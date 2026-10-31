@@ -2,20 +2,12 @@
 
 Plan CI: ile zadań pytest i Mutation checks startuje w runie ``ci.yml`` i co biegnie w każdym.
 
-Pracę pytest wyznacza ``zakres`` (ADR 0020). Na pushu to pełne CI ``main``: trzy tory (``TORY``: Windows 3.11, Windows
-3.14, Linux 3.14), na każdym każdy plik testów ``tests/``, oraz kroki CI (``KROKI``) na swoich torach: E2E na obu
-Windows, straż czasu na Windows 3.14. Na pull request to bramka PR: tory Windows 3.11 (minimum u taty) i Linux 3.14,
-na każdym pliki z wyboru ``tools/szybko.py`` dla zmiany od bazy, bez jego budżetu, i testy ``STRUCTURE``
-(węzeł ``plik::test`` biegnie sam, gdy jego pliku nie ma w wyborze); wybór i ``STRUCTURE`` daje
-``tools/lib/wplyw_zmiany.py``. Zmiana ścieżki, która w jego tabeli reguł uruchamia wszystko w bramce PR
-(``Context.PR_GATE``: pliki, od których zależy każdy test, i ``.github/workflows/``), wybiera wszystkie pliki. Na Windows 3.11 E2E biegnie przy zmianie pod ``src/``, a straż czasu
-przy zmianie w domknięciu jej skryptów (``STRAZ``); przy wyborze wszystkich plików oba.
-Praca Mutation checks to tor ``MUTACJE`` (Windows 3.14): kroki skilli z wyboru ``tools/ci/mutacje_skilli.py`` (na pull
-request podstawy ``ci:``, których werdykt mogą zmienić zmiany od bazy, i skrypt mutacji modelu przy zmianie modelu, na
-pushu wszystkie kroki), każda podstawa ``ci:`` i
-każdy skrypt mutacji osobno. Zdarzenie ``noc`` (workflow ``mutacje-nocne.yml``, ADR 0021) nie ma pytest, a jego Mutation
-checks to skrypty mutacji skilli, których werdykt mogły zmienić zmiany ``main`` od bazy nocy, i każda część każdej
-liczby części podstawy z ``ci-czesci``, którą pull request uruchomiłby przy tych zmianach. Koszt jednostki to ściana, którą dodaje do zadania: plik waży sumę czasów swoich testów przez
+Co biegnie, wyznacza zakres runu (``tools/lib/zakres_runu.py``, ADR 0020, ADR 0021) dla zdarzenia (``pull_request``,
+``push`` albo ``noc``, workflow ``mutacje-nocne.yml``) i zmiany od bazy: tory pytest z krokami CI (E2E, straż czasu) i
+pliki testów na każdym, oraz kroki skilli, które biegną, z powodem. Plan tylko wycenia i pakuje ten zakres: pytest na
+torach zakresu, a kroki skilli na torze ``MUTACJE`` (Windows 3.14, zadania Mutation checks), każda podstawa ``ci:`` i
+każdy skrypt mutacji osobno, a krok z częściami ustalonymi przez zakres (nocą każda część każdej liczby części podstawy
+z ``ci-czesci``) każdą z nich. Koszt jednostki to ściana, którą dodaje do zadania: plik waży sumę czasów swoich testów przez
 ``WORKERY`` workerów xdist, krok swój czas. Czasy to mediany z ostatnich runów main (``tools/ci/czasy_ci.py``). Plik albo
 krok skilla bez pomiaru waży medianę zmierzonych jednostek tego rodzaju na torze, a bez żadnych pomiarów wagę z
 ``DOMYSLNIE``: plan to wypisuje i biegnie dalej, bo brak czasów psuje tylko równowagę zadań, nie zbiór pracy.
@@ -30,9 +22,7 @@ skrypt bierze z ``MUTACJE_CZESC=k/n``, ``tools/lib/skrypt_skilla.py``), a bez ni
 każdego toru po podziale: poniżej niej ściana zadania nie zejdzie.
 Zadanie Mutation checks instaluje Chromium tylko wtedy, gdy ma krok skilla, którego skrypty importują Playwright. Gdy
 run (``STALE_ZADANIA``, zadania pytest i Mutation checks) przekroczyłby ``ZADANIA_RUNU`` na pull request albo
-``ZADANIA_RUNU_MAIN`` na pushu i nocą, cel wszystkich torów rośnie co ``KROK_CELU_S``. Mutacje zmienionych linii i
-skrypty mutacji skilli nie biegną na pull request, tylko nocą na ``main`` (ADR 0021), poza skryptem mutacji modelu TLA+
-przy zmianie jego modelu (``mutacje_skilli.model_watched``).
+``ZADANIA_RUNU_MAIN`` na pushu i nocą, cel wszystkich torów rośnie co ``KROK_CELU_S``.
 
 Na pull request zadanie po porażce pytest uruchamia raz same testy, które padły (``niestabilne_testy``, najwyżej
 ``PONOWIENIE_NAJWIECEJ``; więcej porażek to nie flaky test), jeśli id każdego da się zgłosić w issue. Gdy wszystkie
@@ -64,7 +54,7 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 import hashlib
 import json
 import math
@@ -80,12 +70,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import czasy_ci
+from kroki_skilli import Step, steps
 import mutacje
 import mutacje_skilli
 import niestabilne_testy
 from niestabilne_testy import FlakyTest, ZapisKwarantanny
 import potomne
-from wplyw_zmiany import Context, Repository, changed_since, run_all, with_structure
+from wplyw_zmiany import changed_since
+from zakres_runu import KROKI, MUTACJE, TORY, Krok, KrokSkilla, Tor, ZakresRunu, Zdarzenie, zakres
 
 ROOT = Path(__file__).resolve().parents[1]
 WERSJA = 1
@@ -104,8 +96,6 @@ LIMIT_PYTEST_MIN_S = 10 * 60
 NARZUT_ZADANIA_S = 10 * 60
 WYKONANIE = Path(".ci-czasy", "wykonanie.json")
 CZESCI = Path(".ci-plan", "czesci.json")
-# Domyślne python_files pytest: pyproject.toml go nie zmienia.
-PLIKI_TESTOW = ("test_*.py", "*_test.py")
 # W symulacji 60 PR (29.10) cel 60, 75 i 90 s daje bramce ten sam p50 i p90, bo ścianę trzyma jednostka, której plan
 # nie dzieli (część podstawy skilla, krok E2E, długi test), a 90 s najmniej zadań: stały koszt zadania pytest to ok. 40 s.
 CEL_S = 90.0
@@ -118,8 +108,6 @@ ZADANIA_RUNU_MAIN = 20
 STALE_ZADANIA = 4
 # Zadania bramki w ci.yml, które startują tylko z pracą od planu.
 Z_PLANU = ("pytest", "mutations")
-# Zdarzenie planu skryptów mutacji skilli w mutacje-nocne.yml.
-NOC = "noc"
 
 
 @dataclass(frozen=True)
@@ -137,66 +125,6 @@ class Domyslnie:
 
 
 DOMYSLNIE = Domyslnie()
-
-
-@dataclass(frozen=True)
-class Krok:
-    """Krok CI spoza pytest: polecenia po kolei, każde z limitem; ``{python}``, ``{temp}``, ``{podsumowanie}``.
-
-    Polecenie to jeden napis z argumentami po spacji, bo ``tools/skille_dla_zmiany.py`` czyta z tego pliku, które
-    polecenia skilli liczy CI, tak jak z ``ci.yml``.
-    """
-
-    nazwa: str
-    polecenia: tuple[str, ...]
-    limity_s: tuple[float, ...]
-    domyslnie_s: float
-
-
-E2E = Krok("e2e", ("{python} .agents/skills/verify-rozliczenia/scripts/run_verification.py --variant all",), (15 * 60,), 60.0)
-# Straż czasu Przebiegu rozliczeń (spec #141, #145): benchmark „typowy tydzień” na syntetycznych Wzorcach kształtu
-# Wzorców taty (tools/syntetyczne_wzorce.py), bo prawdziwych nie ma w repozytorium. Budżet 180 000 ms to mediana
-# czasu ściany typowego tygodnia na runnerze; krok pada tylko powyżej niego. Docelowo 3 × cel twardy po przeliczeniu
-# na runner: 3 × 18 s (Mac M4 Max) × ~3,3 ≈ 180 000 ms (Mac → komputer taty, i7-10875H; windows-latest ma podobną
-# wydajność jednego rdzenia). Po #147 (ADR 0008) Przebieg trwa ~3 s na Macu, czyli ~10 s na runnerze: budżet
-# przepuszcza szum współdzielonych runnerów, a łapie powrót do pełnego zapisu przez openpyxl (~240 s). To jedyne
-# miejsce budżetu. Najdłuższy pomiar trwał 13 min (CI 20.10–25.10), mediana 1 min.
-TIMING = Krok(
-    "timing",
-    (
-        "{python} tools/syntetyczne_wzorce.py {temp}/syntetyczne-wzorce",
-        "{python} tools/benchmark_przebiegu.py measure --scenario typowy-tydzien --templates-dir {temp}/syntetyczne-wzorce"
-        " --config {temp}/syntetyczne-wzorce/worker_mapping.yaml --mirror-dir {temp}/lustro --journal {temp}/przebieg.jsonl"
-        " --machine github-windows-latest",
-        "{python} tools/benchmark_przebiegu.py guard --journal {temp}/przebieg.jsonl --budget-ms 180000 --summary {podsumowanie}",
-    ),
-    (10 * 60, 30 * 60, 10 * 60),
-    25.0,
-)
-KROKI = {krok.nazwa: krok for krok in (E2E, TIMING)}
-# Skrypty straży czasu: na pull request biegnie, gdy zmiana sięga ich wykonania (import, czytany plik).
-STRAZ = ("tools/syntetyczne_wzorce.py", "tools/benchmark_przebiegu.py")
-
-
-@dataclass(frozen=True)
-class Tor:
-    nazwa: str  # początek id zadań toru
-    szablon: str  # zadanie ci.yml, którego macierz to zadania toru
-    pomiary: str  # tor czasów w czasy-ci: system i Python runnera
-    os: str
-    python: str
-    kroki: tuple[str, ...]
-    zadanie: str  # nazwa zadania w runie, jak przed planem: "pytest (Python 3.14, Linux, 1/3)"
-
-
-TORY = (
-    Tor("windows-3.11", "pytest", "windows-3.11", "windows-latest", "3.11", ("e2e",), "pytest (Python 3.11, {numer}/{liczba})"),
-    Tor("windows-3.14", "pytest", "windows-3.14", "windows-latest", "3.14", ("e2e", "timing"), "pytest (Python 3.14, {numer}/{liczba})"),
-    Tor("linux-3.14", "pytest", "linux-3.14", "ubuntu-latest", "3.14", (), "pytest (Python 3.14, Linux, {numer}/{liczba})"),
-)
-# Drive Centrum potrzebuje Windows (#409: tzdata, strefa, stare Centrum po aktualizacji); skille niezależne od systemu
-# przejdą na Linuksa po jednym, każdy z dowodem, że jego mutacje dalej są wykrywane.
-MUTACJE = Tor("mutacje", "mutations", "windows-3.14", "windows-latest", "3.14", (), "Mutation checks ({numer}/{liczba})")
 
 
 @dataclass(frozen=True)
@@ -220,7 +148,7 @@ class Zadanie:
 
 @dataclass(frozen=True)
 class Plan:
-    zdarzenie: str
+    zdarzenie: Zdarzenie
     cel_s: float
     runy: tuple[int, ...]  # runy main, z których są czasy
     zadania: tuple[Zadanie, ...]
@@ -243,7 +171,7 @@ class Plan:
             raise ValueError(f"plan w wersji innej niż {WERSJA}")
         digest = dane.pop("digest")
         zadania = tuple(Zadanie(**{**zadanie, "jednostki": tuple(zadanie["jednostki"])}) for zadanie in dane.pop("zadania"))
-        plan = cls(**{**dane, "runy": tuple(dane["runy"]), "zadania": zadania, "bledy": tuple(dane["bledy"])})
+        plan = cls(**{**dane, "zdarzenie": Zdarzenie(dane["zdarzenie"]), "runy": tuple(dane["runy"]), "zadania": zadania, "bledy": tuple(dane["bledy"])})
         if plan.digest != digest:
             raise ValueError(f"treść planu nie zgadza się z jego digest {digest[:12]}")
         return plan
@@ -269,7 +197,7 @@ class Plan:
         i ``NARZUT_ZADANIA_S``, więc zadanie kończy limit kroku z linią ``LIMIT``, zanim zabije je GitHub."""
 
         kroki = [KROKI[klucz.removeprefix("krok:")] for klucz in zadanie.jednostki if klucz.startswith("krok:")]
-        ponowienie = PONOWIENIE_LIMIT_S if self.zdarzenie == "pull_request" else 0
+        ponowienie = PONOWIENIE_LIMIT_S if self.zdarzenie is Zdarzenie.PULL_REQUEST else 0
         return math.ceil((NARZUT_ZADANIA_S + limit_pytest_s(zadanie) + ponowienie + sum(sum(krok.limity_s) for krok in kroki)) / 60)
 
 
@@ -305,34 +233,6 @@ class Wycena:
         return wynik
 
 
-def pliki_testow(root: Path = ROOT) -> list[str]:
-    return sorted({sciezka.relative_to(root).as_posix() for wzorzec in PLIKI_TESTOW for sciezka in (root / "tests").rglob(wzorzec)})
-
-
-@dataclass(frozen=True)
-class Zakres:
-    """Praca pytest runu: tory z ich krokami CI i pliki testów (albo węzły ``plik::test``), które biegną na każdym."""
-
-    tory: tuple[Tor, ...]
-    pliki: tuple[str, ...]
-    zrodlo: str  # skąd pliki, do linii PLAN CI: ``wszystkie pliki``, ``wybór <n> plików``, ``FULL (<pliki>)``
-
-
-def zakres(zdarzenie: str, zmiana: frozenset[str], root: Path = ROOT) -> Zakres:
-    """Na pushu pełne CI ``main``, na pull request bramka PR dla ``zmiana`` (ścieżki od bazy), nocą bez pytest."""
-
-    if zdarzenie == NOC:
-        return Zakres((), (), "bez pytest")
-    if zdarzenie == "push":
-        return Zakres(TORY, tuple(pliki_testow(root)), "wszystkie pliki")
-    windows, linux = (tor for tor in TORY if tor.nazwa in ("windows-3.11", "linux-3.14"))
-    if full := run_all(zmiana, Context.PR_GATE):
-        return Zakres((replace(windows, kroki=("e2e", "timing")), linux), tuple(pliki_testow(root)), f"FULL ({', '.join(full)})")
-    wybor = Repository.scan(root).impact(zmiana)
-    kroki = ("e2e",) * any(sciezka.startswith("src/") for sciezka in zmiana) + ("timing",) * any(skrypt in wybor.distances for skrypt in STRAZ)
-    return Zakres((replace(windows, kroki=kroki), linux), with_structure(wybor.tests), f"wybór {len(wybor.tests)} plików")
-
-
 def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy) -> Wycena:
     """Plik testów jest podzielny na udziały, a węzeł ``plik::test`` nie i waży najwyżej tyle, co typowy plik."""
 
@@ -353,31 +253,28 @@ def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy) -> Wycena:
     )
 
 
-def wycen_mutacje(kroki: Sequence[mutacje_skilli.Step], czasy: czasy_ci.Czasy, zdarzenie: str = "pull_request") -> Wycena:
+def wycen_mutacje(kroki: Sequence[KrokSkilla], czasy: czasy_ci.Czasy) -> Wycena:
     """Kroki skilli na torze ``MUTACJE``: skrypt mutacji podzielny na najwyżej tyle części, ile ma mutacji, podstawa na
-    tyle, ile mówi jej ``ci-czesci``, a bez niego wcale. Nocą podstawa z ``ci-czesci: n`` biegnie każdą częścią
-    ``k/m`` każdego m od 1 do n, każda osobną jednostką, bo pull request uruchamia części tylko jednego m."""
+    tyle, ile mówi jej ``ci-czesci``, a bez niego wcale. Krok z częściami ustalonymi przez zakres (``KrokSkilla.czesci``)
+    biegnie dokładnie nimi, każda osobną jednostką."""
 
     tor = MUTACJE
     pomiary = czasy.tory.get(tor.pomiary, {})
     zmierzone = {klucz: s for klucz in pomiary if klucz.startswith("skill:") and (s := czasy.praca(tor.pomiary, klucz)) is not None}
     domyslny = statistics.median(zmierzone.values()) if zmierzone else DOMYSLNIE.krok_skilla_s
-    koszty = {f"skill:{krok.key}": zmierzone.get(f"skill:{krok.key}", domyslny) for krok in kroki}
+    koszty = {f"skill:{w.krok.key}": zmierzone.get(f"skill:{w.krok.key}", domyslny) for w in kroki}
     narzuty = [z[f"narzut:{tor.szablon}"] for z in czasy.zadania(tor.pomiary) if f"narzut:{tor.szablon}" in z]
-    kazde_n = [krok for krok in kroki if zdarzenie == NOC and krok.verdict is None and krok.parts > 1]
-    podzielne = [krok for krok in kroki if (krok.verdict or krok.parts > 1) and krok not in kazde_n]
-    czesci_kazdego_n = {
-        f"skill:{krok.key}#{k}/{n}": koszty[f"skill:{krok.key}"] / n for krok in kazde_n for n in range(1, krok.parts + 1) for k in range(1, n + 1)
-    }
+    podzielne = [w.krok for w in kroki if (w.krok.verdict or w.krok.parts > 1) and not w.czesci]
+    ustalone = {f"skill:{w.krok.key}#{k}/{n}": koszty[f"skill:{w.krok.key}"] / n for w in kroki for k, n in w.czesci}
     return Wycena(
         tor,
         {f"skill:{krok.key}": koszty[f"skill:{krok.key}"] for krok in podzielne},
-        {f"skill:{krok.key}": koszty[f"skill:{krok.key}"] for krok in kroki if krok not in podzielne and krok not in kazde_n} | czesci_kazdego_n,
+        {f"skill:{w.krok.key}": koszty[f"skill:{w.krok.key}"] for w in kroki if w.krok not in podzielne and not w.czesci} | ustalone,
         statistics.median(narzuty) if narzuty else DOMYSLNIE.narzut_mutacji_s,
         # Wybór kroków i start Pythona przed pierwszym krokiem: do 1 s w runach main 40297447225–40308056465.
         0.0,
         {f"skill:{krok.key}": krok.parts for krok in podzielne},
-        frozenset(f"skill:{krok.key}" for krok in kroki if krok.browser),
+        frozenset(f"skill:{w.krok.key}" for w in kroki if w.krok.browser),
     )
 
 
@@ -419,11 +316,11 @@ def _kolejnosc(jednostka: Jednostka) -> tuple[bool, float, str, bool, str]:
     return (jednostka.klucz.startswith("krok:"), -jednostka.s, "", False, jednostka.klucz)
 
 
-def _limit_runu(zdarzenie: str) -> int:
-    return ZADANIA_RUNU if zdarzenie == "pull_request" else ZADANIA_RUNU_MAIN
+def _limit_runu(zdarzenie: Zdarzenie) -> int:
+    return ZADANIA_RUNU if zdarzenie is Zdarzenie.PULL_REQUEST else ZADANIA_RUNU_MAIN
 
 
-def rozplanuj(wyceny: Sequence[Wycena], zdarzenie: str, runy: tuple[int, ...] = (), bledy: tuple[str, ...] = ()) -> Plan:
+def rozplanuj(wyceny: Sequence[Wycena], zdarzenie: Zdarzenie, runy: tuple[int, ...] = (), bledy: tuple[str, ...] = ()) -> Plan:
     """Najmniej zadań na tor przy celu ``CEL_S``; gdy run przekroczyłby limit zadań zdarzenia (``ZADANIA_RUNU`` albo
     ``ZADANIA_RUNU_MAIN``), cel wszystkich torów rośnie o ``KROK_CELU_S``. Tor bez pracy nie ma zadań."""
 
@@ -459,7 +356,7 @@ def _katalog_czasow() -> Path:
     return (ROOT / _git("rev-parse", "--git-common-dir").strip() / "czasy-ci").resolve()
 
 
-def _wypisz(plan: Plan, praca: Zakres, wyceny: Sequence[Wycena], wybor: mutacje_skilli.Selection) -> None:
+def _wypisz(plan: Plan, praca: ZakresRunu, wyceny: Sequence[Wycena]) -> None:
     run = STALE_ZADANIA + len(plan.zadania)
     zrodlo = ", ".join(map(str, plan.runy)) or "brak (wagi domyślne)"
     print(f"PLAN CI | {plan.zdarzenie} | {praca.zrodlo} | cel {plan.cel_s:.0f} s | {run} zadań runu (limit {_limit_runu(plan.zdarzenie)}) | czasy z runów main: {zrodlo}")
@@ -473,11 +370,11 @@ def _wypisz(plan: Plan, praca: Zakres, wyceny: Sequence[Wycena], wybor: mutacje_
             reszta = [klucz for klucz in zadanie.jednostki if "#" in klucz or not klucz.startswith("pytest:")]
             opis = " ".join([f"{pliki} plików"] * bool(pliki) + reszta + ["+ Chromium"] * zadanie.przegladarka)
             print(f"  {zadanie.nazwa}: {zadanie.sciana_s:.0f} s | {opis}")
-    for nazwa, powod in sorted(wybor.failed.items()):
+    for nazwa, powod in praca.bledy:
         print(f"FAIL {nazwa}: {powod}")
-    for krok, powod in wybor.chosen:
-        print(f"WYBRANY {krok.name} ({powod})" if powod else f"WYBRANY {krok.name}")
-    for krok, powod in wybor.skipped:
+    for wybrany in praca.wybrane:
+        print(f"WYBRANY {wybrany.krok.name} ({wybrany.powod})" if wybrany.powod else f"WYBRANY {wybrany.krok.name}")
+    for krok, powod in praca.pominiete:
         print(f"POMINIĘTY {krok.name}: {powod}")
     print(f"PLAN CI DIGEST | {plan.digest}")
 
@@ -487,13 +384,10 @@ def _plan(args: argparse.Namespace) -> int:
     czasy = czasy_ci.z_mainu(katalog, odswiez_po_s=0 if args.czasy else czasy_ci.ODSWIEZ_S)
     if czasy.blad:
         print(f"CZASY CI | {czasy.blad}; plan waży pracę bez pomiaru domyślnie")
-    zmiana = None if args.zdarzenie == "push" else changed_since(ROOT, args.baza)
-    praca = zakres(args.zdarzenie, zmiana or frozenset(), ROOT)
-    wybor = mutacje_skilli.wybor(zmiana, night=args.zdarzenie == NOC)
-    wyceny = [*(wycen(tor, praca.pliki, czasy) for tor in praca.tory), wycen_mutacje([krok for krok, _ in wybor.chosen], czasy, args.zdarzenie)]
-    bledy = tuple(f"{nazwa}: {powod}" for nazwa, powod in sorted(wybor.failed.items()))
-    plan = rozplanuj(wyceny, args.zdarzenie, czasy.runy, bledy)
-    _wypisz(plan, praca, wyceny, wybor)
+    praca = zakres(args.zdarzenie, frozenset() if args.zdarzenie is Zdarzenie.PUSH else changed_since(ROOT, args.baza), ROOT)
+    wyceny = [*(wycen(tor, praca.pliki, czasy) for tor in praca.tory), wycen_mutacje(praca.wybrane, czasy)]
+    plan = rozplanuj(wyceny, args.zdarzenie, czasy.runy, tuple(f"{nazwa}: {powod}" for nazwa, powod in praca.bledy))
+    _wypisz(plan, praca, wyceny)
     if args.wyjscie:
         args.wyjscie.parent.mkdir(parents=True, exist_ok=True)
         args.wyjscie.write_text(plan.do_json(), encoding="utf-8")
@@ -551,7 +445,7 @@ def _uruchom(nazwa: str, polecenia: Sequence[tuple[tuple[str, ...], float]], po_
     return {"klucz": nazwa, "s": s, "status": status}
 
 
-def _krok_skilla(klucz: str, znalezione: Mapping[str, mutacje_skilli.Step]) -> dict[str, object]:
+def _krok_skilla(klucz: str, znalezione: Mapping[str, Step]) -> dict[str, object]:
     """Krok skilla albo część ``#k/n`` skryptu mutacji; wynik zgłasza pod kluczem całego kroku, jak udział pliku testów."""
 
     nazwa, _, czesc = klucz.partition("#")
@@ -576,7 +470,7 @@ def _krok_pytest(plan: Plan, zadanie: Zadanie, pliki: Mapping[str, list[tuple[in
         " stosy swoich wątków, a zawieszenie przy imporcie albo zbieraniu testów stosów nie zostawia"
     )
     status = _uruchom("krok:pytest", [(_pytest(pliki), limit)], po_limicie)["status"]
-    if status != "ok" and plan.zdarzenie == "pull_request" and (testy := niestabilne_testy.padniete(JUNIT)):
+    if status != "ok" and plan.zdarzenie is Zdarzenie.PULL_REQUEST and (testy := niestabilne_testy.padniete(JUNIT)):
         if len(testy) > PONOWIENIE_NAJWIECEJ:
             print(f"PONOWIENIE | bez ponowienia: padło {len(testy)} testów, a flaky testy to najwyżej {PONOWIENIE_NAJWIECEJ}", flush=True)
         elif obce := [test for test in testy if not niestabilne_testy.zgloszalny(test)]:
@@ -624,7 +518,7 @@ def wykonaj(plan: Plan, zadanie_id: str) -> int:
     wyniki += [_uruchom(f"krok:{krok.nazwa}", _polecenia(krok)) for krok in kroki]
     if skille:
         # Po kolei: mutacje kilku skilli naraz na czterech rdzeniach runnera przekraczają swoje limity czasu.
-        znalezione = {f"skill:{krok.key}": krok for krok in mutacje_skilli.steps({})}
+        znalezione = {f"skill:{krok.key}": krok for krok in steps({})}
         wyniki += [_krok_skilla(klucz, znalezione) for klucz in skille]
     WYKONANIE.parent.mkdir(parents=True, exist_ok=True)
     WYKONANIE.write_text(json.dumps({"plan": plan.digest, "zadanie": zadanie.id, "jednostki": wyniki}, indent=1), encoding="utf-8")
@@ -716,7 +610,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     polecenia = parser.add_subparsers(dest="polecenie", required=True)
     plan = polecenia.add_parser("plan", help="Plan runu: zadania pytest i Mutation checks (zadanie plan albo lokalnie).")
-    plan.add_argument("--zdarzenie", choices=("pull_request", "push", NOC), default="pull_request")
+    plan.add_argument("--zdarzenie", type=Zdarzenie, choices=list(Zdarzenie), default=Zdarzenie.PULL_REQUEST)
     plan.add_argument(
         "--baza",
         default="origin/main",

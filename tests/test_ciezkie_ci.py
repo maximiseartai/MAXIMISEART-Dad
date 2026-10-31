@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT / "tools" / "lib"))
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
 from ciezkie_ci import HEAVY, NIGHTLY, mutations_refusal, refusal  # noqa: E402
-import plan_ci  # noqa: E402
+from zakres_runu import MUTACJE, TORY  # noqa: E402
 
 PASSES = ("GITHUB_ACTIONS", "MAXIMISEART_NA_SCALONYCH_PR")
 OUTSIDE_CI = {name: value for name, value in os.environ.items() if name not in PASSES}
@@ -378,7 +378,7 @@ def test_nazwy_ciezkich_zadan_zgadzaja_sie_z_ci() -> None:
         **yaml.safe_load((ROOT / ".github" / "workflows" / "mutacje-nocne.yml").read_text(encoding="utf-8"))["jobs"],
     }
     # Zadanie, którego macierz układa plan, nazywa się jak jego tor w planie.
-    planned = {lane.szablon: lane.zadanie for lane in (*plan_ci.TORY, plan_ci.MUTACJE)}
+    planned = {lane.szablon: lane.zadanie for lane in (*TORY, MUTACJE)}
     names = {job: planned[job] if jobs[job]["name"] == "${{ matrix.nazwa }}" else jobs[job]["name"] for job in HEAVY}
 
     assert {job: re.sub(r" \((\$\{\{|\{numer\}).*", "", name) for job, name in names.items()} == HEAVY

@@ -29,7 +29,7 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   folder, runner mutacji albo sprawdzenie zmieniło się od bazy, i części każdego n podstaw z ``ci-czesci``), a zadanie
   planu wgrywa swój zapis wykonania jako artefakt ``mutacje-skilli-<id zadania>``. ``zglos --plan-skilli`` daje każdy
   skrypt, który padł, linią ``SKRYPT <skrypt>`` do issue ``Przeżyte mutacje skilli z #N`` PR-u, który ostatni zmienił
-  folder skilla od bazy (bez takiej zmiany: inną ścieżkę z ``mutacje_skilli.watched``, a dla podstawy z ``pilnuje``,
+  folder skilla od bazy (bez takiej zmiany: inną ścieżkę z ``kroki_skilli.watched``, a dla podstawy z ``pilnuje``,
   a bez niej ostatni PR nocy); linii, którą issue już ma, nie dostaje drugi raz. Zadanie bez zapisu tego planu albo bez wyniku jednostki czerwieni run,
   tak jak skrypt, który padł w nocy bez commitu od bazy, bo nie ma PR-u, który by go dostał.
 
@@ -57,7 +57,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
-import mutacje_skilli
+import kroki_skilli
 import mutacje_zmiany
 import plan_ci
 from wplyw_zmiany import Context
@@ -266,16 +266,16 @@ def przypisz_skrypty(github: GitHub, root: Path, od: str, padly: Sequence[str]) 
     """Skrypty mutacji skilli, które padły, według PR-u, który ostatni zmienił folder skilla od ``od``, i przyczyny
     porażki skryptów, których nie ma komu przypisać, bo ``main`` nie ma commitu od ``od``."""
 
-    kroki = {f"skill:{krok.key}": krok for krok in mutacje_skilli.steps({})}
+    kroki = {f"skill:{krok.key}": krok for krok in kroki_skilli.steps({})}
     linia_main = _git(root, "rev-list", "--first-parent", "--reverse", f"{od}..HEAD").split()
     wynik: dict[Autor, list[str]] = {}
     problemy: list[str] = []
     for klucz in padly:
         krok = kroki[klucz]
-        folder = f"{krok.skill.relative_to(mutacje_skilli.ROOT).as_posix()}/"
+        folder = f"{krok.skill.relative_to(kroki_skilli.ROOT).as_posix()}/"
         try:
             # Część podstawy z ci-czesci psuje skrypt skilla albo kod, który skill pilnuje.
-            sciezki = mutacje_skilli.watched(krok) if krok.verdict else (folder, *(mutacje_skilli.guarded(krok.skill / "SKILL.md") or ()))
+            sciezki = kroki_skilli.watched(krok) if krok.verdict else (folder, *(kroki_skilli.guarded(krok.skill / "SKILL.md") or ()))
         except Exception:  # noqa: BLE001 - tabela, której nie da się wczytać, wskazuje tylko folder skilla
             sciezki = (folder,)
         # Grupa bez ścieżek daje ostatni commit nocy.

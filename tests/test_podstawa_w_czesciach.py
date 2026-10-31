@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT / "tools" / "lib"))
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
 import mutacje  # noqa: E402
-import mutacje_skilli  # noqa: E402
+import kroki_skilli  # noqa: E402
 import skrypt_skilla  # noqa: E402
 
 CENTRUM = ROOT / ".agents" / "skills" / "verify-centrum-rozliczen"
@@ -57,7 +57,7 @@ def test_czesc_spoza_jednostek_to_blad_a_nie_pusty_przebieg(value: str) -> None:
 
 
 def test_czesci_podstawy_centrum_przejezdzaja_kazda_funkcje_all_raz_w_kolejnosci_all(runner: ModuleType) -> None:
-    count = mutacje_skilli.ci_parts(CENTRUM / "SKILL.md")
+    count = kroki_skilli.ci_parts(CENTRUM / "SKILL.md")
     every = runner.driven("all", {})
 
     assert count > 1 and count <= len(every)

@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import mutacje  # noqa: E402
 import plan_ci  # noqa: E402
+from zakres_runu import Zdarzenie  # noqa: E402
 
 TOOL = ROOT / "tools" / "mutacje.py"
 PACKAGE = "src/rozliczenia/__init__.py"
@@ -626,7 +627,7 @@ def _ci_repository(tmp_path: Path, plans: dict[str, list[plan_ci.Zadanie]], runs
     gh = tmp_path / "gh"
     gh.mkdir()
     for run, jobs in plans.items():
-        (gh / f"plan-{run}.json").write_text(plan_ci.Plan("pull_request", 300.0, (), tuple(jobs)).do_json(), encoding="utf-8")
+        (gh / f"plan-{run}.json").write_text(plan_ci.Plan(Zdarzenie.PULL_REQUEST, 300.0, (), tuple(jobs)).do_json(), encoding="utf-8")
     (gh / "runy.json").write_text(json.dumps([{"databaseId": run} for run in runs]), encoding="utf-8")
     calls = gh / "wywolania"
     (gh / "gh.py").write_text(

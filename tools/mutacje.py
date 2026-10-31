@@ -685,7 +685,7 @@ def _ci_mutations(mutations: Sequence[Mutation], run: str, base: str) -> list[Mu
     with tempfile.TemporaryDirectory(prefix="plan-ci-") as folder:
         _output(["gh", "run", "download", run, "--name", "plan", "--dir", folder])
         plan = plan_ci.Plan.z_json((Path(folder) / "plan.json").read_text(encoding="utf-8"))
-    tracks = {track.nazwa for track in plan_ci.TORY if track.os.startswith("windows") == (sys.platform == "win32")}
+    tracks = {track.nazwa for track in importlib.import_module("zakres_runu").TORY if track.os.startswith("windows") == (sys.platform == "win32")}
     jobs = ci_jobs([(job.tor, job.nazwa, job.jednostki) for job in plan.zadania], tracks, tested)
     if not jobs:
         raise ValueError(f"run {run} nie stawia w zadaniu pytest toru {', '.join(sorted(tracks))} pliku testów zmienionego od {base}")

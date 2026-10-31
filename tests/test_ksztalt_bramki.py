@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
 import czasy_ci  # noqa: E402
 import plan_ci  # noqa: E402
+from zakres_runu import Zdarzenie, zakres  # noqa: E402
 
 PRZYPADKI = ROOT / "tests" / "fixtures" / "ksztalt_bramki"
 
@@ -58,14 +59,14 @@ def czasy(tmp_path_factory: pytest.TempPathFactory) -> czasy_ci.Czasy:
 @pytest.mark.parametrize("przypadek", sorted(LIMITY))
 def test_plan_bramki_wzorcowego_pr_miesci_sie_w_limicie_testow_zadan_i_prognozy_sciany(przypadek: str, czasy: czasy_ci.Czasy) -> None:
     zmiana = frozenset((PRZYPADKI / f"{przypadek}.txt").read_text(encoding="utf-8").split())
-    zakres = plan_ci.zakres("pull_request", zmiana)
-    plan = plan_ci.rozplanuj([plan_ci.wycen(tor, zakres.pliki, czasy) for tor in zakres.tory], "pull_request", czasy.runy)
+    praca = zakres(Zdarzenie.PULL_REQUEST, zmiana)
+    plan = plan_ci.rozplanuj([plan_ci.wycen(tor, praca.pliki, czasy) for tor in praca.tory], Zdarzenie.PULL_REQUEST, czasy.runy)
     zadania = plan_ci.STALE_ZADANIA + len(plan.zadania)
     sciana = max(zadanie.sciana_s for zadanie in plan.zadania)
     limit = LIMITY[przypadek]
 
-    assert (len(zakres.pliki) <= limit.testy, zadania <= limit.zadania, sciana <= limit.sciana_s) == (True, True, True), (
-        f"przypadek {przypadek}: {len(zakres.pliki)} testów na torze (limit {limit.testy}), {zadania} zadań runu (limit {limit.zadania}),"
+    assert (len(praca.pliki) <= limit.testy, zadania <= limit.zadania, sciana <= limit.sciana_s) == (True, True, True), (
+        f"przypadek {przypadek}: {len(praca.pliki)} testów na torze (limit {limit.testy}), {zadania} zadań runu (limit {limit.zadania}),"
         f" prognoza ściany {sciana:.1f} s (limit {limit.sciana_s} s),"
-        f" {zakres.zrodlo}; podniesienie limitu to decyzja Maksa"
+        f" {praca.zrodlo}; podniesienie limitu to decyzja Maksa"
     )

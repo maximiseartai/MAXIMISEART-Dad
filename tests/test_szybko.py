@@ -37,18 +37,6 @@ BY_CHANGE_ONLY = {
         "src/, katalogu (import message_samples) i pliku tests/expected/komunikaty.txt (literał)"
     ),
     "tests/test_mutacje.py": "sprawdza silnik mutacji na repozytoriach testu, a nie całe repozytorium",
-    "tests/test_mutacje_skilli.py::test_na_pull_request_biegna_same_podstawy_a_noca_same_skrypty_mutacji": (
-        "sprawdza wybór kroków skilli na repozytorium testu, a nie całe repozytorium"
-    ),
-    "tests/test_mutacje_skilli.py::test_na_pull_request_skrypt_mutacji_modelu_biegnie_przy_zmianie_modelu_skryptu_albo_sprawdzenia": (
-        "sprawdza wybór skryptu mutacji modelu na repozytorium testu, a nie całe repozytorium"
-    ),
-    "tests/test_mutacje_skilli.py::test_noca_skrypt_mutacji_biegnie_przy_zmianie_folderu_skilla_albo_runnera": (
-        "sprawdza wybór skryptów mutacji na repozytorium testu, a nie całe repozytorium"
-    ),
-    "tests/test_mutacje_skilli.py::test_ze_zmianami_od_bazy_podstawa_ci_biegnie_przy_trafieniu_w_pilnuje_albo_folder_skilla": (
-        "sprawdza wybór podstaw na repozytorium testu, a nie całe repozytorium"
-    ),
     "tests/test_mutacje_nocne.py": (
         "sprawdza narzędzie na repozytoriach testu i atrapie GitHuba; mutacje-nocne.yml czyta ścieżką, którą graf widzi"
     ),
@@ -60,9 +48,6 @@ BY_CHANGE_ONLY = {
     "tests/test_skille_dla_zmiany.py::test_liczy_ci_i_liczy_noc_wymieniaja_dokladnie_kroki_skilla_ktore_uruchamia_plan_pull_requestu_i_nocy": (
         "sprawdza linie LICZY CI i LICZY NOC na repozytorium testu, a nie całe repozytorium"
     ),
-    "tests/test_skille_dla_zmiany.py::test_liczy_ci_wymienia_e2e_tylko_gdy_plan_pull_requestu_go_uruchamia": (
-        "sprawdza linię LICZY CI na repozytorium testu, a nie całe repozytorium"
-    ),
     "tests/test_skille_dla_zmiany.py::test_skrypt_mutacji_modelu_przy_zmianie_modelu_stoi_w_liczy_ci_a_nie_w_liczy_noc": (
         "sprawdza linie LICZY CI i LICZY NOC skryptu mutacji modelu na repozytorium testu, a nie całe repozytorium"
     ),
@@ -70,6 +55,7 @@ BY_CHANGE_ONLY = {
         "sprawdza wybór skilli na repozytorium testu, a nie całe repozytorium"
     ),
     "tests/test_szybko.py": "sprawdza samo szybko w repozytoriach testu; graf wybiera go przy zmianie tools/szybko.py i tabel reguł",
+    "tests/test_zakres_runu.py": "sprawdza zakres runu na repozytoriach testu, a ci.yml i mutacje-nocne.yml czyta ścieżką, którą graf widzi",
     "tests/test_zadania_ci.py": "sprawdza ci.yml, który czyta ścieżką widoczną dla grafu, i plan na atrapach zapisów",
     "tests/test_zgoda.py": (
         "sprawdza hook zgody i jego wyrocznię na pojedynczych zdarzeniach; graf wybiera go przy zmianie hooka, wyroczni "

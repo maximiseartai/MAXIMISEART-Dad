@@ -37,7 +37,7 @@ REPO = {
 
 
 TOOLS_FOR_CHANGE = (
-    "tools/skille_dla_zmiany.py", "tools/ci/mutacje_skilli.py", "tools/plan_ci.py", "tools/lib/niestabilne_testy.py",
+    "tools/skille_dla_zmiany.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/ci/mutacje_skilli.py", "tools/plan_ci.py", "tools/lib/niestabilne_testy.py",
     "tools/mutacje_zmiany.py", "tools/ci/pokrycie_procesu.py", "tools/lib/potomne.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py",
     "tools/ci/czasy_ci.py", "tools/lib/ciezkie_ci.py", "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py",
 )
@@ -171,17 +171,14 @@ def test_skill_z_poleceniami_w_ci_zostaje_w_skillach_verify_a_liczy_ci_wymienia_
             ".agents/skills/verify-a/scripts/check_a_mutations.py": MUTATION_SCRIPT,
             ".agents/skills/verify-mac/SKILL.md": "---\nname: verify-mac\npilnuje:\n  - src/a/*\n---\n",
             ".agents/skills/verify-zly/SKILL.md": "---\nname: verify-zly\npilnuje:\n  - src/a/*\nci: docs/b.md\n---\n",
-            ".agents/skills/verify-e2e/SKILL.md": "---\nname: verify-e2e\npilnuje:\n  - src/a/*\n---\n",
-            ".agents/skills/verify-e2e/scripts/run_e2e.py": "print('e2e')\n",
-            ".github/workflows/ci.yml": "      - run: py -3 .agents/skills/verify-e2e/scripts/run_e2e.py --variant all\n",
         },
     )
     _append(tmp_path, "src/a/b/gleboki.py")
 
     result = _run(tmp_path, base)
 
-    assert _skills(result) == ["verify-a", "verify-e2e", "verify-mac", "verify-zly"]
-    assert result.stdout.splitlines()[-2] == "LICZY CI: verify-a (narzedzie.py --wszystko); verify-e2e (run_e2e.py --variant all)"
+    assert _skills(result) == ["verify-a", "verify-mac", "verify-zly"]
+    assert result.stdout.splitlines()[-2] == "LICZY CI: verify-a (narzedzie.py --wszystko)"
 
 
 MUTATION_SCRIPT = "MUTATIONS = ()\nif __name__ == '__main__':\n    print('MUTACJE OK')\n"
@@ -193,26 +190,6 @@ AGREEING = {
     ".agents/skills/verify-a/scripts/sprawdz_a.py": "print('sprawdzone')\n",
     ".agents/skills/verify-a/scripts/check_a_mutations.py": MUTATION_SCRIPT,
 }
-
-
-def _in_mutation_checks(root: Path, base: str, *, night: bool = False) -> list[str]:
-    """Polecenia kroków, które uruchomił ``tools/ci/mutacje_skilli.py --zmiany-od`` (z ``night``: ``--noc``), w postaci linii
-    ``LICZY CI`` albo ``LICZY NOC``."""
-
-    out = subprocess.run(
-        [sys.executable, str(root / "tools" / "ci" / "mutacje_skilli.py"), "--zmiany-od", base, *(["--noc"] * night)],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-    ).stdout
-    found = []
-    for line in out.splitlines():
-        if line.startswith("== "):
-            command = line.removeprefix("== ").split(" (")[0].split(": ", 1)[-1].split()
-            found.append(" ".join([Path(command[0]).name, *command[1:]]))
-    return found
 
 
 @pytest.mark.parametrize(
@@ -235,7 +212,6 @@ def test_liczy_ci_i_liczy_noc_wymieniaja_dokladnie_kroki_skilla_ktore_uruchamia_
         "LICZY CI: verify-a (sprawdz_a.py --wszystko)",
         *([f"LICZY NOC: verify-a ({', '.join(at_night)})"] * bool(at_night)),
     ]
-    assert (_in_mutation_checks(tmp_path, base), _in_mutation_checks(tmp_path, base, night=True)) == (["sprawdz_a.py --wszystko"], at_night)
 
 
 MODEL_SCRIPT = (
@@ -274,7 +250,6 @@ def test_skrypt_mutacji_modelu_przy_zmianie_modelu_stoi_w_liczy_ci_a_nie_w_liczy
         f"LICZY CI: verify-a ({', '.join(['sprawdz_a.py --wszystko', *in_ci])})",
         *([f"LICZY NOC: verify-a ({', '.join(at_night)})"] * bool(at_night)),
     ]
-    assert _in_mutation_checks(tmp_path, base) == ["sprawdz_a.py --wszystko", *in_ci]
 
 
 def test_zmiana_runnera_mutacji_nie_wskazuje_skilla_choc_noc_uruchamia_jego_skrypt_mutacji(tmp_path: Path) -> None:
@@ -283,31 +258,8 @@ def test_zmiana_runnera_mutacji_nie_wskazuje_skilla_choc_noc_uruchamia_jego_skry
         file.write("# zmiana\n")
     commit(tmp_path, "zmiana runnera")
 
-    assert _skills(_run(tmp_path, base)) == []
-    assert (_in_mutation_checks(tmp_path, base), _in_mutation_checks(tmp_path, base, night=True)) == ([], ["check_a_mutations.py"])
-
-
-@pytest.mark.parametrize(
-    ("changed", "in_ci"),
-    [("src/a/b/gleboki.py", ["LICZY CI: verify-rozliczenia (run_verification.py --variant all)"]), (".agents/skills/verify-rozliczenia/SKILL.md", [])],
-    ids=["src", "tylko folder skilla"],
-)
-def test_liczy_ci_wymienia_e2e_tylko_gdy_plan_pull_requestu_go_uruchamia(tmp_path: Path, changed: str, in_ci: list[str]) -> None:
-    base = _repo(
-        tmp_path,
-        {
-            **REPO,
-            ".agents/skills/verify-rozliczenia/SKILL.md": "---\nname: verify-rozliczenia\npilnuje:\n  - src/a/*\n---\n",
-            ".agents/skills/verify-rozliczenia/scripts/run_verification.py": "print('e2e')\n",
-        },
-    )
-    _append(tmp_path, changed)
-    commit(tmp_path, "zmiana")
-
-    result = _run(tmp_path, base)
-
-    assert "verify-rozliczenia" in _skills(result)
-    assert [line for line in result.stdout.splitlines() if line.startswith("LICZY CI")] == in_ci
+    # Linie LICZY dostaje tylko skill, który obowiązuje; skrypt nocy uruchamia zakres (tests/test_zakres_runu.py).
+    assert _run(tmp_path, base).stdout.splitlines() == [f"{VERDICT}brak"]
 
 
 def test_baza_ktorej_nie_ma_daje_nieznane_skille_i_kod_bledu(tmp_path: Path) -> None:
@@ -331,7 +283,7 @@ def _load_tool(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
 
 def test_kazdy_skill_verify_deklaruje_pilnuje(monkeypatch: pytest.MonkeyPatch) -> None:
     _load_tool(monkeypatch)
-    ci = importlib.import_module("mutacje_skilli")
+    ci = importlib.import_module("kroki_skilli")
     skills = sorted(SKILLS.glob("verify-*/SKILL.md"))
 
     without = [md.parent.name for md in skills if ci.guarded(md) is None]
@@ -355,7 +307,7 @@ def test_frontmatter_kazdego_skilla_jest_poprawnym_yaml() -> None:
 
 def test_workflow_skilla_windows_biegnie_dla_tych_samych_sciezek_co_jego_pilnuje(monkeypatch: pytest.MonkeyPatch) -> None:
     _load_tool(monkeypatch)
-    ci = importlib.import_module("mutacje_skilli")
+    ci = importlib.import_module("kroki_skilli")
     skill = SKILLS / "verify-centrum-na-windowsie"
     workflow = yaml.safe_load((ROOT / ".github" / "workflows" / f"{skill.name}.yml").read_text(encoding="utf-8"))
     triggers = workflow[True]  # YAML 1.1 czyta klucz „on” jako True
@@ -372,14 +324,19 @@ BEFORE_PUSH = re.compile(r"before (handing|you hand|pushing|you push|opening|you
 # Argumenty kontraktu skryptu skilla (``tools/lib/skrypt_skilla.py``), które mówią, gdzie biec, a nie co sprawdzić.
 PLACE = ("--run-dir", "--root")
 CI_AND_LOCAL = "## What CI runs and what stays local"
+# Wywołanie skryptu skilla w prozie SKILL.md: skill, ścieżka skryptu w ``scripts/`` i argumenty do końca linii.
+SKILL_COMMAND = re.compile(r"\.agents/skills/([\w-]+)/scripts/([\w/]+\.py)((?:[ \t]+[^\s`\"']+)*)")
 
 
-def _ci_commands(tool: ModuleType) -> set[tuple[str, ...]]:
-    """Polecenia skilli, które liczy CI (``ci_runs`` narzędzia); skrypt mutacji bez argumentów obejmuje każde swoje wywołanie."""
+def _ci_commands(skill: Path) -> set[tuple[str, ...]]:
+    """Polecenia skilla (nazwa skryptu z argumentami), które CI liczy w którymś runie: jego kroki (podstawa ``ci:``,
+    skrypty mutacji) i wywołania jego skryptów w krokach CI planu; skrypt mutacji bez argumentów obejmuje każde swoje
+    wywołanie."""
 
-    steps = importlib.import_module("mutacje_skilli").steps({})
-    every = importlib.import_module("plan_ci").KROKI.values()
-    return {run for md in SKILLS.glob("*/SKILL.md") for run in tool.ci_runs(md.parent, steps, every)}
+    steps = importlib.import_module("kroki_skilli").steps({})
+    ci_steps = importlib.import_module("zakres_runu").KROKI.values()
+    runs = {(Path(step.command[0]).name, *step.command[1:]) for step in steps if step.skill == skill}
+    return runs | {run for ci_step in ci_steps for run in ci_step.wywolania(skill.name)}
 
 
 def _selecting(arguments: str) -> tuple[str, ...]:
@@ -401,14 +358,14 @@ def _paragraphs(text: str) -> list[str]:
     return found
 
 
-def _mandates(tool: ModuleType, text: str, commands: set[tuple[str, ...]]) -> list[str]:
+def _mandates(text: str, commands: set[tuple[str, ...]]) -> list[str]:
     """Akapity, które każą przed pushem uruchomić lokalnie polecenie liczone przez CI."""
 
     found = []
     for paragraph in _paragraphs(text):
         if not BEFORE_PUSH.search(paragraph):
             continue
-        named = {(Path(script).name, *_selecting(arguments)) for _, script, arguments in tool.SKILL_COMMAND.findall(paragraph.replace("\\", "/"))}
+        named = {(Path(script).name, *_selecting(arguments)) for _, script, arguments in SKILL_COMMAND.findall(paragraph.replace("\\", "/"))}
         # Wywołanie bez części argumentów polecenia CI to zwykle jego domyślny przebieg (``all``), więc też się liczy.
         if any(command[: len(ci)] == ci or ci[: len(command)] == command for command in named for ci in commands):
             found.append(paragraph.splitlines()[0])
@@ -422,10 +379,10 @@ def test_skill_nie_kaze_uruchamiac_przed_pushem_tego_co_liczy_ci(monkeypatch: py
     Granica: nakaz innymi słowami („after every change”, „always run”, „it must end with”) łapie tylko przegląd.
     """
 
-    tool = _load_tool(monkeypatch)
-    commands = _ci_commands(tool)
+    _load_tool(monkeypatch)
+    commands = {run for md in SKILLS.glob("*/SKILL.md") for run in _ci_commands(md.parent)}
 
-    found = {md.parent.name: _mandates(tool, md.read_text(encoding="utf-8"), commands) for md in sorted(SKILLS.glob("*/SKILL.md"))}
+    found = {md.parent.name: _mandates(md.read_text(encoding="utf-8"), commands) for md in sorted(SKILLS.glob("*/SKILL.md"))}
 
     assert {("run_verification.py", "--variant", "all"), ("run_centrum_verification.py", "--feature", "all")} <= commands
     assert {skill: lines for skill, lines in found.items() if lines} == {}, (
@@ -436,10 +393,8 @@ def test_skill_nie_kaze_uruchamiac_przed_pushem_tego_co_liczy_ci(monkeypatch: py
 def test_skill_z_poleceniami_w_ci_mowi_co_liczy_ci_a_co_zostaje_lokalnie(monkeypatch: pytest.MonkeyPatch) -> None:
     """Granica: czy sekcja trafnie nazywa osąd, który zostaje lokalnie, łapie tylko przegląd."""
 
-    tool = _load_tool(monkeypatch)
-    steps = importlib.import_module("mutacje_skilli").steps({})
-    every = importlib.import_module("plan_ci").KROKI.values()
-    skills = [md for md in sorted(SKILLS.glob("verify-*/SKILL.md")) if tool.ci_runs(md.parent, steps, every)]
+    _load_tool(monkeypatch)
+    skills = [md for md in sorted(SKILLS.glob("verify-*/SKILL.md")) if _ci_commands(md.parent)]
 
     without = [md.parent.name for md in skills if CI_AND_LOCAL not in md.read_text(encoding="utf-8").splitlines()]
 

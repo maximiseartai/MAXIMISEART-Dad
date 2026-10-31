@@ -30,10 +30,11 @@ from tests.fixtures.git_repo import commit, git, repository
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
+import kroki_skilli  # noqa: E402
 import mutacje_nocne  # noqa: E402
-import mutacje_skilli  # noqa: E402
 import mutacje_zmiany  # noqa: E402
 import plan_ci  # noqa: E402
+from zakres_runu import Zdarzenie  # noqa: E402
 
 REPO = "repos/{owner}/{repo}"
 RUNY = f"{REPO}/actions/workflows/mutacje-nocne.yml/runs?branch=main&status=success&per_page=1"
@@ -552,7 +553,7 @@ def _historia_skilli(tmp_path: Path) -> tuple[Path, str]:
 SKRYPT_A, SKRYPT_B = "skill:verify-a/check_a_mutations.py", "skill:verify-b/check_b_mutations.py"
 PODSTAWA_C = ".agents/skills/verify-c/scripts/sprawdz_c.py"
 PLAN_SKILLI = plan_ci.Plan(
-    plan_ci.NOC,
+    Zdarzenie.NOC,
     225.0,
     (),
     (
@@ -577,8 +578,8 @@ def test_skrypt_mutacji_skilla_ktory_padl_noca_trafia_do_issue_pr_ktory_ostatni_
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo, baza = _historia_skilli(tmp_path)
-    monkeypatch.setattr(mutacje_skilli, "ROOT", repo)
-    monkeypatch.setattr(mutacje_skilli, "SKILLS", repo / ".agents" / "skills")
+    monkeypatch.setattr(kroki_skilli, "ROOT", repo)
+    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
     github = GitHubWPamieci()
     # Obie części skryptu verify-a zgłaszają go pod jego kluczem; padła jedna z nich.
     zapisy = _wykonania(
@@ -611,8 +612,8 @@ def test_skrypt_mutacji_skilla_ktory_padl_noca_po_zmianie_bibliotek_trafia_do_is
     repo, baza = _historia_skilli(tmp_path)
     (repo / "requirements.txt").write_text("pytest\n", encoding="utf-8")
     commit(repo, "Zmień biblioteki (#24)")
-    monkeypatch.setattr(mutacje_skilli, "ROOT", repo)
-    monkeypatch.setattr(mutacje_skilli, "SKILLS", repo / ".agents" / "skills")
+    monkeypatch.setattr(kroki_skilli, "ROOT", repo)
+    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
     github = GitHubWPamieci()
     zapisy = _wykonania(
         tmp_path / "zapisy",
@@ -628,8 +629,8 @@ def test_skrypt_ktory_padl_znowu_trafia_komentarzem_do_issue_bez_jego_linii_a_sk
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo, baza = _historia_skilli(tmp_path)
-    monkeypatch.setattr(mutacje_skilli, "ROOT", repo)
-    monkeypatch.setattr(mutacje_skilli, "SKILLS", repo / ".agents" / "skills")
+    monkeypatch.setattr(kroki_skilli, "ROOT", repo)
+    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
     odpowiedz = {"body": "SKRYPT .agents/skills/verify-a/scripts/check_a_mutations.py | nie warto, bo mutacja psuje tylko log"}
     github = GitHubWPamieci(
         issues=[
@@ -655,11 +656,11 @@ def test_czesc_podstawy_ktora_padla_noca_obok_przechodzacej_w_tym_samym_zadaniu_
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo, baza = _historia_skilli(tmp_path)
-    monkeypatch.setattr(mutacje_skilli, "ROOT", repo)
-    monkeypatch.setattr(mutacje_skilli, "SKILLS", repo / ".agents" / "skills")
+    monkeypatch.setattr(kroki_skilli, "ROOT", repo)
+    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
     github = GitHubWPamieci()
     klucz = "skill:verify-c/ci"
-    plan = plan_ci.Plan(plan_ci.NOC, 225.0, (), (plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/1)", (f"{klucz}#1/2", f"{klucz}#2/2"), 100.0),))
+    plan = plan_ci.Plan(Zdarzenie.NOC, 225.0, (), (plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/1)", (f"{klucz}#1/2", f"{klucz}#2/2"), 100.0),))
     # Obie części zgłaszają się pod kluczem podstawy, a padła pierwsza.
     zapis = tmp_path / "zapisy" / f"{mutacje_nocne.ARTEFAKT_SKILLI}mutacje-1" / plan_ci.WYKONANIE.name
     zapis.parent.mkdir(parents=True)
@@ -680,8 +681,8 @@ def test_czesc_podstawy_skilla_bez_pilnuje_ktorego_folder_sie_nie_zmienil_trafia
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo, _ = _historia_skilli(tmp_path)
-    monkeypatch.setattr(mutacje_skilli, "ROOT", repo)
-    monkeypatch.setattr(mutacje_skilli, "SKILLS", repo / ".agents" / "skills")
+    monkeypatch.setattr(kroki_skilli, "ROOT", repo)
+    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
     podstawa = ".agents/skills/verify-d/scripts/sprawdz_d.py"
     (repo / podstawa).parent.mkdir(parents=True)
     (repo / podstawa).write_text("", encoding="utf-8")
@@ -692,7 +693,7 @@ def test_czesc_podstawy_skilla_bez_pilnuje_ktorego_folder_sie_nie_zmienil_trafia
     (repo / "README.md").write_text("Opis.\n", encoding="utf-8")
     commit(repo, "Opis repozytorium (#26)")
     klucz = "skill:verify-d/ci"
-    plan = plan_ci.Plan(plan_ci.NOC, 225.0, (), (plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/1)", (f"{klucz}#1/2", f"{klucz}#2/2"), 100.0),))
+    plan = plan_ci.Plan(Zdarzenie.NOC, 225.0, (), (plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/1)", (f"{klucz}#1/2", f"{klucz}#2/2"), 100.0),))
     github = GitHubWPamieci()
 
     kod = mutacje_nocne.zglos(github, repo, baza, _wykonania(tmp_path / "zapisy", {"mutacje-1": (plan.digest, {klucz: "fail"})}), 0, RUN, plan)
@@ -707,9 +708,9 @@ def test_skrypt_skilla_ktory_padl_w_nocy_bez_commitow_czerwieni_przebieg_bo_nie_
 ) -> None:
     # Skill bez pilnuje biegnie każdej nocy, także takiej, w której main nie dostał commitu od bazy.
     repo, _ = _historia_skilli(tmp_path)
-    for modul in (mutacje_nocne, mutacje_skilli):
+    for modul in (mutacje_nocne, kroki_skilli):
         monkeypatch.setattr(modul, "ROOT", repo)
-    monkeypatch.setattr(mutacje_skilli, "SKILLS", repo / ".agents" / "skills")
+    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
     github = GitHubWPamieci()
     monkeypatch.setattr(mutacje_nocne, "GhApi", lambda: github)
     podstawa = ".agents/skills/verify-d/scripts/sprawdz_d.py"
@@ -718,7 +719,7 @@ def test_skrypt_skilla_ktory_padl_w_nocy_bez_commitow_czerwieni_przebieg_bo_nie_
     (repo / ".agents/skills/verify-d/SKILL.md").write_text(f"---\nname: verify-d\nci: {podstawa}\nci-czesci: 2\n---\n", encoding="utf-8")
     baza = commit(repo, "Dodaj verify-d (#24)")
     klucz = "skill:verify-d/ci"
-    plan = plan_ci.Plan(plan_ci.NOC, 225.0, (), (plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/1)", (f"{klucz}#1/2", f"{klucz}#2/2"), 100.0),))
+    plan = plan_ci.Plan(Zdarzenie.NOC, 225.0, (), (plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/1)", (f"{klucz}#1/2", f"{klucz}#2/2"), 100.0),))
     zapisy = _wykonania(tmp_path / "zapisy", {"mutacje-1": (plan.digest, {klucz: "fail"})})
     (tmp_path / "plan.json").write_text(plan.do_json(), encoding="utf-8")
 
@@ -733,8 +734,8 @@ def test_zadanie_skilli_bez_zapisu_tego_planu_albo_bez_wyniku_jednostki_czerwien
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo, baza = _historia_skilli(tmp_path)
-    monkeypatch.setattr(mutacje_skilli, "ROOT", repo)
-    monkeypatch.setattr(mutacje_skilli, "SKILLS", repo / ".agents" / "skills")
+    monkeypatch.setattr(kroki_skilli, "ROOT", repo)
+    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
     zapisy = _wykonania(tmp_path / "zapisy", {"mutacje-2": (PLAN_SKILLI.digest, {SKRYPT_A: "ok"})})
     uszkodzone = _wykonania(tmp_path / "uszkodzone", {"mutacje-1": (PLAN_SKILLI.digest, {}), "mutacje-2": (PLAN_SKILLI.digest, {SKRYPT_A: "ok", SKRYPT_B: "ok"})})
     (uszkodzone / f"{mutacje_nocne.ARTEFAKT_SKILLI}mutacje-1" / plan_ci.WYKONANIE.name).write_text("", encoding="utf-8")
@@ -756,9 +757,9 @@ def test_zgloszenie_z_polecenia_workflow_zaklada_issue_i_konczy_sie_ok(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], ze_skryptami: bool
 ) -> None:
     repo, baza = _historia_skilli(tmp_path)
-    for modul in (mutacje_nocne, mutacje_skilli):
+    for modul in (mutacje_nocne, kroki_skilli):
         monkeypatch.setattr(modul, "ROOT", repo)
-    monkeypatch.setattr(mutacje_skilli, "SKILLS", repo / ".agents" / "skills")
+    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
     github = GitHubWPamieci()
     monkeypatch.setattr(mutacje_nocne, "GhApi", lambda: github)
     zapisy = _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, [_przezyta("src/a.py:1 stała")])})
@@ -809,7 +810,7 @@ def test_noc_planuje_skrypty_skilli_od_bazy_a_ich_zadanie_wgrywa_zapis_pod_nazwa
     pobrania = {krok["with"].get("pattern") or krok["with"]["name"]: krok["with"]["path"] for krok in zgloszenie["steps"] if "download-artifact" in krok.get("uses", "")}
     polecenie_zgloszenia = shlex.split(next(krok["run"] for krok in zgloszenie["steps"] if "zglos" in krok.get("run", "")))
 
-    assert polecenie_planu[polecenie_planu.index("--zdarzenie") + 1] == plan_ci.NOC
+    assert polecenie_planu[polecenie_planu.index("--zdarzenie") + 1] == Zdarzenie.NOC
     assert (polecenie_planu[polecenie_planu.index("--baza") + 1], krok_planu["env"]["BAZA"]) == ("$BAZA", "${{ steps.plan.outputs.baza }}")
     assert plan_nocy["outputs"]["skille"] == f"${{{{ steps.{krok_planu['id']}.outputs.mutations }}}}"
     assert (skille["needs"], skille["strategy"]["matrix"]["include"]) == ("plan", "${{ fromJSON(needs.plan.outputs.skille) }}")

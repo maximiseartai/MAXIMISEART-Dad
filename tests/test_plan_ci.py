@@ -26,10 +26,11 @@ sys.path.insert(0, str(ROOT / "tools" / "lib"))
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
 import czasy_ci  # noqa: E402
+import kroki_skilli  # noqa: E402
 import mutacje_skilli  # noqa: E402
 import niestabilne_testy  # noqa: E402
 import plan_ci  # noqa: E402
-from wplyw_zmiany import STRUCTURE  # noqa: E402
+from zakres_runu import KROKI, MUTACJE, TORY, Krok, KrokSkilla, Tor, Zdarzenie, pliki_testow, zakres  # noqa: E402
 
 FILES = [f"tests/test_{index:02}.py" for index in range(40)]
 # Plik dłuższy niż zadanie, jak test_uszkodzone_wejscia: 1100 s testów na Windows.
@@ -40,7 +41,7 @@ def _times(per_file_s: float = 60.0) -> czasy_ci.Czasy:
     """Czasy jednego runu main: każdy plik ``per_file_s`` na każdym torze, ``LONG`` 1100 s, i dwa zadania pytest toru."""
 
     lanes: dict[str, dict[str, tuple[czasy_ci.Obserwacja, ...]]] = {}
-    for lane in plan_ci.TORY:
+    for lane in TORY:
         keys: dict[str, tuple[czasy_ci.Obserwacja, ...]] = {f"pytest:{name}": (czasy_ci.Obserwacja(1, "A", per_file_s),) for name in FILES}
         keys[f"pytest:{LONG}"] = (czasy_ci.Obserwacja(1, "B", 1100.0),)
         keys["narzut:pytest"] = (czasy_ci.Obserwacja(1, "A", 14.0), czasy_ci.Obserwacja(1, "B", 16.0))
@@ -61,10 +62,10 @@ SKILL_STEPS = {
 }
 
 
-def _skill_steps(keys: list[str]) -> list[mutacje_skilli.Step]:
+def _skill_steps(keys: list[str]) -> list[kroki_skilli.Step]:
     skills = ROOT / ".agents" / "skills"
     return [
-        mutacje_skilli.Step(skills / key.split("/")[0], key, key, (key,), None if key.endswith("/ci") else mutacje_skilli.VERDICT, SKILL_STEPS[key][1], SKILL_STEPS[key][2])
+        kroki_skilli.Step(skills / key.split("/")[0], key, key, (key,), None if key.endswith("/ci") else kroki_skilli.VERDICT, SKILL_STEPS[key][1], SKILL_STEPS[key][2])
         for key in keys
     ]
 
@@ -72,15 +73,17 @@ def _skill_steps(keys: list[str]) -> list[mutacje_skilli.Step]:
 def _with_skill_times(czasy: czasy_ci.Czasy) -> czasy_ci.Czasy:
     """Czasy z pomiarem każdego kroku ``SKILL_STEPS`` i narzutem dwóch zadań Mutation checks z runu 1."""
 
-    lane = plan_ci.MUTACJE.pomiary
+    lane = MUTACJE.pomiary
     keys: dict[str, tuple[czasy_ci.Obserwacja, ...]] = {f"skill:{key}": (czasy_ci.Obserwacja(1, "M", s),) for key, (s, _, _) in SKILL_STEPS.items()}
     keys["narzut:mutations"] = (czasy_ci.Obserwacja(1, "M", 40.0), czasy_ci.Obserwacja(1, "N", 46.0))
     return czasy_ci.Czasy(czasy.runy, {**czasy.tory, lane: {**czasy.tory.get(lane, {}), **keys}})
 
 
-def _plan(czasy: czasy_ci.Czasy, files: list[str], steps: list[mutacje_skilli.Step] | None = None, event: str = "pull_request") -> plan_ci.Plan:
-    lanes = [plan_ci.wycen(lane, files, czasy) for lane in plan_ci.TORY]
-    skills = [] if steps is None else [plan_ci.wycen_mutacje(steps, czasy)]
+def _plan(
+    czasy: czasy_ci.Czasy, files: list[str], steps: list[kroki_skilli.Step] | None = None, event: Zdarzenie = Zdarzenie.PULL_REQUEST, tory: tuple[Tor, ...] = TORY
+) -> plan_ci.Plan:
+    lanes = [plan_ci.wycen(lane, files, czasy) for lane in tory]
+    skills = [] if steps is None else [plan_ci.wycen_mutacje([KrokSkilla(step, "") for step in steps], czasy)]
     return plan_ci.rozplanuj([*lanes, *skills], event, czasy.runy)
 
 
@@ -91,7 +94,7 @@ def _run_jobs(plan: plan_ci.Plan) -> int:
 def test_kazdy_plik_testow_biegnie_raz_na_kazdym_torze_a_udzialy_dlugiego_pliku_pokrywaja_go_raz() -> None:
     plan = _plan(_times(), [*FILES, LONG])
 
-    for lane in plan_ci.TORY:
+    for lane in TORY:
         units = Counter(unit for job in plan.zadania if job.tor == lane.nazwa for unit in job.jednostki)
         shares = sorted(unit for unit in units if unit.startswith(f"pytest:{LONG}#"))
         count = len(shares)
@@ -105,8 +108,8 @@ def test_kazdy_plik_testow_biegnie_raz_na_kazdym_torze_a_udzialy_dlugiego_pliku_
     assert [job.id for job in plan.zadania if "krok:timing" in job.jednostki] != [] == [job for job in plan.zadania if "krok:timing" in job.jednostki and job.tor != "windows-3.14"]
 
 
-@pytest.mark.parametrize(("skills", "event", "limit"), [(False, "pull_request", "ZADANIA_RUNU"), (True, "pull_request", "ZADANIA_RUNU"), (True, "push", "ZADANIA_RUNU_MAIN"), (True, plan_ci.NOC, "ZADANIA_RUNU_MAIN")])
-def test_run_miesci_sie_w_limicie_zadan_zdarzenia_bo_cel_sciany_rosnie_o_krok(skills: bool, event: str, limit: str, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(("skills", "event", "limit"), [(False, Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (True, Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (True, Zdarzenie.PUSH, "ZADANIA_RUNU_MAIN"), (True, Zdarzenie.NOC, "ZADANIA_RUNU_MAIN")])
+def test_run_miesci_sie_w_limicie_zadan_zdarzenia_bo_cel_sciany_rosnie_o_krok(skills: bool, event: Zdarzenie, limit: str, monkeypatch: pytest.MonkeyPatch) -> None:
     czasy = _with_skill_times(_times(per_file_s=150.0))
     steps = _skill_steps(list(SKILL_STEPS)) if skills else None
     for name in ("ZADANIA_RUNU", "ZADANIA_RUNU_MAIN"):
@@ -131,8 +134,8 @@ def test_run_miesci_sie_w_limicie_zadan_zdarzenia_bo_cel_sciany_rosnie_o_krok(sk
     assert bool(plan.macierz("mutations")) == skills
 
 
-@pytest.mark.parametrize(("event", "limit"), [("pull_request", "ZADANIA_RUNU"), ("push", "ZADANIA_RUNU_MAIN")])
-def test_plan_odmawia_gdy_limit_zadan_zdarzenia_nie_miesci_zadania_na_kazdy_tor_i_podaje_ten_limit(event: str, limit: str, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(("event", "limit"), [(Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (Zdarzenie.PUSH, "ZADANIA_RUNU_MAIN")])
+def test_plan_odmawia_gdy_limit_zadan_zdarzenia_nie_miesci_zadania_na_kazdy_tor_i_podaje_ten_limit(event: Zdarzenie, limit: str, monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ("ZADANIA_RUNU", "ZADANIA_RUNU_MAIN"):
         monkeypatch.setattr(plan_ci, name, 1000)
     # Trzy tory z pracą, a limit zdarzenia zostawia planowi jedno zadanie.
@@ -145,7 +148,7 @@ def test_plan_odmawia_gdy_limit_zadan_zdarzenia_nie_miesci_zadania_na_kazdy_tor_
 def test_kazdy_wybrany_krok_skilla_biegnie_raz_a_skrypt_dluzszy_od_zadania_w_czesciach_najwyzej_po_jednej_na_mutacje() -> None:
     chosen = [key for key in SKILL_STEPS if key != "verify-d/check_d_mutations.py"]
     plan = _plan(_with_skill_times(_times()), [*FILES, LONG], steps=_skill_steps(chosen))
-    jobs = [job for job in plan.zadania if job.tor == plan_ci.MUTACJE.nazwa]
+    jobs = [job for job in plan.zadania if job.tor == MUTACJE.nazwa]
     units = Counter(unit for job in jobs for unit in job.jednostki)
     parts = {key: sorted(unit for unit in units if unit.partition("#")[0] == f"skill:{key}") for key in SKILL_STEPS}
 
@@ -172,11 +175,11 @@ def _base_in_parts(capacities: float, key: str = "verify-e/ci") -> plan_ci.Plan:
     zadanie Mutation checks przy ``CEL_S`` (narzut 43 s z ``_with_skill_times``)."""
 
     seconds = capacities * (plan_ci.CEL_S - 43.0 - plan_ci.DOMYSLNIE.koniec_s)
-    steps = [mutacje_skilli.Step(ROOT / ".agents" / "skills" / key.split("/")[0], key, key, (key,), None, 4, True)]
+    steps = [kroki_skilli.Step(ROOT / ".agents" / "skills" / key.split("/")[0], key, key, (key,), None, 4, True)]
     czasy = _with_skill_times(_times())
-    lane = czasy.tory[plan_ci.MUTACJE.pomiary]
-    czasy = dataclasses.replace(czasy, tory={**czasy.tory, plan_ci.MUTACJE.pomiary: {**lane, f"skill:{key}": (czasy_ci.Obserwacja(1, "M", seconds),)}})
-    return plan_ci.rozplanuj([plan_ci.wycen_mutacje(steps, czasy)], "pull_request", czasy.runy)
+    lane = czasy.tory[MUTACJE.pomiary]
+    czasy = dataclasses.replace(czasy, tory={**czasy.tory, MUTACJE.pomiary: {**lane, f"skill:{key}": (czasy_ci.Obserwacja(1, "M", seconds),)}})
+    return plan_ci.rozplanuj([plan_ci.wycen_mutacje([KrokSkilla(step, "") for step in steps], czasy)], Zdarzenie.PULL_REQUEST, czasy.runy)
 
 
 @pytest.mark.parametrize(("capacities", "parts"), [(1.5, 2), (10.0, 4)], ids=["dwie części mieszczą się w zadaniu", "do limitu ci-czesci"])
@@ -246,7 +249,7 @@ def test_w_zadaniu_podstawa_skilla_biegnie_przed_jego_skryptami_mutacji(monkeypa
     monkeypatch.setattr(plan_ci, "CEL_S", 150.0)
     plan = _plan(_with_skill_times(_times()), FILES, steps=_skill_steps(["verify-c/check_c_mutations.py", "verify-c/ci"]))
 
-    assert [job.jednostki for job in plan.zadania if job.tor == plan_ci.MUTACJE.nazwa] == [("skill:verify-c/ci", "skill:verify-c/check_c_mutations.py")]
+    assert [job.jednostki for job in plan.zadania if job.tor == MUTACJE.nazwa] == [("skill:verify-c/ci", "skill:verify-c/check_c_mutations.py")]
 
 
 def test_ten_sam_stan_daje_ten_sam_plan_a_zadania_maja_rozne_nazwy() -> None:
@@ -258,8 +261,7 @@ def test_ten_sam_stan_daje_ten_sam_plan_a_zadania_maja_rozne_nazwy() -> None:
 
 def test_tor_bez_pracy_nie_ma_zadan_a_bez_zadnej_pracy_macierz_jest_pusta(monkeypatch: pytest.MonkeyPatch) -> None:
     with_steps = _plan(czasy_ci.Czasy((), {}), [], steps=[])
-    monkeypatch.setattr(plan_ci, "TORY", tuple(dataclasses.replace(lane, kroki=()) for lane in plan_ci.TORY))
-    empty = _plan(czasy_ci.Czasy((), {}), [], steps=[])
+    empty = _plan(czasy_ci.Czasy((), {}), [], steps=[], tory=tuple(dataclasses.replace(lane, kroki=()) for lane in TORY))
     skipped = {"plan": "success", "pytest": "skipped", "mutations": "skipped"}
 
     assert {job.tor for job in with_steps.zadania} == {"windows-3.11", "windows-3.14"}
@@ -312,6 +314,19 @@ def test_required_czerwienieje_gdy_jednostka_zadania_padla_w_ostatniej_probie_a_
     assert plan_ci.werdykt(plan, results, [*others, failed, _record(plan, job, units, attempt=2)]) == []
 
 
+@pytest.mark.parametrize(("event", "minutes"), [(Zdarzenie.PULL_REQUEST, 106), (Zdarzenie.PUSH, 96)])
+def test_plan_wczytany_z_pliku_ma_zdarzenie_zapisanego_wiec_zadanie_pr_dalej_ma_ponowienie(event: Zdarzenie, minutes: int) -> None:
+    """Zadania CI wykonują plan wczytany z ``plan.json``; zdarzenie z pliku rządzi ponowieniem i limitem zadania."""
+
+    job = plan_ci.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py", "krok:e2e", "krok:timing"), 401.0)
+    loaded = plan_ci.Plan.z_json(plan_ci.Plan(event, plan_ci.CEL_S, (), (job,)).do_json())
+
+    assert (loaded.zdarzenie is event, loaded.limit_zadania_min(job)) == (True, minutes)
+    unknown = plan_ci.Plan(event, plan_ci.CEL_S, (), (job,)).do_json().replace(f'"zdarzenie": "{event}"', '"zdarzenie": "release"')
+    with pytest.raises(ValueError, match="release"):
+        plan_ci.Plan.z_json(unknown)
+
+
 def test_plan_zmieniony_po_digest_nie_wykonuje_sie_a_required_nie_bierze_zapisow_innego_planu(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     plan = _plan(_times(), [*FILES, LONG])
     tampered = json.loads(plan.do_json())
@@ -341,21 +356,21 @@ def test_bez_czasow_z_main_plan_wazy_prace_domyslnie_mowi_to_i_daje_macierz(
     plan = plan_ci.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8"))
     output = dict(line.split("=", 1) for line in (tmp_path / "output").read_text(encoding="utf-8").splitlines())
 
-    every_step = {f"skill:{step.key}" for step, _ in mutacje_skilli.wybor(None).chosen}
-    planned_steps = {unit.partition("#")[0] for job in plan.zadania if job.tor == plan_ci.MUTACJE.nazwa for unit in job.jednostki}
+    every_step = {f"skill:{chosen.krok.key}" for chosen in zakres(Zdarzenie.PUSH, frozenset()).wybrane}
+    planned_steps = {unit.partition("#")[0] for job in plan.zadania if job.tor == MUTACJE.nazwa for unit in job.jednostki}
 
     assert code == 0
     assert out[0] == "CZASY CI | pobranie czasy-ci z GitHuba: gh: not logged in; plan waży pracę bez pomiaru domyślnie"
     assert re.fullmatch(rf"PLAN CI \| push \| wszystkie pliki \| cel \d+ s \| (\d+) zadań runu \(limit {plan_ci.ZADANIA_RUNU_MAIN}\) \| czasy z runów main: brak \(wagi domyślne\)", out[1]), out[1]
     assert out[-1] == f"PLAN CI DIGEST | {plan.digest}"
-    assert {unit for job in plan.zadania if job.tor == "linux-3.14" for unit in job.jednostki} == {f"pytest:{name}" for name in plan_ci.pliki_testow()}
+    assert {unit for job in plan.zadania if job.tor == "linux-3.14" for unit in job.jednostki} == {f"pytest:{name}" for name in pliki_testow()}
     # Push biegnie każdy krok każdego skilla repozytorium.
     assert planned_steps == every_step != set()
     assert output == {"pytest": json.dumps(plan.macierz("pytest"), ensure_ascii=False), "mutations": json.dumps(plan.macierz("mutations"), ensure_ascii=False)}
 
 
 def test_kroki_planu_uruchamiaja_skrypty_repozytorium_kazde_polecenie_z_limitem_czasu() -> None:
-    for step in plan_ci.KROKI.values():
+    for step in KROKI.values():
         assert len(step.polecenia) == len(step.limity_s) and all(limit > 0 for limit in step.limity_s), step.nazwa
         for command in step.polecenia:
             python, script, *_ = command.split()
@@ -405,7 +420,7 @@ def test_udzialy_pliku_dziela_go_miedzy_zadania_bez_luk_i_powtorzen_a_kazdy_ma_t
         )
         for share in range(1, shares + 1)
     )
-    plan = plan_ci.Plan("push", plan_ci.CEL_S, (), jobs)
+    plan = plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), jobs)
     ran = []
     for share in range(1, shares + 1):
         monkeypatch.setenv("PYTHONHASHSEED", ("0", "1", "random")[share % 3])
@@ -421,11 +436,11 @@ def test_zadanie_wykonuje_kroki_po_czerwonym_pytest_przerywa_krok_po_limicie_i_z
 ) -> None:
     (mini_repo / "wisi.py").write_text("import time\n\ntime.sleep(60)\n", encoding="utf-8")
     (mini_repo / "zapisuje.py").write_text("import pathlib, sys\n\npathlib.Path(sys.argv[1]).touch()\n", encoding="utf-8")
-    quick = plan_ci.Krok("szybki", ("{python} zapisuje.py biegl",), (60.0,), 1.0)
-    hung = plan_ci.Krok("wiszacy", ("{python} wisi.py", "{python} zapisuje.py nie-biegnie"), (1.0, 60.0), 1.0)
+    quick = Krok("szybki", ("{python} zapisuje.py biegl",), (60.0,), 1.0)
+    hung = Krok("wiszacy", ("{python} wisi.py", "{python} zapisuje.py nie-biegnie"), (1.0, 60.0), 1.0)
     monkeypatch.setattr(plan_ci, "KROKI", {step.nazwa: step for step in (quick, hung)})
     job = plan_ci.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_mini.py", "krok:wiszacy", "krok:szybki"), 1.0)
-    plan = plan_ci.Plan("push", plan_ci.CEL_S, (), (job,))
+    plan = plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,))
     (mini_repo / "plan.json").write_text(plan.do_json(), encoding="utf-8")
 
     code = plan_ci.main(["wykonaj", "--plan", str(mini_repo / "plan.json"), "--zadanie", job.id])
@@ -439,9 +454,9 @@ def test_zadanie_wykonuje_kroki_po_czerwonym_pytest_przerywa_krok_po_limicie_i_z
     assert capsys.readouterr().out.splitlines()[-1] == "WYKONANIE FAIL | krok:pytest, krok:wiszacy"
 
 
-@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize("event", [Zdarzenie.PULL_REQUEST, Zdarzenie.PUSH])
 def test_zawieszony_test_konczy_krok_pytest_po_limicie_z_linia_limitu_a_nie_po_godzinach(
-    mini_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: str
+    mini_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: Zdarzenie
 ) -> None:
     (mini_repo / "tests" / "test_wisi.py").write_text("import time\n\n\ndef test_wisi() -> None:\n    time.sleep(60)\n", encoding="utf-8")
     monkeypatch.setattr(plan_ci, "LIMIT_PYTEST_MIN_S", 3)
@@ -464,9 +479,9 @@ def test_limit_kroku_pytest_to_trzy_sciany_zadania_z_planu_a_najmniej_dziesiec_m
     assert plan_ci.limit_pytest_s(job) == limit_s
 
 
-@pytest.mark.parametrize(("event", "minutes"), [("pull_request", 106), ("push", 96)])
-def test_github_zabija_zadanie_pytest_dopiero_po_limitach_wszystkich_jego_krokow(event: str, minutes: int) -> None:
-    # 401 s ściany: pytest 1203 s, na pull request ponowienie 600 s, E2E 900 s, straż czasu 3000 s, narzut 600 s; w górę do minuty.
+@pytest.mark.parametrize(("event", "minutes"), [(Zdarzenie.PULL_REQUEST, 106), (Zdarzenie.PUSH, 96), (Zdarzenie.NOC, 96)])
+def test_github_zabija_zadanie_pytest_dopiero_po_limitach_wszystkich_jego_krokow(event: Zdarzenie, minutes: int) -> None:
+    # 401 s ściany: pytest 1203 s, tylko na pull request ponowienie 600 s, E2E 900 s, straż czasu 3000 s, narzut 600 s; w górę do minuty.
     job = plan_ci.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py", "krok:e2e", "krok:timing"), 401.0)
     plan = plan_ci.Plan(event, plan_ci.CEL_S, (), (job,))
 
@@ -488,7 +503,7 @@ def test_polecenie_pytest_kroku_drukuje_stosy_testu_ktory_wisi_dluzej_niz_faulth
     (mini_repo / "tests" / "test_wisi.py").write_text("import time\n\n\ndef test_wisi() -> None:\n    time.sleep(4)\n", encoding="utf-8")
     job = plan_ci.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_wisi.py",), 1.0)
 
-    code = plan_ci.wykonaj(plan_ci.Plan("push", plan_ci.CEL_S, (), (job,)), job.id)
+    code = plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id)
     out = capsys.readouterr().out
 
     assert code == 0, out
@@ -520,7 +535,7 @@ def test_bramka_ponawia_raz_test_ktory_padl_a_przejscie_po_ponowieniu_to_flaky_t
     monkeypatch.setenv("GITHUB_RUN_ID", "40380584486")
     job = plan_ci.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
 
-    result = plan_ci.wykonaj(plan_ci.Plan("pull_request", plan_ci.CEL_S, (), (job,)), job.id)
+    result = plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id)
     records = czasy_ci._junit(plan_ci.JUNIT)
 
     assert result == code
@@ -535,7 +550,7 @@ def test_push_nie_ponawia_testu_ktory_padl(mini_repo: Path) -> None:
     (mini_repo / "tests" / "test_flaky.py").write_text(FLAKY.format(always=True, second="return"), encoding="utf-8")
     job = plan_ci.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
 
-    assert plan_ci.wykonaj(plan_ci.Plan("push", plan_ci.CEL_S, (), (job,)), job.id) == 1
+    assert plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id) == 1
     assert not niestabilne_testy.FLAKY_TESTY.exists()
 
 
@@ -554,7 +569,7 @@ def test_zadanie_zapisuje_wynik_testow_z_kwarantanny_xfail_to_porazka_a_xpass_pr
     )
     job = plan_ci.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
 
-    plan_ci.wykonaj(plan_ci.Plan("push", plan_ci.CEL_S, (), (job,)), job.id)
+    plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id)
     record = niestabilne_testy.kwarantanna_z_json(niestabilne_testy.KWARANTANNA.read_text(encoding="utf-8"))
 
     assert record.zadanie == job.id
@@ -597,7 +612,7 @@ def test_bramka_ponawia_najwyzej_piec_testow_bo_wiecej_porazek_to_nie_flaky_test
     (mini_repo / "tests" / "test_flaky.py").write_text(_padajace_raz(padniete), encoding="utf-8")
     job = plan_ci.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
 
-    assert plan_ci.wykonaj(plan_ci.Plan("pull_request", plan_ci.CEL_S, (), (job,)), job.id) == code
+    assert plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id) == code
     flaky_testy = [] if code else niestabilne_testy.flaky_testy_z_json(niestabilne_testy.FLAKY_TESTY.read_text(encoding="utf-8"))[0]
     assert [flaky.test for flaky in flaky_testy] == ([] if code else [f"tests/test_flaky.py::test_pada_raz_{numer}" for numer in range(5)])
     wyjscie = capsys.readouterr().out
@@ -613,7 +628,7 @@ def test_bramka_nie_ponawia_testu_ktorego_id_nie_da_sie_zglosic_wiec_zostaje_cze
     unit = "pytest:tests/z-myslnikiem/test_flaky.py"
     job = plan_ci.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", (unit,), 1.0)
 
-    assert plan_ci.wykonaj(plan_ci.Plan("pull_request", plan_ci.CEL_S, (), (job,)), job.id) == 1
+    assert plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id) == 1
     assert "PONOWIENIE | bez ponowienia: id testu, którego nie da się zgłosić w issue: tests/z-myslnikiem/test_flaky.py::test_pada_raz_0" in capsys.readouterr().out
     assert not niestabilne_testy.FLAKY_TESTY.exists()
 
@@ -633,8 +648,9 @@ def test_zadanie_mutation_checks_uruchamia_po_kolei_swoje_kroki_skilli_a_czesc_s
     for name, text in files.items():
         (tmp_path / ".agents" / "skills" / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / ".agents" / "skills" / name).write_text(text, encoding="utf-8")
-    monkeypatch.setattr(mutacje_skilli, "ROOT", tmp_path)
-    monkeypatch.setattr(mutacje_skilli, "SKILLS", tmp_path / ".agents" / "skills")
+    for module in (kroki_skilli, mutacje_skilli):
+        monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(kroki_skilli, "SKILLS", tmp_path / ".agents" / "skills")
     monkeypatch.chdir(tmp_path)
     script = "skill:verify-a/check_a_mutations.py"
     # Krok z planu, którego zadanie nie znajduje wśród kroków skilli (plan i zadanie policzyły je inaczej), nie biegł.
@@ -645,7 +661,7 @@ def test_zadanie_mutation_checks_uruchamia_po_kolei_swoje_kroki_skilli_a_czesc_s
         ),
         plan_ci.Zadanie("mutacje-2", "mutacje", "Mutation checks (2/2)", (f"{script}#2/2",), 1.0),
     )
-    plan = plan_ci.Plan("push", plan_ci.CEL_S, (), jobs)
+    plan = plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), jobs)
     results = []
     for job in jobs:
         code = plan_ci.wykonaj(plan, job.id)
@@ -676,14 +692,12 @@ SKILL_SCRIPT = ".agents/skills/verify-a/scripts/check_a_mutations.py"
 @pytest.mark.parametrize(
     ("event", "changed", "reported"),
     [
-        ("pull_request", "src/pakiet/a.py", [f"WYBRANY {SKILL_BASELINE} (zmienione: src/pakiet/a.py)", f"POMINIĘTY {SKILL_SCRIPT}: skrypt mutacji biegnie nocą"]),
         ("pull_request", "tests/test_a.py", [f"POMINIĘTY {SKILL_BASELINE}: ", f"POMINIĘTY {SKILL_SCRIPT}: skrypt mutacji biegnie nocą"]),
         # Na PR skrypt mutacji nie biegnie także przy zmianie folderu skilla, tylko nocą na main (ADR 0021).
         ("pull_request", ".agents/skills/verify-a/scripts/sprawdz_a.py", [f"WYBRANY {SKILL_BASELINE} (zmienione: ", f"POMINIĘTY {SKILL_SCRIPT}: skrypt mutacji biegnie nocą"]),
-        ("noc", "src/pakiet/a.py", [f"POMINIĘTY {SKILL_BASELINE}: podstawa biegnie na pull request", f"POMINIĘTY {SKILL_SCRIPT}: zmiany nie dotykają folderu skilla"]),
         ("noc", ".agents/skills/verify-a/scripts/sprawdz_a.py", [f"WYBRANY {SKILL_SCRIPT} (zmienione: ", f"POMINIĘTY {SKILL_BASELINE}: podstawa biegnie na pull request"]),
     ],
-    ids=["zmiana src", "zmiana testów", "zmiana folderu skilla", "noc bez zmiany skilla", "noc ze zmianą folderu skilla"],
+    ids=["zmiana testów", "zmiana folderu skilla", "noc ze zmianą folderu skilla"],
 )
 def test_plan_pull_requestu_i_nocy_startuje_mutation_checks_tylko_z_praca_od_zmiany(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: str, changed: str, reported: list[str]
@@ -697,9 +711,9 @@ def test_plan_pull_requestu_i_nocy_startuje_mutation_checks_tylko_z_praca_od_zmi
     with (repo / changed).open("a", encoding="utf-8") as file:
         file.write("\n\ndef b(x: int) -> bool:\n    return x < 3\n")
     commit(repo, "zmiana")
-    for module in (plan_ci, mutacje_skilli):
+    for module in (plan_ci, kroki_skilli):
         monkeypatch.setattr(module, "ROOT", repo)
-    monkeypatch.setattr(mutacje_skilli, "SKILLS", repo / ".agents" / "skills")
+    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
     monkeypatch.setattr(czasy_ci, "_gh", offline)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
@@ -717,87 +731,24 @@ def test_plan_pull_requestu_i_nocy_startuje_mutation_checks_tylko_z_praca_od_zmi
     assert len(shown) == len(reported) and all(line.startswith(start) for line, start in zip(shown, reported, strict=True)), out
 
 
-MODEL_SCRIPT = ".agents/skills/verify-a/scripts/check_model_a_mutations.py"
-WITH_MODEL = {
-    **SKILL,
-    ".agents/skills/verify-a/model/A.tla": "X\n",
-    MODEL_SCRIPT: (
-        "from pathlib import Path\n\nfrom mutacje import Edit, Mutation\n\n"
-        "MUTATIONS = (Mutation('m', (Edit(Path('.agents/skills/verify-a/model/A.tla'), 'X', 'Y'),), "
-        "('.agents/skills/verify-a/scripts/sprawdz_a.py',)),)\n"
-    ),
-}
+@pytest.mark.parametrize("fixed", [True, False], ids=["części z zakresu", "bez części z zakresu"])
+def test_plan_biegnie_kazda_czescia_ustalona_przez_zakres_a_bez_nich_czesciami_jednego_n(fixed: bool) -> None:
+    """Zakres ustala nocą każdą część każdego n podstawy z ``ci-czesci`` (``tests/test_zakres_runu.py``); plan biegnie
+    każdą z nich osobno, a bez ustalonych części dzieli podstawę na części jednego n, które zależy od celu ściany."""
 
+    key = "verify-e/ci"
+    step = kroki_skilli.Step(ROOT / ".agents" / "skills" / "verify-e", key, key, (key,), None, 3, False)
+    parts = tuple((k, n) for n in range(1, 4) for k in range(1, n + 1)) if fixed else ()
+    czasy = _with_skill_times(_times())
+    plan = plan_ci.rozplanuj([plan_ci.wycen_mutacje([KrokSkilla(step, "", parts)], czasy)], Zdarzenie.NOC, czasy.runy)
+    base = Counter(unit for job in plan.zadania for unit in job.jednostki)
 
-@pytest.mark.parametrize(
-    ("changed", "reported"),
-    [
-        # Zmiana modelu jak w #667 dostaje na PR skrypt mutacji modelu, a nie dopiero czerwony main po merge'u (ADR 0021).
-        (".agents/skills/verify-a/model/A.tla", f"WYBRANY {MODEL_SCRIPT} (zmienione: .agents/skills/verify-a/model/A.tla)"),
-        (".agents/skills/verify-a/SKILL.md", f"POMINIĘTY {MODEL_SCRIPT}: skrypt mutacji modelu biegnie na pull request tylko przy zmianie modelu"),
-        ("src/pakiet/a.py", f"POMINIĘTY {MODEL_SCRIPT}: skrypt mutacji modelu biegnie na pull request tylko przy zmianie modelu"),
-    ],
-    ids=["zmiana modelu", "folder skilla bez modelu", "zmiana src"],
-)
-def test_plan_pull_requestu_uruchamia_skrypt_mutacji_modelu_tylko_gdy_zmiana_dotyka_modelu(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], changed: str, reported: str
-) -> None:
-    def offline(*arguments: str) -> str:
-        raise subprocess.CalledProcessError(1, ["gh", *arguments], stderr="gh: not logged in")
-
-    repo = repository(tmp_path / "repo", {"src/pakiet/a.py": "def a(x: int) -> bool:\n    return x > 1\n", **WITH_MODEL})
-    commit(repo, "baza")
-    git(repo, "branch", "baza")
-    with (repo / changed).open("a", encoding="utf-8") as file:
-        file.write("\n")
-    commit(repo, "zmiana")
-    for module in (plan_ci, mutacje_skilli):
-        monkeypatch.setattr(module, "ROOT", repo)
-    monkeypatch.setattr(mutacje_skilli, "SKILLS", repo / ".agents" / "skills")
-    monkeypatch.setattr(czasy_ci, "_gh", offline)
-
-    code = plan_ci.main(["plan", "--zdarzenie", "pull_request", "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")])
-    out = capsys.readouterr().out
-    plan = plan_ci.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8"))
-    units = {unit.partition("#")[0] for job in plan.zadania for unit in job.jednostki}
-
-    assert code == 0, out
-    assert any(line.startswith(reported) for line in out.splitlines()), out
-    assert (f"skill:verify-a/{Path(MODEL_SCRIPT).name}" in units) == reported.startswith("WYBRANY")
-
-
-@pytest.mark.parametrize("event", ["pull_request", "noc"])
-def test_noca_podstawa_z_ci_czesci_biegnie_kazda_czescia_kazdego_n_a_pull_request_czesciami_jednego(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: str
-) -> None:
-    def offline(*arguments: str) -> str:
-        raise subprocess.CalledProcessError(1, ["gh", *arguments], stderr="gh: not logged in")
-
-    skill_md = ".agents/skills/verify-a/SKILL.md"
-    files = {**SKILL, skill_md: SKILL[skill_md].replace("ci: ", "ci-czesci: 3\nci: ")}
-    repo = repository(tmp_path / "repo", {"src/pakiet/a.py": "def a(x: int) -> bool:\n    return x > 1\n", **files})
-    commit(repo, "baza")
-    git(repo, "branch", "baza")
-    with (repo / ".agents/skills/verify-a/scripts/sprawdz_a.py").open("a", encoding="utf-8") as file:
-        file.write("\nZMIANA = 1\n")
-    commit(repo, "zmiana podstawy")
-    for module in (plan_ci, mutacje_skilli):
-        monkeypatch.setattr(module, "ROOT", repo)
-    monkeypatch.setattr(mutacje_skilli, "SKILLS", repo / ".agents" / "skills")
-    monkeypatch.setattr(czasy_ci, "_gh", offline)
-
-    code = plan_ci.main(["plan", "--zdarzenie", event, "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")])
-    plan = plan_ci.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8"))
-    base = Counter(unit for job in plan.zadania for unit in job.jednostki if unit.startswith("skill:verify-a/ci"))
-
-    assert code == 0, capsys.readouterr().out
-    if event == "noc":
+    if fixed:
         # Część, która pada tylko przy innym n niż dzisiejszy plan pull requestu, wychodzi w nocy.
-        assert base == Counter(f"skill:verify-a/ci#{k}/{n}" for n in range(1, 4) for k in range(1, n + 1))
+        assert base == Counter(f"skill:{key}#{k}/{n}" for k, n in parts)
     else:
-        # Pull request: części jednego n, które zależy od celu ściany, każda dokładnie raz.
         n = len(base)
-        assert base == (Counter(["skill:verify-a/ci"]) if n == 1 else Counter(f"skill:verify-a/ci#{k}/{n}" for k in range(1, n + 1))), base
+        assert base == (Counter([f"skill:{key}"]) if n == 1 else Counter(f"skill:{key}#{k}/{n}" for k in range(1, n + 1))), base
 
 
 @pytest.mark.parametrize(
@@ -827,9 +778,9 @@ def test_zgubiony_skrypt_mutacji_albo_zly_klucz_ci_trafia_z_wyboru_do_planu_i_cz
         (repo / name).parent.mkdir(parents=True, exist_ok=True)
         (repo / name).write_text(text, encoding="utf-8")
     commit(repo, "zmiana")
-    for module in (plan_ci, mutacje_skilli):
+    for module in (plan_ci, kroki_skilli):
         monkeypatch.setattr(module, "ROOT", repo)
-    monkeypatch.setattr(mutacje_skilli, "SKILLS", repo / ".agents" / "skills")
+    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
     monkeypatch.setattr(czasy_ci, "_gh", offline)
 
     code = plan_ci.main(["plan", "--zdarzenie", "pull_request", "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")])
@@ -843,70 +794,13 @@ def test_zgubiony_skrypt_mutacji_albo_zly_klucz_ci_trafia_z_wyboru_do_planu_i_cz
     assert plan_ci.werdykt(plan, every_job_green, complete) == [f"mutacje skilli: {failure}"]
 
 
-GATE = {
-    "src/pakiet/__init__.py": "",
-    "src/pakiet/a.py": "def a(x: int) -> bool:\n    return x > 1\n",
-    "src/pakiet/b.py": "def b(x: int) -> bool:\n    return x < 3\n",
-    "tests/test_a.py": "from pakiet.a import a\n\n\ndef test_a() -> None:\n    assert a(2)\n",
-    "tests/test_b.py": "from pakiet.b import b\n\n\ndef test_b() -> None:\n    assert b(2)\n",
-    "tools/benchmark_przebiegu.py": "from pakiet.a import a\n",
-    "tools/syntetyczne_wzorce.py": "",
-    "tools/raport.py": "",
-    "README.md": "Repozytorium\n",
-    ".github/workflows/ci.yml": "name: CI\n",
-}
 WINDOWS, LINUX = "windows-3.11", "linux-3.14"
-
-
-@pytest.mark.parametrize(
-    ("changed", "source", "files", "steps"),
-    [
-        ("tests/test_b.py", "wybór 1 plików", ["tests/test_b.py"], ()),
-        ("src/pakiet/b.py", "wybór 1 plików", ["tests/test_b.py"], ("e2e",)),
-        ("src/pakiet/a.py", "wybór 1 plików", ["tests/test_a.py"], ("e2e", "timing")),
-        ("tools/syntetyczne_wzorce.py", "wybór 0 plików", [], ("timing",)),
-        ("tools/raport.py", "wybór 0 plików", [], ()),
-        ("README.md", "wybór 0 plików", [], ()),
-        (".github/workflows/ci.yml", "FULL (.github/workflows/ci.yml)", None, ("e2e", "timing")),
-        ("requirements.txt", "FULL (requirements.txt)", None, ("e2e", "timing")),
-    ],
-    ids=["test", "src poza straza czasu", "src w domknieciu strazy czasu", "skrypt strazy czasu", "tools", "dokument", "workflow", "plik FULL"],
-)
-def test_bramka_pr_biegnie_na_windows_311_i_linuksie_z_wyborem_szybko_a_e2e_i_straz_czasu_tylko_przy_ich_zmianie(
-    tmp_path: Path, changed: str, source: str, files: list[str] | None, steps: tuple[str, ...]
-) -> None:
-    repo = repository(tmp_path / "repo", GATE)
-
-    gate = plan_ci.zakres("pull_request", frozenset({changed}), repo)
-
-    assert [(lane.nazwa, lane.kroki) for lane in gate.tory] == [(WINDOWS, steps), (LINUX, ())]
-    assert gate.zrodlo == source
-    # GATE nie ma plików testów ze STRUCTURE, więc wybór biegnie z całą strukturą.
-    assert list(gate.pliki) == (plan_ci.pliki_testow(repo) if files is None else [*files, *STRUCTURE])
-
-
-def test_bramka_pr_biegnie_wybrany_plik_testow_raz_bez_jego_wezlow_ze_struktury(tmp_path: Path) -> None:
-    file = next(node.partition("::")[0] for node in STRUCTURE if "::" in node)
-    repo = repository(tmp_path / "repo", {**GATE, file: "def test_wezel() -> None:\n    pass\n"})
-
-    gate = plan_ci.zakres("pull_request", frozenset({file}), repo)
-
-    assert [unit for unit in gate.pliki if unit.startswith(file)] == [file]
-
-
-def test_push_biegnie_pelne_ci_main_na_trzech_torach_z_kazdym_plikiem_testow(tmp_path: Path) -> None:
-    repo = repository(tmp_path / "repo", GATE)
-
-    main = plan_ci.zakres("push", frozenset(), repo)
-
-    assert (main.tory, main.pliki, main.zrodlo) == (plan_ci.TORY, ("tests/test_a.py", "tests/test_b.py"), "wszystkie pliki")
-    assert [(lane.nazwa, lane.kroki) for lane in main.tory] == [("windows-3.11", ("e2e",)), ("windows-3.14", ("e2e", "timing")), ("linux-3.14", ())]
 
 
 def test_wezel_testu_biegnie_caly_w_jednym_zadaniu_a_required_przyjmuje_go_z_zapisu_jego_pliku() -> None:
     node = f"{LONG}::test_struktura"
-    gate = [dataclasses.replace(lane, kroki=()) for lane in plan_ci.TORY if lane.nazwa in (WINDOWS, LINUX)]
-    plan = plan_ci.rozplanuj([plan_ci.wycen(lane, [*FILES[:2], node], _times()) for lane in gate], "pull_request")
+    gate = [dataclasses.replace(lane, kroki=()) for lane in TORY if lane.nazwa in (WINDOWS, LINUX)]
+    plan = plan_ci.rozplanuj([plan_ci.wycen(lane, [*FILES[:2], node], _times()) for lane in gate], Zdarzenie.PULL_REQUEST)
     results = {"plan": "success", "pytest": "success"}
     without_node = [_record(plan, job, [unit for unit in _reported(job) if unit != f"pytest:{LONG}"]) for job in plan.zadania]
 

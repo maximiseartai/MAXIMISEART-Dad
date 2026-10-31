@@ -1,7 +1,7 @@
 """Wpływ zmiany: ścieżki, którymi checkout różni się od bazy, zmiany, które uruchamiają wszystko, i testy, których dotyczą.
 
 Jedyne miejsce, które odpowiada na pytanie „czego dotyka ta zmiana”; pytają o to ``tools/szybko.py``, plan CI
-(``tools/plan_ci.py``), mutacje zmian (``tools/mutacje_zmiany.py``), wybór kroków skilli (``tools/ci/mutacje_skilli.py``)
+(``tools/plan_ci.py``), mutacje zmian (``tools/mutacje_zmiany.py``), zakres runu CI (``tools/lib/zakres_runu.py``)
 i ``tools/skille_dla_zmiany.py``:
 
     changed = changed_since(root, "origin/main")    # merge-base, diff --no-renames, nieśledzone
@@ -61,7 +61,7 @@ class Context(enum.Enum):
 
     TESTS = "wybór testów"  # tools/szybko.py i mutacje zmian; plik reguły wchodzi do odcisku każdego testu
     PR_GATE = "bramka PR"  # pytest bramki PR w tools/plan_ci.py: wszystkie pliki, E2E i straż czasu (ADR 0020)
-    SKILL_STEPS = "kroki skilli"  # tools/ci/mutacje_skilli.py: każdy krok swojego rodzaju
+    SKILL_STEPS = "kroki skilli"  # tools/lib/zakres_runu.py: każdy krok skilla swojego rodzaju
 
     def paths(self) -> tuple[str, ...]:
         """Ścieżki reguł kontekstu w kolejności tabeli (katalog kończy ``/``), np. jako pathspec gita."""

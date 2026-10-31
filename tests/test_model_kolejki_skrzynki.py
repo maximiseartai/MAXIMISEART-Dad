@@ -29,10 +29,10 @@ from tests.fixtures.git_repo import commit, git
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-sys.path.insert(0, str(ROOT / "tools" / "ci"))
+sys.path.insert(0, str(ROOT / "tools" / "lib"))
 
 import mutacje  # noqa: E402
-import mutacje_skilli  # noqa: E402
+import kroki_skilli  # noqa: E402
 
 SCRIPT = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "scripts" / "sprawdz_model_kolejki.py"
 BASELINE = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "scripts" / "sprawdz_kolejke.py"
@@ -309,7 +309,7 @@ def test_podstawa_ci_uruchamia_jednostki_swojej_czesci_do_konca_i_pada_gdy_padla
 def test_czesci_podstawy_kazdej_liczby_do_ci_czesci_skladaja_sie_na_kazdy_zakres_i_model_raz(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.syspath_prepend(str(EXPLORER.parent))
     baseline = _load(BASELINE)
-    count = mutacje_skilli.ci_parts(SKILL_MD)
+    count = kroki_skilli.ci_parts(SKILL_MD)
 
     assert 1 < count <= len(baseline.UNITS)
     for parts in range(1, count + 1):

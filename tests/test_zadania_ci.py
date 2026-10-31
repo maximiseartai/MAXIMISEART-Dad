@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
 import plan_ci  # noqa: E402
+from zakres_runu import Zdarzenie  # noqa: E402
 
 REQUIRED = "required"
 # Zadanie, którego macierz albo start ustala plan, i wyrażenie ci.yml, które czyta wyjście planu.
@@ -75,7 +76,7 @@ def test_zadania_z_planu_czekaja_na_plan_i_startuja_tylko_z_praca_od_niego() -> 
 def test_zadanie_z_macierza_planu_czyta_z_niej_tylko_pola_wpisu(template: str) -> None:
     pytest_job = plan_ci.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_adr.py",), 1.0)
     skill_job = plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/1)", ("skill:verify-a/ci",), 1.0, przegladarka=True)
-    plan = plan_ci.Plan("push", plan_ci.CEL_S, (), (pytest_job, skill_job))
+    plan = plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (pytest_job, skill_job))
     used = set(re.findall(r"matrix\.([\w-]+)", yaml.safe_dump(jobs()[template])))
 
     assert used == set(plan.macierz(template)[0])
@@ -134,7 +135,7 @@ def _plan(event: str, *, skills: bool = False, errors: tuple[str, ...] = ()) -> 
         plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/2)", ("skill:verify-a/ci", f"{SCRIPT}#1/2"), 99.0, przegladarka=True),
         plan_ci.Zadanie("mutacje-2", "mutacje", "Mutation checks (2/2)", (f"{SCRIPT}#2/2", "skill:verify-b/ci"), 99.0),
     )
-    return plan_ci.Plan(event, plan_ci.CEL_S, (), (job, *checks) if skills else (job,), errors)
+    return plan_ci.Plan(Zdarzenie(event), plan_ci.CEL_S, (), (job, *checks) if skills else (job,), errors)
 
 
 @pytest.mark.parametrize(
