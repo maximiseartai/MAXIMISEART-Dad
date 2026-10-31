@@ -439,8 +439,9 @@ def test_polecenia_skilla_to_jego_wybrane_kroki_i_wywolania_w_krokach_ci_ktore_b
     assert praca.polecenia(repo / ".agents/skills/verify-zly") == []
 
 
-# Katalog skilli w napisie workflow: ``.agents`` albo segment ścieżki ``skills`` z ``/`` lub ``\``.
-KATALOG_SKILLI = re.compile(r"\.agents\b|(?<![\w-])skills[/\\]|[/\\]skills(?![\w-])")
+# Katalog skilli w napisie workflow: ``.agents`` albo segment ścieżki ``skills`` z ``/`` lub ``\``, bez względu na
+# wielkość liter, bo na Windows i macOS ``.AGENTS\SKILLS`` to ten sam katalog.
+KATALOG_SKILLI = re.compile(r"\.agents\b|(?<![\w-])skills[/\\]|[/\\]skills(?![\w-])", re.IGNORECASE)
 
 
 def _napisy(wezel: object) -> Iterator[str]:
@@ -476,6 +477,8 @@ def _workflow(krok: str) -> str:
         "      - run: python .agents/skills/${{ matrix.skill }}/scripts/sprawdz.py\n",
         "      - env:\n          SKILL: .agents/skills/verify-a\n        run: python $SKILL/scripts/sprawdz_a.py\n",
         "      - shell: pwsh\n        run: python .agents\\skills\\verify-a\\scripts\\sprawdz_a.py\n",
+        "      - if: runner.os == 'Windows'\n        run: py -3 .AGENTS\\SKILLS\\verify-a\\scripts\\sprawdz_a.py\n",
+        "      - run: echo start\n      - run: python .agents/skills/verify-a/scripts/sprawdz_a.py\n",
         "      - run: for s in .agents/skills/*/scripts/check_*_mutations.py; do python $s; done\n",
         "      - run: cd .agents\n      - run: python skills/verify-a/scripts/sprawdz_a.py\n",
         '      - run: cd "${{ vars.KATALOG }}" && python skills/verify-a/scripts/sprawdz_a.py\n',
@@ -483,7 +486,7 @@ def _workflow(krok: str) -> str:
         "      - shell: pwsh\n        run: python ${{ vars.KATALOG }}\\skills\\verify-a\\scripts\\sprawdz_a.py\n",
         '      - uses: ./.github/actions/skill\n        with:\n          katalog: "${{ github.workspace }}/.agents"\n',
     ],
-    ids=["ścieżka", "runpy", "working-directory", "cd", "matrix", "env", "backslash", "glob", "cd w osobnym kroku", "skills/ ze zmiennej", "/skills ze zmiennej", "\\skills ze zmiennej", "with"],
+    ids=["ścieżka", "runpy", "working-directory", "cd", "matrix", "env", "backslash", "wielkie litery", "drugi krok", "glob", "cd w osobnym kroku", "skills/ ze zmiennej", "/skills ze zmiennej", "\\skills ze zmiennej", "with"],
 )
 def test_odwolanie_workflow_do_katalogu_skilli_w_kazdej_postaci_jest_zgloszone(krok: str) -> None:
     assert _odwolania_do_skilli(_workflow(krok)) != []
@@ -509,11 +512,13 @@ def test_workflowy_runow_nie_wywoluja_skryptow_skilli_poza_planem() -> None:
     ``working-directory``, ``env``, ``with``, macierz, nazwa kroku) nie wskazuje katalogu skilli, czyli nie zawiera
     ``.agents`` ani segmentu ścieżki ``skills`` z ``/`` lub ``\\`` (``KATALOG_SKILLI``). Łapie więc dosłowną ścieżkę
     skryptu, ``runpy``, ``working-directory`` i ``cd`` do folderu skilla, ``${{ matrix.* }}`` i glob w ścieżce, ścieżkę
-    w ``env`` i ścieżkę Windows. Skrypty skilli workflow uruchamia tylko przez plan i runner
+    w ``env`` i ścieżkę Windows, także pisaną innymi wielkimi literami (``.AGENTS\\SKILLS``), w każdym kroku i jobie.
+    Skrypty skilli workflow uruchamia tylko przez plan i runner
     (``tools/ci/mutacje_skilli.py``, ``tools/plan_ci.py``), które nie nazywają katalogu skilli.
 
     Granica: komentarze YAML nie są sprawdzane. Nie łapie ścieżki złożonej w czasie runu z części bez tych segmentów
-    (``".ag""ents"``, wynik innego kroku spoza planu) ani skryptu spoza ``.agents``, który sam uruchamia skrypt
+    (``".ag""ents"``, wynik innego kroku spoza planu), globu bez obu segmentów (``.*/*/verify-*/...``), ``find
+    -name 'check_*_mutations.py'`` ani ``\\`` w środku słowa, ani skryptu spoza ``.agents``, który sam uruchamia skrypt
     skilla; to łapie przegląd. Workflow skilla Windows (``verify-centrum-na-windowsie.yml``) to osobny run poza
     planem."""
 
