@@ -23,6 +23,10 @@ BY_CHANGE_ONLY = {
     "tests/test_brama_pre_push.py": "sprawdza zachowanie bramy pushem w repozytorium testu, a nie całe repozytorium",
     "tests/test_ciezkie_ci.py": "sprawdza strażnika narzędzi na repozytoriach testu i atrapie gh; ci.yml czyta ścieżką, którą graf widzi",
     "tests/test_czekanie.py": "sprawdza hook na pojedynczych poleceniach; graf wybiera go przy zmianie hooka i .claude/settings.json",
+    "tests/test_eksplorator_w_procesie.py": (
+        "sprawdza strażnika na katalogach przypadków w osobnym pytest; graf wybiera go przy zmianie pluginu (import), "
+        "a zmiana tests/conftest.py uruchamia pełny zestaw"
+    ),
     "tests/test_git_w_testach.py": (
         "sprawdza gita sesji testów, a nie całe repozytorium"
     ),

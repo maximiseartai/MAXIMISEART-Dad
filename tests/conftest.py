@@ -29,6 +29,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 import niestabilne_testy
 
 _CHECKED_CONTENT_TYPES = ("application/json", "text/event-stream")
+# Kod eksploratora przeplotów skilla w procesie pytest wywraca test (docstring pluginu).
+pytest_plugins = ["tests.fixtures.eksplorator_w_procesie"]
 
 
 def pytest_itemcollected(item: pytest.Item) -> None:

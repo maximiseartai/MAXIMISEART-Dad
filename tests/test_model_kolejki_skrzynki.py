@@ -317,5 +317,14 @@ def test_czesci_podstawy_kazdej_liczby_do_ci_czesci_skladaja_sie_na_kazdy_zakres
         assert sum(chosen, ()) == baseline.UNITS, parts
         assert all(chosen), parts
     scopes = [argument for name, arguments in baseline.UNITS if name == EXPLORER.name for argument in arguments if argument != "--scope"]
-    assert sorted(scopes) == sorted(importlib.import_module("explore_outbox").SCOPES)
+    listed = subprocess.run(
+        [sys.executable, "-c", "import explore_outbox; print(*explore_outbox.SCOPES, sep='\\n')"],
+        cwd=EXPLORER.parent,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=True,
+    )
+    assert sorted(scopes) == sorted(listed.stdout.splitlines())
     assert [arguments for name, arguments in baseline.UNITS if name == SCRIPT.name] == [()]
