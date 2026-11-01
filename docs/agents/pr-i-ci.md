@@ -62,7 +62,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 - Podstawę `ci:` plan dzieli tak samo, na najwyżej tyle części, ile mówi klucz `ci-czesci:` w `SKILL.md`, a podstawę bez niego nie dzieli wcale.
   Linia każdego toru w planie nazywa najdłuższą jednostkę po podziale, poniżej której ściana zadania nie zejdzie.
 - `Required CI status` czerwienieje też wtedy, gdy części podzielonej jednostki jednego toru nie są w planie dokładnie raz każdą z `1/n`…`n/n`.
-- Chromium instaluje tylko zadanie Mutation checks z krokiem skilla, którego skrypty importują Playwright.
+- Chromium instaluje tylko zadanie Mutation checks z krokiem skilla, którego skrypty importują Playwright, i zadanie pytest z plikiem testów, który sięga Atrapy efenix (`PRZEGLADARKA` w `tools/lib/zakres_runu.py`).
 - `Required CI status` czerwienieje także wtedy, gdy planu nie ma albo zadanie planu (pytest albo Mutation checks) nie zgłosiło w zapisie czasów ostatniej próby którejś swojej jednostki albo zgłosiło ją z porażką, a linia `REQUIRED FAIL` nazywa zadanie i jednostkę.
 - Skrypt mutacji, którego wybór skilli by nie uruchomił (nazwa spoza wzorca, wskazany w `SKILL.md`, a usunięty), i zły klucz `ci:` plan zgłasza w `Required CI status` linią `REQUIRED FAIL | mutacje skilli: …`.
 - Porażkę jednego zadania pytest odtwarzasz przez `tools/ci_lokalnie.py --tylko pytest` albo przez pytest na plikach tego zadania.

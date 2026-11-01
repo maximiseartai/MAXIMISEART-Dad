@@ -20,7 +20,8 @@ najwyżej tyle części, ile ma mutacji: część biegnie z ``MUTACJE_CZESC=k/n`
 poleceń swoich mutacji. Podstawa ``ci:`` z ``ci-czesci: <n>`` dzieli się tak samo na najwyżej n części (część k
 skrypt bierze z ``MUTACJE_CZESC=k/n``, ``tools/lib/skrypt_skilla.py``), a bez niego nie. Plan drukuje najdłuższą jednostkę
 każdego toru po podziale: poniżej niej ściana zadania nie zejdzie.
-Zadanie Mutation checks instaluje Chromium tylko wtedy, gdy ma krok skilla, którego skrypty importują Playwright. Gdy
+Zadanie Mutation checks instaluje Chromium tylko wtedy, gdy ma krok skilla, którego skrypty importują Playwright, a
+zadanie pytest tylko wtedy, gdy ma plik testów, który sięga Chromium dla testów (``PRZEGLADARKA``). Gdy
 run (``STALE_ZADANIA``, zadania pytest i Mutation checks) przekroczyłby ``ZADANIA_RUNU`` na pull request albo
 ``ZADANIA_RUNU_MAIN`` na pushu i nocą, cel wszystkich torów rośnie co ``KROK_CELU_S``.
 
@@ -185,9 +186,8 @@ class Plan:
             tor = tory[z.tor]
             if tor.szablon == szablon:
                 wpis: dict[str, str | bool | int] = {"id": z.id, "nazwa": z.nazwa, "os": tor.os, "python": tor.python}
-                if szablon == MUTACJE.szablon:
-                    wpis["przegladarka"] = z.przegladarka
-                else:
+                wpis["przegladarka"] = z.przegladarka
+                if szablon != MUTACJE.szablon:
                     wpis["limit_minut"] = self.limit_zadania_min(z)
                 wpisy.append(wpis)
         return wpisy
@@ -233,8 +233,11 @@ class Wycena:
         return wynik
 
 
-def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy) -> Wycena:
-    """Plik testów jest podzielny na udziały, a węzeł ``plik::test`` nie i waży najwyżej tyle, co typowy plik."""
+def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy, przegladarka: frozenset[str] = frozenset()) -> Wycena:
+    """Plik testów jest podzielny na udziały, a węzeł ``plik::test`` nie i waży najwyżej tyle, co typowy plik.
+
+    ``przegladarka``: pliki testów, które potrzebują Chromium; ich jednostki (udziały, węzły) dostają je w zadaniu.
+    """
 
     zmierzone = czasy.pliki(tor.pomiary)
     domyslny = statistics.median(zmierzone.values()) if zmierzone else DOMYSLNIE.plik_s
@@ -250,6 +253,7 @@ def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy) -> Wycena:
         {**wezly, **kroki},
         statistics.median(narzuty) if narzuty else DOMYSLNIE.narzut_s,
         max(0.0, statistics.median(starty)) if starty else DOMYSLNIE.start_s,
+        przegladarka=frozenset(f"pytest:{plik}" for plik in pliki if plik.partition("::")[0] in przegladarka),
     )
 
 
@@ -385,7 +389,7 @@ def _plan(args: argparse.Namespace) -> int:
     if czasy.blad:
         print(f"CZASY CI | {czasy.blad}; plan waży pracę bez pomiaru domyślnie")
     praca = zakres(args.zdarzenie, frozenset() if args.zdarzenie is Zdarzenie.PUSH else changed_since(ROOT, args.baza), ROOT)
-    wyceny = [*(wycen(tor, praca.pliki, czasy) for tor in praca.tory), wycen_mutacje(praca.wybrane, czasy)]
+    wyceny = [*(wycen(tor, praca.pliki, czasy, praca.przegladarka) for tor in praca.tory), wycen_mutacje(praca.wybrane, czasy)]
     plan = rozplanuj(wyceny, args.zdarzenie, czasy.runy, tuple(f"{nazwa}: {powod}" for nazwa, powod in praca.bledy))
     _wypisz(plan, praca, wyceny)
     if args.wyjscie:

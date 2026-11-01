@@ -94,6 +94,14 @@ def test_mutation_checks_instaluja_playwright_i_chromium_tylko_w_zadaniu_ktore_p
     assert installs == {"Install Playwright": "${{ matrix.przegladarka }}", "Install Chromium": "${{ matrix.przegladarka }}"}
 
 
+def test_zadanie_pytest_instaluje_chromium_tylko_gdy_plan_oznaczyl_je_plikiem_testow_atrapy_efenix() -> None:
+    steps = jobs()["pytest"]["steps"]
+
+    browser = {step["name"]: step.get("if") for step in steps if "playwright" in str(step.get("run", "")) + str(step.get("with", ""))}
+
+    assert browser == dict.fromkeys(["Playwright version", "Cache Chromium", "Install Chromium"], "${{ matrix.przegladarka }}")
+
+
 def _required(
     tmp_path: Path, plan: plan_ci.Plan | None, results: dict[str, str], *, missing: frozenset[str] = frozenset(), failed: frozenset[str] = frozenset()
 ) -> subprocess.CompletedProcess[str]:

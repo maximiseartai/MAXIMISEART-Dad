@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 import importlib.util
 import itertools
@@ -42,6 +43,9 @@ from tests.fixtures.settlement import (
     write_quantity_source,
     write_template,
 )
+from tests.fixtures.atrapa_efenix import atrapa_efenix
+from tests.fixtures.efenix import Order as EfenixOrder
+from tests.fixtures.efenix import write_collective_file
 from tests.fixtures.intermax import Intermax
 from tests.fixtures.workbooks import hyperlinks
 
@@ -458,6 +462,31 @@ def test_uporzadkowanie_intermax_bez_surowych_zlecen_konczy_kodem_1_z_kodem_komu
 
     assert (exit_code, result["result"], result["summary"]) == (1, "BLAD_KRYTYCZNY", None)
     assert (result["stop"]["kind"], result["stop"]["message"]["code"]) == ("stop", "BRAK_SUROWYCH_ZLECEN")
+
+
+def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_karte_uruchomienia_z_kodami_bledow_zlecen(
+    tmp_path: Path,
+) -> None:
+    orders = [EfenixOrder("#9401"), EfenixOrder("#9402")]
+    source = write_collective_file(tmp_path, orders)
+    metrics = tmp_path / "metrics.jsonl"
+    with atrapa_efenix([orders[0].in_efenix("901"), replace(orders[1].in_efenix("902"), status="Rozliczone")]) as atrapa:
+        exit_code, result = _run("efenix", "--source", source, "--efenix-url", atrapa.url, "--metrics", metrics)
+        requested = {method for method, _path in atrapa.requested()}
+
+    assert (exit_code, result["result"], result["stop"], requested) == (2, "WYMAGA_SPRAWDZENIA", None, {"GET", "POST"})
+    assert result["summary"]["figures"] == [
+        {"label": "Zlecenia w zakresie", "value": 2, "unit": "count"},
+        {"label": "Znalezione w efenix", "value": 1, "unit": "count"},
+        {"label": "Błędy zleceń", "value": 1, "unit": "count"},
+        {"label": "Pominięte ze zdjęciami", "value": 0, "unit": "count"},
+        {"label": "Pominięte usterki", "value": 0, "unit": "count"},
+    ]
+    assert [(warning["code"], warning["where"].rpartition(", ")[2]) for warning in result["warnings"]] == [
+        ("EFENIX_INNY_STATUS", "wiersz 19")
+    ]
+    assert [phase["state"] for phase in result["progress"]["phases"]] == ["completed"] * 4
+    assert "9401" not in json.dumps(result) and "9401" not in metrics.read_text(encoding="utf-8")
 
 
 def test_bledne_argumenty_koncza_sie_kodem_1_bez_wyniku_json(tmp_path: Path) -> None:

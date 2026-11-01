@@ -14,6 +14,8 @@ from typing import Final, Generic, Protocol, TypeVar
 from rozliczenia.centrum import contract
 from rozliczenia.collective_preparation import PreparationSummary
 from rozliczenia.domain import SettlementSummary
+from rozliczenia.efenix_pricing import PricingSummary
+from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.intermax_process import OrderingInputs
 from rozliczenia.message import Message
@@ -239,4 +241,30 @@ INTERMAX: Final[ProcessView[OrderingInputs, OrderingSummary]] = ProcessView(
     register_name="INTERMAX",
     _figures=_ordering_figures,
     _summary=_ordering_summary,
+)
+
+
+def _pricing_figures(snapshot: ProgressSnapshot, _dry_run: bool) -> list[contract.Figure]:
+    return [contract.Figure(label="Czas uruchomienia", value=snapshot.total_elapsed_ms, unit="ms")]
+
+
+def _pricing_summary(summary: PricingSummary, _dry_run: bool) -> contract.RunSummary:
+    return contract.RunSummary(
+        figures=[
+            _count("Zlecenia w zakresie", len(summary.results)),
+            _count("Znalezione w efenix", summary.found_count),
+            _count("Błędy zleceń", summary.error_count),
+            _count("Pominięte ze zdjęciami", summary.with_photos),
+            _count("Pominięte usterki", summary.defects),
+        ],
+        counts=None,
+        files=[],
+        worker_settlements=None,
+    )
+
+
+# Wycena w efenix nie ma jeszcze karty w Centrum rozliczeń (#750): tylko liczby na żywo i wynik Skryptu dla maszyn.
+EFENIX: Final[ResultView[EfenixInputs, PricingSummary]] = ResultView(
+    _figures=_pricing_figures,
+    _summary=_pricing_summary,
 )

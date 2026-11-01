@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT / "tools" / "lib"))
 
 import kroki_skilli  # noqa: E402
 from wplyw_zmiany import STRUCTURE  # noqa: E402
-from zakres_runu import TORY, Zdarzenie, ZakresRunu, pliki_testow, zakres  # noqa: E402
+from zakres_runu import PRZEGLADARKA, TORY, Zdarzenie, ZakresRunu, pliki_testow, zakres  # noqa: E402
 
 PASSING = 'print("WYKRYTA: proba")\nprint("MUTACJE OK")\n'
 CHECKED = "src/pakiet/sprawdzany.py"
@@ -145,6 +145,30 @@ def test_push_biegnie_pelne_ci_main_na_trzech_torach_z_kazdym_plikiem_testow_a_n
     assert (main.tory, main.pliki, main.zrodlo) == (TORY, ("tests/test_a.py", "tests/test_b.py"), "wszystkie pliki")
     assert [(lane.nazwa, lane.kroki) for lane in main.tory] == [("windows-3.11", ("e2e",)), ("windows-3.14", ("e2e", "timing")), ("linux-3.14", ())]
     assert (night.tory, night.pliki, night.zrodlo) == ((), (), "bez pytest")
+
+
+def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_request_i_na_pushu(tmp_path: Path) -> None:
+    atrapa = "from tests.fixtures.atrapa_efenix import ATRAPA\n\n\ndef test_c() -> None:\n    assert ATRAPA\n"
+    files = {
+        **GATE,
+        "tests/__init__.py": "",
+        "tests/fixtures/__init__.py": "",
+        PRZEGLADARKA: "ATRAPA = 1\n",
+        "tests/fixtures/okno.py": "from tests.fixtures.atrapa_efenix import ATRAPA as OKNO\n",
+        "tests/test_c.py": atrapa,
+        "tests/test_d.py": "from tests.fixtures.okno import OKNO\n\n\ndef test_d() -> None:\n    assert OKNO\n",
+    }
+    repo = repository(tmp_path / "repo", files)
+
+    gate = zakres(Zdarzenie.PULL_REQUEST, frozenset({"tests/test_c.py", "tests/test_a.py"}), repo)
+    main = zakres(Zdarzenie.PUSH, frozenset(), repo)
+    without = zakres(Zdarzenie.PULL_REQUEST, frozenset({"tests/test_a.py"}), repo)
+
+    assert (gate.przegladarka, main.przegladarka, without.przegladarka) == (
+        frozenset({"tests/test_c.py"}),
+        frozenset({"tests/test_c.py", "tests/test_d.py"}),
+        frozenset(),
+    )
 
 
 # --- kroki skilli ---

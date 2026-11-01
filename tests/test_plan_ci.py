@@ -170,6 +170,19 @@ def test_kazdy_wybrany_krok_skilla_biegnie_raz_a_skrypt_dluzszy_od_zadania_w_cze
     assert all(job.sciana_s <= plan.cel_s or len(job.jednostki) == 1 for job in jobs)
 
 
+def test_zadanie_pytest_instaluje_chromium_tylko_z_plikiem_testow_ktory_go_potrzebuje() -> None:
+    browser = FILES[3]
+    lanes = [plan_ci.wycen(lane, [*FILES, f"{FILES[5]}::test_wezel"], _times(), frozenset({browser, FILES[5]})) for lane in TORY]
+    plan = plan_ci.rozplanuj(lanes, Zdarzenie.PULL_REQUEST)
+    jobs = [job for job in plan.zadania if job.tor != MUTACJE.nazwa]
+    needs = {f"pytest:{browser}", f"pytest:{FILES[5]}", f"pytest:{FILES[5]}::test_wezel"}
+
+    assert [job.przegladarka for job in jobs] == [bool(needs & set(job.jednostki)) for job in jobs]
+    assert {job.tor for job in jobs if job.przegladarka} == {lane.nazwa for lane in TORY}
+    assert not all(job.przegladarka for job in jobs)
+    assert [entry["przegladarka"] for entry in plan.macierz("pytest")] == [job.przegladarka for job in jobs]
+
+
 def _base_in_parts(capacities: float, key: str = "verify-e/ci") -> plan_ci.Plan:
     """Plan pull requestu z jedną podstawą z ``ci-czesci: 4``, która trwa w CI ``capacities`` razy tyle, ile mieści
     zadanie Mutation checks przy ``CEL_S`` (narzut 43 s z ``_with_skill_times``)."""
