@@ -4,7 +4,8 @@ Kolejność sprawdzeń to kolejność ``OrderProblem``, a pierwsza niezgodność
 zbiorczym (``searched_number``), potem wiersze listy efenix po szukaniu (``listing``): dokładnie jedno zlecenie o
 ``Numer dokumentu`` równym numerowi, status „Do wyceny”, realizator równy ``WYKONAWCA`` bez wielkości liter i ``Dane
 adresowe`` równe ``ADRES`` (``efenix_address``), a na końcu data wykonania pusta albo równa dniowi z ``DATA``
-(``date_problem``).
+(``date_problem``). Pustą datę wykonania proces ustawia z ``DATA``, a dzień, którego efenix nie przyjął, to
+``DateRefused``.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from typing import Final
 from .efenix_address import same_address
 from .efenix_orders import CollectiveOrder
 
-__all__ = ["PRICING_STATUS", "ListedOrder", "OrderProblem", "date_problem", "listing", "searched_number"]
+__all__ = ["PRICING_STATUS", "DateRefused", "ListedOrder", "OrderProblem", "date_problem", "listing", "searched_number"]
 
 PRICING_STATUS: Final = "Do wyceny"
 
@@ -34,6 +35,16 @@ class OrderProblem(enum.Enum):
     OTHER_REALIZATOR = enum.auto()
     OTHER_ADDRESS = enum.auto()
     OTHER_DATE = enum.auto()
+
+
+class DateRefused(enum.Enum):
+    """efenix nie przyjął dnia z ``DATA`` jako daty wykonania, więc proces nie ładuje Wyceny Emmetta ani nie wpisuje ilości."""
+
+    OUT_OF_RANGE = enum.auto()
+    """Kalendarz efenix zamienił dzień na dzisiejszy (dzień po dziś albo przed pierwszym dniem poprzedniego miesiąca), więc
+    narzędzie niczego nie wysłało."""
+    NOT_SAVED = enum.auto()
+    """Po „Potwierdź” ponownie otwarta strona zlecenia nie ma tego dnia jako daty wykonania."""
 
 
 @dataclass(frozen=True)

@@ -11,11 +11,13 @@ nic się nie zmienia i proces idzie dalej.
 
 Zlecenie z kwotą w efenix różną od 0 ma już wycenę: proces tylko ją porównuje i jest „gotowe”, gdy każda ilość i kwota
 zgadzają się z plikiem, a w przeciwnym razie to błąd „wycena już jest i się różni”. Przy kwocie 0 proces ustawia pustą
-datę wykonania z ``DATA``, ładuje Wycenę Emmetta i czyta jej ilości: sprzeczność z plikiem to ostrzeżenie bez dopisywania,
+datę wykonania z ``DATA`` i sprawdza ją na ponownie otwartej stronie zlecenia: dzień, którego kalendarz efenix nie
+przyjął albo którego efenix nie zapisał, to błąd zlecenia (``DateRefused``) bez Emmetta i bez ilości. Potem ładuje
+Wycenę Emmetta i czyta jej ilości: sprzeczność z plikiem to ostrzeżenie bez dopisywania,
 a w przeciwnym razie wpisuje ilości pliku w pozycjach pustych u Emmetta i porównuje kwotę końcową, którą odesłał efenix,
 z ``Kwota`` (AU). Okno efenix (``Efenix``) nie ma działania, które przekazuje zlecenie do akceptacji, anuluje je albo
 zmienia jego status. Strona logowania i strona o innej budowie, także bez pozycji z przypisania kolumn, to Zatrzymanie
-(``LoggedOut``, ``UnexpectedPage``). Wynik nie zawiera numerów zleceń, adresów ani loginów, tylko numery wierszy Pliku
+(``LoggedOut``, ``UnexpectedPage``), a jego Komunikat mówi, czy przed nim proces zmienił już coś w efenix. Wynik nie zawiera numerów zleceń, adresów ani loginów, tylko numery wierszy Pliku
 zbiorczego.
 """
 
@@ -35,7 +37,7 @@ from typing import Protocol
 from . import efenix_messages as messages
 from . import workbook_files
 from .domain import ProgressObserver, ProgressPhase
-from .efenix_checks import ListedOrder, OrderProblem, date_problem, listing, searched_number
+from .efenix_checks import DateRefused, ListedOrder, OrderProblem, date_problem, listing, searched_number
 from .efenix_orders import AmountsNotComputed, CollectiveOrder, MissingColumns, PricingScope, read_scope
 from .efenix_positions import (
     Conflict,
@@ -118,6 +120,11 @@ class Efenix(Protocol):
     ``UnexpectedPage`` na stronie o innej budowie.
     """
 
+    @property
+    def sent_change(self) -> bool:
+        """Okno kliknęło już przycisk, który wysyła do efenix zmianę zlecenia (data wykonania, Wycena Emmetta, ilość)."""
+        ...
+
     def search(self, number: str) -> Sequence[ListedOrder]:
         """Wiersze listy zleceń po szukaniu po ``Numer``."""
         ...
@@ -126,8 +133,12 @@ class Efenix(Protocol):
         """Otwiera stronę zlecenia i czyta jego datę wykonania i wycenę."""
         ...
 
-    def set_execution_date(self, day: date) -> None:
-        """Ustawia datę wykonania otwartego zlecenia."""
+    def set_execution_date(self, day: date) -> bool:
+        """Wybiera ``day`` w kalendarzu daty wykonania otwartego zlecenia i potwierdza go.
+
+        ``False``, gdy kalendarz efenix zamienił dzień na inny: wtedy okno zamyka kalendarz bez „Potwierdź” i niczego nie
+        wysyła. ``True`` znaczy tylko, że efenix odpowiedział na „Potwierdź”; czy zapisał dzień, pokazuje ``open_order``.
+        """
         ...
 
     def load_emmett(self) -> OrderPricing:
@@ -240,8 +251,9 @@ def price_orders(
     scope = phases.plan(plan, issue_count=lambda _: 0)
 
     def save() -> tuple[OrderResult, ...]:
-        with _efenix_stops(), open_efenix() as efenix:
-            return tuple(OrderResult(order, _priced(order, efenix)) for order in scope.orders)
+        with _efenix_stops(lambda: False), open_efenix() as efenix:
+            with _efenix_stops(lambda: efenix.sent_change):
+                return tuple(OrderResult(order, _priced(order, efenix)) for order in scope.orders)
 
     results = phases.save(save)
     return PricingSummary(
@@ -264,17 +276,20 @@ def _warning(source: Path, result: OrderResult) -> Message | None:
 
 
 @contextmanager
-def _efenix_stops() -> Iterator[None]:
-    """Strona logowania, nieznana budowa strony i brak połączenia z efenix to Zatrzymanie z Komunikatem procesu."""
+def _efenix_stops(changed: Callable[[], bool]) -> Iterator[None]:
+    """Strona logowania, nieznana budowa strony i brak połączenia z efenix to Zatrzymanie z Komunikatem procesu.
+
+    ``changed``: czy przed Zatrzymaniem proces zmienił już coś w efenix.
+    """
 
     try:
         yield
     except LoggedOut as error:
-        raise StopError(messages.logged_out()) from error
+        raise StopError(messages.logged_out(kept=changed())) from error
     except UnexpectedPage as error:
-        raise StopError(messages.efenix_changed()) from error
+        raise StopError(messages.efenix_changed(kept=changed())) from error
     except EfenixUnreachable as error:
-        raise StopError(messages.efenix_unreachable()) from error
+        raise StopError(messages.efenix_unreachable(kept=changed())) from error
 
 
 def _priced(order: CollectiveOrder, efenix: Efenix) -> Ready | OrderError | EmmettWarning:
@@ -295,7 +310,10 @@ def _priced(order: CollectiveOrder, efenix: Efenix) -> Ready | OrderError | Emme
         differs = priced_differently(file, opened.quantities, opened.amount, order.amount)
         return Ready(hit) if differs is None else OrderError(differs)
     if opened.execution_date is None:
-        efenix.set_execution_date(day)
+        if not efenix.set_execution_date(day):
+            return OrderError(DateRefused.OUT_OF_RANGE)
+        if _known_positions(efenix.open_order(hit)).execution_date != day:
+            return OrderError(DateRefused.NOT_SAVED)
     emmett = _known_positions(efenix.load_emmett())
     if conflicts := emmett_conflicts(file, emmett.quantities):
         return EmmettWarning(conflicts)

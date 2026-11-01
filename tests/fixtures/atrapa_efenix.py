@@ -3,19 +3,25 @@
 Odtwarza tylko to, czego używa okno efenix narzędzia: identyfikatory pól (``#field_numer``, ``#wyniki``, ``#data_install``,
 ``#field_signum``, ``#field_password``), adresy odpowiedzi (``action_fill_orders.php``, ``page_order_edit.php?id=``,
 ``page_login.php``) i kształt komórek tabeli wyników (``Numer dokumentu<br><small>Identyfikator Fenix</small>``, status
-w ``.badge``, ``Wykonawca (login)`` z datą, ``<small>województwo</small><br>Dane adresowe``). Skrypt listy to własny,
+w ``.badge``, ``Wykonawca <small><small class="text-default">(login)</small></small><br><small>`` z datą w ``.badge``,
+``<small>województwo</small><br>Dane adresowe``). Skrypt listy to własny,
 krótki kod Atrapy: Enter w polu ``Numer`` wysyła formularz do ``action_fill_orders.php`` i wkłada odpowiedź do
 ``#wyniki``, a po wczytaniu, gdy karta pamięta numer z poprzedniego szukania (``sessionStorage``), sama szuka go
 jeszcze raz, jak efenix po powrocie ze strony zlecenia na listę. Nie ma w niej żadnego kodu, stylu ani danych z efenix.
 
 Strona zlecenia ma wycenę ze stanem: pozycje z wymyślonymi cenami (``CATALOG``, kody ``INDEKS_NNN_078`` z przypisania
 kolumn i kilka bez niego) w polach ``input.wycena-ilosc`` (dwie ``.wycena-cena``), kwotę końcową ``#cena_all2``, datę
-wykonania z oknem ``#dialog_select_date`` (przycisk ``#button-calendar``, pole ``#field_data_instalacji``, które jak
-kalendarz efenix nie przyjmuje pisania i po otwarciu pokazuje dzisiejszy dzień), Wycenę Emmetta (``#button_emmett``,
+wykonania z oknem ``#dialog_select_date`` (przycisk ``#button-calendar``, pole ``#field_data_instalacji`` z własnym
+kalendarzem Atrapy w API pickadate: ``jQuery(pole).pickadate('picker').set('select', …)``). Jak w efenix pole nie
+przyjmuje pisania, a kalendarz po otwarciu okna pokazuje dzisiejszy dzień, dzień po dziś albo przed pierwszym dniem
+poprzedniego miesiąca zamienia na dzisiejszy z komunikatem w ``#toast``, „Potwierdź” wysyła wartość pola, a po
+odpowiedzi 2xx wpisuje ją do ``#data_install`` bez czytania treści odpowiedzi. „Dziś” daje test (``today``), a
+``refuse_dates`` każe serwerowi odpowiadać na zapis daty bez zapisu. Wycenę Emmetta (``#button_emmett``,
 okno ``#dialog_emmett`` z propozycją z ``action_fill_emmett.php``, „Załaduj do zlecenia” wysyła ``action_load_emmett.php``,
 który czyści wycenę i wpisuje propozycję, a skrypt przeładowuje stronę) i przyciski, których narzędzie nie może użyć:
 Przekazanie do akceptacji (``#button_forward_to_accept``) i anulowanie (``#button_forward_to_cancel``) z oknem
-``#dialog_forward_yes_no``, którego ``.btn-ok`` wysyła ``action_change_status.php`` i stoi na stronie przed oknem Emmetta.
+``#dialog_forward_yes_no``, którego ``.btn-ok`` wysyła ``action_change_status.php`` (``order_id``, ``xstatus``,
+``comment``, jak efenix) i stoi na stronie przed oknem Emmetta. Okna zamyka przycisk ``[data-dismiss="modal"]``.
 Ilość zapisuje skrypt strony po wyjściu z pola (Enter też z niego wychodzi) przez ``action_save_index.php``, a odpowiedź
 JSON (``result``, ``price_index``, ``price_all``) odświeża ``#cena-…`` i ``#cena_all2``; bez sesji ta odpowiedź to
 ``result: nok``, jak w efenix.
@@ -33,7 +39,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 import copy
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 import enum
 from html import escape
@@ -55,6 +61,15 @@ GET_DATE = "action_get_date_of_instalation.php"
 CHANGE_STATUS = "action_change_status.php"
 # Pole ``rodzaj`` szukania, które skrypt listy wysyła sam po wczytaniu strony.
 BY_LIST = "powrot"
+TODAY = date(2026, 10, 12)
+"""Dzień, który kalendarz Atrapy ma za dzisiejszy, gdy test nie poda innego: dni z ``DATA`` testów (wrzesień 2026) są
+w zakresie, który przyjmuje efenix."""
+
+
+def earliest_execution_date(today: date) -> date:
+    """Pierwszy dzień poprzedniego miesiąca: najwcześniejsza data wykonania, którą przyjmuje kalendarz efenix."""
+
+    return (today.replace(day=1) - timedelta(days=1)).replace(day=1)
 
 
 class Changed(enum.Enum):
@@ -64,6 +79,7 @@ class Changed(enum.Enum):
     ORDER_LINK = "wiersz wyników nie ma linku do strony zlecenia"
     DATE_FORMAT = "data wykonania w innym zapisie niż RRRR-MM-DD"
     EMMETT_BUTTON = "strona zlecenia nie ma przycisku Emmetta"
+    HIDDEN_EMMETT = "przycisk Emmetta jest na stronie, ale niewidoczny"
     POSITION_CODE = "pozycja wyceny ma inny kod"
     STALE_AMOUNT = "kwota końcowa nie odświeża się po zapisie ilości"
 
@@ -191,11 +207,14 @@ def atrapa_efenix(
     expire_after: tuple[str, int] | None = None,
     changed: Changed | None = None,
     answer_delay_s: float = 0.0,
+    today: date = TODAY,
+    refuse_dates: bool = False,
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
     ``expire_after``: ścieżka i liczba jej żądań narzędzia (bez szukania, które lista wysyła sama), po których sesja
-    wygasa, jak przy wylogowaniu w trakcie przebiegu.
+    wygasa, jak przy wylogowaniu w trakcie przebiegu. ``today``: dzisiejszy dzień kalendarza daty wykonania.
+    ``refuse_dates``: serwer odpowiada na zapis daty wykonania bez zapisu.
     """
 
     atrapa = AtrapaEfenix(list(orders))
@@ -239,7 +258,7 @@ def atrapa_efenix(
             elif method == "POST" and path in _CHANGES:
                 with atrapa._lock:
                     found = [order for order in atrapa.orders if order.order_id == params.get(_CHANGES[path])]
-                    answer = _change(path, found[0], params) if found else None
+                    answer = _change(path, found[0], params, refuse_dates=refuse_dates) if found else None
                 if answer is None:
                     self._html("<p>Nie ma takiego zlecenia.</p>", HTTPStatus.NOT_FOUND)
                 elif isinstance(answer, dict):
@@ -255,7 +274,7 @@ def atrapa_efenix(
             elif path == ORDER_PAGE and method == "GET":
                 found = [order for order in orders if order.order_id == params.get("id")]
                 if found:
-                    self._html(_order_page(found[0], changed))
+                    self._html(_order_page(found[0], changed, today))
                 else:
                     self._html("<p>Nie ma takiego zlecenia.</p>", HTTPStatus.NOT_FOUND)
             else:
@@ -295,10 +314,10 @@ def atrapa_efenix(
 
 
 # Działania na zleceniu i pole, w którym przychodzi jego identyfikator.
-_CHANGES = {SAVE_QUANTITY: "order_id", FILL_EMMETT: "order_id", LOAD_EMMETT: "order_id", SET_DATE: "id", GET_DATE: "id", CHANGE_STATUS: "main_id"}
+_CHANGES = {SAVE_QUANTITY: "order_id", FILL_EMMETT: "order_id", LOAD_EMMETT: "order_id", SET_DATE: "id", GET_DATE: "id", CHANGE_STATUS: "order_id"}
 
 
-def _change(path: str, order: AtrapaOrder, params: Mapping[str, str]) -> str | dict[str, str]:
+def _change(path: str, order: AtrapaOrder, params: Mapping[str, str], *, refuse_dates: bool) -> str | dict[str, str]:
     """Odpowiedź Atrapy na działanie ``path`` na zleceniu ``order`` i zmiana jego stanu (pod blokadą Atrapy)."""
 
     if path == SAVE_QUANTITY:
@@ -319,11 +338,13 @@ def _change(path: str, order: AtrapaOrder, params: Mapping[str, str]) -> str | d
         order.emmett_loads += 1
         return "ok"
     if path == SET_DATE:
+        if refuse_dates:
+            return "Nie zapisano daty."
         order.execution_date = date.fromisoformat(params["date"])
         return "ok"
     if path == GET_DATE:
         return "0" if order.execution_date is None else order.execution_date.isoformat()
-    order.status = params.get("status", "")
+    order.status = params.get("xstatus", "")
     return "ok"
 
 
@@ -375,7 +396,8 @@ def _results(orders: Sequence[AtrapaOrder], changed: Changed | None) -> str:
         f'<tr><td>{escape(order.number)}<br><small>{escape(order.order_id)}</small></td>'
         f"<td>{escape(order.operator)}<br><small>FSM</small></td>"
         f'<td><span class="badge badge-default">{escape(order.status)}</span></td>'
-        f"<td>{escape(order.executor)} ({escape(order.realizator)})<small>2026-09-01</small></td>"
+        f'<td>{escape(order.executor)} <small><small class="text-default">({escape(order.realizator)})</small></small>'
+        '<br><small><span class="badge badge-light"><i class="fas fa-tools"></i>2026-09-01</span></small></td>'
         f"<td><small>{escape(order.region)}</small><br>{escape(order.address)}</td>"
         f'<td><a href="{link}?id={escape(order.order_id)}" class="btn btn-sm">Otwórz</a></td></tr>'
         for order in orders
@@ -393,15 +415,47 @@ _ORDER_SCRIPT = """
   document.getElementById('button_forward_to_accept').addEventListener('click', () => { status = 'Do akceptacji'; show('dialog_forward_yes_no'); });
   document.getElementById('button_forward_to_cancel').addEventListener('click', () => { status = 'Anulowane'; show('dialog_forward_yes_no'); });
   document.querySelector('#dialog_forward_yes_no .btn-ok').addEventListener('click', () => {
-    post('action_change_status.php', {main_id: mainId, status: status, komentarz: ''}).then(() => location.reload());
+    post('action_change_status.php', {order_id: mainId, xstatus: status, comment: ''}).then(() => location.reload());
   });
+  document.querySelectorAll('[data-dismiss="modal"]').forEach((button) => {
+    button.addEventListener('click', () => hide(button.closest('.modal').id));
+  });
+  const today = '__TODAY__';
+  const earliest = '__EARLIEST__';
+  const pad = (number) => String(number).padStart(2, '0');
   const calendar = document.getElementById('button-calendar');
   const dayField = document.getElementById('field_data_instalacji');
-  calendar.addEventListener('click', () => { dayField.value = new Date().toISOString().slice(0, 10); show('dialog_select_date'); });
+  // Kalendarz pola w API pickadate: set('select', [rok, miesiąc od 0, dzień] albo 'RRRR-MM-DD'), potem onSet.
+  const onSet = () => {
+    const toast = document.getElementById('toast');
+    if (dayField.value > today) {
+      toast.textContent = 'Data nie może być większa niż dzisiejsza !';
+      dayField.value = today;
+    } else if (dayField.value < earliest) {
+      toast.textContent = 'Nie możesz rozliczyć zlecenia sprzed daty: ' + earliest;
+      dayField.value = today;
+    }
+  };
+  const picker = {
+    set: (what, value) => {
+      if (what === 'select') {
+        dayField.value = Array.isArray(value) ? value[0] + '-' + pad(value[1] + 1) + '-' + pad(value[2]) : String(value);
+        onSet();
+      }
+      return picker;
+    },
+  };
+  window.jQuery = (target) => ({ pickadate: (action) => (action === 'picker' && target === dayField ? picker : undefined) });
+  let recordId = '';
+  calendar.addEventListener('click', () => {
+    recordId = calendar.dataset.recordId;
+    picker.set('select', today);
+    show('dialog_select_date');
+  });
   document.querySelector('#dialog_select_date .btn-ok').addEventListener('click', () => {
     const day = dayField.value;
-    post('action_set_date_of_instalation.php', {id: calendar.dataset.recordId, date: day}).then((answer) => answer.text()).then((text) => {
-      if (text !== 'ok') return;
+    post('action_set_date_of_instalation.php', {id: recordId, date: day}).then((answer) => {
+      if (!answer.ok) return;
       hide('dialog_select_date');
       document.getElementById('data_install').textContent = day;
     });
@@ -439,22 +493,26 @@ _ORDER_SCRIPT = """
 """
 
 
-def _order_page(order: AtrapaOrder, changed: Changed | None) -> str:
+def _order_page(order: AtrapaOrder, changed: Changed | None, today: date) -> str:
     day = "" if order.execution_date is None else order.execution_date.isoformat()
     if changed is Changed.DATE_FORMAT and order.execution_date is not None:
         day = f"{order.execution_date:%d.%m.%Y}"
     order_id = escape(order.order_id)
+    hidden = ' style="display: none"' if changed is Changed.HIDDEN_EMMETT else ""
     emmett = (
         ""
         if changed is Changed.EMMETT_BUTTON
-        else f'<button type="button" id="button_emmett" order_id="{order_id}" title="Załaduj wycenę przygotowaną przez Emmetta.">Emmett</button>'
+        else f'<button type="button" id="button_emmett" order_id="{order_id}"{hidden} title="Załaduj wycenę przygotowaną przez Emmetta.">Emmett</button>'
     )
-    script = _ORDER_SCRIPT.replace("__RELOAD__", str(_EMMETT_RELOAD_MS)).replace(
-        "__REFRESH__", "false" if changed is Changed.STALE_AMOUNT else "true"
+    script = (
+        _ORDER_SCRIPT.replace("__RELOAD__", str(_EMMETT_RELOAD_MS))
+        .replace("__REFRESH__", "false" if changed is Changed.STALE_AMOUNT else "true")
+        .replace("__TODAY__", today.isoformat())
+        .replace("__EARLIEST__", earliest_execution_date(today).isoformat())
     )
     return _page(
         "Atrapa efenix - zlecenie",
-        f'<input type="hidden" name="main_id" id="main_id" value="{order_id}">'
+        f'<input type="hidden" name="main_id" id="main_id" value="{order_id}"><div id="toast"></div>'
         f"<div><small>Status</small> {escape(order.status)}</div>"
         f"<div><small>Realizator</small> {escape(order.realizator)}</div>"
         f'<div><small>Data wykonania</small><span id="data_install">{day}</span>'
@@ -497,7 +555,7 @@ def _position(order: AtrapaOrder, position: Position, changed: Changed | None) -
 def _dialog(dialog_id: str, title: str, body: str, ok: str) -> str:
     return (
         f'<div class="modal" id="{dialog_id}" style="display: none"><h5>{escape(title)}</h5><div class="modal-body">{body}</div>'
-        f'<button type="button" class="btn btn-secondary">Zamknij</button><button type="button" class="btn btn-ok">{escape(ok)}</button></div>'
+        f'<button type="button" class="btn btn-secondary" data-dismiss="modal">Zamknij</button><button type="button" class="btn btn-ok">{escape(ok)}</button></div>'
     )
 
 

@@ -12,7 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Final
 
-from .efenix_checks import OrderProblem
+from .efenix_checks import DateRefused, OrderProblem
 from .efenix_positions import Conflict, NotWholeQuantities, OrderFault, OtherAmount, PricedDifferently, UnpairedColumns, column_of
 from .message import REPORT_TO_MAINTAINER, Message, file_label
 from .workbook_files import Problem, WorkbookError
@@ -98,34 +98,37 @@ def amounts_not_computed(source: Path, row: int) -> Message:
     )
 
 
-def logged_out() -> Message:
-    """Okno efenix pokazało stronę logowania."""
+def logged_out(*, kept: bool) -> Message:
+    """Okno efenix pokazało stronę logowania; ``kept``: przed Zatrzymaniem proces zmienił już coś w efenix."""
 
     return Message(
         code="EFENIX_WYLOGOWANY",
-        what=f"efenix pokazał stronę logowania, więc {_PROCESS} się zatrzymała. {_KEPT}",
+        what=f"efenix pokazał stronę logowania, więc {_PROCESS} się zatrzymała. {_after_stop(kept=kept)}",
         where=_EFENIX,
         action="Zaloguj się w efenix i uruchom ponownie.",
     )
 
 
-def efenix_changed() -> Message:
-    """Strona efenix wygląda inaczej, niż zna ją narzędzie."""
+def efenix_changed(*, kept: bool) -> Message:
+    """Strona efenix wygląda inaczej, niż zna ją narzędzie; ``kept`` jak w ``logged_out``."""
 
     return Message(
         code="EFENIX_ZMIENIONY",
-        what=f"Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i dalej niczego w niej nie klika. {_KEPT}",
+        what=(
+            "Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i dalej niczego w niej nie klika. "
+            f"{_after_stop(kept=kept)}"
+        ),
         where=_EFENIX,
         action=REPORT_TO_MAINTAINER,
     )
 
 
-def efenix_unreachable() -> Message:
-    """Okno nie otworzyło efenix."""
+def efenix_unreachable(*, kept: bool) -> Message:
+    """Okno nie otworzyło efenix; ``kept`` jak w ``logged_out``."""
 
     return Message(
         code="EFENIX_NIEDOSTEPNY",
-        what=f"Nie udało się otworzyć efenix. {_KEPT}",
+        what=f"Nie udało się otworzyć efenix. {_after_stop(kept=kept)}",
         where=_EFENIX,
         action=(
             "Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Jeśli błąd "
@@ -134,14 +137,19 @@ def efenix_unreachable() -> Message:
     )
 
 
+def _after_stop(*, kept: bool) -> str:
+    return _KEPT if kept else _UNCHANGED
+
+
 def order_error(source: Path, row: int, problem: OrderFault) -> Message:
     """Zlecenie z wiersza ``row`` Pliku zbiorczego, które proces zostawia tacie, bo ``problem``.
 
-    Kwota inna niż AU po dopisaniu ilości to jedyny błąd, przy którym proces zmienił już wycenę w efenix.
+    Kwota inna niż AU po dopisaniu ilości i data, której efenix nie zapisał po „Potwierdź”, to jedyne błędy, przy których
+    proces mógł już coś zmienić w zleceniu w efenix.
     """
 
     code, what, action = _order_error(problem)
-    unchanged = "" if isinstance(problem, OtherAmount) else " Zlecenie zostało w efenix bez zmian."
+    unchanged = "" if isinstance(problem, OtherAmount) or problem is DateRefused.NOT_SAVED else " Zlecenie zostało w efenix bez zmian."
     return Message(
         code=code,
         dad_file="collective_file",
@@ -211,6 +219,27 @@ def _order_error(problem: OrderFault) -> tuple[str, str, str]:
                     f" {_amount(file_amount)}. Ilości z pliku są już wpisane w efenix."
                 ),
                 "Sprawdź wycenę w efenix i Plik zbiorczy, popraw tę, która jest błędna, i uruchom ponownie.",
+            )
+        case DateRefused.OUT_OF_RANGE:
+            return (
+                "EFENIX_DATA_POZA_ZAKRESEM",
+                (
+                    "Dzień z DATA jest poza zakresem dat wykonania, który przyjmuje efenix (od pierwszego dnia poprzedniego"
+                    " miesiąca do dziś), więc narzędzie nie ustawiło daty wykonania ani nie wyceniło zlecenia."
+                ),
+                (
+                    "Sprawdź DATA w Pliku zbiorczym. Jeśli jest błędna, popraw ją i uruchom ponownie. Jeśli jest dobra, okres"
+                    " jest za stary dla efenix: ustaw datę wykonania i wyceń zlecenie w efenix sam."
+                ),
+            )
+        case DateRefused.NOT_SAVED:
+            return (
+                "EFENIX_DATA_NIEZAPISANA",
+                (
+                    "efenix nie zapisał daty wykonania z DATA: po ponownym otwarciu zlecenia nie ma jej na stronie. Narzędzie"
+                    " nie załadowało Wyceny Emmetta i nie wpisało ilości."
+                ),
+                "Ustaw datę wykonania w efenix sam i uruchom ponownie.",
             )
         case OrderProblem.NO_NUMBER:
             return "EFENIX_BRAK_NUMERU", "Wiersz nie ma numeru zlecenia w NUMER ZL.", "Uzupełnij NUMER ZL. w Pliku zbiorczym albo wyceń zlecenie w efenix sam."

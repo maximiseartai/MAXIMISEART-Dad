@@ -18,7 +18,7 @@ from decimal import Decimal
 from types import MappingProxyType
 from typing import Final
 
-from .efenix_checks import OrderProblem
+from .efenix_checks import DateRefused, OrderProblem
 from .efenix_orders import QUANTITY_COLUMNS, CollectiveOrder
 from .order_facts import NON_NUMERIC
 
@@ -101,7 +101,7 @@ class OtherAmount:
     file_amount: Decimal
 
 
-OrderFault = OrderProblem | UnpairedColumns | NotWholeQuantities | PricedDifferently | OtherAmount
+OrderFault = OrderProblem | DateRefused | UnpairedColumns | NotWholeQuantities | PricedDifferently | OtherAmount
 """Powód, dla którego zlecenie zostaje tacie jako błąd."""
 
 

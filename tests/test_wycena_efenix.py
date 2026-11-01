@@ -57,9 +57,9 @@ def page(browser: Browser) -> Iterator[Page]:
         yield opened
 
 
-def _price(tmp_path: Path, page: Page, url: str, orders: Sequence[Order]) -> Priced:
+def _price(tmp_path: Path, page: Page, url: str, orders: Sequence[Order], *, timeout_ms: int = 10_000) -> Priced:
     source = write_collective_file(tmp_path, orders)
-    inputs = EfenixInputs(source, lambda: efenix_browser.window(page, url, timeout_ms=10_000))
+    inputs = EfenixInputs(source, lambda: efenix_browser.window(page, url, timeout_ms=timeout_ms))
     return run_process(
         efenix_process.PROCESS, inputs, Tata(), view=lambda _inputs, summary: summary, metrics_path=tmp_path / "metryki.jsonl"
     )
@@ -104,6 +104,16 @@ def _stop(outcome: Priced) -> str:
     assert isinstance(outcome.ending, Stop), outcome.ending
     assert outcome.ending.kind == "stop"
     return outcome.ending.message.code
+
+
+def _kept(outcome: Priced) -> bool:
+    """Komunikat Zatrzymania mówi, że wycena zleceń sprzed niego została w efenix (``False``: że nic się nie zmieniło)."""
+
+    assert isinstance(outcome.ending, Stop), outcome.ending
+    what = outcome.ending.message.what
+    kept, unchanged = "Wycena zleceń sprzed zatrzymania została w efenix." in what, "W efenix nic się nie zmieniło." in what
+    assert kept != unchanged, what
+    return kept
 
 
 def _figures_of(orders: int, ready: int, warnings: int = 0, photos: int = 0, defects: int = 0) -> dict[str, int]:
@@ -213,6 +223,50 @@ def test_kwota_efenix_inna_niz_au_po_dopisaniu_ilosci_to_blad_z_obiema_kwotami(t
     [what] = _what(outcome)
     efenix_amount, au = amount_of({"012": 1, "019": 2}), amount_of({"012": 1, "019": 2}) + Decimal("0.40")
     assert f"kwota w efenix to {efenix_amount:.2f} zł, a Kwota (AU) {au:.2f} zł".replace(".", ",") in what
+
+
+@pytest.mark.parametrize(
+    ("day", "result", "errors", "pricing"),
+    [
+        pytest.param(date(2026, 9, 1), "OK", [], ({"012": 1}, date(2026, 9, 1), 1), id="pierwszy-dzień-poprzedniego-miesiąca"),
+        pytest.param(date(2026, 10, 12), "OK", [], ({"012": 1}, date(2026, 10, 12), 1), id="dziś"),
+        pytest.param(
+            date(2026, 8, 31), "WYMAGA_SPRAWDZENIA", [("EFENIX_DATA_POZA_ZAKRESEM", "wiersz 18")], ({}, None, 0), id="przed-poprzednim-miesiącem"
+        ),
+        pytest.param(date(2026, 10, 13), "WYMAGA_SPRAWDZENIA", [("EFENIX_DATA_POZA_ZAKRESEM", "wiersz 18")], ({}, None, 0), id="jutro"),
+    ],
+)
+def test_dzien_z_data_spoza_zakresu_kalendarza_efenix_to_blad_bez_zapisu_daty_bez_emmetta_i_bez_ilosci(
+    tmp_path: Path,
+    page: Page,
+    day: date,
+    result: str,
+    errors: list[tuple[str, str]],
+    pricing: tuple[dict[str, int], date | None, int],
+) -> None:
+    """Kalendarz Atrapy ma za dziś 12 października 2026, więc efenix przyjmuje daty wykonania od 1 września do 12 października."""
+
+    order = Order("#5601", day=day, cells={"O": 1}, amount=_au({"012": 1}))
+    with atrapa_efenix([order.in_efenix("901")], today=date(2026, 10, 12)) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [order])
+        after = _pricing(atrapa)
+        requested = atrapa.requested()
+
+    assert (outcome.result, _errors(outcome), after) == (result, errors, {"5601": pricing})
+    assert requested.count(("POST", SET_DATE)) == (1 if result == "OK" else 0)
+
+
+def test_data_wykonania_ktorej_efenix_nie_zapisal_po_potwierdz_to_blad_bez_emmetta_i_bez_ilosci(tmp_path: Path, page: Page) -> None:
+    """Skrypt strony wpisuje dzień do ``#data_install`` po każdej odpowiedzi, także gdy serwer daty nie zapisał."""
+
+    order = Order("#5701", cells={"O": 1}, amount=_au({"012": 1}))
+    with atrapa_efenix([order.in_efenix("901")], refuse_dates=True) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [order])
+        pricing = _pricing(atrapa)
+        requested = atrapa.requested()
+
+    assert (outcome.result, _errors(outcome), pricing) == ("WYMAGA_SPRAWDZENIA", [("EFENIX_DATA_NIEZAPISANA", "wiersz 18")], {"5701": ({}, None, 0)})
+    assert (requested.count(("POST", SET_DATE)), requested.count(("POST", LOAD_EMMETT)), requested.count(("POST", SAVE_QUANTITY))) == (1, 0, 0)
 
 
 @pytest.mark.parametrize(
@@ -385,19 +439,20 @@ def test_plik_bez_kwot_au_policzonych_przez_excel_zatrzymuje_wycene_zanim_otworz
 
 
 @pytest.mark.parametrize(
-    ("expire_after", "searched"),
+    ("expire_after", "searched", "kept"),
     [
-        pytest.param(None, [], id="przed-szukaniem"),
-        pytest.param((SEARCH, 1), ["9201", "9202"], id="przy-szukaniu"),
-        # Strona pierwszego zlecenia otwiera się dwa razy: przy otwarciu i po załadowaniu Wyceny Emmetta.
-        pytest.param((ORDER_PAGE, 2), ["9201", "9202"], id="przy-otwarciu-zlecenia"),
-        pytest.param((SET_DATE, 1), ["9201", "9202"], id="przy-dacie-wykonania"),
-        pytest.param((LOAD_EMMETT, 1), ["9201", "9202"], id="przy-wycenie-emmetta"),
-        pytest.param((SAVE_QUANTITY, 1), ["9201", "9202"], id="przy-zapisie-ilości"),
+        pytest.param(None, [], False, id="przed-szukaniem"),
+        pytest.param((ORDER_PAGE, 0), ["9201"], False, id="przy-otwarciu-pierwszego-zlecenia"),
+        pytest.param((SEARCH, 1), ["9201", "9202"], True, id="przy-szukaniu"),
+        # Strona pierwszego zlecenia otwiera się trzy razy: przy otwarciu, po dacie wykonania i po Wycenie Emmetta.
+        pytest.param((ORDER_PAGE, 3), ["9201", "9202"], True, id="przy-otwarciu-zlecenia"),
+        pytest.param((SET_DATE, 1), ["9201", "9202"], True, id="przy-dacie-wykonania"),
+        pytest.param((LOAD_EMMETT, 1), ["9201", "9202"], True, id="przy-wycenie-emmetta"),
+        pytest.param((SAVE_QUANTITY, 1), ["9201", "9202"], True, id="przy-zapisie-ilości"),
     ],
 )
-def test_strona_logowania_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene(
-    tmp_path: Path, page: Page, expire_after: tuple[str, int] | None, searched: list[str]
+def test_strona_logowania_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene_a_komunikat_mowi_czy_cos_zmienila(
+    tmp_path: Path, page: Page, expire_after: tuple[str, int] | None, searched: list[str], kept: bool
 ) -> None:
     orders = [Order(f"#920{index}", cells={"O": 1}, amount=_au({"012": 1})) for index in (1, 2, 3)]
     with atrapa_efenix([order.in_efenix(f"90{index}") for index, order in enumerate(orders)], expire_after=expire_after) as atrapa:
@@ -405,17 +460,22 @@ def test_strona_logowania_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene(
             atrapa.expire_session()
         outcome = _price(tmp_path, page, atrapa.url, orders)
 
-        assert (_stop(outcome), atrapa.searched()) == ("EFENIX_WYLOGOWANY", searched)
+        assert (_stop(outcome), atrapa.searched(), _kept(outcome)) == ("EFENIX_WYLOGOWANY", searched, kept)
 
 
 @pytest.mark.parametrize("changed", list(Changed))
 def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene(tmp_path: Path, page: Page, changed: Changed) -> None:
+    """Zatrzymanie przychodzi w czasie okna (tu 3 s), także przy elemencie obecnym, ale niewidocznym.
+
+    Tylko kwota, która się nie odświeża, zatrzymuje wycenę po zmianie w efenix (Wycena Emmetta i ilość).
+    """
+
     order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
     with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)], changed=changed) as atrapa:
-        outcome = _price(tmp_path, page, atrapa.url, [order])
+        outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
         changes = atrapa.status_changes()
 
-    assert (_stop(outcome), changes) == ("EFENIX_ZMIENIONY", 0)
+    assert (_stop(outcome), changes, _kept(outcome)) == ("EFENIX_ZMIENIONY", 0, changed is Changed.STALE_AMOUNT)
 
 
 def test_strona_bez_listy_zlecen_i_adres_bez_efenix_zatrzymuja_wycene(tmp_path: Path, page: Page) -> None:
@@ -426,4 +486,4 @@ def test_strona_bez_listy_zlecen_i_adres_bez_efenix_zatrzymuja_wycene(tmp_path: 
         changed = _price(tmp_path / "zmieniony", page, atrapa.url.replace(LIST_PAGE, "inna_strona.php"), [Order("#9301")])
     unreachable = _price(tmp_path / "niedostepny", page, closed, [Order("#9301")])
 
-    assert (_stop(changed), _stop(unreachable)) == ("EFENIX_ZMIENIONY", "EFENIX_NIEDOSTEPNY")
+    assert (_stop(changed), _stop(unreachable), _kept(changed), _kept(unreachable)) == ("EFENIX_ZMIENIONY", "EFENIX_NIEDOSTEPNY", False, False)

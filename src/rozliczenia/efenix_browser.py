@@ -8,15 +8,19 @@ statusu nie zna. Każdy przycisk okna dialogowego klika w jego oknie (``#dialog_
 odpowiedź do ``#wyniki``. Tabelę wyników okno czyta z odpowiedzi na swoje szukanie (tej z jego numerem w polu ``numer``),
 tę samą, którą skrypt wkłada do ``#wyniki``, bo lista po wczytaniu sama szuka ostatniego numeru z poprzedniej wizyty, a
 jej odpowiedź trafia do ``#wyniki`` w dowolnej chwili. Kolumny tabeli rozpoznaje po nagłówkach (``Numer dokumentu``,
-``Status``, ``Wykonawca``, ``Dane adresowe``), a stronę zlecenia otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony
-albo szukania na ``page_login.php`` to ``LoggedOut``, a strona bez oczekiwanej budowy albo bez odpowiedzi w czasie
-``timeout_ms`` to ``UnexpectedPage``. Przeglądarkę daje rozmówca: stronę (``window``) albo Chromium Playwrighta (``chromium``).
+``Status``, ``Wykonawca``, ``Dane adresowe``), tekst komórki bez jej ``<small>`` (identyfikator Fenix, województwo),
+login realizatora z ``small.text-default`` komórki Wykonawca (obok niego w ``<small>`` stoi data), a stronę zlecenia
+otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony albo szukania na ``page_login.php`` to
+``LoggedOut``, adres, który nie odpowiada, to ``EfenixUnreachable``, a strona bez oczekiwanej budowy, element obecny,
+ale niewidoczny, albo brak odpowiedzi w czasie ``timeout_ms`` to ``UnexpectedPage``. Przeglądarkę daje rozmówca: stronę (``window``) albo Chromium Playwrighta (``chromium``).
 
 Stronę zlecenia czyta tak, jak widzi ją tata: datę wykonania z ``#data_install`` (RRRR-MM-DD albo pusta), kwotę końcową z
 ``#cena_all2`` i ilość każdej pozycji z pola ``input.wycena-ilosc`` o id ``INDEKS_NNN_…`` (kod pozycji to ``NNN``).
-Datę ustawia przyciskiem kalendarza ``#button-calendar``, polem ``#field_data_instalacji`` okna ``#dialog_select_date``
-(kalendarz strony nie przyjmuje pisania, więc okno wpisuje dzień w pole i zgłasza jego zmianę) i „Potwierdź”, a czeka na
-odpowiedź ``action_set_date_of_instalation.php`` i dzień w ``#data_install``. Wycenę Emmetta ładuje przyciskiem
+Datę ustawia przyciskiem kalendarza ``#button-calendar`` i kalendarzem pickadate pola ``#field_data_instalacji`` okna
+``#dialog_select_date``: wybiera dzień przez ``picker.set('select', …)`` kalendarza strony, więc biegnie sprawdzenie
+zakresu efenix, które dzień spoza zakresu zamienia na dzisiejszy. Gdy w polu nie ma potem dokładnie wybranego dnia, okno
+zamyka kalendarz bez „Potwierdź”; inaczej klika „Potwierdź” i czeka na odpowiedź ``action_set_date_of_instalation.php``.
+Tekstowi ``#data_install`` po niej nie wierzy, bo skrypt efenix wpisuje go przy każdej odpowiedzi. Wycenę Emmetta ładuje przyciskiem
 ``#button_emmett`` i „Załaduj do zlecenia” w ``#dialog_emmett``: czeka na odpowiedź ``action_load_emmett.php`` i na
 przeładowanie strony, które robi skrypt efenix, i czyta stronę od nowa. Ilość wpisuje w polu i naciska Enter, a skrypt
 strony zapisuje ją przez ``action_save_index.php``: kwotą końcową jest ``price_all`` z tej odpowiedzi, a ``#cena_all2``,
@@ -79,10 +83,12 @@ _READ_RESULTS: Final = """(html) => {
             const plain = cell.cloneNode(true);
             plain.querySelectorAll('small').forEach((small) => small.remove());
             const badge = cell.querySelector('.badge');
+            const login = cell.querySelector('small.text-default');
             const link = cell.querySelector('a[href*="page_order_edit.php?id="]');
             return {
                 plain: text(plain),
                 badge: badge ? text(badge) : null,
+                login: login ? text(login) : null,
                 link: link ? link.getAttribute('href') : null,
             };
         })),
@@ -90,18 +96,23 @@ _READ_RESULTS: Final = """(html) => {
 }"""
 
 
-# Dzień w polu kalendarza, który nie przyjmuje pisania: wartość i zdarzenia, po których skrypt strony ją widzi.
-_TYPE_DAY: Final = """(field, day) => {
-    field.value = day;
-    field.dispatchEvent(new Event('input', {bubbles: true}));
-    field.dispatchEvent(new Event('change', {bubbles: true}));
+# Dzień wybrany kalendarzem pickadate pola, tak jak klik dnia: biegnie ``onSet`` strony, które sprawdza zakres dat.
+# Miesiąc pickadate liczy od 0. ``false``, gdy pole nie ma kalendarza.
+_PICK_DAY: Final = """(field, [year, month, day]) => {
+    const jquery = window.jQuery;
+    const picker = typeof jquery === 'function' && typeof jquery(field).pickadate === 'function' ? jquery(field).pickadate('picker') : null;
+    if (!picker || typeof picker.set !== 'function') return false;
+    picker.set('select', [year, month - 1, day]);
+    return true;
 }"""
+_DISMISS: Final = '[data-dismiss="modal"]'
 _SHOWS: Final = "([selector, text]) => document.querySelector(selector)?.textContent.trim() === text"
 
 
 class _Cell(TypedDict):
     plain: str
     badge: str | None
+    login: str | None
     link: str | None
 
 
@@ -118,6 +129,13 @@ class BrowserEfenix:
         self._url = url
         self._timeout_ms = timeout_ms
         self._positions: dict[str, str] = {}
+        self._sent_change = False
+
+    @property
+    def sent_change(self) -> bool:
+        """Okno kliknęło już „Potwierdź” daty, „Załaduj do zlecenia” albo Enter w polu „Ilość”."""
+
+        return self._sent_change
 
     def open_list(self) -> None:
         """Otwiera listę zleceń; ``EfenixUnreachable``, gdy adres nie odpowiada."""
@@ -136,12 +154,10 @@ class BrowserEfenix:
         if urlparse(self._page.url).path != urlparse(self._url).path:
             self.open_list()
         field = self._page.locator(_NUMBER_FIELD)
-        field.fill(number)
-        try:
-            with self._page.expect_response(lambda response: _is_search(response, number), timeout=self._timeout_ms) as answer:
-                field.press("Enter")
-        except PlaywrightTimeoutError as error:
-            raise UnexpectedPage(PagePart.RESULTS) from error
+        with _within(PagePart.LIST):
+            field.fill(number, timeout=self._timeout_ms)
+        with _within(PagePart.RESULTS), self._page.expect_response(lambda response: _is_search(response, number), timeout=self._timeout_ms) as answer:
+            field.press("Enter", timeout=self._timeout_ms)
         if _redirected_to_login(answer.value):
             raise LoggedOut
         try:
@@ -156,34 +172,43 @@ class BrowserEfenix:
     def open_order(self, order: ListedOrder) -> OrderPricing:
         """Otwiera stronę zlecenia ``order`` i czyta datę wykonania, kwotę końcową i ilości pozycji."""
 
-        self._page.goto(urljoin(self._url, f"{_ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms)
+        try:
+            self._page.goto(urljoin(self._url, f"{_ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms)
+        except PlaywrightError as error:
+            raise EfenixUnreachable from error
         return self._read_order()
 
-    def set_execution_date(self, day: date) -> None:
-        """Ustawia datę wykonania otwartego zlecenia w oknie „Wybierz datę wykonania”."""
+    def set_execution_date(self, day: date) -> bool:
+        """Wybiera ``day`` w kalendarzu okna „Wybierz datę wykonania” i potwierdza go, gdy kalendarz go przyjął.
 
-        text = day.isoformat()
-        self._only(_DATE_BUTTON, PagePart.DATE).click()
+        ``False``: kalendarz efenix zamienił dzień na inny, więc okno zamknęło kalendarz bez „Potwierdź”.
+        """
+
+        self._click(self._only(_DATE_BUTTON, PagePart.DATE), PagePart.DATE)
         self._shown(_DATE_DIALOG, PagePart.DATE)
         field = self._only(f"{_DATE_DIALOG} {_DATE_FIELD}", PagePart.DATE)
-        field.evaluate(_TYPE_DAY, text)
+        with _within(PagePart.DATE):
+            picked = field.evaluate(_PICK_DAY, [day.year, day.month, day.day], timeout=self._timeout_ms)
+            shown = field.input_value(timeout=self._timeout_ms)
+        if picked is not True:
+            raise UnexpectedPage(PagePart.DATE)
+        if shown != day.isoformat():
+            self._close(_DATE_DIALOG, PagePart.DATE)
+            return False
         confirm = self._only(f"{_DATE_DIALOG} {_OK}", PagePart.DATE)
-        answer = self._answer(_SET_DATE, lambda _params: True, confirm.click, PagePart.DATE)
+        answer = self._answer(_SET_DATE, lambda _params: True, lambda: self._click(confirm, PagePart.DATE), PagePart.DATE)
         if _redirected_to_login(answer):
             raise LoggedOut
-        self._wait_for_text(_EXECUTION_DATE, text, PagePart.DATE)
+        return True
 
     def load_emmett(self) -> OrderPricing:
         """Ładuje Wycenę Emmetta do otwartego zlecenia i czyta stronę po przeładowaniu, które robi skrypt efenix."""
 
-        self._only(_EMMETT_BUTTON, PagePart.EMMETT).click()
+        self._click(self._only(_EMMETT_BUTTON, PagePart.EMMETT), PagePart.EMMETT)
         self._shown(_EMMETT_DIALOG, PagePart.EMMETT)
         load = self._only(f"{_EMMETT_DIALOG} {_OK}", PagePart.EMMETT)
-        try:
-            with self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
-                self._answer(_LOAD_EMMETT, lambda _params: True, load.click, PagePart.EMMETT)
-        except PlaywrightTimeoutError as error:
-            raise UnexpectedPage(PagePart.EMMETT) from error
+        with _within(PagePart.EMMETT), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
+            self._answer(_LOAD_EMMETT, lambda _params: True, lambda: self._click(load, PagePart.EMMETT), PagePart.EMMETT)
         return self._read_order()
 
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
@@ -193,10 +218,14 @@ class BrowserEfenix:
         if field_id is None:
             raise UnexpectedPage(PagePart.QUANTITY)
         field = self._only(f"{_QUANTITY}#{field_id}", PagePart.QUANTITY)
-        field.click()
-        field.fill(str(quantity))
+        self._click(field, PagePart.QUANTITY)
+        with _within(PagePart.QUANTITY):
+            field.fill(str(quantity), timeout=self._timeout_ms)
         answer = self._answer(
-            _SAVE_QUANTITY, lambda params: params.get("index") == [field_id], lambda: field.press("Enter"), PagePart.QUANTITY
+            _SAVE_QUANTITY,
+            lambda params: params.get("index") == [field_id],
+            lambda: field.press("Enter", timeout=self._timeout_ms),
+            PagePart.QUANTITY,
         )
         if _redirected_to_login(answer):
             raise LoggedOut
@@ -237,24 +266,38 @@ class BrowserEfenix:
         return located
 
     def _shown(self, selector: str, part: PagePart) -> None:
-        try:
+        with _within(part):
             self._only(selector, part).wait_for(state="visible", timeout=self._timeout_ms)
-        except PlaywrightTimeoutError as error:
-            raise UnexpectedPage(part) from error
+
+    def _click(self, located: Locator, part: PagePart) -> None:
+        """Klik elementu, który musi być widoczny i klikalny w czasie ``timeout_ms``; inaczej ``UnexpectedPage``."""
+
+        with _within(part):
+            located.click(timeout=self._timeout_ms)
+
+    def _close(self, dialog: str, part: PagePart) -> None:
+        """Zamyka okno dialogowe jego przyciskiem zamknięcia, bez „Potwierdź”, i czeka, aż zniknie."""
+
+        dismiss = self._page.locator(f"{dialog} {_DISMISS}")
+        if dismiss.count() == 0:
+            raise UnexpectedPage(part)
+        self._click(dismiss.first, part)
+        with _within(part):
+            self._only(dialog, part).wait_for(state="hidden", timeout=self._timeout_ms)
 
     def _answer(self, path: str, wanted: Callable[[dict[str, list[str]]], bool], act: Callable[[], None], part: PagePart) -> Response:
-        try:
-            with self._page.expect_response(lambda response: _is_post(response, path) and wanted(_form(response)), timeout=self._timeout_ms) as answer:
-                act()
-        except PlaywrightTimeoutError as error:
-            raise UnexpectedPage(part) from error
+        """Odpowiedź efenix na zmianę zlecenia, którą wysyła ``act``."""
+
+        self._sent_change = True
+        with _within(part), self._page.expect_response(
+            lambda response: _is_post(response, path) and wanted(_form(response)), timeout=self._timeout_ms
+        ) as answer:
+            act()
         return answer.value
 
     def _wait_for_text(self, selector: str, text: str, part: PagePart) -> None:
-        try:
+        with _within(part):
             self._page.wait_for_function(_SHOWS, arg=[selector, text], timeout=self._timeout_ms)
-        except PlaywrightTimeoutError as error:
-            raise UnexpectedPage(part) from error
 
     def _ensure_logged_in(self) -> None:
         if urlparse(self._page.url).path.endswith("/" + _LOGIN_PAGE):
@@ -269,7 +312,7 @@ class BrowserEfenix:
         order_id = parse_qs(urlparse(links[0]).query).get("id", [""])[0]
         number = row[columns["number"]]["plain"]
         status = row[columns["status"]]
-        found = _LOGIN.findall(row[columns["realizator"]]["plain"])
+        found = _LOGIN.findall(row[columns["realizator"]]["login"] or "")
         if not order_id or not number:
             raise UnexpectedPage(PagePart.RESULTS)
         return ListedOrder(
@@ -279,6 +322,16 @@ class BrowserEfenix:
             address=row[columns["address"]]["plain"],
             order_id=order_id,
         )
+
+
+@contextmanager
+def _within(part: PagePart) -> Iterator[None]:
+    """Działanie na części ``part`` strony, które nie skończyło się w czasie okna, to efenix o innej budowie."""
+
+    try:
+        yield
+    except PlaywrightTimeoutError as error:
+        raise UnexpectedPage(part) from error
 
 
 def _column(headers: Sequence[str], header: str) -> int:
