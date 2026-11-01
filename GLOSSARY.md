@@ -21,6 +21,59 @@ okresów. Zawiera między zleceniami całkowicie puste wiersze. Procesy go
 czytają. Uporządkowanie INTERMAX zmienia w nim tylko Surowe zlecenia i widok
 po otwarciu, a przywrócenie Kopii INTERMAX zastępuje go w całości tą kopią.
 
+## Aplikacja firmowa
+
+System INEA, z którego tata i jego pracownicy kopiują zlecenia do Rejestru
+zleceń. Numer w `NUMER ZL.` prowadzi do zlecenia w tym systemie. Tata nie
+wpisuje w nim wyceny zleceń.
+_Avoid_: efenix (to inny system)
+
+## efenix
+
+System firmy, z którą tata się rozlicza, na stronie efenix.pl. Tata loguje się
+do niego własnym kontem i przy każdym zleceniu wpisuje wycenę, której kwota
+musi być równa `Kwota` (AU) tego zlecenia w Pliku zbiorczym. Zlecenie znajduje
+po `Numer dokumentu`, równym `NUMER ZL.`, a nie po `Identyfikator Fenix`.
+Ilości wpisane do wyceny efenix zapamiętuje od razu, bez „Zapisz”. Realizator
+zlecenia w efenix to ten sam identyfikator co `WYKONAWCA` w Pliku zbiorczym.
+Zdjęcia, które robią Wykonawcy, leżą w chomiku (chomik.efenix.pl) przy swoim
+zleceniu.
+_Avoid_: aplikacja firmowa, Fenix
+
+## Przekazanie do akceptacji
+
+Zielony „Zapisz” przy zleceniu w efenix: zlecenie przechodzi ze statusu „Do
+wyceny” do „Do akceptacji” i jego wycenę sprawdza firma. Robi je tylko tata.
+Czerwony „Zapisz” obok niego anuluje zlecenie.
+_Avoid_: zapis, zatwierdzenie
+
+## Wycena w efenix
+
+Proces, który tata uruchamia w Centrum rozliczeń dla okresu po Gotowości:
+w oknie efenix, w którym tata jest zalogowany, uzupełnia wycenę każdego
+zlecenia Pliku zbiorczego, które nie jest Zleceniem ze zdjęciami ani usterką,
+Wyceną Emmetta i Ilościami usług z Pliku zbiorczego, a gotowe oznacza
+Znacznikiem efenix. Nigdy nie robi Przekazania do akceptacji. Zlecenie, którego
+nie da się uzupełnić tak, żeby kwota była równa `Kwota` (AU), zostawia tacie
+jako błąd, a sprzeczność z Wyceną Emmetta jako ostrzeżenie.
+_Avoid_: wpisywanie, import, synchronizacja
+
+## Wycena Emmetta
+
+Ilości, które Emmett, skrypt w efenix, wpisuje do zlecenia po kliknięciu
+„Załaduj wycenę przygotowaną przez Emmetta”, zanim tata przeniesie do niego
+Ilości usług z Pliku zbiorczego. Nikt ich nie nadpisuje: gdy różnią się od
+Pliku zbiorczego, sprzeczność rozstrzyga tata. Załadowanie Wyceny Emmetta
+czyści wycenę, którą zlecenie już ma.
+
+## Znacznik efenix
+
+Jasnofioletowe wypełnienie komórki `ADRES` zlecenia w Pliku zbiorczym: wycena
+tego zlecenia jest uzupełniona w efenix Ilościami usług z Pliku zbiorczego, jej
+kwota jest równa `Kwota` (AU), a Przekazanie do akceptacji należy do taty. Nie jest
+Wyróżnieniem i nie przechodzi do Rozliczeń pracowników.
+_Avoid_: kolor gotowości, zaznaczenie
+
 ## Surowe zlecenia
 
 Zlecenia, które tata albo jego pracownik wkleił z aplikacji firmowej na dół
@@ -270,6 +323,16 @@ V, T i N), w wierszu z opisu (prewencja, niedostępność usług albo puste
 `URZĄDZENIA`, reguły nie dały nic) i w kolumnach z opisu technika w każdym
 wierszu. To miejsca zostawione tacie, nie błędy.
 _Avoid_: błędy, braki, cyfry do wpisania
+
+## Zlecenie ze zdjęciami
+
+Zlecenie Pliku zbiorczego z wartością inną niż 0 w którejkolwiek z kolumn AB,
+AC, AD, AE, AF, AJ–AP albo AS: płatna czynność, którą firma rozlicza tylko ze
+zdjęciem spełniającym jej kryteria (np. otwarte gniazdo spawne z widocznymi
+śrubkami). Tata sprawdza zdjęcia, zanim wyceni takie zlecenie w efenix; gdy
+zdjęcie nie spełnia kryteriów, firma odsyła je z pytaniami. Usterka (ilość w
+`AI`) nie jest Zleceniem ze zdjęciami: usterek nie wycenia się w efenix.
+_Avoid_: zlecenie z cyfrą, zlecenie dodatkowo płatne
 
 ## Uzupełnienie pliku zbiorczego
 
