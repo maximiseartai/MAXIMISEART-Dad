@@ -26,14 +26,16 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .efenix_pricing import EfenixUnreachable, ListedOrder, LoggedOut, PagePart, UnexpectedPage
 
-__all__ = ["BrowserEfenix", "chromium", "window"]
+__all__ = ["EXECUTION_DATE", "HEADERS", "LOGIN_PAGE", "NUMBER_FIELD", "ORDER_PAGE", "SEARCH", "TIMEOUT_MS", "BrowserEfenix", "chromium", "window"]
 
-_NUMBER_FIELD: Final = "#field_numer"
-_LOGIN_PAGE: Final = "page_login.php"
-_SEARCH: Final = "action_fill_orders.php"
-_ORDER_PAGE: Final = "page_order_edit.php"
-_EXECUTION_DATE: Final = "#data_install"
-_HEADERS: Final = {"number": "numer dokumentu", "status": "status", "realizator": "wykonawca", "address": "dane adresowe"}
+# Budowa stron efenix, której używa okno: narzędzie zgodności Atrapy efenix (tools/zgodnosc_efenix.py) sprawdza ją
+# na prawdziwym efenix.
+NUMBER_FIELD: Final = "#field_numer"
+LOGIN_PAGE: Final = "page_login.php"
+SEARCH: Final = "action_fill_orders.php"
+ORDER_PAGE: Final = "page_order_edit.php"
+EXECUTION_DATE: Final = "#data_install"
+HEADERS: Final = {"number": "numer dokumentu", "status": "status", "realizator": "wykonawca", "address": "dane adresowe"}
 _LOGIN: Final = re.compile(r"\(([^()\s]+)\)")
 _DAY: Final = re.compile(r"\d{4}-\d{2}-\d{2}")
 TIMEOUT_MS: Final = 30_000
@@ -89,7 +91,7 @@ class BrowserEfenix:
         except PlaywrightError as error:
             raise EfenixUnreachable from error
         self._ensure_logged_in()
-        if self._page.locator(_NUMBER_FIELD).count() != 1:
+        if self._page.locator(NUMBER_FIELD).count() != 1:
             raise UnexpectedPage(PagePart.LIST)
 
     def search(self, number: str) -> Sequence[ListedOrder]:
@@ -97,7 +99,7 @@ class BrowserEfenix:
 
         if urlparse(self._page.url).path != urlparse(self._url).path:
             self.open_list()
-        field = self._page.locator(_NUMBER_FIELD)
+        field = self._page.locator(NUMBER_FIELD)
         field.fill(number)
         try:
             with self._page.expect_response(lambda response: _is_search(response, number), timeout=self._timeout_ms) as answer:
@@ -118,9 +120,9 @@ class BrowserEfenix:
     def execution_date(self, order: ListedOrder) -> date | None:
         """Data wykonania ze strony zlecenia ``order`` (``#data_install``); pusta to ``None``."""
 
-        self._page.goto(urljoin(self._url, f"{_ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms)
+        self._page.goto(urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms)
         self._ensure_logged_in()
-        executed = self._page.locator(_EXECUTION_DATE)
+        executed = self._page.locator(EXECUTION_DATE)
         if executed.count() != 1:
             raise UnexpectedPage(PagePart.ORDER)
         text = " ".join(executed.inner_text().split())
@@ -134,12 +136,12 @@ class BrowserEfenix:
             raise UnexpectedPage(PagePart.ORDER) from error
 
     def _ensure_logged_in(self) -> None:
-        if urlparse(self._page.url).path.endswith("/" + _LOGIN_PAGE):
+        if urlparse(self._page.url).path.endswith("/" + LOGIN_PAGE):
             raise LoggedOut
 
     @staticmethod
     def _listed(headers: Sequence[str], row: Sequence[_Cell]) -> ListedOrder:
-        columns = {field: _column(headers, header) for field, header in _HEADERS.items()}
+        columns = {field: _column(headers, header) for field, header in HEADERS.items()}
         links = [cell["link"] for cell in row if cell["link"]]
         if len(row) != len(headers) or len(links) != 1:
             raise UnexpectedPage(PagePart.RESULTS)
@@ -168,11 +170,11 @@ def _column(headers: Sequence[str], header: str) -> int:
 def _is_search(response: Response, number: str) -> bool:
     request = response.request
     searched = parse_qs(request.post_data or "").get("numer")
-    return request.method == "POST" and urlparse(response.url).path.endswith("/" + _SEARCH) and searched == [number]
+    return request.method == "POST" and urlparse(response.url).path.endswith("/" + SEARCH) and searched == [number]
 
 
 def _redirected_to_login(response: Response) -> bool:
-    return 300 <= response.status < 400 and urlparse(response.headers.get("location", "")).path.endswith(_LOGIN_PAGE)
+    return 300 <= response.status < 400 and urlparse(response.headers.get("location", "")).path.endswith(LOGIN_PAGE)
 
 
 @contextmanager

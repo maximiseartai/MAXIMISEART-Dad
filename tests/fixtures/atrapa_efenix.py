@@ -12,7 +12,14 @@ Atrapa ma jedną sesję, jak okno taty z zapamiętanym logowaniem: po starcie je
 kończy, a wtedy każda strona i odpowiedź przekierowuje na ``page_login.php``; wysłanie tam formularza loguje z
 powrotem. ``requests`` to każde żądanie po kolei (metoda, ścieżka, parametry), więc test widzi, czego narzędzie użyło.
 ``answer_delay_s`` opóźnia każdą odpowiedź na szukanie, więc szukanie, które lista wysyła sama, trwa jeszcze, gdy
-narzędzie szuka swojego numeru. ``changed`` psuje budowę jednej części strony tak, jak mógłby ją zmienić autor efenix (``Changed``).
+narzędzie szuka swojego numeru. ``changed`` psuje budowę jednej części strony tak, jak mógłby ją zmienić autor efenix (``Changed``,
+a w części, której Wycena w efenix jeszcze nie czyta, ``Unread``).
+
+Dla narzędzia zgodności (``tools/zgodnosc_efenix.py``) strona zlecenia ma też nieruchomą budowę wyceny: karty pozycji
+``POSITIONS`` z polem ``Ilość`` i ceną, kwotę końcową, przyciski i okna Emmetta i daty wykonania oraz przyciski
+Przekazania do akceptacji i anulowania, a formularz logowania wysyła ``action_login.php`` z polem ``fingerprint``.
+``cookie_session`` wiąże sesję z ciasteczkiem ``SESSION_COOKIE``, więc karta bez niego (nowy kontekst przeglądarki) widzi
+stronę logowania, a sesja karty z ciasteczkiem trwa.
 """
 
 from __future__ import annotations
@@ -33,6 +40,17 @@ LIST_PAGE = "index.php"
 SEARCH = "action_fill_orders.php"
 ORDER_PAGE = "page_order_edit.php"
 LOGIN_PAGE = "page_login.php"
+LOGIN_ACTION = "action_login.php"
+SESSION_COOKIE = ("PHPSESSID", "atrapa-efenix")
+# Pozycje wyceny strony zlecenia: kod (``id`` pola Ilość) i wymyślona cena jednostkowa.
+POSITIONS = {
+    f"INDEKS_{code}_078": f"{price}.00"
+    for code, price in (
+        ("007", 40), ("008", 45), ("009", 30), ("010", 35), ("012", 120), ("013", 150), ("014", 90), ("015", 25),
+        ("016", 60), ("017", 80), ("018", 20), ("019", 70), ("021", 15), ("023", 55), ("024", 65), ("025", 75),
+        ("026", 85), ("027", 95), ("028", 50), ("029", 110),
+    )
+}
 # Pole ``rodzaj`` szukania, które skrypt listy wysyła sam po wczytaniu strony.
 BY_LIST = "powrot"
 
@@ -43,6 +61,16 @@ class Changed(enum.Enum):
     STATUS_HEADER = "nagłówek Status tabeli wyników ma inną nazwę"
     ORDER_LINK = "wiersz wyników nie ma linku do strony zlecenia"
     DATE_FORMAT = "data wykonania w innym zapisie niż RRRR-MM-DD"
+
+
+class Unread(enum.Enum):
+    """Część strony Atrapy w innej budowie, której Wycena w efenix jeszcze nie czyta, a sprawdza narzędzie zgodności."""
+
+    ORDER_PARTS = "strona zlecenia bez przycisku Emmetta i bez pola daty w oknie daty wykonania"
+    PRICE_LIST = "jedna pozycja wyceny ma inny kod, a druga inną cenę"
+    LOGIN_FORM = "formularz logowania bez pola fingerprint"
+    PAGE_WRITE = "skrypt strony zlecenia po wczytaniu zapisuje ilość (action_save_index.php)"
+    LOGIN_IN_SMALL = "login realizatora w <small>, jak w rekonesansie efenix"
 
 
 @dataclass
@@ -115,8 +143,9 @@ def atrapa_efenix(
     orders: Sequence[AtrapaOrder],
     *,
     expire_after: tuple[str, int] | None = None,
-    changed: Changed | None = None,
+    changed: Changed | Unread | None = None,
     answer_delay_s: float = 0.0,
+    cookie_session: bool = False,
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
@@ -149,15 +178,14 @@ def atrapa_efenix(
                 if expire_after is not None and path == expire_after[0]:
                     if sum(request.path == path and not request.by_list for request in atrapa.requests) > expire_after[1]:
                         atrapa.logged_in = False
-                logged_in = atrapa.logged_in
+                logged_in = atrapa.logged_in and (not cookie_session or _has_session_cookie(self.headers.get("Cookie", "")))
                 orders = copy.deepcopy(atrapa.orders)
-            if path == LOGIN_PAGE:
-                if method == "POST":
-                    with atrapa._lock:
-                        atrapa.logged_in = True
-                    self._redirect(LIST_PAGE)
-                else:
-                    self._html(_login_page())
+            if path == LOGIN_ACTION and method == "POST":
+                with atrapa._lock:
+                    atrapa.logged_in = True
+                self._redirect(LIST_PAGE, cookie=cookie_session)
+            elif path == LOGIN_PAGE:
+                self._html(_login_page(changed))
             elif not logged_in:
                 self._redirect(LOGIN_PAGE)
             elif path == LIST_PAGE and method == "GET":
@@ -185,9 +213,11 @@ def atrapa_efenix(
                 self.end_headers()
                 self.wfile.write(body)
 
-        def _redirect(self, target: str) -> None:
+        def _redirect(self, target: str, *, cookie: bool = False) -> None:
             self.send_response(HTTPStatus.FOUND)
             self.send_header("Location", target)
+            if cookie:
+                self.send_header("Set-Cookie", "=".join(SESSION_COOKIE))
             self.send_header("Content-Length", "0")
             self.end_headers()
 
@@ -242,7 +272,7 @@ def _list_page() -> str:
     )
 
 
-def _results(orders: Sequence[AtrapaOrder], changed: Changed | None) -> str:
+def _results(orders: Sequence[AtrapaOrder], changed: Changed | Unread | None) -> str:
     status = "Stan" if changed is Changed.STATUS_HEADER else "Status"
     head = (
         "<thead><tr><th>Numer dokumentu<br><small>Identyfikator Fenix</small></th><th>Operator/Rodzaj</th>"
@@ -253,7 +283,7 @@ def _results(orders: Sequence[AtrapaOrder], changed: Changed | None) -> str:
         f'<tr><td>{escape(order.number)}<br><small>{escape(order.order_id)}</small></td>'
         f"<td>{escape(order.operator)}<br><small>FSM</small></td>"
         f'<td><span class="badge badge-default">{escape(order.status)}</span></td>'
-        f"<td>{escape(order.executor)} ({escape(order.realizator)})<small>2026-09-01</small></td>"
+        f"<td>{escape(order.executor)} {_login(order, changed)}<small>2026-09-01</small></td>"
         f"<td><small>{escape(order.region)}</small><br>{escape(order.address)}</td>"
         f'<td><a href="{link}?id={escape(order.order_id)}" class="btn btn-sm">Otwórz</a></td></tr>'
         for order in orders
@@ -261,7 +291,7 @@ def _results(orders: Sequence[AtrapaOrder], changed: Changed | None) -> str:
     return f'<table class="table table-sm">{head}<tbody>{rows}</tbody></table>'
 
 
-def _order_page(order: AtrapaOrder, changed: Changed | None) -> str:
+def _order_page(order: AtrapaOrder, changed: Changed | Unread | None) -> str:
     day = "" if order.execution_date is None else order.execution_date.isoformat()
     if changed is Changed.DATE_FORMAT and order.execution_date is not None:
         day = f"{order.execution_date:%d.%m.%Y}"
@@ -271,14 +301,52 @@ def _order_page(order: AtrapaOrder, changed: Changed | None) -> str:
         f"<div><small>Status</small> {escape(order.status)}</div>"
         f"<div><small>Realizator</small> {escape(order.realizator)}</div>"
         f"<div><small>Data wykonania</small><span id=\"data_install\">{day}</span></div>"
-        f"<div><small>Ulica - numer</small> {escape(order.address)}</div>",
+        f"<div><small>Ulica - numer</small> {escape(order.address)}</div>{_order_parts(changed)}",
     )
 
 
-def _login_page() -> str:
+def _login(order: AtrapaOrder, changed: Changed | Unread | None) -> str:
+    login = f"({escape(order.realizator)})"
+    return f'<small><small class="text-default">{login}</small></small>' if changed is Unread.LOGIN_IN_SMALL else login
+
+
+def _order_parts(changed: Changed | Unread | None) -> str:
+    """Nieruchoma budowa wyceny strony zlecenia, którą sprawdza narzędzie zgodności; bez stanu wyceny."""
+
+    positions = dict(POSITIONS)
+    if changed is Unread.PRICE_LIST:
+        first, second = list(positions)[:2]
+        positions[first.replace("_078", "_079")] = positions.pop(first)
+        positions[second] = "1.00"
+    cards = "".join(
+        f'<div class="card rounded-lg kolorek"><div class="card-body"><span>Pozycja {code[7:10]}</span>'
+        f'<input type="text" class="form-control wycena-ilosc" id="{code}" value="">'
+        f'<input type="text" class="form-control wycena-cena" value="{price}" readonly></div></div>'
+        for code, price in positions.items()
+    )
+    without_parts = changed is Unread.ORDER_PARTS
+    emmett = "" if without_parts else '<button type="button" id="button_emmett" class="btn">Załaduj wycenę przygotowaną przez Emmetta</button>'
+    day = "" if without_parts else '<input type="text" id="field_data_instalacji" class="form-control">'
+    write = "<script>fetch('action_save_index.php', {method: 'POST', body: 'ilosc=1'});</script>" if changed is Unread.PAGE_WRITE else ""
+    return (
+        f'<div id="wycena">{cards}<div>Razem <span id="cena_all2">0.00</span></div></div>{emmett}'
+        '<div id="dialog_emmett" class="modal"><div id="emmett-propozycja"></div>'
+        '<button type="button" class="btn btn-ok">Załaduj do zlecenia</button></div>'
+        f'<div id="dialog_data_instalacji" class="modal">{day}</div>'
+        '<button type="button" id="button_forward_to_accept" class="btn btn-success">Zapisz</button>'
+        f'<button type="button" id="button_forward_to_cancel" class="btn btn-danger">Zapisz</button>{write}'
+    )
+
+
+def _has_session_cookie(header: str) -> bool:
+    return "=".join(SESSION_COOKIE) in (part.strip() for part in header.split(";"))
+
+
+def _login_page(changed: Changed | Unread | None) -> str:
+    fingerprint = "" if changed is Unread.LOGIN_FORM else '<input type="hidden" id="fingerprint" name="fingerprint" value="">'
     return _page(
         "Atrapa efenix - logowanie",
-        f'<form method="post" action="{LOGIN_PAGE}"><input type="text" id="field_signum" name="field_signum">'
-        '<input type="password" id="field_password" name="field_password">'
+        f'<form method="post" action="{LOGIN_ACTION}"><input type="text" id="field_signum" name="field_signum">'
+        f'<input type="password" id="field_password" name="field_password">{fingerprint}'
         '<button type="submit" id="button_login">Zaloguj</button></form>',
     )

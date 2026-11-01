@@ -1,0 +1,5 @@
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 20
+RÓŻNICA | pozycje wyceny | INDEKS_007_078: jest w Atrapie (cena 40.00), nie ma go w efenix
+RÓŻNICA | pozycje wyceny | INDEKS_007_079: jest w efenix (cena 40.00), nie ma go w Atrapie
+RÓŻNICA | pozycje wyceny | INDEKS_008_078: cena w efenix 1.00, w Atrapie 45.00
+RÓŻNICE: 3 | NIESPRAWDZONE: 0 | ZABLOKOWANE: 0
