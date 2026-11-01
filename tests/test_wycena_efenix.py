@@ -201,7 +201,9 @@ def test_pusta_wycena_dostaje_date_z_data_wycene_emmetta_i_ilosci_z_pliku_w_pust
 
 
 def test_kwota_efenix_inna_niz_au_po_dopisaniu_ilosci_to_blad_z_obiema_kwotami(tmp_path: Path, page: Page) -> None:
-    order = Order("#5301", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}) + 5, emmett={"012": 1})
+    """Kwoty różnią się o 40 groszy: równość jest co do grosza, nie co do złotówki."""
+
+    order = Order("#5301", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}) + 0.4, emmett={"012": 1})
     with atrapa_efenix([order.in_efenix("901")]) as atrapa:
         outcome = _price(tmp_path, page, atrapa.url, [order])
         pricing = _pricing(atrapa)
@@ -209,7 +211,7 @@ def test_kwota_efenix_inna_niz_au_po_dopisaniu_ilosci_to_blad_z_obiema_kwotami(t
     assert (outcome.result, _figures(outcome), _errors(outcome)) == ("WYMAGA_SPRAWDZENIA", _figures_of(1, 0), [("EFENIX_INNA_KWOTA", "wiersz 18")])
     assert pricing == {"5301": ({"012": 1, "019": 2}, DAY, 1)}
     [what] = _what(outcome)
-    efenix_amount, au = amount_of({"012": 1, "019": 2}), amount_of({"012": 1, "019": 2}) + 5
+    efenix_amount, au = amount_of({"012": 1, "019": 2}), amount_of({"012": 1, "019": 2}) + Decimal("0.40")
     assert f"kwota w efenix to {efenix_amount:.2f} zł, a Kwota (AU) {au:.2f} zł".replace(".", ",") in what
 
 
