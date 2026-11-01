@@ -5,18 +5,20 @@ Odtwarza tylko to, co czyta okno efenix narzędzia: identyfikatory pól (``#fiel
 ``page_login.php``) i kształt komórek tabeli wyników (``Numer dokumentu<br><small>Identyfikator Fenix</small>``, status
 w ``.badge``, ``Wykonawca (login)`` z datą, ``<small>województwo</small><br>Dane adresowe``). Skrypt listy to własny,
 krótki kod Atrapy: Enter w polu ``Numer`` wysyła formularz do ``action_fill_orders.php`` i wkłada odpowiedź do
-``#wyniki``. Nie ma w niej żadnego kodu, stylu ani danych z efenix.
+``#wyniki``, a po wczytaniu, gdy karta pamięta numer z poprzedniego szukania (``sessionStorage``), sama szuka go
+jeszcze raz, jak efenix po powrocie ze strony zlecenia na listę. Nie ma w niej żadnego kodu, stylu ani danych z efenix.
 
 Atrapa ma jedną sesję, jak okno taty z zapamiętanym logowaniem: po starcie jest zalogowana, ``expire_session`` ją
 kończy, a wtedy każda strona i odpowiedź przekierowuje na ``page_login.php``; wysłanie tam formularza loguje z
 powrotem. ``requests`` to każde żądanie po kolei (metoda, ścieżka, parametry), więc test widzi, czego narzędzie użyło.
-``changed`` psuje budowę jednej części strony tak, jak mógłby ją zmienić autor efenix (``Changed``).
+``answer_delay_s`` opóźnia każdą odpowiedź na szukanie, więc szukanie, które lista wysyła sama, trwa jeszcze, gdy
+narzędzie szuka swojego numeru. ``changed`` psuje budowę jednej części strony tak, jak mógłby ją zmienić autor efenix (``Changed``).
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 import copy
 from dataclasses import dataclass, field
 from datetime import date
@@ -31,6 +33,8 @@ LIST_PAGE = "index.php"
 SEARCH = "action_fill_orders.php"
 ORDER_PAGE = "page_order_edit.php"
 LOGIN_PAGE = "page_login.php"
+# Pole ``rodzaj`` szukania, które skrypt listy wysyła sam po wczytaniu strony.
+BY_LIST = "powrot"
 
 
 class Changed(enum.Enum):
@@ -62,6 +66,12 @@ class Request:
     path: str
     params: Mapping[str, str]
 
+    @property
+    def by_list(self) -> bool:
+        """Szukanie, które skrypt listy wysłał sam po wczytaniu strony, a nie po Enter w polu ``Numer``."""
+
+        return self.path == SEARCH and self.params.get("rodzaj") == BY_LIST
+
 
 @dataclass
 class AtrapaEfenix:
@@ -88,22 +98,35 @@ class AtrapaEfenix:
             return [(request.method, request.path) for request in self.requests]
 
     def searched(self) -> list[str]:
-        """Numery z każdego szukania po kolei."""
+        """Numery z każdego szukania z pola ``Numer`` po kolei."""
 
         with self._lock:
-            return [request.params.get("numer", "") for request in self.requests if request.path == SEARCH]
+            return [request.params.get("numer", "") for request in self.requests if request.path == SEARCH and not request.by_list]
+
+    def searched_by_list(self) -> list[str]:
+        """Numery z każdego szukania, które lista wysłała sama po wczytaniu, po kolei."""
+
+        with self._lock:
+            return [request.params.get("numer", "") for request in self.requests if request.by_list]
 
 
 @contextmanager
 def atrapa_efenix(
-    orders: Sequence[AtrapaOrder], *, expire_after: tuple[str, int] | None = None, changed: Changed | None = None
+    orders: Sequence[AtrapaOrder],
+    *,
+    expire_after: tuple[str, int] | None = None,
+    changed: Changed | None = None,
+    answer_delay_s: float = 0.0,
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
-    ``expire_after``: ścieżka i liczba jej żądań, po których sesja wygasa, jak przy wylogowaniu w trakcie przebiegu.
+    ``expire_after``: ścieżka i liczba jej żądań narzędzia (bez szukania, które lista wysyła sama), po których sesja
+    wygasa, jak przy wylogowaniu w trakcie przebiegu.
     """
 
     atrapa = AtrapaEfenix(list(orders))
+    # Koniec bloku przerywa opóźnione odpowiedzi, więc żaden wątek obsługi nie czeka dłużej niż Atrapa.
+    closing = threading.Event()
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -124,7 +147,7 @@ def atrapa_efenix(
             with atrapa._lock:
                 atrapa.requests.append(Request(method, path, params))
                 if expire_after is not None and path == expire_after[0]:
-                    if sum(request.path == path for request in atrapa.requests) > expire_after[1]:
+                    if sum(request.path == path and not request.by_list for request in atrapa.requests) > expire_after[1]:
                         atrapa.logged_in = False
                 logged_in = atrapa.logged_in
                 orders = copy.deepcopy(atrapa.orders)
@@ -140,6 +163,7 @@ def atrapa_efenix(
             elif path == LIST_PAGE and method == "GET":
                 self._html(_list_page())
             elif path == SEARCH and method == "POST":
+                closing.wait(answer_delay_s)
                 number = params.get("numer", "").strip()
                 self._html(_results([order for order in orders if number in order.number], changed))
             elif path == ORDER_PAGE and method == "GET":
@@ -153,11 +177,13 @@ def atrapa_efenix(
 
         def _html(self, text: str, status: HTTPStatus = HTTPStatus.OK) -> None:
             body = text.encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            # Przeglądarka zrywa połączenie szukania, na które już nie czeka (karta przeszła na inną stronę).
+            with suppress(ConnectionError):
+                self.send_response(status)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
 
         def _redirect(self, target: str) -> None:
             self.send_response(HTTPStatus.FOUND)
@@ -173,6 +199,7 @@ def atrapa_efenix(
     try:
         yield atrapa
     finally:
+        closing.set()
         server.shutdown()
         server.server_close()
         thread.join()
@@ -188,14 +215,20 @@ def _page(title: str, body: str) -> str:
 _LIST_SCRIPT = """
 (function () {
   const numer = document.getElementById('field_numer');
-  function szukaj() {
-    const body = new URLSearchParams({numer: numer.value, rodzaj: 'szukanie', strona: '1'});
+  function szukaj(rodzaj) {
+    sessionStorage.setItem('atrapa_numer', numer.value);
+    const body = new URLSearchParams({numer: numer.value, rodzaj: rodzaj, strona: '1'});
     fetch('action_fill_orders.php', {method: 'POST', body: body})
       .then((answer) => answer.text())
       .then((html) => { document.getElementById('wyniki').innerHTML = html; });
   }
-  numer.addEventListener('keypress', (event) => { if (event.key === 'Enter') szukaj(); });
-  document.getElementById('button_order_search').addEventListener('click', szukaj);
+  numer.addEventListener('keypress', (event) => { if (event.key === 'Enter') szukaj('szukanie'); });
+  document.getElementById('button_order_search').addEventListener('click', () => szukaj('szukanie'));
+  const zapamietany = sessionStorage.getItem('atrapa_numer');
+  if (zapamietany !== null) {
+    numer.value = zapamietany;
+    szukaj('__BY_LIST__');
+  }
 })();
 """
 
@@ -205,7 +238,7 @@ def _list_page() -> str:
         "Atrapa efenix",
         '<div class="container-fluid"><input type="text" id="field_numer" class="form-control">'
         '<button type="button" id="button_order_search" class="btn">Szukaj</button>'
-        f'<div id="wyniki"></div></div><script>{_LIST_SCRIPT}</script>',
+        f'<div id="wyniki"></div></div><script>{_LIST_SCRIPT.replace("__BY_LIST__", BY_LIST)}</script>',
     )
 
 

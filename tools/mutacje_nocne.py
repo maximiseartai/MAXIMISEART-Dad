@@ -8,7 +8,9 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   a bez niego (albo gdy ten commit nie jest przodkiem HEAD) ostatni commit linii pierwszych rodziców HEAD sprzed 24 h.
   Mutacje od bazy liczy jak ``tools/mutacje_zmiany.py`` (``selected``, bez testów), a zły wyjątek ``# mutacje-zmiany:``
   liczy jako jedną mutację, żeby część go zgłosiła. Dzieli je na części po najwyżej ``NA_CZESC`` mutacji, ale na
-  najwyżej ``NAJWIECEJ_CZESCI`` części, i pisze do ``GITHUB_OUTPUT`` ``baza``, ``czesci`` (macierz numerów) i ``liczba``.
+  najwyżej ``NAJWIECEJ_CZESCI`` części, i pisze do ``GITHUB_OUTPUT`` ``baza``, ``czesci`` i ``liczba``. ``czesci`` to
+  macierz zadań części: numer i ``przegladarka``, gdy testy, które mogą sprawdzać mutacje części (dotknięte jej
+  plikami), sięgają Atrapy efenix, więc zadanie części instaluje Chromium tak jak zadanie pytest planu CI.
 - Część k z n to ``tools/mutacje_zmiany.py --baza <baza> --czesc k/n --zapis …``: kolejne mutacje z listy
   posortowanej po plikach, więc pokrycie biegnie na testach kilku plików, nie całej zmiany dnia.
 - ``zglos`` czyta zapisy części. Każdą przeżytą mutację przypisuje PR-owi, który ostatni zmienił jej linie: zmienione
@@ -60,7 +62,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 import kroki_skilli
 import mutacje_zmiany
 import plan_ci
-from wplyw_zmiany import Context
+from wplyw_zmiany import Context, Repository
+from zakres_runu import potrzebuja_chromium
 from zgloszenia_ci import MERGE, REPO, SQUASH, GhApi, GitHub, blok_kodu
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,33 +110,49 @@ def baza(github: GitHub, root: Path, od: str, teraz: datetime) -> tuple[str, str
     return przed, "24 h wstecz, bez udanego runu przodka HEAD"
 
 
-def liczba_mutacji(od: str) -> int:
-    """Mutacje zmiany od ``od`` do checkoutu, policzone jak w ``tools/mutacje_zmiany.py``, bez testów."""
+def mutacje_od(od: str) -> tuple[list[mutacje_zmiany.Mutant], bool]:
+    """Mutacje zmiany od ``od`` do checkoutu w kolejności, w której ``tools/mutacje_zmiany.py`` dzieli je na części,
+    policzone bez testów, i czy zmiana ma zły wyjątek ``# mutacje-zmiany:``."""
 
     fragmenty = mutacje_zmiany.changes(od)
     teksty = {sciezka: (mutacje_zmiany.ROOT / sciezka).read_text(encoding="utf-8") for sciezka in fragmenty}
-    liczba = sum(len(mutacje_zmiany.selected(sciezka, tekst, fragmenty[sciezka])) for sciezka, tekst in teksty.items())
+    mutanty = [mutant for sciezka, tekst in teksty.items() for mutant in mutacje_zmiany.selected(sciezka, tekst, fragmenty[sciezka])]
     try:
         for sciezka, tekst in teksty.items():
             mutacje_zmiany.exceptions(tekst, sciezka)
     except ValueError as blad:
         print(f"MUTACJE NOCNE | {blad}; część mutacji to zgłosi")
-        return max(liczba, 1)
-    return liczba
+        return mutanty, True
+    return mutanty, False
 
 
 def czesci(liczba: int) -> int:
     return min(NAJWIECEJ_CZESCI, math.ceil(liczba / NA_CZESC))
 
 
+def macierz(mutanty: Sequence[mutacje_zmiany.Mutant], n: int, repository: Repository) -> list[dict[str, int | bool]]:
+    """Wpis macierzy każdej z ``n`` części: jej numer i ``przegladarka``, gdy testy jej mutacji sięgają Atrapy efenix,
+    więc zadanie części instaluje Chromium jak zadanie pytest planu CI (``zakres_runu.potrzebuja_chromium``)."""
+
+    wpisy: list[dict[str, int | bool]] = []
+    for numer in range(1, n + 1):
+        sciezki = {mutant.path for mutant in mutacje_zmiany.share(mutanty, numer, n)}
+        testy = [test for dotkniete in mutacje_zmiany.tests_of(repository, sciezki).values() for test in dotkniete]
+        wpisy.append({"czesc": numer, "przegladarka": bool(potrzebuja_chromium(testy, repository))})
+    return wpisy
+
+
 def _plan(od: str) -> int:
     od_sha, skad = baza(GhApi(), ROOT, od, datetime.now(UTC))
-    liczba = liczba_mutacji(od_sha)
-    n = czesci(liczba)
-    print(f"MUTACJE NOCNE PLAN | baza {od_sha} ({skad}) | mutacje {liczba} | części {n}")
+    mutanty, zly_wyjatek = mutacje_od(od_sha)
+    # Zły wyjątek liczy się jak jedna mutacja, żeby część go zgłosiła.
+    liczba = max(len(mutanty), 1) if zly_wyjatek else len(mutanty)
+    wpisy = macierz(mutanty, czesci(liczba), Repository.scan(ROOT))
+    z_chromium = sum(bool(wpis["przegladarka"]) for wpis in wpisy)
+    print(f"MUTACJE NOCNE PLAN | baza {od_sha} ({skad}) | mutacje {liczba} | części {len(wpisy)} | z Chromium {z_chromium}")
     if wyjscie := os.environ.get("GITHUB_OUTPUT"):
         with open(wyjscie, "a", encoding="utf-8") as plik:
-            plik.write(f"baza={od_sha}\nczesci={json.dumps(list(range(1, n + 1)))}\nliczba={n}\n")
+            plik.write(f"baza={od_sha}\nczesci={json.dumps(wpisy)}\nliczba={len(wpisy)}\n")
     return 0
 
 

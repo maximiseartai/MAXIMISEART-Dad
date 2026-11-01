@@ -3,8 +3,10 @@
 Na zewnątrz daje tylko typy domeny (``efenix_pricing.Efenix``, ``ListedOrder``) i zna tylko dwa działania, które niczego
 w efenix nie zmieniają: szukanie po ``Numer`` na liście zleceń i odczyt daty wykonania ze strony zlecenia. Szuka tak jak
 tata: wpisuje numer w pole ``#field_numer`` i naciska Enter, a skrypt strony wysyła ``action_fill_orders.php`` i wkłada
-odpowiedź do ``#wyniki``. Kolumny tabeli wyników rozpoznaje po nagłówkach (``Numer dokumentu``, ``Status``, ``Wykonawca``,
-``Dane adresowe``), a stronę zlecenia otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony
+odpowiedź do ``#wyniki``. Tabelę wyników okno czyta z odpowiedzi na swoje szukanie (tej z jego numerem w polu ``numer``),
+tę samą, którą skrypt wkłada do ``#wyniki``, bo lista po wczytaniu sama szuka ostatniego numeru z poprzedniej wizyty, a
+jej odpowiedź trafia do ``#wyniki`` w dowolnej chwili. Kolumny tabeli rozpoznaje po nagłówkach (``Numer dokumentu``,
+``Status``, ``Wykonawca``, ``Dane adresowe``), a stronę zlecenia otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony
 albo szukania na ``page_login.php`` to ``LoggedOut``, a strona bez oczekiwanej budowy albo bez odpowiedzi w czasie
 ``timeout_ms`` to ``UnexpectedPage``. Przeglądarkę daje rozmówca: stronę (``window``) albo Chromium Playwrighta (``chromium``).
 """
@@ -12,7 +14,7 @@ albo szukania na ``page_login.php`` to ``LoggedOut``, a strona bez oczekiwanej b
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from datetime import date
 import re
 from typing import Final, TypedDict
@@ -27,7 +29,6 @@ from .efenix_pricing import EfenixUnreachable, ListedOrder, LoggedOut, PagePart,
 __all__ = ["BrowserEfenix", "chromium", "window"]
 
 _NUMBER_FIELD: Final = "#field_numer"
-_RESULTS: Final = "#wyniki"
 _LOGIN_PAGE: Final = "page_login.php"
 _SEARCH: Final = "action_fill_orders.php"
 _ORDER_PAGE: Final = "page_order_edit.php"
@@ -36,20 +37,12 @@ _HEADERS: Final = {"number": "numer dokumentu", "status": "status", "realizator"
 _LOGIN: Final = re.compile(r"\(([^()\s]+)\)")
 _DAY: Final = re.compile(r"\d{4}-\d{2}-\d{2}")
 TIMEOUT_MS: Final = 30_000
-_SETTLE_MS: Final = 5_000
 
-# Obietnica w oknie strony, spełniona przy pierwszej zmianie ``#wyniki`` po szukaniu albo po czasie (``false``).
-_WATCH_RESULTS: Final = """([selector, timeout]) => {
-    const results = document.querySelector(selector);
-    window.__wycenaEfenixWyniki = new Promise((resolve) => {
-        const observer = new MutationObserver(() => { observer.disconnect(); resolve(true); });
-        observer.observe(results, {childList: true, subtree: true, characterData: true});
-        setTimeout(() => { observer.disconnect(); resolve(false); }, timeout);
-    });
-}"""
-_RESULTS_CHANGED: Final = "() => window.__wycenaEfenixWyniki"
-_READ_RESULTS: Final = """(selector) => {
-    const table = document.querySelector(selector + ' table');
+# Tabela z odpowiedzi szukania przeczytana parserem HTML przeglądarki w ``<template>``, w którym jej skrypty nie biegną.
+_READ_RESULTS: Final = """(html) => {
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    const table = template.content.querySelector('table');
     if (!table) return null;
     const text = (element) => element.textContent.replace(/\\s+/g, ' ').trim();
     return {
@@ -95,12 +88,8 @@ class BrowserEfenix:
             self._page.goto(self._url, wait_until="load", timeout=self._timeout_ms)
         except PlaywrightError as error:
             raise EfenixUnreachable from error
-        # Skrypt listy może po wczytaniu sam szukać z filtrami z poprzedniej wizyty; jego odpowiedź nie może trafić do
-        # szukania narzędzia. Strona, która stale odpytuje serwer, nie czeka dłużej niż ``_SETTLE_MS``.
-        with suppress(PlaywrightTimeoutError):
-            self._page.wait_for_load_state("networkidle", timeout=_SETTLE_MS)
         self._ensure_logged_in()
-        if self._page.locator(_NUMBER_FIELD).count() != 1 or self._page.locator(_RESULTS).count() != 1:
+        if self._page.locator(_NUMBER_FIELD).count() != 1:
             raise UnexpectedPage(PagePart.LIST)
 
     def search(self, number: str) -> Sequence[ListedOrder]:
@@ -108,7 +97,6 @@ class BrowserEfenix:
 
         if urlparse(self._page.url).path != urlparse(self._url).path:
             self.open_list()
-        self._page.evaluate(_WATCH_RESULTS, [_RESULTS, self._timeout_ms])
         field = self._page.locator(_NUMBER_FIELD)
         field.fill(number)
         try:
@@ -118,9 +106,12 @@ class BrowserEfenix:
             raise UnexpectedPage(PagePart.RESULTS) from error
         if _redirected_to_login(answer.value):
             raise LoggedOut
-        changed = self._page.evaluate(_RESULTS_CHANGED)
-        results: _Results | None = self._page.evaluate(_READ_RESULTS, _RESULTS)
-        if changed is not True or results is None:
+        try:
+            html = answer.value.text()
+        except PlaywrightError as error:
+            raise UnexpectedPage(PagePart.RESULTS) from error
+        results: _Results | None = self._page.evaluate(_READ_RESULTS, html)
+        if results is None:
             raise UnexpectedPage(PagePart.RESULTS)
         return tuple(self._listed(results["headers"], row) for row in results["rows"])
 

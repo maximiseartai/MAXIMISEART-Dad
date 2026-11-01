@@ -76,7 +76,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        czesc: ${{ fromJSON(needs.plan.outputs.czesci) }}
+        # Each entry is a part number and przegladarka: its mutations are checked by tests that reach Atrapa efenix.
+        include: ${{ fromJSON(needs.plan.outputs.czesci) }}
     env:
       PYTHONUTF8: '1'
     steps:
@@ -97,6 +98,26 @@ jobs:
         # The same as the Linux pytest parts of ci.yml: the tests of tools/ it runs call the real ruff and mypy. The
         # editable install does not hide a mutation: tools/mutacje.py puts the copy's src first.
         run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
+
+      # The same Chromium steps as the pytest parts of ci.yml: test files that reach Atrapa efenix drive a real browser,
+      # and the part runs them before it mutates (tools/mutacje_nocne.py marks such a part).
+      - name: Playwright version
+        id: playwright
+        if: ${{ matrix.przegladarka }}
+        shell: bash
+        run: python -c "from importlib.metadata import version; print('version=' + version('playwright'))" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Chromium
+        if: ${{ matrix.przegladarka }}
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
+          key: chromium-headless-shell-${{ runner.os }}-playwright-${{ steps.playwright.outputs.version }}
+
+      # Linux also needs the system libraries of the headless shell, which the cache does not hold.
+      - name: Install Chromium
+        if: ${{ matrix.przegladarka }}
+        run: python -m playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} --only-shell chromium
 
       # Code 1 is surviving mutations, a result the last job files, so the part stays green. Any other failure (code 2:
       # the tests fail without mutations, a bad exception) turns the part red, and tools/mutacje_zmiany.py --odtwarzam

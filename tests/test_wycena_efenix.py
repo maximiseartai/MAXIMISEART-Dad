@@ -99,6 +99,21 @@ def test_zlecenia_zgodne_z_efenix_sa_znalezione_a_efenix_dostaje_tylko_szukanie_
     assert requested.count(("GET", ORDER_PAGE)) == 3
 
 
+def test_szukanie_ktore_lista_efenix_wysyla_sama_po_powrocie_ze_strony_zlecenia_nie_zmienia_wynikow_szukania(
+    tmp_path: Path, page: Page
+) -> None:
+    """Efenix odpowiada wolno, więc szukanie poprzedniego numeru, które lista wysyła sama po wczytaniu, trwa jeszcze,
+    gdy okno szuka następnego zlecenia, i jego odpowiedź przychodzi pierwsza."""
+
+    orders = [Order("#5101"), Order("#5102"), Order("#5103")]
+    with atrapa_efenix([order.in_efenix(f"91{index}") for index, order in enumerate(orders)], answer_delay_s=0.3) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, orders)
+        searched, by_list = atrapa.searched(), atrapa.searched_by_list()
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == ("OK", _figures_of(3, 3), [])
+    assert (searched, by_list) == (["5101", "5102", "5103"], ["5101", "5102"])
+
+
 def test_zlecenia_ze_zdjeciami_i_usterki_sa_pominiete_i_policzone_a_wiersz_z_samymi_zerami_jest_w_zakresie(
     tmp_path: Path, page: Page
 ) -> None:

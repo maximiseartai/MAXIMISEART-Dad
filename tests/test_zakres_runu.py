@@ -22,8 +22,8 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 
 import kroki_skilli  # noqa: E402
-from wplyw_zmiany import STRUCTURE  # noqa: E402
-from zakres_runu import PRZEGLADARKA, TORY, Zdarzenie, ZakresRunu, pliki_testow, zakres  # noqa: E402
+from wplyw_zmiany import STRUCTURE, Repository  # noqa: E402
+from zakres_runu import PRZEGLADARKA, TORY, Zdarzenie, ZakresRunu, pliki_testow, potrzebuja_chromium, zakres  # noqa: E402
 
 PASSING = 'print("WYKRYTA: proba")\nprint("MUTACJE OK")\n'
 CHECKED = "src/pakiet/sprawdzany.py"
@@ -169,6 +169,8 @@ def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_reque
         frozenset({"tests/test_c.py", "tests/test_d.py"}),
         frozenset(),
     )
+    # Węzeł ``plik::test`` (test ``STRUCTURE`` bez swojego pliku w wyborze) biegnie w tym samym Chromium co jego plik.
+    assert potrzebuja_chromium(["tests/test_d.py::test_d", "tests/test_a.py::test_a"], Repository.scan(repo)) == {"tests/test_d.py"}
 
 
 # --- kroki skilli ---
