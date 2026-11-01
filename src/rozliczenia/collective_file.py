@@ -5,7 +5,7 @@ arkusza; jego ``WorkbookError`` przechodzi do procesu, który tłumaczy go na
 Komunikat. Moduł nie zna mapowania Wykonawców ani nazw plików okresu
 (``period_folder``). Z tego samego odczytu każdy Wiersz danych, także bez
 Wykonawcy, przechodzi przez filtr prywatności (``order_facts``) dla Kontroli ilości, zanim Wiersze danych z
-Wykonawcą stracą Ilości tylko dla INEA (``inea_only_quantities``, ADR 0018).
+Wykonawcą stracą Ilości tylko dla INEA (``inea_only_quantities``, ADR 0018) i Znacznik efenix (``efenix_mark``).
 Ten sam odczyt i filtr dają Ilości do uzupełnienia (``read_numbered_orders``), także z pliku otwartego w Excelu, a
 obok filtra teksty wiersza i nazwy pozycji cennika dla strony rodzaju, które nie wychodzą z komputera (ADR 0016).
 """
@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import workbook_files
+from .efenix_mark import without_efenix_mark
 from .inea_only_quantities import Cleared, without_inea_only
 from .order_facts import CollectiveOrders, MissingHeaders, collective_orders
 from .preparation_register import ACTIVITIES, COMPLETED, DEVICES, Column
@@ -28,7 +29,7 @@ from .worker_config import normalize_text
 @dataclass(frozen=True)
 class CollectiveRows:
     rows: list[DataRow]
-    """Wiersze danych z Wykonawcą w kolejności z pliku, bez Ilości tylko dla INEA."""
+    """Wiersze danych z Wykonawcą w kolejności z pliku, bez Ilości tylko dla INEA i bez Znacznika efenix."""
     without_worker: list[int]
     """Numery Wierszy danych bez Wykonawcy w kolejności z pliku."""
     orders: CollectiveOrders
@@ -48,7 +49,7 @@ def read_data_rows(path: Path) -> CollectiveRows:
             without_worker.append(row.number)
             continue
         rows.append(row)
-    rows, inea_only = without_inea_only(read.header, rows)
+    rows, inea_only = without_inea_only(read.header, without_efenix_mark(read.header, rows))
     return CollectiveRows(rows, without_worker, collective_orders(read.header, read.rows), inea_only)
 
 
