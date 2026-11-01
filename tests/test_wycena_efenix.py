@@ -21,7 +21,7 @@ from rozliczenia.efenix_pricing import PricingSummary
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
 
-from tests.fixtures.atrapa_efenix import LIST_PAGE, ORDER_PAGE, SEARCH, atrapa_efenix
+from tests.fixtures.atrapa_efenix import LIST_PAGE, ORDER_PAGE, SEARCH, Changed, atrapa_efenix
 from tests.fixtures.efenix import DAY, Order, write_collective_file
 from tests.fixtures.interlocutor import Tata
 from tests.fixtures.przegladarka import chromium, page_of
@@ -207,17 +207,33 @@ def test_plik_bez_kwot_au_policzonych_przez_excel_zatrzymuje_wycene_zanim_otworz
     assert "Otwórz i zapisz Plik zbiorczy w Excelu" in outcome.ending.message.action
 
 
-def test_strona_logowania_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene(tmp_path: Path, page: Page) -> None:
+@pytest.mark.parametrize(
+    ("expire_after", "searched"),
+    [
+        pytest.param(None, [], id="przed-szukaniem"),
+        pytest.param((SEARCH, 1), ["9201", "9202"], id="przy-szukaniu"),
+        pytest.param((ORDER_PAGE, 1), ["9201", "9202"], id="przy-otwarciu-zlecenia"),
+    ],
+)
+def test_strona_logowania_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene(
+    tmp_path: Path, page: Page, expire_after: tuple[str, int] | None, searched: list[str]
+) -> None:
     orders = [Order("#9201"), Order("#9202"), Order("#9203")]
-    efenix = [order.in_efenix(f"90{index}") for index, order in enumerate(orders)]
-    with atrapa_efenix(efenix) as logged_out:
-        logged_out.expire_session()
-        at_start = _price(tmp_path / "start", page, logged_out.url, orders)
-    with atrapa_efenix(efenix, expire_after_searches=1) as expiring:
-        midway = _price(tmp_path / "w-trakcie", page, expiring.url, orders)
-        searched = expiring.searched()
+    with atrapa_efenix([order.in_efenix(f"90{index}") for index, order in enumerate(orders)], expire_after=expire_after) as atrapa:
+        if expire_after is None:
+            atrapa.expire_session()
+        outcome = _price(tmp_path, page, atrapa.url, orders)
 
-    assert (_stop(at_start), _stop(midway), searched) == ("EFENIX_WYLOGOWANY", "EFENIX_WYLOGOWANY", ["9201", "9202"])
+        assert (_stop(outcome), atrapa.searched()) == ("EFENIX_WYLOGOWANY", searched)
+
+
+@pytest.mark.parametrize("changed", list(Changed))
+def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene(tmp_path: Path, page: Page, changed: Changed) -> None:
+    order = Order("#9501")
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)], changed=changed) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [order])
+
+    assert _stop(outcome) == "EFENIX_ZMIENIONY"
 
 
 def test_strona_bez_listy_zlecen_i_adres_bez_efenix_zatrzymuja_wycene(tmp_path: Path, page: Page) -> None:

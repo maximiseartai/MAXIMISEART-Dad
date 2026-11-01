@@ -10,6 +10,7 @@ krótki kod Atrapy: Enter w polu ``Numer`` wysyła formularz do ``action_fill_or
 Atrapa ma jedną sesję, jak okno taty z zapamiętanym logowaniem: po starcie jest zalogowana, ``expire_session`` ją
 kończy, a wtedy każda strona i odpowiedź przekierowuje na ``page_login.php``; wysłanie tam formularza loguje z
 powrotem. ``requests`` to każde żądanie po kolei (metoda, ścieżka, parametry), więc test widzi, czego narzędzie użyło.
+``changed`` psuje budowę jednej części strony tak, jak mógłby ją zmienić autor efenix (``Changed``).
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from contextlib import contextmanager
 import copy
 from dataclasses import dataclass, field
 from datetime import date
+import enum
 from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -29,6 +31,14 @@ LIST_PAGE = "index.php"
 SEARCH = "action_fill_orders.php"
 ORDER_PAGE = "page_order_edit.php"
 LOGIN_PAGE = "page_login.php"
+
+
+class Changed(enum.Enum):
+    """Część strony Atrapy w innej budowie niż w efenix, który zna narzędzie."""
+
+    STATUS_HEADER = "nagłówek Status tabeli wyników ma inną nazwę"
+    ORDER_LINK = "wiersz wyników nie ma linku do strony zlecenia"
+    DATE_FORMAT = "data wykonania w innym zapisie niż RRRR-MM-DD"
 
 
 @dataclass
@@ -85,10 +95,12 @@ class AtrapaEfenix:
 
 
 @contextmanager
-def atrapa_efenix(orders: Sequence[AtrapaOrder], *, expire_after_searches: int | None = None) -> Iterator[AtrapaEfenix]:
+def atrapa_efenix(
+    orders: Sequence[AtrapaOrder], *, expire_after: tuple[str, int] | None = None, changed: Changed | None = None
+) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
-    ``expire_after_searches``: sesja wygasa po tylu szukaniach, jak przy wylogowaniu w trakcie przebiegu.
+    ``expire_after``: ścieżka i liczba jej żądań, po których sesja wygasa, jak przy wylogowaniu w trakcie przebiegu.
     """
 
     atrapa = AtrapaEfenix(list(orders))
@@ -111,9 +123,8 @@ def atrapa_efenix(orders: Sequence[AtrapaOrder], *, expire_after_searches: int |
             params = {name: values[0] for name, values in parse_qs(url.query).items()} | form
             with atrapa._lock:
                 atrapa.requests.append(Request(method, path, params))
-                if path == SEARCH and expire_after_searches is not None:
-                    searches = sum(request.path == SEARCH for request in atrapa.requests)
-                    if searches > expire_after_searches:
+                if expire_after is not None and path == expire_after[0]:
+                    if sum(request.path == path for request in atrapa.requests) > expire_after[1]:
                         atrapa.logged_in = False
                 logged_in = atrapa.logged_in
                 orders = copy.deepcopy(atrapa.orders)
@@ -130,11 +141,11 @@ def atrapa_efenix(orders: Sequence[AtrapaOrder], *, expire_after_searches: int |
                 self._html(_list_page())
             elif path == SEARCH and method == "POST":
                 number = params.get("numer", "").strip()
-                self._html(_results([order for order in orders if number in order.number]))
+                self._html(_results([order for order in orders if number in order.number], changed))
             elif path == ORDER_PAGE and method == "GET":
                 found = [order for order in orders if order.order_id == params.get("id")]
                 if found:
-                    self._html(_order_page(found[0]))
+                    self._html(_order_page(found[0], changed))
                 else:
                     self._html("<p>Nie ma takiego zlecenia.</p>", HTTPStatus.NOT_FOUND)
             else:
@@ -198,25 +209,29 @@ def _list_page() -> str:
     )
 
 
-def _results(orders: Sequence[AtrapaOrder]) -> str:
+def _results(orders: Sequence[AtrapaOrder], changed: Changed | None) -> str:
+    status = "Stan" if changed is Changed.STATUS_HEADER else "Status"
     head = (
         "<thead><tr><th>Numer dokumentu<br><small>Identyfikator Fenix</small></th><th>Operator/Rodzaj</th>"
-        "<th>Status</th><th>Wykonawca (login)</th><th>Dane adresowe</th><th></th></tr></thead>"
+        f"<th>{status}</th><th>Wykonawca (login)</th><th>Dane adresowe</th><th></th></tr></thead>"
     )
+    link = "" if changed is Changed.ORDER_LINK else ORDER_PAGE
     rows = "".join(
         f'<tr><td>{escape(order.number)}<br><small>{escape(order.order_id)}</small></td>'
         f"<td>{escape(order.operator)}<br><small>FSM</small></td>"
         f'<td><span class="badge badge-default">{escape(order.status)}</span></td>'
         f"<td>{escape(order.executor)} ({escape(order.realizator)})<small>2026-09-01</small></td>"
         f"<td><small>{escape(order.region)}</small><br>{escape(order.address)}</td>"
-        f'<td><a href="{ORDER_PAGE}?id={escape(order.order_id)}" class="btn btn-sm">Otwórz</a></td></tr>'
+        f'<td><a href="{link}?id={escape(order.order_id)}" class="btn btn-sm">Otwórz</a></td></tr>'
         for order in orders
     )
     return f'<table class="table table-sm">{head}<tbody>{rows}</tbody></table>'
 
 
-def _order_page(order: AtrapaOrder) -> str:
+def _order_page(order: AtrapaOrder, changed: Changed | None) -> str:
     day = "" if order.execution_date is None else order.execution_date.isoformat()
+    if changed is Changed.DATE_FORMAT and order.execution_date is not None:
+        day = f"{order.execution_date:%d.%m.%Y}"
     return _page(
         "Atrapa efenix - zlecenie",
         f'<input type="hidden" name="main_id" id="main_id" value="{escape(order.order_id)}">'

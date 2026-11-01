@@ -4,9 +4,9 @@ Na zewnątrz daje tylko typy domeny (``efenix_pricing.Efenix``, ``ListedOrder``)
 w efenix nie zmieniają: szukanie po ``Numer`` na liście zleceń i odczyt daty wykonania ze strony zlecenia. Szuka tak jak
 tata: wpisuje numer w pole ``#field_numer`` i naciska Enter, a skrypt strony wysyła ``action_fill_orders.php`` i wkłada
 odpowiedź do ``#wyniki``. Kolumny tabeli wyników rozpoznaje po nagłówkach (``Numer dokumentu``, ``Status``, ``Wykonawca``,
-``Dane adresowe``), a stronę zlecenia otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Strona logowania (pole
-``#field_signum``) to ``LoggedOut``, a strona bez oczekiwanej budowy albo bez odpowiedzi w czasie ``timeout_ms`` to
-``UnexpectedPage``. Przeglądarkę daje rozmówca: stronę (``window``) albo Chromium Playwrighta (``chromium``).
+``Dane adresowe``), a stronę zlecenia otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony
+albo szukania na ``page_login.php`` to ``LoggedOut``, a strona bez oczekiwanej budowy albo bez odpowiedzi w czasie
+``timeout_ms`` to ``UnexpectedPage``. Przeglądarkę daje rozmówca: stronę (``window``) albo Chromium Playwrighta (``chromium``).
 """
 
 from __future__ import annotations
@@ -28,7 +28,6 @@ __all__ = ["BrowserEfenix", "chromium", "window"]
 
 _NUMBER_FIELD: Final = "#field_numer"
 _RESULTS: Final = "#wyniki"
-_LOGIN_FIELD: Final = "#field_signum"
 _LOGIN_PAGE: Final = "page_login.php"
 _SEARCH: Final = "action_fill_orders.php"
 _ORDER_PAGE: Final = "page_order_edit.php"
@@ -120,7 +119,6 @@ class BrowserEfenix:
         if _redirected_to_login(answer.value):
             raise LoggedOut
         changed = self._page.evaluate(_RESULTS_CHANGED)
-        self._ensure_logged_in()
         results: _Results | None = self._page.evaluate(_READ_RESULTS, _RESULTS)
         if changed is not True or results is None:
             raise UnexpectedPage(PagePart.RESULTS)
@@ -145,7 +143,7 @@ class BrowserEfenix:
             raise UnexpectedPage(PagePart.ORDER) from error
 
     def _ensure_logged_in(self) -> None:
-        if urlparse(self._page.url).path.endswith("/" + _LOGIN_PAGE) or self._page.locator(_LOGIN_FIELD).count():
+        if urlparse(self._page.url).path.endswith("/" + _LOGIN_PAGE):
             raise LoggedOut
 
     @staticmethod
