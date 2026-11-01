@@ -1,0 +1,4 @@
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 43
+RÓŻNICA | bez sesji | GET index.php bez sesji nie przekierowuje na page_login.php
+RÓŻNICA | bez sesji | POST action_fill_orders.php bez sesji nie przekierowuje na page_login.php
+RÓŻNICE: 2 | NIESPRAWDZONE: 0 | ZABLOKOWANE: 0

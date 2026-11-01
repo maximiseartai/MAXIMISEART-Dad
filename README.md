@@ -282,6 +282,31 @@ metryk. Pełny opis pól jest w opisie skryptu (`--help`). Kody wyjścia: `0` OK
 zapisem kończy się kodem `2`, bo ma zawsze ostrzeżenia o ilościach do
 uzupełnienia; podgląd bez zapisu z tymi samymi ostrzeżeniami kończy się kodem `0`.
 
+## Zgodność Atrapy efenix z efenix
+
+`tools/zgodnosc_efenix.py` sprawdza, czy prawdziwy efenix ma budowę, której
+używa Wycena w efenix i którą odtwarza Atrapa efenix: pola listy i strony
+zlecenia, odpowiedź szukania, nagłówki tabeli wyników, postać daty wykonania,
+przyciski Emmetta i daty, karty pozycji wyceny z kodami `INDEKS` i cenami
+i stronę logowania. Uruchamia je Maks przed pierwszą Wyceną w efenix u taty
+i po każdym Zgłoszeniu „efenix się zmienił”, nigdy CI. Narzędzie tylko czyta:
+na czas sprawdzania każde żądanie okna Chrome z sesją taty (każdej karty, okna
+otwartego przez stronę i kroku przekierowania) spoza listy dozwolonych
+odczytów przerywa, zanim wyjdzie do efenix, a sesję taty zostawia zalogowaną.
+Dlatego Chrome dla narzędzia ma osobny profil bez innych kart. Wynik ma tylko nazwy elementów, liczby i kody
+pozycji, bez numerów zleceń, adresów i loginów.
+
+```sh
+google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodnosc"
+# w tym oknie zaloguj się do efenix kontem taty, potem:
+.venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php>
+```
+
+Kody wyjścia: `0` `ZGODNOŚĆ OK`, `2` różnice, części niesprawdzone albo
+żądania zablokowane (każde w osobnej linii), `1` brak Chrome, efenix nie
+odpowiada albo okno nie jest zalogowane. Parametry i Chrome na Windows opisuje
+`--help`.
+
 ## Testy
 
 Testy tworzą syntetyczne pliki `.xlsx` w katalogu tymczasowym. Nie używają

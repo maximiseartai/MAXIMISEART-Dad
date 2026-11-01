@@ -1,0 +1,3 @@
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 3 | pozycje wyceny: 43
+NIESPRAWDZONE | strona zlecenia | postać pustej daty wykonania: żadne z 3 otwartych zleceń nie ma pustej #data_install
+RÓŻNICE: 0 | NIESPRAWDZONE: 1 | ZABLOKOWANE: 0

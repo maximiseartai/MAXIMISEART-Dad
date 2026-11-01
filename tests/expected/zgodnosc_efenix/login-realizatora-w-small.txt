@@ -1,0 +1,3 @@
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 43
+RÓŻNICA | tabela wyników | Wycena w efenix nie czyta z wiersza loginu realizatora „(login)” w kolumnie Wykonawca
+RÓŻNICE: 1 | NIESPRAWDZONE: 0 | ZABLOKOWANE: 0

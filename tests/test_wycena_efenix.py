@@ -21,13 +21,14 @@ from rozliczenia.efenix_pricing import PricingSummary
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
 
-from tests.fixtures.atrapa_efenix import LIST_PAGE, ORDER_PAGE, SEARCH, Changed, atrapa_efenix
+from tests.fixtures.atrapa_efenix import LIST_PAGE, ORDER_PAGE, PAGE_READS, SEARCH, Changed, atrapa_efenix
 from tests.fixtures.efenix import DAY, Order, write_collective_file
 from tests.fixtures.interlocutor import Tata
 from tests.fixtures.przegladarka import chromium, page_of
 
-# Żądania, które niczego w efenix nie zmieniają: lista zleceń, szukanie i strona zlecenia.
-READING = {("GET", LIST_PAGE), ("POST", SEARCH), ("GET", ORDER_PAGE)}
+# Żądania, które niczego w efenix nie zmieniają: lista zleceń, szukanie, strona zlecenia i odczyty, które strony
+# wysyłają same.
+READING = {("GET", LIST_PAGE), ("POST", SEARCH), ("GET", ORDER_PAGE), *PAGE_READS}
 Priced = Outcome[PricingSummary]
 
 
