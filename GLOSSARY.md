@@ -388,8 +388,9 @@ a następnie ich uzupełnienie danymi z Pliku zbiorczego.
 
 ## Uruchomienie procesu
 
-Jedno uruchomienie Przebiegu rozliczeń, Przygotowania pliku zbiorczego albo
-Uporządkowania INTERMAX z Centrum rozliczeń albo ze Skryptu dla maszyn, od
+Jedno uruchomienie Przebiegu rozliczeń, Przygotowania pliku zbiorczego,
+Uporządkowania INTERMAX albo Wyceny w efenix z Centrum rozliczeń albo ze
+Skryptu dla maszyn, od
 gotowych plików (i okresu, gdy proces go ma) do wyniku końcowego. Decyzja
 taty należy do Uruchomienia procesu bez względu na to, skąd wystartowało.
 Kończy się sukcesem, wynikiem wymagającym sprawdzenia albo Zatrzymaniem z
@@ -409,8 +410,8 @@ czekania na Decyzję taty nie wlicza się do `Czas uruchomienia` ani do metryk.
 ## Centrum rozliczeń
 
 Lokalna aplikacja w przeglądarce na komputerze taty, z której uruchamia
-Uporządkowanie INTERMAX, Przygotowanie pliku zbiorczego i Przebieg rozliczeń,
-przywraca Kopię INTERMAX oraz widzi Status okresu każdego okresu i historię
+Uporządkowanie INTERMAX, Przygotowanie pliku zbiorczego, Przebieg rozliczeń i
+Wycenę w efenix, przywraca Kopię INTERMAX oraz widzi Status okresu każdego okresu i historię
 Uruchomień procesu. Jest jedynym wejściem taty do
 tych procesów, nie osobnym procesem.
 _Avoid_: dashboard, panel, centrum dowodzenia
