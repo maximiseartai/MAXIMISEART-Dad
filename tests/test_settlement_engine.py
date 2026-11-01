@@ -28,6 +28,7 @@ from rozliczenia.domain import (
     WorkerFailed,
     WorkerStarted,
 )
+from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.engine import run_settlements
 from rozliczenia.message import StopError
 from rozliczenia.process_run import Stop
@@ -53,6 +54,7 @@ from tests.fixtures.workbooks import (
     written_by_copy,
 )
 from tests.fixtures.settlement import (
+    COLLECTIVE_HEADERS,
     NOT_A_PERIOD,
     PERIOD,
     SOURCE_NAME,
@@ -283,6 +285,53 @@ def test_wiersze_danych_rozliczenia_pracownika_maja_wyroznienia_pliku_zbiorczego
         assert template_look(written["N18"]) == expected_template_look
     finally:
         written_workbook.close()
+
+
+def test_znacznik_efenix_w_adresie_nie_przechodzi_do_rozliczenia_pracownika_a_reszta_wyroznien_tak(
+    complete_run: tuple[Path, Path, Path, Path],
+) -> None:
+    source_path, target_directory, config_path, worker_template_path = complete_run
+    source = load_workbook(source_path)
+    try:
+        for column, header in enumerate(COLLECTIVE_HEADERS, start=1):
+            active_worksheet(source).cell(17, column).value = header
+        source.save(source_path)
+    finally:
+        source.close()
+    marked = Font(name="Arial", sz=8, color="FFFF0000", b=True, i=True)
+    style_cells(
+        {
+            # openpyxl zapisuje kolor bez kanału alfa z ``00``, a Excel z ``FF``: oba to Znacznik efenix.
+            "B18": (marked, PatternFill(fill_type="solid", fgColor=MARK_RGB)),
+            "B19": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor=f"FF{MARK_RGB}")),
+            "B20": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor="FFFFFF00")),
+            "C18": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor=f"FF{MARK_RGB}")),
+        }
+    )(source_path)
+    template_cell = (Font(name="Times New Roman", sz=9), PatternFill(fill_type="solid", fgColor="FF0000FF"))
+    style_cells({"B18": template_cell, "B19": template_cell, "C18": template_cell})(worker_template_path)
+
+    summary = run_settlements(source_path, config_path, worker_template_path=worker_template_path)
+
+    assert summary.written_count == 2
+    # Szablon pracownika Adriana dostaje wiersze 18 i 20 Pliku zbiorczego, Darka wiersz 19.
+    adrian = load_workbook(target_directory / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx")
+    darek = load_workbook(target_directory / f"Rozliczenie {PERIOD} - Darek Fikcyjny.xlsx")
+    try:
+        written = active_worksheet(adrian)
+        assert highlights(written["B18"]) == (None, None, Color("FFFF0000"), True, True)
+        assert highlights(active_worksheet(darek)["B18"])[:2] == (None, None)
+        # Ręczne zaznaczenie taty w ADRES i kolor Znacznika w innej kolumnie przechodzą jak każde Wyróżnienie.
+        assert highlights(written["B19"])[:2] == ("solid", Color("FFFFFF00"))
+        assert highlights(written["C18"])[:2] == ("solid", Color(f"FF{MARK_RGB}"))
+    finally:
+        adrian.close()
+        darek.close()
+    source = load_workbook(source_path)
+    try:
+        assert highlights(active_worksheet(source)["B18"])[:2] == ("solid", Color(f"00{MARK_RGB}"))
+    finally:
+        source.close()
 
 
 def test_numer_zlecenia_w_rozliczeniu_pracownika_ma_hiperlacze_z_pliku_zbiorczego(

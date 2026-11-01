@@ -7,6 +7,7 @@ pilnuje:
   - src/rozliczenia/collective_*.py
   - src/rozliczenia/decision.py
   - src/rozliczenia/domain.py
+  - src/rozliczenia/efenix_mark.py
   - src/rozliczenia/engine.py
   - src/rozliczenia/highlights.py
   - src/rozliczenia/hyperlinks.py
