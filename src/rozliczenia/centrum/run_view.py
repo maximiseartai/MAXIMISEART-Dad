@@ -252,8 +252,9 @@ def _pricing_summary(summary: PricingSummary, _dry_run: bool) -> contract.RunSum
     return contract.RunSummary(
         figures=[
             _count("Zlecenia w zakresie", len(summary.results)),
-            _count("Znalezione w efenix", summary.found_count),
+            _count("Gotowe do przekazania", summary.ready_count),
             _count("Błędy zleceń", summary.error_count),
+            _count("Ostrzeżenia Emmetta", summary.warning_count),
             _count("Pominięte ze zdjęciami", summary.with_photos),
             _count("Pominięte usterki", summary.defects),
         ],

@@ -19,7 +19,7 @@ from .period_folder import PeriodFolder, PeriodFolderError
 from .process_run import Finished, Process
 from .telemetry import UNKNOWN_PERIOD
 
-_COUNTERS = frozenset({"orders", "found", "errors", "with_photos", "defects"})
+_COUNTERS = frozenset({"orders", "ready", "errors", "emmett_warnings", "with_photos", "defects"})
 
 
 def default_metrics_path() -> Path:
@@ -56,11 +56,12 @@ def _execute(inputs: EfenixInputs, observer: ProgressObserver, _conversation: Co
 
 def _finished(_inputs: EfenixInputs, summary: PricingSummary) -> Finished:
     return Finished(
-        result="OK" if summary.error_count == 0 else "WYMAGA_SPRAWDZENIA",
+        result="OK" if summary.ready_count == len(summary.results) else "WYMAGA_SPRAWDZENIA",
         counters={
             "orders": len(summary.results),
-            "found": summary.found_count,
+            "ready": summary.ready_count,
             "errors": summary.error_count,
+            "emmett_warnings": summary.warning_count,
             "with_photos": summary.with_photos,
             "defects": summary.defects,
         },

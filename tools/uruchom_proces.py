@@ -14,9 +14,9 @@ Użycie (z katalogu repozytorium):
 ``settlement`` to Przebieg rozliczeń, ``preparation`` Przygotowanie pliku
 zbiorczego, ``intermax`` Uporządkowanie INTERMAX (klucze procesu z kontraktu
 Centrum rozliczeń), a ``efenix`` Wycena w efenix. Wycena w efenix otwiera
-listę zleceń pod ``--efenix-url`` w nowym Chromium Playwrighta bez okna i nic
-w efenix nie zmienia; w testach i próbach to adres Atrapy efenix, nigdy
-efenix.pl (ADR 0024). Uporządkowanie nie ma okresu ani podglądu bez zapisu: zawsze
+listę zleceń pod ``--efenix-url`` w nowym Chromium Playwrighta bez okna i
+uzupełnia w nim wyceny zleceń (data wykonania, Wycena Emmetta, pola „Ilość”);
+w testach i próbach to adres Atrapy efenix, nigdy efenix.pl (ADR 0024). Uporządkowanie nie ma okresu ani podglądu bez zapisu: zawsze
 zapisuje, a Kopia INTERMAX trafia do ``--copies`` (bez parametru folder Kopii
 narzędzia), z nazwą z zegara komputera. Proces prowadzi ten
 sam rdzeń Uruchomienia procesu co w Centrum, więc wynik ma te same liczby,

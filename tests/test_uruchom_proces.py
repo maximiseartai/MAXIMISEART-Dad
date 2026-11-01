@@ -43,7 +43,7 @@ from tests.fixtures.settlement import (
     write_quantity_source,
     write_template,
 )
-from tests.fixtures.atrapa_efenix import atrapa_efenix
+from tests.fixtures.atrapa_efenix import amount_of, atrapa_efenix
 from tests.fixtures.efenix import Order as EfenixOrder
 from tests.fixtures.efenix import write_collective_file
 from tests.fixtures.intermax import Intermax
@@ -464,27 +464,40 @@ def test_uporzadkowanie_intermax_bez_surowych_zlecen_konczy_kodem_1_z_kodem_komu
     assert (result["stop"]["kind"], result["stop"]["message"]["code"]) == ("stop", "BRAK_SUROWYCH_ZLECEN")
 
 
-def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_karte_uruchomienia_z_kodami_bledow_zlecen(
+def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_kwotami_i_ostrzezenia_emmetta(
     tmp_path: Path,
 ) -> None:
-    orders = [EfenixOrder("#9401"), EfenixOrder("#9402")]
+    au = float(amount_of({"012": 2}))
+    orders = [
+        EfenixOrder("#9401", cells={"O": 2}, amount=au),  # wiersz 18: gotowe po dopisaniu
+        EfenixOrder("#9402"),  # 19: inny status
+        EfenixOrder("#9403", cells={"O": 2}, amount=au + 10),  # 20: kwota inna niż AU
+        EfenixOrder("#9404", cells={"O": 2}, amount=au, emmett={"012": 1}),  # 21: sprzeczność z Emmettem
+    ]
     source = write_collective_file(tmp_path, orders)
     metrics = tmp_path / "metrics.jsonl"
-    with atrapa_efenix([orders[0].in_efenix("901"), replace(orders[1].in_efenix("902"), status="Rozliczone")]) as atrapa:
+    efenix = [order.in_efenix(f"90{index}") for index, order in enumerate(orders)]
+    with atrapa_efenix([efenix[0], replace(efenix[1], status="Rozliczone"), *efenix[2:]]) as atrapa:
         exit_code, result = _run("efenix", "--source", source, "--efenix-url", atrapa.url, "--metrics", metrics)
-        requested = {method for method, _path in atrapa.requested()}
+        changes = atrapa.status_changes()
 
-    assert (exit_code, result["result"], result["stop"], requested) == (2, "WYMAGA_SPRAWDZENIA", None, {"GET", "POST"})
+    assert (exit_code, result["result"], result["stop"], changes) == (2, "WYMAGA_SPRAWDZENIA", None, 0)
     assert result["summary"]["figures"] == [
-        {"label": "Zlecenia w zakresie", "value": 2, "unit": "count"},
-        {"label": "Znalezione w efenix", "value": 1, "unit": "count"},
-        {"label": "Błędy zleceń", "value": 1, "unit": "count"},
+        {"label": "Zlecenia w zakresie", "value": 4, "unit": "count"},
+        {"label": "Gotowe do przekazania", "value": 1, "unit": "count"},
+        {"label": "Błędy zleceń", "value": 2, "unit": "count"},
+        {"label": "Ostrzeżenia Emmetta", "value": 1, "unit": "count"},
         {"label": "Pominięte ze zdjęciami", "value": 0, "unit": "count"},
         {"label": "Pominięte usterki", "value": 0, "unit": "count"},
     ]
     assert [(warning["code"], warning["where"].rpartition(", ")[2]) for warning in result["warnings"]] == [
-        ("EFENIX_INNY_STATUS", "wiersz 19")
+        ("EFENIX_INNY_STATUS", "wiersz 19"),
+        ("EFENIX_INNA_KWOTA", "wiersz 20"),
+        ("EFENIX_SPRZECZNOSC_Z_EMMETTEM", "wiersz 21"),
     ]
+    amounts = f"kwota w efenix to {au:.2f} zł, a Kwota (AU) {au + 10:.2f} zł".replace(".", ",")
+    assert amounts in result["warnings"][1]["what"]
+    assert "pozycja INDEKS_012 (kolumna O): Emmett 1, plik 2" in result["warnings"][2]["what"]
     assert [phase["state"] for phase in result["progress"]["phases"]] == ["completed"] * 4
     assert "9401" not in json.dumps(result) and "9401" not in metrics.read_text(encoding="utf-8")
 

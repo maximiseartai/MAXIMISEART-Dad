@@ -34,7 +34,9 @@ System firmy, z którą tata się rozlicza, na stronie efenix.pl. Tata loguje si
 do niego własnym kontem i przy każdym zleceniu wpisuje wycenę, której kwota
 musi być równa `Kwota` (AU) tego zlecenia w Pliku zbiorczym. Zlecenie znajduje
 po `Numer dokumentu`, równym `NUMER ZL.`, a nie po `Identyfikator Fenix`.
-Ilości wpisane do wyceny efenix zapamiętuje od razu, bez „Zapisz”. Realizator
+Ilości wpisane do wyceny efenix zapamiętuje od razu, bez „Zapisz”. Daty
+wykonania późniejszej niż dziś ani wcześniejszej niż pierwszy dzień poprzedniego
+miesiąca efenix nie przyjmuje. Realizator
 zlecenia w efenix to ten sam identyfikator co `WYKONAWCA` w Pliku zbiorczym.
 Zdjęcia, które robią Wykonawcy, leżą w chomiku (chomik.efenix.pl) przy swoim
 zleceniu.
