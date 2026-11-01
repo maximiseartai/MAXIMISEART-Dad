@@ -429,3 +429,4 @@ Poza zakresem Przygotowania pliku zbiorczego są też:
 
 - połączenie Przygotowania pliku zbiorczego i Przebiegu rozliczeń w jeden
   proces działający w tle.
+
