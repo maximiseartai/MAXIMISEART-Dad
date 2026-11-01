@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date
+from decimal import Decimal
 from functools import partial
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from rozliczenia.centrum import (
 )
 from rozliczenia.centrum.tool_update import LIBRARIES_FAILED, NEW_VERSION_FAILED, ROLLBACK_FAILED, UNEXPECTED
 from rozliczenia.efenix_checks import OrderProblem
+from rozliczenia.efenix_positions import Conflict, NotWholeQuantities, OrderFault, OtherAmount, PricedDifferently, UnpairedColumns
 from rozliczenia.message import Message
 from rozliczenia.period_folder import (
     FolderNotNamedAfterPeriod,
@@ -289,6 +291,14 @@ UPDATE_SAMPLES: Samples = {
     ],
 }
 
+_ORDER_FAULTS: tuple[OrderFault, ...] = (
+    *OrderProblem,
+    UnpairedColumns(("N", "AR")),
+    NotWholeQuantities(("O",)),
+    PricedDifferently(Decimal("150.00"), Decimal("125.5"), ("005", "012")),
+    PricedDifferently(Decimal("150.00"), Decimal("125.5"), ()),
+    OtherAmount(Decimal("1234.50"), Decimal("1200")),
+)
 EFENIX_SAMPLES: Samples = {
     "source_unusable": [partial(efenix_messages.source_unusable, WorkbookError(SOURCE, problem)) for problem in Problem],
     "missing_columns": [lambda: efenix_messages.missing_columns(SOURCE, ["NUMER ZL.", "ADRES"])],
@@ -296,7 +306,10 @@ EFENIX_SAMPLES: Samples = {
     "logged_out": [efenix_messages.logged_out],
     "efenix_changed": [efenix_messages.efenix_changed],
     "efenix_unreachable": [efenix_messages.efenix_unreachable],
-    "order_error": [partial(efenix_messages.order_error, SOURCE, 23, problem) for problem in OrderProblem],
+    "order_error": [partial(efenix_messages.order_error, SOURCE, 23, problem) for problem in _ORDER_FAULTS],
+    "emmett_conflict": [
+        lambda: efenix_messages.emmett_conflict(SOURCE, 23, [Conflict("012", 2, 1), Conflict("020", 1, 0)]),
+    ],
     "unexpected_failure": [efenix_messages.unexpected_failure],
     "plan_not_shown": [efenix_messages.plan_not_shown],
     "summary_not_shown": [efenix_messages.summary_not_shown],

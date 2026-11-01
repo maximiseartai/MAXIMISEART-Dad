@@ -1062,17 +1062,17 @@ amounts_not_computed [EFENIX_KWOTY_NIEPOLICZONE]
   Co zrobić: Otwórz i zapisz Plik zbiorczy w Excelu, potem zamknij go i uruchom ponownie.
 
 logged_out [EFENIX_WYLOGOWANY]
-  Co się stało: efenix pokazał stronę logowania, więc Wycena w efenix się zatrzymała. W efenix nic się nie zmieniło.
+  Co się stało: efenix pokazał stronę logowania, więc Wycena w efenix się zatrzymała. Wycena zleceń sprzed zatrzymania została w efenix.
   Gdzie: okno efenix
   Co zrobić: Zaloguj się w efenix i uruchom ponownie.
 
 efenix_changed [EFENIX_ZMIENIONY]
-  Co się stało: Strona efenix wygląda inaczej niż zwykle, więc narzędzie niczego w niej nie kliknęło. W efenix nic się nie zmieniło.
+  Co się stało: Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i dalej niczego w niej nie klika. Wycena zleceń sprzed zatrzymania została w efenix.
   Gdzie: okno efenix
   Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 efenix_unreachable [EFENIX_NIEDOSTEPNY]
-  Co się stało: Nie udało się otworzyć efenix. W efenix nic się nie zmieniło.
+  Co się stało: Nie udało się otworzyć efenix. Wycena zleceń sprzed zatrzymania została w efenix.
   Gdzie: okno efenix
   Co zrobić: Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
@@ -1116,8 +1116,38 @@ order_error #8 [EFENIX_INNA_DATA]
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź zlecenie w efenix i wyceń je sam.
 
+order_error #9 [EFENIX_KOLUMNA_BEZ_POZYCJI]
+  Co się stało: Zlecenie ma ilość w kolumnach, które nie mają pozycji w efenix: N, AR. Zlecenie zostało w efenix bez zmian.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź zlecenie w efenix i wyceń je sam.
+
+order_error #10 [EFENIX_ILOSC_NIECALKOWITA]
+  Co się stało: Ilość usług nie jest liczbą całkowitą większą od 0 w kolumnach: O. Zlecenie zostało w efenix bez zmian.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Popraw ilość w Pliku zbiorczym albo wyceń zlecenie w efenix sam.
+
+order_error #11 [EFENIX_WYCENA_INNA]
+  Co się stało: Zlecenie ma już wycenę w efenix i różni się ona od Pliku zbiorczego: kwota w efenix 150,00 zł, Kwota (AU) 125,50 zł. Inne ilości: pozycja INDEKS_005 (bez kolumny w Pliku zbiorczym), pozycja INDEKS_012 (kolumna O). Zlecenie zostało w efenix bez zmian.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź wycenę w efenix i Plik zbiorczy, popraw tę, która jest błędna, i uruchom ponownie.
+
+order_error #12 [EFENIX_WYCENA_INNA]
+  Co się stało: Zlecenie ma już wycenę w efenix i różni się ona od Pliku zbiorczego: kwota w efenix 150,00 zł, Kwota (AU) 125,50 zł. Zlecenie zostało w efenix bez zmian.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź wycenę w efenix i Plik zbiorczy, popraw tę, która jest błędna, i uruchom ponownie.
+
+order_error #13 [EFENIX_INNA_KWOTA]
+  Co się stało: Po dopisaniu ilości z Pliku zbiorczego kwota w efenix to 1234,50 zł, a Kwota (AU) 1200,00 zł. Ilości z pliku są już wpisane w efenix.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź wycenę w efenix i Plik zbiorczy, popraw tę, która jest błędna, i uruchom ponownie.
+
+emmett_conflict [EFENIX_SPRZECZNOSC_Z_EMMETTEM]
+  Co się stało: Wycena Emmetta ma inne ilości niż Plik zbiorczy: pozycja INDEKS_012 (kolumna O): Emmett 2, plik 1; pozycja INDEKS_020 (bez kolumny w Pliku zbiorczym): Emmett 1, plik 0. Wycena Emmetta jest załadowana, a narzędzie niczego do niej nie dopisało.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Rozstrzygnij, czy rację ma Emmett, czy Plik zbiorczy, i popraw wycenę w efenix sam.
+
 unexpected_failure [EFENIX_BLAD_NIEOCZEKIWANY]
-  Co się stało: Wycena w efenix zatrzymała się przez nieoczekiwany błąd. Część zleceń mogła zostać sprawdzona.
+  Co się stało: Wycena w efenix zatrzymała się przez nieoczekiwany błąd. Część zleceń mogła zostać już wyceniona w efenix.
   Gdzie: Wycena w efenix
   Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 

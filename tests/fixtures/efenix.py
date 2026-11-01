@@ -25,8 +25,10 @@ DAY = date(2026, 9, 9)
 class Order:
     """Zlecenie w obu miejscach naraz: Wiersz danych Pliku zbiorczego i to samo zlecenie w Atrapie efenix.
 
-    ``cells``: dodatkowe komórki wiersza (litera → wartość), np. ilości w kolumnach Zlecenia ze zdjęciami. ``amount``:
-    ``Kwota`` (AU), którą „policzył Excel”; ``None`` zostawia formułę bez policzonej wartości.
+    ``cells``: dodatkowe komórki wiersza (litera → wartość), np. Ilości usług albo ilości w kolumnach Zlecenia ze
+    zdjęciami. ``amount``: ``Kwota`` (AU), którą „policzył Excel”, domyślnie 0 jak w zleceniu bez Ilości usług; ``None``
+    zostawia formułę bez policzonej wartości. ``quantities``: wycena, która już jest w efenix (kod → ilość), ``emmett``:
+    propozycja Emmetta w tym samym kształcie.
     """
 
     number: str
@@ -34,13 +36,22 @@ class Order:
     address: str = "UL. TESTOWA 12/3"
     day: date | None = DAY
     cells: Mapping[str, CellValue] = field(default_factory=dict)
-    amount: float | None = 150.0
+    amount: float | None = 0.0
     efenix_address: str = "Miasto-Dzielnica ul.Testowa 12 Lokal 3"
+    quantities: Mapping[str, int] = field(default_factory=dict)
+    emmett: Mapping[str, int] = field(default_factory=dict)
 
     def in_efenix(self, order_id: str) -> AtrapaOrder:
-        """To zlecenie w Atrapie z identyfikatorem ``order_id``, zgodne z Plikiem zbiorczym."""
+        """To zlecenie w Atrapie z identyfikatorem ``order_id``, zgodne z Plikiem zbiorczym, z jego wyceną i Emmettem."""
 
-        return AtrapaOrder(order_id=order_id, number=self.number.removeprefix("#"), realizator=self.worker, address=self.efenix_address)
+        return AtrapaOrder(
+            order_id=order_id,
+            number=self.number.removeprefix("#"),
+            realizator=self.worker,
+            address=self.efenix_address,
+            quantities=dict(self.quantities),
+            emmett=dict(self.emmett),
+        )
 
 
 def write_collective_file(directory: Path, orders: Sequence[Order]) -> Path:

@@ -48,15 +48,15 @@ class ListedOrder:
     order_id: str
 
 
-def searched_number(order: CollectiveOrder) -> str | OrderProblem:
-    """Numer, po którym proces szuka zlecenia, albo niezgodność, którą widać bez efenix: wiersz bez ``NUMER ZL.`` albo
-    bez daty w ``DATA``."""
+def searched_number(order: CollectiveOrder) -> tuple[str, date] | OrderProblem:
+    """Numer, po którym proces szuka zlecenia, i dzień z ``DATA`` albo niezgodność, którą widać bez efenix: wiersz bez
+    ``NUMER ZL.`` albo bez daty w ``DATA``."""
 
     if order.number is None:
         return OrderProblem.NO_NUMBER
     if order.day is None:
         return OrderProblem.NO_DATE
-    return order.number
+    return order.number, order.day
 
 
 def listing(order: CollectiveOrder, listed: Sequence[ListedOrder]) -> ListedOrder | OrderProblem:

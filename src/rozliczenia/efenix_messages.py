@@ -8,15 +8,18 @@ loginów Wykonawców i treści stron efenix, bo trafiają też do Logów Uruchom
 from __future__ import annotations
 
 from collections.abc import Sequence
+from decimal import Decimal
 from pathlib import Path
 from typing import Final
 
 from .efenix_checks import OrderProblem
+from .efenix_positions import Conflict, NotWholeQuantities, OrderFault, OtherAmount, PricedDifferently, UnpairedColumns, column_of
 from .message import REPORT_TO_MAINTAINER, Message, file_label
 from .workbook_files import Problem, WorkbookError
 
 _PROCESS: Final = "Wycena w efenix"
 _UNCHANGED: Final = "W efenix nic się nie zmieniło."
+_KEPT: Final = "Wycena zleceń sprzed zatrzymania została w efenix."
 _EFENIX: Final = "okno efenix"
 
 
@@ -100,7 +103,7 @@ def logged_out() -> Message:
 
     return Message(
         code="EFENIX_WYLOGOWANY",
-        what=f"efenix pokazał stronę logowania, więc {_PROCESS} się zatrzymała. {_UNCHANGED}",
+        what=f"efenix pokazał stronę logowania, więc {_PROCESS} się zatrzymała. {_KEPT}",
         where=_EFENIX,
         action="Zaloguj się w efenix i uruchom ponownie.",
     )
@@ -111,7 +114,7 @@ def efenix_changed() -> Message:
 
     return Message(
         code="EFENIX_ZMIENIONY",
-        what=f"Strona efenix wygląda inaczej niż zwykle, więc narzędzie niczego w niej nie kliknęło. {_UNCHANGED}",
+        what=f"Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i dalej niczego w niej nie klika. {_KEPT}",
         where=_EFENIX,
         action=REPORT_TO_MAINTAINER,
     )
@@ -122,7 +125,7 @@ def efenix_unreachable() -> Message:
 
     return Message(
         code="EFENIX_NIEDOSTEPNY",
-        what=f"Nie udało się otworzyć efenix. {_UNCHANGED}",
+        what=f"Nie udało się otworzyć efenix. {_KEPT}",
         where=_EFENIX,
         action=(
             "Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Jeśli błąd "
@@ -131,24 +134,84 @@ def efenix_unreachable() -> Message:
     )
 
 
-def order_error(source: Path, row: int, problem: OrderProblem) -> Message:
-    """Zlecenie z wiersza ``row`` Pliku zbiorczego, którego proces nie ruszył w efenix, bo ``problem``."""
+def order_error(source: Path, row: int, problem: OrderFault) -> Message:
+    """Zlecenie z wiersza ``row`` Pliku zbiorczego, które proces zostawia tacie, bo ``problem``.
+
+    Kwota inna niż AU po dopisaniu ilości to jedyny błąd, przy którym proces zmienił już wycenę w efenix.
+    """
 
     code, what, action = _order_error(problem)
+    unchanged = "" if isinstance(problem, OtherAmount) else " Zlecenie zostało w efenix bez zmian."
     return Message(
         code=code,
         dad_file="collective_file",
-        what=f"{what} Zlecenie zostało w efenix bez zmian.",
+        what=f"{what}{unchanged}",
         where=f"{file_label(source)}, wiersz {row}",
         action=action,
+    )
+
+
+def emmett_conflict(source: Path, row: int, conflicts: Sequence[Conflict]) -> Message:
+    """Emmett wpisał w zleceniu z wiersza ``row`` ilości inne niż Plik zbiorczy, więc proces niczego nie dopisał."""
+
+    listed = "; ".join(f"{_position(conflict.position)}: Emmett {conflict.emmett}, plik {conflict.file}" for conflict in conflicts)
+    return Message(
+        code="EFENIX_SPRZECZNOSC_Z_EMMETTEM",
+        dad_file="collective_file",
+        what=(
+            f"Wycena Emmetta ma inne ilości niż Plik zbiorczy: {listed}. Wycena Emmetta jest załadowana, a narzędzie niczego "
+            "do niej nie dopisało."
+        ),
+        where=f"{file_label(source)}, wiersz {row}",
+        action="Rozstrzygnij, czy rację ma Emmett, czy Plik zbiorczy, i popraw wycenę w efenix sam.",
     )
 
 
 _PRICE_YOURSELF: Final = "Sprawdź zlecenie w efenix i wyceń je sam."
 
 
-def _order_error(problem: OrderProblem) -> tuple[str, str, str]:
+def _position(position: str) -> str:
+    column = column_of(position)
+    return f"pozycja INDEKS_{position} ({'bez kolumny w Pliku zbiorczym' if column is None else f'kolumna {column}'})"
+
+
+def _amount(amount: Decimal) -> str:
+    return f"{amount:.2f}".replace(".", ",") + " zł"
+
+
+def _order_error(problem: OrderFault) -> tuple[str, str, str]:
     match problem:
+        case UnpairedColumns(columns):
+            return (
+                "EFENIX_KOLUMNA_BEZ_POZYCJI",
+                f"Zlecenie ma ilość w kolumnach, które nie mają pozycji w efenix: {', '.join(columns)}.",
+                _PRICE_YOURSELF,
+            )
+        case NotWholeQuantities(columns):
+            return (
+                "EFENIX_ILOSC_NIECALKOWITA",
+                f"Ilość usług nie jest liczbą całkowitą większą od 0 w kolumnach: {', '.join(columns)}.",
+                "Popraw ilość w Pliku zbiorczym albo wyceń zlecenie w efenix sam.",
+            )
+        case PricedDifferently(efenix_amount, file_amount, positions):
+            different = f" Inne ilości: {', '.join(_position(position) for position in positions)}." if positions else ""
+            return (
+                "EFENIX_WYCENA_INNA",
+                (
+                    f"Zlecenie ma już wycenę w efenix i różni się ona od Pliku zbiorczego: kwota w efenix {_amount(efenix_amount)},"
+                    f" Kwota (AU) {_amount(file_amount)}.{different}"
+                ),
+                "Sprawdź wycenę w efenix i Plik zbiorczy, popraw tę, która jest błędna, i uruchom ponownie.",
+            )
+        case OtherAmount(efenix_amount, file_amount):
+            return (
+                "EFENIX_INNA_KWOTA",
+                (
+                    f"Po dopisaniu ilości z Pliku zbiorczego kwota w efenix to {_amount(efenix_amount)}, a Kwota (AU)"
+                    f" {_amount(file_amount)}. Ilości z pliku są już wpisane w efenix."
+                ),
+                "Sprawdź wycenę w efenix i Plik zbiorczy, popraw tę, która jest błędna, i uruchom ponownie.",
+            )
         case OrderProblem.NO_NUMBER:
             return "EFENIX_BRAK_NUMERU", "Wiersz nie ma numeru zlecenia w NUMER ZL.", "Uzupełnij NUMER ZL. w Pliku zbiorczym albo wyceń zlecenie w efenix sam."
         case OrderProblem.NO_DATE:
@@ -172,7 +235,7 @@ def unexpected_failure() -> Message:
 
     return Message(
         code="EFENIX_BLAD_NIEOCZEKIWANY",
-        what=f"{_PROCESS} zatrzymała się przez nieoczekiwany błąd. Część zleceń mogła zostać sprawdzona.",
+        what=f"{_PROCESS} zatrzymała się przez nieoczekiwany błąd. Część zleceń mogła zostać już wyceniona w efenix.",
         where=_PROCESS,
         action=REPORT_TO_MAINTAINER,
     )
