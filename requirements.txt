@@ -7,5 +7,6 @@ pytest-timeout>=2.4
 pytest-xdist>=3.8
 httpx2>=2.14
 hypothesis>=6.170
+playwright>=1.64
 greenlet>=3.1
 tzdata>=2026.5; sys_platform == "win32"

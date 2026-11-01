@@ -429,7 +429,7 @@ _Avoid_: rejestr procesów, lista procesów
 
 Jedyne wejście do procesów spoza Centrum rozliczeń, dla testów, pomiarów czasu
 i osoby utrzymującej narzędzie. Przyjmuje parametrami pliki i okres, gdy
-proces go ma, z nikim nie rozmawia i oddaje wynik w kształcie karty Uruchomienia. Jego Uruchomienia
+proces go ma, a Wycena w efenix także adres efenix (w testach Atrapy efenix), z nikim nie rozmawia i oddaje wynik w kształcie karty Uruchomienia. Jego Uruchomienia
 procesu mają w historii Centrum odznakę `.cmd`, tę samą co stare Uruchomienia
 z dawnych launcherów.
 _Avoid_: CLI, launcher

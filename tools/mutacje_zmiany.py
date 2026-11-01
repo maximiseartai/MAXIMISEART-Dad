@@ -115,7 +115,7 @@ from __future__ import annotations
 import argparse
 import ast
 from collections import defaultdict
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 import datetime
 import difflib
@@ -804,6 +804,18 @@ def entry(mutant: Mutant, text: str) -> dict[str, object]:
     return {"id": _name(mutant), "linie": sorted(mutant.lines), "klucz": fingerprint(mutant, text)}
 
 
+def share(every: Sequence[Mutant], number: int, count: int) -> Sequence[Mutant]:
+    """Mutacje części ``number`` z ``count``: jej kolejny kawałek listy ``every``, każda mutacja w jednej części."""
+
+    return every[len(every) * (number - 1) // count : len(every) * number // count]
+
+
+def tests_of(repository: wplyw_zmiany.Repository, paths: Iterable[str]) -> dict[str, list[str]]:
+    """Testy dotknięte każdym plikiem z ``paths``: tylko spośród nich biegną testy mutacji tego pliku."""
+
+    return {path: list(repository.impact(frozenset({path})).tests) for path in paths}
+
+
 def _mutate(args: argparse.Namespace, survived: list[tuple[Mutant, str]], gate: mutacje.Gate) -> tuple[int, str]:
     """Kod wyjścia i ostatnia linia; przeżyte mutacje z treścią ich pliku przed mutacją dopisuje do ``survived``."""
 
@@ -824,13 +836,13 @@ def _mutate(args: argparse.Namespace, survived: list[tuple[Mutant, str]], gate: 
     except ValueError as error:
         return 2, f"MUTACJE ZMIANY FAIL | {error}"
     every = [mutant for path, text in texts.items() for mutant in selected(path, text, hunks[path])]
-    found = every[len(every) * (number - 1) // count : len(every) * number // count]
+    found = share(every, number, count)
     if not found:
         where = f" w części {number}/{count}" if every else ""
         return 0, f"MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i tools/ od {args.baza}{where}"
     paths = {mutant.path for mutant in found}
     repository = wplyw_zmiany.Repository.scan(ROOT)
-    by_file = {path: list(repository.impact(frozenset({path})).tests) for path in paths}
+    by_file = tests_of(repository, paths)
     tests = sorted({test for chosen in by_file.values() for test in chosen})
     part = f" (część {number}/{count} z {len(every)})" if count > 1 else ""
     print(f"Mutacje: {len(found)}{part} w {len(paths)} plikach src/ i tools/ od {args.baza}. Testy dotknięte zmianą: {len(tests)}.", flush=True)

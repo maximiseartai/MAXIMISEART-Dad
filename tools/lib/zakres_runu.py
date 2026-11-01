@@ -6,6 +6,7 @@ wynik, ``tools/skille_dla_zmiany.py`` drukuje z niego linie ``LICZY CI`` i ``LIC
 
     praca = zakres(Zdarzenie.PULL_REQUEST, changed_since(ROOT, "origin/main"), ROOT)
     praca.tory, praca.pliki, praca.zrodlo        # pytest: tory z krokami CI i pliki testów
+    praca.przegladarka                           # pliki testów, którym zadanie pytest instaluje Chromium
     praca.wybrane, praca.pominiete, praca.bledy  # kroki skilli z powodem i FAIL-e ich znalezienia
     praca.polecenia(skill)                       # polecenia skilla, które CI liczy w tym runie
 
@@ -15,7 +16,10 @@ request to bramka PR: tory Windows 3.11 (minimum u taty) i Linux 3.14, na każdy
 (``tools/lib/wplyw_zmiany.py``) i testy ``STRUCTURE`` (węzeł ``plik::test`` biegnie sam, gdy jego pliku nie ma w
 wyborze). Zmiana ścieżki, która w tabeli reguł wpływu uruchamia wszystko w bramce PR (``Context.PR_GATE``), wybiera
 wszystkie pliki, E2E i straż czasu. Inaczej na Windows 3.11 E2E biegnie przy zmianie pod ``src/``, a straż czasu przy
-zmianie w domknięciu jej skryptów (``STRAZ``). Noc (workflow ``mutacje-nocne.yml``) nie ma pytest.
+zmianie w domknięciu jej skryptów (``STRAZ``). Noc (workflow ``mutacje-nocne.yml``) nie ma pytest. Plik testów, który
+sięga ``PRZEGLADARKA`` (Atrapa efenix, z którą rozmawia tylko przeglądarka: Chromium testu albo Skryptu dla maszyn),
+potrzebuje Chromium (``potrzebuja_chromium``), więc zadanie pytest z nim je instaluje, a nocą część Change mutations,
+której mutacje sprawdzają takie testy (``tools/mutacje_nocne.py``).
 
 Kroki skilli (``tools/lib/kroki_skilli.py``). Na pushu biegnie każdy. Na pull request biegnie podstawa ``ci:``, gdy
 zmieniony jest plik z ``pilnuje`` albo plik w folderze skilla, i skrypt mutacji modelu TLA+ (``model_watched``: każda
@@ -44,7 +48,8 @@ from kroki_skilli import Step, hits, model_watched, repeats, watched, znajdz
 from wplyw_zmiany import Context, Repository, run_all, with_structure
 
 __all__ = [
-    "E2E", "KROKI", "MUTACJE", "STRAZ", "TIMING", "TORY", "Krok", "KrokSkilla", "Tor", "ZakresRunu", "Zdarzenie", "pliki_testow", "zakres",
+    "E2E", "KROKI", "MUTACJE", "PRZEGLADARKA", "STRAZ", "TIMING", "TORY", "Krok", "KrokSkilla", "Tor", "ZakresRunu", "Zdarzenie", "pliki_testow",
+    "potrzebuja_chromium", "zakres",
 ]
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -112,6 +117,9 @@ TIMING = Krok(
 KROKI = {krok.nazwa: krok for krok in (E2E, TIMING)}
 # Skrypty straży czasu: na pull request biegnie, gdy zmiana sięga ich wykonania (import, czytany plik).
 STRAZ = ("tools/syntetyczne_wzorce.py", "tools/benchmark_przebiegu.py")
+# Atrapa efenix odpowiada tylko przeglądarce: plik testów, który sięga jej modułu, prowadzi Chromium sam albo przez
+# Skrypt dla maszyn.
+PRZEGLADARKA = "tests/fixtures/atrapa_efenix.py"
 
 
 @dataclass(frozen=True)
@@ -161,6 +169,7 @@ class ZakresRunu:
     wybrane: tuple[KrokSkilla, ...]
     pominiete: tuple[tuple[Step, str], ...]
     bledy: tuple[tuple[str, str], ...]
+    przegladarka: frozenset[str] = frozenset()  # pliki z ``pliki``, które sięgają ``PRZEGLADARKA``
 
     def kroki_skilla(self, skill: Path) -> list[Step]:
         """Wybrane kroki skilla ``skill`` (folder), w kolejności wyboru."""
@@ -188,7 +197,15 @@ def zakres(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path = ROOT) -> Z
         KrokSkilla(step, why[step][1], _czesci(step, zdarzenie)) for step in running if step.verdict or not repeats(step, running)
     )
     pominiete = tuple((step, why[step][1]) for step in found if not why[step][0])
-    return ZakresRunu(zdarzenie, tory, pliki, zrodlo, wybrane, pominiete, tuple(sorted(failed.items())))
+    przegladarka = potrzebuja_chromium(pliki, Repository.scan(root)) if pliki else frozenset()
+    return ZakresRunu(zdarzenie, tory, pliki, zrodlo, wybrane, pominiete, tuple(sorted(failed.items())), przegladarka)
+
+
+def potrzebuja_chromium(testy: Iterable[str], repository: Repository) -> frozenset[str]:
+    """Pliki testów z ``testy`` (pliki i węzły ``plik::test``), które sięgają ``PRZEGLADARKA``, więc zadanie CI, które
+    je uruchamia (pytest planu albo część nocnych Change mutations), instaluje Chromium."""
+
+    return repository.reaching(PRZEGLADARKA) & {test.partition("::")[0] for test in testy}
 
 
 def _pytest(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path) -> tuple[tuple[Tor, ...], tuple[str, ...], str]:

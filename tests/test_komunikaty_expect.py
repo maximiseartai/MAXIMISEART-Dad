@@ -24,7 +24,7 @@ import typing
 import pytest
 
 import rozliczenia
-from rozliczenia import intermax_messages, settlement_messages
+from rozliczenia import efenix_messages, intermax_messages, settlement_messages
 from rozliczenia import preparation_messages as messages
 from rozliczenia.centrum import (
     contract,
@@ -47,6 +47,7 @@ from tests.fixtures import message_samples
 from tests.fixtures.expect import assert_expected
 from tests.fixtures.message_samples import (
     DIAGNOSIS_SAMPLES,
+    EFENIX_SAMPLES,
     FILL_SAMPLES,
     INTERMAX_SAMPLES,
     NOTIFICATION_SAMPLES,
@@ -70,6 +71,7 @@ CATALOGS: dict[str, tuple[ModuleType, Samples]] = {
     "Powiadomienia": (notification_messages, NOTIFICATION_SAMPLES),
     "Aktualizacja narzędzia": (update_messages, UPDATE_SAMPLES),
     "Uporządkowanie INTERMAX": (intermax_messages, INTERMAX_SAMPLES),
+    "Wycena w efenix": (efenix_messages, EFENIX_SAMPLES),
 }
 # Komunikat karty Urwanego Uruchomienia (contract.Message) nie ma kodu; tytuł procesu jest syntetyczny.
 OUTSIDE_CATALOGS: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], Message | contract.Message]]]]] = {

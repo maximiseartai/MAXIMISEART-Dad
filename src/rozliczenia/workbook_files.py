@@ -12,7 +12,8 @@ Komunikatów: proces tłumaczy powód na Komunikat ze swojego katalogu.
 Moduł jest właścicielem układu arkusza Pliku zbiorczego, wspólnego dla Wzorca
 pliku zbiorczego, Wzorca rozliczenia pracownika i Szablonów pracowników:
 nagłówek w wierszu 17 z WYKONAWCA w H, Wiersze danych od 18, dane wejściowe
-A:K, kolumny wyglądu A:L (``row_look``), ilości N:AP i kolumny Wiersza danych A:AT. Publiczne są etykieta komórki
+A:K, kolumny wyglądu A:L (``row_look``), ilości N:AP, kolumny Wiersza danych A:AT i ``Kwota`` w AU, którą Wycena w efenix
+czyta tak, jak policzył ją Excel (``read_computed_rows``). Publiczne są etykieta komórki
 nagłówka ``WORKER_HEADER`` do treści Komunikatów oraz wiersze i kolumny układu dla pliku z Wzorca i
 narzędzi benchmarku w ``tools/``, żeby nie powtarzały układu.
 """
@@ -80,6 +81,7 @@ INPUT_COLUMNS = range(1, 12)  # A:K: nagłówki w wierszu 17 i dane wejściowe W
 LOOK_COLUMNS = range(1, 13)  # A:L: kolumny wyglądu Wiersza danych
 QUANTITY_COLUMNS = range(14, 43)  # N:AP
 DATA_ROW_COLUMNS = range(1, 47)  # A:AT: kopiowane z Pliku zbiorczego do Szablonu pracownika
+_AMOUNT_COLUMN = 47  # AU: Kwota zlecenia, którą liczy formuła Pliku zbiorczego
 
 
 _ExcelCellValue = (
@@ -294,12 +296,16 @@ def classified(path: Path, items: Iterator[_T]) -> Iterator[_T]:
         yield item
 
 
-def _open(path: Path, source: IO[bytes], *, read_only: bool) -> Workbook:
-    """Skoroszyt ``path`` otwarty przez openpyxl z jego bajtów (``_file_bytes``) z klasyfikacją uszkodzeń."""
+def _open(path: Path, source: IO[bytes], *, read_only: bool, computed: bool = False) -> Workbook:
+    """Skoroszyt ``path`` otwarty przez openpyxl z jego bajtów (``_file_bytes``) z klasyfikacją uszkodzeń.
+
+    ``computed`` (tylko do odczytu): komórka z formułą ma wartość, którą Excel policzył przy ostatnim zapisie, a bez niej
+    ``None``.
+    """
 
     with unreadable_as_error(path):
         if read_only:
-            workbook = load_workbook(source, read_only=True, data_only=False)
+            workbook = load_workbook(source, read_only=True, data_only=computed)
         else:
             workbook = load_workbook(source, read_only=False, data_only=False, keep_links=True)
     if not isinstance(workbook.active, (Worksheet, ReadOnlyWorksheet)):
@@ -421,6 +427,68 @@ def read_data_rows(path: Path, *, despite_excel_lock: bool = False) -> DataRows:
         for column, name in enumerate(price_list, start=QUANTITY_COLUMNS[0])
     }
     return DataRows(header_columns(header), rows, names)
+
+
+@dataclass(frozen=True)
+class ComputedRow:
+    """Wiersz danych Pliku zbiorczego z wartościami komórek A:AU tak, jak Excel je policzył przy ostatnim zapisie.
+
+    ``number`` to numer wiersza w Pliku zbiorczym; komórka z formułą, której Excel nie policzył, ma ``None``.
+    """
+
+    number: int
+    values: ExcelRow
+
+    def value(self, column: str) -> _ExcelCellValue:
+        """Wartość komórki w kolumnie ``column`` (litera, np. ``AU``)."""
+
+        index = column_index_from_string(column) - 1
+        return self.values[index] if index < len(self.values) else None
+
+
+@dataclass(frozen=True)
+class ComputedRows:
+    """Wiersze danych Pliku zbiorczego z wartościami policzonymi przez Excel i nagłówki A17:K17 z tego samego odczytu.
+
+    ``header``: znormalizowany nagłówek (``header_columns``) → kolumna od 1.
+    """
+
+    header: Mapping[str, int]
+    rows: list[ComputedRow]
+
+
+def read_computed_rows(path: Path, *, despite_excel_lock: bool = False) -> ComputedRows:
+    """Wiersze danych Pliku zbiorczego (A:AU) z wartościami, które policzył Excel, w kolejności z pliku; plik jest tylko
+    czytany.
+
+    Wiersz bez wartości w A:K nie jest Wierszem danych i jest pomijany, a brak nagłówka WYKONAWCA w H17 to
+    ``WorkbookError`` ze złym układem, tak jak w ``read_data_rows``. Plik otwarty w Excelu to ``WorkbookError``, chyba
+    że wywołujący jawnie pozwala go czytać (``despite_excel_lock``, ADR 0016).
+    """
+
+    ensure_available(path, despite_excel_lock=despite_excel_lock)
+    content = _file_bytes(path)
+    with unreadable_as_error(path):
+        content = rows_with_input(content, INPUT_COLUMNS[-1])
+    workbook = _open(path, BytesIO(content), read_only=True, computed=True)
+    try:
+        sheet = cast(Worksheet, workbook.active)  # tylko do odczytu: ReadOnlyWorksheet
+        header = next(
+            classified(path, sheet.iter_rows(min_row=HEADER_ROW, max_row=HEADER_ROW, max_col=INPUT_COLUMNS[-1], values_only=True)),
+            (),
+        )
+        check_worker_header(path, sheet.title, header)
+        rows = [
+            ComputedRow(number, values)
+            for number, values in enumerate(
+                classified(path, sheet.iter_rows(min_row=FIRST_DATA_ROW, max_col=_AMOUNT_COLUMN, values_only=True)),
+                start=FIRST_DATA_ROW,
+            )
+            if any(value is not None for value in values[: INPUT_COLUMNS[-1]])
+        ]
+    finally:
+        workbook.close()
+    return ComputedRows(header_columns(header), rows)
 
 
 class _HighlightsReader:

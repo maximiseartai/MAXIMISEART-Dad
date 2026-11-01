@@ -220,6 +220,26 @@ jobs:
         # The pre-push hook test runs the real ruff and mypy from tools/ci_lokalnie.py.
         run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
 
+      # Test files that reach Atrapa efenix (tests/fixtures/atrapa_efenix.py) drive a real browser, in the test or through
+      # the machine script; the plan marks the jobs that run them. Playwright comes with the tool's dependencies, so only its browser is missing.
+      - name: Playwright version
+        id: playwright
+        if: ${{ matrix.przegladarka }}
+        shell: bash
+        run: python -c "from importlib.metadata import version; print('version=' + version('playwright'))" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Chromium
+        if: ${{ matrix.przegladarka }}
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
+          key: chromium-headless-shell-${{ runner.os }}-playwright-${{ steps.playwright.outputs.version }}
+
+      # Linux also needs the system libraries of the headless shell, which the cache does not hold.
+      - name: Install Chromium
+        if: ${{ matrix.przegladarka }}
+        run: python -m playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} --only-shell chromium
+
       - uses: actions/download-artifact@v8
         with:
           name: plan

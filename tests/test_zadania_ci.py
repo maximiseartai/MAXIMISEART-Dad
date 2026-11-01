@@ -15,6 +15,7 @@ import re
 import shlex
 import subprocess
 import sys
+from typing import Any
 
 import pytest
 import yaml
@@ -92,6 +93,33 @@ def test_mutation_checks_instaluja_playwright_i_chromium_tylko_w_zadaniu_ktore_p
     installs = {step["name"]: step.get("if") for step in steps if "playwright" in step.get("run", "") or ".[dev]" in step.get("run", "")}
 
     assert installs == {"Install Playwright": "${{ matrix.przegladarka }}", "Install Chromium": "${{ matrix.przegladarka }}"}
+
+
+def test_zadanie_pytest_instaluje_chromium_tylko_gdy_plan_oznaczyl_je_plikiem_testow_atrapy_efenix() -> None:
+    steps = jobs()["pytest"]["steps"]
+
+    browser = {step["name"]: step.get("if") for step in steps if "playwright" in str(step.get("run", "")) + str(step.get("with", ""))}
+
+    assert browser == dict.fromkeys(["Playwright version", "Cache Chromium", "Install Chromium"], "${{ matrix.przegladarka }}")
+
+
+TESTS_RUN_BY = ("tools/plan_ci.py wykonaj", "tools/mutacje_zmiany.py")
+
+
+@pytest.mark.parametrize("workflow", sorted(WORKFLOW.parent.glob("*.yml")), ids=lambda path: path.name)
+def test_kazde_zadanie_ktore_uruchamia_testy_albo_kroki_skilli_instaluje_chromium_gdy_plan_je_oznaczyl(workflow: Path) -> None:
+    """Test, który sięga Atrapy efenix, albo skrypt skilla z Playwrightem bez Chromium pada, zanim cokolwiek sprawdzi.
+    Takie testy i skrypty uruchamiają tylko plan runu (``plan_ci.py wykonaj``) i część Change mutations
+    (``mutacje_zmiany.py``), a ich plan oznacza zadanie ``przegladarka``."""
+
+    workflow_jobs: dict[str, dict[str, Any]] = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]
+    running = {name: job for name, job in workflow_jobs.items() if any(tool in str(job.get("steps")) for tool in TESTS_RUN_BY)}
+
+    installs = {
+        name: [step.get("if") for step in job["steps"] if "playwright install" in step.get("run", "")] for name, job in running.items()
+    }
+
+    assert installs == dict.fromkeys(running, ["${{ matrix.przegladarka }}"])
 
 
 def _required(

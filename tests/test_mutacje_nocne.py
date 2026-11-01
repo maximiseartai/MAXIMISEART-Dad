@@ -445,10 +445,48 @@ def test_plan_dzieli_mutacje_od_bazy_na_czesci_dla_macierzy_workflow(
 
     wyjscie = capsys.readouterr().out.splitlines()
     assert kod == 0, wyjscie
-    assert wyjscie[-1] == f"MUTACJE NOCNE PLAN | baza {baza} (--od {baza}) | mutacje {mutacje} | części {len(czesci)}"
+    assert wyjscie[-1] == f"MUTACJE NOCNE PLAN | baza {baza} (--od {baza}) | mutacje {mutacje} | części {len(czesci)} | z Chromium 0"
     assert (f"MUTACJE NOCNE | {ZLY_WYJATEK}; część mutacji to zgłosi" in wyjscie) == (mutacje == 1)
     output = dict(linia.split("=", 1) for linia in (tmp_path / "output").read_text(encoding="utf-8").splitlines())
-    assert output == {"baza": baza, "czesci": json.dumps(czesci), "liczba": str(len(czesci))}
+    macierz = [{"czesc": czesc, "przegladarka": False} for czesc in czesci]
+    assert output == {"baza": baza, "czesci": json.dumps(macierz), "liczba": str(len(czesci))}
+
+
+def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_inna_nie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Test pliku ``okno.py`` sięga Atrapy efenix przez fixture, więc biegnie w prawdziwej przeglądarce; test ``a.py``
+    nie. Każdy plik ma swoją część (po dwie mutacje: granica porównania i cofnięcie fragmentu)."""
+
+    fixture = "from tests.fixtures.atrapa_efenix import ATRAPA as OKNO\n"
+    repo = repository(
+        tmp_path / "repo",
+        {
+            "src/pakiet/__init__.py": "",
+            "src/pakiet/a.py": "def a(x: int) -> bool:\n    return x > 1\n",
+            "src/pakiet/okno.py": "def b(x: int) -> bool:\n    return x > 1\n",
+            "tests/__init__.py": "",
+            "tests/fixtures/__init__.py": "",
+            "tests/fixtures/atrapa_efenix.py": "ATRAPA = 1\n",
+            "tests/fixtures/okno.py": fixture,
+            "tests/test_a.py": "from pakiet.a import a\n\n\ndef test_a() -> None:\n    assert a(2)\n",
+            "tests/test_okno.py": "from pakiet.okno import b\nfrom tests.fixtures.okno import OKNO\n\n\ndef test_b() -> None:\n    assert b(OKNO + 1)\n",
+        },
+    )
+    baza = commit(repo, "baza")
+    for sciezka, funkcja in (("src/pakiet/a.py", "a"), ("src/pakiet/okno.py", "b")):
+        (repo / sciezka).write_text(f"def {funkcja}(x: int) -> bool:\n    return x > 2\n", encoding="utf-8")
+    commit(repo, "zmiana")
+    for modul in (mutacje_nocne, mutacje_zmiany):
+        monkeypatch.setattr(modul, "ROOT", repo)
+    monkeypatch.setattr(mutacje_nocne, "NA_CZESC", 2)
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
+
+    kod = mutacje_nocne.main(["plan", "--od", baza])
+
+    output = dict(linia.split("=", 1) for linia in (tmp_path / "output").read_text(encoding="utf-8").splitlines())
+    assert (kod, capsys.readouterr().out.splitlines()[-1].rpartition(" | ")[2]) == (0, "z Chromium 1")
+    assert json.loads(output["czesci"]) == [{"czesc": 1, "przegladarka": False}, {"czesc": 2, "przegladarka": True}]
 
 
 @pytest.mark.parametrize(("mutacje", "czesci"), [(0, 0), (1, 1), (25, 1), (26, 2), (500, 20), (10_000, 20)])
@@ -482,7 +520,7 @@ def test_kazda_czesc_mutuje_od_bazy_planu_i_wgrywa_zapis_pod_nazwa_ktora_czyta_z
     pobranie = next(krok for krok in zgloszenie["steps"] if "download-artifact" in krok.get("uses", ""))
     polecenie_zgloszenia = shlex.split(next(krok["run"] for krok in zgloszenie["steps"] if "zglos" in krok.get("run", "")))
 
-    assert (czesc["needs"], czesc["strategy"]["matrix"]["czesc"]) == ("plan", "${{ fromJSON(needs.plan.outputs.czesci) }}")
+    assert (czesc["needs"], czesc["strategy"]["matrix"]) == ("plan", {"include": "${{ fromJSON(needs.plan.outputs.czesci) }}"})
     assert krok["env"] == {"BAZA": "${{ needs.plan.outputs.baza }}", "CZESC": "${{ matrix.czesc }}/${{ needs.plan.outputs.liczba }}"}
     assert polecenie[polecenie.index("--baza") + 1] == "$BAZA" and polecenie[polecenie.index("--czesc") + 1] == "$CZESC"
     assert "continue-on-error" not in krok
@@ -519,6 +557,23 @@ def _instalacje_na_linuksie(zadanie: dict[str, Any]) -> list[str]:
 def test_czesc_instaluje_to_samo_co_czesci_pytest_na_linuksie() -> None:
     # Część uruchamia testy dotknięte zmianą, a testy tools/scal_pr.py i tools/ci/status_scalenia.py wołają ruff i mypy.
     assert _instalacje_na_linuksie(_nocne()["jobs"]["change-mutations"]) == _instalacje_na_linuksie(jobs()["pytest"])
+
+
+def _kroki_chromium(zadanie: dict[str, Any]) -> list[dict[str, Any]]:
+    return [krok for krok in zadanie["steps"] if "playwright" in str(krok.get("run", "")) + str(krok.get("with", ""))]
+
+
+def test_czesc_oznaczona_przez_plan_instaluje_chromium_tymi_samymi_krokami_co_zadanie_pytest() -> None:
+    """Część przed mutacjami uruchamia testy dotknięte zmianą, a test, który sięga Atrapy efenix, bez Chromium pada,
+    zanim cokolwiek sprawdzi; wtedy część kończy się kodem 2 i czerwieni noc."""
+
+    czesc = _nocne()["jobs"]["change-mutations"]
+    kroki = _kroki_chromium(czesc)
+    mutacje_czesci = next(i for i, krok in enumerate(czesc["steps"]) if "tools/mutacje_zmiany.py" in krok.get("run", ""))
+
+    assert kroki == _kroki_chromium(jobs()["pytest"])
+    assert [krok.get("if") for krok in kroki] == ["${{ matrix.przegladarka }}"] * 3
+    assert max(czesc["steps"].index(krok) for krok in kroki) < mutacje_czesci
 
 
 def _historia_skilli(tmp_path: Path) -> tuple[Path, str]:

@@ -1019,6 +1019,118 @@ plan_not_shown [BLAD_PLANU]
   Gdzie: Uporządkowanie INTERMAX
   Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
+=== Wycena w efenix (src/rozliczenia/efenix_messages.py) ===
+
+source_unusable #1 [EFENIX_BRAK_PLIKU_ZBIORCZEGO]
+  Co się stało: Nie znaleziono Pliku zbiorczego. W efenix nic się nie zmieniło.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
+  Co zrobić: Sprawdź, czy Plik zbiorczy okresu jest w Folderze okresu, i uruchom ponownie.
+
+source_unusable #2 [EFENIX_NIEDOSTEPNY_PLIK_ZBIORCZY]
+  Co się stało: Nie można teraz odczytać Pliku zbiorczego. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. W efenix nic się nie zmieniło.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+source_unusable #3 [EFENIX_NIEDOSTEPNY_PLIK_ZBIORCZY]
+  Co się stało: Nie można teraz odczytać Pliku zbiorczego. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. W efenix nic się nie zmieniło.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+source_unusable #4 [EFENIX_NIECZYTELNY_PLIK_ZBIORCZY]
+  Co się stało: Plik zbiorczy jest uszkodzony albo nie ma układu Pliku zbiorczego. W efenix nic się nie zmieniło.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
+  Co zrobić: Otwórz Plik zbiorczy w Excelu i sprawdź, czy otwiera się poprawnie. Jeśli tak, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+source_unusable #5 [EFENIX_NIECZYTELNY_PLIK_ZBIORCZY]
+  Co się stało: Plik zbiorczy jest uszkodzony albo nie ma układu Pliku zbiorczego. W efenix nic się nie zmieniło.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
+  Co zrobić: Otwórz Plik zbiorczy w Excelu i sprawdź, czy otwiera się poprawnie. Jeśli tak, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+source_unusable #6 [EFENIX_NIECZYTELNY_PLIK_ZBIORCZY]
+  Co się stało: Plik zbiorczy jest uszkodzony albo nie ma układu Pliku zbiorczego. W efenix nic się nie zmieniło.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
+  Co zrobić: Otwórz Plik zbiorczy w Excelu i sprawdź, czy otwiera się poprawnie. Jeśli tak, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+missing_columns [EFENIX_BRAK_NAGLOWKOW]
+  Co się stało: W Pliku zbiorczym brakuje nagłówków: NUMER ZL., ADRES. W efenix nic się nie zmieniło.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 17
+  Co zrobić: Przywróć nagłówki w wierszu 17 Pliku zbiorczego, zapisz plik i uruchom ponownie.
+
+amounts_not_computed [EFENIX_KWOTY_NIEPOLICZONE]
+  Co się stało: Plik zbiorczy nie ma kwot w kolumnie AU policzonych przez Excel. W efenix nic się nie zmieniło.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, kolumna AU, wiersz 18
+  Co zrobić: Otwórz i zapisz Plik zbiorczy w Excelu, potem zamknij go i uruchom ponownie.
+
+logged_out [EFENIX_WYLOGOWANY]
+  Co się stało: efenix pokazał stronę logowania, więc Wycena w efenix się zatrzymała. W efenix nic się nie zmieniło.
+  Gdzie: okno efenix
+  Co zrobić: Zaloguj się w efenix i uruchom ponownie.
+
+efenix_changed [EFENIX_ZMIENIONY]
+  Co się stało: Strona efenix wygląda inaczej niż zwykle, więc narzędzie niczego w niej nie kliknęło. W efenix nic się nie zmieniło.
+  Gdzie: okno efenix
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+efenix_unreachable [EFENIX_NIEDOSTEPNY]
+  Co się stało: Nie udało się otworzyć efenix. W efenix nic się nie zmieniło.
+  Gdzie: okno efenix
+  Co zrobić: Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+order_error #1 [EFENIX_BRAK_NUMERU]
+  Co się stało: Wiersz nie ma numeru zlecenia w NUMER ZL. Zlecenie zostało w efenix bez zmian.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Uzupełnij NUMER ZL. w Pliku zbiorczym albo wyceń zlecenie w efenix sam.
+
+order_error #2 [EFENIX_BRAK_DATY]
+  Co się stało: Wiersz nie ma daty w DATA. Zlecenie zostało w efenix bez zmian.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Uzupełnij DATA w Pliku zbiorczym albo wyceń zlecenie w efenix sam.
+
+order_error #3 [EFENIX_NIEZNANY_NUMER]
+  Co się stało: efenix nie zna zlecenia o numerze z NUMER ZL. Zlecenie zostało w efenix bez zmian.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź NUMER ZL. w Pliku zbiorczym i zlecenie w efenix.
+
+order_error #4 [EFENIX_KILKA_ZLECEN]
+  Co się stało: efenix ma kilka zleceń o numerze z NUMER ZL. Zlecenie zostało w efenix bez zmian.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź zlecenie w efenix i wyceń je sam.
+
+order_error #5 [EFENIX_INNY_STATUS]
+  Co się stało: Zlecenie w efenix nie ma statusu „Do wyceny”. Zlecenie zostało w efenix bez zmian.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź status zlecenia w efenix.
+
+order_error #6 [EFENIX_INNY_REALIZATOR]
+  Co się stało: Realizator zlecenia w efenix jest inny niż WYKONAWCA w Pliku zbiorczym. Zlecenie zostało w efenix bez zmian.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź zlecenie w efenix i wyceń je sam.
+
+order_error #7 [EFENIX_INNY_ADRES]
+  Co się stało: Dane adresowe zlecenia w efenix są inne niż ADRES w Pliku zbiorczym. Zlecenie zostało w efenix bez zmian.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź zlecenie w efenix i wyceń je sam.
+
+order_error #8 [EFENIX_INNA_DATA]
+  Co się stało: Data wykonania zlecenia w efenix jest inna niż dzień z DATA w Pliku zbiorczym. Zlecenie zostało w efenix bez zmian.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź zlecenie w efenix i wyceń je sam.
+
+unexpected_failure [EFENIX_BLAD_NIEOCZEKIWANY]
+  Co się stało: Wycena w efenix zatrzymała się przez nieoczekiwany błąd. Część zleceń mogła zostać sprawdzona.
+  Gdzie: Wycena w efenix
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+plan_not_shown [EFENIX_PLAN_NIEPOKAZANY]
+  Co się stało: Wycena w efenix skończyła się, ale nie udało się pokazać planu. W efenix nic się nie zmieniło.
+  Gdzie: Wycena w efenix
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+summary_not_shown [EFENIX_PODSUMOWANIE_NIEPOKAZANE]
+  Co się stało: Wycena w efenix skończyła się, ale nie udało się pokazać wyniku.
+  Gdzie: Wycena w efenix
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
 === Wynik Uruchomienia (src/rozliczenia/centrum/runs.py) ===
 
 _RESULT_NOT_SHOWN [BLAD_WYNIKU]

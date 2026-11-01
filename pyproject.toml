@@ -11,6 +11,8 @@ dependencies = [
     "openpyxl>=3.1.5",
     "PyYAML>=6.0",
     "fastapi>=0.146",
+    # Wycena w efenix prowadzi okno przeglądarki taty (spec #741); Aktualizacja narzędzia instaluje requirements.txt.
+    "playwright>=1.64",
     "uvicorn>=0.54",
 ]
 

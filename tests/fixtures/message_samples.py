@@ -11,7 +11,7 @@ from datetime import date
 from functools import partial
 from pathlib import Path
 
-from rozliczenia import intermax_messages
+from rozliczenia import efenix_messages, intermax_messages
 from rozliczenia import preparation_messages as messages
 from rozliczenia import settlement_messages
 from rozliczenia.centrum import (
@@ -23,6 +23,7 @@ from rozliczenia.centrum import (
     update_messages,
 )
 from rozliczenia.centrum.tool_update import LIBRARIES_FAILED, NEW_VERSION_FAILED, ROLLBACK_FAILED, UNEXPECTED
+from rozliczenia.efenix_checks import OrderProblem
 from rozliczenia.message import Message
 from rozliczenia.period_folder import (
     FolderNotNamedAfterPeriod,
@@ -286,6 +287,19 @@ UPDATE_SAMPLES: Samples = {
         lambda: update_messages.message_of(ROLLBACK_FAILED),
         lambda: update_messages.message_of("NIEZNANY_KOD"),
     ],
+}
+
+EFENIX_SAMPLES: Samples = {
+    "source_unusable": [partial(efenix_messages.source_unusable, WorkbookError(SOURCE, problem)) for problem in Problem],
+    "missing_columns": [lambda: efenix_messages.missing_columns(SOURCE, ["NUMER ZL.", "ADRES"])],
+    "amounts_not_computed": [lambda: efenix_messages.amounts_not_computed(SOURCE, 18)],
+    "logged_out": [efenix_messages.logged_out],
+    "efenix_changed": [efenix_messages.efenix_changed],
+    "efenix_unreachable": [efenix_messages.efenix_unreachable],
+    "order_error": [partial(efenix_messages.order_error, SOURCE, 23, problem) for problem in OrderProblem],
+    "unexpected_failure": [efenix_messages.unexpected_failure],
+    "plan_not_shown": [efenix_messages.plan_not_shown],
+    "summary_not_shown": [efenix_messages.summary_not_shown],
 }
 
 COPIES = Path("C:/Narzedzie/Kopie INTERMAX")

@@ -1,4 +1,4 @@
-"""Jedno Uruchomienie procesu (settlement, preparation, intermax) z wynikiem JSON; użyj w E2E, benchmarku i skillach zamiast Centrum rozliczeń.
+"""Jedno Uruchomienie procesu (settlement, preparation, intermax, efenix) z wynikiem JSON; użyj w E2E, benchmarku i skillach zamiast Centrum rozliczeń.
 
 Skrypt dla maszyn: jedno Uruchomienie procesu, wynik jako JSON.
 
@@ -9,10 +9,14 @@ Użycie (z katalogu repozytorium):
     python tools/uruchom_proces.py preparation --register REJESTR --periods-directory FOLDER --period TOKEN
         [--dry-run] [--config PLIK] [--internal-template PLIK] [--collective-template PLIK] [--metrics PLIK]
     python tools/uruchom_proces.py intermax --register REJESTR [--copies FOLDER] [--metrics PLIK]
+    python tools/uruchom_proces.py efenix --source PLIK_ZBIORCZY --efenix-url ADRES [--metrics PLIK]
 
 ``settlement`` to Przebieg rozliczeń, ``preparation`` Przygotowanie pliku
-zbiorczego, a ``intermax`` Uporządkowanie INTERMAX (klucze procesu z kontraktu
-Centrum rozliczeń). Uporządkowanie nie ma okresu ani podglądu bez zapisu: zawsze
+zbiorczego, ``intermax`` Uporządkowanie INTERMAX (klucze procesu z kontraktu
+Centrum rozliczeń), a ``efenix`` Wycena w efenix. Wycena w efenix otwiera
+listę zleceń pod ``--efenix-url`` w nowym Chromium Playwrighta bez okna i nic
+w efenix nie zmienia; w testach i próbach to adres Atrapy efenix, nigdy
+efenix.pl (ADR 0024). Uporządkowanie nie ma okresu ani podglądu bez zapisu: zawsze
 zapisuje, a Kopia INTERMAX trafia do ``--copies`` (bez parametru folder Kopii
 narzędzia), z nazwą z zegara komputera. Proces prowadzi ten
 sam rdzeń Uruchomienia procesu co w Centrum, więc wynik ma te same liczby,
@@ -55,10 +59,11 @@ from pydantic import BaseModel, ConfigDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from rozliczenia import intermax_copies, intermax_process, preparation_process, settlement_process
+from rozliczenia import efenix_browser, efenix_process, intermax_copies, intermax_process, preparation_process, settlement_process
 from rozliczenia.centrum import contract, run_view
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.decision import Decision
+from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.intermax_process import OrderingInputs
 from rozliczenia.message import Message
 from rozliczenia.preparation_process import PreparationInputs
@@ -165,6 +170,12 @@ def _order(args: argparse.Namespace) -> tuple[ProcessResult, int]:
     return _conduct(intermax_process.PROCESS, run_view.INTERMAX, inputs, args.metrics)
 
 
+def _price(args: argparse.Namespace) -> tuple[ProcessResult, int]:
+    url: str = args.efenix_url
+    inputs = EfenixInputs(args.source, lambda: efenix_browser.chromium(url))
+    return _conduct(efenix_process.PROCESS, run_view.EFENIX, inputs, args.metrics)
+
+
 class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
         self.print_usage(sys.stderr)
@@ -214,6 +225,12 @@ def _parser() -> argparse.ArgumentParser:
         "--metrics", type=Path, default=intermax_process.PROCESS.metrics_path(), help="Plik metryk JSONL."
     )
     ordering.set_defaults(run=_order)
+
+    pricing = processes.add_parser("efenix", help=efenix_process.PROCESS.name)
+    pricing.add_argument("--source", type=Path, required=True, help="Plik zbiorczy.")
+    pricing.add_argument("--efenix-url", required=True, help="Adres listy zleceń efenix (w testach Atrapy efenix).")
+    pricing.add_argument("--metrics", type=Path, default=efenix_process.PROCESS.metrics_path(), help="Plik metryk JSONL.")
+    pricing.set_defaults(run=_price)
     return parser
 
 
