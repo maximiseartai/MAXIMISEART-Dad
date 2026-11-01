@@ -287,11 +287,13 @@ uzupełnienia; podgląd bez zapisu z tymi samymi ostrzeżeniami kończy się kod
 `tools/zgodnosc_efenix.py` sprawdza, czy prawdziwy efenix ma budowę, której
 używa Wycena w efenix i którą odtwarza Atrapa efenix: pola listy i strony
 zlecenia, odpowiedź szukania, nagłówki tabeli wyników, postać daty wykonania,
-przyciski Emmetta i daty, kody pozycji `INDEKS` z cenami i stronę logowania.
-Uruchamia je Maks przed pierwszą Wyceną w efenix u taty i po każdym Zgłoszeniu
-„efenix się zmienił”, nigdy CI. Narzędzie tylko czyta: każde żądanie spoza
-jego listy dozwolonych odczytów przerywa, zanim wyjdzie do efenix, a sesję
-taty zostawia zalogowaną. Wynik ma tylko nazwy elementów, liczby i kody
+przyciski Emmetta i daty, karty pozycji wyceny z kodami `INDEKS` i cenami
+i stronę logowania. Uruchamia je Maks przed pierwszą Wyceną w efenix u taty
+i po każdym Zgłoszeniu „efenix się zmienił”, nigdy CI. Narzędzie tylko czyta:
+na czas sprawdzania każde żądanie okna Chrome z sesją taty (każdej karty, okna
+otwartego przez stronę i kroku przekierowania) spoza listy dozwolonych
+odczytów przerywa, zanim wyjdzie do efenix, a sesję taty zostawia zalogowaną.
+Dlatego Chrome dla narzędzia ma osobny profil bez innych kart. Wynik ma tylko nazwy elementów, liczby i kody
 pozycji, bez numerów zleceń, adresów i loginów.
 
 ```sh

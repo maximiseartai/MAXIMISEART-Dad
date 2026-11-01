@@ -1,4 +1,4 @@
-ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 20
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 43
 RÓŻNICA | tabela wyników | nagłówek zaczynający się od „status”: 0 zamiast 1 (nagłówki: Numer dokumentu Identyfikator Fenix / Operator/Rodzaj / Stan / Wykonawca (login) / Dane adresowe / (pusty))
 RÓŻNICA | tabela wyników | Wycena w efenix nie czyta wiersza (tabela wyników szukania)
 RÓŻNICE: 2 | NIESPRAWDZONE: 0 | ZABLOKOWANE: 0

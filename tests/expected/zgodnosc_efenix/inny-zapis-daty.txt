@@ -1,3 +1,3 @@
-ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 20
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 43
 RÓŻNICA | strona zlecenia | Wycena w efenix nie czyta daty wykonania #data_install w postaci „99.99.9999”: 1 z 2
 RÓŻNICE: 1 | NIESPRAWDZONE: 0 | ZABLOKOWANE: 0

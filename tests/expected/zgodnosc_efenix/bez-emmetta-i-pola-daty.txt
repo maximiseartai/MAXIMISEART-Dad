@@ -1,4 +1,4 @@
-ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 20
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 43
 RÓŻNICA | strona zlecenia | przycisk Emmetta (#button_emmett): 0 zamiast 1
 RÓŻNICA | strona zlecenia | pole w oknie daty wykonania (input#field_data_instalacji): 0 zamiast 1
 RÓŻNICE: 2 | NIESPRAWDZONE: 0 | ZABLOKOWANE: 0

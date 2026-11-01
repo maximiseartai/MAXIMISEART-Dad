@@ -1,0 +1,3 @@
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 43
+ZABLOKOWANE | POST action_save_index.php | żądanie spoza listy dozwolonych, przerwane przed wysłaniem
+RÓŻNICE: 0 | NIESPRAWDZONE: 0 | ZABLOKOWANE: 1

@@ -9,18 +9,25 @@ w nim własną kartę i sprawdza budowę, której używa Wycena w efenix i któr
   nagłówki ``efenix_browser.HEADERS`` i w każdym wierszu link ``page_order_edit.php?id=`` i status w ``.badge``;
   ``BrowserEfenix.search`` czyta jeden jej wiersz, z loginem realizatora i ``Dane adresowe``;
 - strona zlecenia: ``BrowserEfenix.execution_date`` czyta ``#data_install`` (``RRRR-MM-DD`` albo pusty tekst; pustej
-  daty narzędzie szuka wśród otwieranych zleceń), elementy z ``ELEMENTS`` (przycisk i okno Emmetta, okno daty, kwota
-  końcowa, karty pozycji z polem Ilość i ceną, przyciski Przekazania do akceptacji i anulowania, których nie dotyka) oraz
-  kody pozycji ``INDEKS_NNN_NNN`` i ich ceny (wartość ``input.wycena-cena``) równe ``atrapa_efenix.POSITIONS``;
+  daty narzędzie szuka wśród otwieranych zleceń, najpierw „Do wyceny”), elementy z ``ELEMENTS`` (przycisk i okno
+  Emmetta, okno daty, kwota końcowa, pola Ilość i ceny wpisywanej w kartach pozycji, przyciski Przekazania do akceptacji
+  i anulowania, których nie dotyka) oraz karty pozycji ``.card.rounded-lg.kolorek`` równe ``atrapa_efenix.POSITIONS``:
+  kod ``INDEKS_NNN_NNN`` to ``id`` jedynego pola karty, karta z polem Ilość (``input.wycena-ilosc``) ma cenę jednostkową
+  w tekście ``.col-sm-1.mt-2 > span.text-default > small`` (porównaną jako liczba), a karta z ceną wpisywaną ma samo pole
+  ``input.wycena-cena`` bez ceny w tekście;
 - bez sesji (nowy kontekst przeglądarki bez ciasteczek, więc sesja taty trwa): lista i szukanie przekierowują na
   ``page_login.php``, a strona logowania ma formularz ``action_login.php`` z polami ``field_signum``,
   ``field_password`` i ``fingerprint``.
 
-Każde żądanie kart narzędzia przechodzi przez ``ALLOWED`` (``page.route``): GET listy, strony zlecenia i strony
-logowania, POST szukania, odczyt daty ``action_get_date_of_instalation.php`` i GET plików strony (style, skrypty,
-obrazy, czcionki) bez ``.php``. Inne żądanie, także wysłane przez skrypt strony, narzędzie przerywa przed wysłaniem i
-wypisuje jako ``ZABLOKOWANE``. Niczego nie klika poza Enter w polu ``Numer``. ``action_fill_emmett.php`` (propozycja
-Emmetta) nie jest na liście, bo bez kodu strony nie wiadomo, czy niczego nie zapisuje.
+Na czas sprawdzania każde żądanie kontekstu przeglądarki z sesją (każdej jego karty i okna, także otwartego skryptem
+strony, ramki i workera) przechodzi przez ``ALLOWED`` (``context.route``): GET listy, strony zlecenia i strony logowania,
+POST szukania, odczyt daty ``action_get_date_of_instalation.php``, odczyty, które strony efenix wysyłają same, i GET
+plików strony (style, skrypty, obrazy, czcionki) bez ``.php``. Dozwolone żądanie narzędzie wysyła samo, bez podążania
+za przekierowaniem, i oddaje przeglądarce odpowiedź, więc każdy krok przekierowania wraca na listę jako nowe żądanie,
+zanim wyjdzie. Inne żądanie i każdy WebSocket narzędzie przerywa przed wysłaniem i wypisuje jako ``ZABLOKOWANE``, a okna
+otwarte przez swoją kartę zamyka. Niczego nie klika poza Enter w polu ``Numer``. ``action_fill_emmett.php`` (propozycja
+Emmetta) nie jest na liście, bo bez kodu serwera nie wiadomo, czy niczego nie zapisuje. Chrome z osobnym profilem (niżej)
+nie ma innych kart, więc blokada kontekstu nie zatrzymuje cudzej pracy.
 
 Uruchomienie: Chrome z osobnym profilem i zdalnym debugowaniem, w nim logowanie do efenix kontem taty, potem narzędzie:
 
@@ -49,7 +56,7 @@ import sys
 from typing import Final, TypedDict
 from urllib.parse import parse_qs, urljoin, urlparse
 
-from playwright.sync_api import Browser, BrowserContext, Page, Route, sync_playwright
+from playwright.sync_api import APIResponse, Browser, BrowserContext, Page, Route, WebSocketRoute, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
@@ -75,8 +82,26 @@ from tests.fixtures.atrapa_efenix import POSITIONS
 LIST_PAGE: Final = "index.php"
 LOGIN_ACTION: Final = "action_login.php"
 DATE_READ: Final = "action_get_date_of_instalation.php"
+# Odczyty, które strony efenix wysyłają same, a z kodu strony z rekonesansu (#741) tylko wkładają odpowiedź na stronę.
+# Bez nich na zgodnym efenix wynik zawsze miałby ZABLOKOWANE. Atrapa efenix je odtwarza (``atrapa_efenix.PAGE_READS``).
+PAGE_READS: Final = frozenset(
+    {
+        # Lista po wczytaniu: licznik zalogowanych (też co 2 minuty) i opcje list wyboru województwa, powiatu, gminy,
+        # miasta oraz liczba ulic; po każdej tabeli wyników skrypt stronicowania pobierany przez XHR, nie jako <script>.
+        ("POST", "action_users_online.php"),
+        ("POST", "action_fill_country_order.php"),
+        ("POST", "action_fill_community_order.php"),
+        ("POST", "action_fill_city_order.php"),
+        ("POST", "action_streets_count_order.php"),
+        ("POST", "action_fill_streets_order.php"),
+        ("GET", "pagination.js"),
+        # Strona zlecenia po wczytaniu: notatki zlecenia do ``#notatki`` (pole ``button_note_delete`` mówi tylko, czy
+        # pokazać przyciski kasowania; kasuje ``action_note_delete.php``, którego nie ma na liście).
+        ("POST", "action_fill_notes.php"),
+    }
+)
 # Jedyne żądania do efenix, które narzędzie przepuszcza: odczyty stron i szukanie. Zapis ilości, Emmett, ustawienie
-# daty, zmiana statusu, Przekazanie do akceptacji i anulowanie nie są na liście, więc ich żądanie nie wychodzi.
+# daty, zmiana statusu, Przekazanie do akceptacji, anulowanie i wylogowanie nie są na liście, więc ich żądanie nie wychodzi.
 ALLOWED: Final = frozenset(
     {
         ("GET", LIST_PAGE),
@@ -85,12 +110,16 @@ ALLOWED: Final = frozenset(
         ("GET", LOGIN_PAGE),
         ("GET", DATE_READ),
         ("POST", DATE_READ),
+        *PAGE_READS,
     }
 )
 # Pliki, z których przeglądarka składa stronę: GET bez ``.php``, z dowolnego adresu.
 PAGE_FILES: Final = frozenset({"stylesheet", "script", "image", "font", "media"})
 POSITION_CODE: Final = re.compile(r"INDEKS_\d{3}_\d{3}")
 ORDERS_TO_OPEN: Final = 10
+# Odpowiedzi, za których ``Location`` przeglądarka podąża sama, i najdłuższy łańcuch przekierowań, który narzędzie przepuszcza.
+FOLLOWED: Final = frozenset({301, 302, 303, 307, 308})
+REDIRECT_HOPS: Final = 5
 OK: Final = "ZGODNOŚĆ OK"
 LOGGED_OUT_MIDWAY: Final = "efenix wylogował kartę narzędzia w trakcie sprawdzania: zaloguj się i uruchom narzędzie jeszcze raz"
 
@@ -127,7 +156,7 @@ ELEMENTS: Final = (
     Element(Part.ORDER, "input#field_data_instalacji", "pole w oknie daty wykonania"),
     Element(Part.ORDER, "#cena_all2", "kwota końcowa"),
     Element(Part.ORDER, f"{PRICING_CARD} input.wycena-ilosc", "pola Ilość pozycji wyceny", many=True),
-    Element(Part.ORDER, f"{PRICING_CARD} input.wycena-cena", "ceny pozycji wyceny", many=True),
+    Element(Part.ORDER, f"{PRICING_CARD} input.wycena-cena", "pola ceny wpisywanej pozycji wyceny", many=True),
     Element(Part.ORDER, "#button_forward_to_accept", "przycisk Przekazania do akceptacji"),
     Element(Part.ORDER, "#button_forward_to_cancel", "przycisk anulowania"),
     Element(Part.LOGIN, f'form[action$="{LOGIN_ACTION}"]', "formularz logowania"),
@@ -162,9 +191,11 @@ _READ_RESULTS: Final = """([html, orderPage]) => {
         })),
     };
 }"""
+# Karta pozycji: ``id`` pól Ilość, ``id`` pól ceny wpisywanej i ceny jednostkowe z tekstu karty.
 _READ_POSITIONS: Final = """(card) => [...document.querySelectorAll(card)].map((element) => ({
-    codes: [...element.querySelectorAll('input.wycena-ilosc')].map((input) => input.id),
-    prices: [...element.querySelectorAll('input.wycena-cena')].map((input) => input.value),
+    quantity: [...element.querySelectorAll('input.wycena-ilosc')].map((input) => input.id),
+    price: [...element.querySelectorAll('input.wycena-cena')].map((input) => input.id),
+    shown: [...element.querySelectorAll('.col-sm-1.mt-2 > span.text-default > small')].map((small) => small.textContent.trim()),
 }))"""
 
 
@@ -180,8 +211,9 @@ class _Results(TypedDict):
 
 
 class _Card(TypedDict):
-    codes: list[str]
-    prices: list[str]
+    quantity: list[str]
+    price: list[str]
+    shown: list[str]
 
 
 class ToolError(Exception):
@@ -228,7 +260,7 @@ def check(browser: Browser, session: BrowserContext, url: str, *, number: str = 
     if urlparse(url).scheme not in ("http", "https") or PurePosixPath(urlparse(url).path).name != LIST_PAGE:
         raise ToolError(f"--efenix-url to adres listy zleceń efenix kończący się na /{LIST_PAGE}")
     report = Report()
-    with _guarded_page(session, url, report) as page:
+    with _guarded_page(session, url, report, timeout_ms=timeout_ms) as page:
         _check_signed_in(page, url, report, number=number, timeout_ms=timeout_ms)
     context = browser.new_context()
     try:
@@ -239,27 +271,83 @@ def check(browser: Browser, session: BrowserContext, url: str, *, number: str = 
 
 
 @contextmanager
-def _guarded_page(context: BrowserContext, url: str, report: Report) -> Iterator[Page]:
+def _guarded_page(context: BrowserContext, url: str, report: Report, *, timeout_ms: int) -> Iterator[Page]:
+    """Nowa karta w ``context``; na czas bloku każde żądanie całego ``context`` przechodzi przez ``allowed``.
+
+    Blokada jest na kontekście, nie na karcie, bo ``page.route`` nie widzi okien otwartych skryptem strony. Za
+    przekierowaniem z odpowiedzi, którą dostaje przeglądarka, przeglądarka podąża bez ``guard`` (Playwright go dla kroków
+    przekierowania nie woła), więc dozwolone żądanie narzędzie wysyła samo z ``max_redirects=0`` i odpowiedź
+    z przekierowaniem oddaje przeglądarce dopiero wtedy, gdy każdy krok łańcucha jest na liście (``_forbidden_hop``);
+    inaczej przerywa żądanie. WebSocket nie łączy się z serwerem (obsługa bez ``connect_to_server``). Na końcu zamyka
+    swoją kartę i okna, które otworzyła, a potem zdejmuje blokadę.
+    """
+
     host = urlparse(url).netloc
+
+    def block(method: str, address: str) -> None:
+        parsed = urlparse(address)
+        name = PurePosixPath(parsed.path).name if parsed.netloc == host else parsed.netloc
+        if f"{method} {name}" not in report.blocked:
+            report.blocked.append(f"{method} {name}")
 
     def guard(route: Route) -> None:
         request = route.request
-        if allowed(request.method, request.url, request.resource_type, host):
-            route.continue_()
+        if not allowed(request.method, request.url, request.resource_type, host):
+            block(request.method, request.url)
+            route.abort()
             return
-        address = urlparse(request.url)
-        name = PurePosixPath(address.path).name if address.netloc == host else address.netloc
-        blocked = f"{request.method} {name}"
-        if blocked not in report.blocked:
-            report.blocked.append(blocked)
-        route.abort()
+        try:
+            response = route.fetch(max_redirects=0, timeout=timeout_ms)
+            forbidden = _forbidden_hop(route, response, host, timeout_ms=timeout_ms)
+        except PlaywrightError:
+            route.abort("failed")
+            return
+        if forbidden is not None:
+            block(*forbidden)
+            route.abort()
+            return
+        route.fulfill(response=response)
 
-    page = context.new_page()
+    def no_socket(socket: WebSocketRoute) -> None:
+        block("WebSocket", socket.url)
+
+    ours: list[Page] = []
+
+    def opened(page: Page) -> None:
+        if page.opener() in ours:
+            ours.append(page)
+
+    context.route("**/*", guard)
+    context.route_web_socket("**/*", no_socket)
+    context.on("page", opened)
     try:
-        page.route("**/*", guard)
-        yield page
+        ours.append(context.new_page())
+        yield ours[0]
     finally:
-        page.close()
+        for page in reversed(ours):
+            page.close()
+        context.remove_listener("page", opened)
+        context.unroute_all(behavior="ignoreErrors")
+
+
+def _forbidden_hop(route: Route, response: APIResponse, host: str, *, timeout_ms: int) -> tuple[str, str] | None:
+    """Pierwszy krok przekierowania spoza listy (metoda, adres) w łańcuchu od ``response``; ``None``: cały na liście.
+
+    Kroki na liście to odczyty, więc narzędzie wysyła je samo, żeby zobaczyć następny krok; przeglądarka wyśle je drugi
+    raz, gdy dostanie przekierowanie. Łańcuch dłuższy niż ``REDIRECT_HOPS`` kroków jest spoza listy.
+    """
+
+    request = route.request
+    method, address = request.method, request.url
+    for _ in range(REDIRECT_HOPS):
+        if response.status not in FOLLOWED:
+            return None
+        address = urljoin(address, response.headers.get("location", ""))
+        method = method if response.status in (307, 308) else "GET"
+        if not allowed(method, address, request.resource_type, host):
+            return method, address
+        response = route.fetch(url=address, method=method, max_redirects=0, timeout=timeout_ms)
+    return method, address
 
 
 def _check_signed_in(page: Page, url: str, report: Report, *, number: str, timeout_ms: int) -> None:
@@ -418,24 +506,46 @@ def _check_elements(page: Page, part: Part, report: Report) -> None:
 
 
 def _check_positions(page: Page, report: Report) -> None:
-    """Kody pozycji ``INDEKS_NNN_NNN`` i ich ceny równe pozycjom Atrapy efenix."""
+    """Karty pozycji równe pozycjom Atrapy efenix: te same kody, rodzaj karty i ceny jednostkowe jako liczby."""
 
     cards: list[_Card] = page.evaluate(_READ_POSITIONS, PRICING_CARD)
-    priced = {card["codes"][0]: card["prices"][0] for card in cards if _well_formed(card)}
-    report.checked["pozycje wyceny"] = len(priced)
-    if broken := len(cards) - len(priced):
-        report.differ(Part.PRICING, f"karty bez jednego pola Ilość z kodem INDEKS_NNN_NNN i jednej ceny: {broken} z {len(cards)}")
-    for code in sorted(POSITIONS.keys() - priced.keys()):
-        report.differ(Part.PRICING, f"{code}: jest w Atrapie (cena {POSITIONS[code]}), nie ma go w efenix")
-    for code in sorted(priced.keys() - POSITIONS.keys()):
-        report.differ(Part.PRICING, f"{code}: jest w efenix (cena {priced[code]}), nie ma go w Atrapie")
-    for code in sorted(priced.keys() & POSITIONS.keys()):
-        if _amount(priced[code]) != _amount(POSITIONS[code]):
-            report.differ(Part.PRICING, f"{code}: cena w efenix {priced[code]}, w Atrapie {POSITIONS[code]}")
+    found = dict(position for card in cards if (position := _position(card)) is not None)
+    report.checked["pozycje wyceny"] = len(found)
+    if broken := len(cards) - len(found):
+        report.differ(
+            Part.PRICING,
+            f"karty bez jednego pola Ilość z ceną w tekście albo jednego pola ceny wpisywanej z kodem INDEKS_NNN_NNN: {broken} z {len(cards)}",
+        )
+    for code in sorted(POSITIONS.keys() - found.keys()):
+        report.differ(Part.PRICING, f"{code}: jest w Atrapie ({_price(POSITIONS[code])}), nie ma go w efenix")
+    for code in sorted(found.keys() - POSITIONS.keys()):
+        report.differ(Part.PRICING, f"{code}: jest w efenix ({_price(found[code])}), nie ma go w Atrapie")
+    for code in sorted(found.keys() & POSITIONS.keys()):
+        if not _same_price(found[code], POSITIONS[code]):
+            report.differ(Part.PRICING, f"{code}: w efenix {_price(found[code])}, w Atrapie {_price(POSITIONS[code])}")
 
 
-def _well_formed(card: _Card) -> bool:
-    return len(card["codes"]) == 1 and len(card["prices"]) == 1 and POSITION_CODE.fullmatch(card["codes"][0]) is not None
+def _position(card: _Card) -> tuple[str, str | None] | None:
+    """Kod i cena karty; ``None`` jako cena to karta z ceną wpisywaną, a karta w innym kształcie to ``None``."""
+
+    match card["quantity"], card["price"], card["shown"]:
+        case [code], [], [shown]:
+            position: tuple[str, str | None] = (code, shown)
+        case [], [code], []:
+            position = (code, None)
+        case _:
+            return None
+    return position if POSITION_CODE.fullmatch(position[0]) else None
+
+
+def _price(price: str | None) -> str:
+    return "cena wpisywana" if price is None else f"cena {price}"
+
+
+def _same_price(shown: str | None, expected: str | None) -> bool:
+    if shown is None or expected is None:
+        return shown is expected
+    return _amount(shown) == _amount(expected)
 
 
 def _amount(text: str) -> Decimal | str:
@@ -462,7 +572,7 @@ def _check_logged_out(context: BrowserContext, url: str, report: Report, *, time
             raise ValueError(f"{method} {PurePosixPath(urlparse(address).path).name} nie jest na liście dozwolonych")
         if probe() != LOGIN_PAGE:
             report.differ(Part.LOGGED_OUT, f"{method} {PurePosixPath(urlparse(address).path).name} bez sesji nie przekierowuje na {LOGIN_PAGE}")
-    with _guarded_page(context, url, report) as page:
+    with _guarded_page(context, url, report, timeout_ms=timeout_ms) as page:
         page.goto(urljoin(url, LOGIN_PAGE), wait_until="load", timeout=timeout_ms)
         _check_elements(page, Part.LOGIN, report)
 
