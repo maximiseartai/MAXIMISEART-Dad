@@ -137,6 +137,21 @@ def test_nieudane_usuniecie_starszej_kopii_to_fakt_przy_podmienionym_intermax(fo
     assert sorted(folders.state()[2]) == sorted([*older, NAMES[before]])
 
 
+def test_starsza_kopia_usunieta_wczesniej_przez_kogos_innego_nie_jest_kopia_ktora_zostala(
+    folders: Folders, before: Before
+) -> None:
+    older = _older_copies(folders)
+
+    def gone_first(path: Path) -> None:
+        path.unlink()  # tata usunął Kopię w Eksploratorze albo OneDrive zsynchronizował jej usunięcie
+        LOCAL_DISK.remove(path)
+
+    outcome = folders.replace(before, FaultyDisk(remove=gone_first))
+
+    assert isinstance(outcome, Replaced) and outcome.old_copies_kept is False
+    assert sorted(folders.state()[2]) == sorted([*older[1:], NAMES[before]])
+
+
 def test_kopia_powstaje_tuz_przed_podmiana(folders: Folders, before: Before) -> None:
     copy = folders.copies / NAMES[before]
     seen: list[bytes | None] = []
