@@ -23,7 +23,9 @@ błędu: strona bez swojego skryptu nie działa, a następne działanie nie wys�
 połączenia. Żądanie, na które efenix odpowiedział błędem HTTP (plik strony, którego efenix już nie ma, odpowiada 404),
 dostało odpowiedź, choć przeglądarka zgłasza je jako nieudane: efenix odpowiada, więc strona bez takiego skryptu to
 ``UnexpectedPage``, a martwy link na działającej stronie nic nie zatrzymuje. Żądań spoza efenix (Mapy Google,
-fontawesome) okno nie liczy: ich brak odpowiedzi nic nie mówi o połączeniu z efenix, a schowałby zmienioną stronę.
+fontawesome) okno nie liczy: ich brak odpowiedzi nic nie mówi o połączeniu z efenix, a schowałby zmienioną stronę. Liczy
+za to każde przejście karty okna na inną stronę, także przekierowane spod adresu efenix na inny: strona, która nie
+przyszła, nie ma budowy, którą efenix mógłby zmienić.
 Działanie w zamkniętej karcie albo oknie, także zamkniętym w trakcie działania, to ``WindowClosed``, cokolwiek zgłosił
 wtedy Playwright. Przeglądarkę daje
 rozmówca: stronę (``window``), Chromium Playwrighta (``chromium``) albo widoczne okno zainstalowanego Google Chrome w
@@ -70,7 +72,7 @@ from typing import Concatenate, Final, ParamSpec, TypedDict, TypeVar
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import Locator, Page, Request, Response, sync_playwright
+from playwright.sync_api import Frame, Locator, Page, Request, Response, sync_playwright
 
 from . import TOOL_ROOT
 from .efenix_pricing import (
@@ -280,11 +282,12 @@ class _Results(TypedDict):
 
 
 class _Traffic:
-    """Żądania pod adresem efenix ``origin``, które strona okna wysłała w trakcie jednego działania okna: te, na które
-    odpowiedź jeszcze nie przyszła, i te, które zerwała sieć."""
+    """Żądania, które strona okna wysłała w trakcie jednego działania okna pod adres efenix ``origin`` albo jako przejście
+    karty okna (``main_frame``) na inną stronę: te, na które odpowiedź jeszcze nie przyszła, i te, które zerwała sieć."""
 
-    def __init__(self, origin: str) -> None:
+    def __init__(self, origin: str, main_frame: Frame) -> None:
         self._origin = origin
+        self._main_frame = main_frame
         self._pending: list[Request] = []
         self._cut: list[Request] = []
 
@@ -301,7 +304,7 @@ class _Traffic:
         return any(request.resource_type in _PAGE_FILES for request in self._cut)
 
     def sent(self, request: Request) -> None:
-        if _origin(request.url) == self._origin:
+        if _origin(request.url) == self._origin or (request.is_navigation_request() and request.frame == self._main_frame):
             self._pending.append(request)
 
     def finished(self, request: Request) -> None:
@@ -326,7 +329,7 @@ class BrowserEfenix:
         self._timeout_ms = timeout_ms
         self._positions: dict[str, str] = {}
         self._sent_change = False
-        self._traffic = _Traffic(_origin(url))
+        self._traffic = _Traffic(_origin(url), page.main_frame)
 
     @property
     def sent_change(self) -> bool:
@@ -541,7 +544,7 @@ class BrowserEfenix:
         """Żądania strony na czas działania okna; po działaniu w działaniu (``open_list`` w ``search``) liczy dalej
         zewnętrzne, które liczyło także jego żądania."""
 
-        outer, traffic = self._traffic, _Traffic(_origin(self._url))
+        outer, traffic = self._traffic, _Traffic(_origin(self._url), self._page.main_frame)
         self._traffic = traffic
         self._page.on("request", traffic.sent)
         self._page.on("requestfinished", traffic.finished)
