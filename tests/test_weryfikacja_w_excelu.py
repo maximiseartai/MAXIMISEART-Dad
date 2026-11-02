@@ -1,7 +1,7 @@
 """Narzędzia skilla ``verify-skoroszyty-w-excelu`` nazywają przyczynę, gdy Excel nie odpowiada, i dzielą jednego Excela na Maca.
 
 Prawdziwy Excel sprawdza sam skill (``.agents/skills/verify-skoroszyty-w-excelu/SKILL.md``).
-Tu ``osascript`` i ``open`` są podstawione na ``PATH``, a ``HOME`` wskazuje katalog testu,
+Tu ``osascript``, ``open`` i ``pgrep`` są podstawione na ``PATH``, a ``HOME`` wskazuje katalog testu,
 więc żaden test nie dotyka Excela ani jego kontenera.
 """
 
@@ -31,9 +31,20 @@ elif "-e" in sys.argv:
     print(os.environ.get("FAKE_EXCEL_RUNNING", "true"))
 else:
     sys.stdin.read()
+    if "FAKE_APPLESCRIPT_ANSWER" in os.environ:
+        print(os.environ["FAKE_APPLESCRIPT_ANSWER"])
+        sys.exit(0)
     code = os.environ["FAKE_APPLESCRIPT_ERROR"]
     print(f"271:290: execution error: Microsoft Excel got an error: fake ({{code}})", file=sys.stderr)
     sys.exit(1)
+"""
+
+# Jak ``pgrep -x``: jeden numer procesu w linii, kod 1, gdy żaden proces się nie nazywa tak.
+FAKE_PGREP = f"""#!{sys.executable}
+import os, sys
+ids = os.environ.get("FAKE_EXCEL_PIDS", "").split()
+print("\\n".join(ids))
+sys.exit(0 if ids else 1)
 """
 
 APPLESCRIPT_DENIED = "-1743"
@@ -43,11 +54,11 @@ DIALOG_WINDOW = "8 |  | 420x180"
 
 
 def _fake_commands(tmp_path: Path) -> str:
-    """``PATH`` whose ``osascript`` and ``open`` are fakes, so no test reaches the real Excel."""
+    """``PATH`` whose ``osascript``, ``open`` and ``pgrep`` are fakes, so no test reaches the real Excel."""
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    for name, body in (("osascript", FAKE_OSASCRIPT), ("open", f"#!{sys.executable}\n")):
+    for name, body in (("osascript", FAKE_OSASCRIPT), ("open", f"#!{sys.executable}\n"), ("pgrep", FAKE_PGREP)):
         command = bin_dir / name
         command.write_text(body, encoding="utf-8")
         command.chmod(0o755)
@@ -102,6 +113,30 @@ def test_start_excela_bez_zgody_na_automatyzacje_konczy_sie_od_razu_nazwana_przy
         excel.launch(timeout=20)
 
     assert time.monotonic() - started < 10
+
+
+def test_zimny_start_excela_konczy_sie_numerem_procesu_gdy_excel_odpowiada(
+    excel: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_APPLESCRIPT_ANSWER", "Zeszyt1")
+    monkeypatch.setenv("FAKE_EXCEL_PIDS", "733")
+
+    assert excel.launch(timeout=20) == 733
+
+
+def test_bez_dzialajacego_excela_nie_ma_numeru_procesu(excel: ModuleType) -> None:
+    assert excel.pid() is None
+
+
+def test_dwa_procesy_excela_start_konczy_sie_nazwana_przyczyna_a_pamiec_jest_pusta(
+    excel: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_APPLESCRIPT_ANSWER", "Zeszyt1")
+    monkeypatch.setenv("FAKE_EXCEL_PIDS", "733 734")
+
+    with pytest.raises(excel.ExcelError, match="not one process id"):
+        excel.launch(timeout=20)
+    assert excel.rss_mb() is None
 
 
 def _doctor_excel_problems() -> list[str]:
