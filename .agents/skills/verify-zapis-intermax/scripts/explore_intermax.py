@@ -36,7 +36,9 @@ bounds and checks:
 - SUKCES: a run that returns a summary has replaced INTERMAX and left no temporary file.
 - PRZYWROCONA_KOPIA: a restore that returns has replaced INTERMAX with exactly the bytes of the chosen Kopia.
 - KOPIE_NAJNOWSZE: after a summary, the Kopie folder holds the ``KEPT`` newest Kopie of both names by the moment in
-  their name, the new one among them, unless removing older ones failed, which the code turns into a warning.
+  their name, the new one among them, unless removing older ones failed, which the code turns into a warning, and
+  every Kopia from before the run that is still there has the same bytes as before (``Disk.create`` makes the Kopia only
+  as a new file, ``O_EXCL``), also after such a warning.
 - BEZ_WYJATKU: the run ends with a summary or a ``StopError``, or the process dies; nothing else escapes.
 
 Nothing in the product code is replaced; the checker only wraps the steps to pick at their points, and gives both runs
@@ -439,6 +441,9 @@ def _check(world: World, outcome: Outcome, failure: str) -> list[tuple[str, str]
                     f"po wyniku zostają Kopie {sorted(kopie)} zamiast {intermax_copies.KEPT} najnowszych",
                 )
             )
+        rewritten = sorted(name for name, content in world.old_copies.items() if kopie.get(name, content) != content)
+        if rewritten:
+            broken.append(("KOPIE_NAJNOWSZE", f"po wyniku Kopie sprzed runu mają inne bajty: {rewritten}"))
     if outcome == "wyjatek":
         broken.append(
             ("BEZ_WYJATKU", f"{world.mode} kończy się wyjątkiem: {failure}")
