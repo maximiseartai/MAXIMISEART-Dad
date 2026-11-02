@@ -393,8 +393,10 @@ def test_wybor_okresu_proponuje_ostatni_pelny_okres_i_starsze_ze_statusem_okresu
     centrum.fixture.period_directory.mkdir()
     centrum.fixture.collective_file_path.touch()
 
-    setup, _settlement, _efenix = centrum.client.get("/api/runs/setup").json()["processes"]
+    processes = centrum.client.get("/api/runs/setup").json()["processes"]
+    setup = processes[0]
 
+    assert [process["process"] for process in processes] == ["preparation", "efenix", "settlement"]
     assert (setup["process"], setup["title"], setup["blocker"]) == ("preparation", "Przygotowanie pliku zbiorczego", None)
     assert setup["reminder"] == "Zapisz i zamknij Rejestr zleceń w Excelu"
     assert (setup["confirms_readiness"], setup["preview_hint"]) == (
@@ -416,7 +418,7 @@ def test_wybor_okresu_pamieta_udany_podglad_bez_zapisu_takze_po_odswiezeniu_kart
     centrum = preparing_centrum(tmp_path)
 
     def previewed() -> dict[str, bool]:
-        setup, _settlement, _efenix = centrum.client.get("/api/runs/setup").json()["processes"]
+        setup, _efenix, _settlement = centrum.client.get("/api/runs/setup").json()["processes"]
         return {choice["token"]: choice["previewed"] for choice in setup["periods"][:2]}
 
     before = previewed()
@@ -443,7 +445,7 @@ def test_uruchom_bez_podgladu_i_podglad_wymagajacy_sprawdzenia_nie_sa_udanym_pod
 
     centrum.start(dry_run=False)
     finished_view(centrum.client)
-    setup, _settlement, _efenix = centrum.client.get("/api/runs/setup").json()["processes"]
+    setup, _efenix, _settlement = centrum.client.get("/api/runs/setup").json()["processes"]
 
     assert [choice["previewed"] for choice in setup["periods"][:2]] == [False, False]
 
@@ -491,7 +493,7 @@ def test_karta_startu_mowi_ktore_pliki_przygotowania_sa_otwarte_w_excelu_az_do_i
     locks = [path.with_name(f"~${path.name}") for path in workbooks]
 
     def open_in_excel() -> set[tuple[str, ...]]:
-        setup, _settlement, _efenix = centrum.client.get("/api/runs/setup").json()["processes"]
+        setup, _efenix, _settlement = centrum.client.get("/api/runs/setup").json()["processes"]
         return {tuple(choice["open_in_excel"]) for choice in setup["periods"]}
 
     for lock in locks:
@@ -531,7 +533,7 @@ def test_stopka_karty_startu_nie_kaze_zamknac_rejestru_zlecen_gdy_uruchom_blokuj
         path: Path = getattr(centrum.fixture, workbook)
         path.with_name(f"~${path.name}").touch()
 
-    setup, _settlement, _efenix = centrum.client.get("/api/runs/setup").json()["processes"]
+    setup, _efenix, _settlement = centrum.client.get("/api/runs/setup").json()["processes"]
 
     assert {choice["reminder"] for choice in setup["periods"]} == {reminder}
 
@@ -544,7 +546,7 @@ def test_rada_karty_startu_i_zatrzymania_nazywa_ten_sam_pozostawiony_plik_blokad
     path: Path = getattr(centrum.fixture, workbook)
     leftover = f"pozostawiony plik ~${path.name}"
     path.with_name(f"~${path.name}").touch()
-    setup, _settlement, _efenix = centrum.client.get("/api/runs/setup").json()["processes"]
+    setup, _efenix, _settlement = centrum.client.get("/api/runs/setup").json()["processes"]
 
     [stop] = run_to_end(centrum, dry_run=True)["result"]["stops"]
 
@@ -570,14 +572,14 @@ def test_rejestr_zlecen_w_folderze_bez_dostepu_nie_psuje_karty_startu(tmp_path: 
         folder.chmod(0o755)
 
     assert answer.status_code == 200
-    setup, _settlement, _efenix = answer.json()["processes"]
+    setup, _efenix, _settlement = answer.json()["processes"]
     assert {tuple(choice["open_in_excel"]) for choice in setup["periods"]} == {()}
 
 
 def test_bez_wskazanego_rejestru_zlecen_uruchomienie_jest_odrzucone(tmp_path: Path) -> None:
     client = bare_centrum(tmp_path, today=TODAY).client
 
-    setup, _settlement, _efenix = client.get("/api/runs/setup").json()["processes"]
+    setup, _efenix, _settlement = client.get("/api/runs/setup").json()["processes"]
     refused = client.post("/api/runs", json={"process": "preparation", "period": PERIOD, "dry_run": True})
 
     assert setup["blocker"] == "Najpierw wskaż Rejestr zleceń i folder okresów."
