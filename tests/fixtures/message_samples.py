@@ -303,11 +303,14 @@ _ORDER_FAULTS: tuple[OrderFault, ...] = (
 )
 EFENIX_SAMPLES: Samples = {
     "source_unusable": [partial(efenix_messages.source_unusable, WorkbookError(SOURCE, problem)) for problem in Problem],
+    "collective_file_missing": [lambda: efenix_messages.collective_file_missing(SOURCE)],
     "missing_columns": [lambda: efenix_messages.missing_columns(SOURCE, ["NUMER ZL.", "ADRES"])],
     "amounts_not_computed": [lambda: efenix_messages.amounts_not_computed(SOURCE, 18)],
     "logged_out": [partial(efenix_messages.logged_out, kept=kept) for kept in (False, True)],
+    "window_closed": [partial(efenix_messages.window_closed, kept=kept) for kept in (False, True)],
     "efenix_changed": [partial(efenix_messages.efenix_changed, kept=kept) for kept in (False, True)],
     "efenix_unreachable": [partial(efenix_messages.efenix_unreachable, kept=kept) for kept in (False, True)],
+    "browser_not_started": [efenix_messages.browser_not_started],
     "order_error": [partial(efenix_messages.order_error, SOURCE, 23, problem) for problem in _ORDER_FAULTS],
     "emmett_conflict": [
         lambda: efenix_messages.emmett_conflict(SOURCE, 23, [Conflict("012", 2, 1), Conflict("020", 1, 0)]),

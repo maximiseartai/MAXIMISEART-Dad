@@ -3,8 +3,16 @@ import { TriangleAlertIcon } from "lucide-react"
 import type { Count, Figure } from "@/api/centrum"
 import { seconds } from "@/lib/format"
 
-/** Liczby z etykietami jako kafelki (np. Zlecenia na dzień); zero ma ikonę, nie tylko kolor. */
-export function CountTiles({ title, counts }: { title: string; counts: ReadonlyArray<Count> }) {
+/** Liczby z etykietami jako kafelki (np. Zlecenia na dzień); zero, które ostrzega, ma ikonę, nie tylko kolor. */
+export function CountTiles({
+  title,
+  counts,
+  zeroWarns = true,
+}: {
+  title: string
+  counts: ReadonlyArray<Count>
+  zeroWarns?: boolean
+}) {
   return (
     <section className="flex flex-col gap-2" aria-label={title}>
       <h3 className="text-sm font-medium">{title}</h3>
@@ -13,12 +21,12 @@ export function CountTiles({ title, counts }: { title: string; counts: ReadonlyA
           <li
             key={count.label}
             aria-label={`${count.label}: ${count.count}`}
-            data-zero={count.count === 0}
+            data-zero={zeroWarns && count.count === 0}
             className="flex flex-col items-center gap-1 rounded-lg bg-muted/60 px-1 py-2 data-[zero=true]:bg-warning/10"
           >
             <CountLabel label={count.label} />
             <span className="flex items-center gap-1 text-lg font-semibold tabular-nums">
-              {count.count === 0 ? <TriangleAlertIcon className="size-3.5 text-warning" aria-hidden /> : null}
+              {zeroWarns && count.count === 0 ? <TriangleAlertIcon className="size-3.5 text-warning" aria-hidden /> : null}
               {count.count}
             </span>
           </li>

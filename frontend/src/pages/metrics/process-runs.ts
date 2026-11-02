@@ -7,6 +7,7 @@ export type Mode = ProcessRun["mode"]
 export const PROCESS_OPTIONS: ReadonlyArray<FilterOption<Process>> = [
   { value: "preparation", label: "Przygotowanie" },
   { value: "settlement", label: "Przebieg" },
+  { value: "efenix", label: "efenix" },
   { value: "intermax", label: "INTERMAX" },
 ]
 

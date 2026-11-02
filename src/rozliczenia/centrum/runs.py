@@ -211,6 +211,7 @@ class EndedRun:
             summary=None if self.shown is None else self.shown.summary,
             files_unchanged=self.files_unchanged,
             opens=None if stopped is None else stopped.stop.message.dad_file,
+            order_notes=None if self.shown is None else self.shown.notes,
         )
 
 

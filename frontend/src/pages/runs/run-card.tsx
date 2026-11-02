@@ -23,10 +23,13 @@ import type {
   Message,
   NextAction,
   OpenTarget,
+  OrderNote,
+  OrderNotes,
   PastRun,
   PeriodFile,
   PhaseProgress,
   Progress as RunProgress,
+  ProgressStep,
   RunInfo,
   RunInterrupted,
   RunOutcome,
@@ -112,6 +115,7 @@ export function RunCard({
         {view.state !== "finished" && view.progress.template_total > 0 ? (
           <TemplateProgress progress={view.progress} />
         ) : null}
+        {view.state !== "finished" && view.progress.step != null ? <StepProgress step={view.progress.step} /> : null}
         {stale && view.state === "running" ? (
           <Alert className="wejscie">
             <WifiOffIcon />
@@ -314,6 +318,7 @@ function RunOutcomeSection({ run, result, reminder }: { run: RunInfo; result: Ru
         action={offersDiagnosis ? diagnosis.action : next.button}
         live={{ filesUnchanged: result.files_unchanged, opens: result.opens, openFirst: !offersDiagnosis }}
         below={offersDiagnosis ? diagnosis.result : null}
+        notes={result.order_notes ?? null}
         filling
       />
       {next.dialog}
@@ -338,6 +343,7 @@ function OutcomeBody({
   action,
   live = null,
   below = null,
+  notes = null,
   filling = false,
 }: {
   run: RunInfo
@@ -345,11 +351,19 @@ function OutcomeBody({
   action: React.ReactNode
   live?: LiveStop | null
   below?: React.ReactNode
+  /** Zlecenia, które zostały tacie, z numerami i Wykonawcami: zastępują ostrzeżenia w trzech częściach. */
+  notes?: OrderNotes | null
   filling?: boolean
 }) {
   const [stop] = result.stops
-  // Wynik bez Zatrzymania, który proponuje otworzyć zapisany Plik zbiorczy, to Plik zbiorczy przygotowany.
-  const prepared = filling && result.next_action === "open_collective_file" && stop === undefined
+
+  // Wynik bez Zatrzymania, który proponuje otworzyć Plik zbiorczy zapisany jako plik okresu, to Plik zbiorczy przygotowany
+  // (Wycena w efenix też proponuje Plik zbiorczy, ale go nie tworzy).
+  const prepared =
+    filling &&
+    result.next_action === "open_collective_file" &&
+    stop === undefined &&
+    (result.summary?.files.some((file) => file.kind === "collective_file") ?? false)
 
   return (
     <>
@@ -377,9 +391,14 @@ function OutcomeBody({
       )}
       {below}
       {prepared ? <FillingOnResult token={run.period} /> : null}
-      {result.warnings.map((warning) => (
-        <ThreePartMessage key={warning.what} message={warning} kind="warning" />
-      ))}
+      {notes === null ? (
+        result.warnings.map((warning) => <ThreePartMessage key={warning.what} message={warning} kind="warning" />)
+      ) : (
+        <>
+          <OrderNoteList title="Błędy" notes={notes.errors} />
+          <OrderNoteList title="Ostrzeżenia Emmetta" notes={notes.warnings} />
+        </>
+      )}
       {result.technical_notes.map((note) => (
         <p key={note} className="flex items-center gap-2 text-sm text-muted-foreground">
           <InfoIcon className="size-4" aria-hidden />
@@ -565,6 +584,61 @@ function TemplateProgress({ progress }: { progress: RunProgress }) {
   )
 }
 
+/**
+ * Krok Zapisywania procesu bez Szablonów pracowników: z liczeniem pasek „n z m” z bieżącym Wykonawcą, bez niego
+ * jedno zdanie, co teraz trwa (np. „Zaloguj się w oknie efenix”).
+ */
+function StepProgress({ step }: { step: ProgressStep }) {
+  if (step.total === 0) {
+    return (
+      <p className="wejscie flex items-center gap-2 text-sm font-medium" role="status" aria-label="Krok">
+        <Spinner />
+        {step.label}
+      </p>
+    )
+  }
+
+  const counted = `${step.done} z ${step.total}`
+
+  return (
+    <Progress value={(step.done / step.total) * 100} getAriaValueText={() => counted} aria-label={step.label}>
+      <ProgressLabel>
+        {step.label}
+        {step.worker === null ? null : <span className="font-normal text-muted-foreground"> · {step.worker}</span>}
+      </ProgressLabel>
+      <ProgressValue>{() => counted}</ProgressValue>
+    </Progress>
+  )
+}
+
+/** Zlecenia, które zostały tacie: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i co się stało; puste znika. */
+function OrderNoteList({ title, notes }: { title: string; notes: ReadonlyArray<OrderNote> }) {
+  if (notes.length === 0) {
+    return null
+  }
+
+  return (
+    <section className="flex flex-col gap-2" aria-label={title}>
+      <h3 className="flex items-center gap-2 text-sm font-medium">
+        <TriangleAlertIcon className="size-4 text-warning" aria-hidden />
+        {title} ({notes.length})
+      </h3>
+      <Table aria-label={title}>
+        <TableBody>
+          {notes.map((note) => (
+            <TableRow key={note.row}>
+              <TableCell className="w-24 text-muted-foreground tabular-nums">wiersz {note.row}</TableCell>
+              <TableCell className="w-32 font-medium tabular-nums">{note.order ?? "bez numeru"}</TableCell>
+              <TableCell className="w-40 text-muted-foreground">{note.worker}</TableCell>
+              <TableCell className="whitespace-normal">{note.what}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </section>
+  )
+}
+
 /** Szczegóły wyniku z serwera: kafelki liczb (np. Zlecenia na dzień), pliki okresu i Rozliczenia pracowników. */
 function SummaryDetails({ summary, run }: { summary: RunSummary; run: RunInfo }) {
   // Po podglądzie bez zapisu pliki są tylko planem: jeszcze ich nie ma, więc nie ma czego otwierać.
@@ -572,7 +646,9 @@ function SummaryDetails({ summary, run }: { summary: RunSummary; run: RunInfo })
 
   return (
     <>
-      {summary.counts === null ? null : <CountTiles title={summary.counts.title} counts={summary.counts.counts} />}
+      {summary.counts === null ? null : (
+        <CountTiles title={summary.counts.title} counts={summary.counts.counts} zeroWarns={summary.counts.zero_warns} />
+      )}
       {summary.files.length === 0 ? null : <PeriodFiles files={summary.files} onOpen={open} />}
       {summary.intermax_copy == null ? null : (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">

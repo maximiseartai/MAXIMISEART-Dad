@@ -29,7 +29,7 @@ def source_unusable(error: WorkbookError) -> Message:
 
     match error.problem:
         case Problem.MISSING:
-            return _source_missing(error.path)
+            return collective_file_missing(error.path)
         case Problem.OPEN_IN_EXCEL:
             return _source_open_in_excel(error.path)
         case Problem.INACCESSIBLE:
@@ -38,7 +38,9 @@ def source_unusable(error: WorkbookError) -> Message:
             return _source_unreadable(error.path)
 
 
-def _source_missing(source: Path) -> Message:
+def collective_file_missing(source: Path) -> Message:
+    """Nie ma Pliku zbiorczego okresu ``source``; ten sam Komunikat w procesie i w Diagnozie."""
+
     return Message(
         code="EFENIX_BRAK_PLIKU_ZBIORCZEGO",
         what=f"Nie znaleziono Pliku zbiorczego. {_UNCHANGED}",
@@ -122,6 +124,17 @@ def logged_out(*, kept: bool) -> Message:
     )
 
 
+def window_closed(*, kept: bool) -> Message:
+    """Okno albo karta efenix zamknęły się w trakcie przebiegu; ``kept`` jak w ``logged_out``."""
+
+    return Message(
+        code="EFENIX_OKNO_ZAMKNIETE",
+        what=f"Okno efenix zostało zamknięte, więc {_PROCESS} się zatrzymała. {_after_stop(kept=kept)}",
+        where=_EFENIX,
+        action="Uruchom ponownie i zostaw okno efenix otwarte do końca. Gotowe zlecenia narzędzie tylko sprawdzi.",
+    )
+
+
 def efenix_changed(*, kept: bool) -> Message:
     """Strona efenix wygląda inaczej, niż zna ją narzędzie; ``kept`` jak w ``logged_out``."""
 
@@ -146,6 +159,20 @@ def efenix_unreachable(*, kept: bool) -> Message:
         action=(
             "Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Jeśli błąd "
             "wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
+        ),
+    )
+
+
+def browser_not_started() -> Message:
+    """Przeglądarka okna efenix nie wystartowała, więc proces nie otworzył efenix."""
+
+    return Message(
+        code="EFENIX_BRAK_PRZEGLADARKI",
+        what=f"Nie udało się otworzyć przeglądarki Google Chrome z oknem efenix. {_UNCHANGED}",
+        where=_EFENIX,
+        action=(
+            "Zamknij okno efenix, jeśli zostało otwarte z poprzedniej Wyceny w efenix, i uruchom ponownie. Jeśli na "
+            "komputerze nie ma Google Chrome albo błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
         ),
     )
 

@@ -12,7 +12,15 @@ jej odpowiedź trafia do ``#wyniki`` w dowolnej chwili. Kolumny tabeli rozpoznaj
 login realizatora z ``small.text-default`` komórki Wykonawca (obok niego w ``<small>`` stoi data), a stronę zlecenia
 otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony albo szukania na ``page_login.php`` to
 ``LoggedOut``, adres, który nie odpowiada, to ``EfenixUnreachable``, a strona bez oczekiwanej budowy, element obecny,
-ale niewidoczny, albo brak odpowiedzi w czasie ``timeout_ms`` to ``UnexpectedPage``. Przeglądarkę daje rozmówca: stronę (``window``) albo Chromium Playwrighta (``chromium``).
+ale niewidoczny, albo brak odpowiedzi w czasie ``timeout_ms`` to ``UnexpectedPage``. Przeglądarkę daje rozmówca: stronę (``window``), Chromium Playwrighta (``chromium``)
+albo widoczne okno zainstalowanego Google Chrome w trwałym profilu narzędzia (``chrome``), które nie startuje
+(``BrowserNotStarted``), gdy Chrome nie ma albo jego profil trzyma inne okno.
+
+Okno z ``Login`` od silnika (``chrome`` zawsze, ``window`` na życzenie) na stronie logowania czeka, aż tata się zaloguje:
+co ``LOGIN_POLL_MS`` sprawdza, czy strona przeszła na inną niż logowanie, albo pyta efenix o listę zleceń w tej samej
+sesji przeglądarki bez przekierowań, nie ruszając strony z formularzem, w którym tata pisze. Gdy lista odpowiada, otwiera ją
+i proces rusza; brak logowania przez ``LOGIN_TIMEOUT_MS`` to ``LoggedOut``, a karta, okno albo przeglądarka zamknięte
+w tym czasie to ``WindowClosed`` najpóźniej po ``LOGIN_POLL_MS``.
 
 Stronę zlecenia czyta tak, jak widzi ją tata: datę wykonania z ``#data_install`` (RRRR-MM-DD albo pusta), kwotę końcową z
 ``#cena_all2`` i ilość każdej pozycji z pola ``input.wycena-ilosc`` o id ``INDEKS_NNN_…`` (kod pozycji to ``NNN``).
@@ -35,12 +43,14 @@ muszą być w skryptach tych stron, bo okno polega na ich działaniu (``LIST_SCR
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 import json
+from pathlib import Path
 import re
+import time
 from typing import Final, TypedDict
 from urllib.parse import parse_qs, urljoin, urlparse
 
@@ -48,7 +58,18 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page, Response, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-from .efenix_pricing import EfenixUnreachable, ListedOrder, LoggedOut, OrderPricing, PagePart, UnexpectedPage
+from . import TOOL_ROOT
+from .efenix_pricing import (
+    BrowserNotStarted,
+    EfenixUnreachable,
+    ListedOrder,
+    LoggedOut,
+    Login,
+    OrderPricing,
+    PagePart,
+    UnexpectedPage,
+    WindowClosed,
+)
 
 __all__ = [
     "AMOUNT",
@@ -57,19 +78,26 @@ __all__ = [
     "LIST_ELEMENTS",
     "LIST_SCRIPT_USES",
     "LOGIN_PAGE",
+    "LOGIN_TIMEOUT_MS",
     "ORDER_ELEMENTS",
     "ORDER_PAGE",
     "ORDER_SCRIPT_USES",
+    "PROFILE_DIRECTORY",
     "QUANTITY",
     "SEARCH",
     "BrowserEfenix",
     "PageElement",
     "ScriptUse",
+    "chrome",
     "chromium",
+    "default_profile",
     "read_order",
     "read_results",
     "window",
 ]
+
+PROFILE_DIRECTORY: Final = "przegladarka-efenix"
+"""Folder profilu przeglądarki narzędzia w katalogu narzędzia: na dysku lokalnym taty, poza OneDrive, w ``.gitignore``."""
 
 _NUMBER_FIELD: Final = "#field_numer"
 _NUMBER_PARAM: Final = "numer"
@@ -97,6 +125,9 @@ HEADERS: Final = {"number": "numer dokumentu", "status": "status", "realizator":
 _LOGIN: Final = re.compile(r"\(([^()\s]+)\)")
 _DAY: Final = re.compile(r"\d{4}-\d{2}-\d{2}")
 TIMEOUT_MS: Final = 30_000
+LOGIN_TIMEOUT_MS: Final = 15 * 60_000
+"""Tyle okno czeka na logowanie taty, zanim proces zatrzyma się jak po wylogowaniu."""
+LOGIN_POLL_MS: Final = 2_000
 
 # Tabela z odpowiedzi szukania przeczytana parserem HTML przeglądarki w ``<template>``, w którym jej skrypty nie biegną.
 _READ_RESULTS: Final = """(html) => {
@@ -225,6 +256,50 @@ class BrowserEfenix:
         self._ensure_logged_in()
         if self._page.locator(_NUMBER_FIELD).count() != 1:
             raise UnexpectedPage(PagePart.LIST)
+
+    def wait_for_login(
+        self, login: Login, *, timeout_ms: int = LOGIN_TIMEOUT_MS, clock: Callable[[], float] = time.monotonic
+    ) -> None:
+        """Otwiera listę zleceń, a na stronie logowania czeka w ``login``, aż tata się zaloguje; ``LoggedOut`` po
+        ``timeout_ms`` bez logowania, a ``WindowClosed`` najpóźniej ``LOGIN_POLL_MS`` po zamknięciu karty, okna albo
+        całej przeglądarki. ``clock`` (sekundy) mierzy czas czekania.
+
+        Zamkniętą kartę rozpoznaje po ``Page.is_closed`` przed każdym sprawdzeniem, bo czekanie Playwrighta na adres karty
+        zamkniętej przed nim nie zgłasza jej zamknięcia, tylko kończy się po swoim limicie.
+        """
+
+        try:
+            self.open_list()
+            return
+        except LoggedOut:
+            pass
+        with login():
+            deadline = clock() + timeout_ms / 1000
+            while True:
+                if self._page.is_closed():
+                    raise WindowClosed
+                if self._session_open():
+                    try:
+                        self.open_list()
+                        return
+                    except LoggedOut:
+                        pass
+                remaining_ms = round((deadline - clock()) * 1000)
+                if remaining_ms <= 0:
+                    raise LoggedOut
+                # Czekanie kończy się po limicie, a w karcie zamkniętej w jego trakcie błędem; o zamknięciu mówi ``is_closed``.
+                with suppress(PlaywrightError):
+                    self._page.wait_for_url(lambda url: not _on_login_page(url), timeout=min(LOGIN_POLL_MS, remaining_ms))
+
+    def _session_open(self) -> bool:
+        """Lista zleceń odpowiada w sesji okna bez przekierowania na logowanie; pytanie nie zmienia strony okna."""
+
+        try:
+            response = self._page.context.request.get(self._url, max_redirects=0, timeout=self._timeout_ms)
+        except PlaywrightError:
+            return False
+        location = urlparse(response.headers.get("location", "")).path
+        return response.ok and not location.endswith(LOGIN_PAGE)
 
     def search(self, number: str) -> Sequence[ListedOrder]:
         """Wiersze tabeli wyników po szukaniu ``number`` w polu ``Numer`` listy zleceń."""
@@ -361,7 +436,7 @@ class BrowserEfenix:
             self._page.wait_for_function(_SHOWS, arg=[selector, text], timeout=self._timeout_ms)
 
     def _ensure_logged_in(self) -> None:
-        if urlparse(self._page.url).path.endswith("/" + LOGIN_PAGE):
+        if _on_login_page(self._page.url):
             raise LoggedOut
 
 
@@ -474,17 +549,78 @@ def _amount(shown: str, part: PagePart) -> Decimal:
     return Decimal(text)
 
 
+def _on_login_page(url: str) -> bool:
+    return urlparse(url).path.endswith("/" + LOGIN_PAGE)
+
+
 def _redirected_to_login(response: Response) -> bool:
     return 300 <= response.status < 400 and urlparse(response.headers.get("location", "")).path.endswith(LOGIN_PAGE)
 
 
 @contextmanager
-def window(page: Page, url: str, *, timeout_ms: int = TIMEOUT_MS) -> Iterator[BrowserEfenix]:
-    """Okno efenix na stronie ``page``, którą daje rozmówca, z otwartą listą zleceń pod adresem ``url``."""
+def window(
+    page: Page,
+    url: str,
+    *,
+    timeout_ms: int = TIMEOUT_MS,
+    login: Login | None = None,
+    login_timeout_ms: int = LOGIN_TIMEOUT_MS,
+    clock: Callable[[], float] = time.monotonic,
+) -> Iterator[BrowserEfenix]:
+    """Okno efenix na stronie ``page``, którą daje rozmówca, z otwartą listą zleceń pod adresem ``url``.
+
+    Z ``login`` na stronie logowania czeka na logowanie taty (``BrowserEfenix.wait_for_login``, czas czekania mierzy
+    ``clock``), bez niego to ``LoggedOut``.
+    """
 
     efenix = BrowserEfenix(page, url, timeout_ms=timeout_ms)
-    efenix.open_list()
+    if login is None:
+        efenix.open_list()
+    else:
+        efenix.wait_for_login(login, timeout_ms=login_timeout_ms, clock=clock)
     yield efenix
+
+
+def default_profile() -> Path:
+    """Profil przeglądarki okna efenix taty: osobny od jego profilu z kartami, trwały między uruchomieniami."""
+
+    return TOOL_ROOT / PROFILE_DIRECTORY
+
+
+@contextmanager
+def chrome(
+    url: str,
+    profile: Path,
+    login: Login,
+    *,
+    channel: str | None = "chrome",
+    headless: bool = False,
+    login_timeout_ms: int = LOGIN_TIMEOUT_MS,
+    arguments: Sequence[str] = (),
+) -> Iterator[BrowserEfenix]:
+    """Okno efenix taty: przeglądarka ``channel`` (zainstalowany Google Chrome) w trwałym profilu ``profile``.
+
+    Profil pamięta logowanie między uruchomieniami i nie jest profilem taty z jego kartami. Okno czeka na logowanie taty
+    w ``login`` i zamyka się z przeglądarką na końcu bloku. ``channel`` ``None`` to Chromium Playwrighta, a ``headless``
+    i ``arguments`` (np. port debugowania) są dla testów i weryfikacji; ``BrowserNotStarted``, gdy przeglądarka nie
+    wystartowała.
+    """
+
+    with sync_playwright() as playwright:
+        try:
+            context = playwright.chromium.launch_persistent_context(
+                profile, channel=channel, headless=headless, no_viewport=True, args=list(arguments)
+            )
+        except PlaywrightError as error:
+            raise BrowserNotStarted from error
+        try:
+            page = context.pages[0] if context.pages else context.new_page()
+            with window(page, url, login=login, login_timeout_ms=login_timeout_ms) as efenix:
+                yield efenix
+        finally:
+            # Przeglądarka, którą tata zamknął już sam, nie zmienia wyniku.
+            with suppress(PlaywrightError):
+                context.close()
 
 
 @contextmanager

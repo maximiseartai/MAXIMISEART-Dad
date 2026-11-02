@@ -1,5 +1,5 @@
 import * as React from "react"
-import { EyeIcon, FileSpreadsheetIcon, FolderIcon, InfoIcon, TriangleAlertIcon, UsersIcon } from "lucide-react"
+import { EyeIcon, FileSpreadsheetIcon, FolderIcon, InfoIcon, PlayIcon, ReceiptTextIcon, TriangleAlertIcon, UsersIcon } from "lucide-react"
 
 import type { PathSetting, PeriodChoice, PeriodProcess, ProcessSetup } from "@/api/centrum"
 import { Alert, AlertTitle } from "@/components/ui/alert"
@@ -50,12 +50,14 @@ function PeriodLabel({ choice }: { choice: PeriodChoice }) {
 const PROCESS_ICONS: Record<PeriodProcess, React.ReactNode> = {
   preparation: <FileSpreadsheetIcon aria-hidden />,
   settlement: <UsersIcon aria-hidden />,
+  efenix: <ReceiptTextIcon aria-hidden />,
 }
 
 /**
  * Nowe Uruchomienie procesu: proces (kafelki), okres z preselekcją ostatniego pełnego okresu, pliki
- * z ustawień i jedna akcja główna „Podgląd bez zapisu”. „Uruchom” zapisuje po potwierdzeniu.
- * Przebieg rozliczeń nie ma wyboru pliku: Plik zbiorczy wynika z okresu. Plik wejściowy otwarty w Excelu
+ * z ustawień i jedna akcja główna „Podgląd bez zapisu”. „Uruchom” zapisuje po potwierdzeniu, a w procesie bez
+ * podglądu (Wycena w efenix) jest akcją główną. Przebieg rozliczeń i Wycena w efenix nie mają wyboru pliku: Plik
+ * zbiorczy wynika z okresu. Plik wejściowy otwarty w Excelu
  * wyłącza „Uruchom”; podgląd zostaje, bo przy blokadzie po awarii Excela jego Zatrzymanie mówi, co zrobić.
  */
 export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSetup> }) {
@@ -88,6 +90,7 @@ export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSe
   const choices = chosen.periods.map((choice) => ({ value: choice.token, label: <PeriodLabel choice={choice} /> }))
 
   const run = (dryRun: boolean) => start({ ...selection, dry_run: dryRun })
+  const previewHint = chosen.preview_hint
 
   return (
     <Card>
@@ -106,7 +109,7 @@ export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSe
                 setDraft({ process: next.process, period: next.preselected_period })
               }
             }}
-            className="grid-cols-2"
+            className="grid-cols-3"
           >
             {processes.map((setup) => (
               <FieldLabel key={setup.process} htmlFor={`proces-${setup.process}`}>
@@ -156,7 +159,7 @@ export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSe
               <FieldLabel>Pliki</FieldLabel>
               {settings.state === "ready" ? (
                 <div className="flex flex-col gap-1">
-                  {chosen.process === "settlement" ? (
+                  {chosen.process !== "preparation" ? (
                     <CollectiveFile choice={chosenPeriod} />
                   ) : (
                     <SettingPath
@@ -211,26 +214,40 @@ export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSe
             {reminder}
           </span>
         )}
-        <Button
-          variant="ghost"
-          size="lg"
-          className="ml-auto"
-          disabled={blocked || openInExcel.length > 0 || starting}
-          onClick={() => setConfirming(true)}
-        >
-          Uruchom
-        </Button>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button size="lg" className="h-10 px-4" disabled={blocked || starting} onClick={() => run(true)} />
-            }
+        {previewHint === null ? (
+          <Button
+            size="lg"
+            className="ml-auto h-10 px-4"
+            disabled={blocked || openInExcel.length > 0 || starting}
+            onClick={() => setConfirming(true)}
           >
-            <EyeIcon data-icon="inline-start" />
-            Podgląd bez zapisu
-          </TooltipTrigger>
-          <TooltipContent>{chosen.preview_hint}</TooltipContent>
-        </Tooltip>
+            <PlayIcon data-icon="inline-start" />
+            Uruchom
+          </Button>
+        ) : (
+          <>
+            <Button
+              variant="ghost"
+              size="lg"
+              className="ml-auto"
+              disabled={blocked || openInExcel.length > 0 || starting}
+              onClick={() => setConfirming(true)}
+            >
+              Uruchom
+            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button size="lg" className="h-10 px-4" disabled={blocked || starting} onClick={() => run(true)} />
+                }
+              >
+                <EyeIcon data-icon="inline-start" />
+                Podgląd bez zapisu
+              </TooltipTrigger>
+              <TooltipContent>{previewHint}</TooltipContent>
+            </Tooltip>
+          </>
+        )}
       </CardFooter>
       <ConfirmRunDialog
         open={confirming}
@@ -239,7 +256,8 @@ export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSe
         period={period}
         reminder={chosen.reminder}
         confirmsReadiness={chosen.confirms_readiness}
-        previewed={chosenPeriod?.previewed ?? false}
+        // Bez podglądu bez zapisu w procesie nie ma czego uprzedzać.
+        previewed={previewHint === null || (chosenPeriod?.previewed ?? false)}
         onConfirm={() => run(false)}
       />
     </Card>

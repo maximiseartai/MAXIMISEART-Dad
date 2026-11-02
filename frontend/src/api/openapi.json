@@ -2238,6 +2238,11 @@
             },
             "type": "array",
             "title": "Counts"
+          },
+          "zero_warns": {
+            "type": "boolean",
+            "title": "Zero Warns",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -2246,7 +2251,8 @@
           "title",
           "counts"
         ],
-        "title": "CountGroup"
+        "title": "CountGroup",
+        "description": "Liczby z etykietami pod tytułem; ``zero_warns``: zero to sygnał dla taty (dzień bez zleceń), a nie zwykła liczba\n(zlecenia pominięte przez Wycenę w efenix)."
       },
       "DadNoteDraft": {
         "properties": {
@@ -3196,6 +3202,7 @@
             "enum": [
               "preparation",
               "settlement",
+              "efenix",
               "intermax"
             ],
             "title": "Process"
@@ -3271,6 +3278,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/ReleaseNotification"
+                },
+                {
+                  "$ref": "#/components/schemas/PricingNotification"
                 }
               ],
               "discriminator": {
@@ -3278,6 +3288,7 @@
                 "mapping": {
                   "nowa_wersja": "#/components/schemas/ReleaseNotification",
                   "uwaga": "#/components/schemas/DadNoteNotification",
+                  "wycena_w_efenix": "#/components/schemas/PricingNotification",
                   "zgloszenie": "#/components/schemas/ReportNotification"
                 }
               }
@@ -3359,6 +3370,69 @@
           "name"
         ],
         "title": "Opened"
+      },
+      "OrderNote": {
+        "properties": {
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order"
+          },
+          "worker": {
+            "type": "string",
+            "title": "Worker"
+          },
+          "what": {
+            "type": "string",
+            "title": "What"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "row",
+          "order",
+          "worker",
+          "what"
+        ],
+        "title": "OrderNote",
+        "description": "Zlecenie Wyceny w efenix, które zostało tacie: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i zdanie.\n\nNumer zlecenia (``None``: pusty ``NUMER ZL.``) i Wykonawcę widzi tylko tata na swoim komputerze: Logi Uruchomienia ich\nnie mają."
+      },
+      "OrderNotes": {
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/OrderNote"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/OrderNote"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "errors",
+          "warnings"
+        ],
+        "title": "OrderNotes",
+        "description": "Błędy zleceń i ostrzeżenia Emmetta Wyceny w efenix na karcie bieżącego Uruchomienia."
       },
       "Percentiles": {
         "properties": {
@@ -3743,6 +3817,101 @@
         "title": "PriceListItem",
         "description": "Kolumna N:AP i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego."
       },
+      "PricedOrders": {
+        "properties": {
+          "ready": {
+            "type": "integer",
+            "title": "Ready"
+          },
+          "errors": {
+            "type": "integer",
+            "title": "Errors"
+          },
+          "warnings": {
+            "type": "integer",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ready",
+          "errors",
+          "warnings"
+        ],
+        "title": "PricedOrders",
+        "description": "Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, błędy i ostrzeżenia Emmetta."
+      },
+      "PricingNotification": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "unread": {
+            "type": "boolean",
+            "title": "Unread"
+          },
+          "kind": {
+            "type": "string",
+            "const": "wycena_w_efenix",
+            "title": "Kind"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "orders": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PricedOrders"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stopped": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "unread",
+          "kind",
+          "run_id",
+          "headline",
+          "period",
+          "orders",
+          "stopped"
+        ],
+        "title": "PricingNotification",
+        "description": "Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia\n(``headline``), okres, zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”\nKomunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów."
+      },
       "Problem": {
         "properties": {
           "message": {
@@ -3765,6 +3934,7 @@
             "enum": [
               "preparation",
               "settlement",
+              "efenix",
               "intermax"
             ],
             "title": "Process"
@@ -3869,7 +4039,8 @@
             "type": "string",
             "enum": [
               "preparation",
-              "settlement"
+              "settlement",
+              "efenix"
             ],
             "title": "Process"
           },
@@ -3890,7 +4061,14 @@
             "title": "Confirms Readiness"
           },
           "preview_hint": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Preview Hint"
           },
           "periods": {
@@ -3930,7 +4108,7 @@
           "blocker"
         ],
         "title": "ProcessSetup",
-        "description": "Co tata wybiera przed Uruchomieniem procesu; ``blocker`` mówi, czego jeszcze brakuje w ustawieniach.\n\n``reminder``, ``confirms_readiness`` i ``preview_hint`` deklaruje proces: przypomnienie przed\nuruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu”."
+        "description": "Co tata wybiera przed Uruchomieniem procesu; ``blocker`` mówi, czego jeszcze brakuje w ustawieniach.\n\n``reminder``, ``confirms_readiness`` i ``preview_hint`` deklaruje proces: przypomnienie przed\nuruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma\npodglądu bez zapisu, jak Wycena w efenix)."
       },
       "ProcessStep": {
         "properties": {
@@ -4000,6 +4178,16 @@
             },
             "type": "array",
             "title": "Figures"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProgressStep"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -4012,7 +4200,44 @@
           "figures"
         ],
         "title": "Progress",
-        "description": "Wyświetlany podzbiór snapshotu jedynej projekcji postępu (ADR 0002): etapy, Szablony pracowników i liczby."
+        "description": "Wyświetlany podzbiór snapshotu jedynej projekcji postępu (ADR 0002): etapy, Szablony pracowników i liczby.\n\n``step``: ostatni krok Zapisywania procesu bez Szablonów pracowników; ``None`` w innych procesach i przed nim."
+      },
+      "ProgressStep": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "worker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "worker",
+          "done",
+          "total"
+        ],
+        "title": "ProgressStep",
+        "description": "Krok Zapisywania procesu bez Szablonów pracowników (Wycena w efenix): co trwa, u którego Wykonawcy i ile z ilu.\n\n``total`` 0: krok bez liczenia (logowanie, Znaczniki efenix), który karta pokazuje jako trwający."
       },
       "QuantitiesToFillProblem": {
         "properties": {
@@ -4599,6 +4824,7 @@
             "enum": [
               "preparation",
               "settlement",
+              "efenix",
               "intermax"
             ],
             "title": "Process"
@@ -4827,6 +5053,16 @@
               }
             ],
             "title": "Opens"
+          },
+          "order_notes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderNotes"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -4847,7 +5083,7 @@
           "opens"
         ],
         "title": "RunOutcome",
-        "description": "Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.\n\n``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla\ntaty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).\n``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed\nZapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka\nZatrzymania, a karta proponuje go otworzyć (``None``: żaden)."
+        "description": "Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.\n\n``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla\ntaty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).\n``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed\nZapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka\nZatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które\nzostały tacie, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w trzech częściach\n(``None``: inny proces albo wynik bez podsumowania)."
       },
       "RunRequest": {
         "properties": {
@@ -4855,7 +5091,8 @@
             "type": "string",
             "enum": [
               "preparation",
-              "settlement"
+              "settlement",
+              "efenix"
             ],
             "title": "Process"
           },

@@ -1,18 +1,22 @@
 """Wycena w efenix dla Uruchomienia procesu: wejście procesu, wywołanie silnika i fakty zakończenia.
 
 Opis procesu (``PROCESS``) jest wspólny dla każdego rozmówcy, więc liczby, Komunikaty i rekord metryk są te same.
-Okno efenix daje rozmówca (``EfenixInputs.open_efenix``): Skrypt dla maszyn otwiera Chromium Playwrighta
-(``efenix_browser.chromium``), a testy okno na Atrapie efenix.
+Okno efenix daje rozmówca (``EfenixInputs.open_efenix``): Centrum rozliczeń otwiera widoczne okno Google Chrome w profilu
+narzędzia i czeka w nim na logowanie taty (``efenix_browser.chrome``), Skrypt dla maszyn otwiera Chromium Playwrighta
+(``efenix_browser.chromium``), a testy okno na Atrapie efenix. Czas czekania na logowanie wstrzymuje zegar rdzenia
+(``EngineConversation.waiting``), tak jak Decyzja taty.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
+import time
 
 from . import TOOL_ROOT, efenix_pricing
 from . import efenix_messages as messages
-from .decision import Conversation
+from .decision import EngineConversation
 from .domain import ProgressObserver
 from .efenix_pricing import OpenEfenix, PricingSummary
 from .period_folder import PeriodFolder, PeriodFolderError
@@ -33,10 +37,12 @@ class EfenixInputs:
     """Wejście procesu Wyceny w efenix: Plik zbiorczy okresu i okno efenix w sesji taty.
 
     Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da). Wycena w efenix nie ma podglądu bez zapisu.
+    ``clock`` to zegar w sekundach czasów etapów i śladu zleceń (ten sam, którym rdzeń liczy ``Czas uruchomienia``).
     """
 
     source: Path
     open_efenix: OpenEfenix
+    clock: Callable[[], float] = field(default=time.perf_counter, compare=False)
 
     @property
     def period(self) -> str:
@@ -50,8 +56,10 @@ class EfenixInputs:
         return False
 
 
-def _execute(inputs: EfenixInputs, observer: ProgressObserver, _conversation: Conversation) -> PricingSummary:
-    return efenix_pricing.price_orders(inputs.source, inputs.open_efenix, observer=observer)
+def _execute(inputs: EfenixInputs, observer: ProgressObserver, conversation: EngineConversation) -> PricingSummary:
+    return efenix_pricing.price_orders(
+        inputs.source, inputs.open_efenix, observer=observer, clock=inputs.clock, waiting=conversation.waiting
+    )
 
 
 def _finished(_inputs: EfenixInputs, summary: PricingSummary) -> Finished:

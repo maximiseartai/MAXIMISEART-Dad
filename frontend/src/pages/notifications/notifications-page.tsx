@@ -8,6 +8,7 @@ import {
   EyeIcon,
   LifeBuoyIcon,
   MessageSquareTextIcon,
+  ReceiptTextIcon,
   SendIcon,
   type LucideIcon,
 } from "lucide-react"
@@ -23,21 +24,32 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useContentEntrance } from "@/lib/content-entrance"
 import { ago } from "@/lib/format"
 import { useNotifications } from "@/lib/notifications"
+import { RunCardLink } from "@/pages/runs/run-card-sheet"
 
 type Kind = Notification["kind"]
 
 type Release = Extract<Notification, { kind: "nowa_wersja" }>
 
-type Case = Exclude<Notification, Release>
+type Pricing = Extract<Notification, { kind: "wycena_w_efenix" }>
+
+type Case = Exclude<Notification, Release | Pricing>
 
 type CaseState = Case["state"]
 
-// Kolor rodzaju z palety motywu: zielony nowa wersja, niebieski Uwaga, pomarańczowy Zgłoszenie.
+// Kolor rodzaju z palety motywu: zielony nowa wersja, niebieski Uwaga, pomarańczowy Zgłoszenie, żółty Wycena w efenix.
 const KINDS: Record<Kind, { tag: string; color: string; icon: LucideIcon }> = {
   nowa_wersja: { tag: "Nowa wersja", color: "var(--chart-3)", icon: CircleArrowUpIcon },
   uwaga: { tag: "Uwaga", color: "var(--chart-1)", icon: MessageSquareTextIcon },
   zgloszenie: { tag: "Zgłoszenie", color: "var(--chart-2)", icon: LifeBuoyIcon },
+  wycena_w_efenix: { tag: "Wycena w efenix", color: "var(--chart-4)", icon: ReceiptTextIcon },
 }
+
+// Liczby zleceń w Powiadomieniu o Wycenie w efenix, z etykietami kafelków karty Uruchomienia.
+const PRICED: ReadonlyArray<{ key: keyof NonNullable<Pricing["orders"]>; label: string }> = [
+  { key: "ready", label: "Gotowe do przekazania" },
+  { key: "errors", label: "Błędy zleceń" },
+  { key: "warnings", label: "Ostrzeżenia Emmetta" },
+]
 
 const SOLVED: Record<Release["solved"][number]["kind"], string> = { uwaga: "Uwaga", zgloszenie: "Zgłoszenie" }
 
@@ -126,7 +138,7 @@ export function NotificationsPage() {
         <Card className={cn(entrance, "gap-0 p-0")} aria-label="Powiadomienia" role="list">
           {listed.length === 0 ? (
             <p className="px-5 py-4 text-sm text-muted-foreground">
-              Tu zobaczysz, co Maks zrobił z Twoimi Uwagami i Zgłoszeniami.
+              Tu zobaczysz wynik Wyceny w efenix i to, co Maks zrobił z Twoimi Uwagami i Zgłoszeniami.
             </p>
           ) : (
             listed.map((item) => <Row key={item.id} notification={item} fresh={fresh.has(item.id)} listed />)
@@ -145,6 +157,8 @@ function title(notification: Notification): string {
       return notification.title
     case "zgloszenie":
       return notification.what
+    case "wycena_w_efenix":
+      return notification.headline
   }
 }
 
@@ -176,7 +190,7 @@ function Row({ notification, fresh, listed }: { notification: Notification; fres
             />
           ) : null}
         </h2>
-        {notification.kind === "nowa_wersja" ? <ReleaseBody release={notification} /> : <CaseState notification={notification} />}
+        <Body notification={notification} />
       </div>
       <div className="flex flex-col items-end gap-1.5 pt-0.5">
         <span className="inline-flex h-5 items-center gap-1.5 rounded-full border px-2 text-xs font-medium whitespace-nowrap">
@@ -188,6 +202,43 @@ function Row({ notification, fresh, listed }: { notification: Notification; fres
         </time>
       </div>
     </article>
+  )
+}
+
+function Body({ notification }: { notification: Notification }) {
+  switch (notification.kind) {
+    case "nowa_wersja":
+      return <ReleaseBody release={notification} />
+    case "wycena_w_efenix":
+      return <PricingBody pricing={notification} />
+    default:
+      return <CaseState notification={notification} />
+  }
+}
+
+/**
+ * Wynik Wyceny w efenix, która skończyła się, gdy tata patrzył na okno efenix albo odszedł od komputera: okres, liczby
+ * zleceń, „Co się stało” Zatrzymania i karta Uruchomienia z błędami i ostrzeżeniami.
+ */
+function PricingBody({ pricing }: { pricing: Pricing }) {
+  const orders = pricing.orders
+
+  return (
+    <div className="flex flex-col items-start gap-3">
+      <p className="text-sm text-muted-foreground tabular-nums">Okres {pricing.period}</p>
+      {orders === null ? null : (
+        <dl aria-label="Zlecenia" className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+          {PRICED.map(({ key, label }) => (
+            <div key={key} className="flex items-baseline gap-1.5">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="font-medium tabular-nums">{orders[key]}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {pricing.stopped === null ? null : <p className="text-sm text-pretty break-words">{pricing.stopped}</p>}
+      <RunCardLink runId={pricing.run_id} title={KINDS.wycena_w_efenix.tag} period={pricing.period} />
+    </div>
   )
 }
 

@@ -11,12 +11,13 @@ Uruchomienia procesu.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
 from .message import Message, StopError
 
-__all__ = ["Conversation", "Decision"]
+__all__ = ["Conversation", "Decision", "EngineConversation"]
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,16 @@ class Conversation(Protocol):
     def continue_hint(self) -> str: ...
 
     def confirm(self, decision: Decision) -> bool: ...
+
+
+class EngineConversation(Conversation, Protocol):
+    """Rozmowa, którą rdzeń Uruchomienia procesu daje silnikowi: Decyzja taty i czekanie na tatę poza nią.
+
+    ``waiting`` to czas, w którym silnik czeka, aż tata zrobi coś sam (zaloguje się w oknie efenix); jak czas Decyzji
+    taty nie wlicza się do ``Czas uruchomienia`` ani do metryk.
+    """
+
+    def waiting(self) -> AbstractContextManager[None]: ...
 
 
 class Declined(StopError):

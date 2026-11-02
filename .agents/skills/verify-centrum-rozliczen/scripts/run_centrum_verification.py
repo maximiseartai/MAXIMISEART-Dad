@@ -253,6 +253,12 @@ REQUIRED_SCREENSHOTS = {
         "242-kopie-intermax-otwarty.png",
         "243-kopie-intermax-przywrocona.png",
     ),
+    "wycena-w-efenix": (
+        "260-efenix-karta-startu.png",
+        "261-efenix-logowanie.png",
+        "262-efenix-postep.png",
+        "263-efenix-karta.png",
+    ),
     "powiadomienia": (
         "180-powiadomienia-dzwonek.png",
         "181-powiadomienia-kropka.png",

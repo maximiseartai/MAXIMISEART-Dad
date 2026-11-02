@@ -203,6 +203,12 @@ class AtrapaEfenix:
         with self._lock:
             self.logged_in = False
 
+    def log_in(self) -> None:
+        """Tata zalogował się w efenix (w tej samej sesji, w której pracuje okno narzędzia)."""
+
+        with self._lock:
+            self.logged_in = True
+
     def state(self) -> tuple[list[AtrapaOrder], bool]:
         """Kopia zleceń i sesji do porównania stanu przed przebiegiem i po nim."""
 

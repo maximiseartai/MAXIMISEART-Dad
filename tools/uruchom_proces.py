@@ -172,7 +172,7 @@ def _order(args: argparse.Namespace) -> tuple[ProcessResult, int]:
 
 def _price(args: argparse.Namespace) -> tuple[ProcessResult, int]:
     url: str = args.efenix_url
-    inputs = EfenixInputs(args.source, lambda: efenix_browser.chromium(url))
+    inputs = EfenixInputs(args.source, lambda _login: efenix_browser.chromium(url))
     return _conduct(efenix_process.PROCESS, run_view.EFENIX, inputs, args.metrics)
 
 

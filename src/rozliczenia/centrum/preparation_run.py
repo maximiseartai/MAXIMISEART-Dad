@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Final
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum import contract, run_view
 from rozliczenia.centrum.catalog import PREPARATION
 from rozliczenia.centrum.configuration import ConfigurationFiles, InputWorkbook, open_in_excel
 from rozliczenia.centrum.metrics import previewed_periods
@@ -25,7 +25,7 @@ from rozliczenia.input_checks import Readers
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 from rozliczenia.telemetry import MetricsStore
 
-_VIEW: Final = PREPARATION.view
+_VIEW: Final = run_view.PREPARATION
 _CHOSEN_WEEKS: Final = 8
 
 
