@@ -98,9 +98,17 @@ and `_Server` in `server.py` (`DEFINITIONS` in `sprawdz_model_kolejki.py`). Only
 rest of their files, is drift. Name these three files here without their
 `src/…` path in backticks: such a path makes the whole file covered.
 
-**Sync commit: `a27e0695`** (2026-10-31). The checker and the model share it:
+**Sync commit: `f7f55067`** (2026-11-02). The checker and the model share it:
 at this commit both were confirmed to describe the code above. Since the
-previous sync `05430811` only `a27e0695` (#718) changed a covered file:
+previous sync `a27e0695` only `f7f55067` (#724) changed a covered file: `Post`
+raises `ValueError` for a `ReportIssue` with more than one part, and
+`_deliver_report` opens the issue of a Zgłoszenie with its one part and posts
+no comment. The checker lost the scope `zgloszenie-w-czesciach` and the known
+finding in it, and the model the configuration of the same name and the
+finding `przejecie`; the model takes a Zgłoszenie in one part as an `ASSUME`.
+No other box call, retry, marker, removal or `_waiting` changed and no
+`Target` was added. At `a27e0695`, since the previous sync `05430811` only
+`a27e0695` (#718) changed a covered file:
 `Outbox` takes one `Listener` (`prepare`, `delivered`, `rejected`) instead
 of `prepare`, `on_delivered` and `on_rejected`, and `_send_all` queues the
 wysyłki that `Listener.delivered` returns with `post` at the place where the
@@ -127,7 +135,7 @@ them, `6f94edb8` was the sync of both, and since the checker's earlier sync
 model describes. To see whether they need another look:
 
 ```bash
-git log --oneline a27e0695..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
+git log --oneline f7f55067..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
 ```
 
 A change to the three definitions above shows as a `UWAGA:` line of
