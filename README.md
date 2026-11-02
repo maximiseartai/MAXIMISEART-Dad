@@ -282,6 +282,45 @@ metryk. Pełny opis pól jest w opisie skryptu (`--help`). Kody wyjścia: `0` OK
 zapisem kończy się kodem `2`, bo ma zawsze ostrzeżenia o ilościach do
 uzupełnienia; podgląd bez zapisu z tymi samymi ostrzeżeniami kończy się kodem `0`.
 
+## Zgodność Atrapy efenix z efenix
+
+`tools/zgodnosc_efenix.py` sprawdza, czy prawdziwy efenix ma budowę, której
+używa Wycena w efenix i którą odtwarza Atrapa efenix: pola listy i strony
+zlecenia, odpowiedź szukania i tabelę wyników, postać daty wykonania,
+przycisk i okno Emmetta, okno daty, nazwy w skryptach stron, na których działaniu
+polega Wycena w efenix, karty pozycji wyceny z kodami `INDEKS` i stronę
+logowania. Ceny pozycji z przypisania kolumn porównuje z kosztami z wiersza 14
+Wzorca pliku zbiorczego (domyślnie z konfiguracji narzędzia, inny plik:
+`--wzorzec`). Uruchamia je Maks przed pierwszą Wyceną w efenix u taty i po
+każdym Zgłoszeniu „efenix się zmienił”, nigdy CI.
+
+Narzędzie tylko czyta i nie uruchamia stron efenix: każde żądanie wysyła samo,
+z ciasteczkami sesji taty z Chrome, tylko z krótkiej listy odczytów (lista,
+szukanie, strona zlecenia, skrypty obu stron, strona logowania) i bez
+podążania za przekierowaniem. HTML składa w swoim oknie bez skryptów i bez
+sieci, które na końcu zamyka. Kart taty nie dotyka, a sesję taty zostawia
+zalogowaną. Wynik ma tylko nazwy elementów, liczby i kody pozycji, bez numerów
+zleceń, adresów, loginów i cen.
+
+```sh
+google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodnosc"
+# w tym oknie zaloguj się do efenix kontem taty, potem:
+.venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php>
+```
+
+Gdy wynik mówi, że lista nie ma zleceń albo że żadne otwarte zlecenie nie ma
+pustej daty wykonania, uruchom narzędzie jeszcze raz z `--numer` i numerem
+zlecenia „Do wyceny” bez daty wykonania.
+
+Przycisku kalendarza daty wykonania narzędzie nie sprawdza, więc wynik zawsze
+ma o nim linię `NIESPRAWDZONE`: sprawdź ręcznie w efenix na zleceniu „Do
+wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty.
+
+Kody wyjścia: `0` bez różnic, gdy niesprawdzony jest tylko przycisk kalendarza,
+`2` różnice albo inne części niesprawdzone (każda w osobnej linii), `1` brak
+Chrome albo Wzorca, efenix nie odpowiada albo Chrome nie jest zalogowany.
+Parametry i Chrome na Windows opisuje `--help`.
+
 ## Testy
 
 Testy tworzą syntetyczne pliki `.xlsx` w katalogu tymczasowym. Nie używają

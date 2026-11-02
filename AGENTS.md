@@ -38,6 +38,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/uruchom_proces.py`: Jedno Uruchomienie procesu (settlement, preparation, intermax, efenix) z wynikiem JSON; użyj w E2E, benchmarku i skillach zamiast Centrum rozliczeń.
 - `tools/wydanie.py`: Narzędzie Wydań (plan, potem wydaj): nowa wersja z tagiem v* i GitHub Release (ADR 0014); uruchamiaj tylko z workflow skilla wydanie.
 - `tools/wyrocznia_zgody.py`: Sprawdza, czy zainstalowany Claude Code oddaje hookowi zgoda.py pytanie o zgodę na rm; uruchom po każdej aktualizacji Claude Code.
+- `tools/zgodnosc_efenix.py`: Porównuje budowę stron efenix z Atrapą efenix samym odczytem; uruchom przed pierwszą Wyceną w efenix i po Zgłoszeniu „efenix się zmienił”.
 <!-- koniec spisu narzędzi -->
 
 ## PR: od pushu do merge'a

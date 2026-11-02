@@ -27,12 +27,18 @@ Tekstowi ``#data_install`` po niej nie wierzy, bo skrypt efenix wpisuje go przy 
 przeładowanie strony, które robi skrypt efenix, i czyta stronę od nowa. Ilość wpisuje w polu i naciska Enter, a skrypt
 strony zapisuje ją przez ``action_save_index.php``: kwotą końcową jest ``price_all`` z tej odpowiedzi, a ``#cena_all2``,
 które się do niej nie odświeży, to ``UnexpectedPage``. Odpowiedź ``result: nok`` to wygasła sesja (``LoggedOut``).
+
+Tabelę wyników i stronę zlecenia czytają ``read_results`` i ``read_order``, których używa też narzędzie zgodności
+Atrapy efenix (``tools/zgodnosc_efenix.py``) na HTML z serwera efenix. Resztę budowy, której okno używa, moduł podaje
+jako dane dla tego narzędzia: elementy listy i strony zlecenia (``LIST_ELEMENTS``, ``ORDER_ELEMENTS``) i nazwy, które
+muszą być w skryptach tych stron, bo okno polega na ich działaniu (``LIST_SCRIPT_USES``, ``ORDER_SCRIPT_USES``).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 import functools
@@ -47,28 +53,50 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .efenix_pricing import EfenixUnreachable, ListedOrder, LoggedOut, OrderPricing, PagePart, UnexpectedPage, WindowClosed
 
-__all__ = ["BrowserEfenix", "chromium", "window"]
+__all__ = [
+    "AMOUNT",
+    "EXECUTION_DATE",
+    "HEADERS",
+    "LIST_ELEMENTS",
+    "LIST_SCRIPT_USES",
+    "LOGIN_PAGE",
+    "ORDER_ELEMENTS",
+    "ORDER_PAGE",
+    "ORDER_SCRIPT_USES",
+    "QUANTITY",
+    "SEARCH",
+    "BrowserEfenix",
+    "PageElement",
+    "ScriptUse",
+    "chromium",
+    "read_order",
+    "read_results",
+    "window",
+]
 
 _NUMBER_FIELD: Final = "#field_numer"
-_LOGIN_PAGE: Final = "page_login.php"
-_SEARCH: Final = "action_fill_orders.php"
-_ORDER_PAGE: Final = "page_order_edit.php"
-_EXECUTION_DATE: Final = "#data_install"
-_AMOUNT: Final = "#cena_all2"
-_QUANTITY: Final = "input.wycena-ilosc"
+_NUMBER_PARAM: Final = "numer"
+LOGIN_PAGE: Final = "page_login.php"
+SEARCH: Final = "action_fill_orders.php"
+ORDER_PAGE: Final = "page_order_edit.php"
+EXECUTION_DATE: Final = "#data_install"
+AMOUNT: Final = "#cena_all2"
+QUANTITY: Final = "input.wycena-ilosc"
 _DATE_BUTTON: Final = "#button-calendar"
 _DATE_DIALOG: Final = "#dialog_select_date"
 _DATE_FIELD: Final = "#field_data_instalacji"
 _SET_DATE: Final = "action_set_date_of_instalation.php"
 _EMMETT_BUTTON: Final = "#button_emmett"
 _EMMETT_DIALOG: Final = "#dialog_emmett"
+_FILL_EMMETT: Final = "action_fill_emmett.php"
 _LOAD_EMMETT: Final = "action_load_emmett.php"
 _SAVE_QUANTITY: Final = "action_save_index.php"
+_PRICE_ALL: Final = "price_all"
 _OK: Final = ".btn-ok"
 _POSITION: Final = re.compile(r"INDEKS_(\d{3})_\d+")
 _AMOUNT_TEXT: Final = re.compile(r"[0-9]+(\.[0-9]+)?")
 _QUANTITY_TEXT: Final = re.compile(r"[0-9]*")
-_HEADERS: Final = {"number": "numer dokumentu", "status": "status", "realizator": "wykonawca", "address": "dane adresowe"}
+HEADERS: Final = {"number": "numer dokumentu", "status": "status", "realizator": "wykonawca", "address": "dane adresowe"}
 _LOGIN: Final = re.compile(r"\(([^()\s]+)\)")
 _DAY: Final = re.compile(r"\d{4}-\d{2}-\d{2}")
 TIMEOUT_MS: Final = 30_000
@@ -130,6 +158,56 @@ def _in_open_window(action: Callable[Concatenate[BrowserEfenix, _P], _R]) -> Cal
             raise
 
     return guarded
+
+
+@dataclass(frozen=True)
+class PageElement:
+    """Element strony efenix, którego używa okno: jest na stronie dokładnie raz (``many``: co najmniej raz), a ten, który
+    okno klika pierwszy (``clicked``), jest widoczny."""
+
+    name: str
+    selector: str
+    many: bool = False
+    clicked: bool = False
+
+
+@dataclass(frozen=True)
+class ScriptUse:
+    """Działanie skryptu strony efenix, na którym polega okno, i nazwy (pól, klas, odpowiedzi), które skrypt zawiera."""
+
+    what: str
+    names: tuple[str, ...]
+
+
+# Budowa stron efenix, której okno używa poza odczytem tabeli wyników i strony zlecenia (``read_results``,
+# ``read_order``); narzędzie zgodności Atrapy efenix (``tools/zgodnosc_efenix.py``) sprawdza ją na efenix. Przycisku
+# kalendarza (``_DATE_BUTTON``) nie ma w ``ORDER_ELEMENTS``: okno klika go tylko przy pustej dacie wykonania, a efenix
+# pokazuje go najpewniej tylko wtedy, więc narzędzie nie sprawdza go na pierwszym otwartym zleceniu.
+LIST_ELEMENTS: Final = (PageElement("pole Numer", _NUMBER_FIELD),)
+ORDER_ELEMENTS: Final = (
+    PageElement("okno daty wykonania", _DATE_DIALOG),
+    PageElement("pole kalendarza w oknie daty wykonania", f"{_DATE_DIALOG} {_DATE_FIELD}"),
+    PageElement("„Potwierdź” w oknie daty wykonania", f"{_DATE_DIALOG} {_OK}"),
+    PageElement("zamknięcie okna daty wykonania", f"{_DATE_DIALOG} {_DISMISS}", many=True),
+    PageElement("przycisk Emmetta", _EMMETT_BUTTON, clicked=True),
+    PageElement("okno Emmetta", _EMMETT_DIALOG),
+    PageElement("„Załaduj do zlecenia” w oknie Emmetta", f"{_EMMETT_DIALOG} {_OK}"),
+)
+LIST_SCRIPT_USES: Final = (
+    ScriptUse("Enter w polu Numer wysyła szukanie z polem numer", (_NUMBER_FIELD[1:], SEARCH, f"{_NUMBER_PARAM}:")),
+)
+ORDER_SCRIPT_USES: Final = (
+    ScriptUse("kalendarz pickadate pola daty wykonania sprawdza dzień w onSet", (_DATE_FIELD[1:], "pickadate", "onSet")),
+    ScriptUse("„Potwierdź” okna daty wykonania zapisuje datę", (_DATE_DIALOG[1:], _OK[1:], _SET_DATE)),
+    ScriptUse(
+        "przycisk Emmetta pokazuje propozycję, a „Załaduj do zlecenia” ją ładuje",
+        (_EMMETT_BUTTON[1:], _FILL_EMMETT, _EMMETT_DIALOG[1:], _LOAD_EMMETT),
+    ),
+    ScriptUse(
+        "wyjście z pola Ilość zapisuje ilość, a kwotę końcową z odpowiedzi pokazuje na stronie",
+        (QUANTITY.partition(".")[2], "blur", _SAVE_QUANTITY, _PRICE_ALL, AMOUNT[1:]),
+    ),
+)
 
 
 class _Cell(TypedDict):
@@ -195,17 +273,14 @@ class BrowserEfenix:
             html = answer.value.text()
         except PlaywrightError as error:
             raise UnexpectedPage(PagePart.RESULTS) from error
-        results: _Results | None = self._page.evaluate(_READ_RESULTS, html)
-        if results is None:
-            raise UnexpectedPage(PagePart.RESULTS)
-        return tuple(self._listed(results["headers"], row) for row in results["rows"])
+        return read_results(self._page, html)
 
     @_in_open_window
     def open_order(self, order: ListedOrder) -> OrderPricing:
         """Otwiera stronę zlecenia ``order`` i czyta datę wykonania, kwotę końcową i ilości pozycji."""
 
         try:
-            self._page.goto(urljoin(self._url, f"{_ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms)
+            self._page.goto(urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms)
         except PlaywrightError as error:
             raise EfenixUnreachable from error
         return self._read_order()
@@ -252,7 +327,7 @@ class BrowserEfenix:
         field_id = self._positions.get(position)
         if field_id is None:
             raise UnexpectedPage(PagePart.QUANTITY)
-        field = self._only(f"{_QUANTITY}#{field_id}", PagePart.QUANTITY)
+        field = self._only(f"{QUANTITY}#{field_id}", PagePart.QUANTITY)
         self._click(field, PagePart.QUANTITY)
         with _within(PagePart.QUANTITY):
             field.fill(str(quantity), timeout=self._timeout_ms)
@@ -273,32 +348,18 @@ class BrowserEfenix:
             raise LoggedOut
         if result != "ok":
             raise UnexpectedPage(PagePart.QUANTITY)
-        shown = str(saved.get("price_all", ""))
+        shown = str(saved.get(_PRICE_ALL, ""))
         amount = _amount(shown, PagePart.QUANTITY)
-        self._wait_for_text(_AMOUNT, shown, PagePart.QUANTITY)
+        self._wait_for_text(AMOUNT, shown, PagePart.QUANTITY)
         return amount
 
     def _read_order(self) -> OrderPricing:
         self._ensure_logged_in()
-        executed = self._only(_EXECUTION_DATE, PagePart.ORDER)
-        total = self._only(_AMOUNT, PagePart.ORDER)
-        fields: list[list[str]] = self._page.locator(_QUANTITY).evaluate_all("(fields) => fields.map((f) => [f.id, f.value])")
-        positions: dict[str, str] = {}
-        quantities: dict[str, int] = {}
-        for field_id, value in fields:
-            found = _POSITION.fullmatch(field_id)
-            if found is None or found[1] in positions or not _QUANTITY_TEXT.fullmatch(value.strip()):
-                raise UnexpectedPage(PagePart.ORDER)
-            positions[found[1]] = field_id
-            quantities[found[1]] = int(value.strip() or 0)
-        self._positions = positions
-        return OrderPricing(_execution_date(executed.inner_text()), _amount(total.inner_text(), PagePart.ORDER), quantities)
+        pricing, self._positions = _order_on(self._page)
+        return pricing
 
     def _only(self, selector: str, part: PagePart) -> Locator:
-        located = self._page.locator(selector)
-        if located.count() != 1:
-            raise UnexpectedPage(part)
-        return located
+        return _single(self._page, selector, part)
 
     def _shown(self, selector: str, part: PagePart) -> None:
         with _within(part):
@@ -335,28 +396,69 @@ class BrowserEfenix:
             self._page.wait_for_function(_SHOWS, arg=[selector, text], timeout=self._timeout_ms)
 
     def _ensure_logged_in(self) -> None:
-        if urlparse(self._page.url).path.endswith("/" + _LOGIN_PAGE):
+        if urlparse(self._page.url).path.endswith("/" + LOGIN_PAGE):
             raise LoggedOut
 
-    @staticmethod
-    def _listed(headers: Sequence[str], row: Sequence[_Cell]) -> ListedOrder:
-        columns = {field: _column(headers, header) for field, header in _HEADERS.items()}
-        links = [cell["link"] for cell in row if cell["link"]]
-        if len(row) != len(headers) or len(links) != 1:
-            raise UnexpectedPage(PagePart.RESULTS)
-        order_id = parse_qs(urlparse(links[0]).query).get("id", [""])[0]
-        number = row[columns["number"]]["plain"]
-        status = row[columns["status"]]
-        found = _LOGIN.findall(row[columns["realizator"]]["login"] or "")
-        if not order_id or not number:
-            raise UnexpectedPage(PagePart.RESULTS)
-        return ListedOrder(
-            number=number,
-            status=status["badge"] if status["badge"] is not None else status["plain"],
-            realizator=found[-1] if found else None,
-            address=row[columns["address"]]["plain"],
-            order_id=order_id,
-        )
+
+def read_results(page: Page, html: str) -> tuple[ListedOrder, ...]:
+    """Wiersze tabeli wyników z odpowiedzi szukania ``html``, przeczytane parserem HTML przeglądarki strony ``page``."""
+
+    results: _Results | None = page.evaluate(_READ_RESULTS, html)
+    if results is None:
+        raise UnexpectedPage(PagePart.RESULTS)
+    return tuple(_listed(results["headers"], row) for row in results["rows"])
+
+
+def read_order(page: Page) -> OrderPricing:
+    """Data wykonania, kwota końcowa i ilości pozycji ze strony zlecenia, którą pokazuje ``page``."""
+
+    return _order_on(page)[0]
+
+
+def _listed(headers: Sequence[str], row: Sequence[_Cell]) -> ListedOrder:
+    columns = {field: _column(headers, header) for field, header in HEADERS.items()}
+    links = [cell["link"] for cell in row if cell["link"]]
+    if len(row) != len(headers) or len(links) != 1:
+        raise UnexpectedPage(PagePart.RESULTS)
+    order_id = parse_qs(urlparse(links[0]).query).get("id", [""])[0]
+    number = row[columns["number"]]["plain"]
+    status = row[columns["status"]]
+    found = _LOGIN.findall(row[columns["realizator"]]["login"] or "")
+    if not order_id or not number:
+        raise UnexpectedPage(PagePart.RESULTS)
+    return ListedOrder(
+        number=number,
+        status=status["badge"] if status["badge"] is not None else status["plain"],
+        realizator=found[-1] if found else None,
+        address=row[columns["address"]]["plain"],
+        order_id=order_id,
+    )
+
+
+def _order_on(page: Page) -> tuple[OrderPricing, dict[str, str]]:
+    """Strona zlecenia w ``page`` i ``id`` pola Ilość każdej pozycji (kod ``NNN`` → ``id``)."""
+
+    executed = _single(page, EXECUTION_DATE, PagePart.ORDER)
+    total = _single(page, AMOUNT, PagePart.ORDER)
+    fields: list[list[str]] = page.locator(QUANTITY).evaluate_all("(fields) => fields.map((f) => [f.id, f.value])")
+    positions: dict[str, str] = {}
+    quantities: dict[str, int] = {}
+    for field_id, value in fields:
+        found = _POSITION.fullmatch(field_id)
+        if found is None or found[1] in positions or not _QUANTITY_TEXT.fullmatch(value.strip()):
+            raise UnexpectedPage(PagePart.ORDER)
+        positions[found[1]] = field_id
+        quantities[found[1]] = int(value.strip() or 0)
+    return OrderPricing(_execution_date(executed.inner_text()), _amount(total.inner_text(), PagePart.ORDER), quantities), positions
+
+
+def _single(page: Page, selector: str, part: PagePart) -> Locator:
+    """Element strony, który jest na niej dokładnie raz; inaczej efenix ma inną budowę."""
+
+    located = page.locator(selector)
+    if located.count() != 1:
+        raise UnexpectedPage(part)
+    return located
 
 
 @contextmanager
@@ -377,7 +479,7 @@ def _column(headers: Sequence[str], header: str) -> int:
 
 
 def _is_search(response: Response, number: str) -> bool:
-    return _is_post(response, _SEARCH) and _form(response).get("numer") == [number]
+    return _is_post(response, SEARCH) and _form(response).get(_NUMBER_PARAM) == [number]
 
 
 def _is_post(response: Response, path: str) -> bool:
@@ -408,7 +510,7 @@ def _amount(shown: str, part: PagePart) -> Decimal:
 
 
 def _redirected_to_login(response: Response) -> bool:
-    return 300 <= response.status < 400 and urlparse(response.headers.get("location", "")).path.endswith(_LOGIN_PAGE)
+    return 300 <= response.status < 400 and urlparse(response.headers.get("location", "")).path.endswith(LOGIN_PAGE)
 
 
 @contextmanager
