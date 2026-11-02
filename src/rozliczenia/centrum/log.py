@@ -98,6 +98,11 @@ class CentrumLog:
 
         self._write("aktualizacja-wynik-zostaje", typ=type(failure).__name__)
 
+    def update_result_stale(self, *, result: str, before: str, after: str | None) -> None:
+        """Plik wyniku Aktualizacji narzędzia mówi o porażce z ``before``, a działa inna wersja: wynik jest stary (#725)."""
+
+        self._write("aktualizacja-wynik-stary", wynik=result, przed=before, po=after or "-")
+
     def update_awaits(self, *, result: str, before: str | None, after: str | None) -> bool:
         """Czy wynik Aktualizacji narzędzia (kod ``result``, commity ``before`` i ``after``) ma jeszcze trafić do dziennika.
 
