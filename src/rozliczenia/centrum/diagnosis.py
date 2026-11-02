@@ -29,7 +29,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Final, Literal, assert_never
+from typing import Any, Final, Literal
 
 from rozliczenia import input_checks, intermax_ordering, preparation_messages, workbook_files
 from rozliczenia.centrum import contract, diagnosis_messages
@@ -468,8 +468,6 @@ def _check_of(step: CheckStep) -> _Check:
             return _Check("Konfiguracja wykonawców", lambda computer, label: _worker_config(computer, label, explain))
         case PeriodFolderCheck(collective_file_missing=missing):
             return _Check("Folder okresu", lambda computer, label: _period_folder(computer, label, missing))
-        case _:
-            assert_never(step)
 
 
 def diagnose(
