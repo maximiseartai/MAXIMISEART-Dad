@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Generic, Literal, TypeVar, assert_never
+from typing import Any, Final, Generic, Literal, TypeVar
 
 from rozliczenia import (
     efenix_messages,
@@ -63,8 +63,6 @@ class NeededSetting:
                 return settings.register
             case "periods_directory":
                 return settings.periods_directory
-            case _:
-                assert_never(self.field)
 
     def existing(self, settings: Settings) -> Path | None:
         match self.field:
@@ -72,8 +70,6 @@ class NeededSetting:
                 return settings.existing_register
             case "periods_directory":
                 return settings.existing_periods_directory
-            case _:
-                assert_never(self.field)
 
 
 # Sprawdzenia Diagnozy jako dane: Diagnoza zamienia każdy krok na swoje sprawdzenie, a jego treść zostaje w niej.
