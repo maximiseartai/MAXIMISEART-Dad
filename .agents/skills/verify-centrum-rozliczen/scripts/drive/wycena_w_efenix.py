@@ -184,6 +184,14 @@ def _price(run: Run, page: Page, source: Path) -> None:
         [row["status"] for row in board if row["token"] == PERIOD] == ["collective_file_prepared"],
         "the Status okresu stays Plik zbiorczy przygotowany",
     )
+    [priced] = [row for row in board if row["token"] == PERIOD]
+    run.check(
+        [step["stage"] for step in priced["path"]] == ["done", "done", "now", "later"]
+        and (priced["next_step"]["action"], priced["secondary_step"]["action"])
+        == ("price_in_efenix", "create_worker_settlements"),
+        "a Wycena w efenix that needs checking leaves its step of the Droga okresu current and the next step, with "
+        "Przebieg rozliczeń reachable beside it",
+    )
     logs = _logs(run)
     run.check(len(logs) == logs_before + 1, "the Uruchomienie wrote one file of Logi Uruchomienia of efenix")
     record = logs[-1]

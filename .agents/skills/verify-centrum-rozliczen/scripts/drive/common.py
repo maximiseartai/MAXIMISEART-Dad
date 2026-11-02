@@ -163,6 +163,34 @@ def period_row(page: Page, token: str) -> Locator:
     return page.get_by_role("table", name="Tablica okresów").get_by_role("row").filter(has_text=token)
 
 
+# The Wycena w efenix metrics file of the run (`serve_centrum.py`): its Historia, from which the Droga okresu counts it.
+EFENIX_METRICS = ".wycena-efenix-metrics.jsonl"
+
+
+@contextmanager
+def priced_in_efenix(run: Run, token: str) -> Iterator[None]:
+    """Harness: a Wycena w efenix of ``token`` with the result OK in the run's Historia (one record of metrics schema 2,
+    which the reader still takes), and the file as it was afterwards, so later features count the same history."""
+
+    path = run.root / EFENIX_METRICS
+    before = path.read_bytes() if path.exists() else None
+    counters = dict.fromkeys(("orders", "ready", "errors", "emmett_warnings", "with_photos", "defects"), 0)
+    record = {
+        "schema_version": 2, "started_at": "2026-10-13T10:00:00+02:00", "mode": "RUN", "period": token,
+        "completed": True, "result": "OK", "total_duration_ms": 1000,
+        "phase_durations_ms": dict.fromkeys(("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie"), 0),
+        "counters": counters, "stop": None,
+    }
+    path.write_bytes((before or b"") + json.dumps(record).encode() + b"\n")
+    try:
+        yield
+    finally:
+        if before is None:
+            path.unlink()
+        else:
+            path.write_bytes(before)
+
+
 def last_opened_is(run: Run, path: Path) -> Callable[[], bool]:
     return lambda: run.lines("opened.jsonl")[-1:] == [{"path": str(path)}]
 

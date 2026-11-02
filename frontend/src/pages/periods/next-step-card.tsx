@@ -7,13 +7,13 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { href } from "@/lib/address"
 import { fullDate } from "@/lib/format"
-import { PreviewAction } from "@/pages/periods/prepare-actions"
+import { StepAction } from "@/pages/periods/prepare-actions"
 
 /**
- * „Następny krok” zawsze dla ostatniego pełnego okresu: krótki tytuł, fakty z ikonami i droga okresu.
- * Gdy okres ma następny krok (Przygotowanie pliku zbiorczego albo Przebieg rozliczeń), jedyną akcją
- * główną strony jest „Podgląd bez zapisu” tego procesu. Przy przygotowanym Pliku zbiorczym akcją główną jest
- * „Uzupełnij” (podsumowanie Uzupełnienia pliku zbiorczego), a podgląd Przebiegu rozliczeń zostaje obok jako drugi.
+ * „Następny krok” zawsze dla ostatniego pełnego okresu: krótki tytuł, fakty z ikonami i Droga okresu.
+ * Gdy okres ma następny krok, jedyną akcją główną strony jest akcja tego kroku: „Podgląd bez zapisu” procesu
+ * albo, dla Wyceny w efenix bez podglądu, nowe Uruchomienie z tym okresem. Przy przygotowanym Pliku zbiorczym
+ * akcją główną jest „Uzupełnij” (podsumowanie Uzupełnienia pliku zbiorczego), a akcja kroku zostaje obok jako druga.
  */
 export function NextStepCard({ period }: { period: PeriodRow }) {
   const step = period.next_step
@@ -35,7 +35,7 @@ export function NextStepCard({ period }: { period: PeriodRow }) {
                 Uzupełnij
               </Button>
             ) : null}
-            <PreviewAction period={period} step={step} secondary={filling} />
+            <StepAction period={period} step={step} secondary={filling} />
           </div>
         )}
         <Badge variant="outline">Następny krok</Badge>
@@ -58,7 +58,7 @@ export function NextStepCard({ period }: { period: PeriodRow }) {
             </span>
           )}
         </div>
-        <PeriodPath status={period.status} />
+        <PeriodPath path={period.path} />
         <p className="text-sm text-muted-foreground">{step.hint}</p>
       </CardContent>
     </Card>

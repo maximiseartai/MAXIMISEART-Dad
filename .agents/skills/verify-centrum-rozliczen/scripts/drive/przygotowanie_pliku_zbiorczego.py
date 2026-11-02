@@ -365,8 +365,8 @@ def drive_preparation(run: Run, page: Page) -> None:
     run.step(feature, "przygotowanie-status-okresu")
     page.goto(run.url)
     expect(period_row(page, LAST_COMPLETE)).to_contain_text("Plik zbiorczy przygotowany")
-    expect(page.get_by_role("region", name="Następny krok")).to_contain_text("Utwórz rozliczenia pracowników")
-    run.check(True, "the Status okresu on Tablica okresów is Plik zbiorczy przygotowany")
+    expect(page.get_by_role("region", name="Następny krok")).to_contain_text("Wyceń w efenix")
+    run.check(True, "the Status okresu on Tablica okresów is Plik zbiorczy przygotowany, and the next step Wycena w efenix")
     run.capture(page, "36-przygotowanie-status-okresu")
 
     run.step(feature, "przygotowanie-nienadpisywanie")

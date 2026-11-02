@@ -25,6 +25,7 @@ from drive.common import (
     period_choice,
     period_files,
     period_row,
+    priced_in_efenix,
     start_card_warns_while_open,
     stop_banner,
 )
@@ -213,10 +214,22 @@ def drive_settlement(run: Run, page: Page) -> None:
     records_before = len(_settlement_records(run, "przebieg-metryki-przed"))
     page.goto(run.url)
     next_step = page.get_by_role("region", name="Następny krok")
-    expect(next_step).to_contain_text("Utwórz rozliczenia pracowników")
-    next_step.get_by_role("button", name="Podgląd bez zapisu").click()
-    live = page.get_by_role("region", name="Podgląd na żywo")
-    expect(live).to_contain_text("Podgląd gotowy · nic nie zapisano")
+    expect(next_step).to_contain_text("Wyceń w efenix")
+    expect(next_step.get_by_role("button", name="Podgląd bez zapisu")).to_have_count(0)
+    with priced_in_efenix(run, LAST_COMPLETE):
+        page.reload()
+        expect(next_step).to_contain_text("Utwórz rozliczenia pracowników")
+        path = next_step.get_by_role("list", name="Droga okresu")
+        expect(path.get_by_role("img", name="zrobione")).to_have_count(3)
+        expect(path.locator('[aria-current="step"]')).to_contain_text("Rozliczenia pracowników")
+        run.check(
+            True,
+            "Następny krok offers Przebieg rozliczeń once the Wycena w efenix of the period ended OK (harness: its "
+            "record in the Historia); before it, Wyceń w efenix",
+        )
+        next_step.get_by_role("button", name="Podgląd bez zapisu").click()
+        live = page.get_by_role("region", name="Podgląd na żywo")
+        expect(live).to_contain_text("Podgląd gotowy · nic nie zapisano")
     result = finished_result(run, "przebieg-podglad")
     summary = result["summary"]
     assert isinstance(summary, dict)

@@ -49,7 +49,7 @@ class SettlementEntry:
     def setup(self) -> contract.ProcessSetup:
         settings = self.store.load()
         periods_directory = settings.periods_directory
-        board = read_board(periods_directory, self.today())
+        board = read_board(periods_directory, self.today(), self.processes)
         rows = [row for row in board.periods if row.status == _ELIGIBLE] if board.state == "ready" else []
         preselected = next(
             (row.token for row in rows if row.last_complete),

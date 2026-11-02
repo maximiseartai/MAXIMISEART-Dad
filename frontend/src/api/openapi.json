@@ -3434,6 +3434,32 @@
         "title": "OrderNotes",
         "description": "Błędy zleceń i ostrzeżenia Emmetta Wyceny w efenix na karcie bieżącego Uruchomienia."
       },
+      "PathStep": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "done",
+              "now",
+              "later",
+              "not_done"
+            ],
+            "title": "Stage"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "stage"
+        ],
+        "title": "PathStep",
+        "description": "Krok Drogi okresu: ``now`` to pierwszy niezrobiony krok okresu otwartego, ``not_done`` krok, którego okres\nzamknięty nie zrobił (Wycena w efenix bez wyniku OK)."
+      },
       "Percentiles": {
         "properties": {
           "p50_ms": {
@@ -3613,6 +3639,13 @@
             "type": "boolean",
             "title": "Last Complete"
           },
+          "path": {
+            "items": {
+              "$ref": "#/components/schemas/PathStep"
+            },
+            "type": "array",
+            "title": "Path"
+          },
           "next_step": {
             "oneOf": [
               {
@@ -3628,9 +3661,20 @@
               "mapping": {
                 "create_worker_settlements": "#/components/schemas/ProcessStep",
                 "none": "#/components/schemas/ClosedStep",
-                "prepare_collective_file": "#/components/schemas/ProcessStep"
+                "prepare_collective_file": "#/components/schemas/ProcessStep",
+                "price_in_efenix": "#/components/schemas/ProcessStep"
               }
             }
+          },
+          "secondary_step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProcessStep"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -3647,10 +3691,12 @@
           "worker_settlements_folder_exists",
           "worker_settlement_count",
           "last_complete",
-          "next_step"
+          "path",
+          "next_step",
+          "secondary_step"
         ],
         "title": "PeriodRow",
-        "description": "Jeden okres Tablicy okresów, wyliczony z plików przy każdym odczycie."
+        "description": "Jeden okres Tablicy okresów, wyliczony przy każdym odczycie z plików i z Historii Wyceny w efenix."
       },
       "PhaseDuration": {
         "properties": {
@@ -4116,6 +4162,7 @@
             "type": "string",
             "enum": [
               "prepare_collective_file",
+              "price_in_efenix",
               "create_worker_settlements"
             ],
             "title": "Action"
@@ -4129,7 +4176,14 @@
             "title": "Hint"
           },
           "preview_hint": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Preview Hint"
           }
         },
@@ -4142,7 +4196,7 @@
           "preview_hint"
         ],
         "title": "ProcessStep",
-        "description": "Następny krok okresu robi proces; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu."
+        "description": "Krok okresu, który robi proces; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu, a ``None`` ma\nproces bez podglądu (Wycena w efenix)."
       },
       "Progress": {
         "properties": {

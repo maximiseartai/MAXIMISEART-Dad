@@ -16,6 +16,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 import pytest
 
+from rozliczenia import efenix_process
 from rozliczenia.centrum import app
 from rozliczenia.centrum.app import STATIC_DIRECTORY
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
@@ -26,6 +27,7 @@ from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.reports import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.settings import default_settings_path
+from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from tests.fixtures.centrum import CENTRUM, TOOL_COMMIT, Centrum, ROOT, centrum
 
 
@@ -336,15 +338,21 @@ def test_tablica_okresow_pokazuje_status_okresu_kazdego_folderu_okresu_od_najnow
     ]
     assert [row["next_step"]["action"] for row in rows] == [  # type: ignore[index]
         "prepare_collective_file",
-        "create_worker_settlements",
+        "price_in_efenix",
         "none",
         "prepare_collective_file",
     ]
     assert [row["next_step"].get("preview_hint") for row in rows] == [  # type: ignore[attr-defined]
         "Nic nie zostanie zapisane. Zobaczysz plan i nazwy obu plików.",
-        "Nic nie zostanie zapisane. Zobaczysz plan plików każdego Wykonawcy.",
+        None,
         None,
         "Nic nie zostanie zapisane. Zobaczysz plan i nazwy obu plików.",
+    ]
+    assert [stages(row) for row in rows] == [
+        ["now", "later", "later", "later"],
+        ["done", "now", "later", "later"],
+        ["done", "done", "not_done", "done"],
+        ["now", "later", "later", "later"],
     ]
 
 
@@ -444,6 +452,102 @@ def test_w_ukladzie_folderow_taty_tydzien_w_dwoch_miesiacach_nie_jest_otwierany(
     assert app.platform.opened == []
 
 
+def stages(row: dict[str, object]) -> list[str]:
+    """Stany kroków Drogi okresu wiersza; ich nazwy sprawdza test pełnego wiersza."""
+
+    path = row["path"]
+    assert isinstance(path, list)
+    return [step["stage"] for step in path]
+
+
+def write_pricing(app: Centrum, token: str, *started: tuple[int, CompletedResult | RecordedStop]) -> None:
+    """Uruchomienia Wyceny w efenix okresu ``token`` w Historii, w kolejności zapisu: (godzina startu 13.10, wynik)."""
+
+    store = MetricsStore(app.metrics.efenix, efenix_process.PROCESS.counter_names)
+    for hour, ending in started:
+        store.append(
+            metric_record(
+                mode="RUN",
+                period=token,
+                started_at=f"2026-10-13T{hour:02d}:00:00+02:00",
+                total_duration_ms=1000,
+                phase_durations_ms={},
+                ending=ending,
+                counters=dict.fromkeys(efenix_process.PROCESS.counter_names, 0),
+            )
+        )
+
+
+PRICE = {
+    "action": "price_in_efenix",
+    "label": "Wyceń w efenix",
+    "hint": "Najpierw uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij.",
+    "preview_hint": None,
+}
+PRICE_AGAIN = PRICE | {
+    "hint": "Ostatnia Wycena w efenix nie skończyła się wynikiem OK. Sprawdź jej wynik i uruchom ją ponownie."
+}
+SETTLE = {
+    "action": "create_worker_settlements",
+    "label": "Utwórz rozliczenia pracowników",
+    "hint": "Wycena w efenix skończyła się wynikiem OK. Teraz rozliczenia pracowników z Pliku zbiorczego.",
+    "preview_hint": "Nic nie zostanie zapisane. Zobaczysz plan plików każdego Wykonawcy.",
+}
+SETTLE_BEFORE_PRICING = SETTLE | {
+    "hint": "Możesz je utworzyć także bez Wyceny w efenix, na przykład gdy efenix nie działa."
+}
+CLOSED = {"action": "none", "label": "Okres zamknięty", "hint": "Rozliczenia pracowników są w Folderze okresu."}
+STOPPED: RecordedStop = {"kind": "for_tata", "code": "EFENIX_NIE_ODPOWIADA"}
+
+
+@pytest.mark.parametrize(
+    ("settled", "pricing", "path", "next_step", "secondary_step"),
+    [
+        (False, [], ["done", "now", "later", "later"], PRICE, SETTLE_BEFORE_PRICING),
+        (False, [(11, "OK"), (10, "WYMAGA_SPRAWDZENIA")], ["done", "done", "done", "now"], SETTLE, None),
+        (False, [(10, "OK"), (11, "WYMAGA_SPRAWDZENIA")], ["done", "done", "now", "later"], PRICE_AGAIN, SETTLE_BEFORE_PRICING),
+        (False, [(10, "OK"), (11, STOPPED)], ["done", "done", "now", "later"], PRICE_AGAIN, SETTLE_BEFORE_PRICING),
+        (True, [], ["done", "done", "not_done", "done"], CLOSED, None),
+        (True, [(10, "WYMAGA_SPRAWDZENIA")], ["done", "done", "not_done", "done"], CLOSED, None),
+        (True, [(10, "OK")], ["done", "done", "done", "done"], CLOSED, None),
+    ],
+    ids=[
+        "bez-wyceny",
+        "wycena-ok",
+        "wycena-wymaga-sprawdzenia",
+        "wycena-zatrzymana",
+        "rozliczenia-gotowe-bez-wyceny",
+        "rozliczenia-gotowe-po-wycenie-do-sprawdzenia",
+        "rozliczenia-gotowe-po-wycenie-ok",
+    ],
+)
+def test_droga_okresu_i_nastepny_krok_ida_przez_wycene_w_efenix_zaliczona_ostatnim_uruchomieniem_z_wynikiem_ok(
+    tmp_path: Path,
+    settled: bool,
+    pricing: list[tuple[int, CompletedResult | RecordedStop]],
+    path: list[str],
+    next_step: dict[str, object],
+    secondary_step: dict[str, object] | None,
+) -> None:
+    """Droga okresu: Plik zbiorczy → Uzupełnienie w Excelu → Wycena w efenix → Rozliczenia pracowników. Wycena jest
+    zaliczona, gdy ostatnie (najpóźniej wystartowane) jej Uruchomienie okresu ma wynik OK; Wymaga sprawdzenia i
+    Zatrzymanie zostawiają ją w toku. Przebieg rozliczeń nie czeka na Wycenę, tylko stoi po niej, a Status okresu się
+    nie zmienia. Wycena innego okresu nic tu nie zalicza."""
+
+    app, periods = with_periods_directory(tmp_path)
+    folder = write_period_files(periods, "29_05_10_2026")
+    if settled:
+        write_worker_settlements(folder, "29_05_10_2026", ["Anna Testowa"])
+    write_pricing(app, "29_05_10_2026", *pricing)
+    write_pricing(app, "22_28_09_2026", (12, "OK"))
+
+    row = board_rows(app)[1]
+
+    assert row["token"] == "29_05_10_2026"
+    assert row["status"] == ("worker_settlements_ready" if settled else "collective_file_prepared")
+    assert (stages(row), row["next_step"], row["secondary_step"]) == (path, next_step, secondary_step)
+
+
 def test_tablica_okresow_wskazuje_ostatni_przygotowany_okres_z_plikiem_zbiorczym(tmp_path: Path) -> None:
     app, periods = with_periods_directory(tmp_path)
     before = app.client.get("/api/periods").json()["last_prepared_period"]
@@ -474,12 +578,19 @@ def test_ostatni_pelny_okres_jest_wyrozniony_takze_bez_folderu_okresu(tmp_path: 
         "worker_settlements_folder_exists": False,
         "worker_settlement_count": 0,
         "last_complete": True,
+        "path": [
+            {"label": "Plik zbiorczy", "stage": "now"},
+            {"label": "Uzupełnienie w Excelu", "stage": "later"},
+            {"label": "Wycena w efenix", "stage": "later"},
+            {"label": "Rozliczenia pracowników", "stage": "later"},
+        ],
         "next_step": {
             "action": "prepare_collective_file",
             "label": "Przygotuj plik zbiorczy",
             "hint": "Z Rejestru zleceń powstaną Rozliczenie wewnętrzne i Plik zbiorczy.",
             "preview_hint": "Nic nie zostanie zapisane. Zobaczysz plan i nazwy obu plików.",
         },
+        "secondary_step": None,
     }
     assert [row["last_complete"] for row in rows] == [True, False]
 

@@ -56,6 +56,30 @@ def drive_period_board(run: Run, page: Page) -> None:
     )
     run.capture(page, "06-tablica-okresow")
 
+    run.step(feature, "tablica-droga-okresu")
+    steps = {row["token"]: row for row in rows}
+    run.check(
+        [step["label"] for step in steps["29_05_10_2026"]["path"]]
+        == ["Plik zbiorczy", "Uzupełnienie w Excelu", "Wycena w efenix", "Rozliczenia pracowników"]
+        and [step["stage"] for step in steps["29_05_10_2026"]["path"]] == ["done", "now", "later", "later"]
+        and [step["stage"] for step in steps["22_28_09_2026"]["path"]] == ["done", "done", "not_done", "done"],
+        "Droga okresu has four steps; a closed period without Wycena w efenix shows that step as not done",
+    )
+    run.check(
+        (steps["29_05_10_2026"]["next_step"]["action"], steps["29_05_10_2026"]["next_step"]["preview_hint"])
+        == ("price_in_efenix", None)
+        and steps["29_05_10_2026"]["secondary_step"]["action"] == "create_worker_settlements"
+        and all(row["secondary_step"] is None for row in rows if row["token"] != "29_05_10_2026"),
+        "with a Plik zbiorczy and no Wycena w efenix, the next step is Wycena w efenix (no preview), and Przebieg "
+        "rozliczeń stays reachable beside it",
+    )
+    prepared = period_row(page, "29_05_10_2026")
+    expect(prepared.get_by_role("button", name="Wyceń w efenix, okres 29_05_10_2026", exact=True)).to_be_visible()
+    expect(
+        prepared.get_by_role("button", name="Utwórz rozliczenia pracowników, okres 29_05_10_2026", exact=True)
+    ).to_be_visible()
+    run.check(True, "the row of 29_05_10_2026 offers Wyceń w efenix and, beside it, Utwórz rozliczenia pracowników")
+
     run.step(feature, "tablica-nastepny-krok")
     next_step = page.get_by_role("region", name="Następny krok")
     expect(next_step).to_contain_text("Przygotuj plik zbiorczy")
@@ -194,9 +218,12 @@ def drive_period_board(run: Run, page: Page) -> None:
     run.check(True, "once the server answers, a (simulated) return to the tab shows the board again")
 
     run.step(feature, "tablica-podpowiedz")
-    period_row(page, "29_05_10_2026").get_by_text("Utwórz rozliczenia pracowników").hover()
+    period_row(page, "29_05_10_2026").get_by_text("Wyceń w efenix").hover()
     expect(page.get_by_text("Najpierw uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij.")).to_be_visible()
     run.capture(page, "09-tablica-podpowiedz", full_page=False)
+    period_row(page, "29_05_10_2026").get_by_text("Utwórz rozliczenia pracowników").hover()
+    expect(page.get_by_text("Możesz je utworzyć także bez Wyceny w efenix, na przykład gdy efenix nie działa.")).to_be_visible()
+    run.check(True, "Wyceń w efenix and Utwórz rozliczenia pracowników in the row explain themselves in tooltips")
     preview_hint = rows[0]["next_step"]["preview_hint"]
     page.get_by_role("region", name="Następny krok").get_by_role("button", name="Podgląd bez zapisu", exact=True).hover()
     expect(page.get_by_text(preview_hint, exact=True)).to_be_visible()

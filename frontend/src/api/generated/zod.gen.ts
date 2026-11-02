@@ -455,6 +455,22 @@ export const zOrderNotes = z.object({
 });
 
 /**
+ * PathStep
+ *
+ * Krok Drogi okresu: ``now`` to pierwszy niezrobiony krok okresu otwartego, ``not_done`` krok, którego okres
+ * zamknięty nie zrobił (Wycena w efenix bez wyniku OK).
+ */
+export const zPathStep = z.object({
+    label: z.string(),
+    stage: z.enum([
+        'done',
+        'now',
+        'later',
+        'not_done'
+    ])
+});
+
+/**
  * PeriodChoice
  *
  * Okres do wyboru przy starcie, ze Statusem okresu wyliczonym z plików.
@@ -661,19 +677,24 @@ export const zProcessSetup = z.object({
 /**
  * ProcessStep
  *
- * Następny krok okresu robi proces; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu.
+ * Krok okresu, który robi proces; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu, a ``None`` ma
+ * proces bez podglądu (Wycena w efenix).
  */
 export const zProcessStep = z.object({
-    action: z.enum(['prepare_collective_file', 'create_worker_settlements']),
+    action: z.enum([
+        'prepare_collective_file',
+        'price_in_efenix',
+        'create_worker_settlements'
+    ]),
     label: z.string(),
     hint: z.string(),
-    preview_hint: z.string()
+    preview_hint: z.string().nullable()
 });
 
 /**
  * PeriodRow
  *
- * Jeden okres Tablicy okresów, wyliczony z plików przy każdym odczycie.
+ * Jeden okres Tablicy okresów, wyliczony przy każdym odczycie z plików i z Historii Wyceny w efenix.
  */
 export const zPeriodRow = z.object({
     token: z.string(),
@@ -691,11 +712,14 @@ export const zPeriodRow = z.object({
     worker_settlements_folder_exists: z.boolean(),
     worker_settlement_count: z.int(),
     last_complete: z.boolean(),
+    path: z.array(zPathStep),
     next_step: z.discriminatedUnion('action', [
         zProcessStep.extend({ action: z.literal('create_worker_settlements') }),
         zProcessStep.extend({ action: z.literal('prepare_collective_file') }),
+        zProcessStep.extend({ action: z.literal('price_in_efenix') }),
         zClosedStep
-    ])
+    ]),
+    secondary_step: zProcessStep.nullable()
 });
 
 /**

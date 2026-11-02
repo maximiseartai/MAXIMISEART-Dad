@@ -960,6 +960,23 @@ export type OrderNotes = {
 };
 
 /**
+ * PathStep
+ *
+ * Krok Drogi okresu: ``now`` to pierwszy niezrobiony krok okresu otwartego, ``not_done`` krok, którego okres
+ * zamknięty nie zrobił (Wycena w efenix bez wyniku OK).
+ */
+export type PathStep = {
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Stage
+     */
+    stage: 'done' | 'now' | 'later' | 'not_done';
+};
+
+/**
  * Percentiles
  *
  * P50 i P95 czasu całego Uruchomienia procesu i każdego etapu, w milisekundach.
@@ -1042,7 +1059,7 @@ export type PeriodFile = {
 /**
  * PeriodRow
  *
- * Jeden okres Tablicy okresów, wyliczony z plików przy każdym odczycie.
+ * Jeden okres Tablicy okresów, wyliczony przy każdym odczycie z plików i z Historii Wyceny w efenix.
  */
 export type PeriodRow = {
     /**
@@ -1090,13 +1107,18 @@ export type PeriodRow = {
      */
     last_complete: boolean;
     /**
+     * Path
+     */
+    path: Array<PathStep>;
+    /**
      * Next Step
      */
     next_step: ({
-        action: 'create_worker_settlements' | 'prepare_collective_file';
+        action: 'create_worker_settlements' | 'prepare_collective_file' | 'price_in_efenix';
     } & ProcessStep) | ({
         action: 'none';
     } & ClosedStep);
+    secondary_step: ProcessStep | null;
 };
 
 /**
@@ -1388,13 +1410,14 @@ export type ProcessSetup = {
 /**
  * ProcessStep
  *
- * Następny krok okresu robi proces; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu.
+ * Krok okresu, który robi proces; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu, a ``None`` ma
+ * proces bez podglądu (Wycena w efenix).
  */
 export type ProcessStep = {
     /**
      * Action
      */
-    action: 'prepare_collective_file' | 'create_worker_settlements';
+    action: 'prepare_collective_file' | 'price_in_efenix' | 'create_worker_settlements';
     /**
      * Label
      */
@@ -1406,7 +1429,7 @@ export type ProcessStep = {
     /**
      * Preview Hint
      */
-    preview_hint: string;
+    preview_hint: string | null;
 };
 
 /**
