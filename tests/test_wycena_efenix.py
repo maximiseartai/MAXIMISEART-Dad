@@ -43,8 +43,10 @@ from rozliczenia.workbook_files import excel_lock_file, read_computed_rows, read
 
 from tests.fixtures.atrapa_efenix import (
     LIST_PAGE,
+    LIST_SCRIPT,
     LOAD_EMMETT,
     ORDER_PAGE,
+    ORDER_SCRIPT,
     SAVE_QUANTITY,
     SEARCH,
     SET_DATE,
@@ -60,8 +62,8 @@ from tests.fixtures.przegladarka import chromium, page_of
 from tests.fixtures.settlement import PERIOD, write_mapping, write_template
 from tests.fixtures.workbooks import active_worksheet, rewrite_parts
 
-# Żądania, które niczego w efenix nie zmieniają: lista zleceń, szukanie i strona zlecenia.
-READING = {("GET", LIST_PAGE), ("POST", SEARCH), ("GET", ORDER_PAGE)}
+# Żądania, które niczego w efenix nie zmieniają: lista zleceń, szukanie, strona zlecenia i skrypty obu stron.
+READING = {("GET", LIST_PAGE), ("POST", SEARCH), ("GET", ORDER_PAGE), ("GET", LIST_SCRIPT), ("GET", ORDER_SCRIPT)}
 Priced = Outcome[PricingSummary]
 
 
