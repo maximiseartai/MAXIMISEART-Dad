@@ -394,6 +394,30 @@ def test_liczbe_mutacji_widac_w_logu_ci_zanim_pobiegna_testy(tmp_path: Path) -> 
     assert done.returncode == 0, log.read_text(encoding="utf-8") + done.stderr
 
 
+def test_werdykt_mutacji_z_testami_pliku_widac_w_logu_ci_zanim_pobiegnie_nastepna(tmp_path: Path) -> None:
+    # Testy pliku to często tysiące testów na mutację, a po nich biegnie jeszcze brama typów, więc werdykt bez ``flush``
+    # czekałby w buforze, a anulowane zadanie CI (noc 41019818658) nie zostawiłoby go w logu.
+    tests = (
+        "import os\nfrom pathlib import Path\nimport subprocess\nimport sys\n\nimport rozliczenia.warunek as warunek\n\n\n"
+        "def test_import_w_procesie() -> None:\n    subprocess.run([sys.executable, '-c', 'import rozliczenia.warunek'], check=True)\n\n\n"
+        "def test_a() -> None:\n    assert warunek.A == 2\n\n\n"
+        "def test_b() -> None:\n"
+        "    if warunek.B != 2:\n"
+        "        log = Path(os.environ['LOG_NARZEDZIA'])\n"
+        "        log.with_name('log-przy-drugiej-mutacji.txt').write_text(log.read_text(encoding='utf-8'), encoding='utf-8')\n"
+        "    assert warunek.B == 2\n"
+    )
+    # Stałe czytają testy, które nie wykonały kodu pliku, więc obie mutacje sprawdza dopiero przebieg z testami pliku, po kolei.
+    log = tmp_path / "log.txt"
+
+    done = _run(_repo(tmp_path / "repo", tests, "A = 2\n\n\nB = 2\n", "A = 1\n\n\nB = 1\n"), log=log)
+
+    assert done.returncode == 0, log.read_text(encoding="utf-8") + done.stderr
+    seen = (tmp_path / "log-przy-drugiej-mutacji.txt").read_text(encoding="utf-8").splitlines()
+    first = [line for line in seen if line.startswith("WYKRYTA: src/rozliczenia/warunek.py:1 zmiana linii 1 cofnięta do bazy → ")]
+    assert len(first) == 1 and first[0].endswith(" (testy pliku)"), seen
+
+
 def test_czesci_dziela_mutacje_miedzy_siebie(tmp_path: Path) -> None:
     repo = _repo(tmp_path, ONE_CASE)
 
