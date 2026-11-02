@@ -61,7 +61,7 @@ from tests.fixtures.atrapa_efenix import (
     amount_of,
     atrapa_efenix,
 )
-from tests.fixtures.efenix import DAY, Order, write_collective_file
+from tests.fixtures.efenix import DAY, Order, number_in_trace, write_collective_file
 from tests.fixtures.interlocutor import Tata
 from tests.fixtures.przegladarka import chromium, page_of
 from tests.fixtures.settlement import PERIOD, write_mapping, write_template
@@ -1331,9 +1331,8 @@ def test_slad_wyceny_emmetta_nie_ma_numeru_zlecenia_adresu_loginu_ani_skrotu_num
 
     assert (_stop(stopped), sorted(written)) == ("EFENIX_WYLOGOWANY", [f"{PERIOD}.json", "klucz"])
     unkeyed = hashlib.sha256(number.encode("utf-8")).hexdigest()
-    assert {name: [word in text for word in (number, unkeyed, "testowa", "adrian")] for name, text in written.items()} == {
-        name: [False] * 4 for name in written
-    }
+    found = {name: [number_in_trace(number, text), *(word in text for word in (unkeyed, "testowa", "adrian"))] for name, text in written.items()}
+    assert found == {name: [False] * 4 for name in written}
 
 
 # --- Okno efenix taty: logowanie i przeglądarka (#750) ------------------------------------------------------------------

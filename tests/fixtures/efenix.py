@@ -63,6 +63,17 @@ class Order:
         )
 
 
+def number_in_trace(number: str, text: str) -> bool:
+    """Czy tekst ``text`` pliku śladu Wyceny Emmetta albo jego klucza ma cyfry numeru zlecenia ``number`` poza HMAC i kluczem.
+
+    Zlecenie stoi w śladzie pod HMAC-SHA256 hex, a klucz to 32 bajty hex: oba to ciągi dokładnie 64 znaków hex, w których
+    każdy ciąg cyfr trafia się losowo (run 41387482438 na ``main``: „9401” w HMAC). Takie ciągi się więc nie liczą, a numer
+    jawny, z ``#`` albo bez, także sklejony z literą albo z HMAC w dłuższy ciąg hex, się liczy.
+    """
+
+    return number.removeprefix("#") in re.sub(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])", "", text)
+
+
 def write_collective_file(directory: Path, orders: Sequence[Order], *, notes_sheet_first: bool = False) -> Path:
     """Plik zbiorczy okresu ``PERIOD`` w ``directory/PERIOD`` z nagłówkami Wzorca i Wierszem danych każdego zlecenia od 18.
 
