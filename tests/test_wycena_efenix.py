@@ -726,6 +726,27 @@ def test_milczacy_arkusz_spoza_efenix_przy_otwarciu_strony_to_brak_polaczenia_z_
     assert (_stop(outcome), outcome.ending.stop_kind) == ("EFENIX_NIEDOSTEPNY", "for_tata")
 
 
+def test_efenix_bez_przeladowania_po_zaladuj_do_zlecenia_to_zmieniony_efenix_dla_maksa(tmp_path: Path, page: Page) -> None:
+    """Zmieniony efenix zapisuje Wycenę Emmetta po „Załaduj do zlecenia”, ale jego skrypt nie przeładowuje już strony.
+    Przeładowanie, które się nie zaczęło, to nie brak połączenia, więc tata nie ponawia Wyceny bez końca, a Maks dostaje
+    Zgłoszenie."""
+
+    def no_reload(route: Route) -> None:
+        response = route.fetch()
+        body = response.text()
+        changed = body.replace(".then(() => setTimeout(() => location.reload(),", ".then(() => setTimeout(() => null,", 1)
+        assert changed != body, "skrypt strony zlecenia Atrapy przeładowuje stronę po Wycenie Emmetta"
+        route.fulfill(response=response, body=changed)
+
+    page.route(f"**/{ORDER_SCRIPT}*", no_reload)
+    order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
+
+    assert isinstance(outcome.ending, Stop), _ending(outcome)
+    assert (_stop(outcome), outcome.ending.stop_kind) == ("EFENIX_ZMIENIONY", "for_maks")
+
+
 def test_arkusz_stylow_efenix_bez_odpowiedzi_to_brak_polaczenia_z_efenix(tmp_path: Path, page: Page) -> None:
     """Arkusz stylów spod adresu efenix (strona zlecenia efenix ładuje ich sześć), który nie przyszedł, bo połączenie się
     zerwało, to „brak połączenia z efenix” dla taty, jak zerwany skrypt strony."""

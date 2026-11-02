@@ -23,7 +23,10 @@ błędu: strona bez swojego skryptu nie działa, a następne działanie nie wys�
 połączenia. Żądanie, na które efenix odpowiedział błędem HTTP (plik strony, którego efenix już nie ma, odpowiada 404),
 dostało odpowiedź, choć przeglądarka zgłasza je jako nieudane: efenix odpowiada, więc strona bez takiego skryptu to
 ``UnexpectedPage``, a martwy link na działającej stronie nic nie zatrzymuje. Żądań spoza efenix (Mapy Google,
-fontawesome) okno nie liczy: ich brak odpowiedzi nic nie mówi o połączeniu z efenix, a schowałby zmienioną stronę. Liczy
+fontawesome) okno nie liczy: ich brak odpowiedzi nic nie mówi o połączeniu z efenix, a schowałby zmienioną stronę. Strona
+otwarta albo przeładowana po Wycenie Emmetta, która zaczęła się ładować, ale nie skończyła w czasie okna, to jednak brak
+połączenia, także gdy czeka plik spoza efenix w ``<head>``: zmieniony efenix też ładuje się do końca, a strona, której
+przeładowanie w ogóle się nie zaczęło, to ``UnexpectedPage``. Liczy
 za to każde przejście karty okna na inną stronę, także przekierowane spod adresu efenix na inny: strona, która nie
 przyszła, nie ma budowy, którą efenix mógłby zmienić.
 Działanie w zamkniętej karcie albo oknie, także zamkniętym w trakcie działania, to ``WindowClosed``, cokolwiek zgłosił
@@ -291,6 +294,8 @@ class _Traffic:
         self._main_frame = main_frame
         self._pending: list[Request] = []
         self._cut: list[Request] = []
+        self.navigated = False
+        """Karta okna zaczęła w trakcie działania przejście na inną stronę."""
 
     @property
     def stalled(self) -> bool:
@@ -305,7 +310,9 @@ class _Traffic:
         return any(request.resource_type in _PAGE_FILES for request in self._cut)
 
     def sent(self, request: Request) -> None:
-        if _origin(request.url) == self._origin or (request.is_navigation_request() and request.frame == self._main_frame):
+        navigation = request.is_navigation_request() and request.frame == self._main_frame
+        self.navigated = self.navigated or navigation
+        if _origin(request.url) == self._origin or navigation:
             self._pending.append(request)
 
     def finished(self, request: Request) -> None:
@@ -455,7 +462,7 @@ class BrowserEfenix:
                 self._answer(_LOAD_EMMETT, lambda _params: True, lambda: load.click(timeout=self._timeout_ms))
                 answered = True
         except PlaywrightTimeoutError as error:
-            if answered:
+            if answered and self._traffic.navigated:
                 raise EfenixUnreachable from error
             raise
         self._loaded()
