@@ -16,6 +16,7 @@ on:
       - .agents/skills/verify-centrum-na-windowsie/**
       - run_centrum.py
       - install_centrum_shortcut.py
+      - frontend/src/lib/tool-update.tsx
       - requirements.txt
       - src/rozliczenia/centrum/launcher.py
       - src/rozliczenia/centrum/platform.py
@@ -25,9 +26,11 @@ on:
       - src/rozliczenia/centrum/server.py
       - src/rozliczenia/centrum/shutdown.py
       - src/rozliczenia/centrum/start_problems.py
+      - src/rozliczenia/centrum/log.py
       - src/rozliczenia/centrum/restart_guardian.py
       - src/rozliczenia/centrum/tool_update.py
       - src/rozliczenia/centrum/tool_updates.py
+      - src/rozliczenia/centrum/update_messages.py
       - src/rozliczenia/centrum/version.py
   push:
     branches:
