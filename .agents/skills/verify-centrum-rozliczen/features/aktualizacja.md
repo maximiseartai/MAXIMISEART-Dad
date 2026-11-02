@@ -27,15 +27,15 @@ When the old version finds „ok” in the guardian's result file (the disk refu
 the guardian both the removal of „ok” and the write of the failure), it shows
 the Komunikat of an unexpected failure, not „Narzędzie zaktualizowane”, because
 the commit it runs is not the one „ok” names (#490). A result the Centrum log
-already has does not come back on a later start (#491), with one limit:
-`NOWA_WERSJA_NIE_WYSTARTOWALA` from A to B is reported, the disk lets the
-guardian neither remove nor overwrite its result file, and Dad clicks again;
-B now answers, but the guardian cannot write „ok”, so B shows the old failure
-once and the log gets a second `aktualizacja-koniec` (the Zgłoszenie box still
-holds one Zgłoszenie at most), and the start after that shows nothing.
+already has does not come back on a later start (#491). A failure in the
+result file whose commit before the update is not the commit Centrum runs is
+old: the log gets `aktualizacja-wynik-stary` and the card says nothing, so
+when the disk lets the guardian neither remove the file of
+`NOWA_WERSJA_NIE_WYSTARTOWALA` from A to B nor write „ok” after Dad's next
+click, B, which answers, shows no failure (#725).
 A Centrum log that cannot be read lets the result through. The drive checks
-none of this: the rule is checked by `tests/test_centrum_aktualizacja.py`, and
-the limit only by the review's probe of PR #534.
+none of this: the rules are checked by `tests/test_centrum_aktualizacja.py`
+and the model of `verify-aktualizacja-narzedzia`.
 Konfiguracja keeps GitHub's answer about the newest Wydanie (one answer shared with
 Powiadomienia) for 10 minutes of Centrum's clock, so each harness change of the Wydanie also moves that clock on. In this run the tool
 is the fixture's synthetic clone with a local "origin", and its Centrum is the
