@@ -269,6 +269,30 @@ def test_excel_uruchomiony_przez_run_z_oknem_dialogowym_zostaje_otwarty_tylko_ze
     assert excel.running is users and all(workbook in excel.workbooks for workbook in opened)
 
 
+def test_nieznany_numer_procesu_excela_po_nieudanym_starcie_konczy_run_linia_verify(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, excel: FakeExcel
+) -> None:
+    runner = importlib.import_module("run_excel_verification")
+
+    def start_without_answer(run: object, args: object, real_templates: object) -> None:
+        excel.running = True
+        raise excel.excel.ExcelDialog("Excel did not answer within 90 s of starting; dialogs: []")
+
+    def two_excels() -> int:
+        raise excel.excel.ExcelError("pgrep -x 'Microsoft Excel' exited 0 with ['733', '734'], not one process id")
+
+    monkeypatch.setattr(runner, "_drive", start_without_answer)
+    monkeypatch.setattr(excel.excel, "pid", two_excels)
+    output = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", output)
+    monkeypatch.setattr(sys, "stderr", output)
+
+    code = runner.main(["--wzorce", "syntetyczne", "--run-dir", str(tmp_path / "przebieg")])
+
+    assert code == 1 and _verdict(output.getvalue()).startswith("VERIFY FAIL"), output.getvalue()
+    assert "excel_quit=true" in output.getvalue(), output.getvalue()
+
+
 def test_okno_dialogowe_na_starcie_konczy_run_przed_praca(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, excel: FakeExcel
 ) -> None:

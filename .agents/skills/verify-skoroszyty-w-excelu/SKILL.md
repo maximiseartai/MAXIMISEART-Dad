@@ -73,7 +73,14 @@ locks `~/Library/Containers/com.microsoft.Excel/Data/maximiseart-weryfikacja/exc
 one lock for the whole Mac, so a run from any worktree refuses to start with
 `VERIFY FAIL | ExcelBusy: … (pid <n>, <worktree>)` while another drives Excel.
 The kernel drops the lock when its process ends, so a killed run blocks no
-one. The runner starts Excel itself when Excel is not running. At the end it
+one. The runner starts Excel itself when Excel is not running (`excel.launch`)
+and waits at most 90 s until Excel answers AppleScript and `pgrep -x` names its
+one process. On Maks's Mac a start from a stopped Excel 16.114.3 took 1.4 to
+2.4 s in 5 starts at a load average of 8.6 to 9.0 on 16 cores, its files already
+in the system's cache, and a whole run from a stopped Excel took 0:50
+(2026-11-02, #780). The id does not come from
+`lsappinfo`: macOS 27.2 changed its output, and its old parser made every start
+wait out the 90 s. At the end it
 quits Excel whenever Excel holds no workbook, also an Excel that ran before the
 run: one Excel process grows with every workbook it opened and closed (2.4 GB to
 4.2 GB with no workbook open between 15:05 and 16:30 on 2026-10-24, after it hung
@@ -266,8 +273,9 @@ anchor so it breaks the same rule in the new code.
   doctor.
 - `scripts/excel.py status | close-under --root <dir>`: Excel's state, and
   closing stranded workbooks; as a module, every Excel call of the runner.
-- `tests/test_weryfikacja_w_excelu.py`: the error naming and the Mac-wide
-  lock, with a fake `osascript`; part of `pytest`, so no Excel is needed.
+- `tests/test_weryfikacja_w_excelu.py`: the error naming, the start of Excel
+  and the Mac-wide lock, with a fake `osascript`, `open` and `pgrep`; part of
+  `pytest`, so no Excel is needed.
 - `tests/test_sprzatanie_excela.py`: the start sweep, the cleanup under a
   dialog, the quit of an idle Excel and the memory in `excel.json`, with fake
   Excel calls; it runs on Windows too, for the mutation job.

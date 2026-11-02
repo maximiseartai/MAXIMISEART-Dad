@@ -12,6 +12,7 @@ never a cell value. No step waits for a human, except the opt-in ``--kontrola-na
 from __future__ import annotations
 
 from argparse import Namespace, RawDescriptionHelpFormatter
+from contextlib import suppress
 from dataclasses import dataclass, field
 import hashlib
 import json
@@ -722,7 +723,9 @@ def main(argv: list[str] | None = None) -> int:
     except (VerificationFailure, excel.ExcelError, subprocess.SubprocessError, OSError) as exc:
         outcome = "FAIL"
         if not excel_was_running and run.started_excel is None and excel.running():
-            run.started_excel = excel.pid()
+            # Without a known process id the cleanup never stops this Excel, which leaves it to its owner.
+            with suppress(excel.ExcelError):
+                run.started_excel = excel.pid()
         run.observe("failure", f"{type(exc).__name__}: {exc}")
         print(f"VERIFY FAIL | {type(exc).__name__}: {exc}", file=sys.stderr)
     finally:

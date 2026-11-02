@@ -236,9 +236,19 @@ def _open_paths_quietly() -> list[str]:
 
 
 def pid() -> int | None:
-    completed = subprocess.run(["lsappinfo", "info", "-only", "pid", APP], capture_output=True, text=True, check=False)
-    value = completed.stdout.strip().rpartition("=")[2]
-    return int(value) if value.isdigit() else None
+    """Process id of Excel, or ``None`` when no Excel runs; raises ``ExcelError`` unless ``pgrep`` names one process.
+
+    ``pgrep`` prints one id per line. ``lsappinfo`` changed its output in macOS 27.2 (``pid = 733 !cgsConnection …``),
+    and its old parser found no id, so every cold start waited out the limit of ``launch`` (#780).
+    """
+
+    completed = subprocess.run(["pgrep", "-x", APP], capture_output=True, text=True, check=False)
+    ids = completed.stdout.split()
+    if completed.returncode == 1 and not ids:
+        return None
+    if completed.returncode != 0 or len(ids) != 1 or not ids[0].isdigit():
+        raise ExcelError(f"pgrep -x {APP!r} exited {completed.returncode} with {ids}, not one process id")
+    return int(ids[0])
 
 
 def rss_mb() -> int | None:
@@ -246,9 +256,13 @@ def rss_mb() -> int | None:
 
     One Excel process grows with every workbook it opened and closed (2.4 GB to 4.2 GB with no workbook open
     within 1.5 hours of runs on 2026-10-24, and it hung at about 10 GB), so runs record it before and after.
+    A note only: ``None`` also when Excel's process is not known (``pid`` raises).
     """
 
-    process_id = pid()
+    try:
+        process_id = pid()
+    except ExcelError:
+        return None
     if process_id is None:
         return None
     completed = subprocess.run(["ps", "-o", "rss=", "-p", str(process_id)], capture_output=True, text=True, check=False)
