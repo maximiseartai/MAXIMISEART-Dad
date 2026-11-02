@@ -550,15 +550,18 @@ def test_strona_logowania_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene_a_kom
         assert (_stop(outcome), atrapa.searched(), _kept(outcome)) == ("EFENIX_WYLOGOWANY", searched, kept)
 
 
-# Część strony, której zabrakło przy każdej zmianie budowy Atrapy: tabela wyników, strona zlecenia, Emmett albo kwota.
+# Część strony, której zabrakło przy każdej zmianie budowy Atrapy: tabela wyników, strona zlecenia, okno daty wykonania,
+# Emmett albo kwota.
 CHANGED_PART = {
     Changed.STATUS_HEADER: PagePart.RESULTS,
     Changed.ORDER_LINK: PagePart.RESULTS,
     Changed.DATE_FORMAT: PagePart.ORDER,
+    Changed.DATE_DIALOG: PagePart.DATE,
     Changed.EMMETT_BUTTON: PagePart.EMMETT,
     Changed.HIDDEN_EMMETT: PagePart.EMMETT,
     Changed.POSITION_CODE: PagePart.ORDER,
     Changed.STALE_AMOUNT: PagePart.QUANTITY,
+    Changed.QUANTITY_ANSWER: PagePart.QUANTITY,
 }
 
 
@@ -568,16 +571,19 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
 ) -> None:
     """Zatrzymanie przychodzi w czasie okna (tu 3 s), także przy elemencie obecnym, ale niewidocznym.
 
-    Tylko kwota, która się nie odświeża, zatrzymuje wycenę po zmianie w efenix (Wycena Emmetta i ilość). Zatrzymanie jest
-    „do Maksa”, więc Centrum daje przy nim Diagnozę i Zgłoszenie, a „Gdzie” nazywa część strony, której zabrakło.
+    Tylko zapis ilości (kwota, która się nie odświeża, i odpowiedź w innym zapisie) zatrzymuje wycenę po zmianie w efenix
+    (Wycena Emmetta i ilość). Zatrzymanie jest „do Maksa”, więc Centrum daje przy nim Diagnozę i Zgłoszenie, a „Gdzie”
+    nazywa część strony, której zabrakło.
     """
 
     order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
-    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)], changed=changed) as atrapa:
+    # Okno daty wykonania okno efenix otwiera tylko przy pustej dacie wykonania w efenix.
+    in_efenix = replace(order.in_efenix("901"), execution_date=None if changed is Changed.DATE_DIALOG else DAY)
+    with atrapa_efenix([in_efenix], changed=changed) as atrapa:
         outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
         changes = atrapa.status_changes()
 
-    assert (_stop(outcome), changes, _kept(outcome)) == ("EFENIX_ZMIENIONY", 0, changed is Changed.STALE_AMOUNT)
+    assert (_stop(outcome), changes, _kept(outcome)) == ("EFENIX_ZMIENIONY", 0, changed in (Changed.STALE_AMOUNT, Changed.QUANTITY_ANSWER))
     assert isinstance(outcome.ending, Stop)
     message = outcome.ending.message
     assert (outcome.ending.stop_kind, message.where) == ("for_maks", f"okno efenix, {CHANGED_PART[changed].value}")
@@ -820,15 +826,23 @@ def test_w_tempie_ludzkim_zlecenie_trwa_20_s_a_przerwa_miedzy_dzialaniami_w_efen
     assert {duration for steps in durations for duration in steps} == {0}
 
 
-def test_strona_bez_listy_zlecen_i_adres_bez_efenix_zatrzymuja_wycene(tmp_path: Path, page: Page) -> None:
+def test_strona_bez_listy_zlecen_i_adres_bez_efenix_zatrzymuja_wycene(tmp_path: Path, browser: Browser, page: Page) -> None:
+    """Strona efenix bez listy zleceń to efenix, który się zmienił, a adres, który nie odpowiada, także ten, pod który
+    efenix przekierowuje listę zleceń, to brak połączenia: strona, która nie przyszła, nie ma budowy, którą efenix mógłby
+    zmienić."""
+
     with socket.socket() as unused:
         unused.bind(("127.0.0.1", 0))
         closed = f"http://127.0.0.1:{unused.getsockname()[1]}/{LIST_PAGE}"
     with atrapa_efenix([Order("#9301").in_efenix("901")]) as atrapa:
         changed = _price(tmp_path / "zmieniony", page, atrapa.url.replace(LIST_PAGE, "inna_strona.php"), [Order("#9301")])
+        with page_of(browser) as redirecting:
+            redirecting.route(atrapa.url, lambda route: route.fulfill(status=302, headers={"Location": closed}))
+            redirected = _price(tmp_path / "przekierowany", redirecting, atrapa.url, [Order("#9301")])
     unreachable = _price(tmp_path / "niedostepny", page, closed, [Order("#9301")])
 
-    assert (_stop(changed), _stop(unreachable), _kept(changed), _kept(unreachable)) == ("EFENIX_ZMIENIONY", "EFENIX_NIEDOSTEPNY", False, False)
+    assert (_stop(changed), _stop(unreachable), _stop(redirected)) == ("EFENIX_ZMIENIONY", "EFENIX_NIEDOSTEPNY", "EFENIX_NIEDOSTEPNY")
+    assert (_kept(changed), _kept(unreachable), _kept(redirected)) == (False, False, False)
 
 
 # --- Znacznik efenix w Pliku zbiorczym (#747) ------------------------------------------------------------------------

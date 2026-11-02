@@ -98,10 +98,12 @@ class Changed(enum.Enum):
     STATUS_HEADER = "nagłówek Status tabeli wyników ma inną nazwę"
     ORDER_LINK = "wiersz wyników nie ma linku do strony zlecenia"
     DATE_FORMAT = "data wykonania w innym zapisie niż RRRR-MM-DD"
+    DATE_DIALOG = "przycisk kalendarza nie otwiera okna daty wykonania"
     EMMETT_BUTTON = "strona zlecenia nie ma przycisku Emmetta"
     HIDDEN_EMMETT = "przycisk Emmetta jest na stronie, ale niewidoczny"
     POSITION_CODE = "pozycja wyceny ma inny kod"
     STALE_AMOUNT = "kwota końcowa nie odświeża się po zapisie ilości"
+    QUANTITY_ANSWER = "zapis ilości odpowiada stroną HTML, a nie JSON z kwotą końcową"
 
 
 class Unread(enum.Enum):
@@ -388,6 +390,8 @@ def atrapa_efenix(
                     answer = _change(path, found[0], params, refuse_dates=refuse_dates) if found else None
                 if answer is None:
                     self._html("<p>Nie ma takiego zlecenia.</p>", HTTPStatus.NOT_FOUND)
+                elif isinstance(answer, dict) and changed is Changed.QUANTITY_ANSWER:
+                    self._html("<p>Zapisano.</p>")
                 elif isinstance(answer, dict):
                     self._json(answer)
                 else:
@@ -673,7 +677,7 @@ _ORDER_SCRIPT = """
   calendar.addEventListener('click', () => {
     recordId = calendar.dataset.recordId;
     picker.set('select', today);
-    show('dialog_select_date');
+    if (__DATE_DIALOG__) show('dialog_select_date');
   });
   document.querySelector('#dialog_select_date .btn-ok').addEventListener('click', () => {
     const day = dayField.value;
@@ -761,6 +765,7 @@ def _order_script(changed: Changed | Unread | None, today: date) -> str:
     script = (
         _ORDER_SCRIPT.replace("__RELOAD__", str(_EMMETT_RELOAD_MS))
         .replace("__REFRESH__", "false" if changed is Changed.STALE_AMOUNT else "true")
+        .replace("__DATE_DIALOG__", "false" if changed is Changed.DATE_DIALOG else "true")
         .replace("__TODAY__", today.isoformat())
         .replace("__EARLIEST__", earliest_execution_date(today).isoformat())
     )
