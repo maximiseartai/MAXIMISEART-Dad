@@ -18,6 +18,7 @@ from typing import Any
 import zipfile
 
 import pytest
+import yaml
 
 from tests.fixtures.ci_workflow import jobs
 from tests.fixtures.git_repo import commit, git
@@ -30,6 +31,7 @@ import zgloszenia_ci
 from zgloszenia_ci import Skomentuj, Zaloz, Zamknij
 
 ROOT = Path(__file__).resolve().parents[1]
+ZGLOSZENIA = ROOT / ".github" / "workflows" / "zgloszenia.yml"
 REPO = "repos/{owner}/{repo}"
 TERAZ = datetime(2026, 10, 26, 20, 0, tzinfo=UTC)
 RUN_URL = "https://github.com/maximiseartai/MAXIMISEART-Dad/actions/runs/{}"
@@ -322,6 +324,32 @@ def test_czerwony_main_po_zielonym_zderzeniu_ma_ostatni_zielony_pr_y_bisect_i_li
     assert "REQUIRED FAIL | pytest (Python 3.14, 2/3): jednostki z porażką: pytest:tests/test_a.py" in akcja.tresc
     assert f"git bisect start {main['pr11']} {main['pr10']}\ngit bisect run .venv/bin/python -m pytest tests/test_a.py" in akcja.tresc
     assert "To 2. zderzenie w ostatnich 7 dniach" in akcja.tresc
+
+
+def _checkout_zgloszen(repo: Path, cel: Path) -> Path:
+    """Klon ``repo`` w ``cel`` taki, jaki robi krok ``actions/checkout`` workflowu Zgłoszeń CI: gałąź z ``ref`` i
+    historia z ``fetch-depth`` (0 to cała historia, n to n ostatnich commitów)."""
+
+    [krok] = [krok for krok in yaml.safe_load(ZGLOSZENIA.read_text(encoding="utf-8"))["jobs"]["zgloszenia"]["steps"] if krok.get("uses", "").startswith("actions/checkout@")]
+    glebokosc = krok["with"]["fetch-depth"]
+    # Wyrażenia GitHuba test nie liczy: w nim 0 jest fałszem, więc `push && 0 || 1` dało głębokość 1 także na pushu.
+    assert isinstance(glebokosc, int), f"fetch-depth checkoutu Zgłoszeń CI to liczba, a nie wyrażenie: {glebokosc!r}"
+    git(repo, "clone", "--quiet", "--branch", krok["with"]["ref"], *([f"--depth={glebokosc}"] if glebokosc else []), repo.as_uri(), str(cel))
+    return cel
+
+
+def test_czerwony_main_ma_issue_z_historii_main_w_checkoutcie_workflowu(main: dict[str, str], tmp_path: Path) -> None:
+    """Run 41388657634: płytki checkout nie miał rodzica commitu scalenia, więc czerwony `main` nie dostał issue."""
+
+    checkout = _checkout_zgloszen(Path.cwd(), tmp_path / "checkout")
+    github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z")
+
+    [akcja] = zgloszenia_ci.akcje(github, checkout, 300, TERAZ)
+
+    assert isinstance(akcja, Zaloz)
+    assert akcja.tytul == f"Czerwony main od {main['pr11'][:9]} (zderzenie #10 i #11)"
+    assert f"Ostatni zielony commit: {main['pr10']}" in akcja.tresc
+    assert "PR-y scalone pomiędzy (1):\n- #11 fix: zmiana 11" in akcja.tresc
 
 
 def test_czerwony_main_bez_zderzenia_gdy_bramka_pr_testowala_main_z_poprzednim_scaleniem(main: dict[str, str]) -> None:
