@@ -479,6 +479,7 @@ ENTRIES: dict[str, Entry] = {
     ),
     "getRunSetup": _route("getRunSetup", "GET", "/api/runs/setup"),
     "getIntermaxSetup": _route("getIntermaxSetup", "GET", "/api/intermax"),
+    "getIntermaxDays": _route("getIntermaxDays", "GET", "/api/intermax/days"),
     "getIntermaxCopies": _route("getIntermaxCopies", "GET", "/api/intermax/copies"),
     "restoreIntermaxCopy": _route(
         "restoreIntermaxCopy", "POST", "/api/intermax/copies/restore", {"name": INTERMAX_COPY}

@@ -21,6 +21,7 @@ from rozliczenia.centrum.run_logs import RunLog
 
 from tests.fixtures.centrum import phase_states, views_until
 from tests.fixtures.centrum_intermax import (
+    NOW,
     PERIOD,
     REGISTER_NAME,
     Clock,
@@ -70,6 +71,7 @@ def test_bez_wskazanego_rejestru_zlecen_karta_mowi_co_ustawic_a_start_jest_odrzu
     }
     assert (started.status_code, started.json()) == (409, {"message": "Najpierw wskaż INTERMAX."})
     assert centrum.client.get("/api/runs/current").json()["state"] == "idle"
+    assert centrum.client.get("/api/intermax/days").json() == {"days": [], "problem": None}
 
 
 def test_karta_mowi_ze_intermax_jest_otwarty_w_excelu_az_do_jego_zamkniecia(tmp_path: Path) -> None:
@@ -82,6 +84,105 @@ def test_karta_mowi_ze_intermax_jest_otwarty_w_excelu_az_do_jego_zamkniecia(tmp_
 
     assert (while_open["blocker"], while_open["open_in_excel"]) == (None, [OPEN])
     assert closed["open_in_excel"] == []
+
+
+def _days(centrum: OrderingCentrum) -> list[tuple[str, bool]]:
+    """Dni na karcie jako skrót dnia i to, czy jest uporządkowany; dziś ma gwiazdkę."""
+
+    response = centrum.client.get("/api/intermax/days")
+    assert response.status_code == 200, response.json()
+    found = response.json()
+    assert found["problem"] is None, found["problem"]
+    return [(day["label"] + ("*" if day["today"] else ""), day["ordered"]) for day in found["days"]]
+
+
+def test_karta_pokazuje_dni_okresu_z_dniem_uporzadkowanym_a_po_uporzadkowaniu_takze_wklejony_dzien(tmp_path: Path) -> None:
+    centrum = ordering_centrum(tmp_path)
+
+    before = centrum.client.get("/api/intermax/days").json()
+    centrum.run_to_end()
+    after = _days(centrum)
+
+    assert before["days"][:2] == [
+        {"day": "2026-10-20", "label": "wt 20.10", "today": False, "ordered": True},
+        {"day": "2026-10-21", "label": "śr 21.10", "today": False, "ordered": False},
+    ]
+    assert [(day["label"], day["ordered"]) for day in before["days"][2:]] == [
+        ("czw 22.10", False),
+        ("pt 23.10", False),
+        ("sob 24.10", False),
+        ("niedz 25.10", False),
+        ("pon 26.10", False),
+    ]
+    assert before["days"][-1]["today"] is True
+    assert after[0] == ("wt 20.10", True)
+    assert after[-1] == ("pon 26.10*", True)
+
+
+def test_karta_pokazuje_pozniejsze_dni_uporzadkowane_i_wklejone_a_zlecenie_na_pozniej_w_dniu_nie_jest_dniem(
+    tmp_path: Path,
+) -> None:
+    def at(day: int, hour: int, number: int) -> Order:
+        return Order(datetime(2026, 10, day, hour), "anna.kowalska", number)
+
+    ordered = (at(20, 8, 1), at(20, 9, 2), at(21, 8, 3), at(29, 9, 4), at(21, 10, 5), at(27, 8, 6), at(27, 9, 7))
+    centrum = ordering_centrum(tmp_path, Intermax(ordered=ordered, raw=(at(28, 8, 101), at(28, 9, 102))))
+
+    days = _days(centrum)
+
+    assert days == [
+        ("wt 20.10", True),
+        ("śr 21.10", True),
+        ("czw 22.10", False),
+        ("pt 23.10", False),
+        ("sob 24.10", False),
+        ("niedz 25.10", False),
+        ("pon 26.10*", False),
+        ("wt 27.10", True),
+        ("śr 28.10", False),
+    ]
+
+
+def test_dni_intermax_otwartego_w_excelu_sa_z_jego_ostatniego_zapisu(tmp_path: Path) -> None:
+    centrum = ordering_centrum(tmp_path)
+    open_in_excel(centrum.register)
+
+    days = _days(centrum)
+
+    assert (days[0], len(days)) == (("wt 20.10", True), 7)
+
+
+def test_nastepnego_dnia_karta_pokazuje_dni_nowego_okresu_i_wklejony_dzien_choc_intermax_sie_nie_zmienil(tmp_path: Path) -> None:
+    clock = Clock([NOW, NOW + timedelta(days=1)])
+    centrum = ordering_centrum(tmp_path, clock=clock)
+
+    monday, tuesday = _days(centrum), _days(centrum)
+
+    assert (monday[0], monday[-1]) == (("wt 20.10", True), ("pon 26.10*", False))
+    assert (tuesday[:2], tuesday[-1]) == ([("pon 26.10", False), ("wt 27.10*", False)], ("pon 02.11", False))
+
+
+@pytest.mark.parametrize(
+    ("online_only", "what"),
+    [
+        (False, "Nie można odczytać INTERMAX jako skoroszytu Excela. INTERMAX nie został zmieniony."),
+        (True, "Plik jest tylko w OneDrive w chmurze, bez kopii na tym komputerze."),
+    ],
+    ids=["uszkodzony", "w-chmurze"],
+)
+def test_dni_intermax_ktorego_nie_da_sie_odczytac_to_komunikat_a_w_onedrive_tylko_online_komunikat_o_chmurze(
+    tmp_path: Path, online_only: bool, what: str
+) -> None:
+    centrum = ordering_centrum(tmp_path)
+    centrum.register.write_bytes(b"to nie jest skoroszyt")
+    assert centrum.surroundings.onedrive is not None
+    if online_only:
+        centrum.surroundings.onedrive.online_only.add(centrum.register)
+
+    found = centrum.client.get("/api/intermax/days").json()
+
+    assert (found["days"], found["problem"]["what"]) == ([], what)
+    assert REGISTER_NAME in found["problem"]["where"]
 
 
 def test_uporzadkuj_porzadkuje_intermax_z_ustawien_taty_i_pokazuje_liczby_dzien_i_kopie(tmp_path: Path) -> None:

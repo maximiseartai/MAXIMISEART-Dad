@@ -608,6 +608,13 @@ def workbook_content(path: Path) -> bytes:
     return _file_bytes(path)
 
 
+def saved_workbook_content(path: Path) -> bytes:
+    """Bajty skoroszytu jak ``workbook_content``, także gdy trzyma go Excel: jego ostatnia zapisana wersja (ADR 0016)."""
+
+    ensure_available(path, despite_excel_lock=True)
+    return _file_bytes(path)
+
+
 def template_content(path: Path) -> bytes:
     """Bajty Wzorca jak ``workbook_content``, a plik bez rozszerzenia skoroszytu, który otwiera openpyxl, jest nieczytelny."""
 

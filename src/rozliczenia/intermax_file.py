@@ -258,10 +258,14 @@ class Register:
             ]
 
     @classmethod
-    def read(cls, path: Path) -> Register:
-        """INTERMAX z dysku; ``WorkbookError``, gdy go nie ma, jest otwarty w Excelu, niedostępny albo nieczytelny."""
+    def read(cls, path: Path, *, despite_excel_lock: bool = False) -> Register:
+        """INTERMAX z dysku; ``WorkbookError``, gdy go nie ma, jest otwarty w Excelu, niedostępny albo nieczytelny.
 
-        return cls(path, workbook_files.workbook_content(path))
+        ``despite_excel_lock``: INTERMAX otwarty w Excelu to jego ostatnia zapisana wersja, a nie ``WorkbookError``.
+        """
+
+        read = workbook_files.saved_workbook_content if despite_excel_lock else workbook_files.workbook_content
+        return cls(path, read(path))
 
     def _order_columns(self, part: str) -> OrderColumns | None:
         header_row = _HEADER_ROW.search(self._parts[part])

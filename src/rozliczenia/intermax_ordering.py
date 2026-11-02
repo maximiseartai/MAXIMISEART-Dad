@@ -1,11 +1,14 @@
 """Uporządkowanie INTERMAX: Surowe zlecenia dnia na dole Rejestru zleceń stają się uporządkowanym dniem.
 
-Jedyną operacją publiczną jest ``order_register()``. Silnik sekwencjonuje cztery etapy i jako jedyny tłumaczy fakty
+Operacją procesu jest ``order_register()``. Silnik sekwencjonuje cztery etapy i jako jedyny tłumaczy fakty
 rozpoznania, planu dnia i zapisu na Komunikaty: Sprawdzanie (INTERMAX jest i nie jest otwarty w Excelu), Odczyt
 danych (``intermax_file.Register``), Planowanie (``raw_orders.recognize`` w każdym arkuszu zleceń i
 ``raw_orders.plan_day`` z widokiem na dzisiejszy dzień z ``now``) i Zapisywanie (bajty dnia z
 ``intermax_file.Register.ordered`` przez podmianę INTERMAX ``intermax_replace`` z Kopią INTERMAX). Nie ma podglądu
 bez zapisu ani Decyzji taty. Zatrzymania zgłasza jako ``StopError``, a wynik nie zawiera danych klientów.
+
+Obok procesu, tylko do odczytu: ``register_problem`` dla Diagnozy i ``register_days`` (Dni uporządkowane) dla karty
+Uporządkowania INTERMAX w Centrum rozliczeń.
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 
@@ -38,9 +41,10 @@ from .raw_orders import (
     Undated,
     WithoutWorker,
 )
+from .settlement_period import period_of
 from .workbook_files import WorkbookError
 
-__all__ = ["OrderingSummary", "order_register"]
+__all__ = ["OrderingSummary", "RegisterDay", "order_register", "register_days"]
 
 
 @dataclass
@@ -207,3 +211,38 @@ def register_problem(register_path: Path) -> Message | None:
     except WorkbookError as error:
         return messages.register_unusable(error)
     return None if register.order_sheets else messages.no_order_sheet(register_path)
+
+
+@dataclass(frozen=True)
+class RegisterDay:
+    """Dzień INTERMAX na karcie Uporządkowania INTERMAX: data i to, czy jest Dniem uporządkowanym."""
+
+    day: date
+    ordered: bool
+
+
+def register_days(register_path: Path, today: date) -> tuple[RegisterDay, ...] | Message:
+    """Dni okresu dnia ``today``, późniejsze Dni uporządkowane i dni Surowych zleceń, po kolei, każdy ze stanem.
+
+    Tylko czyta, także INTERMAX otwarty w Excelu (jego ostatnią zapisaną wersję). Dzień uporządkowany rozpoznaje ta
+    sama reguła co Uporządkowanie INTERMAX (``raw_orders.sheet_days``) w każdym arkuszu zleceń. Komunikat, gdy
+    INTERMAX nie da się odczytać, ten sam co w Odczycie danych i Planowaniu procesu.
+    """
+
+    try:
+        register = Register.read(register_path, despite_excel_lock=True)
+    except WorkbookError as error:
+        return messages.register_unusable(error)
+    if not register.order_sheets:
+        return messages.no_order_sheet(register_path)
+    period = period_of(today)
+    ordered: set[date] = set()
+    shown = {period.tuesday + timedelta(days=offset) for offset in range(7)}
+    for sheet in register.order_sheets:
+        try:
+            found = raw_orders.sheet_days(sheet.rows_from_bottom(), sheet.columns, period.tuesday)
+        except UnsupportedShape:
+            return messages.unsupported_shape(register_path, sheet.name)
+        ordered |= found.ordered
+        shown |= found.ordered | found.pasted
+    return tuple(RegisterDay(day, day in ordered) for day in sorted(shown))

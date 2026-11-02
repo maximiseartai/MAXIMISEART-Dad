@@ -5,6 +5,7 @@ import type {
   DecisionAnswer,
   FillKind,
   GetCurrentRunResponse,
+  GetIntermaxDaysResponse,
   GetIntermaxSetupResponse,
   IntermaxRestoreRequest,
   GetNotificationsResponse,
@@ -38,6 +39,7 @@ import {
   zGetConfigurationResponse,
   zGetHealthResponse,
   zGetIntermaxCopiesResponse,
+  zGetIntermaxDaysResponse,
   zGetIntermaxSetupResponse,
   zGetMetricsResponse,
   zGetNotificationsResponse,
@@ -141,6 +143,9 @@ export type PeriodProcess = RunRequest["process"]
 
 /** Karta „Uporządkuj INTERMAX” poza okresami. */
 export type IntermaxSetup = GetIntermaxSetupResponse
+
+/** Dni na karcie „Uporządkuj INTERMAX”, każdy z tym, czy jest uporządkowany. */
+export type IntermaxDays = GetIntermaxDaysResponse
 
 /** Wynik przywrócenia Kopii INTERMAX: przywrócona albo odmowa z Komunikatem (unia z kontraktu po `state`). */
 export type IntermaxRestore = Awaited<ReturnType<typeof restoreIntermaxCopy>>
@@ -286,6 +291,11 @@ export function startRun(request: RunRequest) {
 /** Karta „Uporządkuj INTERMAX”: przypomnienie, czego brakuje w Ustawieniach taty, i ostatnie Uporządkowanie z Logów. */
 export function getIntermaxSetup() {
   return call(zGetIntermaxSetupResponse, "getIntermaxSetup", "/api/intermax")
+}
+
+/** Dni okresu i późniejsze dni INTERMAX z Ustawień taty ze stanem; serwer czyta INTERMAX tylko po jego zmianie. */
+export function getIntermaxDays() {
+  return call(zGetIntermaxDaysResponse, "getIntermaxDays", "/api/intermax/days")
 }
 
 /** Start Uporządkowania INTERMAX z Rejestrem zleceń z Ustawień taty; gdy trwa inne Uruchomienie, serwer odmawia. */

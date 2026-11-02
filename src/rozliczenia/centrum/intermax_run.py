@@ -4,6 +4,11 @@ INTERMAX to Rejestr zleceń z Ustawień taty, a Kopie INTERMAX trafiają do fold
 okresu: okres Uruchomienia to okres dzisiejszej daty z zegara procesu, ustalony przy starcie (ADR 0019), więc
 Logi Uruchomienia trafiają do Skrzynki Zgłoszeń przy tym okresie, także przy Zatrzymaniu przed odczytem.
 
+Dni na karcie (``days``) to Dni uporządkowane z silnika (``intermax_ordering.register_days``). Odczyt INTERMAX
+trwa (0,17 s na Macu dla kopii INTERMAX taty, 6,5 MB), a karta pyta o dni przy każdym wejściu i powrocie do okna,
+więc Centrum czyta go od nowa tylko po zmianie znacznika zapisu (``live_file.saved_version``) albo dnia; inaczej
+oddaje poprzedni wynik. Uporządkowanie INTERMAX zmienia ten znacznik, więc dni po nim są świeże.
+
 Konfiguracja wymienia Kopie INTERMAX z tego folderu i przywraca wybraną (``intermax_restore.restore``). Przywrócenie
 zajmuje w ``RunHost`` miejsce „jedno naraz”, bo podmienia INTERMAX, więc nie biegnie obok Uporządkowania INTERMAX.
 """
@@ -11,8 +16,8 @@ zajmuje w ``RunHost`` miejsce „jedno naraz”, bo podmienia INTERMAX, więc ni
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from dataclasses import dataclass, field
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Final
 
@@ -20,17 +25,36 @@ from fastapi import APIRouter
 
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.catalog import INTERMAX
+from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import InputWorkbook, open_in_excel
+from rozliczenia.centrum.diagnosis_messages import file_only_in_cloud
+from rozliczenia.centrum.live_file import saved_version
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun, RunHost
-from rozliczenia import intermax_copies, intermax_messages, intermax_restore
+from rozliczenia import intermax_copies, intermax_messages, intermax_ordering, intermax_restore
 from rozliczenia.intermax_copies import Copy
 from rozliczenia.intermax_replace import Disk, Waiting
 from rozliczenia.intermax_process import OrderingInputs
-from rozliczenia.message import StopError
+from rozliczenia.message import Message, StopError
+from rozliczenia.quantity_rules import WEEKDAY_LABELS
 from rozliczenia.settings import Settings, SettingsStore
 
 _VIEW: Final = INTERMAX.view
+
+
+@dataclass
+class _DaysRead:
+    """Ostatni odczyt dni: INTERMAX, jego znacznik zapisu, dzień zegara i wynik silnika."""
+
+    register: Path
+    version: str
+    today: date
+    found: tuple[intermax_ordering.RegisterDay, ...] | Message
+
+
+@dataclass
+class _LastDaysRead:
+    read: _DaysRead | None = None
 
 
 @dataclass(frozen=True)
@@ -38,7 +62,8 @@ class IntermaxEntry:
     """Adapter startu Uporządkowania INTERMAX: rdzenie procesów, folder Kopii INTERMAX i zegar procesu.
 
     ``waiting``: zegar Centrum i jego przerwa dla krótkiej ponownej próby podmiany, której odmawia OneDrive, a
-    ``disk`` kroki podmiany INTERMAX na dysku, te same dla Uporządkowania i przywrócenia Kopii.
+    ``disk`` kroki podmiany INTERMAX na dysku, te same dla Uporządkowania i przywrócenia Kopii. ``cloud_files``
+    rozpoznaje INTERMAX „tylko online” w OneDrive, gdy jego dni nie dają się odczytać.
     """
 
     store: SettingsStore
@@ -47,6 +72,8 @@ class IntermaxEntry:
     now: Callable[[], datetime]
     waiting: Waiting
     disk: Disk
+    cloud_files: CloudFiles
+    _last_days: _LastDaysRead = field(default_factory=_LastDaysRead, compare=False, repr=False)
 
     @property
     def key(self) -> contract.ProcessKey:
@@ -64,6 +91,26 @@ class IntermaxEntry:
             open_in_excel=[] if register is None else open_in_excel([InputWorkbook("INTERMAX", register, "data_file")]),
             last=last,
         )
+
+    def days(self) -> contract.IntermaxDays:
+        """Dni INTERMAX z Ustawień taty ze stanem; bez wskazanego Rejestru zleceń żadnych dni i żadnego Komunikatu."""
+
+        register = self.store.load().register
+        if register is None:
+            return contract.IntermaxDays(days=[], problem=None)
+        today = self.now().date()
+        version = saved_version(register)
+        last = self._last_days.read
+        if last is not None and (last.register, last.version, last.today) == (register, version, today):
+            found = last.found
+        else:
+            found = intermax_ordering.register_days(register, today)
+            if version is not None:
+                self._last_days.read = _DaysRead(register, version, today, found)
+        if isinstance(found, Message):
+            problem = file_only_in_cloud(register) if self.cloud_files.online_only(register) else found
+            return contract.IntermaxDays(days=[], problem=contract.Message.of(problem))
+        return contract.IntermaxDays(days=[_day(day, today) for day in found], problem=None)
 
     def prepare(self) -> PreparedRun[Any, Any]:
         """Wejście procesu z Ustawień taty; ``contract.Refusal``, gdy Rejestr zleceń nie jest wskazany."""
@@ -108,6 +155,11 @@ def _copy(copy: Copy) -> contract.IntermaxCopy:
     )
 
 
+def _day(day: intermax_ordering.RegisterDay, today: date) -> contract.IntermaxDay:
+    label = f"{WEEKDAY_LABELS[day.day.weekday()]} {day.day:%d.%m}"
+    return contract.IntermaxDay(day=day.day, label=label, today=day.day == today, ordered=day.ordered)
+
+
 def _register(settings: Settings) -> Path:
     return INTERMAX.required_paths(settings)["register"]
 
@@ -120,6 +172,10 @@ def intermax_router(
     @router.get("", operation_id="getIntermaxSetup")
     def setup() -> contract.IntermaxSetup:
         return entry.setup(last())
+
+    @router.get("/days", operation_id="getIntermaxDays")
+    def days() -> contract.IntermaxDays:
+        return entry.days()
 
     @router.post("/run", operation_id="startIntermax", responses=contract.NOT_FOUND_OR_CONFLICT)
     def start() -> contract.RunView:

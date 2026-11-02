@@ -21,6 +21,19 @@ NOTHING_TO_ORDER = "Na dole arkusza zleceń nie ma wklejonych zleceń do uporzą
 # The fixture's "today" is Monday 19.10.2026, so every Uruchomienie of Uporządkowanie INTERMAX has this period.
 PERIOD = "13_19_10_2026"
 COPY = re.compile(r"INTERMAX przed uporządkowaniem 2026-10-19 \d{2}-\d{2}-\d{2}\.xlsx")
+# Days of the fixture's INTERMAX on the card: the period of today (13–19.10), the later Dzień uporządkowany 20.10 and
+# the day of the Surowe zlecenia 26.10; 19.10 (two ordered rows) and 20.10 (no earlier day under it) are ordered.
+DAYS = (
+    ("wt 13.10", False),
+    ("śr 14.10", False),
+    ("czw 15.10", False),
+    ("pt 16.10", False),
+    ("sob 17.10", False),
+    ("niedz 18.10", False),
+    ("pon 19.10", True),
+    ("wt 20.10", True),
+    ("pon 26.10", False),
+)
 # Dad's laptop runs JavaScript about 4× slower than the Mac this runs on (docs/agents/komputer-taty.md).
 DAD_CPU = 4
 
@@ -54,6 +67,14 @@ def _choose(run: Run, page: Page, path: str) -> None:
     _card(page).get_by_role("button", name=f"{verb} INTERMAX", exact=True).click()
     run.wait_for(lambda: run.remembered("rejestr_zlecen") == path, f"INTERMAX set to {Path(path).name}")
     expect(_card(page).get_by_role("group", name="INTERMAX")).to_contain_text(Path(path).name)
+
+
+def _day_name(label: str, ordered: bool) -> str:
+    return f"{label}: {'uporządkowany' if ordered else 'nieuporządkowany'}"
+
+
+def _days_shown(page: Page) -> Locator:
+    return _card(page).get_by_role("list", name="Dni INTERMAX").get_by_role("listitem")
 
 
 def _logs(run: Run) -> list[Json]:
@@ -96,6 +117,20 @@ def drive_intermax_ordering(run: Run, page: Page) -> None:
     run.check(run.api("/api/intermax", "intermax-gotowa")["blocker"] is None, "the card is ready with Dad's INTERMAX")
     run.capture(page, "231-intermax-karta")
 
+    run.step(FEATURE, "dni")
+    days = run.api("/api/intermax/days", "intermax-dni")["days"]
+    assert isinstance(days, list)
+    expect(_days_shown(page)).to_have_count(len(DAYS))
+    for label, ordered in DAYS:
+        expect(_card(page).get_by_role("listitem", name=_day_name(label, ordered), exact=True)).to_be_visible()
+    expect(_card(page).get_by_role("listitem", name=_day_name("pon 19.10", True), exact=True)).to_have_attribute(
+        "aria-current", "date"
+    )
+    run.check(
+        [(day["label"], day["ordered"]) for day in days] == list(DAYS),
+        "the card lists the days of the period of today, the later Dzień uporządkowany and the pasted day, each with its state",
+    )
+
     run.step(FEATURE, "otwarty")
     lock = register.with_name(f"~${register.name}")
     lock.write_bytes(b"\x00" * 165)
@@ -104,7 +139,9 @@ def drive_intermax_ordering(run: Run, page: Page) -> None:
         _to_card(run, page)
         expect(_card(page).get_by_text(OPEN.format(lock=lock.name), exact=True)).to_be_visible()
         expect(_button(page)).to_be_disabled()
+        expect(_days_shown(page)).to_have_count(len(DAYS))
         run.check(True, "INTERMAX open in Excel disables the button with the sentence what to do")
+        run.check(True, "the days of INTERMAX open in Excel come from its last saved version")
         run.capture(page, "232-intermax-otwarty")
     finally:
         lock.unlink()
@@ -122,6 +159,9 @@ def drive_intermax_ordering(run: Run, page: Page) -> None:
     last = _card(page).get_by_text(re.compile(r"^Ostatnio .* · INTERMAX uporządkowany · " + fixture["day"] + "$"))
     expect(last).to_be_visible()
     run.check(True, "the card shows the last Uporządkowanie from its Logi with its day")
+    expect(_card(page).get_by_role("listitem", name=_day_name("pon 26.10", True), exact=True)).to_be_visible()
+    run.check(True, "after the Uporządkowanie the card shows the pasted day as ordered")
+    run.capture(page, "238-intermax-dni-po-uporzadkowaniu")
     _button(page).click()
     result = finished_result(run, "intermax-nic-do-uporzadkowania")
     banner = stop_banner(page)
