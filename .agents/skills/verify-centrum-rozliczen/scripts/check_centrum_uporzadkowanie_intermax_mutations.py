@@ -43,7 +43,15 @@ MUTATIONS = (
     ),
     Mutation(
         "karta z wklejonym dniem po dzisiejszym",
-        (Edit(INTERMAX_ORDERING, "shown = ordered | {", "shown = ordered | pasted_in.keys() | {"),),
+        (
+            Edit(
+                INTERMAX_ORDERING,
+                "shown = ordered | {",
+                "shown = ordered | {order.when.date() for sheet in register.order_sheets"
+                " for order in raw_orders.pasted(sheet.rows_from_bottom(), sheet.columns)"
+                " if isinstance(order, raw_orders.RawOrder)} | {",
+            ),
+        ),
         UPORZADKOWANIE,
         "karta pokazuje wklejony, nieuporządkowany dzień po dzisiejszym, choć ma pokazywać tylko uporządkowane",
     ),

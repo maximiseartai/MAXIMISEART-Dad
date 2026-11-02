@@ -2,13 +2,16 @@
 
 Operacją procesu jest ``order_register()``. Silnik sekwencjonuje cztery etapy i jako jedyny tłumaczy fakty
 rozpoznania, planu dnia i zapisu na Komunikaty: Sprawdzanie (INTERMAX jest i nie jest otwarty w Excelu), Odczyt
-danych (``intermax_file.Register``), Planowanie (``raw_orders.recognize`` w każdym arkuszu zleceń i
-``raw_orders.plan_day`` z widokiem na dzisiejszy dzień z ``now``) i Zapisywanie (bajty dnia z
+danych (``intermax_file.Register``), Planowanie (``raw_orders.recognize`` w każdym arkuszu zleceń, odmowa dnia,
+który już jest Dniem uporządkowanym (``_ordered_days``), i ``raw_orders.plan_day`` z widokiem na dzisiejszy dzień z
+``now``) i Zapisywanie (bajty dnia z
 ``intermax_file.Register.ordered`` przez podmianę INTERMAX ``intermax_replace`` z Kopią INTERMAX). Nie ma podglądu
 bez zapisu ani Decyzji taty. Zatrzymania zgłasza jako ``StopError``, a wynik nie zawiera danych klientów.
 
 Obok procesu, tylko do odczytu: ``register_problem`` dla Diagnozy i ``register_days`` (Dni uporządkowane) dla karty
-Uporządkowania INTERMAX w Centrum rozliczeń.
+Uporządkowania INTERMAX w Centrum rozliczeń. Dzień uporządkowany Planowanie i karta rozpoznają jedną regułą
+(``_ordered_days``): w każdym arkuszu zleceń, przeglądem z granicą 6 dni przed dzisiejszym dniem, a dla wklejonego
+dnia sprzed niej w tym dniu.
 """
 
 from __future__ import annotations
@@ -32,7 +35,6 @@ from .message import Message, StopError
 from .phase_runner import PhaseRunner
 from .raw_orders import (
     AboveOrdered,
-    DayOrdered,
     DayPlan,
     Obstacle,
     OrderKind,
@@ -45,7 +47,8 @@ from .workbook_files import WorkbookError
 
 __all__ = ["OrderingSummary", "RegisterDay", "order_register", "register_days"]
 
-# Karta Uporządkowania INTERMAX pokazuje dziś i 6 dni przed nim oraz późniejsze Dni uporządkowane.
+# Karta Uporządkowania INTERMAX pokazuje dziś i 6 dni przed nim oraz późniejsze Dni uporządkowane; tyle dni wstecz
+# sięga też przegląd Dni uporządkowanych, więc obejmuje cały okres rozliczeniowy dzisiejszego dnia (7 dni).
 _SHOWN_DAYS = 7
 
 
@@ -131,7 +134,11 @@ def order_register(
         [(sheet, recognized)] = found
         if not isinstance(recognized, RawBlock):
             raise StopError(_obstacle(register_path, sheet.name, recognized))
-        return sheet, recognized, raw_orders.plan_day(recognized, sheet.rows_from_bottom(), sheet.columns, now().date())
+        today = now().date()
+        if recognized.day in _ordered_days(register, min(recognized.day, _earliest_shown(today))):
+            first, last = recognized.orders[0].row, recognized.orders[-1].row
+            raise StopError(messages.day_already_ordered(register_path, sheet.name, recognized.day, first, last))
+        return sheet, recognized, raw_orders.plan_day(recognized, sheet.rows_from_bottom(), sheet.columns, today)
 
     sheet, block, day = phases.plan(plan, issue_count=lambda _: 0)
 
@@ -197,8 +204,6 @@ def _obstacle(register: Path, sheet: str, obstacle: Obstacle) -> Message:
             return messages.raw_order_without_value(register, sheet, row, get_column_letter(column), worker=True)
         case SeveralDays(days, first_row, last_row):
             return messages.several_days(register, sheet, days, first_row, last_row)
-        case DayOrdered(day, first_row, last_row):
-            return messages.day_already_ordered(register, sheet, day, first_row, last_row)
 
 
 def register_problem(register_path: Path) -> Message | None:
@@ -227,9 +232,8 @@ def register_days(register_path: Path, today: date) -> tuple[RegisterDay, ...] |
     """Dzień ``today`` i 6 dni przed nim oraz późniejsze Dni uporządkowane, po kolei, każdy ze stanem.
 
     Tylko czyta, także INTERMAX otwarty w Excelu (jego ostatnią zapisaną wersję). Dzień uporządkowany rozpoznaje ta
-    sama reguła co Uporządkowanie INTERMAX (``raw_orders.sheet_days``) w każdym arkuszu zleceń, a dzień Surowych
-    zleceń jest uporządkowany tak jak w arkuszu, w którym są wklejone, bo tam Planowanie szuka go przed drugim
-    wklejeniem. Komunikat, gdy INTERMAX nie da się odczytać, ten sam co w Odczycie danych i Planowaniu procesu.
+    sama reguła co Planowanie przed drugim wklejeniem (``_ordered_days``). Komunikat, gdy INTERMAX nie da się
+    odczytać, ten sam co w Odczycie danych i Planowaniu procesu.
     """
 
     try:
@@ -238,14 +242,28 @@ def register_days(register_path: Path, today: date) -> tuple[RegisterDay, ...] |
         return messages.register_unusable(error)
     if not register.order_sheets:
         return messages.no_order_sheet(register_path)
-    since = today - timedelta(days=_SHOWN_DAYS - 1)
-    sheets: list[raw_orders.SheetDays] = []
-    for sheet in register.order_sheets:
-        try:
-            sheets.append(raw_orders.sheet_days(sheet.rows_from_bottom(), sheet.columns, since))
-        except UnsupportedShape:
-            return messages.unsupported_shape(register_path, sheet.name)
-    pasted_in = {day: found for found in sheets for day in found.pasted}
-    ordered = {day for found in sheets for day in found.ordered if day not in pasted_in or day in pasted_in[day].ordered}
+    since = _earliest_shown(today)
+    try:
+        ordered = _ordered_days(register, since)
+    except StopError as stop:
+        return stop.message
     shown = ordered | {since + timedelta(days=offset) for offset in range(_SHOWN_DAYS)}
     return tuple(RegisterDay(day, day in ordered) for day in sorted(shown))
+
+
+def _earliest_shown(today: date) -> date:
+    return today - timedelta(days=_SHOWN_DAYS - 1)
+
+
+def _ordered_days(register: Register, since: date) -> frozenset[date]:
+    """Dni uporządkowane od ``since`` w którymkolwiek arkuszu zleceń (``raw_orders.ordered_days``).
+
+    Wszystkie arkusze, bo dzień uporządkowany w starszym arkuszu tata może wkleić do nowszego. ``StopError`` z
+    Komunikatem Planowania, gdy wierszy arkusza nie da się rozdzielić.
+    """
+
+    ordered: set[date] = set()
+    for sheet in register.order_sheets:
+        with _stops(lambda: messages.unsupported_shape(register.path, sheet.name), UnsupportedShape):
+            ordered |= raw_orders.ordered_days(sheet.rows_from_bottom(), sheet.columns, since)
+    return frozenset(ordered)
