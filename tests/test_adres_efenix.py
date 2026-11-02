@@ -3,7 +3,8 @@
 Oczekiwanie pochodzi ze specyfikacji #741 („Porównanie adresu”): bez wielkości liter, zbędnych spacji i interpunkcji,
 ten sam rodzaj (``ul.``, ``os.``), ten sam zbiór słów nazwy ulicy w dowolnej kolejności, ten sam numer i lokal (``/24``
 w pliku to ``Lokal 24`` w efenix), a miejscowość z dzielnicą przed rodzajem w efenix się pomija. Generator pisze jeden
-adres w obu zapisach; zmiana numeru, lokalu, rodzaju albo jednego słowa (także słowo dłuższe o literę) daje inny adres.
+adres w obu zapisach, także z nazwą ulicy ze słowem reguły (``ul.Lokal 1``); zmiana numeru, lokalu, rodzaju albo
+jednego słowa (także słowo dłuższe o literę) daje inny adres.
 Przykłady są deterministyczne (``derandomize=True``, bez bazy przykładów).
 """
 
@@ -29,7 +30,9 @@ class Address:
     flat: str | None
 
 
-words = st.text(LETTERS, min_size=2, max_size=9)
+# Słowa samej reguły (rodzaje i ``Lokal``) bywają nazwą ulicy; Hypothesis losuje je zawsze, a nie tylko wtedy, gdy
+# wcześniejszy test tego procesu xdist załadował moduł z takim napisem (stałe z ``sys.modules``, #759).
+words = st.text(LETTERS, min_size=2, max_size=9) | st.sampled_from(["Lokal", "LOKAL", "ul", "Os", "AL", "pl"])
 addresses = st.builds(
     Address,
     kind=st.sampled_from(["ul", "os"]),
