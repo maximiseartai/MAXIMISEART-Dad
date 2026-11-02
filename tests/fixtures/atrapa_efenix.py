@@ -27,15 +27,16 @@ JSON (``result``, ``price_index``, ``price_all``) odświeża ``#cena-…`` i ``#
 ``result: nok``, jak w efenix.
 
 Atrapa ma jedną sesję, jak okno taty z zapamiętanym logowaniem: po starcie jest zalogowana, ``expire_session`` ją
-kończy, a wtedy każda strona i odpowiedź przekierowuje na ``page_login.php``; wysłanie tam formularza loguje z
-powrotem. ``requests`` to każde żądanie po kolei (metoda, ścieżka, parametry), więc test widzi, czego narzędzie użyło.
+kończy, a wtedy każda strona i odpowiedź przekierowuje na ``page_login.php``; wysłanie tam formularza albo ``log_in``
+(tata loguje się w swoim oknie) loguje z powrotem. ``requests`` to każde żądanie po kolei (metoda, ścieżka, parametry i
+chwila z zegara ``clock``), więc test widzi, czego narzędzie użyło i kiedy.
 ``answer_delay_s`` opóźnia każdą odpowiedź na szukanie, więc szukanie, które lista wysyła sama, trwa jeszcze, gdy
 narzędzie szuka swojego numeru. ``changed`` psuje budowę jednej części strony tak, jak mógłby ją zmienić autor efenix (``Changed``).
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 import copy
 from dataclasses import dataclass, field
@@ -47,6 +48,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
+import time
 from urllib.parse import parse_qs, urlparse
 
 LIST_PAGE = "index.php"
@@ -149,6 +151,7 @@ class Request:
     method: str
     path: str
     params: Mapping[str, str]
+    at: float = 0.0
 
     @property
     def by_list(self) -> bool:
@@ -171,6 +174,12 @@ class AtrapaEfenix:
         with self._lock:
             self.logged_in = False
 
+    def log_in(self) -> None:
+        """Tata loguje się z powrotem w oknie efenix."""
+
+        with self._lock:
+            self.logged_in = True
+
     def state(self) -> tuple[list[AtrapaOrder], bool]:
         """Kopia zleceń i sesji do porównania stanu przed przebiegiem i po nim."""
 
@@ -186,6 +195,12 @@ class AtrapaEfenix:
 
         with self._lock:
             return [request.params.get("numer", "") for request in self.requests if request.path == SEARCH and not request.by_list]
+
+    def moments(self) -> list[tuple[float, str]]:
+        """Chwila z zegara Atrapy i ścieżka każdego żądania po kolei."""
+
+        with self._lock:
+            return [(request.at, request.path) for request in self.requests]
 
     def status_changes(self) -> int:
         """Ile żądań zmiany statusu (Przekazanie do akceptacji, anulowanie) dostała Atrapa."""
@@ -209,15 +224,18 @@ def atrapa_efenix(
     answer_delay_s: float = 0.0,
     today: date = TODAY,
     refuse_dates: bool = False,
+    clock: Callable[[], float] = time.monotonic,
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
     ``expire_after``: ścieżka i liczba jej żądań narzędzia (bez szukania, które lista wysyła sama), po których sesja
-    wygasa, jak przy wylogowaniu w trakcie przebiegu. ``today``: dzisiejszy dzień kalendarza daty wykonania.
-    ``refuse_dates``: serwer odpowiada na zapis daty wykonania bez zapisu.
+    wygasa raz, jak przy wylogowaniu w trakcie przebiegu; po ponownym zalogowaniu już nie wygasa. ``today``: dzisiejszy
+    dzień kalendarza daty wykonania. ``refuse_dates``: serwer odpowiada na zapis daty wykonania bez zapisu. ``clock``:
+    zegar w sekundach, którego chwilę dostaje każde żądanie.
     """
 
     atrapa = AtrapaEfenix(list(orders))
+    expired = threading.Event()
     # Koniec bloku przerywa opóźnione odpowiedzi, więc żaden wątek obsługi nie czeka dłużej niż Atrapa.
     closing = threading.Event()
 
@@ -238,10 +256,11 @@ def atrapa_efenix(
             path = url.path.lstrip("/") or LIST_PAGE
             params = {name: values[0] for name, values in parse_qs(url.query).items()} | form
             with atrapa._lock:
-                atrapa.requests.append(Request(method, path, params))
-                if expire_after is not None and path == expire_after[0]:
+                atrapa.requests.append(Request(method, path, params, clock()))
+                if expire_after is not None and path == expire_after[0] and not expired.is_set():
                     if sum(request.path == path and not request.by_list for request in atrapa.requests) > expire_after[1]:
                         atrapa.logged_in = False
+                        expired.set()
                 logged_in = atrapa.logged_in
                 orders = copy.deepcopy(atrapa.orders)
             if path == LOGIN_PAGE:

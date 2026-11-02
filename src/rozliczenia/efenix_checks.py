@@ -19,9 +19,20 @@ from typing import Final
 from .efenix_address import same_address
 from .efenix_orders import CollectiveOrder
 
-__all__ = ["PRICING_STATUS", "DateRefused", "ListedOrder", "OrderProblem", "date_problem", "listing", "searched_number"]
+__all__ = ["PRICING_STATUS", "DateRefused", "ListedOrder", "OrderProblem", "PagePart", "date_problem", "listing", "searched_number"]
 
 PRICING_STATUS: Final = "Do wyceny"
+
+
+class PagePart(enum.Enum):
+    """Część strony efenix, którą czyta okno; jej nazwa trafia do Komunikatu zmienionej strony efenix."""
+
+    LIST = "lista zleceń z polem Numer"
+    RESULTS = "tabela wyników szukania"
+    ORDER = "strona zlecenia z datą wykonania i wyceną"
+    DATE = "okno daty wykonania"
+    EMMETT = "Wycena Emmetta"
+    QUANTITY = "pole Ilość i kwota końcowa"
 
 
 class OrderProblem(enum.Enum):

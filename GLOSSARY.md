@@ -73,7 +73,9 @@ czyści wycenę, którą zlecenie już ma.
 Jasnofioletowe wypełnienie komórki `ADRES` zlecenia w Pliku zbiorczym: wycena
 tego zlecenia jest uzupełniona w efenix Ilościami usług z Pliku zbiorczego, jej
 kwota jest równa `Kwota` (AU), a Przekazanie do akceptacji należy do taty. Nie jest
-Wyróżnieniem i nie przechodzi do Rozliczeń pracowników.
+Wyróżnieniem i nie przechodzi do Rozliczeń pracowników. Nowy Plik zbiorczy ma
+`ADRES` bez wypełnienia, a żółte `ADRES` stawia tata, gdy zlecenie jest
+rozliczone z firmą.
 _Avoid_: kolor gotowości, zaznaczenie
 
 ## Surowe zlecenia

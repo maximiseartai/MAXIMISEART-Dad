@@ -1062,24 +1062,34 @@ amounts_not_computed [EFENIX_KWOTY_NIEPOLICZONE]
   Co zrobić: Otwórz i zapisz Plik zbiorczy w Excelu, potem zamknij go i uruchom ponownie.
 
 logged_out #1 [EFENIX_WYLOGOWANY]
-  Co się stało: efenix pokazał stronę logowania, więc Wycena w efenix się zatrzymała. W efenix nic się nie zmieniło.
+  Co się stało: efenix wylogował i pokazał stronę logowania, więc Wycena w efenix się zatrzymała. W efenix nic się nie zmieniło.
   Gdzie: okno efenix
-  Co zrobić: Zaloguj się w efenix i uruchom ponownie.
+  Co zrobić: Zaloguj się w efenix i uruchom ponownie. Gotowe zlecenia narzędzie tylko sprawdzi, a resztę wyceni dalej.
 
 logged_out #2 [EFENIX_WYLOGOWANY]
-  Co się stało: efenix pokazał stronę logowania, więc Wycena w efenix się zatrzymała. Wycena zleceń sprzed zatrzymania została w efenix.
+  Co się stało: efenix wylogował i pokazał stronę logowania, więc Wycena w efenix się zatrzymała. Wycena zleceń sprzed zatrzymania została w efenix.
   Gdzie: okno efenix
-  Co zrobić: Zaloguj się w efenix i uruchom ponownie.
+  Co zrobić: Zaloguj się w efenix i uruchom ponownie. Gotowe zlecenia narzędzie tylko sprawdzi, a resztę wyceni dalej.
+
+window_closed #1 [EFENIX_OKNO_ZAMKNIETE]
+  Co się stało: Okno efenix zostało zamknięte, więc Wycena w efenix się zatrzymała. W efenix nic się nie zmieniło.
+  Gdzie: okno efenix
+  Co zrobić: Uruchom ponownie i zostaw okno efenix otwarte do końca. Gotowe zlecenia narzędzie tylko sprawdzi.
+
+window_closed #2 [EFENIX_OKNO_ZAMKNIETE]
+  Co się stało: Okno efenix zostało zamknięte, więc Wycena w efenix się zatrzymała. Wycena zleceń sprzed zatrzymania została w efenix.
+  Gdzie: okno efenix
+  Co zrobić: Uruchom ponownie i zostaw okno efenix otwarte do końca. Gotowe zlecenia narzędzie tylko sprawdzi.
 
 efenix_changed #1 [EFENIX_ZMIENIONY]
-  Co się stało: Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i dalej niczego w niej nie klika. W efenix nic się nie zmieniło.
-  Gdzie: okno efenix
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co się stało: efenix się zmienił, Maks już wie. Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i dalej niczego w niej nie klika. W efenix nic się nie zmieniło.
+  Gdzie: okno efenix, lista zleceń z polem Numer
+  Co zrobić: Wycenę pozostałych zleceń zrób w efenix sam albo poczekaj na poprawkę narzędzia. Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 efenix_changed #2 [EFENIX_ZMIENIONY]
-  Co się stało: Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i dalej niczego w niej nie klika. Wycena zleceń sprzed zatrzymania została w efenix.
-  Gdzie: okno efenix
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co się stało: efenix się zmienił, Maks już wie. Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i dalej niczego w niej nie klika. Wycena zleceń sprzed zatrzymania została w efenix.
+  Gdzie: okno efenix, Wycena Emmetta
+  Co zrobić: Wycenę pozostałych zleceń zrób w efenix sam albo poczekaj na poprawkę narzędzia. Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 efenix_unreachable #1 [EFENIX_NIEDOSTEPNY]
   Co się stało: Nie udało się otworzyć efenix. W efenix nic się nie zmieniło.

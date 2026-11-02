@@ -15,8 +15,8 @@ Użycie (z katalogu repozytorium):
 zbiorczego, ``intermax`` Uporządkowanie INTERMAX (klucze procesu z kontraktu
 Centrum rozliczeń), a ``efenix`` Wycena w efenix. Wycena w efenix otwiera
 listę zleceń pod ``--efenix-url`` w nowym Chromium Playwrighta bez okna i
-uzupełnia w nim wyceny zleceń (data wykonania, Wycena Emmetta, pola „Ilość”);
-w testach i próbach to adres Atrapy efenix, nigdy efenix.pl (ADR 0024). Uporządkowanie nie ma okresu ani podglądu bez zapisu: zawsze
+uzupełnia w nim wyceny zleceń (data wykonania, Wycena Emmetta, pola „Ilość”)
+bez tempa ludzkiego, bo to zawsze adres Atrapy efenix, nigdy efenix.pl (ADR 0024). Uporządkowanie nie ma okresu ani podglądu bez zapisu: zawsze
 zapisuje, a Kopia INTERMAX trafia do ``--copies`` (bez parametru folder Kopii
 narzędzia), z nazwą z zegara komputera. Proces prowadzi ten
 sam rdzeń Uruchomienia procesu co w Centrum, więc wynik ma te same liczby,
@@ -172,7 +172,8 @@ def _order(args: argparse.Namespace) -> tuple[ProcessResult, int]:
 
 def _price(args: argparse.Namespace) -> tuple[ProcessResult, int]:
     url: str = args.efenix_url
-    inputs = EfenixInputs(args.source, lambda: efenix_browser.chromium(url))
+    # Bez tempa ludzkiego: Skrypt dla maszyn biegnie tylko na Atrapie efenix (ADR 0024), w nowym Chromium bez sesji taty.
+    inputs = EfenixInputs(args.source, lambda: efenix_browser.chromium(url), pace=None)
     return _conduct(efenix_process.PROCESS, run_view.EFENIX, inputs, args.metrics)
 
 

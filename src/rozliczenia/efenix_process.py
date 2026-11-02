@@ -2,7 +2,8 @@
 
 Opis procesu (``PROCESS``) jest wspólny dla każdego rozmówcy, więc liczby, Komunikaty i rekord metryk są te same.
 Okno efenix daje rozmówca (``EfenixInputs.open_efenix``): Skrypt dla maszyn otwiera Chromium Playwrighta
-(``efenix_browser.chromium``), a testy okno na Atrapie efenix.
+(``efenix_browser.chromium``), a testy okno na Atrapie efenix. Proces pracuje w oknie w tempie ludzkim (``efenix_pace``),
+chyba że rozmówca je wyłączy (``EfenixInputs.pace`` równe ``None``), jak testy i Skrypt dla maszyn na Atrapie efenix.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import TOOL_ROOT, efenix_pricing
+from .efenix_pace import Pace, paced
 from . import efenix_messages as messages
 from .decision import Conversation
 from .domain import ProgressObserver
@@ -33,10 +35,12 @@ class EfenixInputs:
     """Wejście procesu Wyceny w efenix: Plik zbiorczy okresu i okno efenix w sesji taty.
 
     Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da). Wycena w efenix nie ma podglądu bez zapisu.
+    ``pace``: tempo ludzkie okna, domyślnie z prawdziwym zegarem; ``None`` wyłącza przerwy.
     """
 
     source: Path
     open_efenix: OpenEfenix
+    pace: Pace | None = Pace()
 
     @property
     def period(self) -> str:
@@ -51,7 +55,8 @@ class EfenixInputs:
 
 
 def _execute(inputs: EfenixInputs, observer: ProgressObserver, _conversation: Conversation) -> PricingSummary:
-    return efenix_pricing.price_orders(inputs.source, inputs.open_efenix, observer=observer)
+    open_efenix = inputs.open_efenix if inputs.pace is None else paced(inputs.open_efenix, inputs.pace)
+    return efenix_pricing.price_orders(inputs.source, open_efenix, observer=observer)
 
 
 def _finished(_inputs: EfenixInputs, summary: PricingSummary) -> Finished:

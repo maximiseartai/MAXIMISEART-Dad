@@ -10,14 +10,18 @@ dokładnie jedno trafienie, status „Do wyceny”, realizator równy ``WYKONAWC
 nic się nie zmienia i proces idzie dalej.
 
 Zlecenie z kwotą w efenix różną od 0 ma już wycenę: proces tylko ją porównuje i jest „gotowe”, gdy każda ilość i kwota
-zgadzają się z plikiem, a w przeciwnym razie to błąd „wycena już jest i się różni”. Przy kwocie 0 proces ustawia pustą
+zgadzają się z plikiem, a w przeciwnym razie to błąd „wycena już jest i się różni”. Wyjątkiem jest wycena przerwana
+Zatrzymaniem w poprzednim Uruchomieniu: zlecenie z datą wykonania, którego każda wpisana ilość jest równa ilości pliku, a
+brakuje tylko ilości w pozycjach pustych, dostaje te ilości bez Wyceny Emmetta, jak po Emmetcie. Przy kwocie 0 proces ustawia pustą
 datę wykonania z ``DATA`` i sprawdza ją na ponownie otwartej stronie zlecenia: dzień, którego kalendarz efenix nie
 przyjął albo którego efenix nie zapisał, to błąd zlecenia (``DateRefused``) bez Emmetta i bez ilości. Potem ładuje
 Wycenę Emmetta i czyta jej ilości: sprzeczność z plikiem to ostrzeżenie bez dopisywania,
 a w przeciwnym razie wpisuje ilości pliku w pozycjach pustych u Emmetta i porównuje kwotę końcową, którą odesłał efenix,
 z ``Kwota`` (AU). Okno efenix (``Efenix``) nie ma działania, które przekazuje zlecenie do akceptacji, anuluje je albo
 zmienia jego status. Strona logowania i strona o innej budowie, także bez pozycji z przypisania kolumn, to Zatrzymanie
-(``LoggedOut``, ``UnexpectedPage``), a jego Komunikat mówi, czy przed nim proces zmienił już coś w efenix.
+(``LoggedOut``, ``UnexpectedPage``), tak samo zamknięte okno efenix (``WindowClosed``), a Komunikat Zatrzymania mówi,
+czy przed nim proces zmienił już coś w efenix. Zmieniona strona efenix to Zatrzymanie „do Maksa” z częścią strony, której
+zabrakło, bez treści strony.
 
 Po ostatnim zleceniu, a także przy Zatrzymaniu w trakcie, ``efenix_marking`` raz zapisuje Plik zbiorczy: komórka ``ADRES``
 każdego gotowego zlecenia dostaje Znacznik efenix, a reszta pliku zostaje bajt w bajt. Gdy zapis się nie udaje (Excel trzyma
@@ -34,7 +38,6 @@ from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-import enum
 from pathlib import Path
 import time
 from types import MappingProxyType
@@ -43,7 +46,7 @@ from typing import Protocol
 from . import efenix_messages as messages
 from . import workbook_files
 from .domain import ProgressObserver, ProgressPhase
-from .efenix_checks import DateRefused, ListedOrder, OrderProblem, date_problem, listing, searched_number
+from .efenix_checks import DateRefused, ListedOrder, OrderProblem, PagePart, date_problem, listing, searched_number
 from .efenix_marking import Refusal, mark_ready
 from .efenix_orders import AmountsNotComputed, CollectiveOrder, MissingColumns, PricingScope, read_scope
 from .efenix_positions import (
@@ -78,23 +81,13 @@ __all__ = [
     "PricingSummary",
     "Ready",
     "UnexpectedPage",
+    "WindowClosed",
     "price_orders",
 ]
 
 
 class LoggedOut(Exception):
     """efenix pokazał stronę logowania zamiast strony, o którą prosiło okno."""
-
-
-class PagePart(enum.Enum):
-    """Część strony efenix, którą czyta okno."""
-
-    LIST = "lista zleceń z polem Numer"
-    RESULTS = "tabela wyników szukania"
-    ORDER = "strona zlecenia z datą wykonania i wyceną"
-    DATE = "okno daty wykonania"
-    EMMETT = "Wycena Emmetta"
-    QUANTITY = "pole Ilość i kwota końcowa"
 
 
 class UnexpectedPage(Exception):
@@ -107,6 +100,10 @@ class UnexpectedPage(Exception):
 
 class EfenixUnreachable(Exception):
     """Okno nie otworzyło strony efenix: adres nie odpowiada albo nie ma połączenia."""
+
+
+class WindowClosed(Exception):
+    """Okno albo karta efenix zamknęły się w trakcie przebiegu (tata je zamknął)."""
 
 
 @dataclass(frozen=True)
@@ -123,8 +120,8 @@ class Efenix(Protocol):
     """Okno efenix w sesji taty z listą dozwolonych działań: szukanie, otwarcie zlecenia, data wykonania, Wycena Emmetta i
     pola „Ilość”. Przekazania do akceptacji, anulowania ani zmiany statusu zlecenia w nim nie ma.
 
-    Działania po ``open_order`` dotyczą otwartego zlecenia. Każde działanie zgłasza ``LoggedOut`` na stronie logowania i
-    ``UnexpectedPage`` na stronie o innej budowie.
+    Działania po ``open_order`` dotyczą otwartego zlecenia. Każde działanie zgłasza ``LoggedOut`` na stronie logowania,
+    ``UnexpectedPage`` na stronie o innej budowie i ``WindowClosed`` w zamkniętym oknie.
     """
 
     @property
@@ -158,7 +155,8 @@ class Efenix(Protocol):
 
 
 OpenEfenix = Callable[[], AbstractContextManager[Efenix]]
-"""Otwiera okno efenix z listą zleceń na czas Zapisywania; ``EfenixUnreachable``, ``LoggedOut`` albo ``UnexpectedPage``."""
+"""Otwiera okno efenix z listą zleceń na czas Zapisywania; ``EfenixUnreachable``, ``LoggedOut``, ``UnexpectedPage`` albo
+``WindowClosed``."""
 
 
 @dataclass(frozen=True)
@@ -300,7 +298,8 @@ def _warning(source: Path, result: OrderResult) -> Message | None:
 
 @contextmanager
 def _efenix_stops(changed: Callable[[], bool]) -> Iterator[None]:
-    """Strona logowania, nieznana budowa strony i brak połączenia z efenix to Zatrzymanie z Komunikatem procesu.
+    """Strona logowania, nieznana budowa strony, zamknięte okno i brak połączenia z efenix to Zatrzymanie z Komunikatem
+    procesu.
 
     ``changed``: czy przed Zatrzymaniem proces zmienił już coś w efenix.
     """
@@ -310,7 +309,9 @@ def _efenix_stops(changed: Callable[[], bool]) -> Iterator[None]:
     except LoggedOut as error:
         raise StopError(messages.logged_out(kept=changed())) from error
     except UnexpectedPage as error:
-        raise StopError(messages.efenix_changed(kept=changed())) from error
+        raise StopError(messages.efenix_changed(error.part, kept=changed())) from error
+    except WindowClosed as error:
+        raise StopError(messages.window_closed(kept=changed())) from error
     except EfenixUnreachable as error:
         raise StopError(messages.efenix_unreachable(kept=changed())) from error
 
@@ -331,7 +332,9 @@ def _priced(order: CollectiveOrder, efenix: Efenix) -> Ready | OrderError | Emme
         return OrderError(problem)
     if opened.amount != 0:
         differs = priced_differently(file, opened.quantities, opened.amount, order.amount)
-        return Ready(hit) if differs is None else OrderError(differs)
+        if differs is None:
+            return Ready(hit)
+        return _entered(order, hit, efenix, file, opened) if _interrupted(file, opened) else OrderError(differs)
     if opened.execution_date is None:
         if not efenix.set_execution_date(day):
             return OrderError(DateRefused.OUT_OF_RANGE)
@@ -340,8 +343,23 @@ def _priced(order: CollectiveOrder, efenix: Efenix) -> Ready | OrderError | Emme
     emmett = _known_positions(efenix.load_emmett())
     if conflicts := emmett_conflicts(file, emmett.quantities):
         return EmmettWarning(conflicts)
-    amount = emmett.amount
-    for position, quantity in to_enter(file, emmett.quantities).items():
+    return _entered(order, hit, efenix, file, emmett)
+
+
+def _interrupted(file: Mapping[str, int], opened: OrderPricing) -> bool:
+    """Wycena przerwana Zatrzymaniem po Wycenie Emmetta: data wykonania jest, każda wpisana ilość jest równa ilości pliku,
+    a brakuje ilości pliku w pozycjach pustych."""
+
+    return opened.execution_date is not None and not emmett_conflicts(file, opened.quantities) and bool(to_enter(file, opened.quantities))
+
+
+def _entered(
+    order: CollectiveOrder, hit: ListedOrder, efenix: Efenix, file: Mapping[str, int], on_page: OrderPricing
+) -> Ready | OrderError:
+    """Ilości pliku wpisane w pozycjach pustych na stronie ``on_page`` i kwota końcowa porównana z ``Kwota`` (AU)."""
+
+    amount = on_page.amount
+    for position, quantity in to_enter(file, on_page.quantities).items():
         amount = efenix.enter_quantity(position, quantity)
     return Ready(hit) if same_amount(amount, order.amount) else OrderError(OtherAmount(amount, order.amount))
 
