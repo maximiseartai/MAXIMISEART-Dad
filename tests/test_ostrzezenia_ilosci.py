@@ -94,7 +94,7 @@ def test_w_centrum_podglad_z_ostrzezeniami_ilosci_prowadzi_do_uruchom_a_zapis_wy
     centrum = preparing_centrum(tmp_path, _mixed_period())
 
     def previewed() -> bool:
-        setup, _settlement, _efenix = centrum.client.get("/api/runs/setup").json()["processes"]
+        setup, _efenix, _settlement = centrum.client.get("/api/runs/setup").json()["processes"]
         [choice] = [choice for choice in setup["periods"] if choice["token"] == PERIOD]
         return bool(choice["previewed"])
 

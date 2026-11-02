@@ -224,9 +224,10 @@ def create_app(
     # Adaptery startu procesów z katalogu procesów; reszta Centrum pyta wpis procesu w katalogu, nie adapter.
     entries: list[ProcessEntry] = [
         PreparationEntry(store, configuration, processes, today, readers),
-        SettlementEntry(store, configuration, processes, today, readers),
         # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
+        # Kafelek Wyceny w efenix stoi przed Przebiegiem rozliczeń, bo w tej kolejności tata pracuje.
         EfenixEntry(store, processes, today, efenix_window or EfenixWindow.of_tata()),
+        SettlementEntry(store, configuration, processes, today, readers),
     ]
     # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
     intermax = IntermaxEntry(
