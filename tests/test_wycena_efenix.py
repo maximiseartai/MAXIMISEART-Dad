@@ -53,12 +53,14 @@ from tests.fixtures.atrapa_efenix import (
     LOAD_EMMETT,
     ORDER_PAGE,
     ORDER_SCRIPT,
+    FILL_EMMETT,
     SAVE_QUANTITY,
     SEARCH,
     SET_DATE,
     AtrapaEfenix,
     AtrapaOrder,
     Changed,
+    Outage,
     amount_of,
     atrapa_efenix,
 )
@@ -1065,25 +1067,97 @@ def test_przerwanie_wylogowaniem_i_ponowne_uruchomienie_daje_ten_sam_stan_efenix
     assert (_parts(resumed), _marked(resumed)) == (_parts(whole), [18, 19, 20])
 
 
-def test_przerwanie_po_zaladuj_do_zlecenia_przed_odczytem_wyceny_emmetta_daje_przy_ponownym_uruchomieniu_blad_tylko_tego_zlecenia(
-    tmp_path: Path, page: Page
+# Przerwanie Wyceny w efenix w trakcie: Atrapa efenix odcięta raz od żądania ``path`` numer ``after`` + 1 narzędzia.
+@pytest.mark.parametrize(
+    ("outage", "path", "after"),
+    [
+        pytest.param(Outage.CUT, SEARCH, 1, id="zerwane-szukanie"),
+        pytest.param(Outage.SLOW, SEARCH, 1, id="wolne-szukanie"),
+        pytest.param(Outage.CUT, SET_DATE, 1, id="zerwana-data-wykonania"),
+        pytest.param(Outage.SLOW, SET_DATE, 1, id="wolna-data-wykonania"),
+        # Przycisk Emmetta pyta efenix o propozycję, a okno czeka na okno Emmetta, które pokazuje odpowiedź.
+        pytest.param(Outage.SLOW, FILL_EMMETT, 1, id="wolna-propozycja-emmetta"),
+        pytest.param(Outage.CUT, LOAD_EMMETT, 1, id="zerwane-zaladuj-do-zlecenia"),
+        # Zlecenie 1 ma dwa zapisy ilości, więc czwarty to druga ilość zlecenia 2.
+        pytest.param(Outage.CUT, SAVE_QUANTITY, 3, id="zerwana-ilość"),
+        pytest.param(Outage.SLOW, SAVE_QUANTITY, 3, id="wolna-ilość"),
+    ],
+)
+def test_brak_polaczenia_z_efenix_w_trakcie_to_zatrzymanie_dla_taty_a_ponowne_uruchomienie_daje_ten_sam_stan_co_jeden_przebieg(
+    tmp_path: Path, page: Page, outage: Outage, path: str, after: int
 ) -> None:
-    """Wylogowanie przy przeładowaniu strony zlecenia 2 po „Załaduj do zlecenia”: Emmett jest w efenix, ale narzędzie nie
-    odczytało go ze strony, więc ślad nie ma stanu „Emmett załadowany”, a ponowne uruchomienie tylko porównuje wycenę
-    zlecenia 2 i nic w niej nie zmienia. Zlecenia 1 i 3 kończą się jak w jednym przebiegu."""
+    """Zerwane żądanie i efenix wolniejszy niż czas okna (tu 3 s) to „brak połączenia z efenix”, a nie „efenix się
+    zmienił”: Zatrzymanie dla taty, bez Diagnozy i Zgłoszenia do Maksa. Wolny efenix wykonuje żądanie, tylko odpowiada
+    po czasie. Po powrocie połączenia tata uruchamia ponownie i dostaje ten sam stan efenix i Pliku zbiorczego co po
+    jednym przebiegu bez przerwy."""
+
+    orders = _resumed_orders()
+    original = write_collective_file(tmp_path / "plik", orders)
+    whole, resumed = (tmp_path / name / PERIOD / original.name for name in ("pelny", "przerwany"))
+    for copy_of in (whole, resumed):
+        copy_of.parent.mkdir(parents=True)
+        shutil.copy2(original, copy_of)
+
+    def in_efenix() -> list[AtrapaOrder]:
+        return [order.in_efenix(f"99{index}") for index, order in enumerate(orders)]
+
+    with atrapa_efenix(in_efenix()) as atrapa:
+        once = _run(whole, page, atrapa.url)
+        priced_once = (_pricing(atrapa), atrapa.status_changes())
+    with atrapa_efenix(in_efenix(), outage_after=(outage, path, after)) as atrapa:
+        stopped = _run(resumed, page, atrapa.url, timeout_ms=3_000)
+        atrapa.reconnect()
+        again = _run(resumed, page, atrapa.url)
+        priced_again = (_pricing(atrapa), atrapa.status_changes())
+
+    assert isinstance(stopped.ending, Stop), _ending(stopped)
+    message = stopped.ending.message
+    assert (_stop(stopped), stopped.ending.stop_kind, _kept(stopped)) == ("EFENIX_NIEDOSTEPNY", "for_tata", True)
+    assert message.what.startswith("Brak połączenia z efenix"), message.what
+    assert (once.result, again.result, _figures(again)) == ("OK", "OK", _figures_of(3, 3))
+    assert priced_again == priced_once
+    assert (_parts(resumed), _marked(resumed)) == (_parts(whole), [18, 19, 20])
+
+
+@pytest.mark.parametrize(
+    ("expire_after", "outage_after", "stop"),
+    [
+        # Szóste otwarcie strony zlecenia to przeładowanie po Wycenie Emmetta zlecenia 2 (każde zlecenie otwiera ją trzy razy).
+        pytest.param((ORDER_PAGE, 5), None, "EFENIX_WYLOGOWANY", id="wylogowanie-przy-przeładowaniu"),
+        pytest.param(None, (Outage.CUT, ORDER_PAGE, 5), "EFENIX_NIEDOSTEPNY", id="zerwane-przeładowanie"),
+        # Wolny efenix ładuje Emmetta, ale okno nie doczekało odpowiedzi ani przeładowania.
+        pytest.param(None, (Outage.SLOW, LOAD_EMMETT, 1), "EFENIX_NIEDOSTEPNY", id="wolne-zaladuj-do-zlecenia"),
+    ],
+)
+def test_przerwanie_po_zaladuj_do_zlecenia_przed_odczytem_wyceny_emmetta_daje_przy_ponownym_uruchomieniu_blad_tylko_tego_zlecenia(
+    tmp_path: Path,
+    browser: Browser,
+    page: Page,
+    expire_after: tuple[str, int] | None,
+    outage_after: tuple[Outage, str, int] | None,
+    stop: str,
+) -> None:
+    """Wylogowanie albo brak połączenia z efenix po „Załaduj do zlecenia” zlecenia 2: Emmett jest w efenix, ale narzędzie
+    nie odczytało go ze strony, więc ślad nie ma stanu „Emmett załadowany”, a ponowne uruchomienie tylko porównuje wycenę
+    zlecenia 2 i nic w niej nie zmienia. Zlecenia 1 i 3 kończą się jak w jednym przebiegu.
+
+    Ponowne uruchomienie idzie w nowej karcie, jak u taty, u którego każde Uruchomienie otwiera swoje okno efenix: karta
+    po zerwanym przeładowaniu jeszcze chwilę przechodzi na stronę błędu Chrome i przerwałaby otwarcie listy zleceń."""
 
     orders = _resumed_orders()
     source = write_collective_file(tmp_path, orders)
-    # Szóste otwarcie strony zlecenia to przeładowanie po Wycenie Emmetta zlecenia 2 (każde zlecenie otwiera ją trzy razy).
-    with atrapa_efenix([order.in_efenix(f"99{index}") for index, order in enumerate(orders)], expire_after=(ORDER_PAGE, 5)) as atrapa:
-        stopped = _run(source, page, atrapa.url)
+    in_efenix = [order.in_efenix(f"99{index}") for index, order in enumerate(orders)]
+    with atrapa_efenix(in_efenix, expire_after=expire_after, outage_after=outage_after) as atrapa:
+        stopped = _run(source, page, atrapa.url, timeout_ms=3_000)
         atrapa.log_in()
-        again = _run(source, page, atrapa.url)
+        atrapa.reconnect()
+        with page_of(browser) as new_window:
+            again = _run(source, new_window, atrapa.url)
         pricing = _pricing(atrapa)
 
     filled = {"012": 1, "019": 2, "015": 1}
     assert (_stop(stopped), _figures(again), _errors(again)) == (
-        "EFENIX_WYLOGOWANY",
+        stop,
         _figures_of(3, 2),
         [("EFENIX_WYCENA_INNA", "wiersz 19")],
     )

@@ -26,8 +26,9 @@ dopisywania, a w przeciwnym razie proces wpisuje ilości pliku w pozycjach pusty
 którą odesłał efenix, z ``Kwota`` (AU). Okno efenix (``Efenix``) nie ma działania, które przekazuje zlecenie do
 akceptacji, anuluje je albo zmienia jego status. Strona logowania i strona o innej budowie, także bez pozycji z
 przypisania kolumn, to Zatrzymanie (``LoggedOut``, ``UnexpectedPage``), tak samo zamknięte okno efenix
-(``WindowClosed``), a Komunikat Zatrzymania mówi, czy przed nim proces zmienił już coś w efenix. Zmieniona strona efenix
-to Zatrzymanie „do Maksa” z częścią strony, której zabrakło, bez treści strony.
+(``WindowClosed``) i brak połączenia z efenix, także zerwany albo wolny w trakcie (``EfenixUnreachable``), a Komunikat
+Zatrzymania mówi, czy przed nim proces zmienił już coś w efenix. Zmieniona strona efenix to Zatrzymanie „do Maksa” z
+częścią strony, której zabrakło, bez treści strony; brak połączenia to Zatrzymanie dla taty, który uruchamia ponownie.
 Okno, które czeka, aż tata się zaloguje, robi to w ``Login`` od silnika: ten czas nie wlicza się do czasów etapów ani,
 przez ``waiting`` rozmowy rdzenia, do ``Czas uruchomienia``. Postęp Zapisywania to kroki (``PhaseRunner.step``):
 logowanie, zlecenia z Wykonawcą i liczbą sprawdzonych z wszystkich, na końcu Znaczniki efenix; ślad działań okna przy
@@ -129,7 +130,8 @@ class UnexpectedPage(Exception):
 
 
 class EfenixUnreachable(Exception):
-    """Okno nie otworzyło strony efenix: adres nie odpowiada albo nie ma połączenia."""
+    """Brak połączenia z efenix: okno nie otworzyło strony efenix albo żądanie działania okna zerwała sieć lub efenix
+    nie odpowiedział na nie w czasie okna."""
 
 
 class WindowClosed(Exception):
@@ -155,7 +157,8 @@ class Efenix(Protocol):
     pola „Ilość”. Przekazania do akceptacji, anulowania ani zmiany statusu zlecenia w nim nie ma.
 
     Działania po ``open_order`` dotyczą otwartego zlecenia. Każde działanie zgłasza ``LoggedOut`` na stronie logowania,
-    ``UnexpectedPage`` na stronie o innej budowie i ``WindowClosed`` w zamkniętym oknie.
+    ``UnexpectedPage`` na stronie o innej budowie, ``EfenixUnreachable`` bez połączenia z efenix i ``WindowClosed`` w
+    zamkniętym oknie.
     """
 
     @property

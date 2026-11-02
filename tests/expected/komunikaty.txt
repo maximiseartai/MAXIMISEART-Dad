@@ -1097,14 +1097,14 @@ efenix_changed #2 [EFENIX_ZMIENIONY]
   Co zrobić: Wycenę pozostałych zleceń zrób w efenix sam albo poczekaj na poprawkę narzędzia. Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 efenix_unreachable #1 [EFENIX_NIEDOSTEPNY]
-  Co się stało: Nie udało się otworzyć efenix. W efenix nic się nie zmieniło.
+  Co się stało: Brak połączenia z efenix, więc Wycena w efenix się zatrzymała. W efenix nic się nie zmieniło.
   Gdzie: okno efenix
-  Co zrobić: Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co zrobić: Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Gotowe zlecenia narzędzie tylko sprawdzi. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 efenix_unreachable #2 [EFENIX_NIEDOSTEPNY]
-  Co się stało: Nie udało się otworzyć efenix. Wycena zleceń sprzed zatrzymania została w efenix.
+  Co się stało: Brak połączenia z efenix, więc Wycena w efenix się zatrzymała. Wycena zleceń sprzed zatrzymania została w efenix.
   Gdzie: okno efenix
-  Co zrobić: Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co zrobić: Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Gotowe zlecenia narzędzie tylko sprawdzi. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 browser_not_started [EFENIX_BRAK_PRZEGLADARKI]
   Co się stało: Nie udało się otworzyć przeglądarki Google Chrome z oknem efenix. W efenix nic się nie zmieniło.

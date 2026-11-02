@@ -154,15 +154,19 @@ def efenix_changed(part: PagePart, *, kept: bool) -> Message:
 
 
 def efenix_unreachable(*, kept: bool) -> Message:
-    """Okno nie otworzyło efenix; ``kept`` jak w ``logged_out``."""
+    """Brak połączenia z efenix: okno nie otworzyło efenix albo efenix przestał odpowiadać w trakcie; ``kept`` jak w
+    ``logged_out``.
+
+    Zatrzymanie dla taty, bez Diagnozy i Zgłoszenia: przekazanie Komunikatu jest tylko warunkowe.
+    """
 
     return Message(
         code="EFENIX_NIEDOSTEPNY",
-        what=f"Nie udało się otworzyć efenix. {_after_stop(kept=kept)}",
+        what=f"Brak połączenia z efenix, więc {_PROCESS} się zatrzymała. {_after_stop(kept=kept)}",
         where=_EFENIX,
         action=(
-            "Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Jeśli błąd "
-            "wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
+            "Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Gotowe "
+            "zlecenia narzędzie tylko sprawdzi. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
         ),
     )
 

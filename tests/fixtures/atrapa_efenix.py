@@ -39,6 +39,8 @@ i kiedy.
 ``answer_delay_s`` opóźnia każdą odpowiedź na szukanie, więc szukanie, które lista wysyła sama, trwa jeszcze, gdy
 narzędzie szuka swojego numeru. ``changed`` psuje budowę jednej części strony tak, jak mógłby ją zmienić autor efenix
 (``Changed``, a w części, której Wycena w efenix w testach nie używa, a sprawdza narzędzie zgodności, ``Unread``).
+``outage_after`` w trakcie przebiegu odcina efenix (``Outage``: zerwane połączenie albo efenix wolniejszy niż okno), aż
+test przywróci połączenie (``reconnect``), jak sieć taty, która na chwilę znika.
 """
 
 from __future__ import annotations
@@ -55,6 +57,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import socket
+import struct
 import threading
 import time
 from typing import Any
@@ -114,6 +117,13 @@ class Unread(enum.Enum):
     SCRIPT_ADDRESSES = "lista ładuje skrypt z #fragmentem w adresie, a strona zlecenia z ;parametrem"
     ORDER_REDIRECT = "strona zlecenia przekierowuje na wylogowanie (action_logout.php)"
     HOSTILE = "skrypty i elementy stron po wczytaniu i przy opuszczeniu zapisują, zmieniają status i wylogowują"
+
+
+class Outage(enum.Enum):
+    """Jak Atrapa nie odpowiada na żądania, gdy efenix jest odcięty (``outage_after``)."""
+
+    CUT = "zrywa połączenie każdego żądania bez odpowiedzi i bez wykonania żądania, jak sieć, która zniknęła"
+    SLOW = "wykonuje każde żądanie, a odpowiedź wysyła dopiero na końcu bloku, jak efenix wolniejszy niż czas okna"
 
 
 @dataclass(frozen=True)
@@ -201,6 +211,7 @@ class AtrapaEfenix:
     orders: list[AtrapaOrder]
     url: str = ""
     logged_in: bool = True
+    outage: Outage | None = None
     requests: list[Request] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -213,6 +224,13 @@ class AtrapaEfenix:
 
         with self._lock:
             self.logged_in = True
+
+    def reconnect(self) -> None:
+        """Połączenie z efenix wróciło: Atrapa znów odpowiada na każde żądanie (odpowiedzi wstrzymane przez ``SLOW``
+        dalej czekają na koniec bloku)."""
+
+        with self._lock:
+            self.outage = None
 
     def edit(self, number: str, change: Callable[[AtrapaOrder], object]) -> None:
         """Tata sam zmienia w efenix zlecenie ``number``: ``change`` dostaje jego stan w Atrapie."""
@@ -267,18 +285,21 @@ def atrapa_efenix(
     refuse_dates: bool = False,
     clock: Callable[[], float] = time.monotonic,
     cookie_session: bool = False,
+    outage_after: tuple[Outage, str, int] | None = None,
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
     ``expire_after``: ścieżka i liczba jej żądań narzędzia (bez szukania, które lista wysyła sama), po których sesja
     wygasa raz, jak przy wylogowaniu w trakcie przebiegu; po ponownym zalogowaniu już nie wygasa. ``today``: dzisiejszy
     dzień kalendarza daty wykonania. ``refuse_dates``: serwer odpowiada na zapis daty wykonania bez zapisu. ``clock``:
-    zegar w sekundach, którego chwilę dostaje każde żądanie. Atrapa pracuje na kopii ``orders``, więc zlecenia testu
+    zegar w sekundach, którego chwilę dostaje każde żądanie. ``outage_after``: rodzaj odcięcia, ścieżka i liczba jej
+    żądań narzędzia jak w ``expire_after``, po których efenix jest odcięty raz, od tego żądania do ``reconnect``. Atrapa pracuje na kopii ``orders``, więc zlecenia testu
     zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie.
     """
 
     atrapa = AtrapaEfenix(copy.deepcopy(list(orders)))
     expired = threading.Event()
+    cut_off = threading.Event()
     # Koniec bloku przerywa opóźnione odpowiedzi i zamyka otwarte połączenia, więc żaden wątek obsługi nie czeka dłużej
     # niż Atrapa, a po bloku nic już pod jej adresem nie odpowiada.
     closing = threading.Event()
@@ -288,6 +309,8 @@ def atrapa_efenix(
         # przy HTTP/1.0, co pod xdist na Windows wyczerpywało gniazda (``net::ERR_NO_BUFFER_SPACE``, #778). Każda
         # odpowiedź ma ``Content-Length``.
         protocol_version = "HTTP/1.1"
+        # Odpowiedź żądania, które Atrapa wykonała, gdy efenix był wolny (``Outage.SLOW``), czeka na koniec bloku.
+        _late = False
 
         def handle(self) -> None:
             try:
@@ -319,8 +342,17 @@ def atrapa_efenix(
                     if sum(request.path == path and not request.by_list for request in atrapa.requests) > expire_after[1]:
                         atrapa.logged_in = False
                         expired.set()
+                if outage_after is not None and path == outage_after[1] and not cut_off.is_set():
+                    if sum(request.path == path and not request.by_list for request in atrapa.requests) > outage_after[2]:
+                        atrapa.outage = outage_after[0]
+                        cut_off.set()
+                outage = atrapa.outage
                 logged_in = atrapa.logged_in and (not cookie_session or _has_session_cookie(self.headers.get("Cookie", "")))
                 orders = copy.deepcopy(atrapa.orders)
+            if outage is Outage.CUT:
+                self._cut()
+                return
+            self._late = outage is Outage.SLOW
             if path == LOGIN_ACTION and method == "POST":
                 with atrapa._lock:
                     atrapa.logged_in = True
@@ -366,7 +398,19 @@ def atrapa_efenix(
             else:
                 self._html("<p>Nie ma takiej strony.</p>", HTTPStatus.NOT_FOUND)
 
+        def _cut(self) -> None:
+            """Zrywa połączenie bez odpowiedzi: zamknięcie z ``SO_LINGER`` 0 wysyła RST (``net::ERR_CONNECTION_RESET``)."""
+
+            self.close_connection = True
+            self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+            self.connection.close()
+
+        def _wait_if_late(self) -> None:
+            if self._late:
+                closing.wait()
+
         def _html(self, text: str, status: HTTPStatus = HTTPStatus.OK, *, content_type: str = "text/html") -> None:
+            self._wait_if_late()
             body = text.encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", f"{content_type}; charset=utf-8")
@@ -378,6 +422,7 @@ def atrapa_efenix(
             self._html(json.dumps(answer))
 
         def _redirect(self, target: str, *, cookie: bool = False) -> None:
+            self._wait_if_late()
             self.send_response(HTTPStatus.FOUND)
             self.send_header("Location", target)
             if cookie:
