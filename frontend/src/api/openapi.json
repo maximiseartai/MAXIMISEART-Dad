@@ -3278,6 +3278,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/ReleaseNotification"
+                },
+                {
+                  "$ref": "#/components/schemas/PricingNotification"
                 }
               ],
               "discriminator": {
@@ -3285,6 +3288,7 @@
                 "mapping": {
                   "nowa_wersja": "#/components/schemas/ReleaseNotification",
                   "uwaga": "#/components/schemas/DadNoteNotification",
+                  "wycena_w_efenix": "#/components/schemas/PricingNotification",
                   "zgloszenie": "#/components/schemas/ReportNotification"
                 }
               }
@@ -3812,6 +3816,101 @@
         ],
         "title": "PriceListItem",
         "description": "Kolumna N:AP i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego."
+      },
+      "PricedOrders": {
+        "properties": {
+          "ready": {
+            "type": "integer",
+            "title": "Ready"
+          },
+          "errors": {
+            "type": "integer",
+            "title": "Errors"
+          },
+          "warnings": {
+            "type": "integer",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ready",
+          "errors",
+          "warnings"
+        ],
+        "title": "PricedOrders",
+        "description": "Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, błędy i ostrzeżenia Emmetta."
+      },
+      "PricingNotification": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "unread": {
+            "type": "boolean",
+            "title": "Unread"
+          },
+          "kind": {
+            "type": "string",
+            "const": "wycena_w_efenix",
+            "title": "Kind"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "orders": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PricedOrders"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stopped": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "unread",
+          "kind",
+          "run_id",
+          "headline",
+          "period",
+          "orders",
+          "stopped"
+        ],
+        "title": "PricingNotification",
+        "description": "Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia\n(``headline``), okres, zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”\nKomunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów."
       },
       "Problem": {
         "properties": {

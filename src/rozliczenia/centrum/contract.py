@@ -1153,7 +1153,30 @@ class ReleaseNotification(_Notification):
     update_offered: bool
 
 
-Notification = Annotated[DadNoteNotification | ReportNotification | ReleaseNotification, Field(discriminator="kind")]
+class PricedOrders(_Model):
+    """Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, błędy i ostrzeżenia Emmetta."""
+
+    ready: int
+    errors: int
+    warnings: int
+
+
+class PricingNotification(_Notification):
+    """Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia
+    (``headline``), okres, zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”
+    Komunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów."""
+
+    kind: Literal["wycena_w_efenix"]
+    run_id: str
+    headline: str
+    period: str
+    orders: PricedOrders | None
+    stopped: str | None
+
+
+Notification = Annotated[
+    DadNoteNotification | ReportNotification | ReleaseNotification | PricingNotification, Field(discriminator="kind")
+]
 
 
 class Notifications(_Model):

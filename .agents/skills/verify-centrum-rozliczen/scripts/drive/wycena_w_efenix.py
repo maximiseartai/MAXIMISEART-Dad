@@ -26,6 +26,7 @@ PROCESS = "Wycena w efenix"
 PERIOD = "08_14_09_2026"
 COLLECTIVE_FILE = f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
 LOGIN = "Zaloguj się w oknie efenix"
+BELL_FRESH = "Powiadomienia, są nowe"
 DONE = "Wycena w efenix gotowa · wymaga sprawdzenia"
 # serve_centrum.EFENIX_ORDERS: row → (order number, Wykonawca); 18 is ready, 19 unknown to efenix, 20 differs from Emmett.
 ORDERS = {18: ("QX9001", "adrian.testowy"), 19: ("QX9002", "beata.testowa"), 20: ("QX9003", "celina.testowa")}
@@ -62,9 +63,10 @@ def _log_in(run: Run) -> None:
     """Harness: Dad logs in to efenix in the window Centrum opened (the Atrapa's login form, posted from here)."""
 
     address = (run.root / "efenix" / "adres.txt").read_text(encoding="utf-8")
-    login = address.rsplit("/", 1)[0] + "/page_login.php"
-    print("  harness: Dad logs in to the Atrapa efenix (the form of page_login.php)", flush=True)
-    request = urllib.request.Request(login, data=b"field_signum=tata&field_password=haslo", method="POST")
+    # The form of page_login.php posts to action_login.php with a hidden fingerprint, as in efenix.
+    login = address.rsplit("/", 1)[0] + "/action_login.php"
+    print("  harness: Dad logs in to the Atrapa efenix (the login form, posted to action_login.php)", flush=True)
+    request = urllib.request.Request(login, data=b"field_signum=tata&field_password=haslo&fingerprint=", method="POST")
     with urllib.request.urlopen(request, timeout=10) as answer:
         answer.read()
 
@@ -195,3 +197,46 @@ def _price(run: Run, page: Page, source: Path) -> None:
     live.get_by_role("button", name="Otwórz Plik zbiorczy").click()
     run.wait_for(last_opened_is(run, source), "Otwórz Plik zbiorczy opens it")
     run.check(True, "Otwórz Plik zbiorczy opens the Plik zbiorczy with the Znaczniki efenix")
+    _notification(run, page, result)
+
+
+def _notification(run: Run, page: Page, result: Json) -> None:
+    """The Powiadomienie under the bell, which Dad finds when he comes back to Centrum after the Wycena."""
+
+    run.step(FEATURE, "powiadomienie")
+    shown = current_run(run, "efenix-po-wyniku")["run"]
+    assert isinstance(shown, dict)
+    bell = page.locator("header").get_by_role("button", name="Powiadomienia", exact=False)
+    expect(bell).to_have_accessible_name(BELL_FRESH)
+    answer = run.api("/api/notifications", "efenix-powiadomienia")
+    items = answer["items"]
+    assert isinstance(items, list)
+    [notification] = [item for item in items if item["kind"] == "wycena_w_efenix" and item["run_id"] == shown["id"]]
+    run.check(
+        notification["unread"] is True
+        and (notification["headline"], notification["period"], notification["orders"], notification["stopped"])
+        == (result["headline"], PERIOD, {"ready": 1, "errors": 1, "warnings": 1}, None),
+        "the ended Wycena is a new Powiadomienie with the result, the period and the ready, error and warning counts",
+    )
+    run.capture(page, "264-efenix-dzwonek")
+    bell.click()
+    expect(page.get_by_role("heading", name="Powiadomienia", exact=True)).to_be_visible()
+    row = page.get_by_role("list", name="Powiadomienia").get_by_role("listitem", name=f"{PROCESS}: {DONE}", exact=True)
+    expect(row).to_have_count(1)
+    expect(row.get_by_label("nowe", exact=True)).to_be_visible()
+    expect(row).to_contain_text(f"Okres {PERIOD}")
+    counts = row.get_by_role("definition")
+    expect(counts).to_have_text(["1", "1", "1"])
+    expect(row.get_by_role("term")).to_have_text(["Gotowe do przekazania", "Błędy zleceń", "Ostrzeżenia Emmetta"])
+    run.capture(page, "265-efenix-powiadomienie")
+    row.get_by_role("button", name="Karta Uruchomienia", exact=True).click()
+    sheet = page.get_by_role("dialog")
+    expect(sheet.get_by_label("Wynik")).to_contain_text(DONE)
+    run.check(True, "the Powiadomienie opens the card of this Uruchomienie from its Logi in the side panel")
+    run.capture(page, "266-efenix-powiadomienie-karta")
+    page.keyboard.press("Escape")
+    expect(sheet).to_have_count(0)
+    run.wait_for(
+        lambda: run.api("/api/notifications", "efenix-powiadomienia-przeczytane")["unread"] == 0,
+        "entering the view marks the Powiadomienie read",
+    )

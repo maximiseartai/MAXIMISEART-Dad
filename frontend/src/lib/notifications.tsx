@@ -1,6 +1,7 @@
 import * as React from "react"
 
 import { getNotifications, markNotificationsRead, type Notifications } from "@/api/centrum"
+import { useRuns } from "@/lib/runs"
 import { useResource, type Resource } from "@/lib/use-resource"
 
 type NotificationsValue = {
@@ -18,12 +19,16 @@ const NotificationsContext = React.createContext<NotificationsValue | null>(null
 
 /**
  * Powiadomienia wspólne dla dzwonka w nagłówku i widoku Powiadomienia. Karta czyta je przy starcie, po powrocie
- * do karty i przy każdej zmianie strony; serwer sam decyduje, kiedy zapytać Skrzynkę Zgłoszeń (najwyżej raz na
- * 10 minut). `page` to identyfikator bieżącej strony.
+ * do karty, przy każdej zmianie strony i po końcu Uruchomienia procesu widzianego na żywo (Powiadomienie o Wycenie
+ * w efenix); serwer sam decyduje, kiedy zapytać Skrzynkę Zgłoszeń (najwyżej raz na 10 minut). `page` to identyfikator
+ * bieżącej strony.
  */
 export function NotificationsProvider({ page, children }: { page: string; children: React.ReactNode }) {
   const { resource, reload, replace } = useResource(getNotifications)
   const shownPage = React.useRef(page)
+  const { view } = useRuns()
+  const ended = view?.state === "finished" ? view.run.id : null
+  const shownEnd = React.useRef(ended)
 
   React.useEffect(() => {
     if (shownPage.current !== page) {
@@ -31,6 +36,16 @@ export function NotificationsProvider({ page, children }: { page: string; childr
       reload()
     }
   }, [page, reload])
+
+  React.useEffect(() => {
+    if (shownEnd.current !== ended) {
+      shownEnd.current = ended
+
+      if (ended !== null) {
+        reload()
+      }
+    }
+  }, [ended, reload])
 
   const markRead = React.useCallback(
     (ids: ReadonlyArray<string>) => {

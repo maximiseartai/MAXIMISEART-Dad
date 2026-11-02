@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import EFENIX_BROWSER, EFENIX_RUN, RUN_LOGS, RUN_VIEW, WYCENA
+from cele_mutacji_centrum import EFENIX_BROWSER, EFENIX_RUN, NOTIFICATIONS, RUN_LOGS, RUN_VIEW, WYCENA
 from mutacje import Edit, Mutation, check_all
 
 MUTATIONS = (
@@ -40,6 +40,12 @@ MUTATIONS = (
         (Edit(RUN_LOGS, "efenix_orders=LoggedOrder.all_of(engine_summary) if", "efenix_orders=None if"),),
         WYCENA,
         "Maks nie odtworzy problemu zlecenia z Logów Uruchomienia",
+    ),
+    Mutation(
+        "bez Powiadomienia o zakończonej Wycenie",
+        (Edit(NOTIFICATIONS, "            *map(self._pricing, self._pricings()),\n", ""),),
+        WYCENA,
+        "tata, który odszedł od komputera na półtorej godziny, nie dowie się pod dzwonkiem, że Wycena się skończyła",
     ),
 )
 

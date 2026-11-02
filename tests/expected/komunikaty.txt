@@ -1076,6 +1076,16 @@ logged_out #2 [EFENIX_WYLOGOWANY]
   Gdzie: okno efenix
   Co zrobić: Zaloguj się w efenix i uruchom ponownie.
 
+window_closed #1 [EFENIX_OKNO_ZAMKNIETE]
+  Co się stało: Okno efenix zostało zamknięte, więc Wycena w efenix się zatrzymała. W efenix nic się nie zmieniło.
+  Gdzie: okno efenix
+  Co zrobić: Uruchom ponownie i zostaw okno efenix otwarte do końca. Gotowe zlecenia narzędzie tylko sprawdzi.
+
+window_closed #2 [EFENIX_OKNO_ZAMKNIETE]
+  Co się stało: Okno efenix zostało zamknięte, więc Wycena w efenix się zatrzymała. Wycena zleceń sprzed zatrzymania została w efenix.
+  Gdzie: okno efenix
+  Co zrobić: Uruchom ponownie i zostaw okno efenix otwarte do końca. Gotowe zlecenia narzędzie tylko sprawdzi.
+
 efenix_changed #1 [EFENIX_ZMIENIONY]
   Co się stało: Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i dalej niczego w niej nie klika. W efenix nic się nie zmieniło.
   Gdzie: okno efenix

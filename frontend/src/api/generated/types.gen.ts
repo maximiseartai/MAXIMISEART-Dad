@@ -878,7 +878,7 @@ export type Notifications = {
     /**
      * Items
      */
-    items: Array<DadNoteNotification | ReportNotification | ReleaseNotification>;
+    items: Array<DadNoteNotification | ReportNotification | ReleaseNotification | PricingNotification>;
     message: Message | null;
 };
 
@@ -1201,6 +1201,69 @@ export type PriceListItem = {
      * Name
      */
     name: string;
+};
+
+/**
+ * PricedOrders
+ *
+ * Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, błędy i ostrzeżenia Emmetta.
+ */
+export type PricedOrders = {
+    /**
+     * Ready
+     */
+    ready: number;
+    /**
+     * Errors
+     */
+    errors: number;
+    /**
+     * Warnings
+     */
+    warnings: number;
+};
+
+/**
+ * PricingNotification
+ *
+ * Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia
+ * (``headline``), okres, zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”
+ * Komunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów.
+ */
+export type PricingNotification = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * At
+     */
+    at: string;
+    /**
+     * Unread
+     */
+    unread: boolean;
+    /**
+     * Kind
+     */
+    kind: 'wycena_w_efenix';
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Headline
+     */
+    headline: string;
+    /**
+     * Period
+     */
+    period: string;
+    orders: PricedOrders | null;
+    /**
+     * Stopped
+     */
+    stopped: string | null;
 };
 
 /**

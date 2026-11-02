@@ -124,6 +124,17 @@ def logged_out(*, kept: bool) -> Message:
     )
 
 
+def window_closed(*, kept: bool) -> Message:
+    """Okno albo karta efenix zamknęły się w trakcie przebiegu; ``kept`` jak w ``logged_out``."""
+
+    return Message(
+        code="EFENIX_OKNO_ZAMKNIETE",
+        what=f"Okno efenix zostało zamknięte, więc {_PROCESS} się zatrzymała. {_after_stop(kept=kept)}",
+        where=_EFENIX,
+        action="Uruchom ponownie i zostaw okno efenix otwarte do końca. Gotowe zlecenia narzędzie tylko sprawdzi.",
+    )
+
+
 def efenix_changed(*, kept: bool) -> Message:
     """Strona efenix wygląda inaczej, niż zna ją narzędzie; ``kept`` jak w ``logged_out``."""
 

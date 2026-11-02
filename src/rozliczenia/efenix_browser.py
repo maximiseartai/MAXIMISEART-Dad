@@ -19,7 +19,8 @@ albo widoczne okno zainstalowanego Google Chrome w trwałym profilu narzędzia (
 Okno z ``Login`` od silnika (``chrome`` zawsze, ``window`` na życzenie) na stronie logowania czeka, aż tata się zaloguje:
 co ``LOGIN_POLL_MS`` sprawdza, czy strona przeszła na inną niż logowanie, albo pyta efenix o listę zleceń w tej samej
 sesji przeglądarki bez przekierowań, nie ruszając strony z formularzem, w którym tata pisze. Gdy lista odpowiada, otwiera ją
-i proces rusza; brak logowania przez ``LOGIN_TIMEOUT_MS`` i zamknięte okno to ``LoggedOut``.
+i proces rusza; brak logowania przez ``LOGIN_TIMEOUT_MS`` to ``LoggedOut``, a karta, okno albo przeglądarka zamknięte
+w tym czasie to ``WindowClosed`` najpóźniej po ``LOGIN_POLL_MS``.
 
 Stronę zlecenia czyta tak, jak widzi ją tata: datę wykonania z ``#data_install`` (RRRR-MM-DD albo pusta), kwotę końcową z
 ``#cena_all2`` i ilość każdej pozycji z pola ``input.wycena-ilosc`` o id ``INDEKS_NNN_…`` (kod pozycji to ``NNN``).
@@ -67,6 +68,7 @@ from .efenix_pricing import (
     OrderPricing,
     PagePart,
     UnexpectedPage,
+    WindowClosed,
 )
 
 __all__ = [
@@ -255,9 +257,16 @@ class BrowserEfenix:
         if self._page.locator(_NUMBER_FIELD).count() != 1:
             raise UnexpectedPage(PagePart.LIST)
 
-    def wait_for_login(self, login: Login, *, timeout_ms: int = LOGIN_TIMEOUT_MS) -> None:
+    def wait_for_login(
+        self, login: Login, *, timeout_ms: int = LOGIN_TIMEOUT_MS, clock: Callable[[], float] = time.monotonic
+    ) -> None:
         """Otwiera listę zleceń, a na stronie logowania czeka w ``login``, aż tata się zaloguje; ``LoggedOut`` po
-        ``timeout_ms`` bez logowania albo po zamknięciu okna."""
+        ``timeout_ms`` bez logowania, a ``WindowClosed`` najpóźniej ``LOGIN_POLL_MS`` po zamknięciu karty, okna albo
+        całej przeglądarki. ``clock`` (sekundy) mierzy czas czekania.
+
+        Zamkniętą kartę rozpoznaje po ``Page.is_closed`` przed każdym sprawdzeniem, bo czekanie Playwrighta na adres karty
+        zamkniętej przed nim nie zgłasza jej zamknięcia, tylko kończy się po swoim limicie.
+        """
 
         try:
             self.open_list()
@@ -265,23 +274,22 @@ class BrowserEfenix:
         except LoggedOut:
             pass
         with login():
-            deadline = time.monotonic() + timeout_ms / 1000
+            deadline = clock() + timeout_ms / 1000
             while True:
+                if self._page.is_closed():
+                    raise WindowClosed
                 if self._session_open():
                     try:
                         self.open_list()
                         return
                     except LoggedOut:
                         pass
-                remaining_ms = round((deadline - time.monotonic()) * 1000)
+                remaining_ms = round((deadline - clock()) * 1000)
                 if remaining_ms <= 0:
                     raise LoggedOut
-                try:
+                # Czekanie kończy się po limicie, a w karcie zamkniętej w jego trakcie błędem; o zamknięciu mówi ``is_closed``.
+                with suppress(PlaywrightError):
                     self._page.wait_for_url(lambda url: not _on_login_page(url), timeout=min(LOGIN_POLL_MS, remaining_ms))
-                except PlaywrightTimeoutError:
-                    continue
-                except PlaywrightError as error:
-                    raise LoggedOut from error
 
     def _session_open(self) -> bool:
         """Lista zleceń odpowiada w sesji okna bez przekierowania na logowanie; pytanie nie zmienia strony okna."""
@@ -557,17 +565,19 @@ def window(
     timeout_ms: int = TIMEOUT_MS,
     login: Login | None = None,
     login_timeout_ms: int = LOGIN_TIMEOUT_MS,
+    clock: Callable[[], float] = time.monotonic,
 ) -> Iterator[BrowserEfenix]:
     """Okno efenix na stronie ``page``, którą daje rozmówca, z otwartą listą zleceń pod adresem ``url``.
 
-    Z ``login`` na stronie logowania czeka na logowanie taty (``BrowserEfenix.wait_for_login``), bez niego to ``LoggedOut``.
+    Z ``login`` na stronie logowania czeka na logowanie taty (``BrowserEfenix.wait_for_login``, czas czekania mierzy
+    ``clock``), bez niego to ``LoggedOut``.
     """
 
     efenix = BrowserEfenix(page, url, timeout_ms=timeout_ms)
     if login is None:
         efenix.open_list()
     else:
-        efenix.wait_for_login(login, timeout_ms=login_timeout_ms)
+        efenix.wait_for_login(login, timeout_ms=login_timeout_ms, clock=clock)
     yield efenix
 
 

@@ -112,8 +112,9 @@ co stało się z tym, co wysłał.
   którego Skrzynka już nie ma (Maks je usunął), kolejka usuwa z jedną linią
   dziennika, a bez sieci, klucza albo dostępu zostawia (#402). Wysyłka jest co najmniej raz:
   zerwane połączenie po utworzeniu issue może dać drugie issue.
-- **Powiadomienia** to osobny widok otwierany dzwonkiem, z trzema rodzajami:
-  nowa wersja, Uwaga i Zgłoszenie. Wejście do widoku oznacza wszystkie jako
+- **Powiadomienia** to osobny widok otwierany dzwonkiem, z czterema rodzajami:
+  nowa wersja, Uwaga, Zgłoszenie i zakończona Wycena w efenix (#750, z Logów
+  Uruchomienia, także po Zatrzymaniu, z przyciskiem karty Uruchomienia). Wejście do widoku oznacza wszystkie jako
   przeczytane. Sprawę zamkniętą przez Maksa przed Wydaniem Powiadomienie nazywa
   rozwiązaną, z dopiskiem, że będzie w następnej wersji; zamkniętą bez zmiany w
   kodzie jako przeczytaną (`state_reason` zamkniętego issue: `completed` albo
@@ -125,7 +126,8 @@ co stało się z tym, co wysłał.
   (`offers_update`). Z Wydań kropkę zapala tylko najnowsze Wydanie na `main` i
   tylko wtedy, gdy jest nowsze od wersji taty; starsze stoją na liście jako
   historia, a Wydania wyższe od najnowszego na `main` nie dają karty. Kropkę
-  zapalają też sprawy, które Maks rozwiązał albo przeczytał. Centrum sprawdza
+  zapalają też sprawy, które Maks rozwiązał albo przeczytał, i każda zakończona
+  Wycena w efenix, dopóki tata jej nie zobaczy. Centrum sprawdza
   Wydania i stan spraw przy starcie i najwyżej raz na 10 minut jednym
   sprawdzaniem; bez sieci nie ma nowych Powiadomień ani Komunikatu. Pierwsza
   karta nowej wersji pojawi się z pierwszym Wydaniem opublikowanym przez

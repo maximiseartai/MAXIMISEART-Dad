@@ -227,12 +227,16 @@ class LoggedStep(_Record):
         )
 
 
+OrderOutcome = Literal["gotowe", "błąd", "ostrzeżenie Emmetta"]
+"""Wynik zlecenia Wyceny w efenix w Logach Uruchomienia."""
+
+
 class LoggedOrder(_Record):
     """Ślad zlecenia Wyceny w efenix: wiersz Pliku zbiorczego, wynik z kodem Komunikatu (``None`` przy gotowym),
     ilości z pliku po kodach pozycji (``None``, gdy nie dało się ich przepisać), ``Kwota`` (AU) i działania okna."""
 
     row: int
-    outcome: Literal["gotowe", "błąd", "ostrzeżenie Emmetta"]
+    outcome: OrderOutcome
     code: str | None
     file: dict[str, int] | None
     file_amount: Decimal
@@ -250,7 +254,7 @@ class LoggedOrder(_Record):
     @classmethod
     def _of(cls, result: OrderResult, code: str | None) -> LoggedOrder:
         file = file_quantities(result.order)
-        outcome: Literal["gotowe", "błąd", "ostrzeżenie Emmetta"]
+        outcome: OrderOutcome
         match result.outcome:
             case Ready():
                 outcome = "gotowe"

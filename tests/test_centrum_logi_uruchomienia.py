@@ -5,16 +5,19 @@ Testy czytają pliki z katalogu Logów obok dziennika Centrum, tak jak Maks dost
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
 import os
 from pathlib import Path
 import re
+import signal
 import sys
 from typing import Any, NoReturn
 
+from playwright.sync_api import Browser, sync_playwright
 import pytest
 
 from rozliczenia import settlement_messages
@@ -34,6 +37,7 @@ from tests.fixtures.centrum_processes import (
     stopped_for_maks,
 )
 from tests.fixtures.efenix import Order, write_collective_file
+from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD, incomplete_period_rows
 from tests.fixtures.run_cards import first_view, restored
 from tests.fixtures.settlement import MARKED, SOURCE_NAME, CellValue, write_quantity_source
@@ -666,18 +670,25 @@ def test_narzedzie_poza_klonem_gita_ma_logi_bez_commitu_i_bez_wydania(tmp_path: 
 # --- Wycena w efenix z Centrum (#750) -----------------------------------------------------------------------------------
 
 LOGIN = "Zaloguj się w oknie efenix"
-# Zlecenia trzech Wykonawców, każde z innym wynikiem: gotowe, nieznane w efenix i sprzeczne z Emmettem (wiersze 18–20).
+# Zlecenia sześciu Wykonawców (wiersze 18–23): jedno gotowe, dwa nieznane w efenix i trzy sprzeczne z Emmettem, więc
+# każdy wynik ma inną liczbę zleceń.
 PRICED = [
     Order("#ZLQX01", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
     Order("#ZLQX02", worker="beata.testowa", address="UL. PRYWATNA 7/1", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
     Order("#ZLQX03", worker="celina.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})), emmett={"012": 2}),
+    Order("#ZLQX04", worker="dorota.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
+    Order("#ZLQX05", worker="ewa.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})), emmett={"012": 3}),
+    Order("#ZLQX06", worker="filip.testowy", cells={"O": 1}, amount=float(amount_of({"012": 1})), emmett={"012": 2}),
 ]
+# Zlecenia z ``PRICED``, które zna Atrapa efenix: gotowe i sprzeczne z Emmettem.
+IN_EFENIX = [PRICED[0].in_efenix("611"), PRICED[2].in_efenix("613"), PRICED[4].in_efenix("615"), PRICED[5].in_efenix("616")]
 
 
-def _pricing_centrum(tmp_path: Path, atrapa: AtrapaEfenix) -> SettlingCentrum:
-    """Centrum, którego okno efenix to Chromium na Atrapie; Folder okresu ma Plik zbiorczy z ``PRICED``."""
+def _pricing_centrum(tmp_path: Path, atrapa: AtrapaEfenix, *arguments: str) -> SettlingCentrum:
+    """Centrum, którego okno efenix to Chromium na Atrapie z argumentami ``arguments``; Folder okresu ma Plik zbiorczy
+    z ``PRICED``."""
 
-    centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+    centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url, efenix_arguments=arguments))
     write_collective_file(centrum.period_parent, PRICED)
     return centrum
 
@@ -694,14 +705,15 @@ def _view_where(centrum: SettlingCentrum, wanted: Callable[[dict[str, Any]], boo
     raise AssertionError("Strumień skończył się przed oczekiwanym widokiem.")
 
 
-def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomienie_a_karta_ma_zlecenia_dla_taty(
+def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomienie_a_karta_i_powiadomienie_maja_wynik(
     tmp_path: Path,
 ) -> None:
     """Okres z Plikiem zbiorczym ma przycisk Wyceny w efenix bez Podglądu bez zapisu. W trakcie czekania na logowanie
     inne Uruchomienie nie startuje, a karta po wyniku ma błędy i ostrzeżenia Emmetta z numerem zlecenia i Wykonawcą
-    oraz liczby pominiętych."""
+    oraz liczby pominiętych. Nowe Powiadomienie (kropka na dzwonku) ma tytuł wyniku, okres i liczby zleceń, a prowadzi
+    do karty tego Uruchomienia z jego Logów."""
 
-    with atrapa_efenix([PRICED[0].in_efenix("611"), PRICED[2].in_efenix("613")]) as atrapa:
+    with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
         atrapa.expire_session()
         [setup] = [process for process in centrum.client.get("/api/runs/setup").json()["processes"] if process["process"] == "efenix"]
@@ -710,8 +722,24 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
         waiting = _view_where(centrum, lambda view: (view.get("progress", {}).get("step") or {}).get("label") == LOGIN)
         busy = centrum.start(dry_run=True)
         atrapa.log_in()
-        result = finished_view(centrum.client)["result"]
+        finished = finished_view(centrum.client)
+        result = finished["result"]
+    notifications = centrum.client.get("/api/notifications").json()
+    [notification] = [item for item in notifications["items"] if item["kind"] == "wycena_w_efenix"]
+    card = centrum.client.get(f"/api/runs/{notification['run_id']}/card").json()
 
+    assert (notifications["unread"], notification["unread"]) == (1, True)
+    assert (notification["headline"], notification["period"], notification["orders"], notification["stopped"]) == (
+        "Wycena w efenix gotowa · wymaga sprawdzenia",
+        PERIOD,
+        {"ready": 1, "errors": 2, "warnings": 3},
+        None,
+    )
+    assert (notification["run_id"], card["state"], card["result"]["headline"]) == (
+        finished["run"]["id"],
+        "restored",
+        "Wycena w efenix gotowa · wymaga sprawdzenia",
+    )
     assert (setup["title"], setup["preview_hint"], [period["token"] for period in setup["periods"]]) == ("Wycena w efenix", None, [PERIOD])
     assert (preview.status_code, busy.status_code, waiting["state"]) == (409, 409, "running")
     assert busy.json()["message"].startswith(f"Trwa już Uruchomienie procesu: Wycena w efenix, okres {PERIOD}.")
@@ -721,25 +749,88 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
         "open_collective_file",
     )
     assert {figure["label"]: figure["value"] for figure in result["summary"]["figures"]} == {
-        "Zlecenia w zakresie": 3,
+        "Zlecenia w zakresie": 6,
         "Gotowe do przekazania": 1,
-        "Błędy zleceń": 1,
-        "Ostrzeżenia Emmetta": 1,
+        "Błędy zleceń": 2,
+        "Ostrzeżenia Emmetta": 3,
     }
     assert {count["label"]: count["count"] for count in result["summary"]["counts"]["counts"]} == {
         "Ze zdjęciami": 0,
         "Usterki": 0,
-        "Nieznalezione w efenix": 1,
+        "Nieznalezione w efenix": 2,
     }
     notes = result["order_notes"]
-    assert [(note["row"], note["order"], note["worker"]) for note in notes["errors"]] == [(19, "ZLQX02", "beata.testowa")]
-    assert [(note["row"], note["order"], note["worker"]) for note in notes["warnings"]] == [(20, "ZLQX03", "celina.testowa")]
+    assert [(note["row"], note["order"], note["worker"]) for note in notes["errors"]] == [
+        (19, "ZLQX02", "beata.testowa"),
+        (21, "ZLQX04", "dorota.testowa"),
+    ]
+    assert [(note["row"], note["order"], note["worker"]) for note in notes["warnings"]] == [
+        (20, "ZLQX03", "celina.testowa"),
+        (22, "ZLQX05", "ewa.testowa"),
+        (23, "ZLQX06", "filip.testowy"),
+    ]
     assert notes["errors"][0]["what"].startswith("efenix nie zna zlecenia o numerze z NUMER ZL.")
     assert notes["warnings"][0]["what"].startswith("Wycena Emmetta ma inne ilości niż Plik zbiorczy")
 
 
+def _close_window(profile: Path) -> None:
+    """Tata zamyka krzyżykiem okno efenix, które Centrum otworzyło (przez port debugowania z profilu przeglądarki)."""
+
+    with _devtools(profile) as browser:
+        browser.contexts[0].pages[0].close()
+
+
+def _kill_browser(profile: Path) -> None:
+    """Przeglądarka okna efenix znika cała naraz, jak Chrome zamknięty z paska zadań albo zabity przez system."""
+
+    with _devtools(profile) as browser:
+        processes = browser.new_browser_cdp_session().send("SystemInfo.getProcessInfo")["processInfo"]
+    [pid] = [process["id"] for process in processes if process["type"] == "browser"]
+    if sys.platform == "win32":
+        os.kill(pid, signal.SIGTERM)  # na Windows to TerminateProcess: proces znika bez sprzątania, jak po SIGKILL
+    else:
+        os.kill(pid, signal.SIGKILL)
+
+
+@contextmanager
+def _devtools(profile: Path) -> Iterator[Browser]:
+    port = (profile / "DevToolsActivePort").read_text(encoding="utf-8").split()[0]
+    with sync_playwright() as playwright:
+        yield playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+
+
+@pytest.mark.parametrize("close", [_close_window, _kill_browser], ids=["zamkniete-okno", "zabita-przegladarka"])
+def test_okno_efenix_zamkniete_w_trakcie_logowania_zatrzymuje_wycene_od_razu_a_centrum_przyjmuje_nastepne_uruchomienie(
+    tmp_path: Path, close: Callable[[Path], None]
+) -> None:
+    """Tata zamyka okno efenix albo całą przeglądarkę, zanim się zalogował: Wycena zatrzymuje się po kilku sekundach, nie
+    po 15 minutach limitu logowania, z Komunikatem o zamkniętym oknie, Powiadomienie to mówi, a Centrum od razu przyjmuje
+    następne Uruchomienie."""
+
+    with atrapa_efenix([PRICED[0].in_efenix("611")]) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, "--remote-debugging-port=0")
+        atrapa.expire_session()
+        assert _start_pricing(centrum).status_code == 200
+        _view_where(centrum, lambda view: (view.get("progress", {}).get("step") or {}).get("label") == LOGIN)
+        close(tmp_path / "przegladarka-efenix")
+        # Bez wykrycia zamknięcia Wycena czekałaby do końca limitu logowania, 15 minut.
+        assert wait_for(lambda: centrum.client.get("/api/runs/current").json()["state"] == "finished", 20)
+        result = finished_view(centrum.client)["result"]
+        following = centrum.start(dry_run=True)
+        finished_view(centrum.client)
+    [notification] = [
+        item for item in centrum.client.get("/api/notifications").json()["items"] if item["kind"] == "wycena_w_efenix"
+    ]
+
+    assert ([stop["what"] for stop in result["stops"]], following.status_code) == (
+        ["Okno efenix zostało zamknięte, więc Wycena w efenix się zatrzymała. W efenix nic się nie zmieniło."],
+        200,
+    )
+    assert (notification["stopped"], notification["orders"], notification["unread"]) == (result["stops"][0]["what"], None, True)
+
+
 def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_adresu_i_loginu_wykonawcy(tmp_path: Path) -> None:
-    with atrapa_efenix([PRICED[0].in_efenix("611"), PRICED[2].in_efenix("613")]) as atrapa:
+    with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
         (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
         assert _start_pricing(centrum).status_code == 200
@@ -751,10 +842,14 @@ def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_adr
     texts += [part for issue in box.background_issues for part in (issue.title, issue.body, *issue.comments)]
 
     traced = [(order["row"], order["outcome"], order["code"], [step["action"] for step in order["steps"]]) for order in record["efenix_orders"]]
+    emmett_steps = ["szukanie", "otwarcie zlecenia", "data wykonania", "otwarcie zlecenia", "Wycena Emmetta"]
     assert traced == [
         (18, "gotowe", None, ["szukanie", "otwarcie zlecenia"]),
         (19, "błąd", "EFENIX_NIEZNANY_NUMER", ["szukanie"]),
-        (20, "ostrzeżenie Emmetta", "EFENIX_SPRZECZNOSC_Z_EMMETTEM", ["szukanie", "otwarcie zlecenia", "data wykonania", "otwarcie zlecenia", "Wycena Emmetta"]),
+        (20, "ostrzeżenie Emmetta", "EFENIX_SPRZECZNOSC_Z_EMMETTEM", emmett_steps),
+        (21, "błąd", "EFENIX_NIEZNANY_NUMER", ["szukanie"]),
+        (22, "ostrzeżenie Emmetta", "EFENIX_SPRZECZNOSC_Z_EMMETTEM", emmett_steps),
+        (23, "ostrzeżenie Emmetta", "EFENIX_SPRZECZNOSC_Z_EMMETTEM", emmett_steps),
     ]
     emmett = record["efenix_orders"][2]
     assert (emmett["file"], emmett["steps"][-1]["quantities"]["012"], emmett["steps"][0]["found"]) == ({"012": 1}, 2, 1)

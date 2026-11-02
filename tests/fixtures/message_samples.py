@@ -307,6 +307,7 @@ EFENIX_SAMPLES: Samples = {
     "missing_columns": [lambda: efenix_messages.missing_columns(SOURCE, ["NUMER ZL.", "ADRES"])],
     "amounts_not_computed": [lambda: efenix_messages.amounts_not_computed(SOURCE, 18)],
     "logged_out": [partial(efenix_messages.logged_out, kept=kept) for kept in (False, True)],
+    "window_closed": [partial(efenix_messages.window_closed, kept=kept) for kept in (False, True)],
     "efenix_changed": [partial(efenix_messages.efenix_changed, kept=kept) for kept in (False, True)],
     "efenix_unreachable": [partial(efenix_messages.efenix_unreachable, kept=kept) for kept in (False, True)],
     "browser_not_started": [efenix_messages.browser_not_started],

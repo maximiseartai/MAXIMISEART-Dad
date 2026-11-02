@@ -560,6 +560,36 @@ export const zPriceListItem = z.object({
 });
 
 /**
+ * PricedOrders
+ *
+ * Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, błędy i ostrzeżenia Emmetta.
+ */
+export const zPricedOrders = z.object({
+    ready: z.int(),
+    errors: z.int(),
+    warnings: z.int()
+});
+
+/**
+ * PricingNotification
+ *
+ * Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia
+ * (``headline``), okres, zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”
+ * Komunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów.
+ */
+export const zPricingNotification = z.object({
+    id: z.string(),
+    at: z.iso.datetime(),
+    unread: z.boolean(),
+    kind: z.literal('wycena_w_efenix'),
+    run_id: z.string(),
+    headline: z.string(),
+    period: z.string(),
+    orders: zPricedOrders.nullable(),
+    stopped: z.string().nullable()
+});
+
+/**
  * Problem
  *
  * Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku.
@@ -1140,7 +1170,8 @@ export const zNotifications = z.object({
     items: z.array(z.union([
         zDadNoteNotification,
         zReportNotification,
-        zReleaseNotification
+        zReleaseNotification,
+        zPricingNotification
     ])),
     message: zMessage.nullable()
 });

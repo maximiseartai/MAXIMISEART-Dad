@@ -135,7 +135,8 @@ class Surroundings:
     pobiera z „origin”. ``readers`` czytają Rejestr zleceń i Wzorce w Uruchomieniu procesu, Diagnozie i Konfiguracji.
     ``find_git`` znajduje Gita, którego przy ``tool`` używa Centrum (``None``: Gita nie ma). ``efenix_url`` to lista zleceń
     okna efenix Wyceny w efenix w Chromium Playwrighta bez okna: domyślnie adres, pod którym nic nie odpowiada, a w testach
-    Wyceny adres Atrapy efenix, nigdy efenix.pl.
+    Wyceny adres Atrapy efenix, nigdy efenix.pl; ``efenix_arguments`` to dodatkowe argumenty tej przeglądarki (np. port
+    debugowania, przez który test zamyka okno).
     """
 
     github: FakeGitHub = field(default_factory=FakeGitHub)
@@ -152,6 +153,7 @@ class Surroundings:
     readers: Readers = FILE_READERS
     find_git: Callable[[], Path | None] = find_git
     efenix_url: str = "http://127.0.0.1:9/index.php"
+    efenix_arguments: tuple[str, ...] = ()
     _start: _StartClock | None = field(default=None, init=False, repr=False)
 
     def started_clock(self) -> _StartClock:
@@ -243,7 +245,13 @@ def _client(
         tool_update=surroundings.tool_update(),
         guardian=surroundings.guardian,
         readers=surroundings.readers,
-        efenix_window=EfenixWindow(surroundings.efenix_url, tmp_path / "przegladarka-efenix", channel=None, headless=True),
+        efenix_window=EfenixWindow(
+            surroundings.efenix_url,
+            tmp_path / "przegladarka-efenix",
+            channel=None,
+            headless=True,
+            arguments=surroundings.efenix_arguments,
+        ),
     )
     return CentrumClient(app, since=since)
 

@@ -17,7 +17,8 @@ Wycenę Emmetta i czyta jej ilości: sprzeczność z plikiem to ostrzeżenie bez
 a w przeciwnym razie wpisuje ilości pliku w pozycjach pustych u Emmetta i porównuje kwotę końcową, którą odesłał efenix,
 z ``Kwota`` (AU). Okno efenix (``Efenix``) nie ma działania, które przekazuje zlecenie do akceptacji, anuluje je albo
 zmienia jego status. Strona logowania i strona o innej budowie, także bez pozycji z przypisania kolumn, to Zatrzymanie
-(``LoggedOut``, ``UnexpectedPage``), a jego Komunikat mówi, czy przed nim proces zmienił już coś w efenix. Okno, które
+(``LoggedOut``, ``UnexpectedPage``), tak samo zamknięte okno efenix (``WindowClosed``), a Komunikat Zatrzymania mówi,
+czy przed nim proces zmienił już coś w efenix. Okno, które
 czeka, aż tata się zaloguje, robi to w ``Login`` od silnika: ten czas nie wlicza się do czasów etapów ani, przez
 ``waiting`` rozmowy rdzenia, do ``Czas uruchomienia``. Postęp Zapisywania to kroki (``PhaseRunner.step``): logowanie,
 zlecenia z Wykonawcą i liczbą sprawdzonych z wszystkich, na końcu Znaczniki efenix; ślad działań okna przy każdym zleceniu
@@ -85,6 +86,7 @@ __all__ = [
     "PricingSummary",
     "Ready",
     "UnexpectedPage",
+    "WindowClosed",
     "price_orders",
 ]
 
@@ -114,6 +116,10 @@ class UnexpectedPage(Exception):
 
 class EfenixUnreachable(Exception):
     """Okno nie otworzyło strony efenix: adres nie odpowiada albo nie ma połączenia."""
+
+
+class WindowClosed(Exception):
+    """Okno albo karta efenix zamknęły się w trakcie przebiegu (tata je zamknął)."""
 
 
 class BrowserNotStarted(Exception):
@@ -173,7 +179,7 @@ Login = Callable[[], AbstractContextManager[None]]
 
 OpenEfenix = Callable[[Login], AbstractContextManager[Efenix]]
 """Otwiera okno efenix z listą zleceń na czas Zapisywania, a czekanie na logowanie taty robi w ``Login``;
-``BrowserNotStarted``, ``EfenixUnreachable``, ``LoggedOut`` albo ``UnexpectedPage``."""
+``BrowserNotStarted``, ``EfenixUnreachable``, ``LoggedOut``, ``UnexpectedPage`` albo ``WindowClosed``."""
 
 
 @dataclass(frozen=True)
@@ -352,7 +358,8 @@ def _warning(source: Path, result: OrderResult) -> Message | None:
 
 @contextmanager
 def _efenix_stops(changed: Callable[[], bool]) -> Iterator[None]:
-    """Strona logowania, nieznana budowa strony i brak połączenia z efenix to Zatrzymanie z Komunikatem procesu.
+    """Strona logowania, nieznana budowa strony, zamknięte okno i brak połączenia z efenix to Zatrzymanie z Komunikatem
+    procesu.
 
     ``changed``: czy przed Zatrzymaniem proces zmienił już coś w efenix.
     """
@@ -363,6 +370,8 @@ def _efenix_stops(changed: Callable[[], bool]) -> Iterator[None]:
         raise StopError(messages.logged_out(kept=changed())) from error
     except UnexpectedPage as error:
         raise StopError(messages.efenix_changed(kept=changed())) from error
+    except WindowClosed as error:
+        raise StopError(messages.window_closed(kept=changed())) from error
     except EfenixUnreachable as error:
         raise StopError(messages.efenix_unreachable(kept=changed())) from error
     except BrowserNotStarted as error:

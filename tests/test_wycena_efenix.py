@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from copy import copy
 from dataclasses import replace
 from datetime import date
@@ -34,7 +34,7 @@ import pytest
 from rozliczenia import TOOL_ROOT, efenix_browser, efenix_process
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import MARK_RGB
-from rozliczenia.efenix_pricing import Login, PricingSummary
+from rozliczenia.efenix_pricing import LoggedOut, Login, PricingSummary
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.engine import run_settlements
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
@@ -823,7 +823,8 @@ def test_okno_na_stronie_logowania_czeka_az_tata_sie_zaloguje_a_czas_czekania_ni
     tmp_path: Path, page: Page
 ) -> None:
     """Tata loguje się 10 minut; każdy inny krok Zapisywania trwa 2 s. ``Czas uruchomienia``, czas Zapisywania i rekord
-    metryk mają tylko te 2 s każdego kroku, a postęp idzie po Wykonawcach alfabetycznie, potem Znaczniki efenix."""
+    metryk mają tylko te 2 s każdego kroku, czas uruchomienia na żywo przy każdym kroku postępu też nie liczy logowania, a
+    postęp idzie po Wykonawcach alfabetycznie, potem Znaczniki efenix."""
 
     # Zegar, który przesuwa tylko tata z testu (ManualClock z tests/fixtures/clock.py wciągnąłby ten plik do bramki C).
     now = [0.0]
@@ -834,6 +835,7 @@ def test_okno_na_stronie_logowania_czeka_az_tata_sie_zaloguje_a_czas_czekania_ni
     source = write_collective_file(tmp_path, orders)
     metrics = tmp_path / "metryki.jsonl"
     steps: list[SavingStep] = []
+    reached_ms: list[int] = []
     with atrapa_efenix([orders[0].in_efenix("541"), orders[1].in_efenix("542")]) as atrapa:
         atrapa.expire_session()
 
@@ -842,6 +844,7 @@ def test_okno_na_stronie_logowania_czeka_az_tata_sie_zaloguje_a_czas_czekania_ni
                 if snapshot.step is None or (steps and steps[-1] == snapshot.step):
                     return
                 steps.append(snapshot.step)
+                reached_ms.append(snapshot.total_elapsed_ms)
                 if snapshot.step == LOGIN_STEP:
                     now[0] += 600
                     atrapa.log_in()
@@ -866,6 +869,7 @@ def test_okno_na_stronie_logowania_czeka_az_tata_sie_zaloguje_a_czas_czekania_ni
         SavingStep("Znaczniki efenix w Pliku zbiorczym", None, 0, 0),
     ]
     assert (outcome.total_duration_ms, outcome.progress.phase_durations_ms[ProgressPhase.SAVING]) == (6000, 6000)
+    assert reached_ms == [0, 0, 2000, 4000]
     assert (record["total_duration_ms"], record["phase_durations_ms"][ProgressPhase.SAVING]) == (6000, 6000)
 
 
@@ -894,6 +898,36 @@ def test_okno_bez_logowania_taty_i_przegladarka_ktora_nie_wystartowala_zatrzymuj
     assert (_stop(not_logged_in), _stop(no_browser)) == ("EFENIX_WYLOGOWANY", "EFENIX_BRAK_PRZEGLADARKI")
     assert (_kept(not_logged_in), _kept(no_browser)) == (False, False)
     assert set(requested) <= READING | {("GET", "page_login.php")}
+
+
+def test_okno_czeka_na_logowanie_taty_15_minut_a_potem_daje_wylogowanie(page: Page) -> None:
+    """Domyślny limit czekania na logowanie to 15 minut: tata, który loguje się w 14. minucie i 59. sekundzie, zaczyna
+    Wycenę, a bez logowania okno kończy czekanie w 15. minucie (``LoggedOut``), nie później. Czas czekania mierzy
+    zegar okna, który tu przesuwa test: start w 0, potem podana minuta, a każdy następny odczyt godzinę później."""
+
+    seen: list[float] = []
+
+    def waiting(minutes: float, log_in: Callable[[], None] = lambda: None) -> Callable[[], float]:
+        seen.clear()
+        readings = iter([0.0, minutes * 60])
+
+        def clock() -> float:
+            seen.append(next(readings, 3600.0))
+            if len(seen) == 2:
+                log_in()
+            return seen[-1]
+
+        return clock
+
+    with atrapa_efenix([]) as atrapa:
+        atrapa.expire_session()
+        with efenix_browser.window(page, atrapa.url, login=nullcontext, clock=waiting(14 + 59 / 60, atrapa.log_in)):
+            logged_in = page.url
+        atrapa.expire_session()
+        with pytest.raises(LoggedOut), efenix_browser.window(page, atrapa.url, login=nullcontext, clock=waiting(15)):
+            pass
+
+    assert (logged_in, max(seen)) == (atrapa.url, 900.0)
 
 
 def test_profil_przegladarki_okna_efenix_lezy_w_katalogu_narzedzia_poza_gitem() -> None:
