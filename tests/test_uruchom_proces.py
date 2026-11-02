@@ -536,13 +536,11 @@ def test_opis_uzycia_wymienia_kazdy_proces_z_jego_nazwa() -> None:
     completed = _completed("--help")
 
     assert (completed.returncode, completed.stderr) == (0, "")
-    processes = [line.split(maxsplit=1) for line in completed.stdout.split("PROCES\n", 1)[1].split("\n\n", 1)[0].splitlines()]
-    assert processes == [
-        ["settlement", "Przebieg rozliczeń"],
-        ["preparation", "Przygotowanie pliku zbiorczego"],
-        ["intermax", "Uporządkowanie INTERMAX"],
-        ["efenix", "Wycena w efenix"],
-    ]
+    processes = completed.stdout.split("PROCES\n", 1)[1].split("\n\n", 1)[0].split()
+    assert " ".join(processes) == (
+        "settlement Przebieg rozliczeń preparation Przygotowanie pliku zbiorczego "
+        "intermax Uporządkowanie INTERMAX efenix Wycena w efenix"
+    )
 
 
 def _tool_copy(tmp_path: Path) -> Path:
