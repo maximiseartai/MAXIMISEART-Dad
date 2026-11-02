@@ -5,7 +5,8 @@ Jedyną operacją jest ``read_scope()``: jeden odczyt Pliku zbiorczego z wartoś
 Wykonawcą, który nie jest Zleceniem ze zdjęciami (AB, AC, AD, AE, AF, AJ–AP, AS) ani usterką (AI); wartość 0 i pusta
 komórka znaczą to samo, a każda inna treść, także tekst, czyni wiersz Zleceniem ze zdjęciami albo usterką. Wiersz, który
 jest jednym i drugim, liczy się jako Zlecenie ze zdjęciami. Kolejność to Wykonawcy alfabetycznie, a w każdym ``DATA`` od
-najstarszej (wiersz bez daty na końcu Wykonawcy, remis po numerze wiersza). Plik zbiorczy jest tylko czytany.
+najstarszej (wiersz bez daty na końcu Wykonawcy, remis po numerze wiersza). Plik zbiorczy jest tylko czytany, a zakres
+niesie jego bajty z tego odczytu i kolumnę ``ADRES``, w których Wycena w efenix stawia Znaczniki efenix (``efenix_marking``).
 """
 
 from __future__ import annotations
@@ -63,11 +64,16 @@ class CollectiveOrder:
 
 @dataclass(frozen=True)
 class PricingScope:
-    """Zlecenia w zakresie w kolejności, w której proces je sprawdza, i liczby pominiętych Wierszy danych z Wykonawcą."""
+    """Zlecenia w zakresie w kolejności, w której proces je sprawdza, i liczby pominiętych Wierszy danych z Wykonawcą.
+
+    ``address_column``: litera kolumny ``ADRES``. ``content``: bajty Pliku zbiorczego, z których pochodzi zakres.
+    """
 
     orders: tuple[CollectiveOrder, ...]
     with_photos: int
     defects: int
+    address_column: str
+    content: bytes
 
 
 @dataclass(frozen=True)
@@ -85,17 +91,18 @@ class MissingColumns:
 
 
 def read_scope(path: Path) -> PricingScope | AmountsNotComputed | MissingColumns:
-    """Zakres Wyceny w efenix z Pliku zbiorczego ``path``; ``WorkbookError``, gdy pliku nie da się odczytać.
+    """Zakres Wyceny w efenix z Pliku zbiorczego ``path``; ``WorkbookError``, gdy pliku nie da się odczytać albo jest
+    otwarty w Excelu."""
 
-    Plik otwarty w Excelu też jest czytany: jego ostatnia zapisana wersja, z kwotami policzonymi przy tym zapisie.
-    """
-
-    read = workbook_files.read_computed_rows(path, despite_excel_lock=True)
-    return scope(read.header, read.rows)
+    read = workbook_files.read_computed_rows(path)
+    return scope(read.header, read.rows, read.content)
 
 
-def scope(header: Mapping[str, int], rows: Iterable[ComputedRow]) -> PricingScope | AmountsNotComputed | MissingColumns:
-    """Zakres z Wierszy danych w kolejności z pliku; ``header``: znormalizowany nagłówek wiersza 17 → kolumna od 1."""
+def scope(
+    header: Mapping[str, int], rows: Iterable[ComputedRow], content: bytes
+) -> PricingScope | AmountsNotComputed | MissingColumns:
+    """Zakres z Wierszy danych w kolejności z pliku o bajtach ``content``; ``header``: znormalizowany nagłówek wiersza 17
+    → kolumna od 1."""
 
     names = [normalize_text(column.target_header) for column in _COLUMNS]
     missing = tuple(column.target_header for column, name in zip(_COLUMNS, names, strict=True) if name not in header)
@@ -129,7 +136,7 @@ def scope(header: Mapping[str, int], rows: Iterable[ComputedRow]) -> PricingScop
                 amount=amount,
             )
         )
-    return PricingScope(tuple(sorted(orders, key=_tata_order)), with_photos, defects)
+    return PricingScope(tuple(sorted(orders, key=_tata_order)), with_photos, defects, address, content)
 
 
 def _tata_order(order: CollectiveOrder) -> tuple[str, bool, date, int]:

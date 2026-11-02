@@ -450,26 +450,27 @@ class ComputedRow:
 class ComputedRows:
     """Wiersze danych Pliku zbiorczego z wartościami policzonymi przez Excel i nagłówki A17:K17 z tego samego odczytu.
 
-    ``header``: znormalizowany nagłówek (``header_columns``) → kolumna od 1.
+    ``header``: znormalizowany nagłówek (``header_columns``) → kolumna od 1. ``content``: bajty pliku, z których pochodzą
+    wiersze.
     """
 
     header: Mapping[str, int]
     rows: list[ComputedRow]
+    content: bytes
 
 
-def read_computed_rows(path: Path, *, despite_excel_lock: bool = False) -> ComputedRows:
+def read_computed_rows(path: Path) -> ComputedRows:
     """Wiersze danych Pliku zbiorczego (A:AU) z wartościami, które policzył Excel, w kolejności z pliku; plik jest tylko
     czytany.
 
     Wiersz bez wartości w A:K nie jest Wierszem danych i jest pomijany, a brak nagłówka WYKONAWCA w H17 to
-    ``WorkbookError`` ze złym układem, tak jak w ``read_data_rows``. Plik otwarty w Excelu to ``WorkbookError``, chyba
-    że wywołujący jawnie pozwala go czytać (``despite_excel_lock``, ADR 0016).
+    ``WorkbookError`` ze złym układem, tak jak w ``read_data_rows``. Plik otwarty w Excelu to ``WorkbookError``.
     """
 
-    ensure_available(path, despite_excel_lock=despite_excel_lock)
-    content = _file_bytes(path)
+    ensure_available(path)
+    original = _file_bytes(path)
     with unreadable_as_error(path):
-        content = rows_with_input(content, INPUT_COLUMNS[-1])
+        content = rows_with_input(original, INPUT_COLUMNS[-1])
     workbook = _open(path, BytesIO(content), read_only=True, computed=True)
     try:
         sheet = cast(Worksheet, workbook.active)  # tylko do odczytu: ReadOnlyWorksheet
@@ -488,7 +489,7 @@ def read_computed_rows(path: Path, *, despite_excel_lock: bool = False) -> Compu
         ]
     finally:
         workbook.close()
-    return ComputedRows(header_columns(header), rows)
+    return ComputedRows(header_columns(header), rows, original)
 
 
 class _HighlightsReader:

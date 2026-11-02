@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Final
 
 from .efenix_checks import DateRefused, OrderProblem
+from .efenix_marking import Refusal
 from .efenix_positions import Conflict, NotWholeQuantities, OrderFault, OtherAmount, PricedDifferently, UnpairedColumns, column_of
 from .message import REPORT_TO_MAINTAINER, Message, file_label
 from .workbook_files import Problem, WorkbookError
@@ -29,7 +30,9 @@ def source_unusable(error: WorkbookError) -> Message:
     match error.problem:
         case Problem.MISSING:
             return _source_missing(error.path)
-        case Problem.INACCESSIBLE | Problem.OPEN_IN_EXCEL:
+        case Problem.OPEN_IN_EXCEL:
+            return _source_open_in_excel(error.path)
+        case Problem.INACCESSIBLE:
             return _source_inaccessible(error.path)
         case Problem.UNREADABLE | Problem.LAYOUT | Problem.HAS_DATA:
             return _source_unreadable(error.path)
@@ -41,6 +44,16 @@ def _source_missing(source: Path) -> Message:
         what=f"Nie znaleziono Pliku zbiorczego. {_UNCHANGED}",
         where=file_label(source),
         action="Sprawdź, czy Plik zbiorczy okresu jest w Folderze okresu, i uruchom ponownie.",
+    )
+
+
+def _source_open_in_excel(source: Path) -> Message:
+    return Message(
+        code="EFENIX_PLIK_ZBIORCZY_OTWARTY",
+        dad_file="collective_file",
+        what=f"Plik zbiorczy jest otwarty w Excelu, a {_PROCESS} oznacza w nim gotowe zlecenia Znacznikiem efenix. {_UNCHANGED}",
+        where=file_label(source),
+        action="Zapisz i zamknij Plik zbiorczy w Excelu, potem uruchom ponownie.",
     )
 
 
@@ -139,6 +152,43 @@ def efenix_unreachable(*, kept: bool) -> Message:
 
 def _after_stop(*, kept: bool) -> str:
     return _KEPT if kept else _UNCHANGED
+
+
+def marks_not_saved(source: Path, refusal: Refusal) -> Message:
+    """Gotowe zlecenia nie dostały Znacznika efenix, bo Plik zbiorczy się nie zmienił z powodu ``refusal``."""
+
+    match refusal:
+        case Refusal.OPEN_IN_EXCEL:
+            code, why, action = (
+                "EFENIX_ZNACZNIKI_PLIK_OTWARTY",
+                "Plik zbiorczy jest otwarty w Excelu",
+                "Zapisz i zamknij Plik zbiorczy w Excelu, potem uruchom ponownie.",
+            )
+        case Refusal.CHANGED:
+            code, why, action = (
+                "EFENIX_ZNACZNIKI_PLIK_ZMIENIONY",
+                "Plik zbiorczy zmienił się w trakcie Wyceny w efenix",
+                "Zamknij Plik zbiorczy w Excelu i uruchom ponownie.",
+            )
+        case Refusal.WRITE_FAILED:
+            code, why, action = (
+                "EFENIX_ZNACZNIKI_NIEZAPISANE",
+                "nie udało się zapisać Pliku zbiorczego",
+                (
+                    "Zamknij Plik zbiorczy w Excelu, poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie. Jeśli "
+                    "błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
+                ),
+            )
+    return Message(
+        code=code,
+        dad_file="collective_file",
+        what=(
+            f"Gotowe zlecenia nie dostały Znacznika efenix, bo {why}. Ich wycena została w efenix. Ponowne uruchomienie "
+            "oznaczy je bez zmian w efenix i pokaże listę błędów i ostrzeżeń."
+        ),
+        where=file_label(source),
+        action=action,
+    )
 
 
 def order_error(source: Path, row: int, problem: OrderFault) -> Message:
