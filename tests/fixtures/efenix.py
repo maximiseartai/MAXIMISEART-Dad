@@ -63,6 +63,17 @@ class Order:
         )
 
 
+def number_in_trace(number: str, text: str) -> bool:
+    """Czy tekst ``text`` pliku śladu Wyceny Emmetta albo jego klucza ma cyfry numeru zlecenia ``number`` jako osobną liczbę.
+
+    Zlecenie stoi w śladzie pod HMAC hex, a klucz też jest hexem, więc każdy ciąg cyfr trafia się w nich losowo (run
+    41387482438 na ``main``: „9401” w HMAC). Cyfry wśród małych znaków hex się więc nie liczą, a numer jawny w kluczu albo
+    wartości JSON śladu, z ``#`` albo bez, nie ma obok siebie znaku hex i się liczy.
+    """
+
+    return re.search(rf"(?<![0-9a-f]){re.escape(number.removeprefix('#'))}(?![0-9a-f])", text) is not None
+
+
 def write_collective_file(directory: Path, orders: Sequence[Order], *, notes_sheet_first: bool = False) -> Path:
     """Plik zbiorczy okresu ``PERIOD`` w ``directory/PERIOD`` z nagłówkami Wzorca i Wierszem danych każdego zlecenia od 18.
 

@@ -45,7 +45,7 @@ from tests.fixtures.settlement import (
 )
 from tests.fixtures.atrapa_efenix import amount_of, atrapa_efenix
 from tests.fixtures.efenix import Order as EfenixOrder
-from tests.fixtures.efenix import write_collective_file
+from tests.fixtures.efenix import number_in_trace, write_collective_file
 from tests.fixtures.intermax import Intermax
 from tests.fixtures.workbooks import hyperlinks
 
@@ -511,7 +511,7 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
     assert [phase["state"] for phase in result["progress"]["phases"]] == ["completed"] * 4
     assert "9401" not in json.dumps(result) and "9401" not in metrics.read_text(encoding="utf-8")
     # Ślad Wyceny Emmetta okresu trafia do --slad, bez numerów zleceń.
-    assert "9401" not in (tmp_path / "slad" / f"{source.parent.name}.json").read_text(encoding="utf-8")
+    assert not number_in_trace("9401", (tmp_path / "slad" / f"{source.parent.name}.json").read_text(encoding="utf-8"))
 
 
 def test_bledne_argumenty_koncza_sie_kodem_1_bez_wyniku_json(tmp_path: Path) -> None:
