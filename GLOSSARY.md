@@ -572,7 +572,7 @@ Centrum zamknęło się w jego trakcie. Nie ma Logów Uruchomienia ani rekordu
 metryk; Centrum nazywa je po następnym starcie i radzi, co sprawdzić.
 Uruchomienie, którego wynik jest już w Historii, a Logów nie ma (Centrum
 zamknęło się tuż po wyniku), nie jest urwane: karta po starcie pokazuje jego
-wynik z Historii.
+wynik z Historii, także gdy wiersz nie ma jeszcze identyfikatora Uruchomienia.
 _Avoid_: Zatrzymanie (kończy się Komunikatem procesu), przerwane (tak Metryki
 nazywają Zatrzymania)
 

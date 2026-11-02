@@ -34,11 +34,15 @@ Centrum bez identyfikatora Uruchomienia.
   dziennika, a Uruchomienie biegnie dalej.
 - **Urwane Uruchomienie wynika z plików, nie jest zapisywane.** Po starcie
   Centrum ostatnie Uruchomienie to ostatni start. Gdy ma plik Logów, jego
-  karta wraca z Logów. Gdy go nie ma, a Historia ma wiersz z jego
-  identyfikatorem, Centrum zamknęło się po zapisie rekordu metryk, a przed
-  zapisem Logów: karta pokazuje wynik z Historii z tytułem i akcją z tej samej
-  reguły co na żywo i z dopiskiem, że Centrum zamknęło się tuż po wyniku, więc
-  szczegółów nie ma (#722). Gdy nie ma ani Logów, ani wiersza Historii,
+  karta wraca z Logów. Gdy go nie ma, a Historia ma jego wiersz, Centrum
+  zamknęło się po zapisie rekordu metryk, a przed zapisem Logów: karta pokazuje
+  wynik z Historii z tytułem i akcją z tej samej reguły co na żywo i z
+  dopiskiem, że Centrum zamknęło się tuż po wyniku, więc szczegółów nie ma
+  (#722). Jego wiersz to pierwszy wiersz tego procesu ze startem od startu z
+  pliku, ta sama reguła, po której `CentrumRuns.remember` daje wierszowi
+  identyfikator Uruchomienia, więc karta znajduje go także przed nią.
+  Wcześniejsze Uruchomienia z Centrum startowały przed nim, bo Centrum
+  prowadzi jedno naraz. Gdy nie ma ani Logów, ani wiersza Historii,
   Centrum zamknęło się w trakcie i to Urwane Uruchomienie, bo Logi powstają
   przed końcem każdego Uruchomienia, także przy Zatrzymaniu. Nic nie jest
   zapisywane na końcu, więc nie ma kolejności względem działań po wyniku, a
@@ -82,7 +86,15 @@ Centrum bez identyfikatora Uruchomienia.
 - Wiersz Historii dostaje identyfikator Uruchomienia dopiero chwilę po zapisie
   rekordu metryk (`CentrumRuns.remember` czyta plik metryk i dopisuje jedną
   linię). Centrum zamknięte w tej chwili zostawia wiersz Historii bez
-  identyfikatora (pochodzenie `.cmd`), a karta po starcie mówi o Urwanym
-  Uruchomieniu. Okno nie jest zmierzone.
+  identyfikatora (pochodzenie `.cmd`), a karta po starcie i tak pokazuje jego
+  wynik, bo szuka wiersza po procesie i chwili startu.
+- Uruchomienie spoza Centrum (Skrypt dla maszyn) tego procesu po starcie
+  Urwanego Uruchomienia dałoby mu na karcie swój wynik, jak w
+  `CentrumRuns.remember` dostałoby jego identyfikator. To rzadkie: na
+  komputerze taty Uruchomienia biegną z Centrum.
+- Wiersz Historii nie mówi, czy Zatrzymanie przyszło po silniku. Po błędzie
+  podsumowania przy zapisie karta na żywo proponuje otwarcie pliku, a karta z
+  Historii „Uruchom ponownie”; ponowne Uruchomienie zostawia pliki, które
+  powstały, i mówi, co z nimi zrobić.
 - Plik Logów bez pola Diagnozy (sprzed tego pola, tylko u Maksa) daje „karty
   nie ma”.

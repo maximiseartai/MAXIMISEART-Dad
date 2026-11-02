@@ -7,6 +7,7 @@ kliknięciu skrótu na pulpicie taty.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 import shutil
 import threading
@@ -15,6 +16,7 @@ from typing import Any
 import pytest
 
 from rozliczenia.centrum.run_logs import RunLogs
+from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.telemetry import MetricsStore
 from tests.fixtures.centrum import finished_view, without_times
 from tests.fixtures.centrum_processes import (
@@ -143,10 +145,79 @@ def test_centrum_zamkniete_po_zapisie_wyniku_w_historii_daje_karte_z_wynikiem_z_
     }
 
 
-def test_centrum_zamkniete_przed_zapisem_wyniku_w_historii_daje_urwane_uruchomienie(
+def append_record(path: Path, counter_names: frozenset[str], record: dict[str, Any], started_at: datetime) -> None:
+    """Rekord metryk spoza Centrum (np. ze skryptu dla maszyn) jak ``record``, z wynikiem OK i startem ``started_at``."""
+
+    counters = dict.fromkeys(counter_names, 0)
+    other = {**record, "started_at": started_at.isoformat(), "result": "OK", "stop": None, "counters": counters}
+    MetricsStore(path, counter_names).append(other)
+
+
+def test_centrum_zamkniete_przed_zapamietaniem_uruchomienia_daje_karte_z_wynikiem_z_historii(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wiersz Historii nie ma jeszcze identyfikatora Uruchomienia (``CentrumRuns.remember``), a karta i tak go znajduje:
+    pierwszy wiersz tego procesu od startu Uruchomienia (#722)."""
+
+    centrum = preparing_centrum(tmp_path)
+    reached, released = held_before(monkeypatch, CentrumRuns, "remember")
+    running = centrum.start(dry_run=False).json()
+    assert wait_for(reached.is_set)
+    closed = centrum.client
+    [record] = centrum.metric_records()
+    start_file = json.loads((centrum.log_path.parent / "ostatnie-uruchomienie.json").read_text(encoding="utf-8"))
+    started_at = datetime.fromisoformat(start_file["started_at"])
+    processes = centrum.engines.processes()
+    preparation, settlement = processes.preparation.counter_names, processes.settlement.counter_names
+    append_record(centrum.metrics_path, preparation, record, started_at - timedelta(hours=1))
+    append_record(centrum.engines.metrics.settlement, settlement, record, started_at)
+    append_record(centrum.metrics_path, preparation, record, started_at + timedelta(hours=1))
+
+    centrum.restart()
+
+    previous = centrum.client.get("/api/runs/current").json()["previous"]
+    rows = centrum.client.get("/api/metrics").json()["runs"]
+    released.set()
+    finished_view(closed)
+    [row] = [row for row in rows if row["result"] == "WYMAGA_SPRAWDZENIA"]
+    assert (len(rows), row["run_id"]) == (4, None)
+    assert previous == {
+        "state": "recorded",
+        "run": running["run"],
+        "started_at": row["started_at"],
+        "result": "WYMAGA_SPRAWDZENIA",
+        "headline": "Plik zbiorczy przygotowany · wymaga sprawdzenia",
+        "next_action": "open_collective_file",
+    }
+
+
+def test_karta_z_historii_po_zatrzymaniu_ma_tytul_i_akcje_jak_na_zywo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     centrum = preparing_centrum(tmp_path)
+    centrum.engines.fail_summary = True
+    reached, released = held_before(monkeypatch, RunLogs, "run_ended")
+    running = centrum.start(dry_run=True).json()
+    assert wait_for(reached.is_set)
+    closed = centrum.client
+
+    centrum.restart()
+
+    previous = centrum.client.get("/api/runs/current").json()["previous"]
+    released.set()
+    live = finished_view(closed)["result"]
+    assert live["stop_kind"] == "for_maks"
+    assert (previous["state"], previous["run"], previous["result"]) == ("recorded", running["run"], live["result"])
+    assert (previous["headline"], previous["next_action"]) == (live["headline"], live["next_action"])
+
+
+def test_centrum_zamkniete_przed_zapisem_wyniku_w_historii_daje_urwane_uruchomienie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wiersz wcześniejszego Uruchomienia w Historii nie jest wynikiem Urwanego."""
+
+    centrum = preparing_centrum(tmp_path)
+    earlier = run_to_end(centrum, dry_run=True)
     reached, released = held_before(monkeypatch, MetricsStore, "append")
     running = centrum.start(dry_run=False).json()
     assert wait_for(reached.is_set)
@@ -158,7 +229,8 @@ def test_centrum_zamkniete_przed_zapisem_wyniku_w_historii_daje_urwane_uruchomie
     history = centrum.client.get("/api/metrics").json()["runs"]
     released.set()
     finished_view(closed)
-    assert (history, previous["state"], previous["run"]) == ([], "interrupted", running["run"])
+    assert [row["run_id"] for row in history] == [earlier["run"]["id"]]
+    assert (previous["state"], previous["run"]) == ("interrupted", running["run"])
 
 
 def test_nieczytelna_historia_bez_logow_daje_urwane_uruchomienie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

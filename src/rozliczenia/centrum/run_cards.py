@@ -3,10 +3,11 @@
 Przy każdym starcie Uruchomienia Centrum zapisuje jego bezpieczne fakty (identyfikator, proces, tryb, okres, start)
 w jednym pliku obok dziennika, ``ostatnie-uruchomienie.json``, nadpisywanym przy następnym starcie i nigdy
 nieusuwanym. Po starcie Centrum ostatnie Uruchomienie to ten start: gdy ma plik Logów, jego karta wraca z Logów.
-Gdy go nie ma, a Historia ma wiersz z jego identyfikatorem, Centrum zamknęło się po zapisie rekordu metryk, a przed
-zapisem Logów, więc karta pokazuje wynik z Historii. Gdy nie ma ani Logów, ani wiersza Historii, to Urwane
-Uruchomienie (Centrum zamknęło się w jego trakcie), bo Logi powstają przed końcem każdego Uruchomienia, także przy
-Zatrzymaniu. Na końcu Uruchomienia ten moduł niczego nie zapisuje, więc nie ma kolejności względem działań po wyniku.
+Gdy go nie ma, a Historia ma jego wiersz (pierwszy wiersz procesu od jego startu, także jeszcze bez identyfikatora),
+Centrum zamknęło się po zapisie rekordu metryk, a przed zapisem Logów, więc karta pokazuje wynik z Historii. Gdy nie
+ma ani Logów, ani wiersza Historii, to Urwane Uruchomienie (Centrum zamknęło się w jego trakcie), bo Logi powstają
+przed końcem każdego Uruchomienia, także przy Zatrzymaniu. Na końcu Uruchomienia ten moduł niczego nie zapisuje,
+więc nie ma kolejności względem działań po wyniku.
 
 Karta z Logów niesie tylko to, co w nich jest: Komunikaty w trzech częściach, podsumowanie, etapy, sposób
 zakończenia i Rodzaj Zatrzymania. Tytuł i akcję wylicza ta sama reguła co na żywo (``runs.verdict``), a tytuł
@@ -211,18 +212,32 @@ class RunCards:
         )
 
     def _recorded(self, started: StartedRun) -> contract.RunRecorded | None:
-        """Karta z wiersza Historii Uruchomienia bez Logów; ``None``: Historia go nie ma albo jej nie da się odczytać."""
+        """Karta z wiersza Historii Uruchomienia bez Logów; ``None``: Historia go nie ma albo jej nie da się odczytać.
+
+        Wiersz Uruchomienia to najwcześniejszy wiersz tego procesu ze startem od startu Uruchomienia (reguła
+        ``CentrumRuns.remember``), więc karta go znajduje także wtedy, gdy nie ma jeszcze identyfikatora. Wcześniejsze
+        Uruchomienia startowały przed nim, bo Centrum prowadzi jedno naraz. Uruchomienie spoza Centrum po starcie
+        Urwanego Uruchomienia dałoby mu swój wynik; jak w ``remember`` to rzadkie.
+        """
 
         try:
-            row = next((run for run in self._history() if run.run_id == started.run_id), None)
+            rows = [
+                run
+                for run in self._history()
+                if run.process == started.process and run.started_at >= started.started_at
+            ]
         except OSError:
             return None
+        row = min(rows, key=lambda run: run.started_at, default=None)
         if row is None:
             return None
         declaration = declaration_of(started.process)
         info = declaration.run_info(run_id=started.run_id, period=started.period, dry_run=started.mode == "podgląd")
+        # Bez ``stop_kind`` sposób zakończenia nie zmienia tytułu ani akcji. Wiersz Historii nie mówi, czy Zatrzymanie
+        # przyszło po silniku (``after_engine``), więc po zapisie karta proponuje ponowne Uruchomienie, nie otwarcie
+        # pliku; ponowne Uruchomienie zostawia pliki, które powstały, i mówi, co z nimi zrobić.
         headline, next_action = verdict(
-            ending="finished" if row.stop_kind is None else "stop",
+            ending="stop",
             stop_kind=row.stop_kind,
             result=row.result,
             dry_run=info.dry_run,
