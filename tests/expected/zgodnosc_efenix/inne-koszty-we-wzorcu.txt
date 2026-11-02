@@ -2,4 +2,5 @@ ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | 
 RÓŻNICA | pozycje wyceny | INDEKS_012_078 (kolumna O): cena w efenix inna niż koszt w wierszu 14 Wzorca pliku zbiorczego
 NIESPRAWDZONE | pozycje wyceny | INDEKS_013_078 (kolumna P): koszt w wierszu 14 Wzorca pliku zbiorczego nie jest liczbą
 NIESPRAWDZONE | pozycje wyceny | INDEKS_021_078 (kolumna AP): koszt w wierszu 14 Wzorca pliku zbiorczego nie jest liczbą
-RÓŻNICE: 1 | NIESPRAWDZONE: 2
+NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
+RÓŻNICE: 1 | NIESPRAWDZONE: 3

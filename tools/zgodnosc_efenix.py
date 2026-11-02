@@ -18,9 +18,9 @@ w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service work
   w ``.badge``);
 - strona zlecenia (do ``ORDERS_TO_OPEN`` zleceń z tabeli, najpierw „Do wyceny”, aż znajdzie pustą datę wykonania):
   ``efenix_browser.read_order`` (data wykonania ``RRRR-MM-DD`` albo pusta, kwota końcowa, pola Ilość), a na pierwszym
-  zleceniu elementy ``efenix_browser.ORDER_ELEMENTS`` (kalendarz i okno daty wykonania, przycisk i okno Emmetta;
-  przycisk, który okno klika pierwszy, widoczny w samym HTML, bez stylów efenix), przyciski Przekazania do akceptacji i
-  anulowania, które ma Atrapa, skrypt ``js/page_order_edit.js`` z nazwami ``efenix_browser.ORDER_SCRIPT_USES``
+  zleceniu elementy ``efenix_browser.ORDER_ELEMENTS`` (okno daty wykonania, przycisk i okno Emmetta; przycisk Emmetta
+  widoczny w samym HTML, bez stylów efenix), przyciski Przekazania do akceptacji i anulowania, które ma Atrapa, skrypt
+  ``js/page_order_edit.js`` (pod adresem z listy ``ALLOWED``) z nazwami ``efenix_browser.ORDER_SCRIPT_USES``
   (pickadate z ``onSet``, „Potwierdź” daty, Emmett, zapis ilości z ``price_all``) i karty pozycji
   ``.card.rounded-lg.kolorek``: karta z polem Ilość ma cenę w tekście ``.col-sm-1.mt-2 > span.text-default > small``,
   a karta z ceną wpisywaną samo pole ``input.wycena-cena``; kody ``INDEKS_NNN_NNN`` i rodzaj karty są równe pozycjom
@@ -31,8 +31,10 @@ w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service work
   strona logowania ma formularz ``action_login.php`` z polami ``field_signum``, ``field_password`` i ``fingerprint``.
 
 Skryptów stron narzędzie nie uruchamia, więc ich działania nie widzi: sprawdza tylko, że skrypt ma nazwy, na których
-polega okno Wyceny w efenix. ``action_fill_emmett.php`` (propozycja Emmetta) nie jest na liście, bo bez kodu serwera nie
-wiadomo, czy niczego nie zapisuje.
+polega okno Wyceny w efenix. Przycisku kalendarza daty wykonania (``#button-calendar``) nie sprawdza: okno klika go tylko
+przy pustej dacie wykonania, a efenix pokazuje go najpewniej tylko wtedy, więc wynik zawsze ma linię ``NIESPRAWDZONE``
+z prośbą o sprawdzenie ręczne (``DATE_BUTTON_BY_HAND``). ``action_fill_emmett.php`` (propozycja Emmetta) nie jest na
+liście, bo bez kodu serwera nie wiadomo, czy niczego nie zapisuje.
 
 Uruchomienie: Chrome z osobnym profilem i zdalnym debugowaniem, w nim logowanie do efenix kontem taty, potem narzędzie:
 
@@ -44,8 +46,8 @@ Na czas sprawdzania w Chrome otwiera się okno narzędzia, w którym widać zło
 narzędzie zamyka je na końcu. Wzorzec pliku zbiorczego to domyślnie ten z konfiguracji narzędzia
 (``config/Wzorzec pliku zbiorczego.xlsx``, jak w Centrum rozliczeń), a inny podaje ``--wzorzec``.
 
-Wynik: linie ``RÓŻNICA | <część> | <co>`` i ``NIESPRAWDZONE | <część> | <co>``, na końcu ``ZGODNOŚĆ OK`` (kod 0) albo
-liczby (kod 2). Wynik nie zawiera numerów zleceń, adresów, loginów ani cen: tylko nazwy elementów, liczby, kody pozycji
+Wynik: linie ``RÓŻNICA | <część> | <co>`` i ``NIESPRAWDZONE | <część> | <co>``, na końcu liczby jednych i drugich. Kod 0:
+bez różnic, a niesprawdzony jest tylko przycisk kalendarza; kod 2: różnice albo inne części niesprawdzone. Wynik nie zawiera numerów zleceń, adresów, loginów ani cen: tylko nazwy elementów, liczby, kody pozycji
 z kolumnami i postać daty i kwoty (cyfry jako ``9``). Kod 1: brak Chrome pod ``--cdp``, nieczytelny Wzorzec, efenix nie
 odpowiada albo Chrome nie jest zalogowany; opis na stderr.
 """
@@ -124,7 +126,6 @@ POSITION_CODE: Final = re.compile(r"INDEKS_\d{3}_\d{3}")
 # nie czyta, więc ``workbook_files`` nie ma go w układzie arkusza.
 COST_ROW: Final = 14
 ORDERS_TO_OPEN: Final = 10
-OK: Final = "ZGODNOŚĆ OK"
 NOT_SIGNED_IN: Final = "Chrome nie jest zalogowany do efenix: zaloguj się kontem taty i uruchom narzędzie jeszcze raz"
 LOGGED_OUT_MIDWAY: Final = "efenix przekierował na stronę logowania w trakcie sprawdzania: zaloguj się i uruchom narzędzie jeszcze raz"
 
@@ -153,6 +154,12 @@ LOGIN_ELEMENTS: Final = (
     PageElement("pole fingerprint", 'input[name="fingerprint"]'),
 )
 PRICING_CARD: Final = ".card.rounded-lg.kolorek"
+# Część, której narzędzie nie sprawdza nigdy, a Maks sprawdza ręcznie; zawsze w wyniku jako ``NIESPRAWDZONE``.
+DATE_BUTTON_BY_HAND: Final = (
+    Part.ORDER,
+    "przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu "
+    f"„{PRICING_STATUS}” bez daty wykonania, że jest przycisk otwierający okno wyboru daty",
+)
 
 # Tabela odpowiedzi szukania przeczytana w ``<template>``, w którym nic nie biegnie i nic się nie wczytuje. Linki
 # (identyfikatory zleceń) zostają w pamięci narzędzia: służą do otwierania zleceń, nie trafiają do wyniku.
@@ -216,14 +223,14 @@ class Report:
         self.differences.append((part, what))
 
     def lines(self) -> list[str]:
+        """Wynik dla Maksa; po częściach niesprawdzonych stoi zawsze ``DATE_BUTTON_BY_HAND``."""
+
         head = " | ".join(f"{name}: {count}" for name, count in self.checked.items())
+        unchecked = [*self.unchecked, DATE_BUTTON_BY_HAND]
         lines = [f"ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | {head}"]
         lines += [f"RÓŻNICA | {part.value} | {what}" for part, what in self.differences]
-        lines += [f"NIESPRAWDZONE | {part.value} | {what}" for part, what in self.unchecked]
-        if self.differences or self.unchecked:
-            lines.append(f"RÓŻNICE: {len(self.differences)} | NIESPRAWDZONE: {len(self.unchecked)}")
-        else:
-            lines.append(OK)
+        lines += [f"NIESPRAWDZONE | {part.value} | {what}" for part, what in unchecked]
+        lines.append(f"RÓŻNICE: {len(self.differences)} | NIESPRAWDZONE: {len(unchecked)}")
         return lines
 
 
@@ -503,6 +510,11 @@ def _check_script(efenix: _Efenix, page: Page, page_url: str, part: Part, script
     if not loaded:
         report.differ(part, f"strona nie ładuje skryptu {script}")
         return
+    if not allowed("GET", loaded[0], efenix.url):
+        report.unchecked.append(
+            (part, f"skrypt {script}: strona ładuje go pod adresem spoza listy dozwolonych żądań (inny schemat, #fragment albo ;parametr)")
+        )
+        return
     text = _text(efenix, efenix.get(loaded[0]), f"GET {script}", part, report)
     if text is None:
         return
@@ -588,7 +600,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--efenix-url", required=True, help=f"Adres listy zleceń efenix (…/{LIST_PAGE}).")
     parser.add_argument("--cdp", default="http://127.0.0.1:9222", help="Adres zdalnego debugowania Chrome (domyślnie %(default)s).")
-    parser.add_argument("--numer", default="", help="Co wpisać w pole Numer, żeby lista pokazała zlecenia (domyślnie puste pole).")
+    parser.add_argument(
+        "--numer",
+        default="",
+        help=(
+            "Co wpisać w pole Numer, żeby lista pokazała zlecenia (domyślnie puste pole). Podaj numer zlecenia"
+            f" „{PRICING_STATUS}” bez daty wykonania, gdy wynik mówi, że lista nie ma zleceń albo że żadne otwarte zlecenie nie ma pustej daty wykonania."
+        ),
+    )
     parser.add_argument(
         "--wzorzec",
         type=Path,
@@ -626,9 +645,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ToolError as error:
         print(f"BŁĄD | {error}", file=sys.stderr)
         return 1
-    lines = report.lines()
-    print("\n".join(lines))
-    return 0 if lines[-1] == OK else 2
+    print("\n".join(report.lines()))
+    return 2 if report.differences or report.unchecked else 0
 
 
 if __name__ == "__main__":

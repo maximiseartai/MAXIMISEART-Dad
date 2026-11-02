@@ -287,7 +287,7 @@ uzupełnienia; podgląd bez zapisu z tymi samymi ostrzeżeniami kończy się kod
 `tools/zgodnosc_efenix.py` sprawdza, czy prawdziwy efenix ma budowę, której
 używa Wycena w efenix i którą odtwarza Atrapa efenix: pola listy i strony
 zlecenia, odpowiedź szukania i tabelę wyników, postać daty wykonania,
-przyciski i okna Emmetta i daty, nazwy w skryptach stron, na których działaniu
+przycisk i okno Emmetta, okno daty, nazwy w skryptach stron, na których działaniu
 polega Wycena w efenix, karty pozycji wyceny z kodami `INDEKS` i stronę
 logowania. Ceny pozycji z przypisania kolumn porównuje z kosztami z wiersza 14
 Wzorca pliku zbiorczego (domyślnie z konfiguracji narzędzia, inny plik:
@@ -308,9 +308,18 @@ google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodno
 .venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php>
 ```
 
-Kody wyjścia: `0` `ZGODNOŚĆ OK`, `2` różnice albo części niesprawdzone (każda
-w osobnej linii), `1` brak Chrome albo Wzorca, efenix nie odpowiada albo Chrome
-nie jest zalogowany. Parametry i Chrome na Windows opisuje `--help`.
+Gdy wynik mówi, że lista nie ma zleceń albo że żadne otwarte zlecenie nie ma
+pustej daty wykonania, uruchom narzędzie jeszcze raz z `--numer` i numerem
+zlecenia „Do wyceny” bez daty wykonania.
+
+Przycisku kalendarza daty wykonania narzędzie nie sprawdza, więc wynik zawsze
+ma o nim linię `NIESPRAWDZONE`: sprawdź ręcznie w efenix na zleceniu „Do
+wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty.
+
+Kody wyjścia: `0` bez różnic, gdy niesprawdzony jest tylko przycisk kalendarza,
+`2` różnice albo inne części niesprawdzone (każda w osobnej linii), `1` brak
+Chrome albo Wzorca, efenix nie odpowiada albo Chrome nie jest zalogowany.
+Parametry i Chrome na Windows opisuje `--help`.
 
 ## Testy
 

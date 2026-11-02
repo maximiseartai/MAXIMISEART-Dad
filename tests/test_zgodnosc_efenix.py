@@ -2,8 +2,8 @@
 
 Każdy test uruchamia narzędzie jak Maks: osobnym procesem, który łączy się przez zdalne debugowanie z Chromium (u Maksa
 Chrome z sesją taty), a sprawdza to, co widać z zewnątrz: wynik (plik expect w ``tests/expected/zgodnosc_efenix/``),
-kod wyjścia, żądania, które dostała Atrapa, i jej stan. Zgodna Atrapa daje ``ZGODNOŚĆ OK``, a Atrapa ze zmienioną
-budową każdą różnicę. Każde żądanie, które dostaje Atrapa, jest z listy dozwolonych odczytów, także gdy skrypty i
+kod wyjścia, żądania, które dostała Atrapa, i jej stan. Zgodna Atrapa daje wynik bez różnic, a Atrapa ze zmienioną
+budową każdą różnicę; każdy wynik ma prośbę o ręczne sprawdzenie przycisku kalendarza daty wykonania. Każde żądanie, które dostaje Atrapa, jest z listy dozwolonych odczytów, także gdy skrypty i
 elementy stron same wysyłają zapis albo wylogowanie. Wynik nie zawiera numerów zleceń, adresów, loginów ani
 identyfikatorów, które Atrapa pokazuje, ani cen.
 """
@@ -53,6 +53,11 @@ from tests.fixtures.expect import assert_expected
 from tests.fixtures.settlement import CellValue
 
 ROOT = Path(__file__).resolve().parents[1]
+# Linia, którą ma każdy wynik narzędzia (#748): przycisku kalendarza narzędzie nie sprawdza, sprawdza go Maks.
+DATE_BUTTON_BY_HAND = (
+    "NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix"
+    " na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty"
+)
 TOOL = ROOT / "tools" / "zgodnosc_efenix.py"
 # Żądania, które niczego w efenix nie zmieniają: lista, szukanie, strona zlecenia, skrypty obu stron i strona logowania.
 READING = {("GET", LIST_PAGE), ("GET", LIST_SCRIPT), ("POST", SEARCH), ("GET", ORDER_PAGE), ("GET", ORDER_SCRIPT), ("GET", LOGIN_PAGE)}
@@ -94,6 +99,9 @@ CHANGED = {
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "inne-koszty-we-wzorcu.txt", costs={**COSTS, "O": 99.5, "P": "=O14", "AP": None}
     ),
     "skrypty-stron-inne": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "skrypty-stron-inne.txt", Unread.SCRIPTS),
+    "skrypty-stron-pod-adresem-z-fragmentem": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "skrypty-stron-pod-adresem-z-fragmentem.txt", Unread.SCRIPT_ADDRESSES
+    ),
     "przekierowanie-strony-zlecenia": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "przekierowanie-strony-zlecenia.txt", Unread.ORDER_REDIRECT
     ),
@@ -101,7 +109,7 @@ CHANGED = {
     "sesja-bez-ciasteczka": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "sesja-bez-ciasteczka.txt", cookie_session=False),
     "bez-pustej-daty": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "bez-pustej-daty.txt", orders=DATED),
 }
-# Atrapa w innej postaci niż zgodna, a jednak zgodna z tym, czego używa Wycena w efenix: wynik to ``ZGODNOŚĆ OK``.
+# Atrapa w innej postaci niż zgodna, a jednak zgodna z tym, czego używa Wycena w efenix: wynik bez różnic.
 SAME = {
     "ceny-z-przecinkiem": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "zgodna.txt", Unread.PRICE_TEXT),
     "najpierw-zlecenie-do-akceptacji": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "zgodna.txt", orders=(ORDERS[2], ORDERS[0], ORDERS[1])),
@@ -187,6 +195,7 @@ def _checked(
         checked = _run(endpoint, atrapa, template, "--numer", variant.number)
         assert (atrapa.state(), _pages(endpoint)) == (state, pages)
     assert not [text for text in PRIVATE if text in checked.stdout + checked.stderr]
+    assert DATE_BUTTON_BY_HAND in checked.stdout.splitlines()
     return checked, atrapa
 
 

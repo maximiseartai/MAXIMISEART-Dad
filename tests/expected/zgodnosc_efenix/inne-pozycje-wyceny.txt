@@ -2,4 +2,5 @@ ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | 
 RÓŻNICA | pozycje wyceny | INDEKS_005_078: jest w Atrapie, nie ma go w efenix
 RÓŻNICA | pozycje wyceny | INDEKS_005_079: jest w efenix, nie ma go w Atrapie
 RÓŻNICA | pozycje wyceny | INDEKS_007_078: w efenix pole ceny wpisywanej, w Atrapie pole Ilość
-RÓŻNICE: 3 | NIESPRAWDZONE: 0
+NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
+RÓŻNICE: 3 | NIESPRAWDZONE: 1

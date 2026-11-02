@@ -157,10 +157,11 @@ class ScriptUse:
 
 
 # Budowa stron efenix, której okno używa poza odczytem tabeli wyników i strony zlecenia (``read_results``,
-# ``read_order``); narzędzie zgodności Atrapy efenix (``tools/zgodnosc_efenix.py``) sprawdza ją na efenix.
+# ``read_order``); narzędzie zgodności Atrapy efenix (``tools/zgodnosc_efenix.py``) sprawdza ją na efenix. Przycisku
+# kalendarza (``_DATE_BUTTON``) nie ma w ``ORDER_ELEMENTS``: okno klika go tylko przy pustej dacie wykonania, a efenix
+# pokazuje go najpewniej tylko wtedy, więc narzędzie nie sprawdza go na pierwszym otwartym zleceniu.
 LIST_ELEMENTS: Final = (PageElement("pole Numer", _NUMBER_FIELD),)
 ORDER_ELEMENTS: Final = (
-    PageElement("przycisk kalendarza daty wykonania", _DATE_BUTTON, clicked=True),
     PageElement("okno daty wykonania", _DATE_DIALOG),
     PageElement("pole kalendarza w oknie daty wykonania", f"{_DATE_DIALOG} {_DATE_FIELD}"),
     PageElement("„Potwierdź” w oknie daty wykonania", f"{_DATE_DIALOG} {_OK}"),

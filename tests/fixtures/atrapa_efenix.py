@@ -99,11 +99,15 @@ class Changed(enum.Enum):
 class Unread(enum.Enum):
     """Część strony Atrapy w innej budowie, której testy Wyceny w efenix nie używają, a sprawdza narzędzie zgodności."""
 
-    ORDER_PARTS = "strona zlecenia bez przycisku Emmetta i pola kalendarza w oknie daty wykonania, z ukrytym przyciskiem kalendarza"
+    ORDER_PARTS = (
+        "strona zlecenia bez przycisku Emmetta i pola kalendarza w oknie daty wykonania, a przycisk kalendarza ma tylko przy"
+        " pustej dacie wykonania, jak efenix w rekonesansie"
+    )
     PRICE_LIST = "jedna pozycja wyceny ma inny kod, a druga cenę wpisywaną zamiast pola Ilość"
     PRICE_TEXT = "ceny pozycji w tekście karty z przecinkiem (21,00), a nie z kropką"
     LOGIN_FORM = "formularz logowania bez pola fingerprint"
     SCRIPTS = "skrypt listy szuka bez pola numer, a strona zlecenia ma skrypt w stronie, a nie w js/page_order_edit.js"
+    SCRIPT_ADDRESSES = "lista ładuje skrypt z #fragmentem w adresie, a strona zlecenia z ;parametrem"
     ORDER_REDIRECT = "strona zlecenia przekierowuje na wylogowanie (action_logout.php)"
     HOSTILE = "skrypty i elementy stron po wczytaniu i przy opuszczeniu zapisują, zmieniają status i wylogowują"
 
@@ -451,7 +455,8 @@ def _list_page(changed: Changed | Unread | None, host: str) -> str:
         "Atrapa efenix",
         '<div class="container-fluid"><input type="text" id="field_numer" class="form-control">'
         '<button type="button" id="button_order_search" class="btn">Szukaj</button>'
-        f'<div id="wyniki"></div></div>{_hostile(host) if changed is Unread.HOSTILE else ""}<script src="{LIST_SCRIPT}?v=1"></script>',
+        f'<div id="wyniki"></div></div>{_hostile(host) if changed is Unread.HOSTILE else ""}'
+        f'<script src="{LIST_SCRIPT}{"#v1" if changed is Unread.SCRIPT_ADDRESSES else "?v=1"}"></script>',
     )
 
 
@@ -582,14 +587,18 @@ def _order_page(order: AtrapaOrder, changed: Changed | Unread | None, today: dat
         else f'<button type="button" id="button_emmett" order_id="{order_id}"{hidden} title="Załaduj wycenę przygotowaną przez Emmetta.">Emmett</button>'
     )
     day_field = "" if changed is Unread.ORDER_PARTS else '<input type="text" id="field_data_instalacji" readonly>'
-    calendar = ' hidden=""' if changed is Unread.ORDER_PARTS else ""
+    calendar = (
+        ""
+        if changed is Unread.ORDER_PARTS and order.execution_date is not None
+        else f'<button type="button" id="button-calendar" data-record-id="{order_id}">Kalendarz</button>'
+    )
     return _page(
         "Atrapa efenix - zlecenie",
         f'<input type="hidden" name="main_id" id="main_id" value="{order_id}"><div id="toast"></div>'
         f"<div><small>Status</small> {escape(order.status)}</div>"
         f"<div><small>Realizator</small> {escape(order.realizator)}</div>"
         f'<div><small>Data wykonania</small><span id="data_install">{day}</span>'
-        f'<button type="button" id="button-calendar" data-record-id="{order_id}"{calendar}>Kalendarz</button></div>'
+        f"{calendar}</div>"
         f"<div><small>Ulica - numer</small> {escape(order.address)}</div>"
         '<div class="card"><button type="button" id="button_forward_to_accept">Przekaż do akceptacji.</button>'
         '<button type="button" id="button_forward_to_cancel">Anuluj to zlecenie.</button></div>'
@@ -599,7 +608,11 @@ def _order_page(order: AtrapaOrder, changed: Changed | Unread | None, today: dat
         + _dialog("dialog_select_date", "Wybierz datę wykonania", day_field, "Potwierdź")
         + _dialog("dialog_emmett", "Emmett", '<div id="emmett-propozycja"></div>', "Załaduj do zlecenia")
         + (_hostile(host) if changed is Unread.HOSTILE else "")
-        + (f"<script>{_order_script(changed, today)}</script>" if changed is Unread.SCRIPTS else f'<script src="{ORDER_SCRIPT}?v=1"></script>'),
+        + (
+            f"<script>{_order_script(changed, today)}</script>"
+            if changed is Unread.SCRIPTS
+            else f'<script src="{ORDER_SCRIPT}{";v=1" if changed is Unread.SCRIPT_ADDRESSES else "?v=1"}"></script>'
+        ),
     )
 
 

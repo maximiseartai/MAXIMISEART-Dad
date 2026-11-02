@@ -1,3 +1,4 @@
 ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 3 | pozycje wyceny: 43 | ceny porównane z Wzorcem: 20
 NIESPRAWDZONE | strona zlecenia | postać pustej daty wykonania: żadne z 3 otwartych zleceń nie ma pustej #data_install
-RÓŻNICE: 0 | NIESPRAWDZONE: 1
+NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
+RÓŻNICE: 0 | NIESPRAWDZONE: 2
