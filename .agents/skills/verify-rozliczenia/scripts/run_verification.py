@@ -31,7 +31,7 @@ PROCESS_SCRIPT = str(Path("tools") / "uruchom_proces.py")
 
 @dataclass(frozen=True)
 class WorkflowVariant:
-    process: Literal["settlement", "preparation", "chain"] = "settlement"
+    process: Literal["settlement", "preparation", "chain", "intermax"] = "settlement"
     include_unmapped: bool = False
     pre_run_setup: Literal["existing", "locked"] | None = None
     dry_run_exit: int = 0
@@ -64,6 +64,10 @@ class WorkflowVariant:
         if self.process == "chain":
             processes = ("preparation-dry-run", "preparation-run", "settlement-dry-run", "settlement-run")
             helpers = ("fixture", "doctor", "readiness", "cleanup")
+        elif self.process == "intermax":
+            # Uporządkowanie INTERMAX has no preview without saving, so one run; its Sprawdzanie is the preflight.
+            processes = ("run",)
+            helpers = ("fixture", "cleanup")
         else:
             processes = ("dry-run", "run")
             helpers = ("fixture", "doctor", "cleanup")
@@ -102,6 +106,7 @@ WORKFLOW_VARIANTS = {
     "preparation-real-templates": WorkflowVariant(process="preparation", templates="config"),
     "chain": WorkflowVariant(process="chain"),
     "chain-real-templates": WorkflowVariant(process="chain", templates="config"),
+    "intermax": WorkflowVariant(process="intermax"),
 }
 CI_VARIANTS = tuple(name for name, variant in WORKFLOW_VARIANTS.items() if not variant.local_only)
 
@@ -279,6 +284,9 @@ def _run_workflow(variant: str, run_root: Path, evidence_root: Path, templates_d
         return
     if variant_config.process == "chain":
         _run_chain_workflow(run_root, evidence_root, real_templates)
+        return
+    if variant_config.process == "intermax":
+        _run_intermax_workflow(run_root, evidence_root)
         return
     environment = _utf8_environment()
     version = _version()
@@ -517,6 +525,49 @@ def _run_chain_workflow(run_root: Path, evidence_root: Path, templates_directory
     _run_step(
         "assert-settlement-run",
         assert_settlement_arguments("run"),
+        evidence_root,
+        environment,
+        expected_exit=0,
+    )
+
+
+def _run_intermax_workflow(run_root: Path, evidence_root: Path) -> None:
+    """Uporządkowanie INTERMAX: a synthetic INTERMAX with one pasted day of Surowe zlecenia, then the one write.
+
+    The process always saves, after a Kopia INTERMAX in ``--copies``, so every path stays inside the run root.
+    """
+
+    environment = _utf8_environment()
+    _run_step(
+        "fixture",
+        [str(HELPER_DIRECTORY / "create_intermax_fixture.py"), "--root", str(run_root)],
+        evidence_root,
+        environment,
+        expected_exit=0,
+    )
+    _run_process_step(
+        "run",
+        [
+            "intermax",
+            "--register",
+            str(run_root / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"),
+            "--copies",
+            str(run_root / "Kopie INTERMAX"),
+        ],
+        run_root / "metrics.jsonl",
+        evidence_root,
+        environment,
+        expected_exit=0,
+    )
+    _run_step(
+        "assert-run",
+        [
+            str(HELPER_DIRECTORY / "assert_intermax.py"),
+            "--root",
+            str(run_root),
+            "--result",
+            str(evidence_root / "run.json"),
+        ],
         evidence_root,
         environment,
         expected_exit=0,
