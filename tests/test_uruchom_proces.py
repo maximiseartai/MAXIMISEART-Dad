@@ -478,7 +478,9 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
     metrics = tmp_path / "metrics.jsonl"
     efenix = [order.in_efenix(f"90{index}") for index, order in enumerate(orders)]
     with atrapa_efenix([efenix[0], replace(efenix[1], status="Rozliczone"), *efenix[2:]]) as atrapa:
-        exit_code, result = _run("efenix", "--source", source, "--efenix-url", atrapa.url, "--metrics", metrics)
+        exit_code, result = _run(
+            "efenix", "--source", source, "--efenix-url", atrapa.url, "--metrics", metrics, "--slad", tmp_path / "slad"
+        )
         changes = atrapa.status_changes()
 
     assert (exit_code, result["result"], result["stop"], changes) == (2, "WYMAGA_SPRAWDZENIA", None, 0)
@@ -500,6 +502,9 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
     assert "pozycja INDEKS_012 (kolumna O): Emmett 1, plik 2" in result["warnings"][2]["what"]
     assert [phase["state"] for phase in result["progress"]["phases"]] == ["completed"] * 4
     assert "9401" not in json.dumps(result) and "9401" not in metrics.read_text(encoding="utf-8")
+    # Ślad Wyceny Emmetta okresu trafia do --slad, bez numerów zleceń.
+    [trace] = (tmp_path / "slad").iterdir()
+    assert (trace.name, "9401" in trace.read_text(encoding="utf-8")) == (f"{source.parent.name}.json", False)
 
 
 def test_bledne_argumenty_koncza_sie_kodem_1_bez_wyniku_json(tmp_path: Path) -> None:

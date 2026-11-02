@@ -68,6 +68,15 @@ Ilości usług z Pliku zbiorczego. Nikt ich nie nadpisuje: gdy różnią się od
 Pliku zbiorczego, sprzeczność rozstrzyga tata. Załadowanie Wyceny Emmetta
 czyści wycenę, którą zlecenie już ma.
 
+## Ślad Wyceny Emmetta
+
+Zapis na komputerze taty, poza OneDrive i poza Gitem, o zleceniach okresu, do
+których Wycena w efenix sama załadowała Wycenę Emmetta, z jej ilościami.
+Narzędzie zapisuje go, zanim kliknie „Załaduj do zlecenia”. Tylko zlecenie ze
+śladu ponowne uruchomienie dokańcza, gdy jego wycena już jest; wycenę bez śladu,
+także zaczętą przez tatę, tylko porównuje z Plikiem zbiorczym.
+_Avoid_: historia, pamięć, dziennik
+
 ## Znacznik efenix
 
 Jasnofioletowe wypełnienie komórki `ADRES` zlecenia w Pliku zbiorczym: wycena

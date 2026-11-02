@@ -212,6 +212,13 @@ class AtrapaEfenix:
         with self._lock:
             self.logged_in = True
 
+    def edit(self, number: str, change: Callable[[AtrapaOrder], object]) -> None:
+        """Tata sam zmienia w efenix zlecenie ``number``: ``change`` dostaje jego stan w Atrapie."""
+
+        with self._lock:
+            [order] = [order for order in self.orders if order.number == number]
+            change(order)
+
     def state(self) -> tuple[list[AtrapaOrder], bool]:
         """Kopia zleceń i sesji do porównania stanu przed przebiegiem i po nim."""
 

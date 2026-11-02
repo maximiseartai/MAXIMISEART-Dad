@@ -4,14 +4,15 @@ Opis procesu (``PROCESS``) jest wspólny dla każdego rozmówcy, więc liczby, K
 Okno efenix daje rozmówca (``EfenixInputs.open_efenix``): Skrypt dla maszyn otwiera Chromium Playwrighta
 (``efenix_browser.chromium``), a testy okno na Atrapie efenix. Proces pracuje w oknie w tempie ludzkim (``efenix_pace``),
 chyba że rozmówca je wyłączy (``EfenixInputs.pace`` równe ``None``), jak testy i Skrypt dla maszyn na Atrapie efenix.
+Ślad Wyceny Emmetta okresu (``efenix_trace``) leży w ``EfenixInputs.trace_directory`` w pliku ``<okres>.json``.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import TOOL_ROOT, efenix_pricing
+from . import TOOL_ROOT, efenix_pricing, efenix_trace
 from .efenix_pace import Pace, paced
 from . import efenix_messages as messages
 from .decision import Conversation
@@ -35,12 +36,14 @@ class EfenixInputs:
     """Wejście procesu Wyceny w efenix: Plik zbiorczy okresu i okno efenix w sesji taty.
 
     Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da). Wycena w efenix nie ma podglądu bez zapisu.
-    ``pace``: tempo ludzkie okna, domyślnie z prawdziwym zegarem; ``None`` wyłącza przerwy.
+    ``pace``: tempo ludzkie okna, domyślnie z prawdziwym zegarem; ``None`` wyłącza przerwy. ``trace_directory``: folder
+    Śladów Wyceny Emmetta, domyślnie w ``config/`` katalogu narzędzia.
     """
 
     source: Path
     open_efenix: OpenEfenix
     pace: Pace | None = Pace()
+    trace_directory: Path = field(default_factory=efenix_trace.default_directory)
 
     @property
     def period(self) -> str:
@@ -56,7 +59,8 @@ class EfenixInputs:
 
 def _execute(inputs: EfenixInputs, observer: ProgressObserver, _conversation: Conversation) -> PricingSummary:
     open_efenix = inputs.open_efenix if inputs.pace is None else paced(inputs.open_efenix, inputs.pace)
-    return efenix_pricing.price_orders(inputs.source, open_efenix, observer=observer)
+    trace = inputs.trace_directory / f"{inputs.period}.json"
+    return efenix_pricing.price_orders(inputs.source, open_efenix, trace, observer=observer)
 
 
 def _finished(_inputs: EfenixInputs, summary: PricingSummary) -> Finished:

@@ -145,14 +145,18 @@ _R = TypeVar("_R")
 
 
 def _in_open_window(action: Callable[Concatenate[BrowserEfenix, _P], _R]) -> Callable[Concatenate[BrowserEfenix, _P], _R]:
-    """Działanie okna, które w karcie zamkniętej przed nim albo w jego trakcie zgłasza ``WindowClosed``: Playwright
-    zgłasza wtedy błąd, a okno mogło go już zamienić na ``EfenixUnreachable`` albo ``UnexpectedPage``."""
+    """Działanie okna, które w karcie zamkniętej przed nim albo w jego trakcie zgłasza ``WindowClosed``.
+
+    Każdy wyjątek działania w karcie, która jest już zamknięta, to zamknięte okno, a nie lista typów: Playwright zgłasza
+    wtedy błąd, a okno mogło go już zamienić na ``EfenixUnreachable`` albo, gdy karta zamknęła się między odpowiedzią
+    efenix a odczytem jej treści, na ``UnexpectedPage``.
+    """
 
     @functools.wraps(action)
     def guarded(efenix: BrowserEfenix, /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
         try:
             return action(efenix, *args, **kwargs)
-        except (PlaywrightError, EfenixUnreachable, UnexpectedPage) as error:
+        except Exception as error:
             if efenix.closed:
                 raise WindowClosed from error
             raise
