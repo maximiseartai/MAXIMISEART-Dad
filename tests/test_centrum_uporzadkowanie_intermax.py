@@ -97,7 +97,7 @@ def _days(centrum: OrderingCentrum) -> list[tuple[str, bool]]:
     return [(day["label"] + ("*" if day["today"] else ""), day["ordered"]) for day in found["days"]]
 
 
-def test_karta_pokazuje_dni_okresu_z_dniem_uporzadkowanym_a_po_uporzadkowaniu_takze_wklejony_dzien(tmp_path: Path) -> None:
+def test_karta_pokazuje_siedem_dni_z_dniem_uporzadkowanym_a_po_uporzadkowaniu_takze_dzisiejszy_wklejony_dzien(tmp_path: Path) -> None:
     centrum = ordering_centrum(tmp_path)
 
     before = centrum.client.get("/api/intermax/days").json()
@@ -120,27 +120,33 @@ def test_karta_pokazuje_dni_okresu_z_dniem_uporzadkowanym_a_po_uporzadkowaniu_ta
     assert after[-1] == ("pon 26.10*", True)
 
 
-def test_karta_pokazuje_pozniejsze_dni_uporzadkowane_i_wklejone_a_zlecenie_na_pozniej_w_dniu_nie_jest_dniem(
+def test_karta_pokazuje_dzis_i_szesc_dni_wstecz_oraz_pozniejsze_dni_uporzadkowane_a_nie_pozniejszy_wklejony_dzien(
     tmp_path: Path,
 ) -> None:
-    def at(day: int, hour: int, number: int) -> Order:
-        return Order(datetime(2026, 10, day, hour), "anna.kowalska", number)
+    def at(month: int, day: int, hour: int, number: int) -> Order:
+        return Order(datetime(2026, month, day, hour), "anna.kowalska", number)
 
-    ordered = (at(20, 8, 1), at(20, 9, 2), at(21, 8, 3), at(29, 9, 4), at(21, 10, 5), at(27, 8, 6), at(27, 9, 7))
-    centrum = ordering_centrum(tmp_path, Intermax(ordered=ordered, raw=(at(28, 8, 101), at(28, 9, 102))))
+    # Czwartek 29.10: 22.10 to siódmy dzień wstecz, 02.11 wpisane w środku 23.10 nie jest dniem, 31.10 jest wklejony,
+    # a przegląd od dołu dochodzi do 23.10 dopiero po jedenastu zleceniach 26.10.
+    ordered = (
+        *(at(10, 22, 8, 1), at(10, 22, 9, 2), at(10, 23, 8, 3), at(11, 2, 9, 4), at(10, 23, 10, 5)),
+        *(at(10, 26, 8 + index, 10 + index) for index in range(11)),
+        *(at(10, 30, 8, 6), at(10, 30, 9, 7)),
+    )
+    clock = Clock([NOW + timedelta(days=3)])
+    centrum = ordering_centrum(tmp_path, Intermax(ordered=ordered, raw=(at(10, 31, 8, 101), at(10, 31, 9, 102))), clock=clock)
 
     days = _days(centrum)
 
     assert days == [
-        ("wt 20.10", True),
-        ("śr 21.10", True),
-        ("czw 22.10", False),
-        ("pt 23.10", False),
+        ("pt 23.10", True),
         ("sob 24.10", False),
         ("niedz 25.10", False),
-        ("pon 26.10*", False),
-        ("wt 27.10", True),
+        ("pon 26.10", True),
+        ("wt 27.10", False),
         ("śr 28.10", False),
+        ("czw 29.10*", False),
+        ("pt 30.10", True),
     ]
 
 
@@ -153,14 +159,15 @@ def test_dni_intermax_otwartego_w_excelu_sa_z_jego_ostatniego_zapisu(tmp_path: P
     assert (days[0], len(days)) == (("wt 20.10", True), 7)
 
 
-def test_nastepnego_dnia_karta_pokazuje_dni_nowego_okresu_i_wklejony_dzien_choc_intermax_sie_nie_zmienil(tmp_path: Path) -> None:
+def test_nastepnego_dnia_karta_pokazuje_siedem_dni_do_nowego_dnia_choc_intermax_sie_nie_zmienil(tmp_path: Path) -> None:
     clock = Clock([NOW, NOW + timedelta(days=1)])
     centrum = ordering_centrum(tmp_path, clock=clock)
 
     monday, tuesday = _days(centrum), _days(centrum)
 
     assert (monday[0], monday[-1]) == (("wt 20.10", True), ("pon 26.10*", False))
-    assert (tuesday[:2], tuesday[-1]) == ([("pon 26.10", False), ("wt 27.10*", False)], ("pon 02.11", False))
+    assert (tuesday[0], tuesday[-2:]) == (("śr 21.10", False), [("pon 26.10", False), ("wt 27.10*", False)])
+    assert len(tuesday) == 7
 
 
 @pytest.mark.parametrize(
@@ -235,7 +242,8 @@ def test_wklejony_dzien_karta_pokazuje_jako_uporzadkowany_wtedy_gdy_uporzadkowan
     days = _days(centrum)
     view = centrum.run_to_end()
 
-    assert (day, ordered) in days
+    # Dzień po dzisiejszym karta pokazuje tylko jako uporządkowany, więc nieuporządkowanej środy na niej nie ma.
+    assert ((day, True) in days) == ordered
     result = view["result"]
     refusals = [stop for stop in result["stops"] if stop["what"].startswith(f"Dzień {day[-5:]}.2026 jest już uporządkowany.")]
     assert (result["ending"], len(refusals)) == (("stop", 1) if ordered else ("finished", 0))

@@ -24,7 +24,7 @@ import { SettingPath } from "@/pages/runs/run-setup-card"
 /**
  * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty, tu pod nazwą, którą zna tata,
  * więc jest tylko jeden przycisk. INTERMAX otwarty w Excelu albo niewskazany wyłącza go, a zdanie nad nim mówi, co zrobić. Pod plikiem
- * stoją dni okresu i późniejsze dni INTERMAX z ikoną Dnia uporządkowanego, a pod nimi ostatnie Uporządkowanie z Logów
+ * stoi 7 ostatnich dni INTERMAX i późniejsze Dni uporządkowane z ikoną Dnia uporządkowanego, a pod nimi ostatnie Uporządkowanie z Logów
  * Uruchomienia, którego pełna karta otwiera się z boku.
  */
 export function IntermaxCard() {

@@ -305,19 +305,19 @@ def recognize(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Ra
 
 @dataclass(frozen=True)
 class SheetDays:
-    """Dni arkusza zleceń: ``ordered`` to Dni uporządkowane od ``since`` albo wśród ``pasted``, dni Surowych zleceń."""
+    """Dni arkusza zleceń: ``ordered`` to Dni uporządkowane od ``since``, ``pasted`` dni Surowych zleceń."""
 
     ordered: frozenset[date]
     pasted: frozenset[date]
 
 
 def sheet_days(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, since: date) -> SheetDays:
-    """Dni uporządkowane (od ``since`` i wśród dni Surowych zleceń) i dni Surowych zleceń z wierszy od ostatniego w górę.
+    """Dni uporządkowane od ``since`` i dni Surowych zleceń z wierszy arkusza zleceń od ostatniego w górę.
 
     Dzień uporządkowany rozpoznaje ten sam przegląd co ``recognize`` dzień bloku (``_above``): od ostatniego
     uporządkowanego wiersza w górę, z granicą w tym dniu, więc karta i Uporządkowanie INTERMAX mówią o każdym dniu to
     samo. Przegląd z granicą we wcześniejszym dniu jest dłuższy i zaczyna się tak samo, więc jeden przegląd z
-    najwcześniejszą granicą czyta wiersze dla wszystkich dni.
+    granicą ``since`` czyta wiersze dla wszystkich dni.
     """
 
     rows = iter(rows_from_bottom)
@@ -332,8 +332,8 @@ def sheet_days(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, sinc
             reviewed.append(row)
             yield row
 
-    found = _above(first, kept(), columns, min((since, *pasted_days)))[1]
-    asked = {day for day in found if day >= since or day in pasted_days}
+    found = _above(first, kept(), columns, since)[1]
+    asked = {day for day in found if day >= since}
     ordered = frozenset(day for day in asked if day in _above(first, iter(reviewed), columns, day)[1])
     return SheetDays(ordered, pasted_days)
 

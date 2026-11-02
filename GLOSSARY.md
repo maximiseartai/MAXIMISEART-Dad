@@ -127,8 +127,8 @@ dnia: dwa kolejne uporządkowane wiersze z jego datą albo jeden, pod którym ni
 ma wiersza wcześniejszego dnia. Zlecenie na jutro wpisane w środku
 dzisiejszego dnia nie czyni jutra uporządkowanym. Tą samą regułą
 Uporządkowanie INTERMAX odmawia drugiego wklejenia dnia, a karta Uporządkowania
-INTERMAX w Centrum rozliczeń pokazuje przy każdym dniu okresu dzisiejszej daty,
-każdym późniejszym Dniu uporządkowanym i każdym dniu Surowych zleceń, czy jest
+INTERMAX w Centrum rozliczeń pokazuje przy dzisiejszym dniu i każdym z 6 dni
+przed nim, czy jest uporządkowany, a obok nich każdy późniejszy Dzień
 uporządkowany.
 _Avoid_: dzień zrobiony, dzień sformatowany
 

@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import APP, BUILD, CATALOG, INTERMAX_RUN, RUN_VIEW, UPORZADKOWANIE
+from cele_mutacji_centrum import APP, BUILD, CATALOG, INTERMAX_ORDERING, INTERMAX_RUN, RUN_VIEW, UPORZADKOWANIE
 from mutacje import Edit, Mutation, check_all
 
 MUTATIONS = (
@@ -40,6 +40,12 @@ MUTATIONS = (
         (Edit(INTERMAX_RUN, "ordered=day.ordered)", "ordered=False)"),),
         UPORZADKOWANIE,
         "tata nie widzi na karcie, które dni są już uporządkowane",
+    ),
+    Mutation(
+        "karta z wklejonym dniem po dzisiejszym",
+        (Edit(INTERMAX_ORDERING, "shown = ordered | {", "shown = ordered | pasted_in.keys() | {"),),
+        UPORZADKOWANIE,
+        "karta pokazuje wklejony, nieuporządkowany dzień po dzisiejszym, choć ma pokazywać tylko uporządkowane",
     ),
     Mutation(
         "dni nie czytane po Uporządkowaniu",
