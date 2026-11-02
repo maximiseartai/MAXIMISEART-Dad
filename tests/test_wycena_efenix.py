@@ -27,6 +27,7 @@ import socket
 import subprocess
 import sys
 import time
+import traceback
 import zipfile
 
 from openpyxl import load_workbook
@@ -101,12 +102,20 @@ def _run(
     """Uruchomienie Wyceny w efenix dla Pliku zbiorczego ``source``; ``meanwhile`` to to, co tata zrobił z plikiem, zanim
     proces skończył ostatnie zlecenie. Tempo ludzkie jest wyłączone, chyba że test poda ``pace``, a ``clock`` to zegar
     czasów etapów i śladu działań okna. Ślad Wyceny Emmetta leży w ``_traces(source)``, więc każde Uruchomienie dla tego
-    samego pliku czyta ślad poprzedniego."""
+    samego pliku czyta ślad poprzedniego.
+
+    Błąd okna efenix (np. ``UnexpectedPage``) trafia na stderr testu ze swoją przyczyną z Playwrighta, bo Zatrzymanie w
+    wyniku mówi tylko, w której części strony stanęło, a porażka testu pokazuje stderr. Z samego Zatrzymania nie dało się
+    ustalić przyczyny porażek #767 i #768 na Windows."""
 
     @contextmanager
     def open_efenix(_login: Login) -> Iterator[efenix_browser.BrowserEfenix]:
-        with efenix_browser.window(page, url, timeout_ms=timeout_ms) as efenix:
-            yield efenix
+        try:
+            with efenix_browser.window(page, url, timeout_ms=timeout_ms) as efenix:
+                yield efenix
+        except Exception as error:
+            print("Błąd okna efenix:", "".join(traceback.format_exception(error)), sep="\n", file=sys.stderr)
+            raise
         meanwhile()
 
     return run_process(
@@ -127,7 +136,7 @@ def _traces(source: Path) -> Path:
 def _figures(outcome: Priced) -> dict[str, int]:
     """Liczby podsumowania: zlecenia w zakresie, gotowe, błędy, ostrzeżenia Emmetta i pominięte."""
 
-    assert isinstance(outcome.ending, Finished), outcome.ending
+    assert isinstance(outcome.ending, Finished), _ending(outcome)
     assert outcome.view is not None
     summary = outcome.view
     return {
@@ -138,6 +147,15 @@ def _figures(outcome: Priced) -> dict[str, int]:
         "ze zdjęciami": summary.with_photos,
         "usterki": summary.defects,
     }
+
+
+def _ending(outcome: Priced) -> str:
+    """Zakończenie przebiegu w komunikacie porażki: przy Zatrzymaniu jego kod i „Gdzie” z częścią strony efenix, które
+    pełny zapis Zatrzymania w porażce testu ucina (#768)."""
+
+    if isinstance(outcome.ending, Stop):
+        return f"Zatrzymanie {outcome.ending.message.code} | {outcome.ending.message.where}"
+    return repr(outcome.ending)
 
 
 def _errors(outcome: Priced) -> list[tuple[str, str]]:
@@ -160,7 +178,7 @@ def _pricing(atrapa: AtrapaEfenix) -> dict[str, tuple[dict[str, int], date | Non
 
 
 def _stop(outcome: Priced) -> str:
-    assert isinstance(outcome.ending, Stop), outcome.ending
+    assert isinstance(outcome.ending, Stop), _ending(outcome)
     assert outcome.ending.kind == "stop"
     return outcome.ending.message.code
 
@@ -837,12 +855,16 @@ def test_nastepny_przebieg_na_pliku_ze_znacznikami_czyta_kwoty_au_ma_te_same_got
     tmp_path: Path, page: Page
 ) -> None:
     """Sprzeczność z Emmettem kończy w pierwszym przebiegu zlecenie z wiersza 21 (stan „gotowe” Śladu Wyceny Emmetta), więc
-    drugi przebieg tylko porównuje jego wycenę: błąd „wycena już jest i się różni”, a w efenix nic się nie zmienia."""
+    drugi przebieg tylko porównuje jego wycenę: błąd „wycena już jest i się różni”, a w efenix nic się nie zmienia.
+
+    Pierwszy przebieg musi dojść do końca: zatrzymany przed Wyceną Emmetta wiersza 21 zostawia ją drugiemu przebiegowi,
+    który daje wtedy ostrzeżenie Emmetta zamiast błędu i myli porażkę z błędem drugiego przebiegu (#767)."""
 
     orders = _marking_orders()
     source = write_collective_file(tmp_path, orders)
     with atrapa_efenix(_marking_efenix(orders)) as atrapa:
-        _run(source, page, atrapa.url)
+        first = _run(source, page, atrapa.url)
+        assert _figures(first) == _figures_of(5, 2, warnings=1, photos=1)
         marked, saved, state, requests = source.read_bytes(), source.stat().st_mtime_ns, atrapa.state(), len(atrapa.requested())
         second = _run(source, page, atrapa.url)
         after, again = atrapa.state(), atrapa.requested()[requests:]
