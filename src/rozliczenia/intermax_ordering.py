@@ -41,10 +41,12 @@ from .raw_orders import (
     Undated,
     WithoutWorker,
 )
-from .settlement_period import period_of
 from .workbook_files import WorkbookError
 
 __all__ = ["OrderingSummary", "RegisterDay", "order_register", "register_days"]
+
+# Karta Uporządkowania INTERMAX pokazuje dziś i 6 dni przed nim oraz późniejsze Dni uporządkowane.
+_SHOWN_DAYS = 7
 
 
 @dataclass
@@ -222,7 +224,7 @@ class RegisterDay:
 
 
 def register_days(register_path: Path, today: date) -> tuple[RegisterDay, ...] | Message:
-    """Dni okresu dnia ``today``, późniejsze Dni uporządkowane i dni Surowych zleceń, po kolei, każdy ze stanem.
+    """Dzień ``today`` i 6 dni przed nim oraz późniejsze Dni uporządkowane, po kolei, każdy ze stanem.
 
     Tylko czyta, także INTERMAX otwarty w Excelu (jego ostatnią zapisaną wersję). Dzień uporządkowany rozpoznaje ta
     sama reguła co Uporządkowanie INTERMAX (``raw_orders.sheet_days``) w każdym arkuszu zleceń, a dzień Surowych
@@ -236,14 +238,14 @@ def register_days(register_path: Path, today: date) -> tuple[RegisterDay, ...] |
         return messages.register_unusable(error)
     if not register.order_sheets:
         return messages.no_order_sheet(register_path)
-    period = period_of(today)
+    since = today - timedelta(days=_SHOWN_DAYS - 1)
     sheets: list[raw_orders.SheetDays] = []
     for sheet in register.order_sheets:
         try:
-            sheets.append(raw_orders.sheet_days(sheet.rows_from_bottom(), sheet.columns, period.tuesday))
+            sheets.append(raw_orders.sheet_days(sheet.rows_from_bottom(), sheet.columns, since))
         except UnsupportedShape:
             return messages.unsupported_shape(register_path, sheet.name)
     pasted_in = {day: found for found in sheets for day in found.pasted}
     ordered = {day for found in sheets for day in found.ordered if day not in pasted_in or day in pasted_in[day].ordered}
-    shown = ordered | pasted_in.keys() | {period.tuesday + timedelta(days=offset) for offset in range(7)}
+    shown = ordered | {since + timedelta(days=offset) for offset in range(_SHOWN_DAYS)}
     return tuple(RegisterDay(day, day in ordered) for day in sorted(shown))

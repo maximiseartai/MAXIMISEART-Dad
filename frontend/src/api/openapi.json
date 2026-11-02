@@ -2815,7 +2815,7 @@
           "problem"
         ],
         "title": "IntermaxDays",
-        "description": "Dni okresu dzisiejszej daty, późniejsze Dni uporządkowane i dni Surowych zleceń INTERMAX, po kolei.\n\n``problem`` to Komunikat, gdy INTERMAX nie da się odczytać; ``days`` jest wtedy puste, tak jak bez wskazanego\nRejestru zleceń."
+        "description": "Dziś i 6 dni wstecz oraz późniejsze Dni uporządkowane INTERMAX, po kolei.\n\n``problem`` to Komunikat, gdy INTERMAX nie da się odczytać; ``days`` jest wtedy puste, tak jak bez wskazanego\nRejestru zleceń."
       },
       "IntermaxRestoreRefused": {
         "properties": {

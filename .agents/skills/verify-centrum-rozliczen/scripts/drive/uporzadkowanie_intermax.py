@@ -21,8 +21,9 @@ NOTHING_TO_ORDER = "Na dole arkusza zleceń nie ma wklejonych zleceń do uporzą
 # The fixture's "today" is Monday 19.10.2026, so every Uruchomienie of Uporządkowanie INTERMAX has this period.
 PERIOD = "13_19_10_2026"
 COPY = re.compile(r"INTERMAX przed uporządkowaniem 2026-10-19 \d{2}-\d{2}-\d{2}\.xlsx")
-# Days of the fixture's INTERMAX on the card: the period of today (13–19.10), the later Dzień uporządkowany 20.10 and
-# the day of the Surowe zlecenia 26.10; 19.10 (two ordered rows) and 20.10 (no earlier day under it) are ordered.
+# Days of the fixture's INTERMAX on the card: today and the 6 days before it (13–19.10) and the later Dzień uporządkowany
+# 20.10; 19.10 (two ordered rows) and 20.10 (no earlier day under it) are ordered. The day of the Surowe zlecenia 26.10
+# is later than today and not ordered, so the card leaves it out until the Uporządkowanie.
 DAYS = (
     ("wt 13.10", False),
     ("śr 14.10", False),
@@ -32,7 +33,6 @@ DAYS = (
     ("niedz 18.10", False),
     ("pon 19.10", True),
     ("wt 20.10", True),
-    ("pon 26.10", False),
 )
 # Dad's laptop runs JavaScript about 4× slower than the Mac this runs on (docs/agents/komputer-taty.md).
 DAD_CPU = 4
@@ -128,7 +128,7 @@ def drive_intermax_ordering(run: Run, page: Page) -> None:
     )
     run.check(
         [(day["label"], day["ordered"]) for day in days] == list(DAYS),
-        "the card lists the days of the period of today, the later Dzień uporządkowany and the pasted day, each with its state",
+        "the card lists today, the 6 days before it and the later Dzień uporządkowany, each with its state, without the pasted day",
     )
 
     run.step(FEATURE, "otwarty")

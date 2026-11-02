@@ -371,7 +371,7 @@ export const zIntermaxCopies = z.object({
 /**
  * IntermaxDays
  *
- * Dni okresu dzisiejszej daty, późniejsze Dni uporządkowane i dni Surowych zleceń INTERMAX, po kolei.
+ * Dziś i 6 dni wstecz oraz późniejsze Dni uporządkowane INTERMAX, po kolei.
  *
  * ``problem`` to Komunikat, gdy INTERMAX nie da się odczytać; ``days`` jest wtedy puste, tak jak bez wskazanego
  * Rejestru zleceń.

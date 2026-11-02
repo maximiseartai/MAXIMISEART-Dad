@@ -293,7 +293,7 @@ export function getIntermaxSetup() {
   return call(zGetIntermaxSetupResponse, "getIntermaxSetup", "/api/intermax")
 }
 
-/** Dni okresu i późniejsze dni INTERMAX z Ustawień taty ze stanem; serwer czyta INTERMAX tylko po jego zmianie. */
+/** Dziś, 6 dni wstecz i późniejsze Dni uporządkowane INTERMAX ze stanem; serwer czyta INTERMAX tylko po jego zmianie. */
 export function getIntermaxDays() {
   return call(zGetIntermaxDaysResponse, "getIntermaxDays", "/api/intermax/days")
 }
