@@ -72,6 +72,7 @@ from typing import Concatenate, Final, ParamSpec, TypedDict, TypeVar
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import Frame, Locator, Page, Request, Response, sync_playwright
 
 from . import TOOL_ROOT
@@ -347,8 +348,7 @@ class BrowserEfenix:
     def open_list(self) -> None:
         """Otwiera listę zleceń; ``EfenixUnreachable``, gdy adres nie odpowiada."""
 
-        self._page.goto(self._url, wait_until="load", timeout=self._timeout_ms)
-        self._loaded()
+        self._open(lambda: self._page.goto(self._url, wait_until="load", timeout=self._timeout_ms))
         self._ensure_logged_in()
         if self._page.locator(_NUMBER_FIELD).count() != 1:
             raise UnexpectedPage(PagePart.LIST)
@@ -415,8 +415,8 @@ class BrowserEfenix:
     def open_order(self, order: ListedOrder) -> OrderPricing:
         """Otwiera stronę zlecenia ``order`` i czyta datę wykonania, kwotę końcową i ilości pozycji."""
 
-        self._page.goto(urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms)
-        self._loaded()
+        address = urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}")
+        self._open(lambda: self._page.goto(address, wait_until="load", timeout=self._timeout_ms))
         return self._read_order()
 
     @_action(PagePart.DATE)
@@ -449,8 +449,15 @@ class BrowserEfenix:
         self._only(_EMMETT_BUTTON, PagePart.EMMETT).click(timeout=self._timeout_ms)
         self._shown(_EMMETT_DIALOG, PagePart.EMMETT)
         load = self._only(f"{_EMMETT_DIALOG} {_OK}", PagePart.EMMETT)
-        with self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
-            self._answer(_LOAD_EMMETT, lambda _params: True, lambda: load.click(timeout=self._timeout_ms))
+        answered = False
+        try:
+            with self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
+                self._answer(_LOAD_EMMETT, lambda _params: True, lambda: load.click(timeout=self._timeout_ms))
+                answered = True
+        except PlaywrightTimeoutError as error:
+            if answered:
+                raise EfenixUnreachable from error
+            raise
         self._loaded()
         return self._read_order()
 
@@ -531,6 +538,17 @@ class BrowserEfenix:
             if self._traffic.stalled:
                 raise EfenixUnreachable from error
             raise UnexpectedPage(part) from error
+
+    def _open(self, navigate: Callable[[], object]) -> None:
+        """Otwiera stronę przez ``navigate``. Strona, która nie skończyła się ładować w czasie okna, to brak połączenia z
+        efenix także wtedy, gdy czeka plik spoza efenix (fontawesome, Google Fonts w ``<head>`` listy i strony zlecenia),
+        bo zmieniony efenix też się ładuje do końca."""
+
+        try:
+            navigate()
+        except PlaywrightTimeoutError as error:
+            raise EfenixUnreachable from error
+        self._loaded()
 
     def _loaded(self) -> None:
         """Strona otwarta albo przeładowana w działaniu bez pliku spod adresu efenix (``_PAGE_FILES``), który zerwała

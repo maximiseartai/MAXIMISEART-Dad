@@ -689,6 +689,43 @@ def test_martwy_link_efenix_i_plik_spoza_efenix_bez_odpowiedzi_nie_zatrzymuja_wy
     assert (outcome.result, _figures(outcome)) == ("OK", _figures_of(1, 1))
 
 
+@pytest.mark.parametrize(
+    ("where", "load"),
+    [
+        pytest.param(LIST_PAGE, 1, id="lista"),
+        pytest.param(ORDER_PAGE, 1, id="strona-zlecenia"),
+        pytest.param(ORDER_PAGE, 2, id="przeladowanie-po-emmetcie"),
+    ],
+)
+def test_milczacy_arkusz_spoza_efenix_przy_otwarciu_strony_to_brak_polaczenia_z_efenix(
+    tmp_path: Path, page: Page, where: str, load: int
+) -> None:
+    """Strona efenix ładuje w ``<head>`` arkusze z innych serwerów (fontawesome, Google Fonts). Serwer, który przyjął
+    żądanie i milczy, sprawia, że strona nie kończy się ładować, a to dla taty „brak połączenia z efenix”, nie zmieniony
+    efenix ze Zgłoszeniem do Maksa."""
+
+    loads: list[str] = []
+
+    def add(route: Route) -> None:
+        loads.append(route.request.url)
+        response = route.fetch()
+        body = response.text()
+        if len(loads) == load:
+            body = body.replace("</head>", '<link rel="stylesheet" href="https://use.fontawesome.com/all.css"></head>', 1)
+        route.fulfill(response=response, body=body)
+
+    held: list[Route] = []
+    page.route(f"**/{where}*", add)
+    page.route("https://**/*", lambda route: held.append(route))
+    order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
+
+    assert len(loads) >= load, loads
+    assert isinstance(outcome.ending, Stop), _ending(outcome)
+    assert (_stop(outcome), outcome.ending.stop_kind) == ("EFENIX_NIEDOSTEPNY", "for_tata")
+
+
 def test_arkusz_stylow_efenix_bez_odpowiedzi_to_brak_polaczenia_z_efenix(tmp_path: Path, page: Page) -> None:
     """Arkusz stylów spod adresu efenix (strona zlecenia efenix ładuje ich sześć), który nie przyszedł, bo połączenie się
     zerwało, to „brak połączenia z efenix” dla taty, jak zerwany skrypt strony."""
