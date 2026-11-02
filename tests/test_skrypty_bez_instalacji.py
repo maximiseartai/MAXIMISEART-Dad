@@ -3,7 +3,8 @@
 CI na Windows instaluje tylko ``requirements.txt``, więc skrypt widzi ``src`` tylko wtedy, gdy sam dopisze go do
 ``sys.path`` (jak ``tools/uruchom_proces.py``). Na Macu ``.venv`` ma instalację edytowalną, która to chowa, więc
 test usuwa z ``sys.path`` każdy katalog z pakietem ``rozliczenia`` i uruchamia ``--help`` każdego skryptu z parserem
-argumentów, tak jak ``python skrypt.py``. Skrypty bez parsera pomija, bo ``--help`` nie zatrzymałoby ich pracy.
+argumentów, tak jak ``python skrypt.py``. Skrypt z ``if __name__ == "__main__"`` bez parsera ładuje pod inną nazwą
+niż ``__main__``, bo ``--help`` nie zatrzymałoby jego pracy, więc sprawdza tylko jego importy.
 
 Skrypt dopisuje każdy katalog jedną linią w jednej postaci (``BOOTSTRAP``) zaraz pod importami biblioteki. Ruff
 zwalnia z E402 importy pod wywołaniem ``sys.path.insert``, ale nie pod przypisaniem ani stałą, więc ta postać nie
@@ -26,15 +27,15 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = sorted([*(ROOT / "tools").glob("**/*.py"), *(ROOT / ".agents" / "skills").glob("*/scripts/**/*.py")])
-WITHOUT_INSTALL = (
+STRIPPED = (
     "import runpy, sys\n"
     "from pathlib import Path\n"
     "script = sys.argv[1]\n"
     "sys.path[:] = [entry for entry in sys.path if not (Path(entry or '.') / 'rozliczenia').is_dir()]\n"
     "sys.path.insert(0, str(Path(script).parent))\n"
-    "sys.argv = [script, '--help']\n"
-    "runpy.run_path(script, run_name='__main__')\n"
 )
+WITHOUT_INSTALL = STRIPPED + "sys.argv = [script, '--help']\nrunpy.run_path(script, run_name='__main__')\n"
+LOADED_WITHOUT_INSTALL = STRIPPED + "runpy.run_path(script, run_name='bez_instalacji')\n"
 BOOTSTRAP = 'sys.path.insert(0, str(Path(__file__).resolve().parents[{parents}] / "{folder}"))'
 BOOTSTRAP_SHAPE = re.compile(
     r"sys\.path\.insert\(0, str\(Path\(__file__\)\.resolve\(\)\.parents\[(\d+)\](?: / '([^']+)')?\)\)"
@@ -42,14 +43,16 @@ BOOTSTRAP_SHAPE = re.compile(
 READING = frozenset({"copy", "count", "index"})
 
 
-def _runs_with_parser(path: Path) -> bool:
+def _entry(path: Path) -> tuple[bool, bool]:
+    """Czy skrypt ma ``if __name__ == "__main__"`` i czy buduje parser argumentów."""
+
     tree = ast.parse(path.read_text(encoding="utf-8"))
     entry = any(isinstance(node, ast.If) and "__main__" in ast.unparse(node.test) for node in tree.body)
     parser = any(
         isinstance(node, ast.Call) and ast.unparse(node.func).rsplit(".", 1)[-1] in ("ArgumentParser", "Parser")
         for node in ast.walk(tree)
     )
-    return entry and parser
+    return entry, parser
 
 
 def _path_changes(tree: ast.Module) -> Iterator[ast.expr | ast.stmt]:
@@ -112,13 +115,9 @@ def test_skrypt_dopisuje_katalogi_do_sys_path_jedna_linia() -> None:
     assert problems == [], "\n".join(problems)
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="CI na Windows i tak uruchamia skrypty bez instalacji pakietu")
-@pytest.mark.parametrize(
-    "script", [path for path in SCRIPTS if _runs_with_parser(path)], ids=lambda path: path.relative_to(ROOT).as_posix()
-)
-def test_skrypt_odpowiada_na_help_bez_zainstalowanego_pakietu(tmp_path: Path, script: Path) -> None:
+def _assert_runs(tmp_path: Path, program: str, script: Path) -> None:
     answered = subprocess.run(
-        [sys.executable, "-c", WITHOUT_INSTALL, str(script)],
+        [sys.executable, "-c", program, str(script)],
         cwd=tmp_path,
         stdin=subprocess.DEVNULL,
         capture_output=True,
@@ -129,3 +128,20 @@ def test_skrypt_odpowiada_na_help_bez_zainstalowanego_pakietu(tmp_path: Path, sc
     )
 
     assert answered.returncode == 0, answered.stderr
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="CI na Windows i tak uruchamia skrypty bez instalacji pakietu")
+@pytest.mark.parametrize(
+    "script", [path for path in SCRIPTS if _entry(path) == (True, True)], ids=lambda path: path.relative_to(ROOT).as_posix()
+)
+def test_skrypt_odpowiada_na_help_bez_zainstalowanego_pakietu(tmp_path: Path, script: Path) -> None:
+    _assert_runs(tmp_path, WITHOUT_INSTALL, script)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="CI na Windows i tak uruchamia skrypty bez instalacji pakietu")
+@pytest.mark.parametrize(
+    "script", [path for path in SCRIPTS if _entry(path) == (True, False)], ids=lambda path: path.relative_to(ROOT).as_posix()
+)
+def test_skrypt_bez_parsera_laduje_sie_bez_zainstalowanego_pakietu(tmp_path: Path, script: Path) -> None:
+    _assert_runs(tmp_path, LOADED_WITHOUT_INSTALL, script)
+

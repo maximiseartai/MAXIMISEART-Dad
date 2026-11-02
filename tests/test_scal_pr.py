@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -934,8 +935,9 @@ def test_przeglad_nie_czeka_dluzej_niz_limit_na_skille_dla_zmiany(tmp_path: Path
     [
         ({}, "SKILLE VERIFY: nieznane (HEAD PR nie ma tools/skille_dla_zmiany.py)"),
         ({"tools/skille_dla_zmiany.py": 'print("verify-a: kod/inne.py")\nraise SystemExit("plan CI zepsuty")\n'}, "SKILLE VERIFY: nieznane (tools/skille_dla_zmiany.py: plan CI zepsuty)"),
+        ({"tools/skille_dla_zmiany.py": "raise SystemExit(3)\n"}, "SKILLE VERIFY: nieznane (tools/skille_dla_zmiany.py: kod 3)"),
     ],
-    ids=["bez-narzedzia", "narzedzie-pada"],
+    ids=["bez-narzedzia", "narzedzie-pada", "narzedzie-pada-bez-slowa"],
 )
 def test_przeglad_bez_wyniku_skille_dla_zmiany_podaje_skille_nieznane_a_pr_bez_werdyktu_jako_pierwsza_runde(
     tmp_path: Path, files: dict[str, str], skills: str
@@ -1053,6 +1055,52 @@ def test_blad_gh_konczy_sie_linia_fail_z_nazwa_trybu(tmp_path: Path, mode: list[
     assert answered.returncode == 1, answered.stdout + answered.stderr
     assert answered.stdout.startswith(f"{label} FAIL | gh pr view 2 "), answered.stdout
     assert (github.published(), github.merges()) == ([], [])
+
+
+def _git_hanging_on(github: FakeGitHub, subcommand: str) -> None:
+    """``git <subcommand>`` w narzędziu i atrapie ``gh`` czeka minutę i nic nie drukuje; reszta to prawdziwy Git."""
+
+    real = shutil.which("git")
+    assert real is not None
+    fake = github.bin / "git"
+    fake.write_text(f'#!/bin/sh\n[ "$1" = "{subcommand}" ] && exec sleep 60\nexec "{real}" "$@"\n', encoding="utf-8")
+    fake.chmod(0o755)
+
+
+@pytest.mark.parametrize(
+    ("mode", "subcommand", "label"),
+    [(["--przeglad"], "merge-base", "PRZEGLĄD"), ([], "ls-remote", "SCAL")],
+    ids=["przeglad", "merge"],
+)
+def test_git_ktory_wisi_konczy_sie_linia_fail_po_limicie_githuba(tmp_path: Path, mode: list[str], subcommand: str, label: str) -> None:
+    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    # Scalenie z bazą sprawdza tu atrapa ruff i mypy, bo sprawdzenie nie jest celem testu.
+    head = github.open_pull(1, {"tools/ci_lokalnie.py": "print('CI LOKALNIE OK')\n"}, parent=_short_github_timeout(github))
+    github.comment(1, f"WERDYKT: PASS {head}")
+    _git_hanging_on(github, subcommand)
+
+    answered = github.run("1", *mode)
+
+    assert answered.returncode == 1, answered.stdout + answered.stderr
+    assert _last_line(answered).startswith(f"{label} FAIL | Command '['git', '{subcommand}'"), answered.stdout
+    assert _last_line(answered).endswith("timed out after 3 seconds"), answered.stdout
+    assert github.merges() == []
+
+
+def test_przeglad_pr_bez_wspolnej_historii_z_baza_konczy_sie_linia_fail_z_poleceniem_gita(tmp_path: Path) -> None:
+    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    git(github.checkout, "checkout", "--quiet", "--orphan", "obca-historia")
+    orphan = commit(github.checkout, "obca historia")
+    git(github.checkout, "push", "--quiet", "--force", "origin", f"{orphan}:refs/pull/1/head")
+    git(github.checkout, "checkout", "--quiet", "--force", "main")
+    github.update(1, headRefOid=orphan)
+    base = git(github.origin, "rev-parse", "refs/heads/main")
+
+    answered = github.run("1", "--przeglad")
+
+    assert answered.returncode == 1, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"PRZEGLĄD FAIL | git merge-base {base} {orphan}:", answered.stdout
 
 
 def test_werdykt_bez_pliku_konczy_sie_bledem_narzedzia_bez_komentarza(tmp_path: Path) -> None:
