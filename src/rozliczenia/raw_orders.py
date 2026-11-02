@@ -20,8 +20,8 @@ wierszy ma dzień wcześniejszy niż dzień bloku (bez bloku: niż dzień ostatn
 Pojedyncze wcześniejsze dni (usterka z poprzedniego dnia dopisana pod dniem) nie kończą przeglądu. Dzień jest już
 uporządkowany, gdy w przeglądzie stoją dwa kolejne uporządkowane wiersze z jego datą albo jeden, pod którym nie ma
 wiersza wcześniejszego dnia: zlecenie na jutro wpisane w dzisiejszym dniu nie czyni jutra uporządkowanym. Tym
-samym przeglądem, z granicą danego dnia zamiast dnia bloku, ``sheet_days`` oddaje Dni uporządkowane i dni Surowych
-zleceń dla karty Uporządkowania INTERMAX w Centrum rozliczeń.
+samym przeglądem, z granicą w każdym dniu tak jak w dniu bloku, ``sheet_days`` oddaje Dni uporządkowane i dni
+Surowych zleceń dla karty Uporządkowania INTERMAX w Centrum rozliczeń.
 
 Plan dnia (``plan_day``) z bloku wyznacza docelowe wiersze zleceń: jeden pusty wiersz pod żółtym wierszem albo
 10 pustych pod ostatnim uporządkowanym zleceniem, segmenty Wykonawców w kolejności alfabetycznej z jednym
@@ -305,25 +305,37 @@ def recognize(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Ra
 
 @dataclass(frozen=True)
 class SheetDays:
-    """Dni arkusza zleceń: Dni uporządkowane od ``since`` i dni Surowych zleceń na dole arkusza."""
+    """Dni arkusza zleceń: ``ordered`` to Dni uporządkowane od ``since`` albo wśród ``pasted``, dni Surowych zleceń."""
 
     ordered: frozenset[date]
     pasted: frozenset[date]
 
 
 def sheet_days(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, since: date) -> SheetDays:
-    """Dni uporządkowane od ``since`` i dni Surowych zleceń z wierszy arkusza zleceń od ostatniego w górę.
+    """Dni uporządkowane (od ``since`` i wśród dni Surowych zleceń) i dni Surowych zleceń z wierszy od ostatniego w górę.
 
-    Dzień uporządkowany rozpoznaje ten sam przegląd od ostatniego uporządkowanego wiersza w górę co ``recognize``
-    (``_above``), z granicą ``since`` zamiast dnia bloku: przegląd kończy ``_EARLIER_ROWS`` kolejnych wierszy z dniem
-    wcześniejszym niż ``since``. Wiersz z wyglądem z aplikacji nad uporządkowanym też go kończy.
+    Dzień uporządkowany rozpoznaje ten sam przegląd co ``recognize`` dzień bloku (``_above``): od ostatniego
+    uporządkowanego wiersza w górę, z granicą w tym dniu, więc karta i Uporządkowanie INTERMAX mówią o każdym dniu to
+    samo. Przegląd z granicą we wcześniejszym dniu jest dłuższy i zaczyna się tak samo, więc jeden przegląd z
+    najwcześniejszą granicą czyta wiersze dla wszystkich dni.
     """
 
     rows = iter(rows_from_bottom)
-    raw, _, _, ordered = _bottom(rows, columns)
-    found = set[date]() if ordered is None else _above(ordered, rows, columns, since)[1]
+    raw, _, _, first = _bottom(rows, columns)
     pasted_days = frozenset(order.when.date() for order in _pasted(raw, columns) if isinstance(order, RawOrder))
-    return SheetDays(frozenset(day for day in found if day >= since), pasted_days)
+    if first is None:
+        return SheetDays(frozenset(), pasted_days)
+    reviewed: list[RowFacts] = []
+
+    def kept() -> Iterator[RowFacts]:
+        for row in rows:
+            reviewed.append(row)
+            yield row
+
+    found = _above(first, kept(), columns, min((since, *pasted_days)))[1]
+    asked = {day for day in found if day >= since or day in pasted_days}
+    ordered = frozenset(day for day in asked if day in _above(first, iter(reviewed), columns, day)[1])
+    return SheetDays(ordered, pasted_days)
 
 
 def pasted(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> tuple[RawOrder | Undated | WithoutWorker, ...]:

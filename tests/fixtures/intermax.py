@@ -146,6 +146,8 @@ class Intermax:
     """Przygotowane puste wiersze taty z ramką pod dniem, do końca wklejenia i 5 wierszy niżej."""
     older_sheet: bool = False
     """Starszy arkusz zleceń z samymi uporządkowanymi dniami przed arkuszem z wklejeniem."""
+    older_ordered: Sequence[Order] | None = None
+    """Uporządkowane zlecenia starszego arkusza zleceń; bez nich te same co ``ordered``."""
     epoch_1904: bool = False
     excel: bool = True
     raw_date_format: str = APP_DATE_FORMAT
@@ -165,7 +167,8 @@ class Intermax:
         hidden.title = "Arkusz1"
         hidden.sheet_state = "hidden"
         if self.older_sheet:
-            _ordered_days(_order_sheet(workbook, "ZLECENIA OD 08_11_2021"), self.ordered)
+            older = self.ordered if self.older_ordered is None else self.older_ordered
+            _ordered_days(_order_sheet(workbook, "ZLECENIA OD 08_11_2021"), older)
         sheet = _order_sheet(workbook, ORDER_SHEET, frozen=self.frozen)
         workbook.active = len(workbook.worksheets) - 1
         last_ordered = _ordered_days(sheet, self.ordered)

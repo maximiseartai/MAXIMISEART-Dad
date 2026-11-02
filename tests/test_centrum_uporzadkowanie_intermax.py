@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timedelta
 import json
+import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -183,6 +184,61 @@ def test_dni_intermax_ktorego_nie_da_sie_odczytac_to_komunikat_a_w_onedrive_tylk
 
     assert (found["days"], found["problem"]["what"]) == ([], what)
     assert REGISTER_NAME in found["problem"]["where"]
+
+
+def test_po_chwilowej_porazce_odczytu_karta_czyta_intermax_od_nowa_choc_jego_znacznik_zapisu_sie_nie_zmienil(
+    tmp_path: Path,
+) -> None:
+    # OneDrive w trakcie pobierania: plik chwilowo nieczytelny, a po pobraniu ten sam czas zmiany i rozmiar.
+    centrum = ordering_centrum(tmp_path)
+    original, saved = centrum.register.read_bytes(), centrum.register.stat()
+    centrum.register.write_bytes(bytes(len(original)))
+    os.utime(centrum.register, ns=(saved.st_atime_ns, saved.st_mtime_ns))
+    failing = centrum.client.get("/api/intermax/days").json()
+    centrum.register.write_bytes(original)
+    os.utime(centrum.register, ns=(saved.st_atime_ns, saved.st_mtime_ns))
+
+    days = _days(centrum)
+
+    assert failing["problem"] is not None
+    assert (days[0], len(days)) == (("wt 20.10", True), 7)
+
+
+def _orders(day: int, count: int, first: int) -> tuple[Order, ...]:
+    return tuple(Order(datetime(2026, 10, day, 8 + index), "anna.kowalska", first + index) for index in range(count))
+
+
+@pytest.mark.parametrize(
+    ("intermax", "day", "ordered"),
+    [
+        # Tata we wtorek rano wkleja drugi raz poniedziałek, uporządkowany wczoraj w poprzednim okresie.
+        (Intermax(ordered=_orders(26, 2, 1), raw=_orders(26, 2, 1)), "pon 26.10", True),
+        # Sobota z poprzedniego okresu nad całą niedzielą: niedziela jest wcześniejsza niż wtorek, ale nie niż sobota.
+        (Intermax(ordered=_orders(24, 2, 1) + _orders(25, 10, 3), raw=_orders(24, 2, 1)), "sob 24.10", True),
+        # Środa uporządkowana do przodu, pod nią cały wtorek: przegląd środy kończy dziesięć wierszy wtorku.
+        (Intermax(ordered=_orders(28, 2, 1) + _orders(27, 10, 3), raw=_orders(28, 2, 1)), "śr 28.10", False),
+        # Środa uporządkowana w starszym arkuszu, a wklejona w nowym: Planowanie szuka jej tylko w arkuszu wklejenia.
+        (
+            Intermax(ordered=_orders(20, 2, 1), raw=_orders(28, 2, 3), older_sheet=True, older_ordered=_orders(28, 2, 3)),
+            "śr 28.10",
+            False,
+        ),
+    ],
+    ids=["poprzedni-okres", "nad-pozniejszym-dniem", "do-przodu-nad-wtorkiem", "w-starszym-arkuszu"],
+)
+def test_wklejony_dzien_karta_pokazuje_jako_uporzadkowany_wtedy_gdy_uporzadkowanie_odmawia_go_jako_uporzadkowanego(
+    tmp_path: Path, intermax: Intermax, day: str, ordered: bool
+) -> None:
+    clock = Clock([NOW + timedelta(days=1)])
+    centrum = ordering_centrum(tmp_path, intermax, clock=clock)
+
+    days = _days(centrum)
+    view = centrum.run_to_end()
+
+    assert (day, ordered) in days
+    result = view["result"]
+    refusals = [stop for stop in result["stops"] if stop["what"].startswith(f"Dzień {day[-5:]}.2026 jest już uporządkowany.")]
+    assert (result["ending"], len(refusals)) == (("stop", 1) if ordered else ("finished", 0))
 
 
 def test_uporzadkuj_porzadkuje_intermax_z_ustawien_taty_i_pokazuje_liczby_dzien_i_kopie(tmp_path: Path) -> None:

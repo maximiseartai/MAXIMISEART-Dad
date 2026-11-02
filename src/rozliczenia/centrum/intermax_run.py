@@ -5,9 +5,11 @@ okresu: okres Uruchomienia to okres dzisiejszej daty z zegara procesu, ustalony 
 Logi Uruchomienia trafiają do Skrzynki Zgłoszeń przy tym okresie, także przy Zatrzymaniu przed odczytem.
 
 Dni na karcie (``days``) to Dni uporządkowane z silnika (``intermax_ordering.register_days``). Odczyt INTERMAX
-trwa (0,17 s na Macu dla kopii INTERMAX taty, 6,5 MB), a karta pyta o dni przy każdym wejściu i powrocie do okna,
-więc Centrum czyta go od nowa tylko po zmianie znacznika zapisu (``live_file.saved_version``) albo dnia; inaczej
-oddaje poprzedni wynik. Uporządkowanie INTERMAX zmienia ten znacznik, więc dni po nim są świeże.
+trwa (0,17–0,21 s na Macu dla kopii INTERMAX taty, 6,5 MB: mediany 7 odczytów ``register_days`` dla dni od 28.09 do
+26.10.2026), a karta pyta o dni przy każdym wejściu i powrocie do okna, więc Centrum czyta go od nowa tylko po
+zmianie znacznika zapisu (``live_file.saved_version``) albo dnia; inaczej oddaje poprzedni udany odczyt. Nieudanego odczytu (Komunikatu) nie pamięta, więc ponawia go przy następnym pytaniu,
+jak ``live_file.LastGoodReads``: OneDrive po pobraniu pliku nie zmienia jego znacznika. Uporządkowanie INTERMAX
+zmienia ten znacznik, więc dni po nim są świeże.
 
 Konfiguracja wymienia Kopie INTERMAX z tego folderu i przywraca wybraną (``intermax_restore.restore``). Przywrócenie
 zajmuje w ``RunHost`` miejsce „jedno naraz”, bo podmienia INTERMAX, więc nie biegnie obok Uporządkowania INTERMAX.
@@ -44,12 +46,12 @@ _VIEW: Final = INTERMAX.view
 
 @dataclass
 class _DaysRead:
-    """Ostatni odczyt dni: INTERMAX, jego znacznik zapisu, dzień zegara i wynik silnika."""
+    """Ostatni udany odczyt dni: INTERMAX, jego znacznik zapisu, dzień zegara i dni z silnika."""
 
     register: Path
     version: str
     today: date
-    found: tuple[intermax_ordering.RegisterDay, ...] | Message
+    found: tuple[intermax_ordering.RegisterDay, ...]
 
 
 @dataclass
@@ -102,10 +104,10 @@ class IntermaxEntry:
         version = saved_version(register)
         last = self._last_days.read
         if last is not None and (last.register, last.version, last.today) == (register, version, today):
-            found = last.found
+            found: tuple[intermax_ordering.RegisterDay, ...] | Message = last.found
         else:
             found = intermax_ordering.register_days(register, today)
-            if version is not None:
+            if version is not None and not isinstance(found, Message):
                 self._last_days.read = _DaysRead(register, version, today, found)
         if isinstance(found, Message):
             problem = file_only_in_cloud(register) if self.cloud_files.online_only(register) else found

@@ -225,8 +225,9 @@ def register_days(register_path: Path, today: date) -> tuple[RegisterDay, ...] |
     """Dni okresu dnia ``today``, późniejsze Dni uporządkowane i dni Surowych zleceń, po kolei, każdy ze stanem.
 
     Tylko czyta, także INTERMAX otwarty w Excelu (jego ostatnią zapisaną wersję). Dzień uporządkowany rozpoznaje ta
-    sama reguła co Uporządkowanie INTERMAX (``raw_orders.sheet_days``) w każdym arkuszu zleceń. Komunikat, gdy
-    INTERMAX nie da się odczytać, ten sam co w Odczycie danych i Planowaniu procesu.
+    sama reguła co Uporządkowanie INTERMAX (``raw_orders.sheet_days``) w każdym arkuszu zleceń, a dzień Surowych
+    zleceń jest uporządkowany tak jak w arkuszu, w którym są wklejone, bo tam Planowanie szuka go przed drugim
+    wklejeniem. Komunikat, gdy INTERMAX nie da się odczytać, ten sam co w Odczycie danych i Planowaniu procesu.
     """
 
     try:
@@ -236,13 +237,13 @@ def register_days(register_path: Path, today: date) -> tuple[RegisterDay, ...] |
     if not register.order_sheets:
         return messages.no_order_sheet(register_path)
     period = period_of(today)
-    ordered: set[date] = set()
-    shown = {period.tuesday + timedelta(days=offset) for offset in range(7)}
+    sheets: list[raw_orders.SheetDays] = []
     for sheet in register.order_sheets:
         try:
-            found = raw_orders.sheet_days(sheet.rows_from_bottom(), sheet.columns, period.tuesday)
+            sheets.append(raw_orders.sheet_days(sheet.rows_from_bottom(), sheet.columns, period.tuesday))
         except UnsupportedShape:
             return messages.unsupported_shape(register_path, sheet.name)
-        ordered |= found.ordered
-        shown |= found.ordered | found.pasted
+    pasted_in = {day: found for found in sheets for day in found.pasted}
+    ordered = {day for found in sheets for day in found.ordered if day not in pasted_in or day in pasted_in[day].ordered}
+    shown = ordered | pasted_in.keys() | {period.tuesday + timedelta(days=offset) for offset in range(7)}
     return tuple(RegisterDay(day, day in ordered) for day in sorted(shown))
