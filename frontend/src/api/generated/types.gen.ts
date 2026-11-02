@@ -481,6 +481,28 @@ export type Figure = {
 export type FillKind = 'without_rule' | 'from_description';
 
 /**
+ * FillStep
+ *
+ * Uzupełnienie w Excelu: tata robi je w Excelu, Centrum prowadzi na podsumowanie Uzupełnienia pliku zbiorczego;
+ * ``then`` to krok po nim, Wycena w efenix.
+ */
+export type FillStep = {
+    /**
+     * Action
+     */
+    action: 'fill_collective_file';
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Hint
+     */
+    hint: string;
+    then: ProcessStep;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -1156,6 +1178,8 @@ export type PeriodRow = {
     next_step: ({
         action: 'create_worker_settlements' | 'prepare_collective_file' | 'price_in_efenix';
     } & ProcessStep) | ({
+        action: 'fill_collective_file';
+    } & FillStep) | ({
         action: 'none';
     } & ClosedStep);
     secondary_step: ProcessStep | null;

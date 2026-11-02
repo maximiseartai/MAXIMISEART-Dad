@@ -505,9 +505,10 @@ Plik zbiorczy wynika z okresu, więc go nie szukasz: Centrum bierze
    nie sprawdza, czy skończyłeś: to Ty decydujesz, kiedy plik jest gotowy.
 2. Na stronie `Okresy` okres ma Status `Plik zbiorczy przygotowany`. Droga
    okresu na karcie `Następny krok` ma cztery kroki: Plik zbiorczy,
-   Uzupełnienie w Excelu, Wycena w efenix i Rozliczenia pracowników. Dopóki
-   ostatnia Wycena w efenix tego okresu nie skończyła się wynikiem OK, karta
-   pokazuje `Wyceń w efenix`, a `Utwórz rozliczenia pracowników` jest obok w
+   Uzupełnienie w Excelu, Wycena w efenix i Rozliczenia pracowników. Przed
+   Wyceną w efenix tego okresu karta pokazuje `Uzupełnij plik zbiorczy`, a
+   dopóki ostatnia Wycena nie skończyła się wynikiem OK, `Wyceń w efenix`.
+   `Utwórz rozliczenia pracowników` jest obok w
    wierszu okresu w Tablicy okresów: rozliczenia możesz utworzyć także bez
    Wyceny, na przykład gdy efenix nie działa. Po Wycenie z wynikiem OK karta
    pokazuje `Utwórz rozliczenia pracowników`; kliknij `Podgląd bez zapisu`.

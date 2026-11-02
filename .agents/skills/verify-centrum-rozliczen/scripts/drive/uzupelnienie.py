@@ -15,7 +15,15 @@ from playwright.sync_api import Locator, Page, Request, expect
 
 from create_centrum_fixture import PRICE_LIST
 from drive import kontrola_ilosci
-from drive.common import LAST_COMPLETE, ROW_MARKER, Run, last_opened_is, period_files, period_row
+from drive.common import (
+    LAST_COMPLETE,
+    ROW_MARKER,
+    Run,
+    last_opened_is,
+    next_step_names_current_step,
+    period_files,
+    period_row,
+)
 from drive.przygotowanie_pliku_zbiorczego import HIDE_TAB, SHOW_TAB, drive_preparation
 
 FEATURE = "uzupelnienie"
@@ -619,9 +627,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     _drive_entries(run, page)
     run.step(FEATURE, "uzupelnienie-karta")
     page.goto(run.url)
-    next_step = page.get_by_role("region", name="Następny krok")
-    expect(next_step).to_contain_text(LAST_COMPLETE)
-    expect(next_step).to_contain_text("Wyceń w efenix")
+    next_step = next_step_names_current_step(run, page, LAST_COMPLETE, "Uzupełnienie w Excelu")
     fill = next_step.get_by_role("button", name="Uzupełnij", exact=True)
     expect(fill).to_be_visible()
     expect(next_step.get_by_role("button", name="Wyceń w efenix", exact=True)).to_be_visible()

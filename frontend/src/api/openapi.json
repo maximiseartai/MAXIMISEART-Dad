@@ -2652,6 +2652,36 @@
         "title": "FillKind",
         "description": "Rodzaj Ilości do uzupełnienia, który ma listę wierszy."
       },
+      "FillStep": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "const": "fill_collective_file",
+            "title": "Action"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "hint": {
+            "type": "string",
+            "title": "Hint"
+          },
+          "then": {
+            "$ref": "#/components/schemas/ProcessStep"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "label",
+          "hint",
+          "then"
+        ],
+        "title": "FillStep",
+        "description": "Uzupełnienie w Excelu: tata robi je w Excelu, Centrum prowadzi na podsumowanie Uzupełnienia pliku zbiorczego;\n``then`` to krok po nim, Wycena w efenix."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3734,6 +3764,9 @@
                 "$ref": "#/components/schemas/ProcessStep"
               },
               {
+                "$ref": "#/components/schemas/FillStep"
+              },
+              {
                 "$ref": "#/components/schemas/ClosedStep"
               }
             ],
@@ -3742,6 +3775,7 @@
               "propertyName": "action",
               "mapping": {
                 "create_worker_settlements": "#/components/schemas/ProcessStep",
+                "fill_collective_file": "#/components/schemas/FillStep",
                 "none": "#/components/schemas/ClosedStep",
                 "prepare_collective_file": "#/components/schemas/ProcessStep",
                 "price_in_efenix": "#/components/schemas/ProcessStep"

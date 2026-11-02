@@ -110,6 +110,16 @@ class ProcessStep(_Model):
     preview_hint: str | None
 
 
+class FillStep(_Model):
+    """Uzupełnienie w Excelu: tata robi je w Excelu, Centrum prowadzi na podsumowanie Uzupełnienia pliku zbiorczego;
+    ``then`` to krok po nim, Wycena w efenix."""
+
+    action: Literal["fill_collective_file"]
+    label: str
+    hint: str
+    then: ProcessStep
+
+
 class ClosedStep(_Model):
     """Okres jest zamknięty: następnego kroku nie robi żaden proces."""
 
@@ -118,7 +128,7 @@ class ClosedStep(_Model):
     hint: str
 
 
-NextStep = Annotated[ProcessStep | ClosedStep, Field(discriminator="action")]
+NextStep = Annotated[ProcessStep | FillStep | ClosedStep, Field(discriminator="action")]
 
 PathStage = Literal["done", "now", "later", "not_done"]
 
