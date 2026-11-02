@@ -4,7 +4,8 @@ Do wyboru są okresy, które mają Plik zbiorczy (Status okresu „Plik zbiorczy
 pracowników gotowe”); Plik zbiorczy wynika z folderu okresów i okresu, a Status okresu się nie zmienia. Wycena w efenix
 nie ma Podglądu bez zapisu, więc start bez zapisu jest odrzucony. Okno efenix (``EfenixWindow``) to w Centrum taty
 widoczne okno zainstalowanego Google Chrome w trwałym profilu narzędzia (``efenix_browser.default_profile``), w którym
-proces czeka, aż tata się zaloguje; testy i weryfikacja podają Chromium Playwrighta i adres Atrapy efenix.
+proces czeka, aż tata się zaloguje i pracuje w tempie ludzkim, a Ślad Wyceny Emmetta leży w ``config/`` narzędzia; testy
+i weryfikacja podają Chromium Playwrighta, adres Atrapy efenix, własny folder śladu i okno bez tempa.
 """
 
 from __future__ import annotations
@@ -15,13 +16,14 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Final
 
-from rozliczenia import efenix_browser
+from rozliczenia import efenix_browser, efenix_emmett_trace
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.catalog import EFENIX
 from rozliczenia.centrum.configuration import InputWorkbook, open_in_excel
 from rozliczenia.centrum.period_board import located_period_folder, observed_period_folder, read_board, requested_period
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun
+from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import OpenEfenix
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.period_folder import PeriodStatus, collective_file_name, scan_period_folders
@@ -37,23 +39,27 @@ EFENIX_URL: Final = "https://efenix.pl/index.php"
 
 @dataclass(frozen=True)
 class EfenixWindow:
-    """Okno efenix, które Centrum otwiera dla Wyceny w efenix: adres listy zleceń, profil i przeglądarka.
+    """Okno efenix, które Centrum otwiera dla Wyceny w efenix: adres listy zleceń, profil, przeglądarka, folder Śladów
+    Wyceny Emmetta (``efenix_emmett_trace``) i tempo ludzkie (``efenix_pace``).
 
     ``channel`` ``"chrome"`` to zainstalowany Google Chrome, ``None`` Chromium Playwrighta; ``headless`` i ``arguments``
-    są tylko dla testów i weryfikacji, które nie mają ekranu.
+    są tylko dla testów i weryfikacji, które nie mają ekranu, a ``pace`` ``None`` (bez przerw) tylko dla Atrapy efenix.
     """
 
     url: str
     profile: Path
+    trace_directory: Path
     channel: str | None = "chrome"
     headless: bool = False
     arguments: tuple[str, ...] = ()
+    pace: Pace | None = Pace()
 
     @classmethod
     def of_tata(cls) -> EfenixWindow:
-        """Widoczne okno Google Chrome taty w profilu narzędzia z prawdziwym efenix."""
+        """Widoczne okno Google Chrome taty w profilu narzędzia z prawdziwym efenix, w tempie ludzkim, ze Śladem Wyceny
+        Emmetta w ``config/`` narzędzia."""
 
-        return cls(EFENIX_URL, efenix_browser.default_profile())
+        return cls(EFENIX_URL, efenix_browser.default_profile(), efenix_emmett_trace.default_directory())
 
     def opener(self) -> OpenEfenix:
         return lambda login: efenix_browser.chrome(
@@ -102,7 +108,7 @@ class EfenixEntry:
             raise contract.Refusal(409, _NO_PREVIEW)
         period = requested_period(request.period)
         source = located_period_folder(periods_directory, period).collective_file
-        inputs = EfenixInputs(source, self.window.opener())
+        inputs = EfenixInputs(source, self.window.opener(), self.window.pace, self.window.trace_directory)
         return PreparedRun(declaration=EFENIX, period=period.token, process=EFENIX.core(self.processes), inputs=inputs)
 
 

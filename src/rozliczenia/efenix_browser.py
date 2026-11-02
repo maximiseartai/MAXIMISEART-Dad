@@ -12,9 +12,11 @@ jej odpowiedź trafia do ``#wyniki`` w dowolnej chwili. Kolumny tabeli rozpoznaj
 login realizatora z ``small.text-default`` komórki Wykonawca (obok niego w ``<small>`` stoi data), a stronę zlecenia
 otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony albo szukania na ``page_login.php`` to
 ``LoggedOut``, adres, który nie odpowiada, to ``EfenixUnreachable``, a strona bez oczekiwanej budowy, element obecny,
-ale niewidoczny, albo brak odpowiedzi w czasie ``timeout_ms`` to ``UnexpectedPage``. Przeglądarkę daje rozmówca: stronę (``window``), Chromium Playwrighta (``chromium``)
-albo widoczne okno zainstalowanego Google Chrome w trwałym profilu narzędzia (``chrome``), które nie startuje
-(``BrowserNotStarted``), gdy Chrome nie ma albo jego profil trzyma inne okno.
+ale niewidoczny, albo brak odpowiedzi w czasie ``timeout_ms`` to ``UnexpectedPage``. Działanie w zamkniętej karcie albo
+oknie, także zamkniętym w trakcie działania, to ``WindowClosed``, cokolwiek zgłosił wtedy Playwright. Przeglądarkę daje
+rozmówca: stronę (``window``), Chromium Playwrighta (``chromium``) albo widoczne okno zainstalowanego Google Chrome w
+trwałym profilu narzędzia (``chrome``), które nie startuje (``BrowserNotStarted``), gdy Chrome nie ma albo jego profil
+trzyma inne okno.
 
 Okno z ``Login`` od silnika (``chrome`` zawsze, ``window`` na życzenie) na stronie logowania czeka, aż tata się zaloguje:
 co ``LOGIN_POLL_MS`` sprawdza, czy strona przeszła na inną niż logowanie, albo pyta efenix o listę zleceń w tej samej
@@ -42,16 +44,17 @@ muszą być w skryptach tych stron, bo okno polega na ich działaniu (``LIST_SCR
 
 from __future__ import annotations
 
+import functools
+import json
+import re
+import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-import json
 from pathlib import Path
-import re
-import time
-from typing import Final, TypedDict
+from typing import Concatenate, Final, ParamSpec, TypedDict, TypeVar
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from playwright.sync_api import Error as PlaywrightError
@@ -168,6 +171,30 @@ _DISMISS: Final = '[data-dismiss="modal"]'
 _SHOWS: Final = "([selector, text]) => document.querySelector(selector)?.textContent.trim() === text"
 
 
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _in_open_window(action: Callable[Concatenate[BrowserEfenix, _P], _R]) -> Callable[Concatenate[BrowserEfenix, _P], _R]:
+    """Działanie okna, które w karcie zamkniętej przed nim albo w jego trakcie zgłasza ``WindowClosed``.
+
+    Każdy wyjątek działania w karcie, która jest już zamknięta, to zamknięte okno, a nie lista typów: Playwright zgłasza
+    wtedy błąd, a okno mogło go już zamienić na ``EfenixUnreachable`` albo, gdy karta zamknęła się między odpowiedzią
+    efenix a odczytem jej treści, na ``UnexpectedPage``.
+    """
+
+    @functools.wraps(action)
+    def guarded(efenix: BrowserEfenix, /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
+        try:
+            return action(efenix, *args, **kwargs)
+        except Exception as error:
+            if efenix.closed:
+                raise WindowClosed from error
+            raise
+
+    return guarded
+
+
 @dataclass(frozen=True)
 class PageElement:
     """Element strony efenix, którego używa okno: jest na stronie dokładnie raz (``many``: co najmniej raz), a ten, który
@@ -246,6 +273,13 @@ class BrowserEfenix:
 
         return self._sent_change
 
+    @property
+    def closed(self) -> bool:
+        """Karta okna jest zamknięta: tata zamknął ją albo całe okno przeglądarki."""
+
+        return self._page.is_closed()
+
+    @_in_open_window
     def open_list(self) -> None:
         """Otwiera listę zleceń; ``EfenixUnreachable``, gdy adres nie odpowiada."""
 
@@ -301,6 +335,7 @@ class BrowserEfenix:
         location = urlparse(response.headers.get("location", "")).path
         return response.ok and not location.endswith(LOGIN_PAGE)
 
+    @_in_open_window
     def search(self, number: str) -> Sequence[ListedOrder]:
         """Wiersze tabeli wyników po szukaniu ``number`` w polu ``Numer`` listy zleceń."""
 
@@ -319,6 +354,7 @@ class BrowserEfenix:
             raise UnexpectedPage(PagePart.RESULTS) from error
         return read_results(self._page, html)
 
+    @_in_open_window
     def open_order(self, order: ListedOrder) -> OrderPricing:
         """Otwiera stronę zlecenia ``order`` i czyta datę wykonania, kwotę końcową i ilości pozycji."""
 
@@ -328,6 +364,7 @@ class BrowserEfenix:
             raise EfenixUnreachable from error
         return self._read_order()
 
+    @_in_open_window
     def set_execution_date(self, day: date) -> bool:
         """Wybiera ``day`` w kalendarzu okna „Wybierz datę wykonania” i potwierdza go, gdy kalendarz go przyjął.
 
@@ -351,6 +388,7 @@ class BrowserEfenix:
             raise LoggedOut
         return True
 
+    @_in_open_window
     def load_emmett(self) -> OrderPricing:
         """Ładuje Wycenę Emmetta do otwartego zlecenia i czyta stronę po przeładowaniu, które robi skrypt efenix."""
 
@@ -361,6 +399,7 @@ class BrowserEfenix:
             self._answer(_LOAD_EMMETT, lambda _params: True, lambda: self._click(load, PagePart.EMMETT), PagePart.EMMETT)
         return self._read_order()
 
+    @_in_open_window
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
         """Wpisuje ``quantity`` w pole „Ilość” pozycji ``position`` i zwraca kwotę końcową z odpowiedzi efenix."""
 

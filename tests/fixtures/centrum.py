@@ -433,7 +433,14 @@ def centrum(tmp_path: Path, *, today: date = date(2026, 10, 19)) -> Centrum:
         clock=clock,
         pause=clock.pause,
         # Wycena w efenix w tym Centrum nie dociera do żadnego efenix: pod tym adresem nic nie odpowiada.
-        efenix_window=EfenixWindow("http://127.0.0.1:9/index.php", tmp_path / "przegladarka-efenix", channel=None, headless=True),
+        efenix_window=EfenixWindow(
+            "http://127.0.0.1:9/index.php",
+            tmp_path / "przegladarka-efenix",
+            tmp_path / "slad-wyceny-emmetta",
+            channel=None,
+            headless=True,
+            pace=None,
+        ),
     )
     client = CentrumClient(app)
     return Centrum(client, platform, settings_path, metrics, log_path, report_box, clock)

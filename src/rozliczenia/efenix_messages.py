@@ -12,7 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Final
 
-from .efenix_checks import DateRefused, OrderProblem
+from .efenix_checks import DateRefused, OrderProblem, PagePart
 from .efenix_marking import Refusal
 from .efenix_positions import Conflict, NotWholeQuantities, OrderFault, OtherAmount, PricedDifferently, UnpairedColumns, column_of
 from .message import REPORT_TO_MAINTAINER, Message, file_label
@@ -118,9 +118,9 @@ def logged_out(*, kept: bool) -> Message:
 
     return Message(
         code="EFENIX_WYLOGOWANY",
-        what=f"efenix pokazał stronę logowania, więc {_PROCESS} się zatrzymała. {_after_stop(kept=kept)}",
+        what=f"efenix wylogował i pokazał stronę logowania, więc {_PROCESS} się zatrzymała. {_after_stop(kept=kept)}",
         where=_EFENIX,
-        action="Zaloguj się w efenix i uruchom ponownie.",
+        action="Zaloguj się w efenix i uruchom ponownie. Gotowe zlecenia narzędzie tylko sprawdzi, a resztę wyceni dalej.",
     )
 
 
@@ -135,17 +135,21 @@ def window_closed(*, kept: bool) -> Message:
     )
 
 
-def efenix_changed(*, kept: bool) -> Message:
-    """Strona efenix wygląda inaczej, niż zna ją narzędzie; ``kept`` jak w ``logged_out``."""
+def efenix_changed(part: PagePart, *, kept: bool) -> Message:
+    """Strona efenix nie ma w części ``part`` budowy, którą zna narzędzie; ``kept`` jak w ``logged_out``.
+
+    Zatrzymanie „do Maksa”, więc Centrum daje przy nim Diagnozę i Zgłoszenie, a Maks dostaje je razem z Logami
+    Uruchomienia. „Gdzie” nazywa tylko część strony, bez treści strony.
+    """
 
     return Message(
         code="EFENIX_ZMIENIONY",
         what=(
-            "Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i dalej niczego w niej nie klika. "
-            f"{_after_stop(kept=kept)}"
+            "efenix się zmienił, Maks już wie. Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i "
+            f"dalej niczego w niej nie klika. {_after_stop(kept=kept)}"
         ),
-        where=_EFENIX,
-        action=REPORT_TO_MAINTAINER,
+        where=f"{_EFENIX}, {part.value}",
+        action=f"Wycenę pozostałych zleceń zrób w efenix sam albo poczekaj na poprawkę narzędzia. {REPORT_TO_MAINTAINER}",
     )
 
 

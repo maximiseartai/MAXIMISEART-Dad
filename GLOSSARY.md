@@ -68,12 +68,26 @@ Ilości usług z Pliku zbiorczego. Nikt ich nie nadpisuje: gdy różnią się od
 Pliku zbiorczego, sprzeczność rozstrzyga tata. Załadowanie Wyceny Emmetta
 czyści wycenę, którą zlecenie już ma.
 
+## Ślad Wyceny Emmetta
+
+Zapis na komputerze taty, poza OneDrive i poza Gitem, o zleceniach okresu, do
+których Wycena w efenix sama załadowała Wycenę Emmetta. Zlecenie ma w nim stan
+„Emmett załadowany” z ilościami Wyceny Emmetta, które narzędzie odczytało ze
+strony po „Załaduj do zlecenia”, a po wyniku zlecenia (gotowe, ostrzeżenie
+Emmetta albo błąd) stan „gotowe”. Ponowne uruchomienie dokańcza tylko wycenę
+zlecenia w stanie „Emmett załadowany”, gdy strona ma wyłącznie te ilości Emmetta
+i ilości Pliku zbiorczego w pozycjach pustych u Emmetta; każdą inną wycenę,
+która już jest, także zaczętą przez tatę albo skończoną, tylko porównuje.
+_Avoid_: historia, pamięć, dziennik
+
 ## Znacznik efenix
 
 Jasnofioletowe wypełnienie komórki `ADRES` zlecenia w Pliku zbiorczym: wycena
 tego zlecenia jest uzupełniona w efenix Ilościami usług z Pliku zbiorczego, jej
 kwota jest równa `Kwota` (AU), a Przekazanie do akceptacji należy do taty. Nie jest
-Wyróżnieniem i nie przechodzi do Rozliczeń pracowników.
+Wyróżnieniem i nie przechodzi do Rozliczeń pracowników. Nowy Plik zbiorczy ma
+`ADRES` bez wypełnienia, a żółte `ADRES` stawia tata, gdy zlecenie jest
+rozliczone z firmą.
 _Avoid_: kolor gotowości, zaznaczenie
 
 ## Surowe zlecenia

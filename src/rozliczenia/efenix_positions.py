@@ -7,7 +7,9 @@ zawsze różni się od pliku. Reguły biorą ilości pliku po kodach (``file_qua
 (kod → ilość, pole puste to 0): wycena, która już jest, różni się od pliku ilością albo kwotą (``priced_differently``); Wycena Emmetta
 jest sprzeczna z plikiem w pozycjach, w których Emmett wpisał ilość inną niż plik (``emmett_conflicts``); dopisać
 trzeba ilości pliku w pozycjach pustych u Emmetta (``to_enter``), a pozycja pusta u Emmetta przy 0 w pliku zostaje pusta.
-Kwota końcowa efenix i ``Kwota`` (AU) są równe co do grosza (``same_amount``).
+Strona zlecenia jest taka, jaką narzędzie zostawia po Wycenie Emmetta (``as_left_after_emmett``), gdy każda pozycja z
+ilością Emmetta ma tę ilość, a każda pozycja pusta u Emmetta jest pusta albo ma ilość pliku. Kwota końcowa efenix i
+``Kwota`` (AU) są równe co do grosza (``same_amount``).
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ __all__ = [
     "OtherAmount",
     "PricedDifferently",
     "UnpairedColumns",
+    "as_left_after_emmett",
     "column_of",
     "emmett_conflicts",
     "file_quantities",
@@ -168,6 +171,18 @@ def emmett_conflicts(file: Mapping[str, int], emmett: Mapping[str, int]) -> tupl
         Conflict(position, quantity, file.get(position, 0))
         for position, quantity in sorted(emmett.items())
         if quantity != 0 and quantity != file.get(position, 0)
+    )
+
+
+def as_left_after_emmett(file: Mapping[str, int], emmett: Mapping[str, int], on_page: Mapping[str, int]) -> bool:
+    """Strona ``on_page`` ma tylko ilości, które zostawia narzędzie po Wycenie Emmetta ``emmett``: w każdej pozycji, w
+    której Emmett wpisał ilość, tę samą ilość, a w każdej pozycji pustej u Emmetta nic albo ilość pliku ``file``."""
+
+    return all(
+        on_page.get(position, 0) == emmett[position]
+        if emmett.get(position, 0)
+        else on_page.get(position, 0) in (0, file.get(position, 0))
+        for position in emmett.keys() | on_page.keys()
     )
 
 

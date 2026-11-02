@@ -26,6 +26,7 @@ from rozliczenia.centrum import (
 from rozliczenia.centrum.tool_update import LIBRARIES_FAILED, NEW_VERSION_FAILED, ROLLBACK_FAILED, UNEXPECTED
 from rozliczenia.efenix_checks import DateRefused, OrderProblem
 from rozliczenia.efenix_marking import Refusal
+from rozliczenia.efenix_pricing import PagePart
 from rozliczenia.efenix_positions import Conflict, NotWholeQuantities, OrderFault, OtherAmount, PricedDifferently, UnpairedColumns
 from rozliczenia.message import Message
 from rozliczenia.period_folder import (
@@ -308,7 +309,10 @@ EFENIX_SAMPLES: Samples = {
     "amounts_not_computed": [lambda: efenix_messages.amounts_not_computed(SOURCE, 18)],
     "logged_out": [partial(efenix_messages.logged_out, kept=kept) for kept in (False, True)],
     "window_closed": [partial(efenix_messages.window_closed, kept=kept) for kept in (False, True)],
-    "efenix_changed": [partial(efenix_messages.efenix_changed, kept=kept) for kept in (False, True)],
+    "efenix_changed": [
+        partial(efenix_messages.efenix_changed, PagePart.LIST, kept=False),
+        partial(efenix_messages.efenix_changed, PagePart.EMMETT, kept=True),
+    ],
     "efenix_unreachable": [partial(efenix_messages.efenix_unreachable, kept=kept) for kept in (False, True)],
     "browser_not_started": [efenix_messages.browser_not_started],
     "order_error": [partial(efenix_messages.order_error, SOURCE, 23, problem) for problem in _ORDER_FAULTS],
