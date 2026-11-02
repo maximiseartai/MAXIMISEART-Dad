@@ -102,7 +102,8 @@ The Centrum log goes to ``<root>/logs/centrum-rozliczen.log``, and the button
 Wycena w efenix never reaches efenix.pl (ADR 0024): this script serves the Atrapa efenix of the tests
 (``tests/fixtures/atrapa_efenix.py``) on a free local port for as long as Centrum runs, writes its address to
 ``<root>/efenix/adres.txt``, and gives Centrum an efenix window in Playwright's headless Chromium with its profile in
-``<root>/przegladarka-efenix``. The Atrapa holds ``EFENIX_ORDERS`` (made-up numbers, addresses and logins), starts
+``<root>/przegladarka-efenix``, its Ślad Wyceny Emmetta in ``<root>/slad-wyceny-emmetta`` and no human pace, like the
+tests of the process (Dad's window pauses about 20 s per order). The Atrapa holds ``EFENIX_ORDERS`` (made-up numbers, addresses and logins), starts
 logged out, so the window waits for Dad's login, and answers each search after ``EFENIX_SEARCH_DELAY_S``, so the
 live progress can be seen; a form posted to its ``page_login.php`` logs in. At its first start for a run root the
 script also writes the Plik zbiorczy of those orders, with the Kwota (AU) Excel computed, to

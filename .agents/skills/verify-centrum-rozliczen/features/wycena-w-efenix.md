@@ -42,6 +42,7 @@ Preconditions:
 ## Gotchas
 
 - The efenix window is a second Chromium that Centrum starts itself (`EfenixWindow` in `serve_centrum.py`); the drive cannot click in it, so Dad's login is the harness posting the Atrapa's login form, which logs in the Atrapa's one session. The window notices it within 2 s (`LOGIN_POLL_MS`).
+- The window on the Atrapa has no human pace (`pace=None`) and keeps its Ślad Wyceny Emmetta under the run root; with Dad's pace (about 20 s per order) the feature would take minutes.
 - Without the 1 s search delay the three orders end in milliseconds and the progressbar `Zlecenia` cannot be seen.
 - The Atrapa restarts with Centrum (Aktualizacja narzędzia): it is logged out again, and its orders are fresh, so the feature does not depend on an earlier Wycena in the run.
 - In `all` the feature runs after every feature that counts periods or Logi, because its Folder okresu `08_14_09_2026` and its file of Logi would change their counts.

@@ -25,7 +25,7 @@ from rozliczenia import TOOL_ROOT, settlement_messages
 from rozliczenia.centrum import app, contract, runs
 from rozliczenia.centrum.efenix_run import EfenixWindow
 from rozliczenia.centrum.tool_update import Release
-from rozliczenia.efenix_pace import Pace
+from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.period_folder import PeriodFolderInaccessible
 
 from tests.fixtures.atrapa_efenix import AtrapaEfenix, amount_of, atrapa_efenix
@@ -697,6 +697,21 @@ def test_okno_efenix_taty_pracuje_w_tempie_ludzkim_a_slad_wyceny_emmetta_trzyma_
     assert (window.pace, window.trace_directory.parent) == (Pace(sleep=time.sleep, clock=time.monotonic), TOOL_ROOT / "config")
 
 
+def test_wycena_w_efenix_z_centrum_pracuje_w_tempie_ludzkim_okna_efenix(tmp_path: Path) -> None:
+    """Centrum daje procesowi tempo swojego okna efenix: przerwę przed każdym działaniem w efenix. Na zegarze, który stoi,
+    przerwa w zleceniu to ``ACTION_PAUSE_S``, a przed szukaniem następnego zlecenia próg podtrzymania sesji."""
+
+    pauses: list[float] = []
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        pace = Pace(sleep=pauses.append, clock=lambda: 0.0)
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url, efenix_pace=pace))
+        write_collective_file(centrum.period_parent, PRICED)
+        assert _start_pricing(centrum).status_code == 200
+        finished = finished_view(centrum.client)
+
+    assert (finished["result"]["result"], pauses[0], set(pauses)) == ("WYMAGA_SPRAWDZENIA", ACTION_PAUSE_S, {ACTION_PAUSE_S, KEEPALIVE_S})
+
+
 def _pricing_centrum(tmp_path: Path, atrapa: AtrapaEfenix, *arguments: str) -> SettlingCentrum:
     """Centrum, którego okno efenix to Chromium na Atrapie z argumentami ``arguments``; Folder okresu ma Plik zbiorczy
     z ``PRICED``."""
@@ -724,7 +739,7 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
     """Okres z Plikiem zbiorczym ma przycisk Wyceny w efenix bez Podglądu bez zapisu. W trakcie czekania na logowanie
     inne Uruchomienie nie startuje, a karta po wyniku ma błędy i ostrzeżenia Emmetta z numerem zlecenia i Wykonawcą
     oraz liczby pominiętych. Nowe Powiadomienie (kropka na dzwonku) ma tytuł wyniku, okres i liczby zleceń, a prowadzi
-    do karty tego Uruchomienia z jego Logów."""
+    do karty tego Uruchomienia z jego Logów. Ślad Wyceny Emmetta okresu trafia do folderu śladów okna efenix Centrum."""
 
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
@@ -742,6 +757,7 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
     card = centrum.client.get(f"/api/runs/{notification['run_id']}/card").json()
 
     assert (notifications["unread"], notification["unread"]) == (1, True)
+    assert (tmp_path / "slad-wyceny-emmetta" / f"{PERIOD}.json").is_file()
     assert (notification["headline"], notification["period"], notification["orders"], notification["stopped"]) == (
         "Wycena w efenix gotowa · wymaga sprawdzenia",
         PERIOD,
