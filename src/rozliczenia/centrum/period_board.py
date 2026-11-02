@@ -49,6 +49,12 @@ _PRICE: Final = contract.ProcessStep(
     hint="Najpierw uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij.",
     preview_hint=None,
 )
+_FILL: Final = contract.FillStep(
+    action="fill_collective_file",
+    label="Uzupełnij plik zbiorczy",
+    hint="Uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij.",
+    then=_PRICE,
+)
 _PRICE_AGAIN: Final = _PRICE.model_copy(
     update={"hint": "Ostatnia Wycena w efenix nie skończyła się wynikiem OK. Sprawdź jej wynik i uruchom ją ponownie."}
 )
@@ -79,7 +85,8 @@ def _pricing(result: contract.RunResult | None) -> Pricing:
 
 
 def _path(status: PeriodStatus, pricing: Pricing) -> list[contract.PathStep]:
-    """Krok jest zrobiony po kolei; Uzupełnienie w Excelu kończy Gotowość, którą potwierdza start Wyceny w efenix."""
+    """Krok jest zrobiony po kolei; Uzupełnienie w Excelu kończy Gotowość, którą potwierdza skończone Uruchomienie
+    Wyceny w efenix okresu w Historii albo Rozliczenia pracowników."""
 
     settled = status == "worker_settlements_ready"
     done = (
@@ -97,7 +104,8 @@ def _path(status: PeriodStatus, pricing: Pricing) -> list[contract.PathStep]:
 
 
 def _steps(status: PeriodStatus, pricing: Pricing) -> tuple[contract.NextStep, contract.ProcessStep | None]:
-    """Następny krok okresu i krok obok niego: Przebieg rozliczeń nie czeka na Wycenę w efenix, tylko po niej stoi."""
+    """Następny krok okresu, czyli bieżący krok Drogi okresu, i krok obok niego: Przebieg rozliczeń nie czeka na Wycenę
+    w efenix, tylko po niej stoi."""
 
     match status:
         case "no_period_files":
@@ -105,9 +113,13 @@ def _steps(status: PeriodStatus, pricing: Pricing) -> tuple[contract.NextStep, c
         case "worker_settlements_ready":
             return _CLOSED, None
         case "collective_file_prepared":
-            if pricing == "ok":
-                return _SETTLE, None
-            return (_PRICE if pricing == "not_run" else _PRICE_AGAIN), _SETTLE_BEFORE_PRICING
+            match pricing:
+                case "not_run":
+                    return _FILL, _SETTLE_BEFORE_PRICING
+                case "unfinished":
+                    return _PRICE_AGAIN, _SETTLE_BEFORE_PRICING
+                case "ok":
+                    return _SETTLE, None
 
 
 def _row(folder: PeriodFolder, *, last_complete: bool, pricing: Pricing) -> contract.PeriodRow:

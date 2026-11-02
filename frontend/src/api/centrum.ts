@@ -100,6 +100,7 @@ export type {
   PinnableRun,
   ProcessRun,
   ProcessStep,
+  FillStep,
   ProcessSetup,
   Progress,
   ProgressStep,

@@ -22,6 +22,7 @@ from drive.common import (
     finished_result,
     history_rows,
     last_opened_is,
+    next_step_names_current_step,
     period_choice,
     period_files,
     period_row,
@@ -213,20 +214,24 @@ def drive_settlement(run: Run, page: Page) -> None:
     run.step(feature, "przebieg-podglad")
     records_before = len(_settlement_records(run, "przebieg-metryki-przed"))
     page.goto(run.url)
-    next_step = page.get_by_role("region", name="Następny krok")
-    expect(next_step).to_contain_text("Wyceń w efenix")
+    next_step = next_step_names_current_step(run, page, LAST_COMPLETE, "Uzupełnienie w Excelu")
     expect(next_step.get_by_role("button", name="Podgląd bez zapisu")).to_have_count(0)
+    run.capture(page, "4e-przebieg-krok-uzupelnienie")
+    with priced_in_efenix(run, LAST_COMPLETE, "WYMAGA_SPRAWDZENIA"):
+        page.reload()
+        next_step_names_current_step(run, page, LAST_COMPLETE, "Wycena w efenix")
+        run.capture(page, "4f-przebieg-krok-wycena")
     with priced_in_efenix(run, LAST_COMPLETE):
         page.reload()
-        expect(next_step).to_contain_text("Utwórz rozliczenia pracowników")
+        next_step_names_current_step(run, page, LAST_COMPLETE, "Rozliczenia pracowników")
         path = next_step.get_by_role("list", name="Droga okresu")
         expect(path.get_by_role("img", name="zrobione")).to_have_count(3)
-        expect(path.locator('[aria-current="step"]')).to_contain_text("Rozliczenia pracowników")
         run.check(
             True,
             "Następny krok offers Przebieg rozliczeń once the Wycena w efenix of the period ended OK (harness: its "
-            "record in the Historia); before it, Wyceń w efenix",
+            "record in the Historia); before it, Uzupełnij and then Wyceń w efenix",
         )
+        run.capture(page, "4g-przebieg-krok-rozliczenia")
         next_step.get_by_role("button", name="Podgląd bez zapisu").click()
         live = page.get_by_role("region", name="Podgląd na żywo")
         expect(live).to_contain_text("Podgląd gotowy · nic nie zapisano")
