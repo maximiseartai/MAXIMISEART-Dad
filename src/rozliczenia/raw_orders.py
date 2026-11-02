@@ -14,14 +14,14 @@ Sam blok, bez przeglądu nad nim i bez przeszkód, oddaje ``pasted``: z niego Pr
 z których dni są Surowe zlecenia.
 
 Przeszkody: wiersz z wyglądem z aplikacji nad uporządkowanym wierszem, Surowe zlecenie bez daty z godziną albo bez
-Wykonawcy, blok z więcej niż jednego dnia i dzień, który już jest uporządkowany. Pierwsza i ostatnia wymagają
-przeglądu nad blokiem: od ostatniego uporządkowanego wiersza w górę, aż ``_EARLIER_ROWS`` kolejnych uporządkowanych
-wierszy ma dzień wcześniejszy niż dzień bloku (bez bloku: niż dzień ostatniego uporządkowanego wiersza z datą).
-Pojedyncze wcześniejsze dni (usterka z poprzedniego dnia dopisana pod dniem) nie kończą przeglądu. Dzień jest już
-uporządkowany, gdy w przeglądzie stoją dwa kolejne uporządkowane wiersze z jego datą albo jeden, pod którym nie ma
-wiersza wcześniejszego dnia: zlecenie na jutro wpisane w dzisiejszym dniu nie czyni jutra uporządkowanym. Tym
-samym przeglądem, z granicą w każdym dniu tak jak w dniu bloku, ``sheet_days`` oddaje Dni uporządkowane i dni
-Surowych zleceń dla karty Uporządkowania INTERMAX w Centrum rozliczeń.
+Wykonawcy i blok z więcej niż jednego dnia. Pierwsza wymaga przeglądu nad blokiem (``_above``): od ostatniego
+uporządkowanego wiersza w górę, aż ``_EARLIER_ROWS`` kolejnych uporządkowanych wierszy ma dzień wcześniejszy niż
+granica przeglądu, tu dzień bloku (bez bloku: dzień ostatniego uporządkowanego wiersza z datą). Pojedyncze
+wcześniejsze dni (usterka z poprzedniego dnia dopisana pod dniem) nie kończą przeglądu. Ten sam przegląd z granicą
+``since`` daje w ``ordered_days`` Dni uporządkowane arkusza: dzień, którego w przeglądzie stoją dwa kolejne
+uporządkowane wiersze z jego datą albo jeden, pod którym nie ma wiersza wcześniejszego dnia; zlecenie na jutro
+wpisane w dzisiejszym dniu nie czyni jutra uporządkowanym. Granicę i arkusze, w których się ich szuka, wybiera
+``intermax_ordering`` jednakowo dla Planowania i karty Uporządkowania INTERMAX w Centrum rozliczeń.
 
 Plan dnia (``plan_day``) z bloku wyznacza docelowe wiersze zleceń: jeden pusty wiersz pod żółtym wierszem albo
 10 pustych pod ostatnim uporządkowanym zleceniem, segmenty Wykonawców w kolejności alfabetycznej z jednym
@@ -197,6 +197,12 @@ class RawBlock:
     last_ordered: int
     blank_row: int | None
 
+    @property
+    def day(self) -> date:
+        """Dzień bloku: ``recognize`` oddaje blok tylko z jednego dnia."""
+
+        return self.orders[0].when.date()
+
 
 @dataclass(frozen=True)
 class AboveOrdered:
@@ -231,16 +237,7 @@ class SeveralDays:
     last_row: int
 
 
-@dataclass(frozen=True)
-class DayOrdered:
-    """Dzień bloku Surowych zleceń jest już uporządkowany nad blokiem; blok to wiersze od ``first_row`` do ``last_row``."""
-
-    day: date
-    first_row: int
-    last_row: int
-
-
-Obstacle = AboveOrdered | Undated | WithoutWorker | SeveralDays | DayOrdered
+Obstacle = AboveOrdered | Undated | WithoutWorker | SeveralDays
 """Przeszkoda, przez którą Surowych zleceń nie da się bezpiecznie uporządkować."""
 
 
@@ -287,7 +284,7 @@ def recognize(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Ra
     found = _pasted(raw, columns)
     orders = [order for order in found if isinstance(order, RawOrder)]
     days = sorted({order.when.date() for order in orders})
-    above, ordered_days = (None, set[date]()) if ordered is None else _above(ordered, rows, columns, days[0] if days else None)
+    above = None if ordered is None else _above(ordered, rows, columns, days[0] if days else None)[0]
     if above is not None:
         return above
     if not raw:
@@ -297,45 +294,23 @@ def recognize(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Ra
         return missing
     if len(days) > 1:
         return SeveralDays(tuple(days), raw[0].number, raw[-1].number)
-    if days[0] in ordered_days:
-        return DayOrdered(days[0], raw[0].number, raw[-1].number)
     anchor = 1 if ordered is None else ordered.number
     return RawBlock(tuple(orders), yellow if yellow is not None else anchor, yellow is not None, anchor, blank)
 
 
-@dataclass(frozen=True)
-class SheetDays:
-    """Dni arkusza zleceń: ``ordered`` to Dni uporządkowane od ``since``, ``pasted`` dni Surowych zleceń."""
+def ordered_days(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, since: date) -> frozenset[date]:
+    """Dni uporządkowane od ``since`` z wierszy arkusza zleceń od ostatniego w górę.
 
-    ordered: frozenset[date]
-    pasted: frozenset[date]
-
-
-def sheet_days(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, since: date) -> SheetDays:
-    """Dni uporządkowane od ``since`` i dni Surowych zleceń z wierszy arkusza zleceń od ostatniego w górę.
-
-    Dzień uporządkowany rozpoznaje ten sam przegląd co ``recognize`` dzień bloku (``_above``): od ostatniego
-    uporządkowanego wiersza w górę, z granicą w tym dniu, więc karta i Uporządkowanie INTERMAX mówią o każdym dniu to
-    samo. Przegląd z granicą we wcześniejszym dniu jest dłuższy i zaczyna się tak samo, więc jeden przegląd z
-    granicą ``since`` czyta wiersze dla wszystkich dni.
+    Przegląd (``_above``) zaczyna się od ostatniego uporządkowanego wiersza nad Surowymi zleceniami, tak jak nad blokiem
+    w ``recognize``, i kończy go ``_EARLIER_ROWS`` kolejnych wierszy z dniem wcześniejszym niż ``since``, więc
+    sięga do każdego dnia od ``since`` uporządkowanego do przodu nad wcześniejszymi dniami.
     """
 
     rows = iter(rows_from_bottom)
-    raw, _, _, first = _bottom(rows, columns)
-    pasted_days = frozenset(order.when.date() for order in _pasted(raw, columns) if isinstance(order, RawOrder))
+    first = _bottom(rows, columns)[3]
     if first is None:
-        return SheetDays(frozenset(), pasted_days)
-    reviewed: list[RowFacts] = []
-
-    def kept() -> Iterator[RowFacts]:
-        for row in rows:
-            reviewed.append(row)
-            yield row
-
-    found = _above(first, kept(), columns, since)[1]
-    asked = {day for day in found if day >= since}
-    ordered = frozenset(day for day in asked if day in _above(first, iter(reviewed), columns, day)[1])
-    return SheetDays(ordered, pasted_days)
+        return frozenset()
+    return frozenset(day for day in _above(first, rows, columns, since)[1] if day >= since)
 
 
 def pasted(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> tuple[RawOrder | Undated | WithoutWorker, ...]:
@@ -397,7 +372,7 @@ def plan_day(block: RawBlock, rows_from_bottom: Iterable[RowFacts], columns: Ord
             placements.append(Placement(order, row, _operator_color(order), _entry(order)))
             row += 1
     view_row = _view_row(placements, rows_from_bottom, columns, block.anchor, today)
-    return DayPlan(min(order.when for order in block.orders).date(), tuple(placements), segments, view_row)
+    return DayPlan(block.day, tuple(placements), segments, view_row)
 
 
 def _operator_color(order: RawOrder) -> OperatorColor:

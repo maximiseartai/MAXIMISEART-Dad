@@ -10,12 +10,15 @@ import zipfile
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from io import BytesIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Literal
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from openpyxl import load_workbook
 from openpyxl.styles import Color, Font, PatternFill
 from openpyxl.utils.cell import coordinate_from_string, get_column_letter
@@ -24,7 +27,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from rozliczenia import TOOL_ROOT
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import MARK_RGB
-from rozliczenia.intermax_ordering import OrderingSummary
+from rozliczenia.intermax_ordering import OrderingSummary, RegisterDay, register_days
 from rozliczenia.intermax_replace import LOCAL_DISK, Waiting
 from rozliczenia.intermax_process import PROCESS, OrderingInputs
 from rozliczenia.message import Message
@@ -1389,6 +1392,23 @@ def test_wklejony_dzien_uporzadkowany_nad_nowszymi_dniami_jest_juz_uporzadkowany
     )
 
 
+def test_drugie_wklejenie_dnia_sprzed_tygodnia_mowi_ze_dzien_jest_uporzadkowany(tmp_path: Path) -> None:
+    """Dzień sprzed 6 dni przed dzisiejszym przegląd szuka aż do niego samego (dziś 25.10, wklejony 14.10)."""
+
+    def day(number: int, count: int, first: int) -> tuple[Order, ...]:
+        return tuple(Order(datetime(2026, 10, number, 7 + index), "anna.kowalska", first + index) for index in range(count))
+
+    path, _ = _register(tmp_path, Intermax(ordered=(*day(14, 2, 1), *day(15, 12, 3)), raw=day(14, 2, 101)))
+
+    with _nothing_written(tmp_path, path):
+        stop = _stop(_run(tmp_path))
+
+    assert (stop.message.code, stop.message.what) == (
+        "DZIEN_JUZ_UPORZADKOWANY",
+        "Dzień 14.10.2026 jest już uporządkowany. INTERMAX nie został zmieniony.",
+    )
+
+
 def test_zlecenie_na_jutro_w_srodku_dzisiejszego_dnia_z_jego_wierszami_pod_nim_nie_czyni_jutra_uporzadkowanym(tmp_path: Path) -> None:
     def day(number: int, count: int, first: int) -> tuple[Order, ...]:
         return tuple(Order(datetime(2026, 10, number, 7 + index), "anna.kowalska", first + index) for index in range(count))
@@ -1416,6 +1436,48 @@ def test_dzien_jest_uporzadkowany_takze_z_usterka_poprzedniego_dnia_dopisana_pod
         stop = _stop(_run(tmp_path, now=NOW + timedelta(minutes=5)))
 
     assert stop.message.code == "DZIEN_JUZ_UPORZADKOWANY"
+
+
+_TODAY = date(2026, 10, 29)
+_SHEET_DAYS = st.lists(st.tuples(st.integers(-12, 4), st.integers(1, 12)), max_size=6)
+"""Uporządkowane dni arkusza od góry: dzień względem ``_TODAY`` i liczba jego wierszy; dzień może iść do przodu,
+wstecz albo być jedną usterką dopisaną pod innym dniem."""
+
+
+def _days(days: Sequence[tuple[int, int]], first: int) -> tuple[Order, ...]:
+    whens = [datetime.combine(_TODAY + timedelta(days=day), time(8 + hour)) for day, count in days for hour in range(count)]
+    return tuple(Order(when, "anna.kowalska", first + index) for index, when in enumerate(whens))
+
+
+@settings(derandomize=True, database=None, deadline=None, max_examples=30)
+@given(newer=_SHEET_DAYS, older=st.none() | _SHEET_DAYS, pasted=st.integers(-6, 4))
+def test_karta_przed_wklejeniem_pokazuje_dzien_jako_uporzadkowany_wtedy_gdy_uporzadkowanie_odmawia_jego_wklejenia(
+    newer: list[tuple[int, int]], older: list[tuple[int, int]] | None, pasted: int
+) -> None:
+    """Losowe arkusze zleceń: dni do przodu i wstecz, usterki pod dniem, dzień w starszym arkuszu (#775).
+
+    Tata patrzy na kartę, zanim wklei dzień, więc karta czyta INTERMAX bez wklejenia, a Uporządkowanie ten sam
+    INTERMAX z wklejonym dniem, który karta pokazuje (dziś i 6 dni przed nim albo później).
+    """
+
+    day = _TODAY + timedelta(days=pasted)
+    raw = (Order(datetime.combine(day, time(9)), "jan.nowak", 500), Order(datetime.combine(day, time(11)), "jan.nowak", 501))
+    intermax = Intermax(
+        ordered=_days(newer, 1),
+        older_sheet=older is not None,
+        older_ordered=None if older is None else _days(older, 100),
+    )
+    with TemporaryDirectory() as folder:
+        tmp_path = Path(folder)
+        path, _ = _register(tmp_path, replace(intermax, raw=()))
+        days = register_days(path, _TODAY)
+        _register(tmp_path, replace(intermax, raw=raw))
+        outcome = _run(tmp_path, now=datetime.combine(_TODAY, time(12)))
+
+    assert not isinstance(days, Message), days
+    refused = isinstance(outcome.ending, Stop) and outcome.ending.message.code == "DZIEN_JUZ_UPORZADKOWANY"
+    assert refused or isinstance(outcome.ending, Finished), outcome.ending
+    assert (RegisterDay(day, True) in days) == refused
 
 
 def test_recznie_przesuniety_pierwszy_wiersz_jest_surowym_zleceniem_i_nie_przesuwa_sie_drugi_raz(tmp_path: Path) -> None:
