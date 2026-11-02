@@ -140,7 +140,7 @@ Covered files: `src/rozliczenia/centrum/tool_update.py`,
 `src/rozliczenia/centrum/restart_guardian.py`,
 `src/rozliczenia/centrum/launcher.py`.
 
-Sync commit: `SYNC` (2026-11-02, #725 and #726). Since `05430811` the
+Sync commit: `0c554b2e` (2026-11-02, #725 and #726). Since `05430811` the
 covered files changed in two places, and every row of the table was checked
 against the code at this commit. `ToolUpdates._after_restart` skips a failure
 whose `przed` is not the running commit and logs `aktualizacja-wynik-stary`
