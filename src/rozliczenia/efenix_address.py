@@ -3,8 +3,11 @@
 Jedyną operacją jest ``same_address()``. Obie strony przechodzą przez jeden rozbiór (``_parse``): bez wielkości liter,
 zbędnych spacji i interpunkcji, rodzaj (``ul``, ``os``, ``al``, ``pl``), zbiór słów nazwy ulicy w dowolnej kolejności,
 numer budynku i lokal. Lokal to część po ``/`` przy numerze (``12A/24``, zapis Pliku zbiorczego) albo słowo po
-``Lokal`` (``12A Lokal 24``, zapis efenix). Wszystko przed rodzajem (w efenix miejscowość z dzielnicą) się pomija.
-Adres, którego nie da się tak rozebrać (bez rodzaju, bez numeru, z czymś po lokalu), nie jest równy żadnemu.
+``Lokal`` zaraz za numerem (``12A Lokal 24``, zapis efenix); ``Lokal`` gdzie indziej to słowo nazwy ulicy.
+Wszystko przed rodzajem (w efenix miejscowość z dzielnicą) się pomija.
+Adres, którego nie da się tak rozebrać (bez rodzaju, bez nazwy ulicy, bez numeru, z lokalem i po ``/``, i po
+``Lokal``), nie jest równy żadnemu. Słowa po ``Lokal N`` czyta jak resztę nazwy ulicy z numerem na końcu; lista efenix
+nic po lokalu nie pisze.
 """
 
 from __future__ import annotations
@@ -45,11 +48,9 @@ def _parse(text: str) -> _Address | None:
     words = words[kinds[0] :]
     kind, rest = words[0], words[1:]
     flat: str | None = None
-    if _FLAT_WORD in rest:
-        at = rest.index(_FLAT_WORD)
-        if len(rest) != at + 2:
-            return None
-        rest, flat = rest[:at], rest[at + 1]
+    # ``Lokal`` zaraz za numerem to lokal, a w każdym innym miejscu słowo nazwy ulicy (``ul.Lokal 1``).
+    if len(rest) >= 3 and rest[-2] == _FLAT_WORD and rest[-3][:1].isdigit():
+        rest, flat = rest[:-2], rest[-1]
     if len(rest) < 2:
         return None
     *street, number = rest

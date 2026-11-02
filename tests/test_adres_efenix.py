@@ -3,8 +3,10 @@
 Oczekiwanie pochodzi ze specyfikacji #741 („Porównanie adresu”): bez wielkości liter, zbędnych spacji i interpunkcji,
 ten sam rodzaj (``ul.``, ``os.``), ten sam zbiór słów nazwy ulicy w dowolnej kolejności, ten sam numer i lokal (``/24``
 w pliku to ``Lokal 24`` w efenix), a miejscowość z dzielnicą przed rodzajem w efenix się pomija. Generator pisze jeden
-adres w obu zapisach; zmiana numeru, lokalu, rodzaju albo jednego słowa (także słowo dłuższe o literę) daje inny adres.
-Przykłady są deterministyczne (``derandomize=True``, bez bazy przykładów).
+adres w obu zapisach, także z nazwą ulicy ze słowem reguły (``ul.Lokal 1``); zmiana numeru, lokalu, rodzaju albo
+jednego słowa (także słowo dłuższe o literę) daje inny adres.
+Hypothesis losuje z ``derandomize=True`` i bez bazy przykładów, ale bierze też napisy ze stałych modułów załadowanych
+w procesie, więc słowa reguły generator podaje sam (#759).
 """
 
 from __future__ import annotations
@@ -29,7 +31,9 @@ class Address:
     flat: str | None
 
 
-words = st.text(LETTERS, min_size=2, max_size=9)
+# Słowa samej reguły (rodzaje i ``Lokal``) bywają nazwą ulicy; Hypothesis losuje je zawsze, a nie tylko wtedy, gdy
+# wcześniejszy test tego procesu xdist załadował moduł z takim napisem (stałe z ``sys.modules``, #759).
+words = st.text(LETTERS, min_size=2, max_size=9) | st.sampled_from(["Lokal", "LOKAL", "ul", "Os", "AL", "pl"])
 addresses = st.builds(
     Address,
     kind=st.sampled_from(["ul", "os"]),
@@ -108,6 +112,7 @@ def test_inny_numer_lokal_rodzaj_albo_slowo_ulicy_to_inny_adres(data: st.DataObj
         pytest.param("UL. TESTOWA 1/2/3", "Poznań ul.Testowa 1 Lokal 2", id="dwa-ukosniki"),
         pytest.param("UL. TESTOWA 1/2", "Poznań ul.Testowa 1/2 Lokal 2", id="lokal-dwa-razy"),
         pytest.param("UL. TESTOWA 1/2", "Poznań ul.Testowa 1 Lokal 2 kod", id="cos-po-lokalu"),
+        pytest.param("UL. 12 LOKAL 3", "Poznań ul. 12 Lokal 3", id="lokal-bez-nazwy-ulicy"),
     ],
 )
 def test_adres_bez_rodzaju_numeru_albo_z_czyms_po_lokalu_nie_jest_rowny_zadnemu(collective: str, efenix: str) -> None:
