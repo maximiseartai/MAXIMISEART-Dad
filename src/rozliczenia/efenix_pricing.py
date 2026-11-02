@@ -1,9 +1,9 @@
 """Wycena w efenix: wycena każdego zlecenia z zakresu Pliku zbiorczego uzupełniona w efenix, w sesji, którą otworzył tata.
 
 Jedyną operacją publiczną jest ``price_orders()``. Silnik sekwencjonuje cztery etapy i jako jedyny tłumaczy fakty na
-Komunikaty: Sprawdzanie (Plik zbiorczy jest i daje się otworzyć okno efenix z listą zleceń), Odczyt danych (zakres z
-``efenix_orders``), Planowanie (Zatrzymanie, gdy Plik zbiorczy nie ma kwot AU policzonych przez Excel) i Zapisywanie, w
-którym idzie przez zlecenia z zakresu po kolei. Najpierw to, co widać bez efenix: numer, data i ilości, które da się
+Komunikaty: Sprawdzanie (Plik zbiorczy jest, nie trzyma go Excel i daje się otworzyć okno efenix z listą zleceń), Odczyt
+danych (zakres z ``efenix_orders``), Planowanie (Zatrzymanie, gdy Plik zbiorczy nie ma kwot AU policzonych przez Excel) i
+Zapisywanie, w którym idzie przez zlecenia z zakresu po kolei, a na końcu raz oznacza gotowe Znacznikiem efenix. Najpierw to, co widać bez efenix: numer, data i ilości, które da się
 przepisać (``efenix_positions``). Potem zlecenie znajduje po ``Numer dokumentu`` równym ``NUMER ZL.`` i sprawdza:
 dokładnie jedno trafienie, status „Do wyceny”, realizator równy ``WYKONAWCA``, ``Dane adresowe`` równe ``ADRES``
 (``efenix_address``) i datę wykonania pustą albo równą dniowi z ``DATA``. Pierwsza niezgodność to błąd zlecenia, w efenix
@@ -17,8 +17,14 @@ Wycenę Emmetta i czyta jej ilości: sprzeczność z plikiem to ostrzeżenie bez
 a w przeciwnym razie wpisuje ilości pliku w pozycjach pustych u Emmetta i porównuje kwotę końcową, którą odesłał efenix,
 z ``Kwota`` (AU). Okno efenix (``Efenix``) nie ma działania, które przekazuje zlecenie do akceptacji, anuluje je albo
 zmienia jego status. Strona logowania i strona o innej budowie, także bez pozycji z przypisania kolumn, to Zatrzymanie
-(``LoggedOut``, ``UnexpectedPage``), a jego Komunikat mówi, czy przed nim proces zmienił już coś w efenix. Wynik nie zawiera numerów zleceń, adresów ani loginów, tylko numery wierszy Pliku
-zbiorczego.
+(``LoggedOut``, ``UnexpectedPage``), a jego Komunikat mówi, czy przed nim proces zmienił już coś w efenix.
+
+Po ostatnim zleceniu, a także przy Zatrzymaniu w trakcie, ``efenix_marking`` raz zapisuje Plik zbiorczy: komórka ``ADRES``
+każdego gotowego zlecenia dostaje Znacznik efenix, a reszta pliku zostaje bajt w bajt. Gdy zapis się nie udaje (Excel trzyma
+plik, plik zmienił się od odczytu, zapis nieudany), przebieg kończy się Zatrzymaniem z prośbą o ponowne uruchomienie, a
+wycena w efenix zostaje; przy Zatrzymaniu z efenix zostaje jego Komunikat, bo ponowne uruchomienie i tak jest potrzebne.
+Ponowne uruchomienie dokańcza oznaczanie: gotowe zlecenia mają już wycenę, więc proces je tylko czyta. Wynik nie zawiera
+numerów zleceń, adresów ani loginów, tylko numery wierszy Pliku zbiorczego.
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ from . import efenix_messages as messages
 from . import workbook_files
 from .domain import ProgressObserver, ProgressPhase
 from .efenix_checks import DateRefused, ListedOrder, OrderProblem, date_problem, listing, searched_number
+from .efenix_marking import Refusal, mark_ready
 from .efenix_orders import AmountsNotComputed, CollectiveOrder, MissingColumns, PricingScope, read_scope
 from .efenix_positions import (
     Conflict,
@@ -214,7 +221,7 @@ def price_orders(
     observer: ProgressObserver | None = None,
     clock: Callable[[], float] = time.perf_counter,
 ) -> PricingSummary:
-    """Uzupełnia w efenix wycenę każdego zlecenia z zakresu Pliku zbiorczego ``source``; plik zostaje bez zmian.
+    """Uzupełnia w efenix wycenę każdego zlecenia z zakresu Pliku zbiorczego ``source`` i oznacza w nim gotowe zlecenia.
 
     Zgłasza ``StopError``, gdy nie można działać bezpiecznie. ``clock`` to zegar w sekundach, z którego liczone są
     czasy etapów.
@@ -225,7 +232,7 @@ def price_orders(
 
     def check() -> None:
         try:
-            workbook_files.ensure_available(source, despite_excel_lock=True)
+            workbook_files.ensure_available(source)
         except WorkbookError as error:
             raise StopError(messages.source_unusable(error)) from error
 
@@ -251,9 +258,18 @@ def price_orders(
     scope = phases.plan(plan, issue_count=lambda _: 0)
 
     def save() -> tuple[OrderResult, ...]:
-        with _efenix_stops(lambda: False), open_efenix() as efenix:
-            with _efenix_stops(lambda: efenix.sent_change):
-                return tuple(OrderResult(order, _priced(order, efenix)) for order in scope.orders)
+        results: list[OrderResult] = []
+        try:
+            with _efenix_stops(lambda: False), open_efenix() as efenix:
+                with _efenix_stops(lambda: efenix.sent_change):
+                    for order in scope.orders:
+                        results.append(OrderResult(order, _priced(order, efenix)))
+        except StopError:
+            _mark(source, scope, results)
+            raise
+        if (refusal := _mark(source, scope, results)) is not None:
+            raise StopError(messages.marks_not_saved(source, refusal))
+        return tuple(results)
 
     results = phases.save(save)
     return PricingSummary(
@@ -263,6 +279,13 @@ def price_orders(
         [warning for result in results if (warning := _warning(source, result)) is not None],
         phases.durations_ms(),
     )
+
+
+def _mark(source: Path, scope: PricingScope, results: Sequence[OrderResult]) -> Refusal | None:
+    """Znacznik efenix w ``ADRES`` każdego gotowego zlecenia z ``results``."""
+
+    ready = [result.order.row for result in results if isinstance(result.outcome, Ready)]
+    return mark_ready(source, scope.content, scope.address_column, ready)
 
 
 def _warning(source: Path, result: OrderResult) -> Message | None:

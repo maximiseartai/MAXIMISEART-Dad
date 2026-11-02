@@ -1,28 +1,40 @@
-"""Wycena w efenix przez rdzeń Uruchomienia procesu na Atrapie efenix w prawdziwej przeglądarce (spec #741, #743, #746).
+"""Wycena w efenix przez rdzeń Uruchomienia procesu na Atrapie efenix w prawdziwej przeglądarce (spec #741, #743, #746, #747).
 
 Każdy test prowadzi ``run_process`` z opisem procesu ``efenix_process.PROCESS`` i oknem efenix na karcie Chromium, a
-sprawdza to, co widać z zewnątrz: wynik, Komunikaty, liczby podsumowania, żądania, które dostała Atrapa efenix, i jej
-stan po przebiegu (ilości, data wykonania, załadowania Wyceny Emmetta, zmiany statusu). Przypisanie kolumn do pozycji
+sprawdza to, co widać z zewnątrz: wynik, Komunikaty, liczby podsumowania, żądania, które dostała Atrapa efenix, jej
+stan po przebiegu (ilości, data wykonania, załadowania Wyceny Emmetta, zmiany statusu) i Plik zbiorczy po przebiegu
+(Znaczniki efenix czytane tą samą drogą co Przebieg rozliczeń, ``read_data_rows``, i części zip pliku). Przypisanie kolumn do pozycji
 testy piszą literałami ze specyfikacji #741 (O→012, T→019, Z→010, AG→015). Wynik w kształcie karty Uruchomienia
 sprawdza Skrypt dla maszyn (``tests/test_uruchom_proces.py``).
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import AbstractContextManager, contextmanager
+from copy import copy
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+import re
 import socket
+import sys
+import zipfile
+
+from openpyxl import load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
 
 from playwright.sync_api import Browser, Page
 import pytest
 
 from rozliczenia import efenix_browser, efenix_process
+from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.efenix_pricing import PricingSummary
 from rozliczenia.efenix_process import EfenixInputs
+from rozliczenia.engine import run_settlements
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
+from rozliczenia.workbook_files import excel_lock_file, read_computed_rows, read_data_rows
 
 from tests.fixtures.atrapa_efenix import (
     LIST_PAGE,
@@ -32,6 +44,7 @@ from tests.fixtures.atrapa_efenix import (
     SEARCH,
     SET_DATE,
     AtrapaEfenix,
+    AtrapaOrder,
     Changed,
     amount_of,
     atrapa_efenix,
@@ -39,6 +52,8 @@ from tests.fixtures.atrapa_efenix import (
 from tests.fixtures.efenix import DAY, Order, write_collective_file
 from tests.fixtures.interlocutor import Tata
 from tests.fixtures.przegladarka import chromium, page_of
+from tests.fixtures.settlement import PERIOD, write_mapping, write_template
+from tests.fixtures.workbooks import active_worksheet, rewrite_parts
 
 # Żądania, które niczego w efenix nie zmieniają: lista zleceń, szukanie i strona zlecenia.
 READING = {("GET", LIST_PAGE), ("POST", SEARCH), ("GET", ORDER_PAGE)}
@@ -58,10 +73,27 @@ def page(browser: Browser) -> Iterator[Page]:
 
 
 def _price(tmp_path: Path, page: Page, url: str, orders: Sequence[Order], *, timeout_ms: int = 10_000) -> Priced:
-    source = write_collective_file(tmp_path, orders)
-    inputs = EfenixInputs(source, lambda: efenix_browser.window(page, url, timeout_ms=timeout_ms))
+    return _run(write_collective_file(tmp_path, orders), page, url, timeout_ms=timeout_ms)
+
+
+def _run(
+    source: Path, page: Page, url: str, *, timeout_ms: int = 10_000, meanwhile: Callable[[], None] = lambda: None
+) -> Priced:
+    """Uruchomienie Wyceny w efenix dla Pliku zbiorczego ``source``; ``meanwhile`` to to, co tata zrobił z plikiem, zanim
+    proces skończył ostatnie zlecenie."""
+
+    @contextmanager
+    def open_efenix() -> Iterator[efenix_browser.BrowserEfenix]:
+        with efenix_browser.window(page, url, timeout_ms=timeout_ms) as efenix:
+            yield efenix
+        meanwhile()
+
     return run_process(
-        efenix_process.PROCESS, inputs, Tata(), view=lambda _inputs, summary: summary, metrics_path=tmp_path / "metryki.jsonl"
+        efenix_process.PROCESS,
+        EfenixInputs(source, open_efenix),
+        Tata(),
+        view=lambda _inputs, summary: summary,
+        metrics_path=source.parent.parent / "metryki.jsonl",
     )
 
 
@@ -487,3 +519,327 @@ def test_strona_bez_listy_zlecen_i_adres_bez_efenix_zatrzymuja_wycene(tmp_path: 
     unreachable = _price(tmp_path / "niedostepny", page, closed, [Order("#9301")])
 
     assert (_stop(changed), _stop(unreachable), _kept(changed), _kept(unreachable)) == ("EFENIX_ZMIENIONY", "EFENIX_NIEDOSTEPNY", False, False)
+
+
+# --- Znacznik efenix w Pliku zbiorczym (#747) ------------------------------------------------------------------------
+
+YELLOW = "FFFF00"
+CHANGED_PARTS = {"xl/worksheets/sheet1.xml", "xl/styles.xml"}
+
+
+def _parts(path: Path) -> list[tuple[str, bytes]]:
+    with zipfile.ZipFile(path) as archive:
+        return [(info.filename, archive.read(info)) for info in archive.infolist()]
+
+
+def _address_fills(source: Path) -> dict[int, str | None]:
+    """RGB jednolitego wypełnienia ``ADRES`` każdego Wiersza danych tak, jak czyta je Przebieg rozliczeń (``None``: bez)."""
+
+    fills: dict[int, str | None] = {}
+    for row in read_data_rows(source, despite_excel_lock=True).rows:
+        fill = row.cells[1].highlights.fill
+        solid = isinstance(fill, PatternFill) and fill.patternType == "solid"
+        fills[row.number] = str(fill.fgColor.rgb)[-6:].upper() if solid and isinstance(fill, PatternFill) else None
+    return fills
+
+
+def _marked(source: Path) -> list[int]:
+    return [row for row, rgb in _address_fills(source).items() if rgb == MARK_RGB]
+
+
+def _address_looks(source: Path) -> dict[int, tuple[Font, Border, Protection, Alignment, str]]:
+    """Wygląd ``ADRES`` każdego Wiersza danych poza wypełnieniem: czcionka, obramowanie, ochrona, wyrównanie, format."""
+
+    workbook = load_workbook(source)
+    try:
+        sheet = active_worksheet(workbook)
+        return {
+            row: (copy(cell.font), copy(cell.border), copy(cell.protection), copy(cell.alignment), cell.number_format)
+            for row in range(18, sheet.max_row + 1)
+            if (cell := sheet[f"B{row}"]).value is not None
+        }
+    finally:
+        workbook.close()
+
+
+def _amounts(source: Path) -> dict[int, object]:
+    """``Kwota`` (AU) każdego Wiersza danych tak, jak policzył ją Excel."""
+
+    return {row.number: row.value("AU") for row in read_computed_rows(source).rows}
+
+
+def _without_address_styles(xml: bytes, rows: Sequence[int]) -> bytes:
+    """XML arkusza bez atrybutu ``s`` komórek ``ADRES`` wierszy ``rows``."""
+
+    def neutral(found: re.Match[bytes]) -> bytes:
+        return found.group(1) if int(found.group(2)) in rows else found.group(0)
+
+    return re.sub(rb'(<c r="B(\d+)")(?: s="\d+")?', neutral, xml)
+
+
+STYLE_LISTS = {b"fills": b"fill", b"cellXfs": b"xf"}
+
+
+def _style_list(styles: bytes, tag: bytes) -> re.Match[bytes]:
+    found = re.search(rb"<" + tag + rb'\b[^>]*?count="(\d+)"[^>]*>(.*?)</' + tag + rb">", styles, re.S)
+    assert found is not None, tag
+    return found
+
+
+def _style_counts(styles: bytes) -> dict[bytes, int]:
+    """Liczba wpisów każdej listy ``fills`` i ``cellXfs`` w ``xl/styles.xml``, zgodna z jej atrybutem ``count``."""
+
+    counts = {}
+    for tag, entry in STYLE_LISTS.items():
+        found = _style_list(styles, tag)
+        counts[tag] = len(re.findall(rb"<" + entry + rb"[\s>/]", found.group(2)))
+        assert int(found.group(1)) == counts[tag], tag
+    return counts
+
+
+def _without_appended_styles(written: bytes, original: bytes) -> bytes:
+    """``xl/styles.xml`` ``written`` z listami ``fills`` i ``cellXfs`` z ``original``, gdy ``written`` tylko dopisał do
+    nich wpisy na końcu."""
+
+    for tag in STYLE_LISTS:
+        before, after = _style_list(original, tag), _style_list(written, tag)
+        assert after.group(2).startswith(before.group(2)), tag
+        written = written[: after.start()] + before.group(0) + written[after.end() :]
+    return written
+
+
+def _marking_orders() -> list[Order]:
+    """Wiersze 18 i 19 gotowe (wycena już jest; dopisane ilości, ``ADRES`` bez stylu), 20 błąd kwoty, 21 sprzeczność z
+    Emmettem, 22 Zlecenie ze zdjęciami, 23 nieznane efenix z żółtym ``ADRES`` taty.
+
+    Wiersz 19 ma starszą ``DATA``, więc proces kończy go przed wierszem 18.
+    """
+
+    red = Font(name="Arial", sz=8, color="FFFF0000", b=True, i=True)
+    return [
+        Order("#7701", day=date(2026, 9, 10), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}, address_font=red),
+        Order("#7702", day=date(2026, 9, 8), cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), address_font=None),
+        Order("#7703", cells={"O": 1}, amount=_au({"012": 1}) + 5),
+        Order("#7704", cells={"O": 1}, amount=_au({"012": 1}), emmett={"012": 2}),
+        Order("#7705", cells={"AB": 1}),
+        Order("#7706", address_fill=YELLOW),
+    ]
+
+
+def _marking_efenix(orders: Sequence[Order]) -> list[AtrapaOrder]:
+    return [order.in_efenix(f"77{index}") for index, order in enumerate(orders) if order.number != "#7706"]
+
+
+def test_znacznik_efenix_staje_tylko_w_adresie_gotowych_zlecen_a_reszta_pliku_zostaje_bajt_w_bajt(tmp_path: Path, page: Page) -> None:
+    orders = _marking_orders()
+    source = write_collective_file(tmp_path, orders)
+    parts, looks, amounts = _parts(source), _address_looks(source), _amounts(source)
+    with atrapa_efenix(_marking_efenix(orders)) as atrapa:
+        outcome = _run(source, page, atrapa.url)
+
+    assert (outcome.result, _figures(outcome)) == ("WYMAGA_SPRAWDZENIA", _figures_of(5, 2, warnings=1, photos=1))
+    assert _address_fills(source) == {18: MARK_RGB, 19: MARK_RGB, 20: None, 21: None, 22: None, 23: YELLOW}
+    # Poza wypełnieniem komórka ADRES ma swój wygląd, także czerwoną, pogrubioną kursywę taty w wierszu 18.
+    assert _address_looks(source) == looks
+    font = looks[18][0]
+    assert (font.color.rgb if font.color else None, font.b, font.i) == ("FFFF0000", True, True)
+    assert _amounts(source) == amounts
+    written = _parts(source)
+    assert [name for name, _ in written] == [name for name, _ in parts]
+    before, after = dict(parts), dict(written)
+    assert {name for name in before if before[name] != after[name]} == CHANGED_PARTS
+    assert any(name.startswith("xl/externalLinks/") for name in before)
+    sheet = "xl/worksheets/sheet1.xml"
+    assert _without_address_styles(after[sheet], [18, 19]) == _without_address_styles(before[sheet], [18, 19])
+    assert _without_appended_styles(after["xl/styles.xml"], before["xl/styles.xml"]) == before["xl/styles.xml"]
+    # Jedno wypełnienie Znacznika i po jednym stylu na dwa dotychczasowe style gotowych ADRES.
+    counts, original = _style_counts(after["xl/styles.xml"]), _style_counts(before["xl/styles.xml"])
+    assert (counts[b"fills"] - original[b"fills"], counts[b"cellXfs"] - original[b"cellXfs"]) == (1, 2)
+
+
+def test_nastepny_przebieg_na_pliku_ze_znacznikami_czyta_kwoty_au_ma_te_same_gotowe_i_niczego_nie_zmienia(
+    tmp_path: Path, page: Page
+) -> None:
+    """Sprzeczność z Emmettem z pierwszego przebiegu zostawia w efenix Wycenę Emmetta, więc w drugim to „wycena już jest"."""
+
+    orders = _marking_orders()
+    source = write_collective_file(tmp_path, orders)
+    with atrapa_efenix(_marking_efenix(orders)) as atrapa:
+        _run(source, page, atrapa.url)
+        marked, saved, state, requests = source.read_bytes(), source.stat().st_mtime_ns, atrapa.state(), len(atrapa.requested())
+        second = _run(source, page, atrapa.url)
+        after, again = atrapa.state(), atrapa.requested()[requests:]
+
+    assert (_figures(second), _marked(source), _amounts(source)[18]) == (_figures_of(5, 2, photos=1), [18, 19], _au({"012": 1}))
+    # Plik ze wszystkimi Znacznikami nie jest zapisywany od nowa, więc OneDrive nie dostaje nowej wersji.
+    assert (source.read_bytes() == marked, source.stat().st_mtime_ns == saved) == (True, True)
+    assert (after == state, set(again) <= READING) == (True, True)
+
+
+def test_kolejne_uruchomienie_oznacza_nowe_gotowe_zlecenie_wypelnieniem_i_stylem_z_poprzedniego(
+    tmp_path: Path, page: Page
+) -> None:
+    """Wiersz 19 jest gotowy dopiero w drugim przebiegu (w pierwszym efenix go nie zna), a jego ADRES ma ten sam styl co 18."""
+
+    orders = [Order(f"#760{index}", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}) for index in (1, 2)]
+    source = write_collective_file(tmp_path, orders)
+    original = _style_counts(dict(_parts(source))["xl/styles.xml"])
+    with atrapa_efenix([orders[0].in_efenix("761")]) as atrapa:
+        first = _run(source, page, atrapa.url)
+    marked_first = _marked(source)
+    with atrapa_efenix([order.in_efenix(f"76{index}") for index, order in enumerate(orders)]) as atrapa:
+        second = _run(source, page, atrapa.url)
+
+    assert (first.result, marked_first, second.result, _marked(source)) == ("WYMAGA_SPRAWDZENIA", [18], "OK", [18, 19])
+    counts = _style_counts(dict(_parts(source))["xl/styles.xml"])
+    assert (counts[b"fills"] - original[b"fills"], counts[b"cellXfs"] - original[b"cellXfs"]) == (1, 1)
+
+
+def test_znacznik_efenix_staje_na_aktywnej_karcie_ktora_czyta_wycena_a_inny_arkusz_zostaje(tmp_path: Path, page: Page) -> None:
+    order = Order("#7401", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+    source = write_collective_file(tmp_path, [order], notes_sheet_first=True)
+    notes = dict(_parts(source))["xl/worksheets/sheet1.xml"]
+    with atrapa_efenix([order.in_efenix("741")]) as atrapa:
+        outcome = _run(source, page, atrapa.url)
+
+    assert (outcome.result, _marked(source), dict(_parts(source))["xl/worksheets/sheet1.xml"] == notes) == ("OK", [18], True)
+
+
+def test_gotowe_zlecenie_z_adresem_juz_w_kolorze_znacznika_zostaje_a_plik_sie_nie_zmienia(tmp_path: Path, page: Page) -> None:
+    order = Order("#7501", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}, address_fill=MARK_RGB)
+    source = write_collective_file(tmp_path, [order])
+    before = source.read_bytes()
+    with atrapa_efenix([order.in_efenix("751")]) as atrapa:
+        outcome = _run(source, page, atrapa.url)
+
+    assert (outcome.result, _marked(source), source.read_bytes() == before) == ("OK", [18], True)
+
+
+@contextmanager
+def _excel_open(source: Path) -> Iterator[Callable[[], None]]:
+    """Tata otwiera Plik zbiorczy w Excelu w trakcie przebiegu (plik blokady ``~$…``), a po przebiegu go zamyka."""
+
+    lock = excel_lock_file(source)
+    def open_in_excel() -> None:
+        lock.write_bytes(b"")
+
+    yield open_in_excel
+    lock.unlink(missing_ok=True)
+
+
+@contextmanager
+def _saved_in_excel(source: Path) -> Iterator[Callable[[], None]]:
+    """Tata zapisuje w trakcie przebiegu Plik zbiorczy ze zmienioną komórką."""
+
+    def save() -> None:
+        rewrite_parts(source, lambda name, data: data.replace(b">MIASTO<", b">MIASTA<") if name == "xl/worksheets/sheet1.xml" else data)
+
+    yield save
+
+
+@contextmanager
+def _read_only_folder(source: Path) -> Iterator[Callable[[], None]]:
+    """Folder okresu przestaje przyjmować nowe pliki w trakcie przebiegu (np. OneDrive go trzyma), a potem znów je przyjmuje."""
+
+    folder = source.parent
+    yield lambda: folder.chmod(0o555)
+    folder.chmod(0o755)
+
+
+@pytest.mark.parametrize(
+    ("obstacle", "code"),
+    [
+        pytest.param(_excel_open, "EFENIX_ZNACZNIKI_PLIK_OTWARTY", id="otwarty-w-excelu"),
+        pytest.param(_saved_in_excel, "EFENIX_ZNACZNIKI_PLIK_ZMIENIONY", id="zapisany-w-trakcie"),
+        pytest.param(
+            _read_only_folder,
+            "EFENIX_ZNACZNIKI_NIEZAPISANE",
+            id="zapis-nieudany",
+            marks=pytest.mark.skipif(sys.platform == "win32", reason="chmod folderu nie odbiera zapisu na Windows"),
+        ),
+    ],
+)
+def test_plik_ktorego_nie_da_sie_oznaczyc_daje_komunikat_a_ponowne_uruchomienie_stawia_znaczniki_bez_zmian_w_efenix(
+    tmp_path: Path, page: Page, obstacle: Callable[[Path], AbstractContextManager[Callable[[], None]]], code: str
+) -> None:
+    orders = [
+        Order("#7801", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),
+        Order("#7802", cells={"O": 1}, amount=_au({"012": 1})),
+        Order("#7803", cells={"O": 1}, amount=_au({"012": 1}) + 5),
+    ]
+    source = write_collective_file(tmp_path, orders)
+    with atrapa_efenix([order.in_efenix(f"78{index}") for index, order in enumerate(orders)]) as atrapa:
+        with obstacle(source) as meanwhile:
+            stopped = _run(source, page, atrapa.url, meanwhile=meanwhile)
+            unmarked = source.read_bytes()
+            assert (_stop(stopped), _marked(source)) == (code, [])
+        priced, requests = atrapa.state(), len(atrapa.requested())
+        assert source.read_bytes() == unmarked
+        again = _run(source, page, atrapa.url)
+        after, repeated = atrapa.state(), atrapa.requested()[requests:]
+
+    assert {order.number: (order.quantities, order.execution_date, order.emmett_loads) for order in priced[0]} == {
+        "7801": ({"012": 1}, None, 0),
+        "7802": ({"012": 1}, DAY, 1),
+        "7803": ({"012": 1}, DAY, 1),
+    }
+    assert (again.result, _figures(again), _marked(source)) == ("WYMAGA_SPRAWDZENIA", _figures_of(3, 2), [18, 19])
+    assert (after == priced, set(repeated) <= READING) == (True, True)
+
+
+@pytest.mark.parametrize(
+    ("expire_after", "marked"),
+    [
+        pytest.param((SAVE_QUANTITY, 1), [18], id="po-pierwszym-gotowym"),
+        pytest.param((SAVE_QUANTITY, 0), [], id="przed-pierwszym-gotowym"),
+    ],
+)
+def test_zatrzymanie_w_polowie_przebiegu_oznacza_zlecenia_gotowe_przed_nim(
+    tmp_path: Path, page: Page, expire_after: tuple[str, int], marked: list[int]
+) -> None:
+    orders = [Order(f"#790{index}", cells={"O": 1}, amount=_au({"012": 1})) for index in (1, 2, 3)]
+    source = write_collective_file(tmp_path, orders)
+    unmarked = source.read_bytes()
+    with atrapa_efenix([order.in_efenix(f"79{index}") for index, order in enumerate(orders)], expire_after=expire_after) as atrapa:
+        outcome = _run(source, page, atrapa.url)
+
+    assert (_stop(outcome), _marked(source)) == ("EFENIX_WYLOGOWANY", marked)
+    assert (source.read_bytes() == unmarked) == (not marked)
+
+
+def test_plik_zbiorczy_otwarty_w_excelu_zatrzymuje_wycene_zanim_otworzy_efenix(tmp_path: Path, page: Page) -> None:
+    orders = [Order("#7601", cells={"O": 1}, amount=_au({"012": 1}))]
+    source = write_collective_file(tmp_path, orders)
+    excel_lock_file(source).write_bytes(b"")
+    with atrapa_efenix([orders[0].in_efenix("761")]) as atrapa:
+        outcome = _run(source, page, atrapa.url)
+        requested = atrapa.requested()
+
+    assert (_stop(outcome), requested, _kept(outcome)) == ("EFENIX_PLIK_ZBIORCZY_OTWARTY", [], False)
+
+
+def test_plik_zbiorczy_ze_znacznikami_daje_w_przebiegu_rozliczen_rozliczenie_pracownika_bez_nich(tmp_path: Path, page: Page) -> None:
+    orders = _marking_orders()
+    source = write_collective_file(tmp_path, orders)
+    with atrapa_efenix(_marking_efenix(orders)) as atrapa:
+        _run(source, page, atrapa.url)
+    template = tmp_path / "Wzorzec rozliczenia pracownika.xlsx"
+    write_template(template)
+    assert _marked(source) == [18, 19]
+
+    summary = run_settlements(source, write_mapping(tmp_path / "worker_mapping.yaml"), worker_template_path=template)
+
+    assert summary.written_count == 1
+    written = source.parent / f"Rozliczenie pracowników {PERIOD}" / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx"
+    workbook = load_workbook(written)
+    try:
+        sheet = active_worksheet(workbook)
+        fills = {row: sheet[f"B{row}"].fill for row in range(18, 24)}
+        font = sheet["B18"].font
+    finally:
+        workbook.close()
+    assert {row: (fill.fill_type, str(fill.fgColor.rgb)[-6:] if fill.fill_type else None) for row, fill in fills.items()} == {
+        **{row: (None, None) for row in range(18, 23)},
+        23: ("solid", YELLOW),
+    }
+    assert (font.color.rgb, font.b, font.i) == ("FFFF0000", True, True)
