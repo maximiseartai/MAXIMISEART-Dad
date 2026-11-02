@@ -56,7 +56,10 @@ in `<feature>.md` next to this file, driven by the skill's
   `dialogs.jsonl`, `opened.jsonl`, and `logs/uruchomienia/`.
 - Change files on disk only inside the run root, and restore what a step moved.
 - Capture with `Run.capture`, which waits for running transitions; a screenshot
-  taken mid-transition shows content at partial opacity.
+  taken mid-transition shows content at partial opacity. A close-up is
+  `Run.capture` with `clip`, so its number is checked like every other one;
+  `tests/test_limit_drive_centrum.py` fails on any other `screenshot`
+  call in `drive/`.
 
 ## Proof and skip reporting
 

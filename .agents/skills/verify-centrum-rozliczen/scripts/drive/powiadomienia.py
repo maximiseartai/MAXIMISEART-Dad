@@ -167,8 +167,9 @@ def drive_notifications(run: Run, page: Page) -> None:
     run.capture(page, "181-powiadomienia-kropka")
     header = page.locator("header").first.bounding_box()
     assert header is not None
-    page.screenshot(
-        path=run.evidence / "screenshots" / "181b-powiadomienia-kropka-zblizenie.png",
+    run.capture(
+        page,
+        "181b-powiadomienia-kropka-zblizenie",
         clip={"x": header["x"] + header["width"] - 240, "y": header["y"], "width": 240, "height": header["height"]},
     )
 
