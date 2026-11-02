@@ -162,7 +162,7 @@ def replace_register(
     """
 
     made: list[Copy] = []
-    replaced: list[bool] = []
+    replaced = False
 
     def write(temporary: Path) -> None:
         try:
@@ -195,6 +195,7 @@ def replace_register(
                 made.append(copy)  # cała albo jej część, której zapis się nie udał
 
     def replace(temporary: Path, target: Path) -> None:
+        nonlocal replaced
         deadline = waiting.clock() + _RETRY_S
         while True:
             try:
@@ -207,7 +208,7 @@ def replace_register(
             except OSError as error:
                 raise _Refused(Refusal.WRITE_FAILED) from error
             else:
-                replaced.append(True)
+                replaced = True
                 return
             waiting.pause(_PAUSE_S)
             try:

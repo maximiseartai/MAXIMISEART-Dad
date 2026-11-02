@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -19,6 +20,7 @@ from typing import Any
 
 import pytest
 
+from rozliczenia.centrum import restart_guardian
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S
@@ -1113,6 +1115,92 @@ def test_ok_przy_starej_wersji_gdy_dysk_nie_usuwa_wyniku_zglasza_porazke_raz(
         *([f"wynik=ok przed={before} po={newest} biblioteki=nie"] if new_version_logged else []),
         f"wynik=NIEOCZEKIWANY_BLAD przed={before} po={newest} biblioteki=nie",
     ]
+
+
+class _AnsweringCentrum:
+    """Proces nowego Centrum od opiekuna, który działa (``poll`` zwraca ``None``)."""
+
+    def poll(self) -> None:
+        return None
+
+
+def disk_refuses_replacing(monkeypatch: pytest.MonkeyPatch, refused: Path) -> None:
+    """Dysk nie pozwala podmienić pliku ``refused`` (``os.replace`` w ``write_result``); inne pliki jak zwykle."""
+
+    replace = os.replace
+
+    def refusing(source: str | os.PathLike[str], target: str | os.PathLike[str]) -> None:
+        if Path(target) == refused:
+            raise PermissionError(13, "Odmowa dostępu")
+        replace(source, target)
+
+    monkeypatch.setattr(os, "replace", refusing)
+
+
+def test_nowa_dzialajaca_wersja_po_dwoch_odmowach_dysku_nie_pokazuje_porazki_poprzedniej_proby(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    centrum, repository = updating_centrum(tmp_path)
+    before = repository.head()
+    newest = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
+    result = tmp_path / "config" / RESULT_FILE
+    dialogs: list[str] = []
+    # Pierwsza próba: stare Centrum nie oddaje portu, opiekun cofa klon i zapisuje „nowa wersja nie wystartowała”.
+    update_until_done(centrum)
+    restart = centrum.surroundings.restarts[-1]
+    with monkeypatch.context() as patched:
+        patched.setattr(restart_guardian, "_port_released", lambda port: False)
+        patched.setattr(restart_guardian, "_runs", lambda port, commit: False)
+        assert restart_guardian.main(restart.arguments(), show_problem=lambda title, text: dialogs.append(text)) == 1
+    # Tata uruchamia skrót: stara wersja pokazuje porażkę, a dysk nie daje usunąć pliku wyniku.
+    with monkeypatch.context() as patched:
+        disk_refuses_removing(patched, result)
+        centrum.restart()
+        old_card = centrum.client.get("/api/tool-update").json()
+    # Druga próba się udaje, ale dysk nie przyjmuje „ok” od opiekuna (#725).
+    update_until_done(centrum)
+    restart = centrum.surroundings.restarts[-1]
+    with monkeypatch.context() as patched:
+        patched.setattr(restart_guardian, "_port_released", lambda port: True)
+        patched.setattr(restart_guardian, "_start_centrum", lambda restart: _AnsweringCentrum())
+        patched.setattr(restart_guardian, "_answers", lambda new, port, commit: commit == newest)
+        disk_refuses_replacing(patched, result)
+        assert restart_guardian.main(restart.arguments(), show_problem=lambda title, text: dialogs.append(text)) == 0
+
+    centrum.restart()
+    card = centrum.client.get("/api/tool-update").json()
+
+    assert old_card["state"] == "failed"
+    assert old_card["message"]["what"] == "Nowa wersja narzędzia nie wystartowała."
+    assert repository.head() == newest
+    assert ToolClone(repository.clone).interrupted_update() is None
+    assert card == {"state": "idle"}
+    assert not result.exists()
+    assert log_entries(centrum, "aktualizacja-koniec") == [
+        f"wynik=NOWA_WERSJA_NIE_WYSTARTOWALA przed={before} po={newest} biblioteki=nie"
+    ]
+    assert log_entries(centrum, "aktualizacja-wynik-stary") == [
+        f"wynik=NOWA_WERSJA_NIE_WYSTARTOWALA przed={before} po={newest}"
+    ]
+
+
+@pytest.mark.parametrize("code", [NEW_VERSION_FAILED, UNEXPECTED, ROLLBACK_FAILED])
+def test_porazka_z_pliku_wyniku_przy_wersji_innej_niz_sprzed_aktualizacji_jest_stara_i_karta_jej_nie_pokazuje(
+    tmp_path: Path, code: str
+) -> None:
+    centrum, repository = updating_centrum(tmp_path)
+    running = repository.head()
+    other = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
+    # Wynik próby z innej wersji niż działająca (np. skrót cofnął klon po wyłączeniu komputera, a potem kolejna
+    # Aktualizacja się udała, choć dysk nie przyjął jej „ok”).
+    write_result(tmp_path / "config" / RESULT_FILE, UpdateResult(code, other, running))
+
+    centrum.restart()
+
+    assert centrum.client.get("/api/tool-update").json() == {"state": "idle"}
+    assert not (tmp_path / "config" / RESULT_FILE).exists()
+    assert log_entries(centrum, "aktualizacja-koniec") == []
+    assert log_entries(centrum, "aktualizacja-wynik-stary") == [f"wynik={code} przed={other} po={running}"]
 
 
 def test_urwany_wpis_na_koncu_dziennika_nie_zatrzymuje_startu_z_wynikiem_aktualizacji(tmp_path: Path) -> None:

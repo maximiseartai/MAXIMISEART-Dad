@@ -202,6 +202,68 @@ def test_wyjscie_skryptu_mutacji_widac_w_trakcie_jego_pracy(tmp_path: Path) -> N
     assert (runner.returncode, lines[-1]) == (0, "MUTACJE SKILLI OK"), lines
 
 
+def test_nazwe_kroku_widac_zanim_krok_cokolwiek_wydrukuje(tmp_path: Path) -> None:
+    # Krok, który wisi bez słowa, ma w logu swoją nazwę, więc wiadomo, który wisi. Wybór kroków importuje skrypt, więc
+    # czeka on dopiero pod ``__main__``.
+    seen = tmp_path / "naglowek-widziany"
+    waiting = (
+        "deadline = time.monotonic() + 20\n"
+        f"while not pathlib.Path({str(seen)!r}).exists():\n"
+        "    if time.monotonic() > deadline:\n"
+        "        sys.exit(3)\n"
+        "    time.sleep(0.05)\n" + PASSING
+    )
+    script = "import pathlib, sys, time\n\nif __name__ == '__main__':\n" + "".join(f"    {line}\n" for line in waiting.splitlines())
+    _skill(tmp_path, "verify-a", {"check_a_mutations.py": script})
+
+    runner = _start(tmp_path)
+    assert runner.stdout is not None
+    lines = []
+    for line in runner.stdout:
+        lines.append(line.rstrip("\n"))
+        if line.rstrip("\n") == "== .agents/skills/verify-a/scripts/check_a_mutations.py":
+            seen.touch()
+    runner.wait(timeout=30)
+
+    assert (runner.returncode, lines[-1]) == (0, "MUTACJE SKILLI OK"), lines
+
+
+def test_zadanie_mutations_ci_lokalnie_uruchamia_skrypty_mutacji_skilli(tmp_path: Path) -> None:
+    _tool(tmp_path)
+    _skill(tmp_path, "verify-a", {"check_a_mutations.py": PASSING})
+
+    # Poza CI zadanie mutations odmawia startu (``tools/lib/ciezkie_ci.py``).
+    result = subprocess.run(
+        [sys.executable, str(tmp_path / "tools" / "ci_lokalnie.py"), "--tylko", "mutations"],
+        cwd=tmp_path,
+        env={**os.environ, "GITHUB_ACTIONS": "true"},
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+
+    lines = result.stdout.splitlines()
+    assert (result.returncode, lines[-1]) == (0, "CI LOKALNIE OK | tylko mutations"), result.stdout + result.stderr
+    assert [line.partition(" (")[0] for line in lines[:-1]] == ["OK   mutacje skilli"], result.stdout
+
+
+def test_skrypt_bez_limitu_z_wiersza_polecen_przerywa_domyslny_limit_czasu(tmp_path: Path) -> None:
+    _tool(tmp_path)
+    copy = tmp_path / "tools" / "ci" / "mutacje_skilli.py"
+    copy.write_text(copy.read_text(encoding="utf-8").replace("LIMIT_S = 30 * 60", "LIMIT_S = 1"), encoding="utf-8")
+    late = "import time\n\nif __name__ == '__main__':\n    time.sleep(15)\n" + "".join(f"    {line}\n" for line in PASSING.splitlines())
+    _skill(tmp_path, "verify-a", {"check_a_mutations.py": late})
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1, result.stdout
+    assert "FAIL .agents/skills/verify-a/scripts/check_a_mutations.py" in result.stdout
+    assert "przekroczył limit 1 s" in result.stdout
+
+
 @pytest.mark.parametrize(
     "mention",
     [

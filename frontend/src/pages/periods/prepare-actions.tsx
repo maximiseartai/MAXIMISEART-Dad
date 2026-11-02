@@ -1,8 +1,9 @@
-import { ArrowRightIcon, EyeIcon, PlayIcon } from "lucide-react"
+import { ArrowRightIcon, ClipboardPenLineIcon, EyeIcon, PlayIcon } from "lucide-react"
 
-import type { PeriodProcess, PeriodRow, ProcessStep } from "@/api/centrum"
+import type { FillStep, PeriodProcess, PeriodRow, ProcessStep } from "@/api/centrum"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { href } from "@/lib/address"
 import { isActive, useRuns } from "@/lib/runs"
 import type { PageHref } from "@/pages"
 
@@ -47,6 +48,20 @@ export function StepAction({
 }
 
 type Look = typeof PRIMARY_LOOK | typeof SECONDARY_LOOK
+
+/** „Uzupełnij” w karcie „Następny krok”: podsumowanie Uzupełnienia pliku zbiorczego okresu. */
+export function FillAction({ period, secondary }: { period: PeriodRow; secondary: boolean }) {
+  return (
+    <Button
+      {...(secondary ? SECONDARY_LOOK : PRIMARY_LOOK)}
+      nativeButton={false}
+      render={<a href={href("uzupelnienie", period.token)} />}
+    >
+      <ClipboardPenLineIcon data-icon="inline-start" />
+      Uzupełnij
+    </Button>
+  )
+}
 
 function PreviewAction({ period, step, hint, look }: { period: PeriodRow; step: ProcessStep; hint: string; look: Look }) {
   const { view, start } = useRuns()
@@ -131,6 +146,32 @@ export function PrepareLink({ period, step, secondary }: { period: PeriodRow; st
       >
         {step.label}
         {secondary ? null : <ArrowRightIcon data-icon="inline-end" />}
+      </TooltipTrigger>
+      <TooltipContent>{step.hint}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+/**
+ * Uzupełnienie w Excelu w wierszu Tablicy okresów: „Uzupełnij” jak przycisk główny karty „Następny krok”, przejście na
+ * podsumowanie Uzupełnienia pliku zbiorczego okresu.
+ */
+export function FillLink({ period, step }: { period: PeriodRow; step: FillStep }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={`Uzupełnij, okres ${period.token}`}
+            nativeButton={false}
+            render={<a href={href("uzupelnienie", period.token)} />}
+          />
+        }
+      >
+        Uzupełnij
+        <ArrowRightIcon data-icon="inline-end" />
       </TooltipTrigger>
       <TooltipContent>{step.hint}</TooltipContent>
     </Tooltip>

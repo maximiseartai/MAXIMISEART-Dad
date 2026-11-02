@@ -8,6 +8,7 @@ import itertools
 import json
 from pathlib import Path
 import sys
+import threading
 import time
 from typing import Any, NoReturn
 
@@ -27,6 +28,7 @@ from tests.fixtures.preparation import (
 from tests.fixtures.centrum import centrum as bare_centrum
 from tests.fixtures.centrum_processes import TODAY, PreparingCentrum, Surroundings, preparing_centrum, run_to_end
 from tests.fixtures.centrum import finished_view, phase_states, run_events, views_until
+from tests.fixtures.potomne import wait_for
 
 # Podsumowanie wyniku na domyślnym syntetycznym Rejestrze zleceń, takie samo w podglądzie i przy Uruchom.
 SUMMARY: dict[str, Any] = {
@@ -262,6 +264,62 @@ def test_drugie_uruchomienie_w_trakcie_dostaje_bezpieczny_komunikat_trwa_juz(tmp
     decide(centrum, view, "abort")
     assert finished_view(centrum.client)["state"] == "finished"
     assert centrum.start(dry_run=True).status_code == 200
+
+
+def test_wynik_trafia_na_karte_gdy_druga_karta_klika_uruchom_zaraz_po_koncu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Druga karta ze starym widokiem klika Uruchom, gdy wątek pierwszego Uruchomienia buduje widok jego wyniku (#723).
+
+    Pierwsza karta śledzi strumień i dostaje wynik obu Uruchomień, choć druga klika ponownie od razu po odmowie.
+    """
+
+    centrum = preparing_centrum(tmp_path)
+    building = threading.Event()
+    go = threading.Event()
+
+    class HeldResult(contract.RunFinished):
+        """Widok wyniku, którego budowa w wątku pierwszego Uruchomienia czeka na kliknięcie drugiej karty."""
+
+        def __init__(self, **data: Any) -> None:
+            if threading.current_thread().name.startswith("uruchomienie-") and not go.is_set():
+                building.set()
+                assert go.wait(30)
+            super().__init__(**data)
+
+    monkeypatch.setattr(contract, "RunFinished", HeldResult)
+    first = centrum.start(dry_run=True).json()["run"]["id"]
+    seen: list[tuple[str, str]] = []
+    reading = threading.Event()
+
+    def first_tab() -> None:
+        for event in run_events(centrum.client):
+            view = event["view"]
+            seen.append((view["state"], view["run"]["id"]))
+            reading.set()
+            if view["state"] == "finished" and view["run"]["id"] != first:
+                return
+
+    reader = threading.Thread(target=first_tab, daemon=True)
+    reader.start()
+    assert reading.wait(30)
+    assert building.wait(30)
+    clicks = [centrum.start(dry_run=True)]
+    go.set()
+
+    def accepted() -> bool:
+        if clicks[-1].status_code != 200:
+            clicks.append(centrum.start(dry_run=True))
+        return bool(clicks[-1].status_code == 200)
+
+    assert wait_for(accepted)
+    second = clicks[-1].json()["run"]["id"]
+    reader.join(30)
+
+    assert not reader.is_alive()
+    assert ("finished", first) in seen
+    assert ("finished", second) in seen
+    assert {run["run_id"] for run in centrum.client.get("/api/metrics").json()["runs"]} == {first, second}
 
 
 def test_decyzja_poza_oczekiwaniem_jest_odrzucona(tmp_path: Path) -> None:

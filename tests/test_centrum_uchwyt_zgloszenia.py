@@ -16,22 +16,28 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from rozliczenia.centrum import update_messages
+from rozliczenia import preparation_messages
+from rozliczenia.call_trace import CallFrame, CallTrace
+from rozliczenia.centrum import contract, update_messages
+from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.keyed_box import KeyedBox, read_report_key
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, REPORT, Case, DadCases
 from rozliczenia.centrum.case_delivery import case_outbox
-from rozliczenia.centrum.outbox import RETRY_S, Outbox, Post, ReportIssue, fingerprint_line
+from rozliczenia.centrum.outbox import PART_LIMIT, RETRY_S, Outbox, Post, ReportIssue, fingerprint_line
 from rozliczenia.centrum.report_box import IssuesOutcome, Label, Refused, Unreachable
 from rozliczenia.centrum.reports import (
     SEARCH_DEADLINE_S,
     NoPreview,
+    ProblemFingerprint,
     ReportHandle,
     Reports,
+    StopReport,
     UpdateReport,
 )
 from rozliczenia.centrum.tool_update import NO_CONNECTION, OTHER_BRANCH, UpdateResult
 from rozliczenia.message import Message
+from rozliczenia.process_run import Stop
 
 from tests.fixtures.centrum import (
     QUEUE_THREAD,
@@ -180,6 +186,88 @@ def test_wyslane_zgloszenie_to_dokladnie_podglad_a_sprawa_ma_numer_issue(compute
     }
     assert (owner.states, computer.box.keys) == ([READY, SENT], [KEY])
     assert wait_for(lambda: computer.queued() == [])
+
+
+# Bardzo długi ślad wywołań i dziennik: każde z nich samo jest dłuższe niż jedna część wysyłki (#724).
+LONG_FRAMES = tuple(CallFrame("src/rozliczenia/collective_preparation.py", line, f"krok_{line}") for line in range(3_000))
+LONG_ENTRIES = tuple(f"2026-11-02T10:{minute:02d}:00+01:00 wpis-{minute:02d} {'x' * 5_000}" for minute in range(20))
+SHORT_ENTRIES = tuple(f"2026-11-02T10:{minute:02d}:00+01:00 wpis-{minute:02d}" for minute in range(20))
+
+
+def stop_report(entries: tuple[str, ...]) -> StopReport:
+    """Zgłoszenie Zatrzymania po nieoczekiwanym wyjątku z bardzo długim śladem wywołań i dziennikiem ``entries``."""
+
+    run = contract.RunInfo(
+        id="3f2a9c1b8e7d4f0a",
+        process="preparation",
+        title="Przygotowanie pliku zbiorczego",
+        period="08_14_09_2026",
+        dry_run=True,
+        confirms_readiness=False,
+        register_name="Rejestr zleceń",
+    )
+    message = preparation_messages.unexpected_failure()
+    stop = Stop("unexpected", message, trace=CallTrace("KeyError", LONG_FRAMES))
+    return StopReport(run, stop, ProblemFingerprint.of("preparation", message), Diagnosis((), entries), logs=None)
+
+
+def sent_alone(computer: Computer, report: StopReport | UpdateReport) -> str:
+    """Wysyła Zgłoszenie ``report`` i oddaje treść podglądu, którą skrzynka dostała w jednym issue bez komentarzy."""
+
+    computer.with_key()
+    handle = computer.reports().handle(report.fingerprint)
+    body = handle.prepare(report).body
+
+    assert dump(handle.send()) == SENT
+    [issue] = computer.box.sent
+    assert (issue.body, issue.comments) == (body, [])
+    return body
+
+
+def kept_newest(entries: tuple[str, ...], body: str) -> int:
+    """Ile wpisów ``entries`` ma treść; to zawsze najnowsze, a dopisek mówi, ile najstarszych pominięto."""
+
+    kept = sum(entry in body for entry in entries)
+    assert all(entry in body for entry in entries[len(entries) - kept :])
+    assert f"Pominięte najstarsze wpisy: {len(entries) - kept}, żeby Zgłoszenie zmieściło się w jednym issue." in body
+    return kept
+
+
+def test_zgloszenie_z_bardzo_dlugim_sladem_wywolan_traci_pierwsze_ramki_z_dopiskiem_o_logach(computer: Computer) -> None:
+    body = sent_alone(computer, stop_report(SHORT_ENTRIES))
+
+    frames = [f"{frame.file}:{frame.line} w {frame.function}" for frame in LONG_FRAMES]
+    kept = sum(f"\n{frame}\n" in body for frame in frames)
+    assert all(f"\n{frame}\n" in body for frame in frames[len(frames) - kept :])
+    assert f"- Pominięte pierwsze ramki: {len(frames) - kept}, pełny ślad wywołań jest w Logach Uruchomienia" in body
+    # Ślad traci tylko tyle ramek, ile trzeba, a dziennik zostaje cały.
+    assert len(body) + len(frames[-kept - 1]) + 1 > PART_LIMIT
+    assert all(entry in body for entry in SHORT_ENTRIES)
+    assert "Pominięte najstarsze wpisy" not in body
+
+
+def test_zgloszenie_z_bardzo_dlugim_sladem_i_dziennikiem_to_jedna_czesc_bez_ramek_i_najstarszych_wpisow(
+    computer: Computer,
+) -> None:
+    body = sent_alone(computer, stop_report(LONG_ENTRIES))
+
+    assert f"- Pominięte pierwsze ramki: {len(LONG_FRAMES)}, pełny ślad wywołań jest w Logach Uruchomienia" in body
+    kept = kept_newest(LONG_ENTRIES, body)
+    assert 0 < kept < len(LONG_ENTRIES)
+    assert len(body) + len(LONG_ENTRIES[-kept - 1]) + 1 > PART_LIMIT
+
+
+def test_zgloszenie_nieudanej_aktualizacji_z_bardzo_dlugim_dziennikiem_to_jedna_czesc_bez_najstarszych_wpisow(
+    computer: Computer,
+) -> None:
+    message = update_messages.message_of(NO_CONNECTION)
+    report = UpdateReport(UpdateResult(NO_CONNECTION, TOOL_COMMIT, None), message, LONG_ENTRIES, ProblemFingerprint.of_tool_update(message))
+
+    body = sent_alone(computer, report)
+
+    kept = kept_newest(LONG_ENTRIES, body)
+    assert 0 < kept < len(LONG_ENTRIES)
+    assert len(body) + len(LONG_ENTRIES[-kept - 1]) + 1 > PART_LIMIT
 
 
 def test_bez_sieci_zgloszenie_czeka_w_kolejce_i_dostaje_numer_po_dostarczeniu(computer: Computer) -> None:

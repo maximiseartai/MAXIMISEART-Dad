@@ -718,6 +718,19 @@ export const zProcessStep = z.object({
 });
 
 /**
+ * FillStep
+ *
+ * Uzupełnienie w Excelu: tata robi je w Excelu, Centrum prowadzi na podsumowanie Uzupełnienia pliku zbiorczego;
+ * ``then`` to krok po nim, Wycena w efenix.
+ */
+export const zFillStep = z.object({
+    action: z.literal('fill_collective_file'),
+    label: z.string(),
+    hint: z.string(),
+    then: zProcessStep
+});
+
+/**
  * PeriodRow
  *
  * Jeden okres Tablicy okresów, wyliczony przy każdym odczycie z plików i z Historii Wyceny w efenix.
@@ -743,6 +756,7 @@ export const zPeriodRow = z.object({
         zProcessStep.extend({ action: z.literal('create_worker_settlements') }),
         zProcessStep.extend({ action: z.literal('prepare_collective_file') }),
         zProcessStep.extend({ action: z.literal('price_in_efenix') }),
+        zFillStep,
         zClosedStep
     ]),
     secondary_step: zProcessStep.nullable()

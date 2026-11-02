@@ -6,7 +6,7 @@ from pathlib import Path
 
 from playwright.sync_api import Page, expect
 
-from drive.common import Run, last_opened_is, period_row
+from drive.common import Run, last_opened_is, next_step_names_current_step, period_row
 
 
 def _choose_folder(run: Run, page: Page, path: str) -> None:
@@ -41,9 +41,7 @@ def drive_dad_layout(run: Run, page: Page) -> None:
     run.capture(page, "15-uklad-taty-tablica")
 
     run.step(feature, "taty-nastepny-krok")
-    next_step = page.get_by_role("region", name="Następny krok")
-    expect(next_step).to_contain_text("06_12_10_2026")
-    expect(next_step).to_contain_text("Wyceń w efenix")
+    next_step = next_step_names_current_step(run, page, "06_12_10_2026", "Uzupełnienie w Excelu")
     expect(next_step).not_to_contain_text("Brak Folderu okresu")
     run.check(True, "Następny krok sees the prepared Plik zbiorczy of the last complete period in its month folder")
 

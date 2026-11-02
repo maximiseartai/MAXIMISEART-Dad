@@ -20,6 +20,7 @@ from drive.common import (
     finished_result,
     history_rows,
     last_opened_is,
+    next_step_names_current_step,
     period_choice,
     period_files,
     period_row,
@@ -365,8 +366,8 @@ def drive_preparation(run: Run, page: Page) -> None:
     run.step(feature, "przygotowanie-status-okresu")
     page.goto(run.url)
     expect(period_row(page, LAST_COMPLETE)).to_contain_text("Plik zbiorczy przygotowany")
-    expect(page.get_by_role("region", name="Następny krok")).to_contain_text("Wyceń w efenix")
-    run.check(True, "the Status okresu on Tablica okresów is Plik zbiorczy przygotowany, and the next step Wycena w efenix")
+    next_step_names_current_step(run, page, LAST_COMPLETE, "Uzupełnienie w Excelu")
+    run.check(True, "the Status okresu on Tablica okresów is Plik zbiorczy przygotowany, and the next step Uzupełnij plik zbiorczy")
     run.capture(page, "36-przygotowanie-status-okresu")
 
     run.step(feature, "przygotowanie-nienadpisywanie")
