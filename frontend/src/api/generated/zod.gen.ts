@@ -25,6 +25,7 @@ export const zApiTiming = z.object({
         'getRunSetup',
         'startRun',
         'getIntermaxSetup',
+        'getIntermaxDays',
         'startIntermax',
         'getIntermaxCopies',
         'restoreIntermaxCopy',
@@ -299,6 +300,18 @@ export const zIntermaxCopy = z.object({
 });
 
 /**
+ * IntermaxDay
+ *
+ * Dzień na karcie „Uporządkuj INTERMAX”: data, jej skrót z dniem tygodnia, czy to dziś i czy jest uporządkowany.
+ */
+export const zIntermaxDay = z.object({
+    day: z.iso.date(),
+    label: z.string(),
+    today: z.boolean(),
+    ordered: z.boolean()
+});
+
+/**
  * IntermaxRestoreRequest
  *
  * Przywrócenie Kopii INTERMAX ``name``, którą wymieniła lista Kopii.
@@ -352,6 +365,19 @@ export const zDecision = z.object({
  */
 export const zIntermaxCopies = z.object({
     copies: z.array(zIntermaxCopy),
+    problem: zMessage.nullable()
+});
+
+/**
+ * IntermaxDays
+ *
+ * Dni okresu dzisiejszej daty, późniejsze Dni uporządkowane i dni Surowych zleceń INTERMAX, po kolei.
+ *
+ * ``problem`` to Komunikat, gdy INTERMAX nie da się odczytać; ``days`` jest wtedy puste, tak jak bez wskazanego
+ * Rejestru zleceń.
+ */
+export const zIntermaxDays = z.object({
+    days: z.array(zIntermaxDay),
     problem: zMessage.nullable()
 });
 
@@ -1699,6 +1725,11 @@ export const zRestoreIntermaxCopyResponse = z.discriminatedUnion('state', [
     zIntermaxRestored,
     zIntermaxRestoreRefused
 ]);
+
+/**
+ * Successful Response
+ */
+export const zGetIntermaxDaysResponse = zIntermaxDays;
 
 /**
  * Response Startintermax
