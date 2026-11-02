@@ -251,7 +251,9 @@ class RunHost:
     przyjęte zamknięcie Centrum albo Aktualizacja narzędzia ich nie przerwie.
     Pierwszy widok niesie ``previous``, ostatnie Uruchomienie sprzed startu Centrum,
     a każdy start idzie do ``run_started`` (plik startu na dysku), zanim ruszy jego wątek;
-    nieudany zapis startu trafia tylko do dziennika.
+    nieudany zapis startu trafia tylko do dziennika. Uruchomienie kończy się (``end``) pod tą
+    samą blokadą co publikacja jego wyniku, a start następnego zostawia ten wynik w widokach,
+    więc karta, która czyta strumień co chwilę, dostaje wynik każdego Uruchomienia.
     """
 
     def __init__(
@@ -362,7 +364,8 @@ class RunHost:
                 )
             run = _Run(self, prepared, self._stops)
             self._run = run
-            self._events = []
+            # Wynik poprzedniego Uruchomienia zostaje dla karty, która go jeszcze nie odczytała (#723).
+            self._events = self._events[-1:]
             self._publish_locked(run.running_view())
             view = self._events[-1].view
         self._log.run_started(process=prepared.declaration.key, mode=run.info.mode, period=prepared.period)
@@ -439,6 +442,16 @@ class RunHost:
             ending=run.ending,
         )
 
+    def end(self, run: _Run, result: contract.RunFinished) -> None:
+        """Wynik Uruchomienia ``run`` na kartę i koniec Uruchomienia pod jedną blokadą.
+
+        Start z drugiej karty, który czeka na koniec Uruchomienia, nie wejdzie między wynik a koniec (#723).
+        """
+
+        with self._lock:
+            self._publish_locked(result)
+            run.ended = True
+
     def publish(self, run: _Run, view: contract.RunView) -> None:
         with self._lock:
             if self._run is run:
@@ -503,8 +516,7 @@ class _Run:
         self.stopped = ended.stopped
         self._host.after(ended)
         self._host.finished(ended)
-        self.ended = True
-        self._host.publish(
+        self._host.end(
             self,
             contract.RunFinished(
                 state="finished", run=self.info, progress=self._progress, progress_stale=self._stale, result=result

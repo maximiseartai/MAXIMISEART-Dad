@@ -46,6 +46,12 @@ table, above all the parts modelled by hand, whose change the check cannot see.
   Uruchomienie and the Kontrola ilości of a Przebieg rozliczeń land in their files
   in those actions; a shutdown or update accepted in between kills the thread
   before the files exist, and Maks never gets them.
+- **WYNIK_NA_KARCIE**: the result of every Uruchomienie (its `finished` view) reaches
+  the card, also when a second tab clicks „Uruchom” right after its end. A card's
+  event stream reads `RunHost.events_after` every 50 ms, so the result must stay
+  among the views after the one the card read when that Uruchomienie started.
+  Harm: the card jumps from „trwa” straight to the next Uruchomienie and never
+  shows the result; Dad finds it only in Historia (#723).
 
 An Uruchomienie is in progress from the moment `RunHost.start` creates its `_Run`
 until `RunHost.finished` has written its end to the Centrum log. The checker
@@ -58,11 +64,11 @@ after a new version, until the restart guardian has started and
 
 | Covered code | What the check relies on |
 | --- | --- |
-| `runs.py` `RunHost.start`, `shutdown_refusal`, `decide`, `finished`, `publish` | check and claim of `_run` under `_lock`; refusal while a run has not ended; an accepted shutdown sets `_closing` under the same lock; the start file (`run_started`, `run_cards.RunCards`) written outside the lock, after the claim and before the thread |
+| `runs.py` `RunHost.start`, `shutdown_refusal`, `decide`, `finished`, `publish` | check and claim of `_run` under `_lock`; refusal while a run has not ended; an accepted shutdown sets `_closing` under the same lock; the start file (`run_started`, `run_cards.RunCards`) written outside the lock, after the claim and before the thread; `start` keeps the last view (the previous result) in `_events` |
 | `runs.py` `RunHost.begin_update`, `end_update`, `_busy_locked` | check and claim of `_updating` under `_lock`; refusal while closing, updating, restoring or running |
 | `runs.py` `RunHost.begin_restore`, `end_restore`; `start` | check and claim of `_restoring` under `_lock`; `start` refuses while restoring |
 | `intermax_run.py` `intermax_copies_router` | modelled by hand: `begin_restore`, the restore as one step inside the request, then `end_restore` |
-| `runs.py` `_Run.work`, `confirm`, `answer` | when `ended` is set; after-run actions (`RunHost.after`) before `finished`; waiting for the Decyzja on `_decided` |
+| `runs.py` `_Run.work`, `RunHost.end`, `confirm`, `answer` | `ended` set only in `RunHost.end`, under `_lock` together with the result; after-run actions (`RunHost.after`) before `finished`; waiting for the Decyzja on `_decided` |
 | `shutdown.py` `Shutdown.request`, `wait`, `refuse_while`, `close_for_update` | refusal check, then `_requested.set()`; `close_for_update` sets it without the check |
 | `tool_updates.py` `ToolUpdates.start`, `_update`, `_restart` | modelled by hand: `begin_update`, a log entry, the thread; then either `end_update` or the guardian and `close_for_update` |
 | `app.py` `create_app`: `shutdown.refuse_while(runs.shutdown_refusal)` | the wiring the harness copies |
@@ -104,9 +110,9 @@ script checks the worktree's own `src`.
 
 | Last line | Exit | Meaning |
 | --- | --- | --- |
-| `URUCHOMIENIA OK` | 0 | All three rules hold in every schedule. |
+| `URUCHOMIENIA OK` | 0 | All four rules hold in every schedule. |
 | `URUCHOMIENIA OK, ZNANE USTALENIA: n` | 0 | Only the known findings below, each printed with its counterexample. |
-| `URUCHOMIENIA: NOWE NARUSZENIE (n)` | 1 | A rule breaks in a way not listed below, or a scope never reached a behaviour it must reach (`BRAK_ZAMKNIECIA`, `BRAK_ODMOWY_ZAMKNIECIA`, `BRAK_WYNIKU`, `BRAK_ODMOWY_STARTU`), so the check would prove nothing. |
+| `URUCHOMIENIA: NOWE NARUSZENIE (n)` | 1 | A rule breaks in a way not listed below, or a scope never reached a behaviour it must reach (`BRAK_ZAMKNIECIA`, `BRAK_ODMOWY_ZAMKNIECIA`, `BRAK_WYNIKU`, `BRAK_ODMOWY_STARTU`, `BRAK_DRUGIEGO_WYNIKU`), so the check would prove nothing. |
 | `URUCHOMIENIA: LUKA MODELU (n)` | 2 | `runs.py` or `shutdown.py` uses `threading` in a way the model does not cover (for example `RLock`, `Condition`, `wait(timeout=...)`), or a modelled thread waits on something outside the model. No verdict on the rules. |
 
 A modelled thread that waits on a real lock or Event, or on `time.sleep`, outside the model ends the check about
@@ -138,7 +144,13 @@ thread is one indivisible step, as is each Centrum log entry and
 checker lets any thread whose step can go now go first, and it tries every such
 order. A lock entry can go only while the lock is free, and `wait()` only once the
 Event is set. The actions after the result (`AfterRun`) are one step that
-writes nothing. Schedules that reach a state already seen are cut short.
+writes nothing. A card's event stream is not a modelled thread: at the end of
+every schedule the checker reads `RunHost`'s views (`_events`) as a card would
+next read them, from the view it read when each Uruchomienie started, and finds
+there the result of every Uruchomienie whose thread finished its work. In
+`dwie-karty` that holds only if a second Uruchomienie started after the first
+result (`BRAK_DRUGIEGO_WYNIKU` otherwise). Schedules that reach a state already
+seen are cut short; the state includes those views.
 
 Replaced: `intermax_copies_router` by a „Przywróć tę kopię” tab that calls the real
 `begin_restore`, takes one step for the Kopia and the replace of INTERMAX (`intermax_restore.restore`,
@@ -166,7 +178,7 @@ received.
 
 Not covered: Zatrzymania and errors inside the engine (`_Run.work`'s `except`
 path), `tools/uruchom_proces.py` or a second Centrum process on another port,
-Windows logoff, the SSE stream, Diagnoza and Zgłoszenie (`diagnose`/`send_report`), more tabs or clicks than
+Windows logoff, the SSE stream itself (`_event_stream`, read through `RunHost`'s views), Diagnoza and Zgłoszenie (`diagnose`/`send_report`), more tabs or clicks than
 above, and what Aktualizacja narzędzia does to the clone (the
 [`verify-aktualizacja-narzedzia`](../verify-aktualizacja-narzedzia/SKILL.md) model
 covers it). When another action that must not run during an Uruchomienie lands,
@@ -220,7 +232,8 @@ py -3 .agents\skills\verify-jedno-uruchomienie-naraz\scripts\check_runs_mutation
 It must end with `MUTACJE OK`. These all give `NOWE NARUSZENIE`: the check and
 claim in `start` under two lock entries (two Uruchomienia at once), a refusal that
 skips a run waiting for its Decyzja, `ended` set at the start of `_Run.work`,
-the actions after the result moved below `ended = True`,
+the actions after the result moved below `RunHost.end`, `ended` set under `_lock`
+before the result is published outside it, `start` clearing the previous result from `_events`,
 `Shutdown.request` without the refusal, an accepted shutdown that does not set
 `_closing`, `begin_update` without the closing or the running check, `start`
 without the updating check, `begin_restore` without the running check,
