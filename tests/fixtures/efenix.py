@@ -64,14 +64,14 @@ class Order:
 
 
 def number_in_trace(number: str, text: str) -> bool:
-    """Czy tekst ``text`` pliku śladu Wyceny Emmetta albo jego klucza ma cyfry numeru zlecenia ``number`` jako osobną liczbę.
+    """Czy tekst ``text`` pliku śladu Wyceny Emmetta albo jego klucza ma cyfry numeru zlecenia ``number`` poza HMAC i kluczem.
 
-    Zlecenie stoi w śladzie pod HMAC hex, a klucz też jest hexem, więc każdy ciąg cyfr trafia się w nich losowo (run
-    41387482438 na ``main``: „9401” w HMAC). Cyfry wśród małych znaków hex się więc nie liczą, a numer jawny w kluczu albo
-    wartości JSON śladu, z ``#`` albo bez, nie ma obok siebie znaku hex i się liczy.
+    Zlecenie stoi w śladzie pod HMAC-SHA256 hex, a klucz to 32 bajty hex: oba to ciągi dokładnie 64 znaków hex, w których
+    każdy ciąg cyfr trafia się losowo (run 41387482438 na ``main``: „9401” w HMAC). Takie ciągi się więc nie liczą, a numer
+    jawny, z ``#`` albo bez, także sklejony z literą albo z HMAC w dłuższy ciąg hex, się liczy.
     """
 
-    return re.search(rf"(?<![0-9a-f]){re.escape(number.removeprefix('#'))}(?![0-9a-f])", text) is not None
+    return number.removeprefix("#") in re.sub(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])", "", text)
 
 
 def write_collective_file(directory: Path, orders: Sequence[Order], *, notes_sheet_first: bool = False) -> Path:
