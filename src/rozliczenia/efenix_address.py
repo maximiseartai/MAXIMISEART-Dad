@@ -5,7 +5,9 @@ zbędnych spacji i interpunkcji, rodzaj (``ul``, ``os``, ``al``, ``pl``), zbiór
 numer budynku i lokal. Lokal to część po ``/`` przy numerze (``12A/24``, zapis Pliku zbiorczego) albo słowo po
 ``Lokal`` zaraz za numerem (``12A Lokal 24``, zapis efenix); ``Lokal`` gdzie indziej to słowo nazwy ulicy.
 Wszystko przed rodzajem (w efenix miejscowość z dzielnicą) się pomija.
-Adres, którego nie da się tak rozebrać (bez rodzaju, bez numeru, z czymś po lokalu), nie jest równy żadnemu.
+Adres, którego nie da się tak rozebrać (bez rodzaju, bez nazwy ulicy, bez numeru, z lokalem i po ``/``, i po
+``Lokal``), nie jest równy żadnemu. Słowa po ``Lokal N`` czyta jak resztę nazwy ulicy z numerem na końcu; lista efenix
+nic po lokalu nie pisze.
 """
 
 from __future__ import annotations
