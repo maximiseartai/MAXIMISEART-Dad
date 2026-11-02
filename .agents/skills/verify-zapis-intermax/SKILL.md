@@ -1,6 +1,6 @@
 ---
 name: verify-zapis-intermax
-description: Exhaustively check that Uporządkowanie INTERMAX (`order_register` in `src/rozliczenia/intermax_ordering.py`) and Przywracanie Kopii INTERMAX (`restore` in `src/rozliczenia/intermax_restore.py`), which both replace through `replace_register` in `src/rozliczenia/intermax_replace.py`, replace the Rejestr zleceń only over the bytes they read, keep a Kopia INTERMAX with exactly the bytes they replaced and the 10 newest Kopie of both names, put exactly the chosen Kopia into INTERMAX, and leave INTERMAX, its folder and the Kopie as they were when they stop, under every order of a worker's change arriving through OneDrive, Dad opening INTERMAX in Excel, OneDrive refusing the replace, failed file steps, a failed write check and a killed process. Use when a change touches `intermax_replace` (`replace_register`, its retried replace, `Disk`, `Waiting`, the Kopia and its cleanup), the save phase of `order_register`, `intermax_restore.restore`, `intermax_copies.named`, `listed` or `outdated`, `Register.read` or `Register.check`, `workbook_save.write_atomically`, `workbook_files` reading or the Excel lock, adds another writer of INTERMAX or of the Kopie folder, or when `explore_intermax.py` fails.
+description: Exhaustively check that Uporządkowanie INTERMAX (`order_register` in `src/rozliczenia/intermax_ordering.py`) and Przywracanie Kopii INTERMAX (`restore` in `src/rozliczenia/intermax_restore.py`), which both replace through `replace_register` in `src/rozliczenia/intermax_replace.py`, replace the Rejestr zleceń only over the bytes they read, keep a Kopia INTERMAX with exactly the bytes they replaced and the 10 newest Kopie of both names with the earlier ones byte for byte, put exactly the chosen Kopia into INTERMAX, and leave INTERMAX, its folder and the Kopie as they were when they stop, under every order of a worker's change arriving through OneDrive, Dad opening INTERMAX in Excel, OneDrive refusing the replace, failed file steps, a failed write check and a killed process. Use when a change touches `intermax_replace` (`replace_register`, its retried replace, `Disk`, `Waiting`, the Kopia and its cleanup), the save phase of `order_register`, `intermax_restore.restore`, `intermax_copies.named`, `listed` or `outdated`, `Register.read` or `Register.check`, `workbook_save.write_atomically`, `workbook_files` reading or the Excel lock, adds another writer of INTERMAX or of the Kopie folder, or when `explore_intermax.py` fails.
 pilnuje:
   - src/rozliczenia/intermax_replace.py
   - src/rozliczenia/intermax_ordering.py
@@ -56,7 +56,11 @@ Each rule holds for both; „the run” is either.
   `intermax_copies.KEPT` (10) newest Kopie of both names (`przed
   uporządkowaniem`, `przed przywróceniem`) by the moment in their name, the new
   one among them, unless removing older ones failed, which the code turns into
-  a warning. Harm: Dad loses the Kopia he needs, or the folder grows forever.
+  a warning, and every Kopia that was there before the run and is still there
+  has the same bytes as before, also after that warning (`_create` in
+  `intermax_replace` makes a Kopia only as a new file, `O_EXCL`). Harm: Dad
+  loses the Kopia he needs, the folder grows forever, or a Kopia he kept holds
+  another state than its name says.
 - **BEZ_WYJATKU**: the run ends with a summary or a `StopError`, or the process
   dies; no other exception escapes. Harm: Dad sees an unexpected error instead
   of a Komunikat that tells him what to do.
@@ -187,10 +191,6 @@ Not covered:
   covers, and a restore running beside an Uruchomienie, which `RunHost` refuses
   (`verify-jedno-uruchomienie-naraz`);
 - the order of Kopie by the moment in their name around a clock change;
-- an earlier Kopia whose bytes a successful run rewrites: KOPIE_NAJNOWSZE
-  compares names only, so a `Disk.create` that overwrote a Kopia of the same name
-  would be caught only where the run then stops (ZATRZYMANIE_BEZ_SLADU), as in
-  the second restore in the same second;
 - a second Uporządkowanie in the same second (its `Refusal.COPY_EXISTS` becomes the
   ordinary Zatrzymanie `copy_failed`): after an Uporządkowanie no Surowe
   zlecenia are left to order;
@@ -279,8 +279,14 @@ temporary copy of the checkout (`tools/mutacje.py`) and must end with
 - a retried replace that reads INTERMAX again before the pause instead of
   after it;
 - Kopie sorted by name instead of by the moment in their name;
-- a Kopia that overwrites a Kopia of the same name (no `O_EXCL`), which the
-  second restore in the same second then removes when it stops;
+- a Kopia that overwrites a Kopia of the same name (no `O_EXCL`): the second
+  restore in the same second overwrites the Kopia of the first, and then stops
+  with it rewritten (ZATRZYMANIE_BEZ_SLADU) or, after its replace, fails on
+  `made[0]` with no Kopia of its own (BEZ_WYJATKU), so it never returns a
+  summary;
+- the same with a taken name that does not stop the run: the second restore in
+  the same second returns a summary over the rewritten Kopia of the first
+  (KOPIE_NAJNOWSZE);
 - a restore that replaces INTERMAX with the bytes it read instead of the
   chosen Kopia.
 
