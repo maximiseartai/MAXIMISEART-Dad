@@ -54,8 +54,10 @@ from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import socket
 import threading
 import time
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 LIST_PAGE = "index.php"
@@ -277,10 +279,25 @@ def atrapa_efenix(
 
     atrapa = AtrapaEfenix(copy.deepcopy(list(orders)))
     expired = threading.Event()
-    # Koniec bloku przerywa opóźnione odpowiedzi, więc żaden wątek obsługi nie czeka dłużej niż Atrapa.
+    # Koniec bloku przerywa opóźnione odpowiedzi i zamyka otwarte połączenia, więc żaden wątek obsługi nie czeka dłużej
+    # niż Atrapa, a po bloku nic już pod jej adresem nie odpowiada.
     closing = threading.Event()
 
     class Handler(BaseHTTPRequestHandler):
+        # Połączenia trwałe: przeglądarka wysyła kolejne żądania kilkoma połączeniami, a nie nowym na każde żądanie, jak
+        # przy HTTP/1.0, co pod xdist na Windows wyczerpywało gniazda (``net::ERR_NO_BUFFER_SPACE``, #778). Każda
+        # odpowiedź ma ``Content-Length``.
+        protocol_version = "HTTP/1.1"
+
+        def handle(self) -> None:
+            try:
+                super().handle()
+            except OSError as error:
+                # Przeglądarka zrywa połączenie, na które już nie czeka (karta przeszła na inną stronę albo zamknięta),
+                # a koniec bloku zamyka połączenia, na których przeglądarka czeka na odpowiedź albo wysyła następne żądanie.
+                if not (isinstance(error, ConnectionError) or closing.is_set()):
+                    raise
+
         def do_GET(self) -> None:
             self._answer("GET", {})
 
@@ -351,13 +368,11 @@ def atrapa_efenix(
 
         def _html(self, text: str, status: HTTPStatus = HTTPStatus.OK, *, content_type: str = "text/html") -> None:
             body = text.encode("utf-8")
-            # Przeglądarka zrywa połączenie szukania, na które już nie czeka (karta przeszła na inną stronę).
-            with suppress(ConnectionError):
-                self.send_response(status)
-                self.send_header("Content-Type", f"{content_type}; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+            self.send_response(status)
+            self.send_header("Content-Type", f"{content_type}; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
         def _json(self, answer: Mapping[str, str]) -> None:
             self._html(json.dumps(answer))
@@ -370,8 +385,7 @@ def atrapa_efenix(
             self.send_header("Content-Length", "0")
             self.end_headers()
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.daemon_threads = True
+    server = _Server(Handler)
     thread = threading.Thread(target=server.serve_forever, name="atrapa-efenix")
     thread.start()
     atrapa.url = f"http://127.0.0.1:{server.server_address[1]}/{LIST_PAGE}"
@@ -380,8 +394,44 @@ def atrapa_efenix(
     finally:
         closing.set()
         server.shutdown()
+        server.close_connections()
         server.server_close()
         thread.join()
+
+
+class _Server(ThreadingHTTPServer):
+    """Serwer Atrapy na wolnym porcie ``127.0.0.1``, który pamięta otwarte połączenia, żeby je zamknąć na końcu bloku."""
+
+    daemon_threads = True
+    # Kolejka ``listen`` dłuższa niż domyślne 5: Windows odrzuca połączenie ponad kolejkę, a macOS i Linux je trzymają.
+    request_queue_size = 128
+
+    def __init__(self, handler: type[BaseHTTPRequestHandler]) -> None:
+        self._connections: set[socket.socket] = set()
+        self._connections_lock = threading.Lock()
+        super().__init__(("127.0.0.1", 0), handler)
+
+    def get_request(self) -> tuple[socket.socket, Any]:
+        # Pętla serwera przyjmuje połączenie przed końcem ``shutdown``, więc po nim zbiór ma każde przyjęte połączenie.
+        connection, address = super().get_request()
+        with self._connections_lock:
+            self._connections.add(connection)
+        return connection, address
+
+    def shutdown_request(self, request: socket.socket | tuple[bytes, socket.socket]) -> None:
+        if isinstance(request, socket.socket):
+            with self._connections_lock:
+                self._connections.discard(request)
+        super().shutdown_request(request)
+
+    def close_connections(self) -> None:
+        """Po ``shutdown`` zamyka w obie strony połączenia, które są jeszcze otwarte, więc wątek, który na nim czyta
+        następne żądanie albo pisze odpowiedź, kończy obsługę, a przeglądarka nie dostaje już odpowiedzi."""
+
+        with self._connections_lock:
+            for connection in self._connections:
+                with suppress(OSError):
+                    connection.shutdown(socket.SHUT_RDWR)
 
 
 # Działania na zleceniu i pole, w którym przychodzi jego identyfikator.
