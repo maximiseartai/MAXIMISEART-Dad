@@ -774,8 +774,24 @@ class RunInterrupted(_Model):
     advice: Message
 
 
+class RunRecorded(_Model):
+    """Uruchomienie z wynikiem w Historii, ale bez Logów Uruchomienia: Centrum zamknęło się po zapisie rekordu metryk,
+    a przed zapisem Logów.
+
+    Karta zna tylko to, co wiersz Historii: ``result`` i ``started_at`` są z niego, a ``headline`` i ``next_action``
+    wylicza z nich ta sama reguła co na żywo (``runs.verdict``). Komunikatów, etapów ani podsumowania nie ma.
+    """
+
+    state: Literal["recorded"]
+    run: RunInfo
+    started_at: datetime
+    result: RunResult
+    headline: str
+    next_action: NextAction
+
+
 # Ostatnie Uruchomienie sprzed tego startu Centrum, z dysku.
-PastRun = Annotated[RunRestored | RunInterrupted, Field(discriminator="state")]
+PastRun = Annotated[RunRestored | RunRecorded | RunInterrupted, Field(discriminator="state")]
 
 
 class RunIdle(_Model):

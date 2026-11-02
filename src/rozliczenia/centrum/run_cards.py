@@ -2,9 +2,11 @@
 
 Przy każdym starcie Uruchomienia Centrum zapisuje jego bezpieczne fakty (identyfikator, proces, tryb, okres, start)
 w jednym pliku obok dziennika, ``ostatnie-uruchomienie.json``, nadpisywanym przy następnym starcie i nigdy
-nieusuwanym. Po starcie Centrum ostatnie Uruchomienie to ten start: gdy ma plik Logów, jego karta wraca z Logów;
-gdy go nie ma, to Urwane Uruchomienie (Centrum zamknęło się w jego trakcie), bo Logi powstają przed końcem każdego
-Uruchomienia, także przy Zatrzymaniu. Na końcu Uruchomienia ten moduł niczego nie zapisuje, więc nie ma kolejności względem działań po wyniku.
+nieusuwanym. Po starcie Centrum ostatnie Uruchomienie to ten start: gdy ma plik Logów, jego karta wraca z Logów.
+Gdy go nie ma, a Historia ma wiersz z jego identyfikatorem, Centrum zamknęło się po zapisie rekordu metryk, a przed
+zapisem Logów, więc karta pokazuje wynik z Historii. Gdy nie ma ani Logów, ani wiersza Historii, to Urwane
+Uruchomienie (Centrum zamknęło się w jego trakcie), bo Logi powstają przed końcem każdego Uruchomienia, także przy
+Zatrzymaniu. Na końcu Uruchomienia ten moduł niczego nie zapisuje, więc nie ma kolejności względem działań po wyniku.
 
 Karta z Logów niesie tylko to, co w nich jest: Komunikaty w trzech częściach, podsumowanie, etapy, sposób
 zakończenia i Rodzaj Zatrzymania. Tytuł i akcję wylicza ta sama reguła co na żywo (``runs.verdict``), a tytuł
@@ -20,6 +22,7 @@ Plik Logów zmienia się tylko przy Diagnozie, więc odczyt każdego pliku zosta
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -45,6 +48,9 @@ _PREVIEW_ADVICE: Final = "Podgląd niczego nie zapisał. Uruchom go ponownie."
 _WRITE_ADVICE: Final = "Uruchom ponownie. Pliki okresu, które zdążyły powstać, Centrum zostawi i powie, co z nimi zrobić."
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+History = Callable[[], Iterable[contract.ProcessRun]]
+"""Wiersze Historii z plików metryk; ``OSError``: plików nie da się odczytać."""
 
 
 class StartedRun(BaseModel):
@@ -73,12 +79,13 @@ class LoggedRun:
 class RunCards:
     """Karty Uruchomień z dysku: ostatnie Uruchomienie sprzed startu Centrum i karta po identyfikatorze.
 
-    ``logs`` to katalog Logów Uruchomienia, a ``last_started`` plik ostatniego startu.
+    ``logs`` to katalog Logów Uruchomienia, ``last_started`` plik ostatniego startu, a ``history`` wiersze Historii.
     """
 
-    def __init__(self, logs: Path, last_started: Path) -> None:
+    def __init__(self, logs: Path, last_started: Path, history: History) -> None:
         self._logs = logs
         self._last_started = last_started
+        self._history = history
         self._lock = threading.Lock()
         # Odczyt pliku Logów po nazwie, z jego czasem zmiany i rozmiarem; ``None``: pliku nie dało się odczytać.
         self._ended: dict[str, tuple[tuple[int, int], LoggedRun | None]] = {}
@@ -102,7 +109,7 @@ class RunCards:
             return None
         path = self._logged(started.run_id)
         if path is None:
-            return self._interrupted(started)
+            return self._recorded(started) or self._interrupted(started)
         record = _read(path, RunLog)
         # Logi są, ale nieczytelne: wynik był, tylko go nie znamy, więc to nie jest Urwane Uruchomienie.
         return None if record is None else self._restored(record)
@@ -201,6 +208,33 @@ class RunCards:
                 technical_notes=record.technical_notes,
                 summary=record.summary,
             ),
+        )
+
+    def _recorded(self, started: StartedRun) -> contract.RunRecorded | None:
+        """Karta z wiersza Historii Uruchomienia bez Logów; ``None``: Historia go nie ma albo jej nie da się odczytać."""
+
+        try:
+            row = next((run for run in self._history() if run.run_id == started.run_id), None)
+        except OSError:
+            return None
+        if row is None:
+            return None
+        declaration = declaration_of(started.process)
+        info = declaration.run_info(run_id=started.run_id, period=started.period, dry_run=started.mode == "podgląd")
+        headline, next_action = verdict(
+            ending="finished" if row.stop_kind is None else "stop",
+            stop_kind=row.stop_kind,
+            result=row.result,
+            dry_run=info.dry_run,
+            view=declaration.view,
+        )
+        return contract.RunRecorded(
+            state="recorded",
+            run=info,
+            started_at=row.started_at,
+            result=row.result,
+            headline=headline,
+            next_action=next_action,
         )
 
     def _interrupted(self, started: StartedRun) -> contract.RunInterrupted:

@@ -570,6 +570,9 @@ _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), dziennik Centrum, raport
 Uruchomienie procesu z Centrum rozliczeń, które nie doszło do wyniku, bo
 Centrum zamknęło się w jego trakcie. Nie ma Logów Uruchomienia ani rekordu
 metryk; Centrum nazywa je po następnym starcie i radzi, co sprawdzić.
+Uruchomienie, którego wynik jest już w Historii, a Logów nie ma (Centrum
+zamknęło się tuż po wyniku), nie jest urwane: karta po starcie pokazuje jego
+wynik z Historii.
 _Avoid_: Zatrzymanie (kończy się Komunikatem procesu), przerwane (tak Metryki
 nazywają Zatrzymania)
 

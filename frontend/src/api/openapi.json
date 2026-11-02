@@ -4922,6 +4922,9 @@
                     "$ref": "#/components/schemas/RunRestored"
                   },
                   {
+                    "$ref": "#/components/schemas/RunRecorded"
+                  },
+                  {
                     "$ref": "#/components/schemas/RunInterrupted"
                   }
                 ],
@@ -4929,6 +4932,7 @@
                   "propertyName": "state",
                   "mapping": {
                     "interrupted": "#/components/schemas/RunInterrupted",
+                    "recorded": "#/components/schemas/RunRecorded",
                     "restored": "#/components/schemas/RunRestored"
                   }
                 }
@@ -5220,6 +5224,59 @@
         ],
         "title": "RunOutcome",
         "description": "Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.\n\n``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla\ntaty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).\n``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed\nZapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka\nZatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które\nzostały tacie, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w trzech częściach\n(``None``: inny proces albo wynik bez podsumowania)."
+      },
+      "RunRecorded": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "recorded",
+            "title": "State"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunInfo"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "OK",
+              "WYMAGA_SPRAWDZENIA",
+              "BLAD_KRYTYCZNY"
+            ],
+            "title": "Result"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline"
+          },
+          "next_action": {
+            "type": "string",
+            "enum": [
+              "run",
+              "rerun",
+              "open_collective_file",
+              "open_worker_settlements_folder",
+              "open_order_register"
+            ],
+            "title": "Next Action"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "run",
+          "started_at",
+          "result",
+          "headline",
+          "next_action"
+        ],
+        "title": "RunRecorded",
+        "description": "Uruchomienie z wynikiem w Historii, ale bez Logów Uruchomienia: Centrum zamknęło się po zapisie rekordu metryk,\na przed zapisem Logów.\n\nKarta zna tylko to, co wiersz Historii: ``result`` i ``started_at`` są z niego, a ``headline`` i ``next_action``\nwylicza z nich ta sama reguła co na żywo (``runs.verdict``). Komunikatów, etapów ani podsumowania nie ma."
       },
       "RunRequest": {
         "properties": {

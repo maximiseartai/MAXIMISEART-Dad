@@ -239,8 +239,12 @@ def create_app(
         intermax_disk,
         surroundings.cloud_files,
     )
-    # Karty Uruchomień z pliku startu i Logów Uruchomienia: ostatnie po starcie Centrum i wiersz Historii (ADR 0017).
-    cards = RunCards(log.directory / RUN_LOGS_DIRECTORY, log.directory / LAST_STARTED_FILE)
+    # Karty Uruchomień z pliku startu, Logów Uruchomienia i Historii: ostatnie po starcie Centrum i wiersz Historii (ADR 0017).
+    cards = RunCards(
+        log.directory / RUN_LOGS_DIRECTORY,
+        log.directory / LAST_STARTED_FILE,
+        lambda: read_runs(processes, centrum_runs.started()),
+    )
     # Powiadomienia o Uwagach taty, wysłanych Zgłoszeniach, Wydaniach i zakończonych Wycenach w efenix z Logów
     # Uruchomienia; przeczytane obok Ustawień taty (ADR 0015).
     notifications = Notifications(

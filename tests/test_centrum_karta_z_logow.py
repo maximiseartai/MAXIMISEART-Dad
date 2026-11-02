@@ -9,10 +9,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+import threading
 from typing import Any
 
 import pytest
 
+from rozliczenia.centrum.run_logs import RunLogs
+from rozliczenia.telemetry import MetricsStore
 from tests.fixtures.centrum import finished_view, without_times
 from tests.fixtures.centrum_processes import (
     HeldRegister,
@@ -89,6 +92,92 @@ def test_uruchomienie_przerwane_zamknieciem_centrum_jest_nazwane_po_starcie(
         },
     }
     assert first_view(centrum.client) == current
+
+
+def held_before(monkeypatch: pytest.MonkeyPatch, owner: type, name: str) -> tuple[threading.Event, threading.Event]:
+    """Metoda ``name`` klasy ``owner`` czeka, aż test ją puści: ponowny start Centrum w tym czasie to Centrum zamknięte
+    tuż przed nią. Daje parę (doszło, puść); puszczona metoda robi swoje w poprzednim Centrum."""
+
+    reached, released = threading.Event(), threading.Event()
+    real = getattr(owner, name)
+
+    def held(*args: Any) -> Any:
+        reached.set()
+        released.wait()
+        return real(*args)
+
+    monkeypatch.setattr(owner, name, held)
+    return reached, released
+
+
+def test_centrum_zamkniete_po_zapisie_wyniku_w_historii_daje_karte_z_wynikiem_z_historii(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Centrum zamyka się po rekordzie metryk, a przed Logami Uruchomienia: karta po starcie nie przeczy Historii (#722)."""
+
+    centrum = preparing_centrum(tmp_path)
+    reached, released = held_before(monkeypatch, RunLogs, "run_ended")
+    running = centrum.start(dry_run=False).json()
+    assert wait_for(reached.is_set)
+    closed = centrum.client
+
+    centrum.restart()
+
+    current = centrum.client.get("/api/runs/current").json()
+    shown = first_view(centrum.client)
+    [row] = centrum.client.get("/api/metrics").json()["runs"]
+    without_logs = logged(centrum)
+    released.set()
+    finished_view(closed)
+    assert (without_logs, row["run_id"], row["result"]) == ([], running["run"]["id"], "WYMAGA_SPRAWDZENIA")
+    assert current == shown == {
+        "state": "idle",
+        "previous": {
+            "state": "recorded",
+            "run": running["run"],
+            "started_at": row["started_at"],
+            "result": "WYMAGA_SPRAWDZENIA",
+            "headline": "Plik zbiorczy przygotowany · wymaga sprawdzenia",
+            "next_action": "open_collective_file",
+        },
+    }
+
+
+def test_centrum_zamkniete_przed_zapisem_wyniku_w_historii_daje_urwane_uruchomienie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    centrum = preparing_centrum(tmp_path)
+    reached, released = held_before(monkeypatch, MetricsStore, "append")
+    running = centrum.start(dry_run=False).json()
+    assert wait_for(reached.is_set)
+    closed = centrum.client
+
+    centrum.restart()
+
+    previous = centrum.client.get("/api/runs/current").json()["previous"]
+    history = centrum.client.get("/api/metrics").json()["runs"]
+    released.set()
+    finished_view(closed)
+    assert (history, previous["state"], previous["run"]) == ([], "interrupted", running["run"])
+
+
+def test_nieczytelna_historia_bez_logow_daje_urwane_uruchomienie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Historii nie da się odczytać, więc nie pokaże wyniku, któremu karta mogłaby przeczyć."""
+
+    centrum = preparing_centrum(tmp_path)
+    reached, released = held_before(monkeypatch, RunLogs, "run_ended")
+    running = centrum.start(dry_run=False).json()
+    assert wait_for(reached.is_set)
+    closed = centrum.client
+    centrum.metrics_path.unlink()
+    centrum.metrics_path.mkdir()
+
+    centrum.restart()
+
+    previous = centrum.client.get("/api/runs/current").json()["previous"]
+    released.set()
+    finished_view(closed)
+    assert (previous["state"], previous["run"]) == ("interrupted", running["run"])
 
 
 def test_karta_po_starcie_to_ostatni_start_takze_po_przerwanym(tmp_path: Path) -> None:

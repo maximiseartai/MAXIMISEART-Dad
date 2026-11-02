@@ -60,6 +60,8 @@ import { ConfirmRunDialog } from "@/pages/runs/run-dialogs"
 
 type LiveRun = Exclude<RunView, { state: "idle" }>
 
+type RunRecorded = Extract<PastRun, { state: "recorded" }>
+
 const PHASE_ICONS: Record<PhaseProgress["state"], React.ReactNode> = {
   pending: <CircleDashedIcon className="text-muted-foreground" aria-hidden />,
   running: <Spinner />,
@@ -145,13 +147,16 @@ export function RunCard({
 }
 
 /**
- * Ostatnie Uruchomienie sprzed startu Centrum, z dysku: karta z Logów Uruchomienia albo Uruchomienie, w którego
- * trakcie Centrum się zamknęło. Wygląda jak wynik na żywo, z dopiskiem, skąd jest.
+ * Ostatnie Uruchomienie sprzed startu Centrum, z dysku: karta z Logów Uruchomienia, wynik z Historii, gdy Centrum
+ * zamknęło się przed zapisem Logów, albo Uruchomienie, w którego trakcie Centrum się zamknęło. Wygląda jak wynik na
+ * żywo, z dopiskiem, skąd jest.
  */
 export function PastRunCard({ past, reminder, onNewRun }: { past: PastRun; reminder: string; onNewRun: () => void }) {
   switch (past.state) {
     case "restored":
       return <RestoredRunCard past={past} reminder={reminder} onNewRun={onNewRun} />
+    case "recorded":
+      return <RecordedRunCard past={past} reminder={reminder} onNewRun={onNewRun} />
     case "interrupted":
       return <InterruptedRunCard past={past} onNewRun={onNewRun} />
     default: {
@@ -181,6 +186,33 @@ function RestoredRunCard({ past, reminder, onNewRun }: { past: RunRestored; remi
         <PastNote>Ostatnie Uruchomienie · {dateTime(past.started_at)} · Centrum było od tego czasu zamknięte</PastNote>
         <PhaseList phases={past.phases} />
         <OutcomeBody run={run} result={result} action={next.button} filling />
+        {next.dialog}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** Wynik z Historii bez szczegółów: Centrum zamknęło się tuż po wyniku, zanim zapisało resztę karty. */
+function RecordedRunCard({ past, reminder, onNewRun }: { past: RunRecorded; reminder: string; onNewRun: () => void }) {
+  const { run } = past
+  const next = useNextAction(run, past.next_action, reminder)
+
+  return (
+    <Card role="region" aria-label="Ostatnie Uruchomienie">
+      <RunHeader
+        run={run}
+        actions={
+          <>
+            <NewRunButton onNewRun={onNewRun} />
+            <WriteAboutRun runId={run.id} />
+          </>
+        }
+      />
+      <CardContent className="flex flex-col gap-6">
+        <PastNote>
+          Ostatnie Uruchomienie · {dateTime(past.started_at)} · Centrum zamknęło się tuż po wyniku, więc szczegółów nie ma
+        </PastNote>
+        <ResultAlert result={past.result} headline={past.headline} action={next.button} />
         {next.dialog}
       </CardContent>
     </Card>
@@ -369,15 +401,7 @@ function OutcomeBody({
     <>
       {result.summary === null ? null : <NumberStrip figures={result.summary.figures} />}
       {stop === undefined || result.stop_kind === null ? (
-        <Alert className="wejscie p-4" aria-label="Wynik">
-          {result.result === "OK" ? (
-            <CircleCheckIcon className="text-success!" />
-          ) : (
-            <TriangleAlertIcon className="text-warning!" />
-          )}
-          <AlertTitle className="text-base">{result.headline}</AlertTitle>
-          {action === null ? null : <AlertAction className="top-3 right-3">{action}</AlertAction>}
-        </Alert>
+        <ResultAlert result={result.result} headline={result.headline} action={action} />
       ) : (
         <RunStop
           stop={stop}
@@ -407,6 +431,25 @@ function OutcomeBody({
       ))}
       {result.summary === null ? null : <SummaryDetails summary={result.summary} run={run} />}
     </>
+  )
+}
+
+/** Wynik bez Zatrzymania: ikona wyniku, tytuł i akcja po nim. */
+function ResultAlert({
+  result,
+  headline,
+  action,
+}: {
+  result: LoggedOutcome["result"]
+  headline: string
+  action: React.ReactNode
+}) {
+  return (
+    <Alert className="wejscie p-4" aria-label="Wynik">
+      {result === "OK" ? <CircleCheckIcon className="text-success!" /> : <TriangleAlertIcon className="text-warning!" />}
+      <AlertTitle className="text-base">{headline}</AlertTitle>
+      {action === null ? null : <AlertAction className="top-3 right-3">{action}</AlertAction>}
+    </Alert>
   )
 }
 

@@ -2,7 +2,9 @@
 
 ## Status
 
-Zaakceptowana. Rozstrzyga główną część issue #427. Zmienia dwa miejsca
+Zaakceptowana. Rozstrzyga główną część issue #427. Issue #722 (decyzja Maksa
+z 2.11.2026) dodało kartę z wynikiem z Historii, gdy Logów nie ma. Zmienia
+dwa miejsca
 [ADR 0015](0015-logi-uruchomienia-uwagi-taty-i-powiadomienia.md):
 
 - „Centrum przerwane w trakcie zostawia tylko `uruchomienie-start` w
@@ -32,11 +34,15 @@ Centrum bez identyfikatora Uruchomienia.
   dziennika, a Uruchomienie biegnie dalej.
 - **Urwane Uruchomienie wynika z plików, nie jest zapisywane.** Po starcie
   Centrum ostatnie Uruchomienie to ostatni start. Gdy ma plik Logów, jego
-  karta wraca z Logów. Gdy go nie ma, Centrum zamknęło się w trakcie i to
-  Urwane Uruchomienie, bo Logi powstają przed końcem każdego Uruchomienia,
-  także przy Zatrzymaniu. Nic nie jest zapisywane na końcu, więc nie ma
-  kolejności względem działań po wyniku, a zabicie Centrum w dowolnej chwili
-  daje właściwą kartę.
+  karta wraca z Logów. Gdy go nie ma, a Historia ma wiersz z jego
+  identyfikatorem, Centrum zamknęło się po zapisie rekordu metryk, a przed
+  zapisem Logów: karta pokazuje wynik z Historii z tytułem i akcją z tej samej
+  reguły co na żywo i z dopiskiem, że Centrum zamknęło się tuż po wyniku, więc
+  szczegółów nie ma (#722). Gdy nie ma ani Logów, ani wiersza Historii,
+  Centrum zamknęło się w trakcie i to Urwane Uruchomienie, bo Logi powstają
+  przed końcem każdego Uruchomienia, także przy Zatrzymaniu. Nic nie jest
+  zapisywane na końcu, więc nie ma kolejności względem działań po wyniku, a
+  zabicie Centrum w dowolnej chwili daje kartę zgodną z Historią.
 - **Karta z Logów niesie tylko to, co w nich jest**: Komunikaty w trzech
   częściach, podsumowanie, etapy, sposób zakończenia i Rodzaj Zatrzymania.
   Tytuł wyniku i akcję po nim wylicza ta sama reguła co na żywo. Diagnozy i
@@ -70,10 +76,13 @@ Centrum bez identyfikatora Uruchomienia.
 
 ## Konsekwencje
 
-- Wystarczy jeden nieudany zapis Logów na końcu Uruchomienia (np. brak
-  uprawnień do katalogu Logów, który leży obok pliku startu), żeby karta po
-  ponownym starcie Centrum nazwała zakończone Uruchomienie urwanym: plik
-  startu jest, a Logów nie. Rada „Uruchom ponownie” jest wtedy bezpieczna
-  dzięki Nienadpisywaniu.
+- Nieudany zapis Logów na końcu Uruchomienia (np. brak uprawnień do katalogu
+  Logów, który leży obok pliku startu) daje po ponownym starcie Centrum kartę
+  z wynikiem z Historii, jak zamknięcie Centrum przed zapisem Logów.
+- Wiersz Historii dostaje identyfikator Uruchomienia dopiero chwilę po zapisie
+  rekordu metryk (`CentrumRuns.remember` czyta plik metryk i dopisuje jedną
+  linię). Centrum zamknięte w tej chwili zostawia wiersz Historii bez
+  identyfikatora (pochodzenie `.cmd`), a karta po starcie mówi o Urwanym
+  Uruchomieniu. Okno nie jest zmierzone.
 - Plik Logów bez pola Diagnozy (sprzed tego pola, tylko u Maksa) daje „karty
   nie ma”.
