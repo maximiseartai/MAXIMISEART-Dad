@@ -16,7 +16,7 @@ import urllib.request
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
-from playwright.sync_api import Locator, Page, Request, expect
+from playwright.sync_api import FloatRect, Locator, Page, Request, expect
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
@@ -60,10 +60,13 @@ class Run:
             raise DriveFailure(message)
         print(f"  ok: {message}", flush=True)
 
-    def capture(self, page: Page, name: str, *, full_page: bool = True, live: bool = False) -> None:
+    def capture(
+        self, page: Page, name: str, *, full_page: bool = True, live: bool = False, clip: FloatRect | None = None
+    ) -> None:
         """Screenshot and ARIA snapshot after every running transition has finished.
 
         ``live`` captures while a stage runs: its indeterminate bar loops forever, so do not wait.
+        ``clip`` takes a close-up of that part of the viewport instead of the page.
         """
 
         number = name.split("-", 1)[0]
@@ -74,7 +77,9 @@ class Run:
             page.wait_for_function(
                 "document.getAnimations().every((animation) => animation.playState !== 'running')"
             )
-        page.screenshot(path=self.evidence / "screenshots" / f"{name}.png", full_page=full_page)
+        page.screenshot(
+            path=self.evidence / "screenshots" / f"{name}.png", full_page=full_page and clip is None, clip=clip
+        )
         snapshot = page.locator("body").aria_snapshot()
         (self.evidence / "aria" / f"{name}.txt").write_text(snapshot + "\n", encoding="utf-8")
 
