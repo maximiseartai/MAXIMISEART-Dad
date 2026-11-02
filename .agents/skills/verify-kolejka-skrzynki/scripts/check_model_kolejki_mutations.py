@@ -2,9 +2,8 @@
 
 Each mutation removes from ``model/KolejkaSkrzynki.tla`` one guard or step whose counterpart in
 ``src/rozliczenia/centrum/outbox.py`` the mutation names, runs on its own copy of the checkout (``tools/mutacje.py``)
-and must end TLC's report with the expected line. One mutation fixes a known finding in the model and must end with
-``ZNALEZISKO ZNIKNĘŁO``. A mutation whose anchor text is no longer in the model is reported as NIEAKTUALNA: update
-it to the new model.
+and must end TLC's report with the expected line. A mutation whose anchor text is no longer in the model is reported
+as NIEAKTUALNA: update it to the new model.
 
 The copy of the checkout has no ignored TLC cache, so this script hands Java and ``tla2tools.jar`` of this checkout
 to every command through ``TLC_JAVA`` and ``TLC_JAR``.
@@ -25,7 +24,6 @@ ROOT = Path(__file__).resolve().parents[4]
 MODEL = Path(".agents/skills/verify-kolejka-skrzynki/model/KolejkaSkrzynki.tla")
 CHECK = ".agents/skills/verify-kolejka-skrzynki/scripts/sprawdz_model_kolejki.py"
 NEW = "MODEL KOLEJKI: NOWE NARUSZENIE"
-GONE = "MODEL KOLEJKI: ZNALEZISKO ZNIKNĘŁO"
 
 
 def _check(config: str) -> tuple[str, ...]:
@@ -116,20 +114,6 @@ MUTATIONS = (
         ),
         _check("okres"),
         "plik znika z kolejki, choć Skrzynka nie przyjęła części",
-        NEW,
-    ),
-    Mutation(
-        "Zgłoszenie bez komentarzy przy działającej sieci (_deliver_report: _comment_all(opened.number, (), box))",
-        (
-            Edit(
-                MODEL,
-                "          /\\ nr' = Ustaw(nr, q, Len(nowe)) /\\ kom' = Ustaw(kom, q, Reszta)\n",
-                "          /\\ nr' = Ustaw(nr, q, Len(nowe)) /\\ kom' = Ustaw(kom, q, <<>>)\n",
-            ),
-            Edit(MODEL, "          /\\ IF Reszta = <<>>\n", "          /\\ IF TRUE\n"),
-        ),
-        _check("zgloszenie-w-czesciach"),
-        "każde Zgłoszenie w częściach traci części od 2, także bez awarii",
         NEW,
     ),
     Mutation(
@@ -285,23 +269,6 @@ MUTATIONS = (
         _check("dwa-procesy"),
         "Kontrola ilości, której plik .json.tmp usunął resume nowego Centrum, uchodzi za przyjętą i nie dociera do Skrzynki",
         NEW,
-    ),
-    Mutation(
-        "naprawa w modelu: przejęte Zgłoszenie dostaje resztę części",
-        (
-            Edit(
-                MODEL,
-                "             ELSE /\\ nr' = Ustaw(nr, q, Najnowsze) /\\ kom' = Ustaw(kom, q, <<>>)\n"
-                '                  /\\ Slad("przejecie")\n'
-                '                  /\\ Idz(q, "dostarczona",',
-                "             ELSE /\\ nr' = Ustaw(nr, q, Najnowsze) /\\ kom' = Ustaw(kom, q, Od(2))\n"
-                '                  /\\ Slad("przejecie")\n'
-                '                  /\\ Idz(q, "komentuj",',
-            ),
-        ),
-        _check("zgloszenie-w-czesciach"),
-        "znane znalezisko „przejecie” znika, a sprawdzenie to mówi",
-        GONE,
     ),
 )
 

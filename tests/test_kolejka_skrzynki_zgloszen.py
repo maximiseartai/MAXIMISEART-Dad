@@ -18,7 +18,17 @@ import pytest
 
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.outbox import RETRY_S, Frame, KnownIssue, NewIssue, Outbox, PeriodThread, Post, ReportIssue
+from rozliczenia.centrum.outbox import (
+    PART_LIMIT,
+    RETRY_S,
+    Frame,
+    KnownIssue,
+    NewIssue,
+    Outbox,
+    PeriodThread,
+    Post,
+    ReportIssue,
+)
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, Refused, Rejected, Unreachable
 
 from tests.fixtures.centrum import FakeIssue, FakeReportBox
@@ -773,15 +783,13 @@ def test_zerwane_polaczenie_po_zalozeniu_zgloszenia_nie_daje_drugiego_zgloszenia
     assert [issue.body for issue in queue.box.sent] == [REPORT_BODY]
 
 
-def test_dluga_tresc_zgloszenia_idzie_w_issue_i_komentarzach_bez_ramek(tmp_path: Path) -> None:
-    queue = Queue(tmp_path, FakeReportBox())
-    long_body = REPORT_BODY + "x" * 70_000
+def test_zgloszenie_w_wiecej_niz_jednej_czesci_to_blad_programu() -> None:
+    longest = REPORT_BODY + "x" * (PART_LIMIT - len(REPORT_BODY))
+    assert report(longest).parts == (longest,)
 
-    queue.outbox.post(report(long_body))
-
-    assert queue.box.wait_until(lambda box: len(box.sent) == 1 and len(box.sent[0].comments) == 1)
-    [issue] = queue.box.sent
-    assert issue.body + "".join(issue.comments) == long_body
+    # Ponowiona wysyłka przejmuje znalezione Zgłoszenie bez komentarzy, więc część 2 by przepadła (#724).
+    with pytest.raises(ValueError, match="jednej części"):
+        report(longest + "x")
 
 
 def test_zgloszenie_bez_wiersza_odcisku_w_tresci_issue_to_blad_programu() -> None:

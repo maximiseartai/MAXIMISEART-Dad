@@ -21,7 +21,7 @@ ci-czesci: 2
 CI runs `sprawdz_kolejke.py` (the `ci:` key) in Mutation checks whenever a change touches this skill:
 it runs the checker of the real code (`explore_outbox.py`) and the TLA+ model (`sprawdz_model_kolejki.py`, TLC,
 as the `ci:` of `verify-aktualizacja-narzedzia` does), each to its end. Its units (`UNITS` in
-`sprawdz_kolejke.py`) are the scope `watek-okresu`, the other four scopes, and the model; CI runs them in up to
+`sprawdz_kolejke.py`) are the scope `watek-okresu`, the other three scopes, and the model; CI runs them in up to
 `ci-czesci` parts (`MUTACJE_CZESC=k/n`, consecutive units per part). `watek-okresu` alone takes about as long
 as the other two units together (in CI about 190 s of 340 s), so with two parts it gets its own, and no part
 is longer than it: below that the wall of the job does not go without splitting that scope's schedules. A
@@ -58,6 +58,16 @@ or modeling error?” say also stays with you.
   next start: it has its marker and is never sent again.
 - **BEZ_WYJATKU**: no pass of the queue ends in an exception that `_drain` logs
   as `nieoczekiwany-wyjatek` „wysyłka do Skrzynki Zgłoszeń”.
+
+A Zgłoszenie (`ReportIssue`) always has one part, so WSZYSTKIE_CZESCI holds
+when a retry takes over the Zgłoszenie it finds by its odcisk line without
+comments (`_deliver_report`). Two guards keep it to one part (#724): `Post`
+raises `ValueError` for a `ReportIssue` with more
+(`test_zgloszenie_w_wiecej_niz_jednej_czesci_to_blad_programu`), and
+`reports.py` fits the body into `PART_LIMIT` (`outbox.py`), first by dropping
+the first frames of the call trace, then the oldest entries of the Centrum log
+(the `bardzo_dlugim` tests in `tests/test_centrum_uchwyt_zgloszenia.py`). The
+checker's scope `zgloszenie` and the model's `ASSUME` take one part as given.
 
 ## Does the change touch it?
 
@@ -186,8 +196,7 @@ out and why.
 
 | Scope | Wysyłki |
 | --- | --- |
-| `zgloszenie` | one Zgłoszenie (`ReportIssue`) in one part, as every Zgłoszenie is in practice |
-| `zgloszenie-w-czesciach` | one Zgłoszenie in three parts, which a longer body would make |
+| `zgloszenie` | one Zgłoszenie (`ReportIssue`) in one part, as every Zgłoszenie is |
 | `watek-okresu` | two Kontrole ilości to one issue okresu (`PeriodThread`), in two and one part |
 | `nowe-issue` | one Uwaga taty (`NewIssue`) in two parts |
 | `znane-issue` | a comment in two parts to the existing issue of an Uwaga taty (`KnownIssue`) |
@@ -211,29 +220,8 @@ as `post`, refused content and two file errors in a row.
 
 ## Known findings
 
-1. **`zgloszenie-w-czesciach`, WSZYSTKIE_CZESCI: a retried Zgłoszenie loses
-   its later parts.** A single network failure is enough:
-   1. the pass asks for open Zgłoszenia with the odcisk line and finds none;
-   2. `open_issue` opens issue #1 with part 1;
-   3. `comment(#1, part 2)` gets `Unreachable`, so the pass stops (`brak-sieci`);
-   4. after `RETRY_S` the next pass finds issue #1 by its line;
-   5. `_deliver_report` returns `Delivered(found, ())`, the marker is written
-      and the file removed.
-
-   Parts 2 and 3 never reach the Skrzynka. The docstring of `ReportIssue` takes
-   over a found Zgłoszenie „bez komentarza” on purpose, because it may be one
-   that another computer or an earlier Zgłoszenie opened, but the docstring of
-   `outbox.py` and ADR 0015 promise at least once. It is latent in practice:
-   the body (`reports.py`) has 20 short log entries, so it fits in one part,
-   and nothing is lost in scope `zgloszenie`. Nothing guards that, though: the
-   body also carries every frame of the call trace (`call_trace.py`) and the
-   Diagnoza checks, and a body longer than one comment (`COMMENT_LIMIT` minus
-   2 000 characters) makes the finding real.
-
-   The finding excuses WSZYSTKIE_CZESCI in this scope only after the faults
-   that cause it (`_after_opened_issue`: a lost answer to `open_issue` or a
-   fault at a `comment`). Parts missing after any other schedule, including one
-   without faults, are a new violation.
+None. The former finding `przejecie` (a retried Zgłoszenie in several parts
+lost its later parts) is gone since a Zgłoszenie always has one part (above).
 
 A known finding lives in `KNOWN_FINDINGS` in `explore_outbox.py`, with the
 faults after which it is excused. When a code change fixes it, the check ends
@@ -294,7 +282,6 @@ with `MUTACJE OK`. Each of these gives `KOLEJKA: NOWE NARUSZENIE`:
 - an issue okresu opened without looking for it;
 - a known issue missing part 1;
 - a network failure that skips the file instead of stopping the pass;
-- a Zgłoszenie that never posts its comments, with the network working;
 - an Uwaga taty that opens two issues;
 - no delivery marker;
 - no `RETRY_S` wake after a pass that stopped;
@@ -305,8 +292,8 @@ with `MUTACJE OK`. Each of these gives `KOLEJKA: NOWE NARUSZENIE`:
 - a pass that does not clear `_draining`, so later requests only set `_again`;
 - `send_in_background` that never starts the queue thread.
 
-The Zgłoszenie, Uwaga, marker and removal mutations break the same rule as a
-known finding or an accepted risk, in a schedule those do not excuse. A mutation reported as `NIEAKTUALNA` no longer
+The Uwaga, marker and removal mutations break the same rule as an accepted
+risk, in a schedule it does not excuse. A mutation reported as `NIEAKTUALNA` no longer
 matches `outbox.py`: rewrite its `anchor` and `replacement` against the new code
 so that it breaks the same rule again.
 
@@ -448,7 +435,6 @@ configuration is checked in full.
 | `logi` | Logi Uruchomienia with a header, 2 parts; 2 network failures, 1 lost answer, 2 file errors, 1 switch-off | passes |
 | `nowe` | two Uwagi taty, 2 parts each; 1 network failure, 1 lost answer, 2 file errors, 1 switch-off | passes |
 | `zgloszenie` | one Zgłoszenie in 1 part; 2 network failures, 1 lost answer, 2 file errors, 1 switch-off | passes |
-| `zgloszenie-w-czesciach` | one Zgłoszenie in 2 parts; 1 of each failure | known finding `przejecie` |
 | `znane` | a comment in 2 parts to the known issue of an Uwaga; 2 network failures, 1 lost answer, 2 file errors, 1 switch-off | passes |
 | `dwie-kolejki` | two queues of one folder in one process, one Kontrola in 2 parts; 1 network failure, 1 file error, 1 switch-off | passes |
 | `dwa-procesy` | one Kontrola; the old Centrum closes its port and the new one starts before the old process ends; no other failure | passes |
@@ -464,12 +450,9 @@ its bound.
 
 ### Known findings of the model
 
-1. **`zgloszenie-w-czesciach`, WszystkieCzesci (`przejecie`)**: the checker's
-   known finding 1, reached also without a network failure: `open_issue`
-   opens issue #1 with part 1, the computer switches off (or the answer is
-   lost), the next start finds #1 by its odcisk line, `_deliver_report`
-   returns `Delivered(found, ())`, and the marker and removal follow. Part 2
-   never reaches the Skrzynka.
+None. The former finding `przejecie` is gone with the checker's (above): the
+model takes a Zgłoszenie in one part as `ASSUME Cel = "zgloszenie" => Czesci = 1`,
+whose counterpart is the `ValueError` of `Post`.
 
 A known finding lives in `model/oczekiwane.json` with the promise it breaks
 and the cause it is excused after. When a change fixes it, the check ends with `ZNALEZISKO ZNIKNĘŁO`.
@@ -550,8 +533,7 @@ one guard or step whose code it names, on a copy of the checkout
   that does not write the issue number, and a file with the number that opens
   an issue again (`odmowa-tresci`); and, as a model check without code, the
   accepted risk removed from JednoIssue (the risk is reachable).
-- WszystkieCzesci: a failed comment skipped instead of ending the wysyłka; a
-  Zgłoszenie that never posts its comments, with the network working; and, in
+- WszystkieCzesci: a failed comment skipped instead of ending the wysyłka; and, in
   the configurations with a refused comment or a read error, a refused
   comment that removes the file instead of `_rejected` (`odmowa-tresci`) and
   an unreadable file removed instead of skipped by `_skip_unreadable`
@@ -566,6 +548,3 @@ one guard or step whose code it names, on a copy of the checkout
   ask for a pass (`_woken`); `post` without `send_in_background`; `_again`
   ignored; a pass that does not clear `_draining`; `resume` without
   `send_in_background`.
-
-One mutation fixes a known finding in the model (a found Zgłoszenie gets its
-other parts) and must end with `MODEL KOLEJKI: ZNALEZISKO ZNIKNĘŁO`.
