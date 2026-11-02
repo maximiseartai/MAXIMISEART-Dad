@@ -11,17 +11,20 @@ sprawdza Skrypt dla maszyn (``tests/test_uruchom_proces.py``).
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import AbstractContextManager, contextmanager
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from copy import copy
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
+import json
 from pathlib import Path
 import hashlib
 import itertools
 import re
 import shutil
 import socket
+import subprocess
 import sys
 import time
 import zipfile
@@ -33,12 +36,14 @@ from playwright.sync_api import Browser, Page
 import pytest
 
 from rozliczenia import TOOL_ROOT, efenix_browser, efenix_process
+from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
-from rozliczenia.efenix_pricing import PagePart, PricingSummary
+from rozliczenia.efenix_pricing import LoggedOut, Login, PagePart, PricingSummary
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.engine import run_settlements
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
+from rozliczenia.progress import ProgressSnapshot, SavingStep
 from rozliczenia.workbook_files import excel_lock_file, read_computed_rows, read_data_rows
 
 from tests.fixtures.atrapa_efenix import (
@@ -91,20 +96,22 @@ def _run(
     timeout_ms: int = 10_000,
     meanwhile: Callable[[], None] = lambda: None,
     pace: Pace | None = None,
+    clock: Callable[[], float] = time.perf_counter,
 ) -> Priced:
     """Uruchomienie Wyceny w efenix dla Pliku zbiorczego ``source``; ``meanwhile`` to to, co tata zrobił z plikiem, zanim
-    proces skończył ostatnie zlecenie. Tempo ludzkie jest wyłączone, chyba że test poda ``pace``. Ślad Wyceny Emmetta
-    leży w ``_traces(source)``, więc każde Uruchomienie dla tego samego pliku czyta ślad poprzedniego."""
+    proces skończył ostatnie zlecenie. Tempo ludzkie jest wyłączone, chyba że test poda ``pace``, a ``clock`` to zegar
+    czasów etapów i śladu działań okna. Ślad Wyceny Emmetta leży w ``_traces(source)``, więc każde Uruchomienie dla tego
+    samego pliku czyta ślad poprzedniego."""
 
     @contextmanager
-    def open_efenix() -> Iterator[efenix_browser.BrowserEfenix]:
+    def open_efenix(_login: Login) -> Iterator[efenix_browser.BrowserEfenix]:
         with efenix_browser.window(page, url, timeout_ms=timeout_ms) as efenix:
             yield efenix
         meanwhile()
 
     return run_process(
         efenix_process.PROCESS,
-        EfenixInputs(source, open_efenix, pace=pace, trace_directory=_traces(source)),
+        EfenixInputs(source, open_efenix, pace=pace, trace_directory=_traces(source), clock=clock),
         Tata(),
         view=lambda _inputs, summary: summary,
         metrics_path=source.parent.parent / "metryki.jsonl",
@@ -652,7 +659,9 @@ def test_w_tempie_ludzkim_zlecenie_trwa_20_s_a_przerwa_miedzy_dzialaniami_w_efen
     tmp_path: Path, page: Page
 ) -> None:
     """Na udawanym zegarze: zlecenie z Wyceną Emmetta trwa od szukania do szukania następnego 20 s (spec #741), a zlecenie
-    z wyceną, która już jest (szukanie i otwarcie), nie czeka na następne dłużej niż próg podtrzymania sesji."""
+    z wyceną, która już jest (szukanie i otwarcie), nie czeka na następne dłużej niż próg podtrzymania sesji. Czas każdego
+    działania okna w śladzie zlecenia do Logów Uruchomienia nie liczy przerwy przed nim, więc na zegarze, który przesuwa
+    tylko przerwa, jest równy 0."""
 
     emmett = {"O": 1, "T": 2, "AG": 1}
     orders = [
@@ -662,7 +671,8 @@ def test_w_tempie_ludzkim_zlecenie_trwa_20_s_a_przerwa_miedzy_dzialaniami_w_efen
     ]
     clock = _FakeTime()
     with atrapa_efenix([order.in_efenix(f"98{index}") for index, order in enumerate(orders)], clock=clock) as atrapa:
-        outcome = _run(write_collective_file(tmp_path, orders), page, atrapa.url, pace=Pace(sleep=clock.pause, clock=clock))
+        source = write_collective_file(tmp_path, orders)
+        outcome = _run(source, page, atrapa.url, pace=Pace(sleep=clock.pause, clock=clock), clock=clock)
         moments = atrapa.moments()
 
     searches = [at for at, path in moments if path == SEARCH]
@@ -670,6 +680,10 @@ def test_w_tempie_ludzkim_zlecenie_trwa_20_s_a_przerwa_miedzy_dzialaniami_w_efen
     assert (outcome.result, _figures(outcome)) == ("OK", _figures_of(3, 3))
     # Ruch w oknie co kilkanaście sekund (spec #741): próg podtrzymania sesji jest krótszy niż 20 s.
     assert (searches[1] - searches[0], max(gaps) <= KEEPALIVE_S < 20) == (20, True)
+    assert outcome.view is not None
+    durations = [[step.duration_ms for step in result.steps] for result in outcome.view.results]
+    assert [len(steps) for steps in durations] == [7, 2, 7]
+    assert {duration for steps in durations for duration in steps} == {0}
 
 
 def test_strona_bez_listy_zlecen_i_adres_bez_efenix_zatrzymuja_wycene(tmp_path: Path, page: Page) -> None:
@@ -1322,13 +1336,147 @@ def test_slad_wyceny_emmetta_nie_ma_numeru_zlecenia_adresu_loginu_ani_skrotu_num
     }
 
 
-def test_wycena_w_efenix_bez_podanego_tempa_i_sladu_ma_tempo_ludzkie_i_slad_w_plikach_centrum(tmp_path: Path) -> None:
-    """Centrum rozliczeń (#750) podaje tylko Plik zbiorczy i okno efenix, więc dostaje tempo ludzkie na prawdziwym zegarze
-    i Ślad Wyceny Emmetta w ``config/`` narzędzia, poza OneDrive i poza Gitem (ADR 0015)."""
+# --- Okno efenix taty: logowanie i przeglądarka (#750) ------------------------------------------------------------------
 
-    inputs = EfenixInputs(tmp_path / "plik.xlsx", lambda: pytest.fail("okno efenix się nie otwiera"))
+LOGIN_STEP = SavingStep("Zaloguj się w oknie efenix", None, 0, 0)
 
-    assert (inputs.pace, inputs.trace_directory.parent) == (Pace(sleep=time.sleep, clock=time.monotonic), TOOL_ROOT / "config")
+
+def test_okno_na_stronie_logowania_czeka_az_tata_sie_zaloguje_a_czas_czekania_nie_liczy_sie_do_czasow_uruchomienia(
+    tmp_path: Path, page: Page
+) -> None:
+    """Tata loguje się 10 minut; każdy inny krok Zapisywania trwa 2 s. ``Czas uruchomienia``, czas Zapisywania i rekord
+    metryk mają tylko te 2 s każdego kroku, czas uruchomienia na żywo przy każdym kroku postępu też nie liczy logowania, a
+    postęp idzie po Wykonawcach alfabetycznie, potem Znaczniki efenix."""
+
+    # Zegar, który przesuwa tylko tata z testu (ManualClock z tests/fixtures/clock.py wciągnąłby ten plik do bramki C).
+    now = [0.0]
+    orders = [
+        Order("#5402", worker="beata.testowa", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),
+        Order("#5401", cells={"T": 1}, amount=_au({"019": 1}), quantities={"019": 1}),
+    ]
+    source = write_collective_file(tmp_path, orders)
+    metrics = tmp_path / "metryki.jsonl"
+    steps: list[SavingStep] = []
+    reached_ms: list[int] = []
+    with atrapa_efenix([orders[0].in_efenix("541"), orders[1].in_efenix("542")]) as atrapa:
+        atrapa.expire_session()
+
+        class LoggingIn(Tata):
+            def show_progress(self, snapshot: ProgressSnapshot) -> None:
+                if snapshot.step is None or (steps and steps[-1] == snapshot.step):
+                    return
+                steps.append(snapshot.step)
+                reached_ms.append(snapshot.total_elapsed_ms)
+                if snapshot.step == LOGIN_STEP:
+                    now[0] += 600
+                    atrapa.log_in()
+                else:
+                    now[0] += 2
+
+        outcome = run_process(
+            efenix_process.PROCESS,
+            EfenixInputs(
+                source,
+                lambda login: efenix_browser.window(page, atrapa.url, login=login),
+                pace=None,
+                trace_directory=_traces(source),
+                clock=lambda: now[0],
+            ),
+            LoggingIn(),
+            view=lambda _inputs, summary: summary,
+            metrics_path=metrics,
+            clock=lambda: now[0],
+        )
+    [record] = [json.loads(line) for line in metrics.read_text(encoding="utf-8").splitlines()]
+
+    assert (outcome.result, _figures(outcome)) == ("OK", _figures_of(2, 2))
+    assert steps == [
+        LOGIN_STEP,
+        SavingStep("Zlecenia", "adrian.testowy", 0, 2),
+        SavingStep("Zlecenia", "beata.testowa", 1, 2),
+        SavingStep("Znaczniki efenix w Pliku zbiorczym", None, 0, 0),
+    ]
+    assert (outcome.total_duration_ms, outcome.progress.phase_durations_ms[ProgressPhase.SAVING]) == (6000, 6000)
+    assert reached_ms == [0, 0, 2000, 4000]
+    assert (record["total_duration_ms"], record["phase_durations_ms"][ProgressPhase.SAVING]) == (6000, 6000)
+
+
+def test_okno_bez_logowania_taty_i_przegladarka_ktora_nie_wystartowala_zatrzymuja_wycene_z_komunikatem(
+    tmp_path: Path, page: Page
+) -> None:
+    """Brak logowania w czasie oczekiwania to Zatrzymanie jak po wylogowaniu, a przeglądarka, której nie ma na komputerze
+    (tu kanał, którego Playwright nie zna), to Komunikat dla taty, nie nieoczekiwany wyjątek; w efenix nic się nie zmienia."""
+
+    orders = [Order("#5501", cells={"O": 1}, amount=_au({"012": 1}))]
+    with atrapa_efenix([orders[0].in_efenix("551")]) as atrapa:
+        atrapa.expire_session()
+        not_logged_in = _run_with(
+            write_collective_file(tmp_path / "bez-logowania", orders),
+            lambda login: efenix_browser.window(page, atrapa.url, login=login, login_timeout_ms=1),
+        )
+        # Okno ``chrome`` startuje własny Playwright, a ten wątek ma już Playwright przeglądarki testów.
+        with ThreadPoolExecutor(max_workers=1) as own_thread:
+            no_browser = own_thread.submit(
+                _run_with,
+                write_collective_file(tmp_path / "bez-chrome", orders),
+                lambda login: efenix_browser.chrome(atrapa.url, tmp_path / "profil", login, channel="chrome-niezainstalowany"),
+            ).result()
+        requested = atrapa.requested()
+
+    assert (_stop(not_logged_in), _stop(no_browser)) == ("EFENIX_WYLOGOWANY", "EFENIX_BRAK_PRZEGLADARKI")
+    assert (_kept(not_logged_in), _kept(no_browser)) == (False, False)
+    assert set(requested) <= READING | {("GET", "page_login.php")}
+
+
+def test_okno_czeka_na_logowanie_taty_15_minut_a_potem_daje_wylogowanie(page: Page) -> None:
+    """Domyślny limit czekania na logowanie to 15 minut: tata, który loguje się w 14. minucie i 59. sekundzie, zaczyna
+    Wycenę, a bez logowania okno kończy czekanie w 15. minucie (``LoggedOut``), nie później. Czas czekania mierzy
+    zegar okna, który tu przesuwa test: start w 0, potem podana minuta, a każdy następny odczyt godzinę później."""
+
+    seen: list[float] = []
+
+    def waiting(minutes: float, log_in: Callable[[], None] = lambda: None) -> Callable[[], float]:
+        seen.clear()
+        readings = iter([0.0, minutes * 60])
+
+        def clock() -> float:
+            seen.append(next(readings, 3600.0))
+            if len(seen) == 2:
+                log_in()
+            return seen[-1]
+
+        return clock
+
+    with atrapa_efenix([]) as atrapa:
+        atrapa.expire_session()
+        with efenix_browser.window(page, atrapa.url, login=nullcontext, clock=waiting(14 + 59 / 60, atrapa.log_in)):
+            logged_in = page.url
+        atrapa.expire_session()
+        with pytest.raises(LoggedOut), efenix_browser.window(page, atrapa.url, login=nullcontext, clock=waiting(15)):
+            pass
+
+    assert (logged_in, max(seen)) == (atrapa.url, 900.0)
+
+
+def test_profil_przegladarki_okna_efenix_lezy_w_katalogu_narzedzia_poza_gitem() -> None:
+    """Katalog narzędzia leży u taty na dysku lokalnym poza OneDrive (``docs/agents/komputer-taty.md``)."""
+
+    profile = efenix_browser.default_profile()
+    ignored = subprocess.run(
+        ["git", "check-ignore", "--quiet", "--no-index", str(profile / "Default" / "Cookies")], cwd=TOOL_ROOT, check=False
+    )
+
+    assert (profile.parent, ignored.returncode) == (TOOL_ROOT, 0)
+
+
+def _run_with(source: Path, open_efenix: Callable[[Login], AbstractContextManager[efenix_browser.BrowserEfenix]]) -> Priced:
+    return run_process(
+        efenix_process.PROCESS,
+        EfenixInputs(source, open_efenix, pace=None, trace_directory=_traces(source)),
+        Tata(),
+        view=lambda _inputs, summary: summary,
+        metrics_path=source.parent.parent / "metryki.jsonl",
+    )
 
 
 def test_plik_zbiorczy_otwarty_w_excelu_zatrzymuje_wycene_zanim_otworzy_efenix(tmp_path: Path, page: Page) -> None:

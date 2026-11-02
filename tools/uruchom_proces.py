@@ -174,7 +174,7 @@ def _order(args: argparse.Namespace) -> tuple[ProcessResult, int]:
 def _price(args: argparse.Namespace) -> tuple[ProcessResult, int]:
     url: str = args.efenix_url
     # Bez tempa ludzkiego: Skrypt dla maszyn biegnie tylko na Atrapie efenix (ADR 0024), w nowym Chromium bez sesji taty.
-    inputs = EfenixInputs(args.source, lambda: efenix_browser.chromium(url), pace=None, trace_directory=args.trace)
+    inputs = EfenixInputs(args.source, lambda _login: efenix_browser.chromium(url), pace=None, trace_directory=args.trace)
     return _conduct(efenix_process.PROCESS, run_view.EFENIX, inputs, args.metrics)
 
 

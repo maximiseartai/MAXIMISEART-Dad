@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any, Final, Generic, Literal, TypeVar, assert_never
 
 from rozliczenia import (
+    efenix_messages,
+    efenix_process,
     intermax_messages,
     intermax_process,
     preparation_messages,
@@ -164,10 +166,10 @@ class ProcessDeclaration(Generic[InputsT, SummaryT]):
 
 @dataclass(frozen=True, kw_only=True)
 class PeriodProcessDeclaration(ProcessDeclaration[InputsT, SummaryT]):
-    """Wpis procesu, który tata uruchamia z okresem: karta okresów i Podgląd bez zapisu."""
+    """Wpis procesu, który tata uruchamia z okresem na karcie okresów; Podgląd bez zapisu ma proces, którego widok to
+    ``run_view.PeriodProcessView`` (Wycena w efenix go nie ma)."""
 
     key: contract.PeriodProcessKey
-    view: run_view.PeriodProcessView[InputsT, SummaryT]
 
 
 _PERIODS_DIRECTORY: Final = NeededSetting(
@@ -218,6 +220,22 @@ SETTLEMENT: Final = PeriodProcessDeclaration(
         *_TAIL,
     ),
 )
+# Wycena w efenix czyta Plik zbiorczy okresu i wycenia jego zlecenia w efenix; nie ma Podglądu bez zapisu ani Wzorców.
+EFENIX: Final = PeriodProcessDeclaration(
+    key="efenix",
+    title=efenix_process.PROCESS.name,
+    view=run_view.EFENIX,
+    core=lambda processes: processes.efenix,
+    settings=(_PERIODS_DIRECTORY,),
+    templates=(),
+    checks=(
+        "tata_settings",
+        "files_in_onedrive",
+        PeriodFolderCheck(collective_file_missing=efenix_messages.collective_file_missing),
+        "period_files_in_excel",
+        *_TAIL,
+    ),
+)
 # Uporządkowanie INTERMAX porządkuje dzień, nie okres (ADR 0019): czyta tylko INTERMAX z Ustawień taty.
 INTERMAX: Final = ProcessDeclaration(
     key="intermax",
@@ -230,7 +248,7 @@ INTERMAX: Final = ProcessDeclaration(
 )
 
 # Kolejność statystyk w Metrykach.
-CATALOG: Final[tuple[ProcessDeclaration[Any, Any], ...]] = (PREPARATION, SETTLEMENT, INTERMAX)
+CATALOG: Final[tuple[ProcessDeclaration[Any, Any], ...]] = (PREPARATION, SETTLEMENT, EFENIX, INTERMAX)
 _BY_KEY: Final[Mapping[contract.ProcessKey, ProcessDeclaration[Any, Any]]] = {
     declaration.key: declaration for declaration in CATALOG
 }

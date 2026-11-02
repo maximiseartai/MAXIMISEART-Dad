@@ -43,7 +43,7 @@ py -3 .agents\skills\verify-centrum-rozliczen\scripts\run_centrum_verification.p
 
 `--feature ustawienia`, `--feature tablica-okresow`, `--feature uklad-folderow-taty`, `--feature konfiguracja`, `--feature aktualizacja`,
 `--feature metryki`, `--feature blad-odczytu`, `--feature przygotowanie-pliku-zbiorczego`, `--feature uzupelnienie`,
-`--feature przebieg-rozliczen`, `--feature uporzadkowanie-intermax`, `--feature kopie-intermax`, `--feature kontrola-ilosci`, `--feature diagnoza`, `--feature aktualnosc-i-onedrive`, `--feature zgloszenie`, `--feature uwaga-taty`, `--feature logi-uruchomienia`, `--feature karta-z-logow`, `--feature powiadomienia`, `--feature pomiar-u-taty`, or `--feature start-i-zamykanie` drives one
+`--feature przebieg-rozliczen`, `--feature uporzadkowanie-intermax`, `--feature kopie-intermax`, `--feature kontrola-ilosci`, `--feature diagnoza`, `--feature aktualnosc-i-onedrive`, `--feature zgloszenie`, `--feature uwaga-taty`, `--feature logi-uruchomienia`, `--feature karta-z-logow`, `--feature powiadomienia`, `--feature pomiar-u-taty`, `--feature wycena-w-efenix`, or `--feature start-i-zamykanie` drives one
 feature; the default `all` drives every feature in `features/` except `wydajnosc`, ending
 with `start-i-zamykanie`, which closes Centrum through its own button. In `all`,
 Dad's whole week runs in order: Przygotowanie pliku zbiorczego, the summary of
@@ -95,7 +95,10 @@ application. While `<root>/pacing/szablony-ms.txt` exists, each Szablon
 pracownika of a Przebieg rozliczeń RUN waits that many milliseconds, so the
 live progress and the refused closing can be observed; the drive turns it on
 for one RUN only. Uporządkowanie INTERMAX keeps its Kopie INTERMAX in `<root>/Kopie INTERMAX`, and its clock is the
-fixture's "today" at the computer's time of day. The Diagnoza never reaches GitHub: the commit of the newest Wydanie on `main` is the
+fixture's "today" at the computer's time of day. Wycena w efenix never reaches efenix.pl: its window is Playwright's
+headless Chromium on the tests' Atrapa efenix, which `serve_centrum.py` serves on a free port while Centrum runs
+(address in `<root>/efenix/adres.txt`, logged out until a form is posted to its `page_login.php`), with the
+browser profile in `<root>/przegladarka-efenix`. The Diagnoza never reaches GitHub: the commit of the newest Wydanie on `main` is the
 tool's own unless `<root>/github/main-commit.txt` names another, its tag is in `<root>/github/wydanie.txt`, the published Wydania with their notes are `<root>/github/wydania.json` in GitHub's shape, `<root>/github/brak-sieci`
 means no network, and a full path listed in `<root>/onedrive/tylko-w-chmurze.txt` is a
 OneDrive file „tylko online” on every system. Zgłoszenia never reach GitHub
@@ -233,6 +236,7 @@ Then confirm the evidence directory still exists.
   `scripts/check_centrum_uporzadkowanie_intermax_mutations.py`,
   `scripts/check_centrum_uwaga_taty_mutations.py`,
   `scripts/check_centrum_uzupelnienie_mutations.py`,
+  `scripts/check_centrum_wycena_w_efenix_mutations.py`,
   `scripts/check_centrum_zgloszenie_mutations.py`.
   A mutation goes into the script of the feature its command drives (`--feature …`), so parallel
   PRs on different features do not edit one table. A new feature with mutations adds its own

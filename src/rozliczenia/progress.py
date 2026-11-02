@@ -17,6 +17,7 @@ from .domain import (
     PlanReady,
     ProgressEvent,
     ProgressPhase,
+    StepReached,
     WorkerEnded,
     WorkerFailed,
     WorkerStarted,
@@ -51,6 +52,16 @@ class TemplateProcessing:
 
 
 @dataclass(frozen=True)
+class SavingStep:
+    """Ostatni krok Zapisywania procesu bez Szablonów pracownika (``StepReached``): etykieta, Wykonawca, ile z ilu."""
+
+    label: str
+    worker: str | None
+    done: int
+    total: int
+
+
+@dataclass(frozen=True)
 class ProgressSnapshot:
     """Niemutowalne fakty procesu, które podgląd postępu pokazuje bez interpretowania zdarzeń."""
 
@@ -65,6 +76,8 @@ class ProgressSnapshot:
     issue_count: int
     templates: tuple[TemplateProcessing, ...]
     """Zakończone Przetworzenia Szablonów pracownika po kolei; rozpoczęte bez końca (odłączony podgląd) ich nie mają."""
+    step: SavingStep | None = None
+    """Ostatni krok Zapisywania procesu bez Szablonów pracownika; ``None`` przed pierwszym i w innych procesach."""
 
     def metric_counters(self) -> dict[str, int]:
         return {
@@ -99,6 +112,7 @@ class ProgressProjection:
         self._issue_count = 0
         self._templates: list[TemplateProcessing] = []
         self._worker_started_ms = 0
+        self._step: SavingStep | None = None
         self._snapshot = self._make_snapshot()
 
     @property
@@ -135,6 +149,8 @@ class ProgressProjection:
             case PhaseFailed(phase=phase, phase_elapsed_ms=phase_elapsed_ms):
                 self._phase_states[phase] = PhaseState.FAILED
                 self._phase_durations_ms[phase] = phase_elapsed_ms
+            case StepReached(label=label, worker=worker, done=done, total=total):
+                self._step = SavingStep(label, worker, done, total)
             case WorkerFailed():
                 self._phase_states[event.phase] = PhaseState.FAILED
                 self._phase_durations_ms[event.phase] = event.phase_elapsed_ms
@@ -157,4 +173,5 @@ class ProgressProjection:
             total_elapsed_ms=self._total_elapsed_ms,
             issue_count=self._issue_count,
             templates=tuple(self._templates),
+            step=self._step,
         )

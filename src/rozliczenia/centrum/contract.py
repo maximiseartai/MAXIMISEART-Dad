@@ -176,9 +176,9 @@ class Opened(_Model):
 
 
 # Każdy proces ma klucz, ten sam w Uruchomieniach i w Metrykach.
-ProcessKey = Literal["preparation", "settlement", "intermax"]
+ProcessKey = Literal["preparation", "settlement", "efenix", "intermax"]
 # Proces, którego Uruchomienie tata wybiera z okresem; Uporządkowanie INTERMAX ma własną kartę poza okresami.
-PeriodProcessKey = Literal["preparation", "settlement"]
+PeriodProcessKey = Literal["preparation", "settlement", "efenix"]
 RunMode = Literal["RUN", "DRY-RUN"]
 RunResult = Literal["OK", "WYMAGA_SPRAWDZENIA", "BLAD_KRYTYCZNY"]
 # Rodzaj Zatrzymania zapisany w metrykach, bez powtórki, którą Centrum pamięta tylko do zamknięcia.
@@ -309,7 +309,8 @@ class ProcessSetup(_Model):
     """Co tata wybiera przed Uruchomieniem procesu; ``blocker`` mówi, czego jeszcze brakuje w ustawieniach.
 
     ``reminder``, ``confirms_readiness`` i ``preview_hint`` deklaruje proces: przypomnienie przed
-    uruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu”.
+    uruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma
+    podglądu bez zapisu, jak Wycena w efenix).
     """
 
     process: PeriodProcessKey
@@ -317,7 +318,7 @@ class ProcessSetup(_Model):
     creates: str
     reminder: str
     confirms_readiness: bool
-    preview_hint: str
+    preview_hint: str | None
     periods: list[PeriodChoice]
     preselected_period: str
     blocker: str | None
@@ -349,14 +350,30 @@ class Figure(_Model):
     unit: Literal["count", "ms"]
 
 
+class ProgressStep(_Model):
+    """Krok Zapisywania procesu bez Szablonów pracowników (Wycena w efenix): co trwa, u którego Wykonawcy i ile z ilu.
+
+    ``total`` 0: krok bez liczenia (logowanie, Znaczniki efenix), który karta pokazuje jako trwający.
+    """
+
+    label: str
+    worker: str | None
+    done: int
+    total: int
+
+
 class Progress(_Model):
-    """Wyświetlany podzbiór snapshotu jedynej projekcji postępu (ADR 0002): etapy, Szablony pracowników i liczby."""
+    """Wyświetlany podzbiór snapshotu jedynej projekcji postępu (ADR 0002): etapy, Szablony pracowników i liczby.
+
+    ``step``: ostatni krok Zapisywania procesu bez Szablonów pracowników; ``None`` w innych procesach i przed nim.
+    """
 
     phases: list[PhaseProgress]
     template_total: int
     templates_completed: int
     current_worker: str | None
     figures: list[Figure]
+    step: ProgressStep | None = None
 
 
 class RunInfo(_Model):
@@ -533,8 +550,12 @@ class Count(_Model):
 
 
 class CountGroup(_Model):
+    """Liczby z etykietami pod tytułem; ``zero_warns``: zero to sygnał dla taty (dzień bez zleceń), a nie zwykła liczba
+    (zlecenia pominięte przez Wycenę w efenix)."""
+
     title: str
     counts: list[Count]
+    zero_warns: bool = True
 
 
 class Decision(_Model):
@@ -672,6 +693,26 @@ class LoggedOutcome(_Model):
     summary: RunSummary | None
 
 
+class OrderNote(_Model):
+    """Zlecenie Wyceny w efenix, które zostało tacie: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i zdanie.
+
+    Numer zlecenia (``None``: pusty ``NUMER ZL.``) i Wykonawcę widzi tylko tata na swoim komputerze: Logi Uruchomienia ich
+    nie mają.
+    """
+
+    row: int
+    order: str | None
+    worker: str
+    what: str
+
+
+class OrderNotes(_Model):
+    """Błędy zleceń i ostrzeżenia Emmetta Wyceny w efenix na karcie bieżącego Uruchomienia."""
+
+    errors: list[OrderNote]
+    warnings: list[OrderNote]
+
+
 class RunOutcome(LoggedOutcome):
     """Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.
 
@@ -679,13 +720,16 @@ class RunOutcome(LoggedOutcome):
     taty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).
     ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
     Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
-    Zatrzymania, a karta proponuje go otworzyć (``None``: żaden).
+    Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
+    zostały tacie, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w trzech częściach
+    (``None``: inny proces albo wynik bez podsumowania).
     """
 
     diagnosis: DiagnosisOffer | None
     report: ReportState | None
     files_unchanged: bool
     opens: DadFile | None
+    order_notes: OrderNotes | None = None
 
 
 class RunRestored(_Model):
@@ -1109,7 +1153,30 @@ class ReleaseNotification(_Notification):
     update_offered: bool
 
 
-Notification = Annotated[DadNoteNotification | ReportNotification | ReleaseNotification, Field(discriminator="kind")]
+class PricedOrders(_Model):
+    """Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, błędy i ostrzeżenia Emmetta."""
+
+    ready: int
+    errors: int
+    warnings: int
+
+
+class PricingNotification(_Notification):
+    """Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia
+    (``headline``), okres, zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”
+    Komunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów."""
+
+    kind: Literal["wycena_w_efenix"]
+    run_id: str
+    headline: str
+    period: str
+    orders: PricedOrders | None
+    stopped: str | None
+
+
+Notification = Annotated[
+    DadNoteNotification | ReportNotification | ReleaseNotification | PricingNotification, Field(discriminator="kind")
+]
 
 
 class Notifications(_Model):

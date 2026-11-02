@@ -1,4 +1,5 @@
-"""Powiadomienia (ADR 0015): co stało się z Uwagami taty i Zgłoszeniami wysłanymi z tego komputera i nowe Wydania.
+"""Powiadomienia (ADR 0015): co stało się z Uwagami taty i Zgłoszeniami wysłanymi z tego komputera, nowe Wydania i
+zakończone Wyceny w efenix.
 
 Sprawa taty to Uwaga taty albo Zgłoszenie (``DadCases``); bez numeru issue czeka w kolejce Skrzynki, a jej stan w
 Powiadomieniu to ``DadCases.state``, przy sprawie w kolejce z tym, na co czeka. Powiadomienie to sprawa w jednym stanie, więc nowy stan to nowe Powiadomienie. Nowe są tylko stany, które dał Maks (rozwiązana, przeczytana); wysłanie i czekanie w kolejce
@@ -19,6 +20,11 @@ odpowiedź i tak zapisuje stan. Brak sieci albo odmowa przechodzą po cichu, bez
 odpowiedzią. Przeczytane Powiadomienia (ich ``id``) leżą w ``config/powiadomienia.json`` poza Gitem i przetrwają
 restart Centrum. Gdy ten plik albo plik Spraw taty jest niedostępny, każdy odczyt Powiadomień próbuje zapisać je
 znowu, a dopóki się nie da, Powiadomienia mają Komunikat, który nazywa te pliki.
+
+Powiadomienie o Wycenie w efenix to każda zakończona Wycena w efenix z Logów Uruchomienia (``RunCards.ended``), także
+zakończona Zatrzymaniem: tata w trakcie patrzy na okno efenix albo odchodzi od komputera, więc wynik czeka na niego pod
+dzwonkiem. Ma tytuł wyniku z karty, okres, liczby gotowych, błędów i ostrzeżeń Emmetta, „Co się stało” Zatrzymania i
+kartę Uruchomienia; jest nowe (kropka na dzwonku), dopóki tata go nie zobaczy.
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ from rozliczenia.centrum.dad_cases import NOTE, Case, DadCases
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.report_box import Closure
+from rozliczenia.centrum.run_cards import LoggedRun
 from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.notification_messages import unavailable
 from rozliczenia.centrum.release_notes import parse
@@ -105,7 +112,8 @@ class _Releases:
 class Notifications:
     """Powiadomienia z Uwag taty, wysłanych Zgłoszeń i Wydań, sprawdzanie ich stanu i przeczytane.
 
-    ``release`` to odpowiedź GitHuba o najnowszym Wydaniu, pamiętana wspólnie z Konfiguracją.
+    ``release`` to odpowiedź GitHuba o najnowszym Wydaniu, pamiętana wspólnie z Konfiguracją, a ``pricings`` zakończone
+    Wyceny w efenix z Logów Uruchomienia.
     """
 
     def __init__(
@@ -116,10 +124,12 @@ class Notifications:
         freshness: ToolFreshness,
         release: ReleaseSource,
         log: CentrumLog,
+        pricings: Callable[[], Iterable[LoggedRun]],
         *,
         clock: Callable[[], float],
     ) -> None:
         self._cases = cases
+        self._pricings = pricings
         self._read = read
         self._box = box
         self._freshness = freshness
@@ -202,9 +212,15 @@ class Notifications:
 
         waiting = [file.path for file in self._files if file.unavailable]
         cases = self._cases.all()
-        items: list[contract.DadNoteNotification | contract.ReportNotification | contract.ReleaseNotification] = [
+        items: list[
+            contract.DadNoteNotification
+            | contract.ReportNotification
+            | contract.ReleaseNotification
+            | contract.PricingNotification
+        ] = [
             *(notification for notification in map(self._case, cases) if notification is not None),
             *self._new_versions(cases),
+            *map(self._pricing, self._pricings()),
         ]
         items.sort(key=lambda item: item.at, reverse=True)
         return contract.Notifications(
@@ -267,6 +283,26 @@ class Notifications:
         unread = self._unread(notification_id, state)
         return contract.ReportNotification(
             kind="zgloszenie", id=notification_id, at=at, unread=unread, what=case.title, state=state
+        )
+
+    def _pricing(self, ended: LoggedRun) -> contract.PricingNotification:
+        card = ended.card
+        notification_id = f"wycena-{card.run.id}"
+        orders = ended.orders
+        return contract.PricingNotification(
+            kind="wycena_w_efenix",
+            id=notification_id,
+            at=ended.ended_at,
+            unread=notification_id not in self._read,
+            run_id=card.run.id,
+            headline=card.result.headline,
+            period=card.run.period,
+            orders=None
+            if orders is None
+            else contract.PricedOrders(
+                ready=orders["gotowe"], errors=orders["błąd"], warnings=orders["ostrzeżenie Emmetta"]
+            ),
+            stopped=card.result.stops[0].what if card.result.stops else None,
         )
 
     def _unread(self, notification_id: str, state: contract.CaseState) -> bool:

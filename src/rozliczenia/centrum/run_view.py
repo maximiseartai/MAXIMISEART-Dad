@@ -14,7 +14,7 @@ from typing import Final, Generic, Protocol, TypeVar
 from rozliczenia.centrum import contract
 from rozliczenia.collective_preparation import PreparationSummary
 from rozliczenia.domain import SettlementSummary
-from rozliczenia.efenix_pricing import PricingSummary
+from rozliczenia.efenix_pricing import EmmettWarning, PricingSummary
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.intermax_process import OrderingInputs
@@ -41,23 +41,31 @@ SummaryT = TypeVar("SummaryT", bound=WarnedSummary)
 class Shown(Generic[SummaryT]):
     """Wynik zakończonego procesu: podsumowanie albo plan w kształcie kontraktu i ostrzeżenia z kodami Komunikatów.
 
-    ``engine_summary`` to podsumowanie silnika, z którego powstał, dla działań po wyniku (Kontrola ilości).
+    ``engine_summary`` to podsumowanie silnika, z którego powstał, dla działań po wyniku (Kontrola ilości). ``notes``:
+    zlecenia, które zostały tacie, z numerami zleceń i Wykonawcami, tylko na kartę bieżącego Uruchomienia.
     """
 
     summary: contract.RunSummary
     warnings: tuple[Message, ...]
     engine_summary: SummaryT
+    notes: contract.OrderNotes | None = None
 
 
 @dataclass(frozen=True)
 class ResultView(Generic[InputsT, SummaryT]):
-    """Liczby na żywo i wynik jednego procesu w kształcie kontraktu, te same w Skrypcie dla maszyn i na karcie."""
+    """Liczby na żywo i wynik jednego procesu w kształcie kontraktu, te same w Skrypcie dla maszyn i na karcie.
+
+    ``_notes``: zlecenia z podsumowania, które zostały tacie (Wycena w efenix); inne procesy ich nie mają.
+    """
 
     _figures: Callable[[ProgressSnapshot, bool], list[contract.Figure]]
     _summary: Callable[[SummaryT, bool], contract.RunSummary]
+    _notes: Callable[[SummaryT], contract.OrderNotes | None] = lambda _summary: None
 
     def progress(self, snapshot: ProgressSnapshot, *, dry_run: bool) -> contract.Progress:
-        """Etapy, postęp Szablonów pracowników i liczby na żywo z jednego snapshotu projekcji."""
+        """Etapy, postęp Szablonów pracowników, krok Zapisywania i liczby na żywo z jednego snapshotu projekcji."""
+
+        step = snapshot.step
 
         return contract.Progress(
             phases=[
@@ -70,12 +78,15 @@ class ResultView(Generic[InputsT, SummaryT]):
             templates_completed=snapshot.templates_completed,
             current_worker=snapshot.current_worker,
             figures=self._figures(snapshot, dry_run),
+            step=None
+            if step is None
+            else contract.ProgressStep(label=step.label, worker=step.worker, done=step.done, total=step.total),
         )
 
     def shown(self, inputs: InputsT, summary: SummaryT) -> Shown[SummaryT]:
         """Wynik zakończonego procesu; rdzeń woła go w swojej osłonie (``run_process(view=...)``)."""
 
-        return Shown(self._summary(summary, inputs.dry_run), tuple(summary.warnings), summary)
+        return Shown(self._summary(summary, inputs.dry_run), tuple(summary.warnings), summary, self._notes(summary))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -255,17 +266,37 @@ def _pricing_summary(summary: PricingSummary, _dry_run: bool) -> contract.RunSum
             _count("Gotowe do przekazania", summary.ready_count),
             _count("Błędy zleceń", summary.error_count),
             _count("Ostrzeżenia Emmetta", summary.warning_count),
-            _count("Pominięte ze zdjęciami", summary.with_photos),
-            _count("Pominięte usterki", summary.defects),
         ],
-        counts=None,
+        counts=contract.CountGroup(
+            title="Pominięte",
+            counts=[
+                contract.Count(label="Ze zdjęciami", count=summary.with_photos),
+                contract.Count(label="Usterki", count=summary.defects),
+                contract.Count(label="Nieznalezione w efenix", count=summary.not_found),
+            ],
+            zero_warns=False,
+        ),
         files=[],
         worker_settlements=None,
     )
 
 
-# Wycena w efenix nie ma jeszcze karty w Centrum rozliczeń (#750): tylko liczby na żywo i wynik Skryptu dla maszyn.
-EFENIX: Final[ResultView[EfenixInputs, PricingSummary]] = ResultView(
+def _pricing_notes(summary: PricingSummary) -> contract.OrderNotes:
+    notes: dict[bool, list[contract.OrderNote]] = {True: [], False: []}
+    for result, message in summary.left_for_tata:
+        order = result.order
+        notes[isinstance(result.outcome, EmmettWarning)].append(
+            contract.OrderNote(row=order.row, order=order.number, worker=order.worker, what=message.what)
+        )
+    return contract.OrderNotes(errors=notes[False], warnings=notes[True])
+
+
+EFENIX: Final[ProcessView[EfenixInputs, PricingSummary]] = ProcessView(
+    reminder="Zapisz i zamknij Plik zbiorczy w Excelu",
+    confirms_readiness=False,
+    done="Wycena w efenix gotowa",
+    result_action="open_collective_file",
     _figures=_pricing_figures,
     _summary=_pricing_summary,
+    _notes=_pricing_notes,
 )

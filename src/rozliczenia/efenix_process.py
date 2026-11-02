@@ -1,23 +1,28 @@
 """Wycena w efenix dla Uruchomienia procesu: wejście procesu, wywołanie silnika i fakty zakończenia.
 
 Opis procesu (``PROCESS``) jest wspólny dla każdego rozmówcy, więc liczby, Komunikaty i rekord metryk są te same.
-Okno efenix daje rozmówca (``EfenixInputs.open_efenix``): Skrypt dla maszyn otwiera Chromium Playwrighta
-(``efenix_browser.chromium``), a testy okno na Atrapie efenix. Proces pracuje w oknie w tempie ludzkim (``efenix_pace``),
-chyba że rozmówca je wyłączy (``EfenixInputs.pace`` równe ``None``), jak testy i Skrypt dla maszyn na Atrapie efenix.
-Ślad Wyceny Emmetta okresu (``efenix_emmett_trace``) leży w ``EfenixInputs.trace_directory`` w pliku ``<okres>.json``, obok
-klucza, pod którym są w nim zlecenia.
+Okno efenix daje rozmówca (``EfenixInputs.open_efenix``): Centrum rozliczeń otwiera widoczne okno Google Chrome w profilu
+narzędzia i czeka w nim na logowanie taty (``efenix_browser.chrome``), Skrypt dla maszyn otwiera Chromium Playwrighta
+(``efenix_browser.chromium``), a testy okno na Atrapie efenix. Czas czekania na logowanie wstrzymuje zegar rdzenia
+(``EngineConversation.waiting``), tak jak Decyzja taty. Tempo ludzkie okna (``efenix_pace``) i folder Śladu Wyceny
+Emmetta (``efenix_emmett_trace``) wybiera każdy rozmówca: Centrum taty bierze je z okna taty
+(``centrum.efenix_run.EfenixWindow.of_tata``), a testy, weryfikacja i Skrypt dla maszyn na Atrapie efenix wyłączają tempo
+(``None``) i podają własny folder. Ślad okresu leży w pliku ``<okres>.json`` tego folderu, obok klucza, pod którym są w
+nim zlecenia.
 """
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import TOOL_ROOT, efenix_emmett_trace, efenix_pricing
-from .efenix_pace import Pace, paced
+from . import TOOL_ROOT, efenix_pricing
 from . import efenix_messages as messages
-from .decision import Conversation
+from .decision import EngineConversation
 from .domain import ProgressObserver
+from .efenix_pace import Pace
 from .efenix_pricing import OpenEfenix, PricingSummary
 from .period_folder import PeriodFolder, PeriodFolderError
 from .process_run import Finished, Process
@@ -37,14 +42,15 @@ class EfenixInputs:
     """Wejście procesu Wyceny w efenix: Plik zbiorczy okresu i okno efenix w sesji taty.
 
     Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da). Wycena w efenix nie ma podglądu bez zapisu.
-    ``pace``: tempo ludzkie okna, domyślnie z prawdziwym zegarem; ``None`` wyłącza przerwy. ``trace_directory``: folder
-    Śladów Wyceny Emmetta, domyślnie w ``config/`` katalogu narzędzia.
+    ``clock`` to zegar w sekundach czasów etapów i śladu zleceń (ten sam, którym rdzeń liczy ``Czas uruchomienia``).
+    ``pace``: tempo ludzkie okna; ``None`` wyłącza przerwy. ``trace_directory``: folder Śladów Wyceny Emmetta.
     """
 
     source: Path
     open_efenix: OpenEfenix
-    pace: Pace | None = Pace()
-    trace_directory: Path = field(default_factory=efenix_emmett_trace.default_directory)
+    pace: Pace | None
+    trace_directory: Path
+    clock: Callable[[], float] = field(default=time.perf_counter, compare=False)
 
     @property
     def period(self) -> str:
@@ -58,10 +64,16 @@ class EfenixInputs:
         return False
 
 
-def _execute(inputs: EfenixInputs, observer: ProgressObserver, _conversation: Conversation) -> PricingSummary:
-    open_efenix = inputs.open_efenix if inputs.pace is None else paced(inputs.open_efenix, inputs.pace)
-    trace = inputs.trace_directory / f"{inputs.period}.json"
-    return efenix_pricing.price_orders(inputs.source, open_efenix, trace, observer=observer)
+def _execute(inputs: EfenixInputs, observer: ProgressObserver, conversation: EngineConversation) -> PricingSummary:
+    return efenix_pricing.price_orders(
+        inputs.source,
+        inputs.open_efenix,
+        inputs.trace_directory / f"{inputs.period}.json",
+        observer=observer,
+        clock=inputs.clock,
+        waiting=conversation.waiting,
+        pace=inputs.pace,
+    )
 
 
 def _finished(_inputs: EfenixInputs, summary: PricingSummary) -> Finished:

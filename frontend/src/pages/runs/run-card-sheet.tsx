@@ -24,6 +24,15 @@ export function RunCardButton({ run }: { run: ProcessRun }) {
   )
 }
 
+/** Przycisk z napisem w Powiadomieniu: karta Uruchomienia `runId` z jego Logów w tym samym panelu z boku. */
+export function RunCardLink({ runId, title, period }: { runId: string; title: string; period: string }) {
+  return (
+    <CardSheet title={title} period={period} dryRun={false} labelled>
+      <RunCardBody runId={runId} />
+    </CardSheet>
+  )
+}
+
 /** Karta Uruchomienia, którą serwer już przysłał (np. ostatnie Uporządkowanie INTERMAX), w tym samym panelu z boku. */
 export function RestoredCardButton({ card }: { card: RunRestored }) {
   return (
@@ -33,38 +42,47 @@ export function RestoredCardButton({ card }: { card: RunRestored }) {
   )
 }
 
-/** Przycisk z ikoną karty i panel z boku, który montuje treść karty tylko otwarty. */
+/** Przycisk z ikoną karty (`labelled`: z napisem) i panel z boku, który montuje treść karty tylko otwarty. */
 function CardSheet({
   title,
   period,
   dryRun,
+  labelled = false,
   children,
 }: {
   title: string
   period: string
   dryRun: boolean
+  labelled?: boolean
   children: React.ReactNode
 }) {
   const [open, setOpen] = React.useState(false)
 
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground"
-              aria-label={OPEN}
-              onClick={() => setOpen(true)}
-            />
-          }
-        >
-          <FileClockIcon />
-        </TooltipTrigger>
-        <TooltipContent>{OPEN}</TooltipContent>
-      </Tooltip>
+      {labelled ? (
+        <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+          <FileClockIcon data-icon="inline-start" />
+          {OPEN}
+        </Button>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground"
+                aria-label={OPEN}
+                onClick={() => setOpen(true)}
+              />
+            }
+          >
+            <FileClockIcon />
+          </TooltipTrigger>
+          <TooltipContent>{OPEN}</TooltipContent>
+        </Tooltip>
+      )}
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent className="gap-0 sm:max-w-3xl data-[side=right]:sm:max-w-3xl">
           <SheetHeader className="pr-12">

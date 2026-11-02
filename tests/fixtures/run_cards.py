@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from tests.fixtures.centrum import views_until
 
-LIVE_ONLY = ("diagnosis", "report", "files_unchanged", "opens")
+LIVE_ONLY = ("diagnosis", "report", "files_unchanged", "opens", "order_notes")
 
 
 def restored(live: dict[str, Any], started_at: str) -> dict[str, Any]:

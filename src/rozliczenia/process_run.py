@@ -16,7 +16,7 @@ Komunikaty podane przez proces.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,7 +25,7 @@ from types import MappingProxyType
 from typing import Any, Generic, Literal, Protocol, TypeVar
 
 from .call_trace import CallTrace
-from .decision import Conversation, Decision, Declined
+from .decision import Conversation, Decision, Declined, EngineConversation
 from .domain import ProgressEvent, ProgressObserver, ProgressPhase, StopKind
 from .message import Message, StopError
 from .progress import PhaseState, ProgressProjection, ProgressSnapshot
@@ -137,7 +137,7 @@ class Process(Generic[InputsT, SummaryT]):
     counter_names: frozenset[str]
     metrics_path: Callable[[], Path]
     metrics_failure_tail: str
-    execute: Callable[[InputsT, ProgressObserver, Conversation], SummaryT]
+    execute: Callable[[InputsT, ProgressObserver, EngineConversation], SummaryT]
     finished: Callable[[InputsT, SummaryT], Finished]
     unexpected_failure: Message
     plan_not_shown: Message
@@ -193,7 +193,7 @@ class _Clock:
 
 
 class _ClockedConversation:
-    """Rozmowa rozmówcy dla silnika; czas czekania na Decyzję taty wstrzymuje zegar rdzenia."""
+    """Rozmowa rozmówcy dla silnika; czas czekania na Decyzję taty i na tatę poza nią wstrzymuje zegar rdzenia."""
 
     def __init__(self, interlocutor: Interlocutor, clock: _Clock) -> None:
         self._interlocutor = interlocutor
@@ -206,6 +206,9 @@ class _ClockedConversation:
     def confirm(self, decision: Decision) -> bool:
         with self._clock.paused():
             return self._interlocutor.confirm(decision)
+
+    def waiting(self) -> AbstractContextManager[None]:
+        return self._clock.paused()
 
 
 class _Observation:
@@ -256,7 +259,7 @@ def _run_engine(
     process: Process[InputsT, SummaryT],
     inputs: InputsT,
     observation: _Observation,
-    conversation: Conversation,
+    conversation: EngineConversation,
     view: Callable[[InputsT, SummaryT], ViewT],
 ) -> _DeferredSummary[ViewT] | Stop:
     """Silnik z podglądem jako obserwatorem; po sukcesie zwraca odroczoną budowę podsumowania i widoku."""

@@ -591,11 +591,16 @@ _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), raport różnic
 
 ## Powiadomienie
 
-Fakt dla taty o jego Zgłoszeniach, Uwagach taty i wersjach narzędzia, pokazany
-w widoku Powiadomienia w Centrum rozliczeń, do którego prowadzi dzwonek.
-Nieprzeczytane Powiadomienie zapala kropkę na dzwonku; wejście do widoku
-oznacza wszystkie jako przeczytane. Uwagi techniczne z karty Uruchomienia, np.
-o niezapisanych metrykach, nie są Powiadomieniami.
+Fakt dla taty o jego Zgłoszeniach, Uwagach taty, wersjach narzędzia i
+zakończonych Wycenach w efenix, pokazany w widoku Powiadomienia w Centrum
+rozliczeń, do którego prowadzi dzwonek. Nieprzeczytane Powiadomienie zapala
+kropkę na dzwonku; wejście do widoku oznacza wszystkie jako przeczytane.
+Powiadomienie o zakończonej Wycenie w efenix, także zakończonej Zatrzymaniem,
+ma tytuł wyniku, okres, liczby zleceń gotowych do przekazania, błędów i
+ostrzeżeń Emmetta, „Co się stało” Zatrzymania i przycisk karty Uruchomienia:
+tata w trakcie patrzy na okno efenix albo odchodzi od komputera. Toast wyniku
+w karcie Centrum nie jest Powiadomieniem, a uwagi techniczne z karty
+Uruchomienia, np. o niezapisanych metrykach, też nie.
 _Avoid_: notyfikacja, alert
 
 ## Powiadomienie o nowej wersji

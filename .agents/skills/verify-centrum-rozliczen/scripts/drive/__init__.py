@@ -14,7 +14,9 @@ Playwright is installed, so this module imports nothing.
 # clicks through the pages with the files
 # of Dad's whole week; uporzadkowanie-intermax points the Rejestr zleceń to its INTERMAX files and back, so it runs after
 # every feature that reads the Rejestr zleceń, and kopie-intermax after it, because uporzadkowanie-intermax counts the
-# Kopie in their folder; start-i-zamykanie closes Centrum, so it stays last.
+# Kopie in their folder; wycena-w-efenix puts its own Folder okresu in the folder okresów and removes it again, and adds
+# a file of Logi, so it runs after every feature that counts periods or Logi; start-i-zamykanie closes Centrum, so it
+# stays last.
 # CI drives `all` in consecutive parts of this order (`ci-czesci` in SKILL.md), each part on a fresh fixture and
 # Centrum, so a feature also starts right after the fixture or after any earlier feature of the order.
 FEATURES = (
@@ -39,6 +41,7 @@ FEATURES = (
     "pomiar-u-taty",
     "uporzadkowanie-intermax",
     "kopie-intermax",
+    "wycena-w-efenix",
     "start-i-zamykanie",
 )
 # Run only when named, never in `all`: the measurement takes minutes, needs a quiet CPU, and its own fixture variant.

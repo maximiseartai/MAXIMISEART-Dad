@@ -1051,6 +1051,11 @@ source_unusable #6 [EFENIX_NIECZYTELNY_PLIK_ZBIORCZY]
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
   Co zrobić: Otwórz Plik zbiorczy w Excelu i sprawdź, czy otwiera się poprawnie. Jeśli tak, przekaż ten komunikat osobie utrzymującej narzędzie.
 
+collective_file_missing [EFENIX_BRAK_PLIKU_ZBIORCZEGO]
+  Co się stało: Nie znaleziono Pliku zbiorczego. W efenix nic się nie zmieniło.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
+  Co zrobić: Sprawdź, czy Plik zbiorczy okresu jest w Folderze okresu, i uruchom ponownie.
+
 missing_columns [EFENIX_BRAK_NAGLOWKOW]
   Co się stało: W Pliku zbiorczym brakuje nagłówków: NUMER ZL., ADRES. W efenix nic się nie zmieniło.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 17
@@ -1100,6 +1105,11 @@ efenix_unreachable #2 [EFENIX_NIEDOSTEPNY]
   Co się stało: Nie udało się otworzyć efenix. Wycena zleceń sprzed zatrzymania została w efenix.
   Gdzie: okno efenix
   Co zrobić: Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+browser_not_started [EFENIX_BRAK_PRZEGLADARKI]
+  Co się stało: Nie udało się otworzyć przeglądarki Google Chrome z oknem efenix. W efenix nic się nie zmieniło.
+  Gdzie: okno efenix
+  Co zrobić: Zamknij okno efenix, jeśli zostało otwarte z poprzedniej Wyceny w efenix, i uruchom ponownie. Jeśli na komputerze nie ma Google Chrome albo błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 order_error #1 [EFENIX_BRAK_NUMERU]
   Co się stało: Wiersz nie ma numeru zlecenia w NUMER ZL. Zlecenie zostało w efenix bez zmian.

@@ -207,7 +207,7 @@ class AtrapaEfenix:
             self.logged_in = False
 
     def log_in(self) -> None:
-        """Tata loguje się z powrotem w oknie efenix."""
+        """Tata zalogował się w efenix (w tej samej sesji, w której pracuje okno narzędzia)."""
 
         with self._lock:
             self.logged_in = True

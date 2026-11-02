@@ -28,6 +28,10 @@ akceptacji, anuluje je albo zmienia jego status. Strona logowania i strona o inn
 przypisania kolumn, to Zatrzymanie (``LoggedOut``, ``UnexpectedPage``), tak samo zamknięte okno efenix
 (``WindowClosed``), a Komunikat Zatrzymania mówi, czy przed nim proces zmienił już coś w efenix. Zmieniona strona efenix
 to Zatrzymanie „do Maksa” z częścią strony, której zabrakło, bez treści strony.
+Okno, które czeka, aż tata się zaloguje, robi to w ``Login`` od silnika: ten czas nie wlicza się do czasów etapów ani,
+przez ``waiting`` rozmowy rdzenia, do ``Czas uruchomienia``. Postęp Zapisywania to kroki (``PhaseRunner.step``):
+logowanie, zlecenia z Wykonawcą i liczbą sprawdzonych z wszystkich, na końcu Znaczniki efenix; ślad działań okna przy
+każdym zleceniu (``efenix_trace``) trafia do jego wyniku, a stamtąd do Logów Uruchomienia.
 
 Po ostatnim zleceniu, a także przy Zatrzymaniu w trakcie, ``efenix_marking`` raz zapisuje Plik zbiorczy: komórka ``ADRES``
 każdego gotowego zlecenia dostaje Znacznik efenix, a reszta pliku zostaje bajt w bajt. Gdy zapis się nie udaje (Excel trzyma
@@ -39,23 +43,38 @@ numerów zleceń, adresów ani loginów, tylko numery wierszy Pliku zbiorczego.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-import time
 from types import MappingProxyType
-from typing import Protocol
+from typing import Final, Protocol
 
 from . import efenix_messages as messages
-from . import workbook_files
+from . import efenix_trace, workbook_files
 from .domain import ProgressObserver, ProgressPhase
-from .efenix_checks import DateRefused, ListedOrder, OrderProblem, PagePart, date_problem, listing, searched_number
-from .efenix_marking import Refusal, mark_ready
-from .efenix_orders import AmountsNotComputed, CollectiveOrder, MissingColumns, PricingScope, read_scope
+from .efenix_checks import (
+    DateRefused,
+    ListedOrder,
+    OrderProblem,
+    PagePart,
+    date_problem,
+    listing,
+    searched_number,
+)
 from .efenix_emmett_trace import EmmettTrace
+from .efenix_marking import Refusal, mark_ready
+from .efenix_orders import (
+    AmountsNotComputed,
+    CollectiveOrder,
+    MissingColumns,
+    PricingScope,
+    read_scope,
+)
+from .efenix_pace import Pace, Pacing
 from .efenix_positions import (
     Conflict,
     NotWholeQuantities,
@@ -70,16 +89,19 @@ from .efenix_positions import (
     same_amount,
     to_enter,
 )
+from .efenix_trace import OrderTrace, TraceStep
 from .message import Message, StopError
 from .phase_runner import PhaseRunner
 from .workbook_files import WorkbookError
 
 __all__ = [
+    "BrowserNotStarted",
     "Efenix",
     "EfenixUnreachable",
     "EmmettWarning",
     "ListedOrder",
     "LoggedOut",
+    "Login",
     "OpenEfenix",
     "OrderError",
     "OrderPricing",
@@ -112,6 +134,10 @@ class EfenixUnreachable(Exception):
 
 class WindowClosed(Exception):
     """Okno albo karta efenix zamknęły się w trakcie przebiegu (tata je zamknął)."""
+
+
+class BrowserNotStarted(Exception):
+    """Przeglądarka okna efenix nie wystartowała: nie ma jej na komputerze albo jej profil trzyma inne okno."""
 
 
 @dataclass(frozen=True)
@@ -162,9 +188,12 @@ class Efenix(Protocol):
         ...
 
 
-OpenEfenix = Callable[[], AbstractContextManager[Efenix]]
-"""Otwiera okno efenix z listą zleceń na czas Zapisywania; ``EfenixUnreachable``, ``LoggedOut``, ``UnexpectedPage`` albo
-``WindowClosed``."""
+Login = Callable[[], AbstractContextManager[None]]
+"""Czas, w którym okno czeka, aż tata zaloguje się w efenix; silnik nie liczy go do czasów Uruchomienia."""
+
+OpenEfenix = Callable[[Login], AbstractContextManager[Efenix]]
+"""Otwiera okno efenix z listą zleceń na czas Zapisywania, a czekanie na logowanie taty robi w ``Login``;
+``BrowserNotStarted``, ``EfenixUnreachable``, ``LoggedOut``, ``UnexpectedPage`` albo ``WindowClosed``."""
 
 
 @dataclass(frozen=True)
@@ -190,8 +219,11 @@ class EmmettWarning:
 
 @dataclass(frozen=True)
 class OrderResult:
+    """Wynik zlecenia; ``steps``: ślad działań okna efenix przy nim, po kolei (``efenix_trace``)."""
+
     order: CollectiveOrder
     outcome: Ready | OrderError | EmmettWarning
+    steps: tuple[TraceStep, ...] = ()
 
 
 @dataclass
@@ -219,19 +251,45 @@ class PricingSummary:
     def warning_count(self) -> int:
         return sum(isinstance(result.outcome, EmmettWarning) for result in self.results)
 
+    @property
+    def not_found(self) -> int:
+        """Błędy zleceń, których efenix nie zna po numerze z ``NUMER ZL.``."""
+
+        return sum(
+            isinstance(result.outcome, OrderError) and result.outcome.problem is OrderProblem.UNKNOWN_NUMBER
+            for result in self.results
+        )
+
+    @property
+    def left_for_tata(self) -> tuple[tuple[OrderResult, Message], ...]:
+        """Każde zlecenie z błędem albo ostrzeżeniem Emmetta po kolei z Komunikatem z ``warnings``."""
+
+        left = [result for result in self.results if not isinstance(result.outcome, Ready)]
+        return tuple(zip(left, self.warnings, strict=True))
+
+
+# Kroki Zapisywania na karcie Uruchomienia.
+_LOGIN: Final = "Zaloguj się w oknie efenix"
+_ORDERS: Final = "Zlecenia"
+_MARKING: Final = "Znaczniki efenix w Pliku zbiorczym"
+
 
 def price_orders(
     source: Path,
     open_efenix: OpenEfenix,
-    trace: Path,
+    trace_file: Path,
     *,
     observer: ProgressObserver | None = None,
     clock: Callable[[], float] = time.perf_counter,
+    waiting: Login = nullcontext,
+    pace: Pace | None = None,
 ) -> PricingSummary:
     """Uzupełnia w efenix wycenę każdego zlecenia z zakresu Pliku zbiorczego ``source`` i oznacza w nim gotowe zlecenia.
 
-    Zgłasza ``StopError``, gdy nie można działać bezpiecznie. ``trace``: plik Śladu Wyceny Emmetta okresu
-    (``efenix_emmett_trace``). ``clock`` to zegar w sekundach, z którego liczone są czasy etapów.
+    Zgłasza ``StopError``, gdy nie można działać bezpiecznie. ``trace_file``: plik Śladu Wyceny Emmetta okresu
+    (``efenix_emmett_trace``). ``clock`` to zegar w sekundach, z którego liczone są czasy etapów i śladu zleceń, a
+    ``waiting`` wstrzymuje zegar rozmówcy na czas czekania na logowanie taty. ``pace``: tempo ludzkie okna
+    (``efenix_pace``), ``None`` bez przerw.
     """
 
     phases = PhaseRunner(observer, clock=clock)
@@ -264,17 +322,30 @@ def price_orders(
 
     scope = phases.plan(plan, issue_count=lambda _: 0)
 
+    @contextmanager
+    def login() -> Iterator[None]:
+        with phases.waiting(), waiting():
+            phases.step(_LOGIN)
+            yield
+
     def save() -> tuple[OrderResult, ...]:
         results: list[OrderResult] = []
-        emmett_trace = EmmettTrace(trace)
+        emmett_trace = EmmettTrace(trace_file)
+        pacing = None if pace is None else Pacing(pace)
         try:
-            with _efenix_stops(lambda: False), open_efenix() as efenix:
+            with _efenix_stops(lambda: False), open_efenix(login) as efenix:
                 with _efenix_stops(lambda: efenix.sent_change):
-                    for order in scope.orders:
-                        results.append(OrderResult(order, _priced(order, efenix, emmett_trace)))
+                    for done, order in enumerate(scope.orders):
+                        phases.step(_ORDERS, worker=order.worker, done=done, total=len(scope.orders))
+                        trace = OrderTrace()
+                        window = efenix_trace.traced(efenix, trace, clock)
+                        outcome = _priced(order, window if pacing is None else pacing.window(window), emmett_trace)
+                        results.append(OrderResult(order, outcome, tuple(trace.steps)))
         except StopError:
+            phases.step(_MARKING)
             _mark(source, scope, results)
             raise
+        phases.step(_MARKING)
         if (refusal := _mark(source, scope, results)) is not None:
             raise StopError(messages.marks_not_saved(source, refusal))
         return tuple(results)
@@ -324,6 +395,8 @@ def _efenix_stops(changed: Callable[[], bool]) -> Iterator[None]:
         raise StopError(messages.window_closed(kept=changed())) from error
     except EfenixUnreachable as error:
         raise StopError(messages.efenix_unreachable(kept=changed())) from error
+    except BrowserNotStarted as error:
+        raise StopError(messages.browser_not_started()) from error
 
 
 def _priced(order: CollectiveOrder, efenix: Efenix, trace: EmmettTrace) -> Ready | OrderError | EmmettWarning:

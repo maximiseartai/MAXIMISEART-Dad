@@ -11,13 +11,20 @@ zakończenia i Rodzaj Zatrzymania. Tytuł i akcję wylicza ta sama reguła co na
 procesu i Gotowość jego wpis w katalogu procesów, tak jak przy starcie. Diagnozy i Zgłoszenia nie ma: żyją tylko przy Zatrzymaniu bieżącego
 Uruchomienia tej pracy Centrum. Plik startu ma te same fakty co linia ``uruchomienie-start`` dziennika Centrum i
 identyfikator Uruchomienia, więc reguła prywatności Logów obowiązuje bez zmian.
+
+Zakończone Uruchomienia procesu (``RunCards.ended``) to karty z Logów wszystkich jego Uruchomień, od najnowszego, z
+końcem i liczbą zleceń Wyceny w efenix z każdym wynikiem; z nich powstaje Powiadomienie o zakończonej Wycenie w efenix.
+Plik Logów zmienia się tylko przy Diagnozie, więc odczyt każdego pliku zostaje w pamięci, dopóki plik się nie zmieni.
 """
 
 from __future__ import annotations
 
+from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import re
+import threading
 from typing import Final, Literal, TypeVar
 
 from fastapi import APIRouter
@@ -26,7 +33,7 @@ from pydantic import BaseModel, ConfigDict
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.catalog import declaration_of
-from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs import OrderOutcome, RunLog
 from rozliczenia.centrum.runs import verdict
 
 LAST_STARTED_FILE: Final = "ostatnie-uruchomienie.json"
@@ -53,6 +60,16 @@ class StartedRun(BaseModel):
     started_at: datetime
 
 
+@dataclass(frozen=True)
+class LoggedRun:
+    """Zakończone Uruchomienie z jego Logów: karta, koniec i liczba zleceń Wyceny w efenix z każdym wynikiem (``None``:
+    inny proces albo Wycena bez podsumowania, np. po Zatrzymaniu przed pierwszym zleceniem)."""
+
+    card: contract.RunRestored
+    ended_at: datetime
+    orders: Counter[OrderOutcome] | None
+
+
 class RunCards:
     """Karty Uruchomień z dysku: ostatnie Uruchomienie sprzed startu Centrum i karta po identyfikatorze.
 
@@ -62,6 +79,9 @@ class RunCards:
     def __init__(self, logs: Path, last_started: Path) -> None:
         self._logs = logs
         self._last_started = last_started
+        self._lock = threading.Lock()
+        # Odczyt pliku Logów po nazwie, z jego czasem zmiany i rozmiarem; ``None``: pliku nie dało się odczytać.
+        self._ended: dict[str, tuple[tuple[int, int], LoggedRun | None]] = {}
 
     def run_started(self, info: contract.RunInfo, started_at: datetime) -> None:
         started = StartedRun(
@@ -109,6 +129,34 @@ class RunCards:
         records = [_read(self._logs / name, RunLog) for name in names if name[:16] == second]
         read = [record for record in records if record is not None]
         return self._restored(max(read, key=lambda record: record.started_at)) if read else None
+
+    def ended(self, process: contract.ProcessKey) -> list[LoggedRun]:
+        """Zakończone Uruchomienia procesu ``process`` z Logów, od najnowszego; pliki, których nie da się odczytać, pomija."""
+
+        try:
+            paths = sorted((path for path in self._logs.iterdir() if f"-{process}-" in path.name), reverse=True)
+        except OSError:
+            return []
+        with self._lock:
+            ended = [self._ended_of(path) for path in paths]
+        return [run for run in ended if run is not None]
+
+    def _ended_of(self, path: Path) -> LoggedRun | None:
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+        version = (stat.st_mtime_ns, stat.st_size)
+        known = self._ended.get(path.name)
+        if known is not None and known[0] == version:
+            return known[1]
+        record = _read(path, RunLog)
+        ended = None
+        if record is not None:
+            orders = None if record.efenix_orders is None else Counter(order.outcome for order in record.efenix_orders)
+            ended = LoggedRun(card=self._restored(record), ended_at=record.ended_at, orders=orders)
+        self._ended[path.name] = (version, ended)
+        return ended
 
     def _logged(self, run_id: str) -> Path | None:
         """Plik Logów Uruchomienia ``run_id`` (nazwa kończy się identyfikatorem); ``None`` bez pliku albo katalogu."""

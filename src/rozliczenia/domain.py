@@ -146,8 +146,32 @@ class WorkerFailed:
     phase: ClassVar[ProgressPhase] = ProgressPhase.SAVING
 
 
+@dataclass(frozen=True)
+class StepReached:
+    """Krok Zapisywania procesu bez Szablonów pracownika (Wycena w efenix): co trwa, u którego Wykonawcy i ile z ilu.
+
+    ``worker`` to Wykonawca bieżącego zlecenia (``None`` poza zleceniami), a ``done`` z ``total`` liczą zlecenia, które
+    proces już sprawdził w efenix (``total`` 0: krok bez liczenia, np. czekanie na logowanie).
+    """
+
+    label: str
+    worker: str | None
+    done: int
+    total: int
+    elapsed_ms: int
+    phase: ClassVar[ProgressPhase] = ProgressPhase.SAVING
+
+
 ProgressEvent = (
-    PhaseStarted | PhaseEnded | PhaseFailed | IssueCountReady | PlanReady | WorkerStarted | WorkerEnded | WorkerFailed
+    PhaseStarted
+    | PhaseEnded
+    | PhaseFailed
+    | IssueCountReady
+    | PlanReady
+    | WorkerStarted
+    | WorkerEnded
+    | WorkerFailed
+    | StepReached
 )
 """Zdarzenie przebiegu (GLOSSARY); każdy rodzaj ma tylko swoje pola, a wysyła je tylko ``PhaseRunner``."""
 

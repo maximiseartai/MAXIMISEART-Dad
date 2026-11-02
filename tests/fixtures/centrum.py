@@ -16,8 +16,9 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rozliczenia import intermax_process, preparation_process, settlement_process
+from rozliczenia import efenix_process, intermax_process, preparation_process, settlement_process
 from rozliczenia.centrum.app import create_app
+from rozliczenia.centrum.efenix_run import EfenixWindow
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, REPORT
 from rozliczenia.centrum.log import CentrumLog
@@ -276,16 +277,21 @@ class FakeOneDrive:
 
 @dataclass(frozen=True)
 class MetricsPaths:
-    """Pliki metryk trzech procesów w Centrum testu zamiast historii z katalogu narzędzia."""
+    """Pliki metryk procesów w Centrum testu zamiast historii z katalogu narzędzia; Wycena w efenix obok Przebiegu."""
 
     preparation: Path
     settlement: Path
     intermax: Path
 
+    @property
+    def efenix(self) -> Path:
+        return self.settlement.with_name("efenix-metrics.jsonl")
+
     def processes(self) -> Processes:
         return Processes(
             preparation=replace(preparation_process.PROCESS, metrics_path=lambda: self.preparation),
             settlement=replace(settlement_process.PROCESS, metrics_path=lambda: self.settlement),
+            efenix=replace(efenix_process.PROCESS, metrics_path=lambda: self.efenix),
             intermax=replace(intermax_process.PROCESS, metrics_path=lambda: self.intermax),
         )
 
@@ -426,6 +432,15 @@ def centrum(tmp_path: Path, *, today: date = date(2026, 10, 19)) -> Centrum:
         report_box=report_box,
         clock=clock,
         pause=clock.pause,
+        # Wycena w efenix w tym Centrum nie dociera do żadnego efenix: pod tym adresem nic nie odpowiada.
+        efenix_window=EfenixWindow(
+            "http://127.0.0.1:9/index.php",
+            tmp_path / "przegladarka-efenix",
+            tmp_path / "slad-wyceny-emmetta",
+            channel=None,
+            headless=True,
+            pace=None,
+        ),
     )
     client = CentrumClient(app)
     return Centrum(client, platform, settings_path, metrics, log_path, report_box, clock)
