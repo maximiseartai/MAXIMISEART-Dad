@@ -6,7 +6,7 @@ rozliczeń”, Dad answering a Decyzja, the Uruchomienie thread that ``RunHost.s
 Aktualizacja narzędzia thread, and the server thread ``stop_when_asked``. Every lock entry, Event ``set``/``wait``/``clear``, thread start and Centrum log
 entry of the real code is one indivisible step. Before every step the checker may let any other
 thread go first. It tries every such schedule within the bounds of a scope, re-running the code once
-per schedule, and checks two rules:
+per schedule, and checks four rules:
 
 - JEDNO_NARAZ: at no moment are two Uruchomienia procesu in progress, or an Uruchomienie and an
   Aktualizacja narzędzia, or two Aktualizacje. An Uruchomienie is in progress from the moment
@@ -21,6 +21,10 @@ per schedule, and checks two rules:
   log has also run its actions after the result (``RunHost.after``: the Kontrola ilości lands in the
   queue file there). Otherwise a shutdown accepted right after the result kills the thread before the file
   exists.
+- WYNIK_NA_KARCIE: every Uruchomienie whose thread finished its work has its result (the ``finished`` view) among
+  the views a card's event stream reads after the view it read when that Uruchomienie started (``RunHost.events_after``),
+  at the end of every schedule. A card reads the stream every 50 ms, so a start from a second tab that drops the
+  result before such a read leaves the card without it; the result is then only in Historia.
 
 Replaced: ``threading`` inside ``runs.py`` and ``shutdown.py`` by model primitives that hand control to
 the checker; ``run_process`` by an engine with two steps and an optional Decyzja through the real
@@ -512,7 +516,14 @@ def harness(scheduler: Scheduler) -> Iterator[World]:
             self.model_window = world_box[0].close_window()
             self.model_done = False
             self.model_after_done = False
+            # A card that has read the stream up to this start: every view it reads later has a higher sequence.
+            self.model_card_seen = host._sequence
+            self.model_returned = False
             created.append(self)
+
+        def work(self) -> None:
+            super().work()
+            self.model_returned = True
 
     def engine(process: Any, inputs: Any, interlocutor: Any, *, view: Any, metrics_path: Path) -> Any:
         variant = scheduler.step("silnik: Sprawdzanie … Zapisywanie", variants=("bez Decyzji", WITH_DECISION))
@@ -798,10 +809,18 @@ class Execution:
     update_restarted: bool = False
     restore_refused: bool = False
     restore_done: bool = False
+    results_shown_twice: bool = False
 
 
 def _state(world: World) -> object:
+    # The views a card can still read and each card's cursor decide WYNIK_NA_KARCIE; run ids differ in every schedule.
+    names = {run.info.id: run.model_name for run in world.created}
     return (
+        tuple(
+            (event.sequence, event.view.state, names.get(getattr(getattr(event.view, "run", None), "id", None)))
+            for event in world.host._events
+        ),
+        tuple((run.model_card_seen, run.model_returned) for run in world.created),
         tuple(
             (
                 actor.name,
@@ -877,6 +896,7 @@ def execute(scope: Scope, prefix: Sequence[int], visited: set[object], progress:
         update_restarted=any(update.restarted for update in world.updates) and not world.violations,
         restore_refused=world.restores_refused > 0,
         restore_done=any(restore.done for restore in world.restores) and not world.violations,
+        results_shown_twice=sum(run.model_returned for run in world.created) > 1,
     )
 
 
@@ -920,6 +940,7 @@ def _drive(
                 kind = "Uruchomienia" if kinds == ["Uruchomienie"] else " i ".join(kinds)
                 world.violations.append(Violation("JEDNO_NARAZ", ("JEDNO_NARAZ", kind), f"naraz trwają: {names}"))
             if world.exited:
+                _check_results_on_card(world)
                 return False
             options = [
                 (actor, variant)
@@ -928,6 +949,7 @@ def _drive(
                 for variant in actor.pending.variants
             ]
             if not options:
+                _check_results_on_card(world)
                 return False
             state = _state(world)
             if len(picks) >= replay and state in visited:
@@ -941,6 +963,24 @@ def _drive(
         return False
     finally:
         scheduler.abort_all()
+
+
+def _check_results_on_card(world: World) -> None:
+    """WYNIK_NA_KARCIE at the end of a schedule: what a card reads next, read without a step of the lock."""
+
+    for run in world.created:
+        if not run.model_returned:
+            continue
+        readable = [event.view for event in world.host._events if event.sequence > run.model_card_seen]
+        if not any(isinstance(view, contract.RunFinished) and view.run.id == run.info.id for view in readable):
+            world.violations.append(
+                Violation(
+                    "WYNIK_NA_KARCIE",
+                    ("WYNIK_NA_KARCIE",),
+                    f"{run.model_name} (z: {run.model_creator}) skończyło pracę, a karta, która śledzi strumień "
+                    "od jego startu, nie dostaje jego wyniku: zostaje tylko w Historii",
+                )
+            )
 
 
 def next_prefix(execution: Execution) -> list[int] | None:
@@ -964,6 +1004,7 @@ class ScopeReport:
     updates_restarted: int = 0
     restores_refused: int = 0
     restores_done: int = 0
+    results_shown_twice: int = 0
     counterexamples: dict[tuple[object, ...], tuple[Violation, list[str]]] = field(default_factory=dict)
     gaps: dict[str, list[str]] = field(default_factory=dict)
 
@@ -979,6 +1020,11 @@ class ScopeReport:
             missing.append("BRAK_WYNIKU: żadne Uruchomienie procesu nie doszło do wyniku.")
         if self.scope.start_tabs > 1 and not self.starts_refused:
             missing.append("BRAK_ODMOWY_STARTU: druga karta „Uruchom” ani razu nie dostała 409.")
+        if self.scope.start_tabs > 1 and not self.results_shown_twice:
+            missing.append(
+                "BRAK_DRUGIEGO_WYNIKU: druga karta „Uruchom” ani razu nie uruchomiła procesu po wyniku pierwszego, "
+                "więc WYNIK_NA_KARCIE nie sprawdza startu, który mógłby zgubić wynik."
+            )
         if self.scope.update_tabs and not self.starts_refused:
             missing.append("BRAK_ODMOWY_STARTU: „Uruchom” ani razu nie dostało 409 w trakcie aktualizacji.")
         if self.scope.update_tabs and not self.updates_refused:
@@ -1073,6 +1119,7 @@ def _explore(report: ScopeReport, progress: Progress) -> None:
         report.updates_restarted += execution.update_restarted
         report.restores_refused += execution.restore_refused
         report.restores_done += execution.restore_done
+        report.results_shown_twice += execution.results_shown_twice
         for violation in execution.violations:
             # Keep the shortest counterexample.
             known = report.counterexamples.get(violation.signature)
