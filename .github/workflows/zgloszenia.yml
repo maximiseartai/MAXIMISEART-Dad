@@ -30,11 +30,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # The history of main finds the last green commit and the PRs merged since it.
+      # The history of main finds the parent of the red commit, the last green commit and the PRs merged since it, on
+      # every run: an expression `push && 0 || 1` gave depth 1 on a push too, because 0 is false in GitHub expressions.
       - uses: actions/checkout@v7
         with:
           ref: main
-          fetch-depth: ${{ github.event.workflow_run.event == 'push' && 0 || 1 }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: File the flaky tests and the red main of the CI run
