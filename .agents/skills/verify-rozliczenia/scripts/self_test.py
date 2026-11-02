@@ -43,6 +43,8 @@ ROW_CONTENT_MARKERS = (
     "SYNTHETIC-4",
     "PREP-SYN-",
     "SYNTHETIC-LINK",
+    "ZL-782",
+    "example.invalid/zlecenie",
 )
 
 
