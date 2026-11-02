@@ -79,6 +79,15 @@ def drive_period_board(run: Run, page: Page) -> None:
         prepared.get_by_role("button", name="Utwórz rozliczenia pracowników, okres 29_05_10_2026", exact=True)
     ).to_be_visible()
     run.check(True, "the row of 29_05_10_2026 offers Wyceń w efenix and, beside it, Utwórz rozliczenia pracowników")
+    prepared.get_by_role("button", name="Wyceń w efenix, okres 29_05_10_2026", exact=True).click()
+    expect(page.get_by_text("Nowe Uruchomienie procesu", exact=True)).to_be_visible()
+    expect(page.get_by_role("radio", name="Wycena w efenix")).to_be_checked()
+    expect(page.get_by_role("combobox", name="Okres")).to_contain_text("29_05_10_2026")
+    run.check(True, "Wyceń w efenix opens a new Uruchomienie with the tile Wycena w efenix and that period chosen")
+    # A reload forgets the chosen tile, so later features start from the default Nowe Uruchomienie procesu.
+    page.goto(run.url + "#/okresy")
+    page.reload()
+    expect(page.get_by_role("table", name="Tablica okresów")).to_be_visible()
 
     run.step(feature, "tablica-nastepny-krok")
     next_step = page.get_by_role("region", name="Następny krok")
