@@ -401,9 +401,11 @@ Gotowości: Plik zbiorczy przygotowany nie znaczy, że tata go zakończył.
 Kroki okresu rozliczeniowego po kolei: Plik zbiorczy, Uzupełnienie w Excelu,
 Wycena w efenix i Rozliczenia pracowników. Plik zbiorczy i Rozliczenia
 pracowników są zrobione według Statusu okresu, Uzupełnienie w Excelu, gdy
-tata zaczął Wycenę w efenix albo są Rozliczenia pracowników, a Wycena w
-efenix, gdy ostatnie jej Uruchomienie procesu tego okresu w Historii skończyło
-się wynikiem OK; Wymaga sprawdzenia i Zatrzymanie zostawiają ją w toku.
+Historia ma Wycenę w efenix tego okresu albo są Rozliczenia pracowników, a
+Wycena w efenix, gdy ostatnie jej Uruchomienie procesu tego okresu w Historii
+skończyło się wynikiem OK; Wymaga sprawdzenia i Zatrzymanie zostawiają ją w
+toku. Historia ma tylko skończone Uruchomienia, więc Wycena, która jeszcze
+trwa, niczego w Drodze okresu nie zmienia.
 Następny krok to pierwszy niezrobiony, ale Przebieg rozliczeń nie czeka na
 Wycenę w efenix, tylko stoi po niej. Okres z Rozliczeniami pracowników jest
 zamknięty także bez zaliczonej Wyceny w efenix, która wtedy zostaje
