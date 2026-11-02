@@ -1,0 +1,4 @@
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 43 | ceny porównane z Wzorcem: 20
+RÓŻNICA | lista zleceń | skrypt js/index.js bez „numer:”: Enter w polu Numer wysyła szukanie z polem numer
+RÓŻNICA | strona zlecenia | strona nie ładuje skryptu js/page_order_edit.js
+RÓŻNICE: 2 | NIESPRAWDZONE: 0

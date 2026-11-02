@@ -286,15 +286,21 @@ uzupełnienia; podgląd bez zapisu z tymi samymi ostrzeżeniami kończy się kod
 
 `tools/zgodnosc_efenix.py` sprawdza, czy prawdziwy efenix ma budowę, której
 używa Wycena w efenix i którą odtwarza Atrapa efenix: pola listy i strony
-zlecenia, odpowiedź szukania, nagłówki tabeli wyników, postać daty wykonania,
-przyciski Emmetta i daty, karty pozycji wyceny z kodami `INDEKS` i cenami
-i stronę logowania. Uruchamia je Maks przed pierwszą Wyceną w efenix u taty
-i po każdym Zgłoszeniu „efenix się zmienił”, nigdy CI. Narzędzie tylko czyta:
-na czas sprawdzania każde żądanie okna Chrome z sesją taty (każdej karty, okna
-otwartego przez stronę i kroku przekierowania) spoza listy dozwolonych
-odczytów przerywa, zanim wyjdzie do efenix, a sesję taty zostawia zalogowaną.
-Dlatego Chrome dla narzędzia ma osobny profil bez innych kart. Wynik ma tylko nazwy elementów, liczby i kody
-pozycji, bez numerów zleceń, adresów i loginów.
+zlecenia, odpowiedź szukania i tabelę wyników, postać daty wykonania,
+przyciski i okna Emmetta i daty, nazwy w skryptach stron, na których działaniu
+polega Wycena w efenix, karty pozycji wyceny z kodami `INDEKS` i stronę
+logowania. Ceny pozycji z przypisania kolumn porównuje z kosztami z wiersza 14
+Wzorca pliku zbiorczego (domyślnie z konfiguracji narzędzia, inny plik:
+`--wzorzec`). Uruchamia je Maks przed pierwszą Wyceną w efenix u taty i po
+każdym Zgłoszeniu „efenix się zmienił”, nigdy CI.
+
+Narzędzie tylko czyta i nie uruchamia stron efenix: każde żądanie wysyła samo,
+z ciasteczkami sesji taty z Chrome, tylko z krótkiej listy odczytów (lista,
+szukanie, strona zlecenia, skrypty obu stron, strona logowania) i bez
+podążania za przekierowaniem. HTML składa w swoim oknie bez skryptów i bez
+sieci, które na końcu zamyka. Kart taty nie dotyka, a sesję taty zostawia
+zalogowaną. Wynik ma tylko nazwy elementów, liczby i kody pozycji, bez numerów
+zleceń, adresów, loginów i cen.
 
 ```sh
 google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodnosc"
@@ -302,10 +308,9 @@ google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodno
 .venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php>
 ```
 
-Kody wyjścia: `0` `ZGODNOŚĆ OK`, `2` różnice, części niesprawdzone albo
-żądania zablokowane (każde w osobnej linii), `1` brak Chrome, efenix nie
-odpowiada albo okno nie jest zalogowane. Parametry i Chrome na Windows opisuje
-`--help`.
+Kody wyjścia: `0` `ZGODNOŚĆ OK`, `2` różnice albo części niesprawdzone (każda
+w osobnej linii), `1` brak Chrome albo Wzorca, efenix nie odpowiada albo Chrome
+nie jest zalogowany. Parametry i Chrome na Windows opisuje `--help`.
 
 ## Testy
 

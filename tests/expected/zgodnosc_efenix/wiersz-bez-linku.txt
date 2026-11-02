@@ -1,5 +1,6 @@
 ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3
+RÓŻNICA | tabela wyników | Wycena w efenix nie czyta tabeli wyników
 RÓŻNICA | tabela wyników | wiersze bez jednego linku page_order_edit.php?id=: 3 z 3
 NIESPRAWDZONE | strona zlecenia | żaden wiersz nie prowadzi do strony zlecenia
 NIESPRAWDZONE | pozycje wyceny | bez strony zlecenia
-RÓŻNICE: 1 | NIESPRAWDZONE: 2 | ZABLOKOWANE: 0
+RÓŻNICE: 2 | NIESPRAWDZONE: 2

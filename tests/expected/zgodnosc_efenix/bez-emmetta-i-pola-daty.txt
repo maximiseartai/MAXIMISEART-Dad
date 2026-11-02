@@ -1,4 +1,5 @@
-ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 43
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 43 | ceny porównane z Wzorcem: 20
+RÓŻNICA | strona zlecenia | przycisk kalendarza daty wykonania (#button-calendar) jest ukryty w HTML strony
+RÓŻNICA | strona zlecenia | pole kalendarza w oknie daty wykonania (#dialog_select_date #field_data_instalacji): 0 zamiast 1
 RÓŻNICA | strona zlecenia | przycisk Emmetta (#button_emmett): 0 zamiast 1
-RÓŻNICA | strona zlecenia | pole w oknie daty wykonania (input#field_data_instalacji): 0 zamiast 1
-RÓŻNICE: 2 | NIESPRAWDZONE: 0 | ZABLOKOWANE: 0
+RÓŻNICE: 3 | NIESPRAWDZONE: 0

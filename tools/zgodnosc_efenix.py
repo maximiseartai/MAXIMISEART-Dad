@@ -1,33 +1,38 @@
 """Porównuje budowę stron efenix z Atrapą efenix samym odczytem; uruchom przed pierwszą Wyceną w efenix i po Zgłoszeniu „efenix się zmienił”.
 
-Narzędzie dla Maksa, poza CI (ADR 0024). Łączy się z Chrome, w którym Maks jest zalogowany do efenix kontem taty, otwiera
-w nim własną kartę i sprawdza budowę, której używa Wycena w efenix i którą odtwarza Atrapa efenix
-(``tests/fixtures/atrapa_efenix.py``):
+Narzędzie dla Maksa, poza CI (ADR 0024). Łączy się z Chrome, w którym Maks jest zalogowany do efenix kontem taty, i
+sprawdza budowę, której używa Wycena w efenix i którą odtwarza Atrapa efenix (``tests/fixtures/atrapa_efenix.py``).
+Żadna strona efenix nie działa przy tym w przeglądarce: każde żądanie do efenix narzędzie wysyła samo, z ciasteczkami
+sesji domyślnego kontekstu Chrome (``contexts[0].request``, bez kart i bez skryptów), tylko z listy ``ALLOWED``
+porównywanej po pełnej ścieżce i hoście ``--efenix-url``, i nigdy nie podąża za przekierowaniem: przekierowanie na
+``page_login.php`` to brak sesji, a inne to różnica. HTML z odpowiedzi składa parserem przeglądarki we własnej karcie
+w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service workerami, z której nie wychodzi żadne żądanie
+(obraz, styl, ramka, przejście, prefetch; ``parser_page``). Kart taty nie dotyka. Sprawdza:
 
-- lista zleceń: pole ``Numer`` (``efenix_browser.NUMBER_FIELD``) i ``#wyniki``, a otwiera ją ``BrowserEfenix.open_list``;
-- szukanie: Enter w polu ``Numer`` wysyła ``POST action_fill_orders.php`` z polem ``numer``, a tabela odpowiedzi ma
-  nagłówki ``efenix_browser.HEADERS`` i w każdym wierszu link ``page_order_edit.php?id=`` i status w ``.badge``;
-  ``BrowserEfenix.search`` czyta jeden jej wiersz, z loginem realizatora i ``Dane adresowe``;
-- strona zlecenia: ``BrowserEfenix.execution_date`` czyta ``#data_install`` (``RRRR-MM-DD`` albo pusty tekst; pustej
-  daty narzędzie szuka wśród otwieranych zleceń, najpierw „Do wyceny”), elementy z ``ELEMENTS`` (przycisk i okno
-  Emmetta, okno daty, kwota końcowa, pola Ilość i ceny wpisywanej w kartach pozycji, przyciski Przekazania do akceptacji
-  i anulowania, których nie dotyka) oraz karty pozycji ``.card.rounded-lg.kolorek`` równe ``atrapa_efenix.POSITIONS``:
-  kod ``INDEKS_NNN_NNN`` to ``id`` jedynego pola karty, karta z polem Ilość (``input.wycena-ilosc``) ma cenę jednostkową
-  w tekście ``.col-sm-1.mt-2 > span.text-default > small`` (porównaną jako liczba), a karta z ceną wpisywaną ma samo pole
-  ``input.wycena-cena`` bez ceny w tekście;
-- bez sesji (nowy kontekst przeglądarki bez ciasteczek, więc sesja taty trwa): lista i szukanie przekierowują na
-  ``page_login.php``, a strona logowania ma formularz ``action_login.php`` z polami ``field_signum``,
-  ``field_password`` i ``fingerprint``.
+- lista zleceń: elementy ``efenix_browser.LIST_ELEMENTS`` (pole ``Numer``) i skrypt ``js/index.js``, który lista ładuje,
+  z nazwami ``efenix_browser.LIST_SCRIPT_USES`` (Enter w polu ``Numer`` wysyła ``action_fill_orders.php`` z polem
+  ``numer``);
+- tabela wyników: szukanie ``--numer`` tak jak skrypt listy (POST ``action_fill_orders.php``), a odpowiedź czyta
+  ``efenix_browser.read_results``, odczyt Wyceny w efenix, z loginem realizatora i ``Dane adresowe`` w każdym wierszu
+  (przy błędzie odczytu nagłówki ``efenix_browser.HEADERS``, liczba komórek, link ``page_order_edit.php?id=`` i status
+  w ``.badge``);
+- strona zlecenia (do ``ORDERS_TO_OPEN`` zleceń z tabeli, najpierw „Do wyceny”, aż znajdzie pustą datę wykonania):
+  ``efenix_browser.read_order`` (data wykonania ``RRRR-MM-DD`` albo pusta, kwota końcowa, pola Ilość), a na pierwszym
+  zleceniu elementy ``efenix_browser.ORDER_ELEMENTS`` (kalendarz i okno daty wykonania, przycisk i okno Emmetta;
+  przycisk, który okno klika pierwszy, widoczny w samym HTML, bez stylów efenix), przyciski Przekazania do akceptacji i
+  anulowania, które ma Atrapa, skrypt ``js/page_order_edit.js`` z nazwami ``efenix_browser.ORDER_SCRIPT_USES``
+  (pickadate z ``onSet``, „Potwierdź” daty, Emmett, zapis ilości z ``price_all``) i karty pozycji
+  ``.card.rounded-lg.kolorek``: karta z polem Ilość ma cenę w tekście ``.col-sm-1.mt-2 > span.text-default > small``,
+  a karta z ceną wpisywaną samo pole ``input.wycena-cena``; kody ``INDEKS_NNN_NNN`` i rodzaj karty są równe pozycjom
+  Atrapy (``atrapa_efenix.CATALOG``), a cena pozycji z przypisania kolumn (``efenix_positions.POSITION_OF_COLUMN``) jest
+  równa kosztowi jej kolumny w wierszu 14 Wzorca pliku zbiorczego, bo z kosztów tego wiersza liczy się ``Kwota`` (AU),
+  z którą Wycena w efenix porównuje kwotę końcową efenix;
+- bez sesji (żądania bez ciasteczek, więc sesja taty trwa): lista i szukanie przekierowują na ``page_login.php``, a
+  strona logowania ma formularz ``action_login.php`` z polami ``field_signum``, ``field_password`` i ``fingerprint``.
 
-Na czas sprawdzania każde żądanie kontekstu przeglądarki z sesją (każdej jego karty i okna, także otwartego skryptem
-strony, ramki i workera) przechodzi przez ``ALLOWED`` (``context.route``): GET listy, strony zlecenia i strony logowania,
-POST szukania, odczyt daty ``action_get_date_of_instalation.php``, odczyty, które strony efenix wysyłają same, i GET
-plików strony (style, skrypty, obrazy, czcionki) bez ``.php``. Dozwolone żądanie narzędzie wysyła samo, bez podążania
-za przekierowaniem, i oddaje przeglądarce odpowiedź, więc każdy krok przekierowania wraca na listę jako nowe żądanie,
-zanim wyjdzie. Inne żądanie i każdy WebSocket narzędzie przerywa przed wysłaniem i wypisuje jako ``ZABLOKOWANE``, a okna
-otwarte przez swoją kartę zamyka. Niczego nie klika poza Enter w polu ``Numer``. ``action_fill_emmett.php`` (propozycja
-Emmetta) nie jest na liście, bo bez kodu serwera nie wiadomo, czy niczego nie zapisuje. Chrome z osobnym profilem (niżej)
-nie ma innych kart, więc blokada kontekstu nie zatrzymuje cudzej pracy.
+Skryptów stron narzędzie nie uruchamia, więc ich działania nie widzi: sprawdza tylko, że skrypt ma nazwy, na których
+polega okno Wyceny w efenix. ``action_fill_emmett.php`` (propozycja Emmetta) nie jest na liście, bo bez kodu serwera nie
+wiadomo, czy niczego nie zapisuje.
 
 Uruchomienie: Chrome z osobnym profilem i zdalnym debugowaniem, w nim logowanie do efenix kontem taty, potem narzędzie:
 
@@ -35,93 +40,93 @@ Uruchomienie: Chrome z osobnym profilem i zdalnym debugowaniem, w nim logowanie 
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\\.efenix-zgodnosc"
     .venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php>
 
-Wynik: linie ``RÓŻNICA | <część> | <co>``, ``NIESPRAWDZONE | <część> | <co>`` i ``ZABLOKOWANE | <metoda> <strona>``,
-na końcu ``ZGODNOŚĆ OK`` (kod 0) albo liczby (kod 2). Wynik nie zawiera numerów zleceń, adresów ani loginów: tylko
-nazwy elementów, liczby, kody pozycji z cenami i postać daty (cyfry jako ``9``). Kod 1: brak Chrome pod ``--cdp``,
-efenix nie odpowiada albo karta nie jest zalogowana; opis na stderr.
+Na czas sprawdzania w Chrome otwiera się okno narzędzia, w którym widać złożony HTML stron bez stylów i skryptów;
+narzędzie zamyka je na końcu. Wzorzec pliku zbiorczego to domyślnie ten z konfiguracji narzędzia
+(``config/Wzorzec pliku zbiorczego.xlsx``, jak w Centrum rozliczeń), a inny podaje ``--wzorzec``.
+
+Wynik: linie ``RÓŻNICA | <część> | <co>`` i ``NIESPRAWDZONE | <część> | <co>``, na końcu ``ZGODNOŚĆ OK`` (kod 0) albo
+liczby (kod 2). Wynik nie zawiera numerów zleceń, adresów, loginów ani cen: tylko nazwy elementów, liczby, kody pozycji
+z kolumnami i postać daty i kwoty (cyfry jako ``9``). Kod 1: brak Chrome pod ``--cdp``, nieczytelny Wzorzec, efenix nie
+odpowiada albo Chrome nie jest zalogowany; opis na stderr.
 """
 
 from __future__ import annotations
 
 import argparse
 from collections import Counter
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 import enum
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import re
+import socket
 import sys
-from typing import Final, TypedDict
-from urllib.parse import parse_qs, urljoin, urlparse
+from typing import Final, TypedDict, cast
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
-from playwright.sync_api import APIResponse, Browser, BrowserContext, Page, Route, WebSocketRoute, sync_playwright
+from openpyxl.utils import column_index_from_string
+from openpyxl.worksheet.worksheet import Worksheet
+from playwright.sync_api import APIRequestContext, Browser, Page, ProxySettings, Route, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-# Korzeń repozytorium dla Atrapy efenix (``tests.fixtures``), z której narzędzie bierze kody pozycji i ceny.
+# Korzeń repozytorium dla Atrapy efenix (``tests.fixtures``), z której narzędzie bierze kody pozycji.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from rozliczenia import workbook_files
+from rozliczenia.collective_preparation import default_collective_template_path
 from rozliczenia.efenix_browser import (
+    AMOUNT,
     EXECUTION_DATE,
     HEADERS,
+    LIST_ELEMENTS,
+    LIST_SCRIPT_USES,
     LOGIN_PAGE,
-    NUMBER_FIELD,
+    ORDER_ELEMENTS,
     ORDER_PAGE,
+    ORDER_SCRIPT_USES,
+    QUANTITY,
     SEARCH,
     TIMEOUT_MS,
-    BrowserEfenix,
+    PageElement,
+    ScriptUse,
+    read_order,
+    read_results,
 )
 from rozliczenia.efenix_checks import PRICING_STATUS
-from rozliczenia.efenix_pricing import EfenixUnreachable, ListedOrder, LoggedOut, UnexpectedPage
+from rozliczenia.efenix_positions import POSITION_OF_COLUMN
+from rozliczenia.efenix_pricing import UnexpectedPage
+from rozliczenia.workbook_files import WorkbookError
 
-from tests.fixtures.atrapa_efenix import POSITIONS
+from tests.fixtures.atrapa_efenix import CATALOG
 
 LIST_PAGE: Final = "index.php"
-LOGIN_ACTION: Final = "action_login.php"
-DATE_READ: Final = "action_get_date_of_instalation.php"
-# Odczyty, które strony efenix wysyłają same, a z kodu strony z rekonesansu (#741) tylko wkładają odpowiedź na stronę.
-# Bez nich na zgodnym efenix wynik zawsze miałby ZABLOKOWANE. Atrapa efenix je odtwarza (``atrapa_efenix.PAGE_READS``).
-PAGE_READS: Final = frozenset(
-    {
-        # Lista po wczytaniu: licznik zalogowanych (też co 2 minuty) i opcje list wyboru województwa, powiatu, gminy,
-        # miasta oraz liczba ulic; po każdej tabeli wyników skrypt stronicowania pobierany przez XHR, nie jako <script>.
-        ("POST", "action_users_online.php"),
-        ("POST", "action_fill_country_order.php"),
-        ("POST", "action_fill_community_order.php"),
-        ("POST", "action_fill_city_order.php"),
-        ("POST", "action_streets_count_order.php"),
-        ("POST", "action_fill_streets_order.php"),
-        ("GET", "pagination.js"),
-        # Strona zlecenia po wczytaniu: notatki zlecenia do ``#notatki`` (pole ``button_note_delete`` mówi tylko, czy
-        # pokazać przyciski kasowania; kasuje ``action_note_delete.php``, którego nie ma na liście).
-        ("POST", "action_fill_notes.php"),
-    }
-)
-# Jedyne żądania do efenix, które narzędzie przepuszcza: odczyty stron i szukanie. Zapis ilości, Emmett, ustawienie
-# daty, zmiana statusu, Przekazanie do akceptacji, anulowanie i wylogowanie nie są na liście, więc ich żądanie nie wychodzi.
+LIST_SCRIPT: Final = "js/index.js"
+ORDER_SCRIPT: Final = "js/page_order_edit.js"
+# Jedyne żądania do efenix, które narzędzie wysyła: (metoda, ścieżka względem katalogu ``--efenix-url``). Zapis ilości,
+# Emmett, data wykonania, zmiana statusu, Przekazanie do akceptacji, anulowanie, logowanie i wylogowanie nie są na liście.
 ALLOWED: Final = frozenset(
     {
         ("GET", LIST_PAGE),
+        ("GET", LIST_SCRIPT),
         ("POST", SEARCH),
         ("GET", ORDER_PAGE),
+        ("GET", ORDER_SCRIPT),
         ("GET", LOGIN_PAGE),
-        ("GET", DATE_READ),
-        ("POST", DATE_READ),
-        *PAGE_READS,
     }
 )
-# Pliki, z których przeglądarka składa stronę: GET bez ``.php``, z dowolnego adresu.
-PAGE_FILES: Final = frozenset({"stylesheet", "script", "image", "font", "media"})
+# Szukanie z pola Numer tak, jak wysyła je skrypt listy; pozostałe pola filtrów listy zostają puste.
+SEARCH_FORM: Final = {"rodzaj": "szukanie", "strona": "1"}
 POSITION_CODE: Final = re.compile(r"INDEKS_\d{3}_\d{3}")
+# Wiersz Wzorca pliku zbiorczego z kosztem jednej sztuki każdej pozycji Ilości usług (GLOSSARY: Ilości usług); silnik go
+# nie czyta, więc ``workbook_files`` nie ma go w układzie arkusza.
+COST_ROW: Final = 14
 ORDERS_TO_OPEN: Final = 10
-# Odpowiedzi, za których ``Location`` przeglądarka podąża sama, i najdłuższy łańcuch przekierowań, który narzędzie przepuszcza.
-FOLLOWED: Final = frozenset({301, 302, 303, 307, 308})
-REDIRECT_HOPS: Final = 5
 OK: Final = "ZGODNOŚĆ OK"
-LOGGED_OUT_MIDWAY: Final = "efenix wylogował kartę narzędzia w trakcie sprawdzania: zaloguj się i uruchom narzędzie jeszcze raz"
+NOT_SIGNED_IN: Final = "Chrome nie jest zalogowany do efenix: zaloguj się kontem taty i uruchom narzędzie jeszcze raz"
+LOGGED_OUT_MIDWAY: Final = "efenix przekierował na stronę logowania w trakcie sprawdzania: zaloguj się i uruchom narzędzie jeszcze raz"
 
 
 class Part(enum.Enum):
@@ -135,39 +140,23 @@ class Part(enum.Enum):
     LOGIN = "strona logowania"
 
 
-@dataclass(frozen=True)
-class Element:
-    """Element strony, który musi być na niej dokładnie raz (``many``: co najmniej raz)."""
-
-    part: Part
-    selector: str
-    name: str
-    many: bool = False
-
-
-PRICING_CARD: Final = ".card.rounded-lg.kolorek"
-ELEMENTS: Final = (
-    Element(Part.LIST, f"input{NUMBER_FIELD}", "pole Numer"),
-    Element(Part.LIST, "#wyniki", "miejsce tabeli wyników"),
-    Element(Part.ORDER, EXECUTION_DATE, "data wykonania"),
-    Element(Part.ORDER, "#button_emmett", "przycisk Emmetta"),
-    Element(Part.ORDER, "#dialog_emmett #emmett-propozycja", "propozycja w oknie Emmetta"),
-    Element(Part.ORDER, "#dialog_emmett .btn-ok", "„Załaduj do zlecenia” w oknie Emmetta"),
-    Element(Part.ORDER, "input#field_data_instalacji", "pole w oknie daty wykonania"),
-    Element(Part.ORDER, "#cena_all2", "kwota końcowa"),
-    Element(Part.ORDER, f"{PRICING_CARD} input.wycena-ilosc", "pola Ilość pozycji wyceny", many=True),
-    Element(Part.ORDER, f"{PRICING_CARD} input.wycena-cena", "pola ceny wpisywanej pozycji wyceny", many=True),
-    Element(Part.ORDER, "#button_forward_to_accept", "przycisk Przekazania do akceptacji"),
-    Element(Part.ORDER, "#button_forward_to_cancel", "przycisk anulowania"),
-    Element(Part.LOGIN, f'form[action$="{LOGIN_ACTION}"]', "formularz logowania"),
-    Element(Part.LOGIN, "input#field_signum", "pole loginu"),
-    Element(Part.LOGIN, "input#field_password", "pole hasła"),
-    Element(Part.LOGIN, 'input[name="fingerprint"]', "pole fingerprint"),
+# Elementy, których Wycena w efenix nie używa, a Atrapa ma: przyciski, których okno nie może kliknąć, i formularz
+# logowania, w którym tata loguje się sam.
+UNUSED_ORDER_ELEMENTS: Final = (
+    PageElement("przycisk Przekazania do akceptacji", "#button_forward_to_accept"),
+    PageElement("przycisk anulowania", "#button_forward_to_cancel"),
 )
+LOGIN_ELEMENTS: Final = (
+    PageElement("formularz logowania", 'form[action$="action_login.php"]'),
+    PageElement("pole loginu", "input#field_signum"),
+    PageElement("pole hasła", "input#field_password"),
+    PageElement("pole fingerprint", 'input[name="fingerprint"]'),
+)
+PRICING_CARD: Final = ".card.rounded-lg.kolorek"
 
-# Tabela odpowiedzi szukania przeczytana w ``<template>``, w którym jej skrypty nie biegną. Numery i identyfikatory
-# zostają w pamięci narzędzia: służą do szukania i otwierania zleceń, nie trafiają do wyniku.
-_READ_RESULTS: Final = """([html, orderPage]) => {
+# Tabela odpowiedzi szukania przeczytana w ``<template>``, w którym nic nie biegnie i nic się nie wczytuje. Linki
+# (identyfikatory zleceń) zostają w pamięci narzędzia: służą do otwierania zleceń, nie trafiają do wyniku.
+_READ_TABLE: Final = """([html, orderPage]) => {
     const template = document.createElement('template');
     template.innerHTML = html;
     const table = template.content.querySelector('table');
@@ -177,35 +166,30 @@ _READ_RESULTS: Final = """([html, orderPage]) => {
         copy.querySelectorAll('br').forEach((br) => br.replaceWith(' '));
         return copy.textContent.replace(/\\s+/g, ' ').trim();
     };
-    const plain = (element) => {
-        const copy = element.cloneNode(true);
-        copy.querySelectorAll('small').forEach((small) => small.remove());
-        return text(copy);
-    };
     return {
         headers: [...table.querySelectorAll('thead th')].map(text),
         rows: [...table.querySelectorAll('tbody tr')].map((row) => ({
-            cells: [...row.querySelectorAll('td')].map(plain),
+            cells: row.querySelectorAll('td').length,
             links: [...row.querySelectorAll(`a[href*="${orderPage}?id="]`)].map((link) => link.getAttribute('href')),
             badges: [...row.querySelectorAll('td .badge')].map(text),
         })),
     };
 }"""
-# Karta pozycji: ``id`` pól Ilość, ``id`` pól ceny wpisywanej i ceny jednostkowe z tekstu karty.
-_READ_POSITIONS: Final = """(card) => [...document.querySelectorAll(card)].map((element) => ({
-    quantity: [...element.querySelectorAll('input.wycena-ilosc')].map((input) => input.id),
+# Karta pozycji: ``id`` pól Ilość, ``id`` pól ceny wpisywanej i ceny z tekstu karty.
+_READ_CARDS: Final = """([card, quantity]) => [...document.querySelectorAll(card)].map((element) => ({
+    quantity: [...element.querySelectorAll(quantity)].map((input) => input.id),
     price: [...element.querySelectorAll('input.wycena-cena')].map((input) => input.id),
     shown: [...element.querySelectorAll('.col-sm-1.mt-2 > span.text-default > small')].map((small) => small.textContent.trim()),
 }))"""
 
 
 class _Row(TypedDict):
-    cells: list[str]
+    cells: int
     links: list[str]
     badges: list[str]
 
 
-class _Results(TypedDict):
+class _Table(TypedDict):
     headers: list[str]
     rows: list[_Row]
 
@@ -217,16 +201,15 @@ class _Card(TypedDict):
 
 
 class ToolError(Exception):
-    """Narzędzie nie może sprawdzić efenix (brak Chrome, efenix nie odpowiada, karta niezalogowana); opis dla Maksa."""
+    """Narzędzie nie może sprawdzić efenix (brak Chrome, Wzorca, odpowiedzi efenix albo sesji); opis dla Maksa."""
 
 
 @dataclass
 class Report:
-    """Różnice, części niesprawdzone i przerwane żądania; ``checked`` to liczby tego, co narzędzie obejrzało."""
+    """Różnice i części niesprawdzone; ``checked`` to liczby tego, co narzędzie obejrzało."""
 
     differences: list[tuple[Part, str]] = field(default_factory=list)
     unchecked: list[tuple[Part, str]] = field(default_factory=list)
-    blocked: list[str] = field(default_factory=list)
     checked: dict[str, int] = field(default_factory=dict)
 
     def differ(self, part: Part, what: str) -> None:
@@ -237,278 +220,302 @@ class Report:
         lines = [f"ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | {head}"]
         lines += [f"RÓŻNICA | {part.value} | {what}" for part, what in self.differences]
         lines += [f"NIESPRAWDZONE | {part.value} | {what}" for part, what in self.unchecked]
-        lines += [f"ZABLOKOWANE | {request} | żądanie spoza listy dozwolonych, przerwane przed wysłaniem" for request in self.blocked]
-        if self.differences or self.unchecked or self.blocked:
-            lines.append(f"RÓŻNICE: {len(self.differences)} | NIESPRAWDZONE: {len(self.unchecked)} | ZABLOKOWANE: {len(self.blocked)}")
+        if self.differences or self.unchecked:
+            lines.append(f"RÓŻNICE: {len(self.differences)} | NIESPRAWDZONE: {len(self.unchecked)}")
         else:
             lines.append(OK)
         return lines
 
 
-def allowed(method: str, url: str, resource_type: str, efenix_host: str) -> bool:
-    """Czy narzędzie może wysłać to żądanie: odczyt z ``ALLOWED`` do efenix albo GET pliku strony bez ``.php``."""
+def allowed(method: str, url: str, efenix_url: str) -> bool:
+    """Czy narzędzie może wysłać to żądanie: ``ALLOWED`` po pełnej ścieżce w katalogu ``efenix_url``, na jego hoście."""
 
-    address = urlparse(url)
-    if address.netloc == efenix_host and (method, PurePosixPath(address.path).name) in ALLOWED:
-        return True
-    return method == "GET" and resource_type in PAGE_FILES and not address.path.endswith(".php")
+    address, efenix = urlparse(url), urlparse(efenix_url)
+    folder = efenix.path.rpartition("/")[0] + "/"
+    if (address.scheme, address.netloc) != (efenix.scheme, efenix.netloc) or address.params or address.fragment:
+        return False
+    return address.path.startswith(folder) and (method, address.path.removeprefix(folder)) in ALLOWED
 
 
-def check(browser: Browser, session: BrowserContext, url: str, *, number: str = "", timeout_ms: int = TIMEOUT_MS) -> Report:
-    """Sprawdza efenix pod ``url`` w zalogowanym kontekście ``session``; bez sesji w nowym kontekście ``browser``."""
+@dataclass(frozen=True)
+class _Answer:
+    """Odpowiedź efenix: kod, adres przekierowania (``None``: bez przekierowania) i treść."""
 
-    if urlparse(url).scheme not in ("http", "https") or PurePosixPath(urlparse(url).path).name != LIST_PAGE:
-        raise ToolError(f"--efenix-url to adres listy zleceń efenix kończący się na /{LIST_PAGE}")
-    report = Report()
-    with _guarded_page(session, url, report, timeout_ms=timeout_ms) as page:
-        _check_signed_in(page, url, report, number=number, timeout_ms=timeout_ms)
-    context = browser.new_context()
+    status: int
+    location: str | None
+    text: str
+
+
+class _Efenix:
+    """Odczyty efenix z ``ALLOWED`` wysyłane przez ``request`` bez podążania za przekierowaniem."""
+
+    def __init__(self, request: APIRequestContext, url: str, *, timeout_ms: int) -> None:
+        self._request = request
+        self.url = url
+        self._timeout_ms = timeout_ms
+
+    def address(self, name: str, **query: str) -> str:
+        return urljoin(self.url, name + (f"?{urlencode(query)}" if query else ""))
+
+    def name(self, url: str) -> str:
+        """Ścieżka adresu względem katalogu efenix (adres innego hosta: sam host), bez zapytania."""
+
+        address, efenix = urlparse(url), urlparse(self.url)
+        if address.netloc != efenix.netloc:
+            return address.netloc
+        return address.path.removeprefix(efenix.path.rpartition("/")[0] + "/")
+
+    def get(self, url: str) -> _Answer:
+        return self._send("GET", url, {})
+
+    def post(self, url: str, form: Mapping[str, str]) -> _Answer:
+        return self._send("POST", url, form)
+
+    def to_login(self, answer: _Answer) -> bool:
+        return answer.location is not None and urlparse(answer.location).path == urlparse(self.address(LOGIN_PAGE)).path
+
+    def _send(self, method: str, url: str, form: Mapping[str, str]) -> _Answer:
+        if not allowed(method, url, self.url):
+            raise ValueError(f"{method} {self.name(url)} nie jest na liście dozwolonych żądań")
+        try:
+            response = self._request.fetch(
+                url,
+                method=method,
+                form=dict(form) if method == "POST" else None,
+                max_redirects=0,
+                timeout=self._timeout_ms,
+            )
+        except PlaywrightError as error:
+            raise ToolError("efenix nie odpowiada pod --efenix-url") from error
+        try:
+            location = urljoin(url, response.headers["location"]) if 300 <= response.status < 400 and "location" in response.headers else None
+            return _Answer(response.status, location, "" if location is not None else response.text())
+        finally:
+            response.dispose()
+
+
+def template_costs(path: Path) -> dict[str, Decimal | None]:
+    """Koszt z wiersza 14 Wzorca pliku zbiorczego w każdej kolumnie przypisania kolumn; ``None``: komórka bez liczby."""
+
     try:
-        _check_logged_out(context, url, report, timeout_ms=timeout_ms)
-    finally:
-        context.close()
+        content = workbook_files.template_content(path)
+        with workbook_files.open_workbook(path, content, read_only=True) as workbook:
+            sheet = cast(Worksheet, workbook.active)  # tylko do odczytu: ReadOnlyWorksheet
+            row = next(sheet.iter_rows(min_row=COST_ROW, max_row=COST_ROW, values_only=True), ())
+    except WorkbookError as error:
+        raise ToolError(f"Wzorzec pliku zbiorczego {path}: {error.problem.value}") from error
+    costs: dict[str, Decimal | None] = {}
+    for column in POSITION_OF_COLUMN:
+        index = column_index_from_string(column) - 1
+        value = row[index] if index < len(row) else None
+        costs[column] = Decimal(str(value)) if isinstance(value, int | float | Decimal) and not isinstance(value, bool) else None
+    return costs
+
+
+def check(signed_in: _Efenix, signed_out: _Efenix, page: Page, costs: Mapping[str, Decimal | None], *, number: str = "") -> Report:
+    """Sprawdza efenix odczytami ``signed_in`` (sesja taty) i ``signed_out`` (bez ciasteczek); HTML składa w ``page``."""
+
+    report = Report()
+    _check_signed_in(signed_in, page, costs, report, number=number)
+    _check_signed_out(signed_out, page, report)
     return report
 
 
 @contextmanager
-def _guarded_page(context: BrowserContext, url: str, report: Report, *, timeout_ms: int) -> Iterator[Page]:
-    """Nowa karta w ``context``; na czas bloku każde żądanie całego ``context`` przechodzi przez ``allowed``.
+def parser_page(browser: Browser, *, timeout_ms: int) -> Iterator[Page]:
+    """Karta w nowym kontekście bez ciasteczek, JavaScriptu i service workerów, z której nie wychodzi żadne żądanie.
 
-    Blokada jest na kontekście, nie na karcie, bo ``page.route`` nie widzi okien otwartych skryptem strony. Za
-    przekierowaniem z odpowiedzi, którą dostaje przeglądarka, przeglądarka podąża bez ``guard`` (Playwright go dla kroków
-    przekierowania nie woła), więc dozwolone żądanie narzędzie wysyła samo z ``max_redirects=0`` i odpowiedź
-    z przekierowaniem oddaje przeglądarce dopiero wtedy, gdy każdy krok łańcucha jest na liście (``_forbidden_hop``);
-    inaczej przerywa żądanie. WebSocket nie łączy się z serwerem (obsługa bez ``connect_to_server``). Na końcu zamyka
-    swoją kartę i okna, które otworzyła, a potem zdejmuje blokadę.
+    Przejście (``<meta http-equiv="refresh">``, ramka) dostaje od narzędzia odpowiedź 204, więc karta zostaje przy
+    złożonym HTML, a każde inne żądanie (obraz, styl, skrypt) narzędzie przerywa. Żądania, których przechwytywanie
+    Playwrighta nie widzi (``<link rel="prefetch">`` wysyła proces przeglądarki), idą przez proxy kontekstu na port, który
+    narzędzie zajmuje bez nasłuchu, więc połączenie jest odrzucane (adresy lokalne Playwright też kieruje przez proxy).
     """
 
-    host = urlparse(url).netloc
-
-    def block(method: str, address: str) -> None:
-        parsed = urlparse(address)
-        name = PurePosixPath(parsed.path).name if parsed.netloc == host else parsed.netloc
-        if f"{method} {name}" not in report.blocked:
-            report.blocked.append(f"{method} {name}")
-
-    def guard(route: Route) -> None:
-        request = route.request
-        if not allowed(request.method, request.url, request.resource_type, host):
-            block(request.method, request.url)
-            route.abort()
-            return
+    with socket.socket() as dead:
+        dead.bind(("127.0.0.1", 0))
+        proxy: ProxySettings = {"server": f"http://127.0.0.1:{dead.getsockname()[1]}"}
+        context = browser.new_context(java_script_enabled=False, service_workers="block", proxy=proxy)
         try:
-            response = route.fetch(max_redirects=0, timeout=timeout_ms)
-            forbidden = _forbidden_hop(route, response, host, timeout_ms=timeout_ms)
-        except PlaywrightError:
-            route.abort("failed")
-            return
-        if forbidden is not None:
-            block(*forbidden)
-            route.abort()
-            return
-        route.fulfill(response=response)
-
-    def no_socket(socket: WebSocketRoute) -> None:
-        block("WebSocket", socket.url)
-
-    ours: list[Page] = []
-
-    def opened(page: Page) -> None:
-        if page.opener() in ours:
-            ours.append(page)
-
-    context.route("**/*", guard)
-    context.route_web_socket("**/*", no_socket)
-    context.on("page", opened)
-    try:
-        ours.append(context.new_page())
-        yield ours[0]
-    finally:
-        for page in reversed(ours):
-            page.close()
-        context.remove_listener("page", opened)
-        context.unroute_all(behavior="ignoreErrors")
+            context.route("**/*", _stay)
+            page = context.new_page()
+            page.set_default_timeout(timeout_ms)
+            yield page
+        finally:
+            context.close()
 
 
-def _forbidden_hop(route: Route, response: APIResponse, host: str, *, timeout_ms: int) -> tuple[str, str] | None:
-    """Pierwszy krok przekierowania spoza listy (metoda, adres) w łańcuchu od ``response``; ``None``: cały na liście.
-
-    Kroki na liście to odczyty, więc narzędzie wysyła je samo, żeby zobaczyć następny krok; przeglądarka wyśle je drugi
-    raz, gdy dostanie przekierowanie. Łańcuch dłuższy niż ``REDIRECT_HOPS`` kroków jest spoza listy.
-    """
-
-    request = route.request
-    method, address = request.method, request.url
-    for _ in range(REDIRECT_HOPS):
-        if response.status not in FOLLOWED:
-            return None
-        address = urljoin(address, response.headers.get("location", ""))
-        method = method if response.status in (307, 308) else "GET"
-        if not allowed(method, address, request.resource_type, host):
-            return method, address
-        response = route.fetch(url=address, method=method, max_redirects=0, timeout=timeout_ms)
-    return method, address
+def _stay(route: Route) -> None:
+    if route.request.is_navigation_request():
+        route.fulfill(status=204)
+    else:
+        route.abort()
 
 
-def _check_signed_in(page: Page, url: str, report: Report, *, number: str, timeout_ms: int) -> None:
-    efenix = BrowserEfenix(page, url, timeout_ms=timeout_ms)
-    try:
-        efenix.open_list()
-    except EfenixUnreachable as error:
-        raise ToolError("efenix nie odpowiada pod --efenix-url") from error
-    except LoggedOut as error:
-        raise ToolError("karta Chrome nie jest zalogowana do efenix: zaloguj się kontem taty i uruchom narzędzie jeszcze raz") from error
-    except UnexpectedPage as error:
-        report.differ(Part.LIST, f"Wycena w efenix nie otwiera listy ({error.part.value})")
-    _check_elements(page, Part.LIST, report)
-    results = _search(page, number, report, timeout_ms=timeout_ms)
-    if results is None:
+def _show(page: Page, html: str) -> None:
+    page.set_content(html, wait_until="domcontentloaded")
+
+
+def _text(efenix: _Efenix, answer: _Answer, what: str, part: Part, report: Report) -> str | None:
+    """Treść odpowiedzi 2xx; przekierowanie na stronę logowania kończy narzędzie, a inne i inny kod to różnica."""
+
+    if efenix.to_login(answer):
+        raise ToolError(LOGGED_OUT_MIDWAY)
+    if answer.location is not None:
+        report.differ(part, f"{what} przekierowuje na {efenix.name(answer.location)}")
+    elif not 200 <= answer.status < 300:
+        report.differ(part, f"{what}: odpowiedź {answer.status}")
+    else:
+        return answer.text
+    return None
+
+
+def _check_signed_in(efenix: _Efenix, page: Page, costs: Mapping[str, Decimal | None], report: Report, *, number: str) -> None:
+    listing = efenix.get(efenix.url)
+    if efenix.to_login(listing):
+        raise ToolError(NOT_SIGNED_IN)
+    html = _text(efenix, listing, f"GET {LIST_PAGE}", Part.LIST, report)
+    if html is None:
+        report.unchecked.append((Part.RESULTS, "bez listy zleceń"))
+        return
+    _show(page, html)
+    _check_elements(page, Part.LIST, LIST_ELEMENTS, report)
+    _check_script(efenix, page, efenix.url, Part.LIST, LIST_SCRIPT, LIST_SCRIPT_USES, report)
+    answer = efenix.post(efenix.address(SEARCH), {"numer": number, **SEARCH_FORM})
+    results = _text(efenix, answer, f"POST {SEARCH}", Part.RESULTS, report)
+    table: _Table | None = None if results is None else page.evaluate(_READ_TABLE, [results, ORDER_PAGE])
+    if results is not None and table is None:
+        report.differ(Part.RESULTS, f"odpowiedź POST {SEARCH} bez tabeli")
+    if results is None or table is None:
         report.unchecked += [(Part.ORDER, "bez tabeli wyników nie ma zleceń do otwarcia"), (Part.PRICING, "bez strony zlecenia")]
         return
-    rows = _check_results(results, report)
-    if not results["rows"]:
+    _check_results(page, results, table, report)
+    rows = sorted((row for row in table["rows"] if len(row["links"]) == 1), key=lambda row: PRICING_STATUS not in row["badges"])
+    if not table["rows"]:
         report.unchecked.append((Part.RESULTS, "tabela wyników bez wierszy: podaj --numer, który znajduje zlecenia"))
     if not rows:
         report.unchecked += [(Part.ORDER, "żaden wiersz nie prowadzi do strony zlecenia"), (Part.PRICING, "bez strony zlecenia")]
         return
-    _check_listed(efenix, results["headers"], rows[0], report)
-    _check_orders(efenix, page, rows, report)
+    _check_orders(efenix, page, [_order_id(row) for row in rows], costs, report)
 
 
-def _search(page: Page, number: str, report: Report, *, timeout_ms: int) -> _Results | None:
-    """Szuka ``number`` jak tata (Enter w polu Numer) i czyta tabelę z odpowiedzi ``action_fill_orders.php``."""
+def _check_results(page: Page, html: str, table: _Table, report: Report) -> None:
+    """Wycena w efenix czyta każdy wiersz z loginem realizatora i adresem; przy błędzie odczytu budowa tabeli."""
 
-    field = page.locator(NUMBER_FIELD)
-    if field.count() != 1:
-        return None
-    field.fill(number)
-
-    def answered(response_url: str, method: str, body: str | None) -> bool:
-        searched = parse_qs(body or "", keep_blank_values=True).get("numer")
-        return method == "POST" and urlparse(response_url).path.endswith("/" + SEARCH) and searched == [number]
-
+    rows = table["rows"]
+    report.checked["wiersze wyników"] = len(rows)
     try:
-        with page.expect_response(lambda response: answered(response.url, response.request.method, response.request.post_data), timeout=timeout_ms) as answer:
-            field.press("Enter")
-    except PlaywrightTimeoutError:
-        report.differ(Part.RESULTS, f"Enter w polu Numer nie dał odpowiedzi POST {SEARCH} z polem numer")
-        return None
-    if 300 <= answer.value.status < 400:
-        raise ToolError(LOGGED_OUT_MIDWAY)
-    try:
-        html = answer.value.text()
-    except PlaywrightError:
-        report.differ(Part.RESULTS, f"odpowiedź POST {SEARCH} bez treści")
-        return None
-    results: _Results | None = page.evaluate(_READ_RESULTS, [html, ORDER_PAGE])
-    if results is None:
-        report.differ(Part.RESULTS, f"odpowiedź {SEARCH} bez tabeli")
-    return results
+        listed = read_results(page, html)
+    except UnexpectedPage:
+        report.differ(Part.RESULTS, "Wycena w efenix nie czyta tabeli wyników")
+        _explain_table(table, report)
+        return
+    for what, missing in (
+        ("loginu realizatora „(login)” z kolumny Wykonawca", sum(order.realizator is None for order in listed)),
+        ("Dane adresowe", sum(not order.address for order in listed)),
+    ):
+        if missing:
+            report.differ(Part.RESULTS, f"Wycena w efenix nie czyta {what}: {missing} z {len(listed)} wierszy")
 
 
-def _check_results(results: _Results, report: Report) -> list[_Row]:
-    """Nagłówki i budowa wierszy; wynik to wiersze z jednym linkiem do strony zlecenia, najpierw „Do wyceny”."""
-
-    headers = results["headers"]
+def _explain_table(table: _Table, report: Report) -> None:
+    headers, rows = table["headers"], table["rows"]
     for header in HEADERS.values():
         found = sum(text.casefold().startswith(header) for text in headers)
         if found != 1:
             shown = " / ".join(text or "(pusty)" for text in headers)
             report.differ(Part.RESULTS, f"nagłówek zaczynający się od „{header}”: {found} zamiast 1 (nagłówki: {shown})")
-    rows = results["rows"]
-    report.checked["wiersze wyników"] = len(rows)
     faults = {
-        f"wiersze z inną liczbą komórek niż nagłówków ({len(headers)})": [len(row["cells"]) != len(headers) for row in rows],
+        f"wiersze z inną liczbą komórek niż nagłówków ({len(headers)})": [row["cells"] != len(headers) for row in rows],
         f"wiersze bez jednego linku {ORDER_PAGE}?id=": [len(row["links"]) != 1 for row in rows],
         "wiersze bez statusu w .badge": [not row["badges"] for row in rows],
     }
     for what, bad in faults.items():
         if any(bad):
             report.differ(Part.RESULTS, f"{what}: {sum(bad)} z {len(rows)}")
-    linked = [row for row in rows if len(row["links"]) == 1]
-    return sorted(linked, key=lambda row: PRICING_STATUS not in row["badges"])
 
 
 def _order_id(row: _Row) -> str:
     return parse_qs(urlparse(row["links"][0]).query).get("id", [""])[0]
 
 
-def _check_listed(efenix: BrowserEfenix, headers: Sequence[str], row: _Row, report: Report) -> None:
-    """Wycena w efenix szuka numeru wiersza i czyta go tak jak przy zleceniu taty."""
-
-    # Wiersz z inną liczbą komórek niż nagłówków zgłasza już ``_check_results``.
-    numbers = [cell for text, cell in zip(headers, row["cells"], strict=False) if text.casefold().startswith(HEADERS["number"])]
-    if not numbers or not numbers[0]:
-        report.unchecked.append((Part.RESULTS, "odczyt wiersza przez Wycenę w efenix: wiersz bez Numer dokumentu"))
-        return
-    try:
-        listed = [order for order in efenix.search(numbers[0]) if order.order_id == _order_id(row)]
-    except UnexpectedPage as error:
-        report.differ(Part.RESULTS, f"Wycena w efenix nie czyta wiersza ({error.part.value})")
-        return
-    except LoggedOut as error:
-        raise ToolError(LOGGED_OUT_MIDWAY) from error
-    if len(listed) != 1:
-        report.differ(Part.RESULTS, f"szukanie numeru wiersza daje {len(listed)} wierszy tego zlecenia zamiast 1")
-        return
-    order = listed[0]
-    for missing, what in ((order.realizator is None, "loginu realizatora „(login)” w kolumnie Wykonawca"), (not order.address, "Dane adresowe")):
-        if missing:
-            report.differ(Part.RESULTS, f"Wycena w efenix nie czyta z wiersza {what}")
-
-
-def _check_orders(efenix: BrowserEfenix, page: Page, rows: Sequence[_Row], report: Report) -> None:
-    """Otwiera zlecenia z listy, aż sprawdzi budowę strony zlecenia i znajdzie pustą datę wykonania."""
+def _check_orders(efenix: _Efenix, page: Page, order_ids: Sequence[str], costs: Mapping[str, Decimal | None], report: Report) -> None:
+    """Otwiera zlecenia z tabeli, aż sprawdzi budowę strony zlecenia i znajdzie pustą datę wykonania."""
 
     opened = report.checked["otwarte zlecenia"] = 0
     unread: Counter[str] = Counter()
-    pricing_checked = empty_found = False
-    for row in rows[:ORDERS_TO_OPEN]:
-        if pricing_checked and empty_found:
+    structure_checked = empty_found = False
+    for order_id in order_ids[:ORDERS_TO_OPEN]:
+        if structure_checked and empty_found:
             break
-        order = ListedOrder(number="", status="", realizator=None, address="", order_id=_order_id(row))
+        address = efenix.address(ORDER_PAGE, id=order_id)
+        html = _text(efenix, efenix.get(address), f"GET {ORDER_PAGE}", Part.ORDER, report)
+        if html is None:
+            break
         opened += 1
+        _show(page, html)
         try:
-            day = efenix.execution_date(order)
-        except LoggedOut as error:
-            raise ToolError(LOGGED_OUT_MIDWAY) from error
+            empty_found = empty_found or read_order(page).execution_date is None
         except UnexpectedPage:
-            unread[_day_shape(page)] += 1
-        else:
-            empty_found = empty_found or day is None
-        if not pricing_checked:
-            _check_elements(page, Part.ORDER, report)
-            _check_positions(page, report)
-            pricing_checked = True
+            unread[_shape(page)] += 1
+        if not structure_checked:
+            _check_elements(page, Part.ORDER, (*ORDER_ELEMENTS, *UNUSED_ORDER_ELEMENTS), report)
+            _check_script(efenix, page, address, Part.ORDER, ORDER_SCRIPT, ORDER_SCRIPT_USES, report)
+            _check_positions(page, costs, report)
+            structure_checked = True
     report.checked["otwarte zlecenia"] = opened
     for shape, count in unread.items():
-        report.differ(Part.ORDER, f"Wycena w efenix nie czyta daty wykonania {EXECUTION_DATE} w postaci {shape}: {count} z {opened}")
-    if not empty_found:
+        report.differ(Part.ORDER, f"Wycena w efenix nie czyta strony zlecenia ({shape}): {count} z {opened}")
+    if not structure_checked:
+        report.unchecked.append((Part.PRICING, "bez strony zlecenia"))
+    elif not empty_found:
         report.unchecked.append((Part.ORDER, f"postać pustej daty wykonania: żadne z {opened} otwartych zleceń nie ma pustej {EXECUTION_DATE}"))
 
 
-def _day_shape(page: Page) -> str:
-    executed = page.locator(EXECUTION_DATE)
-    if executed.count() != 1:
-        return f"bez jednego {EXECUTION_DATE}"
-    text = " ".join(executed.inner_text().split())
-    if not text:
-        return "pusta"
-    # Postać bez treści: cyfra to 9, a litera to a.
-    return "„" + re.sub(r"\d", "9", re.sub(r"[^\W\d_]", "a", text)) + "”"
+def _shape(page: Page) -> str:
+    """Postać daty wykonania i kwoty końcowej bez treści: cyfra to 9, a litera to a."""
+
+    shapes = []
+    for selector in (EXECUTION_DATE, AMOUNT):
+        located = page.locator(selector)
+        if located.count() != 1:
+            shapes.append(f"{located.count()} × {selector}")
+            continue
+        text = re.sub(r"\d", "9", re.sub(r"[^\W\d_]", "a", " ".join(located.inner_text().split())))
+        shapes.append(f"{selector} „{text}”")
+    return ", ".join(shapes)
 
 
-def _check_elements(page: Page, part: Part, report: Report) -> None:
-    for element in (element for element in ELEMENTS if element.part is part):
-        found = page.locator(element.selector).count()
+def _check_elements(page: Page, part: Part, elements: Sequence[PageElement], report: Report) -> None:
+    for element in elements:
+        located = page.locator(element.selector)
+        found = located.count()
         if found == 0 or (found > 1 and not element.many):
             report.differ(part, f"{element.name} ({element.selector}): {found} zamiast {'co najmniej 1' if element.many else '1'}")
+        elif element.clicked and not located.first.is_visible():
+            report.differ(part, f"{element.name} ({element.selector}) jest ukryty w HTML strony")
 
 
-def _check_positions(page: Page, report: Report) -> None:
-    """Karty pozycji równe pozycjom Atrapy efenix: te same kody, rodzaj karty i ceny jednostkowe jako liczby."""
+def _check_script(efenix: _Efenix, page: Page, page_url: str, part: Part, script: str, uses: Sequence[ScriptUse], report: Report) -> None:
+    """Skrypt ``script``, który strona ładuje, ma nazwy każdego działania ``uses``; skryptu narzędzie nie uruchamia."""
 
-    cards: list[_Card] = page.evaluate(_READ_POSITIONS, PRICING_CARD)
+    sources: list[str] = page.locator("script[src]").evaluate_all("(scripts) => scripts.map((script) => script.getAttribute('src'))")
+    loaded = [address for address in (urljoin(page_url, source) for source in sources) if efenix.name(address) == script]
+    if not loaded:
+        report.differ(part, f"strona nie ładuje skryptu {script}")
+        return
+    text = _text(efenix, efenix.get(loaded[0]), f"GET {script}", part, report)
+    if text is None:
+        return
+    for use in uses:
+        missing = [name for name in use.names if name not in text]
+        if missing:
+            report.differ(part, f"skrypt {script} bez {', '.join(f'„{name}”' for name in missing)}: {use.what}")
+
+
+def _check_positions(page: Page, costs: Mapping[str, Decimal | None], report: Report) -> None:
+    """Karty pozycji równe pozycjom Atrapy (kody, rodzaj karty) i ceny pozycji z przypisania równe kosztom Wzorca."""
+
+    cards: list[_Card] = page.evaluate(_READ_CARDS, [PRICING_CARD, QUANTITY])
     found = dict(position for card in cards if (position := _position(card)) is not None)
     report.checked["pozycje wyceny"] = len(found)
     if broken := len(cards) - len(found):
@@ -516,17 +523,32 @@ def _check_positions(page: Page, report: Report) -> None:
             Part.PRICING,
             f"karty bez jednego pola Ilość z ceną w tekście albo jednego pola ceny wpisywanej z kodem INDEKS_NNN_NNN: {broken} z {len(cards)}",
         )
-    for code in sorted(POSITIONS.keys() - found.keys()):
-        report.differ(Part.PRICING, f"{code}: jest w Atrapie ({_price(POSITIONS[code])}), nie ma go w efenix")
-    for code in sorted(found.keys() - POSITIONS.keys()):
-        report.differ(Part.PRICING, f"{code}: jest w efenix ({_price(found[code])}), nie ma go w Atrapie")
-    for code in sorted(found.keys() & POSITIONS.keys()):
-        if not _same_price(found[code], POSITIONS[code]):
-            report.differ(Part.PRICING, f"{code}: w efenix {_price(found[code])}, w Atrapie {_price(POSITIONS[code])}")
+    atrapa = {f"INDEKS_{item.code}_078": item.kind == "CENA" for item in CATALOG}
+    for code in sorted(atrapa.keys() - found.keys()):
+        report.differ(Part.PRICING, f"{code}: jest w Atrapie, nie ma go w efenix")
+    for code in sorted(found.keys() - atrapa.keys()):
+        report.differ(Part.PRICING, f"{code}: jest w efenix, nie ma go w Atrapie")
+    for code in sorted(found.keys() & atrapa.keys()):
+        if (found[code] is None) != atrapa[code]:
+            kinds = ("pole ceny wpisywanej", "pole Ilość") if found[code] is None else ("pole Ilość", "pole ceny wpisywanej")
+            report.differ(Part.PRICING, f"{code}: w efenix {kinds[0]}, w Atrapie {kinds[1]}")
+    compared = 0
+    for column, mapped in POSITION_OF_COLUMN.items():
+        for code, shown in sorted(found.items()):
+            if code.split("_")[1] != mapped or shown is None:
+                continue
+            cost = costs.get(column)
+            if cost is None:
+                report.unchecked.append((Part.PRICING, f"{code} (kolumna {column}): koszt w wierszu {COST_ROW} Wzorca pliku zbiorczego nie jest liczbą"))
+                continue
+            compared += 1
+            if _amount(shown) != cost:
+                report.differ(Part.PRICING, f"{code} (kolumna {column}): cena w efenix inna niż koszt w wierszu {COST_ROW} Wzorca pliku zbiorczego")
+    report.checked["ceny porównane z Wzorcem"] = compared
 
 
 def _position(card: _Card) -> tuple[str, str | None] | None:
-    """Kod i cena karty; ``None`` jako cena to karta z ceną wpisywaną, a karta w innym kształcie to ``None``."""
+    """Kod i cena z tekstu karty; ``None`` jako cena to karta z ceną wpisywaną, a karta w innym kształcie to ``None``."""
 
     match card["quantity"], card["price"], card["shown"]:
         case [code], [], [shown]:
@@ -538,47 +560,28 @@ def _position(card: _Card) -> tuple[str, str | None] | None:
     return position if POSITION_CODE.fullmatch(position[0]) else None
 
 
-def _price(price: str | None) -> str:
-    return "cena wpisywana" if price is None else f"cena {price}"
-
-
-def _same_price(shown: str | None, expected: str | None) -> bool:
-    if shown is None or expected is None:
-        return shown is expected
-    return _amount(shown) == _amount(expected)
-
-
-def _amount(text: str) -> Decimal | str:
+def _amount(text: str) -> Decimal | None:
     try:
         return Decimal(text.replace("\xa0", "").replace(" ", "").replace(",", "."))
     except InvalidOperation:
-        return text
+        return None
 
 
-def _check_logged_out(context: BrowserContext, url: str, report: Report, *, timeout_ms: int) -> None:
+def _check_signed_out(efenix: _Efenix, page: Page, report: Report) -> None:
     """Lista i szukanie bez sesji przekierowują na stronę logowania, a ta ma pola formularza logowania."""
 
-    host = urlparse(url).netloc
-    probes: tuple[tuple[str, str, Callable[[], int | str]], ...] = (
-        ("GET", url, lambda: _redirect(context.request.get(url, max_redirects=0, timeout=timeout_ms).headers)),
-        (
-            "POST",
-            urljoin(url, SEARCH),
-            lambda: _redirect(context.request.post(urljoin(url, SEARCH), form={"numer": ""}, max_redirects=0, timeout=timeout_ms).headers),
-        ),
-    )
-    for method, address, probe in probes:
-        if not allowed(method, address, "fetch", host):
-            raise ValueError(f"{method} {PurePosixPath(urlparse(address).path).name} nie jest na liście dozwolonych")
-        if probe() != LOGIN_PAGE:
-            report.differ(Part.LOGGED_OUT, f"{method} {PurePosixPath(urlparse(address).path).name} bez sesji nie przekierowuje na {LOGIN_PAGE}")
-    with _guarded_page(context, url, report, timeout_ms=timeout_ms) as page:
-        page.goto(urljoin(url, LOGIN_PAGE), wait_until="load", timeout=timeout_ms)
-        _check_elements(page, Part.LOGIN, report)
-
-
-def _redirect(headers: dict[str, str]) -> str:
-    return PurePosixPath(urlparse(headers.get("location", "")).path).name
+    for method, name, answer in (
+        ("GET", LIST_PAGE, efenix.get(efenix.url)),
+        ("POST", SEARCH, efenix.post(efenix.address(SEARCH), {"numer": "", **SEARCH_FORM})),
+    ):
+        if not efenix.to_login(answer):
+            report.differ(Part.LOGGED_OUT, f"{method} {name} bez sesji nie przekierowuje na {LOGIN_PAGE}")
+    login = efenix.get(efenix.address(LOGIN_PAGE))
+    if login.location is not None or not 200 <= login.status < 300:
+        report.differ(Part.LOGIN, f"GET {LOGIN_PAGE}: odpowiedź {login.status}")
+        return
+    _show(page, login.text)
+    _check_elements(page, Part.LOGIN, LOGIN_ELEMENTS, report)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -586,9 +589,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--efenix-url", required=True, help=f"Adres listy zleceń efenix (…/{LIST_PAGE}).")
     parser.add_argument("--cdp", default="http://127.0.0.1:9222", help="Adres zdalnego debugowania Chrome (domyślnie %(default)s).")
     parser.add_argument("--numer", default="", help="Co wpisać w pole Numer, żeby lista pokazała zlecenia (domyślnie puste pole).")
-    parser.add_argument("--limit-ms", type=int, default=TIMEOUT_MS, help="Limit czekania na stronę i odpowiedź (ms).")
+    parser.add_argument(
+        "--wzorzec",
+        type=Path,
+        default=None,
+        help="Wzorzec pliku zbiorczego z kosztami pozycji w wierszu 14 (domyślnie Wzorzec z konfiguracji narzędzia, jak w Centrum).",
+    )
+    parser.add_argument("--limit-ms", type=int, default=TIMEOUT_MS, help="Limit czekania na odpowiedź efenix (ms).")
     args = parser.parse_args(argv)
     try:
+        address = urlparse(args.efenix_url)
+        if address.scheme not in ("http", "https") or not address.path.endswith("/" + LIST_PAGE):
+            raise ToolError(f"--efenix-url to adres listy zleceń efenix kończący się na /{LIST_PAGE}")
+        costs = template_costs(args.wzorzec or default_collective_template_path())
         with sync_playwright() as playwright:
             try:
                 browser = playwright.chromium.connect_over_cdp(args.cdp)
@@ -596,7 +609,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ToolError(f"nie ma Chrome ze zdalnym debugowaniem pod --cdp {args.cdp}") from error
             if not browser.contexts:
                 raise ToolError("Chrome pod --cdp nie ma okna z sesją efenix")
-            report = check(browser, browser.contexts[0], args.efenix_url, number=args.numer, timeout_ms=args.limit_ms)
+            # Domyślny kontekst Chrome (sesja taty), wzięty przed kontekstem narzędzia, który też trafia do ``contexts``.
+            session = browser.contexts[0].request
+            signed_out = playwright.request.new_context()
+            try:
+                with parser_page(browser, timeout_ms=args.limit_ms) as page:
+                    report = check(
+                        _Efenix(session, args.efenix_url, timeout_ms=args.limit_ms),
+                        _Efenix(signed_out, args.efenix_url, timeout_ms=args.limit_ms),
+                        page,
+                        costs,
+                        number=args.numer,
+                    )
+            finally:
+                signed_out.dispose()
     except ToolError as error:
         print(f"BŁĄD | {error}", file=sys.stderr)
         return 1

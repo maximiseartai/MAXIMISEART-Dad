@@ -26,8 +26,10 @@ from rozliczenia.process_run import Finished, Outcome, Stop, run_process
 
 from tests.fixtures.atrapa_efenix import (
     LIST_PAGE,
+    LIST_SCRIPT,
     LOAD_EMMETT,
     ORDER_PAGE,
+    ORDER_SCRIPT,
     SAVE_QUANTITY,
     SEARCH,
     SET_DATE,
@@ -40,8 +42,8 @@ from tests.fixtures.efenix import DAY, Order, write_collective_file
 from tests.fixtures.interlocutor import Tata
 from tests.fixtures.przegladarka import chromium, page_of
 
-# Żądania, które niczego w efenix nie zmieniają: lista zleceń, szukanie i strona zlecenia.
-READING = {("GET", LIST_PAGE), ("POST", SEARCH), ("GET", ORDER_PAGE)}
+# Żądania, które niczego w efenix nie zmieniają: lista zleceń, szukanie, strona zlecenia i skrypty obu stron.
+READING = {("GET", LIST_PAGE), ("POST", SEARCH), ("GET", ORDER_PAGE), ("GET", LIST_SCRIPT), ("GET", ORDER_SCRIPT)}
 Priced = Outcome[PricingSummary]
 
 

@@ -4,13 +4,16 @@ Odtwarza tylko to, czego używa okno efenix narzędzia: identyfikatory pól (``#
 ``#field_signum``, ``#field_password``), adresy odpowiedzi (``action_fill_orders.php``, ``page_order_edit.php?id=``,
 ``page_login.php``) i kształt komórek tabeli wyników (``Numer dokumentu<br><small>Identyfikator Fenix</small>``, status
 w ``.badge``, ``Wykonawca <small><small class="text-default">(login)</small></small><br><small>`` z datą w ``.badge``,
-``<small>województwo</small><br>Dane adresowe``). Skrypt listy to własny,
+``<small>województwo</small><br>Dane adresowe``). Skrypty stron leżą jak w efenix w plikach, które strony ładują
+(``LIST_SCRIPT``, ``ORDER_SCRIPT``). Skrypt listy to własny,
 krótki kod Atrapy: Enter w polu ``Numer`` wysyła formularz do ``action_fill_orders.php`` i wkłada odpowiedź do
 ``#wyniki``, a po wczytaniu, gdy karta pamięta numer z poprzedniego szukania (``sessionStorage``), sama szuka go
 jeszcze raz, jak efenix po powrocie ze strony zlecenia na listę. Nie ma w niej żadnego kodu, stylu ani danych z efenix.
 
-Strona zlecenia ma wycenę ze stanem: pozycje z wymyślonymi cenami (``CATALOG``, kody ``INDEKS_NNN_078`` z przypisania
-kolumn i kilka bez niego) w polach ``input.wycena-ilosc`` (dwie ``.wycena-cena``), kwotę końcową ``#cena_all2``, datę
+Strona zlecenia ma wycenę ze stanem: pozycje z wymyślonymi cenami (``CATALOG``: kody ``INDEKS_NNN_078`` stron efenix,
+z przypisania kolumn i bez niego) w kartach ``.card.rounded-lg.kolorek`` jak w efenix: karta z polem
+``input.wycena-ilosc`` ma cenę w tekście ``.col-sm-1.mt-2 > span.text-default > small``, a dwie karty z ceną wpisywaną
+mają samo pole ``.wycena-cena``. Strona ma kwotę końcową ``#cena_all2``, datę
 wykonania z oknem ``#dialog_select_date`` (przycisk ``#button-calendar``, pole ``#field_data_instalacji`` z własnym
 kalendarzem Atrapy w API pickadate: ``jQuery(pole).pickadate('picker').set('select', …)``). Jak w efenix pole nie
 przyjmuje pisania, a kalendarz po otwarciu okna pokazuje dzisiejszy dzień, dzień po dziś albo przed pierwszym dniem
@@ -26,11 +29,15 @@ Ilość zapisuje skrypt strony po wyjściu z pola (Enter też z niego wychodzi) 
 JSON (``result``, ``price_index``, ``price_all``) odświeża ``#cena-…`` i ``#cena_all2``; bez sesji ta odpowiedź to
 ``result: nok``, jak w efenix.
 
-Atrapa ma jedną sesję, jak okno taty z zapamiętanym logowaniem: po starcie jest zalogowana, ``expire_session`` ją
-kończy, a wtedy każda strona i odpowiedź przekierowuje na ``page_login.php``; wysłanie tam formularza loguje z
-powrotem. ``requests`` to każde żądanie po kolei (metoda, ścieżka, parametry), więc test widzi, czego narzędzie użyło.
+Atrapa ma jedną sesję, jak okno taty z zapamiętanym logowaniem: po starcie jest zalogowana, ``expire_session`` i
+``action_logout.php`` ją kończą, a wtedy każda strona i odpowiedź przekierowuje na ``page_login.php``; formularz
+logowania (``action_login.php`` z polem ``fingerprint``, jak w efenix) loguje z powrotem. ``cookie_session`` wiąże sesję
+z ciasteczkiem ``SESSION_COOKIE``, więc żądanie bez niego widzi stronę logowania, a sesja z ciasteczkiem trwa. Pliki
+skryptów Atrapa daje także bez sesji, jak serwer plików. ``requests`` to każde żądanie po kolei (metoda, ścieżka,
+parametry), więc test widzi, czego narzędzie użyło.
 ``answer_delay_s`` opóźnia każdą odpowiedź na szukanie, więc szukanie, które lista wysyła sama, trwa jeszcze, gdy
-narzędzie szuka swojego numeru. ``changed`` psuje budowę jednej części strony tak, jak mógłby ją zmienić autor efenix (``Changed``).
+narzędzie szuka swojego numeru. ``changed`` psuje budowę jednej części strony tak, jak mógłby ją zmienić autor efenix
+(``Changed``, a w części, której Wycena w efenix w testach nie używa, a sprawdza narzędzie zgodności, ``Unread``).
 """
 
 from __future__ import annotations
@@ -59,6 +66,11 @@ LOAD_EMMETT = "action_load_emmett.php"
 SET_DATE = "action_set_date_of_instalation.php"
 GET_DATE = "action_get_date_of_instalation.php"
 CHANGE_STATUS = "action_change_status.php"
+LOGIN_ACTION = "action_login.php"
+LOGOUT = "action_logout.php"
+LIST_SCRIPT = "js/index.js"
+ORDER_SCRIPT = "js/page_order_edit.js"
+SESSION_COOKIE = ("PHPSESSID", "atrapa-efenix")
 # Pole ``rodzaj`` szukania, które skrypt listy wysyła sam po wczytaniu strony.
 BY_LIST = "powrot"
 TODAY = date(2026, 10, 12)
@@ -84,6 +96,18 @@ class Changed(enum.Enum):
     STALE_AMOUNT = "kwota końcowa nie odświeża się po zapisie ilości"
 
 
+class Unread(enum.Enum):
+    """Część strony Atrapy w innej budowie, której testy Wyceny w efenix nie używają, a sprawdza narzędzie zgodności."""
+
+    ORDER_PARTS = "strona zlecenia bez przycisku Emmetta i pola kalendarza w oknie daty wykonania, z ukrytym przyciskiem kalendarza"
+    PRICE_LIST = "jedna pozycja wyceny ma inny kod, a druga cenę wpisywaną zamiast pola Ilość"
+    PRICE_TEXT = "ceny pozycji w tekście karty z przecinkiem (21,00), a nie z kropką"
+    LOGIN_FORM = "formularz logowania bez pola fingerprint"
+    SCRIPTS = "skrypt listy szuka bez pola numer, a strona zlecenia ma skrypt w stronie, a nie w js/page_order_edit.js"
+    ORDER_REDIRECT = "strona zlecenia przekierowuje na wylogowanie (action_logout.php)"
+    HOSTILE = "skrypty i elementy stron po wczytaniu i przy opuszczeniu zapisują, zmieniają status i wylogowują"
+
+
 @dataclass(frozen=True)
 class Position:
     """Pozycja wyceny Atrapy: kod ``NNN``, wymyślona cena i rodzaj pola (``ILOSC`` albo ``CENA``)."""
@@ -93,7 +117,8 @@ class Position:
     kind: str = "ILOSC"
 
 
-# Kody z przypisania kolumn Wyceny w efenix i kilka bez niego; ceny są wymyślone.
+# Kody pozycji stron efenix (z przypisania kolumn Wyceny w efenix i bez niego); ceny są wymyślone, bo ceny efenix to
+# ceny umowy taty z firmą.
 CATALOG = (
     *(
         Position(code, Decimal(price))
@@ -101,7 +126,10 @@ CATALOG = (
             ("005", "11.00"), ("007", "12.00"), ("008", "13.00"), ("009", "14.00"), ("010", "15.00"), ("012", "21.00"),
             ("013", "22.00"), ("014", "23.00"), ("015", "24.00"), ("016", "3.00"), ("017", "25.00"), ("018", "26.00"),
             ("019", "4.00"), ("020", "27.00"), ("021", "28.00"), ("023", "61.00"), ("024", "62.00"), ("025", "63.00"),
-            ("026", "64.00"), ("027", "41.00"), ("028", "42.00"), ("029", "31.00"),
+            ("026", "64.00"), ("027", "41.00"), ("028", "42.00"), ("029", "31.00"), ("022", "29.00"), ("033", "32.00"),
+            ("034", "33.00"), ("035", "34.00"), ("036", "35.00"), ("037", "36.00"), ("038", "37.00"), ("039", "38.00"),
+            ("040", "39.00"), ("041", "43.00"), ("042", "44.00"), ("044", "45.00"), ("046", "46.00"), ("047", "47.00"),
+            ("050", "51.00"), ("051", "52.00"), ("052", "53.00"), ("053", "54.00"), ("054", "55.00"),
         ]
     ),
     Position("045", Decimal("1.00"), "CENA"),
@@ -205,19 +233,21 @@ def atrapa_efenix(
     orders: Sequence[AtrapaOrder],
     *,
     expire_after: tuple[str, int] | None = None,
-    changed: Changed | None = None,
+    changed: Changed | Unread | None = None,
     answer_delay_s: float = 0.0,
     today: date = TODAY,
     refuse_dates: bool = False,
+    cookie_session: bool = False,
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
     ``expire_after``: ścieżka i liczba jej żądań narzędzia (bez szukania, które lista wysyła sama), po których sesja
     wygasa, jak przy wylogowaniu w trakcie przebiegu. ``today``: dzisiejszy dzień kalendarza daty wykonania.
-    ``refuse_dates``: serwer odpowiada na zapis daty wykonania bez zapisu.
+    ``refuse_dates``: serwer odpowiada na zapis daty wykonania bez zapisu. Atrapa pracuje na kopii ``orders``, więc
+    zlecenia testu zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie.
     """
 
-    atrapa = AtrapaEfenix(list(orders))
+    atrapa = AtrapaEfenix(copy.deepcopy(list(orders)))
     # Koniec bloku przerywa opóźnione odpowiedzi, więc żaden wątek obsługi nie czeka dłużej niż Atrapa.
     closing = threading.Event()
 
@@ -242,18 +272,25 @@ def atrapa_efenix(
                 if expire_after is not None and path == expire_after[0]:
                     if sum(request.path == path and not request.by_list for request in atrapa.requests) > expire_after[1]:
                         atrapa.logged_in = False
-                logged_in = atrapa.logged_in
+                logged_in = atrapa.logged_in and (not cookie_session or _has_session_cookie(self.headers.get("Cookie", "")))
                 orders = copy.deepcopy(atrapa.orders)
-            if path == LOGIN_PAGE:
-                if method == "POST":
-                    with atrapa._lock:
-                        atrapa.logged_in = True
-                    self._redirect(LIST_PAGE)
-                else:
-                    self._html(_login_page())
+            if path == LOGIN_ACTION and method == "POST":
+                with atrapa._lock:
+                    atrapa.logged_in = True
+                self._redirect(LIST_PAGE, cookie=cookie_session)
+            elif path == LOGIN_PAGE:
+                self._html(_login_page(changed))
+            elif path == LIST_SCRIPT and method == "GET":
+                self._html(_list_script(changed), content_type="text/javascript")
+            elif path == ORDER_SCRIPT and method == "GET":
+                self._html(_order_script(changed, today), content_type="text/javascript")
             elif not logged_in and path == SAVE_QUANTITY:
                 self._json({"result": "nok", "error": "Brak sesji."})
             elif not logged_in:
+                self._redirect(LOGIN_PAGE)
+            elif path == LOGOUT:
+                with atrapa._lock:
+                    atrapa.logged_in = False
                 self._redirect(LOGIN_PAGE)
             elif method == "POST" and path in _CHANGES:
                 with atrapa._lock:
@@ -266,26 +303,28 @@ def atrapa_efenix(
                 else:
                     self._html(answer)
             elif path == LIST_PAGE and method == "GET":
-                self._html(_list_page())
+                self._html(_list_page(changed, self.headers.get("Host", "")))
             elif path == SEARCH and method == "POST":
                 closing.wait(answer_delay_s)
                 number = params.get("numer", "").strip()
                 self._html(_results([order for order in orders if number in order.number], changed))
+            elif path == ORDER_PAGE and method == "GET" and changed is Unread.ORDER_REDIRECT:
+                self._redirect(LOGOUT)
             elif path == ORDER_PAGE and method == "GET":
                 found = [order for order in orders if order.order_id == params.get("id")]
                 if found:
-                    self._html(_order_page(found[0], changed, today))
+                    self._html(_order_page(found[0], changed, today, self.headers.get("Host", "")))
                 else:
                     self._html("<p>Nie ma takiego zlecenia.</p>", HTTPStatus.NOT_FOUND)
             else:
                 self._html("<p>Nie ma takiej strony.</p>", HTTPStatus.NOT_FOUND)
 
-        def _html(self, text: str, status: HTTPStatus = HTTPStatus.OK) -> None:
+        def _html(self, text: str, status: HTTPStatus = HTTPStatus.OK, *, content_type: str = "text/html") -> None:
             body = text.encode("utf-8")
             # Przeglądarka zrywa połączenie szukania, na które już nie czeka (karta przeszła na inną stronę).
             with suppress(ConnectionError):
                 self.send_response(status)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Type", f"{content_type}; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -293,9 +332,11 @@ def atrapa_efenix(
         def _json(self, answer: Mapping[str, str]) -> None:
             self._html(json.dumps(answer))
 
-        def _redirect(self, target: str) -> None:
+        def _redirect(self, target: str, *, cookie: bool = False) -> None:
             self.send_response(HTTPStatus.FOUND)
             self.send_header("Location", target)
+            if cookie:
+                self.send_header("Set-Cookie", "=".join(SESSION_COOKIE))
             self.send_header("Content-Length", "0")
             self.end_headers()
 
@@ -376,16 +417,52 @@ _LIST_SCRIPT = """
 """
 
 
-def _list_page() -> str:
+# Skrypt i elementy strony, które przy wczytaniu i przy opuszczeniu strony wysyłają zapis, zmianę statusu i wylogowanie
+# każdą drogą przeglądarki: okno, beacon, ``fetch`` z ``keepalive``, WebSocket, worker, service worker, przejście. Na
+# początku skrypt czyści stronę, więc strona, na której w ogóle biegnie, nie ma już budowy efenix.
+_HOSTILE_SCRIPT = """
+document.body.replaceChildren();
+window.open('action_change_status.php?order_id=1&xstatus=Anulowane');
+navigator.sendBeacon('action_logout.php');
+fetch('action_save_index.php', {method: 'POST', keepalive: true, body: 'ilosc=1'});
+addEventListener('pagehide', () => navigator.sendBeacon('action_logout.php'));
+addEventListener('unload', () => fetch('action_save_index.php', {method: 'POST', keepalive: true, body: 'ilosc=1'}));
+new WebSocket('ws://' + location.host + '/gniazdo');
+new Worker(URL.createObjectURL(new Blob(["fetch('/action_save_index.php', {method: 'POST', body: 'ilosc=1'})"])));
+if (navigator.serviceWorker) navigator.serviceWorker.register('sw.js');
+location.href = 'action_logout.php';
+"""
+
+
+def _hostile(host: str) -> str:
+    """Elementy strony z adresami Atrapy, które przeglądarka wysyła sama: przejście, obraz, ramka, styl, skrypt."""
+
+    origin = f"http://{escape(host)}"
+    return (
+        f'<meta http-equiv="refresh" content="0; url={origin}/{LOGOUT}"><img src="{origin}/{LOGOUT}">'
+        f'<iframe src="{origin}/{CHANGE_STATUS}?order_id=1&amp;xstatus=Anulowane"></iframe>'
+        f'<link rel="stylesheet" href="{origin}/{SAVE_QUANTITY}"><link rel="prefetch" href="{origin}/{LOGOUT}">'
+        f'<script src="{origin}/{LOGOUT}"></script><script>{_HOSTILE_SCRIPT}</script>'
+    )
+
+
+def _list_page(changed: Changed | Unread | None, host: str) -> str:
     return _page(
         "Atrapa efenix",
         '<div class="container-fluid"><input type="text" id="field_numer" class="form-control">'
         '<button type="button" id="button_order_search" class="btn">Szukaj</button>'
-        f'<div id="wyniki"></div></div><script>{_LIST_SCRIPT.replace("__BY_LIST__", BY_LIST)}</script>',
+        f'<div id="wyniki"></div></div>{_hostile(host) if changed is Unread.HOSTILE else ""}<script src="{LIST_SCRIPT}?v=1"></script>',
     )
 
 
-def _results(orders: Sequence[AtrapaOrder], changed: Changed | None) -> str:
+def _list_script(changed: Changed | Unread | None) -> str:
+    script = _LIST_SCRIPT.replace("__BY_LIST__", BY_LIST)
+    if changed is Unread.SCRIPTS:
+        return script.replace("{numer: numer.value", "{nr: numer.value")
+    return _HOSTILE_SCRIPT + script if changed is Unread.HOSTILE else script
+
+
+def _results(orders: Sequence[AtrapaOrder], changed: Changed | Unread | None) -> str:
     status = "Stan" if changed is Changed.STATUS_HEADER else "Status"
     head = (
         "<thead><tr><th>Numer dokumentu<br><small>Identyfikator Fenix</small></th><th>Operator/Rodzaj</th>"
@@ -493,7 +570,7 @@ _ORDER_SCRIPT = """
 """
 
 
-def _order_page(order: AtrapaOrder, changed: Changed | None, today: date) -> str:
+def _order_page(order: AtrapaOrder, changed: Changed | Unread | None, today: date, host: str) -> str:
     day = "" if order.execution_date is None else order.execution_date.isoformat()
     if changed is Changed.DATE_FORMAT and order.execution_date is not None:
         day = f"{order.execution_date:%d.%m.%Y}"
@@ -501,40 +578,52 @@ def _order_page(order: AtrapaOrder, changed: Changed | None, today: date) -> str
     hidden = ' style="display: none"' if changed is Changed.HIDDEN_EMMETT else ""
     emmett = (
         ""
-        if changed is Changed.EMMETT_BUTTON
+        if changed in (Changed.EMMETT_BUTTON, Unread.ORDER_PARTS)
         else f'<button type="button" id="button_emmett" order_id="{order_id}"{hidden} title="Załaduj wycenę przygotowaną przez Emmetta.">Emmett</button>'
     )
-    script = (
-        _ORDER_SCRIPT.replace("__RELOAD__", str(_EMMETT_RELOAD_MS))
-        .replace("__REFRESH__", "false" if changed is Changed.STALE_AMOUNT else "true")
-        .replace("__TODAY__", today.isoformat())
-        .replace("__EARLIEST__", earliest_execution_date(today).isoformat())
-    )
+    day_field = "" if changed is Unread.ORDER_PARTS else '<input type="text" id="field_data_instalacji" readonly>'
+    calendar = ' hidden=""' if changed is Unread.ORDER_PARTS else ""
     return _page(
         "Atrapa efenix - zlecenie",
         f'<input type="hidden" name="main_id" id="main_id" value="{order_id}"><div id="toast"></div>'
         f"<div><small>Status</small> {escape(order.status)}</div>"
         f"<div><small>Realizator</small> {escape(order.realizator)}</div>"
         f'<div><small>Data wykonania</small><span id="data_install">{day}</span>'
-        f'<button type="button" id="button-calendar" data-record-id="{order_id}">Kalendarz</button></div>'
+        f'<button type="button" id="button-calendar" data-record-id="{order_id}"{calendar}>Kalendarz</button></div>'
         f"<div><small>Ulica - numer</small> {escape(order.address)}</div>"
         '<div class="card"><button type="button" id="button_forward_to_accept">Przekaż do akceptacji.</button>'
         '<button type="button" id="button_forward_to_cancel">Anuluj to zlecenie.</button></div>'
         f'<div class="card"><span>Wycena</span>{emmett}{"".join(_position(order, position, changed) for position in CATALOG)}'
         f'<h1><span id="cena_all2">{order.amount:.2f}</span></h1></div>'
         + _dialog("dialog_forward_yes_no", "Zmiana statusu", "", "Tak")
-        + _dialog("dialog_select_date", "Wybierz datę wykonania", '<input type="text" id="field_data_instalacji" readonly>', "Potwierdź")
+        + _dialog("dialog_select_date", "Wybierz datę wykonania", day_field, "Potwierdź")
         + _dialog("dialog_emmett", "Emmett", '<div id="emmett-propozycja"></div>', "Załaduj do zlecenia")
-        + f"<script>{script}</script>",
+        + (_hostile(host) if changed is Unread.HOSTILE else "")
+        + (f"<script>{_order_script(changed, today)}</script>" if changed is Unread.SCRIPTS else f'<script src="{ORDER_SCRIPT}?v=1"></script>'),
     )
 
 
-def _position(order: AtrapaOrder, position: Position, changed: Changed | None) -> str:
+def _order_script(changed: Changed | Unread | None, today: date) -> str:
+    script = (
+        _ORDER_SCRIPT.replace("__RELOAD__", str(_EMMETT_RELOAD_MS))
+        .replace("__REFRESH__", "false" if changed is Changed.STALE_AMOUNT else "true")
+        .replace("__TODAY__", today.isoformat())
+        .replace("__EARLIEST__", earliest_execution_date(today).isoformat())
+    )
+    return _HOSTILE_SCRIPT + script if changed is Unread.HOSTILE else script
+
+
+def _position(order: AtrapaOrder, position: Position, changed: Changed | Unread | None) -> str:
+    """Karta pozycji jak w efenix: pole Ilość z ceną w tekście karty albo samo pole ceny wpisywanej, bez ceny w tekście."""
+
     code = "129" if changed is Changed.POSITION_CODE and position.code == "029" else position.code
-    field_id = f"INDEKS_{code}_078"
-    if position.kind == "CENA":
+    suffix = "079" if changed is Unread.PRICE_LIST and position.code == "005" else "078"
+    field_id = f"INDEKS_{code}_{suffix}"
+    shown = f'<div class="col-sm-1 mt-2"><span class="text-default"><small>{_price_text(position.price, changed)}</small></span></div>'
+    if position.kind == "CENA" or (changed is Unread.PRICE_LIST and position.code == "007"):
         field = f'<input type="text" id="{field_id}" order_id="{escape(order.order_id)}" class="form-control form-control-sm wycena-cena" value="0.00">'
         value = Decimal("0.00")
+        shown = ""
     else:
         quantity = order.quantities.get(position.code, 0)
         field = (
@@ -545,8 +634,7 @@ def _position(order: AtrapaOrder, position: Position, changed: Changed | None) -
     return (
         '<div class="card rounded-lg kolorek"><div class="row">'
         f'<div class="col-sm-3 mt-2"><span class="text-default">Usługa testowa {position.code}</span></div>'
-        f'<div class="col-sm-2 mt-2"><span class="text-secondary"><small>{field_id}</small></span></div>'
-        f'<div class="col-sm-1 mt-2"><span class="text-default"><small>{position.price:.2f}</small></span></div>'
+        f'<div class="col-sm-2 mt-2"><span class="text-secondary"><small>{field_id}</small></span></div>{shown}'
         f'<div class="col-sm-2 mt-2">{field}</div>'
         f'<div class="col-sm-2 mt-2"><small><span id="cena-{field_id}"> {value:.2f}</span></small></div></div></div>'
     )
@@ -559,10 +647,20 @@ def _dialog(dialog_id: str, title: str, body: str, ok: str) -> str:
     )
 
 
-def _login_page() -> str:
+def _price_text(price: Decimal, changed: Changed | Unread | None) -> str:
+    shown = f"{price:.2f}"
+    return shown.replace(".", ",") if changed is Unread.PRICE_TEXT else shown
+
+
+def _has_session_cookie(header: str) -> bool:
+    return "=".join(SESSION_COOKIE) in (part.strip() for part in header.split(";"))
+
+
+def _login_page(changed: Changed | Unread | None) -> str:
+    fingerprint = "" if changed is Unread.LOGIN_FORM else '<input type="hidden" id="fingerprint" name="fingerprint" value="">'
     return _page(
         "Atrapa efenix - logowanie",
-        f'<form method="post" action="{LOGIN_PAGE}"><input type="text" id="field_signum" name="field_signum">'
-        '<input type="password" id="field_password" name="field_password">'
+        f'<form method="post" action="{LOGIN_ACTION}"><input type="text" id="field_signum" name="field_signum">'
+        f'<input type="password" id="field_password" name="field_password">{fingerprint}'
         '<button type="submit" id="button_login">Zaloguj</button></form>',
     )

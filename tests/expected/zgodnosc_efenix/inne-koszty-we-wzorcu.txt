@@ -1,0 +1,5 @@
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 43 | ceny porównane z Wzorcem: 18
+RÓŻNICA | pozycje wyceny | INDEKS_012_078 (kolumna O): cena w efenix inna niż koszt w wierszu 14 Wzorca pliku zbiorczego
+NIESPRAWDZONE | pozycje wyceny | INDEKS_013_078 (kolumna P): koszt w wierszu 14 Wzorca pliku zbiorczego nie jest liczbą
+NIESPRAWDZONE | pozycje wyceny | INDEKS_021_078 (kolumna AP): koszt w wierszu 14 Wzorca pliku zbiorczego nie jest liczbą
+RÓŻNICE: 1 | NIESPRAWDZONE: 2

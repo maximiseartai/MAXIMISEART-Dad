@@ -1,0 +1,4 @@
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 0
+RÓŻNICA | strona zlecenia | GET page_order_edit.php przekierowuje na action_logout.php
+NIESPRAWDZONE | pozycje wyceny | bez strony zlecenia
+RÓŻNICE: 1 | NIESPRAWDZONE: 1
