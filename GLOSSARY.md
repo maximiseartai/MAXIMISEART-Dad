@@ -637,3 +637,5 @@ _Avoid_: restart, reboot
 Jeśli folder lub pliki docelowe nowego okresu już istnieją, proces zatrzymuje
 się bez ich nadpisywania. Wzorce również pozostają niezmienione, a Rejestr
 zleceń zmieniają tylko Uporządkowanie INTERMAX i przywrócenie Kopii INTERMAX.
+Istniejący Plik zbiorczy zmienia tylko Wycena w efenix i tylko Znacznikiem
+efenix w `ADRES` gotowych zleceń.

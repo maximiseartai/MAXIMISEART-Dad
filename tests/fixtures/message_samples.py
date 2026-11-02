@@ -25,6 +25,7 @@ from rozliczenia.centrum import (
 )
 from rozliczenia.centrum.tool_update import LIBRARIES_FAILED, NEW_VERSION_FAILED, ROLLBACK_FAILED, UNEXPECTED
 from rozliczenia.efenix_checks import DateRefused, OrderProblem
+from rozliczenia.efenix_marking import Refusal
 from rozliczenia.efenix_positions import Conflict, NotWholeQuantities, OrderFault, OtherAmount, PricedDifferently, UnpairedColumns
 from rozliczenia.message import Message
 from rozliczenia.period_folder import (
@@ -311,6 +312,7 @@ EFENIX_SAMPLES: Samples = {
     "emmett_conflict": [
         lambda: efenix_messages.emmett_conflict(SOURCE, 23, [Conflict("012", 2, 1), Conflict("020", 1, 0)]),
     ],
+    "marks_not_saved": [partial(efenix_messages.marks_not_saved, SOURCE, refusal) for refusal in Refusal],
     "unexpected_failure": [efenix_messages.unexpected_failure],
     "plan_not_shown": [efenix_messages.plan_not_shown],
     "summary_not_shown": [efenix_messages.summary_not_shown],

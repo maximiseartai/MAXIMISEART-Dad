@@ -1,8 +1,9 @@
 """Skoroszyt zapisują tylko moduły zapisu, więc obie drogi zapisu dają ten sam plik (#282).
 
 ``template_file`` zapisuje openpyxl, ``template_copy`` kopiuje Wzorzec, ``row_look`` daje obu ten sam
-Wygląd Wiersza danych, ``workbook_save`` zapisuje plik atomowo, ``intermax_file`` daje bajty dnia Uporządkowania
-INTERMAX z podmianą wierszy XML, a ``intermax_replace`` zastępuje nimi albo bajtami Kopii INTERMAX Rejestr zleceń. Reszta
+Wygląd Wiersza danych, ``workbook_save`` zapisuje plik atomowo, ``efenix_marking`` stawia Znaczniki efenix w Pliku zbiorczym
+podmianą stylu komórek XML, ``intermax_file`` daje bajty dnia Uporządkowania INTERMAX z podmianą wierszy XML, a
+``intermax_replace`` zastępuje nimi albo bajtami Kopii INTERMAX Rejestr zleceń. Reszta
 ``src`` przekazuje im Wiersze danych, ale sama nie pisze do komórek ani plików.
 """
 
@@ -16,6 +17,7 @@ import re
 SRC = Path(__file__).resolve().parents[1] / "src"
 WRITERS = frozenset(
     {
+        "rozliczenia/efenix_marking.py",
         "rozliczenia/template_file.py",
         "rozliczenia/template_copy.py",
         "rozliczenia/row_look.py",
