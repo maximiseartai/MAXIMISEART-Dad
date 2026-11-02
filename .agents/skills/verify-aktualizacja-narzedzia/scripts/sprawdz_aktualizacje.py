@@ -48,6 +48,7 @@ PROMISES = {
     "OkienkoTylkoGdyNicNieDziala": "opiekun pokazuje okienko „nie wystartowało”, choć Centrum działa.",
     "TataNieZostajeBezOdpowiedzi": "nic nie działa, a tata nie dostaje okienka, tylko martwą kartę.",
     "KartaNieKlamie": "karta mówi „Narzędzie zaktualizowane”, choć nowa wersja nie działa.",
+    "KartaNieStraszy": "karta nowej, działającej wersji mówi o porażce aktualizacji.",
 }
 _STATE = re.compile(r"^State \d+: ")
 _STUTTERING = re.compile(r"^State \d+: Stuttering")

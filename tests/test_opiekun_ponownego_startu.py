@@ -516,6 +516,62 @@ def test_gdy_port_nie_zostanie_zwolniony_opiekun_cofa_klon_zapisuje_prawdziwy_wy
     assert read_result(result) == UpdateResult(NEW_VERSION_FAILED, before, newest, False)
 
 
+def test_gdy_po_cofnieciu_bez_portu_centrum_ze_skrotu_juz_dziala_opiekun_konczy_bez_okienka(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(restart_guardian, "PORT_TIMEOUT_S", 1.0)
+    repository = centrum_tool_repository(tmp_path / "repozytoria")
+    clone = repository.clone
+    before = repository.head()
+    newest = repository.publish({"NOWA_WERSJA.txt": "druga wersja narzędzia\n"})
+    assert ToolClone(clone, origin=str(repository.origin)).update().code == UPDATED
+    work = tmp_path / "praca"
+    work.mkdir()
+    result = clone / "config" / RESULT_FILE
+    dialogs: list[tuple[str, str]] = []
+    held = socket.socket()  # stare Centrum zamyka się dłużej niż PORT_TIMEOUT_S
+    held.bind(("127.0.0.1", 0))
+    held.listen()
+    port = held.getsockname()[1]
+    shortcuts: list[subprocess.Popen[bytes]] = []
+    roll_back = ToolClone.roll_back
+
+    def shortcut_during_roll_back(self: ToolClone) -> None:
+        roll_back(self)
+        # Stare Centrum oddaje port w trakcie cofania, a tata klika skrót: dziennika już nie ma, startuje stara wersja.
+        held.close()
+        shortcuts.append(
+            subprocess.Popen(
+                [sys.executable, str(clone / "run_centrum.py"), "--port", str(port), "--no-browser"],
+                cwd=clone,
+                env=os.environ | {"PYTHONUTF8": "1"},
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        )
+        _health(port, commit=before)
+
+    monkeypatch.setattr(ToolClone, "roll_back", shortcut_during_roll_back)
+    try:
+        code = main(
+            Restart(port, before, newest, clone, result, False, work).arguments(),
+            show_problem=lambda title, text: dialogs.append((title, text)),
+        )
+        health = _health(port, timeout_s=5)
+    finally:
+        held.close()
+        _close_if_running(port)
+        for shortcut in shortcuts:
+            shortcut.kill()
+            shortcut.wait()
+
+    assert code == 0
+    assert dialogs == []
+    assert repository.head() == before
+    assert health["commit"] == before[:7]
+    assert read_result(result) == UpdateResult(NEW_VERSION_FAILED, before, newest, False)
+
+
 def test_gdy_cofniecie_sie_nie_uda_wynik_nie_mowi_o_poprzedniej_wersji_a_tata_widzi_jedno_okienko(
     tmp_path: Path,
 ) -> None:

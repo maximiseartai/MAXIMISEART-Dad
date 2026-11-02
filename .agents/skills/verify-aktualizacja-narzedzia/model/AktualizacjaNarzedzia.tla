@@ -26,8 +26,9 @@
 (* Czwarta (TataNieZostajeBezOdpowiedzi): gdy nic już nie działa, tata     *)
 (* widzi okienko albo zgaszony komputer, nigdy samą martwą kartę. Piąta    *)
 (* (KartaNieKlamie): karta mówi „zaktualizowano” tylko w nowej wersji.     *)
-(* Obie opisują plik wyniku (write_result, read_result) i kartę po starcie *)
-(* Centrum (ToolUpdates._after_restart).                                   *)
+(* Szósta (KartaNieStraszy): karta nowej wersji nie mówi o porażce.        *)
+(* Trzy ostatnie opisują plik wyniku (write_result, read_result) i kartę   *)
+(* po starcie Centrum (ToolUpdates._after_restart).                        *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences
 
@@ -74,7 +75,7 @@ VARIABLES
     cofa,          \* kto woła _roll_back: "centrum" (ToolClone.update, ToolUpdates._moved_back), "klik"
                    \* (ToolClone.update przed pobraniem, gdy zastaje dziennik bez terminu opiekuna), "opiekun"
                    \* (restart_guardian._rolled_back po nowej wersji, która nie odpowiada) albo "opiekun_bez_portu"
-                   \* (restart_guardian._rolled_back, gdy port nie został zwolniony: potem nic nie startuje)
+                   \* (restart_guardian._rolled_back, gdy port nie został zwolniony; potem jak po "opiekun")
                    \* albo "skrot" (launcher._roll_back przy starcie); po odmowie scalenia "centrum"
     \* Plik wyniku i to, co tata widzi.
     wynik,         \* config/centrum-aktualizacja.json (write_result): "brak", "ok" (UPDATED) albo "porazka" (każdy inny kod)
@@ -151,10 +152,10 @@ OpiekunCofaTylkoNieudana ==
 OpiekunCofaTylkoNieudanaPozaZnanymi == OpiekunCofaTylkoNieudana \/ Znane
 
 \* Opiekun pokazuje okienko not_started_after_update (pc = "okienko") tylko wtedy, gdy żadne
-\* Centrum nie działa: okienko przy starej wersji ze skrótu to fałszywy alarm (#368). Poza
-\* obietnicą: cofnięcie bez portu (cofa = "opiekun_bez_portu"), po którym opiekun nie pyta portu.
+\* Centrum nie działa: okienko przy starej wersji ze skrótu to fałszywy alarm (#368), także po
+\* cofnięciu bez zwolnionego portu (#726).
 OkienkoTylkoGdyNicNieDziala ==
-    pc = "okienko" /\ cofa /= "opiekun_bez_portu" => centrum = "brak"
+    pc = "okienko" => centrum = "brak"
 
 OkienkoTylkoGdyNicNieDzialaPozaZnanymi == OkienkoTylkoGdyNicNieDziala \/ Znane
 
@@ -173,6 +174,14 @@ KartaNieKlamie ==
     karta = "zaktualizowano" => centrum = "nowa"
 
 KartaNieKlamiePozaZnanymi == KartaNieKlamie \/ Znane
+
+\* Karta nowej, działającej wersji nie mówi o porażce aktualizacji: porażka z pliku wyniku dotyczy
+\* wersji sprzed aktualizacji, do której klon cofnięto, a w nowej jest stara (#725). Inaczej tata
+\* wysyła Maksowi Zgłoszenie o wersji, która startuje.
+KartaNieStraszy ==
+    karta = "porazka" => centrum /= "nowa"
+
+KartaNieStraszyPozaZnanymi == KartaNieStraszy \/ Znane
 
 
 \* --- Start ------------------------------------------------------------------
@@ -215,12 +224,18 @@ PoOdmowie(opis) == pc' = "koniec_dziennika" /\ krok' = opis /\ slady' = slady /\
 
 \* Karta Centrum, które startuje w wersji head przy pliku wyniku w: ToolUpdates._after_restart (read_result,
 \* _view_of). „ok”, gdy działa inny commit niż jego „po” (running != result.after), to NIEOCZEKIWANY_BLAD (#490):
-\* w modelu każde „ok” ma po = "nowa", więc „ok” przy head = "stara" to porażka.
-KartaZ(w) == CASE w = "ok" /\ head = "nowa" -> "zaktualizowano" [] w /= "brak" -> "porazka" [] OTHER -> "nic"
+\* w modelu każde „ok” ma po = "nowa", więc „ok” przy head = "stara" to porażka. Porażka, gdy działa inny commit
+\* niż jej „przed” (result.before != running), jest stara (update_result_stale, #725): każda Aktualizacja w modelu
+\* zaczyna się od head = "stara" (Pobranie przy "nowa" to AKTUALNA), więc porażka przy head = "nowa" nic nie mówi.
+KartaZ(w) == CASE w = "ok" /\ head = "nowa" -> "zaktualizowano"
+               [] w = "ok" -> "porazka"
+               [] w = "porazka" /\ head = "stara" -> "porazka"
+               [] OTHER -> "nic"
 
 KartaSlowami(w) == CASE w = "ok" /\ head = "nowa" -> "karta mowi 'Narzedzie zaktualizowane'"
                      [] w = "ok" -> "karta pokazuje porazke: 'ok' przy starej wersji to NIEOCZEKIWANY_BLAD"
-                     [] w = "porazka" -> "karta pokazuje porazke aktualizacji"
+                     [] w = "porazka" /\ head = "stara" -> "karta pokazuje porazke aktualizacji"
+                     [] w = "porazka" -> "karta nic nie mowi: porazka z pliku jest sprzed nowej wersji (aktualizacja-wynik-stary)"
                      [] OTHER -> "karta nic nie mowi o aktualizacji"
 
 \* Centrum startuje w wersji head przy pliku wyniku w: ToolUpdates._after_restart czyta plik, usuwa go
@@ -582,11 +597,11 @@ OpiekunWycofanie ==
 
 \* Po _rolled_back: _record z NOWA_WERSJA_NIE_WYSTARTOWALA (cofnięcie udane, dziennika nie ma) albo
 \* COFNIECIE_NIEUDANE, write_result w suppress(OSError): odmowa dysku zostawia plik wyniku, a opiekun idzie
-\* dalej. Potem stara wersja tylko po zwolnionym porcie (nie "opiekun_bez_portu") i udanym cofnięciu,
-\* inaczej okienko.
+\* dalej. Potem po udanym cofnięciu stara wersja, także po cofnięciu bez zwolnionego portu (#726), a po
+\* nieudanym okienko.
 OpiekunWynik ==
     /\ pc = "opiekun_wynik"
-    /\ LET dalej == IF dziennik = "brak" /\ cofa = "opiekun" THEN "opiekun_port_stara" ELSE "okienko"
+    /\ LET dalej == IF dziennik = "brak" THEN "opiekun_port_stara" ELSE "okienko"
        IN \/ /\ wynik' = "porazka"
              /\ Idz(dalej, "restart_guardian.main: _record zapisuje wynik porazki po cofnieciu")
           \/ /\ AwariaKopiowania
@@ -594,10 +609,11 @@ OpiekunWynik ==
              /\ Idz(dalej, "restart_guardian.main: _record po cofnieciu, write_result rzuca OSError, opiekun idzie dalej")
     /\ UNCHANGED <<dysk, nowa, centrum, klikniecia, karta, widzi>>
 
-\* Po udanym cofnięciu: _port_released, potem _start_centrum i _answers(before).
-\* Port po cofnięciu może trzymać Centrum, które skrót uruchomił, gdy dziennika już nie było:
-\* _port_released czeka na nie PORT_TIMEOUT_S, a potem opiekun pyta je _runs(before) i kończy bez
-\* okienka. Port bez Centrum i bez skrótu trzyma inny program: wtedy okienko not_started_after_update.
+\* Po udanym cofnięciu: _port_released, potem _start_centrum i _answers(before), także po cofnięciu bez
+\* zwolnionego portu (#726). Port po cofnięciu może trzymać Centrum, które skrót uruchomił, gdy dziennika
+\* już nie było: _port_released czeka na nie PORT_TIMEOUT_S, a potem opiekun pyta je _runs(before) i kończy
+\* bez okienka. Port bez Centrum i bez skrótu trzyma inny program (albo stare Centrum, które się nie
+\* zamknęło): wtedy okienko not_started_after_update.
 OpiekunPortStara ==
     /\ pc = "opiekun_port_stara"
     /\ \/ /\ AwariaOpiekuna

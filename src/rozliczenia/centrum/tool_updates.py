@@ -133,17 +133,23 @@ class ToolUpdates:
     def _after_restart(self) -> None:
         """Wynik od opiekuna ponownego startu: do dziennika i do karty, raz, bez czekania na sieć.
 
-        „ok” przy działającym commicie innym niż „po” to porażka nieoczekiwana: nowa wersja nie działa (#490). Wynik,
-        który dziennik już zgłosił, albo wynik starszej Aktualizacji (``CentrumLog.update_awaits``) Centrum pomija, bo
-        dysk mógł nie dać usunąć jego pliku (#491). Po nowym kliknięciu z tym samym „przed” taki wynik raz wraca, gdy
-        jego pliku nie dało się usunąć ani podmienić. Po porażce (np. cofnięcie nowej wersji) skrzynkę Zgłoszeń pyta w tle
-        uchwyt Zgłoszenia: start Centrum na nią nie czeka.
+        „ok” przy działającym commicie innym niż „po” to porażka nieoczekiwana: nowa wersja nie działa (#490). Porażkę
+        z pliku zapisał opiekun albo skrót po cofnięciu klonu do „przed”, więc przy działającym commicie innym niż
+        „przed” jest stara: dziennik ją zapisuje, a karta jej nie pokazuje (#725). Wynik, który dziennik już zgłosił,
+        albo wynik starszej Aktualizacji (``CentrumLog.update_awaits``) Centrum pomija, bo dysk mógł nie dać usunąć jego
+        pliku (#491). Po porażce (np. cofnięcie nowej wersji) skrzynkę Zgłoszeń pyta w tle uchwyt Zgłoszenia: start
+        Centrum na nią nie czeka.
         """
 
         result = read_result(self._result_file)
         if result is None:
             return
         running = self._commit()
+        if result.code != UPDATED and running is not None and result.before is not None and result.before != running:
+            self._log.update_result_stale(result=result.code, before=result.before, after=result.after)
+            with suppress(OSError):  # następny start zastaje ten sam stary wynik i znów go pomija
+                self._result_file.unlink()
+            return
         if result.code == UPDATED and running is not None and running != result.after:
             result = replace(result, code=UNEXPECTED)
         if not self._log.update_awaits(result=result.code, before=result.before, after=result.after):
