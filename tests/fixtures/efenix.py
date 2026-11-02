@@ -135,3 +135,19 @@ def _compute_amounts(path: Path, amounts: Mapping[int, float], sheet_part: str) 
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
         for name, content in parts.items():
             archive.writestr(name, content)
+
+
+def write_template_costs(path: Path, costs: Mapping[str, CellValue]) -> Path:
+    """Wzorzec pliku zbiorczego w tym, co czyta narzędzie zgodności Atrapy efenix: etykieta „Koszt” w M14 i koszt pozycji
+    w wierszu 14 każdej kolumny ``costs`` (litera → wartość), pod nagłówkami Wzorca w wierszu 17."""
+
+    workbook = Workbook()
+    sheet = active_worksheet(workbook)
+    sheet.title = "Sheet1"
+    sheet["M14"] = "Koszt"
+    for column, header in enumerate(COLLECTIVE_HEADERS, start=1):
+        sheet.cell(17, column).value = header
+    for letter, value in costs.items():
+        sheet[f"{letter}14"] = value
+    workbook.save(path)
+    return path
