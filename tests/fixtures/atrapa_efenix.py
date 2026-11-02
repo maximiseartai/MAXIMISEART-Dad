@@ -39,8 +39,8 @@ i kiedy.
 ``answer_delay_s`` opóźnia każdą odpowiedź na szukanie, więc szukanie, które lista wysyła sama, trwa jeszcze, gdy
 narzędzie szuka swojego numeru. ``changed`` psuje budowę jednej części strony tak, jak mógłby ją zmienić autor efenix
 (``Changed``, a w części, której Wycena w efenix w testach nie używa, a sprawdza narzędzie zgodności, ``Unread``).
-``outage_after`` w trakcie przebiegu odcina efenix (``Outage``: zerwane połączenie albo efenix wolniejszy niż okno), aż
-test przywróci połączenie (``reconnect``), jak sieć taty, która na chwilę znika.
+``outage_after`` w trakcie przebiegu odcina efenix (``Outage``: zerwane połączenie, także w połowie odpowiedzi, albo efenix
+wolniejszy niż okno), aż test przywróci połączenie (``reconnect``), jak sieć taty, która na chwilę znika.
 """
 
 from __future__ import annotations
@@ -124,6 +124,7 @@ class Outage(enum.Enum):
 
     CUT = "zrywa połączenie każdego żądania bez odpowiedzi i bez wykonania żądania, jak sieć, która zniknęła"
     SLOW = "wykonuje każde żądanie, a odpowiedź wysyła dopiero na końcu bloku, jak efenix wolniejszy niż czas okna"
+    TORN = "wykonuje każde żądanie i zaczyna odpowiedź, ale zrywa połączenie w połowie jej treści, jak sieć, która zniknęła w trakcie pliku"
 
 
 @dataclass(frozen=True)
@@ -309,8 +310,10 @@ def atrapa_efenix(
         # przy HTTP/1.0, co pod xdist na Windows wyczerpywało gniazda (``net::ERR_NO_BUFFER_SPACE``, #778). Każda
         # odpowiedź ma ``Content-Length``.
         protocol_version = "HTTP/1.1"
-        # Odpowiedź żądania, które Atrapa wykonała, gdy efenix był wolny (``Outage.SLOW``), czeka na koniec bloku.
+        # Odpowiedź żądania, które Atrapa wykonała, gdy efenix był wolny (``Outage.SLOW``), czeka na koniec bloku, a gdy
+        # sieć zrywała odpowiedzi (``Outage.TORN``), urywa się w połowie treści (przekierowanie bez treści przychodzi całe).
         _late = False
+        _torn = False
 
         def handle(self) -> None:
             try:
@@ -353,6 +356,7 @@ def atrapa_efenix(
                 self._cut()
                 return
             self._late = outage is Outage.SLOW
+            self._torn = outage is Outage.TORN
             if path == LOGIN_ACTION and method == "POST":
                 with atrapa._lock:
                     atrapa.logged_in = True
@@ -416,6 +420,11 @@ def atrapa_efenix(
             self.send_header("Content-Type", f"{content_type}; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
+            if self._torn:
+                self.wfile.write(body[: len(body) // 2])
+                self.wfile.flush()
+                self._cut()
+                return
             self.wfile.write(body)
 
         def _json(self, answer: Mapping[str, str]) -> None:

@@ -17,8 +17,11 @@ nie udało, także gdy nie przyszedł jej plik spod adresu efenix (skrypt, arkus
 działa, a następne działanie nie wysłałoby już żądania, po którym widać brak połączenia, i czekanie, które nie skończyło
 się w czasie ``timeout_ms``, gdy strona wysłała w trakcie działania żądanie pod adres efenix, na które nie dostała całej
 odpowiedzi (sieć je zerwała albo efenix nie odpowiedział); inne czekanie dłuższe niż ``timeout_ms`` to
-``UnexpectedPage``, bo strona nie zrobiła tego, co robi efenix, który zna okno. Żądań spoza efenix (Mapy Google,
-fontawesome) okno nie liczy: ich brak odpowiedzi nic nie mówi o połączeniu z efenix, a schowałby zmienioną stronę. Działanie w zamkniętej karcie albo
+``UnexpectedPage``, bo strona nie zrobiła tego, co robi efenix, który zna okno. Żądanie, na które efenix odpowiedział
+błędem HTTP (plik strony, którego efenix już nie ma, odpowiada 404), przyszło, choć przeglądarka zgłasza je jako
+nieudane: efenix odpowiada, więc strona bez takiego skryptu to ``UnexpectedPage``, a martwy link na działającej stronie
+nic nie zatrzymuje. Żądań spoza efenix (Mapy Google, fontawesome) okno nie liczy: ich brak odpowiedzi nic nie mówi o
+połączeniu z efenix, a schowałby zmienioną stronę. Działanie w zamkniętej karcie albo
 oknie, także zamkniętym w trakcie działania, to ``WindowClosed``, cokolwiek zgłosił wtedy Playwright. Przeglądarkę daje
 rozmówca: stronę (``window``), Chromium Playwrighta (``chromium``) albo widoczne okno zainstalowanego Google Chrome w
 trwałym profilu narzędzia (``chrome``), które nie startuje (``BrowserNotStarted``), gdy Chrome nie ma albo jego profil
@@ -137,8 +140,9 @@ TIMEOUT_MS: Final = 30_000
 LOGIN_TIMEOUT_MS: Final = 15 * 60_000
 """Tyle okno czeka na logowanie taty, zanim proces zatrzyma się jak po wylogowaniu."""
 LOGIN_POLL_MS: Final = 2_000
-# Pliki, z których składa się strona efenix: bez któregoś strona nie jest gotowa.
-_PAGE_FILES: Final = frozenset({"document", "script", "stylesheet"})
+# Pliki, które strona efenix ładuje do siebie: bez któregoś strona nie jest gotowa. Samej strony (``document``) tu nie
+# ma, bo otwarcie albo przeładowanie strony, która nie przyszła, kończy się błędem Playwrighta.
+_PAGE_FILES: Final = frozenset({"script", "stylesheet"})
 
 # Tabela z odpowiedzi szukania przeczytana parserem HTML przeglądarki w ``<template>``, w którym jej skrypty nie biegną.
 _READ_RESULTS: Final = """(html) => {
@@ -286,6 +290,12 @@ class _Traffic:
     def finished(self, request: Request) -> None:
         if request in self._unanswered:
             self._unanswered.remove(request)
+
+    def failed(self, request: Request) -> None:
+        """Nieudane żądanie, na które efenix odpowiedział błędem HTTP, dostało odpowiedź; zerwane zostaje bez niej."""
+
+        if not _cut_off(request):
+            self.finished(request)
 
 
 class BrowserEfenix:
@@ -518,12 +528,13 @@ class BrowserEfenix:
     @contextmanager
     def _loading(self) -> Iterator[None]:
         """Otwarcie albo przeładowanie strony efenix w bloku: ``EfenixUnreachable``, gdy strona nie przyszła albo nie
-        przyszedł któryś jej plik spod adresu efenix (``_PAGE_FILES``), bo zdarzenie ``load`` przychodzi także wtedy."""
+        przyszedł któryś jej plik spod adresu efenix (``_PAGE_FILES``) przez zerwane połączenie, bo zdarzenie ``load``
+        przychodzi także wtedy."""
 
         failed: list[Request] = []
 
         def failure(request: Request) -> None:
-            if request.resource_type in _PAGE_FILES and _origin(request.url) == _origin(self._url):
+            if request.resource_type in _PAGE_FILES and _origin(request.url) == _origin(self._url) and _cut_off(request):
                 failed.append(request)
 
         self._page.on("requestfailed", failure)
@@ -545,11 +556,13 @@ class BrowserEfenix:
         self._traffic = traffic
         self._page.on("request", traffic.sent)
         self._page.on("requestfinished", traffic.finished)
+        self._page.on("requestfailed", traffic.failed)
         try:
             yield
         finally:
             self._page.remove_listener("request", traffic.sent)
             self._page.remove_listener("requestfinished", traffic.finished)
+            self._page.remove_listener("requestfailed", traffic.failed)
             self._traffic = outer
 
     def _ensure_logged_in(self) -> None:
@@ -661,6 +674,15 @@ def _origin(url: str) -> str:
 
     parsed = urlparse(url)
     return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _cut_off(request: Request) -> bool:
+    """Nieudane żądanie przerwało zerwane połączenie: nie przyszła odpowiedź efenix albo przyszła bez błędu HTTP, a sieć
+    zerwała jej treść. Na odpowiedź z błędem HTTP (status od 400) przeglądarka też zgłasza żądanie jako nieudane, gdy to
+    skrypt albo arkusz stylów, ale wtedy efenix odpowiedział."""
+
+    response = request.existing_response
+    return response is None or response.status < 400
 
 
 def _on_login_page(url: str) -> bool:

@@ -33,7 +33,7 @@ import zipfile
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
 
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Page, Route
 import pytest
 
 from rozliczenia import TOOL_ROOT, efenix_browser, efenix_process
@@ -606,6 +606,96 @@ def test_zadanie_spoza_efenix_bez_odpowiedzi_nie_zmienia_innej_budowy_strony_w_b
     )
 
 
+# Skrypt strony, którego efenix już nie ma (usunięty albo przemianowany): efenix odpowiada na niego błędem HTTP od żądania
+# ``from_request`` (licząc od zera) tego skryptu.
+@pytest.mark.parametrize(
+    ("script", "status", "from_request", "part"),
+    [
+        pytest.param(LIST_SCRIPT, 404, 0, PagePart.RESULTS, id="skrypt-listy-404"),
+        pytest.param(LIST_SCRIPT, 500, 0, PagePart.RESULTS, id="skrypt-listy-500"),
+        # Drugie otwarcie listy to szukanie drugiego zlecenia ze strony pierwszego, w tym samym działaniu okna co szukanie.
+        pytest.param(LIST_SCRIPT, 404, 1, PagePart.RESULTS, id="skrypt-listy-404-przy-szukaniu"),
+        pytest.param(ORDER_SCRIPT, 404, 0, PagePart.EMMETT, id="skrypt-zlecenia-404"),
+        pytest.param(ORDER_SCRIPT, 500, 0, PagePart.EMMETT, id="skrypt-zlecenia-500"),
+    ],
+)
+def test_skrypt_strony_ktorego_efenix_juz_nie_ma_to_zmieniony_efenix_a_nie_brak_polaczenia(
+    tmp_path: Path, page: Page, script: str, status: int, from_request: int, part: PagePart
+) -> None:
+    """Przeglądarka zgłasza skrypt, na który efenix odpowiedział 404 albo 500, jako nieudany, tak jak zerwany, ale efenix
+    odpowiedział: strona bez swojego skryptu to efenix, który się zmienił, z Diagnozą i Zgłoszeniem do Maksa, a nie
+    „brak połączenia z efenix”, który tata dostawałby przy każdym ponownym uruchomieniu."""
+
+    orders = [Order(f"#950{index}", cells={"O": 1}, amount=_au({"012": 1})) for index in (1, 2)]
+    sent = itertools.count()
+
+    def gone(route: Route) -> None:
+        if next(sent) < from_request:
+            route.continue_()
+        else:
+            route.fulfill(status=status, body="<p>Nie ma takiej strony.</p>", content_type="text/html")
+
+    page.route(f"**/{script}*", gone)
+    with atrapa_efenix([replace(order.in_efenix(f"90{index}"), execution_date=DAY) for index, order in enumerate(orders)]) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, orders, timeout_ms=3_000)
+
+    assert isinstance(outcome.ending, Stop), _ending(outcome)
+    assert (_stop(outcome), outcome.ending.stop_kind, outcome.ending.message.where) == (
+        "EFENIX_ZMIENIONY",
+        "for_maks",
+        f"okno efenix, {part.value}",
+    )
+
+
+def _on_efenix_pages(page: Page, tag: str) -> None:
+    """Dokleja ``tag`` do ``<head>`` listy zleceń i strony zlecenia Atrapy, jak plik, który efenix ładuje na swoich stronach."""
+
+    def add(route: Route) -> None:
+        response = route.fetch()
+        route.fulfill(response=response, body=response.text().replace("</head>", f"{tag}</head>", 1))
+
+    for path in (LIST_PAGE, ORDER_PAGE):
+        page.route(f"**/{path}*", add)
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        pytest.param('<link rel="stylesheet" href="css/usuniety.css">', id="martwy-arkusz-stylow-efenix"),
+        pytest.param('<script src="js/usuniety.js"></script>', id="martwy-skrypt-efenix"),
+        pytest.param('<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css">', id="arkusz-fontawesome"),
+        pytest.param('<script src="https://maps.googleapis.com/maps/api/js"></script>', id="skrypt-map-google"),
+    ],
+)
+def test_martwy_link_efenix_i_plik_spoza_efenix_bez_odpowiedzi_nie_zatrzymuja_wyceny(tmp_path: Path, page: Page, tag: str) -> None:
+    """Działająca strona efenix z linkiem do pliku, którego efenix już nie ma (Atrapa odpowiada na nieznany adres 404), albo
+    z plikiem z innego serwera (fontawesome, Mapy Google), który nie odpowiada, wycenia zlecenie jak bez nich: martwy link
+    to nie brak połączenia, a serwer spoza efenix nic nie mówi o połączeniu z efenix."""
+
+    order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
+    _on_efenix_pages(page, tag)
+    # Serwery spoza efenix zrywają połączenie; Atrapa jest pod ``http://127.0.0.1``.
+    page.route("https://**/*", lambda route: route.abort("connectionreset"))
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
+
+    assert (outcome.result, _figures(outcome)) == ("OK", _figures_of(1, 1))
+
+
+def test_arkusz_stylow_efenix_bez_odpowiedzi_to_brak_polaczenia_z_efenix(tmp_path: Path, page: Page) -> None:
+    """Arkusz stylów spod adresu efenix (strona zlecenia efenix ładuje ich sześć), który nie przyszedł, bo połączenie się
+    zerwało, to „brak połączenia z efenix” dla taty, jak zerwany skrypt strony."""
+
+    order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
+    _on_efenix_pages(page, '<link rel="stylesheet" href="css/efenix.css">')
+    page.route("**/css/efenix.css", lambda route: route.abort("connectionreset"))
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
+
+    assert isinstance(outcome.ending, Stop), _ending(outcome)
+    assert (_stop(outcome), outcome.ending.stop_kind, _kept(outcome)) == ("EFENIX_NIEDOSTEPNY", "for_tata", False)
+
+
 def test_zmieniona_strona_efenix_oznacza_gotowe_przed_nia_a_komunikat_do_maksa_nie_ma_numeru_adresu_ani_loginu(
     tmp_path: Path, page: Page
 ) -> None:
@@ -1114,6 +1204,10 @@ def test_przerwanie_wylogowaniem_i_ponowne_uruchomienie_daje_ten_sam_stan_efenix
         pytest.param(Outage.CUT, ORDER_SCRIPT, 0, False, id="zerwany-skrypt-zlecenia"),
         pytest.param(Outage.CUT, ORDER_SCRIPT, 1, True, id="zerwany-skrypt-zlecenia-po-dacie"),
         pytest.param(Outage.CUT, ORDER_SCRIPT, 3, True, id="zerwany-skrypt-kolejnego-zlecenia"),
+        # Sieć zrywa plik w połowie: efenix zaczął odpowiadać bez błędu, ale strona nie dostała całego skryptu albo siebie.
+        pytest.param(Outage.TORN, LIST_SCRIPT, 0, False, id="uciety-skrypt-listy"),
+        pytest.param(Outage.TORN, ORDER_SCRIPT, 0, False, id="uciety-skrypt-zlecenia"),
+        pytest.param(Outage.TORN, ORDER_PAGE, 0, False, id="ucieta-strona-zlecenia"),
     ],
 )
 def test_brak_polaczenia_z_efenix_w_trakcie_to_zatrzymanie_dla_taty_a_ponowne_uruchomienie_daje_ten_sam_stan_co_jeden_przebieg(
