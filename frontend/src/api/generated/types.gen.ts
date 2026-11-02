@@ -1936,6 +1936,8 @@ export type RunIdle = {
     previous: ({
         state: 'restored';
     } & RunRestored) | ({
+        state: 'recorded';
+    } & RunRecorded) | ({
         state: 'interrupted';
     } & RunInterrupted) | null;
 };
@@ -2076,6 +2078,39 @@ export type RunOutcome = {
      */
     opens: 'order_register' | 'collective_file' | null;
     order_notes?: OrderNotes | null;
+};
+
+/**
+ * RunRecorded
+ *
+ * Uruchomienie z wynikiem w Historii, ale bez Logów Uruchomienia: Centrum zamknęło się po zapisie rekordu metryk,
+ * a przed zapisem Logów.
+ *
+ * Karta zna tylko to, co wiersz Historii: ``result`` i ``started_at`` są z niego, a ``headline`` i ``next_action``
+ * wylicza z nich ta sama reguła co na żywo (``runs.verdict``). Komunikatów, etapów ani podsumowania nie ma.
+ */
+export type RunRecorded = {
+    /**
+     * State
+     */
+    state: 'recorded';
+    run: RunInfo;
+    /**
+     * Started At
+     */
+    started_at: string;
+    /**
+     * Result
+     */
+    result: 'OK' | 'WYMAGA_SPRAWDZENIA' | 'BLAD_KRYTYCZNY';
+    /**
+     * Headline
+     */
+    headline: string;
+    /**
+     * Next Action
+     */
+    next_action: 'run' | 'rerun' | 'open_collective_file' | 'open_worker_settlements_folder' | 'open_order_register';
 };
 
 /**

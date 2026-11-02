@@ -1138,6 +1138,34 @@ export const zRunInterrupted = z.object({
 });
 
 /**
+ * RunRecorded
+ *
+ * Uruchomienie z wynikiem w Historii, ale bez Logów Uruchomienia: Centrum zamknęło się po zapisie rekordu metryk,
+ * a przed zapisem Logów.
+ *
+ * Karta zna tylko to, co wiersz Historii: ``result`` i ``started_at`` są z niego, a ``headline`` i ``next_action``
+ * wylicza z nich ta sama reguła co na żywo (``runs.verdict``). Komunikatów, etapów ani podsumowania nie ma.
+ */
+export const zRunRecorded = z.object({
+    state: z.literal('recorded'),
+    run: zRunInfo,
+    started_at: z.iso.datetime(),
+    result: z.enum([
+        'OK',
+        'WYMAGA_SPRAWDZENIA',
+        'BLAD_KRYTYCZNY'
+    ]),
+    headline: z.string(),
+    next_action: z.enum([
+        'run',
+        'rerun',
+        'open_collective_file',
+        'open_worker_settlements_folder',
+        'open_order_register'
+    ])
+});
+
+/**
  * RunRequest
  *
  * Start Uruchomienia procesu; pliki wejściowe wylicza serwer z ustawień i okresu.
@@ -1602,6 +1630,7 @@ export const zRunIdle = z.object({
     state: z.literal('idle'),
     previous: z.discriminatedUnion('state', [
         zRunRestored,
+        zRunRecorded,
         zRunInterrupted
     ]).nullable()
 });
