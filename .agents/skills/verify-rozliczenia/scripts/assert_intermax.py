@@ -79,7 +79,7 @@ def _check_result(result_path: Path, errors: list[str]) -> str | None:
     if summary.intermax_copy is None or COPY_NAME.fullmatch(summary.intermax_copy) is None:
         errors.append("summary.intermax_copy is not the name of a Kopia INTERMAX before ordering")
     elif summary != _expected_summary(summary.intermax_copy):
-        errors.append(f"summary is not the ordered day {EXPECTED_DAY} of the synthetic INTERMAX")
+        errors.append(f"summary does not match the ordered day {EXPECTED_DAY} of the synthetic INTERMAX")
     progress = result.progress
     if [(phase.phase, phase.state) for phase in progress.phases] != [(phase, "completed") for phase in EXPECTED_PHASES]:
         errors.append("progress does not report the four stages completed in order")
