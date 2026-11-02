@@ -172,23 +172,12 @@ function RestoredRunCard({ past, reminder, onNewRun }: { past: RunRestored; remi
   const next = useNextAction(run, result.next_action, reminder)
 
   return (
-    <Card role="region" aria-label="Ostatnie Uruchomienie">
-      <RunHeader
-        run={run}
-        actions={
-          <>
-            <NewRunButton onNewRun={onNewRun} />
-            <WriteAboutRun runId={run.id} />
-          </>
-        }
-      />
-      <CardContent className="flex flex-col gap-6">
-        <PastNote>Ostatnie Uruchomienie · {dateTime(past.started_at)} · Centrum było od tego czasu zamknięte</PastNote>
-        <PhaseList phases={past.phases} />
-        <OutcomeBody run={run} result={result} action={next.button} filling />
-        {next.dialog}
-      </CardContent>
-    </Card>
+    <FinishedPastCard run={run} onNewRun={onNewRun}>
+      <PastNote>Ostatnie Uruchomienie · {dateTime(past.started_at)} · Centrum było od tego czasu zamknięte</PastNote>
+      <PhaseList phases={past.phases} />
+      <OutcomeBody run={run} result={result} action={next.button} filling />
+      {next.dialog}
+    </FinishedPastCard>
   )
 }
 
@@ -197,6 +186,19 @@ function RecordedRunCard({ past, reminder, onNewRun }: { past: RunRecorded; remi
   const { run } = past
   const next = useNextAction(run, past.next_action, reminder)
 
+  return (
+    <FinishedPastCard run={run} onNewRun={onNewRun}>
+      <PastNote>
+        Ostatnie Uruchomienie · {dateTime(past.started_at)} · Centrum zamknęło się tuż po wyniku, więc szczegółów nie ma
+      </PastNote>
+      <ResultAlert result={past.result} headline={past.headline} action={next.button} />
+      {next.dialog}
+    </FinishedPastCard>
+  )
+}
+
+/** Karta skończonego Uruchomienia sprzed startu Centrum: można zacząć nowe albo napisać o nim do Maksa. */
+function FinishedPastCard({ run, onNewRun, children }: { run: RunInfo; onNewRun: () => void; children: React.ReactNode }) {
   return (
     <Card role="region" aria-label="Ostatnie Uruchomienie">
       <RunHeader
@@ -208,13 +210,7 @@ function RecordedRunCard({ past, reminder, onNewRun }: { past: RunRecorded; remi
           </>
         }
       />
-      <CardContent className="flex flex-col gap-6">
-        <PastNote>
-          Ostatnie Uruchomienie · {dateTime(past.started_at)} · Centrum zamknęło się tuż po wyniku, więc szczegółów nie ma
-        </PastNote>
-        <ResultAlert result={past.result} headline={past.headline} action={next.button} />
-        {next.dialog}
-      </CardContent>
+      <CardContent className="flex flex-col gap-6">{children}</CardContent>
     </Card>
   )
 }
