@@ -583,6 +583,29 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
     assert message.what.startswith("efenix się zmienił, Maks już wie.")
 
 
+@pytest.mark.parametrize("changed", [Changed.HIDDEN_EMMETT, Changed.STALE_AMOUNT])
+def test_zadanie_spoza_efenix_bez_odpowiedzi_nie_zmienia_innej_budowy_strony_w_brak_polaczenia(
+    tmp_path: Path, page: Page, changed: Changed
+) -> None:
+    """Widżet spoza efenix na stronie (jak Mapy Google na stronie zlecenia), który co chwilę pyta swój serwer i nie dostaje
+    odpowiedzi, nie chowa zmienionej strony efenix pod „brak połączenia z efenix”: to dalej Zatrzymanie do Maksa."""
+
+    order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
+    # Serwer widżetu przyjmuje połączenia, ale nigdy nie odpowiada.
+    with socket.create_server(("127.0.0.1", 0), backlog=64) as silent:
+        widget = f"http://127.0.0.1:{silent.getsockname()[1]}/widget"
+        page.add_init_script(f"setInterval(() => fetch({json.dumps(widget)}, {{mode: 'no-cors'}}).catch(() => {{}}), 200)")
+        with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)], changed=changed) as atrapa:
+            outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
+
+    assert isinstance(outcome.ending, Stop), _ending(outcome)
+    assert (_stop(outcome), outcome.ending.stop_kind, outcome.ending.message.where) == (
+        "EFENIX_ZMIENIONY",
+        "for_maks",
+        f"okno efenix, {CHANGED_PART[changed].value}",
+    )
+
+
 def test_zmieniona_strona_efenix_oznacza_gotowe_przed_nia_a_komunikat_do_maksa_nie_ma_numeru_adresu_ani_loginu(
     tmp_path: Path, page: Page
 ) -> None:
@@ -1067,24 +1090,34 @@ def test_przerwanie_wylogowaniem_i_ponowne_uruchomienie_daje_ten_sam_stan_efenix
     assert (_parts(resumed), _marked(resumed)) == (_parts(whole), [18, 19, 20])
 
 
-# Przerwanie Wyceny w efenix w trakcie: Atrapa efenix odcięta raz od żądania ``path`` numer ``after`` + 1 narzędzia.
+# Przerwanie Wyceny w efenix w trakcie: Atrapa efenix odcięta raz od żądania ``path`` numer ``after`` + 1 narzędzia;
+# ``kept``: przed odcięciem proces zmienił już coś w efenix.
 @pytest.mark.parametrize(
-    ("outage", "path", "after"),
+    ("outage", "path", "after", "kept"),
     [
-        pytest.param(Outage.CUT, SEARCH, 1, id="zerwane-szukanie"),
-        pytest.param(Outage.SLOW, SEARCH, 1, id="wolne-szukanie"),
-        pytest.param(Outage.CUT, SET_DATE, 1, id="zerwana-data-wykonania"),
-        pytest.param(Outage.SLOW, SET_DATE, 1, id="wolna-data-wykonania"),
+        pytest.param(Outage.CUT, SEARCH, 1, True, id="zerwane-szukanie"),
+        pytest.param(Outage.SLOW, SEARCH, 1, True, id="wolne-szukanie"),
+        pytest.param(Outage.CUT, SET_DATE, 1, True, id="zerwana-data-wykonania"),
+        pytest.param(Outage.SLOW, SET_DATE, 1, True, id="wolna-data-wykonania"),
         # Przycisk Emmetta pyta efenix o propozycję, a okno czeka na okno Emmetta, które pokazuje odpowiedź.
-        pytest.param(Outage.SLOW, FILL_EMMETT, 1, id="wolna-propozycja-emmetta"),
-        pytest.param(Outage.CUT, LOAD_EMMETT, 1, id="zerwane-zaladuj-do-zlecenia"),
+        pytest.param(Outage.SLOW, FILL_EMMETT, 1, True, id="wolna-propozycja-emmetta"),
+        pytest.param(Outage.CUT, LOAD_EMMETT, 1, True, id="zerwane-zaladuj-do-zlecenia"),
         # Zlecenie 1 ma dwa zapisy ilości, więc czwarty to druga ilość zlecenia 2.
-        pytest.param(Outage.CUT, SAVE_QUANTITY, 3, id="zerwana-ilość"),
-        pytest.param(Outage.SLOW, SAVE_QUANTITY, 3, id="wolna-ilość"),
+        pytest.param(Outage.CUT, SAVE_QUANTITY, 3, True, id="zerwana-ilość"),
+        pytest.param(Outage.SLOW, SAVE_QUANTITY, 3, True, id="wolna-ilość"),
+        # Skrypt strony przychodzi zawsze przez sieć (efenix dokleja do jego adresu ``?v=<microtime>``), a strona bez
+        # niego otwiera się, tylko nie działa. Listę okno otwiera przy starcie i przy szukaniu po stronie zlecenia.
+        pytest.param(Outage.CUT, LIST_SCRIPT, 0, False, id="zerwany-skrypt-listy-przy-starcie"),
+        pytest.param(Outage.CUT, LIST_SCRIPT, 1, True, id="zerwany-skrypt-listy-przy-szukaniu"),
+        # Stronę zlecenia okno otwiera, otwiera po dacie wykonania i przeładowuje po Wycenie Emmetta (przeładowanie sprawdza
+        # ``test_przerwanie_po_zaladuj_do_zlecenia_…``), a potem otwiera następne zlecenie.
+        pytest.param(Outage.CUT, ORDER_SCRIPT, 0, False, id="zerwany-skrypt-zlecenia"),
+        pytest.param(Outage.CUT, ORDER_SCRIPT, 1, True, id="zerwany-skrypt-zlecenia-po-dacie"),
+        pytest.param(Outage.CUT, ORDER_SCRIPT, 3, True, id="zerwany-skrypt-kolejnego-zlecenia"),
     ],
 )
 def test_brak_polaczenia_z_efenix_w_trakcie_to_zatrzymanie_dla_taty_a_ponowne_uruchomienie_daje_ten_sam_stan_co_jeden_przebieg(
-    tmp_path: Path, page: Page, outage: Outage, path: str, after: int
+    tmp_path: Path, page: Page, outage: Outage, path: str, after: int, kept: bool
 ) -> None:
     """Zerwane żądanie i efenix wolniejszy niż czas okna (tu 3 s) to „brak połączenia z efenix”, a nie „efenix się
     zmienił”: Zatrzymanie dla taty, bez Diagnozy i Zgłoszenia do Maksa. Wolny efenix wykonuje żądanie, tylko odpowiada
@@ -1112,7 +1145,7 @@ def test_brak_polaczenia_z_efenix_w_trakcie_to_zatrzymanie_dla_taty_a_ponowne_ur
 
     assert isinstance(stopped.ending, Stop), _ending(stopped)
     message = stopped.ending.message
-    assert (_stop(stopped), stopped.ending.stop_kind, _kept(stopped)) == ("EFENIX_NIEDOSTEPNY", "for_tata", True)
+    assert (_stop(stopped), stopped.ending.stop_kind, _kept(stopped)) == ("EFENIX_NIEDOSTEPNY", "for_tata", kept)
     assert message.what.startswith("Brak połączenia z efenix"), message.what
     assert (once.result, again.result, _figures(again)) == ("OK", "OK", _figures_of(3, 3))
     assert priced_again == priced_once
@@ -1125,6 +1158,8 @@ def test_brak_polaczenia_z_efenix_w_trakcie_to_zatrzymanie_dla_taty_a_ponowne_ur
         # Szóste otwarcie strony zlecenia to przeładowanie po Wycenie Emmetta zlecenia 2 (każde zlecenie otwiera ją trzy razy).
         pytest.param((ORDER_PAGE, 5), None, "EFENIX_WYLOGOWANY", id="wylogowanie-przy-przeładowaniu"),
         pytest.param(None, (Outage.CUT, ORDER_PAGE, 5), "EFENIX_NIEDOSTEPNY", id="zerwane-przeładowanie"),
+        # Przeładowana strona bez swojego skryptu, który przychodzi zawsze przez sieć, jak strona, która nie przyszła.
+        pytest.param(None, (Outage.CUT, ORDER_SCRIPT, 5), "EFENIX_NIEDOSTEPNY", id="zerwany-skrypt-po-przeladowaniu"),
         # Wolny efenix ładuje Emmetta, ale okno nie doczekało odpowiedzi ani przeładowania.
         pytest.param(None, (Outage.SLOW, LOAD_EMMETT, 1), "EFENIX_NIEDOSTEPNY", id="wolne-zaladuj-do-zlecenia"),
     ],
