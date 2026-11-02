@@ -120,6 +120,18 @@ ręcznie. Porządkuje dzień, nie okres. Po nim tata i pracownicy uzupełniają
 dzień ręcznie, a dopiero potem okres trafia do Przygotowania pliku zbiorczego.
 _Avoid_: formatowanie, import
 
+## Dzień uporządkowany
+
+Dzień, którego zlecenia stoją w Rejestrze zleceń z wyglądem uporządkowanego
+dnia: dwa kolejne uporządkowane wiersze z jego datą albo jeden, pod którym nie
+ma wiersza wcześniejszego dnia. Zlecenie na jutro wpisane w środku
+dzisiejszego dnia nie czyni jutra uporządkowanym. Tą samą regułą
+Uporządkowanie INTERMAX odmawia drugiego wklejenia dnia, a karta Uporządkowania
+INTERMAX w Centrum rozliczeń pokazuje przy każdym dniu okresu dzisiejszej daty,
+każdym późniejszym Dniu uporządkowanym i każdym dniu Surowych zleceń, czy jest
+uporządkowany.
+_Avoid_: dzień zrobiony, dzień sformatowany
+
 ## Kopia INTERMAX
 
 Stan Rejestru zleceń zapisany przed Uporządkowaniem INTERMAX albo przed

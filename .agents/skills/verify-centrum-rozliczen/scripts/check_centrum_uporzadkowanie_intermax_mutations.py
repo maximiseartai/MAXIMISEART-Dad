@@ -36,6 +36,24 @@ MUTATIONS = (
         "tata uruchamia Uporządkowanie przy otwartym INTERMAX i dostaje dopiero Zatrzymanie",
     ),
     Mutation(
+        "karta bez Dni uporządkowanych",
+        (Edit(INTERMAX_RUN, "ordered=day.ordered)", "ordered=False)"),),
+        UPORZADKOWANIE,
+        "tata nie widzi na karcie, które dni są już uporządkowane",
+    ),
+    Mutation(
+        "dni nie czytane po Uporządkowaniu",
+        (
+            Edit(
+                INTERMAX_RUN,
+                "(last.register, last.version, last.today) == (register, version, today)",
+                "(last.register, last.today) == (register, today)",
+            ),
+        ),
+        UPORZADKOWANIE,
+        "po Uporządkowaniu karta dalej pokazuje wklejony dzień jako nieuporządkowany",
+    ),
+    Mutation(
         "wynik bez nazwy Kopii INTERMAX",
         (Edit(RUN_VIEW, "        intermax_copy=summary.copy_name,\n", "        intermax_copy=None,\n"),),
         UPORZADKOWANIE,

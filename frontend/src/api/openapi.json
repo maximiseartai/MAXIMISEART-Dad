@@ -356,6 +356,27 @@
         }
       }
     },
+    "/api/intermax/days": {
+      "get": {
+        "tags": [
+          "uruchomienia"
+        ],
+        "summary": "Days",
+        "operationId": "getIntermaxDays",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntermaxDays"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/intermax/run": {
       "post": {
         "tags": [
@@ -1877,6 +1898,7 @@
               "getRunSetup",
               "startRun",
               "getIntermaxSetup",
+              "getIntermaxDays",
               "startIntermax",
               "getIntermaxCopies",
               "restoreIntermaxCopy",
@@ -2734,6 +2756,66 @@
         ],
         "title": "IntermaxCopy",
         "description": "Kopia INTERMAX w folderze Kopii: nazwa pliku, chwila z nazwy i to, przed czym powstała."
+      },
+      "IntermaxDay": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "today": {
+            "type": "boolean",
+            "title": "Today"
+          },
+          "ordered": {
+            "type": "boolean",
+            "title": "Ordered"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "day",
+          "label",
+          "today",
+          "ordered"
+        ],
+        "title": "IntermaxDay",
+        "description": "Dzień na karcie „Uporządkuj INTERMAX”: data, jej skrót z dniem tygodnia, czy to dziś i czy jest uporządkowany."
+      },
+      "IntermaxDays": {
+        "properties": {
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/IntermaxDay"
+            },
+            "type": "array",
+            "title": "Days"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Message"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "days",
+          "problem"
+        ],
+        "title": "IntermaxDays",
+        "description": "Dni okresu dzisiejszej daty, późniejsze Dni uporządkowane i dni Surowych zleceń INTERMAX, po kolei.\n\n``problem`` to Komunikat, gdy INTERMAX nie da się odczytać; ``days`` jest wtedy puste, tak jak bez wskazanego\nRejestru zleceń."
       },
       "IntermaxRestoreRefused": {
         "properties": {

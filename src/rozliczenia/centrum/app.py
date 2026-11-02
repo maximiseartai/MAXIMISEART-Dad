@@ -231,7 +231,13 @@ def create_app(
     ]
     # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
     intermax = IntermaxEntry(
-        store, processes, intermax_copies or default_intermax_copies(), now, Waiting(clock, pause), intermax_disk
+        store,
+        processes,
+        intermax_copies or default_intermax_copies(),
+        now,
+        Waiting(clock, pause),
+        intermax_disk,
+        surroundings.cloud_files,
     )
     # Karty Uruchomień z pliku startu i Logów Uruchomienia: ostatnie po starcie Centrum i wiersz Historii (ADR 0017).
     cards = RunCards(log.directory / RUN_LOGS_DIRECTORY, log.directory / LAST_STARTED_FILE)

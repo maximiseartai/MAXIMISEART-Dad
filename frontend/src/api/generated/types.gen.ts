@@ -13,7 +13,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -548,6 +548,46 @@ export type IntermaxCopy = {
      * Before
      */
     before: 'ordering' | 'restore';
+};
+
+/**
+ * IntermaxDay
+ *
+ * Dzień na karcie „Uporządkuj INTERMAX”: data, jej skrót z dniem tygodnia, czy to dziś i czy jest uporządkowany.
+ */
+export type IntermaxDay = {
+    /**
+     * Day
+     */
+    day: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Today
+     */
+    today: boolean;
+    /**
+     * Ordered
+     */
+    ordered: boolean;
+};
+
+/**
+ * IntermaxDays
+ *
+ * Dni okresu dzisiejszej daty, późniejsze Dni uporządkowane i dni Surowych zleceń INTERMAX, po kolei.
+ *
+ * ``problem`` to Komunikat, gdy INTERMAX nie da się odczytać; ``days`` jest wtedy puste, tak jak bez wskazanego
+ * Rejestru zleceń.
+ */
+export type IntermaxDays = {
+    /**
+     * Days
+     */
+    days: Array<IntermaxDay>;
+    problem: Message | null;
 };
 
 /**
@@ -2693,6 +2733,22 @@ export type RestoreIntermaxCopyResponses = {
 };
 
 export type RestoreIntermaxCopyResponse = RestoreIntermaxCopyResponses[keyof RestoreIntermaxCopyResponses];
+
+export type GetIntermaxDaysData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/intermax/days';
+};
+
+export type GetIntermaxDaysResponses = {
+    /**
+     * Successful Response
+     */
+    200: IntermaxDays;
+};
+
+export type GetIntermaxDaysResponse = GetIntermaxDaysResponses[keyof GetIntermaxDaysResponses];
 
 export type StartIntermaxData = {
     body?: never;

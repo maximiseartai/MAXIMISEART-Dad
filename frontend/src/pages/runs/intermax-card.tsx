@@ -1,7 +1,15 @@
-import { FileSpreadsheetIcon, HistoryIcon, InfoIcon, ListOrderedIcon, TriangleAlertIcon } from "lucide-react"
+import { cn } from "cn"
+import { CheckIcon, FileSpreadsheetIcon, HistoryIcon, InfoIcon, ListOrderedIcon, TriangleAlertIcon } from "lucide-react"
 
-import { getIntermaxSetup, type IntermaxSetup, type RunRestored } from "@/api/centrum"
+import {
+  getIntermaxDays,
+  getIntermaxSetup,
+  type IntermaxDays,
+  type IntermaxSetup,
+  type RunRestored,
+} from "@/api/centrum"
 import { LoadFailure } from "@/components/load-failure"
+import { ThreePartMessage } from "@/components/three-part-message"
 import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,7 +24,8 @@ import { SettingPath } from "@/pages/runs/run-setup-card"
 /**
  * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty, tu pod nazwą, którą zna tata,
  * więc jest tylko jeden przycisk. INTERMAX otwarty w Excelu albo niewskazany wyłącza go, a zdanie nad nim mówi, co zrobić. Pod plikiem
- * stoi ostatnie Uporządkowanie z Logów Uruchomienia, a jego pełna karta otwiera się z boku.
+ * stoją dni okresu i późniejsze dni INTERMAX z ikoną Dnia uporządkowanego, a pod nimi ostatnie Uporządkowanie z Logów
+ * Uruchomienia, którego pełna karta otwiera się z boku.
  */
 export function IntermaxCard() {
   const { resource: setup, reload } = useResource(getIntermaxSetup)
@@ -58,6 +67,7 @@ function IntermaxSetupCard({ setup }: { setup: IntermaxSetup }) {
             onChoose={() => choose("order_register")}
           />
         ) : null}
+        {setup.blocker === null ? <RegisterDays /> : null}
         {notes.length === 0 ? null : (
           <Alert className="wejscie">
             <TriangleAlertIcon className="text-warning!" />
@@ -86,6 +96,58 @@ function IntermaxSetupCard({ setup }: { setup: IntermaxSetup }) {
         </Button>
       </CardFooter>
     </Card>
+  )
+}
+
+/**
+ * Dni INTERMAX w rzędzie, jak kroki Drogi okresu: Dzień uporządkowany ma znak, nieuporządkowany pusty krąg, a dziś
+ * obwódkę. Serwer czyta INTERMAX tylko po jego zmianie, więc odczyt przy każdym wejściu i powrocie do okna jest tani.
+ */
+function RegisterDays() {
+  const { resource: days, reload } = useResource(getIntermaxDays)
+
+  switch (days.state) {
+    case "loading":
+      return <Skeleton className="h-6 w-full" aria-label="Wczytywanie dni INTERMAX" />
+    case "failed":
+      return <LoadFailure what="dni INTERMAX" message={days.message} reload={reload} />
+    case "ready":
+      return <DayRow days={days.data} />
+    default: {
+      const unhandled: never = days
+
+      return unhandled
+    }
+  }
+}
+
+function DayRow({ days }: { days: IntermaxDays }) {
+  if (days.problem !== null) {
+    return <ThreePartMessage message={days.problem} kind="notice" />
+  }
+
+  return (
+    <ol className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="Dni INTERMAX">
+      {days.days.map((day) => (
+        <li
+          key={day.day}
+          className="flex items-center gap-1.5 text-sm tabular-nums"
+          aria-label={`${day.label}: ${day.ordered ? "uporządkowany" : "nieuporządkowany"}`}
+          aria-current={day.today ? "date" : undefined}
+        >
+          <span
+            data-ordered={day.ordered}
+            className={cn(
+              "flex size-5 shrink-0 items-center justify-center rounded-full border data-[ordered=true]:border-transparent data-[ordered=true]:bg-secondary",
+              day.today && "border-foreground data-[ordered=true]:border-foreground"
+            )}
+          >
+            {day.ordered ? <CheckIcon className="size-3 text-success" aria-hidden /> : null}
+          </span>
+          <span className={day.ordered ? undefined : "text-muted-foreground"}>{day.label}</span>
+        </li>
+      ))}
+    </ol>
   )
 }
 

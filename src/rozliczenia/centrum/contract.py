@@ -841,6 +841,26 @@ class IntermaxSetup(_Model):
     last: RunRestored | None
 
 
+class IntermaxDay(_Model):
+    """Dzień na karcie „Uporządkuj INTERMAX”: data, jej skrót z dniem tygodnia, czy to dziś i czy jest uporządkowany."""
+
+    day: date
+    label: str
+    today: bool
+    ordered: bool
+
+
+class IntermaxDays(_Model):
+    """Dni okresu dzisiejszej daty, późniejsze Dni uporządkowane i dni Surowych zleceń INTERMAX, po kolei.
+
+    ``problem`` to Komunikat, gdy INTERMAX nie da się odczytać; ``days`` jest wtedy puste, tak jak bez wskazanego
+    Rejestru zleceń.
+    """
+
+    days: list[IntermaxDay]
+    problem: Message | None
+
+
 # Przed czym powstała Kopia INTERMAX: przed Uporządkowaniem INTERMAX albo przed przywróceniem innej Kopii.
 IntermaxCopyBefore = Literal["ordering", "restore"]
 
@@ -1231,6 +1251,7 @@ ApiOperation = Literal[
     "getRunSetup",
     "startRun",
     "getIntermaxSetup",
+    "getIntermaxDays",
     "startIntermax",
     "getIntermaxCopies",
     "restoreIntermaxCopy",
