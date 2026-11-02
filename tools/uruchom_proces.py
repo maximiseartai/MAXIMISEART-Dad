@@ -60,7 +60,7 @@ from pydantic import BaseModel, ConfigDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from rozliczenia import efenix_browser, efenix_process, efenix_trace, intermax_copies, intermax_process, preparation_process, settlement_process
+from rozliczenia import efenix_browser, efenix_emmett_trace, efenix_process, intermax_copies, intermax_process, preparation_process, settlement_process
 from rozliczenia.centrum import contract, run_view
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.decision import Decision
@@ -233,7 +233,7 @@ def _parser() -> argparse.ArgumentParser:
     pricing.add_argument("--efenix-url", required=True, help="Adres listy zleceń efenix (w testach Atrapy efenix).")
     pricing.add_argument("--metrics", type=Path, default=efenix_process.PROCESS.metrics_path(), help="Plik metryk JSONL.")
     pricing.add_argument(
-        "--slad", dest="trace", type=Path, default=efenix_trace.default_directory(), help="Folder Śladów Wyceny Emmetta."
+        "--slad", dest="trace", type=Path, default=efenix_emmett_trace.default_directory(), help="Folder Śladów Wyceny Emmetta."
     )
     pricing.set_defaults(run=_price)
     return parser

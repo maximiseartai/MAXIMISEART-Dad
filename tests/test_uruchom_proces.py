@@ -503,8 +503,7 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
     assert [phase["state"] for phase in result["progress"]["phases"]] == ["completed"] * 4
     assert "9401" not in json.dumps(result) and "9401" not in metrics.read_text(encoding="utf-8")
     # Ślad Wyceny Emmetta okresu trafia do --slad, bez numerów zleceń.
-    [trace] = (tmp_path / "slad").iterdir()
-    assert (trace.name, "9401" in trace.read_text(encoding="utf-8")) == (f"{source.parent.name}.json", False)
+    assert "9401" not in (tmp_path / "slad" / f"{source.parent.name}.json").read_text(encoding="utf-8")
 
 
 def test_bledne_argumenty_koncza_sie_kodem_1_bez_wyniku_json(tmp_path: Path) -> None:

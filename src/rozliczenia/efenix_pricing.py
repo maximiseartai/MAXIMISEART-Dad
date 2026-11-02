@@ -10,21 +10,24 @@ dokładnie jedno trafienie, status „Do wyceny”, realizator równy ``WYKONAWC
 nic się nie zmienia i proces idzie dalej.
 
 Zlecenie z kwotą w efenix różną od 0 ma już wycenę: proces tylko ją porównuje i jest „gotowe”, gdy każda ilość i kwota
-zgadzają się z plikiem, a w przeciwnym razie to błąd „wycena już jest i się różni”. Wyjątkiem jest wycena, którą proces sam
-zaczął i przerwał Zatrzymaniem w poprzednim Uruchomieniu: zlecenie ze Śladu Wyceny Emmetta (``efenix_trace``) i z datą
-wykonania proces dokańcza jak po Emmetcie, z ilościami Emmetta ze śladu (bez nich z ilościami strony, bo przebieg przerwał
-się przed ich odczytem): sprzeczność Emmetta z plikiem to ostrzeżenie, a ilość na stronie sprzeczna z plikiem to błąd
-„wycena już jest i się różni”, w obu przypadkach bez dopisywania. Ślad mają tylko zlecenia, do których proces sam
-załadował Wycenę Emmetta, więc wyceny zaczętej przez tatę nigdy nie dokańcza. Przy kwocie 0 proces ustawia pustą datę
-wykonania z ``DATA`` i sprawdza ją na ponownie otwartej stronie zlecenia: dzień, którego kalendarz efenix nie przyjął albo
-którego efenix nie zapisał, to błąd zlecenia (``DateRefused``) bez Emmetta i bez ilości. Potem zapisuje w śladzie, że
-ładuje Wycenę Emmetta, ładuje ją i zapisuje w śladzie jej ilości; Wyceny Emmetta, którą ślad zna jako pustą, nie ładuje
-drugi raz. Sprzeczność Emmetta z plikiem to ostrzeżenie bez dopisywania, a w przeciwnym razie proces wpisuje ilości pliku
-w pozycjach pustych u Emmetta i porównuje kwotę końcową, którą odesłał efenix, z ``Kwota`` (AU). Okno efenix (``Efenix``) nie ma działania, które przekazuje zlecenie do akceptacji, anuluje je albo
-zmienia jego status. Strona logowania i strona o innej budowie, także bez pozycji z przypisania kolumn, to Zatrzymanie
-(``LoggedOut``, ``UnexpectedPage``), tak samo zamknięte okno efenix (``WindowClosed``), a Komunikat Zatrzymania mówi,
-czy przed nim proces zmienił już coś w efenix. Zmieniona strona efenix to Zatrzymanie „do Maksa” z częścią strony, której
-zabrakło, bez treści strony.
+zgadzają się z plikiem, a w przeciwnym razie to błąd „wycena już jest i się różni”. Wyjątkiem jest wycena, którą proces
+sam zaczął i której nie skończył, bo przerwało ją Zatrzymanie: zlecenie w stanie „Emmett załadowany” Śladu Wyceny
+Emmetta (``efenix_emmett_trace``) i z datą wykonania proces dokańcza jak po Emmetcie, z ilościami Emmetta ze śladu, gdy
+strona ma tylko ilości, które zostawia po Emmetcie (``as_left_after_emmett``): sprzeczność Emmetta ze śladu z plikiem to
+ostrzeżenie bez dopisywania. Strona z inną ilością, także z usuniętą ilością Emmetta, i strona bez daty wykonania to
+błąd „wycena już jest i się różni” bez zmian. Stan „Emmett załadowany” proces zapisuje dopiero po odczycie Wyceny
+Emmetta ze strony przeładowanej po „Załaduj do zlecenia”, a zlecenie z tym stanem, które skończyło się wynikiem (gotowe,
+ostrzeżenie Emmetta albo błąd), przechodzi w stan „gotowe” śladu, więc wyceny zaczętej przez tatę ani skończonej przez
+proces nigdy nie dokańcza. Przy kwocie 0 proces ustawia pustą datę wykonania z ``DATA`` i sprawdza ją na ponownie
+otwartej stronie zlecenia: dzień, którego kalendarz efenix nie przyjął albo którego efenix nie zapisał, to błąd zlecenia
+(``DateRefused``) bez Emmetta i bez ilości. Potem ładuje Wycenę Emmetta i zapisuje w śladzie jej ilości; pustej Wyceny
+Emmetta zlecenia w stanie „Emmett załadowany” nie ładuje drugi raz. Sprzeczność Emmetta z plikiem to ostrzeżenie bez
+dopisywania, a w przeciwnym razie proces wpisuje ilości pliku w pozycjach pustych u Emmetta i porównuje kwotę końcową,
+którą odesłał efenix, z ``Kwota`` (AU). Okno efenix (``Efenix``) nie ma działania, które przekazuje zlecenie do
+akceptacji, anuluje je albo zmienia jego status. Strona logowania i strona o innej budowie, także bez pozycji z
+przypisania kolumn, to Zatrzymanie (``LoggedOut``, ``UnexpectedPage``), tak samo zamknięte okno efenix
+(``WindowClosed``), a Komunikat Zatrzymania mówi, czy przed nim proces zmienił już coś w efenix. Zmieniona strona efenix
+to Zatrzymanie „do Maksa” z częścią strony, której zabrakło, bez treści strony.
 
 Po ostatnim zleceniu, a także przy Zatrzymaniu w trakcie, ``efenix_marking`` raz zapisuje Plik zbiorczy: komórka ``ADRES``
 każdego gotowego zlecenia dostaje Znacznik efenix, a reszta pliku zostaje bajt w bajt. Gdy zapis się nie udaje (Excel trzyma
@@ -52,12 +55,14 @@ from .domain import ProgressObserver, ProgressPhase
 from .efenix_checks import DateRefused, ListedOrder, OrderProblem, PagePart, date_problem, listing, searched_number
 from .efenix_marking import Refusal, mark_ready
 from .efenix_orders import AmountsNotComputed, CollectiveOrder, MissingColumns, PricingScope, read_scope
+from .efenix_emmett_trace import EmmettTrace
 from .efenix_positions import (
     Conflict,
     NotWholeQuantities,
     OrderFault,
     OtherAmount,
     UnpairedColumns,
+    as_left_after_emmett,
     emmett_conflicts,
     file_quantities,
     missing_positions,
@@ -65,7 +70,6 @@ from .efenix_positions import (
     same_amount,
     to_enter,
 )
-from .efenix_trace import EmmettTrace
 from .message import Message, StopError
 from .phase_runner import PhaseRunner
 from .workbook_files import WorkbookError
@@ -227,7 +231,7 @@ def price_orders(
     """Uzupełnia w efenix wycenę każdego zlecenia z zakresu Pliku zbiorczego ``source`` i oznacza w nim gotowe zlecenia.
 
     Zgłasza ``StopError``, gdy nie można działać bezpiecznie. ``trace``: plik Śladu Wyceny Emmetta okresu
-    (``efenix_trace``). ``clock`` to zegar w sekundach, z którego liczone są czasy etapów.
+    (``efenix_emmett_trace``). ``clock`` to zegar w sekundach, z którego liczone są czasy etapów.
     """
 
     phases = PhaseRunner(observer, clock=clock)
@@ -262,12 +266,12 @@ def price_orders(
 
     def save() -> tuple[OrderResult, ...]:
         results: list[OrderResult] = []
-        loads = EmmettTrace(trace)
+        emmett_trace = EmmettTrace(trace)
         try:
             with _efenix_stops(lambda: False), open_efenix() as efenix:
                 with _efenix_stops(lambda: efenix.sent_change):
                     for order in scope.orders:
-                        results.append(OrderResult(order, _priced(order, efenix, loads)))
+                        results.append(OrderResult(order, _priced(order, efenix, emmett_trace)))
         except StopError:
             _mark(source, scope, results)
             raise
@@ -327,6 +331,12 @@ def _priced(order: CollectiveOrder, efenix: Efenix, trace: EmmettTrace) -> Ready
     if isinstance(searched, OrderProblem):
         return OrderError(searched)
     number, day = searched
+    outcome = _outcome(order, number, day, efenix, trace)
+    trace.finished(number)
+    return outcome
+
+
+def _outcome(order: CollectiveOrder, number: str, day: date, efenix: Efenix, trace: EmmettTrace) -> Ready | OrderError | EmmettWarning:
     file = file_quantities(order)
     if isinstance(file, (UnpairedColumns, NotWholeQuantities)):
         return OrderError(file)
@@ -336,33 +346,36 @@ def _priced(order: CollectiveOrder, efenix: Efenix, trace: EmmettTrace) -> Ready
     opened = _known_positions(efenix.open_order(hit))
     if (problem := date_problem(order, opened.execution_date)) is not None:
         return OrderError(problem)
-    loaded = trace.of(number)
+    emmett = trace.emmett(number)
     if opened.amount != 0:
         differs = priced_differently(file, opened.quantities, opened.amount, order.amount)
         if differs is None:
             return Ready(hit)
-        if loaded is None or opened.execution_date is None:
+        if emmett is None or opened.execution_date is None or not as_left_after_emmett(file, emmett, opened.quantities):
             return OrderError(differs)
-        # Wycena, którą proces sam zaczął: bez ilości Emmetta w śladzie przebieg przerwał się przed ich odczytem, więc
-        # ilości strony to wciąż Wycena Emmetta.
-        if conflicts := emmett_conflicts(file, opened.quantities if loaded.emmett is None else loaded.emmett):
-            return EmmettWarning(conflicts)
-        if emmett_conflicts(file, opened.quantities):
-            return OrderError(differs)
-        return _entered(order, hit, efenix, file, opened)
+        return _after_emmett(order, hit, efenix, file, emmett, opened)
     if opened.execution_date is None:
         if not efenix.set_execution_date(day):
             return OrderError(DateRefused.OUT_OF_RANGE)
         if _known_positions(efenix.open_order(hit)).execution_date != day:
             return OrderError(DateRefused.NOT_SAVED)
     # Pusta Wycena Emmetta ze śladu zostawia kwotę 0, więc jej ponowne załadowanie niczego by nie zmieniło.
-    if loaded is None or loaded.emmett is None or any(loaded.emmett.values()):
-        trace.loading(number)
+    if emmett is None or any(emmett.values()):
         opened = _known_positions(efenix.load_emmett())
-        trace.loaded(number, opened.quantities)
-    if conflicts := emmett_conflicts(file, opened.quantities):
+        emmett = opened.quantities
+        trace.loaded(number, emmett)
+    return _after_emmett(order, hit, efenix, file, emmett, opened)
+
+
+def _after_emmett(
+    order: CollectiveOrder, hit: ListedOrder, efenix: Efenix, file: Mapping[str, int], emmett: Mapping[str, int], on_page: OrderPricing
+) -> Ready | OrderError | EmmettWarning:
+    """Wycena po Wycenie Emmetta ``emmett``: ostrzeżenie, gdy Emmett przeczy plikowi, a inaczej ilości pliku dopisane na
+    stronie ``on_page``."""
+
+    if conflicts := emmett_conflicts(file, emmett):
         return EmmettWarning(conflicts)
-    return _entered(order, hit, efenix, file, opened)
+    return _entered(order, hit, efenix, file, on_page)
 
 
 def _entered(

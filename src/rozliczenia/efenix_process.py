@@ -4,7 +4,8 @@ Opis procesu (``PROCESS``) jest wspólny dla każdego rozmówcy, więc liczby, K
 Okno efenix daje rozmówca (``EfenixInputs.open_efenix``): Skrypt dla maszyn otwiera Chromium Playwrighta
 (``efenix_browser.chromium``), a testy okno na Atrapie efenix. Proces pracuje w oknie w tempie ludzkim (``efenix_pace``),
 chyba że rozmówca je wyłączy (``EfenixInputs.pace`` równe ``None``), jak testy i Skrypt dla maszyn na Atrapie efenix.
-Ślad Wyceny Emmetta okresu (``efenix_trace``) leży w ``EfenixInputs.trace_directory`` w pliku ``<okres>.json``.
+Ślad Wyceny Emmetta okresu (``efenix_emmett_trace``) leży w ``EfenixInputs.trace_directory`` w pliku ``<okres>.json``, obok
+klucza, pod którym są w nim zlecenia.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import TOOL_ROOT, efenix_pricing, efenix_trace
+from . import TOOL_ROOT, efenix_emmett_trace, efenix_pricing
 from .efenix_pace import Pace, paced
 from . import efenix_messages as messages
 from .decision import Conversation
@@ -43,7 +44,7 @@ class EfenixInputs:
     source: Path
     open_efenix: OpenEfenix
     pace: Pace | None = Pace()
-    trace_directory: Path = field(default_factory=efenix_trace.default_directory)
+    trace_directory: Path = field(default_factory=efenix_emmett_trace.default_directory)
 
     @property
     def period(self) -> str:
