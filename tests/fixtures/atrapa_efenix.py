@@ -39,8 +39,9 @@ i kiedy.
 ``answer_delay_s`` opóźnia każdą odpowiedź na szukanie, więc szukanie, które lista wysyła sama, trwa jeszcze, gdy
 narzędzie szuka swojego numeru. ``changed`` psuje budowę jednej części strony tak, jak mógłby ją zmienić autor efenix
 (``Changed``, a w części, której Wycena w efenix w testach nie używa, a sprawdza narzędzie zgodności, ``Unread``).
-``outage_after`` w trakcie przebiegu odcina efenix (``Outage``: zerwane połączenie, także w połowie odpowiedzi, albo efenix
-wolniejszy niż okno), aż test przywróci połączenie (``reconnect``), jak sieć taty, która na chwilę znika.
+``outage_from`` w trakcie przebiegu odcina efenix od żądania o danym numerze (``Outage``: zerwane połączenie, także w połowie
+odpowiedzi, odpowiedź, która staje w połowie, albo efenix wolniejszy niż okno), aż test przywróci połączenie
+(``reconnect``), jak sieć taty, która na chwilę znika.
 """
 
 from __future__ import annotations
@@ -125,6 +126,10 @@ class Outage(enum.Enum):
     CUT = "zrywa połączenie każdego żądania bez odpowiedzi i bez wykonania żądania, jak sieć, która zniknęła"
     SLOW = "wykonuje każde żądanie, a odpowiedź wysyła dopiero na końcu bloku, jak efenix wolniejszy niż czas okna"
     TORN = "wykonuje każde żądanie i zaczyna odpowiedź, ale zrywa połączenie w połowie jej treści, jak sieć, która zniknęła w trakcie pliku"
+    STALLED = (
+        "wykonuje każde żądanie i zaczyna odpowiedź, a po połowie jej treści milknie do końca bloku, jak sieć, która stanęła w"
+        " trakcie pliku bez zerwania połączenia"
+    )
 
 
 @dataclass(frozen=True)
@@ -227,8 +232,8 @@ class AtrapaEfenix:
             self.logged_in = True
 
     def reconnect(self) -> None:
-        """Połączenie z efenix wróciło: Atrapa znów odpowiada na każde żądanie (odpowiedzi wstrzymane przez ``SLOW``
-        dalej czekają na koniec bloku)."""
+        """Połączenie z efenix wróciło: Atrapa znów odpowiada na każde żądanie (odpowiedzi wstrzymane przez ``SLOW`` i
+        ``STALLED`` dalej czekają na koniec bloku)."""
 
         with self._lock:
             self.outage = None
@@ -286,16 +291,16 @@ def atrapa_efenix(
     refuse_dates: bool = False,
     clock: Callable[[], float] = time.monotonic,
     cookie_session: bool = False,
-    outage_after: tuple[Outage, str, int] | None = None,
+    outage_from: tuple[Outage, int] | None = None,
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
     ``expire_after``: ścieżka i liczba jej żądań narzędzia (bez szukania, które lista wysyła sama), po których sesja
     wygasa raz, jak przy wylogowaniu w trakcie przebiegu; po ponownym zalogowaniu już nie wygasa. ``today``: dzisiejszy
     dzień kalendarza daty wykonania. ``refuse_dates``: serwer odpowiada na zapis daty wykonania bez zapisu. ``clock``:
-    zegar w sekundach, którego chwilę dostaje każde żądanie. ``outage_after``: rodzaj odcięcia, ścieżka i liczba jej
-    żądań narzędzia jak w ``expire_after``, po których efenix jest odcięty raz, od tego żądania do ``reconnect``. Atrapa pracuje na kopii ``orders``, więc zlecenia testu
-    zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie.
+    zegar w sekundach, którego chwilę dostaje każde żądanie. ``outage_from``: rodzaj odcięcia i numer żądania (od 0, każde
+    żądanie po kolei, jak w ``requests``), od którego efenix jest odcięty raz, do ``reconnect``. Atrapa pracuje na kopii
+    ``orders``, więc zlecenia testu zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie.
     """
 
     atrapa = AtrapaEfenix(copy.deepcopy(list(orders)))
@@ -311,9 +316,11 @@ def atrapa_efenix(
         # odpowiedź ma ``Content-Length``.
         protocol_version = "HTTP/1.1"
         # Odpowiedź żądania, które Atrapa wykonała, gdy efenix był wolny (``Outage.SLOW``), czeka na koniec bloku, a gdy
-        # sieć zrywała odpowiedzi (``Outage.TORN``), urywa się w połowie treści (przekierowanie bez treści przychodzi całe).
+        # sieć zrywała odpowiedzi (``Outage.TORN``) albo stawała (``Outage.STALLED``), urywa się albo staje w połowie treści
+        # (przekierowanie bez treści przychodzi całe).
         _late = False
         _torn = False
+        _stalled = False
 
         def handle(self) -> None:
             try:
@@ -345,10 +352,9 @@ def atrapa_efenix(
                     if sum(request.path == path and not request.by_list for request in atrapa.requests) > expire_after[1]:
                         atrapa.logged_in = False
                         expired.set()
-                if outage_after is not None and path == outage_after[1] and not cut_off.is_set():
-                    if sum(request.path == path and not request.by_list for request in atrapa.requests) > outage_after[2]:
-                        atrapa.outage = outage_after[0]
-                        cut_off.set()
+                if outage_from is not None and len(atrapa.requests) > outage_from[1] and not cut_off.is_set():
+                    atrapa.outage = outage_from[0]
+                    cut_off.set()
                 outage = atrapa.outage
                 logged_in = atrapa.logged_in and (not cookie_session or _has_session_cookie(self.headers.get("Cookie", "")))
                 orders = copy.deepcopy(atrapa.orders)
@@ -357,6 +363,7 @@ def atrapa_efenix(
                 return
             self._late = outage is Outage.SLOW
             self._torn = outage is Outage.TORN
+            self._stalled = outage is Outage.STALLED
             if path == LOGIN_ACTION and method == "POST":
                 with atrapa._lock:
                     atrapa.logged_in = True
@@ -420,10 +427,14 @@ def atrapa_efenix(
             self.send_header("Content-Type", f"{content_type}; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            if self._torn:
+            if self._torn or self._stalled:
                 self.wfile.write(body[: len(body) // 2])
                 self.wfile.flush()
-                self._cut()
+                if self._stalled:
+                    closing.wait()
+                    self.close_connection = True
+                else:
+                    self._cut()
                 return
             self.wfile.write(body)
 
