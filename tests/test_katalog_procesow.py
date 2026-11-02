@@ -18,7 +18,7 @@ from rozliczenia.centrum import contract
 from rozliczenia.centrum.catalog import CATALOG, PeriodProcessDeclaration, ProcessDeclaration
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.run_logs import RunLog, summary_markdown
-from tests.fixtures.centrum import centrum
+from tests.fixtures.centrum import centrum, finished_view
 from tests.fixtures.centrum_intermax import ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum, run_to_end, settling_centrum
 from tests.fixtures.preparation import PERIOD
@@ -51,6 +51,7 @@ def _intermax_setup(client: TestClient) -> tuple[str | None, Any]:
 _SETUP_AND_START: dict[contract.ProcessKey, Callable[[TestClient], tuple[str | None, Any]]] = {
     "preparation": _period_setup("preparation"),
     "settlement": _period_setup("settlement"),
+    "efenix": _period_setup("efenix"),
     "intermax": _intermax_setup,
 }
 
@@ -80,6 +81,13 @@ def _stopped_settlement(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
     return settling.client, run_to_end(settling, dry_run=True)
 
 
+def _stopped_efenix(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
+    settling = settling_centrum(tmp_path)
+    settling.engines.fail_engine = True
+    assert settling.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "dry_run": False}).status_code == 200
+    return settling.client, finished_view(settling.client)
+
+
 def _stopped_intermax(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
     ordering = ordering_centrum(tmp_path)
     ordering.engines.fail_summary = True
@@ -90,6 +98,7 @@ def _stopped_intermax(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
 _STOPPED: dict[contract.ProcessKey, Callable[[Path], tuple[TestClient, dict[str, Any]]]] = {
     "preparation": _stopped_preparation,
     "settlement": _stopped_settlement,
+    "efenix": _stopped_efenix,
     "intermax": _stopped_intermax,
 }
 

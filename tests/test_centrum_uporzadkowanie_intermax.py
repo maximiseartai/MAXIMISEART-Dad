@@ -38,7 +38,7 @@ SUMMARY: dict[str, Any] = {
         {"label": "Zlecenia", "value": 6, "unit": "count"},
         {"label": "Wykonawcy", "value": 3, "unit": "count"},
     ],
-    "counts": {"title": "Uporządkowany dzień", "counts": [{"label": "pon 26.10.2026", "count": 6}]},
+    "counts": {"title": "Uporządkowany dzień", "counts": [{"label": "pon 26.10.2026", "count": 6}], "zero_warns": True},
     "files": [],
     "worker_settlements": None,
     "intermax_copy": COPY,
@@ -352,6 +352,7 @@ def test_historia_metryki_i_karta_maja_uporzadkowanie_intermax(tmp_path: Path) -
         ("preparation", "DRY-RUN"),
         ("settlement", "RUN"),
         ("settlement", "DRY-RUN"),
+        ("efenix", "RUN"),
         ("intermax", "RUN"),
     ]
     assert card["state"] == "restored"

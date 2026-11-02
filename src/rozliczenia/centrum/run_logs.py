@@ -6,7 +6,9 @@ wywołań Zatrzymania, a z ostatniego snapshotu projekcji postępu (``EndedRun.s
 pracownika i liczba problemów. Środowisko to system, Python i pliki procesu z Diagnozy z rozmiarem i atrybutem OneDrive.
 Z podsumowania silnika Przebiegu rozliczeń jest też liczba wyczyszczonych Ilości tylko dla INEA, której karta nie
 pokazuje (ADR 0018), a z podsumowania Uporządkowania INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019):
-wiersze i operatorzy, bez innej treści wierszy.
+wiersze i operatorzy, bez innej treści wierszy. Z podsumowania Wyceny w efenix jest ślad każdego zlecenia (``LoggedOrder``):
+wiersz Pliku zbiorczego, wynik z kodem Komunikatu, ilości z pliku po kodach pozycji, ``Kwota`` (AU) i działania okna efenix
+z czasami, ilościami Emmetta, wpisanymi i kwotami, bez numeru zlecenia, adresu, loginu Wykonawcy i treści stron efenix.
 Logi nie mają treści komórek: żadne pole nie niesie Wiersza danych, a pliki mają tylko nazwę, nigdy pełną ścieżkę.
 Skrypt dla maszyn nie ma działań po wyniku, więc Logów nie tworzy.
 
@@ -30,8 +32,9 @@ w której trakcie skończyło się następne Uruchomienie, nie dopisuje się nig
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Sequence
-from datetime import datetime, timezone
+from collections.abc import Callable, Mapping, Sequence
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from functools import cache
 from pathlib import Path
 import platform
@@ -53,6 +56,9 @@ from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.domain import SettlementSummary, WorkerStatus
+from rozliczenia.efenix_pricing import EmmettWarning, OrderError, OrderResult, PricingSummary, Ready
+from rozliczenia.efenix_positions import file_quantities
+from rozliczenia.efenix_trace import Action, TraceStep
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.message import Message
 from rozliczenia.period_folder import PeriodFolderInaccessible
@@ -193,6 +199,75 @@ class LoggedEntries(_Record):
         )
 
 
+class LoggedStep(_Record):
+    """Działanie okna efenix przy zleceniu (``efenix_trace.TraceStep``): czas i to, co odpowiedział efenix."""
+
+    action: Action
+    duration_ms: int
+    found: int | None
+    execution_date: date | None
+    amount: Decimal | None
+    quantities: dict[str, int] | None
+    position: str | None
+    quantity: int | None
+    accepted: bool | None
+
+    @classmethod
+    def of(cls, step: TraceStep) -> LoggedStep:
+        return cls(
+            action=step.action,
+            duration_ms=step.duration_ms,
+            found=step.found,
+            execution_date=step.execution_date,
+            amount=step.amount,
+            quantities=None if step.quantities is None else dict(step.quantities),
+            position=step.position,
+            quantity=step.quantity,
+            accepted=step.accepted,
+        )
+
+
+class LoggedOrder(_Record):
+    """Ślad zlecenia Wyceny w efenix: wiersz Pliku zbiorczego, wynik z kodem Komunikatu (``None`` przy gotowym),
+    ilości z pliku po kodach pozycji (``None``, gdy nie dało się ich przepisać), ``Kwota`` (AU) i działania okna."""
+
+    row: int
+    outcome: Literal["gotowe", "błąd", "ostrzeżenie Emmetta"]
+    code: str | None
+    file: dict[str, int] | None
+    file_amount: Decimal
+    steps: list[LoggedStep]
+
+    @classmethod
+    def all_of(cls, summary: PricingSummary) -> list[LoggedOrder]:
+        """Ślad każdego zlecenia po kolei; kody Komunikatów idą w kolejności zleceń, które zostały tacie."""
+
+        codes = iter([message.code for _result, message in summary.left_for_tata])
+        return [
+            cls._of(result, None if isinstance(result.outcome, Ready) else next(codes)) for result in summary.results
+        ]
+
+    @classmethod
+    def _of(cls, result: OrderResult, code: str | None) -> LoggedOrder:
+        file = file_quantities(result.order)
+        outcome: Literal["gotowe", "błąd", "ostrzeżenie Emmetta"]
+        match result.outcome:
+            case Ready():
+                outcome = "gotowe"
+            case EmmettWarning():
+                outcome = "ostrzeżenie Emmetta"
+            case OrderError():
+                outcome = "błąd"
+        return cls(
+            row=result.order.row,
+            outcome=outcome,
+            code=code,
+            file=dict(file) if isinstance(file, Mapping) else None,
+            file_amount=result.order.amount,
+            steps=[LoggedStep.of(step) for step in result.steps],
+        )
+
+
 class Tool(_Record):
     wydanie: str | None
     """Numer Wydania (ADR 0014), którego tag w klonie wskazuje ``commit`` (``0.10.0``); ``None``, gdy nie da się go
@@ -231,6 +306,9 @@ class RunLog(_Record):
     i pliki sprzed tego pola."""
     intermax_entries: LoggedEntries | None = None
     """Wpisy urządzenia i czynności INTERMAX (ADR 0019). ``None``: inne procesy, Uporządkowanie bez podsumowania
+    i pliki sprzed tego pola."""
+    efenix_orders: list[LoggedOrder] | None = None
+    """Ślad każdego zlecenia Wyceny w efenix po kolei. ``None``: inne procesy, Wycena w efenix bez podsumowania
     i pliki sprzed tego pola."""
     environment: Environment
     trace: CallTrace | None
@@ -275,6 +353,7 @@ class RunLog(_Record):
             if isinstance(engine_summary, SettlementSummary)
             else None,
             intermax_entries=LoggedEntries.of(engine_summary) if isinstance(engine_summary, OrderingSummary) else None,
+            efenix_orders=LoggedOrder.all_of(engine_summary) if isinstance(engine_summary, PricingSummary) else None,
             environment=environment,
             trace=None if stopped is None else stopped.stop.trace,
             diagnosis=None,

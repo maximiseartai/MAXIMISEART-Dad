@@ -126,10 +126,14 @@ export const zCount = z.object({
 
 /**
  * CountGroup
+ *
+ * Liczby z etykietami pod tytułem; ``zero_warns``: zero to sygnał dla taty (dzień bez zleceń), a nie zwykła liczba
+ * (zlecenia pominięte przez Wycenę w efenix).
  */
 export const zCountGroup = z.object({
     title: z.string(),
-    counts: z.array(zCount)
+    counts: z.array(zCount),
+    zero_warns: z.boolean().optional().default(true)
 });
 
 /**
@@ -426,6 +430,31 @@ export const zOpened = z.object({
 });
 
 /**
+ * OrderNote
+ *
+ * Zlecenie Wyceny w efenix, które zostało tacie: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i zdanie.
+ *
+ * Numer zlecenia (``None``: pusty ``NUMER ZL.``) i Wykonawcę widzi tylko tata na swoim komputerze: Logi Uruchomienia ich
+ * nie mają.
+ */
+export const zOrderNote = z.object({
+    row: z.int(),
+    order: z.string().nullable(),
+    worker: z.string(),
+    what: z.string()
+});
+
+/**
+ * OrderNotes
+ *
+ * Błędy zleceń i ostrzeżenia Emmetta Wyceny w efenix na karcie bieżącego Uruchomienia.
+ */
+export const zOrderNotes = z.object({
+    errors: z.array(zOrderNote),
+    warnings: z.array(zOrderNote)
+});
+
+/**
  * PeriodChoice
  *
  * Okres do wyboru przy starcie, ze Statusem okresu wyliczonym z plików.
@@ -555,6 +584,7 @@ export const zProcessRun = z.object({
     process: z.enum([
         'preparation',
         'settlement',
+        'efenix',
         'intermax'
     ]),
     process_label: z.string(),
@@ -579,15 +609,20 @@ export const zProcessRun = z.object({
  * Co tata wybiera przed Uruchomieniem procesu; ``blocker`` mówi, czego jeszcze brakuje w ustawieniach.
  *
  * ``reminder``, ``confirms_readiness`` i ``preview_hint`` deklaruje proces: przypomnienie przed
- * uruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu”.
+ * uruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma
+ * podglądu bez zapisu, jak Wycena w efenix).
  */
 export const zProcessSetup = z.object({
-    process: z.enum(['preparation', 'settlement']),
+    process: z.enum([
+        'preparation',
+        'settlement',
+        'efenix'
+    ]),
     title: z.string(),
     creates: z.string(),
     reminder: z.string(),
     confirms_readiness: z.boolean(),
-    preview_hint: z.string(),
+    preview_hint: z.string().nullable(),
     periods: z.array(zPeriodChoice),
     preselected_period: z.string(),
     blocker: z.string().nullable()
@@ -645,16 +680,33 @@ export const zBoardReady = z.object({
 });
 
 /**
+ * ProgressStep
+ *
+ * Krok Zapisywania procesu bez Szablonów pracowników (Wycena w efenix): co trwa, u którego Wykonawcy i ile z ilu.
+ *
+ * ``total`` 0: krok bez liczenia (logowanie, Znaczniki efenix), który karta pokazuje jako trwający.
+ */
+export const zProgressStep = z.object({
+    label: z.string(),
+    worker: z.string().nullable(),
+    done: z.int(),
+    total: z.int()
+});
+
+/**
  * Progress
  *
  * Wyświetlany podzbiór snapshotu jedynej projekcji postępu (ADR 0002): etapy, Szablony pracowników i liczby.
+ *
+ * ``step``: ostatni krok Zapisywania procesu bez Szablonów pracowników; ``None`` w innych procesach i przed nim.
  */
 export const zProgress = z.object({
     phases: z.array(zPhaseProgress),
     template_total: z.int(),
     templates_completed: z.int(),
     current_worker: z.string().nullable(),
-    figures: z.array(zFigure)
+    figures: z.array(zFigure),
+    step: zProgressStep.nullish()
 });
 
 /**
@@ -821,6 +873,7 @@ export const zModeStatistics = z.object({
     process: z.enum([
         'preparation',
         'settlement',
+        'efenix',
         'intermax'
     ]),
     mode: z.enum(['RUN', 'DRY-RUN']),
@@ -953,6 +1006,7 @@ export const zRunInfo = z.object({
     process: z.enum([
         'preparation',
         'settlement',
+        'efenix',
         'intermax'
     ]),
     title: z.string(),
@@ -995,7 +1049,11 @@ export const zRunInterrupted = z.object({
  * Start Uruchomienia procesu; pliki wejściowe wylicza serwer z ustawień i okresu.
  */
 export const zRunRequest = z.object({
-    process: z.enum(['preparation', 'settlement']),
+    process: z.enum([
+        'preparation',
+        'settlement',
+        'efenix'
+    ]),
     period: z.string(),
     dry_run: z.boolean()
 });
@@ -1343,7 +1401,9 @@ export const zLoggedOutcome = z.object({
  * taty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).
  * ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
  * Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
- * Zatrzymania, a karta proponuje go otworzyć (``None``: żaden).
+ * Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
+ * zostały tacie, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w trzech częściach
+ * (``None``: inny proces albo wynik bez podsumowania).
  */
 export const zRunOutcome = z.object({
     result: z.enum([
@@ -1386,7 +1446,8 @@ export const zRunOutcome = z.object({
         zReportNotQueued
     ]).nullable(),
     files_unchanged: z.boolean(),
-    opens: z.enum(['order_register', 'collective_file']).nullable()
+    opens: z.enum(['order_register', 'collective_file']).nullable(),
+    order_notes: zOrderNotes.nullish()
 });
 
 /**

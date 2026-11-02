@@ -203,6 +203,9 @@ export type Count = {
 
 /**
  * CountGroup
+ *
+ * Liczby z etykietami pod tytułem; ``zero_warns``: zero to sygnał dla taty (dzień bez zleceń), a nie zwykła liczba
+ * (zlecenia pominięte przez Wycenę w efenix).
  */
 export type CountGroup = {
     /**
@@ -213,6 +216,10 @@ export type CountGroup = {
      * Counts
      */
     counts: Array<Count>;
+    /**
+     * Zero Warns
+     */
+    zero_warns?: boolean;
 };
 
 /**
@@ -832,7 +839,7 @@ export type ModeStatistics = {
     /**
      * Process
      */
-    process: 'preparation' | 'settlement' | 'intermax';
+    process: 'preparation' | 'settlement' | 'efenix' | 'intermax';
     /**
      * Mode
      */
@@ -907,6 +914,49 @@ export type Opened = {
      * Name
      */
     name: string;
+};
+
+/**
+ * OrderNote
+ *
+ * Zlecenie Wyceny w efenix, które zostało tacie: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i zdanie.
+ *
+ * Numer zlecenia (``None``: pusty ``NUMER ZL.``) i Wykonawcę widzi tylko tata na swoim komputerze: Logi Uruchomienia ich
+ * nie mają.
+ */
+export type OrderNote = {
+    /**
+     * Row
+     */
+    row: number;
+    /**
+     * Order
+     */
+    order: string | null;
+    /**
+     * Worker
+     */
+    worker: string;
+    /**
+     * What
+     */
+    what: string;
+};
+
+/**
+ * OrderNotes
+ *
+ * Błędy zleceń i ostrzeżenia Emmetta Wyceny w efenix na karcie bieżącego Uruchomienia.
+ */
+export type OrderNotes = {
+    /**
+     * Errors
+     */
+    errors: Array<OrderNote>;
+    /**
+     * Warnings
+     */
+    warnings: Array<OrderNote>;
 };
 
 /**
@@ -1181,7 +1231,7 @@ export type ProcessRun = {
     /**
      * Process
      */
-    process: 'preparation' | 'settlement' | 'intermax';
+    process: 'preparation' | 'settlement' | 'efenix' | 'intermax';
     /**
      * Process Label
      */
@@ -1230,13 +1280,14 @@ export type ProcessRun = {
  * Co tata wybiera przed Uruchomieniem procesu; ``blocker`` mówi, czego jeszcze brakuje w ustawieniach.
  *
  * ``reminder``, ``confirms_readiness`` i ``preview_hint`` deklaruje proces: przypomnienie przed
- * uruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu”.
+ * uruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma
+ * podglądu bez zapisu, jak Wycena w efenix).
  */
 export type ProcessSetup = {
     /**
      * Process
      */
-    process: 'preparation' | 'settlement';
+    process: 'preparation' | 'settlement' | 'efenix';
     /**
      * Title
      */
@@ -1256,7 +1307,7 @@ export type ProcessSetup = {
     /**
      * Preview Hint
      */
-    preview_hint: string;
+    preview_hint: string | null;
     /**
      * Periods
      */
@@ -1299,6 +1350,8 @@ export type ProcessStep = {
  * Progress
  *
  * Wyświetlany podzbiór snapshotu jedynej projekcji postępu (ADR 0002): etapy, Szablony pracowników i liczby.
+ *
+ * ``step``: ostatni krok Zapisywania procesu bez Szablonów pracowników; ``None`` w innych procesach i przed nim.
  */
 export type Progress = {
     /**
@@ -1321,6 +1374,33 @@ export type Progress = {
      * Figures
      */
     figures: Array<Figure>;
+    step?: ProgressStep | null;
+};
+
+/**
+ * ProgressStep
+ *
+ * Krok Zapisywania procesu bez Szablonów pracowników (Wycena w efenix): co trwa, u którego Wykonawcy i ile z ilu.
+ *
+ * ``total`` 0: krok bez liczenia (logowanie, Znaczniki efenix), który karta pokazuje jako trwający.
+ */
+export type ProgressStep = {
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Worker
+     */
+    worker: string | null;
+    /**
+     * Done
+     */
+    done: number;
+    /**
+     * Total
+     */
+    total: number;
 };
 
 /**
@@ -1726,7 +1806,7 @@ export type RunInfo = {
     /**
      * Process
      */
-    process: 'preparation' | 'settlement' | 'intermax';
+    process: 'preparation' | 'settlement' | 'efenix' | 'intermax';
     /**
      * Title
      */
@@ -1779,7 +1859,9 @@ export type RunInterrupted = {
  * taty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).
  * ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
  * Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
- * Zatrzymania, a karta proponuje go otworzyć (``None``: żaden).
+ * Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
+ * zostały tacie, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w trzech częściach
+ * (``None``: inny proces albo wynik bez podsumowania).
  */
 export type RunOutcome = {
     /**
@@ -1843,6 +1925,7 @@ export type RunOutcome = {
      * Opens
      */
     opens: 'order_register' | 'collective_file' | null;
+    order_notes?: OrderNotes | null;
 };
 
 /**
@@ -1854,7 +1937,7 @@ export type RunRequest = {
     /**
      * Process
      */
-    process: 'preparation' | 'settlement';
+    process: 'preparation' | 'settlement' | 'efenix';
     /**
      * Period
      */

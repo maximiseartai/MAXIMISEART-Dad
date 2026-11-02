@@ -45,6 +45,7 @@ from drive import (
     ustawienia,
     uwaga_taty,
     uzupelnienie,
+    wycena_w_efenix,
     wydajnosc,
     zgloszenie,
 )
@@ -96,6 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         "pomiar-u-taty": pomiar_u_taty.drive_measurement,
         "uporzadkowanie-intermax": uporzadkowanie_intermax.drive_intermax_ordering,
         "kopie-intermax": kopie_intermax.drive_intermax_copies,
+        "wycena-w-efenix": wycena_w_efenix.drive_efenix_pricing,
         "start-i-zamykanie": start_i_zamykanie.drive_start_and_close,
         "wydajnosc": functools.partial(
             wydajnosc.drive_performance, baseline_path=args.baseline.resolve(), repeats=args.powtorzenia

@@ -98,12 +98,22 @@ because every known problem has its own Komunikat.
 Once the port is bound, ``<root>/server.json`` records this process and URL.
 The Centrum log goes to ``<root>/logs/centrum-rozliczen.log``, and the button
 „Zamknij Centrum rozliczeń” stops this process the way it stops Dad's.
+
+Wycena w efenix never reaches efenix.pl (ADR 0024): this script serves the Atrapa efenix of the tests
+(``tests/fixtures/atrapa_efenix.py``) on a free local port for as long as Centrum runs, writes its address to
+``<root>/efenix/adres.txt``, and gives Centrum an efenix window in Playwright's headless Chromium with its profile in
+``<root>/przegladarka-efenix``. The Atrapa holds ``EFENIX_ORDERS`` (made-up numbers, addresses and logins), starts
+logged out, so the window waits for Dad's login, and answers each search after ``EFENIX_SEARCH_DELAY_S``, so the
+live progress can be seen; a form posted to its ``page_login.php`` logs in. At its first start for a run root the
+script also writes the Plik zbiorczy of those orders, with the Kwota (AU) Excel computed, to
+``<root>/efenix/08_14_09_2026/`` (outside the folder okresów, so the drive puts it in place when it needs it).
 """
 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from datetime import date, datetime
 from functools import partial
@@ -117,11 +127,13 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from rozliczenia import intermax_process, preparation_process, settlement_process
+from rozliczenia import efenix_process, intermax_process, preparation_process, settlement_process
 from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import ConfigurationFiles
+from rozliczenia.centrum.efenix_run import EfenixWindow
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.report_box import (
@@ -150,6 +162,17 @@ from rozliczenia.settlement_period import SettlementPeriod
 from rozliczenia.template_file import Route, TemplateFile
 from rozliczenia.workbook_files import DataRow, RegisterRow
 from skrypt_skilla import Parser
+from tests.fixtures.atrapa_efenix import amount_of, atrapa_efenix
+from tests.fixtures.efenix import Order, write_collective_file
+
+# Wycena w efenix: rows 18–20 of the Plik zbiorczy, one per Wykonawca: ready after the Wycena Emmetta and the quantity
+# from the file, unknown to efenix, and an Emmett whose quantity differs from the file.
+EFENIX_ORDERS = (
+    Order("#QX9001", cells={"O": 1, "T": 2}, amount=float(amount_of({"012": 1, "019": 2})), emmett={"012": 1}),
+    Order("#QX9002", worker="beata.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
+    Order("#QX9003", worker="celina.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})), emmett={"012": 2}),
+)
+EFENIX_SEARCH_DELAY_S = 1.0
 
 
 class ScriptedPlatform:
@@ -382,11 +405,30 @@ def _register_failing_on_hook(root: Path) -> Readers:
     return replace(FILE_READERS, register=register)
 
 
+@contextmanager
+def _efenix_window(root: Path) -> Iterator[EfenixWindow]:
+    """Centrum's efenix window on the Atrapa efenix that serves ``EFENIX_ORDERS`` while Centrum runs (module doc)."""
+
+    directory = root / "efenix"
+    if not directory.exists():
+        write_collective_file(directory, EFENIX_ORDERS)
+    known = [order.in_efenix(f"90{index}") for index, order in enumerate(EFENIX_ORDERS) if order.number != "#QX9002"]
+    with atrapa_efenix(known, answer_delay_s=EFENIX_SEARCH_DELAY_S) as atrapa:
+        atrapa.expire_session()
+        (directory / "adres.txt").write_text(atrapa.url, encoding="utf-8")
+        yield EfenixWindow(atrapa.url, root / "przegladarka-efenix", channel=None, headless=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = Parser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_root("Run root created by create_centrum_fixture.py.")
     parser.add_argument("--port", type=int, required=True, help="Free port on 127.0.0.1.")
     args = parser.parse_args(argv)
+    with ExitStack() as stack:
+        return _serve(args, stack)
+
+
+def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
     root = args.root
     fixture = json.loads((root / "fixture.json").read_text(encoding="utf-8"))
     today = date.fromisoformat(fixture["today"])
@@ -394,6 +436,7 @@ def main(argv: list[str] | None = None) -> int:
     processes = Processes(
         preparation=replace(preparation_process.PROCESS, metrics_path=lambda: Path(metrics["preparation"])),
         settlement=replace(settlement_process.PROCESS, metrics_path=lambda: Path(metrics["settlement"])),
+        efenix=replace(efenix_process.PROCESS, metrics_path=lambda: root / ".wycena-efenix-metrics.jsonl"),
         intermax=replace(intermax_process.PROCESS, metrics_path=lambda: Path(metrics["intermax"])),
     )
     configuration = {name: Path(path) for name, path in fixture["configuration"].items()}
@@ -401,6 +444,7 @@ def main(argv: list[str] | None = None) -> int:
     log = CentrumLog(root / "logs" / "centrum-rozliczen.log")
     shutdown = Shutdown(log)
     _pace_worker_templates(root, configuration["worker_template"])
+    efenix = stack.enter_context(_efenix_window(root))
     # Pip never reaches PyPI from a verification run.
     os.environ["PIP_NO_INDEX"] = "1"
     app = create_app(
@@ -421,6 +465,7 @@ def main(argv: list[str] | None = None) -> int:
         readers=_register_failing_on_hook(root),
         intermax_copies=Path(fixture["intermax"]["copies"]),
         now=lambda: datetime.combine(today, datetime.now().astimezone().timetz()),
+        efenix_window=efenix,
     )
 
     def record_bound_server(url: str) -> None:

@@ -46,9 +46,12 @@ SHOWN = {
 }
 # Pola, których plik nie pokazuje: czas Uruchomienia widać tylko na stronie Metryki, zapisu metryk nie ma w kontrakcie
 # Centrum, czas etapu zmienia się między przebiegami, a jednostką liczby karta tylko formatuje wartość (czas ma w
-# pliku maskę <CZAS>).
+# pliku maskę <CZAS>). Krok Zapisywania ma tylko Wycena w efenix, która nie ma tu scenariusza (Atrapa efenix potrzebuje
+# przeglądarki; jej kroki sprawdza ``tests/test_wycena_efenix.py``), a to, czy zero kafelka ostrzega, jest tylko wyglądem.
 HIDDEN = {
     "": {"total_duration_ms", "metrics_saved"},
+    "progress": {"step"},
+    "summary.counts": {"zero_warns"},
     "progress.phases[]": {"duration_ms"},
     "progress.figures[]": {"unit"},
     "summary.figures[]": {"unit"},

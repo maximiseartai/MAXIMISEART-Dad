@@ -14,7 +14,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Final
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum import contract, run_view
 from rozliczenia.centrum.catalog import SETTLEMENT
 from rozliczenia.centrum.configuration import ConfigurationFiles, InputWorkbook, open_in_excel
 from rozliczenia.centrum.metrics import previewed_periods
@@ -28,7 +28,7 @@ from rozliczenia.input_checks import Readers
 from rozliczenia.settlement_process import SettlementInputs
 from rozliczenia.telemetry import MetricsStore
 
-_VIEW: Final = SETTLEMENT.view
+_VIEW: Final = run_view.SETTLEMENT
 _ELIGIBLE: Final[PeriodStatus] = "collective_file_prepared"
 
 

@@ -18,6 +18,7 @@ from typing import Any, Protocol, TypeVar
 from fastapi.testclient import TestClient
 
 from rozliczenia.centrum.app import create_app
+from rozliczenia.centrum.efenix_run import EfenixWindow
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.processes import Processes
@@ -26,7 +27,7 @@ from rozliczenia.centrum.restart_guardian import Restart
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness
 from rozliczenia.centrum.tool_update import ToolClone, find_git
-from rozliczenia.decision import Conversation
+from rozliczenia.decision import EngineConversation
 from rozliczenia.domain import ProgressObserver
 from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.process_run import Finished, Process, ProcessInputs
@@ -74,11 +75,12 @@ class Engines:
         return Processes(
             preparation=self._steered(real.preparation),
             settlement=self._steered(real.settlement),
+            efenix=self._steered(real.efenix),
             intermax=self._steered(real.intermax),
         )
 
     def _steered(self, real: Process[InputsT, SummaryT]) -> Process[InputsT, SummaryT]:
-        def execute(inputs: InputsT, observer: ProgressObserver, conversation: Conversation) -> SummaryT:
+        def execute(inputs: InputsT, observer: ProgressObserver, conversation: EngineConversation) -> SummaryT:
             if self.fail_engine:
                 raise RuntimeError("nieprzewidziany błąd przy SYN-001")
             return real.execute(inputs, observer, conversation)
@@ -131,7 +133,9 @@ class Surroundings:
     ``report_search_deadline_s`` to limit, po którym Diagnoza przestaje czekać na skrzynkę Zgłoszeń.
     ``release_unanswered`` to GitHub, który przy ``tool`` nie odpowiada o najnowsze Wydanie, chociaż klon dalej
     pobiera z „origin”. ``readers`` czytają Rejestr zleceń i Wzorce w Uruchomieniu procesu, Diagnozie i Konfiguracji.
-    ``find_git`` znajduje Gita, którego przy ``tool`` używa Centrum (``None``: Gita nie ma).
+    ``find_git`` znajduje Gita, którego przy ``tool`` używa Centrum (``None``: Gita nie ma). ``efenix_url`` to lista zleceń
+    okna efenix Wyceny w efenix w Chromium Playwrighta bez okna: domyślnie adres, pod którym nic nie odpowiada, a w testach
+    Wyceny adres Atrapy efenix, nigdy efenix.pl.
     """
 
     github: FakeGitHub = field(default_factory=FakeGitHub)
@@ -147,6 +151,7 @@ class Surroundings:
     release_unanswered: bool = False
     readers: Readers = FILE_READERS
     find_git: Callable[[], Path | None] = find_git
+    efenix_url: str = "http://127.0.0.1:9/index.php"
     _start: _StartClock | None = field(default=None, init=False, repr=False)
 
     def started_clock(self) -> _StartClock:
@@ -238,6 +243,7 @@ def _client(
         tool_update=surroundings.tool_update(),
         guardian=surroundings.guardian,
         readers=surroundings.readers,
+        efenix_window=EfenixWindow(surroundings.efenix_url, tmp_path / "przegladarka-efenix", channel=None, headless=True),
     )
     return CentrumClient(app, since=since)
 

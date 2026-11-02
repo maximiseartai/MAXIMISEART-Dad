@@ -18,6 +18,7 @@ from .domain import (
     ProgressObserver,
     ProgressPhase,
     ProgressProtocolError,
+    StepReached,
     WorkerEnded,
     WorkerFailed,
     WorkerResult,
@@ -55,7 +56,8 @@ class PhaseRunner:
     jedno ``PhaseFailed`` każdego etapu oraz zdarzenia pośrednie:
     ``IssueCountReady`` po Odczycie danych i ``PlanReady`` po Planowaniu.
     W Zapisywaniu ``each_template`` prowadzi po kolei Szablony pracownika
-    Wykonawców z planu i wysyła ich zdarzenia.
+    Wykonawców z planu i wysyła ich zdarzenia, a proces bez Szablonów (Wycena w
+    efenix) zgłasza swoje kroki Zapisywania przez ``step``.
 
     Funkcje liczące są czystymi funkcjami wyniku etapu; sekwencer wywołuje je
     przed END. Liczba problemów jest łączna dla uruchomienia, a pominięta w
@@ -175,6 +177,36 @@ class PhaseRunner:
                 )
             )
         return results
+
+    def step(self, label: str, *, worker: str | None = None, done: int = 0, total: int = 0) -> None:
+        """W trwającym Zapisywaniu wysyła ``StepReached``: krok ``label``, Wykonawca i ``done`` z ``total`` zleceń."""
+
+        if self._active_phase is not ProgressPhase.SAVING:
+            raise ProgressProtocolError("Krok Zapisywania zgłasza się tylko w trakcie Zapisywania.")
+        self._emit(
+            StepReached(
+                label,
+                worker=worker,
+                done=_count(done, "Liczba zleceń"),
+                total=_count(total, "Liczba zleceń"),
+                elapsed_ms=self.elapsed_ms(),
+            )
+        )
+
+    @contextmanager
+    def waiting(self) -> Iterator[None]:
+        """Wstrzymuje zegar uruchomienia i bieżącego etapu na czas czekania na tatę w trakcie etapu (logowanie w efenix).
+
+        Czas czekania nie wlicza się do czasów etapów ani do ``elapsed_ms`` zdarzeń, tak jak czas Decyzji taty.
+        """
+
+        paused_at = self._clock()
+        try:
+            yield
+        finally:
+            paused_s = self._clock() - paused_at
+            self._run_started += paused_s
+            self._phase_started += paused_s
 
     @contextmanager
     def paused(self) -> Iterator[None]:

@@ -432,6 +432,7 @@ def test_uporzadkowanie_intermax_ze_skryptu_dla_maszyn_oddaje_karte_uruchomienia
     assert result["summary"]["counts"] == {
         "title": "Uporządkowany dzień",
         "counts": [{"label": "pon 26.10.2026", "count": 6}],
+        "zero_warns": True,
     }
     assert [phase["state"] for phase in result["progress"]["phases"]] == ["completed"] * 4
     assert len(list(copies.iterdir())) == 1
@@ -487,9 +488,16 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
         {"label": "Gotowe do przekazania", "value": 1, "unit": "count"},
         {"label": "Błędy zleceń", "value": 2, "unit": "count"},
         {"label": "Ostrzeżenia Emmetta", "value": 1, "unit": "count"},
-        {"label": "Pominięte ze zdjęciami", "value": 0, "unit": "count"},
-        {"label": "Pominięte usterki", "value": 0, "unit": "count"},
     ]
+    assert result["summary"]["counts"] == {
+        "title": "Pominięte",
+        "counts": [
+            {"label": "Ze zdjęciami", "count": 0},
+            {"label": "Usterki", "count": 0},
+            {"label": "Nieznalezione w efenix", "count": 0},
+        ],
+        "zero_warns": False,
+    }
     assert [(warning["code"], warning["where"].rpartition(", ")[2]) for warning in result["warnings"]] == [
         ("EFENIX_INNY_STATUS", "wiersz 19"),
         ("EFENIX_INNA_KWOTA", "wiersz 20"),

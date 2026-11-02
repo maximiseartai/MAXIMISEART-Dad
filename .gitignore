@@ -33,3 +33,7 @@ node_modules/
 # Kopie INTERMAX i metryki Uporządkowania INTERMAX na komputerze taty.
 Kopie INTERMAX/
 .uporzadkowanie-intermax-metrics.jsonl
+
+# Profil przeglądarki okna efenix (logowanie taty) i metryki Wyceny w efenix na komputerze taty.
+przegladarka-efenix/
+.wycena-efenix-metrics.jsonl

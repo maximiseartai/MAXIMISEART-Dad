@@ -34,6 +34,7 @@ from rozliczenia.centrum.contract import Health, Problem, Refusal
 from rozliczenia.centrum.dad_cases import DadCases
 from rozliczenia.centrum.dad_notes import dad_notes_router
 from rozliczenia.centrum.diagnosis import Surroundings, diagnose, files_of_process
+from rozliczenia.centrum.efenix_run import EfenixEntry, EfenixWindow
 from rozliczenia.centrum.filling import FillingReads, filling_router
 from rozliczenia.centrum.intermax_run import IntermaxEntry, intermax_copies_router, intermax_router
 from rozliczenia.centrum.log import CentrumLog
@@ -94,6 +95,7 @@ def create_app(
     intermax_copies: Path | None = None,
     intermax_disk: Disk = LOCAL_DISK,
     now: Callable[[], datetime] = lambda: datetime.now().astimezone(),
+    efenix_window: EfenixWindow | None = None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -232,6 +234,8 @@ def create_app(
     entries: list[ProcessEntry] = [
         PreparationEntry(store, configuration, processes, today, readers),
         SettlementEntry(store, configuration, processes, today, readers),
+        # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
+        EfenixEntry(store, processes, today, efenix_window or EfenixWindow.of_tata()),
     ]
     # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
     intermax = IntermaxEntry(
