@@ -503,9 +503,15 @@ Plik zbiorczy wynika z okresu, więc go nie szukasz: Centrum bierze
 
 1. Uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij (Gotowość). Centrum
    nie sprawdza, czy skończyłeś: to Ty decydujesz, kiedy plik jest gotowy.
-2. Na stronie `Okresy` okres ma Status `Plik zbiorczy przygotowany`, a karta
-   `Następny krok` pokazuje `Utwórz rozliczenia pracowników`. Kliknij
-   `Podgląd bez zapisu`. Dla innego tygodnia kliknij `Utwórz rozliczenia
+2. Na stronie `Okresy` okres ma Status `Plik zbiorczy przygotowany`. Droga
+   okresu na karcie `Następny krok` ma cztery kroki: Plik zbiorczy,
+   Uzupełnienie w Excelu, Wycena w efenix i Rozliczenia pracowników. Dopóki
+   ostatnia Wycena w efenix tego okresu nie skończyła się wynikiem OK, karta
+   pokazuje `Wyceń w efenix`, a `Utwórz rozliczenia pracowników` jest obok w
+   wierszu okresu w Tablicy okresów: rozliczenia możesz utworzyć także bez
+   Wyceny, na przykład gdy efenix nie działa. Po Wycenie z wynikiem OK karta
+   pokazuje `Utwórz rozliczenia pracowników`; kliknij `Podgląd bez zapisu`.
+   Dla innego tygodnia kliknij `Utwórz rozliczenia
    pracowników` w jego wierszu Tablicy okresów albo na stronie `Uruchomienia`
    wybierz kafelek `Przebieg rozliczeń` i okres z listy `Okres`. Lista ma tylko
    okresy ze Statusem `Plik zbiorczy przygotowany`.

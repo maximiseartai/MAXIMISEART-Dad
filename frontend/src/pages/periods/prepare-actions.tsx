@@ -1,6 +1,6 @@
 import { ArrowRightIcon, EyeIcon, PlayIcon } from "lucide-react"
 
-import type { NextStep, PeriodProcess, PeriodRow, ProcessStep } from "@/api/centrum"
+import type { PeriodProcess, PeriodRow, ProcessStep } from "@/api/centrum"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { isActive, useRuns } from "@/lib/runs"
@@ -8,15 +8,11 @@ import type { PageHref } from "@/pages"
 
 const RUNS_PAGE: PageHref = "#/uruchomienia"
 
-/** Proces, który robi następny krok okresu; „none” (okres zamknięty) nie ma procesu. */
+/** Proces, który robi krok okresu; „none” (okres zamknięty) nie ma procesu. */
 const STEP_PROCESSES: Record<ProcessStep["action"], PeriodProcess> = {
   prepare_collective_file: "preparation",
+  price_in_efenix: "efenix",
   create_worker_settlements: "settlement",
-}
-
-/** Proces następnego kroku okresu albo `null`, gdy okres jest zamknięty. */
-export function stepProcess(step: NextStep): PeriodProcess | null {
-  return step.action === "none" ? null : STEP_PROCESSES[step.action]
 }
 
 const PRIMARY_LOOK = { size: "lg", className: "h-11 px-5 text-base" } as const
@@ -28,11 +24,11 @@ function showRuns() {
 }
 
 /**
- * Akcja karty „Następny krok”: podgląd bez zapisu procesu następnego kroku od razu,
- * a w trakcie Uruchomienia przejście do podglądu na żywo. Podpowiedź podglądu przychodzi z krokiem.
- * Główna, chyba że karta ma inną akcję główną (`secondary`).
+ * Akcja karty „Następny krok”: podgląd bez zapisu procesu następnego kroku od razu, a w trakcie Uruchomienia
+ * przejście do podglądu na żywo; proces bez podglądu (Wycena w efenix) otwiera nowe Uruchomienie z tym okresem.
+ * Podpowiedź podglądu przychodzi z krokiem. Główna, chyba że karta ma inną akcję główną (`secondary`).
  */
-export function PreviewAction({
+export function StepAction({
   period,
   step,
   secondary,
@@ -41,9 +37,20 @@ export function PreviewAction({
   step: ProcessStep
   secondary: boolean
 }) {
+  const look = secondary ? SECONDARY_LOOK : PRIMARY_LOOK
+
+  return step.preview_hint === null ? (
+    <DraftButton period={period} step={step} look={look} />
+  ) : (
+    <PreviewAction period={period} step={step} hint={step.preview_hint} look={look} />
+  )
+}
+
+type Look = typeof PRIMARY_LOOK | typeof SECONDARY_LOOK
+
+function PreviewAction({ period, step, hint, look }: { period: PeriodRow; step: ProcessStep; hint: string; look: Look }) {
   const { view, start } = useRuns()
   const process = STEP_PROCESSES[step.action]
-  const look = secondary ? SECONDARY_LOOK : PRIMARY_LOOK
 
   if (isActive(view)) {
     return (
@@ -69,13 +76,41 @@ export function PreviewAction({
         <EyeIcon data-icon="inline-start" />
         Podgląd bez zapisu
       </TooltipTrigger>
-      <TooltipContent>{step.preview_hint}</TooltipContent>
+      <TooltipContent>{hint}</TooltipContent>
     </Tooltip>
   )
 }
 
-/** Następny krok w wierszu Tablicy okresów: przejście do Uruchomień z tym procesem i okresem do wybrania. */
-export function PrepareLink({ period, process }: { period: PeriodRow; process: PeriodProcess }) {
+/** Przycisk kroku, który otwiera nowe Uruchomienie z procesem kroku i tym okresem do wybrania. */
+function DraftButton({ period, step, look }: { period: PeriodRow; step: ProcessStep; look: Look }) {
+  const { setDraft } = useRuns()
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            {...look}
+            onClick={() => {
+              setDraft({ process: STEP_PROCESSES[step.action], period: period.token })
+              showRuns()
+            }}
+          />
+        }
+      >
+        {step.label}
+        <ArrowRightIcon data-icon="inline-end" />
+      </TooltipTrigger>
+      <TooltipContent>{step.hint}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+/**
+ * Krok w wierszu Tablicy okresów: przejście do Uruchomień z tym procesem i okresem do wybrania. Krok obok
+ * następnego (`secondary`) jest stonowany i bez strzałki.
+ */
+export function PrepareLink({ period, step, secondary }: { period: PeriodRow; step: ProcessStep; secondary: boolean }) {
   const { setDraft } = useRuns()
 
   return (
@@ -85,18 +120,19 @@ export function PrepareLink({ period, process }: { period: PeriodRow; process: P
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`${period.next_step.label}, okres ${period.token}`}
+            className={secondary ? "text-muted-foreground" : undefined}
+            aria-label={`${step.label}, okres ${period.token}`}
             onClick={() => {
-              setDraft({ process, period: period.token })
+              setDraft({ process: STEP_PROCESSES[step.action], period: period.token })
               showRuns()
             }}
           />
         }
       >
-        {period.next_step.label}
-        <ArrowRightIcon data-icon="inline-end" />
+        {step.label}
+        {secondary ? null : <ArrowRightIcon data-icon="inline-end" />}
       </TooltipTrigger>
-      <TooltipContent>{period.next_step.hint}</TooltipContent>
+      <TooltipContent>{step.hint}</TooltipContent>
     </Tooltip>
   )
 }

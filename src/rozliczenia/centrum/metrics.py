@@ -162,6 +162,28 @@ def previewed_periods(store: MetricsStore) -> frozenset[str]:
     return frozenset(record["period"] for record in records if (record["mode"], record["result"]) == ("DRY-RUN", "OK"))
 
 
+def last_results(store: MetricsStore) -> dict[str, contract.RunResult]:
+    """Wynik ostatniego Uruchomienia procesu (najpóźniejszy start) każdego okresu z historii metryk.
+
+    Nieczytelny plik metryk oznacza „nie było Uruchomień”.
+    """
+
+    try:
+        records = store.read()
+    except OSError:
+        return {}
+    last: dict[str, dict[str, Any]] = {}
+    for record in records:
+        known = last.get(record["period"])
+        if known is None or _started(record) > _started(known):
+            last[record["period"]] = record
+    return {period: record["result"] for period, record in last.items()}
+
+
+def _started(record: Mapping[str, Any]) -> datetime:
+    return datetime.fromisoformat(record["started_at"])
+
+
 def metrics_router(processes: Processes, today: Callable[[], date], centrum_runs: CentrumRuns) -> APIRouter:
     router = APIRouter(prefix="/api/metrics", tags=["metryki"])
 

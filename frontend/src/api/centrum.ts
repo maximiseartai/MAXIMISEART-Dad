@@ -17,7 +17,6 @@ import type {
   NotificationsRead,
   OpenRequest,
   WorkerSettlementRequest,
-  PeriodRow,
   RunEvent,
   RunInfo,
   RunOutcome,
@@ -130,9 +129,6 @@ export type WithoutQuantity = GetWithoutQuantityResponse
 
 /** Aktualizacja narzędzia: krok albo wynik (unia z kontraktu). */
 export type ToolUpdate = GetToolUpdateResponse
-
-/** Następny krok okresu: proces z podpowiedzią podglądu albo okres zamknięty (unia z kontraktu). */
-export type NextStep = PeriodRow["next_step"]
 
 export type PathSetting = Settings["order_register"]
 

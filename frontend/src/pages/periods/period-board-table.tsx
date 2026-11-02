@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { href } from "@/lib/address"
 import { shortDate } from "@/lib/format"
 import { openAndConfirm } from "@/pages/periods/open-period-path"
-import { PrepareLink, stepProcess } from "@/pages/periods/prepare-actions"
+import { PrepareLink } from "@/pages/periods/prepare-actions"
 
 /** Tablica okresów: od najnowszego, ostatni pełny okres wyróżniony tłem. */
 export function PeriodBoardTable({
@@ -54,7 +54,7 @@ export function PeriodBoardTable({
 }
 
 function PeriodBoardRow({ period, onStale }: { period: PeriodRow; onStale: () => void }) {
-  const process = stepProcess(period.next_step)
+  const step = period.next_step
 
   return (
     <TableRow data-state={period.last_complete ? "selected" : undefined}>
@@ -75,8 +75,11 @@ function PeriodBoardRow({ period, onStale }: { period: PeriodRow; onStale: () =>
       </TableCell>
       <TableCell className="text-right">
         {period.status === "collective_file_prepared" ? <FillingLink token={period.token} /> : null}
-        {process !== null ? (
-          <PrepareLink period={period} process={process} />
+        {period.secondary_step === null ? null : (
+          <PrepareLink period={period} step={period.secondary_step} secondary />
+        )}
+        {step.action !== "none" ? (
+          <PrepareLink period={period} step={step} secondary={false} />
         ) : (
           <Tooltip>
             <TooltipTrigger
@@ -89,7 +92,7 @@ function PeriodBoardRow({ period, onStale }: { period: PeriodRow; onStale: () =>
             >
               Zamknięty
             </TooltipTrigger>
-            <TooltipContent>{period.next_step.hint}</TooltipContent>
+            <TooltipContent>{step.hint}</TooltipContent>
           </Tooltip>
         )}
       </TableCell>

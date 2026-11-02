@@ -332,7 +332,14 @@ def _drive_entries(run: Run, page: Page) -> None:
     expect(current).to_have_count(1)
     expect(current).to_contain_text("Uzupełnienie w Excelu")
     expect(path.get_by_role("img", name="zrobione")).to_have_count(1)
-    run.check(True, "Droga okresu shows Uzupełnienie w Excelu as the current step after Plik zbiorczy")
+    steps = path.get_by_role("listitem")
+    expect(steps).to_have_count(4)
+    expect(steps).to_contain_text(["Plik zbiorczy", "Uzupełnienie w Excelu", "Wycena w efenix", "Rozliczenia pracowników"])
+    run.check(
+        True,
+        "Droga okresu has four steps, with Wycena w efenix before Rozliczenia pracowników, and shows Uzupełnienie w "
+        "Excelu as the current step after Plik zbiorczy",
+    )
 
 
 def _shown(cell: dict[str, object]) -> str:
@@ -614,10 +621,10 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     page.goto(run.url)
     next_step = page.get_by_role("region", name="Następny krok")
     expect(next_step).to_contain_text(LAST_COMPLETE)
-    expect(next_step).to_contain_text("Utwórz rozliczenia pracowników")
+    expect(next_step).to_contain_text("Wyceń w efenix")
     fill = next_step.get_by_role("button", name="Uzupełnij", exact=True)
     expect(fill).to_be_visible()
-    expect(next_step.get_by_role("button", name="Podgląd bez zapisu", exact=True)).to_be_visible()
+    expect(next_step.get_by_role("button", name="Wyceń w efenix", exact=True)).to_be_visible()
     board = run.api("/api/periods", "uzupelnienie-karta")
     periods = board["periods"]
     assert isinstance(periods, list)
@@ -625,7 +632,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     run.check(
         last["token"] == LAST_COMPLETE and last["status"] == "collective_file_prepared",
         "Następny krok offers Uzupełnij for the last complete period with Plik zbiorczy przygotowany, "
-        "with Podgląd bez zapisu next to it",
+        "with Wyceń w efenix next to it",
     )
     run.capture(page, "220-uzupelnienie-karta")
 

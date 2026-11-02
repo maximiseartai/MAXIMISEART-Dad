@@ -101,12 +101,13 @@ class ThemeChange(_Model):
 
 
 class ProcessStep(_Model):
-    """Następny krok okresu robi proces; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu."""
+    """Krok okresu, który robi proces; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu, a ``None`` ma
+    proces bez podglądu (Wycena w efenix)."""
 
-    action: Literal["prepare_collective_file", "create_worker_settlements"]
+    action: Literal["prepare_collective_file", "price_in_efenix", "create_worker_settlements"]
     label: str
     hint: str
-    preview_hint: str
+    preview_hint: str | None
 
 
 class ClosedStep(_Model):
@@ -119,9 +120,19 @@ class ClosedStep(_Model):
 
 NextStep = Annotated[ProcessStep | ClosedStep, Field(discriminator="action")]
 
+PathStage = Literal["done", "now", "later", "not_done"]
+
+
+class PathStep(_Model):
+    """Krok Drogi okresu: ``now`` to pierwszy niezrobiony krok okresu otwartego, ``not_done`` krok, którego okres
+    zamknięty nie zrobił (Wycena w efenix bez wyniku OK)."""
+
+    label: str
+    stage: PathStage
+
 
 class PeriodRow(_Model):
-    """Jeden okres Tablicy okresów, wyliczony z plików przy każdym odczycie."""
+    """Jeden okres Tablicy okresów, wyliczony przy każdym odczycie z plików i z Historii Wyceny w efenix."""
 
     token: str
     tuesday: date
@@ -134,7 +145,10 @@ class PeriodRow(_Model):
     worker_settlements_folder_exists: bool
     worker_settlement_count: int
     last_complete: bool
+    path: list[PathStep]
     next_step: NextStep
+    secondary_step: ProcessStep | None
+    """Krok osiągalny obok następnego: Przebieg rozliczeń przed zaliczoną Wyceną w efenix; ``None``: żadnego."""
 
 
 class BoardNotSet(_Model):

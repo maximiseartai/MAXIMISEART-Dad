@@ -43,7 +43,7 @@ def drive_dad_layout(run: Run, page: Page) -> None:
     run.step(feature, "taty-nastepny-krok")
     next_step = page.get_by_role("region", name="Następny krok")
     expect(next_step).to_contain_text("06_12_10_2026")
-    expect(next_step).to_contain_text("Utwórz rozliczenia pracowników")
+    expect(next_step).to_contain_text("Wyceń w efenix")
     expect(next_step).not_to_contain_text("Brak Folderu okresu")
     run.check(True, "Następny krok sees the prepared Plik zbiorczy of the last complete period in its month folder")
 
