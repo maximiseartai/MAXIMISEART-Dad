@@ -1026,10 +1026,10 @@ source_unusable #1 [EFENIX_BRAK_PLIKU_ZBIORCZEGO]
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
   Co zrobić: Sprawdź, czy Plik zbiorczy okresu jest w Folderze okresu, i uruchom ponownie.
 
-source_unusable #2 [EFENIX_NIEDOSTEPNY_PLIK_ZBIORCZY]
-  Co się stało: Nie można teraz odczytać Pliku zbiorczego. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. W efenix nic się nie zmieniło.
+source_unusable #2 [EFENIX_PLIK_ZBIORCZY_OTWARTY]
+  Co się stało: Plik zbiorczy jest otwarty w Excelu, a Wycena w efenix oznacza w nim gotowe zlecenia Znacznikiem efenix. W efenix nic się nie zmieniło.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
-  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co zrobić: Zapisz i zamknij Plik zbiorczy w Excelu, potem uruchom ponownie.
 
 source_unusable #3 [EFENIX_NIEDOSTEPNY_PLIK_ZBIORCZY]
   Co się stało: Nie można teraz odczytać Pliku zbiorczego. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. W efenix nic się nie zmieniło.
@@ -1170,6 +1170,21 @@ emmett_conflict [EFENIX_SPRZECZNOSC_Z_EMMETTEM]
   Co się stało: Wycena Emmetta ma inne ilości niż Plik zbiorczy: pozycja INDEKS_012 (kolumna O): Emmett 2, plik 1; pozycja INDEKS_020 (bez kolumny w Pliku zbiorczym): Emmett 1, plik 0. Wycena Emmetta jest załadowana, a narzędzie niczego do niej nie dopisało.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Rozstrzygnij, czy rację ma Emmett, czy Plik zbiorczy, i popraw wycenę w efenix sam.
+
+marks_not_saved #1 [EFENIX_ZNACZNIKI_PLIK_OTWARTY]
+  Co się stało: Gotowe zlecenia nie dostały Znacznika efenix, bo Plik zbiorczy jest otwarty w Excelu. Ich wycena została w efenix. Ponowne uruchomienie oznaczy je bez zmian w efenix i pokaże listę błędów i ostrzeżeń.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
+  Co zrobić: Zapisz i zamknij Plik zbiorczy w Excelu, potem uruchom ponownie.
+
+marks_not_saved #2 [EFENIX_ZNACZNIKI_PLIK_ZMIENIONY]
+  Co się stało: Gotowe zlecenia nie dostały Znacznika efenix, bo Plik zbiorczy zmienił się w trakcie Wyceny w efenix. Ich wycena została w efenix. Ponowne uruchomienie oznaczy je bez zmian w efenix i pokaże listę błędów i ostrzeżeń.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
+  Co zrobić: Zamknij Plik zbiorczy w Excelu i uruchom ponownie.
+
+marks_not_saved #3 [EFENIX_ZNACZNIKI_NIEZAPISANE]
+  Co się stało: Gotowe zlecenia nie dostały Znacznika efenix, bo nie udało się zapisać Pliku zbiorczego. Ich wycena została w efenix. Ponowne uruchomienie oznaczy je bez zmian w efenix i pokaże listę błędów i ostrzeżeń.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
+  Co zrobić: Zamknij Plik zbiorczy w Excelu, poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 unexpected_failure [EFENIX_BLAD_NIEOCZEKIWANY]
   Co się stało: Wycena w efenix zatrzymała się przez nieoczekiwany błąd. Część zleceń mogła zostać już wyceniona w efenix.

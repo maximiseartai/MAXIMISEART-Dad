@@ -1,7 +1,7 @@
 """Znacznik efenix: jasnofioletowe wypełnienie komórki ``ADRES``, którym Wycena w efenix oznacza gotowe zlecenie.
 
-Kolor ma jednego właściciela, ``MARK_RGB``: Przebieg rozliczeń go rozpoznaje, a Wycena w efenix ma brać z niego
-kolor zapisu, bez osobnej kopii. Znacznik nie jest Wyróżnieniem, więc Przebieg rozliczeń zdejmuje go z Wierszy danych w drodze do
+Kolor ma jednego właściciela, ``MARK_RGB``, a wypełnienie, które jest Znacznikiem, rozpoznaje ``is_mark``: Przebieg
+rozliczeń i zapis Znaczników Wyceny w efenix (``efenix_marking``) pytają obu, bez osobnej kopii. Znacznik nie jest Wyróżnieniem, więc Przebieg rozliczeń zdejmuje go z Wierszy danych w drodze do
 Rozliczenia pracownika (``without_efenix_mark``), a Plik zbiorczy dalej go ma. Inne Wyróżnienia tej komórki, inne
 wypełnienia ``ADRES`` i ten sam kolor w innej kolumnie zostają.
 """
@@ -37,14 +37,16 @@ def without_efenix_mark(header: Mapping[str, int], rows: Sequence[DataRow]) -> l
 
 def _unmarked(row: DataRow, index: int) -> DataRow:
     cell = row.cells[index]
-    if not _is_mark(cell.highlights.fill):
+    if not is_mark(cell.highlights.fill):
         return row
     cells = list(row.cells)
     cells[index] = cell._replace(highlights=replace(cell.highlights, fill=None))
     return replace(row, cells=tuple(cells))
 
 
-def _is_mark(fill: Fill | None) -> bool:
+def is_mark(fill: Fill | None) -> bool:
+    """Wypełnienie jest Znacznikiem efenix: jednolite w kolorze ``MARK_RGB`` podanym jako RGB."""
+
     if not isinstance(fill, PatternFill) or fill.patternType != "solid" or fill.fgColor.type != "rgb":
         return False
     return str(fill.fgColor.rgb).upper().endswith(MARK_RGB)
