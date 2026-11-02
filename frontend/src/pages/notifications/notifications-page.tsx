@@ -260,13 +260,29 @@ function CaseState({ notification }: { notification: Case }) {
 }
 
 /**
- * Notka „Co nowego”, sprawy taty, które Wydanie rozwiązuje, i przycisk aktualizacji, gdy Centrum go proponuje
- * (`update_offered`, ta sama reguła co w Konfiguracji) ze stanem aktualizacji pod nim.
+ * Notka „Co nowego” (zdanie wstępu i punkty jeden pod drugim, jak okienko aktualizacji), sprawy taty, które Wydanie
+ * rozwiązuje, i przycisk aktualizacji, gdy Centrum go proponuje (`update_offered`, ta sama reguła co w Konfiguracji)
+ * ze stanem aktualizacji pod nim.
  */
 function ReleaseBody({ release }: { release: Release }) {
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-pretty whitespace-pre-line text-muted-foreground">{release.summary}</p>
+      <section aria-label="Co nowego" className="mt-1 flex flex-col gap-2 text-sm">
+        <h3 className="font-medium">Co nowego</h3>
+        {release.intro === "" ? null : (
+          <p className="text-pretty whitespace-pre-line text-muted-foreground">{release.intro}</p>
+        )}
+        {release.points.length === 0 ? null : (
+          <ul className="flex list-disc flex-col gap-2 pl-5 text-muted-foreground marker:text-muted-foreground/60">
+            {release.points.map((point, index) => (
+              // Dwa punkty mogą mieć ten sam tekst, a lista z serwera się nie zmienia w trakcie wizyty.
+              <li key={index} className="pl-1 text-pretty break-words">
+                {point}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       {release.solved.length === 0 ? null : (
         <ul aria-label="Rozwiązane sprawy" className="flex flex-col gap-1 text-sm">
           {release.solved.map((item, index) => (

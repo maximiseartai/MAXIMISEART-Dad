@@ -1638,8 +1638,9 @@ export type RecentResults = {
 /**
  * ReleaseNotification
  *
- * Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego”, sprawy taty, które rozwiązuje, i
- * czy Centrum proponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu).
+ * Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego” jako zdanie wstępu i punkty
+ * (``release_notes.whats_new``; notka bez punktów to sam wstęp), sprawy taty, które rozwiązuje, i czy Centrum
+ * proponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu).
  */
 export type ReleaseNotification = {
     /**
@@ -1663,9 +1664,13 @@ export type ReleaseNotification = {
      */
     version: string;
     /**
-     * Summary
+     * Intro
      */
-    summary: string;
+    intro: string;
+    /**
+     * Points
+     */
+    points: Array<string>;
     /**
      * Solved
      */

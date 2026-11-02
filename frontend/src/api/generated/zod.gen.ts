@@ -1237,8 +1237,9 @@ export const zSolvedCase = z.object({
 /**
  * ReleaseNotification
  *
- * Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego”, sprawy taty, które rozwiązuje, i
- * czy Centrum proponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu).
+ * Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego” jako zdanie wstępu i punkty
+ * (``release_notes.whats_new``; notka bez punktów to sam wstęp), sprawy taty, które rozwiązuje, i czy Centrum
+ * proponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu).
  */
 export const zReleaseNotification = z.object({
     id: z.string(),
@@ -1246,7 +1247,8 @@ export const zReleaseNotification = z.object({
     unread: z.boolean(),
     kind: z.literal('nowa_wersja'),
     version: z.string(),
-    summary: z.string(),
+    intro: z.string(),
+    points: z.array(z.string()),
     solved: z.array(zSolvedCase),
     update_offered: z.boolean()
 });
