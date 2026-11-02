@@ -4555,9 +4555,16 @@
             "type": "string",
             "title": "Version"
           },
-          "summary": {
+          "intro": {
             "type": "string",
-            "title": "Summary"
+            "title": "Intro"
+          },
+          "points": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Points"
           },
           "solved": {
             "items": {
@@ -4579,12 +4586,13 @@
           "unread",
           "kind",
           "version",
-          "summary",
+          "intro",
+          "points",
           "solved",
           "update_offered"
         ],
         "title": "ReleaseNotification",
-        "description": "Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego”, sprawy taty, które rozwiązuje, i\nczy Centrum proponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu)."
+        "description": "Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego” jako zdanie wstępu i punkty\n(``release_notes.whats_new``; notka bez punktów to sam wstęp), sprawy taty, które rozwiązuje, i czy Centrum\nproponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu)."
       },
       "ReportDraft": {
         "properties": {

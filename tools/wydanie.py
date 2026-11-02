@@ -475,7 +475,7 @@ def main(argv: list[str] | None = None) -> int:
     planned.add_argument("--plik", type=Path, required=True, help="Plik JSON, do którego trafia plan.")
     released = commands.add_parser("wydaj", help="Wydanie z planu; bez potwierdzenia tylko podgląd.")
     released.add_argument("--plan", type=Path, required=True)
-    released.add_argument("--co-nowego", type=Path, required=True, help="Plik z „Co nowego” dla taty (2-5 zdań).")
+    released.add_argument("--co-nowego", type=Path, required=True, help="Plik z „Co nowego” dla taty: zdanie wstępu i 3-6 punktów w liniach „- ”.")
     released.add_argument("--numer", help="Inny numer niż proponowany, np. 0.3.0; musi być wyższy od poprzedniego.")
     released.add_argument(CONFIRMED, dest="confirmed", action="store_true", help="Maks potwierdził numer, notkę i weryfikację.")
     arguments = parser.parse_args(argv)

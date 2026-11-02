@@ -41,10 +41,26 @@ goes out as PATCH with the same steps.
 
 ## 2. Write „Co nowego”
 
-Write 2-5 sentences to `~/.t3/notes/wydanie/<tag>/co-nowego.txt` for Dad:
-what he will see or no longer have to do, in the words of `GLOSSARY.md` and his
-user guide (`Rozliczenie pracownika`, `Plik zbiorczy`, `Centrum rozliczeń`),
-never PR numbers, module names or English. Leave the list of his cases out:
+Write the note to `~/.t3/notes/wydanie/<tag>/co-nowego.txt` for Dad: an
+optional short intro sentence, an empty line, then 3-6 points, each one line
+starting with `- ` and one sentence of what he will see or no longer have to
+do:
+
+```text
+Ta wersja oszczędza Ci wpisywania.
+
+- Przygotowanie pliku zbiorczego samo wpisuje ilości usług.
+- Rozliczenia pracowników przy dużym okresie są dwa razy szybsze.
+- Centrum rozliczeń pokazuje „Co nowego” jako listę.
+```
+
+Centrum's card `Nowa wersja` shows them under the heading `Co nowego` as the
+intro and a bulleted list, one point under another
+(`release_notes.whats_new`); a paragraph after the points makes the whole note
+one paragraph again, so put nothing below them. Use the words of
+`GLOSSARY.md` and his user guide (`Rozliczenie pracownika`, `Plik zbiorczy`,
+`Centrum rozliczeń`), never PR numbers, module names or English. Leave the
+list of his cases out:
 the tool appends it from the plan in the one format Centrum reads
 (`src/rozliczenia/centrum/release_notes.py`). The Release is public, so the
 note names a case only by the title Dad gave it, never its content.

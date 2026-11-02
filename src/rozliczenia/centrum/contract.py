@@ -1203,12 +1203,14 @@ class SolvedCase(_Model):
 
 
 class ReleaseNotification(_Notification):
-    """Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego”, sprawy taty, które rozwiązuje, i
-    czy Centrum proponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu)."""
+    """Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego” jako zdanie wstępu i punkty
+    (``release_notes.whats_new``; notka bez punktów to sam wstęp), sprawy taty, które rozwiązuje, i czy Centrum
+    proponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu)."""
 
     kind: Literal["nowa_wersja"]
     version: str
-    summary: str
+    intro: str
+    points: list[str]
     solved: list[SolvedCase]
     update_offered: bool
 
