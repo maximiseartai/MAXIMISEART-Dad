@@ -290,14 +290,8 @@ def _post(
 BOUNDS = Bounds(unreachable=2, lost=1, disk=1, kills=1)
 SCOPES = {
     "zgloszenie": Scope(
-        "Zgłoszenie (ReportIssue) w jednej części, jak dziś każde.",
+        "Zgłoszenie (ReportIssue) w jednej części, jak każde (Post odrzuca więcej).",
         (_post(REPORT, "zgl", 1),),
-        (),
-        BOUNDS,
-    ),
-    "zgloszenie-w-czesciach": Scope(
-        "Zgłoszenie (ReportIssue) w trzech częściach, gdyby treść przekroczyła komentarz.",
-        (_post(REPORT, "zgl", 3),),
         (),
         BOUNDS,
     ),
@@ -364,15 +358,7 @@ def _connection_broke_after_issue(faults: Faults) -> bool:
 
 
 # Each must break in its scope after its faults, or the check ends with ZNALEZISKO ZNIKNĘŁO.
-KNOWN_FINDINGS = (
-    Excuse(
-        "zgloszenie-w-czesciach",
-        "WSZYSTKIE_CZESCI",
-        "ponowna próba po przerwanej wysyłce Zgłoszenia znajduje issue założone przez pierwszą i przejmuje je bez "
-        "komentarzy (_deliver_report), więc części, których pierwsza nie dopisała, nigdy nie trafiają do Skrzynki",
-        _after_opened_issue,
-    ),
-)
+KNOWN_FINDINGS: tuple[Excuse, ...] = ()
 ACCEPTED_RISKS = (
     Excuse(
         "nowe-issue",

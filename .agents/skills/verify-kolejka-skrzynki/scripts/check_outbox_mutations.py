@@ -85,19 +85,6 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "Zgłoszenie bez komentarzy także przy działającej sieci",
-        (
-            Edit(
-                VERIFIED,
-                "    opened = box.open_issue(report.label, report.title, body)\n    if not isinstance(opened, Sent):\n        return opened\n    return _comment_all(opened.number, comments, box)\n",
-                "    opened = box.open_issue(report.label, report.title, body)\n    if not isinstance(opened, Sent):\n        return opened\n    return _comment_all(opened.number, (), box)\n",
-            ),
-        ),
-        (EXPLORER, "--scope", "zgloszenie-w-czesciach"),
-        "każde Zgłoszenie w kilku częściach traci części od drugiej, choć znane ustalenie dotyczy tylko przerwanej wysyłki",
-        NEW,
-    ),
-    Mutation(
         "Uwaga taty zakłada issue dwa razy",
         (
             Edit(

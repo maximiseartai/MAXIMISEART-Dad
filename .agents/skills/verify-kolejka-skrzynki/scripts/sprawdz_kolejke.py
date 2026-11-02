@@ -29,7 +29,7 @@ UNITS = (
     ("explore_outbox.py", ("--scope", "watek-okresu")),
     (
         "explore_outbox.py",
-        ("--scope", "zgloszenie", "--scope", "zgloszenie-w-czesciach", "--scope", "nowe-issue", "--scope", "znane-issue"),
+        ("--scope", "zgloszenie", "--scope", "nowe-issue", "--scope", "znane-issue"),
     ),
     ("sprawdz_model_kolejki.py", ()),
 )
