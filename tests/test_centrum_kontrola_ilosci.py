@@ -384,10 +384,12 @@ def test_ponowienie_przy_starcie_nie_opoznia_startu_centrum(tmp_path: Path) -> N
     box(centrum).search_failure = Unreachable()
     run_to_end(centrum, dry_run=False)
     assert wait_for(lambda: waiting_for_network(centrum) >= 1)
+    # Sieć wraca dopiero po końcu kolejki poprzedniego Centrum (restart): jej następne przejście, np. obudzone
+    # przez Logi Uruchomienia, wysłałoby Kontrolę samo i zawisło na hold.
+    centrum.restart()
     box(centrum).open_hold = hold = threading.Event()
     box(centrum).opening.clear()
     box(centrum).search_failure = None
-    centrum.restart()
 
     # Start na osobnym wątku: start, który czeka na skrzynkę, wisiałby inaczej do końca testu.
     start = threading.Thread(target=centrum.client.__enter__, daemon=True)
