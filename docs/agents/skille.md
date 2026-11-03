@@ -15,7 +15,7 @@
 - Skrypt mutacji skilla na PR nie biegnie, bo mierzy jakość sprawdzenia skilla, a nie zmianę (ADR 0021).
   Wyjątkiem jest skrypt mutacji modelu TLA+, którego każda mutacja psuje plik w folderze `model/` skilla (dziś `check_model_kolejki_mutations.py`): na PR biegnie, gdy zmienia się plik w `model/`, sam skrypt albo sprawdzenie, które uruchamiają jego mutacje, bo zmiana modelu może zostawić mutację bez werdyktu (`BŁĄD MODELU`, #667).
   Wtedy stoi w linii `LICZY CI`, a nie `LICZY NOC`.
-  Biegnie w pełnym CI `main` i nocą na `main` (`mutacje-nocne.yml`), gdy od ostatniej udanej nocy zmienił się plik w folderze skilla, runner mutacji (`tools/mutacje.py`, `tools/ci/mutacje_skilli.py`, `tools/lib/kroki_skilli.py`) albo sprawdzenie, które uruchamiają jego mutacje.
+  Biegnie w pełnym CI `main` i nocą na `main` (`mutacje-nocne.yml`), gdy od bazy nocy (`tools/mutacje_nocne.py`) zmienił się plik w folderze skilla, runner mutacji (`tools/mutacje.py`, `tools/ci/mutacje_skilli.py`, `tools/lib/kroki_skilli.py`) albo sprawdzenie, które uruchamiają jego mutacje.
   Skrypt, który padł nocą, trafia linią `SKRYPT <skrypt>` do issue `Przeżyte mutacje skilli z #N` z etykietą `ready-for-agent` PR-u, który ostatni zmienił folder skilla.
 - Zmiana `requirements.txt`, `.github/workflows/ci.yml` albo `.gitattributes` (`Context.SKILL_STEPS` w `tools/lib/wplyw_zmiany.py`) uruchamia każdą podstawę skilla na PR, a nocą każdy skrypt mutacji i każdą podstawę z `ci-czesci`, a skill bez czytelnego `pilnuje:` biegnie przy każdej zmianie.
 - Importów ani plików, które krok czyta, wybór nie liczy, więc to, czego `pilnuje:` nie obejmuje, łapie dopiero pełne CI `main`, na którym biegnie każdy krok.

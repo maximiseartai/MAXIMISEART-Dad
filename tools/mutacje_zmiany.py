@@ -104,10 +104,13 @@ Poza CI biegnie tylko do odtworzenia części, która padła (kod 2) w runie Act
 nocny odtwarza się na jego commicie, z bazą i częścią z jego planu:
 
     git checkout --detach <headSha runu>
-    .venv/bin/python tools/mutacje_zmiany.py --baza <baza z planu> --czesc K/N --odtwarzam <id albo URL runu>
+    .venv/bin/python tools/mutacje_zmiany.py --baza <baza z planu> --do <do z planu> --czesc K/N --odtwarzam <id albo URL runu>
 
 Z ``--czesc K/N`` biegnie K-ty z N kolejnych kawałków listy mutacji, posortowanej po plikach i liniach, więc N zadań
 CI dzieli mutacje bez listy w workflow, a każde liczy pokrycie tylko na testach swoich kilku plików.
+Z ``--do <commit>`` lista ma tylko mutacje, z których linii co najmniej jedną ostatni zmienił (``git blame
+--first-parent``) commit, który ``<commit>`` zawiera: noc z zaległością mutuje zmiany ``main`` tylko do tego commitu
+(``tools/mutacje_nocne.py``).
 """
 
 from __future__ import annotations
@@ -777,6 +780,9 @@ def main(argv: list[str] | None = None, *, gate: mutacje.Gate = mutacje.static_g
     parser.add_argument(
         "--limit-czesci-s", type=float, default=PART_LIMIT_S, help=f"Limit czasu całej części w sekundach (domyślnie {PART_LIMIT_S})."
     )
+    parser.add_argument(
+        "--do", default="", help="Tylko mutacje linii, które ostatni zmienił commit linii pierwszych rodziców zawarty w tym (zakres nocy z planu)."
+    )
     parser.add_argument("--czesc", metavar="K/N", type=_part, default=(1, 1), help="Tylko K-ty z N kolejnych kawałków listy mutacji.")
     parser.add_argument("--zapis", type=Path, help="Plik JSON z ostatnią linią i nazwami przeżytych mutacji (artefakt CI).")
     ciezkie_ci.argument(parser)
@@ -810,6 +816,26 @@ def share(every: Sequence[Mutant], number: int, count: int) -> Sequence[Mutant]:
     return every[len(every) * (number - 1) // count : len(every) * number // count]
 
 
+def last_changes(every: Sequence[Mutant]) -> list[frozenset[str]]:
+    """Commity linii pierwszych rodziców, które ostatnie zmieniły linie każdej mutacji z ``every`` w checkoucie
+    (``git blame --first-parent``: zmianę z gałęzi PR-u dostaje jego commit scalenia, a linię niezacommitowaną zera)."""
+
+    blamed = {
+        path: [row.split(maxsplit=1)[0].lstrip("^") for row in _git("blame", "--first-parent", "-l", "-s", "--", path).splitlines()]
+        for path in dict.fromkeys(mutant.path for mutant in every)
+    }
+    return [frozenset(blamed[mutant.path][line - 1] for line in mutant.lines) for mutant in every]
+
+
+def until(every: Sequence[Mutant], commit: str) -> list[Mutant]:
+    """Mutacje z ``every``, z których linii co najmniej jedną ostatni zmienił commit, który ``commit`` zawiera na linii
+    pierwszych rodziców: zakres nocy do ``commit`` (``tools/mutacje_nocne.py``). Mutację linii zmienionych później dostaje
+    następna noc, której bazą jest ``commit``."""
+
+    contained = set(_git("rev-list", "--first-parent", commit).split())
+    return [mutant for mutant, commits in zip(every, last_changes(every), strict=True) if commits & contained]
+
+
 def tests_of(repository: wplyw_zmiany.Repository, paths: Iterable[str]) -> dict[str, list[str]]:
     """Testy dotknięte każdym plikiem z ``paths``: tylko spośród nich biegną testy mutacji tego pliku."""
 
@@ -836,6 +862,8 @@ def _mutate(args: argparse.Namespace, survived: list[tuple[Mutant, str]], gate: 
     except ValueError as error:
         return 2, f"MUTACJE ZMIANY FAIL | {error}"
     every = [mutant for path, text in texts.items() for mutant in selected(path, text, hunks[path])]
+    if args.do:
+        every = until(every, args.do)
     found = share(every, number, count)
     if not found:
         where = f" w części {number}/{count}" if every else ""

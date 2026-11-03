@@ -4,14 +4,20 @@ Mutacje nocne (ADR 0021): mutacje linii zmienionych na ``main`` od ostatniej noc
 
 Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``workflow_dispatch`` z opcjonalnym ``od``).
 
-- ``plan`` ustala bazę: ``--od``, gdy jest, inaczej ``headSha`` ostatniego udanego runu tego workflow na ``main``,
-  a bez niego (albo gdy ten commit nie jest przodkiem HEAD) ostatni commit linii pierwszych rodziców HEAD sprzed 24 h.
+- ``plan`` ustala bazę: ``--od``, gdy jest, inaczej koniec zakresu ostatniego udanego runu tego workflow na ``main``
+  (``do`` z jego artefaktu ``zakres-nocy``, a run bez tego artefaktu policzył wszystko do swojego ``headSha``), a bez
+  takiego runu (albo gdy jego commit nie jest przodkiem HEAD) ostatni commit linii pierwszych rodziców HEAD sprzed 24 h.
   Mutacje od bazy liczy jak ``tools/mutacje_zmiany.py`` (``selected``, bez testów), a zły wyjątek ``# mutacje-zmiany:``
-  liczy jako jedną mutację, żeby część go zgłosiła. Dzieli je na części po najwyżej ``NA_CZESC`` mutacji, ale na
-  najwyżej ``NAJWIECEJ_CZESCI`` części, i pisze do ``GITHUB_OUTPUT`` ``baza``, ``czesci`` i ``liczba``. ``czesci`` to
+  liczy jako jedną mutację, żeby część go zgłosiła.
+- Noc mutuje najwyżej ``CZESCI_NA_NOC`` części po ``NA_CZESC`` mutacji, żeby każda część skończyła się w limicie
+  czasu i żadna noc nie dostała więcej, niż przerobi. Gdy od bazy jest ich więcej, ``do`` to najdalszy commit linii
+  pierwszych rodziców od bazy, do którego mutacje zmian mieszczą się w tym limicie (co najmniej pierwszy commit z
+  mutacjami, także większy), a noc mutuje tylko zmiany do niego (``mutacje_zmiany.until``). Bazą następnej nocy jest
+  ``do``, więc zaległość przechodzi na kolejne noce, a nie przepada. Plan pisze do ``GITHUB_OUTPUT`` ``baza``, ``do``,
+  ``czesci`` i ``liczba``, a z ``--zakres`` plik JSON z ``baza`` i ``do`` (artefakt ``zakres-nocy``). ``czesci`` to
   macierz zadań części: numer i ``przegladarka``, gdy testy, które mogą sprawdzać mutacje części (dotknięte jej
   plikami), sięgają Atrapy efenix, więc zadanie części instaluje Chromium tak jak zadanie pytest planu CI.
-- Część k z n to ``tools/mutacje_zmiany.py --baza <baza> --czesc k/n --zapis …``: kolejne mutacje z listy
+- Część k z n to ``tools/mutacje_zmiany.py --baza <baza> --do <do> --czesc k/n --zapis …``: kolejne mutacje z listy
   posortowanej po plikach, więc pokrycie biegnie na testach kilku plików, nie całej zmiany dnia.
 - ``zglos`` czyta zapisy części. Każdą przeżytą mutację przypisuje PR-owi, który ostatni zmienił jej linie: zmienione
   linie, które mutacja psuje, a nie linię jej nazwy, bo nazwę daje początek węzła, a w wielowierszowym ``if (`` zmienia
@@ -25,7 +31,7 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   komentarzem, a zamknięte issue z nowymi wraca otwarte z ``ready-for-agent``.
   Część bez zapisu albo z porażką inną niż przeżyte mutacje (testy padają bez mutacji, zły wyjątek, limit czasu części
   minął przed werdyktem którejś mutacji) czerwieni run po zgłoszeniu reszty, także przeżytych mutacji z jej zapisu,
-  więc następna noc liczy od tej samej bazy. Zgłoszone mutacje się nie powtórzą, także gdy PR z
+  więc następna noc liczy od tej samej bazy, z tym samym limitem mutacji. Zgłoszone mutacje się nie powtórzą, także gdy PR z
   następnego dnia przesunie ich linie, bo klucz nie ma numerów linii.
 - Skrypty mutacji skilli nocy planuje ``tools/plan_ci.py plan --zdarzenie noc --baza <baza>`` (skrypty skilli, których
   folder, runner mutacji albo sprawdzenie zmieniło się od bazy, i części każdego n podstaw z ``ci-czesci``), a zadanie
@@ -35,7 +41,7 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   a bez niej ostatni PR nocy); linii, którą issue już ma, nie dostaje drugi raz. Zadanie bez zapisu tego planu albo bez wyniku jednostki czerwieni run,
   tak jak skrypt, który padł w nocy bez commitu od bazy, bo nie ma PR-u, który by go dostał.
 
-Bazę i liczbę części nocy drukuje lokalnie bez testów:
+Bazę, koniec zakresu i liczbę części nocy drukuje lokalnie bez testów:
 
     .venv/bin/python tools/mutacje_nocne.py plan
 """
@@ -43,9 +49,11 @@ Bazę i liczbę części nocy drukuje lokalnie bez testów:
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import io
 import itertools
 import json
 import math
@@ -55,6 +63,7 @@ import re
 import subprocess
 import sys
 from typing import Any
+import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
@@ -68,11 +77,13 @@ from zgloszenia_ci import MERGE, REPO, SQUASH, GhApi, GitHub, blok_kodu
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = "mutacje-nocne.yml"
-# Część Change mutations na PR liczyła pokrycie 6–10 min i ok. 10 s na mutację (runy 40543912115–40612759981 z 27–28.10),
-# więc 25 mutacji to część na 10–15 min.
+# Zadanie części ma limit PART_LIMIT_S (3300 s) w tools/mutacje_zmiany.py. W ostatnim udanym runie przed limitem nocy
+# (41179652907, 31.10) części po 31–32 mutacje trwały 6–50 min (pokrycie 83–651 s); w runie 41601085650 (3.11) części
+# po 102–103 mutacje kończył limit przed werdyktem 5–92 z nich. 25 mutacji to najdłuższa część z 31.10 skrócona do ok. 42 min.
 NA_CZESC = 25
-# Nocą runnery są wolne, ale 60 zadań organizacji dzielą też inne workflowy.
-NAJWIECEJ_CZESCI = 20
+# Zadania części biegną najwyżej po 20 naraz (max-parallel w mutacje-nocne.yml), bo 60 zadań organizacji dzielą też
+# runy CI PR-ów, więc noc to najwyżej dwie fale części.
+CZESCI_NA_NOC = 40
 OKNO = timedelta(hours=24)
 ETYKIETY = ("ready-for-agent", "przezyte-mutacje")
 # Artefakt części k w mutacje-nocne.yml: ``mutacje-nocne-<k>`` z plikiem ``--zapis`` narzędzia mutacji.
@@ -80,6 +91,9 @@ ARTEFAKT = "mutacje-nocne-"
 ZAPIS = "czesc.json"
 # Artefakt zadania skryptów mutacji skilli: ``mutacje-skilli-<id zadania planu>`` z zapisem ``plan_ci.WYKONANIE``.
 ARTEFAKT_SKILLI = "mutacje-skilli-"
+# Artefakt planu z plikiem ``--zakres``: baza i koniec zakresu nocy, od którego zaczyna następna noc.
+ARTEFAKT_ZAKRESU = "zakres-nocy"
+ZAKRES = "zakres.json"
 STRONA = 100
 _ID = re.compile(r"(?P<plik>[^:\s]+):[1-9][0-9]* \S.*")
 _KLUCZ = re.compile(r"\| klucz (?P<klucz>[0-9a-f]{12})\b")
@@ -103,11 +117,24 @@ def baza(github: GitHub, root: Path, od: str, teraz: datetime) -> tuple[str, str
         return _git(root, "rev-parse", "--verify", f"{od}^{{commit}}"), f"--od {od}"
     runy = github.json(f"{REPO}/actions/workflows/{WORKFLOW}/runs?branch=main&status=success&per_page=1")["workflow_runs"]
     if runy and _przodek(root, runy[0]["head_sha"], "HEAD"):
-        return runy[0]["head_sha"], f"ostatni udany run {runy[0]['id']}"
+        return _koniec_runu(github, runy[0]), f"ostatni udany run {runy[0]['id']}"
     przed = _git(root, "rev-list", "-1", "--first-parent", f"--before={(teraz - OKNO).isoformat()}", "HEAD")
     if not przed:
         raise ValueError("HEAD nie ma commitu sprzed 24 h; podaj --od")
     return przed, "24 h wstecz, bez udanego runu przodka HEAD"
+
+
+def _koniec_runu(github: GitHub, run: dict[str, Any]) -> str:
+    """Commit, do którego udany ``run`` zmutował zmiany: ``do`` z jego artefaktu ``zakres-nocy``, a bez artefaktu (run
+    sprzed limitu nocy) jego ``head_sha``. Wygasły artefakt to błąd, bo ``head_sha`` pominąłby zaległość tego runu."""
+
+    artefakty = github.json(f"{REPO}/actions/runs/{run['id']}/artifacts?name={ARTEFAKT_ZAKRESU}")["artifacts"]
+    if not artefakty:
+        return str(run["head_sha"])
+    if artefakty[0]["expired"]:
+        raise ValueError(f"artefakt {ARTEFAKT_ZAKRESU} runu {run['id']} wygasł, więc nie wiadomo, dokąd run zmutował zmiany; podaj --od")
+    with zipfile.ZipFile(io.BytesIO(github.bajty(f"{REPO}/actions/artifacts/{artefakty[0]['id']}/zip"))) as archiwum:
+        return str(json.loads(archiwum.read(ZAKRES))["do"])
 
 
 def mutacje_od(od: str) -> tuple[list[mutacje_zmiany.Mutant], bool]:
@@ -126,8 +153,29 @@ def mutacje_od(od: str) -> tuple[list[mutacje_zmiany.Mutant], bool]:
     return mutanty, False
 
 
+def koniec_nocy(root: Path, od: str, mutanty: Sequence[mutacje_zmiany.Mutant]) -> str:
+    """Commit, do którego noc od ``od`` mutuje zmiany: HEAD, gdy ``mutanty`` mieszczą się w ``CZESCI_NA_NOC`` częściach,
+    a inaczej najdalszy commit linii pierwszych rodziców, do którego mutacje zmian (``mutacje_zmiany.until``) się w nich
+    mieszczą, ale co najmniej pierwszy commit z mutacjami, nawet gdy sam ma ich więcej."""
+
+    limit = NA_CZESC * CZESCI_NA_NOC
+    if len(mutanty) <= limit:
+        return _git(root, "rev-parse", "HEAD")
+    linia = _git(root, "rev-list", "--first-parent", "--reverse", f"{od}..HEAD").split()
+    pozycja = {commit: numer for numer, commit in enumerate(linia)}
+    # Mutacja wchodzi do zakresu z najwcześniejszym commitem, który zmienił którąś jej linię (jak w ``until``), a commit
+    # spoza linii od ``od`` (sprzed ``od``) każdy zakres już zawiera, więc liczy się od pierwszego commitu.
+    od_commitu = Counter(min(pozycja.get(commit, 0) for commit in commity) for commity in mutacje_zmiany.last_changes(mutanty))
+    suma = 0
+    for numer in range(len(linia)):
+        if suma and suma + od_commitu[numer] > limit:
+            return linia[numer - 1]
+        suma += od_commitu[numer]
+    return linia[-1]
+
+
 def czesci(liczba: int) -> int:
-    return min(NAJWIECEJ_CZESCI, math.ceil(liczba / NA_CZESC))
+    return math.ceil(liczba / NA_CZESC)
 
 
 def macierz(mutanty: Sequence[mutacje_zmiany.Mutant], n: int, repository: Repository) -> list[dict[str, int | bool]]:
@@ -142,17 +190,26 @@ def macierz(mutanty: Sequence[mutacje_zmiany.Mutant], n: int, repository: Reposi
     return wpisy
 
 
-def _plan(od: str) -> int:
-    od_sha, skad = baza(GhApi(), ROOT, od, datetime.now(UTC))
-    mutanty, zly_wyjatek = mutacje_od(od_sha)
+def zaplanuj(github: GitHub, od: str, zakres: Path | None) -> int:
+    """Plan nocy: baza, koniec jej zakresu i macierz części w ``GITHUB_OUTPUT``, a z ``zakres`` plik artefaktu ``zakres-nocy``."""
+
+    od_sha, skad = baza(github, ROOT, od, datetime.now(UTC))
+    wszystkie, zly_wyjatek = mutacje_od(od_sha)
+    do_sha = koniec_nocy(ROOT, od_sha, wszystkie)
+    mutanty = mutacje_zmiany.until(wszystkie, do_sha)
     # Zły wyjątek liczy się jak jedna mutacja, żeby część go zgłosiła.
     liczba = max(len(mutanty), 1) if zly_wyjatek else len(mutanty)
     wpisy = macierz(mutanty, czesci(liczba), Repository.scan(ROOT))
     z_chromium = sum(bool(wpis["przegladarka"]) for wpis in wpisy)
-    print(f"MUTACJE NOCNE PLAN | baza {od_sha} ({skad}) | mutacje {liczba} | części {len(wpisy)} | z Chromium {z_chromium}")
+    if zalegle := len(wszystkie) - len(mutanty):
+        print(f"MUTACJE NOCNE | zaległość: {zalegle} mutacji zmian po {do_sha} czeka na następne noce")
+    print(f"MUTACJE NOCNE PLAN | baza {od_sha} ({skad}) | do {do_sha} | mutacje {liczba} | części {len(wpisy)} | z Chromium {z_chromium}")
     if wyjscie := os.environ.get("GITHUB_OUTPUT"):
         with open(wyjscie, "a", encoding="utf-8") as plik:
-            plik.write(f"baza={od_sha}\nczesci={json.dumps(wpisy)}\nliczba={len(wpisy)}\n")
+            plik.write(f"baza={od_sha}\ndo={do_sha}\nczesci={json.dumps(wpisy)}\nliczba={len(wpisy)}\n")
+    if zakres is not None:
+        zakres.parent.mkdir(parents=True, exist_ok=True)
+        zakres.write_text(json.dumps({"baza": od_sha, "do": do_sha}), encoding="utf-8")
     return 0
 
 
@@ -438,8 +495,9 @@ def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     polecenia = parser.add_subparsers(dest="polecenie", required=True)
-    plan = polecenia.add_parser("plan", help="Baza nocy, liczba mutacji i części (GITHUB_OUTPUT).")
-    plan.add_argument("--od", default="", help="Commit, od którego liczyć zmiany (domyślnie ostatni udany run albo 24 h wstecz).")
+    plan = polecenia.add_parser("plan", help="Baza i koniec zakresu nocy, liczba mutacji i części (GITHUB_OUTPUT).")
+    plan.add_argument("--od", default="", help="Commit, od którego liczyć zmiany (domyślnie koniec zakresu ostatniego udanego runu albo 24 h wstecz).")
+    plan.add_argument("--zakres", type=Path, help=f"Plik JSON z bazą i końcem zakresu nocy (artefakt {ARTEFAKT_ZAKRESU}, z którego następna noc bierze bazę).")
     zgloszenie = polecenia.add_parser("zglos", help="Issue dla przeżytych mutacji ze wszystkich części.")
     zgloszenie.add_argument("--baza", required=True, help="Baza nocy z planu.")
     zgloszenie.add_argument("--zapisy", type=Path, required=True, help=f"Katalog z podkatalogami artefaktów {ARTEFAKT}<k>.")
@@ -449,10 +507,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.polecenie == "plan":
-            return _plan(args.od)
+            return zaplanuj(GhApi(), args.od, args.zakres)
         plan_skilli = None if args.plan_skilli is None else plan_ci.Plan.z_json(args.plan_skilli.read_text(encoding="utf-8"))
         return zglos(GhApi(), ROOT, args.baza, args.zapisy, args.czesci, args.run, plan_skilli)
-    except (RuntimeError, ValueError, KeyError, OSError, subprocess.CalledProcessError) as blad:
+    except (RuntimeError, ValueError, KeyError, OSError, subprocess.CalledProcessError, zipfile.BadZipFile) as blad:
         szczegol = blad.stderr.strip() if isinstance(blad, subprocess.CalledProcessError) else blad
         print(f"MUTACJE NOCNE FAIL | {szczegol}")
         return 1

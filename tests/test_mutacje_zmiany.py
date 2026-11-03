@@ -105,6 +105,22 @@ def test_zmiana_bez_testu_ktory_ja_widzi_konczy_sie_fail_z_nazwa_mutacji_takze_w
 
 
 
+@pytest.mark.parametrize(("koniec", "kod", "pliki"), [("warunek", 0, ["src/rozliczenia/warunek.py"]), ("inny", 1, ["src/rozliczenia/inny.py", "src/rozliczenia/warunek.py"])])
+def test_czesc_nocy_z_zalegloscia_mutuje_tylko_zmiany_main_do_konca_zakresu_z_planu(tmp_path: Path, koniec: str, kod: int, pliki: list[str]) -> None:
+    """Na ``main`` PR zmienia warunek (testy go widzą), a następny ``inny.py``, którego nie sprawdza żaden test."""
+
+    repo = _repo(tmp_path / "repo", ALL_CASES, other="def inny() -> int:\n    return 1\n")
+    commity = {"warunek": commit(repo, "Warunek (#1)")}
+    (repo / "src" / "rozliczenia" / "inny.py").write_text("def inny() -> int:\n    return 2\n", encoding="utf-8")
+    commity["inny"] = commit(repo, "Inny (#2)")
+
+    done = _run(repo, "--do", commity[koniec])
+
+    assert done.returncode == kod, done.stdout + done.stderr
+    mutated = {line.split(": ", 1)[1].split(":", 1)[0] for line in done.stdout.splitlines() if line.startswith(("WYKRYTA: ", "NIEWYKRYTA: "))}
+    assert sorted(mutated) == pliki
+
+
 def test_mutacja_ktora_przezyla_testy_pliku_albo_nie_ma_testow_tez_trafia_do_zapisu(tmp_path: Path) -> None:
     other = "def inna() -> int:\n    return 1\n"
     third = "\n\ndef trzecia() -> int:\n    return 3\n"
