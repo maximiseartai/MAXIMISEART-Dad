@@ -36,6 +36,7 @@ from playwright.sync_api import sync_playwright
 import pytest
 import zgodnosc_efenix
 
+from rozliczenia.efenix_browser import launch_options
 from rozliczenia.efenix_positions import POSITION_OF_COLUMN
 
 from tests.fixtures.atrapa_efenix import (
@@ -229,7 +230,7 @@ def chrome() -> Iterator[str]:
     def own() -> None:
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(args=[f"--remote-debugging-port={port}"])
+                browser = playwright.chromium.launch(**launch_options(playwright, arguments=[f"--remote-debugging-port={port}"]))
                 try:
                     remote = playwright.chromium.connect_over_cdp(endpoint)
                     name, value = SESSION_COOKIE

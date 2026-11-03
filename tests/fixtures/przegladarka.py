@@ -11,13 +11,15 @@ from contextlib import contextmanager
 
 from playwright.sync_api import Browser, Page, sync_playwright
 
+from rozliczenia.efenix_browser import launch_options
+
 
 @contextmanager
 def chromium() -> Iterator[Browser]:
-    """Chromium bez okna na czas bloku; zamyka się razem z Playwrightem."""
+    """Chromium bez okna na czas bloku, z argumentami okna efenix; zamyka się razem z Playwrightem."""
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = playwright.chromium.launch(**launch_options(playwright))
         try:
             yield browser
         finally:
