@@ -81,15 +81,16 @@ fragmentu ma linię początku fragmentu, więc obejmuje je komentarz nad nim alb
 terminie nie obowiązuje, ale narzędzie widzi go dopiero przy
 następnej zmianie jego pliku, a komentarz ``mutacje-zmiany:`` w innej postaci kończy narzędzie błędem.
 
-Kończy się ``MUTACJE ZMIANY OK | …`` (kod 0) albo ``MUTACJE ZMIANY FAIL | …``: kodem 1, gdy przeżyły mutacje, a
-kodem 2, gdy wynik mutacji nic nie mówi (nieznana baza, zły wyjątek, testy padają bez mutacji, odmowa
-``tools/lib/ciezkie_ci.py``) albo limit czasu części (``--limit-czesci-s``) minął przed werdyktem którejś mutacji. Po
-limicie żadne polecenie już nie biegnie, a mutacje bez wyniku dostają linię ``BEZ WERDYKTU``, więc część kończy się
-zapisem z przeżytymi mutacjami przed limitem czasu zadania CI.
+Kończy się ``MUTACJE ZMIANY OK | …`` (kod 0) albo ``MUTACJE ZMIANY FAIL | …``: kodem 1, gdy przeżyły mutacje, kodem
+2, gdy wynik mutacji nic nie mówi (nieznana baza, zły wyjątek, testy padają albo nie kończą się w limicie czasu części
+bez mutacji, odmowa ``tools/lib/ciezkie_ci.py``), a kodem 3, gdy limit czasu części (``--limit-czesci-s``) minął po
+pokryciu, przed werdyktem którejś mutacji. Po limicie żadne polecenie już nie biegnie, a mutacje bez wyniku dostają
+linię ``BEZ WERDYKTU``, więc część kończy się zapisem przed limitem czasu zadania CI.
 W CI biegnie nocą na Linuksie, na ``main``, od bazy z ``tools/mutacje_nocne.py``, w częściach
-workflow ``mutacje-nocne.yml``. Z ``--zapis`` każda część zapisuje swoją ostatnią linię i przeżyte mutacje: nazwę
-(``<plik>:<linia> <opis>``, jak w linii ``NIEWYKRYTA``), zmienione linie, które mutacja psuje (``Mutant.lines``), i klucz
-(``fingerprint``), a ``tools/mutacje_nocne.py`` zakłada z nich issue PR-u, który ostatni zmienił te linie.
+workflow ``mutacje-nocne.yml``. Z ``--zapis`` każda część zapisuje swoją ostatnią linię, przeżyte mutacje i mutacje bez
+werdyktu po limicie czasu części: nazwę (``<plik>:<linia> <opis>``, jak w linii ``NIEWYKRYTA``), zmienione linie, które
+mutacja psuje (``Mutant.lines``), i klucz (``fingerprint``), a ``tools/mutacje_nocne.py`` zakłada z nich issue PR-u,
+który ostatni zmienił te linie.
 
 Granica: nie zastępuje mutacji z opisu PR. Obietnicę, której żadna z tych mutacji nie psuje (inny klucz
 wyszukiwania, kolejność kroków), samo usunięcie linii, dekoratory, argument pozycyjny, kod poza ``src/`` i ``tools/``
@@ -147,8 +148,10 @@ import wplyw_zmiany
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "origin/main"
 WORKERS = 4
-# Zadanie części w mutacje-nocne.yml ma 60 min; 5 min zostaje na instalację i wgranie zapisu.
-PART_LIMIT_S = 3300
+# Limit czasu testów jednej mutacji (``--limit-s``): polecenie bez wyniku po nim to PRZEKROCZONY CZAS.
+MUTATION_LIMIT_S = 900
+# Zadanie części w mutacje-nocne.yml ma 180 min; 5 min zostaje na instalację i wgranie zapisu.
+PART_LIMIT_S = 10500
 # Ostatnia linia części, w której przeżyły mutacje (kod 1): wynik, który ``tools/mutacje_nocne.py`` tylko zgłasza.
 SURVIVED = "MUTACJE ZMIANY FAIL | przeżyło"
 # Linia poleceń Windows ma najwyżej 32 767 znaków; dłuższa lista testów idzie jako pliki testów.
@@ -776,7 +779,7 @@ def main(argv: list[str] | None = None, *, gate: mutacje.Gate = mutacje.static_g
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--baza", default=BASE, help=f"Gałąź, od której liczy się zmiana (domyślnie {BASE}).")
     parser.add_argument("--rownolegle", type=int, default=WORKERS, help="Ile mutacji biegnie naraz, każda w swojej kopii.")
-    parser.add_argument("--limit-s", type=float, default=900, help="Limit czasu testów jednej mutacji w sekundach.")
+    parser.add_argument("--limit-s", type=float, default=MUTATION_LIMIT_S, help="Limit czasu testów jednej mutacji w sekundach.")
     parser.add_argument(
         "--limit-czesci-s", type=float, default=PART_LIMIT_S, help=f"Limit czasu całej części w sekundach (domyślnie {PART_LIMIT_S})."
     )
@@ -791,11 +794,17 @@ def main(argv: list[str] | None = None, *, gate: mutacje.Gate = mutacje.static_g
         print(refusal)
         return 2
     survived: list[tuple[Mutant, str]] = []
-    code, result = _mutate(args, survived, gate)
+    unchecked: list[tuple[Mutant, str]] = []
+    code, result = _mutate(args, survived, unchecked, gate)
     print(result)
     if args.zapis is not None:
         args.zapis.parent.mkdir(parents=True, exist_ok=True)
-        record = {"czesc": "/".join(map(str, args.czesc)), "wynik": result, "przezyte": [entry(mutant, text) for mutant, text in survived]}
+        record = {
+            "czesc": "/".join(map(str, args.czesc)),
+            "wynik": result,
+            "przezyte": [entry(mutant, text) for mutant, text in survived],
+            "bez_werdyktu": [entry(mutant, text) for mutant, text in unchecked],
+        }
         args.zapis.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
     return code
 
@@ -805,7 +814,7 @@ def _name(mutant: Mutant) -> str:
 
 
 def entry(mutant: Mutant, text: str) -> dict[str, object]:
-    """Przeżyta mutacja pliku o treści ``text`` w zapisie ``--zapis``, który czyta ``tools/mutacje_nocne.py``."""
+    """Przeżyta albo bez werdyktu mutacja pliku o treści ``text`` w zapisie ``--zapis``, który czyta ``tools/mutacje_nocne.py``."""
 
     return {"id": _name(mutant), "linie": sorted(mutant.lines), "klucz": fingerprint(mutant, text)}
 
@@ -818,10 +827,11 @@ def share(every: Sequence[Mutant], number: int, count: int) -> Sequence[Mutant]:
 
 def last_changes(every: Sequence[Mutant]) -> list[frozenset[str]]:
     """Commity linii pierwszych rodziców, które ostatnie zmieniły linie każdej mutacji z ``every`` w checkoucie
-    (``git blame --first-parent``: zmianę z gałęzi PR-u dostaje jego commit scalenia, a linię niezacommitowaną zera)."""
+    (``git blame --first-parent``: zmianę z gałęzi PR-u dostaje jego commit scalenia, a linię niezacommitowaną zera).
+    Wiersze blame dzieli tylko koniec linii gita (``_rows``): linia z U+2028 albo form feed to dalej jeden wiersz."""
 
     blamed = {
-        path: [row.split(maxsplit=1)[0].lstrip("^") for row in _git("blame", "--first-parent", "-l", "-s", "--", path).splitlines()]
+        path: [row.split(maxsplit=1)[0].lstrip("^") for row in _rows(_git("blame", "--first-parent", "-l", "-s", "--", path))]
         for path in dict.fromkeys(mutant.path for mutant in every)
     }
     return [frozenset(blamed[mutant.path][line - 1] for line in mutant.lines) for mutant in every]
@@ -842,8 +852,11 @@ def tests_of(repository: wplyw_zmiany.Repository, paths: Iterable[str]) -> dict[
     return {path: list(repository.impact(frozenset({path})).tests) for path in paths}
 
 
-def _mutate(args: argparse.Namespace, survived: list[tuple[Mutant, str]], gate: mutacje.Gate) -> tuple[int, str]:
-    """Kod wyjścia i ostatnia linia; przeżyte mutacje z treścią ich pliku przed mutacją dopisuje do ``survived``."""
+def _mutate(
+    args: argparse.Namespace, survived: list[tuple[Mutant, str]], unchecked: list[tuple[Mutant, str]], gate: mutacje.Gate
+) -> tuple[int, str]:
+    """Kod wyjścia i ostatnia linia; przeżyte mutacje z treścią ich pliku przed mutacją dopisuje do ``survived``, a mutacje
+    bez werdyktu po limicie czasu części do ``unchecked``."""
 
     deadline = time.monotonic() + args.limit_czesci_s
     out_of_time = f"MUTACJE ZMIANY FAIL | limit czasu części {args.limit_czesci_s:g} s minął"
@@ -921,7 +934,7 @@ def _mutate(args: argparse.Namespace, survived: list[tuple[Mutant, str]], gate: 
     # Przebieg przed ostatnim biegnie po kilka mutacji naraz jak pierwszy. Ostatni ma testy pliku, często tysiące, a
     # takich mutacji jest kilka, więc biegną po jednej, każda z workerami xdist.
     wide: list[tuple[Mutant, mutacje.Mutation]] = []
-    unchecked = middle = 0
+    middle = 0
     queued, label = narrow, ""
     while queued:
         verdicts = mutacje.verdicts([m for _, m, _ in queued], workers=args.rownolegle, limit_s=args.limit_s, deadline=deadline)
@@ -930,7 +943,7 @@ def _mutate(args: argparse.Namespace, survived: list[tuple[Mutant, str]], gate: 
             # ZAWIESZENIE (pytest-timeout) czerwieni CI, więc kończy mutację jak WYKRYTA, bez szerszych testów.
             caught, last = mutacje.in_ci(verdict, shown)
             if verdict == mutacje.NO_VERDICT:
-                unchecked += 1
+                unchecked.append((mutant, texts[mutant.path]))
             elif not caught and not remaining:
                 passed.append((mutant, mutation, verdict, shown, label))
                 continue
@@ -948,7 +961,8 @@ def _mutate(args: argparse.Namespace, survived: list[tuple[Mutant, str]], gate: 
         if not caught and verdict != mutacje.NO_VERDICT:
             passed.append((mutant, mutation, verdict, shown, " (testy pliku)"))
             continue
-        unchecked += verdict == mutacje.NO_VERDICT
+        if verdict == mutacje.NO_VERDICT:
+            unchecked.append((mutant, texts[mutant.path]))
         print(f"{verdict}: {mutation.name} → {last} (testy pliku)", flush=True)
     clock.append(time.monotonic())
     # Cofnięcie do bazy przywraca kod, który przeszedł bramę, więc jej błąd mówi tylko o niezgodności z resztą zmiany.
@@ -962,7 +976,7 @@ def _mutate(args: argparse.Namespace, survived: list[tuple[Mutant, str]], gate: 
         verdict, shown = (tests_verdict, tests_shown) if mutant.revert else next(gated)
         caught, last = mutacje.in_ci(verdict, shown)
         if verdict == mutacje.NO_VERDICT:
-            unchecked += 1
+            unchecked.append((mutant, texts[mutant.path]))
         elif not caught:
             survived.append((mutant, texts[mutant.path]))
         print(f"{verdict}: {mutation.name} → {last}{label}", flush=True)
@@ -977,7 +991,7 @@ def _mutate(args: argparse.Namespace, survived: list[tuple[Mutant, str]], gate: 
     )
     summary = f"mutacje={len(found)} | wyjątki={excused} | innego systemu={other_system}"
     if unchecked:
-        return 2, f"{out_of_time} przed werdyktem {unchecked} mutacji | przeżyło {len(survived)} | {summary}"
+        return 3, f"{out_of_time} przed werdyktem {len(unchecked)} mutacji | przeżyło {len(survived)} | {summary}"
     if survived:
         return 1, f"{SURVIVED} {len(survived)} | {summary}"
     return 0, f"MUTACJE ZMIANY OK | {summary}"

@@ -9,8 +9,9 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   takiego runu (albo gdy jego commit nie jest przodkiem HEAD) ostatni commit linii pierwszych rodziców HEAD sprzed 24 h.
   Mutacje od bazy liczy jak ``tools/mutacje_zmiany.py`` (``selected``, bez testów), a zły wyjątek ``# mutacje-zmiany:``
   liczy jako jedną mutację, żeby część go zgłosiła.
-- Noc mutuje najwyżej ``CZESCI_NA_NOC`` części po ``NA_CZESC`` mutacji, żeby każda część skończyła się w limicie
-  czasu i żadna noc nie dostała więcej, niż przerobi. Gdy od bazy jest ich więcej, ``do`` to najdalszy commit linii
+- Część ma najwyżej ``NA_CZESC`` mutacji: tyle, że kończy się w limicie czasu części także wtedy, gdy testy każdej z
+  nich trwają pełny limit mutacji (``ZAPAS_S``). Noc mutuje najwyżej ``CZESCI_NA_NOC`` części, żeby nie dostała więcej,
+  niż przerobi. Gdy od bazy jest więcej mutacji, ``do`` to najdalszy commit linii
   pierwszych rodziców od bazy, do którego mutacje zmian mieszczą się w tym limicie (co najmniej pierwszy commit z
   mutacjami, także większy), a noc mutuje tylko zmiany do niego (``mutacje_zmiany.until``). Bazą następnej nocy jest
   ``do``, więc zaległość przechodzi na kolejne noce, a nie przepada. Plan pisze do ``GITHUB_OUTPUT`` ``baza``, ``do``,
@@ -19,19 +20,21 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   plikami), sięgają Atrapy efenix, więc zadanie części instaluje Chromium tak jak zadanie pytest planu CI.
 - Część k z n to ``tools/mutacje_zmiany.py --baza <baza> --do <do> --czesc k/n --zapis …``: kolejne mutacje z listy
   posortowanej po plikach, więc pokrycie biegnie na testach kilku plików, nie całej zmiany dnia.
-- ``zglos`` czyta zapisy części. Każdą przeżytą mutację przypisuje PR-owi, który ostatni zmienił jej linie: zmienione
+- ``zglos`` czyta zapisy części. Każdą przeżytą mutację i mutację bez werdyktu po limicie czasu części przypisuje PR-owi, który ostatni zmienił jej linie: zmienione
   linie, które mutacja psuje, a nie linię jej nazwy, bo nazwę daje początek węzła, a w wielowierszowym ``if (`` zmienia
   się często tylko linia w środku. ``git blame`` tych linii daje commity nocy, bo to linie zmienione od bazy, a z nich
   liczy się ten, który linia pierwszych rodziców HEAD wniosła ostatni. Numer PR podaje temat commitu tej linii, który go wniósł
   (``Merge pull request #N`` albo squash ``… (#N)``); gałąź zbudowana na innej wnosi swoje commity do kilku PR-ów, a
   temat scalenia mówi, który z nich je scalił. Bez numeru w temacie PR podaje ``gh api …/commits/<sha>/pulls``. Na PR
   przypada jedno issue ``Przeżyte mutacje z #N`` z etykietami ``ETYKIETY``, a w nim linie
-  ``MUTACJA <plik>:<linia> <opis> | klucz <klucz>`` (id jak w ``NIEWYKRYTA``, klucz z ``mutacje_zmiany.fingerprint``).
+  ``MUTACJA <plik>:<linia> <opis> | klucz <klucz>`` (id jak w ``NIEWYKRYTA``, klucz z ``mutacje_zmiany.fingerprint``),
+  a mutacja bez werdyktu ma na końcu ``BEZ_WERDYKTU``: część po limicie czasu jej nie sprawdziła, więc noc nie wraca do
+  jej zakresu, a sprawdza ją agent PR-u.
   Mutacji, której klucz issue już ma w treści albo komentarzu, nie dostaje drugi raz; nowe idą do istniejącego issue
   komentarzem, a zamknięte issue z nowymi wraca otwarte z ``ready-for-agent``.
-  Część bez zapisu albo z porażką inną niż przeżyte mutacje (testy padają bez mutacji, zły wyjątek, limit czasu części
-  minął przed werdyktem którejś mutacji) czerwieni run po zgłoszeniu reszty, także przeżytych mutacji z jej zapisu,
-  więc następna noc liczy od tej samej bazy, z tym samym limitem mutacji. Zgłoszone mutacje się nie powtórzą, także gdy PR z
+  Część bez zapisu albo z porażką inną niż przeżyte mutacje i mutacje bez werdyktu (testy padają albo nie kończą się
+  w limicie czasu części bez mutacji, zły wyjątek) czerwieni run po zgłoszeniu reszty, także przeżytych mutacji z jej
+  zapisu, więc następna noc liczy od tej samej bazy, z tym samym limitem mutacji. Zgłoszone mutacje się nie powtórzą, także gdy PR z
   następnego dnia przesunie ich linie, bo klucz nie ma numerów linii.
 - Skrypty mutacji skilli nocy planuje ``tools/plan_ci.py plan --zdarzenie noc --baza <baza>`` (skrypty skilli, których
   folder, runner mutacji albo sprawdzenie zmieniło się od bazy, i części każdego n podstaw z ``ci-czesci``), a zadanie
@@ -77,10 +80,13 @@ from zgloszenia_ci import MERGE, REPO, SQUASH, GhApi, GitHub, blok_kodu
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = "mutacje-nocne.yml"
-# Zadanie części ma limit PART_LIMIT_S (3300 s) w tools/mutacje_zmiany.py. W ostatnim udanym runie przed limitem nocy
-# (41179652907, 31.10) części po 31–32 mutacje trwały 6–50 min (pokrycie 83–651 s); w runie 41601085650 (3.11) części
-# po 102–103 mutacje kończył limit przed werdyktem 5–92 z nich. 25 mutacji to najdłuższa część z 31.10 skrócona do ok. 42 min.
-NA_CZESC = 25
+# Część ma tyle mutacji, ile pełnych kolejek po WORKERS naraz mieści limit czasu części (PART_LIMIT_S), gdy testy każdej
+# trwają pełny limit mutacji (MUTATION_LIMIT_S), a ZAPAS_S zostaje na pokrycie, szersze przebiegi testów i bramę typów.
+# W nocach 31.10–3.11 (runy 41179652907, 41285996039, 41408995300, 41601085650) mediana mutacji pliku wynosiła 1–210 s,
+# ale 34 z 2892 mutacji trwały pełne 900 s, 16 z nich w tools/mutacje.py. Pokrycie części trwało najwyżej 1006 s, testy pliku
+# najwyżej 1201 s, a brama typów najwyżej 58 s.
+ZAPAS_S = 3600
+NA_CZESC = mutacje_zmiany.WORKERS * ((mutacje_zmiany.PART_LIMIT_S - ZAPAS_S) // mutacje_zmiany.MUTATION_LIMIT_S)
 # Zadania części biegną najwyżej po 20 naraz (max-parallel w mutacje-nocne.yml), bo 60 zadań organizacji dzielą też
 # runy CI PR-ów, więc noc to najwyżej dwie fale części.
 CZESCI_NA_NOC = 40
@@ -97,6 +103,8 @@ ZAKRES = "zakres.json"
 STRONA = 100
 _ID = re.compile(r"(?P<plik>[^:\s]+):[1-9][0-9]* \S.*")
 _KLUCZ = re.compile(r"\| klucz (?P<klucz>[0-9a-f]{12})\b")
+# Koniec linii ``MUTACJA`` mutacji, której część nie dała werdyktu przed limitem czasu.
+BEZ_WERDYKTU = " | bez werdyktu w limicie czasu części"
 
 
 def _git(root: Path, *argumenty: str) -> str:
@@ -218,11 +226,17 @@ def zaplanuj(github: GitHub, od: str, zakres: Path | None) -> int:
 
 @dataclass(frozen=True)
 class Przezyta:
-    """Przeżyta mutacja z zapisu części: nazwa ``<plik>:<linia> <opis>``, zmienione linie, które psuje, i jej klucz."""
+    """Przeżyta mutacja z zapisu części, a z ``bez_werdyktu`` mutacja, której część nie dała werdyktu przed limitem
+    czasu: nazwa ``<plik>:<linia> <opis>``, zmienione linie, które psuje, i jej klucz."""
 
     id: str
     linie: tuple[int, ...]
     klucz: str
+    bez_werdyktu: bool = False
+
+    @property
+    def linia(self) -> str:
+        return f"MUTACJA {self.id} | klucz {self.klucz}{BEZ_WERDYKTU if self.bez_werdyktu else ''}"
 
     @property
     def plik(self) -> str:
@@ -233,7 +247,10 @@ class Przezyta:
 
 
 def zapisy(katalog: Path, liczba: int) -> tuple[list[Przezyta], list[str]]:
-    """Przeżyte mutacje wszystkich części i przyczyny porażki części, które nie dały wyniku."""
+    """Przeżyte mutacje i mutacje bez werdyktu wszystkich części oraz przyczyny porażki części, które nie dały wyniku.
+
+    Część, której limit czasu minął po pokryciu (kod 3 ``tools/mutacje_zmiany.py``), dała wynik: jej mutacje bez werdyktu
+    idą do issue jak przeżyte, więc nie zatrzymują bazy nocy."""
 
     przezyte: list[Przezyta] = []
     problemy: list[str] = []
@@ -245,7 +262,9 @@ def zapisy(katalog: Path, liczba: int) -> tuple[list[Przezyta], list[str]]:
             continue
         # Część, której limit czasu minął przed werdyktem części mutacji, też zapisuje przeżyte z reszty.
         przezyte += [Przezyta(wpis["id"], tuple(wpis["linie"]), wpis["klucz"]) for wpis in zapis.get("przezyte") or []]
-        if not str(zapis.get("wynik")).startswith(("MUTACJE ZMIANY OK", mutacje_zmiany.SURVIVED)):
+        bez_werdyktu = [Przezyta(wpis["id"], tuple(wpis["linie"]), wpis["klucz"], bez_werdyktu=True) for wpis in zapis.get("bez_werdyktu") or []]
+        przezyte += bez_werdyktu
+        if not bez_werdyktu and not str(zapis.get("wynik")).startswith(("MUTACJE ZMIANY OK", mutacje_zmiany.SURVIVED)):
             problemy.append(f"część {numer}/{liczba}: {zapis.get('wynik')}")
     return przezyte, problemy
 
@@ -400,7 +419,7 @@ def akcje(github: GitHub, przypisane: dict[Autor, list[Przezyta]], run: str) -> 
             istniejace.setdefault(znalezione["title"], znalezione)
     wynik: list[Akcja] = []
     for kto, mutacje in przypisane.items():
-        linie = [f"MUTACJA {mutacja.id} | klucz {mutacja.klucz}" for mutacja in mutacje]
+        linie = [mutacja.linia for mutacja in mutacje]
         issue = istniejace.get(kto.tytul)
         if issue is None:
             tresc = [
@@ -410,16 +429,26 @@ def akcje(github: GitHub, przypisane: dict[Autor, list[Przezyta]], run: str) -> 
                 "",
                 "Dla każdej linii `MUTACJA` dodaj test, który zabija tę mutację (dowód: `tools/mutacje.py`), albo napisz w komentarzu "
                 "`MUTACJA <plik>:<linia> <opis> | nie warto, bo <powód>`.",
+                *_rada_bez_werdyktu(mutacje),
                 "Gdy każda linia ma test albo powód, zamknij issue (ADR 0021).",
             ]
             wynik.append(Zaloz(kto.tytul, "\n".join(tresc)))
             continue
         znane = "\n".join([issue.get("body") or "", *(komentarz["body"] or "" for komentarz in _strony(github, f"{REPO}/issues/{issue['number']}/comments"))])
         klucze = {znalezione["klucz"] for znalezione in _KLUCZ.finditer(znane)}
-        if nowe := [linia for linia, mutacja in zip(linie, mutacje, strict=True) if mutacja.klucz not in klucze]:
-            tresc = [f"Nowe przeżyte mutacje z [runu]({run}):", "", *blok_kodu(nowe)]
+        if nowe := [mutacja for mutacja in mutacje if mutacja.klucz not in klucze]:
+            tresc = [f"Nowe przeżyte mutacje z [runu]({run}):", "", *blok_kodu([mutacja.linia for mutacja in nowe]), *_rada_bez_werdyktu(nowe)]
             wynik.append(Uzupelnij(issue["number"], "\n".join(tresc), issue["state"] == "closed"))
     return wynik
+
+
+def _rada_bez_werdyktu(mutacje: Sequence[Przezyta]) -> list[str]:
+    if not any(mutacja.bez_werdyktu for mutacja in mutacje):
+        return []
+    return [
+        f"Linia z `{BEZ_WERDYKTU.removeprefix(' | ')}` to mutacja, której noc nie sprawdziła przed limitem czasu części: "
+        "uruchom ją `tools/mutacje.py`, a gdy test już ją wykrywa, napisz w komentarzu `MUTACJA <plik>:<linia> <opis> | wykryta, <polecenie>`."
+    ]
 
 
 def _ma(tekst: str, linia: str) -> bool:
@@ -488,7 +517,9 @@ def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: 
         print(f"MUTACJE NOCNE FAIL | {'; '.join(problemy)}")
         return 1
     skille = "" if plan_skilli is None else f" | zadania skilli {len(plan_skilli.zadania)} | padło skryptów {len(padly)}"
-    print(f"MUTACJE NOCNE OK | części {liczba} | przeżyło {len(przezyte)}{skille}")
+    bez_werdyktu = sum(mutacja.bez_werdyktu for mutacja in przezyte)
+    werdykty = f"przeżyło {len(przezyte) - bez_werdyktu}" + (f" | bez werdyktu {bez_werdyktu}" if bez_werdyktu else "")
+    print(f"MUTACJE NOCNE OK | części {liczba} | {werdykty}{skille}")
     return 0
 
 

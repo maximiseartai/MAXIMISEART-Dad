@@ -121,6 +121,41 @@ def test_czesc_nocy_z_zalegloscia_mutuje_tylko_zmiany_main_do_konca_zakresu_z_pl
     assert sorted(mutated) == pliki
 
 
+def _caught(done: subprocess.CompletedProcess[str]) -> list[str]:
+    return [line.removeprefix("WYKRYTA: ").partition(" → ")[0] for line in done.stdout.splitlines() if line.startswith("WYKRYTA: ")]
+
+
+@pytest.mark.parametrize("separator", [" ", "\x0c"], ids=["u2028", "form-feed"])
+def test_czesc_nocy_mutuje_zmieniona_linie_za_linia_z_separatorem_ktory_nie_konczy_linii_gita(tmp_path: Path, separator: str) -> None:
+    """``str.splitlines`` dzieli też na U+2028 i form feed, a git kończy linię tylko ``\\n``: zmieniona linia tuż za takim
+    znakiem nie może dostać w ``git blame`` końcówki napisu zamiast commitu, bo wypadłaby z każdej nocy."""
+
+    function = 'def oba(a: bool, b: bool) -> bool:\n    napis = "x{separator}y"\n    return {result}\n'
+    repo = _repo(tmp_path / "repo", ALL_CASES, function.format(separator=separator, result="a and b"), function.format(separator=separator, result="a"))
+    head = commit(repo, "Warunek (#1)")
+
+    done = _run(repo, "--do", head)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert sorted(_caught(done)) == ["src/rozliczenia/warunek.py:3 bez `b` w `and`", "src/rozliczenia/warunek.py:3 zmiana linii 3 cofnięta do bazy"]
+
+
+def test_czesc_nocy_do_commitu_scalenia_mutuje_zmiane_z_galezi_pr(tmp_path: Path) -> None:
+    """``main`` scala PR commitem scalenia, a linię zmienił commit gałęzi PR-u, którego nie ma na linii pierwszych rodziców."""
+
+    repo = _repo(tmp_path / "repo", ALL_CASES)
+    main = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    git(repo, "checkout", "--quiet", "-b", "pr")
+    commit(repo, "Warunek")
+    git(repo, "checkout", "--quiet", main)
+    git(repo, "merge", "--quiet", "--no-ff", "--message", "Merge pull request #1 from maximiseartai/pr", "pr")
+
+    done = _run(repo, "--do", git(repo, "rev-parse", "HEAD"))
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert sorted(_caught(done)) == ["src/rozliczenia/warunek.py:2 bez `b` w `and`", "src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy"]
+
+
 def test_mutacja_ktora_przezyla_testy_pliku_albo_nie_ma_testow_tez_trafia_do_zapisu(tmp_path: Path) -> None:
     other = "def inna() -> int:\n    return 1\n"
     third = "\n\ndef trzecia() -> int:\n    return 3\n"
@@ -251,7 +286,7 @@ def test_czesc_konczy_sie_zapisem_w_limicie_czasu_czesci_takze_gdy_mutacja_zawie
 
     done = _run(_repo(tmp_path / "repo", hangs, CHANGED + one, BASE + one), "--rownolegle", "1", "--limit-czesci-s", "15", "--zapis", str(record))
 
-    assert done.returncode == 2, done.stdout + done.stderr
+    assert done.returncode == 3, done.stdout + done.stderr
     verdicts = [line for line in done.stdout.splitlines() if " → " in line]
     # Pierwsza mutacja zawiesza testy do końca czasu części, więc druga już się nie zaczyna, a mutacja bez werdyktu
     # nie biegnie w dalszym kroku, więc każda ma jedną linię i liczy się raz.
@@ -259,8 +294,12 @@ def test_czesc_konczy_sie_zapisem_w_limicie_czasu_czesci_takze_gdy_mutacja_zawie
     assert verdicts[1] == "BEZ WERDYKTU: src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy → czas minął, zanim się zaczęła", done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
     assert written["wynik"] == "MUTACJE ZMIANY FAIL | limit czasu części 15 s minął przed werdyktem 2 mutacji | przeżyło 0 | mutacje=2 | wyjątki=0 | innego systemu=0"
-    # Testy zawieszone do końca czasu części to nie przeżyta mutacja, więc nie trafiają do issue.
+    # Testy zawieszone do końca czasu części to nie przeżyta mutacja, ale noc zgłasza ją jako mutację bez werdyktu.
     assert written["przezyte"] == []
+    assert [(entry["id"], entry["linie"]) for entry in written["bez_werdyktu"]] == [
+        ("src/rozliczenia/warunek.py:2 bez `b` w `and`", [2]),
+        ("src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy", [2]),
+    ]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="linię Failed: Timeout drukuje metoda signal pytest-timeout, a noc biegnie na Linuksie")
@@ -328,10 +367,11 @@ def test_mutacja_ktora_zawiesza_dopiero_testy_pliku_konczy_sie_bez_werdyktu_w_li
 
     done = _run(_repo(tmp_path / "repo", tests, "LIMIT = 5\n", "LIMIT = 3\n"), "--limit-czesci-s", "15", "--zapis", str(record))
 
-    assert done.returncode == 2, done.stdout + done.stderr
+    assert done.returncode == 3, done.stdout + done.stderr
     verdict = next(line for line in done.stdout.splitlines() if " → " in line)
     assert verdict.startswith("BEZ WERDYKTU: src/rozliczenia/warunek.py:1 zmiana linii 1 cofnięta do bazy → ") and verdict.endswith(" (testy pliku)"), done.stdout
-    assert json.loads(record.read_text(encoding="utf-8"))["przezyte"] == []
+    written = json.loads(record.read_text(encoding="utf-8"))
+    assert (written["przezyte"], [entry["id"] for entry in written["bez_werdyktu"]]) == ([], ["src/rozliczenia/warunek.py:1 zmiana linii 1 cofnięta do bazy"])
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="linię Failed: Timeout drukuje metoda signal pytest-timeout, a noc biegnie na Linuksie")
@@ -358,9 +398,14 @@ def test_czesc_z_testem_zawieszonym_bez_mutacji_konczy_sie_zapisem_w_limicie_cza
 
     done = _run(_repo(tmp_path / "repo", hangs), "--limit-czesci-s", "5", "--zapis", str(record))
 
+    # Testy, które bez mutacji nie kończą się w limicie części, to porażka części, a nie mutacje bez werdyktu.
     assert done.returncode == 2, done.stdout + done.stderr
     written = json.loads(record.read_text(encoding="utf-8"))
-    assert (written["wynik"], written["przezyte"]) == ("MUTACJE ZMIANY FAIL | limit czasu części 5 s minął w pokryciu, przed werdyktem 2 mutacji", [])
+    assert (written["wynik"], written["przezyte"], written["bez_werdyktu"]) == (
+        "MUTACJE ZMIANY FAIL | limit czasu części 5 s minął w pokryciu, przed werdyktem 2 mutacji",
+        [],
+        [],
+    )
 
 
 @pytest.mark.parametrize(
