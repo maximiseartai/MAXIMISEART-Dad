@@ -13,7 +13,8 @@ jeszcze raz, jak efenix po powrocie ze strony zlecenia na listę. Nie ma w niej 
 Strona zlecenia ma wycenę ze stanem: pozycje z wymyślonymi cenami (``CATALOG``: kody ``INDEKS_NNN_078`` stron efenix,
 z przypisania kolumn i bez niego) w kartach ``.card.rounded-lg.kolorek`` jak w efenix: karta z polem
 ``input.wycena-ilosc`` ma cenę w tekście ``.col-sm-1.mt-2 > span.text-default > small``, a dwie karty z ceną wpisywaną
-mają samo pole ``.wycena-cena``. Strona ma kwotę końcową ``#cena_all2``, datę
+mają samo pole ``.wycena-cena``. Zlecenie z ``AtrapaOrder.without`` ma stronę bez kart części pozycji, jak zlecenia
+efenix, których strona ma mniej pozycji wyceny. Strona ma kwotę końcową ``#cena_all2``, datę
 wykonania z oknem ``#dialog_select_date`` (przycisk ``#button-calendar``, pole ``#field_data_instalacji`` z własnym
 kalendarzem Atrapy w API pickadate: ``jQuery(pole).pickadate('picker').set('select', …)``). Jak w efenix pole nie
 przyjmuje pisania, a kalendarz po otwarciu okna pokazuje dzisiejszy dzień, dzień po dziś albo przed pierwszym dniem
@@ -101,7 +102,6 @@ class Changed(enum.Enum):
     DATE_DIALOG = "przycisk kalendarza nie otwiera okna daty wykonania"
     EMMETT_BUTTON = "strona zlecenia nie ma przycisku Emmetta"
     HIDDEN_EMMETT = "przycisk Emmetta jest na stronie, ale niewidoczny"
-    POSITION_CODE = "pozycja wyceny ma inny kod"
     STALE_AMOUNT = "kwota końcowa nie odświeża się po zapisie ilości"
     QUANTITY_ANSWER = "zapis ilości odpowiada stroną HTML, a nie JSON z kwotą końcową"
     QUANTITY_VALUE = "pole Ilość pozycji 012 ma wartość, która nie jest liczbą całkowitą (1.5)"
@@ -181,8 +181,10 @@ class AtrapaOrder:
     ``emmett_loads``: ile razy załadowano do zlecenia Wycenę Emmetta. ``changed``: strona tylko tego zlecenia w innej
     budowie (``Changed``), a ``cut``: strona tego zlecenia zrywa połączenie bez odpowiedzi, jak sieć, która zniknęła, więc
     zlecenia przed nim przechodzą jak w efenix. ``error_status``: strona tego zlecenia to strona błędu serwera z tym
-    statusem HTTP, a ``login_form``: formularz logowania pod adresem strony zlecenia, bez przekierowania; z
-    ``after_emmett`` oba dopiero od przeładowania po załadowaniu Wyceny Emmetta.
+    statusem HTTP, a ``login_form``: formularz logowania pod adresem strony zlecenia, bez przekierowania. ``without``:
+    kody pozycji, których karty strona tego zlecenia nie ma, jak strony efenix z częścią pozycji wyceny. Z ``after_date``
+    każda z tych trzech zmian strony jest dopiero od zapisu daty wykonania, a z ``after_emmett`` od przeładowania po
+    załadowaniu Wyceny Emmetta.
     """
 
     order_id: str
@@ -201,6 +203,8 @@ class AtrapaOrder:
     cut: bool = False
     error_status: HTTPStatus | None = None
     login_form: bool = False
+    without: frozenset[str] = frozenset()
+    after_date: bool = False
     after_emmett: bool = False
 
     @property
@@ -763,7 +767,7 @@ def _order_page(order: AtrapaOrder, changed: Changed | Unread | None, today: dat
         f"<div><small>Ulica - numer</small> {escape(order.address)}</div>"
         '<div class="card"><button type="button" id="button_forward_to_accept">Przekaż do akceptacji.</button>'
         '<button type="button" id="button_forward_to_cancel">Anuluj to zlecenie.</button></div>'
-        f'<div class="card"><span>Wycena</span>{emmett}{"".join(_position(order, position, changed) for position in CATALOG)}'
+        f'<div class="card"><span>Wycena</span>{emmett}{"".join(_position(order, position, changed) for position in CATALOG if not (position.code in order.without and _broken(order)))}'
         f'<h1><span id="cena_all2">{order.amount:.2f}</span></h1></div>'
         + _dialog("dialog_forward_yes_no", "Zmiana statusu", "", "Tak")
         + _dialog("dialog_select_date", "Wybierz datę wykonania", day_field, "Potwierdź")
@@ -791,9 +795,8 @@ def _order_script(changed: Changed | Unread | None, today: date) -> str:
 def _position(order: AtrapaOrder, position: Position, changed: Changed | Unread | None) -> str:
     """Karta pozycji jak w efenix: pole Ilość z ceną w tekście karty albo samo pole ceny wpisywanej, bez ceny w tekście."""
 
-    code = "129" if changed is Changed.POSITION_CODE and position.code == "029" else position.code
     suffix = "079" if changed is Unread.PRICE_LIST and position.code == "005" else "078"
-    field_id = f"INDEKS_{code}_{suffix}"
+    field_id = f"INDEKS_{position.code}_{suffix}"
     shown = f'<div class="col-sm-1 mt-2"><span class="text-default"><small>{_price_text(position.price, changed)}</small></span></div>'
     if position.kind == "CENA" or (changed is Unread.PRICE_LIST and position.code == "007"):
         field = f'<input type="text" id="{field_id}" order_id="{escape(order.order_id)}" class="form-control form-control-sm wycena-cena" value="0.00">'
@@ -834,9 +837,12 @@ def _has_session_cookie(header: str) -> bool:
 
 
 def _broken(order: AtrapaOrder) -> bool:
-    """Strona zlecenia ``order`` to już strona błędu albo formularz logowania (``after_emmett``: po Wycenie Emmetta)."""
+    """Strona zlecenia ``order`` jest już zmieniona: strona błędu, formularz logowania albo strona bez pozycji ``without``
+    (``after_date``: od zapisu daty wykonania, ``after_emmett``: po Wycenie Emmetta)."""
 
-    return not order.after_emmett or order.emmett_loads > 0
+    if order.after_emmett:
+        return order.emmett_loads > 0
+    return not order.after_date or order.execution_date is not None
 
 
 def _login_page(changed: Changed | Unread | None) -> str:

@@ -7,6 +7,9 @@ zawsze różni się od pliku. Reguły biorą ilości pliku po kodach (``file_qua
 (kod → ilość, pole puste to 0): wycena, która już jest, różni się od pliku ilością albo kwotą (``priced_differently``); Wycena Emmetta
 jest sprzeczna z plikiem w pozycjach, w których Emmett wpisał ilość inną niż plik (``emmett_conflicts``); dopisać
 trzeba ilości pliku w pozycjach pustych u Emmetta (``to_enter``), a pozycja pusta u Emmetta przy 0 w pliku zostaje pusta.
+Strona zlecenia efenix bywa bez części pozycji z przypisania: brak pozycji, w której plik ma 0 albo pustą komórkę, nie
+przeszkadza, bo ta pozycja i tak zostałaby w efenix pusta, a brak pozycji, w której plik ma ilość, to błąd zlecenia
+(``missing_positions``).
 Strona zlecenia jest taka, jaką narzędzie zostawia po Wycenie Emmetta (``as_left_after_emmett``), gdy każda pozycja z
 ilością Emmetta ma tę ilość, a każda pozycja pusta u Emmetta jest pusta albo ma ilość pliku. Kwota końcowa efenix i
 ``Kwota`` (AU) są równe co do grosza (``same_amount``).
@@ -17,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
+import enum
 from types import MappingProxyType
 from typing import Final
 
@@ -28,9 +32,11 @@ __all__ = [
     "POSITION_OF_COLUMN",
     "UNPAIRED_COLUMNS",
     "Conflict",
+    "MissingPositions",
     "NotWholeQuantities",
     "OrderFault",
     "OtherAmount",
+    "PageRead",
     "PricedDifferently",
     "UnpairedColumns",
     "as_left_after_emmett",
@@ -96,6 +102,23 @@ class PricedDifferently:
     positions: tuple[str, ...]
 
 
+class PageRead(enum.Enum):
+    """Odczyt strony zlecenia w Wycenie w efenix, po którym proces sprawdza, czy są na niej pozycje z ilością w pliku."""
+
+    OPENED = "otwarcie zlecenia"
+    AFTER_DATE = "ponowne otwarcie zlecenia po ustawieniu daty wykonania"
+    AFTER_EMMETT = "strona po załadowaniu Wyceny Emmetta"
+
+
+@dataclass(frozen=True)
+class MissingPositions:
+    """Strona zlecenia nie ma pozycji, w których Plik zbiorczy ma ilość (rosnąco po kodzie); ``read``: odczyt strony,
+    który to pokazał, więc i to, co proces zmienił już w zleceniu w efenix."""
+
+    positions: tuple[str, ...]
+    read: PageRead
+
+
 @dataclass(frozen=True)
 class OtherAmount:
     """Kwota końcowa, którą efenix odesłał po dopisaniu ilości, różni się od ``Kwota`` (AU)."""
@@ -104,7 +127,7 @@ class OtherAmount:
     file_amount: Decimal
 
 
-OrderFault = OrderProblem | DateRefused | UnpairedColumns | NotWholeQuantities | PricedDifferently | OtherAmount
+OrderFault = OrderProblem | DateRefused | UnpairedColumns | NotWholeQuantities | MissingPositions | PricedDifferently | OtherAmount
 """Powód, dla którego zlecenie zostaje tacie jako błąd."""
 
 
@@ -140,10 +163,13 @@ def file_quantities(order: CollectiveOrder) -> Mapping[str, int] | UnpairedColum
     return {POSITION_OF_COLUMN[column]: value for column, value in order.quantities.items() if isinstance(value, int)}
 
 
-def missing_positions(on_page: Mapping[str, int]) -> frozenset[str]:
-    """Kody pozycji z przypisania, których nie ma na stronie zlecenia (efenix zmienił pozycje wyceny)."""
+def missing_positions(file: Mapping[str, int], on_page: Mapping[str, int], read: PageRead) -> MissingPositions | None:
+    """Pozycje, w których plik ``file`` (``file_quantities``: tylko ilości różne od 0) ma ilość, a strona zlecenia z
+    odczytu ``read`` ich nie ma; ``None``, gdy strona ma każdą z nich. Pozycji z 0 w pliku strona mieć nie musi: zostaje
+    w efenix pusta, jak gdyby była."""
 
-    return frozenset(POSITION_OF_COLUMN.values()) - on_page.keys()
+    positions = tuple(sorted(position for position in file if position not in on_page))
+    return MissingPositions(positions, read) if positions else None
 
 
 def same_amount(efenix: Decimal, file: Decimal) -> bool:

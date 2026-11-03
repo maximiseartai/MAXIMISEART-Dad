@@ -3,7 +3,8 @@ zgłasza wyjątek okna, i przyczyna techniczna z zamkniętej listy (``efenix_pri
 Uruchomienia.
 
 Hipotezy ze Zgłoszeń, które przyczyna rozróżnia przy ``UnexpectedPage(PagePart.ORDER)``:
-A: strona zlecenia bez pozycji z przypisania kolumn (``MissingPositions`` z kodami).
+A: strona zlecenia bez pozycji z przypisania kolumn. Od #819 to nie Zatrzymanie: strona bez pozycji z ilością w pliku to
+błąd zlecenia (``efenix_positions.missing_positions``), a bez pozycji z 0 w pliku to zwykła strona efenix.
 B: pole Ilość z id spoza ``INDEKS_NNN_…``, kod pozycji dwa razy albo wartość, która nie jest liczbą całkowitą
 (``OtherShape`` z ``Shape.QUANTITY_ID``, ``POSITION_TWICE``, ``QUANTITY_VALUE``).
 C: ``#data_install`` albo ``#cena_all2`` nie dokładnie raz (``ElementCount`` z selektorem i liczbą) albo data lub
@@ -17,7 +18,7 @@ E: wylogowanie (``LoginSign``), formularz logowania pod adresem strony zlecenia 
 Tabela to dane, a test porównuje ją z kodem: każde ``raise`` wyjątku okna w ``efenix_browser``, ``efenix_pricing`` i
 ``efenix_positions`` (funkcja i tekst wyrażenia) ma dokładnie jeden wiersz, a każdy wiersz ma swoje miejsce. Nowe
 miejsce bez wiersza albo przyczyny nie przejdzie, więc recenzent czyta najpierw tę tabelę. Że przyczyna dochodzi do Logów
-Uruchomienia, pokazują przegląd odcięć w ``tests/test_wycena_efenix.py`` i testy hipotez A–D w
+Uruchomienia, pokazują przegląd odcięć w ``tests/test_wycena_efenix.py`` i testy hipotez B–E w
 ``tests/test_centrum_logi_uruchomienia.py``. Granica: wyjątek okna zgłoszony gdzie indziej niż w tych trzech modułach
 i ``raise`` zmiennej (``raise error``) tabela pomija.
 """
@@ -99,8 +100,6 @@ TABLE = [
         "#data_install niepusta i nie RRRR-MM-DD", "C"),
     Row("efenix_browser", "_execution_date", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))",
         "#data_install RRRR-MM-DD, ale nie istniejący dzień (2026-02-30)", "C"),
-    Row("efenix_pricing", "_known_positions", "UnexpectedPage(PagePart.ORDER, MissingPositions(tuple(sorted(missing))))",
-        "strona zlecenia (po otwarciu albo po Wycenie Emmetta) bez kodu z przypisania kolumn", "A"),
     # --- data wykonania ---
     Row("efenix_browser", "set_execution_date", "UnexpectedPage(PagePart.DATE, OtherShape(Shape.NO_CALENDAR))",
         "pole daty bez kalendarza pickadate", "inna budowa"),

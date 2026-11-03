@@ -66,7 +66,6 @@ from rozliczenia.efenix_pricing import (
     HttpStatus,
     EmmettWarning,
     LoginSign,
-    MissingPositions,
     OrderError,
     OrderResult,
     OtherShape,
@@ -296,8 +295,8 @@ class LoggedCause(_Record):
     """Przyczyna techniczna Zatrzymania okna efenix z zamkniętej listy (``efenix_pricing.WindowCause``), bez treści strony
     i wyjątku: ``part`` to część strony (nazwa ``PagePart``, ``None`` poza stronami efenix), a ``what`` przyczyna z listy.
 
-    ``positions``: kody pozycji (brakujące z przypisania kolumn albo pozycja, której dotyczy budowa). ``element`` i
-    ``count``: selektor z kodu okna i ile razy jest na stronie. ``status``: status HTTP strony błędu efenix. ``error_type`` i ``operation``: typ wyjątku Playwrighta i
+    ``positions``: kod pozycji, której dotyczy budowa. ``element`` i ``count``: selektor z kodu okna i ile razy jest na
+    stronie. ``status``: status HTTP strony błędu efenix. ``error_type`` i ``operation``: typ wyjątku Playwrighta i
     działanie przeglądarki (``None``: działanie bez nazwy).
     """
 
@@ -314,8 +313,6 @@ class LoggedCause(_Record):
     def of(cls, part: PagePart | None, cause: WindowCause) -> LoggedCause:
         name = None if part is None else part.name
         match cause:
-            case MissingPositions(positions):
-                return cls(part=name, what=_MISSING_POSITIONS, positions=list(positions))
             case ElementCount(selector, count):
                 return cls(part=name, what=_ELEMENT_COUNT, element=selector, count=count)
             case HttpStatus(status):
@@ -335,7 +332,6 @@ class LoggedCause(_Record):
                 assert_never(cause)
 
 
-_MISSING_POSITIONS: Final = "strona zlecenia bez pozycji z przypisania kolumn"
 _ELEMENT_COUNT: Final = "element strony nie występuje dokładnie raz"
 _BROWSER_FAILURE: Final = "błąd przeglądarki w działaniu okna"
 _HTTP_STATUS: Final = "strona błędu HTTP serwera efenix zamiast strony zlecenia"
@@ -347,7 +343,7 @@ class LoggedWindowStop(_Record):
     ``row``: wiersz Pliku zbiorczego, ``order`` z ``orders``: miejsce zlecenia w przebiegu (od 1), ``steps``: udane
     działania okna przy nim, ``failed``: działanie, które się nie udało, z rodzajem i czasem. Przy Zatrzymaniu przed
     pierwszym zleceniem (otwarcie okna, logowanie) ``row``, ``order``, ``orders`` i ``failed`` są ``None``, a ``steps``
-    puste; ``failed`` ``None`` przy zleceniu to strona bez pozycji z przypisania kolumn po ostatnim działaniu w ``steps``.
+    puste.
     """
 
     cause: LoggedCause
