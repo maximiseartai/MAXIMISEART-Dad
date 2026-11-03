@@ -9,8 +9,8 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   takiego runu (albo gdy jego commit nie jest przodkiem HEAD) ostatni commit linii pierwszych rodziców HEAD sprzed 24 h.
   Mutacje od bazy liczy jak ``tools/mutacje_zmiany.py`` (``selected``, bez testów), a zły wyjątek ``# mutacje-zmiany:``
   liczy jako jedną mutację, żeby część go zgłosiła.
-- Część ma najwyżej ``NA_CZESC`` mutacji: tyle, że kończy się w limicie czasu części także wtedy, gdy testy każdej z
-  nich trwają pełny limit mutacji (``ZAPAS_S``). Noc mutuje najwyżej ``CZESCI_NA_NOC`` części, żeby nie dostała więcej,
+- Część ma najwyżej ``NA_CZESC`` mutacji: tyle, że kończy się w limicie czasu części także z najdroższymi mutacjami
+  zmierzonych nocy, w testach linii i w testach pliku. Noc mutuje najwyżej ``CZESCI_NA_NOC`` części, żeby nie dostała więcej,
   niż przerobi. Gdy od bazy jest więcej mutacji, ``do`` to najdalszy commit linii
   pierwszych rodziców od bazy, do którego mutacje zmian mieszczą się w tym limicie (co najmniej pierwszy commit z
   mutacjami, także większy), a noc mutuje tylko zmiany do niego (``mutacje_zmiany.until``). Bazą następnej nocy jest
@@ -80,13 +80,14 @@ from zgloszenia_ci import MERGE, REPO, SQUASH, GhApi, GitHub, blok_kodu
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = "mutacje-nocne.yml"
-# Część ma tyle mutacji, ile pełnych kolejek po WORKERS naraz mieści limit czasu części (PART_LIMIT_S), gdy testy każdej
-# trwają pełny limit mutacji (MUTATION_LIMIT_S), a ZAPAS_S zostaje na pokrycie, szersze przebiegi testów i bramę typów.
-# W nocach 31.10–3.11 (runy 41179652907, 41285996039, 41408995300, 41601085650) mediana mutacji pliku wynosiła 1–210 s,
-# ale 34 z 2892 mutacji trwały pełne 900 s, 16 z nich w tools/mutacje.py. Pokrycie części trwało najwyżej 1006 s, testy pliku
-# najwyżej 1201 s, a brama typów najwyżej 58 s.
-ZAPAS_S = 3600
-NA_CZESC = mutacje_zmiany.WORKERS * ((mutacje_zmiany.PART_LIMIT_S - ZAPAS_S) // mutacje_zmiany.MUTATION_LIMIT_S)
+# Część to 6 pełnych kolejek po WORKERS mutacji naraz. W nocach 31.10–3.11 (runy 41179652907, 41285996039, 41408995300,
+# 41601085650) mediana mutacji pliku wynosiła 1–210 s, ale 16 mutacji tools/mutacje.py trwało w testach linii pełny limit
+# mutacji (MUTATION_LIMIT_S). Testy kodu pliku jednej mutacji trwały najwyżej 836 s (doszło do nich najwyżej 11 z 32
+# mutacji części), testy pliku, które biegną po jednej, najwyżej 441 s (najwyżej 37 z 93), pokrycie części 1006 s, a brama
+# typów 58 s. Część mieści się w limicie czasu części (PART_LIMIT_S), gdy ma najgorszy czas każdego przebiegu naraz, a do
+# dalszych przebiegów dochodzi tyle jej mutacji, co w którejś zmierzonej części: ok. 9700 s, a o kolejkę większa ok.
+# 10 800 s (ADR 0021). Mutacja, która trwa pełny limit także w testach pliku, może go przekroczyć i zostaje bez werdyktu.
+NA_CZESC = 6 * mutacje_zmiany.WORKERS
 # Zadania części biegną najwyżej po 20 naraz (max-parallel w mutacje-nocne.yml), bo 60 zadań organizacji dzielą też
 # runy CI PR-ów, więc noc to najwyżej dwie fale części.
 CZESCI_NA_NOC = 40
