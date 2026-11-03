@@ -19,7 +19,8 @@ kodu, więc świeży worktree wybiera tak samo:
 - importy modułów Pythona;
 - w ``tests/`` ścieżki i nazwy modułów w napisach, czyli skrypt, który test uruchamia, plik, który czyta, albo
   pliki katalogu; poza ``tests/`` tylko ścieżki z ``/``, i bez zależności dalej;
-- pliki z globu (``glob``, ``rglob``, ``iterdir``) na katalogu o znanej nazwie;
+- pliki z globu (``glob``, ``rglob``, ``iterdir``) na katalogu o znanej nazwie, z ``**`` jako zero albo więcej
+  katalogów, jak w ``Path.glob``;
 - pliki inne niż Python w katalogu pakietu (``centrum/static``) dla każdego modułu tego pakietu.
 
 Zależność przez import i skrypt testu jest przechodnia, a przez katalog, glob i plik danych nie. Odległość pliku to
@@ -45,6 +46,7 @@ from collections import defaultdict, deque
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 import enum
+from fnmatch import fnmatchcase
 from functools import cached_property
 import hashlib
 from pathlib import Path, PurePosixPath
@@ -355,7 +357,7 @@ def _is_python(root: Path, path: str) -> bool:
 
 
 def _module_roots(files: frozenset[str]) -> list[str]:
-    skills = {"/".join(PurePosixPath(path).parts[:4]) for path in files if PurePosixPath(path).match(f"{_SKILL_SCRIPTS}/**")}
+    skills = {"/".join(PurePosixPath(path).parts[:4]) for path in files if _glob_matches(PurePosixPath(path).parts, (*PurePosixPath(_SKILL_SCRIPTS).parts, "**", "*"))}
     return [*_MODULE_ROOTS, *sorted(skills)]
 
 
@@ -431,15 +433,27 @@ def _folder_files(text: str, in_folder: Mapping[str, set[str]]) -> set[str]:
 
 def _globbed(glob: Glob, files: frozenset[str], directories: set[str]) -> set[str]:
     folders = {folder for folder in directories if folder == glob.folder or folder.endswith("/" + glob.folder)}
-    depth = len(PurePosixPath(glob.pattern).parts)
+    pattern = ("**", *PurePosixPath(glob.pattern).parts) if glob.recursive else PurePosixPath(glob.pattern).parts
     found = set()
     for file in files:
         for folder in folders:
-            if file.startswith(folder + "/"):
-                inside = PurePosixPath(file[len(folder) + 1 :])
-                if inside.match(glob.pattern) and (glob.recursive or "**" in glob.pattern or len(inside.parts) == depth):
-                    found.add(file)
+            if file.startswith(folder + "/") and _glob_matches(PurePosixPath(file[len(folder) + 1 :]).parts, pattern):
+                found.add(file)
     return found
+
+
+def _glob_matches(parts: tuple[str, ...], pattern: tuple[str, ...]) -> bool:
+    """Czy ścieżka (``parts``) pasuje do wzorca ``Path.glob`` (``pattern``): ``**`` to zero albo więcej katalogów.
+
+    ``PurePath.match`` liczy ``**`` jak ``*``, czyli dokładnie jeden katalog, więc ``tools/**/*.py`` nie obejmowało
+    ``tools/mutacje_nocne.py``, a noc zgłaszała mutacje, które zabija test skryptów (#735, #761, #809).
+    """
+
+    if not pattern:
+        return not parts
+    if pattern[0] == "**":
+        return any(_glob_matches(parts[start:], pattern[1:]) for start in range(len(parts) + 1))
+    return bool(parts) and fnmatchcase(parts[0], pattern[0]) and _glob_matches(parts[1:], pattern[1:])
 
 
 def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
