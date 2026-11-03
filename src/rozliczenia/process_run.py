@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 import time
@@ -82,14 +82,18 @@ class Stop:
     dało się zbudować podsumowania, z Komunikatem ``Process.plan_not_shown``
     (DRY-RUN) albo ``Process.summary_not_shown`` (RUN).
 
-    ``trace``: ślad wywołań nieoczekiwanego wyjątku (``unexpected``,
-    ``after_engine``) dla Zgłoszenia do Maksa; nie należy do tożsamości
-    Zatrzymania i nie trafia do dziennika ani metryk.
+    ``trace``: ślad wywołań dla Zgłoszenia do Maksa i Logów Uruchomienia:
+    nieoczekiwanego wyjątku (``unexpected``, ``after_engine``) i własnego
+    zatrzymania „do Maksa”, które ma przyczynę w wyjątku (``StopError`` z
+    ``__cause__``), z łańcuchem przyczyn. ``facts``: fakty Zatrzymania procesu
+    dla Logów Uruchomienia (``StopError.facts``). Oba nie należą do tożsamości
+    Zatrzymania i nie trafiają do dziennika ani metryk.
     """
 
     kind: Literal["stop", "declined", "unexpected", "after_engine"]
     message: Message
     trace: CallTrace | None = field(default=None, compare=False, repr=False)
+    facts: object = field(default=None, compare=False, repr=False)
 
     @property
     def stop_kind(self) -> StopKind:
@@ -241,12 +245,19 @@ class _Observation:
 
 
 def _stop_from(error: Exception, process: Process[Any, Any]) -> Stop:
-    """Własne zatrzymanie procesu z jego Komunikatem; każdy inny wyjątek to Komunikat nieoczekiwanego błędu."""
+    """Własne zatrzymanie procesu z jego Komunikatem i faktami; każdy inny wyjątek to Komunikat nieoczekiwanego błędu.
+
+    Własne zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn, bo Maks ustala z niego,
+    gdzie proces stanął.
+    """
 
     if isinstance(error, Declined):
         return Stop("declined", error.message)
     if isinstance(error, StopError):
-        return Stop("stop", error.message)
+        stop = Stop("stop", error.message, facts=error.facts)
+        if stop.stop_kind == "for_maks" and error.__cause__ is not None:
+            return replace(stop, trace=CallTrace.of(error))
+        return stop
     return Stop("unexpected", process.unexpected_failure, CallTrace.of(error))
 
 

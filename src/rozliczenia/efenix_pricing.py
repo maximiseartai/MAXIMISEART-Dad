@@ -29,7 +29,10 @@ efenix i działanie okna, którego okno nie dokończyło, także na stronie bez 
 (``LoggedOut``, ``EfenixUnreachable``, ``WindowClosed``, ``UnexpectedPage``), a Komunikat Zatrzymania mówi, czy przed
 nim proces zmienił już coś w efenix. Niedokończone działanie okna to Zatrzymanie „do Maksa” z częścią strony, bez
 treści strony i bez zgadywania przyczyny (zerwane połączenie, wolny albo zmieniony efenix): tata uruchamia ponownie, a
-Maks ustala przyczynę ze Zgłoszenia.
+Maks ustala przyczynę z Logów Uruchomienia. Każdy wyjątek okna niesie przyczynę techniczną z zamkniętej listy
+(``WindowCause``), a Zatrzymanie z okna niesie w ``StopError.facts`` (``PricingStopped``) tę przyczynę, wynik każdego
+zlecenia sprzed niego i zlecenie, przy którym okno stanęło (``StoppedOrder``: wiersz, miejsce w przebiegu, udane
+działania okna i to, które się nie udało). Komunikat taty przyczyny nie pokazuje.
 Okno, które czeka, aż tata się zaloguje, robi to w ``Login`` od silnika: ten czas nie wlicza się do czasów etapów ani,
 przez ``waiting`` rozmowy rdzenia, do ``Czas uruchomienia``. Postęp Zapisywania to kroki (``PhaseRunner.step``):
 logowanie, zlecenia z Wykonawcą i liczbą sprawdzonych z wszystkich, na końcu Znaczniki efenix; ślad działań okna przy
@@ -50,6 +53,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import date
+import enum
 from decimal import Decimal
 from pathlib import Path
 from types import MappingProxyType
@@ -97,50 +101,183 @@ from .phase_runner import PhaseRunner
 from .workbook_files import WorkbookError
 
 __all__ = [
+    "BrowserFailure",
     "BrowserNotStarted",
+    "Closed",
     "Efenix",
     "EfenixUnreachable",
+    "ElementCount",
+    "HttpStatus",
     "EmmettWarning",
     "ListedOrder",
     "LoggedOut",
     "Login",
+    "LoginSign",
+    "MissingPositions",
     "OpenEfenix",
+    "Operation",
     "OrderError",
     "OrderPricing",
     "OrderProblem",
     "OrderResult",
+    "OtherShape",
+    "PageCause",
     "PagePart",
+    "PricingStopped",
     "PricingSummary",
     "Ready",
+    "Shape",
+    "StoppedOrder",
     "UnexpectedPage",
+    "WindowCause",
     "WindowClosed",
+    "WindowStop",
     "price_orders",
 ]
 
 
-class LoggedOut(Exception):
+class Operation(enum.Enum):
+    """Działanie przeglądarki w oknie efenix, które skończyło się błędem Playwrighta."""
+
+    START = "start przeglądarki"
+    OPEN = "otwarcie strony"
+    RELOAD = "czekanie na przeładowanie strony przez skrypt efenix"
+    ANSWER = "czekanie na całą odpowiedź efenix"
+    ELEMENT = "czekanie na pokazanie albo schowanie elementu"
+    AMOUNT = "czekanie na kwotę końcową z odpowiedzi na stronie"
+    CLICK = "kliknięcie"
+    FILL = "wpisanie w pole"
+    ENTER = "Enter w polu"
+    PICK = "wybór dnia w kalendarzu pickadate"
+    READ = "odczyt strony"
+
+
+class Shape(enum.Enum):
+    """Strona albo odpowiedź efenix w budowie, której okno nie zna."""
+
+    QUANTITY_ID = "pole Ilość o id spoza INDEKS_NNN_…"
+    POSITION_TWICE = "kod pozycji w dwóch polach Ilość"
+    QUANTITY_VALUE = "wartość pola Ilość, która nie jest liczbą całkowitą"
+    DATE_TEXT = "data wykonania w innej postaci niż RRRR-MM-DD"
+    AMOUNT_TEXT = "kwota w innej postaci niż liczba z kropką"
+    NO_TABLE = "odpowiedź szukania bez tabeli"
+    COLUMNS = "nagłówek kolumny tabeli wyników nie występuje dokładnie raz"
+    ROW_CELLS = "wiersz tabeli wyników z inną liczbą komórek niż nagłówków albo bez jednego linku do strony zlecenia"
+    ROW_EMPTY = "wiersz tabeli wyników bez identyfikatora zlecenia albo bez numeru"
+    NO_CALENDAR = "pole daty wykonania bez kalendarza pickadate"
+    UNKNOWN_POSITION = "pozycja bez pola Ilość na ostatnio odczytanej stronie zlecenia"
+    ANSWER_NOT_JSON = "odpowiedź zapisu ilości, która nie jest JSON"
+    ANSWER_RESULT = "odpowiedź zapisu ilości z wynikiem innym niż ok i nok"
+    LOGIN_FORM = "formularz logowania efenix pod adresem strony zlecenia, bez przekierowania"
+
+
+class LoginSign(enum.Enum):
+    """Po czym okno poznało, że efenix wylogował."""
+
+    PAGE = "strona logowania zamiast strony, o którą prosiło okno"
+    REDIRECT = "odpowiedź efenix przekierowana na stronę logowania"
+    REFUSED = "odpowiedź zapisu ilości z wynikiem nok"
+    NO_LOGIN = "tata nie zalogował się w czasie, w którym okno czeka na logowanie"
+
+
+class Closed(enum.Enum):
+    """Kiedy okno zastało zamkniętą kartę albo okno przeglądarki."""
+
+    DURING_ACTION = "karta albo okno zamknięte przed działaniem okna albo w jego trakcie"
+    DURING_LOGIN = "karta albo okno zamknięte w czasie czekania na logowanie taty"
+
+
+@dataclass(frozen=True)
+class MissingPositions:
+    """Strona zlecenia bez pozycji z przypisania kolumn (``efenix_positions.missing_positions``), rosnąco po kodzie."""
+
+    positions: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ElementCount:
+    """Element strony (selektor z kodu okna, nie treść strony) jest na niej ``count`` razy zamiast dokładnie raz."""
+
+    selector: str
+    count: int
+
+
+@dataclass(frozen=True)
+class HttpStatus:
+    """Strona zlecenia, której okno nie przeczytało, przyszła z odpowiedzią HTTP o statusie błędu ``status`` (4xx, 5xx):
+    to strona błędu serwera efenix, a nie strona zlecenia w innej budowie."""
+
+    status: int
+
+
+@dataclass(frozen=True)
+class OtherShape:
+    """Budowa strony albo odpowiedzi, której okno nie zna; ``position``: kod pozycji, gdy dotyczy jednej pozycji."""
+
+    shape: Shape
+    position: str | None = None
+
+
+@dataclass(frozen=True)
+class BrowserFailure:
+    """Błąd Playwrighta: typ wyjątku (bez jego treści, w której bywa adres i selektor) i działanie, w którym wystąpił
+    (``None``: działanie okna bez nazwy)."""
+
+    error_type: str
+    operation: Operation | None
+
+
+PageCause = MissingPositions | ElementCount | HttpStatus | OtherShape | BrowserFailure
+"""Przyczyna niedokończonego działania okna (``UnexpectedPage``)."""
+WindowCause = PageCause | LoginSign | Closed
+"""Przyczyna techniczna Zatrzymania okna efenix z zamkniętej listy, dla Logów Uruchomienia, bez treści strony i danych
+zleceń; Komunikat taty jej nie pokazuje."""
+
+
+class WindowStop(Exception):
+    """Okno efenix nie może działać dalej: część strony (``None`` poza stronami efenix) i przyczyna techniczna."""
+
+    def __init__(self, part: PagePart | None, cause: WindowCause) -> None:
+        super().__init__(None if part is None else part.name)
+        self.part = part
+        self.cause = cause
+
+
+class LoggedOut(WindowStop):
     """efenix pokazał stronę logowania zamiast strony, o którą prosiło okno."""
 
+    def __init__(self, part: PagePart, sign: LoginSign) -> None:
+        super().__init__(part, sign)
 
-class UnexpectedPage(Exception):
+
+class UnexpectedPage(WindowStop):
     """Okno nie dokończyło działania w części ``part`` strony efenix (bez treści strony): strona nie ma budowy, którą
-    zna okno, albo nie odpowiedziała w czasie okna; przyczyny okno nie rozróżnia."""
+    zna okno, albo przeglądarka zgłosiła błąd (także czas okna, który minął); ``cause`` mówi, które z nich."""
 
-    def __init__(self, part: PagePart) -> None:
-        super().__init__(part.name)
-        self.part = part
+    def __init__(self, part: PagePart, cause: PageCause) -> None:
+        super().__init__(part, cause)
+        self.part: PagePart = part
 
 
-class EfenixUnreachable(Exception):
+class EfenixUnreachable(WindowStop):
     """Okno nie otworzyło efenix przy starcie: adres nie odpowiada albo nie ma połączenia."""
 
+    def __init__(self, failure: BrowserFailure) -> None:
+        super().__init__(PagePart.LIST, failure)
 
-class WindowClosed(Exception):
+
+class WindowClosed(WindowStop):
     """Okno albo karta efenix zamknęły się w trakcie przebiegu (tata je zamknął)."""
 
+    def __init__(self, part: PagePart, closed: Closed) -> None:
+        super().__init__(part, closed)
 
-class BrowserNotStarted(Exception):
+
+class BrowserNotStarted(WindowStop):
     """Przeglądarka okna efenix nie wystartowała: nie ma jej na komputerze albo jej profil trzyma inne okno."""
+
+    def __init__(self, failure: BrowserFailure) -> None:
+        super().__init__(None, failure)
 
 
 @dataclass(frozen=True)
@@ -271,6 +408,34 @@ class PricingSummary:
         return tuple(zip(left, self.warnings, strict=True))
 
 
+@dataclass(frozen=True)
+class StoppedOrder:
+    """Zlecenie, przy którym okno efenix stanęło: wiersz Pliku zbiorczego, miejsce w przebiegu (``place`` z ``total``, od
+    1), udane działania okna przy nim po kolei i działanie, które się nie udało (``failed``, z samym rodzajem i czasem).
+
+    ``failed`` ``None``: okno dokończyło każde działanie, a zatrzymał je silnik, bo strona nie ma pozycji z przypisania
+    kolumn (``MissingPositions``) po ostatnim działaniu w ``steps``.
+    """
+
+    row: int
+    place: int
+    total: int
+    steps: tuple[TraceStep, ...]
+    failed: TraceStep | None
+
+
+@dataclass(frozen=True)
+class PricingStopped:
+    """Fakty Zatrzymania okna efenix dla Logów Uruchomienia (``StopError.facts``): część strony, przyczyna techniczna,
+    wynik każdego zlecenia sprzed Zatrzymania (``summary``, z Komunikatami jak po przebiegu) i zlecenie, przy którym okno
+    stanęło (``None``: przed pierwszym zleceniem, przy otwieraniu okna albo logowaniu)."""
+
+    part: PagePart | None
+    cause: WindowCause
+    summary: PricingSummary
+    stopped_at: StoppedOrder | None
+
+
 # Kroki Zapisywania na karcie Uruchomienia.
 _LOGIN: Final = "Zaloguj się w oknie efenix"
 _ORDERS: Final = "Zlecenia"
@@ -335,15 +500,30 @@ def price_orders(
         results: list[OrderResult] = []
         emmett_trace = EmmettTrace(trace_file)
         pacing = None if pace is None else Pacing(pace)
+        total = len(scope.orders)
+        current: tuple[int, CollectiveOrder, OrderTrace] | None = None
+
+        def stopped(error: WindowStop) -> PricingStopped:
+            before = tuple(results)
+            summary = PricingSummary(before, scope.with_photos, scope.defects, _warnings(source, before))
+            at = (
+                None
+                if current is None
+                else StoppedOrder(current[1].row, current[0] + 1, total, tuple(current[2].steps), current[2].failed)
+            )
+            return PricingStopped(error.part, error.cause, summary, at)
+
         try:
-            with _efenix_stops(lambda: False), open_efenix(login) as efenix:
-                with _efenix_stops(lambda: efenix.sent_change):
+            with _efenix_stops(lambda: False, stopped), open_efenix(login) as efenix:
+                with _efenix_stops(lambda: efenix.sent_change, stopped):
                     for done, order in enumerate(scope.orders):
-                        phases.step(_ORDERS, worker=order.worker, done=done, total=len(scope.orders))
+                        phases.step(_ORDERS, worker=order.worker, done=done, total=total)
                         trace = OrderTrace()
+                        current = (done, order, trace)
                         window = efenix_trace.traced(efenix, trace, clock)
                         outcome = _priced(order, window if pacing is None else pacing.window(window), emmett_trace)
                         results.append(OrderResult(order, outcome, tuple(trace.steps)))
+                        current = None
         except StopError:
             phases.step(_MARKING)
             _mark(source, scope, results)
@@ -358,7 +538,7 @@ def price_orders(
         results,
         scope.with_photos,
         scope.defects,
-        [warning for result in results if (warning := _warning(source, result)) is not None],
+        _warnings(source, results),
         phases.durations_ms(),
     )
 
@@ -368,6 +548,12 @@ def _mark(source: Path, scope: PricingScope, results: Sequence[OrderResult]) -> 
 
     ready = [result.order.row for result in results if isinstance(result.outcome, Ready)]
     return mark_ready(source, scope.content, scope.address_column, ready)
+
+
+def _warnings(source: Path, results: Sequence[OrderResult]) -> list[Message]:
+    """Komunikat każdego zlecenia z błędem albo ostrzeżeniem Emmetta, po kolei."""
+
+    return [warning for result in results if (warning := _warning(source, result)) is not None]
 
 
 def _warning(source: Path, result: OrderResult) -> Message | None:
@@ -381,9 +567,9 @@ def _warning(source: Path, result: OrderResult) -> Message | None:
 
 
 @contextmanager
-def _efenix_stops(changed: Callable[[], bool]) -> Iterator[None]:
+def _efenix_stops(changed: Callable[[], bool], stopped: Callable[[WindowStop], PricingStopped]) -> Iterator[None]:
     """Strona logowania, niedokończone działanie okna, zamknięte okno i efenix, którego okno nie otworzyło, to Zatrzymanie
-    z Komunikatem procesu.
+    z Komunikatem procesu, a fakty Zatrzymania dla Logów Uruchomienia daje ``stopped``.
 
     ``changed``: czy przed Zatrzymaniem proces zmienił już coś w efenix.
     """
@@ -391,15 +577,15 @@ def _efenix_stops(changed: Callable[[], bool]) -> Iterator[None]:
     try:
         yield
     except LoggedOut as error:
-        raise StopError(messages.logged_out(kept=changed())) from error
+        raise StopError(messages.logged_out(kept=changed()), facts=stopped(error)) from error
     except UnexpectedPage as error:
-        raise StopError(messages.window_stopped(error.part, kept=changed())) from error
+        raise StopError(messages.window_stopped(error.part, kept=changed()), facts=stopped(error)) from error
     except WindowClosed as error:
-        raise StopError(messages.window_closed(kept=changed())) from error
+        raise StopError(messages.window_closed(kept=changed()), facts=stopped(error)) from error
     except EfenixUnreachable as error:
-        raise StopError(messages.efenix_unreachable(kept=changed())) from error
+        raise StopError(messages.efenix_unreachable(kept=changed()), facts=stopped(error)) from error
     except BrowserNotStarted as error:
-        raise StopError(messages.browser_not_started()) from error
+        raise StopError(messages.browser_not_started(), facts=stopped(error)) from error
 
 
 def _priced(order: CollectiveOrder, efenix: Efenix, trace: EmmettTrace) -> Ready | OrderError | EmmettWarning:
@@ -468,6 +654,6 @@ def _entered(
 def _known_positions(pricing: OrderPricing) -> OrderPricing:
     """Strona zlecenia bez którejś pozycji z przypisania kolumn to efenix o innej budowie, niż zna narzędzie."""
 
-    if missing_positions(pricing.quantities):
-        raise UnexpectedPage(PagePart.ORDER)
+    if missing := missing_positions(pricing.quantities):
+        raise UnexpectedPage(PagePart.ORDER, MissingPositions(tuple(sorted(missing))))
     return pricing

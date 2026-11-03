@@ -41,7 +41,20 @@ from rozliczenia import TOOL_ROOT, efenix_browser, efenix_process
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
-from rozliczenia.efenix_pricing import LoggedOut, Login, PagePart, PricingSummary
+from rozliczenia.efenix_pricing import (
+    BrowserFailure,
+    ElementCount,
+    LoggedOut,
+    Login,
+    MissingPositions,
+    Operation,
+    OtherShape,
+    PagePart,
+    PricingStopped,
+    PricingSummary,
+    Shape,
+    WindowCause,
+)
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.engine import run_settlements
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
@@ -107,8 +120,8 @@ def _run(
     czasów etapów i śladu działań okna. Ślad Wyceny Emmetta leży w ``_traces(source)``, więc każde Uruchomienie dla tego
     samego pliku czyta ślad poprzedniego.
 
-    Błąd okna efenix (np. ``UnexpectedPage``) trafia na stderr testu ze swoją przyczyną z Playwrighta, bo Zatrzymanie w
-    wyniku mówi tylko, w której części strony stanęło, a porażka testu pokazuje stderr. Z samego Zatrzymania nie dało się
+    Błąd okna efenix (np. ``UnexpectedPage``) trafia na stderr testu z treścią wyjątku Playwrighta, której Zatrzymanie w
+    wyniku z założenia nie ma (ma tylko typ wyjątku), a porażka testu pokazuje stderr. Z samego Zatrzymania nie dało się
     ustalić przyczyny porażek #767 i #768 na Windows."""
 
     @contextmanager
@@ -550,18 +563,21 @@ def test_strona_logowania_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene_a_kom
         assert (_stop(outcome), atrapa.searched(), _kept(outcome)) == ("EFENIX_WYLOGOWANY", searched, kept)
 
 
-# Część strony, której zabrakło przy każdej zmianie budowy Atrapy: tabela wyników, strona zlecenia, okno daty wykonania,
-# Emmett albo kwota.
-CHANGED_PART = {
-    Changed.STATUS_HEADER: PagePart.RESULTS,
-    Changed.ORDER_LINK: PagePart.RESULTS,
-    Changed.DATE_FORMAT: PagePart.ORDER,
-    Changed.DATE_DIALOG: PagePart.DATE,
-    Changed.EMMETT_BUTTON: PagePart.EMMETT,
-    Changed.HIDDEN_EMMETT: PagePart.EMMETT,
-    Changed.POSITION_CODE: PagePart.ORDER,
-    Changed.STALE_AMOUNT: PagePart.QUANTITY,
-    Changed.QUANTITY_ANSWER: PagePart.QUANTITY,
+TIMEOUT = "playwright._impl._errors.TimeoutError"
+# Część strony, której zabrakło przy każdej zmianie budowy Atrapy (tabela wyników, strona zlecenia, okno daty wykonania,
+# Emmett albo kwota), przyczyna techniczna z tabeli decyzji (``tests/test_tabela_zatrzyman_efenix.py``) i działanie
+# okna, które się nie udało (``None``: strona bez pozycji z przypisania kolumn po udanym otwarciu).
+CHANGED: dict[Changed, tuple[PagePart, WindowCause, str | None]] = {
+    Changed.STATUS_HEADER: (PagePart.RESULTS, OtherShape(Shape.COLUMNS), "szukanie"),
+    Changed.ORDER_LINK: (PagePart.RESULTS, OtherShape(Shape.ROW_CELLS), "szukanie"),
+    Changed.DATE_FORMAT: (PagePart.ORDER, OtherShape(Shape.DATE_TEXT), "otwarcie zlecenia"),
+    Changed.DATE_DIALOG: (PagePart.DATE, BrowserFailure(TIMEOUT, Operation.ELEMENT), "data wykonania"),
+    Changed.EMMETT_BUTTON: (PagePart.EMMETT, ElementCount("#button_emmett", 0), "Wycena Emmetta"),
+    Changed.HIDDEN_EMMETT: (PagePart.EMMETT, BrowserFailure(TIMEOUT, Operation.CLICK), "Wycena Emmetta"),
+    Changed.POSITION_CODE: (PagePart.ORDER, MissingPositions(("029",)), None),
+    Changed.STALE_AMOUNT: (PagePart.QUANTITY, BrowserFailure(TIMEOUT, Operation.AMOUNT), "ilość"),
+    Changed.QUANTITY_ANSWER: (PagePart.QUANTITY, OtherShape(Shape.ANSWER_NOT_JSON, "012"), "ilość"),
+    Changed.QUANTITY_VALUE: (PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, "012"), "otwarcie zlecenia"),
 }
 
 
@@ -573,7 +589,8 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
 
     Tylko zapis ilości (kwota, która się nie odświeża, i odpowiedź w innym zapisie) zatrzymuje wycenę po zmianie w efenix
     (Wycena Emmetta i ilość). To Zatrzymanie okna jak każde inne, „do Maksa”, więc Centrum daje przy nim Diagnozę i
-    Zgłoszenie, a „Gdzie” nazywa część strony, której zabrakło.
+    Zgłoszenie, a „Gdzie” nazywa część strony, której zabrakło. Fakty Zatrzymania dla Logów Uruchomienia mają przyczynę
+    techniczną i działanie okna, które się nie udało.
     """
 
     order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
@@ -586,8 +603,13 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
     assert (_stop(outcome), changes, _kept(outcome)) == ("EFENIX_OKNO_ZATRZYMANE", 0, changed in (Changed.STALE_AMOUNT, Changed.QUANTITY_ANSWER))
     assert isinstance(outcome.ending, Stop)
     message = outcome.ending.message
-    assert (outcome.ending.stop_kind, message.where) == ("for_maks", f"okno efenix, {CHANGED_PART[changed].value}")
+    part, cause, failed = CHANGED[changed]
+    assert (outcome.ending.stop_kind, message.where) == ("for_maks", f"okno efenix, {part.value}")
     assert message.what.startswith("Wycena w efenix się zatrzymała, Maks już wie.")
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped) and facts.stopped_at is not None
+    stopped_at = facts.stopped_at.failed
+    assert (facts.part, facts.cause, None if stopped_at is None else stopped_at.action) == (part, cause, failed)
 
 
 def test_zmieniona_strona_efenix_oznacza_gotowe_przed_nia_a_komunikat_do_maksa_nie_ma_numeru_adresu_ani_loginu(
@@ -1154,7 +1176,9 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
     albo efenix odpowiada wolniej niż czas okna (tu 3 s), aż połączenie wróci. Wycena nigdy nie wisi i nie kończy się
     nieoczekiwanym błędem: lista zleceń, której okno nie otworzyło przy starcie, to „Nie udało się otworzyć efenix” dla
     taty, a każde późniejsze odcięcie to jedno Zatrzymanie okna do Maksa, z Diagnozą i Zgłoszeniem, bez zgadywania
-    przyczyny. Komunikat, że w efenix nic się nie zmieniło, mówi prawdę. Ponowne uruchomienie po powrocie połączenia, w
+    przyczyny. Logi Uruchomienia mają przyczynę techniczną (przy błędzie przeglądarki z nazwanym działaniem), wiersz
+    zlecenia, przy którym okno stanęło, z jego miejscem w przebiegu i działaniem, które się nie udało, oraz ślad każdego
+    zlecenia przed nim. Komunikat, że w efenix nic się nie zmieniło, mówi prawdę. Ponowne uruchomienie po powrocie połączenia, w
     nowym oknie efenix jak u taty, kończy się tym samym stanem efenix i Pliku zbiorczego co jeden przebieg bez przerwy.
     Wyjątek przyjęty w #774: odcięcie między „Załaduj do zlecenia” a odczytem przeładowanej strony może dać przy ponownym
     uruchomieniu błąd tylko tego zlecenia, które zostaje z Wyceną Emmetta."""
@@ -1179,6 +1203,17 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
     not_opened, window_stop = ("EFENIX_NIEDOSTEPNY", "for_tata"), ("EFENIX_OKNO_ZATRZYMANE", "for_maks")
     allowed = [not_opened] if first == 0 else [not_opened, window_stop] if first == 1 else [window_stop]
     assert (stopped.ending.message.code, stopped.ending.stop_kind) in allowed
+    facts = stopped.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert not isinstance(facts.cause, BrowserFailure) or facts.cause.operation is not None, facts.cause
+    # Lista zleceń drugiego zlecenia to żądanie 14: odcięcie przed nim zatrzymuje okno przy zleceniu 1 (wiersz 18).
+    early: dict[int, list[int | None]] = {0: [None], 1: [None, 18]}
+    rows = early.get(first, [18] if first < WHOLE_RUN.index(("GET", LIST_PAGE), 1) else [19])
+    at = facts.stopped_at
+    assert (None if at is None else at.row) in rows, (at, rows)
+    if at is not None:
+        assert (at.place, at.total, at.failed is not None) == (at.row - 17, 2, True), at
+    assert [result.order.row for result in facts.summary.results] == list(range(18, 18 if at is None else at.row))
     assert _kept(stopped) or after_stop == untouched, (after_stop, untouched)
     assert status_changes == 0
     loading = _loading_emmett(first)

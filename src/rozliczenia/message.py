@@ -68,12 +68,15 @@ class StopError(Exception):
 
     Treść dla taty jest w ``message``, nigdy w ``str(error)`` (ADR 0004):
     ``str(error)`` to sam kod Komunikatu, więc zapis wyjątku do logu nie
-    przenosi treści Komunikatu.
+    przenosi treści Komunikatu. ``facts``: fakty Zatrzymania dla Logów
+    Uruchomienia, które zna tylko proces (np. ``efenix_pricing.PricingStopped``),
+    bez danych klientów; ``None``, gdy proces ich nie daje.
     """
 
-    def __init__(self, message: Message) -> None:
+    def __init__(self, message: Message, *, facts: object = None) -> None:
         super().__init__(message.code)
         self.message = message
+        self.facts = facts
 
 
 def _unconditional_referral(sentence: str) -> bool:

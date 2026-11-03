@@ -86,8 +86,9 @@ Rewizja reguły prywatności: Zgłoszenie opuszcza komputer taty, ale niesie tyl
 to, co reguła ADR 0004 już dopuszcza w Centrum (Komunikat w trzech częściach,
 ze skróconymi ścieżkami, wynik sprawdzeń Diagnozy, bezpieczne wpisy dziennika
 Centrum) oraz proces, okres, tryb, wersję i commit narzędzia. Przy
-nieoczekiwanym błędzie dochodzi typ wyjątku i ślad wywołań w kodzie narzędzia
-(plik względem katalogu narzędzia, linia, funkcja); Centrum trzyma go w pamięci
+nieoczekiwanym błędzie, a także przy Zatrzymaniu „do Maksa”, które ma przyczynę
+w wyjątku, dochodzi typ wyjątku z typami jego przyczyn i ślad wywołań w kodzie
+narzędzia (plik względem katalogu narzędzia, linia, funkcja); Centrum trzyma go w pamięci
 tylko przy tym Zatrzymaniu, poza dziennikiem, metrykami i innymi odpowiedziami.
 Bez treści wierszy, adresów, numerów zleceń, stawek, treści wyjątków i pełnych
 ścieżek. Jedyny wyjątek jest ten sam co w regule ADR 0004: Komunikat
