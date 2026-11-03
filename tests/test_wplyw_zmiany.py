@@ -206,6 +206,46 @@ def test_odcisk_testu_zmienia_sie_z_jego_wejsciem_i_plikiem_kazdego_testu(tmp_pa
     assert len({unrelated, own_input, configuration}) == 3
 
 
+GLOBS = (
+    "from pathlib import Path\n\nROOT = Path(__file__).parents[1]\n"
+    "SKRYPTY = [*(ROOT / 'narzedzia').glob('**/*.py'), *(ROOT / 'skille').glob('*/scripts/**/*.py'), *(ROOT / 'dane').rglob('*.json')]\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("changed", "touched"),
+    [
+        ("narzedzia/a.py", True),
+        ("narzedzia/lib/b.py", True),
+        ("narzedzia/lib/x/c.py", True),
+        ("narzedzia/opis.md", False),
+        ("skille/s/scripts/d.py", True),
+        ("skille/s/scripts/drive/e.py", True),
+        ("skille/s/f.py", False),
+        ("dane/g.json", True),
+        ("dane/x/h.json", True),
+    ],
+)
+def test_glob_z_dwiema_gwiazdkami_obejmuje_plik_w_kazdej_glebokosci_takze_w_samym_katalogu(tmp_path: Path, changed: str, touched: bool) -> None:
+    """``**`` w globie to zero albo więcej katalogów, jak w ``Path.glob``: test, który zbiera skrypty ``tools/**/*.py``,
+    jest dotknięty zmianą ``tools/mutacje_nocne.py``, więc noc go uruchamia (#735, #761, #809)."""
+
+    files = {name: "" for name in ("narzedzia/a.py", "narzedzia/lib/b.py", "narzedzia/lib/x/c.py", "narzedzia/opis.md")}
+    files |= {name: "" for name in ("skille/s/scripts/d.py", "skille/s/scripts/drive/e.py", "skille/s/f.py", "dane/g.json", "dane/x/h.json")}
+    repository = Repository.scan(_repo(tmp_path, {**files, "tests/test_globy.py": GLOBS}))
+
+    assert ("tests/test_globy.py" in repository.impact(frozenset({changed})).tests) is touched
+    assert ("tests/test_globy.py" in repository.reaching(changed)) is touched
+
+
+def test_modul_skryptu_skilla_tylko_w_podkatalogu_scripts_jest_dotkniety_przez_test_ktory_go_importuje(tmp_path: Path) -> None:
+    # Skill bez pliku prosto w ``scripts/``: jego ``scripts`` to i tak korzeń modułów, jak ``drive`` w verify-centrum-rozliczen.
+    files = {".agents/skills/s/scripts/drive/__init__.py": "", ".agents/skills/s/scripts/drive/wspolne.py": "", "tests/test_drive.py": "import drive.wspolne\n"}
+    repository = Repository.scan(_repo(tmp_path, files))
+
+    assert "tests/test_drive.py" in repository.impact(frozenset({".agents/skills/s/scripts/drive/wspolne.py"})).tests
+
+
 def test_test_siega_pliku_przez_katalog_nazwany_w_tescie_a_nie_przez_sciezke_nazwana_tylko_w_narzedziu(tmp_path: Path) -> None:
     # Test uruchamia skrypty z katalogu, który nazywa; narzędzie, które test uruchamia, nazywa inne narzędzie.
     repo = _repo(
