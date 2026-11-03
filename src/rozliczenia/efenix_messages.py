@@ -135,38 +135,35 @@ def window_closed(*, kept: bool) -> Message:
     )
 
 
-def efenix_changed(part: PagePart, *, kept: bool) -> Message:
-    """Strona efenix nie ma w części ``part`` budowy, którą zna narzędzie; ``kept`` jak w ``logged_out``.
+def window_stopped(part: PagePart, *, kept: bool) -> Message:
+    """Okno efenix nie dokończyło kroku w części ``part`` strony; ``kept`` jak w ``logged_out``.
 
-    Zatrzymanie „do Maksa”, więc Centrum daje przy nim Diagnozę i Zgłoszenie, a Maks dostaje je razem z Logami
-    Uruchomienia. „Gdzie” nazywa tylko część strony, bez treści strony.
+    Komunikat nie zgaduje przyczyny (zerwane połączenie, wolny albo zmieniony efenix): to Zatrzymanie „do Maksa”, więc
+    Centrum daje przy nim Diagnozę i Zgłoszenie, a Maks ustala przyczynę z nich i z Logów Uruchomienia. „Gdzie” nazywa
+    tylko część strony, bez treści strony.
     """
 
     return Message(
-        code="EFENIX_ZMIENIONY",
-        what=(
-            "efenix się zmienił, Maks już wie. Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i "
-            f"dalej niczego w niej nie klika. {_after_stop(kept=kept)}"
-        ),
+        code="EFENIX_OKNO_ZATRZYMANE",
+        what=f"{_PROCESS} się zatrzymała, Maks już wie. {_after_stop(kept=kept)}",
         where=f"{_EFENIX}, {part.value}",
-        action=f"Wycenę pozostałych zleceń zrób w efenix sam albo poczekaj na poprawkę narzędzia. {REPORT_TO_MAINTAINER}",
+        action=(
+            "Uruchom ponownie: gotowe zlecenia narzędzie tylko sprawdzi, a resztę wyceni dalej. Jeśli Wycena zatrzyma się "
+            f"znowu, wyceń pozostałe zlecenia w efenix sam albo poczekaj na poprawkę narzędzia. {REPORT_TO_MAINTAINER}"
+        ),
     )
 
 
 def efenix_unreachable(*, kept: bool) -> Message:
-    """Brak połączenia z efenix: okno nie otworzyło efenix albo efenix przestał odpowiadać w trakcie; ``kept`` jak w
-    ``logged_out``.
-
-    Zatrzymanie dla taty, bez Diagnozy i Zgłoszenia: przekazanie Komunikatu jest tylko warunkowe.
-    """
+    """Okno nie otworzyło efenix; ``kept`` jak w ``logged_out``."""
 
     return Message(
         code="EFENIX_NIEDOSTEPNY",
-        what=f"Brak połączenia z efenix, więc {_PROCESS} się zatrzymała. {_after_stop(kept=kept)}",
+        what=f"Nie udało się otworzyć efenix. {_after_stop(kept=kept)}",
         where=_EFENIX,
         action=(
-            "Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Gotowe "
-            "zlecenia narzędzie tylko sprawdzi. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
+            "Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Jeśli błąd "
+            "wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
         ),
     )
 

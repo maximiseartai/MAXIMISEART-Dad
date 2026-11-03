@@ -11,29 +11,16 @@ jej odpowiedź trafia do ``#wyniki`` w dowolnej chwili. Kolumny tabeli rozpoznaj
 ``Status``, ``Wykonawca``, ``Dane adresowe``), tekst komórki bez jej ``<small>`` (identyfikator Fenix, województwo),
 login realizatora z ``small.text-default`` komórki Wykonawca (obok niego w ``<small>`` stoi data), a stronę zlecenia
 otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony albo szukania na ``page_login.php`` to
-``LoggedOut``, a strona bez oczekiwanej budowy albo element obecny, ale niewidoczny, to ``UnexpectedPage``. Na odpowiedź
-efenix okno czeka do jej końca, z całą treścią, a nie tylko do nagłówków, bo na treść, którą sieć wstrzymała w połowie,
-czekałoby bez końca. Każdy błąd Playwrighta w działaniu okna (czas czekania na stronę, odpowiedź albo element, który minął,
-otwarcie strony, które się nie udało, treść odpowiedzi, której nie da się przeczytać) tłumaczy jedna granica działania: to
-brak połączenia z efenix (``EfenixUnreachable``), gdy strona wysłała w trakcie działania żądanie pod adres efenix, na które
-nie dostała całej odpowiedzi (sieć je zerwała, także w połowie treści, albo efenix jeszcze nie odpowiedział), a inaczej
-``UnexpectedPage``, bo strona nie zrobiła tego, co robi efenix, który zna okno. Otwarta albo przeładowana strona, której
-plik spod adresu efenix (skrypt, arkusz stylów) zerwała sieć, to też brak połączenia, choć Playwright nie zgłasza wtedy
-błędu: strona bez swojego skryptu nie działa, a następne działanie nie wysłałoby już żądania, po którym widać brak
-połączenia. Żądanie, na które efenix odpowiedział błędem HTTP (plik strony, którego efenix już nie ma, odpowiada 404),
-dostało odpowiedź, choć przeglądarka zgłasza je jako nieudane: efenix odpowiada, więc strona bez takiego skryptu to
-``UnexpectedPage``, a martwy link na działającej stronie nic nie zatrzymuje. Żądań spoza efenix (Mapy Google,
-fontawesome) okno nie liczy: ich brak odpowiedzi nic nie mówi o połączeniu z efenix, a schowałby zmienioną stronę. Strona
-otwarta albo przeładowana po Wycenie Emmetta, która zaczęła się ładować, ale nie skończyła w czasie okna, to jednak brak
-połączenia, także gdy czeka plik spoza efenix w ``<head>``: zmieniony efenix też ładuje się do końca, a strona, której
-przeładowanie w ogóle się nie zaczęło, to ``UnexpectedPage``. Liczy
-za to każde przejście karty okna na inną stronę, także przekierowane spod adresu efenix na inny: strona, która nie
-przyszła, nie ma budowy, którą efenix mógłby zmienić.
-Działanie w zamkniętej karcie albo oknie, także zamkniętym w trakcie działania, to ``WindowClosed``, cokolwiek zgłosił
-wtedy Playwright. Przeglądarkę daje
-rozmówca: stronę (``window``), Chromium Playwrighta (``chromium``) albo widoczne okno zainstalowanego Google Chrome w
-trwałym profilu narzędzia (``chrome``), które nie startuje (``BrowserNotStarted``), gdy Chrome nie ma albo jego profil
-trzyma inne okno.
+``LoggedOut``. Lista zleceń, której okno nie otworzyło przy starcie (adres nie odpowiada), to ``EfenixUnreachable``.
+Każde inne działanie, którego okno nie dokończyło, to ``UnexpectedPage`` z częścią strony: strona bez oczekiwanej
+budowy, element obecny, ale niewidoczny, i każdy błąd Playwrighta w działaniu (czas czekania na stronę, odpowiedź albo
+element, który minął, otwarcie strony, które się nie udało, treść odpowiedzi, której nie da się przeczytać). Przyczyny
+(zerwane połączenie, wolny albo zmieniony efenix) okno nie rozróżnia: ustala ją Maks ze Zgłoszenia. Na odpowiedź efenix
+okno czeka do jej końca, z całą treścią, a nie tylko do nagłówków, bo na treść, którą sieć wstrzymała w połowie,
+czekałoby bez końca. Działanie w zamkniętej karcie albo oknie, także zamkniętym w trakcie działania, to
+``WindowClosed``, cokolwiek zgłosił wtedy Playwright. Przeglądarkę daje rozmówca: stronę (``window``), Chromium
+Playwrighta (``chromium``) albo widoczne okno zainstalowanego Google Chrome w trwałym profilu narzędzia (``chrome``),
+które nie startuje (``BrowserNotStarted``), gdy Chrome nie ma albo jego profil trzyma inne okno.
 
 Okno z ``Login`` od silnika (``chrome`` zawsze, ``window`` na życzenie) na stronie logowania czeka, aż tata się zaloguje:
 co ``LOGIN_POLL_MS`` sprawdza, czy strona przeszła na inną niż logowanie, albo pyta efenix o listę zleceń w tej samej
@@ -75,8 +62,7 @@ from typing import Concatenate, Final, ParamSpec, TypedDict, TypeVar
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-from playwright.sync_api import Frame, Locator, Page, Request, Response, sync_playwright
+from playwright.sync_api import Locator, Page, Request, Response, sync_playwright
 
 from . import TOOL_ROOT
 from .efenix_pricing import (
@@ -148,10 +134,6 @@ TIMEOUT_MS: Final = 30_000
 LOGIN_TIMEOUT_MS: Final = 15 * 60_000
 """Tyle okno czeka na logowanie taty, zanim proces zatrzyma się jak po wylogowaniu."""
 LOGIN_POLL_MS: Final = 2_000
-# Pliki, które strona efenix ładuje do siebie: bez któregoś strona nie jest gotowa. Samej strony (``document``) tu nie
-# ma, bo otwarcie albo przeładowanie strony, która nie przyszła, kończy się błędem Playwrighta, który tłumaczy granica
-# działania.
-_PAGE_FILES: Final = frozenset({"script", "stylesheet"})
 
 # Tabela z odpowiedzi szukania przeczytana parserem HTML przeglądarki w ``<template>``, w którym jej skrypty nie biegną.
 _READ_RESULTS: Final = """(html) => {
@@ -199,19 +181,18 @@ _R = TypeVar("_R")
 def _action(
     part: PagePart,
 ) -> Callable[[Callable[Concatenate[BrowserEfenix, _P], _R]], Callable[Concatenate[BrowserEfenix, _P], _R]]:
-    """Działanie okna na części ``part`` strony efenix: każdy błąd Playwrighta w działaniu tłumaczy granica ``_within``
-    z żądaniami strony z czasu działania (``_watch``), więc żadne czekanie na sieć ani czytanie odpowiedzi jej nie omija.
+    """Działanie okna na części ``part`` strony efenix: każdy błąd Playwrighta w działaniu to ``UnexpectedPage(part)``
+    (granica ``_within``), więc żadne czekanie na sieć ani czytanie odpowiedzi jej nie omija.
 
     Każdy wyjątek działania w karcie zamkniętej przed nim albo w jego trakcie to zamknięte okno (``WindowClosed``), a nie
-    lista typów: Playwright zgłasza wtedy błąd, a granica mogła go już zamienić na ``EfenixUnreachable`` albo
-    ``UnexpectedPage``.
+    lista typów: Playwright zgłasza wtedy błąd, a granica mogła go już zamienić na ``UnexpectedPage``.
     """
 
     def decorate(action: Callable[Concatenate[BrowserEfenix, _P], _R]) -> Callable[Concatenate[BrowserEfenix, _P], _R]:
         @functools.wraps(action)
         def guarded(efenix: BrowserEfenix, /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
             try:
-                with efenix._watch(), efenix._within(part):
+                with _within(part):
                     return action(efenix, *args, **kwargs)
             except Exception as error:
                 if efenix.closed:
@@ -285,49 +266,6 @@ class _Results(TypedDict):
     rows: list[list[_Cell]]
 
 
-class _Traffic:
-    """Żądania, które strona okna wysłała w trakcie jednego działania okna pod adres efenix ``origin`` albo jako przejście
-    karty okna (``main_frame``) na inną stronę: te, na które odpowiedź jeszcze nie przyszła, i te, które zerwała sieć."""
-
-    def __init__(self, origin: str, main_frame: Frame) -> None:
-        self._origin = origin
-        self._main_frame = main_frame
-        self._pending: list[Request] = []
-        self._cut: list[Request] = []
-        self.navigated = False
-        """Karta okna zaczęła w trakcie działania przejście na inną stronę."""
-
-    @property
-    def stalled(self) -> bool:
-        """Któreś żądanie działania nie dostało całej odpowiedzi: sieć je zerwała albo odpowiedź jeszcze nie przyszła."""
-
-        return bool(self._pending or self._cut)
-
-    @property
-    def page_file_cut(self) -> bool:
-        """Sieć zerwała plik strony (``_PAGE_FILES``) wysłany w trakcie działania."""
-
-        return any(request.resource_type in _PAGE_FILES for request in self._cut)
-
-    def sent(self, request: Request) -> None:
-        navigation = request.is_navigation_request() and request.frame == self._main_frame
-        self.navigated = self.navigated or navigation
-        if _origin(request.url) == self._origin or navigation:
-            self._pending.append(request)
-
-    def finished(self, request: Request) -> None:
-        if request in self._pending:
-            self._pending.remove(request)
-
-    def failed(self, request: Request) -> None:
-        """Nieudane żądanie, na które efenix odpowiedział błędem HTTP, dostało odpowiedź; zerwane zostaje bez niej."""
-
-        if request in self._pending:
-            self._pending.remove(request)
-            if _cut_off(request):
-                self._cut.append(request)
-
-
 class BrowserEfenix:
     """Okno efenix na stronie ``page`` z listą zleceń pod adresem ``url``; implementuje ``efenix_pricing.Efenix``."""
 
@@ -337,7 +275,7 @@ class BrowserEfenix:
         self._timeout_ms = timeout_ms
         self._positions: dict[str, str] = {}
         self._sent_change = False
-        self._traffic = _Traffic(_origin(url), page.main_frame)
+        self._opened = False
 
     @property
     def sent_change(self) -> bool:
@@ -353,9 +291,15 @@ class BrowserEfenix:
 
     @_action(PagePart.LIST)
     def open_list(self) -> None:
-        """Otwiera listę zleceń; ``EfenixUnreachable``, gdy adres nie odpowiada."""
+        """Otwiera listę zleceń; ``EfenixUnreachable``, gdy okno nie otworzyło jeszcze efenix, a adres nie odpowiada."""
 
-        self._open(lambda: self._page.goto(self._url, wait_until="load", timeout=self._timeout_ms))
+        try:
+            self._page.goto(self._url, wait_until="load", timeout=self._timeout_ms)
+        except PlaywrightError as error:
+            if not self._opened:
+                raise EfenixUnreachable from error
+            raise
+        self._opened = True
         self._ensure_logged_in()
         if self._page.locator(_NUMBER_FIELD).count() != 1:
             raise UnexpectedPage(PagePart.LIST)
@@ -411,7 +355,7 @@ class BrowserEfenix:
         if urlparse(self._page.url).path != urlparse(self._url).path:
             self.open_list()
         field = self._page.locator(_NUMBER_FIELD)
-        with self._within(PagePart.LIST):
+        with _within(PagePart.LIST):
             field.fill(number, timeout=self._timeout_ms)
         answer = self._finished(lambda request: _is_search(request, number), lambda: field.press("Enter", timeout=self._timeout_ms))
         if _redirected_to_login(answer):
@@ -422,8 +366,7 @@ class BrowserEfenix:
     def open_order(self, order: ListedOrder) -> OrderPricing:
         """Otwiera stronę zlecenia ``order`` i czyta datę wykonania, kwotę końcową i ilości pozycji."""
 
-        address = urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}")
-        self._open(lambda: self._page.goto(address, wait_until="load", timeout=self._timeout_ms))
+        self._page.goto(urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms)
         return self._read_order()
 
     @_action(PagePart.DATE)
@@ -456,16 +399,8 @@ class BrowserEfenix:
         self._only(_EMMETT_BUTTON, PagePart.EMMETT).click(timeout=self._timeout_ms)
         self._shown(_EMMETT_DIALOG, PagePart.EMMETT)
         load = self._only(f"{_EMMETT_DIALOG} {_OK}", PagePart.EMMETT)
-        answered = False
-        try:
-            with self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
-                self._answer(_LOAD_EMMETT, lambda _params: True, lambda: load.click(timeout=self._timeout_ms))
-                answered = True
-        except PlaywrightTimeoutError as error:
-            if answered and self._traffic.navigated:
-                raise EfenixUnreachable from error
-            raise
-        self._loaded()
+        with self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
+            self._answer(_LOAD_EMMETT, lambda _params: True, lambda: load.click(timeout=self._timeout_ms))
         return self._read_order()
 
     @_action(PagePart.QUANTITY)
@@ -533,55 +468,6 @@ class BrowserEfenix:
         assert response is not None, "zakończone żądanie ma odpowiedź"
         return response
 
-    @contextmanager
-    def _within(self, part: PagePart) -> Iterator[None]:
-        """Granica błędów Playwrighta działania okna w części ``part`` strony: błąd czekania na stronę, odpowiedź albo
-        element, otwarcia strony i czytania treści odpowiedzi to brak połączenia z efenix, gdy strona wysłała w trakcie
-        działania żądanie pod adres efenix bez całej odpowiedzi, a inaczej efenix o innej budowie."""
-
-        try:
-            yield
-        except PlaywrightError as error:
-            if self._traffic.stalled:
-                raise EfenixUnreachable from error
-            raise UnexpectedPage(part) from error
-
-    def _open(self, navigate: Callable[[], object]) -> None:
-        """Otwiera stronę przez ``navigate``. Strona, która nie skończyła się ładować w czasie okna, to brak połączenia z
-        efenix także wtedy, gdy czeka plik spoza efenix (fontawesome, Google Fonts w ``<head>`` listy i strony zlecenia),
-        bo zmieniony efenix też się ładuje do końca."""
-
-        try:
-            navigate()
-        except PlaywrightTimeoutError as error:
-            raise EfenixUnreachable from error
-        self._loaded()
-
-    def _loaded(self) -> None:
-        """Strona otwarta albo przeładowana w działaniu bez pliku spod adresu efenix (``_PAGE_FILES``), który zerwała
-        sieć, to brak połączenia z efenix, choć zdarzenie ``load`` przychodzi także wtedy i Playwright nie zgłasza błędu."""
-
-        if self._traffic.page_file_cut:
-            raise EfenixUnreachable
-
-    @contextmanager
-    def _watch(self) -> Iterator[None]:
-        """Żądania strony na czas działania okna; po działaniu w działaniu (``open_list`` w ``search``) liczy dalej
-        zewnętrzne, które liczyło także jego żądania."""
-
-        outer, traffic = self._traffic, _Traffic(_origin(self._url), self._page.main_frame)
-        self._traffic = traffic
-        self._page.on("request", traffic.sent)
-        self._page.on("requestfinished", traffic.finished)
-        self._page.on("requestfailed", traffic.failed)
-        try:
-            yield
-        finally:
-            self._page.remove_listener("request", traffic.sent)
-            self._page.remove_listener("requestfinished", traffic.finished)
-            self._page.remove_listener("requestfailed", traffic.failed)
-            self._traffic = outer
-
     def _ensure_logged_in(self) -> None:
         if _on_login_page(self._page.url):
             raise LoggedOut
@@ -648,6 +534,16 @@ def _single(page: Page, selector: str, part: PagePart) -> Locator:
     return located
 
 
+@contextmanager
+def _within(part: PagePart) -> Iterator[None]:
+    """Działanie na części ``part`` strony, które skończyło się błędem Playwrighta, to ``UnexpectedPage(part)``."""
+
+    try:
+        yield
+    except PlaywrightError as error:
+        raise UnexpectedPage(part) from error
+
+
 def _column(headers: Sequence[str], header: str) -> int:
     positions = [index for index, text in enumerate(headers) if text.casefold().startswith(header)]
     if len(positions) != 1:
@@ -684,22 +580,6 @@ def _amount(shown: str, part: PagePart) -> Decimal:
     if not _AMOUNT_TEXT.fullmatch(text):
         raise UnexpectedPage(part)
     return Decimal(text)
-
-
-def _origin(url: str) -> str:
-    """Schemat, host i port adresu: żądanie pod adresem efenix ma ten sam co lista zleceń."""
-
-    parsed = urlparse(url)
-    return f"{parsed.scheme}://{parsed.netloc}"
-
-
-def _cut_off(request: Request) -> bool:
-    """Nieudane żądanie przerwało zerwane połączenie: nie przyszła odpowiedź efenix albo przyszła bez błędu HTTP, a sieć
-    zerwała jej treść. Na odpowiedź z błędem HTTP (status od 400) przeglądarka też zgłasza żądanie jako nieudane, gdy to
-    skrypt albo arkusz stylów, ale wtedy efenix odpowiedział."""
-
-    response = request.existing_response
-    return response is None or response.status < 400
 
 
 def _on_login_page(url: str) -> bool:

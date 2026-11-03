@@ -24,11 +24,12 @@ otwartej stronie zlecenia: dzień, którego kalendarz efenix nie przyjął albo 
 Emmetta zlecenia w stanie „Emmett załadowany” nie ładuje drugi raz. Sprzeczność Emmetta z plikiem to ostrzeżenie bez
 dopisywania, a w przeciwnym razie proces wpisuje ilości pliku w pozycjach pustych u Emmetta i porównuje kwotę końcową,
 którą odesłał efenix, z ``Kwota`` (AU). Okno efenix (``Efenix``) nie ma działania, które przekazuje zlecenie do
-akceptacji, anuluje je albo zmienia jego status. Strona logowania i strona o innej budowie, także bez pozycji z
-przypisania kolumn, to Zatrzymanie (``LoggedOut``, ``UnexpectedPage``), tak samo zamknięte okno efenix
-(``WindowClosed``) i brak połączenia z efenix, także zerwany albo wolny w trakcie (``EfenixUnreachable``), a Komunikat
-Zatrzymania mówi, czy przed nim proces zmienił już coś w efenix. Zmieniona strona efenix to Zatrzymanie „do Maksa” z
-częścią strony, której zabrakło, bez treści strony; brak połączenia to Zatrzymanie dla taty, który uruchamia ponownie.
+akceptacji, anuluje je albo zmienia jego status. Strona logowania, efenix, którego okno nie otworzyło, zamknięte okno
+efenix i działanie okna, którego okno nie dokończyło, także na stronie bez pozycji z przypisania kolumn, to Zatrzymanie
+(``LoggedOut``, ``EfenixUnreachable``, ``WindowClosed``, ``UnexpectedPage``), a Komunikat Zatrzymania mówi, czy przed
+nim proces zmienił już coś w efenix. Niedokończone działanie okna to Zatrzymanie „do Maksa” z częścią strony, bez
+treści strony i bez zgadywania przyczyny (zerwane połączenie, wolny albo zmieniony efenix): tata uruchamia ponownie, a
+Maks ustala przyczynę ze Zgłoszenia.
 Okno, które czeka, aż tata się zaloguje, robi to w ``Login`` od silnika: ten czas nie wlicza się do czasów etapów ani,
 przez ``waiting`` rozmowy rdzenia, do ``Czas uruchomienia``. Postęp Zapisywania to kroki (``PhaseRunner.step``):
 logowanie, zlecenia z Wykonawcą i liczbą sprawdzonych z wszystkich, na końcu Znaczniki efenix; ślad działań okna przy
@@ -122,7 +123,8 @@ class LoggedOut(Exception):
 
 
 class UnexpectedPage(Exception):
-    """Strona efenix nie ma budowy, którą zna okno; ``part`` to część, w której jej zabrakło (bez treści strony)."""
+    """Okno nie dokończyło działania w części ``part`` strony efenix (bez treści strony): strona nie ma budowy, którą
+    zna okno, albo nie odpowiedziała w czasie okna; przyczyny okno nie rozróżnia."""
 
     def __init__(self, part: PagePart) -> None:
         super().__init__(part.name)
@@ -130,8 +132,7 @@ class UnexpectedPage(Exception):
 
 
 class EfenixUnreachable(Exception):
-    """Brak połączenia z efenix: okno nie otworzyło strony efenix albo żądanie działania okna zerwała sieć lub efenix
-    nie odpowiedział na nie w czasie okna."""
+    """Okno nie otworzyło efenix przy starcie: adres nie odpowiada albo nie ma połączenia."""
 
 
 class WindowClosed(Exception):
@@ -157,8 +158,7 @@ class Efenix(Protocol):
     pola „Ilość”. Przekazania do akceptacji, anulowania ani zmiany statusu zlecenia w nim nie ma.
 
     Działania po ``open_order`` dotyczą otwartego zlecenia. Każde działanie zgłasza ``LoggedOut`` na stronie logowania,
-    ``UnexpectedPage`` na stronie o innej budowie, ``EfenixUnreachable`` bez połączenia z efenix i ``WindowClosed`` w
-    zamkniętym oknie.
+    ``UnexpectedPage``, gdy go nie dokończyło, i ``WindowClosed`` w zamkniętym oknie.
     """
 
     @property
@@ -382,8 +382,8 @@ def _warning(source: Path, result: OrderResult) -> Message | None:
 
 @contextmanager
 def _efenix_stops(changed: Callable[[], bool]) -> Iterator[None]:
-    """Strona logowania, nieznana budowa strony, zamknięte okno i brak połączenia z efenix to Zatrzymanie z Komunikatem
-    procesu.
+    """Strona logowania, niedokończone działanie okna, zamknięte okno i efenix, którego okno nie otworzyło, to Zatrzymanie
+    z Komunikatem procesu.
 
     ``changed``: czy przed Zatrzymaniem proces zmienił już coś w efenix.
     """
@@ -393,7 +393,7 @@ def _efenix_stops(changed: Callable[[], bool]) -> Iterator[None]:
     except LoggedOut as error:
         raise StopError(messages.logged_out(kept=changed())) from error
     except UnexpectedPage as error:
-        raise StopError(messages.efenix_changed(error.part, kept=changed())) from error
+        raise StopError(messages.window_stopped(error.part, kept=changed())) from error
     except WindowClosed as error:
         raise StopError(messages.window_closed(kept=changed())) from error
     except EfenixUnreachable as error:

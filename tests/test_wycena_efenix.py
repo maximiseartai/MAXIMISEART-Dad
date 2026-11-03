@@ -34,7 +34,7 @@ import zipfile
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
 
-from playwright.sync_api import Browser, Page, Route
+from playwright.sync_api import Browser, Page
 import pytest
 
 from rozliczenia import TOOL_ROOT, efenix_browser, efenix_process
@@ -572,8 +572,8 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
     """Zatrzymanie przychodzi w czasie okna (tu 3 s), także przy elemencie obecnym, ale niewidocznym.
 
     Tylko zapis ilości (kwota, która się nie odświeża, i odpowiedź w innym zapisie) zatrzymuje wycenę po zmianie w efenix
-    (Wycena Emmetta i ilość). Zatrzymanie jest „do Maksa”, więc Centrum daje przy nim Diagnozę i Zgłoszenie, a „Gdzie”
-    nazywa część strony, której zabrakło.
+    (Wycena Emmetta i ilość). To Zatrzymanie okna jak każde inne, „do Maksa”, więc Centrum daje przy nim Diagnozę i
+    Zgłoszenie, a „Gdzie” nazywa część strony, której zabrakło.
     """
 
     order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
@@ -583,182 +583,11 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
         outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
         changes = atrapa.status_changes()
 
-    assert (_stop(outcome), changes, _kept(outcome)) == ("EFENIX_ZMIENIONY", 0, changed in (Changed.STALE_AMOUNT, Changed.QUANTITY_ANSWER))
+    assert (_stop(outcome), changes, _kept(outcome)) == ("EFENIX_OKNO_ZATRZYMANE", 0, changed in (Changed.STALE_AMOUNT, Changed.QUANTITY_ANSWER))
     assert isinstance(outcome.ending, Stop)
     message = outcome.ending.message
     assert (outcome.ending.stop_kind, message.where) == ("for_maks", f"okno efenix, {CHANGED_PART[changed].value}")
-    assert message.what.startswith("efenix się zmienił, Maks już wie.")
-
-
-@pytest.mark.parametrize("changed", [Changed.HIDDEN_EMMETT, Changed.STALE_AMOUNT])
-def test_zadanie_spoza_efenix_bez_odpowiedzi_nie_zmienia_innej_budowy_strony_w_brak_polaczenia(
-    tmp_path: Path, page: Page, changed: Changed
-) -> None:
-    """Widżet spoza efenix na stronie (jak Mapy Google na stronie zlecenia), który co chwilę pyta swój serwer i nie dostaje
-    odpowiedzi, nie chowa zmienionej strony efenix pod „brak połączenia z efenix”: to dalej Zatrzymanie do Maksa."""
-
-    order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
-    # Serwer widżetu przyjmuje połączenia, ale nigdy nie odpowiada.
-    with socket.create_server(("127.0.0.1", 0), backlog=64) as silent:
-        widget = f"http://127.0.0.1:{silent.getsockname()[1]}/widget"
-        page.add_init_script(f"setInterval(() => fetch({json.dumps(widget)}, {{mode: 'no-cors'}}).catch(() => {{}}), 200)")
-        with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)], changed=changed) as atrapa:
-            outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
-
-    assert isinstance(outcome.ending, Stop), _ending(outcome)
-    assert (_stop(outcome), outcome.ending.stop_kind, outcome.ending.message.where) == (
-        "EFENIX_ZMIENIONY",
-        "for_maks",
-        f"okno efenix, {CHANGED_PART[changed].value}",
-    )
-
-
-# Skrypt strony, którego efenix już nie ma (usunięty albo przemianowany): efenix odpowiada na niego błędem HTTP od żądania
-# ``from_request`` (licząc od zera) tego skryptu.
-@pytest.mark.parametrize(
-    ("script", "status", "from_request", "part"),
-    [
-        pytest.param(LIST_SCRIPT, 404, 0, PagePart.RESULTS, id="skrypt-listy-404"),
-        pytest.param(LIST_SCRIPT, 500, 0, PagePart.RESULTS, id="skrypt-listy-500"),
-        # Drugie otwarcie listy to szukanie drugiego zlecenia ze strony pierwszego, w tym samym działaniu okna co szukanie.
-        pytest.param(LIST_SCRIPT, 404, 1, PagePart.RESULTS, id="skrypt-listy-404-przy-szukaniu"),
-        pytest.param(ORDER_SCRIPT, 404, 0, PagePart.EMMETT, id="skrypt-zlecenia-404"),
-        pytest.param(ORDER_SCRIPT, 500, 0, PagePart.EMMETT, id="skrypt-zlecenia-500"),
-    ],
-)
-def test_skrypt_strony_ktorego_efenix_juz_nie_ma_to_zmieniony_efenix_a_nie_brak_polaczenia(
-    tmp_path: Path, page: Page, script: str, status: int, from_request: int, part: PagePart
-) -> None:
-    """Przeglądarka zgłasza skrypt, na który efenix odpowiedział 404 albo 500, jako nieudany, tak jak zerwany, ale efenix
-    odpowiedział: strona bez swojego skryptu to efenix, który się zmienił, z Diagnozą i Zgłoszeniem do Maksa, a nie
-    „brak połączenia z efenix”, który tata dostawałby przy każdym ponownym uruchomieniu."""
-
-    orders = [Order(f"#950{index}", cells={"O": 1}, amount=_au({"012": 1})) for index in (1, 2)]
-    sent = itertools.count()
-
-    def gone(route: Route) -> None:
-        if next(sent) < from_request:
-            route.continue_()
-        else:
-            route.fulfill(status=status, body="<p>Nie ma takiej strony.</p>", content_type="text/html")
-
-    page.route(f"**/{script}*", gone)
-    with atrapa_efenix([replace(order.in_efenix(f"90{index}"), execution_date=DAY) for index, order in enumerate(orders)]) as atrapa:
-        outcome = _price(tmp_path, page, atrapa.url, orders, timeout_ms=3_000)
-
-    assert isinstance(outcome.ending, Stop), _ending(outcome)
-    assert (_stop(outcome), outcome.ending.stop_kind, outcome.ending.message.where) == (
-        "EFENIX_ZMIENIONY",
-        "for_maks",
-        f"okno efenix, {part.value}",
-    )
-
-
-def _on_efenix_pages(page: Page, tag: str) -> None:
-    """Dokleja ``tag`` do ``<head>`` listy zleceń i strony zlecenia Atrapy, jak plik, który efenix ładuje na swoich stronach."""
-
-    def add(route: Route) -> None:
-        response = route.fetch()
-        route.fulfill(response=response, body=response.text().replace("</head>", f"{tag}</head>", 1))
-
-    for path in (LIST_PAGE, ORDER_PAGE):
-        page.route(f"**/{path}*", add)
-
-
-@pytest.mark.parametrize(
-    "tag",
-    [
-        pytest.param('<link rel="stylesheet" href="css/usuniety.css">', id="martwy-arkusz-stylow-efenix"),
-        pytest.param('<script src="js/usuniety.js"></script>', id="martwy-skrypt-efenix"),
-        pytest.param('<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css">', id="arkusz-fontawesome"),
-        pytest.param('<script src="https://maps.googleapis.com/maps/api/js"></script>', id="skrypt-map-google"),
-    ],
-)
-def test_martwy_link_efenix_i_plik_spoza_efenix_bez_odpowiedzi_nie_zatrzymuja_wyceny(tmp_path: Path, page: Page, tag: str) -> None:
-    """Działająca strona efenix z linkiem do pliku, którego efenix już nie ma (Atrapa odpowiada na nieznany adres 404), albo
-    z plikiem z innego serwera (fontawesome, Mapy Google), który nie odpowiada, wycenia zlecenie jak bez nich: martwy link
-    to nie brak połączenia, a serwer spoza efenix nic nie mówi o połączeniu z efenix."""
-
-    order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
-    _on_efenix_pages(page, tag)
-    # Serwery spoza efenix zrywają połączenie; Atrapa jest pod ``http://127.0.0.1``.
-    page.route("https://**/*", lambda route: route.abort("connectionreset"))
-    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
-        outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
-
-    assert (outcome.result, _figures(outcome)) == ("OK", _figures_of(1, 1))
-
-
-@pytest.mark.parametrize(
-    ("where", "load"),
-    [
-        pytest.param(LIST_PAGE, 1, id="lista"),
-        pytest.param(ORDER_PAGE, 1, id="strona-zlecenia"),
-        pytest.param(ORDER_PAGE, 2, id="przeladowanie-po-emmetcie"),
-    ],
-)
-def test_milczacy_arkusz_spoza_efenix_przy_otwarciu_strony_to_brak_polaczenia_z_efenix(
-    tmp_path: Path, page: Page, where: str, load: int
-) -> None:
-    """Strona efenix ładuje w ``<head>`` arkusze z innych serwerów (fontawesome, Google Fonts). Serwer, który przyjął
-    żądanie i milczy, sprawia, że strona nie kończy się ładować, a to dla taty „brak połączenia z efenix”, nie zmieniony
-    efenix ze Zgłoszeniem do Maksa."""
-
-    loads: list[str] = []
-
-    def add(route: Route) -> None:
-        loads.append(route.request.url)
-        response = route.fetch()
-        body = response.text()
-        if len(loads) == load:
-            body = body.replace("</head>", '<link rel="stylesheet" href="https://use.fontawesome.com/all.css"></head>', 1)
-        route.fulfill(response=response, body=body)
-
-    held: list[Route] = []
-    page.route(f"**/{where}*", add)
-    page.route("https://**/*", lambda route: held.append(route))
-    order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
-    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
-        outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
-
-    assert len(loads) >= load, loads
-    assert isinstance(outcome.ending, Stop), _ending(outcome)
-    assert (_stop(outcome), outcome.ending.stop_kind) == ("EFENIX_NIEDOSTEPNY", "for_tata")
-
-
-def test_efenix_bez_przeladowania_po_zaladuj_do_zlecenia_to_zmieniony_efenix_dla_maksa(tmp_path: Path, page: Page) -> None:
-    """Zmieniony efenix zapisuje Wycenę Emmetta po „Załaduj do zlecenia”, ale jego skrypt nie przeładowuje już strony.
-    Przeładowanie, które się nie zaczęło, to nie brak połączenia, więc tata nie ponawia Wyceny bez końca, a Maks dostaje
-    Zgłoszenie."""
-
-    def no_reload(route: Route) -> None:
-        response = route.fetch()
-        body = response.text()
-        changed = body.replace(".then(() => setTimeout(() => location.reload(),", ".then(() => setTimeout(() => null,", 1)
-        assert changed != body, "skrypt strony zlecenia Atrapy przeładowuje stronę po Wycenie Emmetta"
-        route.fulfill(response=response, body=changed)
-
-    page.route(f"**/{ORDER_SCRIPT}*", no_reload)
-    order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
-    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
-        outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
-
-    assert isinstance(outcome.ending, Stop), _ending(outcome)
-    assert (_stop(outcome), outcome.ending.stop_kind) == ("EFENIX_ZMIENIONY", "for_maks")
-
-
-def test_arkusz_stylow_efenix_bez_odpowiedzi_to_brak_polaczenia_z_efenix(tmp_path: Path, page: Page) -> None:
-    """Arkusz stylów spod adresu efenix (strona zlecenia efenix ładuje ich sześć), który nie przyszedł, bo połączenie się
-    zerwało, to „brak połączenia z efenix” dla taty, jak zerwany skrypt strony."""
-
-    order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
-    _on_efenix_pages(page, '<link rel="stylesheet" href="css/efenix.css">')
-    page.route("**/css/efenix.css", lambda route: route.abort("connectionreset"))
-    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
-        outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
-
-    assert isinstance(outcome.ending, Stop), _ending(outcome)
-    assert (_stop(outcome), outcome.ending.stop_kind, _kept(outcome)) == ("EFENIX_NIEDOSTEPNY", "for_tata", False)
+    assert message.what.startswith("Wycena w efenix się zatrzymała, Maks już wie.")
 
 
 def test_zmieniona_strona_efenix_oznacza_gotowe_przed_nia_a_komunikat_do_maksa_nie_ma_numeru_adresu_ani_loginu(
@@ -778,7 +607,7 @@ def test_zmieniona_strona_efenix_oznacza_gotowe_przed_nia_a_komunikat_do_maksa_n
     with atrapa_efenix(in_efenix, changed=Changed.EMMETT_BUTTON) as atrapa:
         outcome = _run(source, page, atrapa.url, timeout_ms=3_000)
 
-    assert (_stop(outcome), _kept(outcome), _marked(source)) == ("EFENIX_ZMIENIONY", True, [18])
+    assert (_stop(outcome), _kept(outcome), _marked(source)) == ("EFENIX_OKNO_ZATRZYMANE", True, [18])
     assert isinstance(outcome.ending, Stop)
     text = outcome.ending.message.text
     private = [
@@ -884,23 +713,15 @@ def test_w_tempie_ludzkim_zlecenie_trwa_20_s_a_przerwa_miedzy_dzialaniami_w_efen
     assert {duration for steps in durations for duration in steps} == {0}
 
 
-def test_strona_bez_listy_zlecen_i_adres_bez_efenix_zatrzymuja_wycene(tmp_path: Path, browser: Browser, page: Page) -> None:
-    """Strona efenix bez listy zleceń to efenix, który się zmienił, a adres, który nie odpowiada, także ten, pod który
-    efenix przekierowuje listę zleceń, to brak połączenia: strona, która nie przyszła, nie ma budowy, którą efenix mógłby
-    zmienić."""
-
+def test_strona_bez_listy_zlecen_i_adres_bez_efenix_zatrzymuja_wycene(tmp_path: Path, page: Page) -> None:
     with socket.socket() as unused:
         unused.bind(("127.0.0.1", 0))
         closed = f"http://127.0.0.1:{unused.getsockname()[1]}/{LIST_PAGE}"
     with atrapa_efenix([Order("#9301").in_efenix("901")]) as atrapa:
         changed = _price(tmp_path / "zmieniony", page, atrapa.url.replace(LIST_PAGE, "inna_strona.php"), [Order("#9301")])
-        with page_of(browser) as redirecting:
-            redirecting.route(atrapa.url, lambda route: route.fulfill(status=302, headers={"Location": closed}))
-            redirected = _price(tmp_path / "przekierowany", redirecting, atrapa.url, [Order("#9301")])
     unreachable = _price(tmp_path / "niedostepny", page, closed, [Order("#9301")])
 
-    assert (_stop(changed), _stop(unreachable), _stop(redirected)) == ("EFENIX_ZMIENIONY", "EFENIX_NIEDOSTEPNY", "EFENIX_NIEDOSTEPNY")
-    assert (_kept(changed), _kept(unreachable), _kept(redirected)) == (False, False, False)
+    assert (_stop(changed), _stop(unreachable), _kept(changed), _kept(unreachable)) == ("EFENIX_OKNO_ZATRZYMANE", "EFENIX_NIEDOSTEPNY", False, False)
 
 
 # --- Znacznik efenix w Pliku zbiorczym (#747) ------------------------------------------------------------------------
@@ -1313,29 +1134,30 @@ def whole_run(tmp_path_factory: pytest.TempPathFactory, browser: Browser) -> _Wh
     return _WholeRun(original, source, pricing)
 
 
-def _emmett_not_read(outage: Outage, first: int) -> int | None:
-    """Zlecenie (od 0), którego Wycenę Emmetta efenix załadował, a okno jej nie odczytało, bo odcięcie od żądania
-    ``first`` zaczęło się między „Załaduj do zlecenia” a odczytem przeładowanej strony: od samego „Załaduj”, które efenix
-    wykonuje, gdy jest wolny albo sieć zrywa tylko odpowiedź, albo od przeładowania (strona i jej skrypt)."""
+def _loading_emmett(first: int) -> int | None:
+    """Zlecenie (od 0), przy którego Wycenie Emmetta zaczęło się odcięcie od żądania ``first``: od „Załaduj do zlecenia”
+    do skryptu przeładowanej strony. Okno mogło wtedy nie odczytać Wyceny Emmetta, którą efenix załadował; czy odczytało,
+    zależy od trybu odcięcia i od tego, czy przeglądarka czekała na skrypt strony do końca czasu okna."""
 
     loads = [index for index, request in enumerate(WHOLE_RUN) if request == ("POST", LOAD_EMMETT)]
     for order, load in enumerate(loads):
-        if first in (load + 1, load + 2) or (first == load and outage is not Outage.CUT):
+        if load <= first <= load + 2:
             return order
     return None
 
 
 @pytest.mark.parametrize(("first", "outage"), SWEEP)
-def test_brak_polaczenia_z_efenix_od_kazdego_zadania_wyceny_to_zatrzymanie_dla_taty_a_ponowne_uruchomienie_konczy_jak_jeden_przebieg(
+def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_ponowne_uruchomienie_konczy_jak_jeden_przebieg(
     tmp_path: Path, browser: Browser, whole_run: _WholeRun, outage: Outage, first: int
 ) -> None:
     """Sieć zrywa każde żądanie od żądania ``first`` pełnej Wyceny (także w połowie odpowiedzi), odpowiedź staje w połowie
-    albo efenix odpowiada wolniej niż czas okna (tu 3 s), aż połączenie wróci. To zawsze Zatrzymanie „brak połączenia z efenix” dla taty, bez
-    Diagnozy i Zgłoszenia do Maksa, bo odcięcie trwa, a okno potrzebuje każdego żądania po nim, a Komunikat, że w efenix
-    nic się nie zmieniło, mówi prawdę. Ponowne uruchomienie po powrocie połączenia, w nowym oknie efenix jak u taty, kończy
-    się tym samym stanem efenix i Pliku zbiorczego co jeden przebieg bez przerwy. Wyjątek przyjęty w #774: odcięcie między
-    „Załaduj do zlecenia” a odczytem przeładowanej strony daje przy ponownym uruchomieniu błąd tylko tego zlecenia, które
-    zostaje z Wyceną Emmetta."""
+    albo efenix odpowiada wolniej niż czas okna (tu 3 s), aż połączenie wróci. Wycena nigdy nie wisi i nie kończy się
+    nieoczekiwanym błędem: lista zleceń, której okno nie otworzyło przy starcie, to „Nie udało się otworzyć efenix” dla
+    taty, a każde późniejsze odcięcie to jedno Zatrzymanie okna do Maksa, z Diagnozą i Zgłoszeniem, bez zgadywania
+    przyczyny. Komunikat, że w efenix nic się nie zmieniło, mówi prawdę. Ponowne uruchomienie po powrocie połączenia, w
+    nowym oknie efenix jak u taty, kończy się tym samym stanem efenix i Pliku zbiorczego co jeden przebieg bez przerwy.
+    Wyjątek przyjęty w #774: odcięcie między „Załaduj do zlecenia” a odczytem przeładowanej strony może dać przy ponownym
+    uruchomieniu błąd tylko tego zlecenia, które zostaje z Wyceną Emmetta."""
 
     orders = _two_orders()
     resumed = tmp_path / PERIOD / whole_run.original.name
@@ -1352,17 +1174,19 @@ def test_brak_polaczenia_z_efenix_od_kazdego_zadania_wyceny_to_zatrzymanie_dla_t
         priced_again, status_changes = _pricing(atrapa), atrapa.status_changes()
 
     assert isinstance(stopped.ending, Stop), _ending(stopped)
-    message = stopped.ending.message
-    assert (message.code, stopped.ending.stop_kind, message.where) == ("EFENIX_NIEDOSTEPNY", "for_tata", "okno efenix")
-    assert message.what.startswith("Brak połączenia z efenix"), message.what
+    # Lista zleceń przy starcie to żądania 0 (strona) i 1 (jej skrypt): bez strony okno nie otworzyło efenix, a bez skryptu
+    # otwarcie skończyło się albo nie, zależnie od tego, czy przeglądarka czekała na skrypt do końca czasu okna.
+    not_opened, window_stop = ("EFENIX_NIEDOSTEPNY", "for_tata"), ("EFENIX_OKNO_ZATRZYMANE", "for_maks")
+    allowed = [not_opened] if first == 0 else [not_opened, window_stop] if first == 1 else [window_stop]
+    assert (stopped.ending.message.code, stopped.ending.stop_kind) in allowed
     assert _kept(stopped) or after_stop == untouched, (after_stop, untouched)
     assert status_changes == 0
-    unread = _emmett_not_read(outage, first)
-    if unread is None:
+    loading = _loading_emmett(first)
+    if loading is None or not _errors(again):
         assert (_figures(again), _errors(again), priced_again) == (_figures_of(2, 2), [], whole_run.pricing)
         assert (_parts(resumed), _marked(resumed)) == (_parts(whole_run.source), [18, 19])
     else:
-        order, row = orders[unread], 18 + unread
+        order, row = orders[loading], 18 + loading
         reloaded = {order.number.removeprefix("#"): (dict(order.emmett), order.day, 1)}
         assert (_figures(again), _errors(again)) == (_figures_of(2, 1), [("EFENIX_WYCENA_INNA", f"wiersz {row}")])
         assert (priced_again, _marked(resumed)) == (whole_run.pricing | reloaded, [other for other in (18, 19) if other != row])
