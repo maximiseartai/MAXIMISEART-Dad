@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime
+from http import HTTPStatus
 import json
 import os
 from pathlib import Path
@@ -889,6 +890,18 @@ HYPOTHESES = {
             "error_type": "playwright._impl._errors.Error",
             "operation": "otwarcie strony",
         },
+        ["szukanie"],
+        "otwarcie zlecenia",
+    ),
+    "D-strona-bledu-http": (
+        replace(STOPPED_AT_SECOND[1].in_efenix("617"), error_status=HTTPStatus.INTERNAL_SERVER_ERROR),
+        {"what": "strona błędu HTTP serwera efenix zamiast strony zlecenia", "status": 500},
+        ["szukanie"],
+        "otwarcie zlecenia",
+    ),
+    "E-formularz-logowania-pod-adresem-zlecenia": (
+        replace(STOPPED_AT_SECOND[1].in_efenix("617"), login_form=True),
+        {"what": "formularz logowania efenix pod adresem strony zlecenia, bez przekierowania"},
         ["szukanie"],
         "otwarcie zlecenia",
     ),

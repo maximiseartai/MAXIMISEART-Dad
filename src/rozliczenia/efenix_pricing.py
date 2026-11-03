@@ -107,6 +107,7 @@ __all__ = [
     "Efenix",
     "EfenixUnreachable",
     "ElementCount",
+    "HttpStatus",
     "EmmettWarning",
     "ListedOrder",
     "LoggedOut",
@@ -167,6 +168,7 @@ class Shape(enum.Enum):
     UNKNOWN_POSITION = "pozycja bez pola Ilość na ostatnio odczytanej stronie zlecenia"
     ANSWER_NOT_JSON = "odpowiedź zapisu ilości, która nie jest JSON"
     ANSWER_RESULT = "odpowiedź zapisu ilości z wynikiem innym niż ok i nok"
+    LOGIN_FORM = "formularz logowania efenix pod adresem strony zlecenia, bez przekierowania"
 
 
 class LoginSign(enum.Enum):
@@ -201,6 +203,14 @@ class ElementCount:
 
 
 @dataclass(frozen=True)
+class HttpStatus:
+    """Strona zlecenia, której okno nie przeczytało, przyszła z odpowiedzią HTTP o statusie błędu ``status`` (4xx, 5xx):
+    to strona błędu serwera efenix, a nie strona zlecenia w innej budowie."""
+
+    status: int
+
+
+@dataclass(frozen=True)
 class OtherShape:
     """Budowa strony albo odpowiedzi, której okno nie zna; ``position``: kod pozycji, gdy dotyczy jednej pozycji."""
 
@@ -217,7 +227,7 @@ class BrowserFailure:
     operation: Operation | None
 
 
-PageCause = MissingPositions | ElementCount | OtherShape | BrowserFailure
+PageCause = MissingPositions | ElementCount | HttpStatus | OtherShape | BrowserFailure
 """Przyczyna niedokończonego działania okna (``UnexpectedPage``)."""
 WindowCause = PageCause | LoginSign | Closed
 """Przyczyna techniczna Zatrzymania okna efenix z zamkniętej listy, dla Logów Uruchomienia, bez treści strony i danych

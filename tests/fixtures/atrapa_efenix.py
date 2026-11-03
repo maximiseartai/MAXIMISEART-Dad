@@ -180,7 +180,8 @@ class AtrapaOrder:
     ``quantities``: ilości wyceny (kod → ilość różna od 0), ``emmett``: propozycja Emmetta w tym samym kształcie,
     ``emmett_loads``: ile razy załadowano do zlecenia Wycenę Emmetta. ``changed``: strona tylko tego zlecenia w innej
     budowie (``Changed``), a ``cut``: strona tego zlecenia zrywa połączenie bez odpowiedzi, jak sieć, która zniknęła, więc
-    zlecenia przed nim przechodzą jak w efenix.
+    zlecenia przed nim przechodzą jak w efenix. ``error_status``: strona tego zlecenia to strona błędu serwera z tym
+    statusem HTTP, a ``login_form``: formularz logowania pod adresem strony zlecenia, bez przekierowania.
     """
 
     order_id: str
@@ -197,6 +198,8 @@ class AtrapaOrder:
     emmett_loads: int = 0
     changed: Changed | None = None
     cut: bool = False
+    error_status: HTTPStatus | None = None
+    login_form: bool = False
 
     @property
     def amount(self) -> Decimal:
@@ -413,6 +416,10 @@ def atrapa_efenix(
                 found = [order for order in orders if order.order_id == params.get("id")]
                 if found and found[0].cut:
                     self._cut()
+                elif found and found[0].error_status is not None:
+                    self._html("<p>Wystąpił błąd serwera.</p>", found[0].error_status)
+                elif found and found[0].login_form:
+                    self._html(_login_page(None))
                 elif found:
                     self._html(_order_page(found[0], found[0].changed or changed, today, self.headers.get("Host", "")))
                 else:

@@ -63,6 +63,7 @@ from rozliczenia.efenix_pricing import (
     BrowserFailure,
     Closed,
     ElementCount,
+    HttpStatus,
     EmmettWarning,
     LoginSign,
     MissingPositions,
@@ -296,7 +297,7 @@ class LoggedCause(_Record):
     i wyjątku: ``part`` to część strony (nazwa ``PagePart``, ``None`` poza stronami efenix), a ``what`` przyczyna z listy.
 
     ``positions``: kody pozycji (brakujące z przypisania kolumn albo pozycja, której dotyczy budowa). ``element`` i
-    ``count``: selektor z kodu okna i ile razy jest na stronie. ``error_type`` i ``operation``: typ wyjątku Playwrighta i
+    ``count``: selektor z kodu okna i ile razy jest na stronie. ``status``: status HTTP strony błędu efenix. ``error_type`` i ``operation``: typ wyjątku Playwrighta i
     działanie przeglądarki (``None``: działanie bez nazwy).
     """
 
@@ -305,6 +306,7 @@ class LoggedCause(_Record):
     positions: list[str] | None = None
     element: str | None = None
     count: int | None = None
+    status: int | None = None
     error_type: str | None = None
     operation: str | None = None
 
@@ -316,6 +318,8 @@ class LoggedCause(_Record):
                 return cls(part=name, what=_MISSING_POSITIONS, positions=list(positions))
             case ElementCount(selector, count):
                 return cls(part=name, what=_ELEMENT_COUNT, element=selector, count=count)
+            case HttpStatus(status):
+                return cls(part=name, what=_HTTP_STATUS, status=status)
             case OtherShape(shape, position):
                 return cls(part=name, what=shape.value, positions=None if position is None else [position])
             case BrowserFailure(error_type, operation):
@@ -334,6 +338,7 @@ class LoggedCause(_Record):
 _MISSING_POSITIONS: Final = "strona zlecenia bez pozycji z przypisania kolumn"
 _ELEMENT_COUNT: Final = "element strony nie występuje dokładnie raz"
 _BROWSER_FAILURE: Final = "błąd przeglądarki w działaniu okna"
+_HTTP_STATUS: Final = "strona błędu HTTP serwera efenix zamiast strony zlecenia"
 
 
 class LoggedWindowStop(_Record):

@@ -75,6 +75,7 @@ from .efenix_pricing import (
     Closed,
     EfenixUnreachable,
     ElementCount,
+    HttpStatus,
     ListedOrder,
     LoggedOut,
     Login,
@@ -182,6 +183,7 @@ _PICK_DAY: Final = """(field, [year, month, day]) => {
     return true;
 }"""
 _DISMISS: Final = '[data-dismiss="modal"]'
+_LOGIN_FORM: Final = 'form[action*="action_login.php"]'
 _SHOWS: Final = "([selector, text]) => document.querySelector(selector)?.textContent.trim() === text"
 
 
@@ -378,11 +380,25 @@ class BrowserEfenix:
 
     @_action(PagePart.ORDER)
     def open_order(self, order: ListedOrder) -> OrderPricing:
-        """Otwiera stronę zlecenia ``order`` i czyta datę wykonania, kwotę końcową i ilości pozycji."""
+        """Otwiera stronę zlecenia ``order`` i czyta datę wykonania, kwotę końcową i ilości pozycji.
+
+        Stronę, której nie przeczytało, okno nazywa w przyczynie stroną błędu HTTP (``goto`` nie zgłasza błędu przy
+        statusie 4xx i 5xx) albo formularzem logowania pod adresem zlecenia, zanim uzna ją za stronę w innej budowie.
+        Sprawdza to tylko po nieudanym odczycie, więc strony, którą czyta, nie odrzuca.
+        """
 
         with _doing(Operation.OPEN):
-            self._page.goto(urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms)
-        return self._read_order()
+            response = self._page.goto(
+                urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms
+            )
+        try:
+            return self._read_order()
+        except UnexpectedPage as unread:
+            if response is not None and not response.ok:
+                raise UnexpectedPage(PagePart.ORDER, HttpStatus(response.status)) from unread
+            if self._page.locator(_LOGIN_FORM).count() > 0:
+                raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.LOGIN_FORM)) from unread
+            raise
 
     @_action(PagePart.DATE)
     def set_execution_date(self, day: date) -> bool:
