@@ -1086,15 +1086,15 @@ window_closed #2 [EFENIX_OKNO_ZAMKNIETE]
   Gdzie: okno efenix
   Co zrobić: Uruchom ponownie i zostaw okno efenix otwarte do końca. Gotowe zlecenia narzędzie tylko sprawdzi.
 
-efenix_changed #1 [EFENIX_ZMIENIONY]
-  Co się stało: efenix się zmienił, Maks już wie. Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i dalej niczego w niej nie klika. W efenix nic się nie zmieniło.
+window_stopped #1 [EFENIX_OKNO_ZATRZYMANE]
+  Co się stało: Wycena w efenix się zatrzymała, Maks już wie. W efenix nic się nie zmieniło.
   Gdzie: okno efenix, lista zleceń z polem Numer
-  Co zrobić: Wycenę pozostałych zleceń zrób w efenix sam albo poczekaj na poprawkę narzędzia. Przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co zrobić: Uruchom ponownie: gotowe zlecenia narzędzie tylko sprawdzi, a resztę wyceni dalej. Jeśli Wycena zatrzyma się znowu, wyceń pozostałe zlecenia w efenix sam albo poczekaj na poprawkę narzędzia. Przekaż ten komunikat osobie utrzymującej narzędzie.
 
-efenix_changed #2 [EFENIX_ZMIENIONY]
-  Co się stało: efenix się zmienił, Maks już wie. Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i dalej niczego w niej nie klika. Wycena zleceń sprzed zatrzymania została w efenix.
+window_stopped #2 [EFENIX_OKNO_ZATRZYMANE]
+  Co się stało: Wycena w efenix się zatrzymała, Maks już wie. Wycena zleceń sprzed zatrzymania została w efenix.
   Gdzie: okno efenix, Wycena Emmetta
-  Co zrobić: Wycenę pozostałych zleceń zrób w efenix sam albo poczekaj na poprawkę narzędzia. Przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co zrobić: Uruchom ponownie: gotowe zlecenia narzędzie tylko sprawdzi, a resztę wyceni dalej. Jeśli Wycena zatrzyma się znowu, wyceń pozostałe zlecenia w efenix sam albo poczekaj na poprawkę narzędzia. Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 efenix_unreachable #1 [EFENIX_NIEDOSTEPNY]
   Co się stało: Nie udało się otworzyć efenix. W efenix nic się nie zmieniło.

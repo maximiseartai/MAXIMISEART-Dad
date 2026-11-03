@@ -21,6 +21,7 @@ import json
 from pathlib import Path
 import hashlib
 import itertools
+import os
 import re
 import shutil
 import socket
@@ -53,12 +54,14 @@ from tests.fixtures.atrapa_efenix import (
     LOAD_EMMETT,
     ORDER_PAGE,
     ORDER_SCRIPT,
+    FILL_EMMETT,
     SAVE_QUANTITY,
     SEARCH,
     SET_DATE,
     AtrapaEfenix,
     AtrapaOrder,
     Changed,
+    Outage,
     amount_of,
     atrapa_efenix,
 )
@@ -547,15 +550,18 @@ def test_strona_logowania_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene_a_kom
         assert (_stop(outcome), atrapa.searched(), _kept(outcome)) == ("EFENIX_WYLOGOWANY", searched, kept)
 
 
-# Część strony, której zabrakło przy każdej zmianie budowy Atrapy: tabela wyników, strona zlecenia, Emmett albo kwota.
+# Część strony, której zabrakło przy każdej zmianie budowy Atrapy: tabela wyników, strona zlecenia, okno daty wykonania,
+# Emmett albo kwota.
 CHANGED_PART = {
     Changed.STATUS_HEADER: PagePart.RESULTS,
     Changed.ORDER_LINK: PagePart.RESULTS,
     Changed.DATE_FORMAT: PagePart.ORDER,
+    Changed.DATE_DIALOG: PagePart.DATE,
     Changed.EMMETT_BUTTON: PagePart.EMMETT,
     Changed.HIDDEN_EMMETT: PagePart.EMMETT,
     Changed.POSITION_CODE: PagePart.ORDER,
     Changed.STALE_AMOUNT: PagePart.QUANTITY,
+    Changed.QUANTITY_ANSWER: PagePart.QUANTITY,
 }
 
 
@@ -565,20 +571,23 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
 ) -> None:
     """Zatrzymanie przychodzi w czasie okna (tu 3 s), także przy elemencie obecnym, ale niewidocznym.
 
-    Tylko kwota, która się nie odświeża, zatrzymuje wycenę po zmianie w efenix (Wycena Emmetta i ilość). Zatrzymanie jest
-    „do Maksa”, więc Centrum daje przy nim Diagnozę i Zgłoszenie, a „Gdzie” nazywa część strony, której zabrakło.
+    Tylko zapis ilości (kwota, która się nie odświeża, i odpowiedź w innym zapisie) zatrzymuje wycenę po zmianie w efenix
+    (Wycena Emmetta i ilość). To Zatrzymanie okna jak każde inne, „do Maksa”, więc Centrum daje przy nim Diagnozę i
+    Zgłoszenie, a „Gdzie” nazywa część strony, której zabrakło.
     """
 
     order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
-    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)], changed=changed) as atrapa:
+    # Okno daty wykonania okno efenix otwiera tylko przy pustej dacie wykonania w efenix.
+    in_efenix = replace(order.in_efenix("901"), execution_date=None if changed is Changed.DATE_DIALOG else DAY)
+    with atrapa_efenix([in_efenix], changed=changed) as atrapa:
         outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
         changes = atrapa.status_changes()
 
-    assert (_stop(outcome), changes, _kept(outcome)) == ("EFENIX_ZMIENIONY", 0, changed is Changed.STALE_AMOUNT)
+    assert (_stop(outcome), changes, _kept(outcome)) == ("EFENIX_OKNO_ZATRZYMANE", 0, changed in (Changed.STALE_AMOUNT, Changed.QUANTITY_ANSWER))
     assert isinstance(outcome.ending, Stop)
     message = outcome.ending.message
     assert (outcome.ending.stop_kind, message.where) == ("for_maks", f"okno efenix, {CHANGED_PART[changed].value}")
-    assert message.what.startswith("efenix się zmienił, Maks już wie.")
+    assert message.what.startswith("Wycena w efenix się zatrzymała, Maks już wie.")
 
 
 def test_zmieniona_strona_efenix_oznacza_gotowe_przed_nia_a_komunikat_do_maksa_nie_ma_numeru_adresu_ani_loginu(
@@ -598,7 +607,7 @@ def test_zmieniona_strona_efenix_oznacza_gotowe_przed_nia_a_komunikat_do_maksa_n
     with atrapa_efenix(in_efenix, changed=Changed.EMMETT_BUTTON) as atrapa:
         outcome = _run(source, page, atrapa.url, timeout_ms=3_000)
 
-    assert (_stop(outcome), _kept(outcome), _marked(source)) == ("EFENIX_ZMIENIONY", True, [18])
+    assert (_stop(outcome), _kept(outcome), _marked(source)) == ("EFENIX_OKNO_ZATRZYMANE", True, [18])
     assert isinstance(outcome.ending, Stop)
     text = outcome.ending.message.text
     private = [
@@ -712,7 +721,7 @@ def test_strona_bez_listy_zlecen_i_adres_bez_efenix_zatrzymuja_wycene(tmp_path: 
         changed = _price(tmp_path / "zmieniony", page, atrapa.url.replace(LIST_PAGE, "inna_strona.php"), [Order("#9301")])
     unreachable = _price(tmp_path / "niedostepny", page, closed, [Order("#9301")])
 
-    assert (_stop(changed), _stop(unreachable), _kept(changed), _kept(unreachable)) == ("EFENIX_ZMIENIONY", "EFENIX_NIEDOSTEPNY", False, False)
+    assert (_stop(changed), _stop(unreachable), _kept(changed), _kept(unreachable)) == ("EFENIX_OKNO_ZATRZYMANE", "EFENIX_NIEDOSTEPNY", False, False)
 
 
 # --- Znacznik efenix w Pliku zbiorczym (#747) ------------------------------------------------------------------------
@@ -1063,6 +1072,124 @@ def test_przerwanie_wylogowaniem_i_ponowne_uruchomienie_daje_ten_sam_stan_efenix
     assert priced_again == priced_once
     assert [emmett_loads for _quantities, _day, emmett_loads in priced_again[0].values()] == [1, 1, 1]
     assert (_parts(resumed), _marked(resumed)) == (_parts(whole), [18, 19, 20])
+
+
+# Żądania pełnej Wyceny w efenix dwóch zleceń z pustą wyceną po kolei (``_resumed_orders`` bez trzeciego). Okno otwiera
+# stronę zlecenia, ustawia datę wykonania i otwiera stronę jeszcze raz, pyta o propozycję Emmetta i ładuje ją do zlecenia, a
+# skrypt strony ją przeładowuje, potem zapisuje dwie ilości. Pierwsze zlecenie szuka na liście otwartej przy starcie, a
+# kolejne na liście otwartej od nowa, która sama szuka jeszcze raz poprzedniego numeru, zanim okno wyśle swoje szukanie.
+_ONE_ORDER = (
+    ("GET", ORDER_PAGE), ("GET", ORDER_SCRIPT), ("POST", SET_DATE),
+    ("GET", ORDER_PAGE), ("GET", ORDER_SCRIPT), ("POST", FILL_EMMETT), ("POST", LOAD_EMMETT),
+    ("GET", ORDER_PAGE), ("GET", ORDER_SCRIPT), ("POST", SAVE_QUANTITY), ("POST", SAVE_QUANTITY),
+)
+WHOLE_RUN = (
+    ("GET", LIST_PAGE), ("GET", LIST_SCRIPT), ("POST", SEARCH), *_ONE_ORDER,
+    ("GET", LIST_PAGE), ("GET", LIST_SCRIPT), ("POST", SEARCH), ("POST", SEARCH), *_ONE_ORDER,
+)
+# Przegląd w CI: zerwane połączenie od każdego żądania, a pozostałe tryby od pierwszego szukania i pierwszego zapisu ilości,
+# odpowiedzi, których treść czyta samo okno. Pełny przegląd, każde żądanie w każdym trybie (116 przypadków, ok. 8 min
+# procesora), uruchamiasz przed zmianą okna efenix albo odcięcia Atrapy efenix:
+# ``PELNY_PRZEGLAD_EFENIX=1 .venv/bin/python -m pytest tests/test_wycena_efenix.py -n 8 -k od_kazdego_zadania``.
+_READ_BY_WINDOW = (WHOLE_RUN.index(("POST", SEARCH)), WHOLE_RUN.index(("POST", SAVE_QUANTITY)))
+SWEEP = [
+    pytest.param(first, outage, id=f"{first:02d}-{path.replace('/', '-')}-{outage.name}")
+    for first, (_method, path) in enumerate(WHOLE_RUN)
+    for outage in Outage
+    if os.environ.get("PELNY_PRZEGLAD_EFENIX") == "1" or outage is Outage.CUT or first in _READ_BY_WINDOW
+]
+
+
+@dataclass(frozen=True)
+class _WholeRun:
+    """Jeden przebieg Wyceny w efenix bez przerwy: Plik zbiorczy przed nim (``original``) i po nim (``source``) oraz stan
+    wyceny Atrapy efenix po nim."""
+
+    original: Path
+    source: Path
+    pricing: dict[str, tuple[dict[str, int], date | None, int]]
+
+
+def _two_orders() -> list[Order]:
+    return _resumed_orders()[:2]
+
+
+def _two_in_efenix() -> list[AtrapaOrder]:
+    return [order.in_efenix(f"99{index}") for index, order in enumerate(_two_orders())]
+
+
+@pytest.fixture(scope="module")
+def whole_run(tmp_path_factory: pytest.TempPathFactory, browser: Browser) -> _WholeRun:
+    """Przebieg bez przerwy, z którym przegląd porównuje ponowne uruchomienie; wysyła dokładnie żądania ``WHOLE_RUN``."""
+
+    root = tmp_path_factory.mktemp("jeden-przebieg")
+    original = write_collective_file(root / "plik", _two_orders())
+    source = root / "pelny" / PERIOD / original.name
+    source.parent.mkdir(parents=True)
+    shutil.copy2(original, source)
+    with atrapa_efenix(_two_in_efenix()) as atrapa, page_of(browser) as window:
+        once = _run(source, window, atrapa.url)
+        requested, pricing, status_changes = atrapa.requested(), _pricing(atrapa), atrapa.status_changes()
+    assert (once.result, _figures(once), requested, status_changes) == ("OK", _figures_of(2, 2), list(WHOLE_RUN), 0)
+    return _WholeRun(original, source, pricing)
+
+
+def _loading_emmett(first: int) -> int | None:
+    """Zlecenie (od 0), przy którego Wycenie Emmetta zaczęło się odcięcie od żądania ``first``: od „Załaduj do zlecenia”
+    do skryptu przeładowanej strony. Okno mogło wtedy nie odczytać Wyceny Emmetta, którą efenix załadował; czy odczytało,
+    zależy od trybu odcięcia i od tego, czy przeglądarka czekała na skrypt strony do końca czasu okna."""
+
+    loads = [index for index, request in enumerate(WHOLE_RUN) if request == ("POST", LOAD_EMMETT)]
+    for order, load in enumerate(loads):
+        if load <= first <= load + 2:
+            return order
+    return None
+
+
+@pytest.mark.parametrize(("first", "outage"), SWEEP)
+def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_ponowne_uruchomienie_konczy_jak_jeden_przebieg(
+    tmp_path: Path, browser: Browser, whole_run: _WholeRun, outage: Outage, first: int
+) -> None:
+    """Sieć zrywa każde żądanie od żądania ``first`` pełnej Wyceny (także w połowie odpowiedzi), odpowiedź staje w połowie
+    albo efenix odpowiada wolniej niż czas okna (tu 3 s), aż połączenie wróci. Wycena nigdy nie wisi i nie kończy się
+    nieoczekiwanym błędem: lista zleceń, której okno nie otworzyło przy starcie, to „Nie udało się otworzyć efenix” dla
+    taty, a każde późniejsze odcięcie to jedno Zatrzymanie okna do Maksa, z Diagnozą i Zgłoszeniem, bez zgadywania
+    przyczyny. Komunikat, że w efenix nic się nie zmieniło, mówi prawdę. Ponowne uruchomienie po powrocie połączenia, w
+    nowym oknie efenix jak u taty, kończy się tym samym stanem efenix i Pliku zbiorczego co jeden przebieg bez przerwy.
+    Wyjątek przyjęty w #774: odcięcie między „Załaduj do zlecenia” a odczytem przeładowanej strony może dać przy ponownym
+    uruchomieniu błąd tylko tego zlecenia, które zostaje z Wyceną Emmetta."""
+
+    orders = _two_orders()
+    resumed = tmp_path / PERIOD / whole_run.original.name
+    resumed.parent.mkdir(parents=True)
+    shutil.copy2(whole_run.original, resumed)
+    with atrapa_efenix(_two_in_efenix(), outage_from=(outage, first)) as atrapa:
+        untouched = _pricing(atrapa)
+        with page_of(browser) as window:
+            stopped = _run(resumed, window, atrapa.url, timeout_ms=3_000)
+        after_stop = _pricing(atrapa)
+        atrapa.reconnect()
+        with page_of(browser) as window:
+            again = _run(resumed, window, atrapa.url)
+        priced_again, status_changes = _pricing(atrapa), atrapa.status_changes()
+
+    assert isinstance(stopped.ending, Stop), _ending(stopped)
+    # Lista zleceń przy starcie to żądania 0 (strona) i 1 (jej skrypt): bez strony okno nie otworzyło efenix, a bez skryptu
+    # otwarcie skończyło się albo nie, zależnie od tego, czy przeglądarka czekała na skrypt do końca czasu okna.
+    not_opened, window_stop = ("EFENIX_NIEDOSTEPNY", "for_tata"), ("EFENIX_OKNO_ZATRZYMANE", "for_maks")
+    allowed = [not_opened] if first == 0 else [not_opened, window_stop] if first == 1 else [window_stop]
+    assert (stopped.ending.message.code, stopped.ending.stop_kind) in allowed
+    assert _kept(stopped) or after_stop == untouched, (after_stop, untouched)
+    assert status_changes == 0
+    loading = _loading_emmett(first)
+    if loading is None or not _errors(again):
+        assert (_figures(again), _errors(again), priced_again) == (_figures_of(2, 2), [], whole_run.pricing)
+        assert (_parts(resumed), _marked(resumed)) == (_parts(whole_run.source), [18, 19])
+    else:
+        order, row = orders[loading], 18 + loading
+        reloaded = {order.number.removeprefix("#"): (dict(order.emmett), order.day, 1)}
+        assert (_figures(again), _errors(again)) == (_figures_of(2, 1), [("EFENIX_WYCENA_INNA", f"wiersz {row}")])
+        assert (priced_again, _marked(resumed)) == (whole_run.pricing | reloaded, [other for other in (18, 19) if other != row])
 
 
 def test_przerwanie_po_zaladuj_do_zlecenia_przed_odczytem_wyceny_emmetta_daje_przy_ponownym_uruchomieniu_blad_tylko_tego_zlecenia(

@@ -135,21 +135,22 @@ def window_closed(*, kept: bool) -> Message:
     )
 
 
-def efenix_changed(part: PagePart, *, kept: bool) -> Message:
-    """Strona efenix nie ma w części ``part`` budowy, którą zna narzędzie; ``kept`` jak w ``logged_out``.
+def window_stopped(part: PagePart, *, kept: bool) -> Message:
+    """Okno efenix nie dokończyło kroku w części ``part`` strony; ``kept`` jak w ``logged_out``.
 
-    Zatrzymanie „do Maksa”, więc Centrum daje przy nim Diagnozę i Zgłoszenie, a Maks dostaje je razem z Logami
-    Uruchomienia. „Gdzie” nazywa tylko część strony, bez treści strony.
+    Komunikat nie zgaduje przyczyny (zerwane połączenie, wolny albo zmieniony efenix): to Zatrzymanie „do Maksa”, więc
+    Centrum daje przy nim Diagnozę i Zgłoszenie, a Maks ustala przyczynę z nich i z Logów Uruchomienia. „Gdzie” nazywa
+    tylko część strony, bez treści strony.
     """
 
     return Message(
-        code="EFENIX_ZMIENIONY",
-        what=(
-            "efenix się zmienił, Maks już wie. Strona efenix wygląda inaczej niż zwykle, więc narzędzie zatrzymało się i "
-            f"dalej niczego w niej nie klika. {_after_stop(kept=kept)}"
-        ),
+        code="EFENIX_OKNO_ZATRZYMANE",
+        what=f"{_PROCESS} się zatrzymała, Maks już wie. {_after_stop(kept=kept)}",
         where=f"{_EFENIX}, {part.value}",
-        action=f"Wycenę pozostałych zleceń zrób w efenix sam albo poczekaj na poprawkę narzędzia. {REPORT_TO_MAINTAINER}",
+        action=(
+            "Uruchom ponownie: gotowe zlecenia narzędzie tylko sprawdzi, a resztę wyceni dalej. Jeśli Wycena zatrzyma się "
+            f"znowu, wyceń pozostałe zlecenia w efenix sam albo poczekaj na poprawkę narzędzia. {REPORT_TO_MAINTAINER}"
+        ),
     )
 
 

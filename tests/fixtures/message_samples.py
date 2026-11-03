@@ -309,9 +309,9 @@ EFENIX_SAMPLES: Samples = {
     "amounts_not_computed": [lambda: efenix_messages.amounts_not_computed(SOURCE, 18)],
     "logged_out": [partial(efenix_messages.logged_out, kept=kept) for kept in (False, True)],
     "window_closed": [partial(efenix_messages.window_closed, kept=kept) for kept in (False, True)],
-    "efenix_changed": [
-        partial(efenix_messages.efenix_changed, PagePart.LIST, kept=False),
-        partial(efenix_messages.efenix_changed, PagePart.EMMETT, kept=True),
+    "window_stopped": [
+        partial(efenix_messages.window_stopped, PagePart.LIST, kept=False),
+        partial(efenix_messages.window_stopped, PagePart.EMMETT, kept=True),
     ],
     "efenix_unreachable": [partial(efenix_messages.efenix_unreachable, kept=kept) for kept in (False, True)],
     "browser_not_started": [efenix_messages.browser_not_started],
