@@ -11,7 +11,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import UTC, datetime
 import hashlib
+import io
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -20,12 +22,13 @@ import subprocess
 import sys
 from typing import Any, cast
 import urllib.parse
+import zipfile
 
 import pytest
 import yaml
 
 from tests.fixtures.ci_workflow import jobs
-from tests.fixtures.git_repo import commit, git, repository
+from tests.fixtures.git_repo import commit, copy_files, git, repository
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
@@ -46,15 +49,26 @@ NOCNE = ROOT / ".github" / "workflows" / "mutacje-nocne.yml"
 class GitHubWPamieci:
     """Issue z etykietą ``przezyte-mutacje``, ich komentarze i PR-y commitów; zapis zmienia stan, który czyta odczyt."""
 
-    def __init__(self, issues: list[dict[str, Any]] | None = None, pr_commitow: dict[str, list[dict[str, Any]]] | None = None, runy: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        issues: list[dict[str, Any]] | None = None,
+        pr_commitow: dict[str, list[dict[str, Any]]] | None = None,
+        runy: list[dict[str, Any]] | None = None,
+        zakresy: dict[int, bytes | None] | None = None,
+    ) -> None:
         self.issues = issues or []
         self.pr_commitow = pr_commitow or {}
         self.runy = runy or []
+        # Treść pliku artefaktu ``zakres-nocy`` runu, a ``None``, gdy artefakt wygasł; run bez wpisu nie ma artefaktu.
+        self.zakresy = zakresy or {}
         self.wyslane: list[tuple[str, str, Mapping[str, object]]] = []
 
     def json(self, sciezka: str) -> Any:
         if sciezka == RUNY:
             return {"workflow_runs": self.runy}
+        if run := re.fullmatch(rf"{re.escape(REPO)}/actions/runs/(\d+)/artifacts\?name=zakres-nocy", sciezka):
+            id_runu = int(run[1])
+            return {"artifacts": [{"id": id_runu, "expired": self.zakresy[id_runu] is None}] if id_runu in self.zakresy else []}
         adres, _, zapytanie = sciezka.partition("?")
         parametry = dict(urllib.parse.parse_qsl(zapytanie))
         if commit := re.fullmatch(rf"{re.escape(REPO)}/commits/(\w+)/pulls", adres):
@@ -66,7 +80,14 @@ class GitHubWPamieci:
         raise KeyError(sciezka)
 
     def bajty(self, sciezka: str) -> bytes:
-        raise KeyError(sciezka)
+        artefakt = re.fullmatch(rf"{re.escape(REPO)}/actions/artifacts/(\d+)/zip", sciezka)
+        tresc = self.zakresy.get(int(artefakt[1])) if artefakt else None
+        if tresc is None:
+            raise KeyError(sciezka)
+        archiwum = io.BytesIO()
+        with zipfile.ZipFile(archiwum, "w") as zip_:
+            zip_.writestr("zakres.json", tresc)
+        return archiwum.getvalue()
 
     def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
         self.wyslane.append((metoda, sciezka, tresc))
@@ -137,10 +158,13 @@ def _przezyta(nazwa: str) -> dict[str, object]:
     return {"id": nazwa, "linie": [int(nazwa.split(":")[1].split()[0])], "klucz": _klucz(nazwa)}
 
 
-def _zapisy(katalog: Path, czesci: dict[int, tuple[str, list[dict[str, object]]]]) -> Path:
+def _zapisy(
+    katalog: Path, czesci: dict[int, tuple[str, list[dict[str, object]]]], bez_werdyktu: dict[int, list[dict[str, object]]] | None = None
+) -> Path:
     for numer, (wynik, przezyte) in czesci.items():
         (katalog / f"mutacje-nocne-{numer}").mkdir(parents=True)
-        (katalog / f"mutacje-nocne-{numer}" / "czesc.json").write_text(json.dumps({"czesc": f"{numer}/3", "wynik": wynik, "przezyte": przezyte}), encoding="utf-8")
+        zapis = {"czesc": f"{numer}/3", "wynik": wynik, "przezyte": przezyte, "bez_werdyktu": (bez_werdyktu or {}).get(numer, [])}
+        (katalog / f"mutacje-nocne-{numer}" / "czesc.json").write_text(json.dumps(zapis), encoding="utf-8")
     return katalog
 
 
@@ -234,17 +258,33 @@ def test_czesc_bez_zapisu_z_uszkodzonym_zapisem_albo_z_porazka_bez_przezytych_cz
     assert wyjscie[-1].endswith(f"; część 3/4: {testy_padaja}; część 4/4 bez zapisu: Expecting value: line 1 column 1 (char 0)")
 
 
-def test_przezyte_mutacje_czesci_po_limicie_czasu_trafiaja_do_issue_a_czesc_czerwieni_przebieg(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_mutacje_bez_werdyktu_po_limicie_czasu_czesci_trafiaja_do_issue_ich_pr_a_przebieg_zostaje_zielony(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Część dała werdykt reszcie mutacji, a zapis wymienia te, których nie zdążyła: noc zgłasza je PR-om ich linii, więc
+    następna noc nie wraca do jej zakresu (ADR 0021)."""
+
     repo, baza = _historia(tmp_path)
     github = GitHubWPamieci()
-    po_limicie = "MUTACJE ZMIANY FAIL | limit czasu części 3300 s minął przed werdyktem 3 mutacji | przeżyło 1 | mutacje=28 | wyjątki=0 | innego systemu=0"
-    zapisy = _zapisy(tmp_path / "zapisy", {1: (OK, []), 2: (po_limicie, [_przezyta("src/a.py:1 stała")])})
+    po_limicie = "MUTACJE ZMIANY FAIL | limit czasu części 10500 s minął przed werdyktem 2 mutacji | przeżyło 1 | mutacje=28 | wyjątki=0 | innego systemu=0"
+    zapisy = _zapisy(
+        tmp_path / "zapisy",
+        {1: (OK, []), 2: (po_limicie, [_przezyta("src/a.py:1 stała")])},
+        bez_werdyktu={2: [_przezyta("src/a.py:5 inna"), _przezyta("src/a.py:2 stała")]},
+    )
 
     kod = mutacje_nocne.zglos(github, repo, baza, zapisy, 2, RUN)
 
-    assert kod == 1
-    assert [issue["title"] for issue in github.issues] == ["Przeżyte mutacje z #11"]
-    assert capsys.readouterr().out.splitlines()[-1] == f"MUTACJE NOCNE FAIL | część 2/2: {po_limicie}"
+    assert kod == 0
+    assert capsys.readouterr().out.splitlines()[-1] == "MUTACJE NOCNE OK | części 2 | przeżyło 1 | bez werdyktu 2"
+    tresci = {issue["title"]: issue["body"] for issue in github.issues}
+    bez_werdyktu = " | bez werdyktu w limicie czasu części"
+    assert [linia for linia in tresci["Przeżyte mutacje z #11"].splitlines() if linia.startswith("MUTACJA")] == [
+        f"MUTACJA src/a.py:1 stała | klucz {_klucz('src/a.py:1 stała')}",
+        f"MUTACJA src/a.py:5 inna | klucz {_klucz('src/a.py:5 inna')}{bez_werdyktu}",
+    ]
+    assert f"MUTACJA src/a.py:2 stała | klucz {_klucz('src/a.py:2 stała')}{bez_werdyktu}" in tresci["Przeżyte mutacje z #12"].splitlines()
+    assert "uruchom ją `tools/mutacje.py`" in tresci["Przeżyte mutacje z #12"]
 
 
 def test_czesc_konczy_sie_w_swoim_limicie_czasu_przed_limitem_zadania_ci_ktore_by_ja_anulowalo_bez_zapisu() -> None:
@@ -253,7 +293,17 @@ def test_czesc_konczy_sie_w_swoim_limicie_czasu_przed_limitem_zadania_ci_ktore_b
 
     # Instalacja przed krokiem trwa ok. 10 s, a wgranie zapisu po nim kilka sekund (run 41019818658).
     assert zadanie["timeout-minutes"] * 60 - mutacje_zmiany.PART_LIMIT_S >= 300
-    assert "--limit-czesci-s" not in krok["run"]
+    # Rozmiar części liczy plan z domyślnych limitów i równoległości narzędzia.
+    assert not {"--limit-czesci-s", "--limit-s", "--rownolegle"} & set(shlex.split(krok["run"]))
+
+
+def test_czesc_konczy_sie_w_limicie_czasu_takze_gdy_testy_kazdej_jej_mutacji_trwaja_pelny_limit_mutacji() -> None:
+    """Pierwszy przebieg testów biegnie po ``WORKERS`` mutacji naraz, a każde polecenie kończy limit mutacji, więc część
+    z ``NA_CZESC`` drogimi mutacjami zostawia ``ZAPAS_S`` na pokrycie, szersze przebiegi testów i bramę typów."""
+
+    kolejki = math.ceil(mutacje_nocne.NA_CZESC / mutacje_zmiany.WORKERS)
+
+    assert kolejki * mutacje_zmiany.MUTATION_LIMIT_S + mutacje_nocne.ZAPAS_S <= mutacje_zmiany.PART_LIMIT_S
 
 
 
@@ -391,21 +441,34 @@ def _repo_z_datami(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Pat
     ("od", "run", "oczekiwana", "skad"),
     [
         ("", "wczoraj", "wczoraj", "ostatni udany run 41"),
+        # Run z zaległością policzył zmiany tylko do ``do`` z artefaktu, więc od niego zaczyna następna noc.
+        ("", "wczoraj z zaległością", "przedwczoraj", "ostatni udany run 41"),
         ("", None, "przedwczoraj", "24 h wstecz, bez udanego runu przodka HEAD"),
         ("", "obcy", "przedwczoraj", "24 h wstecz, bez udanego runu przodka HEAD"),
         ("przedwczoraj", "wczoraj", "przedwczoraj", "--od przedwczoraj"),
     ],
-    ids=["ostatni-udany-run", "bez-udanego-runu", "run-spoza-historii-head", "od-z-recznego-uruchomienia"],
+    ids=["ostatni-udany-run", "run-z-zaleglosci", "bez-udanego-runu", "run-spoza-historii-head", "od-z-recznego-uruchomienia"],
 )
-def test_noc_mutuje_od_ostatniego_udanego_przebiegu_a_bez_niego_od_24_h_wstecz(
+def test_noc_mutuje_od_konca_zakresu_ostatniego_udanego_przebiegu_a_bez_niego_od_24_h_wstecz(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, od: str, run: str | None, oczekiwana: str, skad: str
 ) -> None:
     repo, shas = _repo_z_datami(tmp_path, monkeypatch)
-    github = GitHubWPamieci(runy=[{"id": 41, "head_sha": shas[run]}] if run else [])
+    zakresy: dict[int, bytes | None] = {41: json.dumps({"do": shas["przedwczoraj"]}).encode()} if run == "wczoraj z zaległością" else {}
+    github = GitHubWPamieci(runy=[{"id": 41, "head_sha": shas[run.split()[0]]}] if run else [], zakresy=zakresy)
 
     znaleziona = mutacje_nocne.baza(github, repo, shas[od] if od else "", TERAZ)
 
     assert znaleziona == (shas[oczekiwana], skad.replace("--od przedwczoraj", f"--od {shas['przedwczoraj']}"))
+
+
+def test_noc_po_udanym_przebiegu_z_wygaslym_zakresem_konczy_sie_fail_zamiast_pominac_jego_zaleglosc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, shas = _repo_z_datami(tmp_path, monkeypatch)
+    github = GitHubWPamieci(runy=[{"id": 41, "head_sha": shas["wczoraj"]}], zakresy={41: None})
+
+    with pytest.raises(ValueError, match="artefakt zakres-nocy runu 41 wygasł"):
+        mutacje_nocne.baza(github, repo, "", TERAZ)
 
 
 ZLY_WYJATEK = "src/pakiet/a.py:4: wyjątek musi mieć postać `# mutacje-zmiany: <powód> | do RRRR-MM-DD | zgoda <kto>`"
@@ -445,11 +508,12 @@ def test_plan_dzieli_mutacje_od_bazy_na_czesci_dla_macierzy_workflow(
 
     wyjscie = capsys.readouterr().out.splitlines()
     assert kod == 0, wyjscie
-    assert wyjscie[-1] == f"MUTACJE NOCNE PLAN | baza {baza} (--od {baza}) | mutacje {mutacje} | części {len(czesci)} | z Chromium 0"
+    head = git(repo, "rev-parse", "HEAD")
+    assert wyjscie[-1] == f"MUTACJE NOCNE PLAN | baza {baza} (--od {baza}) | do {head} | mutacje {mutacje} | części {len(czesci)} | z Chromium 0"
     assert (f"MUTACJE NOCNE | {ZLY_WYJATEK}; część mutacji to zgłosi" in wyjscie) == (mutacje == 1)
     output = dict(linia.split("=", 1) for linia in (tmp_path / "output").read_text(encoding="utf-8").splitlines())
     macierz = [{"czesc": czesc, "przegladarka": False} for czesc in czesci]
-    assert output == {"baza": baza, "czesci": json.dumps(macierz), "liczba": str(len(czesci))}
+    assert output == {"baza": baza, "do": head, "czesci": json.dumps(macierz), "liczba": str(len(czesci))}
 
 
 def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_inna_nie(
@@ -489,9 +553,180 @@ def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_
     assert json.loads(output["czesci"]) == [{"czesc": 1, "przegladarka": False}, {"czesc": 2, "przegladarka": True}]
 
 
-@pytest.mark.parametrize(("mutacje", "czesci"), [(0, 0), (1, 1), (25, 1), (26, 2), (500, 20), (10_000, 20)])
-def test_czesc_ma_najwyzej_25_mutacji_ale_noc_najwyzej_20_czesci(mutacje: int, czesci: int) -> None:
-    assert mutacje_nocne.czesci(mutacje) == czesci
+FUNKCJA = "def a(x: int) -> bool:\n    return x > 1\n"
+
+
+def _main_z_zalegloscia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plikow: int) -> tuple[Path, str]:
+    """``main`` z bazą nocy i plikami ``src/pakiet/m<k>.py``, w którym noc mutuje tylko commity PR-ów dopisujących funkcję
+    (``_dopisz``), z częściami po 2 mutacje i najwyżej 2 częściami na noc."""
+
+    repo = repository(tmp_path / "repo", {f"src/pakiet/m{numer}.py": FUNKCJA for numer in range(1, plikow + 1)})
+    git(repo, "checkout", "--quiet", "-b", "main")
+    baza = commit(repo, "baza")
+    for modul in (mutacje_nocne, mutacje_zmiany):
+        monkeypatch.setattr(modul, "ROOT", repo)
+    monkeypatch.setattr(mutacje_nocne, "NA_CZESC", 2)
+    monkeypatch.setattr(mutacje_nocne, "CZESCI_NA_NOC", 2)
+    return repo, baza
+
+
+def _dopisz(repo: Path, numer: int, *pliki: int) -> str:
+    """Squash PR #``numer``: nowa funkcja w każdym z ``pliki`` to dwie mutacje, granica porównania i cofnięcie fragmentu."""
+
+    for plik in pliki or (numer,):
+        with (repo / "src" / "pakiet" / f"m{plik}.py").open("a", encoding="utf-8") as kod:
+            kod.write(NOWA_FUNKCJA)
+    return commit(repo, f"Zmień m{numer} (#{numer})")
+
+
+def _plan_nocy(github: GitHubWPamieci, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], noc: int) -> dict[str, str]:
+    """``baza``, ``do``, ``liczba`` części i ``mutacje`` z planu nocy oraz ``zakres``, plik artefaktu ``zakres-nocy``."""
+
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / f"output-{noc}"))
+    zakres = tmp_path / f"zakres-{noc}.json"
+    assert mutacje_nocne.zaplanuj(github, "", zakres) == 0
+    plan = capsys.readouterr().out.splitlines()[-1]
+    output = dict(linia.split("=", 1) for linia in (tmp_path / f"output-{noc}").read_text(encoding="utf-8").splitlines())
+    return {**output, "mutacje": plan.split(" | mutacje ")[1].split(" |")[0], "zakres": str(zakres)}
+
+
+def test_noc_z_zalegloscia_mutuje_najwyzej_limit_a_kolejne_noce_przerabiaja_ja_do_head_takze_po_czerwonej(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Zaległość 5 PR-ów po 2 mutacje przy limicie nocy 4 (2 części po 2), a każdej nocy po pierwszej dochodzi PR.
+    Noc 2 jest czerwona, więc noc 3 zaczyna od tej samej bazy z tym samym limitem, zamiast dostać jej pracę do swojej."""
+
+    repo, baza = _main_z_zalegloscia(tmp_path, monkeypatch, 8)
+    pr = {numer: _dopisz(repo, numer) for numer in range(1, 6)}
+    github = GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}])
+    noce = []
+    for noc, (nowy, udana) in enumerate([(None, True), (6, False), (7, True), (8, True), (None, True)], start=2):
+        if nowy:
+            pr[nowy] = _dopisz(repo, nowy)
+        noce.append(_plan_nocy(github, tmp_path, monkeypatch, capsys, noc))
+        if udana:
+            github.runy = [{"id": noc, "head_sha": git(repo, "rev-parse", "HEAD")}]
+            github.zakresy[noc] = Path(noce[-1]["zakres"]).read_bytes()
+
+    assert [(plan["baza"], plan["do"], plan["mutacje"], plan["liczba"]) for plan in noce] == [
+        (baza, pr[2], "4", "2"),
+        (pr[2], pr[4], "4", "2"),
+        (pr[2], pr[4], "4", "2"),
+        (pr[4], pr[6], "4", "2"),
+        (pr[6], pr[8], "4", "2"),
+    ]
+    # Udane noce przerobiły razem każdą mutację od pierwszej bazy do HEAD, żadnej dwa razy.
+    assert sum(int(noce[numer]["mutacje"]) for numer in (0, 2, 3, 4)) == len(mutacje_nocne.mutacje_od(baza)[0]) == 16
+
+
+def test_pierwszy_pr_z_wieksza_liczba_mutacji_niz_limit_nocy_dostaje_noc_w_calosci(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, baza = _main_z_zalegloscia(tmp_path, monkeypatch, 3)
+    duzy = _dopisz(repo, 1, 1, 2, 3)
+    _dopisz(repo, 2)
+
+    plan = _plan_nocy(GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}]), tmp_path, monkeypatch, capsys, 2)
+
+    assert (plan["do"], plan["mutacje"], plan["liczba"]) == (duzy, "6", "3")
+
+
+def test_mutacja_linii_dwoch_pr_liczy_sie_do_nocy_wczesniejszego_z_nich_jak_w_zakresie_czesci(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Cofnięcie fragmentu, którego linie zmieniły PR #2 i PR #3, część mutuje już w zakresie do #2 (``until``), więc
+    plan liczy je przy #2: noc do #2 miałaby 4 mutacje przy limicie 3, więc kończy się na #1."""
+
+    b = "def b(x: int, y: int) -> bool:\n    c = x > 1\n    d = y > 1\n    return c and d\n"
+    repo = repository(tmp_path / "repo", {"src/pakiet/a.py": FUNKCJA, "src/pakiet/b.py": b})
+    git(repo, "checkout", "--quiet", "-b", "main")
+    baza = commit(repo, "baza")
+    for modul in (mutacje_nocne, mutacje_zmiany):
+        monkeypatch.setattr(modul, "ROOT", repo)
+    monkeypatch.setattr(mutacje_nocne, "NA_CZESC", 3)
+    monkeypatch.setattr(mutacje_nocne, "CZESCI_NA_NOC", 1)
+    commity: list[str] = []
+    for plik, stare, nowe in (("a", "x > 1", "x > 2"), ("b", "c = x > 1", "c = x > 2"), ("b", "d = y > 1", "d = y > 2")):
+        sciezka = repo / "src" / "pakiet" / f"{plik}.py"
+        sciezka.write_text(sciezka.read_text(encoding="utf-8").replace(stare, nowe), encoding="utf-8")
+        commity.append(commit(repo, f"Zmień {plik} (#{len(commity) + 1})"))
+
+    plan = _plan_nocy(GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}]), tmp_path, monkeypatch, capsys, 2)
+
+    assert (plan["do"], plan["mutacje"]) == (commity[0], "2")
+
+
+# Limit czasu części w teście: części biegną naprawdę, jak krok zadania części w mutacje-nocne.yml.
+CZAS_CZESCI_S = 20
+
+
+def _czesc(repo: Path, plan: dict[str, str], numer: int, zapisy: Path) -> subprocess.CompletedProcess[str]:
+    zapis = zapisy / f"{mutacje_nocne.ARTEFAKT}{numer}" / mutacje_nocne.ZAPIS
+    polecenie = ["--baza", plan["baza"], "--do", plan["do"], "--czesc", f"{numer}/{plan['liczba']}", "--limit-czesci-s", str(CZAS_CZESCI_S), "--zapis", str(zapis)]
+    return subprocess.run(
+        [sys.executable, "tools/mutacje_zmiany.py", *polecenie],
+        cwd=repo,
+        # Narzędzie biegnie jak w zadaniu CI, bo poza nim odmawia startu (tools/lib/ciezkie_ci.py).
+        env={**os.environ, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1", "GITHUB_ACTIONS": "true"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+
+
+def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_nastepna_zaczyna_za_nia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Części biegną naprawdę z limitem czasu ``CZAS_CZESCI_S``. Testy zmiany PR #1 kończą się od razu, a test zmiany PR #2
+    po każdej jej mutacji śpi 300 s, więc jej część kończy limit czasu przed werdyktem. Noc i tak jest udana: mutacje bez
+    werdyktu idą do issue PR #2, a następna noc zaczyna od końca tego zakresu, nie od tej samej bazy."""
+
+    test_b = "import time\n\nfrom rozliczenia.b import b\n\n\ndef test_b() -> None:\n    if b(2):\n        time.sleep(300)\n    assert b(3) is True\n"
+    pliki = {
+        ".gitignore": "__pycache__/\n",
+        "src/rozliczenia/__init__.py": "",
+        "src/rozliczenia/a.py": FUNKCJA,
+        "src/rozliczenia/b.py": FUNKCJA.replace("def a", "def b"),
+        "tests/test_a.py": "from rozliczenia.a import a\n\n\ndef test_a() -> None:\n    assert a(3) is True\n    assert a(2) is False\n",
+        "tests/test_b.py": test_b,
+    }
+    repo = repository(tmp_path / "repo", pliki)
+    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/mutacje_zmiany.py", "tools/ci/pytest_pokrycie.py", "tools/ci/pokrycie_procesu.py"))
+    git(repo, "checkout", "--quiet", "-b", "main")
+    baza = commit(repo, "baza")
+    for modul in (mutacje_nocne, mutacje_zmiany):
+        monkeypatch.setattr(modul, "ROOT", repo)
+    monkeypatch.setattr(mutacje_nocne, "NA_CZESC", 2)
+    for numer, plik in enumerate(("a", "b"), start=1):
+        sciezka = repo / "src" / "rozliczenia" / f"{plik}.py"
+        sciezka.write_text(sciezka.read_text(encoding="utf-8").replace("x > 1", "x > 2"), encoding="utf-8")
+        commit(repo, f"Zmień {plik} (#{numer})")
+    github = GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}])
+    plan = _plan_nocy(github, tmp_path, monkeypatch, capsys, 2)
+    zapisy = tmp_path / "zapisy"
+
+    czesci = [_czesc(repo, plan, numer, zapisy) for numer in range(1, int(plan["liczba"]) + 1)]
+    kod = mutacje_nocne.zglos(github, repo, plan["baza"], zapisy, len(czesci), RUN)
+
+    assert [czesc.returncode for czesc in czesci] == [0, 3], [czesc.stdout for czesc in czesci]
+    assert czesci[1].stdout.splitlines()[-1].startswith(f"MUTACJE ZMIANY FAIL | limit czasu części {CZAS_CZESCI_S} s minął przed werdyktem 2 mutacji")
+    assert (kod, capsys.readouterr().out.splitlines()[-1]) == (0, "MUTACJE NOCNE OK | części 2 | przeżyło 0 | bez werdyktu 2")
+    (issue,) = github.issues
+    assert issue["title"] == "Przeżyte mutacje z #2"
+    assert sorted(linia.split(" | klucz ")[0] for linia in issue["body"].splitlines() if linia.endswith(mutacje_nocne.BEZ_WERDYKTU)) == [
+        "MUTACJA src/rozliczenia/b.py:2 granica `x > 2` → `>=`",
+        "MUTACJA src/rozliczenia/b.py:2 zmiana linii 2 cofnięta do bazy",
+    ]
+    # Run jest udany, więc następna noc ma tylko PR #3 dopisany po nim.
+    github.runy = [{"id": 2, "head_sha": git(repo, "rev-parse", "HEAD")}]
+    github.zakresy[2] = Path(plan["zakres"]).read_bytes()
+    with (repo / "src" / "rozliczenia" / "a.py").open("a", encoding="utf-8") as kod_a:
+        kod_a.write(NOWA_FUNKCJA)
+    commit(repo, "Dopisz b (#3)")
+    nastepna = _plan_nocy(github, tmp_path, monkeypatch, capsys, 3)
+    assert (nastepna["baza"], nastepna["mutacje"]) == (plan["do"], "2")
 
 
 def _nocne() -> dict[Any, Any]:
@@ -521,8 +756,12 @@ def test_kazda_czesc_mutuje_od_bazy_planu_i_wgrywa_zapis_pod_nazwa_ktora_czyta_z
     polecenie_zgloszenia = shlex.split(next(krok["run"] for krok in zgloszenie["steps"] if "zglos" in krok.get("run", "")))
 
     assert (czesc["needs"], czesc["strategy"]["matrix"]) == ("plan", {"include": "${{ fromJSON(needs.plan.outputs.czesci) }}"})
-    assert krok["env"] == {"BAZA": "${{ needs.plan.outputs.baza }}", "CZESC": "${{ matrix.czesc }}/${{ needs.plan.outputs.liczba }}"}
-    assert polecenie[polecenie.index("--baza") + 1] == "$BAZA" and polecenie[polecenie.index("--czesc") + 1] == "$CZESC"
+    assert krok["env"] == {
+        "BAZA": "${{ needs.plan.outputs.baza }}",
+        "DO": "${{ needs.plan.outputs.do }}",
+        "CZESC": "${{ matrix.czesc }}/${{ needs.plan.outputs.liczba }}",
+    }
+    assert [polecenie[polecenie.index(argument) + 1] for argument in ("--baza", "--do", "--czesc")] == ["$BAZA", "$DO", "$CZESC"]
     assert "continue-on-error" not in krok
     assert (Path(zapis).name, wgranie["with"]["path"], wgranie["with"]["name"]) == (mutacje_nocne.ZAPIS, zapis, f"{mutacje_nocne.ARTEFAKT}${{{{ matrix.czesc }}}}")
     assert (pobranie["with"]["pattern"], polecenie_zgloszenia[polecenie_zgloszenia.index("--zapisy") + 1]) == (f"{mutacje_nocne.ARTEFAKT}*", pobranie["with"]["path"])
@@ -531,10 +770,25 @@ def test_kazda_czesc_mutuje_od_bazy_planu_i_wgrywa_zapis_pod_nazwa_ktora_czyta_z
     assert zgloszenie["permissions"]["issues"] == "write"
 
 
+def test_plan_wgrywa_zakres_nocy_pod_nazwa_ktora_czyta_nastepna_noc() -> None:
+    plan = _nocne()["jobs"]["plan"]
+    polecenie = shlex.split(next(krok["run"] for krok in plan["steps"] if "tools/mutacje_nocne.py plan" in krok.get("run", "")))
+    zakres = polecenie[polecenie.index("--zakres") + 1]
+    wgranie = next(krok for krok in plan["steps"] if krok.get("with", {}).get("name") == mutacje_nocne.ARTEFAKT_ZAKRESU)
+
+    assert (Path(zakres).name, wgranie["with"]["path"]) == (mutacje_nocne.ZAKRES, zakres)
+    assert plan["outputs"]["do"] == "${{ steps.plan.outputs.do }}"
+    # Następna noc czyta artefakt przez API runu.
+    assert plan["permissions"]["actions"] == "read"
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="krok biegnie w bashu runnera Linuksa, a atrapa python to skrypt sh")
-@pytest.mark.parametrize(("kod_narzedzia", "czesc_przechodzi"), [(0, True), (1, True), (2, False)], ids=["ok", "przezyly-mutacje", "awaria"])
+@pytest.mark.parametrize(
+    ("kod_narzedzia", "czesc_przechodzi"), [(0, True), (1, True), (2, False), (3, True)], ids=["ok", "przezyly-mutacje", "awaria", "bez-werdyktu"]
+)
 def test_czesc_pada_tylko_przy_awarii_a_przezyte_mutacje_zostawia_zgloszeniu(tmp_path: Path, kod_narzedzia: int, czesc_przechodzi: bool) -> None:
-    """Kod 1 to przeżyte mutacje, które zgłasza ostatnie zadanie; inna porażka czerwieni część, więc ``--odtwarzam``
+    """Kod 1 to przeżyte mutacje, a kod 3 mutacje bez werdyktu po limicie czasu części: oba zgłasza ostatnie zadanie.
+    Inna porażka czerwieni część, więc ``--odtwarzam``
     (``tools/lib/ciezkie_ci.py`` chce zadania ``failure``) ma co odtworzyć."""
 
     krok = next(krok for krok in _nocne()["jobs"]["change-mutations"]["steps"] if "tools/mutacje_zmiany.py" in krok.get("run", ""))

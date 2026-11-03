@@ -7,6 +7,7 @@ Zastępuje część [ADR 0020](0020-ci-w-poziomach.md) o Change mutations na PR:
 Zastępuje też część ADR 0020 o skryptach mutacji skilli na PR: biegną nocą na `main` i w pełnym CI `main`.
 Opiera się na [ADR 0014](0014-tata-dostaje-tylko-wydania.md) i ADR 0020, według których granicą bezpieczeństwa taty jest Wydanie, a nie PR.
 Zmieniona 31.10 (#701, zgoda Maksa w wątku T3: „okej zgadzam się na wdrożenie tego”): skrypt mutacji modelu TLA+ skilla biegnie też na PR, który zmienia jego model (sekcja Decyzja).
+Zmieniona 3.11 (cel Maksa w triage 3.11: noc ma znów każdej nocy dawać wynik i zbiegać do zielonego po zaległości): noc ma limit mutacji, a zaległość przechodzi na kolejne noce; część mieści się w limicie czasu także wtedy, gdy testy każdej jej mutacji trwają pełny limit mutacji, a mutacja bez werdyktu po limicie części trafia do issue zamiast zatrzymać noc (sekcje Decyzja, Konsekwencje i Odrzucone warianty).
 
 ## Kontekst
 
@@ -25,8 +26,23 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
 - Change mutations nie biegną na PR.
   `ci.yml` nie ma ich zadania, plan CI ich nie liczy, a `tools/scal_pr.py` nie sprawdza ich ani linii `MUTACJA` w `PASS`.
 - Workflow `mutacje-nocne.yml` biegnie raz na dobę na `main` i ręcznie z opcjonalnym `od`.
-  Mutuje linie `src/` i `tools/` zmienione od commitu ostatniego udanego przebiegu (bez niego od 24 h wstecz) tym samym `tools/mutacje_zmiany.py`: jedna mutacja na linię, cofnięcie fragmentu, wyjątki `# mutacje-zmiany:`.
-- Mutacje dzielą się na części po najwyżej 25, kolejne na liście posortowanej po plikach, żeby każda część liczyła pokrycie tylko dla kilku plików i trwała 10–15 min.
+  Mutuje linie `src/` i `tools/` zmienione od bazy tym samym `tools/mutacje_zmiany.py`: jedna mutacja na linię, cofnięcie fragmentu, wyjątki `# mutacje-zmiany:`.
+  Bazą jest commit, do którego doszedł ostatni udany przebieg (`do` z jego artefaktu `zakres-nocy`, a w runie bez niego jego commit), a bez udanego przebiegu commit sprzed 24 h.
+- Mutacje dzielą się na części, kolejne na liście posortowanej po plikach, żeby każda część liczyła pokrycie tylko dla kilku plików.
+  Część ma tyle mutacji, ile pełnych kolejek po 4 mutacje naraz mieści jej limit czasu (175 min w zadaniu 180 min), gdy testy każdej mutacji trwają pełny limit mutacji (900 s), a 60 min zostaje na pokrycie, szersze przebiegi testów i bramę typów: 7 kolejek, czyli 28 mutacji (`NA_CZESC` w `tools/mutacje_nocne.py`).
+  Koszt mutacji zależy od pliku o dwa rzędy wielkości, a przed pokryciem plan go nie zna.
+  W nocach 31.10–3.11 (runy 41179652907, 41285996039, 41408995300, 41601085650, 2892 mutacje) mediana mutacji pliku wynosiła 1–210 s, ale 34 mutacje trwały pełne 900 s, 16 z nich w `tools/mutacje.py`.
+  Pokrycie części trwało tam najwyżej 1006 s, testy pliku najwyżej 1201 s, a brama typów najwyżej 58 s.
+  Te same czasy w częściach pierwszej nocy po limicie mutacji nocy dają przy 25 mutacjach najdłuższą część ok. 3400–3600 s, więc w limicie 3300 s ona sama czerwieniłaby każdą noc z tym samym zakresem.
+  Przy 28 mutacjach najdłuższa część tej nocy (28 mutacji `tools/mutacje.py`, 8 z nich po 900 s) trwa tak liczona ok. 4200 s, 40% limitu części.
+- Część, której limit czasu minął po pokryciu, przed werdyktem którejś mutacji, dała wynik: `tools/mutacje_zmiany.py` kończy się kodem 3, a zapis wymienia mutacje bez werdyktu.
+  Każda trafia do issue `Przeżyte mutacje z #N` PR-u, który ostatni zmienił jej linie, z dopiskiem `bez werdyktu w limicie czasu części`, a agent sprawdza ją `tools/mutacje.py`.
+  Zadanie części zostaje zielone, a przebieg przesuwa bazę, więc część z drogimi mutacjami nie zatrzymuje nocy, a następna noc nie dostaje tego samego zakresu.
+- Noc ma najwyżej 40 części, czyli 1120 mutacji, a zadania części biegną najwyżej po 20 naraz, bo 60 zadań organizacji dzielą też runy CI PR-ów.
+  Gdy od bazy jest więcej mutacji, noc mutuje tylko zmiany do najdalszego commitu linii pierwszych rodziców `main`, do którego ich mutacje mieszczą się w limicie, ale co najmniej do pierwszego commitu z mutacjami, także większego (`do`).
+  Mutacja należy do zakresu, gdy którąś z jej linii ostatni zmienił (`git blame --first-parent`) commit, który `do` zawiera, a plan i części liczą to tą samą funkcją (`mutacje_zmiany.until`).
+  Przebieg biegnie na HEAD `main`, więc mutuje dzisiejszy kod, a linie zmienione po `do` mutuje następna noc, której bazą jest `do`; linia zmieniona przed `do` i jeszcze raz po nim wchodzi do obu.
+  Plan pisze, ile mutacji czeka na następne noce (`MUTACJE NOCNE | zaległość:`).
 - Każda przeżyta mutacja trafia do issue `Przeżyte mutacje z #N` z etykietą `ready-for-agent` PR-u, który ostatni zmienił zmienione linie, które ona psuje (`git blame` na `main`, commit scalenia, a bez numeru w jego temacie API GitHuba).
   Jedno issue na PR, a ta sama mutacja nie trafia do niego drugi raz, także gdy jej linie się przesuną: porównuje się klucz z pliku i zmienionego kodu, bez numerów linii.
   Issue naprawia agent testem, który zabija mutację, albo linią `MUTACJA <id> | nie warto, bo <powód>`.
@@ -40,8 +56,8 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
   Takie cofnięcie trafia do issue jak przed bramą, a gdy zmiana była tylko typów (#671, #674), agent odpowiada `nie warto`.
   Ręczne zamiany `check_all` skryptów mutacji skilli brama sprawdza tak samo jak mutacje operatorów.
   Brama biegnie tylko dla mutacji, które przeżyły testy, i raz bez mutacji, która daje im cache mypy; gdy bez mutacji coś zgłasza, przeżyte zostają przeżyte, a linia `BRAMA TYPÓW CZERWONA` idzie na stderr.
-- Część, która nie dała wyniku, jest czerwona, a przebieg z nią jest czerwony i nie przesuwa bazy, więc następna noc sprawdza te linie jeszcze raz.
-  Przeżyte mutacje to wynik, więc zostawiają część zieloną.
+- Część, która nie dała wyniku (testy padają albo nie kończą się w limicie części bez mutacji, zły wyjątek, brak zapisu), jest czerwona, a przebieg z nią jest czerwony i nie przesuwa bazy, więc następna noc sprawdza te linie jeszcze raz, z tym samym limitem mutacji.
+  Przeżyte mutacje i mutacje bez werdyktu po limicie części to wynik, więc zostawiają część zieloną.
 - Skrypty mutacji skilli też nie biegną na PR: Mutation checks na PR to same podstawy `ci:` skilli, których `pilnuje:` albo folder trafia zmiana.
   Ta sama noc uruchamia skrypty skilli, których folder, runner mutacji albo sprawdzenie zmieniło się od jej bazy, w zadaniach planu `tools/plan_ci.py plan --zdarzenie noc`, a pełne CI `main` dalej uruchamia każdy skrypt.
   Skrypt, który padł, trafia linią `SKRYPT <skrypt>` do issue `Przeżyte mutacje skilli z #N` z etykietą `ready-for-agent` PR-u, który ostatni zmienił folder skilla, bez powtórzeń; zadanie bez zapisu czerwieni przebieg.
@@ -65,11 +81,25 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
 - Recenzent nie omawia już mutacji w `PASS`, a przegląd PR kończy się razem z bramką.
 - PR, który osłabia sprawdzenie skilla tak, że jego mutacja przeżywa, pokaże dopiero pełne CI `main` po merge'u i noc, która przypisze porażkę do issue jego PR.
   Wyjątkiem jest zmiana modelu TLA+ skilla ze skryptem mutacji modelu: ta dostaje czerwone Mutation checks na PR.
-- Noc mutuje zmiany wielu PR-ów naraz, więc pokrycie biegnie na testach wielu plików; części po plikach trzymają je w 10–15 min, a gdy zmian jest więcej niż na 20 części, części rosną.
+- Noc mutuje zmiany wielu PR-ów naraz, więc pokrycie biegnie na testach wielu plików; części po plikach trzymają je w limicie czasu części.
+- Część z drogimi mutacjami trzyma runner do 3 h zamiast 1 h, a zwykła część kończy się jak dotąd w kilka minut do godziny (31.10: 4–51 min).
+- Mutacja bez werdyktu w issue to praca dla agenta PR-u, choć test może ją już wykrywać: zgłoszona raz, nie wraca do następnej nocy.
+  Limit części jest ok. 2,5 raza dłuższy od najdłuższej części pierwszej nocy liczonej na zmierzonych czasach, więc taka linia wychodzi rzadko.
+- Dzień z więcej niż 1120 mutacjami, czerwona noc i noc, która nie wystartowała, zostawiają zaległość, którą przerabiają kolejne noce po 1120, więc luka w testach PR-u z takiego dnia wychodzi później niż następnego dnia.
+  Zaległość spada, gdy dzień ma mniej mutacji niż 1120; ręczne uruchomienie workflow bez `od` przerabia następne 1120 od razu.
+- Przed limitem nocy części rosły z zaległością: 1.11 po ok. 49 mutacji (10 z 20 części czerwonych na limicie czasu), 2.11 po ok. 93 (16 z 20), 3.11 po ok. 102 (16 z 20, run 41601085650), a czerwona noc nie przesuwała bazy, więc następna miała jeszcze więcej.
 - Przebieg nocny, który nie skończył się sukcesem, nie zakłada issue o sobie; widać go w Actions, a następna noc powtarza jego zakres.
 
 ## Odrzucone warianty
 
+- Liczba części z liczby mutacji (po 25) bez limitu nocy (3.11). Każda część mieści się w limicie czasu, ale czerwona noc zostawia całą zaległość następnej, więc części i runnery rosną z każdą czerwoną nocą, aż do limitu 256 zadań macierzy GitHuba.
+- Przeniesienie mutacji bez werdyktu na następną noc po ich kluczu, z bazą przesuwaną po każdej nocy (3.11). Noc dalej dostaje więcej, niż przerobi, a odtworzenie przeniesionej mutacji wymaga mutacji od jej starszej bazy: klucz cofnięcia fragmentu zależy od fragmentu względem bazy, więc z nowszej bazy nie wraca, a przypisanie do PR-u liczy linie od najstarszej bazy.
+- Zakres nocy przez checkout commitu `do` (3.11). Części biegłyby na starszym kodzie i starszych narzędziach, a zgłoszenie musiałoby przypisywać linie z `do`, nie z HEAD.
+- Części po 25 mutacji w limicie 3300 s, bo „części po 31–32 mutacje trwały 6–50 min” (3.11). Run 41179652907 nie miał jeszcze mutacji `tools/mutacje.py` z #711 i #721: część pierwszej nocy z 25 takimi mutacjami trwałaby ok. 3400–3600 s (ich czasy z runu 41285996039), a czerwona noc wracałaby z tą samą częścią co noc.
+- Części dzielone według szacowanego kosztu (3.11). Plan nie zna kosztu mutacji przed pokryciem: stosunek mediany mutacji pliku do czasu CI testów dotkniętych plikiem wynosił 0,00–0,48, a mutacja pliku z medianą 4 s potrafiła trwać 900 s. Koszt z poprzednich nocy wymaga stanu między nocami, a nowy drogi plik i tak czerwieniłby pierwszą noc.
+- Druga fala części w tym samym przebiegu dla mutacji bez werdyktu (3.11). Domyka je tej samej nocy, ale dokłada zadanie planu, drugą macierz i do 3 h przebiegu, a mutacja, której nie domknie druga fala, i tak potrzebuje reguły, która nie zatrzymuje nocy.
+- PRZEKROCZONY CZAS jako mutacja wykryta, jak w Stryker i PIT (3.11). Mutacje nocy, które trwały 900 s (np. bez kopii cache mypy w bramie typów), spowalniały testy, a nie wieszały ich: żadnego testu nie przerwał pytest-timeout, więc CI by ich nie złapało. Reguła nie skraca też kolejki: mutacje, które czekały za nimi, dalej nie zaczynały się przed limitem części.
+- Mniejsze części, np. po 8 mutacji, które mieszczą się w 3300 s przy każdej mutacji po 900 s (3.11). Noc miałaby 320 mutacji przy 40 częściach, mniej niż daje dzień, więc zaległość by rosła, a większość części, z mutacjami po kilka sekund, biegłaby głównie pokrycie.
 - Change mutations na PR, ale bez czekania na nie w `tools/scal_pr.py`. Każdy PR dalej zajmowałby trzy runnery po 15 min, a wynik po merge'u i tak musiałby trafić do issue.
 - Mutacje tylko PR-ów z etykietą albo powyżej rozmiaru zmiany. Luki w testach są w małych zmianach tak samo, a wybór PR-ów to osąd, którego nic nie sprawdza.
 - Każdy skrypt mutacji skilla na PR, który zmienia folder skilla (#701). Skrypty mutacji kodu produktu trwają do 13 min, a błąd z #667, który przeszedł bramkę i przegląd, był zmianą modelu TLA+, której nie widzą podstawa skilla ani pytest.

@@ -794,7 +794,7 @@ def test_przeglad_z_wiersza_polecen_nie_liczy_bramy_typow_jako_wykrycia(tmp_path
 
 
 def test_brama_typow_bez_wyniku_przed_koncem_czasu_wywolujacego_daje_bez_werdyktu(tmp_path: Path) -> None:
-    """Noc liczy BEZ WERDYKTU jak część bez wyniku, więc przeżyta, której brama nie sprawdziła, nie trafia do issue."""
+    """Przeżyta, której brama nie sprawdziła przed końcem czasu, to BEZ WERDYKTU: noc zgłasza ją jako mutację bez werdyktu, a nie przeżytą."""
 
     repo = repository(tmp_path / "repo", {PACKAGE: "NIC = 0\n"})
     commit(repo, "baza")
@@ -886,7 +886,7 @@ def test_brama_typow_czyta_diagnostyki_ruff_i_mypy_z_json(
 
 def test_krok_bramy_typow_bez_wyniku_w_limicie_daje_kopie_bez_werdyktu(tmp_path: Path) -> None:
     """Krok, który wisi dłużej niż ``limit_s``, nie daje diagnostyk, więc brama nie wie, czy mutacja przeżyła: noc liczy
-    BEZ WERDYKTU i sprawdza ją następnej nocy, zamiast zgłosić ją w issue."""
+    BEZ WERDYKTU i zgłasza ją w issue jako mutację bez werdyktu, a nie przeżytą."""
 
     (tmp_path / "ruff").mkdir()
     (tmp_path / "ruff" / "__init__.py").write_text("", encoding="utf-8")

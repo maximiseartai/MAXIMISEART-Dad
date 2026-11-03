@@ -1,8 +1,10 @@
 name: Mutacje nocne
 
 # Once a day, one mutation per line of src/ and tools/ that changed on main since the last successful night, as
-# tools/mutacje_zmiany.py mutates it, and the mutation scripts of the skills whose folder changed since then. Each
-# surviving mutation goes to the issue "Przeżyte mutacje z #N" of the PR that last changed its line, and each failed
+# tools/mutacje_zmiany.py mutates it, and the mutation scripts of the skills whose folder changed since then. A night
+# mutates at most CZESCI_NA_NOC parts of NA_CZESC mutations (tools/mutacje_nocne.py): with more, it stops at a commit
+# of main, and the next night starts there. Each surviving mutation, and each mutation its part's time limit left
+# without a verdict, goes to the issue "Przeżyte mutacje z #N" of the PR that last changed its line, and each failed
 # mutation script to "Przeżyte mutacje skilli z #N" of the PR that last changed its skill (tools/mutacje_nocne.py,
 # ADR 0021). Pull requests neither run nor wait for it.
 on:
@@ -11,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       od:
-        description: 'Mutate the changes since this commit (default: the last successful run, or 24 h back)'
+        description: 'Mutate the changes since this commit (default: where the last successful run stopped, or 24 h back)'
         required: false
         default: ''
 
@@ -34,6 +36,7 @@ jobs:
       actions: read
     outputs:
       baza: ${{ steps.plan.outputs.baza }}
+      do: ${{ steps.plan.outputs.do }}
       czesci: ${{ steps.plan.outputs.czesci }}
       liczba: ${{ steps.plan.outputs.liczba }}
       skille: ${{ steps.skille.outputs.mutations }}
@@ -48,7 +51,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           OD: ${{ inputs.od }}
-        run: python3 tools/mutacje_nocne.py plan --od "$OD"
+        run: python3 tools/mutacje_nocne.py plan --od "$OD" --zakres .ci-plan/zakres.json
+
+      # The next night reads "do" from the last successful run's artifact: its base, so the backlog is not skipped.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: zakres-nocy
+          path: .ci-plan/zakres.json
+          retention-days: 90
+          include-hidden-files: true
+          overwrite: true
 
       # The same planner as Mutation checks in ci.yml: the scripts whose verdict the changes since the base can alter,
       # packed into jobs by their times on main.
@@ -72,9 +84,13 @@ jobs:
     needs: plan
     if: ${{ needs.plan.outputs.czesci != '[]' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # A part of NA_CZESC mutations ends in PART_LIMIT_S of tools/mutacje_zmiany.py even when the tests of each take the
+    # full limit of a mutation (tools/mutacje_nocne.py).
+    timeout-minutes: 180
     strategy:
       fail-fast: false
+      # The organization runs 60 jobs at once, shared with the CI runs of pull requests.
+      max-parallel: 20
       matrix:
         # Each entry is a part number and przegladarka: its mutations are checked by tests that reach Atrapa efenix.
         include: ${{ fromJSON(needs.plan.outputs.czesci) }}
@@ -119,14 +135,15 @@ jobs:
         if: ${{ matrix.przegladarka }}
         run: python -m playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} --only-shell chromium
 
-      # Code 1 is surviving mutations, a result the last job files, so the part stays green. Any other failure (code 2:
-      # the tests fail without mutations, a bad exception) turns the part red, and tools/mutacje_zmiany.py --odtwarzam
-      # reproduces it.
+      # Code 1 is surviving mutations and code 3 mutations the part's time limit left without a verdict: results the
+      # last job files, so the part stays green. Any other failure (code 2: the tests fail or hang without mutations, a
+      # bad exception) turns the part red, and tools/mutacje_zmiany.py --odtwarzam reproduces it.
       - name: Mutate the part's changed lines of src/ and tools/
         env:
           BAZA: ${{ needs.plan.outputs.baza }}
+          DO: ${{ needs.plan.outputs.do }}
           CZESC: ${{ matrix.czesc }}/${{ needs.plan.outputs.liczba }}
-        run: python tools/mutacje_zmiany.py --baza "$BAZA" --czesc "$CZESC" --zapis .ci-mutacje/czesc.json || test $? -eq 1
+        run: python tools/mutacje_zmiany.py --baza "$BAZA" --do "$DO" --czesc "$CZESC" --zapis .ci-mutacje/czesc.json || test $? -eq 1 -o $? -eq 3
 
       - name: Upload the surviving mutations
         if: ${{ !cancelled() }}

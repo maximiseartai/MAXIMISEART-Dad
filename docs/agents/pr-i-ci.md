@@ -30,24 +30,29 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 
 ## Change mutations
 
-- Biegną raz na dobę (workflow `mutacje-nocne.yml`, ADR 0021) na `main`, na liniach plików `src/**/*.py` i `tools/**/*.py` zmienionych od commitu ostatniego udanego przebiegu, a bez niego od 24 h wstecz.
+- Biegną raz na dobę (workflow `mutacje-nocne.yml`, ADR 0021) na `main`, na liniach plików `src/**/*.py` i `tools/**/*.py` zmienionych od commitu, do którego doszedł ostatni udany przebieg, a bez niego od 24 h wstecz.
   W tym samym przebiegu biegną skrypty mutacji skilli, których folder, runner mutacji albo sprawdzenie zmieniło się od tej bazy, w zadaniach z planu `tools/plan_ci.py plan --zdarzenie noc`.
   Biegnie w nim też każda część każdego n od 1 do `ci-czesci` podstawy z `ci-czesci:`, którą zmiana od bazy wybrałaby na pull request, bo pull request uruchamia jej części tylko jednego n.
   Ręczne uruchomienie workflow przyjmuje `od`, czyli commit, od którego liczyć zmiany.
-- `tools/mutacje_nocne.py` dzieli mutacje na części po najwyżej 25, więc każda trwa ok. 10–15 min.
+- `tools/mutacje_nocne.py` dzieli mutacje na części po najwyżej 28, a noc ma najwyżej 40 części.
+  Część kończy się w swoim limicie czasu (175 min) także wtedy, gdy testy każdej jej mutacji trwają pełny limit mutacji (900 s), bo biegną po 4 naraz, a 60 min zostaje na pokrycie i dalsze przebiegi (ADR 0021).
+  Gdy od bazy jest więcej mutacji, noc mutuje zmiany `main` tylko do commitu, do którego się mieszczą, a następna noc zaczyna od niego, więc zaległość przechodzi na kolejne noce.
   Część, której testy sięgają Atrapy efenix, plan oznacza `przegladarka`, a jej zadanie instaluje Chromium tymi samymi krokami co zadanie pytest.
-  Bazę i liczbę części drukuje bez testów `.venv/bin/python tools/mutacje_nocne.py plan`.
+  Bazę, koniec zakresu nocy i liczbę części drukuje bez testów `.venv/bin/python tools/mutacje_nocne.py plan`.
 - Każdą przeżytą mutację ostatnie zadanie przypisuje PR-owi, który ostatni zmienił zmienione linie, które ona psuje, i dopisuje linią `MUTACJA <plik>:<linia> <opis> | klucz <klucz>` do issue `Przeżyte mutacje z #N` z etykietą `ready-for-agent`.
+  Mutacja, której część nie dała werdyktu przed limitem czasu, trafia tam tak samo, z dopiskiem `| bez werdyktu w limicie czasu części`.
   Klucz nie ma numerów linii, więc mutacja nie trafia do issue drugi raz, także gdy następny PR przesunie jej linie.
 - Skrypt mutacji skilla, który padł, ostatnie zadanie dopisuje linią `SKRYPT <skrypt>` do issue `Przeżyte mutacje skilli z #N` PR-u, który ostatni zmienił folder skilla od bazy, tak samo bez powtórzeń.
   Część podstawy, która padła, trafia tam linią `SKRYPT <skrypt z ci:>`, a bez zmiany folderu skilla do PR-u, który ostatni zmienił jego `pilnuje:`.
 - Issue naprawiasz testem, który zabija mutację (dowód z `tools/mutacje.py`), albo linią `MUTACJA <plik>:<linia> <opis> | nie warto, bo <powód>`, a potem je zamykasz.
+  Mutację bez werdyktu najpierw uruchamiasz `tools/mutacje.py`, a gdy test już ją wykrywa, odpowiadasz linią `MUTACJA <plik>:<linia> <opis> | wykryta, <polecenie>`.
   Issue skryptu skilla naprawiasz poprawką sprawdzenia skilla albo tabeli mutacji, albo linią `SKRYPT <skrypt> | nie warto, bo <powód>`.
 - Ani `Required CI status`, ani `tools/scal_pr.py` na mutacje nie czekają.
-- Część bez wyniku (testy padają bez mutacji, zły wyjątek `# mutacje-zmiany:`, limit czasu części minął przed werdyktem którejś mutacji) jest czerwona i czerwieni przebieg, więc następna noc liczy od tej samej bazy, a przeżyte mutacje zostawiają część zieloną.
-  Limit czasu części (`PART_LIMIT_S` w `tools/mutacje_zmiany.py`, 55 min) kończy ją przed 60 min jej zadania, więc zapis z przeżytymi mutacjami zostaje, a mutacje bez wyniku mają w logu linię `BEZ WERDYKTU`.
+- Część bez wyniku (testy padają albo nie kończą się w limicie czasu części bez mutacji, zły wyjątek `# mutacje-zmiany:`) jest czerwona i czerwieni przebieg, więc następna noc liczy od tej samej bazy.
+  Przeżyte mutacje i mutacje bez werdyktu po limicie czasu części zostawiają część zieloną, więc przebieg przesuwa bazę.
+  Limit czasu części (`PART_LIMIT_S` w `tools/mutacje_zmiany.py`, 175 min) kończy ją przed 180 min jej zadania, więc zapis zostaje, a mutacje bez wyniku mają w logu linię `BEZ WERDYKTU`.
   Zadanie skryptów skilli bez zapisu też czerwieni przebieg.
-  Czerwoną część odtwarzasz na commicie runu: `git checkout --detach <headSha runu>` i `.venv/bin/python tools/mutacje_zmiany.py --baza <baza z planu> --czesc K/N --odtwarzam <run>`.
+  Czerwoną część odtwarzasz na commicie runu: `git checkout --detach <headSha runu>` i `.venv/bin/python tools/mutacje_zmiany.py --baza <baza z planu> --do <do z planu> --czesc K/N --odtwarzam <run>`.
 
 ## Zadanie CI padło
 
@@ -97,4 +102,4 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 | Do bramki PR dokładasz tylko to, co złapałoby defekt, który przez nią przeszedł, z dowodem z backtestu, a plan wzorcowych PR-ów L i C ponad limit testów, zadań albo prognozy ściany to decyzja Maksa. | limitu testów, zadań i prognozy ściany (+20%) pilnuje `tests/test_ksztalt_bramki.py`, a dowodu z backtestu tylko przegląd |
 | Trwający run `main` kończy się, a nowy push do PR anuluje run jego starszego commitu. | `tests/test_zadania_ci.py::test_push_do_main_nie_anuluje_trwajacego_runu_a_nowy_push_pr_anuluje_stary` |
 | `Required CI status` biegnie także w anulowanym runie, bo pominięty wymagany check przepuszcza merge. | `tests/test_zadania_ci.py::test_required_biegnie_takze_w_anulowanym_runie_bo_pominiety_wymagany_check_przepuszcza_merge` |
-| Change mutations i skrypty mutacji skilli nie biegną na PR (poza skryptem mutacji modelu przy zmianie modelu) i gotowość PR na nie nie czeka, a biegną nocą na `main` od ostatniego udanego przebiegu i każdą przeżytą mutację dopisują raz do issue `Przeżyte mutacje z #N` PR-u, który ostatni zmienił jej linię, a skrypt, który padł, do issue `Przeżyte mutacje skilli z #N` PR-u, który ostatni zmienił folder skilla. | `tests/test_zadania_ci.py::test_required_czeka_na_kazde_zadanie_runu_a_pull_request_nie_mutuje_zmienionych_linii`, `tests/test_scal_pr.py::test_gotowy_pr_nie_czeka_na_mutacje_zmiany_ani_linie_mutacja_bo_mutacje_biegna_noca_na_main`, `tests/test_plan_ci.py::test_plan_pull_requestu_i_nocy_startuje_mutation_checks_tylko_z_praca_od_zmiany`, `tests/test_zakres_runu.py::test_na_pull_request_biegna_same_podstawy_a_noca_same_skrypty_mutacji` i `::test_na_pull_request_skrypt_mutacji_modelu_biegnie_przy_zmianie_modelu_skryptu_albo_sprawdzenia`, `tests/test_mutacje_nocne.py` |
+| Change mutations i skrypty mutacji skilli nie biegną na PR (poza skryptem mutacji modelu przy zmianie modelu) i gotowość PR na nie nie czeka, a biegną nocą na `main` od miejsca, do którego doszedł ostatni udany przebieg, i każdą przeżytą mutację, także mutację bez werdyktu po limicie czasu części, dopisują raz do issue `Przeżyte mutacje z #N` PR-u, który ostatni zmienił jej linię, a skrypt, który padł, do issue `Przeżyte mutacje skilli z #N` PR-u, który ostatni zmienił folder skilla; część mieści się w limicie czasu także wtedy, gdy testy każdej jej mutacji trwają pełny limit mutacji. | `tests/test_zadania_ci.py::test_required_czeka_na_kazde_zadanie_runu_a_pull_request_nie_mutuje_zmienionych_linii`, `tests/test_scal_pr.py::test_gotowy_pr_nie_czeka_na_mutacje_zmiany_ani_linie_mutacja_bo_mutacje_biegna_noca_na_main`, `tests/test_plan_ci.py::test_plan_pull_requestu_i_nocy_startuje_mutation_checks_tylko_z_praca_od_zmiany`, `tests/test_zakres_runu.py::test_na_pull_request_biegna_same_podstawy_a_noca_same_skrypty_mutacji` i `::test_na_pull_request_skrypt_mutacji_modelu_biegnie_przy_zmianie_modelu_skryptu_albo_sprawdzenia`, `tests/test_mutacje_nocne.py` (w nim `::test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_nastepna_zaczyna_za_nia` i `::test_czesc_konczy_sie_w_limicie_czasu_takze_gdy_testy_kazdej_jej_mutacji_trwaja_pelny_limit_mutacji`) |
