@@ -513,7 +513,7 @@ _Avoid_: przerwanie, awaria, błąd
 
 Zatrzymanie, którego przyczyną jest wyjątek w kodzie narzędzia, a nie reguła
 procesu. Tata dostaje ogólny Komunikat; typ wyjątku i ślad wywołań trafiają
-tylko do Zgłoszenia.
+tylko do Zgłoszenia i Logów Uruchomienia.
 _Avoid_: nieoczekiwany błąd, crash
 
 ## Rodzaj Zatrzymania

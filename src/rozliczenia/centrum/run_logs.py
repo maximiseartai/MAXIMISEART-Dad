@@ -9,6 +9,9 @@ pokazuje (ADR 0018), a z podsumowania Uporządkowania INTERMAX jego Wpisy urząd
 wiersze i operatorzy, bez innej treści wierszy. Z podsumowania Wyceny w efenix jest ślad każdego zlecenia (``LoggedOrder``):
 wiersz Pliku zbiorczego, wynik z kodem Komunikatu, ilości z pliku po kodach pozycji, ``Kwota`` (AU) i działania okna efenix
 z czasami, ilościami Emmetta, wpisanymi i kwotami, bez numeru zlecenia, adresu, loginu Wykonawcy i treści stron efenix.
+Zatrzymanie okna efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń sprzed niego i ``LoggedWindowStop``:
+przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w przebiegu oraz jego działania aż do tego, które się
+nie udało; a Zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn.
 Logi nie mają treści komórek: żadne pole nie niesie Wiersza danych, a pliki mają tylko nazwę, nigdy pełną ścieżkę.
 Skrypt dla maszyn nie ma działań po wyniku, więc Logów nie tworzy.
 
@@ -56,7 +59,23 @@ from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.domain import SettlementSummary, WorkerStatus
-from rozliczenia.efenix_pricing import EmmettWarning, OrderError, OrderResult, PricingSummary, Ready
+from rozliczenia.efenix_pricing import (
+    BrowserFailure,
+    Closed,
+    ElementCount,
+    EmmettWarning,
+    LoginSign,
+    MissingPositions,
+    OrderError,
+    OrderResult,
+    OtherShape,
+    PagePart,
+    PricingStopped,
+    PricingSummary,
+    Ready,
+    StoppedOrder,
+    WindowCause,
+)
 from rozliczenia.efenix_positions import file_quantities
 from rozliczenia.efenix_trace import Action, TraceStep
 from rozliczenia.intermax_ordering import OrderingSummary
@@ -272,6 +291,83 @@ class LoggedOrder(_Record):
         )
 
 
+class LoggedCause(_Record):
+    """Przyczyna techniczna Zatrzymania okna efenix z zamkniętej listy (``efenix_pricing.WindowCause``), bez treści strony
+    i wyjątku: ``part`` to część strony (nazwa ``PagePart``, ``None`` poza stronami efenix), a ``what`` przyczyna z listy.
+
+    ``positions``: kody pozycji (brakujące z przypisania kolumn albo pozycja, której dotyczy budowa). ``element`` i
+    ``count``: selektor z kodu okna i ile razy jest na stronie. ``error_type`` i ``operation``: typ wyjątku Playwrighta i
+    działanie przeglądarki (``None``: działanie bez nazwy).
+    """
+
+    part: str | None
+    what: str
+    positions: list[str] | None = None
+    element: str | None = None
+    count: int | None = None
+    error_type: str | None = None
+    operation: str | None = None
+
+    @classmethod
+    def of(cls, part: PagePart | None, cause: WindowCause) -> LoggedCause:
+        name = None if part is None else part.name
+        match cause:
+            case MissingPositions(positions):
+                return cls(part=name, what=_MISSING_POSITIONS, positions=list(positions))
+            case ElementCount(selector, count):
+                return cls(part=name, what=_ELEMENT_COUNT, element=selector, count=count)
+            case OtherShape(shape, position):
+                return cls(part=name, what=shape.value, positions=None if position is None else [position])
+            case BrowserFailure(error_type, operation):
+                return cls(
+                    part=name,
+                    what=_BROWSER_FAILURE,
+                    error_type=error_type,
+                    operation=None if operation is None else operation.value,
+                )
+            case LoginSign() | Closed():
+                return cls(part=name, what=cause.value)
+            case _:
+                assert_never(cause)
+
+
+_MISSING_POSITIONS: Final = "strona zlecenia bez pozycji z przypisania kolumn"
+_ELEMENT_COUNT: Final = "element strony nie występuje dokładnie raz"
+_BROWSER_FAILURE: Final = "błąd przeglądarki w działaniu okna"
+
+
+class LoggedWindowStop(_Record):
+    """Zatrzymanie okna efenix w Wycenie w efenix: przyczyna techniczna i zlecenie, przy którym okno stanęło.
+
+    ``row``: wiersz Pliku zbiorczego, ``order`` z ``orders``: miejsce zlecenia w przebiegu (od 1), ``steps``: udane
+    działania okna przy nim, ``failed``: działanie, które się nie udało, z rodzajem i czasem. Przy Zatrzymaniu przed
+    pierwszym zleceniem (otwarcie okna, logowanie) ``row``, ``order``, ``orders`` i ``failed`` są ``None``, a ``steps``
+    puste; ``failed`` ``None`` przy zleceniu to strona bez pozycji z przypisania kolumn po ostatnim działaniu w ``steps``.
+    """
+
+    cause: LoggedCause
+    row: int | None
+    order: int | None
+    orders: int | None
+    steps: list[LoggedStep]
+    failed: LoggedStep | None
+
+    @classmethod
+    def of(cls, stopped: PricingStopped) -> LoggedWindowStop:
+        at: StoppedOrder | None = stopped.stopped_at
+        cause = LoggedCause.of(stopped.part, stopped.cause)
+        if at is None:
+            return cls(cause=cause, row=None, order=None, orders=None, steps=[], failed=None)
+        return cls(
+            cause=cause,
+            row=at.row,
+            order=at.place,
+            orders=at.total,
+            steps=[LoggedStep.of(step) for step in at.steps],
+            failed=None if at.failed is None else LoggedStep.of(at.failed),
+        )
+
+
 class Tool(_Record):
     wydanie: str | None
     """Numer Wydania (ADR 0014), którego tag w klonie wskazuje ``commit`` (``0.10.0``); ``None``, gdy nie da się go
@@ -312,7 +408,10 @@ class RunLog(_Record):
     """Wpisy urządzenia i czynności INTERMAX (ADR 0019). ``None``: inne procesy, Uporządkowanie bez podsumowania
     i pliki sprzed tego pola."""
     efenix_orders: list[LoggedOrder] | None = None
-    """Ślad każdego zlecenia Wyceny w efenix po kolei. ``None``: inne procesy, Wycena w efenix bez podsumowania
+    """Ślad każdego zlecenia Wyceny w efenix po kolei, a po Zatrzymaniu okna efenix każdego zlecenia sprzed niego.
+    ``None``: inne procesy, Wycena w efenix bez podsumowania i bez Zatrzymania okna oraz pliki sprzed tego pola."""
+    efenix_stop: LoggedWindowStop | None = None
+    """Zatrzymanie okna efenix z przyczyną techniczną. ``None``: inne procesy, Wycena w efenix bez takiego Zatrzymania
     i pliki sprzed tego pola."""
     environment: Environment
     trace: CallTrace | None
@@ -323,6 +422,10 @@ class RunLog(_Record):
     def of(cls, run: EndedRun, *, tool: Tool, environment: Environment) -> RunLog:
         info, stopped, snapshot = run.info, run.stopped, run.snapshot
         engine_summary = None if run.shown is None else run.shown.engine_summary
+        facts = None if stopped is None else stopped.stop.facts
+        priced = engine_summary if isinstance(engine_summary, PricingSummary) else None
+        if isinstance(facts, PricingStopped):
+            priced = facts.summary
         return cls(
             schema_version=1,
             run_id=info.id,
@@ -357,7 +460,8 @@ class RunLog(_Record):
             if isinstance(engine_summary, SettlementSummary)
             else None,
             intermax_entries=LoggedEntries.of(engine_summary) if isinstance(engine_summary, OrderingSummary) else None,
-            efenix_orders=LoggedOrder.all_of(engine_summary) if isinstance(engine_summary, PricingSummary) else None,
+            efenix_orders=None if priced is None else LoggedOrder.all_of(priced),
+            efenix_stop=LoggedWindowStop.of(facts) if isinstance(facts, PricingStopped) else None,
             environment=environment,
             trace=None if stopped is None else stopped.stop.trace,
             diagnosis=None,

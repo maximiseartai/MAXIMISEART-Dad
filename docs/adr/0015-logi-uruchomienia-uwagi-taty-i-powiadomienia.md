@@ -77,7 +77,11 @@ co stało się z tym, co wysłał.
   podsumowanie karty z planem plików, czasy etapów, Szablony pracownika z
   Wykonawcą, wynikiem, liczbą wierszy i czasem, środowisko (system, Python,
   nazwy i rozmiary plików procesu z flagą „tylko online” OneDrive), przy
-  nieoczekiwanym wyjątku ślad wywołań jak w Zgłoszeniu i po Diagnozie jej wynik.
+  nieoczekiwanym wyjątku i przy własnym Zatrzymaniu „do Maksa”, które ma
+  przyczynę w wyjątku, ślad wywołań jak w Zgłoszeniu (z typem i ramkami
+  każdej przyczyny z łańcucha `__cause__`), przy Zatrzymaniu okna efenix
+  przyczyna techniczna z zamkniętej listy, wiersz i miejsce zlecenia w
+  przebiegu oraz ślad zleceń sprzed niego, i po Diagnozie jej wynik.
   Wydanie to numer najwyższego Wydania, którego tag w klonie taty (z instalacji
   albo pobrany przez Aktualizację narzędzia) wskazuje dokładnie commit, z
   którego działa Centrum; Centrum ustala je lokalnie przy końcu każdego

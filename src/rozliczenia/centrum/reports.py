@@ -255,9 +255,10 @@ def _fitted(lines: Callable[[int, int], list[str]], *, frames: int, entries: int
 
 
 def _trace_lines(trace: CallTrace | None, dropped: int) -> list[str]:
-    """Sekcja śladu wywołań nieoczekiwanego wyjątku: typ i ramki kodu narzędzia, bez treści wyjątku.
+    """Sekcja śladu wywołań wyjątku: typ, przyczyny z łańcucha ``__cause__`` i ramki kodu narzędzia, bez treści wyjątku.
 
-    ``dropped`` pierwszych ramek (od miejsca przechwycenia) pomija, z dopiskiem, że pełny ślad mają Logi Uruchomienia.
+    ``dropped`` pierwszych ramek (od miejsca przechwycenia) pomija, z dopiskiem, że pełny ślad mają Logi Uruchomienia;
+    ramki przyczyn są tylko w Logach Uruchomienia.
     """
 
     if trace is None:
@@ -266,6 +267,7 @@ def _trace_lines(trace: CallTrace | None, dropped: int) -> list[str]:
         "## Ślad wywołań",
         "",
         f"- Wyjątek: {trace.exception_type}",
+        *(f"- Przyczyna: {cause.exception_type}" for cause in trace.causes),
         *([] if dropped == 0 else [f"- Pominięte pierwsze ramki: {dropped}, pełny ślad wywołań jest w Logach Uruchomienia"]),
         "",
         "```text",

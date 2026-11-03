@@ -14,8 +14,11 @@ otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony alb
 ``LoggedOut``. Lista zleceń, której okno nie otworzyło przy starcie (adres nie odpowiada), to ``EfenixUnreachable``.
 Każde inne działanie, którego okno nie dokończyło, to ``UnexpectedPage`` z częścią strony: strona bez oczekiwanej
 budowy, element obecny, ale niewidoczny, i każdy błąd Playwrighta w działaniu (czas czekania na stronę, odpowiedź albo
-element, który minął, otwarcie strony, które się nie udało, treść odpowiedzi, której nie da się przeczytać). Przyczyny
-(zerwane połączenie, wolny albo zmieniony efenix) okno nie rozróżnia: ustala ją Maks ze Zgłoszenia. Na odpowiedź efenix
+element, który minął, otwarcie strony, które się nie udało, treść odpowiedzi, której nie da się przeczytać). Każdy z
+tych wyjątków niesie przyczynę techniczną z zamkniętej listy (``efenix_pricing.WindowCause``): element, który nie
+występuje dokładnie raz, z jego selektorem i liczbą, budowę strony, której okno nie zna (``Shape``), a przy błędzie
+Playwrighta typ jego wyjątku i działanie okna, w którym wystąpił (``Operation``), bez treści wyjątku i strony. Czy to
+zerwane połączenie, wolny czy zmieniony efenix, okno nie zgaduje: Maks ustala to z przyczyny w Logach. Na odpowiedź efenix
 okno czeka do jej końca, z całą treścią, a nie tylko do nagłówków, bo na treść, którą sieć wstrzymała w połowie,
 czekałoby bez końca. Działanie w zamkniętej karcie albo oknie, także zamkniętym w trakcie działania, to
 ``WindowClosed``, cokolwiek zgłosił wtedy Playwright. Przeglądarkę daje rozmówca: stronę (``window``), Chromium
@@ -65,14 +68,22 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page, Request, Response, sync_playwright
 
 from . import TOOL_ROOT
+from .call_trace import exception_type
 from .efenix_pricing import (
+    BrowserFailure,
     BrowserNotStarted,
+    Closed,
     EfenixUnreachable,
+    ElementCount,
     ListedOrder,
     LoggedOut,
     Login,
+    LoginSign,
+    Operation,
     OrderPricing,
+    OtherShape,
     PagePart,
+    Shape,
     UnexpectedPage,
     WindowClosed,
 )
@@ -182,7 +193,8 @@ def _action(
     part: PagePart,
 ) -> Callable[[Callable[Concatenate[BrowserEfenix, _P], _R]], Callable[Concatenate[BrowserEfenix, _P], _R]]:
     """Działanie okna na części ``part`` strony efenix: każdy błąd Playwrighta w działaniu to ``UnexpectedPage(part)``
-    (granica ``_within``), więc żadne czekanie na sieć ani czytanie odpowiedzi jej nie omija.
+    z typem błędu i działaniem przeglądarki, które nazwał ``_doing`` (granica ``_within``), więc żadne czekanie na sieć
+    ani czytanie odpowiedzi jej nie omija.
 
     Każdy wyjątek działania w karcie zamkniętej przed nim albo w jego trakcie to zamknięte okno (``WindowClosed``), a nie
     lista typów: Playwright zgłasza wtedy błąd, a granica mogła go już zamienić na ``UnexpectedPage``.
@@ -195,8 +207,8 @@ def _action(
                 with _within(part):
                     return action(efenix, *args, **kwargs)
             except Exception as error:
-                if efenix.closed:
-                    raise WindowClosed from error
+                if efenix.closed and not isinstance(error, WindowClosed):
+                    raise WindowClosed(part, Closed.DURING_ACTION) from error
                 raise
 
         return guarded
@@ -294,15 +306,15 @@ class BrowserEfenix:
         """Otwiera listę zleceń; ``EfenixUnreachable``, gdy okno nie otworzyło jeszcze efenix, a adres nie odpowiada."""
 
         try:
-            self._page.goto(self._url, wait_until="load", timeout=self._timeout_ms)
-        except PlaywrightError as error:
+            with _doing(Operation.OPEN):
+                self._page.goto(self._url, wait_until="load", timeout=self._timeout_ms)
+        except _Failed as failed:
             if not self._opened:
-                raise EfenixUnreachable from error
+                raise EfenixUnreachable(failed.failure) from failed.__cause__
             raise
         self._opened = True
-        self._ensure_logged_in()
-        if self._page.locator(_NUMBER_FIELD).count() != 1:
-            raise UnexpectedPage(PagePart.LIST)
+        self._ensure_logged_in(PagePart.LIST)
+        self._only(_NUMBER_FIELD, PagePart.LIST)
 
     def wait_for_login(
         self, login: Login, *, timeout_ms: int = LOGIN_TIMEOUT_MS, clock: Callable[[], float] = time.monotonic
@@ -324,7 +336,7 @@ class BrowserEfenix:
             deadline = clock() + timeout_ms / 1000
             while True:
                 if self._page.is_closed():
-                    raise WindowClosed
+                    raise WindowClosed(PagePart.LIST, Closed.DURING_LOGIN)
                 if self._session_open():
                     try:
                         self.open_list()
@@ -333,7 +345,7 @@ class BrowserEfenix:
                         pass
                 remaining_ms = round((deadline - clock()) * 1000)
                 if remaining_ms <= 0:
-                    raise LoggedOut
+                    raise LoggedOut(PagePart.LIST, LoginSign.NO_LOGIN)
                 # Czekanie kończy się po limicie, a w karcie zamkniętej w jego trakcie błędem; o zamknięciu mówi ``is_closed``.
                 with suppress(PlaywrightError):
                     self._page.wait_for_url(lambda url: not _on_login_page(url), timeout=min(LOGIN_POLL_MS, remaining_ms))
@@ -355,18 +367,21 @@ class BrowserEfenix:
         if urlparse(self._page.url).path != urlparse(self._url).path:
             self.open_list()
         field = self._page.locator(_NUMBER_FIELD)
-        with _within(PagePart.LIST):
+        with _within(PagePart.LIST), _doing(Operation.FILL):
             field.fill(number, timeout=self._timeout_ms)
-        answer = self._finished(lambda request: _is_search(request, number), lambda: field.press("Enter", timeout=self._timeout_ms))
+        answer = self._finished(lambda request: _is_search(request, number), lambda: self._enter(field))
         if _redirected_to_login(answer):
-            raise LoggedOut
-        return read_results(self._page, answer.text())
+            raise LoggedOut(PagePart.RESULTS, LoginSign.REDIRECT)
+        html = self._text(answer)
+        with _doing(Operation.READ):
+            return read_results(self._page, html)
 
     @_action(PagePart.ORDER)
     def open_order(self, order: ListedOrder) -> OrderPricing:
         """Otwiera stronę zlecenia ``order`` i czyta datę wykonania, kwotę końcową i ilości pozycji."""
 
-        self._page.goto(urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms)
+        with _doing(Operation.OPEN):
+            self._page.goto(urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms)
         return self._read_order()
 
     @_action(PagePart.DATE)
@@ -376,31 +391,33 @@ class BrowserEfenix:
         ``False``: kalendarz efenix zamienił dzień na inny, więc okno zamknęło kalendarz bez „Potwierdź”.
         """
 
-        self._only(_DATE_BUTTON, PagePart.DATE).click(timeout=self._timeout_ms)
+        self._click(self._only(_DATE_BUTTON, PagePart.DATE))
         self._shown(_DATE_DIALOG, PagePart.DATE)
         field = self._only(f"{_DATE_DIALOG} {_DATE_FIELD}", PagePart.DATE)
-        picked = field.evaluate(_PICK_DAY, [day.year, day.month, day.day], timeout=self._timeout_ms)
-        shown = field.input_value(timeout=self._timeout_ms)
+        with _doing(Operation.PICK):
+            picked = field.evaluate(_PICK_DAY, [day.year, day.month, day.day], timeout=self._timeout_ms)
+        with _doing(Operation.READ):
+            shown = field.input_value(timeout=self._timeout_ms)
         if picked is not True:
-            raise UnexpectedPage(PagePart.DATE)
+            raise UnexpectedPage(PagePart.DATE, OtherShape(Shape.NO_CALENDAR))
         if shown != day.isoformat():
             self._close(_DATE_DIALOG, PagePart.DATE)
             return False
         confirm = self._only(f"{_DATE_DIALOG} {_OK}", PagePart.DATE)
-        answer = self._answer(_SET_DATE, lambda _params: True, lambda: confirm.click(timeout=self._timeout_ms))
+        answer = self._answer(_SET_DATE, lambda _params: True, lambda: self._click(confirm))
         if _redirected_to_login(answer):
-            raise LoggedOut
+            raise LoggedOut(PagePart.DATE, LoginSign.REDIRECT)
         return True
 
     @_action(PagePart.EMMETT)
     def load_emmett(self) -> OrderPricing:
         """Ładuje Wycenę Emmetta do otwartego zlecenia i czyta stronę po przeładowaniu, które robi skrypt efenix."""
 
-        self._only(_EMMETT_BUTTON, PagePart.EMMETT).click(timeout=self._timeout_ms)
+        self._click(self._only(_EMMETT_BUTTON, PagePart.EMMETT))
         self._shown(_EMMETT_DIALOG, PagePart.EMMETT)
         load = self._only(f"{_EMMETT_DIALOG} {_OK}", PagePart.EMMETT)
-        with self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
-            self._answer(_LOAD_EMMETT, lambda _params: True, lambda: load.click(timeout=self._timeout_ms))
+        with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
+            self._answer(_LOAD_EMMETT, lambda _params: True, lambda: self._click(load))
         return self._read_order()
 
     @_action(PagePart.QUANTITY)
@@ -409,48 +426,69 @@ class BrowserEfenix:
 
         field_id = self._positions.get(position)
         if field_id is None:
-            raise UnexpectedPage(PagePart.QUANTITY)
+            raise UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.UNKNOWN_POSITION, position))
         field = self._only(f"{QUANTITY}#{field_id}", PagePart.QUANTITY)
-        field.click(timeout=self._timeout_ms)
-        field.fill(str(quantity), timeout=self._timeout_ms)
-        answer = self._answer(
-            _SAVE_QUANTITY, lambda params: params.get("index") == [field_id], lambda: field.press("Enter", timeout=self._timeout_ms)
-        )
+        self._click(field)
+        with _doing(Operation.FILL):
+            field.fill(str(quantity), timeout=self._timeout_ms)
+        answer = self._answer(_SAVE_QUANTITY, lambda params: params.get("index") == [field_id], lambda: self._enter(field))
         if _redirected_to_login(answer):
-            raise LoggedOut
+            raise LoggedOut(PagePart.QUANTITY, LoginSign.REDIRECT)
         try:
-            saved = json.loads(answer.text())
+            saved = json.loads(self._text(answer))
         except ValueError as error:
-            raise UnexpectedPage(PagePart.QUANTITY) from error
+            raise UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.ANSWER_NOT_JSON, position)) from error
         result = saved.get("result") if isinstance(saved, dict) else None
         if result == "nok":
-            raise LoggedOut
+            raise LoggedOut(PagePart.QUANTITY, LoginSign.REFUSED)
         if result != "ok":
-            raise UnexpectedPage(PagePart.QUANTITY)
+            raise UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.ANSWER_RESULT, position))
         shown = str(saved.get(_PRICE_ALL, ""))
         amount = _amount(shown, PagePart.QUANTITY)
-        self._page.wait_for_function(_SHOWS, arg=[AMOUNT, shown], timeout=self._timeout_ms)
+        with _doing(Operation.AMOUNT):
+            self._page.wait_for_function(_SHOWS, arg=[AMOUNT, shown], timeout=self._timeout_ms)
         return amount
 
     def _read_order(self) -> OrderPricing:
-        self._ensure_logged_in()
-        pricing, self._positions = _order_on(self._page)
+        self._ensure_logged_in(PagePart.ORDER)
+        with _doing(Operation.READ):
+            pricing, self._positions = _order_on(self._page)
         return pricing
 
     def _only(self, selector: str, part: PagePart) -> Locator:
-        return _single(self._page, selector, part)
+        with _doing(Operation.READ):
+            return _single(self._page, selector, part)
 
     def _shown(self, selector: str, part: PagePart) -> None:
-        self._only(selector, part).wait_for(state="visible", timeout=self._timeout_ms)
+        located = self._only(selector, part)
+        with _doing(Operation.ELEMENT):
+            located.wait_for(state="visible", timeout=self._timeout_ms)
+
+    def _click(self, located: Locator) -> None:
+        with _doing(Operation.CLICK):
+            located.click(timeout=self._timeout_ms)
+
+    def _enter(self, field: Locator) -> None:
+        with _doing(Operation.ENTER):
+            field.press("Enter", timeout=self._timeout_ms)
+
+    def _text(self, answer: Response) -> str:
+        with _doing(Operation.ANSWER):
+            return answer.text()
 
     def _close(self, dialog: str, part: PagePart) -> None:
         """Zamyka okno dialogowe jego przyciskiem zamknięcia, bez „Potwierdź”, i czeka, aż zniknie."""
 
-        dismiss = self._page.locator(f"{dialog} {_DISMISS}")
-        if dismiss.count() == 0:
-            raise UnexpectedPage(part)
-        dismiss.first.click(timeout=self._timeout_ms)
-        self._only(dialog, part).wait_for(state="hidden", timeout=self._timeout_ms)
+        selector = f"{dialog} {_DISMISS}"
+        dismiss = self._page.locator(selector)
+        with _doing(Operation.READ):
+            count = dismiss.count()
+        if count == 0:
+            raise UnexpectedPage(part, ElementCount(selector, count))
+        self._click(dismiss.first)
+        located = self._only(dialog, part)
+        with _doing(Operation.ELEMENT):
+            located.wait_for(state="hidden", timeout=self._timeout_ms)
 
     def _answer(self, path: str, wanted: Callable[[dict[str, list[str]]], bool], act: Callable[[], None]) -> Response:
         """Odpowiedź efenix na zmianę zlecenia, którą wysyła ``act``."""
@@ -462,15 +500,16 @@ class BrowserEfenix:
         """Odpowiedź efenix z całą treścią na żądanie ``wanted``, które wysyła ``act``: okno czeka w czasie ``timeout_ms``
         na koniec żądania, a nie na nagłówki odpowiedzi, po których treść może się urwać albo stanąć."""
 
-        with self._page.expect_request_finished(wanted, timeout=self._timeout_ms) as finished:
-            act()
-        response = finished.value.response()
+        with _doing(Operation.ANSWER):
+            with self._page.expect_request_finished(wanted, timeout=self._timeout_ms) as finished:
+                act()
+            response = finished.value.response()
         assert response is not None, "zakończone żądanie ma odpowiedź"
         return response
 
-    def _ensure_logged_in(self) -> None:
+    def _ensure_logged_in(self, part: PagePart) -> None:
         if _on_login_page(self._page.url):
-            raise LoggedOut
+            raise LoggedOut(part, LoginSign.PAGE)
 
 
 def read_results(page: Page, html: str) -> tuple[ListedOrder, ...]:
@@ -478,7 +517,7 @@ def read_results(page: Page, html: str) -> tuple[ListedOrder, ...]:
 
     results: _Results | None = page.evaluate(_READ_RESULTS, html)
     if results is None:
-        raise UnexpectedPage(PagePart.RESULTS)
+        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.NO_TABLE))
     return tuple(_listed(results["headers"], row) for row in results["rows"])
 
 
@@ -492,13 +531,13 @@ def _listed(headers: Sequence[str], row: Sequence[_Cell]) -> ListedOrder:
     columns = {field: _column(headers, header) for field, header in HEADERS.items()}
     links = [cell["link"] for cell in row if cell["link"]]
     if len(row) != len(headers) or len(links) != 1:
-        raise UnexpectedPage(PagePart.RESULTS)
+        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_CELLS))
     order_id = parse_qs(urlparse(links[0]).query).get("id", [""])[0]
     number = row[columns["number"]]["plain"]
     status = row[columns["status"]]
     found = _LOGIN.findall(row[columns["realizator"]]["login"] or "")
     if not order_id or not number:
-        raise UnexpectedPage(PagePart.RESULTS)
+        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_EMPTY))
     return ListedOrder(
         number=number,
         status=status["badge"] if status["badge"] is not None else status["plain"],
@@ -518,8 +557,12 @@ def _order_on(page: Page) -> tuple[OrderPricing, dict[str, str]]:
     quantities: dict[str, int] = {}
     for field_id, value in fields:
         found = _POSITION.fullmatch(field_id)
-        if found is None or found[1] in positions or not _QUANTITY_TEXT.fullmatch(value.strip()):
-            raise UnexpectedPage(PagePart.ORDER)
+        if found is None:
+            raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.QUANTITY_ID))
+        if found[1] in positions:
+            raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.POSITION_TWICE, found[1]))
+        if not _QUANTITY_TEXT.fullmatch(value.strip()):
+            raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, found[1]))
         positions[found[1]] = field_id
         quantities[found[1]] = int(value.strip() or 0)
     return OrderPricing(_execution_date(executed.inner_text()), _amount(total.inner_text(), PagePart.ORDER), quantities), positions
@@ -529,25 +572,46 @@ def _single(page: Page, selector: str, part: PagePart) -> Locator:
     """Element strony, który jest na niej dokładnie raz; inaczej efenix ma inną budowę."""
 
     located = page.locator(selector)
-    if located.count() != 1:
-        raise UnexpectedPage(part)
+    if (count := located.count()) != 1:
+        raise UnexpectedPage(part, ElementCount(selector, count))
     return located
 
 
+class _Failed(Exception):
+    """Błąd Playwrighta w działaniu przeglądarki, które nazwał ``_doing``; ``__cause__`` to ten błąd."""
+
+    def __init__(self, failure: BrowserFailure) -> None:
+        super().__init__(failure.error_type)
+        self.failure = failure
+
+
 @contextmanager
-def _within(part: PagePart) -> Iterator[None]:
-    """Działanie na części ``part`` strony, które skończyło się błędem Playwrighta, to ``UnexpectedPage(part)``."""
+def _doing(operation: Operation) -> Iterator[None]:
+    """Działanie przeglądarki ``operation`` w działaniu okna: błąd Playwrighta w nim to ``_Failed`` z typem błędu."""
 
     try:
         yield
     except PlaywrightError as error:
-        raise UnexpectedPage(part) from error
+        raise _Failed(BrowserFailure(exception_type(error), operation)) from error
+
+
+@contextmanager
+def _within(part: PagePart) -> Iterator[None]:
+    """Działanie na części ``part`` strony, które skończyło się błędem Playwrighta, to ``UnexpectedPage(part)`` z typem
+    błędu i działaniem przeglądarki (``None``, gdy ``_doing`` go nie nazwał)."""
+
+    try:
+        yield
+    except _Failed as failed:
+        raise UnexpectedPage(part, failed.failure) from failed.__cause__
+    except PlaywrightError as error:
+        raise UnexpectedPage(part, BrowserFailure(exception_type(error), None)) from error
 
 
 def _column(headers: Sequence[str], header: str) -> int:
     positions = [index for index, text in enumerate(headers) if text.casefold().startswith(header)]
     if len(positions) != 1:
-        raise UnexpectedPage(PagePart.RESULTS)
+        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.COLUMNS))
     return positions[0]
 
 
@@ -568,17 +632,17 @@ def _execution_date(shown: str) -> date | None:
     if not text:
         return None
     if not _DAY.fullmatch(text):
-        raise UnexpectedPage(PagePart.ORDER)
+        raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))
     try:
         return date.fromisoformat(text)
     except ValueError as error:
-        raise UnexpectedPage(PagePart.ORDER) from error
+        raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT)) from error
 
 
 def _amount(shown: str, part: PagePart) -> Decimal:
     text = "".join(shown.split())
     if not _AMOUNT_TEXT.fullmatch(text):
-        raise UnexpectedPage(part)
+        raise UnexpectedPage(part, OtherShape(Shape.AMOUNT_TEXT))
     return Decimal(text)
 
 
@@ -645,7 +709,7 @@ def chrome(
                 profile, channel=channel, headless=headless, no_viewport=True, args=list(arguments)
             )
         except PlaywrightError as error:
-            raise BrowserNotStarted from error
+            raise BrowserNotStarted(BrowserFailure(exception_type(error), Operation.START)) from error
         try:
             page = context.pages[0] if context.pages else context.new_page()
             with window(page, url, login=login, login_timeout_ms=login_timeout_ms) as efenix:

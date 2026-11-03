@@ -16,8 +16,8 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from rozliczenia import preparation_messages
-from rozliczenia.call_trace import CallFrame, CallTrace
+from rozliczenia import efenix_messages, preparation_messages
+from rozliczenia.call_trace import CallCause, CallFrame, CallTrace
 from rozliczenia.centrum import contract, update_messages
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.keyed_box import KeyedBox, read_report_key
@@ -36,6 +36,7 @@ from rozliczenia.centrum.reports import (
     UpdateReport,
 )
 from rozliczenia.centrum.tool_update import NO_CONNECTION, OTHER_BRANCH, UpdateResult
+from rozliczenia.efenix_checks import PagePart
 from rozliczenia.message import Message
 from rozliczenia.process_run import Stop
 
@@ -244,6 +245,42 @@ def test_zgloszenie_z_bardzo_dlugim_sladem_wywolan_traci_pierwsze_ramki_z_dopisk
     assert len(body) + len(frames[-kept - 1]) + 1 > PART_LIMIT
     assert all(entry in body for entry in SHORT_ENTRIES)
     assert "Pominięte najstarsze wpisy" not in body
+
+
+def test_zgloszenie_zatrzymania_do_maksa_z_przyczyna_w_wyjatku_ma_typ_kazdej_przyczyny_w_sladzie_wywolan(
+    computer: Computer,
+) -> None:
+    """Zatrzymanie okna efenix „do Maksa” ma ślad wywołań z łańcuchem przyczyn; Zgłoszenie podaje typ każdej przyczyny
+    po kolei, bez treści wyjątków, a ich ramki zostawia Logom Uruchomienia."""
+
+    run = contract.RunInfo(
+        id="5c1d7e2a9b0f4e36",
+        process="efenix",
+        title="Wycena w efenix",
+        period="08_14_09_2026",
+        dry_run=False,
+        confirms_readiness=False,
+        register_name="Rejestr zleceń",
+    )
+    message = efenix_messages.window_stopped(PagePart.ORDER, kept=True)
+    frames = (CallFrame("src/rozliczenia/efenix_pricing.py", 412, "_efenix_stops"),)
+    causes = (
+        CallCause("rozliczenia.efenix_pricing.UnexpectedPage", (CallFrame("src/rozliczenia/efenix_browser.py", 593, "_within"),)),
+        CallCause("playwright._impl._errors.Error", ()),
+    )
+    stop = Stop("stop", message, trace=CallTrace("rozliczenia.message.StopError", frames, causes))
+    body = sent_alone(computer, StopReport(run, stop, ProblemFingerprint.of("efenix", message), Diagnosis((), SHORT_ENTRIES), logs=None))
+
+    lines = body.splitlines()
+    section = lines[lines.index("## Ślad wywołań") + 1 :]
+    assert section[: section.index("```text")] == [
+        "",
+        "- Wyjątek: rozliczenia.message.StopError",
+        "- Przyczyna: rozliczenia.efenix_pricing.UnexpectedPage",
+        "- Przyczyna: playwright._impl._errors.Error",
+        "",
+    ]
+    assert ("src/rozliczenia/efenix_pricing.py:412 w _efenix_stops" in body, "_within" in body) == (True, False)
 
 
 def test_zgloszenie_z_bardzo_dlugim_sladem_i_dziennikiem_to_jedna_czesc_bez_ramek_i_najstarszych_wpisow(

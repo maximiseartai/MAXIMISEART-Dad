@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 import json
 import os
@@ -28,7 +28,7 @@ from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.period_folder import PeriodFolderInaccessible
 
-from tests.fixtures.atrapa_efenix import AtrapaEfenix, amount_of, atrapa_efenix
+from tests.fixtures.atrapa_efenix import AtrapaEfenix, AtrapaOrder, Changed, amount_of, atrapa_efenix
 from tests.fixtures.centrum import TOOL_COMMIT, FakeGitHub, finished_view, run_events, views_until, without_times
 from tests.fixtures.centrum_processes import (
     PreparingCentrum,
@@ -39,7 +39,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
-from tests.fixtures.efenix import Order, write_collective_file
+from tests.fixtures.efenix import DAY, Order, write_collective_file
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD, incomplete_period_rows
 from tests.fixtures.run_cards import first_view, restored
@@ -50,7 +50,7 @@ AnyCentrum = PreparingCentrum | SettlingCentrum
 KEYS = {
     "schema_version", "run_id", "process", "mode", "period", "started_at", "ended_at", "duration_ms", "tool",
     "result", "ending", "stop_kind", "issue_count", "messages", "technical_notes", "summary", "phases", "templates",
-    "inea_only_cleared", "intermax_entries", "efenix_orders", "environment", "trace", "diagnosis",
+    "inea_only_cleared", "intermax_entries", "efenix_orders", "efenix_stop", "environment", "trace", "diagnosis",
 }
 
 
@@ -242,6 +242,7 @@ ENDINGS = {
         "zapis",
         ("BLAD_KRYTYCZNY", "stop", "for_maks"),
         [("stop", "ZLA_KONFIGURACJA_WYKONAWCOW")],
+        "rozliczenia.message.StopError",
         files_unchanged=True,
     ),
     "wyjatek-zapis": Ending(
@@ -856,6 +857,79 @@ def test_okno_efenix_zamkniete_w_trakcie_logowania_zatrzymuje_wycene_od_razu_a_c
         200,
     )
     assert (notification["stopped"], notification["orders"], notification["unread"]) == (result["stops"][0]["what"], None, True)
+
+
+# Zatrzymanie okna efenix przy wierszu 19, gdy wiersz 18 jest już gotowy (Zgłoszenia #19 i #20 z
+# MAXIMISEART-Dad-zgloszenia): zlecenie Atrapy w wierszu 19 i przyczyna, którą Logi mają podać. Hipotezy A–D z tabeli
+# decyzji (``tests/test_tabela_zatrzyman_efenix.py``).
+STOPPED_AT_SECOND = [PRICED[0], Order("#ZLQX07", worker="gosia.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})))]
+HYPOTHESES = {
+    "A-brak-pozycji": (
+        replace(STOPPED_AT_SECOND[1].in_efenix("617"), changed=Changed.POSITION_CODE),
+        {"what": "strona zlecenia bez pozycji z przypisania kolumn", "positions": ["029"]},
+        ["szukanie", "otwarcie zlecenia"],
+        None,
+    ),
+    "B-ilosc-niecalkowita": (
+        replace(STOPPED_AT_SECOND[1].in_efenix("617"), changed=Changed.QUANTITY_VALUE),
+        {"what": "wartość pola Ilość, która nie jest liczbą całkowitą", "positions": ["012"]},
+        ["szukanie"],
+        "otwarcie zlecenia",
+    ),
+    "C-data-w-innej-postaci": (
+        replace(STOPPED_AT_SECOND[1].in_efenix("617"), changed=Changed.DATE_FORMAT, execution_date=DAY),
+        {"what": "data wykonania w innej postaci niż RRRR-MM-DD"},
+        ["szukanie"],
+        "otwarcie zlecenia",
+    ),
+    "D-zerwane-otwarcie-strony": (
+        replace(STOPPED_AT_SECOND[1].in_efenix("617"), cut=True),
+        {
+            "what": "błąd przeglądarki w działaniu okna",
+            "error_type": "playwright._impl._errors.Error",
+            "operation": "otwarcie strony",
+        },
+        ["szukanie"],
+        "otwarcie zlecenia",
+    ),
+}
+
+
+@pytest.mark.parametrize(("second", "cause", "steps", "failed"), HYPOTHESES.values(), ids=HYPOTHESES.keys())
+def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_i_slad_zlecen_sprzed_niego(
+    tmp_path: Path, second: AtrapaOrder, cause: dict[str, Any], steps: list[str], failed: str | None
+) -> None:
+    """Okno efenix staje przy zleceniu w wierszu 19, a Logi Uruchomienia, które idą do Maksa same, bez Diagnozy, mówią
+    dlaczego: przyczynę z zamkniętej listy (kody pozycji, budowę strony albo typ błędu Playwrighta z działaniem
+    przeglądarki), wiersz, miejsce „2 z 2”, udane działania przy nim i działanie, które się nie udało, oraz ślad gotowego
+    zlecenia z wiersza 18. Ślad wywołań ma łańcuch przyczyn do wyjątku okna. Komunikat taty jest ten sam co bez przyczyny,
+    a Logi nie mają numeru zlecenia, adresu ani loginu Wykonawcy."""
+
+    with atrapa_efenix([PRICED[0].in_efenix("611"), second]) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        write_collective_file(centrum.period_parent, STOPPED_AT_SECOND)
+        assert _start_pricing(centrum).status_code == 200
+        result = finished_view(centrum.client)["result"]
+    [record] = records(centrum)
+    stop, trace = record["efenix_stop"], record["trace"]
+
+    assert ([message["where"] for message in result["stops"]], record["stop_kind"]) == (
+        ["okno efenix, strona zlecenia z datą wykonania i wyceną"],
+        "for_maks",
+    )
+    assert {key: value for key, value in stop["cause"].items() if value is not None} == {"part": "ORDER", **cause}
+    assert (stop["row"], stop["order"], stop["orders"]) == (19, 2, 2)
+    assert ([step["action"] for step in stop["steps"]], (stop["failed"] or {}).get("action")) == (steps, failed)
+    assert [(order["row"], order["outcome"], [step["action"] for step in order["steps"]]) for order in record["efenix_orders"]] == [
+        (18, "gotowe", ["szukanie", "otwarcie zlecenia"])
+    ]
+    assert [trace["exception_type"], *(cause["exception_type"] for cause in trace["causes"])][:2] == [
+        "rozliczenia.message.StopError",
+        "rozliczenia.efenix_pricing.UnexpectedPage",
+    ]
+    text = log_files(centrum)[0].read_text(encoding="utf-8")
+    private = [*(order.number.removeprefix("#") for order in STOPPED_AT_SECOND), *(order.worker for order in STOPPED_AT_SECOND), "TESTOWA"]
+    assert [marker for marker in private if marker in text] == []
 
 
 def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_adresu_i_loginu_wykonawcy(tmp_path: Path) -> None:

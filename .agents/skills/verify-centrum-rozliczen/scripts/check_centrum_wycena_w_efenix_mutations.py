@@ -37,7 +37,7 @@ MUTATIONS = (
     ),
     Mutation(
         "Logi bez śladu zleceń",
-        (Edit(RUN_LOGS, "efenix_orders=LoggedOrder.all_of(engine_summary) if", "efenix_orders=None if"),),
+        (Edit(RUN_LOGS, "efenix_orders=None if priced is None else LoggedOrder.all_of(priced)", "efenix_orders=None"),),
         WYCENA,
         "Maks nie odtworzy problemu zlecenia z Logów Uruchomienia",
     ),

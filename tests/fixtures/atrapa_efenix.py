@@ -104,6 +104,7 @@ class Changed(enum.Enum):
     POSITION_CODE = "pozycja wyceny ma inny kod"
     STALE_AMOUNT = "kwota końcowa nie odświeża się po zapisie ilości"
     QUANTITY_ANSWER = "zapis ilości odpowiada stroną HTML, a nie JSON z kwotą końcową"
+    QUANTITY_VALUE = "pole Ilość pozycji 012 ma wartość, która nie jest liczbą całkowitą (1.5)"
 
 
 class Unread(enum.Enum):
@@ -177,7 +178,9 @@ class AtrapaOrder:
     """Wymyślone zlecenie Atrapy w tym, co pokazują lista i strona zlecenia efenix.
 
     ``quantities``: ilości wyceny (kod → ilość różna od 0), ``emmett``: propozycja Emmetta w tym samym kształcie,
-    ``emmett_loads``: ile razy załadowano do zlecenia Wycenę Emmetta.
+    ``emmett_loads``: ile razy załadowano do zlecenia Wycenę Emmetta. ``changed``: strona tylko tego zlecenia w innej
+    budowie (``Changed``), a ``cut``: strona tego zlecenia zrywa połączenie bez odpowiedzi, jak sieć, która zniknęła, więc
+    zlecenia przed nim przechodzą jak w efenix.
     """
 
     order_id: str
@@ -192,6 +195,8 @@ class AtrapaOrder:
     quantities: dict[str, int] = field(default_factory=dict)
     emmett: dict[str, int] = field(default_factory=dict)
     emmett_loads: int = 0
+    changed: Changed | None = None
+    cut: bool = False
 
     @property
     def amount(self) -> Decimal:
@@ -406,8 +411,10 @@ def atrapa_efenix(
                 self._redirect(LOGOUT)
             elif path == ORDER_PAGE and method == "GET":
                 found = [order for order in orders if order.order_id == params.get("id")]
-                if found:
-                    self._html(_order_page(found[0], changed, today, self.headers.get("Host", "")))
+                if found and found[0].cut:
+                    self._cut()
+                elif found:
+                    self._html(_order_page(found[0], found[0].changed or changed, today, self.headers.get("Host", "")))
                 else:
                     self._html("<p>Nie ma takiego zlecenia.</p>", HTTPStatus.NOT_FOUND)
             else:
@@ -790,6 +797,8 @@ def _position(order: AtrapaOrder, position: Position, changed: Changed | Unread 
             f'class="form-control form-control-sm wycena-ilosc" min="0" max="999999" value="{quantity}">'
         )
         value = position.price * quantity
+        if changed is Changed.QUANTITY_VALUE and position.code == "012":
+            field = field.replace(f'value="{quantity}"', 'value="1.5"')
     return (
         '<div class="card rounded-lg kolorek"><div class="row">'
         f'<div class="col-sm-3 mt-2"><span class="text-default">Usługa testowa {position.code}</span></div>'

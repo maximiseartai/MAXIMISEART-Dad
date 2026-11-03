@@ -161,7 +161,12 @@ class RunCards:
         record = _read(path, RunLog)
         ended = None
         if record is not None:
-            orders = None if record.efenix_orders is None else Counter(order.outcome for order in record.efenix_orders)
+            # Po Zatrzymaniu Logi mają zlecenia sprzed niego, ale Powiadomienie liczy tylko Wycenę z podsumowaniem.
+            orders = (
+                None
+                if record.efenix_orders is None or record.summary is None
+                else Counter(order.outcome for order in record.efenix_orders)
+            )
             ended = LoggedRun(card=self._restored(record), ended_at=record.ended_at, orders=orders)
         self._ended[path.name] = (version, ended)
         return ended
