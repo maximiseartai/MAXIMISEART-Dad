@@ -181,7 +181,8 @@ class AtrapaOrder:
     ``emmett_loads``: ile razy załadowano do zlecenia Wycenę Emmetta. ``changed``: strona tylko tego zlecenia w innej
     budowie (``Changed``), a ``cut``: strona tego zlecenia zrywa połączenie bez odpowiedzi, jak sieć, która zniknęła, więc
     zlecenia przed nim przechodzą jak w efenix. ``error_status``: strona tego zlecenia to strona błędu serwera z tym
-    statusem HTTP, a ``login_form``: formularz logowania pod adresem strony zlecenia, bez przekierowania.
+    statusem HTTP, a ``login_form``: formularz logowania pod adresem strony zlecenia, bez przekierowania; z
+    ``after_emmett`` oba dopiero od przeładowania po załadowaniu Wyceny Emmetta.
     """
 
     order_id: str
@@ -200,6 +201,7 @@ class AtrapaOrder:
     cut: bool = False
     error_status: HTTPStatus | None = None
     login_form: bool = False
+    after_emmett: bool = False
 
     @property
     def amount(self) -> Decimal:
@@ -416,9 +418,9 @@ def atrapa_efenix(
                 found = [order for order in orders if order.order_id == params.get("id")]
                 if found and found[0].cut:
                     self._cut()
-                elif found and found[0].error_status is not None:
+                elif found and found[0].error_status is not None and _broken(found[0]):
                     self._html("<p>Wystąpił błąd serwera.</p>", found[0].error_status)
-                elif found and found[0].login_form:
+                elif found and found[0].login_form and _broken(found[0]):
                     self._html(_login_page(None))
                 elif found:
                     self._html(_order_page(found[0], found[0].changed or changed, today, self.headers.get("Host", "")))
@@ -829,6 +831,12 @@ def _price_text(price: Decimal, changed: Changed | Unread | None) -> str:
 
 def _has_session_cookie(header: str) -> bool:
     return "=".join(SESSION_COOKIE) in (part.strip() for part in header.split(";"))
+
+
+def _broken(order: AtrapaOrder) -> bool:
+    """Strona zlecenia ``order`` to już strona błędu albo formularz logowania (``after_emmett``: po Wycenie Emmetta)."""
+
+    return not order.after_emmett or order.emmett_loads > 0
 
 
 def _login_page(changed: Changed | Unread | None) -> str:

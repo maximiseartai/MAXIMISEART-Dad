@@ -66,9 +66,10 @@ TABLE = [
     Row("efenix_browser", "_within", "UnexpectedPage(part, BrowserFailure(exception_type(error), None))",
         "błąd Playwrighta w działaniu przeglądarki bez nazwy (przegląd odcięć sprawdza, że żadne takie nie zostało)", "D"),
     # --- strona zlecenia, której okno nie przeczytało ---
-    Row("efenix_browser", "open_order", "UnexpectedPage(PagePart.ORDER, HttpStatus(response.status))",
-        "goto strony zlecenia z odpowiedzią 4xx/5xx (goto nie zgłasza wtedy błędu), a odczyt strony się nie udał", "D"),
-    Row("efenix_browser", "open_order", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.LOGIN_FORM))",
+    Row("efenix_browser", "_read_order", "UnexpectedPage(PagePart.ORDER, HttpStatus(response.status))",
+        "otwarcie strony zlecenia albo jej przeładowanie po Wycenie Emmetta z odpowiedzią 4xx/5xx (nawigacja nie zgłasza "
+        "wtedy błędu), a odczyt strony się nie udał", "D"),
+    Row("efenix_browser", "_read_order", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.LOGIN_FORM))",
         "formularz logowania pod adresem strony zlecenia, bez przekierowania, a odczyt strony się nie udał", "E"),
     Row("efenix_browser", "_single", "UnexpectedPage(part, ElementCount(selector, count))",
         "element okna (#field_numer, #data_install, #cena_all2, przyciski i okna dialogowe) nie dokładnie raz", "C"),

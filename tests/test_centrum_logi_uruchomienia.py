@@ -899,6 +899,29 @@ HYPOTHESES = {
         ["szukanie"],
         "otwarcie zlecenia",
     ),
+    "D-strona-bledu-http-404": (
+        replace(STOPPED_AT_SECOND[1].in_efenix("617"), error_status=HTTPStatus.NOT_FOUND),
+        {"what": "strona błędu HTTP serwera efenix zamiast strony zlecenia", "status": 404},
+        ["szukanie"],
+        "otwarcie zlecenia",
+    ),
+    "D-strona-bledu-http-po-wycenie-emmetta": (
+        replace(
+            STOPPED_AT_SECOND[1].in_efenix("617"),
+            execution_date=DAY,
+            error_status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            after_emmett=True,
+        ),
+        {"what": "strona błędu HTTP serwera efenix zamiast strony zlecenia", "status": 500},
+        ["szukanie", "otwarcie zlecenia"],
+        "Wycena Emmetta",
+    ),
+    "E-formularz-logowania-po-wycenie-emmetta": (
+        replace(STOPPED_AT_SECOND[1].in_efenix("617"), execution_date=DAY, login_form=True, after_emmett=True),
+        {"what": "formularz logowania efenix pod adresem strony zlecenia, bez przekierowania"},
+        ["szukanie", "otwarcie zlecenia"],
+        "Wycena Emmetta",
+    ),
     "E-formularz-logowania-pod-adresem-zlecenia": (
         replace(STOPPED_AT_SECOND[1].in_efenix("617"), login_form=True),
         {"what": "formularz logowania efenix pod adresem strony zlecenia, bez przekierowania"},

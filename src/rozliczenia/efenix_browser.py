@@ -380,25 +380,13 @@ class BrowserEfenix:
 
     @_action(PagePart.ORDER)
     def open_order(self, order: ListedOrder) -> OrderPricing:
-        """Otwiera stronę zlecenia ``order`` i czyta datę wykonania, kwotę końcową i ilości pozycji.
-
-        Stronę, której nie przeczytało, okno nazywa w przyczynie stroną błędu HTTP (``goto`` nie zgłasza błędu przy
-        statusie 4xx i 5xx) albo formularzem logowania pod adresem zlecenia, zanim uzna ją za stronę w innej budowie.
-        Sprawdza to tylko po nieudanym odczycie, więc strony, którą czyta, nie odrzuca.
-        """
+        """Otwiera stronę zlecenia ``order`` i czyta datę wykonania, kwotę końcową i ilości pozycji."""
 
         with _doing(Operation.OPEN):
             response = self._page.goto(
                 urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms
             )
-        try:
-            return self._read_order()
-        except UnexpectedPage as unread:
-            if response is not None and not response.ok:
-                raise UnexpectedPage(PagePart.ORDER, HttpStatus(response.status)) from unread
-            if self._page.locator(_LOGIN_FORM).count() > 0:
-                raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.LOGIN_FORM)) from unread
-            raise
+        return self._read_order(response)
 
     @_action(PagePart.DATE)
     def set_execution_date(self, day: date) -> bool:
@@ -432,9 +420,9 @@ class BrowserEfenix:
         self._click(self._only(_EMMETT_BUTTON, PagePart.EMMETT))
         self._shown(_EMMETT_DIALOG, PagePart.EMMETT)
         load = self._only(f"{_EMMETT_DIALOG} {_OK}", PagePart.EMMETT)
-        with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
+        with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms) as reload:
             self._answer(_LOAD_EMMETT, lambda _params: True, lambda: self._click(load))
-        return self._read_order()
+        return self._read_order(reload.value)
 
     @_action(PagePart.QUANTITY)
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
@@ -465,10 +453,24 @@ class BrowserEfenix:
             self._page.wait_for_function(_SHOWS, arg=[AMOUNT, shown], timeout=self._timeout_ms)
         return amount
 
-    def _read_order(self) -> OrderPricing:
+    def _read_order(self, response: Response | None) -> OrderPricing:
+        """Strona zlecenia, na którą przeglądarka przeszła odpowiedzią ``response`` (otwarcie albo przeładowanie).
+
+        Stronę, której nie przeczytało, okno nazywa w przyczynie stroną błędu HTTP (nawigacja nie zgłasza błędu przy
+        statusie 4xx i 5xx) albo formularzem logowania pod adresem zlecenia, zanim uzna ją za stronę w innej budowie.
+        Sprawdza to tylko po nieudanym odczycie, więc strony, którą czyta, nie odrzuca.
+        """
+
         self._ensure_logged_in(PagePart.ORDER)
-        with _doing(Operation.READ):
-            pricing, self._positions = _order_on(self._page)
+        try:
+            with _doing(Operation.READ):
+                pricing, self._positions = _order_on(self._page)
+        except UnexpectedPage as unread:
+            if response is not None and not response.ok:
+                raise UnexpectedPage(PagePart.ORDER, HttpStatus(response.status)) from unread
+            if self._page.locator(_LOGIN_FORM).count() > 0:
+                raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.LOGIN_FORM)) from unread
+            raise
         return pricing
 
     def _only(self, selector: str, part: PagePart) -> Locator:
