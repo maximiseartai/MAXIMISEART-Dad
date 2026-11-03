@@ -149,6 +149,9 @@ REQUIRED_SCREENSHOTS = {
     ),
     "przebieg-rozliczen": (
         "40-przebieg-nowe-uruchomienie.png",
+        "4e-przebieg-krok-uzupelnienie.png",
+        "4f-przebieg-krok-wycena.png",
+        "4g-przebieg-krok-rozliczenia.png",
         "41-przebieg-podglad.png",
         "42-przebieg-potwierdzenie.png",
         "43-przebieg-na-zywo.png",

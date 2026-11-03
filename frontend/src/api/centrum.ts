@@ -100,6 +100,7 @@ export type {
   PinnableRun,
   ProcessRun,
   ProcessStep,
+  FillStep,
   ProcessSetup,
   Progress,
   ProgressStep,
@@ -164,7 +165,7 @@ export type DadNoteState = SendDadNoteResponse
 /** Widok bieżącego Uruchomienia procesu; jego `state` to stany UI (unia z kontraktu). */
 export type RunView = GetCurrentRunResponse
 
-/** Ostatnie Uruchomienie sprzed startu Centrum: karta z Logów albo Urwane Uruchomienie (unia z kontraktu). */
+/** Ostatnie Uruchomienie sprzed startu Centrum: karta z Logów, wynik z Historii bez Logów albo Urwane Uruchomienie (unia z kontraktu). */
 export type PastRun = NonNullable<Extract<RunView, { state: "idle" }>["previous"]>
 
 /** Karta Uruchomienia z wiersza Historii albo jej brak (unia z kontraktu). */

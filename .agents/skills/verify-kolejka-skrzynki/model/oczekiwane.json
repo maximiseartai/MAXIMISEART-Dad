@@ -11,12 +11,6 @@
   "zgloszenie": {
     "wynik": "przechodzi"
   },
-  "zgloszenie-w-czesciach": {
-    "wynik": "narusza",
-    "obietnica": "WszystkieCzesci",
-    "przyczyna": "przejecie",
-    "znalezisko": "ponowiona wysyłka Zgłoszenia przejmuje issue swojej przerwanej próby bez komentarzy, więc części od 2 nie trafiają do Skrzynki (_deliver_report)"
-  },
   "znane": {
     "wynik": "przechodzi"
   },

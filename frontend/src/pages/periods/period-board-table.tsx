@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { href } from "@/lib/address"
 import { shortDate } from "@/lib/format"
 import { openAndConfirm } from "@/pages/periods/open-period-path"
-import { PrepareLink } from "@/pages/periods/prepare-actions"
+import { FillLink, PrepareLink } from "@/pages/periods/prepare-actions"
 
 /** Tablica okresów: od najnowszego, ostatni pełny okres wyróżniony tłem. */
 export function PeriodBoardTable({
@@ -74,11 +74,18 @@ function PeriodBoardRow({ period, onStale }: { period: PeriodRow; onStale: () =>
         <PeriodFiles period={period} onStale={onStale} />
       </TableCell>
       <TableCell className="text-right">
-        {period.status === "collective_file_prepared" ? <FillingLink token={period.token} /> : null}
+        {period.status === "collective_file_prepared" && step.action !== "fill_collective_file" ? (
+          <FillingLink token={period.token} />
+        ) : null}
         {period.secondary_step === null ? null : (
           <PrepareLink period={period} step={period.secondary_step} secondary />
         )}
-        {step.action !== "none" ? (
+        {step.action === "fill_collective_file" ? (
+          <>
+            <PrepareLink period={period} step={step.then} secondary />
+            <FillLink period={period} step={step} />
+          </>
+        ) : step.action !== "none" ? (
           <PrepareLink period={period} step={step} secondary={false} />
         ) : (
           <Tooltip>
@@ -100,7 +107,7 @@ function PeriodBoardRow({ period, onStale }: { period: PeriodRow; onStale: () =>
   )
 }
 
-/** Okres z Plikiem zbiorczym przygotowanym prowadzi na podsumowanie Uzupełnienia pliku zbiorczego. */
+/** Okres z Plikiem zbiorczym przygotowanym po Uzupełnieniu w Excelu nadal prowadzi na jego podsumowanie. */
 function FillingLink({ token }: { token: string }) {
   return (
     <Button

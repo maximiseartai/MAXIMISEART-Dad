@@ -110,6 +110,16 @@ class ProcessStep(_Model):
     preview_hint: str | None
 
 
+class FillStep(_Model):
+    """Uzupełnienie w Excelu: tata robi je w Excelu, Centrum prowadzi na podsumowanie Uzupełnienia pliku zbiorczego;
+    ``then`` to krok po nim, Wycena w efenix."""
+
+    action: Literal["fill_collective_file"]
+    label: str
+    hint: str
+    then: ProcessStep
+
+
 class ClosedStep(_Model):
     """Okres jest zamknięty: następnego kroku nie robi żaden proces."""
 
@@ -118,7 +128,7 @@ class ClosedStep(_Model):
     hint: str
 
 
-NextStep = Annotated[ProcessStep | ClosedStep, Field(discriminator="action")]
+NextStep = Annotated[ProcessStep | FillStep | ClosedStep, Field(discriminator="action")]
 
 PathStage = Literal["done", "now", "later", "not_done"]
 
@@ -774,8 +784,24 @@ class RunInterrupted(_Model):
     advice: Message
 
 
+class RunRecorded(_Model):
+    """Uruchomienie z wynikiem w Historii, ale bez Logów Uruchomienia: Centrum zamknęło się po zapisie rekordu metryk,
+    a przed zapisem Logów.
+
+    Karta zna tylko to, co wiersz Historii: ``result`` i ``started_at`` są z niego, a ``headline`` i ``next_action``
+    wylicza z nich ta sama reguła co na żywo (``runs.verdict``). Komunikatów, etapów ani podsumowania nie ma.
+    """
+
+    state: Literal["recorded"]
+    run: RunInfo
+    started_at: datetime
+    result: RunResult
+    headline: str
+    next_action: NextAction
+
+
 # Ostatnie Uruchomienie sprzed tego startu Centrum, z dysku.
-PastRun = Annotated[RunRestored | RunInterrupted, Field(discriminator="state")]
+PastRun = Annotated[RunRestored | RunRecorded | RunInterrupted, Field(discriminator="state")]
 
 
 class RunIdle(_Model):
@@ -1177,12 +1203,14 @@ class SolvedCase(_Model):
 
 
 class ReleaseNotification(_Notification):
-    """Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego”, sprawy taty, które rozwiązuje, i
-    czy Centrum proponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu)."""
+    """Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego” jako zdanie wstępu i punkty
+    (``release_notes.whats_new``; notka bez punktów to sam wstęp), sprawy taty, które rozwiązuje, i czy Centrum
+    proponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu)."""
 
     kind: Literal["nowa_wersja"]
     version: str
-    summary: str
+    intro: str
+    points: list[str]
     solved: list[SolvedCase]
     update_offered: bool
 

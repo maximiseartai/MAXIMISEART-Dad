@@ -15,6 +15,7 @@ from drive.common import (
     choose_periods_directory,
     error_toasts,
     last_opened_is,
+    next_step_names_current_step,
     period_row,
     sent_requests,
     settle,
@@ -51,8 +52,12 @@ def drive_period_board(run: Run, page: Page) -> None:
             expect(row).to_contain_text("ostatni pełny okres")
     run.check(True, "the screen shows the same order, Status okresu, and highlighted last complete period")
     run.check(
-        all(("preview_hint" in row["next_step"]) == (row["next_step"]["action"] != "none") for row in rows),
-        "every process step carries its Podgląd bez zapisu hint; a closed period has none",
+        all(
+            ("preview_hint" in row["next_step"])
+            == (row["next_step"]["action"] not in ("none", "fill_collective_file"))
+            for row in rows
+        ),
+        "every process step carries its Podgląd bez zapisu hint; Uzupełnienie w Excelu and a closed period have none",
     )
     run.capture(page, "06-tablica-okresow")
 
@@ -65,20 +70,25 @@ def drive_period_board(run: Run, page: Page) -> None:
         and [step["stage"] for step in steps["22_28_09_2026"]["path"]] == ["done", "done", "not_done", "done"],
         "Droga okresu has four steps; a closed period without Wycena w efenix shows that step as not done",
     )
+    filling = steps["29_05_10_2026"]["next_step"]
     run.check(
-        (steps["29_05_10_2026"]["next_step"]["action"], steps["29_05_10_2026"]["next_step"]["preview_hint"])
-        == ("price_in_efenix", None)
+        (filling["action"], filling["label"], filling["then"]["action"], filling["then"]["preview_hint"])
+        == ("fill_collective_file", "Uzupełnij plik zbiorczy", "price_in_efenix", None)
         and steps["29_05_10_2026"]["secondary_step"]["action"] == "create_worker_settlements"
         and all(row["secondary_step"] is None for row in rows if row["token"] != "29_05_10_2026"),
-        "with a Plik zbiorczy and no Wycena w efenix, the next step is Wycena w efenix (no preview), and Przebieg "
-        "rozliczeń stays reachable beside it",
+        "with a Plik zbiorczy and no Wycena w efenix, the next step is Uzupełnij plik zbiorczy, then Wycena w efenix "
+        "(no preview), and Przebieg rozliczeń stays reachable beside it",
     )
     prepared = period_row(page, "29_05_10_2026")
-    expect(prepared.get_by_role("button", name="Wyceń w efenix, okres 29_05_10_2026", exact=True)).to_be_visible()
-    expect(
-        prepared.get_by_role("button", name="Utwórz rozliczenia pracowników, okres 29_05_10_2026", exact=True)
-    ).to_be_visible()
-    run.check(True, "the row of 29_05_10_2026 offers Wyceń w efenix and, beside it, Utwórz rozliczenia pracowników")
+    row_steps = prepared.get_by_role("cell").last.get_by_role("button")
+    names = ["Utwórz rozliczenia pracowników", "Wyceń w efenix", "Uzupełnij"]
+    expect(row_steps).to_have_count(len(names))
+    for index, name in enumerate(names):
+        expect(row_steps.nth(index)).to_have_accessible_name(f"{name}, okres 29_05_10_2026")
+    run.check(
+        True,
+        "the row of 29_05_10_2026 offers Uzupełnij and, beside it, Wyceń w efenix and Utwórz rozliczenia pracowników",
+    )
     prepared.get_by_role("button", name="Wyceń w efenix, okres 29_05_10_2026", exact=True).click()
     expect(page.get_by_text("Nowe Uruchomienie procesu", exact=True)).to_be_visible()
     expect(page.get_by_role("radio", name="Wycena w efenix")).to_be_checked()
@@ -90,9 +100,7 @@ def drive_period_board(run: Run, page: Page) -> None:
     expect(page.get_by_role("table", name="Tablica okresów")).to_be_visible()
 
     run.step(feature, "tablica-nastepny-krok")
-    next_step = page.get_by_role("region", name="Następny krok")
-    expect(next_step).to_contain_text("Przygotuj plik zbiorczy")
-    expect(next_step).to_contain_text(expected[0][0])
+    next_step = next_step_names_current_step(run, page, expected[0][0], "Plik zbiorczy")
     expect(next_step).to_contain_text("Brak Folderu okresu")
     expect(next_step.get_by_role("button", name="Podgląd bez zapisu", exact=True)).to_be_visible()
     run.check(True, "Następny krok targets the last complete period, whose Folder okresu does not exist")
@@ -230,9 +238,14 @@ def drive_period_board(run: Run, page: Page) -> None:
     period_row(page, "29_05_10_2026").get_by_text("Wyceń w efenix").hover()
     expect(page.get_by_text("Najpierw uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij.")).to_be_visible()
     run.capture(page, "09-tablica-podpowiedz", full_page=False)
+    period_row(page, "29_05_10_2026").get_by_text("Uzupełnij", exact=True).hover()
+    expect(page.get_by_text("Uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij.", exact=True)).to_be_visible()
     period_row(page, "29_05_10_2026").get_by_text("Utwórz rozliczenia pracowników").hover()
     expect(page.get_by_text("Możesz je utworzyć także bez Wyceny w efenix, na przykład gdy efenix nie działa.")).to_be_visible()
-    run.check(True, "Wyceń w efenix and Utwórz rozliczenia pracowników in the row explain themselves in tooltips")
+    run.check(
+        True,
+        "Wyceń w efenix, Uzupełnij and Utwórz rozliczenia pracowników in the row explain themselves in tooltips",
+    )
     preview_hint = rows[0]["next_step"]["preview_hint"]
     page.get_by_role("region", name="Następny krok").get_by_role("button", name="Podgląd bez zapisu", exact=True).hover()
     expect(page.get_by_text(preview_hint, exact=True)).to_be_visible()

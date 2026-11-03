@@ -353,6 +353,7 @@ def test_spozniona_odpowiedz_skrzynki_nie_wstrzymuje_powiadomien_a_jej_stan_i_ta
 
 
 SUMMARY = "Plik zbiorczy ma kolumnę z kilometrami."
+POINTS = ["Rozliczenia pracowników są dwa razy szybsze.", "Plik zbiorczy sam wpisuje ilości usług."]
 NEW_COMMIT = "b7e4c1a2d3f5e6a7b8c9d0e1f2a3b4c5d6e7f8a9"
 PUBLISHED_AT = datetime(2026, 10, 22, 8, 0, tzinfo=timezone.utc)
 # Sprawa z notki, której ten komputer nie wysłał: Uwaga taty z innego komputera.
@@ -386,7 +387,8 @@ def test_nowsze_wydanie_daje_powiadomienie_z_notka_sprawami_taty_i_przyciskiem(t
         DadCase(centrum.surroundings.report_box.sent[0].number, "Tytuł z Release", REPORT.label),
         FOREIGN,
     )
-    release_on_main(centrum, "v0.2.0", NEW_COMMIT, published("v0.2.0", render(ReleaseNotes(SUMMARY, cases))))
+    notes = render(ReleaseNotes("\n".join([SUMMARY, "", *(f"- {point}" for point in POINTS)]), cases))
+    release_on_main(centrum, "v0.2.0", NEW_COMMIT, published("v0.2.0", notes))
     # Odpowiedź GitHuba z Diagnozy przed Zgłoszeniem Centrum pamięta przez 10 minut.
     centrum.surroundings.clock.advance(minutes=10)
 
@@ -399,7 +401,8 @@ def test_nowsze_wydanie_daje_powiadomienie_z_notka_sprawami_taty_i_przyciskiem(t
             "at": "2026-10-22T08:00:00Z",
             "unread": True,
             "version": "0.2.0",
-            "summary": SUMMARY,
+            "intro": SUMMARY,
+            "points": POINTS,
             "solved": [{"kind": "uwaga", "title": NOTE_TITLE}, {"kind": "zgloszenie", "title": what}],
             "update_offered": True,
         }
@@ -415,8 +418,8 @@ def test_notka_poprawiona_recznie_na_githubie_daje_co_nowego_bez_listy_i_sprawy_
     notes = f"{SUMMARY}\r\n### Rozwiązane sprawy taty \r\n- Uwaga taty #{number_of(centrum, NOTE_TITLE)}: {NOTE_TITLE}\r\n"
     release_on_main(centrum, "v0.2.0", NEW_COMMIT, published("v0.2.0", notes))
 
-    assert [(item["summary"], item["solved"]) for item in new_versions(centrum)] == [
-        (SUMMARY, [{"kind": "uwaga", "title": NOTE_TITLE}])
+    assert [(item["intro"], item["points"], item["solved"]) for item in new_versions(centrum)] == [
+        (SUMMARY, [], [{"kind": "uwaga", "title": NOTE_TITLE}])
     ]
 
 

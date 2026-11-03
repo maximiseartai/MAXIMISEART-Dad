@@ -39,6 +39,9 @@ CONSTANTS
     \* ...PozaZnanymi tej obietnicy ją pomija. Pozostałe obietnice tego przebiegu sprawdza dalej w całości.
     WybaczoneJednoIssue, WybaczoneWszystkieCzesci, WybaczoneCzesciWKolejnosci, WybaczoneZbieganie
 
+\* outbox.py Post.__post_init__: Zgłoszenie (ReportIssue) w więcej niż jednej części to ValueError (#724).
+ASSUME Cel = "zgloszenie" => Czesci = 1
+
 W == 1..Wysylek
 Q == 1..Kolejki
 \* Proces kolejki q: każda w swoim, gdy DwaProcesy, inaczej obie w jednym (wspólne _PASSES).
@@ -94,7 +97,7 @@ awarie == <<sieci, zgubione, odmowy, bledyPliku, wylaczenia>>
 vars == <<dysk, issues, zyje, watek, passes, blokada, zamkniecia, nadawanie, awarie, krok, slady>>
 
 \* Znane znaleziska (SKILL.md, oczekiwane.json): ślad przyczyny, po której obietnica pada.
-ZnaneZnaleziska == {"przejecie"}
+ZnaneZnaleziska == {}
 \* Ryzyka, które obietnica JednoIssue przyjmuje sama (ADR 0015, docstring outbox.py, komentarze w _send_all).
 Ryzyka == {"zerwane_po_zalozeniu", "bez_znacznika", "bez_numeru"}
 
@@ -308,12 +311,13 @@ Szukaj(q) ==
                   /\ Idz(q, "komentuj", "find_issue: jest issue okresu, kazda czesc komentarzem")
        \/ /\ Cel = "zgloszenie"
           /\ UNCHANGED <<sieci, stopped, nieczytany>>
-          \* _deliver_report: otwarte Zgłoszenie z tym odciskiem to Delivered(found, ()), bez komentarzy.
+          \* _deliver_report: otwarte Zgłoszenie z tym odciskiem to Delivered(found, ()), bez komentarzy; jedyna
+          \* część Zgłoszenia (ASSUME wyżej) jest już w treści tego issue.
           /\ IF Najnowsze = 0
              THEN /\ UNCHANGED <<nr, kom, slady>>
                   /\ Idz(q, "zaloz", "find_issue: brak otwartego Zgloszenia z odciskiem")
              ELSE /\ nr' = Ustaw(nr, q, Najnowsze) /\ kom' = Ustaw(kom, q, <<>>)
-                  /\ Slad("przejecie")
+                  /\ UNCHANGED slady
                   /\ Idz(q, "dostarczona", "_deliver_report: jest Zgloszenie z odciskiem, Delivered(found, ()) bez komentarzy")
        \/ /\ Cel = "znane"
           /\ UNCHANGED <<sieci, stopped, nieczytany, slady>>

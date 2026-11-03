@@ -25,7 +25,7 @@ Preconditions:
 
 - **Point to Załączniki.** Write the `Załączniki` path to `picker/answer.txt`, click `Zmień Folder okresów` (exact; `Wskaż folder okresów` when no folder is set). The settings file's `folder_okresow` becomes that path.
 - **Weeks from every month.** `GET /api/periods` (`api/uklad-taty-tablica.json`) lists `27_02_11_2026`, `13_19_10_2026`, `06_12_10_2026` (collective_file_prepared, last complete), `29_05_10_2026` (collective_file_prepared), `22_28_09_2026`, in that order. Table `Tablica okresów` shows the same tokens; row `06_12_10_2026` shows `Plik zbiorczy przygotowany`.
-- **Następny krok.** Region `Następny krok` contains `06_12_10_2026` and `Wyceń w efenix`, and not `Brak Folderu okresu`.
+- **Następny krok.** Region `Następny krok` contains `06_12_10_2026` and heading `Uzupełnij plik zbiorczy` with current step `Uzupełnienie w Excelu` and main button `Uzupełnij`, as the row's last button, and not `Brak Folderu okresu`.
 - **Open.** Click `Plik zbiorczy, okres 06_12_10_2026`; the last line of `opened.jsonl` is the file in `10_Październik_2026\INEA\06_12_10_2026`.
 - **Restore.** Point back to `INEA` the same way; row `15_21_09_2026` is visible again.
 - **Proof.** Screenshots `15`–`16`, `api/uklad-taty-tablica.json`, `state/opened.jsonl`.

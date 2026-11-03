@@ -338,7 +338,7 @@ def test_tablica_okresow_pokazuje_status_okresu_kazdego_folderu_okresu_od_najnow
     ]
     assert [row["next_step"]["action"] for row in rows] == [  # type: ignore[index]
         "prepare_collective_file",
-        "price_in_efenix",
+        "fill_collective_file",
         "none",
         "prepare_collective_file",
     ]
@@ -496,6 +496,12 @@ SETTLE = {
 SETTLE_BEFORE_PRICING = SETTLE | {
     "hint": "Możesz je utworzyć także bez Wyceny w efenix, na przykład gdy efenix nie działa."
 }
+FILL = {
+    "action": "fill_collective_file",
+    "label": "Uzupełnij plik zbiorczy",
+    "hint": "Uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij.",
+    "then": PRICE,
+}
 CLOSED = {"action": "none", "label": "Okres zamknięty", "hint": "Rozliczenia pracowników są w Folderze okresu."}
 STOPPED: RecordedStop = {"kind": "for_tata", "code": "EFENIX_NIE_ODPOWIADA"}
 
@@ -503,7 +509,7 @@ STOPPED: RecordedStop = {"kind": "for_tata", "code": "EFENIX_NIE_ODPOWIADA"}
 @pytest.mark.parametrize(
     ("settled", "pricing", "path", "next_step", "secondary_step"),
     [
-        (False, [], ["done", "now", "later", "later"], PRICE, SETTLE_BEFORE_PRICING),
+        (False, [], ["done", "now", "later", "later"], FILL, SETTLE_BEFORE_PRICING),
         (False, [(11, "OK"), (10, "WYMAGA_SPRAWDZENIA")], ["done", "done", "done", "now"], SETTLE, None),
         (False, [(10, "OK"), (11, "WYMAGA_SPRAWDZENIA")], ["done", "done", "now", "later"], PRICE_AGAIN, SETTLE_BEFORE_PRICING),
         (False, [(10, "OK"), (11, STOPPED)], ["done", "done", "now", "later"], PRICE_AGAIN, SETTLE_BEFORE_PRICING),
@@ -531,8 +537,9 @@ def test_droga_okresu_i_nastepny_krok_ida_przez_wycene_w_efenix_zaliczona_ostatn
 ) -> None:
     """Droga okresu: Plik zbiorczy → Uzupełnienie w Excelu → Wycena w efenix → Rozliczenia pracowników. Wycena jest
     zaliczona, gdy ostatnie (najpóźniej wystartowane) jej Uruchomienie okresu ma wynik OK; Wymaga sprawdzenia i
-    Zatrzymanie zostawiają ją w toku. Przebieg rozliczeń nie czeka na Wycenę, tylko stoi po niej, a Status okresu się
-    nie zmienia. Wycena innego okresu nic tu nie zalicza."""
+    Zatrzymanie zostawiają ją w toku. Następny krok to bieżący krok Drogi: przed Wyceną Uzupełnij plik zbiorczy, po
+    nim Wyceń w efenix. Przebieg rozliczeń nie czeka na Wycenę, tylko stoi po niej, a Status okresu się nie zmienia.
+    Wycena innego okresu nic tu nie zalicza."""
 
     app, periods = with_periods_directory(tmp_path)
     folder = write_period_files(periods, "29_05_10_2026")

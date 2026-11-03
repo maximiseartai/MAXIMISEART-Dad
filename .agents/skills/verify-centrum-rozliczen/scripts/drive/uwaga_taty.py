@@ -464,8 +464,9 @@ def drive_dad_note(run: Run, page: Page) -> None:
     run.capture(page, "170-uwaga-ikona-w-naglowku")
     header = page.locator("header").first.bounding_box()
     assert header is not None
-    page.screenshot(
-        path=run.evidence / "screenshots" / "170b-uwaga-ikona-zblizenie.png",
+    run.capture(
+        page,
+        "170b-uwaga-ikona-zblizenie",
         clip={"x": header["x"] + header["width"] - 360, "y": header["y"], "width": 360, "height": header["height"] + 40},
     )
 

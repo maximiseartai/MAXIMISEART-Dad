@@ -16,7 +16,7 @@ import urllib.request
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
-from playwright.sync_api import Locator, Page, Request, expect
+from playwright.sync_api import FloatRect, Locator, Page, Request, expect
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
@@ -60,10 +60,13 @@ class Run:
             raise DriveFailure(message)
         print(f"  ok: {message}", flush=True)
 
-    def capture(self, page: Page, name: str, *, full_page: bool = True, live: bool = False) -> None:
+    def capture(
+        self, page: Page, name: str, *, full_page: bool = True, live: bool = False, clip: FloatRect | None = None
+    ) -> None:
         """Screenshot and ARIA snapshot after every running transition has finished.
 
         ``live`` captures while a stage runs: its indeterminate bar loops forever, so do not wait.
+        ``clip`` takes a close-up of that part of the viewport instead of the page.
         """
 
         number = name.split("-", 1)[0]
@@ -74,7 +77,9 @@ class Run:
             page.wait_for_function(
                 "document.getAnimations().every((animation) => animation.playState !== 'running')"
             )
-        page.screenshot(path=self.evidence / "screenshots" / f"{name}.png", full_page=full_page)
+        page.screenshot(
+            path=self.evidence / "screenshots" / f"{name}.png", full_page=full_page and clip is None, clip=clip
+        )
         snapshot = page.locator("body").aria_snapshot()
         (self.evidence / "aria" / f"{name}.txt").write_text(snapshot + "\n", encoding="utf-8")
 
@@ -168,16 +173,17 @@ EFENIX_METRICS = ".wycena-efenix-metrics.jsonl"
 
 
 @contextmanager
-def priced_in_efenix(run: Run, token: str) -> Iterator[None]:
-    """Harness: a Wycena w efenix of ``token`` with the result OK in the run's Historia (one record of metrics schema 2,
-    which the reader still takes), and the file as it was afterwards, so later features count the same history."""
+def priced_in_efenix(run: Run, token: str, result: str = "OK") -> Iterator[None]:
+    """Harness: a Wycena w efenix of ``token`` with ``result`` (OK or WYMAGA_SPRAWDZENIA) in the run's Historia (one
+    record of metrics schema 2, which the reader still takes), and the file as it was afterwards, so later features
+    count the same history."""
 
     path = run.root / EFENIX_METRICS
     before = path.read_bytes() if path.exists() else None
     counters = dict.fromkeys(("orders", "ready", "errors", "emmett_warnings", "with_photos", "defects"), 0)
     record = {
         "schema_version": 2, "started_at": "2026-10-13T10:00:00+02:00", "mode": "RUN", "period": token,
-        "completed": True, "result": "OK", "total_duration_ms": 1000,
+        "completed": True, "result": result, "total_duration_ms": 1000,
         "phase_durations_ms": dict.fromkeys(("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie"), 0),
         "counters": counters, "stop": None,
     }
@@ -189,6 +195,36 @@ def priced_in_efenix(run: Run, token: str) -> Iterator[None]:
             path.unlink()
         else:
             path.write_bytes(before)
+
+
+# The current step of the Droga okresu → the heading of card Następny krok, its main (first) button, and the main
+# (last) button of the period's row in column Następny krok of Tablica okresów.
+CARD_STEPS = {
+    "Plik zbiorczy": ("Przygotuj plik zbiorczy", "Podgląd bez zapisu", "Przygotuj plik zbiorczy"),
+    "Uzupełnienie w Excelu": ("Uzupełnij plik zbiorczy", "Uzupełnij", "Uzupełnij"),
+    "Wycena w efenix": ("Wyceń w efenix", "Wyceń w efenix", "Wyceń w efenix"),
+    "Rozliczenia pracowników": ("Utwórz rozliczenia pracowników", "Podgląd bez zapisu", "Utwórz rozliczenia pracowników"),
+}
+
+
+def next_step_names_current_step(run: Run, page: Page, token: str, current: str) -> Locator:
+    """Card Następny krok of ``token``: its heading, the current step of its Droga okresu and its main button name the
+    same step, and so does the main (last) button of the period's row in column Następny krok of Tablica okresów."""
+
+    heading, button, row_button = CARD_STEPS[current]
+    card = page.get_by_role("region", name="Następny krok")
+    expect(card).to_contain_text(token)
+    expect(card.get_by_role("heading", level=2)).to_have_text(heading)
+    expect(card.get_by_role("list", name="Droga okresu").locator('[aria-current="step"]')).to_contain_text(current)
+    expect(card.get_by_role("button").first).to_have_accessible_name(button)
+    row_step = period_row(page, token).get_by_role("cell").last.get_by_role("button").last
+    expect(row_step).to_have_accessible_name(f"{row_button}, okres {token}")
+    run.check(
+        True,
+        f"Następny krok of {token}: heading {heading}, current step {current} and main button {button} name one step, "
+        "as the main button of its row in Tablica okresów does",
+    )
+    return card
 
 
 def last_opened_is(run: Run, path: Path) -> Callable[[], bool]:

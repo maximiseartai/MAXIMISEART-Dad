@@ -1,6 +1,6 @@
 ---
 name: verify-aktualizacja-narzedzia
-description: Model-check with TLA+ (TLC) that Aktualizacja narzędzia leaves Dad with a version that starts and with his own file in `config/`, that the restart guardian rolls back only a new version that really does not start, that Dad always ends with Centrum or a dialog, and that the card says „Narzędzie zaktualizowane” only on the new version, under every order of failures - fetch, git, pip, file copy, the result file, restart guardian, a new version that will not start, the computer switching off, and Dad clicking the desktop shortcut during the restart. Use when a change touches `ToolClone.update`, `_DadFiles`, `_Journal`, `_roll_back`, `write_result`, `ToolUpdates._update`, `_restart` or `_after_restart`, `restart_guardian.main`, or the start in `launcher._start` in `src/rozliczenia/centrum/`, or when fixing #196.
+description: Model-check with TLA+ (TLC) that Aktualizacja narzędzia leaves Dad with a version that starts and with his own file in `config/`, that the restart guardian rolls back only a new version that really does not start, that Dad always ends with Centrum or a dialog, that the card says „Narzędzie zaktualizowane” only on the new version, and that the new version's card shows no failure of an earlier try, under every order of failures - fetch, git, pip, file copy, the result file, restart guardian, a new version that will not start, the computer switching off, and Dad clicking the desktop shortcut during the restart. Use when a change touches `ToolClone.update`, `_DadFiles`, `_Journal`, `_roll_back`, `write_result`, `ToolUpdates._update`, `_restart` or `_after_restart`, `restart_guardian.main`, or the start in `launcher._start` in `src/rozliczenia/centrum/`, or when fixing #196.
 pilnuje:
   - src/rozliczenia/centrum/tool_update.py
   - src/rozliczenia/centrum/tool_updates.py
@@ -42,9 +42,8 @@ the desktop shortcut while the guardian restarts Centrum.
 **OkienkoTylkoGdyNicNieDziala**: the restart guardian shows its native dialog
 `not_started_after_update` only when no Centrum runs. After a rollback, the
 port may already belong to the old version that Dad started from the shortcut,
-and then the guardian ends without the dialog (`_runs(…, before)`, #368). The
-promise leaves out the rollback after a port that was never released (see
-Scope).
+and then the guardian ends without the dialog (`_runs(…, before)`, #368), also
+after a rollback when the port was never released (#726).
 
 **TataNieZostajeBezOdpowiedzi**: when nothing runs any more (no update, no
 guardian, no Centrum), Dad sees a native dialog with a Komunikat or a computer
@@ -59,6 +58,12 @@ Centrum runs in the new version. Every Centrum reads the result file
 says the card of a rolled-back version must show the failure even when the
 file already said „ok”.
 
+**KartaNieStraszy**: the card of the new version, while it runs, shows no
+failure of the update. A failure in the result file comes from the guardian or
+the shortcut after it rolled the clone back to `przed`, so a Centrum in another
+commit finds an old result: `_after_restart` logs `aktualizacja-wynik-stary`
+and the card says nothing (#725).
+
 Harm: Dad clicks `Zaktualizuj narzędzie` in the middle of a settlement week and
 is left with a tool that will not start, or with names that have turned back
 into the repository's sample, and only Maks can repair it. For the second
@@ -67,7 +72,9 @@ and Maks gets a Zgłoszenie about a version that starts fine. For the third:
 Dad sees „Centrum rozliczeń nie wystartowało” while Centrum works. For the
 fourth: nothing starts and nothing tells Dad why. For the fifth: Dad sees
 „Narzędzie zaktualizowane” on the old version, and Maks gets no Zgłoszenie
-about a version that does not start.
+about a version that does not start. For the sixth: Dad sees „Nowa wersja
+narzędzia nie wystartowała” on the version that started, and Maks gets a
+Zgłoszenie about it.
 
 ADR 0009 promises this as „Wszystko albo nic”, including the journal paragraph,
 and „Opiekun … gdy nowa wersja nie wystartuje, cofa klon i uruchamia starą”
@@ -96,9 +103,9 @@ model action is one indivisible step of this code:
 | `OpiekunPort`, `OpiekunStart` | `restart_guardian.py` `main`: `_port_released` (waits while a shortcut holds the port), `_record(restart, UPDATED)` (`write_result` in `suppress(OSError)`: a refused write leaves the file as it was, and the guardian goes on), `_start_centrum` (`run_centrum.py --bez-okienek`, which skips the journal), `_answers(new, …, after)`, then `_stop`; without the port straight to `_rolled_back`, with no „ok” written. `OpiekunStart` is the moment the new Centrum takes the port in `launcher._listen_when_released` and reads the result file: with `--bez-okienek` it retries `listen_locally` for `_SHORTCUT_HOLDS_PORT_S`, so it waits while a shortcut holds the port (#246) |
 | `OpiekunKoniec` | `restart_guardian.py` `main`: `ToolClone.confirm_update` after `_answers(new, …, after)` |
 | `OpiekunWycofanie` | `restart_guardian.py` `main` after `_stop(new)`: `restart.result.unlink(missing_ok=True)` in `suppress(OSError)`, then `_rolled_back`. A refused removal leaves „ok”, which the old version's card shows as a failure (`StartCentrumZ`) |
-| `OpiekunWynik` | `restart_guardian.py` `main` after `_rolled_back`: `_record` with `NEW_VERSION_FAILED` or `ROLLBACK_FAILED` (a refused write leaves the file, and the guardian goes on), then the old version only when the port was released and the rollback succeeded (`if released and rolled_back`), otherwise `OpiekunOkienko` |
-| `OpiekunPortStara`, `OpiekunStartStara` | `restart_guardian.py` `main` after a successful rollback of a version that did not answer: `_port_released` (fails while a Centrum started from the shortcut holds the port), `_start_centrum` (with `--bez-okienek`, so the old version waits for the shortcut's port like the new one), `_answers(…, before)` (also answered by that Centrum), then `_runs(…, before)`, which ends without a dialog when that Centrum holds the port. Every guardian path that ends in the dialog goes through `OpiekunOkienko` |
-| `OpiekunOkienko` | `restart_guardian.py` `main`: `show_problem` with `not_started_after_update`, then `return 1`. It follows `OpiekunWynik` after a failed rollback or a rollback without the port, a port held by another program after a rollback (`OpiekunPortStara`), and an old version that does not answer (`OpiekunStartStara`) |
+| `OpiekunWynik` | `restart_guardian.py` `main` after `_rolled_back`: `_record` with `NEW_VERSION_FAILED` or `ROLLBACK_FAILED` (a refused write leaves the file, and the guardian goes on), then the old version when the rollback succeeded (`if rolled_back`), also after a port that was never released (#726), otherwise `OpiekunOkienko` |
+| `OpiekunPortStara`, `OpiekunStartStara` | `restart_guardian.py` `main` after a successful rollback of a version that did not answer or of a port that was never released: `_port_released` (fails also while the old Centrum that did not close holds the port, which the model treats like another program) (fails while a Centrum started from the shortcut holds the port), `_start_centrum` (with `--bez-okienek`, so the old version waits for the shortcut's port like the new one), `_answers(…, before)` (also answered by that Centrum), then `_runs(…, before)`, which ends without a dialog when that Centrum holds the port. Every guardian path that ends in the dialog goes through `OpiekunOkienko` |
+| `OpiekunOkienko` | `restart_guardian.py` `main`: `show_problem` with `not_started_after_update`, then `return 1`. It follows `OpiekunWynik` after a failed rollback, a port held by another program after a rollback (`OpiekunPortStara`), and an old version that does not answer (`OpiekunStartStara`) |
 | `Wylacz` | none: the computer switches off; the journal, its copy and the result file stay on disk |
 | `DzierzawaMija` | none: `GUARDIAN_LEASE_S` passes after `lease_to_guardian` (`InterruptedUpdate.guardian_may_run`) |
 | `Skrot` | `launcher.py` `_start` from the shortcut while nothing runs, as one step: `listen_locally`, `ToolClone.interrupted_update`, then the dialog `update_finishing` while `guardian_may_run` (`_refuse`), `launcher._roll_back`, or the normal start (only "does it start") |
@@ -111,6 +118,10 @@ Every action that starts a Centrum (`Skrot`, `SkrotOddajePort`, `SkrotWynik`,
 „ok” while the running commit (`self._commit()`, read when Centrum started) is
 not its `po` becomes `NIEOCZEKIWANY_BLAD` (#490; in the model every „ok” has
 `po` = `"nowa"`, so „ok” on `head = "stara"` is a failure);
+a failure while the running commit is not its `przed` is old: the log gets
+`aktualizacja-wynik-stary`, the file is removed in `suppress(OSError)`, and
+the card says nothing (#725; in the model every update starts on `head =
+"stara"`, so a failure on `head = "nowa"` says nothing);
 `CentrumLog.update_awaits` (#491) lets the result through only when the
 Centrum log cannot be read or has no `aktualizacja-start`, or its last update entry is
 `aktualizacja-start` with the result's `przed`, or `aktualizacja-koniec
@@ -120,14 +131,7 @@ new version wrote „ok”, then the guardian rolled it back); any other result
 an older Aktualizacja) is skipped and its file removed in
 `suppress(OSError)`; otherwise the log gets `aktualizacja-koniec`, `unlink`
 (a refused removal keeps the file and logs `aktualizacja-wynik-zostaje`, and
-the next start skips it), and the card from `_view_of`. An already reported
-result still comes through once when its file stays and a later click with
-the same `przed` works: `NOWA_WERSJA_NIE_WYSTARTOWALA` from A to B is
-reported, the disk lets the guardian neither remove nor overwrite the file,
-the next click from A to B works but the guardian cannot write „ok”, so B
-shows the old failure once and the log gets a second `aktualizacja-koniec`
-(the last update entry is `aktualizacja-start przed=A`); the Zgłoszenie box
-still holds one Zgłoszenie at most. The model does not
+the next start skips it), and the card from `_view_of`. The model does not
 hold the Centrum log, so it lets every start skip the result: the card then
 says nothing, never „updated”.
 
@@ -136,7 +140,20 @@ Covered files: `src/rozliczenia/centrum/tool_update.py`,
 `src/rozliczenia/centrum/restart_guardian.py`,
 `src/rozliczenia/centrum/launcher.py`.
 
-Sync commit: `05430811` (2026-10-31). Since `33e4b1de` the covered files
+Sync commit: `0c554b2e` (2026-11-02, #725 and #726). Since `05430811` the
+covered files changed in two places, and every row of the table was checked
+against the code at this commit. `ToolUpdates._after_restart` skips a failure
+whose `przed` is not the running commit and logs `aktualizacja-wynik-stary`
+(`CentrumLog.update_result_stale` in `log.py`): `KartaZ` gives „nothing” for a
+failure on `head = "nowa"`. `restart_guardian.main` goes on after a rollback
+without the port like after a released port: `OpiekunWynik` leads to
+`OpiekunPortStara` for `cofa = "opiekun_bez_portu"` too. The model gained
+`KartaNieStraszy`, and `OkienkoTylkoGdyNicNieDziala` lost its exception; on
+the model of the code before this commit, `kopiowanie` and `wylaczenie-i-dysk`
+break `KartaNieStraszy` and `skrot-w-trakcie` breaks
+`OkienkoTylkoGdyNicNieDziala`.
+
+`05430811` (2026-10-31). Since `33e4b1de` the covered files
 did not change, and no code outside them started to read or write the
 clone, Dad's files, the journal, its lease or the result file. `da260363`
 made the closing Centrum hold the port until the outbox finished sending,
@@ -286,7 +303,7 @@ guardian's rollback meets every other failure too.
 
 Every configuration checks the invariants `TataMaDzialajacaWersje`,
 `OpiekunCofaTylkoNieudana`, `OkienkoTylkoGdyNicNieDziala`,
-`TataNieZostajeBezOdpowiedzi` and `KartaNieKlamie` and the liveness property
+`TataNieZostajeBezOdpowiedzi`, `KartaNieKlamie` and `KartaNieStraszy` and the liveness property
 `Postep`, under the fairness in `Sprawiedliwosc` (see Scope). A broken invariant prints
 `naruszone <name>:` and its harm in one sentence.
 A broken `Postep` prints `naruszony Postep` and a counterexample that ends in a
@@ -311,6 +328,23 @@ counterexample in the code's words, and its harm.
 
 Fixed:
 
+- #725 (`kopiowanie`, `wylaczenie-i-dysk`, breaks `KartaNieStraszy`): the new
+  version that runs showed „Nowa wersja narzędzia nie wystartowała”. The
+  guardian rolled back the first try without the port and wrote the failure,
+  the disk refused the old version's card the removal of the file, the second
+  click worked, and the disk refused the guardian the write of „ok”. In
+  `wylaczenie-i-dysk` a switch-off and the shortcut's `NIEOCZEKIWANY_BLAD` gave
+  the same end. `_after_restart` now compares a failure's `przed` with the
+  running commit. With `KartaZ` back to „a failure is shown on any version”,
+  both configurations report a new violation.
+- #726 (`skrot-w-trakcie`, breaks `OkienkoTylkoGdyNicNieDziala` without its
+  former exception for `cofa = "opiekun_bez_portu"`): the guardian rolled back
+  without the port, the old Centrum let the port go during the rollback, Dad's
+  shortcut started the old version, and the guardian showed the dialog without
+  asking the port. After that rollback the guardian now goes on like after a
+  released port (`_port_released`, `_answers(…, before)`, `_runs(…, before)`).
+  With `OpiekunWynik` back to the dialog after `opiekun_bez_portu`, the check
+  reports a new violation.
 - #490 (`kopiowanie`, `wylaczenie`, `wylaczenie-i-dysk`, breaks
   `KartaNieKlamie`): „ok” stayed on disk and the old version said „Narzędzie
   zaktualizowane”. `ok_po_dwoch_odmowach`: the new version did not answer, and
@@ -438,13 +472,16 @@ Assumed, and not checked:
   promise checks the wait in `OpiekunStartStara`: without it the old version
   ends with `PORT_ZAJETY`, and `_runs(…, before)` still finds the shortcut's
   Centrum, so Dad sees no dialog either way.
-- `OkienkoTylkoGdyNicNieDziala` leaves out the rollback after a port that was
-  never released (`cofa = "opiekun_bez_portu"`). There the guardian shows the
-  dialog without asking the port, because the old Centrum that did not close
-  may still answer `health` in commit `before`. If the port's holder lets go
-  during that rollback and Dad's shortcut takes the port, Dad sees the dialog
-  while Centrum runs. With that exception removed, the check breaks with
-  exactly this counterexample.
+- An old Centrum that still holds the port after `PORT_TIMEOUT_S` does not
+  answer `health`. `uvicorn.Server.shutdown` closes the listening sockets
+  before it waits for open connections (read in the installed uvicorn, after
+  `_Server.shutdown` logs `stop`), and `main_loop` notices `should_exit` every
+  0.1 s, so a Centrum that keeps the port has an event loop that never got
+  there and does not answer either. If it did answer in commit `before`, the
+  guardian would end without the dialog after a rollback without the port, and
+  Dad would see a dead card once that Centrum closes. The model treats that
+  holder like another program (`OpiekunPortStara`). Not checked against a
+  running Centrum.
 - The guardian shows the dialog right after it decides on it (`_runs`
   returns, then `show_problem`), so `DzialaOpiekun` leaves out
   `pc = "okienko"` and no shortcut click falls between the two. With

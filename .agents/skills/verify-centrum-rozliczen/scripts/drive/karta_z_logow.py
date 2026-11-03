@@ -27,6 +27,7 @@ ABOUT_LOGS = re.compile(r"\bLog(i|ów|ach|ami)\b|uruchomienia/")
 INTERRUPTED_WHAT = "Centrum rozliczeń zamknęło się w trakcie tego Uruchomienia, więc nie ma jego wyniku."
 WRITE_ADVICE = "Uruchom ponownie. Pliki okresu, które zdążyły powstać, Centrum zostawi i powie, co z nimi zrobić."
 MISSING = "Karty tego Uruchomienia nie ma"
+WITHOUT_DETAILS = "Centrum zamknęło się tuż po wyniku, więc szczegółów nie ma"
 
 Json = dict[str, Any]
 
@@ -147,6 +148,50 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
         "the card's Komunikaty are the Komunikaty of the newest file of Logi",
     )
     run.capture(page, "211-karta-po-zamknieciu")
+
+    run.step(FEATURE, "karta-bez-szczegolow")
+    history = run.api("/api/metrics", "karta-historia-podgladu")["runs"]
+    assert isinstance(history, list)
+    [row] = [entry for entry in history if entry["run_id"] == live["run"]["id"]]
+    kontrola_ilosci._close(run, page)
+    [name] = [name for name, logged in _logged(run).items() if logged["run_id"] == live["run"]["id"]]
+    aside_logs = run.root / "odlozone" / name
+    print("  harness: the preview's file of Logi is moved aside, as if Centrum died after the Historia row", flush=True)
+    aside_logs.parent.mkdir(exist_ok=True)
+    shutil.move(run.root / LOGS / name, aside_logs)
+    try:
+        kontrola_ilosci._start(run, "karta-start-bez-logow")
+        _uruchomienia(run, page)
+        card = page.get_by_role("region", name="Ostatnie Uruchomienie")
+        note = f"Ostatnie Uruchomienie · {_local(row['started_at'])} · {WITHOUT_DETAILS}"
+        expect(card.get_by_text(note, exact=True)).to_be_visible()
+        expect(card.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
+        for button in ("Uruchom ponownie", "Nowe Uruchomienie procesu", "Napisz do Maksa o tym Uruchomieniu"):
+            expect(card.get_by_role("button", name=button, exact=True)).to_be_visible()
+        expect(card.get_by_label("Ostrzeżenie")).to_have_count(0)
+        expect(card.get_by_text(INTERRUPTED_WHAT)).to_have_count(0)
+        _nothing_about_logs(run, page, "the card without the Logi")
+        recorded = current_run(run, "karta-bez-szczegolow")
+        run.check(
+            recorded
+            == {
+                "state": "idle",
+                "previous": {
+                    "state": "recorded",
+                    "run": live["run"],
+                    "started_at": row["started_at"],
+                    "result": live["result"]["result"],
+                    "headline": live["result"]["headline"],
+                    "next_action": live["result"]["next_action"],
+                },
+            },
+            "without its file of Logi the last Uruchomienie shows its result from the Historia row, not an Urwane "
+            "Uruchomienie",
+        )
+        run.capture(page, "211b-karta-bez-szczegolow")
+    finally:
+        if aside_logs.exists():
+            shutil.move(aside_logs, run.root / LOGS / name)
 
     run.step(FEATURE, "karta-przerwana")
     period_folder = Path(run.fixture["periods_directory"]) / LAST_COMPLETE

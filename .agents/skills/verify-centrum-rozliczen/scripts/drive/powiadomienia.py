@@ -23,7 +23,15 @@ SENT_NOTE = "Wysłana do Maksa."
 # Synthetic key Maks would write; it must never reach the skrzynka, the log, an answer, or the browser.
 KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ"
 CLOSED_AT = "2026-10-19T09:15:00Z"
-SUMMARY = "Plik zbiorczy ma kolumnę z kilometrami. Rozliczenia pracowników przy dużym okresie są dwa razy szybsze."
+INTRO = "Ta wersja przyspiesza rozliczenia."
+POINTS = (
+    "Plik zbiorczy ma kolumnę z kilometrami.",
+    "Rozliczenia pracowników przy dużym okresie są dwa razy szybsze.",
+    "Centrum rozliczeń pokazuje „Co nowego” jako listę punktów.",
+)
+# The note „Co nowego” as the skill `wydanie` writes it: an optional intro sentence, then one point per `- ` line.
+SUMMARY = "\n".join([INTRO, "", *(f"- {point}" for point in POINTS)])
+WHATS_NEW = "Co nowego"
 FIRST_SUMMARY = "Pierwsza wersja z Powiadomieniami. Tutaj zobaczysz, co Maks zrobił z Twoimi Uwagami i Zgłoszeniami."
 # A Wydanie GitHub names as the newest on `main` that the update does not take: the clone never had this commit.
 DORMANT_RELEASE = "e" * 40
@@ -55,6 +63,15 @@ def _publish(run: Run, newest_tag: str, newest_commit: str | None, releases: lis
 def _release_questions(run: Run) -> int:
     asked = run.root / "github" / "zapytania-wydan.jsonl"
     return len(asked.read_text(encoding="utf-8").splitlines()) if asked.exists() else 0
+
+
+def _expect_points(item: Locator) -> None:
+    """The card or row of v0.2.0 shows the heading „Co nowego”, its intro, and each point as its own list item."""
+
+    whats_new = item.get_by_role("region", name=WHATS_NEW, exact=True)
+    expect(whats_new.get_by_role("heading", name=WHATS_NEW, exact=True)).to_be_visible()
+    expect(whats_new.get_by_role("paragraph")).to_have_text(INTRO)
+    expect(whats_new.get_by_role("listitem")).to_have_text(list(POINTS))
 
 
 def _versions(run: Run, name: str) -> list[tuple[object, object, object]]:
@@ -167,8 +184,9 @@ def drive_notifications(run: Run, page: Page) -> None:
     run.capture(page, "181-powiadomienia-kropka")
     header = page.locator("header").first.bounding_box()
     assert header is not None
-    page.screenshot(
-        path=run.evidence / "screenshots" / "181b-powiadomienia-kropka-zblizenie.png",
+    run.capture(
+        page,
+        "181b-powiadomienia-kropka-zblizenie",
         clip={"x": header["x"] + header["width"] - 240, "y": header["y"], "width": 240, "height": header["height"]},
     )
 
@@ -268,7 +286,7 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
     run.check(_release_questions(run) == asked + 1, "after 10 minutes Centrum asks GitHub for the Wydania once")
     _bell(page).click()
     card = page.get_by_role("region", name="Nowa wersja 0.2.0", exact=True)
-    expect(card).to_contain_text(SUMMARY)
+    _expect_points(card)
     solved = card.get_by_role("list", name="Rozwiązane sprawy").get_by_role("listitem")
     expect(solved).to_have_text([f"Uwaga: {note['title']}", f"Zgłoszenie: {what}"])
     expect(card.get_by_role("button", name=aktualizacja.BUTTON, exact=True)).to_be_enabled()
@@ -283,7 +301,9 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
     card_box, list_box = card.bounding_box(), listed.bounding_box()
     run.check(card_box is not None and list_box is not None and card_box["y"] < list_box["y"], "the card stands above the list")
     older = listed.get_by_role("listitem", name="Nowa wersja 0.1.0", exact=True)
-    expect(older).to_contain_text(FIRST_SUMMARY)
+    # A note without points (every Wydanie before this card) stays one paragraph under the heading.
+    expect(older.get_by_role("region", name=WHATS_NEW, exact=True).get_by_role("paragraph")).to_have_text(FIRST_SUMMARY)
+    expect(older.get_by_role("listitem")).to_have_count(0)
     expect(older.get_by_role("button")).to_have_count(0)
     expect(page.get_by_text("Nowa wersja 0.3.0")).to_have_count(0)
     expect(page.get_by_text("Uwaga z innego komputera")).to_have_count(0)
@@ -336,7 +356,7 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
     _enter(page, run, "powiadomienia", BELL)
     expect(page.get_by_role("region", name="Nowa wersja 0.2.0", exact=True)).to_have_count(0)
     current = page.get_by_role("list", name=BELL).get_by_role("listitem", name="Nowa wersja 0.2.0", exact=True)
-    expect(current).to_contain_text(SUMMARY)
+    _expect_points(current)
     expect(current.get_by_role("button")).to_have_count(0)
     expect(current.get_by_label("nowe", exact=True)).to_have_count(0)
     expect(_bell(page)).to_have_accessible_name(BELL)

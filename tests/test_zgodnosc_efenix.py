@@ -6,13 +6,21 @@ kod wyjścia, żądania, które dostała Atrapa, i jej stan. Zgodna Atrapa daje 
 budową każdą różnicę; każdy wynik ma prośbę o ręczne sprawdzenie przycisku kalendarza daty wykonania. Każde żądanie, które dostaje Atrapa, jest z listy dozwolonych odczytów, także gdy skrypty i
 elementy stron same wysyłają zapis albo wylogowanie. Wynik nie zawiera numerów zleceń, adresów, loginów ani
 identyfikatorów, które Atrapa pokazuje, ani cen.
+
+Budowę, której Atrapa nie umie zmienić sama (``Changed``, ``Unread``), zmienia serwer przed Atrapą (``_in_front``):
+narzędzie łączy się z nim, a on przekazuje każde żądanie Atrapie i zmienia odpowiedź na wskazane strony (inny kod,
+inna treść), jak efenix, którego autor zmienił jedną stronę.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass, field
+from contextlib import contextmanager, nullcontext, suppress
+from dataclasses import dataclass, field, replace
 from datetime import date
+from decimal import Decimal
+import http.client
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import queue
@@ -20,8 +28,10 @@ import socket
 import subprocess
 import sys
 import threading
+from urllib.parse import urlparse
 from urllib.request import urlopen
 
+from openpyxl import Workbook
 from playwright.sync_api import sync_playwright
 import pytest
 import zgodnosc_efenix
@@ -51,6 +61,7 @@ from tests.fixtures.atrapa_efenix import (
 from tests.fixtures.efenix import write_template_costs
 from tests.fixtures.expect import assert_expected
 from tests.fixtures.settlement import CellValue
+from tests.fixtures.workbooks import active_worksheet
 
 ROOT = Path(__file__).resolve().parents[1]
 # Linia, którą ma każdy wynik narzędzia (#748): przycisku kalendarza narzędzie nie sprawdza, sprawdza go Maks.
@@ -76,8 +87,41 @@ COSTS: dict[str, CellValue] = {column: float(PRICES[position]) for column, posit
 
 
 @dataclass(frozen=True)
+class Answer:
+    """Odpowiedź Atrapy, którą serwer przed nią może zmienić: kod, nagłówki ``Location`` i ``Set-Cookie`` i treść."""
+
+    status: int
+    headers: Mapping[str, str]
+    body: str
+
+
+Rewrite = Callable[[Answer], Answer]
+
+
+def _replaced(*changes: tuple[str, str]) -> Rewrite:
+    """Odpowiedź z każdym tekstem ``old`` w treści zamienionym na ``new`` (``changes``: pary ``old``, ``new``)."""
+
+    def rewrite(answer: Answer) -> Answer:
+        body = answer.body
+        for old, new in changes:
+            body = body.replace(old, new)
+        return replace(answer, body=body)
+
+    return rewrite
+
+
+def _answered(status: int) -> Rewrite:
+    """Odpowiedź z kodem ``status`` bez nagłówka ``Location`` i bez treści strony efenix."""
+
+    return lambda _answer: Answer(status, {}, "<p>Błąd serwera.</p>")
+
+
+@dataclass(frozen=True)
 class Variant:
-    """Atrapa efenix pod narzędziem, koszty we Wzorcu i plik expect wyniku."""
+    """Atrapa efenix pod narzędziem, koszty we Wzorcu i plik expect wyniku.
+
+    ``rewrites``: strona Atrapy (ścieżka jak ``ORDER_PAGE``) → zmiana jej odpowiedzi, którą robi serwer przed Atrapą.
+    """
 
     expected: Path
     changed: Changed | Unread | None = None
@@ -85,6 +129,7 @@ class Variant:
     orders: tuple[AtrapaOrder, ...] = ORDERS
     costs: Mapping[str, CellValue] = field(default_factory=lambda: COSTS)
     number: str = ""
+    rewrites: Mapping[str, Rewrite] = field(default_factory=dict)
 
 
 DATED = tuple(AtrapaOrder(order.order_id, order.number, order.realizator, order.address, execution_date=date(2026, 9, 1)) for order in ORDERS)
@@ -96,7 +141,8 @@ CHANGED = {
     "ukryty-przycisk-emmetta": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "ukryty-przycisk-emmetta.txt", Changed.HIDDEN_EMMETT),
     "inne-pozycje-wyceny": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "inne-pozycje-wyceny.txt", Unread.PRICE_LIST),
     "inne-koszty-we-wzorcu": Variant(
-        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "inne-koszty-we-wzorcu.txt", costs={**COSTS, "O": 99.5, "P": "=O14", "AP": None}
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "inne-koszty-we-wzorcu.txt",
+        costs={**COSTS, "O": 99.5, "P": "=O14", "Q": True, "AP": None},
     ),
     "skrypty-stron-inne": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "skrypty-stron-inne.txt", Unread.SCRIPTS),
     "skrypty-stron-pod-adresem-z-fragmentem": Variant(
@@ -108,6 +154,44 @@ CHANGED = {
     "logowanie-bez-fingerprint": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "logowanie-bez-fingerprint.txt", Unread.LOGIN_FORM),
     "sesja-bez-ciasteczka": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "sesja-bez-ciasteczka.txt", cookie_session=False),
     "bez-pustej-daty": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "bez-pustej-daty.txt", orders=DATED),
+    "szukanie-bez-wynikow": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-bez-wynikow.txt", number="ZL/NIEZNANY"),
+    "wiersz-bez-loginu-i-adresu": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "wiersz-bez-loginu-i-adresu.txt",
+        orders=(replace(ORDERS[0], realizator="", address=""), *ORDERS[1:]),
+    ),
+    "lista-bez-pola-numer-i-jej-skrypt-z-bledem": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "lista-bez-pola-numer-i-jej-skrypt-z-bledem.txt",
+        rewrites={LIST_PAGE: _replaced(('id="field_numer"', 'id="field_nr"')), LIST_SCRIPT: _answered(500)},
+    ),
+    "lista-ze-skryptem-innego-hosta-szukanie-bez-tabeli-logowanie-z-bledem": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "lista-ze-skryptem-innego-hosta-szukanie-bez-tabeli-logowanie-z-bledem.txt",
+        rewrites={
+            LIST_PAGE: _replaced((f'src="{LIST_SCRIPT}?v=1"', f'src="http://inny.example/{LIST_SCRIPT}"')),
+            SEARCH: _replaced(('<table class="table table-sm">', "<div>"), ("</table>", "</div>")),
+            LOGIN_PAGE: _answered(500),
+        },
+    ),
+    "strona-zlecenia-w-innej-budowie": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "strona-zlecenia-w-innej-budowie.txt",
+        rewrites={
+            ORDER_PAGE: _replaced(
+                ('id="button_forward_to_accept"', 'id="button_accept"'),
+                ('id="button_forward_to_cancel"', 'id="button_cancel"'),
+                # Okno daty wykonania bez przycisku zamknięcia: jedyne okno z polem ``readonly``.
+                ('readonly></div><button type="button" class="btn btn-secondary" data-dismiss="modal">', 'readonly></div><button type="button" class="btn btn-secondary">'),
+                # Karta pozycji 005 z polem Ilość bez ceny w tekście karty.
+                (f'<div class="col-sm-1 mt-2"><span class="text-default"><small>{PRICES["005"]:.2f}</small></span></div>', ""),
+                ('id="cena_all2"', 'id="cena_razem"'),
+            ),
+            ORDER_SCRIPT: _answered(302),
+        },
+    ),
+    "logowanie-bez-formularza-i-pol": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "logowanie-bez-formularza-i-pol.txt",
+        rewrites={
+            LOGIN_PAGE: _replaced(('action="action_login.php"', 'action="zaloguj.php"'), ('id="field_signum"', 'id="login"'), ('id="field_password"', 'id="haslo"'))
+        },
+    ),
 }
 # Atrapa w innej postaci niż zgodna, a jednak zgodna z tym, czego używa Wycena w efenix: wynik bez różnic.
 SAME = {
@@ -171,9 +255,9 @@ def chrome() -> Iterator[str]:
         owner.join()
 
 
-def _run(endpoint: str, atrapa: AtrapaEfenix, template: Path, *extra: str) -> Checked:
+def _run(endpoint: str, url: str, template: Path, *extra: str, limit_ms: int = 10_000) -> Checked:
     done = subprocess.run(
-        [sys.executable, str(TOOL), "--efenix-url", atrapa.url, "--cdp", endpoint, "--limit-ms", "10000", "--wzorzec", str(template), *extra],
+        [sys.executable, str(TOOL), "--efenix-url", url, "--cdp", endpoint, "--limit-ms", str(limit_ms), "--wzorzec", str(template), *extra],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -192,11 +276,76 @@ def _checked(
     with atrapa_efenix(variant.orders, changed=variant.changed, cookie_session=variant.cookie_session) as atrapa:
         before(atrapa)
         state, pages = atrapa.state(), _pages(endpoint)
-        checked = _run(endpoint, atrapa, template, "--numer", variant.number)
+        with _in_front(atrapa, variant.rewrites) if variant.rewrites else nullcontext(atrapa.url) as url:
+            checked = _run(endpoint, url, template, "--numer", variant.number)
         assert (atrapa.state(), _pages(endpoint)) == (state, pages)
     assert not [text for text in PRIVATE if text in checked.stdout + checked.stderr]
     assert DATE_BUTTON_BY_HAND in checked.stdout.splitlines()
     return checked, atrapa
+
+
+@contextmanager
+def _in_front(atrapa: AtrapaEfenix, rewrites: Mapping[str, Rewrite]) -> Iterator[str]:
+    """Serwer przed Atrapą na czas bloku: każde żądanie (metoda, adres, treść, ciasteczko) przekazuje Atrapie, a jej
+    odpowiedź na stronę z ``rewrites`` zmienia zmianą tej strony; daje adres listy zleceń przez ten serwer."""
+
+    target = urlparse(atrapa.url)
+
+    class Handler(BaseHTTPRequestHandler):
+        def handle(self) -> None:
+            # Narzędzie zrywa połączenie, na którego odpowiedź już nie czeka.
+            with suppress(ConnectionError):
+                super().handle()
+
+        def do_GET(self) -> None:
+            self._forward(None)
+
+        def do_POST(self) -> None:
+            self._forward(self.rfile.read(int(self.headers.get("Content-Length") or 0)))
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+        def _forward(self, body: bytes | None) -> None:
+            headers = {name: value for name, value in self.headers.items() if name.casefold() in ("cookie", "content-type")}
+            connection = http.client.HTTPConnection(target.hostname or "", target.port, timeout=30)
+            try:
+                connection.request(self.command, self.path, body=body, headers=headers)
+                response = connection.getresponse()
+                passed = {name: value for name, value in response.getheaders() if name.casefold() in ("location", "set-cookie")}
+                answer = Answer(response.status, passed, response.read().decode("utf-8"))
+            finally:
+                connection.close()
+            rewrite = rewrites.get(urlparse(self.path).path.lstrip("/"))
+            if rewrite is not None:
+                answer = rewrite(answer)
+            content = answer.body.encode("utf-8")
+            self.send_response(answer.status)
+            for name, value in answer.headers.items():
+                self.send_header(name, value)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, name="przed-atrapa-efenix")
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}/{LIST_PAGE}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def _dead_endpoint() -> str:
+    """Adres zdalnego debugowania, pod którym nie ma Chrome (wolny port bez nasłuchu)."""
+
+    with socket.socket() as free:
+        free.bind(("127.0.0.1", 0))
+        return f"http://127.0.0.1:{free.getsockname()[1]}"
 
 
 def _pages(endpoint: str) -> int:
@@ -247,19 +396,17 @@ def test_bez_sesji_taty_narzedzie_konczy_sie_bledem_bez_wyniku(
     template = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", COSTS)
     with atrapa_efenix(ORDERS, cookie_session=True, expire_after=expire_after) as atrapa:
         before(atrapa)
-        checked = _run(chrome, atrapa, template)
+        checked = _run(chrome, atrapa.url, template)
 
     assert (checked.code, checked.stdout, checked.stderr) == (1, "", f"BŁĄD | {error}\n")
     assert set(atrapa.requested()) <= READING
 
 
 def test_bez_chrome_pod_adresem_zdalnego_debugowania_narzedzie_konczy_sie_bledem(tmp_path: Path) -> None:
-    with socket.socket() as free:
-        free.bind(("127.0.0.1", 0))
-        endpoint = f"http://127.0.0.1:{free.getsockname()[1]}"
+    endpoint = _dead_endpoint()
     template = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", COSTS)
     with atrapa_efenix(ORDERS) as atrapa:
-        checked = _run(endpoint, atrapa, template)
+        checked = _run(endpoint, atrapa.url, template)
 
     assert (checked.code, checked.stdout) == (1, "")
     assert checked.stderr == f"BŁĄD | nie ma Chrome ze zdalnym debugowaniem pod --cdp {endpoint}\n"
@@ -269,7 +416,7 @@ def test_bez_chrome_pod_adresem_zdalnego_debugowania_narzedzie_konczy_sie_bledem
 def test_bez_wzorca_pliku_zbiorczego_narzedzie_konczy_sie_bledem_przed_efenix(chrome: str, tmp_path: Path) -> None:
     missing = tmp_path / "Wzorzec pliku zbiorczego.xlsx"
     with atrapa_efenix(ORDERS, cookie_session=True) as atrapa:
-        checked = _run(chrome, atrapa, missing)
+        checked = _run(chrome, atrapa.url, missing)
 
     assert (checked.code, checked.stdout, checked.stderr) == (1, "", f"BŁĄD | Wzorzec pliku zbiorczego {missing}: brak pliku\n")
     assert atrapa.requested() == []
@@ -294,3 +441,77 @@ def test_lista_dozwolonych_zadan_ma_tylko_odczyty() -> None:
     for path in (f"{LOGOUT}/{LIST_PAGE}", f"{SAVE_QUANTITY}/{SEARCH}", f"js/../{LOGOUT}", f"{LIST_PAGE}/x.png"):
         for method in ("GET", "POST"):
             assert not zgodnosc_efenix.allowed(method, f"https://efenix.example/app/{path}", efenix), (method, path)
+
+
+def test_efenix_bez_odpowiedzi_w_limicie_konczy_narzedzie_bledem(chrome: str, tmp_path: Path) -> None:
+    template = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", COSTS)
+    # Szukanie odpowiada po 5 s, a limit czekania to 1 s; domyślny limit Playwrighta (30 s) doczekałby się odpowiedzi.
+    with atrapa_efenix(ORDERS, cookie_session=True, answer_delay_s=5) as atrapa:
+        checked = _run(chrome, atrapa.url, template, limit_ms=1000)
+
+    assert (checked.code, checked.stdout, checked.stderr) == (1, "", "BŁĄD | efenix nie odpowiada pod --efenix-url\n")
+
+
+def test_zadanie_spoza_listy_dozwolonych_nie_wychodzi_do_efenix() -> None:
+    with atrapa_efenix(ORDERS) as atrapa, sync_playwright() as playwright:
+        request = playwright.request.new_context()
+        try:
+            efenix = zgodnosc_efenix._Efenix(request, atrapa.url, timeout_ms=10_000)
+            with pytest.raises(ValueError, match=f"^GET {LOGOUT} nie jest na liście dozwolonych żądań$"):
+                efenix.get(efenix.address(LOGOUT))
+            with pytest.raises(ValueError, match=f"^POST {SAVE_QUANTITY} nie jest na liście dozwolonych żądań$"):
+                efenix.post(efenix.address(SAVE_QUANTITY), {"order_id": ORDERS[0].order_id, "parametr": "1"})
+        finally:
+            request.dispose()
+
+        assert atrapa.requested() == []
+
+
+def test_wzorzec_bez_kolumn_kosztow_daje_koszty_bez_liczby(tmp_path: Path) -> None:
+    path = tmp_path / "Wzorzec pliku zbiorczego.xlsx"
+    workbook = Workbook()
+    sheet = active_worksheet(workbook)
+    # Arkusz kończy się na kolumnie N, tuż przed O, pierwszą kolumną przypisania kolumn.
+    sheet["M14"], sheet["N14"] = "Koszt", 7.0
+    workbook.save(path)
+
+    assert zgodnosc_efenix.template_costs(path) == dict.fromkeys(POSITION_OF_COLUMN, None)
+
+
+def test_wzorzec_z_logiczna_wartoscia_kosztu_daje_koszt_bez_liczby(tmp_path: Path) -> None:
+    path = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", {**COSTS, "O": True, "P": 12.5})
+
+    costs = zgodnosc_efenix.template_costs(path)
+
+    assert (costs["O"], costs["P"]) == (None, Decimal("12.5"))
+
+
+@pytest.mark.parametrize("url", ["https://efenix.example/app/", "https://efenix.example/app/page_login.php", "ftp://efenix.example/app/index.php"])
+def test_adres_efenix_inny_niz_lista_zlecen_konczy_narzedzie_bledem_przed_efenix(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], url: str
+) -> None:
+    template = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", COSTS)
+
+    code = zgodnosc_efenix.main(["--efenix-url", url, "--wzorzec", str(template), "--cdp", _dead_endpoint()])
+
+    assert (code, capsys.readouterr().err) == (1, f"BŁĄD | --efenix-url to adres listy zleceń efenix kończący się na /{LIST_PAGE}\n")
+
+
+def test_narzedzie_bez_adresu_efenix_konczy_sie_bledem_polecenia(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exited:
+        zgodnosc_efenix.main(["--cdp", _dead_endpoint()])
+
+    assert exited.value.code == 2
+    assert "--efenix-url" in capsys.readouterr().err
+
+
+def test_bez_wzorca_w_poleceniu_narzedzie_czyta_wzorzec_z_konfiguracji(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Wzorzec z konfiguracji to plik ``config/`` checkoutu, u Maksa prawdziwy plik taty, więc test wskazuje inny.
+    configured = tmp_path / "config" / "Wzorzec pliku zbiorczego.xlsx"
+    monkeypatch.setattr(zgodnosc_efenix, "default_collective_template_path", lambda: configured)
+
+    code = zgodnosc_efenix.main(["--efenix-url", "https://efenix.example/app/index.php", "--cdp", _dead_endpoint()])
+
+    assert (code, capsys.readouterr().err) == (1, f"BŁĄD | Wzorzec pliku zbiorczego {configured}: brak pliku\n")

@@ -718,6 +718,19 @@ export const zProcessStep = z.object({
 });
 
 /**
+ * FillStep
+ *
+ * Uzupełnienie w Excelu: tata robi je w Excelu, Centrum prowadzi na podsumowanie Uzupełnienia pliku zbiorczego;
+ * ``then`` to krok po nim, Wycena w efenix.
+ */
+export const zFillStep = z.object({
+    action: z.literal('fill_collective_file'),
+    label: z.string(),
+    hint: z.string(),
+    then: zProcessStep
+});
+
+/**
  * PeriodRow
  *
  * Jeden okres Tablicy okresów, wyliczony przy każdym odczycie z plików i z Historii Wyceny w efenix.
@@ -743,6 +756,7 @@ export const zPeriodRow = z.object({
         zProcessStep.extend({ action: z.literal('create_worker_settlements') }),
         zProcessStep.extend({ action: z.literal('prepare_collective_file') }),
         zProcessStep.extend({ action: z.literal('price_in_efenix') }),
+        zFillStep,
         zClosedStep
     ]),
     secondary_step: zProcessStep.nullable()
@@ -1124,6 +1138,34 @@ export const zRunInterrupted = z.object({
 });
 
 /**
+ * RunRecorded
+ *
+ * Uruchomienie z wynikiem w Historii, ale bez Logów Uruchomienia: Centrum zamknęło się po zapisie rekordu metryk,
+ * a przed zapisem Logów.
+ *
+ * Karta zna tylko to, co wiersz Historii: ``result`` i ``started_at`` są z niego, a ``headline`` i ``next_action``
+ * wylicza z nich ta sama reguła co na żywo (``runs.verdict``). Komunikatów, etapów ani podsumowania nie ma.
+ */
+export const zRunRecorded = z.object({
+    state: z.literal('recorded'),
+    run: zRunInfo,
+    started_at: z.iso.datetime(),
+    result: z.enum([
+        'OK',
+        'WYMAGA_SPRAWDZENIA',
+        'BLAD_KRYTYCZNY'
+    ]),
+    headline: z.string(),
+    next_action: z.enum([
+        'run',
+        'rerun',
+        'open_collective_file',
+        'open_worker_settlements_folder',
+        'open_order_register'
+    ])
+});
+
+/**
  * RunRequest
  *
  * Start Uruchomienia procesu; pliki wejściowe wylicza serwer z ustawień i okresu.
@@ -1195,8 +1237,9 @@ export const zSolvedCase = z.object({
 /**
  * ReleaseNotification
  *
- * Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego”, sprawy taty, które rozwiązuje, i
- * czy Centrum proponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu).
+ * Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego” jako zdanie wstępu i punkty
+ * (``release_notes.whats_new``; notka bez punktów to sam wstęp), sprawy taty, które rozwiązuje, i czy Centrum
+ * proponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu).
  */
 export const zReleaseNotification = z.object({
     id: z.string(),
@@ -1204,7 +1247,8 @@ export const zReleaseNotification = z.object({
     unread: z.boolean(),
     kind: z.literal('nowa_wersja'),
     version: z.string(),
-    summary: z.string(),
+    intro: z.string(),
+    points: z.array(z.string()),
     solved: z.array(zSolvedCase),
     update_offered: z.boolean()
 });
@@ -1588,6 +1632,7 @@ export const zRunIdle = z.object({
     state: z.literal('idle'),
     previous: z.discriminatedUnion('state', [
         zRunRestored,
+        zRunRecorded,
         zRunInterrupted
     ]).nullable()
 });

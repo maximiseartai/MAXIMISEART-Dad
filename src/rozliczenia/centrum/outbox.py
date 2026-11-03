@@ -3,7 +3,7 @@
 Każda wysyłka (``Post``) to gotowy tekst skierowany do issue okresu (``PeriodThread``: etykieta, wiersz rozpoznawczy
 na początku treści issue, tytuł i co z issue, które Maks zamknął), do nowego issue (``NewIssue``: etykieta i tytuł,
 jak Uwaga taty), do issue o znanym numerze (``KnownIssue``) albo do jednego otwartego Zgłoszenia problemu
-(``ReportIssue``: wiersz odcisku problemu w treści i tytuł). Najpierw trafia do własnego pliku JSON w
+(``ReportIssue``: wiersz odcisku problemu w treści i tytuł, zawsze jedna część). Najpierw trafia do własnego pliku JSON w
 ``config/zgloszenia/kolejka/`` (poza Gitem), potem jeden wątek w tle wysyła wszystkie pliki po kolei i usuwa
 wysłane. Porażka (brak klucza, odmowa, brak sieci) zostawia plik bez Komunikatu; wątek rusza znów sam po
 ``RETRY_S``, przy starcie Centrum (``resume``) i po każdej nowej wysyłce. Plik do ``KnownIssue``, którego skrzynka
@@ -65,6 +65,8 @@ SCHEMA_VERSION: Final = 2
 _PERIOD_THREAD_SCHEMA: Final = 1
 # Miejsce w komentarzu na nagłówek części i wiersz rozpoznawczy, ponad tekst bloków.
 _FRAME_RESERVE: Final = 2_000
+# Najwięcej znaków tekstu bloków w jednej części; treść Zgłoszenia (``ReportIssue``) mieści się w jednej.
+PART_LIMIT: Final = COMMENT_LIMIT - _FRAME_RESERVE
 # Etykieta Zgłoszenia jak ``dad_cases.REPORT``.
 _REPORT_LABEL: Final[Label] = "zgloszenie"
 # Początek wiersza odcisku problemu w treści Zgłoszenia (``fingerprint_line``).
@@ -193,10 +195,10 @@ def fingerprint_line(fingerprint: str) -> str:
 class ReportIssue:
     """Zgłoszenie: jedno otwarte issue z etykietą ``zgloszenie`` na odcisk problemu ``fingerprint``.
 
-    Dostarczenie szuka otwartego Zgłoszenia z wierszem odcisku (``line``). Gdy jest (założyła je przerwana próba tej
-    wysyłki, inny komputer albo wcześniejsze Zgłoszenie, którego Centrum jeszcze nie znało), wysyłka je przejmuje bez
-    nowego issue i bez komentarza. Bez niego zakłada issue z ``title`` i częścią 1, a resztę części dopisuje
-    komentarzami.
+    Wysyłka Zgłoszenia ma zawsze jedną część, treść issue (``Post`` odrzuca więcej, #724). Dostarczenie szuka
+    otwartego Zgłoszenia z wierszem odcisku (``line``). Gdy jest (założyła je przerwana próba tej wysyłki, inny
+    komputer albo wcześniejsze Zgłoszenie, którego Centrum jeszcze nie znało), wysyłka je przejmuje bez nowego issue i
+    bez komentarza, więc niczego nie gubi. Bez niego zakłada issue z ``title`` i tą częścią.
     """
 
     fingerprint: str
@@ -239,6 +241,9 @@ class Post:
         # Przerwaną wysyłkę Zgłoszenia następna próba znajduje po tym wierszu; bez niego założyłaby drugie issue.
         if isinstance(self.target, ReportIssue) and self.target.line not in body.splitlines():
             raise ValueError("Treść nowego issue Zgłoszenia musi mieć wiersz odcisku problemu.")
+        # Następna próba przejmuje znalezione Zgłoszenie bez komentarzy, więc część 2 przerwanej wysyłki by przepadła.
+        if isinstance(self.target, ReportIssue) and comments:
+            raise ValueError("Zgłoszenie musi mieścić się w jednej części wysyłki.")
 
     @classmethod
     def of(
@@ -256,7 +261,7 @@ class Post:
         Bloki są sklejane w kolejności; blok dłuższy niż część jest cięty. Część ponad limit to ``ValueError``.
         """
 
-        texts = _pack(blocks, COMMENT_LIMIT - _FRAME_RESERVE)
+        texts = _pack(blocks, PART_LIMIT)
         parts = tuple(frame(number, len(texts), text) for number, text in enumerate(texts, start=1))
         return cls(target, period, run_id, header, parts)
 
@@ -516,10 +521,11 @@ def _deliver_new_issue(post: Post, issue: NewIssue, box: KeyedBox) -> Delivered 
 
 
 def _deliver_report(post: Post, report: ReportIssue, box: KeyedBox) -> Delivered | Failure:
-    """Otwarte Zgłoszenie z tym odciskiem albo nowe issue z częścią 1 i komentarze z resztą.
+    """Otwarte Zgłoszenie z tym odciskiem albo nowe issue z jedyną częścią wysyłki.
 
     Ponowna próba po przerwaniu między założeniem issue a znacznikiem dostarczenia znajduje issue założone przez
-    pierwszą i je przejmuje, więc jeden problem ma jedno otwarte Zgłoszenie także wtedy.
+    pierwszą i je przejmuje, więc jeden problem ma jedno otwarte Zgłoszenie także wtedy, a całe Zgłoszenie jest już w
+    treści tego issue.
     """
 
     found = box.find_issue(report.label, report.line, include_closed=False)
@@ -527,11 +533,10 @@ def _deliver_report(post: Post, report: ReportIssue, box: KeyedBox) -> Delivered
         return found
     if found is not None:
         return Delivered(found, ())
-    body, comments = post.opening()
-    opened = box.open_issue(report.label, report.title, body)
+    opened = box.open_issue(report.label, report.title, post.opening()[0])
     if not isinstance(opened, Sent):
         return opened
-    return _comment_all(opened.number, comments, box)
+    return Delivered(opened.number, ())
 
 
 def _deliver_to_known(post: Post, known: KnownIssue, box: KeyedBox) -> Delivered | Gone | Failure:

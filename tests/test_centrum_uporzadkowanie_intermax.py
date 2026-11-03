@@ -31,7 +31,7 @@ from tests.fixtures.centrum_intermax import (
     open_in_excel,
     ordering_centrum,
 )
-from tests.fixtures.intermax import ACTIVITIES, DEVICES, ORDER_SHEET, Intermax, Order
+from tests.fixtures.intermax import ACTIVITIES, DEVICES, ORDER_SHEET, Intermax, Order, rewrite_parts
 from tests.fixtures.intermax_disk import denied, failing_replace
 
 COPY = "INTERMAX przed uporządkowaniem 2026-10-26 14-05-07.xlsx"
@@ -193,6 +193,22 @@ def test_dni_intermax_ktorego_nie_da_sie_odczytac_to_komunikat_a_w_onedrive_tylk
     assert REGISTER_NAME in found["problem"]["where"]
 
 
+def test_dni_intermax_ze_starszym_arkuszem_zlecen_ktorego_wierszy_nie_da_sie_rozdzielic_to_komunikat_z_tym_arkuszem(
+    tmp_path: Path,
+) -> None:
+    centrum = ordering_centrum(tmp_path, Intermax(older_sheet=True))
+    older = "xl/worksheets/sheet2.xml"
+    rewrite_parts(centrum.register, lambda name, data: data.replace(b"<sheetData>", b"<sheetData><!-- x -->") if name == older else data)
+
+    found = centrum.client.get("/api/intermax/days").json()
+
+    assert (found["days"], found["problem"]["what"]) == (
+        [],
+        "Wklejone zlecenia mają układ, którego narzędzie nie porządkuje. INTERMAX nie został zmieniony.",
+    )
+    assert found["problem"]["where"] == f"plik {REGISTER_NAME}, folder OneDrive, arkusz ZLECENIA OD 08_11_2021"
+
+
 def test_po_chwilowej_porazce_odczytu_karta_czyta_intermax_od_nowa_choc_jego_znacznik_zapisu_sie_nie_zmienil(
     tmp_path: Path,
 ) -> None:
@@ -222,16 +238,35 @@ def _orders(day: int, count: int, first: int) -> tuple[Order, ...]:
         (Intermax(ordered=_orders(26, 2, 1), raw=_orders(26, 2, 1)), "pon 26.10", True),
         # Sobota z poprzedniego okresu nad całą niedzielą: niedziela jest wcześniejsza niż wtorek, ale nie niż sobota.
         (Intermax(ordered=_orders(24, 2, 1) + _orders(25, 10, 3), raw=_orders(24, 2, 1)), "sob 24.10", True),
-        # Środa uporządkowana do przodu, pod nią cały wtorek: przegląd środy kończy dziesięć wierszy wtorku.
-        (Intermax(ordered=_orders(28, 2, 1) + _orders(27, 10, 3), raw=_orders(28, 2, 1)), "śr 28.10", False),
-        # Środa uporządkowana w starszym arkuszu, a wklejona w nowym: Planowanie szuka jej tylko w arkuszu wklejenia.
+        # Przypadek taty: środa uporządkowana do przodu, pod nią cały wtorek (10 i więcej wierszy wcześniejszego dnia).
+        (Intermax(ordered=_orders(28, 2, 1) + _orders(27, 10, 3), raw=_orders(28, 2, 1)), "śr 28.10", True),
+        (Intermax(ordered=_orders(28, 2, 1) + _orders(27, 14, 3), raw=_orders(28, 2, 1)), "śr 28.10", True),
+        # Środa uporządkowana w starszym arkuszu, a wklejona w nowym.
         (
             Intermax(ordered=_orders(20, 2, 1), raw=_orders(28, 2, 3), older_sheet=True, older_ordered=_orders(28, 2, 3)),
+            "śr 28.10",
+            True,
+        ),
+        # Środa nad dziesięcioma wierszami dnia sprzed siedmiu dni karty: przegląd kończy się przed nią.
+        (
+            Intermax(
+                ordered=_orders(20, 2, 1),
+                raw=_orders(28, 2, 3),
+                older_sheet=True,
+                older_ordered=_orders(28, 2, 3) + _orders(20, 10, 5),
+            ),
             "śr 28.10",
             False,
         ),
     ],
-    ids=["poprzedni-okres", "nad-pozniejszym-dniem", "do-przodu-nad-wtorkiem", "w-starszym-arkuszu"],
+    ids=[
+        "poprzedni-okres",
+        "nad-pozniejszym-dniem",
+        "do-przodu-nad-wtorkiem",
+        "do-przodu-nad-czternastoma-wierszami",
+        "w-starszym-arkuszu",
+        "w-starszym-arkuszu-za-granica",
+    ],
 )
 def test_wklejony_dzien_karta_pokazuje_jako_uporzadkowany_wtedy_gdy_uporzadkowanie_odmawia_go_jako_uporzadkowanego(
     tmp_path: Path, intermax: Intermax, day: str, ordered: bool

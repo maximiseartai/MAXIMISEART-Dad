@@ -122,14 +122,17 @@ _Avoid_: formatowanie, import
 
 ## Dzień uporządkowany
 
-Dzień, którego zlecenia stoją w Rejestrze zleceń z wyglądem uporządkowanego
-dnia: dwa kolejne uporządkowane wiersze z jego datą albo jeden, pod którym nie
-ma wiersza wcześniejszego dnia. Zlecenie na jutro wpisane w środku
-dzisiejszego dnia nie czyni jutra uporządkowanym. Tą samą regułą
-Uporządkowanie INTERMAX odmawia drugiego wklejenia dnia, a karta Uporządkowania
-INTERMAX w Centrum rozliczeń pokazuje przy dzisiejszym dniu i każdym z 6 dni
-przed nim, czy jest uporządkowany, a obok nich każdy późniejszy Dzień
-uporządkowany.
+Dzień, którego zlecenia stoją w którymkolwiek arkuszu zleceń Rejestru zleceń z
+wyglądem uporządkowanego dnia: dwa kolejne uporządkowane wiersze z jego datą
+albo jeden, pod którym nie ma wiersza wcześniejszego dnia. Zlecenie na jutro
+wpisane w środku dzisiejszego dnia nie czyni jutra uporządkowanym. Dnia szuka
+się w każdym arkuszu od dołu w górę, aż 10 kolejnych uporządkowanych wierszy ma
+dzień wcześniejszy niż szósty dzień przed dzisiejszym (albo niż wklejony dzień,
+gdy jest wcześniejszy), więc znajduje się też dzień uporządkowany do przodu nad
+wcześniejszymi dniami. Tą samą regułą Uporządkowanie INTERMAX odmawia drugiego
+wklejenia dnia, także do nowszego arkusza, a karta Uporządkowania INTERMAX w
+Centrum rozliczeń pokazuje przy dzisiejszym dniu i każdym z 6 dni przed nim, czy
+jest uporządkowany, a obok nich każdy późniejszy Dzień uporządkowany.
 _Avoid_: dzień zrobiony, dzień sformatowany
 
 ## Kopia INTERMAX
@@ -570,6 +573,9 @@ _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), dziennik Centrum, raport
 Uruchomienie procesu z Centrum rozliczeń, które nie doszło do wyniku, bo
 Centrum zamknęło się w jego trakcie. Nie ma Logów Uruchomienia ani rekordu
 metryk; Centrum nazywa je po następnym starcie i radzi, co sprawdzić.
+Uruchomienie, którego wynik jest już w Historii, a Logów nie ma (Centrum
+zamknęło się tuż po wyniku), nie jest urwane: karta po starcie pokazuje jego
+wynik z Historii, także gdy wiersz nie ma jeszcze identyfikatora Uruchomienia.
 _Avoid_: Zatrzymanie (kończy się Komunikatem procesu), przerwane (tak Metryki
 nazywają Zatrzymania)
 

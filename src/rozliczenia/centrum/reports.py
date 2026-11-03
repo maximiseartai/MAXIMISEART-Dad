@@ -12,6 +12,10 @@ dziennika, bez ścieżek i bez wyjścia Gita. Ścieżki są już skrócone w
 Komunikatach, szczegółach sprawdzeń i ramkach śladu; treści wierszy, treści
 wyjątków ani klucza Zgłoszenie nie ma (ADR 0007).
 
+Treść Zgłoszenia mieści się w jednej części wysyłki (``PART_LIMIT``), bo kolejka Skrzynki przejmuje znalezione
+Zgłoszenie bez komentarzy (#724). Za długa traci najpierw pierwsze ramki śladu wywołań (pełny ślad jest w Logach
+Uruchomienia), a gdy to nie wystarczy, najstarsze wpisy dziennika Centrum; każde skrócenie ma dopisek.
+
 Źródło Zgłoszenia (Zatrzymanie w ``stops``, nieudana Aktualizacja narzędzia w
 ``tool_updates``) trzyma jego uchwyt (``ReportHandle``): uchwyt zamraża podgląd,
 a „Wyślij do Maksa” kładzie dokładnie ten podgląd w kolejce Skrzynki Zgłoszeń,
@@ -23,14 +27,15 @@ co mógłby naprawić tata albo internet (``ReportRejected``).
 
 from __future__ import annotations
 
+from bisect import bisect_left
 import threading
 import uuid
 import weakref
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import astuple, dataclass
 from datetime import datetime, timezone
 import hashlib
-from typing import Final, Literal, assert_never
+from typing import Final, Literal
 
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract, report_messages
@@ -39,7 +44,7 @@ from rozliczenia.centrum.deadline import within
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, Outbox, Post, ReportIssue, fingerprint_line
+from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, PART_LIMIT, Outbox, Post, ReportIssue, fingerprint_line
 from rozliczenia.centrum.report_box import FindOutcome
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.tool_update import UpdateResult
@@ -117,38 +122,38 @@ class StopReport:
         return self.run.period
 
     def report(self, *, commit: str | None, previous: int | None) -> Report:
-        run, message, diagnosis = self.run, self.stop.message, self.diagnosis
+        run, message, diagnosis, trace = self.run, self.stop.message, self.diagnosis, self.stop.trace
         fingerprint = self.fingerprint.digest
         explanation = diagnosis.explanation
-        lines = [
-            *_message_lines(message),
-            "## Uruchomienie procesu",
-            "",
-            f"- Proces: {run.title}",
-            f"- Okres: {run.period}",
-            f"- Tryb: {run.mode}",
-            f"- Logi: {self.logs or f'jeszcze niewysłane, Uruchomienie {run.id}'}",
-            "",
-            *_trace_lines(self.stop.trace),
-            *_tool_lines(fingerprint, previous, commit=f"- Commit: {commit or 'nieznany'}"),
-            "## Diagnoza",
-            "",
-            f"Wyjaśnienie: {explanation.code} · {explanation.what}",
-            "",
-            "| Sprawdzenie | Wynik | Szczegóły |",
-            "| --- | --- | --- |",
-            *(
-                f"| {_cell(check.label)} | {_CHECK_STATES[check.state]} | {_cell(check.detail)} |"
-                for check in diagnosis.checks
-            ),
-            "",
-            "## Dziennik Centrum rozliczeń",
-            "",
-            "```text",
-            *diagnosis.log_entries,
-            "```",
-        ]
-        return _report(message, lines, fingerprint)
+
+        def lines(dropped_frames: int, dropped_entries: int) -> list[str]:
+            return [
+                *_message_lines(message),
+                "## Uruchomienie procesu",
+                "",
+                f"- Proces: {run.title}",
+                f"- Okres: {run.period}",
+                f"- Tryb: {run.mode}",
+                f"- Logi: {self.logs or f'jeszcze niewysłane, Uruchomienie {run.id}'}",
+                "",
+                *_trace_lines(trace, dropped_frames),
+                *_tool_lines(fingerprint, previous, commit=f"- Commit: {commit or 'nieznany'}"),
+                "## Diagnoza",
+                "",
+                f"Wyjaśnienie: {explanation.code} · {explanation.what}",
+                "",
+                "| Sprawdzenie | Wynik | Szczegóły |",
+                "| --- | --- | --- |",
+                *(
+                    f"| {_cell(check.label)} | {_CHECK_STATES[check.state]} | {_cell(check.detail)} |"
+                    for check in diagnosis.checks
+                ),
+                "",
+                *_log_lines(diagnosis.log_entries, dropped_entries),
+            ]
+
+        frames = 0 if trace is None else len(trace.frames)
+        return _report(message, _fitted(lines, frames=frames, entries=len(diagnosis.log_entries)), fingerprint)
 
 
 @dataclass(frozen=True)
@@ -170,23 +175,22 @@ class UpdateReport:
 
     def report(self, *, commit: str | None, previous: int | None) -> Report:
         result, fingerprint = self.result, self.fingerprint.digest
-        lines = [
-            *_message_lines(self.message),
-            "## Aktualizacja narzędzia",
-            "",
-            f"- Wynik: {result.code}",
-            f"- Commit przed: {result.before or 'nieznany'}",
-            f"- Commit po: {result.after or 'brak'}",
-            f"- Biblioteki instalowane: {'tak' if result.installed else 'nie'}",
-            "",
-            *_tool_lines(fingerprint, previous),
-            "## Dziennik Centrum rozliczeń",
-            "",
-            "```text",
-            *self.log_entries,
-            "```",
-        ]
-        return _report(self.message, lines, fingerprint)
+
+        def lines(_dropped_frames: int, dropped_entries: int) -> list[str]:
+            return [
+                *_message_lines(self.message),
+                "## Aktualizacja narzędzia",
+                "",
+                f"- Wynik: {result.code}",
+                f"- Commit przed: {result.before or 'nieznany'}",
+                f"- Commit po: {result.after or 'brak'}",
+                f"- Biblioteki instalowane: {'tak' if result.installed else 'nie'}",
+                "",
+                *_tool_lines(fingerprint, previous),
+                *_log_lines(self.log_entries, dropped_entries),
+            ]
+
+        return _report(self.message, _fitted(lines, frames=0, entries=len(self.log_entries)), fingerprint)
 
 
 def _message_lines(message: Message) -> list[str]:
@@ -221,13 +225,40 @@ def _tool_lines(fingerprint: str, previous: int | None, *, commit: str | None = 
 def _report(message: Message, lines: list[str], fingerprint: str) -> Report:
     """Zgłoszenie z tytułem z kodu i „Co się stało” Komunikatu."""
 
-    return Report(
-        title=f"{message.code}: {message.what}", body="\n".join(lines) + "\n", fingerprint=fingerprint, what=message.what
-    )
+    return Report(title=f"{message.code}: {message.what}", body=_body(lines), fingerprint=fingerprint, what=message.what)
 
 
-def _trace_lines(trace: CallTrace | None) -> list[str]:
-    """Sekcja śladu wywołań nieoczekiwanego wyjątku: typ i ramki kodu narzędzia, bez treści wyjątku."""
+def _body(lines: list[str]) -> str:
+    return "\n".join(lines) + "\n"
+
+
+def _fitted(lines: Callable[[int, int], list[str]], *, frames: int, entries: int) -> list[str]:
+    """Wiersze Zgłoszenia, które mieszczą się w jednej części wysyłki (``PART_LIMIT``).
+
+    ``lines`` dostaje, ile pierwszych ramek śladu wywołań i ile najstarszych wpisów dziennika pominąć. Skraca się
+    najpierw ślad, potem dziennik, każde o najmniej, ile trzeba; treść, która nie mieści się nawet bez śladu i
+    dziennika, zostaje taka, a ``Post`` ją odrzuci.
+    """
+
+    steps = [
+        *((dropped, 0) for dropped in range(frames + 1)),
+        *((frames, dropped) for dropped in range(1, entries + 1)),
+    ]
+
+    def fits(step: tuple[int, int]) -> bool:
+        return len(_body(lines(*step))) <= PART_LIMIT
+
+    # Każdy krok po pierwszym skraca treść, więc pierwszy, który się mieści, znajduje bisekcja. Pierwszy krok (całe
+    # Zgłoszenie) sprawdza osobno, bo dopisek o pominiętych ramkach bywa dłuższy niż jedna ramka.
+    first = 0 if fits(steps[0]) else bisect_left(steps, True, lo=1, key=fits)
+    return lines(*steps[min(first, len(steps) - 1)])
+
+
+def _trace_lines(trace: CallTrace | None, dropped: int) -> list[str]:
+    """Sekcja śladu wywołań nieoczekiwanego wyjątku: typ i ramki kodu narzędzia, bez treści wyjątku.
+
+    ``dropped`` pierwszych ramek (od miejsca przechwycenia) pomija, z dopiskiem, że pełny ślad mają Logi Uruchomienia.
+    """
 
     if trace is None:
         return []
@@ -235,11 +266,25 @@ def _trace_lines(trace: CallTrace | None) -> list[str]:
         "## Ślad wywołań",
         "",
         f"- Wyjątek: {trace.exception_type}",
+        *([] if dropped == 0 else [f"- Pominięte pierwsze ramki: {dropped}, pełny ślad wywołań jest w Logach Uruchomienia"]),
         "",
         "```text",
-        *(f"{frame.file}:{frame.line} w {frame.function}" for frame in trace.frames),
+        *(f"{frame.file}:{frame.line} w {frame.function}" for frame in trace.frames[dropped:]),
         "```",
         "",
+    ]
+
+
+def _log_lines(entries: Sequence[str], dropped: int) -> list[str]:
+    """Sekcja dziennika Centrum bez ``dropped`` najstarszych wpisów, z dopiskiem, ile ich pominięto."""
+
+    return [
+        "## Dziennik Centrum rozliczeń",
+        "",
+        *([] if dropped == 0 else [f"Pominięte najstarsze wpisy: {dropped}, żeby Zgłoszenie zmieściło się w jednym issue.", ""]),
+        "```text",
+        *entries[dropped:],
+        "```",
     ]
 
 
@@ -445,8 +490,6 @@ class Reports:
                     handle._delivered()
                 case CaseRejected():
                     handle._rejected()
-                case _:
-                    assert_never(news)
 
     def _preview(self, source: StopReport | UpdateReport) -> _Preview:
         fingerprint = source.fingerprint.digest

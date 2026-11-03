@@ -2,8 +2,8 @@
 
 This is the maintained source for verifying the user-facing MAXIMISEART-Dad
 processes through the machine script `tools/uruchom_proces.py` (`settlement`
-for Przebieg rozliczeń, `preparation` for Przygotowanie pliku zbiorczego). Dad
-starts them in Centrum rozliczeń; the script runs the same core outside Centrum
+for Przebieg rozliczeń, `preparation` for Przygotowanie pliku zbiorczego,
+`intermax` for Uporządkowanie INTERMAX). Dad starts them in Centrum rozliczeń; the script runs the same core outside Centrum
 and prints the Centrum contract as JSON, which the assertions read as its
 contract model `ProcessResult`.
 
@@ -16,18 +16,20 @@ contract model `ProcessResult`.
 - Use `--variant preparation` for Przygotowanie pliku zbiorczego.
 - Use `--variant preparation-real-templates` locally when `config/` holds the real Wzorce; it is outside CI and `--variant all`, and prints `VERIFY SKIP` without them.
 - Use `--variant chain` for the whole path from Rejestr zleceń through both processes to the Rozliczenia pracowników; `--variant chain-real-templates` is its local-only twin on the three real Wzorce, with the same skip rule.
-- Centrum rozliczeń is Dad's route to both processes; it is covered by `verify-centrum-rozliczen`, not by this map.
+- Use `--variant intermax` for Uporządkowanie INTERMAX.
+- Centrum rozliczeń is Dad's route to the processes; it is covered by `verify-centrum-rozliczen`, not by this map.
 - Never use real customer workbooks or a fixture owned by another verification run. The real Wzorce enter only as byte copies inside the run root.
 
 ## Driving conventions
 
-- The one-command orchestrator verifies each process through the machine script (`settlement`, `preparation` for `--variant preparation`, or both in turn for `--variant chain`).
+- The one-command orchestrator verifies each process through the machine script (`settlement`, `preparation` for `--variant preparation`, both in turn for `--variant chain`, or `intermax` for `--variant intermax`).
 - Read each run's command, exit code, and JSON result from `<step>.json` and its metrics file from `<step>-metrics.jsonl` in the UTF-8 evidence directory.
 - Recognise a warning or a stop by its Komunikat `code`.
 - Use workbook reads only for post-action assertions; do not call internal engine functions as proof.
 - The orchestrator runs `--dry-run` before a real run, checks the complete plan,
   and verifies that it writes metrics but creates no destination folder or
-  output workbook. The real run creates and atomically publishes all worker
+  output workbook. Uporządkowanie INTERMAX has no dry-run: `--variant
+  intermax` runs it once and checks the Kopia INTERMAX it saved first. The real run creates and atomically publishes all worker
   workbooks from the Wzorzec rozliczenia pracownika.
 - Evidence stays in `<run dir>\evidence\` (`--run-dir`, default `.verification`); cleanup removes only a run root that a fixture created.
 
@@ -49,3 +51,4 @@ contract model `ProcessResult`.
 - [Progress and telemetry](./progress-and-metrics.md) covers observable phases, counters, exit semantics, and safe metrics.
 - [Przygotowanie pliku zbiorczego](./prepare-collective-file.md) covers the Rejestr zleceń to Rozliczenie wewnętrzne and Plik zbiorczy process, and its dry-run.
 - [From Rejestr zleceń to Rozliczenia pracowników](./prepare-and-settle.md) covers both processes in turn, and the Gotowość hand-over.
+- [Uporządkowanie INTERMAX](./order-intermax.md) covers the JSON result of `intermax`, its Kopia INTERMAX, and the ordered pasted day.

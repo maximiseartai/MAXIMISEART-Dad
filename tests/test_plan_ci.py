@@ -744,6 +744,39 @@ def test_plan_pull_requestu_i_nocy_startuje_mutation_checks_tylko_z_praca_od_zmi
     assert len(shown) == len(reported) and all(line.startswith(start) for line, start in zip(shown, reported, strict=True)), out
 
 
+@pytest.mark.parametrize(
+    ("arguments", "plan_line"),
+    [
+        (["--baza", "baza"], "PLAN CI | pull_request | wybór 1 plików |"),
+        # Push to pełne CI ``main``, więc baza, której nie ma, nie przeszkadza.
+        (["--zdarzenie", "push", "--baza", "nie-ma-takiej-bazy"], "PLAN CI | push | wszystkie pliki |"),
+    ],
+    ids=["bez zdarzenia to pull request", "push bez bazy"],
+)
+def test_plan_bez_zdarzenia_to_plan_pull_requestu_a_plan_pushu_nie_czyta_bazy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], arguments: list[str], plan_line: str
+) -> None:
+    def offline(*arguments: str) -> str:
+        raise subprocess.CalledProcessError(1, ["gh", *arguments], stderr="gh: not logged in")
+
+    repo = repository(tmp_path / "repo", {"src/pakiet/a.py": "A = 1\n", "tests/test_a.py": "def test_a() -> None:\n    pass\n", **SKILL})
+    commit(repo, "baza")
+    git(repo, "branch", "baza")
+    (repo / "tests" / "test_a.py").write_text("def test_a() -> None:\n    assert True\n", encoding="utf-8")
+    commit(repo, "zmiana")
+    for module in (plan_ci, kroki_skilli):
+        monkeypatch.setattr(module, "ROOT", repo)
+    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
+    monkeypatch.setattr(czasy_ci, "_gh", offline)
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
+
+    code = plan_ci.main(["plan", *arguments, "--czasy", str(tmp_path / "czasy")])
+    out = capsys.readouterr().out
+
+    assert code == 0, out
+    assert next(line for line in out.splitlines() if line.startswith("PLAN CI |")).startswith(plan_line), out
+
+
 @pytest.mark.parametrize("fixed", [True, False], ids=["części z zakresu", "bez części z zakresu"])
 def test_plan_biegnie_kazda_czescia_ustalona_przez_zakres_a_bez_nich_czesciami_jednego_n(fixed: bool) -> None:
     """Zakres ustala nocą każdą część każdego n podstawy z ``ci-czesci`` (``tests/test_zakres_runu.py``); plan biegnie

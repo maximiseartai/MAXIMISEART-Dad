@@ -514,21 +514,62 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
     assert not number_in_trace("9401", (tmp_path / "slad" / f"{source.parent.name}.json").read_text(encoding="utf-8"))
 
 
-def test_bledne_argumenty_koncza_sie_kodem_1_bez_wyniku_json(tmp_path: Path) -> None:
-    completed = _completed("settlement", "--metrics", tmp_path / "metrics.jsonl")
+@pytest.mark.parametrize(
+    ("arguments", "missing"),
+    [
+        (("settlement",), "--source"),
+        (("efenix", "--efenix-url", "http://127.0.0.1:9/zlecenia"), "--source"),
+        (("efenix", "--source", "brak/Plik zbiorczy.xlsx"), "--efenix-url"),
+    ],
+)
+def test_bledne_argumenty_koncza_sie_kodem_1_bez_wyniku_json(
+    tmp_path: Path, arguments: tuple[str, ...], missing: str
+) -> None:
+    completed = _completed(*arguments, "--metrics", tmp_path / "metrics.jsonl")
 
     assert (completed.returncode, completed.stdout) == (1, "")
-    assert "--source" in completed.stderr
+    assert completed.stderr.splitlines()[-1].endswith(f"required: {missing}")
     assert not (tmp_path / "metrics.jsonl").exists()
+
+
+def test_opis_uzycia_wymienia_kazdy_proces_z_jego_nazwa() -> None:
+    completed = _completed("--help")
+
+    assert (completed.returncode, completed.stderr) == (0, "")
+    processes = completed.stdout.split("PROCES\n", 1)[1].split("\n\n", 1)[0].split()
+    assert " ".join(processes) == (
+        "settlement Przebieg rozliczeń preparation Przygotowanie pliku zbiorczego "
+        "intermax Uporządkowanie INTERMAX efenix Wycena w efenix"
+    )
+
+
+def _tool_copy(tmp_path: Path) -> Path:
+    """Skrypt dla maszyn w kopii narzędzia pod ``tmp_path / "narzedzie"``, żeby domyślne pliki nie trafiały do repozytorium."""
+
+    tool = tmp_path / "narzedzie"
+    shutil.copytree(SCRIPT.parents[1] / "src", tool / "src", ignore=shutil.ignore_patterns("__pycache__"))
+    (tool / "tools").mkdir()
+    return Path(shutil.copy(SCRIPT, tool / "tools"))
+
+
+def test_wycena_w_efenix_bez_podanych_plikow_zapisuje_metryki_i_slad_emmetta_w_katalogu_narzedzia(tmp_path: Path) -> None:
+    script = _tool_copy(tmp_path)
+    tool = script.parents[1]
+    order = EfenixOrder("#9401", cells={"O": 2}, amount=float(amount_of({"012": 2})))
+    source = write_collective_file(tmp_path / "okresy", [order])
+    with atrapa_efenix([order.in_efenix("900")]) as atrapa:
+        exit_code, result = _run("efenix", "--source", source, "--efenix-url", atrapa.url, script=script)
+
+    assert (exit_code, result["stop"], result["metrics_saved"]) == (0, None, True)
+    assert len((tool / ".wycena-efenix-metrics.jsonl").read_text(encoding="utf-8").splitlines()) == 1
+    assert (tool / "config" / "slad-wyceny-emmetta" / f"{source.parent.name}.json").is_file()
 
 
 def test_bez_podanych_plikow_oba_procesy_czytaja_konfiguracje_wykonawcow_i_wzorce_z_folderu_config_narzedzia(
     tmp_path: Path,
 ) -> None:
-    tool = tmp_path / "narzedzie"
-    shutil.copytree(SCRIPT.parents[1] / "src", tool / "src", ignore=shutil.ignore_patterns("__pycache__"))
-    (tool / "tools").mkdir()
-    script = Path(shutil.copy(SCRIPT, tool / "tools"))
+    script = _tool_copy(tmp_path)
+    tool = script.parents[1]
     preparation = make_preparation_fixture(tool)  # w config/ Konfiguracja wykonawców i oba Wzorce Przygotowania
     write_template(tool / "config" / "Wzorzec rozliczenia pracownika.xlsx")
     source, _target, _config = make_fixture(tmp_path / "okresy")

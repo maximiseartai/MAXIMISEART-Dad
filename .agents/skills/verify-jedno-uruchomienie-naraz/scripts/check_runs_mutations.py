@@ -46,12 +46,33 @@ MUTATIONS = (
         (
             Edit(
                 RUNS,
-                "        self._host.after(ended)\n        self._host.finished(ended)\n        self.ended = True\n",
-                "        self._host.finished(ended)\n        self.ended = True\n        self._host.after(ended)\n",
+                "        self._host.after(ended)\n        self._host.finished(ended)\n",
+                "        self._host.finished(ended)\n",
             ),
+            Edit(RUNS, "        )\n\n    def _ended(", "        )\n        self._host.after(ended)\n\n    def _ended("),
         ),
         (EXPLORER, "--scope", "zamknij-w-trakcie"),
         "Centrum zamyka się po wyniku, zanim Kontrola ilości trafi do pliku kolejki",
+        "URUCHOMIENIA: NOWE NARUSZENIE",
+    ),
+    Mutation(
+        "koniec Uruchomienia przed wynikiem na karcie",
+        (
+            Edit(
+                RUNS,
+                "        with self._lock:\n            self._publish_locked(result)\n            run.ended = True\n",
+                "        with self._lock:\n            run.ended = True\n        self.publish(run, result)\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "dwie-karty"),
+        "druga karta startuje między końcem a wynikiem pierwszego Uruchomienia i jego wynik nie trafia na kartę",
+        "URUCHOMIENIA: NOWE NARUSZENIE",
+    ),
+    Mutation(
+        "start czyści wynik poprzedniego Uruchomienia",
+        (Edit(RUNS, "            self._events = self._events[-1:]\n", "            self._events = []\n"),),
+        (EXPLORER, "--scope", "dwie-karty"),
+        "druga karta startuje, zanim karta odczyta wynik pierwszego Uruchomienia, i wynik znika ze strumienia",
         "URUCHOMIENIA: NOWE NARUSZENIE",
     ),
     Mutation(

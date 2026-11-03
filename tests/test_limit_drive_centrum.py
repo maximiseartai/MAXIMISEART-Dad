@@ -1,8 +1,17 @@
-"""Drive Centrum rozliczeń w ``verify-centrum-rozliczen`` uznaje się za zawieszony dopiero po limicie, który rośnie z
-liczbą przejeżdżanych funkcji, więc nowa funkcja nie wypycha ``--feature all`` poza stały limit kroku."""
+"""Drive Centrum rozliczeń w ``verify-centrum-rozliczen``: limit zawieszenia i droga każdego zrzutu.
+
+Drive uznaje się za zawieszony dopiero po limicie, który rośnie z liczbą przejeżdżanych funkcji, więc nowa funkcja nie
+wypycha ``--feature all`` poza stały limit kroku.
+
+Każdy zrzut drive'u idzie przez ``Run.capture``, które pilnuje, że jeden numer zrzutu należy do jednej funkcji (pliki
+funkcji i PR-y cytują zrzut po numerze); zrzut prosto przez ``screenshot`` tę regułę omijał (#783: zbliżenia 170b i
+181b). Test czyta kod drive'u, nie uruchamia go, więc łapie też zrzut z rzadko jeżdżącej ścieżki; nie łapie zrzutu
+wywołanego bez atrybutu ``screenshot`` (``getattr``).
+"""
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 from pathlib import Path
 from types import ModuleType
@@ -11,6 +20,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts"
+DRIVE = ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts" / "drive"
 
 
 @pytest.fixture
@@ -31,3 +41,32 @@ def test_drive_wszystkich_funkcji_ma_limit_rosnacy_z_liczba_funkcji_a_jedna_funk
     assert runner.drive_timeout_s(every) == runner.DRIVE_SECONDS_PER_FEATURE * len(every) >= 2 * 305
     assert runner.drive_timeout_s((every[0],)) == runner.STEP_TIMEOUT_SECONDS
     assert runner.drive_timeout_s(("wydajnosc",)) == runner.PERFORMANCE_TIMEOUT_SECONDS
+
+
+def _screenshots_outside_capture(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    allowed: set[int] = set()
+    if path.name == "common.py":
+        run = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "Run")
+        capture = next(node for node in run.body if isinstance(node, ast.FunctionDef) and node.name == "capture")
+        allowed = {id(node) for node in ast.walk(capture)}
+    return [
+        f"{path.relative_to(ROOT).as_posix()}:{node.lineno}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "screenshot"
+        and id(node) not in allowed
+    ]
+
+
+def test_zrzut_w_drive_centrum_idzie_tylko_przez_run_capture() -> None:
+    modules = sorted(DRIVE.glob("*.py"))
+    assert DRIVE / "common.py" in modules
+
+    found = [place for module in modules for place in _screenshots_outside_capture(module)]
+
+    assert found == [], (
+        "zrzut prosto przez screenshot omija regułę numerów zrzutów; użyj run.capture(page, name, clip=…) "
+        f"z drive/common.py: {found}"
+    )

@@ -1,0 +1,8 @@
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | 
+RÓŻNICA | lista zleceń | strona nie ładuje skryptu js/index.js
+RÓŻNICA | tabela wyników | odpowiedź POST action_fill_orders.php bez tabeli
+RÓŻNICA | strona logowania | GET page_login.php: odpowiedź 500
+NIESPRAWDZONE | strona zlecenia | bez tabeli wyników nie ma zleceń do otwarcia
+NIESPRAWDZONE | pozycje wyceny | bez strony zlecenia
+NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
+RÓŻNICE: 3 | NIESPRAWDZONE: 3

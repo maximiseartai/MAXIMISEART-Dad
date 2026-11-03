@@ -1,9 +1,11 @@
 ---
 name: verify-rozliczenia
-description: Verify MAXIMISEART-Dad's processes (Przebieg rozliczeń, Przygotowanie pliku zbiorczego) through the machine script `tools/uruchom_proces.py`, each alone and chained from Rejestr zleceń to Rozliczenia pracowników, with synthetic Excel files, workbook side-effect checks, and retained evidence; use after process, workbook, or safety-rule changes.
+description: Verify MAXIMISEART-Dad's processes (Przebieg rozliczeń, Przygotowanie pliku zbiorczego, Uporządkowanie INTERMAX) through the machine script `tools/uruchom_proces.py`, each alone and chained from Rejestr zleceń to Rozliczenia pracowników, with synthetic Excel files, workbook side-effect checks, and retained evidence; use after process, workbook, or safety-rule changes.
 pilnuje:
   - src/rozliczenia/__init__.py
   - src/rozliczenia/call_trace.py
+  - src/rozliczenia/centrum/contract.py
+  - src/rozliczenia/centrum/run_view.py
   - src/rozliczenia/collective_*.py
   - src/rozliczenia/decision.py
   - src/rozliczenia/domain.py
@@ -29,6 +31,7 @@ pilnuje:
   - src/rozliczenia/template_*.py
   - src/rozliczenia/workbook_*.py
   - src/rozliczenia/worker_config.py
+  - tests/fixtures/intermax.py
   - tools/uruchom_proces.py
 ci: .agents/skills/verify-rozliczenia/scripts/quantity_rules_conformance.py
 ---
@@ -39,8 +42,9 @@ Dad starts both processes in Centrum rozliczeń, verified by
 `verify-centrum-rozliczen`
 ([ADR 0010](../../../docs/adr/0010-centrum-jedynym-wejsciem-taty.md)). This
 harness starts them outside Centrum through the machine script
-`tools/uruchom_proces.py`: `settlement` runs Przebieg rozliczeń and
-`preparation` runs Przygotowanie pliku zbiorczego, through the same core
+`tools/uruchom_proces.py`: `settlement` runs Przebieg rozliczeń,
+`preparation` runs Przygotowanie pliku zbiorczego, and `intermax` runs
+Uporządkowanie INTERMAX, through the same core
 (`run_process`) and the same Uruchomienie view as Centrum. Each run prints one
 JSON result in the shape of the Centrum contract and exits `0` (OK), `2`
 (Wymaga sprawdzenia), or `1` (Zatrzymanie). The script's docstring is the
@@ -145,6 +149,25 @@ rozliczenia pracownika; like `preparation-real-templates` it is local only,
 takes `--templates-dir`, and prints `VERIFY SKIP` without them. Route and
 counts are in `features/prepare-and-settle.md`.
 
+Use this variant after changes to Uporządkowanie INTERMAX, to its summary on
+the Uruchomienie card, or to the `intermax` command of the machine script:
+
+```powershell
+py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py --variant intermax
+```
+
+`intermax` builds a synthetic INTERMAX (Rejestr zleceń) from the INTERMAX
+fixture of the tests with one pasted day of six Surowe zlecenia of three
+Wykonawcy and an empty `Kopie INTERMAX` folder, runs `tools/uruchom_proces.py
+intermax` once (the process has no preview without saving), and checks the
+JSON result: `OK` without warnings, `summary.figures` `Zlecenia` 6 and
+`Wykonawcy` 3, the ordered day, and `summary.intermax_copy` naming the one
+Kopia INTERMAX, which holds INTERMAX's bytes from before the run and is named
+after a moment of this run. It also checks that INTERMAX was written with the
+pasted day ordered by Wykonawca and hour and the earlier days unchanged, and
+the metrics record. Route and counts are in `features/order-intermax.md`.
+How the write survives Excel, OneDrive and failures is `verify-zapis-intermax`.
+
 CI runs every CI variant in one command in its E2E step on Windows (Python 3.11 and
 3.14), so run it locally only to reproduce a red E2E step:
 
@@ -165,7 +188,9 @@ the process handle and the scratch cleanup still runs.
 
 ## Doctor
 
-The runner always executes the read-only doctor before driving the application.
+The runner executes the read-only doctor before driving the application,
+except in the `intermax` variant: Uporządkowanie INTERMAX has its own
+Sprawdzanie and no preview, so the fixture is driven directly.
 The result is retained in `doctor.txt` under the printed evidence directory.
 `DOCTOR OK` means Python is at least 3.11, the checked-out build reports the
 version in `pyproject.toml`, the source name and period folder agree, the source
@@ -228,6 +253,10 @@ preparation steps above under a `preparation-` prefix with their own
 <the Plik zbiorczy written by Przygotowanie> --dry-run`, `assert_chain.py
 --expect dry-run`, `settlement` on the same file, then `assert_chain.py --expect
 run`. Every run requires exit code `0`, except the Przygotowanie write (`2`).
+
+The `intermax` variant runs `create_intermax_fixture.py`, `intermax --register
+<INTERMAX> --copies <Kopie INTERMAX>` with exit code `0`, then
+`assert_intermax.py`.
 
 The assertions read the result through the contract model it is printed
 from (`ProcessResult` in `tools/uruchom_proces.py`), never as a raw dict, so a
@@ -295,6 +324,9 @@ The `chain` variants name the steps of each process instead:
 plus `readiness.txt`. Each process keeps its own metrics history, so
 `preparation-run-metrics.jsonl` and `settlement-run-metrics.jsonl` each hold
 exactly one `DRY-RUN` and one `RUN` record.
+
+The `intermax` variant leaves `fixture.txt`, `run.json`, `run-metrics.jsonl`
+with one `RUN` record, `assert-run.txt`, `cleanup.txt` and `self-test.txt`.
 
 The proof pairs every JSON result with the filesystem side effects. The
 dry-run still reads workbooks and writes local metrics, so those effects are
@@ -373,6 +405,15 @@ already performs both checks and prints `scratch_removed=true`.
   Hiperłącza, and external-link readers. Alone it checks one evidence file and
   names the fields that do not match the contract, never their values.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\wynik_uruchomienia.py --result "$evidenceRoot\run.json"`.
+- `scripts/create_intermax_fixture.py` creates the synthetic INTERMAX with one
+  pasted day of Surowe zlecenia and the empty `Kopie INTERMAX` folder for the
+  `intermax` variant.
+  Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\create_intermax_fixture.py --root "$runRoot"`.
+- `scripts/assert_intermax.py` checks the Uporządkowanie INTERMAX of that
+  variant: the JSON result (`summary.intermax_copy`, `Zlecenia`, `Wykonawcy`,
+  the ordered day, progress), the one Kopia INTERMAX, the ordered INTERMAX, and
+  metrics.
+  Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\assert_intermax.py --root "$runRoot" --result "$evidenceRoot\run.json"`.
 - `scripts/cleanup.py` removes only a run root that a fixture created.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\cleanup.py --root "$runRoot"`.
 - `scripts/self_test.py` checks the skill package and evidence hygiene.

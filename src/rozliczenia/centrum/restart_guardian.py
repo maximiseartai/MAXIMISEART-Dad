@@ -14,7 +14,8 @@ dziennika do commitu sprzed aktualizacji razem z plikami taty
 samo startuje starą wersję, która pokaże go w karcie. Gdy cofnięcie się nie
 uda, wynik mówi to wprost, a dziennik czeka na następny start skrótu. Gdy nie
 wystartuje żadna wersja, opiekun pokazuje jedno natywne okienko z Komunikatem
-startu, chyba że port trzyma już stara wersja, którą tata uruchomił skrótem.
+startu, chyba że port trzyma już stara wersja, którą tata uruchomił skrótem,
+także po cofnięciu bez zwolnionego portu.
 Na końcu usuwa katalog tymczasowy aktualizacji.
 """
 
@@ -162,8 +163,9 @@ def main(argv: Sequence[str], *, show_problem: Callable[[str, str], None] = show
     before = restart.before
     rolled_back = _rolled_back(restart)
     _record(restart, NEW_VERSION_FAILED if rolled_back else ROLLBACK_FAILED)
-    # Bez zwolnionego portu stara wersja też by nie wystartowała; po nieudanym cofnięciu nie ma starej wersji.
-    if released and rolled_back and before is not None:
+    # Po nieudanym cofnięciu nie ma starej wersji. Bez zwolnionego portu tak samo jak po nim: stare Centrum mogło
+    # oddać port w trakcie cofania (#726).
+    if rolled_back and before is not None:
         if _port_released(restart.port) and _answers(_start_centrum(restart), restart.port, before):
             return 0
         # Tata mógł po cofnięciu uruchomić starą wersję skrótem: zajęła port przed opiekunem i działa.

@@ -8,8 +8,9 @@ to czynność taty i kropki na dzwonku nie zapala.
 Powiadomienie o nowej wersji to opublikowane Wydanie (GitHub Release) o numerze nie wyższym od najnowszego Wydania na
 `main`, które wybiera Aktualność narzędzia (ADR 0014): wyższe spoza `main` się nie liczy. Niższego Centrum nie
 sprawdza osobno (każde to pytanie do API); Release z notką zakłada tylko narzędzie Wydań, które sprawdza `main`.
-Powiadomienie ma notkę „Co nowego”, sprawy wysłane z tego komputera, które rozwiązuje (``release_notes.parse``), a
-najnowsze także przycisk Aktualizacji narzędzia, gdy pozwala na to ``offers_update``. Nowe (kropka na dzwonku) jest
+Powiadomienie ma notkę „Co nowego” jako wstęp i punkty (``release_notes.whats_new``), sprawy wysłane z tego
+komputera, które rozwiązuje (``release_notes.parse``), a najnowsze także przycisk Aktualizacji narzędzia, gdy pozwala
+na to ``offers_update``. Nowe (kropka na dzwonku) jest
 tylko Wydanie z przyciskiem, czyli nowsze od wersji taty; starsze Wydania to historia i kropki nie zapalają.
 
 Centrum pyta przy starcie, w tle, i przy odczycie Powiadomień, gdy od ostatniego pytania minęło ``CHECK_INTERVAL_S``:
@@ -47,7 +48,7 @@ from rozliczenia.centrum.report_box import Closure
 from rozliczenia.centrum.run_cards import LoggedRun
 from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.notification_messages import unavailable
-from rozliczenia.centrum.release_notes import parse
+from rozliczenia.centrum.release_notes import parse, whats_new
 from rozliczenia.centrum.tool_freshness import PublishedRelease, ReleaseSource, ToolFreshness, offers_update
 from rozliczenia.centrum.tool_update import Release
 
@@ -250,6 +251,7 @@ class Notifications:
             if release > newest:
                 continue
             notes = parse(published.notes)
+            shown = whats_new(notes.summary)
             notification_id = f"wydanie-{release.tag}"
             offered = known.offered and release == newest
             versions.append(
@@ -259,7 +261,8 @@ class Notifications:
                     at=published.at,
                     unread=offered and notification_id not in self._read,
                     version=".".join(map(str, release.number)),
-                    summary=notes.summary,
+                    intro=shown.intro,
+                    points=list(shown.points),
                     solved=[sent[case.label, case.number] for case in notes.cases if (case.label, case.number) in sent],
                     update_offered=offered,
                 )

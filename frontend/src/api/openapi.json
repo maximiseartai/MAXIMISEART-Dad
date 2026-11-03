@@ -2652,6 +2652,36 @@
         "title": "FillKind",
         "description": "Rodzaj Ilości do uzupełnienia, który ma listę wierszy."
       },
+      "FillStep": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "const": "fill_collective_file",
+            "title": "Action"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "hint": {
+            "type": "string",
+            "title": "Hint"
+          },
+          "then": {
+            "$ref": "#/components/schemas/ProcessStep"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "label",
+          "hint",
+          "then"
+        ],
+        "title": "FillStep",
+        "description": "Uzupełnienie w Excelu: tata robi je w Excelu, Centrum prowadzi na podsumowanie Uzupełnienia pliku zbiorczego;\n``then`` to krok po nim, Wycena w efenix."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3734,6 +3764,9 @@
                 "$ref": "#/components/schemas/ProcessStep"
               },
               {
+                "$ref": "#/components/schemas/FillStep"
+              },
+              {
                 "$ref": "#/components/schemas/ClosedStep"
               }
             ],
@@ -3742,6 +3775,7 @@
               "propertyName": "action",
               "mapping": {
                 "create_worker_settlements": "#/components/schemas/ProcessStep",
+                "fill_collective_file": "#/components/schemas/FillStep",
                 "none": "#/components/schemas/ClosedStep",
                 "prepare_collective_file": "#/components/schemas/ProcessStep",
                 "price_in_efenix": "#/components/schemas/ProcessStep"
@@ -4521,9 +4555,16 @@
             "type": "string",
             "title": "Version"
           },
-          "summary": {
+          "intro": {
             "type": "string",
-            "title": "Summary"
+            "title": "Intro"
+          },
+          "points": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Points"
           },
           "solved": {
             "items": {
@@ -4545,12 +4586,13 @@
           "unread",
           "kind",
           "version",
-          "summary",
+          "intro",
+          "points",
           "solved",
           "update_offered"
         ],
         "title": "ReleaseNotification",
-        "description": "Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego”, sprawy taty, które rozwiązuje, i\nczy Centrum proponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu)."
+        "description": "Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego” jako zdanie wstępu i punkty\n(``release_notes.whats_new``; notka bez punktów to sam wstęp), sprawy taty, które rozwiązuje, i czy Centrum\nproponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu)."
       },
       "ReportDraft": {
         "properties": {
@@ -4922,6 +4964,9 @@
                     "$ref": "#/components/schemas/RunRestored"
                   },
                   {
+                    "$ref": "#/components/schemas/RunRecorded"
+                  },
+                  {
                     "$ref": "#/components/schemas/RunInterrupted"
                   }
                 ],
@@ -4929,6 +4974,7 @@
                   "propertyName": "state",
                   "mapping": {
                     "interrupted": "#/components/schemas/RunInterrupted",
+                    "recorded": "#/components/schemas/RunRecorded",
                     "restored": "#/components/schemas/RunRestored"
                   }
                 }
@@ -5220,6 +5266,59 @@
         ],
         "title": "RunOutcome",
         "description": "Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.\n\n``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla\ntaty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).\n``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed\nZapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka\nZatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które\nzostały tacie, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w trzech częściach\n(``None``: inny proces albo wynik bez podsumowania)."
+      },
+      "RunRecorded": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "recorded",
+            "title": "State"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunInfo"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "OK",
+              "WYMAGA_SPRAWDZENIA",
+              "BLAD_KRYTYCZNY"
+            ],
+            "title": "Result"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline"
+          },
+          "next_action": {
+            "type": "string",
+            "enum": [
+              "run",
+              "rerun",
+              "open_collective_file",
+              "open_worker_settlements_folder",
+              "open_order_register"
+            ],
+            "title": "Next Action"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "run",
+          "started_at",
+          "result",
+          "headline",
+          "next_action"
+        ],
+        "title": "RunRecorded",
+        "description": "Uruchomienie z wynikiem w Historii, ale bez Logów Uruchomienia: Centrum zamknęło się po zapisie rekordu metryk,\na przed zapisem Logów.\n\nKarta zna tylko to, co wiersz Historii: ``result`` i ``started_at`` są z niego, a ``headline`` i ``next_action``\nwylicza z nich ta sama reguła co na żywo (``runs.verdict``). Komunikatów, etapów ani podsumowania nie ma."
       },
       "RunRequest": {
         "properties": {
