@@ -23,7 +23,9 @@ okno czeka do jej końca, z całą treścią, a nie tylko do nagłówków, bo na
 czekałoby bez końca. Działanie w zamkniętej karcie albo oknie, także zamkniętym w trakcie działania, to
 ``WindowClosed``, cokolwiek zgłosił wtedy Playwright. Przeglądarkę daje rozmówca: stronę (``window``), Chromium
 Playwrighta (``chromium``) albo widoczne okno zainstalowanego Google Chrome w trwałym profilu narzędzia (``chrome``),
-które nie startuje (``BrowserNotStarted``), gdy Chrome nie ma albo jego profil trzyma inne okno.
+które nie startuje (``BrowserNotStarted``), gdy Chrome nie ma albo jego profil trzyma inne okno. Każda przeglądarka
+okna, także Chromium testów, startuje z argumentami ``launch_options``: bez losowania portu lokalnego każdego połączenia
+(``TcpPortRandomizationWin``), przy którym Windows odmawia czasem połączenia, choć porty są wolne.
 
 Okno z ``Login`` od silnika (``chrome`` zawsze, ``window`` na życzenie) na stronie logowania czeka, aż tata się zaloguje:
 co ``LOGIN_POLL_MS`` sprawdza, czy strona przeszła na inną niż logowanie, albo pyta efenix o listę zleceń w tej samej
@@ -65,7 +67,7 @@ from typing import Concatenate, Final, ParamSpec, TypedDict, TypeVar
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import Locator, Page, Request, Response, sync_playwright
+from playwright.sync_api import Locator, Page, Playwright, Request, Response, sync_playwright
 
 from . import TOOL_ROOT
 from .call_trace import exception_type
@@ -104,11 +106,13 @@ __all__ = [
     "QUANTITY",
     "SEARCH",
     "BrowserEfenix",
+    "LaunchOptions",
     "PageElement",
     "ScriptUse",
     "chrome",
     "chromium",
     "default_profile",
+    "launch_options",
     "read_order",
     "read_results",
     "window",
@@ -702,6 +706,49 @@ def default_profile() -> Path:
     return TOOL_ROOT / PROFILE_DIRECTORY
 
 
+# Funkcje Chromium, które każda przeglądarka okna wyłącza ponad listę Playwrighta. ``TcpPortRandomizationWin``: Chromium
+# 156 na Windows 11 22H2 i nowszym (także Windows Server 2025 runnerów CI) losuje port lokalny każdego połączenia, a
+# Windows odmawia wtedy czasem połączenia z WSAENOBUFS (``net::ERR_NO_BUFFER_SPACE``), choć porty są wolne
+# (crbug.com/572515601, microsoft/playwright#43545). Playwright wyłącza ją sam od microsoft/playwright#43605, scalonego
+# po wydaniu 1.64.1.
+_DISABLED_FEATURES: Final = ("TcpPortRandomizationWin",)
+_DISABLE_FEATURES: Final = "--disable-features="
+# Przełączniki ``--disable-features``, które Playwright daje przeglądarce danego kanału, raz na proces.
+_PLAYWRIGHT_DISABLING: dict[str | None, tuple[str, ...]] = {}
+
+
+class LaunchOptions(TypedDict):
+    ignore_default_args: list[str]
+    args: list[str]
+
+
+def launch_options(playwright: Playwright, *, channel: str | None = None, arguments: Sequence[str] = ()) -> LaunchOptions:
+    """Argumenty uruchomienia przeglądarki ``channel`` okna efenix (``None`` to Chromium Playwrighta) z ``arguments``.
+
+    Jeden ``--disable-features`` z listą Playwrighta i ``_DISABLED_FEATURES`` zamiast przełącznika Playwrighta, bo
+    Chromium bierze tylko ostatni ``--disable-features``, a własny obok zgubiłby listę Playwrighta. Tej listy Playwright
+    nie podaje w API, więc daje ją linia poleceń przeglądarki tego kanału uruchomionej raz na proces bez okna i zaraz
+    zamkniętej; ``PlaywrightError``, gdy ta przeglądarka nie wystartowała.
+    """
+
+    theirs = _playwright_disabling(playwright, channel)
+    features = [feature for switch in theirs for feature in switch.removeprefix(_DISABLE_FEATURES).split(",")]
+    disabled = ",".join(dict.fromkeys([*features, *_DISABLED_FEATURES]))
+    return {"ignore_default_args": list(theirs), "args": [_DISABLE_FEATURES + disabled, *arguments]}
+
+
+def _playwright_disabling(playwright: Playwright, channel: str | None) -> tuple[str, ...]:
+    if channel not in _PLAYWRIGHT_DISABLING:
+        # ``--enable-automation`` odblokowuje ``Browser.getBrowserCommandLine``.
+        probe = playwright.chromium.launch(channel=channel, headless=True, args=["--enable-automation"])
+        try:
+            line = probe.new_browser_cdp_session().send("Browser.getBrowserCommandLine")["arguments"]
+        finally:
+            probe.close()
+        _PLAYWRIGHT_DISABLING[channel] = tuple(str(argument) for argument in line if str(argument).startswith(_DISABLE_FEATURES))
+    return _PLAYWRIGHT_DISABLING[channel]
+
+
 @contextmanager
 def chrome(
     url: str,
@@ -723,8 +770,9 @@ def chrome(
 
     with sync_playwright() as playwright:
         try:
+            options = launch_options(playwright, channel=channel, arguments=arguments)
             context = playwright.chromium.launch_persistent_context(
-                profile, channel=channel, headless=headless, no_viewport=True, args=list(arguments)
+                profile, channel=channel, headless=headless, no_viewport=True, **options
             )
         except PlaywrightError as error:
             raise BrowserNotStarted(BrowserFailure(exception_type(error), Operation.START)) from error
@@ -743,7 +791,7 @@ def chromium(url: str, *, headless: bool = True) -> Iterator[BrowserEfenix]:
     """Okno efenix w nowym Chromium Playwrighta (Skrypt dla maszyn); przeglądarka zamyka się z oknem."""
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=headless)
+        browser = playwright.chromium.launch(headless=headless, **launch_options(playwright))
         try:
             with window(browser.new_page(), url) as efenix:
                 yield efenix

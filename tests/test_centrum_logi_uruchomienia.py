@@ -830,6 +830,38 @@ def _devtools(profile: Path) -> Iterator[Browser]:
         yield playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
 
 
+def _disabled_features(browser: Browser) -> list[set[str]]:
+    """Funkcje każdego ``--disable-features`` z linii poleceń przeglądarki uruchomionej z ``--enable-automation``."""
+
+    line = browser.new_browser_cdp_session().send("Browser.getBrowserCommandLine")["arguments"]
+    return [set(argument.removeprefix("--disable-features=").split(",")) for argument in line if argument.startswith("--disable-features=")]
+
+
+def test_okno_efenix_z_centrum_nie_losuje_portu_polaczenia_i_ma_wylaczone_funkcje_playwrighta(tmp_path: Path) -> None:
+    """Chromium 156 na Windows 11 22H2 i nowszym losuje port lokalny każdego połączenia (``TcpPortRandomizationWin``), a
+    Windows odmawia wtedy czasem połączenia z efenix (``net::ERR_NO_BUFFER_SPACE``), choć porty są wolne (#767). Przeglądarka
+    okna efenix, które otwiera Centrum, ma tę funkcję wyłączoną w jedynym ``--disable-features``, bo Chromium bierze tylko
+    ostatni, razem z każdą funkcją, którą wyłącza Playwright w Chromium bez tych argumentów."""
+
+    with atrapa_efenix([PRICED[0].in_efenix("611")]) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, "--remote-debugging-port=0", "--enable-automation")
+        atrapa.expire_session()
+        assert _start_pricing(centrum).status_code == 200
+        _view_where(centrum, lambda view: (view.get("progress", {}).get("step") or {}).get("label") == LOGIN)
+        with _devtools(tmp_path / "przegladarka-efenix") as window:
+            disabled_in_window = _disabled_features(window)
+        atrapa.log_in()
+        finished_view(centrum.client)
+    with sync_playwright() as playwright:
+        plain = playwright.chromium.launch(args=["--enable-automation"])
+        try:
+            [disabled_by_playwright] = _disabled_features(plain)
+        finally:
+            plain.close()
+
+    assert disabled_in_window == [disabled_by_playwright | {"TcpPortRandomizationWin"}]
+
+
 @pytest.mark.parametrize("close", [_close_window, _kill_browser], ids=["zamkniete-okno", "zabita-przegladarka"])
 def test_okno_efenix_zamkniete_w_trakcie_logowania_zatrzymuje_wycene_od_razu_a_centrum_przyjmuje_nastepne_uruchomienie(
     tmp_path: Path, close: Callable[[Path], None]
