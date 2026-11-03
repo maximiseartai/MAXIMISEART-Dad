@@ -85,7 +85,7 @@ jobs:
     if: ${{ needs.plan.outputs.czesci != '[]' }}
     runs-on: ubuntu-latest
     # A part of NA_CZESC mutations ends in PART_LIMIT_S of tools/mutacje_zmiany.py even with the costliest mutations of
-    # the measured nights, in the line tests and in the file tests (tools/mutacje_nocne.py).
+    # the measured nights in every test pass: line tests, file code tests and file tests (tools/mutacje_nocne.py).
     timeout-minutes: 180
     strategy:
       fail-fast: false

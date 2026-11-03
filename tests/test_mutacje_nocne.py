@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import UTC, datetime
 import hashlib
+import functools
 import io
 import json
 import math
@@ -298,21 +299,6 @@ def test_czesc_konczy_sie_w_swoim_limicie_czasu_przed_limitem_zadania_ci_ktore_b
     assert zadanie["timeout-minutes"] * 60 - mutacje_zmiany.PART_LIMIT_S >= 300
     # Rozmiar części liczy plan z domyślnych limitów i równoległości narzędzia.
     assert not {"--limit-czesci-s", "--limit-s", "--rownolegle"} & set(shlex.split(krok["run"]))
-
-
-def test_czesc_konczy_sie_w_limicie_czasu_z_najdrozszymi_zmierzonymi_mutacjami_w_testach_linii_i_testach_pliku() -> None:
-    """Etapy części jak w ``_mutate`` (``tools/mutacje_zmiany.py``): pokrycie, testy linii po ``WORKERS`` mutacji naraz,
-    testy pliku po jednej i brama typów, każdy z najgorszym przypadkiem nocy 31.10–3.11 (ADR 0021), choć zmierzono je
-    w różnych częściach: 16 mutacji ``tools/mutacje.py`` po pełnym limicie mutacji w testach linii, reszta po najwyższej
-    medianie mutacji pliku (210 s), co trzecia mutacja w testach pliku po 407 s, pokrycie 1006 s i brama typów 58 s."""
-
-    na_czesc, naraz = mutacje_nocne.NA_CZESC, mutacje_zmiany.WORKERS
-    drogie = min(na_czesc, 16)
-    testy_linii = math.ceil(drogie / naraz) * mutacje_zmiany.MUTATION_LIMIT_S + math.ceil((na_czesc - drogie) / naraz) * 210
-    testy_pliku = math.ceil(na_czesc / 3) * 407
-
-    assert 1006 + testy_linii + testy_pliku + 58 <= mutacje_zmiany.PART_LIMIT_S
-
 
 
 @pytest.mark.parametrize(
@@ -735,6 +721,93 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
     commit(repo, "Dopisz b (#3)")
     nastepna = _plan_nocy(github, tmp_path, monkeypatch, capsys, 3)
     assert (nastepna["baza"], nastepna["mutacje"]) == (plan["do"], "2")
+
+
+# Najgorsze czasy nocy 31.10–3.11 (runy 41179652907, 41285996039, 41408995300, 41601085650, ADR 0021). Pokrycie części
+# 1006 s i brama typów 58 s. W testach linii 16 mutacji tools/mutacje.py trwało pełny limit mutacji i kończyło się tam
+# (PRZEKROCZONY CZAS), a są na liście obok siebie, więc mogą trafić do jednej części; reszta po 210,3 s, najwyższej
+# medianie pliku z co najmniej trzema pomiarami. Testy kodu pliku jednej mutacji trwały najwyżej 836,2 s, a testy pliku
+# 440,64 s. Udziały mutacji, które doszły do tych przebiegów, mają skład prawdziwej części (kodu pliku, pliku, mutacji w
+# testach linii): te, których żadna inna część nie przewyższa w obu udziałach naraz.
+POKRYCIE_S, BRAMA_S, DROGIE, RESZTA_S, KODU_PLIKU_S, PLIKU_S = 1006, 58, 16, 210.3, 836.2, 440.64
+SKLADY_CZESCI = [(0, 37, 93), (6, 29, 93), (9, 26, 103), (11, 1, 32), (12, 12, 49), (26, 4, 102)]
+# Mutacja ``l*`` widzi test swojej linii, a ``w*`` (``@cache``) dopiero test kodu pliku, bo jej linię wykonuje tylko
+# ``test_a_wspolne``. Test, który widzi mutację, czeka, aż wystartuje ``WORKERS`` mutacji jego przebiegu (albo któraś
+# już policzyła), i zapisuje, ile ich biegnie naraz.
+PRZEBIEGI_BAZA = "from functools import cache\n" + "".join(f"\n\ndef l{i}() -> int:\n    return 0\n" for i in range(1, 5)) + "".join(
+    f"\n\n@cache\ndef w{i}() -> int:\n    return 0\n\n\ndef g{i}() -> int:\n    return w{i}()\n" for i in range(1, 5)
+)
+PRZEBIEGI_TESTY = (
+    "import pathlib\nimport time\nimport uuid\n\nfrom rozliczenia import warunek\n\n\n"
+    "def _naraz(przebieg: str) -> None:\n"
+    "    folder = pathlib.Path({folder!r}) / przebieg\n"
+    "    started, running, seen = folder / 'wystartowaly', folder / 'biegna', folder / 'naraz'\n"
+    "    for path in (started, running, seen):\n"
+    "        path.mkdir(parents=True, exist_ok=True)\n"
+    "    me = uuid.uuid4().hex\n"
+    "    (started / me).touch()\n"
+    "    (running / me).touch()\n"
+    "    deadline = time.monotonic() + 15\n"
+    "    while len(list(started.iterdir())) < {workers} and not any(seen.iterdir()) and time.monotonic() < deadline:\n"
+    "        time.sleep(0.05)\n"
+    "    (seen / me).write_text(str(len(list(running.iterdir()))))\n"
+    "    time.sleep(0.5)\n"
+    "    (running / me).unlink()\n\n\n"
+    "def test_a_wspolne() -> None:\n    assert [warunek.w1(), warunek.w2(), warunek.w3(), warunek.w4()]\n"
+    + "".join(
+        f"\n\ndef test_{nazwa}{i}() -> None:\n    if warunek.{nazwa}{i}() != 1:\n        _naraz({przebieg!r})\n    assert warunek.{nazwa}{i}() == 1\n"
+        for nazwa, przebieg in (("l", "linii"), ("g", "kodu pliku"))
+        for i in range(1, 5)
+    )
+)
+
+
+def _najdluzsza_czesc_s(mutacje: int, naraz_linii: int, naraz_kodu_pliku: int) -> float:
+    """Najdłuższa część nocy z ``mutacje`` mutacjami w etapach ``_mutate``: pokrycie, testy linii, testy kodu pliku,
+    testy pliku i brama typów. Z ``drogie`` mutacjami po pełnym limicie dalsze przebiegi dostają najwyżej resztę części,
+    a testy pliku biegną po jednej mutacji, najwolniej, jak mogą."""
+
+    def czesc(drogie: int, kodu_pliku: int, pliku: int, zmierzone: int) -> float:
+        reszta = mutacje - drogie
+        do_kodu_pliku, do_pliku = (min(reszta, math.ceil(mutacje * udzial / zmierzone)) for udzial in (kodu_pliku, pliku))
+        linii = math.ceil(drogie / naraz_linii) * mutacje_zmiany.MUTATION_LIMIT_S + math.ceil(reszta / naraz_linii) * RESZTA_S
+        return POKRYCIE_S + linii + math.ceil(do_kodu_pliku / naraz_kodu_pliku) * KODU_PLIKU_S + do_pliku * PLIKU_S + BRAMA_S
+
+    return max(czesc(drogie, *sklad) for drogie in range(min(mutacje, DROGIE) + 1) for sklad in SKLADY_CZESCI)
+
+
+def test_czesc_konczy_sie_w_limicie_czasu_z_najdrozszymi_zmierzonymi_mutacjami_kazdego_przebiegu(tmp_path: Path) -> None:
+    """Część ma ``NA_CZESC`` mutacji, tyle pełnych kolejek po ``WORKERS``, ile mieści limit czasu części przy najgorszych
+    czasach nocy 31.10–3.11 w każdym przebiegu, z liczbą mutacji, które ``tools/mutacje_zmiany.py`` uruchamia naraz w
+    testach linii i w testach kodu pliku, gdy biegnie jak krok części, bez ``--rownolegle`` (ADR 0021)."""
+
+    folder = tmp_path / "naraz"
+    pliki = {
+        ".gitignore": "__pycache__/\n",
+        "src/rozliczenia/__init__.py": "",
+        "src/rozliczenia/warunek.py": PRZEBIEGI_BAZA,
+        "tests/test_warunek.py": PRZEBIEGI_TESTY.format(folder=str(folder), workers=mutacje_zmiany.WORKERS),
+    }
+    repo = repository(tmp_path / "repo", pliki)
+    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/mutacje_zmiany.py", "tools/ci/pytest_pokrycie.py", "tools/ci/pokrycie_procesu.py"))
+    baza = commit(repo, "baza")
+    (repo / "src" / "rozliczenia" / "warunek.py").write_text(PRZEBIEGI_BAZA.replace("return 0", "return 1"), encoding="utf-8")
+
+    czesc = subprocess.run(
+        [sys.executable, "tools/mutacje_zmiany.py", "--baza", baza],
+        cwd=repo,
+        env={**os.environ, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1", "GITHUB_ACTIONS": "true"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=300,
+        check=False,
+    )
+
+    assert czesc.returncode == 0, czesc.stdout + czesc.stderr
+    naraz_linii, naraz_kodu_pliku = (max(int(plik.read_text()) for plik in (folder / przebieg / "naraz").iterdir()) for przebieg in ("linii", "kodu pliku"))
+    najdluzsza = functools.partial(_najdluzsza_czesc_s, naraz_linii=naraz_linii, naraz_kodu_pliku=naraz_kodu_pliku)
+    assert najdluzsza(mutacje_nocne.NA_CZESC) <= mutacje_zmiany.PART_LIMIT_S < najdluzsza(mutacje_nocne.NA_CZESC + mutacje_zmiany.WORKERS)
 
 
 def _nocne() -> dict[Any, Any]:
