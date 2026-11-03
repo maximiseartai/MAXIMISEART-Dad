@@ -72,6 +72,19 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
+        "Zgłoszenie, które wróciło, przejmuje otwarte Zgłoszenie bez komentarza",
+        (
+            Edit(
+                VERIFIED,
+                "    if any(issue.number == found and issue.body == body for issue in issues):\n",
+                "    if True:\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "zgloszenie-wrocilo"),
+        "powtórzone Zgłoszenie nie zostawia śladu w otwartym Zgłoszeniu tego odcisku",
+        NEW,
+    ),
+    Mutation(
         "brak sieci pomija plik do następnego startu",
         (
             Edit(

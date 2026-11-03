@@ -33,20 +33,28 @@ def _check(config: str) -> tuple[str, ...]:
 MUTATIONS = (
     Mutation(
         "issue okresu zakładane bez szukania (_deliver_to_period: if found is None)",
-        (Edit(MODEL, "          /\\ IF Najnowsze = 0\n             THEN /\\ UNCHANGED <<nr, kom>>\n",
-              "          /\\ IF TRUE\n             THEN /\\ UNCHANGED <<nr, kom>>\n"),),
+        (Edit(MODEL, "          /\\ IF Najnowsze = 0\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ Idz(q, \"zaloz\", \"find_issue",
+              "          /\\ IF TRUE\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ Idz(q, \"zaloz\", \"find_issue"),),
         _check("okres"),
         "druga Kontrola ilości okresu zakłada drugie issue",
         NEW,
     ),
     Mutation(
         "Zgłoszenie zakładane bez szukania (_deliver_report: if found is not None)",
-        (Edit(MODEL, "          /\\ IF Najnowsze = 0\n             THEN /\\ UNCHANGED <<nr, kom, slady>>\n",
-              "          /\\ IF TRUE\n             THEN /\\ UNCHANGED <<nr, kom, slady>>\n"),),
+        (Edit(MODEL, "          /\\ IF Najnowsze = 0\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ Idz(q, \"zaloz\", \"labelled_issues",
+              "          /\\ IF TRUE\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ Idz(q, \"zaloz\", \"labelled_issues"),),
         _check("zgloszenie"),
-        "ponowiona wysyłka Zgłoszenia po zgubionej odpowiedzi zakłada drugie issue tego problemu",
+        "drugie Zgłoszenie tego problemu zakłada drugie issue",
         NEW,
     ),
+    Mutation(
+        "Zgłoszenie, które wróciło, przejęte bez komentarza (_deliver_report: issue.body == body)",
+        (Edit(MODEL, "             ELSE IF issues[Najnowsze].tresc[1] = Cialo(biez[q])\n", "             ELSE IF TRUE\n"),),
+        _check("zgloszenie"),
+        "drugie Zgłoszenie tego problemu dostaje znacznik, choć Skrzynka go nie ma",
+        NEW,
+    ),
+
     Mutation(
         "_claimed zawsze pozwala wysyłać, a blokada folderu jest zawsze wolna (_drain bez _claimed i _folder_lock)",
         (

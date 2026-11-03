@@ -311,14 +311,18 @@ Szukaj(q) ==
                   /\ Idz(q, "komentuj", "find_issue: jest issue okresu, kazda czesc komentarzem")
        \/ /\ Cel = "zgloszenie"
           /\ UNCHANGED <<sieci, stopped, nieczytany>>
-          \* _deliver_report: otwarte Zgłoszenie z tym odciskiem to Delivered(found, ()), bez komentarzy; jedyna
-          \* część Zgłoszenia (ASSUME wyżej) jest już w treści tego issue.
+          \* _deliver_report (newest_with_line na liście labelled_issues): otwarte Zgłoszenie z treścią równą
+          \* jedynej części tej wysyłki (ASSUME wyżej) założyła jej przerwana próba, więc Delivered(found, ()) bez
+          \* komentarzy. Inne otwarte Zgłoszenie z tym odciskiem dostaje tę część komentarzem (returned_report).
+          /\ UNCHANGED slady
           /\ IF Najnowsze = 0
-             THEN /\ UNCHANGED <<nr, kom, slady>>
-                  /\ Idz(q, "zaloz", "find_issue: brak otwartego Zgloszenia z odciskiem")
-             ELSE /\ nr' = Ustaw(nr, q, Najnowsze) /\ kom' = Ustaw(kom, q, <<>>)
-                  /\ UNCHANGED slady
-                  /\ Idz(q, "dostarczona", "_deliver_report: jest Zgloszenie z odciskiem, Delivered(found, ()) bez komentarzy")
+             THEN /\ UNCHANGED <<nr, kom>>
+                  /\ Idz(q, "zaloz", "labelled_issues: brak otwartego Zgloszenia z odciskiem")
+             ELSE IF issues[Najnowsze].tresc[1] = Cialo(biez[q])
+             THEN /\ nr' = Ustaw(nr, q, Najnowsze) /\ kom' = Ustaw(kom, q, <<>>)
+                  /\ Idz(q, "dostarczona", "_deliver_report: Zgloszenie z trescia tej wysylki, Delivered(found, ()) bez komentarzy")
+             ELSE /\ nr' = Ustaw(nr, q, Najnowsze) /\ kom' = Ustaw(kom, q, Od(1))
+                  /\ Idz(q, "komentuj", "_deliver_report: inne Zgloszenie z odciskiem, komentarz returned_report")
        \/ /\ Cel = "znane"
           /\ UNCHANGED <<sieci, stopped, nieczytany, slady>>
           \* _deliver_to_known: issue jest na liście (Gone model pomija), każda część komentarzem.
