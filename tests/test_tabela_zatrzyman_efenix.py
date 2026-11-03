@@ -1,0 +1,137 @@
+"""Tabela decyzji Zatrzymań okna efenix (Zgłoszenia #19 i #20 z MAXIMISEART-Dad-zgloszenia): każde miejsce, które
+zgłasza wyjątek okna, i przyczyna techniczna z zamkniętej listy (``efenix_pricing.WindowCause``), którą daje Logom
+Uruchomienia.
+
+Hipotezy ze Zgłoszeń, które przyczyna rozróżnia przy ``UnexpectedPage(PagePart.ORDER)``:
+A: strona zlecenia bez pozycji z przypisania kolumn (``MissingPositions`` z kodami).
+B: pole Ilość z id spoza ``INDEKS_NNN_…``, kod pozycji dwa razy albo wartość, która nie jest liczbą całkowitą
+(``OtherShape`` z ``Shape.QUANTITY_ID``, ``POSITION_TWICE``, ``QUANTITY_VALUE``).
+C: ``#data_install`` albo ``#cena_all2`` nie dokładnie raz (``ElementCount`` z selektorem i liczbą) albo data lub
+kwota w innej postaci (``Shape.DATE_TEXT``, ``Shape.AMOUNT_TEXT``).
+D: błąd Playwrighta (``BrowserFailure``: typ wyjątku i działanie przeglądarki, ``Operation``, np. ``OPEN`` przy
+``goto``, ``ELEMENT`` przy czekaniu na element, ``ANSWER`` przy odpowiedzi).
+E: wylogowanie (``LoginSign``) i zamknięte okno (``Closed``) mają własne przyczyny.
+
+Tabela to dane, a test porównuje ją z kodem: każde ``raise`` wyjątku okna w ``efenix_browser``, ``efenix_pricing`` i
+``efenix_positions`` (funkcja i tekst wyrażenia) ma dokładnie jeden wiersz, a każdy wiersz ma swoje miejsce. Nowe
+miejsce bez wiersza albo przyczyny nie przejdzie, więc recenzent czyta najpierw tę tabelę. Że przyczyna dochodzi do Logów
+Uruchomienia, pokazują przegląd odcięć w ``tests/test_wycena_efenix.py`` i testy hipotez A–D w
+``tests/test_centrum_logi_uruchomienia.py``. Granica: wyjątek okna zgłoszony gdzie indziej niż w tych trzech modułach
+i ``raise`` zmiennej (``raise error``) tabela pomija.
+"""
+
+from __future__ import annotations
+
+import ast
+from collections import Counter
+from pathlib import Path
+from typing import NamedTuple
+
+ROOT = Path(__file__).resolve().parents[1]
+MODULES = {
+    "efenix_browser": ROOT / "src" / "rozliczenia" / "efenix_browser.py",
+    "efenix_pricing": ROOT / "src" / "rozliczenia" / "efenix_pricing.py",
+    "efenix_positions": ROOT / "src" / "rozliczenia" / "efenix_positions.py",
+}
+WINDOW_ERRORS = {"UnexpectedPage", "LoggedOut", "WindowClosed", "EfenixUnreachable", "BrowserNotStarted"}
+
+
+class Row(NamedTuple):
+    module: str
+    function: str
+    raised: str
+    when: str
+    hypothesis: str
+
+
+TABLE = [
+    # --- otwarcie okna i logowanie ---
+    Row("efenix_browser", "chrome", "BrowserNotStarted(BrowserFailure(exception_type(error), Operation.START))",
+        "Chrome nie wystartował (brak Chrome, profil trzyma inne okno)", "start przeglądarki"),
+    Row("efenix_browser", "open_list", "EfenixUnreachable(failed.failure)",
+        "goto listy zleceń przed pierwszym otwarciem efenix: błąd Playwrighta (Operation.OPEN)", "D przy starcie"),
+    Row("efenix_browser", "wait_for_login", "WindowClosed(PagePart.LIST, Closed.DURING_LOGIN)",
+        "karta zamknięta w czasie czekania na logowanie", "E"),
+    Row("efenix_browser", "wait_for_login", "LoggedOut(PagePart.LIST, LoginSign.NO_LOGIN)",
+        "tata nie zalogował się w LOGIN_TIMEOUT_MS", "E"),
+    Row("efenix_browser", "_ensure_logged_in", "LoggedOut(part, LoginSign.PAGE)",
+        "adres karty to page_login.php po otwarciu listy (LIST) albo strony zlecenia (ORDER)", "E"),
+    # --- każde działanie okna ---
+    Row("efenix_browser", "guarded", "WindowClosed(part, Closed.DURING_ACTION)",
+        "dowolny wyjątek działania, gdy karta jest zamknięta", "E"),
+    Row("efenix_browser", "_within", "UnexpectedPage(part, failed.failure)",
+        "błąd Playwrighta w działaniu przeglądarki nazwanym przez _doing: typ błędu i Operation", "D"),
+    Row("efenix_browser", "_within", "UnexpectedPage(part, BrowserFailure(exception_type(error), None))",
+        "błąd Playwrighta w działaniu przeglądarki bez nazwy (przegląd odcięć sprawdza, że żadne takie nie zostało)", "D"),
+    Row("efenix_browser", "_single", "UnexpectedPage(part, ElementCount(selector, count))",
+        "element okna (#field_numer, #data_install, #cena_all2, przyciski i okna dialogowe) nie dokładnie raz", "C"),
+    Row("efenix_browser", "_close", "UnexpectedPage(part, ElementCount(selector, count))",
+        "okno dialogowe bez przycisku zamknięcia [data-dismiss=\"modal\"]", "C"),
+    Row("efenix_browser", "_amount", "UnexpectedPage(part, OtherShape(Shape.AMOUNT_TEXT))",
+        "#cena_all2 (ORDER) albo price_all odpowiedzi (QUANTITY) nie jest liczbą z kropką", "C"),
+    # --- szukanie i tabela wyników ---
+    Row("efenix_browser", "search", "LoggedOut(PagePart.RESULTS, LoginSign.REDIRECT)",
+        "odpowiedź szukania przekierowana na page_login.php", "E"),
+    Row("efenix_browser", "read_results", "UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.NO_TABLE))",
+        "odpowiedź szukania bez <table>", "inna budowa"),
+    Row("efenix_browser", "_column", "UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.COLUMNS))",
+        "nagłówek Numer dokumentu, Status, Wykonawca albo Dane adresowe nie dokładnie raz", "inna budowa"),
+    Row("efenix_browser", "_listed", "UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_CELLS))",
+        "wiersz z inną liczbą komórek niż nagłówków albo bez jednego linku page_order_edit.php?id=", "inna budowa"),
+    Row("efenix_browser", "_listed", "UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_EMPTY))",
+        "wiersz bez id zlecenia w linku albo bez Numer dokumentu", "inna budowa"),
+    # --- strona zlecenia ---
+    Row("efenix_browser", "_order_on", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.QUANTITY_ID))",
+        "pole input.wycena-ilosc o id spoza INDEKS_NNN_…", "B"),
+    Row("efenix_browser", "_order_on", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.POSITION_TWICE, found[1]))",
+        "ten sam kod pozycji w dwóch polach Ilość", "B"),
+    Row("efenix_browser", "_order_on", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, found[1]))",
+        "wartość pola Ilość, która nie jest liczbą całkowitą (np. 1.5)", "B"),
+    Row("efenix_browser", "_execution_date", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))",
+        "#data_install niepusta i nie RRRR-MM-DD", "C"),
+    Row("efenix_browser", "_execution_date", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))",
+        "#data_install RRRR-MM-DD, ale nie istniejący dzień (2026-02-30)", "C"),
+    Row("efenix_pricing", "_known_positions", "UnexpectedPage(PagePart.ORDER, MissingPositions(tuple(sorted(missing))))",
+        "strona zlecenia (po otwarciu albo po Wycenie Emmetta) bez kodu z przypisania kolumn", "A"),
+    # --- data wykonania ---
+    Row("efenix_browser", "set_execution_date", "UnexpectedPage(PagePart.DATE, OtherShape(Shape.NO_CALENDAR))",
+        "pole daty bez kalendarza pickadate", "inna budowa"),
+    Row("efenix_browser", "set_execution_date", "LoggedOut(PagePart.DATE, LoginSign.REDIRECT)",
+        "odpowiedź zapisu daty przekierowana na page_login.php", "E"),
+    # --- pole Ilość ---
+    Row("efenix_browser", "enter_quantity", "UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.UNKNOWN_POSITION, position))",
+        "pozycji do wpisania nie ma wśród pól ostatnio odczytanej strony", "inna budowa"),
+    Row("efenix_browser", "enter_quantity", "LoggedOut(PagePart.QUANTITY, LoginSign.REDIRECT)",
+        "odpowiedź zapisu ilości przekierowana na page_login.php", "E"),
+    Row("efenix_browser", "enter_quantity", "UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.ANSWER_NOT_JSON, position))",
+        "odpowiedź zapisu ilości nie jest JSON", "inna budowa"),
+    Row("efenix_browser", "enter_quantity", "LoggedOut(PagePart.QUANTITY, LoginSign.REFUSED)",
+        "odpowiedź zapisu ilości result: nok (wygasła sesja)", "E"),
+    Row("efenix_browser", "enter_quantity", "UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.ANSWER_RESULT, position))",
+        "odpowiedź zapisu ilości z result innym niż ok i nok", "inna budowa"),
+]
+
+
+def _raised(path: Path) -> list[tuple[str, str]]:
+    """Funkcja i tekst wyrażenia każdego ``raise`` wyjątku okna w pliku ``path``."""
+
+    found: list[tuple[str, str]] = []
+
+    def walk(node: ast.AST, function: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            inside = child.name if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) else function
+            if isinstance(child, ast.Raise) and child.exc is not None:
+                head = child.exc.func if isinstance(child.exc, ast.Call) else child.exc
+                if isinstance(head, ast.Name) and head.id in WINDOW_ERRORS:
+                    found.append((inside, ast.unparse(child.exc)))
+            walk(child, inside)
+
+    walk(ast.parse(path.read_text(encoding="utf-8")), "<moduł>")
+    return found
+
+
+def test_kazde_miejsce_zatrzymania_okna_efenix_ma_wiersz_tabeli_decyzji_z_przyczyna_z_zamknietej_listy() -> None:
+    in_code = Counter((module, function, raised) for module, path in MODULES.items() for function, raised in _raised(path))
+    in_table = Counter((row.module, row.function, row.raised) for row in TABLE)
+
+    assert (sorted(in_code - in_table), sorted(in_table - in_code)) == ([], [])
