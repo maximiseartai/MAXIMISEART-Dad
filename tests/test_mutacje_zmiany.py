@@ -1091,6 +1091,46 @@ def test_wyjatek_w_zlej_postaci_nazywa_plik_i_linie(comment: str) -> None:
         exceptions(f"x = 1\ny = 2  {comment}\n", "m.py")
 
 
+def test_pokrycie_workera_xdist_przetrwa_zamkniecie_workera_zaraz_po_koncu_sesji(tmp_path: Path) -> None:
+    """Kontroler xdist zamyka workera zaraz po końcu jego sesji, a execnet przerywa mu główny wątek po 5 s (#788).
+
+    Atrapa: worker ginie (``os._exit``) w pierwszym kroku po końcu sesji, a zapis ma już zmienioną linię testu.
+    """
+
+    module = tmp_path / "modul.py"
+    module.write_text("def w_tescie() -> int:\n    return 1\n", encoding="utf-8")
+    (tmp_path / "conftest.py").write_text(
+        "import os\n\nimport pytest\n\n\n"
+        "@pytest.hookimpl(tryfirst=True)\n"
+        "def pytest_unconfigure(config):\n"
+        "    if hasattr(config, 'workerinput'):\n"
+        "        os._exit(0)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "test_modul.py").write_text("import modul\n\n\ndef test_w_tescie() -> None:\n    modul.w_tescie()\n", encoding="utf-8")
+    found = tmp_path / "wynik"
+    found.mkdir()
+    settings = {"linie": {str(module): [2]}, "wynik": str(found)}
+    done = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-n", "1", "-p", "pytest_pokrycie", "-p", "no:cacheprovider", "test_modul.py"],
+        cwd=tmp_path,
+        env={
+            **{name: value for name, value in os.environ.items() if name != pokrycie_procesu.TEST},
+            "PYTHONPATH": os.pathsep.join([str(ROOT / "tools" / "ci"), str(tmp_path)]),
+            "POKRYCIE_LINII": json.dumps(settings),
+        },
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+
+    assert "1 passed" in done.stdout, done.stdout + done.stderr
+    recorded = [json.loads(written.read_text(encoding="utf-8")) for written in found.iterdir()]
+    assert [part["linie"] for part in recorded if part["linie"]] == [{"test_modul.py::test_w_tescie": {str(module): [2]}}]
+
+
 def test_pokrycie_przypisuje_zmieniona_linie_testom_ktore_ja_wykonuja_w_watku_i_w_podprocesie(tmp_path: Path) -> None:
     module = tmp_path / "modul.py"
     module.write_text(

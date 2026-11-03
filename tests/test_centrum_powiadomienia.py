@@ -19,7 +19,7 @@ from rozliczenia.centrum.report_box import CloseReason, Refused, Unreachable
 from rozliczenia.centrum.tool_freshness import PublishedRelease
 from rozliczenia.centrum.tool_update import Release
 
-from tests.fixtures.centrum import TOOL_COMMIT, case_states, centrum as plain_centrum
+from tests.fixtures.centrum import TOOL_COMMIT, case_states, centrum as plain_centrum, join_threads_since, new_line
 from tests.fixtures.centrum_processes import PreparingCentrum, preparing_centrum, stopped_for_maks
 from tests.fixtures.locked_file import lock_file
 from tests.fixtures.potomne import wait_for
@@ -34,11 +34,17 @@ def with_key(centrum: PreparingCentrum) -> None:
 
 
 def sent_report(centrum: PreparingCentrum) -> str:
-    """Zgłoszenie „do Maksa” wysłane z tego komputera; zwraca jego „Co się stało”."""
+    """Zgłoszenie „do Maksa” wysłane z tego komputera; zwraca jego „Co się stało”.
 
+    Czeka też na pytania skrzynki, które wysyłka zostawia w tle (Diagnoza szuka otwartego Zgłoszenia i nikt na to nie
+    czeka): spóźniona odmowa po zmianie skrzynki w teście byłaby werdyktem „klucz odrzucony” sprzed jego pytania.
+    """
+
+    since = new_line()
     run_id = stopped_for_maks(centrum)
     assert centrum.client.post(f"/api/runs/{run_id}/diagnosis").status_code == 200
     assert centrum.client.post(f"/api/runs/{run_id}/report").json() == {"state": "sent"}
+    join_threads_since(since)
     return centrum.surroundings.report_box.sent[-1].title.split(": ", 1)[1]
 
 
