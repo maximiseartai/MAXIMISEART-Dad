@@ -262,10 +262,11 @@ def test_mutacje_bez_werdyktu_po_limicie_czasu_czesci_trafiaja_do_issue_ich_pr_a
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Część dała werdykt reszcie mutacji, a zapis wymienia te, których nie zdążyła: noc zgłasza je PR-om ich linii, więc
-    następna noc nie wraca do jej zakresu (ADR 0021)."""
+    następna noc nie wraca do jej zakresu (ADR 0021). Mutacja bez werdyktu ma dopisek i radę także w komentarzu do
+    issue, które PR już ma, bo inaczej agent wziąłby ją za przeżytą i pisał test albo „nie warto”."""
 
     repo, baza = _historia(tmp_path)
-    github = GitHubWPamieci()
+    github = GitHubWPamieci(issues=[{"number": 5, "title": "Przeżyte mutacje z #12", "state": "open", "body": "", "comments": []}])
     po_limicie = "MUTACJE ZMIANY FAIL | limit czasu części 10500 s minął przed werdyktem 2 mutacji | przeżyło 1 | mutacje=28 | wyjątki=0 | innego systemu=0"
     zapisy = _zapisy(
         tmp_path / "zapisy",
@@ -283,8 +284,10 @@ def test_mutacje_bez_werdyktu_po_limicie_czasu_czesci_trafiaja_do_issue_ich_pr_a
         f"MUTACJA src/a.py:1 stała | klucz {_klucz('src/a.py:1 stała')}",
         f"MUTACJA src/a.py:5 inna | klucz {_klucz('src/a.py:5 inna')}{bez_werdyktu}",
     ]
-    assert f"MUTACJA src/a.py:2 stała | klucz {_klucz('src/a.py:2 stała')}{bez_werdyktu}" in tresci["Przeżyte mutacje z #12"].splitlines()
-    assert "uruchom ją `tools/mutacje.py`" in tresci["Przeżyte mutacje z #12"]
+    assert "uruchom ją `tools/mutacje.py`" in tresci["Przeżyte mutacje z #11"]
+    [komentarz] = [komentarz["body"] for komentarz in github.issues[0]["comments"]]
+    assert [linia for linia in komentarz.splitlines() if linia.startswith("MUTACJA")] == [f"MUTACJA src/a.py:2 stała | klucz {_klucz('src/a.py:2 stała')}{bez_werdyktu}"]
+    assert "uruchom ją `tools/mutacje.py`" in komentarz
 
 
 def test_czesc_konczy_sie_w_swoim_limicie_czasu_przed_limitem_zadania_ci_ktore_by_ja_anulowalo_bez_zapisu() -> None:
@@ -297,13 +300,18 @@ def test_czesc_konczy_sie_w_swoim_limicie_czasu_przed_limitem_zadania_ci_ktore_b
     assert not {"--limit-czesci-s", "--limit-s", "--rownolegle"} & set(shlex.split(krok["run"]))
 
 
-def test_czesc_konczy_sie_w_limicie_czasu_takze_gdy_testy_kazdej_jej_mutacji_trwaja_pelny_limit_mutacji() -> None:
-    """Pierwszy przebieg testów biegnie po ``WORKERS`` mutacji naraz, a każde polecenie kończy limit mutacji, więc część
-    z ``NA_CZESC`` drogimi mutacjami zostawia ``ZAPAS_S`` na pokrycie, szersze przebiegi testów i bramę typów."""
+def test_czesc_konczy_sie_w_limicie_czasu_z_najdrozszymi_zmierzonymi_mutacjami_w_testach_linii_i_testach_pliku() -> None:
+    """Etapy części jak w ``_mutate`` (``tools/mutacje_zmiany.py``): pokrycie, testy linii po ``WORKERS`` mutacji naraz,
+    testy pliku po jednej i brama typów, każdy z najgorszym przypadkiem nocy 31.10–3.11 (ADR 0021), choć zmierzono je
+    w różnych częściach: 16 mutacji ``tools/mutacje.py`` po pełnym limicie mutacji w testach linii, reszta po najwyższej
+    medianie mutacji pliku (210 s), co trzecia mutacja w testach pliku po 407 s, pokrycie 1006 s i brama typów 58 s."""
 
-    kolejki = math.ceil(mutacje_nocne.NA_CZESC / mutacje_zmiany.WORKERS)
+    na_czesc, naraz = mutacje_nocne.NA_CZESC, mutacje_zmiany.WORKERS
+    drogie = min(na_czesc, 16)
+    testy_linii = math.ceil(drogie / naraz) * mutacje_zmiany.MUTATION_LIMIT_S + math.ceil((na_czesc - drogie) / naraz) * 210
+    testy_pliku = math.ceil(na_czesc / 3) * 407
 
-    assert kolejki * mutacje_zmiany.MUTATION_LIMIT_S + mutacje_nocne.ZAPAS_S <= mutacje_zmiany.PART_LIMIT_S
+    assert 1006 + testy_linii + testy_pliku + 58 <= mutacje_zmiany.PART_LIMIT_S
 
 
 

@@ -230,6 +230,28 @@ def test_brama_typow_sprawdza_przezyte_mutacje_operatorow_a_cofniecie_do_bazy_tr
     ]
 
 
+def test_mutacja_ktorej_brama_typow_nie_sprawdzila_w_czasie_trafia_do_zapisu_jako_bez_werdyktu(tmp_path: Path) -> None:
+    """Mutacja, która przeżyła testy, a której brama nie dała wyniku w czasie, nie jest ani przeżyta, ani wykryta: część
+    kończy się kodem 3, a zapis wymienia ją w ``bez_werdyktu``, więc noc zgłasza ją do issue (ADR 0021).
+
+    W nocach to najczęstsza droga do mutacji bez werdyktu (run 41285996039, części 11, 12 i 15: „brama typów, ruff: czas
+    minął, zanim się zaczął”); tu krok atrapy bramy bez wyniku daje ``# brama gdy None: ruff późno``.
+    """
+
+    record = tmp_path / "zapis" / "czesc.json"
+    changed = CHANGED + "\n\ndef zapas() -> int:\n    return 1  # brama gdy None: ruff późno\n"
+    late = "src/rozliczenia/warunek.py:6 `return 1` → `return None`"
+
+    done = _run(_repo(tmp_path / "repo", ALL_CASES, changed), "--zapis", str(record), fake_gate=True)
+
+    assert done.returncode == 3, done.stdout + done.stderr
+    assert f"BEZ WERDYKTU: {late} → brama typów, ruff: brak wyniku po 1 s" in done.stdout.splitlines(), done.stdout
+    written = json.loads(record.read_text(encoding="utf-8"))
+    assert written["wynik"].startswith("MUTACJE ZMIANY FAIL | limit czasu części 10500 s minął przed werdyktem 1 mutacji | "), written["wynik"]
+    assert [entry["id"] for entry in written["bez_werdyktu"]] == [late]
+    assert late not in [entry["id"] for entry in written["przezyte"]]
+
+
 # Poprawka dodaje import w jednym fragmencie, a używa go w innym, i zmienną, którą zwraca; test przechodzi z nią i bez
 # niej. Cofnięcie fragmentu z użyciem zostawia nieużyty import (ruff F401), a ``return wynik`` → ``return None``
 # nieużytą zmienną (F841): oba przeżywają jak przed bramą (#703, runda 1 przeglądu #721).
