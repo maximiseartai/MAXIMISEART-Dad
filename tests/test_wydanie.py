@@ -222,6 +222,11 @@ class Releasing:
     def publish(self, *extra: str) -> subprocess.CompletedProcess[str]:
         return self._tool("wydaj", "--plan", str(self.plan_file), "--co-nowego", str(self.summary_file), *extra)
 
+    def publish_without_summary(self) -> subprocess.CompletedProcess[str]:
+        """``wydaj`` z planem i potwierdzeniem Maksa, ale bez pliku „Co nowego”."""
+
+        return self._tool("wydaj", "--plan", str(self.plan_file), "--potwierdzone-przez-maksa")
+
     def planned(self) -> dict[str, Any]:
         result = self.plan()
         assert result.returncode == 0, result.stdout + result.stderr
@@ -368,6 +373,18 @@ def test_bez_potwierdzenia_maksa_nie_powstaje_tag_ani_release(releasing: Releasi
     assert SUMMARY in result.stdout
     assert releasing.remote_tags() == {}
     assert git(releasing.checkout, "tag", "--list") == ""
+    assert releasing.posted() == []
+
+
+def test_wydanie_bez_pliku_co_nowego_konczy_sie_bledem_uzycia_z_nazwa_opcji_i_nic_nie_tworzy(releasing: Releasing) -> None:
+    releasing.merge(1, "feat: ilości usług", {"src/a.py": "a = 1\n"})
+    releasing.planned()
+
+    result = releasing.publish_without_summary()
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert result.stderr.splitlines()[-1].endswith("the following arguments are required: --co-nowego")
+    assert releasing.remote_tags() == {}
     assert releasing.posted() == []
 
 
