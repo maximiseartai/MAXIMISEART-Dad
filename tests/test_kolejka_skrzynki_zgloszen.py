@@ -747,16 +747,37 @@ def test_zgloszenie_to_issue_z_trescia_podgladu_bez_dopisanego_wiersza(tmp_path:
     assert wait_for(lambda: queue.files() == [])
 
 
-def test_zgloszenie_przejmuje_otwarte_issue_tego_odcisku_bez_nowego_i_bez_komentarza(tmp_path: Path) -> None:
+# Pierwsze Zgłoszenie tego odcisku, już w Skrzynce: inne Uruchomienie, inna Diagnoza.
+FIRST_REPORT_BODY = f"Zgłoszenie z Centrum rozliczeń.\n\n- Logi: pierwsze Uruchomienie\n\n## Narzędzie\n\n{FINGERPRINT_LINE}\n"
+
+
+def test_zgloszenie_z_odciskiem_otwartego_zgloszenia_jest_w_nim_komentarzem_z_cala_trescia(tmp_path: Path) -> None:
     other = FakeIssue(3, "zgloszenie", "inny problem", "- Odcisk problemu: fedcba9876543210\n")
-    open_report = FakeIssue(7, "zgloszenie", REPORT.title, REPORT_BODY)
+    open_report = FakeIssue(7, "zgloszenie", REPORT.title, FIRST_REPORT_BODY)
     queue = Queue(tmp_path, FakeReportBox(issues=[other, open_report]))
 
     queue.outbox.post(report())
 
     assert wait_for(lambda: queue.files() == [])
     assert queue.delivered == [(RUN_ID, 7)]
-    assert (queue.box.issues, open_report.comments, queue.box.keys) == ([other, open_report], [], [])
+    assert queue.box.issues == [other, open_report]
+    assert (open_report.body, other.comments) == (FIRST_REPORT_BODY, [])
+    assert open_report.comments == [f"## Zgłoszenie wróciło\n\n{REPORT_BODY}"]
+    assert queue.outbox.delivered(RUN_ID, "zgloszenie") is not None
+
+
+def test_zgloszenie_ktore_wrocilo_po_urwanej_odpowiedzi_na_komentarz_przychodzi_co_najmniej_raz(tmp_path: Path) -> None:
+    open_report = FakeIssue(7, "zgloszenie", REPORT.title, FIRST_REPORT_BODY)
+    queue = Queue(tmp_path, FakeReportBox(issues=[open_report], lost_comment_answers=1))
+
+    queue.outbox.post(report())
+    queue.passed()
+    assert len(queue.files()) == 1
+    queue.clock.advance(RETRY_S)
+
+    assert wait_for(lambda: queue.files() == [])
+    assert queue.box.issues == [open_report]
+    assert open_report.comments == [f"## Zgłoszenie wróciło\n\n{REPORT_BODY}"] * 2
 
 
 def test_zamkniete_zgloszenie_tego_odcisku_nie_jest_przejete(tmp_path: Path) -> None:
@@ -780,14 +801,14 @@ def test_zerwane_polaczenie_po_zalozeniu_zgloszenia_nie_daje_drugiego_zgloszenia
     queue.clock.advance(RETRY_S)
 
     assert wait_for(lambda: queue.files() == [])
-    assert [issue.body for issue in queue.box.sent] == [REPORT_BODY]
+    assert [(issue.body, issue.comments) for issue in queue.box.sent] == [(REPORT_BODY, [])]
 
 
 def test_zgloszenie_w_wiecej_niz_jednej_czesci_to_blad_programu() -> None:
     longest = REPORT_BODY + "x" * (PART_LIMIT - len(REPORT_BODY))
     assert report(longest).parts == (longest,)
 
-    # Ponowiona wysyłka przejmuje znalezione Zgłoszenie bez komentarzy, więc część 2 by przepadła (#724).
+    # Ponowiona wysyłka przejmuje Zgłoszenie, które sama założyła, bez komentarzy, więc część 2 by przepadła (#724).
     with pytest.raises(ValueError, match="jednej części"):
         report(longest + "x")
 
@@ -829,8 +850,8 @@ def report_file(line: str) -> str:
     )
 
 
-def test_plik_zgloszenia_z_wierszem_odcisku_przejmuje_otwarte_zgloszenie_tego_odcisku(tmp_path: Path) -> None:
-    open_report = FakeIssue(7, "zgloszenie", REPORT.title, REPORT_BODY)
+def test_plik_zgloszenia_z_wierszem_odcisku_trafia_do_otwartego_zgloszenia_tego_odcisku(tmp_path: Path) -> None:
+    open_report = FakeIssue(7, "zgloszenie", REPORT.title, FIRST_REPORT_BODY)
     queue = Queue(tmp_path, FakeReportBox(issues=[open_report]))
     queue.directory.mkdir(parents=True)
     (queue.directory / "20261023T101500000000Z-0001-zgloszenie-3f2a9c1b.json").write_text(
@@ -841,7 +862,7 @@ def test_plik_zgloszenia_z_wierszem_odcisku_przejmuje_otwarte_zgloszenie_tego_od
 
     assert wait_for(lambda: queue.files() == [])
     assert queue.delivered == [(RUN_ID, 7)]
-    assert (queue.box.issues, open_report.comments) == ([open_report], [])
+    assert (queue.box.issues, open_report.comments) == ([open_report], [f"## Zgłoszenie wróciło\n\n{REPORT_BODY}"])
 
 
 def test_plik_zgloszenia_z_samym_odciskiem_bez_jego_wiersza_zostaje_nieczytelny(tmp_path: Path) -> None:

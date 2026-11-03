@@ -114,7 +114,8 @@ class FakeReportBox:
     dopiero, gdy test ją puści (``set``), jak GitHub bez sieci; ``searching``
     mówi, że takie pytanie już trwa. ``open_hold`` i ``opening`` robią to samo
     z zakładaniem issue, a ``comment_outcomes`` to przygotowane wyniki komentarzy. ``lost_answers`` to tyle
-    następnych zakładanych issue, które skrzynka zakłada, ale odpowiedź się urywa (``Unreachable``).
+    następnych zakładanych issue, które skrzynka zakłada, ale odpowiedź się urywa (``Unreachable``), a
+    ``lost_comment_answers`` tak samo z następnymi komentarzami.
     ``wait_until`` czeka na wysyłkę w tle.
 
     Issue etykiet z ``background`` to ruch w tle, którego test nie ogląda (np. Logi Uruchomienia w testach
@@ -135,6 +136,7 @@ class FakeReportBox:
     opening: threading.Event = field(default_factory=threading.Event)
     comment_outcomes: list[CommentOutcome] = field(default_factory=list)
     lost_answers: int = 0
+    lost_comment_answers: int = 0
     background: frozenset[Label] = frozenset()
     background_issues: list[FakeIssue] = field(default_factory=list)
     background_comment_outcomes: list[CommentOutcome] = field(default_factory=list)
@@ -194,6 +196,9 @@ class FakeReportBox:
                 return Refused()
             issue.comments.append(body)
             comment_id = sum(len(issue.comments) for issue in self.issues)
+            if self.lost_comment_answers:
+                self.lost_comment_answers -= 1
+                return Unreachable()
         return Commented(comment_id, f"https://github.com/{REPOSITORY}/issues/{number}#issuecomment-{comment_id}")
 
     def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:

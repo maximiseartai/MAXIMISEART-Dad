@@ -3,7 +3,8 @@
 Każda wysyłka (``Post``) to gotowy tekst skierowany do issue okresu (``PeriodThread``: etykieta, wiersz rozpoznawczy
 na początku treści issue, tytuł i co z issue, które Maks zamknął), do nowego issue (``NewIssue``: etykieta i tytuł,
 jak Uwaga taty), do issue o znanym numerze (``KnownIssue``) albo do jednego otwartego Zgłoszenia problemu
-(``ReportIssue``: wiersz odcisku problemu w treści i tytuł, zawsze jedna część). Najpierw trafia do własnego pliku JSON w
+(``ReportIssue``: wiersz odcisku problemu w treści i tytuł, zawsze jedna część; Zgłoszenie, którego odcisk ma już
+otwarte issue, idzie do niego komentarzem „Zgłoszenie wróciło”). Najpierw trafia do własnego pliku JSON w
 ``config/zgloszenia/kolejka/`` (poza Gitem), potem jeden wątek w tle wysyła wszystkie pliki po kolei i usuwa
 wysłane. Porażka (brak klucza, odmowa, brak sieci) zostawia plik bez Komunikatu; wątek rusza znów sam po
 ``RETRY_S``, przy starcie Centrum (``resume``) i po każdej nowej wysyłce. Plik do ``KnownIssue``, którego skrzynka
@@ -50,6 +51,7 @@ from rozliczenia.centrum.report_box import (
     Rejected,
     Sent,
     Unreachable,
+    newest_with_line,
 )
 
 if sys.platform == "win32":
@@ -71,6 +73,8 @@ PART_LIMIT: Final = COMMENT_LIMIT - _FRAME_RESERVE
 _REPORT_LABEL: Final[Label] = "zgloszenie"
 # Początek wiersza odcisku problemu w treści Zgłoszenia (``fingerprint_line``).
 _FINGERPRINT_PREFIX: Final = "- Odcisk problemu: "
+# Nagłówek komentarza, którym Zgłoszenie trafia do otwartego Zgłoszenia tego samego odcisku (``returned_report``).
+_RETURNED_HEADING: Final = "## Zgłoszenie wróciło\n\n"
 # Po przejściu, które stanęło na przyczynie dla całej kolejki (brak sieci, brak klucza, odmowa klucza), kolejka
 # próbuje znowu po minucie. Odrzucony klucz nie kosztuje przy tym zapytania: ``KeyedBox`` odpowiada ``Refused`` bez
 # sieci przez kwadrans, a brak klucza to odczyt pliku. Nieudana próba DNS raz na minutę nic nie kosztuje, a dłuższa
@@ -191,14 +195,21 @@ def fingerprint_line(fingerprint: str) -> str:
     return f"{_FINGERPRINT_PREFIX}{fingerprint}"
 
 
+def returned_report(body: str) -> str:
+    """Komentarz do otwartego Zgłoszenia tego odcisku: nagłówek „Zgłoszenie wróciło” i cała treść Zgłoszenia ``body``."""
+
+    return f"{_RETURNED_HEADING}{body}"
+
+
 @dataclass(frozen=True, kw_only=True)
 class ReportIssue:
     """Zgłoszenie: jedno otwarte issue z etykietą ``zgloszenie`` na odcisk problemu ``fingerprint``.
 
-    Wysyłka Zgłoszenia ma zawsze jedną część, treść issue (``Post`` odrzuca więcej, #724). Dostarczenie szuka
-    otwartego Zgłoszenia z wierszem odcisku (``line``). Gdy jest (założyła je przerwana próba tej wysyłki, inny
-    komputer albo wcześniejsze Zgłoszenie, którego Centrum jeszcze nie znało), wysyłka je przejmuje bez nowego issue i
-    bez komentarza, więc niczego nie gubi. Bez niego zakłada issue z ``title`` i tą częścią.
+    Wysyłka Zgłoszenia ma zawsze jedną część, treść issue albo komentarza (``Post`` odrzuca więcej, #724).
+    Dostarczenie szuka otwartego Zgłoszenia z wierszem odcisku (``line``). Bez niego zakłada issue z ``title`` i tą
+    częścią. Otwarte Zgłoszenie dokładnie z tą treścią założyła przerwana próba tej wysyłki: wysyłka je przejmuje bez
+    komentarza. Inne otwarte Zgłoszenie tego odcisku (wcześniejsze, z tego albo innego komputera) dostaje komentarz
+    ``returned_report`` z tą częścią, więc Maks widzi, że problem wraca (#820).
     """
 
     fingerprint: str
@@ -241,7 +252,8 @@ class Post:
         # Przerwaną wysyłkę Zgłoszenia następna próba znajduje po tym wierszu; bez niego założyłaby drugie issue.
         if isinstance(self.target, ReportIssue) and self.target.line not in body.splitlines():
             raise ValueError("Treść nowego issue Zgłoszenia musi mieć wiersz odcisku problemu.")
-        # Następna próba przejmuje znalezione Zgłoszenie bez komentarzy, więc część 2 przerwanej wysyłki by przepadła.
+        # Przerwaną wysyłkę następna próba poznaje po treści issue równej części 1 i przejmuje bez komentarzy, więc
+        # część 2 by przepadła. Nagłówek komentarza ``returned_report`` mieści się w zapasie ``PART_LIMIT``.
         if isinstance(self.target, ReportIssue) and comments:
             raise ValueError("Zgłoszenie musi mieścić się w jednej części wysyłki.")
 
@@ -521,22 +533,27 @@ def _deliver_new_issue(post: Post, issue: NewIssue, box: KeyedBox) -> Delivered 
 
 
 def _deliver_report(post: Post, report: ReportIssue, box: KeyedBox) -> Delivered | Failure:
-    """Otwarte Zgłoszenie z tym odciskiem albo nowe issue z jedyną częścią wysyłki.
+    """Nowe issue z jedyną częścią wysyłki albo komentarz z nią do otwartego Zgłoszenia z tym odciskiem.
 
-    Ponowna próba po przerwaniu między założeniem issue a znacznikiem dostarczenia znajduje issue założone przez
-    pierwszą i je przejmuje, więc jeden problem ma jedno otwarte Zgłoszenie także wtedy, a całe Zgłoszenie jest już w
-    treści tego issue.
+    Jeden problem ma jedno otwarte Zgłoszenie: znalezione dostaje komentarz ``returned_report``. Wyjątkiem jest
+    Zgłoszenie z treścią równą tej części: założyła je ta wysyłka, a przerwanie przyszło przed znacznikiem
+    dostarczenia, więc całe Zgłoszenie już jest w treści i wysyłka je przejmuje bez komentarza. Przerwanie po
+    komentarzu, przed znacznikiem, powtarza komentarz, jak przy każdym komentarzu kolejki (co najmniej raz).
     """
 
-    found = box.find_issue(report.label, report.line, include_closed=False)
-    if isinstance(found, Refused | Unreachable | NoKey):
-        return found
-    if found is not None:
+    issues = box.labelled_issues(report.label, include_closed=False)
+    if isinstance(issues, Refused | Unreachable | NoKey):
+        return issues
+    body = post.opening()[0]
+    found = newest_with_line(issues, report.line)
+    if found is None:
+        opened = box.open_issue(report.label, report.title, body)
+        if not isinstance(opened, Sent):
+            return opened
+        return Delivered(opened.number, ())
+    if any(issue.number == found and issue.body == body for issue in issues):
         return Delivered(found, ())
-    opened = box.open_issue(report.label, report.title, post.opening()[0])
-    if not isinstance(opened, Sent):
-        return opened
-    return Delivered(opened.number, ())
+    return _comment_all(found, (returned_report(body),), box)
 
 
 def _deliver_to_known(post: Post, known: KnownIssue, box: KeyedBox) -> Delivered | Gone | Failure:

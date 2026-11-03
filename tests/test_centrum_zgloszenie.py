@@ -667,7 +667,7 @@ def test_odmowa_przy_wysylce_uwagi_odrzuca_klucz_w_konfiguracji_bez_osobnego_pyt
 WAITING = {"state": "waiting"}
 
 
-def test_kolejne_uruchomienie_z_otwartym_zgloszeniem_tego_problemu_czeka_na_naprawe_bez_drugiej_wysylki(
+def test_kolejne_uruchomienie_z_otwartym_zgloszeniem_tego_problemu_czeka_na_naprawe_bez_drugiego_issue(
     tmp_path: Path
 ) -> None:
     centrum = preparing_centrum(tmp_path)
@@ -679,10 +679,12 @@ def test_kolejne_uruchomienie_z_otwartym_zgloszeniem_tego_problemu_czeka_na_napr
     again = stopped_for_maks(centrum)
 
     assert current_report(centrum) == WAITING
-    diagnose(centrum, again)
+    again_body = diagnose(centrum, again)["report"]["body"]
     assert current_report(centrum) == WAITING
-    assert send(centrum, again) == {"state": "sent"}  # kolejka przejmuje otwarte Zgłoszenie zamiast zakładać drugie
-    assert (len(centrum.surroundings.report_box.sent), [case["number"] for case in cases(centrum)]) == (1, [1])
+    assert send(centrum, again) == {"state": "sent"}
+    [issue] = centrum.surroundings.report_box.sent
+    assert issue.comments == [f"## Zgłoszenie wróciło\n\n{again_body}"]
+    assert [case["number"] for case in cases(centrum)] == [1]
 
 
 def test_diagnoza_nie_czeka_na_skrzynke_a_jej_odpowiedz_o_otwartym_zgloszeniu_trafia_na_karte(tmp_path: Path) -> None:

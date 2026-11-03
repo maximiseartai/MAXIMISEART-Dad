@@ -74,9 +74,11 @@ pierwszy sekret na jego komputerze:
   pamięta jako Sprawy taty w `config/sprawy-taty.json` poza Gitem; sprawa w kolejce nie
   ma jeszcze numeru i dostaje go przy dostarczeniu. Jeden problem ma jedno
   otwarte Zgłoszenie: kolejka szuka w skrzynce otwartego Zgłoszenia z tym
-  samym odciskiem (wiersz `Odcisk problemu` w treści) i przejmuje je zamiast
-  zakładać nowe, także po przerwaniu między założeniem issue a znacznikiem
-  dostarczenia. Problem, którego Zgłoszenie czeka w kolejce, nie trafia do niej
+  samym odciskiem (wiersz `Odcisk problemu` w treści) i dopisuje do niego
+  komentarz „Zgłoszenie wróciło” z całą treścią nowego Zgłoszenia zamiast
+  zakładać nowe (#820). Zgłoszenie z treścią równą wysyłanej założyła
+  przerwana próba tej samej wysyłki (między założeniem issue a znacznikiem
+  dostarczenia): kolejka przejmuje je bez komentarza. Problem, którego Zgłoszenie czeka w kolejce, nie trafia do niej
   drugi raz. Gdy
   Maks je zamknął, a problem wraca, nowe Zgłoszenie ma odnośnik do
   poprzedniego. Bez odpowiedzi skrzynki problem wysłany z tego komputera

@@ -12,9 +12,10 @@ dziennika, bez ścieżek i bez wyjścia Gita. Ścieżki są już skrócone w
 Komunikatach, szczegółach sprawdzeń i ramkach śladu; treści wierszy, treści
 wyjątków ani klucza Zgłoszenie nie ma (ADR 0007).
 
-Treść Zgłoszenia mieści się w jednej części wysyłki (``PART_LIMIT``), bo kolejka Skrzynki przejmuje znalezione
-Zgłoszenie bez komentarzy (#724). Za długa traci najpierw pierwsze ramki śladu wywołań (pełny ślad jest w Logach
-Uruchomienia), a gdy to nie wystarczy, najstarsze wpisy dziennika Centrum; każde skrócenie ma dopisek.
+Treść Zgłoszenia mieści się w jednej części wysyłki (``PART_LIMIT``), bo kolejka Skrzynki przejmuje Zgłoszenie,
+które założyła przerwana próba tej samej wysyłki, bez komentarzy (#724), a do otwartego Zgłoszenia tego odcisku
+dopisuje całą treść jednym komentarzem (#820). Za długa traci najpierw pierwsze ramki śladu wywołań (pełny ślad jest
+w Logach Uruchomienia), a gdy to nie wystarczy, najstarsze wpisy dziennika Centrum; każde skrócenie ma dopisek.
 
 Źródło Zgłoszenia (Zatrzymanie w ``stops``, nieudana Aktualizacja narzędzia w
 ``tool_updates``) trzyma jego uchwyt (``ReportHandle``): uchwyt zamraża podgląd,
@@ -442,8 +443,9 @@ class Reports:
     skrzynkę najwyżej ``DELIVERY_WAIT_S``. Numer issue dopisują sprawie Sprawy taty w Skrzynce (``case_delivery``),
     także po następnym starcie Centrum, a ``Reports`` słyszy o nim od Spraw taty (``DadCases.watch``) i oddaje stan
     „wysłane” każdemu żywemu uchwytowi tego problemu; o odrzuconej treści tak samo. Jeden problem ma jedno
-    otwarte Zgłoszenie: podgląd pyta skrzynkę o otwarte Zgłoszenie z tym odciskiem, kolejka przejmuje je zamiast
-    zakładać nowe, a problem, którego Zgłoszenie czeka w kolejce, nie trafia do niej drugi raz.
+    otwarte Zgłoszenie: podgląd pyta skrzynkę o otwarte Zgłoszenie z tym odciskiem, kolejka dopisuje do niego
+    komentarz „Zgłoszenie wróciło” zamiast zakładać nowe, a problem, którego Zgłoszenie czeka w kolejce, nie trafia
+    do niej drugi raz.
     """
 
     def __init__(

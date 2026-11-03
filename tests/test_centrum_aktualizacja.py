@@ -716,7 +716,7 @@ def test_nieudana_aktualizacja_ze_zgloszeniem_otwartym_w_skrzynce_karta_od_razu_
         again = update_with_slow_box(centrum)
         state = send_report(centrum)
 
-    # Przycisku nie ma; wysyłka z API przejmuje otwarte Zgłoszenie zamiast zakładać drugie.
+    # Przycisku nie ma; wysyłka z API dopisuje komentarz do otwartego Zgłoszenia zamiast zakładać drugie.
     assert (again["state"], again["report"], state) == ("failed", {"state": "waiting"}, {"state": "sent"})
     assert len(box.sent) == 1
 
