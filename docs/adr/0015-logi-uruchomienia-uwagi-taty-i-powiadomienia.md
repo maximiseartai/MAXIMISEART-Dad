@@ -44,6 +44,18 @@ wynikiem zmienia komentarz Logów swojego Uruchomienia, zamiast wysyłać całe 
 kolejnym komentarzem. Zdania o „co najmniej raz” w decyzji niżej opisują stan
 sprzed tego dopisku.
 
+**Dopisek (#844, 2026-11-04).** Każde Uruchomienie to jeden komentarz w issue
+okresu: podsumowanie i odnośnik do pełnych Logów w Archiwum Logów okresu, GitHub
+Release z tagiem `logi-<okres>` w repozytorium Skrzynki, które Centrum zakłada
+przy pierwszych Logach okresu. Pełne Logi leżą tam jako jeden plik na
+Uruchomienie o nazwie pliku Logów z `.gz`, a JSON nie idzie już w komentarzu
+ani w częściach. Diagnoza podmienia plik i zmienia komentarz. Plik idzie
+dokładnie raz jak komentarz: jego etykieta niesie wersję wysyłki. Token do
+Zgłoszeń potrzebuje do tego uprawnienia do zapisu treści repozytorium Skrzynki;
+bez niego plik czeka w Kolejce wysyłki bez Komunikatu dla taty, a komentarz
+idzie z dopiskiem, że pełne Logi czekają. Zdania o komentarzu z pełnym JSON w
+`<details>` i o częściach w decyzji niżej opisują stan sprzed tego dopisku.
+
 ## Kontekst
 
 Wszystko, co Maks wiedział o pracy narzędzia u taty, to rekord metryk (czasy,

@@ -519,7 +519,7 @@ def test_logi_nie_maja_tresci_komorek_wykonawcy_przy_wierszu_daty_dziennej_ani_p
     ]
     box = centrum.surroundings.report_box
     assert box.wait_until(lambda fake: sum(len(issue.comments) for issue in fake.background_issues) == 3)
-    sent = [part for issue in box.background_issues for part in (issue.title, issue.body, *issue.comments)]
+    sent = in_box(box)
     texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
     assert len(texts) == 3
     texts += sent
@@ -550,8 +550,7 @@ def test_diagnoza_w_logach_nie_ma_tresci_komorek_ani_pelnych_sciezek(tmp_path: P
     assert box.wait_until(lambda fake: len(fake.edited) == 1), "Diagnoza zmienia komentarz Logów"
     [record] = records(centrum)
     assert "failed" in [check["state"] for check in record["diagnosis"]["checks"]], "Diagnoza z przyczyną w pliku Logów"
-    sent = [part for issue in box.background_issues for part in (issue.title, issue.body, *issue.comments)]
-    texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)] + sent
+    texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)] + in_box(box)
     forbidden = ("ZNACZNIK", "adrian.testowy", "2026-09-09", "09.09.2026", in_json(tmp_path), in_json(tmp_path.resolve()))
     assert [marker for marker in forbidden if any(marker in text for text in texts)] == []
 
@@ -1069,7 +1068,7 @@ def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_adr
     assert box.wait_until(lambda fake: sum(len(issue.comments) for issue in fake.background_issues) == 1)
     [record] = records(centrum)
     texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
-    texts += [part for issue in box.background_issues for part in (issue.title, issue.body, *issue.comments)]
+    texts += in_box(box)
 
     traced = [(order["row"], order["outcome"], order["code"], [step["action"] for step in order["steps"]]) for order in record["efenix_orders"]]
     emmett_steps = ["szukanie", "otwarcie zlecenia", "data wykonania", "otwarcie zlecenia", "Wycena Emmetta"]
@@ -1127,6 +1126,25 @@ def logs_comments(fake: FakeReportBox) -> list[str]:
     return [comment for issue in fake.background_issues if issue.label == "logi-uruchomienia" for comment in issue.comments]
 
 
+# Odnośnik komentarza Logów do pliku w Archiwum Logów okresu (#844): nazwa pliku i tag Archiwum z adresu pobrania.
+ARCHIVE_LINK = re.compile(r"\[(?P<name>[^\]]+)\]\(https://github\.com/[^/]+/[^/]+/releases/download/(?P<tag>[^/]+)/(?P=name)\)")
+
+
+def logs_text(fake: FakeReportBox, comment: str) -> str:
+    """Pełne Logi z pliku w Archiwum Logów okresu, do którego prowadzi komentarz Logów, rozpakowane."""
+
+    found = ARCHIVE_LINK.search(comment)
+    assert found is not None, comment
+    return fake.archived(found["tag"])[found["name"]]
+
+
+def in_box(fake: FakeReportBox) -> list[str]:
+    """Wszystko, co Maks dostaje w Skrzynce: tytuły, treści i komentarze issue oraz rozpakowane pliki w Archiwach."""
+
+    issues = [part for issue in fake.background_issues for part in (issue.title, issue.body, *issue.comments)]
+    return issues + [asset.text for archive in fake.archives for asset in archive.assets]
+
+
 def test_dzialania_taty_miedzy_dwoma_uruchomieniami_sa_w_logach_drugiego_z_godzinami_bez_tresci_uwagi_taty(
     tmp_path: Path,
 ) -> None:
@@ -1168,7 +1186,7 @@ def test_dzialania_taty_miedzy_dwoma_uruchomieniami_sa_w_logach_drugiego_z_godzi
     assert times[-1] <= datetime.fromisoformat(later["started_at"])
     box = centrum.surroundings.report_box
     assert box.wait_until(lambda fake: len(logs_comments(fake)) == 2), "Logi obu Uruchomień w Skrzynce"
-    [_, sent] = logs_comments(box)
+    sent = logs_text(box, logs_comments(box)[1])
     assert '"operation": "sendDadNote"' in sent, "dziennik działań taty dociera do Maksa"
     assert [marker for marker in ("SYNTETYCZNY-TYTUŁ", "SYNTETYCZNA-TREŚĆ") if marker in text or marker in sent] == []
 
@@ -1241,10 +1259,10 @@ def journal_entries(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line != TORN]
 
 
-def logs_json(comment: str) -> dict[str, Any]:
-    """Logi JSON z komentarza Logów w jednej części."""
+def logs_json(fake: FakeReportBox, comment: str) -> dict[str, Any]:
+    """Logi JSON z pliku w Archiwum Logów okresu, do którego prowadzi komentarz Logów."""
 
-    loaded: dict[str, Any] = json.loads(comment.split("````json\n", 1)[1].split("\n````", 1)[0])
+    loaded: dict[str, Any] = json.loads(logs_text(fake, comment))
     return loaded
 
 
@@ -1313,7 +1331,7 @@ def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwan
         ("przycisk", "startRun", "efenix", "zapis"),
     ], "działania taty sprzed zgaśnięcia, bez startu Centrum po nim"
     assert utc(record["started_at"]) <= utc(record["ended_at"]) == utc(entries[-1]["at"])
-    assert (logs_json(comment), "- Wynik: brak, Centrum zamknęło się w trakcie (Urwane Uruchomienie)" in comment) == (record, True)
+    assert (logs_json(box, comment), "- Wynik: brak, Centrum zamknęło się w trakcie (Urwane Uruchomienie)" in comment) == (record, True)
     assert (previous["state"], previous["run"]["id"], previous["orders"]["title"]) == ("interrupted", run_id, "Zlecenia przed zamknięciem Centrum")
     assert {count["label"]: count["count"] for count in previous["orders"]["counts"]} == {
         "Gotowe do przekazania": 2,
@@ -1405,7 +1423,7 @@ def test_logi_urwanego_uruchomienia_po_ponownym_zgasnieciu_centrum_przed_wysylka
     centrum.client.stop()
 
     assert closed == ([(run_id, "interrupted")], 1, 0)
-    assert (sent, [(logs["run_id"], logs["ending"]) for logs in map(logs_json, logs_comments(box))]) == (True, [(run_id, "interrupted")])
+    assert (sent, [(logs["run_id"], logs["ending"]) for logs in (logs_json(box, comment) for comment in logs_comments(box))]) == (True, [(run_id, "interrupted")])
     assert ((previous["state"], previous["run"]["id"]), journals(centrum)) == (("interrupted", run_id), [])
 
 
@@ -1429,7 +1447,7 @@ def test_dziennik_urwanej_wyceny_ktorego_logow_kolejka_wysylki_nie_przyjela_zost
     sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
     centrum.client.stop()
 
-    assert (kept, sent, logs_json(logs_comments(box)[0])["run_id"], journals(centrum)) == ((1, 0), True, run_id, [])
+    assert (kept, sent, logs_json(box, logs_comments(box)[0])["run_id"], journals(centrum)) == ((1, 0), True, run_id, [])
 
 
 def test_krotki_proces_nie_pisze_dziennika_wyceny_w_efenix(tmp_path: Path) -> None:
