@@ -15,6 +15,7 @@ import shutil
 import threading
 from typing import Any, Protocol, TypeVar
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from rozliczenia.centrum.app import create_app
@@ -227,10 +228,20 @@ def _client(
     surroundings: Surroundings,
     since: int | None = None,
 ) -> CentrumClient:
+    return CentrumClient(_app(tmp_path, platform, configuration, engines, surroundings), since=since)
+
+
+def _app(
+    tmp_path: Path,
+    platform: FakePlatform,
+    configuration: ConfigurationFiles,
+    engines: Engines,
+    surroundings: Surroundings,
+) -> FastAPI:
     log = CentrumLog(tmp_path / "logs" / "centrum-rozliczen.log")
     onedrive = surroundings.onedrive
     clock = surroundings.started_clock()
-    app = create_app(
+    return create_app(
         settings_path=tmp_path / "config" / "centrum-ustawienia.yaml",
         platform=platform,
         log=log,
@@ -257,7 +268,6 @@ def _client(
             pace=surroundings.efenix_pace,
         ),
     )
-    return CentrumClient(app, since=since)
 
 
 @dataclass
@@ -422,14 +432,9 @@ def settling_centrum(
     write_source(parent / PERIOD / SOURCE_NAME, include_unmapped=include_unmapped)
     config = tmp_path / "config"
     config.mkdir()
-    worker_template = config / "Wzorzec rozliczenia pracownika.xlsx"
-    write_template(worker_template)
-    configuration = ConfigurationFiles(
-        worker_config=write_mapping(config / "worker_mapping.yaml"),
-        internal_template=config / "Wzorzec rozliczenia wewnętrznego.xlsx",
-        collective_template=config / "Wzorzec pliku zbiorczego.xlsx",
-        worker_template=worker_template,
-    )
+    configuration = _settling_configuration(tmp_path)
+    write_template(configuration.worker_template)
+    write_mapping(configuration.worker_config)
     engines = Engines(_metrics(tmp_path))
     surroundings = surroundings or Surroundings()
     platform = FakePlatform(chosen_files=[register], chosen_folders=[periods_directory])
@@ -449,6 +454,23 @@ def settling_centrum(
         surroundings,
         engines,
     )
+
+
+def _settling_configuration(tmp_path: Path) -> ConfigurationFiles:
+    config = tmp_path / "config"
+    return ConfigurationFiles(
+        worker_config=config / "worker_mapping.yaml",
+        internal_template=config / "Wzorzec rozliczenia wewnętrznego.xlsx",
+        collective_template=config / "Wzorzec pliku zbiorczego.xlsx",
+        worker_template=config / "Wzorzec rozliczenia pracownika.xlsx",
+    )
+
+
+def settling_app(tmp_path: Path, surroundings: Surroundings) -> FastAPI:
+    """Aplikacja Centrum na plikach, które ``settling_centrum`` założył w ``tmp_path`` (Ustawienia taty, wzorce, metryki
+    i katalog Logów), bez klienta testu: tak startuje Centrum w osobnym procesie (``centrum_w_procesie``)."""
+
+    return _app(tmp_path, FakePlatform(), _settling_configuration(tmp_path), Engines(_metrics(tmp_path)), surroundings)
 
 
 class _Starting(Protocol):

@@ -92,6 +92,7 @@ def test_uruchomienie_przerwane_zamknieciem_centrum_jest_nazwane_po_starcie(
             "run": running["run"],
             "started_at": record["started_at"],
             "advice": {"what": INTERRUPTED, "where": f"Przygotowanie pliku zbiorczego, okres {PERIOD}", "action": action},
+            "orders": None,
         },
     }
     assert first_view(centrum.client) == current

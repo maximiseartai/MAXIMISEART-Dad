@@ -49,6 +49,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
+from tests.fixtures.centrum_w_procesie import centrum_process
 from tests.fixtures.efenix import DAY, Order, write_collective_file
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD, incomplete_period_rows
@@ -61,7 +62,7 @@ KEYS = {
     "schema_version", "run_id", "process", "mode", "period", "started_at", "ended_at", "duration_ms", "tool",
     "result", "ending", "stop_kind", "issue_count", "messages", "technical_notes", "summary", "phases", "templates",
     "inea_only_cleared", "intermax_entries", "efenix_orders", "efenix_stop", "environment", "trace", "diagnosis",
-    "dad_actions",
+    "dad_actions", "interruption",
 }
 
 
@@ -1168,3 +1169,183 @@ def test_dzialania_taty_miedzy_dwoma_uruchomieniami_sa_w_logach_drugiego_z_godzi
     [_, sent] = logs_comments(box)
     assert '"operation": "sendDadNote"' in sent, "dziennik działań taty dociera do Maksa"
     assert [marker for marker in ("SYNTETYCZNY-TYTUŁ", "SYNTETYCZNA-TREŚĆ") if marker in text or marker in sent] == []
+
+
+# Dziennik Wyceny w efenix (#845): ślad Wyceny na dysku taty w trakcie i Logi Urwanego Uruchomienia po starcie Centrum.
+
+# Wiersze 18–21: gotowe po zapisach w efenix (data wykonania, Wycena Emmetta, ilość), gotowe bez zapisu (wycena już jest),
+# zlecenie, przy którym efenix staje po zapisie daty wykonania, i zlecenie, do którego przebieg nie dochodzi.
+CUT = [
+    Order("#ZLQZ01", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
+    Order("#ZLQZ02", worker="beata.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
+    Order("#ZLQZ03", worker="celina.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
+    Order("#ZLQZ04", worker="dorota.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
+]
+CUT_IN_EFENIX = [
+    CUT[0].in_efenix("631"),
+    CUT[1].in_efenix("632"),
+    replace(CUT[2].in_efenix("633"), hung=True, after_date=True),
+    CUT[3].in_efenix("634"),
+]
+# Wpis dziennika, który prąd urwał w trakcie zapisu.
+TORN = '{"at": "2026-09-16T10:'
+
+
+def journals(centrum: SettlingCentrum) -> list[Path]:
+    return sorted((centrum.log_path.parent / "dzienniki-wyceny").glob("*"))
+
+
+def journal_entries(path: Path) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line != TORN]
+
+
+def logs_json(comment: str) -> dict[str, Any]:
+    """Logi JSON z komentarza Logów w jednej części."""
+
+    loaded: dict[str, Any] = json.loads(comment.split("````json\n", 1)[1].split("\n````", 1)[0])
+    return loaded
+
+
+def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwanego_uruchomienia_ze_zleceniami_sprzed_zgasniecia(
+    tmp_path: Path,
+) -> None:
+    """Centrum gaśnie nagle, cały proces razem z oknem efenix, przy trzecim zleceniu, po zapisie jego daty wykonania w
+    efenix, a prąd urywa wpis dziennika w trakcie zapisu. Dziennik Wyceny w efenix ma wpis „zaczynam zlecenie” każdego
+    zlecenia, które Atrapa ma zmienione. Następny start Centrum zamyka dziennik jako Logi Urwanego Uruchomienia: dwa
+    zlecenia skończone z wynikiem i śladem, zlecenie zaczęte bez wyniku i jeden wpis nie do odczytania, bez wyniku
+    Uruchomienia. Te Logi idą do Skrzynki Zgłoszeń jak zwykłe Logi, karta po starcie pokazuje zlecenia sprzed zgaśnięcia,
+    a Urwane Uruchomienie nie ma karty wiersza Historii ani Powiadomienia o zakończonej Wycenie."""
+
+    with atrapa_efenix(CUT_IN_EFENIX) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        write_collective_file(centrum.period_parent, CUT)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        before, _ = atrapa.state()
+        with centrum_process(tmp_path, atrapa.url) as process:
+            status, started = process.post("/api/runs", {"process": "efenix", "period": PERIOD, "dry_run": False})
+            stalled = wait_for(lambda: atrapa.state()[0][2].execution_date is not None, 120)
+            process.kill()
+        after, _ = atrapa.state()
+    [journal] = journals(centrum)
+    with journal.open("a", encoding="utf-8") as torn:
+        torn.write(TORN)
+    entries, journal_text = journal_entries(journal), journal.read_text(encoding="utf-8")
+    centrum.restart()
+    previous = centrum.client.get("/api/runs/current").json()["previous"]
+    box = centrum.surroundings.report_box
+    sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+    run_id = started["run"]["id"]
+    card = centrum.client.get(f"/api/runs/{run_id}/card").json()
+    notifications = centrum.client.get("/api/notifications").json()["items"]
+    centrum.client.stop()
+    [comment] = logs_comments(box)
+    [record] = records(centrum)
+
+    assert (status, stalled, sent) == (200, True, True)
+    changed = [row for row, (was, now) in enumerate(zip(before, after, strict=True), start=18) if was != now]
+    begun = [entry["row"] for entry in entries if entry["entry"] == "zaczynam zlecenie"]
+    assert (changed, [row for row in changed if row not in begun]) == ([18, 20], []), "zmiana w efenix bez wpisu w dzienniku"
+    assert [(entry["entry"], entry.get("row", entry.get("order", {}).get("row"))) for entry in entries] == [
+        ("start Uruchomienia", None),
+        ("zaczynam zlecenie", 18),
+        ("zlecenie skończone", 18),
+        ("zaczynam zlecenie", 19),
+        ("zlecenie skończone", 19),
+        ("zaczynam zlecenie", 20),
+    ]
+    assert (record["run_id"], record["ending"], record["result"], record["duration_ms"]) == (run_id, "interrupted", None, None)
+    assert [(order["row"], order["outcome"], [step["action"] for step in order["steps"]]) for order in record["efenix_orders"]] == [
+        (18, "gotowe", ["szukanie", "otwarcie zlecenia", "data wykonania", "otwarcie zlecenia", "Wycena Emmetta", "ilość"]),
+        (19, "gotowe", ["szukanie", "otwarcie zlecenia"]),
+    ]
+    assert record["interruption"] == {"row": 20, "place": 3, "total": 4, "omitted": 1}
+    assert utc(record["started_at"]) <= utc(record["ended_at"]) == utc(entries[-1]["at"])
+    assert (logs_json(comment), "- Wynik: brak, Centrum zamknęło się w trakcie (Urwane Uruchomienie)" in comment) == (record, True)
+    assert (previous["state"], previous["run"]["id"], previous["orders"]["title"]) == ("interrupted", run_id, "Zlecenia przed zamknięciem Centrum")
+    assert {count["label"]: count["count"] for count in previous["orders"]["counts"]} == {
+        "Gotowe do przekazania": 2,
+        "Rozliczone": 0,
+        "Błędy zleceń": 0,
+        "Ostrzeżenia Emmetta": 0,
+    }
+    assert (card, [item for item in notifications if item["kind"] == "wycena_w_efenix"]) == ({"state": "missing"}, [])
+    assert journals(centrum) == [], "dziennik, którego Logi przyjęła Kolejka wysyłki, znika"
+    private = [*(order.number.removeprefix("#") for order in CUT), *(order.worker for order in CUT), "TESTOWA", "Miasto-Dzielnica"]
+    assert [marker for marker in private if marker in journal_text or marker in comment] == []
+
+
+@pytest.mark.parametrize("lost", [None, "historia", "logi"], ids=["logi-i-historia", "bez-historii", "bez-logow"])
+def test_wycena_w_efenix_ktora_doszla_do_konca_nie_zostawia_dziennika_ktory_start_uznalby_za_urwany(
+    tmp_path: Path, lost: str | None
+) -> None:
+    """Wycena w efenix doszła do wyniku. Następny start Centrum nie zamyka jej dziennika jako Urwanego Uruchomienia, także
+    gdy zostały tylko jej Logi albo tylko jej wiersz Historii (Centrum zgasło po rekordzie metryk, a przed Logami, #722):
+    karta po starcie ma wynik, Skrzynka nie dostaje drugich Logów, a dziennik znika."""
+
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        assert _start_pricing(centrum).status_code == 200
+        run_id = finished_view(centrum.client)["run"]["id"]
+    box = centrum.surroundings.report_box
+    assert box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+    centrum.client.stop()
+    [logs] = log_files(centrum)
+    if lost == "historia":
+        centrum.engines.metrics.efenix.unlink()
+    elif lost == "logi":
+        logs.unlink()
+
+    centrum.restart()
+    previous = centrum.client.get("/api/runs/current").json()["previous"]
+    centrum.client.stop()
+
+    expected = "recorded" if lost == "logi" else "restored"
+    assert (previous["state"], previous["run"]["id"], len(logs_comments(box))) == (expected, run_id, 1)
+    assert (log_files(centrum), journals(centrum)) == ([] if lost == "logi" else [logs], [])
+
+
+def test_krotki_proces_nie_pisze_dziennika_wyceny_w_efenix(tmp_path: Path) -> None:
+    """Przebieg rozliczeń zbiera Logi po wyniku, jak przed dziennikiem Wyceny w efenix: w trakcie nic nie trafia na dysk."""
+
+    centrum = settling_centrum(tmp_path)
+    run_to_end(centrum, dry_run=False)
+    centrum.client.stop()
+
+    assert (len(log_files(centrum)), (centrum.log_path.parent / "dzienniki-wyceny").exists()) == (1, False)
+
+
+def test_dziennik_wyceny_w_efenix_ktorego_nie_da_sie_zapisac_nie_zatrzymuje_wyceny_i_ma_jedna_linie_w_dzienniku_centrum(
+    tmp_path: Path,
+) -> None:
+    """Katalog dzienników zajęty przez plik: Wycena w efenix kończy się tym samym wynikiem co z dziennikiem, a dziennik
+    Centrum ma jedną linię o dzienniku Wyceny, bez treści błędu, nie jedną na każdy wpis."""
+
+    blocked = tmp_path / "logs" / "dzienniki-wyceny"
+    blocked.parent.mkdir(parents=True)
+    blocked.write_text("", encoding="utf-8")
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        assert _start_pricing(centrum).status_code == 200
+        result = finished_view(centrum.client)["result"]
+    centrum.client.stop()
+    lines = [line for line in centrum.log_path.read_text(encoding="utf-8").splitlines() if "dziennik-wyceny" in line]
+
+    assert (result["result"], len(records(centrum)[0]["efenix_orders"])) == ("WYMAGA_SPRAWDZENIA", 6)
+    assert [line.split(" ", 1)[1] for line in lines] == ["dziennik-wyceny-niedostepny typ=FileExistsError miejsce=wpis"]
+
+
+def test_dziennik_urwany_przy_pierwszym_wpisie_start_usuwa_bez_logow(tmp_path: Path) -> None:
+    """Prąd zgasł w trakcie pierwszego zapisu dziennika, zanim Wycena cokolwiek zmieniła w efenix: dziennik bez linii
+    startu nie mówi, czyje to Uruchomienie, więc start Centrum go usuwa i nie robi z niego Logów."""
+
+    centrum = settling_centrum(tmp_path)
+    directory = centrum.log_path.parent / "dzienniki-wyceny"
+    directory.mkdir(parents=True)
+    (directory / f"20260916T101500Z-efenix-{'a' * 32}.jsonl").write_text(TORN, encoding="utf-8")
+
+    centrum.restart()
+    centrum.client.get("/api/runs/current")
+    centrum.client.stop()
+
+    assert (journals(centrum), log_files(centrum)) == ([], [])

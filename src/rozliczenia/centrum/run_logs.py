@@ -37,6 +37,12 @@ plik. Diagnoza z tym samym wynikiem co ostatnio dopisana (``LoggedDiagnosis.same
 nieoczekiwanym wyjątku karta zaczyna Diagnozę sama przy każdym pokazaniu, a Maks potrzebuje tylko zmiany wyniku.
 Diagnozę ma tylko ostatnie Uruchomienie tej pracy Centrum, więc w pamięci zostają tylko jego Logi; Diagnoza,
 w której trakcie skończyło się następne Uruchomienie, nie dopisuje się nigdzie.
+
+Urwana Wycena w efenix (#845) ma Logi z dziennika Wyceny w efenix (``pricing_journal``), które start Centrum zamyka
+(``RunLogs.interrupted``, ``RunLogs.close``) i wysyła (``RunLogs.send``) jak zwykłe Logi: sposób zakończenia
+``interrupted``, bez wyniku (``result`` ``None``), czasu, etapów i Komunikatów, ze śladem zleceń skończonych przed
+zgaśnięciem Centrum i ze zleceniem zaczętym bez wyniku (``LoggedInterruption``). Koniec takich Logów to ostatni wpis
+dziennika, bo chwili zgaśnięcia nikt nie zapisał.
 """
 
 from __future__ import annotations
@@ -49,7 +55,7 @@ from functools import cache
 from pathlib import Path
 import platform
 import threading
-from typing import Final, Literal, assert_never
+from typing import Final, Literal, Protocol, assert_never
 
 from pydantic import BaseModel, ConfigDict
 
@@ -94,6 +100,10 @@ from rozliczenia.progress import ProgressSnapshot
 
 RUN_LOGS_DIRECTORY: Final = "uruchomienia"
 LABEL: Final[Label] = "logi-uruchomienia"
+
+LoggedEnding = Literal[Ending, "interrupted"]
+"""Sposób zakończenia w Logach: jak na karcie (``runs.Ending``) albo ``interrupted``, Urwane Uruchomienie, którego Logi
+zamknął start Centrum z dziennika Wyceny w efenix."""
 
 ProcessFiles = Callable[[contract.ProcessKey, str], Sequence[Path]]
 """Pliki taty Uruchomienia procesu dla tokenu okresu, z Ustawieniami taty z chwili końca Uruchomienia."""
@@ -321,10 +331,12 @@ class LoggedOrder(_Record):
         """Ślad każdego zlecenia po kolei, z kodem Komunikatu zlecenia, które zostało tacie."""
 
         codes = {id(result): message.code for result, message in summary.left_for_tata}
-        return [cls._of(result, codes.get(id(result))) for result in summary.results]
+        return [cls.of(result, codes.get(id(result))) for result in summary.results]
 
     @classmethod
-    def _of(cls, result: OrderResult, code: str | None) -> LoggedOrder:
+    def of(cls, result: OrderResult, code: str | None) -> LoggedOrder:
+        """Ślad zlecenia ``result`` z kodem Komunikatu ``code`` zlecenia, które zostało tacie."""
+
         file = file_quantities(result.order)
         outcome: OrderOutcome
         match result.outcome:
@@ -424,6 +436,20 @@ class LoggedWindowStop(_Record):
         )
 
 
+class LoggedInterruption(_Record):
+    """Urwana Wycena w efenix z dziennika: zlecenie zaczęte bez wyniku i wpisy dziennika, których nie dało się odczytać.
+
+    ``row`` (wiersz Pliku zbiorczego), ``place`` i ``total`` (miejsce w przebiegu, od 1): zlecenie, w którego trakcie Centrum
+    zgasło, więc jego zmiany w efenix mogą być niepełne; ``None``, gdy zgasło między zleceniami. ``omitted``: wpisy
+    dziennika, których nie dało się odczytać (np. wpis urwany zgaśnięciem w trakcie zapisu).
+    """
+
+    row: int | None
+    place: int | None
+    total: int | None
+    omitted: int
+
+
 class Tool(_Record):
     wydanie: str | None
     """Numer Wydania (ADR 0014), którego tag w klonie wskazuje ``commit`` (``0.10.0``); ``None``, gdy nie da się go
@@ -435,7 +461,8 @@ class RunLog(_Record):
     """Logi jednego Uruchomienia procesu z Centrum; kształt tego modelu to schemat pliku JSON.
 
     ``duration_ms`` to Czas uruchomienia bez czekania na Decyzję taty; ``started_at`` i ``ended_at`` to zegar ścienny.
-    ``issue_count``, ``templates`` i ``duration_ms`` są puste tylko wtedy, gdy sam rdzeń (``run_process``) rzucił wyjątek.
+    ``issue_count``, ``templates`` i ``duration_ms`` są puste tylko wtedy, gdy sam rdzeń (``run_process``) rzucił wyjątek,
+    albo w Logach Urwanego Uruchomienia (``ending`` ``interrupted``), które nie mają też wyniku (``result`` ``None``).
     Centrum zapisuje schemat 2, a czyta też pliki schematu 1 (bez godzin kroków i dziennika działań taty).
     """
 
@@ -448,8 +475,8 @@ class RunLog(_Record):
     ended_at: datetime
     duration_ms: int | None
     tool: Tool
-    result: contract.RunResult
-    ending: Ending
+    result: contract.RunResult | None
+    ending: LoggedEnding
     stop_kind: contract.StopKind | None
     issue_count: int | None
     messages: list[LoggedMessage]
@@ -477,6 +504,8 @@ class RunLog(_Record):
     dad_actions: DadActions | None = None
     """Działania taty w Centrum od Logów poprzedniego Uruchomienia do końca tego (``dad_actions``). ``None``: pliki
     schematu 1."""
+    interruption: LoggedInterruption | None = None
+    """Urwana Wycena w efenix (``ending`` ``interrupted``); ``None`` w każdych innych Logach."""
 
     @classmethod
     def of(cls, run: EndedRun, *, tool: Tool, environment: Environment, dad_actions: DadActions) -> RunLog:
@@ -530,17 +559,81 @@ class RunLog(_Record):
             dad_actions=dad_actions,
         )
 
+    @classmethod
+    def interrupted(
+        cls,
+        started: StartedFacts,
+        *,
+        ended_at: datetime,
+        orders: Sequence[LoggedOrder],
+        interruption: LoggedInterruption,
+        tool: Tool,
+        environment: Environment,
+        dad_actions: DadActions,
+    ) -> RunLog:
+        """Logi Urwanego Uruchomienia ``started`` z dziennika Wyceny w efenix: zlecenia skończone przed zgaśnięciem Centrum
+        (``orders``) i ``interruption``; ``ended_at`` to ostatni wpis dziennika."""
+
+        return cls(
+            schema_version=2,
+            run_id=started.run_id,
+            process=started.process,
+            mode=started.mode,
+            period=started.period,
+            started_at=started.started_at,
+            ended_at=ended_at,
+            duration_ms=None,
+            tool=tool,
+            result=None,
+            ending="interrupted",
+            stop_kind=None,
+            issue_count=None,
+            messages=[],
+            technical_notes=[],
+            summary=None,
+            phases=[],
+            templates=[],
+            efenix_orders=list(orders),
+            environment=environment,
+            trace=None,
+            diagnosis=None,
+            dad_actions=dad_actions,
+            interruption=interruption,
+        )
+
     @property
     def file_name(self) -> str:
         """``20261023T140507Z-settlement-<run_id>.json``: start w UTC, klucz procesu, identyfikator Uruchomienia."""
 
-        return f"{self.started_at:%Y%m%dT%H%M%SZ}-{self.process}-{self.run_id}.json"
+        return logs_file_name(self.started_at, self.process, self.run_id)
 
     @property
     def text(self) -> str:
         """Treść pliku Logów; te same znaki idą do Skrzynki Zgłoszeń."""
 
         return self.model_dump_json(indent=2) + "\n"
+
+
+class StartedFacts(Protocol):
+    """Bezpieczne fakty startu Uruchomienia, te same co nagłówek Logów (plik ostatniego startu, dziennik Wyceny w efenix)."""
+
+    @property
+    def run_id(self) -> str: ...
+    @property
+    def process(self) -> contract.ProcessKey: ...
+    @property
+    def mode(self) -> Literal["podgląd", "zapis"]: ...
+    @property
+    def period(self) -> str: ...
+    @property
+    def started_at(self) -> datetime: ...
+
+
+def logs_file_name(started_at: datetime, process: contract.ProcessKey, run_id: str) -> str:
+    """Nazwa pliku Logów Uruchomienia: sekunda startu w UTC, klucz procesu i identyfikator, więc jedna na Uruchomienie,
+    a pliki układają się chronologicznie."""
+
+    return f"{started_at:%Y%m%dT%H%M%SZ}-{process}-{run_id}.json"
 
 
 def logi_post(record: RunLog) -> Post:
@@ -602,13 +695,15 @@ def _diagnosis(diagnosis: LoggedDiagnosis) -> str:
 def _result(record: RunLog) -> str:
     match record.ending:
         case "finished":
-            return record.result
+            return f"{record.result}"
         case "stop" | "declined":
             return f"{record.result}, {_stop(record.stop_kind)}"
         case "unexpected":
             return f"{record.result}, nieoczekiwany wyjątek"
         case "after_engine":
             return f"{record.result}, błąd po zakończeniu silnika"
+        case "interrupted":
+            return "brak, Centrum zamknęło się w trakcie (Urwane Uruchomienie)"
         case _:
             assert_never(record.ending)
 
@@ -674,10 +769,8 @@ class RunLogs:
         self._last: RunLog | None = None  # Logi ostatniego Uruchomienia tak, jak ostatnio poszły do pliku i Skrzynki
 
     def run_ended(self, run: EndedRun) -> None:
-        commit = self._commit()
-        release = None if commit is None else self._wydanie(commit)
-        tool = Tool(wydanie=None if release is None else release.version, commit=commit)
-        record = RunLog.of(run, tool=tool, environment=self._environment(run), dad_actions=self._dad_actions.take())
+        environment = self._environment(run.info.process, run.info.period)
+        record = RunLog.of(run, tool=self._tool(), environment=environment, dad_actions=self._dad_actions.take())
         with self._lock:
             self._last = record
         self._keep(record)
@@ -717,9 +810,51 @@ class RunLogs:
             # Katalog Logów, który nie przyjął pliku, nie zatrzymuje Logów w drodze do Maksa.
             self._outbox.post(logi_post(record))
 
-    def _environment(self, run: EndedRun) -> Environment:
+    def interrupted(
+        self,
+        started: StartedFacts,
+        *,
+        ended_at: datetime,
+        orders: Sequence[LoggedOrder],
+        interruption: LoggedInterruption,
+    ) -> RunLog:
+        """Logi Urwanego Uruchomienia ``started`` (``RunLog.interrupted``) z dzisiejszym narzędziem i środowiskiem i z
+        działaniami taty, które czekają na Logi: Aktualizacja narzędzia nie startuje w trakcie Uruchomienia, więc po
+        zgaśnięciu Centrum ma ten sam commit."""
+
+        return RunLog.interrupted(
+            started,
+            ended_at=ended_at,
+            orders=orders,
+            interruption=interruption,
+            tool=self._tool(),
+            environment=self._environment(started.process, started.period),
+            dad_actions=self._dad_actions.take(),
+        )
+
+    def file_of(self, started: StartedFacts) -> Path:
+        """Plik Logów Uruchomienia ``started``, także taki, którego jeszcze nie ma."""
+
+        return self._directory / logs_file_name(started.started_at, started.process, started.run_id)
+
+    def close(self, record: RunLog) -> None:
+        """Plik Logów Urwanego Uruchomienia, jeszcze bez wysyłki (``send``); ``OSError``: pliku nie udało się zapisać."""
+
+        replace_atomically(self._directory / record.file_name, record.text)
+
+    def send(self, record: RunLog) -> bool:
+        """Logi ``record`` do Kolejki wysyłki; ``False``: kolejka ich nie przyjęła (typ błędu jest w dzienniku Centrum)."""
+
+        return self._outbox.post(logi_post(record))
+
+    def _tool(self) -> Tool:
+        commit = self._commit()
+        release = None if commit is None else self._wydanie(commit)
+        return Tool(wydanie=None if release is None else release.version, commit=commit)
+
+    def _environment(self, process: contract.ProcessKey, period: str) -> Environment:
         try:
-            paths = self._files(run.info.process, run.info.period)
+            paths = self._files(process, period)
         except (OSError, PeriodFolderInaccessible):
             # Niedostępny folder to stan komputera taty, nie nieoczekiwany wyjątek: bez wpisu, który Diagnoza by zgłosiła.
             files = None
