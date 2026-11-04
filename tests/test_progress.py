@@ -136,12 +136,18 @@ def test_projection_reduces_complete_przebieg_rozliczen_to_one_snapshot() -> Non
 
 
 def test_projection_marks_failed_faza_przebiegu() -> None:
-    projection = project([PhaseStarted(ProgressPhase.CHECKING, elapsed_ms=1)])
+    """Przerwana Faza przebiegu ma stan, czas i chwilę końca: chwilę zdarzenia, które ją przerwało."""
+
+    projection = project([PhaseStarted(ProgressPhase.CHECKING, elapsed_ms=1)], ticking())
 
     snapshot = projection.update(PhaseFailed(ProgressPhase.CHECKING, elapsed_ms=3, phase_elapsed_ms=2))
 
     assert snapshot.phase_states[ProgressPhase.CHECKING] is PhaseState.FAILED
     assert snapshot.phase_durations_ms[ProgressPhase.CHECKING] == 2
+    assert (snapshot.phase_started_at[ProgressPhase.CHECKING], snapshot.phase_ended_at[ProgressPhase.CHECKING]) == (
+        moment(0),
+        moment(1),
+    )
 
 
 def test_projekcja_mierzy_kazde_przetworzenie_szablonu_pracownika_od_jego_rozpoczecia_do_konca() -> None:
