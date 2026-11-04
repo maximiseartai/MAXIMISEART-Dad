@@ -15,6 +15,13 @@ nie udało; a Zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad wywoł
 Logi nie mają treści komórek: żadne pole nie niesie Wiersza danych, a pliki mają tylko nazwę, nigdy pełną ścieżkę.
 Skrypt dla maszyn nie ma działań po wyniku, więc Logów nie tworzy.
 
+Schemat 2 (#839) daje każdemu krokowi śladu godzinę (UTC) obok czasu trwania: etap ma chwilę rozpoczęcia i końca,
+Przetworzenie Szablonu pracownika też, a działanie okna efenix chwilę rozpoczęcia, więc widać przerwy i czekanie, których
+czasy trwania nie liczą. Etapy i Szablony mają chwile z projekcji postępu (``ProgressSnapshot``), działania okna efenix
+z jego śladu (``efenix_trace``). Dochodzi dziennik działań taty w Centrum (``dad_actions``) od Logów poprzedniego
+Uruchomienia do końca tego, bez treści zapytań, więc bez treści Uwagi taty. Karta z Logów i Historia czytają oba
+schematy: plik schematu 1 nie ma godzin ani dziennika, a te pola są w nim ``None``.
+
 Plik leży w katalogu Logów obok dziennika Centrum, poza Gitem i OneDrive, bez rotacji. Nazwa to czas startu (UTC),
 klucz procesu i identyfikator Uruchomienia, więc jest jedna na Uruchomienie i układa się chronologicznie. Zapis jest
 atomowy; nieudany wychodzi z ``run_ended``, a ``RunHost.after`` zapisuje w dzienniku tylko jego typ, bez zmiany
@@ -51,6 +58,7 @@ from rozliczenia.centrum import contract
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.cloud_files import CloudFiles
+from rozliczenia.centrum.dad_actions import DadActionJournal, DadActions
 from rozliczenia.centrum.diagnosis import CheckState, Diagnosis
 from rozliczenia.centrum.outbox import Outbox, PeriodThread, Post
 from rozliczenia.centrum.report_box import Label
@@ -58,7 +66,7 @@ from rozliczenia.centrum.runs import EndedRun, Ending
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.centrum.version import short_commit
-from rozliczenia.domain import SettlementSummary, WorkerStatus
+from rozliczenia.domain import ProgressPhase, SettlementSummary, WorkerStatus
 from rozliczenia.efenix_pricing import (
     BrowserFailure,
     Closed,
@@ -82,6 +90,7 @@ from rozliczenia.efenix_trace import Action, TraceStep
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.message import Message
 from rozliczenia.period_folder import PeriodFolderInaccessible
+from rozliczenia.progress import ProgressSnapshot
 
 RUN_LOGS_DIRECTORY: Final = "uruchomienia"
 LABEL: Final[Label] = "logi-uruchomienia"
@@ -108,13 +117,54 @@ class LoggedMessage(_Record):
         return cls(kind=kind, code=message.code, what=message.what, where=message.where, action=message.action)
 
 
+class LoggedPhase(_Record):
+    """Etap Uruchomienia jak na karcie (stan i czas bez czekania na tatę) z chwilami rozpoczęcia i końca (UTC).
+
+    ``started_at`` ``None``: etap się nie zaczął; ``ended_at`` ``None``: nie skończył się (Zatrzymanie w innym etapie,
+    odłączony podgląd postępu). Oba ``None`` także w plikach schematu 1.
+    """
+
+    phase: contract.PhaseName
+    state: Literal["pending", "running", "completed", "failed"]
+    duration_ms: int
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+
+    @classmethod
+    def all_of(cls, phases: Sequence[contract.PhaseProgress], snapshot: ProgressSnapshot | None) -> list[LoggedPhase]:
+        def moment(moments: Mapping[ProgressPhase, datetime] | None, phase: contract.PhaseName) -> datetime | None:
+            return None if moments is None else moments.get(ProgressPhase(phase))
+
+        started = None if snapshot is None else snapshot.phase_started_at
+        ended = None if snapshot is None else snapshot.phase_ended_at
+        return [
+            cls(
+                phase=phase.phase,
+                state=phase.state,
+                duration_ms=phase.duration_ms,
+                started_at=moment(started, phase.phase),
+                ended_at=moment(ended, phase.phase),
+            )
+            for phase in phases
+        ]
+
+    @property
+    def progress(self) -> contract.PhaseProgress:
+        """Etap tak, jak go pokazuje karta Uruchomienia."""
+
+        return contract.PhaseProgress(phase=self.phase, state=self.state, duration_ms=self.duration_ms)
+
+
 class LoggedTemplate(_Record):
-    """Przetworzenie Szablonu pracownika: Wykonawca, wynik, Wiersze danych i czas."""
+    """Przetworzenie Szablonu pracownika: Wykonawca, wynik, Wiersze danych, czas oraz chwile rozpoczęcia i końca (UTC;
+    ``None`` w plikach schematu 1)."""
 
     wykonawca: str
     outcome: WorkerStatus | Literal["failed"]
     rows: int
     duration_ms: int
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
 
 
 class LoggedFile(_Record):
@@ -220,9 +270,11 @@ class LoggedEntries(_Record):
 
 
 class LoggedStep(_Record):
-    """Działanie okna efenix przy zleceniu (``efenix_trace.TraceStep``): czas i to, co odpowiedział efenix."""
+    """Działanie okna efenix przy zleceniu (``efenix_trace.TraceStep``): chwila rozpoczęcia (UTC; ``None`` w plikach
+    schematu 1), czas i to, co odpowiedział efenix."""
 
     action: Action
+    started_at: datetime | None = None
     duration_ms: int
     found: int | None
     execution_date: date | None
@@ -236,6 +288,7 @@ class LoggedStep(_Record):
     def of(cls, step: TraceStep) -> LoggedStep:
         return cls(
             action=step.action,
+            started_at=step.started_at,
             duration_ms=step.duration_ms,
             found=step.found,
             execution_date=step.execution_date,
@@ -383,9 +436,10 @@ class RunLog(_Record):
 
     ``duration_ms`` to Czas uruchomienia bez czekania na Decyzję taty; ``started_at`` i ``ended_at`` to zegar ścienny.
     ``issue_count``, ``templates`` i ``duration_ms`` są puste tylko wtedy, gdy sam rdzeń (``run_process``) rzucił wyjątek.
+    Centrum zapisuje schemat 2, a czyta też pliki schematu 1 (bez godzin kroków i dziennika działań taty).
     """
 
-    schema_version: Literal[1]
+    schema_version: Literal[1, 2]
     run_id: str
     process: contract.ProcessKey
     mode: Literal["podgląd", "zapis"]
@@ -401,7 +455,7 @@ class RunLog(_Record):
     messages: list[LoggedMessage]
     technical_notes: list[str]
     summary: contract.RunSummary | None
-    phases: list[contract.PhaseProgress]
+    phases: list[LoggedPhase]
     templates: list[LoggedTemplate]
     inea_only_cleared: dict[str, int] | None = None
     """Ilości tylko dla INEA (ADR 0018): litera kolumny → liczba komórek z wartością, które Przebieg rozliczeń zostawił
@@ -420,9 +474,12 @@ class RunLog(_Record):
     trace: CallTrace | None
     diagnosis: LoggedDiagnosis | None
     """Ostatnia Diagnoza tego Uruchomienia z nowym wynikiem; ``None``, dopóki tata jej nie uruchomił (pliki schematu 1 sprzed niej też)."""
+    dad_actions: DadActions | None = None
+    """Działania taty w Centrum od Logów poprzedniego Uruchomienia do końca tego (``dad_actions``). ``None``: pliki
+    schematu 1."""
 
     @classmethod
-    def of(cls, run: EndedRun, *, tool: Tool, environment: Environment) -> RunLog:
+    def of(cls, run: EndedRun, *, tool: Tool, environment: Environment, dad_actions: DadActions) -> RunLog:
         info, stopped, snapshot = run.info, run.stopped, run.snapshot
         engine_summary = None if run.shown is None else run.shown.engine_summary
         facts = None if stopped is None else stopped.stop.facts
@@ -430,7 +487,7 @@ class RunLog(_Record):
         if isinstance(facts, PricingStopped):
             priced = facts.summary
         return cls(
-            schema_version=1,
+            schema_version=2,
             run_id=info.id,
             process=info.process,
             mode="podgląd" if info.dry_run else "zapis",
@@ -447,7 +504,7 @@ class RunLog(_Record):
             + [LoggedMessage.of("warning", warning) for warning in run.warnings],
             technical_notes=list(run.technical_notes),
             summary=None if run.shown is None else run.shown.summary,
-            phases=run.progress.phases,
+            phases=LoggedPhase.all_of(run.progress.phases, snapshot),
             templates=[]
             if snapshot is None
             else [
@@ -456,6 +513,8 @@ class RunLog(_Record):
                     outcome=template.outcome,
                     rows=template.rows,
                     duration_ms=template.duration_ms,
+                    started_at=template.started_at,
+                    ended_at=template.ended_at,
                 )
                 for template in snapshot.templates
             ],
@@ -468,6 +527,7 @@ class RunLog(_Record):
             environment=environment,
             trace=None if stopped is None else stopped.stop.trace,
             diagnosis=None,
+            dad_actions=dad_actions,
         )
 
     @property
@@ -601,8 +661,10 @@ class RunLogs:
         wydanie: Callable[[str], Release | None],
         files: ProcessFiles,
         cloud_files: CloudFiles,
+        dad_actions: DadActionJournal,
     ) -> None:
         self._directory = directory
+        self._dad_actions = dad_actions
         self._outbox = outbox
         self._commit = commit
         self._wydanie = wydanie
@@ -615,7 +677,7 @@ class RunLogs:
         commit = self._commit()
         release = None if commit is None else self._wydanie(commit)
         tool = Tool(wydanie=None if release is None else release.version, commit=commit)
-        record = RunLog.of(run, tool=tool, environment=self._environment(run))
+        record = RunLog.of(run, tool=tool, environment=self._environment(run), dad_actions=self._dad_actions.take())
         with self._lock:
             self._last = record
         self._keep(record)

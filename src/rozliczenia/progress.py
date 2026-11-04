@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Literal, TypeVar
@@ -43,12 +44,16 @@ class TemplateProcessing:
 
     ``duration_ms``: od ``WorkerStarted`` do ``WorkerEnded`` albo ``WorkerFailed`` zegarem sekwencera etapów
     (różnica ``elapsed_ms``), tym samym co czasy etapów. ``failed``: Przetworzenie przerwane; ``rows`` jest wtedy 0.
+    ``started_at`` i ``ended_at``: chwile (UTC) tych samych zdarzeń z zegara ściennego projekcji, więc widać też
+    czekanie, którego ``duration_ms`` nie liczy.
     """
 
     worker_name: str
     outcome: WorkerStatus | Literal["failed"]
     rows: int
     duration_ms: int
+    started_at: datetime
+    ended_at: datetime
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,10 @@ class ProgressSnapshot:
 
     phase_states: Mapping[ProgressPhase, PhaseState]
     phase_durations_ms: Mapping[ProgressPhase, int]
+    phase_started_at: Mapping[ProgressPhase, datetime]
+    """Chwila (UTC) rozpoczęcia każdego etapu, który się zaczął; etap, który się nie zaczął, jej nie ma."""
+    phase_ended_at: Mapping[ProgressPhase, datetime]
+    """Chwila (UTC) końca albo przerwania każdego etapu, który się skończył."""
     template_total: int
     templates_completed: int
     rows: int
@@ -94,15 +103,24 @@ def _immutable_mapping(values: Mapping[KeyT, ValueT]) -> Mapping[KeyT, ValueT]:
     return MappingProxyType(dict(values))
 
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class ProgressProjection:
     """Jedyny interpretator Zdarzeń przebiegu.
 
     Redukuje zdarzenia bez ponownego sprawdzania kolejności: ``PhaseRunner`` jest jedynym nadawcą i ją sprawdza (ADR 0002).
+    ``now`` to zegar ścienny (UTC), z którego projekcja bierze chwilę każdego zdarzenia: sekwencer wysyła je w chwili,
+    w której się dzieją, więc chwila nadejścia to chwila zdarzenia.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, now: Callable[[], datetime] = _utc_now) -> None:
+        self._now = now
         self._phase_states = {ProgressPhase(phase): PhaseState.PENDING for phase in PHASES}
         self._phase_durations_ms = {ProgressPhase(phase): 0 for phase in PHASES}
+        self._phase_started_at: dict[ProgressPhase, datetime] = {}
+        self._phase_ended_at: dict[ProgressPhase, datetime] = {}
         self._template_total = 0
         self._templates_completed = 0
         self._rows = 0
@@ -112,6 +130,8 @@ class ProgressProjection:
         self._issue_count = 0
         self._templates: list[TemplateProcessing] = []
         self._worker_started_ms = 0
+        # Jak ``_worker_started_ms``: ``WorkerEnded`` i ``WorkerFailed`` przychodzą zawsze po ``WorkerStarted`` (ADR 0002).
+        self._worker_started_at = datetime.fromtimestamp(0, timezone.utc)
         self._step: SavingStep | None = None
         self._snapshot = self._make_snapshot()
 
@@ -121,12 +141,15 @@ class ProgressProjection:
 
     def update(self, event: ProgressEvent) -> ProgressSnapshot:
         self._total_elapsed_ms = event.elapsed_ms
+        at = self._now()
         match event:
             case PhaseStarted(phase=phase):
                 self._phase_states[phase] = PhaseState.RUNNING
+                self._phase_started_at[phase] = at
             case PhaseEnded(phase=phase, phase_elapsed_ms=phase_elapsed_ms):
                 self._phase_states[phase] = PhaseState.COMPLETED
                 self._phase_durations_ms[phase] = phase_elapsed_ms
+                self._phase_ended_at[phase] = at
             case IssueCountReady(issue_count=issue_count):
                 self._issue_count = issue_count
             case PlanReady(template_total=template_total, issue_count=issue_count):
@@ -135,6 +158,7 @@ class ProgressProjection:
             case WorkerStarted(worker_name=worker_name):
                 self._current_worker = worker_name
                 self._worker_started_ms = event.elapsed_ms
+                self._worker_started_at = at
             case WorkerEnded():
                 self._templates_completed = event.template_index
                 self._rows += event.rows
@@ -143,20 +167,34 @@ class ProgressProjection:
                 self._current_worker = None
                 self._templates.append(
                     TemplateProcessing(
-                        event.worker_name, event.status, event.rows, event.elapsed_ms - self._worker_started_ms
+                        event.worker_name,
+                        event.status,
+                        event.rows,
+                        event.elapsed_ms - self._worker_started_ms,
+                        self._worker_started_at,
+                        at,
                     )
                 )
             case PhaseFailed(phase=phase, phase_elapsed_ms=phase_elapsed_ms):
                 self._phase_states[phase] = PhaseState.FAILED
                 self._phase_durations_ms[phase] = phase_elapsed_ms
+                self._phase_ended_at[phase] = at
             case StepReached(label=label, worker=worker, done=done, total=total):
                 self._step = SavingStep(label, worker, done, total)
             case WorkerFailed():
                 self._phase_states[event.phase] = PhaseState.FAILED
                 self._phase_durations_ms[event.phase] = event.phase_elapsed_ms
+                self._phase_ended_at[event.phase] = at
                 self._current_worker = event.worker_name
                 self._templates.append(
-                    TemplateProcessing(event.worker_name, "failed", 0, event.elapsed_ms - self._worker_started_ms)
+                    TemplateProcessing(
+                        event.worker_name,
+                        "failed",
+                        0,
+                        event.elapsed_ms - self._worker_started_ms,
+                        self._worker_started_at,
+                        at,
+                    )
                 )
         self._snapshot = self._make_snapshot()
         return self._snapshot
@@ -165,6 +203,8 @@ class ProgressProjection:
         return ProgressSnapshot(
             phase_states=_immutable_mapping(self._phase_states),
             phase_durations_ms=_immutable_mapping(self._phase_durations_ms),
+            phase_started_at=_immutable_mapping(self._phase_started_at),
+            phase_ended_at=_immutable_mapping(self._phase_ended_at),
             template_total=self._template_total,
             templates_completed=self._templates_completed,
             rows=self._rows,

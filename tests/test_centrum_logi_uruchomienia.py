@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from http import HTTPStatus
 import json
 import os
@@ -30,7 +30,16 @@ from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.period_folder import PeriodFolderInaccessible
 
 from tests.fixtures.atrapa_efenix import AtrapaEfenix, AtrapaOrder, Changed, amount_of, atrapa_efenix
-from tests.fixtures.centrum import TOOL_COMMIT, FakeGitHub, finished_view, run_events, views_until, without_times
+from tests.fixtures.centrum import (
+    TOOL_COMMIT,
+    FakeGitHub,
+    FakeReportBox,
+    finished_view,
+    run_events,
+    view_timing,
+    views_until,
+    without_times,
+)
 from tests.fixtures.centrum_processes import (
     PreparingCentrum,
     SettlingCentrum,
@@ -52,6 +61,7 @@ KEYS = {
     "schema_version", "run_id", "process", "mode", "period", "started_at", "ended_at", "duration_ms", "tool",
     "result", "ending", "stop_kind", "issue_count", "messages", "technical_notes", "summary", "phases", "templates",
     "inea_only_cleared", "intermax_entries", "efenix_orders", "efenix_stop", "environment", "trace", "diagnosis",
+    "dad_actions",
 }
 
 
@@ -70,6 +80,15 @@ def in_json(path: Path) -> str:
     """Ścieżka tak, jak stoi w tekście pliku JSON (w Windows z podwojonym ``\\``)."""
 
     return json.dumps(str(path))[1:-1]
+
+
+def utc(moment: str | None) -> datetime:
+    """Godzina kroku z Logów; każda jest w UTC."""
+
+    assert moment is not None, "krok bez godziny"
+    parsed = datetime.fromisoformat(moment)
+    assert parsed.utcoffset() == timedelta(0), moment
+    return parsed
 
 
 def card_messages(view: dict[str, Any]) -> list[dict[str, str]]:
@@ -334,7 +353,7 @@ def test_po_ponownym_starcie_karta_ostatniego_uruchomienia_wraca_z_logow(
     assert in_json(tmp_path) not in json.dumps(current), "same nazwy plików, bez ścieżek"
 
 
-def test_logi_maja_etapy_i_przetworzenia_szablonow_pracownika_z_wynikiem_wierszami_i_czasem(tmp_path: Path) -> None:
+def test_logi_maja_etapy_i_przetworzenia_szablonow_pracownika_z_wynikiem_wierszami_czasem_i_godzina(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
 
     view = run_to_end(centrum, dry_run=False)
@@ -342,10 +361,22 @@ def test_logi_maja_etapy_i_przetworzenia_szablonow_pracownika_z_wynikiem_wiersza
     [path] = log_files(centrum)
     [record] = records(centrum)
     assert record.keys() == KEYS
-    assert (record["schema_version"], record["diagnosis"], record["trace"]) == (1, None, None)
+    assert (record["schema_version"], record["diagnosis"], record["trace"]) == (2, None, None)
     assert record["intermax_entries"] is None, "Wpisy INTERMAX ma tylko Uporządkowanie INTERMAX"
     assert record["tool"] == {"wydanie": None, "commit": TOOL_COMMIT}
-    assert record["phases"] == view["progress"]["phases"]
+    assert [{key: phase[key] for key in ("phase", "state", "duration_ms")} for phase in record["phases"]] == view[
+        "progress"
+    ]["phases"]
+    *before_saving, saving = record["phases"]
+    steps = [record["started_at"]]
+    for phase in before_saving:
+        steps += [phase["started_at"], phase["ended_at"]]
+    steps.append(saving["started_at"])
+    for template in record["templates"]:
+        steps += [template["started_at"], template["ended_at"]]
+    steps += [saving["ended_at"], record["ended_at"]]
+    moments = [utc(moment) for moment in steps]
+    assert moments == sorted(moments), "godziny etapów, a w Zapisywaniu Szablonów pracownika, w kolejności kroków"
     assert [phase["state"] for phase in record["phases"]] == ["completed"] * 4
     assert [(template["wykonawca"], template["outcome"], template["rows"]) for template in record["templates"]] == [
         ("Adrian Testowy", "ZAPISANO", 2),
@@ -1049,6 +1080,9 @@ def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_adr
     ]
     emmett = record["efenix_orders"][2]
     assert (emmett["file"], emmett["steps"][-1]["quantities"]["012"], emmett["steps"][0]["found"]) == ({"012": 1}, 2, 1)
+    moments = [utc(step["started_at"]) for order in record["efenix_orders"] for step in order["steps"]]
+    assert utc(record["started_at"]) <= moments[0]
+    assert moments == sorted(moments) and moments[-1] <= utc(record["ended_at"]), "godziny działań w kolejności zleceń"
     private = [
         *(order.number.removeprefix("#") for order in PRICED),
         *(order.worker for order in PRICED),
@@ -1058,3 +1092,79 @@ def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_adr
         in_json(tmp_path),
     ]
     assert [marker for marker in private if any(marker in text for text in texts)] == []
+
+
+# Dziennik działań taty (#839): co tata robił w Centrum od poprzedniego Uruchomienia, z godzinami, bez treści Uwagi taty.
+
+NOTE_TITLE = "Tytuł Uwagi SYNTETYCZNY-TYTUŁ"
+NOTE_BODY = "Treść Uwagi SYNTETYCZNA-TREŚĆ"
+
+
+def logged_record(centrum: SettlingCentrum, run_id: str) -> tuple[str, dict[str, Any]]:
+    [path] = (centrum.log_path.parent / "uruchomienia").glob(f"*-{run_id}.json")
+    text = path.read_text(encoding="utf-8")
+    return text, json.loads(text)
+
+
+def dad_actions(record: dict[str, Any]) -> list[tuple[str, ...]]:
+    """Działania bez godzin: rodzaj, a przy widoku strona i rodzaj widoku, przy przycisku operacja, proces i tryb."""
+
+    def facts(action: dict[str, Any]) -> tuple[str, ...]:
+        rest = [action[key] for key in ("page", "kind", "operation", "process", "mode") if action.get(key) is not None]
+        return (action["action"], *rest)
+
+    return [facts(action) for action in record["dad_actions"]["entries"]]
+
+
+def action_moments(record: dict[str, Any]) -> list[datetime]:
+    return [datetime.fromisoformat(action["at"]) for action in record["dad_actions"]["entries"]]
+
+
+def logs_comments(fake: FakeReportBox) -> list[str]:
+    return [comment for issue in fake.background_issues if issue.label == "logi-uruchomienia" for comment in issue.comments]
+
+
+def test_dzialania_taty_miedzy_dwoma_uruchomieniami_sa_w_logach_drugiego_z_godzinami_bez_tresci_uwagi_taty(
+    tmp_path: Path,
+) -> None:
+    centrum = settling_centrum(tmp_path)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    first = run_to_end(centrum, dry_run=True)["run"]["id"]
+
+    client = centrum.client
+    assert client.post("/api/view-timings", json=view_timing(kind="navigation", page="okresy")).status_code == 204
+    assert client.put("/api/settings/theme", json={"theme": "dark"}).status_code == 200
+    assert client.post("/api/dad-notes/draft", json={"title": NOTE_TITLE, "body": NOTE_BODY}).status_code == 200
+    assert client.post("/api/dad-notes", json={"title": NOTE_TITLE, "body": NOTE_BODY}).status_code == 200
+    assert client.post("/api/shutdown").status_code == 202
+    centrum.restart()
+    assert centrum.client.post("/api/view-timings", json=view_timing(page="uruchomienia")).status_code == 204
+    second = run_to_end(centrum, dry_run=False)["run"]["id"]
+
+    _, earlier = logged_record(centrum, first)
+    text, later = logged_record(centrum, second)
+    assert dad_actions(earlier) == [
+        ("start Centrum",),
+        ("przycisk", "choosePeriodsDirectory"),
+        ("przycisk", "startRun", "settlement", "podgląd"),
+    ]
+    assert dad_actions(later) == [
+        ("widok", "okresy", "navigation"),
+        ("przycisk", "changeTheme"),
+        ("przycisk", "sendDadNote"),
+        ("przycisk", "closeCentrum"),
+        ("start Centrum",),
+        ("widok", "uruchomienia", "cold_start"),
+        ("przycisk", "startRun", "settlement", "zapis"),
+    ]
+    assert later["dad_actions"]["omitted"] == 0
+    times = action_moments(later)
+    assert all(moment.utcoffset() == timedelta(0) for moment in times), "godziny w UTC"
+    assert times == sorted(times)
+    assert datetime.fromisoformat(earlier["ended_at"]) <= times[0]
+    assert times[-1] <= datetime.fromisoformat(later["started_at"])
+    box = centrum.surroundings.report_box
+    assert box.wait_until(lambda fake: len(logs_comments(fake)) == 2), "Logi obu Uruchomień w Skrzynce"
+    [_, sent] = logs_comments(box)
+    assert '"operation": "sendDadNote"' in sent, "dziennik działań taty dociera do Maksa"
+    assert [marker for marker in ("SYNTETYCZNY-TYTUŁ", "SYNTETYCZNA-TREŚĆ") if marker in text or marker in sent] == []

@@ -325,6 +325,36 @@ def test_wiersz_historii_otwiera_karte_swojego_uruchomienia_takze_po_ponownym_st
     assert before == after == expected
 
 
+def as_schema_1(record: dict[str, Any]) -> dict[str, Any]:
+    """Logi tego Uruchomienia tak, jak zapisało je Centrum sprzed #839: bez godzin kroków i dziennika działań taty."""
+
+    old = {key: value for key, value in record.items() if key != "dad_actions"} | {"schema_version": 1}
+    old["phases"] = [{key: phase[key] for key in ("phase", "state", "duration_ms")} for phase in record["phases"]]
+    old["templates"] = [
+        {key: value for key, value in template.items() if key not in ("started_at", "ended_at")}
+        for template in record["templates"]
+    ]
+    return old
+
+
+def test_karta_po_starcie_i_wiersz_historii_otwieraja_logi_schematu_1_i_2(tmp_path: Path) -> None:
+    centrum = settling_centrum(tmp_path)
+    preview = run_to_end(centrum, dry_run=True)
+    saved = run_to_end(centrum, dry_run=False)
+    centrum.client.stop()
+    paths = {record["run_id"]: path for path, record in zip(log_paths(centrum), logged(centrum), strict=True)}
+    records = {run_id: json.loads(path.read_text(encoding="utf-8")) for run_id, path in paths.items()}
+    assert {record["schema_version"] for record in records.values()} == {2}
+    saved_id = saved["run"]["id"]
+    paths[saved_id].write_text(json.dumps(as_schema_1(records[saved_id]), ensure_ascii=False), encoding="utf-8")
+
+    centrum.restart()
+
+    expected = {live["run"]["id"]: restored(live, records[live["run"]["id"]]["started_at"]) for live in (preview, saved)}
+    assert centrum.client.get("/api/runs/current").json()["previous"] == expected[saved_id]
+    assert history_cards(centrum) == expected
+
+
 def test_uruchomienie_bez_logow_nie_ma_karty(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
     run_id = run_to_end(centrum, dry_run=True)["run"]["id"]

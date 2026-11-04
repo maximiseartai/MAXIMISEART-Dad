@@ -202,7 +202,7 @@ class RunCards:
             state="restored",
             run=info,
             started_at=record.started_at,
-            phases=record.phases,
+            phases=[phase.progress for phase in record.phases],
             result=contract.LoggedOutcome(
                 result=record.result,
                 headline=headline,

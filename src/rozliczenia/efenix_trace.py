@@ -1,7 +1,8 @@
 """Ślad zlecenia Wyceny w efenix dla Logów Uruchomienia: każde działanie okna efenix z czasem i tym, co odpowiedział efenix.
 
 Jedyną operacją jest ``traced()``: okno efenix (``efenix_pricing.Efenix``), które przekazuje każde działanie oknu pod
-spodem i zapisuje je w ``OrderTrace``. Ślad nie ma numeru zlecenia, adresu, loginu realizatora ani treści stron efenix:
+spodem i zapisuje je w ``OrderTrace`` z chwilą rozpoczęcia (UTC), więc przerwy tempa ludzkiego między działaniami widać
+bez symulacji. Ślad nie ma numeru zlecenia, adresu, loginu realizatora ani treści stron efenix:
 z szukania tylko liczbę trafień, ze strony zlecenia datę wykonania, kwotę i ilości po kodach pozycji, z pola „Ilość” kod
 pozycji, wpisaną ilość i kwotę końcową, którą odesłał efenix. Działanie, które się nie udało (wyjątek okna, np.
 ``UnexpectedPage``), nie trafia do udanych działań śladu, tylko do ``OrderTrace.failed`` z rodzajem i czasem do
@@ -12,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, TypeVar
@@ -28,7 +29,8 @@ Action = Literal["szukanie", "otwarcie zlecenia", "data wykonania", "Wycena Emme
 
 @dataclass(frozen=True)
 class TraceStep:
-    """Jedno działanie okna efenix: rodzaj, czas w milisekundach i to, co efenix odpowiedział, bez danych klientów.
+    """Jedno działanie okna efenix: rodzaj, chwila rozpoczęcia (UTC), czas w milisekundach i to, co efenix odpowiedział,
+    bez danych klientów.
 
     ``found``: trafienia szukania. ``execution_date``, ``amount`` i ``quantities``: strona zlecenia po otwarciu albo po
     Wycenie Emmetta, a ``amount`` także kwota końcowa po wpisaniu ilości. ``position`` i ``quantity``: pole „Ilość”, w które
@@ -36,6 +38,7 @@ class TraceStep:
     """
 
     action: Action
+    started_at: datetime
     duration_ms: int
     found: int | None = None
     execution_date: date | None = None
@@ -58,52 +61,58 @@ _T = TypeVar("_T")
 
 
 class _Traced:
-    """Okno efenix, które zapisuje każde udane działanie okna ``efenix`` w ``trace`` z czasem z zegara ``clock``."""
+    """Okno efenix, które zapisuje każde udane działanie okna ``efenix`` w ``trace`` z czasem z zegara ``clock`` i chwilą
+    rozpoczęcia z zegara ściennego ``now``."""
 
-    def __init__(self, efenix: Efenix, trace: OrderTrace, clock: Callable[[], float]) -> None:
+    def __init__(
+        self, efenix: Efenix, trace: OrderTrace, clock: Callable[[], float], now: Callable[[], datetime]
+    ) -> None:
         self._efenix = efenix
         self._trace = trace
         self._clock = clock
+        self._now = now
 
     @property
     def sent_change(self) -> bool:
         return self._efenix.sent_change
 
     def search(self, number: str) -> Sequence[ListedOrder]:
-        found, duration_ms = self._done("szukanie", lambda: self._efenix.search(number))
-        self._add(TraceStep("szukanie", duration_ms, found=len(found)))
+        found, at, duration_ms = self._done("szukanie", lambda: self._efenix.search(number))
+        self._add(TraceStep("szukanie", at, duration_ms, found=len(found)))
         return found
 
     def open_order(self, order: ListedOrder) -> OrderPricing:
-        pricing, duration_ms = self._done("otwarcie zlecenia", lambda: self._efenix.open_order(order))
-        self._add(_page("otwarcie zlecenia", duration_ms, pricing))
+        pricing, at, duration_ms = self._done("otwarcie zlecenia", lambda: self._efenix.open_order(order))
+        self._add(_page("otwarcie zlecenia", at, duration_ms, pricing))
         return pricing
 
     def set_execution_date(self, day: date) -> bool:
-        accepted, duration_ms = self._done("data wykonania", lambda: self._efenix.set_execution_date(day))
-        self._add(TraceStep("data wykonania", duration_ms, execution_date=day, accepted=accepted))
+        accepted, at, duration_ms = self._done("data wykonania", lambda: self._efenix.set_execution_date(day))
+        self._add(TraceStep("data wykonania", at, duration_ms, execution_date=day, accepted=accepted))
         return accepted
 
     def load_emmett(self) -> OrderPricing:
-        pricing, duration_ms = self._done("Wycena Emmetta", self._efenix.load_emmett)
-        self._add(_page("Wycena Emmetta", duration_ms, pricing))
+        pricing, at, duration_ms = self._done("Wycena Emmetta", self._efenix.load_emmett)
+        self._add(_page("Wycena Emmetta", at, duration_ms, pricing))
         return pricing
 
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
-        amount, duration_ms = self._done("ilość", lambda: self._efenix.enter_quantity(position, quantity))
-        self._add(TraceStep("ilość", duration_ms, amount=amount, position=position, quantity=quantity))
+        amount, at, duration_ms = self._done("ilość", lambda: self._efenix.enter_quantity(position, quantity))
+        self._add(TraceStep("ilość", at, duration_ms, amount=amount, position=position, quantity=quantity))
         return amount
 
-    def _done(self, action: Action, act: Callable[[], _T]) -> tuple[_T, int]:
-        """Wynik działania ``act`` i jego czas; działanie, które zgłosiło wyjątek, trafia do ``OrderTrace.failed``."""
+    def _done(self, action: Action, act: Callable[[], _T]) -> tuple[_T, datetime, int]:
+        """Wynik działania ``act``, chwila jego rozpoczęcia i czas; działanie, które zgłosiło wyjątek, trafia do
+        ``OrderTrace.failed``."""
 
+        at = self._now()
         started = self._clock()
         try:
             value = act()
         except Exception:
-            self._trace.failed = TraceStep(action, self._since(started))
+            self._trace.failed = TraceStep(action, at, self._since(started))
             raise
-        return value, self._since(started)
+        return value, at, self._since(started)
 
     def _since(self, started: float) -> int:
         return max(0, round((self._clock() - started) * 1000))
@@ -112,9 +121,10 @@ class _Traced:
         self._trace.steps.append(step)
 
 
-def _page(action: Action, duration_ms: int, pricing: OrderPricing) -> TraceStep:
+def _page(action: Action, started_at: datetime, duration_ms: int, pricing: OrderPricing) -> TraceStep:
     return TraceStep(
         action,
+        started_at,
         duration_ms,
         execution_date=pricing.execution_date,
         amount=pricing.amount,
@@ -122,7 +132,14 @@ def _page(action: Action, duration_ms: int, pricing: OrderPricing) -> TraceStep:
     )
 
 
-def traced(efenix: Efenix, trace: OrderTrace, clock: Callable[[], float]) -> Efenix:
-    """Okno ``efenix``, które zapisuje w ``trace`` każde swoje udane działanie z czasem z ``clock`` (sekundy)."""
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
-    return _Traced(efenix, trace, clock)
+
+def traced(
+    efenix: Efenix, trace: OrderTrace, clock: Callable[[], float], now: Callable[[], datetime] = _utc_now
+) -> Efenix:
+    """Okno ``efenix``, które zapisuje w ``trace`` każde swoje udane działanie z czasem z ``clock`` (sekundy) i chwilą
+    rozpoczęcia z ``now`` (UTC)."""
+
+    return _Traced(efenix, trace, clock, now)

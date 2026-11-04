@@ -22,7 +22,7 @@ import time
 import uuid
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -32,6 +32,7 @@ from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import CONFIGURATION_WAIT_S, ConfigurationFiles, configuration_router
 from rozliczenia.centrum.case_delivery import case_outbox
 from rozliczenia.centrum.contract import Health, Problem, Refusal
+from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, DadActionJournal
 from rozliczenia.centrum.dad_cases import DadCases
 from rozliczenia.centrum.dad_notes import dad_notes_router
 from rozliczenia.centrum.diagnosis import Surroundings, diagnose, files_of_process
@@ -109,6 +110,8 @@ def create_app(
         outbox.resume()
         yield
 
+    # Działania taty w Centrum dla Logów następnego Uruchomienia: każda trasa API wpisuje widok albo przycisk.
+    dad_actions = DadActionJournal(log.directory / DAD_ACTIONS_FILE, log)
     # Bez /docs i /openapi.json: kontrakt eksportuje tools/ci/export_openapi.py, a Swagger ładowałby skrypty z sieci.
     app = FastAPI(
         title="Centrum rozliczeń",
@@ -117,6 +120,7 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
         lifespan=lifespan,
+        dependencies=[Depends(dad_actions.observe)],
     )
 
     @app.middleware("http")
@@ -205,6 +209,7 @@ def create_app(
             process, period, settings=store.load(), configuration=configuration
         ),
         cloud_files=surroundings.cloud_files,
+        dad_actions=dad_actions,
     )
     # Jedno Uruchomienie procesu albo Aktualizacja narzędzia naraz; w ich trakcie zamknięcie Centrum jest odrzucone.
     stops = Stops(

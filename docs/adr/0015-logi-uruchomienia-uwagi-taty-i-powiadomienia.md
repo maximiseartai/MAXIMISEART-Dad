@@ -18,6 +18,11 @@ bieżący `main`). Zmienia trzy zdania
   Powiadomień (`powiadomienia.json`) i adresy dostarczonych Logów
   (`skrzynka-adresy.jsonl`), wszystko poza Gitem.
 
+Dopisek #839 (część #837): Logi mają `schema_version` 2 z godziną (UTC) każdego
+kroku śladu i dziennikiem działań taty w Centrum; dochodzi własny plik Centrum
+`logs/dzialania-taty.jsonl` z działaniami, które czekają na Logi następnego
+Uruchomienia. Szczegóły w punkcie „Treść Logów”.
+
 [ADR 0009](0009-aktualizacja-narzedzia-z-centrum.md) traci Powiadomienie o
 naprawie na stronie Okresy: zastępuje je Powiadomienie o nowej wersji.
 
@@ -82,6 +87,14 @@ co stało się z tym, co wysłał.
   każdej przyczyny z łańcucha `__cause__`), przy Zatrzymaniu okna efenix
   przyczyna techniczna z zamkniętej listy, wiersz i miejsce zlecenia w
   przebiegu oraz ślad zleceń sprzed niego, i po Diagnozie jej wynik.
+  Od `schema_version` 2 (#839) każdy etap i każde Przetworzenie Szablonu
+  pracownika ma chwilę rozpoczęcia i końca w UTC, a każde działanie okna efenix
+  chwilę rozpoczęcia, obok czasu trwania. Dochodzi dziennik działań taty w
+  Centrum od Logów poprzedniego Uruchomienia do końca bieżącego: start
+  Centrum, widoki, przyciski (każde zapytanie API, które coś zmienia, nazwane
+  operacją API, start Uruchomienia z procesem i trybem), każde z godziną w UTC,
+  bez treści zapytań, więc bez treści Uwagi taty. Karta Uruchomienia i Historia
+  czytają pliki schematu 1 i 2.
   Wydanie to numer najwyższego Wydania, którego tag w klonie taty (z instalacji
   albo pobrany przez Aktualizację narzędzia) wskazuje dokładnie commit, z
   którego działa Centrum; Centrum ustala je lokalnie przy końcu każdego
