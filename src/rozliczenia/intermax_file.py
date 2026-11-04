@@ -51,7 +51,7 @@ from openpyxl.utils.cell import column_index_from_string, coordinate_from_string
 from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH, from_excel
 from openpyxl.workbook.properties import WorkbookProperties
 
-from . import workbook_files
+from . import client_data, workbook_files
 from .preparation_register import ACTIVITIES, COLUMNS, DATE, DEVICES, WORKER
 from .raw_orders import SHIFT, CellFacts, DayPlan, IntermaxEntry, OperatorColor, OrderColumns, RawBlock, RowFacts
 from .row_look import BORDER
@@ -200,14 +200,24 @@ class OrderSheet:
         except IrregularSheetData as error:
             raise UnsupportedShape(str(error)) from error
 
+    @cached_property
+    def _forbidden(self) -> tuple[tuple[client_data.ForbiddenColumn, int], ...]:
+        return client_data.forbidden_columns(self._register._header(self.part) or {})
+
     def rows_from_bottom(self) -> Iterator[RowFacts]:
-        """Wiersze arkusza od ostatniego do drugiego jako fakty dla rozpoznania Surowych zleceń."""
+        """Wiersze arkusza od ostatniego do drugiego jako fakty dla rozpoznania Surowych zleceń.
+
+        Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza zna reguła danych (``client_data``).
+        """
 
         sheet = self.sheet_xml
         for row in reversed(sheet.data.rows):
             if row.number < 2:
                 return
-            yield self._register._facts(_row_tag(sheet.xml, row), row.number, _cells(sheet.xml[row.start : row.end]))
+            facts = self._register._facts(_row_tag(sheet.xml, row), row.number, _cells(sheet.xml[row.start : row.end]))
+            for column, number in self._forbidden:
+                client_data.remember_value(column, facts.value(number))
+            yield facts
 
 
 def _row_tag(xml: bytes, row: SheetRow) -> bytes:
@@ -267,7 +277,9 @@ class Register:
         read = workbook_files.saved_workbook_content if despite_excel_lock else workbook_files.workbook_content
         return cls(path, read(path))
 
-    def _order_columns(self, part: str) -> OrderColumns | None:
+    def _header(self, part: str) -> dict[str, int] | None:
+        """Nagłówki z wiersza 1 arkusza (po ``normalize_text``) → kolumna od 1; ``None``: arkusz bez wiersza 1."""
+
         header_row = _HEADER_ROW.search(self._parts[part])
         if header_row is None:
             return None
@@ -275,7 +287,12 @@ class Register:
         header: list[object] = [None] * max((cell.column for cell in cells), default=0)
         for cell in cells:
             header[cell.column - 1] = self._value(cell)
-        found = header_columns(header)
+        return header_columns(header)
+
+    def _order_columns(self, part: str) -> OrderColumns | None:
+        found = self._header(part)
+        if found is None:
+            return None
         named = {
             column.target_header: next((found[name] for name in map(normalize_text, column.register_headers) if name in found), None)
             for column in COLUMNS

@@ -22,6 +22,7 @@ from typing import Final, assert_never
 
 from fastapi import APIRouter
 
+from rozliczenia import client_data
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.case_delivery import logs_line
 from rozliczenia.centrum.dad_cases import NOTE, Case, DadCases
@@ -58,12 +59,18 @@ class PinnedRun:
 def note_issue(title: str, body: str, commit: str | None, pinned: PinnedRun | None) -> contract.DadNoteDraft:
     """Issue Uwagi taty: jej tytuł, a w treści jej tekst i stopka (bez tekstu sama stopka).
 
-    Stopka Uwagi ogólnej to wersja narzędzia; przypiętej to linia Uruchomienia z wersją i linia jego Logów.
+    Stopka Uwagi ogólnej to wersja narzędzia; przypiętej to linia Uruchomienia z wersją i linia jego Logów. Tytuł i
+    tekst przechodzą przez strażnika reguły danych (ADR 0025), a uwaga techniczna o zamaskowanej wartości staje pod
+    tekstem, więc tata widzi w podglądzie dokładnie to, co dostanie Maks.
     """
 
     version = f"wersja narzędzia {version_label(commit)}"
     footer = f"Uwaga ogólna · {version}" if pinned is None else _pinned_footer(pinned, version)
-    return contract.DadNoteDraft(title=title, body=f"{body}\n\n{footer}" if body else footer)
+    title_guarded = client_data.guard(title, "tytuł Uwagi taty")
+    body_guarded = client_data.guard(body, "treść Uwagi taty")
+    notes = "".join(f"\n{note}" for note in (*title_guarded.notes, *body_guarded.notes))
+    text = f"{body_guarded.text}{notes}".strip("\n")
+    return contract.DadNoteDraft(title=title_guarded.text, body=f"{text}\n\n{footer}" if text else footer)
 
 
 def _pinned_footer(pinned: PinnedRun, version: str) -> str:

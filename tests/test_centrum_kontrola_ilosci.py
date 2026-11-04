@@ -235,6 +235,27 @@ def test_kontrola_ilosci_nie_ma_adresu_numerow_wykonawcy_daty_ani_czynnosci_zrea
     assert [marker for marker in ALLOWED if any(marker in text for text in seen_by_tata)] == []
 
 
+def test_adres_numer_orange_telefon_i_ulica_wpisane_w_urzadzenia_i_czynnosci_wychodza_zamaskowane_z_uwaga(
+    tmp_path: Path,
+) -> None:
+    address, orange = "Syntetyczna Malachitowa 3/1", "4807654321"
+    typed = {**MARKED, "D": f"nokia {address.lower()} {orange}", "E": "tel. 600-123-456 ul. Kwiatowa 5"}
+    centrum = centrum_with(tmp_path, [{**MARKED, "B": address, "I": orange}, typed])
+
+    run_to_end(centrum, dry_run=False)
+
+    issue = sent_check(centrum)
+    sent = issue.title + issue.body + "".join(issue.comments)
+    leaked = (address.lower(), orange, "600-123-456", "ul. Kwiatowa 5")
+    assert [value for value in leaked if value in sent] == []
+    assert "`nokia [adres] [numer Orange]`" in sent and "`tel. [telefon] [ulica]`" in sent
+    assert sent.endswith(
+        "## Uwagi techniczne\n\n"
+        "- Reguła danych: zamaskowano wartość kolumny ADRES w: treść Kontroli ilości.\n"
+        "- Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: treść Kontroli ilości.\n"
+    )
+
+
 @pytest.mark.parametrize(
     ("answer", "key"),
     [(Sent(1), True), (Refused(), True), (Unreachable(), True), (None, False)],

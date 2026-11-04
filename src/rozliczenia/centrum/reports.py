@@ -10,7 +10,9 @@ te same fakty co dziennik Centrum:
 kod Komunikatu, commit przed i po, czy instalowano biblioteki i ostatnie wpisy
 dziennika, bez ścieżek i bez wyjścia Gita. Ścieżki są już skrócone w
 Komunikatach, szczegółach sprawdzeń i ramkach śladu; treści wierszy, treści
-wyjątków ani klucza Zgłoszenie nie ma (ADR 0007).
+wyjątków ani klucza Zgłoszenie nie ma (ADR 0007). Podgląd przechodzi przez
+strażnika reguły danych (ADR 0025), więc tata widzi i wysyła tekst bez wartości
+``ADRES`` i numeru Orange, z zamaskowanymi telefonami i ulicami.
 
 Treść Zgłoszenia mieści się w jednej części wysyłki (``PART_LIMIT``), bo kolejka Skrzynki przejmuje Zgłoszenie,
 które założyła przerwana próba tej samej wysyłki, bez komentarzy (#724), a do otwartego Zgłoszenia tego odcisku
@@ -34,11 +36,12 @@ import threading
 import uuid
 import weakref
 from collections.abc import Callable, Sequence
-from dataclasses import astuple, dataclass
+from dataclasses import astuple, dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 from typing import Final, Literal
 
+from rozliczenia import client_data
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract, report_messages
 from rozliczenia.centrum.dad_cases import REPORT, Case, CaseNews, CaseNumbered, CaseRejected, DadCases
@@ -228,6 +231,17 @@ def _report(message: Message, lines: list[str], fingerprint: str) -> Report:
     """Zgłoszenie z tytułem z kodu i „Co się stało” Komunikatu."""
 
     return Report(title=f"{message.code}: {message.what}", body=_body(lines), fingerprint=fingerprint, what=message.what)
+
+
+def _guarded(report: Report) -> Report:
+    """Zgłoszenie po strażniku reguły danych (``client_data.guard``): tytuł i treść bez zakazanych wartości, z
+    zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna na końcu treści."""
+
+    title = client_data.guard(report.title, "tytuł Zgłoszenia")
+    body = client_data.guard(report.body, "treść Zgłoszenia")
+    notes = [*title.notes, *body.notes]
+    tail = "" if not notes else "\n## Uwagi techniczne\n\n" + "".join(f"- {note}\n" for note in notes)
+    return replace(report, title=title.text, body=body.text + tail)
 
 
 def _body(lines: list[str]) -> str:
@@ -519,7 +533,7 @@ class Reports:
         fingerprint = source.fingerprint.digest
         sent = [case.number for case in self._cases.all() if case.kind == REPORT and case.id == fingerprint]
         previous = next((number for number in reversed(sent) if number is not None), None)
-        return _Preview(source.report(commit=self._commit(), previous=previous), source.period)
+        return _Preview(_guarded(source.report(commit=self._commit(), previous=previous)), source.period)
 
     def _queue(self, preview: _Preview) -> contract.ReportState:
         """Zapisuje sprawę i kładzie ``preview`` w kolejce Skrzynki, chyba że ten problem już w niej czeka."""

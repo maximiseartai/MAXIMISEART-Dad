@@ -23,6 +23,12 @@ kroku śladu i dziennikiem działań taty w Centrum; dochodzi własny plik Centr
 `logs/dzialania-taty.jsonl` z działaniami, które czekają na Logi następnego
 Uruchomienia. Szczegóły w punkcie „Treść Logów”.
 
+Zdanie „Logi nie niosą treści wierszy” w punkcie „Treść Logów” zastępuje
+reguła danych [ADR 0025](0025-regula-danych-wysylki-do-skrzynki.md) (#838):
+nigdy wartości `ADRES` ani numeru Orange, telefony i ulice w tekście
+zamaskowane, a strażnik sprawdza plik Logów, Zgłoszenie, Kontrolę ilości i
+Uwagę taty przed zapisem i wysyłką.
+
 [ADR 0009](0009-aktualizacja-narzedzia-z-centrum.md) traci Powiadomienie o
 naprawie na stronie Okresy: zastępuje je Powiadomienie o nowej wersji.
 

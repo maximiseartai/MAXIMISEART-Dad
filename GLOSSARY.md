@@ -591,9 +591,11 @@ taty). Mówią wprost, czy był to podgląd, w którym nic nie
 zapisano, czy Uruchomienie z zapisem. Zostają na komputerze taty także po
 zamknięciu Centrum i trafiają same do Skrzynki Zgłoszeń, gdzie wszystkie
 Uruchomienia jednego okresu są w jednym miejscu; Uruchomienie Uporządkowania
-INTERMAX jest tam przy okresie dnia, w którym tata je uruchomił. Nie zawierają
-adresów,
-numerów zleceń ani numerów umów. Tata ich nie wysyła ani nie ogląda, ale z
+INTERMAX jest tam przy okresie dnia, w którym tata je uruchomił. Według reguły
+danych nigdy nie niosą wartości `ADRES` ani `NUMER UMOWY/ZLECENIA ORANGE` z
+plików, które Centrum przeczytało: przed zapisem i wysyłką strażnik maskuje
+taką wartość z uwagą techniczną, a telefony i ulice w tekście są zamaskowane.
+Tata ich nie wysyła ani nie ogląda, ale z
 nich wraca karta Uruchomienia po starcie Centrum i w Historii.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), dziennik Centrum, raport
 
@@ -626,6 +628,17 @@ pyta ją o otwarte Zgłoszenie odcisku problemu, o otwarte issue Kontroli ilośc
 okresu, o issue Logów Uruchomienia okresu (także zamknięte) i o stan wysłanych
 Zgłoszeń. Z jej odpowiedzi Centrum wie, czy przyjmuje Token do Zgłoszeń.
 _Avoid_: issue tracker, publiczne issue
+
+## Reguła danych
+
+To, co z treści plików taty może wyjść z jego komputera do Skrzynki Zgłoszeń, jedno
+dla Logów Uruchomienia, Zgłoszeń, Kontroli ilości i Uwag taty (ADR 0025): nigdy
+wartości `ADRES` ani `NUMER UMOWY/ZLECENIA ORANGE` ani dane adresowe z efenix,
+każda inna kolumna wiersza może. W wolnym tekście telefony są `[telefon]`, a
+ulice `[ulica]`. Przed zapisem Logów i każdą wysyłką strażnik maskuje każdą
+zakazaną wartość z przeczytanych plików i dopisuje uwagę techniczną z kolumną i
+miejscem, bez wartości.
+_Avoid_: reguła prywatności (dawne listy pól każdej wysyłki), anonimizacja
 
 ## Token do Zgłoszeń
 

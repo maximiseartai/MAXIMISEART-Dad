@@ -23,7 +23,9 @@ Zdania tego ADR zmieniają później:
 [ADR 0013](0013-kontrola-ilosci-wysylana-automatycznie.md) (Kontrola ilości
 idzie do Skrzynki bez kliknięcia taty i z treścią wybranych kolumn) i
 [ADR 0015](0015-logi-uruchomienia-uwagi-taty-i-powiadomienia.md) (Logi
-Uruchomienia, Uwagi taty i lista Wydań).
+Uruchomienia, Uwagi taty i lista Wydań) i
+[ADR 0025](0025-regula-danych-wysylki-do-skrzynki.md) (o treści wierszy w
+każdej wysyłce rozstrzyga reguła danych ze strażnikiem przed wysyłką).
 
 ## Decyzja
 

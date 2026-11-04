@@ -46,6 +46,7 @@ from openpyxl.worksheet._read_only import ReadOnlyWorksheet
 from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
 from openpyxl.worksheet.worksheet import Worksheet
 
+from . import client_data
 from .highlights import Highlights
 from .hyperlinks import Hyperlink, read_sheet_hyperlinks
 from .quantity_rules import QuantityColumn
@@ -397,6 +398,7 @@ def read_data_rows(path: Path, *, despite_excel_lock: bool = False) -> DataRows:
         rows: list[DataRow] = []
         last_column = DATA_ROW_COLUMNS[-1]
         highlights = _HighlightsReader()
+        forbidden = client_data.forbidden_columns(header_columns(header))
         for number, cells in enumerate(
             classified(path, sheet.iter_rows(min_row=FIRST_DATA_ROW, max_col=max_column)), start=FIRST_DATA_ROW
         ):
@@ -404,6 +406,7 @@ def read_data_rows(path: Path, *, despite_excel_lock: bool = False) -> DataRows:
             values = tuple(cell.value for cell in row_cells)
             if all(value is None for value in values[: INPUT_COLUMNS[-1]]):
                 continue
+            client_data.remember(forbidden, values)
             row_links = links.row(number, values)
             with unreadable_as_error(path):
                 rows.append(
@@ -487,6 +490,9 @@ def read_computed_rows(path: Path) -> ComputedRows:
             )
             if any(value is not None for value in values[: INPUT_COLUMNS[-1]])
         ]
+        forbidden = client_data.forbidden_columns(header_columns(header))
+        for row in rows:
+            client_data.remember(forbidden, row.values)
     finally:
         workbook.close()
     return ComputedRows(header_columns(header), rows, original)
@@ -543,8 +549,10 @@ class ReadSheet:
                 return
         links = read_sheet_hyperlinks(self._content, self.title)
         highlights = _HighlightsReader()
+        forbidden = client_data.forbidden_columns({normalize_text(header): column for header, column in columns.items()})
         for number, cells in enumerate(self._sheet.iter_rows(min_row=min_row, max_row=max_row), start=min_row):
             values = tuple(getattr(cell, "value", None) for cell in cells)
+            client_data.remember(forbidden, values)
             row_links = links.row(number, values)
             picked = {header: cells[column - 1] if column <= len(cells) else None for header, column in columns.items()}
             yield values, RegisterRow(
