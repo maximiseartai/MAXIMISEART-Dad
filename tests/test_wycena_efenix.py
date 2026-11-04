@@ -41,12 +41,15 @@ from rozliczenia import TOOL_ROOT, efenix_browser, efenix_process
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
+from rozliczenia.efenix_checks import ListedOrder
 from rozliczenia.efenix_pricing import (
     BrowserFailure,
+    Efenix,
     ElementCount,
     LoggedOut,
     Login,
     Operation,
+    OrderPricing,
     OtherShape,
     PagePart,
     PricingStopped,
@@ -113,10 +116,11 @@ def _run(
     meanwhile: Callable[[], None] = lambda: None,
     pace: Pace | None = None,
     clock: Callable[[], float] = time.perf_counter,
+    window: Callable[[Efenix], Efenix] = lambda efenix: efenix,
 ) -> Priced:
     """Uruchomienie Wyceny w efenix dla Pliku zbiorczego ``source``; ``meanwhile`` to to, co tata zrobił z plikiem, zanim
     proces skończył ostatnie zlecenie. Tempo ludzkie jest wyłączone, chyba że test poda ``pace``, a ``clock`` to zegar
-    czasów etapów i śladu działań okna. Ślad Wyceny Emmetta leży w ``_traces(source)``, więc każde Uruchomienie dla tego
+    czasów etapów i śladu działań okna. ``window`` to okno efenix, które dostaje proces, zbudowane z okna przeglądarki. Ślad Wyceny Emmetta leży w ``_traces(source)``, więc każde Uruchomienie dla tego
     samego pliku czyta ślad poprzedniego.
 
     Błąd okna efenix (np. ``UnexpectedPage``) trafia na stderr testu z treścią wyjątku Playwrighta, której Zatrzymanie w
@@ -124,10 +128,10 @@ def _run(
     ustalić przyczyny porażek #767 i #768 na Windows."""
 
     @contextmanager
-    def open_efenix(_login: Login) -> Iterator[efenix_browser.BrowserEfenix]:
+    def open_efenix(_login: Login) -> Iterator[Efenix]:
         try:
             with efenix_browser.window(page, url, timeout_ms=timeout_ms) as efenix:
-                yield efenix
+                yield window(efenix)
         except Exception as error:
             print("Błąd okna efenix:", "".join(traceback.format_exception(error)), sep="\n", file=sys.stderr)
             raise
@@ -823,7 +827,7 @@ class _FakeTime:
 
 
 def _closing_window(page: Page, clock: _FakeTime, at_pause: int) -> Pace:
-    """Tempo na udawanym zegarze, w którym tata zamyka kartę efenix w przerwie numer ``at_pause``."""
+    """Tempo na udawanym zegarze, w którym tata zamyka kartę efenix w przerwie numer ``at_pause`` (od 1, 0: nie zamyka)."""
 
     pauses = 0
 
@@ -837,21 +841,62 @@ def _closing_window(page: Page, clock: _FakeTime, at_pause: int) -> Pace:
     return Pace(sleep=sleep, clock=clock)
 
 
+class _ClosingBeforeAction:
+    """Okno efenix ``efenix``, w którym tata zamyka kartę ``page`` tuż przed działaniem okna numer ``at_action`` (od 1, 0:
+    nie zamyka)."""
+
+    def __init__(self, efenix: Efenix, page: Page, at_action: int) -> None:
+        self._efenix = efenix
+        self._page = page
+        self._left = at_action
+
+    @property
+    def sent_change(self) -> bool:
+        return self._efenix.sent_change
+
+    def search(self, number: str) -> Sequence[ListedOrder]:
+        self._before()
+        return self._efenix.search(number)
+
+    def open_order(self, order: ListedOrder) -> OrderPricing:
+        self._before()
+        return self._efenix.open_order(order)
+
+    def set_execution_date(self, day: date) -> bool:
+        self._before()
+        return self._efenix.set_execution_date(day)
+
+    def load_emmett(self) -> OrderPricing:
+        self._before()
+        return self._efenix.load_emmett()
+
+    def enter_quantity(self, position: str, quantity: int) -> Decimal:
+        self._before()
+        return self._efenix.enter_quantity(position, quantity)
+
+    def _before(self) -> None:
+        self._left -= 1
+        if self._left == 0:
+            self._page.close()
+
+
 @pytest.mark.parametrize(
-    ("at_pause", "kept", "marked"),
+    ("closed_at", "kept", "marked"),
     [
-        # Przerwy: 1 przed szukaniem wiersza 18, 2 przed jego otwarciem, 3 przed szukaniem wiersza 19, 4 przed jego
-        # otwarciem, 5 przed datą wykonania, 6 przed ponownym otwarciem po dacie, 7 przed Wyceną Emmetta, 8 przed ilością.
-        pytest.param(1, False, [], id="przy-szukaniu-na-liście"),
-        pytest.param(3, False, [18], id="między-zleceniami"),
-        pytest.param(5, False, [18], id="przy-dacie-wykonania"),
-        pytest.param(6, True, [18], id="po-dacie-wykonania"),
-        pytest.param(7, True, [18], id="przy-wycenie-emmetta"),
-        pytest.param(8, True, [18], id="przy-ilości"),
+        # Działania okna: 1 szukanie wiersza 18, 2 jego otwarcie, 3 szukanie wiersza 19, 4 jego otwarcie, 5 data
+        # wykonania, 6 ponowne otwarcie po dacie, 7 Wycena Emmetta, 8 ilość. Przerwy tempa są tylko przed zapisami: 1 przed
+        # datą wykonania, 2 przed Wyceną Emmetta, 3 przed ilością. Przed szukaniem i otwarciem po zleceniu bez zapisu
+        # przerwy nie ma, więc tam tata zamyka kartę tuż przed działaniem.
+        pytest.param(("działanie", 1), False, [], id="przy-szukaniu-na-liście"),
+        pytest.param(("działanie", 3), False, [18], id="między-zleceniami"),
+        pytest.param(("przerwa", 1), False, [18], id="przy-dacie-wykonania"),
+        pytest.param(("działanie", 6), True, [18], id="po-dacie-wykonania"),
+        pytest.param(("przerwa", 2), True, [18], id="przy-wycenie-emmetta"),
+        pytest.param(("przerwa", 3), True, [18], id="przy-ilości"),
     ],
 )
 def test_zamkniete_okno_efenix_zatrzymuje_wycene_z_komunikatem_dla_taty_a_gotowe_przed_nim_maja_znacznik(
-    tmp_path: Path, page: Page, at_pause: int, kept: bool, marked: list[int]
+    tmp_path: Path, page: Page, closed_at: tuple[str, int], kept: bool, marked: list[int]
 ) -> None:
     orders = [
         Order("#9701", day=date(2026, 9, 3), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),
@@ -859,41 +904,77 @@ def test_zamkniete_okno_efenix_zatrzymuje_wycene_z_komunikatem_dla_taty_a_gotowe
     ]
     source = write_collective_file(tmp_path, orders)
     clock = _FakeTime()
+    where, number = closed_at
+    in_pause, before_action = (number, 0) if where == "przerwa" else (0, number)
     with atrapa_efenix([order.in_efenix(f"97{index}") for index, order in enumerate(orders)], clock=clock) as atrapa:
-        outcome = _run(source, page, atrapa.url, pace=_closing_window(page, clock, at_pause))
+        outcome = _run(
+            source,
+            page,
+            atrapa.url,
+            pace=_closing_window(page, clock, in_pause),
+            window=lambda efenix: _ClosingBeforeAction(efenix, page, before_action),
+        )
 
     assert isinstance(outcome.ending, Stop)
     assert (_stop(outcome), outcome.ending.stop_kind, _kept(outcome), _marked(source)) == ("EFENIX_OKNO_ZAMKNIETE", "for_tata", kept, marked)
 
 
-def test_w_tempie_ludzkim_zlecenie_trwa_20_s_a_przerwa_miedzy_dzialaniami_w_efenix_nie_przekracza_progu_podtrzymania_sesji(
+def _window_moments(atrapa: AtrapaEfenix, path: str, since: int = 0) -> list[float]:
+    """Chwila każdego żądania ``path`` okna od żądania numer ``since``, bez szukania, które lista wysyła sama."""
+
+    return [request.at for request in atrapa.requests[since:] if request.path == path and not request.by_list]
+
+
+def test_w_tempie_ludzkim_zlecenie_z_zapisem_trwa_20_s_samo_sprawdzenie_idzie_bez_przerw_a_przerwa_nie_przekracza_progu_podtrzymania_sesji(
     tmp_path: Path, page: Page
 ) -> None:
-    """Na udawanym zegarze: zlecenie z Wyceną Emmetta trwa od szukania do szukania następnego 20 s (spec #741), a zlecenie
-    z wyceną, która już jest (szukanie i otwarcie), nie czeka na następne dłużej niż próg podtrzymania sesji. Czas każdego
-    działania okna w śladzie zlecenia do Logów Uruchomienia nie liczy przerwy przed nim, więc na zegarze, który przesuwa
-    tylko przerwa, jest równy 0."""
+    """Na udawanym zegarze: przerwy są przed zapisami w efenix (#834). Zlecenie z Wyceną Emmetta trwa od szukania do
+    szukania następnego 20 s (spec #741), z przerwą 2 s przed datą wykonania, Wyceną Emmetta i każdą ilością. Zlecenie z
+    wyceną, która już jest, Zlecenie rozliczone i zlecenie z błędem nic nie zapisują, więc po nich szukanie następnego i
+    otwarcie idą bez przerwy, tak samo jak pierwsze szukanie przebiegu i każde otwarcie strony zlecenia. Żadna przerwa
+    nie przekracza progu podtrzymania sesji, także po zleceniu z jednym zapisem, któremu do 20 s brakuje więcej. Czas każdego działania okna w śladzie zlecenia do Logów Uruchomienia nie
+    liczy przerwy przed nim, więc na zegarze, który przesuwa tylko przerwa, jest równy 0."""
 
     emmett = {"O": 1, "T": 2, "AG": 1}
+    filled = _au({"012": 1, "019": 2, "015": 1})
     orders = [
-        Order("#9801", day=date(2026, 9, 3), cells=emmett, amount=_au({"012": 1, "019": 2, "015": 1}), emmett={"012": 1}),
-        Order("#9802", day=date(2026, 9, 4), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),
-        Order("#9803", day=date(2026, 9, 5), cells=emmett, amount=_au({"012": 1, "019": 2, "015": 1}), emmett={"012": 1}),
+        Order("#9801", day=date(2026, 9, 3), cells=emmett, amount=filled, emmett={"012": 1}),
+        Order("#9802", day=date(2026, 9, 4), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # gotowe
+        Order("#9803", day=date(2026, 9, 5), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # rozliczone
+        Order("#9804", day=date(2026, 9, 6), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 2}),  # błąd
+        # Data wykonania już jest, a Emmett przeczy plikowi: jedyny zapis to Wycena Emmetta, więc do 20 s od szukania brakuje
+        # 18 s, a przerwa przed szukaniem następnego zlecenia to próg podtrzymania sesji.
+        Order("#9805", day=date(2026, 9, 7), cells={"O": 1}, amount=_au({"012": 1}), emmett={"012": 2}),
+        Order("#9806", day=date(2026, 9, 8), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # gotowe
+        Order("#9807", day=date(2026, 9, 9), cells=emmett, amount=filled, emmett={"012": 1}),
     ]
+    in_efenix = [order.in_efenix(f"98{index}") for index, order in enumerate(orders)]
+    in_efenix[2] = replace(in_efenix[2], status="Rozliczone", execution_date=orders[2].day)
+    in_efenix[4] = replace(in_efenix[4], execution_date=orders[4].day)
     clock = _FakeTime()
-    with atrapa_efenix([order.in_efenix(f"98{index}") for index, order in enumerate(orders)], clock=clock) as atrapa:
+    with atrapa_efenix(in_efenix, clock=clock) as atrapa:
         source = write_collective_file(tmp_path, orders)
         outcome = _run(source, page, atrapa.url, pace=Pace(sleep=clock.pause, clock=clock), clock=clock)
         moments = atrapa.moments()
 
-    searches = [at for at, path in moments if path == SEARCH]
     gaps = [later[0] - earlier[0] for earlier, later in itertools.pairwise(moments)]
-    assert (outcome.result, _figures(outcome)) == ("OK", _figures_of(3, 3))
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == (
+        "WYMAGA_SPRAWDZENIA",
+        _figures_of(7, 4, warnings=1, settled=1),
+        [("EFENIX_WYCENA_INNA", "wiersz 21"), ("EFENIX_SPRZECZNOSC_Z_EMMETTEM", "wiersz 22")],
+    )
+    # Zlecenie 1 szuka w chwili 0 i zapisuje w 2, 4, 6 i 8, więc szukanie zlecenia 2 czeka do 20. Zlecenia 2, 3 i 4 nic nie
+    # zapisują: zlecenie 3 (rozliczone) nie otwiera strony, a szukanie zleceń 3, 4 i 5 jest w tej samej chwili 20. Zlecenie
+    # 5 ładuje Emmetta w 22, więc zlecenie 6 szuka w 22 + 15, a zlecenie 7 po gotowym zleceniu 6 w tej samej chwili.
+    assert _window_moments(atrapa, SEARCH) == [0, 20, 20, 20, 20, 37, 37]
+    assert _window_moments(atrapa, ORDER_PAGE) == [0, 2, 4, 20, 20, 20, 22, 37, 37, 39, 41]
+    assert _window_moments(atrapa, LOAD_EMMETT) == [4, 22, 41]
+    assert _window_moments(atrapa, SAVE_QUANTITY) == [6, 8, 43, 45]
     # Ruch w oknie co kilkanaście sekund (spec #741): próg podtrzymania sesji jest krótszy niż 20 s.
-    assert (searches[1] - searches[0], max(gaps) <= KEEPALIVE_S < 20) == (20, True)
+    assert max(gaps) <= KEEPALIVE_S < 20
     assert outcome.view is not None
     durations = [[step.duration_ms for step in result.steps] for result in outcome.view.results]
-    assert [len(steps) for steps in durations] == [7, 2, 7]
+    assert [len(steps) for steps in durations] == [7, 2, 1, 2, 3, 2, 7]
     assert {duration for steps in durations for duration in steps} == {0}
 
 
@@ -1229,7 +1310,8 @@ def test_przerwanie_wylogowaniem_i_ponowne_uruchomienie_daje_ten_sam_stan_efenix
     """Po wylogowaniu tata loguje się z powrotem i uruchamia ponownie; Wycena Emmetta jest najwyżej raz na zlecenie.
 
     W każdym z tych miejsc proces albo nie kliknął jeszcze „Załaduj do zlecenia” zlecenia 2, albo odczytał już jego Wycenę
-    Emmetta, więc ślad ma stan „Emmett załadowany” z jej ilościami."""
+    Emmetta, więc ślad ma stan „Emmett załadowany” z jej ilościami. Ponowne uruchomienie biegnie w tempie ludzkim na
+    udawanym zegarze: gotowe zlecenie 1 przechodzi bez przerw (#834), a zlecenia 2 i 3 dokańcza z przerwami przed zapisami."""
 
     orders = _resumed_orders()
     original = write_collective_file(tmp_path / "plik", orders)
@@ -1243,11 +1325,17 @@ def test_przerwanie_wylogowaniem_i_ponowne_uruchomienie_daje_ten_sam_stan_efenix
     with atrapa_efenix(in_efenix()) as atrapa:
         once = _run(whole, page, atrapa.url)
         priced_once = (_pricing(atrapa), atrapa.status_changes())
-    with atrapa_efenix(in_efenix(), expire_after=expire_after) as atrapa:
+    clock = _FakeTime()
+    with atrapa_efenix(in_efenix(), expire_after=expire_after, clock=clock) as atrapa:
         stopped = _run(resumed, page, atrapa.url)
         atrapa.log_in()
-        again = _run(resumed, page, atrapa.url)
+        since = len(atrapa.requests)
+        again = _run(resumed, page, atrapa.url, pace=Pace(sleep=clock.pause, clock=clock), clock=clock)
         priced_again = (_pricing(atrapa), atrapa.status_changes())
+        searched_again, written_again = (
+            _window_moments(atrapa, SEARCH, since),
+            [at for path in (SET_DATE, LOAD_EMMETT, SAVE_QUANTITY) for at in _window_moments(atrapa, path, since)],
+        )
 
     assert isinstance(stopped.ending, Stop)
     message = stopped.ending.message
@@ -1256,6 +1344,9 @@ def test_przerwanie_wylogowaniem_i_ponowne_uruchomienie_daje_ten_sam_stan_efenix
     assert priced_again == priced_once
     assert [emmett_loads for _quantities, _day, emmett_loads in priced_again[0].values()] == [1, 1, 1]
     assert (_parts(resumed), _marked(resumed)) == (_parts(whole), [18, 19, 20])
+    # Zlecenie 1 jest już gotowe: jego szukanie, otwarcie i szukanie zlecenia 2 są w chwili 0, a każdy zapis zleceń 2 i 3
+    # czeka na przerwę, więc szukanie zlecenia 3 jest po przerwie.
+    assert (searched_again[:2], searched_again[2] > 0, 0 in written_again) == ([0, 0], True, False)
 
 
 # Żądania pełnej Wyceny w efenix dwóch zleceń z pustą wyceną po kolei (``_resumed_orders`` bez trzeciego). Okno otwiera
