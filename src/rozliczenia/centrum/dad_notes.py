@@ -22,6 +22,7 @@ from typing import Final, assert_never
 
 from fastapi import APIRouter
 
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.case_delivery import logs_line
 from rozliczenia.centrum.dad_cases import NOTE, Case, DadCases
@@ -55,15 +56,23 @@ class PinnedRun:
     logs: str | None
 
 
-def note_issue(title: str, body: str, commit: str | None, pinned: PinnedRun | None) -> contract.DadNoteDraft:
+def note_issue(
+    title: str, body: str, commit: str | None, pinned: PinnedRun | None, forbidden: ForbiddenValues
+) -> contract.DadNoteDraft:
     """Issue Uwagi taty: jej tytuł, a w treści jej tekst i stopka (bez tekstu sama stopka).
 
-    Stopka Uwagi ogólnej to wersja narzędzia; przypiętej to linia Uruchomienia z wersją i linia jego Logów.
+    Stopka Uwagi ogólnej to wersja narzędzia; przypiętej to linia Uruchomienia z wersją i linia jego Logów. Tytuł i
+    tekst przechodzą przez strażnika reguły danych pracy Centrum (ADR 0025), a uwaga techniczna o zamaskowanej wartości staje pod
+    tekstem, więc tata widzi w podglądzie dokładnie to, co dostanie Maks.
     """
 
     version = f"wersja narzędzia {version_label(commit)}"
     footer = f"Uwaga ogólna · {version}" if pinned is None else _pinned_footer(pinned, version)
-    return contract.DadNoteDraft(title=title, body=f"{body}\n\n{footer}" if body else footer)
+    title_guarded = forbidden.guard(title, "tytuł Uwagi taty")
+    body_guarded = forbidden.guard(body, "treść Uwagi taty")
+    notes = "".join(f"\n{note}" for note in (*title_guarded.notes, *body_guarded.notes))
+    text = f"{body_guarded.text}{notes}".strip("\n")
+    return contract.DadNoteDraft(title=title_guarded.text, body=f"{text}\n\n{footer}" if text else footer)
 
 
 def _pinned_footer(pinned: PinnedRun, version: str) -> str:
@@ -124,6 +133,7 @@ def send(
     box: KeyedBox,
     commit: str | None,
     pinned: PinnedRun | None,
+    forbidden: ForbiddenValues,
 ) -> contract.DadNoteState:
     """Zapisuje Uwagę, kładzie ją w kolejce i mówi, czy skrzynka przyjęła ją w ``DELIVERY_WAIT_S``, a jeśli nie, na
     co czeka albo że skrzynka odrzuciła jej treść.
@@ -131,7 +141,7 @@ def send(
     Uwaga, której kolejka nie zapisała, to odmowa: inaczej tekst taty przepadłby po cichu.
     """
 
-    issue = note_issue(request.title, request.body, commit, pinned)
+    issue = note_issue(request.title, request.body, commit, pinned, forbidden)
     run_id = None if pinned is None else pinned.run.run_id
     note = Case(NOTE, uuid.uuid4().hex, issue.title, commit, datetime.now(timezone.utc), number=None, run_id=run_id)
     cases.add(note)
@@ -150,7 +160,13 @@ def send(
 
 
 def dad_notes_router(
-    cases: DadCases, outbox: Outbox, box: KeyedBox, commit: CommitSource, history: History, logs: LogsAddress
+    cases: DadCases,
+    outbox: Outbox,
+    box: KeyedBox,
+    commit: CommitSource,
+    history: History,
+    logs: LogsAddress,
+    forbidden: ForbiddenValues,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/dad-notes", tags=["uwagi-taty"])
     refusals: dict[int | str, dict[str, object]] = {status: {"model": contract.Problem} for status in (404, 500)}
@@ -161,10 +177,10 @@ def dad_notes_router(
 
     @router.post("/draft", operation_id="draftDadNote", responses=refusals)
     def draft(text: contract.DadNoteText) -> contract.DadNoteDraft:
-        return note_issue(text.title, text.body, commit(), _pinned(text.run_id, history, logs))
+        return note_issue(text.title, text.body, commit(), _pinned(text.run_id, history, logs), forbidden)
 
     @router.post("", operation_id="sendDadNote", responses=refusals)
     def send_note(request: contract.DadNoteRequest) -> contract.DadNoteState:
-        return send(request, cases, outbox, box, commit(), _pinned(request.run_id, history, logs))
+        return send(request, cases, outbox, box, commit(), _pinned(request.run_id, history, logs), forbidden)
 
     return router

@@ -25,6 +25,7 @@ from types import MappingProxyType
 
 from . import TOOL_ROOT, input_checks, preparation_files, preparation_plan
 from . import preparation_messages as messages
+from .client_data import ForbiddenValues
 from .decision import Conversation, Decision, Declined
 from .domain import ProgressObserver, ProgressPhase
 from .input_checks import FILE_READERS, Readers
@@ -144,6 +145,7 @@ def prepare_collective_file(
     conversation: Conversation | None = None,
     clock: Callable[[], float] = time.perf_counter,
     readers: Readers = FILE_READERS,
+    forbidden: ForbiddenValues | None = None,
 ) -> PreparationSummary:
     """Tworzy w Folderze okresu razem Rozliczenie wewnętrzne i Plik zbiorczy.
 
@@ -162,7 +164,8 @@ def prepare_collective_file(
     ``Declined`` bez zapisu, z podpowiedzią zgody tego rozmówcy. Czas
     czekania na Decyzję nie wlicza się do czasów etapów. Bez rozmowy
     Przygotowanie o nic nie pyta. ``clock`` to zegar w sekundach, z którego
-    liczone są czasy etapów. ``readers`` czytają Rejestr zleceń i wzorce w Sprawdzaniu i Odczycie danych.
+    liczone są czasy etapów. ``readers`` czytają Rejestr zleceń i wzorce w Sprawdzaniu i Odczycie danych, a komórki
+    zakazanych kolumn Rejestru poznaje ``forbidden`` (reguła danych, ADR 0025).
     """
 
     phases = PhaseRunner(observer, clock=clock)
@@ -182,14 +185,14 @@ def prepare_collective_file(
             collective_template=collective_template,
             readers=readers,
         )
-        raw = input_checks.raw_orders_in_period(register_path, checked[0].folder.period)
+        raw = input_checks.raw_orders_in_period(register_path, checked[0].folder.period, forbidden)
         if raw is not None:
             raise StopError(messages.raw_orders_not_ordered(register_path, raw.sheet, raw.first_row, raw.last_row))
         return checked
 
     files, worker_mapping = phases.check(check)
     folder = files.folder
-    register = phases.read(lambda: input_checks.read_register(register_path, folder.period, readers))
+    register = phases.read(lambda: input_checks.read_register(register_path, folder.period, readers, forbidden))
 
     def plan_orders() -> tuple[Plan, CollectiveFilePlan, list[Message]]:
         plan = preparation_plan.plan_period_orders(register_path, register, folder.period, config_path, worker_mapping)

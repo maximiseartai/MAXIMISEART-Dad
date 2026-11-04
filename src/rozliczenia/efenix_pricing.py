@@ -65,6 +65,7 @@ from typing import Final, Protocol
 
 from . import efenix_messages as messages
 from . import efenix_trace, workbook_files
+from .client_data import ForbiddenColumn, ForbiddenValues
 from .domain import ProgressObserver, ProgressPhase
 from .efenix_checks import (
     DateRefused,
@@ -485,6 +486,7 @@ def price_orders(
     clock: Callable[[], float] = time.perf_counter,
     waiting: Login = nullcontext,
     pace: Pace | None = None,
+    forbidden: ForbiddenValues | None = None,
     journal: OrderJournal = NO_JOURNAL,
 ) -> PricingSummary:
     """Uzupełnia w efenix wycenę każdego zlecenia z zakresu Pliku zbiorczego ``source`` i oznacza w nim gotowe zlecenia.
@@ -492,7 +494,8 @@ def price_orders(
     Zgłasza ``StopError``, gdy nie można działać bezpiecznie. ``trace_file``: plik Śladu Wyceny Emmetta okresu
     (``efenix_emmett_trace``). ``clock`` to zegar w sekundach, z którego liczone są czasy etapów i śladu zleceń, a
     ``waiting`` wstrzymuje zegar rozmówcy na czas czekania na logowanie taty. ``pace``: tempo ludzkie okna
-    (``efenix_pace``), ``None`` bez przerw. ``journal``: dziennik Wyceny w efenix (``OrderJournal``).
+    (``efenix_pace``), ``None`` bez przerw. ``journal``: dziennik Wyceny w efenix (``OrderJournal``). Komórki zakazanych
+    kolumn Pliku zbiorczego i dane adresowe z listy wyników efenix poznaje ``forbidden`` (reguła danych, ADR 0025).
     """
 
     phases = PhaseRunner(observer, clock=clock)
@@ -508,7 +511,7 @@ def price_orders(
 
     def read() -> PricingScope | AmountsNotComputed | MissingColumns:
         try:
-            return read_scope(source)
+            return read_scope(source, forbidden)
         except WorkbookError as error:
             raise StopError(messages.source_unusable(error)) from error
 
@@ -557,7 +560,8 @@ def price_orders(
                         current = (done, order, trace)
                         journal.begun(order.row, done + 1, total)
                         window = efenix_trace.traced(efenix, trace, clock)
-                        outcome = _priced(order, window if pacing is None else pacing.window(window), emmett_trace)
+                        paced = window if pacing is None else pacing.window(window)
+                        outcome = _priced(order, paced, emmett_trace, forbidden)
                         result = OrderResult(order, outcome, tuple(trace.steps))
                         results.append(result)
                         journal.ended(result, _warning(source, result))
@@ -626,23 +630,29 @@ def _efenix_stops(changed: Callable[[], bool], stopped: Callable[[WindowStop], P
         raise StopError(messages.browser_not_started(), facts=stopped(error)) from error
 
 
-def _priced(order: CollectiveOrder, efenix: Efenix, trace: EmmettTrace) -> Ready | Settled | OrderError | EmmettWarning:
+def _priced(
+    order: CollectiveOrder, efenix: Efenix, trace: EmmettTrace, forbidden: ForbiddenValues | None
+) -> Ready | Settled | OrderError | EmmettWarning:
     searched = searched_number(order)
     if isinstance(searched, OrderProblem):
         return OrderError(searched)
     number, day = searched
-    outcome = _outcome(order, number, day, efenix, trace)
+    outcome = _outcome(order, number, day, efenix, trace, forbidden)
     trace.finished(number)
     return outcome
 
 
 def _outcome(
-    order: CollectiveOrder, number: str, day: date, efenix: Efenix, trace: EmmettTrace
+    order: CollectiveOrder, number: str, day: date, efenix: Efenix, trace: EmmettTrace, forbidden: ForbiddenValues | None
 ) -> Ready | Settled | OrderError | EmmettWarning:
     file = file_quantities(order)
     if isinstance(file, (UnpairedColumns, NotWholeQuantities)):
         return OrderError(file)
-    hit = listing(order, efenix.search(number))
+    found = efenix.search(number)
+    if forbidden is not None:
+        for listed in found:
+            forbidden.remember_value(ForbiddenColumn.ADDRESS, listed.address)
+    hit = listing(order, found)
     if isinstance(hit, OrderProblem):
         return OrderError(hit)
     if isinstance(hit, Settled):

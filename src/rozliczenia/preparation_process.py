@@ -16,6 +16,7 @@ from .collective_preparation import (
     default_collective_template_path,
     default_internal_template_path,
 )
+from .client_data import ForbiddenValues
 from .decision import Conversation
 from .domain import ProgressObserver
 from .input_checks import FILE_READERS, Readers
@@ -35,7 +36,10 @@ def default_metrics_path() -> Path:
 
 @dataclass(frozen=True)
 class PreparationInputs:
-    """Wejście procesu Przygotowania pliku zbiorczego, gotowe przed startem silnika, z czytnikami plików taty."""
+    """Wejście procesu Przygotowania pliku zbiorczego, gotowe przed startem silnika, z czytnikami plików taty.
+
+    ``forbidden`` to pamięć reguły danych pracy Centrum (``None``: bez wysyłki, bez pamięci).
+    """
 
     register_path: Path
     periods_directory: Path
@@ -45,6 +49,7 @@ class PreparationInputs:
     internal_template_path: Path = field(default_factory=default_internal_template_path)
     collective_template_path: Path = field(default_factory=default_collective_template_path)
     readers: Readers = FILE_READERS
+    forbidden: ForbiddenValues | None = None
 
 
 def _execute(inputs: PreparationInputs, observer: ProgressObserver, conversation: Conversation) -> PreparationSummary:
@@ -59,6 +64,7 @@ def _execute(inputs: PreparationInputs, observer: ProgressObserver, conversation
         observer=observer,
         conversation=conversation,
         readers=inputs.readers,
+        forbidden=inputs.forbidden,
     )
 
 

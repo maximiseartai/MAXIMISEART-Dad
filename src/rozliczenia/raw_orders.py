@@ -11,7 +11,8 @@ przesuwa. Miejsce dnia wyznacza żółty wiersz, którym tata oddziela dni: najn
 ostatnim uporządkowanym a blokiem, w którym co najmniej połowa kolumn zlecenia ma żółte wypełnienie. Kolumna bez
 komórki ma wypełnienie stylu wiersza: u taty żółty wiersz to zwykle styl całego wiersza bez żadnej komórki.
 Sam blok, bez przeglądu nad nim i bez przeszkód, oddaje ``pasted``: z niego Przygotowanie pliku zbiorczego wie,
-z których dni są Surowe zlecenia.
+z których dni są Surowe zlecenia. Ten sam blok daje ``shifted_row``: wiersz, którego komórki stoją dwie kolumny
+na lewo od swojego nagłówka.
 
 Przeszkody: wiersz z wyglądem z aplikacji nad uporządkowanym wierszem, Surowe zlecenie bez daty z godziną albo bez
 Wykonawcy i blok z więcej niż jednego dnia. Pierwsza wymaga przeglądu nad blokiem (``_above``): od ostatniego
@@ -323,6 +324,15 @@ def pasted(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> tuple
     return tuple(_pasted(_bottom(iter(rows_from_bottom), columns)[0], columns))
 
 
+def shifted_row(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> int | None:
+    """Numer pierwszego wiersza bloku Surowych zleceń, gdy jest przesunięty o ``SHIFT`` kolumn w lewo; ``None``: bez niego.
+
+    To samo rozpoznanie co w ``recognize`` i ``pasted``.
+    """
+
+    return _shifted(_bottom(iter(rows_from_bottom), columns)[0], columns)
+
+
 def _bottom(rows: Iterator[RowFacts], columns: OrderColumns) -> tuple[list[RowFacts], int | None, int | None, RowFacts | None]:
     """Dół arkusza do ostatniego uporządkowanego wiersza: wiersze z wartościami pod nim (od góry), żółty i pusty wiersz, on sam."""
 
@@ -347,7 +357,14 @@ def _bottom(rows: Iterator[RowFacts], columns: OrderColumns) -> tuple[list[RowFa
 
 
 def _pasted(raw: list[RowFacts], columns: OrderColumns) -> list[RawOrder | Undated | WithoutWorker]:
-    return [_order(row, columns, index == 0 and not _is_date(row.value(columns.date))) for index, row in enumerate(raw)]
+    shifted = _shifted(raw, columns)
+    return [_order(row, columns, row.number == shifted) for row in raw]
+
+
+def _shifted(raw: list[RowFacts], columns: OrderColumns) -> int | None:
+    """Pierwszy wiersz bloku bez daty w ``DATA GODZ. POCZ.`` jest przesunięty; z datą na miejscu ktoś go już przesunął."""
+
+    return raw[0].number if raw and not _is_date(raw[0].value(columns.date)) else None
 
 
 def plan_day(block: RawBlock, rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, today: date) -> DayPlan:

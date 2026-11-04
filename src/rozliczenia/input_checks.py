@@ -9,6 +9,9 @@ Sprawdzanie Przygotowania pliku zbiorczego szuka też Surowych zleceń na dole k
 (``raw_orders_in_period``) tym samym rozpoznaniem bloku i odczytem arkusza co Uporządkowanie INTERMAX
 (``raw_orders.pasted`` na ``intermax_file.Register``) i oddaje je jako fakt, który Przygotowanie tłumaczy na
 Zatrzymanie.
+
+Komórki zakazanych kolumn przeczytanych arkuszy Rejestru i Surowych zleceń zna pamięć reguły danych pracy Centrum
+(``forbidden``, ADR 0025), którą Centrum podaje obok czytników; proces bez Centrum jej nie ma.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, TypeAlias
 
-from . import preparation_files, preparation_register, raw_orders, settlement_files, settlement_messages, workbook_files
+from . import client_data, preparation_files, preparation_register, raw_orders, settlement_files, settlement_messages, workbook_files
 from . import preparation_messages as messages
 from .intermax_file import Register, UnsupportedShape
 from .message import Message, StopError
@@ -31,11 +34,11 @@ from .period_folder import (
     locate_period_folder,
 )
 from .preparation_files import PeriodFiles
-from .preparation_register import RegisterSheet
+from .preparation_register import TARGET_HEADERS, RegisterSheet
 from .settlement_period import SettlementPeriod, parse_period_token
 from .template_file import TemplateFile
 from .workbook_files import Problem, WorkbookError
-from .worker_config import WorkerConfigError, load_worker_mapping
+from .worker_config import WorkerConfigError, load_worker_mapping, normalize_text
 
 
 @dataclass(frozen=True)
@@ -130,11 +133,26 @@ def check_preparation(
     return files, _worker_mapping(config, messages.worker_config_problem)
 
 
-def read_register(register: Path, period: SettlementPeriod | None, readers: Readers) -> list[RegisterSheet]:
-    """Arkusze ze zleceniami Rejestru zleceń albo zatrzymanie, gdy Rejestru nie da się odczytać albo nie ma nagłówków."""
+def read_register(
+    register: Path, period: SettlementPeriod | None, readers: Readers, forbidden: client_data.ForbiddenValues | None = None
+) -> list[RegisterSheet]:
+    """Arkusze ze zleceniami Rejestru zleceń albo zatrzymanie, gdy Rejestru nie da się odczytać albo nie ma nagłówków.
+
+    ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza.
+    """
 
     with _stops(messages.register_unusable):
-        return readers.register(register, period)
+        sheets = readers.register(register, period)
+    if forbidden is not None:
+        for sheet in sheets:
+            for row in sheet.register_rows:
+                for column, header in _FORBIDDEN_HEADERS:
+                    forbidden.remember_value(column, row.cells[header].value)
+    return sheets
+
+
+_FORBIDDEN_HEADERS: Final = client_data.forbidden_columns({normalize_text(header): header for header in TARGET_HEADERS})
+"""Zakazane kolumny wiersza Rejestru (``RegisterRow``) z nagłówkiem docelowym, pod którym stoi ich komórka."""
 
 
 @dataclass(frozen=True)
@@ -146,7 +164,9 @@ class RawOrders:
     last_row: int
 
 
-def raw_orders_in_period(register: Path, period: SettlementPeriod) -> RawOrders | None:
+def raw_orders_in_period(
+    register: Path, period: SettlementPeriod, forbidden: client_data.ForbiddenValues | None = None
+) -> RawOrders | None:
     """Surowe zlecenia na dole arkusza zleceń z dniem w ``period`` albo z dniem, którego nie da się ustalić.
 
     Dzień nie daje się ustalić, gdy Surowe zlecenie nie ma daty albo Wykonawcy: wtedy to Uporządkowanie INTERMAX
@@ -155,7 +175,7 @@ def raw_orders_in_period(register: Path, period: SettlementPeriod) -> RawOrders 
     """
 
     with _stops(messages.register_unusable), workbook_files.unreadable_as_error(register):
-        intermax = Register.read(register)
+        intermax = Register.read(register, forbidden=forbidden)
         for sheet in intermax.order_sheets:
             try:
                 pasted = raw_orders.pasted(sheet.rows_from_bottom(), sheet.columns)
@@ -179,11 +199,13 @@ def _raw_rows_in_period(
     return (pasted[0].row, pasted[-1].row) if in_period else None
 
 
-def register_problem(register: Path, readers: Readers) -> Message | None:
+def register_problem(
+    register: Path, readers: Readers, forbidden: client_data.ForbiddenValues | None = None
+) -> Message | None:
     """Komunikat, którym Przygotowanie zatrzymałoby się na Rejestrze zleceń: otwarty w Excelu, nieczytelny, bez nagłówków."""
 
     try:
-        read_register(register, None, readers)
+        read_register(register, None, readers, forbidden)
     except StopError as stop:
         return stop.message
     return None

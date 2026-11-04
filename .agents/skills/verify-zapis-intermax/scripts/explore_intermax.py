@@ -227,15 +227,14 @@ class World:
 def _points(world: World, scheduler: Scheduler) -> Iterator[None]:
     """Wraps the read, the Excel lock and the write check, which the runs reach through their modules; restores them."""
 
-    real_read: Callable[
-        [type[intermax_file.Register], Path], intermax_file.Register
-    ] = intermax_file.Register.read.__func__  # type: ignore[attr-defined]
+    real_read: Callable[..., intermax_file.Register] = intermax_file.Register.read.__func__  # type: ignore[attr-defined]
     real_content = workbook_files.workbook_content
     real_check = intermax_file.Register.check
     real_open = workbook_files.is_open_in_excel
 
-    def read(cls: type[intermax_file.Register], path: Path) -> intermax_file.Register:
-        register = real_read(cls, path)
+    def read(cls: type[intermax_file.Register], /, path: Path, **options: Any) -> intermax_file.Register:
+        # Opcje odczytu (``despite_excel_lock``, pamięć reguły danych ``forbidden``) przechodzą bez zmian.
+        register = real_read(cls, path, **options)
         if path == world.register:
             world.read = register.content
             scheduler.say("Register.read czyta INTERMAX")

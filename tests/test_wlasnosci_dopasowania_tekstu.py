@@ -2,7 +2,7 @@
 
 Recenzje łapały reguły sprawdzone tylko w jednym położeniu tekstu: słowo wyłącznie na początku i nigdy z przecinkiem
 zaraz po nim (#460, ``technicolor,`` z Rejestru), fraza ``akt int`` jako fragment (#473), warianty dopisku ``S.A.`` i
-wielkość liter (#557). Tu każda reguła dostaje wygenerowany zapis tego samego zlecenia, a oczekiwanie pochodzi z
+wielkość liter (#557). Reguła danych (ADR 0025) maskuje telefony, ulice i wartości ``ADRES`` w wolnym tekście taty. Tu każda reguła dostaje wygenerowany zapis tego samego zlecenia, a oczekiwanie pochodzi z
 GLOSSARY.md, ADR 0012, 0018 i 0019 oraz docstringów: zwykle to wynik tej samej reguły dla zapisu kanonicznego.
 
 Przykłady są deterministyczne (``derandomize=True``, bez bazy przykładów), więc każdy przebieg i CI sprawdzają te same.
@@ -13,11 +13,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date, datetime
 from pathlib import Path
+import re
 
 import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
+from rozliczenia import client_data
 from rozliczenia.engine import run_settlements
 from rozliczenia.quantity_rules import OrderContent, QuantityColumn, RuleResult, WithoutRule, evaluate
 from rozliczenia.raw_orders import CellFacts, OrderColumns, Placement, RawBlock, RowFacts, plan_day, recognize
@@ -267,3 +269,58 @@ def test_netia_z_dopiskiem_sa_bez_spacji_to_netia(written: str) -> None:
 
     assert placed.color == netia.color
     assert placed.entry is not None
+
+
+# Reguła danych (ADR 0025, docstring ``client_data``): telefon komórkowy 3-3-3 i stacjonarny 2-3-2-2 z +48 albo bez,
+# wzmianka ulicy „ul.”, „os.”, „al.”, „pl.” z nazwą i numerem, wartość ADRES bez wielkości liter i z dowolnymi znakami
+# spoza słów między jej słowami: odstępami, końcem linii i tym, czym producent zapisał komórkę (⏎, \| tabeli Markdown).
+PHONES = ("600 123 456", "600-123-456", "600123456", "+48 600 123 456", "+48600123456", "0048 600-123-456", "12 345 67 89")
+STREETS = ("ul. Kwiatowa 5", "ul.Kwiatowa 5/3", "os. Tysiąclecia 12 m 4", "al. 3 Maja 5", "pl. Jana Pawła II 2a")
+FREE_TEXT = "abcdefghijklmnopqrstuvwyząćęłńóśźżABCDEFGHIJKLMNOPQRSTUVWYZĄĆĘŁŃÓŚŹŻ .,;:()„”-"
+GUARDED_ADDRESS = "Syntetyczna Rubinowa 7/3 Kraków"
+BETWEEN_WORDS = (" ", "  ", "\n", " \t", "\r\n", "/", " / ", "-", "⏎", "\\|", "`` ", ", ")
+
+
+@PROPERTY
+@given(
+    st.sampled_from(PHONES + STREETS),
+    st.text(FREE_TEXT, max_size=12),
+    st.sampled_from(("", " ", ",", "(", "„", ": ")),
+    st.sampled_from(("", " ", ",", ")", "”", ".")),
+    st.text(FREE_TEXT, max_size=12),
+    st.data(),
+)
+def test_telefon_i_ulica_w_dowolnym_miejscu_wolnego_tekstu_sa_zamaskowane_a_reszta_tekstu_zostaje(
+    sensitive: str, before: str, opening: str, closing: str, after: str, data: st.DataObject
+) -> None:
+    assume(not before[-1:].isalnum() or (opening and not opening[-1].isalnum()))
+    written = data.draw(_mixed_case(sensitive)) if sensitive in STREETS else sensitive
+    mask = "[ulica]" if sensitive in STREETS else "[telefon]"
+    assume(not after[:1].isalnum() or (closing and not closing.isalnum()))
+    assume(client_data.free_text(before + after) == before + after)
+
+    guarded = client_data.ForbiddenValues().guard(f"{before}{opening}{written}{closing}{after}", "własność")
+
+    assert guarded == client_data.Guarded(f"{before}{opening}{mask}{closing}{after}", ())
+
+
+@PROPERTY
+@given(st.text(FREE_TEXT, max_size=12), st.data())
+def test_wartosc_adresu_przeczytana_z_pliku_jest_zamaskowana_w_kazdym_zapisie_z_uwaga_bez_wartosci(
+    before: str, data: st.DataObject
+) -> None:
+    forbidden = client_data.ForbiddenValues()
+    forbidden.remember_value(client_data.ForbiddenColumn.ADDRESS, f"  {GUARDED_ADDRESS} ")
+    words = re.findall(r"\w+", GUARDED_ADDRESS)
+    written = "".join(
+        data.draw(_mixed_case(word)) + (data.draw(st.sampled_from(BETWEEN_WORDS)) if index < len(words) - 1 else "")
+        for index, word in enumerate(words)
+    )
+    assume(not before[-1:].isalnum())
+
+    guarded = forbidden.guard(f"{before}{written}, dalej", "komórka L6")
+
+    assert guarded == client_data.Guarded(
+        f"{before}[adres], dalej", ("Reguła danych: zamaskowano wartość kolumny ADRES w: komórka L6.",)
+    )
+    assert forbidden.guard(f"{before}{written}ów", "komórka L6").notes == (), "dłuższe słowo to inny tekst"

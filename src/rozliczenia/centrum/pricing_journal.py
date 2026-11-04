@@ -24,6 +24,10 @@ Start Centrum czyta każdy dziennik przy budowie aplikacji, przed kartą ostatni
   doszła do końca, bo jej dziennik zostaje do następnego startu;
 - dziennik bez pierwszej linii (urwany pierwszy zapis, przed którym w efenix nic się nie zmieniło) usuwa.
 
+Logi Urwanego Uruchomienia, nowe i te z pliku, start przepuszcza przez strażnika reguły danych pracy Centrum
+(``RunLogs.guard``, ADR 0025) i zapisuje w pliku Logów takie, jakie pójdą do Skrzynki, więc plik i komentarz mają te
+same znaki także po Logach, które zapisała praca Centrum sprzed strażnika.
+
 Logi Urwanego Uruchomienia idą do Skrzynki Zgłoszeń jak zwykłe Logi, ale dopiero przy pierwszym zapytaniu API tej pracy
 Centrum (``InterruptedPricings.send``): przychodzi ono po ``lifespan``, a więc po ``Outbox.resume``, więc kolejka nie
 dostaje wysyłki przed swoim startem (model ``verify-kolejka-skrzynki``). Dziennik znika, gdy kolejka przyjęła jego Logi,
@@ -256,12 +260,17 @@ class InterruptedPricings:
                 logged = RunLog.model_validate_json(logs.read_text(encoding="utf-8"))
             except ValueError:
                 return None  # Logi są, choć nieczytelne: Uruchomienie miało wynik
-            return logged if logged.ending == "interrupted" else None
-        if self._recorded(started.process, started.started_at):
+            if logged.ending != "interrupted":
+                return None
+            record = logged  # Logi, które poprzednia praca Centrum zapisała, a nie wysłała, także sprzed strażnika
+        elif self._recorded(started.process, started.started_at):
             return None
-        record = self._run_logs.interrupted(
-            started, ended_at=read.last_at, orders=read.orders, interruption=read.interruption
-        )
+        else:
+            record = self._run_logs.interrupted(
+                started, ended_at=read.last_at, orders=read.orders, interruption=read.interruption
+            )
+        # Strażnik reguły danych (ADR 0025) przed plikiem i przed wysyłką: plik i komentarz mają te same znaki.
+        record = self._run_logs.guard(record)
         try:
             self._run_logs.close(record)
         except OSError as failure:

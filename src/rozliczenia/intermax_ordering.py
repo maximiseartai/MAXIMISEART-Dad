@@ -28,6 +28,7 @@ from openpyxl.utils.cell import get_column_letter
 
 from . import raw_orders, workbook_files
 from . import intermax_messages as messages
+from .client_data import ForbiddenValues
 from .domain import ProgressObserver, ProgressPhase
 from .intermax_file import OrderSheet, Register, UnsupportedShape
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Replaced, Waiting, replace_register
@@ -88,6 +89,7 @@ def order_register(
     disk: Disk = LOCAL_DISK,
     observer: ProgressObserver | None = None,
     clock: Callable[[], float] = time.perf_counter,
+    forbidden: ForbiddenValues | None = None,
 ) -> OrderingSummary:
     """Porządkuje Surowe zlecenia dnia w INTERMAX ``register_path``.
 
@@ -95,7 +97,8 @@ def order_register(
     INTERMAX (``intermax_replace``) z Kopią INTERMAX w ``copies_directory`` z nazwą z ``now()`` i nazywa jej fakt
     Komunikatem Uporządkowania; nieudane usunięcie starszych Kopii to ostrzeżenie: INTERMAX jest już uporządkowany.
     ``clock`` to zegar w sekundach, z którego liczone są czasy etapów, ``waiting`` zegar i przerwa krótkiej ponownej
-    próby podmiany, której odmawia OneDrive, a ``disk`` kroki podmiany na dysku.
+    próby podmiany, której odmawia OneDrive, a ``disk`` kroki podmiany na dysku. Komórki zakazanych kolumn
+    przeczytanych wierszy poznaje ``forbidden`` (reguła danych, ADR 0025).
     """
 
     phases = PhaseRunner(observer, clock=clock)
@@ -111,7 +114,7 @@ def order_register(
 
     def read() -> Register:
         try:
-            register = Register.read(register_path)
+            register = Register.read(register_path, forbidden=forbidden)
         except WorkbookError as error:
             raise StopError(messages.register_unusable(error)) from error
         if not register.order_sheets:
@@ -228,16 +231,19 @@ class RegisterDay:
     ordered: bool
 
 
-def register_days(register_path: Path, today: date) -> tuple[RegisterDay, ...] | Message:
+def register_days(
+    register_path: Path, today: date, forbidden: ForbiddenValues | None = None
+) -> tuple[RegisterDay, ...] | Message:
     """Dzień ``today`` i 6 dni przed nim oraz późniejsze Dni uporządkowane, po kolei, każdy ze stanem.
 
     Tylko czyta, także INTERMAX otwarty w Excelu (jego ostatnią zapisaną wersję). Dzień uporządkowany rozpoznaje ta
     sama reguła co Planowanie przed drugim wklejeniem (``_ordered_days``). Komunikat, gdy INTERMAX nie da się
-    odczytać, ten sam co w Odczycie danych i Planowaniu procesu.
+    odczytać, ten sam co w Odczycie danych i Planowaniu procesu. Komórki zakazanych kolumn przeczytanych wierszy
+    poznaje ``forbidden``.
     """
 
     try:
-        register = Register.read(register_path, despite_excel_lock=True)
+        register = Register.read(register_path, despite_excel_lock=True, forbidden=forbidden)
     except WorkbookError as error:
         return messages.register_unusable(error)
     if not register.order_sheets:

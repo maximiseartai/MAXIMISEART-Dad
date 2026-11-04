@@ -30,6 +30,12 @@ trakcie jako Logi Urwanego Uruchomienia, a dziennik Wyceny z wynikiem usuwa.
 Krótkie procesy zostawiają dalej tylko `uruchomienie-start`. Szczegóły w dopisku #845 do
 [ADR 0017](0017-karta-uruchomienia-z-logow.md).
 
+Zdanie „Logi nie niosą treści wierszy” w punkcie „Treść Logów” zastępuje
+reguła danych [ADR 0025](0025-regula-danych-wysylki-do-skrzynki.md) (#838):
+nigdy wartości `ADRES` ani numeru Orange, telefony i ulice w tekście
+zamaskowane, a strażnik sprawdza plik Logów, Zgłoszenie, Kontrolę ilości i
+Uwagę taty przed zapisem i wysyłką.
+
 [ADR 0009](0009-aktualizacja-narzedzia-z-centrum.md) traci Powiadomienie o
 naprawie na stronie Okresy: zastępuje je Powiadomienie o nowej wersji.
 
