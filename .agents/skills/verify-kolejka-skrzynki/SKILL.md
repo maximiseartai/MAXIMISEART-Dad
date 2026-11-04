@@ -1,6 +1,6 @@
 ---
 name: verify-kolejka-skrzynki
-description: Exhaustively check that the Kolejka Skrzynki Zgłoszeń (`Outbox` in `src/rozliczenia/centrum/outbox.py`) delivers every part of every wysyłka (Zgłoszenie, Kontrola ilości, Logi Uruchomienia, Uwaga taty) exactly once, lets a newer version of a wysyłka (Logi Uruchomienia after a Diagnoza) change its comments, keeps one issue per problem and per period, and empties the queue, under every order of network failures, answers lost after the Skrzynka acted, file errors and a killed Centrum. Use when a change touches `_deliver*`, `_settle`, `_put`, `_mark`, `_marks`, `_version`, `_comment_all`, `_waiting`, `Outbox._drain`, `_send_all`, `_remove`, `resume`, the folder lock (`_folder_lock`) or the delivery marker in `outbox.py`, the box calls in `keyed_box.py` or `newest_with_line` in `report_box.py`, `replace_atomically` in `atomic_file.py`, adds a new `Target`, or when `explore_outbox.py` or `sprawdz_model_kolejki.py` fails. A TLA+ model of the same queue (TLC) adds the interleavings the checker leaves out (a wysyłka posted during a pass, the `RETRY_S` wake, two queues of one folder in `_claimed` and in the folder lock, a second Centrum whose port the old one already released, a switch-off at the temporary file and at the rename, and an older version of a wysyłka sent after a newer one).
+description: Exhaustively check that the Kolejka Skrzynki Zgłoszeń (`Outbox` in `src/rozliczenia/centrum/outbox.py`) delivers every part of every wysyłka (Zgłoszenie, Kontrola ilości, Logi Uruchomienia, Uwaga taty) exactly once, lets a newer version of a wysyłka (Logi Uruchomienia after a Diagnoza) change its comments while an older one that arrives after it changes nothing, keeps one issue per problem and per period, and empties the queue, under every order of network failures, answers lost after the Skrzynka acted, file errors and a killed Centrum. Use when a change touches `_deliver*`, `_settle`, `_put`, `_mark`, `_marks`, `_version`, `Outbox.post`, `_comment_all`, `_waiting`, `Outbox._drain`, `_send_all`, `_remove`, `resume`, the folder lock (`_folder_lock`) or the delivery marker in `outbox.py`, the box calls in `keyed_box.py` or `newest_with_line` in `report_box.py`, `replace_atomically` in `atomic_file.py`, adds a new `Target`, or when `explore_outbox.py` or `sprawdz_model_kolejki.py` fails. A TLA+ model of the same queue (TLC) adds the interleavings the checker leaves out (a wysyłka posted during a pass, the `RETRY_S` wake, two queues of one folder in `_claimed` and in the folder lock, a second Centrum whose port the old one already released, a switch-off at the temporary file and at the rename, and an older version of a wysyłka sent after a newer one).
 pilnuje:
   - src/rozliczenia/centrum/outbox.py
   - src/rozliczenia/centrum/keyed_box.py
@@ -21,10 +21,11 @@ ci-czesci: 2
 CI runs `sprawdz_kolejke.py` (the `ci:` key) in Mutation checks whenever a change touches this skill:
 it runs the checker of the real code (`explore_outbox.py`) and the TLA+ model (`sprawdz_model_kolejki.py`, TLC,
 as the `ci:` of `verify-aktualizacja-narzedzia` does), each to its end. Its units (`UNITS` in
-`sprawdz_kolejke.py`) are the scopes `watek-okresu` and `diagnoza`, each on its own, the other four scopes, and the
-model; CI runs them in up to `ci-czesci` parts (`MUTACJE_CZESC=k/n`, consecutive units per part). On Maks's Mac
-(2026-11-04) `watek-okresu` takes about 22 s, `diagnoza` about 9 s, the other four scopes together about 8 s and the
-model about 18 s, so with two parts the first runs the two longest scopes and the second the rest and the model. A
+`sprawdz_kolejke.py`) are the scope `watek-okresu`, the scopes `diagnoza` and `diagnoza-odczyt` together, the other
+four scopes, and the model; CI runs them in up to `ci-czesci` parts (`MUTACJE_CZESC=k/n`, consecutive units per part).
+On Maks's Mac (2026-11-04) `watek-okresu` takes about 22 s, `diagnoza` and `diagnoza-odczyt` about 9 s each, the other
+four scopes together about 8 s and the model about 18 s, so with two parts the first runs the two longest units and
+the second the rest and the model. A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`. The model unit
 fails with `MODEL KOLEJKI: ROZJAZD MODELU Z KODEM` when covered code changed since the Sync commit,
 but it cannot tell whether a change to the model is right. `check_outbox_mutations.py` and
@@ -83,16 +84,21 @@ a hidden line, the mark of its wysyłka (`_mark`, an HTML comment GitHub does no
 show): the label and `run_id` of the wysyłka (its identifier), the number of the
 part (0: the header) and the version, the moment and number from the name of
 its queue file (`_version`), which sort as the queue does. Before it sends to an
-issue it found, the queue reads the issue's comments (`_settle`): a part whose
-mark is in the issue's body, or in a comment in this version or a newer one, is
-not sent again; a comment of the part in an older version gets this version's
-text (`_put`, `edit_comment`); every other part is a new comment, in order; and a
-comment of a part this version no longer has gets `_RETIRED`. A `NewIssue` finds
+issue it found, the queue reads the issue's comments (`_settle`): an issue with a
+mark of this wysyłka in a newer version, in its body or in a comment, gets
+nothing from this version; otherwise a part whose mark is in the issue's body,
+or in a comment in this version, is not sent again; a comment of the part in an
+older version gets this version's text (`_put`, `edit_comment`); every other part
+is a new comment, in order; and a comment of a part this version no longer has
+gets `_RETIRED`, unless it has it from this version already. A `NewIssue` finds
 its issue by the mark in the body (`_deliver_new_issue`). So a Diagnoza, which
 queues the Logi Uruchomienia again with the same identifier, changes the comment
 of its Uruchomienie, and an older queue file that arrives after a newer one
-(read once with an `OSError`) changes nothing. The queue never edits an issue
-body. The delivery marker and `_undeleted` now only spare a retry its requests
+(read once with an `OSError`) changes and adds nothing, even when it has more
+parts. The versions of one wysyłka come from one Centrum process (only the last
+Uruchomienie of a process has a Diagnoza, `run_logs.py`), and there `Outbox.post`
+gives every name a moment after the one before, also when the computer's clock
+went back. The queue never edits an issue body. The delivery marker and `_undeleted` now only spare a retry its requests
 and keep a delivered Kontrola ilości from a new issue okresu after Maks closed
 the old one (`closed="new_issue"`), which neither check models.
 
@@ -105,6 +111,7 @@ step of this code that the checker can fail, lose or kill:
 | --- | --- |
 | a box read | `keyed_box.py` `KeyedBox.labelled_issues` (with `newest_with_line` and the body of the issue found), called by `_deliver_report`, `_deliver_to_period`, `_deliver_to_known` and `_deliver_new_issue` in `outbox.py`, and `KeyedBox.comments`, called by `_settle` |
 | a box write | `KeyedBox.open_issue`, `comment` and `edit_comment`, called by `_deliver_new_issue`, `_deliver_report`, `_deliver_to_period`, `_comment_all` and `_settle` (`_put`, `_RETIRED`; also the one comment of a Zgłoszenie that returned) |
+| a read of a queue file | `Outbox._send_all`: `_queued`, whose `OSError` (`read_text`) sets `_read_failed` and skips the file to the `RETRY_S` wake; it fails only in a scope with a read bound (`diagnoza-odczyt`) |
 | the delivery marker | `Outbox._send_all`: `replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts)))` in `suppress(OSError)` |
 | the removal of a queue file | `Outbox._remove` (`path.unlink`, `_undeleted`) |
 | a pass of the queue | `Outbox._drain` (`_claimed`, `_folder_lock`, `_send_all`, `_released`), run only when the real `Outbox.send_in_background` starts the queue thread (called by `Outbox.post`, `Outbox.resume` and `Outbox._woken`); the checker replaces only `threading.Thread` in `outbox.py`, which hands it the target, and runs one Centrum at a time, so the pass always gets the folder lock |
@@ -125,8 +132,17 @@ and `_Server` in `server.py` (`DEFINITIONS` in `sprawdz_model_kolejki.py`). Only
 rest of their files, is drift. Name these three files here without their
 `src/…` path in backticks: such a path makes the whole file covered.
 
-**Sync commit: `ca90b709`** (2026-11-04). The checker and the model share it:
+**Sync commit: `83ed9ab9`** (2026-11-04). The checker and the model share it:
 at this commit both were confirmed to describe the code above. Since the
+previous sync `ca90b709` only `83ed9ab9` (#840, round 1 of #849) changed a covered
+file: `_settle` sends, changes and retires nothing when the issue has a mark of
+the wysyłka in a newer version, and `Outbox.post` gives every queue file a moment
+after the one before. The checker got the read of a queue file as a step that can
+fail and the scope `diagnoza-odczyt`; the model got `CzesciNowszej` (in the
+configuration `diagnoza` the Diagnoza is one part shorter), `_RETIRED` (`Wycofaj`),
+the check of a newer version in `Czytaj` (`Nowsza`) and the clause of
+`DokladnieRaz` that no comment of an older version is left once a newer one was
+sent. Both mutation scripts follow. At `ca90b709`, since the
 previous sync `0b63b1ca` only `ca90b709` (#840) changed a covered file: every text
 of the queue carries the mark of its wysyłka (`_mark`, `_version`), `_settle`
 reads the comments of a found issue (`KeyedBox.comments`) and sends only the
@@ -186,7 +202,7 @@ them, `6f94edb8` was the sync of both, and since the checker's earlier sync
 model describes. To see whether they need another look:
 
 ```bash
-git log --oneline ca90b709..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
+git log --oneline 83ed9ab9..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
 ```
 
 A change to the three definitions above shows as a `UWAGA:` line of
@@ -238,6 +254,9 @@ the checker picks one option:
   GitHub), or the process dies before it;
 - the marker or the removal: it works, raises `OSError` (Windows, antivirus or
   OneDrive holding the file), or the process dies before it;
+- a read of a queue file, in a scope with a read bound: it works or raises
+  `OSError` (antivirus or OneDrive holding the file), so the files after it go
+  first;
 - when files are left and nothing asked for a pass: the `RETRY_S` wake fires,
   if the code armed one, or Centrum restarts. Without an armed wake, the queue
   may also stay as it is until the next start. When the wake or the start does
@@ -247,7 +266,10 @@ the checker picks one option:
 Bounds in every scope: at most 2 network failures, 1 lost answer, 1 file error
 and 1 killed or restarted Centrum; `diagnoza` runs with 1 network failure (with
 2 it also passes, in 51 s instead of 9 s on Maks's Mac on 2026-11-04, and would be
-the longest unit in CI). After the failures run out the queue gets
+the longest unit in CI), and `diagnoza-odczyt` with 1 network failure, 1 lost
+answer, 1 failed read of a queue file, 1 killed or restarted Centrum and no file
+error (with 1 file error it also passes, 17 860 schedules in 39 s instead of 4 065 in 9 s on
+Maks's Mac on 2026-11-04; `diagnoza` checks the file error with two versions). After the failures run out the queue gets
 3 more passes to empty itself. The checker re-runs the code from scratch for
 every schedule. A schedule that reaches a pass boundary already explored stops
 there: the code is deterministic, and the state decides every future and how
@@ -266,6 +288,7 @@ it leaves out and why.
 | `nowe-issue` | one Uwaga taty (`NewIssue`) in two parts |
 | `znane-issue` | a comment in two parts to the existing issue of an Uwaga taty (`KnownIssue`) |
 | `diagnoza` | Logi Uruchomienia (`PeriodThread` with a header) in two parts, then their Diagnoza, a newer version of the same wysyłka in one part: it changes part 1 and retires part 2 |
+| `diagnoza-odczyt` | the same Logi and Diagnoza, and the Logi's queue file can be unreadable once: the Diagnoza goes first, and the Logi that arrive after it change and add nothing |
 
 Not covered: a key that is missing or refused (`NoKey`, `Refused`: the pass
 stops, nothing is sent, and `KeyedBox` keeps a refusal for `REFUSED_KEPT_S`),
@@ -273,9 +296,11 @@ content the Skrzynka rejects (`Rejected`: the file waits for the next start,
 and the same content would be rejected again), Maks closing or deleting an
 issue (`Gone`, `closed="reuse"`; after Maks closed the issue of a Kontrola
 ilości, a delivered file without its delivery marker would open a new issue
-okresu with the whole Kontrola), an older version of a wysyłka sent after a
-newer one (the checker never fails a read, so the files go in order; the model
-covers it), a
+okresu with the whole Kontrola), a failed read of a queue file outside
+`diagnoza-odczyt` (the model's `odczyt` and `diagnoza` have it), a clock that
+goes back between two wysyłki (every schedule posts in order with the real
+clock; `test_logi_z_diagnoza_po_cofnieciu_zegara_komputera_zmieniaja_komentarz_uruchomienia`
+checks `Outbox.post`), a
 delivered file with its marker that waits for the next start, two queues on one folder (`_claimed`,
 `_folder_lock`), a process killed in the middle of `replace_atomically` (it leaves a `.tmp` that
 `resume` removes), `prepare` holding a wysyłka back, a queue thread running at
@@ -341,6 +366,8 @@ with `MUTACJE OK`. Each of these gives `KOLEJKA: NOWE NARUSZENIE`:
 - no check of the identifier before sending: `_put` sends a part that is already there (`znane-issue`);
 - a Diagnoza that adds a comment instead of changing it (`diagnoza`);
 - a part the newer version lacks left in place instead of `_RETIRED` (`diagnoza`);
+- an older version that arrives after a newer one and adds its part, `_settle`
+  without the check of a newer version (`diagnoza-odczyt`);
 - an Uwaga taty that does not look for its issue by the mark (`nowe-issue`);
 - a network failure that skips the file instead of stopping the pass;
 - an Uwaga taty that opens two issues;
@@ -367,7 +394,8 @@ the `RETRY_S` wake, a second queue of one folder, a second Centrum process),
 the temporary file and the rename of `replace_atomically` as separate failure
 points, a switch-off at every step, refused content (`Rejected`), a queue file
 that cannot be read, two file errors in a row, and the Diagnoza of Logi as a
-newer version of the same wysyłka, also sent before the older one.
+newer version of the same wysyłka, one part shorter, also sent before the older
+one.
 
 ### The model's promise
 
@@ -377,8 +405,10 @@ newer version of the same wysyłka, also sent before the older one.
   Harm as JEDNO_ISSUE.
 - **DokladnieRaz**: a queue file disappears or gets its delivery marker only
   when every part of it is in the Skrzynka, in its version or a newer one of
-  the same wysyłka, and no part of any wysyłka is in the Skrzynka twice, in one
-  version or two. Harm as DOKLADNIE_RAZ.
+  the same wysyłka (a file whose wysyłka has a newer version in the queue may
+  go without them), no part of any wysyłka is in the Skrzynka twice, in one
+  version or two, and once a version was sent no comment of an older version
+  of it is left. Harm as DOKLADNIE_RAZ.
 - **CzesciWKolejnosci**: in every issue, part k > 1 of a wysyłka has part
   k-1 of the same wysyłka (in any version) before it, so the issue reads in
   order. Harm: Logi Uruchomienia whose JSON blocks do not join into the file.
@@ -393,7 +423,9 @@ newer version of the same wysyłka, also sent before the older one.
 Each element of an issue in the model is the mark of one text, `<<w, k>>`: part
 `k` (0: the header) of wysyłka `w`, and `w` is also its version, the order of
 the queue files. With `Diagnoza` the wysyłka 2 is a newer version of the
-wysyłka 1 (`Id`): its comments replace theirs in place, as `edit_comment` does.
+wysyłka 1 (`Id`) in `CzesciNowszej` parts: its comments replace theirs in place,
+as `edit_comment` does, and the comment of a part it lacks gets its mark, as
+`_RETIRED` does.
 
 ### Model action and code
 
@@ -407,9 +439,9 @@ The comment above each action and branch in the model names the same code.
 | `Petla` | `Outbox._drain`: `_claimed` (taken → ask for another pass and skip `_send_all`), then `_folder_lock` without waiting (held by a queue of another process → `_locked_out` and skip `_send_all`), then `_read_failed = False` and `sorted(glob("*.json"))` in `_send_all` |
 | `Plik` | `Outbox._send_all` for one file: `_undeleted` → `_remove`, `_rejected` → skip, `_queued` (an `OSError` or a missing file → `_read_failed` and `_skip_unreadable`), `delivered` → `_remove`, else `_deliver`; the end of the list sets `_stopped_on = None` |
 | `Szukaj` | `keyed_box.py` `KeyedBox.labelled_issues` (`report_box.py` `newest_with_line`) in `_deliver_to_period`, `_deliver_report` (a found Zgłoszenie gets the part as a comment `returned_report`), `_deliver_to_known` and `_deliver_new_issue` (the newest issue whose body has a mark of the wysyłka) |
-| `Czytaj` | `KeyedBox.comments` in `_settle`, then its plan: a part with its mark in the body, or in its first comment in this version or a newer one, is skipped (a Zgłoszenie whose body has the mark of its part is `Delivered(found, ())`), a comment in an older version is changed, the rest is a new comment |
+| `Czytaj` | `KeyedBox.comments` in `_settle`, then its plan: nothing when the issue has a mark of the wysyłka in a newer version (`Nowsza`); otherwise a part with its mark in the body, or in its first comment in this version or a newer one, is skipped (a Zgłoszenie whose body has the mark of its part is `Delivered(found, ())`), a comment in an older version is changed, the rest is a new comment, and then the comment of each part this version lacks gets `_RETIRED` (`Wycofaj`) |
 | `Zaloz` | `KeyedBox.open_issue` in `_deliver_new_issue`, `_deliver_report`, `_deliver_to_period`, with `Post.opening` and the marks (`_opening`) |
-| `Komentuj` | `KeyedBox.comment` in `_comment_all` and `_settle` (`_put`), or `KeyedBox.edit_comment` in `_settle` (`_put`: the comment of an older version gets this version's text in place), one part per step; the first failure ends the wysyłka |
+| `Komentuj` | `KeyedBox.comment` in `_comment_all` and `_settle` (`_put`), or `KeyedBox.edit_comment` in `_settle` (`_put`: the comment of an older version gets this version's text in place; `_RETIRED` in the comment of a part this version lacks), one part per step; the first failure ends the wysyłka |
 | `Stop`, `Odrzuc` | `_waiting`: `Unreachable`, `Refused`, `NoKey` → `_stopped_on` and `return`; `Rejected` → `_rejected` and the next file |
 | `Znacznik`, `Zamiana` | `_send_all` after `Delivered`: `_stopped_on = None`, then the marker in `suppress(OSError)`: `atomic_file.py` `replace_atomically` (`write_text` of `.json.tmp`, then `replace`; an `OSError` unlinks the `.tmp`) |
 | `Usun` | `Outbox._remove`: `unlink(missing_ok=True)`, an `OSError` adds the name to `_undeleted` |
@@ -486,7 +518,7 @@ configuration is checked in full.
 | `dwa-procesy` | one Kontrola; the old Centrum closes its port and the new one starts before the old process ends; no other failure | passes |
 | `odczyt` | one Kontrola; 1 network failure, 1 read error of the queue file, 1 switch-off | passes |
 | `odmowa-tresci` | one Uwaga in 2 parts; 2 refused contents, 1 file error, 1 switch-off | passes |
-| `diagnoza` | Logi Uruchomienia with a header, 2 parts, and their Diagnoza, a newer version of the same wysyłka (`Diagnoza = TRUE`); 1 network failure, 1 lost answer, 1 file error or read error of the queue file, 1 switch-off | passes |
+| `diagnoza` | Logi Uruchomienia with a header, 2 parts, and their Diagnoza in 1 part, a newer version of the same wysyłka (`Diagnoza = TRUE`, `CzesciNowszej = 1`); 1 network failure, 1 lost answer, 1 file error or read error of the queue file, 1 switch-off | passes |
 
 Every configuration checks `TypeOK`, `JednoIssue`, `DokladnieRaz`,
 `CzesciWKolejnosci` and `Zbieganie`. `Zbieganie` holds only under the
@@ -544,10 +576,14 @@ Checked only with the bounds in the configurations. Assumed and not checked:
   that lags behind could let a retry open a second issue okresu or
   Zgłoszenie; the next retry comes `RETRY_S` later.
 - `os.replace` is atomic: a switch-off leaves the old file or the new one.
-- Every version of a wysyłka has `Czesci` parts, so `_RETIRED` (a newer version
-  with fewer parts) stays with the checker's scope `diagnoza`. Only the Logi
-  Uruchomienia have a newer version (`ASSUME Diagnoza => ...`): `RunLogs.diagnosed`
-  is the only caller that queues a wysyłka again with the same identifier.
+- Only the Logi Uruchomienia have a newer version (`ASSUME Diagnoza => ...`):
+  `RunLogs.diagnosed` is the only caller that queues a wysyłka again with the
+  same identifier, and only in the Centrum process that queued the older one,
+  so the model's order of the wysyłki is the order of their versions
+  (`Outbox.post` gives a later name also after the clock went back). Only the
+  configuration `diagnoza` has versions with different numbers of parts, and
+  there the newer one is shorter; a longer newer version, whose extra parts
+  are new comments, is not checked.
 - The queue never edits an issue body, so the model never changes `tresc[1]`.
 - More than 1 000 comments of an issue: `GitHubReportBox.comments` reads at most
   ten pages, and a mark after them is not seen.
@@ -584,8 +620,10 @@ one guard or step whose code it names, on a copy of the checkout
   Uwaga that opens two issues; an Uwaga that does not look for its issue by
   the mark (`nowe`).
 - DokladnieRaz: no check of the identifier before sending, every part a new
-  comment (`okres`); an older version that changes a newer one, and a Diagnoza
-  that adds a comment instead of changing it (`diagnoza`); a failed comment
+  comment (`okres`); an older version that arrives after a newer one and adds
+  its part (`_settle` without the check of a newer version), a Diagnoza that adds
+  a comment instead of changing it, and a part the newer version lacks left in
+  place instead of `_RETIRED` (`diagnoza`); a failed comment
   skipped instead of ending the wysyłka; a
   Zgłoszenie that returned taken over without a comment (`zgloszenie`); and, in
   the configurations with a refused comment or a read error, a refused

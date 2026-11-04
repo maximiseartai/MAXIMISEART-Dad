@@ -126,6 +126,19 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
+        "starsza wersja po nowszej dopisuje swoją część (_settle: newest > version)",
+        (
+            Edit(
+                VERIFIED,
+                "    if newest > version:\n",
+                "    if False:\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "diagnoza-odczyt"),
+        "Logi sprzed Diagnozy, których plik raz był nieczytelny, dopisują po niej część, której Diagnoza nie ma",
+        NEW,
+    ),
+    Mutation(
         "część, której nowsza wersja nie ma, zostaje (_settle: _RETIRED)",
         (
             Edit(

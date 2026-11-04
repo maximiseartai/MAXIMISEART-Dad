@@ -17,7 +17,9 @@
 (* Każdy tekst kolejki w Skrzynce niesie znacznik wysyłki (outbox.py       *)
 (* _mark): element <<w, k>> issue to część k wysyłki w, a w to też jej     *)
 (* wersja (kolejność plików kolejki). Diagnoza to druga wersja tej samej   *)
-(* wysyłki (Id), która poprawia komentarze pierwszej (edit_comment).       *)
+(* wysyłki (Id), która poprawia komentarze pierwszej (edit_comment), a     *)
+(* komentarz części, której sama nie ma, opróżnia (_RETIRED). Starsza      *)
+(* wersja, która dochodzi po nowszej, niczego w issue nie zmienia.         *)
 (*                                                                         *)
 (* Jedna akcja to jeden krok kodu: jedno zapytanie do Skrzynki, jeden      *)
 (* zapis pliku tymczasowego, jedna zamiana pliku, jedno usunięcie, jedna   *)
@@ -30,6 +32,7 @@ CONSTANTS
     Cel,            \* cel wysyłki (outbox.py Target): "okres" (PeriodThread), "nowe" (NewIssue),
                     \* "zgloszenie" (ReportIssue), "znane" (KnownIssue: issue o znanym numerze już jest)
     Czesci,         \* części jednej wysyłki (Post.parts, Post.of dzieli treść ponad COMMENT_LIMIT)
+    CzesciNowszej,  \* części nowszej wersji (wysyłka 2 przy Diagnozie): Diagnoza zmienia długość Logów
     Naglowek,       \* Post.header: treść nowego issue to nagłówek, a każda część idzie komentarzem (Logi)
     Wysylek,        \* wysyłki do tego samego celu, po kolei (ten sam wiersz rozpoznawczy)
     MaxBrakSieci,   \* Unreachable, Refused albo NoKey przed skutkiem: _waiting daje "stop"
@@ -50,10 +53,15 @@ CONSTANTS
 ASSUME Cel = "zgloszenie" => Czesci = 1
 \* Nowszą wersję wysyłki daje tylko Diagnoza Logów Uruchomienia: issue okresu z nagłówkiem.
 ASSUME Diagnoza => Cel = "okres" /\ Naglowek /\ Wysylek = 2
+\* Bez Diagnozy każda wysyłka ma Czesci części.
+ASSUME CzesciNowszej >= 1 /\ (~Diagnoza => CzesciNowszej = Czesci)
 
 W == 1..Wysylek
 \* Identyfikator wysyłki w (etykieta i run_id w znaczniku): przy Diagnozie wysyłka 2 to wersja wysyłki 1.
 Id(w) == IF Diagnoza THEN 1 ELSE w
+\* Części wysyłki w (Post.parts): nowsza wersja może mieć ich więcej albo mniej niż starsza.
+Liczba(w) == IF Diagnoza /\ w = 2 THEN CzesciNowszej ELSE Czesci
+Najwiecej == IF CzesciNowszej > Czesci THEN CzesciNowszej ELSE Czesci
 Q == 1..Kolejki
 \* Proces kolejki q: każda w swoim, gdy DwaProcesy, inaczej obie w jednym (wspólne _PASSES).
 Proc(q) == IF DwaProcesy THEN q ELSE 1
@@ -80,8 +88,8 @@ VARIABLES
     lista,         \* pliki tego przejścia jeszcze nie obsłużone (sorted(glob("*.json")) w _send_all)
     biez,          \* plik, który przejście właśnie wysyła
     nr,            \* numer issue tej wysyłki (otwarte albo znalezione)
-    kom,           \* części do zapisania po kolei, każda <<część, "dopisz">> (comment, _comment_all) albo
-                   \* <<część, "popraw">> (edit_comment w _settle)
+    kom,           \* części do zapisania po kolei, każda <<część, "dopisz">> (comment, _comment_all),
+                   \* <<część, "popraw">> (edit_comment w _put) albo <<część, "wycofaj">> (edit_comment z _RETIRED)
     bezZnacznika,  \* zapis znacznika się nie udał (suppress(OSError) w _send_all)
     passes,        \* _PASSES[folder] procesu: "wolny", "zajety" (False) albo "prosba" (True)
     blokada,       \* kolejka, która trzyma blokadę systemową pliku przejscie.lock folderu (_folder_lock); 0: żadna.
@@ -108,8 +116,8 @@ ZnaneZnaleziska == {}
 
 Kroki == {"spi", "petla", "plik", "szukaj", "czytaj", "zaloz", "komentuj", "dostarczona", "zamiana", "usun", "zwolnij",
           "decyzja"}
-Para == (0..Wysylek) \X (0..Czesci)
-Zapisy == {"dopisz", "popraw"}
+Para == (0..Wysylek) \X (0..Najwiecej)
+Zapisy == {"dopisz", "popraw", "wycofaj"}
 
 TypeOK ==
     /\ plik \in [W -> {"nadejdzie", "przepadl", "czeka", "oznaczony", "usuniety"}]
@@ -122,7 +130,7 @@ TypeOK ==
     /\ bezBlokady \in [Q -> BOOLEAN]
     /\ undeleted \in [Q -> SUBSET W] /\ rejected \in [Q -> SUBSET W]
     /\ lista \in [Q -> Seq(W)] /\ biez \in [Q -> W] /\ nr \in [Q -> Nat]
-    /\ kom \in [Q -> Seq((1..Czesci) \X Zapisy)] /\ bezZnacznika \in [Q -> BOOLEAN]
+    /\ kom \in [Q -> Seq((1..Najwiecej) \X Zapisy)] /\ bezZnacznika \in [Q -> BOOLEAN]
     /\ passes \in [Procesy -> {"wolny", "zajety", "prosba"}]
     /\ blokada \in Q \cup {0}
     /\ nadawca \in [W -> {"czeka", "zamiana", "budzi", "koniec"}]
@@ -156,8 +164,8 @@ Zakres(s) == {s[i] : i \in 1..Len(s)}
 Klucz == IF Cel = "nowe" THEN "N" ELSE IF Cel = "znane" THEN "Z" ELSE "L"
 \* Post.opening: treść nowego issue to nagłówek albo część 1, a reszta części to komentarze.
 Cialo(w) == IF Naglowek THEN <<w, 0>> ELSE <<w, 1>>
-Od(a) == [i \in 1..(Czesci - a + 1) |-> a + i - 1]
-Reszta == IF Naglowek THEN Od(1) ELSE Od(2)
+Od(w, a) == [i \in 1..(Liczba(w) - a + 1) |-> a + i - 1]
+Reszta(w) == IF Naglowek THEN Od(w, 1) ELSE Od(w, 2)
 Najwyzszy(z) == IF z = {} THEN 0 ELSE CHOOSE i \in z : \A j \in z : j <= i
 Najnizszy(z) == CHOOSE i \in z : \A j \in z : i <= j
 \* report_box.py newest_with_line na liście labelled_issues: najnowsze issue z wierszem; 0 to None.
@@ -170,7 +178,14 @@ Swoje(w) == Najwyzszy({i \in 1..Len(issues) : Moj(issues[i].tresc[1], w)})
 Ma(i, w, k) == \E j \in 1..Len(issues[i].tresc) :
                  Moj(issues[i].tresc[j], w) /\ issues[i].tresc[j][2] = k /\ issues[i].tresc[j][1] >= w
 \* Każda część wysyłki w jest w jednym issue (w treści albo w komentarzu), w tej wersji albo nowszej.
-Dostarczona(w) == \E i \in 1..Len(issues) : \A k \in 1..Czesci : Ma(i, w, k)
+Dostarczona(w) == \E i \in 1..Len(issues) : \A k \in 1..Liczba(w) : Ma(i, w, k)
+\* Wysyłka w ma w kolejce nowszą wersję (Diagnoza): jej plik może zniknąć bez swoich części, bo Skrzynce należy się
+\* nowsza.
+Zastapiona(w) == \E v \in zakolejkowane : v > w /\ Id(v) = Id(w)
+\* Żaden komentarz wysyłki w (część k > 0; nagłówka w treści issue kolejka nie zmienia) nie jest w wersji starszej
+\* niż w.
+BezStarszych(w) == \A i \in 1..Len(issues) : \A j \in 1..Len(issues[i].tresc) :
+                     LET e == issues[i].tresc[j] IN Moj(e, w) /\ e[2] > 0 => e[1] >= w
 \* Miejsca w Skrzynce, w których jest część k wysyłki w, w każdej wersji.
 Miejsca(w, k) == UNION {{<<i, j>> : j \in {m \in 1..Len(issues[i].tresc) :
                                              Moj(issues[i].tresc[m], w) /\ issues[i].tresc[m][2] = k}} :
@@ -186,10 +201,12 @@ JednoIssue ==
       [] Cel = "nowe" -> \A w \in W : Cardinality({i \in 1..Len(issues) : issues[i].tresc[1] = Cialo(w)}) <= 1
 
 \* Plik znika z kolejki, przepada albo dostaje znacznik dopiero, gdy Skrzynka ma każdą jego część w jego wersji albo
-\* nowszej, a żadna część żadnej wysyłki nie jest w Skrzynce dwa razy (ani w dwóch wersjach).
+\* nowszej (plik wersji, którą zastąpiła nowsza w kolejce, może zniknąć bez nich), żadna część żadnej wysyłki nie jest
+\* w Skrzynce dwa razy (ani w dwóch wersjach), a po wysłaniu wersji w Skrzynka nie ma już tekstu starszej.
 DokladnieRaz ==
-    /\ \A w \in zakolejkowane : plik[w] \in {"oznaczony", "usuniety", "przepadl"} => Dostarczona(w)
-    /\ \A w \in W : \A k \in 1..Czesci : Cardinality(Miejsca(w, k)) <= 1
+    /\ \A w \in zakolejkowane : plik[w] \in {"oznaczony", "usuniety", "przepadl"} /\ ~Zastapiona(w) => Dostarczona(w)
+    /\ \A w \in W : \A k \in 1..Najwiecej : Cardinality(Miejsca(w, k)) <= 1
+    /\ \A w \in zakolejkowane : plik[w] \in {"oznaczony", "usuniety"} => BezStarszych(w)
 
 \* Część k > 1 w issue ma przed sobą część k-1 tej samej wysyłki: issue czyta się po kolei.
 CzesciWKolejnosci ==
@@ -320,7 +337,7 @@ Szukaj(q) ==
           /\ IF Najnowsze = 0
              THEN /\ UNCHANGED <<nr, kom>>
                   /\ Idz(q, "zaloz", "find_issue: brak issue okresu")
-             ELSE /\ nr' = Ustaw(nr, q, Najnowsze) /\ kom' = Ustaw(kom, q, Dopisz(Od(1)))
+             ELSE /\ nr' = Ustaw(nr, q, Najnowsze) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
                   /\ Idz(q, "czytaj", "labelled_issues: jest issue okresu, _settle z kazda czescia")
        \/ /\ Cel = "zgloszenie"
           /\ UNCHANGED <<sieci, stopped, nieczytany>>
@@ -331,12 +348,12 @@ Szukaj(q) ==
           /\ IF Najnowsze = 0
              THEN /\ UNCHANGED <<nr, kom>>
                   /\ Idz(q, "zaloz", "labelled_issues: brak otwartego Zgloszenia z odciskiem")
-             ELSE /\ nr' = Ustaw(nr, q, Najnowsze) /\ kom' = Ustaw(kom, q, Dopisz(Od(1)))
+             ELSE /\ nr' = Ustaw(nr, q, Najnowsze) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
                   /\ Idz(q, "czytaj", "_deliver_report: jest Zgloszenie z odciskiem, _settle z komentarzem returned_report")
        \/ /\ Cel = "znane"
           /\ UNCHANGED <<sieci, stopped, nieczytany, slady>>
           \* _deliver_to_known: issue jest na liście (Gone model pomija), _settle z każdą częścią.
-          /\ nr' = Ustaw(nr, q, 1) /\ kom' = Ustaw(kom, q, Dopisz(Od(1)))
+          /\ nr' = Ustaw(nr, q, 1) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
           /\ Idz(q, "czytaj", "_deliver_to_known: issue jest na liscie, _settle z kazda czescia")
        \/ /\ Cel = "nowe"
           /\ UNCHANGED <<sieci, stopped, nieczytany, slady>>
@@ -345,7 +362,7 @@ Szukaj(q) ==
           /\ IF Swoje(biez[q]) = 0
              THEN /\ UNCHANGED <<nr, kom>>
                   /\ Idz(q, "zaloz", "labelled_issues: brak issue ze znacznikiem tej Uwagi")
-             ELSE /\ nr' = Ustaw(nr, q, Swoje(biez[q])) /\ kom' = Ustaw(kom, q, Dopisz(Reszta))
+             ELSE /\ nr' = Ustaw(nr, q, Swoje(biez[q])) /\ kom' = Ustaw(kom, q, Dopisz(Reszta(biez[q])))
                   /\ Idz(q, "czytaj", "labelled_issues: jest issue ze znacznikiem tej Uwagi, _settle z reszta czesci")
     /\ UNCHANGED <<dysk, issues, zyje, draining, again, armed, undeleted, rejected, lista, biez, bezZnacznika,
                    passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy, bledyPliku, wylaczenia>>
@@ -355,18 +372,28 @@ Szukaj(q) ==
 \* "dopisz" (outbox.py _settle i _put).
 WTresci(i, w, k) == Moj(issues[i].tresc[1], w) /\ issues[i].tresc[1][2] = k
 Komentarze(i, w, k) == {j \in 2..Len(issues[i].tresc) : Moj(issues[i].tresc[j], w) /\ issues[i].tresc[j][2] = k}
+Wersja(i, w, k) == issues[i].tresc[Najnizszy(Komentarze(i, w, k))][1]
 Krok(i, w, k) ==
     IF WTresci(i, w, k) THEN "jest"
     ELSE IF Komentarze(i, w, k) = {} THEN "dopisz"
-    ELSE IF issues[i].tresc[Najnizszy(Komentarze(i, w, k))][1] < w THEN "popraw"
+    ELSE IF Wersja(i, w, k) < w THEN "popraw"
     ELSE "jest"
+\* outbox.py _settle: komentarz części, której wersja w nie ma (ani w treści issue), w starszej wersji dostaje _RETIRED
+\* (part not in wanted and seen < version), po częściach tej wersji.
+Wycofaj(i, w) == SelectSeq([k \in 1..Najwiecej |-> <<k, "wycofaj">>],
+                           LAMBDA x : x[1] > Liczba(w) /\ ~WTresci(i, w, x[1]) /\ Komentarze(i, w, x[1]) /= {}
+                                      /\ Wersja(i, w, x[1]) < w)
 Plan(i, w, ks) == SelectSeq([n \in 1..Len(ks) |-> <<ks[n][1], Krok(i, w, ks[n][1])>>], LAMBDA x : x[2] /= "jest")
+                  \o Wycofaj(i, w)
+\* outbox.py _settle: znacznik wysyłki w w nowszej wersji w treści albo komentarzu issue i (newest > version).
+Nowsza(i, w) == \E j \in 1..Len(issues[i].tresc) : Moj(issues[i].tresc[j], w) /\ issues[i].tresc[j][1] > w
 
 \* keyed_box.py KeyedBox.comments w outbox.py _settle: komentarze znalezionego issue przed wysłaniem, a z nich (i z
-\* treści issue) plan części, których w Skrzynce jeszcze nie ma albo są w starszej wersji. Odczyt nie zmienia Skrzynki.
-\* Część nowszej wersji ponad liczbę części tej wersji (_RETIRED) model pomija: każda wersja ma Czesci części.
+\* treści issue) plan: nic, gdy issue ma już nowszą wersję tej wysyłki, a inaczej części, których w Skrzynce jeszcze
+\* nie ma albo są w starszej wersji, potem _RETIRED w komentarzach części, których ta wersja nie ma. Odczyt nie
+\* zmienia Skrzynki.
 Czytaj(q) ==
-    LET plan == Plan(nr[q], biez[q], kom[q]) IN
+    LET plan == IF Nowsza(nr[q], biez[q]) THEN <<>> ELSE Plan(nr[q], biez[q], kom[q]) IN
     /\ pc[q] = "czytaj"
     /\ \/ /\ sieci < MaxBrakSieci
           /\ sieci' = sieci + 1
@@ -375,8 +402,10 @@ Czytaj(q) ==
        \/ /\ kom' = Ustaw(kom, q, plan)
           /\ UNCHANGED <<sieci, stopped, nieczytany>>
           /\ IF plan = <<>>
-             THEN Idz(q, "dostarczona", "comments: kazda czesc juz jest w Skrzynce, Delivered")
-             ELSE Idz(q, "komentuj", "comments: brakujace czesci komentarzami, starsza wersja poprawka")
+             THEN Idz(q, "dostarczona", IF Nowsza(nr[q], biez[q])
+                                         THEN "comments: issue ma nowsza wersje tej wysylki, Delivered bez zapisu"
+                                         ELSE "comments: kazda czesc juz jest w Skrzynce, Delivered")
+             ELSE Idz(q, "komentuj", "comments: brakujace czesci komentarzami, starsza wersja poprawka, _RETIRED")
     /\ UNCHANGED <<dysk, issues, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, bezZnacznika,
                    passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy, bledyPliku, wylaczenia, slady>>
 
@@ -388,9 +417,9 @@ Zaloz(q) ==
     IN
     /\ pc[q] = "zaloz"
     /\ \/ /\ issues' = nowe
-          /\ nr' = Ustaw(nr, q, Len(nowe)) /\ kom' = Ustaw(kom, q, Dopisz(Reszta))
+          /\ nr' = Ustaw(nr, q, Len(nowe)) /\ kom' = Ustaw(kom, q, Dopisz(Reszta(w)))
           /\ UNCHANGED <<stopped, nieczytany, rejected, sieci, zgubione, odmowy, slady, odrzucone>>
-          /\ IF Reszta = <<>>
+          /\ IF Reszta(w) = <<>>
              THEN Idz(q, "dostarczona", "open_issue: Sent, cala wysylka w tresci issue")
              ELSE Idz(q, "komentuj", "open_issue: Sent, reszta czesci komentarzami (_comment_all)")
        \/ /\ sieci < MaxBrakSieci
@@ -409,16 +438,18 @@ Zaloz(q) ==
                    bezBlokady, zamkniecia, nadawca, przez, zakolejkowane, bledyPliku, wylaczenia>>
 
 \* keyed_box.py KeyedBox.comment (_comment_all, _settle przez _put) albo KeyedBox.edit_comment (_put: komentarz
-\* części w starszej wersji dostaje tekst tej wersji w tym samym miejscu issue), po kolei; pierwsza porażka kończy
-\* wysyłkę.
+\* części w starszej wersji dostaje tekst tej wersji w tym samym miejscu issue; _settle: komentarz części, której ta
+\* wersja nie ma, dostaje _RETIRED ze znacznikiem tej wersji), po kolei; pierwsza porażka kończy wysyłkę.
 Komentuj(q) ==
     LET w == biez[q]
         k == Head(kom[q])[1]
-        popraw == Head(kom[q])[2] = "popraw"
+        popraw == Head(kom[q])[2] \in {"popraw", "wycofaj"}
         zapis == IF popraw
                  THEN [issues EXCEPT ![nr[q]].tresc[Najnizszy(Komentarze(nr[q], w, k))] = <<w, k>>]
                  ELSE [issues EXCEPT ![nr[q]].tresc = Append(@, <<w, k>>)]
-        zapytanie == IF popraw THEN "edit_comment" ELSE "comment"
+        zapytanie == CASE Head(kom[q])[2] = "popraw" -> "edit_comment"
+                       [] Head(kom[q])[2] = "wycofaj" -> "edit_comment (_RETIRED)"
+                       [] OTHER -> "comment"
     IN
     /\ pc[q] = "komentuj"
     /\ \/ /\ issues' = zapis

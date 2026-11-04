@@ -266,7 +266,7 @@ def test_rozjazd_liczy_w_plikach_procesu_centrum_tylko_definicje_procesow_centru
         assert found == f"kod procesów Centrum zmienił się od {sync[:8]}: {moved}. Sprawdź Start, Zamknij i KoniecProcesu."
 
 
-# Dwa najdłuższe zakresy sprawdzenia kodu, każdy osobną jednostką na początku ``UNITS``.
+# Dwie najdłuższe jednostki sprawdzenia kodu na początku ``UNITS``; atrapa sprawdzenia wypisuje pierwszy zakres jednostki.
 LONG = ["explore_outbox.py --scope watek-okresu", "explore_outbox.py --scope diagnoza"]
 
 

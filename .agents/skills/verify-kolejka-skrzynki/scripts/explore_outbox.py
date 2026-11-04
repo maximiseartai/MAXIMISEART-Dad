@@ -192,7 +192,7 @@ class MemoryBox:
 
 
 Choice = Literal[
-    "ok", "unreachable", "lost", "oserror", "kill", "next", "restart", "stuck"
+    "ok", "unreachable", "lost", "oserror", "unreadable", "kill", "next", "restart", "stuck"
 ]
 
 
@@ -202,6 +202,9 @@ class Bounds:
     lost: int
     disk: int
     kills: int
+    reads: int = 0
+    """Reads of a queue file that raise ``OSError`` (OneDrive or an antivirus holding it), so the files after it go
+    first in that pass; 0 leaves the read out of the schedules."""
 
 
 class Scheduler:
@@ -215,6 +218,7 @@ class Scheduler:
             "unreachable": bounds.unreachable,
             "lost": bounds.lost,
             "oserror": bounds.disk,
+            "unreadable": bounds.reads,
             "kill": bounds.kills,
         }
         self.trace: list[str] = []
@@ -265,6 +269,16 @@ class Scheduler:
         if chosen == "oserror":
             self.say(f"{what}: OSError")
         return chosen == "oserror"
+
+    def read(self, what: str) -> bool:
+        """A read of a queue file: it works or raises ``OSError``. A kill here is the kill at the step before it."""
+
+        if not self.left["unreadable"]:
+            return False
+        chosen = self._pick(("ok", "unreadable"), what)
+        if chosen == "unreadable":
+            self.say(f"{what}: OSError (plik trzyma OneDrive albo antywirus)")
+        return chosen == "unreadable"
 
     def between_passes(self, woken: bool) -> Literal["next", "restart", "stuck"]:
         """When nothing asked for a pass and files are left: the ``RETRY_S`` wake the code armed fires, Centrum
@@ -333,6 +347,11 @@ def _post(
 
 
 BOUNDS = Bounds(unreachable=2, lost=1, disk=1, kills=1)
+# Logi Uruchomienia w dwóch częściach i ich Diagnoza w jednej: nowsza wersja tej samej wysyłki (ten sam run_id).
+DIAGNOSED = (
+    _post(LOGS, "uruchomienie", 2, header="Logi okresu"),
+    _post(LOGS, "uruchomienie", 1, header="Logi okresu", version=" po Diagnozie"),
+)
 SCOPES = {
     "zgloszenie": Scope(
         "Zgłoszenie (ReportIssue) w jednej części, jak każde (Post odrzuca więcej).",
@@ -367,18 +386,24 @@ SCOPES = {
     "diagnoza": Scope(
         "Logi Uruchomienia (PeriodThread z nagłówkiem) w dwóch częściach, potem ich Diagnoza w jednej: nowsza wersja "
         "tej samej wysyłki zmienia część 1 i opróżnia część 2.",
-        (
-            _post(LOGS, "uruchomienie", 2, header="Logi okresu"),
-            _post(LOGS, "uruchomienie", 1, header="Logi okresu", version=" po Diagnozie"),
-        ),
+        DIAGNOSED,
         (),
         # Z BOUNDS też przechodzi (51 s na Macu Maksa 2026-11-04 wobec 9 s), a w CI byłby najdłuższą jednostką.
         Bounds(unreachable=1, lost=1, disk=1, kills=1),
     ),
+    "diagnoza-odczyt": Scope(
+        "Te same Logi i Diagnoza, a pliku Logów raz nie da się odczytać: Diagnoza idzie przed nimi, a Logi, które "
+        "dochodzą po niej, niczego w Skrzynce nie zmieniają ani nie dopisują.",
+        DIAGNOSED,
+        (),
+        # Z błędem dysku też przechodzi (17 860 harmonogramów, 39 s na Macu Maksa 2026-11-04 wobec 9 s), a w CI byłby
+        # najdłuższą jednostką; błąd dysku przy dwóch wersjach sprawdza zakres diagnoza.
+        Bounds(unreachable=1, lost=1, disk=0, kills=1, reads=1),
+    ),
 }
 
 Faults = Sequence[tuple[str, str]]
-"""What went wrong in a schedule, in order: (``unreachable``/``lost``/``oserror``/``kill``/``restart``, the step)."""
+"""What went wrong in a schedule, in order: (``unreachable``/``lost``/``oserror``/``unreadable``/``kill``/``restart``, the step)."""
 
 
 @dataclass(frozen=True)
@@ -467,12 +492,22 @@ def _queue_threads(started: list[Callable[[], None]]) -> Iterator[None]:
 
 
 @contextmanager
-def _intercepted(scheduler: Scheduler, queue: Path) -> Iterator[None]:
-    """The marker write and the removal of queue files as steps of ``scheduler``."""
+def _intercepted(scheduler: Scheduler, queue: Path, versions: dict[str, str]) -> Iterator[None]:
+    """The read of a queue file, the marker write and the removal of queue files as steps of ``scheduler``.
+
+    The read is ``_queued``, which lets the ``OSError`` of ``read_text`` through to ``_send_all``; the checker raises it
+    before the real ``_queued`` runs.
+    """
 
     names = vars(outbox_module)
+    queued = names["_queued"]
     replace = names["replace_atomically"]
     unlink = pathlib.Path.unlink
+
+    def read(path: Path) -> object:
+        if scheduler.read(f"odczyt pliku kolejki wysyłki {versions[outbox_module._version(path)]}"):
+            raise PermissionError("plik zablokowany")
+        return queued(path)
 
     def marker(path: Path, text: str) -> None:
         if scheduler.disk("zapis znacznika dostarczenia"):
@@ -487,11 +522,13 @@ def _intercepted(scheduler: Scheduler, queue: Path) -> Iterator[None]:
             scheduler.say("plik kolejki usunięty")
         unlink(path, missing_ok=missing_ok)
 
+    names["_queued"] = read
     names["replace_atomically"] = marker
     pathlib.Path.unlink = removal  # type: ignore[method-assign,assignment]
     try:
         yield
     finally:
+        names["_queued"] = queued
         names["replace_atomically"] = replace
         pathlib.Path.unlink = unlink  # type: ignore[method-assign]
 
@@ -614,8 +651,10 @@ def _state(
     Also whether a ``RETRY_S`` wake is armed, and ``_stopped_on`` and ``_retry_armed``, which decide in ``_drain``
     whether the next one is, and ``_draining``, ``_again`` and the queue threads started and not run yet, which decide
     whether ``send_in_background`` starts a pass. Left out on purpose, because they do not change what is sent: ``_first_comments``
-    (``delivered``, ``wait_delivered``), ``_rejected`` (no ``Rejected`` here) and the key verdict of ``KeyedBox``
-    (the key is always accepted, and ``Unreachable`` does not change it).
+    (``delivered``, ``wait_delivered``), ``_rejected`` (no ``Rejected`` here), ``_read_failed`` and ``_unreadable``
+    (``_send_all`` sets the first anew in every pass, and whether it armed a wake is in the state; the second only spares
+    the log a line) and the key verdict of ``KeyedBox`` (the key is always accepted, and ``Unreachable`` does not change
+    it).
     """
 
     files = {
@@ -693,10 +732,10 @@ def execute(
         }
         bounds = scope.bounds
         passes = (
-            bounds.unreachable + bounds.lost + bounds.disk + bounds.kills + EXTRA_PASSES
+            bounds.unreachable + bounds.lost + bounds.disk + bounds.kills + bounds.reads + EXTRA_PASSES
         )
         ended = "pusta"
-        with _intercepted(scheduler, queue):
+        with _intercepted(scheduler, queue, versions):
             while any(queue.glob("*.json")):
                 if not passes:
                     ended = "limit"

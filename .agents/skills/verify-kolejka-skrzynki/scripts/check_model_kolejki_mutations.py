@@ -49,7 +49,7 @@ MUTATIONS = (
     ),
     Mutation(
         "Zgłoszenie, które wróciło, przejęte bez komentarza (_deliver_report: Delivered(found, ()) zamiast _settle)",
-        (Edit(MODEL, "             ELSE /\\ nr' = Ustaw(nr, q, Najnowsze) /\\ kom' = Ustaw(kom, q, Dopisz(Od(1)))\n"
+        (Edit(MODEL, "             ELSE /\\ nr' = Ustaw(nr, q, Najnowsze) /\\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))\n"
               "                  /\\ Idz(q, \"czytaj\", \"_deliver_report:",
               "             ELSE /\\ nr' = Ustaw(nr, q, Najnowsze) /\\ kom' = Ustaw(kom, q, <<>>)\n"
               "                  /\\ Idz(q, \"dostarczona\", \"_deliver_report:"),),
@@ -59,23 +59,32 @@ MUTATIONS = (
     ),
     Mutation(
         "bez sprawdzenia identyfikatora przed wysyłką (_settle: każda część jako nowy komentarz)",
-        (Edit(MODEL, "    LET plan == Plan(nr[q], biez[q], kom[q]) IN\n", "    LET plan == kom[q] IN\n"),),
+        (Edit(MODEL, "    LET plan == IF Nowsza(nr[q], biez[q]) THEN <<>> ELSE Plan(nr[q], biez[q], kom[q]) IN\n",
+              "    LET plan == kom[q] IN\n"),),
         _check("okres"),
         "część, którą Skrzynka przyjęła przed zgaśnięciem Centrum, idzie po starcie drugi raz",
         NEW,
     ),
     Mutation(
-        "starsza wersja poprawia nowszą (_put: seen < version)",
-        (Edit(MODEL, '[1] < w THEN "popraw"\n', '[1] /= w THEN "popraw"\n'),),
+        "starsza wersja po nowszej zmienia issue (_settle: newest > version)",
+        (Edit(MODEL, "    LET plan == IF Nowsza(nr[q], biez[q]) THEN <<>> ELSE Plan(nr[q], biez[q], kom[q]) IN\n",
+              "    LET plan == Plan(nr[q], biez[q], kom[q]) IN\n"),),
         _check("diagnoza"),
-        "plik Logów sprzed Diagnozy, który dochodzi po niej, cofa komentarz Uruchomienia do Logów bez Diagnozy",
+        "plik Logów sprzed Diagnozy, który dochodzi po niej, dopisuje część, której Diagnoza już nie ma",
         NEW,
     ),
     Mutation(
         "Diagnoza dopisuje komentarz zamiast poprawić (_put: edit_comment)",
-        (Edit(MODEL, '[1] < w THEN "popraw"\n', '[1] < w THEN "dopisz"\n'),),
+        (Edit(MODEL, 'ELSE IF Wersja(i, w, k) < w THEN "popraw"\n', 'ELSE IF Wersja(i, w, k) < w THEN "dopisz"\n'),),
         _check("diagnoza"),
         "Uruchomienie po Diagnozie ma w issue okresu dwa komentarze z tą samą częścią Logów",
+        NEW,
+    ),
+    Mutation(
+        "część, której nowsza wersja nie ma, zostaje (_settle: _RETIRED)",
+        (Edit(MODEL, "                  \\o Wycofaj(i, w)\n", "                  \\o <<>>\n"),),
+        _check("diagnoza"),
+        "w issue okresu zostaje część Logów sprzed Diagnozy, krótszej o tę część",
         NEW,
     ),
     Mutation(
@@ -159,8 +168,8 @@ MUTATIONS = (
     ),
     Mutation(
         "części komentowane od końca (_comment_all: reversed(comments))",
-        (Edit(MODEL, "Od(a) == [i \\in 1..(Czesci - a + 1) |-> a + i - 1]\n",
-              "Od(a) == [i \\in 1..(Czesci - a + 1) |-> Czesci - i + 1]\n"),),
+        (Edit(MODEL, "Od(w, a) == [i \\in 1..(Liczba(w) - a + 1) |-> a + i - 1]\n",
+              "Od(w, a) == [i \\in 1..(Liczba(w) - a + 1) |-> Liczba(w) - i + 1]\n"),),
         _check("okres"),
         "issue okresu ma część 2 przed częścią 1 drugiej Kontroli ilości",
         NEW,
