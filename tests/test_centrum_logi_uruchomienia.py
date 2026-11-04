@@ -700,8 +700,8 @@ def test_okno_efenix_taty_pracuje_w_tempie_ludzkim_a_slad_wyceny_emmetta_trzyma_
 
 
 def test_wycena_w_efenix_z_centrum_pracuje_w_tempie_ludzkim_okna_efenix(tmp_path: Path) -> None:
-    """Centrum daje procesowi tempo swojego okna efenix: przerwę przed każdym działaniem w efenix. Na zegarze, który stoi,
-    przerwa w zleceniu to ``ACTION_PAUSE_S``, a przed szukaniem następnego zlecenia próg podtrzymania sesji."""
+    """Centrum daje procesowi tempo swojego okna efenix: przerwę przed każdym zapisem w efenix. Na zegarze, który stoi,
+    przerwa przed zapisem to ``ACTION_PAUSE_S``, a przed szukaniem zlecenia po zleceniu z zapisem próg podtrzymania sesji."""
 
     pauses: list[float] = []
     with atrapa_efenix(IN_EFENIX) as atrapa:

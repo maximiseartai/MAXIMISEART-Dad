@@ -25,7 +25,14 @@ efenix tata codziennie pracuje naprawdę.
   lokalnej imitacji stron i odpowiedzi efenix z wymyślonymi zleceniami.
   Prawdziwy efenix widzi tylko Uruchomienie procesu taty. Rekonesans na
   prawdziwym efenix jest wyłącznie do odczytu.
-- **Tempo jest ludzkie:** ok. 20 s na zlecenie, nie sekundy.
+- **Tempo jest ludzkie:** ok. 20 s na zlecenie, w którym narzędzie coś
+  zapisuje w efenix, nie sekundy. Przerwy należą do zapisów (data wykonania,
+  Wycena Emmetta, ilość) i do szukania po zleceniu z zapisem (decyzja Maksa
+  4.11.2026, #834). Samo sprawdzenie zlecenia bez zmiany w efenix (wycena już
+  jest, Zlecenie rozliczone, błąd zlecenia) idzie bez przerw, żeby ponowne
+  uruchomienie po Zatrzymaniu nie czekało na gotowych zleceniach: gotowe
+  zlecenie trwało z przerwami ok. 17 s, więc przy Zatrzymaniu na 150.
+  zleceniu tata czekał ok. 45 minut, zanim narzędzie wyceniało dalej.
 - **Zlecenie „Rozliczone” to wynik, nie błąd** (decyzja Maksa 4.11.2026,
   #821). Zlecenie, które w efenix ma status „Rozliczone”, jest Zleceniem
   rozliczonym: narzędzie go nie otwiera, niczego w nim nie zmienia i nie
