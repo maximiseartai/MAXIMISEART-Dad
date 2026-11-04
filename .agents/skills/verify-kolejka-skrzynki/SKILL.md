@@ -166,8 +166,20 @@ and `_Server` in `server.py` (`DEFINITIONS` in `sprawdz_model_kolejki.py`). Only
 rest of their files, is drift. Name these three files here without their
 `src/…` path in backticks: such a path makes the whole file covered.
 
-**Sync commit: `50fd9abb`** (2026-11-04). The checker and the model share it:
+**Sync commit: `6cc9e712`** (2026-11-05). The checker and the model share it:
 at this commit both were confirmed to describe the code above. Since the
+previous sync `50fd9abb` only `6cc9e712` (round 2 of #860) changed a covered
+file: `GitHubReportBox.open_archive` reads GitHub's 409 to a new Release in a
+repository without a commit as `Rejected` instead of `Unreachable`, so the
+refusal is `ArchiveWaits` and stops only the file, not the pass; and
+`replace_atomically` got `newline`, which only the file of the Logi passes
+(`run_logs.py`), so the queue files it writes are as before. The checker got
+`_github` (every refusal of the Archiwum is GitHub's answer read by the real
+`GitHubReportBox`), `Scope.empty_repository` and the scope
+`archiwum-puste-repo`; the model got `PusteRepo`, `OdmowaPustegoRepo`, the
+configuration `puste-repo` and the clause of `Zbieganie` that only a file with
+the marker of its parts may stay while the Archiwum never comes. Both mutation
+scripts follow. At `50fd9abb`, since the
 previous sync `83ed9ab9` only `50fd9abb` (#844) changed a covered file: a
 wysyłka to an issue okresu may carry a file for the Archiwum Logów okresu
 (`ArchiveFile`), which `_deliver_archive` sends before the parts with the new box
@@ -249,7 +261,7 @@ them, `6f94edb8` was the sync of both, and since the checker's earlier sync
 model describes. To see whether they need another look:
 
 ```bash
-git log --oneline 50fd9abb..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
+git log --oneline 6cc9e712..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
 ```
 
 A change to the three definitions above shows as a `UWAGA:` line of
