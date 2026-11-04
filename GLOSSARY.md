@@ -57,7 +57,7 @@ zlecenia Pliku zbiorczego, które nie jest Zleceniem ze zdjęciami ani usterką,
 Wyceną Emmetta i Ilościami usług z Pliku zbiorczego, a gotowe oznacza
 Znacznikiem efenix. Nigdy nie robi Przekazania do akceptacji. Zlecenie, którego
 nie da się uzupełnić tak, żeby kwota była równa `Kwota` (AU), zostawia tacie
-jako błąd, a sprzeczność z Wyceną Emmetta jako ostrzeżenie. Zlecenie
+jako błąd, a sprzeczność z Wyceną Emmetta jako Ostrzeżenie Emmetta. Zlecenie
 rozliczone nie jest błędem, a zlecenie o statusie innym niż „Do wyceny” i
 „Rozliczone” jest. Strona zlecenia w
 efenix bywa bez części pozycji wyceny: brak pozycji, w której Plik zbiorczy ma
@@ -81,6 +81,15 @@ Ilości, które Emmett, skrypt w efenix, wpisuje do zlecenia po kliknięciu
 Ilości usług z Pliku zbiorczego. Nikt ich nie nadpisuje: gdy różnią się od
 Pliku zbiorczego, sprzeczność rozstrzyga tata. Załadowanie Wyceny Emmetta
 czyści wycenę, którą zlecenie już ma.
+
+## Ostrzeżenie Emmetta
+
+Wynik zlecenia w Wycenie w efenix, w którym Wycena Emmetta ma w jakiejś pozycji
+ilość inną niż Plik zbiorczy, także gdy plik ma w niej 0. Pozycja pusta u
+Emmetta nie jest sprzecznością: Wycena w efenix wpisuje w nią ilość z pliku.
+Zlecenie z Ostrzeżeniem Emmetta zostaje w efenix z samą Wyceną Emmetta, bez
+Znacznika efenix, a sprzeczność rozstrzyga tata.
+_Avoid_: błąd Emmetta, konflikt z Emmettem
 
 ## Ślad Wyceny Emmetta
 
