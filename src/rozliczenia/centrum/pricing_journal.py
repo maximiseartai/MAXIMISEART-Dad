@@ -11,7 +11,7 @@ Plik powstaje z pierwszym wpisem, więc procesy, które nie piszą dziennika (Pr
 rozliczeń, Uporządkowanie INTERMAX), niczego nie zapisują. Każdy wpis jest na dysku (``fsync``), zanim silnik zrobi
 następny krok, więc zgaśnięcie Centrum, także brak prądu, urywa najwyżej wpis w trakcie zapisu. Nieudany zapis wpisu to
 jedna linia dziennika Centrum na Uruchomienie, a Wycena biegnie dalej: ślad jest dla Maksa, a nie warunkiem pracy taty.
-Dziennik ma tylko dane Logów Uruchomienia: bez numeru zlecenia, adresu i loginu Wykonawcy.
+Dziennik ma tylko dane Logów Uruchomienia: bez numeru zlecenia i bez danych adresowych.
 
 Start Centrum czyta każdy dziennik przy budowie aplikacji, przed kartą ostatniego Uruchomienia
 (``InterruptedPricings.close``):
