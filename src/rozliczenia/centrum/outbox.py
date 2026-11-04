@@ -32,6 +32,15 @@ komentarze. Bez niego zakłada nowe issue: pierwsza część (albo nagłówek) j
 issue, które założyła przerwana próba, dostaje tylko brakujące części. Kto czeka na wynik (Uwaga taty), może poczekać
 na dostarczenie przez ``wait_delivered``.
 
+Wysyłka do issue okresu może nieść plik do Archiwum okresu (``ArchiveFile``, #844: pełne Logi Uruchomienia), GitHub
+Release z tagiem w repozytorium Skrzynki. Plik idzie tuż przed częściami, a wysyłka jest dokładnie raz także w
+Archiwum: GitHub trzyma jeden plik jednej nazwy, a etykieta pliku niesie wersję wysyłki, więc ponowienie nie wysyła
+pliku, który już jest w tej albo nowszej wersji, plik starszej wersji ustępuje nowszej (``remove``, potem ``upload``),
+a issue z nowszą wersją wysyłki nie dostaje od starszej niczego, także w Archiwum. Gdy Archiwum nie przyjmie pliku
+(brak uprawnienia klucza do zapisu treści repozytorium, odmowa treści), części idą z dopiskiem, że plik czeka, a plik
+kolejki dostaje znacznik części (``delivered_parts``) i czeka tylko na Archiwum: następne próby nie pytają już o issue.
+Przejście, w którym Archiwum odmówiło, nie pyta go więcej, a budzenie po ``RETRY_S`` ponawia jedno pytanie.
+
 Adres pierwszego komentarza każdej dostarczonej wysyłki (np. Logów Uruchomienia, do których prowadzi przypięta
 Uwaga taty) kolejka dopisuje do pliku ``addresses`` i wczytuje przy następnym starcie Centrum, więc ``delivered``
 zna też wysyłki poprzednich prac Centrum. Co wysyłka znaczy poza kolejką, wie jej słuchacz (``Listener``, w Centrum
@@ -41,14 +50,15 @@ przejścia, a po przyjęciu albo odrzuceniu treści przez skrzynkę dostaje wyni
 
 from __future__ import annotations
 
+import gzip
 import itertools
 import json
 import re
 import sys
 import threading
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, BinaryIO, Final, Literal, Protocol, assert_never, get_args
@@ -59,14 +69,18 @@ from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
 from rozliczenia.centrum.log import CentrumLog, WaitingCause
 from rozliczenia.centrum.report_box import (
     COMMENT_LIMIT,
+    Archive,
+    Asset,
     Comment,
     Commented,
     Issue,
     Label,
     Refused,
     Rejected,
+    Removed,
     Sent,
     Unreachable,
+    archive_url,
     newest_with_line,
 )
 
@@ -78,7 +92,11 @@ else:
 QUEUE_DIRECTORY: Final = "kolejka"
 # Poza ``config/zgloszenia``: weryfikacja Kontroli ilości sprawdza, że jest tam tylko kolejka.
 ADDRESSES_FILE: Final = "skrzynka-adresy.jsonl"
-SCHEMA_VERSION: Final = 2
+# Schemat 3 (#844) niesie plik do Archiwum okresu; stare Centrum, które go nie zna, zostawia taki plik w kolejce,
+# zamiast wysłać same części i usunąć plik razem z plikiem do Archiwum.
+SCHEMA_VERSION: Final = 3
+# Pliki kolejki od ``NewIssue`` (#273) do #844: cel w kluczu ``target``, bez pliku do Archiwum.
+_TARGET_SCHEMA: Final = 2
 # Pliki kolejki sprzed ``NewIssue`` (#273) mają cel w kluczu ``thread`` i zawsze jest nim issue okresu.
 _PERIOD_THREAD_SCHEMA: Final = 1
 # Miejsce w komentarzu na nagłówek części, wiersz rozpoznawczy i znacznik wysyłki, ponad tekst bloków.
@@ -261,11 +279,61 @@ Target = PeriodThread | NewIssue | KnownIssue | ReportIssue
 
 
 @dataclass(frozen=True)
+class ArchiveFile:
+    """Plik wysyłki w Archiwum okresu (GitHub Release z tagiem ``tag`` w repozytorium Skrzynki Zgłoszeń).
+
+    ``name`` i ``text`` to plik przed spakowaniem (Logi Uruchomienia: nazwa i treść pliku Logów); w Archiwum leży
+    spakowany gzipem jako ``packed_name``, a ``link`` prowadzi do niego, zanim dojdzie. ``title`` i ``description`` to
+    tytuł i opis Archiwum, gdy kolejka musi je założyć.
+    """
+
+    tag: str
+    title: str
+    description: str
+    name: str
+    text: str
+
+    @property
+    def packed_name(self) -> str:
+        """``<name>.gz``: ``gunzip`` oddaje z niego plik ``name``."""
+
+        return f"{self.name}.gz"
+
+    @property
+    def link(self) -> str:
+        return archive_url(self.tag, self.packed_name)
+
+    def packed(self) -> bytes:
+        """``text`` w UTF-8 spakowany gzipem bez chwili spakowania, więc te same znaki to zawsze te same bajty."""
+
+        return gzip.compress(self.text.encode("utf-8"), mtime=0)
+
+
+def _waiting_note(archive: ArchiveFile) -> str:
+    """Dopisek części, gdy Archiwum nie przyjęło pliku: plik czeka w kolejce, a odnośnik zadziała, gdy dojdzie."""
+
+    return (
+        f"Plik `{archive.packed_name}` czeka w Kolejce wysyłki na komputerze taty: Archiwum okresu go nie przyjęło "
+        "(np. Token do Zgłoszeń bez uprawnienia do zapisu treści repozytorium Skrzynki). Odnośnik zadziała, gdy plik dojdzie."
+    )
+
+
+def _noted(text: str, note: str) -> str:
+    """Tekst części z dopiskiem ``note`` w osobnym akapicie na końcu; bez dopisku ten sam tekst."""
+
+    if not note:
+        return text
+    paragraph = text.rstrip("\n")
+    return f"{paragraph}\n\n{note}\n"
+
+
+@dataclass(frozen=True)
 class Post:
     """Gotowa wysyłka do Skrzynki Zgłoszeń, wyrenderowana przez wersję narzędzia, która ją utworzyła.
 
     ``header``: treść nowego issue; ``None``: nowe issue otwiera pierwsza część (Kontrola ilości, Uwaga taty).
-    ``run_id`` to Uruchomienie, a dla Uwagi taty jej identyfikator.
+    ``run_id`` to Uruchomienie, a dla Uwagi taty jej identyfikator. ``archive``: plik do Archiwum okresu, tylko przy
+    wysyłce do issue okresu w jednej części, która idzie z dopiskiem, gdy Archiwum pliku nie przyjmie.
     """
 
     target: Target
@@ -274,11 +342,15 @@ class Post:
     run_id: str
     header: str | None
     parts: tuple[str, ...]
+    archive: ArchiveFile | None = None
 
     def __post_init__(self) -> None:
         body, comments = self.opening()
-        if not self.parts or any(len(text) > TEXT_LIMIT for text in (body, *comments)):
+        note = 0 if self.archive is None else len(_noted("", _waiting_note(self.archive)))
+        if not self.parts or any(len(text) + note > TEXT_LIMIT for text in (body, *comments)):
             raise ValueError("Wysyłka musi mieć części mieszczące się w komentarzu Skrzynki Zgłoszeń.")
+        if self.archive is not None and (not isinstance(self.target, PeriodThread) or len(self.parts) != 1):
+            raise ValueError("Plik do Archiwum okresu idzie z jedną częścią do issue okresu.")
         # Identyfikator wysyłki stoi w znaczniku w jednej linii (``_mark``), a znacznik mieści się w ``_MARK_RESERVE``.
         if not 0 < len(self.run_id) <= _RUN_ID_LIMIT or not self.run_id.isprintable() or " " in self.run_id:
             raise ValueError("Identyfikator wysyłki musi być krótkim napisem bez spacji.")
@@ -331,22 +403,32 @@ class Post:
                 assert_never(self.target)
 
     def to_json(self) -> str:
-        return _queue_text(self, delivered_parts=0)
+        return _queue_text(self, delivered_parts=0, archived=False)
 
 
 @dataclass(frozen=True)
 class _Queued:
-    """Plik kolejki: wysyłka i ile jej części skrzynka już przyjęła (wszystkie: plik czeka tylko na usunięcie)."""
+    """Plik kolejki: wysyłka, ile jej części skrzynka już przyjęła i czy plik do Archiwum już tam jest.
+
+    Wszystkie części bez pliku w Archiwum: Archiwum go nie przyjęło, a plik kolejki czeka tylko na nie (``commented``).
+    Wszystkie części i plik w Archiwum (albo wysyłka bez niego): plik kolejki czeka tylko na usunięcie (``delivered``).
+    """
 
     post: Post
     delivered_parts: int
+    archived: bool
+
+    @property
+    def commented(self) -> bool:
+        return self.delivered_parts == len(self.post.parts)
 
     @property
     def delivered(self) -> bool:
-        return self.delivered_parts == len(self.post.parts)
+        return self.commented and (self.archived or self.post.archive is None)
 
 
-def _queue_text(post: Post, *, delivered_parts: int) -> str:
+def _queue_text(post: Post, *, delivered_parts: int, archived: bool) -> str:
+    archive = post.archive
     return json.dumps(
         {
             "schema_version": SCHEMA_VERSION,
@@ -355,7 +437,17 @@ def _queue_text(post: Post, *, delivered_parts: int) -> str:
             "run_id": post.run_id,
             "header": post.header,
             "parts": list(post.parts),
+            "archive": None
+            if archive is None
+            else {
+                "tag": archive.tag,
+                "title": archive.title,
+                "description": archive.description,
+                "name": archive.name,
+                "text": archive.text,
+            },
             "delivered_parts": delivered_parts,
+            "archived": archived,
         },
         ensure_ascii=False,
         indent=2,
@@ -407,13 +499,14 @@ def _parse(text: str) -> _Queued | None:
     """Granica plików kolejki. ``delivered_parts`` jest opcjonalne: pliki z #273 go nie mają i nic nie dostarczyły.
 
     Pliki od #665 do #840 mogą mieć numer issue Uwagi taty (``issue``) i kolejka go pomija: issue wysyłki znajduje po
-    znaczniku, a Uwaga ma jedną część, więc żadna jej próba nie zostawiła issue bez całej treści.
+    znaczniku, a Uwaga ma jedną część, więc żadna jej próba nie zostawiła issue bez całej treści. Pliki schematu 1 i 2
+    nie mają pliku do Archiwum.
     """
 
     try:
         document = json.loads(text)
         schema = document["schema_version"]
-        if schema == SCHEMA_VERSION:
+        if schema in (SCHEMA_VERSION, _TARGET_SCHEMA):
             target = _target(document["target"], document["target"]["kind"])
         elif schema == _PERIOD_THREAD_SCHEMA:
             target = _target(document["thread"], "period_thread")
@@ -421,19 +514,38 @@ def _parse(text: str) -> _Queued | None:
             return None
         if target is None:
             return None
+        archive = _archive_file(document["archive"]) if schema == SCHEMA_VERSION else None
+        archived = document["archived"] if schema == SCHEMA_VERSION else False
         post = Post(
             target,
             _optional_string(document["period"]),
             _string(document["run_id"]),
             _optional_string(document["header"]),
             tuple(_string(part) for part in document["parts"]),
+            archive,
         )
         delivered_parts = document.get("delivered_parts", 0)
     except (ValueError, KeyError, TypeError):
         return None
-    if type(delivered_parts) is not int or not 0 <= delivered_parts <= len(post.parts):
+    if type(delivered_parts) is not int or not 0 <= delivered_parts <= len(post.parts) or type(archived) is not bool:
         return None
-    return _Queued(post, delivered_parts)
+    return _Queued(post, delivered_parts, archived)
+
+
+def _archive_file(entry: object) -> ArchiveFile | None:
+    """Plik do Archiwum z pliku kolejki; ``None``: wysyłka go nie ma. Inny kształt to ``TypeError`` (plik nieczytelny)."""
+
+    if entry is None:
+        return None
+    if not isinstance(entry, dict):
+        raise TypeError("plik do Archiwum")
+    return ArchiveFile(
+        _string(entry["tag"]),
+        _string(entry["title"]),
+        _string(entry["description"]),
+        _string(entry["name"]),
+        _string(entry["text"]),
+    )
 
 
 def _queued(path: Path) -> _Queued | None:
@@ -503,8 +615,21 @@ def _read_addresses(path: Path) -> dict[tuple[str, Label], str | None]:
 
 @dataclass(frozen=True)
 class Delivered:
+    """Skrzynka ma każdą część wysyłki w issue ``number``; ``archive_waits``: plik do Archiwum jeszcze nie doszedł."""
+
     number: int
     comments: tuple[Commented, ...]
+    archive_waits: bool = False
+
+
+@dataclass(frozen=True)
+class InArchive:
+    """Plik wysyłki jest w Archiwum okresu w tej wersji albo nowszej."""
+
+
+@dataclass(frozen=True)
+class ArchiveWaits:
+    """Archiwum okresu nie przyjęło pliku (odmowa uprawnienia albo treści): plik czeka w kolejce, części idą dalej."""
 
 
 @dataclass(frozen=True)
@@ -552,23 +677,24 @@ def _marks(text: str, post: Post) -> Iterator[tuple[int, str]]:
             yield int(found.group(1)), found.group(2)
 
 
-def _opening(post: Post, version: str) -> tuple[Marked, tuple[Marked, ...]]:
-    """``Post.opening`` ze znacznikami: treść nowego issue i komentarze po niej."""
+def _opening(post: Post, version: str, *, note: str = "") -> tuple[Marked, tuple[Marked, ...]]:
+    """``Post.opening`` ze znacznikami: treść nowego issue i komentarze po niej; ``note`` kończy tekst każdej części."""
 
     body, comments = post.opening()
     first = len(post.parts) - len(comments) + 1
+    opened = 0 if post.header is not None else 1
     return (
-        _marked(body, post, 0 if post.header is not None else 1, version),
-        tuple(_marked(text, post, part, version) for part, text in enumerate(comments, start=first)),
+        _marked(_noted(body, note) if opened else body, post, opened, version),
+        tuple(_marked(_noted(text, note), post, part, version) for part, text in enumerate(comments, start=first)),
     )
 
 
-def _deliver(post: Post, version: str, box: KeyedBox) -> Delivered | Gone | Failure:
-    """Wysyłka w wersji ``version`` do jej celu."""
+def _deliver(post: Post, version: str, box: KeyedBox, *, archive_open: bool) -> Delivered | Gone | Failure:
+    """Wysyłka w wersji ``version`` do jej celu; ``archive_open`` ``False``: Archiwum odmówiło w tym przejściu."""
 
     match post.target:
         case PeriodThread() as thread:
-            return _deliver_to_period(post, version, thread, box)
+            return _deliver_to_period(post, version, thread, box, archive_open=archive_open)
         case NewIssue() as issue:
             return _deliver_new_issue(post, version, issue, box)
         case KnownIssue() as known:
@@ -636,11 +762,15 @@ def _deliver_to_known(post: Post, version: str, known: KnownIssue, box: KeyedBox
     return _settle(post, version, _issue(found, known.number), _opening(post, version)[1], box)
 
 
-def _deliver_to_period(post: Post, version: str, thread: PeriodThread, box: KeyedBox) -> Delivered | Failure:
+def _deliver_to_period(
+    post: Post, version: str, thread: PeriodThread, box: KeyedBox, *, archive_open: bool
+) -> Delivered | Failure:
     """Każda część jako komentarz do issue okresu, a bez niego nowe issue z pierwszą częścią i komentarze z resztą.
 
     Issue okresu jest szukane przy każdej próbie, więc usunięte albo zamknięte issue nie blokuje kolejki. Pierwsza
-    porażka kończy wysyłkę; następna próba dopisuje tylko części, których w issue nie ma (``_settle``).
+    porażka kończy wysyłkę; następna próba dopisuje tylko części, których w issue nie ma (``_settle``). Plik do Archiwum
+    idzie przed częściami (``_deliver_archive``), a w znalezionym issue dopiero wtedy, gdy nie ma w nim nowszej wersji tej
+    wysyłki; plik, którego Archiwum nie przyjęło, dopisuje do części ``_waiting_note``.
     """
 
     issues = box.labelled_issues(thread.label, include_closed=thread.closed == "reuse")
@@ -648,13 +778,86 @@ def _deliver_to_period(post: Post, version: str, thread: PeriodThread, box: Keye
         return issues
     found = newest_with_line(issues, thread.line)
     if found is None:
-        (_, body), comments = _opening(post, version)
+        step = _deliver_archive(post, version, box, archive_open=archive_open)
+        if isinstance(step, Unreachable | NoKey):
+            return step
+        (_, body), comments = _opening(post, version, note=_note(post, step))
         opened = box.open_issue(thread.label, thread.title, body)
         if not isinstance(opened, Sent):
             return opened
-        return _comment_all(opened.number, comments, box)
-    parts = tuple(_marked(text, post, part, version) for part, text in enumerate(post.parts, start=1))
-    return _settle(post, version, _issue(issues, found), parts, box)
+        return _archive_waits(_comment_all(opened.number, comments, box), step)
+    issue = _issue(issues, found)
+    seen = _seen(post, issue, box)
+    if not isinstance(seen, _Seen):
+        return seen
+    if seen.newest > version:
+        return _newer(post, issue.number, seen, range(1, len(post.parts) + 1))
+    step = _deliver_archive(post, version, box, archive_open=archive_open)
+    if isinstance(step, Unreachable | NoKey):
+        return step
+    note = _note(post, step)
+    parts = tuple(_marked(_noted(text, note), post, part, version) for part, text in enumerate(post.parts, start=1))
+    return _archive_waits(_put_all(post, version, issue.number, parts, seen, box), step)
+
+
+def _note(post: Post, step: InArchive | ArchiveWaits) -> str:
+    return _waiting_note(post.archive) if isinstance(step, ArchiveWaits) and post.archive is not None else ""
+
+
+def _archive_waits(outcome: Delivered | Failure, step: InArchive | ArchiveWaits) -> Delivered | Failure:
+    return replace(outcome, archive_waits=True) if isinstance(outcome, Delivered) and isinstance(step, ArchiveWaits) else outcome
+
+
+def _deliver_archive(
+    post: Post, version: str, box: KeyedBox, *, archive_open: bool
+) -> InArchive | ArchiveWaits | Unreachable | NoKey:
+    """Plik wysyłki w Archiwum okresu w wersji ``version``, dokładnie raz; wysyłka bez pliku jest już w Archiwum.
+
+    Archiwum z tagiem kolejka znajduje (``archive``) albo zakłada (``open_archive``). Plik tej nazwy w tej wersji albo
+    nowszej (z etykiety, ``_asset_version``) zostaje; plik starszej wersji albo urwany w trakcie wysyłki ustępuje
+    (``remove``), a potem idzie ten (``upload``). Odmowa Archiwum (``Refused``: brak uprawnienia, ``Rejected``: treść)
+    to ``ArchiveWaits``; ``archive_open`` ``False`` daje je bez pytania Skrzynki.
+    """
+
+    archive = post.archive
+    if archive is None:
+        return InArchive()
+    if not archive_open:
+        return ArchiveWaits()
+    listed = box.archive(archive.tag)
+    found = box.open_archive(archive.tag, archive.title, archive.description) if listed is None else listed
+    if isinstance(found, Refused | Rejected):
+        return ArchiveWaits()
+    if not isinstance(found, Archive):
+        return found
+    present = next((asset for asset in found.assets if asset.name == archive.packed_name), None)
+    if present is not None:
+        seen = _asset_version(present, archive)
+        if present.uploaded and seen is not None and seen >= version:
+            return InArchive()
+        removed = box.remove(present.id)
+        if isinstance(removed, Refused):
+            return ArchiveWaits()
+        if not isinstance(removed, Removed):
+            return removed
+    sent = box.upload(found.id, archive.packed_name, _asset_label(archive, version), archive.packed())
+    if isinstance(sent, Refused | Rejected):
+        return ArchiveWaits()
+    return InArchive() if isinstance(sent, Asset) else sent
+
+
+def _asset_label(archive: ArchiveFile, version: str) -> str:
+    """Etykieta pliku w Archiwum: jego nazwa i wersja wysyłki (``_version``), jak znacznik wysyłki w komentarzu."""
+
+    return f"{archive.packed_name} (wersja {version})"
+
+
+def _asset_version(asset: Asset, archive: ArchiveFile) -> str | None:
+    """Wersja wysyłki z etykiety pliku (``_asset_label``); etykieta w innej postaci to ``None``."""
+
+    start, end = f"{archive.packed_name} (wersja ", ")"
+    seen = asset.label.removeprefix(start).removesuffix(end)
+    return seen if asset.label == f"{start}{seen}{end}" and seen and " " not in seen else None
 
 
 def _issue(issues: tuple[Issue, ...], number: int) -> Issue:
@@ -673,16 +876,18 @@ def _comment_all(number: int, comments: Sequence[Marked], box: KeyedBox) -> Deli
     return Delivered(number, tuple(delivered))
 
 
-def _settle(post: Post, version: str, issue: Issue, comments: Sequence[Marked], box: KeyedBox) -> Delivered | Failure:
-    """Części ``comments`` w istniejącym issue, każda dokładnie raz, z komentarzami issue przeczytanymi przed wysłaniem.
+@dataclass(frozen=True)
+class _Seen:
+    """Znaczniki wysyłki w znalezionym issue: części w treści z wersją, pierwszy komentarz każdej części z wersją i
+    najnowsza wersja tej wysyłki w issue (pusta, gdy żadnej)."""
 
-    Issue, które ma znacznik tej wysyłki w nowszej wersji (w treści albo w komentarzu), od tej wersji nie dostaje
-    niczego: starszy plik, który doszedł po nowszym, nie dopisuje, nie zmienia i nie opróżnia żadnej części, także gdy
-    ma ich więcej niż nowsza wersja. Inaczej część ze znacznikiem w treści issue albo w komentarzu w tej wersji już
-    jest; komentarz części w starszej wersji dostaje nowy tekst; reszta to nowe komentarze po kolei. Komentarz części,
-    której ta wersja nie ma (nowsza wersja ma mniej części), dostaje ``_RETIRED``, chyba że dostał go już od tej wersji
-    (ponowienie po zgubionej odpowiedzi). Pierwsza porażka kończy wysyłkę.
-    """
+    in_body: dict[int, str]
+    sent: dict[int, tuple[str, Comment]]
+    newest: str
+
+
+def _seen(post: Post, issue: Issue, box: KeyedBox) -> _Seen | Failure:
+    """Komentarze ``issue`` przeczytane przed wysłaniem i znaczniki wysyłki ``post`` w nich i w treści issue."""
 
     found = box.comments(issue.number)
     if isinstance(found, Refused | Unreachable | NoKey):
@@ -694,23 +899,55 @@ def _settle(post: Post, version: str, issue: Issue, comments: Sequence[Marked], 
         for part, seen in _marks(comment.body, post):
             sent.setdefault(part, (seen, comment))
             newest = max(newest, seen)
-    if newest > version:
-        return Delivered(issue.number, tuple(_kept(sent[part][1]) for part, _ in comments if part in sent))
+    return _Seen(in_body, sent, newest)
+
+
+def _settle(post: Post, version: str, issue: Issue, comments: Sequence[Marked], box: KeyedBox) -> Delivered | Failure:
+    """Części ``comments`` w istniejącym issue, każda dokładnie raz, z komentarzami issue przeczytanymi przed wysłaniem.
+
+    Issue, które ma znacznik tej wysyłki w nowszej wersji (w treści albo w komentarzu), od tej wersji nie dostaje
+    niczego: starszy plik, który doszedł po nowszym, nie dopisuje, nie zmienia i nie opróżnia żadnej części, także gdy
+    ma ich więcej niż nowsza wersja. Inaczej części idą przez ``_put_all``.
+    """
+
+    seen = _seen(post, issue, box)
+    if not isinstance(seen, _Seen):
+        return seen
+    if seen.newest > version:
+        return _newer(post, issue.number, seen, (part for part, _ in comments))
+    return _put_all(post, version, issue.number, comments, seen, box)
+
+
+def _newer(post: Post, number: int, seen: _Seen, parts: Iterable[int]) -> Delivered:
+    """Wysyłka, której issue ma już nowszą wersję: nic nie idzie, a wynik to komentarze części, które tam są."""
+
+    return Delivered(number, tuple(_kept(seen.sent[part][1]) for part in parts if part in seen.sent))
+
+
+def _put_all(
+    post: Post, version: str, number: int, comments: Sequence[Marked], seen: _Seen, box: KeyedBox
+) -> Delivered | Failure:
+    """Część ze znacznikiem w treści issue albo w komentarzu w tej wersji już jest; komentarz części w starszej wersji
+    dostaje nowy tekst; reszta to nowe komentarze po kolei. Komentarz części, której ta wersja nie ma (nowsza wersja ma
+    mniej części), dostaje ``_RETIRED``, chyba że dostał go już od tej wersji (ponowienie po zgubionej odpowiedzi).
+    Pierwsza porażka kończy wysyłkę.
+    """
+
     delivered: list[Commented] = []
     for part, text in comments:
-        if part in in_body:
+        if part in seen.in_body:
             continue
-        answer = _put(issue.number, sent.get(part), text, version, box)
+        answer = _put(number, seen.sent.get(part), text, version, box)
         if not isinstance(answer, Commented):
             return answer
         delivered.append(answer)
-    wanted = {part for part, _ in comments} | in_body.keys()
-    for part, (seen, comment) in sorted(sent.items()):
-        if part not in wanted and seen < version:
+    wanted = {part for part, _ in comments} | seen.in_body.keys()
+    for part, (was, comment) in sorted(seen.sent.items()):
+        if part not in wanted and was < version:
             answer = box.edit_comment(comment.id, _marked(_RETIRED, post, part, version)[1])
             if not isinstance(answer, Commented):
                 return answer
-    return Delivered(issue.number, tuple(delivered))
+    return Delivered(number, tuple(delivered))
 
 
 def _put(number: int, sent: tuple[str, Comment] | None, text: str, version: str, box: KeyedBox) -> Commented | Failure:
@@ -788,9 +1025,9 @@ class Outbox:
     drugiej, nie wysyła nic, a druga po swoim przejściu robi następne. Kolejka, która zastanie blokadę folderu u kolejki
     innego procesu (``_folder_lock``), też nie wysyła nic.
 
-    Przejście, które stanęło na przyczynie dla całej kolejki, pominęło plik, którego nie dało się odczytać, albo
-    zastało blokadę folderu u innego procesu, nastawia jedno budzenie ``clock`` za ``RETRY_S``, chyba że już jest
-    nastawione; budzenie rusza wysyłkę w tle. Uszkodzona treść pliku, odrzucona treść i wysyłka, którą zatrzymał
+    Przejście, które stanęło na przyczynie dla całej kolejki, pominęło plik, którego nie dało się odczytać, zastało
+    blokadę folderu u innego procesu albo odmowę Archiwum okresu, nastawia jedno budzenie ``clock`` za ``RETRY_S``,
+    chyba że już jest nastawione; budzenie rusza wysyłkę w tle. Uszkodzona treść pliku, odrzucona treść i wysyłka, którą zatrzymał
     ``Listener.prepare``, budzenia nie nastawiają: ponowienie im nie pomoże. Linia „skrzynka-czeka” trafia do dziennika
     tylko przy zmianie przyczyny (zeruje ją każde dostarczenie i przejście do końca), bo budzenie co minutę zapełniłoby
     ostatnie wpisy, które niesie Diagnoza.
@@ -823,11 +1060,13 @@ class Outbox:
         self._stopped_on: WaitingCause | None = None  # tylko wątek kolejki
         self._read_failed = False  # tylko wątek kolejki: ostatnie przejście pominęło plik, którego nie dało się odczytać
         self._locked_out = False  # tylko wątek kolejki: ostatnie przejście zastało blokadę folderu u innego procesu
+        self._archive_refused = False  # tylko wątek kolejki: Archiwum okresu odmówiło w ostatnim przejściu
         self._first_comments: dict[tuple[str, Label], str | None] = {} if addresses is None else _read_addresses(addresses)
         self._undeleted: set[str] = set()  # wysłane w tej pracy Centrum, usunięcie się nie udało i jest w dzienniku
         self._unreadable: set[str] = set()  # nieczytelne, już w dzienniku tej pracy Centrum
         self._rejected: set[str] = set()  # treść odrzucona przez skrzynkę, w dzienniku; następna próba po starcie
         self._rejected_posts: set[tuple[str, Label]] = set()  # run_id i etykieta plików z _rejected
+        self._archive_logged: set[str] = set()  # pliki czekające na Archiwum, już w dzienniku tej pracy Centrum
 
     def resume(self) -> None:
         """Przy starcie Centrum: usuwa pozostałości urwanego zapisu i wysyła w tle wszystko, co czeka.
@@ -931,7 +1170,8 @@ class Outbox:
             with self._changed:
                 if not self._again:
                     self._draining = False
-                    if (self._stopped_on is not None or self._read_failed or self._locked_out) and not self._retry_armed:
+                    waiting = self._stopped_on is not None or self._read_failed or self._archive_refused
+                    if (waiting or self._locked_out) and not self._retry_armed:
                         self._retry_armed = True
                         self._clock.after(RETRY_S, self._woken)
                     self._changed.notify_all()
@@ -946,11 +1186,13 @@ class Outbox:
     def _send_all(self) -> None:
         """Pliki kolejki po nazwie (czas utworzenia); porażka skrzynki zatrzymuje przejście albo pomija plik (``_waiting``).
 
-        ``_stopped_on`` to potem przyczyna, na której przejście stanęło, albo ``None``, a ``_read_failed`` mówi, czy
-        przejście pominęło plik, którego nie dało się odczytać.
+        ``_stopped_on`` to potem przyczyna, na której przejście stanęło, albo ``None``, ``_read_failed`` mówi, czy
+        przejście pominęło plik, którego nie dało się odczytać, a ``_archive_refused``, czy Archiwum okresu odmówiło.
+        Plik, którego części już są w Skrzynce (``_Queued.commented``), czeka tylko na Archiwum i idzie bez issue.
         """
 
         self._read_failed = False
+        self._archive_refused = False
         for path in sorted(self._directory.glob("*.json")):
             if path.name in self._undeleted:
                 self._remove(path)
@@ -972,7 +1214,19 @@ class Outbox:
             if post is None:
                 continue
             label, period = post.target.label, post.period
-            outcome = _deliver(post, _version(path), self._box)
+            if queued.commented:
+                step = _deliver_archive(post, _version(path), self._box, archive_open=not self._archive_refused)
+                if isinstance(step, Unreachable | NoKey):
+                    self._stop(label, period, _waiting(step)[0])
+                    return
+                if isinstance(step, ArchiveWaits):
+                    self._archive_waits(path, post)
+                    continue
+                self._stopped_on = None
+                self._log.box_post_archived(label=label, period=period)
+                self._mark_delivered(path, post)
+                continue
+            outcome = _deliver(post, _version(path), self._box, archive_open=not self._archive_refused)
             if isinstance(outcome, Gone):
                 self._log.box_post_dropped(label=label, file=path.name, number=outcome.number)
                 self._remove(path)
@@ -980,9 +1234,7 @@ class Outbox:
             if not isinstance(outcome, Delivered):
                 cause, then = _waiting(outcome)
                 if then == "stop":
-                    if cause != self._stopped_on:
-                        self._log.box_post_waiting(label=label, period=period, cause=cause)
-                    self._stopped_on = cause
+                    self._stop(label, period, cause)
                     return
                 self._rejected.add(path.name)
                 with self._lock:
@@ -998,10 +1250,35 @@ class Outbox:
                 self._first_comments[post.run_id, label] = outcome.comments[0].url if outcome.comments else None
                 self._changed.notify_all()
             self._remember_address(post, outcome)
-            with suppress(OSError):  # bez znacznika następna próba znajdzie każdą część w skrzynce (_settle)
-                replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts)))
-            self._remove(path)
+            if outcome.archive_waits:
+                self._archive_waits(path, post)
+                with suppress(OSError):  # bez znacznika części następna próba znajdzie je w skrzynce (_settle)
+                    replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts), archived=False))
+                continue
+            self._mark_delivered(path, post)
         self._stopped_on = None
+
+    def _stop(self, label: Label, period: str | None, cause: WaitingCause) -> None:
+        """Przejście staje na przyczynie dla całej kolejki; linia dziennika tylko przy zmianie przyczyny."""
+
+        if cause != self._stopped_on:
+            self._log.box_post_waiting(label=label, period=period, cause=cause)
+        self._stopped_on = cause
+
+    def _archive_waits(self, path: Path, post: Post) -> None:
+        """Archiwum nie przyjęło pliku wysyłki: reszta przejścia go nie pyta, a dziennik dostaje linię raz na plik."""
+
+        self._archive_refused = True
+        if path.name not in self._archive_logged:
+            self._archive_logged.add(path.name)
+            self._log.box_post_waiting(label=post.target.label, period=post.period, cause="odmowa-archiwum", file=path.name)
+
+    def _mark_delivered(self, path: Path, post: Post) -> None:
+        """Znacznik dostarczenia całej wysyłki, potem usunięcie pliku kolejki."""
+
+        with suppress(OSError):  # bez znacznika następna próba znajdzie każdą część w skrzynce (_settle) i plik w Archiwum
+            replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts), archived=True))
+        self._remove(path)
 
     def _remember_address(self, post: Post, outcome: Delivered) -> None:
         """Dopisuje adres pierwszego komentarza do pliku ``addresses``; nieudany zapis to tylko wpis w dzienniku."""

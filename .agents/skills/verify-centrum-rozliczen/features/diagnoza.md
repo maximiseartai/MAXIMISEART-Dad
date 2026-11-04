@@ -15,8 +15,9 @@ fails itself (a nieoczekiwany wyjątek inside the Diagnoza) is `nie sprawdzono`
 in its place and the rest still runs, so the Diagnoza always ends with an
 explanation and `Wyślij do Maksa`. Dad sees nothing more, but Centrum adds each
 Diagnoza with a new result to the Logi Uruchomienia of its Uruchomienie: the
-file gets the field `diagnosis`, and the queue of the skrzynka Zgłoszeń one more
-comment with the whole Logi. The same explanation and every check with the
+file gets the field `diagnosis`, and the queue of the skrzynka Zgłoszeń replaces
+the file in the Archiwum Logów okresu and changes the comment of its Uruchomienie
+(#840, #844). The same explanation and every check with the
 same state, code and (unless it passed) detail is the same result, whatever the
 time, so the automatic Diagnoza at every showing of the card adds nothing.
 

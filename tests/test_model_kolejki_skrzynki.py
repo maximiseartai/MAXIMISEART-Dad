@@ -266,21 +266,27 @@ def test_rozjazd_liczy_w_plikach_procesu_centrum_tylko_definicje_procesow_centru
         assert found == f"kod procesów Centrum zmienił się od {sync[:8]}: {moved}. Sprawdź Start, Zamknij i KoniecProcesu."
 
 
-# Dwie najdłuższe jednostki sprawdzenia kodu na początku ``UNITS``; atrapa sprawdzenia wypisuje pierwszy zakres jednostki.
-LONG = ["explore_outbox.py --scope watek-okresu", "explore_outbox.py --scope diagnoza"]
+# Jednostki sprawdzenia kodu i modelu w kolejności ``UNITS``; atrapa sprawdzenia wypisuje pierwszy zakres jednostki.
+ALL = [
+    "explore_outbox.py --scope archiwum",
+    "explore_outbox.py --scope watek-okresu",
+    "explore_outbox.py --scope diagnoza",
+    "explore_outbox.py --scope zgloszenie",
+    "sprawdz_model_kolejki.py",
+]
 
 
 @pytest.mark.parametrize(
     ("part", "failing", "ran", "last", "returncode"),
     [
-        ("", "", [*LONG, "explore_outbox.py --scope zgloszenie", "sprawdz_model_kolejki.py"], "KOLEJKA SKRZYNKI OK", 0),
-        ("", "sprawdz_model_kolejki.py", [*LONG, "explore_outbox.py --scope zgloszenie", "sprawdz_model_kolejki.py"], "KOLEJKA SKRZYNKI: PADŁO sprawdz_model_kolejki.py", 1),
-        ("", "explore_outbox.py --scope watek-okresu", [*LONG, "explore_outbox.py --scope zgloszenie", "sprawdz_model_kolejki.py"], "KOLEJKA SKRZYNKI: PADŁO explore_outbox.py --scope watek-okresu", 1),
-        ("2/2", "", ["explore_outbox.py --scope zgloszenie", "sprawdz_model_kolejki.py"], "KOLEJKA SKRZYNKI OK", 0),
-        ("1/2", "", LONG, "KOLEJKA SKRZYNKI OK", 0),
-        ("5/5", "", [], "KOLEJKA SKRZYNKI: PADŁO (MUTACJE_CZESC to K/N z 1 <= K <= N <= 4, nie '5/5')", 1),
+        ("", "", ALL, "KOLEJKA SKRZYNKI OK", 0),
+        ("", "sprawdz_model_kolejki.py", ALL, "KOLEJKA SKRZYNKI: PADŁO sprawdz_model_kolejki.py", 1),
+        ("", "explore_outbox.py --scope watek-okresu", ALL, "KOLEJKA SKRZYNKI: PADŁO explore_outbox.py --scope watek-okresu", 1),
+        ("3/3", "", ALL[3:], "KOLEJKA SKRZYNKI OK", 0),
+        ("1/3", "", ALL[:1], "KOLEJKA SKRZYNKI OK", 0),
+        ("6/6", "", [], "KOLEJKA SKRZYNKI: PADŁO (MUTACJE_CZESC to K/N z 1 <= K <= N <= 5, nie '6/6')", 1),
     ],
-    ids=["calosc", "model-pada", "zakres-pada", "czesc-2-z-2", "czesc-1-z-2", "zla-czesc"],
+    ids=["calosc", "model-pada", "zakres-pada", "czesc-3-z-3", "czesc-1-z-3", "zla-czesc"],
 )
 def test_podstawa_ci_uruchamia_jednostki_swojej_czesci_do_konca_i_pada_gdy_padla_ktoras(
     tmp_path: Path, part: str, failing: str, ran: list[str], last: str, returncode: int

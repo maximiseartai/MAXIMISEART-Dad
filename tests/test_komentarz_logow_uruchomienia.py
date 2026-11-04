@@ -1,7 +1,8 @@
-"""Komentarz Logów Uruchomienia w Skrzynce Zgłoszeń (#320): to, czego testy przez HTTP nie osiągną tanio.
+"""Komentarz Logów Uruchomienia w Skrzynce Zgłoszeń (#320, #844): to, czego testy przez HTTP nie osiągną tanio.
 
-Logi ponad limit komentarza GitHuba wymagałyby przez HTTP setek Komunikatów, więc podział sprawdza wysyłka
-zbudowana wprost z rekordu (``logi_post``): jej części to dokładnie komentarze, które kolejka dopisuje do issue.
+Logi ponad limit komentarza GitHuba wymagałyby przez HTTP setek Komunikatów, więc to, że i tak idą jednym komentarzem
+z pełnymi Logami w Archiwum Logów okresu, sprawdza wysyłka zbudowana wprost z rekordu (``logi_post``): jej części to
+dokładnie komentarze, które kolejka dopisuje do issue, a jej plik to plik w Archiwum.
 Podsumowanie ma tu tylko przypadki bez taniej drogi przez HTTP z fikstur Przebiegu: nazwa Przygotowania,
 powtórki kodów, powtórzone Zatrzymanie, Zatrzymanie po odmowie w Decyzji taty, czas w sekundach albo nieznany, brak commitu i sprawdzenia Diagnozy,
 które nie przeszły albo których nie sprawdzono. Resztę sprawdza ``test_centrum_logi_w_skrzynce.py``.
@@ -9,17 +10,16 @@ które nie przeszły albo których nie sprawdzono. Resztę sprawdza ``test_centr
 
 from __future__ import annotations
 
-import re
+import gzip
 from typing import Any
 
 import pytest
 
-from rozliczenia.centrum.report_box import COMMENT_LIMIT
+from rozliczenia.centrum.report_box import COMMENT_LIMIT, REPOSITORY
 from rozliczenia.centrum.run_logs import RunLog, logi_post, summary_markdown
 
 RUN_ID = "627b45fe219e4274b722953c34d4af54"
 STOP = {"kind": "stop", "code": "ZLA_KONFIGURACJA_WYKONAWCOW", "what": "Co.", "where": "Gdzie.", "action": "Zrób."}
-JSON_PART = re.compile(r"\n````json\n(.*)\n````\n\n</details>\n\Z", re.DOTALL)
 
 
 def warning(code: str, what: str = "Co.") -> dict[str, str]:
@@ -135,7 +135,7 @@ def test_podsumowanie_nazywa_wynik_sposob_zakonczenia_i_kody_komunikatow(
     assert [line for line in lines if line not in summary] == []
 
 
-def test_logi_ponad_limit_komentarza_dziela_sie_na_czesci_ktore_razem_daja_caly_json() -> None:
+def test_logi_ponad_limit_komentarza_ida_jednym_komentarzem_a_cale_w_pliku_archiwum_logow_okresu() -> None:
     logs = record(
         result="WYMAGA_SPRAWDZENIA",
         messages=[warning("BRAK_MAPOWANIA", f"Wiersz {row}: {'ż' * 300}") for row in range(600)],
@@ -144,17 +144,11 @@ def test_logi_ponad_limit_komentarza_dziela_sie_na_czesci_ktore_razem_daja_caly_
 
     post = logi_post(logs)
 
-    count = len(post.parts)
-    assert count >= 4
-    assert post.parts[0].startswith(summary_markdown(logs))
-    assert [f"Logi JSON, część {number}/{count}</summary>" in comment for number, comment in enumerate(post.parts, 1)] == [
-        True
-    ] * count
-    assert all(RUN_ID in comment.split("<details>")[0] for comment in post.parts)
-    assert sent_json(post.parts) == logs.text
-
-
-def sent_json(comments: tuple[str, ...]) -> str:
-    parts = [JSON_PART.search(comment) for comment in comments]
-    assert all(parts), comments
-    return "".join(part.group(1) for part in parts if part)
+    name = f"20261023T204720Z-settlement-{RUN_ID}.json.gz"
+    link = f"https://github.com/{REPOSITORY}/releases/download/logi-08_14_09_2026/{name}"
+    [comment] = post.parts
+    assert comment == f"{summary_markdown(logs)}\n"
+    assert comment.splitlines()[-1] == f"- Pełne Logi: [{name}]({link})"
+    assert post.archive is not None
+    assert (post.archive.tag, post.archive.packed_name, post.archive.link) == ("logi-08_14_09_2026", name, link)
+    assert gzip.decompress(post.archive.packed()).decode("utf-8") == logs.text

@@ -642,7 +642,7 @@ def test_zapis_urwany_przez_utrate_zasilania_znika_przy_starcie_i_nie_jest_wysyl
         "{",
         "[]",
         '{"schema_version": 2}',
-        post(["x"]).to_json().replace('"schema_version": 2', '"schema_version": 3'),
+        post(["x"]).to_json().replace('"schema_version": 3', '"schema_version": 4'),
         post(["x"]).to_json().replace('"kontrola-ilosci"', '"inna-etykieta"'),
     ],
     ids=["urwany", "nie-obiekt", "bez-celu", "nowszy-schemat", "nieznana-etykieta"],

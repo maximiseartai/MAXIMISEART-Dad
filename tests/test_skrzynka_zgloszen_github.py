@@ -5,15 +5,23 @@
 
 from __future__ import annotations
 
+import gzip
 import http.client
+import itertools
 import json
+import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
 from rozliczenia.centrum.report_box import (
+    Archive,
+    Asset,
     Closure,
     Comment,
     CommentOutcome,
@@ -28,14 +36,18 @@ from rozliczenia.centrum.report_box import (
     Label,
     Refused,
     Rejected,
+    Removed,
     SendOutcome,
     Sent,
     Unreachable,
 )
 from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
-from rozliczenia.centrum.outbox import fingerprint_line
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.outbox import ArchiveFile, Outbox, PeriodThread, Post, fingerprint_line
 
 from tests.fixtures.clock import ManualClock
+from tests.fixtures.potomne import wait_for
+from tests.fixtures.sluchacz_kolejki import QueueListener
 
 TITLE = "BRAK_WZORCA: Nie znaleziono wzorca."
 BODY = "## Komunikat\n"
@@ -457,6 +469,10 @@ OPERATIONS: dict[str, Callable[[GitHubReportBox, str], object]] = {
     "edit_comment": lambda box, key: box.edit_comment(901, BODY, key=key),
     "comments": lambda box, key: box.comments(12, key=key),
     "labelled_issues": lambda box, key: box.labelled_issues("kontrola-ilosci", include_closed=True, key=key),
+    "archive": lambda box, key: box.archive("logi-08_14_09_2026", key=key),
+    "open_archive": lambda box, key: box.open_archive("logi-08_14_09_2026", "Logi", "Opis", key=key),
+    "upload": lambda box, key: box.upload(9, "logi.json.gz", "logi.json.gz (wersja 1)", b"\x1f\x8b", key=key),
+    "remove": lambda box, key: box.remove(77, key=key),
 }
 
 
@@ -468,7 +484,7 @@ TOO_LONG = (
 
 
 @pytest.mark.parametrize("status", [400, 413, 422])
-@pytest.mark.parametrize("operation", ["open_issue", "comment", "edit_comment"])
+@pytest.mark.parametrize("operation", ["open_issue", "comment", "edit_comment", "open_archive", "upload"])
 def test_odmowa_tresci_wysylki_to_odmowa_tej_wysylki_a_nie_brak_sieci(operation: str, status: int) -> None:
     transport = ScriptedTransport(lambda: HttpResponse(status, TOO_LONG))
 
@@ -514,3 +530,255 @@ def test_403_bez_limitu_zapytan_to_odmowa_klucza(operation: str) -> None:
     outcome = OPERATIONS[operation](GitHubReportBox(transport=transport), KEY)
 
     assert outcome == Refused()
+
+
+RELEASES = "https://api.github.com/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases"
+UPLOADS = "https://uploads.github.com/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases"
+TAG = "logi-08_14_09_2026"
+ASSET = "20261023T204720Z-settlement-627b45fe219e4274b722953c34d4af54.json.gz"
+
+
+def test_archiwum_okresu_to_release_z_tagiem_z_listy_wydan_repozytorium_z_jego_plikami() -> None:
+    transport = ScriptedTransport(
+        pages(
+            [{"id": 4, "tag_name": "logi-01_07_09_2026"}, {"id": 5, "tag_name": TAG}, {"tag_name": "bez-id"}],
+            [
+                {"id": 11, "name": ASSET, "label": f"{ASSET} (wersja 7)", "state": "uploaded"},
+                {"id": 12, "name": "urwany.json.gz", "label": None, "state": "starter"},
+                {"name": "bez-id.json.gz"},
+            ],
+        )
+    )
+
+    outcome = GitHubReportBox(transport=transport).archive(TAG, key=KEY)
+
+    assert outcome == Archive(5, (Asset(11, ASSET, f"{ASSET} (wersja 7)", True), Asset(12, "urwany.json.gz", "", False)))
+    assert [(request.method, request.url, request.body) for request in transport.requests] == [
+        ("GET", f"{RELEASES}?per_page=100&page=1", None),
+        ("GET", f"{RELEASES}/5/assets?per_page=100&page=1", None),
+    ]
+    assert all(request.headers["Authorization"] == f"Bearer {KEY}" for request in transport.requests)
+
+
+def test_bez_release_z_tagiem_okresu_archiwum_jeszcze_nie_ma() -> None:
+    transport = ScriptedTransport(pages([{"id": 4, "tag_name": "logi-01_07_09_2026"}]))
+
+    assert GitHubReportBox(transport=transport).archive(TAG, key=KEY) is None
+    assert len(transport.requests) == 1
+
+
+def test_brak_sieci_przy_plikach_archiwum_to_skrzynka_nieosiagalna() -> None:
+    answers = iter([lambda: HttpResponse(200, json.dumps([{"id": 5, "tag_name": TAG}]).encode()), no_network])
+
+    outcome = GitHubReportBox(transport=ScriptedTransport(lambda: next(answers)())).archive(TAG, key=KEY)
+
+    assert outcome == Unreachable()
+
+
+def test_zalozone_archiwum_to_release_z_tagiem_ktory_nie_jest_najnowszym_wydaniem() -> None:
+    transport = ScriptedTransport(lambda: HttpResponse(201, json.dumps({"id": 9, "tag_name": TAG}).encode()))
+
+    outcome = GitHubReportBox(transport=transport).open_archive(TAG, "Logi Uruchomień", "Opis.", key=KEY)
+
+    assert outcome == Archive(9, ())
+    [request] = transport.requests
+    assert (request.method, request.url, request.headers["Content-Type"]) == ("POST", RELEASES, "application/json")
+    assert request.body is not None
+    assert json.loads(request.body) == {
+        "tag_name": TAG,
+        "name": "Logi Uruchomień",
+        "body": "Opis.",
+        "make_latest": "false",
+    }
+
+
+def test_plik_idzie_na_adres_wysylki_plikow_z_nazwa_i_etykieta_a_wynik_to_plik_archiwum() -> None:
+    label = f"{ASSET} (wersja 20261023T204720846240Z-0001)"
+    transport = ScriptedTransport(
+        lambda: HttpResponse(201, json.dumps({"id": 77, "name": ASSET, "label": label, "state": "uploaded"}).encode())
+    )
+
+    outcome = GitHubReportBox(transport=transport).upload(9, ASSET, label, b"\x1f\x8bspakowane", key=KEY)
+
+    assert outcome == Asset(77, ASSET, label, True)
+    [request] = transport.requests
+    address = urlsplit(request.url)
+    assert (request.method, f"{address.scheme}://{address.netloc}{address.path}") == ("POST", f"{UPLOADS}/9/assets")
+    assert parse_qs(address.query) == {"name": [ASSET], "label": [label]}
+    assert (request.body, request.headers["Content-Type"]) == (b"\x1f\x8bspakowane", "application/octet-stream")
+
+
+def test_usuniety_plik_archiwum_to_odpowiedz_bez_tresci() -> None:
+    transport = ScriptedTransport(lambda: HttpResponse(204, b""))
+
+    outcome = GitHubReportBox(transport=transport).remove(77, key=KEY)
+
+    assert outcome == Removed()
+    [request] = transport.requests
+    assert (request.method, request.url, request.body) == ("DELETE", f"{RELEASES}/assets/77", None)
+
+
+@pytest.mark.parametrize(
+    ("operation", "answer"),
+    [
+        ("open_archive", lambda: HttpResponse(201, json.dumps({"tag_name": TAG}).encode())),
+        ("open_archive", lambda: HttpResponse(200, json.dumps({"id": 9}).encode())),
+        ("upload", lambda: HttpResponse(201, json.dumps({"id": 77}).encode())),
+        ("upload", lambda: HttpResponse(200, json.dumps({"id": 77, "name": ASSET}).encode())),
+        ("remove", lambda: HttpResponse(200, b"{}")),
+        ("archive", lambda: HttpResponse(200, b'{"message": "to nie jest lista"}')),
+    ],
+    ids=["release-bez-id", "release-nie-201", "plik-bez-nazwy", "plik-nie-201", "usuniecie-nie-204", "lista-nie-lista"],
+)
+def test_niezwykla_odpowiedz_przy_archiwum_to_skrzynka_nieosiagalna(
+    operation: str, answer: Callable[[], HttpResponse]
+) -> None:
+    outcome = OPERATIONS[operation](GitHubReportBox(transport=ScriptedTransport(answer)), KEY)
+
+    assert outcome == Unreachable()
+
+
+@dataclass
+class GitHubOnTransport:
+    """GitHub REST dla Skrzynki w pamięci, za transportem HTTP: issue z komentarzami i Release'y z plikami.
+
+    Zna tylko zapytania, które wysyła ``GitHubReportBox``, i jak GitHub nie trzyma dwóch plików jednej nazwy w jednym
+    Release (422). ``refuse_releases``: klucz bez uprawnienia do treści repozytorium (403 przy każdym zapytaniu o
+    Release'y i ich pliki).
+    """
+
+    issues: dict[int, dict[str, Any]] = field(default_factory=dict)
+    releases: dict[int, dict[str, Any]] = field(default_factory=dict)
+    assets: dict[int, dict[str, Any]] = field(default_factory=dict)
+    data: dict[int, bytes] = field(default_factory=dict)
+    refuse_releases: bool = False
+    requests: list[tuple[str, str]] = field(default_factory=list)
+    _ids: Iterator[int] = field(default_factory=lambda: itertools.count(101))
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        address = urlsplit(request.url)
+        path, query = address.path.removeprefix("/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia"), parse_qs(address.query)
+        self.requests.append((request.method, path))
+        body: Any = json.loads(request.body or b"null") if request.headers.get("Content-Type") == "application/json" else None
+        if path.startswith("/releases") and self.refuse_releases:
+            return self._answer(403, {"message": "Resource not accessible by personal access token"})
+        match request.method, path.split("/")[1:]:
+            case "GET", ["issues"]:
+                label = query["labels"][0]
+                return self._page([issue for issue in self.issues.values() if issue["label"] == label], query)
+            case "POST", ["issues"]:
+                number = len(self.issues) + 1
+                self.issues[number] = {"number": number, "body": body["body"], "label": body["labels"][0], "comments": []}
+                return self._answer(201, {"number": number})
+            case "GET", ["issues", number, "comments"]:
+                return self._page(self.issues[int(number)]["comments"], query)
+            case "POST", ["issues", number, "comments"]:
+                comment = {"id": next(self._ids), "html_url": f"https://github.com/c/{number}", "body": body["body"]}
+                self.issues[int(number)]["comments"].append(comment)
+                return self._answer(201, comment)
+            case "PATCH", ["issues", "comments", comment_id]:
+                comment = next(c for i in self.issues.values() for c in i["comments"] if c["id"] == int(comment_id))
+                comment["body"] = body["body"]
+                return self._answer(200, comment)
+            case "GET", ["releases"]:
+                return self._page(list(self.releases.values()), query)
+            case "POST", ["releases"]:
+                release = {"id": next(self._ids), "tag_name": body["tag_name"], "name": body["name"]}
+                self.releases[release["id"]] = release
+                return self._answer(201, release)
+            case "GET", ["releases", release_id, "assets"]:
+                return self._page([a for a in self.assets.values() if a["release"] == int(release_id)], query)
+            case "POST", ["releases", release_id, "assets"]:
+                name, label = query["name"][0], query["label"][0]
+                if any(a["release"] == int(release_id) and a["name"] == name for a in self.assets.values()):
+                    return self._answer(422, {"errors": [{"code": "already_exists"}]})
+                asset_id = next(self._ids)
+                self.data[asset_id] = request.body or b""
+                self.assets[asset_id] = {"id": asset_id, "name": name, "label": label, "state": "uploaded", "release": int(release_id)}
+                return self._answer(201, self.assets[asset_id])
+            case "DELETE", ["releases", "assets", asset_id]:
+                del self.assets[int(asset_id)]
+                return HttpResponse(204, b"")
+            case _:
+                raise AssertionError(f"GitHubReportBox nie wysyła {request.method} {path}")
+
+    def files(self, tag: str) -> dict[str, str]:
+        """Pliki Release z tagiem ``tag`` po nazwie, rozpakowane."""
+
+        [release] = [release["id"] for release in self.releases.values() if release["tag_name"] == tag]
+        mine = [asset for asset in self.assets.values() if asset["release"] == release]
+        return {asset["name"]: gzip.decompress(self.data[asset["id"]]).decode("utf-8") for asset in mine}
+
+    @staticmethod
+    def _page(entries: list[Any], query: dict[str, list[str]]) -> HttpResponse:
+        size, page = int(query["per_page"][0]), int(query["page"][0])
+        return HttpResponse(200, json.dumps(entries[(page - 1) * size : page * size]).encode())
+
+    @staticmethod
+    def _answer(status: int, document: object) -> HttpResponse:
+        return HttpResponse(status, json.dumps(document).encode())
+
+
+LOGS = PeriodThread("logi-uruchomienia", "- Logi Uruchomienia okresu: 08_14_09_2026", "reuse", "Logi Uruchomienia 08_14_09_2026")
+
+
+def logs_post(text: str) -> Post:
+    archive = ArchiveFile(TAG, "Logi Uruchomień 08_14_09_2026", "Opis.", ASSET.removesuffix(".gz"), text)
+    return Post(LOGS, "08_14_09_2026", "627b45fe219e4274b722953c34d4af54", "Logi okresu", ("podsumowanie\n",), archive)
+
+
+def github_queue(tmp_path: Path, github: GitHubOnTransport) -> Outbox:
+    clock = ManualClock()
+    keyed = KeyedBox(GitHubReportBox(transport=github), lambda: KEY, clock=clock)
+    log = CentrumLog(tmp_path / "logs" / "centrum-rozliczen.log")
+    return Outbox(tmp_path / "kolejka", keyed, log, clock=clock, listener=QueueListener())
+
+
+def test_skrzynka_githuba_zaklada_archiwum_okresu_wysyla_plik_a_po_diagnozie_podmienia_go_bez_drugiego_pliku(
+    tmp_path: Path,
+) -> None:
+    github = GitHubOnTransport()
+    queue = github_queue(tmp_path, github)
+
+    queue.post(logs_post("{\"diagnosis\": null}\n"))
+    assert wait_for(lambda: not list((tmp_path / "kolejka").glob("*.json")))
+    first = list(github.requests)
+    queue.post(logs_post("{\"diagnosis\": \"BRAK_WZORCA\"}\n"))
+    assert wait_for(lambda: not list((tmp_path / "kolejka").glob("*.json")) and len(github.requests) > len(first) + 4)
+
+    assert first == [
+        ("GET", "/issues"),
+        ("GET", "/releases"),
+        ("POST", "/releases"),
+        ("POST", "/releases/101/assets"),
+        ("POST", "/issues"),
+        ("POST", "/issues/1/comments"),
+    ]
+    assert github.requests[len(first) :] == [
+        ("GET", "/issues"),
+        ("GET", "/issues/1/comments"),
+        ("GET", "/releases"),
+        ("GET", "/releases/101/assets"),
+        ("DELETE", "/releases/assets/102"),
+        ("POST", "/releases/101/assets"),
+        ("PATCH", "/issues/comments/103"),
+    ]
+    assert github.files(TAG) == {ASSET: "{\"diagnosis\": \"BRAK_WZORCA\"}\n"}
+    [release] = github.releases.values()
+    assert release["name"] == "Logi Uruchomień 08_14_09_2026"
+
+
+def test_klucz_bez_uprawnienia_do_tresci_repozytorium_zostawia_plik_w_kolejce_a_komentarz_idzie_z_dopiskiem(
+    tmp_path: Path,
+) -> None:
+    github = GitHubOnTransport(refuse_releases=True)
+    queue = github_queue(tmp_path, github)
+
+    queue.post(logs_post("{}\n"))
+    assert wait_for(lambda: bool(github.issues) and bool(github.issues[1]["comments"]))
+    assert wait_for(lambda: "przyczyna=odmowa-archiwum" in (tmp_path / "logs" / "centrum-rozliczen.log").read_text("utf-8"))
+
+    [queued] = (tmp_path / "kolejka").glob("*.json")
+    assert (json.loads(queued.read_text("utf-8"))["delivered_parts"], github.releases) == (1, {})
+    [comment] = github.issues[1]["comments"]
+    assert re.search(rf"Plik `{re.escape(ASSET)}` czeka w Kolejce wysyłki", str(comment["body"]))

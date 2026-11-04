@@ -11,7 +11,7 @@ pilnuje:
   - src/rozliczenia/centrum/server.py
   - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
 ci: .agents/skills/verify-kolejka-skrzynki/scripts/sprawdz_kolejke.py
-ci-czesci: 2
+ci-czesci: 3
 ---
 
 # Verify Kolejka Skrzynki Zgłoszeń

@@ -33,8 +33,8 @@ def _check(config: str) -> tuple[str, ...]:
 MUTATIONS = (
     Mutation(
         "issue okresu zakładane bez szukania (_deliver_to_period: if found is None)",
-        (Edit(MODEL, "          /\\ IF Najnowsze = 0\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ Idz(q, \"zaloz\", \"find_issue",
-              "          /\\ IF TRUE\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ Idz(q, \"zaloz\", \"find_issue"),),
+        (Edit(MODEL, "          /\\ IF Najnowsze = 0\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ PoArchiwum(q, \"zaloz\", \"find_issue",
+              "          /\\ IF TRUE\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ PoArchiwum(q, \"zaloz\", \"find_issue"),),
         _check("okres"),
         "druga Kontrola ilości okresu zakłada drugie issue",
         NEW,
@@ -59,16 +59,15 @@ MUTATIONS = (
     ),
     Mutation(
         "bez sprawdzenia identyfikatora przed wysyłką (_settle: każda część jako nowy komentarz)",
-        (Edit(MODEL, "    LET plan == IF Nowsza(nr[q], biez[q]) THEN <<>> ELSE Plan(nr[q], biez[q], kom[q]) IN\n",
-              "    LET plan == kom[q] IN\n"),),
+        (Edit(MODEL, "        plan == IF nowsza THEN <<>> ELSE Plan(nr[q], biez[q], kom[q])\n",
+              "        plan == kom[q]\n"),),
         _check("okres"),
         "część, którą Skrzynka przyjęła przed zgaśnięciem Centrum, idzie po starcie drugi raz",
         NEW,
     ),
     Mutation(
         "starsza wersja po nowszej zmienia issue (_settle: newest > version)",
-        (Edit(MODEL, "    LET plan == IF Nowsza(nr[q], biez[q]) THEN <<>> ELSE Plan(nr[q], biez[q], kom[q]) IN\n",
-              "    LET plan == Plan(nr[q], biez[q], kom[q]) IN\n"),),
+        (Edit(MODEL, "    LET nowsza == Nowsza(nr[q], biez[q])\n", "    LET nowsza == FALSE\n"),),
         _check("diagnoza"),
         "plik Logów sprzed Diagnozy, który dochodzi po niej, dopisuje część, której Diagnoza już nie ma",
         NEW,
@@ -114,7 +113,8 @@ MUTATIONS = (
     ),
     Mutation(
         "blokada u innego procesu nie nastawia budzenia RETRY_S (_drain: _locked_out)",
-        (Edit(MODEL, "armed[q] \\/ stopped[q] \\/ nieczytany[q] \\/ bezBlokady[q])\n", "armed[q] \\/ stopped[q] \\/ nieczytany[q])\n"),),
+        (Edit(MODEL, "armed[q] \\/ stopped[q] \\/ nieczytany[q] \\/ odmowaArch[q] \\/ bezBlokady[q])\n",
+              "armed[q] \\/ stopped[q] \\/ nieczytany[q] \\/ odmowaArch[q])\n"),),
         _check("dwa-procesy"),
         "Kontrola ilości, której wysyłkę przerwał koniec starego Centrum, czeka w kolejce nowego do następnej wysyłki",
         NEW,
@@ -185,13 +185,11 @@ MUTATIONS = (
             ),
             Edit(
                 MODEL,
-                "    /\\ UNCHANGED <<dysk, issues, zyje, draining, again, armed, undeleted, rejected, lista, biez, "
-                "bezZnacznika,\n                   passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, "
-                "odmowy, bledyPliku, wylaczenia>>\n",
-                "    /\\ UNCHANGED <<dysk, issues, zyje, draining, again, armed, undeleted, lista, biez, "
-                "bezZnacznika,\n                   passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, "
-                "odmowy, bledyPliku, wylaczenia>>\n"
-                '    /\\ pc\'[q] = "plik" \\/ UNCHANGED rejected\n',
+                "    /\\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, "
+                "bezZnacznika,\n                   arch, odmowaArch, passes,",
+                "    /\\ pc'[q] = \"plik\" \\/ UNCHANGED rejected\n"
+                "    /\\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, lista, biez, "
+                "bezZnacznika,\n                   arch, odmowaArch, passes,",
             ),
         ),
         _check("okres"),
@@ -208,7 +206,7 @@ MUTATIONS = (
     ),
     Mutation(
         "brak budzenia RETRY_S (_drain: clock.after)",
-        (Edit(MODEL, "            /\\ armed' = Ustaw(armed, q, armed[q] \\/ stopped[q] \\/ nieczytany[q] \\/ bezBlokady[q])\n",
+        (Edit(MODEL, "            /\\ armed' = Ustaw(armed, q, armed[q] \\/ stopped[q] \\/ nieczytany[q] \\/ odmowaArch[q] \\/ bezBlokady[q])\n",
               "            /\\ UNCHANGED armed\n"),),
         _check("okres"),
         "po braku sieci wysyłka czeka do następnego startu albo następnej wysyłki",
@@ -216,7 +214,8 @@ MUTATIONS = (
     ),
     Mutation(
         "nieczytelny plik nie nastawia budzenia RETRY_S (_drain: _read_failed)",
-        (Edit(MODEL, "armed[q] \\/ stopped[q] \\/ nieczytany[q] \\/ bezBlokady[q])\n", "armed[q] \\/ stopped[q] \\/ bezBlokady[q])\n"),),
+        (Edit(MODEL, "armed[q] \\/ stopped[q] \\/ nieczytany[q] \\/ odmowaArch[q] \\/ bezBlokady[q])\n",
+              "armed[q] \\/ stopped[q] \\/ odmowaArch[q] \\/ bezBlokady[q])\n"),),
         _check("odczyt"),
         "Kontrola ilości, której pliku raz nie dało się odczytać, czeka do następnej wysyłki albo startu, choć sieć działa",
         NEW,
@@ -255,6 +254,43 @@ MUTATIONS = (
               "    /\\ UNCHANGED <<draining, pc>>\n"),),
         _check("okres"),
         "wysyłka z kolejki poprzedniej pracy Centrum czeka na następną wysyłkę",
+        NEW,
+    ),
+    Mutation(
+        "plik w Archiwum bez sprawdzenia wersji z etykiety: kolejka usuwa swój plik i wysyła go drugi raz "
+        "(_deliver_archive: seen >= version)",
+        (Edit(MODEL, "                  ELSE IF \\E i \\in moje : archiwum[i] >= w\n", "                  ELSE IF FALSE\n"),),
+        _check("archiwum"),
+        "plik Logów, którego odpowiedź na upload zginęła, idzie do Archiwum drugi raz",
+        NEW,
+    ),
+    Mutation(
+        "Archiwum okresu zakładane bez szukania (_deliver_archive: listed is None)",
+        (Edit(MODEL, "               /\\ IF wydania = 0\n", "               /\\ IF TRUE\n"),),
+        _check("archiwum"),
+        "Diagnoza zakłada drugie Archiwum (Release) okresu",
+        NEW,
+    ),
+    Mutation(
+        "plik starszej wersji nie ustępuje: upload bez remove (_deliver_archive: box.remove)",
+        (Edit(MODEL, "                  ELSE IF moje /= {}\n", "                  ELSE IF FALSE\n"),),
+        _check("archiwum"),
+        "plik Logów z Diagnozą nigdy nie dochodzi, bo GitHub odrzuca drugi plik tej nazwy",
+        NEW,
+    ),
+    Mutation(
+        "odmowa Archiwum nie nastawia budzenia RETRY_S (_drain: _archive_refused)",
+        (Edit(MODEL, "armed[q] \\/ stopped[q] \\/ nieczytany[q] \\/ odmowaArch[q] \\/ bezBlokady[q])\n",
+              "armed[q] \\/ stopped[q] \\/ nieczytany[q] \\/ bezBlokady[q])\n"),),
+        _check("archiwum"),
+        "plik Logów, którego Archiwum nie przyjęło, czeka do następnej wysyłki albo startu, choć uprawnienie wróciło",
+        NEW,
+    ),
+    Mutation(
+        "plik, którego Archiwum nie przyjęło, dostaje pełny znacznik i znika (_send_all: archive_waits)",
+        (Edit(MODEL, 'IF czeka THEN "skomentowany" ELSE "oznaczony"', '"oznaczony"'),),
+        _check("archiwum"),
+        "plik Logów znika z kolejki, a Archiwum go nie ma",
         NEW,
     ),
     Mutation(

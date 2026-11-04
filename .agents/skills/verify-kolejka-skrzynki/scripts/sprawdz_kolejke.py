@@ -22,11 +22,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import part
 
-# Jednostka to skrypt skilla z argumentami; każda biegnie od świeżego startu. Na Macu Maksa (2026-11-04) zakres
-# ``watek-okresu`` trwa ok. 22 s, ``diagnoza`` i ``diagnoza-odczyt`` po ok. 9 s, cztery pozostałe zakresy razem ok. 8 s,
-# a model ok. 18 s, więc przy dwóch częściach pierwsza bierze dwie najdłuższe jednostki, a druga resztę i model (ok. 40 s
-# i 26 s).
+# Jednostka to skrypt skilla z argumentami; każda biegnie od świeżego startu. Na Macu Maksa (2026-11-04) zakresy
+# ``archiwum`` i ``archiwum-diagnoza`` trwają razem ok. 53 s, ``watek-okresu`` ok. 22 s, ``diagnoza`` i
+# ``diagnoza-odczyt`` razem ok. 18 s, cztery pozostałe zakresy razem ok. 8 s, a model ok. 40 s, więc przy trzech
+# częściach pierwsza bierze zakresy Archiwum, druga dwie następne jednostki, a trzecia resztę i model (ok. 53 s, 40 s i
+# 48 s).
 UNITS = (
+    ("explore_outbox.py", ("--scope", "archiwum", "--scope", "archiwum-diagnoza")),
     ("explore_outbox.py", ("--scope", "watek-okresu")),
     ("explore_outbox.py", ("--scope", "diagnoza", "--scope", "diagnoza-odczyt")),
     (

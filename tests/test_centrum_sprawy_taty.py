@@ -22,16 +22,20 @@ from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import KnownIssue, NewIssue, PeriodThread, Post
 from rozliczenia.centrum.report_box import (
+    ArchiveOutcome,
     Closure,
     CommentOutcome,
     CommentsOutcome,
     Issue,
     IssuesOutcome,
     Label,
+    OpenArchiveOutcome,
     Refused,
+    RemoveOutcome,
     SendOutcome,
     Sent,
     Unreachable,
+    UploadOutcome,
 )
 
 from tests.fixtures.centrum import RUN_LOGS_IN_BACKGROUND, FakeIssue, FakeReportBox, centrum
@@ -345,6 +349,18 @@ class AnsweringBox:
 
     def edit_comment(self, comment_id: int, body: str, *, key: str) -> CommentOutcome:
         raise AssertionError("Sprawy taty nie zmieniają komentarzy issue")
+
+    def archive(self, tag: str, *, key: str) -> ArchiveOutcome:
+        raise AssertionError("Sprawy taty nie pytają o Archiwum okresu")
+
+    def open_archive(self, tag: str, title: str, description: str, *, key: str) -> OpenArchiveOutcome:
+        raise AssertionError("Sprawy taty nie zakładają Archiwum okresu")
+
+    def upload(self, archive_id: int, name: str, label: str, data: bytes, *, key: str) -> UploadOutcome:
+        raise AssertionError("Sprawy taty nie wysyłają plików do Archiwum okresu")
+
+    def remove(self, asset_id: int, *, key: str) -> RemoveOutcome:
+        raise AssertionError("Sprawy taty nie usuwają plików z Archiwum okresu")
 
     def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
         self.asked.append((label, include_closed, key))

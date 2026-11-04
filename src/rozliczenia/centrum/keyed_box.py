@@ -6,7 +6,9 @@ zapytania. Każda odpowiedź adaptera na pytanie z kluczem jest werdyktem o tym 
 albo liście issue to „klucz odrzucony”, każda inna odpowiedź Skrzynki (także odmowa treści) to „klucz przyjęty”, a
 brak sieci niczego nie zmienia. Odmowa komentarza, pytania o komentarze issue i poprawki komentarza mówi o issue
 (404: Maks je usunął, #402), nie o kluczu, więc werdyktu nie zmienia; każda wysyłka kolejki najpierw pyta o listę
-albo zakłada issue, więc zły klucz i tak wyjdzie przed komentarzem.
+albo zakłada issue, więc zły klucz i tak wyjdzie przed komentarzem. Odmowa kroków Archiwum okresu (#844) też nie zmienia
+werdyktu: mówi o uprawnieniu klucza do zapisu treści repozytorium, którego issue nie potrzebują, a tata, który zobaczyłby
+niedziałający Token do Zgłoszeń, nie ma czego naprawiać, gdy Zgłoszenia i komentarze dochodzą.
 
 Werdykt należy do klucza (skrót SHA-256): Maks, który wpisze nowy klucz, dostaje nowe sprawdzenie od razu.
 Odrzucony klucz Centrum pamięta ``REFUSED_KEPT_S`` i przez ten czas nie wysyła nim żadnego zapytania: kolejka,
@@ -28,15 +30,19 @@ from pathlib import Path
 from typing import Final, Literal, TypeVar
 
 from rozliczenia.centrum.report_box import (
+    ArchiveOutcome,
     CommentOutcome,
     CommentsOutcome,
     FindOutcome,
     IssuesOutcome,
     Label,
+    OpenArchiveOutcome,
     Refused,
+    RemoveOutcome,
     ReportBox,
     SendOutcome,
     Unreachable,
+    UploadOutcome,
     newest_with_line,
 )
 
@@ -79,7 +85,7 @@ def _digest(key: str) -> str:
 class KeyedBox:
     """Skrzynka Zgłoszeń z kluczem taty i werdyktem o nim (opis modułu).
 
-    Te same operacje co ``ReportBox`` bez ``key=`` i z kolejną porażką ``NoKey``, plus ``find_issue``,
+    Te same operacje co ``ReportBox`` (także Archiwum okresu) bez ``key=`` i z kolejną porażką ``NoKey``, plus ``find_issue``,
     ``judge`` (stan klucza w ograniczonym czasie) i ``check_in_background`` (sprawdzenie przy starcie Centrum).
     Blokada chroni tylko werdykt i sprawdzenie w tle; zapytania do Skrzynki idą bez niej.
     """
@@ -117,8 +123,22 @@ class KeyedBox:
 
         return self._about_issue(lambda key: self._box.edit_comment(comment_id, body, key=key))
 
+    def archive(self, tag: str) -> ArchiveOutcome | NoKey:
+        """Archiwum okresu z tagiem ``tag``; jego odmowa (brak uprawnienia do treści repozytorium) nie jest werdyktem."""
+
+        return self._about_issue(lambda key: self._box.archive(tag, key=key))
+
+    def open_archive(self, tag: str, title: str, description: str) -> OpenArchiveOutcome | NoKey:
+        return self._about_issue(lambda key: self._box.open_archive(tag, title, description, key=key))
+
+    def upload(self, archive_id: int, name: str, label: str, data: bytes) -> UploadOutcome | NoKey:
+        return self._about_issue(lambda key: self._box.upload(archive_id, name, label, data, key=key))
+
+    def remove(self, asset_id: int) -> RemoveOutcome | NoKey:
+        return self._about_issue(lambda key: self._box.remove(asset_id, key=key))
+
     def _about_issue(self, ask: Callable[[str], _Outcome]) -> _Outcome | NoKey | Refused:
-        """Pytanie o jedno issue: odpowiedź poza odmową jest werdyktem o kluczu."""
+        """Pytanie o jedno issue albo o Archiwum okresu: odpowiedź poza odmową jest werdyktem o kluczu."""
 
         key = self._usable()
         if not isinstance(key, str):

@@ -15,11 +15,12 @@ card: no alert, toast or text; only the previews of a Zgłoszenie
 of a Wiersz danych reach the file. The same Logi wait in the queue of the skrzynka
 Zgłoszeń (`config/zgloszenia/kolejka/`, like the Kontrola ilości) and go to the
 period's issue labelled `logi-uruchomienia`, which they keep using after Maks
-closes it, one comment per Uruchomienie: a summary, then the file's JSON in a
-`<details>` block (a JSON too long for one comment goes in comments `część k/n`).
+closes it, one comment per Uruchomienie: a summary ending with the link to its
+full Logi in the Archiwum Logów okresu (#844), the GitHub Release `logi-<period>`
+of the skrzynka's repository, which holds the file under its own name plus `.gz`.
 Each Diagnoza with a new result (features/diagnoza.md) of the last Uruchomienie of this Centrum
-rewrites the file with its `diagnosis` and adds one more comment with the whole
-Logi, so the newest comment of an Uruchomienie is always its file; a Diagnoza of
+rewrites the file with its `diagnosis`, replaces it in the Archiwum and changes the
+comment of its Uruchomienie, so its file in the Archiwum is always the file; a Diagnoza of
 an Uruchomienie from before a restart of Centrum adds nothing.
 
 ## Sub-features
@@ -29,7 +30,7 @@ an Uruchomienie from before a restart of Centrum adds nothing.
 - `logi-szablony`: the file of the written Przebieg rozliczeń of `06_12_10_2026` (the card `przebieg-rozliczen` recorded) lists every Wykonawca in order with outcome `ZAPISANO` (`PUSTY_SZABLON` for the one without orders), its rows and its time; the first Szablon pracownika, paced by the harness, took at least the pacing.
 - `logi-kazde-uruchomienie`: every `uruchomienie-koniec` line of the Centrum log has exactly one file with the same process, mode, period, result and ending, in the same order, and no Uruchomienie has two.
 - `logi-bez-sladu`: Uruchomienia, also after a reload, shows nothing about the Logi; no file holds a path in the run root or the fixture's row marker; the process's files are names only.
-- `logi-w-skrzynce`: with a key, one more Podgląd bez zapisu wakes the queue and no Logi wait in it any more; the skrzynka has one issue labelled `logi-uruchomienia` per period with Uruchomienia, and every file of Logi of the run is the newest comment of its Uruchomienie in its period's issue, starting with the summary and ending with the file's JSON character for character; every Uruchomienie has exactly one comment, also a diagnosed one, whose Diagnoza changed that comment; neither the key nor the row marker is in the skrzynka; Dad reads nothing about it.
+- `logi-w-skrzynce`: with a key, one more Podgląd bez zapisu wakes the queue and no Logi wait in it any more; the skrzynka has one issue labelled `logi-uruchomienia` and one Archiwum Logów okresu per period with Uruchomienia, and every file of Logi of the run is, unpacked, the file in the Archiwum that the one comment of its Uruchomienie in its period's issue links, character for character; every comment starts with the summary; every Uruchomienie has exactly one comment and one file, also a diagnosed one, whose Diagnoza changed both; neither the key nor the row marker is in the skrzynka; Dad reads nothing about it.
 
 ## How to get to it (user POV)
 
@@ -49,7 +50,7 @@ Preconditions:
 - **Szablony pracowników.** The file whose `run_id` is the `run.id` of `api/przebieg-zapisane.json` equals that card (its `tool` aside) and has `templates` `[(wykonawca, "ZAPISANO" or "PUSTY_SZABLON" when rows is 0, rows)]` for `fixture.json` → `workers` and `settlement.rows_per_worker`, each with an integer `duration_ms`, the first ≥ the Szablony pacing of `przebieg-rozliczen` (2500 ms).
 - **Every Uruchomienie.** The `uruchomienie-koniec` lines of `logs/centrum-rozliczen.log` (`tryb` `DRY-RUN` is `podgląd`, `RUN` is `zapis`) equal the files sorted by `started_at`, and every `run_id` is unique. In `all` this covers every Uruchomienie of the run, with the unexpected exceptions of `diagnoza`.
 - **No trace.** Reload `#/uruchomienia`: label `Zatrzymanie` is visible and the page text says nothing about the Logi. No file contains the run root or `CENTRUM-SYN-ROW`; every `environment.files[].name` has no `/` or `\`.
-- **Skrzynka.** Harness: Maks writes `config/zgloszenia-klucz.txt`. The same Podgląd bez zapisu as above (`api/logi-skrzynka-podglad.json`); within 60 s no `*-logi-uruchomienia-*.json` is left in `config/zgloszenia/kolejka/`. In `<root>/skrzynka-zgloszen/` the issues labelled `logi-uruchomienia` have titles `Logi Uruchomienia <period>` and first lines `- Logi Uruchomienia okresu: <period>`, one per period of the files. The JSON in the four-backtick `json` fence at the end of each comment, grouped by `run_id`, has the file of that Uruchomienie as its newest comment (one comment without `diagnosis`; more after Diagnozy, differing only in `diagnosis`), each in its period's issue, and every comment starts with `**Logi Uruchomienia**: `. The drive removes the key. `api/logi-skrzynka.json` lists the issues; `api/logi-komentarz.md` is the comment of this Podgląd. Capture `162`.
+- **Skrzynka.** Harness: Maks writes `config/zgloszenia-klucz.txt`. The same Podgląd bez zapisu as above (`api/logi-skrzynka-podglad.json`); within 60 s no `*-logi-uruchomienia-*.json` is left in `config/zgloszenia/kolejka/`. In `<root>/skrzynka-zgloszen/` the issues labelled `logi-uruchomienia` have titles `Logi Uruchomienia <period>` and first lines `- Logi Uruchomienia okresu: <period>`, one per period of the files. Each comment ends with `- Pełne Logi: [<name>](https://github.com/<repository>/releases/download/logi-<period>/<name>)`; `<root>/skrzynka-archiwum/logi-<period>/<name>` unpacked with gzip, grouped by `run_id`, is the file of that Uruchomienie (one comment and one file per Uruchomienie, also after Diagnozy), each in its period's issue and Archiwum; `<root>/skrzynka-archiwum/archiwa.json` lists one Archiwum per period and one file per file of Logi; every comment starts with `**Logi Uruchomienia**: `. The drive removes the key. `api/logi-skrzynka.json` lists the issues; `api/logi-komentarz.md` is the comment of this Podgląd. Capture `162`.
 - **Proof.** Screenshots `160`–`162`, `api/logi-*.json`, `api/logi-komentarz.md`, `state/uruchomienia/` (every file of Logi of the run, also checked by the self-test's evidence hygiene), checks in `drive.txt`.
 
 ## Gotchas
@@ -58,7 +59,7 @@ Preconditions:
 - File names start with the start time in whole seconds; sort by `started_at` inside the file, not by name, when two Uruchomienia start in the same second.
 - The card's Komunikaty have no code; only the file has it, so the drive checks codes against the messages it knows for these runs.
 - Logi surviving a restart of Centrum is proved only in `all`: `kontrola-ilosci` restarts Centrum twice after Przebieg rozliczeń, so `logi-kazde-uruchomienie` finds the files of the Uruchomienia before those restarts. Alone, the feature does not restart; `tests/test_centrum_logi_uruchomienia.py` covers it over HTTP.
-- In `all`, `diagnoza` and `zgloszenie` diagnose several Uruchomienia, so their threads hold more than one comment per Uruchomienie; alone, this feature diagnoses nothing and every file is exactly one comment.
-- Every Uruchomienie queues its Logi, so before `logi-w-skrzynce` the queue holds Logi of the whole run; in `all`, the restart with a key in `kontrola-ilosci` and the key of `zgloszenie` already sent part of them. The check covers both: every file is one comment, wherever it went.
+- In `all`, `diagnoza` and `zgloszenie` diagnose several Uruchomienia, whose Diagnozy change their comment and replace their file in the Archiwum; alone, this feature diagnoses nothing.
+- Every Uruchomienie queues its Logi, so before `logi-w-skrzynce` the queue holds Logi of the whole run; in `all`, the restart with a key in `kontrola-ilosci` and the key of `zgloszenie` already sent part of them. The check covers both: every file is one comment and one file in the Archiwum, wherever it went.
 - `tool.commit` is the commit Centrum ran when the Uruchomienie ended. In `all`, `aktualizacja` moves the tool before Dad's week, so only the drive's own Uruchomienia are compared with `served_version`, and never with the clone's `HEAD`.
 - `tool.wydanie` comes from the clone's tags on that commit. Alone, the clone stands on the fixture's first version, tagged `v0.0.1` like a README install, so the Logi name `0.0.1`. In `all`, `aktualizacja` withdraws and moves the origin's tags, so the Wydanie is whatever the clone's tags say then, possibly none.
