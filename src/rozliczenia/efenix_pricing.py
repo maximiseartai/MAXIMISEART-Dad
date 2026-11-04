@@ -7,7 +7,9 @@ Zapisywanie, w którym idzie przez zlecenia z zakresu po kolei, a na końcu raz 
 przepisać (``efenix_positions``). Potem zlecenie znajduje po ``Numer dokumentu`` równym ``NUMER ZL.`` i sprawdza:
 dokładnie jedno trafienie, status „Do wyceny”, realizator równy ``WYKONAWCA``, ``Dane adresowe`` równe ``ADRES``
 (``efenix_address``) i datę wykonania pustą albo równą dniowi z ``DATA``. Pierwsza niezgodność to błąd zlecenia, w efenix
-nic się nie zmienia i proces idzie dalej.
+nic się nie zmienia i proces idzie dalej. Każdy odczyt strony zlecenia (otwarcie, ponowne otwarcie po dacie wykonania i
+strona po Wycenie Emmetta) musi mieć pozycje, w których plik ma ilość: strona bez którejś z nich to błąd zlecenia z
+kodami pozycji i ich kolumnami (``missing_positions``), a strona bez pozycji z 0 w pliku to zwykła strona efenix.
 
 Zlecenie z kwotą w efenix różną od 0 ma już wycenę: proces tylko ją porównuje i jest „gotowe”, gdy każda ilość i kwota
 zgadzają się z plikiem, a w przeciwnym razie to błąd „wycena już jest i się różni”. Wyjątkiem jest wycena, którą proces
@@ -25,11 +27,10 @@ Emmetta zlecenia w stanie „Emmett załadowany” nie ładuje drugi raz. Sprzec
 dopisywania, a w przeciwnym razie proces wpisuje ilości pliku w pozycjach pustych u Emmetta i porównuje kwotę końcową,
 którą odesłał efenix, z ``Kwota`` (AU). Okno efenix (``Efenix``) nie ma działania, które przekazuje zlecenie do
 akceptacji, anuluje je albo zmienia jego status. Strona logowania, efenix, którego okno nie otworzyło, zamknięte okno
-efenix i działanie okna, którego okno nie dokończyło, także na stronie bez pozycji z przypisania kolumn, to Zatrzymanie
-(``LoggedOut``, ``EfenixUnreachable``, ``WindowClosed``, ``UnexpectedPage``), a Komunikat Zatrzymania mówi, czy przed
-nim proces zmienił już coś w efenix. Niedokończone działanie okna to Zatrzymanie „do Maksa” z częścią strony, bez
-treści strony i bez zgadywania przyczyny (zerwane połączenie, wolny albo zmieniony efenix): tata uruchamia ponownie, a
-Maks ustala przyczynę z Logów Uruchomienia. Każdy wyjątek okna niesie przyczynę techniczną z zamkniętej listy
+efenix i działanie okna, którego okno nie dokończyło, to Zatrzymanie (``LoggedOut``, ``EfenixUnreachable``,
+``WindowClosed``, ``UnexpectedPage``), a Komunikat Zatrzymania mówi, czy przed nim proces zmienił już coś w efenix.
+Niedokończone działanie okna to Zatrzymanie „do Maksa” z częścią strony, bez treści strony i bez zgadywania przyczyny
+(zerwane połączenie, wolny albo zmieniony efenix): tata uruchamia ponownie, a Maks ustala przyczynę z Logów Uruchomienia. Każdy wyjątek okna niesie przyczynę techniczną z zamkniętej listy
 (``WindowCause``), a Zatrzymanie z okna niesie w ``StopError.facts`` (``PricingStopped``) tę przyczynę, wynik każdego
 zlecenia sprzed niego i zlecenie, przy którym okno stanęło (``StoppedOrder``: wiersz, miejsce w przebiegu, udane
 działania okna i to, które się nie udało). Komunikat taty przyczyny nie pokazuje.
@@ -86,6 +87,7 @@ from .efenix_positions import (
     NotWholeQuantities,
     OrderFault,
     OtherAmount,
+    PageRead,
     UnpairedColumns,
     as_left_after_emmett,
     emmett_conflicts,
@@ -113,7 +115,6 @@ __all__ = [
     "LoggedOut",
     "Login",
     "LoginSign",
-    "MissingPositions",
     "OpenEfenix",
     "Operation",
     "OrderError",
@@ -188,13 +189,6 @@ class Closed(enum.Enum):
 
 
 @dataclass(frozen=True)
-class MissingPositions:
-    """Strona zlecenia bez pozycji z przypisania kolumn (``efenix_positions.missing_positions``), rosnąco po kodzie."""
-
-    positions: tuple[str, ...]
-
-
-@dataclass(frozen=True)
 class ElementCount:
     """Element strony (selektor z kodu okna, nie treść strony) jest na niej ``count`` razy zamiast dokładnie raz."""
 
@@ -227,7 +221,7 @@ class BrowserFailure:
     operation: Operation | None
 
 
-PageCause = MissingPositions | ElementCount | HttpStatus | OtherShape | BrowserFailure
+PageCause = ElementCount | HttpStatus | OtherShape | BrowserFailure
 """Przyczyna niedokończonego działania okna (``UnexpectedPage``)."""
 WindowCause = PageCause | LoginSign | Closed
 """Przyczyna techniczna Zatrzymania okna efenix z zamkniętej listy, dla Logów Uruchomienia, bez treści strony i danych
@@ -411,10 +405,8 @@ class PricingSummary:
 @dataclass(frozen=True)
 class StoppedOrder:
     """Zlecenie, przy którym okno efenix stanęło: wiersz Pliku zbiorczego, miejsce w przebiegu (``place`` z ``total``, od
-    1), udane działania okna przy nim po kolei i działanie, które się nie udało (``failed``, z samym rodzajem i czasem).
-
-    ``failed`` ``None``: okno dokończyło każde działanie, a zatrzymał je silnik, bo strona nie ma pozycji z przypisania
-    kolumn (``MissingPositions``) po ostatnim działaniu w ``steps``.
+    1), udane działania okna przy nim po kolei i działanie, które się nie udało (``failed``, z samym rodzajem i czasem;
+    ``None``, gdy ślad zlecenia nie ma nieudanego działania).
     """
 
     row: int
@@ -605,7 +597,9 @@ def _outcome(order: CollectiveOrder, number: str, day: date, efenix: Efenix, tra
     hit = listing(order, efenix.search(number))
     if isinstance(hit, OrderProblem):
         return OrderError(hit)
-    opened = _known_positions(efenix.open_order(hit))
+    opened = efenix.open_order(hit)
+    if (missing := missing_positions(file, opened.quantities, PageRead.OPENED)) is not None:
+        return OrderError(missing)
     if (problem := date_problem(order, opened.execution_date)) is not None:
         return OrderError(problem)
     emmett = trace.emmett(number)
@@ -619,11 +613,16 @@ def _outcome(order: CollectiveOrder, number: str, day: date, efenix: Efenix, tra
     if opened.execution_date is None:
         if not efenix.set_execution_date(day):
             return OrderError(DateRefused.OUT_OF_RANGE)
-        if _known_positions(efenix.open_order(hit)).execution_date != day:
+        reopened = efenix.open_order(hit)
+        if (missing := missing_positions(file, reopened.quantities, PageRead.AFTER_DATE)) is not None:
+            return OrderError(missing)
+        if reopened.execution_date != day:
             return OrderError(DateRefused.NOT_SAVED)
     # Pusta Wycena Emmetta ze śladu zostawia kwotę 0, więc jej ponowne załadowanie niczego by nie zmieniło.
     if emmett is None or any(emmett.values()):
-        opened = _known_positions(efenix.load_emmett())
+        opened = efenix.load_emmett()
+        if (missing := missing_positions(file, opened.quantities, PageRead.AFTER_EMMETT)) is not None:
+            return OrderError(missing)
         emmett = opened.quantities
         trace.loaded(number, emmett)
     return _after_emmett(order, hit, efenix, file, emmett, opened)
@@ -649,11 +648,3 @@ def _entered(
     for position, quantity in to_enter(file, on_page.quantities).items():
         amount = efenix.enter_quantity(position, quantity)
     return Ready(hit) if same_amount(amount, order.amount) else OrderError(OtherAmount(amount, order.amount))
-
-
-def _known_positions(pricing: OrderPricing) -> OrderPricing:
-    """Strona zlecenia bez którejś pozycji z przypisania kolumn to efenix o innej budowie, niż zna narzędzie."""
-
-    if missing := missing_positions(pricing.quantities):
-        raise UnexpectedPage(PagePart.ORDER, MissingPositions(tuple(sorted(missing))))
-    return pricing

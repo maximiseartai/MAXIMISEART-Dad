@@ -46,7 +46,6 @@ from rozliczenia.efenix_pricing import (
     ElementCount,
     LoggedOut,
     Login,
-    MissingPositions,
     Operation,
     OtherShape,
     PagePart,
@@ -415,6 +414,105 @@ def test_ilosc_ktorej_nie_da_sie_przepisac_do_efenix_to_blad_zlecenia_zanim_proc
     assert (_figures(outcome), _errors(outcome), searched) == (_figures_of(2, 1), [(error, "wiersz 18")], ["5502"])
 
 
+# Strona zlecenia efenix bez części „Montaż urządzeń” (#819): z pozycji przypisania kolumn ma tylko 026, a ma 029, 009 i
+# 010 oraz pozycje bez kolumny. Kody z przypisania kolumn ze specyfikacji #741.
+WITHOUT_ASSEMBLY = frozenset({"012", "013", "014", "015", "016", "017", "018", "019", "020", "021", "022", "023", "024", "025", "027", "028"})
+
+
+def test_strona_zlecenia_bez_pozycji_z_zerem_w_pliku_dostaje_wycene_emmetta_i_ilosci_pliku_a_nastepne_zlecenie_jest_wyceniane(
+    tmp_path: Path, page: Page
+) -> None:
+    """Plik ma ilości tylko w V (029), Y (009) i Z (010), a w O (012) 0: brak pozycji 012 i reszty Montażu urządzeń na
+    stronie nie przeszkadza, bo te pozycje i tak zostałyby w efenix puste."""
+
+    filled = {"029": 1, "009": 2, "010": 1}
+    orders = [
+        Order("#5601", day=date(2026, 9, 3), cells={"V": 1, "Y": 2, "Z": 1, "O": 0}, amount=_au(filled), emmett={"029": 1}),
+        Order("#5602", day=date(2026, 9, 4), cells={"O": 1}, amount=_au({"012": 1})),
+    ]
+    in_efenix = [replace(orders[0].in_efenix("901"), without=WITHOUT_ASSEMBLY), orders[1].in_efenix("902")]
+    with atrapa_efenix(in_efenix) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, orders)
+        pricing = _pricing(atrapa)
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == ("OK", _figures_of(2, 2), [])
+    assert pricing == {"5601": (filled, date(2026, 9, 3), 1), "5602": ({"012": 1}, date(2026, 9, 4), 1)}
+
+
+@pytest.mark.parametrize(
+    ("after_date", "after_emmett", "pricing", "done"),
+    [
+        pytest.param(False, False, ({}, None, 0), " Zlecenie zostało w efenix bez zmian.", id="po-otwarciu"),
+        pytest.param(
+            True,
+            False,
+            ({}, date(2026, 9, 3), 0),
+            " Narzędzie ustawiło już datę wykonania z DATA, ale nie załadowało Wyceny Emmetta i nie wpisało ilości.",
+            id="po-dacie-wykonania",
+        ),
+        pytest.param(
+            False,
+            True,
+            ({"029": 1}, date(2026, 9, 3), 1),
+            " Wycena Emmetta jest już załadowana, a narzędzie niczego do niej nie dopisało.",
+            id="po-wycenie-emmetta",
+        ),
+    ],
+)
+def test_strona_zlecenia_bez_pozycji_z_iloscia_w_pliku_to_blad_zlecenia_z_pozycja_i_kolumna_a_nastepne_zlecenie_jest_wyceniane(
+    tmp_path: Path,
+    page: Page,
+    after_date: bool,
+    after_emmett: bool,
+    pricing: tuple[dict[str, int], date | None, int],
+    done: str,
+) -> None:
+    """Plik ma ilość w O (012) i T (019), a strona zlecenia, przy otwarciu albo dopiero przy kolejnym odczycie, nie ma
+    pozycji Montażu urządzeń: proces nie wpisuje żadnej ilości, a Komunikat mówi, co zmienił już w efenix."""
+
+    orders = [
+        Order("#5701", day=date(2026, 9, 3), cells={"O": 1, "T": 2, "V": 1}, amount=_au({"012": 1, "019": 2, "029": 1}), emmett={"029": 1}),
+        Order("#5702", day=date(2026, 9, 4), cells={"O": 1}, amount=_au({"012": 1})),
+    ]
+    in_efenix = [replace(orders[0].in_efenix("901"), without=WITHOUT_ASSEMBLY, after_date=after_date, after_emmett=after_emmett), orders[1].in_efenix("902")]
+    with atrapa_efenix(in_efenix) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, orders)
+        after = _pricing(atrapa)
+        changes = atrapa.status_changes()
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == (
+        "WYMAGA_SPRAWDZENIA",
+        _figures_of(2, 1),
+        [("EFENIX_BRAK_POZYCJI", "wiersz 18")],
+    )
+    assert _what(outcome) == [
+        "Strona zlecenia w efenix nie ma pozycji, w których Plik zbiorczy ma ilość: pozycja INDEKS_012 (kolumna O),"
+        f" pozycja INDEKS_019 (kolumna T).{done}"
+    ]
+    assert (after, changes) == ({"5701": pricing, "5702": ({"012": 1}, date(2026, 9, 4), 1)}, 0)
+
+
+@pytest.mark.parametrize(
+    ("file", "errors"),
+    [
+        pytest.param(1, [], id="zgodna"),
+        pytest.param(2, [("EFENIX_WYCENA_INNA", "wiersz 18")], id="inna"),
+    ],
+)
+def test_wycena_ktora_juz_jest_na_stronie_bez_pozycji_z_zerem_w_pliku_tylko_sie_porownuje(
+    tmp_path: Path, page: Page, file: int, errors: list[tuple[str, str]]
+) -> None:
+    order = Order("#5801", cells={"V": file}, amount=_au({"029": file}), quantities={"029": 1})
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY, without=WITHOUT_ASSEMBLY)]) as atrapa:
+        before = atrapa.state()
+        outcome = _price(tmp_path, page, atrapa.url, [order])
+        after = atrapa.state()
+        requested = atrapa.requested()
+
+    assert (_figures(outcome), _errors(outcome)) == (_figures_of(1, 1 - len(errors)), errors)
+    assert (after, set(requested) <= READING) == (before, True)
+
+
 def test_szukanie_ktore_lista_efenix_wysyla_sama_po_powrocie_ze_strony_zlecenia_nie_zmienia_wynikow_szukania(
     tmp_path: Path, page: Page
 ) -> None:
@@ -566,15 +664,14 @@ def test_strona_logowania_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene_a_kom
 TIMEOUT = "playwright._impl._errors.TimeoutError"
 # Część strony, której zabrakło przy każdej zmianie budowy Atrapy (tabela wyników, strona zlecenia, okno daty wykonania,
 # Emmett albo kwota), przyczyna techniczna z tabeli decyzji (``tests/test_tabela_zatrzyman_efenix.py``) i działanie
-# okna, które się nie udało (``None``: strona bez pozycji z przypisania kolumn po udanym otwarciu).
-CHANGED: dict[Changed, tuple[PagePart, WindowCause, str | None]] = {
+# okna, które się nie udało.
+CHANGED: dict[Changed, tuple[PagePart, WindowCause, str]] = {
     Changed.STATUS_HEADER: (PagePart.RESULTS, OtherShape(Shape.COLUMNS), "szukanie"),
     Changed.ORDER_LINK: (PagePart.RESULTS, OtherShape(Shape.ROW_CELLS), "szukanie"),
     Changed.DATE_FORMAT: (PagePart.ORDER, OtherShape(Shape.DATE_TEXT), "otwarcie zlecenia"),
     Changed.DATE_DIALOG: (PagePart.DATE, BrowserFailure(TIMEOUT, Operation.ELEMENT), "data wykonania"),
     Changed.EMMETT_BUTTON: (PagePart.EMMETT, ElementCount("#button_emmett", 0), "Wycena Emmetta"),
     Changed.HIDDEN_EMMETT: (PagePart.EMMETT, BrowserFailure(TIMEOUT, Operation.CLICK), "Wycena Emmetta"),
-    Changed.POSITION_CODE: (PagePart.ORDER, MissingPositions(("029",)), None),
     Changed.STALE_AMOUNT: (PagePart.QUANTITY, BrowserFailure(TIMEOUT, Operation.AMOUNT), "ilość"),
     Changed.QUANTITY_ANSWER: (PagePart.QUANTITY, OtherShape(Shape.ANSWER_NOT_JSON, "012"), "ilość"),
     Changed.QUANTITY_VALUE: (PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, "012"), "otwarcie zlecenia"),
@@ -609,7 +706,8 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
     facts = outcome.ending.facts
     assert isinstance(facts, PricingStopped) and facts.stopped_at is not None
     stopped_at = facts.stopped_at.failed
-    assert (facts.part, facts.cause, None if stopped_at is None else stopped_at.action) == (part, cause, failed)
+    assert stopped_at is not None
+    assert (facts.part, facts.cause, stopped_at.action) == (part, cause, failed)
 
 
 def test_zmieniona_strona_efenix_oznacza_gotowe_przed_nia_a_komunikat_do_maksa_nie_ma_numeru_adresu_ani_loginu(

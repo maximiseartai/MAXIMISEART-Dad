@@ -14,7 +14,17 @@ from typing import Final
 
 from .efenix_checks import DateRefused, OrderProblem, PagePart
 from .efenix_marking import Refusal
-from .efenix_positions import Conflict, NotWholeQuantities, OrderFault, OtherAmount, PricedDifferently, UnpairedColumns, column_of
+from .efenix_positions import (
+    Conflict,
+    MissingPositions,
+    NotWholeQuantities,
+    OrderFault,
+    OtherAmount,
+    PageRead,
+    PricedDifferently,
+    UnpairedColumns,
+    column_of,
+)
 from .message import REPORT_TO_MAINTAINER, Message, file_label
 from .workbook_files import Problem, WorkbookError
 
@@ -226,12 +236,13 @@ def marks_not_saved(source: Path, refusal: Refusal) -> Message:
 def order_error(source: Path, row: int, problem: OrderFault) -> Message:
     """Zlecenie z wiersza ``row`` Pliku zbiorczego, które proces zostawia tacie, bo ``problem``.
 
-    Kwota inna niż AU po dopisaniu ilości i data, której efenix nie zapisał po „Potwierdź”, to jedyne błędy, przy których
-    proces mógł już coś zmienić w zleceniu w efenix.
+    Kwota inna niż AU po dopisaniu ilości, data, której efenix nie zapisał po „Potwierdź”, i strona bez pozycji z ilością
+    w pliku po dacie wykonania albo po Wycenie Emmetta to jedyne błędy, przy których proces mógł już coś zmienić w
+    zleceniu w efenix.
     """
 
     code, what, action = _order_error(problem)
-    unchanged = "" if isinstance(problem, OtherAmount) or problem is DateRefused.NOT_SAVED else " Zlecenie zostało w efenix bez zmian."
+    unchanged = " Zlecenie zostało w efenix bez zmian." if _left_unchanged(problem) else ""
     return Message(
         code=code,
         dad_file="collective_file",
@@ -239,6 +250,16 @@ def order_error(source: Path, row: int, problem: OrderFault) -> Message:
         where=f"{file_label(source)}, wiersz {row}",
         action=action,
     )
+
+
+def _left_unchanged(problem: OrderFault) -> bool:
+    match problem:
+        case OtherAmount() | DateRefused.NOT_SAVED:
+            return False
+        case MissingPositions(read=read):
+            return read is PageRead.OPENED
+        case _:
+            return True
 
 
 def emmett_conflict(source: Path, row: int, conflicts: Sequence[Conflict]) -> Message:
@@ -269,6 +290,16 @@ def _amount(amount: Decimal) -> str:
     return f"{amount:.2f}".replace(".", ",") + " zł"
 
 
+_MISSING_AFTER: Final = {
+    PageRead.OPENED: "",
+    PageRead.AFTER_DATE: (
+        " Narzędzie ustawiło już datę wykonania z DATA, ale nie załadowało Wyceny Emmetta i nie wpisało ilości."
+    ),
+    PageRead.AFTER_EMMETT: " Wycena Emmetta jest już załadowana, a narzędzie niczego do niej nie dopisało.",
+}
+"""Co proces zmienił już w zleceniu w efenix, zanim odczyt strony pokazał brak pozycji."""
+
+
 def _order_error(problem: OrderFault) -> tuple[str, str, str]:
     match problem:
         case UnpairedColumns(columns):
@@ -282,6 +313,15 @@ def _order_error(problem: OrderFault) -> tuple[str, str, str]:
                 "EFENIX_ILOSC_NIECALKOWITA",
                 f"Ilość usług nie jest liczbą całkowitą większą od 0 w kolumnach: {', '.join(columns)}.",
                 "Popraw ilość w Pliku zbiorczym albo wyceń zlecenie w efenix sam.",
+            )
+        case MissingPositions(positions, read):
+            return (
+                "EFENIX_BRAK_POZYCJI",
+                (
+                    "Strona zlecenia w efenix nie ma pozycji, w których Plik zbiorczy ma ilość:"
+                    f" {', '.join(_position(position) for position in positions)}.{_MISSING_AFTER[read]}"
+                ),
+                "Sprawdź ilości w tych kolumnach Pliku zbiorczego i pozycje zlecenia w efenix, a potem wyceń zlecenie w efenix sam.",
             )
         case PricedDifferently(efenix_amount, file_amount, positions):
             different = f" Inne ilości: {', '.join(_position(position) for position in positions)}." if positions else ""

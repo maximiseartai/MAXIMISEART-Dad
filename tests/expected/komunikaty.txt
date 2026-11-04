@@ -1186,6 +1186,21 @@ order_error #15 [EFENIX_INNA_KWOTA]
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź wycenę w efenix i Plik zbiorczy, popraw tę, która jest błędna, i uruchom ponownie.
 
+order_error #16 [EFENIX_BRAK_POZYCJI]
+  Co się stało: Strona zlecenia w efenix nie ma pozycji, w których Plik zbiorczy ma ilość: pozycja INDEKS_012 (kolumna O), pozycja INDEKS_019 (kolumna T). Zlecenie zostało w efenix bez zmian.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź ilości w tych kolumnach Pliku zbiorczego i pozycje zlecenia w efenix, a potem wyceń zlecenie w efenix sam.
+
+order_error #17 [EFENIX_BRAK_POZYCJI]
+  Co się stało: Strona zlecenia w efenix nie ma pozycji, w których Plik zbiorczy ma ilość: pozycja INDEKS_012 (kolumna O), pozycja INDEKS_019 (kolumna T). Narzędzie ustawiło już datę wykonania z DATA, ale nie załadowało Wyceny Emmetta i nie wpisało ilości.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź ilości w tych kolumnach Pliku zbiorczego i pozycje zlecenia w efenix, a potem wyceń zlecenie w efenix sam.
+
+order_error #18 [EFENIX_BRAK_POZYCJI]
+  Co się stało: Strona zlecenia w efenix nie ma pozycji, w których Plik zbiorczy ma ilość: pozycja INDEKS_012 (kolumna O), pozycja INDEKS_019 (kolumna T). Wycena Emmetta jest już załadowana, a narzędzie niczego do niej nie dopisało.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź ilości w tych kolumnach Pliku zbiorczego i pozycje zlecenia w efenix, a potem wyceń zlecenie w efenix sam.
+
 emmett_conflict [EFENIX_SPRZECZNOSC_Z_EMMETTEM]
   Co się stało: Wycena Emmetta ma inne ilości niż Plik zbiorczy: pozycja INDEKS_012 (kolumna O): Emmett 2, plik 1; pozycja INDEKS_020 (bez kolumny w Pliku zbiorczym): Emmett 1, plik 0. Wycena Emmetta jest załadowana, a narzędzie niczego do niej nie dopisało.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23

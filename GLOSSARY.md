@@ -57,7 +57,10 @@ zlecenia Pliku zbiorczego, które nie jest Zleceniem ze zdjęciami ani usterką,
 Wyceną Emmetta i Ilościami usług z Pliku zbiorczego, a gotowe oznacza
 Znacznikiem efenix. Nigdy nie robi Przekazania do akceptacji. Zlecenie, którego
 nie da się uzupełnić tak, żeby kwota była równa `Kwota` (AU), zostawia tacie
-jako błąd, a sprzeczność z Wyceną Emmetta jako ostrzeżenie.
+jako błąd, a sprzeczność z Wyceną Emmetta jako ostrzeżenie. Strona zlecenia w
+efenix bywa bez części pozycji wyceny: brak pozycji, w której Plik zbiorczy ma
+0 albo pustą komórkę, nie przeszkadza, a brak pozycji, w której ma ilość, to
+błąd tego zlecenia.
 _Avoid_: wpisywanie, import, synchronizacja
 
 ## Wycena Emmetta

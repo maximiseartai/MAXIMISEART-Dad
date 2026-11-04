@@ -893,16 +893,10 @@ def test_okno_efenix_zamkniete_w_trakcie_logowania_zatrzymuje_wycene_od_razu_a_c
 
 
 # Zatrzymanie okna efenix przy wierszu 19, gdy wiersz 18 jest już gotowy (Zgłoszenia #19 i #20 z
-# MAXIMISEART-Dad-zgloszenia): zlecenie Atrapy w wierszu 19 i przyczyna, którą Logi mają podać. Hipotezy A–D z tabeli
-# decyzji (``tests/test_tabela_zatrzyman_efenix.py``).
+# MAXIMISEART-Dad-zgloszenia): zlecenie Atrapy w wierszu 19 i przyczyna, którą Logi mają podać. Hipotezy B–E z tabeli
+# decyzji (``tests/test_tabela_zatrzyman_efenix.py``); hipoteza A od #819 nie jest Zatrzymaniem.
 STOPPED_AT_SECOND = [PRICED[0], Order("#ZLQX07", worker="gosia.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})))]
 HYPOTHESES = {
-    "A-brak-pozycji": (
-        replace(STOPPED_AT_SECOND[1].in_efenix("617"), changed=Changed.POSITION_CODE),
-        {"what": "strona zlecenia bez pozycji z przypisania kolumn", "positions": ["029"]},
-        ["szukanie", "otwarcie zlecenia"],
-        None,
-    ),
     "B-ilosc-niecalkowita": (
         replace(STOPPED_AT_SECOND[1].in_efenix("617"), changed=Changed.QUANTITY_VALUE),
         {"what": "wartość pola Ilość, która nie jest liczbą całkowitą", "positions": ["012"]},
@@ -965,7 +959,7 @@ HYPOTHESES = {
 
 @pytest.mark.parametrize(("second", "cause", "steps", "failed"), HYPOTHESES.values(), ids=HYPOTHESES.keys())
 def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_i_slad_zlecen_sprzed_niego(
-    tmp_path: Path, second: AtrapaOrder, cause: dict[str, Any], steps: list[str], failed: str | None
+    tmp_path: Path, second: AtrapaOrder, cause: dict[str, Any], steps: list[str], failed: str
 ) -> None:
     """Okno efenix staje przy zleceniu w wierszu 19, a Logi Uruchomienia, które idą do Maksa same, bez Diagnozy, mówią
     dlaczego: przyczynę z zamkniętej listy (kody pozycji, budowę strony albo typ błędu Playwrighta z działaniem
@@ -987,7 +981,7 @@ def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_
     )
     assert {key: value for key, value in stop["cause"].items() if value is not None} == {"part": "ORDER", **cause}
     assert (stop["row"], stop["order"], stop["orders"]) == (19, 2, 2)
-    assert ([step["action"] for step in stop["steps"]], (stop["failed"] or {}).get("action")) == (steps, failed)
+    assert ([step["action"] for step in stop["steps"]], stop["failed"]["action"]) == (steps, failed)
     assert [(order["row"], order["outcome"], [step["action"] for step in order["steps"]]) for order in record["efenix_orders"]] == [
         (18, "gotowe", ["szukanie", "otwarcie zlecenia"])
     ]

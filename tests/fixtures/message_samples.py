@@ -27,7 +27,16 @@ from rozliczenia.centrum.tool_update import LIBRARIES_FAILED, NEW_VERSION_FAILED
 from rozliczenia.efenix_checks import DateRefused, OrderProblem
 from rozliczenia.efenix_marking import Refusal
 from rozliczenia.efenix_pricing import PagePart
-from rozliczenia.efenix_positions import Conflict, NotWholeQuantities, OrderFault, OtherAmount, PricedDifferently, UnpairedColumns
+from rozliczenia.efenix_positions import (
+    Conflict,
+    MissingPositions,
+    NotWholeQuantities,
+    OrderFault,
+    OtherAmount,
+    PageRead,
+    PricedDifferently,
+    UnpairedColumns,
+)
 from rozliczenia.message import Message
 from rozliczenia.period_folder import (
     FolderNotNamedAfterPeriod,
@@ -301,6 +310,7 @@ _ORDER_FAULTS: tuple[OrderFault, ...] = (
     PricedDifferently(Decimal("150.00"), Decimal("125.5"), ("005", "012")),
     PricedDifferently(Decimal("150.00"), Decimal("125.5"), ()),
     OtherAmount(Decimal("1234.50"), Decimal("1200")),
+    *(MissingPositions(("012", "019"), read) for read in PageRead),
 )
 EFENIX_SAMPLES: Samples = {
     "source_unusable": [partial(efenix_messages.source_unusable, WorkbookError(SOURCE, problem)) for problem in Problem],
