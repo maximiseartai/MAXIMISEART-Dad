@@ -22,11 +22,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import part
 
-# Jednostka to skrypt skilla z argumentami; każda biegnie od świeżego startu. Zakres ``watek-okresu`` trwa sam tyle co
-# reszta zakresów i model razem (w CI ok. 190 s z 340 s), więc jest osobną jednostką na początku: przy dwóch częściach
-# dostaje część dla siebie, a dłużej niż on nie trwa już żadna część.
+# Jednostka to skrypt skilla z argumentami; każda biegnie od świeżego startu. Na Macu Maksa (2026-11-04) zakres
+# ``watek-okresu`` trwa ok. 22 s, ``diagnoza`` ok. 9 s, cztery pozostałe zakresy razem ok. 8 s, a model ok. 18 s, więc
+# przy dwóch częściach pierwsza bierze dwa najdłuższe zakresy, a druga resztę i model (ok. 31 s i 26 s).
 UNITS = (
     ("explore_outbox.py", ("--scope", "watek-okresu")),
+    ("explore_outbox.py", ("--scope", "diagnoza")),
     (
         "explore_outbox.py",
         (

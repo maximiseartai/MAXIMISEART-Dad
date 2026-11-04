@@ -1,4 +1,4 @@
-"""Exhaustively check that the Kolejka Skrzynki Zgłoszeń delivers every part of every wysyłka.
+"""Exhaustively check that the Kolejka Skrzynki Zgłoszeń delivers every part of every wysyłka exactly once.
 
 The checker runs the real ``outbox.Outbox`` (its ``_drain`` and ``_send_all``) and the real ``KeyedBox`` against an
 in-memory Skrzynka Zgłoszeń, on a real queue folder in a temporary directory. Each call the code makes to the
@@ -10,12 +10,11 @@ of a scope, re-running the code from scratch once per schedule. A pass runs only
 starts the queue thread, as ``Outbox.post``, ``Outbox.resume`` at a start, or the ``RETRY_S`` wake (``_woken``) that
 ``_drain`` armed ask it to. When no thread starts, the schedule may end there. Then it checks:
 
-- WSZYSTKIE_CZESCI: every part of every wysyłka is in the Skrzynka, in an issue of its target (decision 12 in
-  ADR 0015: „Wysyłka jest co najmniej raz”).
+- DOKLADNIE_RAZ: every part of the newest version of every wysyłka is in the Skrzynka exactly once, in an issue of
+  its target, and no text of an older version of it is left there (ADR 0015 after #840: „Wysyłka jest dokładnie
+  raz”); a part the newest version no longer has is ``_RETIRED``.
 - JEDNO_ISSUE: one problem has one open Zgłoszenie and one period has one issue okresu; a wysyłka to a new issue
-  (Uwaga taty) opens one issue. ADR 0015 accepts a second issue of a NewIssue after the connection broke once the
-  Skrzynka opened it (a lost answer, a failed comment), and the docstring of ``outbox.py`` after a process killed
-  before the delivery marker (``_connection_broke_after_issue``).
+  (Uwaga taty) opens one issue.
 - KOLEJKA_PUSTA: no queue file without its delivery marker is left when the schedule ends; a delivered file whose
   removal failed may wait for the next start.
 - BEZ_WYJATKU: no pass ends in an exception that ``_drain`` logs as ``nieoczekiwany-wyjatek``.
@@ -32,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import shutil
 import sys
 import tempfile
@@ -58,7 +58,9 @@ from rozliczenia.centrum.outbox import (
 )
 from rozliczenia.centrum.report_box import (
     Closure,
+    Comment,
     CommentOutcome,
+    CommentsOutcome,
     Commented,
     Issue,
     IssuesOutcome,
@@ -97,6 +99,7 @@ class _Issue:
     title: str
     body: str
     comments: list[str] = field(default_factory=list)
+    comment_ids: list[int] = field(default_factory=list)
     closed: bool = False
 
 
@@ -127,8 +130,9 @@ class MemoryBox:
         failure = self._scheduler.box_write(f"comment(#{number}, {_part_name(body)})")
         if failure == "unreachable":
             return Unreachable()
-        self.issues[number].comments.append(body)
         self._comment_ids += 1
+        self.issues[number].comments.append(body)
+        self.issues[number].comment_ids.append(self._comment_ids)
         self._scheduler.say(
             f"Skrzynka dopisuje komentarz do #{number}"
             + (", odpowiedź ginie (Unreachable)" if failure else "")
@@ -139,6 +143,34 @@ class MemoryBox:
             else Commented(
                 self._comment_ids, f"https://skrzynka/{number}#{self._comment_ids}"
             )
+        )
+
+    def edit_comment(self, comment_id: int, body: str, *, key: str) -> CommentOutcome:
+        number, issue = next(
+            (number, issue) for number, issue in self.issues.items() if comment_id in issue.comment_ids
+        )
+        failure = self._scheduler.box_write(f"edit_comment(#{number}, {_part_name(body)})")
+        if failure == "unreachable":
+            return Unreachable()
+        issue.comments[issue.comment_ids.index(comment_id)] = body
+        self._scheduler.say(
+            f"Skrzynka zmienia komentarz w #{number}"
+            + (", odpowiedź ginie (Unreachable)" if failure else "")
+        )
+        return (
+            Unreachable()
+            if failure
+            else Commented(comment_id, f"https://skrzynka/{number}#{comment_id}")
+        )
+
+    def comments(self, number: int, *, key: str) -> CommentsOutcome:
+        if self._scheduler.box_read(f"comments(#{number})"):
+            return Unreachable()
+        issue = self.issues[number]
+        self._scheduler.say(f"Skrzynka zwraca komentarze #{number}: {len(issue.comments)}")
+        return tuple(
+            Comment(comment_id, f"https://skrzynka/{number}#{comment_id}", body)
+            for comment_id, body in zip(issue.comment_ids, issue.comments, strict=True)
         )
 
     def labelled_issues(
@@ -251,7 +283,7 @@ class Scheduler:
 
 def _part_name(text: str) -> str:
     return next(
-        (line for line in text.splitlines() if line.startswith("część ")), "treść"
+        (line for line in text.splitlines() if line.startswith(("część ", "Ta część"))), "treść"
     )
 
 
@@ -263,6 +295,12 @@ class Scope:
     bounds: Bounds
 
 
+LOGS = PeriodThread(
+    "logi-uruchomienia",
+    "- Logi Uruchomienia okresu: 08_14_09_2026",
+    "reuse",
+    "Logi Uruchomienia 08_14_09_2026",
+)
 REPORT = ReportIssue(
     fingerprint="4f1c2d", title="Zgłoszenie: Przebieg rozliczeń zatrzymany"
 )
@@ -277,14 +315,21 @@ KNOWN = KnownIssue("uwaga-taty", 1)
 
 
 def _post(
-    target: ReportIssue | PeriodThread | NewIssue | KnownIssue, run_id: str, count: int
+    target: ReportIssue | PeriodThread | NewIssue | KnownIssue,
+    run_id: str,
+    count: int,
+    *,
+    header: str | None = None,
+    version: str = "",
 ) -> Post:
+    """Wysyłka ``run_id`` w ``count`` częściach; ``version`` odróżnia treść nowszej wersji tej samej wysyłki."""
+
     first = f"{REPORT.line}\n" if isinstance(target, ReportIssue) else ""
     parts = tuple(
-        f"{first if number == 1 else ''}część {number}/{count} wysyłki {run_id}"
+        f"{first if number == 1 else ''}część {number}/{count} wysyłki {run_id}{version}"
         for number in range(1, count + 1)
     )
-    return Post(target, "08_14_09_2026", run_id, None, parts)
+    return Post(target, "08_14_09_2026", run_id, header, parts)
 
 
 BOUNDS = Bounds(unreachable=2, lost=1, disk=1, kills=1)
@@ -319,6 +364,17 @@ SCOPES = {
         (("uwaga-taty", "Uwaga taty", "treść Uwagi"),),
         BOUNDS,
     ),
+    "diagnoza": Scope(
+        "Logi Uruchomienia (PeriodThread z nagłówkiem) w dwóch częściach, potem ich Diagnoza w jednej: nowsza wersja "
+        "tej samej wysyłki zmienia część 1 i opróżnia część 2.",
+        (
+            _post(LOGS, "uruchomienie", 2, header="Logi okresu"),
+            _post(LOGS, "uruchomienie", 1, header="Logi okresu", version=" po Diagnozie"),
+        ),
+        (),
+        # Z BOUNDS też przechodzi (51 s na Macu Maksa 2026-11-04 wobec 9 s), a w CI byłby najdłuższą jednostką.
+        Bounds(unreachable=1, lost=1, disk=1, kills=1),
+    ),
 }
 
 Faults = Sequence[tuple[str, str]]
@@ -336,44 +392,9 @@ class Excuse:
     because: Callable[[Faults], bool]
 
 
-def _after_opened_issue(faults: Faults) -> bool:
-    """The first attempt opened the issue and stopped before its comments: a lost answer to ``open_issue`` or any
-    fault at a ``comment``."""
-
-    return ("lost", "open_issue") in faults or any(
-        step == "comment" for _, step in faults
-    )
-
-
-def _connection_broke_after_issue(faults: Faults) -> bool:
-    """The connection broke after the Skrzynka opened the issue (``_after_opened_issue``), or the process died after
-    the Skrzynka took the wysyłka and before a delivery marker was on disk: at a ``comment``, at the marker, or at
-    the removal after the marker failed. Not a restart after a failed removal of a file with its marker, and not a
-    process killed before the Skrzynka got anything: the marker is there to prevent a second issue then."""
-
-    marker_failed = False
-    for kind, step in faults:
-        if (kind, step) == ("oserror", "zapis znacznika dostarczenia"):
-            marker_failed = True
-        if kind == "kill" and (
-            step in ("comment", "zapis znacznika dostarczenia")
-            or (step == "usunięcie pliku kolejki" and marker_failed)
-        ):
-            return True
-    return _after_opened_issue(faults)
-
-
 # Each must break in its scope after its faults, or the check ends with ZNALEZISKO ZNIKNĘŁO.
 KNOWN_FINDINGS: tuple[Excuse, ...] = ()
-ACCEPTED_RISKS = (
-    Excuse(
-        "nowe-issue",
-        "JEDNO_ISSUE",
-        "ADR 0015: „Wysyłka jest co najmniej raz: zerwane połączenie po utworzeniu issue może dać drugie issue”; "
-        "tak samo proces zamknięty przed znacznikiem (outbox.py: przerwanie między wysłaniem a znacznikiem)",
-        _connection_broke_after_issue,
-    ),
-)
+ACCEPTED_RISKS: tuple[Excuse, ...] = ()
 Kind = Literal["known", "accepted", "new"]
 
 
@@ -502,6 +523,7 @@ def _check(
     scope: Scope, box: MemoryBox, queue: Path, failures: list[str], ended: str
 ) -> list[tuple[str, str]]:
     broken: list[tuple[str, str]] = []
+    newest = {(post.target.label, post.run_id): post for post in scope.posts}
     for post in scope.posts:
         target = post.target
         if isinstance(target, KnownIssue):
@@ -520,16 +542,26 @@ def _check(
                 and target.line in issue.body.splitlines()
             ]
         texts = [text for issue in mine for text in (issue.body, *issue.comments)]
-        missing = [
-            f"{number}/{len(post.parts)}"
+        times = {
+            f"{number}/{len(post.parts)}": sum(part in text for text in texts)
             for number, part in enumerate(post.parts, 1)
-            if not any(part in text for text in texts)
-        ]
-        if missing:
+        }
+        if newest[post.target.label, post.run_id] is not post:
+            left = [part for part, count in times.items() if count]
+            if left:
+                broken.append(
+                    (
+                        "DOKLADNIE_RAZ",
+                        f"w Skrzynce zostaje część {', '.join(left)} starszej wersji wysyłki {post.run_id}",
+                    )
+                )
+            continue
+        wrong = [f"{part} ({count} razy)" for part, count in times.items() if count != 1]
+        if wrong:
             broken.append(
                 (
-                    "WSZYSTKIE_CZESCI",
-                    f"w Skrzynce nie ma części {', '.join(missing)} wysyłki {post.run_id}",
+                    "DOKLADNIE_RAZ",
+                    f"w Skrzynce jest część {', '.join(wrong)} wysyłki {post.run_id}",
                 )
             )
         if (
@@ -557,6 +589,9 @@ def _check(
     return list(dict.fromkeys(broken))
 
 
+_VERSION = re.compile(r"wersja (\S+) -->")
+
+
 def _state(
     box: MemoryBox,
     queue: Path,
@@ -566,11 +601,15 @@ def _state(
     failures: list[str],
     clock: _Clock,
     threads: int,
+    versions: dict[str, str],
 ) -> object:
     """What decides every future of a pass boundary and how its breaks are judged: the Skrzynka, the queue files,
     the files ``_remove`` could not delete, the faults so far and those left, the passes left and the exceptions.
     The faults so far count as a set plus the verdict of each ``Excuse`` on them: an excuse that holds keeps holding,
     and the only order it reads (a failed marker before a kill at the removal) is in the set as the failed marker.
+
+    The version of a wysyłka in the Skrzynka's texts (``outbox._version``, from the moment the checker posted it) counts
+    as its place among the scope's wysyłki (``versions``): the code only compares versions of one wysyłka.
 
     Also whether a ``RETRY_S`` wake is armed, and ``_stopped_on`` and ``_retry_armed``, which decide in ``_drain``
     whether the next one is, and ``_draining``, ``_again`` and the queue threads started and not run yet, which decide
@@ -582,9 +621,12 @@ def _state(
     files = {
         path.name: path.read_text(encoding="utf-8") for path in queue.glob("*.json")
     }
+    def same(text: str) -> str:
+        return _VERSION.sub(lambda found: f"wersja {versions.get(found.group(1), '?')} -->", text)
+
     return (
         tuple(
-            (n, i.label, i.title, i.body, tuple(i.comments), i.closed)
+            (n, i.label, i.title, same(i.body), tuple(map(same, i.comments)), i.closed)
             for n, i in sorted(box.issues.items())
         ),
         tuple(sorted(files.values())),
@@ -645,6 +687,10 @@ def execute(
         for post in scope.posts:
             assert outbox.post(post), "zapis wysyłki do kolejki"
         scheduler.say("wysyłki czekają w kolejce (Outbox.post)")
+        versions = {
+            outbox_module._version(path): str(place)
+            for place, path in enumerate(sorted(queue.glob("*.json")), start=1)
+        }
         bounds = scope.bounds
         passes = (
             bounds.unreachable + bounds.lost + bounds.disk + bounds.kills + EXTRA_PASSES
@@ -685,6 +731,7 @@ def execute(
                     failures,
                     clock,
                     len(started_threads),
+                    versions,
                 )
                 if state in visited and len(scheduler.taken) >= len(prefix):
                     return scheduler, []

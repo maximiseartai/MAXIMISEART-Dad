@@ -150,7 +150,7 @@ def test_kontrprzyklad_skleja_wartosc_zmiennej_z_kilku_linii_tlc() -> None:
 
 # Jedno znane znalezisko „a” obietnicy JednoIssue i odpowiedzi TLC: bez wybaczenia (przebieg znaleziska) i z nim (reszta).
 FINDING = {"wynik": "narusza", "obietnica": "JednoIssue", "przyczyna": "a", "znalezisko": "opis"}
-FORGIVEN = ("JednoIssuePozaZnanymi", 'WybaczoneJednoIssue = {"a"}', "WybaczoneWszystkieCzesci = {}", "WybaczoneZbieganie = {}")
+FORGIVEN = ("JednoIssuePozaZnanymi", 'WybaczoneJednoIssue = {"a"}', "WybaczoneDokladnieRaz = {}", "WybaczoneZbieganie = {}")
 
 
 @pytest.mark.parametrize(
@@ -158,9 +158,9 @@ FORGIVEN = ("JednoIssuePozaZnanymi", 'WybaczoneJednoIssue = {"a"}', "WybaczoneWs
     [
         (_violation("JednoIssue", '{"a"}'), PASSED, "MODEL KOLEJKI OK, ZNANE ZNALEZISKA: 1", 0),
         (PASSED, PASSED, "MODEL KOLEJKI: ZNALEZISKO ZNIKNĘŁO (1)", 1),
-        (_violation("JednoIssue", '{"a"}'), _violation("WszystkieCzesciPozaZnanymi", '{"a"}'), "MODEL KOLEJKI: NOWE NARUSZENIE (1)", 1),
-        (_violation("WszystkieCzesci", '{"a"}'), PASSED, "MODEL KOLEJKI: NOWE NARUSZENIE (1)", 1),
-        (_violation("JednoIssue", '{"zerwane_po_zalozeniu"}'), PASSED, "MODEL KOLEJKI: NOWE NARUSZENIE (1)", 1),
+        (_violation("JednoIssue", '{"a"}'), _violation("DokladnieRazPozaZnanymi", '{"a"}'), "MODEL KOLEJKI: NOWE NARUSZENIE (1)", 1),
+        (_violation("DokladnieRaz", '{"a"}'), PASSED, "MODEL KOLEJKI: NOWE NARUSZENIE (1)", 1),
+        (_violation("JednoIssue", '{"b"}'), PASSED, "MODEL KOLEJKI: NOWE NARUSZENIE (1)", 1),
         (_violation("TypeOK", '{"a"}'), PASSED, "MODEL KOLEJKI: BŁĄD MODELU (1)", 2),
     ],
     ids=["znane", "zniknelo", "inna-obietnica-w-reszcie", "inna-obietnica", "bez-przyczyny", "typeok"],
@@ -171,8 +171,8 @@ def test_znane_znalezisko_wybacza_tylko_swoja_obietnice_po_swojej_przyczynie(
     module = _load()
     (tmp_path / "oczekiwane.json").write_text(json.dumps({"f": FINDING}), encoding="utf-8")
     (tmp_path / "f.cfg").write_text(
-        "\\* Opis.\nINVARIANTS TypeOK JednoIssue WszystkieCzesci CzesciWKolejnosci\nPROPERTIES Zbieganie\nCONSTANTS\n"
-        + "".join(f"    Wybaczone{promise} = {{}}\n" for promise in ("JednoIssue", "WszystkieCzesci", "CzesciWKolejnosci", "Zbieganie")),
+        "\\* Opis.\nINVARIANTS TypeOK JednoIssue DokladnieRaz CzesciWKolejnosci\nPROPERTIES Zbieganie\nCONSTANTS\n"
+        + "".join(f"    Wybaczone{promise} = {{}}\n" for promise in ("JednoIssue", "DokladnieRaz", "CzesciWKolejnosci", "Zbieganie")),
         encoding="utf-8",
     )
     monkeypatch.setattr(module, "MODEL", tmp_path)
@@ -205,7 +205,7 @@ def test_konfiguracja_bez_znaleziska_z_kontrprzykladem_to_nowe_naruszenie(
     monkeypatch.setattr(module, "_moved_definitions", lambda tools, root, skill_md: None)
     monkeypatch.setenv("TLC_JAVA", "java")
     monkeypatch.setenv("TLC_JAR", str(tmp_path / "tla2tools.jar"))
-    monkeypatch.setattr(module, "_tlc", lambda java, jar, name, config: _violation("WszystkieCzesci", "{}"))
+    monkeypatch.setattr(module, "_tlc", lambda java, jar, name, config: _violation("DokladnieRaz", "{}"))
 
     assert module.main([]) == 1
     assert capsys.readouterr().out.splitlines()[-1] == "MODEL KOLEJKI: NOWE NARUSZENIE (1)"
@@ -266,15 +266,19 @@ def test_rozjazd_liczy_w_plikach_procesu_centrum_tylko_definicje_procesow_centru
         assert found == f"kod procesów Centrum zmienił się od {sync[:8]}: {moved}. Sprawdź Start, Zamknij i KoniecProcesu."
 
 
+# Dwa najdłuższe zakresy sprawdzenia kodu, każdy osobną jednostką na początku ``UNITS``.
+LONG = ["explore_outbox.py --scope watek-okresu", "explore_outbox.py --scope diagnoza"]
+
+
 @pytest.mark.parametrize(
     ("part", "failing", "ran", "last", "returncode"),
     [
-        ("", "", ["explore_outbox.py --scope watek-okresu", "explore_outbox.py --scope zgloszenie", "sprawdz_model_kolejki.py"], "KOLEJKA SKRZYNKI OK", 0),
-        ("", "sprawdz_model_kolejki.py", ["explore_outbox.py --scope watek-okresu", "explore_outbox.py --scope zgloszenie", "sprawdz_model_kolejki.py"], "KOLEJKA SKRZYNKI: PADŁO sprawdz_model_kolejki.py", 1),
-        ("", "explore_outbox.py --scope watek-okresu", ["explore_outbox.py --scope watek-okresu", "explore_outbox.py --scope zgloszenie", "sprawdz_model_kolejki.py"], "KOLEJKA SKRZYNKI: PADŁO explore_outbox.py --scope watek-okresu", 1),
+        ("", "", [*LONG, "explore_outbox.py --scope zgloszenie", "sprawdz_model_kolejki.py"], "KOLEJKA SKRZYNKI OK", 0),
+        ("", "sprawdz_model_kolejki.py", [*LONG, "explore_outbox.py --scope zgloszenie", "sprawdz_model_kolejki.py"], "KOLEJKA SKRZYNKI: PADŁO sprawdz_model_kolejki.py", 1),
+        ("", "explore_outbox.py --scope watek-okresu", [*LONG, "explore_outbox.py --scope zgloszenie", "sprawdz_model_kolejki.py"], "KOLEJKA SKRZYNKI: PADŁO explore_outbox.py --scope watek-okresu", 1),
         ("2/2", "", ["explore_outbox.py --scope zgloszenie", "sprawdz_model_kolejki.py"], "KOLEJKA SKRZYNKI OK", 0),
-        ("1/2", "", ["explore_outbox.py --scope watek-okresu"], "KOLEJKA SKRZYNKI OK", 0),
-        ("4/4", "", [], "KOLEJKA SKRZYNKI: PADŁO (MUTACJE_CZESC to K/N z 1 <= K <= N <= 3, nie '4/4')", 1),
+        ("1/2", "", LONG, "KOLEJKA SKRZYNKI OK", 0),
+        ("5/5", "", [], "KOLEJKA SKRZYNKI: PADŁO (MUTACJE_CZESC to K/N z 1 <= K <= N <= 4, nie '5/5')", 1),
     ],
     ids=["calosc", "model-pada", "zakres-pada", "czesc-2-z-2", "czesc-1-z-2", "zla-czesc"],
 )

@@ -38,7 +38,7 @@ LIVENESS = "Zbieganie"
 # Obietnice, każda z wariantem ``…PozaZnanymi`` i stałą ``Wybaczone…`` w modelu, i ich zdanie dla czytelnika.
 PROMISES = {
     "JednoIssue": "okres, problem Zgłoszenia albo Uwaga taty ma drugie issue.",
-    "WszystkieCzesci": "plik kolejki zniknął albo ma znacznik, a Skrzynka nie ma którejś jego części.",
+    "DokladnieRaz": "plik kolejki zniknął albo ma znacznik, a Skrzynka nie ma którejś jego części, albo ma część dwa razy.",
     "CzesciWKolejnosci": "część k stoi w issue przed częścią k-1 tej samej wysyłki.",
     LIVENESS: "awarie się skończyły, a plik wysyłki bez znacznika zostaje w kolejce.",
 }
