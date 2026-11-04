@@ -721,12 +721,14 @@ def test_plik_kolejki_ktorego_nigdy_nie_da_sie_odczytac_ponawia_co_minute_z_jedn
     assert f"skrzynka-nieczytelny plik={name}" in line
 
 
-def run_logs(version: str, count: int, *, header: str | None = "Logi Uruchomień okresu.") -> Post:
-    """Logi Uruchomienia ``RUN_ID`` w ``count`` częściach; ``version`` mówi, po której Diagnozie, a każda Diagnoza
+def run_logs(
+    version: str, count: int, *, header: str | None = "Logi Uruchomień okresu.", run_id: str = RUN_ID
+) -> Post:
+    """Logi Uruchomienia ``run_id`` w ``count`` częściach; ``version`` mówi, po której Diagnozie, a każda Diagnoza
     kolejkuje nowszą wersję tej samej wysyłki (``RunLogs.diagnosed``)."""
 
     parts = tuple(f"Logi {version}, część {number}/{count}\n" for number in range(1, count + 1))
-    return Post(LOGS, "08_14_09_2026", RUN_ID, header, parts)
+    return Post(LOGS, "08_14_09_2026", run_id, header, parts)
 
 
 @pytest.mark.parametrize(
@@ -759,6 +761,40 @@ def test_logi_sprzed_diagnozy_ktore_dojda_po_logach_z_diagnoza_nie_zostawiaja_w_
     texts = [issue.body, *issue.comments]
     assert [text for text in texts if "po pierwszej Diagnozie" in text] == []
     assert sum(part in text for part in run_logs("po drugiej Diagnozie", newer).parts for text in texts) == newer
+
+
+def test_logi_sprzed_diagnozy_ktore_dojda_po_logach_z_diagnoza_do_issue_okresu_innego_uruchomienia_go_nie_zmieniaja(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Zwykły przypadek u taty: issue okresu założyło wcześniejsze Uruchomienie, więc znacznik nowszej wersji Logów tego
+    # Uruchomienia stoi tylko w jego komentarzach. Starsza wersja dochodzi po nowszej (plik raz trzyma OneDrive) i nie
+    # zmienia ani komentarzy, ani adresu Logów Uruchomienia, który pokazuje podgląd Zgłoszenia (``RunLogs.link``).
+    queue = Queue(tmp_path, FakeReportBox())
+    queue.outbox.post(run_logs("wcześniejszego Uruchomienia", 1, run_id=NEXT_RUN_IDS[0]))
+    queue.passed()
+    queue.box.search_failure = Unreachable()
+    queue.outbox.post(run_logs("po pierwszej Diagnozie", 3))
+    queue.passed()
+    queue.outbox.post(run_logs("po drugiej Diagnozie", 2))
+    queue.passed()
+    queue.box.search_failure = None
+    locked_reads(monkeypatch, queue, times=1)
+
+    queue.clock.advance(RETRY_S)
+    queue.passed()
+    assert len(queue.files()) == 1, "plik starszej wersji czeka na następne przejście"
+    queue.clock.advance(RETRY_S)
+    queue.passed()
+
+    assert queue.files() == []
+    [issue] = queue.box.issues_with(LOGS.label)
+    earlier, *newer = issue.comments
+    assert "Logi wcześniejszego Uruchomienia" in earlier
+    assert newer == list(run_logs("po drugiej Diagnozie", 2).parts)
+    assert queue.outbox.delivered(RUN_ID, LOGS.label) == (
+        f"https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/{issue.number}"
+        f"#issuecomment-{issue.comment_ids[1]}"
+    )
 
 
 def test_logi_z_diagnoza_ponowione_po_urwanej_odpowiedzi_nie_zmieniaja_komentarzy_uruchomienia_drugi_raz(
