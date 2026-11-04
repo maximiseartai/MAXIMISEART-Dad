@@ -1,8 +1,8 @@
 """Show that explore_outbox.py fails on broken variants of the Kolejka Skrzynki Zgłoszeń.
 
 Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) and must end the checker's report with the
-expected line. A mutation whose anchor text is no longer in ``outbox.py`` is reported as NIEAKTUALNA: update it to
-the new code.
+expected line. A mutation whose anchor text is no longer in ``outbox.py`` (or ``report_box.py``, whose reading of
+GitHub's answers the checker takes from the real adapter) is reported as NIEAKTUALNA: update it to the new code.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 from mutacje import Edit, Mutation, check_all
 
 VERIFIED = Path("src/rozliczenia/centrum/outbox.py")
+REPORT_BOX = Path("src/rozliczenia/centrum/report_box.py")
 EXPLORER = ".agents/skills/verify-kolejka-skrzynki/scripts/explore_outbox.py"
 NEW = "KOLEJKA: NOWE NARUSZENIE"
 
@@ -332,6 +333,13 @@ MUTATIONS = (
         ),
         (EXPLORER, "--scope", "archiwum"),
         "plik Logów, którego Archiwum nie przyjęło, czeka do następnej wysyłki albo startu, choć uprawnienie wróciło",
+        NEW,
+    ),
+    Mutation(
+        "409 pustego repozytorium jako brak sieci (GitHubReportBox.open_archive sprzed #860 r2)",
+        (Edit(REPORT_BOX, "        if answer.status == _EMPTY_REPOSITORY:\n            return Rejected()\n", ""),),
+        (EXPLORER, "--scope", "archiwum-puste-repo"),
+        "repozytorium Skrzynki bez commitu zatrzymuje komentarz Logów i Zgłoszenie, które czeka za nimi w kolejce",
         NEW,
     ),
     Mutation(

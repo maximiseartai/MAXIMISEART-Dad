@@ -166,7 +166,7 @@ Dad does not click or see anything. The machine script sends none.
   tagged `logi-<token>` in the same private repository, which Centrum creates
   with the first Logi of the period (`#844`). It holds one file per
   Uruchomienie, named like the file in `logs\uruchomienia\` on Dad's computer
-  plus `.gz`; `gunzip` gives that file character for character. A Diagnoza
+  plus `.gz`; `gunzip` gives that file byte for byte. A Diagnoza
   replaces the file. The Release is not a Wydanie of the tool: it lives in the
   Zgłoszenia repository, and Centrum and the release tool only read the
   Wydania of the public repository. Do not delete it: Centrum would create a
@@ -182,10 +182,12 @@ Dad does not click or see anything. The machine script sends none.
 - The Token do Zgłoszeń needs write access to the repository's contents
   (fine-grained permission „Contents: Read and write”) to create the Release
   and upload files, and the repository needs at least one commit, because a
-  Release tags a branch. Without them the comment still goes, with a note that
-  the full Logi wait in the queue on Dad's computer; the file waits there
-  without any Komunikat for Dad (log line `przyczyna=odmowa-archiwum`) and goes
-  by itself once the permission is there, within a minute while Centrum runs.
+  Release tags a branch (GitHub answers `409 Git Repository is empty.`). Without
+  them the comment still goes, with a note that the full Logi wait in the queue
+  on Dad's computer; the file waits there without any Komunikat for Dad (log
+  line `przyczyna=odmowa-archiwum`), the rest of the queue (Zgłoszenia, Uwagi
+  taty, Kontrole ilości) goes on, and the file goes by itself once the
+  permission and the commit are there, within a minute while Centrum runs.
 - The Logi hold no cell content, but the Komunikaty are the card's, as in a
   Zgłoszenie: they name Wykonawcy and may quote a cell of the Rejestr zleceń
   (`ZLE_SKUTECZNE`, `NIEZNANY_WYKONAWCA`). Treat them like a Zgłoszenie.

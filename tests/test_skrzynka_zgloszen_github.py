@@ -43,7 +43,7 @@ from rozliczenia.centrum.report_box import (
 )
 from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.outbox import ArchiveFile, Outbox, PeriodThread, Post, fingerprint_line
+from rozliczenia.centrum.outbox import ArchiveFile, Outbox, PeriodThread, Post, ReportIssue, fingerprint_line
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
@@ -638,13 +638,22 @@ def test_niezwykla_odpowiedz_przy_archiwum_to_skrzynka_nieosiagalna(
     assert outcome == Unreachable()
 
 
+# Odpowiedź GitHuba na założenie Release w repozytorium bez commitu (repozytorium Skrzynki 2026-11-04, opis PR #860).
+EMPTY_REPOSITORY = {
+    "message": "Git Repository is empty.",
+    "documentation_url": "https://docs.github.com/rest/releases/releases#create-a-release",
+    "status": "409",
+}
+
+
 @dataclass
 class GitHubOnTransport:
     """GitHub REST dla Skrzynki w pamięci, za transportem HTTP: issue z komentarzami i Release'y z plikami.
 
     Zna tylko zapytania, które wysyła ``GitHubReportBox``, i jak GitHub nie trzyma dwóch plików jednej nazwy w jednym
     Release (422). ``refuse_releases``: klucz bez uprawnienia do treści repozytorium (403 przy każdym zapytaniu o
-    Release'y i ich pliki).
+    Release'y i ich pliki). ``empty_repository``: repozytorium bez żadnego commitu, jak repozytorium Skrzynki
+    2026-11-04: lista Release'ów jest pusta, a założenie Release to 409 „Git Repository is empty.”.
     """
 
     issues: dict[int, dict[str, Any]] = field(default_factory=dict)
@@ -652,6 +661,7 @@ class GitHubOnTransport:
     assets: dict[int, dict[str, Any]] = field(default_factory=dict)
     data: dict[int, bytes] = field(default_factory=dict)
     refuse_releases: bool = False
+    empty_repository: bool = False
     requests: list[tuple[str, str]] = field(default_factory=list)
     _ids: Iterator[int] = field(default_factory=lambda: itertools.count(101))
 
@@ -682,6 +692,8 @@ class GitHubOnTransport:
                 return self._answer(200, comment)
             case "GET", ["releases"]:
                 return self._page(list(self.releases.values()), query)
+            case "POST", ["releases"] if self.empty_repository:
+                return self._answer(409, EMPTY_REPOSITORY)
             case "POST", ["releases"]:
                 release = {"id": next(self._ids), "tag_name": body["tag_name"], "name": body["name"]}
                 self.releases[release["id"]] = release
@@ -782,3 +794,56 @@ def test_klucz_bez_uprawnienia_do_tresci_repozytorium_zostawia_plik_w_kolejce_a_
     assert (json.loads(queued.read_text("utf-8"))["delivered_parts"], github.releases) == (1, {})
     [comment] = github.issues[1]["comments"]
     assert re.search(rf"Plik `{re.escape(ASSET)}` czeka w Kolejce wysyłki", str(comment["body"]))
+
+
+REPORT = ReportIssue(fingerprint=FINGERPRINT, title=TITLE)
+
+
+def queued_before_start(directory: Path, *posts: Post) -> None:
+    """Pliki kolejki z poprzedniej pracy Centrum w tej kolejności, nazwane jak w ``Outbox.post``."""
+
+    directory.mkdir(parents=True)
+    for place, post in enumerate(posts):
+        name = f"20261023T10150{place}000000Z-{place + 1:04d}-{post.target.label}-{post.run_id[:8]}.json"
+        (directory / name).write_text(post.to_json(), encoding="utf-8")
+
+
+@pytest.mark.parametrize("refusal", ["puste-repozytorium", "bez-uprawnienia"])
+def test_odmowa_archiwum_zatrzymuje_tylko_plik_logow_a_zgloszenie_za_nimi_dochodzi_w_tym_samym_przejsciu_bez_komunikatu(
+    tmp_path: Path, refusal: str
+) -> None:
+    """Repozytorium Skrzynki bez commitu (409 na założenie Archiwum) i Token bez uprawnienia do treści repozytorium (403)
+    to odmowa Archiwum, która trwa, aż Maks coś zmieni: zatrzymuje tylko plik Logów. Komentarz Logów idzie z dopiskiem,
+    a Zgłoszenie, które czeka w kolejce za nimi, dochodzi w tym samym przejściu, a klucz taty zostaje przyjęty, więc tata
+    nie dostaje Komunikatu (spec #837, #844)."""
+
+    github = GitHubOnTransport(
+        empty_repository=refusal == "puste-repozytorium", refuse_releases=refusal == "bez-uprawnienia"
+    )
+    clock = ManualClock()
+    keyed = KeyedBox(GitHubReportBox(transport=github), lambda: KEY, clock=clock)
+    listener = QueueListener()
+    log = tmp_path / "logs" / "centrum-rozliczen.log"
+    queue = Outbox(tmp_path / "kolejka", keyed, CentrumLog(log), clock=clock, listener=listener)
+    report_run = "9b1c2d3e4f5a6b7c3f2a9c1b8e7d4f0a"
+    report = Post(REPORT, "08_14_09_2026", report_run, None, (f"Zgłoszenie\n\n{fingerprint_line(FINGERPRINT)}\n",))
+    queued_before_start(tmp_path / "kolejka", logs_post("{}\n"), report)
+
+    queue.resume()
+
+    assert not queue.wait_delivered("", "zgloszenie", timeout_s=30), "przejście kolejki się skończyło"
+    left = sorted((tmp_path / "kolejka").glob("*.json"))
+    assert [path.name.split("-", 2)[2] for path in left] == ["logi-uruchomienia-627b45fe.json"]
+    assert json.loads(left[0].read_text("utf-8"))["delivered_parts"] == 1
+    assert [run_id for run_id, _ in listener.numbers] == ["627b45fe219e4274b722953c34d4af54", report_run]
+    [logs_issue, report_issue] = github.issues.values()
+    assert (report_issue["label"], len(logs_issue["comments"])) == ("zgloszenie", 1)
+    assert re.search(rf"Plik `{re.escape(ASSET)}` czeka w Kolejce wysyłki", str(logs_issue["comments"][0]["body"]))
+    asked = [request for request in github.requests if request[1].startswith("/releases")]
+    assert (asked, github.releases) == (
+        [("GET", "/releases"), ("POST", "/releases")] if refusal == "puste-repozytorium" else [("GET", "/releases")],
+        {},
+    )
+    lines = log.read_text("utf-8")
+    assert ("przyczyna=odmowa-archiwum" in lines, "przyczyna=brak-sieci" in lines) == (True, False)
+    assert keyed.judge(wait_s=0) == "accepted"

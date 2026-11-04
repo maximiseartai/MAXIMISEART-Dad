@@ -25,6 +25,7 @@ from rozliczenia.centrum.outbox import (
     PART_LIMIT,
     RETRY_S,
     TEXT_LIMIT,
+    ArchiveFile,
     Frame,
     KnownIssue,
     NewIssue,
@@ -1071,3 +1072,38 @@ def test_wysylka_nastepcza_sluchacza_idzie_w_tym_samym_przejsciu_kolejki(tmp_pat
     assert issue.comments == ["Komentarz po Uwadze"]
     assert queue.delivered == [(RUN_ID, issue.number), ("komentarz", issue.number)]
     assert queue.files() == []
+
+
+def logs_with_file(run_id: str) -> Post:
+    """Logi Uruchomienia ``run_id`` w jednym komentarzu z plikiem do Archiwum Logów okresu, jak ``logi_post``."""
+
+    archive = ArchiveFile("logi-08_14_09_2026", "Logi Uruchomień 08_14_09_2026", "Opis.", f"{run_id}.json", "{}\n")
+    return Post(LOGS, "08_14_09_2026", run_id, "Logi okresu", (f"podsumowanie {run_id}\n",), archive)
+
+
+def test_przejscie_w_ktorym_archiwum_odmowilo_nie_pyta_go_o_pliki_nastepnych_logow(tmp_path: Path) -> None:
+    """Bez uprawnienia Tokenu do zapisu treści repozytorium każde Uruchomienie okresu czeka w kolejce ze swoim plikiem do
+    Archiwum Logów okresu. Przejście, w którym Archiwum odmówiło, nie pyta go już o pliki następnych Logów, a komentarz
+    każdych idzie z dopiskiem; następne przejście (budzik ``RETRY_S``) pyta Archiwum znowu raz (#844)."""
+
+    queue = Queue(tmp_path, FakeReportBox(archive_failure=Refused()))
+    queue.directory.mkdir(parents=True)
+    run_ids = (RUN_ID, *NEXT_RUN_IDS)
+    for second, run_id in enumerate(run_ids):
+        name = f"20261023T1015{second:02d}000000Z-0001-logi-uruchomienia-{run_id[:8]}.json"
+        (queue.directory / name).write_text(logs_with_file(run_id).to_json(), encoding="utf-8")
+
+    queue.outbox.resume()
+    queue.passed()
+
+    assert queue.box.archive_requests == 1
+    [issue] = queue.box.issues_with(LOGS.label)
+    assert [comment.splitlines()[0] for comment in issue.comments] == [f"podsumowanie {run_id}" for run_id in run_ids]
+    assert all(f"Plik `{run_id}.json.gz` czeka w Kolejce wysyłki" in comment for run_id, comment in zip(run_ids, issue.comments, strict=True))
+    queued = [json.loads(path.read_text(encoding="utf-8")) for path in sorted(queue.directory.glob("*.json"))]
+    assert [(entry["delivered_parts"], entry["archived"]) for entry in queued] == [(1, False)] * 3
+
+    queue.clock.advance(RETRY_S)
+    queue.passed()
+
+    assert queue.box.archive_requests == 2

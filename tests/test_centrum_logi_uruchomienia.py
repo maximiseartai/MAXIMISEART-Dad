@@ -64,6 +64,7 @@ from tests.fixtures.centrum_processes import (
 )
 from tests.fixtures.centrum_w_procesie import centrum_process
 from tests.fixtures.efenix import DAY, Order, write_collective_file
+from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD, default_register_rows, incomplete_period_rows
 from tests.fixtures.run_cards import first_view, restored
@@ -1209,12 +1210,18 @@ def logs_comments(fake: FakeReportBox) -> list[str]:
 ARCHIVE_LINK = re.compile(r"\[(?P<name>[^\]]+)\]\(https://github\.com/[^/]+/[^/]+/releases/download/(?P<tag>[^/]+)/(?P=name)\)")
 
 
-def logs_text(fake: FakeReportBox, comment: str) -> str:
-    """Pełne Logi z pliku w Archiwum Logów okresu, do którego prowadzi komentarz Logów, rozpakowane."""
+def logs_file(fake: FakeReportBox, comment: str) -> bytes:
+    """Pełne Logi z pliku w Archiwum Logów okresu, do którego prowadzi komentarz Logów, rozpakowane bajt w bajt."""
 
     found = ARCHIVE_LINK.search(comment)
     assert found is not None, comment
     return fake.archived(found["tag"])[found["name"]]
+
+
+def logs_text(fake: FakeReportBox, comment: str) -> str:
+    """Pełne Logi z pliku w Archiwum Logów okresu, do którego prowadzi komentarz Logów (``logs_file``), jako tekst."""
+
+    return logs_file(fake, comment).decode("utf-8")
 
 
 def in_box(fake: FakeReportBox) -> list[str]:
@@ -1564,13 +1571,15 @@ def test_dziennik_wyceny_w_efenix_ktorego_nie_da_sie_zapisac_nie_zatrzymuje_wyce
 
 @pytest.mark.parametrize("unsent", [False, True], ids=["z-dziennika", "z-niewyslanych-logow"])
 def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_straznika_reguly_danych(
-    tmp_path: Path, unsent: bool
+    tmp_path: Path, unsent: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Zlecenie skończone przed zgaśnięciem Centrum ma w śladzie pozycje odczytane ze strony efenix, a wśród nich ulicę i
     telefon (wolny tekst, ADR 0025). Start Centrum zamyka dziennik jako Logi Urwanego Uruchomienia, także gdy Logi zapisała
     już poprzednia praca Centrum sprzed strażnika, która zgasła przed ich wysyłką: plik Logów i plik w Archiwum Logów
-    okresu, do którego prowadzi jedyny komentarz w Skrzynce, mają te same znaki, z zamaskowaną ulicą i telefonem."""
+    okresu, do którego prowadzi jedyny komentarz w Skrzynce, mają te same bajty, także z zapisem tekstowym Windows, z
+    zamaskowaną ulicą i telefonem."""
 
+    windows_text_writes(monkeypatch)
     centrum = settling_centrum(tmp_path)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
     started = JournalStarted(
@@ -1619,13 +1628,14 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
     centrum.client.stop()
     [comment] = logs_comments(box)
     [path] = log_files(centrum)
-    text = path.read_text(encoding="utf-8")
-    archived = logs_text(box, comment)
+    data = path.read_bytes()
+    archived = logs_file(box, comment)
 
-    assert (sent, archived == text, journals(centrum)) == (True, True, [])
+    assert (sent, archived == data, journals(centrum)) == (True, True, [])
+    text = data.decode("utf-8")
     [logged] = json.loads(text)["efenix_orders"]
     assert logged["steps"][0]["quantities"] == {"[ulica]": 1, "tel. [telefon]": 2}
-    assert [value for value in (STREET, PHONE) if any(value in kept for kept in (text, comment, archived))] == []
+    assert [value for value in (STREET, PHONE) if any(value in kept for kept in (text, comment))] == []
 
 
 def test_dziennik_urwany_przy_pierwszym_wpisie_start_usuwa_bez_logow(tmp_path: Path) -> None:

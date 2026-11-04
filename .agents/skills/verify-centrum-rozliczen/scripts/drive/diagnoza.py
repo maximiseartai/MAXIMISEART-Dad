@@ -257,8 +257,8 @@ def drive_diagnosis(run: Run, page: Page) -> None:
     run.step(FEATURE, "diagnoza-w-logach")
     run_id = str(run_info["id"])
     [logs] = (run.root / "logs" / "uruchomienia").glob(f"*-{run_id}.json")
-    text = logs.read_text(encoding="utf-8")
-    logged = json.loads(text)["diagnosis"]
+    data = logs.read_bytes()  # bytes: reading text hides the \r\n of a text-mode write on Windows
+    logged = json.loads(data)["diagnosis"]
     run.check(
         logged["explanation"]["code"] == "NIE_ZNALEZIONO_PRZYCZYNY"
         and [{part: check[part] for part in ("label", "state", "detail")} for check in logged["checks"]] == results,
@@ -272,9 +272,10 @@ def drive_diagnosis(run: Run, page: Page) -> None:
         len(queued) >= 2
         and (newest["target"], newest["run_id"]) == (first["target"], first["run_id"])
         and "\n- Diagnoza: " in comment
-        and (newest["archive"]["name"], newest["archive"]["text"]) == (logs.name, text),
+        and (newest["archive"]["name"], newest["archive"]["text"].encode("utf-8")) == (logs.name, data),
         "without a key the Logi with this Diagnoza wait in the queue as a new version of the one comment of the "
-        "Uruchomienie, and their file for the Archiwum Logów okresu is the file character for character",
+        "Uruchomienie, and their file for the Archiwum Logów okresu, in UTF-8 as the queue packs it, is the file byte "
+        "for byte",
     )
 
     run.step(FEATURE, "diagnoza-nieoczekiwany-wyjatek")

@@ -134,10 +134,16 @@ class FakeAsset:
     data: bytes
 
     @property
-    def text(self) -> str:
-        """Plik rozpakowany gzipem, jak go dostaje Maks po ``gh release download`` i ``gunzip``."""
+    def unpacked(self) -> bytes:
+        """Plik rozpakowany gzipem, bajt w bajt, jak go dostaje Maks po ``gh release download`` i ``gunzip``."""
 
-        return gzip.decompress(self.data).decode("utf-8")
+        return gzip.decompress(self.data)
+
+    @property
+    def text(self) -> str:
+        """Plik rozpakowany (``unpacked``) jako tekst UTF-8."""
+
+        return self.unpacked.decode("utf-8")
 
 
 @dataclass
@@ -321,11 +327,11 @@ class FakeReportBox:
 
         self.closed[number] = Closure(reason, at or datetime.now(timezone.utc))
 
-    def archived(self, tag: str) -> dict[str, str]:
-        """Pliki Archiwum z tagiem ``tag`` po nazwie, rozpakowane; bez takiego Archiwum pusto."""
+    def archived(self, tag: str) -> dict[str, bytes]:
+        """Pliki Archiwum z tagiem ``tag`` po nazwie, rozpakowane bajt w bajt; bez takiego Archiwum pusto."""
 
         with self._changed:
-            return {asset.name: asset.text for archive in self.archives if archive.tag == tag for asset in archive.assets}
+            return {asset.name: asset.unpacked for archive in self.archives if archive.tag == tag for asset in archive.assets}
 
     def archive(self, tag: str, *, key: str) -> ArchiveOutcome:
         with self._changed:

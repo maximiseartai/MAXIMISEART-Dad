@@ -131,11 +131,12 @@ def _threads(run: Run) -> list[Json]:
     return sorted((issue for issue in issues if issue["labels"] == [LABEL]), key=lambda issue: int(issue["number"]))
 
 
-def _archived(run: Run, tag: str, name: str) -> str:
-    """The file ``name`` of the Archiwum ``tag`` in the run's skrzynka, unpacked; empty when the Archiwum lacks it."""
+def _archived(run: Run, tag: str, name: str) -> bytes:
+    """The file ``name`` of the Archiwum ``tag`` in the run's skrzynka, unpacked byte for byte; empty when the Archiwum
+    lacks it."""
 
     path = run.root / "skrzynka-archiwum" / tag / name
-    return gzip.decompress(path.read_bytes()).decode("utf-8") if path.is_file() else ""
+    return gzip.decompress(path.read_bytes()) if path.is_file() else b""
 
 
 def _ended_in_centrum_log(run: Run) -> list[tuple[str, str, str, str, str]]:
@@ -244,7 +245,8 @@ def drive_run_logs(run: Run, page: Page) -> None:
         run.wait_for(lambda: _queued_logs(run) == [], "every Logi waiting in the queue reaches the skrzynka", timeout_s=60)
     finally:
         key_file.unlink()
-    files = sorted(path.read_text(encoding="utf-8") for path in (run.root / LOGS).glob("*.json"))
+    # Bytes, not text: reading text turns the \r\n of a file written in text mode on Windows back into \n.
+    files = sorted(path.read_bytes() for path in (run.root / LOGS).glob("*.json"))
     threads = _threads(run)
     (run.evidence / "api" / "logi-skrzynka.json").write_text(
         json.dumps(
@@ -272,13 +274,13 @@ def drive_run_logs(run: Run, page: Page) -> None:
         "each comment ends with the link to its full Logi in the Archiwum Logów okresu",
     )
     sent = [(title, link["tag"], _archived(run, link["tag"], link["name"])) for title, link in links if link is not None]
-    by_run: dict[str, list[str]] = {}
+    by_run: dict[str, list[bytes]] = {}
     for _, _, text in sent:
         by_run.setdefault(json.loads(text)["run_id"] if text else "", []).append(text)
     local = {json.loads(text)["run_id"]: text for text in files}
     run.check(
         sorted(by_run) == sorted(local) and all(texts[-1] == local[run_id] for run_id, texts in by_run.items()),
-        f"each of the {len(files)} files of Logi is, unpacked, the file in the Archiwum its comment links, character for character",
+        f"each of the {len(files)} files of Logi is, unpacked, the file in the Archiwum its comment links, byte for byte",
     )
     run.check(
         all(len(texts) == 1 for texts in by_run.values()),

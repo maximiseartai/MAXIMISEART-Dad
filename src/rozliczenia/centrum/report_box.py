@@ -24,7 +24,8 @@ tokenem okresu Kontroli ilości. Klucz taty podaje adapterowi tylko ``KeyedBox``
 Archiwum okresu (#844) to GitHub Release z tagiem w repozytorium Zgłoszeń, nie Wydanie narzędzia (inne repozytorium i
 tag): ``archive`` znajduje je po tagu z jego plikami (``Asset``: nazwa, etykieta i czy plik doszedł w całości) albo
 daje ``None``, ``open_archive`` zakłada je bez plików, ``upload`` wysyła plik, a ``remove`` usuwa plik, który ma ustąpić
-nowszemu. Zapis treści repozytorium to inne uprawnienie klucza niż issue: jego brak to ``Refused`` z kroków Archiwum.
+nowszemu. Zapis treści repozytorium to inne uprawnienie klucza niż issue: jego brak to ``Refused`` z kroków Archiwum,
+a repozytorium bez commitu odmawia założenia Archiwum (409, ``Rejected``).
 ``archive_url`` to adres pobrania pliku z Archiwum, który zna komentarz, zanim plik dojdzie.
 """
 
@@ -218,6 +219,8 @@ _REFUSALS: Final = frozenset({401, 403, 404})
 _RATE_LIMIT: Final = b"rate limit"
 # Odpowiedzi na treść wysyłki (zła albo za długa), nie na klucz ani sieć.
 _REJECTIONS: Final = frozenset({400, 413, 422})
+# Odpowiedź GitHuba na założenie Release w repozytorium bez commitu („Git Repository is empty.”).
+_EMPTY_REPOSITORY: Final = 409
 # Issue z etykietą przegląda się stronami po 100; dziesięć stron to więcej, niż jedna etykieta kiedykolwiek będzie miała.
 _PAGE_SIZE: Final = 100
 _MAX_PAGES: Final = 10
@@ -308,7 +311,9 @@ class GitHubReportBox:
     def open_archive(self, tag: str, title: str, description: str, *, key: str) -> OpenArchiveOutcome:
         """Release z tagiem na domyślnej gałęzi, nie oznaczony jako najnowszy: Archiwum nie jest Wydaniem.
 
-        Repozytorium bez żadnego commitu nie ma gałęzi, na której GitHub założyłby tag: odpowiada 422 (``Rejected``).
+        Repozytorium bez żadnego commitu nie ma gałęzi, na której GitHub założyłby tag: odpowiada 409 „Git Repository is
+        empty.” (repozytorium Skrzynki 2026-11-04), a na tag, który już ma Release, 422. Każda z tych odmów trwa, aż Maks
+        coś zmieni, więc to ``Rejected``: kolejka zatrzymuje tylko plik w Archiwum, nie wysyłki za nim.
         """
 
         if not _sendable(key):
@@ -317,6 +322,8 @@ class GitHubReportBox:
         answer = self._send("POST", f"{_API}/repos/{REPOSITORY}/releases", payload, key)
         if not isinstance(answer, HttpResponse):
             return answer
+        if answer.status == _EMPTY_REPOSITORY:
+            return Rejected()
         found = _release_id(_json(answer.body)) if answer.status == 201 else None
         return Archive(found, ()) if found is not None else Unreachable()
 

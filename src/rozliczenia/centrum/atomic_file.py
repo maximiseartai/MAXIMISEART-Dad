@@ -26,8 +26,12 @@ def replace_atomically(
     *,
     pause: Callable[[float], None] = time.sleep,
     pauses: Sequence[float] = RETRY_PAUSES_S,
+    newline: str | None = None,
 ) -> None:
-    """Zapisuje ``text`` jako ``path`` przez plik tymczasowy w tym samym folderze.
+    """Zapisuje ``text`` w UTF-8 jako ``path`` przez plik tymczasowy w tym samym folderze.
+
+    ``newline`` jak w ``Path.write_text``: ``None`` zapisuje każde ``\n`` jako koniec linii systemu (na Windows
+    ``\r\n``), a ``""`` zapisuje znaki ``text`` bez zmiany, więc plik ma na każdym systemie te same bajty.
 
     Zamiana, której Windows odmawia (``PermissionError``), czeka ``pause`` kolejnej przerwy z ``pauses`` i próbuje
     ponownie; bez przerw jest jedna próba. Nieudany zapis (``OSError``) nie zostawia pustego ani urwanego pliku i nie
@@ -37,7 +41,7 @@ def replace_atomically(
     temporary = path.with_name(path.name + ".tmp")
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        temporary.write_text(text, encoding="utf-8")
+        temporary.write_text(text, encoding="utf-8", newline=newline)
         for seconds in pauses:
             try:
                 temporary.replace(path)

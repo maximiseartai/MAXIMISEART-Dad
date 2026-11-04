@@ -23,6 +23,7 @@ from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
 
 from tests.fixtures.centrum import TOOL_COMMIT, FakeIssue, FakeReportBox, finished_view
+from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.centrum_processes import (
     SettlingCentrum,
     run_logs_handled,
@@ -100,12 +101,15 @@ def local_path(centrum: SettlingCentrum, run_id: str) -> Path:
     return path
 
 
-def local_logs(centrum: SettlingCentrum, run_id: str) -> str:
-    return local_path(centrum, run_id).read_text(encoding="utf-8")
+def local_logs(centrum: SettlingCentrum, run_id: str) -> bytes:
+    """Plik Logów Uruchomienia ``run_id`` na dysku taty bajt w bajt: odczyt tekstowy ukryłby końce linii Windows."""
+
+    return local_path(centrum, run_id).read_bytes()
 
 
-def archived(centrum: SettlingCentrum, comment: str, *, tag: str = ARCHIVE) -> str:
-    """Plik Logów z Archiwum, do którego prowadzi odnośnik komentarza, rozpakowany; jedyny o tej nazwie w Archiwum."""
+def archived(centrum: SettlingCentrum, comment: str, *, tag: str = ARCHIVE) -> bytes:
+    """Plik Logów z Archiwum, do którego prowadzi odnośnik komentarza, rozpakowany bajt w bajt; jedyny o tej nazwie w
+    Archiwum."""
 
     link = LINK.fullmatch(comment.rstrip("\n").splitlines()[-1])
     assert link is not None, comment
@@ -169,9 +173,13 @@ def test_pierwsze_uruchomienie_nowego_okresu_zaklada_nowe_archiwum_logow(tmp_pat
     assert [(archive.tag, len(archive.assets)) for archive in box(centrum).archives] == [(ARCHIVE, 1), (f"logi-{later}", 1)]
 
 
-def test_komentarz_ma_podsumowanie_uruchomienia_i_odnosnik_do_pliku_w_archiwum_ktory_rozpakowany_jest_plikiem_logow(
-    tmp_path: Path,
+def test_komentarz_ma_podsumowanie_uruchomienia_i_odnosnik_do_pliku_w_archiwum_ktory_rozpakowany_jest_plikiem_logow_bajt_w_bajt_takze_na_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Maks porównuje plik z Archiwum z plikiem Logów z komputera taty (``cmp``, skrót SHA-256): po rozpakowaniu mają te
+    same bajty, także gdy zapis tekstowy na Windows zamienia ``\\n`` na ``\\r\\n`` (spec #837, #844)."""
+
+    windows_text_writes(monkeypatch)
     centrum = watched_centrum(tmp_path)
     centrum.worker_settlements.mkdir()
 
@@ -508,7 +516,7 @@ def test_wyslane_zgloszenie_prowadzi_do_komentarza_logow_swojego_uruchomienia(tm
     assert report.body == preview["body"]
     link = f"- Logi: https://github.com/{REPOSITORY}/issues/{thread.number}#issuecomment-2"
     assert link in report.body.splitlines()
-    assert archived(centrum, thread.comments[1]).startswith('{\n  "schema_version": 2,\n  "run_id": "' + run_id)
+    assert archived(centrum, thread.comments[1]).startswith(('{\n  "schema_version": 2,\n  "run_id": "' + run_id).encode())
 
 
 def test_diagnoza_bez_sieci_jest_w_pliku_logow_jej_komentarz_czeka_w_kolejce_a_zgloszenie_dziala_jak_dotad(
@@ -579,6 +587,39 @@ def test_diagnoza_uruchomienia_bez_logow_nie_trafia_do_logow_poprzedniego(
     assert local_logs(centrum, earlier) == before
     assert wait_for(lambda: queued_logs(centrum) == [])
     assert len(threads(box(centrum))[0].comments) == 1
+
+
+def test_kolejne_uruchomienie_okresu_bez_uprawnienia_do_archiwum_ma_komentarz_z_dopiskiem_a_plik_dochodzi_po_przywroceniu(
+    tmp_path: Path,
+) -> None:
+    """Issue okresu już jest, jak u taty przy każdym Uruchomieniu poza pierwszym w okresie: bez uprawnienia Tokenu do
+    Archiwum komentarz Uruchomienia idzie z dopiskiem, że pełne Logi czekają w kolejce, a plik dochodzi do Archiwum, gdy
+    uprawnienie wróci, bez drugiego komentarza ani poprawki (#844)."""
+
+    centrum = watched_centrum(tmp_path)
+    first = run_to_end(centrum, dry_run=True)["run"]["id"]
+    thread_with(centrum, comments=1)
+    box(centrum).archive_failure = Refused()
+
+    run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
+
+    assert box(centrum).wait_until(lambda fake: len(threads(fake)) == 1 and len(threads(fake)[0].comments) == 2)
+    name = f"{local_path(centrum, run_id).name}.gz"
+    waiting = f"skrzynka-czeka etykieta={LABEL} okres={PERIOD} przyczyna=odmowa-archiwum"
+    assert wait_for(lambda: waiting in centrum.log_path.read_text(encoding="utf-8"))
+    summary, note = threads(box(centrum))[0].comments[1].split("\n\n")[1:]
+    assert summary.splitlines()[-1] == (
+        f"- Pełne Logi: [{name}](https://github.com/{REPOSITORY}/releases/download/{ARCHIVE}/{name})"
+    )
+    assert note.startswith(f"Plik `{name}` czeka w Kolejce wysyłki na komputerze taty")
+    assert list(box(centrum).archived(ARCHIVE)) == [f"{local_path(centrum, first).name}.gz"]
+
+    box(centrum).archive_failure = None
+    centrum.surroundings.clock.advance(RETRY_S)
+
+    assert wait_for(lambda: queued_logs(centrum) == [])
+    assert box(centrum).archived(ARCHIVE)[name] == local_logs(centrum, run_id)
+    assert ([len(issue.comments) for issue in threads(box(centrum))], box(centrum).edited) == ([2], [])
 
 
 def test_bez_uprawnienia_do_archiwum_komentarz_idzie_z_dopiskiem_a_plik_czeka_bez_komunikatu_i_dochodzi_po_przywroceniu(

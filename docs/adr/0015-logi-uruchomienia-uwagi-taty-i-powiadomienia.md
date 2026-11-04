@@ -57,9 +57,11 @@ przy pierwszych Logach okresu. Pełne Logi leżą tam jako jeden plik na
 Uruchomienie o nazwie pliku Logów z `.gz`, a JSON nie idzie już w komentarzu
 ani w częściach. Diagnoza podmienia plik i zmienia komentarz. Plik idzie
 dokładnie raz jak komentarz: jego etykieta niesie wersję wysyłki. Token do
-Zgłoszeń potrzebuje do tego uprawnienia do zapisu treści repozytorium Skrzynki;
-bez niego plik czeka w Kolejce wysyłki bez Komunikatu dla taty, a komentarz
-idzie z dopiskiem, że pełne Logi czekają. Zdania o komentarzu z pełnym JSON w
+Zgłoszeń potrzebuje do tego uprawnienia do zapisu treści repozytorium Skrzynki,
+a repozytorium co najmniej jednego commitu (bez niego GitHub odpowiada 409 na
+założenie Release); bez nich plik czeka w Kolejce wysyłki bez Komunikatu dla
+taty, a komentarz idzie z dopiskiem, że pełne Logi czekają. Odmowa Archiwum
+zatrzymuje tylko plik, nie inne wysyłki kolejki. Zdania o komentarzu z pełnym JSON w
 `<details>` i o częściach w decyzji niżej opisują stan sprzed tego dopisku.
 
 ## Kontekst

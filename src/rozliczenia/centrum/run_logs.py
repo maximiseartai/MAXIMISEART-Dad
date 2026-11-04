@@ -879,11 +879,11 @@ class RunLogs:
 
     def _keep(self, record: RunLog) -> None:
         """Plik Logów (nowy albo nadpisany) po strażniku reguły danych, a do Skrzynki komentarz w issue okresu i plik w
-        Archiwum Logów okresu z tymi samymi znakami co plik."""
+        Archiwum Logów okresu z tymi samymi bajtami co plik (``_write``)."""
 
         kept = guarded(record, self._forbidden)
         try:
-            replace_atomically(self._directory / kept.file_name, kept.text)
+            self._write(kept)
         finally:
             # Katalog Logów, który nie przyjął pliku, nie zatrzymuje Logów w drodze do Maksa.
             self._outbox.post(logi_post(kept))
@@ -924,7 +924,14 @@ class RunLogs:
     def close(self, record: RunLog) -> None:
         """Plik Logów Urwanego Uruchomienia, jeszcze bez wysyłki (``send``); ``OSError``: pliku nie udało się zapisać."""
 
-        replace_atomically(self._directory / record.file_name, record.text)
+        self._write(record)
+
+    def _write(self, record: RunLog) -> None:
+        """Plik Logów ``record`` z bajtami pliku w Archiwum Logów okresu (``ArchiveFile.packed``): ``text`` w UTF-8 bez
+        zamiany ``\n`` na ``\r\n``, którą robi zapis tekstowy na Windows, więc ``gunzip`` pliku z Archiwum daje plik
+        z komputera taty bajt w bajt."""
+
+        replace_atomically(self._directory / record.file_name, record.text, newline="")
 
     def send(self, record: RunLog) -> bool:
         """Logi ``record`` do Kolejki wysyłki; ``False``: kolejka ich nie przyjęła (typ błędu jest w dzienniku Centrum)."""

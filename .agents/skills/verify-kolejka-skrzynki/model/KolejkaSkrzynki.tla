@@ -24,7 +24,9 @@
 (* Wysyłka do issue okresu może nieść plik do Archiwum okresu (GitHub      *)
 (* Release, #844): plik idzie przed częściami, odmowa Archiwum zostawia    *)
 (* plik kolejki „skomentowany” (części są, plik czeka), a Archiwum ma      *)
-(* najwyżej jeden plik wysyłki, w wersji nie starszej niż wysłana.         *)
+(* najwyżej jeden plik wysyłki, w wersji nie starszej niż wysłana. Odmowa  *)
+(* Archiwum, która trwa (repozytorium bez commitu: 409), zatrzymuje tylko  *)
+(* plik: części każdej wysyłki dochodzą (Zbieganie przy PusteRepo).        *)
 (*                                                                         *)
 (* Jedna akcja to jeden krok kodu: jedno zapytanie do Skrzynki, jeden      *)
 (* zapis pliku tymczasowego, jedna zamiana pliku, jedno usunięcie, jedna   *)
@@ -52,6 +54,8 @@ CONSTANTS
                     \* run_logs.py RunLogs.diagnosed), a nie osobna wysyłka
     Archiwum,       \* wysyłka niesie plik do Archiwum okresu (outbox.py Post.archive, ArchiveFile: Logi Uruchomienia)
     MaxOdmowArchiwum, \* Refused albo Rejected z kroku Archiwum (Token bez uprawnienia do treści repozytorium): ArchiveWaits
+    PusteRepo,      \* repozytorium Skrzynki bez commitu przez cały przebieg: GitHub odpowiada 409 „Git Repository is
+                    \* empty.” na każde założenie Archiwum (report_box.py GitHubReportBox.open_archive: Rejected)
     \* Znane znaleziska (oczekiwane.json), każde przy jednej obietnicy: ślady przyczyn, po których wariant
     \* ...PozaZnanymi tej obietnicy ją pomija. Pozostałe obietnice tego przebiegu sprawdza dalej w całości.
     WybaczoneJednoIssue, WybaczoneDokladnieRaz, WybaczoneCzesciWKolejnosci, WybaczoneZbieganie
@@ -64,6 +68,8 @@ ASSUME Diagnoza => Cel = "okres" /\ Naglowek /\ Wysylek = 2
 ASSUME CzesciNowszej >= 1 /\ (~Diagnoza => CzesciNowszej = Czesci)
 \* outbox.py Post.__post_init__: plik do Archiwum idzie tylko z jedną częścią do issue okresu (Logi z nagłówkiem).
 ASSUME Archiwum => Cel = "okres" /\ Naglowek /\ Czesci = 1 /\ CzesciNowszej = 1
+\* Repozytorium bez commitu odmawia tylko założenia Archiwum, więc ma znaczenie tylko z plikiem do Archiwum.
+ASSUME PusteRepo => Archiwum
 
 W == 1..Wysylek
 \* Identyfikator wysyłki w (etykieta i run_id w znaczniku): przy Diagnozie wysyłka 2 to wersja wysyłki 1.
@@ -261,9 +267,13 @@ Pamieta(w) == \E q \in Q : zyje[q] /= "nie" /\ w \in undeleted[q]
 
 \* Gdy awarie się skończą, pliku bez znacznika nie ma, chyba że Skrzynka odrzuciła jego treść albo jest wysłany i
 \* tylko nie dało się go usunąć. Plik, który zniknął albo ma znacznik, a Skrzynka nie ma jego części, łamie już
-\* DokladnieRaz, więc Zbieganie patrzy tylko na pliki bez znacznika i każde znalezisko łamie jedną obietnicę.
+\* DokladnieRaz, więc Zbieganie patrzy tylko na pliki bez znacznika i każde znalezisko łamie jedną obietnicę. W
+\* repozytorium bez commitu (PusteRepo) plik do Archiwum nie dojdzie nigdy, więc zostaje plik ze znacznikiem części
+\* ("skomentowany": każda część jest w Skrzynce, DokladnieRaz), ale żaden bez niego: odmowa Archiwum zatrzymuje tylko
+\* plik, a nie części tej ani następnych wysyłek.
 Zbieganie ==
-    <>[](\A w \in zakolejkowane : plik[w] \in {"czeka", "skomentowany"} => Odrzucona(w) \/ (Pamieta(w) /\ Dostarczona(w)))
+    <>[](\A w \in zakolejkowane : plik[w] = "czeka" \/ (plik[w] = "skomentowany" /\ ~PusteRepo)
+                                  => Odrzucona(w) \/ (Pamieta(w) /\ Dostarczona(w)))
 
 \* Przyczyna jednego ze znanych znalezisk obietnicy już się zdarzyła.
 Po(wybaczone) == wybaczone \cap slady /= {}
@@ -580,17 +590,28 @@ CzytajArchiwum(q) ==
                    bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
                    bledyPliku, wylaczenia, slady>>
 
-\* keyed_box.py KeyedBox.open_archive (Release z tagiem okresu, bez plików) w _deliver_archive.
+\* report_box.py GitHubReportBox.open_archive: 409 „Git Repository is empty.” to Rejected, a _deliver_archive daje z niego
+\* ArchiveWaits: części idą z dopiskiem, a przejście idzie dalej do następnych plików.
+OdmowaPustegoRepo(q) ==
+    /\ UNCHANGED <<stopped, nieczytany>>
+    /\ Czeka(q, "open_archive: 409 Git Repository is empty, Rejected, ArchiveWaits")
+
+\* keyed_box.py KeyedBox.open_archive (Release z tagiem okresu, bez plików) w _deliver_archive. W repozytorium bez
+\* commitu (PusteRepo) GitHub nie zakłada Release, tylko odpowiada 409 (OdmowaPustegoRepo).
 ZalozArchiwum(q) ==
     /\ pc[q] = "wydanie"
-    /\ \/ /\ wydania' = wydania + 1
+    /\ \/ /\ ~PusteRepo
+          /\ wydania' = wydania + 1
           /\ UNCHANGED <<sieci, zgubione, odmowyArchiwum, stopped, nieczytany, arch>>
           /\ Idz(q, "wyslij", "open_archive: Archive bez plikow, upload")
+       \/ /\ PusteRepo
+          /\ UNCHANGED <<wydania, sieci, zgubione, odmowyArchiwum>>
+          /\ OdmowaPustegoRepo(q)
        \/ /\ sieci < MaxBrakSieci
           /\ sieci' = sieci + 1
           /\ UNCHANGED <<wydania, zgubione, odmowyArchiwum, arch>>
           /\ Stop(q, "open_archive: Unreachable przed skutkiem, przejscie staje")
-       \/ /\ zgubione < MaxZgubionych
+       \/ /\ ~PusteRepo /\ zgubione < MaxZgubionych
           /\ zgubione' = zgubione + 1 /\ wydania' = wydania + 1
           /\ UNCHANGED <<sieci, odmowyArchiwum, arch>>
           /\ Stop(q, "open_archive: Skrzynka zaklada Archiwum, odpowiedz ginie, przejscie staje")

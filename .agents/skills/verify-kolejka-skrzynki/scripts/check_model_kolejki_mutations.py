@@ -287,6 +287,16 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
+        "409 pustego repozytorium jako brak sieci: przejście staje na pliku Logów (report_box.py "
+        "GitHubReportBox.open_archive sprzed #860 r2)",
+        (Edit(MODEL, "    /\\ UNCHANGED <<stopped, nieczytany>>\n"
+              "    /\\ Czeka(q, \"open_archive: 409 Git Repository is empty, Rejected, ArchiveWaits\")\n",
+              "    /\\ UNCHANGED arch\n    /\\ Stop(q, \"open_archive: 409 jako Unreachable, przejscie staje\")\n"),),
+        _check("puste-repo"),
+        "repozytorium Skrzynki bez commitu zatrzymuje komentarze Logów i wszystko, co czeka za nimi w kolejce",
+        NEW,
+    ),
+    Mutation(
         "plik, którego Archiwum nie przyjęło, dostaje pełny znacznik i znika (_send_all: archive_waits)",
         (Edit(MODEL, 'IF czeka THEN "skomentowany" ELSE "oznaczony"', '"oznaczony"'),),
         _check("archiwum"),

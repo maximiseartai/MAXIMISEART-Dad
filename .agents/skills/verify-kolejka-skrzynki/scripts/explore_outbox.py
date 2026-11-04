@@ -15,6 +15,9 @@ starts the queue thread, as ``Outbox.post``, ``Outbox.resume`` at a start, or th
   raz”); a part the newest version no longer has is ``_RETIRED``. A wysyłka with a file for the Archiwum okresu
   (#844) has exactly one whole file of its name in the Archiwum of its tag, with the text of the newest version, and
   its file never went twice: the queue never removed a whole file of its version or a newer one to upload it again.
+  In a scope whose Archiwum refuses every time (a repository without a commit: GitHub answers 409 to every new
+  Release), the file waits in the queue with the marker of its parts, and every part of every wysyłka still arrives: a
+  refusal of the Archiwum stops only the file, not the wysyłki after it.
 - JEDNO_ISSUE: one problem has one open Zgłoszenie and one period has one issue okresu; a wysyłka to a new issue
   (Uwaga taty) opens one issue.
 - KOLEJKA_PUSTA: no queue file without its delivery marker is left when the schedule ends; a delivered file whose
@@ -26,7 +29,9 @@ Nothing in ``outbox.py`` or ``keyed_box.py`` is replaced but the start of the qu
 to do, so the real ``send_in_background`` decides whether a pass starts at all. The Skrzynka behind ``KeyedBox`` is
 the in-memory ``MemoryBox`` (GitHub's issues and comments, and its Releases with their files for the Archiwum okresu),
 the clock never moves and keeps the wakes ``after`` arms, and the key is always there and accepted; only a step of the
-Archiwum may be refused (a key without the permission to write the repository's contents).
+Archiwum may be refused (a key without the permission to write the repository's contents, GitHub's 403, or a repository
+without a commit, its 409 to a new Release). The checker does not decide what such an answer means: it hands GitHub's
+answer to the real ``report_box.GitHubReportBox`` (``_github``) and gives the queue its outcome.
 """
 
 from __future__ import annotations
@@ -70,11 +75,12 @@ from rozliczenia.centrum.report_box import (
     CommentOutcome,
     CommentsOutcome,
     Commented,
+    GitHubReportBox,
+    HttpResponse,
     Issue,
     IssuesOutcome,
     Label,
     OpenArchiveOutcome,
-    Refused,
     Rejected,
     Removed,
     RemoveOutcome,
@@ -85,6 +91,16 @@ from rozliczenia.centrum.report_box import (
 )
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
+# GitHub's answers to a step of the Archiwum it refuses until Maks changes something: a key without the permission to
+# write the repository's contents, and a new Release in a repository without a commit (the Skrzynka's on 2026-11-04).
+NO_PERMISSION = HttpResponse(403, b'{"message": "Resource not accessible by personal access token"}')
+EMPTY_REPOSITORY = HttpResponse(409, b'{"message": "Git Repository is empty."}')
+
+
+def _github(answer: HttpResponse) -> GitHubReportBox:
+    """The real GitHub adapter given one answer of GitHub: the code, not the checker, decides what it is to the queue."""
+
+    return GitHubReportBox(transport=lambda request: answer)
 
 
 class _Unchanged:
@@ -137,18 +153,20 @@ class _Release:
 class MemoryBox:
     """The Skrzynka Zgłoszeń behind ``KeyedBox``: GitHub issues with labels, bodies and comments, numbered from 1, and
     Releases by tag with their files (the Archiwum okresu). As on GitHub, a second Release of one tag and a second file
-    of one name in one Release are ``Rejected`` and change nothing.
+    of one name in one Release are ``Rejected`` and change nothing. A refused step and a Release in a repository without a
+    commit (``empty_repository``) get the outcome the real ``GitHubReportBox`` gives GitHub's answer (``_github``).
 
     ``twice`` names each file the queue sent twice: a whole file it removed and, as its very next call, uploaded again
     in the same version or an older one. ``_deliver_archive`` removes a file only to upload its own newer version right
     after, so the pair is one delivery; any other call, a failure or a restart in between ends the pair.
     """
 
-    def __init__(self, scheduler: Scheduler) -> None:
+    def __init__(self, scheduler: Scheduler, *, empty_repository: bool = False) -> None:
         self.issues: dict[int, _Issue] = {}
         self.releases: dict[str, _Release] = {}
         self.twice: list[str] = []
         self._scheduler = scheduler
+        self._empty = empty_repository  # no commit: GitHub opens no Release (409), so the Archiwum stays without one
         self._comment_ids = 0
         self._ids = 0
         self._removed: _Asset | None = None  # whole file removed by the call just before, answered
@@ -162,7 +180,7 @@ class MemoryBox:
         self._removed = None  # any call but upload ends a pair of remove and upload
         chosen = self._scheduler.archive_read(f"archive({tag})")
         if chosen != "ok":
-            return Unreachable() if chosen == "unreachable" else Refused()
+            return Unreachable() if chosen == "unreachable" else _github(NO_PERMISSION).archive(tag, key=key)
         found = self.releases.get(tag)
         self._scheduler.say(f"Skrzynka zwraca Archiwum {tag}: {'brak' if found is None else _files(found)}")
         if found is None:
@@ -175,7 +193,13 @@ class MemoryBox:
         if chosen in ("unreachable", "partial"):
             return Unreachable()
         if chosen == "refused":
-            return Refused()
+            return _github(NO_PERMISSION).open_archive(tag, title, description, key=key)
+        if self._empty:
+            self._scheduler.say(
+                f"Skrzynka nie zakłada Archiwum {tag}: repozytorium bez commitu (409 „Git Repository is empty.”)"
+                + (", odpowiedź ginie (Unreachable)" if chosen == "lost" else "")
+            )
+            return Unreachable() if chosen == "lost" else _github(EMPTY_REPOSITORY).open_archive(tag, title, description, key=key)
         if tag in self.releases:
             self._scheduler.say(f"Skrzynka odrzuca drugie Archiwum {tag} (422)")
             return Rejected()
@@ -191,7 +215,7 @@ class MemoryBox:
         if chosen == "unreachable":
             return Unreachable()
         if chosen == "refused":
-            return Refused()
+            return _github(NO_PERMISSION).upload(archive_id, name, label, data, key=key)
         release = next(release for release in self.releases.values() if release.id == archive_id)
         if any(asset.name == name for asset in release.assets):
             self._scheduler.say(f"Skrzynka odrzuca drugi plik {name} (422)")
@@ -210,7 +234,7 @@ class MemoryBox:
         if chosen in ("unreachable", "partial"):
             return Unreachable()
         if chosen == "refused":
-            return Refused()
+            return _github(NO_PERMISSION).remove(asset_id, key=key)
         [gone] = [asset for release in self.releases.values() for asset in release.assets if asset.id == asset_id]
         for release in self.releases.values():
             release.assets = [asset for asset in release.assets if asset.id != asset_id]
@@ -472,6 +496,9 @@ class Scope:
     posts: tuple[Post, ...]
     issues: tuple[tuple[Label, str, str], ...]
     bounds: Bounds
+    empty_repository: bool = False
+    """The Skrzynka's repository has no commit: GitHub refuses every new Release (409) for the whole schedule, so a file
+    for the Archiwum never arrives and waits in the queue with the marker of its parts."""
 
 
 LOGS = PeriodThread(
@@ -581,6 +608,14 @@ SCOPES = {
         ARCHIVED_DIAGNOSED,
         (),
         Bounds(unreachable=0, lost=1, disk=0, kills=1, reads=1, refusals=1),
+    ),
+    "archiwum-puste-repo": Scope(
+        "Logi Uruchomienia z plikiem do Archiwum okresu, a za nimi Zgłoszenie, w repozytorium Skrzynki bez commitu: GitHub "
+        "odmawia każdego założenia Archiwum (409), więc plik Logów czeka w kolejce, a komentarz Logów i Zgłoszenie dochodzą.",
+        (_archived("uruchomienie", ""), _post(REPORT, "zgl", 1)),
+        (),
+        Bounds(unreachable=1, lost=1, disk=1, kills=1),
+        empty_repository=True,
     ),
     "diagnoza-odczyt": Scope(
         "Te same Logi i Diagnoza, a pliku Logów raz nie da się odczytać: Diagnoza idzie przed nimi, a Logi, które "
@@ -740,6 +775,19 @@ def _marked(path: Path) -> bool:
     return bool(entry.get("delivered_parts") == len(entry["parts"]) and (entry["archive"] is None or entry["archived"]))
 
 
+def _waits_for_archive(path: Path) -> bool:
+    """The file has the marker of its parts only: every part delivered, its file for the Archiwum not (``commented``)."""
+
+    entry = json.loads(path.read_text(encoding="utf-8"))
+    return bool(entry["archive"] is not None and entry.get("delivered_parts") == len(entry["parts"]) and not entry["archived"])
+
+
+def _settled(scope: Scope, path: Path) -> bool:
+    """A queue file the queue leaves for good in this scope: one whose Archiwum refuses every time, with all its parts."""
+
+    return scope.empty_repository and _waits_for_archive(path)
+
+
 ENDINGS = {
     "pusta": "kolejka pusta",
     "limit": "wyczerpany limit przejść, choć kod wciąż uruchamia kolejkę",
@@ -794,7 +842,7 @@ def _check(
                 )
             )
         if post.archive is not None:
-            broken.extend(_archive_broken(post, box))
+            broken.extend(_waiting_broken(post, box, queue) if scope.empty_repository else _archive_broken(post, box))
         if (
             not isinstance(target, KnownIssue)
             and len([issue for issue in mine if not issue.closed]) > 1
@@ -805,7 +853,7 @@ def _check(
                     f"wysyłka {post.run_id} ma {len(mine)} issue: {sorted(n for n, i in box.issues.items() if i in mine)}",
                 )
             )
-    waiting = [path.name for path in queue.glob("*.json") if not _marked(path)]
+    waiting = [path.name for path in queue.glob("*.json") if not _marked(path) and not _settled(scope, path)]
     if waiting:
         broken.append(
             (
@@ -833,6 +881,20 @@ def _archive_broken(post: Post, box: MemoryBox) -> list[tuple[str, str]]:
         broken.append(("DOKLADNIE_RAZ", f"Archiwum ma pliki {archive.packed_name}: {texts or 'brak'}"))
     if archive.packed_name in box.twice:
         broken.append(("DOKLADNIE_RAZ", f"kolejka usuwa cały plik {archive.packed_name} i wysyła go drugi raz"))
+    return broken
+
+
+def _waiting_broken(post: Post, box: MemoryBox, queue: Path) -> list[tuple[str, str]]:
+    """DOKLADNIE_RAZ when the Archiwum refuses every time: no Archiwum, and the file waits in the queue with all parts."""
+
+    archive = post.archive
+    assert archive is not None
+    waits = [path for path in queue.glob("*.json") if _waits_for_archive(path) and json.loads(path.read_text(encoding="utf-8"))["run_id"] == post.run_id]
+    broken = []
+    if archive.tag in box.releases:
+        broken.append(("DOKLADNIE_RAZ", f"repozytorium bez commitu ma Archiwum {archive.tag}"))
+    if len(waits) != 1:
+        broken.append(("DOKLADNIE_RAZ", f"plik {archive.packed_name} nie czeka w kolejce na Archiwum ({len(waits)} plików)"))
     return broken
 
 
@@ -925,7 +987,7 @@ def execute(
     shutil.rmtree(work, ignore_errors=True)
     queue = work / "config" / "zgloszenia" / "kolejka"
     scheduler = Scheduler(prefix, scope.bounds)
-    box = MemoryBox(scheduler)
+    box = MemoryBox(scheduler, empty_repository=scope.empty_repository)
     for label, title, body in scope.issues:
         box.issues[len(box.issues) + 1] = _Issue(label, title, body)
     failures: list[str] = []
@@ -960,7 +1022,7 @@ def execute(
         )
         ended = "pusta"
         with _intercepted(scheduler, queue, versions):
-            while any(queue.glob("*.json")):
+            while any(not _settled(scope, path) for path in queue.glob("*.json")):
                 if not passes:
                     ended = "limit"
                     break
