@@ -10,7 +10,8 @@ krótki kod Atrapy: Enter w polu ``Numer`` wysyła do ``action_fill_orders.php``
 (``LIST_SEARCH_FIELDS``) z liczbą wierszy z pola ``#field_na_stronie`` (domyślnie ``10``) i wkłada odpowiedź do
 ``#wyniki``, a po wczytaniu, gdy karta pamięta numer z poprzedniego szukania (``sessionStorage``), sama szuka go
 jeszcze raz, jak efenix po powrocie ze strony zlecenia na listę. Szukanie bez liczby wierszy (``na_stronie``) dostaje,
-jak w efenix, stronę błędu bazy danych bez tabeli wyników. Nie ma w niej żadnego kodu, stylu ani danych z efenix.
+jak w efenix, stronę błędu bazy danych bez tabeli wyników, a szukanie z pustym ``xrodzaj`` odpowiedź „Nie znaleziono
+pasujących wyników” bez tabeli. Nie ma w niej żadnego kodu, stylu ani danych z efenix.
 
 Strona zlecenia ma wycenę ze stanem: pozycje z wymyślonymi cenami (``CATALOG``: kody ``INDEKS_NNN_078`` stron efenix,
 z przypisania kolumn i bez niego) w kartach ``.card.rounded-lg.kolorek`` jak w efenix: karta z polem
@@ -84,15 +85,19 @@ ORDER_SCRIPT = "js/page_order_edit.js"
 SESSION_COOKIE = ("PHPSESSID", "atrapa-efenix")
 # Pole ``rodzaj`` szukania, które skrypt listy wysyła sam po wczytaniu strony.
 BY_LIST = "powrot"
-# Pola szukania, które skrypt listy efenix wysyła do ``SEARCH``, w jego kolejności (odczyt efenix z 4.11.2026, #822).
+# Pola szukania, które skrypt listy efenix wysyła do ``SEARCH`` w domyślnym stanie listy, w jego kolejności (odczyt
+# efenix z 4.11.2026, #822). ``xrodzaj`` skrypt bierze z ``<select multiple>``, którego jedyna zaznaczona opcja jest
+# wyłączona, więc wartość to pusta tablica, a jQuery ``$.ajax`` klucza z pustą tablicą nie wysyła.
 LIST_SEARCH_FIELDS = (
-    "id", "numer", "xstatus", "xrodzaj", "asp", "rodzaj", "strona", "na_stronie", "wojewodztwo", "powiat", "gmina", "miasto",
+    "id", "numer", "xstatus", "asp", "rodzaj", "strona", "na_stronie", "wojewodztwo", "powiat", "gmina", "miasto",
     "ulica", "realizator", "owner", "operator", "data_od", "data_do", "data_do_akceptacji", "ulica_numer", "adres_id", "sortowanie",
 )
 # Liczba wierszy tabeli wyników w domyślnym ustawieniu listy (pole ``#field_na_stronie``), jak w efenix.
 LIST_ROWS_PER_PAGE = "10"
 # Odpowiedź efenix na szukanie bez liczby wierszy: strona błędu zapytania z pustym limitem wierszy (tekst wymyślony).
 _NO_ROW_LIMIT = "<p>Błąd bazy danych: zapytanie bez liczby wierszy.</p>"
+# Odpowiedź efenix na szukanie z pustym ``xrodzaj``: żaden rodzaj zlecenia, więc żadnego wyniku i żadnej tabeli.
+_NO_RESULTS = "<p>Nie znaleziono pasujących wyników</p>"
 TODAY = date(2026, 10, 12)
 """Dzień, który kalendarz Atrapy ma za dzisiejszy, gdy test nie poda innego: dni z ``DATA`` testów (wrzesień 2026) są
 w zakresie, który przyjmuje efenix."""
@@ -428,6 +433,8 @@ def atrapa_efenix(
                 number = params.get("numer", "").strip()
                 if not params.get("na_stronie"):
                     self._html(_NO_ROW_LIMIT)
+                elif params.get("xrodzaj") == "":
+                    self._html(_NO_RESULTS)
                 else:
                     self._html(_results([order for order in orders if number in order.number], changed))
             elif path == ORDER_PAGE and method == "GET" and changed is Unread.ORDER_REDIRECT:

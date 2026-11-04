@@ -377,9 +377,10 @@ def test_atrapa_efenix_jest_zgodna_z_budowa_ktorej_uzywa_wycena_w_efenix(chrome:
     assert (checked.code, checked.stderr) == (0, ""), checked
     assert_expected(checked.stdout, ROOT / "tests" / "expected" / "zgodnosc_efenix" / "zgodna.txt")
     assert set(atrapa.requested()) == READING
-    # Szukanie z sesją i bez niej z każdym polem, które wysyła skrypt listy efenix po Enter w polu Numer, z pustymi
-    # filtrami i liczbą wierszy z domyślnego ustawienia listy; Atrapa, jak efenix, bez niej nie daje tabeli wyników (#822).
-    searched = dict.fromkeys(LIST_SEARCH_FIELDS, "") | {"rodzaj": "szukanie", "strona": "1", "na_stronie": "10"}
+    # Szukanie z sesją i bez niej z każdym polem, które wysyła skrypt listy efenix po Enter w polu Numer w domyślnym
+    # stanie listy: bez ``xrodzaj``, z pustymi filtrami, pierwszym sortowaniem i liczbą wierszy z domyślnego ustawienia
+    # listy. Atrapa, jak efenix, bez liczby wierszy albo z pustym ``xrodzaj`` nie daje tabeli wyników (#822).
+    searched = dict.fromkeys(LIST_SEARCH_FIELDS, "") | {"rodzaj": "szukanie", "strona": "1", "na_stronie": "10", "sortowanie": "1"}
     assert [request.params for request in atrapa.requests if request.path == SEARCH] == 2 * [searched]
 
 
