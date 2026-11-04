@@ -36,6 +36,9 @@ ORDERS = {
     20: ("QX9003", "celina.testowa"),
     21: ("QX9004", "dorota.testowa"),
 }
+# The made-up ADRES of every order in the Plik zbiorczy and its Dane adresowe in the Atrapa (tests.fixtures.efenix.Order):
+# the rule of data (ADR 0025) keeps both out of the Logi.
+ADDRESSES = ("UL. TESTOWA 12/3", "TESTOWA", "Testowa", "Miasto-Dzielnica")
 # Znacznik efenix (rozliczenia.efenix_mark.MARK_RGB), the light purple of ADRES in a ready order's row.
 MARK_RGB = "E0CCFF"
 
@@ -217,11 +220,20 @@ def _price(run: Run, page: Page, source: Path) -> None:
     record = logs[-1]
     text = json.dumps(record, ensure_ascii=False)
     traced = [(order["row"], order["outcome"]) for order in record["efenix_orders"]]
-    private = [marker for number, worker in ORDERS.values() for marker in (number, worker) if marker in text]
+    private = [marker for marker in (*(number for number, _worker in ORDERS.values()), *ADDRESSES) if marker in text]
     run.check(
         traced == [(18, "gotowe"), (19, "błąd"), (20, "ostrzeżenie Emmetta"), (21, "rozliczone")] and private == [],
-        "the Logi trace every order by its row, the Zlecenie rozliczone as rozliczone, without its order number or the "
-        "Wykonawca's login",
+        "the Logi trace every order by its row, the Zlecenie rozliczone as rozliczone, without its order number or address",
+    )
+    steps = {order["row"]: order["steps"] for order in record["efenix_orders"]}
+    opened = steps[18][1]
+    run.check(
+        (steps[19][0]["found"], steps[19][0]["results"]) == (0, [])
+        and steps[21][0]["results"] == [{"same_number": True, "status": "Rozliczone", "realizator": ORDERS[21][1], "address": []}]
+        and (opened["action"], opened["status"], opened["realizator"], opened["quantities"]["012"])
+        == ("otwarcie zlecenia", "Do wyceny", ORDERS[18][1], 0),
+        "the Logi read every efenix page (#843): the search results with status, realizator and differing address parts, "
+        "and the opened order's status, realizator and every position's quantity",
     )
     live.get_by_role("button", name="Otwórz Plik zbiorczy").click()
     run.wait_for(last_opened_is(run, source), "Otwórz Plik zbiorczy opens it")

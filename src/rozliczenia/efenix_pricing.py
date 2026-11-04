@@ -559,7 +559,7 @@ def price_orders(
                         trace = OrderTrace()
                         current = (done, order, trace)
                         journal.begun(order.row, done + 1, total)
-                        window = efenix_trace.traced(efenix, trace, clock)
+                        window = efenix_trace.traced(efenix, order, trace, clock)
                         paced = window if pacing is None else pacing.window(window)
                         outcome = _priced(order, paced, emmett_trace, forbidden)
                         result = OrderResult(order, outcome, tuple(trace.steps))

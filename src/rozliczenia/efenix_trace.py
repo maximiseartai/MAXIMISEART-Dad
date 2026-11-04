@@ -1,10 +1,14 @@
 """Ślad zlecenia Wyceny w efenix dla Logów Uruchomienia: każde działanie okna efenix z czasem i tym, co odpowiedział efenix.
 
-Jedyną operacją jest ``traced()``: okno efenix (``efenix_pricing.Efenix``), które przekazuje każde działanie oknu pod
-spodem i zapisuje je w ``OrderTrace`` z chwilą rozpoczęcia (UTC), więc przerwy tempa ludzkiego między działaniami widać
-bez symulacji. Ślad nie ma numeru zlecenia, adresu, loginu realizatora ani treści stron efenix:
-z szukania tylko liczbę trafień, ze strony zlecenia datę wykonania, kwotę i ilości po kodach pozycji, z pola „Ilość” kod
-pozycji, wpisaną ilość i kwotę końcową, którą odesłał efenix. Działanie, które się nie udało (wyjątek okna, np.
+Jedyną operacją jest ``traced()``: okno efenix (``efenix_pricing.Efenix``) przy jednym zleceniu Pliku zbiorczego, które
+przekazuje każde działanie oknu pod spodem i zapisuje je w ``OrderTrace`` z chwilą rozpoczęcia (UTC), więc przerwy tempa
+ludzkiego między działaniami widać bez symulacji. Każde działanie niesie odczyt strony efenix po nim (#843), bez numeru
+zlecenia i bez danych adresowych (reguła danych, ADR 0025): z szukania liczbę trafień i każdy wiersz listy
+(``efenix_checks.ListedRead``: czy ``Numer dokumentu`` to ``NUMER ZL.`` z pliku, status, login realizatora i nazwy
+części adresu, którymi ``Dane adresowe`` różnią się od ``ADRES``), z otwarcia zlecenia status i login realizatora wiersza
+listy, który okno otworzyło (okno nie czyta ich ze strony zlecenia), oraz ze strony zlecenia po otwarciu i po Wycenie
+Emmetta datę wykonania, kwotę i ilości wszystkich pozycji po kodach, z daty wykonania wybrany dzień i to, czy kalendarz
+go przyjął, a z pola „Ilość” kod pozycji, wpisaną ilość i kwotę końcową, którą odesłał efenix. Działanie, które się nie udało (wyjątek okna, np.
 ``UnexpectedPage``), nie trafia do udanych działań śladu, tylko do ``OrderTrace.failed`` z rodzajem i czasem do
 wyjątku, bo przebieg kończy się wtedy Zatrzymaniem, a Logi Uruchomienia mówią, przy którym działaniu.
 """
@@ -12,14 +16,17 @@ wyjątku, bo przebieg kończy się wtedy Zatrzymaniem, a Logi Uruchomienia mówi
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, TypeVar
 
+from .efenix_checks import ListedRead, read_listed
+
 if TYPE_CHECKING:
     from .efenix_checks import ListedOrder
+    from .efenix_orders import CollectiveOrder
     from .efenix_pricing import Efenix, OrderPricing
 
 __all__ = ["Action", "OrderTrace", "TraceStep", "traced"]
@@ -32,9 +39,10 @@ class TraceStep:
     """Jedno działanie okna efenix: rodzaj, chwila rozpoczęcia (UTC), czas w milisekundach i to, co efenix odpowiedział,
     bez danych klientów.
 
-    ``found``: trafienia szukania. ``execution_date``, ``amount`` i ``quantities``: strona zlecenia po otwarciu albo po
-    Wycenie Emmetta, a ``amount`` także kwota końcowa po wpisaniu ilości. ``position`` i ``quantity``: pole „Ilość”, w które
-    okno wpisało ilość. ``accepted``: kalendarz przyjął dzień daty wykonania.
+    ``found``: trafienia szukania, a ``results``: odczyt każdego z nich po kolei. ``status`` i ``realizator``: wiersz
+    listy, którego stronę zlecenia okno otworzyło. ``execution_date``, ``amount`` i ``quantities``: strona zlecenia po
+    otwarciu albo po Wycenie Emmetta, a ``amount`` także kwota końcowa po wpisaniu ilości. ``position`` i ``quantity``:
+    pole „Ilość”, w które okno wpisało ilość. ``accepted``: kalendarz przyjął dzień daty wykonania.
     """
 
     action: Action
@@ -47,6 +55,9 @@ class TraceStep:
     position: str | None = None
     quantity: int | None = None
     accepted: bool | None = None
+    results: tuple[ListedRead, ...] | None = None
+    status: str | None = None
+    realizator: str | None = None
 
 
 @dataclass
@@ -61,13 +72,14 @@ _T = TypeVar("_T")
 
 
 class _Traced:
-    """Okno efenix, które zapisuje każde udane działanie okna ``efenix`` w ``trace`` z czasem z zegara ``clock`` i chwilą
-    rozpoczęcia z zegara ściennego ``now``."""
+    """Okno efenix przy zleceniu ``order``, które zapisuje każde udane działanie okna ``efenix`` w ``trace`` z czasem z
+    zegara ``clock`` i chwilą rozpoczęcia z zegara ściennego ``now``."""
 
     def __init__(
-        self, efenix: Efenix, trace: OrderTrace, clock: Callable[[], float], now: Callable[[], datetime]
+        self, efenix: Efenix, order: CollectiveOrder, trace: OrderTrace, clock: Callable[[], float], now: Callable[[], datetime]
     ) -> None:
         self._efenix = efenix
+        self._order = order
         self._trace = trace
         self._clock = clock
         self._now = now
@@ -78,12 +90,13 @@ class _Traced:
 
     def search(self, number: str) -> Sequence[ListedOrder]:
         found, at, duration_ms = self._done("szukanie", lambda: self._efenix.search(number))
-        self._add(TraceStep("szukanie", at, duration_ms, found=len(found)))
+        results = tuple(read_listed(self._order, listed) for listed in found)
+        self._add(TraceStep("szukanie", at, duration_ms, found=len(found), results=results))
         return found
 
     def open_order(self, order: ListedOrder) -> OrderPricing:
         pricing, at, duration_ms = self._done("otwarcie zlecenia", lambda: self._efenix.open_order(order))
-        self._add(_page("otwarcie zlecenia", at, duration_ms, pricing))
+        self._add(replace(_page("otwarcie zlecenia", at, duration_ms, pricing), status=order.status, realizator=order.realizator))
         return pricing
 
     def set_execution_date(self, day: date) -> bool:
@@ -137,9 +150,13 @@ def _utc_now() -> datetime:
 
 
 def traced(
-    efenix: Efenix, trace: OrderTrace, clock: Callable[[], float], now: Callable[[], datetime] = _utc_now
+    efenix: Efenix,
+    order: CollectiveOrder,
+    trace: OrderTrace,
+    clock: Callable[[], float],
+    now: Callable[[], datetime] = _utc_now,
 ) -> Efenix:
-    """Okno ``efenix``, które zapisuje w ``trace`` każde swoje udane działanie z czasem z ``clock`` (sekundy) i chwilą
-    rozpoczęcia z ``now`` (UTC)."""
+    """Okno ``efenix`` przy zleceniu ``order`` Pliku zbiorczego, które zapisuje w ``trace`` każde swoje udane działanie z
+    odczytem strony, czasem z ``clock`` (sekundy) i chwilą rozpoczęcia z ``now`` (UTC)."""
 
-    return _Traced(efenix, trace, clock, now)
+    return _Traced(efenix, order, trace, clock, now)

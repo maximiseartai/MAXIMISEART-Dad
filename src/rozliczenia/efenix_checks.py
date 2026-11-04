@@ -6,7 +6,8 @@ zbiorczym (``searched_number``), potem wiersze listy efenix po szukaniu (``listi
 liter i ``Dane adresowe`` równe ``ADRES`` (``efenix_address``), a na końcu data wykonania pusta albo równa dniowi z
 ``DATA`` (``date_problem``). Zlecenie „Rozliczone” zgodne z plikiem nie jest niezgodnością, tylko Zleceniem rozliczonym
 (``Settled``), którego proces nie otwiera. Pustą datę wykonania proces ustawia z ``DATA``, a dzień, którego efenix nie
-przyjął, to ``DateRefused``.
+przyjął, to ``DateRefused``. Każdy wiersz listy po szukaniu ma też odczyt dla Logów Uruchomienia (``read_listed``):
+te same porównania numeru i adresu, ale z nazwami różniących się części adresu zamiast danych adresowych.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from datetime import date
 import enum
 from typing import Final
 
-from .efenix_address import same_address
+from .efenix_address import AddressPart, address_differences, same_address
 from .efenix_orders import CollectiveOrder
 
 __all__ = [
@@ -25,11 +26,13 @@ __all__ = [
     "SETTLED_STATUS",
     "DateRefused",
     "ListedOrder",
+    "ListedRead",
     "OrderProblem",
     "PagePart",
     "Settled",
     "date_problem",
     "listing",
+    "read_listed",
     "searched_number",
 ]
 
@@ -81,6 +84,30 @@ class ListedOrder:
     realizator: str | None
     address: str
     order_id: str
+
+
+@dataclass(frozen=True)
+class ListedRead:
+    """Wiersz listy zleceń po szukaniu tak, jak trafia do Logów Uruchomienia, bez danych adresowych i bez numeru:
+    ``Numer dokumentu`` równy ``NUMER ZL.`` z pliku (``same_number``), status i login realizatora jak na liście
+    (``realizator`` ``None`` bez loginu) i części adresu, którymi ``Dane adresowe`` różnią się od ``ADRES`` z pliku
+    (``address``, pusta krotka to ten sam adres)."""
+
+    same_number: bool
+    status: str
+    realizator: str | None
+    address: tuple[AddressPart, ...]
+
+
+def read_listed(order: CollectiveOrder, listed: ListedOrder) -> ListedRead:
+    """Odczyt wiersza ``listed`` listy po szukaniu zlecenia ``order`` dla Logów Uruchomienia."""
+
+    return ListedRead(
+        same_number=listed.number == order.number,
+        status=listed.status,
+        realizator=listed.realizator,
+        address=address_differences(order.address, listed.address),
+    )
 
 
 @dataclass(frozen=True)

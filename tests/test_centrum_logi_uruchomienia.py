@@ -42,7 +42,7 @@ from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.period_folder import PeriodFolderInaccessible
 
-from tests.fixtures.atrapa_efenix import AtrapaEfenix, AtrapaOrder, Changed, amount_of, atrapa_efenix
+from tests.fixtures.atrapa_efenix import CATALOG, AtrapaEfenix, AtrapaOrder, Changed, amount_of, atrapa_efenix
 from tests.fixtures.centrum import (
     TOOL_COMMIT,
     FakeGitHub,
@@ -1088,7 +1088,7 @@ def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_
     dlaczego: przyczynę z zamkniętej listy (kody pozycji, budowę strony albo typ błędu Playwrighta z działaniem
     przeglądarki), wiersz, miejsce „2 z 2”, udane działania przy nim i działanie, które się nie udało, oraz ślad gotowego
     zlecenia z wiersza 18. Ślad wywołań ma łańcuch przyczyn do wyjątku okna. Komunikat taty jest ten sam co bez przyczyny,
-    a Logi nie mają numeru zlecenia, adresu ani loginu Wykonawcy."""
+    a Logi nie mają numeru zlecenia ani adresu."""
 
     with atrapa_efenix([PRICED[0].in_efenix("611"), second]) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
@@ -1113,11 +1113,11 @@ def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_
         "rozliczenia.efenix_pricing.UnexpectedPage",
     ]
     text = log_files(centrum)[0].read_text(encoding="utf-8")
-    private = [*(order.number.removeprefix("#") for order in STOPPED_AT_SECOND), *(order.worker for order in STOPPED_AT_SECOND), "TESTOWA"]
+    private = [*(order.number.removeprefix("#") for order in STOPPED_AT_SECOND), "TESTOWA", "Testowa"]
     assert [marker for marker in private if marker in text] == []
 
 
-def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_adresu_i_loginu_wykonawcy(tmp_path: Path) -> None:
+def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_i_adresu(tmp_path: Path) -> None:
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
         (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
@@ -1146,13 +1146,118 @@ def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_adr
     assert moments == sorted(moments) and moments[-1] <= utc(record["ended_at"]), "godziny działań w kolejności zleceń"
     private = [
         *(order.number.removeprefix("#") for order in PRICED),
-        *(order.worker for order in PRICED),
         "TESTOWA",
+        "Testowa",
         "PRYWATNA",
         "Miasto-Dzielnica",
         in_json(tmp_path),
     ]
     assert [marker for marker in private if any(marker in text for text in texts)] == []
+
+
+# Każdy odczyt strony efenix w Logach (#843), wiersze 18–23 po Wykonawcach: zlecenie, które proces wycenia (data wykonania,
+# Wycena Emmetta, ilość), zlecenie z innym statusem, z innym lokalem, z inną ulicą i numerem domu, numer, pod którym
+# efenix pokazuje tylko inne zlecenie, i numer, którego efenix nie zna wcale. Adresy i numery są wymyślone.
+_FILE_ADDRESS = "UL. ZAWILCOWA 12/3"
+_EFENIX_ADDRESS = "Miastowo-Centrum ul.Zawilcowa 12 Lokal 3"
+
+
+def _read_order(number: str, worker: str, *, efenix_address: str = _EFENIX_ADDRESS) -> Order:
+    amount = float(amount_of({"012": 1}))
+    return Order(number, worker=worker, address=_FILE_ADDRESS, efenix_address=efenix_address, cells={"O": 1}, amount=amount)
+
+
+READ = [
+    _read_order("#ZLQS01", "adrian.testowy"),
+    _read_order("#ZLQS02", "beata.testowa"),
+    _read_order("#ZLQS03", "celina.testowa", efenix_address="Miastowo-Centrum ul.Zawilcowa 12 Lokal 4"),
+    _read_order("#ZLQS04", "dorota.testowa", efenix_address="Miastowo-Centrum ul.Rumiankowa 14 Lokal 3"),
+    _read_order("#ZLQS05", "ewa.testowa"),
+    _read_order("#ZLQS06", "filip.testowy"),
+]
+READ_IN_EFENIX = [
+    READ[0].in_efenix("631"),
+    replace(READ[1].in_efenix("632"), status="W realizacji"),
+    READ[2].in_efenix("633"),
+    READ[3].in_efenix("634"),
+    replace(READ[4].in_efenix("635"), number="ZLQS050", realizator="gustaw.testowy", status="Rozliczone"),
+]
+
+
+def _listed(same_number: bool, status: str, realizator: str, address: list[str]) -> dict[str, Any]:
+    return {"same_number": same_number, "status": status, "realizator": realizator, "address": address}
+
+
+def test_logi_wyceny_w_efenix_maja_odczyt_kazdej_strony_efenix_ze_statusem_realizatorem_i_czesciami_adresu_bez_danych_adresowych(
+    tmp_path: Path,
+) -> None:
+    """Logi Wyceny w efenix mówią, co narzędzie zobaczyło w efenix (#843): po szukaniu liczbę wyników i przy każdym
+    status, login realizatora, czy to numer z pliku i które części adresu (ulica, numer domu, lokal) różnią się od ``ADRES``,
+    po otwarciu zlecenia jego status i realizatora, a ze strony zlecenia datę wykonania, kwotę i ilość każdej pozycji, także
+    po zapisie daty, Wyceny Emmetta i ilości. Zlecenie z innym statusem ma ten status, zlecenie z innym adresem tylko nazwy
+    różniących się części, a nieznany numer to, co zwróciło szukanie. Dane adresowe pliku i Atrapy nie wychodzą ani do
+    pliku Logów, ani do Skrzynki Zgłoszeń."""
+
+    with atrapa_efenix(READ_IN_EFENIX) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        write_collective_file(centrum.period_parent, READ)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        assert _start_pricing(centrum).status_code == 200
+        assert finished_view(centrum.client)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
+    box = centrum.surroundings.report_box
+    assert box.wait_until(lambda fake: sum(len(issue.comments) for issue in fake.background_issues) == 1)
+    [record] = records(centrum)
+    texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
+    texts += [part for issue in box.background_issues for part in (issue.title, issue.body, *issue.comments)]
+    page_codes = {position.code for position in CATALOG if position.kind == "ILOSC"}
+
+    def read(step: dict[str, Any]) -> tuple[Any, ...]:
+        match step["action"]:
+            case "szukanie":
+                return ("szukanie", step["found"], step["results"])
+            case "otwarcie zlecenia":
+                return ("otwarcie zlecenia", step["status"], step["realizator"], step["execution_date"], step["amount"], step["quantities"])
+            case "data wykonania":
+                return ("data wykonania", step["execution_date"], step["accepted"])
+            case "Wycena Emmetta":
+                return ("Wycena Emmetta", step["execution_date"], step["amount"], step["quantities"])
+            case "ilość":
+                return ("ilość", step["position"], step["quantity"], step["amount"])
+            case _:
+                raise AssertionError(step["action"])
+
+    empty = dict.fromkeys(sorted(page_codes), 0)
+    priced = str(amount_of({"012": 1}))
+    assert [(order["row"], order["code"], [read(step) for step in order["steps"]]) for order in record["efenix_orders"]] == [
+        (
+            18,
+            None,
+            [
+                ("szukanie", 1, [_listed(True, "Do wyceny", "adrian.testowy", [])]),
+                ("otwarcie zlecenia", "Do wyceny", "adrian.testowy", None, "0.00", empty),
+                ("data wykonania", DAY.isoformat(), True),
+                ("otwarcie zlecenia", "Do wyceny", "adrian.testowy", DAY.isoformat(), "0.00", empty),
+                ("Wycena Emmetta", DAY.isoformat(), "0.00", empty),
+                ("ilość", "012", 1, priced),
+            ],
+        ),
+        (19, "EFENIX_INNY_STATUS", [("szukanie", 1, [_listed(True, "W realizacji", "beata.testowa", [])])]),
+        (20, "EFENIX_INNY_ADRES", [("szukanie", 1, [_listed(True, "Do wyceny", "celina.testowa", ["lokal"])])]),
+        (21, "EFENIX_INNY_ADRES", [("szukanie", 1, [_listed(True, "Do wyceny", "dorota.testowa", ["ulica", "numer domu"])])]),
+        (22, "EFENIX_NIEZNANY_NUMER", [("szukanie", 1, [_listed(False, "Rozliczone", "gustaw.testowy", [])])]),
+        (23, "EFENIX_NIEZNANY_NUMER", [("szukanie", 0, [])]),
+    ]
+    private = [
+        _FILE_ADDRESS,
+        "ZAWILCOWA",
+        "Zawilcowa",
+        "Rumiankowa",
+        "Miastowo",
+        *(order.number.removeprefix("#") for order in READ),
+        "ZLQS050",
+    ]
+    assert [marker for marker in private if any(marker in text for text in texts)] == []
+    assert record["technical_notes"] == []
 
 
 def test_uwaga_taty_po_wycenie_w_efenix_nie_wynosi_adresu_z_pliku_zbiorczego_ani_danych_adresowych_efenix(
@@ -1402,7 +1507,7 @@ def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwan
     }
     assert (card, [item for item in notifications if item["kind"] == "wycena_w_efenix"]) == ({"state": "missing"}, [])
     assert journals(centrum) == [], "dziennik, którego Logi przyjęła Kolejka wysyłki, znika"
-    private = [*(order.number.removeprefix("#") for order in CUT), *(order.worker for order in CUT), "TESTOWA", "Miasto-Dzielnica"]
+    private = [*(order.number.removeprefix("#") for order in CUT), "TESTOWA", "Testowa", "Miasto-Dzielnica"]
     assert [marker for marker in private if marker in journal_text or marker in comment] == []
 
 
