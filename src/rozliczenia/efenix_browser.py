@@ -10,8 +10,10 @@ tę samą, którą skrypt wkłada do ``#wyniki``, bo lista po wczytaniu sama szu
 jej odpowiedź trafia do ``#wyniki`` w dowolnej chwili. Kolumny tabeli rozpoznaje po nagłówkach (``Numer dokumentu``,
 ``Status``, ``Wykonawca``, ``Dane adresowe``), tekst komórki bez jej ``<small>`` (identyfikator Fenix, województwo),
 login realizatora z ``small.text-default`` komórki Wykonawca (obok niego w ``<small>`` stoi data), a stronę zlecenia
-otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony albo szukania na ``page_login.php`` to
-``LoggedOut``. Lista zleceń, której okno nie otworzyło przy starcie (adres nie odpowiada), to ``EfenixUnreachable``.
+otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony albo odpowiedzi na ``page_login.php`` to
+``LoggedOut``, tak jak odpowiedź szukania, która jest samym ostrzeżeniem efenix o wygasłej sesji (``SearchWarning``): na
+szukanie bez sesji efenix nie przekierowuje (pomiar 4.11.2026, #828). Lista zleceń, której okno nie otworzyło przy
+starcie (adres nie odpowiada), to ``EfenixUnreachable``.
 Każde inne działanie, którego okno nie dokończyło, to ``UnexpectedPage`` z częścią strony: strona bez oczekiwanej
 budowy, element obecny, ale niewidoczny, i każdy błąd Playwrighta w działaniu (czas czekania na stronę, odpowiedź albo
 element, który minął, otwarcie strony, które się nie udało, treść odpowiedzi, której nie da się przeczytać). Każdy z
@@ -45,14 +47,16 @@ przeładowanie strony, które robi skrypt efenix, i czyta stronę od nowa. Iloś
 strony zapisuje ją przez ``action_save_index.php``: kwotą końcową jest ``price_all`` z tej odpowiedzi, a ``#cena_all2``,
 które się do niej nie odświeży, to ``UnexpectedPage``. Odpowiedź ``result: nok`` to wygasła sesja (``LoggedOut``).
 
-Tabelę wyników i stronę zlecenia czytają ``read_results`` i ``read_order``, których używa też narzędzie zgodności
-Atrapy efenix (``tools/zgodnosc_efenix.py``) na HTML z serwera efenix. Resztę budowy, której okno używa, moduł podaje
-jako dane dla tego narzędzia: elementy listy i strony zlecenia (``LIST_ELEMENTS``, ``ORDER_ELEMENTS``) i nazwy, które
-muszą być w skryptach tych stron, bo okno polega na ich działaniu (``LIST_SCRIPT_USES``, ``ORDER_SCRIPT_USES``).
+Odpowiedź szukania, jej ostrzeżenie i stronę zlecenia czytają ``read_results``, ``search_warning`` i ``read_order``,
+których używa też narzędzie zgodności Atrapy efenix (``tools/zgodnosc_efenix.py``) na HTML z serwera efenix. Resztę
+budowy, której okno używa, moduł podaje jako dane dla tego narzędzia: elementy listy i strony zlecenia
+(``LIST_ELEMENTS``, ``ORDER_ELEMENTS``) i nazwy, które muszą być w skryptach tych stron, bo okno polega na ich działaniu
+(``LIST_SCRIPT_USES``, ``ORDER_SCRIPT_USES``).
 """
 
 from __future__ import annotations
 
+import enum
 import functools
 import json
 import re
@@ -109,12 +113,14 @@ __all__ = [
     "LaunchOptions",
     "PageElement",
     "ScriptUse",
+    "SearchWarning",
     "chrome",
     "chromium",
     "default_profile",
     "launch_options",
     "read_order",
     "read_results",
+    "search_warning",
     "window",
 ]
 
@@ -174,6 +180,14 @@ _READ_RESULTS: Final = """(html) => {
             };
         })),
     };
+}"""
+
+
+# Cały tekst odpowiedzi szukania bez tabeli (białe znaki jak jedna spacja); ``null``, gdy odpowiedź ma tabelę.
+_ANSWER_TEXT: Final = """(html) => {
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    return template.content.querySelector('table') ? null : template.content.textContent.replace(/\\s+/g, ' ').trim();
 }"""
 
 
@@ -270,6 +284,14 @@ ORDER_SCRIPT_USES: Final = (
         (QUANTITY.partition(".")[2], "blur", _SAVE_QUANTITY, _PRICE_ALL, AMOUNT[1:]),
     ),
 )
+
+
+class SearchWarning(enum.Enum):
+    """Ostrzeżenie, którym efenix odpowiada na szukanie zamiast tabeli wyników: cała odpowiedź to ono samo, 200 bez
+    przekierowania (pomiar na efenix 4.11.2026, #828). Wartość to tekst odpowiedzi, po którym okno je rozpoznaje."""
+
+    SESSION_EXPIRED = "Ostrzeżenie: Twoja sesja wygasła - zaloguj się ponownie !"
+    """Szukanie bez ważnej sesji: efenix wylogował."""
 
 
 class _Cell(TypedDict):
@@ -535,12 +557,30 @@ class BrowserEfenix:
 
 
 def read_results(page: Page, html: str) -> tuple[ListedOrder, ...]:
-    """Wiersze tabeli wyników z odpowiedzi szukania ``html``, przeczytane parserem HTML przeglądarki strony ``page``."""
+    """Wiersze tabeli wyników z odpowiedzi szukania ``html``, przeczytane parserem HTML przeglądarki strony ``page``.
+
+    Odpowiedź bez tabeli, która jest samym ostrzeżeniem efenix o wygasłej sesji (``search_warning``), to ``LoggedOut``,
+    a każda inna odpowiedź bez tabeli to ``UnexpectedPage``.
+    """
 
     results: _Results | None = page.evaluate(_READ_RESULTS, html)
-    if results is None:
-        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.NO_TABLE))
-    return tuple(_listed(results["headers"], row) for row in results["rows"])
+    if results is not None:
+        return tuple(_listed(results["headers"], row) for row in results["rows"])
+    match search_warning(page, html):
+        case SearchWarning.SESSION_EXPIRED:
+            raise LoggedOut(PagePart.RESULTS, LoginSign.SESSION_WARNING)
+        case None:
+            raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.NO_TABLE))
+
+
+def search_warning(page: Page, html: str) -> SearchWarning | None:
+    """Ostrzeżenie efenix, którym jest cała odpowiedź szukania ``html`` bez tabeli, przeczytana parserem HTML przeglądarki
+    strony ``page``; ``None``: odpowiedź z tabelą albo z innym tekstem."""
+
+    try:
+        return SearchWarning(page.evaluate(_ANSWER_TEXT, html))
+    except ValueError:
+        return None
 
 
 def read_order(page: Page) -> OrderPricing:

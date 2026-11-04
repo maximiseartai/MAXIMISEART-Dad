@@ -76,6 +76,19 @@ def test_szukanie_bez_liczby_wierszy_albo_z_pustym_rodzajem_zlecenia_dostaje_jak
     assert (answer in refused, "<table" in refused, "9301" in refused, "<table" in found, "9301" in found) == (True, False, False, True, True)
 
 
+def test_szukanie_bez_sesji_dostaje_jak_w_efenix_samo_ostrzezenie_o_wygaslej_sesji_bez_przekierowania() -> None:
+    with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")]) as atrapa:
+        atrapa.expire_session()
+        connection = _connection(atrapa.url)
+        connection.request("POST", f"/{SEARCH}", body="numer=9301&rodzaj=szukanie&strona=1&na_stronie=10", headers=_FORM)
+        response = connection.getresponse()
+        answer = (response.status, response.getheader("Location"), response.read().decode("utf-8"))
+        connection.close()
+
+    assert answer[:2] == (200, None)
+    assert ("Twoja sesja wygasła - zaloguj się ponownie !" in answer[2], "<table" in answer[2], "9301" in answer[2]) == (True, False, False)
+
+
 def test_po_bloku_atrapy_polaczenie_otwarte_w_bloku_nie_dostaje_odpowiedzi_a_po_jego_zamknieciu_nie_zostaje_jej_watek() -> None:
     before = set(threading.enumerate())
     with atrapa_efenix([]) as atrapa:

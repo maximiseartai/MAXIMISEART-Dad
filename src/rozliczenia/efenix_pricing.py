@@ -164,7 +164,7 @@ class Shape(enum.Enum):
     QUANTITY_VALUE = "wartość pola Ilość, która nie jest liczbą całkowitą"
     DATE_TEXT = "data wykonania w innej postaci niż RRRR-MM-DD"
     AMOUNT_TEXT = "kwota w innej postaci niż liczba z kropką"
-    NO_TABLE = "odpowiedź szukania bez tabeli"
+    NO_TABLE = "odpowiedź szukania bez tabeli i bez ostrzeżenia efenix, które zna okno"
     COLUMNS = "nagłówek kolumny tabeli wyników nie występuje dokładnie raz"
     ROW_CELLS = "wiersz tabeli wyników z inną liczbą komórek niż nagłówków albo bez jednego linku do strony zlecenia"
     ROW_EMPTY = "wiersz tabeli wyników bez identyfikatora zlecenia albo bez numeru"
@@ -180,6 +180,7 @@ class LoginSign(enum.Enum):
 
     PAGE = "strona logowania zamiast strony, o którą prosiło okno"
     REDIRECT = "odpowiedź efenix przekierowana na stronę logowania"
+    SESSION_WARNING = "odpowiedź szukania z samym ostrzeżeniem efenix o wygasłej sesji"
     REFUSED = "odpowiedź zapisu ilości z wynikiem nok"
     NO_LOGIN = "tata nie zalogował się w czasie, w którym okno czeka na logowanie"
 
@@ -241,7 +242,8 @@ class WindowStop(Exception):
 
 
 class LoggedOut(WindowStop):
-    """efenix pokazał stronę logowania zamiast strony, o którą prosiło okno."""
+    """efenix wylogował okno: pokazał stronę logowania albo ostrzeżenie o wygasłej sesji zamiast strony albo odpowiedzi,
+    o którą prosiło okno (``sign`` mówi, po czym okno to poznało)."""
 
     def __init__(self, part: PagePart, sign: LoginSign) -> None:
         super().__init__(part, sign)

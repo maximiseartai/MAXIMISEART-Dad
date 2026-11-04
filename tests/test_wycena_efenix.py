@@ -701,6 +701,7 @@ def test_plik_bez_kwot_au_policzonych_przez_excel_zatrzymuje_wycene_zanim_otworz
     [
         pytest.param(None, [], False, id="przed-szukaniem"),
         pytest.param((ORDER_PAGE, 0), ["9201"], False, id="przy-otwarciu-pierwszego-zlecenia"),
+        # Szukanie bez sesji efenix nie przekierowuje, tylko odpowiada samym ostrzeżeniem o wygasłej sesji (#828).
         pytest.param((SEARCH, 1), ["9201", "9202"], True, id="przy-szukaniu"),
         # Strona pierwszego zlecenia otwiera się trzy razy: przy otwarciu, po dacie wykonania i po Wycenie Emmetta.
         pytest.param((ORDER_PAGE, 3), ["9201", "9202"], True, id="przy-otwarciu-zlecenia"),
@@ -709,7 +710,7 @@ def test_plik_bez_kwot_au_policzonych_przez_excel_zatrzymuje_wycene_zanim_otworz
         pytest.param((SAVE_QUANTITY, 1), ["9201", "9202"], True, id="przy-zapisie-ilości"),
     ],
 )
-def test_strona_logowania_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene_a_komunikat_mowi_czy_cos_zmienila(
+def test_wylogowanie_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene_a_komunikat_mowi_czy_cos_zmienila(
     tmp_path: Path, page: Page, expire_after: tuple[str, int] | None, searched: list[str], kept: bool
 ) -> None:
     orders = [Order(f"#920{index}", cells={"O": 1}, amount=_au({"012": 1})) for index in (1, 2, 3)]
@@ -728,6 +729,7 @@ TIMEOUT = "playwright._impl._errors.TimeoutError"
 CHANGED: dict[Changed, tuple[PagePart, WindowCause, str]] = {
     Changed.STATUS_HEADER: (PagePart.RESULTS, OtherShape(Shape.COLUMNS), "szukanie"),
     Changed.ORDER_LINK: (PagePart.RESULTS, OtherShape(Shape.ROW_CELLS), "szukanie"),
+    Changed.RESULTS_WARNING: (PagePart.RESULTS, OtherShape(Shape.NO_TABLE), "szukanie"),
     Changed.DATE_FORMAT: (PagePart.ORDER, OtherShape(Shape.DATE_TEXT), "otwarcie zlecenia"),
     Changed.DATE_DIALOG: (PagePart.DATE, BrowserFailure(TIMEOUT, Operation.ELEMENT), "data wykonania"),
     Changed.EMMETT_BUTTON: (PagePart.EMMETT, ElementCount("#button_emmett", 0), "Wycena Emmetta"),
