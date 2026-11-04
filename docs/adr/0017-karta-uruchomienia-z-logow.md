@@ -13,6 +13,22 @@ dwa miejsca
 - własne pliki Centrum: dochodzi `logs/ostatnie-uruchomienie.json`, poza
   Gitem i OneDrive.
 
+Dopisek #845 (część #837): Urwana Wycena w efenix ma Logi Urwanego
+Uruchomienia. Wycena w efenix pisze w trakcie dziennik Wyceny w efenix,
+osobny plik Uruchomienia w `logs/dzienniki-wyceny/` (własny plik Centrum, poza
+Gitem i OneDrive), wpis po wpisie: „zaczynam zlecenie” przed pierwszym
+działaniem okna efenix przy zleceniu, więc przed każdym zapisem w efenix, i
+„zlecenie skończone” z wynikiem i śladem zlecenia zaraz po nim. Start Centrum,
+który zastanie dziennik Uruchomienia bez Logów i bez wiersza Historii, zamyka
+go jako Logi z nowym sposobem zakończenia `interrupted` (bez wyniku, ze
+zleceniami sprzed zgaśnięcia i zleceniem zaczętym bez wyniku), zanim przeczyta
+kartę ostatniego Uruchomienia, i wysyła je jak zwykłe Logi przy pierwszym
+zapytaniu tej pracy Centrum, już po starcie Kolejki wysyłki. Karta po starcie
+to dalej karta Urwanego Uruchomienia, z liczbą zleceń skończonych przed
+zamknięciem Centrum z każdym wynikiem. Plik Logów powstaje dalej tylko pełny:
+dziennik nie jest niepełnym plikiem Logów, tylko osobnym plikiem, który czyta
+wyłącznie start Centrum. Krótkie procesy dziennika nie piszą.
+
 ## Kontekst
 
 Centrum trzymało tylko bieżące Uruchomienie procesu w pamięci, więc karta
@@ -62,7 +78,10 @@ Centrum bez identyfikatora Uruchomienia.
   odpowiedź „karty nie ma”, nie błąd, więc przeglądarka nie proponuje
   ponowienia.
 - Urwane Uruchomienie zostaje w Centrum tylko do następnego startu
-  Uruchomienia: nie ma Logów, rekordu metryk ani wiersza Historii.
+  Uruchomienia: nie ma Logów, rekordu metryk ani wiersza Historii. Wyjątek od
+  #845: Urwana Wycena w efenix ma Logi Urwanego Uruchomienia z dziennika (dopisek
+  wyżej), ale też nie ma rekordu metryk ani wiersza Historii, więc nie ma
+  karty wiersza Historii ani Powiadomienia o zakończonej Wycenie w efenix.
 
 ## Odrzucone warianty
 

@@ -143,6 +143,12 @@ class CentrumLog:
 
         self._write("dzialania-taty-niedostepne", typ=type(failure).__name__)
 
+    def pricing_journal_unavailable(self, failure: OSError, *, where: Literal["wpis", "start"]) -> None:
+        """Dziennika Wyceny w efenix nie da się zapisać w trakcie Uruchomienia (``wpis``) albo odczytać, zamknąć lub usunąć
+        przy starcie Centrum (``start``); tylko typ błędu."""
+
+        self._write("dziennik-wyceny-niedostepny", typ=type(failure).__name__, miejsce=where)
+
     def unexpected_failure(self, failure: BaseException, *, where: str) -> None:
         """Nieoczekiwany wyjątek: tylko nazwa typu i miejsce (np. trasa API), bez tekstu wyjątku."""
 

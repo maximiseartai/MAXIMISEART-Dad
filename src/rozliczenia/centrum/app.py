@@ -31,7 +31,7 @@ from rozliczenia.centrum.clock import SYSTEM_CLOCK, Clock
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import CONFIGURATION_WAIT_S, ConfigurationFiles, configuration_router
 from rozliczenia.centrum.case_delivery import case_outbox
-from rozliczenia.centrum.contract import Health, Problem, Refusal
+from rozliczenia.centrum.contract import Health, Problem, Refusal, RunInfo
 from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, DadActionJournal
 from rozliczenia.centrum.dad_cases import DadCases
 from rozliczenia.centrum.dad_notes import dad_notes_router
@@ -50,6 +50,7 @@ from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, UNSENT_DIRECTORY, Reports
 from rozliczenia.centrum.preparation_run import PreparationEntry
+from rozliczenia.centrum.pricing_journal import JOURNALS_DIRECTORY, InterruptedPricings, PricingJournal
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.run_cards import LAST_STARTED_FILE, RunCards, run_cards_router
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, RunLogs
@@ -112,6 +113,11 @@ def create_app(
 
     # Działania taty w Centrum dla Logów następnego Uruchomienia: każda trasa API wpisuje widok albo przycisk.
     dad_actions = DadActionJournal(log.directory / DAD_ACTIONS_FILE, log)
+
+    async def send_interrupted() -> None:
+        # Logi Urwanych Uruchomień z dzienników Wyceny w efenix idą przy pierwszym zapytaniu, już po ``lifespan``.
+        await interrupted.send()
+
     # Bez /docs i /openapi.json: kontrakt eksportuje tools/ci/export_openapi.py, a Swagger ładowałby skrypty z sieci.
     app = FastAPI(
         title="Centrum rozliczeń",
@@ -120,7 +126,7 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
         lifespan=lifespan,
-        dependencies=[Depends(dad_actions.observe)],
+        dependencies=[Depends(dad_actions.observe), Depends(send_interrupted)],
     )
 
     @app.middleware("http")
@@ -199,6 +205,8 @@ def create_app(
     reports = Reports(
         box, outbox, surroundings.tool_freshness.local, cases, search_deadline_s=report_search_deadline_s
     )
+    # Dziennik Wyceny w efenix w trakcie Uruchomienia, obok Logów: przeżywa nagłe zgaśnięcie Centrum (#845).
+    journal = PricingJournal(log.directory / JOURNALS_DIRECTORY, log)
     # Logi Uruchomienia: jeden plik JSON na Uruchomienie obok dziennika Centrum, poza Gitem i OneDrive (ADR 0015).
     run_logs = RunLogs(
         log.directory / RUN_LOGS_DIRECTORY,
@@ -231,7 +239,7 @@ def create_app(
         PreparationEntry(store, configuration, processes, today, readers),
         # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
         # Kafelek Wyceny w efenix stoi przed Przebiegiem rozliczeń, bo w tej kolejności tata pracuje.
-        EfenixEntry(store, processes, today, efenix_window or EfenixWindow.of_tata()),
+        EfenixEntry(store, processes, today, efenix_window or EfenixWindow.of_tata(), journal),
         SettlementEntry(store, configuration, processes, today, readers),
     ]
     # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
@@ -250,6 +258,14 @@ def create_app(
         log.directory / LAST_STARTED_FILE,
         lambda: read_runs(processes, centrum_runs.started()),
     )
+    # Dzienniki Urwanych Wycen w efenix stają się ich Logami, zanim karta ostatniego Uruchomienia przeczyta Logi.
+    interrupted = InterruptedPricings(log.directory / JOURNALS_DIRECTORY, run_logs, cards.recorded, log)
+    interrupted.close()
+
+    def run_started(info: RunInfo, started_at: datetime) -> None:
+        journal.run_started(info, started_at)
+        cards.run_started(info, started_at)
+
     # Powiadomienia o Uwagach taty, wysłanych Zgłoszeniach, Wydaniach i zakończonych Wycenach w efenix z Logów
     # Uruchomienia; przeczytane obok Ustawień taty (ADR 0015).
     notifications = Notifications(
@@ -267,7 +283,7 @@ def create_app(
         centrum_runs,
         stops,
         previous=cards.last(),
-        run_started=cards.run_started,
+        run_started=run_started,
         after_run=[run_logs, QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local), filling],
     )
     shutdown.refuse_while(runs.shutdown_refusal)
