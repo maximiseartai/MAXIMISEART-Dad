@@ -25,8 +25,9 @@ także zamkniętego: każde Uruchomienie to komentarz z podsumowaniem w Markdown
 w zwijanym bloku, a JSON ponad limit komentarza idzie w kolejnych częściach, które sklejone dają tekst pliku.
 
 Diagnoza Zatrzymania dopisuje się do Logów swojego Uruchomienia (``RunLogs.diagnosed``): ten sam plik dostaje pole
-``diagnosis``, a issue okresu kolejny komentarz z całymi Logami, więc najnowszy komentarz Uruchomienia to zawsze jego
-plik. Diagnoza z tym samym wynikiem co ostatnio dopisana (``LoggedDiagnosis.same_result``) nie zmienia niczego: po
+``diagnosis``, a Logi idą do kolejki drugi raz z tym samym identyfikatorem wysyłki (Uruchomienie i etykieta), więc
+kolejka zmienia komentarz tego Uruchomienia zamiast dokładać nowy (#840), a komentarz Uruchomienia to zawsze jego plik.
+Diagnoza z tym samym wynikiem co ostatnio dopisana (``LoggedDiagnosis.same_result``) nie zmienia niczego: po
 nieoczekiwanym wyjątku karta zaczyna Diagnozę sama przy każdym pokazaniu, a Maks potrzebuje tylko zmiany wyniku.
 Diagnozę ma tylko ostatnie Uruchomienie tej pracy Centrum, więc w pamięci zostają tylko jego Logi; Diagnoza,
 w której trakcie skończyło się następne Uruchomienie, nie dopisuje się nigdzie.
@@ -484,7 +485,11 @@ class RunLog(_Record):
 
 
 def logi_post(record: RunLog) -> Post:
-    """Logi do issue okresu w Skrzynce Zgłoszeń: podsumowanie, pod nim JSON w ``<details>``, w razie potrzeby w częściach."""
+    """Logi do issue okresu w Skrzynce Zgłoszeń: podsumowanie, pod nim JSON w ``<details>``, w razie potrzeby w częściach.
+
+    Identyfikator wysyłki to Uruchomienie (``run_id``) i etykieta ``logi-uruchomienia``, te same po Diagnozie, więc
+    Logi z Diagnozą zmieniają komentarz swojego Uruchomienia (``outbox._settle``).
+    """
 
     period, run_id = record.period, record.run_id
 
@@ -629,7 +634,10 @@ class RunLogs:
         return self._outbox.delivered(run_id, LABEL)
 
     def diagnosed(self, run_id: str, diagnosis: Diagnosis) -> None:
-        """Dopisuje Diagnozę do Logów Uruchomienia ``run_id``: do pliku i jako kolejny komentarz w issue okresu.
+        """Dopisuje Diagnozę do Logów Uruchomienia ``run_id``: do pliku i do komentarza Uruchomienia w issue okresu.
+
+        Logi z Diagnozą to nowsza wersja tej samej wysyłki (``logi_post``), więc kolejka zmienia komentarz, który już
+        jest w Skrzynce, a gdy Logi jeszcze czekają w kolejce, zmienia go zaraz po ich wysłaniu.
 
         Uruchomienie, którego Logi nie powstały w tej pracy Centrum, nie dostaje niczego, a Diagnoza z tym samym
         wynikiem co ostatnio dopisana też nie.

@@ -43,6 +43,10 @@ Dad sends, or a Kontrola ilości Centrum sends by itself) becomes
 ``<number>.json`` with its title, body, label, comments, and ``state`` (``open``; the
 drive may edit it to ``closed`` with ``state_reason`` and ``closed_at`` as GitHub
 gives them, which Centrum reads as Maks closing the Zgłoszenie or Uwaga taty).
+``body`` and ``comments`` are what Maks sees on GitHub, without the hidden line of the
+queue's delivery mark (``tests/fixtures/widok_skrzynki.py``); ``raw_body`` and
+``raw_comments`` hold the text as Centrum wrote it, which Centrum reads back, and
+Centrum may change a comment (``edit_comment``) in place.
 Asked for the issues with a label, the skrzynka lists the files
 with that label, only the ``open`` ones unless closed issues are asked for too;
 Centrum takes the newest one whose body has its exact line (the fingerprint
@@ -139,7 +143,9 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.report_box import (
     Closure,
+    Comment,
     CommentOutcome,
+    CommentsOutcome,
     Commented,
     Issue,
     IssuesOutcome,
@@ -164,6 +170,7 @@ from rozliczenia.template_file import Route, TemplateFile
 from rozliczenia.workbook_files import DataRow, RegisterRow
 from skrypt_skilla import Parser
 from tests.fixtures.atrapa_efenix import amount_of, atrapa_efenix
+from tests.fixtures.widok_skrzynki import shown
 from tests.fixtures.efenix import Order, write_collective_file
 
 # Wycena w efenix: rows 18–20 of the Plik zbiorczy, one per Wykonawca: ready after the Wycena Emmetta and the quantity
@@ -227,7 +234,14 @@ class FileReportBox:
         with self._lock:
             self._directory.mkdir(parents=True, exist_ok=True)
             number = len(list(self._directory.glob("*.json"))) + 1
-            issue = {"number": number, "title": title, "body": body, "labels": [label], "state": "open"}
+            issue = {
+                "number": number,
+                "title": title,
+                "body": shown(body),
+                "raw_body": body,
+                "labels": [label],
+                "state": "open",
+            }
             (self._directory / f"{number}.json").write_text(
                 json.dumps(issue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
             )
@@ -237,8 +251,32 @@ class FileReportBox:
         """The comment goes into the issue's own file, so numbering by ``*.json`` stays the issue count.
 
         Its address names the file within the run root, never the full path: the Zgłoszenie links it, and a
-        Zgłoszenie holds no full path.
+        Zgłoszenie holds no full path. Comment ``k`` of issue ``n`` has the id ``n * 1000 + k``.
         """
+
+        return self._write_comment(number, None, body)
+
+    def edit_comment(self, comment_id: int, body: str, *, key: str) -> CommentOutcome:
+        number, position = divmod(comment_id, 1000)
+        return self._write_comment(number, position, body)
+
+    def comments(self, number: int, *, key: str) -> CommentsOutcome:
+        if (self._directory / "brak-sieci").exists():
+            return Unreachable()
+        if self._refuses_key():
+            return Refused()
+        path = self._directory / f"{number}.json"
+        with self._lock:
+            if not path.is_file():
+                return Refused()
+            texts = _raw_comments(json.loads(path.read_text(encoding="utf-8")))
+        return tuple(
+            Comment(number * 1000 + position, f"skrzynka-zgloszen/{number}.json#komentarz-{position}", text)
+            for position, text in enumerate(texts, start=1)
+        )
+
+    def _write_comment(self, number: int, position: int | None, body: str) -> CommentOutcome:
+        """A new comment (``position`` ``None``) or new text of comment ``position`` of issue ``number``."""
 
         if (self._directory / "brak-sieci").exists():
             return Unreachable()
@@ -251,10 +289,17 @@ class FileReportBox:
             issue = json.loads(path.read_text(encoding="utf-8"))
             if self._rejects(issue["labels"][0]):
                 return Rejected()
-            issue["comments"] = [*issue.get("comments", []), body]
+            texts = _raw_comments(issue)
+            if position is None:
+                texts.append(body)
+                position = len(texts)
+            elif not 0 < position <= len(texts):
+                return Refused()
+            else:
+                texts[position - 1] = body
+            issue["raw_comments"], issue["comments"] = texts, [shown(text) for text in texts]
             path.write_text(json.dumps(issue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            comment_id = len(issue["comments"])
-        return Commented(comment_id, f"skrzynka-zgloszen/{number}.json#komentarz-{comment_id}")
+        return Commented(number * 1000 + position, f"skrzynka-zgloszen/{number}.json#komentarz-{position}")
 
     def _rejects(self, label: str) -> bool:
         return (self._directory / f"odrzuca-{label}").exists()
@@ -273,10 +318,16 @@ class FileReportBox:
         with self._lock:
             issues = [json.loads(path.read_text(encoding="utf-8")) for path in self._directory.glob("*.json")]
         return tuple(
-            Issue(issue["number"], issue["body"], _closure(issue))
+            Issue(issue["number"], issue.get("raw_body", issue["body"]), _closure(issue))
             for issue in issues
             if issue["labels"] == [label] and (include_closed or issue["state"] == "open")
         )
+
+
+def _raw_comments(issue: dict[str, Any]) -> list[str]:
+    """Comments of ``issue`` as Centrum wrote them; an issue the drive wrote itself has only ``comments``."""
+
+    return list(issue.get("raw_comments", issue.get("comments", [])))
 
 
 def _closure(issue: dict[str, Any]) -> Closure | None:

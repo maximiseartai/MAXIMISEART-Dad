@@ -638,7 +638,12 @@ _Avoid_: klucz, hasło
 Miejsce na komputerze taty, w którym Zgłoszenia, Uwagi taty, Logi Uruchomienia
 i Kontrole ilości czekają, aż przyjmie je Skrzynka Zgłoszeń. Bez internetu
 wychodzą same, gdy sieć wróci, a bez działającego Tokenu do Zgłoszeń, gdy Maks
-go naprawi. Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego
+go naprawi. Każda wysyłka trafia do Skrzynki dokładnie raz, także gdy Centrum
+zgaśnie albo połączenie się zerwie, zanim kolejka zapisze, że ją dostarczyła:
+każdy jej tekst w Skrzynce niesie niewidoczny identyfikator (Uruchomienie i
+rodzaj), a kolejka przed wysłaniem sprawdza, co już tam jest. Nowsza wersja tej
+samej wysyłki, jak Logi Uruchomienia po Diagnozie, zmienia jej komentarz zamiast
+dokładać nowy. Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego
 startu Centrum rozliczeń; tata ma wtedy skontaktować się z Maksem.
 _Avoid_: outbox, bufor
 

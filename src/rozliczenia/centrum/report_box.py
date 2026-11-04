@@ -10,11 +10,12 @@ wyniku, dziennika ani issue.
 
 Każda operacja zwraca wynik albo jedną z dwóch porażek: ``Refused`` (skrzynka
 odmówiła: klucz wygasł albo jest nieważny) albo ``Unreachable`` (brak sieci,
-limit zapytań GitHuba albo skrzynka nie odpowiedziała jak zwykle). Zakładanie issue i komentarz mają
+limit zapytań GitHuba albo skrzynka nie odpowiedziała jak zwykle). Zakładanie issue, komentarz i jego poprawka mają
 trzecią: ``Rejected`` (skrzynka odmówiła tej treści). Klucz, którego nie da się wysłać
 w nagłówku HTTP (np. z BOM albo znakiem spoza ASCII), to ``Refused`` bez
 zapytania: taki klucz nie może być ważny. Nowe issue to ``Sent`` z numerem,
-komentarz ``Commented`` z identyfikatorem i adresem, a pytanie o issue z
+komentarz i jego poprawka (``edit_comment``) ``Commented`` z identyfikatorem i adresem, pytanie o komentarze
+issue (``comments``) daje je po kolei z treścią, a pytanie o issue z
 etykietą (``labelled_issues``) daje ich numery, treści i zamknięcie (powód i czas,
 z których Powiadomienia biorą stan sprawy). ``newest_with_line`` wybiera z nich
 najnowsze issue z wierszem rozpoznawczym: odciskiem problemu Zgłoszenia albo
@@ -56,6 +57,15 @@ class Commented:
     url: str
 
 
+@dataclass(frozen=True)
+class Comment:
+    """Komentarz issue w skrzynce: ``id`` z API, ``url`` do niego i treść (pusta, gdy komentarz jej nie ma)."""
+
+    id: int
+    url: str
+    body: str
+
+
 CloseReason = Literal["completed", "not_planned", "duplicate"]
 """Powód zamknięcia issue (``state_reason``): Maks coś zmienił (``completed``) albo nie (``not_planned``, ``duplicate``)."""
 
@@ -95,6 +105,7 @@ class Unreachable:
 SendOutcome = Sent | Refused | Rejected | Unreachable
 CommentOutcome = Commented | Refused | Rejected | Unreachable
 IssuesOutcome = tuple[Issue, ...] | Refused | Unreachable
+CommentsOutcome = tuple[Comment, ...] | Refused | Unreachable
 # Numer znalezionego issue albo ``None``, gdy issue z tym wierszem nie ma (nigdy nie było albo Maks je zamknął).
 FindOutcome = int | None | Refused | Unreachable
 
@@ -110,6 +121,14 @@ class ReportBox(Protocol):
 
     def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
         """Otwarte issue z etykietą ``label``, z ``include_closed`` także zamknięte; nigdy nie rzuca wyjątku sieci."""
+        ...
+
+    def comments(self, number: int, *, key: str) -> CommentsOutcome:
+        """Komentarze issue ``number`` w kolejności dodania; nigdy nie rzuca wyjątku sieci."""
+        ...
+
+    def edit_comment(self, comment_id: int, body: str, *, key: str) -> CommentOutcome:
+        """Zmienia treść komentarza ``comment_id`` na ``body``; nigdy nie rzuca wyjątku sieci."""
         ...
 
 
@@ -172,7 +191,8 @@ class GitHubReportBox:
     def open_issue(self, label: Label, title: str, body: str, *, key: str) -> SendOutcome:
         if not _sendable(key):
             return Refused()
-        answer = self._post(f"{_API}/repos/{REPOSITORY}/issues", {"title": title, "body": body, "labels": [label]}, key)
+        payload = {"title": title, "body": body, "labels": [label]}
+        answer = self._send("POST", f"{_API}/repos/{REPOSITORY}/issues", payload, key)
         if not isinstance(answer, HttpResponse):
             return answer
         number = _json_field(answer.body, "number") if answer.status == 201 else None
@@ -181,41 +201,54 @@ class GitHubReportBox:
     def comment(self, number: int, body: str, *, key: str) -> CommentOutcome:
         if not _sendable(key):
             return Refused()
-        answer = self._post(f"{_API}/repos/{REPOSITORY}/issues/{number}/comments", {"body": body}, key)
-        if not isinstance(answer, HttpResponse):
-            return answer
-        document = _json(answer.body) if answer.status == 201 else None
-        if not isinstance(document, dict):
-            return Unreachable()
-        comment_id, url = document.get("id"), document.get("html_url")
-        return Commented(comment_id, url) if isinstance(comment_id, int) and isinstance(url, str) else Unreachable()
+        answer = self._send("POST", f"{_API}/repos/{REPOSITORY}/issues/{number}/comments", {"body": body}, key)
+        return _commented(answer, 201)
+
+    def edit_comment(self, comment_id: int, body: str, *, key: str) -> CommentOutcome:
+        if not _sendable(key):
+            return Refused()
+        answer = self._send("PATCH", f"{_API}/repos/{REPOSITORY}/issues/comments/{comment_id}", {"body": body}, key)
+        return _commented(answer, 200)
 
     def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
         """Issue z etykietą strona po stronie; wpis bez numeru (nie issue) pomija, a porażka strony to porażka całości."""
 
+        state = "all" if include_closed else "open"
+        entries = self._pages(f"{_API}/repos/{REPOSITORY}/issues?state={state}&labels={label}&", key)
+        return entries if not isinstance(entries, list) else tuple(i for i in map(_issue, entries) if i is not None)
+
+    def comments(self, number: int, *, key: str) -> CommentsOutcome:
+        """Komentarze issue strona po stronie; wpis bez identyfikatora albo adresu pomija, a porażka strony to porażka
+        całości."""
+
+        entries = self._pages(f"{_API}/repos/{REPOSITORY}/issues/{number}/comments?", key)
+        return entries if not isinstance(entries, list) else tuple(c for c in map(_comment, entries) if c is not None)
+
+    def _pages(self, query: str, key: str) -> list[object] | Refused | Unreachable:
+        """Wpisy listy GitHuba ze wszystkich stron, najwyżej ``_MAX_PAGES``; ``query`` to adres z ``?`` albo ``&`` na końcu."""
+
         if not _sendable(key):
             return Refused()
-        state = "all" if include_closed else "open"
-        found: list[Issue] = []
+        found: list[object] = []
         for page in range(1, _MAX_PAGES + 1):
-            url = f"{_API}/repos/{REPOSITORY}/issues?state={state}&labels={label}&per_page={_PAGE_SIZE}&page={page}"
-            answer = self._exchange(HttpRequest(method="GET", url=url, headers=_headers(key), body=None))
+            paged = f"{query}per_page={_PAGE_SIZE}&page={page}"
+            answer = self._exchange(HttpRequest(method="GET", url=paged, headers=_headers(key), body=None))
             if not isinstance(answer, HttpResponse):
                 return answer
             entries = _json(answer.body) if answer.status == 200 else None
             if not isinstance(entries, list):
                 return Unreachable()
-            found.extend(issue for issue in map(_issue, entries) if issue is not None)
+            found.extend(entries)
             if len(entries) < _PAGE_SIZE:
                 break
-        return tuple(found)
+        return found
 
-    def _post(
-        self, url: str, payload: Mapping[str, object], key: str
+    def _send(
+        self, method: str, url: str, payload: Mapping[str, object], key: str
     ) -> HttpResponse | Refused | Rejected | Unreachable:
         answer = self._exchange(
             HttpRequest(
-                method="POST",
+                method=method,
                 url=url,
                 headers={**_headers(key), "Content-Type": "application/json"},
                 body=json.dumps(payload).encode("utf-8"),
@@ -252,6 +285,25 @@ def _headers(key: str) -> dict[str, str]:
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "centrum-rozliczen",
     }
+
+
+def _commented(answer: HttpResponse | Refused | Rejected | Unreachable, status: int) -> CommentOutcome:
+    """Komentarz z odpowiedzi ``status`` (201 nowy, 200 poprawiony); inna odpowiedź albo bez id i adresu to ``Unreachable``."""
+
+    if not isinstance(answer, HttpResponse):
+        return answer
+    document = _json(answer.body) if answer.status == status else None
+    if not isinstance(document, dict):
+        return Unreachable()
+    comment_id, url = document.get("id"), document.get("html_url")
+    return Commented(comment_id, url) if isinstance(comment_id, int) and isinstance(url, str) else Unreachable()
+
+
+def _comment(entry: object) -> Comment | None:
+    if not isinstance(entry, dict) or not isinstance(entry.get("id"), int) or not isinstance(entry.get("html_url"), str):
+        return None
+    body = entry.get("body")
+    return Comment(entry["id"], entry["html_url"], body if isinstance(body, str) else "")
 
 
 def _issue(entry: object) -> Issue | None:
