@@ -10,7 +10,7 @@ tę samą, którą skrypt wkłada do ``#wyniki``, bo lista po wczytaniu sama szu
 jej odpowiedź trafia do ``#wyniki`` w dowolnej chwili. Kolumny tabeli rozpoznaje po nagłówkach (``Numer dokumentu``,
 ``Status``, ``Wykonawca``, ``Dane adresowe``), tekst komórki bez jej ``<small>`` (identyfikator Fenix, województwo),
 login realizatora z ``small.text-default`` komórki Wykonawca (obok niego w ``<small>`` stoi data), a stronę zlecenia
-otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony albo odpowiedzi na ``page_login.php`` to
+otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony albo odpowiedzi daty i ilości na ``page_login.php`` to
 ``LoggedOut``. Na szukanie bez tabeli wyników efenix odpowiada samym ostrzeżeniem (``SearchWarning``, pomiar 4.11.2026,
 #828): „Nie znaleziono pasujących wyników” to brak wyników, a ostrzeżenie o wygasłej sesji to ``LoggedOut``, bo na
 szukanie bez sesji efenix nie przekierowuje. Lista zleceń, której okno nie otworzyło przy starcie (adres nie
@@ -401,8 +401,6 @@ class BrowserEfenix:
         with _within(PagePart.LIST), _doing(Operation.FILL):
             field.fill(number, timeout=self._timeout_ms)
         answer = self._finished(lambda request: _is_search(request, number), lambda: self._enter(field))
-        if _redirected_to_login(answer):
-            raise LoggedOut(PagePart.RESULTS, LoginSign.REDIRECT)
         html = self._text(answer)
         with _doing(Operation.READ):
             return read_results(self._page, html)

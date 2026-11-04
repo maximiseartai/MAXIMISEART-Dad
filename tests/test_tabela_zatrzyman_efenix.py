@@ -79,8 +79,6 @@ TABLE = [
     Row("efenix_browser", "_amount", "UnexpectedPage(part, OtherShape(Shape.AMOUNT_TEXT))",
         "#cena_all2 (ORDER) albo price_all odpowiedzi (QUANTITY) nie jest liczbą z kropką", "C"),
     # --- szukanie i tabela wyników ---
-    Row("efenix_browser", "search", "LoggedOut(PagePart.RESULTS, LoginSign.REDIRECT)",
-        "odpowiedź szukania przekierowana na page_login.php", "E"),
     Row("efenix_browser", "read_results", "LoggedOut(PagePart.RESULTS, LoginSign.SESSION_WARNING)",
         "odpowiedź szukania to samo ostrzeżenie efenix o wygasłej sesji (tak efenix odpowiada bez sesji, #828)", "E"),
     Row("efenix_browser", "read_results", "UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.NO_TABLE))",

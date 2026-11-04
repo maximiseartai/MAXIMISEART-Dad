@@ -100,9 +100,9 @@ LIST_ROWS_PER_PAGE = "10"
 # Odpowiedź efenix na szukanie bez liczby wierszy: strona błędu zapytania z pustym limitem wierszy (tekst wymyślony).
 _NO_ROW_LIMIT = "<p>Błąd bazy danych: zapytanie bez liczby wierszy.</p>"
 # Odpowiedzi efenix na szukanie bez tabeli wyników, samym ostrzeżeniem (pomiar 4.11.2026, #828): szukanie, które nie
-# znajduje żadnego zlecenia, i szukanie bez sesji. Zdanie to tekst efenix, który rozpoznaje okno, a znaczniki są Atrapy.
-_NOT_FOUND = '<p class="alert alert-danger"><strong>Ostrzeżenie: </strong>Nie znaleziono pasujących wyników !</p>'
-_SESSION_EXPIRED = '<p class="alert alert-danger"><strong>Ostrzeżenie: </strong>Twoja sesja wygasła - zaloguj się ponownie !</p>'
+# znajduje żadnego zlecenia, i szukanie bez sesji. Zdanie i puste linie przed nim są jak w efenix, a znaczniki są Atrapy.
+_NOT_FOUND = '\r\n\n\r\n\r\n<p class="alert alert-danger"><strong>Ostrzeżenie: </strong>Nie znaleziono pasujących wyników !</p>'
+_SESSION_EXPIRED = '\r\n\n\r\n\r\n<p class="alert alert-danger"><strong>Ostrzeżenie: </strong>Twoja sesja wygasła - zaloguj się ponownie !</p>'
 # Ostrzeżenie, którego okno nie zna, bez tabeli wyników (``Changed.RESULTS_WARNING``, tekst wymyślony).
 _OTHER_WARNING = '<p class="alert alert-danger"><strong>Ostrzeżenie: </strong>Lista zleceń jest chwilowo niedostępna !</p>'
 TODAY = date(2026, 10, 12)
