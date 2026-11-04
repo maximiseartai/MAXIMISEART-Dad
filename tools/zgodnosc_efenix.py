@@ -12,8 +12,9 @@ w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service work
 - lista zleceń: elementy ``efenix_browser.LIST_ELEMENTS`` (pole ``Numer``) i skrypt ``js/index.js``, który lista ładuje,
   z nazwami ``efenix_browser.LIST_SCRIPT_USES`` (Enter w polu ``Numer`` wysyła ``action_fill_orders.php`` z polem
   ``numer``);
-- tabela wyników: szukanie ``--numer`` tak jak skrypt listy (POST ``action_fill_orders.php`` z każdym polem, które
-  wysyła skrypt listy, filtrami pustymi i ``na_stronie`` jak w domyślnym ustawieniu listy), a odpowiedź czyta
+- tabela wyników: szukanie ``--numer`` tak jak skrypt listy w domyślnym stanie listy (POST ``action_fill_orders.php``
+  z każdym polem, które wysyła wtedy skrypt listy, bez ``xrodzaj``, z pustymi filtrami, pierwszym ``sortowanie`` i
+  ``na_stronie`` jak w domyślnym ustawieniu listy), a odpowiedź czyta
   ``efenix_browser.read_results``, odczyt Wyceny w efenix, z loginem realizatora i ``Dane adresowe`` w każdym wierszu
   (przy błędzie odczytu nagłówki ``efenix_browser.HEADERS``, liczba komórek, link ``page_order_edit.php?id=`` i status
   w ``.badge``);
@@ -121,10 +122,17 @@ ALLOWED: Final = frozenset(
         ("GET", LOGIN_PAGE),
     }
 )
-# Szukanie z pola Numer tak, jak wysyła je skrypt listy efenix (``js/index.js``), który odtwarza Atrapa: każde jego pole
-# w jego kolejności, z pustymi filtrami listy i liczbą wierszy ``na_stronie`` z domyślnego ustawienia listy. Bez
-# ``na_stronie`` efenix odpowiada stroną błędu bazy danych zamiast tabeli wyników (#822).
-SEARCH_FORM: Final = dict.fromkeys(LIST_SEARCH_FIELDS, "") | {"rodzaj": "szukanie", "strona": "1", "na_stronie": LIST_ROWS_PER_PAGE}
+# Szukanie z pola Numer tak, jak wysyła je skrypt listy efenix (``js/index.js``) w domyślnym stanie listy, który
+# odtwarza Atrapa: każde jego pole w jego kolejności, bez ``xrodzaj``, którego skrypt wtedy nie wysyła, z pustymi
+# filtrami, pierwszą opcją ``sortowanie`` i liczbą wierszy ``na_stronie`` z domyślnego ustawienia listy. Pusty
+# ``xrodzaj`` daje w efenix zero wyników, a brak ``na_stronie`` stronę błędu bazy danych (#822). ``asp`` zostaje pusty
+# zamiast nazwy ASP konta taty: w pomiarze z 4.11.2026 pusty nie zmienił wyniku.
+SEARCH_FORM: Final = dict.fromkeys(LIST_SEARCH_FIELDS, "") | {
+    "rodzaj": "szukanie",
+    "strona": "1",
+    "na_stronie": LIST_ROWS_PER_PAGE,
+    "sortowanie": "1",
+}
 POSITION_CODE: Final = re.compile(r"INDEKS_\d{3}_\d{3}")
 # Wiersz Wzorca pliku zbiorczego z kosztem jednej sztuki każdej pozycji Ilości usług (GLOSSARY: Ilości usług); silnik go
 # nie czyta, więc ``workbook_files`` nie ma go w układzie arkusza.

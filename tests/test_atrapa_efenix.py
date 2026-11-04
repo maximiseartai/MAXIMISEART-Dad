@@ -54,17 +54,26 @@ def test_atrapa_odpowiada_na_kolejne_zadania_tym_samym_polaczeniem_takze_przekie
     assert ([status for status, _ in answers], all(sent_by is sockets[0] for sent_by in sockets)) == ([200, 200, 200, 404, 302, 200], True)
 
 
-@pytest.mark.parametrize("rows", ["", "&na_stronie="], ids=["bez-pola", "puste"])
-def test_szukanie_bez_liczby_wierszy_dostaje_jak_w_efenix_strone_bledu_bez_tabeli_wynikow(rows: str) -> None:
+@pytest.mark.parametrize(
+    ("fields", "answer"),
+    [
+        pytest.param("", "Błąd bazy danych", id="bez-liczby-wierszy"),
+        pytest.param("&na_stronie=", "Błąd bazy danych", id="pusta-liczba-wierszy"),
+        pytest.param("&na_stronie=10&xrodzaj=", "Nie znaleziono pasujących wyników", id="pusty-rodzaj-zlecenia"),
+    ],
+)
+def test_szukanie_bez_liczby_wierszy_albo_z_pustym_rodzajem_zlecenia_dostaje_jak_w_efenix_strone_bez_tabeli_wynikow(
+    fields: str, answer: str
+) -> None:
     with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")]) as atrapa:
         connection = _connection(atrapa.url)
-        connection.request("POST", f"/{SEARCH}", body=f"numer=9301&rodzaj=szukanie&strona=1{rows}", headers=_FORM)
-        without_rows = connection.getresponse().read().decode("utf-8")
+        connection.request("POST", f"/{SEARCH}", body=f"numer=9301&rodzaj=szukanie&strona=1{fields}", headers=_FORM)
+        refused = connection.getresponse().read().decode("utf-8")
         connection.request("POST", f"/{SEARCH}", body="numer=9301&rodzaj=szukanie&strona=1&na_stronie=10", headers=_FORM)
-        with_rows = connection.getresponse().read().decode("utf-8")
+        found = connection.getresponse().read().decode("utf-8")
         connection.close()
 
-    assert ("<table" in without_rows, "9301" in without_rows, "<table" in with_rows, "9301" in with_rows) == (False, False, True, True)
+    assert (answer in refused, "<table" in refused, "9301" in refused, "<table" in found, "9301" in found) == (True, False, False, True, True)
 
 
 def test_po_bloku_atrapy_polaczenie_otwarte_w_bloku_nie_dostaje_odpowiedzi_a_po_jego_zamknieciu_nie_zostaje_jej_watek() -> None:
