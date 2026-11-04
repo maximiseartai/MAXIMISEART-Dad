@@ -23,6 +23,12 @@ kroku śladu i dziennikiem działań taty w Centrum; dochodzi własny plik Centr
 `logs/dzialania-taty.jsonl` z działaniami, które czekają na Logi następnego
 Uruchomienia. Szczegóły w punkcie „Treść Logów”.
 
+Dopisek #845 (część #837): Wycena w efenix, przerwana w trakcie, zostawia też
+dziennik Wyceny w efenix w `logs/dzienniki-wyceny/`, z którego następny start
+Centrum zamyka Logi Urwanego Uruchomienia; krótkie procesy zostawiają dalej
+tylko `uruchomienie-start`. Szczegóły w dopisku #845 do
+[ADR 0017](0017-karta-uruchomienia-z-logow.md).
+
 Zdanie „Logi nie niosą treści wierszy” w punkcie „Treść Logów” zastępuje
 reguła danych [ADR 0025](0025-regula-danych-wysylki-do-skrzynki.md) (#838):
 nigdy wartości `ADRES` ani numeru Orange, telefony i ulice w tekście
@@ -31,6 +37,17 @@ Uwagę taty przed zapisem i wysyłką.
 
 [ADR 0009](0009-aktualizacja-narzedzia-z-centrum.md) traci Powiadomienie o
 naprawie na stronie Okresy: zastępuje je Powiadomienie o nowej wersji.
+
+**Dopisek (#840, 2026-11-04).** Kolejka Skrzynki Zgłoszeń wysyła każdą wysyłkę
+dokładnie raz, a nie „co najmniej raz”: każdy tekst, który zapisuje w Skrzynce,
+niesie niewidoczny znacznik z identyfikatorem wysyłki (Uruchomienie i etykieta),
+numerem części i wersją, a przed wysłaniem kolejka czyta issue celu i jego
+komentarze i nie wysyła części, która już tam jest. Zerwane połączenie po
+utworzeniu issue nie daje więc drugiego issue Uwagi taty, a przerwanie między
+wysłaniem a znacznikiem dostarczenia nie powtarza komentarza. Diagnoza z nowym
+wynikiem zmienia komentarz Logów swojego Uruchomienia, zamiast wysyłać całe Logi
+kolejnym komentarzem. Zdania o „co najmniej raz” w decyzji niżej opisują stan
+sprzed tego dopisku.
 
 ## Kontekst
 

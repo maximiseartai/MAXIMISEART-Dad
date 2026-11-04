@@ -4,9 +4,9 @@ Kolejka Skrzynki, Powiadomienia i Zgłoszenia pytają Skrzynkę tylko przez ``Ke
 ``config/zgloszenia-klucz.txt`` i nie podaje klucza adapterowi. Bez pliku klucza każda operacja to ``NoKey`` bez
 zapytania. Każda odpowiedź adaptera na pytanie z kluczem jest werdyktem o tym kluczu: odmowa przy zakładaniu issue
 albo liście issue to „klucz odrzucony”, każda inna odpowiedź Skrzynki (także odmowa treści) to „klucz przyjęty”, a
-brak sieci niczego nie zmienia. Odmowa komentarza mówi o issue (404: Maks je usunął, #402), nie o kluczu, więc
-werdyktu nie zmienia; każda wysyłka kolejki najpierw pyta o listę albo zakłada issue, więc zły klucz i tak wyjdzie
-przed komentarzem.
+brak sieci niczego nie zmienia. Odmowa komentarza, pytania o komentarze issue i poprawki komentarza mówi o issue
+(404: Maks je usunął, #402), nie o kluczu, więc werdyktu nie zmienia; każda wysyłka kolejki najpierw pyta o listę
+albo zakłada issue, więc zły klucz i tak wyjdzie przed komentarzem.
 
 Werdykt należy do klucza (skrót SHA-256): Maks, który wpisze nowy klucz, dostaje nowe sprawdzenie od razu.
 Odrzucony klucz Centrum pamięta ``REFUSED_KEPT_S`` i przez ten czas nie wysyła nim żadnego zapytania: kolejka,
@@ -25,10 +25,11 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Literal
+from typing import Final, Literal, TypeVar
 
 from rozliczenia.centrum.report_box import (
     CommentOutcome,
+    CommentsOutcome,
     FindOutcome,
     IssuesOutcome,
     Label,
@@ -47,6 +48,8 @@ ACCEPTED_KEPT_S: Final = 10 * 60
 NO_ANSWER_KEPT_S: Final = 60
 # Odrzucony klucz nie zmieni się sam: Maks wymienia plik (nowy skrót, więc sprawdzenie od razu) albo uprawnienia tokenu.
 REFUSED_KEPT_S: Final = 15 * 60
+
+_Outcome = TypeVar("_Outcome")
 
 KeyJudgement = Literal["accepted", "refused", "unchecked", "missing"]
 """Co wiadomo o kluczu: przyjęty, odrzucony, jeszcze bez odpowiedzi Skrzynki (np. brak sieci) albo brak pliku klucza.
@@ -76,7 +79,7 @@ def _digest(key: str) -> str:
 class KeyedBox:
     """Skrzynka Zgłoszeń z kluczem taty i werdyktem o nim (opis modułu).
 
-    Te same trzy operacje co ``ReportBox`` bez ``key=`` i z czwartą porażką ``NoKey``, plus ``find_issue``,
+    Te same operacje co ``ReportBox`` bez ``key=`` i z kolejną porażką ``NoKey``, plus ``find_issue``,
     ``judge`` (stan klucza w ograniczonym czasie) i ``check_in_background`` (sprawdzenie przy starcie Centrum).
     Blokada chroni tylko werdykt i sprawdzenie w tle; zapytania do Skrzynki idą bez niej.
     """
@@ -102,11 +105,26 @@ class KeyedBox:
     def comment(self, number: int, body: str) -> CommentOutcome | NoKey:
         """Komentarz; jego odmowa (404 usuniętego issue) nie jest werdyktem o kluczu, przyjęcie jest."""
 
+        return self._about_issue(lambda key: self._box.comment(number, body, key=key))
+
+    def comments(self, number: int) -> CommentsOutcome | NoKey:
+        """Komentarze issue; odmowa (404 usuniętego issue) nie jest werdyktem o kluczu, odpowiedź jest."""
+
+        return self._about_issue(lambda key: self._box.comments(number, key=key))
+
+    def edit_comment(self, comment_id: int, body: str) -> CommentOutcome | NoKey:
+        """Poprawka komentarza; jej odmowa (404 usuniętego komentarza albo issue) nie jest werdyktem o kluczu."""
+
+        return self._about_issue(lambda key: self._box.edit_comment(comment_id, body, key=key))
+
+    def _about_issue(self, ask: Callable[[str], _Outcome]) -> _Outcome | NoKey | Refused:
+        """Pytanie o jedno issue: odpowiedź poza odmową jest werdyktem o kluczu."""
+
         key = self._usable()
         if not isinstance(key, str):
             return key
         asked_at = self._clock()
-        outcome = self._box.comment(number, body, key=key)
+        outcome = ask(key)
         if not isinstance(outcome, Refused):
             self._observe(key, asked_at, outcome)
         return outcome

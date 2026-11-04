@@ -602,8 +602,12 @@ _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), dziennik Centrum, raport
 ## Urwane Uruchomienie
 
 Uruchomienie procesu z Centrum rozliczeń, które nie doszło do wyniku, bo
-Centrum zamknęło się w jego trakcie. Nie ma Logów Uruchomienia ani rekordu
-metryk; Centrum nazywa je po następnym starcie i radzi, co sprawdzić.
+Centrum zamknęło się w jego trakcie. Nie ma rekordu metryk; Centrum nazywa je
+po następnym starcie i radzi, co sprawdzić. Urwana Wycena w efenix ma Logi
+Uruchomienia, które następny start Centrum zamyka z dziennika Wyceny w efenix,
+pisanego w trakcie zlecenie po zleceniu, i wysyła jak zwykłe Logi: zlecenia
+skończone przed zamknięciem Centrum i zlecenie zaczęte bez wyniku, a karta po
+starcie pokazuje te zlecenia. Urwane Uruchomienie innego procesu Logów nie ma.
 Uruchomienie, którego wynik jest już w Historii, a Logów nie ma (Centrum
 zamknęło się tuż po wyniku), nie jest urwane: karta po starcie pokazuje jego
 wynik z Historii, także gdy wiersz nie ma jeszcze identyfikatora Uruchomienia.
@@ -653,7 +657,13 @@ _Avoid_: klucz, hasło
 Miejsce na komputerze taty, w którym Zgłoszenia, Uwagi taty, Logi Uruchomienia
 i Kontrole ilości czekają, aż przyjmie je Skrzynka Zgłoszeń. Bez internetu
 wychodzą same, gdy sieć wróci, a bez działającego Tokenu do Zgłoszeń, gdy Maks
-go naprawi. Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego
+go naprawi. Każda wysyłka trafia do Skrzynki dokładnie raz, także gdy Centrum
+zgaśnie albo połączenie się zerwie, zanim kolejka zapisze, że ją dostarczyła:
+każdy jej tekst w Skrzynce niesie niewidoczny identyfikator (Uruchomienie i
+rodzaj), a kolejka przed wysłaniem sprawdza, co już tam jest. Nowsza wersja tej
+samej wysyłki, jak Logi Uruchomienia po Diagnozie, zmienia jej komentarz zamiast
+dokładać nowy, a starsza, która dojdzie po nowszej, niczego w Skrzynce nie
+zmienia. Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego
 startu Centrum rozliczeń; tata ma wtedy skontaktować się z Maksem.
 _Avoid_: outbox, bufor
 

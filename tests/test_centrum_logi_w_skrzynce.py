@@ -1,8 +1,8 @@
 """Logi Uruchomienia w Skrzynce Zgłoszeń (ADR 0015, #320) przez HTTP API Centrum z fałszywą Skrzynką.
 
 Maks czyta w Skrzynce jedno issue na okres, a w nim komentarz na każde Uruchomienie: podsumowanie i JSON, który
-sklejony z części daje plik Logów z komputera taty. Diagnoza (#321) dopisuje się do pliku i dodaje kolejny komentarz
-z całymi Logami, a Zgłoszenie prowadzi do komentarza Logów swojego Uruchomienia. Żaden test nie łączy się z GitHubem.
+sklejony z części daje plik Logów z komputera taty. Diagnoza (#321) dopisuje się do pliku i zmienia komentarz swojego
+Uruchomienia (#840), a Zgłoszenie prowadzi do komentarza Logów swojego Uruchomienia. Żaden test nie łączy się z GitHubem.
 """
 
 from __future__ import annotations
@@ -73,6 +73,14 @@ def thread_with(centrum: SettlingCentrum, comments: int) -> FakeIssue:
     assert wait_for(lambda: queued_logs(centrum) == [])
     [thread] = threads(box(centrum))
     return thread
+
+
+def diagnosed_comment(centrum: SettlingCentrum, edits: int) -> str:
+    """Jedyny komentarz issue Logów okresu, gdy Skrzynka zmieniła już ``edits`` komentarzy, a kolejka Logów jest pusta."""
+
+    assert box(centrum).wait_until(lambda fake: len(fake.edited) == edits), f"Skrzynka nie ma {edits} poprawek"
+    [comment] = thread_with(centrum, comments=1).comments
+    return comment
 
 
 def local_logs(centrum: SettlingCentrum, run_id: str) -> str:
@@ -244,27 +252,28 @@ def diagnose(centrum: SettlingCentrum, run_id: str) -> dict[str, Any]:
     return diagnosis
 
 
-def test_diagnoza_po_zatrzymaniu_do_maksa_dopisuje_sie_do_pliku_logow_i_jako_kolejny_komentarz_w_issue_okresu(
+def test_diagnoza_po_zatrzymaniu_do_maksa_dopisuje_sie_do_pliku_logow_i_zmienia_komentarz_uruchomienia_w_issue_okresu(
     tmp_path: Path,
 ) -> None:
     centrum = watched_centrum(tmp_path)
     run_id = stopped_for_maks(centrum)
     before = local_logs(centrum, run_id)
-    thread_with(centrum, comments=1)
+    [first] = thread_with(centrum, comments=1).comment_ids
 
     shown = diagnose(centrum, run_id)
 
-    thread = thread_with(centrum, comments=2)
+    comment = diagnosed_comment(centrum, edits=1)
     local = local_logs(centrum, run_id)
     diagnosis = json.loads(local)["diagnosis"]
     assert {**json.loads(local), "diagnosis": None} == json.loads(before)
     assert [{part: check[part] for part in ("label", "state", "detail")} for check in diagnosis["checks"]] == shown["checks"]
     assert {part: diagnosis["explanation"][part] for part in ("what", "where", "action")} == shown["explanation"]
     assert diagnosis["next_action"] == shown["next_action"]
-    assert [sent_json([comment]) for comment in thread.comments] == [before, local]
-    summary = thread.comments[1].split("\n\n<details>")[0].splitlines()
+    assert sent_json([comment]) == local
+    summary = comment.split("\n\n<details>")[0].splitlines()
     assert f"- Diagnoza: `{diagnosis['explanation']['code']}`" in [line.split(";")[0] for line in summary]
-    assert [issue.number for issue in box(centrum).issues_with(LABEL)] == [thread.number]
+    assert box(centrum).edited == [first]
+    assert len(box(centrum).issues_with(LABEL)) == 1
 
 
 def unexpected_exception(centrum: SettlingCentrum) -> str:
@@ -280,27 +289,28 @@ def unexpected_exception(centrum: SettlingCentrum) -> str:
     return str(view["run"]["id"])
 
 
-def test_diagnoza_z_tym_samym_wynikiem_przy_kazdym_pokazaniu_karty_daje_jeden_komentarz_logow(tmp_path: Path) -> None:
+def test_diagnoza_z_tym_samym_wynikiem_przy_kazdym_pokazaniu_karty_zmienia_komentarz_logow_raz(tmp_path: Path) -> None:
     centrum = watched_centrum(tmp_path)
     run_id = unexpected_exception(centrum)
     thread_with(centrum, comments=1)
     diagnose(centrum, run_id)
-    diagnosed = thread_with(centrum, comments=2).comments[1]
+    diagnosed = diagnosed_comment(centrum, edits=1)
 
     shown = [diagnose(centrum, run_id) for _ in range(3)]
     response = centrum.client.post(f"/api/runs/{run_id}/report")
 
-    thread = thread_with(centrum, comments=2)
-    assert thread.comments == [thread.comments[0], diagnosed]
+    assert diagnosed_comment(centrum, edits=1) == diagnosed
     assert sent_json([diagnosed]) == local_logs(centrum, run_id)
     assert response.json() == {"state": "sent"}
     [report] = box(centrum).sent
     assert report.body == shown[-1]["report"]["body"]
-    link = f"- Logi: https://github.com/{REPOSITORY}/issues/{thread.number}#issuecomment-2"
+    [thread] = threads(box(centrum))
+    link = f"- Logi: https://github.com/{REPOSITORY}/issues/{thread.number}#issuecomment-1"
     assert link in report.body.splitlines()
+    assert len(box(centrum).edited) == 1
 
 
-def test_diagnoza_z_innym_wynikiem_niz_ostatnio_wyslana_doklada_komentarz_logow(tmp_path: Path) -> None:
+def test_diagnoza_z_innym_wynikiem_niz_ostatnio_wyslana_zmienia_komentarz_logow(tmp_path: Path) -> None:
     centrum = watched_centrum(tmp_path)
     run_id = unexpected_exception(centrum)
     template = centrum.configuration.worker_template
@@ -308,20 +318,20 @@ def test_diagnoza_z_innym_wynikiem_niz_ostatnio_wyslana_doklada_komentarz_logow(
     thread_with(centrum, comments=1)
 
     passing = diagnose(centrum, run_id)
-    thread_with(centrum, comments=2)
+    comments = [diagnosed_comment(centrum, edits=1)]
     template.write_bytes(b"to nie jest skoroszyt")
     broken = diagnose(centrum, run_id)
-    thread_with(centrum, comments=3)
+    comments.append(diagnosed_comment(centrum, edits=2))
     template.write_bytes(good)
     fixed = diagnose(centrum, run_id)
-    thread_with(centrum, comments=4)
+    comments.append(diagnosed_comment(centrum, edits=3))
     centrum.surroundings.github.release = None
     offline = diagnose(centrum, run_id)
-    thread_with(centrum, comments=5)
+    comments.append(diagnosed_comment(centrum, edits=4))
     centrum.surroundings.github.tool_commit = None
     without_git = diagnose(centrum, run_id)
 
-    thread = thread_with(centrum, comments=6)
+    comments.append(diagnosed_comment(centrum, edits=5))
     labels = ("Wzorzec rozliczenia pracownika", "Aktualność narzędzia")
     shown = (passing, broken, fixed, offline, without_git)
     states = [tuple(check_state(diagnosis, label) for label in labels) for diagnosis in shown]
@@ -333,37 +343,37 @@ def test_diagnoza_z_innym_wynikiem_niz_ostatnio_wyslana_doklada_komentarz_logow(
         ("passed", "not_checked"),
     ]
     assert check_detail(offline, labels[1]) != check_detail(without_git, labels[1])
-    logged = [json.loads(sent_json([comment]))["diagnosis"] for comment in thread.comments[1:]]
+    logged = [json.loads(sent_json([comment]))["diagnosis"] for comment in comments]
     assert [tuple(check_state(diagnosis, label) for label in labels) for diagnosis in logged] == states
     assert [check_detail(diagnosis, labels[1]) for diagnosis in logged[-2:]] == [
         check_detail(diagnosis, labels[1]) for diagnosis in shown[-2:]
     ]
-    assert sent_json([thread.comments[-1]]) == local_logs(centrum, run_id)
+    assert sent_json([comments[-1]]) == local_logs(centrum, run_id)
 
 
-def test_to_samo_wyjasnienie_o_innym_pliku_okresu_doklada_komentarz_logow(tmp_path: Path) -> None:
+def test_to_samo_wyjasnienie_o_innym_pliku_okresu_zmienia_komentarz_logow(tmp_path: Path) -> None:
     centrum = watched_centrum(tmp_path)
     run_id = unexpected_exception(centrum)
     thread_with(centrum, comments=1)
     collective = centrum.collective_file.with_name(f"~${centrum.collective_file.name}")
     collective.write_bytes(b"")
     first = diagnose(centrum, run_id)
-    thread_with(centrum, comments=2)
+    comments = [diagnosed_comment(centrum, edits=1)]
 
     collective.unlink()
     (centrum.period_directory / f"~${INTERNAL_SETTLEMENT_NAME}").write_bytes(b"")
     second = diagnose(centrum, run_id)
 
-    thread = thread_with(centrum, comments=3)
+    comments.append(diagnosed_comment(centrum, edits=2))
     shown = [diagnosis["explanation"]["where"] for diagnosis in (first, second)]
     assert shown[0] != shown[1]
-    logged = [json.loads(sent_json([comment]))["diagnosis"]["explanation"] for comment in thread.comments[1:]]
+    logged = [json.loads(sent_json([comment]))["diagnosis"]["explanation"] for comment in comments]
     assert [(explanation["code"], explanation["where"]) for explanation in logged] == [
         ("PLIK_OKRESU_OTWARTY", where) for where in shown
     ]
 
 
-def test_inny_plik_tylko_w_chmurze_za_tym_samym_co_zrobic_doklada_komentarz_logow(tmp_path: Path) -> None:
+def test_inny_plik_tylko_w_chmurze_za_tym_samym_co_zrobic_zmienia_komentarz_logow(tmp_path: Path) -> None:
     centrum = watched_centrum(tmp_path)
     run_id = unexpected_exception(centrum)
     onedrive = centrum.surroundings.onedrive
@@ -371,22 +381,22 @@ def test_inny_plik_tylko_w_chmurze_za_tym_samym_co_zrobic_doklada_komentarz_logo
     thread_with(centrum, comments=1)
     onedrive.online_only.add(centrum.collective_file)
     first = diagnose(centrum, run_id)
-    thread_with(centrum, comments=2)
+    comments = [diagnosed_comment(centrum, edits=1)]
 
     onedrive.online_only = {centrum.configuration.worker_template}
     second = diagnose(centrum, run_id)
 
-    thread = thread_with(centrum, comments=3)
+    comments.append(diagnosed_comment(centrum, edits=2))
     explanations = [diagnosis["explanation"] for diagnosis in (first, second)]
     assert explanations[0]["action"] == explanations[1]["action"]
     assert explanations[0]["where"] != explanations[1]["where"]
-    logged = [json.loads(sent_json([comment]))["diagnosis"]["explanation"] for comment in thread.comments[1:]]
+    logged = [json.loads(sent_json([comment]))["diagnosis"]["explanation"] for comment in comments]
     assert [(explanation["code"], explanation["where"]) for explanation in logged] == [
         ("PLIK_TYLKO_W_CHMURZE", explanation["where"]) for explanation in explanations
     ]
 
 
-def test_inna_wada_sprawdzenia_za_tym_samym_wyjasnieniem_doklada_komentarz_logow(tmp_path: Path) -> None:
+def test_inna_wada_sprawdzenia_za_tym_samym_wyjasnieniem_zmienia_komentarz_logow(tmp_path: Path) -> None:
     centrum = watched_centrum(tmp_path)
     run_id = unexpected_exception(centrum)
     thread_with(centrum, comments=1)
@@ -394,16 +404,16 @@ def test_inna_wada_sprawdzenia_za_tym_samym_wyjasnieniem_doklada_komentarz_logow
     workers = centrum.configuration.worker_config
     workers.write_bytes("wykonawcy: [".encode())
     not_yaml = diagnose(centrum, run_id)
-    thread_with(centrum, comments=2)
+    comments = [diagnosed_comment(centrum, edits=1)]
 
     workers.write_bytes("wykonawcy: ż".encode("cp1250"))
     not_utf8 = diagnose(centrum, run_id)
 
-    thread = thread_with(centrum, comments=3)
+    comments.append(diagnosed_comment(centrum, edits=2))
     label = "Konfiguracja wykonawców"
     assert [diagnosis["explanation"] for diagnosis in (not_yaml, not_utf8)] == [not_yaml["explanation"]] * 2
     assert check_detail(not_yaml, label) != check_detail(not_utf8, label)
-    logged = [json.loads(sent_json([comment]))["diagnosis"] for comment in thread.comments[1:]]
+    logged = [json.loads(sent_json([comment]))["diagnosis"] for comment in comments]
     checks = [next(check for check in diagnosis["checks"] if check["label"] == label) for diagnosis in logged]
     assert [(check["code"], check["detail"]) for check in checks] == [
         ("ZLA_KONFIGURACJA_WYKONAWCOW", check_detail(diagnosis, label)) for diagnosis in (not_yaml, not_utf8)
@@ -420,15 +430,15 @@ def test_plik_logow_ktory_nie_powstal_przy_diagnozie_powstaje_przy_nastepnej_z_t
     blocked = path.with_name(path.name + ".tmp")
     blocked.mkdir()
     diagnose(centrum, run_id)
-    thread_with(centrum, comments=2)
+    diagnosed_comment(centrum, edits=1)
     assert json.loads(local_logs(centrum, run_id))["diagnosis"] is None
 
     blocked.rmdir()
     diagnose(centrum, run_id)
 
-    thread = thread_with(centrum, comments=3)
+    comment = diagnosed_comment(centrum, edits=2)
     assert json.loads(local_logs(centrum, run_id))["diagnosis"] is not None
-    assert sent_json([thread.comments[-1]]) == local_logs(centrum, run_id)
+    assert sent_json([comment]) == local_logs(centrum, run_id)
 
 
 def check_state(diagnosis: dict[str, Any], label: str) -> str:
@@ -479,10 +489,10 @@ def test_diagnoza_bez_sieci_jest_w_pliku_logow_jej_komentarz_czeka_w_kolejce_a_z
     box(centrum).search_failure = None
     centrum.restart()
     with centrum.client:
-        thread = thread_with(centrum, comments=2)
+        comment = diagnosed_comment(centrum, edits=1)
         assert box(centrum).wait_until(lambda box: len(box.sent) == 1)
 
-    assert sent_json([thread.comments[1]]) == local
+    assert sent_json([comment]) == local
     assert box(centrum).sent[0].body == shown["report"]["body"]
     assert wait_for(lambda: queued_logs(centrum) == [])
 
@@ -499,8 +509,8 @@ def test_katalog_logow_bez_prawa_zapisu_nie_zmienia_diagnozy_ani_zgloszenia_a_di
 
     shown = diagnose(centrum, run_id)
 
-    thread = thread_with(centrum, comments=2)
-    assert json.loads(sent_json([thread.comments[1]]))["diagnosis"]["next_action"] == shown["next_action"]
+    comment = diagnosed_comment(centrum, edits=1)
+    assert json.loads(sent_json([comment]))["diagnosis"]["next_action"] == shown["next_action"]
     assert "- Logi: https://github.com/" in shown["report"]["body"]
     assert blocked.read_text(encoding="utf-8") == ""
     log = centrum.log_path.read_text(encoding="utf-8")

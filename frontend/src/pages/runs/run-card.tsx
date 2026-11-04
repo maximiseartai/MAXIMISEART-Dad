@@ -230,6 +230,9 @@ function InterruptedRunCard({ past, onNewRun }: { past: RunInterrupted; onNewRun
           kind="warning"
           action={<RerunButton onRerun={() => start(rerunOf(run))} />}
         />
+        {past.orders == null ? null : (
+          <CountTiles title={past.orders.title} counts={past.orders.counts} zeroWarns={past.orders.zero_warns} />
+        )}
       </CardContent>
     </Card>
   )

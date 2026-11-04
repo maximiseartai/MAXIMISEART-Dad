@@ -96,6 +96,10 @@ telefony na okres.
 - Czas strażnika zależy od długości tekstu, nie od liczby zapamiętanych
   wartości, więc pamięć po Diagnozie całego Rejestru (~31,7 tys. wierszy) nie
   spowalnia wysyłek (pomiar w PR #851).
+- Logi Urwanego Uruchomienia (#845) idą do pliku i Skrzynki bez strażnika.
+  Powstają przy starcie Centrum, gdy pamięć jest jeszcze pusta, i niosą tylko
+  ślad zleceń Wyceny w efenix (wiersz, wynik, kod Komunikatu, kody pozycji),
+  bez Komunikatów i tekstu komórek.
 - Telefon zapisany inaczej niż w powyższych kształtach (np. w nawiasach,
   z kropkami) i ulica bez „ul.”, „os.”, „al.” ani „pl.” wychodzą bez
   maskowania.

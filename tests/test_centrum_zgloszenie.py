@@ -685,7 +685,7 @@ def test_odmowa_przy_wysylce_uwagi_odrzuca_klucz_w_konfiguracji_bez_osobnego_pyt
 
     assert sent.json() == {"state": "waiting", "waits_for": "key"}
     assert key_state(centrum) == "refused_key"
-    assert box.listed == []
+    assert box.listed == [("uwaga-taty", True)]  # kolejka szuka issue tej Uwagi, a Konfiguracja nie pyta o klucz osobno
 
 
 WAITING = {"state": "waiting"}

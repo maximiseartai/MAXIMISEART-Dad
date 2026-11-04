@@ -38,7 +38,9 @@ działania okna i to, które się nie udało). Komunikat taty przyczyny nie poka
 Okno, które czeka, aż tata się zaloguje, robi to w ``Login`` od silnika: ten czas nie wlicza się do czasów etapów ani,
 przez ``waiting`` rozmowy rdzenia, do ``Czas uruchomienia``. Postęp Zapisywania to kroki (``PhaseRunner.step``):
 logowanie, zlecenia z Wykonawcą i liczbą sprawdzonych z wszystkich, na końcu Znaczniki efenix; ślad działań okna przy
-każdym zleceniu (``efenix_trace``) trafia do jego wyniku, a stamtąd do Logów Uruchomienia.
+każdym zleceniu (``efenix_trace``) trafia do jego wyniku, a stamtąd do Logów Uruchomienia. Dziennik Wyceny w efenix
+(``OrderJournal``, w Centrum ``centrum.pricing_journal``) dostaje wpis o każdym zleceniu przed pierwszym działaniem okna przy
+nim, więc przed każdym zapisem w efenix, i wpis z wynikiem zaraz po nim, zanim proces przejdzie do następnego zlecenia.
 
 Po ostatnim zleceniu, a także przy Zatrzymaniu w trakcie, ``efenix_marking`` raz zapisuje Plik zbiorczy: komórka ``ADRES``
 każdego gotowego zlecenia dostaje Znacznik efenix, a reszta pliku zostaje bajt w bajt. Gdy zapis się nie udaje (Excel trzyma
@@ -118,9 +120,11 @@ __all__ = [
     "LoggedOut",
     "Login",
     "LoginSign",
+    "NO_JOURNAL",
     "OpenEfenix",
     "Operation",
     "OrderError",
+    "OrderJournal",
     "OrderPricing",
     "OrderProblem",
     "OrderResult",
@@ -438,6 +442,35 @@ class PricingStopped:
     stopped_at: StoppedOrder | None
 
 
+class OrderJournal(Protocol):
+    """Dziennik Wyceny w efenix w trakcie przebiegu: proces woła go na wątku przebiegu, zlecenie po zleceniu.
+
+    Wpis nie może zatrzymać przebiegu: dziennik, który nie zapisał wpisu, sam to zgłasza i wraca.
+    """
+
+    def begun(self, row: int, place: int, total: int) -> None:
+        """Zaczynam zlecenie z wiersza ``row`` Pliku zbiorczego, ``place`` z ``total`` w przebiegu (od 1), przed pierwszym
+        działaniem okna efenix przy nim."""
+        ...
+
+    def ended(self, result: OrderResult, message: Message | None) -> None:
+        """Zlecenie skończone z wynikiem ``result`` i jego Komunikatem (``None`` przy gotowym i rozliczonym)."""
+        ...
+
+
+class _NoJournal:
+    """Przebieg bez dziennika (Skrypt dla maszyn, testy silnika)."""
+
+    def begun(self, row: int, place: int, total: int) -> None:
+        return None
+
+    def ended(self, result: OrderResult, message: Message | None) -> None:
+        return None
+
+
+NO_JOURNAL: Final[OrderJournal] = _NoJournal()
+
+
 # Kroki Zapisywania na karcie Uruchomienia.
 _LOGIN: Final = "Zaloguj się w oknie efenix"
 _ORDERS: Final = "Zlecenia"
@@ -454,14 +487,15 @@ def price_orders(
     waiting: Login = nullcontext,
     pace: Pace | None = None,
     forbidden: ForbiddenValues | None = None,
+    journal: OrderJournal = NO_JOURNAL,
 ) -> PricingSummary:
     """Uzupełnia w efenix wycenę każdego zlecenia z zakresu Pliku zbiorczego ``source`` i oznacza w nim gotowe zlecenia.
 
     Zgłasza ``StopError``, gdy nie można działać bezpiecznie. ``trace_file``: plik Śladu Wyceny Emmetta okresu
     (``efenix_emmett_trace``). ``clock`` to zegar w sekundach, z którego liczone są czasy etapów i śladu zleceń, a
     ``waiting`` wstrzymuje zegar rozmówcy na czas czekania na logowanie taty. ``pace``: tempo ludzkie okna
-    (``efenix_pace``), ``None`` bez przerw. Komórki zakazanych kolumn Pliku zbiorczego i dane adresowe z listy wyników
-    efenix poznaje ``forbidden`` (reguła danych, ADR 0025).
+    (``efenix_pace``), ``None`` bez przerw. ``journal``: dziennik Wyceny w efenix (``OrderJournal``). Komórki zakazanych
+    kolumn Pliku zbiorczego i dane adresowe z listy wyników efenix poznaje ``forbidden`` (reguła danych, ADR 0025).
     """
 
     phases = PhaseRunner(observer, clock=clock)
@@ -524,10 +558,13 @@ def price_orders(
                         phases.step(_ORDERS, worker=order.worker, done=done, total=total)
                         trace = OrderTrace()
                         current = (done, order, trace)
+                        journal.begun(order.row, done + 1, total)
                         window = efenix_trace.traced(efenix, trace, clock)
                         paced = window if pacing is None else pacing.window(window)
                         outcome = _priced(order, paced, emmett_trace, forbidden)
-                        results.append(OrderResult(order, outcome, tuple(trace.steps)))
+                        result = OrderResult(order, outcome, tuple(trace.steps))
+                        results.append(result)
+                        journal.ended(result, _warning(source, result))
                         current = None
         except StopError:
             phases.step(_MARKING)

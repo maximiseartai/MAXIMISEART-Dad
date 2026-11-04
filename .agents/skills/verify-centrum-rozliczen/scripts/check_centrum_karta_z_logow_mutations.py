@@ -31,13 +31,13 @@ MUTATIONS = (
     ),
     Mutation(
         "Urwane Uruchomienie bez karty",
-        (Edit(RUN_CARDS, " or self._interrupted(started)\n", "\n"),),
+        (Edit(RUN_CARDS, " or _interrupted(started, None)\n", "\n"),),
         KARTA,
         "po starcie Centrum tata nie wie, że Uruchomienie urwało się w trakcie",
     ),
     Mutation(
         "Uruchomienie z wynikiem w Historii bez Logów jako Urwane",
-        (Edit(RUN_CARDS, "return self._recorded(started) or self._interrupted", "return self._interrupted"),),
+        (Edit(RUN_CARDS, "return self._recorded(started) or _interrupted", "return _interrupted"),),
         KARTA,
         "karta po starcie mówi, że nie ma wyniku, a Historia ma wynik tego Uruchomienia (#722)",
     ),

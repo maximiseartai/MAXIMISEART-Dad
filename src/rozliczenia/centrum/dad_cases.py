@@ -59,7 +59,7 @@ class CaseKind:
 
     ``recurs``: ``id`` to odcisk problemu, który wraca po zamknięciu Zgłoszenia, więc numer issue dostaje tylko
     czekająca sprawa. Inaczej ``id`` to jedna wysyłka (Uwaga taty), a każde jej dostarczenie, także ponowne po
-    przerwaniu przed znacznikiem (kolejka zakłada wtedy drugie issue), daje sprawie numer tego issue.
+    przerwaniu przed znacznikiem (kolejka znajduje wtedy issue, które już założyła), daje sprawie numer tego issue.
     """
 
     key: Literal["uwaga", "zgloszenie"]

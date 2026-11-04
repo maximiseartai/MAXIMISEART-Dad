@@ -27,7 +27,9 @@ from rozliczenia.centrum.report_box import (
     REPOSITORY,
     CloseReason,
     Closure,
+    Comment,
     CommentOutcome,
+    CommentsOutcome,
     Commented,
     Issue,
     IssuesOutcome,
@@ -42,6 +44,7 @@ from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease,
 from rozliczenia.centrum.tool_update import Release
 
 from tests.fixtures.clock import ManualClock
+from tests.fixtures.widok_skrzynki import shown
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -92,13 +95,24 @@ class FakePlatform:
 
 @dataclass
 class FakeIssue:
-    """Issue fałszywej skrzynki: etykieta, tytuł i treść, jak je założyło Centrum."""
+    """Issue fałszywej skrzynki: etykieta, tytuł, treść i komentarze tak, jak je zapisało Centrum (``text``,
+    ``comment_texts`` z identyfikatorami ``comment_ids``), a ``body`` i ``comments`` tak, jak Maks je widzi (``shown``).
+    """
 
     number: int
     label: Label
     title: str
-    body: str
-    comments: list[str] = field(default_factory=list)
+    text: str
+    comment_texts: list[str] = field(default_factory=list)
+    comment_ids: list[int] = field(default_factory=list)
+
+    @property
+    def body(self) -> str:
+        return shown(self.text)
+
+    @property
+    def comments(self) -> list[str]:
+        return [shown(text) for text in self.comment_texts]
 
 
 @dataclass
@@ -115,7 +129,9 @@ class FakeReportBox:
     mówi, że takie pytanie już trwa. ``open_hold`` i ``opening`` robią to samo
     z zakładaniem issue, a ``comment_outcomes`` to przygotowane wyniki komentarzy. ``lost_answers`` to tyle
     następnych zakładanych issue, które skrzynka zakłada, ale odpowiedź się urywa (``Unreachable``), a
-    ``lost_comment_answers`` tak samo z następnymi komentarzami.
+    ``lost_comment_answers`` tak samo z następnymi komentarzami. ``after_comment`` biegnie, gdy skrzynka przyjęła
+    komentarz, przed odpowiedzią. ``edited`` to identyfikator każdego poprawionego komentarza po kolei, a
+    ``lost_edit_answers`` to numery tych poprawek (od 1), które skrzynka przyjmuje, ale odpowiedź się urywa.
     ``wait_until`` czeka na wysyłkę w tle.
 
     Issue etykiet z ``background`` to ruch w tle, którego test nie ogląda (np. Logi Uruchomienia w testach
@@ -137,6 +153,9 @@ class FakeReportBox:
     comment_outcomes: list[CommentOutcome] = field(default_factory=list)
     lost_answers: int = 0
     lost_comment_answers: int = 0
+    after_comment: Callable[[], None] = lambda: None
+    edited: list[int] = field(default_factory=list)
+    lost_edit_answers: frozenset[int] = frozenset()
     background: frozenset[Label] = frozenset()
     background_issues: list[FakeIssue] = field(default_factory=list)
     background_comment_outcomes: list[CommentOutcome] = field(default_factory=list)
@@ -183,10 +202,11 @@ class FakeReportBox:
             if behind is not None:
                 if self.background_comment_outcomes:
                     return self.background_comment_outcomes.pop(0)
-                behind.comments.append(body)
+                position = len(behind.comment_texts) + 1
+                behind.comment_texts.append(body)
+                behind.comment_ids.append(number * BACKGROUND_NUMBERS + position)
                 self._changed.notify_all()
-                position = len(behind.comments)
-                return Commented(position, f"https://github.com/{REPOSITORY}/issues/{number}#issuecomment-{position}")
+                return Commented(behind.comment_ids[-1], _comment_url(number, position))
             self.keys.append(key)
             self._changed.notify_all()
             if self.comment_outcomes:
@@ -194,18 +214,47 @@ class FakeReportBox:
             issue = next((issue for issue in self.issues if issue.number == number), None)
             if issue is None:
                 return Refused()
-            issue.comments.append(body)
-            comment_id = sum(len(issue.comments) for issue in self.issues)
-            if self.lost_comment_answers:
-                self.lost_comment_answers -= 1
-                return Unreachable()
-        return Commented(comment_id, f"https://github.com/{REPOSITORY}/issues/{number}#issuecomment-{comment_id}")
+            comment_id = sum(len(issue.comment_texts) for issue in self.issues) + 1
+            issue.comment_texts.append(body)
+            issue.comment_ids.append(comment_id)
+            lost = self.lost_comment_answers > 0
+            self.lost_comment_answers -= lost
+        self.after_comment()
+        return Unreachable() if lost else Commented(comment_id, _comment_url(number, comment_id))
+
+    def comments(self, number: int, *, key: str) -> CommentsOutcome:
+        with self._changed:
+            issue = next((issue for issue in (*self.issues, *self.background_issues) if issue.number == number), None)
+            if issue is None:
+                return Refused()
+            return tuple(
+                Comment(comment_id, self._url_of(issue, comment_id), text)
+                for comment_id, text in zip(issue.comment_ids, issue.comment_texts, strict=True)
+            )
+
+    def edit_comment(self, comment_id: int, body: str, *, key: str) -> CommentOutcome:
+        with self._changed:
+            for issue in (*self.issues, *self.background_issues):
+                if comment_id in issue.comment_ids:
+                    issue.comment_texts[issue.comment_ids.index(comment_id)] = body
+                    self.edited.append(comment_id)
+                    self._changed.notify_all()
+                    if len(self.edited) in self.lost_edit_answers:
+                        return Unreachable()
+                    return Commented(comment_id, self._url_of(issue, comment_id))
+        return Refused()
+
+    def _url_of(self, issue: FakeIssue, comment_id: int) -> str:
+        """Adres komentarza: w ruchu w tle z jego miejscem w issue, inaczej z identyfikatorem."""
+
+        behind = issue in self.background_issues
+        return _comment_url(issue.number, issue.comment_ids.index(comment_id) + 1 if behind else comment_id)
 
     def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
         if label in self.background:
             with self._changed:
                 return tuple(
-                    Issue(issue.number, issue.body, self.closed.get(issue.number))
+                    Issue(issue.number, issue.text, self.closed.get(issue.number))
                     for issue in self.background_issues
                     if include_closed or issue.number not in self.closed
                 )
@@ -217,7 +266,7 @@ class FakeReportBox:
         if self.search_failure is not None:
             return self.search_failure
         return tuple(
-            Issue(issue.number, issue.body, self.closed.get(issue.number))
+            Issue(issue.number, issue.text, self.closed.get(issue.number))
             for issue in self.issues_with(label)
             if include_closed or issue.number not in self.closed
         )
@@ -226,6 +275,10 @@ class FakeReportBox:
         """Maks zamyka issue ``number`` z powodem ``reason`` (``state_reason`` GitHuba) w chwili ``at``."""
 
         self.closed[number] = Closure(reason, at or datetime.now(timezone.utc))
+
+
+def _comment_url(number: int, comment: int) -> str:
+    return f"https://github.com/{REPOSITORY}/issues/{number}#issuecomment-{comment}"
 
 
 @dataclass

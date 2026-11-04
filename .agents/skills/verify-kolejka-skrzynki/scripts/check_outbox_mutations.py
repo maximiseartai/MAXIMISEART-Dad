@@ -20,12 +20,12 @@ NEW = "KOLEJKA: NOWE NARUSZENIE"
 
 MUTATIONS = (
     Mutation(
-        "nieudany komentarz pominięty zamiast końca wysyłki",
+        "nieudany komentarz nowego issue pominięty zamiast końca wysyłki (_comment_all)",
         (
             Edit(
                 VERIFIED,
-                "        if not isinstance(answer, Commented):\n            return answer\n",
-                "        if not isinstance(answer, Commented):\n            continue\n",
+                "        answer = box.comment(number, comment)\n        if not isinstance(answer, Commented):\n            return answer\n",
+                "        answer = box.comment(number, comment)\n        if not isinstance(answer, Commented):\n            continue\n",
             ),
         ),
         (EXPLORER, "--scope", "nowe-issue"),
@@ -33,12 +33,27 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
+        "nieudany komentarz znalezionego issue pominięty zamiast końca wysyłki (_settle)",
+        (
+            Edit(
+                VERIFIED,
+                "        answer = _put(issue.number, sent.get(part), text, version, box)\n"
+                "        if not isinstance(answer, Commented):\n            return answer\n",
+                "        answer = _put(issue.number, sent.get(part), text, version, box)\n"
+                "        if not isinstance(answer, Commented):\n            continue\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "znane-issue"),
+        "plik znika z kolejki, choć Skrzynka nie przyjęła części odnośnika do Logów",
+        NEW,
+    ),
+    Mutation(
         "do znalezionego issue okresu bez pierwszej części",
         (
             Edit(
                 VERIFIED,
-                "        number, comments = found, post.parts\n",
-                "        number, comments = found, post.parts[1:]\n",
+                "for part, text in enumerate(post.parts, start=1))\n",
+                "for part, text in enumerate(post.parts[1:], start=2))\n",
             ),
         ),
         (EXPLORER, "--scope", "watek-okresu"),
@@ -50,8 +65,8 @@ MUTATIONS = (
         (
             Edit(
                 VERIFIED,
-                "    if found is None:\n        body, comments = post.opening()\n        opened = box.open_issue(thread.label",
-                "    if True:\n        body, comments = post.opening()\n        opened = box.open_issue(thread.label",
+                "    if found is None:\n        (_, body), comments = _opening(post, version)\n        opened = box.open_issue(thread.label",
+                "    if True:\n        (_, body), comments = _opening(post, version)\n        opened = box.open_issue(thread.label",
             ),
         ),
         (EXPLORER, "--scope", "watek-okresu"),
@@ -63,8 +78,8 @@ MUTATIONS = (
         (
             Edit(
                 VERIFIED,
-                "    return _comment_all(known.number, post.opening()[1], box)\n",
-                "    return _comment_all(known.number, post.opening()[1][1:], box)\n",
+                "_issue(found, known.number), _opening(post, version)[1], box)\n",
+                "_issue(found, known.number), _opening(post, version)[1][1:], box)\n",
             ),
         ),
         (EXPLORER, "--scope", "znane-issue"),
@@ -76,12 +91,77 @@ MUTATIONS = (
         (
             Edit(
                 VERIFIED,
-                "    if any(issue.number == found and issue.body == body for issue in issues):\n",
-                "    if True:\n",
+                "    return _settle(post, version, _issue(issues, found), (returned,), box)\n",
+                "    return Delivered(found, ())\n",
             ),
         ),
         (EXPLORER, "--scope", "zgloszenie-wrocilo"),
         "powtórzone Zgłoszenie nie zostawia śladu w otwartym Zgłoszeniu tego odcisku",
+        NEW,
+    ),
+    Mutation(
+        "bez sprawdzenia identyfikatora przed wysyłką (_put: część, która już jest, idzie znowu)",
+        (
+            Edit(
+                VERIFIED,
+                "    if sent is None:\n        return box.comment(number, text)\n",
+                "    if True:\n        return box.comment(number, text)\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "znane-issue"),
+        "część, którą Skrzynka przyjęła przed zgubioną odpowiedzią, idzie drugi raz",
+        NEW,
+    ),
+    Mutation(
+        "Diagnoza dopisuje komentarz zamiast poprawić (_put: edit_comment)",
+        (
+            Edit(
+                VERIFIED,
+                "        return box.edit_comment(comment.id, text)\n",
+                "        return box.comment(number, text)\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "diagnoza"),
+        "Uruchomienie po Diagnozie ma w issue okresu dwa komentarze Logów",
+        NEW,
+    ),
+    Mutation(
+        "starsza wersja po nowszej dopisuje swoją część (_settle: newest > version)",
+        (
+            Edit(
+                VERIFIED,
+                "    if newest > version:\n",
+                "    if False:\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "diagnoza-odczyt"),
+        "Logi sprzed Diagnozy, których plik raz był nieczytelny, dopisują po niej część, której Diagnoza nie ma",
+        NEW,
+    ),
+    Mutation(
+        "część, której nowsza wersja nie ma, zostaje (_settle: _RETIRED)",
+        (
+            Edit(
+                VERIFIED,
+                "        if part not in wanted and seen < version:\n",
+                "        if False:\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "diagnoza"),
+        "w issue okresu zostaje część Logów sprzed Diagnozy",
+        NEW,
+    ),
+    Mutation(
+        "Uwaga taty bez szukania issue po znaczniku (_deliver_new_issue: found)",
+        (
+            Edit(
+                VERIFIED,
+                "    if found is not None:\n        return _settle(post, version, found, comments, box)\n",
+                "    if False:\n        return _settle(post, version, found, comments, box)\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "nowe-issue"),
+        "Uwaga, której odpowiedź na założenie issue zginęła, dostaje drugie issue",
         NEW,
     ),
     Mutation(
@@ -107,20 +187,7 @@ MUTATIONS = (
             ),
         ),
         (EXPLORER, "--scope", "nowe-issue"),
-        "każda Uwaga taty daje dwa issue, choć ADR 0015 przyjmuje drugie tylko po zerwanym połączeniu",
-        NEW,
-    ),
-    Mutation(
-        "bez znacznika dostarczenia",
-        (
-            Edit(
-                VERIFIED,
-                "                replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts)))\n",
-                "                pass\n",
-            ),
-        ),
-        (EXPLORER, "--scope", "nowe-issue"),
-        "plik, którego nie dało się usunąć, idzie po restarcie drugi raz i zakłada drugie issue Uwagi taty",
+        "każda Uwaga taty daje dwa issue, także bez awarii",
         NEW,
     ),
     Mutation(
@@ -134,19 +201,6 @@ MUTATIONS = (
         ),
         (EXPLORER, "--scope", "znane-issue"),
         "po zerwanej sieci wysyłka czeka do restartu Centrum albo nowej wysyłki",
-        NEW,
-    ),
-    Mutation(
-        "usunięcie pliku przed znacznikiem dostarczenia",
-        (
-            Edit(
-                VERIFIED,
-                "            with suppress(OSError):  # bez znacznika chroni już tylko _undeleted, do końca tej pracy Centrum\n                replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts)))\n            self._remove(path)\n",
-                "            self._remove(path)\n            with suppress(OSError):  # bez znacznika chroni już tylko _undeleted, do końca tej pracy Centrum\n                replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts)))\n",
-            ),
-        ),
-        (EXPLORER, "--scope", "nowe-issue"),
-        "proces zamknięty przy usuwaniu wysłanej Uwagi taty wysyła ją po restarcie drugi raz",
         NEW,
     ),
     Mutation(

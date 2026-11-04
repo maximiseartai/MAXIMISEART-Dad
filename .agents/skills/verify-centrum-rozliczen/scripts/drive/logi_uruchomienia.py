@@ -124,10 +124,6 @@ def _queued_logs(run: Run) -> list[Path]:
     return sorted((run.root / "config" / "zgloszenia" / "kolejka").glob(f"*-{LABEL}-*.json"))
 
 
-def _without_diagnosis(text: str) -> Json:
-    return {**json.loads(text), "diagnosis": None}
-
-
 def _threads(run: Run) -> list[Json]:
     box = run.root / "skrzynka-zgloszen"
     issues = [json.loads(path.read_text(encoding="utf-8")) for path in box.glob("*.json")] if box.is_dir() else []
@@ -272,14 +268,8 @@ def drive_run_logs(run: Run, page: Page) -> None:
         f"each of the {len(files)} files of Logi is the newest comment of its Uruchomienie, character for character",
     )
     run.check(
-        all(
-            len(by_run[run_id]) == 1
-            if json.loads(text)["diagnosis"] is None
-            else all(_without_diagnosis(sent) == _without_diagnosis(text) for sent in by_run[run_id][:-1])
-            and len(by_run[run_id]) > 1
-            for run_id, text in local.items()
-        ),
-        "an Uruchomienie without a Diagnoza is one comment; each Diagnoza added one more, which differ only in it",
+        all(len(texts) == 1 for texts in by_run.values()),
+        "each Uruchomienie is one comment, also after a Diagnoza, which changes that comment",
     )
     run.check(
         all(title == f"Logi Uruchomienia {json.loads(text)['period']}" for title, text in sent),

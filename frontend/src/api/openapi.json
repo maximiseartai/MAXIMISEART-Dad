@@ -5108,6 +5108,16 @@
           },
           "advice": {
             "$ref": "#/components/schemas/Message"
+          },
+          "orders": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CountGroup"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -5119,7 +5129,7 @@
           "advice"
         ],
         "title": "RunInterrupted",
-        "description": "Urwane Uruchomienie: Centrum zamknęło się w jego trakcie, więc zna tylko jego start.\n\nNie ma wyniku, Logów Uruchomienia ani rekordu metryk. ``advice`` mówi w trzech częściach, co się stało i co\nzrobić, osobno dla podglądu (nic nie zapisał) i zapisu."
+        "description": "Urwane Uruchomienie: Centrum zamknęło się w jego trakcie, więc nie ma jego wyniku.\n\nNie ma wyniku ani rekordu metryk. ``advice`` mówi w trzech częściach, co się stało i co zrobić, osobno dla podglądu\n(nic nie zapisał) i zapisu. ``orders``: zlecenia Wyceny w efenix skończone przed zamknięciem Centrum, z każdym\nwynikiem, z Logów Urwanego Uruchomienia, które start Centrum zamknął z dziennika Wyceny w efenix (``None``: inny\nproces albo Logów nie ma)."
       },
       "RunOutcome": {
         "properties": {

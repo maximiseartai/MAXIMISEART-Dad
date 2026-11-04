@@ -1138,16 +1138,19 @@ export const zRunAwaitingDecision = z.object({
 /**
  * RunInterrupted
  *
- * Urwane Uruchomienie: Centrum zamknęło się w jego trakcie, więc zna tylko jego start.
+ * Urwane Uruchomienie: Centrum zamknęło się w jego trakcie, więc nie ma jego wyniku.
  *
- * Nie ma wyniku, Logów Uruchomienia ani rekordu metryk. ``advice`` mówi w trzech częściach, co się stało i co
- * zrobić, osobno dla podglądu (nic nie zapisał) i zapisu.
+ * Nie ma wyniku ani rekordu metryk. ``advice`` mówi w trzech częściach, co się stało i co zrobić, osobno dla podglądu
+ * (nic nie zapisał) i zapisu. ``orders``: zlecenia Wyceny w efenix skończone przed zamknięciem Centrum, z każdym
+ * wynikiem, z Logów Urwanego Uruchomienia, które start Centrum zamknął z dziennika Wyceny w efenix (``None``: inny
+ * proces albo Logów nie ma).
  */
 export const zRunInterrupted = z.object({
     state: z.literal('interrupted'),
     run: zRunInfo,
     started_at: z.iso.datetime(),
-    advice: zMessage
+    advice: zMessage,
+    orders: zCountGroup.nullish()
 });
 
 /**
