@@ -137,6 +137,11 @@ class CentrumLog:
 
         self._write("aktualizacja-pominiete-wydania", tagi=",".join(tags))
 
+    def dad_actions_unavailable(self, failure: OSError) -> None:
+        """Dziennika działań taty dla Logów Uruchomienia nie da się zapisać, odczytać albo opróżnić; tylko typ błędu."""
+
+        self._write("dzialania-taty-niedostepne", typ=type(failure).__name__)
+
     def unexpected_failure(self, failure: BaseException, *, where: str) -> None:
         """Nieoczekiwany wyjątek: tylko nazwa typu i miejsce (np. trasa API), bez tekstu wyjątku."""
 

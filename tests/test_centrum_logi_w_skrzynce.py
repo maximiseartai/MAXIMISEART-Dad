@@ -456,7 +456,7 @@ def test_wyslane_zgloszenie_prowadzi_do_komentarza_logow_swojego_uruchomienia(tm
     assert report.body == preview["body"]
     link = f"- Logi: https://github.com/{REPOSITORY}/issues/{thread.number}#issuecomment-2"
     assert link in report.body.splitlines()
-    assert sent_json([thread.comments[1]]).startswith('{\n  "schema_version": 1,\n  "run_id": "' + run_id)
+    assert sent_json([thread.comments[1]]).startswith('{\n  "schema_version": 2,\n  "run_id": "' + run_id)
 
 
 def test_diagnoza_bez_sieci_jest_w_pliku_logow_jej_komentarz_czeka_w_kolejce_a_zgloszenie_dziala_jak_dotad(

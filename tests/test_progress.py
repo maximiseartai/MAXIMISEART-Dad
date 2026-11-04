@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
+import itertools
 
 import pytest
 
@@ -37,8 +40,24 @@ def until_saving(template_total: int, *, issue_count: int = 0) -> list[ProgressE
     return events
 
 
-def project(events: list[ProgressEvent]) -> ProgressProjection:
-    projection = ProgressProjection()
+START = datetime(2026, 9, 30, 8, 0, tzinfo=timezone.utc)
+
+
+def moment(index: int) -> datetime:
+    """Chwila zdarzenia numer ``index`` (od 0) projekcji z zegarem ``ticking``."""
+
+    return START + timedelta(seconds=index)
+
+
+def ticking() -> Callable[[], datetime]:
+    """Zegar ścienny, który przy każdym odczycie idzie o sekundę od ``START``."""
+
+    seconds = itertools.count()
+    return lambda: moment(next(seconds))
+
+
+def project(events: list[ProgressEvent], now: Callable[[], datetime] | None = None) -> ProgressProjection:
+    projection = ProgressProjection() if now is None else ProgressProjection(now)
     for event in events:
         projection.update(event)
     return projection
@@ -126,21 +145,29 @@ def test_projection_marks_failed_faza_przebiegu() -> None:
 
 
 def test_projekcja_mierzy_kazde_przetworzenie_szablonu_pracownika_od_jego_rozpoczecia_do_konca() -> None:
+    before = until_saving(3)
     projection = project(
         [
-            *until_saving(3),
+            *before,
             WorkerStarted("Adrian Testowy", template_index=1, elapsed_ms=10),
             WorkerEnded("Adrian Testowy", template_index=1, status="ZAPISANO", rows=2, elapsed_ms=13, issue_count=0),
             WorkerStarted("Darek Fikcyjny", template_index=2, elapsed_ms=14),
             WorkerEnded("Darek Fikcyjny", template_index=2, status="PUSTY_SZABLON", rows=0, elapsed_ms=15, issue_count=0),
             WorkerStarted("Kamil Syntetyczny", template_index=3, elapsed_ms=21),
-        ]
+        ],
+        ticking(),
     )
+    adrian = len(before)
 
     running = projection.snapshot
     failed = projection.update(WorkerFailed("Kamil Syntetyczny", template_index=3, elapsed_ms=27, phase_elapsed_ms=9))
 
-    written = TemplateProcessing("Adrian Testowy", "ZAPISANO", rows=2, duration_ms=3)
-    empty = TemplateProcessing("Darek Fikcyjny", "PUSTY_SZABLON", rows=0, duration_ms=1)
+    written = TemplateProcessing("Adrian Testowy", "ZAPISANO", 2, 3, moment(adrian), moment(adrian + 1))
+    empty = TemplateProcessing("Darek Fikcyjny", "PUSTY_SZABLON", 0, 1, moment(adrian + 2), moment(adrian + 3))
     assert running.templates == (written, empty)
-    assert failed.templates == (written, empty, TemplateProcessing("Kamil Syntetyczny", "failed", rows=0, duration_ms=6))
+    stopped = TemplateProcessing("Kamil Syntetyczny", "failed", 0, 6, moment(adrian + 4), moment(adrian + 5))
+    assert failed.templates == (written, empty, stopped)
+    assert (failed.phase_started_at[ProgressPhase.SAVING], failed.phase_ended_at[ProgressPhase.SAVING]) == (
+        moment(adrian - 1),
+        moment(adrian + 5),
+    )

@@ -584,8 +584,10 @@ Zgłoszeń), czeka w Kolejce wysyłki i wychodzi samo.
 ## Logi Uruchomienia
 
 Pełny, bezpieczny obraz jednego Uruchomienia procesu z Centrum rozliczeń:
-wynik, Komunikaty, podsumowanie, przebieg etapów i Szablonów pracownika oraz
-wersja narzędzia. Mówią wprost, czy był to podgląd, w którym nic nie
+wynik, Komunikaty, podsumowanie, przebieg etapów i Szablonów pracownika z
+godziną każdego kroku, wersja narzędzia oraz dziennik działań taty w Centrum od
+poprzedniego Uruchomienia (widoki i przyciski z godzinami, bez treści Uwagi
+taty). Mówią wprost, czy był to podgląd, w którym nic nie
 zapisano, czy Uruchomienie z zapisem. Zostają na komputerze taty także po
 zamknięciu Centrum i trafiają same do Skrzynki Zgłoszeń, gdzie wszystkie
 Uruchomienia jednego okresu są w jednym miejscu; Uruchomienie Uporządkowania
