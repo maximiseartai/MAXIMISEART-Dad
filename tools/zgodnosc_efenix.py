@@ -5,7 +5,8 @@ sprawdza budowę, której używa Wycena w efenix i którą odtwarza Atrapa efeni
 Żadna strona efenix nie działa przy tym w przeglądarce: każde żądanie do efenix narzędzie wysyła samo, z ciasteczkami
 sesji domyślnego kontekstu Chrome (``contexts[0].request``, bez kart i bez skryptów), tylko z listy ``ALLOWED``
 porównywanej po pełnej ścieżce i hoście ``--efenix-url``, i nigdy nie podąża za przekierowaniem: przekierowanie na
-``page_login.php`` to brak sesji, a inne to różnica. HTML z odpowiedzi składa parserem przeglądarki we własnej karcie
+``page_login.php`` i odpowiedź szukania z ostrzeżeniem o wygasłej sesji (``efenix_browser.SearchWarning``) to brak
+sesji, a inne przekierowanie to różnica. HTML z odpowiedzi składa parserem przeglądarki we własnej karcie
 w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service workerami, z której nie wychodzi żadne żądanie
 (obraz, styl, ramka, przejście, prefetch; ``parser_page``). Kart taty nie dotyka. Sprawdza:
 
@@ -17,7 +18,8 @@ w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service work
   ``na_stronie`` jak w domyślnym ustawieniu listy), a odpowiedź czyta
   ``efenix_browser.read_results``, odczyt Wyceny w efenix, z loginem realizatora i ``Dane adresowe`` w każdym wierszu
   (przy błędzie odczytu nagłówki ``efenix_browser.HEADERS``, liczba komórek, link ``page_order_edit.php?id=`` i status
-  w ``.badge``);
+  w ``.badge``); ostrzeżenie „Nie znaleziono pasujących wyników”, którym efenix odpowiada na numer, którego nie zna,
+  Wycena czyta jak tabelę bez wierszy, więc ``--numer`` takiego numeru sprawdza i tę odpowiedź;
 - strona zlecenia (do ``ORDERS_TO_OPEN`` zleceń z tabeli, najpierw „Do wyceny”, aż znajdzie pustą datę wykonania):
   ``efenix_browser.read_order`` (data wykonania ``RRRR-MM-DD`` albo pusta, kwota końcowa, pola Ilość), a na pierwszym
   zleceniu elementy ``efenix_browser.ORDER_ELEMENTS`` (okno daty wykonania, przycisk i okno Emmetta; przycisk Emmetta
@@ -30,8 +32,10 @@ w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service work
   zlecenia efenix z mniejszą liczbą pozycji wyceny, a strona bez żadnej karty pozycji to część niesprawdzona; cena
   pozycji z przypisania kolumn (``efenix_positions.POSITION_OF_COLUMN``) jest równa kosztowi jej kolumny w wierszu 14 Wzorca pliku zbiorczego, bo z kosztów tego wiersza liczy się ``Kwota`` (AU),
   z którą Wycena w efenix porównuje kwotę końcową efenix;
-- bez sesji (żądania bez ciasteczek, więc sesja taty trwa): lista i szukanie przekierowują na ``page_login.php``, a
-  strona logowania ma formularz ``action_login.php`` z polami ``field_signum``, ``field_password`` i ``fingerprint``.
+- bez sesji (żądania bez ciasteczek, więc sesja taty trwa): lista przekierowuje na ``page_login.php``, szukanie
+  odpowiada 2xx bez przekierowania samym ostrzeżeniem o wygasłej sesji, które rozpoznaje Wycena w efenix
+  (``efenix_browser.SearchWarning``), a strona logowania ma formularz ``action_login.php`` z polami
+  ``field_signum``, ``field_password`` i ``fingerprint``.
 
 Skryptów stron narzędzie nie uruchamia, więc ich działania nie widzi: sprawdza tylko, że skrypt ma nazwy, na których
 polega okno Wyceny w efenix. Przycisku kalendarza daty wykonania (``#button-calendar``) nie sprawdza: okno klika go tylko
@@ -97,8 +101,10 @@ from rozliczenia.efenix_browser import (
     TIMEOUT_MS,
     PageElement,
     ScriptUse,
+    SearchWarning,
     read_order,
     read_results,
+    search_warning,
 )
 from rozliczenia.efenix_checks import PRICING_STATUS
 from rozliczenia.efenix_positions import POSITION_OF_COLUMN
@@ -139,7 +145,7 @@ POSITION_CODE: Final = re.compile(r"INDEKS_\d{3}_\d{3}")
 COST_ROW: Final = 14
 ORDERS_TO_OPEN: Final = 10
 NOT_SIGNED_IN: Final = "Chrome nie jest zalogowany do efenix: zaloguj się kontem taty i uruchom narzędzie jeszcze raz"
-LOGGED_OUT_MIDWAY: Final = "efenix przekierował na stronę logowania w trakcie sprawdzania: zaloguj się i uruchom narzędzie jeszcze raz"
+LOGGED_OUT_MIDWAY: Final = "efenix wylogował w trakcie sprawdzania: zaloguj się i uruchom narzędzie jeszcze raz"
 
 
 class Part(enum.Enum):
@@ -401,7 +407,16 @@ def _check_signed_in(efenix: _Efenix, page: Page, costs: Mapping[str, Decimal | 
     _check_script(efenix, page, efenix.url, Part.LIST, LIST_SCRIPT, LIST_SCRIPT_USES, report)
     answer = efenix.post(efenix.address(SEARCH), {**SEARCH_FORM, "numer": number})
     results = _text(efenix, answer, f"POST {SEARCH}", Part.RESULTS, report)
-    table: _Table | None = None if results is None else page.evaluate(_READ_TABLE, [results, ORDER_PAGE])
+    table: _Table | None = None
+    if results is not None:
+        match search_warning(page, results):
+            case SearchWarning.SESSION_EXPIRED:
+                raise ToolError(LOGGED_OUT_MIDWAY)
+            case SearchWarning.NOT_FOUND:
+                # Wycena w efenix czyta tę odpowiedź jak tabelę bez wierszy (``read_results``).
+                table = _Table(headers=[], rows=[])
+            case None:
+                table = page.evaluate(_READ_TABLE, [results, ORDER_PAGE])
     if results is not None and table is None:
         report.differ(Part.RESULTS, f"odpowiedź POST {SEARCH} bez tabeli")
     if results is None or table is None:
@@ -599,14 +614,18 @@ def _amount(text: str) -> Decimal | None:
 
 
 def _check_signed_out(efenix: _Efenix, page: Page, report: Report) -> None:
-    """Lista i szukanie bez sesji przekierowują na stronę logowania, a ta ma pola formularza logowania."""
+    """Lista bez sesji przekierowuje na stronę logowania, szukanie odpowiada ostrzeżeniem o wygasłej sesji, które
+    rozpoznaje Wycena w efenix, a strona logowania ma pola formularza logowania."""
 
-    for method, name, answer in (
-        ("GET", LIST_PAGE, efenix.get(efenix.url)),
-        ("POST", SEARCH, efenix.post(efenix.address(SEARCH), SEARCH_FORM)),
-    ):
-        if not efenix.to_login(answer):
-            report.differ(Part.LOGGED_OUT, f"{method} {name} bez sesji nie przekierowuje na {LOGIN_PAGE}")
+    if not efenix.to_login(efenix.get(efenix.url)):
+        report.differ(Part.LOGGED_OUT, f"GET {LIST_PAGE} bez sesji nie przekierowuje na {LOGIN_PAGE}")
+    search = efenix.post(efenix.address(SEARCH), SEARCH_FORM)
+    if search.location is not None:
+        report.differ(Part.LOGGED_OUT, f"POST {SEARCH} bez sesji przekierowuje na {efenix.name(search.location)} zamiast ostrzeżenia o wygasłej sesji")
+    elif not 200 <= search.status < 300:
+        report.differ(Part.LOGGED_OUT, f"POST {SEARCH} bez sesji: odpowiedź {search.status}")
+    elif search_warning(page, search.text) is not SearchWarning.SESSION_EXPIRED:
+        report.differ(Part.LOGGED_OUT, f"POST {SEARCH} bez sesji nie odpowiada ostrzeżeniem o wygasłej sesji")
     login = efenix.get(efenix.address(LOGIN_PAGE))
     if login.location is not None or not 200 <= login.status < 300:
         report.differ(Part.LOGIN, f"GET {LOGIN_PAGE}: odpowiedź {login.status}")

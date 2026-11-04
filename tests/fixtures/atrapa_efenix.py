@@ -10,8 +10,9 @@ krótki kod Atrapy: Enter w polu ``Numer`` wysyła do ``action_fill_orders.php``
 (``LIST_SEARCH_FIELDS``) z liczbą wierszy z pola ``#field_na_stronie`` (domyślnie ``10``) i wkłada odpowiedź do
 ``#wyniki``, a po wczytaniu, gdy karta pamięta numer z poprzedniego szukania (``sessionStorage``), sama szuka go
 jeszcze raz, jak efenix po powrocie ze strony zlecenia na listę. Szukanie bez liczby wierszy (``na_stronie``) dostaje,
-jak w efenix, stronę błędu bazy danych bez tabeli wyników, a szukanie z pustym ``xrodzaj`` odpowiedź „Nie znaleziono
-pasujących wyników” bez tabeli. Nie ma w niej żadnego kodu, stylu ani danych z efenix.
+jak w efenix, stronę błędu bazy danych bez tabeli wyników, a szukanie, które nie znajduje żadnego zlecenia (numer, którego
+Atrapa nie ma, albo pusty ``xrodzaj``), jak w efenix (pomiar 4.11.2026, #828) samo ostrzeżenie „Nie znaleziono pasujących
+wyników” bez tabeli. Nie ma w niej żadnego kodu, stylu ani danych z efenix poza tekstem ostrzeżeń, który rozpoznaje okno.
 
 Strona zlecenia ma wycenę ze stanem: pozycje z wymyślonymi cenami (``CATALOG``: kody ``INDEKS_NNN_078`` stron efenix,
 z przypisania kolumn i bez niego) w kartach ``.card.rounded-lg.kolorek`` jak w efenix: karta z polem
@@ -34,7 +35,9 @@ JSON (``result``, ``price_index``, ``price_all``) odświeża ``#cena-…`` i ``#
 ``result: nok``, jak w efenix.
 
 Atrapa ma jedną sesję, jak okno taty z zapamiętanym logowaniem: po starcie jest zalogowana, ``expire_session`` i
-``action_logout.php`` ją kończą, a wtedy każda strona i odpowiedź przekierowuje na ``page_login.php``; formularz
+``action_logout.php`` ją kończą, a wtedy każda strona i odpowiedź przekierowuje na ``page_login.php``, poza zapisem
+ilości (``result: nok``) i szukaniem, na które Atrapa, jak efenix (pomiar 4.11.2026, #828), odpowiada 200 z samym
+ostrzeżeniem o wygasłej sesji (tekst efenix, który rozpoznaje okno, w znacznikach Atrapy); formularz
 logowania (``action_login.php`` z polem ``fingerprint``, jak w efenix) albo ``log_in`` (tata loguje się w swoim oknie)
 loguje z powrotem. ``cookie_session`` wiąże sesję z ciasteczkiem ``SESSION_COOKIE``, więc żądanie bez niego widzi stronę
 logowania, a sesja z ciasteczkiem trwa. Pliki skryptów Atrapa daje także bez sesji, jak serwer plików. ``requests`` to
@@ -96,8 +99,12 @@ LIST_SEARCH_FIELDS = (
 LIST_ROWS_PER_PAGE = "10"
 # Odpowiedź efenix na szukanie bez liczby wierszy: strona błędu zapytania z pustym limitem wierszy (tekst wymyślony).
 _NO_ROW_LIMIT = "<p>Błąd bazy danych: zapytanie bez liczby wierszy.</p>"
-# Odpowiedź efenix na szukanie z pustym ``xrodzaj``: żaden rodzaj zlecenia, więc żadnego wyniku i żadnej tabeli.
-_NO_RESULTS = "<p>Nie znaleziono pasujących wyników</p>"
+# Odpowiedzi efenix na szukanie bez tabeli wyników, samym ostrzeżeniem (pomiar 4.11.2026, #828): szukanie, które nie
+# znajduje żadnego zlecenia, i szukanie bez sesji. Zdanie i puste linie przed nim są jak w efenix, a znaczniki są Atrapy.
+_NOT_FOUND = '\r\n\n\r\n\r\n<p class="alert alert-danger"><strong>Ostrzeżenie: </strong>Nie znaleziono pasujących wyników !</p>'
+_SESSION_EXPIRED = '\r\n\n\r\n\r\n<p class="alert alert-danger"><strong>Ostrzeżenie: </strong>Twoja sesja wygasła - zaloguj się ponownie !</p>'
+# Ostrzeżenie, którego okno nie zna, bez tabeli wyników (``Changed.RESULTS_WARNING``, tekst wymyślony).
+_OTHER_WARNING = '<p class="alert alert-danger"><strong>Ostrzeżenie: </strong>Lista zleceń jest chwilowo niedostępna !</p>'
 TODAY = date(2026, 10, 12)
 """Dzień, który kalendarz Atrapy ma za dzisiejszy, gdy test nie poda innego: dni z ``DATA`` testów (wrzesień 2026) są
 w zakresie, który przyjmuje efenix."""
@@ -114,6 +121,7 @@ class Changed(enum.Enum):
 
     STATUS_HEADER = "nagłówek Status tabeli wyników ma inną nazwę"
     ORDER_LINK = "wiersz wyników nie ma linku do strony zlecenia"
+    RESULTS_WARNING = "szukanie odpowiada ostrzeżeniem, którego okno nie zna, bez tabeli wyników"
     DATE_FORMAT = "data wykonania w innym zapisie niż RRRR-MM-DD"
     DATE_DIALOG = "przycisk kalendarza nie otwiera okna daty wykonania"
     EMMETT_BUTTON = "strona zlecenia nie ma przycisku Emmetta"
@@ -408,6 +416,8 @@ def atrapa_efenix(
                 self._html(_order_script(changed, today), content_type="text/javascript")
             elif not logged_in and path == SAVE_QUANTITY:
                 self._json({"result": "nok", "error": "Brak sesji."})
+            elif not logged_in and path == SEARCH and method == "POST":
+                self._html(_SESSION_EXPIRED)
             elif not logged_in:
                 self._redirect(LOGIN_PAGE)
             elif path == LOGOUT:
@@ -433,10 +443,11 @@ def atrapa_efenix(
                 number = params.get("numer", "").strip()
                 if not params.get("na_stronie"):
                     self._html(_NO_ROW_LIMIT)
-                elif params.get("xrodzaj") == "":
-                    self._html(_NO_RESULTS)
+                elif changed is Changed.RESULTS_WARNING:
+                    self._html(_OTHER_WARNING)
                 else:
-                    self._html(_results([order for order in orders if number in order.number], changed))
+                    found = [] if params.get("xrodzaj") == "" else [order for order in orders if number in order.number]
+                    self._html(_results(found, changed) if found else _NOT_FOUND)
             elif path == ORDER_PAGE and method == "GET" and changed is Unread.ORDER_REDIRECT:
                 self._redirect(LOGOUT)
             elif path == ORDER_PAGE and method == "GET":

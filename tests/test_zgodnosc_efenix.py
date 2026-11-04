@@ -118,6 +118,14 @@ def _answered(status: int) -> Rewrite:
     return lambda _answer: Answer(status, {}, "<p>Błąd serwera.</p>")
 
 
+def _to_login_if_warned(answer: Answer) -> Answer:
+    """Odpowiedź z ostrzeżeniem o wygasłej sesji zamieniona na przekierowanie na stronę logowania, a inna bez zmian."""
+
+    if "Twoja sesja wygasła" in answer.body:
+        return Answer(302, {"Location": LOGIN_PAGE}, "")
+    return answer
+
+
 @dataclass(frozen=True)
 class Variant:
     """Atrapa efenix pod narzędziem, koszty we Wzorcu i plik expect wyniku.
@@ -198,6 +206,11 @@ CHANGED = {
             ),
             ORDER_SCRIPT: _answered(302),
         },
+    ),
+    # Szukanie bez sesji przekierowane na stronę logowania, jak Atrapa przed #828, zamiast ostrzeżenia efenix.
+    "szukanie-bez-sesji-przekierowuje-na-logowanie": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-bez-sesji-przekierowuje-na-logowanie.txt",
+        rewrites={SEARCH: _to_login_if_warned},
     ),
     "logowanie-bez-formularza-i-pol": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "logowanie-bez-formularza-i-pol.txt",
@@ -407,6 +420,7 @@ def test_atrapa_ze_zmieniona_budowa_daje_kazda_roznice(chrome: str, tmp_path: Pa
     [
         pytest.param(AtrapaEfenix.expire_session, None, zgodnosc_efenix.NOT_SIGNED_IN, id="przed-sprawdzaniem"),
         pytest.param(lambda _atrapa: None, (ORDER_PAGE, 0), zgodnosc_efenix.LOGGED_OUT_MIDWAY, id="w-trakcie-sprawdzania"),
+        pytest.param(lambda _atrapa: None, (SEARCH, 0), zgodnosc_efenix.LOGGED_OUT_MIDWAY, id="przy-szukaniu-ostrzezenie"),
     ],
 )
 def test_bez_sesji_taty_narzedzie_konczy_sie_bledem_bez_wyniku(
