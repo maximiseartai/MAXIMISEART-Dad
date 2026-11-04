@@ -18,7 +18,8 @@ w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service work
   ``na_stronie`` jak w domyślnym ustawieniu listy), a odpowiedź czyta
   ``efenix_browser.read_results``, odczyt Wyceny w efenix, z loginem realizatora i ``Dane adresowe`` w każdym wierszu
   (przy błędzie odczytu nagłówki ``efenix_browser.HEADERS``, liczba komórek, link ``page_order_edit.php?id=`` i status
-  w ``.badge``);
+  w ``.badge``); ostrzeżenie „Nie znaleziono pasujących wyników”, którym efenix odpowiada na numer, którego nie zna,
+  Wycena czyta jak tabelę bez wierszy, więc ``--numer`` takiego numeru sprawdza i tę odpowiedź;
 - strona zlecenia (do ``ORDERS_TO_OPEN`` zleceń z tabeli, najpierw „Do wyceny”, aż znajdzie pustą datę wykonania):
   ``efenix_browser.read_order`` (data wykonania ``RRRR-MM-DD`` albo pusta, kwota końcowa, pola Ilość), a na pierwszym
   zleceniu elementy ``efenix_browser.ORDER_ELEMENTS`` (okno daty wykonania, przycisk i okno Emmetta; przycisk Emmetta
@@ -406,9 +407,16 @@ def _check_signed_in(efenix: _Efenix, page: Page, costs: Mapping[str, Decimal | 
     _check_script(efenix, page, efenix.url, Part.LIST, LIST_SCRIPT, LIST_SCRIPT_USES, report)
     answer = efenix.post(efenix.address(SEARCH), {**SEARCH_FORM, "numer": number})
     results = _text(efenix, answer, f"POST {SEARCH}", Part.RESULTS, report)
-    if results is not None and search_warning(page, results) is SearchWarning.SESSION_EXPIRED:
-        raise ToolError(LOGGED_OUT_MIDWAY)
-    table: _Table | None = None if results is None else page.evaluate(_READ_TABLE, [results, ORDER_PAGE])
+    table: _Table | None = None
+    if results is not None:
+        match search_warning(page, results):
+            case SearchWarning.SESSION_EXPIRED:
+                raise ToolError(LOGGED_OUT_MIDWAY)
+            case SearchWarning.NOT_FOUND:
+                # Wycena w efenix czyta tę odpowiedź jak tabelę bez wierszy (``read_results``).
+                table = _Table(headers=[], rows=[])
+            case None:
+                table = page.evaluate(_READ_TABLE, [results, ORDER_PAGE])
     if results is not None and table is None:
         report.differ(Part.RESULTS, f"odpowiedź POST {SEARCH} bez tabeli")
     if results is None or table is None:

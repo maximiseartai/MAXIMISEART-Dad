@@ -57,17 +57,18 @@ def test_atrapa_odpowiada_na_kolejne_zadania_tym_samym_polaczeniem_takze_przekie
 @pytest.mark.parametrize(
     ("fields", "answer"),
     [
-        pytest.param("", "Błąd bazy danych", id="bez-liczby-wierszy"),
-        pytest.param("&na_stronie=", "Błąd bazy danych", id="pusta-liczba-wierszy"),
-        pytest.param("&na_stronie=10&xrodzaj=", "Nie znaleziono pasujących wyników", id="pusty-rodzaj-zlecenia"),
+        pytest.param("numer=9301", "Błąd bazy danych", id="bez-liczby-wierszy"),
+        pytest.param("numer=9301&na_stronie=", "Błąd bazy danych", id="pusta-liczba-wierszy"),
+        pytest.param("numer=9301&na_stronie=10&xrodzaj=", "Nie znaleziono pasujących wyników !", id="pusty-rodzaj-zlecenia"),
+        pytest.param("numer=9399&na_stronie=10", "Nie znaleziono pasujących wyników !", id="numer-ktorego-nie-ma"),
     ],
 )
-def test_szukanie_bez_liczby_wierszy_albo_z_pustym_rodzajem_zlecenia_dostaje_jak_w_efenix_strone_bez_tabeli_wynikow(
+def test_szukanie_bez_liczby_wierszy_z_pustym_rodzajem_zlecenia_albo_bez_wynikow_dostaje_jak_w_efenix_odpowiedz_bez_tabeli(
     fields: str, answer: str
 ) -> None:
     with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")]) as atrapa:
         connection = _connection(atrapa.url)
-        connection.request("POST", f"/{SEARCH}", body=f"numer=9301&rodzaj=szukanie&strona=1{fields}", headers=_FORM)
+        connection.request("POST", f"/{SEARCH}", body=f"rodzaj=szukanie&strona=1&{fields}", headers=_FORM)
         refused = connection.getresponse().read().decode("utf-8")
         connection.request("POST", f"/{SEARCH}", body="numer=9301&rodzaj=szukanie&strona=1&na_stronie=10", headers=_FORM)
         found = connection.getresponse().read().decode("utf-8")

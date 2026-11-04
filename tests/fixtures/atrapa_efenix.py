@@ -10,9 +10,9 @@ krótki kod Atrapy: Enter w polu ``Numer`` wysyła do ``action_fill_orders.php``
 (``LIST_SEARCH_FIELDS``) z liczbą wierszy z pola ``#field_na_stronie`` (domyślnie ``10``) i wkłada odpowiedź do
 ``#wyniki``, a po wczytaniu, gdy karta pamięta numer z poprzedniego szukania (``sessionStorage``), sama szuka go
 jeszcze raz, jak efenix po powrocie ze strony zlecenia na listę. Szukanie bez liczby wierszy (``na_stronie``) dostaje,
-jak w efenix, stronę błędu bazy danych bez tabeli wyników, a szukanie z pustym ``xrodzaj`` odpowiedź „Nie znaleziono
-pasujących wyników” bez tabeli. Nie ma w niej żadnego kodu, stylu ani danych z efenix poza tekstem ostrzeżenia o wygasłej
-sesji, który rozpoznaje okno.
+jak w efenix, stronę błędu bazy danych bez tabeli wyników, a szukanie, które nie znajduje żadnego zlecenia (numer, którego
+Atrapa nie ma, albo pusty ``xrodzaj``), jak w efenix (pomiar 4.11.2026, #828) samo ostrzeżenie „Nie znaleziono pasujących
+wyników” bez tabeli. Nie ma w niej żadnego kodu, stylu ani danych z efenix poza tekstem ostrzeżeń, który rozpoznaje okno.
 
 Strona zlecenia ma wycenę ze stanem: pozycje z wymyślonymi cenami (``CATALOG``: kody ``INDEKS_NNN_078`` stron efenix,
 z przypisania kolumn i bez niego) w kartach ``.card.rounded-lg.kolorek`` jak w efenix: karta z polem
@@ -99,10 +99,9 @@ LIST_SEARCH_FIELDS = (
 LIST_ROWS_PER_PAGE = "10"
 # Odpowiedź efenix na szukanie bez liczby wierszy: strona błędu zapytania z pustym limitem wierszy (tekst wymyślony).
 _NO_ROW_LIMIT = "<p>Błąd bazy danych: zapytanie bez liczby wierszy.</p>"
-# Odpowiedź efenix na szukanie z pustym ``xrodzaj``: żaden rodzaj zlecenia, więc żadnego wyniku i żadnej tabeli.
-_NO_RESULTS = "<p>Nie znaleziono pasujących wyników</p>"
-# Odpowiedź efenix na szukanie bez sesji, samo ostrzeżenie bez tabeli wyników (pomiar 4.11.2026, #828). Zdanie to tekst
-# efenix, który rozpoznaje okno, a znaczniki są Atrapy.
+# Odpowiedzi efenix na szukanie bez tabeli wyników, samym ostrzeżeniem (pomiar 4.11.2026, #828): szukanie, które nie
+# znajduje żadnego zlecenia, i szukanie bez sesji. Zdanie to tekst efenix, który rozpoznaje okno, a znaczniki są Atrapy.
+_NOT_FOUND = '<p class="alert alert-danger"><strong>Ostrzeżenie: </strong>Nie znaleziono pasujących wyników !</p>'
 _SESSION_EXPIRED = '<p class="alert alert-danger"><strong>Ostrzeżenie: </strong>Twoja sesja wygasła - zaloguj się ponownie !</p>'
 # Ostrzeżenie, którego okno nie zna, bez tabeli wyników (``Changed.RESULTS_WARNING``, tekst wymyślony).
 _OTHER_WARNING = '<p class="alert alert-danger"><strong>Ostrzeżenie: </strong>Lista zleceń jest chwilowo niedostępna !</p>'
@@ -444,12 +443,11 @@ def atrapa_efenix(
                 number = params.get("numer", "").strip()
                 if not params.get("na_stronie"):
                     self._html(_NO_ROW_LIMIT)
-                elif params.get("xrodzaj") == "":
-                    self._html(_NO_RESULTS)
                 elif changed is Changed.RESULTS_WARNING:
                     self._html(_OTHER_WARNING)
                 else:
-                    self._html(_results([order for order in orders if number in order.number], changed))
+                    found = [] if params.get("xrodzaj") == "" else [order for order in orders if number in order.number]
+                    self._html(_results(found, changed) if found else _NOT_FOUND)
             elif path == ORDER_PAGE and method == "GET" and changed is Unread.ORDER_REDIRECT:
                 self._redirect(LOGOUT)
             elif path == ORDER_PAGE and method == "GET":

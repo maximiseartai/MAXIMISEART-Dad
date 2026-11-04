@@ -11,9 +11,10 @@ jej odpowiedź trafia do ``#wyniki`` w dowolnej chwili. Kolumny tabeli rozpoznaj
 ``Status``, ``Wykonawca``, ``Dane adresowe``), tekst komórki bez jej ``<small>`` (identyfikator Fenix, województwo),
 login realizatora z ``small.text-default`` komórki Wykonawca (obok niego w ``<small>`` stoi data), a stronę zlecenia
 otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony albo odpowiedzi na ``page_login.php`` to
-``LoggedOut``, tak jak odpowiedź szukania, która jest samym ostrzeżeniem efenix o wygasłej sesji (``SearchWarning``): na
-szukanie bez sesji efenix nie przekierowuje (pomiar 4.11.2026, #828). Lista zleceń, której okno nie otworzyło przy
-starcie (adres nie odpowiada), to ``EfenixUnreachable``.
+``LoggedOut``. Na szukanie bez tabeli wyników efenix odpowiada samym ostrzeżeniem (``SearchWarning``, pomiar 4.11.2026,
+#828): „Nie znaleziono pasujących wyników” to brak wyników, a ostrzeżenie o wygasłej sesji to ``LoggedOut``, bo na
+szukanie bez sesji efenix nie przekierowuje. Lista zleceń, której okno nie otworzyło przy starcie (adres nie
+odpowiada), to ``EfenixUnreachable``.
 Każde inne działanie, którego okno nie dokończyło, to ``UnexpectedPage`` z częścią strony: strona bez oczekiwanej
 budowy, element obecny, ale niewidoczny, i każdy błąd Playwrighta w działaniu (czas czekania na stronę, odpowiedź albo
 element, który minął, otwarcie strony, które się nie udało, treść odpowiedzi, której nie da się przeczytać). Każdy z
@@ -290,6 +291,8 @@ class SearchWarning(enum.Enum):
     """Ostrzeżenie, którym efenix odpowiada na szukanie zamiast tabeli wyników: cała odpowiedź to ono samo, 200 bez
     przekierowania (pomiar na efenix 4.11.2026, #828). Wartość to tekst odpowiedzi, po którym okno je rozpoznaje."""
 
+    NOT_FOUND = "Ostrzeżenie: Nie znaleziono pasujących wyników !"
+    """Szukanie nie znalazło żadnego zlecenia: efenix nie zna numeru."""
     SESSION_EXPIRED = "Ostrzeżenie: Twoja sesja wygasła - zaloguj się ponownie !"
     """Szukanie bez ważnej sesji: efenix wylogował."""
 
@@ -559,14 +562,17 @@ class BrowserEfenix:
 def read_results(page: Page, html: str) -> tuple[ListedOrder, ...]:
     """Wiersze tabeli wyników z odpowiedzi szukania ``html``, przeczytane parserem HTML przeglądarki strony ``page``.
 
-    Odpowiedź bez tabeli, która jest samym ostrzeżeniem efenix o wygasłej sesji (``search_warning``), to ``LoggedOut``,
-    a każda inna odpowiedź bez tabeli to ``UnexpectedPage``.
+    Odpowiedź bez tabeli, która jest samym ostrzeżeniem efenix (``search_warning``), to brak wierszy
+    (``SearchWarning.NOT_FOUND``) albo ``LoggedOut`` (``SearchWarning.SESSION_EXPIRED``), a każda inna odpowiedź bez
+    tabeli to ``UnexpectedPage``.
     """
 
     results: _Results | None = page.evaluate(_READ_RESULTS, html)
     if results is not None:
         return tuple(_listed(results["headers"], row) for row in results["rows"])
     match search_warning(page, html):
+        case SearchWarning.NOT_FOUND:
+            return ()
         case SearchWarning.SESSION_EXPIRED:
             raise LoggedOut(PagePart.RESULTS, LoginSign.SESSION_WARNING)
         case None:

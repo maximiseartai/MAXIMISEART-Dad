@@ -570,41 +570,43 @@ def test_kazda_niezgodnosc_z_efenix_to_blad_zlecenia_z_powodem_a_proces_idzie_da
     orders = [
         Order(""),  # wiersz 18: bez NUMER ZL.
         Order("#8002", day=None),  # 19: bez daty w DATA
-        Order("#8003"),  # 20: efenix go nie zna
-        Order("#8004"),  # 21: dwa zlecenia o tym numerze
-        Order("#8005"),  # 22: inny status
-        Order("#8006"),  # 23: inny realizator
-        Order("#8007"),  # 24: inny adres
-        Order("#8008"),  # 25: inna data wykonania
-        Order("#8009", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # 26: gotowe, po wszystkich błędach
+        Order("#8003"),  # 20: efenix go nie zna, a szukanie znajduje zlecenie z dłuższym numerem
+        Order("#8010"),  # 21: efenix go nie zna i szukanie odpowiada „Nie znaleziono pasujących wyników”
+        Order("#8004"),  # 22: dwa zlecenia o tym numerze
+        Order("#8005"),  # 23: inny status
+        Order("#8006"),  # 24: inny realizator
+        Order("#8007"),  # 25: inny adres
+        Order("#8008"),  # 26: inna data wykonania
+        Order("#8009", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # 27: gotowe, po wszystkich błędach
     ]
     efenix = [
         orders[1].in_efenix("902"),
         replace(orders[2].in_efenix("903"), number="80031"),
-        orders[3].in_efenix("904"),
-        orders[3].in_efenix("914"),
-        replace(orders[4].in_efenix("905"), status="Do akceptacji"),
-        replace(orders[5].in_efenix("906"), realizator="zenon.testowy"),
-        replace(orders[6].in_efenix("907"), address="Miasto-Dzielnica ul.Testowa 14 Lokal 3"),
-        replace(orders[7].in_efenix("908"), execution_date=date(2026, 9, 10)),
-        replace(orders[8].in_efenix("909"), execution_date=DAY),
+        orders[4].in_efenix("904"),
+        orders[4].in_efenix("914"),
+        replace(orders[5].in_efenix("905"), status="Do akceptacji"),
+        replace(orders[6].in_efenix("906"), realizator="zenon.testowy"),
+        replace(orders[7].in_efenix("907"), address="Miasto-Dzielnica ul.Testowa 14 Lokal 3"),
+        replace(orders[8].in_efenix("908"), execution_date=date(2026, 9, 10)),
+        replace(orders[9].in_efenix("909"), execution_date=DAY),
     ]
     with atrapa_efenix(efenix) as atrapa:
         before = atrapa.state()
         outcome = _price(tmp_path, page, atrapa.url, orders)
         after = atrapa.state()
 
-    assert (outcome.result, _figures(outcome)) == ("WYMAGA_SPRAWDZENIA", _figures_of(9, 1))
+    assert (outcome.result, _figures(outcome)) == ("WYMAGA_SPRAWDZENIA", _figures_of(10, 1))
     # Wiersz bez daty idzie na koniec swojego Wykonawcy, więc błędy są w kolejności wierszy dopiero po sortowaniu.
     assert sorted(_errors(outcome), key=lambda error: error[1]) == [
         ("EFENIX_BRAK_NUMERU", "wiersz 18"),
         ("EFENIX_BRAK_DATY", "wiersz 19"),
         ("EFENIX_NIEZNANY_NUMER", "wiersz 20"),
-        ("EFENIX_KILKA_ZLECEN", "wiersz 21"),
-        ("EFENIX_INNY_STATUS", "wiersz 22"),
-        ("EFENIX_INNY_REALIZATOR", "wiersz 23"),
-        ("EFENIX_INNY_ADRES", "wiersz 24"),
-        ("EFENIX_INNA_DATA", "wiersz 25"),
+        ("EFENIX_NIEZNANY_NUMER", "wiersz 21"),
+        ("EFENIX_KILKA_ZLECEN", "wiersz 22"),
+        ("EFENIX_INNY_STATUS", "wiersz 23"),
+        ("EFENIX_INNY_REALIZATOR", "wiersz 24"),
+        ("EFENIX_INNY_ADRES", "wiersz 25"),
+        ("EFENIX_INNA_DATA", "wiersz 26"),
     ]
     assert after == before
 
