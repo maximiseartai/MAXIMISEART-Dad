@@ -57,11 +57,22 @@ zlecenia Pliku zbiorczego, które nie jest Zleceniem ze zdjęciami ani usterką,
 Wyceną Emmetta i Ilościami usług z Pliku zbiorczego, a gotowe oznacza
 Znacznikiem efenix. Nigdy nie robi Przekazania do akceptacji. Zlecenie, którego
 nie da się uzupełnić tak, żeby kwota była równa `Kwota` (AU), zostawia tacie
-jako błąd, a sprzeczność z Wyceną Emmetta jako ostrzeżenie. Strona zlecenia w
+jako błąd, a sprzeczność z Wyceną Emmetta jako ostrzeżenie. Zlecenie
+rozliczone nie jest błędem, a zlecenie o statusie innym niż „Do wyceny” i
+„Rozliczone” jest. Strona zlecenia w
 efenix bywa bez części pozycji wyceny: brak pozycji, w której Plik zbiorczy ma
 0 albo pustą komórkę, nie przeszkadza, a brak pozycji, w której ma ilość, to
 błąd tego zlecenia.
 _Avoid_: wpisywanie, import, synchronizacja
+
+## Zlecenie rozliczone
+
+Zlecenie Pliku zbiorczego, które w efenix ma status „Rozliczone”, a jego
+realizator i dane adresowe zgadzają się z `WYKONAWCA` i `ADRES`: firma już je
+rozliczyła z tatą. Wycena w efenix go nie otwiera, niczego w nim nie zmienia i
+nie stawia mu Znacznika efenix. Tata widzi je jako Rozliczone, osobno od
+gotowych, błędów i ostrzeżeń Emmetta, a samo nie zmienia wyniku OK.
+_Avoid_: zlecenie zamknięte, zlecenie zakończone
 
 ## Wycena Emmetta
 
@@ -637,8 +648,8 @@ zakończonych Wycenach w efenix, pokazany w widoku Powiadomienia w Centrum
 rozliczeń, do którego prowadzi dzwonek. Nieprzeczytane Powiadomienie zapala
 kropkę na dzwonku; wejście do widoku oznacza wszystkie jako przeczytane.
 Powiadomienie o zakończonej Wycenie w efenix, także zakończonej Zatrzymaniem,
-ma tytuł wyniku, okres, liczby zleceń gotowych do przekazania, błędów i
-ostrzeżeń Emmetta, „Co się stało” Zatrzymania i przycisk karty Uruchomienia:
+ma tytuł wyniku, okres, liczby zleceń gotowych do przekazania, Zleceń
+rozliczonych, błędów i ostrzeżeń Emmetta, „Co się stało” Zatrzymania i przycisk karty Uruchomienia:
 tata w trakcie patrzy na okno efenix albo odchodzi od komputera. Toast wyniku
 w karcie Centrum nie jest Powiadomieniem, a uwagi techniczne z karty
 Uruchomienia, np. o niezapisanych metrykach, też nie.

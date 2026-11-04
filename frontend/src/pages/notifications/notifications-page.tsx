@@ -47,6 +47,7 @@ const KINDS: Record<Kind, { tag: string; color: string; icon: LucideIcon }> = {
 // Liczby zleceń w Powiadomieniu o Wycenie w efenix, z etykietami kafelków karty Uruchomienia.
 const PRICED: ReadonlyArray<{ key: keyof NonNullable<Pricing["orders"]>; label: string }> = [
   { key: "ready", label: "Gotowe do przekazania" },
+  { key: "settled", label: "Rozliczone" },
   { key: "errors", label: "Błędy zleceń" },
   { key: "warnings", label: "Ostrzeżenia Emmetta" },
 ]

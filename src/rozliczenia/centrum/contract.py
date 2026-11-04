@@ -717,8 +717,8 @@ class LoggedOutcome(_Model):
     summary: RunSummary | None
 
 
-class OrderNote(_Model):
-    """Zlecenie Wyceny w efenix, które zostało tacie: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i zdanie.
+class OrderLine(_Model):
+    """Zlecenie Wyceny w efenix na karcie bieżącego Uruchomienia: wiersz Pliku zbiorczego, numer zlecenia i Wykonawca.
 
     Numer zlecenia (``None``: pusty ``NUMER ZL.``) i Wykonawcę widzi tylko tata na swoim komputerze: Logi Uruchomienia ich
     nie mają.
@@ -727,14 +727,20 @@ class OrderNote(_Model):
     row: int
     order: str | None
     worker: str
+
+
+class OrderNote(OrderLine):
+    """Zlecenie Wyceny w efenix, które zostało tacie, ze zdaniem „Co się stało” jego Komunikatu."""
+
     what: str
 
 
 class OrderNotes(_Model):
-    """Błędy zleceń i ostrzeżenia Emmetta Wyceny w efenix na karcie bieżącego Uruchomienia."""
+    """Błędy zleceń, ostrzeżenia Emmetta i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego Uruchomienia."""
 
     errors: list[OrderNote]
     warnings: list[OrderNote]
+    settled: list[OrderLine]
 
 
 class RunOutcome(LoggedOutcome):
@@ -745,8 +751,8 @@ class RunOutcome(LoggedOutcome):
     ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
     Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
     Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
-    zostały tacie, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w trzech częściach
-    (``None``: inny proces albo wynik bez podsumowania).
+    zostały tacie, i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
+    trzech częściach (``None``: inny proces albo wynik bez podsumowania).
     """
 
     diagnosis: DiagnosisOffer | None
@@ -1216,9 +1222,10 @@ class ReleaseNotification(_Notification):
 
 
 class PricedOrders(_Model):
-    """Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, błędy i ostrzeżenia Emmetta."""
+    """Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, rozliczone, błędy i ostrzeżenia Emmetta."""
 
     ready: int
+    settled: int
     errors: int
     warnings: int
 

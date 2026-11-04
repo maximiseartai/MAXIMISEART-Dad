@@ -14,7 +14,7 @@ from typing import Final, Generic, Protocol, TypeVar
 from rozliczenia.centrum import contract
 from rozliczenia.collective_preparation import PreparationSummary
 from rozliczenia.domain import SettlementSummary
-from rozliczenia.efenix_pricing import EmmettWarning, PricingSummary
+from rozliczenia.efenix_pricing import EmmettWarning, PricingSummary, Settled
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.intermax_process import OrderingInputs
@@ -42,7 +42,8 @@ class Shown(Generic[SummaryT]):
     """Wynik zakończonego procesu: podsumowanie albo plan w kształcie kontraktu i ostrzeżenia z kodami Komunikatów.
 
     ``engine_summary`` to podsumowanie silnika, z którego powstał, dla działań po wyniku (Kontrola ilości). ``notes``:
-    zlecenia, które zostały tacie, z numerami zleceń i Wykonawcami, tylko na kartę bieżącego Uruchomienia.
+    zlecenia, które zostały tacie, i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, tylko na kartę bieżącego
+    Uruchomienia.
     """
 
     summary: contract.RunSummary
@@ -55,7 +56,8 @@ class Shown(Generic[SummaryT]):
 class ResultView(Generic[InputsT, SummaryT]):
     """Liczby na żywo i wynik jednego procesu w kształcie kontraktu, te same w Skrypcie dla maszyn i na karcie.
 
-    ``_notes``: zlecenia z podsumowania, które zostały tacie (Wycena w efenix); inne procesy ich nie mają.
+    ``_notes``: zlecenia z podsumowania, które zostały tacie, i Zlecenia rozliczone (Wycena w efenix); inne procesy ich
+    nie mają.
     """
 
     _figures: Callable[[ProgressSnapshot, bool], list[contract.Figure]]
@@ -264,6 +266,7 @@ def _pricing_summary(summary: PricingSummary, _dry_run: bool) -> contract.RunSum
         figures=[
             _count("Zlecenia w zakresie", len(summary.results)),
             _count("Gotowe do przekazania", summary.ready_count),
+            _count("Rozliczone", summary.settled_count),
             _count("Błędy zleceń", summary.error_count),
             _count("Ostrzeżenia Emmetta", summary.warning_count),
         ],
@@ -288,7 +291,12 @@ def _pricing_notes(summary: PricingSummary) -> contract.OrderNotes:
         notes[isinstance(result.outcome, EmmettWarning)].append(
             contract.OrderNote(row=order.row, order=order.number, worker=order.worker, what=message.what)
         )
-    return contract.OrderNotes(errors=notes[False], warnings=notes[True])
+    settled = [
+        contract.OrderLine(row=result.order.row, order=result.order.number, worker=result.order.worker)
+        for result in summary.results
+        if isinstance(result.outcome, Settled)
+    ]
+    return contract.OrderNotes(errors=notes[False], warnings=notes[True], settled=settled)
 
 
 EFENIX: Final[ProcessView[EfenixInputs, PricingSummary]] = ProcessView(

@@ -172,7 +172,10 @@ EFENIX_ORDERS = (
     Order("#QX9001", cells={"O": 1, "T": 2}, amount=float(amount_of({"012": 1, "019": 2})), emmett={"012": 1}),
     Order("#QX9002", worker="beata.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
     Order("#QX9003", worker="celina.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})), emmett={"012": 2}),
+    Order("#QX9004", worker="dorota.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
 )
+# The orders of ``EFENIX_ORDERS`` with the status „Rozliczone” in efenix (an Zlecenie rozliczone, #821).
+EFENIX_SETTLED = frozenset({"#QX9004"})
 EFENIX_SEARCH_DELAY_S = 1.0
 
 
@@ -413,7 +416,11 @@ def _efenix_window(root: Path) -> Iterator[EfenixWindow]:
     directory = root / "efenix"
     if not directory.exists():
         write_collective_file(directory, EFENIX_ORDERS)
-    known = [order.in_efenix(f"90{index}") for index, order in enumerate(EFENIX_ORDERS) if order.number != "#QX9002"]
+    known = [
+        replace(order.in_efenix(f"90{index}"), status="Rozliczone") if order.number in EFENIX_SETTLED else order.in_efenix(f"90{index}")
+        for index, order in enumerate(EFENIX_ORDERS)
+        if order.number != "#QX9002"
+    ]
     with atrapa_efenix(known, answer_delay_s=EFENIX_SEARCH_DELAY_S) as atrapa:
         atrapa.expire_session()
         (directory / "adres.txt").write_text(atrapa.url, encoding="utf-8")

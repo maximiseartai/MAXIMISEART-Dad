@@ -73,6 +73,7 @@ from rozliczenia.efenix_pricing import (
     PricingStopped,
     PricingSummary,
     Ready,
+    Settled,
     StoppedOrder,
     WindowCause,
 )
@@ -246,13 +247,14 @@ class LoggedStep(_Record):
         )
 
 
-OrderOutcome = Literal["gotowe", "błąd", "ostrzeżenie Emmetta"]
-"""Wynik zlecenia Wyceny w efenix w Logach Uruchomienia."""
+OrderOutcome = Literal["gotowe", "rozliczone", "błąd", "ostrzeżenie Emmetta"]
+"""Wynik zlecenia Wyceny w efenix w Logach Uruchomienia; ``rozliczone`` to Zlecenie rozliczone, które nie jest błędem."""
 
 
 class LoggedOrder(_Record):
-    """Ślad zlecenia Wyceny w efenix: wiersz Pliku zbiorczego, wynik z kodem Komunikatu (``None`` przy gotowym),
-    ilości z pliku po kodach pozycji (``None``, gdy nie dało się ich przepisać), ``Kwota`` (AU) i działania okna."""
+    """Ślad zlecenia Wyceny w efenix: wiersz Pliku zbiorczego, wynik z kodem Komunikatu (``None`` przy gotowym i
+    rozliczonym), ilości z pliku po kodach pozycji (``None``, gdy nie dało się ich przepisać), ``Kwota`` (AU) i działania
+    okna."""
 
     row: int
     outcome: OrderOutcome
@@ -263,12 +265,10 @@ class LoggedOrder(_Record):
 
     @classmethod
     def all_of(cls, summary: PricingSummary) -> list[LoggedOrder]:
-        """Ślad każdego zlecenia po kolei; kody Komunikatów idą w kolejności zleceń, które zostały tacie."""
+        """Ślad każdego zlecenia po kolei, z kodem Komunikatu zlecenia, które zostało tacie."""
 
-        codes = iter([message.code for _result, message in summary.left_for_tata])
-        return [
-            cls._of(result, None if isinstance(result.outcome, Ready) else next(codes)) for result in summary.results
-        ]
+        codes = {id(result): message.code for result, message in summary.left_for_tata}
+        return [cls._of(result, codes.get(id(result))) for result in summary.results]
 
     @classmethod
     def _of(cls, result: OrderResult, code: str | None) -> LoggedOrder:
@@ -277,6 +277,8 @@ class LoggedOrder(_Record):
         match result.outcome:
             case Ready():
                 outcome = "gotowe"
+            case Settled():
+                outcome = "rozliczone"
             case EmmettWarning():
                 outcome = "ostrzeżenie Emmetta"
             case OrderError():

@@ -28,8 +28,14 @@ COLLECTIVE_FILE = f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
 LOGIN = "Zaloguj się w oknie efenix"
 BELL_FRESH = "Powiadomienia, są nowe"
 DONE = "Wycena w efenix gotowa · wymaga sprawdzenia"
-# serve_centrum.EFENIX_ORDERS: row → (order number, Wykonawca); 18 is ready, 19 unknown to efenix, 20 differs from Emmett.
-ORDERS = {18: ("QX9001", "adrian.testowy"), 19: ("QX9002", "beata.testowa"), 20: ("QX9003", "celina.testowa")}
+# serve_centrum.EFENIX_ORDERS: row → (order number, Wykonawca); 18 is ready, 19 unknown to efenix, 20 differs from Emmett,
+# 21 is „Rozliczone” in efenix.
+ORDERS = {
+    18: ("QX9001", "adrian.testowy"),
+    19: ("QX9002", "beata.testowa"),
+    20: ("QX9003", "celina.testowa"),
+    21: ("QX9004", "dorota.testowa"),
+}
 # Znacznik efenix (rozliczenia.efenix_mark.MARK_RGB), the light purple of ADRES in a ready order's row.
 MARK_RGB = "E0CCFF"
 
@@ -158,12 +164,18 @@ def _price(run: Run, page: Page, source: Path) -> None:
         (result["result"], figures, skipped)
         == (
             "WYMAGA_SPRAWDZENIA",
-            {"Zlecenia w zakresie": 3, "Gotowe do przekazania": 1, "Błędy zleceń": 1, "Ostrzeżenia Emmetta": 1},
+            {
+                "Zlecenia w zakresie": 4,
+                "Gotowe do przekazania": 1,
+                "Rozliczone": 1,
+                "Błędy zleceń": 1,
+                "Ostrzeżenia Emmetta": 1,
+            },
             {"Ze zdjęciami": 0, "Usterki": 0, "Nieznalezione w efenix": 1},
         ),
-        "the card counts the ready, the errors, Emmett's warnings and the skipped orders",
+        "the card counts the ready, the settled, the errors, Emmett's warnings and the skipped orders",
     )
-    for title, row in (("Błędy", 19), ("Ostrzeżenia Emmetta", 20)):
+    for title, row in (("Błędy", 19), ("Ostrzeżenia Emmetta", 20), ("Rozliczone", 21)):
         table = page.get_by_role("table", name=title)
         number, worker = ORDERS[row]
         expect(table.get_by_role("row")).to_have_count(1)
@@ -172,12 +184,20 @@ def _price(run: Run, page: Page, source: Path) -> None:
         expect(table.get_by_role("row").first.get_by_role("cell").nth(2)).to_have_text(worker)
     expect(page.get_by_role("table", name="Błędy")).to_contain_text("efenix nie zna zlecenia o numerze z NUMER ZL.")
     expect(page.get_by_role("table", name="Ostrzeżenia Emmetta")).to_contain_text("Emmett 2, plik 1")
-    run.check(True, "the card lists each error and warning with its row, order number, Wykonawca and sentence, and a toast")
+    expect(page.get_by_role("table", name="Rozliczone").get_by_role("row").first.get_by_role("cell").nth(3)).to_have_text("")
+    run.check(
+        True,
+        "the card lists each error and warning with its row, order number, Wykonawca and sentence, each Zlecenie "
+        "rozliczone with its row, order number and Wykonawca, and a toast",
+    )
     run.capture(page, "263-efenix-karta")
 
     run.step(FEATURE, "plik-i-logi")
     fills = _address_fills(source)
-    run.check(fills == {18: MARK_RGB, 19: None, 20: None}, "only the ready order's ADRES has the Znacznik efenix")
+    run.check(
+        fills == {18: MARK_RGB, 19: None, 20: None, 21: None},
+        "only the ready order's ADRES has the Znacznik efenix, the Zlecenie rozliczone's has none",
+    )
     board = run.api("/api/periods", "efenix-status-okresu")["periods"]
     assert isinstance(board, list)
     run.check(
@@ -199,8 +219,9 @@ def _price(run: Run, page: Page, source: Path) -> None:
     traced = [(order["row"], order["outcome"]) for order in record["efenix_orders"]]
     private = [marker for number, worker in ORDERS.values() for marker in (number, worker) if marker in text]
     run.check(
-        traced == [(18, "gotowe"), (19, "błąd"), (20, "ostrzeżenie Emmetta")] and private == [],
-        "the Logi trace every order by its row, without its order number or the Wykonawca's login",
+        traced == [(18, "gotowe"), (19, "błąd"), (20, "ostrzeżenie Emmetta"), (21, "rozliczone")] and private == [],
+        "the Logi trace every order by its row, the Zlecenie rozliczone as rozliczone, without its order number or the "
+        "Wykonawca's login",
     )
     live.get_by_role("button", name="Otwórz Plik zbiorczy").click()
     run.wait_for(last_opened_is(run, source), "Otwórz Plik zbiorczy opens it")
@@ -223,8 +244,9 @@ def _notification(run: Run, page: Page, result: Json) -> None:
     run.check(
         notification["unread"] is True
         and (notification["headline"], notification["period"], notification["orders"], notification["stopped"])
-        == (result["headline"], PERIOD, {"ready": 1, "errors": 1, "warnings": 1}, None),
-        "the ended Wycena is a new Powiadomienie with the result, the period and the ready, error and warning counts",
+        == (result["headline"], PERIOD, {"ready": 1, "settled": 1, "errors": 1, "warnings": 1}, None),
+        "the ended Wycena is a new Powiadomienie with the result, the period and the ready, settled, error and warning "
+        "counts",
     )
     run.capture(page, "264-efenix-dzwonek")
     bell.click()
@@ -234,8 +256,8 @@ def _notification(run: Run, page: Page, result: Json) -> None:
     expect(row.get_by_label("nowe", exact=True)).to_be_visible()
     expect(row).to_contain_text(f"Okres {PERIOD}")
     counts = row.get_by_role("definition")
-    expect(counts).to_have_text(["1", "1", "1"])
-    expect(row.get_by_role("term")).to_have_text(["Gotowe do przekazania", "Błędy zleceń", "Ostrzeżenia Emmetta"])
+    expect(counts).to_have_text(["1", "1", "1", "1"])
+    expect(row.get_by_role("term")).to_have_text(["Gotowe do przekazania", "Rozliczone", "Błędy zleceń", "Ostrzeżenia Emmetta"])
     run.capture(page, "265-efenix-powiadomienie")
     row.get_by_role("button", name="Karta Uruchomienia", exact=True).click()
     sheet = page.get_by_role("dialog")

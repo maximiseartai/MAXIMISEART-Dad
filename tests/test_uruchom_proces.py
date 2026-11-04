@@ -478,7 +478,7 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
     source = write_collective_file(tmp_path, orders)
     metrics = tmp_path / "metrics.jsonl"
     efenix = [order.in_efenix(f"90{index}") for index, order in enumerate(orders)]
-    with atrapa_efenix([efenix[0], replace(efenix[1], status="Rozliczone"), *efenix[2:]]) as atrapa:
+    with atrapa_efenix([efenix[0], replace(efenix[1], status="Do akceptacji"), *efenix[2:]]) as atrapa:
         exit_code, result = _run(
             "efenix", "--source", source, "--efenix-url", atrapa.url, "--metrics", metrics, "--slad", tmp_path / "slad"
         )
@@ -488,6 +488,7 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
     assert result["summary"]["figures"] == [
         {"label": "Zlecenia w zakresie", "value": 4, "unit": "count"},
         {"label": "Gotowe do przekazania", "value": 1, "unit": "count"},
+        {"label": "Rozliczone", "value": 0, "unit": "count"},
         {"label": "Błędy zleceń", "value": 2, "unit": "count"},
         {"label": "Ostrzeżenia Emmetta", "value": 1, "unit": "count"},
     ]

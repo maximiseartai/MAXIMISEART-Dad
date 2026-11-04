@@ -7,7 +7,8 @@ Zapisywanie, w którym idzie przez zlecenia z zakresu po kolei, a na końcu raz 
 przepisać (``efenix_positions``). Potem zlecenie znajduje po ``Numer dokumentu`` równym ``NUMER ZL.`` i sprawdza:
 dokładnie jedno trafienie, status „Do wyceny”, realizator równy ``WYKONAWCA``, ``Dane adresowe`` równe ``ADRES``
 (``efenix_address``) i datę wykonania pustą albo równą dniowi z ``DATA``. Pierwsza niezgodność to błąd zlecenia, w efenix
-nic się nie zmienia i proces idzie dalej. Każdy odczyt strony zlecenia (otwarcie, ponowne otwarcie po dacie wykonania i
+nic się nie zmienia i proces idzie dalej. Zlecenie o statusie „Rozliczone” z realizatorem i adresem z pliku to Zlecenie
+rozliczone (``Settled``): proces go nie otwiera, nie oznacza i nie zostawia tacie jako błędu. Każdy odczyt strony zlecenia (otwarcie, ponowne otwarcie po dacie wykonania i
 strona po Wycenie Emmetta) musi mieć pozycje, w których plik ma ilość: strona bez którejś z nich to błąd zlecenia z
 kodami pozycji i ich kolumnami (``missing_positions``), a strona bez pozycji z 0 w pliku to zwykła strona efenix.
 
@@ -68,6 +69,7 @@ from .efenix_checks import (
     ListedOrder,
     OrderProblem,
     PagePart,
+    Settled,
     date_problem,
     listing,
     searched_number,
@@ -127,6 +129,7 @@ __all__ = [
     "PricingStopped",
     "PricingSummary",
     "Ready",
+    "Settled",
     "Shape",
     "StoppedOrder",
     "UnexpectedPage",
@@ -356,7 +359,7 @@ class OrderResult:
     """Wynik zlecenia; ``steps``: ślad działań okna efenix przy nim, po kolei (``efenix_trace``)."""
 
     order: CollectiveOrder
-    outcome: Ready | OrderError | EmmettWarning
+    outcome: Ready | Settled | OrderError | EmmettWarning
     steps: tuple[TraceStep, ...] = ()
 
 
@@ -376,6 +379,10 @@ class PricingSummary:
     @property
     def ready_count(self) -> int:
         return sum(isinstance(result.outcome, Ready) for result in self.results)
+
+    @property
+    def settled_count(self) -> int:
+        return sum(isinstance(result.outcome, Settled) for result in self.results)
 
     @property
     def error_count(self) -> int:
@@ -398,7 +405,7 @@ class PricingSummary:
     def left_for_tata(self) -> tuple[tuple[OrderResult, Message], ...]:
         """Każde zlecenie z błędem albo ostrzeżeniem Emmetta po kolei z Komunikatem z ``warnings``."""
 
-        left = [result for result in self.results if not isinstance(result.outcome, Ready)]
+        left = [result for result in self.results if isinstance(result.outcome, (OrderError, EmmettWarning))]
         return tuple(zip(left, self.warnings, strict=True))
 
 
@@ -550,7 +557,7 @@ def _warnings(source: Path, results: Sequence[OrderResult]) -> list[Message]:
 
 def _warning(source: Path, result: OrderResult) -> Message | None:
     match result.outcome:
-        case Ready():
+        case Ready() | Settled():
             return None
         case OrderError(problem):
             return messages.order_error(source, result.order.row, problem)
@@ -580,7 +587,7 @@ def _efenix_stops(changed: Callable[[], bool], stopped: Callable[[WindowStop], P
         raise StopError(messages.browser_not_started(), facts=stopped(error)) from error
 
 
-def _priced(order: CollectiveOrder, efenix: Efenix, trace: EmmettTrace) -> Ready | OrderError | EmmettWarning:
+def _priced(order: CollectiveOrder, efenix: Efenix, trace: EmmettTrace) -> Ready | Settled | OrderError | EmmettWarning:
     searched = searched_number(order)
     if isinstance(searched, OrderProblem):
         return OrderError(searched)
@@ -590,13 +597,17 @@ def _priced(order: CollectiveOrder, efenix: Efenix, trace: EmmettTrace) -> Ready
     return outcome
 
 
-def _outcome(order: CollectiveOrder, number: str, day: date, efenix: Efenix, trace: EmmettTrace) -> Ready | OrderError | EmmettWarning:
+def _outcome(
+    order: CollectiveOrder, number: str, day: date, efenix: Efenix, trace: EmmettTrace
+) -> Ready | Settled | OrderError | EmmettWarning:
     file = file_quantities(order)
     if isinstance(file, (UnpairedColumns, NotWholeQuantities)):
         return OrderError(file)
     hit = listing(order, efenix.search(number))
     if isinstance(hit, OrderProblem):
         return OrderError(hit)
+    if isinstance(hit, Settled):
+        return hit
     opened = efenix.open_order(hit)
     if (missing := missing_positions(file, opened.quantities, PageRead.OPENED)) is not None:
         return OrderError(missing)

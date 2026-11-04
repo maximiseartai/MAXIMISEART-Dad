@@ -2,10 +2,11 @@
 
 Kolejność sprawdzeń to kolejność ``OrderProblem``, a pierwsza niezgodność jest błędem zlecenia: numer i data w Pliku
 zbiorczym (``searched_number``), potem wiersze listy efenix po szukaniu (``listing``): dokładnie jedno zlecenie o
-``Numer dokumentu`` równym numerowi, status „Do wyceny”, realizator równy ``WYKONAWCA`` bez wielkości liter i ``Dane
-adresowe`` równe ``ADRES`` (``efenix_address``), a na końcu data wykonania pusta albo równa dniowi z ``DATA``
-(``date_problem``). Pustą datę wykonania proces ustawia z ``DATA``, a dzień, którego efenix nie przyjął, to
-``DateRefused``.
+``Numer dokumentu`` równym numerowi, status „Do wyceny” albo „Rozliczone”, realizator równy ``WYKONAWCA`` bez wielkości
+liter i ``Dane adresowe`` równe ``ADRES`` (``efenix_address``), a na końcu data wykonania pusta albo równa dniowi z
+``DATA`` (``date_problem``). Zlecenie „Rozliczone” zgodne z plikiem nie jest niezgodnością, tylko Zleceniem rozliczonym
+(``Settled``), którego proces nie otwiera. Pustą datę wykonania proces ustawia z ``DATA``, a dzień, którego efenix nie
+przyjął, to ``DateRefused``.
 """
 
 from __future__ import annotations
@@ -19,9 +20,21 @@ from typing import Final
 from .efenix_address import same_address
 from .efenix_orders import CollectiveOrder
 
-__all__ = ["PRICING_STATUS", "DateRefused", "ListedOrder", "OrderProblem", "PagePart", "date_problem", "listing", "searched_number"]
+__all__ = [
+    "PRICING_STATUS",
+    "SETTLED_STATUS",
+    "DateRefused",
+    "ListedOrder",
+    "OrderProblem",
+    "PagePart",
+    "Settled",
+    "date_problem",
+    "listing",
+    "searched_number",
+]
 
 PRICING_STATUS: Final = "Do wyceny"
+SETTLED_STATUS: Final = "Rozliczone"
 
 
 class PagePart(enum.Enum):
@@ -70,6 +83,14 @@ class ListedOrder:
     order_id: str
 
 
+@dataclass(frozen=True)
+class Settled:
+    """Zlecenie rozliczone: zlecenie listy zgodne z Plikiem zbiorczym ma w efenix status „Rozliczone”, więc proces go nie
+    otwiera, niczego w nim nie zmienia i nie stawia mu Znacznika efenix."""
+
+    listed: ListedOrder
+
+
 def searched_number(order: CollectiveOrder) -> tuple[str, date] | OrderProblem:
     """Numer, po którym proces szuka zlecenia, i dzień z ``DATA`` albo niezgodność, którą widać bez efenix: wiersz bez
     ``NUMER ZL.`` albo bez daty w ``DATA``."""
@@ -81,10 +102,12 @@ def searched_number(order: CollectiveOrder) -> tuple[str, date] | OrderProblem:
     return order.number, order.day
 
 
-def listing(order: CollectiveOrder, listed: Sequence[ListedOrder]) -> ListedOrder | OrderProblem:
-    """Jedyne zlecenie listy o numerze ``order`` zgodne z Plikiem zbiorczym albo pierwsza niezgodność.
+def listing(order: CollectiveOrder, listed: Sequence[ListedOrder]) -> ListedOrder | Settled | OrderProblem:
+    """Jedyne zlecenie listy o numerze ``order`` zgodne z Plikiem zbiorczym albo pierwsza niezgodność; zgodne zlecenie o
+    statusie „Rozliczone” to ``Settled``.
 
-    Wiersz listy o innym ``Numer dokumentu`` (szukanie po części numeru) nie jest trafieniem.
+    Wiersz listy o innym ``Numer dokumentu`` (szukanie po części numeru) nie jest trafieniem. Zlecenie „Rozliczone” też
+    musi mieć realizatora i ``Dane adresowe`` z pliku, bo inaczej ``NUMER ZL.`` wskazuje inne zlecenie.
     """
 
     hits = [candidate for candidate in listed if candidate.number == order.number]
@@ -93,13 +116,20 @@ def listing(order: CollectiveOrder, listed: Sequence[ListedOrder]) -> ListedOrde
     if len(hits) > 1:
         return OrderProblem.SEVERAL_FOUND
     [hit] = hits
-    if hit.status.casefold().split() != PRICING_STATUS.casefold().split():
+    settled = _is_status(hit, SETTLED_STATUS)
+    if not settled and not _is_status(hit, PRICING_STATUS):
         return OrderProblem.OTHER_STATUS
     if hit.realizator is None or hit.realizator.casefold() != order.worker.casefold():
         return OrderProblem.OTHER_REALIZATOR
     if not same_address(order.address, hit.address):
         return OrderProblem.OTHER_ADDRESS
-    return hit
+    return Settled(hit) if settled else hit
+
+
+def _is_status(hit: ListedOrder, status: str) -> bool:
+    """Status zlecenia listy to ``status`` bez wielkości liter i z dowolnymi odstępami między słowami."""
+
+    return hit.status.casefold().split() == status.casefold().split()
 
 
 def date_problem(order: CollectiveOrder, executed: date | None) -> OrderProblem | None:

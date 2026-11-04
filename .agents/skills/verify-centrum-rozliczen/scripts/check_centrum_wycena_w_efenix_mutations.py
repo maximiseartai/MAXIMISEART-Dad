@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import EFENIX_BROWSER, EFENIX_RUN, NOTIFICATIONS, RUN_LOGS, RUN_VIEW, WYCENA
+from cele_mutacji_centrum import EFENIX_BROWSER, EFENIX_CHECKS, EFENIX_RUN, NOTIFICATIONS, RUN_LOGS, RUN_VIEW, WYCENA
 from mutacje import Edit, Mutation, check_all
 
 MUTATIONS = (
@@ -40,6 +40,12 @@ MUTATIONS = (
         (Edit(RUN_LOGS, "efenix_orders=None if priced is None else LoggedOrder.all_of(priced)", "efenix_orders=None"),),
         WYCENA,
         "Maks nie odtworzy problemu zlecenia z Logów Uruchomienia",
+    ),
+    Mutation(
+        "zlecenie Rozliczone to znowu błąd",
+        (Edit(EFENIX_CHECKS, "    settled = _is_status(hit, SETTLED_STATUS)\n", "    settled = False\n"),),
+        WYCENA,
+        "tata dostaje fałszywy błąd za zlecenie, które firma już rozliczyła (#821)",
     ),
     Mutation(
         "bez Powiadomienia o zakończonej Wycenie",

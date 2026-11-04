@@ -26,6 +26,14 @@ efenix tata codziennie pracuje naprawdę.
   Prawdziwy efenix widzi tylko Uruchomienie procesu taty. Rekonesans na
   prawdziwym efenix jest wyłącznie do odczytu.
 - **Tempo jest ludzkie:** ok. 20 s na zlecenie, nie sekundy.
+- **Zlecenie „Rozliczone” to wynik, nie błąd** (decyzja Maksa 4.11.2026,
+  #821). Zlecenie, które w efenix ma status „Rozliczone”, jest Zleceniem
+  rozliczonym: narzędzie go nie otwiera, niczego w nim nie zmienia i nie
+  stawia mu Znacznika efenix, a tata widzi je na karcie Uruchomienia i w
+  Powiadomieniu jako Rozliczone. Logi Uruchomienia mają ten wynik pod nazwą
+  `rozliczone`. Zlecenie o statusie innym niż „Do wyceny” i „Rozliczone”
+  zostaje błędem. Bez tego tata dostawał listę fałszywych błędów za zlecenia,
+  które firma już rozliczyła.
 
 ## Odrzucone warianty
 
