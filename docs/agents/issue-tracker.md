@@ -71,6 +71,20 @@ this public one ([ADR 0007](../adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md)
 - Refer to it by number only, e.g. `Naprawia MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia#N`
   in the PR body. Closing the Zgłoszenie tells Dad's Centrum that the fix is
   ready to update.
+- One odcisk problemu has at most one open Zgłoszenie. A Zgłoszenie whose
+  odcisk already has an open issue arrives as a comment on that issue, headed
+  `## Zgłoszenie wróciło`, with the whole Zgłoszenie as a new issue would have
+  it (Komunikat, Uruchomienie with the link to its Logi, commit, Diagnoza), so
+  each return of the problem shows there with its version and Logi. Dad does
+  not click anything for it: after the Diagnoza of a Zatrzymanie whose problem
+  has an open Zgłoszenie, Centrum queues the return itself, once per
+  Uruchomienie procesu. Once you
+  close the issue, the next Zgłoszenie of that odcisk opens a new one with
+  `- Poprzednie Zgłoszenie: #N`.
+- The queue and its retries are those of the Kontrola ilości below: power
+  loss between the comment and the delivery marker can repeat the comment. A
+  retry after the queue opened the issue and before the marker finds the issue
+  whose body is exactly its Zgłoszenie and adds no comment.
 
 ## Kontrola ilości from Dad's computer
 

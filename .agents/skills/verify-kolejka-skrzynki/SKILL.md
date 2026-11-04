@@ -21,7 +21,7 @@ ci-czesci: 2
 CI runs `sprawdz_kolejke.py` (the `ci:` key) in Mutation checks whenever a change touches this skill:
 it runs the checker of the real code (`explore_outbox.py`) and the TLA+ model (`sprawdz_model_kolejki.py`, TLC,
 as the `ci:` of `verify-aktualizacja-narzedzia` does), each to its end. Its units (`UNITS` in
-`sprawdz_kolejke.py`) are the scope `watek-okresu`, the other three scopes, and the model; CI runs them in up to
+`sprawdz_kolejke.py`) are the scope `watek-okresu`, the other four scopes, and the model; CI runs them in up to
 `ci-czesci` parts (`MUTACJE_CZESC=k/n`, consecutive units per part). `watek-okresu` alone takes about as long
 as the other two units together (in CI about 190 s of 340 s), so with two parts it gets its own, and no part
 is longer than it: below that the wall of the job does not go without splitting that scope's schedules. A
@@ -60,8 +60,11 @@ or modeling error?” say also stays with you.
   as `nieoczekiwany-wyjatek` „wysyłka do Skrzynki Zgłoszeń”.
 
 A Zgłoszenie (`ReportIssue`) always has one part, so WSZYSTKIE_CZESCI holds
-when a retry takes over the Zgłoszenie it finds by its odcisk line without
-comments (`_deliver_report`). Two guards keep it to one part (#724): `Post`
+when a retry takes over, without comments, the Zgłoszenie whose body is that
+part (`_deliver_report`: the attempt before it opened the issue and was cut off
+before the marker). Any other open Zgłoszenie with its odcisk line gets the part
+as one comment headed „Zgłoszenie wróciło” (`returned_report`, #820). Two
+guards keep it to one part (#724): `Post`
 raises `ValueError` for a `ReportIssue` with more
 (`test_zgloszenie_w_wiecej_niz_jednej_czesci_to_blad_programu`), and
 `reports.py` fits the body into `PART_LIMIT` (`outbox.py`), first by dropping
@@ -76,8 +79,8 @@ step of this code that the checker can fail, lose or kill:
 
 | Step in the checker | Code |
 | --- | --- |
-| a box read | `keyed_box.py` `KeyedBox.labelled_issues` and `find_issue` (`newest_with_line`), called by `_deliver_report`, `_deliver_to_period`, `_deliver_to_known` in `outbox.py` |
-| a box write | `KeyedBox.open_issue` and `comment`, called by `_deliver_new_issue`, `_deliver_report`, `_deliver_to_period`, `_comment_all` |
+| a box read | `keyed_box.py` `KeyedBox.labelled_issues` and `find_issue` (`newest_with_line`), called by `_deliver_report` (`labelled_issues`, then `newest_with_line` and the body of the issue it found), `_deliver_to_period`, `_deliver_to_known` in `outbox.py` |
+| a box write | `KeyedBox.open_issue` and `comment`, called by `_deliver_new_issue`, `_deliver_report`, `_deliver_to_period`, `_comment_all` (also the one comment of a Zgłoszenie that returned) |
 | the delivery marker | `Outbox._send_all`: `replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts)))` in `suppress(OSError)` |
 | the removal of a queue file | `Outbox._remove` (`path.unlink`, `_undeleted`) |
 | a pass of the queue | `Outbox._drain` (`_claimed`, `_folder_lock`, `_send_all`, `_released`), run only when the real `Outbox.send_in_background` starts the queue thread (called by `Outbox.post`, `Outbox.resume` and `Outbox._woken`); the checker replaces only `threading.Thread` in `outbox.py`, which hands it the target, and runs one Centrum at a time, so the pass always gets the folder lock |
@@ -98,9 +101,19 @@ and `_Server` in `server.py` (`DEFINITIONS` in `sprawdz_model_kolejki.py`). Only
 rest of their files, is drift. Name these three files here without their
 `src/…` path in backticks: such a path makes the whole file covered.
 
-**Sync commit: `f7f55067`** (2026-11-02). The checker and the model share it:
+**Sync commit: `0b63b1ca`** (2026-11-04). The checker and the model share it:
 at this commit both were confirmed to describe the code above. Since the
-previous sync `a27e0695` only `f7f55067` (#724) changed a covered file: `Post`
+previous sync `f7f55067` only `0b63b1ca` (#820) changed a covered file:
+`_deliver_report` reads the open Zgłoszenia with `labelled_issues` and
+`newest_with_line` instead of `find_issue`, takes over without a comment only
+the issue whose body is its one part, and comments that part to any other open
+Zgłoszenie with its odcisk line (`_comment_all`, `returned_report`). The
+checker got the scope `zgloszenie-wrocilo` and the mutation of a returned
+Zgłoszenie taken over without a comment; the model's `Szukaj` got the same two
+branches, the configuration `zgloszenie` a second Zgłoszenie of the same
+odcisk, and `check_model_kolejki_mutations.py` the same mutation. No retry,
+marker, removal or `_waiting` changed and no `Target` was added. At
+`f7f55067`, since the previous sync `a27e0695` only `f7f55067` (#724) changed a covered file: `Post`
 raises `ValueError` for a `ReportIssue` with more than one part, and
 `_deliver_report` opens the issue of a Zgłoszenie with its one part and posts
 no comment. The checker lost the scope `zgloszenie-w-czesciach` and the known
@@ -135,7 +148,7 @@ them, `6f94edb8` was the sync of both, and since the checker's earlier sync
 model describes. To see whether they need another look:
 
 ```bash
-git log --oneline f7f55067..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
+git log --oneline 0b63b1ca..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
 ```
 
 A change to the three definitions above shows as a `UWAGA:` line of
@@ -205,6 +218,7 @@ out and why.
 | Scope | Wysyłki |
 | --- | --- |
 | `zgloszenie` | one Zgłoszenie (`ReportIssue`) in one part, as every Zgłoszenie is |
+| `zgloszenie-wrocilo` | one Zgłoszenie in one part whose odcisk already has an open Zgłoszenie in the Skrzynka: the part goes to it as a comment |
 | `watek-okresu` | two Kontrole ilości to one issue okresu (`PeriodThread`), in two and one part |
 | `nowe-issue` | one Uwaga taty (`NewIssue`) in two parts |
 | `znane-issue` | a comment in two parts to the existing issue of an Uwaga taty (`KnownIssue`) |
@@ -286,6 +300,7 @@ after a change of this skill's folder. It applies each broken variant of
 with `MUTACJE OK`. Each of these gives `KOLEJKA: NOWE NARUSZENIE`:
 
 - a failed comment skipped;
+- a Zgłoszenie that returned taken over without a comment (`zgloszenie-wrocilo`);
 - a found issue okresu missing part 1;
 - an issue okresu opened without looking for it;
 - a known issue missing part 1;
@@ -367,7 +382,7 @@ The comment above each action and branch in the model names the same code.
 | `Nadaj` | `outbox.py` `Outbox.post`: the name from the moment and `next(self._sequence)`, `replace_atomically` (`write_text` of `.json.tmp`, then `replace`; `OSError` → `False`, also the `FileNotFoundError` of `replace` when `resume` of a new process removed the `.tmp`), then `send_in_background` |
 | `Petla` | `Outbox._drain`: `_claimed` (taken → ask for another pass and skip `_send_all`), then `_folder_lock` without waiting (held by a queue of another process → `_locked_out` and skip `_send_all`), then `_read_failed = False` and `sorted(glob("*.json"))` in `_send_all` |
 | `Plik` | `Outbox._send_all` for one file: `_undeleted` → `_remove`, `_rejected` → skip, `_queued` (an `OSError` or a missing file → `_read_failed` and `_skip_unreadable`), `delivered` → `_remove`, else `_deliver` (with the file's issue number, `_deliver_to_known`); the end of the list sets `_stopped_on = None` |
-| `Szukaj` | `keyed_box.py` `KeyedBox.labelled_issues` / `find_issue` (`report_box.py` `newest_with_line`) in `_deliver_to_period`, `_deliver_report` (a found Zgłoszenie is `Delivered(found, ())`), `_deliver_to_known` (also for the issue number in the file: the comments of `Post.opening`) |
+| `Szukaj` | `keyed_box.py` `KeyedBox.labelled_issues` / `find_issue` (`report_box.py` `newest_with_line`) in `_deliver_to_period`, `_deliver_report` (a found Zgłoszenie whose body is the wysyłka's part is `Delivered(found, ())`, any other gets the part as a comment), `_deliver_to_known` (also for the issue number in the file: the comments of `Post.opening`) |
 | `Zaloz` | `KeyedBox.open_issue` in `_deliver_new_issue`, `_deliver_report`, `_deliver_to_period`, with `Post.opening` |
 | `Komentuj` | `KeyedBox.comment` in `_comment_all`, one part per step; the first failure ends the wysyłka |
 | `Stop`, `Odrzuc` | `_waiting`: `Unreachable`, `Refused`, `NoKey` → `_stopped_on` and `return`; `Rejected` → `_rejected` and the next file |
@@ -442,7 +457,7 @@ configuration is checked in full.
 | `okres` | two Kontrole ilości to one issue okresu, 2 parts each; 1 network failure, 1 lost answer, 1 file error, 1 switch-off | passes |
 | `logi` | Logi Uruchomienia with a header, 2 parts; 2 network failures, 1 lost answer, 2 file errors, 1 switch-off | passes |
 | `nowe` | two Uwagi taty, 2 parts each; 1 network failure, 1 lost answer, 2 file errors, 1 switch-off | passes |
-| `zgloszenie` | one Zgłoszenie in 1 part; 2 network failures, 1 lost answer, 2 file errors, 1 switch-off | passes |
+| `zgloszenie` | two Zgłoszenia of one odcisk in 1 part each, the second as a comment to the issue of the first; 2 network failures, 1 lost answer, 2 file errors, 1 switch-off | passes |
 | `znane` | a comment in 2 parts to the known issue of an Uwaga; 2 network failures, 1 lost answer, 2 file errors, 1 switch-off | passes |
 | `dwie-kolejki` | two queues of one folder in one process, one Kontrola in 2 parts; 1 network failure, 1 file error, 1 switch-off | passes |
 | `dwa-procesy` | one Kontrola; the old Centrum closes its port and the new one starts before the old process ends; no other failure | passes |
@@ -541,7 +556,8 @@ one guard or step whose code it names, on a copy of the checkout
   that does not write the issue number, and a file with the number that opens
   an issue again (`odmowa-tresci`); and, as a model check without code, the
   accepted risk removed from JednoIssue (the risk is reachable).
-- WszystkieCzesci: a failed comment skipped instead of ending the wysyłka; and, in
+- WszystkieCzesci: a failed comment skipped instead of ending the wysyłka; a
+  Zgłoszenie that returned taken over without a comment (`zgloszenie`); and, in
   the configurations with a refused comment or a read error, a refused
   comment that removes the file instead of `_rejected` (`odmowa-tresci`) and
   an unreadable file removed instead of skipped by `_skip_unreadable`

@@ -173,7 +173,7 @@ class DadCases:
         """Numer issue ``number`` dla sprawy ``kind`` o ``case_id``, którą przyjęła skrzynka; ``False``, gdy żadnej nie dostała.
 
         Rodzaj, którego ``id`` wraca (``CaseKind.recurs``, Zgłoszenie), daje numer tylko ostatniej czekającej sprawie.
-        Gdy inna sprawa ma już ten numer (wysyłka przejęła otwarte Zgłoszenie znane z tego komputera; numery issue są
+        Gdy inna sprawa ma już ten numer (wysyłka trafiła do otwartego Zgłoszenia znanego z tego komputera; numery issue są
         wspólne dla całej Skrzynki), czekająca znika, bo jedno issue to jedna sprawa i jedno Powiadomienie. Ten sam
         numer drugi raz to ``False``. Inny rodzaj (Uwaga) daje numer każdej swojej sprawie o ``case_id``, także już
         numerowanej. Obserwatorzy rodzaju (``watch``) słyszą o numerze, gdy któraś sprawa go dostała.

@@ -667,7 +667,16 @@ def test_odmowa_przy_wysylce_uwagi_odrzuca_klucz_w_konfiguracji_bez_osobnego_pyt
 WAITING = {"state": "waiting"}
 
 
-def test_kolejne_uruchomienie_z_otwartym_zgloszeniem_tego_problemu_czeka_na_naprawe_bez_drugiej_wysylki(
+def diagnosed_to_end(centrum: PreparingCentrum, run_id: str) -> str:
+    """Diagnoza Zatrzymania i jej dalszy ciąg w tle (odpowiedź skrzynki, powrót problemu w kolejce); treść podglądu."""
+
+    since = new_line()
+    body: str = diagnose(centrum, run_id)["report"]["body"]
+    join_threads_since(since, named="zgloszenie-skrzynka")
+    return body
+
+
+def test_powrot_problemu_z_otwartym_zgloszeniem_po_diagnozie_jest_komentarzem_w_nim_bez_klikniecia(
     tmp_path: Path
 ) -> None:
     centrum = preparing_centrum(tmp_path)
@@ -679,10 +688,26 @@ def test_kolejne_uruchomienie_z_otwartym_zgloszeniem_tego_problemu_czeka_na_napr
     again = stopped_for_maks(centrum)
 
     assert current_report(centrum) == WAITING
-    diagnose(centrum, again)
+    again_body = diagnosed_to_end(centrum, again)
+    [issue] = centrum.surroundings.report_box.sent
+    assert issue.comments == [f"## Zgłoszenie wróciło\n\n{again_body}"]
     assert current_report(centrum) == WAITING
-    assert send(centrum, again) == {"state": "sent"}  # kolejka przejmuje otwarte Zgłoszenie zamiast zakładać drugie
-    assert (len(centrum.surroundings.report_box.sent), [case["number"] for case in cases(centrum)]) == (1, [1])
+    assert [case["number"] for case in cases(centrum)] == [1]
+
+
+def test_druga_diagnoza_tego_samego_zatrzymania_nie_dubluje_komentarza_powrotu(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path)
+    with_key(centrum)
+    first = stopped_for_maks(centrum)
+    diagnose(centrum, first)
+    send(centrum, first)
+    again = stopped_for_maks(centrum)
+    diagnosed_to_end(centrum, again)
+
+    diagnosed_to_end(centrum, again)
+
+    [issue] = centrum.surroundings.report_box.sent
+    assert (len(issue.comments), current_report(centrum)) == (1, WAITING)
 
 
 def test_diagnoza_nie_czeka_na_skrzynke_a_jej_odpowiedz_o_otwartym_zgloszeniu_trafia_na_karte(tmp_path: Path) -> None:
@@ -710,8 +735,9 @@ def test_diagnoza_nie_czeka_na_skrzynke_a_jej_odpowiedz_o_otwartym_zgloszeniu_tr
 
     assert (box_answered, while_box_silent) == (False, {"state": "ready"})
     assert report_becomes(centrum, WAITING) == WAITING
-    assert send(centrum, again) == {"state": "sent"}
-    assert len(centrum.surroundings.report_box.sent) == 1
+    # Odpowiedź skrzynki o otwartym Zgłoszeniu spoza tego komputera też kładzie powrót problemu w kolejce.
+    assert box.wait_until(lambda box: len(box.sent[0].comments) == 1)
+    assert len(box.sent) == 1
 
 
 def test_zgloszenie_zamkniete_wedlug_powiadomien_nie_czeka_juz_po_restarcie(tmp_path: Path) -> None:
@@ -728,8 +754,10 @@ def test_zgloszenie_zamkniete_wedlug_powiadomien_nie_czeka_juz_po_restarcie(tmp_
     again = stopped_for_maks(centrum)
 
     assert current_report(centrum) == {"state": "ready"}
-    preview = diagnose(centrum, again)["report"]
-    assert "- Poprzednie Zgłoszenie: #1" in preview["body"].splitlines()
+    preview_body = diagnosed_to_end(centrum, again)
+    assert "- Poprzednie Zgłoszenie: #1" in preview_body.splitlines()
+    # Bez otwartego Zgłoszenia nic nie wychodzi samo: tata ma przycisk i podgląd.
+    assert ([issue.comments for issue in box.sent], current_report(centrum)) == ([[]], {"state": "ready"})
     assert send(centrum, again) == {"state": "sent"}
     sent = dad_cases(tmp_path / "config", "zgloszenie")
     assert [(entry["number"], entry["closure"] is None) for entry in sent] == [(1, False), (2, True)]

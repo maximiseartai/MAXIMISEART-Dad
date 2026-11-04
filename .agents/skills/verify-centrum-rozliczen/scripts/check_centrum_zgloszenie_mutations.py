@@ -56,6 +56,18 @@ MUTATIONS = (
         "tata czeka na internet, który nie naprawi treści odrzuconej przez Skrzynkę (Q17)",
     ),
     Mutation(
+        "powrót problemu z otwartym Zgłoszeniem czeka na kliknięcie",
+        (
+            Edit(
+                REPORTS,
+                "            if comeback is None or self._returned or not isinstance(self._state, contract.ReportWaiting):\n",
+                "            if True:\n",
+            ),
+        ),
+        ZGLOSZENIE,
+        "Maks nie widzi w otwartym Zgłoszeniu, że problem wraca, bo tata nie ma przycisku (#820)",
+    ),
+    Mutation(
         "brak Tokenu do Zgłoszeń obiecuje wysyłkę",
         (Edit(BUILD, "`Token do Zgłoszeń nie działa. Skontaktuj się z Maksem.`", "`Wyślę do Maksa, gdy będzie internet.`"),),
         ZGLOSZENIE,

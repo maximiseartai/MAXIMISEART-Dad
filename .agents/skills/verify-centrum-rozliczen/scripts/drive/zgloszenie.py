@@ -32,6 +32,8 @@ FOR_INTERNET = "Zgłoszenie czeka na internet. Wyśle się samo."
 REJECTED = "Tego Zgłoszenia nie da się wysłać. Skontaktuj się z Maksem."
 SENT = "Zgłoszenie wysłane do Maksa. Poczekaj na naprawę."
 WAITING = "Zgłoszenie tego problemu już jest wysłane i czeka na naprawę."
+# Heading of the comment the queue adds to the open Zgłoszenie when its problem returns (ADR 0007, #820).
+RETURNED = "## Zgłoszenie wróciło\n\n"
 # Synthetic key Maks would write; it must never reach the skrzynka, the log, an answer, or the browser.
 KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ"
 
@@ -246,20 +248,72 @@ def drive_report(run: Run, page: Page) -> None:
     run.capture(page, "65-zgloszenie-po-odswiezeniu")
 
     run.step(FEATURE, "zgloszenie-kolejne-uruchomienie")
-    _stop_for_maks(run, page, "zgloszenie-kolejne-uruchomienie")
+    again = _stop_for_maks(run, page, "zgloszenie-kolejne-uruchomienie")
     expect(page.get_by_role("status").filter(has_text=WAITING)).to_be_visible()
     run.check(
         _report_state(run, "zgloszenie-kolejne-uruchomienie") == {"state": "waiting"},
         "the same problem in a new Uruchomienie shows it is already sent and waits for the fix",
     )
+    _logs_sent(run, queue, again)
     stop_banner(page).get_by_role("button", name="Diagnoza", exact=True).click()
     expect(diagnosis.get_by_label("Wyjaśnienie Diagnozy")).to_contain_text(NOT_FOUND)
     expect(diagnosis.get_by_role("status").filter(has_text=WAITING)).to_be_visible()
     expect(page.get_by_role("button", name="Wyślij do Maksa", exact=True)).to_have_count(0)
-    run.check(len(_issues(box)) == 1, "no second Zgłoszenie of the same problem")
+    run.wait_for(
+        lambda: _issues(box)[0].get("comments", []) != [], "the return of the problem reaches the open Zgłoszenie with no click"
+    )
+    issues = _issues(box)
+    (run.evidence / "api" / "zgloszenie-skrzynka-powrot.json").write_text(
+        json.dumps(issues, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    run.check(len(issues) == 1, "no second Zgłoszenie of the same problem")
+    [returned] = issues
+    comments = returned.get("comments", [])
+    assert isinstance(comments, list)
+    returned_body = str(comments[0]).removeprefix(RETURNED)
+    fingerprint = [line for line in body.splitlines() if line.startswith("- Odcisk problemu: ")]
+    run.check(
+        len(comments) == 1
+        and str(comments[0]).startswith(RETURNED + "Zgłoszenie z Centrum rozliczeń.\n")
+        and [line for line in returned_body.splitlines() if line.startswith("- Odcisk problemu: ")] == fingerprint
+        and "## Diagnoza" in returned_body.splitlines(),
+        "the open Zgłoszenie has one comment „Zgłoszenie wróciło” with the whole Zgłoszenie of the returned problem",
+    )
+    _check_logs_link(run, box, returned_body, again)
+    run.check(
+        _report_state(run, "zgloszenie-kolejne-uruchomienie-po-diagnozie") == {"state": "waiting"},
+        "Dad still sees that the Zgłoszenie waits for the fix",
+    )
     run.capture(page, "66-zgloszenie-kolejne-uruchomienie")
     _one_open_report(run, page, box, config)
     key_file.unlink()
+
+
+def _logs_sent(run: Run, queue: Path, run_id: str) -> None:
+    """Waits until the Logi of Uruchomienie ``run_id`` left the queue, so the next Diagnoza links their comment."""
+
+    run.wait_for(
+        lambda: not list(queue.glob(f"*-logi-uruchomienia-{run_id[:8]}.json")),
+        "with the key the Logi of this Uruchomienie reach the skrzynka",
+        timeout_s=60,
+    )
+
+
+def _check_logs_link(run: Run, box: Path, body: str, run_id: str) -> None:
+    """The Zgłoszenie ``body`` links the comment of the Logi of Uruchomienie ``run_id`` in the skrzynka."""
+
+    links = [line.removeprefix("- Logi: ") for line in body.splitlines() if line.startswith("- Logi: ")]
+    run.check(
+        len(links) == 1 and re.fullmatch(r"skrzynka-zgloszen/\d+\.json#komentarz-\d+", links[0]) is not None,
+        f"the Zgłoszenie has one Logi line with the address of a comment in the skrzynka: {links}",
+    )
+    thread, _, comment = links[0].removeprefix("skrzynka-zgloszen/").partition(".json#komentarz-")
+    logs = json.loads((box / f"{thread}.json").read_text(encoding="utf-8"))
+    run.check(
+        logs["labels"] == ["logi-uruchomienia"]
+        and f"- Uruchomienie: {run_id}," in logs["comments"][int(comment) - 1],
+        f"the Zgłoszenie links the comment of the Logi of its own Uruchomienie ({links[0]})",
+    )
 
 
 def _one_open_report(run: Run, page: Page, box: Path, config: Path) -> None:
@@ -275,12 +329,7 @@ def _one_open_report(run: Run, page: Page, box: Path, config: Path) -> None:
     closed.write_text(json.dumps({**json.loads(closed.read_text(encoding="utf-8")), "state": "closed"}), encoding="utf-8")
     run_id = _stop_for_maks(run, page, "zgloszenie-zamkniete")
     expect(page.get_by_role("status").filter(has_text=WAITING)).to_be_visible()
-    queue = config / "zgloszenia" / "kolejka"
-    run.wait_for(
-        lambda: not list(queue.glob(f"*-logi-uruchomienia-{run_id[:8]}.json")),
-        "with the key the Logi of this Uruchomienie reach the skrzynka",
-        timeout_s=60,
-    )
+    _logs_sent(run, config / "zgloszenia" / "kolejka", run_id)
     run.capture(page, "68-zgloszenie-zamkniete-przed-diagnoza")
     stop_banner(page).get_by_role("button", name="Diagnoza", exact=True).click()
     send = diagnosis.get_by_role("button", name="Wyślij do Maksa", exact=True)
@@ -293,18 +342,7 @@ def _one_open_report(run: Run, page: Page, box: Path, config: Path) -> None:
     diagnosis.get_by_role("button", name="Co zostanie wysłane", exact=True).click()
     title, body = _shown_report(page)
     run.check(f"- Poprzednie Zgłoszenie: #{number}" in body.splitlines(), "the new Zgłoszenie links the previous one")
-    links = [line.removeprefix("- Logi: ") for line in body.splitlines() if line.startswith("- Logi: ")]
-    run.check(
-        len(links) == 1 and re.fullmatch(r"skrzynka-zgloszen/\d+\.json#komentarz-\d+", links[0]) is not None,
-        f"the preview has one Logi line with the address of a comment in the skrzynka: {links}",
-    )
-    thread, _, comment = links[0].removeprefix("skrzynka-zgloszen/").partition(".json#komentarz-")
-    logs = json.loads((box / f"{thread}.json").read_text(encoding="utf-8"))
-    run.check(
-        logs["labels"] == ["logi-uruchomienia"]
-        and f"- Uruchomienie: {run_id}," in logs["comments"][int(comment) - 1],
-        f"the preview links the comment of the Logi of its own Uruchomienie ({links[0]})",
-    )
+    _check_logs_link(run, box, body, run_id)
     run.capture(page, "69-zgloszenie-zamkniete-po-diagnozie")
 
     run.step(FEATURE, "zgloszenie-nowe-z-odnosnikiem")

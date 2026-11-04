@@ -552,8 +552,12 @@ Komunikat. Niczego nie zmienia ani nie naprawia.
 ## Zgłoszenie
 
 Komunikat Zatrzymania razem z wynikiem Diagnozy, wysłany z Centrum rozliczeń
-do Maksa. Jeden odcisk problemu ma najwyżej jedno otwarte Zgłoszenie; gdy Maks
-je zamknie, a problem wraca, powstaje nowe z odnośnikiem do poprzedniego.
+do Maksa. Jeden odcisk problemu ma najwyżej jedno otwarte Zgłoszenie: Zgłoszenie,
+którego odcisk ma już otwarte, trafia do niego jako komentarz „Zgłoszenie
+wróciło” z całą swoją treścią. Takie Zgłoszenie powrotu problemu idzie do
+Kolejki wysyłki samo po Diagnozie Zatrzymania, raz na Uruchomienie procesu, a
+tata widzi tylko, że Zgłoszenie czeka na naprawę. Gdy Maks je zamknie, a
+problem wraca, powstaje nowe z odnośnikiem do poprzedniego.
 Zgłoszenie, które nie może od razu wyjść (brak internetu albo Tokenu do
 Zgłoszeń), czeka w Kolejce wysyłki i wychodzi samo.
 

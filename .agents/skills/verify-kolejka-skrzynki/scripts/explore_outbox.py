@@ -295,6 +295,12 @@ SCOPES = {
         (),
         BOUNDS,
     ),
+    "zgloszenie-wrocilo": Scope(
+        "Zgłoszenie (ReportIssue), którego odcisk ma już otwarte Zgłoszenie: jedyna część idzie do niego komentarzem.",
+        (_post(REPORT, "zgl-wrocilo", 1),),
+        (("zgloszenie", REPORT.title, f"{REPORT.line}\nwcześniejsze Zgłoszenie"),),
+        BOUNDS,
+    ),
     "watek-okresu": Scope(
         "Dwie Kontrole ilości do jednego issue okresu (PeriodThread), w dwóch i jednej części.",
         (_post(THREAD, "kontrola-a", 2), _post(THREAD, "kontrola-b", 1)),

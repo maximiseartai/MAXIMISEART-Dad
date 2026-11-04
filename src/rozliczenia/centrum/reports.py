@@ -12,14 +12,16 @@ dziennika, bez ścieżek i bez wyjścia Gita. Ścieżki są już skrócone w
 Komunikatach, szczegółach sprawdzeń i ramkach śladu; treści wierszy, treści
 wyjątków ani klucza Zgłoszenie nie ma (ADR 0007).
 
-Treść Zgłoszenia mieści się w jednej części wysyłki (``PART_LIMIT``), bo kolejka Skrzynki przejmuje znalezione
-Zgłoszenie bez komentarzy (#724). Za długa traci najpierw pierwsze ramki śladu wywołań (pełny ślad jest w Logach
-Uruchomienia), a gdy to nie wystarczy, najstarsze wpisy dziennika Centrum; każde skrócenie ma dopisek.
+Treść Zgłoszenia mieści się w jednej części wysyłki (``PART_LIMIT``), bo kolejka Skrzynki przejmuje Zgłoszenie,
+które założyła przerwana próba tej samej wysyłki, bez komentarzy (#724), a do otwartego Zgłoszenia tego odcisku
+dopisuje całą treść jednym komentarzem (#820). Za długa traci najpierw pierwsze ramki śladu wywołań (pełny ślad jest
+w Logach Uruchomienia), a gdy to nie wystarczy, najstarsze wpisy dziennika Centrum; każde skrócenie ma dopisek.
 
 Źródło Zgłoszenia (Zatrzymanie w ``stops``, nieudana Aktualizacja narzędzia w
 ``tool_updates``) trzyma jego uchwyt (``ReportHandle``): uchwyt zamraża podgląd,
 a „Wyślij do Maksa” kładzie dokładnie ten podgląd w kolejce Skrzynki Zgłoszeń,
-najwyżej raz na uchwyt. Bez sieci albo Tokenu do Zgłoszeń Zgłoszenie czeka w
+najwyżej raz na uchwyt. Powrót problemu, którego Zgłoszenie jest otwarte, idzie
+do kolejki sam po Diagnozie Zatrzymania, bez kliknięcia (#820). Bez sieci albo Tokenu do Zgłoszeń Zgłoszenie czeka w
 kolejce i wychodzi samo; Komunikat jest tylko wtedy, gdy nie da się zapisać
 pliku kolejki. Zgłoszenie, którego treść Skrzynka odrzuciła, nie czeka na nic,
 co mógłby naprawić tata albo internet (``ReportRejected``).
@@ -327,6 +329,9 @@ class ReportHandle:
 
     ``prepare`` zamraża podgląd i pyta skrzynkę Zgłoszeń w tle o otwarte Zgłoszenie tego problemu, a ``send``
     kładzie ostatni podgląd w kolejce Skrzynki najwyżej raz; drugie kliknięcie w trakcie wysyłki czeka na jej wynik.
+    Podgląd Zatrzymania, którego problem po odpowiedzi skrzynki czeka na naprawę (ma otwarte Zgłoszenie), uchwyt
+    kładzie w kolejce sam jako powrót problemu, najwyżej raz: kolejka dopisuje go do otwartego Zgłoszenia komentarzem
+    „Zgłoszenie wróciło”, a stan zostaje „czeka na naprawę”, bo tata nie ma tu nic do zrobienia (ADR 0007).
     Po każdej odpowiedzi skrzynki, każdej wysyłce i dostarczeniu z kolejki nowy stan dostaje ``shown`` właściciela.
     Odpowiedź na pytanie sprzed wysyłki przepada, bo stan to już wynik wysyłki. ``shown`` biegnie pod blokadą
     uchwytu, więc dostaje stany w kolejności ich zmian, i nie woła uchwytu. Właściciel, który pokazuje stan dopiero
@@ -343,6 +348,7 @@ class ReportHandle:
         self._asking: threading.Thread | None = None
         self._sends = 0  # wysyłki zaczęte do tej pory: odpowiedź skrzynki na pytanie sprzed wysyłki przepada
         self._sending = False
+        self._returned = False  # powrót problemu już poszedł do kolejki: drugi z tego uchwytu by go dublował
 
     @property
     def state(self) -> contract.ReportState:
@@ -354,31 +360,46 @@ class ReportHandle:
     def prepare(self, source: StopReport | UpdateReport) -> contract.ReportDraft:
         """Nowy podgląd ``source``, który wyśle ``send``; nie czeka na skrzynkę i niczego nie zapisuje.
 
-        Gdy ten problem był już zgłoszony z tego komputera, Zgłoszenie ma odnośnik do ostatniego z nich.
+        Gdy ten problem był już zgłoszony z tego komputera, Zgłoszenie ma odnośnik do ostatniego z nich. Podgląd
+        Zatrzymania, którego problem czeka na naprawę, po odpowiedzi skrzynki idzie sam do kolejki jako powrót.
         """
 
         preview = self._reports._preview(source)
+        comeback = preview if isinstance(source, StopReport) else None
         with self._changed:
             self._preview = preview
             asking = self._asking = threading.Thread(
-                target=self._ask, args=(self._sends,), name="zgloszenie-skrzynka", daemon=True
+                target=self._ask, args=(self._sends, comeback), name="zgloszenie-skrzynka", daemon=True
             )
         asking.start()
         return preview.view
 
     def wait_for_box(self) -> None:
-        """Czeka na odpowiedź skrzynki na pytanie z ostatniego ``prepare``, najwyżej termin szukania w skrzynce."""
+        """Czeka na odpowiedź skrzynki na pytanie z ostatniego ``prepare``, najwyżej termin szukania w skrzynce.
+
+        Po odpowiedzi „czeka na naprawę” podglądu Zatrzymania czeka też na wysyłkę jego powrotu (``DELIVERY_WAIT_S``).
+        """
 
         with self._changed:
             asking = self._asking
         if asking is not None:
             asking.join()
 
-    def _ask(self, sends: int) -> None:
+    def _ask(self, sends: int, comeback: _Preview | None) -> None:
         self._reports._ask_box(self._fingerprint)
         with self._changed:
-            if sends == self._sends:
-                self._show(self._state if self._done else self._reports._state_of(self._fingerprint))
+            if sends != self._sends:
+                return
+            self._show(self._state if self._done else self._reports._state_of(self._fingerprint))
+            if comeback is None or self._returned or not isinstance(self._state, contract.ReportWaiting):
+                return
+            self._returned = self._sending = True
+        try:
+            self._reports._queue(comeback)
+        finally:
+            with self._changed:
+                self._sending = False
+                self._changed.notify_all()
 
     def send(self) -> contract.ReportState:
         """Kładzie ostatni podgląd w kolejce Skrzynki i czeka na nią chwilę, chyba że już wysłany albo czeka w kolejce.
@@ -442,8 +463,9 @@ class Reports:
     skrzynkę najwyżej ``DELIVERY_WAIT_S``. Numer issue dopisują sprawie Sprawy taty w Skrzynce (``case_delivery``),
     także po następnym starcie Centrum, a ``Reports`` słyszy o nim od Spraw taty (``DadCases.watch``) i oddaje stan
     „wysłane” każdemu żywemu uchwytowi tego problemu; o odrzuconej treści tak samo. Jeden problem ma jedno
-    otwarte Zgłoszenie: podgląd pyta skrzynkę o otwarte Zgłoszenie z tym odciskiem, kolejka przejmuje je zamiast
-    zakładać nowe, a problem, którego Zgłoszenie czeka w kolejce, nie trafia do niej drugi raz.
+    otwarte Zgłoszenie: podgląd pyta skrzynkę o otwarte Zgłoszenie z tym odciskiem, kolejka dopisuje do niego
+    komentarz „Zgłoszenie wróciło” zamiast zakładać nowe (powrót po Diagnozie Zatrzymania kładzie w kolejce sam
+    uchwyt), a problem, którego Zgłoszenie czeka w kolejce, nie trafia do niej drugi raz.
     """
 
     def __init__(

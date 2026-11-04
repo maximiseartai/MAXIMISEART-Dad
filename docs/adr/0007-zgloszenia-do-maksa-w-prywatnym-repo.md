@@ -74,13 +74,28 @@ pierwszy sekret na jego komputerze:
   pamięta jako Sprawy taty w `config/sprawy-taty.json` poza Gitem; sprawa w kolejce nie
   ma jeszcze numeru i dostaje go przy dostarczeniu. Jeden problem ma jedno
   otwarte Zgłoszenie: kolejka szuka w skrzynce otwartego Zgłoszenia z tym
-  samym odciskiem (wiersz `Odcisk problemu` w treści) i przejmuje je zamiast
-  zakładać nowe, także po przerwaniu między założeniem issue a znacznikiem
-  dostarczenia. Problem, którego Zgłoszenie czeka w kolejce, nie trafia do niej
+  samym odciskiem (wiersz `Odcisk problemu` w treści) i dopisuje do niego
+  komentarz „Zgłoszenie wróciło” z całą treścią nowego Zgłoszenia zamiast
+  zakładać nowe (#820). Zgłoszenie z treścią równą wysyłanej założyła
+  przerwana próba tej samej wysyłki (między założeniem issue a znacznikiem
+  dostarczenia): kolejka przejmuje je bez komentarza. Problem, którego Zgłoszenie czeka w kolejce, nie trafia do niej
   drugi raz. Gdy
   Maks je zamknął, a problem wraca, nowe Zgłoszenie ma odnośnik do
   poprzedniego. Bez odpowiedzi skrzynki problem wysłany z tego komputera
   czeka na naprawę, także po restarcie Centrum.
+- Powrót problemu, którego Zgłoszenie jest otwarte, idzie do Kolejki wysyłki
+  sam, bez „Wyślij do Maksa” (#820): gdy po Diagnozie Zatrzymania odpowiedź
+  skrzynki (a bez niej Sprawy taty) mówi, że Zgłoszenie tego odcisku czeka na
+  naprawę, Centrum kładzie w kolejce dokładnie podgląd z tej Diagnozy, a kolejka
+  dopisuje go komentarzem „Zgłoszenie wróciło”. Tata nic nie klika i widzi to,
+  co dotąd: „Zgłoszenie tego problemu już jest wysłane i czeka na naprawę”, bez
+  przycisku. Przycisk przy otwartym Zgłoszeniu kazałby tacie zgłaszać problem,
+  o którym Maks już wie, a bez przycisku i bez wysyłki samej Maks nie widziałby,
+  że problem wraca. Logi Uruchomienia z tą samą Diagnozą i tak wychodzą same
+  (ADR 0015). Jedno Zatrzymanie daje najwyżej jeden komentarz powrotu:
+  powtórzona Diagnoza na tej samej karcie go nie dubluje. Nieudana Aktualizacja
+  narzędzia nie ma Diagnozy, więc jej powrót przy otwartym Zgłoszeniu nie idzie
+  do kolejki.
 
 Rewizja reguły prywatności: Zgłoszenie opuszcza komputer taty, ale niesie tylko
 to, co reguła ADR 0004 już dopuszcza w Centrum (Komunikat w trzech częściach,
