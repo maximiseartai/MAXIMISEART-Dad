@@ -48,10 +48,50 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "Zgłoszenie, które wróciło, przejęte bez komentarza (_deliver_report: issue.body == body)",
-        (Edit(MODEL, "             ELSE IF issues[Najnowsze].tresc[1] = Cialo(biez[q])\n", "             ELSE IF TRUE\n"),),
+        "Zgłoszenie, które wróciło, przejęte bez komentarza (_deliver_report: Delivered(found, ()) zamiast _settle)",
+        (Edit(MODEL, "             ELSE /\\ nr' = Ustaw(nr, q, Najnowsze) /\\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))\n"
+              "                  /\\ Idz(q, \"czytaj\", \"_deliver_report:",
+              "             ELSE /\\ nr' = Ustaw(nr, q, Najnowsze) /\\ kom' = Ustaw(kom, q, <<>>)\n"
+              "                  /\\ Idz(q, \"dostarczona\", \"_deliver_report:"),),
         _check("zgloszenie"),
         "drugie Zgłoszenie tego problemu dostaje znacznik, choć Skrzynka go nie ma",
+        NEW,
+    ),
+    Mutation(
+        "bez sprawdzenia identyfikatora przed wysyłką (_settle: każda część jako nowy komentarz)",
+        (Edit(MODEL, "    LET plan == IF Nowsza(nr[q], biez[q]) THEN <<>> ELSE Plan(nr[q], biez[q], kom[q]) IN\n",
+              "    LET plan == kom[q] IN\n"),),
+        _check("okres"),
+        "część, którą Skrzynka przyjęła przed zgaśnięciem Centrum, idzie po starcie drugi raz",
+        NEW,
+    ),
+    Mutation(
+        "starsza wersja po nowszej zmienia issue (_settle: newest > version)",
+        (Edit(MODEL, "    LET plan == IF Nowsza(nr[q], biez[q]) THEN <<>> ELSE Plan(nr[q], biez[q], kom[q]) IN\n",
+              "    LET plan == Plan(nr[q], biez[q], kom[q]) IN\n"),),
+        _check("diagnoza"),
+        "plik Logów sprzed Diagnozy, który dochodzi po niej, dopisuje część, której Diagnoza już nie ma",
+        NEW,
+    ),
+    Mutation(
+        "Diagnoza dopisuje komentarz zamiast poprawić (_put: edit_comment)",
+        (Edit(MODEL, 'ELSE IF Wersja(i, w, k) < w THEN "popraw"\n', 'ELSE IF Wersja(i, w, k) < w THEN "dopisz"\n'),),
+        _check("diagnoza"),
+        "Uruchomienie po Diagnozie ma w issue okresu dwa komentarze z tą samą częścią Logów",
+        NEW,
+    ),
+    Mutation(
+        "część, której nowsza wersja nie ma, zostaje (_settle: _RETIRED)",
+        (Edit(MODEL, "                  \\o Wycofaj(i, w)\n", "                  \\o <<>>\n"),),
+        _check("diagnoza"),
+        "w issue okresu zostaje część Logów sprzed Diagnozy, krótszej o tę część",
+        NEW,
+    ),
+    Mutation(
+        "Uwaga taty bez szukania issue po znaczniku (_deliver_new_issue: found)",
+        (Edit(MODEL, "          /\\ IF Swoje(biez[q]) = 0\n", "          /\\ IF TRUE\n"),),
+        _check("nowe"),
+        "Uwaga, której odpowiedź na założenie issue zginęła, dostaje drugie issue",
         NEW,
     ),
 
@@ -88,32 +128,11 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "bez znacznika dostarczenia (replace_atomically w _send_all)",
-        (Edit(MODEL, '          /\\ plik\' = [plik EXCEPT ![w] = "oznaczony"]\n', "          /\\ UNCHANGED plik\n"),),
-        _check("nowe"),
-        "plik, którego Windows nie dał usunąć, idzie po następnym starcie drugi raz i zakłada drugie issue Uwagi",
-        NEW,
-    ),
-    Mutation(
-        "plik z _undeleted wysyłany drugi raz w tej samej pracy Centrum",
-        (Edit(MODEL, "            /\\ CASE w \\in undeleted[q] ->\n", "            /\\ CASE FALSE ->\n"),),
-        _check("nowe"),
-        "wysłana Uwaga bez znacznika, której pliku nie dało się usunąć, zakłada drugie issue przy następnym przejściu",
-        NEW,
-    ),
-    Mutation(
-        "bez wyjątku ryzyka z ADR 0015 (model: ryzyko jest osiągalne)",
-        (Edit(MODEL, "            \\/ slady \\cap Ryzyka /= {}\n", "            \\/ FALSE\n"),),
-        _check("nowe"),
-        "zerwane połączenie po założeniu issue daje Uwadze taty drugie issue, co ADR 0015 przyjmuje",
-        NEW,
-    ),
-    Mutation(
         "nieudany komentarz pominięty zamiast końca wysyłki (_comment_all)",
         (
             Edit(
                 MODEL,
-                '          /\\ Stop(q, "comment: Unreachable przed skutkiem, przejscie staje")\n'
+                '          /\\ Stop(q, zapytanie \\o ": Unreachable przed skutkiem, przejscie staje")\n'
                 "          /\\ UNCHANGED <<issues, kom, rejected, zgubione, odmowy, odrzucone>>\n",
                 "          /\\ kom' = Ustaw(kom, q, Tail(kom[q])) /\\ UNCHANGED <<stopped, nieczytany>>\n"
                 '          /\\ Idz(q, IF Tail(kom[q]) = <<>> THEN "dostarczona" ELSE "komentuj", "comment: pominiety")\n'
@@ -129,33 +148,14 @@ MUTATIONS = (
         (
             Edit(
                 MODEL,
-                '          /\\ IF Cel = "nowe" /\\ numer[w] = 0\n'
-                "             THEN /\\ UNCHANGED rejected\n"
-                '                  /\\ Idz(q, "zapisz_numer", "comment: Rejected po open_issue, Opened: plik zapamieta numer issue")\n'
-                '             ELSE Odrzuc(q, w, "comment: Rejected, plik czeka do nastepnego startu")\n'
-                "          /\\ UNCHANGED <<issues, kom, stopped, nieczytany, sieci, zgubione, slady>>\n",
+                '          /\\ Odrzuc(q, w, zapytanie \\o ": Rejected, plik czeka do nastepnego startu")\n'
+                "          /\\ UNCHANGED <<issues, kom, stopped, nieczytany, sieci, zgubione>>\n",
                 '          /\\ Idz(q, "usun", "comment: Rejected, _remove")\n'
-                "          /\\ UNCHANGED <<issues, kom, stopped, nieczytany, rejected, sieci, zgubione, slady>>\n",
+                "          /\\ UNCHANGED <<issues, kom, stopped, nieczytany, rejected, sieci, zgubione>>\n",
             ),
         ),
         _check("odmowa-tresci"),
         "Uwaga taty, której komentarz Skrzynka odrzuciła, znika z kolejki bez części 2",
-        NEW,
-    ),
-    Mutation(
-        "odrzucony komentarz po założeniu issue Uwagi nie zapisuje numeru (_send_all: replace_atomically po Opened)",
-        (Edit(MODEL, '          /\\ IF Cel = "nowe" /\\ numer[w] = 0\n             THEN /\\ UNCHANGED rejected\n',
-              "          /\\ IF FALSE\n             THEN /\\ UNCHANGED rejected\n"),),
-        _check("odmowa-tresci"),
-        "następny start zakłada drugie issue z tą samą Uwagą taty",
-        NEW,
-    ),
-    Mutation(
-        "plik z numerem issue zakłada nowe issue (_deliver: if opened is not None)",
-        (Edit(MODEL, '                         /\\ IF Cel = "nowe" /\\ numer[w] = 0\n',
-              '                         /\\ IF Cel = "nowe"\n'),),
-        _check("odmowa-tresci"),
-        "Uwaga taty, której plik zapamiętał numer issue, dostaje przy następnym starcie drugie issue",
         NEW,
     ),
     Mutation(
@@ -168,8 +168,8 @@ MUTATIONS = (
     ),
     Mutation(
         "części komentowane od końca (_comment_all: reversed(comments))",
-        (Edit(MODEL, "Od(a) == [i \\in 1..(Czesci - a + 1) |-> a + i - 1]\n",
-              "Od(a) == [i \\in 1..(Czesci - a + 1) |-> Czesci - i + 1]\n"),),
+        (Edit(MODEL, "Od(w, a) == [i \\in 1..(Liczba(w) - a + 1) |-> a + i - 1]\n",
+              "Od(w, a) == [i \\in 1..(Liczba(w) - a + 1) |-> Liczba(w) - i + 1]\n"),),
         _check("okres"),
         "issue okresu ma część 2 przed częścią 1 drugiej Kontroli ilości",
         NEW,
@@ -186,10 +186,10 @@ MUTATIONS = (
             Edit(
                 MODEL,
                 "    /\\ UNCHANGED <<dysk, issues, zyje, draining, again, armed, undeleted, rejected, lista, biez, "
-                "bezZnacznika, bezOchrony,\n                   passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, "
+                "bezZnacznika,\n                   passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, "
                 "odmowy, bledyPliku, wylaczenia>>\n",
                 "    /\\ UNCHANGED <<dysk, issues, zyje, draining, again, armed, undeleted, lista, biez, "
-                "bezZnacznika, bezOchrony,\n                   passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, "
+                "bezZnacznika,\n                   passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, "
                 "odmowy, bledyPliku, wylaczenia>>\n"
                 '    /\\ pc\'[q] = "plik" \\/ UNCHANGED rejected\n',
             ),

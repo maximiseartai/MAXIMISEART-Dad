@@ -56,11 +56,13 @@ def test_bez_pliku_klucza_klucza_brak_a_skrzynki_nikt_nie_pyta() -> None:
     answers = (
         skrzynka.keyed.open_issue("zgloszenie", "tytuł", "treść"),
         skrzynka.keyed.comment(1, "treść"),
+        skrzynka.keyed.comments(1),
+        skrzynka.keyed.edit_comment(1, "treść"),
         skrzynka.keyed.labelled_issues("zgloszenie", include_closed=True),
         skrzynka.keyed.find_issue("zgloszenie", "- Odcisk problemu: 0", include_closed=False),
     )
 
-    assert answers == (NoKey(), NoKey(), NoKey(), NoKey())
+    assert answers == (NoKey(),) * 6
     assert (skrzynka.keyed.judge(wait_s=WAIT_S), skrzynka.requests()) == ("missing", 0)
 
 
@@ -127,11 +129,19 @@ def test_brak_sieci_nie_zmienia_werdyktu_o_kluczu() -> None:
     assert len(skrzynka.box.listed) == 3
 
 
-def test_odmowa_komentarza_nie_odrzuca_klucza() -> None:
+ABOUT_DELETED: dict[str, Callable[[Skrzynka], object]] = {
+    "komentarz": lambda s: s.keyed.comment(99, "do issue, które Maks usunął"),
+    "komentarze": lambda s: s.keyed.comments(99),
+    "poprawka-komentarza": lambda s: s.keyed.edit_comment(99_001, "w issue, które Maks usunął"),
+}
+
+
+@pytest.mark.parametrize("ask", ABOUT_DELETED.values(), ids=ABOUT_DELETED.keys())
+def test_odmowa_o_issue_ktore_maks_usunal_nie_odrzuca_klucza(ask: Callable[[Skrzynka], object]) -> None:
     skrzynka = Skrzynka()
     accepted(skrzynka)
 
-    assert skrzynka.keyed.comment(99, "do issue, które Maks usunął") == Refused()
+    assert ask(skrzynka) == Refused()
 
     assert skrzynka.keyed.judge(wait_s=0) == "accepted"
 

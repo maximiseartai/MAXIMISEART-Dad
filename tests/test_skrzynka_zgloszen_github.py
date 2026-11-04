@@ -15,7 +15,9 @@ import pytest
 
 from rozliczenia.centrum.report_box import (
     Closure,
+    Comment,
     CommentOutcome,
+    CommentsOutcome,
     Commented,
     FindOutcome,
     GitHubReportBox,
@@ -345,9 +347,115 @@ def test_brak_sieci_albo_niezwykla_odpowiedz_przy_komentarzu_to_skrzynka_nieosia
     assert outcome == Unreachable()
 
 
+def edit_with(answer: Callable[[], HttpResponse]) -> tuple[CommentOutcome, ScriptedTransport]:
+    transport = ScriptedTransport(answer)
+    return GitHubReportBox(transport=transport).edit_comment(901, BODY, key=KEY), transport
+
+
+def test_poprawiony_komentarz_ma_ten_sam_identyfikator_i_adres_a_skrzynka_dostaje_nowa_tresc() -> None:
+    outcome, transport = edit_with(
+        lambda: HttpResponse(200, json.dumps({"id": 901, "html_url": COMMENT_URL, "body": BODY}).encode())
+    )
+
+    assert outcome == Commented(901, COMMENT_URL)
+    [request] = transport.requests
+    assert (request.method, request.url) == ("PATCH", f"{ISSUES}/comments/901")
+    assert request.headers["Authorization"] == f"Bearer {KEY}"
+    assert request.body is not None
+    assert json.loads(request.body) == {"body": BODY}
+
+
+@pytest.mark.parametrize("status", [401, 403, 404])
+def test_odmowa_przy_poprawce_komentarza_to_odmowa_skrzynki(status: int) -> None:
+    outcome, _ = edit_with(lambda: HttpResponse(status, b'{"message": "Not Found"}'))
+
+    assert outcome == Refused()
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        no_network,
+        cut_off,
+        lambda: HttpResponse(502, b"<html>Bad gateway</html>"),
+        lambda: HttpResponse(201, json.dumps({"id": 901, "html_url": COMMENT_URL}).encode()),
+        lambda: HttpResponse(200, json.dumps({"id": 901}).encode()),
+    ],
+    ids=["brak-sieci", "urwana-odpowiedz", "awaria-githuba", "nie-200", "bez-adresu"],
+)
+def test_brak_sieci_albo_niezwykla_odpowiedz_przy_poprawce_komentarza_to_skrzynka_nieosiagalna(
+    answer: Callable[[], HttpResponse],
+) -> None:
+    outcome, _ = edit_with(answer)
+
+    assert outcome == Unreachable()
+
+
+def comments_with(answer: Callable[[], HttpResponse]) -> tuple[CommentsOutcome, ScriptedTransport]:
+    transport = ScriptedTransport(answer)
+    return GitHubReportBox(transport=transport).comments(12, key=KEY), transport
+
+
+def test_komentarze_issue_to_ich_identyfikatory_adresy_i_tresci_po_kolei() -> None:
+    outcome, transport = comments_with(
+        pages(
+            [
+                {"id": 901, "html_url": COMMENT_URL, "body": "pierwszy\r\n<!-- znacznik -->"},
+                {"id": 902, "html_url": f"{COMMENT_URL}2", "body": None},
+                {"id": "903", "html_url": COMMENT_URL, "body": "id tekstem"},
+                {"id": 904, "body": "bez adresu"},
+            ]
+        )
+    )
+
+    assert outcome == (Comment(901, COMMENT_URL, "pierwszy\r\n<!-- znacznik -->"), Comment(902, f"{COMMENT_URL}2", ""))
+    [request] = transport.requests
+    assert (request.method, request.url, request.body) == ("GET", f"{ISSUES}/12/comments?per_page=100&page=1", None)
+    assert request.headers["Authorization"] == f"Bearer {KEY}"
+
+
+def test_komentarze_issue_sa_zbierane_ze_wszystkich_stron() -> None:
+    full_page = [{"id": number, "html_url": f"{COMMENT_URL}{number}", "body": ""} for number in range(1, 101)]
+
+    outcome, transport = comments_with(pages(full_page, [{"id": 101, "html_url": COMMENT_URL, "body": "ostatni"}]))
+
+    assert isinstance(outcome, tuple)
+    assert [found.id for found in outcome] == list(range(1, 102))
+    assert [request.url for request in transport.requests] == [
+        f"{ISSUES}/12/comments?per_page=100&page={page}" for page in (1, 2)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("answers", "expected"),
+    [
+        ((lambda: HttpResponse(404, b'{"message": "Not Found"}'),), Refused()),
+        ((lambda: HttpResponse(200, b'{"message": "to nie jest lista"}'),), Unreachable()),
+        (
+            (
+                lambda: HttpResponse(200, json.dumps([{"id": n, "html_url": COMMENT_URL} for n in range(100)]).encode()),
+                no_network,
+            ),
+            Unreachable(),
+        ),
+    ],
+    ids=["usuniete-issue", "nieczytelna-odpowiedz", "brak-sieci-na-drugiej-stronie"],
+)
+def test_porazka_strony_komentarzy_to_porazka_calosci(
+    answers: tuple[Callable[[], HttpResponse], ...], expected: CommentsOutcome
+) -> None:
+    remaining = iter(answers)
+
+    outcome, _ = comments_with(lambda: next(remaining)())
+
+    assert outcome == expected
+
+
 OPERATIONS: dict[str, Callable[[GitHubReportBox, str], object]] = {
     "open_issue": lambda box, key: box.open_issue("kontrola-ilosci", TITLE, BODY, key=key),
     "comment": lambda box, key: box.comment(12, BODY, key=key),
+    "edit_comment": lambda box, key: box.edit_comment(901, BODY, key=key),
+    "comments": lambda box, key: box.comments(12, key=key),
     "labelled_issues": lambda box, key: box.labelled_issues("kontrola-ilosci", include_closed=True, key=key),
 }
 
@@ -360,7 +468,7 @@ TOO_LONG = (
 
 
 @pytest.mark.parametrize("status", [400, 413, 422])
-@pytest.mark.parametrize("operation", ["open_issue", "comment"])
+@pytest.mark.parametrize("operation", ["open_issue", "comment", "edit_comment"])
 def test_odmowa_tresci_wysylki_to_odmowa_tej_wysylki_a_nie_brak_sieci(operation: str, status: int) -> None:
     transport = ScriptedTransport(lambda: HttpResponse(status, TOO_LONG))
 

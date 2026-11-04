@@ -9,15 +9,28 @@ otwarte issue, idzie do niego komentarzem „Zgłoszenie wróciło”). Najpierw
 wysłane. Porażka (brak klucza, odmowa, brak sieci) zostawia plik bez Komunikatu; wątek rusza znów sam po
 ``RETRY_S``, przy starcie Centrum (``resume``) i po każdej nowej wysyłce. Plik do ``KnownIssue``, którego skrzynka
 już nie ma, kolejka porzuca z linią dziennika (#402). Wysłany plik dostaje znacznik dostarczenia, zanim zniknie,
-więc plik, którego nie da się usunąć, nie idzie drugi raz. Przerwanie między wysłaniem a znacznikiem powtarza
-wysyłkę (co najmniej raz, decyzja 12). Treść nigdy nie trafia do dziennika Centrum: tylko etykieta, okres, numer
-issue i przyczyna czekania (decyzja 13).
+więc plik, którego nie da się usunąć, nie idzie drugi raz. Treść nigdy nie trafia do dziennika Centrum: tylko
+etykieta, okres, numer issue i przyczyna czekania (decyzja 13).
+
+Wysyłka jest dokładnie raz (#840): każda część trafia do Skrzynki raz, także gdy przerwanie (zerwane połączenie,
+zgaśnięcie Centrum) przyjdzie między jej przyjęciem przez skrzynkę a znacznikiem dostarczenia. Każdy tekst, który
+kolejka zapisuje w skrzynce, kończy się niewidocznym znacznikiem (``_mark``, komentarz HTML w osobnej linii): z
+identyfikatorem wysyłki, czyli etykietą (rodzajem) i ``run_id`` (Uruchomieniem), z numerem części (0: nagłówek) i z
+wersją, czyli chwilą i numerem z nazwy pliku kolejki (``_version``), w porządku kolejki. Przed wysłaniem kolejka
+czyta treść i komentarze issue celu (``_settle``): issue ze znacznikiem tej wysyłki w nowszej wersji nie dostaje od
+niej niczego, część, której znacznik już tam jest w tej wersji, nie idzie drugi raz, komentarz części w starszej
+wersji dostaje nowy tekst (``edit_comment``), a komentarz części, której nowsza wersja nie ma, dostaje ``_RETIRED``.
+Tak Diagnoza, która wysyła Logi Uruchomienia drugi raz z tym samym identyfikatorem, zmienia komentarz swojego
+Uruchomienia, a starszy plik, który dojdzie po nowszym (np. raz nieczytelny), niczego w issue nie zmienia ani nie
+dopisuje. Wersje jednej wysyłki powstają w jednej pracy Centrum (Diagnozę ma tylko ostatnie Uruchomienie tej pracy,
+``run_logs``), a w niej wersja rośnie z każdą wysyłką, także gdy zegar komputera się cofnie (``Outbox.post``).
+Treści issue kolejka nigdy nie zmienia.
 
 Issue okresu kolejka znajduje po wierszu rozpoznawczym przy każdej próbie wysyłki i dopisuje do niego części jako
 komentarze. Bez niego zakłada nowe issue: pierwsza część (albo nagłówek) jest jego treścią, kolejne komentarzami.
-``NewIssue`` zawsze zakłada nowe issue tak samo, bez wiersza rozpoznawczego; gdy skrzynka odrzuci treść komentarza
-do issue, które już założyła, plik zapamiętuje jego numer i następna próba dopisuje resztę do niego. Kto czeka na wynik (Uwaga taty),
-może poczekać na dostarczenie przez ``wait_delivered``.
+``NewIssue`` szuka issue, którego treść ma znacznik tej wysyłki (także zamkniętego), a bez niego zakłada nowe, więc
+issue, które założyła przerwana próba, dostaje tylko brakujące części. Kto czeka na wynik (Uwaga taty), może poczekać
+na dostarczenie przez ``wait_delivered``.
 
 Adres pierwszego komentarza każdej dostarczonej wysyłki (np. Logów Uruchomienia, do których prowadzi przypięta
 Uwaga taty) kolejka dopisuje do pliku ``addresses`` i wczytuje przy następnym starcie Centrum, więc ``delivered``
@@ -30,12 +43,13 @@ from __future__ import annotations
 
 import itertools
 import json
+import re
 import sys
 import threading
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, BinaryIO, Final, Literal, Protocol, assert_never, get_args
 
@@ -45,7 +59,9 @@ from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
 from rozliczenia.centrum.log import CentrumLog, WaitingCause
 from rozliczenia.centrum.report_box import (
     COMMENT_LIMIT,
+    Comment,
     Commented,
+    Issue,
     Label,
     Refused,
     Rejected,
@@ -65,10 +81,24 @@ ADDRESSES_FILE: Final = "skrzynka-adresy.jsonl"
 SCHEMA_VERSION: Final = 2
 # Pliki kolejki sprzed ``NewIssue`` (#273) mają cel w kluczu ``thread`` i zawsze jest nim issue okresu.
 _PERIOD_THREAD_SCHEMA: Final = 1
-# Miejsce w komentarzu na nagłówek części i wiersz rozpoznawczy, ponad tekst bloków.
+# Miejsce w komentarzu na nagłówek części, wiersz rozpoznawczy i znacznik wysyłki, ponad tekst bloków.
 _FRAME_RESERVE: Final = 2_000
 # Najwięcej znaków tekstu bloków w jednej części; treść Zgłoszenia (``ReportIssue``) mieści się w jednej.
 PART_LIMIT: Final = COMMENT_LIMIT - _FRAME_RESERVE
+# Najwięcej znaków ``run_id``: identyfikator Uruchomienia, Uwagi taty albo Zgłoszenia (32 znaki ``uuid4().hex``).
+_RUN_ID_LIMIT: Final = 64
+# Miejsce na znacznik wysyłki (``_mark``) z linią przed nim: przy ``run_id`` do ``_RUN_ID_LIMIT`` znaków i wersji z
+# nazwy pliku z ``post`` ma najwyżej 150 znaków.
+_MARK_RESERVE: Final = 200
+# Najwięcej znaków tekstu wysyłki w treści issue albo komentarzu, bez znacznika.
+TEXT_LIMIT: Final = COMMENT_LIMIT - _MARK_RESERVE
+# Znacznik wysyłki: linia ``<!-- wysyłka <etykieta> <run_id> część <k> wersja <wersja> -->`` (``_mark``).
+_MARK_START: Final = "<!-- wysyłka "
+_MARK_REST: Final = re.compile(r"część ([0-9]+) wersja (\S+) -->")
+# Najmniejszy krok chwili w nazwie pliku kolejki (``%f``): wysyłka po cofnięciu zegara dostaje chwilę tuż po poprzedniej.
+_TICK: Final = timedelta(microseconds=1)
+# Tekst komentarza części, której nowsza wersja wysyłki już nie ma (Logi po Diagnozie krótsze o część).
+_RETIRED: Final = "Ta część jest pusta: nowsza wersja tej wysyłki ma mniej części."
 # Etykieta Zgłoszenia jak ``dad_cases.REPORT``.
 _REPORT_LABEL: Final[Label] = "zgloszenie"
 # Początek wiersza odcisku problemu w treści Zgłoszenia (``fingerprint_line``).
@@ -247,8 +277,11 @@ class Post:
 
     def __post_init__(self) -> None:
         body, comments = self.opening()
-        if not self.parts or any(len(text) > COMMENT_LIMIT for text in (body, *comments)):
+        if not self.parts or any(len(text) > TEXT_LIMIT for text in (body, *comments)):
             raise ValueError("Wysyłka musi mieć części mieszczące się w komentarzu Skrzynki Zgłoszeń.")
+        # Identyfikator wysyłki stoi w znaczniku w jednej linii (``_mark``), a znacznik mieści się w ``_MARK_RESERVE``.
+        if not 0 < len(self.run_id) <= _RUN_ID_LIMIT or not self.run_id.isprintable() or " " in self.run_id:
+            raise ValueError("Identyfikator wysyłki musi być krótkim napisem bez spacji.")
         # Przerwaną wysyłkę Zgłoszenia następna próba znajduje po tym wierszu; bez niego założyłaby drugie issue.
         if isinstance(self.target, ReportIssue) and self.target.line not in body.splitlines():
             raise ValueError("Treść nowego issue Zgłoszenia musi mieć wiersz odcisku problemu.")
@@ -303,22 +336,17 @@ class Post:
 
 @dataclass(frozen=True)
 class _Queued:
-    """Plik kolejki: wysyłka i ile jej części skrzynka już przyjęła (wszystkie: plik czeka tylko na usunięcie).
-
-    ``issue``: numer issue, które założyła wcześniejsza próba tej wysyłki, zanim skrzynka odrzuciła treść jej
-    komentarza (``Opened``); następna próba dopisuje do niego komentarze zamiast zakładać drugie issue.
-    """
+    """Plik kolejki: wysyłka i ile jej części skrzynka już przyjęła (wszystkie: plik czeka tylko na usunięcie)."""
 
     post: Post
     delivered_parts: int
-    issue: int | None = None
 
     @property
     def delivered(self) -> bool:
         return self.delivered_parts == len(self.post.parts)
 
 
-def _queue_text(post: Post, *, delivered_parts: int, issue: int | None = None) -> str:
+def _queue_text(post: Post, *, delivered_parts: int) -> str:
     return json.dumps(
         {
             "schema_version": SCHEMA_VERSION,
@@ -328,7 +356,6 @@ def _queue_text(post: Post, *, delivered_parts: int, issue: int | None = None) -
             "header": post.header,
             "parts": list(post.parts),
             "delivered_parts": delivered_parts,
-            "issue": issue,
         },
         ensure_ascii=False,
         indent=2,
@@ -379,7 +406,8 @@ def _target(entry: dict[str, Any], kind: object) -> Target | None:
 def _parse(text: str) -> _Queued | None:
     """Granica plików kolejki. ``delivered_parts`` jest opcjonalne: pliki z #273 go nie mają i nic nie dostarczyły.
 
-    ``issue`` też: pliki sprzed #665 go nie mają i żadna ich próba nie zostawiła założonego issue.
+    Pliki od #665 do #840 mogą mieć numer issue Uwagi taty (``issue``) i kolejka go pomija: issue wysyłki znajduje po
+    znaczniku, a Uwaga ma jedną część, więc żadna jej próba nie zostawiła issue bez całej treści.
     """
 
     try:
@@ -401,14 +429,11 @@ def _parse(text: str) -> _Queued | None:
             tuple(_string(part) for part in document["parts"]),
         )
         delivered_parts = document.get("delivered_parts", 0)
-        issue = document.get("issue")
     except (ValueError, KeyError, TypeError):
         return None
     if type(delivered_parts) is not int or not 0 <= delivered_parts <= len(post.parts):
         return None
-    if issue is not None and type(issue) is not int:
-        return None
-    return _Queued(post, delivered_parts, issue)
+    return _Queued(post, delivered_parts)
 
 
 def _queued(path: Path) -> _Queued | None:
@@ -489,77 +514,115 @@ class Gone:
     number: int
 
 
-@dataclass(frozen=True)
-class Opened:
-    """Skrzynka założyła issue ``number`` nowej wysyłki (``NewIssue``), a potem odrzuciła treść jej komentarza.
-
-    Takiego issue następna próba nie znajdzie, bo nie ma wiersza rozpoznawczego, więc jego numer zapamiętuje plik.
-    """
-
-    number: int
-
-
 Failure = Refused | Rejected | Unreachable | NoKey
 """Porażka wysyłki: odmowa klucza, odmowa treści, brak sieci albo brak klucza."""
 
 
-def _deliver(post: Post, box: KeyedBox, opened: int | None) -> Delivered | Gone | Opened | Failure:
-    """Wysyłka do jej celu; ``opened``: wcześniejsza próba założyła już to issue (``Opened``), więc tylko komentarze."""
+def _version(path: Path) -> str:
+    """Wersja wysyłki z pliku ``path``: chwila i numer z początku nazwy (``Outbox.post``), w porządku kolejki.
 
-    if opened is not None:
-        return _deliver_to_known(post, KnownIssue(post.target.label, opened), box)
+    W jednej pracy Centrum rośnie z każdą wysyłką także po cofnięciu zegara komputera (``Outbox.post``).
+    """
+
+    return "-".join(path.stem.split("-")[:2])
+
+
+def _mark(post: Post, part: int, version: str) -> str:
+    """Znacznik części ``part`` (0: nagłówek) wysyłki ``post`` w wersji ``version``; GitHub go nie pokazuje."""
+
+    return f"{_MARK_START}{post.target.label} {post.run_id} część {part} wersja {version} -->"
+
+
+Marked = tuple[int, str]
+"""Część wysyłki (0: nagłówek) i jej tekst ze znacznikiem."""
+
+
+def _marked(text: str, post: Post, part: int, version: str) -> Marked:
+    """Część ``part`` i jej tekst ze znacznikiem w ostatniej linii."""
+
+    return part, f"{text}\n{_mark(post, part, version)}"
+
+
+def _marks(text: str, post: Post) -> Iterator[tuple[int, str]]:
+    """Część i wersja każdego znacznika wysyłki ``post`` w ``text``; linia w innej postaci znacznikiem nie jest."""
+
+    start = f"{_MARK_START}{post.target.label} {post.run_id} "
+    for line in text.splitlines():
+        if line.startswith(start) and (found := _MARK_REST.fullmatch(line.removeprefix(start))):
+            yield int(found.group(1)), found.group(2)
+
+
+def _opening(post: Post, version: str) -> tuple[Marked, tuple[Marked, ...]]:
+    """``Post.opening`` ze znacznikami: treść nowego issue i komentarze po niej."""
+
+    body, comments = post.opening()
+    first = len(post.parts) - len(comments) + 1
+    return (
+        _marked(body, post, 0 if post.header is not None else 1, version),
+        tuple(_marked(text, post, part, version) for part, text in enumerate(comments, start=first)),
+    )
+
+
+def _deliver(post: Post, version: str, box: KeyedBox) -> Delivered | Gone | Failure:
+    """Wysyłka w wersji ``version`` do jej celu."""
+
     match post.target:
         case PeriodThread() as thread:
-            return _deliver_to_period(post, thread, box)
+            return _deliver_to_period(post, version, thread, box)
         case NewIssue() as issue:
-            return _deliver_new_issue(post, issue, box)
+            return _deliver_new_issue(post, version, issue, box)
         case KnownIssue() as known:
-            return _deliver_to_known(post, known, box)
+            return _deliver_to_known(post, version, known, box)
         case ReportIssue() as report:
-            return _deliver_report(post, report, box)
+            return _deliver_report(post, version, report, box)
         case _:
             assert_never(post.target)
 
 
-def _deliver_new_issue(post: Post, issue: NewIssue, box: KeyedBox) -> Delivered | Opened | Failure:
-    """Nowe issue z pierwszą częścią (albo nagłówkiem) i komentarze z resztą; porażka kończy wysyłkę."""
+def _deliver_new_issue(post: Post, version: str, issue: NewIssue, box: KeyedBox) -> Delivered | Failure:
+    """Issue z treścią ze znacznikiem tej wysyłki (także zamknięte) albo nowe z pierwszą częścią; reszta komentarzami.
 
-    body, comments = post.opening()
+    Takie issue założyła przerwana próba tej wysyłki (zerwane połączenie, zgaśnięcie Centrum przed znacznikiem
+    dostarczenia), więc wysyłka dopisuje do niego tylko części, których tam nie ma.
+    """
+
+    issues = box.labelled_issues(issue.label, include_closed=True)
+    if isinstance(issues, Refused | Unreachable | NoKey):
+        return issues
+    (_, body), comments = _opening(post, version)
+    found = max((found for found in issues if any(_marks(found.body, post))), key=lambda found: found.number, default=None)
+    if found is not None:
+        return _settle(post, version, found, comments, box)
     opened = box.open_issue(issue.label, issue.title, body)
     if not isinstance(opened, Sent):
         return opened
-    outcome = _comment_all(opened.number, comments, box)
-    return Opened(opened.number) if isinstance(outcome, Rejected) else outcome
+    return _comment_all(opened.number, comments, box)
 
 
-def _deliver_report(post: Post, report: ReportIssue, box: KeyedBox) -> Delivered | Failure:
+def _deliver_report(post: Post, version: str, report: ReportIssue, box: KeyedBox) -> Delivered | Failure:
     """Nowe issue z jedyną częścią wysyłki albo komentarz z nią do otwartego Zgłoszenia z tym odciskiem.
 
     Jeden problem ma jedno otwarte Zgłoszenie: znalezione dostaje komentarz ``returned_report``. Wyjątkiem jest
-    Zgłoszenie z treścią równą tej części: założyła je ta wysyłka, a przerwanie przyszło przed znacznikiem
-    dostarczenia, więc całe Zgłoszenie już jest w treści i wysyłka je przejmuje bez komentarza. Przerwanie po
-    komentarzu, przed znacznikiem, powtarza komentarz, jak przy każdym komentarzu kolejki (co najmniej raz).
+    Zgłoszenie, którego treść ma znacznik tej części: założyła je ta wysyłka, a przerwanie przyszło przed znacznikiem
+    dostarczenia, więc całe Zgłoszenie już jest w treści i wysyłka je przejmuje bez komentarza (``_settle``).
     """
 
     issues = box.labelled_issues(report.label, include_closed=False)
     if isinstance(issues, Refused | Unreachable | NoKey):
         return issues
-    body = post.opening()[0]
     found = newest_with_line(issues, report.line)
     if found is None:
+        (_, body), _ = _opening(post, version)
         opened = box.open_issue(report.label, report.title, body)
         if not isinstance(opened, Sent):
             return opened
         return Delivered(opened.number, ())
-    if any(issue.number == found and issue.body == body for issue in issues):
-        return Delivered(found, ())
-    return _comment_all(found, (returned_report(body),), box)
+    returned = _marked(returned_report(post.parts[0]), post, 1, version)
+    return _settle(post, version, _issue(issues, found), (returned,), box)
 
 
-def _deliver_to_known(post: Post, known: KnownIssue, box: KeyedBox) -> Delivered | Gone | Failure:
-    """Komentarze wysyłki (``Post.opening``) do issue ``known.number``, jeśli skrzynka je ma (otwarte albo zamknięte).
-
-    Do ``KnownIssue`` to każda część, a do issue, które założyła wcześniejsza próba (``Opened``), części po jego treści.
+def _deliver_to_known(post: Post, version: str, known: KnownIssue, box: KeyedBox) -> Delivered | Gone | Failure:
+    """Każda część wysyłki komentarzem do issue ``known.number``, jeśli skrzynka je ma (otwarte albo zamknięte).
 
     Komentarz do issue, które Maks usunął, to 404, czyli odmowa, która zatrzymałaby całą kolejkę, więc kolejka
     najpierw pyta o issue z etykietą. Gdy lista przyszła bez tego numeru, issue nie ma (``Gone``).
@@ -570,38 +633,101 @@ def _deliver_to_known(post: Post, known: KnownIssue, box: KeyedBox) -> Delivered
         return found
     if all(issue.number != known.number for issue in found):
         return Gone(known.number)
-    return _comment_all(known.number, post.opening()[1], box)
+    return _settle(post, version, _issue(found, known.number), _opening(post, version)[1], box)
 
 
-def _deliver_to_period(post: Post, thread: PeriodThread, box: KeyedBox) -> Delivered | Failure:
+def _deliver_to_period(post: Post, version: str, thread: PeriodThread, box: KeyedBox) -> Delivered | Failure:
     """Każda część jako komentarz do issue okresu, a bez niego nowe issue z pierwszą częścią i komentarze z resztą.
 
     Issue okresu jest szukane przy każdej próbie, więc usunięte albo zamknięte issue nie blokuje kolejki. Pierwsza
-    porażka kończy wysyłkę; następna próba zaczyna od nowa.
+    porażka kończy wysyłkę; następna próba dopisuje tylko części, których w issue nie ma (``_settle``).
     """
 
-    found = box.find_issue(thread.label, thread.line, include_closed=thread.closed == "reuse")
-    if isinstance(found, Refused | Unreachable | NoKey):
-        return found
+    issues = box.labelled_issues(thread.label, include_closed=thread.closed == "reuse")
+    if isinstance(issues, Refused | Unreachable | NoKey):
+        return issues
+    found = newest_with_line(issues, thread.line)
     if found is None:
-        body, comments = post.opening()
+        (_, body), comments = _opening(post, version)
         opened = box.open_issue(thread.label, thread.title, body)
         if not isinstance(opened, Sent):
             return opened
-        number = opened.number
-    else:
-        number, comments = found, post.parts
-    return _comment_all(number, comments, box)
+        return _comment_all(opened.number, comments, box)
+    parts = tuple(_marked(text, post, part, version) for part, text in enumerate(post.parts, start=1))
+    return _settle(post, version, _issue(issues, found), parts, box)
 
 
-def _comment_all(number: int, comments: Sequence[str], box: KeyedBox) -> Delivered | Failure:
+def _issue(issues: tuple[Issue, ...], number: int) -> Issue:
+    return next(issue for issue in issues if issue.number == number)
+
+
+def _comment_all(number: int, comments: Sequence[Marked], box: KeyedBox) -> Delivered | Failure:
+    """Komentarze nowego issue po kolei; pierwsza porażka kończy wysyłkę."""
+
     delivered: list[Commented] = []
-    for comment in comments:
+    for _part, comment in comments:
         answer = box.comment(number, comment)
         if not isinstance(answer, Commented):
             return answer
         delivered.append(answer)
     return Delivered(number, tuple(delivered))
+
+
+def _settle(post: Post, version: str, issue: Issue, comments: Sequence[Marked], box: KeyedBox) -> Delivered | Failure:
+    """Części ``comments`` w istniejącym issue, każda dokładnie raz, z komentarzami issue przeczytanymi przed wysłaniem.
+
+    Issue, które ma znacznik tej wysyłki w nowszej wersji (w treści albo w komentarzu), od tej wersji nie dostaje
+    niczego: starszy plik, który doszedł po nowszym, nie dopisuje, nie zmienia i nie opróżnia żadnej części, także gdy
+    ma ich więcej niż nowsza wersja. Inaczej część ze znacznikiem w treści issue albo w komentarzu w tej wersji już
+    jest; komentarz części w starszej wersji dostaje nowy tekst; reszta to nowe komentarze po kolei. Komentarz części,
+    której ta wersja nie ma (nowsza wersja ma mniej części), dostaje ``_RETIRED``, chyba że dostał go już od tej wersji
+    (ponowienie po zgubionej odpowiedzi). Pierwsza porażka kończy wysyłkę.
+    """
+
+    found = box.comments(issue.number)
+    if isinstance(found, Refused | Unreachable | NoKey):
+        return found
+    in_body = dict(_marks(issue.body, post))
+    newest = max(in_body.values(), default="")
+    sent: dict[int, tuple[str, Comment]] = {}
+    for comment in found:
+        for part, seen in _marks(comment.body, post):
+            sent.setdefault(part, (seen, comment))
+            newest = max(newest, seen)
+    if newest > version:
+        return Delivered(issue.number, tuple(_kept(sent[part][1]) for part, _ in comments if part in sent))
+    delivered: list[Commented] = []
+    for part, text in comments:
+        if part in in_body:
+            continue
+        answer = _put(issue.number, sent.get(part), text, version, box)
+        if not isinstance(answer, Commented):
+            return answer
+        delivered.append(answer)
+    wanted = {part for part, _ in comments} | in_body.keys()
+    for part, (seen, comment) in sorted(sent.items()):
+        if part not in wanted and seen < version:
+            answer = box.edit_comment(comment.id, _marked(_RETIRED, post, part, version)[1])
+            if not isinstance(answer, Commented):
+                return answer
+    return Delivered(issue.number, tuple(delivered))
+
+
+def _put(number: int, sent: tuple[str, Comment] | None, text: str, version: str, box: KeyedBox) -> Commented | Failure:
+    """Komentarz części: nowy, gdy go nie ma, nowy tekst w komentarzu starszej wersji, a inaczej ten, który już jest."""
+
+    if sent is None:
+        return box.comment(number, text)
+    seen, comment = sent
+    if seen < version:
+        return box.edit_comment(comment.id, text)
+    return _kept(comment)
+
+
+def _kept(comment: Comment) -> Commented:
+    """Komentarz części, który już jest w Skrzynce, jako wynik wysyłki (jego adres zna potem ``Outbox.delivered``)."""
+
+    return Commented(comment.id, comment.url)
 
 
 def _waiting(outcome: Failure) -> tuple[WaitingCause, Literal["stop", "next"]]:
@@ -687,7 +813,9 @@ class Outbox:
         self._listener = listener
         self._addresses = addresses
         self._sequence = itertools.count(1)
-        self._lock = threading.Lock()  # _draining, _again, _retry_armed, _first_comments, _rejected_posts
+        self._last_moment: datetime | None = None  # chwila z nazwy ostatniego pliku, który zapisał ``post``
+        # _draining, _again, _retry_armed, _first_comments, _rejected_posts, _sequence, _last_moment
+        self._lock = threading.Lock()
         self._changed = threading.Condition(self._lock)
         self._draining = False
         self._again = False
@@ -755,11 +883,17 @@ class Outbox:
     def post(self, post: Post) -> bool:
         """Zapisuje ``post`` w nowym pliku kolejki i budzi wysyłkę w tle; nie pyta skrzynki i nie czeka na sieć.
 
-        ``False``: pliku nie udało się zapisać (typ wyjątku jest w dzienniku) i wysyłka przepadła.
+        Nazwa pliku sortuje się po nazwie każdej wcześniejszej wysyłki tej kolejki, także gdy zegar komputera się cofnął
+        (Windows poprawia czas): chwila w nazwie jest wtedy o ``_TICK`` późniejsza od poprzedniej, więc wysyłka zapisana
+        później ma nowszą wersję (``_version``). ``False``: pliku nie udało się zapisać (typ wyjątku jest w dzienniku) i
+        wysyłka przepadła.
         """
 
-        moment = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        name = f"{moment}-{next(self._sequence):04d}-{post.target.label}-{post.run_id[:8]}.json"
+        with self._lock:  # chwila i numer razem: każda następna nazwa tej kolejki sortuje się po poprzedniej
+            now = datetime.now(timezone.utc)
+            moment = now if self._last_moment is None else max(now, self._last_moment + _TICK)
+            self._last_moment = moment
+            name = f"{moment:%Y%m%dT%H%M%S%fZ}-{next(self._sequence):04d}-{post.target.label}-{post.run_id[:8]}.json"
         try:
             replace_atomically(self._directory / name, post.to_json())
         except OSError as failure:
@@ -838,13 +972,7 @@ class Outbox:
             if post is None:
                 continue
             label, period = post.target.label, post.period
-            outcome = _deliver(post, self._box, queued.issue)
-            if isinstance(outcome, Opened):
-                # Bez numeru w pliku następny start założyłby drugie issue; chroni wtedy już tylko _rejected, do końca
-                # tej pracy Centrum.
-                with suppress(OSError):
-                    replace_atomically(path, _queue_text(post, delivered_parts=0, issue=outcome.number))
-                outcome = Rejected()
+            outcome = _deliver(post, _version(path), self._box)
             if isinstance(outcome, Gone):
                 self._log.box_post_dropped(label=label, file=path.name, number=outcome.number)
                 self._remove(path)
@@ -870,7 +998,7 @@ class Outbox:
                 self._first_comments[post.run_id, label] = outcome.comments[0].url if outcome.comments else None
                 self._changed.notify_all()
             self._remember_address(post, outcome)
-            with suppress(OSError):  # bez znacznika chroni już tylko _undeleted, do końca tej pracy Centrum
+            with suppress(OSError):  # bez znacznika następna próba znajdzie każdą część w skrzynce (_settle)
                 replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts)))
             self._remove(path)
         self._stopped_on = None

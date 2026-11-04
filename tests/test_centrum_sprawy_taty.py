@@ -24,6 +24,7 @@ from rozliczenia.centrum.outbox import KnownIssue, NewIssue, PeriodThread, Post
 from rozliczenia.centrum.report_box import (
     Closure,
     CommentOutcome,
+    CommentsOutcome,
     Issue,
     IssuesOutcome,
     Label,
@@ -338,6 +339,12 @@ class AnsweringBox:
 
     def comment(self, number: int, body: str, *, key: str) -> CommentOutcome:
         raise AssertionError("Sprawy taty nie komentują issue")
+
+    def comments(self, number: int, *, key: str) -> CommentsOutcome:
+        raise AssertionError("Sprawy taty nie czytają komentarzy issue")
+
+    def edit_comment(self, comment_id: int, body: str, *, key: str) -> CommentOutcome:
+        raise AssertionError("Sprawy taty nie zmieniają komentarzy issue")
 
     def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
         self.asked.append((label, include_closed, key))

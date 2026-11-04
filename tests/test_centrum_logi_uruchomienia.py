@@ -545,7 +545,7 @@ def test_diagnoza_w_logach_nie_ma_tresci_komorek_ani_pelnych_sciezek(tmp_path: P
 
     assert response.status_code == 200, response.json()
     box = centrum.surroundings.report_box
-    assert box.wait_until(lambda fake: sum(len(issue.comments) for issue in fake.background_issues) == 2)
+    assert box.wait_until(lambda fake: len(fake.edited) == 1), "Diagnoza zmienia komentarz Logów"
     [record] = records(centrum)
     assert "failed" in [check["state"] for check in record["diagnosis"]["checks"]], "Diagnoza z przyczyną w pliku Logów"
     sent = [part for issue in box.background_issues for part in (issue.title, issue.body, *issue.comments)]

@@ -46,7 +46,7 @@ class DiagnosedLogs(Protocol):
         ...
 
     def diagnosed(self, run_id: str, diagnosis: Diagnosis) -> None:
-        """Dopisuje Diagnozę z nowym wynikiem do Logów Uruchomienia: do pliku i jako kolejny komentarz w Skrzynce Zgłoszeń."""
+        """Dopisuje Diagnozę z nowym wynikiem do Logów Uruchomienia: do pliku i do ich komentarza w Skrzynce Zgłoszeń."""
         ...
 
 

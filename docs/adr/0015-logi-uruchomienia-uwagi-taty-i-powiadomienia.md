@@ -26,6 +26,17 @@ Uruchomienia. Szczegóły w punkcie „Treść Logów”.
 [ADR 0009](0009-aktualizacja-narzedzia-z-centrum.md) traci Powiadomienie o
 naprawie na stronie Okresy: zastępuje je Powiadomienie o nowej wersji.
 
+**Dopisek (#840, 2026-11-04).** Kolejka Skrzynki Zgłoszeń wysyła każdą wysyłkę
+dokładnie raz, a nie „co najmniej raz”: każdy tekst, który zapisuje w Skrzynce,
+niesie niewidoczny znacznik z identyfikatorem wysyłki (Uruchomienie i etykieta),
+numerem części i wersją, a przed wysłaniem kolejka czyta issue celu i jego
+komentarze i nie wysyła części, która już tam jest. Zerwane połączenie po
+utworzeniu issue nie daje więc drugiego issue Uwagi taty, a przerwanie między
+wysłaniem a znacznikiem dostarczenia nie powtarza komentarza. Diagnoza z nowym
+wynikiem zmienia komentarz Logów swojego Uruchomienia, zamiast wysyłać całe Logi
+kolejnym komentarzem. Zdania o „co najmniej raz” w decyzji niżej opisują stan
+sprzed tego dopisku.
+
 ## Kontekst
 
 Wszystko, co Maks wiedział o pracy narzędzia u taty, to rekord metryk (czasy,
