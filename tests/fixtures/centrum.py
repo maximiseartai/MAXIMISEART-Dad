@@ -130,7 +130,8 @@ class FakeReportBox:
     z zakładaniem issue, a ``comment_outcomes`` to przygotowane wyniki komentarzy. ``lost_answers`` to tyle
     następnych zakładanych issue, które skrzynka zakłada, ale odpowiedź się urywa (``Unreachable``), a
     ``lost_comment_answers`` tak samo z następnymi komentarzami. ``after_comment`` biegnie, gdy skrzynka przyjęła
-    komentarz, przed odpowiedzią. ``edited`` to identyfikator każdego poprawionego komentarza po kolei.
+    komentarz, przed odpowiedzią. ``edited`` to identyfikator każdego poprawionego komentarza po kolei, a
+    ``lost_edit_answers`` to numery tych poprawek (od 1), które skrzynka przyjmuje, ale odpowiedź się urywa.
     ``wait_until`` czeka na wysyłkę w tle.
 
     Issue etykiet z ``background`` to ruch w tle, którego test nie ogląda (np. Logi Uruchomienia w testach
@@ -154,6 +155,7 @@ class FakeReportBox:
     lost_comment_answers: int = 0
     after_comment: Callable[[], None] = lambda: None
     edited: list[int] = field(default_factory=list)
+    lost_edit_answers: frozenset[int] = frozenset()
     background: frozenset[Label] = frozenset()
     background_issues: list[FakeIssue] = field(default_factory=list)
     background_comment_outcomes: list[CommentOutcome] = field(default_factory=list)
@@ -237,6 +239,8 @@ class FakeReportBox:
                     issue.comment_texts[issue.comment_ids.index(comment_id)] = body
                     self.edited.append(comment_id)
                     self._changed.notify_all()
+                    if len(self.edited) in self.lost_edit_answers:
+                        return Unreachable()
                     return Commented(comment_id, self._url_of(issue, comment_id))
         return Refused()
 

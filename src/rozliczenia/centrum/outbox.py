@@ -17,11 +17,14 @@ zgaśnięcie Centrum) przyjdzie między jej przyjęciem przez skrzynkę a znaczn
 kolejka zapisuje w skrzynce, kończy się niewidocznym znacznikiem (``_mark``, komentarz HTML w osobnej linii): z
 identyfikatorem wysyłki, czyli etykietą (rodzajem) i ``run_id`` (Uruchomieniem), z numerem części (0: nagłówek) i z
 wersją, czyli chwilą i numerem z nazwy pliku kolejki (``_version``), w porządku kolejki. Przed wysłaniem kolejka
-czyta treść i komentarze issue celu (``_settle``): część, której znacznik już tam jest w tej albo nowszej wersji,
-nie idzie drugi raz, komentarz części w starszej wersji dostaje nowy tekst (``edit_comment``), a komentarz części,
-której nowsza wersja nie ma, dostaje ``_RETIRED``. Tak Diagnoza, która wysyła Logi Uruchomienia drugi raz z tym samym
-identyfikatorem, zmienia komentarz swojego Uruchomienia, a starszy plik, który dojdzie po nowszym (np. raz
-nieczytelny), niczego nie cofa. Treści issue kolejka nigdy nie zmienia.
+czyta treść i komentarze issue celu (``_settle``): issue ze znacznikiem tej wysyłki w nowszej wersji nie dostaje od
+niej niczego, część, której znacznik już tam jest w tej wersji, nie idzie drugi raz, komentarz części w starszej
+wersji dostaje nowy tekst (``edit_comment``), a komentarz części, której nowsza wersja nie ma, dostaje ``_RETIRED``.
+Tak Diagnoza, która wysyła Logi Uruchomienia drugi raz z tym samym identyfikatorem, zmienia komentarz swojego
+Uruchomienia, a starszy plik, który dojdzie po nowszym (np. raz nieczytelny), niczego w issue nie zmienia ani nie
+dopisuje. Wersje jednej wysyłki powstają w jednej pracy Centrum (Diagnozę ma tylko ostatnie Uruchomienie tej pracy,
+``run_logs``), a w niej wersja rośnie z każdą wysyłką, także gdy zegar komputera się cofnie (``Outbox.post``).
+Treści issue kolejka nigdy nie zmienia.
 
 Issue okresu kolejka znajduje po wierszu rozpoznawczym przy każdej próbie wysyłki i dopisuje do niego części jako
 komentarze. Bez niego zakłada nowe issue: pierwsza część (albo nagłówek) jest jego treścią, kolejne komentarzami.
@@ -46,7 +49,7 @@ import threading
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, BinaryIO, Final, Literal, Protocol, assert_never, get_args
 
@@ -92,6 +95,8 @@ TEXT_LIMIT: Final = COMMENT_LIMIT - _MARK_RESERVE
 # Znacznik wysyłki: linia ``<!-- wysyłka <etykieta> <run_id> część <k> wersja <wersja> -->`` (``_mark``).
 _MARK_START: Final = "<!-- wysyłka "
 _MARK_REST: Final = re.compile(r"część ([0-9]+) wersja (\S+) -->")
+# Najmniejszy krok chwili w nazwie pliku kolejki (``%f``): wysyłka po cofnięciu zegara dostaje chwilę tuż po poprzedniej.
+_TICK: Final = timedelta(microseconds=1)
 # Tekst komentarza części, której nowsza wersja wysyłki już nie ma (Logi po Diagnozie krótsze o część).
 _RETIRED: Final = "Ta część jest pusta: nowsza wersja tej wysyłki ma mniej części."
 # Etykieta Zgłoszenia jak ``dad_cases.REPORT``.
@@ -514,7 +519,10 @@ Failure = Refused | Rejected | Unreachable | NoKey
 
 
 def _version(path: Path) -> str:
-    """Wersja wysyłki z pliku ``path``: chwila i numer z początku nazwy (``Outbox.post``), w porządku kolejki."""
+    """Wersja wysyłki z pliku ``path``: chwila i numer z początku nazwy (``Outbox.post``), w porządku kolejki.
+
+    W jednej pracy Centrum rośnie z każdą wysyłką także po cofnięciu zegara komputera (``Outbox.post``).
+    """
 
     return "-".join(path.stem.split("-")[:2])
 
@@ -668,19 +676,26 @@ def _comment_all(number: int, comments: Sequence[Marked], box: KeyedBox) -> Deli
 def _settle(post: Post, version: str, issue: Issue, comments: Sequence[Marked], box: KeyedBox) -> Delivered | Failure:
     """Części ``comments`` w istniejącym issue, każda dokładnie raz, z komentarzami issue przeczytanymi przed wysłaniem.
 
-    Część ze znacznikiem w treści issue albo w komentarzu w tej lub nowszej wersji już jest; komentarz części w
-    starszej wersji dostaje nowy tekst; reszta to nowe komentarze po kolei. Komentarz części, której ta wersja nie
-    ma (nowsza wersja ma mniej części), dostaje ``_RETIRED``. Pierwsza porażka kończy wysyłkę.
+    Issue, które ma znacznik tej wysyłki w nowszej wersji (w treści albo w komentarzu), od tej wersji nie dostaje
+    niczego: starszy plik, który doszedł po nowszym, nie dopisuje, nie zmienia i nie opróżnia żadnej części, także gdy
+    ma ich więcej niż nowsza wersja. Inaczej część ze znacznikiem w treści issue albo w komentarzu w tej wersji już
+    jest; komentarz części w starszej wersji dostaje nowy tekst; reszta to nowe komentarze po kolei. Komentarz części,
+    której ta wersja nie ma (nowsza wersja ma mniej części), dostaje ``_RETIRED``, chyba że dostał go już od tej wersji
+    (ponowienie po zgubionej odpowiedzi). Pierwsza porażka kończy wysyłkę.
     """
 
     found = box.comments(issue.number)
     if isinstance(found, Refused | Unreachable | NoKey):
         return found
-    in_body = {part for part, _ in _marks(issue.body, post)}
+    in_body = dict(_marks(issue.body, post))
+    newest = max(in_body.values(), default="")
     sent: dict[int, tuple[str, Comment]] = {}
     for comment in found:
         for part, seen in _marks(comment.body, post):
             sent.setdefault(part, (seen, comment))
+            newest = max(newest, seen)
+    if newest > version:
+        return Delivered(issue.number, tuple(_kept(sent[part][1]) for part, _ in comments if part in sent))
     delivered: list[Commented] = []
     for part, text in comments:
         if part in in_body:
@@ -689,7 +704,7 @@ def _settle(post: Post, version: str, issue: Issue, comments: Sequence[Marked], 
         if not isinstance(answer, Commented):
             return answer
         delivered.append(answer)
-    wanted = {part for part, _ in comments} | in_body
+    wanted = {part for part, _ in comments} | in_body.keys()
     for part, (seen, comment) in sorted(sent.items()):
         if part not in wanted and seen < version:
             answer = box.edit_comment(comment.id, _marked(_RETIRED, post, part, version)[1])
@@ -706,6 +721,12 @@ def _put(number: int, sent: tuple[str, Comment] | None, text: str, version: str,
     seen, comment = sent
     if seen < version:
         return box.edit_comment(comment.id, text)
+    return _kept(comment)
+
+
+def _kept(comment: Comment) -> Commented:
+    """Komentarz części, który już jest w Skrzynce, jako wynik wysyłki (jego adres zna potem ``Outbox.delivered``)."""
+
     return Commented(comment.id, comment.url)
 
 
@@ -792,7 +813,9 @@ class Outbox:
         self._listener = listener
         self._addresses = addresses
         self._sequence = itertools.count(1)
-        self._lock = threading.Lock()  # _draining, _again, _retry_armed, _first_comments, _rejected_posts
+        self._last_moment: datetime | None = None  # chwila z nazwy ostatniego pliku, który zapisał ``post``
+        # _draining, _again, _retry_armed, _first_comments, _rejected_posts, _sequence, _last_moment
+        self._lock = threading.Lock()
         self._changed = threading.Condition(self._lock)
         self._draining = False
         self._again = False
@@ -860,11 +883,17 @@ class Outbox:
     def post(self, post: Post) -> bool:
         """Zapisuje ``post`` w nowym pliku kolejki i budzi wysyłkę w tle; nie pyta skrzynki i nie czeka na sieć.
 
-        ``False``: pliku nie udało się zapisać (typ wyjątku jest w dzienniku) i wysyłka przepadła.
+        Nazwa pliku sortuje się po nazwie każdej wcześniejszej wysyłki tej kolejki, także gdy zegar komputera się cofnął
+        (Windows poprawia czas): chwila w nazwie jest wtedy o ``_TICK`` późniejsza od poprzedniej, więc wysyłka zapisana
+        później ma nowszą wersję (``_version``). ``False``: pliku nie udało się zapisać (typ wyjątku jest w dzienniku) i
+        wysyłka przepadła.
         """
 
-        moment = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        name = f"{moment}-{next(self._sequence):04d}-{post.target.label}-{post.run_id[:8]}.json"
+        with self._lock:  # chwila i numer razem: każda następna nazwa tej kolejki sortuje się po poprzedniej
+            now = datetime.now(timezone.utc)
+            moment = now if self._last_moment is None else max(now, self._last_moment + _TICK)
+            self._last_moment = moment
+            name = f"{moment:%Y%m%dT%H%M%S%fZ}-{next(self._sequence):04d}-{post.target.label}-{post.run_id[:8]}.json"
         try:
             replace_atomically(self._directory / name, post.to_json())
         except OSError as failure:

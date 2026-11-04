@@ -643,7 +643,8 @@ zgaśnie albo połączenie się zerwie, zanim kolejka zapisze, że ją dostarczy
 każdy jej tekst w Skrzynce niesie niewidoczny identyfikator (Uruchomienie i
 rodzaj), a kolejka przed wysłaniem sprawdza, co już tam jest. Nowsza wersja tej
 samej wysyłki, jak Logi Uruchomienia po Diagnozie, zmienia jej komentarz zamiast
-dokładać nowy. Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego
+dokładać nowy, a starsza, która dojdzie po nowszej, niczego w Skrzynce nie
+zmienia. Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego
 startu Centrum rozliczeń; tata ma wtedy skontaktować się z Maksem.
 _Avoid_: outbox, bufor
 

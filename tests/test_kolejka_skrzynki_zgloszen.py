@@ -8,14 +8,17 @@ Centrum nieosiągalna rozsądnym kosztem.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime, timezone
 import itertools
 import json
 from pathlib import Path
 import shutil
 import threading
+from types import SimpleNamespace
 
 import pytest
 
+from rozliczenia.centrum import outbox as outbox_module
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import (
@@ -145,6 +148,19 @@ def test_czesc_ponad_limit_komentarza_to_blad_programu() -> None:
             blocks=["x" * 60_000],
             frame=lambda _number, _count, text: "nagłówek " * 1_000 + text,
         )
+
+
+@pytest.mark.parametrize(
+    "run_id",
+    ["", "x" * 65, "3f2a9c1b 8e7d4f0a", "3f2a9c1b\n8e7d4f0a"],
+    ids=["pusty", "dluzszy-niz-64-znaki", "ze-spacja", "w-dwoch-liniach"],
+)
+def test_identyfikator_wysylki_pusty_dlugi_ze_spacja_albo_w_dwoch_liniach_to_blad_programu(run_id: str) -> None:
+    # Znacznik wysyłki to jedna linia z identyfikatorem jako jednym słowem, w zapasie _MARK_RESERVE każdego komentarza.
+    assert Post(THREAD, period="08_14_09_2026", run_id="x" * 64, header=None, parts=("treść",)).run_id == "x" * 64
+
+    with pytest.raises(ValueError, match="Identyfikator wysyłki"):
+        Post(THREAD, period="08_14_09_2026", run_id=run_id, header=None, parts=("treść",))
 
 
 def test_granica_tresci_liczy_znaki_a_nie_bajty_takze_z_polskimi_literami() -> None:
@@ -703,6 +719,89 @@ def test_plik_kolejki_ktorego_nigdy_nie_da_sie_odczytac_ponawia_co_minute_z_jedn
     assert (queue.box.issues, queue.box.keys, queue.files()) == ([], [], [name])
     [line] = queue.log().splitlines()
     assert f"skrzynka-nieczytelny plik={name}" in line
+
+
+def run_logs(version: str, count: int, *, header: str | None = "Logi Uruchomień okresu.") -> Post:
+    """Logi Uruchomienia ``RUN_ID`` w ``count`` częściach; ``version`` mówi, po której Diagnozie, a każda Diagnoza
+    kolejkuje nowszą wersję tej samej wysyłki (``RunLogs.diagnosed``)."""
+
+    parts = tuple(f"Logi {version}, część {number}/{count}\n" for number in range(1, count + 1))
+    return Post(LOGS, "08_14_09_2026", RUN_ID, header, parts)
+
+
+@pytest.mark.parametrize(
+    ("header", "older", "newer"),
+    [("Logi Uruchomień okresu.", 3, 2), (None, 2, 1)],
+    ids=["z-naglowkiem", "nowsza-cala-w-tresci-issue"],
+)
+def test_logi_sprzed_diagnozy_ktore_dojda_po_logach_z_diagnoza_nie_zostawiaja_w_issue_okresu_zadnej_swojej_czesci(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, header: str | None, older: int, newer: int
+) -> None:
+    # Bez sieci czekają dwie wersje Logów jednego Uruchomienia, po drugiej Diagnozie o część krótsze niż po pierwszej.
+    # Po powrocie sieci plik starszej raz nie daje się odczytać (trzyma go OneDrive), więc nowsza idzie pierwsza. Bez
+    # nagłówka nowsza wersja w jednej części jest cała w treści issue, które sama zakłada.
+    queue = Queue(tmp_path, FakeReportBox(search_failure=Unreachable()))
+    queue.outbox.post(run_logs("po pierwszej Diagnozie", older, header=header))
+    queue.passed()
+    queue.outbox.post(run_logs("po drugiej Diagnozie", newer, header=header))
+    queue.passed()
+    queue.box.search_failure = None
+    locked_reads(monkeypatch, queue, times=1)
+
+    queue.clock.advance(RETRY_S)
+    queue.passed()
+    assert len(queue.files()) == 1, "plik starszej wersji czeka na następne przejście"
+    queue.clock.advance(RETRY_S)
+    queue.passed()
+
+    assert queue.files() == []
+    [issue] = queue.box.issues_with(LOGS.label)
+    texts = [issue.body, *issue.comments]
+    assert [text for text in texts if "po pierwszej Diagnozie" in text] == []
+    assert sum(part in text for part in run_logs("po drugiej Diagnozie", newer).parts for text in texts) == newer
+
+
+def test_logi_z_diagnoza_ponowione_po_urwanej_odpowiedzi_nie_zmieniaja_komentarzy_uruchomienia_drugi_raz(
+    tmp_path: Path,
+) -> None:
+    # Diagnoza skraca Logi o część: kolejka zmienia komentarz części 1 i opróżnia komentarz części 2, a odpowiedź na
+    # opróżnienie się urywa, więc ponowienie po RETRY_S zastaje oba komentarze już w nowszej wersji.
+    queue = Queue(tmp_path, FakeReportBox(lost_edit_answers=frozenset({2})))
+    queue.outbox.post(run_logs("bez Diagnozy", 2))
+    queue.passed()
+    queue.outbox.post(run_logs("z Diagnozą", 1))
+    queue.passed()
+    assert len(queue.files()) == 1, "po urwanej odpowiedzi plik Logów z Diagnozą czeka na ponowienie"
+
+    queue.clock.advance(RETRY_S)
+    queue.passed()
+
+    assert queue.files() == []
+    [issue] = queue.box.issues_with(LOGS.label)
+    first, second = issue.comment_ids
+    assert queue.box.edited == [first, second]
+    assert issue.comments[0] == run_logs("z Diagnozą", 1).parts[0]
+    assert "Logi bez Diagnozy" not in issue.comments[1]
+
+
+def test_logi_z_diagnoza_po_cofnieciu_zegara_komputera_zmieniaja_komentarz_uruchomienia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Windows poprawia zegar między wysłaniem Logów a Diagnozą: Diagnoza przychodzi z chwilą sprzed wysłania Logów.
+    moments = iter(
+        (datetime(2026, 9, 14, 12, 0, 5, tzinfo=timezone.utc), datetime(2026, 9, 14, 12, 0, 0, tzinfo=timezone.utc))
+    )
+    monkeypatch.setattr(outbox_module, "datetime", SimpleNamespace(now=lambda zone: next(moments)))
+    queue = Queue(tmp_path, FakeReportBox())
+
+    queue.outbox.post(run_logs("bez Diagnozy", 2))
+    queue.passed()
+    queue.outbox.post(run_logs("z Diagnozą", 2))
+    queue.passed()
+
+    assert queue.files() == []
+    [issue] = queue.box.issues_with(LOGS.label)
+    assert issue.comments == list(run_logs("z Diagnozą", 2).parts)
 
 
 def test_wyslanej_wysylki_ktorej_nie_da_sie_usunac_skrzynka_nie_dostaje_drugi_raz(
