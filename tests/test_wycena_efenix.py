@@ -937,6 +937,7 @@ def test_w_tempie_ludzkim_zlecenie_z_zapisem_trwa_20_s_samo_sprawdzenie_idzie_be
 
     emmett = {"O": 1, "T": 2, "AG": 1}
     filled = _au({"012": 1, "019": 2, "015": 1})
+    many = {column: 1 for column in ("O", "P", "Q", "R", "S", "T", "U", "V", "Y", "Z")}
     orders = [
         Order("#9801", day=date(2026, 9, 3), cells=emmett, amount=filled, emmett={"012": 1}),
         Order("#9802", day=date(2026, 9, 4), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # gotowe
@@ -947,10 +948,17 @@ def test_w_tempie_ludzkim_zlecenie_z_zapisem_trwa_20_s_samo_sprawdzenie_idzie_be
         Order("#9805", day=date(2026, 9, 7), cells={"O": 1}, amount=_au({"012": 1}), emmett={"012": 2}),
         Order("#9806", day=date(2026, 9, 8), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # gotowe
         Order("#9807", day=date(2026, 9, 9), cells=emmett, amount=filled, emmett={"012": 1}),
+        Order("#9808", day=date(2026, 9, 10), cells=emmett, amount=filled, emmett={"012": 1}),
+        # Po Emmetcie dziewięć ilości: zapisy trwają 22 s od szukania, więc przed szukaniem następnego zostaje najkrótsza przerwa.
+        Order("#9809", day=date(2026, 9, 11), cells=many, amount=_au({code: 1 for code in ("012", "013", "014", "017", "016", "019", "027", "029", "009", "010")}), emmett={"012": 1}),
+        # Jedyny zapis to data wykonania: po niej strona nie ma pozycji z ilością w pliku, więc to błąd zlecenia.
+        Order("#9810", day=date(2026, 9, 12), cells={"O": 1}, amount=_au({"012": 1})),
+        Order("#9811", day=date(2026, 9, 13), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # gotowe
     ]
     in_efenix = [order.in_efenix(f"98{index}") for index, order in enumerate(orders)]
     in_efenix[2] = replace(in_efenix[2], status="Rozliczone", execution_date=orders[2].day)
     in_efenix[4] = replace(in_efenix[4], execution_date=orders[4].day)
+    in_efenix[9] = replace(in_efenix[9], without=frozenset({"012"}), after_date=True)
     clock = _FakeTime()
     with atrapa_efenix(in_efenix, clock=clock) as atrapa:
         source = write_collective_file(tmp_path, orders)
@@ -960,21 +968,25 @@ def test_w_tempie_ludzkim_zlecenie_z_zapisem_trwa_20_s_samo_sprawdzenie_idzie_be
     gaps = [later[0] - earlier[0] for earlier, later in itertools.pairwise(moments)]
     assert (outcome.result, _figures(outcome), _errors(outcome)) == (
         "WYMAGA_SPRAWDZENIA",
-        _figures_of(7, 4, warnings=1, settled=1),
-        [("EFENIX_WYCENA_INNA", "wiersz 21"), ("EFENIX_SPRZECZNOSC_Z_EMMETTEM", "wiersz 22")],
+        _figures_of(11, 7, warnings=1, settled=1),
+        [("EFENIX_WYCENA_INNA", "wiersz 21"), ("EFENIX_SPRZECZNOSC_Z_EMMETTEM", "wiersz 22"), ("EFENIX_BRAK_POZYCJI", "wiersz 27")],
     )
     # Zlecenie 1 szuka w chwili 0 i zapisuje w 2, 4, 6 i 8, więc szukanie zlecenia 2 czeka do 20. Zlecenia 2, 3 i 4 nic nie
     # zapisują: zlecenie 3 (rozliczone) nie otwiera strony, a szukanie zleceń 3, 4 i 5 jest w tej samej chwili 20. Zlecenie
     # 5 ładuje Emmetta w 22, więc zlecenie 6 szuka w 22 + 15, a zlecenie 7 po gotowym zleceniu 6 w tej samej chwili.
-    assert _window_moments(atrapa, SEARCH) == [0, 20, 20, 20, 20, 37, 37]
-    assert _window_moments(atrapa, ORDER_PAGE) == [0, 2, 4, 20, 20, 20, 22, 37, 37, 39, 41]
-    assert _window_moments(atrapa, LOAD_EMMETT) == [4, 22, 41]
-    assert _window_moments(atrapa, SAVE_QUANTITY) == [6, 8, 43, 45]
+    # Zlecenia 7, 8 i 9 z zapisem idą po sobie: zlecenia 8 i 9 szukają 20 s po poprzednim. Ostatnia ilość zlecenia 9 jest
+    # w 99, 22 s po jego szukaniu, więc zlecenie 10 szuka po najkrótszej przerwie w 101. Zlecenie 10 zapisuje tylko datę w
+    # 103, więc zlecenie 11 szuka w 103 + 15.
+    assert _window_moments(atrapa, SEARCH) == [0, 20, 20, 20, 20, 37, 37, 57, 77, 101, 118]
+    assert _window_moments(atrapa, ORDER_PAGE) == [0, 2, 4, 20, 20, 20, 22, 37, 37, 39, 41, 57, 59, 61, 77, 79, 81, 101, 103, 118]
+    assert _window_moments(atrapa, SET_DATE) == [2, 39, 59, 79, 103]
+    assert _window_moments(atrapa, LOAD_EMMETT) == [4, 22, 41, 61, 81]
+    assert _window_moments(atrapa, SAVE_QUANTITY) == [6, 8, 43, 45, 63, 65, *range(83, 100, 2)]
     # Ruch w oknie co kilkanaście sekund (spec #741): próg podtrzymania sesji jest krótszy niż 20 s.
     assert max(gaps) <= KEEPALIVE_S < 20
     assert outcome.view is not None
     durations = [[step.duration_ms for step in result.steps] for result in outcome.view.results]
-    assert [len(steps) for steps in durations] == [7, 2, 1, 2, 3, 2, 7]
+    assert [len(steps) for steps in durations] == [7, 2, 1, 2, 3, 2, 7, 7, 14, 4, 2]
     assert {duration for steps in durations for duration in steps} == {0}
 
 
