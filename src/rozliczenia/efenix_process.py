@@ -23,6 +23,7 @@ from pathlib import Path
 
 from . import TOOL_ROOT, efenix_pricing
 from . import efenix_messages as messages
+from .client_data import ForbiddenValues
 from .decision import EngineConversation
 from .domain import ProgressObserver
 from .efenix_pace import Pace
@@ -47,6 +48,7 @@ class EfenixInputs:
     Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da). Wycena w efenix nie ma podglądu bez zapisu.
     ``clock`` to zegar w sekundach czasów etapów i śladu zleceń (ten sam, którym rdzeń liczy ``Czas uruchomienia``).
     ``pace``: tempo ludzkie okna; ``None`` wyłącza przerwy. ``trace_directory``: folder Śladów Wyceny Emmetta.
+    ``forbidden``: pamięć reguły danych pracy Centrum (``None``: bez wysyłki, bez pamięci).
     """
 
     source: Path
@@ -54,6 +56,7 @@ class EfenixInputs:
     pace: Pace | None
     trace_directory: Path
     clock: Callable[[], float] = field(default=time.perf_counter, compare=False)
+    forbidden: ForbiddenValues | None = None
 
     @property
     def period(self) -> str:
@@ -76,6 +79,7 @@ def _execute(inputs: EfenixInputs, observer: ProgressObserver, conversation: Eng
         clock=inputs.clock,
         waiting=conversation.waiting,
         pace=inputs.pace,
+        forbidden=inputs.forbidden,
     )
 
 

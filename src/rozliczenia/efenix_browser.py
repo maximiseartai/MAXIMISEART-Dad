@@ -74,7 +74,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page, Playwright, Request, Response, sync_playwright
 
-from . import TOOL_ROOT, client_data
+from . import TOOL_ROOT
 from .call_trace import exception_type
 from .efenix_pricing import (
     BrowserFailure,
@@ -604,15 +604,11 @@ def _listed(headers: Sequence[str], row: Sequence[_Cell]) -> ListedOrder:
     found = _LOGIN.findall(row[columns["realizator"]]["login"] or "")
     if not order_id or not number:
         raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_EMPTY))
-    address = row[columns["address"]]["plain"]
-    # Dane adresowe efenix nie wychodzą (ADR 0025): całe i każda linia z numerem; sama miejscowość może wyjść jak MIASTO.
-    for part in (address, *(line for line in address.splitlines() if any(sign.isdigit() for sign in line))):
-        client_data.remember_value(client_data.ForbiddenColumn.ADDRESS, part)
     return ListedOrder(
         number=number,
         status=status["badge"] if status["badge"] is not None else status["plain"],
         realizator=found[-1] if found else None,
-        address=address,
+        address=row[columns["address"]]["plain"],
         order_id=order_id,
     )
 

@@ -66,6 +66,7 @@ from rozliczenia.centrum import restart_guardian
 from rozliczenia.centrum.tool_update import RESULT_FILE, ToolClone
 from rozliczenia.centrum.tool_updates import GuardianLauncher, ToolUpdates, tool_update_router
 from rozliczenia.centrum.version import SERVICE, short_commit
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.intermax_copies import default_directory as default_intermax_copies
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
@@ -189,7 +190,10 @@ def create_app(
         cloud_files or CloudFiles.of_system(),
         lambda: box.judge(wait_s=report_search_deadline_s),
     )
-    filling = FillingReads(clock=clock)
+    # Reguła danych (ADR 0025): zakazane wartości z każdego pliku taty, który ta praca Centrum przeczytała, dla
+    # strażnika każdej wysyłki do Skrzynki; jedna pamięć na pracę Centrum, tylko w pamięci.
+    forbidden = ForbiddenValues()
+    filling = FillingReads(clock=clock, forbidden=forbidden)
     app.include_router(filling_router(store, log, surroundings.cloud_files, filling))
     # Kontrola ilości, Logi Uruchomienia, Uwagi taty i Zgłoszenia: w kolejce Skrzynki, wysyłane w tle (ADR 0007, 0013,
     # 0015); co doręczenie znaczy dla Spraw taty, wiedzą Sprawy taty w Skrzynce.
@@ -197,7 +201,12 @@ def create_app(
         config / UNSENT_DIRECTORY / QUEUE_DIRECTORY, box, log, cases, clock=clock, addresses=config / ADDRESSES_FILE
     )
     reports = Reports(
-        box, outbox, surroundings.tool_freshness.local, cases, search_deadline_s=report_search_deadline_s
+        box,
+        outbox,
+        surroundings.tool_freshness.local,
+        cases,
+        search_deadline_s=report_search_deadline_s,
+        forbidden=forbidden,
     )
     # Logi Uruchomienia: jeden plik JSON na Uruchomienie obok dziennika Centrum, poza Gitem i OneDrive (ADR 0015).
     run_logs = RunLogs(
@@ -210,6 +219,7 @@ def create_app(
         ),
         cloud_files=surroundings.cloud_files,
         dad_actions=dad_actions,
+        forbidden=forbidden,
     )
     # Jedno Uruchomienie procesu albo Aktualizacja narzędzia naraz; w ich trakcie zamknięcie Centrum jest odrzucone.
     stops = Stops(
@@ -222,17 +232,18 @@ def create_app(
             log=log,
             surroundings=surroundings,
             readers=readers,
+            forbidden=forbidden,
         ),
         log,
         run_logs,
     )
     # Adaptery startu procesów z katalogu procesów; reszta Centrum pyta wpis procesu w katalogu, nie adapter.
     entries: list[ProcessEntry] = [
-        PreparationEntry(store, configuration, processes, today, readers),
+        PreparationEntry(store, configuration, processes, today, readers, forbidden),
         # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
         # Kafelek Wyceny w efenix stoi przed Przebiegiem rozliczeń, bo w tej kolejności tata pracuje.
-        EfenixEntry(store, processes, today, efenix_window or EfenixWindow.of_tata()),
-        SettlementEntry(store, configuration, processes, today, readers),
+        EfenixEntry(store, processes, today, efenix_window or EfenixWindow.of_tata(), forbidden),
+        SettlementEntry(store, configuration, processes, today, readers, forbidden),
     ]
     # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
     intermax = IntermaxEntry(
@@ -243,6 +254,7 @@ def create_app(
         Waiting(clock, pause),
         intermax_disk,
         surroundings.cloud_files,
+        forbidden,
     )
     # Karty Uruchomień z pliku startu, Logów Uruchomienia i Historii: ostatnie po starcie Centrum i wiersz Historii (ADR 0017).
     cards = RunCards(
@@ -268,7 +280,7 @@ def create_app(
         stops,
         previous=cards.last(),
         run_started=cards.run_started,
-        after_run=[run_logs, QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local), filling],
+        after_run=[run_logs, QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden), filling],
     )
     shutdown.refuse_while(runs.shutdown_refusal)
     # Klon narzędzia, które Centrum aktualizuje (ADR 0009); w testach klon z lokalnym „origin”. Po sukcesie
@@ -297,6 +309,7 @@ def create_app(
             surroundings.tool_freshness.local,
             lambda: read_runs(processes, centrum_runs.started()),
             run_logs.link,
+            forbidden,
         )
     )
     app.include_router(metrics_router(processes, today, centrum_runs))

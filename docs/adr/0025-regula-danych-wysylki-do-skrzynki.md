@@ -46,27 +46,38 @@ telefony na okres.
 - **Wolny tekst idzie w całości z maskowaniem**: numer telefonu (komórkowy
   3-3-3, stacjonarny 2-3-2-2, z `+48` albo bez) staje się `[telefon]`, a
   wzmianka ulicy („ul.”, „os.”, „al.”, „pl.” z nazwą i numerem domu, z
-  lokalem albo bez) `[ulica]`.
+  lokalem albo bez) `[ulica]`. Cyfry zaraz po `#` to `NUMER ZL.`, nie telefon.
 - **Strażnik u producenta, nie w kolejce.** Tam, gdzie powstaje tekst pliku
   Logów i każdej wysyłki (Logi, podgląd Zgłoszenia, Kontrola ilości, podgląd
   Uwagi taty), Centrum szuka w nim każdej zakazanej wartości z plików, które
   przeczytało, i każdą znalezioną zastępuje `[adres]` albo
-  `[numer Orange]` (bez wielkości liter, z dowolnymi odstępami, jako całe
-  słowa). Dopisuje uwagę techniczną z nazwą kolumny i miejscem (w Logach pole
+  `[numer Orange]`. Wartość to ciąg jej słów: tekst ją zawiera, gdy ma te
+  słowa po kolei, całe i bez wielkości liter, z dowolnymi znakami spoza słów
+  między nimi. Producent może więc zapisać komórkę po swojemu przed strażnikiem
+  (koniec linii jako `⏎` i `|` jako `\|` w tabeli Kontroli ilości, cudzysłów
+  Komunikatu), a z kilku wartości od tego samego słowa wygrywa najdłuższa.
+  Dopisuje uwagę techniczną z nazwą kolumny i miejscem (w Logach pole
   pliku, np. `messages[0].where`), bez wartości: w Logach do
   `technical_notes`, w Zgłoszeniu i Kontroli ilości sekcją „Uwagi
   techniczne”, w Uwadze taty linią pod jej tekstem. Tata widzi w podglądzie
   Zgłoszenia i Uwagi dokładnie to, co wyjdzie. Tekst bez zakazanej wartości,
   telefonu i ulicy wychodzi bez zmian i bez uwagi.
-- **Skąd Centrum zna zakazane wartości.** Każdy czytnik Wierszy danych
-  (Pliku zbiorczego w Przebiegu rozliczeń, Kontroli ilości i Wycenie w
-  efenix, Rejestru zleceń w Przygotowaniu i Diagnozie, INTERMAX w
-  Uporządkowaniu) oddaje przy odczycie komórki zakazanych kolumn regule
-  danych, a okno efenix dane adresowe z listy wyników. Pamięć jest jedna na
-  pracę Centrum, tylko rośnie i nie trafia na dysk, więc chroni także Uwagę
-  taty, która nie ma Uruchomienia, i Zgłoszenie z Diagnozy. Wartość krótsza
-  niż 5 znaków jest pomijana: nie wskazuje klienta, a pasowałaby do zwykłych
-  słów i liczb.
+- **Skąd Centrum zna zakazane wartości.** Każdy czytnik Wierszy danych,
+  który czyta dla Centrum (Pliku zbiorczego w Przebiegu rozliczeń, Kontroli
+  ilości, Wycenie w efenix i Uzupełnieniu, Rejestru zleceń w Przygotowaniu i
+  Diagnozie, INTERMAX w Uporządkowaniu, na jego karcie i przy szukaniu
+  Surowych zleceń w Przygotowaniu), oddaje przy odczycie komórki zakazanych
+  kolumn pamięci reguły danych, a Wycena w efenix dane adresowe każdego
+  wiersza listy wyników. W przesuniętym pierwszym wierszu wklejenia INTERMAX
+  (ADR 0019) te komórki stoją dwie kolumny na lewo od nagłówka; rozpoznaje go
+  to samo rozpoznanie bloku co Uporządkowanie. Pamięć jest jedna na pracę
+  Centrum: Centrum tworzy ją przy starcie i podaje czytnikom i producentom, a
+  nie jest stanem modułu, więc dwie prace Centrum w jednym procesie (testy)
+  jej nie dzielą. Tylko rośnie i nie trafia na dysk, więc chroni także Uwagę
+  taty, która nie ma Uruchomienia, i Zgłoszenie z Diagnozy. Proces bez Centrum
+  (Skrypt dla maszyn) pamięci nie ma, bo nic nie wysyła. Wartość krótsza niż
+  5 znaków jest pomijana: nie wskazuje klienta, a pasowałaby do zwykłych słów
+  i liczb.
 - **Zgoda taty.** Tata wie, że wysyłki do prywatnej Skrzynki Zgłoszeń będą
   niosły numery zleceń, Wykonawców, miasta i opisy techników, i zgodził się
   na to z Maksem (grilling 4.11.2026).
@@ -78,9 +89,13 @@ telefony na okres.
 - Wartości przeczytane przed startem tej pracy Centrum strażnik zna dopiero
   po ponownym odczycie pliku. Uwaga taty napisana zaraz po starcie Centrum
   ma tylko maskowanie telefonów i ulic.
-- Pierwszy wiersz wklejenia w INTERMAX jest przesunięty o dwie kolumny
-  (ADR 0019), więc jego `ADRES` i `NUMER UMOWY` stoją pod innym nagłówkiem i
-  strażnik ich nie zna, dopóki Uporządkowanie go nie przeniesie.
+- Strażnik maskuje ciąg słów wartości także z innymi znakami między nimi
+  (`Kwiatowa 5-3` przy wartości `Kwiatowa 5/3`): to więcej niż sama wartość,
+  nigdy mniej. Część wartości (sama ulica z numerem z danych adresowych efenix
+  bez miejscowości przed nią) nie jest wartością i ma tylko maskowanie ulicy.
+- Czas strażnika zależy od długości tekstu, nie od liczby zapamiętanych
+  wartości, więc pamięć po Diagnozie całego Rejestru (~31,7 tys. wierszy) nie
+  spowalnia wysyłek (pomiar w PR #851).
 - Telefon zapisany inaczej niż w powyższych kształtach (np. w nawiasach,
   z kropkami) i ulica bez „ul.”, „os.”, „al.” ani „pl.” wychodzą bez
   maskowania.

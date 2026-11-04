@@ -23,6 +23,7 @@ from rozliczenia.centrum.configuration import InputWorkbook, open_in_excel
 from rozliczenia.centrum.period_board import located_period_folder, observed_period_folder, read_board, requested_period
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import OpenEfenix
 from rozliczenia.efenix_process import EfenixInputs
@@ -75,6 +76,7 @@ class EfenixEntry:
     processes: Processes
     today: Callable[[], date]
     window: EfenixWindow
+    forbidden: ForbiddenValues
 
     @property
     def key(self) -> contract.PeriodProcessKey:
@@ -108,7 +110,9 @@ class EfenixEntry:
             raise contract.Refusal(409, _NO_PREVIEW)
         period = requested_period(request.period)
         source = located_period_folder(periods_directory, period).collective_file
-        inputs = EfenixInputs(source, self.window.opener(), self.window.pace, self.window.trace_directory)
+        inputs = EfenixInputs(
+            source, self.window.opener(), self.window.pace, self.window.trace_directory, forbidden=self.forbidden
+        )
         return PreparedRun(declaration=EFENIX, period=period.token, process=EFENIX.core(self.processes), inputs=inputs)
 
 

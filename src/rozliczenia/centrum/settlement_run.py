@@ -24,6 +24,7 @@ from rozliczenia.centrum.runs import PreparedRun
 from rozliczenia.settings import SettingsStore
 from rozliczenia.period_folder import PeriodStatus, collective_file_name, period_status_label, scan_period_folders
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.input_checks import Readers
 from rozliczenia.settlement_process import SettlementInputs
 from rozliczenia.telemetry import MetricsStore
@@ -41,6 +42,7 @@ class SettlementEntry:
     processes: Processes
     today: Callable[[], date]
     readers: Readers
+    forbidden: ForbiddenValues
 
     @property
     def key(self) -> contract.PeriodProcessKey:
@@ -91,6 +93,7 @@ class SettlementEntry:
             config_path=self.configuration.worker_config,
             worker_template_path=self.configuration.worker_template,
             readers=self.readers,
+            forbidden=self.forbidden,
         )
 
         return PreparedRun(

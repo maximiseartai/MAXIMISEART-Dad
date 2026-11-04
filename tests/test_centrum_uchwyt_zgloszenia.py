@@ -36,6 +36,7 @@ from rozliczenia.centrum.reports import (
     UpdateReport,
 )
 from rozliczenia.centrum.tool_update import NO_CONNECTION, OTHER_BRANCH, UpdateResult
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.efenix_checks import PagePart
 from rozliczenia.message import Message
 from rozliczenia.process_run import Stop
@@ -118,7 +119,9 @@ class Computer:
         outbox = case_outbox(
             self.config / "zgloszenia" / "kolejka", keyed, self.log, stored, clock=self.clock, addresses=None
         )
-        reports = Reports(keyed, outbox, lambda: TOOL_COMMIT, stored, search_deadline_s=self.search_deadline_s)
+        reports = Reports(
+            keyed, outbox, lambda: TOOL_COMMIT, stored, search_deadline_s=self.search_deadline_s, forbidden=ForbiddenValues()
+        )
         self.outbox, self.keyed, self.stored = outbox, keyed, stored
         return reports
 

@@ -363,12 +363,15 @@ class DataRows:
     pusta komórka to ``""``."""
 
 
-def read_data_rows(path: Path, *, despite_excel_lock: bool = False) -> DataRows:
+def read_data_rows(
+    path: Path, *, despite_excel_lock: bool = False, forbidden: client_data.ForbiddenValues | None = None
+) -> DataRows:
     """Wiersze danych Pliku zbiorczego z Wyróżnieniami i Hiperłączami komórek w kolejności z pliku; plik jest tylko czytany.
 
     Wiersz bez wartości w A:K nie jest Wierszem danych i jest pomijany. Brak
     nagłówka WYKONAWCA w H17 to ``WorkbookError`` ze złym układem. Plik otwarty w Excelu to
     ``WorkbookError``, chyba że wywołujący jawnie pozwala go czytać (``despite_excel_lock``, ADR 0016).
+    Komórki zakazanych kolumn każdego Wiersza danych zna ``forbidden`` (reguła danych, ADR 0025).
 
     openpyxl czyta tylko wiersze, które mogą mieć wartości w A:K
     (``workbook_parts.rows_with_input``), a nie każdy z ~10 tys. sformatowanych wierszy Pliku
@@ -398,7 +401,7 @@ def read_data_rows(path: Path, *, despite_excel_lock: bool = False) -> DataRows:
         rows: list[DataRow] = []
         last_column = DATA_ROW_COLUMNS[-1]
         highlights = _HighlightsReader()
-        forbidden = client_data.forbidden_columns(header_columns(header))
+        remembered_columns = client_data.forbidden_columns(header_columns(header))
         for number, cells in enumerate(
             classified(path, sheet.iter_rows(min_row=FIRST_DATA_ROW, max_col=max_column)), start=FIRST_DATA_ROW
         ):
@@ -406,7 +409,8 @@ def read_data_rows(path: Path, *, despite_excel_lock: bool = False) -> DataRows:
             values = tuple(cell.value for cell in row_cells)
             if all(value is None for value in values[: INPUT_COLUMNS[-1]]):
                 continue
-            client_data.remember(forbidden, values)
+            if forbidden is not None:
+                forbidden.remember(remembered_columns, values)
             row_links = links.row(number, values)
             with unreadable_as_error(path):
                 rows.append(
@@ -462,12 +466,13 @@ class ComputedRows:
     content: bytes
 
 
-def read_computed_rows(path: Path) -> ComputedRows:
+def read_computed_rows(path: Path, *, forbidden: client_data.ForbiddenValues | None = None) -> ComputedRows:
     """Wiersze danych Pliku zbiorczego (A:AU) z wartościami, które policzył Excel, w kolejności z pliku; plik jest tylko
     czytany.
 
     Wiersz bez wartości w A:K nie jest Wierszem danych i jest pomijany, a brak nagłówka WYKONAWCA w H17 to
     ``WorkbookError`` ze złym układem, tak jak w ``read_data_rows``. Plik otwarty w Excelu to ``WorkbookError``.
+    Komórki zakazanych kolumn każdego Wiersza danych zna ``forbidden`` (reguła danych, ADR 0025).
     """
 
     ensure_available(path)
@@ -490,9 +495,10 @@ def read_computed_rows(path: Path) -> ComputedRows:
             )
             if any(value is not None for value in values[: INPUT_COLUMNS[-1]])
         ]
-        forbidden = client_data.forbidden_columns(header_columns(header))
-        for row in rows:
-            client_data.remember(forbidden, row.values)
+        if forbidden is not None:
+            remembered_columns = client_data.forbidden_columns(header_columns(header))
+            for row in rows:
+                forbidden.remember(remembered_columns, row.values)
     finally:
         workbook.close()
     return ComputedRows(header_columns(header), rows, original)
@@ -549,10 +555,8 @@ class ReadSheet:
                 return
         links = read_sheet_hyperlinks(self._content, self.title)
         highlights = _HighlightsReader()
-        forbidden = client_data.forbidden_columns({normalize_text(header): column for header, column in columns.items()})
         for number, cells in enumerate(self._sheet.iter_rows(min_row=min_row, max_row=max_row), start=min_row):
             values = tuple(getattr(cell, "value", None) for cell in cells)
-            client_data.remember(forbidden, values)
             row_links = links.row(number, values)
             picked = {header: cells[column - 1] if column <= len(cells) else None for header, column in columns.items()}
             yield values, RegisterRow(

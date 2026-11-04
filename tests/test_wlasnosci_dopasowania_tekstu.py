@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date, datetime
 from pathlib import Path
+import re
 
 import pytest
 from hypothesis import assume, given, settings
@@ -271,11 +272,13 @@ def test_netia_z_dopiskiem_sa_bez_spacji_to_netia(written: str) -> None:
 
 
 # Reguła danych (ADR 0025, docstring ``client_data``): telefon komórkowy 3-3-3 i stacjonarny 2-3-2-2 z +48 albo bez,
-# wzmianka ulicy „ul.”, „os.”, „al.”, „pl.” z nazwą i numerem, wartość ADRES bez wielkości liter i z innymi odstępami.
+# wzmianka ulicy „ul.”, „os.”, „al.”, „pl.” z nazwą i numerem, wartość ADRES bez wielkości liter i z dowolnymi znakami
+# spoza słów między jej słowami: odstępami, końcem linii i tym, czym producent zapisał komórkę (⏎, \| tabeli Markdown).
 PHONES = ("600 123 456", "600-123-456", "600123456", "+48 600 123 456", "+48600123456", "0048 600-123-456", "12 345 67 89")
 STREETS = ("ul. Kwiatowa 5", "ul.Kwiatowa 5/3", "os. Tysiąclecia 12 m 4", "al. 3 Maja 5", "pl. Jana Pawła II 2a")
 FREE_TEXT = "abcdefghijklmnopqrstuvwyząćęłńóśźżABCDEFGHIJKLMNOPQRSTUVWYZĄĆĘŁŃÓŚŹŻ .,;:()„”-"
 GUARDED_ADDRESS = "Syntetyczna Rubinowa 7/3 Kraków"
+BETWEEN_WORDS = (" ", "  ", "\n", " \t", "\r\n", "/", " / ", "-", "⏎", "\\|", "`` ", ", ")
 
 
 @PROPERTY
@@ -296,7 +299,7 @@ def test_telefon_i_ulica_w_dowolnym_miejscu_wolnego_tekstu_sa_zamaskowane_a_resz
     assume(not after[:1].isalnum() or (closing and not closing.isalnum()))
     assume(client_data.free_text(before + after) == before + after)
 
-    guarded = client_data.guard(f"{before}{opening}{written}{closing}{after}", "własność")
+    guarded = client_data.ForbiddenValues().guard(f"{before}{opening}{written}{closing}{after}", "własność")
 
     assert guarded == client_data.Guarded(f"{before}{opening}{mask}{closing}{after}", ())
 
@@ -306,17 +309,18 @@ def test_telefon_i_ulica_w_dowolnym_miejscu_wolnego_tekstu_sa_zamaskowane_a_resz
 def test_wartosc_adresu_przeczytana_z_pliku_jest_zamaskowana_w_kazdym_zapisie_z_uwaga_bez_wartosci(
     before: str, data: st.DataObject
 ) -> None:
-    client_data.remember_value(client_data.ForbiddenColumn.ADDRESS, f"  {GUARDED_ADDRESS} ")
-    words = GUARDED_ADDRESS.split()
+    forbidden = client_data.ForbiddenValues()
+    forbidden.remember_value(client_data.ForbiddenColumn.ADDRESS, f"  {GUARDED_ADDRESS} ")
+    words = re.findall(r"\w+", GUARDED_ADDRESS)
     written = "".join(
-        data.draw(_mixed_case(word)) + (data.draw(st.sampled_from((" ", "  ", "\n", " \t"))) if index < len(words) - 1 else "")
+        data.draw(_mixed_case(word)) + (data.draw(st.sampled_from(BETWEEN_WORDS)) if index < len(words) - 1 else "")
         for index, word in enumerate(words)
     )
     assume(not before[-1:].isalnum())
 
-    guarded = client_data.guard(f"{before}{written}, dalej", "komórka L6")
+    guarded = forbidden.guard(f"{before}{written}, dalej", "komórka L6")
 
     assert guarded == client_data.Guarded(
         f"{before}[adres], dalej", ("Reguła danych: zamaskowano wartość kolumny ADRES w: komórka L6.",)
     )
-    assert client_data.guard(f"{before}{written}ów", "komórka L6").notes == (), "dłuższe słowo to inny tekst"
+    assert forbidden.guard(f"{before}{written}ów", "komórka L6").notes == (), "dłuższe słowo to inny tekst"

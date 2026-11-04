@@ -14,8 +14,8 @@ przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w przebieg
 nie udało; a Zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn.
 Logi nie mają treści komórek: żadne pole nie niesie Wiersza danych, a pliki mają tylko nazwę, nigdy pełną ścieżkę.
 Komórkę cytuje tylko Komunikat (``ZLE_SKUTECZNE``), więc przed zapisem pliku i przed wysyłką Logi przechodzą przez
-strażnika reguły danych (``guarded``, ADR 0025): wartość ``ADRES`` albo numeru Orange z przeczytanych plików staje się
-maską z uwagą techniczną, a telefony i ulice w tekście są zamaskowane.
+strażnika reguły danych pracy Centrum (``guarded``, ADR 0025): wartość ``ADRES`` albo numeru Orange z przeczytanych
+plików staje się maską z uwagą techniczną, a telefony i ulice w tekście są zamaskowane.
 Skrypt dla maszyn nie ma działań po wyniku, więc Logów nie tworzy.
 
 Schemat 2 (#839) daje każdemu krokowi śladu godzinę (UTC) obok czasu trwania: etap ma chwilę rozpoczęcia i końca,
@@ -57,7 +57,7 @@ from typing import Final, Literal, assert_never
 
 from pydantic import BaseModel, ConfigDict
 
-from rozliczenia import client_data
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.atomic_file import replace_atomically
@@ -548,8 +548,8 @@ class RunLog(_Record):
         return self.model_dump_json(indent=2) + "\n"
 
 
-def guarded(record: RunLog) -> RunLog:
-    """Logi po strażniku reguły danych (``client_data.guard``): każdy tekst i klucz bez zakazanych wartości, z
+def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
+    """Logi po strażniku reguły danych (``ForbiddenValues.guard``): każdy tekst i klucz bez zakazanych wartości, z
     zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna z kolumną i polem pliku.
 
     Pole to ścieżka JSON z nazw pól, a klucz z danych (operator, kod pozycji) jest w niej ``[…]``, żeby uwaga nie
@@ -559,7 +559,7 @@ def guarded(record: RunLog) -> RunLog:
     notes: list[str] = []
 
     def text(value: str, place: str) -> str:
-        found = client_data.guard(value, place or "Logi")
+        found = forbidden.guard(value, place or "Logi")
         notes.extend(found.notes)
         return found.text
 
@@ -711,9 +711,11 @@ class RunLogs:
         files: ProcessFiles,
         cloud_files: CloudFiles,
         dad_actions: DadActionJournal,
+        forbidden: ForbiddenValues,
     ) -> None:
         self._directory = directory
         self._dad_actions = dad_actions
+        self._forbidden = forbidden
         self._outbox = outbox
         self._commit = commit
         self._wydanie = wydanie
@@ -760,7 +762,7 @@ class RunLogs:
     def _keep(self, record: RunLog) -> None:
         """Plik Logów (nowy albo nadpisany) i komentarz w issue okresu z tymi samymi znakami, po strażniku reguły danych."""
 
-        kept = guarded(record)
+        kept = guarded(record, self._forbidden)
         try:
             replace_atomically(self._directory / kept.file_name, kept.text)
         finally:

@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 import hashlib
 from typing import Final, Literal
 
-from rozliczenia import client_data
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract, report_messages
 from rozliczenia.centrum.dad_cases import REPORT, Case, CaseNews, CaseNumbered, CaseRejected, DadCases
@@ -233,12 +233,12 @@ def _report(message: Message, lines: list[str], fingerprint: str) -> Report:
     return Report(title=f"{message.code}: {message.what}", body=_body(lines), fingerprint=fingerprint, what=message.what)
 
 
-def _guarded(report: Report) -> Report:
-    """Zgłoszenie po strażniku reguły danych (``client_data.guard``): tytuł i treść bez zakazanych wartości, z
+def _guarded(report: Report, forbidden: ForbiddenValues) -> Report:
+    """Zgłoszenie po strażniku reguły danych (``ForbiddenValues.guard``): tytuł i treść bez zakazanych wartości, z
     zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna na końcu treści."""
 
-    title = client_data.guard(report.title, "tytuł Zgłoszenia")
-    body = client_data.guard(report.body, "treść Zgłoszenia")
+    title = forbidden.guard(report.title, "tytuł Zgłoszenia")
+    body = forbidden.guard(report.body, "treść Zgłoszenia")
     notes = [*title.notes, *body.notes]
     tail = "" if not notes else "\n## Uwagi techniczne\n\n" + "".join(f"- {note}\n" for note in notes)
     return replace(report, title=title.text, body=body.text + tail)
@@ -490,8 +490,10 @@ class Reports:
         cases: DadCases,
         *,
         search_deadline_s: float,
+        forbidden: ForbiddenValues,
     ) -> None:
         self._commit = commit
+        self._forbidden = forbidden
         self._search_deadline_s = search_deadline_s
         self._cases = cases
         self._queue_directory = outbox.directory
@@ -533,7 +535,7 @@ class Reports:
         fingerprint = source.fingerprint.digest
         sent = [case.number for case in self._cases.all() if case.kind == REPORT and case.id == fingerprint]
         previous = next((number for number in reversed(sent) if number is not None), None)
-        return _Preview(_guarded(source.report(commit=self._commit(), previous=previous)), source.period)
+        return _Preview(_guarded(source.report(commit=self._commit(), previous=previous), self._forbidden), source.period)
 
     def _queue(self, preview: _Preview) -> contract.ReportState:
         """Zapisuje sprawę i kładzie ``preview`` w kolejce Skrzynki, chyba że ten problem już w niej czeka."""
