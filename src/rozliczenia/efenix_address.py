@@ -2,12 +2,14 @@
 
 Jedyną operacją jest ``same_address()``. Obie strony przechodzą przez jeden rozbiór (``_parse``): bez wielkości liter,
 zbędnych spacji i interpunkcji, rodzaj (``ul``, ``os``, ``al``, ``pl``), zbiór słów nazwy ulicy w dowolnej kolejności,
-numer budynku i lokal. Lokal to część po ``/`` przy numerze (``12A/24``, zapis Pliku zbiorczego) albo słowo po
-``Lokal`` zaraz za numerem (``12A Lokal 24``, zapis efenix); ``Lokal`` gdzie indziej to słowo nazwy ulicy.
+numer budynku i lokal. Numer budynku to jedna część (``12A``) albo dwie po ``/`` (``13/14``), każda od cyfry.
+Lokal to słowo po ``Lokal`` zaraz za numerem (``12A Lokal 24``, ``13/14 Lokal 16``, zapis efenix) albo część po
+ostatnim ``/`` przy numerze bez ``Lokal`` (``12A/24``, ``13/14/16``, zapis Pliku zbiorczego); jeden ``/`` bez
+``Lokal`` dzieli więc numer i lokal, a nie dwie części numeru. ``Lokal`` gdzie indziej to słowo nazwy ulicy.
 Wszystko przed rodzajem (w efenix miejscowość z dzielnicą) się pomija.
-Adres, którego nie da się tak rozebrać (bez rodzaju, bez nazwy ulicy, bez numeru, z lokalem i po ``/``, i po
-``Lokal``), nie jest równy żadnemu. Słowa po ``Lokal N`` czyta jak resztę nazwy ulicy z numerem na końcu; lista efenix
-nic po lokalu nie pisze.
+Adres, którego nie da się tak rozebrać (bez rodzaju, bez nazwy ulicy, bez numeru, z numerem budynku z więcej niż
+dwiema częściami albo z pustą częścią numeru), nie jest równy żadnemu, nawet samemu sobie. Słowa po ``Lokal N`` czyta
+jak resztę nazwy ulicy z numerem na końcu; lista efenix nic po lokalu nie pisze.
 """
 
 from __future__ import annotations
@@ -54,12 +56,9 @@ def _parse(text: str) -> _Address | None:
     if len(rest) < 2:
         return None
     *street, number = rest
-    if "/" in number:
-        if flat is not None:
-            return None
-        number, _, flat = number.partition("/")
-        if not flat or "/" in flat:
-            return None
-    if not number[:1].isdigit() or "/" in "".join(street):
+    building = number.split("/")
+    if flat is None and len(building) > 1:
+        *building, flat = building
+    if flat == "" or len(building) > 2 or not all(part[:1].isdigit() for part in building) or "/" in "".join(street):
         return None
-    return _Address(kind, frozenset(street), number, flat)
+    return _Address(kind, frozenset(street), "/".join(building), flat)
