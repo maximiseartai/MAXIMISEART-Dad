@@ -897,6 +897,12 @@ class RunLogs:
 
         return self._directory / logs_file_name(started.started_at, started.process, started.run_id)
 
+    def guard(self, record: RunLog) -> RunLog:
+        """Logi ``record`` po strażniku reguły danych tej pracy Centrum (``guarded``), jak w ``_keep``: Logi Urwanego
+        Uruchomienia przechodzą przez niego przed plikiem (``close``) i wysyłką (``send``)."""
+
+        return guarded(record, self._forbidden)
+
     def close(self, record: RunLog) -> None:
         """Plik Logów Urwanego Uruchomienia, jeszcze bez wysyłki (``send``); ``OSError``: pliku nie udało się zapisać."""
 

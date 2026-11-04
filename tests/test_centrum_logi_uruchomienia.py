@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
+from decimal import Decimal
 from http import HTTPStatus
 import json
 import os
@@ -24,8 +25,18 @@ import pytest
 
 from rozliczenia import TOOL_ROOT, settlement_messages
 from rozliczenia.centrum import app, contract, runs
-from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES
+from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES, DadActions
 from rozliczenia.centrum.efenix_run import EfenixWindow
+from rozliczenia.centrum.pricing_journal import JournalStarted, OrderEnded
+from rozliczenia.centrum.run_logs import (
+    Environment,
+    LoggedInterruption,
+    LoggedOrder,
+    LoggedStep,
+    RunLog,
+    Tool,
+    logs_file_name,
+)
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.period_folder import PeriodFolderInaccessible
@@ -1439,6 +1450,71 @@ def test_dziennik_wyceny_w_efenix_ktorego_nie_da_sie_zapisac_nie_zatrzymuje_wyce
 
     assert (result["result"], len(records(centrum)[0]["efenix_orders"])) == ("WYMAGA_SPRAWDZENIA", 6)
     assert [line.split(" ", 1)[1] for line in lines] == ["dziennik-wyceny-niedostepny typ=FileExistsError miejsce=wpis"]
+
+
+@pytest.mark.parametrize("unsent", [False, True], ids=["z-dziennika", "z-niewyslanych-logow"])
+def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_straznika_reguly_danych(
+    tmp_path: Path, unsent: bool
+) -> None:
+    """Zlecenie skończone przed zgaśnięciem Centrum ma w śladzie pozycje odczytane ze strony efenix, a wśród nich ulicę i
+    telefon (wolny tekst, ADR 0025). Start Centrum zamyka dziennik jako Logi Urwanego Uruchomienia, także gdy Logi zapisała
+    już poprzednia praca Centrum sprzed strażnika, która zgasła przed ich wysyłką: plik Logów i komentarz w Skrzynce mają
+    te same znaki, z zamaskowaną ulicą i telefonem."""
+
+    centrum = settling_centrum(tmp_path)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    started = JournalStarted(
+        entry="start Uruchomienia",
+        run_id="b" * 32,
+        process="efenix",
+        mode="zapis",
+        period=PERIOD,
+        started_at=utc("2026-09-16T10:15:00+00:00"),
+    )
+    step = LoggedStep(
+        action="otwarcie zlecenia",
+        duration_ms=120,
+        found=None,
+        execution_date=None,
+        amount=None,
+        quantities={STREET: 1, f"tel. {PHONE}": 2},
+        position=None,
+        quantity=None,
+        accepted=None,
+    )
+    order = LoggedOrder(row=18, outcome="gotowe", code=None, file={}, file_amount=Decimal(0), steps=[step])
+    ended = OrderEnded(at=utc("2026-09-16T10:16:00+00:00"), entry="zlecenie skończone", order=order)
+    directory = centrum.log_path.parent / "dzienniki-wyceny"
+    directory.mkdir(parents=True)
+    journal = directory / Path(logs_file_name(started.started_at, "efenix", started.run_id)).with_suffix(".jsonl")
+    journal.write_text(f"{started.model_dump_json()}\n{ended.model_dump_json()}\n", encoding="utf-8")
+    if unsent:
+        logs = centrum.log_path.parent / "uruchomienia" / logs_file_name(started.started_at, "efenix", started.run_id)
+        logs.parent.mkdir(parents=True)
+        written = RunLog.interrupted(
+            started,
+            ended_at=ended.at,
+            orders=[order],
+            interruption=LoggedInterruption(row=None, place=None, total=None, omitted=0),
+            tool=Tool(wydanie=None, commit=TOOL_COMMIT),
+            environment=Environment(system="Windows-11", python="3.12.7", files=None),
+            dad_actions=DadActions(entries=[], omitted=0),
+        )
+        logs.write_text(written.text, encoding="utf-8")
+
+    centrum.restart()
+    centrum.client.get("/api/runs/current")
+    box = centrum.surroundings.report_box
+    sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+    centrum.client.stop()
+    [comment] = logs_comments(box)
+    [path] = log_files(centrum)
+    text = path.read_text(encoding="utf-8")
+
+    assert (sent, text in comment, journals(centrum)) == (True, True, [])
+    [logged] = json.loads(text)["efenix_orders"]
+    assert logged["steps"][0]["quantities"] == {"[ulica]": 1, "tel. [telefon]": 2}
+    assert [value for value in (STREET, PHONE) if value in text or value in comment] == []
 
 
 def test_dziennik_urwany_przy_pierwszym_wpisie_start_usuwa_bez_logow(tmp_path: Path) -> None:

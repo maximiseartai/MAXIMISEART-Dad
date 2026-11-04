@@ -88,7 +88,10 @@ telefony na okres.
   jego strażnika; nowy rodzaj wysyłki dostaje go tak samo.
 - Wartości przeczytane przed startem tej pracy Centrum strażnik zna dopiero
   po ponownym odczycie pliku. Uwaga taty napisana zaraz po starcie Centrum
-  ma tylko maskowanie telefonów i ulic.
+  ma tylko maskowanie telefonów i ulic, tak jak Logi Urwanego Uruchomienia
+  (#845): start Centrum przepuszcza je przez strażnika przed plikiem i
+  wysyłką, także Logi zapisane, a niewysłane przez poprzednią pracę Centrum,
+  ale zamyka je i wysyła, zanim ta praca Centrum przeczyta plik taty.
 - Strażnik maskuje ciąg słów wartości także z innymi znakami między nimi
   (`Kwiatowa 5-3` przy wartości `Kwiatowa 5/3`): to więcej niż sama wartość,
   nigdy mniej. Część wartości (sama ulica z numerem z danych adresowych efenix
@@ -96,10 +99,6 @@ telefony na okres.
 - Czas strażnika zależy od długości tekstu, nie od liczby zapamiętanych
   wartości, więc pamięć po Diagnozie całego Rejestru (~31,7 tys. wierszy) nie
   spowalnia wysyłek (pomiar w PR #851).
-- Logi Urwanego Uruchomienia (#845) idą do pliku i Skrzynki bez strażnika.
-  Powstają przy starcie Centrum, gdy pamięć jest jeszcze pusta, i niosą tylko
-  ślad zleceń Wyceny w efenix (wiersz, wynik, kod Komunikatu, kody pozycji),
-  bez Komunikatów i tekstu komórek.
 - Telefon zapisany inaczej niż w powyższych kształtach (np. w nawiasach,
   z kropkami) i ulica bez „ul.”, „os.”, „al.” ani „pl.” wychodzą bez
   maskowania.
