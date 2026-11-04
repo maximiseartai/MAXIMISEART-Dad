@@ -23,10 +23,11 @@ kroku śladu i dziennikiem działań taty w Centrum; dochodzi własny plik Centr
 `logs/dzialania-taty.jsonl` z działaniami, które czekają na Logi następnego
 Uruchomienia. Szczegóły w punkcie „Treść Logów”.
 
-Dopisek #845 (część #837): Wycena w efenix, przerwana w trakcie, zostawia też
-dziennik Wyceny w efenix w `logs/dzienniki-wyceny/`, z którego następny start
-Centrum zamyka Logi Urwanego Uruchomienia; krótkie procesy zostawiają dalej
-tylko `uruchomienie-start`. Szczegóły w dopisku #845 do
+Dopisek #845 (część #837): Wycena w efenix z co najmniej jednym zleceniem
+zostawia też dziennik Wyceny w efenix w `logs/dzienniki-wyceny/`, także gdy
+doszła do wyniku; następny start Centrum zamyka dziennik Wyceny przerwanej w
+trakcie jako Logi Urwanego Uruchomienia, a dziennik Wyceny z wynikiem usuwa.
+Krótkie procesy zostawiają dalej tylko `uruchomienie-start`. Szczegóły w dopisku #845 do
 [ADR 0017](0017-karta-uruchomienia-z-logow.md).
 
 [ADR 0009](0009-aktualizacja-narzedzia-z-centrum.md) traci Powiadomienie o
