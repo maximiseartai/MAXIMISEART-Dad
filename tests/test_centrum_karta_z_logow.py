@@ -49,6 +49,7 @@ def logged(centrum: PreparingCentrum | SettlingCentrum) -> list[dict[str, Any]]:
 def test_karta_po_starcie_idzie_za_plikiem_logow_bez_ustawien_metryk_i_folderu_okresu(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path, include_unmapped=True)
     live = run_to_end(centrum, dry_run=True)
+    centrum.client.stop()
     [path] = log_paths(centrum)
     record = json.loads(path.read_text(encoding="utf-8"))
     record["messages"][0]["what"] = "Ostrzeżenie zmienione w pliku Logów."
