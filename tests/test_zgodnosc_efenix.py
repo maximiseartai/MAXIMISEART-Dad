@@ -137,6 +137,7 @@ class Variant:
 # Strona zlecenia z częścią pozycji Atrapy, jak zlecenia efenix z mniejszą liczbą pozycji wyceny (#822): bez dwóch
 # pozycji z przypisania kolumn, jednej spoza niego i jednej z ceną wpisywaną.
 SUBSET = tuple(replace(order, without=frozenset({"012", "021", "005", "045"})) for order in ORDERS)
+NO_MAPPED = tuple(replace(order, without=frozenset(POSITION_OF_COLUMN.values())) for order in ORDERS)
 NO_CARDS = tuple(replace(order, without=frozenset(PRICES)) for order in ORDERS)
 DATED = tuple(AtrapaOrder(order.order_id, order.number, order.realizator, order.address, execution_date=date(2026, 9, 1)) for order in ORDERS)
 CHANGED = {
@@ -162,6 +163,9 @@ CHANGED = {
     "bez-pustej-daty": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "bez-pustej-daty.txt", orders=DATED),
     "strona-zlecenia-bez-kart-pozycji": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "strona-zlecenia-bez-kart-pozycji.txt", orders=NO_CARDS
+    ),
+    "strona-zlecenia-bez-pozycji-z-przypisania": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "strona-zlecenia-bez-pozycji-z-przypisania.txt", orders=NO_MAPPED
     ),
     "szukanie-bez-wynikow": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-bez-wynikow.txt", number="ZL/NIEZNANY"),
     "wiersz-bez-loginu-i-adresu": Variant(

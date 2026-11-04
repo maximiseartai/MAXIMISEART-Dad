@@ -531,7 +531,8 @@ def _check_script(efenix: _Efenix, page: Page, page_url: str, part: Part, script
 def _check_positions(page: Page, costs: Mapping[str, Decimal | None], report: Report) -> None:
     """Karty pozycji to pozycje Atrapy (kod, rodzaj karty), a ceny pozycji z przypisania są równe kosztom Wzorca.
 
-    Strona z częścią pozycji Atrapy jest zgodna: zlecenia efenix bywają bez części pozycji wyceny (#819, #822).
+    Strona z częścią pozycji Atrapy jest zgodna: zlecenia efenix bywają bez części pozycji wyceny (#819, #822). Strona
+    bez żadnej pozycji z przypisania kolumn nie pozwala porównać cen, więc to porównanie zostaje niesprawdzone.
     """
 
     cards: list[_Card] = page.evaluate(_READ_CARDS, [PRICING_CARD, QUANTITY])
@@ -551,11 +552,12 @@ def _check_positions(page: Page, costs: Mapping[str, Decimal | None], report: Re
         if (found[code] is None) != atrapa[code]:
             kinds = ("pole ceny wpisywanej", "pole Ilość") if found[code] is None else ("pole Ilość", "pole ceny wpisywanej")
             report.differ(Part.PRICING, f"{code}: w efenix {kinds[0]}, w Atrapie {kinds[1]}")
-    compared = 0
+    compared = mapped_shown = 0
     for column, mapped in POSITION_OF_COLUMN.items():
         for code, shown in sorted(found.items()):
             if code.split("_")[1] != mapped or shown is None:
                 continue
+            mapped_shown += 1
             cost = costs.get(column)
             if cost is None:
                 report.unchecked.append((Part.PRICING, f"{code} (kolumna {column}): koszt w wierszu {COST_ROW} Wzorca pliku zbiorczego nie jest liczbą"))
@@ -563,6 +565,8 @@ def _check_positions(page: Page, costs: Mapping[str, Decimal | None], report: Re
             compared += 1
             if _amount(shown) != cost:
                 report.differ(Part.PRICING, f"{code} (kolumna {column}): cena w efenix inna niż koszt w wierszu {COST_ROW} Wzorca pliku zbiorczego")
+    if cards and not mapped_shown:
+        report.unchecked.append((Part.PRICING, "strona zlecenia bez pozycji z przypisania kolumn: ceny nie porównane z Wzorcem pliku zbiorczego"))
     report.checked["ceny porównane z Wzorcem"] = compared
 
 
