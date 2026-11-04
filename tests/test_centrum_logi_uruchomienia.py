@@ -24,6 +24,7 @@ import pytest
 
 from rozliczenia import TOOL_ROOT, settlement_messages
 from rozliczenia.centrum import app, contract, runs
+from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES
 from rozliczenia.centrum.efenix_run import EfenixWindow
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
@@ -1168,3 +1169,40 @@ def test_dzialania_taty_miedzy_dwoma_uruchomieniami_sa_w_logach_drugiego_z_godzi
     [_, sent] = logs_comments(box)
     assert '"operation": "sendDadNote"' in sent, "dziennik działań taty dociera do Maksa"
     assert [marker for marker in ("SYNTETYCZNY-TYTUŁ", "SYNTETYCZNA-TREŚĆ") if marker in text or marker in sent] == []
+
+
+def test_logi_maja_najnowsze_dzialania_taty_do_limitu_a_liczbe_starszych_obok(tmp_path: Path) -> None:
+    """Tata długo przegląda Centrum przed Uruchomieniem: Logi mają ``MAX_ENTRIES`` najnowszych działań, ze startem tego
+    Uruchomienia na końcu, a start Centrum, wybór folderu okresów i najstarszy widok liczy ``omitted``."""
+
+    centrum = settling_centrum(tmp_path)
+    for _ in range(MAX_ENTRIES):
+        assert centrum.client.post("/api/view-timings", json=view_timing(kind="navigation", page="okresy")).status_code == 204
+    run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
+
+    _, record = logged_record(centrum, run_id)
+    assert dad_actions(record) == [
+        *[("widok", "okresy", "navigation")] * (MAX_ENTRIES - 1),
+        ("przycisk", "startRun", "settlement", "podgląd"),
+    ]
+    assert record["dad_actions"]["omitted"] == 3
+
+
+def test_dziennik_dzialan_taty_ktorego_nie_da_sie_zapisac_jest_linia_dziennika_centrum_a_nie_bledem_przycisku(
+    tmp_path: Path,
+) -> None:
+    """Na miejscu pliku dziennika działań taty stoi katalog: przyciski i Uruchomienie działają jak zawsze, Logi mają
+    pusty dziennik, a dziennik Centrum mówi, że dziennika działań taty nie da się zapisać."""
+
+    centrum = settling_centrum(tmp_path)
+    journal = centrum.log_path.parent / DAD_ACTIONS_FILE
+    journal.unlink(missing_ok=True)
+    journal.mkdir()
+
+    assert centrum.client.put("/api/settings/theme", json={"theme": "dark"}).status_code == 200
+    view = run_to_end(centrum, dry_run=True)
+
+    assert view["result"]["result"] == "OK"
+    _, record = logged_record(centrum, view["run"]["id"])
+    assert record["dad_actions"] == {"entries": [], "omitted": 0}
+    assert "dzialania-taty-niedostepne typ=" in centrum.log_path.read_text(encoding="utf-8")

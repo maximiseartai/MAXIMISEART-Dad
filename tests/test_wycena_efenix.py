@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from copy import copy
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import json
 from pathlib import Path
@@ -37,7 +37,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
 from playwright.sync_api import Browser, Page
 import pytest
 
-from rozliczenia import TOOL_ROOT, efenix_browser, efenix_process
+from rozliczenia import TOOL_ROOT, efenix_browser, efenix_process, efenix_trace
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
@@ -55,6 +55,7 @@ from rozliczenia.efenix_pricing import (
     PricingStopped,
     PricingSummary,
     Shape,
+    UnexpectedPage,
     WindowCause,
 )
 from rozliczenia.efenix_process import EfenixInputs
@@ -1963,3 +1964,53 @@ def test_plik_zbiorczy_ze_znacznikami_daje_w_przebiegu_rozliczen_rozliczenie_pra
         23: ("solid", YELLOW),
     }
     assert (font.color.rgb, font.b, font.i) == ("FFFF0000", True, True)
+
+
+_TRACE_START = datetime(2026, 9, 30, 8, 0, tzinfo=timezone.utc)
+
+
+@dataclass
+class _SlowEfenix:
+    """Okno efenix, w którym każde działanie trwa ``ACTION_S`` udawanego czasu ``time``, a otwarcie zlecenia po nim
+    zgłasza ``UnexpectedPage``."""
+
+    time: _FakeTime
+    ACTION_S = 3.0
+
+    @property
+    def sent_change(self) -> bool:
+        return False
+
+    def search(self, number: str) -> Sequence[ListedOrder]:
+        self.time.pause(self.ACTION_S)
+        return [ListedOrder(number, "Nowe", None, "", "1")]
+
+    def open_order(self, order: ListedOrder) -> OrderPricing:
+        self.time.pause(self.ACTION_S)
+        raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))
+
+    def set_execution_date(self, day: date) -> bool:
+        raise AssertionError("ślad nie woła działań, których nie woła przebieg")
+
+    def load_emmett(self) -> OrderPricing:
+        raise AssertionError("ślad nie woła działań, których nie woła przebieg")
+
+    def enter_quantity(self, position: str, quantity: int) -> Decimal:
+        raise AssertionError("ślad nie woła działań, których nie woła przebieg")
+
+
+def test_slad_zlecenia_ma_chwile_rozpoczecia_kazdego_dzialania_okna_efenix_takze_tego_ktore_sie_nie_udalo() -> None:
+    """Godzina działania w Logach Uruchomienia to jego start, a nie koniec, także działania, przy którym okno stanęło:
+    szukanie zaczyna się w chwili 1 s i trwa 3 s, a nieudane otwarcie zlecenia zaczyna się po przerwie w chwili 5 s."""
+
+    time = _FakeTime(seconds=1.0)
+    trace = efenix_trace.OrderTrace()
+    window = efenix_trace.traced(_SlowEfenix(time), trace, time, lambda: _TRACE_START + timedelta(seconds=time.seconds))
+
+    [listed] = window.search("#9901")
+    time.pause(1.0)
+    with pytest.raises(UnexpectedPage):
+        window.open_order(listed)
+
+    assert trace.steps == [efenix_trace.TraceStep("szukanie", _TRACE_START + timedelta(seconds=1), 3000, found=1)]
+    assert trace.failed == efenix_trace.TraceStep("otwarcie zlecenia", _TRACE_START + timedelta(seconds=5), 3000)
