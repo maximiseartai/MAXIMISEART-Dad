@@ -1,6 +1,9 @@
 """Wycena w efenix dla Uruchomienia procesu: wejście procesu, wywołanie silnika i fakty zakończenia.
 
 Opis procesu (``PROCESS``) jest wspólny dla każdego rozmówcy, więc liczby, Komunikaty i rekord metryk są te same.
+Wynik to OK, gdy żadne zlecenie nie zostało tacie (każde jest gotowe albo jest Zleceniem rozliczonym). Zlecenia
+rozliczone liczą się w rekordzie metryk tylko do ``orders``: zestaw liczników jest stały, bo rekord z innym zestawem
+Historia odrzuca, a z niej Droga okresu liczy Wycenę w efenix.
 Okno efenix daje rozmówca (``EfenixInputs.open_efenix``): Centrum rozliczeń otwiera widoczne okno Google Chrome w profilu
 narzędzia i czeka w nim na logowanie taty (``efenix_browser.chrome``), Skrypt dla maszyn otwiera Chromium Playwrighta
 (``efenix_browser.chromium``), a testy okno na Atrapie efenix. Czas czekania na logowanie wstrzymuje zegar rdzenia
@@ -78,7 +81,7 @@ def _execute(inputs: EfenixInputs, observer: ProgressObserver, conversation: Eng
 
 def _finished(_inputs: EfenixInputs, summary: PricingSummary) -> Finished:
     return Finished(
-        result="OK" if summary.ready_count == len(summary.results) else "WYMAGA_SPRAWDZENIA",
+        result="OK" if not summary.left_for_tata else "WYMAGA_SPRAWDZENIA",
         counters={
             "orders": len(summary.results),
             "ready": summary.ready_count,

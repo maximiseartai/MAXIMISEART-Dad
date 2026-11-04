@@ -149,7 +149,7 @@ def _traces(source: Path) -> Path:
 
 
 def _figures(outcome: Priced) -> dict[str, int]:
-    """Liczby podsumowania: zlecenia w zakresie, gotowe, błędy, ostrzeżenia Emmetta i pominięte."""
+    """Liczby podsumowania: zlecenia w zakresie, gotowe, rozliczone, błędy, ostrzeżenia Emmetta i pominięte."""
 
     assert isinstance(outcome.ending, Finished), _ending(outcome)
     assert outcome.view is not None
@@ -157,6 +157,7 @@ def _figures(outcome: Priced) -> dict[str, int]:
     return {
         "zakres": len(summary.results),
         "gotowe": summary.ready_count,
+        "rozliczone": summary.settled_count,
         "błędy": summary.error_count,
         "ostrzeżenia": summary.warning_count,
         "ze zdjęciami": summary.with_photos,
@@ -208,11 +209,14 @@ def _kept(outcome: Priced) -> bool:
     return kept
 
 
-def _figures_of(orders: int, ready: int, warnings: int = 0, photos: int = 0, defects: int = 0) -> dict[str, int]:
+def _figures_of(
+    orders: int, ready: int, warnings: int = 0, photos: int = 0, defects: int = 0, settled: int = 0
+) -> dict[str, int]:
     return {
         "zakres": orders,
         "gotowe": ready,
-        "błędy": orders - ready - warnings,
+        "rozliczone": settled,
+        "błędy": orders - ready - warnings - settled,
         "ostrzeżenia": warnings,
         "ze zdjęciami": photos,
         "usterki": defects,
@@ -603,6 +607,62 @@ def test_kazda_niezgodnosc_z_efenix_to_blad_zlecenia_z_powodem_a_proces_idzie_da
         ("EFENIX_INNA_DATA", "wiersz 25"),
     ]
     assert after == before
+
+
+def test_zlecenie_rozliczone_w_efenix_nie_jest_bledem_a_proces_go_nie_otwiera_i_nie_stawia_mu_znacznika(
+    tmp_path: Path, page: Page
+) -> None:
+    """Status „Rozliczone” to Zlecenie rozliczone (#821): bez błędu, bez otwarcia strony zlecenia i bez Znacznika efenix,
+    także gdy wycena w efenix jest inna niż w pliku. Wynik to OK, gdy żadne zlecenie nie zostało tacie."""
+
+    orders = [
+        Order("#8101", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 2}),  # wiersz 18: rozliczone
+        Order("#8102", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # 19: gotowe
+    ]
+    source = write_collective_file(tmp_path, orders)
+    with atrapa_efenix(
+        [replace(orders[0].in_efenix("901"), status=" rozliczone ", execution_date=DAY), orders[1].in_efenix("902")]
+    ) as atrapa:
+        before = atrapa.state()
+        outcome = _run(source, page, atrapa.url)
+        after = atrapa.state()
+        requested = atrapa.requested()
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == ("OK", _figures_of(2, 1, settled=1), [])
+    assert (after, set(requested) <= READING, requested.count(("GET", ORDER_PAGE))) == (before, True, 1)
+    assert _marked(source) == [19]
+
+
+@pytest.mark.parametrize(
+    ("changed", "code"),
+    [
+        pytest.param(
+            lambda order: replace(order, status="Rozliczone", realizator="zenon.testowy"),
+            "EFENIX_INNY_REALIZATOR",
+            id="inny-realizator",
+        ),
+        pytest.param(
+            lambda order: replace(order, status="Rozliczone", address="Miasto-Dzielnica ul.Testowa 14 Lokal 3"),
+            "EFENIX_INNY_ADRES",
+            id="inny-adres",
+        ),
+        pytest.param(
+            lambda order: replace(order, status="Rozliczone częściowo"), "EFENIX_INNY_STATUS", id="status-dłuższy-niż-rozliczone"
+        ),
+    ],
+)
+def test_zlecenie_rozliczone_innego_wykonawcy_albo_adresu_to_blad_zlecenia(
+    tmp_path: Path, page: Page, changed: Callable[[AtrapaOrder], AtrapaOrder], code: str
+) -> None:
+    """``NUMER ZL.``, pod którym efenix ma rozliczone zlecenie innego realizatora albo pod innym adresem, wskazuje inne
+    zlecenie niż wiersz pliku, więc zostaje błędem jak przy statusie „Do wyceny”; status, który tylko zaczyna się od
+    „Rozliczone”, to inny status."""
+
+    order = Order("#8201")
+    with atrapa_efenix([changed(order.in_efenix("901"))]) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [order])
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == ("WYMAGA_SPRAWDZENIA", _figures_of(1, 0), [(code, "wiersz 18")])
 
 
 @pytest.mark.parametrize(

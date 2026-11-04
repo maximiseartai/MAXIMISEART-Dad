@@ -763,7 +763,7 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
     assert (notification["headline"], notification["period"], notification["orders"], notification["stopped"]) == (
         "Wycena w efenix gotowa · wymaga sprawdzenia",
         PERIOD,
-        {"ready": 1, "errors": 2, "warnings": 3},
+        {"ready": 1, "settled": 0, "errors": 2, "warnings": 3},
         None,
     )
     assert (notification["run_id"], card["state"], card["result"]["headline"]) == (
@@ -782,6 +782,7 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
     assert {figure["label"]: figure["value"] for figure in result["summary"]["figures"]} == {
         "Zlecenia w zakresie": 6,
         "Gotowe do przekazania": 1,
+        "Rozliczone": 0,
         "Błędy zleceń": 2,
         "Ostrzeżenia Emmetta": 3,
     }
@@ -802,6 +803,36 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
     ]
     assert notes["errors"][0]["what"].startswith("efenix nie zna zlecenia o numerze z NUMER ZL.")
     assert notes["warnings"][0]["what"].startswith("Wycena Emmetta ma inne ilości niż Plik zbiorczy")
+    assert notes["settled"] == []
+
+
+def test_zlecenie_rozliczone_w_efenix_ma_na_karcie_w_logach_i_w_powiadomieniu_wlasny_wynik_a_nie_blad(tmp_path: Path) -> None:
+    """Zlecenie o statusie „Rozliczone” (#821) to na karcie Uruchomienia osobna liczba i lista z numerem zlecenia i
+    Wykonawcą, w Logach Uruchomienia wynik „rozliczone” bez kodu Komunikatu, a w Powiadomieniu osobna liczba; wynik to OK."""
+
+    orders = [
+        Order("#ZLQR01", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
+        Order("#ZLQR02", worker="beata.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
+    ]
+    in_efenix = [orders[0].in_efenix("621"), replace(orders[1].in_efenix("622"), status="Rozliczone", execution_date=DAY)]
+    with atrapa_efenix(in_efenix) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        write_collective_file(centrum.period_parent, orders)
+        assert _start_pricing(centrum).status_code == 200
+        result = finished_view(centrum.client)["result"]
+    [record] = records(centrum)
+    [notification] = [item for item in centrum.client.get("/api/notifications").json()["items"] if item["kind"] == "wycena_w_efenix"]
+
+    figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
+    assert (result["result"], figures["Gotowe do przekazania"], figures["Rozliczone"], figures["Błędy zleceń"]) == ("OK", 1, 1, 0)
+    notes = result["order_notes"]
+    assert (notes["errors"], [(note["row"], note["order"], note["worker"]) for note in notes["settled"]]) == (
+        [],
+        [(19, "ZLQR02", "beata.testowa")],
+    )
+    traced = [(order["row"], order["outcome"], order["code"], [step["action"] for step in order["steps"]]) for order in record["efenix_orders"]]
+    assert traced == [(18, "gotowe", None, ["szukanie", "otwarcie zlecenia"]), (19, "rozliczone", None, ["szukanie"])]
+    assert notification["orders"] == {"ready": 1, "settled": 1, "errors": 0, "warnings": 0}
 
 
 def _close_window(profile: Path) -> None:

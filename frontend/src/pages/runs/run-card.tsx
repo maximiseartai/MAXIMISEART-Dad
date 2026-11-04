@@ -23,6 +23,7 @@ import type {
   Message,
   NextAction,
   OpenTarget,
+  OrderLine,
   OrderNote,
   OrderNotes,
   PastRun,
@@ -379,7 +380,7 @@ function OutcomeBody({
   action: React.ReactNode
   live?: LiveStop | null
   below?: React.ReactNode
-  /** Zlecenia, które zostały tacie, z numerami i Wykonawcami: zastępują ostrzeżenia w trzech częściach. */
+  /** Zlecenia, które zostały tacie, i Zlecenia rozliczone, z numerami i Wykonawcami: zastępują ostrzeżenia w trzech częściach. */
   notes?: OrderNotes | null
   filling?: boolean
 }) {
@@ -417,6 +418,7 @@ function OutcomeBody({
         <>
           <OrderNoteList title="Błędy" notes={notes.errors} />
           <OrderNoteList title="Ostrzeżenia Emmetta" notes={notes.warnings} />
+          <OrderNoteList title="Rozliczone" notes={notes.settled} settled />
         </>
       )}
       {result.technical_notes.map((note) => (
@@ -650,8 +652,17 @@ function StepProgress({ step }: { step: ProgressStep }) {
   )
 }
 
-/** Zlecenia, które zostały tacie: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i co się stało; puste znika. */
-function OrderNoteList({ title, notes }: { title: string; notes: ReadonlyArray<OrderNote> }) {
+/** Zlecenia Wyceny w efenix: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i co się stało (gdy zostały tacie); puste znika. */
+function OrderNoteList({
+  title,
+  notes,
+  settled = false,
+}: {
+  title: string
+  notes: ReadonlyArray<OrderNote | OrderLine>
+  /** Zlecenia rozliczone w efenix: tata nie ma nic do zrobienia, więc bez ostrzeżenia i bez zdania. */
+  settled?: boolean
+}) {
   if (notes.length === 0) {
     return null
   }
@@ -659,7 +670,11 @@ function OrderNoteList({ title, notes }: { title: string; notes: ReadonlyArray<O
   return (
     <section className="flex flex-col gap-2" aria-label={title}>
       <h3 className="flex items-center gap-2 text-sm font-medium">
-        <TriangleAlertIcon className="size-4 text-warning" aria-hidden />
+        {settled ? (
+          <CircleCheckIcon className="size-4 text-muted-foreground" aria-hidden />
+        ) : (
+          <TriangleAlertIcon className="size-4 text-warning" aria-hidden />
+        )}
         {title} ({notes.length})
       </h3>
       <Table aria-label={title}>
@@ -669,7 +684,8 @@ function OrderNoteList({ title, notes }: { title: string; notes: ReadonlyArray<O
               <TableCell className="w-24 text-muted-foreground tabular-nums">wiersz {note.row}</TableCell>
               <TableCell className="w-32 font-medium tabular-nums">{note.order ?? "bez numeru"}</TableCell>
               <TableCell className="w-40 text-muted-foreground">{note.worker}</TableCell>
-              <TableCell className="whitespace-normal">{note.what}</TableCell>
+              {/* Zlecenie rozliczone nie ma zdania, ale pusta komórka trzyma kolumny w linii z Błędami. */}
+              <TableCell className="whitespace-normal">{"what" in note ? note.what : null}</TableCell>
             </TableRow>
           ))}
         </TableBody>

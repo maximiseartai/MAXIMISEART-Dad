@@ -3483,6 +3483,38 @@
         ],
         "title": "Opened"
       },
+      "OrderLine": {
+        "properties": {
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order"
+          },
+          "worker": {
+            "type": "string",
+            "title": "Worker"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "row",
+          "order",
+          "worker"
+        ],
+        "title": "OrderLine",
+        "description": "Zlecenie Wyceny w efenix na karcie bieżącego Uruchomienia: wiersz Pliku zbiorczego, numer zlecenia i Wykonawca.\n\nNumer zlecenia (``None``: pusty ``NUMER ZL.``) i Wykonawcę widzi tylko tata na swoim komputerze: Logi Uruchomienia ich\nnie mają."
+      },
       "OrderNote": {
         "properties": {
           "row": {
@@ -3518,7 +3550,7 @@
           "what"
         ],
         "title": "OrderNote",
-        "description": "Zlecenie Wyceny w efenix, które zostało tacie: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i zdanie.\n\nNumer zlecenia (``None``: pusty ``NUMER ZL.``) i Wykonawcę widzi tylko tata na swoim komputerze: Logi Uruchomienia ich\nnie mają."
+        "description": "Zlecenie Wyceny w efenix, które zostało tacie, ze zdaniem „Co się stało” jego Komunikatu."
       },
       "OrderNotes": {
         "properties": {
@@ -3535,16 +3567,24 @@
             },
             "type": "array",
             "title": "Warnings"
+          },
+          "settled": {
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            },
+            "type": "array",
+            "title": "Settled"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "errors",
-          "warnings"
+          "warnings",
+          "settled"
         ],
         "title": "OrderNotes",
-        "description": "Błędy zleceń i ostrzeżenia Emmetta Wyceny w efenix na karcie bieżącego Uruchomienia."
+        "description": "Błędy zleceń, ostrzeżenia Emmetta i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego Uruchomienia."
       },
       "PathStep": {
         "properties": {
@@ -3985,6 +4025,10 @@
             "type": "integer",
             "title": "Ready"
           },
+          "settled": {
+            "type": "integer",
+            "title": "Settled"
+          },
           "errors": {
             "type": "integer",
             "title": "Errors"
@@ -3998,11 +4042,12 @@
         "type": "object",
         "required": [
           "ready",
+          "settled",
           "errors",
           "warnings"
         ],
         "title": "PricedOrders",
-        "description": "Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, błędy i ostrzeżenia Emmetta."
+        "description": "Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, rozliczone, błędy i ostrzeżenia Emmetta."
       },
       "PricingNotification": {
         "properties": {
@@ -5265,7 +5310,7 @@
           "opens"
         ],
         "title": "RunOutcome",
-        "description": "Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.\n\n``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla\ntaty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).\n``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed\nZapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka\nZatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które\nzostały tacie, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w trzech częściach\n(``None``: inny proces albo wynik bez podsumowania)."
+        "description": "Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.\n\n``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla\ntaty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).\n``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed\nZapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka\nZatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które\nzostały tacie, i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w\ntrzech częściach (``None``: inny proces albo wynik bez podsumowania)."
       },
       "RunRecorded": {
         "properties": {

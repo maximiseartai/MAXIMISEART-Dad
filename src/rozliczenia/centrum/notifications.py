@@ -303,7 +303,10 @@ class Notifications:
             orders=None
             if orders is None
             else contract.PricedOrders(
-                ready=orders["gotowe"], errors=orders["błąd"], warnings=orders["ostrzeżenie Emmetta"]
+                ready=orders["gotowe"],
+                settled=orders["rozliczone"],
+                errors=orders["błąd"],
+                warnings=orders["ostrzeżenie Emmetta"],
             ),
             stopped=card.result.stops[0].what if card.result.stops else None,
         )
