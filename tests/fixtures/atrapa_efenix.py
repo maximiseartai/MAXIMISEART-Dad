@@ -6,9 +6,11 @@ Odtwarza tylko to, czego używa okno efenix narzędzia: identyfikatory pól (``#
 w ``.badge``, ``Wykonawca <small><small class="text-default">(login)</small></small><br><small>`` z datą w ``.badge``,
 ``<small>województwo</small><br>Dane adresowe``). Skrypty stron leżą jak w efenix w plikach, które strony ładują
 (``LIST_SCRIPT``, ``ORDER_SCRIPT``). Skrypt listy to własny,
-krótki kod Atrapy: Enter w polu ``Numer`` wysyła formularz do ``action_fill_orders.php`` i wkłada odpowiedź do
+krótki kod Atrapy: Enter w polu ``Numer`` wysyła do ``action_fill_orders.php`` pola skryptu listy efenix
+(``LIST_SEARCH_FIELDS``) z liczbą wierszy z pola ``#field_na_stronie`` (domyślnie ``10``) i wkłada odpowiedź do
 ``#wyniki``, a po wczytaniu, gdy karta pamięta numer z poprzedniego szukania (``sessionStorage``), sama szuka go
-jeszcze raz, jak efenix po powrocie ze strony zlecenia na listę. Nie ma w niej żadnego kodu, stylu ani danych z efenix.
+jeszcze raz, jak efenix po powrocie ze strony zlecenia na listę. Szukanie bez liczby wierszy (``na_stronie``) dostaje,
+jak w efenix, stronę błędu bazy danych bez tabeli wyników. Nie ma w niej żadnego kodu, stylu ani danych z efenix.
 
 Strona zlecenia ma wycenę ze stanem: pozycje z wymyślonymi cenami (``CATALOG``: kody ``INDEKS_NNN_078`` stron efenix,
 z przypisania kolumn i bez niego) w kartach ``.card.rounded-lg.kolorek`` jak w efenix: karta z polem
@@ -82,6 +84,15 @@ ORDER_SCRIPT = "js/page_order_edit.js"
 SESSION_COOKIE = ("PHPSESSID", "atrapa-efenix")
 # Pole ``rodzaj`` szukania, które skrypt listy wysyła sam po wczytaniu strony.
 BY_LIST = "powrot"
+# Pola szukania, które skrypt listy efenix wysyła do ``SEARCH``, w jego kolejności (odczyt efenix z 4.11.2026, #822).
+LIST_SEARCH_FIELDS = (
+    "id", "numer", "xstatus", "xrodzaj", "asp", "rodzaj", "strona", "na_stronie", "wojewodztwo", "powiat", "gmina", "miasto",
+    "ulica", "realizator", "owner", "operator", "data_od", "data_do", "data_do_akceptacji", "ulica_numer", "adres_id", "sortowanie",
+)
+# Liczba wierszy tabeli wyników w domyślnym ustawieniu listy (pole ``#field_na_stronie``), jak w efenix.
+LIST_ROWS_PER_PAGE = "10"
+# Odpowiedź efenix na szukanie bez liczby wierszy: strona błędu zapytania z pustym limitem wierszy (tekst wymyślony).
+_NO_ROW_LIMIT = "<p>Błąd bazy danych: zapytanie bez liczby wierszy.</p>"
 TODAY = date(2026, 10, 12)
 """Dzień, który kalendarz Atrapy ma za dzisiejszy, gdy test nie poda innego: dni z ``DATA`` testów (wrzesień 2026) są
 w zakresie, który przyjmuje efenix."""
@@ -415,7 +426,10 @@ def atrapa_efenix(
             elif path == SEARCH and method == "POST":
                 closing.wait(answer_delay_s)
                 number = params.get("numer", "").strip()
-                self._html(_results([order for order in orders if number in order.number], changed))
+                if not params.get("na_stronie"):
+                    self._html(_NO_ROW_LIMIT)
+                else:
+                    self._html(_results([order for order in orders if number in order.number], changed))
             elif path == ORDER_PAGE and method == "GET" and changed is Unread.ORDER_REDIRECT:
                 self._redirect(LOGOUT)
             elif path == ORDER_PAGE and method == "GET":
@@ -570,7 +584,9 @@ _LIST_SCRIPT = """
   const numer = document.getElementById('field_numer');
   function szukaj(rodzaj) {
     sessionStorage.setItem('atrapa_numer', numer.value);
-    const body = new URLSearchParams({numer: numer.value, rodzaj: rodzaj, strona: '1'});
+    const pola = Object.fromEntries('__FIELDS__'.split(' ').map((nazwa) => [nazwa, '']));
+    const wartosci = {numer: numer.value, rodzaj: rodzaj, strona: '1', na_stronie: document.getElementById('field_na_stronie').value};
+    const body = new URLSearchParams({...pola, ...wartosci});
     fetch('action_fill_orders.php', {method: 'POST', body: body})
       .then((answer) => answer.text())
       .then((html) => { document.getElementById('wyniki').innerHTML = html; });
@@ -620,13 +636,15 @@ def _list_page(changed: Changed | Unread | None, host: str) -> str:
         "Atrapa efenix",
         '<div class="container-fluid"><input type="text" id="field_numer" class="form-control">'
         '<button type="button" id="button_order_search" class="btn">Szukaj</button>'
+        f'<select id="field_na_stronie" class="form-control"><option value="{LIST_ROWS_PER_PAGE}" selected>{LIST_ROWS_PER_PAGE}</option>'
+        '<option value="25">25</option><option value="50">50</option></select>'
         f'<div id="wyniki"></div></div>{_hostile(host) if changed is Unread.HOSTILE else ""}'
         f'<script src="{LIST_SCRIPT}{"#v1" if changed is Unread.SCRIPT_ADDRESSES else "?v=1"}"></script>',
     )
 
 
 def _list_script(changed: Changed | Unread | None) -> str:
-    script = _LIST_SCRIPT.replace("__BY_LIST__", BY_LIST)
+    script = _LIST_SCRIPT.replace("__BY_LIST__", BY_LIST).replace("__FIELDS__", " ".join(LIST_SEARCH_FIELDS))
     if changed is Unread.SCRIPTS:
         return script.replace("{numer: numer.value", "{nr: numer.value")
     return _HOSTILE_SCRIPT + script if changed is Unread.HOSTILE else script
