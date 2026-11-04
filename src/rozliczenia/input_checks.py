@@ -155,7 +155,8 @@ def read_register(
                 for column, header in _FORBIDDEN_HEADERS:
                     forbidden.remember_value(column, row.cells[header].value)
     if copy is not None:
-        _copied(register, sheets, copy)
+        with _stops(messages.register_unusable):
+            _copied(register, sheets, copy)
     return sheets
 
 
@@ -163,15 +164,11 @@ def _copied(register: Path, sheets: Sequence[RegisterSheet], copy: input_copy.In
     """Arkusze Rejestru z odczytu w Kopii wejścia: komórki każdej kolumny ``COLUMNS`` w jej kolumnie arkusza pod
     nagłówkiem Rejestru (wiersz 1) i puste wiersze z odczytanego zakresu.
 
-    Czytnik Rejestru nie oddaje bajtów, więc odcisk jest z bajtów przeczytanych zaraz po nim; Rejestru, którego w tej
-    chwili już nie da się przeczytać, Kopia nie ma, a Uruchomienie idzie dalej z tym, co czytnik oddał.
+    Czytnik Rejestru nie oddaje bajtów, więc odcisk jest z bajtów przeczytanych zaraz po nim, także gdy Rejestr otworzył
+    już Excel; Rejestr, którego w tej chwili nie da się przeczytać, to ``WorkbookError`` jak przy czytniku.
     """
 
-    try:
-        content = workbook_files.saved_workbook_content(register)
-    except WorkbookError:
-        return
-    workbook = copy.workbook(register, content)
+    workbook = copy.workbook(register, workbook_files.saved_workbook_content(register))
     for sheet in sheets:
         positions = sheet.positions
         copied = workbook.sheet(sheet.name, 1, {number: column.register_header for column, number in positions.items()})

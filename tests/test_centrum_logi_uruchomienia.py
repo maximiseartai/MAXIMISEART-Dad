@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time as time_of_day, timedelta, timezone
 from decimal import Decimal
 import hashlib
 from http import HTTPStatus
@@ -22,6 +22,7 @@ import sys
 import time
 from typing import Any, NoReturn
 
+from openpyxl.worksheet.formula import ArrayFormula
 from playwright.sync_api import Browser, sync_playwright
 import pytest
 
@@ -1706,10 +1707,12 @@ def test_logi_przebiegu_rozliczen_maja_wiersze_pliku_zbiorczego_bez_adresu_i_num
     tmp_path: Path,
 ) -> None:
     """Kopia wejścia Przebiegu to arkusz Pliku zbiorczego z nagłówkami z wiersza 17 i każdym Wierszem danych z jego
-    komórkami A:AT, także tymi, których Rozliczenie pracownika nie dostaje, bez ``ADRES`` i numeru Orange."""
+    komórkami A:AT, bez ``ADRES`` i numeru Orange. Godzina i czas trwania mają rodzaj, bo JSON nie odróżnia ich od
+    tekstu, a formuła tablicowa to jej tekst, jak każda formuła."""
 
     centrum = settling_centrum(tmp_path)
-    write_quantity_source(centrum.collective_file, [MARKED, {"H": "kamil.syntetyczny", "N": 2}])
+    typed = {"AQ": time_of_day(8, 30), "AR": timedelta(hours=1, minutes=30), "AS": True, "AT": ArrayFormula("AT19", "=SUM(N19:N19)")}
+    write_quantity_source(centrum.collective_file, [MARKED, {"H": "kamil.syntetyczny", "N": 2, **typed}])
     content = centrum.collective_file.read_bytes()
 
     view = run_to_end(centrum, dry_run=True)
@@ -1723,8 +1726,22 @@ def test_logi_przebiegu_rozliczen_maja_wiersze_pliku_zbiorczego_bez_adresu_i_num
     marked = {letter: value for letter, value in MARKED.items() if letter not in ("B", "I")}
     assert sheet["rows"] == [
         {"row": 18, "cells": {**marked, "G": moment("2026-09-09T13:45:00"), "H": "adrian.testowy"}},
-        {"row": 19, "cells": {"A": "POZNAŃ", "F": "#19", "H": "kamil.syntetyczny", "J": "tak", "N": 2}},
+        {
+            "row": 19,
+            "cells": {
+                "A": "POZNAŃ",
+                "F": "#19",
+                "H": "kamil.syntetyczny",
+                "J": "tak",
+                "N": 2,
+                "AQ": {"type": "time", "text": "08:30:00"},
+                "AR": {"type": "timedelta", "text": "5400.0"},
+                "AS": True,
+                "AT": "=SUM(N19:N19)",
+            },
+        },
     ]
+    assert sheet["rows"][1]["cells"]["AS"] is True, "prawda/fałsz, nie liczba"
 
 
 def test_logi_wyceny_w_efenix_maja_wiersze_pliku_zbiorczego_z_kwota_i_odcisk_przeczytanej_wersji_pliku(
@@ -1819,8 +1836,11 @@ def test_adres_i_numer_orange_z_kopii_wejscia_nie_wychodza_do_logow_ani_skrzynki
     )
     [record] = records(centrum)
     [copied] = record["input_copy"]
+    headers = [header for sheet in copied["sheets"] for header in sheet["columns"].values()]
+    assert [header for header in headers if header in ("ADRES", "NUMER UMOWY", "NUMER UMOWY/ZLECENIA ORANGE")] == []
     cells = [value for sheet in copied["sheets"] for row in sheet["rows"] for value in row["cells"].values()]
-    assert MASKED in cells, "wolny tekst w Kopii wejścia po strażniku"
+    masked = [value for value in cells if "[adres]" in str(value) or "[numer Orange]" in str(value)]
+    assert masked == [MASKED], "zakazanych komórek nie ma w Kopii, a wolny tekst jest po strażniku"
     assert [note for note in record["technical_notes"] if "input_copy[0]" in note] == [
         f"Reguła danych: zamaskowano wartość kolumny {column} w: input_copy[0].sheets[0].rows[{cells_row(copied)}].cells.[…]."
         for column in ("ADRES", "NUMER UMOWY/ZLECENIA ORANGE")

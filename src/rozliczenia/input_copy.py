@@ -19,23 +19,23 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta, timezone
-from decimal import Decimal
+from datetime import datetime, time, timedelta, timezone
 import hashlib
-import math
 from pathlib import Path
 from typing import Literal
 
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.formula import ArrayFormula
 
 from . import client_data
 
-TypedKind = Literal["datetime", "date", "time", "timedelta", "number", "other"]
+TypedKind = Literal["datetime", "time", "timedelta", "other"]
 
 
 @dataclass(frozen=True)
 class Typed:
-    """Wartość komórki, której JSON nie odróżnia od tekstu: ``kind`` i jej zapis (ISO 8601, sekundy albo tekst)."""
+    """Wartość komórki, której JSON nie odróżnia od tekstu: ``kind`` i jej zapis (ISO 8601 albo sekundy); ``other``:
+    wartość, której Kopia nie zapisuje, z nazwą jej typu."""
 
     kind: TypedKind
     text: str
@@ -181,24 +181,19 @@ def _cells(values: Values, forbidden: set[int]) -> dict[str, CellValue]:
 
 
 def _value(value: object) -> CellValue:
-    """Wartość komórki do JSON: tekst, liczba i prawda/fałsz jak są, a data, godzina i czas trwania z rodzajem."""
+    """Wartość komórki z openpyxl do JSON: tekst (także formuła), liczba i prawda/fałsz jak są, a data z godziną (openpyxl
+    czyta tak także samą datę), godzina i czas trwania z rodzajem. Formuła tablicowa to jej tekst, jak każda formuła."""
 
     match value:
-        case bool() | int() | str():
+        case bool() | int() | float() | str():
             return value
-        case float() if math.isfinite(value):
-            return value
-        case float():
-            return Typed("number", repr(value))
-        case Decimal():
-            return Typed("number", str(value))
         case datetime():
             return Typed("datetime", value.isoformat())
-        case date():
-            return Typed("date", value.isoformat())
         case time():
             return Typed("time", value.isoformat())
         case timedelta():
             return Typed("timedelta", repr(value.total_seconds()))
+        case ArrayFormula():
+            return str(value.text)
         case _:
-            return Typed("other", str(value))
+            return Typed("other", type(value).__name__)
