@@ -1568,8 +1568,8 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
 ) -> None:
     """Zlecenie skończone przed zgaśnięciem Centrum ma w śladzie pozycje odczytane ze strony efenix, a wśród nich ulicę i
     telefon (wolny tekst, ADR 0025). Start Centrum zamyka dziennik jako Logi Urwanego Uruchomienia, także gdy Logi zapisała
-    już poprzednia praca Centrum sprzed strażnika, która zgasła przed ich wysyłką: plik Logów i komentarz w Skrzynce mają
-    te same znaki, z zamaskowaną ulicą i telefonem."""
+    już poprzednia praca Centrum sprzed strażnika, która zgasła przed ich wysyłką: plik Logów i plik w Archiwum Logów
+    okresu, do którego prowadzi jedyny komentarz w Skrzynce, mają te same znaki, z zamaskowaną ulicą i telefonem."""
 
     centrum = settling_centrum(tmp_path)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
@@ -1620,11 +1620,12 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
     [comment] = logs_comments(box)
     [path] = log_files(centrum)
     text = path.read_text(encoding="utf-8")
+    archived = logs_text(box, comment)
 
-    assert (sent, text in comment, journals(centrum)) == (True, True, [])
+    assert (sent, archived == text, journals(centrum)) == (True, True, [])
     [logged] = json.loads(text)["efenix_orders"]
     assert logged["steps"][0]["quantities"] == {"[ulica]": 1, "tel. [telefon]": 2}
-    assert [value for value in (STREET, PHONE) if value in text or value in comment] == []
+    assert [value for value in (STREET, PHONE) if any(value in kept for kept in (text, comment, archived))] == []
 
 
 def test_dziennik_urwany_przy_pierwszym_wpisie_start_usuwa_bez_logow(tmp_path: Path) -> None:
