@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import TOOL_ROOT, engine, settlement_messages
+from .client_data import ForbiddenValues
 from .decision import Conversation
 from .domain import ProgressObserver, SettlementSummary
 from .engine import default_worker_template_path
@@ -35,7 +36,8 @@ def _period_label(source: Path) -> str:
 class SettlementInputs:
     """Wejście procesu Przebiegu rozliczeń, gotowe przed startem silnika.
 
-    Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da). ``readers`` czytają Wzorzec.
+    Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da). ``readers`` czytają Wzorzec, a
+    ``forbidden`` to pamięć reguły danych pracy Centrum (``None``: bez wysyłki, bez pamięci).
     """
 
     source: Path
@@ -43,6 +45,7 @@ class SettlementInputs:
     config_path: Path = field(default_factory=default_config_path)
     worker_template_path: Path = field(default_factory=default_worker_template_path)
     readers: Readers = FILE_READERS
+    forbidden: ForbiddenValues | None = None
 
     @property
     def period(self) -> str:
@@ -59,6 +62,7 @@ def _execute(
         worker_template_path=inputs.worker_template_path,
         observer=observer,
         readers=inputs.readers,
+        forbidden=inputs.forbidden,
     )
 
 

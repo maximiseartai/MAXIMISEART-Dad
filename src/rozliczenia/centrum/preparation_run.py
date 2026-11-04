@@ -18,6 +18,7 @@ from rozliczenia.centrum.metrics import previewed_periods
 from rozliczenia.centrum.period_board import observed_period_folder, requested_period
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.settings import SettingsStore
 from rozliczenia.period_folder import PeriodFolders, period_status_label, scan_period_folders
 from rozliczenia.preparation_process import PreparationInputs
@@ -38,6 +39,7 @@ class PreparationEntry:
     processes: Processes
     today: Callable[[], date]
     readers: Readers
+    forbidden: ForbiddenValues
 
     @property
     def key(self) -> contract.PeriodProcessKey:
@@ -87,6 +89,7 @@ class PreparationEntry:
             internal_template_path=self.configuration.internal_template,
             collective_template_path=self.configuration.collective_template,
             readers=self.readers,
+            forbidden=self.forbidden,
         )
         return PreparedRun(
             declaration=PREPARATION, period=period, process=PREPARATION.core(self.processes), inputs=inputs

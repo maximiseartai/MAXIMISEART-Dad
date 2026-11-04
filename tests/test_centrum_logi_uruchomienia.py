@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
+from decimal import Decimal
 from http import HTTPStatus
 import json
 import os
@@ -25,8 +26,18 @@ import pytest
 
 from rozliczenia import TOOL_ROOT, settlement_messages
 from rozliczenia.centrum import app, contract, runs
-from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES
+from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES, DadActions
 from rozliczenia.centrum.efenix_run import EfenixWindow
+from rozliczenia.centrum.pricing_journal import JournalStarted, OrderEnded
+from rozliczenia.centrum.run_logs import (
+    Environment,
+    LoggedInterruption,
+    LoggedOrder,
+    LoggedStep,
+    RunLog,
+    Tool,
+    logs_file_name,
+)
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.period_folder import PeriodFolderInaccessible
@@ -54,7 +65,7 @@ from tests.fixtures.centrum_processes import (
 from tests.fixtures.centrum_w_procesie import centrum_process
 from tests.fixtures.efenix import DAY, Order, write_collective_file
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.preparation import PERIOD, incomplete_period_rows
+from tests.fixtures.preparation import PERIOD, default_register_rows, incomplete_period_rows
 from tests.fixtures.run_cards import first_view, restored
 from tests.fixtures.settlement import MARKED, SOURCE_NAME, CellValue, write_quantity_source
 from tests.fixtures.tool_clone import ToolRepository, git_command, git_failing_on, tool_repository
@@ -553,6 +564,53 @@ def test_diagnoza_w_logach_nie_ma_tresci_komorek_ani_pelnych_sciezek(tmp_path: P
     texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)] + in_box(box)
     forbidden = ("ZNACZNIK", "adrian.testowy", "2026-09-09", "09.09.2026", in_json(tmp_path), in_json(tmp_path.resolve()))
     assert [marker for marker in forbidden if any(marker in text for text in texts)] == []
+
+
+# Syntetyczne wartości kolumn, które nigdy nie wychodzą z komputera taty (ADR 0025), i wolny tekst z telefonem i ulicą.
+ADDRESS_VALUE = "Syntetyczna Bursztynowa 14/2 Poznań"
+ORANGE_VALUE = "4801234567"
+PHONE = "600 123 456"
+STREET = "ul. Kwiatowa 5"
+
+
+def test_adres_i_numer_orange_cytowane_przez_komunikat_nie_wychodza_w_logach_ani_zgloszeniu_a_logi_maja_uwage(
+    tmp_path: Path,
+) -> None:
+    rows = default_register_rows()
+    rows[2] = {**(rows[2] or {}), "ADRES": ADDRESS_VALUE}
+    rows[4] = {**(rows[4] or {}), "NUMER UMOWY": ORANGE_VALUE}
+    rows[7] = {**(rows[7] or {}), "SKUTECZNE": f"{ADDRESS_VALUE.upper()}  {ORANGE_VALUE} tel. {PHONE}, {STREET}"}
+    centrum = preparing_centrum(tmp_path, rows)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+
+    first = run_to_end(centrum, dry_run=True)
+    second = run_to_end(centrum, dry_run=True)
+    diagnosis = centrum.client.post(f"/api/runs/{second['run']['id']}/diagnosis")
+    sent = centrum.client.post(f"/api/runs/{second['run']['id']}/report")
+
+    assert [view["result"]["stop_kind"] for view in (first, second)] == ["for_tata", "repeated"]
+    assert (diagnosis.status_code, sent.json()) == (200, {"state": "sent"})
+    box = centrum.surroundings.report_box
+    # Logi obu Uruchomień, a Diagnoza drugiego zmienia jego komentarz (#849), więc jego tekst to Logi po Diagnozie.
+    assert box.wait_until(
+        lambda fake: sum(len(issue.comments) for issue in fake.background_issues) == 2 and len(fake.edited) == 1
+    )
+    assert ADDRESS_VALUE.upper() in json.dumps(card_messages(second), ensure_ascii=False), "karta taty cytuje komórkę"
+    texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
+    texts += [part for issue in [*box.issues, *box.background_issues] for part in (issue.title, issue.body, *issue.comments)]
+    leaked = (ADDRESS_VALUE, ADDRESS_VALUE.upper(), ORANGE_VALUE, PHONE, STREET)
+    assert [value for value in leaked if any(value in text for text in texts)] == []
+    quoted = "„[adres]  [numer Orange] tel. [telefon], [ulica]”"
+    [report] = box.sent
+    assert quoted in report.title + report.body
+    assert "- Reguła danych: zamaskowano wartość kolumny ADRES w: treść Zgłoszenia." in report.body
+    for record in records(centrum):
+        [message] = record["messages"]
+        assert quoted in message["where"]
+        assert record["technical_notes"] == [
+            "Reguła danych: zamaskowano wartość kolumny ADRES w: messages[0].where.",
+            "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: messages[0].where.",
+        ]
 
 
 def test_katalog_logow_bez_prawa_zapisu_daje_ten_sam_wynik_bez_komunikatu(tmp_path: Path) -> None:
@@ -1096,6 +1154,27 @@ def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_adr
     assert [marker for marker in private if any(marker in text for text in texts)] == []
 
 
+def test_uwaga_taty_po_wycenie_w_efenix_nie_wynosi_adresu_z_pliku_zbiorczego_ani_danych_adresowych_efenix(
+    tmp_path: Path,
+) -> None:
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        assert _start_pricing(centrum).status_code == 200
+        assert finished_view(centrum.client)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
+    efenix_address = PRICED[0].efenix_address
+
+    sent = centrum.client.post("/api/dad-notes", json={"title": "Adresy", "body": f"{PRICED[1].address}\n{efenix_address}"})
+
+    assert sent.json() == {"state": "sent"}
+    [issue] = centrum.surroundings.report_box.issues_with("uwaga-taty")
+    assert issue.body.splitlines()[:3] == [
+        "[adres]",
+        "[adres]",
+        "Reguła danych: zamaskowano wartość kolumny ADRES w: treść Uwagi taty.",
+    ]
+
+
 # Dziennik działań taty (#839): co tata robił w Centrum od poprzedniego Uruchomienia, z godzinami, bez treści Uwagi taty.
 
 NOTE_TITLE = "Tytuł Uwagi SYNTETYCZNY-TYTUŁ"
@@ -1481,6 +1560,71 @@ def test_dziennik_wyceny_w_efenix_ktorego_nie_da_sie_zapisac_nie_zatrzymuje_wyce
 
     assert (results, [len(record["efenix_orders"]) for record in records(centrum)]) == (["WYMAGA_SPRAWDZENIA"] * 2, [6, 6])
     assert [line.split(" ", 1)[1] for line in lines] == ["dziennik-wyceny-niedostepny typ=FileExistsError miejsce=wpis"] * 2
+
+
+@pytest.mark.parametrize("unsent", [False, True], ids=["z-dziennika", "z-niewyslanych-logow"])
+def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_straznika_reguly_danych(
+    tmp_path: Path, unsent: bool
+) -> None:
+    """Zlecenie skończone przed zgaśnięciem Centrum ma w śladzie pozycje odczytane ze strony efenix, a wśród nich ulicę i
+    telefon (wolny tekst, ADR 0025). Start Centrum zamyka dziennik jako Logi Urwanego Uruchomienia, także gdy Logi zapisała
+    już poprzednia praca Centrum sprzed strażnika, która zgasła przed ich wysyłką: plik Logów i komentarz w Skrzynce mają
+    te same znaki, z zamaskowaną ulicą i telefonem."""
+
+    centrum = settling_centrum(tmp_path)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    started = JournalStarted(
+        entry="start Uruchomienia",
+        run_id="b" * 32,
+        process="efenix",
+        mode="zapis",
+        period=PERIOD,
+        started_at=utc("2026-09-16T10:15:00+00:00"),
+    )
+    step = LoggedStep(
+        action="otwarcie zlecenia",
+        duration_ms=120,
+        found=None,
+        execution_date=None,
+        amount=None,
+        quantities={STREET: 1, f"tel. {PHONE}": 2},
+        position=None,
+        quantity=None,
+        accepted=None,
+    )
+    order = LoggedOrder(row=18, outcome="gotowe", code=None, file={}, file_amount=Decimal(0), steps=[step])
+    ended = OrderEnded(at=utc("2026-09-16T10:16:00+00:00"), entry="zlecenie skończone", order=order)
+    directory = centrum.log_path.parent / "dzienniki-wyceny"
+    directory.mkdir(parents=True)
+    journal = directory / Path(logs_file_name(started.started_at, "efenix", started.run_id)).with_suffix(".jsonl")
+    journal.write_text(f"{started.model_dump_json()}\n{ended.model_dump_json()}\n", encoding="utf-8")
+    if unsent:
+        logs = centrum.log_path.parent / "uruchomienia" / logs_file_name(started.started_at, "efenix", started.run_id)
+        logs.parent.mkdir(parents=True)
+        written = RunLog.interrupted(
+            started,
+            ended_at=ended.at,
+            orders=[order],
+            interruption=LoggedInterruption(row=None, place=None, total=None, omitted=0),
+            tool=Tool(wydanie=None, commit=TOOL_COMMIT),
+            environment=Environment(system="Windows-11", python="3.12.7", files=None),
+            dad_actions=DadActions(entries=[], omitted=0),
+        )
+        logs.write_text(written.text, encoding="utf-8")
+
+    centrum.restart()
+    centrum.client.get("/api/runs/current")
+    box = centrum.surroundings.report_box
+    sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+    centrum.client.stop()
+    [comment] = logs_comments(box)
+    [path] = log_files(centrum)
+    text = path.read_text(encoding="utf-8")
+
+    assert (sent, text in comment, journals(centrum)) == (True, True, [])
+    [logged] = json.loads(text)["efenix_orders"]
+    assert logged["steps"][0]["quantities"] == {"[ulica]": 1, "tel. [telefon]": 2}
+    assert [value for value in (STREET, PHONE) if value in text or value in comment] == []
 
 
 def test_dziennik_urwany_przy_pierwszym_wpisie_start_usuwa_bez_logow(tmp_path: Path) -> None:

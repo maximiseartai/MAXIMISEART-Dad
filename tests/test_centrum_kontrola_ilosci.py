@@ -235,6 +235,62 @@ def test_kontrola_ilosci_nie_ma_adresu_numerow_wykonawcy_daty_ani_czynnosci_zrea
     assert [marker for marker in ALLOWED if any(marker in text for text in seen_by_tata)] == []
 
 
+def test_adres_numer_orange_telefon_i_ulica_wpisane_w_urzadzenia_i_czynnosci_wychodza_zamaskowane_z_uwaga(
+    tmp_path: Path,
+) -> None:
+    address, orange = "Syntetyczna Malachitowa 3/1", "4807654321"
+    typed = {**MARKED, "D": f"nokia {address.lower()} {orange}", "E": "tel. 600-123-456 ul. Kwiatowa 5"}
+    centrum = centrum_with(tmp_path, [{**MARKED, "B": address, "I": orange}, typed])
+
+    run_to_end(centrum, dry_run=False)
+
+    issue = sent_check(centrum)
+    sent = issue.title + issue.body + "".join(issue.comments)
+    leaked = (address.lower(), orange, "600-123-456", "ul. Kwiatowa 5")
+    assert [value for value in leaked if value in sent] == []
+    assert "`nokia [adres] [numer Orange]`" in sent and "`tel. [telefon] [ulica]`" in sent
+    assert sent.endswith(
+        "## Uwagi techniczne\n\n"
+        "- Reguła danych: zamaskowano wartość kolumny ADRES w: treść Kontroli ilości.\n"
+        "- Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: treść Kontroli ilości.\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("forbidden", "typed", "shown", "column"),
+    [
+        ({"B": "Syntetyczna Malachitowa 3/1"}, "klient Syntetyczna\nMalachitowa 3/1 dzwonić", "`klient [adres] dzwonić`", "ADRES"),
+        ({"I": "1-SYN|4321"}, "umowa 1-SYN|4321 aktywna", "`umowa [numer Orange] aktywna`", "NUMER UMOWY/ZLECENIA ORANGE"),
+    ],
+    ids=["adres-w-dwoch-liniach", "numer-orange-z-kreska"],
+)
+def test_wartosc_zakazanej_kolumny_w_komorce_ktora_tabela_kontroli_zapisuje_inaczej_wychodzi_zamaskowana(
+    tmp_path: Path, forbidden: dict[str, CellValue], typed: str, shown: str, column: str
+) -> None:
+    # Tabela Kontroli ilości pisze koniec linii komórki jako „⏎”, a „|” jako „\|” (ADR 0025: każdy zapis wartości).
+    centrum = centrum_with(tmp_path, [{**MARKED, **forbidden}, {**MARKED, "E": typed}])
+
+    run_to_end(centrum, dry_run=False)
+
+    issue = sent_check(centrum)
+    sent = issue.title + issue.body + "".join(issue.comments)
+    assert shown in sent
+    assert ("Malachitowa" in sent, "4321" in sent) == (False, False)
+    assert sent.endswith(f"## Uwagi techniczne\n\n- Reguła danych: zamaskowano wartość kolumny {column} w: treść Kontroli ilości.\n")
+
+
+def test_wartosc_adresu_rowna_slowom_tytulu_kontroli_ilosci_jest_zamaskowana_takze_w_tytule(tmp_path: Path) -> None:
+    # Tytuł ma dziś tylko token okresu i liczbę różnic, a reguła danych obejmuje cały tekst Kontroli ilości: wartość
+    # ADRES, tu równa słowom tytułu, nie wychodzi także w nim. Linia okresu na górze issue to znacznik wątku okresu.
+    centrum = centrum_with(tmp_path, [{**MARKED, "B": "Kontrola ilości"}])
+
+    run_to_end(centrum, dry_run=False)
+
+    issue = sent_check(centrum)
+    assert issue.title.startswith(f"[adres] {PERIOD}: ")
+    assert "- Reguła danych: zamaskowano wartość kolumny ADRES w: tytuł Kontroli ilości.\n" in issue.body
+
+
 @pytest.mark.parametrize(
     ("answer", "key"),
     [(Sent(1), True), (Refused(), True), (Unreachable(), True), (None, False)],

@@ -54,6 +54,7 @@ from tests.fixtures.centrum_processes import (
 )
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD
+from tests.fixtures.settlement import write_quantity_source
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ_ZGLOSZEN"
 
@@ -188,6 +189,29 @@ def test_zgloszenie_nie_ma_tresci_wierszy_wyjatku_pelnych_sciezek_ani_klucza(tmp
     for forbidden in ("SYN-", "nieprzewidziany błąd", KEY, str(tmp_path), tmp_path.as_posix(), "Traceback"):
         assert forbidden not in text
     assert KEY not in centrum.log_path.read_text(encoding="utf-8")
+
+
+def test_adres_wpisany_jako_wykonawca_wychodzi_w_tytule_zgloszenia_zamaskowany_z_uwaga(tmp_path: Path) -> None:
+    # Komunikat nieznanego Wykonawcy cytuje WYKONAWCA w „Co się stało”, a z niego jest tytuł Zgłoszenia; tu tata
+    # wpisał w WYKONAWCA adres, który stoi w ADRES innego Wiersza danych (reguła danych, ADR 0025).
+    address = "Syntetyczna Kwarcowa 9/2"
+    centrum = settling_centrum(tmp_path)
+    write_quantity_source(centrum.collective_file, [{"B": address}, {"H": address}])
+    with_key(centrum)
+    run_to_end(centrum, dry_run=False)
+    run_id = run_to_end(centrum, dry_run=False)["run"]["id"]
+    preview = diagnose(centrum, run_id)["report"]
+
+    assert send(centrum, run_id) == {"state": "sent"}
+    [report] = centrum.surroundings.report_box.sent
+    assert {"title": report.title, "body": report.body} == preview
+    assert "Kwarcowa" not in report.title + report.body
+    assert "spoza konfiguracji wykonawców: [adres]." in report.title
+    assert report.body.endswith(
+        "## Uwagi techniczne\n\n"
+        "- Reguła danych: zamaskowano wartość kolumny ADRES w: tytuł Zgłoszenia.\n"
+        "- Reguła danych: zamaskowano wartość kolumny ADRES w: treść Zgłoszenia.\n"
+    )
 
 
 MARKER = "SYN-SLAD-158 treść wyjątku z Rejestru zleceń"

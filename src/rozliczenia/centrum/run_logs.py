@@ -13,6 +13,9 @@ Zatrzymanie okna efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń s
 przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w przebiegu oraz jego działania aż do tego, które się
 nie udało; a Zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn.
 Logi nie mają treści komórek: żadne pole nie niesie Wiersza danych, a pliki mają tylko nazwę, nigdy pełną ścieżkę.
+Komórkę cytuje tylko Komunikat (``ZLE_SKUTECZNE``), więc przed zapisem pliku i przed wysyłką Logi przechodzą przez
+strażnika reguły danych pracy Centrum (``guarded``, ADR 0025): wartość ``ADRES`` albo numeru Orange z przeczytanych
+plików staje się maską z uwagą techniczną, a telefony i ulice w tekście są zamaskowane.
 Skrypt dla maszyn nie ma działań po wyniku, więc Logów nie tworzy.
 
 Schemat 2 (#839) daje każdemu krokowi śladu godzinę (UTC) obok czasu trwania: etap ma chwilę rozpoczęcia i końca,
@@ -57,11 +60,13 @@ from decimal import Decimal
 from functools import cache
 from pathlib import Path
 import platform
+import re
 import threading
 from typing import Final, Literal, Protocol, assert_never
 
 from pydantic import BaseModel, ConfigDict
 
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.atomic_file import replace_atomically
@@ -639,6 +644,50 @@ def logs_file_name(started_at: datetime, process: contract.ProcessKey, run_id: s
     return f"{started_at:%Y%m%dT%H%M%SZ}-{process}-{run_id}.json"
 
 
+def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
+    """Logi po strażniku reguły danych (``ForbiddenValues.guard``): każdy tekst i klucz bez zakazanych wartości, z
+    zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna z kolumną i polem pliku.
+
+    Pole to ścieżka JSON z nazw pól, a klucz z danych (operator, kod pozycji) jest w niej ``[…]``, żeby uwaga nie
+    niosła treści. Logi bez niczego do zamaskowania wracają te same.
+    """
+
+    notes: list[str] = []
+
+    def text(value: str, place: str) -> str:
+        found = forbidden.guard(value, place or "Logi")
+        notes.extend(found.notes)
+        return found.text
+
+    def walk(value: object, place: str) -> object:
+        if isinstance(value, str):
+            return text(value, place)
+        if isinstance(value, list):
+            return [walk(item, f"{place}[{index}]") for index, item in enumerate(value)]
+        if isinstance(value, dict):
+            return {
+                text(key, place): walk(item, _field(place, key)) for key, item in value.items() if isinstance(key, str)
+            }
+        return value
+
+    dumped = record.model_dump(mode="json")
+    walked = walk(dumped, "")
+    if walked == dumped:
+        return record
+    assert isinstance(walked, dict)
+    walked["technical_notes"] = [*walked["technical_notes"], *dict.fromkeys(notes)]
+    return RunLog.model_validate(walked)
+
+
+def _field(place: str, key: str) -> str:
+    name = key if _FIELD_NAME.fullmatch(key) else "[…]"
+    return f"{place}.{name}" if place else name
+
+
+_FIELD_NAME: Final = re.compile(r"[a-z_]+")
+"""Nazwa pola schematu Logów; inny klucz (operator, kod pozycji, litera kolumny) to dane."""
+
+
 def logi_post(record: RunLog) -> Post:
     """Logi do Skrzynki Zgłoszeń jedną wysyłką: komentarz z podsumowaniem i odnośnikiem w issue okresu i pełne Logi w
     Archiwum Logów okresu (``archive_file``).
@@ -778,9 +827,11 @@ class RunLogs:
         files: ProcessFiles,
         cloud_files: CloudFiles,
         dad_actions: DadActionJournal,
+        forbidden: ForbiddenValues,
     ) -> None:
         self._directory = directory
         self._dad_actions = dad_actions
+        self._forbidden = forbidden
         self._outbox = outbox
         self._commit = commit
         self._wydanie = wydanie
@@ -827,13 +878,15 @@ class RunLogs:
             self._last = record  # po pliku, który nie powstał, następna Diagnoza próbuje znowu: plik i komentarz
 
     def _keep(self, record: RunLog) -> None:
-        """Plik Logów (nowy albo nadpisany) i komentarz w issue okresu z tymi samymi znakami."""
+        """Plik Logów (nowy albo nadpisany) po strażniku reguły danych, a do Skrzynki komentarz w issue okresu i plik w
+        Archiwum Logów okresu z tymi samymi znakami co plik."""
 
+        kept = guarded(record, self._forbidden)
         try:
-            replace_atomically(self._directory / record.file_name, record.text)
+            replace_atomically(self._directory / kept.file_name, kept.text)
         finally:
             # Katalog Logów, który nie przyjął pliku, nie zatrzymuje Logów w drodze do Maksa.
-            self._outbox.post(logi_post(record))
+            self._outbox.post(logi_post(kept))
 
     def interrupted(
         self,
@@ -861,6 +914,12 @@ class RunLogs:
         """Plik Logów Uruchomienia ``started``, także taki, którego jeszcze nie ma."""
 
         return self._directory / logs_file_name(started.started_at, started.process, started.run_id)
+
+    def guard(self, record: RunLog) -> RunLog:
+        """Logi ``record`` po strażniku reguły danych tej pracy Centrum (``guarded``), jak w ``_keep``: Logi Urwanego
+        Uruchomienia przechodzą przez niego przed plikiem (``close``) i wysyłką (``send``)."""
+
+        return guarded(record, self._forbidden)
 
     def close(self, record: RunLog) -> None:
         """Plik Logów Urwanego Uruchomienia, jeszcze bez wysyłki (``send``); ``OSError``: pliku nie udało się zapisać."""

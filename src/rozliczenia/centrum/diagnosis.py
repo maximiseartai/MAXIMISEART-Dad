@@ -40,6 +40,7 @@ from rozliczenia.centrum.keyed_box import KeyJudgement
 from rozliczenia.centrum.log import CentrumLog, event_of
 from rozliczenia.centrum.tool_freshness import ToolFreshness, offers_update
 from rozliczenia.centrum.version import short_commit
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.input_checks import Readers, WorkerConfigExplanation
 from rozliczenia.message import Message
 from rozliczenia.period_folder import (
@@ -222,11 +223,13 @@ def files_of_process(
 
 @dataclass(frozen=True)
 class _Computer(_ProcessFiles):
-    """Komputer taty w chwili Diagnozy: pliki procesu Zatrzymania, dziennik, granice poza plikami taty i czytniki procesu."""
+    """Komputer taty w chwili Diagnozy: pliki procesu Zatrzymania, dziennik, granice poza plikami taty, czytniki procesu
+    i pamięć reguły danych pracy Centrum, która poznaje komórki zakazanych kolumn przeczytanego Rejestru zleceń."""
 
     log: CentrumLog
     surroundings: Surroundings
     readers: Readers
+    forbidden: ForbiddenValues
 
     @cached_property
     def log_entries(self) -> tuple[str, ...]:
@@ -311,7 +314,7 @@ def _register(computer: _Computer, label: str) -> list[CheckResult]:
     register = computer.settings.existing_register
     if register is None:
         return [CheckResult.not_checked(label, "Rejestru zleceń nie ma na miejscu.")]
-    problem = input_checks.register_problem(register, computer.readers)
+    problem = input_checks.register_problem(register, computer.readers, computer.forbidden)
     if problem is not None:
         return [CheckResult.failed(label, problem)]
     return [CheckResult.passed(label, "Nie jest otwarty w Excelu, otwiera się i ma wymagane nagłówki.")]
@@ -479,11 +482,17 @@ def diagnose(
     log: CentrumLog,
     surroundings: Surroundings,
     readers: Readers,
+    forbidden: ForbiddenValues,
 ) -> Diagnosis:
-    """Wszystkie sprawdzenia procesu ``process`` dla tokenu okresu ``period``, tylko do odczytu, czytnikami procesu."""
+    """Wszystkie sprawdzenia procesu ``process`` dla tokenu okresu ``period``, tylko do odczytu, czytnikami procesu.
+
+    Komórki zakazanych kolumn przeczytanego Rejestru zleceń poznaje ``forbidden`` (reguła danych, ADR 0025).
+    """
 
     declaration = declaration_of(process)
-    computer = _Computer(declaration, parse_period_token(period), settings, configuration, log, surroundings, readers)
+    computer = _Computer(
+        declaration, parse_period_token(period), settings, configuration, log, surroundings, readers, forbidden
+    )
     checks: list[CheckResult] = []
     for step in declaration.checks:
         checks.extend(_check_of(step).results(computer))

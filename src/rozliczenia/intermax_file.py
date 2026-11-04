@@ -3,7 +3,9 @@
 ``Register.read`` czyta bajty INTERMAX przez jedyne miejsce odczytu bajtów skoroszytu (``workbook_files``) i
 znajduje arkusze zleceń po nagłówkach z wiersza 1, tak jak Przygotowanie pliku zbiorczego (``COLUMNS``), z
 kolumnami ``AKCJE`` i ``UWAGI``. Arkusz zleceń daje swoje wiersze od dołu jako fakty (``raw_orders.RowFacts``),
-bez openpyxl: ~42 tys. wierszy taty to dziesiątki MB XML, a rozpoznanie potrzebuje tylko dołu arkusza.
+bez openpyxl: ~42 tys. wierszy taty to dziesiątki MB XML, a rozpoznanie potrzebuje tylko dołu arkusza. Komórki
+``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych pracy Centrum (``forbidden``,
+ADR 0025), w przesuniętym pierwszym wierszu wklejenia (``raw_orders.shifted_row``) dwie kolumny na lewo od nagłówka.
 
 ``Register.ordered`` daje bajty INTERMAX z planem dnia (ADR 0019, wzorem kopii Wzorca z ADR 0008). Zmieniają się
 tylko:
@@ -51,7 +53,7 @@ from openpyxl.utils.cell import column_index_from_string, coordinate_from_string
 from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH, from_excel
 from openpyxl.workbook.properties import WorkbookProperties
 
-from . import workbook_files
+from . import client_data, raw_orders, workbook_files
 from .preparation_register import ACTIVITIES, COLUMNS, DATE, DEVICES, WORKER
 from .raw_orders import SHIFT, CellFacts, DayPlan, IntermaxEntry, OperatorColor, OrderColumns, RawBlock, RowFacts
 from .row_look import BORDER
@@ -200,9 +202,30 @@ class OrderSheet:
         except IrregularSheetData as error:
             raise UnsupportedShape(str(error)) from error
 
-    def rows_from_bottom(self) -> Iterator[RowFacts]:
-        """Wiersze arkusza od ostatniego do drugiego jako fakty dla rozpoznania Surowych zleceń."""
+    @cached_property
+    def _forbidden_columns(self) -> tuple[tuple[client_data.ForbiddenColumn, int], ...]:
+        return client_data.forbidden_columns(self._register._header(self.part) or {})
 
+    @cached_property
+    def _shifted_row(self) -> int | None:
+        return raw_orders.shifted_row(self._facts_from_bottom(), self.columns)
+
+    def rows_from_bottom(self) -> Iterator[RowFacts]:
+        """Wiersze arkusza od ostatniego do drugiego jako fakty dla rozpoznania Surowych zleceń.
+
+        Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych Rejestru, a w
+        przesuniętym pierwszym wierszu wklejenia komórki o ``SHIFT`` kolumn na lewo od nagłówka.
+        """
+
+        forbidden = self._register.forbidden
+        for facts in self._facts_from_bottom():
+            if forbidden is not None:
+                offset = SHIFT if facts.number == self._shifted_row else 0
+                for column, number in self._forbidden_columns:
+                    forbidden.remember_value(column, facts.value(number - offset))
+            yield facts
+
+    def _facts_from_bottom(self) -> Iterator[RowFacts]:
         sheet = self.sheet_xml
         for row in reversed(sheet.data.rows):
             if row.number < 2:
@@ -225,11 +248,15 @@ class _SheetXml:
 
 
 class Register:
-    """INTERMAX odczytany raz: bajty, części zip, style, teksty wspólne i arkusze zleceń."""
+    """INTERMAX odczytany raz: bajty, części zip, style, teksty wspólne i arkusze zleceń.
 
-    def __init__(self, path: Path, content: bytes) -> None:
+    ``forbidden``: pamięć reguły danych pracy Centrum, która poznaje komórki zakazanych kolumn wierszy arkuszy zleceń.
+    """
+
+    def __init__(self, path: Path, content: bytes, forbidden: client_data.ForbiddenValues | None = None) -> None:
         self.path = path
         self.content = content
+        self.forbidden = forbidden
         with workbook_files.unreadable_as_error(path):
             archive = zipfile.ZipFile(BytesIO(content))
             self._infos = archive.infolist()
@@ -258,16 +285,20 @@ class Register:
             ]
 
     @classmethod
-    def read(cls, path: Path, *, despite_excel_lock: bool = False) -> Register:
+    def read(
+        cls, path: Path, *, despite_excel_lock: bool = False, forbidden: client_data.ForbiddenValues | None = None
+    ) -> Register:
         """INTERMAX z dysku; ``WorkbookError``, gdy go nie ma, jest otwarty w Excelu, niedostępny albo nieczytelny.
 
         ``despite_excel_lock``: INTERMAX otwarty w Excelu to jego ostatnia zapisana wersja, a nie ``WorkbookError``.
         """
 
         read = workbook_files.saved_workbook_content if despite_excel_lock else workbook_files.workbook_content
-        return cls(path, read(path))
+        return cls(path, read(path), forbidden)
 
-    def _order_columns(self, part: str) -> OrderColumns | None:
+    def _header(self, part: str) -> dict[str, int] | None:
+        """Nagłówki z wiersza 1 arkusza (po ``normalize_text``) → kolumna od 1; ``None``: arkusz bez wiersza 1."""
+
         header_row = _HEADER_ROW.search(self._parts[part])
         if header_row is None:
             return None
@@ -275,7 +306,12 @@ class Register:
         header: list[object] = [None] * max((cell.column for cell in cells), default=0)
         for cell in cells:
             header[cell.column - 1] = self._value(cell)
-        found = header_columns(header)
+        return header_columns(header)
+
+    def _order_columns(self, part: str) -> OrderColumns | None:
+        found = self._header(part)
+        if found is None:
+            return None
         named = {
             column.target_header: next((found[name] for name in map(normalize_text, column.register_headers) if name in found), None)
             for column in COLUMNS

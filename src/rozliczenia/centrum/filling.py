@@ -26,6 +26,7 @@ from rozliczenia.centrum.live_file import GoodRead, LastGoodReads, saved_version
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.period_board import located_period_folder, requested_period
 from rozliczenia.centrum.runs import EndedRun
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.collective_file import NumberedOrders
 from rozliczenia.message import Message
 from rozliczenia.order_facts import MissingHeaders
@@ -41,11 +42,13 @@ class FillingReads:
     Uruchomienie, które zmieniło pliki okresu (``files_unchanged`` fałszywe), mogło podmienić jego Plik zbiorczy, więc
     ostatni dobry odczyt sprzed niego nie zastępuje już nieudanego odczytu: ``run_ended`` (``runs.AfterRun``) zapomina
     odczyty wszystkich plików, zanim karta wyniku dostanie wynik. Pliki innych okresów tracą przez to tylko minutę
-    pokazywania ostatniego dobrego odczytu podczas porażki.
+    pokazywania ostatniego dobrego odczytu podczas porażki. Komórki zakazanych kolumn każdego odczytu poznaje pamięć
+    reguły danych pracy Centrum (``forbidden``, ADR 0025).
     """
 
-    def __init__(self, *, clock: Callable[[], float]) -> None:
+    def __init__(self, *, clock: Callable[[], float], forbidden: ForbiddenValues) -> None:
         self.reads: LastGoodReads[NumberedOrders] = LastGoodReads(clock=clock)
+        self.forbidden = forbidden
 
     def run_ended(self, run: EndedRun) -> None:
         if not run.files_unchanged:
@@ -64,7 +67,7 @@ def filling_router(store: SettingsStore, log: CentrumLog, cloud_files: CloudFile
     def read(token: str, path: Path) -> GoodRead[NumberedOrders] | contract.QuantitiesToFillProblem:
         reads = filling.reads
         attempt = reads.attempt(path)
-        found = _attempt(path, cloud_files)
+        found = _attempt(path, cloud_files, filling.forbidden)
         if not isinstance(found, _Unreadable):
             return reads.succeeded(path, found, attempt)
         failing = reads.failed(path, attempt, cause=found.message.code)
@@ -124,7 +127,7 @@ def filling_router(store: SettingsStore, log: CentrumLog, cloud_files: CloudFile
         Komunikat i wpis w dzienniku daje strona Uzupełnienia, a sam Przebieg rozliczeń nazywa plik.
         """
 
-        return _without_quantity(folder_of(token))
+        return _without_quantity(folder_of(token), filling.forbidden)
 
     return router
 
@@ -140,9 +143,9 @@ def without_quantity_sentence(rows: Sequence[int]) -> str | None:
     return f"{count} {word} bez ilości: {', '.join(map(str, rows))}"
 
 
-def _without_quantity(folder: PeriodFolder) -> contract.WithoutQuantity:
+def _without_quantity(folder: PeriodFolder, forbidden: ForbiddenValues) -> contract.WithoutQuantity:
     try:
-        found = collective_file.read_numbered_orders(folder.collective_file)
+        found = collective_file.read_numbered_orders(folder.collective_file, forbidden)
     except WorkbookError:
         return contract.WithoutQuantityUnread(state="unread")
     if isinstance(found, MissingHeaders):
@@ -209,9 +212,9 @@ class _Unreadable:
     type: str
 
 
-def _attempt(path: Path, cloud_files: CloudFiles) -> NumberedOrders | _Unreadable:
+def _attempt(path: Path, cloud_files: CloudFiles, forbidden: ForbiddenValues) -> NumberedOrders | _Unreadable:
     try:
-        read = collective_file.read_numbered_orders(path)
+        read = collective_file.read_numbered_orders(path, forbidden)
     except WorkbookError as error:
         message = (
             fill_messages.only_in_cloud(path)

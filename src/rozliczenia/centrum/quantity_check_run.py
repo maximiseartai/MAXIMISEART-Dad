@@ -3,7 +3,10 @@
 Działanie po wyniku Uruchomienia (``runs.AfterRun``). Kontrola powstaje tylko po Przebiegu rozliczeń z zapisem,
 którego wynik karta pokazuje jako zakończony (OK albo wymagający sprawdzenia, decyzja 7); podgląd, Zatrzymanie i
 nieoczekiwany wyjątek jej nie dają, a Skrypt dla maszyn nie ma działań po wyniku. Na wątku Uruchomienia tylko
-przelicza i zapisuje wysyłkę w kolejce; sieć zostaje w wątku kolejki.
+przelicza i zapisuje wysyłkę w kolejce; sieć zostaje w wątku kolejki. Tytuł i treść przechodzą przez strażnika
+reguły danych pracy Centrum (ADR 0025): ``URZĄDZENIA``, ``CZYNNOŚCI`` i ``UMOWA`` to tekst taty, w którym może stać
+adres albo telefon. Strażnik dostaje gotowe bloki Markdown, bo zapis komórki w tabeli (``⏎``, ``\\|``) zmienia tylko
+znaki między słowami, a strażnik szuka słów wartości bez względu na znaki między nimi.
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ from __future__ import annotations
 from typing import Final
 
 from rozliczenia import quantity_check
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.centrum.outbox import Outbox, PeriodThread, Post
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.centrum.tool_freshness import CommitSource
@@ -20,9 +24,10 @@ LABEL: Final = "kontrola-ilosci"
 
 
 class QuantityCheckAfterRun:
-    def __init__(self, outbox: Outbox, commit: CommitSource) -> None:
+    def __init__(self, outbox: Outbox, commit: CommitSource, forbidden: ForbiddenValues) -> None:
         self._outbox = outbox
         self._commit = commit
+        self._forbidden = forbidden
 
     def run_ended(self, run: EndedRun) -> None:
         summary = None if run.shown is None else run.shown.engine_summary
@@ -30,6 +35,13 @@ class QuantityCheckAfterRun:
             return
         period, run_id = run.info.period, run.info.id
         result = quantity_check.check(summary.orders)
+        title = self._forbidden.guard(quantity_check.title(period, result), "tytuł Kontroli ilości")
+        blocks = [
+            self._forbidden.guard(block, "treść Kontroli ilości")
+            for block in quantity_check.blocks(result, commit=self._commit(), run_id=run_id)
+        ]
+        notes = dict.fromkeys(note for guarded in (title, *blocks) for note in guarded.notes)
+        tail = [] if not notes else ["## Uwagi techniczne\n\n" + "".join(f"- {note}\n" for note in notes)]
 
         def frame(number: int, count: int, text: str) -> str:
             return text if count == 1 else f"Kontrola ilości, część {number}/{count} (Uruchomienie {run_id})\n\n{text}"
@@ -40,11 +52,11 @@ class QuantityCheckAfterRun:
                     label=LABEL,
                     line=f"- Kontrola ilości okresu: {period}",
                     closed="new_issue",
-                    title=quantity_check.title(period, result),
+                    title=title.text,
                 ),
                 period=period,
                 run_id=run_id,
-                blocks=quantity_check.blocks(result, commit=self._commit(), run_id=run_id),
+                blocks=[*(block.text for block in blocks), *tail],
                 frame=frame,
             )
         )

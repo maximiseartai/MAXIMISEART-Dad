@@ -5,7 +5,10 @@ z pełnymi Logami w Archiwum Logów okresu, sprawdza wysyłka zbudowana wprost z
 dokładnie komentarze, które kolejka dopisuje do issue, a jej plik to plik w Archiwum.
 Podsumowanie ma tu tylko przypadki bez taniej drogi przez HTTP z fikstur Przebiegu: nazwa Przygotowania,
 powtórki kodów, powtórzone Zatrzymanie, Zatrzymanie po odmowie w Decyzji taty, czas w sekundach albo nieznany, brak commitu i sprawdzenia Diagnozy,
-które nie przeszły albo których nie sprawdzono. Resztę sprawdza ``test_centrum_logi_w_skrzynce.py``.
+które nie przeszły albo których nie sprawdzono. Resztę sprawdza ``test_centrum_logi_w_skrzynce.py``. Strażnik reguły
+danych (``guarded``, ADR 0025) ma tu klucz słownika Logów z zakazaną wartością: klucze pochodzą dziś z zamkniętych
+list (operator z reguły taty, kod pozycji efenix, litera kolumny), więc przez HTTP żadna taka wartość do klucza nie
+trafia.
 """
 
 from __future__ import annotations
@@ -16,7 +19,8 @@ from typing import Any
 import pytest
 
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, REPOSITORY
-from rozliczenia.centrum.run_logs import RunLog, logi_post, summary_markdown
+from rozliczenia.centrum.run_logs import RunLog, guarded, logi_post, summary_markdown
+from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 
 RUN_ID = "627b45fe219e4274b722953c34d4af54"
 STOP = {"kind": "stop", "code": "ZLA_KONFIGURACJA_WYKONAWCOW", "what": "Co.", "where": "Gdzie.", "action": "Zrób."}
@@ -152,3 +156,20 @@ def test_logi_ponad_limit_komentarza_ida_jednym_komentarzem_a_cale_w_pliku_archi
     assert post.archive is not None
     assert (post.archive.tag, post.archive.packed_name, post.archive.link) == ("logi-08_14_09_2026", name, link)
     assert gzip.decompress(post.archive.packed()).decode("utf-8") == logs.text
+
+
+def test_zakazana_wartosc_w_kluczu_slownika_logow_jest_zamaskowana_z_uwaga_o_polu_bez_wartosci() -> None:
+    forbidden = ForbiddenValues()
+    forbidden.remember_value(ForbiddenColumn.ADDRESS, "Syntetyczna Kwarcowa 9")
+    logs = record(process="intermax", intermax_entries={"rows": {"SYNTETYCZNA KWARCOWA 9": [12]}, "without_entry": []})
+
+    kept = guarded(logs, forbidden)
+
+    assert kept.intermax_entries is not None
+    assert kept.intermax_entries.rows == {"[adres]": [12]}
+    assert kept.technical_notes == ["Reguła danych: zamaskowano wartość kolumny ADRES w: intermax_entries.rows."]
+    post = logi_post(kept)
+    assert post.archive is not None
+    assert gzip.decompress(post.archive.packed()).decode("utf-8") == kept.text
+    assert all("Kwarcowa" not in text for text in (*post.parts, kept.text))
+

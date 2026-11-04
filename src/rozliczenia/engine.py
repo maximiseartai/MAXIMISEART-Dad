@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import collective_file, input_checks, settlement_files, settlement_messages
 from .domain import PlannedWorkerResult, ProgressObserver, SavedWorkerResult, SettlementSummary, WorkerResult
+from .client_data import ForbiddenValues
 from .inea_only_quantities import Cleared
 from .input_checks import FILE_READERS, Readers
 from .message import Message, StopError
@@ -25,7 +26,7 @@ def default_worker_template_path() -> Path:
 
 
 def _read_source_rows(
-    source_path: Path,
+    source_path: Path, forbidden: ForbiddenValues | None
 ) -> tuple[dict[str, list[DataRow]], list[int], CollectiveOrders, Cleared]:
     """Czyta Wiersze danych Pliku zbiorczego z ich Wyróżnieniami i grupuje je po identyfikatorze WYKONAWCA.
 
@@ -33,7 +34,7 @@ def _read_source_rows(
     """
 
     try:
-        read = collective_file.read_data_rows(source_path)
+        read = collective_file.read_data_rows(source_path, forbidden)
     except WorkbookError as error:
         raise StopError(settlement_messages.collective_file_unusable(error)) from error
     rows_by_worker: defaultdict[str, list[DataRow]] = defaultdict(list)
@@ -87,6 +88,7 @@ def run_settlements(
     worker_template_path: Path | None = None,
     observer: ProgressObserver | None = None,
     readers: Readers = FILE_READERS,
+    forbidden: ForbiddenValues | None = None,
 ) -> SettlementSummary:
     """Uruchamia pełny proces z ochroną przed błędną lokalizacją i duplikacją.
 
@@ -95,7 +97,7 @@ def run_settlements(
     sekwencer etapów. Konfiguracja wykonawców jest w
     ``worker_config``, a folder tymczasowy, Nienadpisywanie i publikacja
     Folderu rozliczeń pracowników w ``settlement_files``, a Sprawdzanie Wzorca czytnikami ``readers``
-    w ``input_checks``.
+    w ``input_checks``. Komórki zakazanych kolumn Pliku zbiorczego zna ``forbidden`` (reguła danych, ADR 0025).
     """
 
     phases = PhaseRunner(observer)
@@ -109,7 +111,7 @@ def run_settlements(
     target_directory = folder.worker_settlements
     worker_names = list(mapping.values())
     rows_by_worker, without_worker, orders, inea_only = phases.read(
-        lambda: _read_source_rows(source_path),
+        lambda: _read_source_rows(source_path, forbidden),
         issue_count=lambda read_rows: len(read_rows[1]),
     )
 

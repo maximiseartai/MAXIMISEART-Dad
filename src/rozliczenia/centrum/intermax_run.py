@@ -34,6 +34,7 @@ from rozliczenia.centrum.live_file import saved_version
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun, RunHost
 from rozliczenia import intermax_copies, intermax_messages, intermax_ordering, intermax_restore
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.intermax_copies import Copy
 from rozliczenia.intermax_replace import Disk, Waiting
 from rozliczenia.intermax_process import OrderingInputs
@@ -65,7 +66,8 @@ class IntermaxEntry:
 
     ``waiting``: zegar Centrum i jego przerwa dla krótkiej ponownej próby podmiany, której odmawia OneDrive, a
     ``disk`` kroki podmiany INTERMAX na dysku, te same dla Uporządkowania i przywrócenia Kopii. ``cloud_files``
-    rozpoznaje INTERMAX „tylko online” w OneDrive, gdy jego dni nie dają się odczytać.
+    rozpoznaje INTERMAX „tylko online” w OneDrive, gdy jego dni nie dają się odczytać. ``forbidden``: pamięć reguły
+    danych pracy Centrum dla Uporządkowania i dni na karcie.
     """
 
     store: SettingsStore
@@ -75,6 +77,7 @@ class IntermaxEntry:
     waiting: Waiting
     disk: Disk
     cloud_files: CloudFiles
+    forbidden: ForbiddenValues
     _last_days: _LastDaysRead = field(default_factory=_LastDaysRead, compare=False, repr=False)
 
     @property
@@ -106,7 +109,7 @@ class IntermaxEntry:
         if last is not None and (last.register, last.version, last.today) == (register, version, today):
             found: tuple[intermax_ordering.RegisterDay, ...] | Message = last.found
         else:
-            found = intermax_ordering.register_days(register, today)
+            found = intermax_ordering.register_days(register, today, self.forbidden)
             if version is not None and not isinstance(found, Message):
                 self._last_days.read = _DaysRead(register, version, today, found)
         if isinstance(found, Message):
@@ -118,7 +121,9 @@ class IntermaxEntry:
         """Wejście procesu z Ustawień taty; ``contract.Refusal``, gdy Rejestr zleceń nie jest wskazany."""
 
         register = _register(self.store.load())
-        inputs = OrderingInputs(register, self.copies_directory, now=self.now, waiting=self.waiting, disk=self.disk)
+        inputs = OrderingInputs(
+            register, self.copies_directory, now=self.now, waiting=self.waiting, disk=self.disk, forbidden=self.forbidden
+        )
         return PreparedRun(
             declaration=INTERMAX, period=inputs.period, process=INTERMAX.core(self.processes), inputs=inputs
         )
