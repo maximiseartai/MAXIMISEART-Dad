@@ -714,11 +714,13 @@ def test_nieudana_aktualizacja_ze_zgloszeniem_otwartym_w_skrzynce_karta_od_razu_
         centrum.restart()
 
         again = update_with_slow_box(centrum)
+        # Nieudana Aktualizacja nie ma Diagnozy: jej powrót nie idzie do kolejki sam jak powrót Zatrzymania.
+        before_send = [len(issue.comments) for issue in box.sent]
         state = send_report(centrum)
 
     # Przycisku nie ma; wysyłka z API dopisuje komentarz do otwartego Zgłoszenia zamiast zakładać drugie.
     assert (again["state"], again["report"], state) == ("failed", {"state": "waiting"}, {"state": "sent"})
-    assert len(box.sent) == 1
+    assert (before_send, len(box.sent)) == ([0], 1)
 
 
 def test_zgloszenie_nieudanej_aktualizacji_bez_sieci_czeka_w_kolejce_i_wychodzi_samo(tmp_path: Path) -> None:

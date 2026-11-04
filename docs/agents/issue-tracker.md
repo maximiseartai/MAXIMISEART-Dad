@@ -75,7 +75,10 @@ this public one ([ADR 0007](../adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md)
   odcisk already has an open issue arrives as a comment on that issue, headed
   `## Zgłoszenie wróciło`, with the whole Zgłoszenie as a new issue would have
   it (Komunikat, Uruchomienie with the link to its Logi, commit, Diagnoza), so
-  each return of the problem shows there with its version and Logi. Once you
+  each return of the problem shows there with its version and Logi. Dad does
+  not click anything for it: after the Diagnoza of a Zatrzymanie whose problem
+  has an open Zgłoszenie, Centrum queues the return itself, once per
+  Uruchomienie procesu. Once you
   close the issue, the next Zgłoszenie of that odcisk opens a new one with
   `- Poprzednie Zgłoszenie: #N`.
 - The queue and its retries are those of the Kontrola ilości below: power
