@@ -5,7 +5,8 @@ pracowników gotowe”); Plik zbiorczy wynika z folderu okresów i okresu, a Sta
 nie ma Podglądu bez zapisu, więc start bez zapisu jest odrzucony. Okno efenix (``EfenixWindow``) to w Centrum taty
 widoczne okno zainstalowanego Google Chrome w trwałym profilu narzędzia (``efenix_browser.default_profile``), w którym
 proces czeka, aż tata się zaloguje i pracuje w tempie ludzkim, a Ślad Wyceny Emmetta leży w ``config/`` narzędzia; testy
-i weryfikacja podają Chromium Playwrighta, adres Atrapy efenix, własny folder śladu i okno bez tempa.
+i weryfikacja podają Chromium Playwrighta, adres Atrapy efenix, własny folder śladu i okno bez tempa. Wejście procesu ma
+dziennik Wyceny w efenix Centrum (``pricing_journal``), który przeżywa nagłe zgaśnięcie Centrum.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from rozliczenia.centrum.period_board import located_period_folder, observed_per
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun
 from rozliczenia.efenix_pace import Pace
-from rozliczenia.efenix_pricing import OpenEfenix
+from rozliczenia.efenix_pricing import OpenEfenix, OrderJournal
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.period_folder import PeriodStatus, collective_file_name, scan_period_folders
 from rozliczenia.settings import SettingsStore
@@ -69,12 +70,13 @@ class EfenixWindow:
 
 @dataclass(frozen=True)
 class EfenixEntry:
-    """Wycena w efenix jako proces uruchamiany z Centrum (``runs.ProcessEntry``)."""
+    """Wycena w efenix jako proces uruchamiany z Centrum (``runs.ProcessEntry``) z dziennikiem ``journal``."""
 
     store: SettingsStore
     processes: Processes
     today: Callable[[], date]
     window: EfenixWindow
+    journal: OrderJournal
 
     @property
     def key(self) -> contract.PeriodProcessKey:
@@ -108,7 +110,9 @@ class EfenixEntry:
             raise contract.Refusal(409, _NO_PREVIEW)
         period = requested_period(request.period)
         source = located_period_folder(periods_directory, period).collective_file
-        inputs = EfenixInputs(source, self.window.opener(), self.window.pace, self.window.trace_directory)
+        inputs = EfenixInputs(
+            source, self.window.opener(), self.window.pace, self.window.trace_directory, journal=self.journal
+        )
         return PreparedRun(declaration=EFENIX, period=period.token, process=EFENIX.core(self.processes), inputs=inputs)
 
 

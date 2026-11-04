@@ -205,10 +205,11 @@ class AtrapaOrder:
     ``emmett_loads``: ile razy załadowano do zlecenia Wycenę Emmetta. ``changed``: strona tylko tego zlecenia w innej
     budowie (``Changed``), a ``cut``: strona tego zlecenia zrywa połączenie bez odpowiedzi, jak sieć, która zniknęła, więc
     zlecenia przed nim przechodzą jak w efenix. ``error_status``: strona tego zlecenia to strona błędu serwera z tym
-    statusem HTTP, a ``login_form``: formularz logowania pod adresem strony zlecenia, bez przekierowania. ``without``:
-    kody pozycji, których karty strona tego zlecenia nie ma, jak strony efenix z częścią pozycji wyceny. Z ``after_date``
-    każda z tych trzech zmian strony jest dopiero od zapisu daty wykonania, a z ``after_emmett`` od przeładowania po
-    załadowaniu Wyceny Emmetta.
+    statusem HTTP, a ``login_form``: formularz logowania pod adresem strony zlecenia, bez przekierowania. ``hung``: strona
+    tego zlecenia nie odpowiada do końca bloku, jak efenix, który stanął, więc test może zgasić Centrum w trakcie
+    zlecenia. ``without``: kody pozycji, których karty strona tego zlecenia nie ma, jak strony efenix z częścią pozycji
+    wyceny. Z ``after_date`` każda z tych czterech zmian strony jest dopiero od zapisu daty wykonania, a z ``after_emmett``
+    od przeładowania po załadowaniu Wyceny Emmetta.
     """
 
     order_id: str
@@ -227,6 +228,7 @@ class AtrapaOrder:
     cut: bool = False
     error_status: HTTPStatus | None = None
     login_form: bool = False
+    hung: bool = False
     without: frozenset[str] = frozenset()
     after_date: bool = False
     after_emmett: bool = False
@@ -458,6 +460,9 @@ def atrapa_efenix(
                     self._html("<p>Wystąpił błąd serwera.</p>", found[0].error_status)
                 elif found and found[0].login_form and _broken(found[0]):
                     self._html(_login_page(None))
+                elif found and found[0].hung and _broken(found[0]):
+                    closing.wait()
+                    self.close_connection = True
                 elif found:
                     self._html(_order_page(found[0], found[0].changed or changed, today, self.headers.get("Host", "")))
                 else:
@@ -873,8 +878,8 @@ def _has_session_cookie(header: str) -> bool:
 
 
 def _broken(order: AtrapaOrder) -> bool:
-    """Strona zlecenia ``order`` jest już zmieniona: strona błędu, formularz logowania albo strona bez pozycji ``without``
-    (``after_date``: od zapisu daty wykonania, ``after_emmett``: po Wycenie Emmetta)."""
+    """Strona zlecenia ``order`` jest już zmieniona: strona błędu, formularz logowania, strona bez odpowiedzi albo bez
+    pozycji ``without`` (``after_date``: od zapisu daty wykonania, ``after_emmett``: po Wycenie Emmetta)."""
 
     if order.after_emmett:
         return order.emmett_loads > 0

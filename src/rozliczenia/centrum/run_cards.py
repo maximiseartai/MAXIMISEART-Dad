@@ -9,6 +9,11 @@ ma ani Logów, ani wiersza Historii, to Urwane Uruchomienie (Centrum zamknęło 
 przed końcem każdego Uruchomienia, także przy Zatrzymaniu. Na końcu Uruchomienia ten moduł niczego nie zapisuje,
 więc nie ma kolejności względem działań po wyniku.
 
+Urwana Wycena w efenix ma Logi Urwanego Uruchomienia, które start Centrum zamknął z jej dziennika (``pricing_journal``,
+#845): jej karta po starcie to dalej karta Urwanego Uruchomienia, z liczbą zleceń skończonych przed zamknięciem Centrum
+z każdym wynikiem. Takie Logi nie dają karty wiersza Historii (Urwane Uruchomienie nie ma wiersza Historii) ani karty
+zakończonego Uruchomienia, z której powstaje Powiadomienie.
+
 Karta z Logów niesie tylko to, co w nich jest: Komunikaty w trzech częściach, podsumowanie, etapy, sposób
 zakończenia i Rodzaj Zatrzymania. Tytuł i akcję wylicza ta sama reguła co na żywo (``runs.verdict``), a tytuł
 procesu i Gotowość jego wpis w katalogu procesów, tak jak przy starcie. Diagnozy i Zgłoszenia nie ma: żyją tylko przy Zatrzymaniu bieżącego
@@ -45,6 +50,14 @@ LAST_STARTED_FILE: Final = "ostatnie-uruchomienie.json"
 _RUN_ID: Final = re.compile(r"[0-9a-f]{32}")
 
 _INTERRUPTED: Final = "Centrum rozliczeń zamknęło się w trakcie tego Uruchomienia, więc nie ma jego wyniku."
+_ORDERS_TITLE: Final = "Zlecenia przed zamknięciem Centrum"
+# Wynik zlecenia Wyceny w efenix z Logów i jego nazwa na karcie, w kolejności karty na żywo.
+_ORDER_LABELS: Final[dict[OrderOutcome, str]] = {
+    "gotowe": "Gotowe do przekazania",
+    "rozliczone": "Rozliczone",
+    "błąd": "Błędy zleceń",
+    "ostrzeżenie Emmetta": "Ostrzeżenia Emmetta",
+}
 _PREVIEW_ADVICE: Final = "Podgląd niczego nie zapisał. Uruchom go ponownie."
 _WRITE_ADVICE: Final = "Uruchom ponownie. Pliki okresu, które zdążyły powstać, Centrum zostawi i powie, co z nimi zrobić."
 
@@ -110,17 +123,28 @@ class RunCards:
             return None
         path = self._logged(started.run_id)
         if path is None:
-            return self._recorded(started) or self._interrupted(started)
+            return self._recorded(started) or _interrupted(started, None)
         record = _read(path, RunLog)
-        # Logi są, ale nieczytelne: wynik był, tylko go nie znamy, więc to nie jest Urwane Uruchomienie.
-        return None if record is None else self._restored(record)
+        if record is None:
+            # Logi są, ale nieczytelne: wynik był, tylko go nie znamy, więc to nie jest Urwane Uruchomienie.
+            return None
+        return _interrupted(started, _orders(record)) if record.ending == "interrupted" else self._restored(record)
+
+    def recorded(self, process: contract.ProcessKey, started_at: datetime) -> bool:
+        """Czy Historia ma wiersz Uruchomienia procesu ``process`` ze startem ``started_at``, czyli czy doszło do wyniku;
+        Historia, której nie da się odczytać, go nie ma."""
+
+        return self._row(process, started_at) is not None
 
     def card(self, run_id: str) -> contract.RunCard:
-        """Karta Uruchomienia ``run_id`` z jego Logów; ``missing`` bez pliku Logów albo z plikiem, którego nie da się odczytać."""
+        """Karta Uruchomienia ``run_id`` z jego Logów; ``missing`` bez pliku Logów, z plikiem, którego nie da się odczytać,
+        i z Logami Urwanego Uruchomienia, które nie ma wiersza Historii."""
 
         path = self._logged(run_id) if _RUN_ID.fullmatch(run_id) else None
         record = None if path is None else _read(path, RunLog)
-        return contract.RunCardMissing(state="missing") if record is None else self._restored(record)
+        if record is None or record.ending == "interrupted":
+            return contract.RunCardMissing(state="missing")
+        return self._restored(record)
 
     def latest(self, process: contract.ProcessKey) -> contract.RunRestored | None:
         """Karta ostatniego Uruchomienia procesu ``process`` z Logów; ``None``: żadnego albo nie da się go odczytać.
@@ -160,7 +184,7 @@ class RunCards:
             return known[1]
         record = _read(path, RunLog)
         ended = None
-        if record is not None:
+        if record is not None and record.ending != "interrupted":
             # Po Zatrzymaniu Logi mają zlecenia sprzed niego, ale Powiadomienie liczy tylko Wycenę z podsumowaniem.
             orders = (
                 None
@@ -181,12 +205,16 @@ class RunCards:
             return None
 
     def _restored(self, record: RunLog) -> contract.RunRestored:
+        """Karta z Logów Uruchomienia, które doszło do wyniku (każdy sposób zakończenia poza ``interrupted``)."""
+
+        ending, result = record.ending, record.result
+        assert ending != "interrupted" and result is not None, "Logi Urwanego Uruchomienia nie mają karty wyniku"
         declaration = declaration_of(record.process)
         info = declaration.run_info(run_id=record.run_id, period=record.period, dry_run=record.mode == "podgląd")
         headline, next_action = verdict(
-            ending=record.ending,
+            ending=ending,
             stop_kind=record.stop_kind,
-            result=record.result,
+            result=result,
             dry_run=info.dry_run,
             view=declaration.view,
         )
@@ -204,9 +232,9 @@ class RunCards:
             started_at=record.started_at,
             phases=[phase.progress for phase in record.phases],
             result=contract.LoggedOutcome(
-                result=record.result,
+                result=result,
                 headline=headline,
-                ending=record.ending,
+                ending=ending,
                 next_action=next_action,
                 stop_kind=record.stop_kind,
                 stops=messages["stop"],
@@ -225,15 +253,7 @@ class RunCards:
         Urwanego Uruchomienia dałoby mu swój wynik; jak w ``remember`` to rzadkie.
         """
 
-        try:
-            rows = [
-                run
-                for run in self._history()
-                if run.process == started.process and run.started_at >= started.started_at
-            ]
-        except OSError:
-            return None
-        row = min(rows, key=lambda run: run.started_at, default=None)
+        row = self._row(started.process, started.started_at)
         if row is None:
             return None
         declaration = declaration_of(started.process)
@@ -257,16 +277,41 @@ class RunCards:
             next_action=next_action,
         )
 
-    def _interrupted(self, started: StartedRun) -> contract.RunInterrupted:
-        info = declaration_of(started.process).run_info(
-            run_id=started.run_id, period=started.period, dry_run=started.mode == "podgląd"
-        )
-        return contract.RunInterrupted(
-            state="interrupted",
-            run=info,
-            started_at=started.started_at,
-            advice=_interrupted_advice(info.title, info.period, dry_run=info.dry_run),
-        )
+    def _row(self, process: contract.ProcessKey, started_at: datetime) -> contract.ProcessRun | None:
+        """Wiersz Historii Uruchomienia ze startem ``started_at``: najwcześniejszy wiersz procesu od tej chwili; ``None``,
+        gdy go nie ma albo Historii nie da się odczytać."""
+
+        try:
+            rows = [run for run in self._history() if run.process == process and run.started_at >= started_at]
+        except OSError:
+            return None
+        return min(rows, key=lambda run: run.started_at, default=None)
+
+
+def _orders(record: RunLog) -> contract.CountGroup | None:
+    """Liczba zleceń Wyceny w efenix z Logów Urwanego Uruchomienia z każdym wynikiem; ``None`` bez śladu zleceń."""
+
+    if record.efenix_orders is None:
+        return None
+    counted = Counter(order.outcome for order in record.efenix_orders)
+    return contract.CountGroup(
+        title=_ORDERS_TITLE,
+        counts=[contract.Count(label=label, count=counted[outcome]) for outcome, label in _ORDER_LABELS.items()],
+        zero_warns=False,
+    )
+
+
+def _interrupted(started: StartedRun, orders: contract.CountGroup | None) -> contract.RunInterrupted:
+    info = declaration_of(started.process).run_info(
+        run_id=started.run_id, period=started.period, dry_run=started.mode == "podgląd"
+    )
+    return contract.RunInterrupted(
+        state="interrupted",
+        run=info,
+        started_at=started.started_at,
+        advice=_interrupted_advice(info.title, info.period, dry_run=info.dry_run),
+        orders=orders,
+    )
 
 
 def _interrupted_advice(title: str, period: str, *, dry_run: bool) -> contract.Message:
