@@ -43,6 +43,7 @@ from tests.fixtures.atrapa_efenix import (
     CHANGE_STATUS,
     LIST_PAGE,
     LIST_SCRIPT,
+    LIST_SEARCH_FIELDS,
     LOAD_EMMETT,
     LOGIN_PAGE,
     LOGOUT,
@@ -133,6 +134,11 @@ class Variant:
     rewrites: Mapping[str, Rewrite] = field(default_factory=dict)
 
 
+# Strona zlecenia z częścią pozycji Atrapy, jak zlecenia efenix z mniejszą liczbą pozycji wyceny (#822): bez dwóch
+# pozycji z przypisania kolumn, jednej spoza niego i jednej z ceną wpisywaną.
+SUBSET = tuple(replace(order, without=frozenset({"012", "021", "005", "045"})) for order in ORDERS)
+NO_MAPPED = tuple(replace(order, without=frozenset(POSITION_OF_COLUMN.values())) for order in ORDERS)
+NO_CARDS = tuple(replace(order, without=frozenset(PRICES)) for order in ORDERS)
 DATED = tuple(AtrapaOrder(order.order_id, order.number, order.realizator, order.address, execution_date=date(2026, 9, 1)) for order in ORDERS)
 CHANGED = {
     "inny-naglowek-status": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "inny-naglowek-status.txt", Changed.STATUS_HEADER),
@@ -155,6 +161,12 @@ CHANGED = {
     "logowanie-bez-fingerprint": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "logowanie-bez-fingerprint.txt", Unread.LOGIN_FORM),
     "sesja-bez-ciasteczka": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "sesja-bez-ciasteczka.txt", cookie_session=False),
     "bez-pustej-daty": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "bez-pustej-daty.txt", orders=DATED),
+    "strona-zlecenia-bez-kart-pozycji": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "strona-zlecenia-bez-kart-pozycji.txt", orders=NO_CARDS
+    ),
+    "strona-zlecenia-bez-pozycji-z-przypisania": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "strona-zlecenia-bez-pozycji-z-przypisania.txt", orders=NO_MAPPED
+    ),
     "szukanie-bez-wynikow": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-bez-wynikow.txt", number="ZL/NIEZNANY"),
     "wiersz-bez-loginu-i-adresu": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "wiersz-bez-loginu-i-adresu.txt",
@@ -199,6 +211,9 @@ SAME = {
     "ceny-z-przecinkiem": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "zgodna.txt", Unread.PRICE_TEXT),
     "najpierw-zlecenie-do-akceptacji": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "zgodna.txt", orders=(ORDERS[2], ORDERS[0], ORDERS[1])),
     "skrypty-stron-zapisuja-i-wylogowuja": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "zgodna.txt", Unread.HOSTILE),
+    "strona-zlecenia-z-czescia-pozycji": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "strona-zlecenia-z-czescia-pozycji.txt", orders=SUBSET
+    ),
     "szukanie-numeru": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-numeru.txt", number=ORDERS[1].number),
 }
 
@@ -362,8 +377,10 @@ def test_atrapa_efenix_jest_zgodna_z_budowa_ktorej_uzywa_wycena_w_efenix(chrome:
     assert (checked.code, checked.stderr) == (0, ""), checked
     assert_expected(checked.stdout, ROOT / "tests" / "expected" / "zgodnosc_efenix" / "zgodna.txt")
     assert set(atrapa.requested()) == READING
-    # Szukanie z sesją i bez niej, z polami, które wysyła skrypt listy po Enter w polu Numer.
-    assert [request.params for request in atrapa.requests if request.path == SEARCH] == 2 * [{"numer": "", "rodzaj": "szukanie", "strona": "1"}]
+    # Szukanie z sesją i bez niej z każdym polem, które wysyła skrypt listy efenix po Enter w polu Numer, z pustymi
+    # filtrami i liczbą wierszy z domyślnego ustawienia listy; Atrapa, jak efenix, bez niej nie daje tabeli wyników (#822).
+    searched = dict.fromkeys(LIST_SEARCH_FIELDS, "") | {"rodzaj": "szukanie", "strona": "1", "na_stronie": "10"}
+    assert [request.params for request in atrapa.requests if request.path == SEARCH] == 2 * [searched]
 
 
 @pytest.mark.parametrize("variant", SAME.values(), ids=SAME.keys())

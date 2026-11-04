@@ -12,7 +12,8 @@ w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service work
 - lista zleceń: elementy ``efenix_browser.LIST_ELEMENTS`` (pole ``Numer``) i skrypt ``js/index.js``, który lista ładuje,
   z nazwami ``efenix_browser.LIST_SCRIPT_USES`` (Enter w polu ``Numer`` wysyła ``action_fill_orders.php`` z polem
   ``numer``);
-- tabela wyników: szukanie ``--numer`` tak jak skrypt listy (POST ``action_fill_orders.php``), a odpowiedź czyta
+- tabela wyników: szukanie ``--numer`` tak jak skrypt listy (POST ``action_fill_orders.php`` z każdym polem, które
+  wysyła skrypt listy, filtrami pustymi i ``na_stronie`` jak w domyślnym ustawieniu listy), a odpowiedź czyta
   ``efenix_browser.read_results``, odczyt Wyceny w efenix, z loginem realizatora i ``Dane adresowe`` w każdym wierszu
   (przy błędzie odczytu nagłówki ``efenix_browser.HEADERS``, liczba komórek, link ``page_order_edit.php?id=`` i status
   w ``.badge``);
@@ -23,9 +24,10 @@ w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service work
   ``js/page_order_edit.js`` (pod adresem z listy ``ALLOWED``) z nazwami ``efenix_browser.ORDER_SCRIPT_USES``
   (pickadate z ``onSet``, „Potwierdź” daty, Emmett, zapis ilości z ``price_all``) i karty pozycji
   ``.card.rounded-lg.kolorek``: karta z polem Ilość ma cenę w tekście ``.col-sm-1.mt-2 > span.text-default > small``,
-  a karta z ceną wpisywaną samo pole ``input.wycena-cena``; kody ``INDEKS_NNN_NNN`` i rodzaj karty są równe pozycjom
-  Atrapy (``atrapa_efenix.CATALOG``), a cena pozycji z przypisania kolumn (``efenix_positions.POSITION_OF_COLUMN``) jest
-  równa kosztowi jej kolumny w wierszu 14 Wzorca pliku zbiorczego, bo z kosztów tego wiersza liczy się ``Kwota`` (AU),
+  a karta z ceną wpisywaną samo pole ``input.wycena-cena``; każdy kod ``INDEKS_NNN_NNN`` jest pozycją Atrapy
+  (``atrapa_efenix.CATALOG``) z tym samym rodzajem karty, przy czym strona może mieć tylko część pozycji Atrapy, jak
+  zlecenia efenix z mniejszą liczbą pozycji wyceny, a strona bez żadnej karty pozycji to część niesprawdzona; cena
+  pozycji z przypisania kolumn (``efenix_positions.POSITION_OF_COLUMN``) jest równa kosztowi jej kolumny w wierszu 14 Wzorca pliku zbiorczego, bo z kosztów tego wiersza liczy się ``Kwota`` (AU),
   z którą Wycena w efenix porównuje kwotę końcową efenix;
 - bez sesji (żądania bez ciasteczek, więc sesja taty trwa): lista i szukanie przekierowują na ``page_login.php``, a
   strona logowania ma formularz ``action_login.php`` z polami ``field_signum``, ``field_password`` i ``fingerprint``.
@@ -74,7 +76,7 @@ from playwright.sync_api import APIRequestContext, Browser, Page, ProxySettings,
 from playwright.sync_api import Error as PlaywrightError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-# Korzeń repozytorium dla Atrapy efenix (``tests.fixtures``), z której narzędzie bierze kody pozycji.
+# Korzeń repozytorium dla Atrapy efenix (``tests.fixtures``), z której narzędzie bierze kody pozycji i pola szukania.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from rozliczenia import workbook_files
@@ -102,7 +104,7 @@ from rozliczenia.efenix_positions import POSITION_OF_COLUMN
 from rozliczenia.efenix_pricing import UnexpectedPage
 from rozliczenia.workbook_files import WorkbookError
 
-from tests.fixtures.atrapa_efenix import CATALOG
+from tests.fixtures.atrapa_efenix import CATALOG, LIST_ROWS_PER_PAGE, LIST_SEARCH_FIELDS
 
 LIST_PAGE: Final = "index.php"
 LIST_SCRIPT: Final = "js/index.js"
@@ -119,8 +121,10 @@ ALLOWED: Final = frozenset(
         ("GET", LOGIN_PAGE),
     }
 )
-# Szukanie z pola Numer tak, jak wysyła je skrypt listy; pozostałe pola filtrów listy zostają puste.
-SEARCH_FORM: Final = {"rodzaj": "szukanie", "strona": "1"}
+# Szukanie z pola Numer tak, jak wysyła je skrypt listy efenix (``js/index.js``), który odtwarza Atrapa: każde jego pole
+# w jego kolejności, z pustymi filtrami listy i liczbą wierszy ``na_stronie`` z domyślnego ustawienia listy. Bez
+# ``na_stronie`` efenix odpowiada stroną błędu bazy danych zamiast tabeli wyników (#822).
+SEARCH_FORM: Final = dict.fromkeys(LIST_SEARCH_FIELDS, "") | {"rodzaj": "szukanie", "strona": "1", "na_stronie": LIST_ROWS_PER_PAGE}
 POSITION_CODE: Final = re.compile(r"INDEKS_\d{3}_\d{3}")
 # Wiersz Wzorca pliku zbiorczego z kosztem jednej sztuki każdej pozycji Ilości usług (GLOSSARY: Ilości usług); silnik go
 # nie czyta, więc ``workbook_files`` nie ma go w układzie arkusza.
@@ -387,7 +391,7 @@ def _check_signed_in(efenix: _Efenix, page: Page, costs: Mapping[str, Decimal | 
     _show(page, html)
     _check_elements(page, Part.LIST, LIST_ELEMENTS, report)
     _check_script(efenix, page, efenix.url, Part.LIST, LIST_SCRIPT, LIST_SCRIPT_USES, report)
-    answer = efenix.post(efenix.address(SEARCH), {"numer": number, **SEARCH_FORM})
+    answer = efenix.post(efenix.address(SEARCH), {**SEARCH_FORM, "numer": number})
     results = _text(efenix, answer, f"POST {SEARCH}", Part.RESULTS, report)
     table: _Table | None = None if results is None else page.evaluate(_READ_TABLE, [results, ORDER_PAGE])
     if results is not None and table is None:
@@ -525,9 +529,15 @@ def _check_script(efenix: _Efenix, page: Page, page_url: str, part: Part, script
 
 
 def _check_positions(page: Page, costs: Mapping[str, Decimal | None], report: Report) -> None:
-    """Karty pozycji równe pozycjom Atrapy (kody, rodzaj karty) i ceny pozycji z przypisania równe kosztom Wzorca."""
+    """Karty pozycji to pozycje Atrapy (kod, rodzaj karty), a ceny pozycji z przypisania są równe kosztom Wzorca.
+
+    Strona z częścią pozycji Atrapy jest zgodna: zlecenia efenix bywają bez części pozycji wyceny (#819, #822). Strona
+    bez żadnej pozycji z przypisania kolumn nie pozwala porównać cen, więc to porównanie zostaje niesprawdzone.
+    """
 
     cards: list[_Card] = page.evaluate(_READ_CARDS, [PRICING_CARD, QUANTITY])
+    if not cards:
+        report.unchecked.append((Part.PRICING, f"strona zlecenia bez kart pozycji {PRICING_CARD}"))
     found = dict(position for card in cards if (position := _position(card)) is not None)
     report.checked["pozycje wyceny"] = len(found)
     if broken := len(cards) - len(found):
@@ -536,19 +546,18 @@ def _check_positions(page: Page, costs: Mapping[str, Decimal | None], report: Re
             f"karty bez jednego pola Ilość z ceną w tekście albo jednego pola ceny wpisywanej z kodem INDEKS_NNN_NNN: {broken} z {len(cards)}",
         )
     atrapa = {f"INDEKS_{item.code}_078": item.kind == "CENA" for item in CATALOG}
-    for code in sorted(atrapa.keys() - found.keys()):
-        report.differ(Part.PRICING, f"{code}: jest w Atrapie, nie ma go w efenix")
     for code in sorted(found.keys() - atrapa.keys()):
         report.differ(Part.PRICING, f"{code}: jest w efenix, nie ma go w Atrapie")
     for code in sorted(found.keys() & atrapa.keys()):
         if (found[code] is None) != atrapa[code]:
             kinds = ("pole ceny wpisywanej", "pole Ilość") if found[code] is None else ("pole Ilość", "pole ceny wpisywanej")
             report.differ(Part.PRICING, f"{code}: w efenix {kinds[0]}, w Atrapie {kinds[1]}")
-    compared = 0
+    compared = mapped_shown = 0
     for column, mapped in POSITION_OF_COLUMN.items():
         for code, shown in sorted(found.items()):
             if code.split("_")[1] != mapped or shown is None:
                 continue
+            mapped_shown += 1
             cost = costs.get(column)
             if cost is None:
                 report.unchecked.append((Part.PRICING, f"{code} (kolumna {column}): koszt w wierszu {COST_ROW} Wzorca pliku zbiorczego nie jest liczbą"))
@@ -556,6 +565,8 @@ def _check_positions(page: Page, costs: Mapping[str, Decimal | None], report: Re
             compared += 1
             if _amount(shown) != cost:
                 report.differ(Part.PRICING, f"{code} (kolumna {column}): cena w efenix inna niż koszt w wierszu {COST_ROW} Wzorca pliku zbiorczego")
+    if cards and not mapped_shown:
+        report.unchecked.append((Part.PRICING, "strona zlecenia bez pozycji z przypisania kolumn: ceny nie porównane z Wzorcem pliku zbiorczego"))
     report.checked["ceny porównane z Wzorcem"] = compared
 
 
@@ -584,7 +595,7 @@ def _check_signed_out(efenix: _Efenix, page: Page, report: Report) -> None:
 
     for method, name, answer in (
         ("GET", LIST_PAGE, efenix.get(efenix.url)),
-        ("POST", SEARCH, efenix.post(efenix.address(SEARCH), {"numer": "", **SEARCH_FORM})),
+        ("POST", SEARCH, efenix.post(efenix.address(SEARCH), SEARCH_FORM)),
     ):
         if not efenix.to_login(answer):
             report.differ(Part.LOGGED_OUT, f"{method} {name} bez sesji nie przekierowuje na {LOGIN_PAGE}")
