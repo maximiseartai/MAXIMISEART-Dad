@@ -5,7 +5,8 @@ ten sam rodzaj (``ul.``, ``os.``), ten sam zbiór słów nazwy ulicy w dowolnej 
 w pliku to ``Lokal 24`` w efenix), a miejscowość z dzielnicą przed rodzajem w efenix się pomija. Numer budynku z ``/``
 ma lokal (decyzja #829): ``13/14 Lokal 16`` w efenix to ``13/14/16`` w pliku. Generator pisze jeden adres w obu
 zapisach, także z nazwą ulicy ze słowem reguły (``ul.Lokal 1``); zmiana numeru, lokalu, rodzaju albo jednego słowa
-(także słowo dłuższe o literę) daje inny adres.
+(także słowo dłuższe o literę) daje inny adres, a różnicą adresów (#843) jest dokładnie zmieniona część: ulica (rodzaj albo
+słowo nazwy), numer domu albo lokal; adres, którego reguła nie rozbiera, to strona bez rozbioru zamiast części.
 Hypothesis losuje z ``derandomize=True`` i bez bazy przykładów, ale bierze też napisy ze stałych modułów załadowanych
 w procesie, więc słowa reguły generator podaje sam (#759).
 """
@@ -18,7 +19,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 import pytest
 
-from rozliczenia.efenix_address import same_address
+from rozliczenia.efenix_address import AddressPart, address_differences, same_address
 
 PROPERTY = settings(derandomize=True, database=None, deadline=None, max_examples=150)
 LETTERS = "abcdefghijklmnoprstuwyząćęłńóśźżABCDEFGHIJKLMNOPRSTUWYZĄĆĘŁŃÓŚŹŻ"
@@ -161,3 +162,56 @@ def test_numer_budynku_z_ukosnikiem_rozni_sie_od_numeru_bez_niego_i_od_innej_cze
 )
 def test_numer_budynku_z_wiecej_niz_dwiema_czesciami_albo_pusta_czescia_nie_jest_rowny_nawet_sobie(address: str) -> None:
     assert not same_address(address, address)
+
+
+def _changed_part(address: Address) -> st.SearchStrategy[tuple[Address, AddressPart]]:
+    """Adres ``address`` ze zmianą jednej części i ta część; numer z ``/`` zostaje z lokalem, jak w ``addresses``."""
+
+    def kept(changed: Address) -> bool:
+        return changed.flat is not None or "/" not in changed.number
+
+    other_number = numbers.filter(lambda n: n.casefold() != address.number.casefold())
+    other_flat = (st.none() | st.from_regex(r"[1-9][0-9]{0,2}", fullmatch=True)).filter(
+        lambda f: (f or "").casefold() != (address.flat or "").casefold()
+    )
+    other_word = words.filter(lambda w: w.casefold() not in {word.casefold() for word in address.words})
+    street = st.one_of(
+        st.just(replace(address, kind="os" if address.kind == "ul" else "ul")),
+        st.just(replace(address, words=(address.words[0] + "a", *address.words[1:]))),
+        other_word.map(lambda w: replace(address, words=(w, *address.words[1:]))),
+        st.just(replace(address, words=(*address.words, "Dodatkowe"))),
+    )
+    return st.one_of(
+        other_number.map(lambda number: (replace(address, number=number), AddressPart.NUMBER)),
+        other_flat.map(lambda flat: (replace(address, flat=flat), AddressPart.FLAT)),
+        street.map(lambda changed: (changed, AddressPart.STREET)),
+    ).filter(lambda changed: kept(changed[0]))
+
+
+@PROPERTY
+@given(st.data(), addresses)
+def test_roznica_adresow_to_dokladnie_zmieniona_czesc_ulica_numer_domu_albo_lokal(data: st.DataObject, address: Address) -> None:
+    changed, part = data.draw(_changed_part(address))
+
+    assert address_differences(data.draw(_collective(address)), data.draw(_efenix(changed))) == (part,)
+
+
+@PROPERTY
+@given(st.data(), addresses)
+def test_ten_sam_adres_nie_ma_roznicy(data: st.DataObject, address: Address) -> None:
+    assert address_differences(data.draw(_collective(address)), data.draw(_efenix(address))) == ()
+
+
+@pytest.mark.parametrize(
+    ("collective", "efenix", "parts"),
+    [
+        pytest.param("UL. TESTOWA 1/2", "Poznań ul.Inna 3 Lokal 4", (AddressPart.STREET, AddressPart.NUMBER, AddressPart.FLAT), id="wszystkie-czesci"),
+        pytest.param("TESTOWA 1/2", "Poznań ul.Testowa 1 Lokal 2", (AddressPart.FILE_UNREAD,), id="plik-bez-rodzaju"),
+        pytest.param("UL. TESTOWA 1/2", "Poznań Testowa 1 Lokal 2", (AddressPart.EFENIX_UNREAD,), id="efenix-bez-rodzaju"),
+        pytest.param("UL. TESTOWA", "Poznań ul.Testowa", (AddressPart.FILE_UNREAD, AddressPart.EFENIX_UNREAD), id="obie-bez-numeru"),
+    ],
+)
+def test_roznica_adresu_bez_rozbioru_to_strona_bez_rozbioru_a_kilka_czesci_po_kolei(
+    collective: str, efenix: str, parts: tuple[AddressPart, ...]
+) -> None:
+    assert address_differences(collective, efenix) == parts

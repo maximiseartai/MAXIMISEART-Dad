@@ -180,6 +180,10 @@ CHANGED = {
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "wiersz-bez-loginu-i-adresu.txt",
         orders=(replace(ORDERS[0], realizator="", address=""), *ORDERS[1:]),
     ),
+    "wiersz-bez-statusu-i-adres-bez-rodzaju-ulicy": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "wiersz-bez-statusu-i-adres-bez-rodzaju-ulicy.txt",
+        orders=(replace(ORDERS[0], status=""), replace(ORDERS[1], address="Miastowo Zawilcowa 12 Lokal 3"), *ORDERS[2:]),
+    ),
     "lista-bez-pola-numer-i-jej-skrypt-z-bledem": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "lista-bez-pola-numer-i-jej-skrypt-z-bledem.txt",
         rewrites={LIST_PAGE: _replaced(('id="field_numer"', 'id="field_nr"')), LIST_SCRIPT: _answered(500)},

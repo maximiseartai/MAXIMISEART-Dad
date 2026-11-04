@@ -587,7 +587,12 @@ Pełny, bezpieczny obraz jednego Uruchomienia procesu z Centrum rozliczeń:
 wynik, Komunikaty, podsumowanie, przebieg etapów i Szablonów pracownika z
 godziną każdego kroku, wersja narzędzia oraz dziennik działań taty w Centrum od
 poprzedniego Uruchomienia (widoki i przyciski z godzinami, bez treści Uwagi
-taty). Mówią wprost, czy był to podgląd, w którym nic nie
+taty). Logi Wyceny w efenix mają też odczyt strony efenix po każdym szukaniu,
+otwarciu zlecenia i zapisie: przy każdym wyniku szukania status, realizator i
+nazwy części adresu (ulica, numer domu, lokal), którymi różni się od `ADRES`,
+bez ich wartości, a ze strony zlecenia status, realizator, datę wykonania,
+kwotę i ilość każdej pozycji; zrzutów ekranu nie mają. Mówią wprost, czy był to
+podgląd, w którym nic nie
 zapisano, czy Uruchomienie z zapisem. Zostają na komputerze taty także po
 zamknięciu Centrum i trafiają same do Skrzynki Zgłoszeń, gdzie wszystkie
 Uruchomienia jednego okresu są w jednym miejscu; Uruchomienie Uporządkowania

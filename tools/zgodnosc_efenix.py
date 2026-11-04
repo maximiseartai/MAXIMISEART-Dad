@@ -16,8 +16,9 @@ w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service work
 - tabela wyników: szukanie ``--numer`` tak jak skrypt listy w domyślnym stanie listy (POST ``action_fill_orders.php``
   z każdym polem, które wysyła wtedy skrypt listy, bez ``xrodzaj``, z pustymi filtrami, pierwszym ``sortowanie`` i
   ``na_stronie`` jak w domyślnym ustawieniu listy), a odpowiedź czyta
-  ``efenix_browser.read_results``, odczyt Wyceny w efenix, z loginem realizatora i ``Dane adresowe`` w każdym wierszu
-  (przy błędzie odczytu nagłówki ``efenix_browser.HEADERS``, liczba komórek, link ``page_order_edit.php?id=`` i status
+  ``efenix_browser.read_results``, odczyt Wyceny w efenix, ze statusem, loginem realizatora i ``Dane adresowe`` w każdym
+  wierszu, które reguła adresu (``efenix_address.readable``) rozbiera na ulicę, numer domu i lokal, bo z tych części
+  Logi Uruchomienia mówią, czym różni się adres (przy błędzie odczytu nagłówki ``efenix_browser.HEADERS``, liczba komórek, link ``page_order_edit.php?id=`` i status
   w ``.badge``); ostrzeżenie „Nie znaleziono pasujących wyników”, którym efenix odpowiada na numer, którego nie zna,
   Wycena czyta jak tabelę bez wierszy, więc ``--numer`` takiego numeru sprawdza i tę odpowiedź;
 - strona zlecenia (do ``ORDERS_TO_OPEN`` zleceń z tabeli, najpierw „Do wyceny”, aż znajdzie pustą datę wykonania):
@@ -85,6 +86,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from rozliczenia import workbook_files
+from rozliczenia.efenix_address import readable
 from rozliczenia.collective_preparation import default_collective_template_path
 from rozliczenia.efenix_browser import (
     AMOUNT,
@@ -433,7 +435,8 @@ def _check_signed_in(efenix: _Efenix, page: Page, costs: Mapping[str, Decimal | 
 
 
 def _check_results(page: Page, html: str, table: _Table, report: Report) -> None:
-    """Wycena w efenix czyta każdy wiersz z loginem realizatora i adresem; przy błędzie odczytu budowa tabeli."""
+    """Wycena w efenix czyta każdy wiersz ze statusem, loginem realizatora i adresem, który rozbiera reguła adresu; przy
+    błędzie odczytu budowa tabeli."""
 
     rows = table["rows"]
     report.checked["wiersze wyników"] = len(rows)
@@ -444,8 +447,13 @@ def _check_results(page: Page, html: str, table: _Table, report: Report) -> None
         _explain_table(table, report)
         return
     for what, missing in (
+        ("statusu", sum(not order.status for order in listed)),
         ("loginu realizatora „(login)” z kolumny Wykonawca", sum(order.realizator is None for order in listed)),
         ("Dane adresowe", sum(not order.address for order in listed)),
+        (
+            "Dane adresowe jako ulicy, numeru domu i lokalu (reguła adresu ich nie rozbiera)",
+            sum(bool(order.address) and not readable(order.address) for order in listed),
+        ),
     ):
         if missing:
             report.differ(Part.RESULTS, f"Wycena w efenix nie czyta {what}: {missing} z {len(listed)} wierszy")

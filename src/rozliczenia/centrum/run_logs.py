@@ -8,7 +8,10 @@ Z podsumowania silnika Przebiegu rozliczeń jest też liczba wyczyszczonych Ilo�
 pokazuje (ADR 0018), a z podsumowania Uporządkowania INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019):
 wiersze i operatorzy, bez innej treści wierszy. Z podsumowania Wyceny w efenix jest ślad każdego zlecenia (``LoggedOrder``):
 wiersz Pliku zbiorczego, wynik z kodem Komunikatu, ilości z pliku po kodach pozycji, ``Kwota`` (AU) i działania okna efenix
-z czasami, ilościami Emmetta, wpisanymi i kwotami, bez numeru zlecenia, adresu, loginu Wykonawcy i treści stron efenix.
+z czasami i odczytem strony po każdym (``LoggedStep``, #843): przy szukaniu każdy wiersz listy ze statusem, loginem
+realizatora, zgodnością numeru i nazwami części adresu, którymi różni się od ``ADRES`` (``LoggedResult``), przy otwarciu
+zlecenia jego status i realizator, a ze strony zlecenia data wykonania, kwota i ilości wszystkich pozycji. Bez numeru
+zlecenia i bez danych adresowych z pliku i z efenix.
 Zatrzymanie okna efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń sprzed niego i ``LoggedWindowStop``:
 przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w przebiegu oraz jego działania aż do tego, które się
 nie udało; a Zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn.
@@ -99,6 +102,7 @@ from rozliczenia.efenix_pricing import (
     StoppedOrder,
     WindowCause,
 )
+from rozliczenia.efenix_checks import ListedRead
 from rozliczenia.efenix_positions import file_quantities
 from rozliczenia.efenix_trace import Action, TraceStep
 from rozliczenia.intermax_ordering import OrderingSummary
@@ -287,9 +291,33 @@ class LoggedEntries(_Record):
         )
 
 
+class LoggedResult(_Record):
+    """Wiersz listy zleceń efenix po szukaniu (``efenix_checks.ListedRead``): czy ``Numer dokumentu`` to ``NUMER ZL.`` z
+    pliku, status i login realizatora jak na liście oraz nazwy części adresu (``efenix_address.AddressPart``), którymi
+    ``Dane adresowe`` różnią się od ``ADRES``, bez wartości; pusta lista to ten sam adres."""
+
+    same_number: bool
+    status: str
+    realizator: str | None
+    address: list[str]
+
+    @classmethod
+    def of(cls, read: ListedRead) -> LoggedResult:
+        return cls(
+            same_number=read.same_number,
+            status=read.status,
+            realizator=read.realizator,
+            address=[part.value for part in read.address],
+        )
+
+
 class LoggedStep(_Record):
     """Działanie okna efenix przy zleceniu (``efenix_trace.TraceStep``): chwila rozpoczęcia (UTC; ``None`` w plikach
-    schematu 1), czas i to, co odpowiedział efenix."""
+    schematu 1), czas i odczyt strony efenix po nim.
+
+    ``results``: każdy wiersz listy po szukaniu, ``status`` i ``realizator``: wiersz listy, którego stronę zlecenia okno
+    otworzyło; ``None`` przy innych działaniach i w plikach sprzed tych pól.
+    """
 
     action: Action
     started_at: datetime | None = None
@@ -301,6 +329,9 @@ class LoggedStep(_Record):
     position: str | None
     quantity: int | None
     accepted: bool | None
+    results: list[LoggedResult] | None = None
+    status: str | None = None
+    realizator: str | None = None
 
     @classmethod
     def of(cls, step: TraceStep) -> LoggedStep:
@@ -315,6 +346,9 @@ class LoggedStep(_Record):
             position=step.position,
             quantity=step.quantity,
             accepted=step.accepted,
+            results=None if step.results is None else [LoggedResult.of(read) for read in step.results],
+            status=step.status,
+            realizator=step.realizator,
         )
 
 
