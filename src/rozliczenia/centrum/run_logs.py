@@ -12,10 +12,13 @@ z czasami, ilościami Emmetta, wpisanymi i kwotami, bez numeru zlecenia, adresu,
 Zatrzymanie okna efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń sprzed niego i ``LoggedWindowStop``:
 przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w przebiegu oraz jego działania aż do tego, które się
 nie udało; a Zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn.
-Logi nie mają treści komórek: żadne pole nie niesie Wiersza danych, a pliki mają tylko nazwę, nigdy pełną ścieżkę.
-Komórkę cytuje tylko Komunikat (``ZLE_SKUTECZNE``), więc przed zapisem pliku i przed wysyłką Logi przechodzą przez
-strażnika reguły danych pracy Centrum (``guarded``, ADR 0025): wartość ``ADRES`` albo numeru Orange z przeczytanych
-plików staje się maską z uwagą techniczną, a telefony i ulice w tekście są zamaskowane.
+Wiersze danych niesie tylko Kopia wejścia (``input_copy``, #841): każdy plik taty, który Uruchomienie przeczytało, z
+odciskiem i przeczytanymi wierszami bez kolumn ``ADRES`` i numeru Orange, zebrana po wyniku z tego, co czytniki procesu
+oddały Kopii wejścia Uruchomienia (``EndedRun.input_copy``). Poza nią komórkę cytuje tylko Komunikat
+(``ZLE_SKUTECZNE``), a pliki mają tylko nazwę, nigdy pełną ścieżkę. Przed zapisem pliku i przed wysyłką Logi przechodzą
+przez strażnika reguły danych pracy Centrum (``guarded``, ADR 0025): wartość ``ADRES`` albo numeru Orange z przeczytanych
+plików, także wpisana w inną komórkę Kopii wejścia, staje się maską z uwagą techniczną, a telefony i ulice w tekście są
+zamaskowane.
 Skrypt dla maszyn nie ma działań po wyniku, więc Logów nie tworzy.
 
 Schemat 2 (#839) daje każdemu krokowi śladu godzinę (UTC) obok czasu trwania: etap ma chwilę rozpoczęcia i końca,
@@ -99,6 +102,7 @@ from rozliczenia.efenix_pricing import (
 )
 from rozliczenia.efenix_positions import file_quantities
 from rozliczenia.efenix_trace import Action, TraceStep
+from rozliczenia.input_copy import CellValue, CopiedFile, CopiedSheet, Typed, TypedKind
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.message import Message
 from rozliczenia.period_folder import PeriodFolderInaccessible
@@ -456,6 +460,80 @@ class LoggedInterruption(_Record):
     omitted: int
 
 
+class LoggedTyped(_Record):
+    """Wartość komórki, której JSON nie odróżnia od tekstu (``input_copy.Typed``): rodzaj i zapis."""
+
+    type: TypedKind
+    text: str
+
+
+LoggedCell = bool | int | float | str | LoggedTyped
+"""Wartość niepustej komórki w Kopii wejścia."""
+
+
+def _cell(value: CellValue) -> LoggedCell:
+    return LoggedTyped(type=value.kind, text=value.text) if isinstance(value, Typed) else value
+
+
+class LoggedRow(_Record):
+    """Przeczytany wiersz: numer w arkuszu i niepuste komórki po literze kolumny."""
+
+    row: int
+    cells: dict[str, LoggedCell]
+
+
+class LoggedSheet(_Record):
+    """Przeczytany arkusz: wiersz nagłówka, nagłówki po literze kolumny (bez zakazanych kolumn), wiersze i puste wiersze
+    z odczytanego zakresu, które proces liczy (Rejestr zleceń)."""
+
+    sheet: str
+    header_row: int
+    columns: dict[str, str]
+    rows: list[LoggedRow]
+    empty_rows: list[int]
+
+    @classmethod
+    def of(cls, sheet: CopiedSheet) -> LoggedSheet:
+        return cls(
+            sheet=sheet.name,
+            header_row=sheet.header_row,
+            columns=dict(sheet.columns),
+            rows=[
+                LoggedRow(row=row.number, cells={letter: _cell(value) for letter, value in row.cells.items()})
+                for row in sheet.rows
+            ],
+            empty_rows=list(sheet.empty_rows),
+        )
+
+
+class LoggedFingerprint(_Record):
+    """Odcisk pliku: rozmiar i skrót SHA-256 przeczytanych bajtów, chwila zmiany pliku w chwili odczytu (UTC; ``None``,
+    gdy system jej nie oddał)."""
+
+    size: int
+    modified_at: datetime | None
+    sha256: str
+
+
+class LoggedInputFile(_Record):
+    """Plik taty w Kopii wejścia (``input_copy``): sama nazwa, odcisk i przeczytane arkusze."""
+
+    name: str
+    fingerprint: LoggedFingerprint
+    sheets: list[LoggedSheet]
+
+    @classmethod
+    def of(cls, copied: CopiedFile) -> LoggedInputFile:
+        fingerprint = copied.fingerprint
+        return cls(
+            name=copied.name,
+            fingerprint=LoggedFingerprint(
+                size=fingerprint.size, modified_at=fingerprint.modified_at, sha256=fingerprint.sha256
+            ),
+            sheets=[LoggedSheet.of(sheet) for sheet in copied.sheets],
+        )
+
+
 class Tool(_Record):
     wydanie: str | None
     """Numer Wydania (ADR 0014), którego tag w klonie wskazuje ``commit`` (``0.10.0``); ``None``, gdy nie da się go
@@ -512,6 +590,10 @@ class RunLog(_Record):
     schematu 1."""
     interruption: LoggedInterruption | None = None
     """Urwana Wycena w efenix (``ending`` ``interrupted``); ``None`` w każdych innych Logach."""
+    input_copy: list[LoggedInputFile] | None = None
+    """Kopia wejścia (``input_copy``, #841): pliki taty, które Uruchomienie przeczytało, w kolejności odczytu, każdy z
+    odciskiem i przeczytanymi Wierszami danych po regule danych. Pusta lista: Uruchomienie skończyło się przed odczytem.
+    ``None``: Uporządkowanie INTERMAX (jeszcze bez Kopii), Logi Urwanego Uruchomienia i pliki sprzed tego pola."""
 
     @classmethod
     def of(cls, run: EndedRun, *, tool: Tool, environment: Environment, dad_actions: DadActions) -> RunLog:
@@ -563,6 +645,7 @@ class RunLog(_Record):
             trace=None if stopped is None else stopped.stop.trace,
             diagnosis=None,
             dad_actions=dad_actions,
+            input_copy=None if run.input_copy is None else [LoggedInputFile.of(file) for file in run.input_copy.files()],
         )
 
     @classmethod

@@ -90,6 +90,12 @@ class RegisterSheet:
 
         return get_column_letter(self._positions[COLUMNS.index(column)])
 
+    @property
+    def positions(self) -> dict[Column, int]:
+        """Kolumna ``COLUMNS`` → jej numer w arkuszu (od 1)."""
+
+        return dict(zip(COLUMNS, self._positions, strict=True))
+
 
 def cell_value(row: RegisterRow, column: Column) -> object:
     """Wartość komórki Rejestru pod nagłówkiem ``column`` w wierszu ``row``."""

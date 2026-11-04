@@ -11,7 +11,8 @@ Sprawdzanie Przygotowania pliku zbiorczego szuka też Surowych zleceń na dole k
 Zatrzymanie.
 
 Komórki zakazanych kolumn przeczytanych arkuszy Rejestru i Surowych zleceń zna pamięć reguły danych pracy Centrum
-(``forbidden``, ADR 0025), którą Centrum podaje obok czytników; proces bez Centrum jej nie ma.
+(``forbidden``, ADR 0025), którą Centrum podaje obok czytników; proces bez Centrum jej nie ma. Wiersze Rejestru z
+Odczytu danych zna też Kopia wejścia Uruchomienia (``copy``, #841).
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, TypeAlias
 
-from . import client_data, preparation_files, preparation_register, raw_orders, settlement_files, settlement_messages, workbook_files
+from . import client_data, input_copy, preparation_files, preparation_register, raw_orders, settlement_files, settlement_messages, workbook_files
 from . import preparation_messages as messages
 from .intermax_file import Register, UnsupportedShape
 from .message import Message, StopError
@@ -134,11 +135,16 @@ def check_preparation(
 
 
 def read_register(
-    register: Path, period: SettlementPeriod | None, readers: Readers, forbidden: client_data.ForbiddenValues | None = None
+    register: Path,
+    period: SettlementPeriod | None,
+    readers: Readers,
+    forbidden: client_data.ForbiddenValues | None = None,
+    copy: input_copy.InputCopy | None = None,
 ) -> list[RegisterSheet]:
     """Arkusze ze zleceniami Rejestru zleceń albo zatrzymanie, gdy Rejestru nie da się odczytać albo nie ma nagłówków.
 
-    ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza.
+    ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza, a ``copy`` każdy przeczytany wiersz
+    (``_copied``).
     """
 
     with _stops(messages.register_unusable):
@@ -148,7 +154,30 @@ def read_register(
             for row in sheet.register_rows:
                 for column, header in _FORBIDDEN_HEADERS:
                     forbidden.remember_value(column, row.cells[header].value)
+    if copy is not None:
+        _copied(register, sheets, copy)
     return sheets
+
+
+def _copied(register: Path, sheets: Sequence[RegisterSheet], copy: input_copy.InputCopy) -> None:
+    """Arkusze Rejestru z odczytu w Kopii wejścia: komórki każdej kolumny ``COLUMNS`` w jej kolumnie arkusza pod
+    nagłówkiem Rejestru (wiersz 1) i puste wiersze z odczytanego zakresu.
+
+    Czytnik Rejestru nie oddaje bajtów, więc odcisk jest z bajtów przeczytanych zaraz po nim; Rejestru, którego w tej
+    chwili już nie da się przeczytać, Kopia nie ma, a Uruchomienie idzie dalej z tym, co czytnik oddał.
+    """
+
+    try:
+        content = workbook_files.saved_workbook_content(register)
+    except WorkbookError:
+        return
+    workbook = copy.workbook(register, content)
+    for sheet in sheets:
+        positions = sheet.positions
+        copied = workbook.sheet(sheet.name, 1, {number: column.register_header for column, number in positions.items()})
+        for row in sheet.register_rows:
+            copied.row(row.number, {number: row.cells[column.target_header].value for column, number in positions.items()})
+        copied.empty_rows(sheet.empty_rows)
 
 
 _FORBIDDEN_HEADERS: Final = client_data.forbidden_columns({normalize_text(header): header for header in TARGET_HEADERS})

@@ -36,6 +36,15 @@ nigdy wartości `ADRES` ani numeru Orange, telefony i ulice w tekście
 zamaskowane, a strażnik sprawdza plik Logów, Zgłoszenie, Kontrolę ilości i
 Uwagę taty przed zapisem i wysyłką.
 
+Dopisek #841 (część #837): Logi Przygotowania pliku zbiorczego, Przebiegu
+rozliczeń i Wyceny w efenix mają pole `input_copy`, Kopię wejścia: każdy plik
+taty, z którego Uruchomienie czytało Wiersze danych (Rejestr zleceń, Plik
+zbiorczy), z odciskiem (rozmiar, chwila zmiany, SHA-256 przeczytanych bajtów)
+i przeczytanymi wierszami bez kolumn `ADRES` i numeru Orange. Kopię zbierają
+czytniki w trakcie Uruchomienia jako odwołania do tego, co i tak czytają, a
+Logi budują ją po wyniku. Uporządkowanie INTERMAX i Logi Urwanego Uruchomienia
+jej jeszcze nie mają (`None`).
+
 [ADR 0009](0009-aktualizacja-narzedzia-z-centrum.md) traci Powiadomienie o
 naprawie na stronie Okresy: zastępuje je Powiadomienie o nowej wersji.
 

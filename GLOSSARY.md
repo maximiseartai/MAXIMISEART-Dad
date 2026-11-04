@@ -585,9 +585,9 @@ Zgłoszeń), czeka w Kolejce wysyłki i wychodzi samo.
 
 Pełny, bezpieczny obraz jednego Uruchomienia procesu z Centrum rozliczeń:
 wynik, Komunikaty, podsumowanie, przebieg etapów i Szablonów pracownika z
-godziną każdego kroku, wersja narzędzia oraz dziennik działań taty w Centrum od
-poprzedniego Uruchomienia (widoki i przyciski z godzinami, bez treści Uwagi
-taty). Mówią wprost, czy był to podgląd, w którym nic nie
+godziną każdego kroku, wersja narzędzia, Kopia wejścia oraz dziennik działań
+taty w Centrum od poprzedniego Uruchomienia (widoki i przyciski z godzinami, bez
+treści Uwagi taty). Mówią wprost, czy był to podgląd, w którym nic nie
 zapisano, czy Uruchomienie z zapisem. Zostają na komputerze taty także po
 zamknięciu Centrum i trafiają same do Skrzynki Zgłoszeń, gdzie wszystkie
 Uruchomienia jednego okresu są w jednym miejscu; Uruchomienie Uporządkowania
@@ -598,6 +598,22 @@ taką wartość z uwagą techniczną, a telefony i ulice w tekście są zamaskow
 Tata ich nie wysyła ani nie ogląda, ale z
 nich wraca karta Uruchomienia po starcie Centrum i w Historii.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), dziennik Centrum, raport
+
+## Kopia wejścia
+
+Część Logów Uruchomienia: Wiersze danych, które Uruchomienie procesu przeczytało
+z plików taty, i odcisk każdego z tych plików, żeby Maks mógł odtworzyć
+Uruchomienie na tych samych danych. Przygotowanie pliku zbiorczego ma w niej
+zlecenia Rejestru zleceń, które przeczytało dla okresu, a Przebieg rozliczeń i
+Wycena w efenix Wiersze danych Pliku zbiorczego (Wycena z wartościami, które
+policzył Excel, także `Kwota`). Wiersz ma numer i wartości komórek po literze
+kolumny, a arkusz nagłówki kolumn; według reguły danych bez kolumn `ADRES` i
+`NUMER UMOWY/ZLECENIA ORANGE`, a wolny tekst po maskowaniu. Odcisk to rozmiar,
+chwila zmiany i skrót treści przeczytanej wersji pliku, więc Maks wie, czy jego
+kopia pliku jest tą samą wersją. Wyglądu komórek (Wyróżnień, formatu liczby,
+Hiperłączy) Kopia nie ma, bo proces tylko przenosi go do plików, które tworzy.
+Kopia powstaje po wyniku Uruchomienia, więc go nie spowalnia.
+_Avoid_: zrzut pliku, kopia pliku taty (to cały plik, a Kopia wejścia ma tylko przeczytane wiersze)
 
 ## Urwane Uruchomienie
 

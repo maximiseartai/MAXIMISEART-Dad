@@ -164,6 +164,12 @@ def forbidden_columns(header: Mapping[str, _Position]) -> tuple[tuple[ForbiddenC
     return tuple((_HEADERS[name], position) for name, position in header.items() if name in _HEADERS)
 
 
+def forbidden_column(header: object) -> ForbiddenColumn | None:
+    """Zakazana kolumna o nagłówku ``header`` (komórka nagłówka albo nagłówek docelowy); ``None``: kolumna może wyjść."""
+
+    return None if header is None else _HEADERS.get(normalize_text(header))
+
+
 def free_text(text: str) -> str:
     """Wolny tekst z zamaskowanymi telefonami (``[telefon]``) i wzmiankami ulic (``[ulica]``)."""
 

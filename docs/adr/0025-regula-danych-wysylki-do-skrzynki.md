@@ -9,8 +9,8 @@ Zmienia:
   „Treść Logów”: zdanie „Logi nie niosą treści wierszy: nigdy adresu, numeru
   zlecenia, numeru umowy, Wykonawcy przy wierszu, daty dziennej z komórki,
   `CZYNNOŚCI ZREALIZOWANE` ani opisu technika” zastępuje reguła danych niżej.
-  Logi tego Wydania dalej nie niosą Wierszy danych (to zrobi Kopia wejścia,
-  #841), ale to, co niosą, przechodzi przez strażnika;
+  Od #841 Logi niosą Wiersze danych w Kopii wejścia, bez zakazanych kolumn,
+  a wszystko, co niosą, przechodzi przez strażnika;
 - [ADR 0007](0007-zgloszenia-do-maksa-w-prywatnym-repo.md), zdanie „Bez treści
   wierszy, adresów, numerów zleceń, stawek, treści wyjątków i pełnych
   ścieżek” w rewizji reguły prywatności: o treści wierszy w Zgłoszeniu,
