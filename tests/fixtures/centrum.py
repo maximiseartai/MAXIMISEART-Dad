@@ -174,6 +174,7 @@ class FakeReportBox:
     ``lost_comment_answers`` tak samo z następnymi komentarzami. ``after_comment`` biegnie, gdy skrzynka przyjęła
     komentarz, przed odpowiedzią. ``edited`` to identyfikator każdego poprawionego komentarza po kolei, a
     ``lost_edit_answers`` to numery tych poprawek (od 1), które skrzynka przyjmuje, ale odpowiedź się urywa.
+    ``written`` to identyfikator i tekst każdego przyjętego komentarza i każdej poprawki po kolei.
     ``wait_until`` czeka na wysyłkę w tle.
 
     ``archives`` to Archiwa okresów (GitHub Release) z plikami; plik o nazwie, która w Archiwum już jest, i drugie
@@ -203,6 +204,7 @@ class FakeReportBox:
     after_comment: Callable[[], None] = lambda: None
     edited: list[int] = field(default_factory=list)
     lost_edit_answers: frozenset[int] = frozenset()
+    written: list[tuple[int, str]] = field(default_factory=list)
     background: frozenset[Label] = frozenset()
     background_issues: list[FakeIssue] = field(default_factory=list)
     background_comment_outcomes: list[CommentOutcome] = field(default_factory=list)
@@ -268,6 +270,7 @@ class FakeReportBox:
             comment_id = sum(len(issue.comment_texts) for issue in self.issues) + 1
             issue.comment_texts.append(body)
             issue.comment_ids.append(comment_id)
+            self.written.append((comment_id, body))
             lost = self.lost_comment_answers > 0
             self.lost_comment_answers -= lost
         self.after_comment()
@@ -289,6 +292,7 @@ class FakeReportBox:
                 if comment_id in issue.comment_ids:
                     issue.comment_texts[issue.comment_ids.index(comment_id)] = body
                     self.edited.append(comment_id)
+                    self.written.append((comment_id, body))
                     self._changed.notify_all()
                     if len(self.edited) in self.lost_edit_answers:
                         return Unreachable()

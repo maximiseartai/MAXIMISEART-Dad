@@ -51,6 +51,7 @@ from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, UNSENT_DIRECTORY, Reports
 from rozliczenia.centrum.preparation_run import PreparationEntry
 from rozliczenia.centrum.pricing_journal import JOURNALS_DIRECTORY, InterruptedPricings, PricingJournal
+from rozliczenia.centrum.pricing_progress import ProgressComment
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.run_cards import LAST_STARTED_FILE, RunCards, run_cards_router
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, RunLogs
@@ -273,9 +274,12 @@ def create_app(
     # Dzienniki Urwanych Wycen w efenix stają się ich Logami, zanim karta ostatniego Uruchomienia przeczyta Logi.
     interrupted = InterruptedPricings(log.directory / JOURNALS_DIRECTORY, run_logs, cards.recorded, log)
     interrupted.close()
+    # Komentarz postępu Wyceny w efenix w issue Logów okresu, odświeżany z jej dziennika (#846).
+    progress = ProgressComment(journal, run_logs, process=EFENIX.key, clock=clock)
 
     def run_started(info: RunInfo, started_at: datetime) -> None:
         journal.run_started(info, started_at)
+        progress.run_started(info, started_at)
         cards.run_started(info, started_at)
 
     # Powiadomienia o Uwagach taty, wysłanych Zgłoszeniach, Wydaniach i zakończonych Wycenach w efenix z Logów
@@ -296,7 +300,8 @@ def create_app(
         stops,
         previous=cards.last(),
         run_started=run_started,
-        after_run=[run_logs, QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden), filling],
+        # Koniec postępu przed Logami: żaden postęp nie przychodzi po podsumowaniu.
+        after_run=[progress, run_logs, QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden), filling],
     )
     shutdown.refuse_while(runs.shutdown_refusal)
     # Klon narzędzia, które Centrum aktualizuje (ADR 0009); w testach klon z lokalnym „origin”. Po sukcesie

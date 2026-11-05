@@ -48,7 +48,15 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
 
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.run_logs import LoggedInterruption, LoggedOrder, RunLog, RunLogs, logs_file_name
+from rozliczenia.centrum.run_logs import (
+    LoggedInterruption,
+    LoggedOrder,
+    OrderDone,
+    PricingProgress,
+    RunLog,
+    RunLogs,
+    logs_file_name,
+)
 from rozliczenia.efenix_pricing import OrderResult
 from rozliczenia.message import Message
 
@@ -117,6 +125,10 @@ class PricingJournal:
         self._started: JournalStarted | None = None
         self._header = False  # pierwsza linia czeka na pierwszy wpis
         self._failed = False  # nieudany zapis tego Uruchomienia jest już w dzienniku Centrum
+        # Wpisy tego Uruchomienia, które są już na dysku (po ``fsync``), dla postępu (``progress``).
+        self._done: list[OrderDone] = []
+        self._total: int | None = None
+        self._current: int | None = None
 
     def run_started(self, info: contract.RunInfo, started_at: datetime) -> None:
         """Start Uruchomienia z Centrum, zanim ruszy jego wątek: następne wpisy idą do jego dziennika."""
@@ -131,6 +143,17 @@ class PricingJournal:
         )
         with self._lock:
             self._started, self._header, self._failed = started, True, False
+            self._done, self._total, self._current = [], None, None
+
+    def progress(self, run_id: str) -> PricingProgress | None:
+        """Postęp Uruchomienia ``run_id`` z wpisów, które dziennik ma już na dysku, więc nigdy przed dziennikiem (#846);
+        ``None``: dziennik pisze inne Uruchomienie albo żadne. Wpis, którego nie dało się zapisać, postępu nie zmienia."""
+
+        with self._lock:
+            started = self._started
+            if started is None or started.run_id != run_id:
+                return None
+            return PricingProgress(started, tuple(self._done), self._total, self._current)
 
     def begun(self, row: int, place: int, total: int) -> None:
         self._write(OrderBegun(at=_utc_now(), entry="zaczynam zlecenie", row=row, place=place, total=total))
@@ -158,6 +181,12 @@ class PricingJournal:
                     self._failed = True
                 return
             self._header = False
+            match entry:
+                case OrderBegun():
+                    self._total, self._current = entry.total, entry.row
+                case OrderEnded(order=order):
+                    self._done.append(OrderDone(order.row, order.outcome, order.code))
+                    self._current = None
 
 
 @dataclass(frozen=True)
