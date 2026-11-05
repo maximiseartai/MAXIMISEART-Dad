@@ -79,13 +79,13 @@ taty, potem narzędzie:
 
 Pomiar propozycji Emmetta na Macu, krok po kroku:
 
-1. W Terminalu uruchom Chrome pierwszym poleceniem wyżej i zaloguj się w nim do efenix kontem taty.
+1. Uruchom Chrome pierwszym poleceniem wyżej i zaloguj się w nim do efenix kontem taty.
 2. W tym Chrome otwórz w jednej karcie stronę zlecenia „Do wyceny”, któremu Emmett coś proponuje.
-3. W Terminalu uruchom narzędzie poleceniem wyżej z ``--emmett``. Po sprawdzeniu stron narzędzie prosi
+3. Uruchom narzędzie poleceniem wyżej z ``--emmett``. Po sprawdzeniu stron narzędzie prosi
    (``EMMETT | …`` na stderr) o kliknięcie przycisku Emmetta.
 4. W Chrome kliknij przycisk Emmetta i poczekaj, aż okno Emmetta pokaże propozycję. Nie klikaj „Załaduj do zlecenia”:
    ono wpisuje ilości do zlecenia taty.
-5. W Terminalu wciśnij Enter. Narzędzie czyta okno Emmetta, a potem prosi o jego zamknięcie i na chwilę otwiera okno
+5. W oknie narzędzia wciśnij Enter. Narzędzie czyta okno Emmetta, a potem prosi o jego zamknięcie i na chwilę otwiera okno
    Atrapy efenix.
 6. W Chrome zamknij okno Emmetta przyciskiem „Zamknij”.
 

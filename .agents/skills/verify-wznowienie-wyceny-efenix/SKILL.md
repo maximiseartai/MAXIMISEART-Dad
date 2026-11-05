@@ -82,8 +82,10 @@ classification of other failures) does not move the model. A change that makes a
 write the trace file or decide whether an order is finished does, though no definition above changes: add it to the
 table and to `model/definicje.json`.
 
-Sync commit: `c2db26d6c` (2026-11-05, the fix of #908). Every row of the table was checked against the code at this
-commit. Since `7cb21bc68` only `load_emmett` changed, with the new `_came_whole`: amount 0 after a 2xx to „Załaduj do
+Sync commit: `8564a8904` (2026-11-05, #953). Every row of the table was checked against the code at this
+commit. Since `c2db26d6c` only `load_emmett` changed, and only by a name: the rule whether the Emmett dialog shows anything is the public
+`SHOWS_ANYTHING`, which the compatibility tool also uses, instead of the private `_SHOWS_ANYTHING`, with the same JavaScript,
+so the model did not change and has no new path to break. On the previous Sync commit `c2db26d6c` (the fix of #908), since `7cb21bc68` only `load_emmett` changed, with the new `_came_whole`: amount 0 after a 2xx to „Załaduj do
 zlecenia” is an empty Wycena Emmetta only when the Emmett dialog showed nothing and the answer to `action_fill_emmett.php`
 came whole with 2xx; after a failed proposal it stops with `Shape.EMMETT_NOT_LOADED` before `trace.loaded`. Efenix then
 holds no Wycena Emmetta (a refusal) or an empty one, which leaves the order as it was, so that is the `Zatrzymanie` the

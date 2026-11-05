@@ -332,12 +332,13 @@ na chwilę w osobnym oknie Chrome. Na Macu:
 1. Uruchom Chrome poleceniem wyżej i zaloguj się w nim do efenix kontem taty.
 2. W tym Chrome otwórz w jednej karcie stronę zlecenia „Do wyceny”, któremu
    Emmett coś proponuje.
-3. W Terminalu uruchom narzędzie poleceniem wyżej z `--emmett`. Po
+3. Uruchom narzędzie poleceniem wyżej z `--emmett`. Po
    sprawdzeniu stron narzędzie prosi (linia `EMMETT | …`) o kliknięcie
    przycisku Emmetta.
 4. W Chrome kliknij przycisk Emmetta i poczekaj na okno z propozycją. Nie
    klikaj „Załaduj do zlecenia”: ono wpisuje ilości do zlecenia taty.
-5. W Terminalu wciśnij Enter. Narzędzie czyta okno i prosi o jego zamknięcie.
+5. W oknie narzędzia wciśnij Enter. Narzędzie czyta okno Emmetta i prosi o
+   jego zamknięcie.
 6. W Chrome zamknij okno Emmetta przyciskiem „Zamknij”.
 
 Okno zamknięte albo otwarte w kilku kartach, brak karty zlecenia i propozycja,
