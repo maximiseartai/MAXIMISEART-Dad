@@ -1,0 +1,55 @@
+{
+  "zwykle": {},
+  "odczyt": {
+    "znane": [
+      {
+        "obietnica": "DziennikPoKolejce",
+        "przyczyna": "wiersz-pozniejszej-wyceny",
+        "znalezisko": "dziennik Urwanej Wyceny, którego start nie odczytał, następny start usuwa bez Logów, gdy w międzyczasie inna Wycena doszła do wyniku: RunCards._row bierze jej wiersz Historii (start >= start urwanej)"
+      }
+    ]
+  },
+  "logi-i-kolejka": {
+    "znane": [
+      {
+        "obietnica": "DziennikPoKolejce",
+        "przyczyna": "wiersz-pozniejszej-wyceny",
+        "znalezisko": "jak w odczyt, gdy start nie zapisał pliku Logów Urwanego Uruchomienia, a Kolejka wysyłki ich nie przyjęła"
+      }
+    ]
+  },
+  "historia": {
+    "znane": [
+      {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "historia-nieczytelna",
+        "znalezisko": "Wycena z wierszem Historii, a bez pliku Logów (zgaśnięcie między rekordem metryk a Logami albo nieudany zapis Logów) dostaje przy starcie, który nie odczytał Historii, Logi Urwanego Uruchomienia, a w Skrzynce zastępują one Logi z wynikiem"
+      }
+    ]
+  },
+  "wpisy": {
+    "znane": [
+      {
+        "obietnica": "ZaczeteWLogach",
+        "przyczyna": "wpis-nieudany",
+        "znalezisko": "wpis dziennika, który się nie zapisał, zostawia zmianę w efenix bez śladu w Logach (przyjęte w docstringu pricing_journal.py: „Nieudany zapis wpisu … Wycena biegnie dalej”)"
+      }
+    ]
+  },
+  "stare-logi": {
+    "znane": [
+      {
+        "obietnica": "TeSameZnaki",
+        "przyczyna": "zapis-logow-nieudany",
+        "znalezisko": "Logi sprzed strażnika, których start nie przepisał (OSError zapisu), zostają na dysku bez maski, a do Archiwum Logów okresu idą z maską; u taty takich Logów nie ma, bo dziennik (#845) i strażnik (#851) wejdą w jednym Wydaniu"
+      }
+    ]
+  },
+  "wszystko": {
+    "znane": [
+      {"obietnica": "DziennikPoKolejce", "przyczyna": "wiersz-pozniejszej-wyceny", "znalezisko": "jak w odczyt"},
+      {"obietnica": "BezUrwanychPoWyniku", "przyczyna": "historia-nieczytelna", "znalezisko": "jak w historia"},
+      {"obietnica": "ZaczeteWLogach", "przyczyna": "wpis-nieudany", "znalezisko": "jak w wpisy"}
+    ]
+  }
+}

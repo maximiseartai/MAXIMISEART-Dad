@@ -1,0 +1,48 @@
+{
+  "src/rozliczenia/centrum/pricing_journal.py": [
+    "PricingJournal",
+    "_read",
+    "InterruptedPricings"
+  ],
+  "src/rozliczenia/centrum/run_logs.py": [
+    "RunLog.interrupted",
+    "guarded",
+    "RunLogs.run_ended",
+    "RunLogs._keep",
+    "RunLogs.interrupted",
+    "RunLogs.file_of",
+    "RunLogs.guard",
+    "RunLogs.close",
+    "RunLogs._write",
+    "RunLogs.send"
+  ],
+  "src/rozliczenia/centrum/run_cards.py": [
+    "RunCards.recorded",
+    "RunCards._row"
+  ],
+  "src/rozliczenia/centrum/app.py": [
+    "lifespan",
+    "send_interrupted",
+    "app",
+    "interrupted",
+    "run_started"
+  ],
+  "src/rozliczenia/centrum/runs.py": [
+    "_Run.work",
+    "RunHost.after",
+    "RunHost.shutdown_refusal"
+  ],
+  "src/rozliczenia/centrum/outbox.py": [
+    "Outbox.post",
+    "Outbox.resume"
+  ],
+  "src/rozliczenia/centrum/launcher.py": [
+    "_start"
+  ],
+  "src/rozliczenia/centrum/atomic_file.py": [
+    "replace_atomically"
+  ],
+  "src/rozliczenia/efenix_pricing.py": [
+    "save"
+  ]
+}
