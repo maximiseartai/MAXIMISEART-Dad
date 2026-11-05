@@ -4,5 +4,5 @@ NIESPRAWDZONE | pozycje wyceny | INDEKS_013_078 (kolumna P): koszt w wierszu 14 
 NIESPRAWDZONE | pozycje wyceny | INDEKS_014_078 (kolumna Q): koszt w wierszu 14 Wzorca pliku zbiorczego nie jest liczbą
 NIESPRAWDZONE | pozycje wyceny | INDEKS_021_078 (kolumna AP): koszt w wierszu 14 Wzorca pliku zbiorczego nie jest liczbą
 NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
-NIESPRAWDZONE | propozycja Emmetta | budowa propozycji Emmetta nie jest sprawdzana: narzędzie nie wysyła action_fill_emmett.php; zmierz ją plikiem --propozycja z propozycją zapisaną w Chrome (--help)
+NIESPRAWDZONE | propozycja Emmetta | budowa propozycji Emmetta nie jest sprawdzana: narzędzie nie wysyła action_fill_emmett.php; pomiar propozycji w osobnym PR (Część #953)
 RÓŻNICE: 1 | NIESPRAWDZONE: 5

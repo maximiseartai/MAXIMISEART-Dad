@@ -316,34 +316,12 @@ Przycisku kalendarza daty wykonania narzędzie nie sprawdza, więc wynik zawsze
 ma o nim linię `NIESPRAWDZONE`: sprawdź ręcznie w efenix na zleceniu „Do
 wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty.
 
-Propozycji Emmetta narzędzie samo nie pobiera (`action_fill_emmett.php` nie
-jest na liście odczytów), więc wynik ma o jej budowie linię `NIESPRAWDZONE`.
+Propozycji Emmetta narzędzie nie pobiera (`action_fill_emmett.php` nie jest na
+liście odczytów), więc wynik ma o jej budowie zawsze linię `NIESPRAWDZONE`.
 Przycisk Emmetta pokazuje w okienku podgląd, co i z jakimi ilościami Emmett
 uzupełni, a ilości wpisuje do zlecenia dopiero „Załaduj do zlecenia”. Tak
 pamięta to Maks, ale co serwer efenix robi przy podglądzie, nikt nie sprawdził.
-
-Budowę propozycji mierzy `--propozycja <plik>` z odpowiedzią
-`action_fill_emmett.php` z zakładki Network DevTools Chrome, zapisaną jedną z
-dwóch dróg:
-
-1. zalecana: przy zwykłej pracy taty, gdy i tak wycenia zlecenie Emmettem;
-2. podgląd: na zleceniu „Do wyceny” przycisk Emmetta, potem „Zamknij”, nigdy
-   „Załaduj do zlecenia”.
-
-DevTools (Cmd+Option+I) z zakładką Network otwórz przed kliknięciem przycisku
-Emmetta, a plik zapisz przed „Załaduj do zlecenia”, po którym strona się
-przeładowuje i zakładka Network jest pusta. W wierszu `action_fill_emmett.php` wybierz prawym klikiem Copy → Copy
-response, a schowek zapisz do pliku poleceniem `pbpaste`, nie przez TextEdit,
-który zapisuje RTF:
-
-```sh
-pbpaste > ~/.t3/notes/953/propozycja.html
-.venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php> --propozycja ~/.t3/notes/953/propozycja.html
-```
-
-Odpowiedź, którą jQuery strony efenix składa inaczej niż narzędzie (np.
-zaczyna się od `<tr>` albo `<td>`), i element skopiowany z zakładki Elements
-narzędzie zgłasza jako `NIESPRAWDZONE` z powodem.
+Pomiar propozycji z prawdziwego efenix będzie w osobnym PR (Część #953).
 
 Czasu przebiegu w prawdziwym efenix nikt jeszcze nie zmierzył: narzędzie wysyła
 po kolei najwyżej 17 odczytów, więc trwa mniej więcej tyle, ile 17 odpowiedzi
@@ -352,9 +330,9 @@ efenix (na Atrapie 0,98 s w teście zgodnej Atrapy z `pytest --durations`,
 `--limit-ms` (domyślnie 30 s), kończy je kodem `1`.
 
 Kody wyjścia: `0` bez różnic, gdy niesprawdzone są tylko przycisk kalendarza
-i, bez `--propozycja`, budowa propozycji Emmetta, `2` różnice albo inne części
-niesprawdzone (każda w osobnej linii), `1` brak Chrome, Wzorca albo pliku
-`--propozycja`, efenix nie odpowiada albo Chrome nie jest zalogowany.
+i budowa propozycji Emmetta, `2` różnice albo inne części niesprawdzone (każda
+w osobnej linii), `1` brak Chrome albo Wzorca, efenix nie odpowiada albo Chrome
+nie jest zalogowany.
 Parametry i Chrome na Windows i Linuksie opisuje `--help`.
 
 ## Testy
