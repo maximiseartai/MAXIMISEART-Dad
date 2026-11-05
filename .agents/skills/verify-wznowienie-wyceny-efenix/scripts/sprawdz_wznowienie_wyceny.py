@@ -44,7 +44,17 @@ PROMISES = {
 # Kod, który opisują akcje modelu (tabela w SKILL.md): rozjazd liczą tylko te definicje, nie całe pliki, bo
 # ``efenix_pricing.py`` zmienia się często obok przebiegu zlecenia (Sprawdzanie, Odczyt danych, Logi).
 DEFINITIONS = {
-    "src/rozliczenia/efenix_pricing.py": ("save", "_mark", "_efenix_stops", "_priced", "_outcome", "_after_emmett", "_entered"),
+    "src/rozliczenia/efenix_pricing.py": (
+        "save",
+        "_mark",
+        "_efenix_stops",
+        "_priced",
+        "_outcome",
+        "_after_emmett",
+        "_entered",
+        "_TraceNotSaved",
+        "_WrittenAhead",
+    ),
     "src/rozliczenia/efenix_emmett_trace.py": ("EmmettTrace", "_replace", "_read_secret", "_read", "_is_entry"),
     "src/rozliczenia/efenix_positions.py": ("as_left_after_emmett", "to_enter", "priced_differently", "same_amount", "emmett_conflicts"),
     # Okno efenix: kiedy efenix zapisał Wycenę Emmetta i ilość, a kiedy okno zgłasza ``LoggedOut`` bez zapisu ilości.
@@ -253,7 +263,7 @@ _STEPS = {
     "ZaladujEmmetta": "okno klika „Załaduj do zlecenia” w zleceniu {z}: efenix ma Wycenę Emmetta (load_emmett)",
     "OdczytPoEmmetcie": "okno czyta stronę zlecenia {z} po Emmetcie, trace.loaded zapisuje „Emmett załadowany”",
     "BrakPozycji": "strona zlecenia {z} po Emmetcie nie ma pozycji z ilością w pliku: błąd zlecenia przed trace.loaded",
-    "Zapowiedz": "trace.entering zapisuje z wyprzedzeniem pozycję, którą okno zaraz wpisze w zleceniu {z} (_entered)",
+    "Zapowiedz": "po przerwie tempa trace.entering zapisuje z wyprzedzeniem pozycję, którą okno zaraz wpisze w zleceniu {z} (_WrittenAhead)",
     "Wpisz": "okno wpisuje ilość z pliku w zleceniu {z}, efenix ją zapisuje (enter_quantity)",
     "Odmowa": "efenix nie zapisał ilości w zleceniu {z} (LoggedOut), trace.not_entered wycofuje pozycję, Zatrzymanie",
     "Potwierdz": "efenix odpowiada kwotą w zleceniu {z}",
