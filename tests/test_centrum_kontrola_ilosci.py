@@ -145,9 +145,10 @@ def box(centrum: SettlingCentrum) -> FakeReportBox:
 
 
 def queued(centrum: SettlingCentrum) -> list[Path]:
-    """Kontrole ilości w kolejce; Logi Uruchomienia mają w niej własne pliki."""
+    """Kontrole ilości w kolejce, bez ``.json.tmp``, który kolejka zostawia na chwilę przepisania pliku
+    (``replace_atomically``, na Windows z ponowieniami zamiany; #885); Logi Uruchomienia mają w niej własne pliki."""
 
-    return sorted((centrum.tmp_path / "config" / "zgloszenia" / "kolejka").glob(f"*-{LABEL}-*"))
+    return sorted((centrum.tmp_path / "config" / "zgloszenia" / "kolejka").glob(f"*-{LABEL}-*.json"))
 
 
 def sent_check(centrum: SettlingCentrum) -> FakeIssue:
