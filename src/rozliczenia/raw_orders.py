@@ -11,8 +11,10 @@ przesuwa. Miejsce dnia wyznacza żółty wiersz, którym tata oddziela dni: najn
 ostatnim uporządkowanym a blokiem, w którym co najmniej połowa kolumn zlecenia ma żółte wypełnienie. Kolumna bez
 komórki ma wypełnienie stylu wiersza: u taty żółty wiersz to zwykle styl całego wiersza bez żadnej komórki.
 Sam blok, bez przeglądu nad nim i bez przeszkód, oddaje ``pasted``: z niego Przygotowanie pliku zbiorczego wie,
-z których dni są Surowe zlecenia. Ten sam blok daje ``shifted_row``: wiersz, którego komórki stoją dwie kolumny
-na lewo od swojego nagłówka, a ``pasted_rows`` jego wiersze jako fakty, które Kopia wejścia Uporządkowania niesie.
+z których dni są Surowe zlecenia. Ten sam blok daje ``pasted_rows``: jego wiersze jako fakty, które Kopia wejścia
+Uporządkowania niesie, a ``shifts`` przesunięcia wierszy: wiersz, którego komórki rozpoznanie czyta dwie kolumny na
+lewo od swojego nagłówka, i wiersze, w których komórki mogą stać przesunięte albo nie, bo rozpoznanie ich nie
+przeczytało jako Surowych zleceń.
 
 Przeszkody: wiersz z wyglądem z aplikacji nad uporządkowanym wierszem, Surowe zlecenie bez daty z godziną albo bez
 Wykonawcy i blok z więcej niż jednego dnia. Pierwsza wymaga przeglądu nad blokiem (``_above``): od ostatniego
@@ -331,13 +333,44 @@ def pasted_rows(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> 
     return tuple(_bottom(iter(rows_from_bottom), columns)[0])
 
 
-def shifted_row(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> int | None:
-    """Numer pierwszego wiersza bloku Surowych zleceń, gdy jest przesunięty o ``SHIFT`` kolumn w lewo; ``None``: bez niego.
+@dataclass(frozen=True)
+class Shifts:
+    """O ile kolumn na lewo od swojego nagłówka stoją w pliku komórki wierszy arkusza zleceń (``shifts``).
 
-    To samo rozpoznanie co w ``recognize`` i ``pasted``.
+    ``shifted_row``: pierwszy wiersz bloku Surowych zleceń, który rozpoznanie czyta przesunięty o ``SHIFT`` kolumn w
+    lewo; ``None``: bez niego. Tak przychodzi jednak pierwszy wiersz każdego wklejenia, także drugiego w tym samym
+    bloku, a pierwszy wiersz bloku bez daty z godziną na miejscu nie musi być przesunięty (data jako tekst). Pewne
+    położenie ma więc tylko wiersz uporządkowany i wiersz bloku, który rozpoznanie przeczytało jako Surowe zlecenie;
+    w każdym innym wierszu z wartościami (wiersz bloku bez daty z godziną albo bez Wykonawcy, wiersz z wyglądem z
+    aplikacji nad uporządkowanymi) komórki mogą stać przy obu przesunięciach.
     """
 
-    return _shifted(_bottom(iter(rows_from_bottom), columns)[0], columns)
+    shifted_row: int | None
+    columns: OrderColumns
+    placed: frozenset[int]
+    """Wiersze bloku, które rozpoznanie przeczytało jako Surowe zlecenia."""
+
+    def read(self, row: int) -> int:
+        """Przesunięcie, z którym rozpoznanie czyta wiersz ``row``: ``SHIFT`` w ``shifted_row``, inaczej 0."""
+
+        return SHIFT if row == self.shifted_row else 0
+
+    def possible(self, row: RowFacts) -> tuple[int, ...]:
+        """Przesunięcia, przy których komórki wiersza mogą stać w pliku: samo ``read``, gdy położenie jest pewne, a
+        inaczej 0 i ``SHIFT``."""
+
+        if row.number in self.placed or _is_ordered(row, self.columns):
+            return (self.read(row.number),)
+        return (0, SHIFT)
+
+
+def shifts(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Shifts:
+    """Przesunięcia wierszy arkusza zleceń z tego samego rozpoznania bloku co w ``recognize`` i ``pasted``."""
+
+    raw = _bottom(iter(rows_from_bottom), columns)[0]
+    shifted = _shifted(raw, columns)
+    placed = frozenset(row.number for row in raw if isinstance(_order(row, columns, row.number == shifted), RawOrder))
+    return Shifts(shifted, columns, placed)
 
 
 def _bottom(rows: Iterator[RowFacts], columns: OrderColumns) -> tuple[list[RowFacts], int | None, int | None, RowFacts | None]:

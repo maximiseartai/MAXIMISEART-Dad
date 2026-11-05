@@ -9,7 +9,8 @@ Szablony pracowników with their outcome and time, the tool's commit and its Wyd
 name (with size and whether OneDrive holds them only online). A Przebieg rozliczeń adds how many Ilości tylko dla
 INEA it left empty (`inea_only_cleared`, ADR 0018), and an Uporządkowanie INTERMAX its Wpisy urządzenia i
 czynności INTERMAX (`intermax_entries`, ADR 0019): INTERMAX row numbers and operator names, while its Kopia wejścia
-(#842) holds the pasted rows it ordered, columns A to `UWAGI` without `ADRES` and `NUMER UMOWY`. Dad sees nothing of it on the
+(#842) holds the pasted rows it ordered, columns A to `UWAGI` without `ADRES` and `NUMER UMOWY` (a row whose
+position it did not establish, in `uncertain_rows`, only with the cells allowed shifted and not). Dad sees nothing of it on the
 card: no alert, toast or text; only the previews of a Zgłoszenie
 (`zgloszenie.md`) and of an Uwaga taty pinned to the Uruchomienie
 (`uwaga-taty.md`) carry a line to its Logi. No path and no cell content

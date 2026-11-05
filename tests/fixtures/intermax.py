@@ -74,6 +74,9 @@ class Order:
 
     ``operator`` stoi w ``CZYNNOŚCI`` (``None``: pusta komórka), a ``kind`` w ``URZĄDZENIA``, jak z aplikacji.
     ``cells``: kolumna (od 1, nieprzesunięta) → wartość w miejsce wartości z numeru, np. liczba w ``NUMER UMOWY``.
+    ``shifted``: wiersz stoi dwie kolumny na lewo od nagłówków, jak pierwszy wiersz każdego wklejenia (pierwszy wiersz
+    ``Intermax.raw`` przesuwa ``Intermax.shifted``), a ``app_look``: wiersz w ``Intermax.ordered`` ma wygląd z
+    aplikacji (Roboto 4), jak zlecenie wklejone nad uporządkowanymi.
     """
 
     when: datetime
@@ -82,6 +85,8 @@ class Order:
     operator: str | None = "INEA"
     kind: str = "Instalacja"
     cells: tuple[tuple[int, datetime | str | int], ...] = ()
+    shifted: bool = False
+    app_look: bool = False
 
     def values(self) -> dict[int, datetime | str | int]:
         """Wartości kolumn od B do AK na swoim miejscu (nieprzesunięte)."""
@@ -109,12 +114,15 @@ class Order:
 
 @dataclass(frozen=True)
 class Layout:
-    """Gdzie fixture postawiła wiersze: ostatni uporządkowany, żółty i pierwszy Surowy."""
+    """Gdzie fixture postawiła wiersze: ostatni uporządkowany, żółty i pierwszy Surowy, a ``raw_rows`` i
+    ``older_raw_rows`` wiersz każdego zlecenia ``Intermax.raw`` i ``Intermax.older_raw``."""
 
     last_ordered: int
     yellow: int | None
     first_raw: int
     raw: tuple[Order, ...]
+    raw_rows: tuple[int, ...] = ()
+    older_raw_rows: tuple[int, ...] = ()
 
 
 @dataclass
@@ -152,6 +160,10 @@ class Intermax:
     """Starszy arkusz zleceń z samymi uporządkowanymi dniami przed arkuszem z wklejeniem."""
     older_ordered: Sequence[Order] | None = None
     """Uporządkowane zlecenia starszego arkusza zleceń; bez nich te same co ``ordered``."""
+    older_raw: Sequence[Order] = ()
+    """Wklejenie na dole starszego arkusza zleceń, ``gap`` pustych wierszy pod jego uporządkowanymi zleceniami."""
+    blank_in_paste: frozenset[int] = frozenset()
+    """Indeksy zleceń ``raw``, nad którymi w wklejeniu stoi pusty wiersz taty."""
     epoch_1904: bool = False
     excel: bool = True
     raw_date_format: str = APP_DATE_FORMAT
@@ -170,9 +182,12 @@ class Intermax:
         assert isinstance(hidden, Worksheet)
         hidden.title = "Arkusz1"
         hidden.sheet_state = "hidden"
+        older_raw_rows: tuple[int, ...] = ()
         if self.older_sheet:
             older = self.ordered if self.older_ordered is None else self.older_ordered
-            _ordered_days(_order_sheet(workbook, "ZLECENIA OD 08_11_2021"), older)
+            older_sheet = _order_sheet(workbook, "ZLECENIA OD 08_11_2021")
+            older_last = _ordered_days(older_sheet, older)
+            older_raw_rows = self._paste(older_sheet, self.older_raw, older_last + 1 + self.gap, frozenset())
         sheet = _order_sheet(workbook, ORDER_SHEET, frozen=self.frozen)
         workbook.active = len(workbook.worksheets) - 1
         last_ordered = _ordered_days(sheet, self.ordered)
@@ -190,22 +205,10 @@ class Intermax:
             row = last_ordered + 1
         first_raw = row + self.gap
         if self.grid:
-            for number in range(last_ordered + 1, first_raw + len(self.raw) + 5):
+            for number in range(last_ordered + 1, first_raw + len(self.raw) + len(self.blank_in_paste) + 5):
                 if number != yellow:
                     _grid_row(sheet, number)
-        for index, order in enumerate(self.raw):
-            shift = 2 if self.shifted and index == 0 else 0
-            number = first_raw + index
-            for column in range(1, APP_LAST + 1):
-                cell = sheet.cell(number, column)
-                cell.font = _APP_FONT
-                cell.fill = _APP_FILLS[index % 2]
-            for column, value in order.values().items():
-                cell = sheet.cell(number, column - shift, value)
-                if column == DATE:
-                    cell.number_format = self.raw_date_format
-                if column == NUMBER:
-                    cell.hyperlink = order.link
+        raw_rows = self._paste(sheet, self.raw, first_raw, self.blank_in_paste)
         lists = workbook.create_sheet("LISTA OD 08.11.2021.")
         lists["A1"] = "lista"
         notes = workbook.create_sheet("komentarze")
@@ -216,7 +219,31 @@ class Intermax:
         workbook.save(path)
         if self.excel:
             like_excel(path)
-        return Layout(last_ordered, yellow, first_raw, tuple(self.raw))
+        return Layout(last_ordered, yellow, first_raw, tuple(self.raw), raw_rows, older_raw_rows)
+
+    def _paste(self, sheet: Worksheet, raw: Sequence[Order], first: int, blank_before: frozenset[int]) -> tuple[int, ...]:
+        """Wklejenie ``raw`` od wiersza ``first`` z wyglądem z aplikacji, z pustym wierszem nad zleceniami
+        ``blank_before``; wiersz każdego zlecenia."""
+
+        rows: list[int] = []
+        number = first
+        for index, order in enumerate(raw):
+            if index in blank_before:
+                number += 1
+            shift = 2 if (self.shifted and index == 0) or order.shifted else 0
+            for column in range(1, APP_LAST + 1):
+                cell = sheet.cell(number, column)
+                cell.font = _APP_FONT
+                cell.fill = _APP_FILLS[index % 2]
+            for column, value in order.values().items():
+                cell = sheet.cell(number, column - shift, value)
+                if column == DATE:
+                    cell.number_format = self.raw_date_format
+                if column == NUMBER:
+                    cell.hyperlink = order.link
+            rows.append(number)
+            number += 1
+        return tuple(rows)
 
 
 _INLINE = re.compile(rb'<c ([^>]*?)t="inlineStr"([^>]*)><is><t[^>]*>([^<]*)</t></is></c>')
@@ -314,9 +341,9 @@ def _ordered_days(sheet: Worksheet, ordered: Sequence[Order]) -> int:
         _grid_row(sheet, row)
         sheet.row_dimensions[row].height = ORDER_HEIGHT
         for column, value in order.values().items():
-            cell = sheet.cell(row, column, value)
+            cell = sheet.cell(row, column - (2 if order.shifted else 0), value)
             if column <= LAST:
-                cell.font = Font(name="Calibri", sz=9 if column == WORKER else 8)
+                cell.font = _APP_FONT if order.app_look else Font(name="Calibri", sz=9 if column == WORKER else 8)
                 cell.border = _BORDER
             if column == DATE:
                 cell.number_format = DATE_FORMAT

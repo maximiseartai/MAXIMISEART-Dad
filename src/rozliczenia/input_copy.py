@@ -69,8 +69,10 @@ class CopiedRow:
 class CopiedSheet:
     """Przeczytany arkusz: wiersz nagłówka, nagłówki po literze kolumny, wiersze i puste wiersze, które proces liczy.
 
-    ``shifted_row``: wiersz, którego komórki stały w pliku o ``raw_orders.SHIFT`` kolumn na lewo od swojego nagłówka
+    ``shifted_row``: wiersz, którego komórki czytnik czyta o ``raw_orders.SHIFT`` kolumn na lewo od swojego nagłówka
     (przesunięty pierwszy wiersz wklejenia INTERMAX), a w Kopii stoją pod nim; ``None``: bez takiego wiersza.
+    ``uncertain_rows``: wiersze bez pewnego położenia (wklejenie INTERMAX, ``raw_orders.Shifts.possible``), które mają
+    w Kopii tylko komórki dozwolone przy każdym ich możliwym przesunięciu, więc brak komórki nie znaczy w nich pustej.
     """
 
     name: str
@@ -79,6 +81,7 @@ class CopiedSheet:
     rows: tuple[CopiedRow, ...]
     empty_rows: tuple[int, ...]
     shifted_row: int | None = None
+    uncertain_rows: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -97,13 +100,14 @@ Values = Sequence[object] | Mapping[int, object]
 @dataclass
 class SheetCopy:
     """Arkusz w trakcie odczytu: nagłówek (numer kolumny → nagłówek), zakazane kolumny (numery od 1), przesunięty
-    wiersz (``CopiedSheet.shifted_row``) i odwołania do przeczytanych wierszy."""
+    wiersz i wiersze bez pewnego położenia (``CopiedSheet``) i odwołania do przeczytanych wierszy."""
 
     name: str
     header_row: int
     header: Mapping[int, object]
     forbidden: frozenset[int]
     shifted_row: int | None = None
+    uncertain_rows: tuple[int, ...] = ()
     _rows: list[tuple[int, Values]] = field(default_factory=list)
     _empty: list[int] = field(default_factory=list)
 
@@ -130,6 +134,7 @@ class SheetCopy:
             tuple(CopiedRow(number, _cells(values, self.forbidden)) for number, values in self._rows),
             tuple(self._empty),
             self.shifted_row,
+            self.uncertain_rows,
         )
 
 
@@ -143,13 +148,20 @@ class WorkbookCopy:
     _sheets: list[SheetCopy] = field(default_factory=list)
 
     def sheet(
-        self, name: str, header_row: int, header: Values, forbidden: Collection[int], shifted_row: int | None = None
+        self,
+        name: str,
+        header_row: int,
+        header: Values,
+        forbidden: Collection[int],
+        shifted_row: int | None = None,
+        uncertain_rows: Sequence[int] = (),
     ) -> SheetCopy:
         """Arkusz ``name`` z nagłówkiem w wierszu ``header_row``, bez kolumn ``forbidden`` (numery od 1), których komórki
         czytnik oddaje pamięci reguły danych; ``shifted_row``: przesunięty wiersz (``CopiedSheet.shifted_row``), którego
-        wartości czytnik oddaje już pod ich nagłówkiem."""
+        wartości czytnik oddaje już pod ich nagłówkiem, a ``uncertain_rows`` wiersze bez pewnego położenia, którym
+        czytnik oddaje tylko komórki dozwolone w każdym położeniu (``CopiedSheet.uncertain_rows``)."""
 
-        sheet = SheetCopy(name, header_row, _numbered(header), frozenset(forbidden), shifted_row)
+        sheet = SheetCopy(name, header_row, _numbered(header), frozenset(forbidden), shifted_row, tuple(uncertain_rows))
         self._sheets.append(sheet)
         return sheet
 

@@ -540,8 +540,10 @@ class LoggedSheet(_Record):
     """Przeczytany arkusz: wiersz nagłówka, nagłówki po literze kolumny (bez zakazanych kolumn), wiersze i puste wiersze
     z odczytanego zakresu, które proces liczy (Rejestr zleceń).
 
-    ``shifted_row``: przesunięty pierwszy wiersz wklejenia INTERMAX, którego komórki stały w pliku dwie kolumny na lewo
-    od nagłówka, a tu stoją pod nim (``input_copy.CopiedSheet.shifted_row``); ``None``: bez niego i pliki sprzed #842.
+    ``shifted_row``: przesunięty pierwszy wiersz wklejenia INTERMAX, którego komórki Uporządkowanie czyta w pliku dwie
+    kolumny na lewo od nagłówka, a tu stoją pod nim (``input_copy.CopiedSheet.shifted_row``); ``None``: bez niego i
+    pliki sprzed #842. ``uncertain_rows``: wiersze wklejenia bez pewnego położenia, które mają tylko komórki dozwolone
+    w każdym ich możliwym położeniu (``input_copy.CopiedSheet.uncertain_rows``).
     """
 
     sheet: str
@@ -550,6 +552,7 @@ class LoggedSheet(_Record):
     rows: list[LoggedRow]
     empty_rows: list[int]
     shifted_row: int | None = None
+    uncertain_rows: list[int] = []
 
     @classmethod
     def of(cls, sheet: CopiedSheet) -> LoggedSheet:
@@ -563,6 +566,7 @@ class LoggedSheet(_Record):
             ],
             empty_rows=list(sheet.empty_rows),
             shifted_row=sheet.shifted_row,
+            uncertain_rows=list(sheet.uncertain_rows),
         )
 
 

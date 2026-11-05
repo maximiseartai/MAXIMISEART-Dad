@@ -96,7 +96,13 @@ telefony na okres.
   kolumn pamięci reguły danych, a Wycena w efenix dane adresowe każdego
   wiersza listy wyników. W przesuniętym pierwszym wierszu wklejenia INTERMAX
   (ADR 0019) te komórki stoją dwie kolumny na lewo od nagłówka; rozpoznaje go
-  to samo rozpoznanie bloku co Uporządkowanie. Pamięć jest jedna na pracę
+  to samo rozpoznanie bloku co Uporządkowanie. Pewne położenie ma jednak tylko
+  wiersz uporządkowany i wiersz, który rozpoznanie przeczytało jako Surowe
+  zlecenie: pierwszy wiersz drugiego wklejenia też przychodzi przesunięty, a
+  pierwszy wiersz z datą jako tekstem nie musi być przesunięty. W każdym innym
+  wierszu pamięć poznaje komórki w obu miejscach, a Kopia wejścia niesie tylko
+  komórki dozwolone w obu położeniach (#842, tabela położeń w PR #905).
+  Pamięć jest jedna na pracę
   Centrum: Centrum tworzy ją przy starcie i podaje czytnikom i producentom, a
   nie jest stanem modułu, więc dwie prace Centrum w jednym procesie (testy)
   jej nie dzielą. Tylko rośnie i nie trafia na dysk, więc chroni także Uwagę
