@@ -1,6 +1,6 @@
 ---
 name: verify-wycena-efenix
-description: Exhaustively break each request of a real Wycena w efenix (the window `efenix_browser.window` in Playwright's Chromium on the Atrapa efenix, behind a fault proxy) with every kind of fault (network cut, torn, stalled or slow; HTTP 4xx and 5xx; logout; redirect; a hung answer; an answer just before or after the window's time limit; the login page under an order address; a closed tab; Dad's login wait; the tool killed) and check the Zatrzymanie's cause and Komunikat, the efenix state, the Znaczniki efenix, the Logi and the Ślad Wyceny Emmetta, then resume each stop with and without Dad's changes in efenix. Use when a change touches `efenix_browser`, `efenix_pricing`, `efenix_emmett_trace`, `efenix_marking` or another `efenix_*` module, the Dziennik Wyceny w efenix, the Atrapa efenix, or when `explore_wycena_efenix.py` or `the explorer tests in `tests/test_tabela_zatrzyman_efenix.py` fail.
+description: Exhaustively break each request of a real Wycena w efenix (the window `efenix_browser.window` in Playwright's Chromium on the Atrapa efenix, behind a fault proxy) with every kind of fault (network cut, torn, stalled or slow; HTTP 4xx and 5xx; logout; redirect; a hung answer; an answer just before or after the window's time limit; the login page under an order address; a closed tab; Dad's login wait; the tool killed) and check the Zatrzymanie's cause and Komunikat, the efenix state, the Znaczniki efenix, the Logi and the Ślad Wyceny Emmetta, then resume each stop with and without Dad's changes in efenix. Use when a change touches `efenix_browser`, `efenix_pricing`, `efenix_emmett_trace`, `efenix_marking` or another `efenix_*` module, the Dziennik Wyceny w efenix, the Atrapa efenix, or when `explore_wycena_efenix.py` or `the explorer tests in `tests/test_centrum_logi_uruchomienia.py` fail.
 pilnuje:
   - src/rozliczenia/efenix_*.py
   - src/rozliczenia/centrum/pricing_journal.py
@@ -22,7 +22,7 @@ second runs) took 345 s on Maks's Mac with 4 browsers, and parts 1/8 and 5/8 too
 `~/.t3/notes/verify-wycena-efenix/`); windows-latest is about 3 times slower (`tools/lib/zakres_runu.py`), so a part takes
 about 2.5 min there. A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`.
-`tests/test_tabela_zatrzyman_efenix.py` runs one small scope through every phase in pytest. `check_wycena_efenix_mutations.py`
+`tests/test_centrum_logi_uruchomienia.py` runs one small scope through every phase in pytest. `check_wycena_efenix_mutations.py`
 runs in full CI on `main` and nightly on `main` (`mutacje-nocne.yml`) after a change of this skill's folder. Run them
 locally only to reproduce a red CI step or the night's issue, or one `--variant` and `--rola` while you work on it.
 
