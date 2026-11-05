@@ -31,6 +31,8 @@ import rozjazd_modelu  # noqa: E402
 SCRIPT = ROOT / ".agents" / "skills" / "verify-wznowienie-wyceny-efenix" / "scripts" / "sprawdz_wznowienie_wyceny.py"
 TOOLS = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts" / "sprawdz_aktualizacje.py"
 OWNER = ROOT / "tools" / "lib" / "rozjazd_modelu.py"
+# Właścicielka rozjazdu dopobiera historię przez potomne.run.
+POTOMNE = ROOT / "tools" / "lib" / "potomne.py"
 DEFINITIONS = ROOT / ".agents" / "skills" / "verify-wznowienie-wyceny-efenix" / "model" / "definicje.json"
 PRICING = "src/rozliczenia/efenix_pricing.py"
 DRIFT = "WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM"
@@ -54,7 +56,7 @@ def _load() -> ModuleType:
 def _repository(root: Path) -> str:
     """Repozytorium z kodem opisanym modelem i skryptami skilli; zwraca commit synchronizacji."""
 
-    for script in (SCRIPT, TOOLS, OWNER, DEFINITIONS, *(ROOT / path for path in COVERED)):
+    for script in (SCRIPT, TOOLS, OWNER, POTOMNE, DEFINITIONS, *(ROOT / path for path in COVERED)):
         copy = root / script.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(script, copy)

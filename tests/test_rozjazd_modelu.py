@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 import sys
 
 import pytest
@@ -18,6 +19,7 @@ from tests.fixtures.git_repo import commit, git
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 
+import potomne  # noqa: E402
 import rozjazd_modelu  # noqa: E402
 
 SKILL = ".agents/skills/verify-model"
@@ -205,16 +207,16 @@ def test_plytki_klon_bez_sieci_mowi_ze_nie_dopobral_historii(tmp_path: Path) -> 
 
 
 def test_dopobranie_historii_ma_limit_czasu(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _repository(tmp_path)
-    _sync(tmp_path, "abcdef1")
-    asked: list[tuple[tuple[str, ...], float | None]] = []
+    clone, _ = _shallow_clone(tmp_path)
+    limits: list[float | None] = []
 
-    def answer(root: Path, *arguments: str, timeout_s: float | None = None) -> str | None:
-        asked.append((arguments, timeout_s))
-        return None
+    def run(command: list[str], *, cwd: Path, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
+        limits.append(timeout)
+        raise subprocess.TimeoutExpired(command, timeout or 0)
 
-    monkeypatch.setattr(rozjazd_modelu, "_git", answer)
+    monkeypatch.setattr(potomne, "run", run)
 
-    rozjazd_modelu.rozjazd(tmp_path / SKILL, tmp_path, dopobierz=True)
+    found = rozjazd_modelu.rozjazd(clone / SKILL, clone, dopobierz=True)
 
-    assert [timeout for arguments, timeout in asked if arguments[0] == "fetch"] == [rozjazd_modelu.FETCH_TIMEOUT_S]
+    assert limits == [rozjazd_modelu.FETCH_TIMEOUT_S]
+    assert found is not None and found.startswith("nie udało się dopobrać historii do Sync commit"), found

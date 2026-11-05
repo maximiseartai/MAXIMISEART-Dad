@@ -21,6 +21,8 @@ from pathlib import Path
 import re
 import subprocess
 
+import potomne
+
 __all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "SYNC", "definicje", "rozjazd", "skille"]
 
 DEFINICJE = "model/definicje.json"
@@ -58,8 +60,7 @@ def _found(skill: Path, root: Path, dopobierz: bool) -> str | None:
         return f"{(skill / DEFINICJE).relative_to(root).as_posix()}: {error}."
     commit = f"{sync[1]}^{{commit}}"
     if _git(root, "cat-file", "-e", commit) is None and dopobierz:
-        # W pełnym klonie ``--unshallow`` pada i niczego nie zmienia.
-        _git(root, "fetch", "--quiet", "--unshallow", "origin", timeout_s=FETCH_TIMEOUT_S)
+        _fetch(root)
     if _git(root, "cat-file", "-e", commit) is None:
         if _git(root, "rev-parse", "--is-shallow-repository") != "true":
             return f"Sync commit {sync[1]} nie ma w tej historii; pobierz go albo porównaj kod ręcznie."
@@ -142,11 +143,18 @@ def _named(nodes: list[ast.stmt] | list[ast.AST], name: str) -> str | None:
     return None
 
 
-def _git(root: Path, *arguments: str, timeout_s: float | None = None) -> str | None:
-    """Wyjście polecenia ``git`` bez końcowych białych znaków; ``None``, gdy się nie udało albo minęło ``timeout_s``."""
+def _fetch(root: Path) -> None:
+    """Dopobiera historię płytkiego klonu; porażkę (sieć, limit czasu) widać potem po braku Sync commit. W pełnym klonie
+    ``--unshallow`` pada i niczego nie zmienia."""
 
     try:
-        done = subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True, encoding="utf-8", check=False, timeout=timeout_s)
+        potomne.run(["git", "fetch", "--quiet", "--unshallow", "origin"], cwd=root, timeout=FETCH_TIMEOUT_S)
     except subprocess.TimeoutExpired:
-        return None
+        return
+
+
+def _git(root: Path, *arguments: str) -> str | None:
+    """Wyjście szybkiego, lokalnego polecenia ``git`` bez końcowych białych znaków; ``None``, gdy się nie udało."""
+
+    done = subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True, encoding="utf-8", check=False)
     return done.stdout.strip() if done.returncode == 0 else None

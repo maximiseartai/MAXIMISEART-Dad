@@ -432,6 +432,7 @@ FAST_GIT = frozenset(
     {
         "blame",
         "branch",
+        "cat-file",
         "commit-tree",
         "config",
         "diff",
@@ -442,6 +443,7 @@ FAST_GIT = frozenset(
         "merge-tree",
         "rev-list",
         "rev-parse",
+        "show",
         "show-ref",
         "status",
         "worktree",

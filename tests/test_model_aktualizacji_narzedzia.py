@@ -23,6 +23,8 @@ from tests.fixtures.git_repo import commit, git
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts" / "sprawdz_aktualizacje.py"
 OWNER = ROOT / "tools" / "lib" / "rozjazd_modelu.py"
+# Właścicielka rozjazdu dopobiera historię przez potomne.run.
+POTOMNE = ROOT / "tools" / "lib" / "potomne.py"
 COVERED = "src/rozliczenia/centrum/tool_update.py"
 DRIFT = "AKTUALIZACJA: ROZJAZD MODELU Z KODEM"
 
@@ -33,7 +35,7 @@ def _repo(root: Path) -> str:
     (root / COVERED).parent.mkdir(parents=True)
     (root / COVERED).write_text("X = 1\n", encoding="utf-8")
     skill = root / SCRIPT.relative_to(ROOT).parents[1]
-    for script in (SCRIPT, OWNER):
+    for script in (SCRIPT, OWNER, POTOMNE):
         copy = root / script.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(script, copy)

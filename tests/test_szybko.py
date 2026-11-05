@@ -36,6 +36,10 @@ BY_CHANGE_ONLY = {
         "skanuje cały src/, ale globem (rglob) na src, który graf widzi, więc wybiera go przy zmianie każdego modułu "
         "src/, katalogu (import message_samples) i pliku tests/expected/komunikaty.txt (literał)"
     ),
+    "tests/test_mutacje_skilli.py::test_kazdy_skill_z_modelem_tla_wskazuje_kod_modelu_w_pilnuje_sync_commit_i_kroki_naprawy_rozjazdu": (
+        "graf wybiera go przy zmianie SKILL.md i pliku model/ skilla, także nowego modelu .tla, i tools/lib/rozjazd_modelu.py, "
+        "a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
+    ),
     "tests/test_mutacje.py": "sprawdza silnik mutacji na repozytoriach testu, a nie całe repozytorium",
     "tests/test_mutacje_nocne.py": (
         "sprawdza narzędzie na repozytoriach testu i atrapie GitHuba; mutacje-nocne.yml czyta ścieżką, którą graf widzi"
