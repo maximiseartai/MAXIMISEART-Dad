@@ -150,9 +150,10 @@ def read_register(
     ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza pod ich nagłówkiem, a wiersza z dwoma
     położeniami (``RegisterSheet.uncertain_rows``) pod nagłówkiem i ``raw_orders.SHIFT`` kolumn na lewo od niego: z
     położenia podstawowego (``RegisterSheet.left_shifted``) wszędzie, a z drugiego z miejscem wiersza w Rejestrze (#918,
-    ADR 0025); zakazaną kolumnę od kolumny, od której wiersz na pewno stoi na miejscu
-    (``RegisterSheet.in_place_from``), tylko pod nagłówkiem, wszędzie. ``copy`` poznaje każdy przeczytany wiersz (``_copied``), wiersze ze
-    śladem przesunięcia i chwilę zmiany Rejestru sprzed jego odczytu.
+    ADR 0025), poza pierwszym wierszem bloku wklejenia bez przesunięcia potwierdzonego trzema faktami
+    (``RegisterSheet.everywhere_rows``), którego oba położenia zna wszędzie; zakazaną kolumnę od kolumny, od której
+    wiersz na pewno stoi na miejscu (``RegisterSheet.in_place_from``), tylko pod nagłówkiem, wszędzie. ``copy`` poznaje
+    każdy przeczytany wiersz (``_copied``), wiersze ze śladem przesunięcia i chwilę zmiany Rejestru sprzed jego odczytu.
     """
 
     modified = input_copy.modified_at(register)
@@ -164,7 +165,9 @@ def read_register(
             numbers = {column.target_header: number for column, number in sheet.positions.items()}
             for row in sheet.register_rows:
                 values = sheet.uncertain_rows.get(row.number)
-                second = client_data.RowPlace(register.name, digest, sheet.name, row.number)
+                second = None
+                if row.number not in sheet.everywhere_rows:
+                    second = client_data.RowPlace(register.name, digest, sheet.name, row.number)
                 primary = raw_orders.SHIFT if row.number in sheet.left_shifted else 0
                 fixed = sheet.in_place_from.get(row.number)
                 for column, header in _FORBIDDEN_HEADERS:

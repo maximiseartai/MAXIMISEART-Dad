@@ -396,10 +396,12 @@ def primary_offset(*, left_of_date: object, links: Collection[int] | None, numbe
     """Położenie podstawowe wiersza z dwoma położeniami, którego wartości pamięć reguły danych maskuje wszędzie:
     ``SHIFT``, gdy wiersz ma podpis przesunięcia w lewo (data z godziną dwie kolumny na lewo od ``DATA GODZ. POCZ.``
     albo Hiperłącze dwie kolumny na lewo od ``NUMER ZL.``), a inaczej 0 (na miejscu). Pamięć zna wartości obu położeń,
-    ale wartość z drugiego ma wąski zakres opcji 3 (ADR 0025): gdy podpis nie mówi prawdy o zakazanej kolumnie (data
-    w A albo Hiperłącze pod ``URZĄDZENIA`` na wierszu na miejscu, częściowe przesunięcie, brak podpisu w wierszu
-    przesuniętym), prawdziwy adres albo numer Orange wychodzi tam, gdzie ta sama wartość stoi w zwykłej kolumnie innego
-    wiersza. Wybór zmienia więc wyciek w tej granicy, a nie tylko koszt maski."""
+    ale wartość z drugiego ma wąski zakres opcji 3 (ADR 0025), poza pierwszym wierszem bloku bez przesunięcia
+    potwierdzonego trzema faktami (``Shifts.everywhere``). Gdy w innym wierszu podpis nie mówi prawdy o zakazanej
+    kolumnie (data w A albo Hiperłącze pod ``URZĄDZENIA`` na wierszu na miejscu, częściowe przesunięcie, brak podpisu w
+    wierszu przesuniętym), prawdziwy adres albo numer Orange wychodzi tam, gdzie ta sama wartość stoi w zwykłej kolumnie
+    innego wiersza; w pierwszym wierszu tylko wtedy, gdy kłamią naraz wszystkie trzy fakty ``confirmed_shift``. Wybór
+    zmienia więc wyciek w tej granicy, a nie tylko koszt maski."""
 
     if _is_date(left_of_date) or (links is not None and number - SHIFT in links):
         return SHIFT
@@ -422,6 +424,15 @@ def in_place_from(*, left_of_date: object, date: object, links: Collection[int] 
     if links is None or set(links) != {number} or not _is_date(date) or not _blank(left_of_date):
         return None
     return number
+
+
+def confirmed_shift(*, left_of_date: object, date: object, links: Collection[int] | None, number: int) -> bool:
+    """Przesunięcie wiersza w lewo potwierdzone trzema faktami naraz: data z godziną ``SHIFT`` kolumn na lewo od
+    ``DATA GODZ. POCZ.``, pod nią brak daty z godziną i jedyne Hiperłącze wiersza ``SHIFT`` kolumn na lewo od ``NUMER
+    ZL.``. Tak wygląda przesunięty pierwszy wklejony wiersz z aplikacji u taty, a wiersz na miejscu musiałby skłamać we
+    wszystkich trzech naraz (wariant B, ADR 0025)."""
+
+    return _is_date(left_of_date) and not _is_date(date) and links is not None and set(links) == {number - SHIFT}
 
 
 @dataclass(frozen=True)
@@ -459,6 +470,21 @@ class Shifts:
 
         columns = self.columns
         return in_place_from(
+            left_of_date=row.value(columns.date - SHIFT),
+            date=row.value(columns.date),
+            links=row.links,
+            number=columns.number,
+        )
+
+    def everywhere(self, row: RowFacts) -> bool:
+        """Czy pamięć reguły danych zna wartości obu położeń wiersza wszędzie, a nie wartość z drugiego wąsko: tak dla
+        pierwszego wiersza bloku bez przesunięcia potwierdzonego trzema faktami (``confirmed_shift``), bo przy nim
+        podpis przesunięcia może kłamać (przegląd #966 r2, decyzja Maksa 5.11.2026)."""
+
+        if row.number != self.first_row:
+            return False
+        columns = self.columns
+        return not confirmed_shift(
             left_of_date=row.value(columns.date - SHIFT),
             date=row.value(columns.date),
             links=row.links,

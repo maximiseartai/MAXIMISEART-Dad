@@ -248,16 +248,19 @@ class OrderSheet:
         Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych Rejestru w każdym
         położeniu, w którym mogą stać (``raw_orders.Shifts.possible``): wiersz z jednym położeniem pod nagłówkiem, a
         wiersz z dwoma położeniami w obu, z położenia podstawowego wszędzie, a z drugiego z miejscem wiersza w INTERMAX,
-        więc strażnik nie maskuje ich w zwykłych kolumnach innych wierszy. Zakazaną kolumnę od ``NUMER ZL.`` w prawo
-        wiersza, którego jedyne Hiperłącze stoi pod ``NUMER ZL.`` (``raw_orders.in_place_from``), pamięć zna tylko na
-        miejscu, wszędzie.
+        więc strażnik nie maskuje ich w zwykłych kolumnach innych wierszy. Pierwszy wiersz bloku bez przesunięcia
+        potwierdzonego trzema faktami pamięć zna w obu położeniach wszędzie (``raw_orders.Shifts.everywhere``).
+        Zakazaną kolumnę od ``NUMER ZL.`` w prawo wiersza, którego jedyne Hiperłącze stoi pod ``NUMER ZL.``
+        (``raw_orders.in_place_from``), pamięć zna tylko na miejscu, wszędzie.
         """
 
         forbidden = self._register.forbidden
         for facts in self._facts_from_bottom():
             if forbidden is not None:
                 register = self._register
-                second = client_data.RowPlace(register.path.name, register.digest, self.name, facts.number)
+                second = None
+                if not self._shifts.everywhere(facts):
+                    second = client_data.RowPlace(register.path.name, register.digest, self.name, facts.number)
                 fixed = self._shifts.in_place_from(facts)
                 for index, offset in enumerate(self._shifts.possible(facts)):
                     for column, number in self._forbidden_columns:

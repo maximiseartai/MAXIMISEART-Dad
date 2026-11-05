@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass, field, replace
-from datetime import datetime, time as time_of_day, timedelta, timezone
+from datetime import date, datetime, time as time_of_day, timedelta, timezone
 from decimal import Decimal
 import errno
 import hashlib
@@ -906,6 +906,66 @@ def test_wiersz_uporzadkowany_z_wpisem_taty_bez_sladu_nie_lamie_faktu_domeny_a_j
     cells = {row["row"]: row["cells"] for row in sheet["rows"]}
     assert (record["input_copy_notes"], cells[IN_PLACE_ROW]["I"]) == ([], number)
     assert draft.json()["body"].splitlines()[0] == f"Zlecenie {number} gotowe"
+
+
+def _in_middle_of_paste(register: Path) -> None:
+    """Wiersz próbny na miejscu w środku wklejenia po okresie, z datą z godziną w A, którą tata wpisał potem."""
+
+    when = datetime(2026, 9, 15, 10)
+    pasted = [
+        register_order(90, datetime(2026, 9, 15, 9)),
+        _register_probe(when),
+        register_order(91, datetime(2026, 9, 15, 12)),
+    ]
+    first = paste_raw_orders(register, pasted)
+    put_into_register(register, f"A{first + 1}", when, RAW_ORDER_FONT)
+
+
+KNOWN_UNTIL = date(2027, 2, 5)
+"""Termin przeglądu granicy wariantu B: po nim przypadek ``srodek_wklejenia`` znów pada."""
+LYING_SIGNATURE = {
+    "pierwszy_wiersz_bloku": pytest.param(
+        _above_ordered(in_place_from="DATA GODZ. POCZ.", typed={"A": (WHEN, RAW_ORDER_FONT)}), id="pierwszy_wiersz_bloku"
+    ),
+    "srodek_wklejenia": pytest.param(
+        _in_middle_of_paste,
+        id="srodek_wklejenia",
+        marks=()
+        if datetime.now().astimezone().date() > KNOWN_UNTIL
+        else (
+            pytest.mark.xfail(
+                strict=True,
+                reason="Granica wariantu B (zgoda Maksa 5.11.2026, ADR 0025): wiersz, który nie jest pierwszy w bloku, a "
+                "podpis przesunięcia kłamie, wbrew faktowi domeny; u taty 84 z 84 podpisów zgodnych i 0 kolizji",
+            ),
+        ),
+    ),
+}
+"""Wiersz próbny na miejscu z datą z godziną w A: pierwszy wiersz bloku i, jako znana granica, wiersz w środku
+wklejenia."""
+
+
+@pytest.mark.parametrize("paste", LYING_SIGNATURE.values())
+def test_adres_wiersza_rejestru_na_miejscu_z_data_w_kolumnie_a_nie_wychodzi_z_tej_samej_wartosci_pod_urzadzenia_innego(
+    tmp_path: Path, paste: Callable[[Path], object]
+) -> None:
+    """W1 z przeglądu #966 r2 w Rejestrze: wiersz próbny stoi na miejscu, ale ma datę z godziną w A, więc podpis
+    przesunięcia kłamie, a jego adres stoi też pod ``URZĄDZENIA`` uporządkowanego wiersza okresu. Pierwszy wiersz bloku
+    bez trzech faktów przesunięcia pamięć zna w obu położeniach wszędzie (wariant B, ADR 0025), więc adres nie wychodzi
+    z Przygotowania do pliku Logów ani do Skrzynki Zgłoszeń; wiersz w środku wklejenia to znana granica."""
+
+    centrum = preparing_centrum(tmp_path)
+    register = centrum.fixture.register_path
+    paste(register)
+    put_into_register(register, f"G{IN_PLACE_ROW}", PROBE_ADDRESS, REGISTER_FACE)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+
+    run_to_end(centrum, dry_run=True)
+
+    box = centrum.surroundings.report_box
+    assert box.wait_until(lambda fake: logs_arrived(fake, 1))
+    texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)] + in_box(box)
+    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in texts)] == []
 
 
 def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_okresu(tmp_path: Path) -> None:

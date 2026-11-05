@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -1389,6 +1389,127 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
     }
     broken = [note for note in logs["input_copy_notes"] if note.startswith("Fakt domeny złamany: wiersz ")]
     assert len(broken) == position.broken, logs["input_copy_notes"]
+
+
+# --- Adres i numer Orange także w zwykłej kolumnie innego wiersza (W1 z przeglądu #966 r2, wariant B) ----------------
+# Wartość wiersza próbnego stoi też pod URZĄDZENIA innego wiersza, a podpis przesunięcia kłamie albo go brak. Pierwszy
+# wiersz bloku bez przesunięcia potwierdzonego trzema faktami (data z godziną w A, pod DATA bez niej, jedyne Hiperłącze
+# pod URZĄDZENIA, ``raw_orders.confirmed_shift``) pamięć reguły danych zna w obu położeniach wszędzie, więc ta komórka
+# wychodzi zamaskowana (decyzja Maksa z 5.11.2026, ADR 0025). Kontrole C1 i C2 to te same wiersze bez kolizji.
+
+STALE_ADDRESS = (2, PROBE_ADDRESS)
+"""``AKCJE`` (B) z adresem: tata skopiował przesunięty wiersz dwie kolumny w prawo, zamiast go przenieść."""
+UNDER_DEVICES = (DEVICES,)
+"""Jedyne Hiperłącze wiersza pod ``URZĄDZENIA``, dwie kolumny na lewo od ``NUMER ZL.``."""
+KNOWN_UNTIL = date(2027, 2, 5)
+"""Termin przeglądu granic wariantu B: po nim przypadki z ``KNOWN`` znów padają."""
+KNOWN = {
+    name: "Granica wariantu B (zgoda Maksa 5.11.2026, ADR 0025): " + reason
+    for names, reason in (
+        (
+            ("P3", "P4", "P6", "P7", "P8", "P9"),
+            "wiersz, który nie jest pierwszy w bloku, a podpis przesunięcia kłamie albo go brak, wbrew faktowi domeny; "
+            "u taty 84 z 84 podpisów zgodnych z położeniem odczytu i 0 kolizji",
+        ),
+        (("T3",), "pierwszy wiersz na miejscu, w którym naraz kłamią wszystkie trzy fakty confirmed_shift"),
+    )
+    for name in names
+}
+"""Znane przypadki: powód, termin i zgoda Maksa. Po terminie przypadek znów pada, a naprawiony pada od razu (strict)."""
+
+
+def _colliding(index: int, probe: Order, other: int, value: str) -> tuple[Order, ...]:
+    """Wklejenie z wierszem próbnym ``probe`` na miejscu ``index`` i wartością ``value`` pod ``URZĄDZENIA`` wiersza
+    ``other``."""
+
+    rows = list(_pasted(index, probe))
+    rows[other] = replace(PASTED[other], cells=((DEVICES, value),))
+    return tuple(rows)
+
+
+COLLISIONS = {
+    # sondy W1 z przeglądu #966 r2 dla pierwszego wiersza: podpis kłamie (P1, P2) albo go brak (P5)
+    "P1a": Intermax(ordered=ORDERED, raw=_colliding(0, _probe(PASTED[0], A_DATE), 2, PROBE_ADDRESS), shifted=False),
+    "P1b": Intermax(ordered=ORDERED, raw=_colliding(0, _probe(PASTED[0], A_DATE), 2, PROBE_ORANGE), shifted=False),
+    "P1c": Intermax(
+        ordered=ORDERED, raw=_colliding(0, _probe(PASTED[0], A_DATE, STALE_ADDRESS), 2, PROBE_ADDRESS), shifted=False
+    ),
+    "P2": Intermax(
+        ordered=ORDERED, raw=_colliding(0, _probe(PASTED[0], links=UNDER_DEVICES), 2, PROBE_ADDRESS), shifted=False
+    ),
+    "P5": Intermax(ordered=ORDERED, raw=_colliding(0, _probe(PASTED[0], TEXT_DATE, links=()), 2, PROBE_ADDRESS)),
+    # pierwszy wiersz na miejscu z dwoma z trzech faktów: brak daty w A, data pod DATA, Hiperłącze pod NUMER ZL. albo
+    # drugie Hiperłącze obok tego pod URZĄDZENIA
+    "T2_bez_daty_w_A": Intermax(
+        ordered=ORDERED,
+        raw=_colliding(0, _probe(PASTED[0], TEXT_DATE, links=UNDER_DEVICES), 2, PROBE_ADDRESS),
+        shifted=False,
+    ),
+    "T2_z_data_pod_DATA": Intermax(
+        ordered=ORDERED,
+        raw=_colliding(0, _probe(PASTED[0], A_DATE, links=UNDER_DEVICES), 2, PROBE_ADDRESS),
+        shifted=False,
+    ),
+    "T2_z_hiperlaczem_pod_NUMER_ZL": Intermax(
+        ordered=ORDERED, raw=_colliding(0, _probe(PASTED[0], A_DATE, TEXT_DATE), 2, PROBE_ADDRESS), shifted=False
+    ),
+    "T2_z_dwoma_hiperlaczami": Intermax(
+        ordered=ORDERED,
+        raw=_colliding(0, _probe(PASTED[0], A_DATE, TEXT_DATE, links=(DEVICES, NUMBER)), 2, PROBE_ADDRESS),
+        shifted=False,
+    ),
+    "C1": Intermax(ordered=ORDERED, raw=_pasted(0, _probe(PASTED[0], A_DATE)), shifted=False),
+    "C2": Intermax(ordered=ORDERED, raw=_pasted(2, _probe(PASTED[2], TEXT_DATE, shifted=True, links=()))),
+    # granice: środek bloku (sondy W1 P3, P4, P6–P9) i pierwszy wiersz na miejscu z trzema kłamiącymi faktami
+    "P3": Intermax(ordered=ORDERED, raw=_colliding(1, _probe(PASTED[1], A_DATE), 3, PROBE_ADDRESS)),
+    "P4": Intermax(ordered=ORDERED, raw=_colliding(1, _probe(PASTED[1], links=UNDER_DEVICES), 3, PROBE_ORANGE)),
+    "P6": Intermax(
+        ordered=ORDERED, raw=_colliding(2, _probe(PASTED[2], TEXT_DATE, shifted=True, links=()), 3, PROBE_ADDRESS)
+    ),
+    "P7": Intermax(
+        ordered=ORDERED, raw=_colliding(2, _probe(PASTED[2], (3, ""), shifted=True, links=()), 3, PROBE_ORANGE)
+    ),
+    "P8": Intermax(
+        ordered=ORDERED, raw=_colliding(2, _probe(PASTED[2], shifted=True, in_place_from=10), 3, PROBE_ORANGE)
+    ),
+    "P9": Intermax(
+        ordered=ORDERED, raw=_colliding(2, _probe(PASTED[2], shifted=True, in_place_from=ADDRESS), 3, PROBE_ADDRESS)
+    ),
+    "T3": Intermax(
+        ordered=ORDERED,
+        raw=_colliding(0, _probe(PASTED[0], A_DATE, TEXT_DATE, links=UNDER_DEVICES), 2, PROBE_ADDRESS),
+        shifted=False,
+    ),
+}
+
+
+def _known(name: str) -> tuple[pytest.MarkDecorator, ...]:
+    reason = KNOWN.get(name)
+    if reason is None or datetime.now().astimezone().date() > KNOWN_UNTIL:
+        return ()
+    return (pytest.mark.xfail(strict=True, reason=reason),)
+
+
+@pytest.mark.parametrize(
+    "intermax", [pytest.param(intermax, id=name, marks=_known(name)) for name, intermax in COLLISIONS.items()]
+)
+def test_adres_i_numer_orange_pierwszego_wiersza_bloku_nie_wychodza_takze_z_tej_samej_wartosci_pod_urzadzenia_innego(
+    tmp_path: Path, intermax: Intermax
+) -> None:
+    """Pierwszy wiersz bloku wklejenia, którego podpis przesunięcia kłamie albo go brak, z adresem albo numerem Orange
+    także pod ``URZĄDZENIA`` innego wiersza: adres i numer Orange nie wychodzą do pliku Logów, do Skrzynki Zgłoszeń ani
+    w Uwadze taty, bo bez trzech faktów przesunięcia pamięć zna oba położenia wszędzie."""
+
+    centrum = ordering_centrum(tmp_path, intermax)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+
+    centrum.run_to_end()
+    note = centrum.client.post("/api/dad-notes/draft", json=NOTE).json()
+
+    texts = [path.read_text(encoding="utf-8") for path in sorted((tmp_path / "logs" / "uruchomienia").glob("*"))]
+    leaked = [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in [*texts, *_sent(centrum)])]
+    assert leaked == []
+    assert note["body"].splitlines()[0] == "Klient [adres], umowa [numer Orange]"
 
 
 # --- Koszt reguły danych w zwykłych kolumnach (opcja 3, #913, #918) ----------------------------------------------------

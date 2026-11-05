@@ -2108,15 +2108,17 @@ def test_wiersz_wklejenia_pozostawiony_na_miejscu_to_niezgodnosc_zapisu(tmp_path
 def test_wiersz_z_dwoma_polozeniami_przeniesiony_do_dnia_ma_wlasna_komorke_w_zapisanej_wersji_intermax(
     tmp_path: Path,
 ) -> None:
-    """Pierwszy wiersz wklejenia stoi na miejscu, ale z datą z godziną w A i słowem pod ``DATA GODZ. POCZ.``, więc
+    """Pierwszy wiersz wklejenia stoi na miejscu, ale z datą z godziną w A, słowem pod ``DATA GODZ. POCZ.`` i jedynym
+    Hiperłączem pod ``URZĄDZENIA``, czyli z trzema faktami przesunięcia (``raw_orders.confirmed_shift``), więc
     rozpoznanie czyta go przesunięty i Uporządkowanie stawia go w dniu dwie kolumny w prawo: jego ``ADRES`` stoi potem
-    pod ``URZĄDZENIA`` wiersza dnia. Pierwszy wiersz wklejenia ma dwa położenia, więc pamięć reguły danych zna ten adres
-    z miejscem wiersza: w zapisanej wersji INTERMAX wiersz dnia jest jego, więc strażnik maskuje go w jego
-    ``URZĄDZENIA``, a w przeczytanej wersji ten numer wiersza należy do innego wiersza i maski w nim nie ma (ADR 0025)."""
+    pod ``URZĄDZENIA`` wiersza dnia. Pamięć reguły danych zna ten adres z drugiego położenia z miejscem wiersza: w
+    zapisanej wersji INTERMAX wiersz dnia jest jego, więc strażnik maskuje go w jego ``URZĄDZENIA``, a w przeczytanej
+    wersji ten numer wiersza należy do innego wiersza i maski w nim nie ma (ADR 0025)."""
 
     address = "Syntetyczna Bursztynowa 14/2 Poznań"
     raw = Intermax().raw
-    first = replace(raw[0], cells=((ADDRESS, address), (DATE, "brak"), (1, datetime(2026, 10, 26, 14))))
+    cells = ((ADDRESS, address), (DATE, "brak"), (1, datetime(2026, 10, 26, 14)))
+    first = replace(raw[0], cells=cells, links=(DEVICES,))
     path, _ = _register(tmp_path, Intermax(shifted=False, raw=(first, *raw[1:])))
     read = hashlib.sha256(path.read_bytes()).hexdigest()
     forbidden = ForbiddenValues()

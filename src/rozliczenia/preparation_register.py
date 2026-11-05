@@ -103,6 +103,10 @@ class RegisterSheet:
     in_place_from: Mapping[int, int] = field(default_factory=lambda: MappingProxyType({}))
     """Wiersze z dwoma położeniami → kolumna (od 1), od której na pewno stoją na miejscu, bo ich jedyne Hiperłącze stoi
     pod ``NUMER ZL.`` (``raw_orders.in_place_from``)."""
+    everywhere_rows: frozenset[int] = frozenset()
+    """Pierwsze wiersze bloków wklejenia (bez wyglądu uporządkowanego, a nad nimi najbliższy wiersz z danymi odczytu ma
+    ten wygląd albo nie ma żadnego) bez przesunięcia potwierdzonego trzema faktami (``raw_orders.confirmed_shift``):
+    pamięć reguły danych zna je w obu położeniach wszędzie (ADR 0025)."""
 
     def column_letter(self, column: Column) -> str:
         """Litera kolumny arkusza z nagłówkiem ``column``, np. ``L`` dla ``SKUTECZNE``."""
@@ -234,6 +238,7 @@ def _read_register_sheets(workbook: ReadWorkbook, positions: dict[str, list[int]
         traced: dict[int, tuple[ShiftTrace, ...]] = {}
         left_shifted: set[int] = set()
         in_place: dict[int, int] = {}
+        everywhere: set[int] = set()
         above: bool | None = None  # wygląd uporządkowany najbliższego wiersza z danymi nad wierszem; None: nie ma go
         for empty, found in read:
             if empty:
@@ -241,12 +246,15 @@ def _read_register_sheets(workbook: ReadWorkbook, positions: dict[str, list[int]
             ordered = _ordered_look(found)
             first = not ordered and above is not False
             facts = _row_facts(found, columns)
+            date = found.row.cells[DATE.target_header].value
+            if first and not raw_orders.confirmed_shift(date=date, **facts):
+                everywhere.add(found.row.number)
             traces = raw_orders.shift_traces(**facts)
             if not ordered or traces:
                 uncertain[found.row.number] = MappingProxyType(dict(enumerate(found.values, start=1)))
                 if raw_orders.primary_offset(**facts):
                     left_shifted.add(found.row.number)
-                fixed = raw_orders.in_place_from(date=found.row.cells[DATE.target_header].value, **facts)
+                fixed = raw_orders.in_place_from(date=date, **facts)
                 if fixed is not None:
                     in_place[found.row.number] = fixed
             if traces and not first:
@@ -262,6 +270,7 @@ def _read_register_sheets(workbook: ReadWorkbook, positions: dict[str, list[int]
                 MappingProxyType(traced),
                 frozenset(left_shifted),
                 MappingProxyType(in_place),
+                frozenset(everywhere),
             )
         )
     return sheets
