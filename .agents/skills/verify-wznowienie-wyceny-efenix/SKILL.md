@@ -79,7 +79,7 @@ classification of other failures) does not move the model. A change that makes a
 write the trace file or decide whether an order is finished does, though no definition above changes: add it to the
 table and to `DEFINITIONS`.
 
-Sync commit: `510a963ac` (2026-11-05, the fix of #864 and #865). Every row of the table was checked against the
+Sync commit: `dde575566` (2026-11-05, the fix of #864 and #865). Every row of the table was checked against the
 code at this commit, and each path below was replayed on that code with the Atrapa efenix. The model gained the write
 ahead of each quantity (`Zapowiedz`), its withdrawal after `LoggedOut` (`Odmowa`), the strict `JakPoEmmetcie` and a
 third position, because the code now records each quantity in the trace before efenix can save it, and with one
