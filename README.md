@@ -299,8 +299,8 @@ Narzędzie tylko czyta i nie uruchamia stron efenix: każde żądanie wysyła sa
 z ciasteczkami sesji taty z Chrome, tylko z krótkiej listy odczytów (lista,
 szukanie, strona zlecenia, skrypty obu stron, strona logowania) i bez
 podążania za przekierowaniem. HTML składa w swoim oknie bez skryptów i bez
-sieci, które na końcu zamyka. Kart taty nie dotyka, a sesję taty zostawia
-zalogowaną. Wynik ma tylko nazwy elementów, liczby i kody pozycji, bez numerów
+sieci, które na końcu zamyka. Kart taty nie zmienia (z `--emmett` tylko czyta
+okno Emmetta), a sesję taty zostawia zalogowaną. Wynik ma tylko nazwy elementów, liczby i kody pozycji, bez numerów
 zleceń, adresów, loginów i cen.
 
 ```sh
@@ -317,12 +317,33 @@ Przycisku kalendarza daty wykonania narzędzie nie sprawdza, więc wynik zawsze
 ma o nim linię `NIESPRAWDZONE`: sprawdź ręcznie w efenix na zleceniu „Do
 wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty.
 
-Propozycji Emmetta narzędzie nie pobiera (`action_fill_emmett.php` nie jest na
-liście odczytów), więc wynik ma o jej budowie zawsze linię `NIESPRAWDZONE`.
-Przycisk Emmetta pokazuje w okienku podgląd, co i z jakimi ilościami Emmett
-uzupełni, a ilości wpisuje do zlecenia dopiero „Załaduj do zlecenia”. Tak
-pamięta to Maks, ale co serwer efenix robi przy podglądzie, nikt nie sprawdził.
-Pomiar propozycji z prawdziwego efenix będzie w osobnym PR (Część #953).
+Propozycji Emmetta narzędzie samo nie pobiera (`action_fill_emmett.php` nie
+jest na liście odczytów). Przycisk Emmetta pokazuje w okienku podgląd, co i z
+jakimi ilościami Emmett uzupełni, a ilości wpisuje do zlecenia dopiero
+„Załaduj do zlecenia”. Tak pamięta to Maks, ale co serwer efenix robi przy
+podglądzie, nikt nie sprawdził. Bez `--emmett` wynik ma więc o budowie
+propozycji zawsze linię `NIESPRAWDZONE`.
+
+Z `--emmett` przycisk Emmetta klika Maks, a narzędzie tylko czyta okno Emmetta
+z jego karty i porównuje budowę propozycji (znaczniki, klasy, nazwy atrybutów,
+miejsca tekstu, bez treści) z oknem Emmetta Atrapy efenix, które samo otwiera
+na chwilę w osobnym oknie Chrome. Na Macu:
+
+1. Uruchom Chrome poleceniem wyżej i zaloguj się w nim do efenix kontem taty.
+2. W tym Chrome otwórz w jednej karcie stronę zlecenia „Do wyceny”, któremu
+   Emmett coś proponuje.
+3. Uruchom narzędzie poleceniem wyżej z `--emmett`. Po
+   sprawdzeniu stron narzędzie prosi (linia `EMMETT | …`) o kliknięcie
+   przycisku Emmetta.
+4. W Chrome kliknij przycisk Emmetta i poczekaj na okno z propozycją. Nie
+   klikaj „Załaduj do zlecenia”: ono wpisuje ilości do zlecenia taty.
+5. W oknie narzędzia wciśnij Enter. Narzędzie czyta okno Emmetta i prosi o
+   jego zamknięcie.
+6. W Chrome zamknij okno Emmetta przyciskiem „Zamknij”.
+
+Okno zamknięte albo otwarte w kilku kartach, brak karty zlecenia i propozycja,
+która nic nie pokazuje, dają linię `NIESPRAWDZONE` z powodem i kod `2`, nigdy
+zgodną propozycję.
 
 Czasu przebiegu w prawdziwym efenix nikt jeszcze nie zmierzył: narzędzie wysyła
 po kolei najwyżej 17 odczytów, więc trwa mniej więcej tyle, ile 17 odpowiedzi
@@ -331,7 +352,7 @@ efenix (na Atrapie 0,98 s w teście zgodnej Atrapy z `pytest --durations`,
 `--limit-ms` (domyślnie 30 s), kończy je kodem `1`.
 
 Kody wyjścia: `0` bez różnic, gdy niesprawdzone są tylko przycisk kalendarza
-i budowa propozycji Emmetta, `2` różnice albo inne części niesprawdzone (każda
+i, bez `--emmett`, budowa propozycji Emmetta, `2` różnice albo inne części niesprawdzone (każda
 w osobnej linii), `1` brak Chrome albo Wzorca, efenix nie odpowiada albo Chrome
 nie jest zalogowany.
 Parametry i Chrome na Windows i Linuksie opisuje `--help`.

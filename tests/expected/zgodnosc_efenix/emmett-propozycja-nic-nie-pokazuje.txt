@@ -1,0 +1,4 @@
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 43 | ceny porównane z Wzorcem: 20
+NIESPRAWDZONE | propozycja Emmetta | okno Emmetta nic nie pokazuje (bez elementu i bez tekstu): Emmett nic nie zaproponował albo propozycja padła; kliknij Emmetta na zleceniu, któremu Emmett coś proponuje, i uruchom narzędzie jeszcze raz
+NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
+RÓŻNICE: 0 | NIESPRAWDZONE: 2

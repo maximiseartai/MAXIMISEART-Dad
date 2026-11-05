@@ -5,17 +5,22 @@ Chrome z sesją taty), a sprawdza to, co widać z zewnątrz: wynik (plik expect 
 kod wyjścia, żądania, które dostała Atrapa, i jej stan. Zgodna Atrapa daje wynik bez różnic, a Atrapa ze zmienioną
 budową każdą różnicę; każdy wynik ma prośbę o ręczne sprawdzenie przycisku kalendarza daty wykonania. Każde żądanie, które dostaje Atrapa, jest z listy dozwolonych odczytów, także gdy skrypty i
 elementy stron same wysyłają zapis albo wylogowanie, a nigdy propozycja Emmetta (``action_fill_emmett.php``), więc
-każdy wynik ma też linię o niesprawdzonej budowie propozycji. Wynik nie zawiera numerów zleceń, adresów, loginów ani
-identyfikatorów, które Atrapa pokazuje, ani cen.
+każdy wynik bez ``--emmett`` ma też linię o niesprawdzonej budowie propozycji. Wynik nie zawiera numerów zleceń,
+adresów, loginów ani identyfikatorów, które Atrapa pokazuje, ani cen.
 
 Budowę, której Atrapa nie umie zmienić sama (``Changed``, ``Unread``), zmienia serwer przed Atrapą (``_in_front``):
 narzędzie łączy się z nim, a on przekazuje każde żądanie Atrapie i zmienia odpowiedź na wskazane strony (inny kod,
 inna treść), jak efenix, którego autor zmienił jedną stronę.
+
+Pomiar propozycji Emmetta (``--emmett``) test uruchamia tak, jak robi to Maks: zanim narzędzie wystartuje, „Maks” w karcie
+domyślnego kontekstu Chromium otwiera zlecenie przez serwer przed Atrapą i klika przycisk Emmetta (jedyne
+``action_fill_emmett.php`` przebiegu), a Enter przychodzi na stdin narzędzia. Żądania, które Atrapa dostaje od startu
+narzędzia, są tylko z listy odczytów, a karty Maksa i ich okna Emmetta zostają takie, jakie były.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext, suppress
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -29,11 +34,12 @@ import socket
 import subprocess
 import sys
 import threading
-from urllib.parse import urlparse
+from typing import TypeVar, cast
+from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
 
 from openpyxl import Workbook
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import Browser, Page, sync_playwright
 import pytest
 import zgodnosc_efenix
 
@@ -75,8 +81,8 @@ DATE_BUTTON_BY_HAND = (
 )
 # Linia każdego wyniku (#953): narzędzie nie wysyła propozycji Emmetta.
 PROPOSAL_BY_HAND = (
-    "NIESPRAWDZONE | propozycja Emmetta | budowa propozycji Emmetta nie jest sprawdzana: narzędzie nie wysyła"
-    " action_fill_emmett.php; pomiar propozycji w osobnym PR (Część #953)"
+    "NIESPRAWDZONE | propozycja Emmetta | budowa propozycji Emmetta nie jest sprawdzana: uruchom narzędzie z --emmett"
+    " i kliknij w Chrome przycisk Emmetta, gdy narzędzie o to poprosi"
 )
 TOOL = ROOT / "tools" / "zgodnosc_efenix.py"
 # Żądania, które niczego w efenix nie zmieniają: lista, szukanie, strona zlecenia, skrypty obu stron i strona logowania.
@@ -251,6 +257,192 @@ SAME = {
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "strona-zlecenia-z-czescia-pozycji.txt", orders=SUBSET
     ),
     "szukanie-numeru": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-numeru.txt", number=ORDERS[1].number),
+    # Propozycja w oknie Emmetta z samymi białymi znakami przed propozycją: według reguły okna Wyceny pusta (#908).
+    "propozycja-z-bialymi-znakami-przed-propozycja": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "zgodna.txt",
+        rewrites={ORDER_PAGE: _replaced(('<div id="emmett-propozycja"></div>', '<div id="emmett-propozycja">\n \t\u00a0\n</div>'))},
+    ),
+}
+# Zlecenia pomiaru propozycji Emmetta: Maks klika Emmetta na drugim, któremu Emmett proponuje jedną pozycję (zlecenie
+# Atrapy narzędzia ma dwie, a liczba pozycji propozycji zależy od zlecenia, nie od budowy).
+EMMETT_ORDERS = (ORDERS[0], replace(ORDERS[1], emmett={"012": 3}), ORDERS[2])
+DIALOG = "#dialog_emmett"
+# Skrypt strony zlecenia, który wkłada propozycję jak ``.html()`` jQuery: skrypty w odpowiedzi biegną.
+RUNS_ANSWER_SCRIPTS = _replaced(
+    (
+        "document.getElementById('emmett-propozycja').innerHTML = html;",
+        "document.getElementById('emmett-propozycja').replaceChildren(document.createRange().createContextualFragment(html));",
+    )
+)
+
+
+def _proposal(body: str) -> Rewrite:
+    """Odpowiedź ``action_fill_emmett.php`` z treścią ``body`` i kodem Atrapy."""
+
+    return lambda answer: replace(answer, body=body)
+
+
+def _clicked(browser: Browser, address: str) -> Page:
+    """Maks otwiera zlecenie pod ``address`` w nowej karcie, klika przycisk Emmetta i czeka na okno Emmetta."""
+
+    tab = browser.contexts[0].new_page()
+    tab.goto(address)
+    tab.click("#button_emmett")
+    tab.locator(DIALOG).wait_for(state="visible")
+    return tab
+
+
+def _click(browser: Browser, address: str, _elsewhere: str) -> None:
+    _clicked(browser, address)
+
+
+def _click_and_close(browser: Browser, address: str, _elsewhere: str) -> None:
+    tab = _clicked(browser, address)
+    tab.click(f'{DIALOG} [data-dismiss="modal"]')
+    tab.locator(DIALOG).wait_for(state="hidden")
+
+
+def _click_and_reload(browser: Browser, address: str, _elsewhere: str) -> None:
+    _clicked(browser, address).reload()
+
+
+def _click_in_two_tabs(browser: Browser, address: str, _elsewhere: str) -> None:
+    _clicked(browser, address)
+    _clicked(browser, address)
+
+
+def _click_and_open_second(browser: Browser, address: str, _elsewhere: str) -> None:
+    _clicked(browser, address)
+    browser.contexts[0].new_page().goto(address)
+
+
+def _open(browser: Browser, address: str, _elsewhere: str) -> None:
+    browser.contexts[0].new_page().goto(address)
+
+
+def _open_list(browser: Browser, address: str, _elsewhere: str) -> None:
+    browser.contexts[0].new_page().goto(urljoin(address, LIST_PAGE))
+
+
+def _click_elsewhere(browser: Browser, _address: str, elsewhere: str) -> None:
+    _clicked(browser, elsewhere)
+
+
+def _click_in_frame(browser: Browser, address: str, _elsewhere: str) -> None:
+    """Maks klika Emmetta na stronie zlecenia w ramce strony listy zleceń."""
+
+    tab = browser.contexts[0].new_page()
+    tab.goto(urljoin(address, LIST_PAGE))
+    tab.set_content(f'<iframe src="{address}" width="900" height="700"></iframe>')
+    frame = tab.frame_locator("iframe")
+    frame.locator("#button_emmett").click()
+    frame.locator(DIALOG).wait_for(state="visible")
+
+
+@dataclass(frozen=True)
+class Emmett:
+    """Pomiar propozycji Emmetta: co Maks robi w Chrome (``maks``: przeglądarka, adres zlecenia pod ``--efenix-url`` i
+    adres tego zlecenia na innym hoście), co wpisuje na stdin, Atrapa efenix pod narzędziem, kod wyjścia i plik expect.
+    ``read``: narzędzie przeczytało otwarte okno Emmetta, więc prosi o jego zamknięcie."""
+
+    expected: Path
+    maks: Callable[[Browser, str, str], None] = _click
+    code: int = 2
+    read: bool = True
+    orders: tuple[AtrapaOrder, ...] = EMMETT_ORDERS
+    rewrites: Mapping[str, Rewrite] = field(default_factory=dict)
+    enter: str = "\n"
+
+
+EMMETT = {
+    "zgodna": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-zgodna.txt", code=0),
+    # Propozycja z białymi znakami i komentarzem między elementami, jak HTML pisany z wcięciami.
+    "propozycja-z-wcieciami-i-komentarzem": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-zgodna.txt",
+        code=0,
+        rewrites={FILL_EMMETT: _proposal("\n<!-- Emmett -->\n<ul>\n  <li>INDEKS_012_078: 3</li>\n  <!-- koniec -->\n</ul>\n")},
+    ),
+    "druga-karta-bez-okna": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-zgodna.txt", _click_and_open_second, code=0),
+    "bez-enter": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-bez-enter.txt", read=False, enter=""),
+    "bez-karty-zlecenia": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-bez-karty-zlecenia.txt", _open_list, read=False),
+    "karta-zlecenia-innego-hosta": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-bez-karty-zlecenia.txt", _click_elsewhere, read=False
+    ),
+    "zlecenie-w-ramce": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-bez-karty-zlecenia.txt", _click_in_frame, read=False),
+    "okno-zamkniete-przed-odczytem": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-okno-zamkniete.txt", _click_and_close, read=False
+    ),
+    "okno-ukryte-przez-visibility": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-okno-zamkniete.txt",
+        _click_and_close,
+        read=False,
+        rewrites={ORDER_SCRIPT: _replaced(("document.getElementById(id).style.display = 'none';", "document.getElementById(id).style.visibility = 'hidden';"))},
+    ),
+    "strona-przeladowana-po-kliknieciu": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-okno-zamkniete.txt", _click_and_reload, read=False
+    ),
+    "strona-bez-okna-emmetta": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-strona-bez-okna-emmetta.txt",
+        _open,
+        read=False,
+        rewrites={ORDER_PAGE: _replaced(('id="dialog_emmett"', 'id="dialog_inny"'))},
+    ),
+    "okno-otwarte-w-dwoch-kartach": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-okno-w-dwoch-kartach.txt", _click_in_two_tabs, read=False
+    ),
+    # Skrypt strony psuje odczyt pudełka okna, więc odczyt karty pada, jak przy przejściu karty w trakcie odczytu.
+    "odczyt-karty-pada": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-odczyt-karty-pada.txt",
+        read=False,
+        rewrites={
+            ORDER_PAGE: _replaced(
+                ('<div id="toast"></div>', "<div id=\"toast\"></div><script>Element.prototype.getClientRects = () => { throw new Error('zepsute'); };</script>")
+            )
+        },
+    ),
+    # Emmett nic nie proponuje: Atrapa odpowiada pustą treścią.
+    "propozycja-pusta": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-propozycja-nic-nie-pokazuje.txt",
+        orders=(ORDERS[0], replace(ORDERS[1], emmett={}), ORDERS[2]),
+    ),
+    "propozycja-z-bialymi-znakami": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-propozycja-nic-nie-pokazuje.txt",
+        rewrites={FILL_EMMETT: _proposal("\n \t\u00a0\n")},
+    ),
+    "propozycja-sam-tekst": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-propozycja-sam-tekst.txt",
+        rewrites={FILL_EMMETT: _proposal(f"Emmett proponuje dla {ORDERS[1].address} 3 pozycje")},
+    ),
+    "propozycja-w-polach-bez-tekstu": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-propozycja-w-polach-bez-tekstu.txt",
+        orders=(ORDERS[0], replace(ORDERS[1], emmett={"012": 3}, emmett_in_fields=True), ORDERS[2]),
+    ),
+    "propozycja-z-innymi-klasami": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-propozycja-z-innymi-klasami.txt",
+        rewrites={FILL_EMMETT: _proposal('<ul class="list-group"><li class="list-group-item pozycja-12">INDEKS_012_078: 3</li></ul>')},
+    ),
+    "propozycja-z-innymi-atrybutami": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-propozycja-z-innymi-atrybutami.txt",
+        rewrites={FILL_EMMETT: _proposal('<ul><li data-indeks="012" title="ul.Ukryta 9">INDEKS_012_078: 3</li></ul>')},
+    ),
+    "skrypt-w-odpowiedzi-rysuje-liste": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-skrypt-w-odpowiedzi-rysuje-liste.txt",
+        rewrites={
+            ORDER_SCRIPT: RUNS_ANSWER_SCRIPTS,
+            FILL_EMMETT: _proposal(
+                "<script>document.getElementById('emmett-propozycja')"
+                ".insertAdjacentHTML('beforeend', '<ul><li>INDEKS_012_078: 3</li></ul>');</script>"
+            ),
+        },
+    ),
+    "ramka-w-propozycji": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-ramka-w-propozycji.txt",
+        rewrites={FILL_EMMETT: _proposal('<iframe src="about:blank">ul.Ukryta 9</iframe>')},
+    ),
+    "druga-propozycja-w-propozycji": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-druga-propozycja-w-propozycji.txt",
+        rewrites={FILL_EMMETT: _proposal('<div id="emmett-propozycja"><ul><li>INDEKS_012_078: 3</li></ul></div>')},
+    ),
 }
 
 
@@ -261,14 +453,36 @@ class Checked:
     stderr: str
 
 
+_T = TypeVar("_T")
+
+
+@dataclass(frozen=True)
+class Chromium:
+    """Chromium ze zdalnym debugowaniem pod ``endpoint``; ``do`` wykonuje działanie Maksa w jego przeglądarce."""
+
+    endpoint: str
+    _jobs: queue.Queue[tuple[Callable[[Browser], object], queue.Queue[tuple[object, BaseException | None]]]]
+
+    def do(self, job: Callable[[Browser], _T]) -> _T:
+        """``job`` na przeglądarce połączonej przez zdalne debugowanie, w wątku, który obsługuje Playwrighta Chromium."""
+
+        answer: queue.Queue[tuple[object, BaseException | None]] = queue.Queue()
+        self._jobs.put((job, answer))
+        result, error = answer.get(timeout=120)
+        if error is not None:
+            raise error
+        return cast(_T, result)
+
+
 @pytest.fixture(scope="module")
-def chrome() -> Iterator[str]:
+def chromium() -> Iterator[Chromium]:
     """Chromium ze zdalnym debugowaniem (jak Chrome Maksa) i ciasteczkiem sesji Atrapy w domyślnym kontekście.
 
     Chromium i jego Playwright żyją w osobnym wątku, który przez cały czas obsługuje Playwrighta, jak osobny program
     Chrome u Maksa. Playwright, który uruchomił przeglądarkę, a którego nikt nie obsługuje, bo test czeka na proces
     narzędzia, na Windows wstrzymuje przeglądarkę: jego sterownik pisze do pełnej rury procesu testu i przestaje
     wznawiać nowe karty, więc karta, w której narzędzie składa HTML, nie wczytuje się (#755, CI na windows-2025).
+    Dlatego i działania Maksa w kartach (``Chromium.do``) wykonuje ten sam wątek.
     """
 
     with socket.socket() as free:
@@ -277,6 +491,7 @@ def chrome() -> Iterator[str]:
     endpoint = f"http://127.0.0.1:{port}"
     started: queue.Queue[BaseException | None] = queue.Queue()
     stop = threading.Event()
+    jobs: queue.Queue[tuple[Callable[[Browser], object], queue.Queue[tuple[object, BaseException | None]]]] = queue.Queue()
 
     def own() -> None:
         try:
@@ -289,7 +504,15 @@ def chrome() -> Iterator[str]:
                     idle = browser.new_page()
                     started.put(None)
                     while not stop.is_set():
-                        idle.wait_for_timeout(50)
+                        try:
+                            job, answer = jobs.get_nowait()
+                        except queue.Empty:
+                            idle.wait_for_timeout(50)
+                            continue
+                        try:
+                            answer.put((job(remote), None))
+                        except Exception as error:  # noqa: BLE001 - błąd działania Maksa wraca do testu w jego wątku
+                            answer.put((None, error))
                 finally:
                     browser.close()
         except BaseException as error:  # noqa: BLE001 - błąd startu przeglądarki wraca do fixture'a w wątku testu
@@ -301,15 +524,23 @@ def chrome() -> Iterator[str]:
         failure = started.get(timeout=120)
         if failure is not None:
             raise failure
-        yield endpoint
+        yield Chromium(endpoint, jobs)
     finally:
         stop.set()
         owner.join()
 
 
-def _run(endpoint: str, url: str, template: Path, *extra: str, limit_ms: int = 10_000) -> Checked:
+@pytest.fixture
+def chrome(chromium: Chromium) -> str:
+    """Adres zdalnego debugowania Chromium, pod który narzędzie się łączy."""
+
+    return chromium.endpoint
+
+
+def _run(endpoint: str, url: str, template: Path, *extra: str, limit_ms: int = 10_000, enter: str | None = None) -> Checked:
     done = subprocess.run(
         [sys.executable, str(TOOL), "--efenix-url", url, "--cdp", endpoint, "--limit-ms", str(limit_ms), "--wzorzec", str(template), *extra],
+        input=enter,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -440,6 +671,51 @@ def test_atrapa_ze_zmieniona_budowa_daje_kazda_roznice(chrome: str, tmp_path: Pa
     assert set(atrapa.requested()) <= READING
 
 
+@pytest.mark.parametrize("variant", EMMETT.values(), ids=EMMETT.keys())
+def test_okno_emmetta_po_kliknieciu_maksa_narzedzie_porownuje_z_atrapa_samym_odczytem(
+    chromium: Chromium, tmp_path: Path, variant: Emmett
+) -> None:
+    template = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", COSTS)
+    with atrapa_efenix(variant.orders, cookie_session=True) as atrapa, _in_front(atrapa, variant.rewrites) as url:
+        before: list[Page] = chromium.do(lambda browser: list(browser.contexts[0].pages))
+        try:
+            chromium.do(lambda browser: variant.maks(browser, _order(url), _order(atrapa.url)))
+            clicked = len(atrapa.requests)
+            shown, state, pages = chromium.do(lambda browser: _tabs(browser, before)), atrapa.state(), _pages(chromium.endpoint)
+            checked = _run(chromium.endpoint, url, template, "--emmett", enter=variant.enter)
+            assert (chromium.do(lambda browser: _tabs(browser, before)), atrapa.state(), _pages(chromium.endpoint)) == (shown, state, pages)
+        finally:
+            chromium.do(lambda browser: _close_new(browser, before))
+
+    asked = [zgodnosc_efenix.ASK_EMMETT, *([zgodnosc_efenix.CLOSE_EMMETT] if variant.read else [])]
+    assert (checked.code, checked.stderr.splitlines()) == (variant.code, asked), checked
+    assert_expected(checked.stdout, variant.expected)
+    assert not [text for text in PRIVATE if text in checked.stdout + checked.stderr]
+    assert DATE_BUTTON_BY_HAND in checked.stdout.splitlines()
+    assert PROPOSAL_BY_HAND not in checked.stdout.splitlines()
+    # Przycisk Emmetta klika tylko Maks, przed startem narzędzia; narzędzie wysyła same odczyty.
+    assert set(atrapa.requested()[clicked:]) <= READING
+    assert set(atrapa.requested()) <= READING | {("POST", FILL_EMMETT)}
+
+
+def _order(url: str) -> str:
+    """Adres strony zlecenia, na którym Maks klika Emmetta, w katalogu listy zleceń ``url``."""
+
+    return urljoin(url, f"{ORDER_PAGE}?id={EMMETT_ORDERS[1].order_id}")
+
+
+def _close_new(browser: Browser, before: Sequence[Page]) -> None:
+    for tab in browser.contexts[0].pages:
+        if tab not in before:
+            tab.close()
+
+
+def _tabs(browser: Browser, before: Sequence[Page]) -> list[tuple[str, bool]]:
+    """Adres każdej karty Maksa (poza ``before``) i czy jest w niej widoczne okno Emmetta."""
+
+    return [(tab.url, tab.locator(DIALOG).is_visible()) for tab in browser.contexts[0].pages if tab not in before]
+
+
 @pytest.mark.parametrize(
     ("before", "expire_after", "error"),
     [
@@ -514,6 +790,20 @@ def test_lista_dozwolonych_zadan_ma_tylko_odczyty() -> None:
     for path in (f"{LOGOUT}/{LIST_PAGE}", f"{SAVE_QUANTITY}/{SEARCH}", f"js/../{LOGOUT}", f"{LIST_PAGE}/x.png"):
         for method in ("GET", "POST"):
             assert not zgodnosc_efenix.allowed(method, f"https://efenix.example/app/{path}", efenix), (method, path)
+
+
+def test_karta_strony_zlecenia_to_strona_zlecenia_w_katalogu_i_na_hoscie_adresu_efenix() -> None:
+    efenix = "https://efenix.example/app/index.php"
+
+    assert zgodnosc_efenix.order_tab(f"https://efenix.example/app/{ORDER_PAGE}?id=1#dol", efenix)
+    for url in (
+        f"http://efenix.example/app/{ORDER_PAGE}?id=1",
+        f"https://inny.example/app/{ORDER_PAGE}?id=1",
+        f"https://efenix.example/{ORDER_PAGE}?id=1",
+        f"https://efenix.example/app/{LIST_PAGE}",
+        f"https://efenix.example/app/{ORDER_PAGE}/{LIST_PAGE}",
+    ):
+        assert not zgodnosc_efenix.order_tab(url, efenix), url
 
 
 def test_efenix_bez_odpowiedzi_w_limicie_konczy_narzedzie_bledem(chrome: str, tmp_path: Path) -> None:
