@@ -232,9 +232,11 @@ _PICK_DAY: Final = """(field, [year, month, day]) => {
 _DISMISS: Final = '[data-dismiss="modal"]'
 _LOGIN_FORM: Final = 'form[action*="action_login.php"]'
 _SHOWS: Final = "([selector, text]) => document.querySelector(selector)?.textContent.trim() === text"
-# Element pokazuje cokolwiek: ma element albo tekst; ``false`` tylko dla pustego (same białe znaki).
 _COUNT: Final = "(selector) => ({count: document.querySelectorAll(selector).length})"
-_SHOWS_ANYTHING: Final = "(element) => element.childElementCount > 0 || element.textContent.trim() !== ''"
+SHOWS_ANYTHING: Final = "(element) => element.childElementCount > 0 || element.textContent.trim() !== ''"
+"""Reguła okna Wyceny, czy element pokazuje cokolwiek: ma element albo tekst, a ``false`` tylko dla pustego (same białe
+znaki); funkcja JavaScript elementu. Jej jedyny właściciel: narzędzie zgodności (``tools/zgodnosc_efenix.py``) mierzy
+nią propozycję Emmetta w efenix i w Atrapie efenix (#908, #953)."""
 
 
 _P = ParamSpec("_P")
@@ -528,7 +530,7 @@ class BrowserEfenix:
         self._shown(_EMMETT_DIALOG, PagePart.EMMETT)
         proposal = self._only(f"{_EMMETT_DIALOG} {_PROPOSAL}", PagePart.EMMETT)
         with _doing(Operation.READ):
-            shown = proposal.evaluate(_SHOWS_ANYTHING, timeout=self._timeout_ms)
+            shown = proposal.evaluate(SHOWS_ANYTHING, timeout=self._timeout_ms)
         nothing_proposed = shown is False and _came_whole(asked.value)
         load = self._only(f"{_EMMETT_DIALOG} {_OK}", PagePart.EMMETT)
         with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms) as reload:

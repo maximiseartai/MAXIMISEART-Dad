@@ -8,7 +8,8 @@ porównywanej po pełnej ścieżce i hoście ``--efenix-url``, i nigdy nie podą
 ``page_login.php`` i odpowiedź szukania z ostrzeżeniem o wygasłej sesji (``efenix_browser.SearchWarning``) to brak
 sesji, a inne przekierowanie to różnica. HTML z odpowiedzi składa parserem przeglądarki we własnej karcie
 w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service workerami, z której nie wychodzi żadne żądanie
-(obraz, styl, ramka, przejście, prefetch; ``parser_page``). Kart taty nie dotyka. Sprawdza:
+(obraz, styl, ramka, przejście, prefetch; ``parser_page``). Kart taty nie zmienia: z ``--emmett`` tylko czyta okno
+Emmetta w karcie, w której Maks sam kliknął przycisk Emmetta. Sprawdza:
 
 - lista zleceń: elementy ``efenix_browser.LIST_ELEMENTS`` (pole ``Numer``) i skrypt ``js/index.js``, który lista ładuje,
   z nazwami ``efenix_browser.LIST_SCRIPT_USES`` (Enter w polu ``Numer`` wysyła ``action_fill_orders.php`` z polem
@@ -44,12 +45,29 @@ polega okno Wyceny w efenix. Przycisku kalendarza daty wykonania (``#button-cale
 przy pustej dacie wykonania, a efenix pokazuje go najpewniej tylko wtedy, więc wynik zawsze ma linię ``NIESPRAWDZONE``
 z prośbą o sprawdzenie ręczne (``DATE_BUTTON_BY_HAND``).
 
-Propozycji Emmetta narzędzie nie czyta: ``action_fill_emmett.php`` nie jest na liście ``ALLOWED``. Skrypt strony
+Propozycji Emmetta narzędzie samo nie pobiera: ``action_fill_emmett.php`` nie jest na liście ``ALLOWED``. Skrypt strony
 zlecenia efenix (rekonesans z 1.11.2026) wysyła w nim tylko ``order_id`` z przycisku Emmetta, odpowiedź 2xx wkłada do
 ``#emmett-propozycja`` i pokazuje okno Emmetta z podglądem, co i z jakimi ilościami Emmett uzupełni. Ilości wpisuje
 dopiero „Załaduj do zlecenia” (``action_load_emmett.php``), a okno bez zmian w zleceniu zamyka „Zamknij”; tak pamięta to
-Maks i tak działa Atrapa, ale co serwer efenix robi przy ``action_fill_emmett.php``, nikt nie sprawdził. Wynik ma więc
-zawsze linię ``NIESPRAWDZONE`` o budowie propozycji (``PROPOSAL_BY_HAND``).
+Maks i tak działa Atrapa, ale co serwer efenix robi przy ``action_fill_emmett.php``, nikt nie sprawdził. Bez
+``--emmett`` wynik ma więc zawsze linię ``NIESPRAWDZONE`` o budowie propozycji (``PROPOSAL_BY_HAND``).
+
+Z ``--emmett`` przycisk Emmetta klika Maks, a narzędzie po jego Enter czyta żywe drzewo propozycji w oknie Emmetta tej
+karty Chrome, której strona to strona zlecenia efenix spod ``--efenix-url`` (``_READ_WINDOW``): sam odczyt DOM funkcją,
+która przechodzi drzewo ``#emmett-propozycja`` i oddaje znaczniki, klasy (cyfra to 9), nazwy atrybutów bez wartości i
+tekst z maską (litera to a, cyfra to 9), bez skryptu, stylu i ramki w środku, z wynikiem reguły okna Wyceny, czy
+propozycja coś pokazuje (``efenix_browser.SHOWS_ANYTHING``). Niczego nie klika, nie przewija, nie zamyka i nie wysyła.
+Odczyt widzi propozycję po skryptach strony, także tę, którą narysował skrypt w odpowiedzi ``action_fill_emmett.php``.
+Potem narzędzie uruchamia Atrapę efenix na tym komputerze, otwiera jej zlecenie z propozycją dwóch pozycji
+(``ATRAPA_PROPOSAL``) w osobnym oknie Chrome bez ciasteczek taty, klika w nim przycisk Emmetta, czyta jej
+okno tą samą funkcją i zamyka okno. Budowa jest zgodna, gdy oba drzewa mają te same znaczniki, klasy, nazwy atrybutów i
+miejsca tekstu, przy czym kolejne takie same węzły to jeden (liczba pozycji propozycji zależy od zlecenia). Inna budowa to
+``RÓŻNICA`` z oboma drzewami z maską. ``NIESPRAWDZONE`` z powodem, nigdy zgodna, jest propozycja bez Enter, bez karty
+strony zlecenia efenix (także strona zlecenia w ramce innej strony), z oknem Emmetta zamkniętym w każdej karcie (zamknięte
+przed odczytem, strona przeładowana, odpowiedź jeszcze nie przyszła), otwartym w kilku kartach, z kartą, której odczyt
+padł (karta zmieniła stronę w trakcie odczytu), i z propozycją, która nic nie pokazuje (pusta albo same białe znaki: Emmett
+nic nie zaproponował albo propozycja padła, a tego narzędzie nie rozróżni). Okno Emmetta bez jednego
+``#emmett-propozycja`` to ``RÓŻNICA``, bo w nim okno Wyceny czyta propozycję.
 
 Uruchomienie: Chrome z osobnym profilem i zdalnym debugowaniem (macOS, Linux, Windows), w nim logowanie do efenix kontem
 taty, potem narzędzie:
@@ -57,7 +75,19 @@ taty, potem narzędzie:
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodnosc"
     google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodnosc"
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\\.efenix-zgodnosc"
-    .venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php> --cdp http://127.0.0.1:9222 [--numer <numer>]
+    .venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php> --cdp http://127.0.0.1:9222 [--numer <numer>] [--emmett]
+
+Pomiar propozycji Emmetta na Macu, krok po kroku:
+
+1. Uruchom Chrome pierwszym poleceniem wyżej i zaloguj się w nim do efenix kontem taty.
+2. W tym Chrome otwórz w jednej karcie stronę zlecenia „Do wyceny”, któremu Emmett coś proponuje.
+3. Uruchom narzędzie poleceniem wyżej z ``--emmett``. Po sprawdzeniu stron narzędzie prosi
+   (``EMMETT | …`` na stderr) o kliknięcie przycisku Emmetta.
+4. W Chrome kliknij przycisk Emmetta i poczekaj, aż okno Emmetta pokaże propozycję. Nie klikaj „Załaduj do zlecenia”:
+   ono wpisuje ilości do zlecenia taty.
+5. W oknie narzędzia wciśnij Enter. Narzędzie czyta okno Emmetta, a potem prosi o jego zamknięcie i na chwilę otwiera okno
+   Atrapy efenix.
+6. W Chrome zamknij okno Emmetta przyciskiem „Zamknij”.
 
 Czasu przebiegu w prawdziwym efenix nikt nie zmierzył: narzędzie wysyła po kolei najwyżej 17 odczytów (lista, jej
 skrypt, szukanie, do ``ORDERS_TO_OPEN`` stron zleceń, skrypt strony zlecenia i trzy odczyty bez sesji), więc trwa mniej
@@ -69,8 +99,8 @@ narzędzie zamyka je na końcu. Wzorzec pliku zbiorczego to domyślnie ten z kon
 (``config/Wzorzec pliku zbiorczego.xlsx``, jak w Centrum rozliczeń), a inny podaje ``--wzorzec``.
 
 Wynik (na stdout): linie ``RÓŻNICA | <część> | <co>`` i ``NIESPRAWDZONE | <część> | <co>``, na końcu liczby jednych i
-drugich. Kod 0: bez różnic, a niesprawdzone są tylko przycisk kalendarza i budowa propozycji Emmetta; kod 2: różnice
-albo inne części niesprawdzone. Wynik nie zawiera numerów zleceń, adresów, loginów ani cen: tylko nazwy elementów,
+drugich. Kod 0: bez różnic, a niesprawdzone są tylko przycisk kalendarza i, bez ``--emmett``, budowa propozycji Emmetta;
+kod 2: różnice albo inne części niesprawdzone, także propozycja Emmetta niesprawdzona z ``--emmett``. Wynik nie zawiera numerów zleceń, adresów, loginów ani cen: tylko nazwy elementów,
 liczby, kody pozycji z kolumnami i postać daty i kwoty (cyfry jako ``9``). Kod 1: brak Chrome pod ``--cdp``,
 nieczytelny Wzorzec, efenix nie odpowiada albo Chrome nie jest zalogowany; opis na stderr.
 """
@@ -115,6 +145,7 @@ from rozliczenia.efenix_browser import (
     ORDER_SCRIPT_USES,
     QUANTITY,
     SEARCH,
+    SHOWS_ANYTHING,
     TIMEOUT_MS,
     PageElement,
     ScriptUse,
@@ -128,7 +159,7 @@ from rozliczenia.efenix_positions import POSITION_OF_COLUMN
 from rozliczenia.efenix_pricing import UnexpectedPage
 from rozliczenia.workbook_files import WorkbookError
 
-from tests.fixtures.atrapa_efenix import CATALOG, LIST_ROWS_PER_PAGE, LIST_SEARCH_FIELDS
+from tests.fixtures.atrapa_efenix import CATALOG, LIST_ROWS_PER_PAGE, LIST_SEARCH_FIELDS, AtrapaOrder, atrapa_efenix
 
 LIST_PAGE: Final = "index.php"
 LIST_SCRIPT: Final = "js/index.js"
@@ -190,21 +221,48 @@ LOGIN_ELEMENTS: Final = (
     PageElement("pole fingerprint", 'input[name="fingerprint"]'),
 )
 PRICING_CARD: Final = ".card.rounded-lg.kolorek"
-# Propozycja w oknie Emmetta z ``ORDER_ELEMENTS``: element, do którego skrypt strony wkłada odpowiedź
-# ``action_fill_emmett.php``.
+# Przycisk i okno Emmetta z ``ORDER_ELEMENTS`` i propozycja w oknie Emmetta: element, do którego skrypt strony wkłada
+# odpowiedź ``action_fill_emmett.php``.
+EMMETT_BUTTON: Final = next(element.selector for element in ORDER_ELEMENTS if element.name == "przycisk Emmetta")
+DIALOG: Final = next(element.selector for element in ORDER_ELEMENTS if element.name == "okno Emmetta")
 PROPOSAL: Final = next(element.selector for element in ORDER_ELEMENTS if element.name == "propozycja w oknie Emmetta")
+# Zlecenie Atrapy efenix, na którym narzędzie z ``--emmett`` klika Emmetta, żeby przeczytać okno Emmetta Atrapy: propozycja
+# dwóch pozycji z przypisania kolumn.
+ATRAPA_PROPOSAL: Final = AtrapaOrder("ATRAPA-1", "ZL/ATRAPA/1", "atrapa", "ul.Atrapy 1", emmett={"012": 2, "021": 1})
+# Tyle znaków tekstu z maską pokazuje wynik w drzewie propozycji.
+TEXT_SHOWN: Final = 40
 # Część, której narzędzie nie sprawdza nigdy, a Maks sprawdza ręcznie; zawsze w wyniku jako ``NIESPRAWDZONE``.
 DATE_BUTTON_BY_HAND: Final = (
     Part.ORDER,
     "przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu "
     f"„{PRICING_STATUS}” bez daty wykonania, że jest przycisk otwierający okno wyboru daty",
 )
-# Budowa propozycji Emmetta: narzędzie nie wysyła ``action_fill_emmett.php``, a pomiar propozycji z prawdziwego efenix
-# jest w osobnym PR (Część #953); zawsze w wyniku jako ``NIESPRAWDZONE``.
+# Budowa propozycji Emmetta bez ``--emmett``: narzędzie samo nie wysyła ``action_fill_emmett.php``, a okno Emmetta czyta
+# tylko po kliknięciu Maksa; wtedy zawsze w wyniku jako ``NIESPRAWDZONE``.
 PROPOSAL_BY_HAND: Final = (
     Part.PROPOSAL,
-    "budowa propozycji Emmetta nie jest sprawdzana: narzędzie nie wysyła action_fill_emmett.php; pomiar propozycji"
-    " w osobnym PR (Część #953)",
+    "budowa propozycji Emmetta nie jest sprawdzana: uruchom narzędzie z --emmett i kliknij w Chrome przycisk Emmetta,"
+    " gdy narzędzie o to poprosi",
+)
+# Rozmowa z Maksem przy ``--emmett`` (na stderr): prośba o kliknięcie Emmetta i, po odczycie okna, o jego zamknięcie.
+ASK_EMMETT: Final = (
+    "EMMETT | W Chrome na stronie zlecenia „Do wyceny”, któremu Emmett coś proponuje, kliknij przycisk Emmetta i poczekaj,"
+    " aż okno Emmetta pokaże propozycję. Nie klikaj „Załaduj do zlecenia”: ono wpisuje ilości do zlecenia. Potem wciśnij"
+    " tu Enter."
+)
+CLOSE_EMMETT: Final = "EMMETT | Okno Emmetta przeczytane: zamknij je w Chrome przyciskiem „Zamknij”."
+NO_ENTER: Final = "bez Enter po kliknięciu Emmetta: okna Emmetta narzędzie nie czytało"
+NO_ORDER_TAB: Final = (
+    f"w Chrome nie ma karty ze stroną zlecenia efenix ({ORDER_PAGE} spod --efenix-url): otwórz zlecenie w karcie,"
+    " kliknij w niej przycisk Emmetta i uruchom narzędzie jeszcze raz"
+)
+READ_FAILED: Final = (
+    "odczyt karty strony zlecenia efenix padł (karta zmieniła stronę albo zamknęła się w trakcie odczytu): kliknij"
+    " Emmetta jeszcze raz i uruchom narzędzie jeszcze raz"
+)
+SHOWS_NOTHING: Final = (
+    "okno Emmetta nic nie pokazuje (bez elementu i bez tekstu): Emmett nic nie zaproponował albo propozycja padła;"
+    " kliknij Emmetta na zleceniu, któremu Emmett coś proponuje, i uruchom narzędzie jeszcze raz"
 )
 
 # Tabela odpowiedzi szukania przeczytana w ``<template>``, w którym nic nie biegnie i nic się nie wczytuje. Linki
@@ -228,12 +286,43 @@ _READ_TABLE: Final = """([html, orderPage]) => {
         })),
     };
 }"""
-# Czy pierwszy element ``selector`` coś pokazuje: ma element albo tekst inny niż białe znaki, jak w regule okna Wyceny
-# po propozycji Emmetta (``_SHOWS_ANYTHING`` w ``efenix_browser``, #908); ``false`` bez elementu.
-_SHOWS_ANYTHING: Final = """(selector) => {
+# Czy pierwszy element ``selector`` coś pokazuje według reguły okna Wyceny (``efenix_browser.SHOWS_ANYTHING``, #908);
+# ``false`` bez elementu.
+_SHOWS_ANYTHING: Final = f"""(selector) => {{
     const element = document.querySelector(selector);
-    return element !== null && (element.childElementCount > 0 || element.textContent.trim() !== '');
+    return element !== null && ({SHOWS_ANYTHING})(element);
+}}"""
+# Okno Emmetta w karcie z kliknięciem Emmetta: ``null``, gdy okna nie ma albo nie jest widoczne (bez pudełka, jak przy
+# ``display: none``, albo ``visibility: hidden``), a w widocznym liczba propozycji (``#emmett-propozycja``), wynik reguły okna Wyceny dla
+# jedynej propozycji i jej drzewo. Węzeł drzewa to tekst z maską (litera to a, cyfra to 9, białe znaki jak jedna spacja;
+# sam biały znak pomija) albo element: znacznik, klasy (cyfra to 9), nazwy atrybutów poza ``class`` bez wartości i węzły
+# w środku, a w skrypcie, stylu, szablonie, ramce i ``noscript`` bez nich. Komentarz pomija. Funkcja tylko czyta.
+_READ_WINDOW: Final = (
+    """([dialogSelector, proposalSelector]) => {
+    const dialog = document.querySelector(dialogSelector);
+    if (dialog === null) return null;
+    if (dialog.getClientRects().length === 0 || getComputedStyle(dialog).visibility === 'hidden') return null;
+    const proposals = dialog.querySelectorAll(proposalSelector);
+    if (proposals.length !== 1) return {proposals: proposals.length, shows: false, nodes: []};
+    const opaque = ['script', 'style', 'template', 'iframe', 'noscript'];
+    const mask = (text) => text.replace(/\\s+/g, ' ').trim().replace(/\\p{L}/gu, 'a').replace(/\\p{N}/gu, '9');
+    const read = (node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+            const text = mask(node.data);
+            return text === '' ? null : {text: text};
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return null;
+        return {
+            tag: node.localName,
+            classes: [...node.classList].map((name) => name.replace(/\\d/g, '9')).sort(),
+            attributes: node.getAttributeNames().filter((name) => name !== 'class').sort(),
+            nodes: opaque.includes(node.localName) ? [] : nodes(node),
+        };
+    };
+    const nodes = (parent) => [...parent.childNodes].map(read).filter((node) => node !== null);
+    return {proposals: 1, shows: (__SHOWS_ANYTHING__)(proposals[0]), nodes: nodes(proposals[0])};
 }"""
+).replace("__SHOWS_ANYTHING__", SHOWS_ANYTHING)
 # Karta pozycji: ``id`` pól Ilość, ``id`` pól ceny wpisywanej i ceny z tekstu karty.
 _READ_CARDS: Final = """([card, quantity]) => [...document.querySelectorAll(card)].map((element) => ({
     quantity: [...element.querySelectorAll(quantity)].map((input) => input.id),
@@ -259,6 +348,22 @@ class _Card(TypedDict):
     shown: list[str]
 
 
+class _Node(TypedDict, total=False):
+    """Węzeł drzewa propozycji z ``_READ_WINDOW``: ``text`` w węźle tekstu, a pozostałe klucze w elemencie."""
+
+    text: str
+    tag: str
+    classes: list[str]
+    attributes: list[str]
+    nodes: list[_Node]
+
+
+class _Window(TypedDict):
+    proposals: int
+    shows: bool
+    nodes: list[_Node]
+
+
 class ToolError(Exception):
     """Narzędzie nie może sprawdzić efenix (brak Chrome, Wzorca, odpowiedzi efenix albo sesji); opis dla Maksa."""
 
@@ -270,15 +375,17 @@ class Report:
     differences: list[tuple[Part, str]] = field(default_factory=list)
     unchecked: list[tuple[Part, str]] = field(default_factory=list)
     checked: dict[str, int] = field(default_factory=dict)
+    proposal_by_hand: bool = True
 
     def differ(self, part: Part, what: str) -> None:
         self.differences.append((part, what))
 
     def lines(self) -> list[str]:
-        """Wynik dla Maksa; po częściach niesprawdzonych stoją zawsze ``DATE_BUTTON_BY_HAND`` i ``PROPOSAL_BY_HAND``."""
+        """Wynik dla Maksa; po częściach niesprawdzonych stoi zawsze ``DATE_BUTTON_BY_HAND``, a bez pomiaru propozycji
+        Emmetta (``proposal_by_hand``) ``PROPOSAL_BY_HAND``."""
 
         head = " | ".join(f"{name}: {count}" for name, count in self.checked.items())
-        unchecked = [*self.unchecked, DATE_BUTTON_BY_HAND, PROPOSAL_BY_HAND]
+        unchecked = [*self.unchecked, DATE_BUTTON_BY_HAND, *([PROPOSAL_BY_HAND] if self.proposal_by_hand else [])]
         lines = [f"ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | {head}"]
         lines += [f"RÓŻNICA | {part.value} | {what}" for part, what in self.differences]
         lines += [f"NIESPRAWDZONE | {part.value} | {what}" for part, what in unchecked]
@@ -683,6 +790,109 @@ def _check_signed_out(efenix: _Efenix, page: Page, report: Report) -> None:
     _check_elements(page, Part.LOGIN, LOGIN_ELEMENTS, report)
 
 
+def measure_proposal(browser: Browser, efenix_url: str, report: Report, *, timeout_ms: int) -> None:
+    """Pomiar propozycji Emmetta z ``--emmett``: prosi Maksa o kliknięcie Emmetta, po jego Enter czyta okno Emmetta
+    w karcie strony zlecenia efenix i porównuje drzewo propozycji z drzewem z okna Emmetta Atrapy efenix."""
+
+    report.proposal_by_hand = False
+    print(ASK_EMMETT, file=sys.stderr, flush=True)
+    if not sys.stdin.readline():
+        report.unchecked.append((Part.PROPOSAL, NO_ENTER))
+        return
+    window = _efenix_window(browser.contexts[0].pages, efenix_url, report)
+    if window is None:
+        return
+    print(CLOSE_EMMETT, file=sys.stderr, flush=True)
+    if window["proposals"] != 1:
+        report.differ(Part.PROPOSAL, f"okno Emmetta po kliknięciu Emmetta ma {window['proposals']} × {PROPOSAL} zamiast 1")
+        return
+    if not window["shows"]:
+        report.unchecked.append((Part.PROPOSAL, SHOWS_NOTHING))
+        return
+    efenix_key, efenix_shown = _layout(window["nodes"])
+    atrapa_key, atrapa_shown = _layout(_atrapa_window(browser, timeout_ms=timeout_ms)["nodes"])
+    report.checked["okno Emmetta"] = 1
+    if efenix_key != atrapa_key:
+        report.differ(Part.PROPOSAL, f"propozycja po kliknięciu Emmetta w innej budowie niż w Atrapie: w efenix {efenix_shown}, w Atrapie {atrapa_shown}")
+
+
+def order_tab(url: str, efenix_url: str) -> bool:
+    """Czy karta pod ``url`` to strona zlecenia efenix: ``ORDER_PAGE`` w katalogu ``efenix_url``, na jego hoście."""
+
+    address = urlparse(url)
+    return f"{address.scheme}://{address.netloc}{address.path}" == urljoin(efenix_url, ORDER_PAGE)
+
+
+def _efenix_window(tabs: Sequence[Page], efenix_url: str, report: Report) -> _Window | None:
+    """Okno Emmetta jedynej karty strony zlecenia efenix, w której jest widoczne; inaczej powód ``NIESPRAWDZONE``."""
+
+    orders = [tab for tab in tabs if order_tab(tab.url, efenix_url)]
+    try:
+        windows: list[_Window] = [window for tab in orders if (window := tab.evaluate(_READ_WINDOW, [DIALOG, PROPOSAL])) is not None]
+    except PlaywrightError:
+        report.unchecked.append((Part.PROPOSAL, READ_FAILED))
+        return None
+    if len(windows) == 1:
+        return windows[0]
+    if not orders:
+        report.unchecked.append((Part.PROPOSAL, NO_ORDER_TAB))
+    elif not windows:
+        report.unchecked.append(
+            (
+                Part.PROPOSAL,
+                f"okno Emmetta nie jest otwarte w żadnej karcie strony zlecenia efenix (kart: {len(orders)}): kliknij"
+                " Emmetta, poczekaj na propozycję i uruchom narzędzie jeszcze raz",
+            )
+        )
+    else:
+        report.unchecked.append(
+            (Part.PROPOSAL, f"okno Emmetta jest otwarte w {len(windows)} kartach: zostaw je otwarte w jednej i uruchom narzędzie jeszcze raz")
+        )
+    return None
+
+
+def _atrapa_window(browser: Browser, *, timeout_ms: int) -> _Window:
+    """Okno Emmetta Atrapy efenix po kliknięciu Emmetta na zleceniu ``ATRAPA_PROPOSAL``, w osobnym kontekście Chrome bez
+    ciasteczek; strona Atrapy wysyła żądania tylko do Atrapy."""
+
+    with atrapa_efenix([ATRAPA_PROPOSAL]) as atrapa:
+        context = browser.new_context(service_workers="block")
+        try:
+            page = context.new_page()
+            page.set_default_timeout(timeout_ms)
+            page.goto(urljoin(atrapa.url, f"{ORDER_PAGE}?id={ATRAPA_PROPOSAL.order_id}"))
+            page.click(EMMETT_BUTTON)
+            page.locator(DIALOG).wait_for(state="visible")
+            window: _Window = page.evaluate(_READ_WINDOW, [DIALOG, PROPOSAL])
+        finally:
+            context.close()
+    return window
+
+
+def _layout(nodes: Sequence[_Node]) -> tuple[str, str]:
+    """Drzewo węzłów do porównania (kolejne takie same węzły jako jeden, tekst jako ``#text``) i do wyniku (z liczbą
+    kolejnych takich samych węzłów i tekstem z maską pierwszego z nich)."""
+
+    runs: list[tuple[str, str, int]] = []
+    for node in nodes:
+        key, shown = _node_layout(node)
+        if runs and runs[-1][0] == key:
+            runs[-1] = (key, runs[-1][1], runs[-1][2] + 1)
+        else:
+            runs.append((key, shown, 1))
+    return " ".join(key for key, _shown, _count in runs), " ".join(shown + (f"×{count}" if count > 1 else "") for _key, shown, count in runs)
+
+
+def _node_layout(node: _Node) -> tuple[str, str]:
+    if "text" in node:
+        return "#text", f"„{node['text'][:TEXT_SHOWN]}”"
+    head = node["tag"] + "".join(f".{name}" for name in node["classes"]) + (f"[{','.join(node['attributes'])}]" if node["attributes"] else "")
+    if not node["nodes"]:
+        return head, head
+    key, shown = _layout(node["nodes"])
+    return f"{head}({key})", f"{head}({shown})"
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--efenix-url", required=True, help=f"Adres listy zleceń efenix (…/{LIST_PAGE}).")
@@ -702,6 +912,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Wzorzec pliku zbiorczego z kosztami pozycji w wierszu 14 (domyślnie Wzorzec z konfiguracji narzędzia, jak w Centrum).",
     )
     parser.add_argument("--limit-ms", type=int, default=TIMEOUT_MS, help="Limit czekania na odpowiedź efenix (ms).")
+    parser.add_argument(
+        "--emmett",
+        action="store_true",
+        help=(
+            "Po sprawdzeniu stron poproś o kliknięcie przycisku Emmetta w Chrome, po Enter przeczytaj okno Emmetta i"
+            " porównaj budowę propozycji z Atrapą efenix (krok po kroku w opisie narzędzia)."
+        ),
+    )
     args = parser.parse_args(argv)
     try:
         address = urlparse(args.efenix_url)
@@ -727,6 +945,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         costs,
                         number=args.numer,
                     )
+                if args.emmett:
+                    measure_proposal(browser, args.efenix_url, report, timeout_ms=args.limit_ms)
             finally:
                 signed_out.dispose()
     except ToolError as error:

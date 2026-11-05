@@ -51,13 +51,17 @@ class Order:
     address_fill: str | None = None
 
     def in_efenix(self, order_id: str) -> AtrapaOrder:
-        """To zlecenie w Atrapie z identyfikatorem ``order_id``, zgodne z Plikiem zbiorczym, z jego wyceną i Emmettem."""
+        """To zlecenie w Atrapie z identyfikatorem ``order_id``, zgodne z Plikiem zbiorczym, z jego wyceną i Emmettem.
+
+        Zlecenie z wyceną, która już jest, ma datę wykonania z ``DATA``, jak po Wycenie w efenix, a zlecenie bez wyceny
+        pustą; wycenę bez daty test ustawia sam (``execution_date=None``)."""
 
         return AtrapaOrder(
             order_id=order_id,
             number=self.number.removeprefix("#"),
             realizator=self.worker,
             address=self.efenix_address,
+            execution_date=self.day if any(self.quantities.values()) else None,
             quantities=dict(self.quantities),
             emmett=dict(self.emmett),
         )

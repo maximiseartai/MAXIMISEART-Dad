@@ -1,6 +1,6 @@
 ---
 name: verify-wznowienie-wyceny-efenix
-description: Model-check with TLA+ (TLC) that Wycena w efenix, across the Uruchomienia of one period, completes every order to the Plik zbiorczy only upwards (ADR 0026), never loads Wycena Emmetta over an order that has quantities, never lowers or clears a quantity in efenix, ends an order Dad changed with an Ostrzeżenie Emmetta exactly when it holds more than the file, puts a Znacznik efenix only beside an order priced as in the file, and leaves Dad an error or an Ostrzeżenie Emmetta only for an order he changed, under every order of window Zatrzymania, Centrum switching off and Dad's own changes in efenix between Uruchomienia. Use when a change touches `save`, `_outcome`, `_completed`, `_mark` or `_efenix_stops` in `src/rozliczenia/efenix_pricing.py`, `completion` or `same_amount` in `src/rozliczenia/efenix_positions.py`, or `load_emmett`, `_came_whole`, `enter_quantity` in `src/rozliczenia/efenix_browser.py`, or when a resumed Wycena w efenix lowered, cleared or wiped a quantity in efenix.
+description: Model-check with TLA+ (TLC) that Wycena w efenix, across the Uruchomienia of one period, completes every order to the Plik zbiorczy only upwards (ADR 0026), never loads Wycena Emmetta over an order that has quantities, never lowers or clears a quantity in efenix, ends an order Dad changed with an Ostrzeżenie Emmetta exactly when it holds more than the file, puts a Znacznik efenix only beside an order priced as in the file, and leaves Dad an error or an Ostrzeżenie Emmetta only for an order he changed, under every order of window Zatrzymania, Centrum switching off and Dad's own changes in efenix between Uruchomienia. Use when a change touches `save`, `_outcome`, `_dated`, `_completed`, `_mark` or `_efenix_stops` in `src/rozliczenia/efenix_pricing.py`, `completion` or `same_amount` in `src/rozliczenia/efenix_positions.py`, or `load_emmett`, `_came_whole`, `enter_quantity` in `src/rozliczenia/efenix_browser.py`, or when a resumed Wycena w efenix lowered, cleared or wiped a quantity in efenix.
 pilnuje:
   - src/rozliczenia/efenix_pricing.py
   - src/rozliczenia/efenix_positions.py
@@ -67,7 +67,7 @@ you keep the two in step. Each model action is one indivisible step of this code
 | Model action | Code |
 | --- | --- |
 | `Start` | `efenix_pricing.py` `price_orders.save`: the orders of the scope in order |
-| `Otworz` | `_outcome`: `efenix.search`, `listing`, `open_order`, then the decision on the page: a page without any quantity (`not any(opened.quantities.values())`) goes to Wycena Emmetta; a page with quantities goes straight to `_completed` (`completion` in `efenix_positions.py`: `to_enter` where the page has less than the file, `excess` where it has more), with the result at once when nothing is to be entered |
+| `Otworz` | `_outcome`: `efenix.search`, `listing`, `open_order`, `_dated` when the execution date is empty (on a page with or without quantities; it writes only the date, which the model leaves out), then the decision on the page: a page without any quantity (`not any(opened.quantities.values())`) goes to Wycena Emmetta; a page with quantities goes straight to `_completed` (`completion` in `efenix_positions.py`: `to_enter` where the page has less than the file, `excess` where it has more), with the result at once when nothing is to be entered |
 | `ZaladujEmmetta` | `_outcome`: `efenix.load_emmett()` up to the click of „Załaduj do zlecenia”, after which efenix holds Wycena Emmetta (`efenix_browser.BrowserEfenix.load_emmett`, `_answer(_LOAD_EMMETT, …)`); before the click the window reads whether the Emmett dialog shows a proposal (`#emmett-propozycja`) and whether the answer to `action_fill_emmett.php` came whole with 2xx (`_came_whole`, #908), and it never reads the body of the answer to „Załaduj do zlecenia” (#895). An answer that refuses it raises: a redirect in `load_emmett` and a 4xx/5xx in `_finished` (`_ErrorAnswer`, #878) before the page is read, and a 2xx after which the reloaded page (`_read_order`) has amount 0 although Emmett did not propose nothing (`Shape.EMMETT_NOT_LOADED`, #889, #908). When efenix did not load Wycena Emmetta that is `Zatrzymanie` in place of this step; when it loaded it and still answered with an error (a 5xx after the load) it is this step and then `Zatrzymanie` before `OdczytPoEmmetcie` |
 | `OdczytPoEmmetcie` | `load_emmett` reads the reloaded page (`_read_order`), then `_completed` on it: `completion` from Emmett's quantities |
 | `BrakPozycji` | `_outcome`: `missing_positions(..., PageRead.AFTER_EMMETT)` is `OrderError` after `load_emmett`, before `_completed` |
@@ -80,15 +80,22 @@ you keep the two in step. Each model action is one indivisible step of this code
 | `Tata` | none: Dad changes a quantity in efenix by hand while no Uruchomienie runs (`AtrapaEfenix.edit` in the tests) |
 
 The script compares these definitions with the Sync commit (`model/definicje.json`): `save`, `_mark`, `_efenix_stops`,
-`_outcome`, `_completed` in `src/rozliczenia/efenix_pricing.py`; `completion`, `same_amount` in
+`_outcome`, `_dated`, `_completed` in `src/rozliczenia/efenix_pricing.py`; `completion`, `same_amount` in
 `src/rozliczenia/efenix_positions.py`; `load_emmett`, `_came_whole`, `enter_quantity`, `_finished` in
 `src/rozliczenia/efenix_browser.py`. A change elsewhere in these files (Sprawdzanie, Odczyt danych, Logi, the window's
 classification of other failures) does not move the model. A change that makes another function write in efenix or
 decide whether an order is finished does, though no definition above changes: add it to the table and to
 `model/definicje.json`.
 
-Sync commit: `ed73f88ce` (2026-11-05, #960: Wycena w efenix completes every order to the Plik zbiorczy only upwards).
-Every row of the table was checked against the code at this commit. Since the previous Sync commit `c2db26d6c` the
+Sync commit: `a5d275cdc` (2026-11-05: the execution date also on a pricing that already is). Every row of the table was
+checked against the code at this commit. Since `aac769579` only `_outcome` changed, and the new `_dated`, which
+`model/definicje.json` now lists: the date step moved out of the branch of a page without quantities and runs on every
+page with an empty date, so the model, which has no date, did not change beyond the comment of `Otworz`. On the
+previous Sync commit `aac769579` (2026-11-05, #953: merge of `main` after #960) every row of the table was checked
+against the code. Since `ed73f88ce` only `load_emmett` changed, and only by a name: the rule whether the Emmett dialog
+shows anything is the public `SHOWS_ANYTHING`, which the compatibility tool also uses, instead of the private
+`_SHOWS_ANYTHING`, with the same JavaScript, so the model did not change. On the previous Sync commit `ed73f88ce`
+(2026-11-05, #960: Wycena w efenix completes every order to the Plik zbiorczy only upwards), since `c2db26d6c` the
 decision of `_outcome` changed on purpose (ADR 0026): `completion` replaced `to_enter`, `emmett_conflicts`,
 `priced_differently` and `as_left_after_emmett`, both paths (a page without quantities after Emmett, a page with
 quantities without Emmett) go through `_completed`, and the Ślad Wyceny Emmetta with its write ahead
@@ -186,9 +193,10 @@ Left out, each a reason the check can pass while the code is wrong:
   while he does not work in efenix), not a finding of this check.
 - **The execution date** (`set_execution_date`, `DateRefused`) and the checks before the page (`listing`, statuses,
   `missing_positions` at opening and after the date): they change nothing in efenix that a later Uruchomienie decides
-  on, except the date, whose write before Emmett is harmless (the page has no quantity). A page with quantities and an
-  empty date is completed without setting the date (story 30 of #741 for a page that already equals the file).
-  `missing_positions` after Emmett is `BrakPozycji`.
+  on, except the date. Since Maks's decision of 5.11.2026 `_dated` sets an empty date from `DATA` on a page with or
+  without quantities before Emmett and `_completed`; it writes no quantity, a refused date ends the order before any
+  quantity changes, and a later Uruchomienie accepts the date it wrote (`date_problem`), so none of the five promises
+  depends on it. `missing_positions` after Emmett is `BrakPozycji`.
 - **Emmett with more than the file.** The model's Emmett never exceeds the file (in the Logs of 4.11.2026 none of 108
   loads did); an excess from Dad takes the same path through `completion`, and
   `test_pozycja_z_wieksza_iloscia_w_efenix_niz_w_pliku_zostaje_a_reszta_zlecenia_jest_dopisana_z_ostrzezeniem_emmetta`

@@ -4,6 +4,7 @@
     "_mark",
     "_efenix_stops",
     "_outcome",
+    "_dated",
     "_completed"
   ],
   "src/rozliczenia/efenix_positions.py": [

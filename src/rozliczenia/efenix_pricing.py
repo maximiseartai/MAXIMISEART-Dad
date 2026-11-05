@@ -12,12 +12,13 @@ rozliczone (``Settled``): proces go nie otwiera, nie oznacza i nie zostawia taci
 strona po Wycenie Emmetta) musi mieć pozycje, w których plik ma ilość: strona bez którejś z nich to błąd zlecenia z
 kodami pozycji i ich kolumnami (``missing_positions``), a strona bez pozycji z 0 w pliku to zwykła strona efenix.
 
-Wycenę zlecenia proces dokańcza do Pliku zbiorczego tylko w górę (ADR 0026, ``completion``). Strona bez żadnej ilości
-nie ma wyceny: proces ustawia datę wykonania z ``DATA``, gdy jest pusta, i sprawdza ją na ponownie otwartej stronie (dzień,
+Wycenę zlecenia proces dokańcza do Pliku zbiorczego tylko w górę (ADR 0026, ``completion``). Najpierw, z ilościami na
+stronie albo bez, ustawia datę wykonania z ``DATA``, gdy jest pusta, i sprawdza ją na ponownie otwartej stronie (dzień,
 którego kalendarz efenix nie przyjął albo którego efenix nie zapisał, to błąd zlecenia ``DateRefused`` bez Emmetta i bez
-ilości), a potem ładuje Wycenę Emmetta. Strona z ilościami ma już wycenę, zaczętą przez proces, przez tatę albo samą
-Wycenę Emmetta: proces nie ładuje do niej Wyceny Emmetta, bo „Załaduj do zlecenia” czyści wycenę, ani nie ustawia daty
-wykonania. Potem w obu przypadkach proces wpisuje ilość z pliku w każdej pozycji, w której strona ma mniej niż plik,
+zmian ilości), żeby gotowe zlecenie nie zostało bez daty wykonania. Strona bez żadnej ilości nie ma wyceny: proces ładuje
+do niej Wycenę Emmetta. Strona z ilościami ma już wycenę, zaczętą przez proces, przez tatę albo samą
+Wycenę Emmetta: proces nie ładuje do niej Wyceny Emmetta, bo „Załaduj do zlecenia” czyści wycenę. Potem w obu
+przypadkach proces wpisuje ilość z pliku w każdej pozycji, w której strona ma mniej niż plik,
 także w miejsce ilości Emmetta. Pozycji, w której strona ma więcej niż plik, nie
 obniża i nie czyści: zlecenie z taką pozycją to Ostrzeżenie Emmetta z pozycją i obiema ilościami, choć resztę ilości
 proces i tak wpisał. Zlecenie bez takiej pozycji jest gotowe, gdy kwota końcowa, którą odesłał efenix, jest równa
@@ -633,8 +634,8 @@ def _efenix_stops(
 
 
 def _outcome(order: CollectiveOrder, efenix: Efenix, forbidden: ForbiddenValues | None) -> Ready | Settled | OrderError | EmmettWarning:
-    """Wynik zlecenia ``order`` w oknie ``efenix``: sprawdzenia, Wycena Emmetta przy stronie bez ilości i dokończenie do
-    Pliku zbiorczego tylko w górę."""
+    """Wynik zlecenia ``order`` w oknie ``efenix``: sprawdzenia, data wykonania z ``DATA``, gdy jest pusta, Wycena
+    Emmetta przy stronie bez ilości i dokończenie do Pliku zbiorczego tylko w górę."""
 
     searched = searched_number(order)
     if isinstance(searched, OrderProblem):
@@ -657,19 +658,32 @@ def _outcome(order: CollectiveOrder, efenix: Efenix, forbidden: ForbiddenValues 
         return OrderError(missing)
     if (problem := date_problem(order, opened.execution_date)) is not None:
         return OrderError(problem)
+    if opened.execution_date is None:
+        dated = _dated(hit, efenix, file, day)
+        if isinstance(dated, OrderError):
+            return dated
+        opened = dated
     if not any(opened.quantities.values()):
-        if opened.execution_date is None:
-            if not efenix.set_execution_date(day):
-                return OrderError(DateRefused.OUT_OF_RANGE)
-            reopened = efenix.open_order(hit)
-            if (missing := missing_positions(file, reopened.quantities, PageRead.AFTER_DATE)) is not None:
-                return OrderError(missing)
-            if reopened.execution_date != day:
-                return OrderError(DateRefused.NOT_SAVED)
         opened = efenix.load_emmett()
         if (missing := missing_positions(file, opened.quantities, PageRead.AFTER_EMMETT)) is not None:
             return OrderError(missing)
     return _completed(order, hit, efenix, file, opened)
+
+
+def _dated(hit: ListedOrder, efenix: Efenix, file: Mapping[str, int], day: date) -> OrderPricing | OrderError:
+    """Strona zlecenia ``hit`` z pustą datą wykonania po ustawieniu ``day``, otwarta ponownie, z ilościami albo bez.
+
+    Dzień, którego kalendarz efenix nie przyjął albo którego efenix nie zapisał, to błąd ``DateRefused``, a ponownie
+    otwarta strona bez pozycji z ilością w pliku to błąd ``missing_positions``; ilości proces wtedy nie zmienia."""
+
+    if not efenix.set_execution_date(day):
+        return OrderError(DateRefused.OUT_OF_RANGE)
+    reopened = efenix.open_order(hit)
+    if (missing := missing_positions(file, reopened.quantities, PageRead.AFTER_DATE)) is not None:
+        return OrderError(missing)
+    if reopened.execution_date != day:
+        return OrderError(DateRefused.NOT_SAVED)
+    return reopened
 
 
 def _completed(
