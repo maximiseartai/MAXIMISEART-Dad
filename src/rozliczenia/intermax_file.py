@@ -7,7 +7,7 @@ kolumnami Hiperłączy z bajtów arkusza), bez openpyxl: ~42 tys. wierszy taty t
 potrzebuje tylko dołu arkusza. Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły
 danych pracy Centrum (``forbidden``, ADR 0025) w każdym położeniu, w którym mogą stać (``raw_orders.Shifts.possible``):
 wiersz z jednym położeniem pod nagłówkiem (w przesuniętym pierwszym wierszu wklejenia dwie kolumny na lewo od niego),
-a wiersz z dwoma położeniami w obu, z miejscem komórki (``client_data.CellPlace``). Zakazane kolumny to te z
+a wiersz z dwoma położeniami w obu, z miejscem wiersza (``client_data.RowPlace``). Zakazane kolumny to te z
 nagłówkiem zakazanej kolumny w wierszu 1 (``client_data.forbidden_columns``): INTERMAX nie ma stałego układu kolumn,
 więc kolumnę zna się po nagłówku, tak jak kolumny ``COLUMNS``.
 
@@ -245,21 +245,19 @@ class OrderSheet:
         Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych Rejestru w każdym
         położeniu, w którym mogą stać (``raw_orders.Shifts.possible``): wiersz z jednym położeniem pod nagłówkiem (w
         przesuniętym pierwszym wierszu wklejenia o ``SHIFT`` kolumn na lewo od niego), a wiersz z dwoma położeniami w
-        obu, z miejscem komórki w INTERMAX, więc strażnik nie maskuje ich w zwykłych kolumnach innych wierszy.
+        obu, z miejscem wiersza w INTERMAX, więc strażnik nie maskuje ich w zwykłych kolumnach innych wierszy.
         """
 
         forbidden = self._register.forbidden
         for facts in self._facts_from_bottom():
             if forbidden is not None:
                 possible = self._shifts.possible(facts)
+                register = self._register
+                place = None
+                if len(possible) > 1:
+                    place = client_data.RowPlace(register.path.name, register.digest, self.name, facts.number)
                 for offset in possible:
                     for column, number in self._forbidden_columns:
-                        place = None
-                        if len(possible) > 1:
-                            register = self._register
-                            place = client_data.CellPlace(
-                                register.path.name, register.digest, self.name, facts.number, number - offset
-                            )
                         forbidden.remember_value(column, facts.value(number - offset), place)
             yield facts
 

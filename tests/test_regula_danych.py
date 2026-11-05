@@ -15,11 +15,11 @@ import pytest
 
 from rozliczenia.client_data import (
     MIN_VALUE,
-    CellPlace,
     CopiedCell,
     ForbiddenColumn,
     ForbiddenValues,
     Guarded,
+    RowPlace,
     free_text,
 )
 from tests.fixtures.formy_telefonu import CELL_FORMS, PhoneForm
@@ -102,43 +102,44 @@ def test_kazda_forma_telefonu_z_tabeli_adr_0025_wychodzi_tak_jak_mowi_tabela(for
 
 
 # --- Wartość z wiersza z dwoma położeniami (opcja 3, #913, ADR 0025) ------------------------------------------------
-# Wiersz Rejestru zleceń, który może stać przesunięty, daje pamięci wartości z obu położeń z miejscem komórki. Strażnik
-# maskuje taką wartość w jej komórce Kopii wejścia (w tej samej wersji pliku), pod ADRES i NUMER UMOWY, w wolnym tekście
-# (każdy tekst poza komórką Kopii i komórka Kopii pod nagłówkiem innym niż zwykła kolumna) i w innym pliku, ale nie w
-# zwykłej kolumnie innego wiersza pliku o tej samej nazwie.
+# Wiersz Rejestru zleceń, który może stać przesunięty, daje pamięci wartości z obu położeń z miejscem wiersza. Strażnik
+# maskuje taką wartość w każdej komórce Kopii wejścia swojego wiersza (w tej samej wersji pliku), pod ADRES i NUMER
+# UMOWY, w wolnym tekście (każdy tekst poza komórką Kopii i komórka Kopii pod nagłówkiem innym niż zwykła kolumna) i w
+# innym pliku, ale nie w zwykłej kolumnie innego wiersza pliku o tej samej nazwie.
 REGISTER = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
 READ = "a" * 64
 """Skrót bajtów przeczytanej wersji Rejestru."""
 SAVED = "b" * 64
 """Skrót bajtów wersji, którą zapisało Uporządkowanie."""
-SECOND = CellPlace(REGISTER, READ, "ZLECENIA", 12, 9)
-"""``NUMER ZL.`` (I) wiersza z dwoma położeniami: w położeniu przesuniętym stoi tu ``NUMER UMOWY``."""
+SECOND = RowPlace(REGISTER, READ, "ZLECENIA", 12)
+"""Wiersz z dwoma położeniami: w położeniu przesuniętym pod ``NUMER ZL.`` stoi jego ``NUMER UMOWY``."""
 PLACED = "ZL-SYN-48012"
 OTHER_ROW = replace(SECOND, row=13)
 SCOPE = {
-    "własna_komórka": (SECOND, "NUMER ZL.", True),
+    "numer_zl_wlasnego_wiersza": (SECOND, "NUMER ZL.", True),
+    "inna_zwykla_kolumna_wlasnego_wiersza": (SECOND, "MIASTO", True),
     "numer_zl_innego_wiersza": (OTHER_ROW, "NUMER ZL.", False),
-    "urzadzenia_innego_wiersza": (replace(OTHER_ROW, column=7), "URZĄDZENIA", False),
-    "data_innego_wiersza": (replace(OTHER_ROW, column=3), "DATA GODZ. POCZ.", False),
-    "data_w_pliku_zbiorczym_pod_naglowkiem_docelowym": (replace(OTHER_ROW, column=3), "DATA", False),
-    "wykonawca_innego_wiersza": (replace(OTHER_ROW, column=10), "WYKONAWCA", False),
-    "adres_innego_wiersza": (replace(OTHER_ROW, column=5), "ADRES", True),
-    "numer_umowy_innego_wiersza": (replace(OTHER_ROW, column=11), "NUMER UMOWY", True),
-    "numer_umowy_orange_innego_wiersza": (replace(OTHER_ROW, column=11), "NUMER UMOWY/ZLECENIA ORANGE", True),
-    "czynnosci_zrealizowane": (replace(OTHER_ROW, column=13), "CZYNNOŚCI ZREALIZOWANE", True),
-    "zwrot": (replace(OTHER_ROW, column=14), "ZWROT", True),
-    "uwagi": (replace(OTHER_ROW, column=15), "UWAGI", True),
-    "akcje": (replace(OTHER_ROW, column=2), "AKCJE", True),
-    "kolumna_bez_naglowka": (replace(OTHER_ROW, column=1), None, True),
-    "nieznany_naglowek": (replace(OTHER_ROW, column=20), "NR SERYJNY", True),
+    "urzadzenia_innego_wiersza": (OTHER_ROW, "URZĄDZENIA", False),
+    "data_innego_wiersza": (OTHER_ROW, "DATA GODZ. POCZ.", False),
+    "data_w_pliku_zbiorczym_pod_naglowkiem_docelowym": (OTHER_ROW, "DATA", False),
+    "wykonawca_innego_wiersza": (OTHER_ROW, "WYKONAWCA", False),
+    "adres_innego_wiersza": (OTHER_ROW, "ADRES", True),
+    "numer_umowy_innego_wiersza": (OTHER_ROW, "NUMER UMOWY", True),
+    "numer_umowy_orange_innego_wiersza": (OTHER_ROW, "NUMER UMOWY/ZLECENIA ORANGE", True),
+    "czynnosci_zrealizowane": (OTHER_ROW, "CZYNNOŚCI ZREALIZOWANE", True),
+    "zwrot": (OTHER_ROW, "ZWROT", True),
+    "uwagi": (OTHER_ROW, "UWAGI", True),
+    "akcje": (OTHER_ROW, "AKCJE", True),
+    "kolumna_bez_naglowka": (OTHER_ROW, None, True),
+    "nieznany_naglowek": (OTHER_ROW, "NR SERYJNY", True),
     "inny_plik": (replace(OTHER_ROW, file="Rozliczenie 08_14_09_2026 - zbiorcze.xlsx"), "NUMER ZL.", True),
-    "ta_sama_komorka_w_innej_wersji_pliku": (replace(SECOND, content=SAVED), "NUMER ZL.", False),
+    "ten_sam_wiersz_w_innej_wersji_pliku": (replace(SECOND, content=SAVED), "NUMER ZL.", False),
 }
 
 
 @pytest.mark.parametrize(("place", "header", "masked"), SCOPE.values(), ids=SCOPE.keys())
-def test_wartosc_z_wiersza_z_dwoma_polozeniami_jest_maskowana_tylko_w_swojej_komorce_zakazanych_kolumnach_wolnym_tekscie_i_innym_pliku(
-    place: CellPlace, header: str | None, masked: bool
+def test_wartosc_z_wiersza_z_dwoma_polozeniami_jest_maskowana_tylko_w_swoim_wierszu_zakazanych_kolumnach_wolnym_tekscie_i_innym_pliku(
+    place: RowPlace, header: str | None, masked: bool
 ) -> None:
     forbidden = ForbiddenValues()
     forbidden.remember_value(ForbiddenColumn.ORANGE, PLACED, SECOND)
@@ -172,21 +173,21 @@ def test_liczba_z_wiersza_z_dwoma_polozeniami_jest_maskowana_w_swojej_komorce_a_
     assert (own is not None and own.text, other) == ("[numer Orange]", None)
 
 
-def test_uporzadkowanie_przenosi_wlasna_komorke_do_wiersza_dnia_tylko_w_zapisanej_wersji_pliku() -> None:
-    """Wiersz 12, przesunięty, idzie do wiersza dnia 30 dwie kolumny w prawo: w zapisanej wersji jego komórka jest w
-    wierszu 30, a w przeczytanej wersji wiersz 30 to inny wiersz."""
+def test_uporzadkowanie_przenosi_wlasny_wiersz_do_wiersza_dnia_tylko_w_zapisanej_wersji_pliku() -> None:
+    """Wiersz 12 idzie do wiersza dnia 30: w zapisanej wersji jego wiersz to 30, a w przeczytanej wersji wiersz 30 to
+    inny wiersz, tak jak w zapisanej wiersz 31, do którego poszedł wiersz 13."""
 
     forbidden = ForbiddenValues()
     forbidden.remember_value(ForbiddenColumn.ORANGE, PLACED, SECOND)
 
-    forbidden.moved(READ, SAVED, "ZLECENIA", {12: (30, 2), 13: (31, 0)})
+    forbidden.moved(READ, SAVED, "ZLECENIA", {12: 30, 13: 31})
 
-    moved = replace(SECOND, content=SAVED, row=30, column=11)
-    cells = {"zapisana": moved, "przeczytana": replace(moved, content=READ), "zapisana_bez_przesuniecia": replace(moved, column=9)}
-    assert {name: forbidden.guard(PLACED, "komórka", CopiedCell(place, "NUMER ZL.")).text for name, place in cells.items()} == {
+    moved = replace(SECOND, content=SAVED, row=30)
+    rows = {"zapisana": moved, "przeczytana": replace(moved, content=READ), "zapisana_inny_wiersz": replace(moved, row=31)}
+    assert {name: forbidden.guard(PLACED, "komórka", CopiedCell(place, "NUMER ZL.")).text for name, place in rows.items()} == {
         "zapisana": "[numer Orange]",
         "przeczytana": PLACED,
-        "zapisana_bez_przesuniecia": PLACED,
+        "zapisana_inny_wiersz": PLACED,
     }
     assert forbidden.guard(PLACED, "komórka", CopiedCell(SECOND, "NUMER ZL.")).text == "[numer Orange]"
 

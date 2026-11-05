@@ -701,7 +701,7 @@ ulice `[ulica]`. Przed zapisem Logów i każdą wysyłką strażnik maskuje każ
 zakazaną wartość z przeczytanych plików i dopisuje uwagę techniczną z kolumną i
 miejscem, bez wartości. Wiersz Rejestru zleceń, który może stać przesunięty
 (pierwszy wiersz wklejenia i wiersz ze Śladem przesunięcia), strażnik zna w obu
-położeniach, a wartość z niego maskuje w jej komórce, pod `ADRES` i `NUMER
+położeniach, a wartość z niego maskuje w jego wierszu, pod `ADRES` i `NUMER
 UMOWY`, w wolnym tekście i w innych plikach, ale nie w zwykłej kolumnie innego
 wiersza, np. w `URZĄDZENIA` albo `NUMER ZL.`.
 _Avoid_: reguła prywatności (dawne listy pól każdej wysyłki), anonimizacja

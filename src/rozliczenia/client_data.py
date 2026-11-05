@@ -13,12 +13,12 @@ chroni każdą wysyłkę przed wartością z każdego pliku, który ta praca Cen
 ma swojego Uruchomienia. Proces bez Centrum (Skrypt dla maszyn) nie ma pamięci, bo niczego nie wysyła.
 
 Wiersz Rejestru zleceń z dwoma położeniami (``raw_orders.Shifts``, ``preparation_register``) daje pamięci komórki
-zakazanych kolumn z obu położeń razem z miejscem komórki w pliku (``CellPlace``). Taka wartość nie maskuje wszędzie
-(ADR 0025, opcja 3 z #913): strażnik maskuje ją w każdym tekście poza komórką Kopii wejścia, a w Kopii w jej własnej
-komórce w tej samej wersji pliku (także w wersji zapisanej przez Uporządkowanie, w wierszu dnia, do którego
-przeniosło jej wiersz, ``moved``), pod nagłówkiem innym niż zwykła kolumna wiersza (``CopiedCell.ordinary``: zakazana
-kolumna, wolny tekst, kolumna bez nagłówka) i w każdym pliku o innej nazwie. W zwykłej kolumnie innego wiersza pliku
-o tej samej nazwie (np. ``URZĄDZENIA``, ``NUMER ZL.``) jej nie maskuje.
+zakazanych kolumn z obu położeń razem ze swoim miejscem w pliku (``RowPlace``). Taka wartość nie maskuje wszędzie
+(ADR 0025, opcja 3 z #913): strażnik maskuje ją w każdym tekście poza komórką Kopii wejścia, a w Kopii w każdej
+komórce swojego wiersza w tej samej wersji pliku (także w wersji zapisanej przez Uporządkowanie, w wierszu dnia, do
+którego przeniosło jej wiersz, ``moved``), pod nagłówkiem innym niż zwykła kolumna wiersza (``CopiedCell.ordinary``:
+zakazana kolumna, wolny tekst, kolumna bez nagłówka) i w każdym pliku o innej nazwie. W zwykłej kolumnie innego
+wiersza pliku o tej samej nazwie (np. ``URZĄDZENIA``, ``NUMER ZL.``) jej nie maskuje.
 
 Strażnik (``ForbiddenValues.guard``) przed zapisem pliku Logów i przed każdą wysyłką maskuje w tekście każdą znaną
 wartość jako ``[adres]`` albo ``[numer Orange]`` i oddaje uwagę techniczną z nazwą kolumny i miejscem w tekście, bez
@@ -88,7 +88,7 @@ _ORDINARY: Final = frozenset(
         "SKUTECZNE",
     )
 )
-"""Zwykłe kolumny wiersza Rejestru zleceń i INTERMAX po ``normalize_text``: w nich wartość z miejscem (``CellPlace``)
+"""Zwykłe kolumny wiersza Rejestru zleceń i INTERMAX po ``normalize_text``: w nich wartość z miejscem (``RowPlace``)
 nie maskuje komórek innych wierszy tego samego pliku. Każdy inny nagłówek (zakazana kolumna, ``CZYNNOŚCI
 ZREALIZOWANE``, ``ZWROT``, ``UWAGI``, ``AKCJE``, nieznany) i kolumna bez nagłówka to wolny tekst."""
 
@@ -121,22 +121,21 @@ class Guarded:
 
 
 @dataclass(frozen=True)
-class CellPlace:
-    """Miejsce komórki w jednej wersji pliku taty: nazwa pliku (bez ścieżki), skrót SHA-256 bajtów tej wersji (jak w
-    odcisku Kopii wejścia), arkusz, wiersz i kolumna w pliku (od 1)."""
+class RowPlace:
+    """Wiersz w jednej wersji pliku taty: nazwa pliku (bez ścieżki), skrót SHA-256 bajtów tej wersji (jak w odcisku
+    Kopii wejścia), arkusz i numer wiersza."""
 
     file: str
     content: str
     sheet: str
     row: int
-    column: int
 
 
 @dataclass(frozen=True)
 class CopiedCell:
-    """Komórka Kopii wejścia przed strażnikiem: jej miejsce w pliku taty i nagłówek kolumny (``None``: bez nagłówka)."""
+    """Komórka Kopii wejścia przed strażnikiem: jej wiersz w pliku taty i nagłówek kolumny (``None``: bez nagłówka)."""
 
-    place: CellPlace
+    place: RowPlace
     header: object
 
     @property
@@ -148,12 +147,12 @@ class CopiedCell:
 
 @dataclass
 class _Known:
-    """Zapamiętana wartość: kolumna, pod którą przyszła pierwsza, i miejsca komórek wiersza z dwoma położeniami
+    """Zapamiętana wartość: kolumna, pod którą przyszła pierwsza, i wiersze z dwoma położeniami, z których przyszła
     (``everywhere``: także z wiersza z jednym położeniem, więc strażnik maskuje ją w każdym tekście)."""
 
     column: ForbiddenColumn
     everywhere: bool
-    places: set[CellPlace] = field(default_factory=set)
+    places: set[RowPlace] = field(default_factory=set)
 
     def masked_in(self, cell: CopiedCell | None) -> bool:
         if self.everywhere or cell is None or not cell.ordinary or cell.place in self.places:
@@ -181,12 +180,13 @@ class ForbiddenValues:
             if number <= len(values):
                 self.remember_value(column, values[number - 1])
 
-    def remember_value(self, column: ForbiddenColumn, value: object, place: CellPlace | None = None) -> None:
+    def remember_value(self, column: ForbiddenColumn, value: object, place: RowPlace | None = None) -> None:
         """Zapamiętuje jedną komórkę zakazanej ``column`` przeczytaną z pliku taty; ta sama wartość zostaje przy
         kolumnie, pod którą przyszła pierwsza.
 
-        ``place``: komórka wiersza z dwoma położeniami, więc wartość maskuje tylko tam, gdzie mówi docstring modułu;
-        ``None``: wiersz z jednym położeniem, więc wartość maskuje wszędzie, także gdy przyszła wcześniej z miejscem.
+        ``place``: wiersz z dwoma położeniami, z którego jest komórka, więc wartość maskuje tylko tam, gdzie mówi
+        docstring modułu; ``None``: wiersz z jednym położeniem, więc wartość maskuje wszędzie, także gdy przyszła
+        wcześniej z miejscem.
         """
 
         words = _value_words(value)
@@ -204,17 +204,17 @@ class ForbiddenValues:
             else:
                 known.places.add(place)
 
-    def moved(self, before: str, after: str, sheet: str, rows: Mapping[int, tuple[int, int]]) -> None:
+    def moved(self, before: str, after: str, sheet: str, rows: Mapping[int, int]) -> None:
         """Wiersze arkusza ``sheet``, które Uporządkowanie przeniosło, zapisując z wersji pliku o skrócie ``before``
-        wersję o skrócie ``after``: wiersz → (nowy wiersz, o ile kolumn w prawo). Wartość z miejscem w takim wierszu ma
-        w wersji ``after`` komórkę w nowym miejscu, a Kopia wejścia tego Uruchomienia (wersja ``before``) ją bez zmian."""
+        wersję o skrócie ``after``: wiersz → wiersz dnia. Wartość z miejscem w takim wierszu ma w wersji ``after``
+        swój wiersz w nowym miejscu, a Kopia wejścia tego Uruchomienia (wersja ``before``) stary."""
 
         with self._lock:
             for known in self._known.values():
                 for place in list(known.places):
                     target = rows.get(place.row) if (place.content, place.sheet) == (before, sheet) else None
                     if target is not None:
-                        known.places.add(CellPlace(place.file, after, sheet, target[0], place.column + target[1]))
+                        known.places.add(RowPlace(place.file, after, sheet, target))
 
     def guard(self, text: str, place: str, cell: CopiedCell | None = None) -> Guarded:
         """Tekst bez zakazanych wartości i z zamaskowanym wolnym tekstem; ``place`` nazywa miejsce w uwadze technicznej,

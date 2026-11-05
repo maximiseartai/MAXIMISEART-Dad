@@ -13,7 +13,7 @@ Zatrzymanie.
 Komórki zakazanych kolumn przeczytanych arkuszy Rejestru i Surowych zleceń zna pamięć reguły danych pracy Centrum
 (``forbidden``, ADR 0025), którą Centrum podaje obok czytników; proces bez Centrum jej nie ma. Pierwszy wiersz bloku
 wklejenia i wiersz ze śladem przesunięcia mogą stać przesunięte, więc pamięć zna ich komórki w obu położeniach, z
-miejscem komórki (#918, ADR 0025). Wiersze Rejestru z Odczytu danych zna też Kopia wejścia Uruchomienia (``copy``, #841).
+miejscem wiersza (#918, ADR 0025). Wiersze Rejestru z Odczytu danych zna też Kopia wejścia Uruchomienia (``copy``, #841).
 """
 
 from __future__ import annotations
@@ -149,7 +149,7 @@ def read_register(
 
     ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza pod ich nagłówkiem, a wiersza z dwoma
     położeniami (``RegisterSheet.uncertain_rows``) pod nagłówkiem i ``raw_orders.SHIFT`` kolumn na lewo od niego, z
-    miejscem komórki w Rejestrze (#918, ADR 0025). ``copy`` poznaje każdy przeczytany wiersz (``_copied``), wiersze ze
+    miejscem wiersza w Rejestrze (#918, ADR 0025). ``copy`` poznaje każdy przeczytany wiersz (``_copied``), wiersze ze
     śladem przesunięcia i chwilę zmiany Rejestru sprzed jego odczytu.
     """
 
@@ -162,14 +162,13 @@ def read_register(
             numbers = {column.target_header: number for column, number in sheet.positions.items()}
             for row in sheet.register_rows:
                 values = sheet.uncertain_rows.get(row.number)
+                place = client_data.RowPlace(register.name, digest, sheet.name, row.number)
                 for column, header in _FORBIDDEN_HEADERS:
                     if values is None:
                         forbidden.remember_value(column, row.cells[header].value)
                         continue
                     for offset in (0, raw_orders.SHIFT):
-                        at = numbers[header] - offset
-                        place = client_data.CellPlace(register.name, digest, sheet.name, row.number, at)
-                        forbidden.remember_value(column, values.get(at), place)
+                        forbidden.remember_value(column, values.get(numbers[header] - offset), place)
     if copy is not None:
         _copied(register, read, modified, copy)
     return read.sheets

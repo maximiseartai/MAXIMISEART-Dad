@@ -124,7 +124,7 @@ telefony na okres.
   Surowych zleceń w Przygotowaniu), oddaje przy odczycie komórki zakazanych
   kolumn pamięci reguły danych, a Wycena w efenix dane adresowe każdego
   wiersza listy wyników. Wiersz Rejestru zleceń, który może stać
-  przesunięty (ADR 0019), pamięć zna w obu położeniach, z miejscem komórki,
+  przesunięty (ADR 0019), pamięć zna w obu położeniach, z miejscem wiersza,
   a strażnik maskuje taką wartość węziej niż każdą inną (sekcja „Wiersz,
   który może stać przesunięty”).
   Pamięć jest jedna na pracę
@@ -167,16 +167,21 @@ Diagnozie (`raw_orders.Shifts`, `preparation_register`).
   wartości).
 - **Zakres maski.** Wartość z wiersza z jednym położeniem strażnik maskuje
   wszędzie. Wartość z wiersza z dwoma położeniami, z każdego z nich, maskuje:
-  w jej komórce Kopii wejścia w tej samej wersji pliku (skrót bajtów jak w
-  odcisku Kopii; w wersji, którą zapisało Uporządkowanie, w wierszu dnia, do
-  którego przeniosło wiersz), pod nagłówkiem `ADRES` i `NUMER UMOWY…` każdego
+  w każdej komórce Kopii wejścia swojego wiersza w tej samej wersji pliku
+  (skrót bajtów jak w odcisku Kopii; w wersji, którą zapisało Uporządkowanie,
+  w wierszu dnia, do którego przeniosło wiersz), pod nagłówkiem `ADRES` i
+  `NUMER UMOWY…` każdego
   wiersza, w każdym wolnym tekście (każde pole Logów poza komórkami Kopii,
   Zgłoszenie, Kontrola ilości, Uwaga taty, a w Kopii kolumny inne niż zwykłe:
   `CZYNNOŚCI ZREALIZOWANE`, `ZWROT`, `UWAGI`, `AKCJE`, kolumna bez nagłówka i
   każdy nieznany nagłówek) i w Kopii pliku o innej nazwie (Plik zbiorczy niesie
   wartości przepisane z Rejestru). Nie maskuje jej w zwykłej kolumnie innego
   wiersza pliku o tej samej nazwie: `DATA GODZ. POCZ.`, `MIASTO`, `UMOWA`,
-  `URZĄDZENIA`, `CZYNNOŚCI`, `NUMER ZL.`, `WYKONAWCA`, `SKUTECZNE`.
+  `URZĄDZENIA`, `CZYNNOŚCI`, `NUMER ZL.`, `WYKONAWCA`, `SKUTECZNE`. Cały
+  swój wiersz, a nie tylko swoją komórkę, bo ta sama wartość w innej kolumnie
+  tego wiersza (adres przepisany pod `MIASTO`) to też ta wartość: syntetyczny
+  Rejestr weryfikacji Centrum ma w każdej komórce wiersza ten sam znacznik i z
+  samą komórką wychodził on w Logach z `MIASTO` pierwszego wiersza wklejenia.
 - **Żadne z dwóch położeń nie jest podstawowe.** Położenie, w którym czytnik
   czyta wiersz, nie jest pewniejsze od drugiego. Gdyby jego wartości maskowały
   wszędzie, pierwszy wiersz drugiego wklejenia (repro 1 z #913, czytany bez

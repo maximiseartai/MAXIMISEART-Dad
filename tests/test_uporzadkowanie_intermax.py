@@ -26,7 +26,7 @@ from openpyxl.utils.cell import coordinate_from_string, get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import TOOL_ROOT
-from rozliczenia.client_data import CellPlace, CopiedCell, ForbiddenValues
+from rozliczenia.client_data import CopiedCell, ForbiddenValues, RowPlace
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.intermax_ordering import OrderingSummary, RegisterDay, register_days
@@ -2111,8 +2111,8 @@ def test_wiersz_z_dwoma_polozeniami_przeniesiony_do_dnia_ma_wlasna_komorke_w_zap
     """Pierwszy wiersz wklejenia stoi na miejscu, ale z datą z godziną w A i słowem pod ``DATA GODZ. POCZ.``, więc
     rozpoznanie czyta go przesunięty i Uporządkowanie stawia go w dniu dwie kolumny w prawo: jego ``ADRES`` stoi potem
     pod ``URZĄDZENIA`` wiersza dnia. Pierwszy wiersz wklejenia ma dwa położenia, więc pamięć reguły danych zna ten adres
-    z miejscem komórki: w zapisanej wersji INTERMAX ta komórka wiersza dnia jest jego, więc strażnik ją maskuje, a w
-    przeczytanej wersji ta sama komórka należy do innego wiersza i maski w niej nie ma (ADR 0025)."""
+    z miejscem wiersza: w zapisanej wersji INTERMAX wiersz dnia jest jego, więc strażnik maskuje go w jego
+    ``URZĄDZENIA``, a w przeczytanej wersji ten numer wiersza należy do innego wiersza i maski w nim nie ma (ADR 0025)."""
 
     address = "Syntetyczna Bursztynowa 14/2 Poznań"
     raw = Intermax().raw
@@ -2132,7 +2132,7 @@ def test_wiersz_z_dwoma_polozeniami_przeniesiony_do_dnia_ma_wlasna_komorke_w_zap
         workbook.close()
 
     def guarded_in(content: str) -> str:
-        cell = CopiedCell(CellPlace(REGISTER_NAME, content, ORDER_SHEET, row, DEVICES), "URZĄDZENIA")
+        cell = CopiedCell(RowPlace(REGISTER_NAME, content, ORDER_SHEET, row), "URZĄDZENIA")
         return forbidden.guard(address, "komórka", cell).text
 
     assert (guarded_in(hashlib.sha256(written).hexdigest()), guarded_in(read)) == ("[adres]", address)

@@ -171,10 +171,7 @@ def order_register(
         if isinstance(outcome, Refusal):
             raise StopError(_refused(outcome, register_path, copies_directory))
         if forbidden is not None:
-            moved = {
-                placement.order.row: (placement.row, raw_orders.SHIFT if placement.order.shifted else 0)
-                for placement in day.placements
-            }
+            moved = {placement.order.row: placement.row for placement in day.placements}
             forbidden.moved(register.digest, hashlib.sha256(ordered).hexdigest(), sheet.name, moved)
         return outcome
 

@@ -81,11 +81,10 @@ import re
 import threading
 from typing import Annotated, Final, Literal, Protocol, assert_never, cast, get_args
 
-from openpyxl.utils import column_index_from_string
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic.fields import FieldInfo
 
-from rozliczenia.client_data import CellPlace, CopiedCell, ForbiddenValues, Guarded
+from rozliczenia.client_data import CopiedCell, ForbiddenValues, Guarded, RowPlace
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.atomic_file import replace_atomically
@@ -127,7 +126,6 @@ from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.message import Message
 from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.progress import ProgressSnapshot
-from rozliczenia.raw_orders import SHIFT
 
 RUN_LOGS_DIRECTORY: Final = "uruchomienia"
 LABEL: Final[Label] = "logi-uruchomienia"
@@ -859,7 +857,7 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     albo ich okres, Uruchomienie i commit (#936). Klucz słownika (operator, kod pozycji, litera kolumny) to dane, więc go
     maskuje.
 
-    Komórkę Kopii wejścia strażnik sprawdza z jej miejscem w pliku taty i nagłówkiem (``client_data.CopiedCell``):
+    Komórkę Kopii wejścia strażnik sprawdza z jej wierszem w pliku taty i nagłówkiem (``client_data.CopiedCell``):
     wartość z wiersza z dwoma położeniami maskuje w niej tylko tam, gdzie mówi ``client_data``, a nie w zwykłej kolumnie
     innego wiersza tego samego pliku. Każde inne pole to wolny tekst z maską każdej wartości.
 
@@ -954,17 +952,11 @@ class _InCopy:
         return replace(self, cells=isinstance(source, LoggedRow) and key == "cells")
 
     def _cell(self, letter: str) -> CopiedCell | None:
-        """Komórka ``letter`` wiersza Kopii w pliku taty: przesunięty pierwszy wiersz wklejenia INTERMAX stoi w Kopii pod
-        nagłówkiem, a w pliku ``SHIFT`` kolumn na lewo; ``None`` (wolny tekst), gdy to nie litera kolumny."""
+        """Komórka ``letter`` wiersza Kopii: jej wiersz w wersji pliku taty z odcisku i nagłówek kolumny."""
 
         if self.file is None or self.sheet is None or self.row is None:
             return None
-        try:
-            column = column_index_from_string(letter)
-        except ValueError:
-            return None
-        shift = SHIFT if self.row == self.sheet.shifted_row else 0
-        place = CellPlace(self.file.name, self.file.fingerprint.sha256, self.sheet.sheet, self.row, column - shift)
+        place = RowPlace(self.file.name, self.file.fingerprint.sha256, self.sheet.sheet, self.row)
         return CopiedCell(place, self.sheet.columns.get(letter))
 
 TOOL_FIELDS: Final = frozenset(
