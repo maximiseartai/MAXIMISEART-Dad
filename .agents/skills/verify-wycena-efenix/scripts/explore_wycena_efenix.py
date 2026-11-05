@@ -638,8 +638,13 @@ class RiskShape:
     - ``left``: what run 1 left of the order, its page in efenix and its Ślad entry (``None``: none), and its index;
     - ``second``: how the second run ended the order: its page before and after, and the fault of its error.
 
-    Each of them has in ``check_wycena_efenix_mutations.BOUNDARIES`` a broken variant just outside one part, which
-    must give a new violation."""
+    Each part has in ``check_wycena_efenix_mutations.BOUNDARIES`` a broken variant just outside it, which must give a
+    new violation (``tests/test_mutacje_skilli.py``). A part that admits every member of its enum restricts nothing and
+    has none: the way of ``#774``, and the step of ``przerwanie-przed-zapisem-ilosci``, whose place is its state
+    (``left``), because the Ślad has a quantity ahead only after the window read the reloaded page, and each request
+    of the order after that is that page, its files or a quantity. ``ROLE_OF`` tells a request by its occurrence
+    (``Counter``), so a request of an earlier step sent again after that page is an occurrence of the next order or of
+    none, and ``interrupted_at`` gives ``None``, which stays outside every step, as does a step the proxy cannot tell."""
 
     at: frozenset[Role]
     interruptions: frozenset[Interruption]
@@ -742,7 +747,7 @@ ACCEPTED_RISKS: Final[tuple[Risk, ...]] = (
         "zmienia (#864; przyjęte ustalenie 3 modelu verify-wznowienie-wyceny-efenix). Po wylogowaniu Ślad tę ilość "
         "wycofuje, więc tam to nowe naruszenie",
         RiskShape(
-            at=frozenset({Role.RELOADED, Role.QUANTITY}),
+            at=frozenset(Role),
             interruptions=frozenset({Interruption.OTHER}),
             left=unsaved_ahead,
             second=only_compared,

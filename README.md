@@ -201,7 +201,8 @@ powstają razem albo żaden.
   nie zostawia żadnego z nich ani nowo założonego Folderu okresu. Wyjątek
   zaakceptowany w [ADR 0005](docs/adr/0005-przerwana-publikacja-plikow-okresu.md):
   do istniejącego Folderu okresu pliki trafiają dwoma przeniesieniami, więc
-  proces zamknięty między nimi zostawia samo Rozliczenie wewnętrzne.
+  proces zamknięty między nimi albo po nieudanym drugim, zanim wycofanie usunęło
+  pierwszy plik, zostawia samo Rozliczenie wewnętrzne.
 - Rejestr zleceń i wzorce są tylko czytane.
 - Zatrzymania i ostrzeżenia mają trzy części: co się stało, gdzie, co zrobić.
   Pełna lista z instrukcją postępowania jest w tabeli „komunikat → co zrobić”

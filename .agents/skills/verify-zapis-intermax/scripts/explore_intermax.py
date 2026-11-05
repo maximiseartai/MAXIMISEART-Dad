@@ -49,6 +49,7 @@ is a ``BaseException`` raised at a point, so ``finally`` blocks still run, which
 from __future__ import annotations
 
 import argparse
+import enum
 import errno
 import os
 import shutil
@@ -56,7 +57,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -77,8 +78,15 @@ NAME = "INTERMAX.xlsx"
 TEMPORARY = f".{Path(NAME).stem}."
 AFTER_READ = "pracownik po odczycie, przed podmianą"
 INJECTED = "plik zablokowany"
+READ = "po odczycie INTERMAX"
+EXCEL = "is_open_in_excel(INTERMAX)"
+WRITE = "zapis pliku tymczasowego obok INTERMAX"
+CHECK = "Register.check sprawdza plik tymczasowy"
+EXISTS = "Disk.exists (nazwa Kopii INTERMAX)"
+CREATE = "Disk.create (Kopia INTERMAX)"
 REPLACE = "os.replace pliku tymczasowego na INTERMAX"
 PAUSE = "przerwa przed ponowną próbą podmiany"
+PRUNE = "usunięcie starszej Kopii (KEPT)"
 Mode = Literal["Uporządkowanie", "przywrócenie Kopii", "drugie przywrócenie w tej samej sekundzie"]
 ORDERING: Mode = "Uporządkowanie"
 RESTORE: Mode = "przywrócenie Kopii"
@@ -238,7 +246,7 @@ def _points(world: World, scheduler: Scheduler) -> Iterator[None]:
         if path == world.register:
             world.read = register.content
             scheduler.say("Register.read czyta INTERMAX")
-            scheduler.point("po odczycie INTERMAX")
+            scheduler.point(READ)
         return register
 
     def content(path: Path) -> bytes:
@@ -246,16 +254,16 @@ def _points(world: World, scheduler: Scheduler) -> Iterator[None]:
         if world.mode != ORDERING and path == world.register and world.read is None:
             world.read = read
             scheduler.say("restore czyta INTERMAX (workbook_content)")
-            scheduler.point("po odczycie INTERMAX")
+            scheduler.point(READ)
         return read
 
     def check(self: intermax_file.Register, *arguments: Any) -> None:
-        scheduler.point("Register.check sprawdza plik tymczasowy", fails="niezgodny")
+        scheduler.point(CHECK, fails="niezgodny")
         real_check(self, *arguments)
 
     def is_open(path: Path) -> bool:
         if path == world.register:
-            scheduler.point("is_open_in_excel(INTERMAX)")
+            scheduler.point(EXCEL)
         return real_open(path)
 
     intermax_file.Register.read = classmethod(read)  # type: ignore[method-assign,assignment]
@@ -275,15 +283,15 @@ def _disk(world: World, scheduler: Scheduler) -> Disk:
     """The replace's steps on the disk: the real ones (``LOCAL_DISK``), each behind its point."""
 
     def write(path: Path, data: bytes) -> None:
-        scheduler.point("zapis pliku tymczasowego obok INTERMAX", fails="oserror")
+        scheduler.point(WRITE, fails="oserror")
         LOCAL_DISK.write(path, data)
 
     def exists(path: Path) -> bool:
-        scheduler.point("Disk.exists (nazwa Kopii INTERMAX)", fails="oserror")
+        scheduler.point(EXISTS, fails="oserror")
         return LOCAL_DISK.exists(path)
 
     def create(path: Path, data: bytes) -> None:
-        scheduler.point("Disk.create (Kopia INTERMAX)", fails="oserror")
+        scheduler.point(CREATE, fails="oserror")
         LOCAL_DISK.create(path, data)
         scheduler.say(f"Kopia INTERMAX zapisana: {path.name}")
 
@@ -307,7 +315,7 @@ def _disk(world: World, scheduler: Scheduler) -> Disk:
         # replace is not (SKILL.md: not covered).
         if world.replaced is not None:
             try:
-                scheduler.point("usunięcie starszej Kopii (KEPT)", fails="oserror")
+                scheduler.point(PRUNE, fails="oserror")
             except OSError:
                 world.keep_failed = True
                 raise
@@ -450,45 +458,126 @@ def _check(world: World, outcome: Outcome, failure: str) -> list[tuple[str, str]
     return list(dict.fromkeys(broken))
 
 
-def _worker_change_lost(world: World, faults: Sequence[tuple[str, str]]) -> bool:
-    """A worker's change arrived after the read and before the replace, and the replace put the run's file over it.
+class Version(enum.Enum):
+    """Whose bytes INTERMAX had, as far as the model tells them apart: the original, the worker's change or other bytes
+    (the run's own file, a Kopia brought back, nothing read)."""
 
-    Not when OneDrive refused a replace after the change arrived, nor when the change arrived in the pause before a
-    retry: the run reads INTERMAX again after that pause, so the worker's change it puts the run's file over is one it
-    had time to see.
-    """
+    ORIGINAL = "oryginał"
+    WORKER = "zmiana pracownika"
+    OTHER = "inne bajty"
 
-    return (
-        any(kind == AFTER_READ for kind, _ in faults)
-        and all(step != PAUSE for kind, step in faults if kind == AFTER_READ)
-        and world.changed_at == world.refused
-        and world.read == world.original
-        and world.replaced == world.worker_bytes
+
+class Copy(enum.Enum):
+    """Whether a Kopia INTERMAX holds the bytes the run read."""
+
+    OF_READ = "Kopia ma bajty, które run przeczytał"
+    OTHER = "żadna Kopia nie ma bajtów, które run przeczytał"
+
+
+@dataclass(frozen=True)
+class Came:
+    """How the run lost the worker's change it did not read, each part of a finding's shape (``FindingShape``): the
+    point of the run the change came before after the read (``None``: no change came after the read), how many times
+    OneDrive refused the replace after it, what the run read and what its replace put its file over, and whether a
+    Kopia holds the bytes the run read."""
+
+    before: str | None
+    refusals_after: int
+    lost: tuple[Version, Version]
+    copy: Copy
+
+
+def _version(world: World, content: bytes | None) -> Version:
+    if content == world.original:
+        return Version.ORIGINAL
+    return Version.WORKER if content == world.worker_bytes else Version.OTHER
+
+
+def _came(world: World, faults: Sequence[tuple[str, str]]) -> Came:
+    before = next((step for kind, step in faults if kind == AFTER_READ), None)
+    return Came(
+        before,
+        0 if world.changed_at is None else world.refused - world.changed_at,
+        (_version(world, world.read), _version(world, world.replaced)),
+        Copy.OF_READ if world.read in world.kopie().values() else Copy.OTHER,
     )
 
 
-def _copy_of_what_was_read(world: World, faults: Sequence[tuple[str, str]]) -> bool:
-    """The same story, and the Kopia holds the bytes the run read (``current`` of ``replace_register``)."""
+@dataclass(frozen=True)
+class FindingShape:
+    """The exact shape of a known finding, each part taken from its story and each required, so an entry cannot match
+    on fewer of them (#920):
 
-    return _worker_change_lost(world, faults) and world.read in world.kopie().values()
+    - ``came_before``: the points of the run before which the worker's change came after the read; not the pause
+      before a retry, after which the run reads INTERMAX again, so a change it puts its file over there is one it had
+      time to see;
+    - ``refusals_after``: how many times OneDrive refused the replace after the change came; after a refusal the run
+      reads INTERMAX again too;
+    - ``lost``: what the run read and what its replace put its file over: the original and the worker's change, and not
+      the run's own bytes or a change the run read;
+    - ``copy``: what the Kopia holds; the story of KOPIA_ZASTAPIONEGO is a Kopia of the bytes read (``current`` of
+      ``replace_register``), and BEZ_UTRATY_ZMIAN says nothing of the Kopia, so its shape admits every ``Copy``.
+
+    Each part that restricts has in ``check_intermax_mutations.BOUNDARIES`` a broken variant just outside it, which must
+    give a new violation (``tests/test_mutacje_skilli.py``)."""
+
+    came_before: frozenset[str]
+    refusals_after: int
+    lost: frozenset[tuple[Version, Version]]
+    copy: frozenset[Copy]
+
+    def __post_init__(self) -> None:
+        if not self.came_before or not self.lost or not self.copy:
+            raise ValueError("kształt bez punktu, przed którym przyszła zmiana pracownika, bez tego, co run stracił, albo bez Kopii")
+
+    def holds(self, came: Came) -> bool:
+        return (
+            came.before in self.came_before
+            and came.refusals_after == self.refusals_after
+            and came.lost in self.lost
+            and came.copy in self.copy
+        )
 
 
-# rule: the finding, and the story after which it is excused; the same rule broken otherwise is a new violation.
-KNOWN_FINDINGS: dict[
-    str, tuple[str, Callable[[World, Sequence[tuple[str, str]]], bool]]
-] = {
-    "BEZ_UTRATY_ZMIAN": (
+@dataclass(frozen=True)
+class Finding:
+    """A break of the rule ``name`` that the report lists apart from new ones, only in ``shape``: the same rule broken
+    otherwise is a new violation."""
+
+    name: str
+    story: str
+    shape: FindingShape
+
+
+CHANGE_AFTER_READ = FindingShape(
+    came_before=frozenset({READ, EXCEL, WRITE, CHECK, EXISTS, CREATE, REPLACE}),
+    refusals_after=0,
+    lost=frozenset({(Version.ORIGINAL, Version.WORKER)}),
+    copy=frozenset(Copy),
+)
+"""Uporządkowanie and the restore do not check right before os.replace whether INTERMAX still has the bytes they read:
+a worker's change that comes after the read of the original, and after which the run neither paused nor was refused, is
+lost under the run's file."""
+
+KNOWN_FINDINGS: tuple[Finding, ...] = (
+    Finding(
+        "BEZ_UTRATY_ZMIAN",
         "Uporządkowanie i przywrócenie Kopii nie sprawdzają tuż przed os.replace, czy INTERMAX ma wciąż bajty, które "
         "przeczytały (przed pierwszą próbą wcale, przed ponowną po przerwie): zmiana pracownika z innego komputera, "
         "którą OneDrive wgrał w trakcie, przepada",
-        _worker_change_lost,
+        CHANGE_AFTER_READ,
     ),
-    "KOPIA_ZASTAPIONEGO": (
+    Finding(
+        "KOPIA_ZASTAPIONEGO",
         "Kopia INTERMAX powstaje z bajtów przeczytanych na początku (current w replace_register), więc "
         "nie ma też zmiany pracownika, która przyszła w trakcie",
-        _copy_of_what_was_read,
+        replace(CHANGE_AFTER_READ, copy=frozenset({Copy.OF_READ})),
     ),
-}
+)
+
+
+def _finding(rule: str) -> Finding | None:
+    return next((finding for finding in KNOWN_FINDINGS if finding.name == rule), None)
 
 
 def execute(
@@ -549,11 +638,10 @@ def execute(
             scheduler.say(f"wyjątek {failure}")
     trace = tuple(scheduler.trace)
     violations = []
+    came = _came(world, scheduler.faults)
     for rule, detail in _check(world, outcome, failure):
-        known = KNOWN_FINDINGS.get(rule)
-        kind: Literal["known", "new"] = (
-            "known" if known and known[1](world, scheduler.faults) else "new"
-        )
+        known = _finding(rule)
+        kind: Literal["known", "new"] = "known" if known and known.shape.holds(came) else "new"
         violations.append(Violation(rule, detail, trace, kind))
     return scheduler, violations
 
@@ -596,9 +684,10 @@ def summarize(report: Report, *, strict: bool = False) -> tuple[list[str], int]:
     lines = [f"Harmonogramy: {report.schedules}."]
     new = known = 0
     for (rule, kind), violation in sorted(report.shortest.items()):
-        if kind == "known" and not strict:
+        finding = _finding(rule)
+        if kind == "known" and finding is not None and not strict:
             known += 1
-            lines.append(f"znane ustalenie {rule}: {KNOWN_FINDINGS[rule][0]}")
+            lines.append(f"znane ustalenie {rule}: {finding.story}")
         else:
             new += 1
             lines.append(f"NOWE NARUSZENIE {rule}")
@@ -607,7 +696,7 @@ def summarize(report: Report, *, strict: bool = False) -> tuple[list[str], int]:
             f"   {number}. {step}"
             for number, step in enumerate(violation.trace, start=1)
         )
-    gone = [rule for rule in KNOWN_FINDINGS if (rule, "known") not in report.shortest]
+    gone = [finding.name for finding in KNOWN_FINDINGS if (finding.name, "known") not in report.shortest]
     lines.extend(
         f"ZNALEZISKO ZNIKNĘŁO {rule}: usuń je z KNOWN_FINDINGS i z SKILL.md"
         for rule in gone

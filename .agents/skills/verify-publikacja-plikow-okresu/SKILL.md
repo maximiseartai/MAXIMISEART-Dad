@@ -154,12 +154,24 @@ A break of a rule that a recorded decision accepts. It is printed as
 1. **Proces zamknięty w trakcie publikacji**
    ([ADR 0005](../../../docs/adr/0005-przerwana-publikacja-plikow-okresu.md)).
    When the Folder okresu already exists, `_publish` moves the two files with
-   two separate `os.rename` calls. If the process dies between them, only
-   Rozliczenie wewnętrzne is left. The next run stops on `PLIK_OKRESU_ISTNIEJE`,
-   and Dad's instructions say how to recognise and remove the leftover file.
+   two separate `os.rename` calls. If the process dies between them, or after
+   the second `os.rename` failed (a file system error or Dad's own file of that
+   name) and before the rollback's `os.unlink` removed the first file, only
+   Rozliczenie wewnętrzne is left. ADR 0005 accepts both. The next run stops on
+   `PLIK_OKRESU_ISTNIEJE`, and Dad's instructions say how to recognise and
+   remove the leftover file. The check prints it twice, once for each step the
+   process died before.
 
-An entry lives in `ACCEPTED_RISKS` in `explore_publication.py` and names its
-decision. If a change to the publication code makes it disappear, delete the
+An entry lives in `ACCEPTED_RISKS` in `explore_publication.py`, names its
+decision and has its shape (`RiskShape`, each part required, #920): the steps
+of `_publish` before which the kill of the process ended the run
+(`killed_before`), the run's period files left, exactly (`left`), and no failed
+`os.unlink` of the run (`unlink_failed`): a rollback whose `os.unlink` failed is
+issue #92's case, which ADR 0005 does not cover. A run that was not killed, that
+left other files, or whose `os.unlink` failed breaks the rule anew. Each part has a broken variant just
+outside it in `BOUNDARIES` of `check_publication_mutations.py`, which must give
+a new violation; `tests/test_mutacje_skilli.py` reds an entry with a part
+without one. If a change to the publication code makes it disappear, delete the
 entry here and there, and mark the ADR as superseded.
 
 ## When the check fails
@@ -171,8 +183,9 @@ is the code that made the call. Then sort it into one of three cases:
 - **Real bug**: the story is something that can happen to Dad on Windows, and
   the end state breaks the rule as stated above. Report it with the story in
   those words. Fix the product code only if the user asks. If the user accepts
-  the risk instead, record the decision in an ADR, add the printed signature to
-  `ACCEPTED_RISKS` with a one-line description naming the ADR, and add it to
+  the risk instead, record the decision in an ADR, add to `ACCEPTED_RISKS` an
+  entry naming the ADR with the shape of its story (`RiskShape`), add to
+  `BOUNDARIES` a broken variant just outside each part of it, and add it to
   Accepted risks here.
 - **Modeling error**: the story contains a step Windows would not do, such as a
   rename that replaces a file, or a step the code cannot reach. Fix the
@@ -195,7 +208,11 @@ py -3 .agents\skills\verify-publikacja-plikow-okresu\scripts\check_publication_m
 ```
 
 It must end with `MUTACJE OK`: `os.replace` instead of `os.rename`, a removed
-rollback, a failed rollback reported as plain `BLAD_ZAPISU`, recording a file
+rollback (`BOUNDARIES`: a run that is not killed, outside `killed_before`), the
+period files moved in the reverse order (`BOUNDARIES`: only the Plik zbiorczy
+left, outside `left`), a rollback that retries a failed `os.unlink`
+(`BOUNDARIES`: killed before the retry, outside `unlink_failed`), a failed
+rollback reported as plain `BLAD_ZAPISU`, recording a file
 for rollback before it is moved, and a failed staging cleanup reported as
 `BLAD_ZAPISU` all give `NOWE NARUSZENIE`. `shutil.move` gives `LUKA MODELU`. A mutation reported as
 `NIEAKTUALNA` no longer matches `preparation_files.py`. Rewrite its `anchor` and

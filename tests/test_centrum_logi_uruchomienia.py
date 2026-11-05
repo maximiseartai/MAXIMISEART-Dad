@@ -1149,41 +1149,6 @@ def test_odmowa_zaladuj_do_zlecenia_zabity_proces_przy_niej_i_wznowienie_po_nich
     assert list((tmp_path / "runs").iterdir()) == []
 
 
-EXPLORER_MUTATIONS = (
-    Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "scripts" / "check_wycena_efenix_mutations.py"
-)
-
-
-def test_kazde_przyjete_ryzyko_i_znane_ustalenie_przegladu_ma_mutacje_tuz_za_granica_swojego_ksztaltu() -> None:
-    """Przyjęte ryzyko albo znane ustalenie, które wybacza szerzej niż jego opis, przepuszcza zepsuty kod jako znany
-    (#867 runda 3, #916 rundy 1 i 2; #920). Każdy wpis ``ACCEPTED_RISKS`` i ``KNOWN_FINDINGS`` sprawdzenia ma więc w
-    ``BOUNDARIES`` skryptu mutacji skilla co najmniej jedną mutację tuż za granicą swojego kształtu, która jest w jego
-    tabeli i musi dać nowe naruszenie; że je daje, sprawdza skrypt mutacji. Nazwy wpisów pochodzą z kodu sprawdzenia,
-    które czyta własny proces, bo jego kodu nie wykonuje proces pytest (#651)."""
-
-    import subprocess
-
-    read = (
-        "import json, sys\n"
-        f"sys.path.insert(0, {str(EXPLORER.parent)!r})\n"
-        "import explore_wycena_efenix as explorer, check_wycena_efenix_mutations as table\n"
-        "entries = [entry.name for entry in (*explorer.ACCEPTED_RISKS, *explorer.KNOWN_FINDINGS)]\n"
-        "boundaries = {name: [[m.name, m.expected == table.NEW, m in table.MUTATIONS] for m in ms] for name, ms in table.BOUNDARIES.items()}\n"
-        "print(json.dumps([entries, boundaries]))\n"
-    )
-    done = subprocess.run(
-        [sys.executable, "-X", "utf8", "-c", read], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60, check=False
-    )
-    assert done.returncode == 0, done.stdout.decode("utf-8", "replace")
-    entries, boundaries = json.loads(done.stdout.decode("utf-8").splitlines()[-1])
-
-    assert entries, "sprawdzenie bez przyjętych ryzyk: test nic by nie pilnował"
-    assert sorted(boundaries) == sorted(entries), f"{EXPLORER_MUTATIONS.name}: BOUNDARIES ma inne wpisy niż sprawdzenie"
-    for name, mutations in boundaries.items():
-        assert mutations, f"{name}: bez mutacji tuż za granicą kształtu"
-        assert all(new and listed for _mutation, new, listed in mutations), f"{name}: {mutations}"
-
-
 def test_czesci_przegladu_z_ci_czesci_skladaja_sie_na_caly_zakres_kazdy_przypadek_raz() -> None:
     """Każda część ``ci-czesci`` z ``SKILL.md`` skilla ma swoje przypadki, a razem, w kolejności, cały zakres; mniejsze
     liczby części daje ten sam ``part`` (``tests/test_podstawa_w_czesciach.py``)."""

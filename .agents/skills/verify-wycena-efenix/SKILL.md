@@ -21,7 +21,9 @@ of the cases (`--lista` prints them), with the second runs of its own stops and 
 #908 added `REFUSED_NO_PROPOSAL`, 35 of them kills checked on the reference's states, and 68 distinct second runs) took
 517 s on Maks's Mac with 4 browsers under a load of about 8 to 10, and the 8 parts, four at a time under a load of 15 to
 18, took 63 to 85 s each (2026-11-05, reports in `~/.t3/notes/wycena-wznowienie-901/r3/`; without second runs the
-parts took 57 to 75 s, so `ci-czesci` stays 8). On Windows in CI the two parts of n=2 took 259 and 338 s (run
+parts took 57 to 75 s, so `ci-czesci` stays 8). Since the step of `przerwanie-przed-zapisem-ilosci` is any step (#920), the stops share second
+runs by other windows: the whole space gives 73 distinct second runs in 518 s, with the same 52 first runs excused
+(`~/.t3/notes/920/full-head/`). On Windows in CI the two parts of n=2 took 259 and 338 s (run
 41985714991), about as long as on the Mac, so a part of n=8 takes about 1 to 1.5 min there. A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`.
 `tests/test_centrum_logi_uruchomienia.py` runs one small scope through every phase in pytest. `check_wycena_efenix_mutations.py`
@@ -174,13 +176,17 @@ are all required, so an entry cannot match on fewer of them (#920):
 - **left**: what run 1 left of the order, its page in efenix and its Ślad entry;
 - **second run**: how the second run ended the order (page before and after, and the fault of its error).
 
-Each entry also has a broken variant just outside its shape in `BOUNDARIES` of `check_wycena_efenix_mutations.py`,
-which must give a new violation; `tests/test_centrum_logi_uruchomienia.py` reds an entry without one.
+Each part of each entry also has a broken variant just outside it in `BOUNDARIES` of
+`check_wycena_efenix_mutations.py`, the same harm with that one part other than the story says, which must give a new
+violation; `tests/test_mutacje_skilli.py` reds an entry with a part without one. A part that admits every member of its
+enum restricts nothing and has none: the way of `#774`, and the step of `przerwanie-przed-zapisem-ilosci`, whose place
+is its state, because the Ślad has a quantity ahead only after the window read the reloaded page, and a request of an
+earlier step sent again after it counts as an occurrence of the next order or of none, which is outside every step.
 
 | Name | Step | Way | Left | Second run | Story |
 |---|---|---|---|---|---|
 | `#774` | `zaladuj-do-zlecenia`, `strona-po-emmetcie` | any | page with exactly Emmett's quantities, no Ślad entry (`emmett_outside_trace`) | unchanged, `PricedDifferently` (`only_compared`) | A stop or a kill between „Załaduj do zlecenia” and reading the reloaded page leaves Emmett in efenix and no trace, so the second run only compares and gives `EFENIX_WYCENA_INNA` for that order alone, which Dad finishes himself (the model's finding 1 `przerwanie-po-zaladuj`). In the whole run of 2026-11-05, 37 first runs in two second runs (`także po` in their counterexamples): `TORN` from Emmett's proposal on (the window breaks at the page efenix reloads after the „Załaduj do zlecenia” it ran), `TORN`, `STALLED`, `HTTP_5XX`, `HUNG`, `SLOW`, `LATE_AFTER` and a closed tab at „Załaduj do zlecenia”, every fault of the reloaded page that stops the window, `STALLED`, `SLOW`, `HUNG`, `LATE_AFTER` and a closed tab at its files, and the kills from after „Załaduj do zlecenia” to its files. A logout at the page's file breaks at the first quantity, outside this step. |
-| `przerwanie-przed-zapisem-ilosci` | `strona-po-emmetcie`, `ilosc` | not a logout | page with Emmett's quantities and a part of those the Ślad has ahead, nothing else (`unsaved_ahead`) | unchanged, `PricedDifferently` (`only_compared`) | A stop other than a logout, or a kill, after the Ślad got a quantity ahead and before efenix saved it leaves in the Ślad a quantity efenix does not have; the page cannot tell it from one Dad removed, so the second run gives `EFENIX_WYCENA_INNA` for that order alone and changes nothing in it (#864; the model's finding 3). The step is the save of a quantity, or the page after Emmett when its script did not load, so the save sends nothing. In the whole run of 2026-11-05, 15 first runs in three second runs: `CUT` and `TORN` at that page's stylesheet, those and `HTTP_4XX`, `HTTP_5XX` and `REDIRECT` at its script, `CUT`, `HTTP_4XX` and `REDIRECT` at either `action_save_index.php`, and the kills before them. After a logout the Ślad withdraws the quantity (`trace.not_entered`), so the same state there is a new violation. |
+| `przerwanie-przed-zapisem-ilosci` | any of this order | not a logout | page with Emmett's quantities and a part of those the Ślad has ahead, nothing else (`unsaved_ahead`) | unchanged, `PricedDifferently` (`only_compared`) | A stop other than a logout, or a kill, after the Ślad got a quantity ahead and before efenix saved it leaves in the Ślad a quantity efenix does not have; the page cannot tell it from one Dad removed, so the second run gives `EFENIX_WYCENA_INNA` for that order alone and changes nothing in it (#864; the model's finding 3). The step is the save of a quantity, or the page after Emmett when its script did not load, so the save sends nothing. In the whole run of 2026-11-05, 15 first runs in three second runs: `CUT` and `TORN` at that page's stylesheet, those and `HTTP_4XX`, `HTTP_5XX` and `REDIRECT` at its script, `CUT`, `HTTP_4XX` and `REDIRECT` at either `action_save_index.php`, and the kills before them. After a logout the Ślad withdraws the quantity (`trace.not_entered`), so the same state there is a new violation. |
 
 ## When the check fails
 
@@ -189,7 +195,8 @@ Zatrzymanie or result. Then sort it:
 
 - **Real bug**: the fault can happen at Dad's (his network, a slow or failing efenix, Dad closing the window or changing
   an order by hand) and the outcome breaks the rule as stated above. Report it with the story; fix the product only if
-  the user asks, otherwise add it to the known findings with its counterexample.
+  the user asks, otherwise add it to the known findings with its counterexample, its `RiskShape` and a broken
+  variant just outside each part of it in `BOUNDARIES`.
 - **Modeling error**: a fault efenix or Chromium would not produce, or an expectation the domain sentence does not
   give. Fix `Fault`, `applies()` or `expected()` and say which sentence was wrong. Never widen an expectation to make
   a real counterexample pass.
@@ -223,10 +230,12 @@ Each gives `WYCENA EFENIX: NOWE NARUSZENIE`:
 - #864: a quantity entered in efenix without its write ahead in the Ślad (`_WrittenAhead`); a resume that takes an
   empty position the Ślad has ahead for one efenix did not save (the rule before the fix, which adds back a quantity
   Dad removed);
-- `BOUNDARIES`, each just outside the shape of an accepted risk: for `#774` a logout at the first quantity that removes
-  the order from the Ślad (outside its step) and a Ślad „gotowe” after a Zatrzymanie (outside what it left), for
-  `przerwanie-przed-zapisem-ilosci` a quantity efenix did not save after a logout kept in the Ślad (`trace.not_entered`
-  skipped, outside its way);
+- `BOUNDARIES`, each just outside one part of the shape of an accepted risk: for `#774` a logout at the first quantity
+  that removes the order from the Ślad (outside its step), a Ślad „Emmett załadowany” without Emmett's quantities
+  written before „Załaduj do zlecenia” (outside what it left), and a second run that gives another error than
+  `EFENIX_WYCENA_INNA` (outside its second run); for `przerwanie-przed-zapisem-ilosci` a quantity efenix did not save
+  after a logout kept in the Ślad (`trace.not_entered` skipped, outside its way), a Ślad „gotowe” after a Zatrzymanie
+  (outside what it left), and the same other error (outside its second run);
 - the window clicking Przekazanie do akceptacji; the Ślad keyed by the order number; a Komunikat that always says
   nothing changed; a Zatrzymanie without the Znaczniki of orders gotowe before it.
 

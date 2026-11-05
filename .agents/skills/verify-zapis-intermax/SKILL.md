@@ -222,19 +222,28 @@ Not covered:
    the finding there too, because a point sits between them. No `os.replace` on
    Windows replaces only a file that is unchanged.
 
-   BEZ_UTRATY_ZMIAN is excused only when a worker's change arrived after the
-   read and before the replace, neither followed by an OneDrive refusal nor in
-   the pause before a retry, the run read the original and replaced the
-   worker's version (`_worker_change_lost`). A worker's change followed by a
-   refusal is one the run had a pause to see, and one that arrived in that
-   pause is one the re-read after it sees, so losing either is a new violation.
-   KOPIA_ZASTAPIONEGO
-   is excused only in the same story with a Kopia of the bytes read
-   (`_copy_of_what_was_read`).
-   The same rules broken in any other schedule are a new violation.
+   Both are excused only in the shape of this story (`FindingShape`, each part
+   required, #920): the worker's change came after the read before one of the
+   run's points up to the replace, not in the pause before a retry
+   (`came_before`), and OneDrive refused the replace no more after it
+   (`refusals_after` 0). A worker's change followed by a refusal is one the run
+   had a pause to see, and one that arrived in that pause is one the re-read
+   after it sees, so losing either is a new violation. The run read the
+   original and its replace put its file over the worker's change (`lost`), not
+   over the run's own bytes or over a change it read. KOPIA_ZASTAPIONEGO also
+   needs a Kopia of the bytes the run read (`copy`, `current` of
+   `replace_register`); a Kopia of other bytes, such as the run's new file when
+   INTERMAX changed before the Kopia, is a new violation. BEZ_UTRATY_ZMIAN says
+   nothing of the Kopia, so its shape admits any. The same rules broken in any
+   other schedule are a new violation.
+
+   Each part that restricts has a broken variant just outside it in
+   `BOUNDARIES` of `check_intermax_mutations.py`, which must give a new
+   violation;
+   `tests/test_mutacje_skilli.py` reds a finding with a part without one.
 
 A known finding lives in `KNOWN_FINDINGS` in `explore_intermax.py` with the
-story after which it is excused. When a code change fixes it, the check ends
+story after which it is excused and its shape. When a code change fixes it, the check ends
 with `ZNALEZISKO ZNIKNĘŁO`: delete the entry there and here.
 
 ## When the check fails
@@ -277,7 +286,15 @@ temporary copy of the checkout (`tools/mutacje.py`) and must end with
 - a failed replace that removes every Kopia;
 - a retried replace that does not read INTERMAX again after the pause;
 - a retried replace that reads INTERMAX again before the pause instead of
-  after it;
+  after it (`BOUNDARIES`: outside `came_before` of both findings);
+- a retried replace that compares INTERMAX read after the pause with the bytes
+  read right after OneDrive's refusal instead of those the run read
+  (`BOUNDARIES`: outside `refusals_after` of both findings);
+- a replace that, when INTERMAX changed after the read, first writes the run's
+  new file over it and puts it back if the replace fails (`BOUNDARIES`: outside
+  `lost` of both findings);
+- a Kopia of the run's new file when INTERMAX changed before the Kopia
+  (`BOUNDARIES`: outside `copy` of KOPIA_ZASTAPIONEGO);
 - Kopie sorted by name instead of by the moment in their name;
 - a Kopia that overwrites a Kopia of the same name (no `O_EXCL`): the second
   restore in the same second overwrites the Kopia of the first, and then stops
