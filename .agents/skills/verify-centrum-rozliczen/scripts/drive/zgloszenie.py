@@ -132,7 +132,7 @@ def drive_report(run: Run, page: Page) -> None:
     queue = config / "zgloszenia" / "kolejka"
     box = run.root / "skrzynka-zgloszen"
     diagnosis = page.get_by_role("region", name="Diagnoza")
-    drop_report_key(key_file)
+    drop_report_key(key_file, missing_ok=True)
 
     run.step(FEATURE, "zgloszenie-podglad")
     page.goto(run.url)

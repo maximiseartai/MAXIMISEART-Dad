@@ -356,7 +356,7 @@ def drive_diagnosis(run: Run, page: Page) -> None:
     run.step(FEATURE, "diagnoza-nieoczekiwany-wyjatek-zgloszenie")
     config = Path(run.fixture["settings"]).parent
     key_file = config / "zgloszenia-klucz.txt"
-    drop_report_key(key_file)  # no key before features/zgloszenie.md
+    drop_report_key(key_file, missing_ok=True)  # no key before features/zgloszenie.md
     diagnosis.get_by_role("button", name="Wyślij do Maksa", exact=True).click()
     expect(diagnosis.get_by_role("status").filter(has_text=FOR_KEY)).to_be_visible()
     [queued_report] = [

@@ -25,6 +25,7 @@ from drive.common import (
     period_files,
     period_row,
     remove,
+    remove_empty_folder,
 )
 from drive.przygotowanie_pliku_zbiorczego import HIDE_TAB, SHOW_TAB, drive_preparation
 
@@ -283,7 +284,7 @@ def _settled_result_card(run: Run, page: Page, filling: Locator, collective_file
         run.check(True, "after Przebieg the result card has no hint about saving in Excel")
         run.capture(page, "256-uzupelnienie-wynik-po-przebiegu")
     finally:
-        worker_settlements.rmdir()
+        remove_empty_folder(worker_settlements)
     page.evaluate(RETURN_TO_TAB)
     expect(hint).to_have_count(1)
     run.check(True, "without the Folder rozliczeń pracowników the hint is back on the card")
@@ -906,7 +907,7 @@ def _drive_after_settlement(run: Run, page: Page, collective_file: Path) -> None
         if switched:
             page.locator("header").get_by_role("button", name="Włącz motyw ciemny", exact=True).click()
     finally:
-        worker_settlements.rmdir()
+        remove_empty_folder(worker_settlements)
     page.goto(run.url)
 
 

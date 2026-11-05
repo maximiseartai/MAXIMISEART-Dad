@@ -2,8 +2,8 @@
 
 Checks the frontmatter, the feature-map headings, that every helper named in
 SKILL.md exists and answers ``--help``, the gate of ``wydajnosc`` on made-up
-numbers (no browser), that the drive removes and renames files only through
-``drive/common.py`` (``remove``, ``move``), that evidence text is strict UTF-8 and screenshots are PNG
+numbers (no browser), that the drive deletes, moves and replaces files and folders
+only through the retrying helpers of ``drive/common.py``, that evidence text is strict UTF-8 and screenshots are PNG
 files, and that no workbook content (the fixture's row marker) reached the
 evidence.
 """
@@ -41,9 +41,71 @@ REQUIRED_FEATURE_HEADINGS = (
 )
 ROW_MARKER = "CENTRUM-SYN-ROW"  # create_centrum_fixture.py puts it in every synthetic workbook
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-# Path methods that fail on Windows while another process holds the file open (WinError 32, #921): the drive calls
-# them only inside ``drive/common.py``, whose ``remove`` and ``move`` retry while the server reads the file.
-RETRIED_ON_WINDOWS = ("unlink", "rename")
+# Every way to delete or move a file or folder fails on Windows while another process holds it open (WinError 32,
+# #921), so the drive reaches them only through the retrying helpers of ``drive/common.py`` (``DRIVE_HELPERS``).
+# The forms and the rule that catches each are the table of PR #925; ``REMOVAL_SAMPLES`` holds one sample of each.
+OS_REMOVALS = frozenset({"remove", "unlink", "rename", "replace", "renames", "rmdir", "removedirs"})
+SHUTIL_REMOVALS = frozenset({"move", "rmtree"})
+REMOVING_MODULES = {"os": OS_REMOVALS, "shutil": SHUTIL_REMOVALS, "pathlib": frozenset()}
+# Attributes no other object of the drive has: any access counts, also an alias such as ``Path.unlink``.
+REMOVING_ATTRIBUTES = frozenset({"unlink", "rename", "rmdir", "rmtree", "removedirs", "renames", "move_into"})
+# Path methods whose names other objects share (``str.replace``, ``page.mouse.move``): a call with the Path signature
+# (one positional argument, no keyword), or any access on a pathlib class.
+ONE_TARGET_METHODS = frozenset({"replace", "move"})
+PATHLIB_CLASSES = frozenset({"Path", "PurePath", "PosixPath", "WindowsPath", "PurePosixPath", "PureWindowsPath"})
+DRIVE_HELPERS = frozenset({"_while_open", "remove", "remove_tree", "remove_empty_folder", "move", "replace_file"})
+# What the guard cannot see, so review still must: a shell command (``rm``, ``del``, ``Remove-Item``), ``importlib``
+# or ``__import__``, ``getattr`` with a name computed at run time, ``operator.methodcaller``, ``tempfile`` cleanup.
+REMOVAL_SAMPLES = (
+    "p.unlink()",
+    "p.unlink(missing_ok=True)",
+    "p.rename(q)",
+    "p.rmdir()",
+    "p.replace(q)",
+    "p.move(q)",
+    "p.move_into(folder)",
+    "drop = Path.unlink",
+    "from pathlib import Path\nswap = Path.replace",
+    "from pathlib import Path as P\nswap = P.replace",
+    "import pathlib\nswap = pathlib.Path.move",
+    "import os\nos.remove(p)",
+    "import os\nos.unlink(p)",
+    "import os\nos.rename(p, q)",
+    "import os\nos.replace(p, q)",
+    "import os\nos.renames(p, q)",
+    "import os\nos.rmdir(p)",
+    "import os\nos.removedirs(p)",
+    "import os as system\nsystem.remove(p)",
+    "import os.path\nos.remove(p)",
+    "import shutil\nshutil.move(p, q)",
+    "import shutil\nshutil.rmtree(p)",
+    "import shutil\nshutil.rmtree(p, ignore_errors=True)",
+    "import shutil as sh\nsh.move(p, q)",
+    "from os import remove",
+    "from os import replace as swap",
+    "from shutil import rmtree",
+    "from shutil import move as shift",
+    "from os import *",
+    "from shutil import *",
+    "from pathlib import *",
+    "getattr(p, 'unlink')()",
+    "import os\ngetattr(os, 'remove')(p)",
+)
+LOOKALIKE_SAMPLES = (
+    "text.replace('a', 'b')",
+    "text.replace(*pair)",
+    "moment.replace(tzinfo=zone)",
+    "import dataclasses\ndataclasses.replace(item)",
+    "import dataclasses\ndataclasses.replace(item, name='x')",
+    "page.mouse.move(4, 4)",
+    "items.remove(item)",
+    "import os\nos.path.join(a, b)",
+    "import os\nos.kill(pid, 9)",
+    "import shutil\nshutil.copytree(a, b)\nshutil.copyfile(a, b)\nshutil.copy2(a, b)",
+    "from pathlib import Path\nPath(a).write_bytes(b'')",
+    "from drive.common import move, remove\nremove(p)\nmove(p, q)",
+    "getattr(page, 'url')",
+)
 
 
 def _check_skill(errors: list[str]) -> None:
@@ -76,22 +138,104 @@ def _check_feature_map(errors: list[str]) -> None:
             errors.append(f"{path.name} must have exactly the H2s {REQUIRED_FEATURE_HEADINGS}, in order")
 
 
-def _check_drive_removals(errors: list[str]) -> None:
-    """The drive deletes and renames the run's files only through ``remove`` and ``move`` of ``drive/common.py``."""
+def _removals(source: str, helpers: frozenset[str] = frozenset()) -> list[str]:
+    """Each deletion or move of a file or folder in ``source`` outside the top-level functions ``helpers``, as
+    ``<line>: <form>``."""
 
-    for path in sorted((SCRIPTS_ROOT / "drive").glob("*.py")):
-        if path.name == "common.py":
+    tree = ast.parse(source)
+    skipped = {
+        id(inner)
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in helpers
+        for inner in ast.walk(node)
+    }
+    modules: dict[str, str] = {}
+    imported: set[str] = set()
+    pathlib_classes: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".")[0]
+                bound = alias.asname or root
+                imported.add(bound)
+                if root in REMOVING_MODULES:
+                    modules[bound] = root
+        elif isinstance(node, ast.ImportFrom) and node.module == "pathlib":
+            pathlib_classes.update(alias.asname or alias.name for alias in node.names if alias.name in PATHLIB_CLASSES)
+
+    def pathlib_class(value: ast.expr) -> bool:
+        if isinstance(value, ast.Name):
+            return value.id in pathlib_classes
+        return (
+            isinstance(value, ast.Attribute)
+            and value.attr in PATHLIB_CLASSES
+            and isinstance(value.value, ast.Name)
+            and modules.get(value.value.id) == "pathlib"
+        )
+
+    found: set[tuple[int, str]] = set()
+    for node in ast.walk(tree):
+        if id(node) in skipped:
             continue
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path))):
+        if isinstance(node, ast.ImportFrom) and node.module in REMOVING_MODULES:
+            for alias in node.names:
+                if alias.name == "*" or alias.name in REMOVING_MODULES[node.module]:
+                    found.add((node.lineno, f"from {node.module} import {alias.name}"))
+        elif isinstance(node, ast.Attribute):
+            owner = node.value.id if isinstance(node.value, ast.Name) else None
+            if node.attr in REMOVING_ATTRIBUTES:
+                found.add((node.lineno, f".{node.attr}"))
+            elif owner in modules and node.attr in REMOVING_MODULES[modules[owner]]:
+                found.add((node.lineno, f"{modules[owner]}.{node.attr}"))
+            elif node.attr in ONE_TARGET_METHODS and pathlib_class(node.value):
+                found.add((node.lineno, f"Path.{node.attr}"))
+        elif isinstance(node, ast.Call):
+            function = node.func
             if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr in RETRIED_ON_WINDOWS
+                isinstance(function, ast.Attribute)
+                and function.attr in ONE_TARGET_METHODS
+                and len(node.args) == 1
+                and not any(isinstance(argument, ast.Starred) for argument in node.args)
+                and not node.keywords
+                and not (isinstance(function.value, ast.Name) and function.value.id in imported)
             ):
-                errors.append(
-                    f"drive/{path.name}:{node.lineno} calls .{node.func.attr}(); use remove or move from drive/common.py, "
-                    "which retry while the server holds the file open on Windows (#921)"
-                )
+                found.add((node.lineno, f".{function.attr}(target)"))
+            elif (
+                isinstance(function, ast.Name)
+                and function.id == "getattr"
+                and len(node.args) >= 2
+                and isinstance(node.args[1], ast.Constant)
+                and node.args[1].value in REMOVING_ATTRIBUTES | OS_REMOVALS | SHUTIL_REMOVALS | ONE_TARGET_METHODS
+            ):
+                found.add((node.lineno, f"getattr(…, {node.args[1].value!r})"))
+    return [f"{line}: {form}" for line, form in sorted(found)]
+
+
+def _helpers_of(name: str) -> frozenset[str]:
+    """The functions of ``drive/<name>`` that may delete and move: only the retrying helpers of ``common.py``."""
+
+    return DRIVE_HELPERS if name == "common.py" else frozenset()
+
+
+def _check_drive_removals(errors: list[str]) -> None:
+    """The drive deletes, moves and replaces files and folders only through the helpers of ``drive/common.py``, and
+    the guard catches every form of ``REMOVAL_SAMPLES`` and none of ``LOOKALIKE_SAMPLES``."""
+
+    for sample in REMOVAL_SAMPLES:
+        if not _removals(sample):
+            errors.append(f"the guard of #921 misses a deletion or move: {sample!r}")
+    for sample in LOOKALIKE_SAMPLES:
+        if _removals(sample):
+            errors.append(f"the guard of #921 takes {sample!r} for a deletion or move: {_removals(sample)}")
+    if not _removals("def remove(path):\n    path.unlink()\n", _helpers_of("kontrola_ilosci.py")):
+        errors.append("the guard of #921 lets a feature hide a deletion in its own function named like a helper")
+    for path in sorted((SCRIPTS_ROOT / "drive").glob("*.py")):
+        for finding in _removals(path.read_text(encoding="utf-8"), _helpers_of(path.name)):
+            errors.append(
+                f"drive/{path.name}:{finding}; delete, move and replace through remove, remove_tree, "
+                "remove_empty_folder, move or replace_file of drive/common.py, which retry while the server holds the "
+                "file open on Windows (#921)"
+            )
 
 
 def _check_retry_while_open(errors: list[str]) -> None:
@@ -111,6 +255,30 @@ def _check_retry_while_open(errors: list[str]) -> None:
         _while_open(held_for_a_moment)
     except PermissionError:
         errors.append("drive/common.py gives up on a file the server holds open for a moment (#921)")
+
+
+def _check_drop_report_key(errors: list[str]) -> None:
+    """``drop_report_key`` empties a key the step wrote, and refuses one it never wrote unless ``missing_ok``."""
+
+    import tempfile
+
+    from drive.common import DriveFailure, drop_report_key
+
+    with tempfile.TemporaryDirectory() as scratch:
+        key_file = Path(scratch) / "zgloszenia-klucz.txt"
+        key_file.write_text("KLUCZ\n", encoding="utf-8")
+        drop_report_key(key_file)
+        if key_file.read_bytes() != b"":
+            errors.append("drop_report_key leaves the key in its file")
+        for missing_ok in (False, True):
+            try:
+                drop_report_key(key_file, missing_ok=missing_ok)
+            except DriveFailure:
+                if missing_ok:
+                    errors.append("drop_report_key(missing_ok=True) refuses a file without a key")
+            else:
+                if not missing_ok:
+                    errors.append("drop_report_key takes away a key the step never wrote, which the removal refused")
 
 
 def _check_performance_gate(errors: list[str]) -> None:
@@ -256,6 +424,7 @@ def main(argv: list[str] | None = None) -> int:
     _check_feature_map(errors)
     _check_drive_removals(errors)
     _check_retry_while_open(errors)
+    _check_drop_report_key(errors)
     _check_performance_gate(errors)
     _check_machine_lock(errors)
     if args.evidence_root:

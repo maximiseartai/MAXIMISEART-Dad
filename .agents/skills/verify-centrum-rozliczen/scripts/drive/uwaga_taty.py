@@ -453,7 +453,7 @@ def drive_dad_note(run: Run, page: Page) -> None:
     key_file = config / "zgloszenia-klucz.txt"
     box = run.root / "skrzynka-zgloszen"
     pacing = run.root / "pacing" / "skrzynka-ms.txt"
-    drop_report_key(key_file)
+    drop_report_key(key_file, missing_ok=True)
     notes_before = len(_notes(config))
     issues_before = len(_issues(box))
     run.check(_queued(config) == [], "the skrzynka queue is empty before the first Uwaga")
