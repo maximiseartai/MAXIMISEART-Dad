@@ -10,6 +10,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime, time as time_of_day, timedelta, timezone
 from decimal import Decimal
+import errno
 import hashlib
 from http import HTTPStatus
 import json
@@ -19,6 +20,7 @@ import re
 import shutil
 import signal
 import sys
+import threading
 import time
 from typing import Any, NoReturn
 
@@ -31,13 +33,14 @@ from rozliczenia import TOOL_ROOT, settlement_messages, workbook_files
 from rozliczenia.centrum import app, contract, runs
 from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES, DadActions
 from rozliczenia.centrum.efenix_run import EfenixWindow
-from rozliczenia.centrum.pricing_journal import JournalStarted, OrderEnded
+from rozliczenia.centrum.pricing_journal import JournalStarted, OrderBegun, OrderEnded
 from rozliczenia.centrum.run_logs import (
     Environment,
     LoggedInterruption,
     LoggedOrder,
     LoggedStep,
     RunLog,
+    RunLogs,
     Tool,
     logs_file_name,
 )
@@ -45,6 +48,7 @@ from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.period_folder import PeriodFolderInaccessible
+from rozliczenia.telemetry import MetricsStore
 
 from tests.fixtures.atrapa_efenix import CATALOG, AtrapaEfenix, AtrapaOrder, Changed, amount_of, atrapa_efenix
 from tests.fixtures.centrum import (
@@ -1677,9 +1681,10 @@ def test_wycena_w_efenix_ktora_doszla_do_konca_nie_zostawia_dziennika_ktory_star
 
 
 def _pricing_cut_before_result(tmp_path: Path) -> tuple[SettlingCentrum, str, Path]:
-    """Wycena w efenix przeszła wszystkie zlecenia, ale Centrum zgasło przed jej wynikiem: dziennik ma każde zlecenie, a
-    nie ma Logów, wiersza Historii ani wysyłki w kolejce, czyli to Urwane Uruchomienie (ADR 0017). Skrzynka Zgłoszeń ma
-    klucz dopiero od następnego startu, więc nic z tej Wyceny do niej nie poszło. Zwraca też folder kolejki wysyłki."""
+    """Wycena w efenix przeszła wszystkie zlecenia, ale Centrum zgasło przed jej wynikiem: dziennik ma każde zlecenie bez
+    wpisu końca, a nie ma Logów, wiersza Historii ani wysyłki w kolejce, czyli to Urwane Uruchomienie (ADR 0017).
+    Skrzynka Zgłoszeń ma klucz dopiero od następnego startu, więc nic z tej Wyceny do niej nie poszło. Zwraca też folder
+    kolejki wysyłki."""
 
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
@@ -1689,6 +1694,10 @@ def _pricing_cut_before_result(tmp_path: Path) -> tuple[SettlingCentrum, str, Pa
     [logs] = log_files(centrum)
     logs.unlink()
     centrum.engines.metrics.efenix.unlink()
+    [journal] = journals(centrum)
+    *before_result, end = journal.read_text(encoding="utf-8").splitlines(keepends=True)
+    assert json.loads(end)["entry"] == "koniec Uruchomienia"
+    journal.write_text("".join(before_result), encoding="utf-8")
     queue = tmp_path / "config" / "zgloszenia" / "kolejka"
     shutil.rmtree(queue)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
@@ -2325,3 +2334,249 @@ def test_numer_orange_i_telefon_zapisane_przez_excel_jako_liczba_nie_wychodza_do
     assert any("[numer Orange]" in part for part in sent), "Kopia wejścia w pliku Logów w Archiwum"
     leaked = (ORANGE_VALUE, str(PHONE_NUMBER), str(PHONE_WITH_PREFIX_NUMBER))
     assert [value for value in leaked if any(value in text for text in texts + sent)] == []
+
+
+@contextmanager
+def _refused(monkeypatch: pytest.MonkeyPatch, method: str, refuses: Callable[[Path, str], bool]) -> Iterator[None]:
+    """``Path.<method>`` rzuca PermissionError (plik trzyma antywirus albo inny program), gdy ``refuses`` mówi tak o
+    ścieżce i trybie otwarcia."""
+
+    original = getattr(Path, method)
+
+    def refusing(self: Path, *arguments: Any, **keywords: Any) -> Any:
+        mode = arguments[0] if arguments and isinstance(arguments[0], str) else keywords.get("mode", "r")
+        if refuses(self, mode):
+            raise PermissionError(13, "plik zajęty")
+        return original(self, *arguments, **keywords)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, method, refusing)
+        yield
+
+
+def test_dziennik_urwanej_wyceny_nieodczytany_przy_starcie_dostaje_logi_urwanego_uruchomienia_takze_po_nastepnej_wycenie_z_wynikiem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#870: Wycena 1 urwana po „zaczynam zlecenie”, a start Centrum nie może przeczytać jej dziennika, więc zostawia go
+    następnemu. W tej pracy Centrum Wycena 2 dochodzi do wyniku i ma wiersz Historii ze startem późniejszym niż Wycena 1.
+    Następny start zamyka dziennik Wyceny 1 jako jej Logi Urwanego Uruchomienia ze zleceniem zaczętym bez wyniku i wysyła
+    je do Skrzynki obok Logów Wyceny 2, a dopiero potem dziennik znika."""
+
+    run_1 = "a" * 32
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        box = centrum.surroundings.report_box
+        started_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        started = JournalStarted(
+            entry="start Uruchomienia", run_id=run_1, process="efenix", mode="zapis", period=PERIOD, started_at=started_at
+        )
+        begun = OrderBegun(at=started_at + timedelta(seconds=30), entry="zaczynam zlecenie", row=18, place=1, total=6)
+        directory = centrum.log_path.parent / "dzienniki-wyceny"
+        directory.mkdir(parents=True)
+        journal_1 = directory / Path(logs_file_name(started_at, "efenix", run_1)).with_suffix(".jsonl")
+        journal_1.write_text(f"{started.model_dump_json()}\n{begun.model_dump_json()}\n", encoding="utf-8")
+        centrum.client.stop()
+        with _refused(monkeypatch, "read_text", lambda path, _: path == journal_1):
+            centrum.restart()
+            assert centrum.client.get("/api/runs/current").status_code == 200
+        skipped = (journal_1.exists(), log_files(centrum))
+        assert _start_pricing(centrum).status_code == 200
+        run_2 = finished_view(centrum.client)["run"]["id"]
+        centrum.client.stop()
+        centrum.restart()
+        assert centrum.client.get("/api/runs/current").status_code == 200
+        sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 2)
+        centrum.client.stop()
+    logged = {record["run_id"]: record for record in records(centrum)}
+
+    assert (skipped, sent) == ((True, []), True)
+    assert {run_id: record["ending"] for run_id, record in logged.items()} == {run_1: "interrupted", run_2: "finished"}
+    assert logged[run_1]["interruption"] == {"row": 18, "place": 1, "total": 6, "omitted": 0}
+    assert sorted(logs_json(box, comment)["run_id"] for comment in logs_comments(box)) == sorted([run_1, run_2])
+    assert journals(centrum) == [], "dziennik, którego Logi przyjęła Kolejka wysyłki, znika"
+
+
+@pytest.mark.parametrize("unseen", ["historia-nieczytelna", "rekord-metryk-niezapisany"])
+def test_wycena_z_wynikiem_bez_pliku_logow_nie_dostaje_logow_urwanego_uruchomienia_gdy_start_nie_widzi_jej_wiersza_historii(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unseen: str
+) -> None:
+    """#871: Wycena doszła do wyniku, ale pliku jej Logów nie ma (katalog Logów zajęty przez plik), więc Logi z wynikiem
+    poszły do Skrzynki tylko z kolejki. Start Centrum nie widzi jej wiersza Historii: plik metryk Wyceny w efenix jest
+    nieczytelny przy starcie albo rekord metryk się nie zapisał (pełny dysk). Dziennik ma wpis końca, więc start go usuwa
+    bez Logów Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem."""
+
+    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked.parent.mkdir(parents=True)
+    blocked.write_text("", encoding="utf-8")  # plik zamiast katalogu Logów: RunLogs._write rzuca OSError
+
+    def full_disk(_store: MetricsStore, _record: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        box = centrum.surroundings.report_box
+        with monkeypatch.context() as patch:
+            if unseen == "rekord-metryk-niezapisany":
+                patch.setattr(MetricsStore, "append", full_disk)
+            assert _start_pricing(centrum).status_code == 200
+            run_id = finished_view(centrum.client)["run"]["id"]
+        assert box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        [result] = [logs_json(box, comment) for comment in logs_comments(box)]
+        centrum.client.stop()
+    blocked.unlink()
+    metrics = centrum.engines.metrics.efenix
+    with _refused(monkeypatch, "open", lambda path, mode: unseen == "historia-nieczytelna" and path == metrics and mode == "r"):
+        centrum.restart()
+        assert centrum.client.get("/api/runs/current").status_code == 200
+    centrum.client.stop()
+
+    assert (result["run_id"], result["ending"], metrics.exists() == (unseen == "historia-nieczytelna")) == (run_id, "finished", True)
+    assert (records(centrum), journals(centrum)) == ([], [])
+    assert [logs_json(box, comment)["ending"] for comment in logs_comments(box)] == ["finished"]
+
+
+def test_wpis_konca_ktory_sie_nie_zapisal_usuwa_dziennik_wyceny_z_wynikiem_a_start_nie_robi_z_niej_urwanego_uruchomienia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Każdy wpis Wyceny w efenix się zapisuje oprócz wpisu końca, bo po rekordzie metryk antywirus trzyma dziennik, a
+    pliku Logów nie ma (katalog Logów zajęty przez plik). Wycena usuwa wtedy swój dziennik sama, z jedną linią dziennika
+    Centrum, więc następny start nie robi z niej Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem."""
+
+    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked.parent.mkdir(parents=True)
+    blocked.write_text("", encoding="utf-8")
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        box = centrum.surroundings.report_box
+        metrics = centrum.engines.metrics.efenix
+
+        def after_result(path: Path, mode: str) -> bool:
+            return path.parent.name == "dzienniki-wyceny" and mode == "a" and metrics.exists()
+
+        with _refused(monkeypatch, "open", after_result):
+            assert _start_pricing(centrum).status_code == 200
+            finished_view(centrum.client)
+        assert box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        centrum.client.stop()
+    ended = journals(centrum)
+    blocked.unlink()
+    centrum.restart()
+    assert centrum.client.get("/api/runs/current").status_code == 200
+    centrum.client.stop()
+    lines = [line.split(" ", 1)[1] for line in centrum.log_path.read_text(encoding="utf-8").splitlines() if "dziennik-wyceny" in line]
+
+    assert (ended, lines) == ([], ["dziennik-wyceny-niedostepny typ=PermissionError miejsce=wpis"])
+    assert (records(centrum), [logs_json(box, comment)["ending"] for comment in logs_comments(box)]) == ([], ["finished"])
+
+
+class _Unconfirmed:
+    """Plik dziennika, którego zapis dysk przyjął (``write`` i ``flush``), ale nie potwierdził: ``fsync`` na jego deskryptorze
+    zgłasza błąd wejścia-wyjścia."""
+
+    def __init__(self, file: Any) -> None:
+        self._file = file
+
+    def __enter__(self) -> _Unconfirmed:
+        self._file.__enter__()
+        return self
+
+    def __exit__(self, *exception: object) -> None:
+        self._file.__exit__(*exception)
+
+    def write(self, text: str) -> int:
+        return int(self._file.write(text))
+
+    def flush(self) -> None:
+        self._file.flush()
+
+    def fileno(self) -> NoReturn:
+        raise OSError(errno.EIO, "Input/output error")
+
+
+def test_wycena_z_wynikiem_ktorej_jedyny_wpis_dziennika_zawiodl_po_zapisie_pierwszej_linii_nie_dostaje_logow_urwanego_uruchomienia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pierwszy wpis Wyceny w efenix, „zaczynam zlecenie”, jest już na dysku razem z pierwszą linią dziennika, gdy dysk
+    zgłasza błąd wejścia-wyjścia, a okno efenix staje przy tym samym zleceniu (strona błędu HTTP), więc Wycena dochodzi
+    do wyniku z Zatrzymaniem bez następnego wpisu. Pliku Logów nie ma (katalog Logów zajęty przez plik), więc jej Logi z
+    wynikiem idą do Skrzynki tylko z kolejki. Wycena usuwa dziennik sama, z jedną linią dziennika Centrum, więc następny
+    start nie robi z niej Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem."""
+
+    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked.parent.mkdir(parents=True)
+    blocked.write_text("", encoding="utf-8")
+    opened = Path.open
+    unconfirmed: list[Path] = []
+
+    def opening(self: Path, *arguments: Any, **keywords: Any) -> Any:
+        file = opened(self, *arguments, **keywords)
+        mode = arguments[0] if arguments and isinstance(arguments[0], str) else keywords.get("mode", "r")
+        if self.parent.name == "dzienniki-wyceny" and mode == "a" and not unconfirmed:
+            unconfirmed.append(self)
+            return _Unconfirmed(file)
+        return file
+
+    with atrapa_efenix([HYPOTHESES["D-strona-bledu-http"][0]]) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        write_collective_file(centrum.period_parent, STOPPED_AT_SECOND[1:])
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        box = centrum.surroundings.report_box
+        with monkeypatch.context() as patch:
+            patch.setattr(Path, "open", opening)
+            assert _start_pricing(centrum).status_code == 200
+            stops = finished_view(centrum.client)["result"]["stops"]
+        assert box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        centrum.client.stop()
+    left = journals(centrum)
+    blocked.unlink()
+    centrum.restart()
+    assert centrum.client.get("/api/runs/current").status_code == 200
+    centrum.client.stop()
+    lines = [line.split(" ", 1)[1] for line in centrum.log_path.read_text(encoding="utf-8").splitlines() if "dziennik-wyceny" in line]
+
+    assert (len(unconfirmed), len(stops), lines) == (1, 1, ["dziennik-wyceny-niedostepny typ=OSError miejsce=wpis"])
+    assert (records(centrum), left, [logs_json(box, comment)["ending"] for comment in logs_comments(box)]) == ([], [], ["stop"])
+
+
+def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie_zastepuje_ich_logami_urwanego_uruchomienia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Centrum gaśnie zaraz po tym, jak Logi z wynikiem Wyceny w efenix poszły do Kolejki wysyłki, a pliku Logów nie ma
+    (katalog Logów zajęty przez plik). Wycena dopisała wpis końca do dziennika przed swoimi Logami, więc następny start
+    usuwa dziennik bez Logów Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem (#871)."""
+
+    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked.parent.mkdir(parents=True)
+    blocked.write_text("", encoding="utf-8")
+    reached, released = threading.Event(), threading.Event()
+    keep = RunLogs.run_ended
+
+    def held_after(self: RunLogs, run: Any) -> None:
+        try:
+            keep(self, run)  # rzuca OSError po wysyłce do kolejki: pliku Logów nie da się zapisać
+        finally:
+            reached.set()
+            released.wait()
+
+    monkeypatch.setattr(RunLogs, "run_ended", held_after)
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        box = centrum.surroundings.report_box
+        assert _start_pricing(centrum).status_code == 200
+        assert wait_for(reached.is_set, 120)
+        sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        closed = centrum.client
+        blocked.unlink()
+        centrum.restart()
+        assert centrum.client.get("/api/runs/current").status_code == 200
+        after = (records(centrum), journals(centrum))
+        released.set()
+        finished_view(closed)
+    centrum.client.stop()
+
+    assert (sent, after) == (True, ([], []))
+    assert [logs_json(box, comment)["ending"] for comment in logs_comments(box)] == ["finished"]

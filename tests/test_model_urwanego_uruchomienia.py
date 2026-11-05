@@ -130,10 +130,10 @@ def _check_in_ci(root: Path, sync: str) -> subprocess.CompletedProcess[str]:
     "name",
     [
         pytest.param("InterruptedPricings", id="zamykanie-i-wysylka-dziennikow"),
-        pytest.param("RunCards._row", id="wiersz-historii"),
+        pytest.param("runs", id="kolejnosc-dzialan-po-wyniku"),
         pytest.param("send_interrupted", id="wysylka-przy-zapytaniu"),
         pytest.param("lifespan", id="start-kolejki"),
-        pytest.param("run_process", id="zapis-wiersza-historii"),
+        pytest.param("run_process", id="wynik-uruchomienia"),
     ],
 )
 def test_w_ci_zmieniona_definicja_opisana_modelem_konczy_sprawdzenie_porazka(tmp_path: Path, name: str) -> None:
@@ -175,14 +175,14 @@ def test_w_ci_zmiana_obok_definicji_opisanych_modelem_nie_jest_rozjazdem(tmp_pat
 
 def test_w_ci_definicja_ktorej_nie_ma_jest_rozjazdem(tmp_path: Path) -> None:
     sync = _repository(tmp_path)
-    path = tmp_path / _file_of("RunCards.recorded")
-    path.write_text(path.read_text(encoding="utf-8").replace("def recorded(", "def recorded_inaczej("), encoding="utf-8")
+    path = tmp_path / _file_of("_remove")
+    path.write_text(path.read_text(encoding="utf-8").replace("def _remove(", "def _remove_inaczej("), encoding="utf-8")
     commit(tmp_path, "inna nazwa")
 
     done = _check_in_ci(tmp_path, sync[:9])
 
     assert done.stdout.splitlines()[-1] == DRIFT, done.stdout + done.stderr
-    assert f"{_file_of('RunCards.recorded')} RunCards.recorded." in done.stdout
+    assert f"{_file_of('_remove')} _remove." in done.stdout
 
 
 def test_w_ci_brak_commitu_synchronizacji_konczy_sprawdzenie_porazka(tmp_path: Path) -> None:
@@ -225,18 +225,18 @@ def _verdicts(
     return forgiven
 
 
-_KNOWN = [{"obietnica": "DziennikPoKolejce", "przyczyna": "wiersz-pozniejszej-wyceny", "znalezisko": "test"}]
+_KNOWN = [{"obietnica": "BezUrwanychPoWyniku", "przyczyna": "przed-wpisem-konca", "znalezisko": "test"}]
 
 
 @pytest.mark.parametrize(
     ("own", "rest", "code", "last"),
     [
-        pytest.param(("DziennikPoKolejce", {"wiersz-pozniejszej-wyceny"}), None, 0, "URWANE URUCHOMIENIE OK, ZNANE ZNALEZISKA: 1", id="znane"),
-        pytest.param(("DziennikPoKolejce", set()), None, 1, "URWANE URUCHOMIENIE: NOWE NARUSZENIE (1)", id="bez-przyczyny"),
-        pytest.param(("TeSameZnaki", {"wiersz-pozniejszej-wyceny"}), None, 1, "URWANE URUCHOMIENIE: NOWE NARUSZENIE (1)", id="inna-obietnica"),
+        pytest.param(("BezUrwanychPoWyniku", {"przed-wpisem-konca"}), None, 0, "URWANE URUCHOMIENIE OK, ZNANE ZNALEZISKA: 1", id="znane"),
+        pytest.param(("BezUrwanychPoWyniku", set()), None, 1, "URWANE URUCHOMIENIE: NOWE NARUSZENIE (1)", id="bez-przyczyny"),
+        pytest.param(("TeSameZnaki", {"przed-wpisem-konca"}), None, 1, "URWANE URUCHOMIENIE: NOWE NARUSZENIE (1)", id="inna-obietnica"),
         pytest.param(None, None, 1, "URWANE URUCHOMIENIE: ZNALEZISKO ZNIKNĘŁO (1)", id="zniknelo"),
         pytest.param(
-            ("DziennikPoKolejce", {"wiersz-pozniejszej-wyceny"}),
+            ("BezUrwanychPoWyniku", {"przed-wpisem-konca"}),
             ("Zbieganie", set()),
             1,
             "URWANE URUCHOMIENIE: NOWE NARUSZENIE (1)",
@@ -262,7 +262,7 @@ def test_znane_znalezisko_wybacza_tylko_swoja_obietnice_po_swojej_przyczynie(
 
     assert module.main([]) == code
     assert capsys.readouterr().out.splitlines()[-1] == last
-    assert forgiven == [frozenset(), frozenset({("DziennikPoKolejce", "wiersz-pozniejszej-wyceny")})]
+    assert forgiven == [frozenset(), frozenset({("BezUrwanychPoWyniku", "przed-wpisem-konca")})]
 
 
 def test_konfiguracja_wybacza_tylko_znane_znaleziska_ktore_oczekiwane_podaja_dla_niej(
@@ -272,9 +272,9 @@ def test_konfiguracja_wybacza_tylko_znane_znaleziska_ktore_oczekiwane_podaja_dla
     oczekuje, to nowe naruszenie. Każde znalezisko ma swój przebieg bez pozostałych znanych swojej konfiguracji."""
 
     module = _load()
-    later = ("DziennikPoKolejce", "wiersz-pozniejszej-wyceny")
-    unread = ("BezUrwanychPoWyniku", "historia-nieczytelna")
-    unwritten = ("BezUrwanychPoWyniku", "historia-niezapisana")
+    later = ("ZaczeteWLogach", "wpis-nieudany")
+    unread = ("BezUrwanychPoWyniku", "przed-wpisem-konca")
+    unwritten = ("BezUrwanychPoWyniku", "wpis-konca-nieudany")
 
     def finding(found: tuple[str, str]) -> dict[str, str]:
         return {"obietnica": found[0], "przyczyna": found[1], "znalezisko": "test"}
@@ -286,7 +286,7 @@ def test_konfiguracja_wybacza_tylko_znane_znaleziska_ktore_oczekiwane_podaja_dla
         module.Verdict(later[0], frozenset({later[1]})),
         module.Verdict(None),
     ]
-    known = {"historia": [finding(unread), finding(unwritten)], "odczyt": [finding(later)]}
+    known = {"koniec": [finding(unread), finding(unwritten)], "wpisy": [finding(later)]}
     forgiven = _verdicts(module, monkeypatch, tmp_path, known, answers)
 
     assert module.main([]) == 0
@@ -312,25 +312,25 @@ def test_kontrprzyklad_daje_obietnice_i_przyczyny_jej_zdarzen_a_odczyt_ktory_sie
     module = _load()
     output = "\n".join(
         [
-            "Error: Invariant DziennikPoKolejcePozaZnanymi is violated.",
+            "Error: Invariant BezUrwanychPoWynikuPozaZnanymi is violated.",
             "State 1: <Initial predicate>",
             '/\\ dziennik = <<"jest", "brak">>',
             "/\\ kursor = 1",
             "/\\ awarieOdczytu = 0",
-            "/\\ zgubiony = {}",
+            "/\\ poWyniku = {}",
             "State 2: <Czytaj line 193, col 5 to line 231, col 50 of module UrwaneUruchomienie>",
             '/\\ dziennik = <<"jest", "brak">>',
             "/\\ kursor = 2",
             "/\\ awarieOdczytu = 1",
-            '/\\ zgubiony = {{"wiersz-pozniejszej-wyceny",',
-            '   "historia-nieczytelna"}}',
+            '/\\ poWyniku = {{"przed-wpisem-konca",',
+            '   "wpis-konca-nieudany"}}',
         ]
     )
     _tlc_output(monkeypatch, module, tmp_path, output)
 
     found = module._run("java", Path("tla2tools.jar"), "k", frozenset())
 
-    assert found == module.Verdict("DziennikPoKolejce", frozenset({"wiersz-pozniejszej-wyceny", "historia-nieczytelna"}))
+    assert found == module.Verdict("BezUrwanychPoWyniku", frozenset({"przed-wpisem-konca", "wpis-konca-nieudany"}))
     assert "1. close: odczyt dziennika Wyceny 1 rzuca OSError, dziennik zostaje następnemu startowi" in capsys.readouterr().out
 
 

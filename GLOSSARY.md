@@ -638,6 +638,8 @@ starcie pokazuje te zlecenia. Urwane Uruchomienie innego procesu Logów nie ma.
 Uruchomienie, którego wynik jest już w Historii, a Logów nie ma (Centrum
 zamknęło się tuż po wyniku), nie jest urwane: karta po starcie pokazuje jego
 wynik z Historii, także gdy wiersz nie ma jeszcze identyfikatora Uruchomienia.
+Wyjątek to Wycena w efenix, którą Centrum zamknęło przed wpisem końca jej
+dziennika: start zamyka ją jako Urwaną Wycenę z Logami Urwanego Uruchomienia.
 _Avoid_: Zatrzymanie (kończy się Komunikatem procesu), przerwane (tak Metryki
 nazywają Zatrzymania)
 
