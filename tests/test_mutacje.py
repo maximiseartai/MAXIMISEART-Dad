@@ -146,6 +146,42 @@ def test_pusta_lista_mutacji_niczego_nie_dowodzi() -> None:
     assert (answered.returncode, answered.stdout.strip()) == (1, "MUTACJE: brak mutacji, więc nie ma czego dowieść")
 
 
+def test_skrypt_mutacji_skilla_pokazuje_czas_kazdej_mutacji_i_ostrzega_o_tej_ktora_zuzyla_ponad_polowe_limitu(tmp_path: Path) -> None:
+    """Mutacja z #911 rosła od ~74 s do ponad 600 s, a log CI pokazał ją dopiero jako PRZEKROCZONY CZAS (#927).
+
+    Czas i ostrzeżenie idą na stderr, które log CI łączy ze stdout: ostrzeżenie nie jest werdyktem, więc werdykty, linia
+    ``MUTACJE OK`` i kod 0 zostają takie jak bez niego.
+    """
+
+    repo = _small_repository(tmp_path)
+    script = ".agents/skills/verify-x/scripts/check_x_mutations.py"
+    (repo / script).parent.mkdir(parents=True)
+    (repo / script).write_text(
+        "import sys\nfrom pathlib import Path\nsys.path.insert(0, 'tools')\nfrom mutacje import Edit, Mutation, check_all\n\n"
+        "slow = ('-c', 'import time, rozliczenia\\nif rozliczenia.WARTOSC == 1:\\n    time.sleep(3.5)\\nraise SystemExit(rozliczenia.WARTOSC)')\n"
+        "MUTATIONS = (\n"
+        f"    Mutation('wolna', (Edit(Path({PACKAGE!r}), 'WARTOSC = 0', 'WARTOSC = 1'),), slow),\n"
+        f"    Mutation('szybka', (Edit(Path({PACKAGE!r}), 'WARTOSC = 0', 'WARTOSC = 2'),), slow),\n"
+        ")\nraise SystemExit(check_all(MUTATIONS, limit_s=6))\n",
+        encoding="utf-8",
+    )
+
+    answered = subprocess.run(
+        [sys.executable, script], cwd=repo, env=WITHOUT_XDIST_WORKERS | {"MUTACJE_CZESC": "1/1"}, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False
+    )
+
+    shown = answered.stdout + answered.stderr
+    verdicts = ["MUTACJE CZĘŚĆ 1/1: 2 z 2 mutacji", "WYKRYTA: wolna → kod wyjścia 1", "WYKRYTA: szybka → kod wyjścia 2", "MUTACJE OK"]
+    assert (answered.returncode, answered.stdout.splitlines()) == (0, verdicts), shown
+    times = answered.stderr.splitlines()
+    assert len(times) == 3, shown
+    slow = re.fullmatch(r"CZAS: wolna → ([0-9]+) s", times[0])
+    fast = re.fullmatch(r"CZAS: szybka → ([0-9]+) s", times[1])
+    warned = re.fullmatch(rf"CZAS BLISKO LIMITU: {re.escape(script)} \(MUTACJE_CZESC=1/1\): wolna → ([0-9]+) s z limitu --limit-s 6 s .*", times[2])
+    assert slow and fast and warned, shown
+    assert (3 <= int(slow[1]) <= 6, int(fast[1]) < 3, warned[1] == slow[1]) == (True, True, True), shown
+
+
 def test_czesci_tabeli_sprawdzaja_kazda_mutacje_raz_kazda_z_podstawa_tylko_polecen_swoich_mutacji(tmp_path: Path) -> None:
     repo = _small_repository(tmp_path)
     log = tmp_path / "polecenia"
@@ -777,7 +813,7 @@ def test_brama_typow_czerwona_bez_mutacji_zostawia_przezyta_mutacje_przezyta(tmp
     answered = _check_all(repo, "NIC = 0", "NIC = 1  # brama: mypy assignment")
 
     assert (answered.returncode, answered.stdout.splitlines()) == (1, ["NIEWYKRYTA: m → kod wyjścia 0", "MUTACJE: 1 bez oczekiwanego wyniku"]), answered.stderr
-    assert answered.stderr.splitlines() == [
+    assert [line for line in answered.stderr.splitlines() if not line.startswith("CZAS: m → ")] == [
         "BRAMA TYPÓW CZERWONA: ruff: src/rozliczenia/__init__.py:1: F401 (bez mutacji, więc przeżyte mutacje zostają przeżyte)"
     ]
 
