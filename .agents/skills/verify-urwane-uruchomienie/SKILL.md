@@ -5,6 +5,7 @@ pilnuje:
   - src/rozliczenia/centrum/pricing_journal.py
   - src/rozliczenia/centrum/run_logs.py
   - src/rozliczenia/centrum/run_cards.py
+  - src/rozliczenia/centrum/metrics.py
   - src/rozliczenia/centrum/app.py
   - src/rozliczenia/centrum/runs.py
   - src/rozliczenia/centrum/outbox.py
@@ -95,11 +96,16 @@ unless named otherwise):
 The script compares these definitions with the Sync commit (`model/definicje.json`: file → names, `Class.method` is a
 method): `PricingJournal`, `_read`, `InterruptedPricings` in `pricing_journal.py`;
 `RunLog.interrupted`, `guarded`, `RunLogs.run_ended`, `_keep`, `interrupted`, `file_of`, `guard`, `close`, `_write`,
-`send` in `run_logs.py`; `RunCards.recorded`, `_row` in `run_cards.py`; `lifespan`, `send_interrupted`, the assignments
-`app` and `interrupted` and `run_started` in `app.py`; `_Run.work`, `RunHost.after`, `RunHost.shutdown_refusal` in
-`runs.py`; `Outbox.post`, `Outbox.resume` in `outbox.py`; `_start` in `launcher.py`; `replace_atomically` in
-`atomic_file.py`; `save` in `efenix_pricing.py`; `run_process` in `process_run.py`; `MetricsStore.append` in
-`telemetry.py`. A change elsewhere in these files does not move the model. Two
+`send`, `LoggedEnding`, `logi_post` in `run_logs.py`; `RunCards.recorded`, `_row` in `run_cards.py`; `read_runs`,
+`_records`, `_runs`, `_run` in `metrics.py` (the Historia that `_row` reads); `lifespan`, `send_interrupted`, the
+assignments `app` and `interrupted` and `run_started` in `app.py`; `_Run.work`, `RunHost.start`, `RunHost.after`,
+`RunHost.shutdown_refusal` in `runs.py`; `Outbox.post`, `Outbox.resume` in `outbox.py`; `_start`,
+`_listen_when_released` in `launcher.py`; `replace_atomically` in `atomic_file.py`; `save` in `efenix_pricing.py`;
+`run_process` in `process_run.py`; `MetricsStore.append`, `MetricsStore.read` in `telemetry.py`. Every code name in the
+table above is one of them, except three left out on purpose: `RunLog` as a whole (the schema of the Logs file, which
+changes with every new field; the model reads only `ending`, whose values are `LoggedEnding`), `_priced` and `_outcome`
+(`ZmianaWEfenix` needs only that `save` calls `journal.begun` before them, which `save` holds), and `create_app` (see
+below). A change elsewhere in these files does not move the model. Two
 changes move it without changing a definition, so look for them in the diff: the call `interrupted.close()` in
 `create_app` leaving its place right after `interrupted = InterruptedPricings(...)`, and a new caller of
 `InterruptedPricings` or of `RunLogs.send` outside these definitions. Add such code to the table and to

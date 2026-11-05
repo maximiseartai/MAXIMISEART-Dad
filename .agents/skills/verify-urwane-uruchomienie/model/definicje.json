@@ -14,7 +14,9 @@
     "RunLogs.guard",
     "RunLogs.close",
     "RunLogs._write",
-    "RunLogs.send"
+    "RunLogs.send",
+    "LoggedEnding",
+    "logi_post"
   ],
   "src/rozliczenia/centrum/run_cards.py": [
     "RunCards.recorded",
@@ -30,14 +32,16 @@
   "src/rozliczenia/centrum/runs.py": [
     "_Run.work",
     "RunHost.after",
-    "RunHost.shutdown_refusal"
+    "RunHost.shutdown_refusal",
+    "RunHost.start"
   ],
   "src/rozliczenia/centrum/outbox.py": [
     "Outbox.post",
     "Outbox.resume"
   ],
   "src/rozliczenia/centrum/launcher.py": [
-    "_start"
+    "_start",
+    "_listen_when_released"
   ],
   "src/rozliczenia/centrum/atomic_file.py": [
     "replace_atomically"
@@ -49,6 +53,13 @@
     "run_process"
   ],
   "src/rozliczenia/telemetry.py": [
-    "MetricsStore.append"
+    "MetricsStore.append",
+    "MetricsStore.read"
+  ],
+  "src/rozliczenia/centrum/metrics.py": [
+    "read_runs",
+    "_records",
+    "_runs",
+    "_run"
   ]
 }
