@@ -594,6 +594,9 @@ class RunLog(_Record):
     """Kopia wejścia (``input_copy``, #841): pliki taty, które Uruchomienie przeczytało, w kolejności odczytu, każdy z
     odciskiem i przeczytanymi Wierszami danych po regule danych. Pusta lista: Uruchomienie skończyło się przed odczytem.
     ``None``: Uporządkowanie INTERMAX (jeszcze bez Kopii), Logi Urwanego Uruchomienia i pliki sprzed tego pola."""
+    input_copy_notes: list[str] = []
+    """Uwagi techniczne strażnika reguły danych o wartościach zamaskowanych w Kopii wejścia (``guarded``), osobno od
+    ``technical_notes``, które pokazuje karta Uruchomienia z Logów."""
 
     @classmethod
     def of(cls, run: EndedRun, *, tool: Tool, environment: Environment, dad_actions: DadActions) -> RunLog:
@@ -730,14 +733,17 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna z kolumną i polem pliku.
 
     Pole to ścieżka JSON z nazw pól, a klucz z danych (operator, kod pozycji) jest w niej ``[…]``, żeby uwaga nie
-    niosła treści. Logi bez niczego do zamaskowania wracają te same.
+    niosła treści. Uwaga o polu Kopii wejścia idzie do ``input_copy_notes``, a każda inna do ``technical_notes``, które
+    pokazuje karta Uruchomienia z Logów: Kopii karta nie pokazuje, więc karta po starcie Centrum zostaje taka jak przed
+    nim (ADR 0017). Logi bez niczego do zamaskowania wracają te same.
     """
 
     notes: list[str] = []
+    copy_notes: list[str] = []
 
     def text(value: str, place: str) -> str:
         found = forbidden.guard(value, place or "Logi")
-        notes.extend(found.notes)
+        (copy_notes if re.split(r"[.\[]", place)[0] == _INPUT_COPY else notes).extend(found.notes)
         return found.text
 
     def walk(value: object, place: str) -> object:
@@ -757,7 +763,12 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
         return record
     assert isinstance(walked, dict)
     walked["technical_notes"] = [*walked["technical_notes"], *dict.fromkeys(notes)]
+    walked["input_copy_notes"] = [*walked["input_copy_notes"], *dict.fromkeys(copy_notes)]
     return RunLog.model_validate(walked)
+
+
+_INPUT_COPY: Final = "input_copy"
+"""Pole Kopii wejścia w Logach; uwagi strażnika o nim idą do ``input_copy_notes``."""
 
 
 def _field(place: str, key: str) -> str:

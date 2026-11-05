@@ -40,7 +40,9 @@ Dopisek #841 (część #837): Logi Przygotowania pliku zbiorczego, Przebiegu
 rozliczeń i Wyceny w efenix mają pole `input_copy`, Kopię wejścia: każdy plik
 taty, z którego Uruchomienie czytało Wiersze danych (Rejestr zleceń, Plik
 zbiorczy), z odciskiem (rozmiar, chwila zmiany, SHA-256 przeczytanych bajtów)
-i przeczytanymi wierszami bez kolumn `ADRES` i numeru Orange. Kopię zbierają
+i przeczytanymi wierszami bez kolumn `ADRES` i numeru Orange, a uwagi strażnika
+o wartościach zamaskowanych w niej idą do `input_copy_notes`, więc karta z Logów
+ma te same uwagi techniczne co karta na żywo. Kopię zbierają
 czytniki w trakcie Uruchomienia jako odwołania do tego, co i tak czytają, a
 Logi budują ją po wyniku. Uporządkowanie INTERMAX i Logi Urwanego Uruchomienia
 jej jeszcze nie mają (`None`).

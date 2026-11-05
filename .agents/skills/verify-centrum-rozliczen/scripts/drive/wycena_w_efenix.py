@@ -215,13 +215,20 @@ def _price(run: Run, page: Page, source: Path) -> None:
     logs = _logs(run)
     run.check(len(logs) == logs_before + 1, "the Uruchomienie wrote one file of Logi Uruchomienia of efenix")
     record = logs[-1]
-    text = json.dumps(record, ensure_ascii=False)
+    text = json.dumps(record["efenix_orders"], ensure_ascii=False)
     traced = [(order["row"], order["outcome"]) for order in record["efenix_orders"]]
     private = [marker for number, worker in ORDERS.values() for marker in (number, worker) if marker in text]
     run.check(
         traced == [(18, "gotowe"), (19, "błąd"), (20, "ostrzeżenie Emmetta"), (21, "rozliczone")] and private == [],
-        "the Logi trace every order by its row, the Zlecenie rozliczone as rozliczone, without its order number or the "
-        "Wykonawca's login",
+        "the Logi trace every order by its row, the Zlecenie rozliczone as rozliczone, the trace without its order "
+        "number or the Wykonawca's login",
+    )
+    copied = {row["row"]: row["cells"] for file in record["input_copy"] for sheet in file["sheets"] for row in sheet["rows"]}
+    run.check(
+        sorted(copied) == sorted(ORDERS)
+        and all(number in str(copied[row].get("F")) and copied[row].get("H") == worker for row, (number, worker) in ORDERS.items())
+        and all("B" not in cells for cells in copied.values()),
+        "the Kopia wejścia of the Logi holds rows 18–21 of the Plik zbiorczy with NUMER ZL. and WYKONAWCA, without ADRES",
     )
     live.get_by_role("button", name="Otwórz Plik zbiorczy").click()
     run.wait_for(last_opened_is(run, source), "Otwórz Plik zbiorczy opens it")

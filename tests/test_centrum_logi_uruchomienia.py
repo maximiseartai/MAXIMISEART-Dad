@@ -77,7 +77,7 @@ KEYS = {
     "schema_version", "run_id", "process", "mode", "period", "started_at", "ended_at", "duration_ms", "tool",
     "result", "ending", "stop_kind", "issue_count", "messages", "technical_notes", "summary", "phases", "templates",
     "inea_only_cleared", "intermax_entries", "efenix_orders", "efenix_stop", "environment", "trace", "diagnosis",
-    "dad_actions", "interruption", "input_copy",
+    "dad_actions", "interruption", "input_copy", "input_copy_notes",
 }
 
 
@@ -604,10 +604,12 @@ def test_adres_i_numer_orange_cytowane_przez_komunikat_nie_wychodza_w_logach_ani
     for record in records(centrum):
         [message] = record["messages"]
         assert quoted in message["where"]
-        # SKUTECZNE z adresem i numerem Orange to także komórka czwartego przeczytanego wiersza Rejestru w Kopii wejścia.
         assert record["technical_notes"] == [
             "Reguła danych: zamaskowano wartość kolumny ADRES w: messages[0].where.",
             "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: messages[0].where.",
+        ]
+        # SKUTECZNE z adresem i numerem Orange to także komórka czwartego przeczytanego wiersza Rejestru w Kopii wejścia.
+        assert record["input_copy_notes"] == [
             "Reguła danych: zamaskowano wartość kolumny ADRES w: input_copy[0].sheets[0].rows[3].cells.[…].",
             "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: input_copy[0].sheets[0].rows[3].cells.[…].",
         ]
@@ -1711,7 +1713,7 @@ def test_logi_przebiegu_rozliczen_maja_wiersze_pliku_zbiorczego_bez_adresu_i_num
     tekstu, a formuła tablicowa to jej tekst, jak każda formuła."""
 
     centrum = settling_centrum(tmp_path)
-    typed = {"AQ": time_of_day(8, 30), "AR": timedelta(hours=1, minutes=30), "AS": True, "AT": ArrayFormula("AT19", "=SUM(N19:N19)")}
+    typed: dict[str, CellValue] = {"AQ": time_of_day(8, 30), "AR": timedelta(hours=1, minutes=30), "AS": True, "AT": ArrayFormula("AT19", "=SUM(N19:N19)")}
     write_quantity_source(centrum.collective_file, [MARKED, {"H": "kamil.syntetyczny", "N": 2, **typed}])
     content = centrum.collective_file.read_bytes()
 
@@ -1819,8 +1821,9 @@ def test_adres_i_numer_orange_z_kopii_wejscia_nie_wychodza_do_logow_ani_skrzynki
     tmp_path: Path, process: str
 ) -> None:
     """Komórki ``ADRES`` i numeru Orange nie stoją w Kopii wejścia, a ich wartości wpisane w wolny tekst innej komórki
-    strażnik maskuje razem z telefonem i ulicą, z uwagą techniczną o miejscu w Kopii; nic z tego nie wychodzi do pliku
-    Logów ani do Skrzynki Zgłoszeń."""
+    strażnik maskuje razem z telefonem i ulicą, z uwagą techniczną o miejscu w Kopii osobno od uwag technicznych karty,
+    więc karta z Logów ma te same uwagi co karta na żywo (ADR 0017); nic z tego nie wychodzi do pliku Logów ani do
+    Skrzynki Zgłoszeń."""
 
     with ExitStack() as stack:
         centrum = COPY_PROCESSES[process](tmp_path, stack)
@@ -1841,10 +1844,11 @@ def test_adres_i_numer_orange_z_kopii_wejscia_nie_wychodza_do_logow_ani_skrzynki
     cells = [value for sheet in copied["sheets"] for row in sheet["rows"] for value in row["cells"].values()]
     masked = [value for value in cells if "[adres]" in str(value) or "[numer Orange]" in str(value)]
     assert masked == [MASKED], "zakazanych komórek nie ma w Kopii, a wolny tekst jest po strażniku"
-    assert [note for note in record["technical_notes"] if "input_copy[0]" in note] == [
+    assert record["input_copy_notes"] == [
         f"Reguła danych: zamaskowano wartość kolumny {column} w: input_copy[0].sheets[0].rows[{cells_row(copied)}].cells.[…]."
         for column in ("ADRES", "NUMER UMOWY/ZLECENIA ORANGE")
     ]
+    assert record["technical_notes"] == result["technical_notes"], "uwagi techniczne karty"
     texts = [path.read_text(encoding="utf-8") for path in sorted((centrum.log_path.parent / "uruchomienia").glob("*"))]
     sent = [part for issue in [*box.issues, *box.background_issues] for part in (issue.title, issue.body, *issue.comments)]
     assert any(MASKED in part for part in sent), "Kopia wejścia w komentarzu Logów"

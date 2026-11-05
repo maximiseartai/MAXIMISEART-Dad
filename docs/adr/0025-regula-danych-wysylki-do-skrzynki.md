@@ -58,8 +58,10 @@ telefony na okres.
   Komunikatu), a z kilku wartości od tego samego słowa wygrywa najdłuższa.
   Dopisuje uwagę techniczną z nazwą kolumny i miejscem (w Logach pole
   pliku, np. `messages[0].where`), bez wartości: w Logach do
-  `technical_notes`, w Zgłoszeniu i Kontroli ilości sekcją „Uwagi
-  techniczne”, w Uwadze taty linią pod jej tekstem. Tata widzi w podglądzie
+  `technical_notes` (o polu Kopii wejścia do `input_copy_notes`, #841, bo
+  `technical_notes` pokazuje karta Uruchomienia z Logów, a Kopii nie), w
+  Zgłoszeniu i Kontroli ilości sekcją „Uwagi techniczne”, w Uwadze taty linią
+  pod jej tekstem. Tata widzi w podglądzie
   Zgłoszenia i Uwagi dokładnie to, co wyjdzie. Tekst bez zakazanej wartości,
   telefonu i ulicy wychodzi bez zmian i bez uwagi.
 - **Skąd Centrum zna zakazane wartości.** Każdy czytnik Wierszy danych,
