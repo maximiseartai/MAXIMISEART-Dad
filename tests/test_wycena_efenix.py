@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
 from copy import copy
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
@@ -31,13 +31,13 @@ import sys
 import time
 import traceback
 from typing import cast
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 import zipfile
 
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
 
-from playwright.sync_api import Browser, Page, Route
+from playwright.sync_api import Browser, Error as PlaywrightError, Page, Request as PlaywrightRequest, Route
 import pytest
 
 from rozliczenia import TOOL_ROOT, efenix_browser, efenix_emmett_trace, efenix_process, efenix_trace
@@ -1008,6 +1008,72 @@ def test_karta_zamknieta_w_trakcie_nawigacji_okna_to_zamkniete_okno_takze_gdy_bl
         part,
         Closed.DURING_ACTION,
     )
+
+
+def test_cala_przegladarka_zamknieta_w_trakcie_otwierania_strony_zlecenia_to_zamkniete_okno(tmp_path: Path) -> None:
+    """Tata zamyka całą przeglądarkę, a nie kartę, gdy okno otwiera stronę zlecenia: pytanie przeglądarki, czy karta jest
+    zamknięta (``BrowserEfenix.closed``), kończy się wtedy błędem, a Zatrzymanie to i tak zamknięte okno z Komunikatem
+    dla taty, a nie „okno zatrzymane” do Maksa ani wyjątek Playwrighta (#886)."""
+
+    orders = _full_and_ready()
+
+    def priced_in_own_browser(url: str) -> Priced:
+        with chromium() as own:
+            page = own.new_page()
+            browser_session = own.new_browser_cdp_session()
+
+            def close_browser(request: PlaywrightRequest) -> None:
+                if urlparse(request.url).path.endswith("/" + ORDER_PAGE):
+                    # Przeglądarka zamyka się, zanim odpowie na to pytanie.
+                    with suppress(PlaywrightError):
+                        browser_session.send("Browser.close")
+
+            page.on("request", close_browser)
+            return _price(tmp_path, page, url, orders)
+
+    with atrapa_efenix(_full_and_ready_in_efenix(orders)) as atrapa:
+        # Własna przeglądarka, którą test zamyka, startuje własny Playwright, a ten wątek ma już Playwright testów.
+        with ThreadPoolExecutor(max_workers=1) as own_thread:
+            outcome = own_thread.submit(priced_in_own_browser, atrapa.url).result()
+
+    assert isinstance(outcome.ending, Stop)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), outcome.ending.stop_kind, facts.part, facts.cause) == (
+        "EFENIX_OKNO_ZAMKNIETE",
+        "for_tata",
+        PagePart.ORDER,
+        Closed.DURING_ACTION,
+    )
+
+
+def test_strona_ktora_nie_odpowiada_konczy_dzialanie_okna_zatrzymaniem_w_czasie_okna(tmp_path: Path, page: Page) -> None:
+    """Skrypt strony efenix stoi w pętli, więc strona nie odpowiada: działanie okna kończy się po czasie czekania okna
+    Zatrzymaniem do Maksa, a pytanie, czy karta jest zamknięta (``BrowserEfenix.closed``), ma ten sam limit czasu, więc
+    okno w nim nie wisi (#886). Czas okna to tu 1 s, więc wpisanie numeru i to pytanie trwają razem około 2 s, a nie
+    domyślne 30 s okna ani bez końca."""
+
+    orders = _full_and_ready()
+
+    def hung(efenix: Efenix) -> Efenix:
+        page.evaluate("setTimeout(() => { for (;;) {} }, 0)")
+        return efenix
+
+    with atrapa_efenix(_full_and_ready_in_efenix(orders)) as atrapa:
+        started = time.monotonic()
+        outcome = _run(write_collective_file(tmp_path, orders), page, atrapa.url, timeout_ms=1_000, window=hung)
+        took_s = time.monotonic() - started
+
+    assert isinstance(outcome.ending, Stop)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), outcome.ending.stop_kind, facts.part, facts.cause) == (
+        "EFENIX_OKNO_ZATRZYMANE",
+        "for_maks",
+        PagePart.LIST,
+        BrowserFailure(TIMEOUT, Operation.FILL),
+    )
+    assert took_s < 15, took_s
 
 
 # Żądanie okna, na które efenix odpowiada stroną błędu serwera, numer tego żądania okna, status i część strony, którą
@@ -2116,6 +2182,50 @@ def test_okno_czeka_na_logowanie_taty_15_minut_a_potem_daje_wylogowanie(page: Pa
             pass
 
     assert (logged_in, max(seen)) == (atrapa.url, 900.0)
+
+
+def test_lista_ze_statusem_bledu_po_zalogowaniu_taty_zatrzymuje_czekanie_na_logowanie_ze_statusem_http(page: Page) -> None:
+    """Tata loguje się, a lista zleceń, o którą okno pyta w sesji przeglądarki, odpowiada stroną błędu serwera: to
+    Zatrzymanie okna ze statusem HTTP listy, jak lista przy starcie (#878), a nie pytanie bez końca i po limicie „tata się
+    nie zalogował” (#891). Żądania listy: 1 otwarcie przy starcie, 2 karta taty po zalogowaniu, 3 pytanie okna."""
+
+    with atrapa_efenix([], error_answer=(LIST_PAGE, 3, HTTPStatus.INTERNAL_SERVER_ERROR)) as atrapa:
+        atrapa.expire_session()
+
+        @contextmanager
+        def logging_in() -> Iterator[None]:
+            atrapa.log_in()
+            page.goto(atrapa.url)
+            yield
+
+        with pytest.raises(UnexpectedPage) as stopped, efenix_browser.window(page, atrapa.url, login=logging_in):
+            pass
+
+    assert (stopped.value.part, stopped.value.cause) == (PagePart.LIST, HttpStatus(HTTPStatus.INTERNAL_SERVER_ERROR))
+
+
+def test_czekanie_na_logowanie_pyta_efenix_najwyzej_co_login_poll_ms_takze_gdy_karta_nie_stoi_na_stronie_logowania(
+    page: Page,
+) -> None:
+    """Tata przechodzi ze strony logowania na inną stronę, nie logując się: czekanie, aż karta zejdzie ze strony
+    logowania, kończy się od razu, a okno i tak pyta efenix o listę zleceń najwyżej co ``LOGIN_POLL_MS`` (#891), aż minie
+    limit czekania."""
+
+    with atrapa_efenix([]) as atrapa:
+        atrapa.expire_session()
+
+        @contextmanager
+        def walking_away() -> Iterator[None]:
+            page.goto(urljoin(atrapa.url, LIST_SCRIPT))
+            yield
+
+        with pytest.raises(LoggedOut), efenix_browser.window(page, atrapa.url, login=walking_away, login_timeout_ms=500):
+            pass
+        # Bez otwarcia listy przy starcie.
+        asked = [request.at for request in atrapa.requests if request.path == LIST_PAGE][1:]
+
+    assert len(asked) == 2, asked
+    assert asked[1] - asked[0] >= efenix_browser.LOGIN_POLL_MS / 1000
 
 
 def test_profil_przegladarki_okna_efenix_lezy_w_katalogu_narzedzia_poza_gitem() -> None:

@@ -60,6 +60,9 @@ TABLE = [
         "karta zamknięta w czasie czekania na logowanie", "E"),
     Row("efenix_browser", "wait_for_login", "LoggedOut(PagePart.LIST, LoginSign.NO_LOGIN)",
         "tata nie zalogował się w LOGIN_TIMEOUT_MS", "E"),
+    Row("efenix_browser", "_session_open", "UnexpectedPage(PagePart.LIST, HttpStatus(response.status))",
+        "lista zleceń, o którą okno pyta w czasie czekania na logowanie, z odpowiedzią 4xx/5xx: adres odpowiada, a tata "
+        "mógł się już zalogować, więc to nie brak logowania po LOGIN_TIMEOUT_MS (#891)", "D"),
     Row("efenix_browser", "_ensure_logged_in", "LoggedOut(part, LoginSign.PAGE)",
         "adres karty to page_login.php po otwarciu listy (LIST) albo strony zlecenia (ORDER)", "E"),
     # --- każde działanie okna ---
