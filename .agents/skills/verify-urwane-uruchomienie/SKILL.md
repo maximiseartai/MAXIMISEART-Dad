@@ -114,9 +114,14 @@ changes move it without changing a definition, so look for them in the diff: the
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `5e1905142` (2026-11-05, `main` after #860). Every row of the table was checked against the code at this
-commit, and each known finding below was replayed on that code (`historia-niezapisana` on `main` 86677b151, whose
-`src/` is the same).
+Sync commit: `fa8db43b5` (2026-11-05, round 2 of #846). Every row of the table was checked against the code at this
+commit. Since the previous sync `5e1905142` (`main` after #860) only #846 changed a definition: `PricingJournal.run_started`
+writes the first line of the journal at the start of the Wycena, so the model got `ZapiszStart`, its torn first line in
+`Zgasniecie` and a `Wpis` that writes the first line only while it is not on disk, and its mutation; the progress of a
+Wycena (`PricingJournal.progress`, `RunLogs.progress`, the end of the progress in `RunLogs.run_ended`, `logi_post` through
+`_logs_post`, `run_started` in `app.py`) changes no step of the model (Scope). Each known finding below was replayed at
+`5e1905142` (`historia-niezapisana` on `main` 86677b151, whose `src/` is the same); #846 changed no step of their paths
+before the start of Centrum reads the journal, and the check gives each of them at this commit.
 
 ## Run
 
