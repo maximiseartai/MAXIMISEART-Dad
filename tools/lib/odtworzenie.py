@@ -117,6 +117,10 @@ _REGISTER_FORBIDDEN: Final = {
     for forbidden, _ in forbidden_columns({normalize_text(column.target_header): column})
 }
 """Nagłówek Rejestru zleceń i INTERMAX (``ADRES``, ``NUMER UMOWY``) każdej kolumny, której Kopia wejścia nie ma."""
+_NUMBER: Final = normalize_text("NUMER ZL.")
+"""Nagłówek kolumny numeru zlecenia z aplikacji, w której stoi jego Hiperłącze."""
+SYNTHETIC_LINK: Final = "https://odtworzenie.invalid/zlecenie/{row}"
+"""Hiperłącze ``NUMER ZL.`` wklejonego wiersza w odtworzonym INTERMAX."""
 _DEVICES: Final = normalize_text("URZĄDZENIA")
 """Nagłówek kolumny rodzaju zlecenia w INTERMAX (``raw_orders.order_kind``)."""
 _ORDERED_FONT: Final = Font(name="Calibri", sz=8)
@@ -541,13 +545,17 @@ def _configured(work: _Work) -> dict[str, Path]:
     return _configuration_files(work.configuration)
 
 
-def _register_file(record: RunLog, work: _Work, folder: str, font: Font) -> tuple[Path, list[Limit]]:
+def _register_file(
+    record: RunLog, work: _Work, folder: str, font: Font, *, linked: bool = False
+) -> tuple[Path, list[Limit]]:
     """Rejestr zleceń albo INTERMAX z Kopii wejścia: arkusze z nagłówkami w wierszu 1 i wierszami pod ich numerami.
 
     Kolumn ``ADRES`` i ``NUMER UMOWY`` Kopia nie ma, więc ich nagłówki stoją w pierwszych kolumnach bez nagłówka między
     kolumnami Kopii (u taty tam stoją), a gdy takich nie ma, za ostatnią; ich komórki mają wartości syntetyczne.
     Wiersz z dwoma położeniami bez ``URZĄDZENIA`` w Kopii ma w niej tekst swojego rodzaju zlecenia
-    (``LoggedSheet.order_kinds``), więc Planowanie daje mu ten sam Kolor usterki i Wpis.
+    (``LoggedSheet.order_kinds``), więc Planowanie daje mu ten sam Kolor usterki i Wpis. ``linked``: wiersz z ``NUMER
+    ZL.`` w Kopii ma pod nim Hiperłącze syntetyczne (``SYNTHETIC_LINK``), bo wklejony wiersz INTERMAX ma ``NUMER ZL.``
+    w Kopii tylko z Hiperłączem z aplikacji w tej komórce (``raw_orders.in_place_from``), a Kopia Hiperłączy nie niesie.
     Przesunięty pierwszy wiersz wklejenia INTERMAX stoi znowu dwie kolumny w lewo, a nad wklejeniem ostatni
     uporządkowany wiersz (Calibri 8, bez daty) i żółty wiersz stoją tam, gdzie u taty. ``font``: krój komórek z Kopii.
     """
@@ -559,6 +567,7 @@ def _register_file(record: RunLog, work: _Work, folder: str, font: Font) -> tupl
         created = _sheet(workbook, sheet)
         forbidden = _forbidden_places(sheet)
         devices = next((letter for letter, name in sheet.columns.items() if normalize_text(name) == _DEVICES), None)
+        number = next((letter for letter, name in sheet.columns.items() if normalize_text(name) == _NUMBER), None)
         if len(forbidden) < len(_REGISTER_FORBIDDEN):
             limits.append(Limit(f"arkusz {sheet.sheet}: nie wiem, gdzie stały kolumny ADRES i NUMER UMOWY"))
         for column, header in forbidden.items():
@@ -570,6 +579,9 @@ def _register_file(record: RunLog, work: _Work, folder: str, font: Font) -> tupl
             for column, header in forbidden.items():
                 synthetic = _SYNTHETIC[_REGISTER_FORBIDDEN[header]].format(row=row.row)
                 created.cell(row.row, column - shift, synthetic)
+            if linked and number is not None and number in row.cells:
+                link = SYNTHETIC_LINK.format(row=row.row)
+                created.cell(row.row, column_index_from_string(number) - shift).hyperlink = link
             if row.row in sheet.order_kinds and devices is not None:
                 kind = OrderKind[sheet.order_kinds[row.row]].value
                 created.cell(row.row, column_index_from_string(devices) - shift, kind).font = font
@@ -646,7 +658,7 @@ def _preparation_limits(record: RunLog) -> list[Limit]:
 
 
 def _intermax(record: RunLog, work: _Work) -> _Setup:
-    register, limits = _register_file(record, work, "intermax", _PASTED_FONT)
+    register, limits = _register_file(record, work, "intermax", _PASTED_FONT, linked=True)
     moment = _intermax_moment(record, work)
     forbidden, copy = ForbiddenValues(), InputCopy()
     inputs = OrderingInputs(
@@ -686,9 +698,10 @@ def _intermax_limits(record: RunLog) -> list[Limit]:
             Limit(
                 f"Kopia wejścia ma wiersze INTERMAX z dwoma położeniami ({where}): nie ma w nich komórek, które w "
                 "którymś położeniu stałyby pod ADRES, NUMER UMOWY albo za UWAGI (w przesuniętym pierwszym wierszu "
-                "wklejenia URZĄDZENIA i CZYNNOŚCI ZREALIZOWANE, w innym NUMER ZL., ZWROT i UWAGI, a DATA GODZ. POCZ., gdy "
-                "nie jest datą z godziną albo ślad wskazuje przesunięcie), więc odtworzony wiersz ich nie ma, a reguła, "
-                "która je czyta (rodzaj zlecenia i Wpis, data), może zdecydować inaczej (ADR 0025)"
+                "wklejenia URZĄDZENIA i CZYNNOŚCI ZREALIZOWANE, w innym NUMER ZL., ZWROT i UWAGI, gdy jego jedyne "
+                "Hiperłącze nie stoi pod NUMER ZL., i DATA GODZ. POCZ., gdy nie jest datą z godziną), więc odtworzony "
+                "wiersz ich nie ma, a reguła, która je czyta (rodzaj zlecenia i Wpis, data), może zdecydować inaczej "
+                "(ADR 0025)"
             )
         )
     return [

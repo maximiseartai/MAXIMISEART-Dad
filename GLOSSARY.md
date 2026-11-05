@@ -633,8 +633,10 @@ policzył Excel, także `Kwota`), a Uporządkowanie INTERMAX wklejone wiersze
 z dołu każdego arkusza zleceń, które przetwarzało, nie cały Rejestr zleceń,
 w kolumnach od A do `UWAGI`, które Uporządkowanie przenosi do dnia, także
 przesunięty pierwszy wiersz pod jego nagłówkami, każdy z dwoma położeniami,
-więc tylko z komórkami dozwolonymi przesunięty i nie i z datą z godziną spod
-`DATA GODZ. POCZ.`, a z rodzajem zlecenia, gdy nie ma w niej jego `URZĄDZENIA`,
+więc tylko z komórkami dozwolonymi przesunięty i nie, z datą z godziną spod
+`DATA GODZ. POCZ.` i, gdy jego jedyne Hiperłącze stoi pod `NUMER ZL.`, z
+komórkami od `NUMER ZL.` w prawo, a z rodzajem zlecenia, gdy nie ma w niej jego
+`URZĄDZENIA`,
 a nad wklejeniem tylko numery ostatniego uporządkowanego i żółtego wiersza, od
 których Planowanie liczy wiersz dnia. Wiersz ma numer i wartości komórek po literze
 kolumny, a arkusz nagłówki kolumn; według reguły danych bez kolumn `ADRES` i

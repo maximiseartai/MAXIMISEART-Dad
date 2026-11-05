@@ -15,8 +15,9 @@ Kopia wejścia Uruchomienia z Centrum (``copy``, #842) dostaje bajty, z których
 chwilą zmiany sprzed odczytu, a z każdego arkusza zleceń nagłówki i wklejenie (``raw_orders.pasted_rows``): te same
 fakty wierszy, które rozpoznaje Planowanie, nie cały Rejestr. Wiersz ma w Kopii komórki od A do ``UWAGI``, te, które
 Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, także przesunięty pierwszy wiersz,
-bez zakazanych kolumn. Wiersz z dwoma położeniami (każdy wklejony) ma w Kopii tylko komórki dozwolone w obu położeniach
-i datę z godziną spod ``DATA GODZ. POCZ.``, gdy jego położenie podstawowe to położenie odczytu, a wiersz ze śladem
+bez zakazanych kolumn. Wiersz z dwoma położeniami (każdy wklejony) ma w Kopii tylko komórki dozwolone w obu położeniach,
+datę z godziną spod ``DATA GODZ. POCZ.`` i, gdy jedyne Hiperłącze stoi pod ``NUMER ZL.``, komórki od niego w prawo, a
+wiersz ze śladem
 przesunięcia poza pierwszym wierszem bloku jest w ``traced_rows`` arkusza (fakt domeny złamany). Kolumn
 z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie ich nie zapisuje, nie mają nagłówka, a jedna z nich u taty
 niesie części adresu ze słowami sklejonymi ``_``, których strażnik nie rozpozna jako wartości ``ADRES``. Nad
@@ -247,7 +248,9 @@ class OrderSheet:
         Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych Rejestru w każdym
         położeniu, w którym mogą stać (``raw_orders.Shifts.possible``): wiersz z jednym położeniem pod nagłówkiem, a
         wiersz z dwoma położeniami w obu, z położenia podstawowego wszędzie, a z drugiego z miejscem wiersza w INTERMAX,
-        więc strażnik nie maskuje ich w zwykłych kolumnach innych wierszy.
+        więc strażnik nie maskuje ich w zwykłych kolumnach innych wierszy. Zakazaną kolumnę od ``NUMER ZL.`` w prawo
+        wiersza, którego jedyne Hiperłącze stoi pod ``NUMER ZL.`` (``raw_orders.in_place_from``), pamięć zna tylko na
+        miejscu, wszędzie.
         """
 
         forbidden = self._register.forbidden
@@ -255,8 +258,13 @@ class OrderSheet:
             if forbidden is not None:
                 register = self._register
                 second = client_data.RowPlace(register.path.name, register.digest, self.name, facts.number)
+                fixed = self._shifts.in_place_from(facts)
                 for index, offset in enumerate(self._shifts.possible(facts)):
                     for column, number in self._forbidden_columns:
+                        if fixed is not None and number >= fixed:
+                            if offset == 0:
+                                forbidden.remember_value(column, facts.value(number))
+                            continue
                         forbidden.remember_value(column, facts.value(number - offset), second if index else None)
             yield facts
 
@@ -265,9 +273,10 @@ class OrderSheet:
         Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, bez zakazanych kolumn;
         ``UnsupportedShape`` przed dopisaniem arkusza, gdy wierszy nie da się rozdzielić. Wiersz z dwoma położeniami
         (``raw_orders.Shifts.possible``) ma tylko komórki, które przy każdym jego możliwym przesunięciu stoją pod
-        nagłówkiem od A do ``UWAGI`` innym niż zakazany (bez ``URZĄDZENIA`` z rodzajem zlecenia w ``order_kinds``), i
-        datę z godziną spod ``DATA GODZ. POCZ.``, gdy położenie podstawowe to położenie odczytu: data z godziną nie jest
-        wartością zakazanej kolumny, a bez niej odtworzenie nie powtórzy Uruchomienia (#847), a
+        nagłówkiem od A do ``UWAGI`` innym niż zakazany (bez ``URZĄDZENIA`` z rodzajem zlecenia w ``order_kinds``), datę z
+        godziną spod ``DATA GODZ. POCZ.`` położenia odczytu (data z godziną nie jest wartością zakazanej kolumny, a bez niej
+        odtworzenie nie powtórzy Uruchomienia, #847) i, gdy jedyne Hiperłącze wiersza na miejscu stoi pod ``NUMER ZL.``,
+        każdą komórkę od ``NUMER ZL.`` w prawo poza zakazaną (``raw_orders.in_place_from``), a
         wiersz ze śladem przesunięcia poza pierwszym wierszem bloku jest z rodzajami śladu w ``traced_rows``. Wiersze idą
         przez ``rows_from_bottom``, więc pamięć reguły danych zna
         ich zakazane komórki. Z dołu arkusza Kopia dostaje też numery ostatniego uporządkowanego i żółtego wiersza
@@ -295,13 +304,15 @@ class OrderSheet:
         sheet.order_kinds = kinds
         for facts in pasted:
             shift, possible = shifts.read(facts.number), shifts.possible(facts)
+            fixed = shifts.in_place_from(facts) if shift == 0 else None
             cells = {
                 column + shift: cell.value
                 for column, cell in facts.cells.items()
                 if all(column + offset in allowed for offset in possible)
+                or (fixed is not None and column >= fixed and column in allowed)
             }
             when = facts.value(self.columns.date - shift)
-            if possible[0] == shift and isinstance(when, datetime):
+            if isinstance(when, datetime):
                 cells[self.columns.date] = when
             sheet.row(facts.number, cells)
             kind = raw_orders.order_kind(facts.value(self.columns.devices - shift))

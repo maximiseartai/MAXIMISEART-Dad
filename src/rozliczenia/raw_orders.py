@@ -395,12 +395,33 @@ def shift_traces(*, left_of_date: object, links: Collection[int] | None, number:
 def primary_offset(*, left_of_date: object, links: Collection[int] | None, number: int) -> int:
     """Położenie podstawowe wiersza z dwoma położeniami, którego wartości pamięć reguły danych maskuje wszędzie:
     ``SHIFT``, gdy wiersz ma podpis przesunięcia w lewo (data z godziną dwie kolumny na lewo od ``DATA GODZ. POCZ.``
-    albo Hiperłącze dwie kolumny na lewo od ``NUMER ZL.``), a inaczej 0 (na miejscu). Drugie położenie ma zakres opcji 3
-    (ADR 0025), więc wybór zmienia tylko koszt maski, nie to, czy pamięć zna wartość."""
+    albo Hiperłącze dwie kolumny na lewo od ``NUMER ZL.``), a inaczej 0 (na miejscu). Pamięć zna wartości obu położeń,
+    ale wartość z drugiego ma wąski zakres opcji 3 (ADR 0025): gdy podpis nie mówi prawdy o zakazanej kolumnie (data
+    w A albo Hiperłącze pod ``URZĄDZENIA`` na wierszu na miejscu, częściowe przesunięcie, brak podpisu w wierszu
+    przesuniętym), prawdziwy adres albo numer Orange wychodzi tam, gdzie ta sama wartość stoi w zwykłej kolumnie innego
+    wiersza. Wybór zmienia więc wyciek w tej granicy, a nie tylko koszt maski."""
 
     if _is_date(left_of_date) or (links is not None and number - SHIFT in links):
         return SHIFT
     return 0
+
+
+def in_place_from(*, left_of_date: object, date: object, links: Collection[int] | None, number: int) -> int | None:
+    """Kolumna, od której wiersz z dwoma położeniami na pewno stoi na miejscu: ``NUMER ZL.``, gdy jedyne Hiperłącze
+    wiersza stoi pod nim, pod ``DATA GODZ. POCZ.`` jest data z godziną, a dwie kolumny na lewo od niej nic; ``None``:
+    któregoś z tych trzech faktów brak.
+
+    Hiperłącze z aplikacji firmowej idzie z komórką ``NUMER ZL.``, a przesunięcie w lewo, w całości albo w części,
+    przesuwa wiersz od lewej: ``NUMER ZL.`` na miejscu znaczy, że wszystko od niego w prawo też. Samo Hiperłącze może
+    stać w złym miejscu (sondy #917 r3: przesunięty wiersz z Hiperłączem pod ``NUMER ZL.``), więc potwierdzają je data
+    na miejscu i pusta kolumna, w której przesunięty wiersz ma datę. U taty tak wygląda 83 z 83 wklejonych wierszy na
+    miejscu. Granice: przesunięcie w prawo, wpis taty w komórkę z Hiperłączem i przesunięty wiersz z pustą datą z
+    aplikacji, ``ADRES`` jako datą z godziną i Hiperłączem przeniesionym pod ``NUMER ZL.``.
+    """
+
+    if links is None or set(links) != {number} or not _is_date(date) or not _blank(left_of_date):
+        return None
+    return number
 
 
 @dataclass(frozen=True)
@@ -432,6 +453,17 @@ class Shifts:
         columns = self.columns
         primary = primary_offset(left_of_date=row.value(columns.date - SHIFT), links=row.links, number=columns.number)
         return (primary, SHIFT - primary)
+
+    def in_place_from(self, row: RowFacts) -> int | None:
+        """Kolumna, od której wiersz na pewno stoi na miejscu (``in_place_from``)."""
+
+        columns = self.columns
+        return in_place_from(
+            left_of_date=row.value(columns.date - SHIFT),
+            date=row.value(columns.date),
+            links=row.links,
+            number=columns.number,
+        )
 
     def traced(self, row: RowFacts) -> tuple[ShiftTrace, ...]:
         """Ślady przesunięcia wiersza poza pierwszym wierszem bloku: każdy łamie fakt domeny, bo przesunięty przychodzi
@@ -625,6 +657,10 @@ def _above(
 
 def _is_date(value: object) -> bool:
     return isinstance(value, datetime)
+
+
+def _blank(value: object) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
 
 
 def _order_cells(row: RowFacts, columns: OrderColumns) -> list[CellFacts]:

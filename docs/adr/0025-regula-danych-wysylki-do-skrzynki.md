@@ -170,7 +170,17 @@ Diagnozie (`raw_orders.Shifts`, `preparation_register`).
   wiersz ma podpis przesunięcia w lewo (data z godziną dwie kolumny przed `DATA
   GODZ. POCZ.` albo Hiperłącze dwie kolumny przed `NUMER ZL.`), a inaczej na
   miejscu (`raw_orders.primary_offset`). Jego wartości strażnik maskuje
-  wszędzie, jak każdą inną.
+  wszędzie, jak każdą inną. Wybór decyduje o wycieku, nie tylko o koszcie:
+  prawdziwa wartość w drugim położeniu ma wąski zakres (granica niżej).
+- **Na miejscu od `NUMER ZL.`** (`raw_orders.in_place_from`): wiersz z dwoma
+  położeniami, którego jedyne Hiperłącze stoi pod `NUMER ZL.`, ma datę z
+  godziną pod `DATA GODZ. POCZ.` i pustą kolumnę dwie na lewo od niej, stoi na
+  miejscu od `NUMER ZL.` w prawo: Hiperłącze z aplikacji idzie z komórką `NUMER
+  ZL.`, a przesunięcie w lewo, także częściowe, przesuwa wiersz od lewej. Samo
+  Hiperłącze tego nie dowodzi, bo może stać w złym miejscu (sondy #917 r3). W
+  takim wierszu `NUMER UMOWY` ma jedno położenie, a `NUMER ZL.` nie jest
+  możliwym numerem Orange. U taty tak wygląda 83 z 83 wklejonych wierszy na
+  miejscu.
 - **Drugie położenie, zakres opcji 3.** Wartość z niego strażnik maskuje w
   każdej komórce Kopii wejścia swojego wiersza w tej samej wersji pliku (skrót
   bajtów jak w odcisku Kopii; w wersji, którą zapisało Uporządkowanie, w
@@ -187,13 +197,17 @@ Diagnozie (`raw_orders.Shifts`, `preparation_register`).
   wartość: syntetyczny Rejestr weryfikacji Centrum ma w każdej komórce wiersza
   ten sam znacznik i z samą komórką wychodził on z `MIASTO`.
 - **Kopia wejścia.** Wiersz INTERMAX z dwoma położeniami ma w Kopii tylko
-  komórki dozwolone w obu (`uncertain_rows`), więc wiersz na miejscu nie ma
-  `NUMER ZL.`, `ZWROT` i `UWAGI`, a przesunięty pierwszy wiersz `URZĄDZENIA` i
-  `CZYNNOŚCI ZREALIZOWANE` (jego rodzaj zlecenia jest w `order_kinds` jako nazwa
-  z zamkniętej listy). Datę z godziną spod `DATA GODZ. POCZ.` Kopia niesie
-  zawsze, gdy położenie podstawowe to położenie odczytu: data z godziną nie jest
-  wartością zakazanej kolumny, a bez niej odtworzenie z Logów (#847) nie
-  powtórzy Uruchomienia. Wiersz Rejestru w Przygotowaniu ma w Kopii komórki pod
+  komórki dozwolone w obu (`uncertain_rows`), datę z godziną spod `DATA GODZ.
+  POCZ.` położenia odczytu (data z godziną nie jest wartością zakazanej
+  kolumny, a bez niej odtworzenie z Logów, #847, nie powtórzy Uruchomienia) i,
+  w wierszu na miejscu od `NUMER ZL.`, każdą komórkę od `NUMER ZL.` w prawo poza
+  `NUMER UMOWY`. Kopia nie ma więc tylko komórek, które mogą być `ADRES` albo
+  `NUMER UMOWY` w drugim położeniu: w przesuniętym pierwszym wierszu
+  `URZĄDZENIA` i `CZYNNOŚCI ZREALIZOWANE` (rodzaj zlecenia jest w `order_kinds`
+  jako nazwa z zamkniętej listy), a w wierszu na miejscu bez dowodu od `NUMER
+  ZL.` (z datą w A, z innym Hiperłączem albo bez niego) `NUMER ZL.`, `ZWROT` i
+  `UWAGI`. Odtworzenie stawia pod `NUMER ZL.` wiersza z tą komórką w Kopii
+  Hiperłącze syntetyczne, żeby odtworzony wiersz miał ten sam dowód. Wiersz Rejestru w Przygotowaniu ma w Kopii komórki pod
   nagłówkami bez zakazanych, a wartości z drugiego położenia w jego komórkach
   (`DATA`, `NUMER ZL.`) maskuje strażnik. Odtworzenie traktuje wiersz z dwoma
   położeniami jako zastrzeżenie, nie jako granicę blokującą.
@@ -203,8 +217,9 @@ Każdy przypadek sond przeglądów #917 (rundy 1–3: 6, 77 i 35), #952 (23) i #
 Maksa, opis PR); przemiatanie jej grup przez HTTP API Centrum to tabele położeń
 w `tests/test_centrum_uporzadkowanie_intermax.py` (`POSITIONS`) i
 `tests/test_centrum_logi_uruchomienia.py` (`REGISTER_POSITIONS`), z Uwagą
-taty. Sondy przeglądów na tym kodzie: 3 wycieki ze 148 (na `main` 050bd8911: 18
-ze 141), każdy z pierwszej granicy niżej.
+taty. Sondy przeglądów na tym kodzie: 3 wycieki ze 148 sond #917, #952 i K1–K7
+z #966 (na `main` 050bd8911: 18 ze 141), każdy z pierwszej granicy niżej, i 11 z
+13 sond P1–P9 z #966 r2 (na `main` 0), każdy z drugiej granicy.
 
 Znane granice, w których adres albo numer Orange wychodzi:
 - przesunięcie w prawo: tata wstawił dwie komórki w J:K albo K:L wiersza na
@@ -212,18 +227,28 @@ Znane granice, w których adres albo numer Orange wychodzi:
   jak na `main` (3 przypadki sond). Zamknięcie wymagałoby trzeciego położenia
   w każdym wierszu, a wtedy `URZĄDZENIA` każdego wiersza (G = `ADRES`+2) byłoby
   w nim wartością `ADRES`;
-- wartość z drugiego położenia, które jest prawdziwe, w zwykłej kolumnie innego
-  wiersza: to zakres opcji 3. Prawdziwe jest drugie położenie, gdy podpis
-  przesunięcia kłamie albo go brak: wiersz przesunięty bez daty w A i bez
-  Hiperłącza pod `URZĄDZENIA` (pusta `DATA` z aplikacji, wklejenie samych
-  wartości) albo wiersz na miejscu z datą z godziną wpisaną w A. Jego prawdziwy
-  adres albo numer Orange wychodzi, gdy stoi też w zwykłej kolumnie innego
-  wiersza (np. ten sam numer pod `NUMER ZL.` zlecenia tego samego klienta); u
-  taty takich wierszy nie ma (każdy wklejony ma jedno Hiperłącze pod `NUMER ZL.`,
-  kolumna A jest pusta poza przesuniętym pierwszym, #917);
-- w takim przesuniętym wierszu bez podpisu `ADRES`, który Excel trzyma jako datę
-  z godziną, Kopia niesie pod `DATA GODZ. POCZ.` (u taty `ADRES` jako data: 0
-  wierszy, #917);
+- prawdziwa wartość w drugim położeniu, gdy podpis przesunięcia nie mówi
+  prawdy o zakazanej kolumnie, i ta sama wartość w zwykłej kolumnie innego
+  wiersza (przegląd #966 r2, W1, do decyzji Maksa): adres albo numer Orange
+  wychodzi wtedy z tej zwykłej komórki do Logów i Skrzynki (Uwaga taty jest
+  zamaskowana jako wolny tekst), a na `main` nie wychodzi. Podpis nie mówi
+  prawdy w trzech klasach: kłamie na wierszu na miejscu (data z godziną w A albo
+  Hiperłącze pod `URZĄDZENIA`), brak go w wierszu przesuniętym (data tekstem
+  albo pusta, bez Hiperłącza) i jest prawdziwy, ale zakazana kolumna stoi na
+  miejscu w częściowym przesunięciu (W4 z #917 r3: tata postawił z powrotem
+  komórki od `WYKONAWCA` albo od `ADRES`). Sonda recenzenta: 11 z 11 takich
+  przypadków wycieka, na `main` 0. Na kopii INTERMAX taty podpis zgadza się z
+  położeniem odczytu w 84 z 84 wklejonych wierszy (pierwszy: data w A i
+  Hiperłącze w G, 83: pusta A, data w C i Hiperłącze w I), 31 772 uporządkowane
+  wiersze nie mają daty w A ani Hiperłącza w G, a kolizji prawdziwej wartości z
+  całą zwykłą komórką innego wiersza jest 0;
+- `ADRES`, który Excel trzyma jako datę z godziną, w wierszu przesuniętym
+  czytanym bez przesunięcia: Kopia niesie go pod `DATA GODZ. POCZ.` (u taty
+  `ADRES` jako data: 0 wierszy, #917);
+- przesunięty wiersz z pustą datą z aplikacji, `ADRES` jako datą z godziną i
+  Hiperłączem przeniesionym pod `NUMER ZL.` wygląda na wiersz na miejscu od
+  `NUMER ZL.`, więc pamięć nie zna jego `NUMER UMOWY` spod `NUMER ZL.` (trzy
+  fakty kłamią naraz);
 - wiersz na miejscu, z którego tata usunął `NUMER ZL.` z Hiperłączem i sąsiednią
   komórkę, tak że `NUMER UMOWY` stoi pod `NUMER ZL.`, i który jest
   uporządkowany: jedno położenie;
@@ -236,12 +261,13 @@ Koszt na kopiach plików taty (tylko odczyt, Mac Maksa, pomiar w PR, src `main`
 050bd8911 → ta zmiana): Kopia wejścia Uporządkowania na kopii INTERMAX z
 wklejeniem (84 wiersze) bez Diagnozy 0 → 0 masek, po Diagnozie Przygotowania
 165 (`NUMER ZL.` 83, `URZĄDZENIA` 82) → 0, po repro 1 w następnym Uporządkowaniu
-82 → 0; komórek Kopii 518 → 433 (`NUMER ZL.` wierszy na miejscu poza Kopią).
+82 → 0; komórek Kopii 518 → 517 (`URZĄDZENIA` przesuniętego pierwszego wiersza,
+rodzaj zlecenia w `order_kinds`).
 Uwagi o złamanym fakcie domeny w Kopii Przygotowania 41 okresów tygodniowych
 2026 na kopii Rejestru z 20.10.2026: 0 → 0, w repro 1 jedna. Dwa położenia w
 całym Rejestrze (Diagnoza): 11 → 11 wierszy, z wklejeniem 95 → 95. Wolny tekst
 całego Rejestru (`CZYNNOŚCI ZREALIZOWANE`, `ZWROT`, `UWAGI`, 26 495 komórek) z
-pamięcią po Diagnozie: 2 → 2 komórki z maską. Kopie Rejestru taty mają puste
+pamięcią po Diagnozie: 2 → 2 komórki z maską (wartości z miejscem w pamięci 2). Kopie Rejestru taty mają puste
 `ADRES`, `NUMER UMOWY` i `NUMER ZL.`, więc o masce w Przygotowaniu mówi tylko
 kopia INTERMAX z wklejeniem.
 

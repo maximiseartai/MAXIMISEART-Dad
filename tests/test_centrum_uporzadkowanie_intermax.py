@@ -806,9 +806,10 @@ def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_ora
     wklejenia, z komórkami od A do ``UWAGI``, które Uporządkowanie przenosi do dnia. Przesunięty pierwszy wiersz ma
     komórki pod ich nagłówkiem, bez kolumn z aplikacji, które w pliku wpadły pod ``ZWROT`` i ``UWAGI``, a jako pierwszy
     wiersz wklejenia ma dwa położenia, więc nie ma też ``URZĄDZENIA`` i ``CZYNNOŚCI ZREALIZOWANE``, które w położeniu bez
-    przesunięcia stałyby pod ``ADRES`` i ``NUMER UMOWY`` (ADR 0025). Każdy inny wklejony wiersz też ma dwa położenia,
-    więc nie ma ``NUMER ZL.``, a ma datę z godziną spod ``DATA GODZ. POCZ.``. Wiersz z datą z godziną w kolumnie A ma
-    ślad przesunięcia, więc nie ma też tej daty, a Logi mówią, że fakt domeny jest złamany. Z dołu arkusza nad
+    przesunięcia stałyby pod ``ADRES`` i ``NUMER UMOWY`` (ADR 0025). Każdy inny wklejony wiersz też ma dwa położenia, a
+    że jego jedyne Hiperłącze stoi pod ``NUMER ZL.``, pod ``DATA GODZ. POCZ.`` jest data z godziną, a kolumna A jest
+    pusta, ma w Kopii wszystkie komórki. Wiersz z datą z godziną w kolumnie A ma ślad przesunięcia, więc ma datę spod
+    ``DATA GODZ. POCZ.``, ale nie ``NUMER ZL.``, a Logi mówią, że fakt domeny jest złamany. Z dołu arkusza nad
     wklejeniem Kopia ma tylko numery ostatniego uporządkowanego i żółtego wiersza, od których Planowanie liczy
     wiersz dnia (#847). Odcisk to rozmiar i skrót bajtów, które
     Uporządkowanie przeczytało, choć zaraz po odczycie OneDrive albo Autozapis Excela zapisał INTERMAX z innymi
@@ -863,16 +864,16 @@ def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_ora
     assert (sheet["last_ordered_row"], sheet["yellow_row"]) == (centrum.layout.last_ordered, centrum.layout.yellow)
     assert sheet["rows"][2]["cells"]["A"] == {"type": "datetime", "text": A_TYPED.isoformat()}
     # W drugim położeniu pod ADRES i NUMER UMOWY stałyby: w przesuniętym pierwszym wierszu URZĄDZENIA i CZYNNOŚCI
-    # ZREALIZOWANE, a w wierszu na miejscu NUMER ZL. (ZWROT i UWAGI za UWAGI), a DATA GODZ. POCZ. wiersza z datą w A,
-    # bo jego położenie podstawowe to przesunięte.
-    second_position = {0: {"G", "M"}, 2: {"C", "I", "N", "O"}}
+    # ZREALIZOWANE, a w wierszu z datą w A NUMER ZL. (ZWROT i UWAGI za UWAGI). Wiersz na miejscu z jedynym Hiperłączem
+    # pod NUMER ZL., datą pod DATA i pustą kolumną A ma NUMER ZL. i wszystko na prawo od niego na miejscu.
+    second_position = {0: {"G", "M"}, 2: {"I", "N", "O"}}
     assert sheet["rows"] == [
         {
             "row": first + index,
             "cells": {
                 letter: value
                 for letter, value in _copied_cells(order).items()
-                if letter not in second_position.get(index, {"I", "N", "O"})
+                if letter not in second_position.get(index, set())
             },
         }
         for index, order in enumerate(centrum.layout.raw)
@@ -1056,9 +1057,10 @@ TEXT_DATE = (3, "26.10.2026 11:00")
 A_DATE = (LEFT_OF_DATE, datetime(2026, 10, 26, 11))
 """Data z godziną w kolumnie A, dwie na lewo od ``DATA GODZ. POCZ.``, jak w przesuniętym wierszu."""
 POSITIONS = {
-    # U1 tabeli decyzji: wiersz na miejscu bez śladu ma dwa położenia, a Kopia ma jego datę z godziną bez NUMER ZL.
+    # U1 tabeli decyzji: wiersz na miejscu bez śladu ma dwa położenia, a jego jedyne Hiperłącze pod NUMER ZL. (z
+    # datą pod DATA i pustą kolumną A) zostawia w Kopii NUMER ZL. i wszystko od niego w prawo
     "zwykly_wiersz": Position(
-        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1]))), (ORDER_SHEET, 1), "CDFGHJ", None
+        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1]))), (ORDER_SHEET, 1), "CDFGHIJ", None
     ),
     # U9: pierwszy wiersz wklejenia ma dwa położenia, także przesunięty z datą w A
     "przesuniety_pierwszy_wiersz_wklejenia": Position(
@@ -1103,12 +1105,27 @@ POSITIONS = {
     ),
     # U4 (W1 z #917): ślad, data z godziną dwie kolumny przed DATA w wierszu na miejscu
     "wiersz_z_data_z_godzina_takze_dwie_kolumny_przed_data": Position(
-        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], A_DATE))), (ORDER_SHEET, 1), "ADFGHJ", None,
+        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], A_DATE))), (ORDER_SHEET, 1), "ACDFGHJ", None,
         broken=1,
     ),
     # U6: ślad, Hiperłącze NUMER ZL. pod URZĄDZENIA w wierszu na miejscu
     "wiersz_z_hiperlaczem_pod_urzadzenia": Position(
-        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], links=(7,)))), (ORDER_SHEET, 1), "DFGHJ", None,
+        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], links=(7,)))), (ORDER_SHEET, 1), "CDFGHJ", None,
+        broken=1,
+    ),
+    # U6b, U6c (D2 z przeglądu #966 r2): Hiperłącze pod NUMER UMOWY albo pod ADRES to też ślad
+    "wiersz_z_hiperlaczem_pod_numer_umowy": Position(
+        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], links=(CONTRACT_NUMBER,)))),
+        (ORDER_SHEET, 1),
+        "CDFGHJ",
+        None,
+        broken=1,
+    ),
+    "wiersz_z_hiperlaczem_pod_adres": Position(
+        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], links=(ADDRESS,)))),
+        (ORDER_SHEET, 1),
+        "CDFGHJ",
+        None,
         broken=1,
     ),
     # U11 (W3 z #917): przesunięty z ADRES jako datą z godziną i datą jako tekstem w A
@@ -1118,7 +1135,7 @@ POSITIONS = {
             raw=_pasted(2, _probe(PASTED[2], (3, "26.10.2026 11:00"), (ADDRESS, datetime(2026, 10, 26, 12)), shifted=True)),
         ),
         (ORDER_SHEET, 2),
-        "ABDFGH",
+        "ABCDFGH",
         "SUROWE_ZLECENIE_BEZ_WYKONAWCY",
         address_in_file=False,
         echo=f"montaż {PROBE_ADDRESS} umowa [numer Orange] po ZL-1003",
@@ -1131,7 +1148,7 @@ POSITIONS = {
             raw=_pasted(2, _probe(PASTED[2], (3, ""), (ADDRESS, datetime(2026, 10, 26, 12)), shifted=True)),
         ),
         (ORDER_SHEET, 2),
-        "BDFGH",
+        "BCDFGH",
         "SUROWE_ZLECENIE_BEZ_WYKONAWCY",
         address_in_file=False,
         echo=f"montaż {PROBE_ADDRESS} umowa [numer Orange] po ZL-1003",
@@ -1194,7 +1211,7 @@ POSITIONS = {
             shifted=False,
         ),
         (ORDER_SHEET, 0),
-        "CDFGHJ",
+        "CDFGHIJ",
         None,
     ),
     "numer_orange_pierwszego_wiersza_na_miejscu_pod_numer_zl_innego_wiersza": Position(
@@ -1204,14 +1221,14 @@ POSITIONS = {
             shifted=False,
         ),
         (ORDER_SHEET, 0),
-        "CDFGHJ",
+        "CDFGHIJ",
         None,
     ),
     # U26: ten sam klient w innym wierszu, a w nim NUMER UMOWY pod NUMER ZL. bez Hiperłącza (granica 2 z ADR 0025)
     "numer_umowy_pod_numer_zl_u_klienta_pierwszego_wiersza_na_miejscu": Position(
         Intermax(ordered=ORDERED, raw=(_probe(PASTED[0]), PASTED[1], SAME_CLIENT, *PASTED[3:]), shifted=False),
         (ORDER_SHEET, 0),
-        "CDFGHJ",
+        "CDFGHIJ",
         None,
     ),
     "numer_umowy_pod_numer_zl_u_klienta_przesunietego_pierwszego_wiersza": Position(
@@ -1249,7 +1266,7 @@ POSITIONS = {
     "wiersz_bez_wykonawcy": Position(
         Intermax(ordered=ORDERED, raw=_pasted(1, _probe(replace(PASTED[1], worker="")))),
         (ORDER_SHEET, 1),
-        "CDFGH",
+        "CDFGHI",
         "SUROWE_ZLECENIE_BEZ_WYKONAWCY",
     ),
     # U17
@@ -1305,7 +1322,7 @@ POSITIONS = {
             raw=(replace(PASTED[0], when=datetime(2026, 10, 27, 14)), *_pasted(1, _probe(PASTED[1]))[1:]),
         ),
         (ORDER_SHEET, 1),
-        "CDFGHJ",
+        "CDFGHIJ",
         "WKLEJENIE_Z_KILKU_DNI",
     ),
     "przesuniety_pierwszy_wiersz_wklejenia_w_starszym_arkuszu": Position(
@@ -1421,10 +1438,11 @@ def test_po_diagnozie_przygotowania_uporzadkowanie_ma_numer_zl_i_urzadzenia_wkle
     tmp_path: Path,
 ) -> None:
     """Koszt z #918: Diagnoza Przygotowania czyta cały Rejestr zleceń, także wklejenie z aplikacji na dole, a każdy
-    wklejony wiersz ma w nim dwa położenia. Wartość z drugiego położenia (``NUMER ZL.`` wiersza na miejscu,
-    ``URZĄDZENIA`` przesuniętego pierwszego wiersza) nie maskuje zwykłych kolumn innych wierszy, więc Uporządkowanie w tej
-    samej pracy Centrum ma Kopię bez żadnej maski, z ``URZĄDZENIA`` każdego wiersza na miejscu, a adres wklejonego
-    wiersza, który tata cytuje w Uwadze po Diagnozie, jest zamaskowany."""
+    wklejony wiersz ma w nim dwa położenia. ``NUMER ZL.`` wiersza na miejscu z jedynym Hiperłączem pod nim nie jest
+    możliwym numerem Orange, a ``URZĄDZENIA`` przesuniętego pierwszego wiersza (drugie położenie) nie maskuje zwykłych
+    kolumn innych wierszy, więc Uporządkowanie w tej samej pracy Centrum ma Kopię bez żadnej maski, z ``URZĄDZENIA`` i
+    ``NUMER ZL.`` każdego wiersza na miejscu, a adres wklejonego wiersza, który tata cytuje w Uwadze po Diagnozie, jest
+    zamaskowany."""
 
     periods = tmp_path / "okresy"
     periods.mkdir()
@@ -1446,6 +1464,8 @@ def test_po_diagnozie_przygotowania_uporzadkowanie_ma_numer_zl_i_urzadzenia_wkle
     cells = {row["row"]: row["cells"] for row in sheet["rows"]}
     first_row, *rest = centrum.layout.raw_rows
     raw = centrum.layout.raw
-    assert {row: cells[row][DEVICES_LETTER] for row in rest} == {row: order.kind for row, order in zip(rest, raw[1:], strict=True)}
+    assert {row: (cells[row][DEVICES_LETTER], cells[row][NUMBER_LETTER]) for row in rest} == {
+        row: (order.kind, f"ZL-{order.number}") for row, order in zip(rest, raw[1:], strict=True)
+    }
     assert cells[first_row][NUMBER_LETTER] == f"ZL-{raw[0].number}"
     assert [value for row in cells.values() for value in row.values() if isinstance(value, str) and "[" in value] == []

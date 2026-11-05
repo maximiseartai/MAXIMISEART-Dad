@@ -100,6 +100,9 @@ class RegisterSheet:
     łamią fakt domeny, że przesunięty przychodzi tylko pierwszy wklejony wiersz."""
     left_shifted: frozenset[int] = frozenset()
     """Wiersze z dwoma położeniami, których położenie podstawowe to przesunięte (``raw_orders.primary_offset``)."""
+    in_place_from: Mapping[int, int] = field(default_factory=lambda: MappingProxyType({}))
+    """Wiersze z dwoma położeniami → kolumna (od 1), od której na pewno stoją na miejscu, bo ich jedyne Hiperłącze stoi
+    pod ``NUMER ZL.`` (``raw_orders.in_place_from``)."""
 
     def column_letter(self, column: Column) -> str:
         """Litera kolumny arkusza z nagłówkiem ``column``, np. ``L`` dla ``SKUTECZNE``."""
@@ -230,6 +233,7 @@ def _read_register_sheets(workbook: ReadWorkbook, positions: dict[str, list[int]
         uncertain: dict[int, Mapping[int, object]] = {}
         traced: dict[int, tuple[ShiftTrace, ...]] = {}
         left_shifted: set[int] = set()
+        in_place: dict[int, int] = {}
         above: bool | None = None  # wygląd uporządkowany najbliższego wiersza z danymi nad wierszem; None: nie ma go
         for empty, found in read:
             if empty:
@@ -242,6 +246,9 @@ def _read_register_sheets(workbook: ReadWorkbook, positions: dict[str, list[int]
                 uncertain[found.row.number] = MappingProxyType(dict(enumerate(found.values, start=1)))
                 if raw_orders.primary_offset(**facts):
                     left_shifted.add(found.row.number)
+                fixed = raw_orders.in_place_from(date=found.row.cells[DATE.target_header].value, **facts)
+                if fixed is not None:
+                    in_place[found.row.number] = fixed
             if traces and not first:
                 traced[found.row.number] = traces
             above = ordered
@@ -254,6 +261,7 @@ def _read_register_sheets(workbook: ReadWorkbook, positions: dict[str, list[int]
                 MappingProxyType(uncertain),
                 MappingProxyType(traced),
                 frozenset(left_shifted),
+                MappingProxyType(in_place),
             )
         )
     return sheets
