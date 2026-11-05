@@ -84,11 +84,12 @@ unless named otherwise):
 | `Wyslij` | `send`: `self._run_logs.send(record)` → `outbox.py` `Outbox.post(logi_post(record))`: True once the queue file exists, False leaves the journal for the next start |
 | `UsunPoWysylce` | `send`: `_remove(path, ...)` after True |
 | `StartWyceny` | `runs.py` `RunHost.start` → `app.py` `run_started` → `PricingJournal.run_started` (start in memory, first line pending) |
-| `WpisZaczete` | `efenix_pricing.py` `save`: `journal.begun(...)` before `efenix_trace.traced` and `_priced` → `PricingJournal._write` (first line and entry in one `write`, `flush`, `fsync`; `OSError` drops the entry, `_header` stays) |
+| `WpisZaczete` | `efenix_pricing.py` `save`: `journal.begun(...)` before `efenix_trace.traced` and `_priced` → `PricingJournal._write` (first line and entry in one `write`, `flush`, `fsync`; `OSError` drops the entry, `_header` stays; an `OSError` from `flush` or `fsync` after `write` may leave the whole first line on the disk, so the journal has its start while `_header` stays) |
 | `ZmianaWEfenix` | `_priced` → `_outcome`: the first window action that changes the order (execution date, Wycena Emmetta, a quantity) |
 | `WpisSkonczone` | `save`: `journal.ended(result, ...)` after the result → `PricingJournal._write` |
+| `Zatrzymanie` | `save`: a `StopError` after `journal.begun` of an order and before its `journal.ended` (the window stops, or the Ślad Wyceny Emmetta did not save a quantity written ahead, #881); `save` marks the ready orders and raises it on, and `run_process` returns with the Zatrzymanie, so the Wycena reaches its result without „zlecenie skończone” of that order |
 | `Wynik` | `runs.py` `_Run.work` → `process_run.py` `run_process`: the engine reached its result, the metrics record (the Historia row) is written or not (`metrics_saved`), and `run_process` returns; when it raises, `_Run.work` goes on with a Stop. Nothing on the journal path reads the Historia row, so the model has none |
-| `WpisKonca` | `_Run.work` → `RunHost.after` → `PricingJournal.run_ended`, the first of `after_run` in `create_app` (assignment `runs`): only when the journal has its first line (`not self._header`), `_write(RunEnded(...))` (`write`, `flush`, `fsync`); when it returns False, `_remove(path, ...)` (`unlink`; `OSError` leaves the journal without its end entry) |
+| `WpisKonca` | `_Run.work` → `RunHost.after` → `PricingJournal.run_ended`, the first of `after_run` in `create_app` (assignment `runs`): when the journal has its first line (`not self._header`), `_write(RunEnded(...))` (`write`, `flush`, `fsync`); when no entry was written (`self._header`, and a failed write may have left the first line) or `_write` returns False, `_remove(path, ...)` (`unlink`; no file, or a file in place of the folder, leaves nothing to remove; `OSError` leaves the journal without its end entry) |
 | `LogiWyniku` | `RunHost.after` → `RunLogs.run_ended`, the next of `after_run` → `_keep`: `_write` of the Logs with the result |
 | `WyslijWynik` | `_keep`: `finally: self._outbox.post(logi_post(kept))`, then the end of the Uruchomienie; the journal stays with its end entry until the next start |
 | `Zgasniecie` | none: Centrum switches off at any step; memory is gone, disk and queue stay; an entry being written may be torn, a torn first line is a journal without a start, and a torn end entry is a journal without one (`_read` counts it in `omitted`) |
@@ -133,9 +134,9 @@ py -3 .agents\skills\verify-urwane-uruchomienie\scripts\sprawdz_urwane_uruchomie
 
 `--config NAME` runs one configuration, `--strict` fails also on known findings. Java and `tla2tools.jar` come from
 `verify-aktualizacja-narzedzia` (`sprawdz_aktualizacje.py` installs pinned `jdk4py` and the jar into `.verification/`
-on first use; `TLC_JAVA` and `TLC_JAR` override them). The whole check took 20 s on Maks's Mac on 2026-11-05 (after
-#870/#871, 13 known findings in 20 TLC runs); the run of `wszystko` with its three known findings excused has 213 445
-distinct states in 6 s, and with two switch-offs instead of one it also passes, 1.04 million distinct states in 21 s.
+on first use; `TLC_JAVA` and `TLC_JAR` override them). The whole check took 48 s on Maks's Mac on 2026-11-05 (round 2
+of #888, 13 known findings in 20 TLC runs); the run of `wszystko` with its three known findings excused has 1 097 470
+distinct states in 22 s, and with two switch-offs instead of one it also passes, 4.52 million distinct states in 85 s.
 
 The last line is the verdict:
 
@@ -174,8 +175,11 @@ or a journal written with `JournalStarted`, `OrderBegun` and `OrderEnded`, as in
 folder (`logs/uruchomienia`, `logs/dzienniki-wyceny`) or a folder in place of the temporary file
 (`<Logs file>.tmp`), a failed metrics record is `monkeypatch` of `MetricsStore.append` raising `OSError` during the
 Wycena, and a failed end entry is `Path.open` with mode `"a"` of a journal raising once the efenix metrics file exists
-(every order entry comes before the metrics record, the end entry after it). A path that does not happen on the code
-means the model is wrong until you show it is not.
+(every order entry comes before the metrics record, the end entry after it). A failed write that leaves its first line
+is the first journal file opened with mode `"a"` whose `fileno` raises `OSError` after `write` and `flush`, and a
+Zatrzymanie at an order is an Atrapa order with an HTTP error page (both in
+`test_wycena_z_wynikiem_ktorej_jedyny_wpis_dziennika_zawiodl_po_zapisie_pierwszej_linii_nie_dostaje_logow_urwanego_uruchomienia`).
+A path that does not happen on the code means the model is wrong until you show it is not.
 
 ## Configurations
 
@@ -184,10 +188,10 @@ means the model is wrong until you show it is not.
 | `zwykle` | two Wyceny of two orders, two switch-offs anywhere, no other failure | known `przed-wpisem-konca` |
 | `odczyt` | two Wyceny of one order, one switch-off, one start that cannot read a journal | known `przed-wpisem-konca` |
 | `logi-i-kolejka` | two Wyceny, one switch-off, one failed write of a Logs file, one `post` False, one failed `unlink` | known `przed-wpisem-konca` |
-| `koniec` | two Wyceny, one switch-off, one journal entry that fails (the end entry too), one failed `unlink`, one failed write of a Logs file | known `przed-wpisem-konca`, `wpis-konca-nieudany`, `wpis-nieudany` |
+| `koniec` | two Wyceny, one switch-off, one Zatrzymanie at an order, one journal entry that fails (the end entry too, or after its first line is on the disk), one failed `unlink`, one failed write of a Logs file | known `przed-wpisem-konca`, `wpis-konca-nieudany`, `wpis-nieudany` |
 | `wpisy` | one Wycena of two orders, one switch-off, one journal entry that fails | known `przed-wpisem-konca`, `wpis-nieudany` |
 | `stare-logi` | Wycena 1 already cut, its Logi Urwanego Uruchomienia written without the guard and not sent, one more Wycena, one switch-off, one failed write of a Logs file | known `przed-wpisem-konca`, `zapis-logow-nieudany` |
-| `wszystko` | two Wyceny of two orders, one switch-off and one failure of every kind | the three known findings of `koniec` |
+| `wszystko` | two Wyceny of two orders, one switch-off, one Zatrzymanie at an order and one failure of every kind | the three known findings of `koniec` |
 
 ## Known findings
 
@@ -227,7 +231,10 @@ were replayed on the code.
    `_write` failed): the start closes the journal as Logi Urwanego Uruchomienia, and when the Logi with the result went
    to the queue without their file, these Logi replace them in the Skrzynka. Two failures of the journal at once and a
    third event; with a full disk, the most likely shared cause, `unlink` succeeds and frees space, so the journal is
-   gone. The shortest path TLC shows (both journal failures, then a switch-off before the Logs) replaces nothing.
+   gone. The shortest path TLC shows (both journal failures, then a switch-off before the Logs) replaces nothing. A
+   Wycena no entry of which was written (`_header`) gets the same finding only through a failed `unlink`: a failed
+   write may have left the journal with its first line (a Zatrzymanie at the first order then ends the Wycena with that
+   line alone), and `run_ended` removes it.
    Replayed with `Path.open` mode `"a"` of the journal raising after the metrics record and `Path.unlink` of the
    journal raising during the Wycena: the journal stays with „zlecenie skończone” last and the Centrum log has
    `dziennik-wyceny-niedostepny typ=PermissionError miejsce=wpis` twice; with a file in place of `logs/uruchomienia`
@@ -280,7 +287,9 @@ each gives `URWANE URUCHOMIENIE: NOWE NARUSZENIE`:
 - BezUrwanychPoWyniku: `_closed` without `read.ended`; no end entry at all (`after_run` without `journal`);
   `after_run` with `run_logs` before `journal` (`koniec`: Logi with the result accepted without their file, a
   switch-off before the end entry, and Logi Urwanego Uruchomienia replace them); `run_ended` without `_remove` after a
-  failed end entry (`koniec`); `_closed` without `return None` for Logs with a result (`koniec`: a Wycena whose end
+  failed end entry (`koniec`); `run_ended` returning on `self._header` without `_remove` (`koniec`: the first entry
+  fails after its first line is on the disk, the Wycena stops at that order, and the start gives it Logi Urwanego
+  Uruchomienia); `_closed` without `return None` for Logs with a result (`koniec`: a Wycena whose end
   entry and `unlink` failed gets Logi Urwanego Uruchomienia although its Logs with the result exist).
 - TeSameZnaki: the Logs file written before the guard (`guard` after `RunLogs.close`).
 - PrzezStraznika: `_closed` without `record = self._run_logs.guard(record)`.
@@ -296,9 +305,9 @@ breaks the same rule again.
 ## Scope
 
 Verified: the seven promises over every order of the actions above within the bounds of each configuration (one or two
-Wyceny started one after the other, one or two orders each, one or two switch-offs, at most one failure of each kind),
-with Dad opening and closing Centrum as often as he likes. Assumed, each a reason the check can pass while the code is
-wrong:
+Wyceny started one after the other, one or two orders each, one or two switch-offs, at most one Zatrzymanie at an
+order and at most one failure of each kind), with Dad opening and closing Centrum as often as he likes. Assumed, each a
+reason the check can pass while the code is wrong:
 
 - **`os.replace` is atomic** (`replace_atomically`): a switch-off leaves the old Logs file or the new one.
 - **One Centrum at a time builds the app**: `_listen_when_released` takes the port before `create_app`, and the old
@@ -314,8 +323,9 @@ wrong:
   `wpis-konca-nieudany`.** A journal written by a build between #845 and #870/#871 has no end entry either, so a Wycena
   of such a build that reached its result without a Logs file gets Logi Urwanego Uruchomienia; no Wydanie has such a
   build (v0.4.3 has no journal), so only Maks's computers can have such a journal. Every Uruchomienie that reached its
-  result reaches `RunHost.after` (`_Run.work` catches an exception of `run_process` and goes on), so only a switch-off
-  skips the end entry.
+  result reaches `RunHost.after` (`_Run.work` catches an exception of `run_process` and goes on), and `run_ended`
+  removes the journal it gives no end entry (a failed end entry, or no entry written at all), so only a switch-off
+  before `run_ended` or a failed `unlink` leaves the journal of a Wycena with a result without its end entry.
 - **`RunLog.model_validate_json(text).text == text`** for a file `close` wrote, and two builds of the same journal give
   Logs with the same orders; their environment, tool and Dad's actions may differ, which the model leaves out. A rebuild
   happens only when the file is missing, so the file and the newest accepted Logi stay the same, unless the clock went
@@ -324,11 +334,10 @@ wrong:
 Left out: a glob of `logs/dzienniki-wyceny/` that fails (it skips every journal, like one failed read per journal), a
 Logs file that cannot be parsed (truncated by hand, a schema from a newer version after a rollback: `close` takes it as
 a result and removes the journal), a torn entry in the middle of a journal (counted in `omitted`), a failed write that
-left a whole first line on the disk (`_header` stays, so `run_ended` writes no end entry and the journal looks like
-`przed-wpisem-konca`), a Zatrzymanie of the window (the Wycena reaches its result either way), the Historia (no step of
-this path reads it), exceptions other than `OSError` in `close`, `send` or `run_ended`, Dad's actions in the Logs
-(`DadActionJournal.take`), and the karta after the start (`RunCards.last`, which shows the Urwane Uruchomienie for
-`przed-wpisem-konca`).
+left a torn first line (`run_ended` removes it like a whole one, and a start removes a journal without a start), a
+Zatrzymanie before the first order (no entry, no journal), the Historia (no step of this path reads it), exceptions
+other than `OSError` in `close`, `send` or `run_ended`, Dad's actions in the Logs (`DadActionJournal.take`), and the
+karta after the start (`RunCards.last`, which shows the Urwane Uruchomienie for `przed-wpisem-konca`).
 
 ## Files
 

@@ -10,6 +10,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime, time as time_of_day, timedelta, timezone
 from decimal import Decimal
+import errno
 import hashlib
 from http import HTTPStatus
 import json
@@ -19,6 +20,7 @@ import re
 import shutil
 import signal
 import sys
+import threading
 import time
 from typing import Any, NoReturn
 
@@ -38,6 +40,7 @@ from rozliczenia.centrum.run_logs import (
     LoggedOrder,
     LoggedStep,
     RunLog,
+    RunLogs,
     Tool,
     logs_file_name,
 )
@@ -2405,3 +2408,113 @@ def test_wpis_konca_ktory_sie_nie_zapisal_usuwa_dziennik_wyceny_z_wynikiem_a_sta
 
     assert (ended, lines) == ([], ["dziennik-wyceny-niedostepny typ=PermissionError miejsce=wpis"])
     assert (records(centrum), [logs_json(box, comment)["ending"] for comment in logs_comments(box)]) == ([], ["finished"])
+
+
+class _Unconfirmed:
+    """Plik dziennika, którego zapis dysk przyjął (``write`` i ``flush``), ale nie potwierdził: ``fsync`` na jego deskryptorze
+    zgłasza błąd wejścia-wyjścia."""
+
+    def __init__(self, file: Any) -> None:
+        self._file = file
+
+    def __enter__(self) -> _Unconfirmed:
+        self._file.__enter__()
+        return self
+
+    def __exit__(self, *exception: object) -> None:
+        self._file.__exit__(*exception)
+
+    def write(self, text: str) -> int:
+        return int(self._file.write(text))
+
+    def flush(self) -> None:
+        self._file.flush()
+
+    def fileno(self) -> NoReturn:
+        raise OSError(errno.EIO, "Input/output error")
+
+
+def test_wycena_z_wynikiem_ktorej_jedyny_wpis_dziennika_zawiodl_po_zapisie_pierwszej_linii_nie_dostaje_logow_urwanego_uruchomienia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pierwszy wpis Wyceny w efenix, „zaczynam zlecenie”, jest już na dysku razem z pierwszą linią dziennika, gdy dysk
+    zgłasza błąd wejścia-wyjścia, a okno efenix staje przy tym samym zleceniu (strona błędu HTTP), więc Wycena dochodzi
+    do wyniku z Zatrzymaniem bez następnego wpisu. Pliku Logów nie ma (katalog Logów zajęty przez plik), więc jej Logi z
+    wynikiem idą do Skrzynki tylko z kolejki. Wycena usuwa dziennik sama, z jedną linią dziennika Centrum, więc następny
+    start nie robi z niej Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem."""
+
+    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked.parent.mkdir(parents=True)
+    blocked.write_text("", encoding="utf-8")
+    opened = Path.open
+    unconfirmed: list[Path] = []
+
+    def opening(self: Path, *arguments: Any, **keywords: Any) -> Any:
+        file = opened(self, *arguments, **keywords)
+        mode = arguments[0] if arguments and isinstance(arguments[0], str) else keywords.get("mode", "r")
+        if self.parent.name == "dzienniki-wyceny" and mode == "a" and not unconfirmed:
+            unconfirmed.append(self)
+            return _Unconfirmed(file)
+        return file
+
+    with atrapa_efenix([HYPOTHESES["D-strona-bledu-http"][0]]) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        write_collective_file(centrum.period_parent, STOPPED_AT_SECOND[1:])
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        box = centrum.surroundings.report_box
+        with monkeypatch.context() as patch:
+            patch.setattr(Path, "open", opening)
+            assert _start_pricing(centrum).status_code == 200
+            stops = finished_view(centrum.client)["result"]["stops"]
+        assert box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        centrum.client.stop()
+    left = journals(centrum)
+    blocked.unlink()
+    centrum.restart()
+    assert centrum.client.get("/api/runs/current").status_code == 200
+    centrum.client.stop()
+    lines = [line.split(" ", 1)[1] for line in centrum.log_path.read_text(encoding="utf-8").splitlines() if "dziennik-wyceny" in line]
+
+    assert (len(unconfirmed), len(stops), lines) == (1, 1, ["dziennik-wyceny-niedostepny typ=OSError miejsce=wpis"])
+    assert (records(centrum), left, [logs_json(box, comment)["ending"] for comment in logs_comments(box)]) == ([], [], ["stop"])
+
+
+def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie_zastepuje_ich_logami_urwanego_uruchomienia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Centrum gaśnie zaraz po tym, jak Logi z wynikiem Wyceny w efenix poszły do Kolejki wysyłki, a pliku Logów nie ma
+    (katalog Logów zajęty przez plik). Wycena dopisała wpis końca do dziennika przed swoimi Logami, więc następny start
+    usuwa dziennik bez Logów Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem (#871)."""
+
+    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked.parent.mkdir(parents=True)
+    blocked.write_text("", encoding="utf-8")
+    reached, released = threading.Event(), threading.Event()
+    keep = RunLogs.run_ended
+
+    def held_after(self: RunLogs, run: Any) -> None:
+        try:
+            keep(self, run)  # rzuca OSError po wysyłce do kolejki: pliku Logów nie da się zapisać
+        finally:
+            reached.set()
+            released.wait()
+
+    monkeypatch.setattr(RunLogs, "run_ended", held_after)
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        box = centrum.surroundings.report_box
+        assert _start_pricing(centrum).status_code == 200
+        assert wait_for(reached.is_set, 120)
+        sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        closed = centrum.client
+        blocked.unlink()
+        centrum.restart()
+        assert centrum.client.get("/api/runs/current").status_code == 200
+        after = (records(centrum), journals(centrum))
+        released.set()
+        finished_view(closed)
+    centrum.client.stop()
+
+    assert (sent, after) == (True, ([], []))
+    assert [logs_json(box, comment)["ending"] for comment in logs_comments(box)] == ["finished"]

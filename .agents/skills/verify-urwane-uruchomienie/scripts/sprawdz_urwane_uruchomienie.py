@@ -233,6 +233,7 @@ _STEPS = {
     "WpisZaczete": "Wycena {b} pisze „zaczynam zlecenie” {z}",
     "ZmianaWEfenix": "okno efenix zmienia zlecenie {z} Wyceny {b}",
     "WpisSkonczone": "Wycena {b} pisze „zlecenie skończone” {z}",
+    "Zatrzymanie": "Wycena {b} staje przy zleceniu {z} (Zatrzymanie): bez „zlecenie skończone” do wyniku",
     "Wynik": "run_process Wyceny {b} wraca z wynikiem (rekord metryk, wiersz Historii, zapisany albo nie)",
     "WpisKonca": "PricingJournal.run_ended: Wycena {b} pisze „koniec Uruchomienia”, zanim powstaną jej Logi",
     "LogiWyniku": "RunLogs._keep zapisuje plik Logów z wynikiem Wyceny {b}",
@@ -256,10 +257,15 @@ def _step(action: str, before: dict[str, str], after: dict[str, str]) -> str:
         "z": before.get("zlecenie", "?"),
     }
     said = _STEPS.get(action, action).format(**fields)
+    if action == "WpisKonca" and before.get("naglowekCzeka") == "TRUE":
+        kept = "_remove usuwa dziennik" if after.get("dziennik") != before.get("dziennik") else "bez wpisu końca"
+        said = f"PricingJournal.run_ended: żaden wpis Wyceny {fields['b']} się nie zapisał (_header), {kept}"
+    # Nieudany wpis, po którym dziennik powstał: write położył całą pierwszą linię, a flush albo fsync rzucił.
+    left_start = action != "WpisKonca" and after.get("dziennik") != before.get("dziennik")
     failed = [
         what
         for counter, what in (
-            ("awarieWpisu", "wpis rzuca OSError"),
+            ("awarieWpisu", "wpis rzuca OSError po całej pierwszej linii na dysku" if left_start else "wpis rzuca OSError"),
             ("awarieLogow", "zapis pliku Logów rzuca OSError"),
             ("awarieKolejki", "Outbox.post zwraca False"),
             ("awarieUsuniecia", "unlink rzuca OSError"),

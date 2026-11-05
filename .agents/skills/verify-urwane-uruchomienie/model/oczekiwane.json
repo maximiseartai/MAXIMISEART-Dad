@@ -24,7 +24,7 @@
       {
         "obietnica": "BezUrwanychPoWyniku",
         "przyczyna": "wpis-konca-nieudany",
-        "znalezisko": "wpis końca i usunięcie dziennika po nim zawodzą (OSError), a pliku Logów z wynikiem nie ma (zgaśnięcie przed nim albo nieudany zapis): start zamyka dziennik jako Logi Urwanego Uruchomienia, a gdy Logi z wynikiem poszły do kolejki bez pliku, w Skrzynce je zastępują; dwie awarie dziennika naraz i do tego zgaśnięcie albo trzecia awaria, przyjęte w #870/#871"
+        "znalezisko": "wpis końca i usunięcie dziennika po nim zawodzą (OSError), a pliku Logów z wynikiem nie ma (zgaśnięcie przed nim albo nieudany zapis): start zamyka dziennik jako Logi Urwanego Uruchomienia, a gdy Logi z wynikiem poszły do kolejki bez pliku, w Skrzynce je zastępują; dwie awarie dziennika naraz i do tego zgaśnięcie albo trzecia awaria, przyjęte w #870/#871; tak samo, gdy żaden wpis się nie zapisał, a nieudany zapis zostawił pierwszą linię, i zawodzi tylko usunięcie dziennika"
       },
       {"obietnica": "ZaczeteWLogach", "przyczyna": "wpis-nieudany", "znalezisko": "jak w wpisy"}
     ]

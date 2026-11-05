@@ -106,6 +106,23 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
+        "dziennik z pierwszą linią z nieudanego zapisu zostaje po wyniku (PricingJournal.run_ended: return przy "
+        "self._header, bez _remove)",
+        (
+            Edit(MODEL, "          /\\ naglowekCzeka /\\ dziennik[r] = \"brak\"\n", "          /\\ naglowekCzeka\n"),
+            Edit(
+                MODEL,
+                "          /\\ IF naglowekCzeka THEN UNCHANGED awarieWpisu\n"
+                "             ELSE awarieWpisu < MaxAwariiWpisu /\\ awarieWpisu' = awarieWpisu + 1\n",
+                "          /\\ ~naglowekCzeka /\\ awarieWpisu < MaxAwariiWpisu /\\ awarieWpisu' = awarieWpisu + 1\n",
+            ),
+        ),
+        _check("koniec"),
+        "pierwszy wpis rzuca OSError po zapisie pierwszej linii, okno efenix staje, a Wycena z wynikiem dostaje przy "
+        "starcie Logi Urwanego Uruchomienia, które w Skrzynce zastępują jej Logi z wynikiem",
+        NEW,
+    ),
+    Mutation(
         "plik Logów z wynikiem nie rozstrzyga (_closed: bez return None przy logged.ending != \"interrupted\")",
         (
             Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ ~koniecZapisany /\\ logi[r].rodzaj = \"wynik\"\n",

@@ -34,7 +34,10 @@ Dopisek #870/#871: o tym, czy Uruchomienie z dziennikiem doszło do wyniku,
 mówi sam dziennik, nie Historia. Pierwsze działanie po wyniku dopisuje do
 niego „koniec Uruchomienia” (z `fsync`), zanim powstaną Logi z wynikiem i
 zanim pójdą do Skrzynki, a dziennik, w którym ten wpis się nie zapisał,
-Centrum od razu usuwa. Start usuwa dziennik z wpisem końca i nie czyta
+Centrum od razu usuwa, tak samo jak dziennik, w którym nie zapisał się żaden
+wpis (nieudany zapis mógł zostawić na dysku jego pierwszą linię, a
+Zatrzymanie przy zleceniu zakończyć Wycenę przed następnym wpisem). Start
+usuwa dziennik z wpisem końca i nie czyta
 Historii, bo reguła „pierwszy wiersz od startu” jest prawdziwa tylko dla
 ostatniego startu (wiersz późniejszej Wyceny zabierał dziennik urwanej bez
 Logów), a Historia nieczytelna albo bez rekordu metryk dawała Wycenie z

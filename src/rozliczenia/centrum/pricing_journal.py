@@ -17,7 +17,10 @@ Uruchomienie, które doszło do wyniku (``run_process`` wrócił, z wierszem His
 Uruchomienia” (``PricingJournal.run_ended``): to pierwsze działanie po wyniku, więc wpis jest na dysku, zanim powstaną
 Logi z wynikiem i zanim pójdą do Skrzynki. Dziennik sam mówi więc startowi Centrum, czy jego Uruchomienie doszło do
 wyniku, a start nie zgaduje tego z Historii, którą pisze kto inny i którą start może źle odczytać (#870, #871). Wpis
-końca, który się nie zapisał, usuwa dziennik: Uruchomienie ma wynik, więc jego dziennik nie jest już potrzebny.
+końca, który się nie zapisał, usuwa dziennik: Uruchomienie ma wynik, więc jego dziennik nie jest już potrzebny. Tak samo
+Uruchomienie, którego żaden wpis się nie zapisał, usuwa dziennik, który mógł po nim zostać: zapis, w którym ``flush``
+albo ``fsync`` rzucił po ``write``, zostawia na dysku całą pierwszą linię, a Zatrzymanie przy pierwszym zleceniu kończy
+Wycenę bez następnego wpisu.
 Zgaśnięcie Centrum między rekordem metryk a wpisem końca (milisekundy) zostawia dziennik bez wpisu końca, a start
 zamyka go jako Logi Urwanego Uruchomienia; Logi z wynikiem jeszcze wtedy nie istnieją, więc niczego w Skrzynce nie
 zastępują.
@@ -155,15 +158,17 @@ class PricingJournal:
 
     def run_ended(self, run: EndedRun) -> None:
         """Działanie po wyniku (``runs.AfterRun``), pierwsze, przed Logami Uruchomienia: wpis końca w dzienniku, który ma
-        pierwszą linię; Uruchomienie bez dziennika (inny proces albo każdy wpis nieudany) niczego nie pisze. Wpis końca,
-        który się nie zapisał, usuwa dziennik, żeby start Centrum nie wziął go za Urwane Uruchomienie. Dziennik należy do
-        ``run``, bo następne Uruchomienie startuje (``run_started``) dopiero po końcu tego."""
+        pierwszą linię. Dziennik bez wpisu końca start Centrum wziąłby za Urwane Uruchomienie, więc usuwa go wpis końca,
+        który się nie zapisał, i Uruchomienie, którego żaden wpis się nie zapisał: nieudany zapis mógł zostawić na dysku
+        całą pierwszą linię (``flush`` albo ``fsync`` rzuca po ``write``). Uruchomienie bez dziennika (inny proces albo
+        każdy zapis nieudany bez śladu) nie ma czego usuwać. Dziennik należy do ``run``, bo następne Uruchomienie startuje
+        (``run_started``) dopiero po końcu tego."""
 
         with self._lock:
-            started = self._started
-            if started is None or self._header:
-                return
-        if not self._write(RunEnded(at=_utc_now(), entry="koniec Uruchomienia")):
+            started, header = self._started, self._header
+        if started is None:
+            return
+        if header or not self._write(RunEnded(at=_utc_now(), entry="koniec Uruchomienia")):
             _remove(_path(self._directory, started), self._log, where="wpis")
 
     def _write(self, entry: OrderBegun | OrderEnded | RunEnded) -> bool:
@@ -191,11 +196,12 @@ class PricingJournal:
 
 
 def _remove(path: Path, log: CentrumLog, *, where: Literal["wpis", "start"]) -> None:
-    """Usuwa dziennik ``path``; ``OSError`` zostawia go z linią dziennika Centrum."""
+    """Usuwa dziennik ``path``; ``OSError`` zostawia go z linią dziennika Centrum. Dziennika nie ma także wtedy, gdy na
+    miejscu katalogu dzienników stoi plik (``NotADirectoryError``, a w Windows ``FileNotFoundError``)."""
 
     try:
         path.unlink()
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         pass
     except OSError as failure:
         log.pricing_journal_unavailable(failure, where=where)
