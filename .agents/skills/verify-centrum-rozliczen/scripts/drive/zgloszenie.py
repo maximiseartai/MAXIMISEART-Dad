@@ -14,6 +14,7 @@ from drive.common import (
     Run,
     current_run,
     drop_report_key,
+    edit_issue,
     ended_run_shown,
     ensure_files_set,
     finished_result,
@@ -328,8 +329,7 @@ def _one_open_report(run: Run, page: Page, box: Path, config: Path) -> None:
     [first] = _issues(box)
     number = first["number"]
     print(f"  harness: Maks closes Zgłoszenie {number} in the skrzynka Zgłoszeń", flush=True)
-    closed = box / f"{number}.json"
-    closed.write_text(json.dumps({**json.loads(closed.read_text(encoding="utf-8")), "state": "closed"}), encoding="utf-8")
+    edit_issue(box, number, state="closed")
     run_id = _stop_for_maks(run, page, "zgloszenie-zamkniete")
     expect(page.get_by_role("status").filter(has_text=WAITING)).to_be_visible()
     _logs_sent(run, config / "zgloszenia" / "kolejka", run_id)
@@ -423,8 +423,7 @@ def _rejected_report(run: Run, page: Page, box: Path, config: Path) -> None:
     run.step(FEATURE, "zgloszenie-odrzucone")
     newest = _issues(box)[-1]
     print(f"  harness: Maks closes Zgłoszenie {newest['number']}; the skrzynka rejects the content of every Zgłoszenie", flush=True)
-    closed = box / f"{newest['number']}.json"
-    closed.write_text(json.dumps({**json.loads(closed.read_text(encoding="utf-8")), "state": "closed"}), encoding="utf-8")
+    edit_issue(box, newest["number"], state="closed")
     rejecting = box / "odrzuca-zgloszenie"
     rejecting.touch()
     try:
