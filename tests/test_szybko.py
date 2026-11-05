@@ -48,6 +48,7 @@ BY_CHANGE_ONLY = {
     "tests/test_plan_ci.py": "sprawdza plan na repozytoriach testu i atrapach czasów; graf wybiera go przy zmianie planu i ci.yml",
     "tests/test_podstawa_w_czesciach.py": "sprawdza podział podstawy Centrum; graf wybiera go przy zmianie skilla, skrypt_skilla.py i mutacje_skilli.py",
     "tests/test_rozjazd_modelu.py": "sprawdza właścicielkę rozjazdu modelu na repozytoriach testu, a nie całe repozytorium",
+    "tests/test_praca_w_tle.py": "sprawdza hook na pojedynczych wejściach Stop; graf wybiera go przy zmianie hooka i .claude/settings.json",
     "tests/test_praca_w_toku.py": "sprawdza werdykt narzędzia na repozytoriach testu, a nie całe repozytorium; trwa ok. 19 s",
     "tests/test_scal_pr.py": "sprawdza narzędzie na atrapie gh i repozytoriach testu, a nie całe repozytorium",
     "tests/test_skille_dla_zmiany.py::test_liczy_ci_i_liczy_noc_wymieniaja_dokladnie_kroki_skilla_ktore_uruchamia_plan_pull_requestu_i_nocy": (

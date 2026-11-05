@@ -102,7 +102,8 @@ INSTEAD = (
     "Zamiast czekać: dziecko delegate_task kończy zadanie i zwraca URL PR i pełny SHA HEAD (rodzic ma "
     "watch_pull_request i scal_pr.py, który sam sprawdza CI na HEAD). Wątek główny wywołuje watch_pull_request "
     "i kończy turę, a T3 budzi go po końcu CI, albo uruchamia to samo polecenie z run_in_background: true "
-    "i dostaje powiadomienie o jego końcu."
+    "i przed końcem tury czeka na jego koniec (w T3 t3_background_wait z jego ID; hook Stop praca_w_tle.py nie "
+    "kończy tury z pracą w tle)."
 )
 
 
@@ -116,7 +117,8 @@ WATCHING = Refusal(f"Odmowa: gh pr checks --watch i gh run watch blokują na pie
 PGREP_LOOP = Refusal(
     "Odmowa: pętla z sleep na pgrep -f nie widzi procesu, bo pgrep -f znajduje własną powłokę tej pętli: "
     "until ! pgrep -f X i while pgrep -f X nie kończą się nigdy, a until pgrep -f X kończy się od razu. "
-    "Na własny proces uruchom go Bashem z run_in_background: true i czekaj na powiadomienie o jego końcu, "
+    "Na własny proces uruchom go Bashem z run_in_background: true i przed końcem tury czekaj na jego koniec "
+    "(w T3 t3_background_wait z jego ID), "
     "a na proces ze znanym PID sprawdzaj kill -0 $PID, nie pgrep."
 )
 

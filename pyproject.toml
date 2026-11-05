@@ -72,12 +72,13 @@ include = [
 extend-exclude = [".claude"]
 
 [tool.ruff.per-file-target-version]
-# Systemowy Python (na Macu 3.9) uruchamia je przed .venv: bramę pre-push, hooki czekania i zgody Claude Code
+# Systemowy Python (na Macu 3.9) uruchamia je przed .venv: bramę pre-push, hooki czekania, zgody i pracy w tle Claude Code
 # i setup_worktree razem z potomne, które importują. tests/test_systemowy_python.py importuje je tym Pythonem,
 # gdy jest, i łapie też API.
 "tools/hooks/pre-push" = "py39"
 "tools/hooks/czekanie.py" = "py39"
 "tools/hooks/zgoda.py" = "py39"
+"tools/hooks/praca_w_tle.py" = "py39"
 "tools/setup_worktree.py" = "py39"
 "tools/lib/potomne.py" = "py39"
 

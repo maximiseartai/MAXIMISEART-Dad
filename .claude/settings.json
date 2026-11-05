@@ -12,6 +12,17 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test ! -f \"$CLAUDE_PROJECT_DIR/tools/hooks/praca_w_tle.py\" || python3 \"$CLAUDE_PROJECT_DIR/tools/hooks/praca_w_tle.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PermissionRequest": [
       {
         "matcher": "Bash",
