@@ -2,6 +2,8 @@
   "src/rozliczenia/centrum/pricing_journal.py": [
     "PricingJournal",
     "RunEnded",
+    "JournalAfterLogs",
+    "_Read",
     "_read",
     "_remove",
     "InterruptedPricings"
@@ -19,7 +21,11 @@
     "RunLogs.send",
     "RunLogs.progress",
     "LoggedEnding",
-    "logi_post"
+    "logi_post",
+    "RunLogs.queued",
+    "ResultWithoutLogs",
+    "progress_post",
+    "_logs_post"
   ],
   "src/rozliczenia/centrum/app.py": [
     "lifespan",
@@ -38,7 +44,11 @@
   ],
   "src/rozliczenia/centrum/outbox.py": [
     "Outbox.post",
-    "Outbox.resume"
+    "Outbox.resume",
+    "Rank",
+    "Version",
+    "_version_of",
+    "_superseded"
   ],
   "src/rozliczenia/centrum/launcher.py": [
     "_start",

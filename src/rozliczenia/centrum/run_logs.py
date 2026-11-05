@@ -21,7 +21,8 @@ odciskiem i przeczytanymi wierszami bez kolumn ``ADRES`` i numeru Orange (w Upor
 (``ZLE_SKUTECZNE``), a pliki mają tylko nazwę, nigdy pełną ścieżkę. Przed zapisem pliku i przed wysyłką Logi przechodzą
 przez strażnika reguły danych pracy Centrum (``guarded``, ADR 0025): wartość ``ADRES`` albo numeru Orange z przeczytanych
 plików, także wpisana w inną komórkę Kopii wejścia albo zapisana przez Excel jako liczba, staje się maską z uwagą
-techniczną, a telefony i ulice w tekście są zamaskowane.
+techniczną, a telefony i ulice w tekście są zamaskowane. Pola, które niosą tylko słowa i chwile narzędzia (okres,
+Uruchomienie, proces, chwile startu i końca, commit), i nazwy pól schematu zostają bez maski (#936).
 Skrypt dla maszyn nie ma działań po wyniku, więc Logów nie tworzy.
 
 Schemat 2 (#839) daje każdemu krokowi śladu godzinę (UTC) obok czasu trwania: etap ma chwilę rozpoczęcia i końca,
@@ -56,10 +57,14 @@ Urwana Wycena w efenix (#845) ma Logi z dziennika Wyceny w efenix (``pricing_jou
 zgaśnięciem Centrum i ze zleceniem zaczętym bez wyniku (``LoggedInterruption``). Koniec takich Logów to ostatni wpis
 dziennika, bo chwili zgaśnięcia nikt nie zapisał.
 
-W trakcie Wyceny w efenix jej komentarz Uruchomienia pokazuje postęp z dziennika (``RunLogs.progress``, #846). Postęp
-to starsza wersja wysyłki Logów tego Uruchomienia, więc Logi z wynikiem na końcu (``run_ended``) albo Logi Urwanego
-Uruchomienia z następnego startu Centrum (``pricing_journal``) zamieniają ten komentarz w podsumowanie. Wycena, której
-Logi z wynikiem nie doszły do kolejki po wpisie końca dziennika, zostawia komentarz postępu bez wersji końcowej (#910).
+W trakcie Wyceny w efenix jej komentarz Uruchomienia pokazuje postęp z dziennika (``RunLogs.progress``, #846). Każda
+wysyłka Logów jednego Uruchomienia niesie stopień wersji (``outbox.Rank``, #910), który wybiera ten moduł, a nie zegar:
+postęp ma najniższy (``DRAFT``), wersja zastępcza, którą następny start Centrum wysyła z dziennika (``send``: Logi z
+pliku, Logi Urwanego Uruchomienia albo wynik bez Logów, ``ResultWithoutLogs``), środkowy (``STAND_IN``), a Logi z pracy
+Centrum Uruchomienia (``_keep``: z wynikiem, z Diagnozą) najwyższy (``OWN``). Wersja końcowa zamienia więc komentarz
+postępu w podsumowanie także po cofnięciu zegara, a wersja zastępcza nie zastępuje Logów z wynikiem, które kolejka już
+przyjęła, w kolejce ani w Skrzynce. Start wysyła ją tylko za Wycenę, której Logów kolejka nie przyjęła w pracy jej
+Uruchomienia (``queued``), bo inaczej dziennik już zniknął (``pricing_journal.JournalAfterLogs``).
 """
 
 from __future__ import annotations
@@ -76,7 +81,8 @@ import re
 import threading
 from typing import Annotated, Final, Literal, Protocol, assert_never, get_args
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic.fields import FieldInfo
 
 from rozliczenia.client_data import ForbiddenValues, Guarded
 from rozliczenia.call_trace import CallTrace
@@ -86,7 +92,7 @@ from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.dad_actions import DadActionJournal, DadActions
 from rozliczenia.centrum.diagnosis import CheckState, Diagnosis
-from rozliczenia.centrum.outbox import ArchiveFile, Outbox, PeriodThread, Post
+from rozliczenia.centrum.outbox import ArchiveFile, Outbox, PeriodThread, Post, Rank
 from rozliczenia.centrum.report_box import Label
 from rozliczenia.centrum.runs import EndedRun, Ending
 from rozliczenia.centrum.tool_freshness import CommitSource
@@ -594,8 +600,8 @@ class LoggedFingerprint(_Record):
 class LoggedInputFile(_Record):
     """Plik taty w Kopii wejścia (``input_copy``): sama nazwa, odcisk i przeczytane arkusze.
 
-    ``folders``: nazwy folderu nadrzędnego i folderu pliku, jak w Komunikatach (``input_copy.CopiedFile.folders``);
-    pusta lista w plikach sprzed #847.
+    ``folders``: nazwy folderu nad folderem pliku i folderu pliku (``input_copy.CopiedFile.folders``; Komunikaty
+    INTERMAX pokazują tylko folder pliku); pusta lista w plikach sprzed #847.
     """
 
     name: str
@@ -819,10 +825,17 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     ilości przy zleceniu Wyceny w efenix) w tekście, który pokazuje Excel (``ForbiddenValues.guard_number``), i liczba z
     zakazaną wartością albo telefonem staje się w całości maską. Liczb, które policzyło narzędzie, nie sprawdza.
 
+    Strażnik porównuje słowa, a nie pochodzenie wartości, więc wartość z pliku taty równa słowu albo chwili narzędzia
+    trafiłaby też w pole, które niesie tylko to, co dało narzędzie. Takich pól (``TOOL_FIELDS``) nie maskuje i zostawia
+    w nich wartość z rekordu, a klucza pola modelu Logów (nazwy pola schematu) też nie: maska w nich gubiła całe Logi
+    albo ich okres, Uruchomienie i commit (#936). Klucz słownika (operator, kod pozycji, litera kolumny) to dane, więc go
+    maskuje.
+
     Pole to ścieżka JSON z nazw pól, a klucz z danych (operator, kod pozycji) jest w niej ``[…]``, żeby uwaga nie
     niosła treści. Uwaga o polu Kopii wejścia idzie do ``input_copy_notes``, a każda inna do ``technical_notes``, które
     pokazuje karta Uruchomienia z Logów: Kopii karta nie pokazuje, więc karta po starcie Centrum zostaje taka jak przed
-    nim (ADR 0017). Logi bez niczego do zamaskowania wracają te same.
+    nim (ADR 0017). Pole typowane, które maski nie przyjmuje, zostaje puste albo odpada z uwagą techniczną
+    (``_representable``). Logi bez niczego do zamaskowania wracają te same.
     """
 
     notes: list[str] = []
@@ -843,6 +856,8 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
         """``value`` z JSON-a Logów i ``source``, z którego powstał (``None``: poza modelem Logów); ``read``: w polu
         ``READ_VALUES``."""
 
+        if place in TOOL_FIELDS:
+            return value
         if isinstance(value, str):
             return text(value, place)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -856,8 +871,9 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
         if isinstance(value, dict):
             items: dict[str, object] = {}
             for key, entry in value.items():
-                child, marked = _child(source, key)
-                items[text(key, place)] = walk(child, entry, _field(place, key), read or marked)
+                child, field = _child(source, key)
+                marked = field is not None and READ_VALUES in field.metadata
+                items[key if field is not None else text(key, place)] = walk(child, entry, _field(place, key), read or marked)
             return items
         return value
 
@@ -868,23 +884,218 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     assert isinstance(walked, dict)
     walked["technical_notes"] = [*walked["technical_notes"], *dict.fromkeys(notes)]
     walked["input_copy_notes"] = [*walked["input_copy_notes"], *dict.fromkeys(copy_notes)]
-    return RunLog.model_validate(walked)
+    return _representable(walked)
 
 
 _INPUT_COPY: Final = "input_copy"
 """Pole Kopii wejścia w Logach; uwagi strażnika o nim idą do ``input_copy_notes``."""
 
+TOOL_FIELDS: Final = frozenset(
+    {
+        "run_id",
+        "process",
+        "mode",
+        "period",
+        "started_at",
+        "ended_at",
+        "tool",
+        "result",
+        "ending",
+        "stop_kind",
+        "phases",
+        "trace",
+        "dad_actions",
+        "environment.system",
+        "environment.python",
+    }
+)
+"""Pola Logów (ścieżka JSON jak w uwadze strażnika), które niosą tylko słowa i chwile narzędzia, więc strażnik
+(``guarded``) zostawia w nich wartość z rekordu (#936). Każde ma wartość z kodu narzędzia, a nie z pliku taty:
+``run_id`` to ``uuid4``, ``period`` token okresu z ``parse_period_token`` albo z zegara (INTERMAX), ``process``,
+``mode``, ``result``, ``ending`` i ``stop_kind`` to wartości zamkniętych list schematu, ``started_at`` i ``ended_at``
+chwile zegara Centrum (w Logach Urwanego Uruchomienia z dziennika Wyceny, który pisze Centrum), ``tool`` Wydanie i
+commit z Gita narzędzia, ``phases`` etapy z zamkniętej listy ze stanem, czasem i chwilami projekcji postępu, ``trace``
+typy wyjątków i ramki kodu narzędzia bez treści wyjątku (``call_trace``), ``dad_actions`` chwile, wartości zamkniętych
+list i operacje API z kontraktu bez treści zapytań, a ``system`` i ``python`` Środowiska moduł ``platform``.
 
-def _child(source: object, key: str) -> tuple[object, bool]:
-    """Wartość pod kluczem ``key`` modelu albo słownika ``source``, z którego powstał JSON Logów, i czy to pole
-    ``READ_VALUES``."""
+Pole spoza listy może nieść treść pliku taty (tekst Komunikatu, Wykonawca, nazwa pliku, odczyt strony efenix, Kopia
+wejścia), więc strażnik maskuje je dalej, także w polu z wartością narzędzia w modelu, który niesie i jedno, i drugie
+(kod Komunikatu, wynik zlecenia efenix). Liczby, które policzyło narzędzie (``schema_version``, ``duration_ms``,
+``issue_count``, ``interruption``), zostają i bez listy, bo strażnik sprawdza tylko liczby z ``READ_VALUES``. Każde
+pole najwyższego poziomu bez ``None`` poza Środowiskiem jest więc na liście, jest liczbą narzędzia albo listą, z której
+maska zabiera najwyżej element, a Środowisko (``environment``) ma poza listą tylko pliki procesu (lista albo ``None``),
+więc maska nie gubi całych Logów (``UnrepresentableLogs``).
+
+Pole z listy strażnik zostawia z całym poddrzewem, więc test struktury w ``tests/test_komentarz_logow_uruchomienia.py``
+przechodzi typ każdego z nich (modele, dataclassy, unie) i czerwienieje, gdy w poddrzewie jest typ, który przyjmuje
+dowolny tekst (``str`` spoza jawnych wyjątków z powodem w teście, słownik, ``Any``), liczba ``READ_VALUES`` albo typ,
+którego test nie zna."""
+
+_Path = tuple[str | int, ...]
+
+
+class UnrepresentableLogs(ValueError):
+    """Logi, w których maska strażnika trafiła w pole, które nie może stracić wartości: pole najwyższego poziomu bez
+    ``None`` spoza listy pól narzędzia (``TOOL_FIELDS``), albo ``stuck``: cięcia (``_representable``) przestały zmieniać
+    Logi, czyli błąd w cięciach. ``place``: to pole albo miejsce ostatniego cięcia.
+
+    Schemat Logów nie ma dziś pola najwyższego poziomu bez ``None``, które gubiłoby Logi (#936). Nowe takie pole wywraca
+    przemiatanie pełnych Logów w ``tests/test_komentarz_logow_uruchomienia.py``, które każe pełnym Logom mieć wartość w
+    każdym polu ``RunLog``: każdy tekst i każda liczba tych Logów (od ``MIN_VALUE`` znaków) po kolei jako wartość z pliku
+    taty, także liczba w polu ``READ_VALUES``. Pole, którego wartość w pełnych Logach jest krótsza, przemiatanie
+    przepuszcza."""
+
+    def __init__(self, place: str, *, stuck: bool = False) -> None:
+        reason = (
+            f"cięcia strażnika przestały zmieniać Logi (ostatnie w polu {place})"
+            if stuck
+            else f"Logi bez miejsca na maskę strażnika w polu {place} (#936)"
+        )
+        super().__init__(reason)
+        self.place = place
+        self.stuck = stuck
+
+
+@dataclass(frozen=True)
+class GuardCut:
+    """Miejsce Logów, które straciło wartość, bo strażnik zamaskował w nim pole, które maski nie przyjmuje
+    (``_representable``): ``removed`` element listy odpadł, inaczej pole jest puste. ``place``: ścieżka JSON jak w
+    uwadze strażnika."""
+
+    place: str
+    removed: bool
+
+
+def guard_cuts(record: RunLog) -> tuple[GuardCut, ...]:
+    """Miejsca, które strażnik pominął albo zostawił puste, z uwag technicznych i uwag o Kopii wejścia Logów."""
+
+    found = (_CUT_NOTE.fullmatch(note) for note in (*record.technical_notes, *record.input_copy_notes))
+    return tuple(
+        GuardCut(match["removed"] or match["emptied"], match["removed"] is not None) for match in found if match
+    )
+
+
+def _cut_note(place: str, removed: bool) -> str:
+    what = f"pominięto {place}" if removed else f"pole {place} jest puste"
+    return f"Reguła danych: {what}: strażnik zamaskował w nim wartość, której pole nie przyjmuje."
+
+
+_CUT_NOTE: Final = re.compile(
+    r"Reguła danych: (?:pominięto (?P<removed>\S+)|pole (?P<emptied>\S+) jest puste): strażnik zamaskował w nim "
+    r"wartość, której pole nie przyjmuje\."
+)
+"""Uwaga ``_cut_note``; miejsce (``_place``) nie ma spacji."""
+
+
+def _representable(walked: dict[str, object]) -> RunLog:
+    """Logi z JSON-a po strażniku (``guarded``), w którym każde pole przyjmuje swoją wartość.
+
+    Pole typowane (kwota ``Decimal``, data, wartość z zamkniętej listy), w którym strażnik zamaskował tekst, maski nie
+    przyjmuje, więc takie Logi nie przeszłyby walidacji i przepadły. Pole dostaje ``None``, a gdy i ``None`` nie
+    przyjmuje, odpada najbliższy element listy nad nim (zlecenie, krok, plik) albo ``None`` dostaje pole nad nim
+    (``_cut``), z uwagą techniczną o tym miejscu (``guard_cuts``). Pole Logów najwyższego poziomu bez ``None`` i poza
+    listą nie ma czego stracić, więc dałoby ``UnrepresentableLogs``, ale każde takie pole niesie słowa narzędzia, których
+    strażnik nie maskuje (``TOOL_FIELDS``, #936).
+
+    Każde cięcie zabiera Logom co najmniej jedną wartość, więc cięć jest najwyżej tyle, ile Logi mają wartości:
+    po tylu obrotach bez poprawnych Logów pętla kończy się ``UnrepresentableLogs``, a nie wisi z końcem Uruchomienia.
+    """
+
+    # Miejsce w Logach przed cięciami → odpadło z listy (``False``: dostało ``None``). Błędy idą od ostatniego, więc
+    # element, który odpada, przesuwa w liście tylko elementy już bez błędów, a miejsca w uwagach są te sprzed cięć.
+    cuts: dict[_Path, bool] = {}
+    place: _Path = ()
+    for _ in range(_values(walked) + 1):
+        try:
+            record = RunLog.model_validate(walked)
+        except ValidationError as failure:
+            place, removed = _cut(walked, _existing(walked, failure.errors()[-1]["loc"]))
+            if removed:
+                cuts = {cut: kind for cut, kind in cuts.items() if cut[: len(place)] != place}
+            cuts[place] = removed
+            continue
+        notes: dict[bool, list[str]] = {True: [], False: []}  # Kopia wejścia → uwagi
+        for path, removed in sorted(cuts.items()):
+            notes[path[0] == _INPUT_COPY].append(_cut_note(_place(path), removed))
+        return record.model_copy(
+            update={
+                "technical_notes": [*record.technical_notes, *notes[False]],
+                "input_copy_notes": [*record.input_copy_notes, *notes[True]],
+            }
+        )
+    raise UnrepresentableLogs(_place(place), stuck=True)
+
+
+def _cut(walked: dict[str, object], path: _Path) -> tuple[_Path, bool]:
+    """Najgłębsze miejsce ścieżki błędu walidacji ``path``, które może stracić wartość, i czy odpadło z listy.
+
+    Element listy odpada, a pole z wartością dostaje ``None``. Pole, które już ma ``None``, a wciąż ma błąd, ``None``
+    nie przyjmuje, więc wartość traci miejsce wyżej; ścieżka bez takiego miejsca to ``UnrepresentableLogs``.
+    """
+
+    for depth in range(len(path), 0, -1):
+        place = path[:depth]
+        container, key = _at(walked, place[:-1]), place[-1]
+        if isinstance(container, list) and isinstance(key, int):
+            del container[key]
+            return place, True
+        if isinstance(container, dict) and container[key] is not None:
+            container[key] = None
+            return place, False
+    raise UnrepresentableLogs(_place(path))
+
+
+def _values(value: object) -> int:
+    """Liczba wartości JSON-a (słowników, list i liści) bez ``None``: ile razy najwyżej da się coś z niego zabrać."""
+
+    if isinstance(value, dict):
+        return 1 + sum(_values(entry) for entry in value.values())
+    if isinstance(value, list):
+        return 1 + sum(_values(entry) for entry in value)
+    return 0 if value is None else 1
+
+
+def _existing(walked: object, location: Sequence[str | int]) -> _Path:
+    """Najdłuższy początek miejsca błędu walidacji ``location``, który jest w JSON-ie ``walked`` (dalej pydantic dopisuje
+    nazwy wariantów typu)."""
+
+    path: list[str | int] = []
+    for key in location:
+        if isinstance(walked, dict) and key in walked:
+            walked = walked[key]
+        elif isinstance(walked, list) and isinstance(key, int):
+            walked = walked[key]
+        else:
+            break
+        path.append(key)
+    return tuple(path)
+
+
+def _at(walked: object, path: _Path) -> object:
+    for key in path:
+        if isinstance(walked, dict):
+            walked = walked[key]
+        elif isinstance(walked, list) and isinstance(key, int):
+            walked = walked[key]
+    return walked
+
+
+def _place(path: _Path) -> str:
+    place = ""
+    for key in path:
+        place = f"{place}[{key}]" if isinstance(key, int) else _field(place, key)
+    return place
+
+
+def _child(source: object, key: str) -> tuple[object, FieldInfo | None]:
+    """Wartość pod kluczem ``key`` modelu albo słownika ``source``, z którego powstał JSON Logów, i pole modelu z tym
+    kluczem (``None``: klucz słownika, czyli dane, albo JSON poza modelem Logów)."""
 
     if isinstance(source, BaseModel):
-        field = type(source).model_fields.get(key)
-        return getattr(source, key, None), field is not None and READ_VALUES in field.metadata
+        return getattr(source, key, None), type(source).model_fields.get(key)
     if isinstance(source, Mapping):
-        return source.get(key), False
-    return None, False
+        return source.get(key), None
+    return None, None
 
 
 def _field(place: str, key: str) -> str:
@@ -896,20 +1107,23 @@ _FIELD_NAME: Final = re.compile(r"[a-z_]+")
 """Nazwa pola schematu Logów; inny klucz (operator, kod pozycji, litera kolumny) to dane."""
 
 
-def logi_post(record: RunLog) -> Post:
+def logi_post(record: RunLog, rank: Rank = Rank.OWN) -> Post:
     """Logi do Skrzynki Zgłoszeń jedną wysyłką: komentarz z podsumowaniem i odnośnikiem w issue okresu i pełne Logi w
     Archiwum Logów okresu (``archive_file``).
 
     Identyfikator wysyłki to Uruchomienie (``run_id``) i etykieta ``logi-uruchomienia``, te same po Diagnozie i w
     postępie Wyceny w efenix (``progress_post``), więc Logi z Diagnozą podmieniają plik w Archiwum i zmieniają komentarz
-    swojego Uruchomienia, a Logi na końcu Wyceny zamieniają jej komentarz postępu w podsumowanie (``outbox``).
+    swojego Uruchomienia, a Logi na końcu Wyceny zamieniają jej komentarz postępu w podsumowanie (``outbox``). Stopień
+    wersji ``rank``: ``OWN`` dla Logów z pracy Centrum Uruchomienia, ``STAND_IN`` dla Logów, które start wysyła z
+    dziennika (``RunLogs.send``).
     """
 
-    return _logs_post(record.period, record.run_id, summary_markdown(record), archive_file(record))
+    return _logs_post(record.period, record.run_id, summary_markdown(record), archive_file(record), rank)
 
 
-def _logs_post(period: str, run_id: str, comment: str, archive: ArchiveFile | None) -> Post:
-    """Wysyłka Logów Uruchomienia ``run_id``: jeden komentarz ``comment`` w issue Logów okresu ``period``."""
+def _logs_post(period: str, run_id: str, comment: str, archive: ArchiveFile | None, rank: Rank) -> Post:
+    """Wysyłka Logów Uruchomienia ``run_id`` w stopniu wersji ``rank``: jeden komentarz ``comment`` w issue Logów
+    okresu ``period``."""
 
     return Post(
         PeriodThread(
@@ -926,6 +1140,7 @@ def _logs_post(period: str, run_id: str, comment: str, archive: ArchiveFile | No
         ),
         parts=(comment + "\n",),
         archive=archive,
+        rank=rank,
     )
 
 
@@ -955,13 +1170,14 @@ class PricingProgress:
 
 
 def progress_post(progress: PricingProgress, comment: str) -> Post:
-    """Postęp Wyceny w efenix jako starsza wersja wysyłki Logów tego Uruchomienia (``logi_post``): ten sam
-    identyfikator i ten sam komentarz w issue Logów okresu, a ``comment`` to jego tekst (``progress_markdown``).
+    """Postęp Wyceny w efenix jako wersja wysyłki Logów tego Uruchomienia (``logi_post``) najniższego stopnia
+    (``Rank.DRAFT``): ten sam identyfikator i ten sam komentarz w issue Logów okresu, a ``comment`` to jego tekst
+    (``progress_markdown``). Każda wersja końcowa jest od niego nowsza, także po cofnięciu zegara komputera.
 
     Postęp nie ma pliku w Archiwum Logów okresu: pełne Logi powstają dopiero na końcu Uruchomienia.
     """
 
-    return _logs_post(progress.started.period, progress.started.run_id, comment, None)
+    return _logs_post(progress.started.period, progress.started.run_id, comment, None, Rank.DRAFT)
 
 
 def progress_markdown(progress: PricingProgress, *, elapsed_s: float) -> str:
@@ -982,6 +1198,43 @@ def progress_markdown(progress: PricingProgress, *, elapsed_s: float) -> str:
         f"- Czas: {int(elapsed_s // 60)} min do tej pory",
         f"- Uruchomienie: {started.run_id}, start {started.started_at:%Y-%m-%d %H:%M:%S} UTC",
         "- Pełne Logi: w tym komentarzu, gdy Uruchomienie się skończy",
+    ]
+    return _comment_title(started) + "\n".join(lines)
+
+
+LogsMissing = Literal["niezapisane", "nieczytelne"]
+"""Dlaczego start Centrum nie ma Logów Wyceny, która doszła do wyniku: pliku nie ma albo nie da się go odczytać."""
+
+_LOGS_MISSING: Final[dict[LogsMissing, str]] = {
+    "niezapisane": "nie ma, Centrum nie zapisało ich po wyniku (np. zamknęło się tuż po nim)",
+    "nieczytelne": "plik Logów na komputerze taty jest, ale nie da się go odczytać",
+}
+
+
+@dataclass(frozen=True)
+class ResultWithoutLogs:
+    """Wersja końcowa komentarza Uruchomienia Wyceny w efenix, której Logów start Centrum nie ma (``logs``): wynik z
+    wpisu końca dziennika Wyceny (``result``; ``None``: dziennik go nie ma) i zlecenia z dziennika (``journal``), bez
+    pliku w Archiwum Logów okresu."""
+
+    journal: PricingProgress
+    result: contract.RunResult | None
+    logs: LogsMissing
+
+
+def without_logs_markdown(final: ResultWithoutLogs) -> str:
+    """Wynik bez Logów: proces, tryb, okres, wynik z wpisu końca dziennika, zlecenia skończone z dziennika i ich wyniki,
+    zlecenie zaczęte bez wyniku, Uruchomienie i dlaczego pełnych Logów nie ma."""
+
+    journal = final.journal
+    started = journal.started
+    result = "nieznany, dziennik Wyceny go nie ma" if final.result is None else final.result
+    lines = [f"- Wynik: {result}", f"- Zlecenia: {_orders_done(journal) or 'dziennik Wyceny nie ma żadnego zlecenia'}"]
+    if journal.current is not None:
+        lines.append(f"- Zlecenie bez wyniku: wiersz {journal.current}")
+    lines += [
+        f"- Uruchomienie: {started.run_id}, start {started.started_at:%Y-%m-%d %H:%M:%S} UTC",
+        f"- Pełne Logi: {_LOGS_MISSING[final.logs]}",
     ]
     return _comment_title(started) + "\n".join(lines)
 
@@ -1126,6 +1379,9 @@ class RunLogs:
         self._lock = threading.Lock()
         self._last: RunLog | None = None  # Logi ostatniego Uruchomienia tak, jak ostatnio poszły do pliku i Skrzynki
         self._ended: set[str] = set()  # Uruchomienia tej pracy Centrum po wyniku: ich postęp się skończył (``progress``)
+        # Uruchomienia tej pracy Centrum, których Logi przyjęła Kolejka wysyłki (``queued``); ``_keep`` tylko dodaje,
+        # jedną operacją ``set.add``, także bez blokady.
+        self._queued: set[str] = set()
 
     def run_ended(self, run: EndedRun) -> None:
         with self._lock:  # postęp, który już idzie do kolejki, jest w niej przed Logami, a następny nie pójdzie
@@ -1149,7 +1405,10 @@ class RunLogs:
         Uruchomienia w issue okresu.
 
         Logi z Diagnozą to nowsza wersja tej samej wysyłki (``logi_post``), więc kolejka podmienia plik w Archiwum i
-        zmienia komentarz, które już są w Skrzynce, a gdy Logi jeszcze czekają w kolejce, robi to zaraz po ich wysłaniu.
+        zmienia komentarz, które już są w Skrzynce. Logi, które jeszcze czekają w kolejce, nowsza wersja zastępuje
+        (``outbox._superseded``): przejście kolejki, które zastaje obie, oznacza starsze bez wysyłania i wysyła tylko Logi z
+        Diagnozą, jednym komentarzem bez edycji. Gdy przejście przeczytało Logi, zanim przyszła Diagnoza, wysyła je, a
+        plik w Archiwum i komentarz zmienia następne przejście.
 
         Uruchomienie, którego Logi nie powstały w tej pracy Centrum, nie dostaje niczego, a Diagnoza z tym samym
         wynikiem co ostatnio dopisana też nie.
@@ -1168,14 +1427,21 @@ class RunLogs:
 
     def _keep(self, record: RunLog) -> None:
         """Plik Logów (nowy albo nadpisany) po strażniku reguły danych, a do Skrzynki komentarz w issue okresu i plik w
-        Archiwum Logów okresu z tymi samymi bajtami co plik (``_write``)."""
+        Archiwum Logów okresu z tymi samymi bajtami co plik (``_write``); Logi, które kolejka przyjęła, zna ``queued``."""
 
         kept = guarded(record, self._forbidden)
         try:
             self._write(kept)
         finally:
             # Katalog Logów, który nie przyjął pliku, nie zatrzymuje Logów w drodze do Maksa.
-            self._outbox.post(logi_post(kept))
+            if self._outbox.post(logi_post(kept)):
+                self._queued.add(kept.run_id)
+
+    def queued(self, run_id: str) -> bool:
+        """Czy Kolejka wysyłki przyjęła w tej pracy Centrum Logi Uruchomienia ``run_id`` (``run_ended``), także gdy ich
+        pliku nie dało się zapisać: wersja końcowa jego komentarza Uruchomienia jest już w drodze do Skrzynki."""
+
+        return run_id in self._queued
 
     def interrupted(
         self,
@@ -1222,10 +1488,19 @@ class RunLogs:
 
         replace_atomically(self._directory / record.file_name, record.text, newline="")
 
-    def send(self, record: RunLog) -> bool:
-        """Logi ``record`` do Kolejki wysyłki; ``False``: kolejka ich nie przyjęła (typ błędu jest w dzienniku Centrum)."""
+    def send(self, final: RunLog | ResultWithoutLogs) -> bool:
+        """Wersja zastępcza komentarza Uruchomienia, którą start Centrum zamyka dziennik Wyceny, do Kolejki wysyłki w
+        stopniu ``Rank.STAND_IN``: Logi (``logi_post``) albo wynik bez Logów po strażniku reguły danych tej pracy Centrum.
+        Zastępuje postęp, a Logi z wynikiem, które kolejka przyjęła w pracy Uruchomienia, zostają. ``False``: kolejka jej
+        nie przyjęła (typ błędu jest w dzienniku Centrum)."""
 
-        return self._outbox.post(logi_post(record))
+        match final:
+            case RunLog():
+                return self._outbox.post(logi_post(final, Rank.STAND_IN))
+            case ResultWithoutLogs(journal=journal):
+                comment = self._guarded(without_logs_markdown(final), "wynik Wyceny w efenix bez Logów")
+                started = journal.started
+                return self._outbox.post(_logs_post(started.period, started.run_id, comment, None, Rank.STAND_IN))
 
     def progress(self, run_id: str, progress: PricingProgress | None, *, elapsed_s: float) -> bool:
         """Postęp Wyceny w efenix ``run_id`` do Kolejki wysyłki jako starsza wersja wysyłki Logów tego Uruchomienia
@@ -1239,10 +1514,15 @@ class RunLogs:
             if run_id in self._ended:
                 return False
             if progress is not None:
-                guarded = self._forbidden.guard(progress_markdown(progress, elapsed_s=elapsed_s), "postęp Wyceny w efenix")
-                notes = "".join(f"\n- Uwaga techniczna: {note}" for note in guarded.notes)
-                self._outbox.post(progress_post(progress, guarded.text + notes))
+                comment = self._guarded(progress_markdown(progress, elapsed_s=elapsed_s), "postęp Wyceny w efenix")
+                self._outbox.post(progress_post(progress, comment))
             return True
+
+    def _guarded(self, text: str, place: str) -> str:
+        """Komentarz bez pliku Logów po strażniku reguły danych: zamaskowana wartość to uwaga techniczna na jego końcu."""
+
+        guarded = self._forbidden.guard(text, place)
+        return guarded.text + "".join(f"\n- Uwaga techniczna: {note}" for note in guarded.notes)
 
     def _tool(self) -> Tool:
         commit = self._commit()

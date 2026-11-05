@@ -41,16 +41,17 @@ DRIFT = f"{VERDICT}: ROZJAZD MODELU Z KODEM"
 LIVENESS = "Zbieganie"
 # Obietnice, każda z wariantem ``…PozaZnanymi`` i stałą ``Wybaczone…`` w modelu, i ich zdanie dla czytelnika.
 PROMISES = {
-    "DziennikPoKolejce": "dziennik Urwanego Uruchomienia zniknął, a Kolejka wysyłki nie przyjęła jego Logów.",
+    "DziennikPoKolejce": "dziennik Urwanego Uruchomienia zniknął, a jego Logi nie są najnowszą wersją, którą przyjęła "
+    "Kolejka wysyłki, więc do Skrzynki nie dojdą.",
     "BezUrwanychPoWyniku": "Wycena, która doszła do wyniku, dostała Logi Urwanego Uruchomienia.",
     "TeSameZnaki": "Logi Urwanego Uruchomienia poszły do kolejki z innymi znakami, niż ma plik Logów na dysku.",
     "PrzezStraznika": "Logi Urwanego Uruchomienia poszły do kolejki bez strażnika reguły danych.",
     "NicPrzedWznowieniem": "wysyłka poszła do kolejki, zanim praca Centrum wywołała Outbox.resume.",
     "ZaczeteWLogach": "zlecenie, które Urwana Wycena zmieniła w efenix, nie jest w jej Logach.",
-    "WersjaKoncowa": "dziennik Wyceny, która mogła wysłać postęp, zniknął, a Kolejka wysyłki nie przyjęła wersji końcowej jej "
-    "komentarza Uruchomienia, więc w Skrzynce może zostać postęp „Uruchomienie trwa”.",
-    "WynikZostaje": "po Logach z wynikiem, które kolejka przyjęła, do kolejki poszła wersja bez Logów tego Uruchomienia, "
-    "która zastąpi je w Skrzynce.",
+    "WersjaKoncowa": "dziennik Wyceny, która mogła wysłać postęp, zniknął, a najnowsza wersja jej komentarza Uruchomienia w "
+    "Kolejce wysyłki nie jest końcowa, więc w Skrzynce zostaje postęp „Uruchomienie trwa”.",
+    "LogiZostaja": "nowsza wersja komentarza Uruchomienia zastąpiła w kolejce Logi (z wynikiem albo Urwanego Uruchomienia) "
+    "postępem albo wersją bez Logów, a Logi z wynikiem także Logami Urwanego Uruchomienia.",
 }
 LIVENESS_SAID = "awarie się skończyły, tata otwiera i zamyka Centrum, a dziennik zostaje na dysku bez końca."
 # Zmienna historii każdej obietnicy: zbiór przyczyn w chwili każdego zdarzenia, które ją łamie.
@@ -62,7 +63,7 @@ _EVENTS = {
     "NicPrzedWznowieniem": "przedWznowieniem",
     "ZaczeteWLogach": "bezZlecenia",
     "WersjaKoncowa": "bezWersji",
-    "WynikZostaje": "wyparty",
+    "LogiZostaja": "wyparty",
 }
 _STATE = re.compile(r"^State \d+: ")
 _STUTTERING = re.compile(r"^State \d+: Stuttering")
@@ -229,15 +230,15 @@ def _trace(output: str) -> list[dict[str, str]]:
 # Akcja modelu i krok kodu, który opisuje (tabela w SKILL.md), w słowach kontrprzykładu.
 _STEPS = {
     "Start": "tata otwiera Centrum: port, create_app, InterruptedPricings.close czyta dzienniki",
-    "ZapiszLogi": "close zapisuje plik Logów Urwanego Uruchomienia Wyceny {k} (RunLogs.close)",
+    "ZapiszLogi": "close zapisuje plik Logów Wyceny {k} po strażniku (RunLogs.close)",
     "UsunDziennik": "close usuwa dziennik Wyceny {k} (_remove)",
     "Wznow": "lifespan: Outbox.resume",
-    "PierwszeZapytanie": "pierwsze zapytanie API: send_interrupted bierze Logi z _pending",
-    "Wyslij": "send: Outbox.post Logów Urwanego Uruchomienia Wyceny {w}",
+    "PierwszeZapytanie": "pierwsze zapytanie API: send_interrupted bierze wersje zastępcze z _pending",
+    "Wyslij": "send: Outbox.post wersji zastępczej ({h}) Wyceny {w}, Rank.STAND_IN",
     "UsunPoWysylce": "send usuwa dziennik Wyceny {w} po przyjęciu przez kolejkę",
     "StartWyceny": "tata uruchamia Wycenę {b2} (PricingJournal.run_started)",
     "ZapiszStart": "run_started zapisuje pierwszą linię dziennika Wyceny {b} (_append_locked)",
-    "Postep": "budzik postępu: RunLogs.progress wysyła postęp Wyceny {b} z dziennika",
+    "Postep": "budzik postępu: RunLogs.progress, kolejka przyjmuje postęp Wyceny {b} z dziennika, Rank.DRAFT",
     "WpisZaczete": "Wycena {b} pisze „zaczynam zlecenie” {z}",
     "ZmianaWEfenix": "okno efenix zmienia zlecenie {z} Wyceny {b}",
     "WpisSkonczone": "Wycena {b} pisze „zlecenie skończone” {z}",
@@ -245,7 +246,8 @@ _STEPS = {
     "Wynik": "run_process Wyceny {b} wraca z wynikiem (rekord metryk, wiersz Historii, zapisany albo nie)",
     "WpisKonca": "PricingJournal.run_ended: Wycena {b} pisze „koniec Uruchomienia”, zanim powstaną jej Logi",
     "LogiWyniku": "RunLogs._keep zapisuje plik Logów z wynikiem Wyceny {b}",
-    "WyslijWynik": "RunLogs._keep: Outbox.post Logów z wynikiem Wyceny {b}",
+    "WyslijWynik": "RunLogs._keep: Outbox.post Logów z wynikiem Wyceny {b}, Rank.OWN",
+    "UsunPoLogach": "JournalAfterLogs: dziennik Wyceny {b} znika, gdy kolejka przyjęła jej Logi z wynikiem",
     "KoniecUruchomienia": "reszta działań po wyniku Wyceny {b}, koniec Uruchomienia",
     "Zgasniecie": "Centrum gaśnie (brak prądu, zabity proces)",
     "Zamkniecie": "tata zamyka Centrum",
@@ -257,15 +259,22 @@ def _step(action: str, before: dict[str, str], after: dict[str, str]) -> str:
 
     if action == "Czytaj":
         return _read(before, after)
-    head = re.search(r"bieg \|-> (\d+)", before.get("doWyslania", ""))
+    first = _first_record(before.get("doWyslania", ""))
+    run = re.search(r"bieg \|-> (\d+)", first)
+    kind = re.search(r'rodzaj \|-> "(\w+)"', first)
     fields = {
         "k": before.get("kursor", "?"),
-        "w": head.group(1) if head else "?",
+        "w": run.group(1) if run else "?",
+        "h": _KINDS.get(kind.group(1), "?") if kind else "?",
         "b": before.get("bieg", "?"),
         "b2": after.get("bieg", "?"),
         "z": before.get("zlecenie", "?"),
     }
     said = _STEPS.get(action, action).format(**fields)
+    if action == "Start" and after.get("cofniecia") != before.get("cofniecia"):
+        said += ", a zegar komputera cofnął się, gdy Centrum było zamknięte"
+    if action in ("Wyslij", "Postep", "WyslijWynik") and after.get("najnowsza") == before.get("najnowsza"):
+        said += " (kolejka ma nowszą wersję, więc ta niczego nie zmienia)"
     if action == "WpisKonca" and before.get("naglowekCzeka") == "TRUE":
         kept = "_remove usuwa dziennik" if after.get("dziennik") != before.get("dziennik") else "bez wpisu końca"
         said = f"PricingJournal.run_ended: żaden wpis Wyceny {fields['b']} się nie zapisał (_header), {kept}"
@@ -284,6 +293,18 @@ def _step(action: str, before: dict[str, str], after: dict[str, str]) -> str:
     return said + (f": {', '.join(failed)}" if failed else "")
 
 
+def _first_record(value: str) -> str:
+    """Pierwszy rekord ``[...]`` ciągu TLC, z rekordami zagnieżdżonymi; TLC wypisuje pola w swojej kolejności."""
+
+    start = value.find("[")
+    depth = 0
+    for index in range(max(start, 0), len(value)):
+        depth += {"[": 1, "]": -1}.get(value[index], 0)
+        if depth == 0 and start >= 0:
+            return value[start : index + 1]
+    return ""
+
+
 def _read(before: dict[str, str], after: dict[str, str]) -> str:
     """Co ``close`` postanowił o dzienniku na pozycji ``kursor``."""
 
@@ -291,9 +312,18 @@ def _read(before: dict[str, str], after: dict[str, str]) -> str:
     if after.get("awarieOdczytu") != before.get("awarieOdczytu"):
         return f"close: odczyt dziennika Wyceny {k} rzuca OSError, dziennik zostaje następnemu startowi"
     if after.get("krokZamykania") == "usun":
-        return f"close: dziennik Wyceny {k} do usunięcia (bez pierwszej linii, z wpisem końca albo z Logami z wynikiem)"
+        journals = re.findall(r'"(\w+)"', before.get("dziennik", ""))
+        index = int(k) - 1 if k.isdigit() else -1
+        why = "bez pierwszej linii" if 0 <= index < len(journals) and journals[index] == "bezStartu" else "bez wysyłki"
+        return f"close: dziennik Wyceny {k} do usunięcia, {why}"
     if after.get("krokZamykania") == "zapisz":
-        return f"close: Logi Urwanego Uruchomienia Wyceny {k} po strażniku (z dziennika albo z pliku Logów, guard)"
+        files = re.findall(r'rodzaj \|-> "(\w+)", tresc', before.get("logi", ""))
+        index = int(k) - 1 if k.isdigit() else -1
+        if 0 <= index < len(files) and files[index] != "brak":
+            return f"close: {_KINDS[files[index]]} Wyceny {k} z pliku Logów, po strażniku (guard)"
+        return f"close: Logi Urwanego Uruchomienia Wyceny {k} z dziennika, po strażniku (guard)"
+    if after.get("oczekujace") != before.get("oczekujace"):
+        return f"close: wynik bez Logów Wyceny {k} (wpis końca bez pliku Logów, ResultWithoutLogs)"
     return f"close: dziennika Wyceny {k} nie ma"
 
 
@@ -304,7 +334,7 @@ def _tell(trace: list[dict[str, str]]) -> None:
     print(
         f"   na koniec: dzienniki {_brief(last.get('dziennik', '?'))}, Logi {_logs(last.get('logi', ''))}, "
         f"z wynikiem {_brief(last.get('wynik', '?'))}, "
-        f"kolejka {_queue(last.get('kolejka', ''))}"
+        f"kolejka {_queue(last.get('kolejka', ''))}, najnowsza wersja w kolejce {_newest(last.get('najnowsza', ''))}"
     )
 
 
@@ -320,10 +350,21 @@ def _logs(value: str) -> str:
 
 
 def _queue(value: str) -> str:
-    """Wysyłki, które Kolejka przyjęła: rodzaj Logów i Wycena."""
+    """Wersje końcowe, które Kolejka przyjęła: rodzaj i Wycena."""
 
     found = re.findall(r'rodzaj \|-> "(\w+)".*?bieg \|-> (\d+)', value)
     return "{" + ", ".join(f"{kind} Wyceny {run}" for kind, run in found) + "}"
+
+
+def _newest(value: str) -> str:
+    """Najnowsza wersja komentarza Uruchomienia każdej Wyceny w kolejce: rodzaj i stopień."""
+
+    found = re.findall(r'rodzaj \|-> "(\w+)", stopien \|-> (\d)', value)
+    return "<<" + ", ".join(f"{kind} {rank}" for kind, rank in found) + ">>"
+
+
+# Rodzaj wersji z dziennika w słowach kontrprzykładu.
+_KINDS = {"wynik": "Logi z wynikiem z pliku", "urwane": "Logi Urwanego Uruchomienia", "bezLogow": "wynik bez Logów"}
 
 
 def _description(name: str) -> str:

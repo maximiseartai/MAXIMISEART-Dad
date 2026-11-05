@@ -180,14 +180,15 @@ Dad does not click or see anything. The machine script sends none.
   Wycena and the progress goes only once it is there, so when Centrum stopped
   during the Wycena, before the journal's end entry, the next start of Centrum
   turns the comment into the summary of the Logi of an Urwane Uruchomienie.
-  When the Logi with the result did not reach the queue after the end entry
-  (Centrum stopped right after the result, the end entry or the Logs failed, or
-  the queue refused them), the comment stays a progress comment, because the
-  start sends nothing for a Wycena with an end entry so as not to replace Logi
-  with the result that may already be in the Skrzynka (`#910` closes this
-  window). A Wycena whose journal cannot be written has no progress comment,
-  only the summary at its end. Without the network only the newest progress
-  waits in the queue.
+  When the queue did not accept the Logi with the result (Centrum stopped right
+  after the result, the Logs were not made, or the queue refused them), the
+  journal stays and the next start turns the comment into a stand-in summary
+  from it (`#910`): the Logi from their file, or the result without Logi
+  (`- Pełne Logi: nie ma, …`). A version carries a rank before its moment, so a
+  progress never replaces a summary and a stand-in summary never replaces Logi
+  with the result, also after the computer's clock went back. A Wycena whose
+  journal cannot be written has no progress comment, only the summary at its
+  end. Without the network only the newest version waits in the queue.
 - The full Logi are in the period's Archiwum Logów okresu: the GitHub Release
   tagged `logi-<token>` in the same private repository, which Centrum creates
   with the first Logi of the period (`#844`). It holds one file per
@@ -222,9 +223,12 @@ Dad does not click or see anything. The machine script sends none.
   line `przyczyna=odmowa-archiwum`), the rest of the queue (Zgłoszenia, Uwagi
   taty, Kontrole ilości) goes on, and the file goes by itself once the
   permission and the commit are there, within a minute while Centrum runs.
-- The Logi hold no cell content, but the Komunikaty are the card's, as in a
-  Zgłoszenie: they name Wykonawcy and may quote a cell of the Rejestr zleceń
-  (`ZLE_SKUTECZNE`, `NIEZNANY_WYKONAWCA`). Treat them like a Zgłoszenie.
+- Since #841 the Logi hold cell content: the Kopia wejścia has the Wiersze
+  danych the process read, without the `ADRES` and `NUMER UMOWY/ZLECENIA
+  ORANGE` columns and with free text and numbers masked (ADR 0025). The
+  Komunikaty are the card's, as in a Zgłoszenie: they name Wykonawcy and may
+  quote a cell of the Rejestr zleceń (`ZLE_SKUTECZNE`, `NIEZNANY_WYKONAWCA`).
+  Treat the Logi like a Zgłoszenie.
 - The queue, its log entries and its retries are the ones of the Kontrola
   ilości above; the queue file of the Logi is `<time>-<n>-logi-uruchomienia-<run>.json`.
 - Centrum never creates the `logi-uruchomienia` label; it must exist in the

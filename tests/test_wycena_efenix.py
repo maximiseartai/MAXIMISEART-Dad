@@ -30,6 +30,7 @@ import subprocess
 import sys
 import time
 import traceback
+import weakref
 from typing import TypeVar, cast
 from urllib.parse import urljoin, urlparse
 import zipfile
@@ -101,6 +102,8 @@ from tests.fixtures.workbooks import active_worksheet, rewrite_parts
 # Żądania, które niczego w efenix nie zmieniają: lista zleceń, szukanie, strona zlecenia i skrypty obu stron.
 READING = {("GET", LIST_PAGE), ("POST", SEARCH), ("GET", ORDER_PAGE), ("GET", LIST_SCRIPT), ("GET", ORDER_SCRIPT)}
 Priced = Outcome[PricingSummary]
+# Karty, w których biegło już Uruchomienie (``_run``).
+_USED_TABS: weakref.WeakSet[Page] = weakref.WeakSet()
 _T = TypeVar("_T")
 
 
@@ -136,9 +139,18 @@ def _run(
     czasów etapów i śladu działań okna. ``window`` to okno efenix, które dostaje proces, zbudowane z okna przeglądarki. Ślad Wyceny Emmetta leży w ``_traces(source)``, więc każde Uruchomienie dla tego
     samego pliku czyta ślad poprzedniego.
 
+    Karta ``page`` służy jednemu Uruchomieniu, jak przeglądarka okna taty (``efenix_browser.chrome``) i Skryptu dla maszyn
+    (``efenix_browser.chromium``), która zamyka się z oknem, więc następne Uruchomienie dostaje nową kartę
+    (``_next_tab``). Skrypt strony efenix zostawionej przez Zatrzymanie przeładowuje ją jeszcze po odmowie „Załaduj do
+    zlecenia”, na którą okno nie czeka, a to przeładowanie w tej samej karcie przerywało otwarcie listy przez następne
+    Uruchomienie (``EFENIX_NIEDOSTEPNY``, #932).
+
     Błąd okna efenix (np. ``UnexpectedPage``) trafia na stderr testu z treścią wyjątku Playwrighta, której Zatrzymanie w
     wyniku z założenia nie ma (ma tylko typ wyjątku), a porażka testu pokazuje stderr. Z samego Zatrzymania nie dało się
     ustalić przyczyny porażek #767 i #768 na Windows."""
+
+    assert page not in _USED_TABS, "następne Uruchomienie w nowej karcie: _next_tab(page)"
+    _USED_TABS.add(page)
 
     @contextmanager
     def open_efenix(_login: Login) -> Iterator[Efenix]:
@@ -157,6 +169,16 @@ def _run(
         view=lambda _inputs, summary: summary,
         metrics_path=source.parent.parent / "metryki.jsonl",
     )
+
+
+def _next_tab(page: Page) -> Page:
+    """Karta następnego Uruchomienia: karta ``page`` poprzedniego zamyka się, jak przeglądarka okna, więc jej skrypt
+    efenix nie wysyła już żądań do efenix w trakcie następnego Uruchomienia (testy porównują jego żądania), a nowa jest
+    w tej samej przeglądarce, z jej ciasteczkami, jak trwały profil okna taty, który pamięta logowanie między
+    Uruchomieniami."""
+
+    page.close()
+    return page.context.new_page()
 
 
 def _traces(source: Path) -> Path:
@@ -1195,7 +1217,7 @@ def test_strona_bez_listy_zlecen_i_adres_bez_efenix_zatrzymuja_wycene(tmp_path: 
         closed = f"http://127.0.0.1:{unused.getsockname()[1]}/{LIST_PAGE}"
     with atrapa_efenix([Order("#9301").in_efenix("901")]) as atrapa:
         changed = _price(tmp_path / "zmieniony", page, atrapa.url.replace(LIST_PAGE, "inna_strona.php"), [Order("#9301")])
-    unreachable = _price(tmp_path / "niedostepny", page, closed, [Order("#9301")])
+    unreachable = _price(tmp_path / "niedostepny", _next_tab(page), closed, [Order("#9301")])
 
     assert (_stop(changed), _stop(unreachable), _kept(changed), _kept(unreachable)) == ("EFENIX_OKNO_ZATRZYMANE", "EFENIX_NIEDOSTEPNY", False, False)
 
@@ -1351,7 +1373,7 @@ def test_nastepny_przebieg_na_pliku_ze_znacznikami_czyta_kwoty_au_ma_te_same_got
         first = _run(source, page, atrapa.url)
         assert _figures(first) == _figures_of(5, 2, warnings=1, photos=1)
         marked, saved, state, requests = source.read_bytes(), source.stat().st_mtime_ns, atrapa.state(), len(atrapa.requested())
-        second = _run(source, page, atrapa.url)
+        second = _run(source, _next_tab(page), atrapa.url)
         after, again = atrapa.state(), atrapa.requested()[requests:]
 
     assert (_figures(second), _marked(source), _amounts(source)[18]) == (_figures_of(5, 2, photos=1), [18, 19], _au({"012": 1}))
@@ -1377,7 +1399,7 @@ def test_kolejne_uruchomienie_oznacza_nowe_gotowe_zlecenie_wypelnieniem_i_stylem
         first = _run(source, page, atrapa.url)
     marked_first = _marked(source)
     with atrapa_efenix([order.in_efenix(f"76{index}") for index, order in enumerate(orders)]) as atrapa:
-        second = _run(source, page, atrapa.url)
+        second = _run(source, _next_tab(page), atrapa.url)
 
     assert (first.result, marked_first, second.result, _marked(source)) == ("WYMAGA_SPRAWDZENIA", [18], "OK", [18, 19])
     counts = _style_counts(dict(_parts(source))["xl/styles.xml"])
@@ -1464,7 +1486,7 @@ def test_plik_ktorego_nie_da_sie_oznaczyc_daje_komunikat_a_ponowne_uruchomienie_
             assert (_stop(stopped), _marked(source)) == (code, [])
         priced, requests = atrapa.state(), len(atrapa.requested())
         assert source.read_bytes() == unmarked
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         after, repeated = atrapa.state(), atrapa.requested()[requests:]
 
     assert {order.number: (order.quantities, order.execution_date, order.emmett_loads) for order in priced[0]} == {
@@ -1538,10 +1560,10 @@ def test_przerwanie_wylogowaniem_i_ponowne_uruchomienie_daje_ten_sam_stan_efenix
         priced_once = (_pricing(atrapa), atrapa.status_changes())
     clock = _FakeTime()
     with atrapa_efenix(in_efenix(), expire_after=expire_after, clock=clock) as atrapa:
-        stopped = _run(resumed, page, atrapa.url)
+        stopped = _run(resumed, _next_tab(page), atrapa.url)
         atrapa.log_in()
         since = len(atrapa.requests)
-        again = _run(resumed, page, atrapa.url, pace=Pace(sleep=clock.pause, clock=clock), clock=clock)
+        again = _run(resumed, _next_tab(page), atrapa.url, pace=Pace(sleep=clock.pause, clock=clock), clock=clock)
         priced_again = (_pricing(atrapa), atrapa.status_changes())
         searched_again, written_again = (
             _window_moments(atrapa, SEARCH, since),
@@ -1727,7 +1749,7 @@ def test_przerwanie_po_zaladuj_do_zlecenia_przed_odczytem_wyceny_emmetta_daje_pr
     with atrapa_efenix([order.in_efenix(f"99{index}") for index, order in enumerate(orders)], expire_after=(ORDER_PAGE, 5)) as atrapa:
         stopped = _run(source, page, atrapa.url)
         atrapa.log_in()
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         pricing = _pricing(atrapa)
 
     filled = {"012": 1, "019": 2, "015": 1}
@@ -1784,7 +1806,7 @@ def test_odmowa_zaladuj_do_zlecenia_zatrzymuje_wycene_bez_znacznika_i_sladu_a_po
         marked = _marked(source)
         atrapa.log_in()
         atrapa.edit("9702", lambda order: setattr(order, "emmett_refusal", None))
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
 
     loaded = refusal is EmmettRefusal.SERVER_ERROR
     assert isinstance(stopped.ending, Stop) and isinstance(stopped.ending.facts, PricingStopped), _ending(stopped)
@@ -1823,15 +1845,20 @@ def test_propozycja_emmetta_ktora_padla_zostawia_okno_emmetta_puste_jak_w_efenix
 ) -> None:
     """Propozycja Emmetta (``action_fill_emmett.php``) pada błędem serwera, zerwaną treścią albo zerwanym połączeniem, a
     skrypt efenix i tak pokazuje okno Emmetta, puste. „Załaduj do zlecenia” ładuje Wycenę Emmetta, bo efenix bierze ją u
-    siebie, a nie z okna, więc strona z kwotą różną od 0 kończy zlecenie jak bez awarii."""
+    siebie, a nie z okna, więc strona z kwotą różną od 0 kończy zlecenie jak bez awarii. Przeglądarka dostaje propozycję
+    tak, jak padła: 500, nagłówki 200 i zerwaną treść, albo nic (bez tego test zerwanej treści sprawdzałby całą)."""
 
     order = Order("#9721", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"012": 1})
     source = write_collective_file(tmp_path, [order])
     in_efenix = replace(order.in_efenix("9721"), emmett_proposal_failure=failure)
+    proposal: list[int | str] = []
+    page.on("response", lambda response: proposal.append(response.status) if response.url.endswith(FILL_EMMETT) else None)
+    page.on("requestfailed", lambda request: proposal.append("zerwana") if request.url.endswith(FILL_EMMETT) else None)
     with atrapa_efenix([in_efenix]) as atrapa:
         outcome = _run(source, page, atrapa.url)
         pricing = _pricing(atrapa)
 
+    assert proposal == {ProposalFailure.SERVER_ERROR: [500], ProposalFailure.TORN: [200, "zerwana"], ProposalFailure.CUT: ["zerwana"]}[failure]
     assert (outcome.result, _figures(outcome), _errors(outcome)) == ("OK", _figures_of(1, 1), [])
     assert (pricing, _marked(source)) == ({"9721": ({"012": 1, "019": 2}, DAY, 1)}, [18])
 
@@ -1943,7 +1970,7 @@ def test_przerwanie_przed_wycena_emmetta_a_potem_wycena_zaczeta_przez_tate_zosta
         stopped = _run(source, page, atrapa.url)
         atrapa.log_in()
         atrapa.edit("5201", lambda edited: edited.quantities.update({"012": 1}))
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         pricing = _pricing(atrapa)
 
     assert (_stop(stopped), _errors(again)) == ("EFENIX_WYLOGOWANY", [("EFENIX_WYCENA_INNA", "wiersz 18")])
@@ -1968,7 +1995,7 @@ def test_zlecenie_skonczone_przez_proces_w_ktorym_tata_usunal_potem_ilosc_ponown
     with atrapa_efenix([order.in_efenix("931")]) as atrapa:
         priced = _run(source, page, atrapa.url)
         atrapa.edit("5301", lambda edited: edited.quantities.pop("019"))
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         pricing = _pricing(atrapa)
 
     assert (_errors(priced), _errors(again)) == (first, [("EFENIX_WYCENA_INNA", "wiersz 18")])
@@ -2025,7 +2052,7 @@ def test_bez_sladu_wyceny_emmetta_albo_z_uszkodzonym_ponowne_uruchomienie_przerw
         _interrupted(source, atrapa, page)
         interrupted = _pricing(atrapa)["9902"]
         damage(_traces(source) / f"{PERIOD}.json")
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         after = _pricing(atrapa)["9902"]
 
     assert (_figures(again), _errors(again)) == (_figures_of(3, 2), [("EFENIX_WYCENA_INNA", "wiersz 19")])
@@ -2055,7 +2082,7 @@ def test_przerwana_wycena_ze_sladu_ktora_tata_zmienil_potem_w_efenix_to_blad_bez
         _interrupted(source, atrapa, page)
         atrapa.edit("9902", change)
         changed = _pricing(atrapa)["9902"]
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         after = _pricing(atrapa)["9902"]
 
     assert (_figures(again), _errors(again)) == (_figures_of(3, 2), [("EFENIX_WYCENA_INNA", "wiersz 19")])
@@ -2076,7 +2103,7 @@ def test_przerwana_wycena_ze_sladu_sprzeczna_z_plikiem_zmienionym_po_przerwaniu_
         _interrupted(source, atrapa, page)
         interrupted = _pricing(atrapa)["9902"]
         write_collective_file(tmp_path, [orders[0], changed, orders[2]])
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         after = _pricing(atrapa)["9902"]
 
     assert (_figures(again), _errors(again)) == (
@@ -2097,7 +2124,7 @@ def test_ostrzezenie_emmetta_konczy_zlecenie_wiec_po_zmianie_pliku_na_ilosc_emme
     with atrapa_efenix([order.in_efenix("961")]) as atrapa:
         first = _run(source, page, atrapa.url)
         write_collective_file(tmp_path, [replace(order, cells={"O": 2, "T": 2}, amount=_au({"012": 2, "019": 2}))])
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         pricing = _pricing(atrapa)
 
     assert [_errors(outcome) for outcome in (first, again)] == [
@@ -2130,7 +2157,7 @@ def test_pusta_wycena_emmetta_ze_sladu_nie_laduje_sie_drugi_raz_po_przerwaniu_pr
     with atrapa_efenix([order.in_efenix("951")], expire_after=(SAVE_QUANTITY, 0)) as atrapa:
         stopped = _run(source, page, atrapa.url)
         atrapa.log_in()
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         pricing = _pricing(atrapa)
 
     assert (_stop(stopped), again.result, pricing, _marked(source)) == ("EFENIX_WYLOGOWANY", "OK", {"9501": (filled, DAY, 1)}, [18])
@@ -2177,10 +2204,10 @@ def test_slad_wyceny_emmetta_ktorego_nie_da_sie_zastapic_znika_z_dysku_a_wznowie
         interrupted = _pricing(atrapa)["9902"]
         # Folder w miejscu pliku tymczasowego: plik tymczasowy się nie zapisuje, a stary ślad da się usunąć.
         temporary.mkdir()
-        resumed = _run(source, page, atrapa.url)
+        resumed = _run(source, _next_tab(page), atrapa.url)
         resumed_trace = trace.exists()
         temporary.rmdir()
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         after = _pricing(atrapa)["9902"]
 
     assert (_stop(resumed), resumed_trace) == ("EFENIX_SLAD_NIEZAPISANY", False)
@@ -2525,7 +2552,7 @@ def test_zatrzymanie_okna_po_zapisie_ilosci_w_efenix_a_potem_ilosc_usunieta_prze
         stopped = _run(source, page, atrapa.url, window=_StopsAfterSaving)
         after_stop = _pricing(atrapa)["5301"]
         atrapa.edit("5301", lambda edited: edited.quantities.pop("019"))
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         pricing = _pricing(atrapa)
 
     assert (_stop(stopped), after_stop) == ("EFENIX_OKNO_ZATRZYMANE", ({"012": 1, "019": 2}, DAY, 1))
@@ -2566,7 +2593,7 @@ def test_slad_ktorego_nie_da_sie_zapisac_ani_usunac_po_skonczonym_zleceniu_nie_p
             priced = _run(source, page, atrapa.url)
         left_on_disk = (_traces(source) / trace_name).read_text(encoding="utf-8")
         atrapa.edit("5301", lambda edited: edited.quantities.pop("019"))
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         pricing = _pricing(atrapa)
 
     assert (priced.result, '"gotowe"' in left_on_disk) == ("OK", False)
@@ -2584,7 +2611,7 @@ def test_po_przerwaniu_ilosc_wpisana_przez_tate_w_pustej_pozycji_to_blad_bez_dop
         stopped = _run(source, page, atrapa.url)
         atrapa.log_in()
         atrapa.edit("5401", lambda edited: edited.quantities.update({"019": 2}))
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         pricing = _pricing(atrapa)
 
     assert (_stop(stopped), _errors(again)) == ("EFENIX_WYLOGOWANY", [("EFENIX_WYCENA_INNA", "wiersz 18")])
@@ -2636,7 +2663,7 @@ def test_zgasniecie_centrum_w_przerwie_tempa_przed_iloscia_daje_wznowienie_ktore
         with pytest.raises(_SwitchedOff):
             _run(source, page, atrapa.url, pace=Pace(sleep=switching_off_before_quantity, clock=clock))
         switched_off = _pricing(atrapa)["5501"]
-        again = _run(source, page, atrapa.url)
+        again = _run(source, _next_tab(page), atrapa.url)
         pricing = _pricing(atrapa)
 
     assert switched_off == ({"012": 1}, DAY, 1)

@@ -14,8 +14,10 @@ from drive.common import (
     ended_run_shown,
     ensure_files_set,
     finished_result,
+    move,
     period_choice,
     release_only,
+    remove,
     sent_requests,
     settle,
     stop_banner,
@@ -56,13 +58,13 @@ def _stop_without_cause_on_computer(run: Run, page: Page) -> str:
     page.get_by_role("radio", name="Przygotowanie pliku zbiorczego").click()
     page.get_by_role("combobox", name="Okres").click()
     page.get_by_role("option", name=period_choice(PERIOD, "Brak plików okresu"), exact=True).click()
-    template.rename(aside)
+    move(template, aside)
     try:
         page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
         expect(stop_banner(page)).to_contain_text(TEMPLATE_MISSING)
         result = finished_result(run, "aktualnosc-zatrzymanie")
     finally:
-        aside.rename(template)
+        move(aside, template)
     run.check(result["stop_kind"] == "for_maks", "the stop without its Wzorzec is „do Maksa”")
     view = current_run(run, "aktualnosc-zatrzymanie")["run"]
     assert isinstance(view, dict)
@@ -133,7 +135,7 @@ def drive_freshness_and_onedrive(run: Run, page: Page) -> None:
     run.capture(page, "76-aktualnosc-nowsza-wersja")
 
     run.step(FEATURE, "aktualnosc-brak-sieci")
-    main_commit.unlink()
+    remove(main_commit)
     offline.touch()
     explanation = _diagnose(page)
     expect(explanation).to_contain_text(NOT_FOUND)
@@ -151,7 +153,7 @@ def drive_freshness_and_onedrive(run: Run, page: Page) -> None:
     run.capture(page, "77-aktualnosc-brak-sieci")
 
     run.step(FEATURE, "onedrive-tylko-w-chmurze")
-    offline.unlink()
+    remove(offline)
     before = (register.read_bytes(), register.stat().st_mtime_ns)
     only_in_cloud.write_text(str(register) + "\n", encoding="utf-8")
     explanation = _diagnose(page)
@@ -192,8 +194,8 @@ def drive_freshness_and_onedrive(run: Run, page: Page) -> None:
     _drive_update_in_progress(run, page, update)
 
     run.step(FEATURE, "aktualnosc-i-onedrive-przeszly")
-    main_commit.unlink()
-    only_in_cloud.unlink()
+    remove(main_commit)
+    remove(only_in_cloud)
     explanation = _diagnose(page)
     expect(explanation).to_contain_text(NOT_FOUND)
     checks = _shown_checks(page)
@@ -253,7 +255,7 @@ def _drive_update_in_progress(run: Run, page: Page, update: Locator) -> None:
         )
         run.capture(page, "140-aktualnosc-aktualizacja-w-trakcie", live=True)
     finally:
-        pacing.unlink(missing_ok=True)
+        remove(pacing, missing_ok=True)
     try:
         expect(diagnosis.get_by_role("status").filter(has_text=UP_TO_DATE)).to_be_visible(timeout=20_000)
         expect(update).to_be_enabled()

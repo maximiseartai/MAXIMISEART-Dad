@@ -11,8 +11,9 @@ Sprawdzanie Przygotowania pliku zbiorczego szuka też Surowych zleceń na dole k
 Zatrzymanie.
 
 Komórki zakazanych kolumn przeczytanych arkuszy Rejestru i Surowych zleceń zna pamięć reguły danych pracy Centrum
-(``forbidden``, ADR 0025), którą Centrum podaje obok czytników; proces bez Centrum jej nie ma. Wiersze Rejestru z
-Odczytu danych zna też Kopia wejścia Uruchomienia (``copy``, #841).
+(``forbidden``, ADR 0025), którą Centrum podaje obok czytników; proces bez Centrum jej nie ma. Wiersz Rejestru bez
+wyglądu uporządkowanego może być przesuniętym pierwszym wierszem wklejenia, więc pamięć zna jego komórki w obu
+położeniach (#918). Wiersze Rejestru z Odczytu danych zna też Kopia wejścia Uruchomienia (``copy``, #841).
 """
 
 from __future__ import annotations
@@ -145,8 +146,9 @@ def read_register(
 ) -> list[RegisterSheet]:
     """Arkusze ze zleceniami Rejestru zleceń albo zatrzymanie, gdy Rejestru nie da się odczytać albo nie ma nagłówków.
 
-    ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza, a ``copy`` każdy przeczytany wiersz
-    (``_copied``) i chwilę zmiany Rejestru sprzed jego odczytu.
+    ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza pod ich nagłówkiem, a w wierszu bez
+    wyglądu uporządkowanego (``RegisterSheet.uncertain_rows``) także ``raw_orders.SHIFT`` kolumn na lewo od niego (#918).
+    ``copy`` poznaje każdy przeczytany wiersz (``_copied``) i chwilę zmiany Rejestru sprzed jego odczytu.
     """
 
     modified = input_copy.modified_at(register)
@@ -157,6 +159,10 @@ def read_register(
             for row in sheet.register_rows:
                 for column, header in _FORBIDDEN_HEADERS:
                     forbidden.remember_value(column, row.cells[header].value)
+            numbers = {column.target_header: number for column, number in sheet.positions.items()}
+            for values in sheet.uncertain_rows.values():
+                for column, header in _FORBIDDEN_HEADERS:
+                    forbidden.remember_value(column, values.get(numbers[header] - raw_orders.SHIFT))
     if copy is not None:
         _copied(register, read, modified, copy)
     return read.sheets

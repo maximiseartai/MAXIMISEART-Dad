@@ -50,7 +50,7 @@ the Token do Zgłoszeń is there and whether the skrzynka accepts it, never its 
 
 Preconditions:
 
-- Centrum is served for this run with `DOCTOR OK`, with the file skrzynka `<root>/skrzynka-zgloszen/` (see `serve_centrum.py`). Run alone, the drive points Centrum to the fixture's folder okresów and Rejestr zleceń itself. The drive removes `config/zgloszenia-klucz.txt` first and at the end.
+- Centrum is served for this run with `DOCTOR OK`, with the file skrzynka `<root>/skrzynka-zgloszen/` (see `serve_centrum.py`). Run alone, the drive points Centrum to the fixture's folder okresów and Rejestr zleceń itself. The drive empties `config/zgloszenia-klucz.txt` first and at the end (an empty key file is no key for the server, and on Windows it can be emptied while the server reads it).
 
 - **Podgląd.** On `#/uruchomienia` (after `Nowe Uruchomienie procesu` when a result is shown) choose `Przygotowanie pliku zbiorczego` and `wt 08.09 – pon 14.09 · Brak plików okresu · 08_14_09_2026`, rename the Wzorzec rozliczenia wewnętrznego aside, click `Podgląd bez zapisu` (exact), rename it back after the stop. `GET /api/runs/current` has `stop_kind` `for_maks` and `report` `{"state": "ready"}`. Reload, click `Diagnoza` on the stop banner, then button `Co zostanie wysłane` in region `Diagnoza`. Figure `Treść Zgłoszenia` shows the title in its caption and the Markdown body in `pre`.
 - **Bez klucza.** Click `Wyślij do Maksa`. A `status` in region `Diagnoza` reads `Token do Zgłoszeń nie działa. Skontaktuj się z Maksem.`. The queue file's target title and joined parts are the title and body shown. The header button `Powiadomienia` opens the list, whose item `Zgłoszenie: <Co się stało>` reads the same sentence.

@@ -549,18 +549,35 @@ def read_computed_rows(
     return ComputedRows(header_columns(header), rows, original)
 
 
+Face = tuple[str | None, float | None]
+"""Krój i rozmiar czcionki komórki; ``(None, None)``: brakująca komórka."""
+
+
+class ReadRow(NamedTuple):
+    """Wiersz arkusza z ``ReadSheet.data_rows``: wartości całego wiersza od A, wiersz z komórkami pod nagłówkiem
+    docelowym i krój czcionki każdej z tych komórek po nagłówku docelowym."""
+
+    values: tuple[object, ...]
+    row: RegisterRow
+    faces: Mapping[str, Face]
+
+
 class _HighlightsReader:
-    """Wyróżnienia komórek jednego odczytu; komórki o tej samej czcionce i wypełnieniu dzielą jeden obiekt."""
+    """Wyróżnienia i krój czcionki komórek jednego odczytu; komórki o tej samej czcionce i wypełnieniu dzielą jeden
+    obiekt."""
 
     def __init__(self) -> None:
-        self._known: dict[tuple[int, int], Highlights] = {}
+        self._known: dict[tuple[int, int], tuple[Highlights, Face]] = {}
 
     def of(self, cell: object) -> Highlights:
+        return self.look(cell)[0]
+
+    def look(self, cell: object) -> tuple[Highlights, Face]:
         font, fill = getattr(cell, "font", None), getattr(cell, "fill", None)
         key = (id(font), id(fill))
         found = self._known.get(key)
         if found is None:
-            found = self._known[key] = Highlights.of(font, fill)
+            found = self._known[key] = (Highlights.of(font, fill), (None, None) if font is None else (font.name, font.sz))
         return found
 
 
@@ -583,8 +600,9 @@ class ReadSheet:
     def values(self, min_row: int, max_row: int | None = None) -> Iterator[tuple[object, ...]]:
         return classified(self._path, self._sheet.iter_rows(min_row=min_row, max_row=max_row, values_only=True))
 
-    def data_rows(self, min_row: int, columns: Mapping[str, int]) -> Iterator[tuple[tuple[object, ...], RegisterRow]]:
-        """Wartości całego wiersza i wiersz z komórkami ``columns`` (nagłówek docelowy → kolumna od 1), od ``min_row`` w dół.
+    def data_rows(self, min_row: int, columns: Mapping[str, int]) -> Iterator[ReadRow]:
+        """Wartości całego wiersza, wiersz z komórkami ``columns`` (nagłówek docelowy → kolumna od 1) i krój czcionki
+        tych komórek, od ``min_row`` w dół.
 
         Wyróżnienia czyta ta sama reguła co w Pliku zbiorczym (``Highlights.of``), a format liczby każdej
         komórki to jej format, ogólny dla brakującej. W arkuszu zawężonym tylko wiersze z jego zakresu.
@@ -592,7 +610,7 @@ class ReadSheet:
 
         return classified(self._path, self._data_rows(min_row, columns))
 
-    def _data_rows(self, min_row: int, columns: Mapping[str, int]) -> Iterator[tuple[tuple[object, ...], RegisterRow]]:
+    def _data_rows(self, min_row: int, columns: Mapping[str, int]) -> Iterator[ReadRow]:
         max_row = None
         if self._rows is not None:
             min_row, max_row = max(min_row, self._rows.start), self._rows.stop - 1
@@ -604,13 +622,14 @@ class ReadSheet:
             values = tuple(getattr(cell, "value", None) for cell in cells)
             row_links = links.row(number, values)
             picked = {header: cells[column - 1] if column <= len(cells) else None for header, column in columns.items()}
-            yield values, RegisterRow(
+            looks = {header: highlights.look(cell) for header, cell in picked.items()}
+            row = RegisterRow(
                 number,
                 MappingProxyType(
                     {
                         header: DataCell(
                             getattr(cell, "value", None),
-                            highlights.of(cell),
+                            looks[header][0],
                             getattr(cell, "number_format", None) or GENERAL,
                             row_links.get(columns[header]),
                         )
@@ -618,6 +637,7 @@ class ReadSheet:
                     }
                 ),
             )
+            yield ReadRow(values, row, {header: face for header, (_, face) in looks.items()})
 
 
 class ReadWorkbook:

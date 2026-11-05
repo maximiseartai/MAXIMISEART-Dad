@@ -76,6 +76,35 @@ telefony na okres.
   pod jej tekstem. Tata widzi w podglądzie
   Zgłoszenia i Uwagi dokładnie to, co wyjdzie. Tekst bez zakazanej wartości,
   telefonu i ulicy wychodzi bez zmian i bez uwagi.
+- **W Logach słowa i chwile narzędzia zostają** (#936). Strażnik porównuje
+  słowa, a nie pochodzenie wartości, więc wartość z pliku taty równa słowu
+  narzędzia (`zapis`, token okresu, część chwili startu) trafiała też w pole,
+  które niesie tylko to, co dało narzędzie, i gubiła całe Logi albo ich okres,
+  Uruchomienie i commit, z których odtworzenie (#847) buduje Uruchomienie.
+  Strażnik zostawia więc wartość z rekordu w tych polach Logów, a lista jest
+  jedna (`TOOL_FIELDS` w `run_logs.py`):
+  - `run_id`: identyfikator `uuid4`;
+  - `period`: token okresu z żądania przeglądarki po `parse_period_token`
+    albo z zegara (Uporządkowanie INTERMAX);
+  - `process`, `mode`, `result`, `ending`, `stop_kind`: wartości zamkniętych
+    list schematu;
+  - `started_at`, `ended_at`: chwile zegara Centrum (w Logach Urwanego
+    Uruchomienia z dziennika Wyceny, który pisze Centrum);
+  - `tool`: Wydanie i commit z Gita narzędzia;
+  - `phases`: etapy z zamkniętej listy ze stanem, czasem i chwilami projekcji
+    postępu;
+  - `trace`: typy wyjątków i ramki kodu narzędzia, bez treści wyjątku;
+  - `dad_actions`: chwile, wartości zamkniętych list i operacje API z
+    kontraktu, bez treści zapytań;
+  - `system` i `python` Środowiska: moduł `platform`.
+
+  Nazw pól schematu (kluczy modeli Logów) strażnik też nie maskuje, a klucze
+  słowników (operator, kod pozycji, litera kolumny) to dane i maskuje je jak
+  tekst. Każde inne pole może nieść treść pliku taty (tekst Komunikatu,
+  Wykonawca, nazwa pliku, odczyt strony efenix, Kopia wejścia) i dalej ma
+  maskę. Pole typowane spoza listy (kwota, data, wartość z zamkniętej listy w
+  elemencie listy), które maski nie przyjmuje, zostaje puste albo odpada jego
+  element listy z uwagą techniczną (#929), więc maska nie gubi całych Logów.
 - **Liczba ma tekst, który pokazuje Excel** (#841): numer Orange albo
   telefon, który tata wpisał w komórkę bez innego tekstu, Excel trzyma jako
   liczbę, a liczba całkowita zapisana jako ułamek to jej cyfry. Format General
@@ -102,6 +131,26 @@ telefony na okres.
   pierwszy wiersz z datą jako tekstem nie musi być przesunięty. W każdym innym
   wierszu pamięć poznaje komórki w obu miejscach, a Kopia wejścia niesie tylko
   komórki dozwolone w obu położeniach (#842, tabela położeń w PR #905).
+  Odczyt Rejestru zleceń w Przygotowaniu i Diagnozie czyta każdy wiersz po
+  nagłówkach, bez rozpoznania bloku, a szukanie Surowych zleceń zna tylko
+  wiersze pod ostatnim uporządkowanym. Przesunięty wiersz wklejenia nad
+  uporządkowanymi w zakresie dat okresu dawał więc w Kopii wejścia
+  Przygotowania adres pod `DATA` i numer Orange pod `NUMER ZL.`, a strażnik ich
+  nie znał: wychodziły do Logów, do Skrzynki i w Uwadze taty (#918). Dlatego w
+  wierszu Rejestru bez wyglądu uporządkowanego (reguła Uporządkowania na
+  kolumnach, które czyta Przygotowanie: żadna komórka z wartością poza
+  `WYKONAWCA` nie ma Calibri 8) pamięć poznaje komórki pod nagłówkiem i dwie
+  kolumny na lewo od niego, a Kopia wejścia niesie wiersz po nagłówkach i
+  strażnik maskuje w niej obie wartości.
+  Wiersz uporządkowany pamięć zna tylko pod nagłówkiem, więc jego `NUMER ZL.`
+  wychodzi bez maski (tabela położeń odczytu Rejestru w
+  `tests/test_centrum_logi_uruchomienia.py`). Koszt to maska `NUMER ZL.` i
+  tekstu spod `DATA` w wierszu bez tego wyglądu. Na kopii Rejestru taty z
+  20.10.2026 takich wierszy jest 11 z 31 778, w okresie 13_19_10_2026 żadnego
+  z 684. Na jej wersji z wklejeniem z aplikacji jest ich 95, bo Diagnoza
+  Przygotowania czyta cały Rejestr, także wklejenie: po niej Kopia wejścia
+  Uporządkowania w tej samej pracy Centrum ma maskę `NUMER ZL.` w 83 z 84
+  wklejonych wierszy, obok maski `URZĄDZENIA` w 82, która była już przed #918.
   Pamięć jest jedna na pracę
   Centrum: Centrum tworzy ją przy starcie i podaje czytnikom i producentom, a
   nie jest stanem modułu, więc dwie prace Centrum w jednym procesie (testy)

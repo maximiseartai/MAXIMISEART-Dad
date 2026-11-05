@@ -7,7 +7,9 @@ from contextlib import contextmanager
 from datetime import date, timedelta
 from fnmatch import fnmatchcase
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import time
@@ -166,6 +168,83 @@ def period_choice(token: str, status: str) -> str:
 
 def period_row(page: Page, token: str) -> Locator:
     return page.get_by_role("table", name="Tablica okresów").get_by_role("row").filter(has_text=token)
+
+
+# How long every helper below (`remove`, `remove_tree`, `remove_empty_folder`, `move`, `replace_file`) retries a file
+# the server holds open on Windows; the server reads the harness's files in milliseconds, so this only bounds a change
+# that will never succeed.
+RETRY_OPEN_S = 10.0
+
+
+def _while_open(action: Callable[[], object]) -> None:
+    """Run ``action`` on a file of the run, retrying while the server holds it open, for at most ``RETRY_OPEN_S``.
+
+    The server reads the run's files from its own threads at any moment (pacing, the scripted GitHub, the queue of
+    the skrzynka Zgłoszeń, the settings, metrics and Wzorce while a page refreshes), and on Windows a file another
+    process has open can be neither deleted nor renamed (``WinError 32``, #921)."""
+
+    deadline = time.monotonic() + RETRY_OPEN_S
+    while True:
+        try:
+            action()
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+
+
+def remove(path: Path, *, missing_ok: bool = False) -> None:
+    """Harness: remove a file of the run, even while the server reads it (``_while_open``).
+
+    The drive deletes, moves and replaces files and folders only through ``remove``, ``remove_tree``,
+    ``remove_empty_folder``, ``move`` and ``replace_file``; ``centrum_self_test.py`` fails on the forms of the table of
+    its ``_removals`` anywhere else in ``drive/``."""
+
+    _while_open(lambda: path.unlink(missing_ok=missing_ok))
+
+
+def remove_tree(folder: Path, *, missing_ok: bool = False) -> None:
+    """Harness: remove a folder of the run with its content, even while the server reads a file in it.
+
+    A retry after a refusal removes what the first try left; after ``RETRY_OPEN_S`` the refusal is raised, never
+    swallowed, so a folder that stays is a failure of the drive, not a quiet difference in later steps."""
+
+    if missing_ok and not folder.exists():
+        return
+    _while_open(lambda: shutil.rmtree(folder))
+
+
+def remove_empty_folder(folder: Path) -> None:
+    """Harness: remove an empty folder of the run, even while the server looks into it; fails when it is not empty."""
+
+    _while_open(folder.rmdir)
+
+
+def move(source: Path, target: Path | str) -> None:
+    """Harness: rename a file or folder of the run, even while the server reads it (``_while_open``)."""
+
+    _while_open(lambda: Path(source).rename(target))
+
+
+def replace_file(source: Path, target: Path) -> None:
+    """Harness: put ``source`` in place of ``target`` at once, like Excel saving a whole file, even while the server
+    reads ``target``."""
+
+    _while_open(lambda: os.replace(source, target))
+
+
+def drop_report_key(key_file: Path, *, missing_ok: bool = False) -> None:
+    """Harness: Maks takes the key to the skrzynka Zgłoszeń away by leaving its file empty, never deleting it.
+
+    The server reads the key whenever the queue or the Powiadomienia ask the skrzynka, and an empty file is no key
+    for it (``read_report_key``), the same as no file. Rewriting succeeds while the server reads it on Windows, where
+    a removal fails (``WinError 32``, #921), as Python opens files sharing read and write. Without ``missing_ok`` the
+    step must have written a key, as the removal it replaces required its file."""
+
+    if not missing_ok and not (key_file.is_file() and key_file.read_bytes().strip()):
+        raise DriveFailure(f"the harness takes away a key that was never written: {key_file.name} is missing or empty")
+    key_file.write_bytes(b"")
 
 
 # The Wycena w efenix metrics file of the run (`serve_centrum.py`): its Historia, from which the Droga okresu counts it.
@@ -340,7 +419,7 @@ def start_card_warns_while_open(
         )
         run.capture(page, shots[0])
     finally:
-        lock.unlink(missing_ok=True)
+        remove(lock, missing_ok=True)
     print(f"  harness: Excel closes {workbook.name}, so its lock file is gone; Dad returns to Centrum", flush=True)
     page.evaluate(FOCUS)
     expect(warned).to_have_count(0)

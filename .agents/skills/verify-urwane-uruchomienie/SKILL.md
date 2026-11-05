@@ -1,6 +1,6 @@
 ---
 name: verify-urwane-uruchomienie
-description: Model-check with TLA+ (TLC) the trail of a Wycena w efenix that a switched-off Centrum cut short, across the next starts of Centrum, the Dziennik Wyceny in `logs/dzienniki-wyceny/` (`pricing_journal.py`), the Logi Urwanego Uruchomienia (`RunLogs.interrupted`, `guard`, `close`, `send` in `run_logs.py`) and their way into the Kolejka wysyłki (`Outbox.post`), next to the progress comment of the Wycena (#846, `RunLogs.progress`). It checks that a journal disappears only after the queue accepted its Logi, that the journal of a Wycena that may have sent a progress disappears only after the queue accepted the final version of its comment (a known finding, #910, when the Logi with the result did not reach the queue after the end entry), that no version without Logi (a progress) follows accepted Logi with the result, that a Wycena with a result never gets Logi Urwanego Uruchomienia, that the Logs file and what goes to the queue have the same characters and passed the guard, that nothing reaches the queue before `Outbox.resume`, and that every order the Wycena changed in efenix is in its Logi, under every order of switch-offs and failed reads and writes. Use when a change touches `PricingJournal` (its first line `run_started`, `progress`, its end entry `run_ended`), `RunEnded`, `_read`, `_remove` or `InterruptedPricings` in `src/rozliczenia/centrum/pricing_journal.py`, `RunLogs` (also `progress` and `_ended`) or `RunLog.interrupted` or `guarded` in `run_logs.py`, `ProgressComment` in `pricing_progress.py`, `lifespan`, `send_interrupted` or the order of `after_run` in `app.py`, `_Run.work` or `RunHost.after` in `runs.py`, `run_process` in `process_run.py` (the result), the journal calls in `efenix_pricing.py` `save`, or when the check of this skill fails.
+description: Model-check with TLA+ (TLC) the trail of a Wycena w efenix that a switched-off Centrum cut short, across the next starts of Centrum, the Dziennik Wyceny in `logs/dzienniki-wyceny/` (`pricing_journal.py`), the Logi Urwanego Uruchomienia (`RunLogs.interrupted`, `guard`, `close`, `send` in `run_logs.py`) and their way into the Kolejka wysyłki (`Outbox.post`), next to the progress comment of the Wycena (#846, `RunLogs.progress`). It checks that a journal disappears only after its Logi are the newest version the queue accepted, that the journal of a Wycena that may have sent a progress disappears only after the newest version of its comment the queue accepted is final (the Logi with the result, or a stand-in version from the next start, which is the Logi from the file, the Logi Urwanego Uruchomienia or the result without Logi, #910), that no newer version replaces Logi with a progress or a version without Logi, also after the computer's clock went back (the rank of a version, `outbox.Rank`), that a Wycena with a result never gets Logi Urwanego Uruchomienia, that the Logs file and what goes to the queue have the same characters and passed the guard, that nothing reaches the queue before `Outbox.resume`, and that every order the Wycena changed in efenix is in its Logi, under every order of switch-offs and failed reads and writes. Use when a change touches `PricingJournal` (its first line `run_started`, `progress`, its end entry `run_ended`, `logs_queued`), `RunEnded`, `JournalAfterLogs`, `_read`, `_remove` or `InterruptedPricings` in `src/rozliczenia/centrum/pricing_journal.py`, `RunLogs` (also `progress`, `_ended`, `queued` and `send`), `ResultWithoutLogs`, `logi_post`, `progress_post` or `RunLog.interrupted` or `guarded` in `run_logs.py`, `Rank`, `Version` or `_superseded` in `outbox.py`, `ProgressComment` in `pricing_progress.py`, `lifespan`, `send_interrupted` or the order of `after_run` in `app.py`, `_Run.work` or `RunHost.after` in `runs.py`, `run_process` in `process_run.py` (the result), the journal calls in `efenix_pricing.py` `save`, or when the check of this skill fails.
 pilnuje:
   - src/rozliczenia/centrum/pricing_journal.py
   - src/rozliczenia/centrum/run_logs.py
@@ -14,6 +14,7 @@ pilnuje:
   - src/rozliczenia/process_run.py
   - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
   - tools/lib/rozjazd_modelu.py
+  - tools/lib/narzedzia_tlc.py
 ci: .agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwane_uruchomienie.py
 ---
 
@@ -38,14 +39,20 @@ Wycena w efenix runs up to an hour and a half, and the Logi Uruchomienia exist o
 off in the middle (power cut, a closed console, a killed process), the only trace of what the tool already changed in
 efenix is the Dziennik Wyceny w efenix, one file per Uruchomienie. The next start of Centrum turns it into Logi Urwanego
 Uruchomienia and sends them to Maks through the Kolejka wysyłki. During the Wycena its comment of the Uruchomienie in the
-Skrzynka shows the progress from the journal (#846), an older version of its Logi, so the journal is also the trace of a
-comment that may still say „Uruchomienie trwa”, and the Logi with the result or the Logi Urwanego Uruchomienia turn it
-into the summary. The docstrings of `pricing_journal.py` and `pricing_progress.py` promise, and the model checks over
-every order of steps:
+Skrzynka shows the progress from the journal (#846), a version of its Logi of the lowest rank, so the journal is also
+the trace of a comment that may still say „Uruchomienie trwa”, and the Logi with the result or a stand-in version from
+the next start turn it into the summary. Every version of one wysyłka carries a rank that its sender picks
+(`outbox.Rank`, #910), and the queue compares the rank first and the moment from the file name only within one rank:
+the progress (`DRAFT`) < the stand-in version the start sends from the journal (`STAND_IN`: the Logi from the file,
+the Logi Urwanego Uruchomienia or the result without Logi, `ResultWithoutLogs`) < the Logi of the Uruchomienie's own
+Centrum work (`OWN`: with the result, with the Diagnoza). The docstrings of `pricing_journal.py`, `pricing_progress.py`
+and `outbox.py` promise, and the model checks over every order of steps:
 
 - **DziennikPoKolejce**: a journal of an Urwane Uruchomienie (it has its first line and the Wycena did not reach its
-  result) disappears only after `Outbox.post` accepted its Logi. With **Zbieganie** this is „wysyłka co najmniej raz”.
-  Harm: Maks never learns that a Wycena stopped half-way and which order was in progress in efenix.
+  result) disappears only after its Logi are the newest version that `Outbox.post` accepted, so they reach the
+  Skrzynka. With **Zbieganie** this is „wysyłka co najmniej raz”. Harm: Maks never learns that a Wycena stopped
+  half-way and which order was in progress in efenix (D2 of #875: after the clock went back the progress was newer and
+  the queue dropped the Logi).
 - **BezUrwanychPoWyniku**: Logi Urwanego Uruchomienia are made only for a Wycena that did not reach its result
   (`run_process` returned with a result, whether or not its Historia row was written); the journal of a Wycena with a
   result is removed, because it says so itself: „koniec Uruchomienia” (`RunEnded`) is on the disk before its Logi with
@@ -60,15 +67,16 @@ every order of steps:
 - **ZaczeteWLogach**: every order the Urwana Wycena changed in efenix is in its Logi, as finished or as the order begun
   without a result (`interruption`). Harm: Maks does not know which order may be half-priced in efenix.
 - **WersjaKoncowa**: a Wycena that may have sent a progress (its first line is on the disk without `_header`, so
-  `PricingJournal.progress` gives one) has a journal, and the journal disappears only after `Outbox.post` accepted a
-  final version of the comment of its Uruchomienie (the Logi with the result or the Logi Urwanego Uruchomienia). With
-  **Zbieganie** every Wycena that sent a progress ends in the Skrzynka with its summary. Harm: Maks reads „Wynik: jeszcze
-  nie ma, Uruchomienie trwa” forever about a Wycena that ended or was cut. It breaks today in one window, the known
-  finding `po-wpisie-konca` (#910).
-- **WynikZostaje**: once the queue accepted the Logi with the result of an Uruchomienie, no version of its comment
-  without Logi (a progress, or any other text without the Logs file) goes to the queue after them. Harm: the newer
-  version replaces the Logi with the result in the queue and in the Skrzynka, so Maks loses the summary and the link to
-  the full Logi (#871, W1 of round 3 of #846).
+  `PricingJournal.progress` gives one) has a journal, and the journal disappears only after the newest version of the
+  comment of its Uruchomienie that `Outbox.post` accepted is final (the Logi with the result, the Logi Urwanego
+  Uruchomienia or the result without Logi). With **Zbieganie** every Wycena that sent a progress has its summary in the
+  Skrzynka after the next start. Harm: Maks reads „Wynik: jeszcze nie ma, Uruchomienie trwa” forever about a Wycena that
+  ended or was cut (W2 of #875, #910).
+- **LogiZostaja**: once the newest version of the comment of an Uruchomienie the queue accepted has Logi (with the
+  result or of an Urwane Uruchomienie), no newer version replaces them with a progress or a version without Logi, and
+  Logi with the result also not with Logi Urwanego Uruchomienia. Harm: the newer version replaces the Logi in the queue
+  and in the Skrzynka, so Maks loses the summary and the link to the full Logi, and without the network the full Logi
+  (#871, W1 of round 3 of #846).
 - **Zbieganie** (liveness): once failures stop and Dad keeps closing and opening Centrum, every journal disappears.
   Harm: `logs/dzienniki-wyceny/` grows forever, or every start sends the same Logi again.
 
@@ -79,7 +87,9 @@ path ends where that one begins: at `Outbox.post` returning True. Here the queue
 state is the journals, Logs files and Historia rows on Dad's disk across Centrum starts. Putting both in one model would
 multiply a state space that already takes 45 s, so the two models meet at one step: this one checks that the journal
 path calls `post` only after `Outbox.resume` and keeps the journal until `post` accepted, and the queue model checks
-the rest, which also replaces an older version of the same wysyłka (the progress) with a newer one. The Historia is not
+the rest, which also replaces an older version of the same wysyłka with a newer one in the order of `Version`, also when
+the older one was posted later (configuration `starsza` there). This model keeps only the newest version of each
+comment the queue accepted (`najnowsza`) and which of them the rank and the clock make newer (`Przyjmij`). The Historia is not
 in the model: since #870/#871 the start decides from the journal and the Logs file only.
 
 ## Does the change touch it?
@@ -90,13 +100,13 @@ unless named otherwise):
 
 | Model action | Code |
 | --- | --- |
-| `Start` | `launcher.py` `_start`: `_listen_when_released` takes the port, then `create_app`; in it `InterruptedPricings(...).close()` lists `sorted(glob("*.jsonl"))`. Only the process with the port builds the app, so two closes never run at once |
-| `Czytaj` | `InterruptedPricings.close` → `_closed(path)` for one journal: `pricing_journal._read` (no first line or the end entry `RunEnded`, `read.ended` → `None`), `RunLogs.file_of` and `RunLog.model_validate_json` (`ending != "interrupted"` → `None`; `"interrupted"` → the record from the file), else `RunLogs.interrupted`; then `RunLogs.guard`. The Historia is not read. An `OSError` from the journal or the Logs file is caught by `close`, which leaves the journal. One step, because nothing else writes these files while `create_app` runs |
+| `Start` | `launcher.py` `_start`: `_listen_when_released` takes the port, then `create_app`; in it `InterruptedPricings(...).close()` lists `sorted(glob("*.jsonl"))`. Only the process with the port builds the app, so two closes never run at once. The clock may have gone back while Centrum was closed (`MaxCofniecZegara`): the moments of this work may then be earlier than those of any version already in the queue |
+| `Czytaj` | `InterruptedPricings.close` → `_closed(path)` for one journal: `pricing_journal._read` (no first line → `None`), `RunLogs.file_of` and `RunLog.model_validate_json` (a readable file → those Logi, with the result or Urwane; an unreadable one → `ResultWithoutLogs` `"nieczytelne"`, which the model leaves out), no file and the end entry `RunEnded` (`read.end`) → `ResultWithoutLogs` `"niezapisane"`, no file and no end entry → `RunLogs.interrupted`; Logi then `RunLogs.guard`. The Historia is not read. An `OSError` from the journal or the Logs file is caught by `close`, which leaves the journal. One step, because nothing else writes these files while `create_app` runs |
 | `ZapiszLogi` | `_closed`: `RunLogs.close(record)` → `_write` → `atomic_file.replace_atomically`; `OSError` only to the Centrum log, and the record still goes to `_pending` |
-| `UsunDziennik` | `close`: `if closed is None: _remove(path, ...)` (`unlink`; `OSError` leaves the journal) |
+| `UsunDziennik` | `close`: `if closed is None: _remove(path, ...)`, a journal without its first line (`unlink`; `OSError` leaves the journal) |
 | `Wznow` | `app.py` `lifespan`: `outbox.resume()` before uvicorn accepts the first request |
 | `PierwszeZapytanie` | `app.py` `send_interrupted`, a dependency of every API route, → `InterruptedPricings.send`: `pending, self._pending = self._pending, []` |
-| `Wyslij` | `send`: `self._run_logs.send(record)` → `outbox.py` `Outbox.post(logi_post(record))`: True once the queue file exists, False leaves the journal for the next start |
+| `Wyslij` | `send`: `self._run_logs.send(final)` → `outbox.py` `Outbox.post` of the stand-in version (`Rank.STAND_IN`): `logi_post(final, Rank.STAND_IN)` or the result without Logi after the guard (`_guarded`, `_logs_post`); True once the queue file exists, False leaves the journal for the next start |
 | `UsunPoWysylce` | `send`: `_remove(path, ...)` after True |
 | `StartWyceny` | `runs.py` `RunHost.start` → `app.py` `run_started` → `PricingJournal.run_started` (start in memory, `_header` set) |
 | `ZapiszStart` | `PricingJournal.run_started` → `_append_locked(started)`: the first line alone in one `write`, `flush`, `fsync`, before the thread of the Wycena starts (#846); `OSError` leaves `_header` set, so the first line goes with the next entry, and an `OSError` from `flush` or `fsync` after `write` may leave the whole first line on the disk while `_header` stays. Without `_header` `PricingJournal.progress` gives a progress, so from here the model counts a progress as possible (`postepMozliwy`) |
@@ -104,25 +114,28 @@ unless named otherwise):
 | `ZmianaWEfenix` | `_priced` → `_outcome`: the first window action that changes the order (execution date, Wycena Emmetta, a quantity) |
 | `WpisSkonczone` | `save`: `journal.ended(result, ...)` after the result → `PricingJournal._write` |
 | `Zatrzymanie` | `save`: a `StopError` after `journal.begun` of an order and before its `journal.ended` (the window stops, or the Ślad Wyceny Emmetta did not save a quantity written ahead, #881), or before the first `journal.begun` (the window closed while it waits for Dad's login); `save` marks the ready orders and raises it on, and `run_process` returns with the Zatrzymanie, so the Wycena reaches its result without „zlecenie skończone” of that order |
-| `Postep` | `pricing_progress.py` `ProgressComment` (at the start of the Wycena and every `PROGRESS_S`) → `RunLogs.progress`: `Outbox.post(progress_post(...))` when `PricingJournal.progress` gives a progress (no `_header`) and the Uruchomienie is not in `_ended`, both under the lock of `RunLogs`. The model counts the progress as possible from the first line on the disk (`postepMozliwy`), so this action changes nothing and only checks that it never comes after accepted Logi with the result (WynikZostaje) |
+| `Postep` | `pricing_progress.py` `ProgressComment` (at the start of the Wycena and every `PROGRESS_S`) → `RunLogs.progress`: `Outbox.post(progress_post(...))` (`Rank.DRAFT`) when `PricingJournal.progress` gives a progress (no `_header`) and the Uruchomienie is not in `_ended`, both under the lock of `RunLogs`. The model counts the progress as possible from the first line on the disk (`postepMozliwy`); a progress the queue accepted becomes the newest version of the comment when it is newer (`Przyjmij`), a refused one changes nothing |
 | `Wynik` | `runs.py` `_Run.work` → `process_run.py` `run_process`: the engine reached its result, the metrics record (the Historia row) is written or not (`metrics_saved`), and `run_process` returns; when it raises, `_Run.work` goes on with a Stop. Nothing on the journal path reads the Historia row, so the model has none |
-| `WpisKonca` | `_Run.work` → `RunHost.after` → `PricingJournal.run_ended`, the first of `after_run` in `create_app` (assignment `runs`): when the journal has its first line on the disk (`not self._header`), `_write(RunEnded(...))` (`write`, `flush`, `fsync`); when no write confirmed the first line (`self._header`, and a failed write may have left it) or `_write` returns False, `_remove(path, ...)` (`unlink`; no file, or a file in place of the folder, leaves nothing to remove; `OSError` leaves the journal without its end entry) |
+| `WpisKonca` | `_Run.work` → `RunHost.after` → `PricingJournal.run_ended`, the first of `after_run` in `create_app` (assignment `runs`): when no write confirmed the first line (`self._header`, and a failed write may have left it), `_remove(path, ...)` (`unlink`; no file, or a file in place of the folder, leaves nothing to remove; `OSError` leaves the journal without its end entry); otherwise `_write(RunEnded(..., result=run.result))` (`write`, `flush`, `fsync`), whose `OSError` leaves the journal without its end entry |
 | `LogiWyniku` | `RunHost.after` → `RunLogs.run_ended`, the next of `after_run`: `_ended.add` under the lock (the end of the progress), then `_keep`: `_write` of the Logs with the result |
-| `WyslijWynik` | `_keep`: `finally: self._outbox.post(logi_post(kept))`; the journal stays with its end entry until the next start |
+| `WyslijWynik` | `_keep`: `finally: if self._outbox.post(logi_post(kept)): self._queued.add(kept.run_id)` (`Rank.OWN`) |
+| `UsunPoLogach` | `RunHost.after` → `JournalAfterLogs.run_ended`, the next of `after_run`: `if self.run_logs.queued(run.info.id): self.journal.logs_queued(run)`, which removes the journal of this run (`_remove`) unless `_header`; otherwise the journal stays until the next start |
 | `KoniecUruchomienia` | the rest of `after_run` (`QuantityCheckAfterRun`, `filling`), then the end of the Uruchomienie |
 | `Zgasniecie` | none: Centrum switches off at any step; memory is gone, disk and queue stay; an entry being written may be torn, a torn first line is a journal without a start, and a torn end entry is a journal without one (`_read` counts it in `omitted`); a Wycena with a possible progress whose journal never had its first line on the disk would keep its progress (an event of WersjaKoncowa) |
 | `Zamkniecie` | „Zamknij Centrum rozliczeń”: `RunHost.shutdown_refusal` accepts it only when no Uruchomienie runs, and the request passed `send_interrupted` first |
 
 The script compares these definitions with the Sync commit (`model/definicje.json`: file → names, `Class.method` is a
-method): `PricingJournal`, `RunEnded`, `_read`, `_remove`, `InterruptedPricings` in `pricing_journal.py`;
-`RunLog.interrupted`, `guarded`, `RunLogs.run_ended`, `_keep`, `interrupted`, `file_of`, `guard`, `close`, `_write`,
-`send`, `progress`, `LoggedEnding`, `logi_post` in `run_logs.py`; `lifespan`, `send_interrupted`, the assignments `app`, `journal`,
-`interrupted` and `runs` (its `after_run` puts `journal` before `run_logs`) and `run_started` in `app.py`; `_Run.work`,
-`RunHost.start`, `RunHost.after`, `RunHost.shutdown_refusal` in `runs.py`; `Outbox.post`, `Outbox.resume` in
-`outbox.py`; `_start`, `_listen_when_released` in `launcher.py`; `replace_atomically` in `atomic_file.py`; `save` in
-`efenix_pricing.py`; `run_process` in `process_run.py`. Every code name in the table above is one of them, except five
-left out on purpose: `ProgressComment` and `progress_post` (they only decide when `RunLogs.progress` runs and what text
-it posts, and the model lets a progress come at any step it allows), `RunLog` as a whole (the schema of the Logs file, which changes with every new field; the model
+method): `PricingJournal`, `RunEnded`, `JournalAfterLogs`, `_Read`, `_read`, `_remove`, `InterruptedPricings` in
+`pricing_journal.py`; `RunLog.interrupted`, `guarded`, `RunLogs.run_ended`, `_keep`, `queued`, `interrupted`,
+`file_of`, `guard`, `close`, `_write`, `send`, `progress`, `LoggedEnding`, `ResultWithoutLogs`, `logi_post`,
+`progress_post`, `_logs_post` in `run_logs.py`; `lifespan`, `send_interrupted`, the assignments `app`, `journal`,
+`interrupted` and `runs` (its `after_run` puts `journal`, `run_logs` and `JournalAfterLogs` in this order) and
+`run_started` in `app.py`; `_Run.work`, `RunHost.start`, `RunHost.after`, `RunHost.shutdown_refusal` in `runs.py`;
+`Outbox.post`, `Outbox.resume`, `Rank`, `Version`, `_version_of`, `_superseded` in `outbox.py`; `_start`,
+`_listen_when_released` in `launcher.py`; `replace_atomically` in `atomic_file.py`; `save` in `efenix_pricing.py`;
+`run_process` in `process_run.py`. Every code name in the table above is one of them, except six left out on purpose:
+`ProgressComment` (it only decides when `RunLogs.progress` runs, and the model lets a progress come at any step it
+allows), `_guarded` (the text of a version without Logi), `RunLog` as a whole (the schema of the Logs file, which changes with every new field; the model
 reads only `ending`, whose values are `LoggedEnding`), `_priced`, `_outcome`, `efenix_trace.traced` and `StopError`
 (`ZmianaWEfenix` and `Zatrzymanie` need only their place in `save` after `journal.begun` and before `journal.ended`,
 which `save` holds), `metrics_saved` and the Historia (no step of this path reads
@@ -135,16 +148,24 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `2b2af53e4` (2026-11-05, #846 after its split, the start of #888 back and #910 out, merged with `main`
-after #912 and #914). Every row of the table was checked against the code at this commit. Since the Sync commit of `main` `4cb7154e4` (round 2
-of #888) #846 changed these definitions: the first line of the journal goes to the disk at the start of the Wycena
-(`run_started` → `_append_locked`, model `ZapiszStart`, its torn first line in `Zgasniecie` and its failed write that
-leaves the line, and a `Wpis` that writes the first line only while `_header` is set); `PricingJournal.progress` gives a
-progress only without `_header`; `RunLogs.run_ended` ends the progress (`_ended.add`) before the Logi and
-`RunLogs.progress` sends one only before that (model `Postep`, `KoniecUruchomienia`); the window can close before the
-first order (`Zatrzymanie` in `zaczete`). The start of Centrum and the removal of the journal after a failed end entry
-are those of #888. The model got the promises WersjaKoncowa (event `bezWersji`, ghost `postepMozliwy`) and WynikZostaje
-(event `wyparty`), the known finding `po-wpisie-konca` (#910) and four mutations.
+Sync commit: `ba4092817` (2026-11-05, #936 merged with `main` after #910 and #916). Every row of the table was checked against
+the code at this commit. Since the Sync commit `18bf04e33` of `main` only `guarded` changed (#936): it leaves the fields
+that carry only tool words and moments (`TOOL_FIELDS`: `process`, `mode`, `period`, `run_id`, `started_at`,
+`ended_at`, `ending` and the rest) and the keys of the Logs models without a mask, so no mask loses the whole Logs; the
+model has no step in which the guard masks or raises, so no action changed. Since the Sync commit `917cf6fc6` of `main`
+#910 changed these definitions: the
+version of a wysyłka has a rank before its moment (`Rank`, `Version`, `_version_of`, `_superseded` in `outbox.py`;
+`progress_post`, `logi_post`, `_logs_post`, `RunLogs.send` in `run_logs.py`), `RunEnded` carries the result, a failed
+end entry leaves the journal, `JournalAfterLogs` removes the journal once the queue accepted the Logi with the result
+(`RunLogs.queued`), and the start closes every journal with its first line with a stand-in version (`_closed`,
+`ResultWithoutLogs`). The model got the newest version of each comment the queue accepted (`najnowsza`, `Przyjmij` with
+the rank and the clock, `MaxCofniecZegara`), a progress that the queue takes (`Postep`), the action `UsunPoLogach`, the
+stand-in version in `Czytaj` and `Wyslij`, the promise LogiZostaja in place of WynikZostaje, the configuration `zegar`,
+and its WersjaKoncowa and DziennikPoKolejce read the newest version; the known finding `po-wpisie-konca` is gone. At
+`917cf6fc6`, since `2b2af53e4` (#846 after its split) only `guarded` changed: a mask in a typed field of the Logs (a
+`Decimal`, a date, a closed list) empties the field or drops its list element with a technical note, a top-level field
+without `None` raises `UnrepresentableLogs` instead of `ValidationError` (#936), and the loop of cuts ends after at most
+as many turns as the Logs have values. The model has no step in which the guard raises, so no action changed.
 
 ## Run
 
@@ -155,10 +176,8 @@ py -3 .agents\skills\verify-urwane-uruchomienie\scripts\sprawdz_urwane_uruchomie
 
 `--config NAME` runs one configuration, `--strict` fails also on known findings. Java and `tla2tools.jar` come from
 `verify-aktualizacja-narzedzia` (`sprawdz_aktualizacje.py` installs pinned `jdk4py` and the jar into `.verification/`
-on first use; `TLC_JAVA` and `TLC_JAR` override them). The whole check took 51 s on Maks's Mac on 2026-11-05 (#846 after
-its split, 20 known findings in 27 TLC runs, with other runs on the machine); the run of `wszystko` with its four known
-findings excused has 1 656 724 distinct states, and with two switch-offs instead of one it also passes, 6 848 507
-distinct states (both runs together 2 min 29 s).
+on first use; `TLC_JAVA` and `TLC_JAR` override them). The whole check took 2 min 23 s on Maks's Mac on 2026-11-05
+(#910, 15 known findings in 23 TLC runs, with other runs on the machine).
 
 The last line is the verdict:
 
@@ -203,22 +222,25 @@ Zatrzymanie at an order is an Atrapa order with an HTTP error page (both in
 `test_wycena_z_wynikiem_ktorej_jedyny_wpis_dziennika_zawiodl_po_zapisie_pierwszej_linii_nie_dostaje_logow_urwanego_uruchomienia`).
 The progress comment of a Wycena is the comment of its Uruchomienie in the issue Logów okresu of a box without
 `background` (`pricing` in `tests/test_centrum_logi_uruchomienia.py`, a minute of the Centrum clock per efenix request).
-The window of `po-wpisie-konca` is the end entry on the disk and the Logi with the result not in the queue: stop
-`RunLogs.run_ended` (as `test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie_zastepuje_ich_logami_urwanego_uruchomienia`
-does after the Logi) before `_keep`, then `centrum.restart()`. A path that does not happen on the code means the model is
-wrong until you show it is not.
+A switch-off between the end entry and the accepted Logi with the result holds `RunLogs.run_ended` before `_keep`
+(`test_centrum_zgaszone_po_wpisie_konca_a_przed_logami_z_wynikiem_konczy_komentarz_postepu_wynikiem_bez_logow`) or after
+it (`test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie_zastepuje_ich_logami_urwanego_uruchomienia`),
+then `centrum.restart()`. A clock that went back is a queue file whose name has a later moment than any wysyłka of the
+next work (`test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_przed_logami_urwanego_uruchomienia`).
+A path that does not happen on the code means the model is wrong until you show it is not.
 
 ## Configurations
 
 | Configuration | What can happen | Expected |
 | --- | --- | --- |
-| `zwykle` | two Wyceny of two orders, two switch-offs anywhere, no other failure | known `przed-wpisem-konca`, `po-wpisie-konca` |
-| `odczyt` | two Wyceny of one order, one switch-off, one start that cannot read a journal | known `przed-wpisem-konca`, `po-wpisie-konca` |
-| `logi-i-kolejka` | two Wyceny, one switch-off, one failed write of a Logs file, one `post` False, one failed `unlink` | known `przed-wpisem-konca`, `po-wpisie-konca` |
-| `koniec` | two Wyceny, one switch-off, one Zatrzymanie at an order or before the first, one journal write that fails (the first line, an entry or the end entry, or after the first line is on the disk), one failed `unlink`, one failed write of a Logs file | known `przed-wpisem-konca`, `wpis-konca-nieudany`, `wpis-nieudany`, `po-wpisie-konca` |
-| `wpisy` | one Wycena of two orders, one switch-off, one journal write that fails | known `przed-wpisem-konca`, `wpis-nieudany`, `po-wpisie-konca` |
-| `stare-logi` | Wycena 1 already cut, its Logi Urwanego Uruchomienia written without the guard and not sent, one more Wycena, one switch-off, one failed write of a Logs file | known `przed-wpisem-konca`, `zapis-logow-nieudany`, `po-wpisie-konca` |
-| `wszystko` | two Wyceny of two orders, one switch-off, one Zatrzymanie at an order or before the first and one failure of every kind | the four known findings of `koniec` |
+| `zwykle` | two Wyceny of two orders, two switch-offs anywhere, no other failure | known `przed-wpisem-konca` |
+| `odczyt` | two Wyceny of one order, one switch-off, one start that cannot read a journal | known `przed-wpisem-konca` |
+| `logi-i-kolejka` | two Wyceny, one switch-off, one failed write of a Logs file, one `post` False, one failed `unlink` | known `przed-wpisem-konca` |
+| `koniec` | two Wyceny, one switch-off, one Zatrzymanie at an order or before the first, one journal write that fails (the first line, an entry or the end entry, or after the first line is on the disk), one failed `unlink`, one failed write of a Logs file | known `przed-wpisem-konca`, `wpis-konca-nieudany`, `wpis-nieudany` |
+| `wpisy` | one Wycena of two orders, one switch-off, one journal write that fails | known `przed-wpisem-konca`, `wpis-konca-nieudany`, `wpis-nieudany` |
+| `stare-logi` | Wycena 1 already cut, its Logi Urwanego Uruchomienia written without the guard and not sent, one more Wycena, one switch-off, one failed write of a Logs file | known `przed-wpisem-konca`, `zapis-logow-nieudany` |
+| `wszystko` | two Wyceny of two orders, one switch-off, one Zatrzymanie at an order or before the first and one failure of every kind | the three known findings of `koniec` |
+| `zegar` | two Wyceny of one order, one switch-off, the clock goes back once while Centrum is closed, one failed write of a Logs file, one `post` False, one failed `unlink` | known `przed-wpisem-konca` |
 
 ## Known findings
 
@@ -228,13 +250,10 @@ for an event that happened with its cause (the history variables `zgubiony`, `po
 path is a new violation. Each cause is pinned to what the finding is about: `wpis-nieudany` to the orders whose own
 entry failed (`przepadle`), so an order missing from the Logi whose entries were written is a new violation;
 `przed-wpisem-konca` and `wpis-konca-nieudany` to a Wycena without a Logs file with its result, and
-`przed-wpisem-konca` also to a Wycena whose Logi with the result the queue did not accept, so Logi Urwanego Uruchomienia
-that would replace accepted Logi with the result after a plain switch-off are a new violation; `po-wpisie-konca` to the
-removals that rely on the result of the Wycena (the start's removal of a journal with the end entry or with a Logs file
-with the result, and `run_ended`'s removal after a failed end entry), so any other journal of a Wycena with a possible
-progress that disappears before the final version is a new violation. Each finding has its own run without the other
-known findings of its configuration, and the configuration one run without all of them. All five were replayed on the
-code.
+`przed-wpisem-konca` also to a Wycena whose Logi with the result the queue did not accept (a switch-off before the end
+entry is before the Logi). WersjaKoncowa and LogiZostaja have no known finding. Each finding has its own run without the
+other known findings of its configuration, and the configuration one run without all of them. All four were replayed on
+the code.
 
 1. **`przed-wpisem-konca`, BezUrwanychPoWyniku (accepted in #870/#871).** Centrum switches off after `run_process`
    returned with a result and before `PricingJournal.run_ended` wrote „koniec Uruchomienia” (in between: the metrics
@@ -256,19 +275,22 @@ code.
    Centrum na Uruchomienie, a Wycena biegnie dalej: ślad jest dla Maksa, a nie warunkiem pracy taty”. Replayed with a
    file in place of `logs/dzienniki-wyceny`, a real Centrum process killed after the Atrapa had a change: after the
    restart there is no journal and no Logs file.
-3. **`wpis-konca-nieudany`, BezUrwanychPoWyniku (accepted in #870/#871).** The end entry fails (`OSError`) and so does
-   `_remove` of the journal after it, and there is no Logs file with the result (Centrum switched off before it or its
-   `_write` failed): the start closes the journal as Logi Urwanego Uruchomienia, and when the Logi with the result went
-   to the queue without their file, these Logi replace them in the Skrzynka. Two failures of the journal at once and a
-   third event; with a full disk, the most likely shared cause, `unlink` succeeds and frees space, so the journal is
-   gone. The shortest path TLC shows (both journal failures, then a switch-off before the Logs) replaces nothing. A
-   Wycena whose first line no write confirmed (`_header`) gets the same finding only through a failed `unlink`: a failed
-   write may have left the journal with its first line (a Zatrzymanie before the first order or at it then ends the
-   Wycena with that line alone), and `run_ended` removes it.
-   Replayed with `Path.open` mode `"a"` of the journal raising after the metrics record and `Path.unlink` of the
-   journal raising during the Wycena: the journal stays with „zlecenie skończone” last and the Centrum log has
+3. **`wpis-konca-nieudany`, BezUrwanychPoWyniku (accepted in #870/#871, changed in #910).** The end entry fails
+   (`OSError`), so the journal stays without it, and the queue did not accept the Logi with the result in that Centrum
+   work (a switch-off before `JournalAfterLogs`, or `post` False), and there is no Logs file with the result (a
+   switch-off before it or its `_write` failed): the start cannot know that the Wycena reached its result and closes the
+   journal as Logi Urwanego Uruchomienia. A failed end entry plus a switch-off in the milliseconds before the Logs, or
+   three failures. When the queue had accepted the Logi with the result, they are a version of a higher rank, so these
+   Logi change nothing in the queue or in the Skrzynka; the comment gets them instead of „Uruchomienie trwa” forever,
+   which is what a failed end entry left before #910 (it removed the journal), and the card after the start shows the
+   Urwane Uruchomienie instead of the result. A Wycena whose first line no write confirmed (`_header`) gets the same
+   finding only through a failed `unlink`: a failed write may have left the journal with its first line (a Zatrzymanie
+   before the first order or at it then ends the Wycena with that line alone), and `run_ended` removes it. Replayed with
+   `Path.open` mode `"a"` of the journal raising after the metrics record and `Path.unlink` of the journal raising
+   during the Wycena, before #910: the journal stays with „zlecenie skończone” last and the Centrum log has
    `dziennik-wyceny-niedostepny typ=PermissionError miejsce=wpis` twice; with a file in place of `logs/uruchomienia`
-   too, the only comment of Logs in the Skrzynka changes from `ending` `finished` to `interrupted` after the start.
+   too, the only comment of Logs in the Skrzynka changed from `ending` `finished` to `interrupted` after the start,
+   which the rank now prevents.
 4. **`zapis-logow-nieudany`, TeSameZnaki (open, cannot happen at Dad's yet).** Logi Urwanego Uruchomienia written by a
    Centrum work before the guard (#851) and not sent: the start guards them, `RunLogs.close` fails (`OSError`), and the
    queue gets the masked text while the file keeps the phone number. No Wydanie has the journal (#845) without the
@@ -277,20 +299,15 @@ code.
    `[telefon]` in the Archiwum after a failed `close`. Replayed with such a file and a folder in place of its
    `.tmp`: the file has `600 123 456`, the file in the Archiwum `[telefon]`.
 
-5. **`po-wpisie-konca`, WersjaKoncowa (open, #910).** A Wycena that may have sent a progress reaches its result, and its
-   Logi with the result do not reach the queue after `run_ended` handled the end entry: Centrum switches off between the
-   end entry and the accepted Logi, `post` returns False, the Logi are not made (an exception in `RunLogs.run_ended`), or
-   the end entry fails and `run_ended` removes the journal before the Logi (#888). The journal disappears (the next start
-   removes a journal with the end entry, or with a Logs file with the result, without sending anything), so the comment
-   of the Uruchomienie in the issue okresu stays the progress „Uruchomienie trwa”. Why the start sends nothing: it does not
-   know whether the Logi with the result reached the queue, and a final version from the start would replace them there
-   (W1 of round 3 of #846: the result without Logi made the comment say „Pełne Logi: nie ma”, and without the network the
-   full Logi were lost; WynikZostaje and the mutation of round 3 guard it). #910 closes the window: first a model of the
-   order of the versions of one wysyłka, then the code. Replayed with `RunLogs.run_ended` held before `_keep` (the
-   journal has its end entry, the Logi are not made) and `centrum.restart()`: after the start the journal is gone and the
-   only comment of the Uruchomienie is the progress „Wynik: jeszcze nie ma, Uruchomienie trwa”.
+Decide 4 with Maks; when the code changes, the finding disappears and the check says `ZNALEZISKO ZNIKNĘŁO`.
 
-Decide 4 with Maks and 5 in #910; when the code changes, the finding disappears and the check says `ZNALEZISKO ZNIKNĘŁO`.
+Fixed in #910, gone from `model/oczekiwane.json`: `po-wpisie-konca` (WersjaKoncowa: a Wycena whose Logi with the result
+did not reach the queue after the end entry kept the progress „Uruchomienie trwa” forever, because the start removed a
+journal with the end entry without sending anything, so as not to replace Logi with the result the queue might have
+accepted). The start now sends a stand-in version of a rank between the progress and the Logi with the result, and
+`JournalAfterLogs` removes the journal once the Logi are accepted, so the start sends it only when they may not be.
+`tests/test_centrum_logi_uruchomienia.py` replays the window, the Logi accepted without their file with and without the
+network, and the clock that went back (D2 of #875), and the first and the last fail on `main` before the fix.
 
 Fixed in #870/#871, gone from `model/oczekiwane.json`: `wiersz-pozniejszej-wyceny` (DziennikPoKolejce: the start removed
 the journal of an Urwana Wycena it had once failed to read, because `RunCards._row` matched the Historia row of a later
@@ -324,31 +341,40 @@ to reproduce a red Mutation checks step or while you change the model. Each muta
 each gives `URWANE URUCHOMIENIE: NOWE NARUSZENIE`:
 
 - DziennikPoKolejce: the journal removed although `post` returned False (`send` without `if
-  self._run_logs.send(record)`, `logi-i-kolejka`); Logi Urwanego Uruchomienia from the file taken for Logi with a
-  result (`_closed` without `logged.ending != "interrupted"`); the end entry written before the metrics record (in
-  `save` or in `run_process` before `MetricsStore.append`: a journal cut between the two disappears without Logi).
-- BezUrwanychPoWyniku: `_closed` without `read.ended`; no end entry at all (`after_run` without `journal`);
-  `after_run` with `run_logs` before `journal` (`koniec`: Logi with the result accepted without their file, a
-  switch-off before the end entry, and Logi Urwanego Uruchomienia replace them); `run_ended` without `_remove` after a
-  failed end entry (`koniec`); `run_ended` returning on `self._header` without `_remove` (`koniec`: the first entry
-  fails after its first line is on the disk, the Wycena stops at that order, and the start gives it Logi Urwanego
-  Uruchomienia); `_closed` without `return None` for Logs with a result (`koniec`: a Wycena whose end
-  entry and `unlink` failed gets Logi Urwanego Uruchomienia although its Logs with the result exist).
+  self._run_logs.send(final)`, `logi-i-kolejka`); the end entry written before the metrics record (in `save` or in
+  `run_process` before `MetricsStore.append`: a journal cut between the two disappears without Logi); the version only
+  from the moment, without a rank, after the clock went back (`zegar`: the progress in the queue is newer than the Logi
+  Urwanego Uruchomienia of the start, which the queue drops, D2 of #875).
+- BezUrwanychPoWyniku: `_closed` without `read.end`; no end entry at all (`after_run` without `journal`); `after_run`
+  with `run_logs` before `journal` (`koniec`: Logi with the result accepted without their file, a switch-off before the
+  end entry, and the start gives the Wycena Logi Urwanego Uruchomienia); `run_ended` returning on `self._header` without
+  `_remove` (`koniec`: the first entry fails after its first line is on the disk, the Wycena stops at that order, and
+  the start gives it Logi Urwanego Uruchomienia).
 - TeSameZnaki: the Logs file written before the guard (`guard` after `RunLogs.close`).
 - PrzezStraznika: `_closed` without `record = self._run_logs.guard(record)`.
-- NicPrzedWznowieniem: the Logi sent in `create_app` right after `close`, not in the dependency of the first request.
+- NicPrzedWznowieniem: the stand-in version sent in `create_app` right after `close`, not in the dependency of the first
+  request.
 - ZaczeteWLogach: `_read` without the order begun without a result; `journal.begun` after the first window action;
   `PricingJournal._write` starting with `if self._failed: return` (`wpisy`: after one failed entry the journal writes
   nothing more, so an order without a failed entry of its own is missing from the Logi).
 - WersjaKoncowa: `PricingJournal.progress` without `self._header` (`wpisy`: the write of the first line at the start
   fails, the progress goes, Centrum switches off before the next entry, and no journal can finish the comment, W1 of
-  round 1 of #846); `_append_locked` clearing `_header` also after `OSError` (`wpisy`: the first line never reaches the
-  disk, so the start removes a journal without a start while its progress is in the Skrzynka).
-- WynikZostaje: `RunLogs.progress` without `if run_id in self._ended: return False`, or `_ended.add` after `_keep`
-  (`zwykle`: the progress comes after the accepted Logi with the result); the start of round 3 of #846 that sends the
-  result without Logi for a journal with the end entry and without a Logs file (`logi-i-kolejka`: the Logs file failed,
-  the queue took the Logi with the result, and the start replaces them).
+  round 1 of #846); `_append_locked` clearing `_header` also after `OSError` (`wpisy`); a failed end entry that removes
+  the journal (`run_ended` as in #888, `wpisy`); the start that removes a journal with a Logs file without sending it
+  (`_closed` as on `main` before #910, `zwykle`); `logs_queued` without `RunLogs.queued` (`logi-i-kolejka`: `post` of
+  the Logi with the result returns False, and the journal disappears); the progress of the rank of the stand-in version
+  (`progress_post` with `Rank.STAND_IN`, `zegar`); the whole start of `main` before #910 (`zwykle`: the start removes a
+  journal with the end entry without sending anything, W2 of #875).
+- LogiZostaja: the version only from the moment, without a rank (`logi-i-kolejka`: the Logs file failed, the queue
+  took the Logi with the result, Centrum switches off before `JournalAfterLogs`, and the result without Logi of the start
+  is newer, W1 of round 3 of #846); the stand-in version of the rank of the Logi with the result (`RunLogs.send` with
+  `Rank.OWN`, `logi-i-kolejka`).
 - Zbieganie: `send` without `_remove(path, ...)`; `close` without `if closed is None: _remove(path, ...)`.
+
+`RunLogs.progress` without `if run_id in self._ended: return False`, or `_ended.add` after `_keep`, breaks no promise
+since #910: a progress after the Logi with the result has a lower rank and changes nothing. `_ended` still ends the
+progress timer, which the test
+`test_postep_wyceny_w_efenix_ktorego_budzik_dzwoni_gdy_jej_logi_sa_juz_w_kolejce_nie_cofa_podsumowania` checks.
 
 A mutation reported as `NIEAKTUALNA` no longer matches the model: rewrite its anchor against the new model so that it
 breaks the same rule again.
@@ -370,31 +396,37 @@ reason the check can pass while the code is wrong:
   changes nothing; only Logs written without the guard (`StareLogi`) change. A number the guard masked becomes the text
   of its mask, which it leaves as it is. Idempotent means one version of the guard: Logs written by a Centrum whose
   guard masked less (before #851 nothing, before #863 the phone with `48` without `+`) are `StareLogi` for a newer one.
+  It also means the memory of a start: the start guards before it reads any file of Dad's (ADR 0025). With the memory
+  that wrote the Logs, a value equal to a field name in the place of a guard note is masked again in that note (5 of the
+  words of the full Logs in the test of #936, 6 before it), but no step guards Logs twice with one memory.
 - **A journal without its end entry is an Urwane Uruchomienie or one of the known findings `przed-wpisem-konca` and
   `wpis-konca-nieudany`.** A journal written by a build between #845 and #870/#871 has no end entry either, so a Wycena
   of such a build that reached its result without a Logs file gets Logi Urwanego Uruchomienia; no Wydanie has such a
   build (v0.4.3 has no journal), so only Maks's computers can have such a journal. Every Uruchomienie that reached its
-  result reaches `RunHost.after` (`_Run.work` catches an exception of `run_process` and goes on), and `run_ended`
-  removes the journal it gives no end entry (a failed end entry, or no write that confirmed the first line), so only a
-  switch-off before `run_ended` or a failed `unlink` leaves the journal of a Wycena with a result without its end entry.
+  result reaches `RunHost.after` (`_Run.work` catches an exception of `run_process` and goes on).
+- **The queue keeps the newest version by `Version`** (rank, then the moment), as `verify-kolejka-skrzynki` checks, so
+  the model keeps only the newest version each comment got (`najnowsza`). Its moments are abstract: a later `post` in one
+  Centrum work has a later moment (`Outbox.post`), and a version of an earlier work an earlier one, unless the clock
+  went back at a start since then (`cofniety`), when the order is either. Two versions of one rank compare by the moment
+  only within one Centrum work (progresses; the Logi with the result and the Diagnoza, which the model leaves out) or
+  between stand-in versions of one journal from two starts (a failed `unlink`), which have the same kind.
 - **A progress is possible from the first line on the disk on**: the model counts it from `ZapiszStart` or the first
   successful `Wpis` to the end of the Wycena, the earliest `ProgressComment` can send it, so every journal that may have
   a progress in the Skrzynka is checked; a progress that did not come yet only makes the check stricter.
 - **`RunLog.model_validate_json(text).text == text`** for a file `close` wrote, and two builds of the same journal give
   Logs with the same orders; their environment, tool and Dad's actions may differ, which the model leaves out. A rebuild
-  happens only when the file is missing, so the file and the newest accepted Logi stay the same, unless the clock went
-  back between two Centrum works (the queue's version order, `verify-kolejka-skrzynki`).
+  happens only when the file is missing, so the file and the newest accepted Logi have the same orders, whichever of
+  two stand-in versions of one journal the clock makes newer.
 
 Left out: a glob of `logs/dzienniki-wyceny/` that fails (it skips every journal, like one failed read per journal), a
-Logs file that cannot be parsed (truncated by hand, a schema from a newer version after a rollback: `close` takes it as
-a result and removes the journal), a torn entry in the middle of a journal (counted in `omitted`), a failed write that
-left a torn first line (`run_ended` removes it like a whole one, and a start removes a journal without a start), the
+Logs file that cannot be parsed (truncated by hand, a schema from a newer version after a rollback: `_closed` sends the
+result without Logi, `"nieczytelne"`), a torn entry in the middle of a journal (counted in `omitted`), a failed write
+that left a torn first line (`run_ended` removes it like a whole one, and a start removes a journal without a start), the
 Historia (no step of this path reads it), exceptions other than `OSError` in `close`, `send` or `run_ended` (one in
-`RunLogs.run_ended` leaves the Logi with the result out of the queue, like `post` False: `po-wpisie-konca`), the text of
-the progress, a progress the queue refused (the next refresh tries again), the order of the versions in the queue
-(`verify-kolejka-skrzynki`: the newer version replaces the older one, the progress the Logi only while the clock does not
-go back), Dad's actions in the Logs (`DadActionJournal.take`), and the
-karta after the start (`RunCards.last`, which shows the Urwane Uruchomienie for `przed-wpisem-konca`).
+`RunLogs.run_ended` leaves the Logi with the result out of the queue, like `post` False: the journal stays for the
+stand-in version), the text of the progress and of the result without Logi, the Diagnoza (a newer version of the Logi
+with the result, of their rank and Centrum work), Dad's actions in the Logs (`DadActionJournal.take`), and the karta after
+the start (`RunCards.last`, which shows the Urwane Uruchomienie for `przed-wpisem-konca` and `wpis-konca-nieudany`).
 
 ## Files
 

@@ -166,7 +166,7 @@ MUTATIONS = (
     ),
     Mutation(
         "Diagnoza dopisuje komentarz zamiast poprawić (_put: edit_comment)",
-        (Edit(MODEL, 'ELSE IF Wersja(i, w, k) < w THEN "popraw"\n', 'ELSE IF Wersja(i, w, k) < w THEN "dopisz"\n'),),
+        (Edit(MODEL, 'ELSE IF Nr(Wersja(i, w, k)) < Nr(w) THEN "popraw"\n', 'ELSE IF Nr(Wersja(i, w, k)) < Nr(w) THEN "dopisz"\n'),),
         _check("diagnoza"),
         "Uruchomienie po Diagnozie ma w issue okresu dwa komentarze z tą samą częścią Logów",
         NEW,
@@ -278,10 +278,10 @@ MUTATIONS = (
             ),
             Edit(
                 MODEL,
-                "    /\\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, "
+                "    /\\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, "
                 "bezZnacznika,\n                   arch, odmowaArch, passes,",
                 "    /\\ pc'[q] = \"plik\" \\/ UNCHANGED rejected\n"
-                "    /\\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, lista, biez, "
+                "    /\\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, lista, czytane, biez, "
                 "bezZnacznika,\n                   arch, odmowaArch, passes,",
             ),
         ),
@@ -352,7 +352,7 @@ MUTATIONS = (
     Mutation(
         "plik w Archiwum bez sprawdzenia wersji z etykiety: kolejka usuwa swój plik i wysyła go drugi raz "
         "(_deliver_archive: seen >= version)",
-        (Edit(MODEL, "                  ELSE IF \\E i \\in moje : archiwum[i] >= w\n", "                  ELSE IF FALSE\n"),),
+        (Edit(MODEL, "                  ELSE IF \\E i \\in moje : Nr(archiwum[i]) >= Nr(w)\n", "                  ELSE IF FALSE\n"),),
         _check("archiwum"),
         "plik Logów, którego odpowiedź na upload zginęła, idzie do Archiwum drugi raz",
         NEW,
@@ -409,8 +409,8 @@ MUTATIONS = (
     ),
     Mutation(
         "zastąpienie bez nowszej wersji tej samej wysyłki (_superseded: cel i run_id)",
-        (Edit(MODEL, "Nowszy(q, w) == \\E v \\in Zakres(Tail(lista[q])) : Id(v) = Id(w) /\\ ",
-              "Nowszy(q, w) == \\E v \\in Zakres(Tail(lista[q])) : TRUE /\\ "),),
+        (Edit(MODEL, "Nowszy(q, w) == \\E v \\in czytane[q] : Id(v) = Id(w) /\\ ",
+              "Nowszy(q, w) == \\E v \\in czytane[q] : TRUE /\\ "),),
         _check("okres"),
         "Kontrola ilości okresu dostaje znacznik bez wysłania, bo za nią w kolejce czeka inna Kontrola tego okresu",
         NEW,
@@ -425,6 +425,35 @@ MUTATIONS = (
               "                         /\\ nieczytany' = nieczytany\n"),),
         _check("diagnoza"),
         "Logi z Diagnozą, których pliku przejście nie odczytało, czekają w kolejce bez budzika RETRY_S do następnego startu",
+        NEW,
+    ),
+    Mutation(
+        "zastąpienie przez plik dalej na liście, bez porządku wersji (_superseded jak przed #910: najnowsza to ostatnia "
+        "nazwa)",
+        (Edit(MODEL, "Nowszy(q, w) == \\E v \\in czytane[q] : Id(v) = Id(w) /\\ Nr(v) > Nr(w)\n",
+              "Nowszy(q, w) == \\E v \\in Zakres(Tail(lista[q])) \\cap czytane[q] : Id(v) = Id(w)\n"),),
+        _check("starsza"),
+        "bez sieci wersja zastępcza ze startu Centrum zdejmuje z kolejki Logi z wynikiem, które czekają przed nią, i "
+        "idzie do Skrzynki zamiast nich",
+        NEW,
+    ),
+    Mutation(
+        "issue z nowszą wersją po nazwie pliku, bez stopnia (_settle i _put: wersja jak przed #910)",
+        (
+            Edit(MODEL, "Moj(issues[i].tresc[j], w) /\\ Nr(issues[i].tresc[j][1]) > Nr(w)",
+                 "Moj(issues[i].tresc[j], w) /\\ issues[i].tresc[j][1] > w"),
+            Edit(MODEL, "    ELSE IF Nr(Wersja(i, w, k)) < Nr(w) THEN \"popraw\"", "    ELSE IF Wersja(i, w, k) < w THEN \"popraw\""),
+        ),
+        _check("starsza"),
+        "wersja zastępcza doszła do Skrzynki pierwsza (Logi z wynikiem raz nieczytelne), a Logi z wynikiem potem niczego "
+        "w issue nie zmieniają: komentarz zostaje wersją zastępczą",
+        NEW,
+    ),
+    Mutation(
+        "plik w Archiwum w wersji po nazwie pliku, bez stopnia (_deliver_archive: _asset_version jak przed #910)",
+        (Edit(MODEL, "ELSE IF \\E i \\in moje : Nr(archiwum[i]) >= Nr(w)", "ELSE IF \\E i \\in moje : archiwum[i] >= w"),),
+        _check("starsza"),
+        "plik wersji zastępczej zostaje w Archiwum, a pliku Logów z wynikiem, które przyszły po nim, kolejka nie wysyła",
         NEW,
     ),
     Mutation(

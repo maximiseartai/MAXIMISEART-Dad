@@ -28,9 +28,13 @@
 (* Archiwum, która trwa (repozytorium bez commitu: 409), zatrzymuje tylko  *)
 (* plik: części każdej wysyłki dochodzą (Zbieganie przy PusteRepo).        *)
 (*                                                                         *)
-(* Plik, za którym w tym samym przejściu leży nowsza wersja tej samej      *)
-(* wysyłki, kolejka oznacza i usuwa bez wysyłania (_superseded, #846).     *)
-(* Postęp Wyceny w efenix to starsza wersja Logów bez pliku do Archiwum.   *)
+(* Plik, gdy przejście odczytało plik nowszej wersji tej samej wysyłki,  *)
+(* kolejka oznacza i usuwa bez wysyłania (_superseded, #846). Postęp       *)
+(* Wyceny w efenix to starsza wersja Logów bez pliku do Archiwum. Wersja   *)
+(* to stopień, potem chwila (#910, outbox.py Version), więc wersja         *)
+(* zastępcza ze startu Centrum, wysłana po Logach z wynikiem, może być     *)
+(* od nich starsza (StarszaPozniej): porządek wersji to Nr, nie kolejność  *)
+(* wysyłek.                                                                *)
 (*                                                                         *)
 (* Listy GitHuba (issue, Release'y) pokazują nowe issue i Archiwum z      *)
 (* opóźnieniem (#879, #887): KeyedBox dopisuje do list to, co założył on  *)
@@ -70,6 +74,8 @@ CONSTANTS
                     \* empty.” na każde założenie Archiwum (report_box.py GitHubReportBox.open_archive: Rejected)
     Postep,         \* wysyłka 1 to postęp Wyceny w efenix, starsza wersja Logów wysyłki 2 bez pliku do Archiwum
                     \* (run_logs.py progress_post, pricing_progress.py)
+    StarszaPozniej, \* wysyłka 2 to wersja zastępcza ze startu Centrum (Rank.STAND_IN: Logi z pliku), starsza od Logów
+                    \* z wynikiem wysyłki 1 (Rank.OWN), choć jej plik kolejki powstał później (#910)
     OpoznienieListy, \* listy GitHuba (labelled_issues, archive) pokazują nowe issue i Archiwum po kilku sekundach
     \* Znane znaleziska (oczekiwane.json), każde przy jednej obietnicy: ślady przyczyn, po których wariant
     \* ...PozaZnanymi tej obietnicy ją pomija. Pozostałe obietnice tego przebiegu sprawdza dalej w całości.
@@ -87,6 +93,8 @@ ASSUME Archiwum => Cel = "okres" /\ Naglowek /\ Czesci = 1 /\ CzesciNowszej = 1
 ASSUME PusteRepo => Archiwum
 \* Postęp to starsza wersja Logów (ten sam run_id i etykieta), a pełne Logi na końcu niosą plik do Archiwum.
 ASSUME Postep => Diagnoza /\ Archiwum
+\* Wersja zastępcza to wersja Logów z plikiem do Archiwum (InterruptedPricings.send, RunLogs.send) po Logach z wynikiem.
+ASSUME StarszaPozniej => Diagnoza /\ Archiwum /\ ~Postep
 
 W == 1..Wysylek
 \* Identyfikator wysyłki w (etykieta i run_id w znaczniku): przy Diagnozie wysyłka 2 to wersja wysyłki 1.
@@ -96,6 +104,10 @@ Liczba(w) == IF Diagnoza /\ w = 2 THEN CzesciNowszej ELSE Czesci
 Najwiecej == IF CzesciNowszej > Czesci THEN CzesciNowszej ELSE Czesci
 \* Wysyłka w niesie plik do Archiwum (Post.archive); postęp Wyceny w efenix (wysyłka 1 przy Postep) go nie ma.
 MaPlik(w) == Archiwum /\ ~(Postep /\ w = 1)
+\* Miejsce wersji wysyłki w w porządku wersji (outbox.py Version: stopień, potem chwila i numer z nazwy pliku): kolejność
+\* wysyłek, a przy StarszaPozniej wysyłka 2 jest starsza od wysyłki 1. Znacznik części i etykieta pliku w Archiwum niosą
+\* wysyłkę w, a kolejka porównuje ich Nr (_settle, _put, _deliver_archive, _superseded).
+Nr(w) == IF StarszaPozniej /\ w \in {1, 2} THEN 3 - w ELSE w
 Q == 1..Kolejki
 \* Proces kolejki q: każda w swoim, gdy DwaProcesy, inaczej obie w jednym (wspólne _PASSES).
 Proc(q) == IF DwaProcesy THEN q ELSE 1
@@ -132,6 +144,8 @@ VARIABLES
     bezBlokady,    \* Outbox._locked_out: przejście zastało blokadę folderu u kolejki innego procesu
     undeleted, rejected,             \* Outbox._undeleted, _rejected (nazwy plików)
     lista,         \* pliki tego przejścia jeszcze nie obsłużone (sorted(glob("*.json")) w _send_all)
+    czytane,       \* pliki, które przejście odczytało na początku (read w _send_all, bez _undeleted i _rejected), z
+                   \* których _superseded bierze najnowszą wersję każdej wysyłki
     biez,          \* plik, który przejście właśnie wysyła
     nr,            \* numer issue tej wysyłki (otwarte albo znalezione)
     kom,           \* części do zapisania po kolei, każda <<część, "dopisz">> (comment, _comment_all),
@@ -161,8 +175,8 @@ VARIABLES
     slady          \* przyczyny znanych znalezisk, które już się zdarzyły
 
 dysk == <<plik, tmp>>
-watek == <<pc, draining, again, armed, stopped, nieczytany, bezBlokady, undeleted, rejected, lista, biez, nr, kom, bezZnacznika,
-           arch, po, odmowaArch>>
+watek == <<pc, draining, again, armed, stopped, nieczytany, bezBlokady, undeleted, rejected, lista, czytane, biez, nr, kom,
+           bezZnacznika, arch, po, odmowaArch>>
 archiwa == <<archiwum, wydania, podwojny>>
 nadawanie == <<nadawca, przez, zakolejkowane, odrzucone>>
 awarie == <<sieci, zgubione, odmowy, odmowyArchiwum, bledyPliku, wylaczenia>>
@@ -194,7 +208,7 @@ TypeOK ==
     /\ armed \in [Q -> BOOLEAN] /\ stopped \in [Q -> BOOLEAN] /\ nieczytany \in [Q -> BOOLEAN]
     /\ bezBlokady \in [Q -> BOOLEAN]
     /\ undeleted \in [Q -> SUBSET W] /\ rejected \in [Q -> SUBSET W]
-    /\ lista \in [Q -> Seq(W)] /\ biez \in [Q -> W] /\ nr \in [Q -> Nat]
+    /\ lista \in [Q -> Seq(W)] /\ czytane \in [Q -> SUBSET W] /\ biez \in [Q -> W] /\ nr \in [Q -> Nat]
     /\ kom \in [Q -> Seq((1..Najwiecej) \X Zapisy)] /\ bezZnacznika \in [Q -> BOOLEAN]
     /\ passes \in [Procesy -> {"wolny", "zajety", "prosba"}]
     /\ blokada \in Q \cup {0}
@@ -222,7 +236,7 @@ Init ==
     /\ armed = [q \in Q |-> FALSE] /\ stopped = [q \in Q |-> FALSE] /\ nieczytany = [q \in Q |-> FALSE]
     /\ bezBlokady = [q \in Q |-> FALSE]
     /\ undeleted = [q \in Q |-> {}] /\ rejected = [q \in Q |-> {}]
-    /\ lista = [q \in Q |-> <<>>] /\ biez = [q \in Q |-> 1] /\ nr = [q \in Q |-> 0]
+    /\ lista = [q \in Q |-> <<>>] /\ czytane = [q \in Q |-> {}] /\ biez = [q \in Q |-> 1] /\ nr = [q \in Q |-> 0]
     /\ kom = [q \in Q |-> <<>>] /\ bezZnacznika = [q \in Q |-> FALSE]
     /\ passes = [p \in Procesy |-> "wolny"]
     /\ blokada = 0
@@ -264,23 +278,23 @@ Swoje(w, q, zna) == Najwyzszy({i \in Widoczne(q, zna) : Moj(issues[i].tresc[1], 
 OdczytyZapisow == IF OpoznienieListy /\ bledyPliku < MaxBledowPliku THEN {TRUE, FALSE} ELSE {TRUE}
 \* Część k wysyłki w jest w issue i w tej wersji albo nowszej (Diagnoza ją poprawiła).
 Ma(i, w, k) == \E j \in 1..Len(issues[i].tresc) :
-                 Moj(issues[i].tresc[j], w) /\ issues[i].tresc[j][2] = k /\ issues[i].tresc[j][1] >= w
+                 Moj(issues[i].tresc[j], w) /\ issues[i].tresc[j][2] = k /\ Nr(issues[i].tresc[j][1]) >= Nr(w)
 \* Każda część wysyłki w jest w jednym issue (w treści albo w komentarzu), w tej wersji albo nowszej.
 WIssue(w) == \E i \in 1..Len(issues) : \A k \in 1..Liczba(w) : Ma(i, w, k)
 \* Pliki wysyłki w w Archiwum (każda wersja) i czy jest wśród nich plik w tej wersji albo nowszej.
 Pliki(w) == {i \in 1..Len(archiwum) : Id(archiwum[i]) = Id(w)}
-WArchiwum(w) == ~MaPlik(w) \/ \E i \in Pliki(w) : archiwum[i] >= w
+WArchiwum(w) == ~MaPlik(w) \/ \E i \in Pliki(w) : Nr(archiwum[i]) >= Nr(w)
 \* Wysyłka w jest w Skrzynce cała: każda część w issue i plik w Archiwum.
 Dostarczona(w) == WIssue(w) /\ WArchiwum(w)
 \* Wysyłka w ma w kolejce nowszą wersję (Diagnoza): jej plik może zniknąć bez swoich części, bo Skrzynce należy się
 \* nowsza.
-Zastapiona(w) == \E v \in zakolejkowane : v > w /\ Id(v) = Id(w)
+Zastapiona(w) == \E v \in zakolejkowane : Nr(v) > Nr(w) /\ Id(v) = Id(w)
 \* Żaden komentarz wysyłki w (część k > 0; nagłówka w treści issue kolejka nie zmienia) nie jest w wersji starszej
 \* niż w.
 BezStarszych(w) ==
     /\ \A i \in 1..Len(issues) : \A j \in 1..Len(issues[i].tresc) :
-         LET e == issues[i].tresc[j] IN Moj(e, w) /\ e[2] > 0 => e[1] >= w
-    /\ \A i \in Pliki(w) : archiwum[i] >= w
+         LET e == issues[i].tresc[j] IN Moj(e, w) /\ e[2] > 0 => Nr(e[1]) >= Nr(w)
+    /\ \A i \in Pliki(w) : Nr(archiwum[i]) >= Nr(w)
 \* Miejsca w Skrzynce, w których jest część k wysyłki w, w każdej wersji.
 Miejsca(w, k) == UNION {{<<i, j>> : j \in {m \in 1..Len(issues[i].tresc) :
                                              Moj(issues[i].tresc[m], w) /\ issues[i].tresc[m][2] = k}} :
@@ -390,6 +404,9 @@ Zapis(q, r, zna) ==
 
 \* --- Wątek skrzynka-kolejka ----------------------------------------------------
 
+\* sorted(glob("*.json")) w _send_all: pliki kolejki po nazwie (bez *.json.tmp i przejscie.lock).
+PlikiPrzejscia == SelectSeq([i \in 1..Wysylek |-> i], LAMBDA w : plik[w] \in {"czeka", "skomentowany", "oznaczony"})
+
 \* outbox.py Outbox._drain: początek pętli while, _claimed, potem _folder_lock. Kolejka, która zastanie
 \* przejście innej kolejki tego folderu w swoim procesie, tylko prosi o następne (_PASSES = True) i nie wysyła.
 \* Zajęta kolejka bierze blokadę folderu bez czekania (_locked); gdy trzyma ją kolejka innego procesu,
@@ -406,32 +423,34 @@ Petla(q) ==
                THEN /\ blokada' = q
                     /\ nieczytany' = Ustaw(nieczytany, q, FALSE)
                     /\ odmowaArch' = Ustaw(odmowaArch, q, FALSE)
-                    /\ lista' = Ustaw(lista, q, SelectSeq([i \in 1..Wysylek |-> i],
-                                                          LAMBDA w : plik[w] \in {"czeka", "skomentowany", "oznaczony"}))
+                    /\ lista' = Ustaw(lista, q, PlikiPrzejscia)
+                    /\ czytane' = Ustaw(czytane, q, {w \in Zakres(PlikiPrzejscia) : w \notin rejected[q] \cup undeleted[q]})
                     /\ Idz(q, "plik", "_drain: _claimed, _folder_lock, _send_all bierze pliki kolejki po nazwie")
-               ELSE /\ UNCHANGED <<blokada, lista, nieczytany, odmowaArch>>
+               ELSE /\ UNCHANGED <<blokada, lista, czytane, nieczytany, odmowaArch>>
                     /\ Idz(q, "zwolnij", "_drain: _claimed, blokade folderu trzyma kolejka innego procesu, _locked_out")
        ELSE /\ passes' = Ustaw(passes, Proc(q), "prosba")
-            /\ UNCHANGED <<blokada, lista, nieczytany, bezBlokady, odmowaArch>>
+            /\ UNCHANGED <<blokada, lista, czytane, nieczytany, bezBlokady, odmowaArch>>
             /\ Idz(q, "decyzja", "_drain: _claimed zastaje przejscie innej kolejki, prosi o nastepne")
     /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, again, armed, stopped, undeleted, rejected, biez, nr, kom,
                    bezZnacznika, arch, po, zamkniecia, nadawanie, awarie, slady>>
 
-\* outbox.py _superseded: za plikiem w w liście tego przejścia jest plik nowszej wersji tej samej wysyłki (ten sam cel
-\* i run_id: Id), poza _rejected i _undeleted; _send_all czyta pliki przejścia na początku (_read).
-Nowszy(q, w) == \E v \in Zakres(Tail(lista[q])) : Id(v) = Id(w) /\ v \notin rejected[q] \cup undeleted[q]
-                                                  /\ plik[v] \in {"czeka", "skomentowany", "oznaczony"}
+\* outbox.py _superseded: przejście odczytało na początku (_read) plik nowszej wersji tej samej wysyłki (ten sam cel i
+\* run_id: Id), poza _rejected i _undeleted, także plik przed w na liście (wersja zastępcza po Logach z wynikiem).
+Nowszy(q, w) == \E v \in czytane[q] : Id(v) = Id(w) /\ Nr(v) > Nr(w)
+\* Plik nowszej wersji jest dalej na liście, więc przejście jeszcze go nie obsłużyło: model rozstrzyga jego odczyt teraz.
+NowszyDalej(q, w) == \E v \in Zakres(Tail(lista[q])) \cap czytane[q] : Id(v) = Id(w) /\ Nr(v) > Nr(w)
 
 \* outbox.py Outbox._send_all, jeden plik: _undeleted (_remove), _rejected (pomija), _queued (odczyt:
 \* nieczytelny albo usunięty przez inny proces plik pomija, a OSError ustawia _read_failed), delivered
-\* (_remove), plik, za którym jest nowsza wersja tej wysyłki (_superseded: _mark_delivered bez wysyłania; gdy nowszej nie
-\* da się odczytać, ten idzie jak zwykle, a nowsza czeka na budzik), commented (_deliver_archive, sam plik do
+\* (_remove), plik, gdy przejście odczytało nowszą wersję tej wysyłki, przed nim albo za nim (_superseded:
+\* _mark_delivered bez wysyłania; gdy nowszej za nim nie da się odczytać, ten idzie jak zwykle, a nowsza czeka na
+\* budzik), commented (_deliver_archive, sam plik do
 \* Archiwum), potem _deliver. Koniec listy: self._stopped_on = None.
 Plik(q) ==
     /\ pc[q] = "plik"
     /\ IF lista[q] = <<>>
        THEN /\ stopped' = Ustaw(stopped, q, FALSE)
-            /\ UNCHANGED <<lista, biez, nieczytany, bledyPliku, slady, arch, po>>
+            /\ UNCHANGED <<lista, czytane, biez, nieczytany, bledyPliku, slady, arch, po>>
             /\ Idz(q, "zwolnij", "_send_all: koniec plikow, _stopped_on = None")
        ELSE LET w == Head(lista[q])
                 dalej == Ustaw(lista, q, Tail(lista[q]))
@@ -441,52 +460,57 @@ Plik(q) ==
             /\ UNCHANGED stopped
             /\ CASE w \in undeleted[q] ->
                       /\ lista' = dalej
-                      /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
+                      /\ UNCHANGED <<czytane, nieczytany, bledyPliku, slady, po>>
                       /\ Idz(q, "usun", "_send_all: plik w _undeleted, _remove")
                  [] w \in rejected[q] ->
                       /\ lista' = dalej
-                      /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
+                      /\ UNCHANGED <<czytane, nieczytany, bledyPliku, slady, po>>
                       /\ Idz(q, "plik", "_send_all: plik w _rejected, czeka do nastepnego startu")
                  [] OTHER ->
                       \/ /\ AwariaOdczytu /\ bledyPliku < MaxBledowPliku /\ plik[w] /= "usuniety"
                          /\ lista' = dalej
                          /\ bledyPliku' = bledyPliku + 1
                          /\ nieczytany' = Ustaw(nieczytany, q, TRUE)
+                         \* _read na początku przejścia dał None, więc ten plik nie wypiera starszej wersji (_superseded).
+                         /\ czytane' = Ustaw(czytane, q, czytane[q] \ {w})
                          /\ UNCHANGED <<slady, po>>
                          /\ Idz(q, "plik", "_queued: read_text rzuca OSError, _read_failed, _skip_unreadable pomija plik")
                       \/ /\ plik[w] = "usuniety"
                          /\ lista' = dalej
                          /\ nieczytany' = Ustaw(nieczytany, q, TRUE)
+                         /\ czytane' = Ustaw(czytane, q, czytane[q] \ {w})
                          /\ UNCHANGED <<bledyPliku, slady, po>>
                          /\ Idz(q, "plik", "_queued: pliku juz nie ma (usunal go inny proces), _read_failed, _skip_unreadable")
                       \/ /\ plik[w] = "oznaczony"
                          /\ lista' = dalej
-                         /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
+                         /\ UNCHANGED <<czytane, nieczytany, bledyPliku, slady, po>>
                          /\ Idz(q, "usun", "_queued: plik ze znacznikiem dostarczenia, _remove")
                       \/ /\ plik[w] \in {"czeka", "skomentowany"} /\ Nowszy(q, w)
                          /\ lista' = dalej
-                         /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
-                         /\ Idz(q, "dostarczona", "_superseded: za plikiem jest nowsza wersja tej wysylki, znacznik bez wysylania")
-                      \/ /\ plik[w] \in {"czeka", "skomentowany"} /\ Nowszy(q, w)
+                         /\ UNCHANGED <<czytane, nieczytany, bledyPliku, slady, po>>
+                         /\ Idz(q, "dostarczona", "_superseded: przejscie odczytalo nowsza wersje tej wysylki, znacznik bez wysylania")
+                      \/ /\ plik[w] \in {"czeka", "skomentowany"} /\ NowszyDalej(q, w)
                          /\ AwariaOdczytu /\ bledyPliku < MaxBledowPliku
                          \* _send_all czyta pliki na początku przejścia (_read), więc nowsza wersja, której odczyt padł,
                          \* nie wypiera tej, a gdy przejście do niej dojdzie, _skip_unreadable ją pomija do budzika
-                         \* RETRY_S (_read_failed): przejście bierze ją z listy już teraz.
+                         \* RETRY_S (_read_failed): przejście bierze ją z listy już teraz. Nowsza wersja przed tym plikiem
+                         \* na liście ma już swój odczyt za sobą (czytane).
                          /\ lista' = Ustaw(lista, q, SelectSeq(Tail(lista[q]), LAMBDA v : Id(v) /= Id(w)))
                          /\ bledyPliku' = bledyPliku + 1
                          /\ nieczytany' = Ustaw(nieczytany, q, TRUE)
+                         /\ czytane' = Ustaw(czytane, q, {v \in czytane[q] : v \notin Zakres(Tail(lista[q])) \/ Id(v) /= Id(w)})
                          /\ po' = IF plik[w] = "skomentowany" THEN Ustaw(po, q, "dostarczona") ELSE po
                          /\ UNCHANGED slady
                          /\ Idz(q, IF plik[w] = "skomentowany" THEN "archiwum" ELSE "szukaj",
                                 "_read: pliku nowszej wersji nie da sie odczytac (OSError), _read_failed; ten idzie jak zwykle, nowsza czeka na budzik")
                       \/ /\ plik[w] = "skomentowany" /\ ~Nowszy(q, w)
                          /\ lista' = dalej
-                         /\ UNCHANGED <<nieczytany, bledyPliku, slady>>
+                         /\ UNCHANGED <<czytane, nieczytany, bledyPliku, slady>>
                          /\ po' = Ustaw(po, q, "dostarczona")
                          /\ Idz(q, "archiwum", "_queued: czesci sa w Skrzynce (commented), sam _deliver_archive")
                       \/ /\ plik[w] = "czeka" /\ ~Nowszy(q, w)
                          /\ lista' = dalej
-                         /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
+                         /\ UNCHANGED <<czytane, nieczytany, bledyPliku, slady, po>>
                          \* _deliver: każdy cel najpierw pyta Skrzynkę o issue z etykietą.
                          /\ Idz(q, "szukaj", "_deliver: wysylka z pliku")
     /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, nr, kom, bezZnacznika,
@@ -552,7 +576,7 @@ Szukaj(q) == \E zna \in OdczytyZapisow :
              ELSE /\ nr' = Ustaw(nr, q, Swoje(biez[q], q, zna)) /\ kom' = Ustaw(kom, q, Dopisz(Reszta(biez[q])))
                   /\ Idz(q, "czytaj", "labelled_issues: jest issue ze znacznikiem tej Uwagi, _settle z reszta czesci")
     /\ UNCHANGED <<niewidoczne, zakladanie, pamiec, wydanieNiewidoczne, pamiecWydania, falszywe>>
-    /\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, bezZnacznika,
+    /\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, bezZnacznika,
                    arch, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
                    odmowyArchiwum, wylaczenia>>
 
@@ -565,17 +589,17 @@ Wersja(i, w, k) == issues[i].tresc[Najnizszy(Komentarze(i, w, k))][1]
 Krok(i, w, k) ==
     IF WTresci(i, w, k) THEN "jest"
     ELSE IF Komentarze(i, w, k) = {} THEN "dopisz"
-    ELSE IF Wersja(i, w, k) < w THEN "popraw"
+    ELSE IF Nr(Wersja(i, w, k)) < Nr(w) THEN "popraw"
     ELSE "jest"
 \* outbox.py _settle: komentarz części, której wersja w nie ma (ani w treści issue), w starszej wersji dostaje _RETIRED
 \* (part not in wanted and seen < version), po częściach tej wersji.
 Wycofaj(i, w) == SelectSeq([k \in 1..Najwiecej |-> <<k, "wycofaj">>],
                            LAMBDA x : x[1] > Liczba(w) /\ ~WTresci(i, w, x[1]) /\ Komentarze(i, w, x[1]) /= {}
-                                      /\ Wersja(i, w, x[1]) < w)
+                                      /\ Nr(Wersja(i, w, x[1])) < Nr(w))
 Plan(i, w, ks) == SelectSeq([n \in 1..Len(ks) |-> <<ks[n][1], Krok(i, w, ks[n][1])>>], LAMBDA x : x[2] /= "jest")
                   \o Wycofaj(i, w)
 \* outbox.py _settle: znacznik wysyłki w w nowszej wersji w treści albo komentarzu issue i (newest > version).
-Nowsza(i, w) == \E j \in 1..Len(issues[i].tresc) : Moj(issues[i].tresc[j], w) /\ issues[i].tresc[j][1] > w
+Nowsza(i, w) == \E j \in 1..Len(issues[i].tresc) : Moj(issues[i].tresc[j], w) /\ Nr(issues[i].tresc[j][1]) > Nr(w)
 
 \* keyed_box.py KeyedBox.comments w outbox.py _settle: komentarze znalezionego issue przed wysłaniem, a z nich (i z
 \* treści issue) plan: nic, gdy issue ma już nowszą wersję tej wysyłki, a inaczej części, których w Skrzynce jeszcze
@@ -600,7 +624,7 @@ Czytaj(q) ==
              ELSE IF plan = <<>>
              THEN PoArchiwum(q, "dostarczona", "comments: kazda czesc juz jest w Skrzynce, Delivered")
              ELSE PoArchiwum(q, "komentuj", "comments: brakujace czesci komentarzami, starsza wersja poprawka, _RETIRED")
-    /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, bezZnacznika,
+    /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, nr, bezZnacznika,
                    arch, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
                    odmowyArchiwum, bledyPliku, wylaczenia, slady>>
 
@@ -658,7 +682,7 @@ Zaloz(q) ==
           /\ odmowy' = odmowy + 1 /\ odrzucone' = odrzucone \cup {w}
           /\ Odrzuc(q, w, "open_issue: Rejected, plik zakladania jak przed zapisem, plik czeka do nastepnego startu")
           /\ UNCHANGED <<issues, nr, kom, stopped, nieczytany, sieci, zgubione, slady, bledyPliku, opoznienie>>
-    /\ UNCHANGED <<dysk, archiwa, zyje, draining, again, armed, undeleted, lista, biez, bezZnacznika, arch, po, odmowaArch,
+    /\ UNCHANGED <<dysk, archiwa, zyje, draining, again, armed, undeleted, lista, czytane, biez, bezZnacznika, arch, po, odmowaArch,
                    passes, blokada, bezBlokady, zamkniecia, nadawca, przez, zakolejkowane, odmowyArchiwum, wylaczenia>>
 
 \* keyed_box.py KeyedBox.comment (_comment_all, _settle przez _put) albo KeyedBox.edit_comment (_put: komentarz
@@ -694,7 +718,7 @@ Komentuj(q) ==
           /\ odmowy' = odmowy + 1 /\ odrzucone' = odrzucone \cup {w}
           /\ Odrzuc(q, w, zapytanie \o ": Rejected, plik czeka do nastepnego startu")
           /\ UNCHANGED <<issues, kom, stopped, nieczytany, sieci, zgubione>>
-    /\ UNCHANGED <<opoznienie, dysk, archiwa, zyje, draining, again, armed, undeleted, lista, biez, nr, bezZnacznika, arch, po,
+    /\ UNCHANGED <<opoznienie, dysk, archiwa, zyje, draining, again, armed, undeleted, lista, czytane, biez, nr, bezZnacznika, arch, po,
                    odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawca, przez, zakolejkowane, odmowyArchiwum,
                    bledyPliku, wylaczenia, slady>>
 
@@ -733,7 +757,7 @@ CzytajArchiwum(q) ==
                /\ IF wydania = 0 \/ (wydanieNiewidoczne /\ ~(zna /\ pamiecWydania))
                   THEN /\ UNCHANGED arch
                        /\ Idz(q, "wydanie", "archive: brak Archiwum okresu na liscie, open_archive")
-                  ELSE IF \E i \in moje : archiwum[i] >= w
+                  ELSE IF \E i \in moje : Nr(archiwum[i]) >= Nr(w)
                   THEN /\ arch' = Ustaw(arch, q, "jest")
                        /\ Idz(q, po[q], "archive: plik jest w tej wersji albo nowszej, InArchive")
                   ELSE IF moje /= {}
@@ -741,7 +765,7 @@ CzytajArchiwum(q) ==
                        /\ Idz(q, "usunplik", "archive: plik starszej wersji ustepuje, remove")
                   ELSE /\ UNCHANGED arch
                        /\ Idz(q, "wyslij", "archive: pliku nie ma, upload")
-    /\ UNCHANGED <<niewidoczne, zakladanie, pamiec, wydanieNiewidoczne, pamiecWydania, falszywe, dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom,
+    /\ UNCHANGED <<niewidoczne, zakladanie, pamiec, wydanieNiewidoczne, pamiecWydania, falszywe, dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, nr, kom,
                    bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
                    wylaczenia, slady>>
 
@@ -791,7 +815,7 @@ ZalozArchiwum(q) ==
           /\ odmowyArchiwum' = odmowyArchiwum + 1
           /\ UNCHANGED <<wydania, sieci, zgubione, stopped, nieczytany, opoznienie>>
           /\ Czeka(q, "open_archive: Refused albo Rejected, ArchiveWaits")
-    /\ UNCHANGED <<dysk, issues, archiwum, podwojny, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom,
+    /\ UNCHANGED <<dysk, issues, archiwum, podwojny, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, nr, kom,
                    bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, odmowy, bledyPliku,
                    wylaczenia, slady>>
 
@@ -800,7 +824,7 @@ ZalozArchiwum(q) ==
 UsunPlik(q) ==
     LET w == biez[q]
         zostaje == SelectSeq(archiwum, LAMBDA e : Id(e) /= Id(w))
-        zbedny == \E i \in Pliki(w) : archiwum[i] >= w
+        zbedny == \E i \in Pliki(w) : Nr(archiwum[i]) >= Nr(w)
     IN
     /\ pc[q] = "usunplik"
     /\ \/ /\ archiwum' = zostaje /\ podwojny' = (podwojny \/ zbedny)
@@ -818,7 +842,7 @@ UsunPlik(q) ==
           /\ odmowyArchiwum' = odmowyArchiwum + 1
           /\ UNCHANGED <<archiwum, podwojny, sieci, zgubione, stopped, nieczytany>>
           /\ Czeka(q, "remove: Refused, ArchiveWaits")
-    /\ UNCHANGED <<opoznienie, dysk, issues, wydania, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom,
+    /\ UNCHANGED <<opoznienie, dysk, issues, wydania, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, nr, kom,
                    bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, odmowy, bledyPliku,
                    wylaczenia, slady>>
 
@@ -850,7 +874,7 @@ WyslijPlik(q) ==
           /\ odmowyArchiwum' = odmowyArchiwum + 1
           /\ UNCHANGED <<archiwum, sieci, zgubione, stopped, nieczytany>>
           /\ Czeka(q, "upload: Refused, ArchiveWaits")
-    /\ UNCHANGED <<opoznienie, dysk, issues, wydania, podwojny, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom,
+    /\ UNCHANGED <<opoznienie, dysk, issues, wydania, podwojny, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, nr, kom,
                    bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, odmowy, bledyPliku,
                    wylaczenia, slady>>
 
@@ -881,7 +905,7 @@ Znacznik(q) ==
                /\ UNCHANGED tmp
                /\ IF czeka THEN Idz(q, "plik", "znacznik czesci: write_text pliku .json.tmp rzuca OSError (suppress)")
                   ELSE Idz(q, "usun", "znacznik: write_text pliku .json.tmp rzuca OSError (suppress), _remove")
-    /\ UNCHANGED <<opoznienie, plik, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom, arch, po,
+    /\ UNCHANGED <<opoznienie, plik, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, nr, kom, arch, po,
                    passes, blokada, bezBlokady, zamkniecia, nadawanie, sieci, zgubione, odmowy, odmowyArchiwum,
                    wylaczenia, slady>>
 
@@ -909,7 +933,7 @@ Zamiana(q) ==
           /\ bezZnacznika' = Ustaw(bezZnacznika, q, TRUE)
           /\ UNCHANGED <<plik, bledyPliku>>
           /\ Idz(q, dalej, "znacznik: pliku .json.tmp juz nie ma, os.replace rzuca OSError (suppress)")
-    /\ UNCHANGED <<opoznienie, issues, archiwa, zyje, draining, again, armed, stopped, nieczytany, undeleted, rejected, lista, biez, nr,
+    /\ UNCHANGED <<opoznienie, issues, archiwa, zyje, draining, again, armed, stopped, nieczytany, undeleted, rejected, lista, czytane, biez, nr,
                    kom, arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, sieci, zgubione,
                    odmowy, odmowyArchiwum, wylaczenia, slady>>
 
@@ -928,7 +952,7 @@ Usun(q) ==
           /\ undeleted' = Ustaw(undeleted, q, undeleted[q] \cup {w})
           /\ UNCHANGED plik
           /\ Idz(q, "plik", "_remove: unlink rzuca OSError, plik zostaje, nazwa w _undeleted")
-    /\ UNCHANGED <<opoznienie, tmp, issues, archiwa, zyje, draining, again, armed, stopped, nieczytany, rejected, lista, biez, nr, kom,
+    /\ UNCHANGED <<opoznienie, tmp, issues, archiwa, zyje, draining, again, armed, stopped, nieczytany, rejected, lista, czytane, biez, nr, kom,
                    arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, sieci, zgubione, odmowy,
                    odmowyArchiwum, wylaczenia, slady>>
 
@@ -942,7 +966,7 @@ Zwolnij(q) ==
     /\ passes' = Ustaw(passes, Proc(q), "wolny")
     /\ Idz(q, "decyzja", "_drain: koniec _folder_lock, _released")
     /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, armed, stopped, nieczytany, bezBlokady, undeleted, rejected,
-                   lista, biez, nr, kom, bezZnacznika, arch, po, odmowaArch, zamkniecia, nadawanie, awarie, slady>>
+                   lista, czytane, biez, nr, kom, bezZnacznika, arch, po, odmowaArch, zamkniecia, nadawanie, awarie, slady>>
 
 \* outbox.py Outbox._drain pod self._changed: z _again następne przejście; bez niego _draining = False
 \* i, gdy przejście stanęło (_stopped_on), pominęło nieczytelny plik (_read_failed), zastało odmowę Archiwum
@@ -959,7 +983,7 @@ Decyzja(q) ==
             /\ UNCHANGED again
             /\ Idz(q, "spi", IF stopped[q] \/ nieczytany[q] \/ odmowaArch[q] \/ bezBlokady[q]
                              THEN "_drain: koniec watku, budzenie za RETRY_S" ELSE "_drain: koniec watku")
-    /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, stopped, nieczytany, undeleted, rejected, lista, biez, nr, kom, bezZnacznika,
+    /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, stopped, nieczytany, undeleted, rejected, lista, czytane, biez, nr, kom, bezZnacznika,
                    arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, awarie, slady>>
 
 Watek(q) ==
@@ -975,7 +999,7 @@ Budzenie(q) ==
     /\ armed' = Ustaw(armed, q, FALSE)
     /\ Budz(q)
     /\ krok' = "_woken po RETRY_S: send_in_background"
-    /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, stopped, nieczytany, undeleted, rejected, lista, biez, nr, kom, bezZnacznika,
+    /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, stopped, nieczytany, undeleted, rejected, lista, czytane, biez, nr, kom, bezZnacznika,
                    arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, awarie, slady>>
 
 \* --- Zapytania HTTP: Outbox.post ------------------------------------------------
@@ -1033,7 +1057,7 @@ Nadaj(w) ==
           /\ krok' = "post: send_in_background"
           /\ UNCHANGED <<plik, tmp, przez, zakolejkowane, bledyPliku>>
     /\ nadawca[w] /= "czeka" => zyje[przez[w]] /= "nie"
-    /\ UNCHANGED <<opoznienie, issues, archiwa, zyje, armed, stopped, nieczytany, undeleted, rejected, lista, biez, nr, kom, bezZnacznika,
+    /\ UNCHANGED <<opoznienie, issues, archiwa, zyje, armed, stopped, nieczytany, undeleted, rejected, lista, czytane, biez, nr, kom, bezZnacznika,
                    arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, odrzucone, sieci, zgubione, odmowy,
                    odmowyArchiwum, wylaczenia, slady>>
 
@@ -1053,6 +1077,7 @@ Zabij(S) ==
     /\ undeleted' = [q \in Q |-> IF q \in S THEN {} ELSE undeleted[q]]
     /\ rejected' = [q \in Q |-> IF q \in S THEN {} ELSE rejected[q]]
     /\ lista' = [q \in Q |-> IF q \in S THEN <<>> ELSE lista[q]]
+    /\ czytane' = [q \in Q |-> IF q \in S THEN {} ELSE czytane[q]]
     /\ kom' = [q \in Q |-> IF q \in S THEN <<>> ELSE kom[q]]
     /\ bezZnacznika' = [q \in Q |-> IF q \in S THEN FALSE ELSE bezZnacznika[q]]
     /\ arch' = [q \in Q |-> IF q \in S THEN "brak" ELSE arch[q]]
@@ -1096,7 +1121,7 @@ Start(q) ==
     /\ draining' = Ustaw(draining, q, TRUE)
     /\ pc' = Ustaw(pc, q, "petla")
     /\ krok' = "Centrum startuje: Outbox.resume usuwa *.tmp, send_in_background"
-    /\ UNCHANGED <<niewidoczne, zakladanie, pamiec, pamiecWydania, wydanieNiewidoczne, falszywe, plik, issues, archiwa, again, armed, stopped, nieczytany, bezBlokady, undeleted, rejected, lista, biez,
+    /\ UNCHANGED <<niewidoczne, zakladanie, pamiec, pamiecWydania, wydanieNiewidoczne, falszywe, plik, issues, archiwa, again, armed, stopped, nieczytany, bezBlokady, undeleted, rejected, lista, czytane, biez,
                    nr, kom, bezZnacznika, arch, po, odmowaArch, passes, blokada, zamkniecia, nadawanie, awarie, slady>>
 
 \* Tata zamyka Centrum albo opiekun ponownego startu je restartuje: uvicorn zamyka gniazdo (port wolny

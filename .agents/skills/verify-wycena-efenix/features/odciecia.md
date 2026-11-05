@@ -17,7 +17,7 @@ Dad's network drops or slows down in the middle of a Wycena w efenix that he sta
 ## Driving it with the explorer
 
 `.venv/bin/python .agents/skills/verify-wycena-efenix/scripts/explore_wycena_efenix.py --variant odciecia [--rola <rola>]`.
-A stop is PRZYCZYNA-checked against `expected()`.
+A stop is PRZYCZYNA-checked against `expected()`, then resumed (see `wznowienie`).
 
 ## Gotchas
 

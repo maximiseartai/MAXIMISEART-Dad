@@ -2,25 +2,27 @@
 
 Rejestr jest tylko czytany, przez moduł skoroszytu. Arkusze ze zleceniami są rozpoznawane po komplecie
 wymaganych nagłówków w pierwszym wierszu, a komórki z wartościami, Wyróżnieniami i Hiperłączami
-są zwracane pod nagłówkiem docelowym każdej kolumny ``COLUMNS``. Dla okresu czytane są tylko wiersze
-od pierwszego do ostatniego, którego data może leżeć w okresie. ``read_register`` to produkcyjny czytnik
-Rejestru dla ``input_checks.Readers``, który tłumaczy jego ``WorkbookError``.
+są zwracane pod nagłówkiem docelowym każdej kolumny ``COLUMNS``. Wiersz bez wyglądu uporządkowanego może stać
+przesunięty, więc arkusz oddaje go też z wartościami całego wiersza (``RegisterSheet.uncertain_rows``). Dla okresu
+czytane są tylko wiersze od pierwszego do ostatniego, którego data może leżeć w okresie. ``read_register`` to
+produkcyjny czytnik Rejestru dla ``input_checks.Readers``, który tłumaczy jego ``WorkbookError``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 
 from openpyxl.utils import get_column_letter
 
 from . import preparation_messages as messages
-from . import workbook_files
+from . import raw_orders, workbook_files
 from .message import StopError
 from .settlement_period import SettlementPeriod
-from .workbook_files import ReadWorkbook, RegisterRow, header_columns, is_blank
+from .workbook_files import ReadRow, ReadWorkbook, RegisterRow, header_columns, is_blank
 from .worker_config import normalize_text
 
 
@@ -84,6 +86,11 @@ class RegisterSheet:
     """Wiersze z danymi; komórki pod nagłówkiem docelowym."""
     empty_rows: tuple[int, ...]
     _positions: tuple[int, ...]  # numery kolumn ``COLUMNS`` w arkuszu (od 1)
+    uncertain_rows: Mapping[int, Mapping[int, object]] = field(default_factory=lambda: MappingProxyType({}))
+    """Wiersze z danymi bez wyglądu uporządkowanego (``raw_orders.ordered_look``) → wartości całego wiersza po numerze
+    kolumny (od 1). Taki wiersz może być wklejony z aplikacji firmowej, a pierwszy wiersz każdego wklejenia stoi
+    ``raw_orders.SHIFT`` kolumn na lewo od nagłówków, więc jego komórki mogą stać pod nagłówkiem albo tyle kolumn na lewo
+    od niego (#918)."""
 
     def column_letter(self, column: Column) -> str:
         """Litera kolumny arkusza z nagłówkiem ``column``, np. ``L`` dla ``SKUTECZNE``."""
@@ -204,12 +211,29 @@ def _read_register_sheets(workbook: ReadWorkbook, positions: dict[str, list[int]
             continue
         columns = positions[sheet.title]
         read = [
-            (all(is_blank(cell) for cell in whole_row), row)
-            for whole_row, row in sheet.data_rows(
+            (all(is_blank(cell) for cell in found.values), found)
+            for found in sheet.data_rows(
                 min_row=2, columns={header: columns[index] for index, header in enumerate(TARGET_HEADERS)}
             )
         ]
-        rows = tuple(row for empty, row in read if not empty)
-        empty_rows = tuple(row.number for empty, row in read if empty)
-        sheets.append(RegisterSheet(sheet.title, rows, empty_rows, tuple(columns)))
+        rows = tuple(found.row for empty, found in read if not empty)
+        empty_rows = tuple(found.row.number for empty, found in read if empty)
+        uncertain = {
+            found.row.number: MappingProxyType(dict(enumerate(found.values, start=1)))
+            for empty, found in read
+            if not empty and not _ordered_look(found)
+        }
+        sheets.append(RegisterSheet(sheet.title, rows, empty_rows, tuple(columns), MappingProxyType(uncertain)))
     return sheets
+
+
+def _ordered_look(found: ReadRow) -> bool:
+    """Wiersz z wyglądem uporządkowanym (``raw_orders.ordered_look``) w komórkach z wartością spod nagłówków ``COLUMNS``
+    poza ``WYKONAWCA``. To część kolumn zlecenia, więc wiersz z tym wyglądem tutaj ma go też w Uporządkowaniu, a wiersz,
+    który ma go tylko w ``AKCJE``, ``ZWROT`` albo ``UWAGI``, tutaj go nie ma."""
+
+    return raw_orders.ordered_look(
+        face
+        for header, face in found.faces.items()
+        if header != WORKER.target_header and not is_blank(found.row.cells[header].value)
+    )

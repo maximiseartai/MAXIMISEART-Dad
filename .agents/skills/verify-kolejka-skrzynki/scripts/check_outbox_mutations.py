@@ -133,7 +133,7 @@ MUTATIONS = (
         (
             Edit(
                 VERIFIED,
-                "    if seen.newest > version:\n        return _newer(post, issue.number, seen, range(",
+                "    if seen.newest is not None and seen.newest > version:\n        return _newer(post, issue.number, seen, range(",
                 "    if False:\n        return _newer(post, issue.number, seen, range(",
             ),
         ),
@@ -267,8 +267,10 @@ MUTATIONS = (
                 "        if False:\n",
             ),
         ),
-        (EXPLORER, "--scope", "archiwum"),
-        "plik Logów, którego odpowiedź na upload zginęła, idzie do Archiwum drugi raz",
+        # W archiwum też ją łapie, ale po 38 024 harmonogramach (61 s na Macu Maksa 2026-11-05 po #911, przed nim 190 s
+        # i ponad 600 s na Windows CI); archiwum-lista po 4 130 (9 s).
+        (EXPLORER, "--scope", "archiwum-lista"),
+        "plik Logów, który już jest w Archiwum, idzie tam drugi raz przy ponowieniu po zgubionej odpowiedzi",
         NEW,
     ),
     Mutation(
@@ -356,13 +358,13 @@ MUTATIONS = (
         (
             Edit(
                 VERIFIED,
-                "            newest[queued.post.target, queued.post.run_id] = path\n",
-                "            newest[queued.post.target, \"\"] = path\n",
+                "            key, mine = (queued.post.target, queued.post.run_id), (",
+                "            key, mine = (queued.post.target, \"\"), (",
             ),
             Edit(
                 VERIFIED,
-                "        if queued is not None and newest[queued.post.target, queued.post.run_id] != path\n",
-                "        if queued is not None and newest[queued.post.target, \"\"] != path\n",
+                "        if queued is not None and newest[queued.post.target, queued.post.run_id][1] != path\n",
+                "        if queued is not None and newest[queued.post.target, \"\"][1] != path\n",
             ),
         ),
         (EXPLORER, "--scope", "watek-okresu"),
