@@ -25,7 +25,8 @@ przyjmuje pisania, a kalendarz po otwarciu okna pokazuje dzisiejszy dzień, dzie
 poprzedniego miesiąca zamienia na dzisiejszy z komunikatem w ``#toast``, „Potwierdź” wysyła wartość pola, a po
 odpowiedzi 2xx wpisuje ją do ``#data_install`` bez czytania treści odpowiedzi. „Dziś” daje test (``today``), a
 ``refuse_dates`` każe serwerowi odpowiadać na zapis daty bez zapisu. Wycenę Emmetta (``#button_emmett``,
-okno ``#dialog_emmett`` z propozycją z ``action_fill_emmett.php``, „Załaduj do zlecenia” wysyła ``action_load_emmett.php``,
+okno ``#dialog_emmett`` z propozycją z ``action_fill_emmett.php`` w ``#emmett-propozycja``, pustą, gdy Emmett nic nie
+proponuje, jak ten element strony efenix bez propozycji, „Załaduj do zlecenia” wysyła ``action_load_emmett.php``,
 który czyści wycenę i wpisuje propozycję, a skrypt przeładowuje stronę po każdej odpowiedzi, także po odmowie
 ``AtrapaOrder.emmett_refusal``) i przyciski, których narzędzie nie może użyć:
 Przekazanie do akceptacji (``#button_forward_to_accept``) i anulowanie (``#button_forward_to_cancel``) z oknem
@@ -169,6 +170,7 @@ class EmmettRefusal(enum.Enum):
     ELSEWHERE = "przekierowanie na listę zleceń bez załadowania Wyceny Emmetta"
     LOGGED_OUT = "sesja wygasa przy tym żądaniu: przekierowanie na stronę logowania bez załadowania Wyceny Emmetta"
     NOK = "200 z JSON result: nok bez załadowania Wyceny Emmetta"
+    OTHER = "200 z inną treścią (strona HTML) bez załadowania Wyceny Emmetta"
 
 
 @dataclass(frozen=True)
@@ -468,6 +470,8 @@ def atrapa_efenix(
                         self._redirect(LOGIN_PAGE)
                     case EmmettRefusal.NOK:
                         self._json({"result": "nok", "error": "Nie załadowano."})
+                    case EmmettRefusal.OTHER:
+                        self._html("<p>Nie załadowano wyceny Emmetta.</p>")
             elif method == "POST" and path in _CHANGES:
                 with atrapa._lock:
                     found = [order for order in atrapa.orders if order.order_id == params.get(_CHANGES[path])]
@@ -627,7 +631,7 @@ def _change(path: str, order: AtrapaOrder, params: Mapping[str, str], *, refuse_
         return {"result": "ok", "price_index": f"{PRICES[code] * quantity:.2f}", "price_all": f"{order.amount:.2f}"}
     if path == FILL_EMMETT:
         rows = "".join(f"<li>INDEKS_{escape(code)}_078: {quantity}</li>" for code, quantity in sorted(order.emmett.items()))
-        return f"<ul>{rows}</ul>"
+        return f"<ul>{rows}</ul>" if rows else ""
     if path == LOAD_EMMETT:
         order.quantities = dict(order.emmett)
         order.emmett_loads += 1
