@@ -47,6 +47,10 @@ PROMISES = {
     "PrzezStraznika": "Logi Urwanego Uruchomienia poszły do kolejki bez strażnika reguły danych.",
     "NicPrzedWznowieniem": "wysyłka poszła do kolejki, zanim praca Centrum wywołała Outbox.resume.",
     "ZaczeteWLogach": "zlecenie, które Urwana Wycena zmieniła w efenix, nie jest w jej Logach.",
+    "WersjaKoncowa": "dziennik Wyceny, która mogła wysłać postęp, zniknął, a Kolejka wysyłki nie przyjęła wersji końcowej jej "
+    "komentarza Uruchomienia, więc w Skrzynce może zostać postęp „Uruchomienie trwa”.",
+    "WynikZostaje": "po Logach z wynikiem, które kolejka przyjęła, do kolejki poszła wersja bez Logów tego Uruchomienia, "
+    "która zastąpi je w Skrzynce.",
 }
 LIVENESS_SAID = "awarie się skończyły, tata otwiera i zamyka Centrum, a dziennik zostaje na dysku bez końca."
 # Zmienna historii każdej obietnicy: zbiór przyczyn w chwili każdego zdarzenia, które ją łamie.
@@ -57,6 +61,8 @@ _EVENTS = {
     "PrzezStraznika": "bezStrazy",
     "NicPrzedWznowieniem": "przedWznowieniem",
     "ZaczeteWLogach": "bezZlecenia",
+    "WersjaKoncowa": "bezWersji",
+    "WynikZostaje": "wyparty",
 }
 _STATE = re.compile(r"^State \d+: ")
 _STUTTERING = re.compile(r"^State \d+: Stuttering")
@@ -230,6 +236,8 @@ _STEPS = {
     "Wyslij": "send: Outbox.post Logów Urwanego Uruchomienia Wyceny {w}",
     "UsunPoWysylce": "send usuwa dziennik Wyceny {w} po przyjęciu przez kolejkę",
     "StartWyceny": "tata uruchamia Wycenę {b2} (PricingJournal.run_started)",
+    "ZapiszStart": "run_started zapisuje pierwszą linię dziennika Wyceny {b} (_append_locked)",
+    "Postep": "budzik postępu: RunLogs.progress wysyła postęp Wyceny {b} z dziennika",
     "WpisZaczete": "Wycena {b} pisze „zaczynam zlecenie” {z}",
     "ZmianaWEfenix": "okno efenix zmienia zlecenie {z} Wyceny {b}",
     "WpisSkonczone": "Wycena {b} pisze „zlecenie skończone” {z}",
@@ -237,7 +245,8 @@ _STEPS = {
     "Wynik": "run_process Wyceny {b} wraca z wynikiem (rekord metryk, wiersz Historii, zapisany albo nie)",
     "WpisKonca": "PricingJournal.run_ended: Wycena {b} pisze „koniec Uruchomienia”, zanim powstaną jej Logi",
     "LogiWyniku": "RunLogs._keep zapisuje plik Logów z wynikiem Wyceny {b}",
-    "WyslijWynik": "RunLogs._keep: Outbox.post Logów z wynikiem Wyceny {b}, koniec Uruchomienia",
+    "WyslijWynik": "RunLogs._keep: Outbox.post Logów z wynikiem Wyceny {b}",
+    "KoniecUruchomienia": "reszta działań po wyniku Wyceny {b}, koniec Uruchomienia",
     "Zgasniecie": "Centrum gaśnie (brak prądu, zabity proces)",
     "Zamkniecie": "tata zamyka Centrum",
 }

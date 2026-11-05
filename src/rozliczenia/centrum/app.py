@@ -52,6 +52,7 @@ from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, UNSENT_DIRECTORY, Reports
 from rozliczenia.centrum.preparation_run import PreparationEntry
 from rozliczenia.centrum.pricing_journal import JOURNALS_DIRECTORY, InterruptedPricings, PricingJournal
+from rozliczenia.centrum.pricing_progress import ProgressComment
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.run_cards import LAST_STARTED_FILE, RunCards, run_cards_router
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, RunLogs
@@ -221,7 +222,7 @@ def create_app(
         forbidden=forbidden,
     )
     # Dziennik Wyceny w efenix w trakcie Uruchomienia, obok Logów: przeżywa nagłe zgaśnięcie Centrum (#845).
-    journal = PricingJournal(log.directory / JOURNALS_DIRECTORY, log)
+    journal = PricingJournal(log.directory / JOURNALS_DIRECTORY, log, process=EFENIX.key)
     # Logi Uruchomienia: jeden plik JSON na Uruchomienie obok dziennika Centrum, poza Gitem i OneDrive (ADR 0015).
     run_logs = RunLogs(
         log.directory / RUN_LOGS_DIRECTORY,
@@ -279,10 +280,13 @@ def create_app(
     # Dzienniki Urwanych Wycen w efenix stają się ich Logami, zanim karta ostatniego Uruchomienia przeczyta Logi.
     interrupted = InterruptedPricings(log.directory / JOURNALS_DIRECTORY, run_logs, log)
     interrupted.close()
+    # Komentarz postępu Wyceny w efenix w issue Logów okresu, odświeżany z jej dziennika (#846).
+    progress = ProgressComment(journal, run_logs, clock=clock)
 
     def run_started(info: RunInfo, started_at: datetime) -> None:
         journal.run_started(info, started_at)
         cards.run_started(info, started_at)
+        progress.run_started(info, started_at)  # ostatni: postęp jest dla Maksa, a nie warunkiem pracy taty
 
     # Powiadomienia o Uwagach taty, wysłanych Zgłoszeniach, Wydaniach i zakończonych Wycenach w efenix z Logów
     # Uruchomienia; przeczytane obok Ustawień taty (ADR 0015).
