@@ -12,7 +12,7 @@ from typing import Any
 
 from playwright.sync_api import Page, expect
 
-from drive.common import ROW_MARKER, Run, finished_result, served_version
+from drive.common import ROW_MARKER, Run, drop_report_key, finished_result, served_version
 from drive.przebieg_rozliczen import TEMPLATE_PACING_MS, drive_settlement
 
 FEATURE = "logi-uruchomienia"
@@ -244,7 +244,7 @@ def drive_run_logs(run: Run, page: Page) -> None:
         woke = _card(run, "logi-skrzynka-podglad")
         run.wait_for(lambda: _queued_logs(run) == [], "every Logi waiting in the queue reaches the skrzynka", timeout_s=60)
     finally:
-        key_file.unlink()
+        drop_report_key(key_file)
     # Bytes, not text: reading text turns the \r\n of a file written in text mode on Windows back into \n.
     files = sorted(path.read_bytes() for path in (run.root / LOGS).glob("*.json"))
     threads = _threads(run)

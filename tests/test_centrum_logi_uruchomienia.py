@@ -1247,7 +1247,7 @@ def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_i_b
         assert _start_pricing(centrum).status_code == 200
         assert finished_view(centrum.client)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
     box = centrum.surroundings.report_box
-    assert box.wait_until(lambda fake: sum(len(issue.comments) for issue in fake.background_issues) == 1)
+    assert box.wait_until(lambda fake: logs_arrived(fake, 1))
     [record] = records(centrum)
     texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
     texts += in_box(box)
@@ -1323,7 +1323,7 @@ def test_logi_wyceny_w_efenix_maja_odczyt_kazdej_strony_efenix_ze_statusem_reali
         assert _start_pricing(centrum).status_code == 200
         assert finished_view(centrum.client)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
     box = centrum.surroundings.report_box
-    assert box.wait_until(lambda fake: sum(len(issue.comments) for issue in fake.background_issues) == 1)
+    assert box.wait_until(lambda fake: logs_arrived(fake, 1))
     [record] = records(centrum)
     texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
     texts += [part for issue in box.background_issues for part in (issue.title, issue.body, *issue.comments)]
@@ -1429,6 +1429,17 @@ def logs_comments(fake: FakeReportBox) -> list[str]:
 ARCHIVE_LINK = re.compile(r"\[(?P<name>[^\]]+)\]\(https://github\.com/[^/]+/[^/]+/releases/download/(?P<tag>[^/]+)/(?P=name)\)")
 
 
+def logs_arrived(fake: FakeReportBox, count: int) -> bool:
+    """Skrzynka ma ``count`` komentarzy Logów i każdy prowadzi już do pełnych Logów w Archiwum Logów okresu.
+
+    Komentarz Wyceny w efenix powstaje przy jej starcie jako komentarz postępu bez odnośnika (#846), a Logi zmieniają go
+    dopiero później, więc sama liczba komentarzy przychodzi przed Logami (#923).
+    """
+
+    comments = logs_comments(fake)
+    return len(comments) == count and all(ARCHIVE_LINK.search(comment) is not None for comment in comments)
+
+
 def logs_file(fake: FakeReportBox, comment: str) -> bytes:
     """Pełne Logi z pliku w Archiwum Logów okresu, do którego prowadzi komentarz Logów, rozpakowane bajt w bajt."""
 
@@ -1490,7 +1501,7 @@ def test_dzialania_taty_miedzy_dwoma_uruchomieniami_sa_w_logach_drugiego_z_godzi
     assert datetime.fromisoformat(earlier["ended_at"]) <= times[0]
     assert times[-1] <= datetime.fromisoformat(later["started_at"])
     box = centrum.surroundings.report_box
-    assert box.wait_until(lambda fake: len(logs_comments(fake)) == 2), "Logi obu Uruchomień w Skrzynce"
+    assert box.wait_until(lambda fake: logs_arrived(fake, 2)), "Logi obu Uruchomień w Skrzynce"
     sent = logs_text(box, logs_comments(box)[1])
     assert '"operation": "sendDadNote"' in sent, "dziennik działań taty dociera do Maksa"
     assert [marker for marker in ("SYNTETYCZNY-TYTUŁ", "SYNTETYCZNA-TREŚĆ") if marker in text or marker in sent] == []
@@ -1621,7 +1632,7 @@ def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwan
     centrum.restart()
     previous = centrum.client.get("/api/runs/current").json()["previous"]
     box = centrum.surroundings.report_box
-    sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+    sent = box.wait_until(lambda fake: logs_arrived(fake, 1))
     run_id = started["run"]["id"]
     card = centrum.client.get(f"/api/runs/{run_id}/card").json()
     notifications = centrum.client.get("/api/notifications").json()["items"]
@@ -1691,7 +1702,7 @@ def test_wycena_w_efenix_ktora_doszla_do_konca_nie_zostawia_dziennika_ktory_star
         assert _start_pricing(centrum).status_code == 200
         run_id = finished_view(centrum.client)["run"]["id"]
     box = centrum.surroundings.report_box
-    assert box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+    assert box.wait_until(lambda fake: logs_arrived(fake, 1))
     centrum.client.stop()
     [logs] = log_files(centrum)
     if lost == "historia":
@@ -1750,7 +1761,7 @@ def test_logi_urwanego_uruchomienia_po_ponownym_zgasnieciu_centrum_przed_wysylka
 
     centrum.restart()
     previous = centrum.client.get("/api/runs/current").json()["previous"]
-    sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+    sent = box.wait_until(lambda fake: logs_arrived(fake, 1))
     centrum.client.stop()
 
     assert closed == ([(run_id, "interrupted")], 1, 0)
@@ -1775,7 +1786,7 @@ def test_dziennik_urwanej_wyceny_ktorego_logow_kolejka_wysylki_nie_przyjela_zost
     queue.unlink()
     centrum.restart()
     assert centrum.client.get("/api/runs/current").status_code == 200
-    sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+    sent = box.wait_until(lambda fake: logs_arrived(fake, 1))
     centrum.client.stop()
 
     assert (kept, sent, logs_json(box, logs_comments(box)[0])["run_id"], journals(centrum)) == ((1, 0), True, run_id, [])
@@ -1869,7 +1880,7 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
     centrum.restart()
     centrum.client.get("/api/runs/current")
     box = centrum.surroundings.report_box
-    sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+    sent = box.wait_until(lambda fake: logs_arrived(fake, 1))
     centrum.client.stop()
     [comment] = logs_comments(box)
     [path] = log_files(centrum)
@@ -2823,7 +2834,7 @@ def test_dziennik_urwanej_wyceny_nieodczytany_przy_starcie_dostaje_logi_urwanego
         centrum.client.stop()
         centrum.restart()
         assert centrum.client.get("/api/runs/current").status_code == 200
-        sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 2)
+        sent = box.wait_until(lambda fake: logs_arrived(fake, 2))
         centrum.client.stop()
     logged = {record["run_id"]: record for record in records(centrum)}
 
@@ -2859,7 +2870,7 @@ def test_wycena_z_wynikiem_bez_pliku_logow_nie_dostaje_logow_urwanego_uruchomien
                 patch.setattr(MetricsStore, "append", full_disk)
             assert _start_pricing(centrum).status_code == 200
             run_id = finished_view(centrum.client)["run"]["id"]
-        assert box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        assert box.wait_until(lambda fake: logs_arrived(fake, 1))
         [result] = [logs_json(box, comment) for comment in logs_comments(box)]
         centrum.client.stop()
     blocked.unlink()
@@ -2897,7 +2908,7 @@ def test_wpis_konca_ktory_sie_nie_zapisal_zostawia_dziennik_do_przyjecia_logow_z
         with _refused(monkeypatch, "open", after_result):
             assert _start_pricing(centrum).status_code == 200
             finished_view(centrum.client)
-        assert box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        assert box.wait_until(lambda fake: logs_arrived(fake, 1))
         centrum.client.stop()
     ended = journals(centrum)
     blocked.unlink()
@@ -2967,7 +2978,7 @@ def test_wycena_z_wynikiem_ktorej_jedyny_wpis_dziennika_zawiodl_po_zapisie_pierw
             patch.setattr(Path, "open", opening)
             assert _start_pricing(centrum).status_code == 200
             stops = finished_view(centrum.client)["result"]["stops"]
-        assert box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        assert box.wait_until(lambda fake: logs_arrived(fake, 1))
         centrum.client.stop()
     left = journals(centrum)
     blocked.unlink()
@@ -3009,7 +3020,7 @@ def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie
         box = centrum.surroundings.report_box
         assert _start_pricing(centrum).status_code == 200
         assert wait_for(reached.is_set, 120)
-        sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        sent = box.wait_until(lambda fake: logs_arrived(fake, 1))
         edited = list(box.edited)
         closed = centrum.client
         blocked.unlink()

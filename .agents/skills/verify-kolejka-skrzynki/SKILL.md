@@ -635,7 +635,7 @@ with `MUTACJE OK`. Each of these gives `KOLEJKA: NOWE NARUSZENIE`:
   without the check of a newer version (`diagnoza-odczyt`);
 - an Uwaga taty that does not look for its issue by the mark (`nowe-issue`);
 - a file in the Archiwum without the check of the version in its label: the queue removes its own whole file and
-  sends it again (`archiwum`);
+  sends it again (`archiwum-lista`: `archiwum` catches it too, but after over 600 s on Windows CI since #897);
 - a file whose upload broke off taken as sent, without `uploaded` (`archiwum`);
 - a wysyłka without the step of the Archiwum (`archiwum`);
 - a file of an older version that is not removed before the upload of the newer one (`archiwum-diagnoza`);

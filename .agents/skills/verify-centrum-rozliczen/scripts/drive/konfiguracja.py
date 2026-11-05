@@ -9,7 +9,7 @@ from pathlib import Path
 
 from playwright.sync_api import Locator, Page, expect
 
-from drive.common import Run, served_version, unreadable, version_line
+from drive.common import Run, move, remove, served_version, unreadable, version_line
 
 TEMPLATE_LABELS = ("Wzorzec rozliczenia wewnętrznego", "Wzorzec pliku zbiorczego", "Wzorzec rozliczenia pracownika")
 REPORT_TO_MAINTAINER = "Przekaż ten komunikat osobie utrzymującej narzędzie."
@@ -129,7 +129,7 @@ def drive_configuration(run: Run, page: Page) -> None:
         run.capture(page, "12-konfiguracja-wzorzec-otwarty")
         run.check(lock.exists(), "Centrum leaves Excel's lock file alone")
     finally:
-        lock.unlink()
+        remove(lock)
     # Headless Chromium keeps every tab visible, so returning to the tab is simulated with `focus`.
     page.evaluate("window.dispatchEvent(new FocusEvent('focus'))")
     _shown_as_ready(page, "Wzorzec pliku zbiorczego")
@@ -162,7 +162,7 @@ def drive_configuration(run: Run, page: Page) -> None:
     run.step(feature, "konfiguracja-brak-wzorca")
     worker_template = files["worker_template"]
     moved = worker_template.with_name(worker_template.name + ".przeniesiony")
-    worker_template.rename(moved)
+    move(worker_template, moved)
     try:
         page.reload()
         expect(_template_group(page, "Wzorzec rozliczenia pracownika")).to_contain_text("Brak pliku")
@@ -174,12 +174,12 @@ def drive_configuration(run: Run, page: Page) -> None:
         run.check(answer["problem"] == "missing", "the server reports the Wzorzec rozliczenia pracownika as missing")
         run.capture(page, "13-konfiguracja-brak-wzorca")
     finally:
-        moved.rename(worker_template)
+        move(moved, worker_template)
 
     run.step(feature, "konfiguracja-nieczytelna-konfiguracja-wykonawcow")
     worker_config = files["worker_config"]
     moved = worker_config.with_name(worker_config.name + ".przeniesiony")
-    worker_config.rename(moved)
+    move(worker_config, moved)
     try:
         worker_config.write_text("workers: [niedomknięta lista\n", encoding="utf-8")
         page.reload()
@@ -194,8 +194,8 @@ def drive_configuration(run: Run, page: Page) -> None:
         run.check(workers["state"] == "unreadable", "the server reports the konfiguracja wykonawców as unreadable")
         run.capture(page, "14-konfiguracja-nieczytelna-konfiguracja-wykonawcow")
     finally:
-        worker_config.unlink(missing_ok=True)
-        moved.rename(worker_config)
+        remove(worker_config, missing_ok=True)
+        move(moved, worker_config)
 
     run.step(feature, "konfiguracja-niedostepna-konfiguracja-wykonawcow")
     with unreadable(worker_config):
