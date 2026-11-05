@@ -2,7 +2,8 @@
 
 Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) and must end the checker's report with the
 expected line. A mutation whose anchor text is no longer in ``outbox.py`` (or ``report_box.py``, whose reading of
-GitHub's answers the checker takes from the real adapter) is reported as NIEAKTUALNA: update it to the new code.
+GitHub's answers the checker takes from the real adapter, or ``keyed_box.py``, whose list after its own writes covers
+the lag of GitHub's issue list) is reported as NIEAKTUALNA: update it to the new code.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from mutacje import Edit, Mutation, check_all
 
 VERIFIED = Path("src/rozliczenia/centrum/outbox.py")
 REPORT_BOX = Path("src/rozliczenia/centrum/report_box.py")
+KEYED_BOX = Path("src/rozliczenia/centrum/keyed_box.py")
 EXPLORER = ".agents/skills/verify-kolejka-skrzynki/scripts/explore_outbox.py"
 NEW = "KOLEJKA: NOWE NARUSZENIE"
 
@@ -372,6 +374,94 @@ MUTATIONS = (
         (Edit(VERIFIED, "                self._mark_delivered(path, queued.post)\n", "                self._remove(path)\n"),),
         (EXPLORER, "--scope", "postep"),
         "plik starszego postępu, którego nie da się usunąć, czeka w kolejce bez znacznika i bez budzika",
+        NEW,
+    ),
+    Mutation(
+        "lista issue bez issue, które KeyedBox właśnie założył (#879)",
+        (
+            Edit(
+                KEYED_BOX,
+                "        return (*listed, *missing)\n",
+                "        return listed\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "watek-okresu-lista"),
+        "druga Kontrola ilości okresu zakłada drugie issue okresu, zanim lista pokaże pierwsze",
+        NEW,
+    ),
+    Mutation(
+        "zapis do Skrzynki bez wstrzymania po zapisie bez odpowiedzi (#879)",
+        (
+            Edit(
+                KEYED_BOX,
+                "        return 0 <= now - moment and listed_at - moment < LIST_LAG_S\n",
+                "        return False\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "nowe-issue-lista"),
+        "ponowienie albo start Centrum po zgubionej odpowiedzi zakłada drugie issue Uwagi, zanim lista pokaże pierwsze",
+        NEW,
+    ),
+    Mutation(
+        "zapisy tylko w pamięci, więc nowe Centrum ich nie zna (#879)",
+        (
+            Edit(
+                KEYED_BOX,
+                "        if self._opening is None:\n            return self._remembered.fresh(now)\n",
+                "        if True:\n            return self._remembered.fresh(now)\n",
+            ),
+            Edit(
+                KEYED_BOX,
+                "        if self._opening is None:\n            self._remembered = notes\n",
+                "        if True:\n            self._remembered = notes\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "nowe-issue-lista"),
+        "start Centrum zaraz po zgubionej odpowiedzi zakłada drugie issue Uwagi, zanim lista pokaże pierwsze",
+        NEW,
+    ),
+    Mutation(
+        "nowe Centrum nie zna issue, które założyło stare, choć zapis bez odpowiedzi już go nie wstrzymuje (#879)",
+        (
+            Edit(
+                KEYED_BOX,
+                "            [(float(at), str(label), Issue(int(number), str(body))) for at, label, number, body in found[\"issue\"]],\n",
+                "            [],\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "nowe-issue-lista"),
+        "start Centrum zaraz po założeniu issue Uwagi zakłada drugie, zanim lista pokaże pierwsze",
+        NEW,
+    ),
+    Mutation(
+        "Archiwum bez Archiwum, które KeyedBox właśnie założył (#887, #879)",
+        (
+            Edit(
+                KEYED_BOX,
+                "        found = outcome if outcome is not None else None if opened is None else Archive(opened, ())\n",
+                "        found = outcome\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "archiwum-lista"),
+        "drugie Logi nowego okresu dostają odmowę drugiego Archiwum i komentarz z dopiskiem, że plik czeka",
+        NEW,
+    ),
+    Mutation(
+        "wysłanie pliku do Archiwum bez wstrzymania po wysłaniu bez odpowiedzi (#879)",
+        (
+            Edit(
+                KEYED_BOX,
+                "        return self._listed_write(\n"
+                "            _file_kind(name),\n"
+                "            lambda key: self._box.upload(archive_id, name, label, data, key=key),\n",
+                "        return self._about_issue(lambda key: self._box.upload(archive_id, name, label, data, key=key))\n"
+                "        return self._listed_write(\n"
+                "            _file_kind(name),\n"
+                "            lambda key: self._box.upload(archive_id, name, label, data, key=key),\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "archiwum-lista"),
+        "ponowienie po zgubionej odpowiedzi na wysłanie pliku dostaje odmowę drugiego pliku tej nazwy i dopisek, że plik czeka",
         NEW,
     ),
     Mutation(

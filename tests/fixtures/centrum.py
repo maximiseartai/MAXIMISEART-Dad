@@ -175,7 +175,9 @@ class FakeReportBox:
     komentarz, przed odpowiedzią. ``edited`` to identyfikator każdego poprawionego komentarza po kolei, a
     ``lost_edit_answers`` to numery tych poprawek (od 1), które skrzynka przyjmuje, ale odpowiedź się urywa.
     ``written`` to identyfikator i tekst każdego przyjętego komentarza i każdej poprawki po kolei.
-    ``wait_until`` czeka na wysyłkę w tle.
+    ``wait_until`` czeka na wysyłkę w tle. ``list_lag`` to lista issue, która nie widzi nowego issue, dopóki test jej
+    nie puści (``list_caught_up``), jak lista GitHuba, która nadąża za nowym issue po kilku sekundach (#879); tak samo
+    lista Archiwów (GitHub Releases) i ich plików, która nadąża za nowym Archiwum (``verify-github-skrzynki``, #887).
 
     ``archives`` to Archiwa okresów (GitHub Release) z plikami; plik o nazwie, która w Archiwum już jest, i drugie
     Archiwum tego samego tagu skrzynka odrzuca (``Rejected``) jak GitHub. ``archive_failure`` to odmowa albo brak sieci
@@ -211,6 +213,9 @@ class FakeReportBox:
     archives: list[FakeArchive] = field(default_factory=list)
     archive_failure: Refused | Unreachable | None = None
     archive_requests: int = 0
+    list_lag: bool = False
+    unlisted: set[int] = field(default_factory=set)
+    unlisted_archives: set[int] = field(default_factory=set)
     _changed: threading.Condition = field(default_factory=threading.Condition)
     _asset_ids: Iterator[int] = field(default_factory=lambda: itertools.count(1))
 
@@ -243,6 +248,8 @@ class FakeReportBox:
             outcome = self.outcomes.pop(0) if self.outcomes else Sent(number=len(self.issues) + 1)
             if isinstance(outcome, Sent):
                 self.issues.append(FakeIssue(outcome.number, label, title, body))
+                if self.list_lag:
+                    self.unlisted.add(outcome.number)
                 if self.lost_answers:
                     self.lost_answers -= 1
                     outcome = Unreachable()
@@ -323,8 +330,15 @@ class FakeReportBox:
         return tuple(
             Issue(issue.number, issue.text, self.closed.get(issue.number))
             for issue in self.issues_with(label)
-            if include_closed or issue.number not in self.closed
+            if (include_closed or issue.number not in self.closed) and issue.number not in self.unlisted
         )
+
+    def list_caught_up(self) -> None:
+        """Lista issue nadąża: widzi każde issue, które skrzynka założyła."""
+
+        with self._changed:
+            self.unlisted.clear()
+            self.unlisted_archives.clear()
 
     def close(self, number: int, reason: CloseReason | None = "completed", at: datetime | None = None) -> None:
         """Maks zamyka issue ``number`` z powodem ``reason`` (``state_reason`` GitHuba) w chwili ``at``."""
@@ -342,7 +356,10 @@ class FakeReportBox:
             self.archive_requests += 1
             if self.archive_failure is not None:
                 return self.archive_failure
-            found = next((archive for archive in self.archives if archive.tag == tag), None)
+            found = next(
+                (archive for archive in self.archives if archive.tag == tag and archive.id not in self.unlisted_archives),
+                None,
+            )
             if found is None:
                 return None
             return Archive(found.id, tuple(Asset(asset.id, asset.name, asset.label, True) for asset in found.assets))
@@ -356,6 +373,8 @@ class FakeReportBox:
                 return Rejected()
             opened = FakeArchive(len(self.archives) + 1, tag, title, description)
             self.archives.append(opened)
+            if self.list_lag:
+                self.unlisted_archives.add(opened.id)
             self._changed.notify_all()
             return Archive(opened.id, ())
 

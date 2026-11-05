@@ -34,7 +34,11 @@ Nothing in ``outbox.py`` or ``keyed_box.py`` is replaced but the start of the qu
 ``outbox.py`` hands its target (``_drain``) to the checker, which runs it in its own thread when nothing else is left
 to do, so the real ``send_in_background`` decides whether a pass starts at all. The Skrzynka behind ``KeyedBox`` is
 the in-memory ``MemoryBox`` (GitHub's issues and comments, and its Releases with their files for the Archiwum okresu),
-the clock never moves and keeps the wakes ``after`` arms, and the key is always there and accepted; only a step of the
+the clock moves only when the ``RETRY_S`` wake fires and keeps the wakes ``after`` arms, and the key is always there and
+accepted. In a scope with ``list_lag`` GitHub's issue list does not show an issue until ``LIST_LAG_S`` after it was
+opened, the longest lag ``KeyedBox`` allows for (#879), so only the wake lets it catch up: a restart of Centrum takes no
+time. ``KeyedBox`` keeps the moments of its openings in the file ``OPENING_FILE`` of the run directory, which a restart
+keeps, as Dad's ``config`` folder does. Only a step of the
 Archiwum may be refused (a key without the permission to write the repository's contents, GitHub's 403, or a repository
 without a commit, its 409 to a new Release). The checker does not decide what such an answer means: it hands GitHub's
 answer to the real ``report_box.GitHubReportBox`` (``_github``) and gives the queue its outcome.
@@ -59,10 +63,13 @@ from typing import Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-from rozliczenia.centrum import atomic_file, outbox as outbox_module
-from rozliczenia.centrum.keyed_box import KeyedBox
+from rozliczenia.centrum import keyed_box as keyed_box_module
+from rozliczenia.centrum import outbox as outbox_module
+from rozliczenia.centrum.atomic_file import replace_atomically
+from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE, KeyedBox, NotesFile
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import (
+    RETRY_S,
     ArchiveFile,
     Deliveries,
     KnownIssue,
@@ -122,6 +129,8 @@ class _Unchanged:
         return None
 # Passes beyond one per failure until the queue must be empty; a pass without a failure delivers or removes each file.
 EXTRA_PASSES = 3
+# Początek dopisku części, gdy Archiwum nie przyjęło pliku (outbox._waiting_note).
+WAITING = "czeka w Kolejce wysyłki na komputerze taty"
 DRAIN_FAILURE = "wysyłka do Skrzynki Zgłoszeń"
 
 
@@ -165,10 +174,21 @@ class MemoryBox:
     ``twice`` names each file the queue sent twice: a whole file it removed and, as its very next call, uploaded again
     in the same version or an older one. ``_deliver_archive`` removes a file only to upload its own newer version right
     after, so the pair is one delivery; any other call, a failure or a restart in between ends the pair.
+
+    With ``list_lag`` ``labelled_issues`` leaves out each issue opened less than ``LIST_LAG_S`` ago on ``clock``
+    (``opened_at``), also one whose answer was lost, as GitHub's list does for a few seconds, and ``archive`` leaves out
+    a Release opened so recently (``release_opened_at``), as GitHub's list of Releases does (#887). The list of a
+    Release's files does not lag here: its lag was not measured.
     """
 
-    def __init__(self, scheduler: Scheduler, *, empty_repository: bool = False) -> None:
+    def __init__(
+        self, scheduler: Scheduler, clock: _Clock, *, empty_repository: bool = False, list_lag: bool = False
+    ) -> None:
         self.issues: dict[int, _Issue] = {}
+        self.opened_at: dict[int, float] = {}
+        self.release_opened_at: dict[str, float] = {}
+        self._clock = clock
+        self._list_lag = list_lag
         self.releases: dict[str, _Release] = {}
         self.twice: list[str] = []
         self._scheduler = scheduler
@@ -189,7 +209,12 @@ class MemoryBox:
         if chosen != "ok":
             return Unreachable() if chosen == "unreachable" else _github(NO_PERMISSION).archive(tag, key=key)
         found = self.releases.get(tag)
-        self._scheduler.say(f"Skrzynka zwraca Archiwum {tag}: {'brak' if found is None else _files(found)}")
+        lags = found is not None and self._list_lag and self._clock() - self.release_opened_at[tag] < LIST_LAG_S
+        found = None if lags else found
+        self._scheduler.say(
+            f"Skrzynka zwraca Archiwum {tag}: {'brak' if found is None else _files(found)}"
+            + (" (lista Release'ów jeszcze go nie pokazuje)" if lags else "")
+        )
         if found is None:
             return None
         return Archive(found.id, tuple(Asset(a.id, a.name, a.label, a.uploaded) for a in found.assets))
@@ -211,6 +236,7 @@ class MemoryBox:
             self._scheduler.say(f"Skrzynka odrzuca drugie Archiwum {tag} (422)")
             return Rejected()
         self.releases[tag] = _Release(self._next_id())
+        self.release_opened_at[tag] = self._clock()
         self._scheduler.say(f"Skrzynka zakłada Archiwum {tag}" + (", odpowiedź ginie (Unreachable)" if chosen == "lost" else ""))
         return Unreachable() if chosen == "lost" else Archive(self.releases[tag].id, ())
 
@@ -262,6 +288,7 @@ class MemoryBox:
         number = len(self.issues) + 1
         self.issues[number] = _Issue(label, title, body)
         self._scheduler.written(body, self.versions)
+        self.opened_at[number] = self._clock()
         self._scheduler.say(
             f"Skrzynka zakłada issue #{number}"
             + (", odpowiedź ginie (Unreachable)" if failure else "")
@@ -331,12 +358,25 @@ class MemoryBox:
                 number, issue.body, Closure("completed", None) if issue.closed else None
             )
             for number, issue in self.issues.items()
-            if issue.label == label and (include_closed or not issue.closed)
+            if issue.label == label and (include_closed or not issue.closed) and number not in self.unlisted()
         )
         self._scheduler.say(
             f"Skrzynka zwraca issue {label}: {[issue.number for issue in found] or 'brak'}"
+            + (f" (lista jeszcze nie pokazuje {sorted(self.unlisted())})" if self.unlisted() else "")
         )
         return found
+
+    def unlisted_releases(self) -> set[str]:
+        """Tagi Release'ów, których lista Release'ów jeszcze nie pokazuje (``list_lag``)."""
+
+        now = self._clock()
+        return {tag for tag, at in self.release_opened_at.items() if self._list_lag and now - at < LIST_LAG_S}
+
+    def unlisted(self) -> set[int]:
+        """Issue, których lista issue jeszcze nie pokazuje (``list_lag``)."""
+
+        now = self._clock()
+        return {n for n, at in self.opened_at.items() if self._list_lag and now - at < LIST_LAG_S}
 
 
 Choice = Literal[
@@ -528,6 +568,8 @@ class Scope:
     later: tuple[Post, ...] = ()
     """Wysyłki the code posts later, in order, each between two passes at a moment the schedule picks (before the first
     pass, too): a Diagnoza or the next progress of a Wycena w efenix, newer versions of a wysyłka in ``posts``."""
+    list_lag: bool = False
+    """GitHub's issue list shows a new issue only ``LIST_LAG_S`` after it was opened (``MemoryBox``)."""
 
 
 LOGS = PeriodThread(
@@ -666,6 +708,39 @@ SCOPES = {
         Bounds(unreachable=1, lost=1, disk=1, kills=1),
         empty_repository=True,
     ),
+    "watek-okresu-lista": Scope(
+        "Te dwie Kontrole ilości, a lista issue pokazuje nowe issue dopiero po LIST_LAG_S (#879): druga Kontrola w tym "
+        "samym przejściu, ponowienie po zgubionej odpowiedzi i start Centrum przychodzą, zanim lista je pokaże.",
+        (_post(THREAD, "kontrola-a", 2), _post(THREAD, "kontrola-b", 1)),
+        (),
+        # Z BOUNDS też przechodzi (11 827 harmonogramów, 40 s na Macu Maksa 2026-11-05), a brak sieci przed skutkiem
+        # sprawdza watek-okresu; opóźnienie listy spotyka zgubiona odpowiedź, błąd dysku i start Centrum.
+        Bounds(unreachable=1, lost=1, disk=1, kills=1),
+        list_lag=True,
+    ),
+    "nowe-issue-lista": Scope(
+        "Uwaga taty w dwóch częściach, a lista issue pokazuje nowe issue dopiero po LIST_LAG_S (#879).",
+        (_post(NOTE, "uwaga", 2),),
+        (),
+        BOUNDS,
+        list_lag=True,
+    ),
+    "zgloszenie-lista": Scope(
+        "Zgłoszenie w jednej części, a lista issue pokazuje nowe issue dopiero po LIST_LAG_S (#879).",
+        (_post(REPORT, "zgl", 1),),
+        (),
+        BOUNDS,
+        list_lag=True,
+    ),
+    "archiwum-lista": Scope(
+        "Logi dwóch Uruchomień okresu, każde z plikiem do Archiwum okresu, a lista Release'ów pokazuje nowe Archiwum "
+        "dopiero po LIST_LAG_S (#887): drugie Logi w tym samym przejściu i ponowienie po zgubionej odpowiedzi dokładają "
+        "plik do Archiwum, które już jest, bez odmowy drugiego Archiwum i bez dopisku, że plik czeka.",
+        (_archived("uruchomienie-a", ""), _archived("uruchomienie-b", "")),
+        (),
+        Bounds(unreachable=1, lost=1, disk=0, kills=1),
+        list_lag=True,
+    ),
     "diagnoza-odczyt": Scope(
         "Te same Logi i Diagnoza, a pliku Logów raz nie da się odczytać: Diagnoza idzie przed nimi, a Logi, które "
         "dochodzą po niej, niczego w Skrzynce nie zmieniają ani nie dopisują.",
@@ -723,13 +798,15 @@ class _Log(CentrumLog):
 
 
 class _Clock:
-    """Time stands still; ``after`` arms the wake that the checker fires between passes, as the timer would."""
+    """Time stands still but for the ``RETRY_S`` wake (``now``); ``after`` arms the wake that the checker fires between
+    passes, as the timer would."""
 
     def __init__(self) -> None:
         self.armed: list[Callable[[], None]] = []
+        self.now = 0.0
 
     def __call__(self) -> float:
-        return 0.0
+        return self.now
 
     def after(self, seconds: float, wake: Callable[[], None]) -> None:
         self.armed.append(wake)
@@ -814,7 +891,7 @@ def _posting() -> Iterator[None]:
 
     names = vars(outbox_module)
     intercepted = names["replace_atomically"]
-    names["replace_atomically"] = atomic_file.replace_atomically
+    names["replace_atomically"] = replace_atomically
     try:
         yield
     finally:
@@ -859,9 +936,19 @@ ENDINGS = {
 
 
 def _check(
-    scope: Scope, box: MemoryBox, queue: Path, failures: list[str], ended: str, older: Sequence[str]
+    scope: Scope,
+    box: MemoryBox,
+    queue: Path,
+    failures: list[str],
+    ended: str,
+    older: Sequence[str],
+    refused: bool,
 ) -> list[tuple[str, str]]:
     broken: list[tuple[str, str]] = []
+    if not (scope.empty_repository or refused) and any(
+        WAITING in text for issue in box.issues.values() for text in (issue.body, *issue.comments)
+    ):
+        broken.append(("DOKLADNIE_RAZ", "komentarz ma dopisek, że plik czeka na Archiwum, choć Archiwum niczego nie odmówiło"))
     everything = (*scope.posts, *scope.later)
     newest = {(post.target.label, post.run_id): post for post in everything}
     for post in everything:
@@ -980,6 +1067,8 @@ def _state(
     threads: int,
     versions: dict[str, str],
     pending: int,
+    keyed: KeyedBox,
+    opening: Path,
 ) -> object:
     """What decides every future of a pass boundary and how its breaks are judged: the Skrzynka, the queue files,
     the files ``_remove`` could not delete, the faults so far and those left, the passes left and the exceptions.
@@ -997,6 +1086,13 @@ def _state(
     ``_archive_refused`` is in the state although ``_send_all`` sets it anew in every pass, as the wake it arms is.
     Also how many later wysyłki of the scope the code has not posted yet (``pending``), which decides which versions are
     superseded, and whether the Skrzynka got a text of a superseded one (NAJNOWSZA_WERSJA).
+    Time counts only as what it decides (#879): which issues and Releases GitHub's lists do not show yet, which issues
+    ``KeyedBox`` still adds to a list (``opened`` in ``opening``), which kinds have a write without an answer less than
+    ``LIST_LAG_S`` ago in ``opening``, each with whether the last list of the queue thread came before the write ended
+    its lag (``_listed_at``), and the Releases, files and removals ``KeyedBox`` adds to what ``archive`` answers
+    (``archives``, ``uploads``, ``removals`` in ``opening``); a wake moves time past all of them. The checker runs every
+    pass in its own thread, so the last list of a pass is still there in the next one; in Centrum each pass has a new
+    thread, so it holds at least as often, and every write follows a list of its kind in the same pass.
     Left out on purpose, because they do not change what is sent: ``_first_comments``
     (``delivered``, ``wait_delivered``), ``_rejected`` (no ``Rejected`` here), ``_read_failed`` and ``_unreadable``
     (``_send_all`` sets the first anew in every pass, and whether it armed a wake is in the state; the second only spares
@@ -1007,6 +1103,9 @@ def _state(
     files = {
         path.name: path.read_text(encoding="utf-8") for path in queue.glob("*.json")
     }
+    with keyed._lock:
+        notes = keyed._notes() or keyed_box_module._Notes()
+    listed = keyed._listed_at()
     def same(text: str) -> str:
         return _VERSION.sub(lambda found: f"wersja {versions.get(found.group(1), '?')} -->", text)
 
@@ -1042,6 +1141,20 @@ def _state(
         threads,
         pending,
         bool(scheduler.older_sent),
+        tuple(sorted(box.unlisted())),
+        tuple(sorted(box.unlisted_releases())),
+        tuple(sorted(tag for _, tag, _ in notes.archives)),
+        tuple(sorted(asset.id for _, _, asset in notes.uploads)),
+        tuple(sorted(asset for _, asset in notes.removals)),
+        tuple(sorted(keyed._names.items())),
+        tuple(sorted(issue.number for _, _, issue in notes.opened)),
+        tuple(
+            sorted(
+                (kind, listed.get(keyed_box_module._list_of(kind), clock()) - moment < LIST_LAG_S)
+                for kind, (moment, _) in notes.pending.items()
+                if 0 <= clock() - moment < LIST_LAG_S
+            )
+        ),
     )
 
 
@@ -1059,21 +1172,23 @@ def execute(
     shutil.rmtree(work, ignore_errors=True)
     queue = work / "config" / "zgloszenia" / "kolejka"
     scheduler = Scheduler(prefix, scope.bounds)
-    box = MemoryBox(scheduler, empty_repository=scope.empty_repository)
+    clock = _Clock()
+    box = MemoryBox(scheduler, clock, empty_repository=scope.empty_repository, list_lag=scope.list_lag)
     for label, title, body in scope.issues:
         box.issues[len(box.issues) + 1] = _Issue(label, title, body)
     failures: list[str] = []
-    clock = _Clock()
     started_threads: list[
         Callable[[], None]
     ] = []  # targets of threads the code started, not run yet
+    keyed: list[KeyedBox] = []  # the KeyedBox of the Centrum that runs now
 
     def started() -> Outbox:
         clock.armed.clear()  # a timer and a thread die with their process
         started_threads.clear()
+        keyed[:] = [KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(work / "config" / OPENING_FILE, replace_atomically))]
         return Outbox(
             queue,
-            KeyedBox(box, lambda: KEY, clock=clock),
+            keyed[0],
             _Log(work / "centrum.log", failures),
             clock=clock,
             listener=_Unchanged(),
@@ -1130,6 +1245,7 @@ def execute(
                         outbox.resume()
                     elif then == "next":
                         scheduler.say("mija RETRY_S: budzik woła Outbox._woken")
+                        clock.now += RETRY_S
                         clock.armed.pop(0)()
                     elif pending:
                         arrive()  # the code posts it anyway: the next version is the last thing that moves the queue
@@ -1156,6 +1272,8 @@ def execute(
                     len(started_threads),
                     versions,
                     len(pending),
+                    keyed[0],
+                    work / "config" / OPENING_FILE,
                 )
                 if state in visited and len(scheduler.taken) >= len(prefix):
                     return scheduler, []
@@ -1176,7 +1294,9 @@ def execute(
     older = [] if any(fault == "unreadable" for fault, _ in faults) else scheduler.older_sent
     return scheduler, [
         Violation(rule, detail, trace, _kind(name, rule, faults))
-        for rule, detail in _check(scope, box, queue, failures, ended, older)
+        for rule, detail in _check(
+            scope, box, queue, failures, ended, older, any(kind == "refused" for kind, _ in faults)
+        )
     ]
 
 

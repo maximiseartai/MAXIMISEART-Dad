@@ -25,7 +25,10 @@ przyjmuje pisania, a kalendarz po otwarciu okna pokazuje dzisiejszy dzień, dzie
 poprzedniego miesiąca zamienia na dzisiejszy z komunikatem w ``#toast``, „Potwierdź” wysyła wartość pola, a po
 odpowiedzi 2xx wpisuje ją do ``#data_install`` bez czytania treści odpowiedzi. „Dziś” daje test (``today``), a
 ``refuse_dates`` każe serwerowi odpowiadać na zapis daty bez zapisu. Wycenę Emmetta (``#button_emmett``,
-okno ``#dialog_emmett`` z propozycją z ``action_fill_emmett.php``, „Załaduj do zlecenia” wysyła ``action_load_emmett.php``,
+okno ``#dialog_emmett`` z propozycją z ``action_fill_emmett.php`` w ``#emmett-propozycja``, którą skrypt wkłada, jak
+skrypt efenix, tylko z odpowiedzi 2xx, a okno pokazuje po każdej odpowiedzi, także po błędzie i zerwanym połączeniu, gdy element zostaje pusty
+jak na stronie efenix przed odpowiedzią; gdy Emmett nic nie proponuje, Atrapa odpowiada pustą treścią, choć co wtedy
+odpowiada efenix, nikt nie zmierzył, „Załaduj do zlecenia” wysyła ``action_load_emmett.php``,
 który czyści wycenę i wpisuje propozycję, a skrypt przeładowuje stronę po każdej odpowiedzi, także po odmowie
 ``AtrapaOrder.emmett_refusal``) i przyciski, których narzędzie nie może użyć:
 Przekazanie do akceptacji (``#button_forward_to_accept``) i anulowanie (``#button_forward_to_cancel``) z oknem
@@ -169,6 +172,7 @@ class EmmettRefusal(enum.Enum):
     ELSEWHERE = "przekierowanie na listę zleceń bez załadowania Wyceny Emmetta"
     LOGGED_OUT = "sesja wygasa przy tym żądaniu: przekierowanie na stronę logowania bez załadowania Wyceny Emmetta"
     NOK = "200 z JSON result: nok bez załadowania Wyceny Emmetta"
+    OTHER = "200 z inną treścią (strona HTML) bez załadowania Wyceny Emmetta"
 
 
 @dataclass(frozen=True)
@@ -199,7 +203,9 @@ CATALOG = (
     Position("032", Decimal("1.00"), "CENA"),
 )
 PRICES = {position.code: position.price for position in CATALOG}
-# Przeładowanie strony po załadowaniu Wyceny Emmetta (w efenix po 1 s; tu krócej, żeby testy szły szybko).
+EFENIX_EMMETT_RELOAD_MS = 1000
+"""Przeładowanie strony, które skrypt efenix robi po odpowiedzi „Załaduj do zlecenia”: w efenix po 1 s."""
+# W Atrapie domyślnie krócej, żeby testy szły szybko.
 _EMMETT_RELOAD_MS = 200
 
 
@@ -222,7 +228,10 @@ class AtrapaOrder:
     zlecenia. ``without``: kody pozycji, których karty strona tego zlecenia nie ma, jak strony efenix z częścią pozycji
     wyceny. Z ``after_date`` każda z tych czterech zmian strony jest dopiero od zapisu daty wykonania, a z ``after_emmett``
     od przeładowania po załadowaniu Wyceny Emmetta. ``emmett_refusal``: efenix odmawia „Załaduj do zlecenia” tego
-    zlecenia (``EmmettRefusal``), aż test to zmieni.
+    zlecenia (``EmmettRefusal``), aż test to zmieni. ``emmett_in_fields``: okno Emmetta pokazuje propozycję w polach bez
+    tekstu (ilość w ``value``), jedną z postaci, których w efenix nikt nie zmierzył. ``emmett_proposal_error``: efenix
+    odpowiada na propozycję Emmetta tego zlecenia (``action_fill_emmett.php``) błędem serwera (500), więc okno Emmetta
+    zostaje puste.
     """
 
     order_id: str
@@ -246,6 +255,8 @@ class AtrapaOrder:
     after_date: bool = False
     after_emmett: bool = False
     emmett_refusal: EmmettRefusal | None = None
+    emmett_in_fields: bool = False
+    emmett_proposal_error: bool = False
 
     @property
     def amount(self) -> Decimal:
@@ -349,6 +360,7 @@ def atrapa_efenix(
     cookie_session: bool = False,
     outage_from: tuple[Outage, int] | None = None,
     error_answer: tuple[str, int, HTTPStatus] | None = None,
+    emmett_reload_ms: int = _EMMETT_RELOAD_MS,
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
@@ -356,7 +368,9 @@ def atrapa_efenix(
     wygasa raz, jak przy wylogowaniu w trakcie przebiegu; po ponownym zalogowaniu już nie wygasa. ``today``: dzisiejszy
     dzień kalendarza daty wykonania. ``refuse_dates``: serwer odpowiada na zapis daty wykonania bez zapisu. ``clock``:
     zegar w sekundach, którego chwilę dostaje każde żądanie. ``outage_from``: rodzaj odcięcia i numer żądania (od 0, każde
-    żądanie po kolei, jak w ``requests``), od którego efenix jest odcięty raz, do ``reconnect``. Atrapa pracuje na kopii
+    żądanie po kolei, jak w ``requests``), od którego efenix jest odcięty raz, do ``reconnect``. ``emmett_reload_ms``: po
+    ilu milisekundach od odpowiedzi „Załaduj do zlecenia” skrypt strony ją przeładowuje (w efenix
+    ``EFENIX_EMMETT_RELOAD_MS``, domyślnie krócej). Atrapa pracuje na kopii
     ``orders``, więc zlecenia testu zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie.
     ``error_answer``: ścieżka, numer jej żądania narzędzia (od 1, bez szukania, które lista wysyła sama) i status błędu
     HTTP: na to jedno żądanie Atrapa odpowiada stroną błędu serwera z tym statusem, bez wykonania żądania.
@@ -440,7 +454,7 @@ def atrapa_efenix(
             elif path == LIST_SCRIPT and method == "GET":
                 self._html(_list_script(changed), content_type="text/javascript")
             elif path == ORDER_SCRIPT and method == "GET":
-                self._html(_order_script(changed, today), content_type="text/javascript")
+                self._html(_order_script(changed, today, emmett_reload_ms), content_type="text/javascript")
             elif not logged_in and path == SAVE_QUANTITY:
                 self._json({"result": "nok", "error": "Brak sesji."})
             elif not logged_in and path == SEARCH and method == "POST":
@@ -468,6 +482,12 @@ def atrapa_efenix(
                         self._redirect(LOGIN_PAGE)
                     case EmmettRefusal.NOK:
                         self._json({"result": "nok", "error": "Nie załadowano."})
+                    case EmmettRefusal.OTHER:
+                        self._html("<p>Nie załadowano wyceny Emmetta.</p>")
+            elif method == "POST" and path == FILL_EMMETT and any(
+                order.emmett_proposal_error for order in orders if order.order_id == params.get("order_id")
+            ):
+                self._html("<p>Wystąpił błąd serwera.</p>", HTTPStatus.INTERNAL_SERVER_ERROR)
             elif method == "POST" and path in _CHANGES:
                 with atrapa._lock:
                     found = [order for order in atrapa.orders if order.order_id == params.get(_CHANGES[path])]
@@ -506,7 +526,7 @@ def atrapa_efenix(
                     closing.wait()
                     self.close_connection = True
                 elif found:
-                    self._html(_order_page(found[0], found[0].changed or changed, today, self.headers.get("Host", "")))
+                    self._html(_order_page(found[0], found[0].changed or changed, today, self.headers.get("Host", ""), emmett_reload_ms))
                 else:
                     self._html("<p>Nie ma takiego zlecenia.</p>", HTTPStatus.NOT_FOUND)
             else:
@@ -626,8 +646,10 @@ def _change(path: str, order: AtrapaOrder, params: Mapping[str, str], *, refuse_
             order.quantities.pop(code, None)
         return {"result": "ok", "price_index": f"{PRICES[code] * quantity:.2f}", "price_all": f"{order.amount:.2f}"}
     if path == FILL_EMMETT:
+        if order.emmett_in_fields:
+            return "".join(f'<input name="INDEKS_{escape(code)}_078" value="{quantity}">' for code, quantity in sorted(order.emmett.items()))
         rows = "".join(f"<li>INDEKS_{escape(code)}_078: {quantity}</li>" for code, quantity in sorted(order.emmett.items()))
-        return f"<ul>{rows}</ul>"
+        return f"<ul>{rows}</ul>" if rows else ""
     if path == LOAD_EMMETT:
         order.quantities = dict(order.emmett)
         order.emmett_loads += 1
@@ -798,11 +820,15 @@ _ORDER_SCRIPT = """
   });
   const emmett = document.getElementById('button_emmett');
   if (emmett) {
+    // Jak $.ajax efenix: propozycję wkłada tylko odpowiedź 2xx przeczytana do końca, a okno pokazuje się po każdej.
     emmett.addEventListener('click', () => {
-      post('action_fill_emmett.php', {order_id: emmett.getAttribute('order_id')}).then((answer) => answer.text()).then((html) => {
-        document.getElementById('emmett-propozycja').innerHTML = html;
-        show('dialog_emmett');
-      });
+      post('action_fill_emmett.php', {order_id: emmett.getAttribute('order_id')})
+        .then((answer) => (answer.ok ? answer.text() : null))
+        .catch(() => null)
+        .then((html) => {
+          if (html !== null) document.getElementById('emmett-propozycja').innerHTML = html;
+          show('dialog_emmett');
+        });
     });
   }
   document.querySelector('#dialog_emmett .btn-ok').addEventListener('click', () => {
@@ -829,7 +855,7 @@ _ORDER_SCRIPT = """
 """
 
 
-def _order_page(order: AtrapaOrder, changed: Changed | Unread | None, today: date, host: str) -> str:
+def _order_page(order: AtrapaOrder, changed: Changed | Unread | None, today: date, host: str, reload_ms: int) -> str:
     day = "" if order.execution_date is None else order.execution_date.isoformat()
     if changed is Changed.DATE_FORMAT and order.execution_date is not None:
         day = f"{order.execution_date:%d.%m.%Y}"
@@ -863,16 +889,16 @@ def _order_page(order: AtrapaOrder, changed: Changed | Unread | None, today: dat
         + _dialog("dialog_emmett", "Emmett", '<div id="emmett-propozycja"></div>', "Załaduj do zlecenia")
         + (_hostile(host) if changed is Unread.HOSTILE else "")
         + (
-            f"<script>{_order_script(changed, today)}</script>"
+            f"<script>{_order_script(changed, today, reload_ms)}</script>"
             if changed is Unread.SCRIPTS
             else f'<script src="{ORDER_SCRIPT}{";v=1" if changed is Unread.SCRIPT_ADDRESSES else "?v=1"}"></script>'
         ),
     )
 
 
-def _order_script(changed: Changed | Unread | None, today: date) -> str:
+def _order_script(changed: Changed | Unread | None, today: date, reload_ms: int) -> str:
     script = (
-        _ORDER_SCRIPT.replace("__RELOAD__", str(_EMMETT_RELOAD_MS))
+        _ORDER_SCRIPT.replace("__RELOAD__", str(reload_ms))
         .replace("__REFRESH__", "false" if changed is Changed.STALE_AMOUNT else "true")
         .replace("__DATE_DIALOG__", "false" if changed is Changed.DATE_DIALOG else "true")
         .replace("__TODAY__", today.isoformat())

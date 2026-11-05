@@ -978,6 +978,68 @@ def _disabled_features(browser: Browser) -> list[set[str]]:
     return [set(argument.removeprefix("--disable-features=").split(",")) for argument in line if argument.startswith("--disable-features=")]
 
 
+# Sprawdzenie skilla verify-wycena-efenix: przyczynę Zatrzymania okna efenix, którą dostają Logi, przy każdej awarii każdego
+# żądania prawdziwej Wyceny w efenix sprawdza jego skrypt (explore_wycena_efenix.py) z tabelą oczekiwań z domeny. Cały
+# zakres biegnie w CI jako podstawa skilla w częściach, a tu we własnym procesie z limitem (#651) zakres, który przechodzi
+# przez każdą fazę sprawdzenia: przebieg bez awarii, awarie i stan, który zostawia zabity proces.
+EXPLORER = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "scripts" / "explore_wycena_efenix.py"
+EXPLORER_SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "SKILL.md"
+# Poniżej limitu pytest, żeby sprawdzenie, które się nie kończy, padło z tym, co zdążyło wypisać.
+EXPLORER_LIMIT_S = 100
+
+
+def _explorer_in_own_process(*arguments: str, environment: dict[str, str] | None = None) -> tuple[int | None, list[str]]:
+    """Kod wyjścia skryptu skilla z ``arguments`` we własnym procesie (``None`` po limicie) i jego linie."""
+
+    import subprocess
+
+    try:
+        done = subprocess.run(
+            [sys.executable, "-X", "utf8", "-u", str(EXPLORER), *arguments],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=EXPLORER_LIMIT_S,
+            env=environment,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as hung:
+        return None, (hung.stdout or b"").decode("utf-8", "replace").splitlines()
+    return done.returncode, done.stdout.decode("utf-8", "replace").splitlines()
+
+
+@pytest.mark.dlugi
+def test_odmowa_zaladuj_do_zlecenia_i_zabity_proces_przy_niej_trzymaja_niezmienniki_bez_znanych_ustalen(
+    tmp_path: Path,
+) -> None:
+    code, lines = _explorer_in_own_process(
+        "--run-dir", str(tmp_path), "--variant", "odpowiedzi", "zabity-proces", "--rola", "zaladuj-do-zlecenia", "--rownolegle", "4"
+    )
+
+    assert (code, lines[-1:]) == (0, ["WYCENA EFENIX OK"]), "\n".join(lines)
+    assert not any(line.startswith("znane ustalenie ") for line in lines), "\n".join(lines)
+    [evidence] = (tmp_path / "evidence").iterdir()
+    assert (evidence / "raport.txt").read_text(encoding="utf-8").splitlines()[-1] == "WYCENA EFENIX OK"
+    assert not (evidence / "kontrprzyklady").exists()
+    assert list((tmp_path / "runs").iterdir()) == []
+
+
+def test_czesci_przegladu_z_ci_czesci_skladaja_sie_na_caly_zakres_kazdy_przypadek_raz() -> None:
+    """Każda część ``ci-czesci`` z ``SKILL.md`` skilla ma swoje przypadki, a razem, w kolejności, cały zakres; mniejsze
+    liczby części daje ten sam ``part`` (``tests/test_podstawa_w_czesciach.py``)."""
+
+    [count] = [int(line.split(":")[1]) for line in EXPLORER_SKILL.read_text(encoding="utf-8").splitlines() if line.startswith("ci-czesci:")]
+    code, whole = _explorer_in_own_process("--lista")
+    parts = []
+    for number in range(1, count + 1):
+        part_code, lines = _explorer_in_own_process("--lista", environment={**os.environ, "MUTACJE_CZESC": f"{number}/{count}"})
+        assert part_code == 0, "\n".join(lines)
+        parts.append(lines)
+
+    assert code == 0 and len(whole) > 400, "\n".join(whole)
+    assert sum(parts, []) == whole
+    assert all(parts)
+
+
 def test_okno_efenix_z_centrum_nie_losuje_portu_polaczenia_i_ma_wylaczone_funkcje_playwrighta(tmp_path: Path) -> None:
     """Chromium 156 na Windows 11 22H2 i nowszym losuje port lokalny każdego połączenia (``TcpPortRandomizationWin``), a
     Windows odmawia wtedy czasem połączenia z efenix (``net::ERR_NO_BUFFER_SPACE``), choć porty są wolne (#767). Przeglądarka

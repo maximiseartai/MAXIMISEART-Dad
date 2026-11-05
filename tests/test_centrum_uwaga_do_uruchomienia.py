@@ -12,6 +12,7 @@ import pytest
 
 from rozliczenia import settlement_process
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
+from rozliczenia.centrum.keyed_box import LIST_LAG_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Rejected, Unreachable
 from rozliczenia.telemetry import MetricsStore
 
@@ -326,6 +327,9 @@ def test_komentarz_do_usunietego_issue_uwagi_kolejka_porzuca_raz_i_wiecej_o_nie_
     (centrum.tmp_path / "config" / "zgloszenia-klucz.txt").unlink()
     behind = centrum.client.post("/api/dad-notes", json={"title": "Uwaga za komentarzem"})
     assert behind.json() == {"state": "waiting", "waits_for": "key"}
+    # Maks usuwa issue Uwagi, gdy lista issue już je pokazuje: usunięte w LIST_LAG_S po założeniu lista issue z etykietą
+    # pokazuje z zapisów KeyedBox, więc kolejka porzuca komentarz do niego dopiero po budzeniu (#879).
+    centrum.surroundings.clock.pause(LIST_LAG_S)
     box(centrum).issues.remove(issue)
     write_key(centrum)
 
