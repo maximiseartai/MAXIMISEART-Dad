@@ -209,14 +209,16 @@ that Centrum changes often: `lifespan` in `app.py`, `listen_locally` and
 and `_Server` in `server.py`. `model/definicje.json` lists the four covered files as whole files and these three
 by their definitions: only a change to these definitions, not to the rest of their files, is drift.
 
-**Sync commit: `4ec0d182`** (2026-11-05). The checker and the model share it:
+**Sync commit: `7a5acaa9`** (2026-11-05). The checker and the model share it:
 at this commit both were confirmed to describe the code above. Since the
-previous sync `865ffcdc` only `4ec0d182` (round 2 of #897) changed a covered
-file, `keyed_box.py`: the file `OPENING_FILE` keeps the effects of answered
+previous sync `865ffcdc` only `4ec0d182` and `7a5acaa9` (round 2 of #897)
+changed a covered file, `keyed_box.py` (`create_app` in `app.py` is outside
+`lifespan`): the file `OPENING_FILE` keeps the effects of answered
 writes (`_Notes`), so every `KeyedBox`, also a new Centrum's, adds them to its
 lists, and only a write without an answer holds; a list without closed issues
 adds an effect only when the list with closed ones does not have it closed; the
-time of the list is per thread; the file goes through `replace_atomically`. The
+time of the list is per thread; the file goes through the `replace_atomically`
+that `create_app` passes (`NotesFile`). The
 checker reads the file instead of the memory of `KeyedBox`; the model has
 `pamiec` and `pamiecWydania` in the file (they survive a restart), no
 `odpowiedz`, an answer that clears the hold of every queue and the failed write
