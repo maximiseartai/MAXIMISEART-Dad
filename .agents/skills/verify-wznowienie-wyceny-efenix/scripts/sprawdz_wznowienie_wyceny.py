@@ -1,4 +1,4 @@
-"""Sprawdza model TLA+ wznowienia Wyceny w efenix przy każdej kolejności Zatrzymań, zgaśnięć, zapisów śladu i zmian taty.
+"""Sprawdza model TLA+ wznowienia Wyceny w efenix przy każdej kolejności Zatrzymań, zgaśnięć i zmian taty w efenix.
 
 Uruchamia TLC na każdej konfiguracji z ``model/*.cfg``, porównuje wynik z ``model/oczekiwane.json`` i opowiada każdy
 kontrprzykład krokami kodu. Javę i ``tla2tools.jar`` bierze z narzędzi skilla ``verify-aktualizacja-narzedzia``
@@ -41,9 +41,13 @@ DRIFT = f"{VERDICT}: ROZJAZD MODELU Z KODEM"
 # Obietnice, każda z wariantem ``…PozaZnanymi`` i stałą ``Wybaczone…`` w modelu, i ich zdanie dla czytelnika.
 PROMISES = {
     "NieCzysciWycenyTaty": "narzędzie ładuje Wycenę Emmetta do zlecenia, które ma już ilości, i czyści je.",
-    "ZmianaTatyZostaje": "narzędzie wpisuje ilość do zlecenia z wyceną, które tata sam zmienił (także dopisuje z powrotem ilość, którą usunął).",
+    "NieObnizaIlosci": "narzędzie obniża albo czyści ilość w efenix.",
+    "ZmianaTatyZostaje": (
+        "zlecenie, które tata zmienił, nie kończy się Ostrzeżeniem Emmetta przy ilości większej niż plik albo nie jest"
+        " gotowe bez niej."
+    ),
     "ZnacznikTylkoNaWycenionym": "Znacznik efenix staje przy zleceniu, którego wycena w efenix różni się od pliku.",
-    "BladTylkoPoZmianieTaty": "tata dostaje błąd „wycena już jest i się różni” przy zleceniu, którego sam nie zmieniał.",
+    "BladTylkoPoZmianieTaty": "tata dostaje błąd albo Ostrzeżenie Emmetta przy zleceniu, którego sam nie zmieniał.",
 }
 _STATE = re.compile(r"^State \d+: ")
 _STUTTERING = re.compile(r"^State \d+: Stuttering")
@@ -144,7 +148,8 @@ def _said(verdict: Verdict | None) -> str:
 # Zmienna historii każdej obietnicy: zbiór z jednym zbiorem śladów w chwili zdarzenia, które ją łamie.
 _EVENTS = {
     "NieCzysciWycenyTaty": "czysciTate",
-    "ZmianaTatyZostaje": "nadpisujeTate",
+    "NieObnizaIlosci": "obniza",
+    "ZmianaTatyZostaje": "zlyWynikPoTacie",
     "ZnacznikTylkoNaWycenionym": "zlyZnacznik",
     "BladTylkoPoZmianieTaty": "bladBezPowodu",
 }
@@ -205,16 +210,14 @@ def _trace(output: str) -> list[dict[str, str]]:
 
 # Akcja modelu i krok kodu, który opisuje (tabela w SKILL.md), w słowach kontrprzykładu.
 _STEPS = {
-    "Start": "tata uruchamia Wycenę w efenix (EmmettTrace czyta ślad z dysku)",
-    "Otworz": "okno otwiera zlecenie {z} i decyduje (_outcome)",
+    "Start": "tata uruchamia Wycenę w efenix",
+    "Otworz": "okno otwiera zlecenie {z} i decyduje (_outcome, completion)",
     "ZaladujEmmetta": "okno klika „Załaduj do zlecenia” w zleceniu {z}: efenix ma Wycenę Emmetta (load_emmett)",
-    "OdczytPoEmmetcie": "okno czyta stronę zlecenia {z} po Emmetcie, trace.loaded zapisuje „Emmett załadowany”",
-    "BrakPozycji": "strona zlecenia {z} po Emmetcie nie ma pozycji z ilością w pliku: błąd zlecenia przed trace.loaded",
-    "Zapowiedz": "po przerwie tempa trace.entering zapisuje z wyprzedzeniem pozycję, którą okno zaraz wpisze w zleceniu {z} (_WrittenAhead)",
+    "OdczytPoEmmetcie": "okno czyta stronę zlecenia {z} po Emmetcie i liczy, co dopisać (_completed, completion)",
+    "BrakPozycji": "strona zlecenia {z} po Emmetcie nie ma pozycji z ilością w pliku: błąd zlecenia",
     "Wpisz": "okno wpisuje ilość z pliku w zleceniu {z}, efenix ją zapisuje (enter_quantity)",
-    "Odmowa": "efenix nie zapisał ilości w zleceniu {z} (LoggedOut), trace.not_entered wycofuje pozycję, Zatrzymanie",
     "Potwierdz": "efenix odpowiada kwotą w zleceniu {z}",
-    "KoniecZlecenia": "zlecenie {z} ma wynik, potem trace.finished (_priced)",
+    "KoniecZlecenia": "zlecenie {z} ma wynik",
     "Zatrzymanie": "okno efenix się nie dokończyło działania: Zatrzymanie (StopError) w zleceniu {z}",
     "Znaczniki": "Znaczniki efenix przy gotowych zleceniach (_mark), koniec Uruchomienia",
     "Zgasniecie": "Centrum gaśnie w zleceniu {z} (brak prądu, zabity proces)",
@@ -225,23 +228,11 @@ _STEPS = {
 def _tell(trace: list[dict[str, str]]) -> None:
     for number, (before, state) in enumerate(itertools.pairwise(trace), start=1):
         step = _STEPS.get(state["_akcja"], state["_akcja"]).format(z=before.get("zlecenie", "?"))
-        print(f"   {number}. {step}: efenix {_brief(state['efenix'])}, ślad na dysku {_entries(_brief(state['naDysku']))}")
+        print(f"   {number}. {step}: efenix {_brief(state['efenix'])}, wynik {_brief(state['wynik'])}")
 
 
 def _brief(value: str) -> str:
     return " ".join(value.split())
-
-
-# Wpis śladu modelu, np. ``[stan |-> "zaladowany", wpisuje |-> {"B"}]``, opowiedziany jako ``zaladowany {B}``.
-_ENTRY = re.compile(r'\[stan \|-> "(\w+)", wpisuje \|-> \{([^}]*)\}\]')
-
-
-def _entries(value: str) -> str:
-    def told(entry: re.Match[str]) -> str:
-        positions = entry.group(2).replace('"', "")
-        return entry.group(1) + (f" {{{positions}}}" if positions else "")
-
-    return _ENTRY.sub(told, value)
 
 
 def _description(name: str) -> str:

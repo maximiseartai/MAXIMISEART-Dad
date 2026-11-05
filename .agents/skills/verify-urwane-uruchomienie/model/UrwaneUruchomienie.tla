@@ -453,7 +453,7 @@ Wpis(rodzaj) ==
        /\ zapisanyStart' = [zapisanyStart EXCEPT ![r] = TRUE]
        /\ UNCHANGED <<wpisy, postepMozliwy, naglowekCzeka>>
 
-\* efenix_pricing.save: journal.begun(order.row, ...) przed efenix_trace.traced i _priced.
+\* efenix_pricing.save: journal.begun(order.row, ...) przed efenix_trace.traced i _outcome.
 WpisZaczete ==
     /\ bieg # 0 /\ faza = "zaczete"
     /\ Wpis("zaczete")
@@ -462,7 +462,7 @@ WpisZaczete ==
                    doWyslania, krokWysylki, bieg, zlecenie, wKolejce, nastepny, zgasniecia, zatrzymania, awarieOdczytu,
                    awarieLogow, awarieKolejki, awarieUsuniecia, cofniecia, wynik, bezKonca, zdarzenia>>
 
-\* _priced -> _outcome: pierwsze działanie okna efenix, które zmienia zlecenie (data wykonania, Wycena Emmetta, ilość).
+\* _outcome: pierwsze działanie okna efenix, które zmienia zlecenie (data wykonania, Wycena Emmetta, ilość).
 ZmianaWEfenix ==
     /\ bieg # 0 /\ faza = "efenix"
     /\ efenix' = [efenix EXCEPT ![bieg] = @ \cup {zlecenie}]
@@ -483,7 +483,7 @@ WpisSkonczone ==
                    awarieLogow, awarieKolejki, awarieUsuniecia, cofniecia, wynik, bezKonca, zdarzenia>>
 
 (* save: Zatrzymanie przy zleceniu po journal.begun, a przed journal.ended (okno efenix staje: strona błędu,         *)
-(* wylogowanie, zamknięte okno; albo Ślad Wyceny Emmetta nie zapisał ilości z wyprzedzeniem, #881); save oznacza       *)
+(* wylogowanie, zamknięte okno); save oznacza                                                                       *)
 (* gotowe i rzuca StopError dalej, a run_process wraca z wynikiem z Zatrzymaniem. Wpisu „zlecenie skończone” tego      *)
 (* zlecenia nie ma, więc dziennik może dojść do wyniku z jednym wpisem. Okno efenix staje też przed pierwszym         *)
 (* journal.begun (zamknięte w trakcie logowania taty, faza "zaczete"), więc dziennik dochodzi do wyniku z samą         *)

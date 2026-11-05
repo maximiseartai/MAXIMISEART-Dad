@@ -6,16 +6,14 @@ was, and once after each change he could make by hand in efenix to the order the
 ## Sub-features
 
 - Without Dad's change in an order: efenix and the Plik zbiorczy end like one run without a fault
-  (`BladTylkoPoZmianieTaty` of `verify-wznowienie-wyceny-efenix`), except #774 (an order stopped between „Załaduj do
-  zlecenia” and reading the reloaded page is left to Dad) and `przerwanie-przed-zapisem-ilosci` (an order stopped
-  after the Ślad got a quantity ahead and before efenix saved it is left to Dad, #864), each only in its whole
-  `RiskShape`: the window's step and the way run 1 broke, what it left, and how the second run ended the order (the
-  table in `SKILL.md`, Accepted risks).
-- `FINISHED`, `REMOVED_EMMETT`, `REMOVED_ADDED`, `OWN`: the second run never changes an order Dad left with a pricing
-  (`ZmianaTatyZostaje`); `REMOVED_ADDED` after a quantity efenix saved is the path of #864.
-- A pricing that already is gets completed only when the Ślad has it as „Emmett załadowany” and the page has exactly
-  Emmett's quantities and those the Ślad has ahead (`entering`), only by adding quantities in empty positions, never
-  by loading Emmett again (`GLOSSARY.md`, Ślad Wyceny Emmetta; `NieCzysciWycenyTaty`).
+  (`BladTylkoPoZmianieTaty` of `verify-wznowienie-wyceny-efenix`), also after a stop or a kill between „Załaduj do
+  zlecenia” and reading the reloaded page or before efenix saved a quantity: the second run completes the order to the
+  file without loading Emmett again (ADR 0026; the accepted risks #774 and #864 before #960).
+- `FINISHED`, `REMOVED_EMMETT`, `REMOVED_ADDED`, `OWN`: the second run completes the order Dad changed to the file only
+  upwards (`completed` in the explorer, `ZmianaTatyZostaje`): a quantity he removed comes back from the file, one above
+  the file stays and gives an Ostrzeżenie Emmetta.
+- No quantity in efenix is lower after the second run than before it (`NieObnizaIlosci`), and an order with a quantity
+  gets no new „Załaduj do zlecenia” (`NieCzysciWycenyTaty`).
 
 ## How to get to it (user POV)
 
@@ -28,10 +26,8 @@ ilosc` the logout at a quantity.
 
 ## Gotchas
 
-- An order Dad emptied (amount 0) has no pricing (`efenix_pricing`: „Zlecenie z kwotą w efenix różną od 0 ma już
-  wycenę”), so the second run may price it like a new one.
+- An order Dad emptied has no pricing, so the second run prices it like a new one, with Wycena Emmetta.
 - Two first runs that left the same state share one second run only when they broke in the step and way of the same
-  accepted risks (`RiskShape.window`), so a logout at a quantity never borrows #774 of a stop at the page after Emmett,
-  nor #864 of a cut at the quantity. No Ślad file and a Ślad file without the order are two states.
+  accepted risks (`RiskShape.window`); with none today, equal states share one second run.
 - A fault the window goes on after breaks it at a later step: a logout at the stylesheet of the page after Emmett breaks
   at the first quantity, and a torn script of that page breaks at the save of a quantity, which then sends nothing.

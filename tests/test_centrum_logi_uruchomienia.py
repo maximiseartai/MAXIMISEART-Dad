@@ -1143,8 +1143,8 @@ def test_odmowa_zaladuj_do_zlecenia_zabity_proces_przy_niej_i_wznowienie_po_nich
     assert any(" ponownych uruchomień " in line for line in lines), "\n".join(lines)
     [evidence] = (tmp_path / "evidence").iterdir()
     assert (evidence / "raport.txt").read_text(encoding="utf-8").splitlines()[-1] == "WYCENA EFENIX OK"
-    counterexamples = [json.loads(path.read_text(encoding="utf-8")) for path in (evidence / "kontrprzyklady").iterdir()]
-    assert [violation.partition(" | ")[0] for found in counterexamples for violation in found["naruszenia"]] == ["WZNOWIENIE"]
+    # Kontrprzykład ma tylko przypadek z naruszeniem, znanym ustaleniem albo przyjętym ryzykiem, a tu nie ma żadnego.
+    assert not (evidence / "kontrprzyklady").exists()
     assert list((tmp_path / "runs").iterdir()) == []
 
 

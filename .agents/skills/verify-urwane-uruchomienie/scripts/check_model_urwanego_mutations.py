@@ -177,7 +177,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "„zaczynam zlecenie” po pierwszym działaniu okna efenix (save: journal.begun po _priced)",
+        "„zaczynam zlecenie” po pierwszym działaniu okna efenix (save: journal.begun po _outcome)",
         (
             Edit(MODEL, "    /\\ faza' = \"zaczete\"\n    /\\ UNCHANGED <<wpisy, logi,",
                  "    /\\ faza' = \"efenix\"\n    /\\ UNCHANGED <<wpisy, logi,"),
