@@ -148,7 +148,7 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `ed73f88ce` (2026-11-05, #913 option 3 merged with `main` after #960). Every row of the table was checked
+Sync commit: `0fb635748` (2026-11-05, #913 option 3 merged with `main` after #960). Every row of the table was checked
 against the code at this commit. Since the Sync commit `ba4092817` two definitions changed, both without a new action:
 `guarded` (#913) checks each cell of the Kopia wejścia with its row in Dad's file and its header
 (`client_data.CopiedCell`), so a value from a row with two positions is masked there only in its own row, under `ADRES`
