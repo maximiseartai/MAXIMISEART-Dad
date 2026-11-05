@@ -98,23 +98,31 @@ telefony na okres.
   (ADR 0019) te komórki stoją dwie kolumny na lewo od nagłówka; rozpoznaje go
   to samo rozpoznanie bloku co Uporządkowanie. Pierwszy wiersz drugiego
   wklejenia też przychodzi przesunięty, a pierwszy wiersz z datą jako tekstem
-  nie musi być przesunięty, więc położenie wiersza ustala data z godziną:
-  wiersz z nią pod `DATA GODZ. POCZ.` stoi bez przesunięcia, a wiersz z nią dwie
-  kolumny na lewo od tego nagłówka stoi przesunięty (#913). To wymaga układu
-  arkusza taty, który kod sprawdza po nagłówkach z wiersza 1: dwie kolumny na
-  prawo od `DATA GODZ. POCZ.` stoi zakazana kolumna (`ADRES`), więc przesunięty
-  wiersz nie ma tam daty, a dwie kolumny na lewo nie ma nagłówka, więc wiersz
-  bez przesunięcia nic tam nie ma. Na kopii INTERMAX taty z wklejeniem z
-  25.10.2026 (42 839 wierszy, pomiar do #913) datę z godziną dwie kolumny na
-  prawo od `DATA GODZ. POCZ.` ma 0 wierszy, a dwie kolumny na lewo 1:
-  przesunięty pierwszy wiersz wklejenia. W innym układzie arkusza pewne
+  nie musi być przesunięty, więc położenie wiersza ustala data z godziną,
+  i to tylko wtedy, gdy wiersz przeczy też drugiemu położeniu (#913, #917).
+  To wymaga układu arkusza taty, który kod sprawdza po nagłówkach z wiersza 1:
+  dwie kolumny na prawo od `DATA GODZ. POCZ.` stoi zakazana kolumna (`ADRES`),
+  a dwie kolumny na lewo kolumna bez nagłówka. Wiersz z datą z godziną pod
+  `DATA GODZ. POCZ.` stoi bez przesunięcia, bo przesunięty miałby datę z
+  godziną jako `ADRES`. Wiersz z datą z godziną dwie kolumny na lewo stoi
+  przesunięty tylko wtedy, gdy pod `DATA GODZ. POCZ.` ma tekst z literą bez
+  śladu daty ani godziny (np. adres): kolumnę bez nagłówka tata może wypełnić
+  także w wierszu bez przesunięcia, a ten ma pod `DATA GODZ. POCZ.` datę,
+  choćby jako tekst, albo nic. Na kopii INTERMAX taty z wklejeniem z
+  25.10.2026 (42 839 wierszy, pomiar do #913 i #917) datę z godziną dwie
+  kolumny na prawo od `DATA GODZ. POCZ.` ma 0 wierszy, a dwie kolumny na lewo
+  1: przesunięty pierwszy wiersz wklejenia, z tekstem adresu pod `DATA GODZ.
+  POCZ.`; taki tekst ma tam jeszcze 1 wiersz uporządkowany. Wyciek zostaje
+  więc możliwy tylko w wierszu bez przesunięcia, w którym tata wpisał datę z
+  godziną w kolumnę bez nagłówka, a pod `DATA GODZ. POCZ.` tekst bez daty
+  (np. słowo). W innym układzie arkusza pewne
   położenie ma tylko wiersz uporządkowany. Komórki wiersza z pewnym
   położeniem poznaje pamięć pracy Centrum tam, gdzie stoją, więc wiersz z
   pewnym położeniem nie maskuje w Kopii następnych Uruchomień niczego
   zbędnego (przed #913 przesunięty wiersz kolejnego wklejenia maskował
   `URZĄDZENIA` w 82 z 84 wierszy Kopii na tej kopii INTERMAX). Wiersz bez
-  niego (bez daty z godziną w żadnym z tych miejsc albo w obu, albo w innym
-  układzie arkusza) ma `ADRES` i numer Orange w jednym z dwóch miejsc, a w
+  niego (każdy inny wiersz z wartościami, a w innym układzie arkusza każdy
+  wiersz poza uporządkowanymi) ma `ADRES` i numer Orange w jednym z dwóch miejsc, a w
   drugim wartość innej kolumny, np. `NUMER ZL.`. Jego komórki z obu miejsc
   też poznaje pamięć pracy Centrum: Uwaga taty i Logi innego Uruchomienia,
   które zacytują jego adres, nie czytają tego wiersza ponownie, więc tylko ta

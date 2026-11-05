@@ -921,10 +921,10 @@ def test_arkusz_zlecen_ktorego_wierszy_nie_da_sie_rozdzielic_zatrzymuje_uporzadk
 # --- Położenia wklejonego wiersza (#842) ---------------------------------------------------------------------------------
 # Tabela położeń z opisu PR #905: wiersz próbny niesie syntetyczny adres i numer Orange tam, gdzie w pliku stoją jego
 # kolumny ``ADRES`` i ``NUMER UMOWY``, a ostatnie zlecenie wklejenia cytuje je w ``CZYNNOŚCI ZREALIZOWANE``, więc
-# strażnik musi je znać, gdziekolwiek stały. Pewne położenie ma wiersz uporządkowany i wiersz z datą z godziną albo pod
-# ``DATA GODZ. POCZ.``, albo dwie kolumny na lewo od niego (#913); w każdym innym ``ADRES`` i numer Orange mogą stać pod
-# nagłówkiem albo dwie kolumny na lewo od niego, więc Kopia ma z niego tylko komórki dozwolone w obu położeniach, a oba
-# zna pamięć pracy Centrum.
+# strażnik musi je znać, gdziekolwiek stały. Pewne położenie ma wiersz uporządkowany, wiersz z datą z godziną pod
+# ``DATA GODZ. POCZ.`` i wiersz z nią dwie kolumny na lewo od niego, który pod ``DATA GODZ. POCZ.`` ma tekst z literą bez
+# śladu daty (#913, #917); w każdym innym ``ADRES`` i numer Orange mogą stać pod nagłówkiem albo dwie kolumny na lewo od
+# niego, więc Kopia ma z niego tylko komórki dozwolone w obu położeniach, a oba zna pamięć pracy Centrum.
 # ``NUMER ZL.`` uporządkowanego wiersza, który stoi tam, gdzie numer Orange przesuniętego, cytowany w tym samym tekście
 # zostaje: może wyjść (ADR 0025).
 
@@ -994,6 +994,9 @@ class Position:
 
 TEXT_DATE = (3, "26.10.2026 11:00")
 """``DATA GODZ. POCZ.`` jako tekst, nie data z godziną."""
+LEFT_DATE = (1, datetime(2026, 10, 26, 11))
+"""Data z godziną w kolumnie A bez nagłówka, dwie kolumny na lewo od ``DATA GODZ. POCZ.``: tam, gdzie stoi data
+przesuniętego wiersza, choć tata może ją wpisać także w wierszu bez przesunięcia."""
 POSITIONS = {
     "zwykly_wiersz": Position(
         Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1]))), (ORDER_SHEET, 1), "CDFGHIJ", False, None
@@ -1037,11 +1040,32 @@ POSITIONS = {
         "SUROWE_ZLECENIE_BEZ_DATY",
     ),
     "wiersz_z_data_z_godzina_takze_dwie_kolumny_przed_data": Position(
-        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], (1, datetime(2026, 10, 26, 11))))),
+        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], LEFT_DATE))),
         (ORDER_SHEET, 1),
         "ADFGHJ",
         True,
         None,
+    ),
+    "wiersz_z_data_jako_tekst_i_data_z_godzina_dwie_kolumny_przed_data": Position(
+        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], TEXT_DATE, LEFT_DATE))),
+        (ORDER_SHEET, 1),
+        "ADFGHJ",
+        True,
+        "SUROWE_ZLECENIE_BEZ_DATY",
+    ),
+    "przedostatni_wiersz_z_data_jako_tekst_i_data_z_godzina_dwie_kolumny_przed_data": Position(
+        Intermax(ordered=ORDERED, raw=_pasted(3, _probe(PASTED[3], TEXT_DATE, LEFT_DATE))),
+        (ORDER_SHEET, 3),
+        "ADFGHJ",
+        True,
+        "SUROWE_ZLECENIE_BEZ_DATY",
+    ),
+    "wiersz_bez_daty_z_data_z_godzina_dwie_kolumny_przed_data": Position(
+        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], (3, " "), LEFT_DATE))),
+        (ORDER_SHEET, 1),
+        "ADFGHJ",
+        True,
+        "SUROWE_ZLECENIE_BEZ_DATY",
     ),
     "wiersz_bez_wykonawcy": Position(
         Intermax(ordered=ORDERED, raw=_pasted(1, _probe(replace(PASTED[1], worker="")))),
@@ -1249,7 +1273,7 @@ def test_w_arkuszu_z_naglowkiem_dwie_kolumny_przed_data_data_z_godzina_nie_ustal
     Orange, zacytowane w ``CZYNNOŚCI ZREALIZOWANE`` innego zlecenia, nie wychodzą do Logów ani do Skrzynki, a żaden
     wklejony wiersz nie ma w Kopii pewnego położenia."""
 
-    probe = _probe(PASTED[1], TEXT_DATE, (1, datetime(2026, 10, 26, 11)))
+    probe = _probe(PASTED[1], TEXT_DATE, LEFT_DATE)
     centrum = ordering_centrum(
         tmp_path, Intermax(ordered=ORDERED, raw=_pasted(1, probe), headers={1: "PRZYJĘTO"})
     )

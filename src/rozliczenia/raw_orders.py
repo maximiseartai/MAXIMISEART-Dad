@@ -341,15 +341,18 @@ class Shifts:
     lewo; ``None``: bez niego. Tak przychodzi jednak pierwszy wiersz każdego wklejenia, także drugiego w tym samym
     bloku, a pierwszy wiersz bloku bez daty z godziną na miejscu nie musi być przesunięty (data jako tekst).
 
-    Położenie wiersza ustala więc data z godziną, a nie rozpoznanie: wiersz z nią pod ``DATA GODZ. POCZ.`` stoi bez
-    przesunięcia, a wiersz z nią ``SHIFT`` kolumn na lewo od tego nagłówka stoi przesunięty. Tak jest tylko w układzie
-    arkusza taty (``dated``), który to wyklucza: ``SHIFT`` kolumn na prawo od ``DATA GODZ. POCZ.`` stoi zakazana kolumna
-    (``ADRES``), więc w przesuniętym wierszu pod ``DATA GODZ. POCZ.`` nie ma daty, a ``SHIFT`` kolumn na lewo nie ma
-    nagłówka, więc w wierszu bez przesunięcia nic tam nie stoi. Na kopii INTERMAX taty z wklejeniem z 25.10.2026
-    (42 839 wierszy, pomiar do #913) datę z godziną ``SHIFT`` kolumn na prawo od ``DATA GODZ. POCZ.`` ma 0 wierszy, a
-    ``SHIFT`` kolumn na lewo 1: przesunięty pierwszy wiersz wklejenia. Pewne położenie ma też wiersz uporządkowany.
-    Wiersz z wartościami bez daty z godziną w żadnym z tych miejsc albo w obu, a w innym układzie arkusza każdy wiersz
-    poza uporządkowanymi, może mieć komórki przy obu przesunięciach.
+    Położenie wiersza ustala więc data z godziną, a nie rozpoznanie, i to tylko wtedy, gdy wiersz przeczy też drugiemu
+    położeniu. Tak jest w układzie arkusza taty (``dated``): ``SHIFT`` kolumn na prawo od ``DATA GODZ. POCZ.`` stoi
+    zakazana kolumna (``ADRES``), a ``SHIFT`` kolumn na lewo kolumna bez nagłówka. Wiersz z datą z godziną pod ``DATA
+    GODZ. POCZ.`` stoi bez przesunięcia: przesunięty miałby datę z godziną jako ``ADRES``. Wiersz z datą z godziną
+    ``SHIFT`` kolumn na lewo stoi przesunięty tylko wtedy, gdy pod ``DATA GODZ. POCZ.`` ma tekst z literą bez śladu
+    daty ani godziny (``_contradicts_date``, np. adres): kolumnę bez nagłówka tata może wypełnić także w wierszu bez
+    przesunięcia, a ten pod ``DATA GODZ. POCZ.`` ma datę, choćby jako tekst, albo nic (#917). Na kopii INTERMAX taty z
+    wklejeniem z 25.10.2026 (42 839 wierszy, pomiar do #913 i #917) datę z godziną ``SHIFT`` kolumn na prawo od ``DATA
+    GODZ. POCZ.`` ma 0 wierszy, a ``SHIFT`` kolumn na lewo 1: przesunięty pierwszy wiersz wklejenia, z tekstem adresu
+    pod ``DATA GODZ. POCZ.``; taki tekst ma tam jeszcze tylko 1 wiersz uporządkowany. Pewne położenie ma też wiersz
+    uporządkowany. Każdy inny wiersz z wartościami, a w innym układzie arkusza każdy wiersz poza uporządkowanymi, może
+    mieć komórki przy obu przesunięciach.
     """
 
     shifted_row: int | None
@@ -368,8 +371,13 @@ class Shifts:
 
         if _is_ordered(row, self.columns):
             return (self.read(row.number),)
-        dated = tuple(offset for offset in (0, SHIFT) if _is_date(row.value(self.columns.date - offset)))
-        return dated if self.dated and len(dated) == 1 else (0, SHIFT)
+        if self.dated:
+            here, left = (row.value(self.columns.date - offset) for offset in (0, SHIFT))
+            if _is_date(here) and not _is_date(left):
+                return (0,)
+            if _is_date(left) and _contradicts_date(here):
+                return (SHIFT,)
+        return (0, SHIFT)
 
 
 def shifts(
@@ -560,6 +568,18 @@ def _above(
 
 def _is_date(value: object) -> bool:
     return isinstance(value, datetime)
+
+
+_DATE_TRACE: Final = re.compile(r"\d\s*[:.]\s*\d\d|\d\s*[./-]\s*\d+\s*[./-]\s*\d|(?<!\d)(?:19|20)\d\d(?!\d)")
+"""Ślad daty albo godziny w tekście: godzina albo dzień z miesiącem (``11:00``, ``11.00``, ``26.10``), data z trzech
+liczb (``26-10-26``) albo rok (``2026``). Dwie liczby przez ``/`` śladem nie są, bo tak pisze się numer lokalu."""
+
+
+def _contradicts_date(value: object) -> bool:
+    """Wartość, która nie jest datą z ``DATA GODZ. POCZ.``, także wpisaną jako tekst: tekst z literą bez śladu daty ani
+    godziny (``_DATE_TRACE``), np. adres. Pusta komórka, liczba i tekst bez litery mogą być datą."""
+
+    return isinstance(value, str) and any(character.isalpha() for character in value) and not _DATE_TRACE.search(value)
 
 
 def _order_cells(row: RowFacts, columns: OrderColumns) -> list[CellFacts]:
