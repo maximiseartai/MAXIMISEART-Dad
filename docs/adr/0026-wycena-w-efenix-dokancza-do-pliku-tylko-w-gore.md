@@ -4,7 +4,9 @@
 
 Zaakceptowana (decyzja Maksa 5.11.2026 po odpowiedziach taty na pytania po
 runie z 4.11.2026, #960). Odwraca historie 21, 22, 24, 25 i 31 specyfikacji
-#741; historie 19 i 20 zostają.
+#741; historie 19 i 20 zostają. Historia 30 zostaje dla zlecenia z datą
+wykonania, a zlecenie z wyceną i bez daty dostaje datę z `DATA` (decyzja Maksa
+5.11.2026 po #965).
 
 ## Kontekst
 
@@ -37,6 +39,13 @@ pozycja nie przekracza pliku.
 - **Wycenę Emmetta ładuje tylko do zlecenia bez żadnej ilości** (historie 19 i
   20), bo „Załaduj do zlecenia” czyści wycenę. Do zlecenia z ilościami jej nie
   ładuje.
+- **Pustą datę wykonania ustawia z `DATA` przy każdym zleceniu, z ilościami w
+  efenix albo bez, zanim dokończy je do pliku**, żeby gotowe zlecenie ze
+  Znacznikiem efenix nie zostało w efenix bez daty. Dzień, którego efenix nie
+  przyjął albo nie zapisał, to błąd zlecenia bez zmian ilości, tak samo jak
+  przy zleceniu bez wyceny. Do 5.11.2026 datę dostawało tylko zlecenie bez
+  ilości, więc zlecenie z wyceną i bez daty mogło dostać Znacznik efenix bez
+  daty wykonania.
 - **Zlecenie bez nadmiaru z kwotą końcową równą `Kwota` (AU) jest gotowe.**
   Kwota różna od AU to błąd z obiema kwotami, jak dotąd.
 - **Ręczna zmiana taty w efenix w dół nie jest chroniona.** Ilość, którą tata
