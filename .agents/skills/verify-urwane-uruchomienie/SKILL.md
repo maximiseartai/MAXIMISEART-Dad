@@ -130,7 +130,7 @@ and a new caller of `InterruptedPricings`, of `PricingJournal.run_ended`, of `Pr
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `SYNCPLACEHOLDER` (2026-11-05, round 3 of #846 merged with `main` after #888).
+Sync commit: `8f4b85f75` (2026-11-05, round 3 of #846 merged with `main` after #888).
 Every row of the table was checked against the code at this commit. Since the previous Sync commit `4cb7154e4` (round 2
 of #888) #846 changed these definitions: the first line of the journal goes to the disk at the start of the Wycena
 (`run_started` → `_append_locked`, model `ZapiszStart`, its torn first line in `Zgasniecie` and its failed write that
