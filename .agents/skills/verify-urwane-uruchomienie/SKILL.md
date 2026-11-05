@@ -110,10 +110,10 @@ unless named otherwise):
 | `UsunPoWysylce` | `send`: `_remove(path, ...)` after True |
 | `StartWyceny` | `runs.py` `RunHost.start` → `app.py` `run_started` → `PricingJournal.run_started` (start in memory, `_header` set) |
 | `ZapiszStart` | `PricingJournal.run_started` → `_append_locked(started)`: the first line alone in one `write`, `flush`, `fsync`, before the thread of the Wycena starts (#846); `OSError` leaves `_header` set, so the first line goes with the next entry, and an `OSError` from `flush` or `fsync` after `write` may leave the whole first line on the disk while `_header` stays. Without `_header` `PricingJournal.progress` gives a progress, so from here the model counts a progress as possible (`postepMozliwy`) |
-| `WpisZaczete` | `efenix_pricing.py` `save`: `journal.begun(...)` before `efenix_trace.traced` and `_priced` → `PricingJournal._write` → `_append_locked` (the first line, while `_header` is set, and the entry in one `write`, `flush`, `fsync`, else the entry alone; `OSError` drops the entry, `_header` stays; an `OSError` from `flush` or `fsync` after `write` may leave the whole first line on the disk, so the journal has its start while `_header` stays) |
-| `ZmianaWEfenix` | `_priced` → `_outcome`: the first window action that changes the order (execution date, Wycena Emmetta, a quantity) |
+| `WpisZaczete` | `efenix_pricing.py` `save`: `journal.begun(...)` before `efenix_trace.traced` and `_outcome` → `PricingJournal._write` → `_append_locked` (the first line, while `_header` is set, and the entry in one `write`, `flush`, `fsync`, else the entry alone; `OSError` drops the entry, `_header` stays; an `OSError` from `flush` or `fsync` after `write` may leave the whole first line on the disk, so the journal has its start while `_header` stays) |
+| `ZmianaWEfenix` | `_outcome`: the first window action that changes the order (execution date, Wycena Emmetta, a quantity) |
 | `WpisSkonczone` | `save`: `journal.ended(result, ...)` after the result → `PricingJournal._write` |
-| `Zatrzymanie` | `save`: a `StopError` after `journal.begun` of an order and before its `journal.ended` (the window stops, or the Ślad Wyceny Emmetta did not save a quantity written ahead, #881), or before the first `journal.begun` (the window closed while it waits for Dad's login); `save` marks the ready orders and raises it on, and `run_process` returns with the Zatrzymanie, so the Wycena reaches its result without „zlecenie skończone” of that order |
+| `Zatrzymanie` | `save`: a `StopError` after `journal.begun` of an order and before its `journal.ended` (the window stops), or before the first `journal.begun` (the window closed while it waits for Dad's login); `save` marks the ready orders and raises it on, and `run_process` returns with the Zatrzymanie, so the Wycena reaches its result without „zlecenie skończone” of that order |
 | `Postep` | `pricing_progress.py` `ProgressComment` (at the start of the Wycena and every `PROGRESS_S`) → `RunLogs.progress`: `Outbox.post(progress_post(...))` (`Rank.DRAFT`) when `PricingJournal.progress` gives a progress (no `_header`) and the Uruchomienie is not in `_ended`, both under the lock of `RunLogs`. The model counts the progress as possible from the first line on the disk (`postepMozliwy`); a progress the queue accepted becomes the newest version of the comment when it is newer (`Przyjmij`), a refused one changes nothing |
 | `Wynik` | `runs.py` `_Run.work` → `process_run.py` `run_process`: the engine reached its result, the metrics record (the Historia row) is written or not (`metrics_saved`), and `run_process` returns; when it raises, `_Run.work` goes on with a Stop. Nothing on the journal path reads the Historia row, so the model has none |
 | `WpisKonca` | `_Run.work` → `RunHost.after` → `PricingJournal.run_ended`, the first of `after_run` in `create_app` (assignment `runs`): when no write confirmed the first line (`self._header`, and a failed write may have left it), `_remove(path, ...)` (`unlink`; no file, or a file in place of the folder, leaves nothing to remove; `OSError` leaves the journal without its end entry); otherwise `_write(RunEnded(..., result=run.result))` (`write`, `flush`, `fsync`), whose `OSError` leaves the journal without its end entry |
@@ -136,7 +136,7 @@ method): `PricingJournal`, `RunEnded`, `JournalAfterLogs`, `_Read`, `_read`, `_r
 `run_process` in `process_run.py`. Every code name in the table above is one of them, except six left out on purpose:
 `ProgressComment` (it only decides when `RunLogs.progress` runs, and the model lets a progress come at any step it
 allows), `_guarded` (the text of a version without Logi), `RunLog` as a whole (the schema of the Logs file, which changes with every new field; the model
-reads only `ending`, whose values are `LoggedEnding`), `_priced`, `_outcome`, `efenix_trace.traced` and `StopError`
+reads only `ending`, whose values are `LoggedEnding`), `_outcome`, `efenix_trace.traced` and `StopError`
 (`ZmianaWEfenix` and `Zatrzymanie` need only their place in `save` after `journal.begun` and before `journal.ended`,
 which `save` holds), `metrics_saved` and the Historia (no step of this path reads
 them since #870/#871: `RunCards` and the metrics files are the card's, ADR 0017), and `create_app` (see below). Three
@@ -148,11 +148,14 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `b26551a19` (2026-11-05, #913 option 3 on `main` after #958). Every row of the table was checked against
-the code at this commit. Since the Sync commit `ba4092817` only `guarded` changed (#913): it checks each cell of the Kopia
-wejścia with its row in Dad's file and its header (`client_data.CopiedCell`), so a value from a row with two positions
-is masked there only in its own row, under `ADRES` and `NUMER UMOWY` and in free text; the model has no step in which
-the guard masks or raises, so no action changed. Since the Sync commit `18bf04e33` of `main` only `guarded` changed (#936): it leaves the fields
+Sync commit: `ed73f88ce` (2026-11-05, #913 option 3 merged with `main` after #960). Every row of the table was checked
+against the code at this commit. Since the Sync commit `ba4092817` two definitions changed, both without a new action:
+`guarded` (#913) checks each cell of the Kopia wejścia with its row in Dad's file and its header
+(`client_data.CopiedCell`), so a value from a row with two positions is masked there only in its own row, under `ADRES`
+and `NUMER UMOWY` and in free text, and the model has no step in which the guard masks or raises; `save` (#960) no
+longer reads the Ślad Wyceny Emmetta, and the Zatrzymanie after its failed write ahead (#881) is gone with it, so `save`
+stops only on a window stop; `journal.begun` before the first window action and `journal.ended` after the result kept
+their place, so the model gained no path to break. On the previous Sync commit `ba4092817` (#936 merged with `main` after #910 and #916), since the Sync commit `18bf04e33` of `main` only `guarded` changed (#936): it leaves the fields
 that carry only tool words and moments (`TOOL_FIELDS`: `process`, `mode`, `period`, `run_id`, `started_at`,
 `ended_at`, `ending` and the rest) and the keys of the Logs models without a mask, so no mask loses the whole Logs; the
 model has no step in which the guard masks or raises, so no action changed. Since the Sync commit `917cf6fc6` of `main`

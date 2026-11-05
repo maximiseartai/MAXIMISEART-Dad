@@ -12,16 +12,15 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Final
 
-from .efenix_checks import DateRefused, OrderProblem, PagePart
+from .efenix_checks import DATE_TOLERANCE, DateRefused, OrderProblem, PagePart
 from .efenix_marking import Refusal
 from .efenix_positions import (
-    Conflict,
+    Excess,
     MissingPositions,
     NotWholeQuantities,
     OrderFault,
     OtherAmount,
     PageRead,
-    PricedDifferently,
     UnpairedColumns,
     column_of,
 )
@@ -192,26 +191,6 @@ def browser_not_started() -> Message:
     )
 
 
-def emmett_trace_not_saved(trace_file: Path, row: int) -> Message:
-    """Plik Śladu Wyceny Emmetta ``trace_file`` nie zapisał ilości z wyprzedzeniem w zleceniu z wiersza ``row`` Pliku
-    zbiorczego, więc proces tej ilości nie wpisał i się zatrzymał."""
-
-    return Message(
-        code="EFENIX_SLAD_NIEZAPISANY",
-        what=(
-            f"Narzędzie nie zapisało na dysku Śladu Wyceny Emmetta, zanim wpisało ilość w zleceniu z wiersza {row} Pliku"
-            f" zbiorczego, więc tej ilości nie wpisało i {_PROCESS} się zatrzymała. To zlecenie ma w efenix Wycenę Emmetta"
-            f" bez części ilości z pliku. {_KEPT}"
-        ),
-        where=file_label(trace_file),
-        action=(
-            "Uruchom ponownie: gotowe zlecenia narzędzie tylko sprawdzi. Jeśli Wycena zatrzyma się znowu albo to zlecenie"
-            " dostanie błąd „wycena już jest i się różni”, dopisz w nim ilości z Pliku zbiorczego w efenix sam."
-            f" {REPORT_TO_MAINTAINER}"
-        ),
-    )
-
-
 def _after_stop(*, kept: bool) -> str:
     return _KEPT if kept else _UNCHANGED
 
@@ -282,19 +261,23 @@ def _left_unchanged(problem: OrderFault) -> bool:
             return True
 
 
-def emmett_conflict(source: Path, row: int, conflicts: Sequence[Conflict]) -> Message:
-    """Emmett wpisał w zleceniu z wiersza ``row`` ilości inne niż Plik zbiorczy, więc proces niczego nie dopisał."""
+def emmett_warning(source: Path, row: int, excess: Sequence[Excess]) -> Message:
+    """Ostrzeżenie Emmetta: efenix ma w zleceniu z wiersza ``row`` w pozycjach ``excess`` więcej niż Plik zbiorczy, więc
+    proces ich nie obniżył, a pozostałe ilości z pliku wpisał."""
 
-    listed = "; ".join(f"{_position(conflict.position)}: Emmett {conflict.emmett}, plik {conflict.file}" for conflict in conflicts)
+    listed = "; ".join(f"{_position(more.position)}: efenix {more.efenix}, plik {more.file}" for more in excess)
     return Message(
-        code="EFENIX_SPRZECZNOSC_Z_EMMETTEM",
+        code="EFENIX_WIECEJ_NIZ_PLIK",
         dad_file="collective_file",
         what=(
-            f"Wycena Emmetta ma inne ilości niż Plik zbiorczy: {listed}. Wycena Emmetta jest załadowana, a narzędzie niczego "
-            "do niej nie dopisało."
+            f"efenix ma więcej niż Plik zbiorczy: {listed}. Narzędzie tych ilości nie zmieniło, a pozostałe ilości z pliku"
+            " wpisało."
         ),
         where=f"{file_label(source)}, wiersz {row}",
-        action="Rozstrzygnij, czy rację ma Emmett, czy Plik zbiorczy, i popraw wycenę w efenix sam.",
+        action=(
+            "Jeśli rację ma efenix, popraw Plik zbiorczy i uruchom ponownie. Jeśli rację ma plik, zmniejsz tę ilość w efenix"
+            " sam."
+        ),
     )
 
 
@@ -343,16 +326,6 @@ def _order_error(problem: OrderFault) -> tuple[str, str, str]:
                 ),
                 "Sprawdź ilości w tych kolumnach Pliku zbiorczego i pozycje zlecenia w efenix, a potem wyceń zlecenie w efenix sam.",
             )
-        case PricedDifferently(efenix_amount, file_amount, positions):
-            different = f" Inne ilości: {', '.join(_position(position) for position in positions)}." if positions else ""
-            return (
-                "EFENIX_WYCENA_INNA",
-                (
-                    f"Zlecenie ma już wycenę w efenix i różni się ona od Pliku zbiorczego: kwota w efenix {_amount(efenix_amount)},"
-                    f" Kwota (AU) {_amount(file_amount)}.{different}"
-                ),
-                "Sprawdź wycenę w efenix i Plik zbiorczy, popraw tę, która jest błędna, i uruchom ponownie.",
-            )
         case OtherAmount(efenix_amount, file_amount):
             return (
                 "EFENIX_INNA_KWOTA",
@@ -398,7 +371,11 @@ def _order_error(problem: OrderFault) -> tuple[str, str, str]:
         case OrderProblem.OTHER_ADDRESS:
             return "EFENIX_INNY_ADRES", "Dane adresowe zlecenia w efenix są inne niż ADRES w Pliku zbiorczym.", _PRICE_YOURSELF
         case OrderProblem.OTHER_DATE:
-            return "EFENIX_INNA_DATA", "Data wykonania zlecenia w efenix jest inna niż dzień z DATA w Pliku zbiorczym.", _PRICE_YOURSELF
+            return (
+                "EFENIX_INNA_DATA",
+                f"Data wykonania zlecenia w efenix różni się od dnia z DATA w Pliku zbiorczym o więcej niż {DATE_TOLERANCE.days} dni.",
+                _PRICE_YOURSELF,
+            )
 
 
 def unexpected_failure() -> Message:

@@ -192,11 +192,13 @@ MUTATIONS = (
         "od 11. podmiany limit Kopii usuwa świeżą Kopię zaraz po podmianie",
         NEW,
     ),
+    # Jedna Kopia mniej, a nie jedna Kopia: przy [1:] podmiana usuwa 10 Kopii, każdą za punktem eksploratora, więc
+    # harmonogramów jest 5,9 razy więcej (14255 zamiast 2407) i mutacja doszła w CI do limitu --limit-s (#963).
     Mutation(
-        "zostaje jedna Kopia zamiast KEPT",
-        (Edit(COPIES, "    return listed(directory)[KEPT:]\n", "    return listed(directory)[1:]\n"),),
+        "zostaje KEPT - 1 Kopii zamiast KEPT",
+        (Edit(COPIES, "    return listed(directory)[KEPT:]\n", "    return listed(directory)[KEPT - 1 :]\n"),),
         EXPLORER,
-        "tata ma jedną Kopię INTERMAX zamiast dziesięciu",
+        "tata ma dziewięć Kopii INTERMAX zamiast dziesięciu",
         NEW,
     ),
     Mutation(

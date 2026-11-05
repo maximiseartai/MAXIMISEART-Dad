@@ -4,7 +4,8 @@ Każdy test uruchamia narzędzie jak Maks: osobnym procesem, który łączy się
 Chrome z sesją taty), a sprawdza to, co widać z zewnątrz: wynik (plik expect w ``tests/expected/zgodnosc_efenix/``),
 kod wyjścia, żądania, które dostała Atrapa, i jej stan. Zgodna Atrapa daje wynik bez różnic, a Atrapa ze zmienioną
 budową każdą różnicę; każdy wynik ma prośbę o ręczne sprawdzenie przycisku kalendarza daty wykonania. Każde żądanie, które dostaje Atrapa, jest z listy dozwolonych odczytów, także gdy skrypty i
-elementy stron same wysyłają zapis albo wylogowanie. Wynik nie zawiera numerów zleceń, adresów, loginów ani
+elementy stron same wysyłają zapis albo wylogowanie, a nigdy propozycja Emmetta (``action_fill_emmett.php``), więc
+każdy wynik ma też linię o niesprawdzonej budowie propozycji. Wynik nie zawiera numerów zleceń, adresów, loginów ani
 identyfikatorów, które Atrapa pokazuje, ani cen.
 
 Budowę, której Atrapa nie umie zmienić sama (``Changed``, ``Unread``), zmienia serwer przed Atrapą (``_in_front``):
@@ -41,6 +42,7 @@ from rozliczenia.efenix_positions import POSITION_OF_COLUMN
 
 from tests.fixtures.atrapa_efenix import (
     CHANGE_STATUS,
+    FILL_EMMETT,
     LIST_PAGE,
     LIST_SCRIPT,
     LIST_SEARCH_FIELDS,
@@ -70,6 +72,11 @@ ROOT = Path(__file__).resolve().parents[1]
 DATE_BUTTON_BY_HAND = (
     "NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix"
     " na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty"
+)
+# Linia każdego wyniku (#953): narzędzie nie wysyła propozycji Emmetta.
+PROPOSAL_BY_HAND = (
+    "NIESPRAWDZONE | propozycja Emmetta | budowa propozycji Emmetta nie jest sprawdzana: narzędzie nie wysyła"
+    " action_fill_emmett.php; pomiar propozycji w osobnym PR (Część #953)"
 )
 TOOL = ROOT / "tools" / "zgodnosc_efenix.py"
 # Żądania, które niczego w efenix nie zmieniają: lista, szukanie, strona zlecenia, skrypty obu stron i strona logowania.
@@ -218,6 +225,16 @@ CHANGED = {
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-bez-sesji-przekierowuje-na-logowanie.txt",
         rewrites={SEARCH: _to_login_if_warned},
     ),
+    # Propozycja w oknie Emmetta ma tekst albo element bez tekstu na stronie zlecenia, zanim skrypt włoży do niej
+    # propozycję.
+    "propozycja-pokazuje-cos-przed-propozycja": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-pokazuje-cos-przed-propozycja.txt",
+        rewrites={ORDER_PAGE: _replaced(('<div id="emmett-propozycja"></div>', '<div id="emmett-propozycja">Wczytywanie propozycji</div>'))},
+    ),
+    "propozycja-pokazuje-element-przed-propozycja": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-pokazuje-cos-przed-propozycja.txt",
+        rewrites={ORDER_PAGE: _replaced(('<div id="emmett-propozycja"></div>', '<div id="emmett-propozycja"><span class="spinner-border"></span></div>'))},
+    ),
     "logowanie-bez-formularza-i-pol": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "logowanie-bez-formularza-i-pol.txt",
         rewrites={
@@ -316,6 +333,8 @@ def _checked(
         assert (atrapa.state(), _pages(endpoint)) == (state, pages)
     assert not [text for text in PRIVATE if text in checked.stdout + checked.stderr]
     assert DATE_BUTTON_BY_HAND in checked.stdout.splitlines()
+    assert PROPOSAL_BY_HAND in checked.stdout.splitlines()
+    assert FILL_EMMETT not in {path for _method, path in atrapa.requested()}
     return checked, atrapa
 
 
@@ -459,6 +478,21 @@ def test_bez_wzorca_pliku_zbiorczego_narzedzie_konczy_sie_bledem_przed_efenix(ch
 
     assert (checked.code, checked.stdout, checked.stderr) == (1, "", f"BŁĄD | Wzorzec pliku zbiorczego {missing}: brak pliku\n")
     assert atrapa.requested() == []
+
+
+def test_przejscie_w_karcie_skladania_zostawia_zlozony_html(chrome: str) -> None:
+    # Przejście ramki kończy się przed zdarzeniem ``load``, na które czeka złożenie strony, więc po nim widać, czy ramka
+    # przeszła na inną stronę (bez odpowiedzi 204 przeglądarka pokazałaby w niej pustą stronę błędu połączenia, adres
+    # ``chrome-error://``), czy została przy swoim pierwszym, pustym dokumencie.
+    with atrapa_efenix(ORDERS) as atrapa, sync_playwright() as playwright:
+        browser = playwright.chromium.connect_over_cdp(chrome)
+        with zgodnosc_efenix.parser_page(browser, timeout_ms=10_000) as page:
+            page.set_content(f'<p>Złożony HTML</p><iframe src="{atrapa.url}"></iframe>')
+            frames = page.main_frame.child_frames
+            shown = (page.locator("p").inner_text(), [frame.content() for frame in frames], [frame.url in {"", "about:blank"} for frame in frames])
+
+        assert shown == ("Złożony HTML", ["<html><head></head><body></body></html>"], [True])
+        assert atrapa.requested() == []
 
 
 def test_lista_dozwolonych_zadan_ma_tylko_odczyty() -> None:

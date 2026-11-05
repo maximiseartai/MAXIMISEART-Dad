@@ -1,13 +1,13 @@
 # Zabity proces
 
 The tool's process dies right before or right after efenix ran a request. Nothing runs after it: no Znaczniki, no Logi.
-The checker takes what the run without a fault had at that moment (Atrapa orders, Plik zbiorczy, Ślad, dziennik),
+The checker takes what the run without a fault had at that moment (Atrapa orders, Plik zbiorczy, dziennik),
 checks it as it is and starts the second run from it (`wznowienie`).
 
 ## Sub-features
 
 - Before and after each request of the reference run (2 states per request; equal states resume once).
-- No order changed its status, and the dziennik and the Ślad have no order data.
+- No order changed its status, and the dziennik has no order data.
 - Every order changed in efenix before the kill has a „zaczynam” entry in the dziennik.
 - The Plik zbiorczy has no Znacznik efenix (Zapisywanie sets them at its end), and an order the dziennik ended gotowe
   has the file's pricing in efenix.

@@ -20,7 +20,6 @@ from decimal import Decimal
 from http import HTTPStatus
 import json
 from pathlib import Path
-import hashlib
 import itertools
 import os
 import re
@@ -42,7 +41,7 @@ from playwright.sync_api import Browser, Error as PlaywrightError, Page, Request
 from playwright.sync_api import Response as PlaywrightResponse
 import pytest
 
-from rozliczenia import TOOL_ROOT, efenix_browser, efenix_emmett_trace, efenix_process, efenix_trace
+from rozliczenia import TOOL_ROOT, efenix_browser, efenix_process, efenix_trace
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
@@ -93,7 +92,7 @@ from tests.fixtures.atrapa_efenix import (
     amount_of,
     atrapa_efenix,
 )
-from tests.fixtures.efenix import DAY, Order, number_in_trace, write_collective_file
+from tests.fixtures.efenix import DAY, Order, write_collective_file
 from tests.fixtures.interlocutor import Tata
 from tests.fixtures.przegladarka import chromium, page_of
 from tests.fixtures.settlement import PERIOD, write_mapping, write_template
@@ -136,8 +135,7 @@ def _run(
 ) -> Priced:
     """Uruchomienie Wyceny w efenix dla Pliku zbiorczego ``source``; ``meanwhile`` to to, co tata zrobił z plikiem, zanim
     proces skończył ostatnie zlecenie. Tempo ludzkie jest wyłączone, chyba że test poda ``pace``, a ``clock`` to zegar
-    czasów etapów i śladu działań okna. ``window`` to okno efenix, które dostaje proces, zbudowane z okna przeglądarki. Ślad Wyceny Emmetta leży w ``_traces(source)``, więc każde Uruchomienie dla tego
-    samego pliku czyta ślad poprzedniego.
+    czasów etapów i śladu działań okna. ``window`` to okno efenix, które dostaje proces, zbudowane z okna przeglądarki.
 
     Karta ``page`` służy jednemu Uruchomieniu, jak przeglądarka okna taty (``efenix_browser.chrome``) i Skryptu dla maszyn
     (``efenix_browser.chromium``), która zamyka się z oknem, więc następne Uruchomienie dostaje nową kartę
@@ -164,7 +162,7 @@ def _run(
 
     return run_process(
         efenix_process.PROCESS,
-        EfenixInputs(source, open_efenix, pace=pace, trace_directory=_traces(source), clock=clock),
+        EfenixInputs(source, open_efenix, pace=pace, clock=clock),
         Tata(),
         view=lambda _inputs, summary: summary,
         metrics_path=source.parent.parent / "metryki.jsonl",
@@ -179,12 +177,6 @@ def _next_tab(page: Page) -> Page:
 
     page.close()
     return page.context.new_page()
-
-
-def _traces(source: Path) -> Path:
-    """Folder Śladów Wyceny Emmetta testu z Plikiem zbiorczym ``source``, obok jego Folderu okresu."""
-
-    return source.parent.parent / "slad"
 
 
 def _figures(outcome: Priced) -> dict[str, int]:
@@ -292,38 +284,106 @@ def test_zlecenie_z_wycena_zgodna_z_plikiem_jest_gotowe_a_efenix_dostaje_tylko_s
     assert requested.count(("GET", ORDER_PAGE)) == 3
 
 
+# Zlecenia z run 4.11.2026 (okres 20_26_10), które zostały tacie, w kształcie z Logów: sama Wycena Emmetta z S (016) o 1
+# mniejszym niż plik i bez Y (009) i Z (010), które Emmett zostawia puste, oraz wycena zaczęta wcześniej bez Y i Z
+# (wiersze 284, 378, 380). Plik ma ilość w O (012), S (016), Y (009) i Z (010).
+_RUN_4_11_CELLS = {"O": 1, "S": 3, "Y": 2, "Z": 1}
+_RUN_4_11_FILE = {"012": 1, "016": 3, "009": 2, "010": 1}
+
+
 @pytest.mark.parametrize(
-    ("in_efenix", "executed", "positions"),
+    ("in_efenix", "executed", "entered"),
     [
-        pytest.param({"012": 1, "019": 1}, None, "pozycja INDEKS_019 (kolumna T)", id="inna-ilość"),
-        pytest.param({"012": 2}, DAY, "pozycja INDEKS_012 (kolumna O), pozycja INDEKS_019 (kolumna T)", id="inna-ilość-z-datą"),
-        pytest.param(
-            {"012": 1, "019": 2, "005": 1}, None, "pozycja INDEKS_005 (bez kolumny w Pliku zbiorczym)", id="pozycja-bez-kolumny"
-        ),
-        pytest.param({"012": 1, "019": 2}, DAY, None, id="ilości-zgodne-kwota-inna"),
-        pytest.param({"012": 1}, None, "pozycja INDEKS_019 (kolumna T)", id="brak-ilości-bez-daty"),
-        # Tata zaczął wycenę sam, bez Wyceny Emmetta: data jest, wpisane ilości zgadzają się z plikiem, a brakuje T. Bez
-        # Śladu Wyceny Emmetta proces tylko porównuje, choć Emmett (019: 5) przeczyłby plikowi.
-        pytest.param({"012": 1}, DAY, "pozycja INDEKS_019 (kolumna T)", id="wycena-zaczęta-przez-tatę"),
+        pytest.param({"012": 1, "016": 2}, DAY, {"016": 3, "009": 2, "010": 1}, id="sama-wycena-emmetta-z-S-o-1-mniejszym-bez-Y-i-Z"),
+        pytest.param({"012": 1, "016": 3}, DAY, {"009": 2, "010": 1}, id="niepełna-wycena-bez-Y-i-Z"),
+        pytest.param({"012": 1, "016": 1, "009": 1}, None, {"016": 3, "009": 2, "010": 1}, id="mniej-w-kilku-pozycjach-bez-daty"),
     ],
 )
-def test_wycena_ktora_juz_jest_i_rozni_sie_od_pliku_to_blad_z_kwotami_bez_zmian_i_bez_emmetta(
-    tmp_path: Path, page: Page, in_efenix: dict[str, int], executed: date | None, positions: str | None
+def test_wycena_ktora_juz_jest_z_mniejsza_iloscia_niz_plik_proces_dokancza_iloscia_z_pliku_bez_wyceny_emmetta(
+    tmp_path: Path, page: Page, in_efenix: dict[str, int], executed: date | None, entered: dict[str, int]
 ) -> None:
-    au = _au({"012": 1, "019": 2}) + (0 if positions else 1)
-    order = Order("#5101", cells={"O": 1, "T": 2}, amount=au, quantities=in_efenix, emmett={"012": 1, "019": 5})
+    """Wycena już jest (zaczęta przez wcześniejszy run, przez tatę albo sama Wycena Emmetta), a w części pozycji efenix ma
+    mniej niż plik: proces wpisuje w nich ilość z pliku (ADR 0026), nie ładuje Wyceny Emmetta, która wyczyściłaby wycenę,
+    i nie zmienia daty wykonania. Zlecenie ma potem ilości pliku i kwotę równą AU, więc jest gotowe i ma Znacznik efenix."""
+
+    order = Order("#5101", cells=_RUN_4_11_CELLS, amount=_au(_RUN_4_11_FILE), quantities=in_efenix, emmett={"012": 1, "016": 2})
+    source = write_collective_file(tmp_path, [order])
     with atrapa_efenix([replace(order.in_efenix("901"), execution_date=executed)]) as atrapa:
+        outcome = _run(source, page, atrapa.url)
+        pricing = _pricing(atrapa)
+        requested = atrapa.requested()
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == ("OK", _figures_of(1, 1), [])
+    assert (pricing, _marked(source)) == ({"5101": (_RUN_4_11_FILE, executed, 0)}, [18])
+    assert {("POST", FILL_EMMETT), ("POST", LOAD_EMMETT), ("POST", SET_DATE)} & set(requested) == set()
+    assert requested.count(("POST", SAVE_QUANTITY)) == len(entered)
+
+
+@pytest.mark.parametrize(
+    ("in_efenix", "emmett", "excess", "after"),
+    [
+        pytest.param({"012": 2}, {}, "pozycja INDEKS_012 (kolumna O): efenix 2, plik 1", {"012": 2, "019": 2}, id="wycena-ktora-juz-jest"),
+        pytest.param(
+            {"012": 1, "013": 1},
+            {},
+            "pozycja INDEKS_013 (kolumna P): efenix 1, plik 0",
+            {"012": 1, "013": 1, "019": 2},
+            id="wycena-ktora-juz-jest-0-w-pliku",
+        ),
+        pytest.param(
+            {"012": 1, "005": 1},
+            {},
+            "pozycja INDEKS_005 (bez kolumny w Pliku zbiorczym): efenix 1, plik 0",
+            {"005": 1, "012": 1, "019": 2},
+            id="pozycja-bez-kolumny",
+        ),
+        pytest.param({}, {"012": 2}, "pozycja INDEKS_012 (kolumna O): efenix 2, plik 1", {"012": 2, "019": 2}, id="wycena-emmetta"),
+        pytest.param(
+            {},
+            {"012": 1, "020": 1},
+            "pozycja INDEKS_020 (bez kolumny w Pliku zbiorczym): efenix 1, plik 0",
+            {"012": 1, "020": 1, "019": 2},
+            id="wycena-emmetta-bez-kolumny",
+        ),
+    ],
+)
+def test_pozycja_z_wieksza_iloscia_w_efenix_niz_w_pliku_zostaje_a_reszta_zlecenia_jest_dopisana_z_ostrzezeniem_emmetta(
+    tmp_path: Path, page: Page, in_efenix: dict[str, int], emmett: dict[str, int], excess: str, after: dict[str, int]
+) -> None:
+    """Pozycja, w której efenix (wycena, która już jest, albo Wycena Emmetta) ma więcej niż plik, także przy 0 w pliku
+    albo bez kolumny, zostaje bez zmian: proces nigdy nie obniża ani nie czyści ilości w efenix (ADR 0026). Pozostałe
+    pozycje dostają ilość z pliku, a zlecenie to Ostrzeżenie Emmetta z pozycją, kolumną i obiema ilościami, bez
+    Znacznika efenix i bez drugiego błędu o kwocie."""
+
+    order = Order("#5401", cells={"O": 1, "P": 0, "T": 2}, amount=_au({"012": 1, "019": 2}), quantities=in_efenix, emmett=emmett)
+    source = write_collective_file(tmp_path, [order])
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
+        outcome = _run(source, page, atrapa.url)
+        pricing = _pricing(atrapa)
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == (
+        "WYMAGA_SPRAWDZENIA",
+        _figures_of(1, 0, warnings=1),
+        [("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 18")],
+    )
+    assert _what(outcome) == [
+        f"efenix ma więcej niż Plik zbiorczy: {excess}. Narzędzie tych ilości nie zmieniło, a pozostałe ilości z pliku wpisało."
+    ]
+    assert (pricing, _marked(source)) == ({"5401": (after, DAY, int(not in_efenix))}, [])
+
+
+def test_wycena_ktora_juz_jest_z_iloscmi_pliku_a_kwota_inna_niz_au_to_blad_z_obiema_kwotami_bez_zmian(tmp_path: Path, page: Page) -> None:
+    order = Order("#5102", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}) + 1, quantities={"012": 1, "019": 2})
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
         before = atrapa.state()
         outcome = _price(tmp_path, page, atrapa.url, [order])
         after = atrapa.state()
         requested = atrapa.requested()
 
-    assert (outcome.result, _figures(outcome), _errors(outcome)) == ("WYMAGA_SPRAWDZENIA", _figures_of(1, 0), [("EFENIX_WYCENA_INNA", "wiersz 18")])
+    assert (outcome.result, _errors(outcome)) == ("WYMAGA_SPRAWDZENIA", [("EFENIX_INNA_KWOTA", "wiersz 18")])
     [what] = _what(outcome)
-    assert f"kwota w efenix {amount_of(in_efenix):.2f} zł".replace(".", ",") in what
-    assert f"Kwota (AU) {Decimal(str(au)):.2f} zł".replace(".", ",") in what
-    assert (positions is None) == ("Inne ilości" not in what)
-    assert positions is None or positions in what
+    efenix_amount = amount_of({"012": 1, "019": 2})
+    assert f"kwota w efenix to {efenix_amount:.2f} zł, a Kwota (AU) {efenix_amount + 1:.2f} zł".replace(".", ",") in what
     assert (after, set(requested) <= READING) == (before, True)
 
 
@@ -398,6 +458,39 @@ def test_dzien_z_data_spoza_zakresu_kalendarza_efenix_to_blad_bez_zapisu_daty_be
     assert requested.count(("POST", SET_DATE)) == (1 if result == "OK" else 0)
 
 
+@pytest.mark.parametrize(
+    ("days", "result", "errors", "pricing"),
+    [
+        pytest.param(-3, "OK", [], ({"012": 1}, 1), id="3-dni-przed"),
+        pytest.param(2, "OK", [], ({"012": 1}, 1), id="2-dni-po"),
+        pytest.param(3, "OK", [], ({"012": 1}, 1), id="3-dni-po"),
+        pytest.param(-4, "WYMAGA_SPRAWDZENIA", [("EFENIX_INNA_DATA", "wiersz 18")], ({}, 0), id="4-dni-przed"),
+        pytest.param(4, "WYMAGA_SPRAWDZENIA", [("EFENIX_INNA_DATA", "wiersz 18")], ({}, 0), id="4-dni-po"),
+    ],
+)
+def test_data_wykonania_rozna_od_data_najwyzej_o_3_dni_zostaje_w_efenix_a_wieksza_roznica_to_inna_data(
+    tmp_path: Path,
+    page: Page,
+    days: int,
+    result: str,
+    errors: list[tuple[str, str]],
+    pricing: tuple[dict[str, int], int],
+) -> None:
+    """Tata po runie z 4.11.2026 (#961): data wykonania w efenix różna od dnia z ``DATA`` najwyżej o 3 dni w którąkolwiek
+    stronę jest prawidłowa, więc proces wycenia zlecenie dalej i daty nie zmienia."""
+
+    executed = DAY + timedelta(days=days)
+    order = Order("#5651", cells={"O": 1}, amount=_au({"012": 1}), emmett={"012": 1})
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=executed)]) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [order])
+        after = _pricing(atrapa)
+        requested = atrapa.requested()
+
+    quantities, emmett_loads = pricing
+    assert (outcome.result, _errors(outcome), after) == (result, errors, {"5651": (quantities, executed, emmett_loads)})
+    assert requested.count(("POST", SET_DATE)) == 0
+
+
 def test_data_wykonania_ktorej_efenix_nie_zapisal_po_potwierdz_to_blad_bez_emmetta_i_bez_ilosci(tmp_path: Path, page: Page) -> None:
     """Skrypt strony wpisuje dzień do ``#data_install`` po każdej odpowiedzi, także gdy serwer daty nie zapisał."""
 
@@ -411,30 +504,22 @@ def test_data_wykonania_ktorej_efenix_nie_zapisal_po_potwierdz_to_blad_bez_emmet
     assert (requested.count(("POST", SET_DATE)), requested.count(("POST", LOAD_EMMETT)), requested.count(("POST", SAVE_QUANTITY))) == (1, 0, 0)
 
 
-@pytest.mark.parametrize(
-    ("emmett", "conflict"),
-    [
-        pytest.param({"012": 2}, "pozycja INDEKS_012 (kolumna O): Emmett 2, plik 1", id="inna-ilość"),
-        pytest.param({"012": 1, "013": 1}, "pozycja INDEKS_013 (kolumna P): Emmett 1, plik 0", id="0-w-pliku"),
-        pytest.param({"012": 1, "020": 1}, "pozycja INDEKS_020 (bez kolumny w Pliku zbiorczym): Emmett 1, plik 0", id="pozycja-bez-kolumny"),
-    ],
-)
-def test_ilosc_emmetta_inna_niz_w_pliku_to_ostrzezenie_z_pozycja_a_proces_niczego_nie_dopisuje(
-    tmp_path: Path, page: Page, emmett: dict[str, int], conflict: str
-) -> None:
-    order = Order("#5401", cells={"O": 1, "P": 0, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett=emmett)
+def test_ilosc_emmetta_mniejsza_niz_w_pliku_proces_zastepuje_iloscia_z_pliku_a_zlecenie_jest_gotowe(tmp_path: Path, page: Page) -> None:
+    """Emmett liczy w S (016) tylko dekodery, a plik każde urządzenie (#960): Emmett wpisał S 1 i O 1, a plik ma S 3, O 1 i
+    T 2. Proces wpisuje S z pliku w miejsce ilości Emmetta i dopisuje T, więc kwota końcowa jest równa AU, a zlecenie
+    jest gotowe ze Znacznikiem efenix."""
+
+    filled = {"012": 1, "016": 3, "019": 2}
+    order = Order("#5402", cells={"O": 1, "S": 3, "T": 2}, amount=_au(filled), emmett={"012": 1, "016": 1})
+    source = write_collective_file(tmp_path, [order])
     with atrapa_efenix([order.in_efenix("901")]) as atrapa:
-        outcome = _price(tmp_path, page, atrapa.url, [order])
+        outcome = _run(source, page, atrapa.url)
         pricing = _pricing(atrapa)
         requested = atrapa.requested()
 
-    assert (outcome.result, _figures(outcome), _errors(outcome)) == (
-        "WYMAGA_SPRAWDZENIA",
-        _figures_of(1, 0, warnings=1),
-        [("EFENIX_SPRZECZNOSC_Z_EMMETTEM", "wiersz 18")],
-    )
-    assert conflict in _what(outcome)[0]
-    assert (pricing, ("POST", SAVE_QUANTITY) in requested) == ({"5401": (emmett, DAY, 1)}, False)
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == ("OK", _figures_of(1, 1), [])
+    assert (pricing, _marked(source)) == ({"5402": (filled, DAY, 1)}, [18])
+    assert (requested.count(("POST", LOAD_EMMETT)), requested.count(("POST", SAVE_QUANTITY))) == (1, 2)
 
 
 @pytest.mark.parametrize(
@@ -536,24 +621,23 @@ def test_strona_zlecenia_bez_pozycji_z_iloscia_w_pliku_to_blad_zlecenia_z_pozycj
 
 
 @pytest.mark.parametrize(
-    ("file", "errors"),
+    ("file", "saved"),
     [
-        pytest.param(1, [], id="zgodna"),
-        pytest.param(2, [("EFENIX_WYCENA_INNA", "wiersz 18")], id="inna"),
+        pytest.param(1, 0, id="zgodna"),
+        pytest.param(2, 1, id="mniejsza-w-efenix"),
     ],
 )
-def test_wycena_ktora_juz_jest_na_stronie_bez_pozycji_z_zerem_w_pliku_tylko_sie_porownuje(
-    tmp_path: Path, page: Page, file: int, errors: list[tuple[str, str]]
+def test_wycena_ktora_juz_jest_na_stronie_bez_pozycji_z_zerem_w_pliku_jest_dokonczona_do_pliku(
+    tmp_path: Path, page: Page, file: int, saved: int
 ) -> None:
     order = Order("#5801", cells={"V": file}, amount=_au({"029": file}), quantities={"029": 1})
     with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY, without=WITHOUT_ASSEMBLY)]) as atrapa:
-        before = atrapa.state()
         outcome = _price(tmp_path, page, atrapa.url, [order])
-        after = atrapa.state()
+        pricing = _pricing(atrapa)
         requested = atrapa.requested()
 
-    assert (_figures(outcome), _errors(outcome)) == (_figures_of(1, 1 - len(errors)), errors)
-    assert (after, set(requested) <= READING) == (before, True)
+    assert (_figures(outcome), _errors(outcome)) == (_figures_of(1, 1), [])
+    assert (pricing, requested.count(("POST", SAVE_QUANTITY))) == ({"5801": ({"029": file}, DAY, 0)}, saved)
 
 
 def test_szukanie_ktore_lista_efenix_wysyla_sama_po_powrocie_ze_strony_zlecenia_nie_zmienia_wynikow_szukania(
@@ -615,7 +699,7 @@ def test_kazda_niezgodnosc_z_efenix_to_blad_zlecenia_z_powodem_a_proces_idzie_da
         Order("#8005"),  # 23: inny status
         Order("#8006"),  # 24: inny realizator
         Order("#8007"),  # 25: inny adres
-        Order("#8008"),  # 26: inna data wykonania
+        Order("#8008"),  # 26: data wykonania 4 dni po DATA
         Order("#8009", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # 27: gotowe, po wszystkich błędach
     ]
     efenix = [
@@ -626,7 +710,7 @@ def test_kazda_niezgodnosc_z_efenix_to_blad_zlecenia_z_powodem_a_proces_idzie_da
         replace(orders[5].in_efenix("905"), status="Do akceptacji"),
         replace(orders[6].in_efenix("906"), realizator="zenon.testowy"),
         replace(orders[7].in_efenix("907"), address="Miasto-Dzielnica ul.Testowa 14 Lokal 3"),
-        replace(orders[8].in_efenix("908"), execution_date=date(2026, 9, 10)),
+        replace(orders[8].in_efenix("908"), execution_date=date(2026, 9, 13)),
         replace(orders[9].in_efenix("909"), execution_date=DAY),
     ]
     with atrapa_efenix(efenix) as atrapa:
@@ -1151,7 +1235,7 @@ def test_w_tempie_ludzkim_zlecenie_z_zapisem_trwa_20_s_samo_sprawdzenie_idzie_be
 ) -> None:
     """Na udawanym zegarze: przerwy są przed zapisami w efenix (#834). Zlecenie z Wyceną Emmetta trwa od szukania do
     szukania następnego 20 s (spec #741), z przerwą 2 s przed datą wykonania, Wyceną Emmetta i każdą ilością. Zlecenie z
-    wyceną, która już jest, Zlecenie rozliczone i zlecenie z błędem nic nie zapisują, więc po nich szukanie następnego i
+    wyceną, która już jest i niczego nie potrzebuje, Zlecenie rozliczone i zlecenie z błędem nic nie zapisują, więc po nich szukanie następnego i
     otwarcie idą bez przerwy, tak samo jak pierwsze szukanie przebiegu i każde otwarcie strony zlecenia. Żadna przerwa
     nie przekracza progu podtrzymania sesji, także po zleceniu z jednym zapisem, któremu do 20 s brakuje więcej. Czas każdego działania okna w śladzie zlecenia do Logów Uruchomienia nie
     liczy przerwy przed nim, więc na zegarze, który przesuwa tylko przerwa, jest równy 0."""
@@ -1163,8 +1247,9 @@ def test_w_tempie_ludzkim_zlecenie_z_zapisem_trwa_20_s_samo_sprawdzenie_idzie_be
         Order("#9801", day=date(2026, 9, 3), cells=emmett, amount=filled, emmett={"012": 1}),
         Order("#9802", day=date(2026, 9, 4), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # gotowe
         Order("#9803", day=date(2026, 9, 5), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # rozliczone
-        Order("#9804", day=date(2026, 9, 6), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 2}),  # błąd
-        # Data wykonania już jest, a Emmett przeczy plikowi: jedyny zapis to Wycena Emmetta, więc do 20 s od szukania brakuje
+        # Wycena, która już jest, ma O większe niż plik: Ostrzeżenie Emmetta bez zapisu.
+        Order("#9804", day=date(2026, 9, 6), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 2}),
+        # Data wykonania już jest, a Emmett ma O większe niż plik: jedyny zapis to Wycena Emmetta, więc do 20 s od szukania brakuje
         # 18 s, a przerwa przed szukaniem następnego zlecenia to próg podtrzymania sesji.
         Order("#9805", day=date(2026, 9, 7), cells={"O": 1}, amount=_au({"012": 1}), emmett={"012": 2}),
         Order("#9806", day=date(2026, 9, 8), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # gotowe
@@ -1189,8 +1274,8 @@ def test_w_tempie_ludzkim_zlecenie_z_zapisem_trwa_20_s_samo_sprawdzenie_idzie_be
     gaps = [later[0] - earlier[0] for earlier, later in itertools.pairwise(moments)]
     assert (outcome.result, _figures(outcome), _errors(outcome)) == (
         "WYMAGA_SPRAWDZENIA",
-        _figures_of(11, 7, warnings=1, settled=1),
-        [("EFENIX_WYCENA_INNA", "wiersz 21"), ("EFENIX_SPRZECZNOSC_Z_EMMETTEM", "wiersz 22"), ("EFENIX_BRAK_POZYCJI", "wiersz 27")],
+        _figures_of(11, 7, warnings=2, settled=1),
+        [("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 21"), ("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 22"), ("EFENIX_BRAK_POZYCJI", "wiersz 27")],
     )
     # Zlecenie 1 szuka w chwili 0 i zapisuje w 2, 4, 6 i 8, więc szukanie zlecenia 2 czeka do 20. Zlecenia 2, 3 i 4 nic nie
     # zapisują: zlecenie 3 (rozliczone) nie otwiera strony, a szukanie zleceń 3, 4 i 5 jest w tej samej chwili 20. Zlecenie
@@ -1310,8 +1395,8 @@ def _without_appended_styles(written: bytes, original: bytes) -> bytes:
 
 
 def _marking_orders() -> list[Order]:
-    """Wiersze 18 i 19 gotowe (wycena już jest; dopisane ilości, ``ADRES`` bez stylu), 20 błąd kwoty, 21 sprzeczność z
-    Emmettem, 22 Zlecenie ze zdjęciami, 23 nieznane efenix z żółtym ``ADRES`` taty.
+    """Wiersze 18 i 19 gotowe (wycena już jest; dopisane ilości, ``ADRES`` bez stylu), 20 błąd kwoty, 21 Ostrzeżenie
+    Emmetta (Emmett ma O większe niż plik), 22 Zlecenie ze zdjęciami, 23 nieznane efenix z żółtym ``ADRES`` taty.
 
     Wiersz 19 ma starszą ``DATA``, więc proces kończy go przed wierszem 18.
     """
@@ -1361,11 +1446,8 @@ def test_znacznik_efenix_staje_tylko_w_adresie_gotowych_zlecen_a_reszta_pliku_zo
 def test_nastepny_przebieg_na_pliku_ze_znacznikami_czyta_kwoty_au_ma_te_same_gotowe_i_niczego_nie_zmienia(
     tmp_path: Path, page: Page
 ) -> None:
-    """Sprzeczność z Emmettem kończy w pierwszym przebiegu zlecenie z wiersza 21 (stan „gotowe” Śladu Wyceny Emmetta), więc
-    drugi przebieg tylko porównuje jego wycenę: błąd „wycena już jest i się różni”, a w efenix nic się nie zmienia.
-
-    Pierwszy przebieg musi dojść do końca: zatrzymany przed Wyceną Emmetta wiersza 21 zostawia ją drugiemu przebiegowi,
-    który daje wtedy ostrzeżenie Emmetta zamiast błędu i myli porażkę z błędem drugiego przebiegu (#767)."""
+    """Drugi przebieg nie ma czego dopisać: błąd kwoty (wiersz 20) i Ostrzeżenie Emmetta (wiersz 21) wracają takie same,
+    gotowe wiersze mają już Znaczniki, a w efenix i w Pliku zbiorczym nic się nie zmienia (#767)."""
 
     orders = _marking_orders()
     source = write_collective_file(tmp_path, orders)
@@ -1376,11 +1458,10 @@ def test_nastepny_przebieg_na_pliku_ze_znacznikami_czyta_kwoty_au_ma_te_same_got
         second = _run(source, _next_tab(page), atrapa.url)
         after, again = atrapa.state(), atrapa.requested()[requests:]
 
-    assert (_figures(second), _marked(source), _amounts(source)[18]) == (_figures_of(5, 2, photos=1), [18, 19], _au({"012": 1}))
-    # Błąd kwoty (20) i sprzeczność z Emmettem (21) skończyły zlecenie, więc drugi przebieg tylko porównuje ich wycenę.
+    assert (_figures(second), _marked(source), _amounts(source)[18]) == (_figures_of(5, 2, warnings=1, photos=1), [18, 19], _au({"012": 1}))
     assert [error for error in _errors(second) if error[1] in {"wiersz 20", "wiersz 21"}] == [
-        ("EFENIX_WYCENA_INNA", "wiersz 20"),
-        ("EFENIX_WYCENA_INNA", "wiersz 21"),
+        ("EFENIX_INNA_KWOTA", "wiersz 20"),
+        ("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 21"),
     ]
     # Plik ze wszystkimi Znacznikami nie jest zapisywany od nowa, więc OneDrive nie dostaje nowej wersji.
     assert (source.read_bytes() == marked, source.stat().st_mtime_ns == saved) == (True, True)
@@ -1542,9 +1623,9 @@ def test_przerwanie_wylogowaniem_i_ponowne_uruchomienie_daje_ten_sam_stan_efenix
 ) -> None:
     """Po wylogowaniu tata loguje się z powrotem i uruchamia ponownie; Wycena Emmetta jest najwyżej raz na zlecenie.
 
-    W każdym z tych miejsc proces albo nie kliknął jeszcze „Załaduj do zlecenia” zlecenia 2, albo odczytał już jego Wycenę
-    Emmetta, więc ślad ma stan „Emmett załadowany” z jej ilościami. Ponowne uruchomienie biegnie w tempie ludzkim na
-    udawanym zegarze: gotowe zlecenie 1 przechodzi bez przerw (#834), a zlecenia 2 i 3 dokańcza z przerwami przed zapisami."""
+    W każdym z tych miejsc zlecenie 2 jest albo bez ilości, więc ponowne uruchomienie ładuje Wycenę Emmetta, albo ma już
+    Wycenę Emmetta, więc ponowne uruchomienie ją dokańcza. Biegnie ono w tempie ludzkim na udawanym zegarze: gotowe
+    zlecenie 1 przechodzi bez przerw (#834), a zlecenia 2 i 3 dokańcza z przerwami przed zapisami."""
 
     orders = _resumed_orders()
     original = write_collective_file(tmp_path / "plik", orders)
@@ -1642,29 +1723,6 @@ def whole_run(tmp_path_factory: pytest.TempPathFactory, browser: Browser) -> _Wh
     return _WholeRun(original, source, pricing)
 
 
-def _loading_emmett(first: int, outage: Outage) -> int | None:
-    """Zlecenie (od 0), przy którego Wycenie Emmetta zaczęło się odcięcie od żądania ``first``: od „Załaduj do zlecenia”
-    do skryptu przeładowanej strony, a przy ``Outage.TORN`` już od propozycji Emmetta, bo skrypt efenix pokazuje okno
-    Emmetta także po rozerwanej odpowiedzi, a „Załaduj do zlecenia” efenix wykonuje, zanim rozerwie odpowiedź. Okno mogło
-    wtedy nie odczytać Wyceny Emmetta, którą efenix załadował; czy odczytało, zależy od trybu odcięcia i od tego, czy
-    przeglądarka czekała na skrypt strony do końca czasu okna."""
-
-    loads = [index for index, request in enumerate(WHOLE_RUN) if request == ("POST", LOAD_EMMETT)]
-    for order, load in enumerate(loads):
-        if load - (outage is Outage.TORN) <= first <= load + 2:
-            return order
-    return None
-
-
-def _entering_quantity(first: int) -> int | None:
-    """Zlecenie (od 0), którego zapis ilości zerwało odcięcie od żądania ``first`` (``Outage.CUT``) przed wykonaniem: Ślad
-    Wyceny Emmetta ma tę ilość zapisaną z wyprzedzeniem, a efenix jej nie ma."""
-
-    if WHOLE_RUN[first] != ("POST", SAVE_QUANTITY):
-        return None
-    return 0 if first < WHOLE_RUN.index(("GET", LIST_PAGE), 1) else 1
-
-
 @pytest.mark.parametrize(("first", "outage"), SWEEP)
 def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_ponowne_uruchomienie_konczy_jak_jeden_przebieg(
     tmp_path: Path, browser: Browser, whole_run: _WholeRun, outage: Outage, first: int
@@ -1676,14 +1734,11 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
     przyczyny. Logi Uruchomienia mają przyczynę techniczną (przy błędzie przeglądarki z nazwanym działaniem), wiersz
     zlecenia, przy którym okno stanęło, z jego miejscem w przebiegu i działaniem, które się nie udało, oraz ślad każdego
     zlecenia przed nim. Komunikat, że w efenix nic się nie zmieniło, mówi prawdę. Ponowne uruchomienie po powrocie połączenia, w
-    nowym oknie efenix jak u taty, kończy się tym samym stanem efenix i Pliku zbiorczego co jeden przebieg bez przerwy.
-    Wyjątek przyjęty w #774: odcięcie między „Załaduj do zlecenia” a odczytem przeładowanej strony, a odpowiedź rozerwana w
-    połowie już od propozycji Emmetta, może dać przy ponownym uruchomieniu błąd tylko tego zlecenia, które zostaje z
-    Wyceną Emmetta. Wyjątek przyjęty w #864: zerwany zapis ilości
-    zostawia w Śladzie Wyceny Emmetta ilość zapisaną z wyprzedzeniem, której efenix nie ma, a tego strona nie odróżnia od
-    ilości usuniętej przez tatę, więc ponowne uruchomienie daje błąd tylko tego zlecenia i niczego w nim nie zmienia."""
+    nowym oknie efenix jak u taty, kończy się zawsze tym samym stanem efenix i Pliku zbiorczego co jeden przebieg bez
+    przerwy, także po odcięciu między „Załaduj do zlecenia” a odczytem przeładowanej strony (dawniej wyjątek #774) i po
+    zerwanym zapisie ilości (dawniej #864): zlecenie z Wyceną Emmetta albo z częścią ilości proces dokańcza do pliku bez
+    ponownego ładowania Emmetta (ADR 0026)."""
 
-    orders = _two_orders()
     resumed = tmp_path / PERIOD / whole_run.original.name
     resumed.parent.mkdir(parents=True)
     shutil.copy2(whole_run.original, resumed)
@@ -1721,49 +1776,32 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
     assert [result.order.row for result in facts.summary.results] == list(range(18, 18 if at is None else at.row))
     assert _kept(stopped) or after_stop == untouched, (after_stop, untouched)
     assert status_changes == 0
-    left = _loading_emmett(first, outage)
-    if left is None and outage is Outage.CUT:
-        left = _entering_quantity(first)
-    if left is None or not _errors(again):
-        assert (_figures(again), _errors(again), priced_again) == (_figures_of(2, 2), [], whole_run.pricing)
-        assert (_parts(resumed), _marked(resumed)) == (_parts(whole_run.source), [18, 19])
-    else:
-        number, row = orders[left].number.removeprefix("#"), 18 + left
-        assert (_figures(again), _errors(again)) == (_figures_of(2, 1), [("EFENIX_WYCENA_INNA", f"wiersz {row}")])
-        assert (priced_again, _marked(resumed)) == (
-            whole_run.pricing | {number: after_stop[number]},
-            [other for other in (18, 19) if other != row],
-        )
+    assert (_figures(again), _errors(again), priced_again) == (_figures_of(2, 2), [], whole_run.pricing)
+    assert (_parts(resumed), _marked(resumed)) == (_parts(whole_run.source), [18, 19])
 
 
-def test_przerwanie_po_zaladuj_do_zlecenia_przed_odczytem_wyceny_emmetta_daje_przy_ponownym_uruchomieniu_blad_tylko_tego_zlecenia(
+def test_przerwanie_po_zaladuj_do_zlecenia_przed_odczytem_wyceny_emmetta_ponowne_uruchomienie_dokancza_bez_ponownego_emmetta(
     tmp_path: Path, page: Page
 ) -> None:
-    """Wylogowanie przy przeładowaniu strony zlecenia 2 po „Załaduj do zlecenia”: Emmett jest w efenix, ale narzędzie nie
-    odczytało go ze strony, więc ślad nie ma stanu „Emmett załadowany”, a ponowne uruchomienie tylko porównuje wycenę
-    zlecenia 2 i nic w niej nie zmienia. Zlecenia 1 i 3 kończą się jak w jednym przebiegu."""
+    """Wylogowanie przy przeładowaniu strony zlecenia 2 po „Załaduj do zlecenia”: efenix ma samą Wycenę Emmetta, której
+    narzędzie nie odczytało (kształt 46 zleceń z runu 4.11). Ponowne uruchomienie widzi zlecenie z ilościami, więc nie
+    ładuje Emmetta drugi raz, tylko dopisuje ilości z pliku: wszystkie trzy zlecenia kończą się jak w jednym przebiegu."""
 
     orders = _resumed_orders()
     source = write_collective_file(tmp_path, orders)
     # Szóste otwarcie strony zlecenia to przeładowanie po Wycenie Emmetta zlecenia 2 (każde zlecenie otwiera ją trzy razy).
     with atrapa_efenix([order.in_efenix(f"99{index}") for index, order in enumerate(orders)], expire_after=(ORDER_PAGE, 5)) as atrapa:
         stopped = _run(source, page, atrapa.url)
+        left = _pricing(atrapa)["9902"]
         atrapa.log_in()
         again = _run(source, _next_tab(page), atrapa.url)
         pricing = _pricing(atrapa)
 
     filled = {"012": 1, "019": 2, "015": 1}
-    assert (_stop(stopped), _figures(again), _errors(again)) == (
-        "EFENIX_WYLOGOWANY",
-        _figures_of(3, 2),
-        [("EFENIX_WYCENA_INNA", "wiersz 19")],
-    )
-    assert pricing == {
-        "9901": (filled, date(2026, 9, 1), 1),
-        "9902": ({"012": 1}, date(2026, 9, 2), 1),
-        "9903": (filled, date(2026, 9, 3), 1),
-    }
-    assert _marked(source) == [18, 20]
+    assert (_stop(stopped), left) == ("EFENIX_WYLOGOWANY", ({"012": 1}, date(2026, 9, 2), 1))
+    assert (_figures(again), _errors(again)) == (_figures_of(3, 3), [])
+    assert pricing == {f"990{index}": (filled, date(2026, 9, index), 1) for index in (1, 2, 3)}
+    assert _marked(source) == [18, 19, 20]
 
 
 @pytest.mark.parametrize(
@@ -1784,14 +1822,14 @@ def test_przerwanie_po_zaladuj_do_zlecenia_przed_odczytem_wyceny_emmetta_daje_pr
 def test_odmowa_zaladuj_do_zlecenia_zatrzymuje_wycene_bez_znacznika_i_sladu_a_ponowne_uruchomienie_daje_ostrzezenie_emmetta(
     tmp_path: Path, page: Page, refusal: EmmettRefusal, code: str, cause: WindowCause
 ) -> None:
-    """Zlecenie 2 ma pustą wycenę i Emmetta, który przeczy plikowi w T, a efenix odmawia jego „Załaduj do zlecenia”;
+    """Zlecenie 2 ma pustą wycenę i Emmetta, który ma w T więcej niż plik, a efenix odmawia jego „Załaduj do zlecenia”;
     skrypt strony i tak ją przeładowuje, a strona bez Wyceny Emmetta wygląda jak pusta Wycena Emmetta (#877).
 
     Odmowa to Zatrzymanie okna z przyczyną z odpowiedzi efenix, a odmowa odpowiedzią 2xx (``result: nok`` w ważnej
     sesji, inna treść, #889) z przeładowanej strony bez wyceny, choć okno Emmetta pokazało propozycję: zlecenie 2 nie
-    dostaje ilości z pliku ani Znacznika efenix, a Ślad nie ma jego stanu „Emmett załadowany”. Ponowne uruchomienie po
-    odmowie bez załadowania ładuje Emmetta i kończy zlecenie 2 Ostrzeżeniem Emmetta jak jeden przebieg; po 500, po którym
-    efenix ma już Emmetta poza Śladem, tylko porównuje jego wycenę (#774).
+    dostaje ilości z pliku ani Znacznika efenix. Ponowne uruchomienie po odmowie bez załadowania ładuje Emmetta, a po 500,
+    po którym efenix ma już Emmetta, dokańcza jego wycenę bez ponownego ładowania: w obu przypadkach zlecenie 2 kończy
+    się jak jeden przebieg, z O z pliku, T od Emmetta i Ostrzeżeniem Emmetta.
     """
 
     orders = [
@@ -1807,16 +1845,15 @@ def test_odmowa_zaladuj_do_zlecenia_zatrzymuje_wycene_bez_znacznika_i_sladu_a_po
         atrapa.log_in()
         atrapa.edit("9702", lambda order: setattr(order, "emmett_refusal", None))
         again = _run(source, _next_tab(page), atrapa.url)
+        resumed = _pricing(atrapa)["9702"]
 
     loaded = refusal is EmmettRefusal.SERVER_ERROR
     assert isinstance(stopped.ending, Stop) and isinstance(stopped.ending.facts, PricingStopped), _ending(stopped)
     facts = stopped.ending.facts
     assert (_stop(stopped), _kept(stopped), facts.part, facts.cause) == (code, True, PagePart.EMMETT, cause)
     assert (refused, marked) == (({"019": 5} if loaded else {}, date(2026, 9, 2), int(loaded)), [18])
-    assert (_errors(again), _marked(source)) == (
-        [("EFENIX_WYCENA_INNA" if loaded else "EFENIX_SPRZECZNOSC_Z_EMMETTEM", "wiersz 19")],
-        [18],
-    )
+    assert (_errors(again), _marked(source)) == ([("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 19")], [18])
+    assert resumed == ({"012": 1, "019": 5}, date(2026, 9, 2), 1)
 
 
 def test_odmowa_zaladuj_do_zlecenia_po_propozycji_emmetta_w_polach_bez_tekstu_zatrzymuje_wycene_bez_znacznika(
@@ -1958,13 +1995,15 @@ def test_przeladowanie_strony_przed_odczytem_odpowiedzi_zaladuj_do_zlecenia_konc
         pytest.param((ORDER_PAGE, 1), id="po-dacie-przed-emmettem"),
     ],
 )
-def test_przerwanie_przed_wycena_emmetta_a_potem_wycena_zaczeta_przez_tate_zostaje_bledem_bez_zmian(
+def test_przerwanie_przed_wycena_emmetta_a_potem_wycena_zaczeta_przez_tate_ponowne_uruchomienie_dokancza_bez_emmetta(
     tmp_path: Path, page: Page, expire_after: tuple[str, int]
 ) -> None:
     """Emmett dałby T (019) 5, a plik ma 2. Po Zatrzymaniu tata loguje się i sam, bez Emmetta, wpisuje O (012) 1 jak w
-    pliku: proces nie załadował Emmetta, więc ponowne uruchomienie tylko porównuje tę wycenę i T nie dopisuje."""
+    pliku: zlecenie ma ilość, więc ponowne uruchomienie nie ładuje Emmetta, który wyczyściłby wycenę taty, tylko dopisuje T
+    z pliku."""
 
-    order = Order("#5201", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"012": 1, "019": 5})
+    filled = {"012": 1, "019": 2}
+    order = Order("#5201", cells={"O": 1, "T": 2}, amount=_au(filled), emmett={"012": 1, "019": 5})
     source = write_collective_file(tmp_path, [order])
     with atrapa_efenix([order.in_efenix("921")], expire_after=expire_after) as atrapa:
         stopped = _run(source, page, atrapa.url)
@@ -1973,22 +2012,23 @@ def test_przerwanie_przed_wycena_emmetta_a_potem_wycena_zaczeta_przez_tate_zosta
         again = _run(source, _next_tab(page), atrapa.url)
         pricing = _pricing(atrapa)
 
-    assert (_stop(stopped), _errors(again)) == ("EFENIX_WYLOGOWANY", [("EFENIX_WYCENA_INNA", "wiersz 18")])
-    assert (pricing, _marked(source)) == ({"5201": ({"012": 1}, DAY, 0)}, [])
+    assert (_stop(stopped), again.result, _errors(again)) == ("EFENIX_WYLOGOWANY", "OK", [])
+    assert (pricing, _marked(source)) == ({"5201": (filled, DAY, 0)}, [18])
 
 
 @pytest.mark.parametrize(
-    ("amount", "first"),
+    ("amount", "errors"),
     [
         pytest.param(_au({"012": 1, "019": 2}), [], id="gotowe"),
         pytest.param(_au({"012": 1, "019": 2}) + 1, [("EFENIX_INNA_KWOTA", "wiersz 18")], id="błąd-kwoty"),
     ],
 )
-def test_zlecenie_skonczone_przez_proces_w_ktorym_tata_usunal_potem_ilosc_ponowne_uruchomienie_tylko_porownuje(
-    tmp_path: Path, page: Page, amount: float, first: list[tuple[str, str]]
+def test_ilosc_ktora_tata_usunal_w_efenix_po_skonczonym_zleceniu_ponowne_uruchomienie_wpisuje_z_pliku_z_powrotem(
+    tmp_path: Path, page: Page, amount: float, errors: list[tuple[str, str]]
 ) -> None:
-    """Proces załadował Emmetta (O), dopisał T (019) i skończył zlecenie; tata usuwa potem w efenix T. Ponowne
-    uruchomienie nie dopisuje T drugi raz, bo ślad ma stan „gotowe”."""
+    """Proces załadował Emmetta (O), dopisał T (019) i skończył zlecenie; tata usuwa potem w efenix T. Prawdziwy jest
+    Plik zbiorczy, a zmiana taty w dół nie jest chroniona (ADR 0026), więc ponowne uruchomienie wpisuje T z pliku z
+    powrotem i kończy zlecenie tym samym wynikiem co pierwsze."""
 
     order = Order("#5301", cells={"O": 1, "T": 2}, amount=amount, emmett={"012": 1})
     source = write_collective_file(tmp_path, [order])
@@ -1998,8 +2038,8 @@ def test_zlecenie_skonczone_przez_proces_w_ktorym_tata_usunal_potem_ilosc_ponown
         again = _run(source, _next_tab(page), atrapa.url)
         pricing = _pricing(atrapa)
 
-    assert (_errors(priced), _errors(again)) == (first, [("EFENIX_WYCENA_INNA", "wiersz 18")])
-    assert pricing == {"5301": ({"012": 1}, DAY, 1)}
+    assert (_errors(priced), _errors(again)) == (errors, errors)
+    assert pricing == {"5301": ({"012": 1, "019": 2}, DAY, 1)}
 
 
 def _interrupted(source: Path, atrapa: AtrapaEfenix, page: Page) -> None:
@@ -2014,222 +2054,85 @@ _IN_HALF_OF_ORDER_2 = (SAVE_QUANTITY, 3)
 
 
 @pytest.mark.parametrize(
-    "damage",
+    ("change", "after", "errors"),
     [
-        pytest.param(lambda trace: shutil.rmtree(trace.parent), id="brak"),
-        pytest.param(lambda trace: trace.write_bytes(trace.read_bytes()[: trace.stat().st_size // 2]), id="urwany"),
-        pytest.param(lambda trace: trace.write_text("[]", encoding="utf-8"), id="nie-obiekt"),
-        # Ilości jako tekst zamiast liczb: plik jest JSON-em, ale nie ma budowy śladu.
         pytest.param(
-            lambda trace: trace.write_text(re.sub(r'(": )(\d+)', r'\1"\2"', trace.read_text(encoding="utf-8")), encoding="utf-8"),
-            id="inna-budowa",
+            lambda order: order.quantities.update({"012": 3}),
+            {"012": 3, "015": 1, "019": 2},
+            [("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 19")],
+            id="większa-ilość-emmetta",
         ),
-        # Zlecenie bez ilości Wyceny Emmetta, jak dawny zapis „ładuje” sprzed jej odczytu.
-        pytest.param(
-            lambda trace: trace.write_text(
-                re.sub(r'\{"emmett": \{[^}]*\}, "entering": \{[^}]*\}\}', "null", trace.read_text(encoding="utf-8")),
-                encoding="utf-8",
-            ),
-            id="bez-wyceny-emmetta",
-        ),
-        # Ślad wersji sprzed zapisu z wyprzedzeniem: „Emmett załadowany” bez ilości, które narzędzie zaczęło wpisywać.
-        pytest.param(
-            lambda trace: trace.write_text(
-                re.sub(r', "entering": \{[^}]*\}', "", trace.read_text(encoding="utf-8")), encoding="utf-8"
-            ),
-            id="wersja-sprzed-zapisu-z-wyprzedzeniem",
-        ),
-        pytest.param(lambda trace: trace.rename(trace.with_name("15_21_09_2026.json")), id="inny-okres"),
-        pytest.param(lambda trace: trace.with_name("klucz").unlink(), id="bez-klucza"),
-    ],
-)
-def test_bez_sladu_wyceny_emmetta_albo_z_uszkodzonym_ponowne_uruchomienie_przerwanej_wyceny_tylko_ja_porownuje(
-    tmp_path: Path, page: Page, damage: Callable[[Path], object]
-) -> None:
-    orders = _resumed_orders()
-    source = write_collective_file(tmp_path, orders)
-    with atrapa_efenix([order.in_efenix(f"99{index}") for index, order in enumerate(orders)], expire_after=_IN_HALF_OF_ORDER_2) as atrapa:
-        _interrupted(source, atrapa, page)
-        interrupted = _pricing(atrapa)["9902"]
-        damage(_traces(source) / f"{PERIOD}.json")
-        again = _run(source, _next_tab(page), atrapa.url)
-        after = _pricing(atrapa)["9902"]
-
-    assert (_figures(again), _errors(again)) == (_figures_of(3, 2), [("EFENIX_WYCENA_INNA", "wiersz 19")])
-    assert (after, _marked(source)) == (interrupted, [18, 20])
-
-
-@pytest.mark.parametrize(
-    "change",
-    [
-        pytest.param(lambda order: order.quantities.update({"012": 3}), id="inna-ilość-emmetta"),
-        pytest.param(lambda order: order.quantities.pop("012"), id="usunięta-ilość-emmetta"),
+        pytest.param(lambda order: order.quantities.pop("012"), {"012": 1, "015": 1, "019": 2}, [], id="usunięta-ilość-emmetta"),
         # T (019) jest pusta u Emmetta, a plik ma 2.
-        pytest.param(lambda order: order.quantities.update({"019": 5}), id="inna-ilość-w-pozycji-pustej-u-emmetta"),
-        pytest.param(lambda order: setattr(order, "execution_date", None), id="bez-daty-wykonania"),
+        pytest.param(
+            lambda order: order.quantities.update({"019": 5}),
+            {"012": 1, "015": 1, "019": 5},
+            [("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 19")],
+            id="większa-ilość-w-pozycji-pustej-u-emmetta",
+        ),
+        pytest.param(
+            lambda order: order.quantities.update({"019": 2}), {"012": 1, "015": 1, "019": 2}, [], id="ilość-pliku-w-pozycji-pustej-u-emmetta"
+        ),
     ],
 )
-def test_przerwana_wycena_ze_sladu_ktora_tata_zmienil_potem_w_efenix_to_blad_bez_zmian(
-    tmp_path: Path, page: Page, change: Callable[[AtrapaOrder], object]
+def test_przerwana_wycena_ktora_tata_zmienil_potem_w_efenix_ponowne_uruchomienie_dokancza_tylko_w_gore(
+    tmp_path: Path, page: Page, change: Callable[[AtrapaOrder], object], after: dict[str, int], errors: list[tuple[str, str]]
 ) -> None:
     """Po przerwaniu zlecenie 2 ma O (012) od Emmetta i AG (015) od procesu. Tata zmienia albo usuwa w efenix ilość
-    Emmetta, wpisuje w pozycji pustej u Emmetta ilość inną niż plik albo usuwa datę wykonania: strona nie jest już taka,
-    jaką proces zostawił, więc proces nie dokańcza tej wyceny."""
+    Emmetta albo sam wpisuje T: ponowne uruchomienie wpisuje ilość z pliku w każdej pozycji, w której efenix ma mniej, a
+    pozycji, w której ma więcej, nie zmienia i daje Ostrzeżenie Emmetta."""
 
     orders = _resumed_orders()
     source = write_collective_file(tmp_path, orders)
     with atrapa_efenix([order.in_efenix(f"99{index}") for index, order in enumerate(orders)], expire_after=_IN_HALF_OF_ORDER_2) as atrapa:
         _interrupted(source, atrapa, page)
         atrapa.edit("9902", change)
-        changed = _pricing(atrapa)["9902"]
         again = _run(source, _next_tab(page), atrapa.url)
-        after = _pricing(atrapa)["9902"]
+        pricing = _pricing(atrapa)["9902"]
 
-    assert (_figures(again), _errors(again)) == (_figures_of(3, 2), [("EFENIX_WYCENA_INNA", "wiersz 19")])
-    assert after == changed
+    assert (_figures(again), _errors(again)) == (_figures_of(3, 3 - len(errors), warnings=len(errors)), errors)
+    assert (pricing, _marked(source)) == ((after, date(2026, 9, 2), 1), [18, 19, 20] if not errors else [18, 20])
 
 
-def test_przerwana_wycena_ze_sladu_sprzeczna_z_plikiem_zmienionym_po_przerwaniu_to_ostrzezenie_bez_dopisywania(
-    tmp_path: Path, page: Page
-) -> None:
+def test_przerwana_wycena_po_zmianie_pliku_przez_tate_ponowne_uruchomienie_dokancza_do_nowego_pliku(tmp_path: Path, page: Page) -> None:
     """Emmett wpisał w zleceniu 2 O (012) 1, proces dopisał AG, a wylogowanie przerwało go przed T. Tata zmienia w Pliku
-    zbiorczym O tego zlecenia na 2: ponowne uruchomienie ostrzega o sprzeczności z Wyceną Emmetta ze śladu i T nie
-    dopisuje."""
+    zbiorczym O tego zlecenia na 2: ponowne uruchomienie wpisuje O z pliku w miejsce ilości Emmetta i dopisuje T."""
 
     orders = _resumed_orders()
     source = write_collective_file(tmp_path, orders)
-    changed = replace(orders[1], cells={**orders[1].cells, "O": 2}, amount=_au({"012": 2, "019": 2, "015": 1}))
+    filled = {"012": 2, "019": 2, "015": 1}
+    changed = replace(orders[1], cells={**orders[1].cells, "O": 2}, amount=_au(filled))
     with atrapa_efenix([order.in_efenix(f"99{index}") for index, order in enumerate(orders)], expire_after=_IN_HALF_OF_ORDER_2) as atrapa:
         _interrupted(source, atrapa, page)
-        interrupted = _pricing(atrapa)["9902"]
         write_collective_file(tmp_path, [orders[0], changed, orders[2]])
         again = _run(source, _next_tab(page), atrapa.url)
         after = _pricing(atrapa)["9902"]
 
-    assert (_figures(again), _errors(again)) == (
-        _figures_of(3, 2, warnings=1),
-        [("EFENIX_SPRZECZNOSC_Z_EMMETTEM", "wiersz 19")],
-    )
-    assert after == interrupted
+    assert (again.result, _figures(again), _errors(again)) == ("OK", _figures_of(3, 3), [])
+    assert after == (filled, date(2026, 9, 2), 1)
 
 
-def test_ostrzezenie_emmetta_konczy_zlecenie_wiec_po_zmianie_pliku_na_ilosc_emmetta_ponowne_uruchomienie_tylko_porownuje(
+def test_po_ostrzezeniu_emmetta_tata_poprawia_plik_a_ponowne_uruchomienie_stawia_znacznik_bez_zmian_w_efenix(
     tmp_path: Path, page: Page
 ) -> None:
-    """Emmett wpisał O (012) 2, a plik ma 1: ostrzeżenie bez dopisywania. Tata zmienia w Pliku zbiorczym O na 2, a T (019)
-    zostawia: ponowne uruchomienie nie dopisuje T do wyceny, którą proces skończył ostrzeżeniem."""
+    """Emmett wpisał O (012) 2, a plik ma 1: O zostaje, T (019) jest dopisane, a zlecenie to Ostrzeżenie Emmetta. Tata
+    przyznaje rację efenix i zmienia w Pliku zbiorczym O na 2: ponowne uruchomienie niczego nie wpisuje i stawia
+    Znacznik efenix."""
 
     order = Order("#9601", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"012": 2})
     source = write_collective_file(tmp_path, [order])
     with atrapa_efenix([order.in_efenix("961")]) as atrapa:
         first = _run(source, page, atrapa.url)
+        warned = _pricing(atrapa)
         write_collective_file(tmp_path, [replace(order, cells={"O": 2, "T": 2}, amount=_au({"012": 2, "019": 2}))])
+        since = len(atrapa.requested())
         again = _run(source, _next_tab(page), atrapa.url)
         pricing = _pricing(atrapa)
+        requested_again = atrapa.requested()[since:]
 
-    assert [_errors(outcome) for outcome in (first, again)] == [
-        [("EFENIX_SPRZECZNOSC_Z_EMMETTEM", "wiersz 18")],
-        [("EFENIX_WYCENA_INNA", "wiersz 18")],
-    ]
-    assert (pricing, _marked(source)) == ({"9601": ({"012": 2}, DAY, 1)}, [])
-
-
-def test_wycena_zaczeta_przez_tate_obok_zlecenia_wycenionego_przez_proces_zostaje_bledem_bez_zmian(tmp_path: Path, page: Page) -> None:
-    """Ślad jednego zlecenia nie dotyczy innego: proces ładuje Wycenę Emmetta do wiersza 18, a wiersz 19 tata zaczął sam."""
-
-    started = date(2026, 9, 4)
-    orders = [
-        Order("#5111", day=date(2026, 9, 3), cells={"O": 1}, amount=_au({"012": 1})),
-        Order("#5112", day=started, cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), quantities={"012": 1}),
-    ]
-    with atrapa_efenix([orders[0].in_efenix("511"), replace(orders[1].in_efenix("512"), execution_date=started)]) as atrapa:
-        outcome = _price(tmp_path, page, atrapa.url, orders)
-        pricing = _pricing(atrapa)
-
-    assert (_figures(outcome), _errors(outcome)) == (_figures_of(2, 1), [("EFENIX_WYCENA_INNA", "wiersz 19")])
-    assert pricing["5112"] == ({"012": 1}, started, 0)
-
-
-def test_pusta_wycena_emmetta_ze_sladu_nie_laduje_sie_drugi_raz_po_przerwaniu_przed_pierwsza_iloscia(tmp_path: Path, page: Page) -> None:
-    filled = {"012": 1, "019": 2}
-    order = Order("#9501", cells={"O": 1, "T": 2}, amount=_au(filled))
-    source = write_collective_file(tmp_path, [order])
-    with atrapa_efenix([order.in_efenix("951")], expire_after=(SAVE_QUANTITY, 0)) as atrapa:
-        stopped = _run(source, page, atrapa.url)
-        atrapa.log_in()
-        again = _run(source, _next_tab(page), atrapa.url)
-        pricing = _pricing(atrapa)
-
-    assert (_stop(stopped), again.result, pricing, _marked(source)) == ("EFENIX_WYLOGOWANY", "OK", {"9501": (filled, DAY, 1)}, [18])
-
-
-def test_slad_wyceny_emmetta_ktorego_nie_da_sie_zapisac_zatrzymuje_wycene_przed_pierwsza_iloscia_i_nie_zostawia_pliku_tymczasowego(
-    tmp_path: Path, page: Page
-) -> None:
-    """Zapis „Emmett załadowany” się nie udaje i Wycena idzie dalej, ale ilości bez zapisu z wyprzedzeniem proces nie
-    wpisuje: zatrzymuje się „do Maksa”, a zlecenie zostaje z samą Wyceną Emmetta."""
-
-    order = Order("#9401", cells={"O": 1}, amount=_au({"012": 1}))
-    source = write_collective_file(tmp_path, [order])
-    # Folder w miejscu pliku śladu: plik tymczasowy się zapisuje, a zamiana nie.
-    (_traces(source) / f"{PERIOD}.json").mkdir(parents=True)
-    with atrapa_efenix([order.in_efenix("941")]) as atrapa:
-        outcome = _run(source, page, atrapa.url)
-        pricing = _pricing(atrapa)
-
-    assert isinstance(outcome.ending, Stop)
-    assert (_stop(outcome), outcome.ending.stop_kind, pricing, _marked(source)) == (
-        "EFENIX_SLAD_NIEZAPISANY",
-        "for_maks",
-        {"9401": ({}, DAY, 1)},
-        [],
-    )
-    assert sorted(path.name for path in _traces(source).iterdir()) == [f"{PERIOD}.json", "klucz"]
-
-
-def test_slad_wyceny_emmetta_ktorego_nie_da_sie_zastapic_znika_z_dysku_a_wznowienie_staje_bez_ilosci_bez_zapisu_z_wyprzedzeniem(
-    tmp_path: Path, page: Page
-) -> None:
-    """Po przerwaniu ślad na dysku ma zlecenie 2 w stanie „Emmett załadowany” z AG (015). Przy ponownym uruchomieniu
-    żadnego zapisu śladu nie da się zastąpić: zapis z wyprzedzeniem T (019) się nie udaje, więc proces T nie wpisuje, usuwa
-    stary ślad i się zatrzymuje. Trzecie uruchomienie nie ma śladu, więc zlecenie 2 tylko porównuje i niczego w nim nie
-    zmienia."""
-
-    orders = _resumed_orders()
-    source = write_collective_file(tmp_path, orders)
-    trace = _traces(source) / f"{PERIOD}.json"
-    temporary = trace.with_name(f"{PERIOD}.json.tmp")
-    with atrapa_efenix([order.in_efenix(f"99{index}") for index, order in enumerate(orders)], expire_after=_IN_HALF_OF_ORDER_2) as atrapa:
-        _interrupted(source, atrapa, page)
-        interrupted = _pricing(atrapa)["9902"]
-        # Folder w miejscu pliku tymczasowego: plik tymczasowy się nie zapisuje, a stary ślad da się usunąć.
-        temporary.mkdir()
-        resumed = _run(source, _next_tab(page), atrapa.url)
-        resumed_trace = trace.exists()
-        temporary.rmdir()
-        again = _run(source, _next_tab(page), atrapa.url)
-        after = _pricing(atrapa)["9902"]
-
-    assert (_stop(resumed), resumed_trace) == ("EFENIX_SLAD_NIEZAPISANY", False)
-    assert (_figures(again), _errors(again), after) == (_figures_of(3, 2), [("EFENIX_WYCENA_INNA", "wiersz 19")], interrupted)
-
-
-def test_slad_wyceny_emmetta_nie_ma_numeru_zlecenia_adresu_loginu_ani_skrotu_numeru_bez_klucza(tmp_path: Path, page: Page) -> None:
-    """Przerwanie przed pierwszą ilością zostawia zlecenie w stanie „Emmett załadowany”; plik śladu i klucz nie mają
-    numeru zlecenia, adresu ani loginu, a plik śladu także skrótu SHA-256 numeru, którym bez klucza dałoby się sprawdzić
-    zgadnięty numer."""
-
-    number = "12345678"
-    order = Order(f"#{number}", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"012": 1})
-    source = write_collective_file(tmp_path, [order])
-    with atrapa_efenix([order.in_efenix("123")], expire_after=(SAVE_QUANTITY, 0)) as atrapa:
-        stopped = _run(source, page, atrapa.url)
-    written = {path.name: path.read_text(encoding="utf-8").lower() for path in _traces(source).iterdir()}
-
-    assert (_stop(stopped), sorted(written)) == ("EFENIX_WYLOGOWANY", [f"{PERIOD}.json", "klucz"])
-    unkeyed = hashlib.sha256(number.encode("utf-8")).hexdigest()
-    found = {name: [number_in_trace(number, text), *(word in text for word in (unkeyed, "testowa", "adrian"))] for name, text in written.items()}
-    assert found == {name: [False] * 4 for name in written}
+    assert [_errors(outcome) for outcome in (first, again)] == [[("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 18")], []]
+    assert (warned, pricing, _marked(source)) == ({"9601": ({"012": 2, "019": 2}, DAY, 1)},) * 2 + ([18],)
+    assert set(requested_again) <= READING
 
 
 # --- Okno efenix taty: logowanie i przeglądarka (#750) ------------------------------------------------------------------
@@ -2275,7 +2178,6 @@ def test_okno_na_stronie_logowania_czeka_az_tata_sie_zaloguje_a_czas_czekania_ni
                 source,
                 lambda login: efenix_browser.window(page, atrapa.url, login=login),
                 pace=None,
-                trace_directory=_traces(source),
                 clock=lambda: now[0],
             ),
             LoggingIn(),
@@ -2412,7 +2314,7 @@ def test_profil_przegladarki_okna_efenix_lezy_w_katalogu_narzedzia_poza_gitem() 
 def _run_with(source: Path, open_efenix: Callable[[Login], AbstractContextManager[efenix_browser.BrowserEfenix]]) -> Priced:
     return run_process(
         efenix_process.PROCESS,
-        EfenixInputs(source, open_efenix, pace=None, trace_directory=_traces(source)),
+        EfenixInputs(source, open_efenix, pace=None),
         Tata(),
         view=lambda _inputs, summary: summary,
         metrics_path=source.parent.parent / "metryki.jsonl",
@@ -2509,128 +2411,7 @@ def test_slad_zlecenia_ma_chwile_rozpoczecia_kazdego_dzialania_okna_efenix_takze
     assert trace.failed == efenix_trace.TraceStep("otwarcie zlecenia", _TRACE_START + timedelta(seconds=5), 3000)
 
 
-# --- Zapis z wyprzedzeniem w Śladzie Wyceny Emmetta (#864, #865) --------------------------------------------------------
-
-
-class _StopsAfterSaving:
-    """Okno, w którym efenix zapisuje ilość, a okno nie dokańcza działania, zanim przeczyta odpowiedź (Zatrzymanie po
-    zapisie na serwerze, jak zerwana odpowiedź)."""
-
-    def __init__(self, efenix: Efenix) -> None:
-        self._efenix = efenix
-
-    @property
-    def sent_change(self) -> bool:
-        return self._efenix.sent_change
-
-    def search(self, number: str) -> Sequence[ListedOrder]:
-        return self._efenix.search(number)
-
-    def open_order(self, order: ListedOrder) -> OrderPricing:
-        return self._efenix.open_order(order)
-
-    def set_execution_date(self, day: date) -> bool:
-        return self._efenix.set_execution_date(day)
-
-    def load_emmett(self) -> OrderPricing:
-        return self._efenix.load_emmett()
-
-    def enter_quantity(self, position: str, quantity: int) -> Decimal:
-        self._efenix.enter_quantity(position, quantity)
-        raise UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.ANSWER_RESULT, position))
-
-
-def test_zatrzymanie_okna_po_zapisie_ilosci_w_efenix_a_potem_ilosc_usunieta_przez_tate_ponowne_uruchomienie_tylko_porownuje(
-    tmp_path: Path, page: Page
-) -> None:
-    """Emmett wpisuje O (012), efenix zapisuje T (019), a okno staje, zanim przeczyta odpowiedź. Tata usuwa potem T w
-    efenix: ponowne uruchomienie nie dopisuje T drugi raz, tylko daje błąd bez zmian, jak po zleceniu skończonym (#864)."""
-
-    order = Order("#5301", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"012": 1})
-    source = write_collective_file(tmp_path, [order])
-    with atrapa_efenix([order.in_efenix("931")]) as atrapa:
-        stopped = _run(source, page, atrapa.url, window=_StopsAfterSaving)
-        after_stop = _pricing(atrapa)["5301"]
-        atrapa.edit("5301", lambda edited: edited.quantities.pop("019"))
-        again = _run(source, _next_tab(page), atrapa.url)
-        pricing = _pricing(atrapa)
-
-    assert (_stop(stopped), after_stop) == ("EFENIX_OKNO_ZATRZYMANE", ({"012": 1, "019": 2}, DAY, 1))
-    assert (_errors(again), pricing, _marked(source)) == (
-        [("EFENIX_WYCENA_INNA", "wiersz 18")],
-        {"5301": ({"012": 1}, DAY, 1)},
-        [],
-    )
-
-
-def test_slad_ktorego_nie_da_sie_zapisac_ani_usunac_po_skonczonym_zleceniu_nie_przywraca_ilosci_usunietej_przez_tate(
-    tmp_path: Path, page: Page, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Zapis „gotowe” po skończonym zleceniu się nie udaje i pliku śladu nie da się usunąć, więc na dysku zostaje
-    „Emmett załadowany”. Tata usuwa potem T (019): ponowne uruchomienie T nie dopisuje, bo ślad ma ją zapisaną z
-    wyprzedzeniem (#865)."""
-
-    trace_name = f"{PERIOD}.json"
-    replace = efenix_emmett_trace._replace
-    unlink = Path.unlink
-
-    def replace_unless_finished(path: Path, text: str) -> OSError | None:
-        if path.name == trace_name and '"gotowe"' in text:
-            return PermissionError("plik trzyma inny program")
-        return replace(path, text)
-
-    def unlink_refused(self: Path, missing_ok: bool = False) -> None:
-        if self.name == trace_name:
-            raise PermissionError("plik trzyma inny program")
-        unlink(self, missing_ok=missing_ok)
-
-    order = Order("#5301", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"012": 1})
-    source = write_collective_file(tmp_path, [order])
-    with atrapa_efenix([order.in_efenix("931")]) as atrapa:
-        with monkeypatch.context() as patched:
-            patched.setattr(efenix_emmett_trace, "_replace", replace_unless_finished)
-            patched.setattr(Path, "unlink", unlink_refused)
-            priced = _run(source, page, atrapa.url)
-        left_on_disk = (_traces(source) / trace_name).read_text(encoding="utf-8")
-        atrapa.edit("5301", lambda edited: edited.quantities.pop("019"))
-        again = _run(source, _next_tab(page), atrapa.url)
-        pricing = _pricing(atrapa)
-
-    assert (priced.result, '"gotowe"' in left_on_disk) == ("OK", False)
-    assert (_errors(again), pricing) == ([("EFENIX_WYCENA_INNA", "wiersz 18")], {"5301": ({"012": 1}, DAY, 1)})
-
-
-def test_po_przerwaniu_ilosc_wpisana_przez_tate_w_pustej_pozycji_to_blad_bez_dopisywania_reszty(tmp_path: Path, page: Page) -> None:
-    """Wylogowanie przy pierwszej ilości (AG, 015): efenix jej nie zapisał, a ślad ją wycofał. Tata wpisuje sam T (019)
-    jak w pliku: tej ilości narzędzie nie zaczęło wpisywać, więc ponowne uruchomienie nie dopisuje AG do jego wyceny."""
-
-    filled = {"012": 1, "015": 1, "019": 2}
-    order = Order("#5401", cells={"O": 1, "T": 2, "AG": 1}, amount=_au(filled), emmett={"012": 1})
-    source = write_collective_file(tmp_path, [order])
-    with atrapa_efenix([order.in_efenix("941")], expire_after=(SAVE_QUANTITY, 0)) as atrapa:
-        stopped = _run(source, page, atrapa.url)
-        atrapa.log_in()
-        atrapa.edit("5401", lambda edited: edited.quantities.update({"019": 2}))
-        again = _run(source, _next_tab(page), atrapa.url)
-        pricing = _pricing(atrapa)
-
-    assert (_stop(stopped), _errors(again)) == ("EFENIX_WYLOGOWANY", [("EFENIX_WYCENA_INNA", "wiersz 18")])
-    assert (pricing, _marked(source)) == ({"5401": ({"012": 1, "019": 2}, DAY, 1)}, [])
-
-
-def test_slad_nie_zapisuje_z_wyprzedzeniem_ani_nie_wycofuje_ilosci_zlecenia_bez_wyceny_emmetta(tmp_path: Path) -> None:
-    """Zapis z wyprzedzeniem ma tylko zlecenie w stanie „Emmett załadowany”; dla innego ślad odmawia (proces nie wpisuje
-    wtedy ilości) i niczego nie zapisuje na dysku. Tej drogi przebieg nie osiąga, bo wpisuje tylko po Wycenie Emmetta."""
-
-    trace = efenix_emmett_trace.EmmettTrace(tmp_path / "slad" / f"{PERIOD}.json")
-
-    trace.not_entered("9901", "019")
-    refused = trace.entering("9901", "019", 2)
-
-    assert (refused, trace.entered("9901"), (tmp_path / "slad").exists()) == (False, {}, False)
-
-
-# --- Zapis z wyprzedzeniem po przerwie tempa ludzkiego (#881) -----------------------------------------------------------
+# --- Zgaśnięcie Centrum w przerwie tempa ludzkiego (#881) ----------------------------------------------------------------
 
 
 class _SwitchedOff(BaseException):
@@ -2641,9 +2422,8 @@ def test_zgasniecie_centrum_w_przerwie_tempa_przed_iloscia_daje_wznowienie_ktore
     tmp_path: Path, page: Page
 ) -> None:
     """Emmett wpisuje O (012), a proces ma wpisać T (019). Centrum gaśnie w przerwie tempa ludzkiego przed zapisem T,
-    zanim okno wyśle żądanie: efenix nie ma T, a ślad nie ma jej zapisu z wyprzedzeniem, bo ten stoi po przerwie, tuż przed
-    żądaniem (#881). Ponowne uruchomienie dokańcza więc zlecenie i daje ten sam stan efenix i Znaczniki co jeden przebieg,
-    a nie błąd „wycena już jest i się różni”."""
+    zanim okno wyśle żądanie, więc efenix nie ma T. Ponowne uruchomienie dokańcza zlecenie z samą Wyceną Emmetta bez
+    ponownego ładowania Emmetta i daje ten sam stan efenix i Znaczniki co jeden przebieg."""
 
     filled = {"012": 1, "019": 2}
     order = Order("#5501", cells={"O": 1, "T": 2}, amount=_au(filled), emmett={"012": 1})

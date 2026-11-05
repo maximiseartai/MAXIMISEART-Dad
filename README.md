@@ -288,7 +288,7 @@ uzupełnienia; podgląd bez zapisu z tymi samymi ostrzeżeniami kończy się kod
 `tools/zgodnosc_efenix.py` sprawdza, czy prawdziwy efenix ma budowę, której
 używa Wycena w efenix i którą odtwarza Atrapa efenix: pola listy i strony
 zlecenia, odpowiedź szukania i tabelę wyników, postać daty wykonania,
-przycisk i okno Emmetta, okno daty, nazwy w skryptach stron, na których działaniu
+przycisk i okno Emmetta (z pustą propozycją przed propozycją Emmetta), okno daty, nazwy w skryptach stron, na których działaniu
 polega Wycena w efenix, karty pozycji wyceny z kodami `INDEKS` i stronę
 logowania. Ceny pozycji z przypisania kolumn porównuje z kosztami z wiersza 14
 Wzorca pliku zbiorczego (domyślnie z konfiguracji narzędzia, inny plik:
@@ -304,9 +304,9 @@ zalogowaną. Wynik ma tylko nazwy elementów, liczby i kody pozycji, bez numeró
 zleceń, adresów, loginów i cen.
 
 ```sh
-google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodnosc"
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodnosc"
 # w tym oknie zaloguj się do efenix kontem taty, potem:
-.venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php>
+.venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php> --cdp http://127.0.0.1:9222
 ```
 
 Gdy wynik mówi, że lista nie ma zleceń albo że żadne otwarte zlecenie nie ma
@@ -317,10 +317,24 @@ Przycisku kalendarza daty wykonania narzędzie nie sprawdza, więc wynik zawsze
 ma o nim linię `NIESPRAWDZONE`: sprawdź ręcznie w efenix na zleceniu „Do
 wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty.
 
-Kody wyjścia: `0` bez różnic, gdy niesprawdzony jest tylko przycisk kalendarza,
-`2` różnice albo inne części niesprawdzone (każda w osobnej linii), `1` brak
-Chrome albo Wzorca, efenix nie odpowiada albo Chrome nie jest zalogowany.
-Parametry i Chrome na Windows opisuje `--help`.
+Propozycji Emmetta narzędzie nie pobiera (`action_fill_emmett.php` nie jest na
+liście odczytów), więc wynik ma o jej budowie zawsze linię `NIESPRAWDZONE`.
+Przycisk Emmetta pokazuje w okienku podgląd, co i z jakimi ilościami Emmett
+uzupełni, a ilości wpisuje do zlecenia dopiero „Załaduj do zlecenia”. Tak
+pamięta to Maks, ale co serwer efenix robi przy podglądzie, nikt nie sprawdził.
+Pomiar propozycji z prawdziwego efenix będzie w osobnym PR (Część #953).
+
+Czasu przebiegu w prawdziwym efenix nikt jeszcze nie zmierzył: narzędzie wysyła
+po kolei najwyżej 17 odczytów, więc trwa mniej więcej tyle, ile 17 odpowiedzi
+efenix (na Atrapie 0,98 s w teście zgodnej Atrapy z `pytest --durations`,
+5.11.2026), a odpowiedź, która nie przyjdzie w
+`--limit-ms` (domyślnie 30 s), kończy je kodem `1`.
+
+Kody wyjścia: `0` bez różnic, gdy niesprawdzone są tylko przycisk kalendarza
+i budowa propozycji Emmetta, `2` różnice albo inne części niesprawdzone (każda
+w osobnej linii), `1` brak Chrome albo Wzorca, efenix nie odpowiada albo Chrome
+nie jest zalogowany.
+Parametry i Chrome na Windows i Linuksie opisuje `--help`.
 
 ## Testy
 

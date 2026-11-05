@@ -31,7 +31,7 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   wejścia są poza porównaniem: zależą od komputera i chwili, a nie od kodu i wejścia.
 
 Odtworzenie pisze tylko w katalogu roboczym (``work``): pliki wejścia, Rozliczenia i Kopie INTERMAX, które proces
-zapisuje, metryki i Ślad Wyceny Emmetta. Nic nie idzie do Skrzynki Zgłoszeń, bo odtworzenie nie ma Kolejki wysyłki.
+zapisuje, i metryki. Nic nie idzie do Skrzynki Zgłoszeń, bo odtworzenie nie ma Kolejki wysyłki.
 """
 
 from __future__ import annotations
@@ -719,7 +719,6 @@ def _efenix(record: RunLog, work: _Work) -> _Setup:
         source,
         lambda _login: efenix_browser.chromium(url),
         pace=None,
-        trace_directory=work.folder("Ślad Wyceny Emmetta"),
         forbidden=forbidden,
         copy=copy,
     )
@@ -736,8 +735,7 @@ def _efenix_limits(record: RunLog) -> list[Limit]:
     limits.append(
         Limit(
             "efenix to Atrapa efenix z odczytów stron w Logach, a nie efenix taty: budowa stron, odpowiedzi na zapis i "
-            "ceny pozycji, których Logi nie wyznaczają, są Atrapy; Śladu Wyceny Emmetta z wcześniejszych Wycen Logi "
-            "nie mają"
+            "ceny pozycji, których Logi nie wyznaczają, są Atrapy"
         )
     )
     if record.efenix_stop is not None:

@@ -2,22 +2,22 @@
 
 The checker runs the real process (``run_process`` with ``efenix_process.PROCESS``, the window ``efenix_browser.window``
 in Playwright's Chromium, ``pace=None``) on the Atrapa efenix (``tests/fixtures/atrapa_efenix.py``) with two orders of a
-synthetic Plik zbiorczy: order 1 (row 18) has an empty pricing, Emmett gives O and the process adds T and AG, so it ends
-gotowe with a Znacznik efenix; order 2 (row 19) has an empty pricing and an Emmett that contradicts the file in T, so it
-ends with an Ostrzeżenie Emmetta. Between the window and the Atrapa sits the proxy of ``awarie_efenix.py``.
+synthetic Plik zbiorczy: order 1 (row 18) has an empty pricing, Emmett gives O as the file and T one less than the
+file, and the process enters T over Emmett's and adds AG, so it ends gotowe with a Znacznik efenix; order 2 (row 19) has
+an empty pricing and an Emmett with more than the file in T, so it ends with an Ostrzeżenie Emmetta (ADR 0026). Between the window and the Atrapa sits the proxy of ``awarie_efenix.py``.
 
 First a run without a fault (the reference) gives the window's requests, which must be exactly ``EXPECTED_CALLS``
-(otherwise the space is stale: ``LUKA MODELU``), and the state of the Atrapa, the Plik zbiorczy, the Ślad Wyceny Emmetta
-and the dziennik before and after each request, which is what a killed tool leaves (``Fault.KILLED``, checked as it
+(otherwise the space is stale: ``LUKA MODELU``), and the state of the Atrapa, the Plik zbiorczy and the dziennik before
+and after each request, which is what a killed tool leaves (``Fault.KILLED``, checked as it
 is). Then each request gets each other ``Fault`` in its own run (run 1), and every run that stopped or was killed gets a
 second Uruchomienie (run 2) after Dad logs in and the network is back, once as it is and once after each change Dad
 could make by hand in efenix between them (``Edit``): he finishes the order himself, removes a quantity Emmett gave,
 removes a quantity the process added, or prices the empty order himself without Emmett. Second runs from the same state
-that broke in the place and way of the same accepted risks (``RiskShape.window``) are run once.
+that broke in the place and way of the same accepted risks (``RiskShape.window``, none today) are run once.
 
 The invariants (``Rule``), each with the domain sentence it comes from:
 
-- PRZYCZYNA: a Zatrzymanie names the fault the way the docstrings of ``efenix_browser`` and ``efenix_pricing.StopCause``
+- PRZYCZYNA: a Zatrzymanie names the fault the way the docstrings of ``efenix_browser`` and ``efenix_pricing.WindowCause``
   sort it, at the order of the faulted request: a broken network or a late answer is a browser failure with a named
   operation (or ``EfenixUnreachable`` before the list opened), an error page of the order page is ``HttpStatus``, a
   login is ``LoggedOut``, a closed tab is ``WindowClosed``, a „Załaduj do zlecenia” efenix answered with 2xx without
@@ -30,16 +30,13 @@ The invariants (``Rule``), each with the domain sentence it comes from:
   efenix are exactly the gotowe orders, and a gotowe order has the file's quantities, the AU amount and the date.
   What a killed tool leaves has a „zaczynam” entry in the dziennik for each order changed in efenix, no Znaczniki
   efenix, and the file's pricing in efenix for each order the dziennik ended gotowe.
-- WZNOWIENIE: the promises of ``verify-wznowienie-wyceny-efenix`` and the Ślad Wyceny Emmetta of ``GLOSSARY.md``: a
-  second run never changes an order with a pricing Dad changed by hand (ZmianaTatyZostaje), changes a pricing that
-  already is only when the Ślad has it as „Emmett załadowany” and the page has exactly Emmett's quantities and the
-  quantities the tool started entering, every other position empty, and then only by adding quantities in empty
-  positions (``GLOSSARY.md``; NieCzysciWycenyTaty), and ends every order Dad did not change like one run
-  (BladTylkoPoZmianieTaty), except the model's accepted findings ``przerwanie-po-zaladuj`` (#774) and
-  ``przerwanie-przed-zapisem-ilosci`` (#864), each only in its whole shape (``RiskShape``): where run 1 broke, how,
-  what it left in efenix and the Ślad, and how the second run ended the order.
-- BEZ_DANYCH: the Logi (orders, Zatrzymanie, Komunikaty), the dziennik and the Ślad have no order number, efenix
-  identifier or address.
+- WZNOWIENIE: the promises of ``verify-wznowienie-wyceny-efenix`` and the Wycena w efenix of ``GLOSSARY.md`` (ADR
+  0026): a second run never loads Emmett into an order with a quantity (NieCzysciWycenyTaty), never lowers or clears a
+  quantity in efenix (NieObnizaIlosci), completes every order to the file only upwards, so an order Dad changed ends as
+  ``completed`` says (ZmianaTatyZostaje), and ends every order Dad did not change like one run
+  (BladTylkoPoZmianieTaty).
+- BEZ_DANYCH: the Logi (orders, Zatrzymanie, Komunikaty) and the dziennik have no order number, efenix identifier or
+  address.
 - BEZ_WYJATKU: a run ends with a result or a Zatrzymanie of the window, never with an unexpected error, and a second run
   ends with a result.
 
@@ -51,7 +48,6 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import hmac
 import itertools
 import json
 import os
@@ -82,7 +78,6 @@ from rozliczenia import efenix_browser, efenix_process
 from rozliczenia.centrum.run_logs import LoggedMessage, LoggedOrder, LoggedWindowStop
 from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.efenix_pricing import (
-    AheadNotSaved,
     BrowserFailure,
     Closed,
     Efenix,
@@ -101,14 +96,13 @@ from rozliczenia.efenix_pricing import (
     Settled,
     Shape,
 )
-from rozliczenia.efenix_positions import PricedDifferently
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.message import Message
 from rozliczenia.process_run import Outcome, Stop, run_process
 from rozliczenia.workbook_files import read_data_rows
 from skrypt_skilla import Parser, create_run_root, new_run, part, remove_run_root
 from tests.fixtures.atrapa_efenix import EFENIX_EMMETT_RELOAD_MS, AtrapaOrder, amount_of, atrapa_efenix
-from tests.fixtures.efenix import Order, number_in_trace, write_collective_file
+from tests.fixtures.efenix import Order, write_collective_file
 from tests.fixtures.interlocutor import Tata
 from tests.fixtures.settlement import PERIOD
 
@@ -136,13 +130,14 @@ IDENTIFIERS: Final = ("a5kx1", "a5kx2")
 FILE: Final[tuple[Mapping[str, int], ...]] = ({"012": 1, "019": 2, "015": 1}, {"012": 1, "019": 2})
 """Quantities of the Plik zbiorczy by position: O→012, T→019, AG→015 (spec #741)."""
 CELLS: Final[tuple[Mapping[str, int], ...]] = ({"O": 1, "T": 2, "AG": 1}, {"O": 1, "T": 2})
-EMMETT: Final[tuple[Mapping[str, int], ...]] = ({"012": 1}, {"012": 1, "019": 5})
-"""Emmett of order 2 gives 5 in T, the file has 2: an Ostrzeżenie Emmetta."""
+EMMETT: Final[tuple[Mapping[str, int], ...]] = ({"012": 1, "019": 1}, {"012": 1, "019": 5})
+"""Emmett of order 1 gives 1 in T, the file has 2: the process enters 2 over it (#960). Emmett of order 2 gives 5 in T, the
+file has 2: the process leaves it and gives an Ostrzeżenie Emmetta."""
 DAYS: Final = (date(2026, 9, 1), date(2026, 9, 2))
 ADDRESSES: Final = ("UL. KASZTANOWA 7/1", "UL. LIPOWA 3/9")
 EFENIX_ADDRESSES: Final = ("Sopot-Centrum ul.Kasztanowa 7 Lokal 1", "Sopot-Centrum ul.Lipowa 3 Lokal 9")
 FORBIDDEN_TEXT: Final = (*NUMBERS, *IDENTIFIERS, "kasztanow", "lipow", "sopot")
-"""Text of the orders that no Logi, dziennik or Ślad may hold (compared without letter case)."""
+"""Text of the orders that no Logi or dziennik may hold (compared without letter case)."""
 
 
 def file_orders() -> list[Order]:
@@ -166,12 +161,14 @@ def efenix_orders() -> list[AtrapaOrder]:
 
 @dataclass(frozen=True)
 class Priced:
-    """State of one order in the Atrapa: quantities (code → quantity other than 0), date, Emmett loads, status."""
+    """State of one order in the Atrapa: quantities (code → quantity other than 0), date, Emmett loads, status, and of
+    the loads those over a pricing other than that Wycena Emmetta (``AtrapaOrder.emmett_over_pricing``)."""
 
     quantities: tuple[tuple[str, int], ...]
     day: date | None
     emmett_loads: int
     status: str
+    emmett_over_pricing: int
 
     @property
     def amount(self) -> Decimal:
@@ -179,21 +176,34 @@ class Priced:
 
     def __str__(self) -> str:
         quantities = ", ".join(f"{code}={quantity}" for code, quantity in self.quantities) or "pusta"
-        return f"wycena [{quantities}], data {self.day or 'pusta'}, Emmett {self.emmett_loads}x, {self.status}"
+        over = f" (na inną wycenę {self.emmett_over_pricing}x)" if self.emmett_over_pricing else ""
+        return f"wycena [{quantities}], data {self.day or 'pusta'}, Emmett {self.emmett_loads}x{over}, {self.status}"
 
 
 def priced(order: AtrapaOrder) -> Priced:
-    return Priced(tuple(sorted(order.quantities.items())), order.execution_date, order.emmett_loads, order.status)
+    return Priced(tuple(sorted(order.quantities.items())), order.execution_date, order.emmett_loads, order.status, order.emmett_over_pricing)
 
 
 INITIAL: Final = tuple(priced(order) for order in efenix_orders())
-"""Domain expectation of one run without a fault (``GLOSSARY.md``, Wycena w efenix): order 1 gets the date, Emmett and
-the file's quantities in the positions empty at Emmett; order 2 gets the date and Emmett and nothing more."""
+"""Domain expectation of one run without a fault (``GLOSSARY.md``, Wycena w efenix, ADR 0026): order 1 gets the date,
+Emmett and the file's quantity in each position where Emmett has less; order 2 gets the date and Emmett, whose T stays
+above the file, and nothing more, because its other position equals the file."""
 REFERENCE_FINAL: Final = (
-    Priced(tuple(sorted(FILE[0].items())), DAYS[0], 1, "Do wyceny"),
-    Priced(tuple(sorted(EMMETT[1].items())), DAYS[1], 1, "Do wyceny"),
+    Priced(tuple(sorted(FILE[0].items())), DAYS[0], 1, "Do wyceny", 0),
+    Priced(tuple(sorted(EMMETT[1].items())), DAYS[1], 1, "Do wyceny", 0),
 )
 REFERENCE_OUTCOMES: Final = ("gotowe", "ostrzeżenie Emmetta")
+
+
+def like_one_run(state: Priced, index: int) -> bool:
+    """Whether order ``index`` is in efenix as after one run without a fault (``REFERENCE_FINAL``): the same quantities,
+    date and status, and Wycena Emmetta loaded, never over a pricing other than itself (NieCzysciWycenyTaty: „the tool
+    loads Wycena Emmetta only into an order with no quantity”). How many times it was loaded does not count: after a torn
+    answer Chromium sends „Załaduj do zlecenia” again, so efenix loads it twice in one click (CI run 42058117564 on
+    Windows, PR #965), and a load into an order without a pricing or into its own Wycena Emmetta replaces nothing. A
+    second run's own load into an order with a quantity stays a violation of its own (``check_resume``)."""
+
+    return replace(state, emmett_loads=min(state.emmett_loads, 1)) == REFERENCE_FINAL[index]
 REFERENCE_MARKED: Final = (FIRST_ROW,)
 
 # --- The window's requests in one run without a fault -----------------------------------------------------------
@@ -288,7 +298,7 @@ ALLOWED_PATHS: Final = frozenset(call.path for call, _role, _order in EXPECTED_C
 
 
 class Cause(enum.Enum):
-    """Domain category of a Zatrzymanie, from the docstrings of ``efenix_browser`` and ``StopCause``."""
+    """Domain category of a Zatrzymanie, from the docstrings of ``efenix_browser`` and ``WindowCause``."""
 
     NETWORK = "błąd przeglądarki z nazwanym działaniem (sieć albo czas okna)"
     TIMEOUT = "czas okna minął (TimeoutError z nazwanym działaniem)"
@@ -299,7 +309,6 @@ class Cause(enum.Enum):
     SHAPE = "strona w innej budowie (ElementCount, OtherShape)"
     NOT_LOADED = "efenix nie załadował Wyceny Emmetta po odpowiedzi 2xx (OtherShape EMMETT_NOT_LOADED)"
     UNNAMED = "błąd przeglądarki bez nazwanego działania"
-    TRACE = "Ślad Wyceny Emmetta nie zapisał ilości z wyprzedzeniem (EFENIX_SLAD_NIEZAPISANY)"
 
 
 @dataclass(frozen=True)
@@ -450,10 +459,6 @@ def applies(fault: Fault, role: Role) -> bool:
             return True
 
 
-TRACE_NOT_SAVED: Final = "EFENIX_SLAD_NIEZAPISANY"
-"""Komunikat of the Zatrzymanie after a failed write ahead of a quantity (``efenix_messages.emmett_trace_not_saved``)."""
-
-
 _RELOAD_WAIT = {Role.LOAD, Role.RELOADED, Role.RELOADED_FILE}
 """Requests the window waits for in the time limit of „Załaduj do zlecenia”, which runs from its click to the end of the
 reload (``efenix_browser.load_emmett``: ``expect_navigation`` around the answer)."""
@@ -475,13 +480,9 @@ def plan_of(case: Case | None) -> Plan:
 
 def classify(facts: PricingStopped, code: str) -> Cause:
     """Category of a Zatrzymanie from its facts; ``EfenixUnreachable`` carries a browser failure at the list like
-    ``UnexpectedPage`` does, so its Komunikat tells them apart. A failed write of the Ślad ahead of a quantity stops
-    the Wycena outside a page of efenix with ``AheadNotSaved`` (``efenix_pricing._WrittenAhead``); no fault of this
-    checker touches the disk, so it is never the expected cause."""
+    ``UnexpectedPage`` does, so its Komunikat tells them apart."""
 
     match facts.cause:
-        case AheadNotSaved():
-            return Cause.TRACE
         case LoginSign():
             return Cause.LOGIN
         case Closed():
@@ -521,19 +522,14 @@ def describe(facts: PricingStopped) -> str:
             cause = f"HttpStatus({status})"
         case LoginSign() | Closed():
             cause = f"{type(facts.cause).__name__}.{facts.cause.name}"
-        case AheadNotSaved(position):
-            cause = f"AheadNotSaved({position})"
     return f"{part}, {cause}"
 
 
 def code_of(facts: PricingStopped) -> str:
-    """Komunikat of a Zatrzymanie (``efenix_pricing._efenix_stops``): a failed write of the Ślad is „Ślad
-    niezapisany”, a sign of logout „wylogowany”, a closed window „okno zamknięte”, a browser failure at the list
-    before it opened „niedostępny”, the rest „okno zatrzymane”."""
+    """Komunikat of a Zatrzymanie (``efenix_pricing._efenix_stops``): a sign of logout „wylogowany”, a closed window
+    „okno zamknięte”, a browser failure at the list before it opened „niedostępny”, the rest „okno zatrzymane”."""
 
     match facts.cause:
-        case AheadNotSaved():
-            return TRACE_NOT_SAVED
         case LoginSign():
             return "EFENIX_WYLOGOWANY"
         case Closed():
@@ -579,10 +575,8 @@ def edited(state: Priced, index: int, edit: Edit) -> Priced | None:
 
 
 class Interruption(enum.Enum):
-    """What ended run 1, as the code tells it apart for the Ślad (``efenix_pricing._WrittenAhead``): a Zatrzymanie of a
-    logout (``LoggedOut``, ``LoginSign``), after which the Ślad withdraws the quantity efenix did not save
-    (``trace.not_entered``, the action ``Odmowa`` of ``verify-wznowienie-wyceny-efenix``), or any other Zatrzymanie or a
-    killed tool (``Zatrzymanie``, ``Zgasniecie``), after which the Ślad keeps every quantity written ahead."""
+    """What ended run 1: a Zatrzymanie of a logout (``LoggedOut``, ``LoginSign``), or any other Zatrzymanie or a killed
+    tool (``Zatrzymanie``, ``Zgasniecie`` of ``verify-wznowienie-wyceny-efenix``), the way an accepted risk names it."""
 
     LOGOUT = "wylogowanie"
     OTHER = "inne Zatrzymanie albo zabicie"
@@ -601,14 +595,13 @@ class Resumed:
     """What a second run that did not end order ``index`` like one run, although Dad did not change it
     (BladTylkoPoZmianieTaty), resumed and did, each part of an accepted risk's shape (``RiskShape``): where run 1 broke
     (``at``, ``None`` when the proxy cannot tell), how (``interruption``), what it left of the order in efenix
-    (``page``) and in the Ślad (``trace``, ``None`` without an entry), and the order after the second run (``now``)
-    with the fault of its error (``problem``, ``None`` without one)."""
+    (``page``), and the order after the second run (``now``) with the fault of its error (``problem``, ``None`` without
+    one)."""
 
     at: Role | None
     interruption: Interruption
     index: int
     page: Priced
-    trace: object
     now: Priced
     problem: object
 
@@ -635,20 +628,17 @@ class RiskShape:
 
     - ``at``: the window's steps at which run 1 broke (``interrupted_at``), the place of the story;
     - ``interruptions``: how it broke (``Interruption``);
-    - ``left``: what run 1 left of the order, its page in efenix and its Ślad entry (``None``: none), and its index;
+    - ``left``: what run 1 left of the order, its page in efenix, and its index;
     - ``second``: how the second run ended the order: its page before and after, and the fault of its error.
 
     Each part has in ``check_wycena_efenix_mutations.BOUNDARIES`` a broken variant just outside it, which must give a
     new violation (``tests/test_mutacje_skilli.py``). A part that admits every member of its enum restricts nothing and
-    has none: the way of ``#774``, and the step of ``przerwanie-przed-zapisem-ilosci``, whose place is its state
-    (``left``), because the Ślad has a quantity ahead only after the window read the reloaded page, and each request
-    of the order after that is that page, its files or a quantity. ``ROLE_OF`` tells a request by its occurrence
-    (``Counter``), so a request of an earlier step sent again after that page is an occurrence of the next order or of
-    none, and ``interrupted_at`` gives ``None``, which stays outside every step, as does a step the proxy cannot tell."""
+    has none. ``ROLE_OF`` tells a request by its occurrence (``Counter``), so ``interrupted_at`` gives ``None`` for a
+    request of an earlier step sent again later, which stays outside every step, as does a step the proxy cannot tell."""
 
     at: frozenset[Role]
     interruptions: frozenset[Interruption]
-    left: Callable[[Priced, object, int], bool]
+    left: Callable[[Priced, int], bool]
     second: Callable[[Priced, Priced, object], bool]
 
     def __post_init__(self) -> None:
@@ -663,7 +653,7 @@ class RiskShape:
     def holds(self, resumed: Resumed) -> bool:
         return (
             self.window(resumed.at, resumed.interruption)
-            and self.left(resumed.page, resumed.trace, resumed.index)
+            and self.left(resumed.page, resumed.index)
             and self.second(resumed.page, resumed.now, resumed.problem)
         )
 
@@ -694,66 +684,11 @@ class Known(Risk):
             raise ValueError(f"znane ustalenie {self.name} nazywa przypadki, po których występuje, albo jest flaky")
 
 
-def emmett_outside_trace(state: Priced, trace: object, index: int) -> bool:
-    """The state of the model's accepted finding ``przerwanie-po-zaladuj`` (``verify-wznowienie-wyceny-efenix``, #774):
-    efenix loaded Wycena Emmetta, so the page has exactly Emmett's quantities and nothing else, and the Ślad has no entry
-    for the order („leaves Emmett in efenix and no trace”). A Ślad „gotowe”, or a page with a quantity the tool entered,
-    is another state."""
-
-    emmett = {code: quantity for code, quantity in EMMETT[index].items() if quantity}
-    return trace is None and state.emmett_loads >= 1 and dict(state.quantities) == emmett
-
-
-def unsaved_ahead(state: Priced, trace: object, _index: int) -> bool:
-    """The state of the model's accepted finding ``przerwanie-przed-zapisem-ilosci`` (``verify-wznowienie-wyceny-efenix``,
-    #864): the page has Emmett's quantities and some of those the Ślad has ahead, and lacks at least one of the latter,
-    because run 1 ended after the Ślad got it and before efenix saved it; the page cannot tell it from a quantity Dad
-    removed."""
-
-    if not isinstance(trace, dict):
-        return False
-    page, emmett, ahead = dict(state.quantities), trace["emmett"], trace["entering"]
-    entered = {code: quantity for code, quantity in ahead.items() if quantity and page.get(code) == quantity}
-    left = {code: quantity for code, quantity in (*emmett.items(), *entered.items()) if quantity}
-    return page == left and any(quantity and page.get(code) != quantity for code, quantity in ahead.items())
-
-
-def only_compared(page: Priced, now: Priced, problem: object) -> bool:
-    """The second run of both accepted findings: it „only compares and gives `EFENIX_WYCENA_INNA`” and changes nothing
-    (``verify-wznowienie-wyceny-efenix``, findings 1 and 3), so the order stays as run 1 left it with ``PricedDifferently``."""
-
-    return now == page and isinstance(problem, PricedDifferently)
-
-
 KNOWN_FINDINGS: Final[tuple[Known, ...]] = ()
-ACCEPTED_RISKS: Final[tuple[Risk, ...]] = (
-    Risk(
-        "#774",
-        "przerwanie między „Załaduj do zlecenia” a odczytem przeładowanej strony zostawia zlecenie z samą Wyceną "
-        "Emmetta poza Śladem, a ponowne uruchomienie tylko porównuje i daje błąd tego zlecenia (EFENIX_WYCENA_INNA), które "
-        "tata kończy sam (#774; przyjęte ustalenie 1 przerwanie-po-zaladuj modelu verify-wznowienie-wyceny-efenix)",
-        RiskShape(
-            at=frozenset({Role.LOAD, Role.RELOADED}),
-            interruptions=frozenset(Interruption),
-            left=emmett_outside_trace,
-            second=only_compared,
-        ),
-    ),
-    Risk(
-        "przerwanie-przed-zapisem-ilosci",
-        "Zatrzymanie inne niż wylogowanie albo zabicie po zapisie ilości z wyprzedzeniem w Śladzie, a przed zapisem jej "
-        "w efenix zostawia w Śladzie ilość, której efenix nie ma; strona nie odróżnia jej od ilości usuniętej przez tatę, "
-        "więc ponowne uruchomienie tylko porównuje, daje błąd tego zlecenia (EFENIX_WYCENA_INNA) i niczego w nim nie "
-        "zmienia (#864; przyjęte ustalenie 3 modelu verify-wznowienie-wyceny-efenix). Po wylogowaniu Ślad tę ilość "
-        "wycofuje, więc tam to nowe naruszenie",
-        RiskShape(
-            at=frozenset(Role),
-            interruptions=frozenset({Interruption.OTHER}),
-            left=unsaved_ahead,
-            second=only_compared,
-        ),
-    ),
-)
+ACCEPTED_RISKS: Final[tuple[Risk, ...]] = ()
+"""None since #960: the second run completes every order to the file (ADR 0026), so the model's accepted findings
+``przerwanie-po-zaladuj`` (#774) and ``przerwanie-przed-zapisem-ilosci`` (#864), which came from the Ślad Wyceny Emmetta,
+are gone."""
 # --- Observing a run -------------------------------------------------------------------------------------------
 
 
@@ -766,56 +701,6 @@ def marked(source: Path) -> tuple[int, ...]:
         if isinstance(fill, PatternFill) and fill.patternType == "solid" and str(fill.fgColor.rgb)[-6:].upper() == MARK_RGB:
             rows.append(row.number)
     return tuple(rows)
-
-
-def trace_states(files: Mapping[str, bytes]) -> dict[str, object]:
-    """The Ślad Wyceny Emmetta of the period from the files of its folder, by order number: ``"gotowe"`` or, for
-    „Emmett załadowany”, ``{"emmett": {...}, "entering": {...}}`` with Emmett's quantities and the quantities the tool
-    started entering.
-
-    Read with its key (HMAC-SHA256 of the number), not through ``efenix_emmett_trace``. As its docstring says, a trace
-    that cannot be read or has another shape is no trace, also one with a „Emmett załadowany” without ``entering``
-    (the format before the write ahead)."""
-
-    try:
-        secret = bytes.fromhex(files["klucz"].decode("utf-8"))
-        orders = json.loads(files[f"{PERIOD}.json"].decode("utf-8"))["orders"]
-        entries = sorted(orders.items())
-    except (KeyError, ValueError, TypeError, AttributeError):
-        return {}
-    if not all(_trace_entry(entry) for _key, entry in entries):
-        return {}
-    by_key = {hmac.new(secret, number.encode(), hashlib.sha256).hexdigest(): number for number in NUMBERS}
-    return {by_key.get(key, f"nieznany {key[:8]}"): entry for key, entry in entries}
-
-
-def _trace_entry(entry: object) -> bool:
-    if entry == "gotowe":
-        return True
-    return (
-        isinstance(entry, dict)
-        and entry.keys() == {"emmett", "entering"}
-        and all(isinstance(quantities, dict) and all(type(quantity) is int for quantity in quantities.values()) for quantities in entry.values())
-    )
-
-
-def finishes(state: Priced, trace: object) -> bool:
-    """``GLOSSARY.md``, Ślad Wyceny Emmetta: „Ponowne uruchomienie dokańcza tylko wycenę zlecenia w stanie „Emmett
-    załadowany”, gdy strona ma dokładnie te ilości Emmetta i te ilości narzędzia, a każdą inną pozycję pustą”."""
-
-    if not isinstance(trace, dict):
-        return False
-    left = {code: quantity for code, quantity in (*trace["emmett"].items(), *trace["entering"].items()) if quantity}
-    return dict(state.quantities) == left
-
-
-def shown_trace(trace: object) -> str:
-    """The Ślad of one order for a report: „gotowe”, nothing, or Emmett's and the ahead quantities other than 0."""
-
-    if not isinstance(trace, dict):
-        return "brak" if trace is None else str(trace)
-    emmett, ahead = ({code: quantity for code, quantity in sorted(trace[key].items()) if quantity} for key in ("emmett", "entering"))
-    return f"„Emmett załadowany” {emmett}, z wyprzedzeniem {ahead}"
 
 
 class Journal:
@@ -865,11 +750,10 @@ class Journal:
 
 @dataclass(frozen=True)
 class Disk:
-    """What a run leaves on disk and in efenix: Atrapa orders, the Plik zbiorczy, the Ślad folder and the dziennik."""
+    """What a run leaves on disk and in efenix: Atrapa orders, the Plik zbiorczy and the dziennik."""
 
     orders: tuple[AtrapaOrder, ...]
     source: bytes
-    traces: Mapping[str, bytes]
     journal: bytes
 
     @property
@@ -877,29 +761,10 @@ class Disk:
         return tuple(priced(order) for order in self.orders)
 
     def key(self) -> str:
-        """Same key, same second run: Atrapa state, Plik zbiorczy bytes and the Ślad: the names of its files, so no
-        file is not a file without the order, and its decoded orders, or the bytes of its file when it has none it can
-        read (each run has its own HMAC key, so equal orders differ in bytes). A second run starts with a new dziennik,
-        so the dziennik is not part of it."""
+        """Same key, same second run: Atrapa state and Plik zbiorczy bytes. A second run starts with a new dziennik, so
+        the dziennik is not part of it."""
 
-        traces = trace_states(self.traces) or hashlib.sha256(self.traces.get(f"{PERIOD}.json", b"")).hexdigest()
-        return json.dumps(
-            [[str(state) for state in self.state], hashlib.sha256(self.source).hexdigest(), sorted(self.traces), traces],
-            sort_keys=True,
-            default=str,
-        )
-
-
-def read_files(directory: Path) -> dict[str, bytes]:
-    if not directory.is_dir():
-        return {}
-    files = {}
-    for path in sorted(directory.iterdir()):
-        try:
-            files[path.name] = path.read_bytes()
-        except OSError:
-            continue
-    return files
+        return json.dumps([[str(state) for state in self.state], hashlib.sha256(self.source).hexdigest()], sort_keys=True, default=str)
 
 
 @dataclass
@@ -916,7 +781,6 @@ class Run:
     status_changes: int
     forbidden_clicks: int
     marked: tuple[int, ...]
-    traces: dict[str, object]
     logs: str
     error: str | None = None
     snapshots: dict[str, Disk] = field(default_factory=dict)
@@ -927,7 +791,7 @@ class Run:
 
 @dataclass(frozen=True)
 class Place:
-    """Files of one run: Plik zbiorczy in its Folder okresu, the Ślad folder and the dziennik."""
+    """Files of one run: Plik zbiorczy in its Folder okresu and the dziennik."""
 
     root: Path
 
@@ -936,25 +800,18 @@ class Place:
         return self.root / "plik" / PERIOD / f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
 
     @property
-    def traces(self) -> Path:
-        return self.root / "slad"
-
-    @property
     def journal(self) -> Path:
         return self.root / "dziennik.jsonl"
 
     def prepare(self, disk: Disk) -> None:
-        """The Plik zbiorczy and the Ślad ``disk`` left, with a new dziennik, as each Uruchomienie has its own."""
+        """The Plik zbiorczy ``disk`` left, with a new dziennik, as each Uruchomienie has its own."""
 
         self.source.parent.mkdir(parents=True)
         self.source.write_bytes(disk.source)
-        self.traces.mkdir()
-        for name, content in disk.traces.items():
-            (self.traces / name).write_bytes(content)
         self.journal.write_bytes(b"")
 
     def disk(self, orders: Sequence[AtrapaOrder]) -> Disk:
-        return Disk(tuple(copy.deepcopy(list(orders))), self.source.read_bytes(), read_files(self.traces), _read(self.journal))
+        return Disk(tuple(copy.deepcopy(list(orders))), self.source.read_bytes(), _read(self.journal))
 
 
 def _read(path: Path) -> bytes:
@@ -964,9 +821,9 @@ def _read(path: Path) -> bytes:
         return b""
 
 
-def logs_text(outcome: Outcome[PricingSummary] | None, journal: bytes, traces: Mapping[str, bytes]) -> str:
-    """The Logi of the run as Centrum writes them for a Wycena w efenix (orders, Zatrzymanie, Komunikaty), the dziennik
-    and the Ślad files, one text for the BEZ_DANYCH check."""
+def logs_text(outcome: Outcome[PricingSummary] | None, journal: bytes) -> str:
+    """The Logi of the run as Centrum writes them for a Wycena w efenix (orders, Zatrzymanie, Komunikaty) and the
+    dziennik, one text for the BEZ_DANYCH check."""
 
     parts: list[str] = [journal.decode("utf-8", "replace")]
     if outcome is not None:
@@ -1037,8 +894,7 @@ def run_once(browser: Browser, place: Place, orders: Sequence[AtrapaOrder], plan
         status_changes=status_changes,
         forbidden_clicks=clicks,
         marked=marked(place.source),
-        traces=trace_states(after.traces),
-        logs=logs_text(outcome, after.journal, after.traces),
+        logs=logs_text(outcome, after.journal),
         error=error,
         snapshots=taken,
         injected=injected,
@@ -1106,7 +962,7 @@ def _price(place: Place, page: Page, url: str) -> Outcome[PricingSummary]:
 
     return run_process(
         efenix_process.PROCESS,
-        EfenixInputs(place.source, open_efenix, pace=None, trace_directory=place.traces, journal=Journal(place.journal)),
+        EfenixInputs(place.source, open_efenix, pace=None, journal=Journal(place.journal)),
         Tata(),
         view=lambda _inputs, summary: summary,
         metrics_path=place.root / "metryki.jsonl",
@@ -1283,24 +1139,20 @@ def common_checks(name: str, run: Run, before: Sequence[Priced], extra: Mapping[
             if name == "gotowe" and not (full and state.amount == amount_of(FILE[index])):
                 add("ZMIANA_ZE_SLADEM", "gotowe bez wyceny pliku", f"zlecenie {index + 1} jest gotowe, a w efenix ma {state}")
     if leaked := leaks(run):
-        add("BEZ_DANYCH", "dane zleceń", f"Logi, dziennik albo Ślad mają: {', '.join(leaked)}")
+        add("BEZ_DANYCH", "dane zleceń", f"Logi albo dziennik mają: {', '.join(leaked)}")
     return found
 
 
 def leaks(run: Run) -> list[str]:
-    """BEZ_DANYCH: order numbers, efenix identifiers and address words in the Logi, the dziennik or the Ślad."""
+    """BEZ_DANYCH: order numbers, efenix identifiers and address words in the Logi or the dziennik."""
 
     text = run.logs.casefold()
-    leaked = [word for word in FORBIDDEN_TEXT if word.casefold() in text]
-    trace_text = "\n".join(content.decode("utf-8", "replace") for content in run.after.traces.values())
-    leaked += [f"{number} w Śladzie" for number in NUMBERS if number_in_trace(number, trace_text)]
-    leaked += [f"{word} w Śladzie" for word in FORBIDDEN_TEXT if word not in NUMBERS and word.casefold() in trace_text.casefold()]
-    return leaked
+    return [word for word in FORBIDDEN_TEXT if word.casefold() in text]
 
 
 def killed_run(snapshot: Disk, source: Path) -> Run:
     """What the tool killed at the moment of ``snapshot`` leaves, as a run without an outcome: no Logi, no Komunikat,
-    only efenix, the Plik zbiorczy (written to ``source`` to read its Znaczniki), the Ślad and the dziennik."""
+    only efenix, the Plik zbiorczy (written to ``source`` to read its Znaczniki) and the dziennik."""
 
     source.write_bytes(snapshot.source)
     return Run(
@@ -1313,8 +1165,7 @@ def killed_run(snapshot: Disk, source: Path) -> Run:
         status_changes=0,
         forbidden_clicks=0,
         marked=marked(source),
-        traces=trace_states(snapshot.traces),
-        logs=logs_text(None, snapshot.journal, snapshot.traces),
+        logs=logs_text(None, snapshot.journal),
     )
 
 
@@ -1324,7 +1175,7 @@ def check_killed(name: str, case: Case, run: Run) -> list[Violation]:
     zlecenie” … „przed pierwszym działaniem okna efenix przy zleceniu, więc przed każdym zapisem w efenix”); the Plik
     zbiorczy has no Znacznik efenix, because Zapisywanie sets them at its end (``efenix_pricing``: „na końcu Znaczniki
     efenix”); an order the dziennik ended gotowe has the file's quantities, ``Kwota`` (AU) and the date in efenix; and
-    the dziennik and the Ślad have no order data."""
+    the dziennik has no order data."""
 
     found: list[Violation] = []
 
@@ -1345,7 +1196,7 @@ def check_killed(name: str, case: Case, run: Run) -> list[Violation]:
     if run.marked:
         add("ZMIANA_ZE_SLADEM", "znaczniki", f"Znaczniki efenix w wierszach {list(run.marked)} przed końcem Zapisywania")
     if leaked := leaks(run):
-        add("BEZ_DANYCH", "dane zleceń", f"dziennik albo Ślad mają: {', '.join(leaked)}")
+        add("BEZ_DANYCH", "dane zleceń", f"dziennik ma: {', '.join(leaked)}")
     return found
 
 
@@ -1393,10 +1244,12 @@ def check_first(case: Case, run: Run) -> list[Violation]:
         return found
     outcomes = _outcomes(run.outcome.view)
     after = run.after.state
-    like_reference = tuple(outcomes.get(index) for index in range(2)) == REFERENCE_OUTCOMES and after == REFERENCE_FINAL
+    like_reference = tuple(outcomes.get(index) for index in range(2)) == REFERENCE_OUTCOMES and all(
+        like_one_run(after[index], index) for index in range(2)
+    )
     others = [index for index in range(2) if index != case.order]
     left = outcomes.get(case.order) in ("błąd", "ostrzeżenie Emmetta") and all(
-        outcomes.get(index) == REFERENCE_OUTCOMES[index] and after[index] == REFERENCE_FINAL[index] for index in others
+        outcomes.get(index) == REFERENCE_OUTCOMES[index] and like_one_run(after[index], index) for index in others
     )
     if not ((expect.same and like_reference) or (expect.left and left)):
         shown = "; ".join(f"zlecenie {index + 1}: {outcomes.get(index)}, {after[index]}" for index in range(2))
@@ -1410,23 +1263,48 @@ def check_first(case: Case, run: Run) -> list[Violation]:
     return found
 
 
+@dataclass(frozen=True)
+class Completed:
+    """Order ``index`` after a second run that started from ``was``, as the rule of ADR 0026 gives it: a page without a
+    quantity gets the date and Wycena Emmetta first; then each position where efenix has less than the file gets the
+    file's quantity, and a position with more stays. ``outcome``: an Ostrzeżenie Emmetta with such a position, and
+    gotowe without it (the file's quantities give ``Kwota`` (AU))."""
+
+    state: Priced
+    outcome: str
+
+
+def completed(was: Priced, index: int) -> Completed:
+    """``Completed`` of order ``index`` from ``was`` (``GLOSSARY.md``, Wycena w efenix and Ostrzeżenie Emmetta)."""
+
+    priced_before = bool(was.quantities)
+    base = dict(was.quantities) if priced_before else dict(EMMETT[index])
+    file = FILE[index]
+    quantities = {code: max(base.get(code, 0), file.get(code, 0)) for code in base.keys() | file.keys()}
+    excess = any(quantity > file.get(code, 0) for code, quantity in base.items())
+    state = replace(
+        was,
+        quantities=tuple(sorted((code, quantity) for code, quantity in quantities.items() if quantity)),
+        day=was.day if priced_before or was.day is not None else DAYS[index],
+        emmett_loads=was.emmett_loads + (0 if priced_before else 1),
+    )
+    return Completed(state, "ostrzeżenie Emmetta" if excess else "gotowe")
+
+
 def check_resume(resume: Resume, run: Run) -> list[Violation]:
     """WZNOWIENIE, BEZ_WYJATKU and the common checks of a second run. Each expectation comes from a promise of the model
-    ``verify-wznowienie-wyceny-efenix`` or from ``GLOSSARY.md``, never from a run:
+    ``verify-wznowienie-wyceny-efenix`` or from ``GLOSSARY.md`` (ADR 0026), never from a run:
 
-    - ZmianaTatyZostaje („in an order with a pricing in which Dad changed, added or removed something by hand, the tool
-      writes nothing; it does not add back a quantity he removed”): the order Dad changed by hand and left with a
-      pricing ends as he left it. One he emptied has none (``efenix_pricing``: „Zlecenie z kwotą w efenix różną od 0 ma
-      już wycenę”), so it may be priced like a new one.
-    - Ślad Wyceny Emmetta („Ponowne uruchomienie dokańcza tylko wycenę zlecenia w stanie „Emmett załadowany”, gdy strona
-      ma dokładnie te ilości Emmetta i te ilości narzędzia, a każdą inną pozycję pustą; każdą inną wycenę, która już
-      jest … tylko porównuje”) and NieCzysciWycenyTaty („the tool loads Wycena Emmetta only into an order with no
-      quantity”): any other pricing that already is changes only when ``finishes`` holds, and then only by quantities
-      in positions empty on the page and outside Emmett's, with the same date and no new „Załaduj do zlecenia”.
-    - BladTylkoPoZmianieTaty („an order the tool started is finished by the next Uruchomienie”): every order Dad did not
-      change ends like one run (``REFERENCE_FINAL``). Its violation carries ``Resumed``, so ``ACCEPTED_RISKS`` takes
-      it only in the whole shape of the model's accepted findings ``przerwanie-po-zaladuj`` (#774) and
-      ``przerwanie-przed-zapisem-ilosci`` (#864).
+    - NieCzysciWycenyTaty („the tool loads Wycena Emmetta only into an order with no quantity”): an order with a
+      quantity gets no new „Załaduj do zlecenia”.
+    - NieObnizaIlosci („the tool never lowers or clears a quantity in efenix”): no quantity of the order is lower after
+      the second run than before it.
+    - ZmianaTatyZostaje („an order in which Dad changed a quantity by hand ends with an Ostrzeżenie Emmetta when it
+      holds more than the file, and is gotowe otherwise”): the order Dad changed ends as ``completed`` gives it.
+    - BladTylkoPoZmianieTaty („an order the tool started, also one a Zatrzymanie or a switch-off cut, the next
+      Uruchomienie finishes as gotowe”): every order Dad did not change ends like one run (``like_one_run``,
+      ``REFERENCE_OUTCOMES``), where a load of Emmett that replaced nothing does not count. Its violation carries ``Resumed``, so an entry of ``ACCEPTED_RISKS`` could take it only
+      in its whole shape.
     """
 
     extra: dict[str, object] = {"fault": resume.case.fault, "role": resume.case.role, "edit": resume.edit}
@@ -1442,40 +1320,29 @@ def check_resume(resume: Resume, run: Run) -> list[Violation]:
     if isinstance(run.outcome.ending, Stop):
         add("BEZ_WYJATKU", "zatrzymanie", f"ponowne Uruchomienie zatrzymało się: {run.outcome.ending.message.code}")
         return found
-    traces = trace_states(resume.disk.traces)
     outcomes, problems = _outcomes(run.outcome.view), _problems(run.outcome.view)
     final = run.after.state
     for index in range(2):
         was, now = start[index], final[index]
-        trace = traces.get(NUMBERS[index])
-        emmett = trace.get("emmett") if isinstance(trace, dict) else None
-        changed_by_dad = resume.edit is not Edit.NONE and index == resume.order
-        if changed_by_dad and now != was and was.amount != 0:
-            added = sorted(set(dict(now.quantities).items()) - set(dict(was.quantities).items()))
-            tag = "dopisał po tacie" if now.emmett_loads == was.emmett_loads else "Emmett po tacie"
-            add("WZNOWIENIE", tag, f"zmienił zlecenie {index + 1}, które tata zmienił ręcznie: {was} → {now} (dopisane {added})")
-            continue
-        if was.amount != 0 and now != was:
-            on_page = dict(was.quantities)
-            only_added = (
-                isinstance(emmett, dict)
-                and now.emmett_loads == was.emmett_loads
-                and now.day == was.day
-                and all(not on_page.get(code) and not emmett.get(code) for code, quantity in now.quantities if on_page.get(code) != quantity)
-                and all(dict(now.quantities).get(code) == quantity for code, quantity in on_page.items())
-            )
-            if not (finishes(was, trace) and only_added):
-                add("WZNOWIENIE", "zmiana wyceny, która już jest",
-                    f"zmienił wycenę zlecenia {index + 1}, która już była ({was} → {now}), a Ślad ma {shown_trace(trace)}")
-        if not changed_by_dad and now != REFERENCE_FINAL[index]:
+        if was.quantities and now.emmett_loads != was.emmett_loads:
+            add("WZNOWIENIE", "Emmett do wyceny, która już jest", f"załadował Emmetta do zlecenia {index + 1} z ilościami: {was} → {now}")
+        lowered = sorted(code for code, quantity in was.quantities if dict(now.quantities).get(code, 0) < quantity)
+        if lowered:
+            add("WZNOWIENIE", "obniżona ilość", f"obniżył albo wyczyścił w zleceniu {index + 1} pozycje {lowered}: {was} → {now}")
+        if resume.edit is not Edit.NONE and index == resume.order:
+            expected_now = completed(was, index)
+            if (now, outcomes.get(index)) != (expected_now.state, expected_now.outcome):
+                add("WZNOWIENIE", "nie dokończone do pliku po tacie",
+                    f"zlecenie {index + 1} po zmianie taty ({resume.edit.value}): {was} → {now} ({outcomes.get(index)}), "
+                    f"a z pliku tylko w górę: {expected_now.state} ({expected_now.outcome})")
+        elif not like_one_run(now, index) or outcomes.get(index) != REFERENCE_OUTCOMES[index]:
             # Where run 1 broke is a fact of the order it broke at, not of the other one.
             at_order = resume.at if index == resume.order else None
             at = "?" if at_order is None else at_order.value
             add("WZNOWIENIE", "nie jak jeden przebieg",
                 f"zlecenie {index + 1} po ponownym uruchomieniu po {resume.interruption.value} przy [{at}], bez zmian taty "
-                f"w nim: {now} ({outcomes.get(index)}), po jednym przebiegu: {REFERENCE_FINAL[index]}, a Ślad ma "
-                f"{shown_trace(trace)}",
-                Resumed(at_order, resume.interruption, index, was, trace, now, problems.get(index)))
+                f"w nim: {now} ({outcomes.get(index)}), po jednym przebiegu: {REFERENCE_FINAL[index]}",
+                Resumed(at_order, resume.interruption, index, was, now, problems.get(index)))
     return found
 
 
@@ -1588,7 +1455,7 @@ def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequ
     if report.gaps:
         return report
     started = time.monotonic()
-    blank = Disk(tuple(efenix_orders()), write_collective_file(run_root / "wzor", file_orders()).read_bytes(), {}, b"")
+    blank = Disk(tuple(efenix_orders()), write_collective_file(run_root / "wzor", file_orders()).read_bytes(), b"")
     counter = iter(range(1_000_000))
 
     def place(disk: Disk) -> Place:
@@ -1679,8 +1546,7 @@ def _resumes(resumes: dict[str, Resume], name: str, disk: Disk, order: int, case
     """A second run from ``disk`` after each ``Edit`` of order ``order`` that applies to it. First runs that left the
     same state share it only when they broke in the place and way of the same accepted risks and known findings
     (``RiskShape.window``): the same state from a break outside a risk's window is a new violation, so it never shares
-    the second run, nor its risk, with a break inside it (a logout at the quantity with a cut there, #864, or a stop at
-    the quantity with one at the page after Emmett, #774)."""
+    the second run, nor its risk, with a break inside it."""
 
     windows = [risk.name for risk in (*ACCEPTED_RISKS, *KNOWN_FINDINGS) if risk.shape.window(at, ended)]
 
@@ -1749,7 +1615,6 @@ def _keep(evidence: Path, name: str, run: Run, violations: Sequence[Violation], 
         "efenix przed": [str(state) for state in run.before],
         "efenix po": [str(state) for state in run.after.state],
         "Znaczniki": list(run.marked),
-        "Ślad": run.traces,
         "żądania": run.actions,
         "Logi": run.logs.splitlines(),
     }

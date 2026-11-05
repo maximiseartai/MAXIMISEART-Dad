@@ -55,9 +55,13 @@ Proces, który tata uruchamia w Centrum rozliczeń dla okresu po Gotowości:
 w oknie efenix, w którym tata jest zalogowany, uzupełnia wycenę każdego
 zlecenia Pliku zbiorczego, które nie jest Zleceniem ze zdjęciami ani usterką,
 Wyceną Emmetta i Ilościami usług z Pliku zbiorczego, a gotowe oznacza
-Znacznikiem efenix. Nigdy nie robi Przekazania do akceptacji. Zlecenie, którego
-nie da się uzupełnić tak, żeby kwota była równa `Kwota` (AU), zostawia tacie
-jako błąd, a sprzeczność z Wyceną Emmetta jako Ostrzeżenie Emmetta. Zlecenie
+Znacznikiem efenix. Nigdy nie robi Przekazania do akceptacji. Wycenę dokańcza do
+Pliku zbiorczego tylko w górę (ADR 0026): w każdej pozycji, w której efenix ma
+mniej niż plik, wpisuje ilość z pliku, także w miejsce ilości Emmetta i w
+wycenie, która już jest, a ilości w efenix nigdy nie obniża ani nie czyści.
+Zlecenie, którego nie da się uzupełnić tak, żeby kwota była równa `Kwota` (AU),
+zostawia tacie jako błąd, a pozycję, w której efenix ma więcej niż plik, jako
+Ostrzeżenie Emmetta. Zlecenie
 rozliczone nie jest błędem, a zlecenie o statusie innym niż „Do wyceny” i
 „Rozliczone” jest. Strona zlecenia w
 efenix bywa bez części pozycji wyceny: brak pozycji, w której Plik zbiorczy ma
@@ -71,39 +75,30 @@ Zlecenie Pliku zbiorczego, które w efenix ma status „Rozliczone”, a jego
 realizator i dane adresowe zgadzają się z `WYKONAWCA` i `ADRES`: firma już je
 rozliczyła z tatą. Wycena w efenix go nie otwiera, niczego w nim nie zmienia i
 nie stawia mu Znacznika efenix. Tata widzi je jako Rozliczone, osobno od
-gotowych, błędów i ostrzeżeń Emmetta, a samo nie zmienia wyniku OK.
+gotowych, błędów i Ostrzeżeń Emmetta, a samo nie zmienia wyniku OK.
 _Avoid_: zlecenie zamknięte, zlecenie zakończone
 
 ## Wycena Emmetta
 
 Ilości, które Emmett, skrypt w efenix, wpisuje do zlecenia po kliknięciu
 „Załaduj wycenę przygotowaną przez Emmetta”, zanim tata przeniesie do niego
-Ilości usług z Pliku zbiorczego. Nikt ich nie nadpisuje: gdy różnią się od
-Pliku zbiorczego, sprzeczność rozstrzyga tata. Załadowanie Wyceny Emmetta
-czyści wycenę, którą zlecenie już ma.
+Ilości usług z Pliku zbiorczego. Prawdziwy jest Plik zbiorczy: ilość Emmetta
+mniejszą niż w pliku Wycena w efenix zastępuje ilością z pliku, a większą
+zostawia jako Ostrzeżenie Emmetta. Załadowanie Wyceny Emmetta czyści wycenę,
+którą zlecenie już ma, więc Wycena w efenix ładuje ją tylko do zlecenia bez
+żadnej ilości.
 
 ## Ostrzeżenie Emmetta
 
-Wynik zlecenia w Wycenie w efenix, w którym Wycena Emmetta ma w jakiejś pozycji
-ilość inną niż Plik zbiorczy, także gdy plik ma w niej 0. Pozycja pusta u
-Emmetta nie jest sprzecznością: Wycena w efenix wpisuje w nią ilość z pliku.
-Zlecenie z Ostrzeżeniem Emmetta zostaje w efenix z samą Wyceną Emmetta, bez
-Znacznika efenix, a sprzeczność rozstrzyga tata.
-_Avoid_: błąd Emmetta, konflikt z Emmettem
-
-## Ślad Wyceny Emmetta
-
-Zapis na komputerze taty, poza OneDrive i poza Gitem, o zleceniach okresu, do
-których Wycena w efenix sama załadowała Wycenę Emmetta. Zlecenie ma w nim stan
-„Emmett załadowany” z ilościami Wyceny Emmetta, które narzędzie odczytało ze
-strony po „Załaduj do zlecenia”, i z każdą ilością, którą narzędzie zaczęło
-wpisywać: zapisuje ją w śladzie, zanim wpisze ją w efenix. Po wyniku zlecenia
-(gotowe, ostrzeżenie Emmetta albo błąd) zlecenie ma stan „gotowe”. Ponowne
-uruchomienie dokańcza tylko wycenę zlecenia w stanie „Emmett załadowany”, gdy
-strona ma dokładnie te ilości Emmetta i te ilości narzędzia, a każdą inną
-pozycję pustą; każdą inną wycenę, która już jest, także zaczętą albo zmienioną
-przez tatę albo skończoną, tylko porównuje.
-_Avoid_: historia, pamięć, dziennik
+Wynik zlecenia w Wycenie w efenix, w którym efenix ma w jakiejś pozycji więcej
+niż Plik zbiorczy, także gdy plik ma w niej 0 albo pozycja nie ma kolumny w
+pliku: od Emmetta, od taty albo z wcześniejszej wyceny. Wycena w efenix tej
+ilości nie obniża ani nie czyści, a pozostałe ilości z pliku i tak wpisuje.
+Ostrzeżenie podaje pozycję, jej kolumnę i obie ilości. Zlecenie z
+Ostrzeżeniem Emmetta nie dostaje Znacznika efenix: tata poprawia Plik zbiorczy
+albo sam zmniejsza ilość w efenix. Mniejsza ilość w efenix niż w pliku nie
+jest Ostrzeżeniem Emmetta, bo Wycena w efenix wpisuje w nią ilość z pliku.
+_Avoid_: błąd Emmetta, konflikt z Emmettem, sprzeczność z Emmettem
 
 ## Znacznik efenix
 
@@ -768,7 +763,7 @@ rozliczeń, do którego prowadzi dzwonek. Nieprzeczytane Powiadomienie zapala
 kropkę na dzwonku; wejście do widoku oznacza wszystkie jako przeczytane.
 Powiadomienie o zakończonej Wycenie w efenix, także zakończonej Zatrzymaniem,
 ma tytuł wyniku, okres, liczby zleceń gotowych do przekazania, Zleceń
-rozliczonych, błędów i ostrzeżeń Emmetta, „Co się stało” Zatrzymania i przycisk karty Uruchomienia:
+rozliczonych, błędów i Ostrzeżeń Emmetta, „Co się stało” Zatrzymania i przycisk karty Uruchomienia:
 tata w trakcie patrzy na okno efenix albo odchodzi od komputera. Toast wyniku
 w karcie Centrum nie jest Powiadomieniem, a uwagi techniczne z karty
 Uruchomienia, np. o niezapisanych metrykach, też nie.

@@ -1,6 +1,6 @@
 ---
 name: verify-wycena-efenix
-description: Exhaustively break each request of a real Wycena w efenix (the window `efenix_browser.window` in Playwright's Chromium on the Atrapa efenix, behind a fault proxy) with every kind of fault (network cut, torn, stalled or slow; HTTP 4xx and 5xx; logout; redirect; a „Załaduj do zlecenia” refused with a 200 answer; a hung answer; an answer just before or after the window's time limit; the login page under an order address; a closed tab; Dad's login wait; the tool killed) and check the Zatrzymanie's cause and Komunikat, the efenix state, the Znaczniki efenix, the Logi and the Ślad Wyceny Emmetta, and what a killed tool leaves, then resume each stop and kill with and without Dad's changes in efenix. Use when a change touches `efenix_browser`, `efenix_pricing`, `efenix_emmett_trace`, `efenix_marking` or another `efenix_*` module, the Dziennik Wyceny w efenix, the Atrapa efenix, or when `explore_wycena_efenix.py` or the explorer tests in `tests/test_centrum_logi_uruchomienia.py` fail.
+description: Exhaustively break each request of a real Wycena w efenix (the window `efenix_browser.window` in Playwright's Chromium on the Atrapa efenix, behind a fault proxy) with every kind of fault (network cut, torn, stalled or slow; HTTP 4xx and 5xx; logout; redirect; a „Załaduj do zlecenia” refused with a 200 answer; a hung answer; an answer just before or after the window's time limit; the login page under an order address; a closed tab; Dad's login wait; the tool killed) and check the Zatrzymanie's cause and Komunikat, the efenix state, the Znaczniki efenix and the Logi, and what a killed tool leaves, then resume each stop and kill with and without Dad's changes in efenix and check that the second run completes every order to the file only upwards. Use when a change touches `efenix_browser`, `efenix_pricing`, `efenix_positions`, `efenix_marking` or another `efenix_*` module, the Dziennik Wyceny w efenix, the Atrapa efenix, or when `explore_wycena_efenix.py` or the explorer tests in `tests/test_centrum_logi_uruchomienia.py` fail.
 pilnuje:
   - src/rozliczenia/efenix_*.py
   - src/rozliczenia/centrum/pricing_journal.py
@@ -21,9 +21,9 @@ of the cases (`--lista` prints them), with the second runs of its own stops and 
 #908 added `REFUSED_NO_PROPOSAL`, 35 of them kills checked on the reference's states, and 68 distinct second runs) took
 517 s on Maks's Mac with 4 browsers under a load of about 8 to 10, and the 8 parts, four at a time under a load of 15 to
 18, took 63 to 85 s each (2026-11-05, reports in `~/.t3/notes/wycena-wznowienie-901/r3/`; without second runs the
-parts took 57 to 75 s, so `ci-czesci` stays 8). Since the step of `przerwanie-przed-zapisem-ilosci` is any step (#920), the stops share second
-runs by other windows: the whole space gives 73 distinct second runs in 518 s, with the same 52 first runs excused
-(`~/.t3/notes/920/full-head/`). On Windows in CI the two parts of n=2 took 259 and 338 s (run
+parts took 57 to 75 s, so `ci-czesci` stays 8). Since #960 no accepted risk is left, so equal states share one second run: the whole space gave 433 first runs, 70
+states after a kill and 27 distinct second runs in 498 s with 4 browsers, `WYCENA EFENIX OK` with no first run excused
+(2026-11-05, `~/.t3/notes/960/eksplorator-pelny.txt`). On Windows in CI the two parts of n=2 took 259 and 338 s (run
 41985714991), about as long as on the Mac, so a part of n=8 takes about 1 to 1.5 min there. A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`.
 `tests/test_centrum_logi_uruchomienia.py` runs one small scope through every phase in pytest. `check_wycena_efenix_mutations.py`
@@ -55,9 +55,7 @@ from these sentences, never from a run:
   propozycji, także po pustym oknie Emmetta po padniętej propozycji, to `UnexpectedPage` z
   `Shape.EMMETT_NOT_LOADED`”, #908); an expired session there stays a logout. Only
   a page efenix really sent in another shape (a redirect elsewhere) may be a shape.
-  The Zatrzymanie after a failed write of the Ślad ahead of a quantity (`EFENIX_SLAD_NIEZAPISANY`, with the facts of
-  the Wycena and `AheadNotSaved`) is never the cause of a fault in efenix, because no fault of this checker touches
-  the disk. A run that does not stop ends like the reference or leaves the faulted order to Dad (a date efenix did
+  A run that does not stop ends like the reference or leaves the faulted order to Dad (a date efenix did
   not save is `DateRefused.NOT_SAVED`); it never makes an order gotowe that differs from one run without a fault.
   Harm: Maks chases a changed efenix that never changed, or Dad gets a Znacznik on an order nobody checked with Emmett.
 - **BEZ_ZMIANY_STATUSU**: the window never changes an order's status (`status_changes == 0`), never clicks Przekazanie
@@ -71,27 +69,28 @@ from these sentences, never from a run:
   końcu Znaczniki efenix”) and the file's pricing for each order the dziennik ended gotowe. Harm: Dad and Maks cannot
   tell what the tool did to efenix.
 - **WZNOWIENIE**: the second Uruchomienie keeps the promises of the model `verify-wznowienie-wyceny-efenix` and the
-  Ślad Wyceny Emmetta of `GLOSSARY.md`. It never changes an order Dad left with a pricing after changing it by hand
-  (ZmianaTatyZostaje). It changes a pricing that already is only when the Ślad has it as „Emmett załadowany” and the
-  page has exactly Emmett's quantities and the quantities the tool started entering, every other position empty
-  („Ponowne uruchomienie dokańcza tylko wycenę zlecenia w stanie „Emmett załadowany”, gdy strona ma dokładnie te
-  ilości Emmetta i te ilości narzędzia, a każdą inną pozycję pustą”), only by adding quantities in empty positions,
-  never by loading Emmett again (NieCzysciWycenyTaty). Every order Dad did not change ends like one run (BladTylkoPoZmianieTaty),
-  except the two accepted risks below. An order Dad emptied has no pricing (`efenix_pricing`: „Zlecenie z kwotą w
-  efenix różną od 0 ma już wycenę”), so it may be priced like a new one. The Ślad is read as `efenix_emmett_trace`
-  says: an entry without `entering` makes the whole file no trace. Harm: the tool writes over Dad's work in efenix
-  (#757, #864), or leaves him an order it started.
-- **BEZ_DANYCH**: the Logi (orders, Zatrzymanie, Komunikaty, as `run_logs` builds them), the dziennik and the Ślad
-  have no order number, efenix identifier or address (ADR 0025, `efenix_emmett_trace`).
+  Wycena w efenix of `GLOSSARY.md` (ADR 0026, #960). It never loads Emmett into an order with a quantity
+  (NieCzysciWycenyTaty) and never lowers or clears a quantity in efenix (NieObnizaIlosci). An order Dad changed by hand
+  ends as `completed` gives it from what he left: each position where efenix has less than the file gets the file's
+  quantity, a position with more stays, and the order is an Ostrzeżenie Emmetta with such a position and gotowe
+  without it (ZmianaTatyZostaje). Every order Dad did not change ends like one run (BladTylkoPoZmianieTaty), also the
+  one a stop or a kill cut between „Załaduj do zlecenia” and reading the reloaded page or before efenix saved a
+  quantity (the accepted risks #774 and #864 before #960). Like one run means the same quantities, date and status,
+  with Wycena Emmetta loaded and never over a pricing other than itself (`like_one_run`); how many times efenix loaded
+  it does not count, because after a torn answer Chromium sends „Załaduj do zlecenia” again and efenix loads Emmett
+  twice into the same order (CI run 42058117564 on Windows, #965), which replaces nothing. The Atrapa counts the loads
+  over another pricing apart (`emmett_over_pricing`). An order Dad emptied has no pricing, so it is priced like a new
+  one. Harm: the tool wipes or lowers Dad's work in efenix, or leaves him an order it started.
+- **BEZ_DANYCH**: the Logi (orders, Zatrzymanie, Komunikaty, as `run_logs` builds them) and the dziennik have no order
+  number, efenix identifier or address (ADR 0025).
 - **BEZ_WYJATKU** and **BEZ_AWARII**: a run ends with a result or a Zatrzymanie of the window within `CASE_LIMIT_S`, a
   second run ends with a result, and one run without a fault ends as `GLOSSARY.md` says (`REFERENCE_FINAL`).
 
 Each stop and each kill gets a second run after Dad logs in and the network is back: once as it was, and once after each
 change Dad could make by hand to the order it stopped at (`Edit`: he finished it, removed a quantity of Emmett's or one
-the tool added, or priced the empty order himself). First runs that left the same state (efenix, the Plik zbiorczy and
-the Ślad, where no Ślad file is not a file without the order) share one second run only when they broke in the place
-and way of the same accepted risks (`RiskShape.window`), so a break outside a risk's window never shares a second run,
-nor its risk, with one inside it. `REFUSED_NO_PROPOSAL` (#908) stops in place of loading Emmett and leaves the order as it was,
+the tool added, or priced the empty order himself). First runs that left the same state (efenix and the Plik zbiorczy)
+share one second run only when they broke in the place and way of the same accepted risks (`RiskShape.window`, none
+today), so a break outside a risk's window never shares a second run, nor its risk, with one inside it. `REFUSED_NO_PROPOSAL` (#908) stops in place of loading Emmett and leaves the order as it was,
 so its second run, with the proposal whole, finishes that order like one run (the model's `Zatrzymanie` in place of
 `ZaladujEmmetta`). The model checks the same promises over every order of steps without a browser; this axis
 checks them on the real window and the Atrapa.
@@ -100,8 +99,9 @@ checks them on the real window and the Atrapa.
 
 No server to keep: each run starts its own Atrapa efenix (`tests/fixtures/atrapa_efenix.py`) and proxy
 (`scripts/awarie_efenix.py`) on free ports of `127.0.0.1`, and each worker its own headless Chromium of Playwright.
-The scenario is two synthetic orders (`file_orders()`): order 1 (row 18) ends gotowe after the date, Emmett and two
-quantities; order 2 (row 19) ends with an Ostrzeżenie Emmetta. The window's time limit is 4 s (3 s and the 1 s reload after „Załaduj do zlecenia”, which it
+The scenario is two synthetic orders (`file_orders()`): order 1 (row 18) ends gotowe after the date, Emmett (with T one
+less than the file, like the S of #960) and two quantities, T over Emmett's and AG; order 2 (row 19) ends with an
+Ostrzeżenie Emmetta, because Emmett has more than the file in T. The window's time limit is 4 s (3 s and the 1 s reload after „Załaduj do zlecenia”, which it
 waits for in the same limit) and the login wait 4 s.
 The Atrapa reloads the page 1 s after „Załaduj do zlecenia”, as efenix does (`EFENIX_EMMETT_RELOAD_MS`), not after the
 200 ms of its tests.
@@ -136,7 +136,7 @@ The Atrapa reloads the page 1 s after „Załaduj do zlecenia”, as efenix does
 `<run dir>/evidence/<id>/` (`--run-dir`, default `.verification` of the checkout): `raport.txt` (the report with the
 verdict), `przebieg-bez-awarii.txt` (the requests of the reference run with times) and `kontrprzyklady/<case>.json` for
 each case with a violation, a known finding or an accepted risk: the rules it broke, the Zatrzymanie, efenix before and
-after, the Znaczniki, the Ślad, the requests with the fault marked (`← HTTP_4XX`) and the Logi. Evidence has no real
+after, the Znaczniki, the requests with the fault marked (`← HTTP_4XX`) and the Logi. Evidence has no real
 data: orders, addresses and numbers are synthetic.
 
 ## Cleanup
@@ -173,20 +173,19 @@ are all required, so an entry cannot match on fewer of them (#920):
   page with its files counting as one step, without a request Chromium sends again after a cut and without what efenix
   sent the browser to (the page after a redirect, the login page); for a kill, the step of the request it was killed at;
 - **way**: how it broke (`Interruption`: a logout, or another stop or a kill);
-- **left**: what run 1 left of the order, its page in efenix and its Ślad entry;
+- **left**: what run 1 left of the order, its page in efenix;
 - **second run**: how the second run ended the order (page before and after, and the fault of its error).
 
 Each part of each entry also has a broken variant just outside it in `BOUNDARIES` of
 `check_wycena_efenix_mutations.py`, the same harm with that one part other than the story says, which must give a new
 violation; `tests/test_mutacje_skilli.py` reds an entry with a part without one. A part that admits every member of its
-enum restricts nothing and has none: the way of `#774`, and the step of `przerwanie-przed-zapisem-ilosci`, whose place
-is its state, because the Ślad has a quantity ahead only after the window read the reloaded page, and a request of an
-earlier step sent again after it counts as an occurrence of the next order or of none, which is outside every step.
+enum restricts nothing and has none.
 
-| Name | Step | Way | Left | Second run | Story |
-|---|---|---|---|---|---|
-| `#774` | `zaladuj-do-zlecenia`, `strona-po-emmetcie` | any | page with exactly Emmett's quantities, no Ślad entry (`emmett_outside_trace`) | unchanged, `PricedDifferently` (`only_compared`) | A stop or a kill between „Załaduj do zlecenia” and reading the reloaded page leaves Emmett in efenix and no trace, so the second run only compares and gives `EFENIX_WYCENA_INNA` for that order alone, which Dad finishes himself (the model's finding 1 `przerwanie-po-zaladuj`). In the whole run of 2026-11-05, 37 first runs in two second runs (`także po` in their counterexamples): `TORN` from Emmett's proposal on (the window breaks at the page efenix reloads after the „Załaduj do zlecenia” it ran), `TORN`, `STALLED`, `HTTP_5XX`, `HUNG`, `SLOW`, `LATE_AFTER` and a closed tab at „Załaduj do zlecenia”, every fault of the reloaded page that stops the window, `STALLED`, `SLOW`, `HUNG`, `LATE_AFTER` and a closed tab at its files, and the kills from after „Załaduj do zlecenia” to its files. A logout at the page's file breaks at the first quantity, outside this step. |
-| `przerwanie-przed-zapisem-ilosci` | any of this order | not a logout | page with Emmett's quantities and a part of those the Ślad has ahead, nothing else (`unsaved_ahead`) | unchanged, `PricedDifferently` (`only_compared`) | A stop other than a logout, or a kill, after the Ślad got a quantity ahead and before efenix saved it leaves in the Ślad a quantity efenix does not have; the page cannot tell it from one Dad removed, so the second run gives `EFENIX_WYCENA_INNA` for that order alone and changes nothing in it (#864; the model's finding 3). The step is the save of a quantity, or the page after Emmett when its script did not load, so the save sends nothing. In the whole run of 2026-11-05, 15 first runs in three second runs: `CUT` and `TORN` at that page's stylesheet, those and `HTTP_4XX`, `HTTP_5XX` and `REDIRECT` at its script, `CUT`, `HTTP_4XX` and `REDIRECT` at either `action_save_index.php`, and the kills before them. After a logout the Ślad withdraws the quantity (`trace.not_entered`), so the same state there is a new violation. |
+None today. Until #960 there were two, both from the Ślad Wyceny Emmetta: `#774` (a stop or a kill between „Załaduj do
+zlecenia” and reading the reloaded page left Emmett in efenix without a Ślad entry, and the second run gave
+`EFENIX_WYCENA_INNA`) and `przerwanie-przed-zapisem-ilosci` (#864: a quantity the Ślad had ahead and efenix did not).
+Since #960 the second run completes both orders to the file like one run (ADR 0026): the whole space ran without an
+excused first run (above, in „What CI runs”).
 
 ## When the check fails
 
@@ -225,19 +224,13 @@ Each gives `WYCENA EFENIX: NOWE NARUSZENIE`:
 - the window waiting for the reload after „Załaduj do zlecenia” 1 s shorter than for its answer, which only the answer
   just before the time limit meets;
 - a „zaczynam” entry of the dziennik written only after the window's actions at an order;
-- #757: „Emmett załadowany” written before „Załaduj do zlecenia”; a resume without checking that the page is as the
-  process left it after Emmett; a pricing without a Ślad completed like one after Emmett;
-- #864: a quantity entered in efenix without its write ahead in the Ślad (`_WrittenAhead`); a resume that takes an
-  empty position the Ślad has ahead for one efenix did not save (the rule before the fix, which adds back a quantity
-  Dad removed);
-- `BOUNDARIES`, each just outside one part of the shape of an accepted risk: for `#774` a logout at the first quantity
-  that removes the order from the Ślad (outside its step), a Ślad „Emmett załadowany” without Emmett's quantities
-  written before „Załaduj do zlecenia” (outside what it left), and a second run that gives another error than
-  `EFENIX_WYCENA_INNA` (outside its second run); for `przerwanie-przed-zapisem-ilosci` a quantity efenix did not save
-  after a logout kept in the Ślad (`trace.not_entered` skipped, outside its way), a Ślad „gotowe” after a Zatrzymanie
-  (outside what it left), and the same other error (outside its second run);
-- the window clicking Przekazanie do akceptacji; the Ślad keyed by the order number; a Komunikat that always says
-  nothing changed; a Zatrzymanie without the Znaczniki of orders gotowe before it.
+- #960: Wycena Emmetta loaded also into an order with quantities; a pricing that already is only compared instead of
+  completed to the file; the file's quantity entered only in positions empty on the page (the rule before #960, which
+  leaves Emmett's S below the file); the file's quantity entered also where efenix has more (lowering it); no
+  Ostrzeżenie Emmetta for a position with more than the file;
+- #965: Wycena Emmetta loaded into an order with quantities on resume also on the axis `odciecia` at
+  `propozycja-emmetta` and `ilosc`, where a torn answer can make efenix load Emmett twice;
+- the window clicking Przekazanie do akceptacji; a Komunikat that always says nothing changed; a Zatrzymanie without the Znaczniki of orders gotowe before it.
 
 A mutation reported as `NIEAKTUALNA` no longer matches its file: rewrite its anchor and replacement against the new code
 so that it breaks the same rule again.

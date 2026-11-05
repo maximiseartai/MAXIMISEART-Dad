@@ -41,7 +41,6 @@ DRIFT = "WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM"
 
 COVERED = (
     "src/rozliczenia/efenix_pricing.py",
-    "src/rozliczenia/efenix_emmett_trace.py",
     "src/rozliczenia/efenix_positions.py",
     "src/rozliczenia/efenix_browser.py",
 )
@@ -92,14 +91,14 @@ def _check_in_ci(root: Path, sync: str) -> subprocess.CompletedProcess[str]:
 
 def test_w_ci_zmieniona_definicja_opisana_modelem_konczy_sprawdzenie_porazka(tmp_path: Path) -> None:
     sync = _repository(tmp_path)
-    _edit(tmp_path / PRICING, "    trace.finished(number)\n", "")
-    commit(tmp_path, "bez trace.finished")
+    _edit(tmp_path / PRICING, "    if plan.excess:\n        return EmmettWarning(plan.excess)\n", "")
+    commit(tmp_path, "bez Ostrzeżenia Emmetta")
 
     done = _check_in_ci(tmp_path, sync[:9])
 
     assert done.returncode == 1, done.stdout + done.stderr
     assert done.stdout.splitlines()[-1] == DRIFT
-    assert f"kod opisany modelem zmienił się od {sync[:9]}: {PRICING} _priced" in done.stdout
+    assert f"kod opisany modelem zmienił się od {sync[:9]}: {PRICING} _completed" in done.stdout
 
 
 def test_w_ci_zmiana_obok_definicji_opisanych_modelem_nie_jest_rozjazdem(tmp_path: Path) -> None:
@@ -195,15 +194,15 @@ def test_kontrprzyklad_daje_obietnice_i_przyczyny_jej_zdarzenia_z_wyjscia_tlc(
             "Error: Invariant ZmianaTatyZostajePozaZnanymi is violated.",
             "State 1: <Initial predicate>",
             "/\\ efenix = <<[A |-> 0, B |-> 0]>>",
-            '/\\ naDysku = <<"brak">>',
+            '/\\ wynik = <<"brak">>',
             "/\\ zlecenie = 1",
-            "/\\ nadpisujeTate = {}",
+            "/\\ zlyWynikPoTacie = {}",
             "State 2: <Wpisz line 170, col 5 to line 179, col 70 of module WznowienieWyceny>",
             "/\\ efenix = <<[A |-> 1, B |-> 1]>>",
-            '/\\ naDysku = <<"zaladowany">>',
+            '/\\ wynik = <<"ostrzezenie">>',
             "/\\ zlecenie = 1",
-            '/\\ nadpisujeTate = {{"przerwanie-po-ilosci",',
-            '   "slad-zostal-po-gotowe"}}',
+            '/\\ zlyWynikPoTacie = {{"przerwanie-po-ilosci",',
+            '   "brak-pozycji-po-emmetcie"}}',
         ]
     )
     monkeypatch.setattr(module, "_tools", lambda: type("T", (), {"_tlc": staticmethod(lambda *arguments: output)}))
@@ -212,5 +211,5 @@ def test_kontrprzyklad_daje_obietnice_i_przyczyny_jej_zdarzenia_z_wyjscia_tlc(
 
     found = module._run("java", Path("tla2tools.jar"), "k", frozenset())
 
-    assert found == module.Verdict("ZmianaTatyZostaje", frozenset({"przerwanie-po-ilosci", "slad-zostal-po-gotowe"}))
+    assert found == module.Verdict("ZmianaTatyZostaje", frozenset({"przerwanie-po-ilosci", "brak-pozycji-po-emmetcie"}))
     assert "1. okno wpisuje ilość z pliku w zleceniu 1" in capsys.readouterr().out

@@ -234,6 +234,19 @@ def replace_file(source: Path, target: Path) -> None:
     _while_open(lambda: os.replace(source, target))
 
 
+def edit_issue(box: Path, number: object, **changes: object) -> None:
+    """Harness: Maks edits issue ``number`` of the skrzynka Zgłoszeń (closes it), and GitHub shows the edit at once.
+
+    The server reads the issue's file from its own threads, so the edited file takes its place whole (``replace_file``):
+    a plain write leaves it empty for a moment, as the skrzynka's own writes did on Windows (#963)."""
+
+    path = box / f"{number}.json"
+    edited = path.with_name(f"{path.name}.edycja")
+    issue = {**json.loads(path.read_text(encoding="utf-8")), **changes}
+    edited.write_text(json.dumps(issue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    replace_file(edited, path)
+
+
 def drop_report_key(key_file: Path, *, missing_ok: bool = False) -> None:
     """Harness: Maks takes the key to the skrzynka Zgłoszeń away by leaving its file empty, never deleting it.
 
