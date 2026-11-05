@@ -8,7 +8,8 @@ Wykonawcy, przechodzi przez filtr prywatności (``order_facts``) dla Kontroli il
 Wykonawcą stracą Ilości tylko dla INEA (``inea_only_quantities``, ADR 0018) i Znacznik efenix (``efenix_mark``).
 Ten sam odczyt i filtr dają Ilości do uzupełnienia (``read_numbered_orders``), także z pliku otwartego w Excelu, a
 obok filtra teksty wiersza i nazwy pozycji cennika dla strony rodzaju, które nie wychodzą z komputera (ADR 0016).
-Komórki zakazanych kolumn odczytu zna pamięć reguły danych pracy Centrum (``forbidden``, ADR 0025).
+Komórki zakazanych kolumn odczytu zna pamięć reguły danych pracy Centrum (``forbidden``, ADR 0025), a odczyt Przebiegu
+rozliczeń Kopia wejścia jego Uruchomienia (``copy``, #841).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from pathlib import Path
 from . import workbook_files
 from .client_data import ForbiddenValues
 from .efenix_mark import without_efenix_mark
+from .input_copy import InputCopy
 from .inea_only_quantities import Cleared, without_inea_only
 from .order_facts import CollectiveOrders, MissingHeaders, collective_orders
 from .preparation_register import ACTIVITIES, COMPLETED, DEVICES, Column
@@ -40,10 +42,12 @@ class CollectiveRows:
     """Liczba komórek z wartością, które Wiersze danych z Wykonawcą straciły jako Ilości tylko dla INEA."""
 
 
-def read_data_rows(path: Path, forbidden: ForbiddenValues | None = None) -> CollectiveRows:
+def read_data_rows(
+    path: Path, forbidden: ForbiddenValues | None = None, copy: InputCopy | None = None
+) -> CollectiveRows:
     """Wiersze danych Pliku zbiorczego jednym odczytem; plik jest tylko czytany."""
 
-    read = workbook_files.read_data_rows(path, forbidden=forbidden)
+    read = workbook_files.read_data_rows(path, forbidden=forbidden, copy=copy)
     rows: list[DataRow] = []
     without_worker: list[int] = []
     for row in read.rows:

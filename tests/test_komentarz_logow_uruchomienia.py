@@ -8,7 +8,7 @@ powtórki kodów, powtórzone Zatrzymanie, Zatrzymanie po odmowie w Decyzji taty
 które nie przeszły albo których nie sprawdzono. Resztę sprawdza ``test_centrum_logi_w_skrzynce.py``. Strażnik reguły
 danych (``guarded``, ADR 0025) ma tu klucz słownika Logów z zakazaną wartością: klucze pochodzą dziś z zamkniętych
 list (operator z reguły taty, kod pozycji efenix, litera kolumny), więc przez HTTP żadna taka wartość do klucza nie
-trafia.
+trafia, i liczbę policzoną przez narzędzie w kształcie telefonu, której syntetyczne pliki taty przez HTTP nie dają.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ import pytest
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, REPOSITORY
 from rozliczenia.centrum.run_logs import RunLog, guarded, logi_post, summary_markdown
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
+from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 
 RUN_ID = "627b45fe219e4274b722953c34d4af54"
 STOP = {"kind": "stop", "code": "ZLA_KONFIGURACJA_WYKONAWCOW", "what": "Co.", "where": "Gdzie.", "action": "Zrób."}
@@ -173,3 +174,19 @@ def test_zakazana_wartosc_w_kluczu_slownika_logow_jest_zamaskowana_z_uwaga_o_pol
     assert gzip.decompress(post.archive.packed()).decode("utf-8") == kept.text
     assert all("Kwarcowa" not in text for text in (*post.parts, kept.text))
 
+
+def test_liczba_policzona_przez_narzedzie_w_ksztalcie_telefonu_zostaje_a_ta_sama_liczba_z_komorki_jest_telefonem() -> None:
+    """Strażnik liczby sprawdza tylko wartości z komórek pliku taty (ADR 0025): numer wiersza i rozmiar pliku w Kopii
+    wejścia policzyło narzędzie, więc zostają, choć mają kształt telefonu, a te same liczby w komórkach są ``[telefon]``."""
+
+    row, size = (form.value for form in COMPUTED)
+    sheet = {"sheet": "Sheet1", "header_row": 17, "columns": {}, "rows": [{"row": row, "cells": {"AS": row, "AT": size}}], "empty_rows": []}
+    copied = {"name": "plik.xlsx", "fingerprint": {"size": size, "modified_at": None, "sha256": "0" * 64}, "sheets": [sheet]}
+
+    kept = guarded(record(input_copy=[copied]), ForbiddenValues())
+
+    assert kept.input_copy is not None
+    [file] = kept.input_copy
+    [logged] = file.sheets[0].rows
+    assert (file.fingerprint.size, logged.row, logged.cells) == (size, row, {"AS": PHONE, "AT": PHONE})
+    assert (kept.technical_notes, kept.input_copy_notes) == ([], [])

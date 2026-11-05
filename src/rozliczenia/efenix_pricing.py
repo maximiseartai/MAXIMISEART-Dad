@@ -70,6 +70,7 @@ from typing import Final, Protocol
 from . import efenix_messages as messages
 from . import efenix_trace, workbook_files
 from .client_data import ForbiddenColumn, ForbiddenValues
+from .input_copy import InputCopy
 from .domain import ProgressObserver, ProgressPhase
 from .efenix_checks import (
     DateRefused,
@@ -512,6 +513,7 @@ def price_orders(
     pace: Pace | None = None,
     forbidden: ForbiddenValues | None = None,
     journal: OrderJournal = NO_JOURNAL,
+    copy: InputCopy | None = None,
 ) -> PricingSummary:
     """Uzupełnia w efenix wycenę każdego zlecenia z zakresu Pliku zbiorczego ``source`` i oznacza w nim gotowe zlecenia.
 
@@ -519,7 +521,8 @@ def price_orders(
     (``efenix_emmett_trace``). ``clock`` to zegar w sekundach, z którego liczone są czasy etapów i śladu zleceń, a
     ``waiting`` wstrzymuje zegar rozmówcy na czas czekania na logowanie taty. ``pace``: tempo ludzkie okna
     (``efenix_pace``), ``None`` bez przerw. ``journal``: dziennik Wyceny w efenix (``OrderJournal``). Komórki zakazanych
-    kolumn Pliku zbiorczego i dane adresowe z listy wyników efenix poznaje ``forbidden`` (reguła danych, ADR 0025).
+    kolumn Pliku zbiorczego i dane adresowe z listy wyników efenix poznaje ``forbidden`` (reguła danych, ADR 0025), a
+    odczyt Pliku zbiorczego Kopia wejścia Uruchomienia ``copy`` (#841).
     """
 
     phases = PhaseRunner(observer, clock=clock)
@@ -535,7 +538,7 @@ def price_orders(
 
     def read() -> PricingScope | AmountsNotComputed | MissingColumns:
         try:
-            return read_scope(source, forbidden)
+            return read_scope(source, forbidden, copy)
         except WorkbookError as error:
             raise StopError(messages.source_unusable(error)) from error
 
