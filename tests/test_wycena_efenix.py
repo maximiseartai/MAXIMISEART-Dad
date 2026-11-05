@@ -263,16 +263,14 @@ def _au(quantities: dict[str, int]) -> float:
 def test_zlecenie_z_wycena_zgodna_z_plikiem_jest_gotowe_a_efenix_dostaje_tylko_szukanie_i_otwarcie_zlecenia(
     tmp_path: Path, page: Page
 ) -> None:
-    """Wycena już jest, każda ilość i kwota zgadzają się z plikiem: proces niczego nie zmienia, także pustej daty."""
+    """Wycena już jest, z datą wykonania, a każda ilość i kwota zgadzają się z plikiem: proces niczego nie zmienia."""
 
     orders = [
         Order("#5001", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), quantities={"012": 1, "019": 2}),
         Order("#5002", cells={"AG": 3}, amount=_au({"015": 3}), quantities={"015": 3}, emmett={"015": 1}),
         Order("5003", cells={"Z": 1}, amount=_au({"010": 1}), quantities={"010": 1}),
     ]
-    with atrapa_efenix(
-        [orders[0].in_efenix("901"), replace(orders[1].in_efenix("902"), execution_date=DAY), orders[2].in_efenix("903")]
-    ) as atrapa:
+    with atrapa_efenix([orders[0].in_efenix("901"), orders[1].in_efenix("902"), orders[2].in_efenix("903")]) as atrapa:
         before = atrapa.state()
         outcome = _price(tmp_path, page, atrapa.url, orders)
         after = atrapa.state()
@@ -292,31 +290,84 @@ _RUN_4_11_FILE = {"012": 1, "016": 3, "009": 2, "010": 1}
 
 
 @pytest.mark.parametrize(
-    ("in_efenix", "executed", "entered"),
+    ("in_efenix", "entered"),
     [
-        pytest.param({"012": 1, "016": 2}, DAY, {"016": 3, "009": 2, "010": 1}, id="sama-wycena-emmetta-z-S-o-1-mniejszym-bez-Y-i-Z"),
-        pytest.param({"012": 1, "016": 3}, DAY, {"009": 2, "010": 1}, id="niepełna-wycena-bez-Y-i-Z"),
-        pytest.param({"012": 1, "016": 1, "009": 1}, None, {"016": 3, "009": 2, "010": 1}, id="mniej-w-kilku-pozycjach-bez-daty"),
+        pytest.param({"012": 1, "016": 2}, {"016": 3, "009": 2, "010": 1}, id="sama-wycena-emmetta-z-S-o-1-mniejszym-bez-Y-i-Z"),
+        pytest.param({"012": 1, "016": 3}, {"009": 2, "010": 1}, id="niepełna-wycena-bez-Y-i-Z"),
+        pytest.param({"012": 1, "016": 1, "009": 1}, {"016": 3, "009": 2, "010": 1}, id="mniej-w-kilku-pozycjach"),
     ],
 )
 def test_wycena_ktora_juz_jest_z_mniejsza_iloscia_niz_plik_proces_dokancza_iloscia_z_pliku_bez_wyceny_emmetta(
-    tmp_path: Path, page: Page, in_efenix: dict[str, int], executed: date | None, entered: dict[str, int]
+    tmp_path: Path, page: Page, in_efenix: dict[str, int], entered: dict[str, int]
 ) -> None:
     """Wycena już jest (zaczęta przez wcześniejszy run, przez tatę albo sama Wycena Emmetta), a w części pozycji efenix ma
     mniej niż plik: proces wpisuje w nich ilość z pliku (ADR 0026), nie ładuje Wyceny Emmetta, która wyczyściłaby wycenę,
-    i nie zmienia daty wykonania. Zlecenie ma potem ilości pliku i kwotę równą AU, więc jest gotowe i ma Znacznik efenix."""
+    i nie zmienia daty wykonania, którą zlecenie już ma. Zlecenie ma potem ilości pliku i kwotę równą AU, więc jest gotowe
+    i ma Znacznik efenix."""
 
     order = Order("#5101", cells=_RUN_4_11_CELLS, amount=_au(_RUN_4_11_FILE), quantities=in_efenix, emmett={"012": 1, "016": 2})
     source = write_collective_file(tmp_path, [order])
-    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=executed)]) as atrapa:
+    with atrapa_efenix([order.in_efenix("901")]) as atrapa:
         outcome = _run(source, page, atrapa.url)
         pricing = _pricing(atrapa)
         requested = atrapa.requested()
 
     assert (outcome.result, _figures(outcome), _errors(outcome)) == ("OK", _figures_of(1, 1), [])
-    assert (pricing, _marked(source)) == ({"5101": (_RUN_4_11_FILE, executed, 0)}, [18])
+    assert (pricing, _marked(source)) == ({"5101": (_RUN_4_11_FILE, DAY, 0)}, [18])
     assert {("POST", FILL_EMMETT), ("POST", LOAD_EMMETT), ("POST", SET_DATE)} & set(requested) == set()
     assert requested.count(("POST", SAVE_QUANTITY)) == len(entered)
+
+
+@pytest.mark.parametrize(
+    ("in_efenix", "entered"),
+    [
+        pytest.param({"012": 1, "016": 1, "009": 1}, 3, id="mniej-niż-plik"),
+        pytest.param(_RUN_4_11_FILE, 0, id="zgodna-z-plikiem"),
+    ],
+)
+def test_wycena_ktora_juz_jest_bez_daty_wykonania_dostaje_date_z_data_a_potem_ilosci_z_pliku_bez_wyceny_emmetta(
+    tmp_path: Path, page: Page, in_efenix: dict[str, int], entered: int
+) -> None:
+    """Decyzja Maksa z 5.11.2026: zlecenie z wyceną, która już jest, ale bez daty wykonania, dostaje datę z ``DATA`` tak
+    samo jak zlecenie bez wyceny, zanim proces dokończy je do pliku, żeby gotowe zlecenie ze Znacznikiem efenix nie
+    zostało w efenix bez daty. Wyceny Emmetta proces do niego nie ładuje, bo wyczyściłaby wycenę."""
+
+    executed = date(2026, 9, 3)
+    order = Order("#5103", day=executed, cells=_RUN_4_11_CELLS, amount=_au(_RUN_4_11_FILE), quantities=in_efenix, emmett={"012": 1})
+    source = write_collective_file(tmp_path, [order])
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=None)]) as atrapa:
+        outcome = _run(source, page, atrapa.url)
+        pricing = _pricing(atrapa)
+        requested = atrapa.requested()
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == ("OK", _figures_of(1, 1), [])
+    assert (pricing, _marked(source)) == ({"5103": (_RUN_4_11_FILE, executed, 0)}, [18])
+    assert {("POST", FILL_EMMETT), ("POST", LOAD_EMMETT)} & set(requested) == set()
+    assert (requested.count(("POST", SET_DATE)), requested.count(("POST", SAVE_QUANTITY))) == (1, entered)
+
+
+@pytest.mark.parametrize(
+    ("day", "refuse_dates", "error", "set_date"),
+    [
+        pytest.param(date(2026, 10, 13), False, "EFENIX_DATA_POZA_ZAKRESEM", 0, id="dzień-poza-kalendarzem"),
+        pytest.param(DAY, True, "EFENIX_DATA_NIEZAPISANA", 1, id="dzień-niezapisany"),
+    ],
+)
+def test_data_wykonania_odrzucona_przy_wycenie_ktora_juz_jest_to_blad_bez_zmiany_ilosci(
+    tmp_path: Path, page: Page, day: date, refuse_dates: bool, error: str, set_date: int
+) -> None:
+    """Zlecenie z wyceną mniejszą niż plik i bez daty wykonania: dzień, którego kalendarz efenix nie przyjął albo którego
+    efenix nie zapisał, to błąd zlecenia jak przy zleceniu bez wyceny, a ilości w efenix zostają bez zmian."""
+
+    in_efenix = {"012": 1, "016": 1}
+    order = Order("#5104", day=day, cells=_RUN_4_11_CELLS, amount=_au(_RUN_4_11_FILE), quantities=in_efenix)
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=None)], today=date(2026, 10, 12), refuse_dates=refuse_dates) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [order])
+        pricing = _pricing(atrapa)
+        requested = atrapa.requested()
+
+    assert (outcome.result, _errors(outcome), pricing) == ("WYMAGA_SPRAWDZENIA", [(error, "wiersz 18")], {"5104": (in_efenix, None, 0)})
+    assert (requested.count(("POST", SET_DATE)), requested.count(("POST", LOAD_EMMETT)), requested.count(("POST", SAVE_QUANTITY))) == (set_date, 0, 0)
 
 
 @pytest.mark.parametrize(
@@ -1571,7 +1622,7 @@ def test_plik_ktorego_nie_da_sie_oznaczyc_daje_komunikat_a_ponowne_uruchomienie_
         after, repeated = atrapa.state(), atrapa.requested()[requests:]
 
     assert {order.number: (order.quantities, order.execution_date, order.emmett_loads) for order in priced[0]} == {
-        "7801": ({"012": 1}, None, 0),
+        "7801": ({"012": 1}, DAY, 0),
         "7802": ({"012": 1}, DAY, 1),
         "7803": ({"012": 1}, DAY, 1),
     }
