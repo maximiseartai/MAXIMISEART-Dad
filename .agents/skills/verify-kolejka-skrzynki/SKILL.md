@@ -186,8 +186,13 @@ and `_Server` in `server.py` (`DEFINITIONS` in `sprawdz_model_kolejki.py`). Only
 rest of their files, is drift. Name these three files here without their
 `src/…` path in backticks: such a path makes the whole file covered.
 
-**Sync commit: `0deaca72`** (2026-11-05). The checker and the model share it:
-at this commit both were confirmed to describe the code above. Since the
+**Sync commit: `ed6e5833`** (2026-11-05). The checker and the model share it:
+at this commit both were confirmed to describe the code above. It merges
+`main` into #846 after its round 2, which changed no covered file but brought
+the model's `Plik` in line with `_send_all`: a newer version whose read failed
+at the start of the pass leaves this pass, as `_skip_unreadable` skips it to the
+`RETRY_S` wake, instead of being read again and sent in the same pass, and
+`check_model_kolejki_mutations.py` got the mutation of that branch. Since the
 previous sync `6cc9e712` two commits changed a covered file. `19f54659` (#846):
 `_send_all` reads every queue file at the start of the pass (`_read`) and marks
 and removes unsent the file behind which the same pass has a newer version of
@@ -295,7 +300,7 @@ them, `6f94edb8` was the sync of both, and since the checker's earlier sync
 model describes. To see whether they need another look:
 
 ```bash
-git log --oneline 0deaca72..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
+git log --oneline ed6e5833..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
 ```
 
 A change to the three definitions above shows as a `UWAGA:` line of
