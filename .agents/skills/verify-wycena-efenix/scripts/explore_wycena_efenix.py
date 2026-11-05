@@ -161,12 +161,14 @@ def efenix_orders() -> list[AtrapaOrder]:
 
 @dataclass(frozen=True)
 class Priced:
-    """State of one order in the Atrapa: quantities (code → quantity other than 0), date, Emmett loads, status."""
+    """State of one order in the Atrapa: quantities (code → quantity other than 0), date, Emmett loads, status, and of
+    the loads those over a pricing other than that Wycena Emmetta (``AtrapaOrder.emmett_over_pricing``)."""
 
     quantities: tuple[tuple[str, int], ...]
     day: date | None
     emmett_loads: int
     status: str
+    emmett_over_pricing: int
 
     @property
     def amount(self) -> Decimal:
@@ -174,11 +176,12 @@ class Priced:
 
     def __str__(self) -> str:
         quantities = ", ".join(f"{code}={quantity}" for code, quantity in self.quantities) or "pusta"
-        return f"wycena [{quantities}], data {self.day or 'pusta'}, Emmett {self.emmett_loads}x, {self.status}"
+        over = f" (na inną wycenę {self.emmett_over_pricing}x)" if self.emmett_over_pricing else ""
+        return f"wycena [{quantities}], data {self.day or 'pusta'}, Emmett {self.emmett_loads}x{over}, {self.status}"
 
 
 def priced(order: AtrapaOrder) -> Priced:
-    return Priced(tuple(sorted(order.quantities.items())), order.execution_date, order.emmett_loads, order.status)
+    return Priced(tuple(sorted(order.quantities.items())), order.execution_date, order.emmett_loads, order.status, order.emmett_over_pricing)
 
 
 INITIAL: Final = tuple(priced(order) for order in efenix_orders())
@@ -186,10 +189,21 @@ INITIAL: Final = tuple(priced(order) for order in efenix_orders())
 Emmett and the file's quantity in each position where Emmett has less; order 2 gets the date and Emmett, whose T stays
 above the file, and nothing more, because its other position equals the file."""
 REFERENCE_FINAL: Final = (
-    Priced(tuple(sorted(FILE[0].items())), DAYS[0], 1, "Do wyceny"),
-    Priced(tuple(sorted(EMMETT[1].items())), DAYS[1], 1, "Do wyceny"),
+    Priced(tuple(sorted(FILE[0].items())), DAYS[0], 1, "Do wyceny", 0),
+    Priced(tuple(sorted(EMMETT[1].items())), DAYS[1], 1, "Do wyceny", 0),
 )
 REFERENCE_OUTCOMES: Final = ("gotowe", "ostrzeżenie Emmetta")
+
+
+def like_one_run(state: Priced, index: int) -> bool:
+    """Whether order ``index`` is in efenix as after one run without a fault (``REFERENCE_FINAL``): the same quantities,
+    date and status, and Wycena Emmetta loaded, never over a pricing other than itself (NieCzysciWycenyTaty: „the tool
+    loads Wycena Emmetta only into an order with no quantity”). How many times it was loaded does not count: after a torn
+    answer Chromium sends „Załaduj do zlecenia” again, so efenix loads it twice in one click (CI run 42058117564 on
+    Windows, PR #965), and a load into an order without a pricing or into its own Wycena Emmetta replaces nothing. A
+    second run's own load into an order with a quantity stays a violation of its own (``check_resume``)."""
+
+    return replace(state, emmett_loads=min(state.emmett_loads, 1)) == REFERENCE_FINAL[index]
 REFERENCE_MARKED: Final = (FIRST_ROW,)
 
 # --- The window's requests in one run without a fault -----------------------------------------------------------
@@ -1230,10 +1244,12 @@ def check_first(case: Case, run: Run) -> list[Violation]:
         return found
     outcomes = _outcomes(run.outcome.view)
     after = run.after.state
-    like_reference = tuple(outcomes.get(index) for index in range(2)) == REFERENCE_OUTCOMES and after == REFERENCE_FINAL
+    like_reference = tuple(outcomes.get(index) for index in range(2)) == REFERENCE_OUTCOMES and all(
+        like_one_run(after[index], index) for index in range(2)
+    )
     others = [index for index in range(2) if index != case.order]
     left = outcomes.get(case.order) in ("błąd", "ostrzeżenie Emmetta") and all(
-        outcomes.get(index) == REFERENCE_OUTCOMES[index] and after[index] == REFERENCE_FINAL[index] for index in others
+        outcomes.get(index) == REFERENCE_OUTCOMES[index] and like_one_run(after[index], index) for index in others
     )
     if not ((expect.same and like_reference) or (expect.left and left)):
         shown = "; ".join(f"zlecenie {index + 1}: {outcomes.get(index)}, {after[index]}" for index in range(2))
@@ -1286,8 +1302,8 @@ def check_resume(resume: Resume, run: Run) -> list[Violation]:
     - ZmianaTatyZostaje („an order in which Dad changed a quantity by hand ends with an Ostrzeżenie Emmetta when it
       holds more than the file, and is gotowe otherwise”): the order Dad changed ends as ``completed`` gives it.
     - BladTylkoPoZmianieTaty („an order the tool started, also one a Zatrzymanie or a switch-off cut, the next
-      Uruchomienie finishes as gotowe”): every order Dad did not change ends like one run (``REFERENCE_FINAL``,
-      ``REFERENCE_OUTCOMES``). Its violation carries ``Resumed``, so an entry of ``ACCEPTED_RISKS`` could take it only
+      Uruchomienie finishes as gotowe”): every order Dad did not change ends like one run (``like_one_run``,
+      ``REFERENCE_OUTCOMES``), where a load of Emmett that replaced nothing does not count. Its violation carries ``Resumed``, so an entry of ``ACCEPTED_RISKS`` could take it only
       in its whole shape.
     """
 
@@ -1319,7 +1335,7 @@ def check_resume(resume: Resume, run: Run) -> list[Violation]:
                 add("WZNOWIENIE", "nie dokończone do pliku po tacie",
                     f"zlecenie {index + 1} po zmianie taty ({resume.edit.value}): {was} → {now} ({outcomes.get(index)}), "
                     f"a z pliku tylko w górę: {expected_now.state} ({expected_now.outcome})")
-        elif (now, outcomes.get(index)) != (REFERENCE_FINAL[index], REFERENCE_OUTCOMES[index]):
+        elif not like_one_run(now, index) or outcomes.get(index) != REFERENCE_OUTCOMES[index]:
             # Where run 1 broke is a fact of the order it broke at, not of the other one.
             at_order = resume.at if index == resume.order else None
             at = "?" if at_order is None else at_order.value

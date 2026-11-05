@@ -75,8 +75,12 @@ from these sentences, never from a run:
   quantity, a position with more stays, and the order is an Ostrzeżenie Emmetta with such a position and gotowe
   without it (ZmianaTatyZostaje). Every order Dad did not change ends like one run (BladTylkoPoZmianieTaty), also the
   one a stop or a kill cut between „Załaduj do zlecenia” and reading the reloaded page or before efenix saved a
-  quantity (the accepted risks #774 and #864 before #960). An order Dad emptied has no pricing, so it is priced like a
-  new one. Harm: the tool wipes or lowers Dad's work in efenix, or leaves him an order it started.
+  quantity (the accepted risks #774 and #864 before #960). Like one run means the same quantities, date and status,
+  with Wycena Emmetta loaded and never over a pricing other than itself (`like_one_run`); how many times efenix loaded
+  it does not count, because after a torn answer Chromium sends „Załaduj do zlecenia” again and efenix loads Emmett
+  twice into the same order (CI run 42058117564 on Windows, #965), which replaces nothing. The Atrapa counts the loads
+  over another pricing apart (`emmett_over_pricing`). An order Dad emptied has no pricing, so it is priced like a new
+  one. Harm: the tool wipes or lowers Dad's work in efenix, or leaves him an order it started.
 - **BEZ_DANYCH**: the Logi (orders, Zatrzymanie, Komunikaty, as `run_logs` builds them) and the dziennik have no order
   number, efenix identifier or address (ADR 0025).
 - **BEZ_WYJATKU** and **BEZ_AWARII**: a run ends with a result or a Zatrzymanie of the window within `CASE_LIMIT_S`, a
@@ -224,6 +228,8 @@ Each gives `WYCENA EFENIX: NOWE NARUSZENIE`:
   completed to the file; the file's quantity entered only in positions empty on the page (the rule before #960, which
   leaves Emmett's S below the file); the file's quantity entered also where efenix has more (lowering it); no
   Ostrzeżenie Emmetta for a position with more than the file;
+- #965: Wycena Emmetta loaded into an order with quantities on resume also on the axis `odciecia` at
+  `propozycja-emmetta` and `ilosc`, where a torn answer can make efenix load Emmett twice;
 - the window clicking Przekazanie do akceptacji; a Komunikat that always says nothing changed; a Zatrzymanie without the Znaczniki of orders gotowe before it.
 
 A mutation reported as `NIEAKTUALNA` no longer matches its file: rewrite its anchor and replacement against the new code

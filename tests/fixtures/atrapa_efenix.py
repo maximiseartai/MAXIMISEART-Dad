@@ -229,7 +229,9 @@ class AtrapaOrder:
     """Wymyślone zlecenie Atrapy w tym, co pokazują lista i strona zlecenia efenix.
 
     ``quantities``: ilości wyceny (kod → ilość różna od 0), ``emmett``: propozycja Emmetta w tym samym kształcie,
-    ``emmett_loads``: ile razy załadowano do zlecenia Wycenę Emmetta. ``changed``: strona tylko tego zlecenia w innej
+    ``emmett_loads``: ile razy załadowano do zlecenia Wycenę Emmetta, a ``emmett_over_pricing``: ile z tych razy
+    zlecenie miało w chwili żądania wycenę inną niż ta Wycena Emmetta, którą „Załaduj do zlecenia” zastąpił (wycenę taty
+    albo ilości wpisane przez proces). ``changed``: strona tylko tego zlecenia w innej
     budowie (``Changed``), a ``cut``: strona tego zlecenia zrywa połączenie bez odpowiedzi, jak sieć, która zniknęła, więc
     zlecenia przed nim przechodzą jak w efenix. ``error_status``: strona tego zlecenia to strona błędu serwera z tym
     statusem HTTP, a ``login_form``: formularz logowania pod adresem strony zlecenia, bez przekierowania. ``hung``: strona
@@ -254,6 +256,7 @@ class AtrapaOrder:
     quantities: dict[str, int] = field(default_factory=dict)
     emmett: dict[str, int] = field(default_factory=dict)
     emmett_loads: int = 0
+    emmett_over_pricing: int = 0
     changed: Changed | None = None
     cut: bool = False
     error_status: HTTPStatus | None = None
@@ -692,6 +695,8 @@ def _change(
         rows = "".join(f"<li>INDEKS_{escape(code)}_078: {quantity}</li>" for code, quantity in sorted(order.emmett.items()))
         return f"<ul>{rows}</ul>" if rows else ""
     if path == LOAD_EMMETT:
+        if order.quantities and order.quantities != order.emmett:
+            order.emmett_over_pricing += 1
         order.quantities = dict(order.emmett)
         order.emmett_loads += 1
         return "ok"

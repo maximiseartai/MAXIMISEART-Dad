@@ -1,8 +1,9 @@
 """Show that explore_wycena_efenix.py fails on broken variants of the Wycena w efenix, the defects of #802, #808, #758,
 #891, #895 at every „Załaduj do zlecenia”, #889 and #908, a reload waited for shorter than its answer, a closed tab not seen
 in the window's action, a dziennik that names an order only after the window changed it, the completion to the file only
-upwards of #960 (ADR 0026), and for each part of the shape of each accepted risk of the explorer a broken variant just
-outside it (``BOUNDARIES``, none today).
+upwards of #960 (ADR 0026), also on the way of a torn answer, after which efenix may load Emmett twice (#965), and for
+each part of the shape of each accepted risk of the explorer a broken variant just outside it (``BOUNDARIES``, none
+today).
 
 Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) with the axes and request roles that reach it,
 one browser at a time, and must end the checker's report with the expected line. A mutation whose anchor text is no
@@ -208,6 +209,14 @@ MUTATIONS = (
         (Edit(PRICING, "    if not any(opened.quantities.values()):\n", "    if True:\n"),),
         explorer("zabity-proces", "ilosc"),
         "ponowne uruchomienie ładuje Emmetta do zlecenia z ilościami i czyści je",
+        NEW,
+    ),
+    Mutation(
+        "#965: Wycena Emmetta przy wznowieniu po zerwanej odpowiedzi także do zlecenia z ilościami, na drodze, na której"
+        " Chromium ponawia „Załaduj do zlecenia”",
+        (Edit(PRICING, "    if not any(opened.quantities.values()):\n", "    if True:\n"),),
+        explorer("odciecia", "propozycja-emmetta", "ilosc"),
+        "po zerwanej sieci ponowne uruchomienie ładuje Emmetta do zlecenia z ilościami i czyści je",
         NEW,
     ),
     Mutation(
