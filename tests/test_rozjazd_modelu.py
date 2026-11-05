@@ -25,6 +25,7 @@ import rozjazd_modelu  # noqa: E402
 SKILL = ".agents/skills/verify-model"
 CODE = "src/pakiet/kod.py"
 WHOLE = "src/pakiet/caly.py"
+# ``Logi.zamknij`` stoi przed ``Dziennik.zamknij`` z tabeli: pierwsza metoda o tej nazwie w pliku jest metodą innej klasy.
 SOURCE = '''"""Moduł."""
 
 
@@ -37,14 +38,14 @@ def obok() -> int:
     return 2
 
 
-class Dziennik:
-    def zamknij(self) -> int:
-        return 3
-
-
 class Logi:
     def zamknij(self) -> int:
         return 4
+
+
+class Dziennik:
+    def zamknij(self) -> int:
+        return 3
 
 
 def utworz() -> object:
