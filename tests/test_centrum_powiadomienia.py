@@ -19,8 +19,9 @@ from rozliczenia.centrum.report_box import CloseReason, Refused, Unreachable
 from rozliczenia.centrum.tool_freshness import PublishedRelease
 from rozliczenia.centrum.tool_update import Release
 
-from tests.fixtures.centrum import TOOL_COMMIT, case_states, centrum as plain_centrum, join_threads_since, new_line
+from tests.fixtures.centrum import TOOL_COMMIT, case_states, centrum as plain_centrum, join_threads_since
 from tests.fixtures.centrum_processes import PreparingCentrum, preparing_centrum, stopped_for_maks
+from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.locked_file import lock_file
 from tests.fixtures.potomne import wait_for
 

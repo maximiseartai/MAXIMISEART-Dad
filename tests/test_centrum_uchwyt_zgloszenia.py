@@ -47,9 +47,9 @@ from tests.fixtures.centrum import (
     FakeReportBox,
     dad_cases,
     join_threads_since,
-    new_line,
 )
 from tests.fixtures.clock import ManualClock
+from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.potomne import wait_for
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ_ZGLOSZEN"
