@@ -44,7 +44,8 @@ i przeczytanymi wierszami bez kolumn `ADRES` i numeru Orange, a uwagi strażnika
 o wartościach zamaskowanych w niej idą do `input_copy_notes`, więc karta z Logów
 ma te same uwagi techniczne co karta na żywo. Kopię zbierają
 czytniki w trakcie Uruchomienia jako odwołania do tego, co i tak czytają, a
-Logi budują ją po wyniku. Uporządkowanie INTERMAX i Logi Urwanego Uruchomienia
+Logi budują ją po końcu procesu, zanim karta pokaże wynik. Uporządkowanie
+INTERMAX i Logi Urwanego Uruchomienia
 jej jeszcze nie mają (`None`).
 
 [ADR 0009](0009-aktualizacja-narzedzia-z-centrum.md) traci Powiadomienie o

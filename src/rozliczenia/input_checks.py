@@ -35,7 +35,7 @@ from .period_folder import (
     locate_period_folder,
 )
 from .preparation_files import PeriodFiles
-from .preparation_register import TARGET_HEADERS, RegisterSheet
+from .preparation_register import TARGET_HEADERS, RegisterRead, RegisterSheet
 from .settlement_period import SettlementPeriod, parse_period_token
 from .template_file import TemplateFile
 from .workbook_files import Problem, WorkbookError
@@ -50,8 +50,9 @@ class Readers:
     Ten sam obiekt dostają Uruchomienie procesu i Diagnoza, więc usterka czytnika trafia do obu.
     """
 
-    register: Callable[[Path, SettlementPeriod | None], list[RegisterSheet]]
-    """Arkusze ze zleceniami Rejestru, z ``period`` tylko wiersze, których data może leżeć w okresie.
+    register: Callable[[Path, SettlementPeriod | None], RegisterRead]
+    """Arkusze ze zleceniami Rejestru z bajtami, z których je przeczytał; z ``period`` tylko wiersze, których data może
+    leżeć w okresie.
 
     Rejestr, którego nie ma albo który jest otwarty w Excelu, to też ``WorkbookError``.
     """
@@ -148,30 +149,32 @@ def read_register(
     """
 
     with _stops(messages.register_unusable):
-        sheets = readers.register(register, period)
+        read = readers.register(register, period)
     if forbidden is not None:
-        for sheet in sheets:
+        for sheet in read.sheets:
             for row in sheet.register_rows:
                 for column, header in _FORBIDDEN_HEADERS:
                     forbidden.remember_value(column, row.cells[header].value)
     if copy is not None:
-        with _stops(messages.register_unusable):
-            _copied(register, sheets, copy)
-    return sheets
+        _copied(register, read, copy)
+    return read.sheets
 
 
-def _copied(register: Path, sheets: Sequence[RegisterSheet], copy: input_copy.InputCopy) -> None:
-    """Arkusze Rejestru z odczytu w Kopii wejścia: komórki każdej kolumny ``COLUMNS`` w jej kolumnie arkusza pod
-    nagłówkiem Rejestru (wiersz 1) i puste wiersze z odczytanego zakresu.
+def _copied(register: Path, read: RegisterRead, copy: input_copy.InputCopy) -> None:
+    """Odczyt Rejestru w Kopii wejścia: bajty, z których czytnik przeczytał arkusze, i komórki każdej kolumny
+    ``COLUMNS`` bez zakazanych (``_FORBIDDEN_HEADERS``) w jej kolumnie arkusza pod nagłówkiem Rejestru (wiersz 1) oraz
+    puste wiersze z odczytanego zakresu; bez drugiego odczytu pliku, więc Kopia nie zatrzymuje Przygotowania."""
 
-    Czytnik Rejestru nie oddaje bajtów, więc odcisk jest z bajtów przeczytanych zaraz po nim, także gdy Rejestr otworzył
-    już Excel; Rejestr, którego w tej chwili nie da się przeczytać, to ``WorkbookError`` jak przy czytniku.
-    """
-
-    workbook = copy.workbook(register, workbook_files.saved_workbook_content(register))
-    for sheet in sheets:
+    workbook = copy.workbook(register, read.content)
+    forbidden = {header for _, header in _FORBIDDEN_HEADERS}
+    for sheet in read.sheets:
         positions = sheet.positions
-        copied = workbook.sheet(sheet.name, 1, {number: column.register_header for column, number in positions.items()})
+        copied = workbook.sheet(
+            sheet.name,
+            1,
+            {number: column.register_header for column, number in positions.items()},
+            {number for column, number in positions.items() if column.target_header in forbidden},
+        )
         for row in sheet.register_rows:
             copied.row(row.number, {number: row.cells[column.target_header].value for column, number in positions.items()})
         copied.empty_rows(sheet.empty_rows)

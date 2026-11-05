@@ -41,7 +41,9 @@ telefony na okres.
   Zgłoszeń**: Logów Uruchomienia, Zgłoszeń, Kontroli ilości i Uwag taty.
   Nigdy nie wychodzą z komputera taty wartości kolumn `ADRES` i
   `NUMER UMOWY/ZLECENIA ORANGE` (w Rejestrze zleceń i INTERMAX także `adres`
-  i `NUMER UMOWY`) ani dane adresowe ze strony zlecenia efenix. Każda inna
+  i `NUMER UMOWY`) ani dane adresowe ze strony zlecenia efenix. W Pliku
+  zbiorczym to kolumny B i I z układu Wzorca, także gdy tata zmienił ich
+  nagłówek, i każda inna kolumna A:K z takim nagłówkiem (#841). Każda inna
   kolumna wiersza może wyjść, w tym `NUMER ZL.`, `WYKONAWCA` i `MIASTO`.
 - **Wolny tekst idzie w całości z maskowaniem**: numer telefonu (komórkowy
   3-3-3, stacjonarny 2-3-2-2, z `+48` albo bez) staje się `[telefon]`, a
@@ -64,6 +66,15 @@ telefony na okres.
   pod jej tekstem. Tata widzi w podglądzie
   Zgłoszenia i Uwagi dokładnie to, co wyjdzie. Tekst bez zakazanej wartości,
   telefonu i ulicy wychodzi bez zmian i bez uwagi.
+- **Liczba ma tekst, który pokazuje Excel** (#841): numer Orange albo
+  telefon, który tata wpisał w komórkę bez innego tekstu, Excel trzyma jako
+  liczbę, a liczba całkowita zapisana jako ułamek to jej cyfry. Tak liczbę
+  zapamiętuje pamięć i tak sprawdza ją strażnik, który maskuje ją w całości
+  (`[numer Orange]` z uwagą techniczną albo `[telefon]`). W Logach sprawdza
+  liczby w polach z wartościami z komórek pliku taty i ze strony efenix
+  (komórki Kopii wejścia i ilości przy zleceniu Wyceny w efenix), bo każdą
+  inną liczbę Logów (wiersz, rozmiar, czas, liczbę zleceń) policzyło
+  narzędzie.
 - **Skąd Centrum zna zakazane wartości.** Każdy czytnik Wierszy danych,
   który czyta dla Centrum (Pliku zbiorczego w Przebiegu rozliczeń, Kontroli
   ilości, Wycenie w efenix i Uzupełnieniu, Rejestru zleceń w Przygotowaniu i

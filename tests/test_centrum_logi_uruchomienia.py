@@ -22,6 +22,7 @@ import sys
 import time
 from typing import Any, NoReturn
 
+from openpyxl import load_workbook
 from openpyxl.worksheet.formula import ArrayFormula
 from playwright.sync_api import Browser, sync_playwright
 import pytest
@@ -42,6 +43,7 @@ from rozliczenia.centrum.run_logs import (
 )
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
+from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.period_folder import PeriodFolderInaccessible
 
 from tests.fixtures.atrapa_efenix import CATALOG, AtrapaEfenix, AtrapaOrder, Changed, amount_of, atrapa_efenix
@@ -72,6 +74,7 @@ from tests.fixtures.preparation import PERIOD, default_register_rows, incomplete
 from tests.fixtures.run_cards import first_view, restored
 from tests.fixtures.settlement import COLLECTIVE_HEADERS, MARKED, SOURCE_NAME, CellValue, write_quantity_source
 from tests.fixtures.tool_clone import ToolRepository, git_command, git_failing_on, tool_repository
+from tests.fixtures.workbooks import active_worksheet, rewrite_parts
 
 AnyCentrum = PreparingCentrum | SettlingCentrum
 KEYS = {
@@ -1991,8 +1994,183 @@ def test_adres_i_numer_orange_z_kopii_wejscia_nie_wychodza_do_logow_ani_skrzynki
     assert [value for value in leaked if any(value in text for text in texts)] == []
 
 
+def test_kolumny_adresu_i_numeru_orange_pliku_zbiorczego_nie_wychodza_takze_pod_innym_naglowkiem(tmp_path: Path) -> None:
+    """Kolumny B i I Pliku zbiorczego to ``ADRES`` i numer Orange z układu Wzorca bez względu na nagłówek, który tata
+    w nich zmienił: Kopia wejścia Przebiegu ich nie ma, a ich wartości wpisane w wolny tekst innej komórki strażnik
+    maskuje, więc nie wychodzą do pliku Logów ani do Skrzynki Zgłoszeń."""
+
+    centrum = settling_centrum(tmp_path)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_quantity_source(centrum.collective_file, [{"B": ADDRESS_VALUE, "I": ORANGE_VALUE, "K": FREE_TEXT}])
+    workbook = load_workbook(centrum.collective_file)
+    sheet = active_worksheet(workbook)
+    sheet["B17"], sheet["I17"] = "ADRES KLIENTA", "NR UMOWY ORANGE"
+    workbook.save(centrum.collective_file)
+
+    view = run_to_end(centrum, dry_run=True)
+
+    assert view["result"]["stop_kind"] is None, view["result"]["stops"]
+    box: FakeReportBox = centrum.surroundings.report_box
+    assert box.wait_until(
+        lambda fake: any(issue.label == "logi-uruchomienia" and issue.comments for issue in fake.background_issues)
+    )
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    [sheet_copy] = copied["sheets"]
+    assert [letter for letter in ("B", "I") if letter in sheet_copy["columns"]] == []
+    [row] = sheet_copy["rows"]
+    assert ([letter for letter in ("B", "I") if letter in row["cells"]], row["cells"]["K"]) == ([], MASKED)
+    texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)] + in_box(box)
+    assert [value for value in (ADDRESS_VALUE, ORANGE_VALUE) if any(value in text for text in texts)] == []
+
+
+def _register_saved_again(path: Path) -> None:
+    path.write_bytes(path.read_bytes() + b"\0")
+
+
+def _register_gone(path: Path) -> None:
+    path.rename(path.with_name("przeniesiony.xlsx"))
+
+
+@pytest.mark.parametrize("after_reading", [_register_saved_again, _register_gone], ids=["zapisany-znowu", "zniknal"])
+def test_odcisk_rejestru_jest_z_bajtow_ktore_przeczytalo_przygotowanie_takze_gdy_plik_zmienil_sie_zaraz_po_odczycie(
+    tmp_path: Path, after_reading: Callable[[Path], None]
+) -> None:
+    """Rejestr zapisany znowu (Autozapis Excela, OneDrive) albo przeniesiony zaraz po odczycie: odcisk w Kopii wejścia
+    to rozmiar i skrót bajtów, z których Przygotowanie przeczytało zlecenia, a Kopia nie czyta pliku drugi raz, więc nie
+    zatrzymuje Przygotowania."""
+
+    content: list[bytes] = []
+
+    def read_then_changed(path: Path, period: Any) -> Any:
+        content.append(path.read_bytes())
+        read = FILE_READERS.register(path, period)
+        after_reading(path)
+        return read
+
+    readers = replace(FILE_READERS, register=read_then_changed)
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=readers))
+
+    view = run_to_end(centrum, dry_run=True)
+
+    assert (view["result"]["result"], view["result"]["stop_kind"]) == ("OK", None), view["result"]["stops"]
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    [read] = content
+    found = copied["fingerprint"]
+    assert (found["size"], found["sha256"]) == (len(read), hashlib.sha256(read).hexdigest())
+
+
 def cells_row(copied: dict[str, Any]) -> int:
     """Miejsce (od 0) przeczytanego wiersza z zamaskowanym wolnym tekstem w jedynym arkuszu Kopii."""
 
     [sheet] = copied["sheets"]
     return next(index for index, row in enumerate(sheet["rows"]) if MASKED in row["cells"].values())
+
+
+ORANGE_NUMBER = int(ORANGE_VALUE)
+PHONE_NUMBER = int(PHONE.replace(" ", ""))
+"""Numer Orange i telefon, które tata wpisał w komórkę bez innego tekstu, więc Excel trzyma je jako liczby."""
+
+
+@dataclass(frozen=True)
+class NumbersInCells:
+    """Uruchomienie z liczbami w komórkach: Centrum gotowe do startu i komórki Kopii wejścia z numerem Orange albo
+    telefonem po strażniku (wiersz arkusza → litera → maska), a ``elsewhere``: pola Logów poza Kopią z numerem Orange
+    (ilości przy zleceniu Wyceny w efenix; ``steps[…]``: którekolwiek działanie okna)."""
+
+    centrum: PreparingCentrum | SettlingCentrum
+    masked: dict[int, dict[str, str]]
+    elsewhere: frozenset[str] = frozenset()
+
+
+def _numbers_preparation(tmp_path: Path, _: ExitStack) -> NumbersInCells:
+    rows = default_register_rows()
+    rows[2] = {**(rows[2] or {}), "NUMER UMOWY": ORANGE_NUMBER, "UMOWA": ORANGE_NUMBER, "CZYNNOŚCI ZREALIZOWANE": PHONE_NUMBER}
+    return NumbersInCells(preparing_centrum(tmp_path, rows), {4: {"F": "[numer Orange]", "M": "[telefon]"}})
+
+
+def _numbers_settlement(tmp_path: Path, _: ExitStack) -> NumbersInCells:
+    """Excel zapisał numer Orange w I18 jako ułamek (``4.801234567E9``), a ten sam numer w AT18 jako liczbę całkowitą."""
+
+    centrum = settling_centrum(tmp_path)
+    write_quantity_source(centrum.collective_file, [{"I": ORANGE_NUMBER, "AT": ORANGE_NUMBER, "AS": PHONE_NUMBER}])
+    as_fraction = re.compile(rb'(<c r="I18"[^>]*><v>)' + ORANGE_VALUE.encode() + rb"(</v>)")
+
+    def fraction(name: str, data: bytes) -> bytes:
+        if name != "xl/worksheets/sheet1.xml":
+            return data
+        changed, count = as_fraction.subn(rb"\g<1>4.801234567E9\g<2>", data)
+        assert count == 1
+        return changed
+
+    rewrite_parts(centrum.collective_file, fraction)
+    return NumbersInCells(centrum, {18: {"AT": "[numer Orange]", "AS": "[telefon]"}})
+
+
+def _numbers_pricing(tmp_path: Path, stack: ExitStack) -> NumbersInCells:
+    """Numer Orange także w kolumnie ilości (O) dwóch zleceń: wiersz 18 ma tę wycenę już w efenix (okno czyta ilości ze
+    strony zlecenia), a wiersz 19 nie ma żadnej (okno wpisuje ilość)."""
+
+    amount = float(amount_of({"012": ORANGE_NUMBER}))
+    cells: dict[str, CellValue] = {"I": ORANGE_NUMBER, "O": ORANGE_NUMBER, "AQ": ORANGE_NUMBER, "AT": PHONE_NUMBER}
+    priced = Order("#ZLKW04", cells=cells, amount=amount, quantities={"012": ORANGE_NUMBER})
+    unpriced = Order("#ZLKW05", cells={"O": ORANGE_NUMBER}, amount=amount)
+    atrapa = stack.enter_context(atrapa_efenix([priced.in_efenix("704"), unpriced.in_efenix("705")]))
+    centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+    write_collective_file(centrum.period_parent, [priced, unpriced])
+    masked = {18: {"O": "[numer Orange]", "AQ": "[numer Orange]", "AT": "[telefon]"}, 19: {"O": "[numer Orange]"}}
+    elsewhere = {
+        "efenix_orders[0].file.[…]",
+        "efenix_orders[0].steps[…].quantities.[…]",
+        "efenix_orders[1].file.[…]",
+        "efenix_orders[1].steps[…].quantity",
+    }
+    return NumbersInCells(centrum, masked, frozenset(elsewhere))
+
+
+NUMBER_PROCESSES = {"preparation": _numbers_preparation, "settlement": _numbers_settlement, "efenix": _numbers_pricing}
+
+
+@pytest.mark.parametrize("process", NUMBER_PROCESSES.keys())
+def test_numer_orange_i_telefon_zapisane_przez_excel_jako_liczba_nie_wychodza_do_logow_ani_skrzynki(
+    tmp_path: Path, process: str
+) -> None:
+    """Numer Orange i telefon, które Excel trzyma jako liczbę, strażnik porównuje w tekście, który pokazuje Excel (numer
+    zapisany jako ułamek to jego cyfry), więc liczba w innej komórce Kopii wejścia i w ilości przy zleceniu Wyceny w
+    efenix (z pliku, ze strony zlecenia i wpisana w oknie) staje się w całości maską z uwagą techniczną o jej miejscu;
+    nic z tego nie wychodzi do pliku Logów ani do Skrzynki Zgłoszeń."""
+
+    with ExitStack() as stack:
+        setup = NUMBER_PROCESSES[process](tmp_path, stack)
+        centrum = setup.centrum
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})
+        assert started.status_code == 200, started.json()
+        result = finished_view(centrum.client)["result"]
+
+    assert result["stop_kind"] is None, result["stops"]
+    box: FakeReportBox = centrum.surroundings.report_box
+    assert box.wait_until(
+        lambda fake: any(issue.label == "logi-uruchomienia" and issue.comments for issue in fake.background_issues)
+    )
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    [sheet] = copied["sheets"]
+    rows = {row["row"]: (index, row["cells"]) for index, row in enumerate(sheet["rows"])}
+    assert {number: {letter: rows[number][1].get(letter) for letter in cells} for number, cells in setup.masked.items()} == setup.masked
+    orange = "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: {}."
+    assert record["input_copy_notes"] == [
+        orange.format(f"input_copy[0].sheets[0].rows[{rows[number][0]}].cells.[…]")
+        for number, cells in sorted(setup.masked.items())
+        if "[numer Orange]" in cells.values()
+    ]
+    card = len(result["technical_notes"])
+    assert record["technical_notes"][:card] == result["technical_notes"], "uwagi techniczne karty"
+    assert {re.sub(r"steps\[\d+\]", "steps[…]", note) for note in record["technical_notes"][card:]} == {
+        orange.format(place) for place in setup.elsewhere
+    }
+    texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
+    sent = in_box(box) + [part for issue in box.issues for part in (issue.title, issue.body, *issue.comments)]
+    assert any("[numer Orange]" in part for part in sent), "Kopia wejścia w pliku Logów w Archiwum"
+    assert [value for value in (ORANGE_VALUE, str(PHONE_NUMBER)) if any(value in text for text in texts + sent)] == []

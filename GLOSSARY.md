@@ -613,11 +613,15 @@ zlecenia Rejestru zleceń, które przeczytało dla okresu, a Przebieg rozliczeń
 Wycena w efenix Wiersze danych Pliku zbiorczego (Wycena z wartościami, które
 policzył Excel, także `Kwota`). Wiersz ma numer i wartości komórek po literze
 kolumny, a arkusz nagłówki kolumn; według reguły danych bez kolumn `ADRES` i
-`NUMER UMOWY/ZLECENIA ORANGE`, a wolny tekst po maskowaniu. Odcisk to rozmiar,
-chwila zmiany i skrót treści przeczytanej wersji pliku, więc Maks wie, czy jego
+`NUMER UMOWY/ZLECENIA ORANGE` (w Pliku zbiorczym kolumn B i I, także pod innym
+nagłówkiem), a wolny tekst i liczby po maskowaniu. Odcisk to rozmiar, chwila
+zmiany i skrót bajtów, z których proces przeczytał plik, więc Maks wie, czy jego
 kopia pliku jest tą samą wersją. Wyglądu komórek (Wyróżnień, formatu liczby,
 Hiperłączy) Kopia nie ma, bo proces tylko przenosi go do plików, które tworzy.
-Kopia powstaje po wyniku Uruchomienia, więc go nie spowalnia.
+Centrum składa Kopię po końcu procesu razem z resztą Logów, zanim karta pokaże
+wynik, więc tata czeka na wynik także na nią: na kopii prawdziwego Pliku
+zbiorczego (458 Wierszy danych) Kopia ze strażnikiem to ok. 50 ms na Macu Maksa
+(pomiar w PR #863).
 _Avoid_: zrzut pliku, kopia pliku taty (to cały plik, a Kopia wejścia ma tylko przeczytane wiersze)
 
 ## Urwane Uruchomienie

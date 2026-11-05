@@ -443,7 +443,7 @@ def test_rejestr_row_ending_before_the_last_column_has_an_empty_general_cell_the
         path, lambda name, data: re.sub(rb"<dimension [^>]*/>", b"", data) if name.startswith("xl/worksheets/") else data
     )
 
-    [register] = read_register(path)
+    [register] = read_register(path).sheets
 
     [row] = register.register_rows
     assert row.cells["CZYNNOŚCI ZREALIZOWANE"] == DataCell(None, PLAIN, "General", None)
@@ -453,7 +453,7 @@ def test_rejestr_row_ending_before_the_last_column_has_an_empty_general_cell_the
 def test_rejestr_rows_remembered_after_podglad_cannot_be_changed(tmp_path: Path) -> None:
     fixture = make_preparation_fixture(tmp_path)
     link_register_order_numbers(fixture.register_path, "https://firma.example/zlecenie/")
-    row = read_register(fixture.register_path, parse_period_token(PERIOD))[0].register_rows[0]
+    row = read_register(fixture.register_path, parse_period_token(PERIOD)).sheets[0].register_rows[0]
     header, cell = next((header, cell) for header, cell in row.cells.items() if cell.hyperlink is not None)
 
     with pytest.raises(TypeError):

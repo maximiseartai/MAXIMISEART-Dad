@@ -16,12 +16,12 @@ Zatrzymanie okna efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń s
 przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w przebiegu oraz jego działania aż do tego, które się
 nie udało; a Zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn.
 Wiersze danych niesie tylko Kopia wejścia (``input_copy``, #841): każdy plik taty, który Uruchomienie przeczytało, z
-odciskiem i przeczytanymi wierszami bez kolumn ``ADRES`` i numeru Orange, zebrana po wyniku z tego, co czytniki procesu
+odciskiem i przeczytanymi wierszami bez kolumn ``ADRES`` i numeru Orange, zebrana po końcu procesu z tego, co czytniki
 oddały Kopii wejścia Uruchomienia (``EndedRun.input_copy``). Poza nią komórkę cytuje tylko Komunikat
 (``ZLE_SKUTECZNE``), a pliki mają tylko nazwę, nigdy pełną ścieżkę. Przed zapisem pliku i przed wysyłką Logi przechodzą
 przez strażnika reguły danych pracy Centrum (``guarded``, ADR 0025): wartość ``ADRES`` albo numeru Orange z przeczytanych
-plików, także wpisana w inną komórkę Kopii wejścia, staje się maską z uwagą techniczną, a telefony i ulice w tekście są
-zamaskowane.
+plików, także wpisana w inną komórkę Kopii wejścia albo zapisana przez Excel jako liczba, staje się maską z uwagą
+techniczną, a telefony i ulice w tekście są zamaskowane.
 Skrypt dla maszyn nie ma działań po wyniku, więc Logów nie tworzy.
 
 Schemat 2 (#839) daje każdemu krokowi śladu godzinę (UTC) obok czasu trwania: etap ma chwilę rozpoczęcia i końca,
@@ -68,11 +68,11 @@ from pathlib import Path
 import platform
 import re
 import threading
-from typing import Final, Literal, Protocol, assert_never
+from typing import Annotated, Final, Literal, Protocol, assert_never
 
 from pydantic import BaseModel, ConfigDict
 
-from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.client_data import ForbiddenValues, Guarded
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.atomic_file import replace_atomically
@@ -127,6 +127,18 @@ ProcessFiles = Callable[[contract.ProcessKey, str], Sequence[Path]]
 
 class _Record(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class _ReadValues:
+    """Znacznik pola Logów (``Annotated``), które niesie wartości przeczytane z komórek pliku taty albo ze strony efenix,
+    także liczby: strażnik (``guarded``) maskuje w nim liczbę z zakazaną wartością albo telefonem jak tekst. Każda inna
+    liczba Logów (numer wiersza, rozmiar, czas, liczba zleceń) to liczba, którą policzyło narzędzie."""
+
+
+READ_VALUES: Final = _ReadValues()
+
+LoggedQuantity = int | str
+"""Ilość pozycji przy zleceniu Wyceny w efenix; tekst to maska strażnika (``[numer Orange]``) zamiast liczby."""
 
 
 class LoggedMessage(_Record):
@@ -329,9 +341,9 @@ class LoggedStep(_Record):
     found: int | None
     execution_date: date | None
     amount: Decimal | None
-    quantities: dict[str, int] | None
+    quantities: Annotated[dict[str, LoggedQuantity] | None, READ_VALUES]
     position: str | None
-    quantity: int | None
+    quantity: Annotated[LoggedQuantity | None, READ_VALUES]
     accepted: bool | None
     results: list[LoggedResult] | None = None
     status: str | None = None
@@ -368,7 +380,7 @@ class LoggedOrder(_Record):
     row: int
     outcome: OrderOutcome
     code: str | None
-    file: dict[str, int] | None
+    file: Annotated[dict[str, LoggedQuantity] | None, READ_VALUES]
     file_amount: Decimal
     steps: list[LoggedStep]
 
@@ -515,7 +527,7 @@ class LoggedRow(_Record):
     """Przeczytany wiersz: numer w arkuszu i niepuste komórki po literze kolumny."""
 
     row: int
-    cells: dict[str, LoggedCell]
+    cells: Annotated[dict[str, LoggedCell], READ_VALUES]
 
 
 class LoggedSheet(_Record):
@@ -768,6 +780,11 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     """Logi po strażniku reguły danych (``ForbiddenValues.guard``): każdy tekst i klucz bez zakazanych wartości, z
     zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna z kolumną i polem pliku.
 
+    Strażnik widzi każdy tekst pliku: także datę, kwotę i wartość ``Decimal``, które JSON zapisuje jako tekst. Liczbę
+    sprawdza w polu z wartościami z komórek pliku taty albo ze strony efenix (``READ_VALUES``: komórki Kopii wejścia i
+    ilości przy zleceniu Wyceny w efenix) w tekście, który pokazuje Excel (``ForbiddenValues.guard_number``), i liczba z
+    zakazaną wartością albo telefonem staje się w całości maską. Liczb, które policzyło narzędzie, nie sprawdza.
+
     Pole to ścieżka JSON z nazw pól, a klucz z danych (operator, kod pozycji) jest w niej ``[…]``, żeby uwaga nie
     niosła treści. Uwaga o polu Kopii wejścia idzie do ``input_copy_notes``, a każda inna do ``technical_notes``, które
     pokazuje karta Uruchomienia z Logów: Kopii karta nie pokazuje, więc karta po starcie Centrum zostaje taka jak przed
@@ -777,24 +794,41 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     notes: list[str] = []
     copy_notes: list[str] = []
 
-    def text(value: str, place: str) -> str:
-        found = forbidden.guard(value, place or "Logi")
+    def noted(found: Guarded, place: str) -> str:
         (copy_notes if re.split(r"[.\[]", place)[0] == _INPUT_COPY else notes).extend(found.notes)
         return found.text
 
-    def walk(value: object, place: str) -> object:
+    def text(value: str, place: str) -> str:
+        return noted(forbidden.guard(value, place or "Logi"), place)
+
+    def number(value: int | float, place: str) -> object:
+        found = forbidden.guard_number(value, place)
+        return value if found is None else noted(found, place)
+
+    def walk(source: object, value: object, place: str, read: bool) -> object:
+        """``value`` z JSON-a Logów i ``source``, z którego powstał (``None``: poza modelem Logów); ``read``: w polu
+        ``READ_VALUES``."""
+
         if isinstance(value, str):
             return text(value, place)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return number(value, place) if read else value
         if isinstance(value, list):
-            return [walk(item, f"{place}[{index}]") for index, item in enumerate(value)]
+            sources = source if isinstance(source, list) else [None] * len(value)
+            return [
+                walk(item, entry, f"{place}[{index}]", read)
+                for index, (item, entry) in enumerate(zip(sources, value, strict=True))
+            ]
         if isinstance(value, dict):
-            return {
-                text(key, place): walk(item, _field(place, key)) for key, item in value.items() if isinstance(key, str)
-            }
+            items: dict[str, object] = {}
+            for key, entry in value.items():
+                child, marked = _child(source, key)
+                items[text(key, place)] = walk(child, entry, _field(place, key), read or marked)
+            return items
         return value
 
     dumped = record.model_dump(mode="json")
-    walked = walk(dumped, "")
+    walked = walk(record, dumped, "", False)
     if walked == dumped:
         return record
     assert isinstance(walked, dict)
@@ -805,6 +839,18 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
 
 _INPUT_COPY: Final = "input_copy"
 """Pole Kopii wejścia w Logach; uwagi strażnika o nim idą do ``input_copy_notes``."""
+
+
+def _child(source: object, key: str) -> tuple[object, bool]:
+    """Wartość pod kluczem ``key`` modelu albo słownika ``source``, z którego powstał JSON Logów, i czy to pole
+    ``READ_VALUES``."""
+
+    if isinstance(source, BaseModel):
+        field = type(source).model_fields.get(key)
+        return getattr(source, key, None), field is not None and READ_VALUES in field.metadata
+    if isinstance(source, Mapping):
+        return source.get(key), False
+    return None, False
 
 
 def _field(place: str, key: str) -> str:

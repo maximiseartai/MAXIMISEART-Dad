@@ -1,15 +1,17 @@
 """Kopia wejścia (#841): Wiersze danych, które Uruchomienie procesu przeczytało z plików taty, i odcisk każdego pliku.
 
 Uruchomienie z Centrum ma swoją Kopię wejścia (``InputCopy``), a czytnik Wierszy danych, który czyta dla niego plik
-taty, oddaje jej bajty pliku i każdy przeczytany wiersz: Rejestr zleceń w Przygotowaniu pliku zbiorczego
-(``input_checks.read_register``), Plik zbiorczy w Przebiegu rozliczeń (``workbook_files.read_data_rows``) i w Wycenie
-w efenix (``workbook_files.read_computed_rows``). Proces bez Centrum (Skrypt dla maszyn) Kopii nie ma, bo nie ma Logów.
+taty, oddaje jej bajty, z których czytał plik, zakazane kolumny każdego arkusza i każdy przeczytany wiersz: Rejestr
+zleceń w Przygotowaniu pliku zbiorczego (``input_checks.read_register``), Plik zbiorczy w Przebiegu rozliczeń
+(``workbook_files.read_data_rows``) i w Wycenie w efenix (``workbook_files.read_computed_rows``). Zakazane kolumny to
+te, których komórki ten sam czytnik oddaje pamięci reguły danych (``client_data.ForbiddenValues``). Proces bez Centrum
+(Skrypt dla maszyn) Kopii nie ma, bo nie ma Logów.
 
 W trakcie odczytu Kopia trzyma tylko odwołania do bajtów i wartości, które czytnik i tak ma, i chwilę zmiany pliku.
-Plik po regule danych (``files``) powstaje po wyniku Uruchomienia: odcisk (rozmiar, chwila zmiany i skrót SHA-256
-przeczytanych bajtów) i arkusze z kolumnami po nagłówku i wierszami po numerze, bez kolumn zakazanych przez regułę
-danych (``client_data.forbidden_column``) i bez pustych komórek. Wolny tekst i wartości zakazanych kolumn w innych
-komórkach maskuje strażnik Logów (``run_logs.guarded``), jak w każdym innym polu Logów.
+Plik po regule danych (``files``) powstaje po końcu procesu, zanim karta pokaże wynik: odcisk (rozmiar, chwila zmiany
+i skrót SHA-256 przeczytanych bajtów) i arkusze z kolumnami po nagłówku i wierszami po numerze, bez zakazanych kolumn i
+bez pustych komórek. Wolny tekst i wartości zakazanych kolumn w innych komórkach, także liczby, maskuje strażnik Logów
+(``run_logs.guarded``), jak w każdym innym polu Logów.
 
 Kopia niesie wartości komórek, bo na nich proces podejmuje decyzje: wynik, Komunikaty i ślad. Wygląd komórek
 (Wyróżnienia, format liczby, Hiperłącza) proces tylko przenosi do plików, które tworzy, więc go nie ma.
@@ -17,7 +19,7 @@ Kopia niesie wartości komórek, bo na nich proces podejmuje decyzje: wynik, Kom
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
 import hashlib
@@ -26,8 +28,6 @@ from typing import Literal
 
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.formula import ArrayFormula
-
-from . import client_data
 
 TypedKind = Literal["datetime", "time", "timedelta", "other"]
 
@@ -89,11 +89,13 @@ Values = Sequence[object] | Mapping[int, object]
 
 @dataclass
 class SheetCopy:
-    """Arkusz w trakcie odczytu: nagłówek (numer kolumny → nagłówek) i odwołania do przeczytanych wierszy."""
+    """Arkusz w trakcie odczytu: nagłówek (numer kolumny → nagłówek), zakazane kolumny (numery od 1) i odwołania do
+    przeczytanych wierszy."""
 
     name: str
     header_row: int
     header: Mapping[int, object]
+    forbidden: frozenset[int]
     _rows: list[tuple[int, Values]] = field(default_factory=list)
     _empty: list[int] = field(default_factory=list)
 
@@ -108,17 +110,16 @@ class SheetCopy:
         self._empty.extend(numbers)
 
     def copied(self) -> CopiedSheet:
-        forbidden = {column for column, name in self.header.items() if client_data.forbidden_column(name) is not None}
         columns = {
             get_column_letter(column): str(name)
             for column, name in sorted(self.header.items())
-            if column not in forbidden and name is not None and str(name).strip()
+            if column not in self.forbidden and name is not None and str(name).strip()
         }
         return CopiedSheet(
             self.name,
             self.header_row,
             columns,
-            tuple(CopiedRow(number, _cells(values, forbidden)) for number, values in self._rows),
+            tuple(CopiedRow(number, _cells(values, self.forbidden)) for number, values in self._rows),
             tuple(self._empty),
         )
 
@@ -132,10 +133,11 @@ class WorkbookCopy:
     modified_at: datetime | None
     _sheets: list[SheetCopy] = field(default_factory=list)
 
-    def sheet(self, name: str, header_row: int, header: Values) -> SheetCopy:
-        """Arkusz ``name`` z nagłówkiem w wierszu ``header_row``."""
+    def sheet(self, name: str, header_row: int, header: Values, forbidden: Collection[int]) -> SheetCopy:
+        """Arkusz ``name`` z nagłówkiem w wierszu ``header_row``, bez kolumn ``forbidden`` (numery od 1), których komórki
+        czytnik oddaje pamięci reguły danych."""
 
-        sheet = SheetCopy(name, header_row, _numbered(header))
+        sheet = SheetCopy(name, header_row, _numbered(header), frozenset(forbidden))
         self._sheets.append(sheet)
         return sheet
 
@@ -162,7 +164,7 @@ class InputCopy:
         return copy
 
     def files(self) -> tuple[CopiedFile, ...]:
-        """Przeczytane pliki po regule danych, z odciskiem; liczone po wyniku Uruchomienia."""
+        """Przeczytane pliki po regule danych, z odciskiem; liczone po końcu procesu, w Logach Uruchomienia."""
 
         return tuple(copy.copied() for copy in self._files)
 
@@ -171,7 +173,7 @@ def _numbered(values: Values) -> Mapping[int, object]:
     return values if isinstance(values, Mapping) else dict(enumerate(values, start=1))
 
 
-def _cells(values: Values, forbidden: set[int]) -> dict[str, CellValue]:
+def _cells(values: Values, forbidden: frozenset[int]) -> dict[str, CellValue]:
     numbered = _numbered(values)
     return {
         get_column_letter(column): _value(value)
