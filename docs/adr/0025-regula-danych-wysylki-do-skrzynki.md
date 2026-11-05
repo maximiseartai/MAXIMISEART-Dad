@@ -109,16 +109,19 @@ telefony na okres.
   prawo od `DATA GODZ. POCZ.` ma 0 wierszy, a dwie kolumny na lewo 1:
   przesunięty pierwszy wiersz wklejenia. W innym układzie arkusza pewne
   położenie ma tylko wiersz uporządkowany. Komórki wiersza z pewnym
-  położeniem poznaje pamięć pracy Centrum tam, gdzie stoją. Wiersz bez niego
-  (bez daty z godziną w żadnym z tych miejsc albo w innym układzie arkusza)
-  ma `ADRES` i numer Orange w jednym z dwóch miejsc, a w drugim wartość innej
-  kolumny, np. `URZĄDZENIA`. Komórki z obu miejsc poznaje więc tylko pamięć
-  Uruchomienia, które niesie ten wiersz w Kopii wejścia, a strażnik maskuje je
-  w Logach tego Uruchomienia, także zacytowane w innym wierszu. Pamięć pracy
-  Centrum ich nie zna, bo maskowałaby wartość `URZĄDZENIA` w prawie każdym
-  wierszu Kopii każdego następnego Uruchomienia (na tej kopii INTERMAX 82 z 84
-  wierszy, #913), a odczyt INTERMAX bez Kopii (karta) ich nie poznaje, bo
-  komórki INTERMAX wynosi tylko Kopia. Kopia wejścia niesie z wiersza, którego
+  położeniem poznaje pamięć pracy Centrum tam, gdzie stoją, więc wiersz z
+  pewnym położeniem nie maskuje w Kopii następnych Uruchomień niczego
+  zbędnego (przed #913 przesunięty wiersz kolejnego wklejenia maskował
+  `URZĄDZENIA` w 82 z 84 wierszy Kopii na tej kopii INTERMAX). Wiersz bez
+  niego (bez daty z godziną w żadnym z tych miejsc albo w obu, albo w innym
+  układzie arkusza) ma `ADRES` i numer Orange w jednym z dwóch miejsc, a w
+  drugim wartość innej kolumny, np. `NUMER ZL.`. Jego komórki z obu miejsc
+  też poznaje pamięć pracy Centrum: Uwaga taty i Logi innego Uruchomienia,
+  które zacytują jego adres, nie czytają tego wiersza ponownie, więc tylko ta
+  pamięć je chroni. Kosztem jest maska wartości z drugiego miejsca w Kopii
+  następnych Uruchomień, gdy tata poprawi wiersz (na tej kopii INTERMAX 1
+  maska w `NUMER ZL.` po wierszu z datą jako tekstem); prywatność wygrywa
+  (decyzja w PR #917). Kopia wejścia niesie z wiersza, którego
   rozpoznanie nie czyta w jego pewnym położeniu, tylko komórki dozwolone w
   każdym możliwym położeniu (#842 i #913, tabela położeń w PR #905).
   Pamięć pracy Centrum jest jedna na pracę

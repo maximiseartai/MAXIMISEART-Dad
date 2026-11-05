@@ -924,7 +924,7 @@ def test_arkusz_zlecen_ktorego_wierszy_nie_da_sie_rozdzielic_zatrzymuje_uporzadk
 # strażnik musi je znać, gdziekolwiek stały. Pewne położenie ma wiersz uporządkowany i wiersz z datą z godziną albo pod
 # ``DATA GODZ. POCZ.``, albo dwie kolumny na lewo od niego (#913); w każdym innym ``ADRES`` i numer Orange mogą stać pod
 # nagłówkiem albo dwie kolumny na lewo od niego, więc Kopia ma z niego tylko komórki dozwolone w obu położeniach, a oba
-# zna strażnik Logów tego Uruchomienia, nie pamięć pracy Centrum.
+# zna pamięć pracy Centrum.
 # ``NUMER ZL.`` uporządkowanego wiersza, który stoi tam, gdzie numer Orange przesuniętego, cytowany w tym samym tekście
 # zostaje: może wyjść (ADR 0025).
 
@@ -1145,6 +1145,28 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
     }
 
 
+PROBED = {name: position for name, position in POSITIONS.items() if position.probe is not None}
+
+
+@pytest.mark.parametrize("position", PROBED.values(), ids=PROBED.keys())
+def test_adres_i_numer_orange_wklejonego_wiersza_w_kazdym_polozeniu_zna_uwaga_taty_po_uporzadkowaniu(
+    tmp_path: Path, position: Position
+) -> None:
+    """Uwaga taty nie ma swojego Uruchomienia, więc chroni ją tylko pamięć pracy Centrum (ADR 0025): adres i numer Orange
+    wiersza próbnego z każdego położenia z tabeli, także z wiersza bez daty z godziną w żadnym miejscu, które mogą stać
+    pod nagłówkiem albo dwie kolumny na lewo od niego (#913), Uwaga zacytowane po Uporządkowaniu wysyła zamaskowane."""
+
+    centrum = ordering_centrum(tmp_path, position.intermax)
+    if position.edit is not None:
+        position.edit(centrum.register)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    centrum.run_to_end()
+
+    draft = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": f"Klient {PROBE_ADDRESS}, umowa {PROBE_ORANGE}"})
+
+    assert draft.json()["body"].splitlines()[0] == "Klient [adres], umowa [numer Orange]"
+
+
 def _masked_cells(sheet: dict[str, Any]) -> list[tuple[int, str]]:
     """Komórki arkusza Kopii wejścia z maską strażnika ``[adres]`` albo ``[numer Orange]``: wiersz i litera kolumny."""
 
@@ -1157,17 +1179,20 @@ def _masked_cells(sheet: dict[str, Any]) -> list[tuple[int, str]]:
 
 
 @pytest.mark.parametrize(
-    "stopped", ["przesuniety_pierwszy_wiersz_kolejnego_wklejenia", "pierwszy_wiersz_z_data_jako_tekst_na_miejscu"]
+    ("stopped", "own_masks"),
+    [("przesuniety_pierwszy_wiersz_kolejnego_wklejenia", ""), ("pierwszy_wiersz_z_data_jako_tekst_na_miejscu", "I")],
 )
-def test_po_zatrzymaniu_na_wierszu_bez_pewnego_odczytu_nastepne_uporzadkowanie_ma_w_kopii_urzadzenia_i_numery_bez_maski(
-    tmp_path: Path, stopped: str
+def test_po_zatrzymaniu_na_wierszu_bez_pewnego_odczytu_nastepne_uporzadkowanie_maskuje_w_kopii_tylko_jego_mozliwe_adresy(
+    tmp_path: Path, stopped: str, own_masks: str
 ) -> None:
     """#913: Uporządkowanie staje na wklejonym wierszu, którego rozpoznanie nie czyta tam, gdzie stoi (przesunięty
     pierwszy wiersz kolejnego wklejenia z datą z godziną dwie kolumny na lewo od ``DATA GODZ. POCZ.``) albo którego
     położenia nie da się ustalić (data jako tekst). Karta czyta przy tym INTERMAX z tym wierszem. Po poprawieniu
     wiersza przez tatę następne Uporządkowanie w tej samej pracy Centrum kończy się wynikiem, a jego Kopia wejścia ma
-    każdą komórkę wklejenia bez maski, także ``URZĄDZENIA`` i ``NUMER ZL.``; zamaskowany zostaje tylko adres i numer
-    Orange zacytowane w ``CZYNNOŚCI ZREALIZOWANE`` ostatniego zlecenia."""
+    ``URZĄDZENIA`` każdego wiersza bez maski. Zamaskowany jest adres i numer Orange zacytowane w ``CZYNNOŚCI
+    ZREALIZOWANE`` ostatniego zlecenia, a w wierszu bez pewnego położenia także ``own_masks``: komórka, która w drugim
+    możliwym położeniu stała pod zakazaną kolumną, bo pamięć pracy Centrum zna wartości z obu (koszt decyzji #913:
+    numer Orange w ``NUMER ZL.``); wiersz z pewnym położeniem nie ma maski zbędnej."""
 
     position = POSITIONS[stopped]
     assert position.probe is not None
@@ -1178,7 +1203,7 @@ def test_po_zatrzymaniu_na_wierszu_bez_pewnego_odczytu_nastepne_uporzadkowanie_m
     [first] = centrum.run_logs()
     assert [message["code"] for message in first["messages"] if message["kind"] == "stop"] == [position.stop]
 
-    Intermax(ordered=ORDERED, raw=_pasted(index, _probe(PASTED[index]))).write(centrum.register)
+    layout = Intermax(ordered=ORDERED, raw=_pasted(index, _probe(PASTED[index]))).write(centrum.register)
     assert centrum.client.get("/api/intermax/days").status_code == 200
     centrum.run_to_end()
 
@@ -1187,8 +1212,9 @@ def test_po_zatrzymaniu_na_wierszu_bez_pewnego_odczytu_nastepne_uporzadkowanie_m
     [copied] = second["input_copy"]
     [sheet] = copied["sheets"]
     assert [row["cells"]["G"] for row in sheet["rows"]] == [order.kind for order in PASTED]
-    assert [row["cells"]["I"] for row in sheet["rows"]] == [f"ZL-{order.number}" for order in PASTED]
-    assert _masked_cells(sheet) == [(centrum.layout.raw_rows[-1], "M")]
+    assert _masked_cells(sheet) == sorted(
+        [*((layout.raw_rows[index], letter) for letter in own_masks), (layout.raw_rows[-1], "M")]
+    )
 
 
 def test_adres_przesunietego_wiersza_z_data_z_godzina_zna_pamiec_pracy_centrum_takze_w_nastepnym_uporzadkowaniu(

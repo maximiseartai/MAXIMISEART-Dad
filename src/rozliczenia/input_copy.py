@@ -17,12 +17,6 @@ polu Logów.
 
 Kopia niesie wartości komórek, bo na nich proces podejmuje decyzje: wynik, Komunikaty i ślad. Wygląd komórek
 (Wyróżnienia, format liczby, Hiperłącza) proces tylko przenosi do plików, które tworzy, więc go nie ma.
-
-Wiersz INTERMAX bez pewnego położenia (``raw_orders.Shifts.possible``) ma wartość ``ADRES`` i numeru Orange w jednym
-z dwóch miejsc, a w drugim wartość innej kolumny, np. ``URZĄDZENIA``. Komórki z obu miejsc poznaje więc pamięć
-Uruchomienia (``possibly_forbidden``, #913), nie pamięć pracy Centrum: strażnik maskuje je w Logach tego Uruchomienia
-(``run_logs.RunLog.of``), także zacytowane w innym wierszu Kopii, a następne Uruchomienie, które czyta poprawiony
-wiersz, nie dostaje maski w miejscu wartości ``URZĄDZENIA`` każdego wiersza. Tylko Kopia wynosi komórki INTERMAX.
 """
 
 from __future__ import annotations
@@ -36,8 +30,6 @@ from typing import Literal
 
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.formula import ArrayFormula
-
-from .client_data import ForbiddenValues
 
 TypedKind = Literal["datetime", "time", "timedelta", "other"]
 
@@ -181,15 +173,10 @@ class WorkbookCopy:
 
 
 class InputCopy:
-    """Kopia wejścia jednego Uruchomienia procesu z Centrum; pliki w kolejności odczytu.
-
-    ``possibly_forbidden``: pamięć reguły danych tego Uruchomienia, z wartościami, które w przeczytanym wierszu bez
-    pewnego położenia mogą stać pod zakazaną kolumną; maskuje je strażnik Logów tego Uruchomienia.
-    """
+    """Kopia wejścia jednego Uruchomienia procesu z Centrum; pliki w kolejności odczytu."""
 
     def __init__(self) -> None:
         self._files: list[WorkbookCopy] = []
-        self.possibly_forbidden = ForbiddenValues()
 
     def workbook(self, path: Path, content: bytes, modified: datetime | None) -> WorkbookCopy:
         """Plik ``path`` przeczytany z bajtów ``content``; ``modified``: chwila zmiany pliku sprzed odczytu bajtów
