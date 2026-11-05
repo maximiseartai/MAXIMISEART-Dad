@@ -83,9 +83,9 @@ class Stop:
     (DRY-RUN) albo ``Process.summary_not_shown`` (RUN).
 
     ``trace``: ślad wywołań dla Zgłoszenia do Maksa i Logów Uruchomienia:
-    nieoczekiwanego wyjątku (``unexpected``, ``after_engine``) i własnego
-    zatrzymania „do Maksa”, które ma przyczynę w wyjątku (``StopError`` z
-    ``__cause__``), z łańcuchem przyczyn. ``facts``: fakty Zatrzymania procesu
+    nieoczekiwanego wyjątku (``unexpected``, ``after_engine``) i każdego
+    własnego zatrzymania, które ma przyczynę w wyjątku (``StopError`` z
+    ``__cause__``), także dla taty, z łańcuchem przyczyn (#976). ``facts``: fakty Zatrzymania procesu
     dla Logów Uruchomienia (``StopError.facts``). Oba nie należą do tożsamości
     Zatrzymania i nie trafiają do dziennika ani metryk.
     """
@@ -247,15 +247,16 @@ class _Observation:
 def _stop_from(error: Exception, process: Process[Any, Any]) -> Stop:
     """Własne zatrzymanie procesu z jego Komunikatem i faktami; każdy inny wyjątek to Komunikat nieoczekiwanego błędu.
 
-    Własne zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn, bo Maks ustala z niego,
-    gdzie proces stanął.
+    Własne zatrzymanie z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn, bo Maks ustala z niego, gdzie proces
+    stanął, także przy Zatrzymaniu dla taty: Wycena w efenix, której okno nie wystartowało, mówi w nim, która droga
+    startu zawiodła (``EfenixUnreachable``, ``BrowserNotStarted``) i z jakim wyjątkiem (#976).
     """
 
     if isinstance(error, Declined):
         return Stop("declined", error.message)
     if isinstance(error, StopError):
         stop = Stop("stop", error.message, facts=error.facts)
-        if stop.stop_kind == "for_maks" and error.__cause__ is not None:
+        if error.__cause__ is not None:
             return replace(stop, trace=CallTrace.of(error))
         return stop
     return Stop("unexpected", process.unexpected_failure, CallTrace.of(error))

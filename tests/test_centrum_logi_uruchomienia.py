@@ -12,6 +12,7 @@ from datetime import datetime, time as time_of_day, timedelta, timezone
 from decimal import Decimal
 import errno
 import hashlib
+import importlib.util
 from http import HTTPStatus
 import json
 import os
@@ -59,7 +60,17 @@ from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.telemetry import MetricsStore
 
-from tests.fixtures.atrapa_efenix import CATALOG, AtrapaEfenix, AtrapaOrder, Changed, amount_of, atrapa_efenix
+from tests.fixtures.atrapa_efenix import (
+    CATALOG,
+    LIST_PAGE,
+    TODAY,
+    AtrapaEfenix,
+    AtrapaOrder,
+    Changed,
+    Outage,
+    amount_of,
+    atrapa_efenix,
+)
 from tests.fixtures.centrum import (
     TOOL_COMMIT,
     FakeGitHub,
@@ -289,6 +300,8 @@ ENDINGS = {
         "podgląd",
         ("BLAD_KRYTYCZNY", "stop", "for_tata"),
         [("stop", "BRAK_PLIKU_ZBIORCZEGO")],
+        # Zatrzymanie dla taty z przyczyną w wyjątku (``WorkbookError``) też ma ślad wywołań (#976).
+        "rozliczenia.message.StopError",
         files_unchanged=True,
     ),
     "decyzja-przerwij": Ending(
@@ -1196,7 +1209,8 @@ def test_okno_efenix_zamkniete_w_trakcie_logowania_zatrzymuje_wycene_od_razu_a_c
 ) -> None:
     """Tata zamyka okno efenix albo całą przeglądarkę, zanim się zalogował: Wycena zatrzymuje się po kilku sekundach, nie
     po 15 minutach limitu logowania, z Komunikatem o zamkniętym oknie, Powiadomienie to mówi, a Centrum od razu przyjmuje
-    następne Uruchomienie."""
+    następne Uruchomienie. Logi tej Wyceny nazywają w śladzie wywołań drogę startu, która zawiodła (zamknięte okno), choć
+    to Zatrzymanie dla taty (#976)."""
 
     with atrapa_efenix([PRICED[0].in_efenix("611")]) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa, "--remote-debugging-port=0")
@@ -1218,6 +1232,12 @@ def test_okno_efenix_zamkniete_w_trakcie_logowania_zatrzymuje_wycene_od_razu_a_c
         200,
     )
     assert (notification["stopped"], notification["orders"], notification["unread"]) == (result["stops"][0]["what"], None, True)
+    [logged] = [record for record in records(centrum) if record["process"] == "efenix"]
+    trace = logged["trace"]
+    assert ([trace["exception_type"], *(link["exception_type"] for link in trace["causes"])][:2], logged["stop_kind"]) == (
+        ["rozliczenia.message.StopError", "rozliczenia.efenix_pricing.WindowClosed"],
+        "for_tata",
+    )
 
 
 # Zatrzymanie okna efenix przy wierszu 19, gdy wiersz 18 jest już gotowy (Zgłoszenia #19 i #20 z
@@ -1321,6 +1341,129 @@ def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_
     traced_text = json.dumps(record["efenix_orders"], ensure_ascii=False)
     assert [order.number for order in STOPPED_AT_SECOND if order.number.removeprefix("#") in traced_text] == []
     assert [marker for marker in ("TESTOWA", "Testowa", "Miasto-Dzielnica") if marker in text] == [], "ADRES"
+
+
+@dataclass(frozen=True)
+class StartPath:
+    """Droga startu okna efenix, która kończy Wycenę Zatrzymaniem (tabela w ``tests/test_tabela_zatrzyman_efenix.py``):
+    jak test ją wywołuje i co mówią o niej Logi Uruchomienia.
+
+    ``driver``: sterownik Playwrighta pod adresem, pod którym go nie ma; ``profile_file``: folder profilu przeglądarki
+    okna jest plikiem, więc przeglądarka nie startuje; ``outage``, ``error_answer``: Atrapa przy pierwszym żądaniu.
+    ``cause``: przyczyna techniczna ``efenix_stop.cause`` bez pól ``None`` (``error_type`` ``None``: dowolny błąd
+    Playwrighta, którego typ zależy od systemu), ``chain``: wyjątek Zatrzymania, wyjątek okna (nazwa drogi startu) i
+    jego źródło w śladzie wywołań, ``raised``: funkcja kodu narzędzia, w której wyjątek okna powstał.
+    """
+
+    stop_kind: str
+    code: str
+    cause: dict[str, Any]
+    chain: list[str | None]
+    raised: str
+    driver: bool = False
+    profile_file: bool = False
+    outage: tuple[Outage, int] | None = None
+    error_answer: tuple[str, int, HTTPStatus] | None = None
+
+
+_BROWSER_FAILURE = "błąd przeglądarki w działaniu okna"
+_PLAYWRIGHT_ERROR = "playwright._impl._errors.Error"
+_STOP_ERROR = "rozliczenia.message.StopError"
+START_PATHS = {
+    "sterownik-playwrighta-nie-wystartowal": StartPath(
+        "for_tata",
+        "EFENIX_BRAK_PRZEGLADARKI",
+        {"what": _BROWSER_FAILURE, "error_type": "FileNotFoundError", "operation": "start sterownika Playwrighta"},
+        [_STOP_ERROR, "rozliczenia.efenix_pricing.BrowserNotStarted", "FileNotFoundError"],
+        "_playwright",
+        driver=True,
+    ),
+    "przegladarka-nie-wystartowala": StartPath(
+        "for_tata",
+        "EFENIX_BRAK_PRZEGLADARKI",
+        {"what": _BROWSER_FAILURE, "error_type": None, "operation": "start przeglądarki"},
+        [_STOP_ERROR, "rozliczenia.efenix_pricing.BrowserNotStarted", None],
+        "chrome",
+        profile_file=True,
+    ),
+    "efenix-nie-odpowiada": StartPath(
+        "for_tata",
+        "EFENIX_NIEDOSTEPNY",
+        {"part": "LIST", "what": _BROWSER_FAILURE, "error_type": _PLAYWRIGHT_ERROR, "operation": "otwarcie strony"},
+        [_STOP_ERROR, "rozliczenia.efenix_pricing.EfenixUnreachable", _PLAYWRIGHT_ERROR],
+        "open_list",
+        outage=(Outage.CUT, 0),
+    ),
+    "lista-to-strona-bledu-http": StartPath(
+        "for_maks",
+        "EFENIX_OKNO_ZATRZYMANE",
+        {"part": "LIST", "what": "strona błędu HTTP serwera efenix zamiast strony albo odpowiedzi, na którą czekało okno", "status": 500},
+        [_STOP_ERROR, "rozliczenia.efenix_pricing.UnexpectedPage", "rozliczenia.efenix_pricing.UnexpectedPage"],
+        "open_list",
+        error_answer=(LIST_PAGE, 1, HTTPStatus.INTERNAL_SERVER_ERROR),
+    ),
+}
+
+
+@pytest.mark.parametrize("path", START_PATHS.values(), ids=START_PATHS.keys())
+def test_logi_wyceny_zatrzymanej_przy_starcie_okna_efenix_nazywaja_droge_startu_typ_wyjatku_i_ramki_kodu_narzedzia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], path: StartPath
+) -> None:
+    """Okno efenix nie otwiera listy zleceń przy starcie (#976): Logi Uruchomienia, które idą do Maksa same, także przy
+    Zatrzymaniu dla taty, mówią, która droga startu zawiodła: przyczynę techniczną bez zlecenia (``row`` ``None``) i
+    ślad wywołań z nazwą wyjątku okna (``BrowserNotStarted``, ``EfenixUnreachable``, ``UnexpectedPage``), typem jego
+    źródła i ramką kodu narzędzia, w której powstał, bez treści wyjątku. Narzędzie odtwarzania pokazuje tę przyczynę, a
+    Logi nie mają adresu z Pliku zbiorczego."""
+
+    if path.driver:
+        monkeypatch.setenv("PLAYWRIGHT_NODEJS_PATH", str(tmp_path / "bez-sterownika" / "node"))
+    if path.profile_file:
+        (tmp_path / "przegladarka-efenix").write_text("", encoding="utf-8")
+    with atrapa_efenix([PRICED[0].in_efenix("611")], outage_from=path.outage, error_answer=path.error_answer) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        assert _start_pricing(centrum).status_code == 200
+        finished_view(centrum.client)
+    monkeypatch.delenv("PLAYWRIGHT_NODEJS_PATH", raising=False)
+    [record] = records(centrum)
+    stop, trace = record["efenix_stop"], record["trace"]
+    cause = {key: value for key, value in stop["cause"].items() if value is not None}
+    chain = [trace["exception_type"], *(link["exception_type"] for link in trace["causes"])][:3]
+    window_frames = trace["causes"][0]["frames"]
+
+    assert ([message["code"] for message in record["messages"]], record["stop_kind"]) == ([path.code], path.stop_kind)
+    if path.cause.get("error_type", "") is None:
+        assert cause.pop("error_type").startswith("playwright._impl._errors."), cause
+    assert cause == {key: value for key, value in path.cause.items() if value is not None}
+    assert (stop["row"], stop["order"], stop["steps"], stop["failed"]) == (None, None, [], None)
+    if path.chain[2] is None:
+        assert chain[2].startswith("playwright._impl._errors."), chain
+    assert chain == [path.chain[0], path.chain[1], path.chain[2] or chain[2]]
+    assert (window_frames[-1]["file"], window_frames[-1]["function"]) == ("src/rozliczenia/efenix_browser.py", path.raised)
+    text = log_files(centrum)[0].read_text(encoding="utf-8")
+    assert [marker for marker in ("TESTOWA", "Testowa", "Miasto-Dzielnica") if marker in text] == [], "ADRES"
+
+    replay_lines = _replay_report(capsys, log_files(centrum)[0])
+    [shown] = [line for line in replay_lines if line.startswith("Przyczyna w Logach: ")]
+    logged = stop["cause"]
+    details = [str(logged[key]) for key in ("operation", "error_type") if logged[key] is not None]
+    details += [] if logged["status"] is None else [f"HTTP {logged['status']}"]
+    assert shown.split("; wyjątki ")[0] == f"Przyczyna w Logach: okno efenix przy starcie okna: {logged['what']} ({', '.join(details)})"
+    assert f"; wyjątki {' ← '.join(chain)}" in shown and shown.endswith(f" w {path.raised}"), shown
+
+
+REPLAY_TOOL = Path(__file__).resolve().parents[1] / "tools" / "odtworz_uruchomienie.py"
+
+
+def _replay_report(capsys: pytest.CaptureFixture[str], logs: Path) -> list[str]:
+    """Linie raportu narzędzia odtwarzania (``tools/odtworz_uruchomienie.py``) z pliku Logów ``logs`` na tym drzewie."""
+
+    spec = importlib.util.spec_from_file_location("odtworz_uruchomienie", REPLAY_TOOL)
+    assert spec is not None and spec.loader is not None
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    capsys.readouterr()
+    tool.main([str(logs), "--na-tym-drzewie", "--efenix-dzis", TODAY.isoformat()])
+    return capsys.readouterr().out.splitlines()
 
 
 def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_i_bez_adresu(tmp_path: Path) -> None:

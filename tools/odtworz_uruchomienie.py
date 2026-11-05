@@ -27,8 +27,9 @@ dzień kalendarza Atrapy (bez parametru dzień startu Uruchomienia). ``--zachowa
 pliki, które zapisał proces, i ``odtworzone-logi.json``; bez niego wszystko znika po końcu.
 
 Na stdout trafia raport: w pierwszej linii ``ODTWORZENIE ZGODNE``, ``ODTWORZENIE RÓŻNE`` albo ``NIE DA SIĘ
-ODTWORZYĆ: <powód>``, potem Uruchomienie, kod, pierwsza różnica (pole Logów, wartość w Logach i w odtworzeniu),
-porównane części i granice Logów, które mogą tłumaczyć różnicę. Kod wyjścia: 0 zgodne, 1 różne, 3 nie da się
+ODTWORZYĆ: <powód>``, potem Uruchomienie, kod, przyczyna Zatrzymania z Logów (przyczyna techniczna Zatrzymania okna
+efenix i łańcuch wyjątków śladu wywołań z drogą startu okna, która zawiodła), pierwsza różnica (pole Logów, wartość w
+Logach i w odtworzeniu), porównane części i granice Logów, które mogą tłumaczyć różnicę. Kod wyjścia: 0 zgodne, 1 różne, 3 nie da się
 odtworzyć, 2 błąd parametrów albo pliku. Narzędzie nie pisze nic do repozytorium (poza chwilową kopią commitu) ani do
 Skrzynki Zgłoszeń.
 """
