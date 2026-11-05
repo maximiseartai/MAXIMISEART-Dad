@@ -12,9 +12,10 @@ z czasami i odczytem strony po każdym (``LoggedStep``, #843): przy szukaniu ka�
 realizatora, zgodnością numeru i nazwami części adresu, którymi różni się od ``ADRES`` (``LoggedResult``), przy otwarciu
 zlecenia jego status i realizator, a ze strony zlecenia data wykonania, kwota i ilości wszystkich pozycji. Bez numeru
 zlecenia i bez danych adresowych z pliku i z efenix.
-Zatrzymanie okna efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń sprzed niego i ``LoggedWindowStop``:
-przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w przebiegu oraz jego działania aż do tego, które się
-nie udało; a Zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn.
+Zatrzymanie okna efenix albo zapisu z wyprzedzeniem w Śladzie Wyceny Emmetta (``efenix_pricing.PricingStopped``) daje
+ślad zleceń sprzed niego i ``LoggedWindowStop``: przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w
+przebiegu oraz jego działania aż do tego, które się nie udało; a Zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad
+wywołań z łańcuchem przyczyn (przy zapisie śladu typ błędu zapisu pliku i miejsce w kodzie).
 Logi nie mają treści komórek: żadne pole nie niesie Wiersza danych, a pliki mają tylko nazwę, nigdy pełną ścieżkę.
 Komórkę cytuje tylko Komunikat (``ZLE_SKUTECZNE``), więc przed zapisem pliku i przed wysyłką Logi przechodzą przez
 strażnika reguły danych pracy Centrum (``guarded``, ADR 0025): wartość ``ADRES`` albo numeru Orange z przeczytanych
@@ -85,6 +86,7 @@ from rozliczenia.centrum.tool_update import Release
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.domain import ProgressPhase, SettlementSummary, WorkerStatus
 from rozliczenia.efenix_pricing import (
+    AheadNotSaved,
     BrowserFailure,
     Closed,
     ElementCount,
@@ -99,8 +101,8 @@ from rozliczenia.efenix_pricing import (
     PricingSummary,
     Ready,
     Settled,
+    StopCause,
     StoppedOrder,
-    WindowCause,
 )
 from rozliczenia.efenix_checks import ListedRead
 from rozliczenia.efenix_positions import file_quantities
@@ -401,10 +403,11 @@ class LoggedOrder(_Record):
 
 
 class LoggedCause(_Record):
-    """Przyczyna techniczna Zatrzymania okna efenix z zamkniętej listy (``efenix_pricing.WindowCause``), bez treści strony
-    i wyjątku: ``part`` to część strony (nazwa ``PagePart``, ``None`` poza stronami efenix), a ``what`` przyczyna z listy.
+    """Przyczyna techniczna Zatrzymania Wyceny w efenix z zamkniętej listy (``efenix_pricing.StopCause``), bez treści
+    strony i wyjątku: ``part`` to część strony (nazwa ``PagePart``, ``None`` poza stronami efenix), a ``what`` przyczyna z
+    listy.
 
-    ``positions``: kod pozycji, której dotyczy budowa. ``element`` i ``count``: selektor z kodu okna i ile razy jest na
+    ``positions``: kod pozycji, której dotyczy budowa albo zapis z wyprzedzeniem w Śladzie Wyceny Emmetta. ``element`` i ``count``: selektor z kodu okna i ile razy jest na
     stronie. ``status``: status HTTP strony błędu efenix. ``error_type`` i ``operation``: typ wyjątku Playwrighta i
     działanie przeglądarki (``None``: działanie bez nazwy).
     """
@@ -419,7 +422,7 @@ class LoggedCause(_Record):
     operation: str | None = None
 
     @classmethod
-    def of(cls, part: PagePart | None, cause: WindowCause) -> LoggedCause:
+    def of(cls, part: PagePart | None, cause: StopCause) -> LoggedCause:
         name = None if part is None else part.name
         match cause:
             case ElementCount(selector, count):
@@ -437,6 +440,8 @@ class LoggedCause(_Record):
                 )
             case LoginSign() | Closed():
                 return cls(part=name, what=cause.value)
+            case AheadNotSaved(position):
+                return cls(part=name, what=_AHEAD_NOT_SAVED, positions=[position])
             case _:
                 assert_never(cause)
 
@@ -444,10 +449,12 @@ class LoggedCause(_Record):
 _ELEMENT_COUNT: Final = "element strony nie występuje dokładnie raz"
 _BROWSER_FAILURE: Final = "błąd przeglądarki w działaniu okna"
 _HTTP_STATUS: Final = "strona błędu HTTP serwera efenix zamiast strony zlecenia"
+_AHEAD_NOT_SAVED: Final = "Ślad Wyceny Emmetta nie zapisał ilości z wyprzedzeniem, więc okno jej nie wpisało"
 
 
 class LoggedWindowStop(_Record):
-    """Zatrzymanie okna efenix w Wycenie w efenix: przyczyna techniczna i zlecenie, przy którym okno stanęło.
+    """Zatrzymanie okna efenix albo zapisu z wyprzedzeniem w Śladzie Wyceny Emmetta w Wycenie w efenix: przyczyna
+    techniczna i zlecenie, przy którym Wycena stanęła.
 
     ``row``: wiersz Pliku zbiorczego, ``order`` z ``orders``: miejsce zlecenia w przebiegu (od 1), ``steps``: udane
     działania okna przy nim, ``failed``: działanie, które się nie udało, z rodzajem i czasem. Przy Zatrzymaniu przed
@@ -534,11 +541,11 @@ class RunLog(_Record):
     """Wpisy urządzenia i czynności INTERMAX (ADR 0019). ``None``: inne procesy, Uporządkowanie bez podsumowania
     i pliki sprzed tego pola."""
     efenix_orders: list[LoggedOrder] | None = None
-    """Ślad każdego zlecenia Wyceny w efenix po kolei, a po Zatrzymaniu okna efenix każdego zlecenia sprzed niego.
+    """Ślad każdego zlecenia Wyceny w efenix po kolei, a po Zatrzymaniu z ``efenix_stop`` każdego zlecenia sprzed niego.
     ``None``: inne procesy, Wycena w efenix bez podsumowania i bez Zatrzymania okna oraz pliki sprzed tego pola."""
     efenix_stop: LoggedWindowStop | None = None
-    """Zatrzymanie okna efenix z przyczyną techniczną. ``None``: inne procesy, Wycena w efenix bez takiego Zatrzymania
-    i pliki sprzed tego pola."""
+    """Zatrzymanie okna efenix albo zapisu z wyprzedzeniem w Śladzie Wyceny Emmetta z przyczyną techniczną. ``None``: inne
+    procesy, Wycena w efenix bez takiego Zatrzymania i pliki sprzed tego pola."""
     environment: Environment
     trace: CallTrace | None
     diagnosis: LoggedDiagnosis | None

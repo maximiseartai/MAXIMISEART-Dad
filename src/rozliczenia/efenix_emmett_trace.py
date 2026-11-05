@@ -31,7 +31,8 @@ dysku. Ślad niczego nie wysyła.
 Każdy zapis zastępuje plik atomowo (plik tymczasowy i zamiana), więc przerwanie w trakcie zostawia poprzedni ślad. Brak
 pliku albo klucza i plik, którego nie da się przeczytać albo który ma inną budowę, to brak śladu; także plik wersji sprzed
 zapisu z wyprzedzeniem, w którym „Emmett załadowany” nie ma ilości, które narzędzie zaczęło wpisywać. Zapis, który się nie
-udał, zwraca ``False``, ślad zostaje w pamięci, a narzędzie usuwa plik śladu z dysku, bo poprzedni ślad mógłby mieć
+udał, zwraca ``False``, a jego błąd daje ``failure`` (dla śladu wywołań w Logach Uruchomienia); ślad zostaje w pamięci, a
+narzędzie usuwa plik śladu z dysku, bo poprzedni ślad mógłby mieć
 „Emmett załadowany” przy zleceniu, które jest już gotowe. Następny udany zapis zapisuje cały ślad z pamięci. Gdy pliku nie
 da się ani zastąpić, ani usunąć, zostaje na dysku poprzedni ślad; ma on każdą ilość, którą narzędzie wpisało w efenix.
 """
@@ -82,12 +83,20 @@ class EmmettTrace:
         self._secret_saved = secret is not None
         self._secret = secrets.token_bytes(_SECRET_BYTES) if secret is None else secret
         self._orders = {} if secret is None else _read(path)
+        self._failure: OSError | None = None
 
     @property
     def path(self) -> Path:
         """Plik śladu okresu."""
 
         return self._path
+
+    @property
+    def failure(self) -> OSError | None:
+        """Błąd ostatniego zapisu pliku śladu albo klucza, który się nie udał; ``None``, gdy ostatni zapis się udał albo
+        zapisu jeszcze nie było."""
+
+        return self._failure
 
     def emmett(self, number: str) -> Mapping[str, int] | None:
         """Wycena Emmetta zlecenia o ``Numer dokumentu`` równym ``number`` w stanie „Emmett załadowany” (kod ``NNN`` →
@@ -146,30 +155,34 @@ class EmmettTrace:
         return hmac.new(self._secret, number.encode("utf-8"), hashlib.sha256).hexdigest()
 
     def _save(self) -> bool:
-        """Cały ślad z pamięci w pliku śladu; ``False`` (i plik śladu usunięty, gdy się da), gdy zapis się nie udał."""
+        """Cały ślad z pamięci w pliku śladu; ``False`` (i plik śladu usunięty, gdy się da), gdy zapis się nie udał, a
+        jego błąd w ``failure``."""
 
-        if not self._secret_saved:
-            self._secret_saved = _replace(self._secret_path, self._secret.hex())
-        if self._secret_saved and _replace(self._path, json.dumps({"orders": self._orders}, sort_keys=True)):
+        self._failure = None if self._secret_saved else _replace(self._secret_path, self._secret.hex())
+        self._secret_saved = self._failure is None
+        if self._secret_saved:
+            self._failure = _replace(self._path, json.dumps({"orders": self._orders}, sort_keys=True))
+        if self._failure is None:
             return True
         with suppress(OSError):
             self._path.unlink(missing_ok=True)
         return False
 
 
-def _replace(path: Path, text: str) -> bool:
-    """Zastępuje plik ``path`` tekstem ``text`` atomowo; ``False``, gdy się nie udało (plik tymczasowy nie zostaje)."""
+def _replace(path: Path, text: str) -> OSError | None:
+    """Zastępuje plik ``path`` tekstem ``text`` atomowo; błąd, gdy się nie udało (plik tymczasowy nie zostaje), a
+    ``None``, gdy się udało."""
 
     temporary = path.with_name(path.name + ".tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary.write_text(text, encoding="utf-8")
         os.replace(temporary, path)
-    except OSError:
+    except OSError as error:
         with suppress(OSError):
             temporary.unlink(missing_ok=True)
-        return False
-    return True
+        return error
+    return None
 
 
 def _read_secret(path: Path) -> bytes | None:

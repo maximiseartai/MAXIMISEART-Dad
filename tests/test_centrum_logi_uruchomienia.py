@@ -1757,3 +1757,45 @@ def test_dziennik_urwany_przy_pierwszym_wpisie_start_usuwa_bez_logow(tmp_path: P
     centrum.client.stop()
 
     assert (journals(centrum), log_files(centrum)) == ([], [])
+
+
+def test_logi_zatrzymania_po_nieudanym_zapisie_sladu_wyceny_emmetta_maja_pozycje_slad_zlecen_i_blad_zapisu_pliku(
+    tmp_path: Path,
+) -> None:
+    """Pliku Śladu Wyceny Emmetta nie da się zastąpić (w jego miejscu jest folder), więc zapis ilości z wyprzedzeniem w
+    zleceniu z wiersza 19 się nie udaje, a Wycena staje „do Maksa” (#881). Logi Uruchomienia mają to, co przy Zatrzymaniu
+    okna: przyczynę z kodem pozycji, wiersz, miejsce „2 z 2”, udane działania okna przy tym zleceniu bez działania, które
+    się nie udało (okno ilości nie wpisało), ślad gotowego zlecenia z wiersza 18, a w śladzie wywołań błąd zapisu pliku
+    śladu w ``_replace``."""
+
+    with atrapa_efenix([PRICED[0].in_efenix("611"), STOPPED_AT_SECOND[1].in_efenix("617")]) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        (tmp_path / "slad-wyceny-emmetta" / f"{PERIOD}.json").mkdir(parents=True)
+        write_collective_file(centrum.period_parent, STOPPED_AT_SECOND)
+        assert _start_pricing(centrum).status_code == 200
+        assert finished_view(centrum.client)["result"]["result"] == "BLAD_KRYTYCZNY"
+    [record] = records(centrum)
+    stop, trace = record["efenix_stop"], record["trace"]
+
+    assert ([(message["kind"], message["code"]) for message in record["messages"]], record["stop_kind"]) == (
+        [("stop", "EFENIX_SLAD_NIEZAPISANY")],
+        "for_maks",
+    )
+    assert {key: value for key, value in stop["cause"].items() if value is not None} == {
+        "what": "Ślad Wyceny Emmetta nie zapisał ilości z wyprzedzeniem, więc okno jej nie wpisało",
+        "positions": ["012"],
+    }
+    assert (stop["row"], stop["order"], stop["orders"], stop["failed"]) == (19, 2, 2, None)
+    assert [step["action"] for step in stop["steps"]] == [
+        "szukanie",
+        "otwarcie zlecenia",
+        "data wykonania",
+        "otwarcie zlecenia",
+        "Wycena Emmetta",
+    ]
+    assert [(order["row"], order["outcome"]) for order in record["efenix_orders"]] == [(18, "gotowe")]
+    assert [trace["exception_type"], *(cause["exception_type"] for cause in trace["causes"])][:2] == [
+        "rozliczenia.message.StopError",
+        "rozliczenia.efenix_pricing._TraceNotSaved",
+    ]
+    assert [frame["function"] for frame in trace["causes"][-1]["frames"]][-1:] == ["_replace"]

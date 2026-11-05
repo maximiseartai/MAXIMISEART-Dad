@@ -3,7 +3,7 @@
 (* efenix, zgaśnięcie Centrum w każdym miejscu, nieudany zapis śladu i ręczne zmiany taty w efenix między            *)
 (* Uruchomieniami. Każda akcja to jeden niepodzielny krok kodu z tabeli w SKILL.md skilla                            *)
 (* verify-wznowienie-wyceny-efenix: src/rozliczenia/efenix_pricing.py (price_orders.save, _priced, _outcome,         *)
-(* _after_emmett, _entered, _mark) i src/rozliczenia/efenix_emmett_trace.py (EmmettTrace).                          *)
+(* _after_emmett, _entered, _WrittenAhead, _mark) i src/rozliczenia/efenix_emmett_trace.py (EmmettTrace).           *)
 EXTENDS Naturals, FiniteSets
 
 CONSTANTS
@@ -180,9 +180,9 @@ BrakPozycji ==
     /\ UNCHANGED <<efenix, naDysku, wPamieci, proces, zlecenie, zWycena, doWpisania, znacznik, odTaty, tataZmienial,
                    uruchomienia, zmian, awarieSladu, historia>>
 
-(* _entered: trace.entering(number, position, quantity), zapis z wyprzedzeniem pozycji, którą okno zaraz wpisze. Gdy *)
-(* się nie uda, _entered nie wpisuje ilości i zatrzymuje Wycenę (StopError, emmett_trace_not_saved), a save() oznacza  *)
-(* gotowe zlecenia sprzed niego.                                                                                     *)
+(* _WrittenAhead.enter_quantity: po przerwie tempa ludzkiego trace.entering(number, position, quantity), zapis z     *)
+(* wyprzedzeniem pozycji, którą okno zaraz wpisze. Gdy się nie uda, okno nie wpisuje ilości (_TraceNotSaved), a        *)
+(* _efenix_stops zatrzymuje Wycenę (StopError, emmett_trace_not_saved), a save() oznacza gotowe zlecenia sprzed niego. *)
 Zapowiedz ==
     LET p == Pierwsza(doWpisania)
         wpis == Zaladowany(wPamieci[zlecenie].wpisuje \cup {p}) IN
@@ -192,7 +192,7 @@ Zapowiedz ==
     /\ UNCHANGED <<efenix, proces, zlecenie, zWycena, doWpisania, wynik, znacznik, odTaty, tataZmienial,
                    uruchomienia, zmian, historia>>
 
-\* _entered: enter_quantity; efenix zapisuje ilość na serwerze po wyjściu z pola, zanim okno odczyta odpowiedź.
+\* _WrittenAhead.enter_quantity: enter_quantity okna; efenix zapisuje ilość na serwerze po wyjściu z pola, zanim okno odczyta odpowiedź.
 Wpisz ==
     LET p == Pierwsza(doWpisania) IN
     /\ proces = "dziala" /\ krok = "wpisz"
@@ -204,9 +204,9 @@ Wpisz ==
     /\ UNCHANGED <<naDysku, wPamieci, proces, zlecenie, zWycena, wynik, znacznik, tataZmienial,
                    uruchomienia, zmian, awarieSladu, slady, czysciTate, zlyZnacznik, bladBezPowodu>>
 
-(* _entered: enter_quantity zgłasza LoggedOut (odpowiedź zapisu z wynikiem nok albo przekierowana na logowanie), więc *)
-(* efenix ilości nie zapisał; trace.not_entered(number, position) wycofuje pozycję ze śladu, a StopError przechodzi     *)
-(* przez _priced bez trace.finished.                                                                                 *)
+(* _WrittenAhead.enter_quantity: okno zgłasza LoggedOut (odpowiedź zapisu z wynikiem nok albo przekierowana na       *)
+(* logowanie), więc efenix ilości nie zapisał; trace.not_entered(number, position) wycofuje pozycję ze śladu, a       *)
+(* StopError przechodzi przez _priced bez trace.finished.                                                            *)
 Odmowa ==
     /\ MozeSieZatrzymac /\ proces = "dziala" /\ krok = "wpisz"
     /\ Zapisz(zlecenie, Zaladowany(wPamieci[zlecenie].wpisuje \ {Pierwsza(doWpisania)}))
