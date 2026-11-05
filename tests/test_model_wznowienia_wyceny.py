@@ -28,7 +28,12 @@ TOOLS = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts
 PRICING = "src/rozliczenia/efenix_pricing.py"
 DRIFT = "WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM"
 
-COVERED = ("src/rozliczenia/efenix_pricing.py", "src/rozliczenia/efenix_emmett_trace.py", "src/rozliczenia/efenix_positions.py")
+COVERED = (
+    "src/rozliczenia/efenix_pricing.py",
+    "src/rozliczenia/efenix_emmett_trace.py",
+    "src/rozliczenia/efenix_positions.py",
+    "src/rozliczenia/efenix_browser.py",
+)
 
 
 def _load() -> ModuleType:
