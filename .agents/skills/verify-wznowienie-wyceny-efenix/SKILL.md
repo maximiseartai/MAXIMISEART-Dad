@@ -81,7 +81,7 @@ classification of other failures) does not move the model. A change that makes a
 write the trace file or decide whether an order is finished does, though no definition above changes: add it to the
 table and to `model/definicje.json`.
 
-Sync commit: `SYNC_895` (2026-11-05, the fix of #895 and #889). Every row of the table was checked against the code at
+Sync commit: `7cb21bc68` (2026-11-05, the fix of #895 and #889). Every row of the table was checked against the code at
 this commit. Since `de9f9ecba` only `load_emmett` changed: it no longer reads the body of the answer to „Załaduj do zlecenia”,
 which the reload drops (#895), and stops after a 2xx when the reloaded page has amount 0 although the Emmett dialog showed a
 proposal (#889, also `result: nok`), before `trace.loaded`; efenix then holds no Wycena Emmetta, which is the `Zatrzymanie` the
