@@ -81,8 +81,12 @@ classification of other failures) does not move the model. A change that makes a
 write the trace file or decide whether an order is finished does, though no definition above changes: add it to the
 table and to `model/definicje.json`.
 
-Sync commit: `c490d2497` (2026-11-05, the fix of #881 on top of #877). Every row of the table was checked against the
-code at this commit. The model did not change, only the code names in its comments: the write ahead and its withdrawal
+Sync commit: `de9f9ecba` (2026-11-05, the fix of #878 merged with #881). Every row of the table was checked against
+the code at this commit. Since `c490d2497` only `load_emmett` and `_finished` changed: a 4xx/5xx answer to „Załaduj do
+zlecenia” or to the save of a quantity is raised by `_finished` before the window reads it (#878), which is the
+`Zatrzymanie` the model already has in place of `ZaladujEmmetta` or right after it, and before or after `Wpisz`, so the
+model did not change. On the previous Sync commit `c490d2497` (the fix of #881 on top of #877) the model did not
+change either, only the code names in its comments: the write ahead and its withdrawal
 moved from `_entered` to the window `_WrittenAhead`, which the paced window wraps, so the write ahead comes after the
 human-pace pause instead of before it, and a failed write ahead stops through `_efenix_stops` with `PricingStopped`; the
 model has no time, so `Zapowiedz` and `Wpisz` stay two steps with a stop between (known finding 3). On the previous
