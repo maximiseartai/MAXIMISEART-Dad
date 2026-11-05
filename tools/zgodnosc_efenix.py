@@ -816,18 +816,17 @@ def measure_proposal(browser: Browser, efenix_url: str, report: Report, *, timeo
         report.differ(Part.PROPOSAL, f"propozycja po kliknięciu Emmetta w innej budowie niż w Atrapie: w efenix {efenix_shown}, w Atrapie {atrapa_shown}")
 
 
-def _order_tab(url: str, efenix_url: str) -> bool:
+def order_tab(url: str, efenix_url: str) -> bool:
     """Czy karta pod ``url`` to strona zlecenia efenix: ``ORDER_PAGE`` w katalogu ``efenix_url``, na jego hoście."""
 
-    address, efenix = urlparse(url), urlparse(efenix_url)
-    page = efenix.path.rpartition("/")[0] + "/" + ORDER_PAGE
-    return (address.scheme, address.netloc, address.path) == (efenix.scheme, efenix.netloc, page)
+    address = urlparse(url)
+    return f"{address.scheme}://{address.netloc}{address.path}" == urljoin(efenix_url, ORDER_PAGE)
 
 
 def _efenix_window(tabs: Sequence[Page], efenix_url: str, report: Report) -> _Window | None:
     """Okno Emmetta jedynej karty strony zlecenia efenix, w której jest widoczne; inaczej powód ``NIESPRAWDZONE``."""
 
-    orders = [tab for tab in tabs if _order_tab(tab.url, efenix_url)]
+    orders = [tab for tab in tabs if order_tab(tab.url, efenix_url)]
     try:
         windows: list[_Window] = [window for tab in orders if (window := tab.evaluate(_READ_WINDOW, [DIALOG, PROPOSAL])) is not None]
     except PlaywrightError:

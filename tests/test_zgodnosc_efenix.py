@@ -792,6 +792,20 @@ def test_lista_dozwolonych_zadan_ma_tylko_odczyty() -> None:
             assert not zgodnosc_efenix.allowed(method, f"https://efenix.example/app/{path}", efenix), (method, path)
 
 
+def test_karta_strony_zlecenia_to_strona_zlecenia_w_katalogu_i_na_hoscie_adresu_efenix() -> None:
+    efenix = "https://efenix.example/app/index.php"
+
+    assert zgodnosc_efenix.order_tab(f"https://efenix.example/app/{ORDER_PAGE}?id=1#dol", efenix)
+    for url in (
+        f"http://efenix.example/app/{ORDER_PAGE}?id=1",
+        f"https://inny.example/app/{ORDER_PAGE}?id=1",
+        f"https://efenix.example/{ORDER_PAGE}?id=1",
+        f"https://efenix.example/app/{LIST_PAGE}",
+        f"https://efenix.example/app/{ORDER_PAGE}/{LIST_PAGE}",
+    ):
+        assert not zgodnosc_efenix.order_tab(url, efenix), url
+
+
 def test_efenix_bez_odpowiedzi_w_limicie_konczy_narzedzie_bledem(chrome: str, tmp_path: Path) -> None:
     template = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", COSTS)
     # Szukanie odpowiada po 5 s, a limit czekania to 1 s; domyślny limit Playwrighta (30 s) doczekałby się odpowiedzi.
