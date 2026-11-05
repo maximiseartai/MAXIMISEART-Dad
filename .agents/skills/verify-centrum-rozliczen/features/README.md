@@ -55,6 +55,9 @@ in `<feature>.md` next to this file, driven by the skill's
 - Read side effects from the run root: `config/centrum-ustawienia.yaml`,
   `dialogs.jsonl`, `opened.jsonl`, and `logs/uruchomienia/`.
 - Change files on disk only inside the run root, and restore what a step moved.
+  Delete and rename with `remove` and `move` (`drive/common.py`), which retry while the server holds the file
+  open: on Windows that refuses the change (`WinError 32`, #921), and `centrum_self_test.py` fails on a bare
+  `.unlink()` or `.rename()` in `drive/`. Take the key away with `drop_report_key`, which leaves the file empty.
 - Capture with `Run.capture`, which waits for running transitions; a screenshot
   taken mid-transition shows content at partial opacity. A close-up is
   `Run.capture` with `clip`, so its number is checked like every other one;

@@ -9,7 +9,7 @@ import shutil
 from typing import Any
 
 from playwright.sync_api import Locator, Page, expect
-from drive.common import DAD_TIME_ZONE, Run
+from drive.common import DAD_TIME_ZONE, Run, remove
 
 FEATURE = "kopie-intermax"
 CARD = "Kopie INTERMAX"
@@ -83,12 +83,12 @@ def drive_intermax_copies(run: Run, page: Page) -> None:
     finally:
         print("  harness: the Kopie and the settings from before this feature", flush=True)
         for name in set(_kopie(folder)) - set(kopie_before):
-            (folder / name).unlink()
+            remove(folder / name)
         register.write_bytes(original)
         lock = register.with_name(f"~${register.name}")
-        lock.unlink(missing_ok=True)
+        remove(lock, missing_ok=True)
         if saved is None:
-            settings.unlink(missing_ok=True)
+            remove(settings, missing_ok=True)
         else:
             settings.write_text(saved, encoding="utf-8")
 
@@ -153,7 +153,7 @@ def _drive(
         )
         run.capture(page, "242-kopie-intermax-otwarty")
     finally:
-        lock.unlink()
+        remove(lock)
 
     run.step(FEATURE, "przywrocenie-dotykiem")
     _restore_by_touch(run, page, register, folder, original, oldest)

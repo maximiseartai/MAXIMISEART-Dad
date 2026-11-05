@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 from playwright.sync_api import Page, Request, Route, expect
 
-from drive.common import REPEAT_SETTLE_MS, Run, choose_periods_directory
+from drive.common import REPEAT_SETTLE_MS, Run, choose_periods_directory, move
 
 
 def drive_settings(run: Run, page: Page) -> None:
@@ -139,7 +139,7 @@ def drive_settings(run: Run, page: Page) -> None:
 
     run.step(feature, "ustawienia-nieistniejaca-sciezka")
     moved = Path(run.fixture["order_register"] + ".przeniesiony")
-    Path(run.fixture["order_register"]).rename(moved)
+    move(Path(run.fixture["order_register"]), moved)
     try:
         page.reload()
         expect(register.get_by_text(f"Nie ma już: {register_name}")).to_be_visible()
@@ -150,7 +150,7 @@ def drive_settings(run: Run, page: Page) -> None:
         }, "a remembered Rejestr zleceń that is gone is reported as missing")
         run.capture(page, "04-ustawienia-brak-rejestru")
     finally:
-        moved.rename(run.fixture["order_register"])
+        move(moved, run.fixture["order_register"])
     page.reload()
     expect(register.get_by_text(register_name, exact=True)).to_be_visible()
 

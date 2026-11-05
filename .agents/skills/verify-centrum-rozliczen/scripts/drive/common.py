@@ -168,6 +168,53 @@ def period_row(page: Page, token: str) -> Locator:
     return page.get_by_role("table", name="Tablica okresów").get_by_role("row").filter(has_text=token)
 
 
+# How long `remove` and `move` retry a file the server holds open on Windows; the server reads the harness's files
+# in milliseconds, so this only bounds a change that will never succeed.
+RETRY_OPEN_S = 10.0
+
+
+def _while_open(action: Callable[[], object]) -> None:
+    """Run ``action`` on a file of the run, retrying while the server holds it open, for at most ``RETRY_OPEN_S``.
+
+    The server reads the run's files from its own threads at any moment (pacing, the scripted GitHub, the queue of
+    the skrzynka Zgłoszeń, the settings, metrics and Wzorce while a page refreshes), and on Windows a file another
+    process has open can be neither deleted nor renamed (``WinError 32``, #921)."""
+
+    deadline = time.monotonic() + RETRY_OPEN_S
+    while True:
+        try:
+            action()
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+
+
+def remove(path: Path, *, missing_ok: bool = False) -> None:
+    """Harness: remove a file of the run, even while the server reads it (``_while_open``).
+
+    Every removal and rename in the drive goes through ``remove`` or ``move`` (``centrum_self_test.py`` checks it)."""
+
+    _while_open(lambda: path.unlink(missing_ok=missing_ok))
+
+
+def move(source: Path, target: Path | str) -> None:
+    """Harness: rename a file or folder of the run, even while the server reads it (``_while_open``)."""
+
+    _while_open(lambda: Path(source).rename(target))
+
+
+def drop_report_key(key_file: Path) -> None:
+    """Harness: Maks takes the key to the skrzynka Zgłoszeń away by leaving its file empty, never deleting it.
+
+    The server reads the key whenever the queue or the Powiadomienia ask the skrzynka, and an empty file is no key
+    for it (``read_report_key``), the same as no file. Rewriting succeeds while the server reads it on Windows, where
+    a removal fails (``WinError 32``, #921), as Python opens files sharing read and write."""
+
+    key_file.write_bytes(b"")
+
+
 # The Wycena w efenix metrics file of the run (`serve_centrum.py`): its Historia, from which the Droga okresu counts it.
 EFENIX_METRICS = ".wycena-efenix-metrics.jsonl"
 
@@ -340,7 +387,7 @@ def start_card_warns_while_open(
         )
         run.capture(page, shots[0])
     finally:
-        lock.unlink(missing_ok=True)
+        remove(lock, missing_ok=True)
     print(f"  harness: Excel closes {workbook.name}, so its lock file is gone; Dad returns to Centrum", flush=True)
     page.evaluate(FOCUS)
     expect(warned).to_have_count(0)

@@ -2,7 +2,8 @@
 
 Checks the frontmatter, the feature-map headings, that every helper named in
 SKILL.md exists and answers ``--help``, the gate of ``wydajnosc`` on made-up
-numbers (no browser), that evidence text is strict UTF-8 and screenshots are PNG
+numbers (no browser), that the drive removes and renames files only through
+``drive/common.py`` (``remove``, ``move``), that evidence text is strict UTF-8 and screenshots are PNG
 files, and that no workbook content (the fixture's row marker) reached the
 evidence.
 """
@@ -10,6 +11,7 @@ evidence.
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 from pathlib import Path
 import re
@@ -39,6 +41,9 @@ REQUIRED_FEATURE_HEADINGS = (
 )
 ROW_MARKER = "CENTRUM-SYN-ROW"  # create_centrum_fixture.py puts it in every synthetic workbook
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+# Path methods that fail on Windows while another process holds the file open (WinError 32, #921): the drive calls
+# them only inside ``drive/common.py``, whose ``remove`` and ``move`` retry while the server reads the file.
+RETRIED_ON_WINDOWS = ("unlink", "rename")
 
 
 def _check_skill(errors: list[str]) -> None:
@@ -69,6 +74,43 @@ def _check_feature_map(errors: list[str]) -> None:
         headings = [line for line in lines if line.startswith("## ")]
         if headings != list(REQUIRED_FEATURE_HEADINGS):
             errors.append(f"{path.name} must have exactly the H2s {REQUIRED_FEATURE_HEADINGS}, in order")
+
+
+def _check_drive_removals(errors: list[str]) -> None:
+    """The drive deletes and renames the run's files only through ``remove`` and ``move`` of ``drive/common.py``."""
+
+    for path in sorted((SCRIPTS_ROOT / "drive").glob("*.py")):
+        if path.name == "common.py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path))):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in RETRIED_ON_WINDOWS
+            ):
+                errors.append(
+                    f"drive/{path.name}:{node.lineno} calls .{node.func.attr}(); use remove or move from drive/common.py, "
+                    "which retry while the server holds the file open on Windows (#921)"
+                )
+
+
+def _check_retry_while_open(errors: list[str]) -> None:
+    """``remove`` and ``move`` outlast a file the server holds open for a moment: Windows refuses twice, then allows."""
+
+    from drive.common import _while_open
+
+    refusals = 2
+
+    def held_for_a_moment() -> None:
+        nonlocal refusals
+        if refusals:
+            refusals -= 1
+            raise PermissionError(32, "The process cannot access the file because it is being used by another process")
+
+    try:
+        _while_open(held_for_a_moment)
+    except PermissionError:
+        errors.append("drive/common.py gives up on a file the server holds open for a moment (#921)")
 
 
 def _check_performance_gate(errors: list[str]) -> None:
@@ -212,6 +254,8 @@ def main(argv: list[str] | None = None) -> int:
     errors: list[str] = []
     _check_skill(errors)
     _check_feature_map(errors)
+    _check_drive_removals(errors)
+    _check_retry_while_open(errors)
     _check_performance_gate(errors)
     _check_machine_lock(errors)
     if args.evidence_root:

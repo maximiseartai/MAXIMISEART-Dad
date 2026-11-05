@@ -12,10 +12,13 @@ from drive.common import (
     Run,
     current_run,
     diagnosis_answer,
+    drop_report_key,
     ended_run_shown,
     ensure_files_set,
     finished_result,
+    move,
     period_choice,
+    remove,
     stop_banner,
     unreadable,
 )
@@ -165,7 +168,7 @@ def drive_diagnosis(run: Run, page: Page) -> None:
     run.capture(page, "53-diagnoza-sprawdzono")
 
     run.step(FEATURE, "diagnoza-inny-komunikat")
-    lock.unlink()
+    remove(lock)
     stop_banner(page).get_by_role("button", name="Uruchom ponownie", exact=True).click()
     expect(stop_banner(page)).to_contain_text(NO_ORDERS)
     result = finished_result(run, "diagnoza-inny-komunikat")
@@ -176,7 +179,7 @@ def drive_diagnosis(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "diagnoza-do-maksa")
     aside = internal_template.with_name(f"{internal_template.name}.odlozony")
-    internal_template.rename(aside)
+    move(internal_template, aside)
     stop_banner(page).get_by_role("button", name="Uruchom ponownie", exact=True).click()
     expect(stop_banner(page)).to_contain_text(TEMPLATE_MISSING)
     result = finished_result(run, "diagnoza-do-maksa")
@@ -222,10 +225,10 @@ def drive_diagnosis(run: Run, page: Page) -> None:
         )
         run.capture(page, "56-diagnoza-do-maksa-wyjasnienie")
     finally:
-        main_commit.unlink()
+        remove(main_commit)
 
     run.step(FEATURE, "diagnoza-bez-przyczyny")
-    aside.rename(internal_template)
+    move(aside, internal_template)
     page.reload()
     stop_banner(page).get_by_role("button", name="Diagnoza", exact=True).click()
     expect(diagnosis.get_by_label("Wyjaśnienie Diagnozy")).to_contain_text(NOT_FOUND)
@@ -348,12 +351,12 @@ def drive_diagnosis(run: Run, page: Page) -> None:
         diagnosis.get_by_role("button", name="Co zostanie wysłane", exact=True).click()
         title, body = shown.locator("figcaption").inner_text(), shown.locator("pre").inner_text()
     finally:
-        fault.unlink()
+        remove(fault)
 
     run.step(FEATURE, "diagnoza-nieoczekiwany-wyjatek-zgloszenie")
     config = Path(run.fixture["settings"]).parent
     key_file = config / "zgloszenia-klucz.txt"
-    key_file.unlink(missing_ok=True)  # never there before features/zgloszenie.md
+    drop_report_key(key_file)  # no key before features/zgloszenie.md
     diagnosis.get_by_role("button", name="Wyślij do Maksa", exact=True).click()
     expect(diagnosis.get_by_role("status").filter(has_text=FOR_KEY)).to_be_visible()
     [queued_report] = [
@@ -396,13 +399,13 @@ def drive_diagnosis(run: Run, page: Page) -> None:
         )
         run.capture(page, "59b-diagnoza-klucz-odrzucony")
     finally:
-        refusing.unlink()
-        key_file.unlink()
+        remove(refusing)
+        drop_report_key(key_file)
 
     run.step(FEATURE, "diagnoza-konfiguracja-wykonawcow")
     worker_config = Path(configuration["worker_config"])
     kept = worker_config.with_name(f"{worker_config.name}.odlozony")
-    worker_config.rename(kept)
+    move(worker_config, kept)
     worker_config.write_bytes(b"\xff\xfe nie UTF-8")
     try:
         page.get_by_role("button", name="Nowe Uruchomienie procesu").click()
@@ -430,8 +433,8 @@ def drive_diagnosis(run: Run, page: Page) -> None:
         )
         run.capture(page, "59c-diagnoza-konfiguracja-wykonawcow")
     finally:
-        worker_config.unlink()
-        kept.rename(worker_config)
+        remove(worker_config)
+        move(kept, worker_config)
 
     run.step(FEATURE, "diagnoza-konfiguracja-wykonawcow-niedostepna")
     with unreadable(worker_config):

@@ -13,10 +13,13 @@ from drive.common import (
     ROW_MARKER,
     Run,
     current_run,
+    drop_report_key,
     ended_run_shown,
     ensure_files_set,
     finished_result,
+    move,
     period_choice,
+    remove,
     stop_banner,
 )
 
@@ -55,13 +58,13 @@ def _stop_for_maks(run: Run, page: Page, name: str, missing: str = "internal_tem
     page.get_by_role("radio", name="Przygotowanie pliku zbiorczego").click()
     page.get_by_role("combobox", name="Okres").click()
     page.get_by_role("option", name=period_choice(PERIOD, "Brak plików okresu"), exact=True).click()
-    template.rename(aside)
+    move(template, aside)
     try:
         page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
         expect(stop_banner(page)).to_contain_text(TEMPLATE_MISSING)
         result = finished_result(run, name)
     finally:
-        aside.rename(template)
+        move(aside, template)
     run.check(result["stop_kind"] == "for_maks", "the stop without its Wzorzec is „do Maksa”")
     view = current_run(run, name)["run"]
     assert isinstance(view, dict)
@@ -129,7 +132,7 @@ def drive_report(run: Run, page: Page) -> None:
     queue = config / "zgloszenia" / "kolejka"
     box = run.root / "skrzynka-zgloszen"
     diagnosis = page.get_by_role("region", name="Diagnoza")
-    key_file.unlink(missing_ok=True)
+    drop_report_key(key_file)
 
     run.step(FEATURE, "zgloszenie-podglad")
     page.goto(run.url)
@@ -209,7 +212,7 @@ def drive_report(run: Run, page: Page) -> None:
     run.check(refused["reports"] == "refused_key", "Konfiguracja reports the refused key")
     run.capture(page, "63b-zgloszenie-konfiguracja-odrzucony")
     print("  harness: Maks writes a new key the skrzynka accepts", flush=True)
-    refusing.unlink()
+    remove(refusing)
     key_file.write_text(KEY + "\n", encoding="utf-8")
     page.reload()
     expect(page.get_by_text("Zgłoszenia: gotowe", exact=True)).to_be_visible()
@@ -286,7 +289,7 @@ def drive_report(run: Run, page: Page) -> None:
     )
     run.capture(page, "66-zgloszenie-kolejne-uruchomienie")
     _one_open_report(run, page, box, config)
-    key_file.unlink()
+    drop_report_key(key_file)
 
 
 def _logs_sent(run: Run, queue: Path, run_id: str) -> None:
@@ -393,7 +396,7 @@ def _one_open_report(run: Run, page: Page, box: Path, config: Path) -> None:
         run.capture(page, "72-zgloszenie-bez-sieci")
     finally:
         print("  harness: the network comes back", flush=True)
-        offline.unlink()
+        remove(offline)
     _advance_clock(run)
     expect(diagnosis.get_by_role("status").filter(has_text=SENT)).to_be_visible()
     issues = _issues(box)
@@ -447,7 +450,7 @@ def _rejected_report(run: Run, page: Page, box: Path, config: Path) -> None:
         expect(rows.filter(has_text=REJECTED)).to_have_count(1)
         run.capture(page, "74b-zgloszenie-odrzucone-powiadomienia")
     finally:
-        rejecting.unlink(missing_ok=True)
+        remove(rejecting, missing_ok=True)
 
     run.step(FEATURE, "zgloszenie-odrzucone-po-starcie")
     kontrola_ilosci._close(run, page)
