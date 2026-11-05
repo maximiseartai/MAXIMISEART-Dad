@@ -19,6 +19,7 @@ from rozliczenia.centrum.period_board import observed_period_folder, requested_p
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun
 from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.input_copy import InputCopy
 from rozliczenia.settings import SettingsStore
 from rozliczenia.period_folder import PeriodFolders, period_status_label, scan_period_folders
 from rozliczenia.preparation_process import PreparationInputs
@@ -80,6 +81,7 @@ class PreparationEntry:
     def prepare(self, request: contract.RunRequest) -> PreparedRun[Any, Any]:
         paths = PREPARATION.required_paths(self.store.load())
         period = requested_period(request.period).token
+        copy = InputCopy()
         inputs = PreparationInputs(
             paths["register"],
             paths["periods_directory"],
@@ -90,9 +92,14 @@ class PreparationEntry:
             collective_template_path=self.configuration.collective_template,
             readers=self.readers,
             forbidden=self.forbidden,
+            copy=copy,
         )
         return PreparedRun(
-            declaration=PREPARATION, period=period, process=PREPARATION.core(self.processes), inputs=inputs
+            declaration=PREPARATION,
+            period=period,
+            process=PREPARATION.core(self.processes),
+            inputs=inputs,
+            input_copy=copy,
         )
 
 

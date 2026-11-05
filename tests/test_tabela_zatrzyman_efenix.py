@@ -10,8 +10,8 @@ B: pole Ilość z id spoza ``INDEKS_NNN_…``, kod pozycji dwa razy albo wartoś
 C: ``#data_install`` albo ``#cena_all2`` nie dokładnie raz (``ElementCount`` z selektorem i liczbą) albo data lub
 kwota w innej postaci (``Shape.DATE_TEXT``, ``Shape.AMOUNT_TEXT``).
 D: błąd Playwrighta (``BrowserFailure``: typ wyjątku i działanie przeglądarki, ``Operation``, np. ``OPEN`` przy
-``goto``, ``ELEMENT`` przy czekaniu na element, ``ANSWER`` przy odpowiedzi) albo strona błędu serwera efenix pod adresem
-strony zlecenia (``HttpStatus`` ze statusem).
+``goto``, ``ELEMENT`` przy czekaniu na element, ``ANSWER`` przy odpowiedzi) albo strona błędu serwera efenix zamiast
+strony albo odpowiedzi, na którą okno czekało (``HttpStatus`` ze statusem).
 E: wylogowanie (``LoginSign``), formularz logowania pod adresem strony zlecenia bez przekierowania
 (``Shape.LOGIN_FORM``) i zamknięte okno (``Closed``) mają własne przyczyny.
 
@@ -53,17 +53,27 @@ TABLE = [
         "Chrome nie wystartował (brak Chrome, profil trzyma inne okno)", "start przeglądarki"),
     Row("efenix_browser", "open_list", "EfenixUnreachable(failed.failure)",
         "goto listy zleceń przed pierwszym otwarciem efenix: błąd Playwrighta (Operation.OPEN)", "D przy starcie"),
+    Row("efenix_browser", "open_list", "UnexpectedPage(PagePart.LIST, HttpStatus(response.status))",
+        "lista zleceń, także przy starcie, z odpowiedzią 4xx/5xx (nawigacja nie zgłasza wtedy błędu), a pola Numer na niej "
+        "nie ma: adres odpowiada, więc to nie EfenixUnreachable (#878)", "D"),
     Row("efenix_browser", "wait_for_login", "WindowClosed(PagePart.LIST, Closed.DURING_LOGIN)",
         "karta zamknięta w czasie czekania na logowanie", "E"),
     Row("efenix_browser", "wait_for_login", "LoggedOut(PagePart.LIST, LoginSign.NO_LOGIN)",
         "tata nie zalogował się w LOGIN_TIMEOUT_MS", "E"),
+    Row("efenix_browser", "_session_open", "UnexpectedPage(PagePart.LIST, HttpStatus(response.status))",
+        "lista zleceń, o którą okno pyta w czasie czekania na logowanie, z odpowiedzią 4xx/5xx: adres odpowiada, a tata "
+        "mógł się już zalogować, więc to nie brak logowania po LOGIN_TIMEOUT_MS (#891)", "D"),
     Row("efenix_browser", "_ensure_logged_in", "LoggedOut(part, LoginSign.PAGE)",
         "adres karty to page_login.php po otwarciu listy (LIST) albo strony zlecenia (ORDER)", "E"),
     # --- każde działanie okna ---
     Row("efenix_browser", "guarded", "WindowClosed(part, Closed.DURING_ACTION)",
-        "dowolny wyjątek działania, gdy karta jest zamknięta", "E"),
+        "dowolny wyjątek działania, gdy karta jest zamknięta, także błąd nawigacji, który przyszedł przed wiadomością o "
+        "zamknięciu karty (#878)", "E"),
     Row("efenix_browser", "_within", "UnexpectedPage(part, failed.failure)",
         "błąd Playwrighta w działaniu przeglądarki nazwanym przez _doing: typ błędu i Operation", "D"),
+    Row("efenix_browser", "_within", "UnexpectedPage(part, answer.status)",
+        "odpowiedź 4xx/5xx na żądanie, na które okno czeka (szukanie, zapis daty, „Załaduj do zlecenia”, zapis ilości), "
+        "zanim okno ją przeczyta (#878)", "D"),
     Row("efenix_browser", "_within", "UnexpectedPage(part, BrowserFailure(exception_type(error), None))",
         "błąd Playwrighta w działaniu przeglądarki bez nazwy (przegląd odcięć sprawdza, że żadne takie nie zostało)", "D"),
     # --- strona zlecenia, której okno nie przeczytało ---
@@ -110,10 +120,9 @@ TABLE = [
         "odpowiedź „Załaduj do zlecenia” przekierowana na page_login.php", "E"),
     Row("efenix_browser", "load_emmett", "UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))",
         "odpowiedź „Załaduj do zlecenia” przekierowana gdzie indziej niż na page_login.php", "inna budowa"),
-    Row("efenix_browser", "load_emmett", "UnexpectedPage(PagePart.EMMETT, HttpStatus(answer.status))",
-        "odpowiedź „Załaduj do zlecenia” 4xx/5xx (strona błędu serwera efenix)", "D"),
-    Row("efenix_browser", "load_emmett", "LoggedOut(PagePart.EMMETT, LoginSign.REFUSED)",
-        "odpowiedź „Załaduj do zlecenia” 2xx z result: nok (wygasła sesja)", "E"),
+    Row("efenix_browser", "load_emmett", "UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.EMMETT_NOT_LOADED))",
+        "odpowiedź „Załaduj do zlecenia” 2xx, a strona po przeładowaniu ma kwotę 0, choć okno Emmetta pokazało propozycję "
+        "(result: nok, inna treść, #889); treści odpowiedzi okno nie czyta (#895)", "inna budowa"),
     # --- pole Ilość ---
     Row("efenix_browser", "enter_quantity", "UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.UNKNOWN_POSITION, position))",
         "pozycji do wpisania nie ma wśród pól ostatnio odczytanej strony", "inna budowa"),

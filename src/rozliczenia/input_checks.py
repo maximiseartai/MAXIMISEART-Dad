@@ -11,7 +11,8 @@ Sprawdzanie Przygotowania pliku zbiorczego szuka też Surowych zleceń na dole k
 Zatrzymanie.
 
 Komórki zakazanych kolumn przeczytanych arkuszy Rejestru i Surowych zleceń zna pamięć reguły danych pracy Centrum
-(``forbidden``, ADR 0025), którą Centrum podaje obok czytników; proces bez Centrum jej nie ma.
+(``forbidden``, ADR 0025), którą Centrum podaje obok czytników; proces bez Centrum jej nie ma. Wiersze Rejestru z
+Odczytu danych zna też Kopia wejścia Uruchomienia (``copy``, #841).
 """
 
 from __future__ import annotations
@@ -19,10 +20,11 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Final, TypeAlias
 
-from . import client_data, preparation_files, preparation_register, raw_orders, settlement_files, settlement_messages, workbook_files
+from . import client_data, input_copy, preparation_files, preparation_register, raw_orders, settlement_files, settlement_messages, workbook_files
 from . import preparation_messages as messages
 from .intermax_file import Register, UnsupportedShape
 from .message import Message, StopError
@@ -34,7 +36,7 @@ from .period_folder import (
     locate_period_folder,
 )
 from .preparation_files import PeriodFiles
-from .preparation_register import TARGET_HEADERS, RegisterSheet
+from .preparation_register import TARGET_HEADERS, RegisterRead, RegisterSheet
 from .settlement_period import SettlementPeriod, parse_period_token
 from .template_file import TemplateFile
 from .workbook_files import Problem, WorkbookError
@@ -49,8 +51,9 @@ class Readers:
     Ten sam obiekt dostają Uruchomienie procesu i Diagnoza, więc usterka czytnika trafia do obu.
     """
 
-    register: Callable[[Path, SettlementPeriod | None], list[RegisterSheet]]
-    """Arkusze ze zleceniami Rejestru, z ``period`` tylko wiersze, których data może leżeć w okresie.
+    register: Callable[[Path, SettlementPeriod | None], RegisterRead]
+    """Arkusze ze zleceniami Rejestru z bajtami, z których je przeczytał; z ``period`` tylko wiersze, których data może
+    leżeć w okresie.
 
     Rejestr, którego nie ma albo który jest otwarty w Excelu, to też ``WorkbookError``.
     """
@@ -134,21 +137,50 @@ def check_preparation(
 
 
 def read_register(
-    register: Path, period: SettlementPeriod | None, readers: Readers, forbidden: client_data.ForbiddenValues | None = None
+    register: Path,
+    period: SettlementPeriod | None,
+    readers: Readers,
+    forbidden: client_data.ForbiddenValues | None = None,
+    copy: input_copy.InputCopy | None = None,
 ) -> list[RegisterSheet]:
     """Arkusze ze zleceniami Rejestru zleceń albo zatrzymanie, gdy Rejestru nie da się odczytać albo nie ma nagłówków.
 
-    ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza.
+    ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza, a ``copy`` każdy przeczytany wiersz
+    (``_copied``) i chwilę zmiany Rejestru sprzed jego odczytu.
     """
 
+    modified = input_copy.modified_at(register)
     with _stops(messages.register_unusable):
-        sheets = readers.register(register, period)
+        read = readers.register(register, period)
     if forbidden is not None:
-        for sheet in sheets:
+        for sheet in read.sheets:
             for row in sheet.register_rows:
                 for column, header in _FORBIDDEN_HEADERS:
                     forbidden.remember_value(column, row.cells[header].value)
-    return sheets
+    if copy is not None:
+        _copied(register, read, modified, copy)
+    return read.sheets
+
+
+def _copied(register: Path, read: RegisterRead, modified: datetime | None, copy: input_copy.InputCopy) -> None:
+    """Odczyt Rejestru w Kopii wejścia: bajty, z których czytnik przeczytał arkusze, z chwilą zmiany ``modified`` sprzed
+    odczytu, komórki każdej kolumny ``COLUMNS`` bez zakazanych (``_FORBIDDEN_HEADERS``) w jej kolumnie arkusza pod
+    nagłówkiem Rejestru (wiersz 1) oraz puste wiersze z odczytanego zakresu; bez drugiego odczytu pliku, więc Kopia nie
+    zatrzymuje Przygotowania."""
+
+    workbook = copy.workbook(register, read.content, modified)
+    forbidden = {header for _, header in _FORBIDDEN_HEADERS}
+    for sheet in read.sheets:
+        positions = sheet.positions
+        copied = workbook.sheet(
+            sheet.name,
+            1,
+            {number: column.register_header for column, number in positions.items()},
+            {number for column, number in positions.items() if column.target_header in forbidden},
+        )
+        for row in sheet.register_rows:
+            copied.row(row.number, {number: row.cells[column.target_header].value for column, number in positions.items()})
+        copied.empty_rows(sheet.empty_rows)
 
 
 _FORBIDDEN_HEADERS: Final = client_data.forbidden_columns({normalize_text(header): header for header in TARGET_HEADERS})

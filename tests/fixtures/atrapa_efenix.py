@@ -25,7 +25,8 @@ przyjmuje pisania, a kalendarz po otwarciu okna pokazuje dzisiejszy dzień, dzie
 poprzedniego miesiąca zamienia na dzisiejszy z komunikatem w ``#toast``, „Potwierdź” wysyła wartość pola, a po
 odpowiedzi 2xx wpisuje ją do ``#data_install`` bez czytania treści odpowiedzi. „Dziś” daje test (``today``), a
 ``refuse_dates`` każe serwerowi odpowiadać na zapis daty bez zapisu. Wycenę Emmetta (``#button_emmett``,
-okno ``#dialog_emmett`` z propozycją z ``action_fill_emmett.php``, „Załaduj do zlecenia” wysyła ``action_load_emmett.php``,
+okno ``#dialog_emmett`` z propozycją z ``action_fill_emmett.php`` w ``#emmett-propozycja``, pustą, gdy Emmett nic nie
+proponuje, jak ten element strony efenix bez propozycji, „Załaduj do zlecenia” wysyła ``action_load_emmett.php``,
 który czyści wycenę i wpisuje propozycję, a skrypt przeładowuje stronę po każdej odpowiedzi, także po odmowie
 ``AtrapaOrder.emmett_refusal``) i przyciski, których narzędzie nie może użyć:
 Przekazanie do akceptacji (``#button_forward_to_accept``) i anulowanie (``#button_forward_to_cancel``) z oknem
@@ -169,6 +170,7 @@ class EmmettRefusal(enum.Enum):
     ELSEWHERE = "przekierowanie na listę zleceń bez załadowania Wyceny Emmetta"
     LOGGED_OUT = "sesja wygasa przy tym żądaniu: przekierowanie na stronę logowania bez załadowania Wyceny Emmetta"
     NOK = "200 z JSON result: nok bez załadowania Wyceny Emmetta"
+    OTHER = "200 z inną treścią (strona HTML) bez załadowania Wyceny Emmetta"
 
 
 @dataclass(frozen=True)
@@ -222,7 +224,8 @@ class AtrapaOrder:
     zlecenia. ``without``: kody pozycji, których karty strona tego zlecenia nie ma, jak strony efenix z częścią pozycji
     wyceny. Z ``after_date`` każda z tych czterech zmian strony jest dopiero od zapisu daty wykonania, a z ``after_emmett``
     od przeładowania po załadowaniu Wyceny Emmetta. ``emmett_refusal``: efenix odmawia „Załaduj do zlecenia” tego
-    zlecenia (``EmmettRefusal``), aż test to zmieni.
+    zlecenia (``EmmettRefusal``), aż test to zmieni. ``emmett_in_fields``: okno Emmetta pokazuje propozycję w polach bez
+    tekstu (ilość w ``value``), jedną z postaci, których w efenix nikt nie zmierzył.
     """
 
     order_id: str
@@ -246,6 +249,7 @@ class AtrapaOrder:
     after_date: bool = False
     after_emmett: bool = False
     emmett_refusal: EmmettRefusal | None = None
+    emmett_in_fields: bool = False
 
     @property
     def amount(self) -> Decimal:
@@ -348,6 +352,7 @@ def atrapa_efenix(
     clock: Callable[[], float] = time.monotonic,
     cookie_session: bool = False,
     outage_from: tuple[Outage, int] | None = None,
+    error_answer: tuple[str, int, HTTPStatus] | None = None,
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
@@ -357,6 +362,8 @@ def atrapa_efenix(
     zegar w sekundach, którego chwilę dostaje każde żądanie. ``outage_from``: rodzaj odcięcia i numer żądania (od 0, każde
     żądanie po kolei, jak w ``requests``), od którego efenix jest odcięty raz, do ``reconnect``. Atrapa pracuje na kopii
     ``orders``, więc zlecenia testu zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie.
+    ``error_answer``: ścieżka, numer jej żądania narzędzia (od 1, bez szukania, które lista wysyła sama) i status błędu
+    HTTP: na to jedno żądanie Atrapa odpowiada stroną błędu serwera z tym statusem, bez wykonania żądania.
     """
 
     atrapa = AtrapaEfenix(copy.deepcopy(list(orders)))
@@ -412,6 +419,12 @@ def atrapa_efenix(
                     atrapa.outage = outage_from[0]
                     cut_off.set()
                 outage = atrapa.outage
+                failing = (
+                    error_answer is not None
+                    and path == error_answer[0]
+                    and not atrapa.requests[-1].by_list
+                    and sum(request.path == path and not request.by_list for request in atrapa.requests) == error_answer[1]
+                )
                 logged_in = atrapa.logged_in and (not cookie_session or _has_session_cookie(self.headers.get("Cookie", "")))
                 orders = copy.deepcopy(atrapa.orders)
             if outage is Outage.CUT:
@@ -420,7 +433,9 @@ def atrapa_efenix(
             self._late = outage is Outage.SLOW
             self._torn = outage is Outage.TORN
             self._stalled = outage is Outage.STALLED
-            if path == LOGIN_ACTION and method == "POST":
+            if failing and error_answer is not None:
+                self._html("<p>Wystąpił błąd serwera.</p>", error_answer[2])
+            elif path == LOGIN_ACTION and method == "POST":
                 with atrapa._lock:
                     atrapa.logged_in = True
                 self._redirect(LIST_PAGE, cookie=cookie_session)
@@ -457,6 +472,8 @@ def atrapa_efenix(
                         self._redirect(LOGIN_PAGE)
                     case EmmettRefusal.NOK:
                         self._json({"result": "nok", "error": "Nie załadowano."})
+                    case EmmettRefusal.OTHER:
+                        self._html("<p>Nie załadowano wyceny Emmetta.</p>")
             elif method == "POST" and path in _CHANGES:
                 with atrapa._lock:
                     found = [order for order in atrapa.orders if order.order_id == params.get(_CHANGES[path])]
@@ -615,8 +632,10 @@ def _change(path: str, order: AtrapaOrder, params: Mapping[str, str], *, refuse_
             order.quantities.pop(code, None)
         return {"result": "ok", "price_index": f"{PRICES[code] * quantity:.2f}", "price_all": f"{order.amount:.2f}"}
     if path == FILL_EMMETT:
+        if order.emmett_in_fields:
+            return "".join(f'<input name="INDEKS_{escape(code)}_078" value="{quantity}">' for code, quantity in sorted(order.emmett.items()))
         rows = "".join(f"<li>INDEKS_{escape(code)}_078: {quantity}</li>" for code, quantity in sorted(order.emmett.items()))
-        return f"<ul>{rows}</ul>"
+        return f"<ul>{rows}</ul>" if rows else ""
     if path == LOAD_EMMETT:
         order.quantities = dict(order.emmett)
         order.emmett_loads += 1

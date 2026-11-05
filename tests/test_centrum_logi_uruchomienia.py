@@ -6,10 +6,12 @@ Testy czytają pliki z katalogu Logów obok dziennika Centrum, tak jak Maks dost
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import datetime, time as time_of_day, timedelta, timezone
 from decimal import Decimal
+import errno
+import hashlib
 from http import HTTPStatus
 import json
 import os
@@ -18,29 +20,35 @@ import re
 import shutil
 import signal
 import sys
+import threading
 import time
 from typing import Any, NoReturn
 
+from openpyxl import load_workbook
+from openpyxl.worksheet.formula import ArrayFormula
 from playwright.sync_api import Browser, sync_playwright
 import pytest
 
-from rozliczenia import TOOL_ROOT, settlement_messages
+from rozliczenia import TOOL_ROOT, settlement_messages, workbook_files
 from rozliczenia.centrum import app, contract, runs
 from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES, DadActions
 from rozliczenia.centrum.efenix_run import EfenixWindow
-from rozliczenia.centrum.pricing_journal import JournalStarted, OrderEnded
+from rozliczenia.centrum.pricing_journal import JournalStarted, OrderBegun, OrderEnded
 from rozliczenia.centrum.run_logs import (
     Environment,
     LoggedInterruption,
     LoggedOrder,
     LoggedStep,
     RunLog,
+    RunLogs,
     Tool,
     logs_file_name,
 )
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
+from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.period_folder import PeriodFolderInaccessible
+from rozliczenia.telemetry import MetricsStore
 
 from tests.fixtures.atrapa_efenix import CATALOG, AtrapaEfenix, AtrapaOrder, Changed, amount_of, atrapa_efenix
 from tests.fixtures.centrum import (
@@ -68,15 +76,16 @@ from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD, default_register_rows, incomplete_period_rows
 from tests.fixtures.run_cards import first_view, restored
-from tests.fixtures.settlement import MARKED, SOURCE_NAME, CellValue, write_quantity_source
+from tests.fixtures.settlement import COLLECTIVE_HEADERS, MARKED, SOURCE_NAME, CellValue, write_quantity_source
 from tests.fixtures.tool_clone import ToolRepository, git_command, git_failing_on, tool_repository
+from tests.fixtures.workbooks import active_worksheet, rewrite_parts
 
 AnyCentrum = PreparingCentrum | SettlingCentrum
 KEYS = {
     "schema_version", "run_id", "process", "mode", "period", "started_at", "ended_at", "duration_ms", "tool",
     "result", "ending", "stop_kind", "issue_count", "messages", "technical_notes", "summary", "phases", "templates",
     "inea_only_cleared", "intermax_entries", "efenix_orders", "efenix_stop", "environment", "trace", "diagnosis",
-    "dad_actions", "interruption",
+    "dad_actions", "interruption", "input_copy", "input_copy_notes",
 }
 
 
@@ -349,7 +358,7 @@ def test_kazda_droga_zakonczenia_w_obu_trybach_daje_jeden_plik_logow_z_wynikiem_
     assert three_parts(record) == card_messages(view)
     assert (record["trace"] or {}).get("exception_type") == ending.trace
     text = path.read_text(encoding="utf-8")
-    assert "SYN-" not in text
+    assert [marker for marker in ("syntetyczny adres SYN-", "OR-SYN-") if marker in text] == [], "ADRES i numer Orange"
     assert in_json(tmp_path) not in text and in_json(tmp_path.resolve()) not in text
 
 
@@ -512,7 +521,7 @@ def test_pliki_procesu_ktorych_nie_da_sie_wyliczyc_daja_logi_bez_plikow_bez_nieo
     assert "nieoczekiwany-wyjatek" not in centrum.log_path.read_text(encoding="utf-8")
 
 
-def test_logi_nie_maja_tresci_komorek_wykonawcy_przy_wierszu_daty_dziennej_ani_pelnych_sciezek(tmp_path: Path) -> None:
+def test_logi_przebiegu_rozliczen_nie_maja_adresu_numeru_orange_ani_pelnych_sciezek(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
     unmapped = {**MARKED, "H": "ZNACZNIK-WYKONAWCA"}
@@ -535,20 +544,14 @@ def test_logi_nie_maja_tresci_komorek_wykonawcy_przy_wierszu_daty_dziennej_ani_p
     texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
     assert len(texts) == 3
     texts += sent
-    naming = [
-        settlement_messages.unmapped_worker_warning(centrum.collective_file, "ZNACZNIK-WYKONAWCA").what,
-        settlement_messages.unmapped_worker(centrum.collective_file, ["ZNACZNIK-WYKONAWCA"]).what,
-    ]
-    for what in naming:
-        forms = (what, json.dumps(what)[1:-1])
-        assert any(form in text for form in forms for text in texts), what
-        texts = [text.replace(forms[0], "").replace(forms[1], "") for text in texts]
-    forbidden = ("ZNACZNIK", "adrian.testowy", "2026-09-09", "09.09.2026", in_json(tmp_path), in_json(tmp_path.resolve()))
+    naming = settlement_messages.unmapped_worker(centrum.collective_file, ["ZNACZNIK-WYKONAWCA"]).what
+    assert any(form in text for form in (naming, json.dumps(naming)[1:-1]) for text in texts), "Komunikat z Wykonawcą"
+    forbidden = ("ZNACZNIK-ADRES", "ZNACZNIK-NUMER-UMOWY", in_json(tmp_path), in_json(tmp_path.resolve()))
     assert [marker for marker in forbidden if any(marker in text for text in texts)] == []
     assert sum("Adrian Testowy" in text for text in texts) == 4, "Wykonawca z Konfiguracji w obu wynikach z planem"
 
 
-def test_diagnoza_w_logach_nie_ma_tresci_komorek_ani_pelnych_sciezek(tmp_path: Path) -> None:
+def test_diagnoza_w_logach_nie_ma_adresu_numeru_orange_ani_pelnych_sciezek(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
     write_quantity_source(centrum.collective_file, [MARKED, {**MARKED, "H": "ZNACZNIK-WYKONAWCA"}])
@@ -563,7 +566,7 @@ def test_diagnoza_w_logach_nie_ma_tresci_komorek_ani_pelnych_sciezek(tmp_path: P
     [record] = records(centrum)
     assert "failed" in [check["state"] for check in record["diagnosis"]["checks"]], "Diagnoza z przyczyną w pliku Logów"
     texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)] + in_box(box)
-    forbidden = ("ZNACZNIK", "adrian.testowy", "2026-09-09", "09.09.2026", in_json(tmp_path), in_json(tmp_path.resolve()))
+    forbidden = ("ZNACZNIK-ADRES", "ZNACZNIK-NUMER-UMOWY", in_json(tmp_path), in_json(tmp_path.resolve()))
     assert [marker for marker in forbidden if any(marker in text for text in texts)] == []
 
 
@@ -611,6 +614,11 @@ def test_adres_i_numer_orange_cytowane_przez_komunikat_nie_wychodza_w_logach_ani
         assert record["technical_notes"] == [
             "Reguła danych: zamaskowano wartość kolumny ADRES w: messages[0].where.",
             "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: messages[0].where.",
+        ]
+        # SKUTECZNE z adresem i numerem Orange to także komórka czwartego przeczytanego wiersza Rejestru w Kopii wejścia.
+        assert record["input_copy_notes"] == [
+            "Reguła danych: zamaskowano wartość kolumny ADRES w: input_copy[0].sheets[0].rows[3].cells.[…].",
+            "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: input_copy[0].sheets[0].rows[3].cells.[…].",
         ]
 
 
@@ -1044,13 +1052,13 @@ HYPOTHESES = {
     ),
     "D-strona-bledu-http": (
         replace(STOPPED_AT_SECOND[1].in_efenix("617"), error_status=HTTPStatus.INTERNAL_SERVER_ERROR),
-        {"what": "strona błędu HTTP serwera efenix zamiast strony zlecenia", "status": 500},
+        {"what": "strona błędu HTTP serwera efenix zamiast strony albo odpowiedzi, na którą czekało okno", "status": 500},
         ["szukanie"],
         "otwarcie zlecenia",
     ),
     "D-strona-bledu-http-404": (
         replace(STOPPED_AT_SECOND[1].in_efenix("617"), error_status=HTTPStatus.NOT_FOUND),
-        {"what": "strona błędu HTTP serwera efenix zamiast strony zlecenia", "status": 404},
+        {"what": "strona błędu HTTP serwera efenix zamiast strony albo odpowiedzi, na którą czekało okno", "status": 404},
         ["szukanie"],
         "otwarcie zlecenia",
     ),
@@ -1061,7 +1069,7 @@ HYPOTHESES = {
             error_status=HTTPStatus.INTERNAL_SERVER_ERROR,
             after_emmett=True,
         ),
-        {"what": "strona błędu HTTP serwera efenix zamiast strony zlecenia", "status": 500},
+        {"what": "strona błędu HTTP serwera efenix zamiast strony albo odpowiedzi, na którą czekało okno", "status": 500},
         ["szukanie", "otwarcie zlecenia"],
         "Wycena Emmetta",
     ),
@@ -1130,7 +1138,7 @@ def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_
     dlaczego: przyczynę z zamkniętej listy (kody pozycji, budowę strony albo typ błędu Playwrighta z działaniem
     przeglądarki), wiersz, miejsce „2 z 2”, udane działania przy nim i działanie, które się nie udało, oraz ślad gotowego
     zlecenia z wiersza 18. Ślad wywołań ma łańcuch przyczyn do wyjątku okna. Komunikat taty jest ten sam co bez przyczyny,
-    a Logi nie mają numeru zlecenia ani adresu."""
+    a ślad zleceń nie ma numeru zlecenia, a Logi adresu."""
 
     with atrapa_efenix([PRICED[0].in_efenix("611"), second]) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
@@ -1155,11 +1163,12 @@ def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_
         "rozliczenia.efenix_pricing.UnexpectedPage",
     ]
     text = log_files(centrum)[0].read_text(encoding="utf-8")
-    private = [*(order.number.removeprefix("#") for order in STOPPED_AT_SECOND), "TESTOWA", "Testowa"]
-    assert [marker for marker in private if marker in text] == []
+    traced_text = json.dumps(record["efenix_orders"], ensure_ascii=False)
+    assert [order.number for order in STOPPED_AT_SECOND if order.number.removeprefix("#") in traced_text] == []
+    assert [marker for marker in ("TESTOWA", "Testowa") if marker in text] == [], "ADRES"
 
 
-def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_i_adresu(tmp_path: Path) -> None:
+def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_i_bez_adresu(tmp_path: Path) -> None:
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
         (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
@@ -1186,14 +1195,9 @@ def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_i_a
     moments = [utc(step["started_at"]) for order in record["efenix_orders"] for step in order["steps"]]
     assert utc(record["started_at"]) <= moments[0]
     assert moments == sorted(moments) and moments[-1] <= utc(record["ended_at"]), "godziny działań w kolejności zleceń"
-    private = [
-        *(order.number.removeprefix("#") for order in PRICED),
-        "TESTOWA",
-        "Testowa",
-        "PRYWATNA",
-        "Miasto-Dzielnica",
-        in_json(tmp_path),
-    ]
+    traced_text = json.dumps(record["efenix_orders"], ensure_ascii=False)
+    assert [order.number for order in PRICED if order.number.removeprefix("#") in traced_text] == [], "ślad bez numeru"
+    private = ["TESTOWA", "Testowa", "PRYWATNA", "Miasto-Dzielnica", in_json(tmp_path)]
     assert [marker for marker in private if any(marker in text for text in texts)] == []
 
 
@@ -1289,16 +1293,12 @@ def test_logi_wyceny_w_efenix_maja_odczyt_kazdej_strony_efenix_ze_statusem_reali
         (22, "EFENIX_NIEZNANY_NUMER", [("szukanie", 1, [_listed(False, "Rozliczone", "gustaw.testowy", [])])]),
         (23, "EFENIX_NIEZNANY_NUMER", [("szukanie", 0, [])]),
     ]
-    private = [
-        _FILE_ADDRESS,
-        "ZAWILCOWA",
-        "Zawilcowa",
-        "Rumiankowa",
-        "Miastowo",
-        *(order.number.removeprefix("#") for order in READ),
-        "ZLQS050",
-    ]
-    assert [marker for marker in private if any(marker in text for text in texts)] == []
+    # Numer zlecenia może wyjść (ADR 0025) i stoi w Kopii wejścia, ale nie w śladzie zleceń; adresu nie ma nigdzie.
+    traced_text = json.dumps(record["efenix_orders"], ensure_ascii=False)
+    numbers = [*(order.number.removeprefix("#") for order in READ), "ZLQS050"]
+    assert [number for number in numbers if number in traced_text] == []
+    private = [_FILE_ADDRESS, "ZAWILCOWA", "Zawilcowa", "Rumiankowa", "Miastowo"]
+    assert [marker for marker in private if any(marker in text for text in texts + in_box(box))] == []
     assert record["technical_notes"] == []
 
 
@@ -1619,9 +1619,10 @@ def test_wycena_w_efenix_ktora_doszla_do_konca_nie_zostawia_dziennika_ktory_star
 
 
 def _pricing_cut_before_result(tmp_path: Path) -> tuple[SettlingCentrum, str, Path]:
-    """Wycena w efenix przeszła wszystkie zlecenia, ale Centrum zgasło przed jej wynikiem: dziennik ma każde zlecenie, a
-    nie ma Logów, wiersza Historii ani wysyłki w kolejce, czyli to Urwane Uruchomienie (ADR 0017). Skrzynka Zgłoszeń ma
-    klucz dopiero od następnego startu, więc nic z tej Wyceny do niej nie poszło. Zwraca też folder kolejki wysyłki."""
+    """Wycena w efenix przeszła wszystkie zlecenia, ale Centrum zgasło przed jej wynikiem: dziennik ma każde zlecenie bez
+    wpisu końca, a nie ma Logów, wiersza Historii ani wysyłki w kolejce, czyli to Urwane Uruchomienie (ADR 0017).
+    Skrzynka Zgłoszeń ma klucz dopiero od następnego startu, więc nic z tej Wyceny do niej nie poszło. Zwraca też folder
+    kolejki wysyłki."""
 
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
@@ -1631,6 +1632,10 @@ def _pricing_cut_before_result(tmp_path: Path) -> tuple[SettlingCentrum, str, Pa
     [logs] = log_files(centrum)
     logs.unlink()
     centrum.engines.metrics.efenix.unlink()
+    [journal] = journals(centrum)
+    *before_result, end = journal.read_text(encoding="utf-8").splitlines(keepends=True)
+    assert json.loads(end)["entry"] == "koniec Uruchomienia"
+    journal.write_text("".join(before_result), encoding="utf-8")
     queue = tmp_path / "config" / "zgloszenia" / "kolejka"
     shutil.rmtree(queue)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
@@ -1799,3 +1804,717 @@ def test_dziennik_urwany_przy_pierwszym_wpisie_start_usuwa_bez_logow(tmp_path: P
     centrum.client.stop()
 
     assert (journals(centrum), log_files(centrum)) == ([], [])
+
+
+# --- Kopia wejścia (#841) ------------------------------------------------------------------------------------------------
+# Przygotowanie, Przebieg i Wycena w efenix dają Logi z Wierszami danych, które przeczytały, bez kolumn ``ADRES`` i
+# ``NUMER UMOWY/ZLECENIA ORANGE``, z odciskiem każdego pliku zgodnym z plikiem na dysku (reguła danych, ADR 0025).
+
+FREE_TEXT = f"montaż {ADDRESS_VALUE} umowa {ORANGE_VALUE} tel. {PHONE}, {STREET}"
+MASKED = "montaż [adres] umowa [numer Orange] tel. [telefon], [ulica]"
+
+COLLECTIVE_COLUMNS = {
+    letter: header
+    for letter, header in zip("ABCDEFGHIJK", COLLECTIVE_HEADERS, strict=True)
+    if header not in ("ADRES", "NUMER UMOWY/ZLECENIA ORANGE")
+}
+"""Nagłówki A17:K17 Pliku zbiorczego w Kopii wejścia: bez ``ADRES`` (B) i numeru Orange (I)."""
+
+
+def fingerprint(content: bytes, path: Path) -> dict[str, object]:
+    """Odcisk pliku taty tak, jak go liczy Maks na swojej kopii: rozmiar, chwila zmiany (UTC) i SHA-256 treści."""
+
+    modified = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+    return {"size": len(content), "modified_at": modified, "sha256": hashlib.sha256(content).hexdigest()}
+
+
+def logged_fingerprint(copied: dict[str, Any]) -> dict[str, object]:
+    found = dict(copied["fingerprint"])
+    found["modified_at"] = None if found["modified_at"] is None else datetime.fromisoformat(found["modified_at"])
+    return found
+
+
+def moment(text: str) -> dict[str, str]:
+    """Data z godziną w Kopii wejścia: rodzaj, bo JSON nie odróżnia jej od tekstu."""
+
+    return {"type": "datetime", "text": text}
+
+
+def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_orange_oraz_odcisk_rejestru(
+    tmp_path: Path,
+) -> None:
+    """Kopia wejścia Przygotowania to arkusz zleceń Rejestru: kolumny, które proces przenosi, pod nagłówkiem Rejestru
+    (wiersz 1) w ich kolumnach arkusza, bez ``ADRES`` (E) i ``NUMER UMOWY`` (K), i każde zlecenie okresu z jego
+    komórkami. Arkusz bez nagłówków zleceń („lista”) i kolumny, których proces nie przenosi (AKCJE, ZWROT, UWAGI),
+    w Kopii nie stoją."""
+
+    centrum = preparing_centrum(tmp_path)
+    register = centrum.fixture.register_path
+    content = register.read_bytes()
+
+    view = run_to_end(centrum, dry_run=True)
+
+    assert view["result"]["result"] == "OK"
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    assert (copied["name"], logged_fingerprint(copied)) == (register.name, fingerprint(content, register))
+    [sheet] = copied["sheets"]
+    assert (sheet["sheet"], sheet["header_row"]) == ("ZLECENIA", 1)
+    assert sheet["columns"] == {
+        "C": "DATA GODZ. POCZ.",
+        "D": "MIASTO",
+        "F": "UMOWA",
+        "G": "URZĄDZENIA",
+        "H": "CZYNNOŚCI",
+        "I": "NUMER ZL.",
+        "J": "WYKONAWCA",
+        "L": "SKUTECZNE",
+        "M": "CZYNNOŚCI ZREALIZOWANE",
+    }
+    rows = {row["row"]: row["cells"] for row in sheet["rows"]}
+    in_period = {
+        4: ("2026-09-08T00:00:00", 2, "adrian.testowy", "tak"),
+        6: ("2026-09-09T10:30:00", 3, "dariusz.fikcyjny2", "NIE"),
+        9: ("2026-09-12T12:00:00", 4, "kamil.syntetyczny", " Tak "),
+        13: ("2026-09-14T18:30:00", 6, "dariusz.fikcyjny2", "TAK"),
+    }
+    for number, (started, order, worker, successful) in in_period.items():
+        assert rows[number] == {
+            "C": moment(started),
+            "D": "POZNAŃ",
+            "F": f"UM-SYN-{order:03d}",
+            "G": "dekoder",
+            "H": "instalacja",
+            "I": f"ZL-SYN-{order:03d}",
+            "J": worker,
+            "L": successful,
+            "M": "montaż",
+        }, number
+    assert {5, 7, 8, 10} <= set(sheet["empty_rows"]), "puste wiersze między zleceniami okresu"
+
+
+def test_logi_przebiegu_rozliczen_maja_wiersze_pliku_zbiorczego_bez_adresu_i_numeru_orange_oraz_odcisk_pliku(
+    tmp_path: Path,
+) -> None:
+    """Kopia wejścia Przebiegu to arkusz Pliku zbiorczego z nagłówkami z wiersza 17 i każdym Wierszem danych z jego
+    komórkami A:AT, bez ``ADRES`` i numeru Orange. Godzina i czas trwania mają rodzaj, bo JSON nie odróżnia ich od
+    tekstu, a formuła tablicowa to jej tekst, jak każda formuła."""
+
+    centrum = settling_centrum(tmp_path)
+    typed: dict[str, CellValue] = {"AQ": time_of_day(8, 30), "AR": timedelta(hours=1, minutes=30), "AS": True, "AT": ArrayFormula("AT19", "=SUM(N19:N19)")}
+    write_quantity_source(centrum.collective_file, [MARKED, {"H": "kamil.syntetyczny", "N": 2, **typed}])
+    content = centrum.collective_file.read_bytes()
+
+    view = run_to_end(centrum, dry_run=True)
+
+    assert view["result"]["result"] == "OK"
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    assert (copied["name"], logged_fingerprint(copied)) == (SOURCE_NAME, fingerprint(content, centrum.collective_file))
+    [sheet] = copied["sheets"]
+    assert (sheet["sheet"], sheet["header_row"], sheet["columns"], sheet["empty_rows"]) == ("Sheet1", 17, COLLECTIVE_COLUMNS, [])
+    marked = {letter: value for letter, value in MARKED.items() if letter not in ("B", "I")}
+    assert sheet["rows"] == [
+        {"row": 18, "cells": {**marked, "G": moment("2026-09-09T13:45:00"), "H": "adrian.testowy"}},
+        {
+            "row": 19,
+            "cells": {
+                "A": "POZNAŃ",
+                "F": "#19",
+                "H": "kamil.syntetyczny",
+                "J": "tak",
+                "N": 2,
+                "AQ": {"type": "time", "text": "08:30:00"},
+                "AR": {"type": "timedelta", "text": "5400.0"},
+                "AS": True,
+                "AT": "=SUM(N19:N19)",
+            },
+        },
+    ]
+    assert sheet["rows"][1]["cells"]["AS"] is True, "prawda/fałsz, nie liczba"
+
+
+def test_logi_wyceny_w_efenix_maja_wiersze_pliku_zbiorczego_z_kwota_i_odcisk_przeczytanej_wersji_pliku(
+    tmp_path: Path,
+) -> None:
+    """Kopia wejścia Wyceny w efenix to Wiersze danych Pliku zbiorczego z wartościami, które policzył Excel, także
+    ``Kwota`` (AU). Wycena zapisuje Znaczniki efenix w tym samym pliku, więc odcisk to wersja, którą przeczytała, a nie
+    plik po Uruchomieniu."""
+
+    amount = float(amount_of({"012": 1}))
+    ready = Order("#ZLKW01", cells={"O": 1}, amount=amount, quantities={"012": 1})
+    unknown = Order("#ZLKW02", worker="beata.testowa", cells={"O": 1, "AQ": "uwaga taty"}, amount=amount)
+    with atrapa_efenix([ready.in_efenix("701")]) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        source = write_collective_file(centrum.period_parent, [ready, unknown])
+        content = source.read_bytes()
+        read = fingerprint(content, source)
+        started = centrum.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "dry_run": False})
+        assert started.status_code == 200, started.json()
+        result = finished_view(centrum.client)["result"]
+
+    assert result["result"] == "WYMAGA_SPRAWDZENIA"
+    assert source.read_bytes() != content, "Znacznik efenix gotowego zlecenia"
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    assert (copied["name"], logged_fingerprint(copied)) == (SOURCE_NAME, read)
+    [sheet] = copied["sheets"]
+    assert (sheet["header_row"], sheet["columns"]) == (17, COLLECTIVE_COLUMNS)
+    started_at = moment("2026-09-09T10:30:00")
+    assert sheet["rows"] == [
+        {"row": 18, "cells": {"A": "MIASTO", "F": "#ZLKW01", "G": started_at, "H": "adrian.testowy", "J": "tak", "O": 1, "AU": amount}},
+        {
+            "row": 19,
+            "cells": {
+                "A": "MIASTO",
+                "F": "#ZLKW02",
+                "G": started_at,
+                "H": "beata.testowa",
+                "J": "tak",
+                "O": 1,
+                "AQ": "uwaga taty",
+                "AU": amount,
+            },
+        },
+    ]
+
+
+def _copy_preparation(tmp_path: Path, _: ExitStack) -> PreparingCentrum | SettlingCentrum:
+    rows = default_register_rows()
+    rows[2] = {**(rows[2] or {}), "ADRES": ADDRESS_VALUE, "NUMER UMOWY": ORANGE_VALUE, "CZYNNOŚCI ZREALIZOWANE": FREE_TEXT}
+    return preparing_centrum(tmp_path, rows)
+
+
+def _copy_settlement(tmp_path: Path, _: ExitStack) -> PreparingCentrum | SettlingCentrum:
+    centrum = settling_centrum(tmp_path)
+    write_quantity_source(centrum.collective_file, [{"B": ADDRESS_VALUE, "I": ORANGE_VALUE, "K": FREE_TEXT}])
+    return centrum
+
+
+def _copy_pricing(tmp_path: Path, stack: ExitStack) -> PreparingCentrum | SettlingCentrum:
+    """Zlecenie, którego efenix nie zna: Wycena czyta cały wiersz i kończy się wynikiem bez zapisu w efenix."""
+
+    atrapa = stack.enter_context(atrapa_efenix([]))
+    centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+    order = Order("#ZLKW03", address=ADDRESS_VALUE, cells={"I": ORANGE_VALUE, "K": FREE_TEXT}, amount=0.0)
+    write_collective_file(centrum.period_parent, [order])
+    return centrum
+
+
+COPY_PROCESSES = {"preparation": _copy_preparation, "settlement": _copy_settlement, "efenix": _copy_pricing}
+
+
+@pytest.mark.parametrize("process", COPY_PROCESSES.keys())
+def test_adres_i_numer_orange_z_kopii_wejscia_nie_wychodza_do_logow_ani_skrzynki_takze_wpisane_w_wolny_tekst(
+    tmp_path: Path, process: str
+) -> None:
+    """Komórki ``ADRES`` i numeru Orange nie stoją w Kopii wejścia, a ich wartości wpisane w wolny tekst innej komórki
+    strażnik maskuje razem z telefonem i ulicą, z uwagą techniczną o miejscu w Kopii osobno od uwag technicznych karty,
+    więc karta z Logów ma te same uwagi co karta na żywo (ADR 0017); nic z tego nie wychodzi do pliku Logów ani do
+    Skrzynki Zgłoszeń."""
+
+    with ExitStack() as stack:
+        centrum = COPY_PROCESSES[process](tmp_path, stack)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})
+        assert started.status_code == 200, started.json()
+        result = finished_view(centrum.client)["result"]
+
+    assert result["stop_kind"] is None, result["stops"]
+    box: FakeReportBox = centrum.surroundings.report_box
+    assert box.wait_until(
+        lambda fake: any(issue.label == "logi-uruchomienia" and issue.comments for issue in fake.background_issues)
+    )
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    headers = [header for sheet in copied["sheets"] for header in sheet["columns"].values()]
+    assert [header for header in headers if header in ("ADRES", "NUMER UMOWY", "NUMER UMOWY/ZLECENIA ORANGE")] == []
+    cells = [value for sheet in copied["sheets"] for row in sheet["rows"] for value in row["cells"].values()]
+    masked = [value for value in cells if "[adres]" in str(value) or "[numer Orange]" in str(value)]
+    assert masked == [MASKED], "zakazanych komórek nie ma w Kopii, a wolny tekst jest po strażniku"
+    assert record["input_copy_notes"] == [
+        f"Reguła danych: zamaskowano wartość kolumny {column} w: input_copy[0].sheets[0].rows[{cells_row(copied)}].cells.[…]."
+        for column in ("ADRES", "NUMER UMOWY/ZLECENIA ORANGE")
+    ]
+    assert record["technical_notes"] == result["technical_notes"], "uwagi techniczne karty"
+    texts = [path.read_text(encoding="utf-8") for path in sorted((centrum.log_path.parent / "uruchomienia").glob("*"))]
+    sent = in_box(box) + [part for issue in box.issues for part in (issue.title, issue.body, *issue.comments)]
+    assert any(MASKED in part for part in sent), "Kopia wejścia w pliku Logów w Archiwum"
+    texts += sent
+    leaked = (ADDRESS_VALUE, ORANGE_VALUE, PHONE, STREET, json.dumps(ADDRESS_VALUE)[1:-1])
+    assert [value for value in leaked if any(value in text for text in texts)] == []
+
+
+def test_kolumny_adresu_i_numeru_orange_pliku_zbiorczego_nie_wychodza_takze_pod_innym_naglowkiem(tmp_path: Path) -> None:
+    """Kolumny B i I Pliku zbiorczego to ``ADRES`` i numer Orange z układu Wzorca bez względu na nagłówek, który tata
+    w nich zmienił: Kopia wejścia Przebiegu ich nie ma, a ich wartości wpisane w wolny tekst innej komórki strażnik
+    maskuje, więc nie wychodzą do pliku Logów ani do Skrzynki Zgłoszeń."""
+
+    centrum = settling_centrum(tmp_path)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_quantity_source(centrum.collective_file, [{"B": ADDRESS_VALUE, "I": ORANGE_VALUE, "K": FREE_TEXT}])
+    workbook = load_workbook(centrum.collective_file)
+    sheet = active_worksheet(workbook)
+    sheet["B17"], sheet["I17"] = "ADRES KLIENTA", "NR UMOWY ORANGE"
+    workbook.save(centrum.collective_file)
+
+    view = run_to_end(centrum, dry_run=True)
+
+    assert view["result"]["stop_kind"] is None, view["result"]["stops"]
+    box: FakeReportBox = centrum.surroundings.report_box
+    assert box.wait_until(
+        lambda fake: any(issue.label == "logi-uruchomienia" and issue.comments for issue in fake.background_issues)
+    )
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    [sheet_copy] = copied["sheets"]
+    assert [letter for letter in ("B", "I") if letter in sheet_copy["columns"]] == []
+    [row] = sheet_copy["rows"]
+    assert ([letter for letter in ("B", "I") if letter in row["cells"]], row["cells"]["K"]) == ([], MASKED)
+    texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)] + in_box(box)
+    assert [value for value in (ADDRESS_VALUE, ORANGE_VALUE) if any(value in text for text in texts)] == []
+
+
+READ_AT = datetime(2023, 11, 14, 22, 13, 20, tzinfo=timezone.utc)
+"""Chwila zmiany pliku taty przed Uruchomieniem, a ``SAVED_AGAIN_AT`` po zapisie zaraz po odczycie."""
+SAVED_AGAIN_AT = datetime(2027, 1, 15, 8, 0, tzinfo=timezone.utc)
+
+
+def _saved_at(path: Path, moment: datetime) -> None:
+    os.utime(path, (moment.timestamp(), moment.timestamp()))
+
+
+def _register_saved_again(path: Path) -> None:
+    path.write_bytes(path.read_bytes() + b"\0")
+    _saved_at(path, SAVED_AGAIN_AT)
+
+
+def _register_gone(path: Path) -> None:
+    path.rename(path.with_name("przeniesiony.xlsx"))
+
+
+@pytest.mark.parametrize("after_reading", [_register_saved_again, _register_gone], ids=["zapisany-znowu", "zniknal"])
+def test_odcisk_rejestru_jest_z_bajtow_ktore_przeczytalo_przygotowanie_takze_gdy_plik_zmienil_sie_zaraz_po_odczycie(
+    tmp_path: Path, after_reading: Callable[[Path], None]
+) -> None:
+    """Rejestr zapisany znowu (Autozapis Excela, OneDrive) albo przeniesiony zaraz po odczycie: odcisk w Kopii wejścia
+    to rozmiar i skrót bajtów, z których Przygotowanie przeczytało zlecenia, i chwila zmiany tej wersji, sprzed odczytu,
+    a Kopia nie czyta pliku drugi raz, więc nie zatrzymuje Przygotowania."""
+
+    content: list[bytes] = []
+
+    def read_then_changed(path: Path, period: Any) -> Any:
+        content.append(path.read_bytes())
+        read = FILE_READERS.register(path, period)
+        after_reading(path)
+        return read
+
+    readers = replace(FILE_READERS, register=read_then_changed)
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=readers))
+    _saved_at(centrum.fixture.register_path, READ_AT)
+
+    view = run_to_end(centrum, dry_run=True)
+
+    assert (view["result"]["result"], view["result"]["stop_kind"]) == ("OK", None), view["result"]["stops"]
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    [read] = content
+    assert logged_fingerprint(copied) == {"size": len(read), "modified_at": READ_AT, "sha256": hashlib.sha256(read).hexdigest()}
+
+
+@pytest.mark.parametrize("process", ["settlement", "efenix"])
+def test_chwila_zmiany_w_odcisku_pliku_zbiorczego_jest_sprzed_odczytu_takze_gdy_plik_zapisano_zaraz_po_nim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, process: str
+) -> None:
+    """Plik zbiorczy zapisany znowu (Autozapis Excela, OneDrive) zaraz po tym, jak Przebieg rozliczeń albo Wycena w
+    efenix przeczytały jego bajty: odcisk w Kopii wejścia ma chwilę zmiany przeczytanej wersji, sprzed odczytu."""
+
+    file_bytes = workbook_files._file_bytes
+
+    def read_then_saved(path: Path) -> bytes:
+        content = file_bytes(path)
+        if path.name == SOURCE_NAME:
+            _saved_at(path, SAVED_AGAIN_AT)
+        return content
+
+    # Jedyny odczyt bajtów skoroszytu w src/ (tests/test_jeden_odczyt_skoroszytu.py).
+    monkeypatch.setattr(workbook_files, "_file_bytes", read_then_saved)
+    with ExitStack() as stack:
+        centrum = COPY_PROCESSES[process](tmp_path, stack)
+        assert isinstance(centrum, SettlingCentrum)
+        _saved_at(centrum.collective_file, READ_AT)
+        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})
+        assert started.status_code == 200, started.json()
+        result = finished_view(centrum.client)["result"]
+
+    assert result["stop_kind"] is None, result["stops"]
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    assert (copied["name"], logged_fingerprint(copied)["modified_at"]) == (SOURCE_NAME, READ_AT)
+
+
+def cells_row(copied: dict[str, Any]) -> int:
+    """Miejsce (od 0) przeczytanego wiersza z zamaskowanym wolnym tekstem w jedynym arkuszu Kopii."""
+
+    [sheet] = copied["sheets"]
+    return next(index for index, row in enumerate(sheet["rows"]) if MASKED in row["cells"].values())
+
+
+ORANGE_NUMBER = int(ORANGE_VALUE)
+PHONE_NUMBER = int(PHONE.replace(" ", ""))
+PHONE_WITH_PREFIX_NUMBER = int(f"48{PHONE_NUMBER}")
+"""Numer Orange i telefon, które tata wpisał w komórkę bez innego tekstu, więc Excel trzyma je jako liczby; telefon
+wpisany z ``+48`` albo ``0048`` format General trzyma bez ``+`` i zer (``PHONE_WITH_PREFIX_NUMBER``)."""
+
+
+@dataclass(frozen=True)
+class NumbersInCells:
+    """Uruchomienie z liczbami w komórkach: Centrum gotowe do startu i komórki Kopii wejścia z numerem Orange albo
+    telefonem po strażniku (wiersz arkusza → litera → maska), a ``elsewhere``: pola Logów poza Kopią z numerem Orange
+    (ilości przy zleceniu Wyceny w efenix; ``steps[…]``: którekolwiek działanie okna)."""
+
+    centrum: PreparingCentrum | SettlingCentrum
+    masked: dict[int, dict[str, str]]
+    elsewhere: frozenset[str] = frozenset()
+
+
+def _numbers_preparation(tmp_path: Path, _: ExitStack) -> NumbersInCells:
+    rows = default_register_rows()
+    rows[2] = {**(rows[2] or {}), "NUMER UMOWY": ORANGE_NUMBER, "UMOWA": ORANGE_NUMBER, "CZYNNOŚCI ZREALIZOWANE": PHONE_NUMBER}
+    return NumbersInCells(preparing_centrum(tmp_path, rows), {4: {"F": "[numer Orange]", "M": "[telefon]"}})
+
+
+def _numbers_settlement(tmp_path: Path, _: ExitStack) -> NumbersInCells:
+    """Excel zapisał numer Orange w I18 jako ułamek (``4.801234567E9``), a ten sam numer w AT18 jako liczbę całkowitą;
+    telefon wpisany z ``+48`` w AQ18 to liczba ``48600123456``."""
+
+    centrum = settling_centrum(tmp_path)
+    cells: dict[str, CellValue] = {"I": ORANGE_NUMBER, "AT": ORANGE_NUMBER, "AS": PHONE_NUMBER, "AQ": PHONE_WITH_PREFIX_NUMBER}
+    write_quantity_source(centrum.collective_file, [cells])
+    as_fraction = re.compile(rb'(<c r="I18"[^>]*><v>)' + ORANGE_VALUE.encode() + rb"(</v>)")
+
+    def fraction(name: str, data: bytes) -> bytes:
+        if name != "xl/worksheets/sheet1.xml":
+            return data
+        changed, count = as_fraction.subn(rb"\g<1>4.801234567E9\g<2>", data)
+        assert count == 1
+        return changed
+
+    rewrite_parts(centrum.collective_file, fraction)
+    return NumbersInCells(centrum, {18: {"AT": "[numer Orange]", "AS": "[telefon]", "AQ": "[telefon]"}})
+
+
+def _numbers_pricing(tmp_path: Path, stack: ExitStack) -> NumbersInCells:
+    """Numer Orange także w kolumnie ilości (O) dwóch zleceń: wiersz 18 ma tę wycenę już w efenix (okno czyta ilości ze
+    strony zlecenia), a wiersz 19 nie ma żadnej (okno wpisuje ilość)."""
+
+    amount = float(amount_of({"012": ORANGE_NUMBER}))
+    cells: dict[str, CellValue] = {"I": ORANGE_NUMBER, "O": ORANGE_NUMBER, "AQ": ORANGE_NUMBER, "AT": PHONE_NUMBER}
+    priced = Order("#ZLKW04", cells=cells, amount=amount, quantities={"012": ORANGE_NUMBER})
+    unpriced = Order("#ZLKW05", cells={"O": ORANGE_NUMBER}, amount=amount)
+    atrapa = stack.enter_context(atrapa_efenix([priced.in_efenix("704"), unpriced.in_efenix("705")]))
+    centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+    write_collective_file(centrum.period_parent, [priced, unpriced])
+    masked = {18: {"O": "[numer Orange]", "AQ": "[numer Orange]", "AT": "[telefon]"}, 19: {"O": "[numer Orange]"}}
+    elsewhere = {
+        "efenix_orders[0].file.[…]",
+        "efenix_orders[0].steps[…].quantities.[…]",
+        "efenix_orders[1].file.[…]",
+        "efenix_orders[1].steps[…].quantity",
+    }
+    return NumbersInCells(centrum, masked, frozenset(elsewhere))
+
+
+NUMBER_PROCESSES = {"preparation": _numbers_preparation, "settlement": _numbers_settlement, "efenix": _numbers_pricing}
+
+
+@pytest.mark.parametrize("process", NUMBER_PROCESSES.keys())
+def test_numer_orange_i_telefon_zapisane_przez_excel_jako_liczba_nie_wychodza_do_logow_ani_skrzynki(
+    tmp_path: Path, process: str
+) -> None:
+    """Numer Orange i telefon, które Excel trzyma jako liczbę, strażnik porównuje w tekście, który pokazuje Excel (numer
+    zapisany jako ułamek to jego cyfry), więc liczba w innej komórce Kopii wejścia i w ilości przy zleceniu Wyceny w
+    efenix (z pliku, ze strony zlecenia i wpisana w oknie) staje się w całości maską z uwagą techniczną o jej miejscu,
+    a telefon, także z ``+48`` zgubionym przez format General, maską ``[telefon]``; nic z tego nie wychodzi do pliku
+    Logów ani do Skrzynki Zgłoszeń."""
+
+    with ExitStack() as stack:
+        setup = NUMBER_PROCESSES[process](tmp_path, stack)
+        centrum = setup.centrum
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})
+        assert started.status_code == 200, started.json()
+        result = finished_view(centrum.client)["result"]
+
+    assert result["stop_kind"] is None, result["stops"]
+    box: FakeReportBox = centrum.surroundings.report_box
+    assert box.wait_until(
+        lambda fake: any(issue.label == "logi-uruchomienia" and issue.comments for issue in fake.background_issues)
+    )
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    [sheet] = copied["sheets"]
+    rows = {row["row"]: (index, row["cells"]) for index, row in enumerate(sheet["rows"])}
+    assert {number: {letter: rows[number][1].get(letter) for letter in cells} for number, cells in setup.masked.items()} == setup.masked
+    orange = "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: {}."
+    assert record["input_copy_notes"] == [
+        orange.format(f"input_copy[0].sheets[0].rows[{rows[number][0]}].cells.[…]")
+        for number, cells in sorted(setup.masked.items())
+        if "[numer Orange]" in cells.values()
+    ]
+    card = len(result["technical_notes"])
+    assert record["technical_notes"][:card] == result["technical_notes"], "uwagi techniczne karty"
+    assert {re.sub(r"steps\[\d+\]", "steps[…]", note) for note in record["technical_notes"][card:]} == {
+        orange.format(place) for place in setup.elsewhere
+    }
+    texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
+    sent = in_box(box) + [part for issue in box.issues for part in (issue.title, issue.body, *issue.comments)]
+    assert any("[numer Orange]" in part for part in sent), "Kopia wejścia w pliku Logów w Archiwum"
+    leaked = (ORANGE_VALUE, str(PHONE_NUMBER), str(PHONE_WITH_PREFIX_NUMBER))
+    assert [value for value in leaked if any(value in text for text in texts + sent)] == []
+
+
+@contextmanager
+def _refused(monkeypatch: pytest.MonkeyPatch, method: str, refuses: Callable[[Path, str], bool]) -> Iterator[None]:
+    """``Path.<method>`` rzuca PermissionError (plik trzyma antywirus albo inny program), gdy ``refuses`` mówi tak o
+    ścieżce i trybie otwarcia."""
+
+    original = getattr(Path, method)
+
+    def refusing(self: Path, *arguments: Any, **keywords: Any) -> Any:
+        mode = arguments[0] if arguments and isinstance(arguments[0], str) else keywords.get("mode", "r")
+        if refuses(self, mode):
+            raise PermissionError(13, "plik zajęty")
+        return original(self, *arguments, **keywords)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, method, refusing)
+        yield
+
+
+def test_dziennik_urwanej_wyceny_nieodczytany_przy_starcie_dostaje_logi_urwanego_uruchomienia_takze_po_nastepnej_wycenie_z_wynikiem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#870: Wycena 1 urwana po „zaczynam zlecenie”, a start Centrum nie może przeczytać jej dziennika, więc zostawia go
+    następnemu. W tej pracy Centrum Wycena 2 dochodzi do wyniku i ma wiersz Historii ze startem późniejszym niż Wycena 1.
+    Następny start zamyka dziennik Wyceny 1 jako jej Logi Urwanego Uruchomienia ze zleceniem zaczętym bez wyniku i wysyła
+    je do Skrzynki obok Logów Wyceny 2, a dopiero potem dziennik znika."""
+
+    run_1 = "a" * 32
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        box = centrum.surroundings.report_box
+        started_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        started = JournalStarted(
+            entry="start Uruchomienia", run_id=run_1, process="efenix", mode="zapis", period=PERIOD, started_at=started_at
+        )
+        begun = OrderBegun(at=started_at + timedelta(seconds=30), entry="zaczynam zlecenie", row=18, place=1, total=6)
+        directory = centrum.log_path.parent / "dzienniki-wyceny"
+        directory.mkdir(parents=True)
+        journal_1 = directory / Path(logs_file_name(started_at, "efenix", run_1)).with_suffix(".jsonl")
+        journal_1.write_text(f"{started.model_dump_json()}\n{begun.model_dump_json()}\n", encoding="utf-8")
+        centrum.client.stop()
+        with _refused(monkeypatch, "read_text", lambda path, _: path == journal_1):
+            centrum.restart()
+            assert centrum.client.get("/api/runs/current").status_code == 200
+        skipped = (journal_1.exists(), log_files(centrum))
+        assert _start_pricing(centrum).status_code == 200
+        run_2 = finished_view(centrum.client)["run"]["id"]
+        centrum.client.stop()
+        centrum.restart()
+        assert centrum.client.get("/api/runs/current").status_code == 200
+        sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 2)
+        centrum.client.stop()
+    logged = {record["run_id"]: record for record in records(centrum)}
+
+    assert (skipped, sent) == ((True, []), True)
+    assert {run_id: record["ending"] for run_id, record in logged.items()} == {run_1: "interrupted", run_2: "finished"}
+    assert logged[run_1]["interruption"] == {"row": 18, "place": 1, "total": 6, "omitted": 0}
+    assert sorted(logs_json(box, comment)["run_id"] for comment in logs_comments(box)) == sorted([run_1, run_2])
+    assert journals(centrum) == [], "dziennik, którego Logi przyjęła Kolejka wysyłki, znika"
+
+
+@pytest.mark.parametrize("unseen", ["historia-nieczytelna", "rekord-metryk-niezapisany"])
+def test_wycena_z_wynikiem_bez_pliku_logow_nie_dostaje_logow_urwanego_uruchomienia_gdy_start_nie_widzi_jej_wiersza_historii(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unseen: str
+) -> None:
+    """#871: Wycena doszła do wyniku, ale pliku jej Logów nie ma (katalog Logów zajęty przez plik), więc Logi z wynikiem
+    poszły do Skrzynki tylko z kolejki. Start Centrum nie widzi jej wiersza Historii: plik metryk Wyceny w efenix jest
+    nieczytelny przy starcie albo rekord metryk się nie zapisał (pełny dysk). Dziennik ma wpis końca, więc start go usuwa
+    bez Logów Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem."""
+
+    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked.parent.mkdir(parents=True)
+    blocked.write_text("", encoding="utf-8")  # plik zamiast katalogu Logów: RunLogs._write rzuca OSError
+
+    def full_disk(_store: MetricsStore, _record: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        box = centrum.surroundings.report_box
+        with monkeypatch.context() as patch:
+            if unseen == "rekord-metryk-niezapisany":
+                patch.setattr(MetricsStore, "append", full_disk)
+            assert _start_pricing(centrum).status_code == 200
+            run_id = finished_view(centrum.client)["run"]["id"]
+        assert box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        [result] = [logs_json(box, comment) for comment in logs_comments(box)]
+        centrum.client.stop()
+    blocked.unlink()
+    metrics = centrum.engines.metrics.efenix
+    with _refused(monkeypatch, "open", lambda path, mode: unseen == "historia-nieczytelna" and path == metrics and mode == "r"):
+        centrum.restart()
+        assert centrum.client.get("/api/runs/current").status_code == 200
+    centrum.client.stop()
+
+    assert (result["run_id"], result["ending"], metrics.exists() == (unseen == "historia-nieczytelna")) == (run_id, "finished", True)
+    assert (records(centrum), journals(centrum)) == ([], [])
+    assert [logs_json(box, comment)["ending"] for comment in logs_comments(box)] == ["finished"]
+
+
+def test_wpis_konca_ktory_sie_nie_zapisal_usuwa_dziennik_wyceny_z_wynikiem_a_start_nie_robi_z_niej_urwanego_uruchomienia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Każdy wpis Wyceny w efenix się zapisuje oprócz wpisu końca, bo po rekordzie metryk antywirus trzyma dziennik, a
+    pliku Logów nie ma (katalog Logów zajęty przez plik). Wycena usuwa wtedy swój dziennik sama, z jedną linią dziennika
+    Centrum, więc następny start nie robi z niej Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem."""
+
+    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked.parent.mkdir(parents=True)
+    blocked.write_text("", encoding="utf-8")
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        box = centrum.surroundings.report_box
+        metrics = centrum.engines.metrics.efenix
+
+        def after_result(path: Path, mode: str) -> bool:
+            return path.parent.name == "dzienniki-wyceny" and mode == "a" and metrics.exists()
+
+        with _refused(monkeypatch, "open", after_result):
+            assert _start_pricing(centrum).status_code == 200
+            finished_view(centrum.client)
+        assert box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        centrum.client.stop()
+    ended = journals(centrum)
+    blocked.unlink()
+    centrum.restart()
+    assert centrum.client.get("/api/runs/current").status_code == 200
+    centrum.client.stop()
+    lines = [line.split(" ", 1)[1] for line in centrum.log_path.read_text(encoding="utf-8").splitlines() if "dziennik-wyceny" in line]
+
+    assert (ended, lines) == ([], ["dziennik-wyceny-niedostepny typ=PermissionError miejsce=wpis"])
+    assert (records(centrum), [logs_json(box, comment)["ending"] for comment in logs_comments(box)]) == ([], ["finished"])
+
+
+class _Unconfirmed:
+    """Plik dziennika, którego zapis dysk przyjął (``write`` i ``flush``), ale nie potwierdził: ``fsync`` na jego deskryptorze
+    zgłasza błąd wejścia-wyjścia."""
+
+    def __init__(self, file: Any) -> None:
+        self._file = file
+
+    def __enter__(self) -> _Unconfirmed:
+        self._file.__enter__()
+        return self
+
+    def __exit__(self, *exception: object) -> None:
+        self._file.__exit__(*exception)
+
+    def write(self, text: str) -> int:
+        return int(self._file.write(text))
+
+    def flush(self) -> None:
+        self._file.flush()
+
+    def fileno(self) -> NoReturn:
+        raise OSError(errno.EIO, "Input/output error")
+
+
+def test_wycena_z_wynikiem_ktorej_jedyny_wpis_dziennika_zawiodl_po_zapisie_pierwszej_linii_nie_dostaje_logow_urwanego_uruchomienia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pierwszy wpis Wyceny w efenix, „zaczynam zlecenie”, jest już na dysku razem z pierwszą linią dziennika, gdy dysk
+    zgłasza błąd wejścia-wyjścia, a okno efenix staje przy tym samym zleceniu (strona błędu HTTP), więc Wycena dochodzi
+    do wyniku z Zatrzymaniem bez następnego wpisu. Pliku Logów nie ma (katalog Logów zajęty przez plik), więc jej Logi z
+    wynikiem idą do Skrzynki tylko z kolejki. Wycena usuwa dziennik sama, z jedną linią dziennika Centrum, więc następny
+    start nie robi z niej Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem."""
+
+    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked.parent.mkdir(parents=True)
+    blocked.write_text("", encoding="utf-8")
+    opened = Path.open
+    unconfirmed: list[Path] = []
+
+    def opening(self: Path, *arguments: Any, **keywords: Any) -> Any:
+        file = opened(self, *arguments, **keywords)
+        mode = arguments[0] if arguments and isinstance(arguments[0], str) else keywords.get("mode", "r")
+        if self.parent.name == "dzienniki-wyceny" and mode == "a" and not unconfirmed:
+            unconfirmed.append(self)
+            return _Unconfirmed(file)
+        return file
+
+    with atrapa_efenix([HYPOTHESES["D-strona-bledu-http"][0]]) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        write_collective_file(centrum.period_parent, STOPPED_AT_SECOND[1:])
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        box = centrum.surroundings.report_box
+        with monkeypatch.context() as patch:
+            patch.setattr(Path, "open", opening)
+            assert _start_pricing(centrum).status_code == 200
+            stops = finished_view(centrum.client)["result"]["stops"]
+        assert box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        centrum.client.stop()
+    left = journals(centrum)
+    blocked.unlink()
+    centrum.restart()
+    assert centrum.client.get("/api/runs/current").status_code == 200
+    centrum.client.stop()
+    lines = [line.split(" ", 1)[1] for line in centrum.log_path.read_text(encoding="utf-8").splitlines() if "dziennik-wyceny" in line]
+
+    assert (len(unconfirmed), len(stops), lines) == (1, 1, ["dziennik-wyceny-niedostepny typ=OSError miejsce=wpis"])
+    assert (records(centrum), left, [logs_json(box, comment)["ending"] for comment in logs_comments(box)]) == ([], [], ["stop"])
+
+
+def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie_zastepuje_ich_logami_urwanego_uruchomienia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Centrum gaśnie zaraz po tym, jak Logi z wynikiem Wyceny w efenix poszły do Kolejki wysyłki, a pliku Logów nie ma
+    (katalog Logów zajęty przez plik). Wycena dopisała wpis końca do dziennika przed swoimi Logami, więc następny start
+    usuwa dziennik bez Logów Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem (#871)."""
+
+    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked.parent.mkdir(parents=True)
+    blocked.write_text("", encoding="utf-8")
+    reached, released = threading.Event(), threading.Event()
+    keep = RunLogs.run_ended
+
+    def held_after(self: RunLogs, run: Any) -> None:
+        try:
+            keep(self, run)  # rzuca OSError po wysyłce do kolejki: pliku Logów nie da się zapisać
+        finally:
+            reached.set()
+            released.wait()
+
+    monkeypatch.setattr(RunLogs, "run_ended", held_after)
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        box = centrum.surroundings.report_box
+        assert _start_pricing(centrum).status_code == 200
+        assert wait_for(reached.is_set, 120)
+        sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        closed = centrum.client
+        blocked.unlink()
+        centrum.restart()
+        assert centrum.client.get("/api/runs/current").status_code == 200
+        after = (records(centrum), journals(centrum))
+        released.set()
+        finished_view(closed)
+    centrum.client.stop()
+
+    assert (sent, after) == (True, ([], []))
+    assert [logs_json(box, comment)["ending"] for comment in logs_comments(box)] == ["finished"]

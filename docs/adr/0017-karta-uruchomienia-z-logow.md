@@ -19,8 +19,9 @@ osobny plik Uruchomienia w `logs/dzienniki-wyceny/` (własny plik Centrum, poza
 Gitem i OneDrive), wpis po wpisie: „zaczynam zlecenie” przed pierwszym
 działaniem okna efenix przy zleceniu, więc przed każdym zapisem w efenix, i
 „zlecenie skończone” z wynikiem i śladem zlecenia zaraz po nim. Start Centrum,
-który zastanie dziennik Uruchomienia bez Logów i bez wiersza Historii, zamyka
-go jako Logi z nowym sposobem zakończenia `interrupted` (bez wyniku, ze
+który zastanie dziennik Uruchomienia bez Logów i bez wpisu końca (dopisek
+#870/#871 niżej), zamyka go jako Logi z nowym sposobem zakończenia
+`interrupted` (bez wyniku, ze
 zleceniami sprzed zgaśnięcia i zleceniem zaczętym bez wyniku), zanim przeczyta
 kartę ostatniego Uruchomienia, i wysyła je jak zwykłe Logi przy pierwszym
 zapytaniu tej pracy Centrum, już po starcie Kolejki wysyłki. Karta po starcie
@@ -28,6 +29,25 @@ to dalej karta Urwanego Uruchomienia, z liczbą zleceń skończonych przed
 zamknięciem Centrum z każdym wynikiem. Plik Logów powstaje dalej tylko pełny:
 dziennik nie jest niepełnym plikiem Logów, tylko osobnym plikiem, który czyta
 wyłącznie start Centrum. Krótkie procesy dziennika nie piszą.
+
+Dopisek #870/#871: o tym, czy Uruchomienie z dziennikiem doszło do wyniku,
+mówi sam dziennik, nie Historia. Pierwsze działanie po wyniku dopisuje do
+niego „koniec Uruchomienia” (z `fsync`), zanim powstaną Logi z wynikiem i
+zanim pójdą do Skrzynki, a dziennik, w którym ten wpis się nie zapisał,
+Centrum od razu usuwa, tak samo jak dziennik, w którym nie zapisał się żaden
+wpis (nieudany zapis mógł zostawić na dysku jego pierwszą linię, a
+Zatrzymanie przy zleceniu zakończyć Wycenę przed następnym wpisem). Start
+usuwa dziennik z wpisem końca i nie czyta
+Historii, bo reguła „pierwszy wiersz od startu” jest prawdziwa tylko dla
+ostatniego startu (wiersz późniejszej Wyceny zabierał dziennik urwanej bez
+Logów), a Historia nieczytelna albo bez rekordu metryk dawała Wycenie z
+wynikiem Logi Urwanego Uruchomienia, które w Skrzynce zastępowały Logi z
+wynikiem. Zgaśnięcie między rekordem metryk a wpisem końca (milisekundy)
+zostawia dziennik bez wpisu końca: start zamyka go jako Logi Urwanego
+Uruchomienia, a karta po starcie pokazuje Urwane Uruchomienie, choć Historia
+ma wiersz. Logi z wynikiem jeszcze wtedy nie istnieją, więc w Skrzynce
+niczego nie zastępują. Wpis końca przed rekordem metryk odrzucony: w tym
+samym oknie dziennik Urwanej Wyceny znikałby bez żadnych Logów.
 
 ## Kontekst
 

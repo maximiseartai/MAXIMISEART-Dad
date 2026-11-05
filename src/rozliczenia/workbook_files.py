@@ -47,6 +47,7 @@ from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
 from openpyxl.worksheet.worksheet import Worksheet
 
 from . import client_data
+from .input_copy import InputCopy, SheetCopy, modified_at
 from .highlights import Highlights
 from .hyperlinks import Hyperlink, read_sheet_hyperlinks
 from .quantity_rules import QuantityColumn
@@ -83,6 +84,7 @@ LOOK_COLUMNS = range(1, 13)  # A:L: kolumny wyglądu Wiersza danych
 QUANTITY_COLUMNS = range(14, 43)  # N:AP
 DATA_ROW_COLUMNS = range(1, 47)  # A:AT: kopiowane z Pliku zbiorczego do Szablonu pracownika
 _AMOUNT_COLUMN = 47  # AU: Kwota zlecenia, którą liczy formuła Pliku zbiorczego
+_FORBIDDEN_POSITIONS = ((client_data.ForbiddenColumn.ADDRESS, 2), (client_data.ForbiddenColumn.ORANGE, 9))  # B, I: reguła danych
 
 
 _ExcelCellValue = (
@@ -348,6 +350,30 @@ def header_columns(values: Sequence[object]) -> dict[str, int]:
     return {normalize_text(value): column for column, value in enumerate(values, start=1) if not is_blank(value)}
 
 
+def _forbidden_columns(header: Sequence[object]) -> tuple[tuple[client_data.ForbiddenColumn, int], ...]:
+    """Zakazane kolumny Wiersza danych Pliku zbiorczego (reguła danych, ADR 0025) z ich numerem od 1, z nagłówków
+    A17:K17 ``header``: ``ADRES`` (B) i ``NUMER UMOWY/ZLECENIA ORANGE`` (I) z układu Wzorca bez względu na nagłówek, więc
+    adres pod innym nagłówkiem też nie wychodzi, i każda kolumna A:K z nagłówkiem zakazanej kolumny."""
+
+    by_header = client_data.forbidden_columns(header_columns(header[: INPUT_COLUMNS[-1]]))
+    return tuple(dict.fromkeys((*_FORBIDDEN_POSITIONS, *by_header)))
+
+
+def _copied(
+    copy: InputCopy,
+    path: Path,
+    content: bytes,
+    modified: datetime | None,
+    title: str,
+    header: Sequence[object],
+    forbidden: Sequence[tuple[client_data.ForbiddenColumn, int]],
+) -> SheetCopy:
+    """Arkusz Pliku zbiorczego w Kopii wejścia: bajty ``content`` z chwilą zmiany ``modified`` sprzed ich odczytu,
+    nagłówki z wiersza 17, bez zakazanych kolumn."""
+
+    return copy.workbook(path, content, modified).sheet(title, HEADER_ROW, header, {column for _, column in forbidden})
+
+
 @dataclass(frozen=True)
 class DataRows:
     """Wiersze danych Pliku zbiorczego i nagłówki A17:K17 z tego samego odczytu.
@@ -364,14 +390,20 @@ class DataRows:
 
 
 def read_data_rows(
-    path: Path, *, despite_excel_lock: bool = False, forbidden: client_data.ForbiddenValues | None = None
+    path: Path,
+    *,
+    despite_excel_lock: bool = False,
+    forbidden: client_data.ForbiddenValues | None = None,
+    copy: InputCopy | None = None,
 ) -> DataRows:
     """Wiersze danych Pliku zbiorczego z Wyróżnieniami i Hiperłączami komórek w kolejności z pliku; plik jest tylko czytany.
 
     Wiersz bez wartości w A:K nie jest Wierszem danych i jest pomijany. Brak
     nagłówka WYKONAWCA w H17 to ``WorkbookError`` ze złym układem. Plik otwarty w Excelu to
     ``WorkbookError``, chyba że wywołujący jawnie pozwala go czytać (``despite_excel_lock``, ADR 0016).
-    Komórki zakazanych kolumn każdego Wiersza danych zna ``forbidden`` (reguła danych, ADR 0025).
+    Komórki zakazanych kolumn (``_forbidden_columns``) każdego Wiersza danych zna ``forbidden`` (reguła danych, ADR 0025),
+    a bajty pliku, nagłówki A17:AP17 i wartości A:AT każdego Wiersza danych bez tych kolumn Kopia wejścia Uruchomienia
+    ``copy``.
 
     openpyxl czyta tylko wiersze, które mogą mieć wartości w A:K
     (``workbook_parts.rows_with_input``), a nie każdy z ~10 tys. sformatowanych wierszy Pliku
@@ -380,9 +412,10 @@ def read_data_rows(
     """
 
     ensure_available(path, despite_excel_lock=despite_excel_lock)
-    content = _file_bytes(path)
+    modified = modified_at(path)
+    original = _file_bytes(path)
     with unreadable_as_error(path):
-        content = rows_with_input(content, INPUT_COLUMNS[-1])
+        content = rows_with_input(original, INPUT_COLUMNS[-1])
     workbook = _open(path, BytesIO(content), read_only=True)
     try:
         sheet = cast(Worksheet, workbook.active)  # tylko do odczytu: ReadOnlyWorksheet
@@ -393,6 +426,8 @@ def read_data_rows(
             ),
             (),
         )
+        remembered_columns = _forbidden_columns(header)
+        copied = None if copy is None else _copied(copy, path, original, modified, sheet.title, header, remembered_columns)
         header, price_list = header[: INPUT_COLUMNS[-1]], header[QUANTITY_COLUMNS[0] - 1 :]
         check_worker_header(path, sheet.title, header)
         with unreadable_as_error(path):
@@ -401,7 +436,6 @@ def read_data_rows(
         rows: list[DataRow] = []
         last_column = DATA_ROW_COLUMNS[-1]
         highlights = _HighlightsReader()
-        remembered_columns = client_data.forbidden_columns(header_columns(header))
         for number, cells in enumerate(
             classified(path, sheet.iter_rows(min_row=FIRST_DATA_ROW, max_col=max_column)), start=FIRST_DATA_ROW
         ):
@@ -411,6 +445,8 @@ def read_data_rows(
                 continue
             if forbidden is not None:
                 forbidden.remember(remembered_columns, values)
+            if copied is not None:
+                copied.row(number, values)
             row_links = links.row(number, values)
             with unreadable_as_error(path):
                 rows.append(
@@ -466,16 +502,21 @@ class ComputedRows:
     content: bytes
 
 
-def read_computed_rows(path: Path, *, forbidden: client_data.ForbiddenValues | None = None) -> ComputedRows:
+def read_computed_rows(
+    path: Path, *, forbidden: client_data.ForbiddenValues | None = None, copy: InputCopy | None = None
+) -> ComputedRows:
     """Wiersze danych Pliku zbiorczego (A:AU) z wartościami, które policzył Excel, w kolejności z pliku; plik jest tylko
     czytany.
 
     Wiersz bez wartości w A:K nie jest Wierszem danych i jest pomijany, a brak nagłówka WYKONAWCA w H17 to
     ``WorkbookError`` ze złym układem, tak jak w ``read_data_rows``. Plik otwarty w Excelu to ``WorkbookError``.
-    Komórki zakazanych kolumn każdego Wiersza danych zna ``forbidden`` (reguła danych, ADR 0025).
+    Komórki zakazanych kolumn (``_forbidden_columns``) każdego Wiersza danych zna ``forbidden`` (reguła danych, ADR 0025),
+    a bajty pliku, nagłówki A17:K17 i wartości A:AU każdego Wiersza danych bez tych kolumn Kopia wejścia Uruchomienia
+    ``copy``.
     """
 
     ensure_available(path)
+    modified = modified_at(path)
     original = _file_bytes(path)
     with unreadable_as_error(path):
         content = rows_with_input(original, INPUT_COLUMNS[-1])
@@ -495,10 +536,14 @@ def read_computed_rows(path: Path, *, forbidden: client_data.ForbiddenValues | N
             )
             if any(value is not None for value in values[: INPUT_COLUMNS[-1]])
         ]
+        remembered_columns = _forbidden_columns(header)
         if forbidden is not None:
-            remembered_columns = client_data.forbidden_columns(header_columns(header))
             for row in rows:
                 forbidden.remember(remembered_columns, row.values)
+        if copy is not None:
+            copied = _copied(copy, path, original, modified, sheet.title, header, remembered_columns)
+            for row in rows:
+                copied.row(row.number, row.values)
     finally:
         workbook.close()
     return ComputedRows(header_columns(header), rows, original)

@@ -9,8 +9,8 @@ Zmienia:
   „Treść Logów”: zdanie „Logi nie niosą treści wierszy: nigdy adresu, numeru
   zlecenia, numeru umowy, Wykonawcy przy wierszu, daty dziennej z komórki,
   `CZYNNOŚCI ZREALIZOWANE` ani opisu technika” zastępuje reguła danych niżej.
-  Logi tego Wydania dalej nie niosą Wierszy danych (to zrobi Kopia wejścia,
-  #841), ale to, co niosą, przechodzi przez strażnika;
+  Od #841 Logi niosą Wiersze danych w Kopii wejścia, bez zakazanych kolumn,
+  a wszystko, co niosą, przechodzi przez strażnika;
 - [ADR 0007](0007-zgloszenia-do-maksa-w-prywatnym-repo.md), zdanie „Bez treści
   wierszy, adresów, numerów zleceń, stawek, treści wyjątków i pełnych
   ścieżek” w rewizji reguły prywatności: o treści wierszy w Zgłoszeniu,
@@ -41,12 +41,16 @@ telefony na okres.
   Zgłoszeń**: Logów Uruchomienia, Zgłoszeń, Kontroli ilości i Uwag taty.
   Nigdy nie wychodzą z komputera taty wartości kolumn `ADRES` i
   `NUMER UMOWY/ZLECENIA ORANGE` (w Rejestrze zleceń i INTERMAX także `adres`
-  i `NUMER UMOWY`) ani dane adresowe ze strony zlecenia efenix. Każda inna
+  i `NUMER UMOWY`) ani dane adresowe ze strony zlecenia efenix. W Pliku
+  zbiorczym to kolumny B i I z układu Wzorca, także gdy tata zmienił ich
+  nagłówek, i każda inna kolumna A:K z takim nagłówkiem (#841). Każda inna
   kolumna wiersza może wyjść, w tym `NUMER ZL.`, `WYKONAWCA` i `MIASTO`.
 - **Wolny tekst idzie w całości z maskowaniem**: numer telefonu (komórkowy
-  3-3-3, stacjonarny 2-3-2-2, z `+48` albo bez) staje się `[telefon]`, a
-  wzmianka ulicy („ul.”, „os.”, „al.”, „pl.” z nazwą i numerem domu, z
-  lokalem albo bez) `[ulica]`. Cyfry zaraz po `#` to `NUMER ZL.`, nie telefon.
+  3-3-3, stacjonarny 2-3-2-2, z numerem kierunkowym `+48`, `0048` albo `48`
+  albo bez) staje się `[telefon]`, a wzmianka ulicy („ul.”, „os.”, „al.”,
+  „pl.” z nazwą i numerem domu, z lokalem albo bez) `[ulica]`. Cyfry zaraz po
+  `#` to `NUMER ZL.`, nie telefon. Które formy telefonu strażnik maskuje, a
+  które nie, mówi tabela w sekcji „Telefon: formy i znane granice”.
 - **Strażnik u producenta, nie w kolejce.** Tam, gdzie powstaje tekst pliku
   Logów i każdej wysyłki (Logi, podgląd Zgłoszenia, Kontrola ilości, podgląd
   Uwagi taty), Centrum szuka w nim każdej zakazanej wartości z plików, które
@@ -58,10 +62,24 @@ telefony na okres.
   Komunikatu), a z kilku wartości od tego samego słowa wygrywa najdłuższa.
   Dopisuje uwagę techniczną z nazwą kolumny i miejscem (w Logach pole
   pliku, np. `messages[0].where`), bez wartości: w Logach do
-  `technical_notes`, w Zgłoszeniu i Kontroli ilości sekcją „Uwagi
-  techniczne”, w Uwadze taty linią pod jej tekstem. Tata widzi w podglądzie
+  `technical_notes` (o polu Kopii wejścia do `input_copy_notes`, #841, bo
+  `technical_notes` pokazuje karta Uruchomienia z Logów, a Kopii nie), w
+  Zgłoszeniu i Kontroli ilości sekcją „Uwagi techniczne”, w Uwadze taty linią
+  pod jej tekstem. Tata widzi w podglądzie
   Zgłoszenia i Uwagi dokładnie to, co wyjdzie. Tekst bez zakazanej wartości,
   telefonu i ulicy wychodzi bez zmian i bez uwagi.
+- **Liczba ma tekst, który pokazuje Excel** (#841): numer Orange albo
+  telefon, który tata wpisał w komórkę bez innego tekstu, Excel trzyma jako
+  liczbę, a liczba całkowita zapisana jako ułamek to jej cyfry. Format General
+  gubi `+` i zera z przodu, więc telefon `+48600123456` albo `0048600123456`
+  to liczba `48600123456`. Tak liczbę zapamiętuje pamięć i tak sprawdza ją
+  strażnik, który maskuje ją w całości: `[numer Orange]` z uwagą techniczną
+  albo `[telefon]`, gdy to liczba całkowita z 9 cyframi albo z `48` i 9
+  cyframi. Liczba z częścią ułamkową nie jest telefonem. W Logach sprawdza
+  liczby w polach z wartościami z komórek pliku taty i ze strony efenix
+  (komórki Kopii wejścia i ilości przy zleceniu Wyceny w efenix), bo każdą
+  inną liczbę Logów (wiersz, rozmiar, czas, liczbę zleceń) policzyło
+  narzędzie.
 - **Skąd Centrum zna zakazane wartości.** Każdy czytnik Wierszy danych,
   który czyta dla Centrum (Pliku zbiorczego w Przebiegu rozliczeń, Kontroli
   ilości, Wycenie w efenix i Uzupełnieniu, Rejestru zleceń w Przygotowaniu i
@@ -99,9 +117,53 @@ telefony na okres.
 - Czas strażnika zależy od długości tekstu, nie od liczby zapamiętanych
   wartości, więc pamięć po Diagnozie całego Rejestru (~31,7 tys. wierszy) nie
   spowalnia wysyłek (pomiar w PR #851).
-- Telefon zapisany inaczej niż w powyższych kształtach (np. w nawiasach,
-  z kropkami) i ulica bez „ul.”, „os.”, „al.” ani „pl.” wychodzą bez
-  maskowania.
+- Telefon w formie spoza tabeli niżej i ulica bez „ul.”, „os.”, „al.” ani
+  „pl.” wychodzą bez maskowania.
+
+## Telefon: formy i znane granice
+
+Dopisek #841 (PR #863). Tabela mówi, co strażnik robi z każdą formą telefonu
+w komórce z tekstem albo w wolnym tekście (tekst) i w komórce, którą Excel
+trzyma jako liczbę (liczba). Te same formy są danymi testu
+`tests/fixtures/formy_telefonu.py`, który przechodzi przez całą tabelę.
+
+| Forma | Przykład | Wynik |
+|---|---|---|
+| tekst: komórkowy 3-3-3 bez separatorów, ze spacjami albo kreskami | `600 123 456` | `[telefon]` |
+| tekst: z `+48`, `0048` albo `48`, z separatorami albo bez | `48600123456` | `[telefon]` |
+| tekst: stacjonarny 2-3-2-2, ze spacjami albo kreskami, z numerem kierunkowym albo bez | `12 345 67 89` | `[telefon]` |
+| tekst: `+48` w nawiasie | `(+48) 600 123 456` | `(+48) [telefon]` |
+| liczba całkowita z 9 cyframi, także zapisana jako ułamek albo w notacji E | `600123456` | `[telefon]` |
+| liczba całkowita z `48` i 9 cyframi (`+48` albo `0048` zgubione przez format General) | `48600123456` | `[telefon]` |
+
+Znane granice, w których telefon wychodzi bez maski: telefon z kropkami
+(`600.123.456`), numer w nawiasie (`(600) 123 456`, `(12) 345 67 89`),
+komórkowy w grupach 3-2-2-2 (`600 12 34 56`) i telefon sklejony z literami w
+jedno słowo (`tel600123456`). Kropki między grupami cyfr mają też daty z
+godziną i adresy IP, a słowo z cyframi to też numer urządzenia w opisie
+technika, więc maska tych form zabierałaby wartości, które nie są telefonem.
+
+Znane granice w drugą stronę, w których strażnik maskuje wartość, która nie
+jest telefonem: liczba z 9 cyframi bez `#` (`NUMER ZL.` ma dziś 8 cyfr) i
+ciąg `48` z 9 cyframi w tekście (np. numer seryjny).
+
+Bez maski wychodzą ilość, kwota, `NUMER ZL.` z `#` (8 albo 9 cyfr), data, data
+z godziną, liczba z częścią ułamkową i liczba całkowita, która nie ma 9 cyfr
+ani `48` i 9 cyfr. Liczb policzonych przez narzędzie (numer wiersza, rozmiar
+pliku) strażnik liczby nie sprawdza.
+
+Skan kopii plików taty (PR #863: 2 kopie Rejestru zleceń, 3 Pliki zbiorcze,
+2 Rozliczenia wewnętrzne i surowe zlecenia z aplikacji firmowej, ok. 613 tys.
+komórek z wartością): form ze znanych granic jest 0. Numer kierunkowy `48`
+bez `+` i zer (PR #863) maskuje tam 5 wartości więcej: 4 liczby z `48` i 9
+cyframi w `CZYNNOŚCI ZREALIZOWANE` i `ZWROT` Rejestru i 1 taki ciąg w tekście,
+wszystkie z prefiksem sieci komórkowej, i żadnej wartości, która nie jest
+telefonem.
+Poza telefonami maska łapie tam, jak przed tą zmianą, 8 numerów umowy z
+przedrostkiem i 9 cyframi (kolumna `NUMER UMOWY` surowych zleceń i
+Rozliczenia wewnętrznego, której wartości reguła danych i tak nie wypuszcza)
+i 1 liczbę z 9 cyframi w arkuszu „komentarze” Rejestru, którego żaden proces
+nie czyta.
 
 ## Odrzucone warianty
 

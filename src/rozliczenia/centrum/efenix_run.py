@@ -25,6 +25,7 @@ from rozliczenia.centrum.period_board import located_period_folder, observed_per
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun
 from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.input_copy import InputCopy
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import OpenEfenix, OrderJournal
 from rozliczenia.efenix_process import EfenixInputs
@@ -112,6 +113,7 @@ class EfenixEntry:
             raise contract.Refusal(409, _NO_PREVIEW)
         period = requested_period(request.period)
         source = located_period_folder(periods_directory, period).collective_file
+        copy = InputCopy()
         inputs = EfenixInputs(
             source,
             self.window.opener(),
@@ -119,8 +121,11 @@ class EfenixEntry:
             self.window.trace_directory,
             journal=self.journal,
             forbidden=self.forbidden,
+            copy=copy,
         )
-        return PreparedRun(declaration=EFENIX, period=period.token, process=EFENIX.core(self.processes), inputs=inputs)
+        return PreparedRun(
+            declaration=EFENIX, period=period.token, process=EFENIX.core(self.processes), inputs=inputs, input_copy=copy
+        )
 
 
 def _collective_files(periods_directory: Path, rows: list[contract.PeriodRow]) -> dict[str, Path]:

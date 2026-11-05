@@ -26,6 +26,7 @@
   ],
   "src/rozliczenia/efenix_browser.py": [
     "load_emmett",
-    "enter_quantity"
+    "enter_quantity",
+    "_finished"
   ]
 }
