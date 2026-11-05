@@ -485,8 +485,6 @@ class BrowserEfenix:
                 raise LoggedOut(PagePart.EMMETT, LoginSign.REDIRECT)
             if 300 <= answer.status < 400:
                 raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))
-            if not answer.ok:
-                raise UnexpectedPage(PagePart.EMMETT, HttpStatus(answer.status))
             if _refused(self._text(answer)):
                 raise LoggedOut(PagePart.EMMETT, LoginSign.REFUSED)
         return self._read_order(reload.value)

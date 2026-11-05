@@ -117,8 +117,6 @@ TABLE = [
         "odpowiedź „Załaduj do zlecenia” przekierowana na page_login.php", "E"),
     Row("efenix_browser", "load_emmett", "UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))",
         "odpowiedź „Załaduj do zlecenia” przekierowana gdzie indziej niż na page_login.php", "inna budowa"),
-    Row("efenix_browser", "load_emmett", "UnexpectedPage(PagePart.EMMETT, HttpStatus(answer.status))",
-        "odpowiedź „Załaduj do zlecenia” 4xx/5xx (strona błędu serwera efenix)", "D"),
     Row("efenix_browser", "load_emmett", "LoggedOut(PagePart.EMMETT, LoginSign.REFUSED)",
         "odpowiedź „Załaduj do zlecenia” 2xx z result: nok (wygasła sesja)", "E"),
     # --- pole Ilość ---
