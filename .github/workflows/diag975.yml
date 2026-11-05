@@ -1,0 +1,86 @@
+# DIAGNOSTYKA #975 (do usunięcia przed końcem PR): skład zadania pytest (Python 3.11, 1/2) runu main 42107838602, na
+# testach main (przed) i tej gałęzi (po), ze stosami wiszącego testu po 100 s i próbnikiem TIME_WAIT.
+name: DIAG975
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  odtworzenie:
+    if: ${{ github.head_ref == 'fix/petle-testclient-975' }}
+    name: DIAG975 ${{ matrix.wariant }} ${{ matrix.proba }}
+    runs-on: windows-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        wariant: [przed, po]
+        proba: [1, 2]
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/checkout@v7
+        if: ${{ matrix.wariant == 'przed' }}
+        with:
+          ref: main
+          path: testowany
+
+      - name: Kopia tej gałęzi jako testowany
+        if: ${{ matrix.wariant == 'po' }}
+        shell: pwsh
+        run: git worktree add testowany HEAD
+
+      - id: python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: false
+
+      - name: Zależności i Chromium
+        shell: pwsh
+        run: |
+          uv pip install --system --python "${{ steps.python.outputs.python-path }}" -r testowany/requirements.txt
+          & python -m playwright install --only-shell chromium
+
+      - name: Próbnik TIME_WAIT
+        shell: pwsh
+        run: |
+          netsh int ipv4 show dynamicport tcp
+          netsh int ipv4 show excludedportrange protocol=tcp
+          Start-Process pwsh -ArgumentList '-NoProfile','-File',"$env:GITHUB_WORKSPACE\.github\scripts\diag975-probnik.ps1",'-Out',"$env:RUNNER_TEMP\diag975.csv" -WindowStyle Hidden
+          exit 0
+
+      - name: Skład zadania main 1/2
+        continue-on-error: true
+        timeout-minutes: 25
+        shell: pwsh
+        working-directory: testowany
+        run: |
+          $pliki = Get-Content "$env:GITHUB_WORKSPACE\.github\scripts\diag975-pliki.txt"
+          & python -m pytest -n auto -p no:cacheprovider -o faulthandler_timeout=100 -rf @pliki 2>&1 | Select-String -NotMatch '^\.+\s*\['
+
+      - name: Raport TIME_WAIT
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" | Where-Object { $_.CommandLine -like '*diag975-probnik*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+          $rows = Get-Content "$env:RUNNER_TEMP\diag975.csv" | ForEach-Object { $c = $_ -split ','; [pscustomobject]@{ t = $c[0]; tw = [int]$c[1]; all = [int]$c[2] } }
+          $max = $rows | Sort-Object tw -Descending | Select-Object -First 1
+          "DIAG975 | ${{ matrix.wariant }} ${{ matrix.proba }} | próbek $($rows.Count) | TIME_WAIT max $($max.tw) o $($max.t) (TCP razem $($max.all))"
+          $rows | ForEach-Object { "$($_.t) $($_.tw) $($_.all)" }
+
+      - name: Sonda socketpair
+        if: ${{ always() }}
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: pwsh
+        run: '& python .github/scripts/diag975_sonda.py'

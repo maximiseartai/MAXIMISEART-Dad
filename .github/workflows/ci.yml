@@ -330,6 +330,7 @@ jobs:
       - name: DIAG975 sonda
         if: ${{ always() && runner.os == 'Windows' }}
         continue-on-error: true
+        timeout-minutes: 5
         shell: pwsh
         run: '& python .github/scripts/diag975_sonda.py'
 
