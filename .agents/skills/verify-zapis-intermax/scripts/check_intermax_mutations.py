@@ -193,7 +193,7 @@ MUTATIONS = (
         NEW,
     ),
     # Jedna Kopia mniej, a nie jedna Kopia: przy [1:] podmiana usuwa 10 Kopii, każdą za punktem eksploratora, więc
-    # harmonogramów jest 7 razy więcej (14255 zamiast 2407) i mutacja doszła w CI do limitu --limit-s (#963).
+    # harmonogramów jest 5,9 razy więcej (14255 zamiast 2407) i mutacja doszła w CI do limitu --limit-s (#963).
     Mutation(
         "zostaje KEPT - 1 Kopii zamiast KEPT",
         (Edit(COPIES, "    return listed(directory)[KEPT:]\n", "    return listed(directory)[KEPT - 1 :]\n"),),
