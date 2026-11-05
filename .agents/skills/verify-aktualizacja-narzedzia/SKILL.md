@@ -7,6 +7,7 @@ pilnuje:
   - src/rozliczenia/centrum/restart_guardian.py
   - src/rozliczenia/centrum/launcher.py
   - tools/lib/rozjazd_modelu.py
+  - tools/lib/narzedzia_tlc.py
 ci: .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
 ---
 
@@ -269,8 +270,13 @@ In a worktree, create its `.venv` first (`python3 tools/setup_worktree.py`).
 No system Java is needed. The first run downloads pinned `jdk4py==25.0.2.1`
 (a Java runtime packaged for pip, about 50 MB) and `tla2tools.jar` v1.7.4
 (TLC 2.19, SHA-256 checked) into `.verification/formal-aktualizacja/`, which
-Git ignores. After that a run takes about 6 s, offline. `--config NAME` runs
-one configuration, and `--strict` makes known findings exit 1.
+Git ignores. After that a run takes about 6 s, offline. The pins and the
+download live in `tools/lib/narzedzia_tlc.py`: a network error, HTTP 5xx or
+429 is retried twice, and a download that still fails ends with a line
+`BŁĄD POBIERANIA NARZĘDZIA TLC`, which is a failed download, not a model
+verdict. CI keeps the folder in `actions/cache`, keyed by that file (#930).
+`--config NAME` runs one configuration, and `--strict` makes known findings
+exit 1.
 
 The last line is the verdict:
 
