@@ -638,11 +638,22 @@ def test_niezwykla_odpowiedz_przy_archiwum_to_skrzynka_nieosiagalna(
     assert outcome == Unreachable()
 
 
-# Odpowiedź GitHuba na założenie Release w repozytorium bez commitu (repozytorium Skrzynki 2026-11-04, opis PR #860).
+# Odpowiedzi GitHuba na założenie Release w repozytorium bez commitu: 409 z repozytorium Skrzynki 2026-11-04 (opis PR
+# #860) i 422 z repozytorium próbnego 2026-11-05 kluczem OAuth i fine-grained (nagrania ``verify-github-skrzynki``).
 EMPTY_REPOSITORY = {
     "message": "Git Repository is empty.",
     "documentation_url": "https://docs.github.com/rest/releases/releases#create-a-release",
     "status": "409",
+}
+EMPTY_REPOSITORY_VALIDATION = {
+    "message": "Validation Failed",
+    "errors": [{"resource": "Release", "code": "custom", "message": "Repository is empty."}],
+    "documentation_url": "https://docs.github.com/rest/releases/releases#create-a-release",
+    "status": "422",
+}
+EMPTY_REPOSITORY_ANSWERS = {
+    "puste-repozytorium": (409, EMPTY_REPOSITORY),
+    "puste-repozytorium-422": (422, EMPTY_REPOSITORY_VALIDATION),
 }
 
 
@@ -653,7 +664,7 @@ class GitHubOnTransport:
     Zna tylko zapytania, które wysyła ``GitHubReportBox``, i jak GitHub nie trzyma dwóch plików jednej nazwy w jednym
     Release (422). ``refuse_releases``: klucz bez uprawnienia do treści repozytorium (403 przy każdym zapytaniu o
     Release'y i ich pliki). ``empty_repository``: repozytorium bez żadnego commitu, jak repozytorium Skrzynki
-    2026-11-04: lista Release'ów jest pusta, a założenie Release to 409 „Git Repository is empty.”.
+    2026-11-04: lista Release'ów jest pusta, a założenie Release to ta odpowiedź (``EMPTY_REPOSITORY_ANSWERS``).
     """
 
     issues: dict[int, dict[str, Any]] = field(default_factory=dict)
@@ -661,7 +672,7 @@ class GitHubOnTransport:
     assets: dict[int, dict[str, Any]] = field(default_factory=dict)
     data: dict[int, bytes] = field(default_factory=dict)
     refuse_releases: bool = False
-    empty_repository: bool = False
+    empty_repository: tuple[int, object] | None = None
     requests: list[tuple[str, str]] = field(default_factory=list)
     _ids: Iterator[int] = field(default_factory=lambda: itertools.count(101))
 
@@ -692,8 +703,8 @@ class GitHubOnTransport:
                 return self._answer(200, comment)
             case "GET", ["releases"]:
                 return self._page(list(self.releases.values()), query)
-            case "POST", ["releases"] if self.empty_repository:
-                return self._answer(409, EMPTY_REPOSITORY)
+            case "POST", ["releases"] if self.empty_repository is not None:
+                return self._answer(*self.empty_repository)
             case "POST", ["releases"]:
                 release = {"id": next(self._ids), "tag_name": body["tag_name"], "name": body["name"]}
                 self.releases[release["id"]] = release
@@ -808,17 +819,17 @@ def queued_before_start(directory: Path, *posts: Post) -> None:
         (directory / name).write_text(post.to_json(), encoding="utf-8")
 
 
-@pytest.mark.parametrize("refusal", ["puste-repozytorium", "bez-uprawnienia"])
+@pytest.mark.parametrize("refusal", [*EMPTY_REPOSITORY_ANSWERS, "bez-uprawnienia"])
 def test_odmowa_archiwum_zatrzymuje_tylko_plik_logow_a_zgloszenie_za_nimi_dochodzi_w_tym_samym_przejsciu_bez_komunikatu(
     tmp_path: Path, refusal: str
 ) -> None:
-    """Repozytorium Skrzynki bez commitu (409 na założenie Archiwum) i Token bez uprawnienia do treści repozytorium (403)
+    """Repozytorium Skrzynki bez commitu (409 albo 422 na założenie Archiwum) i Token bez uprawnienia do treści repozytorium (403)
     to odmowa Archiwum, która trwa, aż Maks coś zmieni: zatrzymuje tylko plik Logów. Komentarz Logów idzie z dopiskiem,
     a Zgłoszenie, które czeka w kolejce za nimi, dochodzi w tym samym przejściu, a klucz taty zostaje przyjęty, więc tata
     nie dostaje Komunikatu (spec #837, #844)."""
 
     github = GitHubOnTransport(
-        empty_repository=refusal == "puste-repozytorium", refuse_releases=refusal == "bez-uprawnienia"
+        empty_repository=EMPTY_REPOSITORY_ANSWERS.get(refusal), refuse_releases=refusal == "bez-uprawnienia"
     )
     clock = ManualClock()
     keyed = KeyedBox(GitHubReportBox(transport=github), lambda: KEY, clock=clock)
@@ -841,7 +852,7 @@ def test_odmowa_archiwum_zatrzymuje_tylko_plik_logow_a_zgloszenie_za_nimi_dochod
     assert re.search(rf"Plik `{re.escape(ASSET)}` czeka w Kolejce wysyłki", str(logs_issue["comments"][0]["body"]))
     asked = [request for request in github.requests if request[1].startswith("/releases")]
     assert (asked, github.releases) == (
-        [("GET", "/releases"), ("POST", "/releases")] if refusal == "puste-repozytorium" else [("GET", "/releases")],
+        [("GET", "/releases"), ("POST", "/releases")] if refusal in EMPTY_REPOSITORY_ANSWERS else [("GET", "/releases")],
         {},
     )
     lines = log.read_text("utf-8")

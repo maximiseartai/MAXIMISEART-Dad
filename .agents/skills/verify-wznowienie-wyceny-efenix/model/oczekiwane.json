@@ -1,0 +1,74 @@
+{
+  "zwykle": {},
+  "przerwania": {
+    "znane": [
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "przerwanie-po-zaladuj",
+        "znalezisko": "przerwanie między „Załaduj do zlecenia” a odczytem strony zostawia Emmetta w efenix bez śladu, więc ponowne Uruchomienie daje błąd „wycena już jest i się różni” (przyjęte: test_przerwanie_po_zaladuj_do_zlecenia_przed_odczytem_wyceny_emmetta_daje_przy_ponownym_uruchomieniu_blad_tylko_tego_zlecenia)"
+      },
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "przerwanie-przed-zapisem-ilosci",
+        "znalezisko": "przerwanie inne niż wylogowanie po zapisie pozycji z wyprzedzeniem, a zanim efenix zapisał jej ilość, zostawia w śladzie pozycję pustą w efenix, więc ponowne Uruchomienie daje błąd „wycena już jest i się różni” bez zmian (przyjęte: tego nie da się odróżnić od ilości, którą tata usunął)"
+      }
+    ]
+  },
+  "tata-po-przerwaniu": {
+    "znane": [
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "przerwanie-po-zaladuj",
+        "znalezisko": "jak w przerwania"
+      },
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "przerwanie-przed-zapisem-ilosci",
+        "znalezisko": "jak w przerwania"
+      },
+      {
+        "obietnica": "ZmianaTatyZostaje",
+        "przyczyna": "tata-wpisal-ilosc-ze-sladu",
+        "znalezisko": "po przerwaniu między zapisem pozycji z wyprzedzeniem a zapisem jej ilości w efenix tata sam wpisuje w tej pozycji dokładnie ilość, którą narzędzie zaczęło wpisywać: strona jest taka jak po zapisie narzędzia, więc ponowne Uruchomienie dopisuje pozostałe ilości pliku; nic, co tata wpisał albo usunął, się nie zmienia (przyjęte: tych dwóch stron nie da się odróżnić)"
+      }
+    ]
+  },
+  "slad": {
+    "znane": [
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "slad-nie-zapisany",
+        "znalezisko": "nieudany zapis śladu usuwa plik albo zostawia poprzedni bez ostatniego stanu „Emmett załadowany” zlecenia, a Uruchomienie kończy się przed końcem zlecenia (także Zatrzymaniem po nieudanym zapisie z wyprzedzeniem), więc ponowne Uruchomienie daje błąd „wycena już jest i się różni” bez zmian"
+      }
+    ]
+  },
+  "wszystko": {
+    "znane": [
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "przerwanie-po-zaladuj",
+        "znalezisko": "jak w przerwania"
+      },
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "przerwanie-przed-zapisem-ilosci",
+        "znalezisko": "jak w przerwania"
+      },
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "slad-nie-zapisany",
+        "znalezisko": "jak w slad"
+      },
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "brak-pozycji-po-emmetcie",
+        "znalezisko": "strona po „Załaduj do zlecenia” bez pozycji z ilością w pliku to błąd zlecenia przed trace.loaded, więc Wycena Emmetta zostaje w efenix bez śladu, a ponowne Uruchomienie daje znowu błąd (w kodzie przy otwarciu ten sam brak pozycji, a gdy pozycja wróci, „wycena już jest i się różni”) bez zmian"
+      },
+      {
+        "obietnica": "ZmianaTatyZostaje",
+        "przyczyna": "tata-wpisal-ilosc-ze-sladu",
+        "znalezisko": "jak w tata-po-przerwaniu"
+      }
+    ]
+  }
+}

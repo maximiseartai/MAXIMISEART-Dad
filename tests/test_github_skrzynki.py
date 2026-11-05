@@ -1,0 +1,121 @@
+"""Skill ``verify-github-skrzynki``: granice przebiegu na żywo i nagrania prawdziwego GitHuba.
+
+Przebieg na żywo pisze tylko do repozytorium próbnego, więc transport klienta Skrzynki odmawia każdego innego adresu,
+także prawdziwej Skrzynki, zanim cokolwiek wyśle. Nagrania leżą w repozytorium publicznym, więc nie mają klucza ani
+nagłówków żądań. Odtwarzanie nagrań (podstawa ``ci:``) biegnie w Mutation checks; tu sprawdza się tylko, że odtwarzanie
+odmawia żądania spoza nagrania.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import re
+import sys
+
+import pytest
+
+from rozliczenia.centrum.report_box import (
+    REPOSITORY,
+    GitHubReportBox,
+    HttpRequest,
+    Unreachable,
+)
+
+SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
+sys.path.insert(0, str(SKILL / "scripts"))
+
+import github_wymiana  # noqa: E402
+
+TRIAL = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        f"https://api.github.com/repos/{REPOSITORY}/issues",
+        f"https://uploads.github.com/repos/{REPOSITORY}/releases/1/assets?name=a",
+    ],
+    ids=["api", "wysylka-plikow"],
+)
+def test_zadanie_skrzynki_idzie_do_repozytorium_probnego(url: str) -> None:
+    moved = github_wymiana.to_trial(url)
+
+    assert f"/repos/{TRIAL}/" in moved
+    assert f"/repos/{REPOSITORY}/" not in moved
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        f"https://api.github.com/repos/{TRIAL}/issues",
+        "https://api.github.com/repos/maximiseartai/MAXIMISEART-Dad/issues",
+        f"https://example.com/repos/{REPOSITORY}/issues",
+        f"https://api.github.com/repos/{REPOSITORY}-inne/issues",
+    ],
+    ids=["juz-probne", "repo-narzedzia", "inny-host", "repo-o-tym-samym-poczatku"],
+)
+def test_transport_przebiegu_odmawia_adresu_spoza_skrzynki_przed_wysylka(
+    url: str,
+) -> None:
+    sent: list[str] = []
+    transport = github_wymiana.LiveTransport(github_wymiana.Recorder(), github_wymiana.Pace(), sent)
+
+    with pytest.raises(github_wymiana.OutsideTrial):
+        transport(HttpRequest("POST", url, {}, b"{}"))
+
+    assert sent == []
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("POST", f"/repos/{REPOSITORY}/issues"),
+        ("DELETE", "/repos/maximiseartai/MAXIMISEART-Dad/git/refs/tags/v0.1.0"),
+        ("GET", "/user/repos"),
+    ],
+    ids=["skrzynka", "repo-narzedzia", "odczyt-poza-proba"],
+)
+def test_harness_odmawia_poza_repozytorium_probnym(method: str, path: str) -> None:
+    admin = github_wymiana.Admin("klucz-nieuzywany", github_wymiana.Pace())
+
+    with pytest.raises(github_wymiana.OutsideTrial):
+        admin.request(method, path)
+
+    assert admin.log == []
+
+
+_TOKEN = re.compile(r"\b(gh[opsu]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})")
+
+
+def test_nagrania_sa_i_nie_maja_klucza_ani_naglowkow_zadan() -> None:
+    recordings = sorted((SKILL / "nagrania").glob("*.json"))
+    texts = {path.name: path.read_text(encoding="utf-8") for path in recordings}
+
+    assert {"aktualnosc.json"} <= set(texts) and any(name.startswith("skrzynka-") for name in texts), sorted(texts)
+    assert [name for name, text in texts.items() if _TOKEN.search(text) or "Authorization" in text] == []
+    for name, text in texts.items():
+        for case in json.loads(text)["przypadki"].values():
+            assert all(
+                set(exchange) == set(github_wymiana.Exchange("", "", None, None, None, None, None).to_json())
+                for exchange in case["wymiany"]
+            ), name
+
+
+def test_odtwarzanie_odmawia_zadania_spoza_nagrania() -> None:
+    recorded = github_wymiana.Exchange(
+        "GET",
+        f"/repos/{REPOSITORY}/issues/1/comments?per_page=100&page=1",
+        None,
+        None,
+        200,
+        None,
+        [],
+    )
+    transport = github_wymiana.ReplayTransport([recorded])
+
+    outcome = GitHubReportBox(transport=transport).comments(2, key="github_pat_ODTWORZENIE")
+
+    assert outcome == Unreachable()
+    [problem] = transport.finish()
+    assert "issues/2/comments" in problem and "issues/1/comments" in problem

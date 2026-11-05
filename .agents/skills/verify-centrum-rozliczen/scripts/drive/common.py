@@ -175,11 +175,15 @@ EFENIX_METRICS = ".wycena-efenix-metrics.jsonl"
 @contextmanager
 def priced_in_efenix(run: Run, token: str, result: str = "OK") -> Iterator[None]:
     """Harness: a Wycena w efenix of ``token`` with ``result`` (OK or WYMAGA_SPRAWDZENIA) in the run's Historia (one
-    record of metrics schema 2, which the reader still takes), and the file as it was afterwards, so later features
-    count the same history."""
+    record of metrics schema 2, which the reader still takes), and the file's content as it was afterwards, so later
+    features count the same history.
+
+    A missing file comes back empty, not deleted: the server reads the file while the page refreshes, and on Windows a
+    file another process has open cannot be deleted (``WinError 32``, part 2/4 of #863), while it can be rewritten,
+    as Python opens files sharing read and write. The metrics reader takes an empty file as no history."""
 
     path = run.root / EFENIX_METRICS
-    before = path.read_bytes() if path.exists() else None
+    before = path.read_bytes() if path.exists() else b""
     counters = dict.fromkeys(("orders", "ready", "errors", "emmett_warnings", "with_photos", "defects"), 0)
     record = {
         "schema_version": 2, "started_at": "2026-10-13T10:00:00+02:00", "mode": "RUN", "period": token,
@@ -187,14 +191,11 @@ def priced_in_efenix(run: Run, token: str, result: str = "OK") -> Iterator[None]
         "phase_durations_ms": dict.fromkeys(("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie"), 0),
         "counters": counters, "stop": None,
     }
-    path.write_bytes((before or b"") + json.dumps(record).encode() + b"\n")
+    path.write_bytes(before + json.dumps(record).encode() + b"\n")
     try:
         yield
     finally:
-        if before is None:
-            path.unlink()
-        else:
-            path.write_bytes(before)
+        path.write_bytes(before)
 
 
 # The current step of the Droga okresu → the heading of card Następny krok, its main (first) button, and the main
