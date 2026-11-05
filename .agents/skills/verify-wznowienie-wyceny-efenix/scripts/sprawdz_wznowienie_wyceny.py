@@ -47,6 +47,8 @@ DEFINITIONS = {
     "src/rozliczenia/efenix_pricing.py": ("save", "_mark", "_efenix_stops", "_priced", "_outcome", "_after_emmett", "_entered"),
     "src/rozliczenia/efenix_emmett_trace.py": ("EmmettTrace", "_replace", "_read_secret", "_read", "_is_entry"),
     "src/rozliczenia/efenix_positions.py": ("as_left_after_emmett", "to_enter", "priced_differently", "same_amount", "emmett_conflicts"),
+    # Okno efenix: kiedy efenix zapisał Wycenę Emmetta i ilość, a kiedy okno zgłasza ``LoggedOut`` bez zapisu ilości.
+    "src/rozliczenia/efenix_browser.py": ("load_emmett", "enter_quantity"),
 }
 # Dopobranie historii płytkiego klonu CI nie czeka do limitu czasu runnera.
 FETCH_TIMEOUT_S = 300
@@ -250,7 +252,10 @@ _STEPS = {
     "Otworz": "okno otwiera zlecenie {z} i decyduje (_outcome)",
     "ZaladujEmmetta": "okno klika „Załaduj do zlecenia” w zleceniu {z}: efenix ma Wycenę Emmetta (load_emmett)",
     "OdczytPoEmmetcie": "okno czyta stronę zlecenia {z} po Emmetcie, trace.loaded zapisuje „Emmett załadowany”",
+    "BrakPozycji": "strona zlecenia {z} po Emmetcie nie ma pozycji z ilością w pliku: błąd zlecenia przed trace.loaded",
+    "Zapowiedz": "trace.entering zapisuje z wyprzedzeniem pozycję, którą okno zaraz wpisze w zleceniu {z} (_entered)",
     "Wpisz": "okno wpisuje ilość z pliku w zleceniu {z}, efenix ją zapisuje (enter_quantity)",
+    "Odmowa": "efenix nie zapisał ilości w zleceniu {z} (LoggedOut), trace.not_entered wycofuje pozycję, Zatrzymanie",
     "Potwierdz": "efenix odpowiada kwotą w zleceniu {z}",
     "KoniecZlecenia": "zlecenie {z} ma wynik, potem trace.finished (_priced)",
     "Zatrzymanie": "okno efenix się nie dokończyło działania: Zatrzymanie (StopError) w zleceniu {z}",
@@ -263,11 +268,23 @@ _STEPS = {
 def _tell(trace: list[dict[str, str]]) -> None:
     for number, (before, state) in enumerate(itertools.pairwise(trace), start=1):
         step = _STEPS.get(state["_akcja"], state["_akcja"]).format(z=before.get("zlecenie", "?"))
-        print(f"   {number}. {step}: efenix {_brief(state['efenix'])}, ślad na dysku {state['naDysku']}")
+        print(f"   {number}. {step}: efenix {_brief(state['efenix'])}, ślad na dysku {_entries(_brief(state['naDysku']))}")
 
 
 def _brief(value: str) -> str:
     return " ".join(value.split())
+
+
+# Wpis śladu modelu, np. ``[stan |-> "zaladowany", wpisuje |-> {"B"}]``, opowiedziany jako ``zaladowany {B}``.
+_ENTRY = re.compile(r'\[stan \|-> "(\w+)", wpisuje \|-> \{([^}]*)\}\]')
+
+
+def _entries(value: str) -> str:
+    def told(entry: re.Match[str]) -> str:
+        positions = entry.group(2).replace('"', "")
+        return entry.group(1) + (f" {{{positions}}}" if positions else "")
+
+    return _ENTRY.sub(told, value)
 
 
 def _description(name: str) -> str:

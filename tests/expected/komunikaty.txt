@@ -1111,6 +1111,11 @@ browser_not_started [EFENIX_BRAK_PRZEGLADARKI]
   Gdzie: okno efenix
   Co zrobić: Zamknij okno efenix, jeśli zostało otwarte z poprzedniej Wyceny w efenix, i uruchom ponownie. Jeśli na komputerze nie ma Google Chrome albo błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
+emmett_trace_not_saved [EFENIX_SLAD_NIEZAPISANY]
+  Co się stało: Narzędzie nie zapisało na dysku Śladu Wyceny Emmetta, zanim wpisało ilość w zleceniu z wiersza 19 Pliku zbiorczego, więc tej ilości nie wpisało i Wycena w efenix się zatrzymała. To zlecenie ma w efenix Wycenę Emmetta bez części ilości z pliku. Wycena zleceń sprzed zatrzymania została w efenix.
+  Gdzie: plik 08_14_09_2026.json, folder slad-wyceny-emmetta
+  Co zrobić: Uruchom ponownie: gotowe zlecenia narzędzie tylko sprawdzi. Jeśli Wycena zatrzyma się znowu albo to zlecenie dostanie błąd „wycena już jest i się różni”, dopisz w nim ilości z Pliku zbiorczego w efenix sam. Przekaż ten komunikat osobie utrzymującej narzędzie.
+
 order_error #1 [EFENIX_BRAK_NUMERU]
   Co się stało: Wiersz nie ma numeru zlecenia w NUMER ZL. Zlecenie zostało w efenix bez zmian.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
