@@ -20,6 +20,13 @@ etykietą (``labelled_issues``) daje ich numery, treści i zamknięcie (powód i
 z których Powiadomienia biorą stan sprawy). ``newest_with_line`` wybiera z nich
 najnowsze issue z wierszem rozpoznawczym: odciskiem problemu Zgłoszenia albo
 tokenem okresu Kontroli ilości. Klucz taty podaje adapterowi tylko ``KeyedBox``.
+
+Archiwum okresu (#844) to GitHub Release z tagiem w repozytorium Zgłoszeń, nie Wydanie narzędzia (inne repozytorium i
+tag): ``archive`` znajduje je po tagu z jego plikami (``Asset``: nazwa, etykieta i czy plik doszedł w całości) albo
+daje ``None``, ``open_archive`` zakłada je bez plików, ``upload`` wysyła plik, a ``remove`` usuwa plik, który ma ustąpić
+nowszemu. Zapis treści repozytorium to inne uprawnienie klucza niż issue: jego brak to ``Refused`` z kroków Archiwum,
+a repozytorium bez commitu odmawia założenia Archiwum (409, ``Rejected``).
+``archive_url`` to adres pobrania pliku z Archiwum, który zna komentarz, zanim plik dojdzie.
 """
 
 from __future__ import annotations
@@ -27,6 +34,7 @@ from __future__ import annotations
 import http.client
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -102,12 +110,43 @@ class Unreachable:
     """Skrzynka nie odpowiedziała jak zwykle: brak sieci, przekroczony czas, limit zapytań albo awaria GitHuba."""
 
 
+@dataclass(frozen=True)
+class Asset:
+    """Plik w Archiwum okresu: ``id`` z API, nazwa, etykieta (pusta, gdy pliku jej nie dano) i czy doszedł w całości.
+
+    ``uploaded`` ``False``: wysyłka pliku urwała się w trakcie, a GitHub trzyma go niepełnego pod tą nazwą.
+    """
+
+    id: int
+    name: str
+    label: str
+    uploaded: bool
+
+
+@dataclass(frozen=True)
+class Archive:
+    """Archiwum okresu (GitHub Release z tagiem) w Skrzynce: ``id`` z API i jego pliki."""
+
+    id: int
+    assets: tuple[Asset, ...]
+
+
+@dataclass(frozen=True)
+class Removed:
+    """Skrzynka usunęła plik z Archiwum."""
+
+
 SendOutcome = Sent | Refused | Rejected | Unreachable
 CommentOutcome = Commented | Refused | Rejected | Unreachable
 IssuesOutcome = tuple[Issue, ...] | Refused | Unreachable
 CommentsOutcome = tuple[Comment, ...] | Refused | Unreachable
 # Numer znalezionego issue albo ``None``, gdy issue z tym wierszem nie ma (nigdy nie było albo Maks je zamknął).
 FindOutcome = int | None | Refused | Unreachable
+# Archiwum z tym tagiem albo ``None``, gdy go jeszcze nie ma.
+ArchiveOutcome = Archive | None | Refused | Unreachable
+OpenArchiveOutcome = Archive | Refused | Rejected | Unreachable
+UploadOutcome = Asset | Refused | Rejected | Unreachable
+RemoveOutcome = Removed | Refused | Unreachable
 
 
 class ReportBox(Protocol):
@@ -131,6 +170,25 @@ class ReportBox(Protocol):
         """Zmienia treść komentarza ``comment_id`` na ``body``; nigdy nie rzuca wyjątku sieci."""
         ...
 
+    def archive(self, tag: str, *, key: str) -> ArchiveOutcome:
+        """Archiwum z tagiem ``tag`` z jego plikami albo ``None``, gdy go nie ma; nigdy nie rzuca wyjątku sieci."""
+        ...
+
+    def open_archive(self, tag: str, title: str, description: str, *, key: str) -> OpenArchiveOutcome:
+        """Zakłada Archiwum z tagiem ``tag``, tytułem i opisem, bez plików; nigdy nie rzuca wyjątku sieci."""
+        ...
+
+    def upload(self, archive_id: int, name: str, label: str, data: bytes, *, key: str) -> UploadOutcome:
+        """Wysyła plik ``name`` z etykietą ``label`` do Archiwum ``archive_id``; nigdy nie rzuca wyjątku sieci.
+
+        Plik o tej nazwie, który już jest w Archiwum, to ``Rejected``: GitHub nie trzyma dwóch plików jednej nazwy.
+        """
+        ...
+
+    def remove(self, asset_id: int, *, key: str) -> RemoveOutcome:
+        """Usuwa plik ``asset_id`` z Archiwum; nigdy nie rzuca wyjątku sieci."""
+        ...
+
 
 @dataclass(frozen=True)
 class HttpRequest:
@@ -151,6 +209,9 @@ Transport = Callable[[HttpRequest], HttpResponse]
 
 REPOSITORY: Final = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia"
 _API: Final = "https://api.github.com"
+# Pliki GitHub Release idą na osobny adres (dokumentacja „Upload a release asset”).
+_UPLOADS: Final = "https://uploads.github.com"
+_WEB: Final = "https://github.com"
 _TIMEOUT_S: Final = 15.0
 _REFUSALS: Final = frozenset({401, 403, 404})
 # GitHub odpowiada na przekroczony limit zapytań (podstawowy i „secondary”) kodem 403 z „rate limit” w ``message``
@@ -158,6 +219,8 @@ _REFUSALS: Final = frozenset({401, 403, 404})
 _RATE_LIMIT: Final = b"rate limit"
 # Odpowiedzi na treść wysyłki (zła albo za długa), nie na klucz ani sieć.
 _REJECTIONS: Final = frozenset({400, 413, 422})
+# Odpowiedź GitHuba na założenie Release w repozytorium bez commitu („Git Repository is empty.”).
+_EMPTY_REPOSITORY: Final = 409
 # Issue z etykietą przegląda się stronami po 100; dziesięć stron to więcej, niż jedna etykieta kiedykolwiek będzie miała.
 _PAGE_SIZE: Final = 100
 _MAX_PAGES: Final = 10
@@ -168,6 +231,12 @@ def newest_with_line(issues: tuple[Issue, ...], line: str) -> int | None:
     """Najnowsze (o najwyższym numerze) z ``issues`` z dokładnie wierszem ``line`` w treści."""
 
     return max((issue.number for issue in issues if line in issue.body.splitlines()), default=None)
+
+
+def archive_url(tag: str, name: str) -> str:
+    """Adres pobrania pliku ``name`` z Archiwum z tagiem ``tag`` (GitHub Release w repozytorium Zgłoszeń)."""
+
+    return f"{_WEB}/{REPOSITORY}/releases/download/{urllib.parse.quote(tag)}/{urllib.parse.quote(name)}"
 
 
 def urllib_transport(request: HttpRequest) -> HttpResponse:
@@ -224,6 +293,66 @@ class GitHubReportBox:
         entries = self._pages(f"{_API}/repos/{REPOSITORY}/issues/{number}/comments?", key)
         return entries if not isinstance(entries, list) else tuple(c for c in map(_comment, entries) if c is not None)
 
+    def archive(self, tag: str, *, key: str) -> ArchiveOutcome:
+        """Release z tagiem ``tag`` z listy Release'ów i jego pliki, oba strona po stronie; porażka strony to porażka
+        całości. Lista, a nie Release po tagu: 404 po tagu znaczy też brak uprawnienia, a lista bez niego jest pusta."""
+
+        releases = self._pages(f"{_API}/repos/{REPOSITORY}/releases?", key)
+        if not isinstance(releases, list):
+            return releases
+        found = next((_release_id(entry) for entry in releases if _tag(entry) == tag), None)
+        if found is None:
+            return None
+        assets = self._pages(f"{_API}/repos/{REPOSITORY}/releases/{found}/assets?", key)
+        if not isinstance(assets, list):
+            return assets
+        return Archive(found, tuple(asset for asset in map(_asset, assets) if asset is not None))
+
+    def open_archive(self, tag: str, title: str, description: str, *, key: str) -> OpenArchiveOutcome:
+        """Release z tagiem na domyślnej gałęzi, nie oznaczony jako najnowszy: Archiwum nie jest Wydaniem.
+
+        Repozytorium bez żadnego commitu nie ma gałęzi, na której GitHub założyłby tag: odpowiada 409 „Git Repository is
+        empty.” (repozytorium Skrzynki 2026-11-04), a na tag, który już ma Release, 422. Każda z tych odmów trwa, aż Maks
+        coś zmieni, więc to ``Rejected``: kolejka zatrzymuje tylko plik w Archiwum, nie wysyłki za nim.
+        """
+
+        if not _sendable(key):
+            return Refused()
+        payload = {"tag_name": tag, "name": title, "body": description, "make_latest": "false"}
+        answer = self._send("POST", f"{_API}/repos/{REPOSITORY}/releases", payload, key)
+        if not isinstance(answer, HttpResponse):
+            return answer
+        if answer.status == _EMPTY_REPOSITORY:
+            return Rejected()
+        found = _release_id(_json(answer.body)) if answer.status == 201 else None
+        return Archive(found, ()) if found is not None else Unreachable()
+
+    def upload(self, archive_id: int, name: str, label: str, data: bytes, *, key: str) -> UploadOutcome:
+        if not _sendable(key):
+            return Refused()
+        query = urllib.parse.urlencode({"name": name, "label": label})
+        url = f"{_UPLOADS}/repos/{REPOSITORY}/releases/{archive_id}/assets?{query}"
+        answer = self._submit("POST", url, data, "application/octet-stream", key)
+        if not isinstance(answer, HttpResponse):
+            return answer
+        asset = _asset(_json(answer.body)) if answer.status == 201 else None
+        return asset if asset is not None else Unreachable()
+
+    def remove(self, asset_id: int, *, key: str) -> RemoveOutcome:
+        if not _sendable(key):
+            return Refused()
+        answer = self._exchange(
+            HttpRequest(
+                method="DELETE",
+                url=f"{_API}/repos/{REPOSITORY}/releases/assets/{asset_id}",
+                headers=_headers(key),
+                body=None,
+            )
+        )
+        if not isinstance(answer, HttpResponse):
+            return answer
+        return Removed() if answer.status == 204 else Unreachable()
+
     def _pages(self, query: str, key: str) -> list[object] | Refused | Unreachable:
         """Wpisy listy GitHuba ze wszystkich stron, najwyżej ``_MAX_PAGES``; ``query`` to adres z ``?`` albo ``&`` na końcu."""
 
@@ -246,13 +375,15 @@ class GitHubReportBox:
     def _send(
         self, method: str, url: str, payload: Mapping[str, object], key: str
     ) -> HttpResponse | Refused | Rejected | Unreachable:
+        return self._submit(method, url, json.dumps(payload).encode("utf-8"), "application/json", key)
+
+    def _submit(
+        self, method: str, url: str, body: bytes, content_type: str, key: str
+    ) -> HttpResponse | Refused | Rejected | Unreachable:
+        """Wysyłka treści ``body``; odpowiedź na samą treść (``_REJECTIONS``) to ``Rejected``."""
+
         answer = self._exchange(
-            HttpRequest(
-                method=method,
-                url=url,
-                headers={**_headers(key), "Content-Type": "application/json"},
-                body=json.dumps(payload).encode("utf-8"),
-            )
+            HttpRequest(method=method, url=url, headers={**_headers(key), "Content-Type": content_type}, body=body)
         )
         return Rejected() if isinstance(answer, HttpResponse) and answer.status in _REJECTIONS else answer
 
@@ -304,6 +435,24 @@ def _comment(entry: object) -> Comment | None:
         return None
     body = entry.get("body")
     return Comment(entry["id"], entry["html_url"], body if isinstance(body, str) else "")
+
+
+def _release_id(entry: object) -> int | None:
+    found = entry.get("id") if isinstance(entry, dict) else None
+    return found if isinstance(found, int) else None
+
+
+def _tag(entry: object) -> object:
+    return entry.get("tag_name") if isinstance(entry, dict) else None
+
+
+def _asset(entry: object) -> Asset | None:
+    """Plik Release z odpowiedzi GitHuba; wpis bez identyfikatora albo nazwy to ``None``."""
+
+    if not isinstance(entry, dict) or not isinstance(entry.get("id"), int) or not isinstance(entry.get("name"), str):
+        return None
+    label = entry.get("label")
+    return Asset(entry["id"], entry["name"], label if isinstance(label, str) else "", entry.get("state") == "uploaded")
 
 
 def _issue(entry: object) -> Issue | None:

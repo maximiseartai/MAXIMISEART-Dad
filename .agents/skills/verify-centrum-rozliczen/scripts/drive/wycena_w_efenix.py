@@ -36,6 +36,9 @@ ORDERS = {
     20: ("QX9003", "celina.testowa"),
     21: ("QX9004", "dorota.testowa"),
 }
+# The made-up ADRES of every order in the Plik zbiorczy and its Dane adresowe in the Atrapa (tests.fixtures.efenix.Order):
+# the rule of data (ADR 0025) keeps both out of the Logi.
+ADDRESSES = ("UL. TESTOWA 12/3", "TESTOWA", "Testowa", "Miasto-Dzielnica")
 # Znacznik efenix (rozliczenia.efenix_mark.MARK_RGB), the light purple of ADRES in a ready order's row.
 MARK_RGB = "E0CCFF"
 
@@ -215,13 +218,15 @@ def _price(run: Run, page: Page, source: Path) -> None:
     logs = _logs(run)
     run.check(len(logs) == logs_before + 1, "the Uruchomienie wrote one file of Logi Uruchomienia of efenix")
     record = logs[-1]
-    text = json.dumps(record["efenix_orders"], ensure_ascii=False)
+    trace = json.dumps(record["efenix_orders"], ensure_ascii=False)
+    whole = json.dumps(record, ensure_ascii=False)
     traced = [(order["row"], order["outcome"]) for order in record["efenix_orders"]]
-    private = [marker for number, worker in ORDERS.values() for marker in (number, worker) if marker in text]
+    private = [number for number, _worker in ORDERS.values() if number in trace]
+    private += [address for address in ADDRESSES if address in whole]
     run.check(
         traced == [(18, "gotowe"), (19, "błąd"), (20, "ostrzeżenie Emmetta"), (21, "rozliczone")] and private == [],
         "the Logi trace every order by its row, the Zlecenie rozliczone as rozliczone, the trace without its order "
-        "number or the Wykonawca's login",
+        "number, and no part of the Logi has the address",
     )
     copied = {row["row"]: row["cells"] for file in record["input_copy"] for sheet in file["sheets"] for row in sheet["rows"]}
     run.check(
@@ -229,6 +234,16 @@ def _price(run: Run, page: Page, source: Path) -> None:
         and all(number in str(copied[row].get("F")) and copied[row].get("H") == worker for row, (number, worker) in ORDERS.items())
         and all("B" not in cells for cells in copied.values()),
         "the Kopia wejścia of the Logi holds rows 18–21 of the Plik zbiorczy with NUMER ZL. and WYKONAWCA, without ADRES",
+    )
+    steps = {order["row"]: order["steps"] for order in record["efenix_orders"]}
+    opened = steps[18][1]
+    run.check(
+        (steps[19][0]["found"], steps[19][0]["results"]) == (0, [])
+        and steps[21][0]["results"] == [{"same_number": True, "status": "Rozliczone", "realizator": ORDERS[21][1], "address": []}]
+        and (opened["action"], opened["status"], opened["realizator"], opened["quantities"]["012"])
+        == ("otwarcie zlecenia", "Do wyceny", ORDERS[18][1], 0),
+        "the Logi read every efenix page (#843): the search results with status, realizator and differing address parts, "
+        "and the opened order's status, realizator and every position's quantity",
     )
     live.get_by_role("button", name="Otwórz Plik zbiorczy").click()
     run.wait_for(last_opened_is(run, source), "Otwórz Plik zbiorczy opens it")

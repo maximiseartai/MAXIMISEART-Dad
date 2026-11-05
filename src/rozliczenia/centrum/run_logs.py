@@ -8,7 +8,10 @@ Z podsumowania silnika Przebiegu rozliczeń jest też liczba wyczyszczonych Ilo�
 pokazuje (ADR 0018), a z podsumowania Uporządkowania INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019):
 wiersze i operatorzy, bez innej treści wierszy. Z podsumowania Wyceny w efenix jest ślad każdego zlecenia (``LoggedOrder``):
 wiersz Pliku zbiorczego, wynik z kodem Komunikatu, ilości z pliku po kodach pozycji, ``Kwota`` (AU) i działania okna efenix
-z czasami, ilościami Emmetta, wpisanymi i kwotami, bez numeru zlecenia, adresu, loginu Wykonawcy i treści stron efenix.
+z czasami i odczytem strony po każdym (``LoggedStep``, #843): przy szukaniu każdy wiersz listy ze statusem, loginem
+realizatora, zgodnością numeru i nazwami części adresu, którymi różni się od ``ADRES`` (``LoggedResult``), przy otwarciu
+zlecenia jego status i realizator, a ze strony zlecenia data wykonania, kwota i ilości wszystkich pozycji. Bez numeru
+zlecenia i bez danych adresowych z pliku i z efenix.
 Zatrzymanie okna efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń sprzed niego i ``LoggedWindowStop``:
 przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w przebiegu oraz jego działania aż do tego, które się
 nie udało; a Zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn.
@@ -33,13 +36,15 @@ klucz procesu i identyfikator Uruchomienia, więc jest jedna na Uruchomienie i u
 atomowy; nieudany wychodzi z ``run_ended``, a ``RunHost.after`` zapisuje w dzienniku tylko jego typ, bez zmiany
 wyniku i bez Komunikatu.
 
-Te same Logi idą przez kolejkę Skrzynki Zgłoszeń (``Outbox``) do issue okresu z etykietą ``logi-uruchomienia``,
-także zamkniętego: każde Uruchomienie to komentarz z podsumowaniem w Markdown (``summary_markdown``) i pełnym JSON
-w zwijanym bloku, a JSON ponad limit komentarza idzie w kolejnych częściach, które sklejone dają tekst pliku.
+Te same Logi idą przez kolejkę Skrzynki Zgłoszeń (``Outbox``) jedną wysyłką (``logi_post``, #844): do issue okresu z
+etykietą ``logi-uruchomienia``, także zamkniętego, jeden komentarz na Uruchomienie z podsumowaniem w Markdown
+(``summary_markdown``) i odnośnikiem do pełnych Logów, a do Archiwum Logów okresu (GitHub Release ``logi-<okres>`` w
+repozytorium Skrzynki, nie Wydanie narzędzia) plik o nazwie pliku Logów spakowany gzipem, który rozpakowany ma znak w
+znak tekst pliku Logów.
 
 Diagnoza Zatrzymania dopisuje się do Logów swojego Uruchomienia (``RunLogs.diagnosed``): ten sam plik dostaje pole
 ``diagnosis``, a Logi idą do kolejki drugi raz z tym samym identyfikatorem wysyłki (Uruchomienie i etykieta), więc
-kolejka zmienia komentarz tego Uruchomienia zamiast dokładać nowy (#840), a komentarz Uruchomienia to zawsze jego plik.
+kolejka podmienia plik w Archiwum i zmienia komentarz tego Uruchomienia zamiast dokładać nowy (#840, #844).
 Diagnoza z tym samym wynikiem co ostatnio dopisana (``LoggedDiagnosis.same_result``) nie zmienia niczego: po
 nieoczekiwanym wyjątku karta zaczyna Diagnozę sama przy każdym pokazaniu, a Maks potrzebuje tylko zmiany wyniku.
 Diagnozę ma tylko ostatnie Uruchomienie tej pracy Centrum, więc w pamięci zostają tylko jego Logi; Diagnoza,
@@ -75,7 +80,7 @@ from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.dad_actions import DadActionJournal, DadActions
 from rozliczenia.centrum.diagnosis import CheckState, Diagnosis
-from rozliczenia.centrum.outbox import Outbox, PeriodThread, Post
+from rozliczenia.centrum.outbox import ArchiveFile, Outbox, PeriodThread, Post
 from rozliczenia.centrum.report_box import Label
 from rozliczenia.centrum.runs import EndedRun, Ending
 from rozliczenia.centrum.tool_freshness import CommitSource
@@ -100,6 +105,7 @@ from rozliczenia.efenix_pricing import (
     StoppedOrder,
     WindowCause,
 )
+from rozliczenia.efenix_checks import ListedRead
 from rozliczenia.efenix_positions import file_quantities
 from rozliczenia.efenix_trace import Action, TraceStep
 from rozliczenia.input_copy import CellValue, CopiedFile, CopiedSheet, Typed, TypedKind
@@ -289,9 +295,33 @@ class LoggedEntries(_Record):
         )
 
 
+class LoggedResult(_Record):
+    """Wiersz listy zleceń efenix po szukaniu (``efenix_checks.ListedRead``): czy ``Numer dokumentu`` to ``NUMER ZL.`` z
+    pliku, status i login realizatora jak na liście oraz nazwy części adresu (``efenix_address.AddressPart``), którymi
+    ``Dane adresowe`` różnią się od ``ADRES``, bez wartości; pusta lista to ten sam adres."""
+
+    same_number: bool
+    status: str
+    realizator: str | None
+    address: list[str]
+
+    @classmethod
+    def of(cls, read: ListedRead) -> LoggedResult:
+        return cls(
+            same_number=read.same_number,
+            status=read.status,
+            realizator=read.realizator,
+            address=[part.value for part in read.address],
+        )
+
+
 class LoggedStep(_Record):
     """Działanie okna efenix przy zleceniu (``efenix_trace.TraceStep``): chwila rozpoczęcia (UTC; ``None`` w plikach
-    schematu 1), czas i to, co odpowiedział efenix."""
+    schematu 1), czas i odczyt strony efenix po nim.
+
+    ``results``: każdy wiersz listy po szukaniu, ``status`` i ``realizator``: wiersz listy, którego stronę zlecenia okno
+    otworzyło; ``None`` przy innych działaniach i w plikach sprzed tych pól.
+    """
 
     action: Action
     started_at: datetime | None = None
@@ -303,6 +333,9 @@ class LoggedStep(_Record):
     position: str | None
     quantity: int | None
     accepted: bool | None
+    results: list[LoggedResult] | None = None
+    status: str | None = None
+    realizator: str | None = None
 
     @classmethod
     def of(cls, step: TraceStep) -> LoggedStep:
@@ -317,6 +350,9 @@ class LoggedStep(_Record):
             position=step.position,
             quantity=step.quantity,
             accepted=step.accepted,
+            results=None if step.results is None else [LoggedResult.of(read) for read in step.results],
+            status=step.status,
+            realizator=step.realizator,
         )
 
 
@@ -781,20 +817,15 @@ _FIELD_NAME: Final = re.compile(r"[a-z_]+")
 
 
 def logi_post(record: RunLog) -> Post:
-    """Logi do issue okresu w Skrzynce Zgłoszeń: podsumowanie, pod nim JSON w ``<details>``, w razie potrzeby w częściach.
+    """Logi do Skrzynki Zgłoszeń jedną wysyłką: komentarz z podsumowaniem i odnośnikiem w issue okresu i pełne Logi w
+    Archiwum Logów okresu (``archive_file``).
 
     Identyfikator wysyłki to Uruchomienie (``run_id``) i etykieta ``logi-uruchomienia``, te same po Diagnozie, więc
-    Logi z Diagnozą zmieniają komentarz swojego Uruchomienia (``outbox._settle``).
+    Logi z Diagnozą podmieniają plik w Archiwum i zmieniają komentarz swojego Uruchomienia (``outbox``).
     """
 
-    period, run_id = record.period, record.run_id
-
-    def frame(number: int, count: int, chunk: str) -> str:
-        part = "" if count == 1 else f", część {number}/{count}"
-        top = summary_markdown(record) if number == 1 else f"**Logi Uruchomienia** {run_id}{part}"
-        return f"{top}\n\n<details><summary>Logi JSON{part}</summary>\n\n````json\n{chunk}\n````\n\n</details>\n"
-
-    return Post.of(
+    period = record.period
+    return Post(
         PeriodThread(
             label=LABEL,
             line=f"- Logi Uruchomienia okresu: {period}",
@@ -802,21 +833,39 @@ def logi_post(record: RunLog) -> Post:
             title=f"Logi Uruchomienia {period}",
         ),
         period=period,
-        run_id=run_id,
+        run_id=record.run_id,
         header=(
-            f"Logi Uruchomień okresu {period} z Centrum rozliczeń taty. Każde Uruchomienie to komentarz: "
-            "podsumowanie, a pod nim pełny JSON Logów. Długie Logi idą w kolejnych komentarzach „część k/n”."
+            f"Logi Uruchomień okresu {period} z Centrum rozliczeń taty. Każde Uruchomienie to jeden komentarz: "
+            f"podsumowanie i odnośnik do pełnych Logów w Archiwum Logów okresu (Release `logi-{period}`)."
         ),
-        blocks=[record.text],
-        frame=frame,
+        parts=(summary_markdown(record) + "\n",),
+        archive=archive_file(record),
+    )
+
+
+def archive_file(record: RunLog) -> ArchiveFile:
+    """Pełne Logi w Archiwum Logów okresu: Release z tagiem ``logi-<okres>``, plik o nazwie i treści pliku Logów."""
+
+    period = record.period
+    return ArchiveFile(
+        tag=f"logi-{period}",
+        title=f"Logi Uruchomień {period}",
+        description=(
+            f"Pełne Logi Uruchomień okresu {period} z Centrum rozliczeń taty: jeden plik na Uruchomienie, nazwany jak "
+            "plik Logów na komputerze taty i spakowany gzipem. To nie jest Wydanie narzędzia."
+        ),
+        name=record.file_name,
+        text=record.text,
     )
 
 
 def summary_markdown(record: RunLog) -> str:
-    """Podsumowanie na górze komentarza Logów: proces, tryb, okres, wynik, czas, kody Komunikatów, Diagnoza i Wydanie."""
+    """Komentarz Logów: proces, tryb, okres, wynik, czas, kody Komunikatów, Diagnoza, Wydanie i odnośnik do pełnych Logów
+    w Archiwum Logów okresu."""
 
     commit = "nieznany" if record.tool.commit is None else short_commit(record.tool.commit)
     diagnosis = "" if record.diagnosis is None else f"- Diagnoza: {_diagnosis(record.diagnosis)}\n"
+    archive = archive_file(record)
     return (
         f"**Logi Uruchomienia**: {declaration_of(record.process).title}, {record.mode}, okres {record.period}\n"
         "\n"
@@ -825,7 +874,8 @@ def summary_markdown(record: RunLog) -> str:
         f"- Komunikaty: {_codes(record.messages)}\n"
         f"{diagnosis}"
         f"- Wydanie: {record.tool.wydanie or 'brak'}, commit {commit}\n"
-        f"- Uruchomienie: {record.run_id}, start {record.started_at:%Y-%m-%d %H:%M:%S} UTC"
+        f"- Uruchomienie: {record.run_id}, start {record.started_at:%Y-%m-%d %H:%M:%S} UTC\n"
+        f"- Pełne Logi: [{archive.packed_name}]({archive.link})"
     )
 
 
@@ -928,16 +978,17 @@ class RunLogs:
     def link(self, run_id: str) -> str | None:
         """Adres komentarza Logów Uruchomienia ``run_id``, który Skrzynka przyjęła w tej pracy Centrum; ``None``: jeszcze żaden.
 
-        Każdy komentarz Logów Uruchomienia ma całe Logi, więc adres po Diagnozie też prowadzi do pełnych Logów.
+        Komentarz Uruchomienia prowadzi do jego pełnych Logów w Archiwum Logów okresu, także po Diagnozie.
         """
 
         return self._outbox.delivered(run_id, LABEL)
 
     def diagnosed(self, run_id: str, diagnosis: Diagnosis) -> None:
-        """Dopisuje Diagnozę do Logów Uruchomienia ``run_id``: do pliku i do komentarza Uruchomienia w issue okresu.
+        """Dopisuje Diagnozę do Logów Uruchomienia ``run_id``: do pliku, do pliku w Archiwum Logów okresu i do komentarza
+        Uruchomienia w issue okresu.
 
-        Logi z Diagnozą to nowsza wersja tej samej wysyłki (``logi_post``), więc kolejka zmienia komentarz, który już
-        jest w Skrzynce, a gdy Logi jeszcze czekają w kolejce, zmienia go zaraz po ich wysłaniu.
+        Logi z Diagnozą to nowsza wersja tej samej wysyłki (``logi_post``), więc kolejka podmienia plik w Archiwum i
+        zmienia komentarz, które już są w Skrzynce, a gdy Logi jeszcze czekają w kolejce, robi to zaraz po ich wysłaniu.
 
         Uruchomienie, którego Logi nie powstały w tej pracy Centrum, nie dostaje niczego, a Diagnoza z tym samym
         wynikiem co ostatnio dopisana też nie.
@@ -955,11 +1006,12 @@ class RunLogs:
             self._last = record  # po pliku, który nie powstał, następna Diagnoza próbuje znowu: plik i komentarz
 
     def _keep(self, record: RunLog) -> None:
-        """Plik Logów (nowy albo nadpisany) i komentarz w issue okresu z tymi samymi znakami, po strażniku reguły danych."""
+        """Plik Logów (nowy albo nadpisany) po strażniku reguły danych, a do Skrzynki komentarz w issue okresu i plik w
+        Archiwum Logów okresu z tymi samymi bajtami co plik (``_write``)."""
 
         kept = guarded(record, self._forbidden)
         try:
-            replace_atomically(self._directory / kept.file_name, kept.text)
+            self._write(kept)
         finally:
             # Katalog Logów, który nie przyjął pliku, nie zatrzymuje Logów w drodze do Maksa.
             self._outbox.post(logi_post(kept))
@@ -1000,7 +1052,14 @@ class RunLogs:
     def close(self, record: RunLog) -> None:
         """Plik Logów Urwanego Uruchomienia, jeszcze bez wysyłki (``send``); ``OSError``: pliku nie udało się zapisać."""
 
-        replace_atomically(self._directory / record.file_name, record.text)
+        self._write(record)
+
+    def _write(self, record: RunLog) -> None:
+        """Plik Logów ``record`` z bajtami pliku w Archiwum Logów okresu (``ArchiveFile.packed``): ``text`` w UTF-8 bez
+        zamiany ``\n`` na ``\r\n``, którą robi zapis tekstowy na Windows, więc ``gunzip`` pliku z Archiwum daje plik
+        z komputera taty bajt w bajt."""
+
+        replace_atomically(self._directory / record.file_name, record.text, newline="")
 
     def send(self, record: RunLog) -> bool:
         """Logi ``record`` do Kolejki wysyłki; ``False``: kolejka ich nie przyjęła (typ błędu jest w dzienniku Centrum)."""

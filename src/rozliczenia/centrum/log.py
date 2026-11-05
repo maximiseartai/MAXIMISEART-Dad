@@ -29,8 +29,9 @@ _UPDATE_STARTED = "aktualizacja-start"
 _UPDATE_FINISHED = "aktualizacja-koniec"
 # Okres wysyłki w tle z Uruchomienia, którego okresu nie ustalono.
 _NO_PERIOD = "bez-okresu"
-# Dlaczego wysyłka w tle czeka w kolejce Skrzynki Zgłoszeń; ``odmowa-tresci`` dotyczy tylko jednego pliku kolejki.
-WaitingCause = Literal["brak-klucza", "brak-sieci", "odmowa", "odmowa-tresci"]
+# Dlaczego wysyłka w tle czeka w kolejce Skrzynki Zgłoszeń; ``odmowa-tresci`` i ``odmowa-archiwum`` (Archiwum okresu
+# nie przyjęło pliku wysyłki, której części już doszły) dotyczą tylko jednego pliku kolejki.
+WaitingCause = Literal["brak-klucza", "brak-sieci", "odmowa", "odmowa-tresci", "odmowa-archiwum"]
 
 
 class CentrumLog:
@@ -184,6 +185,11 @@ class CentrumLog:
 
         named = {} if file is None else {"plik": file}
         self._write("skrzynka-czeka", etykieta=label, okres=_period(period), przyczyna=cause, **named)
+
+    def box_post_archived(self, *, label: str, period: str | None) -> None:
+        """Plik wysyłki, której części już były w Skrzynce Zgłoszeń, doszedł do Archiwum okresu; bez treści i klucza."""
+
+        self._write("skrzynka-archiwum", etykieta=label, okres=_period(period))
 
     def box_post_dropped(self, *, label: str, file: str, number: int) -> None:
         """Plik kolejki Skrzynki Zgłoszeń usunięty bez wysyłki: issue ``number``, do którego szedł, zniknęło."""

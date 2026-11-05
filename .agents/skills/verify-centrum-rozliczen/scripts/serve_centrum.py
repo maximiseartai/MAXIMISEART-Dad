@@ -58,6 +58,11 @@ there. While
 (``Refused``, like GitHub's 401 for an expired token), and while
 ``<root>/skrzynka-zgloszen/odrzuca-<label>`` exists it rejects the content of every new
 issue with that label and of every comment to one (``Rejected``, like GitHub's 422).
+The Archiwa Logów okresu (GitHub Releases of that repository) are ``<root>/skrzynka-archiwum/``: ``archiwa.json`` lists
+each Archiwum (id, tag, title, description) and its files (id, name, label), and ``<tag>/<name>`` holds the bytes of each
+file as Centrum uploaded them (gzip). A second file of one name in one Archiwum is ``Rejected``, as on GitHub, and while
+``<root>/skrzynka-zgloszen/odmawia-archiwum`` exists every step of the Archiwum is ``Refused``, like GitHub's 403 for a
+Token without the permission to write the repository's contents.
 GitHub's rate limit (a 403 that is no refusal) only pytest covers, on the GitHub adapter.
 Each question for the issues with a label, closed ones included (how
 Powiadomienia ask about Dad's sent Zgłoszenia and Uwagi), appends its label to
@@ -142,6 +147,9 @@ from rozliczenia.centrum.efenix_run import EfenixWindow
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.report_box import (
+    Archive,
+    ArchiveOutcome,
+    Asset,
     Closure,
     Comment,
     CommentOutcome,
@@ -150,11 +158,15 @@ from rozliczenia.centrum.report_box import (
     Issue,
     IssuesOutcome,
     Label,
+    OpenArchiveOutcome,
     Refused,
     Rejected,
+    Removed,
+    RemoveOutcome,
     SendOutcome,
     Sent,
     Unreachable,
+    UploadOutcome,
     close_reason,
 )
 from rozliczenia.centrum.launcher import listen_locally
@@ -219,8 +231,80 @@ class FileReportBox:
 
     def __init__(self, directory: Path) -> None:
         self._directory = directory
+        self._archives = directory.with_name("skrzynka-archiwum")
         self._pacing = directory.parent / "pacing" / "skrzynka-ms.txt"
         self._lock = threading.Lock()
+
+    def archive(self, tag: str, *, key: str) -> ArchiveOutcome:
+        refused = self._archive_refused()
+        if refused is not None:
+            return refused
+        with self._lock:
+            found = next((entry for entry in self._listed() if entry["tag"] == tag), None)
+        if found is None:
+            return None
+        return Archive(found["id"], tuple(Asset(asset["id"], asset["name"], asset["label"], True) for asset in found["assets"]))
+
+    def open_archive(self, tag: str, title: str, description: str, *, key: str) -> OpenArchiveOutcome:
+        refused = self._archive_refused()
+        if refused is not None:
+            return refused
+        with self._lock:
+            listed = self._listed()
+            if any(entry["tag"] == tag for entry in listed):
+                return Rejected()
+            archive_id = len(listed) + 1
+            self._list([*listed, {"id": archive_id, "tag": tag, "title": title, "description": description, "assets": []}])
+        return Archive(archive_id, ())
+
+    def upload(self, archive_id: int, name: str, label: str, data: bytes, *, key: str) -> UploadOutcome:
+        refused = self._archive_refused()
+        if refused is not None:
+            return refused
+        with self._lock:
+            listed = self._listed()
+            found = next((entry for entry in listed if entry["id"] == archive_id), None)
+            if found is None:
+                return Refused()
+            if any(asset["name"] == name for asset in found["assets"]):
+                return Rejected()
+            asset_id = 1 + max((asset["id"] for entry in listed for asset in entry["assets"]), default=0)
+            (self._archives / found["tag"]).mkdir(parents=True, exist_ok=True)
+            (self._archives / found["tag"] / name).write_bytes(data)
+            found["assets"].append({"id": asset_id, "name": name, "label": label})
+            self._list(listed)
+        return Asset(asset_id, name, label, True)
+
+    def remove(self, asset_id: int, *, key: str) -> RemoveOutcome:
+        refused = self._archive_refused()
+        if refused is not None:
+            return refused
+        with self._lock:
+            listed = self._listed()
+            for entry in listed:
+                for asset in entry["assets"]:
+                    if asset["id"] == asset_id:
+                        entry["assets"].remove(asset)
+                        (self._archives / entry["tag"] / asset["name"]).unlink()
+                        self._list(listed)
+                        return Removed()
+        return Refused()
+
+    def _archive_refused(self) -> Refused | Unreachable | None:
+        if (self._directory / "brak-sieci").exists():
+            return Unreachable()
+        if self._refuses_key() or (self._directory / "odmawia-archiwum").exists():
+            return Refused()
+        return None
+
+    def _listed(self) -> list[dict[str, Any]]:
+        path = self._archives / "archiwa.json"
+        return list(json.loads(path.read_text(encoding="utf-8"))) if path.is_file() else []
+
+    def _list(self, archives: list[dict[str, Any]]) -> None:
+        self._archives.mkdir(parents=True, exist_ok=True)
+        text = json.dumps(archives, ensure_ascii=False, indent=2) + "\n"
+        (self._archives / "archiwa.json").write_text(text, encoding="utf-8")
 
     def open_issue(self, label: Label, title: str, body: str, *, key: str) -> SendOutcome:
         if self._pacing.exists():

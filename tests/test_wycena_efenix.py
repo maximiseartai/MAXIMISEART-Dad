@@ -41,7 +41,9 @@ from rozliczenia import TOOL_ROOT, efenix_browser, efenix_process, efenix_trace
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
-from rozliczenia.efenix_checks import ListedOrder
+from rozliczenia.efenix_address import AddressPart
+from rozliczenia.efenix_checks import ListedOrder, ListedRead
+from rozliczenia.efenix_orders import CollectiveOrder
 from rozliczenia.efenix_pricing import (
     BrowserFailure,
     Efenix,
@@ -2005,12 +2007,14 @@ def test_slad_zlecenia_ma_chwile_rozpoczecia_kazdego_dzialania_okna_efenix_takze
 
     time = _FakeTime(seconds=1.0)
     trace = efenix_trace.OrderTrace()
-    window = efenix_trace.traced(_SlowEfenix(time), trace, time, lambda: _TRACE_START + timedelta(seconds=time.seconds))
+    order = CollectiveOrder(18, "9901", "adrian.testowy", "UL. TESTOWA 1", DAY, {}, Decimal(0))
+    window = efenix_trace.traced(_SlowEfenix(time), order, trace, time, lambda: _TRACE_START + timedelta(seconds=time.seconds))
 
-    [listed] = window.search("#9901")
+    [listed] = window.search("9901")
     time.pause(1.0)
     with pytest.raises(UnexpectedPage):
         window.open_order(listed)
 
-    assert trace.steps == [efenix_trace.TraceStep("szukanie", _TRACE_START + timedelta(seconds=1), 3000, found=1)]
+    read = ListedRead(same_number=True, status="Nowe", realizator=None, address=(AddressPart.EFENIX_UNREAD,))
+    assert trace.steps == [efenix_trace.TraceStep("szukanie", _TRACE_START + timedelta(seconds=1), 3000, found=1, results=(read,))]
     assert trace.failed == efenix_trace.TraceStep("otwarcie zlecenia", _TRACE_START + timedelta(seconds=5), 3000)

@@ -42,6 +42,12 @@ MUTATIONS = (
         "Maks nie odtworzy problemu zlecenia z Logów Uruchomienia",
     ),
     Mutation(
+        "Logi bez odczytu stron efenix",
+        (Edit(RUN_LOGS, "results=None if step.results is None else [LoggedResult.of(read) for read in step.results],", "results=None,"),),
+        WYCENA,
+        "Maks nie wie, co zwróciło szukanie zlecenia, którego efenix „nie zna” (#843)",
+    ),
+    Mutation(
         "zlecenie Rozliczone to znowu błąd",
         (Edit(EFENIX_CHECKS, "    settled = _is_status(hit, SETTLED_STATUS)\n", "    settled = False\n"),),
         WYCENA,
