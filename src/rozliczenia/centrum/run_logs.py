@@ -55,12 +55,18 @@ Urwana Wycena w efenix (#845) ma Logi z dziennika Wyceny w efenix (``pricing_jou
 ``interrupted``, bez wyniku (``result`` ``None``), czasu, etapów i Komunikatów, ze śladem zleceń skończonych przed
 zgaśnięciem Centrum i ze zleceniem zaczętym bez wyniku (``LoggedInterruption``). Koniec takich Logów to ostatni wpis
 dziennika, bo chwili zgaśnięcia nikt nie zapisał.
+
+W trakcie Wyceny w efenix jej komentarz Uruchomienia pokazuje postęp z dziennika (``RunLogs.progress``, #846). Postęp
+to starsza wersja wysyłki Logów tego Uruchomienia, więc Logi z wynikiem na końcu (``run_ended``) albo Logi Urwanego
+Uruchomienia z następnego startu Centrum (``pricing_journal``) zamieniają ten komentarz w podsumowanie. Wycena, której
+Logi z wynikiem nie doszły do kolejki po wpisie końca dziennika, zostawia komentarz postępu bez wersji końcowej (#910).
 """
 
 from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from functools import cache
@@ -68,7 +74,7 @@ from pathlib import Path
 import platform
 import re
 import threading
-from typing import Annotated, Final, Literal, Protocol, assert_never
+from typing import Annotated, Final, Literal, Protocol, assert_never, get_args
 
 from pydantic import BaseModel, ConfigDict
 
@@ -896,11 +902,17 @@ def logi_post(record: RunLog) -> Post:
     """Logi do Skrzynki Zgłoszeń jedną wysyłką: komentarz z podsumowaniem i odnośnikiem w issue okresu i pełne Logi w
     Archiwum Logów okresu (``archive_file``).
 
-    Identyfikator wysyłki to Uruchomienie (``run_id``) i etykieta ``logi-uruchomienia``, te same po Diagnozie, więc
-    Logi z Diagnozą podmieniają plik w Archiwum i zmieniają komentarz swojego Uruchomienia (``outbox``).
+    Identyfikator wysyłki to Uruchomienie (``run_id``) i etykieta ``logi-uruchomienia``, te same po Diagnozie i w
+    postępie Wyceny w efenix (``progress_post``), więc Logi z Diagnozą podmieniają plik w Archiwum i zmieniają komentarz
+    swojego Uruchomienia, a Logi na końcu Wyceny zamieniają jej komentarz postępu w podsumowanie (``outbox``).
     """
 
-    period = record.period
+    return _logs_post(record.period, record.run_id, summary_markdown(record), archive_file(record))
+
+
+def _logs_post(period: str, run_id: str, comment: str, archive: ArchiveFile | None) -> Post:
+    """Wysyłka Logów Uruchomienia ``run_id``: jeden komentarz ``comment`` w issue Logów okresu ``period``."""
+
     return Post(
         PeriodThread(
             label=LABEL,
@@ -909,14 +921,86 @@ def logi_post(record: RunLog) -> Post:
             title=f"Logi Uruchomienia {period}",
         ),
         period=period,
-        run_id=record.run_id,
+        run_id=run_id,
         header=(
             f"Logi Uruchomień okresu {period} z Centrum rozliczeń taty. Każde Uruchomienie to jeden komentarz: "
             f"podsumowanie i odnośnik do pełnych Logów w Archiwum Logów okresu (Release `logi-{period}`)."
         ),
-        parts=(summary_markdown(record) + "\n",),
-        archive=archive_file(record),
+        parts=(comment + "\n",),
+        archive=archive,
     )
+
+
+@dataclass(frozen=True)
+class OrderDone:
+    """Zlecenie skończone w trakcie Wyceny w efenix, jak we wpisie dziennika „zlecenie skończone”: wiersz Pliku
+    zbiorczego, wynik i kod Komunikatu zlecenia (``None`` przy gotowym i rozliczonym)."""
+
+    row: int
+    outcome: OrderOutcome
+    code: str | None
+
+
+@dataclass(frozen=True)
+class PricingProgress:
+    """Postęp Wyceny w efenix w trakcie Uruchomienia (#846): to, co ma jej dziennik na dysku.
+
+    ``done``: zlecenia skończone po kolei; ``total``: ile zleceń ma przebieg, z ostatniego wpisu „zaczynam zlecenie”
+    (``None`` przed pierwszym, np. gdy okno efenix czeka na logowanie taty, albo gdy dziennika nie da się zapisać);
+    ``current``: wiersz zlecenia zaczętego bez wyniku (``None`` między zleceniami).
+    """
+
+    started: StartedFacts
+    done: tuple[OrderDone, ...]
+    total: int | None
+    current: int | None
+
+
+def progress_post(progress: PricingProgress, comment: str) -> Post:
+    """Postęp Wyceny w efenix jako starsza wersja wysyłki Logów tego Uruchomienia (``logi_post``): ten sam
+    identyfikator i ten sam komentarz w issue Logów okresu, a ``comment`` to jego tekst (``progress_markdown``).
+
+    Postęp nie ma pliku w Archiwum Logów okresu: pełne Logi powstają dopiero na końcu Uruchomienia.
+    """
+
+    return _logs_post(progress.started.period, progress.started.run_id, comment, None)
+
+
+def progress_markdown(progress: PricingProgress, *, elapsed_s: float) -> str:
+    """Komentarz postępu: proces, tryb, okres, zlecenia skończone z wszystkich i ich wyniki, ostatnie skończone,
+    zlecenie w trakcie, czas od startu (``elapsed_s``) i Uruchomienie; odnośnik do pełnych Logów przychodzi z końcem."""
+
+    started = progress.started
+    done = progress.done
+    orders = _orders_done(progress) or "dziennik Wyceny nie ma jeszcze żadnego zlecenia"
+    lines = ["- Wynik: jeszcze nie ma, Uruchomienie trwa", f"- Zlecenia: {orders}"]
+    if done:
+        last = done[-1]
+        code = "" if last.code is None else f", `{last.code}`"
+        lines.append(f"- Ostatnie zlecenie: wiersz {last.row}, {last.outcome}{code}")
+    if progress.current is not None:
+        lines.append(f"- W trakcie: wiersz {progress.current}")
+    lines += [
+        f"- Czas: {int(elapsed_s // 60)} min do tej pory",
+        f"- Uruchomienie: {started.run_id}, start {started.started_at:%Y-%m-%d %H:%M:%S} UTC",
+        "- Pełne Logi: w tym komentarzu, gdy Uruchomienie się skończy",
+    ]
+    return _comment_title(started) + "\n".join(lines)
+
+
+def _comment_title(started: StartedFacts) -> str:
+    return f"**Logi Uruchomienia**: {declaration_of(started.process).title}, {started.mode}, okres {started.period}\n\n"
+
+
+def _orders_done(progress: PricingProgress) -> str | None:
+    """Ile zleceń skończonych z wszystkich i ile każdego wyniku, w kolejności ``OrderOutcome``; ``None`` przed
+    pierwszym wpisem „zaczynam zlecenie”."""
+
+    if progress.total is None:
+        return None
+    counted = Counter(order.outcome for order in progress.done)
+    outcomes = ", ".join(f"{outcome} {counted[outcome]}" for outcome in get_args(OrderOutcome) if counted[outcome])
+    return f"{len(progress.done)} z {progress.total} skończone" + (f" ({outcomes})" if outcomes else "")
 
 
 def archive_file(record: RunLog) -> ArchiveFile:
@@ -1043,8 +1127,11 @@ class RunLogs:
         self._cloud = cloud_files
         self._lock = threading.Lock()
         self._last: RunLog | None = None  # Logi ostatniego Uruchomienia tak, jak ostatnio poszły do pliku i Skrzynki
+        self._ended: set[str] = set()  # Uruchomienia tej pracy Centrum po wyniku: ich postęp się skończył (``progress``)
 
     def run_ended(self, run: EndedRun) -> None:
+        with self._lock:  # postęp, który już idzie do kolejki, jest w niej przed Logami, a następny nie pójdzie
+            self._ended.add(run.info.id)
         environment = self._environment(run.info.process, run.info.period)
         record = RunLog.of(run, tool=self._tool(), environment=environment, dad_actions=self._dad_actions.take())
         with self._lock:
@@ -1141,6 +1228,23 @@ class RunLogs:
         """Logi ``record`` do Kolejki wysyłki; ``False``: kolejka ich nie przyjęła (typ błędu jest w dzienniku Centrum)."""
 
         return self._outbox.post(logi_post(record))
+
+    def progress(self, run_id: str, progress: PricingProgress | None, *, elapsed_s: float) -> bool:
+        """Postęp Wyceny w efenix ``run_id`` do Kolejki wysyłki jako starsza wersja wysyłki Logów tego Uruchomienia
+        (``progress_post``), po strażniku reguły danych tej pracy Centrum jak Logi: zamaskowana wartość to uwaga techniczna
+        na końcu komentarza. ``progress`` ``None``: dziennik nie ma jeszcze na dysku swojej pierwszej linii, więc nic nie
+        idzie. ``False``: Uruchomienie doszło do działań po wyniku (``run_ended``), więc jego postęp się skończył i nic nie
+        idzie, bo postęp po Logach byłby ich nowszą wersją i cofnąłby podsumowanie. Postęp, którego kolejka nie przyjęła,
+        daje ``True``: typ błędu jest w dzienniku Centrum, a następne odświeżenie spróbuje znowu."""
+
+        with self._lock:
+            if run_id in self._ended:
+                return False
+            if progress is not None:
+                guarded = self._forbidden.guard(progress_markdown(progress, elapsed_s=elapsed_s), "postęp Wyceny w efenix")
+                notes = "".join(f"\n- Uwaga techniczna: {note}" for note in guarded.notes)
+                self._outbox.post(progress_post(progress, guarded.text + notes))
+            return True
 
     def _tool(self) -> Tool:
         commit = self._commit()

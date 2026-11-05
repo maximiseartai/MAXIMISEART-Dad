@@ -8,7 +8,9 @@ accept it and lose the answer (``Unreachable`` after the effect), fail the file 
 process. Between two passes of the queue it may also restart Centrum. It tries every such schedule within the bounds
 of a scope, re-running the code from scratch once per schedule. A pass runs only when the real ``send_in_background``
 starts the queue thread, as ``Outbox.post``, ``Outbox.resume`` at a start, or the ``RETRY_S`` wake (``_woken``) that
-``_drain`` armed ask it to. When no thread starts, the schedule may end there. Then it checks:
+``_drain`` armed ask it to. When no thread starts, the schedule may end there. A scope's later wysyłki (a newer version
+of a wysyłka, as a Diagnoza or the next progress of a Wycena w efenix) arrive through ``Outbox.post`` between two
+passes, at a moment the schedule picks. Then it checks:
 
 - DOKLADNIE_RAZ: every part of the newest version of every wysyłka is in the Skrzynka exactly once, in an issue of
   its target, and no text of an older version of it is left there (ADR 0015 after #840: „Wysyłka jest dokładnie
@@ -20,6 +22,10 @@ starts the queue thread, as ``Outbox.post``, ``Outbox.resume`` at a start, or th
   refusal of the Archiwum stops only the file, not the wysyłki after it.
 - JEDNO_ISSUE: one problem has one open Zgłoszenie and one period has one issue okresu; a wysyłka to a new issue
   (Uwaga taty) opens one issue.
+- NAJNOWSZA_WERSJA: once a newer version of a wysyłka is in the queue, the Skrzynka gets no text of an older one: a
+  pass removes the file of the older version unsent (``_superseded``, #846: without the network only the newest progress
+  of a Wycena w efenix waits). Judged only in schedules in which no read of a queue file failed, because a pass that
+  cannot read the newer file sends the older one, and the newer then changes its comment.
 - KOLEJKA_PUSTA: no queue file without its delivery marker is left when the schedule ends; a delivered file whose
   removal failed may wait for the next start.
 - BEZ_WYJATKU: no pass ends in an exception that ``_drain`` logs as ``nieoczekiwany-wyjatek``.
@@ -190,6 +196,7 @@ class MemoryBox:
         self._comment_ids = 0
         self._ids = 0
         self._removed: _Asset | None = None  # whole file removed by the call just before, answered
+        self.versions: dict[str, str] = {}  # the version in a mark → the place of its wysyłka (``execute``)
 
 
     def _next_id(self) -> int:
@@ -280,6 +287,7 @@ class MemoryBox:
             return Unreachable()
         number = len(self.issues) + 1
         self.issues[number] = _Issue(label, title, body)
+        self._scheduler.written(body, self.versions)
         self.opened_at[number] = self._clock()
         self._scheduler.say(
             f"Skrzynka zakłada issue #{number}"
@@ -294,6 +302,7 @@ class MemoryBox:
             return Unreachable()
         self._comment_ids += 1
         self.issues[number].comments.append(body)
+        self._scheduler.written(body, self.versions)
         self.issues[number].comment_ids.append(self._comment_ids)
         self._scheduler.say(
             f"Skrzynka dopisuje komentarz do #{number}"
@@ -316,6 +325,7 @@ class MemoryBox:
         if failure == "unreachable":
             return Unreachable()
         issue.comments[issue.comment_ids.index(comment_id)] = body
+        self._scheduler.written(body, self.versions)
         self._scheduler.say(
             f"Skrzynka zmienia komentarz w #{number}"
             + (", odpowiedź ginie (Unreachable)" if failure else "")
@@ -370,7 +380,8 @@ class MemoryBox:
 
 
 Choice = Literal[
-    "ok", "unreachable", "lost", "partial", "refused", "oserror", "unreadable", "kill", "next", "restart", "stuck"
+    "ok", "unreachable", "lost", "partial", "refused", "oserror", "unreadable", "kill", "next", "restart", "stuck",
+    "later", "now",
 ]
 
 
@@ -405,6 +416,8 @@ class Scheduler:
         }
         self.trace: list[str] = []
         self.faults: list[tuple[str, str]] = []
+        self.superseded: set[str] = set()  # places (``versions``) of wysyłki whose newer version is in the queue
+        self.older_sent: list[str] = []  # box writes of a superseded place: NAJNOWSZA_WERSJA
 
     def say(self, line: str) -> None:
         self.trace.append(line)
@@ -495,6 +508,19 @@ class Scheduler:
             self.say(f"{what}: OSError (plik trzyma OneDrive albo antywirus)")
         return chosen == "unreadable"
 
+    def arrival(self, what: str) -> bool:
+        """Between two passes: the code posts the scope's next later wysyłka now, or not yet."""
+
+        return self._pick(("later", "now"), what) == "now"
+
+    def written(self, text: str, versions: dict[str, str]) -> None:
+        """A box write of ``text``: its mark names a version whose newer version is already in the queue."""
+
+        found = _VERSION.search(text)
+        place = None if found is None else versions.get(found.group(1))
+        if place in self.superseded:
+            self.older_sent.append(f"{_part_name(text)} wersji {place}")
+
     def between_passes(self, woken: bool) -> Literal["next", "restart", "stuck"]:
         """When nothing asked for a pass and files are left: the ``RETRY_S`` wake the code armed fires, Centrum
         restarts, or, without an armed wake, the queue may simply stay as it is until the next start."""
@@ -539,6 +565,9 @@ class Scope:
     empty_repository: bool = False
     """The Skrzynka's repository has no commit: GitHub refuses every new Release (409) for the whole schedule, so a file
     for the Archiwum never arrives and waits in the queue with the marker of its parts."""
+    later: tuple[Post, ...] = ()
+    """Wysyłki the code posts later, in order, each between two passes at a moment the schedule picks (before the first
+    pass, too): a Diagnoza or the next progress of a Wycena w efenix, newer versions of a wysyłka in ``posts``."""
     list_lag: bool = False
     """GitHub's issue list shows a new issue only ``LIST_LAG_S`` after it was opened (``MemoryBox``)."""
 
@@ -591,6 +620,12 @@ def _archived(run_id: str, version: str) -> Post:
     return Post(LOGS, "08_14_09_2026", run_id, "Logi okresu", (f"część 1/1 wysyłki {run_id}{version}",), archive)
 
 
+def _progress(run_id: str, version: str) -> Post:
+    """Postęp Wyceny w efenix ``run_id`` (``progress_post``): starsza wersja Logów tego Uruchomienia, bez pliku."""
+
+    return Post(LOGS, "08_14_09_2026", run_id, "Logi okresu", (f"część 1/1 wysyłki {run_id}{version}",))
+
+
 # Logi z plikiem do Archiwum i ich Diagnoza: nowsza wersja tej samej wysyłki podmienia plik i zmienia komentarz.
 ARCHIVED_DIAGNOSED = (_archived("uruchomienie", " przed Diagnozą"), _archived("uruchomienie", " po Diagnozie"))
 # Logi Uruchomienia w dwóch częściach i ich Diagnoza w jednej: nowsza wersja tej samej wysyłki (ten sam run_id).
@@ -630,12 +665,13 @@ SCOPES = {
         BOUNDS,
     ),
     "diagnoza": Scope(
-        "Logi Uruchomienia (PeriodThread z nagłówkiem) w dwóch częściach, potem ich Diagnoza w jednej: nowsza wersja "
-        "tej samej wysyłki zmienia część 1 i opróżnia część 2.",
-        DIAGNOSED,
+        "Logi Uruchomienia (PeriodThread z nagłówkiem) w dwóch częściach, potem ich Diagnoza w jednej, w dowolnej chwili "
+        "między przejściami: nowsza wersja tej samej wysyłki zmienia część 1 i opróżnia część 2, a gdy Logi jeszcze "
+        "czekają, zastępuje ich plik w kolejce.",
+        DIAGNOSED[:1],
         (),
-        # Z BOUNDS też przechodzi (51 s na Macu Maksa 2026-11-04 wobec 9 s), a w CI byłby najdłuższą jednostką.
         Bounds(unreachable=1, lost=1, disk=1, kills=1),
+        later=DIAGNOSED[1:],
     ),
     "archiwum": Scope(
         "Logi Uruchomienia w jednym komentarzu z plikiem do Archiwum okresu (Release z tagiem okresu): plik idzie przed "
@@ -645,11 +681,24 @@ SCOPES = {
         Bounds(unreachable=1, lost=1, disk=1, kills=1, refusals=1),
     ),
     "archiwum-diagnoza": Scope(
-        "Te Logi i ich Diagnoza, nowsza wersja tej samej wysyłki: podmienia plik w Archiwum (usunięcie, potem nowy) i "
-        "zmienia komentarz; plik starszej wersji raz nieczytelny dochodzi po nowszej i niczego nie zmienia.",
-        ARCHIVED_DIAGNOSED,
+        "Te Logi i ich Diagnoza, nowsza wersja tej samej wysyłki, w dowolnej chwili między przejściami: podmienia plik w "
+        "Archiwum (usunięcie, potem nowy) i zmienia komentarz; plik starszej wersji raz nieczytelny dochodzi po nowszej i "
+        "niczego nie zmienia.",
+        ARCHIVED_DIAGNOSED[:1],
         (),
         Bounds(unreachable=0, lost=1, disk=0, kills=1, reads=1, refusals=1),
+        later=ARCHIVED_DIAGNOSED[1:],
+    ),
+    "postep": Scope(
+        "Postęp Wyceny w efenix (Logi tego Uruchomienia bez pliku do Archiwum), potem nowszy postęp i Logi z plikiem, "
+        "każde w dowolnej chwili między przejściami: jeden komentarz Uruchomienia, który na końcu jest podsumowaniem, a "
+        "nowsza wersja w kolejce zastępuje plik starszej.",
+        (_progress("wycena", " postęp 1"),),
+        (),
+        # Ze zgubioną odpowiedzią też przechodzi (218 s na Macu Maksa 2026-11-05 wobec 30 s); zgubioną odpowiedź przy
+        # dwóch wersjach sprawdzają zakresy diagnoza i archiwum-diagnoza.
+        Bounds(unreachable=1, lost=0, disk=1, kills=1),
+        later=(_progress("wycena", " postęp 2"), _archived("wycena", " podsumowanie")),
     ),
     "archiwum-puste-repo": Scope(
         "Logi Uruchomienia z plikiem do Archiwum okresu, a za nimi Zgłoszenie, w repozytorium Skrzynki bez commitu: GitHub "
@@ -697,8 +746,7 @@ SCOPES = {
         "dochodzą po niej, niczego w Skrzynce nie zmieniają ani nie dopisują.",
         DIAGNOSED,
         (),
-        # Z błędem dysku też przechodzi (17 860 harmonogramów, 39 s na Macu Maksa 2026-11-04 wobec 9 s), a w CI byłby
-        # najdłuższą jednostką; błąd dysku przy dwóch wersjach sprawdza zakres diagnoza.
+        # Błąd dysku przy dwóch wersjach sprawdza zakres diagnoza.
         Bounds(unreachable=1, lost=1, disk=0, kills=1, reads=1),
     ),
 }
@@ -836,6 +884,20 @@ def _intercepted(scheduler: Scheduler, queue: Path, versions: dict[str, str]) ->
         pathlib.Path.unlink = unlink  # type: ignore[method-assign]
 
 
+@contextmanager
+def _posting() -> Iterator[None]:
+    """``Outbox.post`` of a later wysyłka writes its file with the real ``replace_atomically``, as the first posts do:
+    the checker fails only the marker write, never a post (the model has a failed post)."""
+
+    names = vars(outbox_module)
+    intercepted = names["replace_atomically"]
+    names["replace_atomically"] = replace_atomically
+    try:
+        yield
+    finally:
+        names["replace_atomically"] = intercepted
+
+
 @dataclass(frozen=True)
 class Violation:
     rule: str
@@ -874,15 +936,22 @@ ENDINGS = {
 
 
 def _check(
-    scope: Scope, box: MemoryBox, queue: Path, failures: list[str], ended: str, refused: bool
+    scope: Scope,
+    box: MemoryBox,
+    queue: Path,
+    failures: list[str],
+    ended: str,
+    older: Sequence[str],
+    refused: bool,
 ) -> list[tuple[str, str]]:
     broken: list[tuple[str, str]] = []
     if not (scope.empty_repository or refused) and any(
         WAITING in text for issue in box.issues.values() for text in (issue.body, *issue.comments)
     ):
         broken.append(("DOKLADNIE_RAZ", "komentarz ma dopisek, że plik czeka na Archiwum, choć Archiwum niczego nie odmówiło"))
-    newest = {(post.target.label, post.run_id): post for post in scope.posts}
-    for post in scope.posts:
+    everything = (*scope.posts, *scope.later)
+    newest = {(post.target.label, post.run_id): post for post in everything}
+    for post in everything:
         target = post.target
         if isinstance(target, KnownIssue):
             mine = [box.issues[target.number]]
@@ -942,6 +1011,10 @@ def _check(
                 f"w kolejce czeka {len(waiting)} plik(ów) bez znacznika dostarczenia: {ENDINGS[ended]}",
             )
         )
+    if older:
+        broken.append(
+            ("NAJNOWSZA_WERSJA", f"Skrzynka dostaje starszą wersję, choć nowsza czeka w kolejce: {', '.join(older)}")
+        )
     if failures:
         broken.append(
             ("BEZ_WYJATKU", f"przejście kolejki kończy się wyjątkiem: {failures[0]}")
@@ -993,6 +1066,7 @@ def _state(
     clock: _Clock,
     threads: int,
     versions: dict[str, str],
+    pending: int,
     keyed: KeyedBox,
     opening: Path,
 ) -> object:
@@ -1010,6 +1084,8 @@ def _state(
     whether each upload ended, plus the files the queue sent twice (``MemoryBox.twice``), which the rule reads; a pair of
     ``remove`` and ``upload`` never spans a pass boundary.
     ``_archive_refused`` is in the state although ``_send_all`` sets it anew in every pass, as the wake it arms is.
+    Also how many later wysyłki of the scope the code has not posted yet (``pending``), which decides which versions are
+    superseded, and whether the Skrzynka got a text of a superseded one (NAJNOWSZA_WERSJA).
     Time counts only as what it decides (#879): which issues and Releases GitHub's lists do not show yet, which issues
     ``KeyedBox`` still adds to a list (``opened`` in ``opening``), which kinds have a write without an answer less than
     ``LIST_LAG_S`` ago in ``opening``, each with whether the last list of the queue thread came before the write ended
@@ -1068,6 +1144,8 @@ def _state(
         outbox._draining,
         outbox._again,
         threads,
+        pending,
+        bool(scheduler.older_sent),
         tuple(sorted(box.unlisted())),
         tuple(sorted(box.unlisted_releases())),
         tuple(sorted(tag for _, tag, _ in notes.archives)),
@@ -1129,20 +1207,44 @@ def execute(
         for post in scope.posts:
             assert outbox.post(post), "zapis wysyłki do kolejki"
         scheduler.say("wysyłki czekają w kolejce (Outbox.post)")
-        versions = {
-            outbox_module._version(path): str(place)
+        versions = box.versions
+        versions.update(
+            (outbox_module._version(path), str(place))
             for place, path in enumerate(sorted(queue.glob("*.json")), start=1)
-        }
+        )
+        pending = list(scope.later)
+        everything = (*scope.posts, *scope.later)
+
+        def arrive() -> None:
+            """The code posts the next later wysyłka; every earlier version of it in the scope is now superseded."""
+
+            post = pending.pop(0)
+            place = len(everything) - len(pending)
+            with _posting():
+                assert outbox.post(post), "zapis wysyłki do kolejki"
+            [new] = [path for path in queue.glob("*.json") if outbox_module._version(path) not in versions]
+            versions[outbox_module._version(new)] = str(place)
+            scheduler.superseded.update(
+                str(number)
+                for number, earlier in enumerate(everything[: place - 1], start=1)
+                if (earlier.target, earlier.run_id) == (post.target, post.run_id)
+            )
+            scheduler.say(f"kod wysyła nowszą wersję {place} wysyłki {post.run_id} (Outbox.post)")
+
         bounds = scope.bounds
         passes = (
-            bounds.unreachable + bounds.lost + bounds.disk + bounds.kills + bounds.reads + EXTRA_PASSES
+            bounds.unreachable + bounds.lost + bounds.disk + bounds.kills + bounds.reads + len(scope.later) + EXTRA_PASSES
         )
         ended = "pusta"
         with _intercepted(scheduler, queue, versions):
-            while any(not _settled(scope, path) for path in queue.glob("*.json")):
+            while pending or any(not _settled(scope, path) for path in queue.glob("*.json")):
                 if not passes:
                     ended = "limit"
                     break
+                while pending and scheduler.arrival(f"Outbox.post(wersja {len(everything) - len(pending) + 1})"):
+                    arrive()
+                if not started_threads and pending and all(_settled(scope, path) for path in queue.glob("*.json")):
+                    arrive()  # nothing else is left to do before it
                 if not started_threads:
                     then = scheduler.between_passes(bool(clock.armed))
                     if then == "restart":
@@ -1153,6 +1255,8 @@ def execute(
                         scheduler.say("mija RETRY_S: budzik woła Outbox._woken")
                         clock.now += RETRY_S
                         clock.armed.pop(0)()
+                    elif pending:
+                        arrive()  # the code posts it anyway: the next version is the last thing that moves the queue
                     else:
                         scheduler.say(
                             "nic nie rusza kolejki do następnego startu Centrum"
@@ -1175,6 +1279,7 @@ def execute(
                     clock,
                     len(started_threads),
                     versions,
+                    len(pending),
                     keyed[0],
                     work / "config" / OPENING_FILE,
                 )
@@ -1193,9 +1298,13 @@ def execute(
                     outbox.resume()
     trace = tuple(scheduler.trace)
     faults = tuple(scheduler.faults)
+    # A pass that could not read the newer file sends the older one, and the newer then changes its comment.
+    older = [] if any(fault == "unreadable" for fault, _ in faults) else scheduler.older_sent
     return scheduler, [
         Violation(rule, detail, trace, _kind(name, rule, faults))
-        for rule, detail in _check(scope, box, queue, failures, ended, any(kind == "refused" for kind, _ in faults))
+        for rule, detail in _check(
+            scope, box, queue, failures, ended, older, any(kind == "refused" for kind, _ in faults)
+        )
     ]
 
 

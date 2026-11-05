@@ -17,6 +17,7 @@
     "RunLogs.close",
     "RunLogs._write",
     "RunLogs.send",
+    "RunLogs.progress",
     "LoggedEnding",
     "logi_post"
   ],

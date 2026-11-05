@@ -540,9 +540,12 @@ def test_wyslane_zgloszenie_prowadzi_do_komentarza_logow_swojego_uruchomienia(tm
     assert archived(centrum, thread.comments[1]).startswith(('{\n  "schema_version": 2,\n  "run_id": "' + run_id).encode())
 
 
-def test_diagnoza_bez_sieci_jest_w_pliku_logow_jej_komentarz_czeka_w_kolejce_a_zgloszenie_dziala_jak_dotad(
+def test_diagnoza_bez_sieci_jest_w_pliku_logow_a_w_kolejce_zastepuje_logi_bez_niej_a_zgloszenie_dziala_jak_dotad(
     tmp_path: Path,
 ) -> None:
+    """Bez sieci Logi z Diagnozą, nowsza wersja wysyłki Logów tego Uruchomienia, zastępują w Kolejce wysyłki Logi bez
+    niej (#846): po powrocie sieci komentarz Uruchomienia powstaje od razu z Diagnozą, bez poprawki."""
+
     centrum = watched_centrum(tmp_path)
     box(centrum).search_failure = Unreachable()
     run_id = stopped_for_maks(centrum)
@@ -554,16 +557,16 @@ def test_diagnoza_bez_sieci_jest_w_pliku_logow_jej_komentarz_czeka_w_kolejce_a_z
     assert json.loads(local)["diagnosis"]["checks"][0]["label"] == shown["checks"][0]["label"]
     assert f"- Logi: jeszcze niewysłane, Uruchomienie {run_id}" in shown["report"]["body"].splitlines()
     assert state == {"state": "queued", "waits_for": "internet"}
-    assert wait_for(lambda: len(queued_logs(centrum)) == 2)
+    assert wait_for(lambda: len(queued_logs(centrum)) == 1)
     assert box(centrum).issues == []
 
     box(centrum).search_failure = None
     centrum.restart()
     with centrum.client:
-        comment = diagnosed_comment(centrum, edits=1)
+        comment = diagnosed_comment(centrum, edits=0)
         assert box(centrum).wait_until(lambda box: len(box.sent) == 1)
 
-    assert archived(centrum, comment) == local
+    assert (archived(centrum, comment), box(centrum).edited) == (local, [])
     assert box(centrum).sent[0].body == shown["report"]["body"]
     assert wait_for(lambda: queued_logs(centrum) == [])
 

@@ -49,6 +49,21 @@ ma wiersz. Logi z wynikiem jeszcze wtedy nie istnieją, więc w Skrzynce
 niczego nie zastępują. Wpis końca przed rekordem metryk odrzucony: w tym
 samym oknie dziennik Urwanej Wyceny znikałby bez żadnych Logów.
 
+Dopisek #846 (część #837): pierwsza linia dziennika, start Uruchomienia, trafia
+na dysk już przy starcie Wyceny w efenix, zanim ruszy jej wątek, a nie z
+pierwszym zleceniem. Wycena zamknięta przed pierwszym zleceniem, np. gdy okno
+efenix czeka na logowanie taty, też ma więc Logi Urwanego Uruchomienia, bez
+zleceń, a karta po starcie pokazuje zero zleceń przed zamknięciem Centrum.
+Dziennik, którego pierwszej linii nie potwierdził żaden zapis, Centrum po
+wyniku usuwa jak w dopisku #870/#871 dziennik bez żadnego zapisanego wpisu.
+Komentarz postępu Wyceny w issue okresu
+(dopisek #846 w ADR 0015) powstaje dopiero, gdy ta linia jest na dysku, więc
+Wycenę przerwaną przed wpisem końca kończą w nim Logi Urwanego Uruchomienia z
+następnego startu. Start zostaje taki, jak w dopisku #870/#871: dziennik z
+wpisem końca usuwa bez wysyłki, bo Logi z wynikiem mogą już być w Skrzynce, więc
+komentarz Wyceny, której Logi z wynikiem nie doszły do kolejki po wpisie końca,
+zostaje postępem. To okno zamyka #910.
+
 ## Kontekst
 
 Centrum trzymało tylko bieżące Uruchomienie procesu w pamięci, więc karta

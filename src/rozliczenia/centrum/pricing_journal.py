@@ -7,10 +7,14 @@ nazwie pliku Logów z rozszerzeniem ``.jsonl``. Silnik dopisuje do niego wpis po
 zleceniu, więc przed każdym zapisem w efenix, i „zlecenie skończone” zaraz po wyniku, ze śladem zlecenia jak w Logach
 (``run_logs.LoggedOrder``), każdy z chwilą w UTC. Pierwsza linia pliku to start Uruchomienia, te same bezpieczne fakty co
 plik ostatniego startu, które Centrum podaje dziennikowi przy każdym starcie Uruchomienia (``PricingJournal.run_started``).
-Plik powstaje z pierwszym wpisem, więc procesy, które nie piszą dziennika (Przygotowanie pliku zbiorczego, Przebieg
-rozliczeń, Uporządkowanie INTERMAX), niczego nie zapisują. Każdy wpis jest na dysku (``fsync``), zanim silnik zrobi
-następny krok, więc zgaśnięcie Centrum, także brak prądu, urywa najwyżej wpis w trakcie zapisu. Nieudany zapis wpisu to
-jedna linia dziennika Centrum na Uruchomienie, a Wycena biegnie dalej: ślad jest dla Maksa, a nie warunkiem pracy taty.
+Dziennik pisze tylko Wycena w efenix (``process``), a jego pierwsza linia trafia na dysk już przy jej starcie, zanim ruszy
+jej wątek (#846), więc każda Wycena z Centrum, także zamknięta przed pierwszym zleceniem (np. gdy okno efenix czeka na
+logowanie taty), ma dziennik, a procesy, które go nie piszą (Przygotowanie pliku zbiorczego, Przebieg rozliczeń,
+Uporządkowanie INTERMAX), niczego nie zapisują. Każdy wpis jest na dysku (``fsync``), zanim silnik zrobi następny krok,
+więc zgaśnięcie Centrum, także brak prądu, urywa najwyżej wpis w trakcie zapisu. Nieudany zapis pierwszej linii albo
+wpisu to jedna linia dziennika Centrum na Uruchomienie, a Wycena biegnie dalej: ślad jest dla Maksa, a nie warunkiem pracy
+taty; pierwsza linia, której nie dało się zapisać, idzie razem z następnym wpisem. Postęp w trakcie
+(``PricingJournal.progress``, #846) jest tylko z tego, co dziennik ma na dysku, więc bez jego pierwszej linii go nie ma.
 Dziennik ma tylko dane Logów Uruchomienia: bez numeru zlecenia i bez danych adresowych.
 
 Uruchomienie, które doszło do wyniku (``run_process`` wrócił, z wierszem Historii albo bez niego), dopisuje „koniec
@@ -18,12 +22,20 @@ Uruchomienia” (``PricingJournal.run_ended``): to pierwsze działanie po wyniku
 Logi z wynikiem i zanim pójdą do Skrzynki. Dziennik sam mówi więc startowi Centrum, czy jego Uruchomienie doszło do
 wyniku, a start nie zgaduje tego z Historii, którą pisze kto inny i którą start może źle odczytać (#870, #871). Wpis
 końca, który się nie zapisał, usuwa dziennik: Uruchomienie ma wynik, więc jego dziennik nie jest już potrzebny. Tak samo
-Uruchomienie, którego żaden wpis się nie zapisał, usuwa dziennik, który mógł po nim zostać: zapis, w którym ``flush``
-albo ``fsync`` rzucił po ``write``, zostawia na dysku całą pierwszą linię, a Zatrzymanie przy pierwszym zleceniu kończy
-Wycenę bez następnego wpisu.
+Uruchomienie, którego pierwsza linia nie trafiła na dysk w żadnym zapisie, usuwa dziennik, który mógł po nim zostać:
+zapis, w którym ``flush`` albo ``fsync`` rzucił po ``write``, zostawia na dysku całą pierwszą linię, a Zatrzymanie przed
+pierwszym zleceniem albo przy nim kończy Wycenę bez następnego wpisu.
 Zgaśnięcie Centrum między rekordem metryk a wpisem końca (milisekundy) zostawia dziennik bez wpisu końca, a start
 zamyka go jako Logi Urwanego Uruchomienia; Logi z wynikiem jeszcze wtedy nie istnieją, więc niczego w Skrzynce nie
 zastępują.
+
+Dziennik z pierwszą linią na dysku to też ślad komentarza postępu Wyceny w issue okresu (``pricing_progress``, #846),
+który mówi, że Uruchomienie trwa. Wersją końcową tego komentarza są Logi z wynikiem na końcu Wyceny albo Logi Urwanego
+Uruchomienia, które wysyła następny start. Start nie wysyła niczego za Wycenę, która doszła do wyniku: Logi z wynikiem,
+które kolejka już przyjęła, zostają w Skrzynce, a wersja końcowa ze startu by je zastąpiła (#871). Dlatego Wycena, której
+Logi z wynikiem nie doszły do kolejki po wpisie końca (Centrum zgasło między wpisem końca a ich przyjęciem, wpis końca się
+nie zapisał, Logi nie powstały albo kolejka ich nie przyjęła), zostawia w issue okresu komentarz postępu bez wersji
+końcowej; to okno zamyka #910 (najpierw model porządku wersji, potem kod).
 
 Start Centrum czyta każdy dziennik przy budowie aplikacji, przed kartą ostatniego Uruchomienia
 (``InterruptedPricings.close``):
@@ -60,7 +72,15 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
 
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.run_logs import LoggedInterruption, LoggedOrder, RunLog, RunLogs, logs_file_name
+from rozliczenia.centrum.run_logs import (
+    LoggedInterruption,
+    LoggedOrder,
+    OrderDone,
+    PricingProgress,
+    RunLog,
+    RunLogs,
+    logs_file_name,
+)
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.efenix_pricing import OrderResult
 from rozliczenia.message import Message
@@ -125,29 +145,52 @@ def _path(directory: Path, started: JournalStarted) -> Path:
 
 
 class PricingJournal:
-    """Dziennik bieżącego Uruchomienia w katalogu ``directory`` (``efenix_pricing.OrderJournal`` w Centrum)."""
+    """Dziennik bieżącej Wyceny w efenix (Uruchomienia procesu ``process``) w katalogu ``directory``
+    (``efenix_pricing.OrderJournal`` w Centrum) i pierwsze działanie po jej wyniku (``runs.AfterRun``)."""
 
-    def __init__(self, directory: Path, log: CentrumLog) -> None:
+    def __init__(self, directory: Path, log: CentrumLog, *, process: contract.ProcessKey) -> None:
+        self.process: Final = process
         self._directory = directory
         self._log = log
         self._lock = threading.Lock()
         self._started: JournalStarted | None = None
-        self._header = False  # pierwsza linia czeka na pierwszy wpis
+        self._header = False  # pierwszej linii nie ma jeszcze na dysku
         self._failed = False  # nieudany zapis tego Uruchomienia jest już w dzienniku Centrum
+        # Wpisy tego Uruchomienia, które są już na dysku (po ``fsync``), dla postępu (``progress``).
+        self._done: list[OrderDone] = []
+        self._total: int | None = None
+        self._current: int | None = None
 
     def run_started(self, info: contract.RunInfo, started_at: datetime) -> None:
-        """Start Uruchomienia z Centrum, zanim ruszy jego wątek: następne wpisy idą do jego dziennika."""
+        """Start Uruchomienia z Centrum, zanim ruszy jego wątek: Uruchomienie procesu ``process`` dostaje dziennik z
+        pierwszą linią na dysku, a następne wpisy idą do niego; inne Uruchomienie dziennika nie ma."""
 
-        started = JournalStarted(
-            entry="start Uruchomienia",
-            run_id=info.id,
-            process=info.process,
-            mode="podgląd" if info.dry_run else "zapis",
-            period=info.period,
-            started_at=started_at,
-        )
         with self._lock:
-            self._started, self._header, self._failed = started, True, False
+            self._done, self._total, self._current = [], None, None
+            if info.process != self.process:
+                self._started = None
+                return
+            self._started = JournalStarted(
+                entry="start Uruchomienia",
+                run_id=info.id,
+                process=info.process,
+                mode="podgląd" if info.dry_run else "zapis",
+                period=info.period,
+                started_at=started_at,
+            )
+            self._header, self._failed = True, False
+            self._append_locked(self._started)
+
+    def progress(self, run_id: str) -> PricingProgress | None:
+        """Postęp Uruchomienia ``run_id`` z wpisów, które dziennik ma już na dysku, więc nigdy przed dziennikiem (#846);
+        ``None``: dziennik pisze inne Uruchomienie albo żadne, albo nie ma jeszcze na dysku pierwszej linii. Wpis, którego
+        nie dało się zapisać, postępu nie zmienia."""
+
+        with self._lock:
+            started = self._started
+            if started is None or started.run_id != run_id or self._header:
+                return None
+            return PricingProgress(started, tuple(self._done), self._total, self._current)
 
     def begun(self, row: int, place: int, total: int) -> None:
         self._write(OrderBegun(at=_utc_now(), entry="zaczynam zlecenie", row=row, place=place, total=total))
@@ -158,41 +201,57 @@ class PricingJournal:
 
     def run_ended(self, run: EndedRun) -> None:
         """Działanie po wyniku (``runs.AfterRun``), pierwsze, przed Logami Uruchomienia: wpis końca w dzienniku, który ma
-        pierwszą linię. Dziennik bez wpisu końca start Centrum wziąłby za Urwane Uruchomienie, więc usuwa go wpis końca,
-        który się nie zapisał, i Uruchomienie, którego żaden wpis się nie zapisał: nieudany zapis mógł zostawić na dysku
-        całą pierwszą linię (``flush`` albo ``fsync`` rzuca po ``write``). Uruchomienie bez dziennika (inny proces albo
-        każdy zapis nieudany bez śladu) nie ma czego usuwać. Dziennik należy do ``run``, bo następne Uruchomienie startuje
-        (``run_started``) dopiero po końcu tego."""
+        pierwszą linię na dysku. Dziennik bez wpisu końca start Centrum wziąłby za Urwane Uruchomienie, więc usuwa go wpis
+        końca, który się nie zapisał, i Uruchomienie, którego pierwsza linia nie trafiła na dysk w żadnym zapisie
+        (``_header``): nieudany zapis mógł ją tam jednak zostawić (``flush`` albo ``fsync`` rzuca po ``write``).
+        Uruchomienie bez dziennika (inny proces albo każdy zapis nieudany bez śladu) nie ma czego usuwać. Dziennik należy
+        do ``run``, bo następne Uruchomienie startuje (``run_started``) dopiero po końcu tego."""
 
         with self._lock:
             started, header = self._started, self._header
-        if started is None:
+        if started is None or started.run_id != run.info.id:
             return
         if header or not self._write(RunEnded(at=_utc_now(), entry="koniec Uruchomienia")):
             _remove(_path(self._directory, started), self._log, where="wpis")
 
     def _write(self, entry: OrderBegun | OrderEnded | RunEnded) -> bool:
-        """Wpis ``entry`` na dysku (z pierwszą linią, gdy czeka); ``False``: nie zapisał się."""
+        """Wpis ``entry`` na dysku (z pierwszą linią, gdy jej tam jeszcze nie ma); ``False``: nie zapisał się."""
 
         with self._lock:
             started = self._started
-            if started is None:  # wpis bez startu z Centrum nie ma dziennika, do którego by należał
+            if started is None:  # wpis bez startu Wyceny z Centrum nie ma dziennika, do którego by należał
                 return False
-            lines: list[JournalEntry] = [started, entry] if self._header else [entry]
-            path = _path(self._directory, started)
-            try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                with path.open("a", encoding="utf-8") as journal:
-                    journal.write("".join(_Line(line).model_dump_json() + "\n" for line in lines))
-                    journal.flush()
-                    os.fsync(journal.fileno())
-            except OSError as failure:
-                if not self._failed:
-                    self._log.pricing_journal_unavailable(failure, where="wpis")
-                    self._failed = True
+            if not self._append_locked(started, entry):
                 return False
-            self._header = False
+            match entry:
+                case OrderBegun():
+                    self._total, self._current = entry.total, entry.row
+                case OrderEnded(order=order):
+                    self._done.append(OrderDone(order.row, order.outcome, order.code))
+                    self._current = None
+                case RunEnded():
+                    pass
             return True
+
+    def _append_locked(self, started: JournalStarted, *entries: OrderBegun | OrderEnded | RunEnded) -> bool:
+        """Wpisy ``entries`` dziennika ``started`` na dysku (``fsync``), z pierwszą linią przed nimi, gdy jeszcze jej tam
+        nie ma; ``False``: zapis się nie udał (jedna linia dziennika Centrum na Uruchomienie)."""
+
+        lines: list[JournalEntry] = [started, *entries] if self._header else list(entries)
+        path = _path(self._directory, started)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as journal:
+                journal.write("".join(_Line(line).model_dump_json() + "\n" for line in lines))
+                journal.flush()
+                os.fsync(journal.fileno())
+        except OSError as failure:
+            if not self._failed:
+                self._log.pricing_journal_unavailable(failure, where="wpis")
+                self._failed = True
+            return False
+        self._header = False
+        return True
 
 
 def _remove(path: Path, log: CentrumLog, *, where: Literal["wpis", "start"]) -> None:
