@@ -91,9 +91,12 @@ def leftovers(admin: Admin, run: str | None = None) -> list[str]:
 
 def _clean_releases(admin: Admin, trial: str, run: str, noted: set[int]) -> list[str]:
     """Release'y (Archiwa) ze znacznikiem runu w opisie, z listy i z rejestru ``noted`` (każdy pytany wprost, bo lista
-    może nie nadążać), razem z plikami, gdy każdy ma w nazwie identyfikator runu, a potem tagi z identyfikatorem runu."""
+    może nie nadążać), razem z plikami, gdy każdy ma w nazwie identyfikator runu, a potem tagi z identyfikatorem runu
+    poza tagami Release'ów, które zostają (z plikiem bez identyfikatora runu albo bez znacznika runu): Release bez tagu
+    to już inny stan repozytorium niż ten, który sprzątanie zostawia."""
 
     lines = []
+    standing = set[str]()
     found = {entry["id"]: entry for entry in admin.pages(f"/repos/{trial}/releases?") if isinstance(entry, dict)}
     for release in sorted(noted - set(found)):
         status, entry = admin.request("GET", f"/repos/{trial}/releases/{release}")
@@ -101,6 +104,7 @@ def _clean_releases(admin: Admin, trial: str, run: str, noted: set[int]) -> list
             found[release] = entry
     for release, entry in sorted(found.items()):
         if f"{RUN_MARKER}{run}" not in str(entry.get("body") or ""):
+            standing.add(str(entry.get("tag_name")))
             continue
         foreign = [
             str(asset.get("name"))
@@ -109,14 +113,19 @@ def _clean_releases(admin: Admin, trial: str, run: str, noted: set[int]) -> list
         ]
         if foreign:
             lines.append(f"BŁĄD: Release {entry.get('tag_name')} zostaje, bo ma pliki bez identyfikatora runu: {foreign[:3]}")
+            standing.add(str(entry.get("tag_name")))
             continue
         status, _ = admin.request("DELETE", f"/repos/{trial}/releases/{release}")
+        if status != 204:
+            standing.add(str(entry.get("tag_name")))
         lines.append(
             f"usunięty Release {entry.get('tag_name')} z plikami" if status == 204 else f"BŁĄD usunięcia Release: {status}"
         )
     for entry in admin.pages(f"/repos/{trial}/tags?"):
         tag = str(entry.get("name")) if isinstance(entry, dict) else ""
-        if tag.startswith(f"{RUN_TAG}{run}"):
+        if tag in standing:
+            lines.append(f"tag {tag} zostaje z Release'em, który zostaje")
+        elif tag.startswith(f"{RUN_TAG}{run}"):
             status, _ = admin.request("DELETE", f"/repos/{trial}/git/refs/tags/{tag}")
             lines.append(f"usunięty tag {tag}" if status == 204 else f"BŁĄD usunięcia tagu {tag}: {status}")
     return lines

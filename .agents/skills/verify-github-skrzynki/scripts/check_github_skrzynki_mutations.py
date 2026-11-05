@@ -17,6 +17,7 @@ from mutacje import Edit, Mutation, check_all
 BOX = Path("src/rozliczenia/centrum/report_box.py")
 KEYED = Path("src/rozliczenia/centrum/keyed_box.py")
 FRESHNESS = Path("src/rozliczenia/centrum/tool_freshness.py")
+OUTBOX = Path("src/rozliczenia/centrum/outbox.py")
 BOX_TESTS = Path("tests/test_skrzynka_zgloszen_github.py")
 REPLAY = ".agents/skills/verify-github-skrzynki/scripts/github_skrzynki.py"
 FAIL = "VERIFY FAIL"
@@ -150,6 +151,13 @@ MUTATIONS = (
         (Edit(BOX, 'label if isinstance(label, str) else ""', '""'),),
         _replay("archiwum"),
         "kolejka nie zna wersji pliku w Archiwum i podmienia nowszy starszym",
+        FAIL,
+    ),
+    Mutation(
+        "Kolejka pakuje do Archiwum inny tekst niż plik Logów",
+        (Edit(OUTBOX, 'gzip.compress(self.text.encode("utf-8"), mtime=0)', 'gzip.compress(self.text.encode("utf-8") + b"\\n", mtime=0)'),),
+        _replay("archiwum"),
+        "plik w Archiwum po rozpakowaniu nie jest plikiem Logów Uruchomienia",
         FAIL,
     ),
     Mutation(

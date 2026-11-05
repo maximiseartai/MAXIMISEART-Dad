@@ -4,8 +4,9 @@ repozytorium próbnym z commitem (``TRIAL_ARCHIVE``).
 Oczekiwany wynik każdego przypadku pochodzi z domeny (``GLOSSARY.md``: Archiwum Logów okresu, ADR 0015 z dopiskiem
 #844, docstringi ``report_box`` i ``outbox._deliver_archive``), nie z przebiegu kodu. Przypadki biegną po kolei:
 późniejszy bierze identyfikatory Archiwów i plików z wcześniejszych (``earlier``), a w odtwarzaniu z faktów swojego
-nagrania. Plik leży w Archiwum tak, jak kładzie go Kolejka wysyłki: ``ArchiveFile.packed`` (gzip bez chwili
-spakowania) pod nazwą ``packed_name`` z etykietą ``<nazwa> (wersja <wersja>)``.
+nagrania. Plik leży w Archiwum pod nazwą ``packed_name`` z etykietą ``<nazwa> (wersja <wersja>)`` jak u Kolejki
+wysyłki, a jego bajty to treść ``ArchiveFile.packed`` po rozpakowaniu w gzipie o tych samych bajtach na każdej maszynie
+(``archived``), bo nagranie trzyma skrót ciała wysyłki.
 """
 
 from __future__ import annotations
@@ -16,9 +17,11 @@ import gzip
 import hashlib
 import json
 from pathlib import Path
+import struct
 import sys
 import time
 from typing import Final, cast
+import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
@@ -48,6 +51,34 @@ SETTLE_S: Final = 90.0
 # plik swojego Uruchomienia”), bez danych taty.
 BEFORE_DIAGNOSIS: Final = '{"diagnosis": null, "run": "%s"}\n'
 AFTER_DIAGNOSIS: Final = '{"diagnosis": "BRAK_WZORCA", "run": "%s"}\n'
+# Nagłówek gzip (RFC 1952) bez nazwy i chwili spakowania, z systemem „nieznany” (255), i największy blok bez kompresji.
+_GZIP_HEADER: Final = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff"
+_STORED_BLOCK: Final = 0xFFFF
+
+
+def portable_gzip(content: bytes) -> bytes:
+    """Plik gzip z ``content`` w blokach deflate bez kompresji: te same bajty na każdym Pythonie, systemie i zlib.
+
+    Bajty ``gzip.compress(..., mtime=0)`` zależą od maszyny: Python 3.12 wpisuje do nagłówka system, dla którego
+    zbudowano zlib (19 na macOS, 3 na Linuksie), Python 3.13 i nowszy zawsze 255, a zlib-ng, z którym Python 3.14 na
+    Windows pakuje, koduje deflate po swojemu. Nagranie trzyma skrót ciała wysyłki, więc nagranie z Maca nie
+    odtwarzało się na Windows w CI (run 41959078147, Mutation checks). Bloki bez kompresji (RFC 1951, 3.2.4) i CRC-32
+    nie zależą od biblioteki.
+    """
+
+    blocks = [content[start : start + _STORED_BLOCK] for start in range(0, len(content), _STORED_BLOCK)] or [b""]
+    deflate = b"".join(
+        struct.pack("<BHH", index == len(blocks) - 1, len(block), len(block) ^ 0xFFFF) + block
+        for index, block in enumerate(blocks)
+    )
+    return _GZIP_HEADER + deflate + struct.pack("<II", zlib.crc32(content), len(content) & 0xFFFFFFFF)
+
+
+def archived(file: ArchiveFile) -> bytes:
+    """Bajty pliku ``file`` w Archiwum przebiegu: plik Logów, który daje ``ArchiveFile.packed`` Kolejki wysyłki po
+    rozpakowaniu, w ``portable_gzip``."""
+
+    return portable_gzip(gzip.decompress(file.packed()))
 
 
 @dataclass
@@ -283,7 +314,7 @@ def _prepare_upload(live: ArchiwumLive, earlier: Facts) -> Facts:
 def _send(client: Client, facts: Facts, text_key: str, label_key: str) -> tuple[object, object]:
     """Wysyłka pliku Kolejki wysyłki z faktów do Archiwum i Archiwum po niej."""
 
-    packed = _file(facts, text_key).packed()
+    packed = archived(_file(facts, text_key))
     archive_id = int(cast(int, facts["archiwum"]))
     sent = client.box.upload(archive_id, str(facts["nazwa"]), str(facts[label_key]), packed, key=client.key)
     return (sent, client.box.archive(str(facts["tag"]), key=client.key))
@@ -336,7 +367,7 @@ def _prepare_pages(live: ArchiwumLive, earlier: Facts) -> Facts:
             archive_id,
             packed_name(live.run, 100 + index),
             _label(packed_name(live.run, 100 + index), f"{live.run}-{index:04d}"),
-            gzip.compress(f"{live.marker} {index}\n".encode(), mtime=0),
+            portable_gzip(f"{live.marker} {index}\n".encode()),
         )
         for index in range(1, PAGE + 2)
     ]
@@ -372,7 +403,7 @@ def _prepare_replace(live: ArchiwumLive, earlier: Facts) -> Facts:
         archive_id,
         packed_name(live.run, 2),
         _label(packed_name(live.run, 2), f"{live.run}-0001"),
-        gzip.compress((BEFORE_DIAGNOSIS % live.run).encode(), mtime=0),
+        portable_gzip((BEFORE_DIAGNOSIS % live.run).encode()),
     )
     same, _ = live.earlier["plik-tej-samej-nazwy"]
     return {**same, "inny": _as_facts(other)}
@@ -425,8 +456,8 @@ def _prepare_link(live: ArchiwumLive, earlier: Facts) -> Facts:
 
 
 def _link(client: Client, facts: Facts) -> object:
-    archived = _file(facts, "tekst_po_diagnozie")
-    return (archived.link, hashlib.sha256(archived.packed()).hexdigest())
+    archived_file = _file(facts, "tekst_po_diagnozie")
+    return (archived_file.link, hashlib.sha256(archived(archived_file)).hexdigest())
 
 
 def _judge_link(facts: Facts, outcome: object) -> list[str]:
@@ -461,7 +492,7 @@ def _bad_key(client: Client, facts: Facts) -> object:
     return {
         "archive": box.archive(tag, key=BAD_KEY),
         "open_archive": box.open_archive(str(facts["tag_nowego"]), "zły klucz", "zły klucz", key=BAD_KEY),
-        "upload": box.upload(archive_id, name, name, gzip.compress(b"{}\n", mtime=0), key=BAD_KEY),
+        "upload": box.upload(archive_id, name, name, portable_gzip(b"{}\n"), key=BAD_KEY),
         "remove": box.remove(_asset_of(facts, "inny").id, key=BAD_KEY),
         "archive kluczem klienta": _by_id(box.archive(tag, key=client.key)),
     }
@@ -586,6 +617,12 @@ UNCHECKED: Final = (
     (
         "urwany-plik",
         "plik urwany w trakcie wysyłki (state inny niż uploaded): przebieg nie umie przerwać wysyłki w połowie",
+    ),
+    (
+        "lista-zaraz-po-zalozeniu",
+        "klient, który pyta o listę Release'ów zaraz po założeniu Archiwum (jak Kolejka przy drugim pliku Logów nowego "
+        "okresu w tym samym przejściu): przypadki czekają, aż lista pokaże Archiwum, a 422 na open_archive tego samego "
+        "tagu nagrano dopiero po tym",
     ),
     (
         "odnosnik-w-przegladarce",

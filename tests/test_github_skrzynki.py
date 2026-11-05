@@ -2,8 +2,8 @@
 
 Przebieg na żywo pisze tylko do repozytoriów próbnych (pustego i Archiwum z commitem), więc transport klienta Skrzynki
 odmawia każdego innego adresu, także prawdziwej Skrzynki, zanim cokolwiek wyśle. Nagrania leżą w repozytorium publicznym, więc nie mają klucza ani
-nagłówków żądań. Odtwarzanie nagrań (podstawa ``ci:``) biegnie w Mutation checks; tu sprawdza się tylko, że odtwarzanie
-odmawia żądania spoza nagrania.
+nagłówków żądań. Odtwarzanie nagrań (podstawa ``ci:``) biegnie w Mutation checks; tu sprawdza się, że odtwarzanie
+odmawia żądania spoza nagrania, a sprzątanie zostawia Release razem z jego tagiem.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from rozliczenia.centrum.report_box import (
 SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
 sys.path.insert(0, str(SKILL / "scripts"))
 
+import github_sprzatanie  # noqa: E402
 import github_wymiana  # noqa: E402
 
 TRIAL = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba"
@@ -163,3 +164,45 @@ def test_odtwarzanie_odmawia_zadania_spoza_nagrania() -> None:
     assert outcome == Unreachable()
     [problem] = transport.finish()
     assert "issues/2/comments" in problem and "issues/1/comments" in problem
+
+
+class _ArchiveHarness:
+    """Harness repozytorium próbnego Archiwum z jednym Release'em runu (ze znacznikiem) i jego tagiem."""
+
+    def __init__(self, run: str, assets: list[str]) -> None:
+        self.release = {"id": 7, "tag_name": f"logi-verify-{run}", "body": f"{github_wymiana.RUN_MARKER}{run}"}
+        self.assets = [{"name": name} for name in assets]
+        self.deleted: list[str] = []
+
+    def pages(self, path: str) -> list[object]:
+        if path.endswith("/releases?"):
+            return [self.release]
+        if path.endswith("/releases/7/assets?"):
+            return list(self.assets)
+        if path.endswith("/tags?"):
+            return [{"name": self.release["tag_name"]}]
+        raise AssertionError(path)
+
+    def request(self, method: str, path: str, payload: object = None) -> tuple[int, object]:
+        self.deleted.append(f"{method} {path}")
+        return 204, None
+
+
+@pytest.mark.parametrize(
+    ("assets", "deleted"),
+    [
+        (["obcy-plik.json.gz"], []),
+        (
+            ["20261105T000000-abcdef-settlement-1.json.gz"],
+            ["releases/7", "git/refs/tags/logi-verify-20261105T000000-abcdef"],
+        ),
+    ],
+    ids=["z-cudzym-plikiem-zostaje-z-tagiem", "z-plikami-runu-znika-z-tagiem"],
+)
+def test_sprzatanie_usuwa_tag_archiwum_runu_tylko_razem_z_jego_release(assets: list[str], deleted: list[str]) -> None:
+    run = "20261105T000000-abcdef"
+    harness = _ArchiveHarness(run, assets)
+
+    github_sprzatanie._clean_releases(harness, TRIAL_ARCHIVE, run, set())  # type: ignore[arg-type]
+
+    assert harness.deleted == [f"DELETE /repos/{TRIAL_ARCHIVE}/{path}" for path in deleted]

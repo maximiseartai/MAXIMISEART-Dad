@@ -1,6 +1,7 @@
 """Skrzynka Zgłoszeń na GitHubie: odpowiedzi REST zamienione na wyniki skrzynki, z podstawionym transportem HTTP.
 
-Żaden test nie łączy się z prawdziwym GitHubem.
+Żaden test nie łączy się z prawdziwym GitHubem. Nagrania prawdziwego GitHuba skilla ``verify-github-skrzynki``
+odtwarzają się tak samo na każdej maszynie, choć bajty gzipu ``ArchiveFile.packed`` zależą od Pythona i zlib.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -48,6 +50,13 @@ from rozliczenia.centrum.outbox import ArchiveFile, Outbox, PeriodThread, Post, 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.sluchacz_kolejki import QueueListener
+
+SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
+sys.path.insert(0, str(SKILL / "scripts"))
+
+import github_przypadki_archiwum  # noqa: E402
+import github_skrzynki  # noqa: E402
+import github_wymiana  # noqa: E402
 
 TITLE = "BRAK_WZORCA: Nie znaleziono wzorca."
 BODY = "## Komunikat\n"
@@ -916,3 +925,29 @@ def test_odmowa_archiwum_zatrzymuje_tylko_plik_logow_a_zgloszenie_za_nimi_dochod
     lines = log.read_text("utf-8")
     assert ("przyczyna=odmowa-archiwum" in lines, "przyczyna=brak-sieci" in lines) == (True, False)
     assert keyed.judge(wait_s=0) == "accepted"
+
+
+@pytest.mark.parametrize("system", [3, 19, 255, 10], ids=["linux", "macos-python-3-12", "python-3-13", "windows-zlib"])
+def test_nagranie_archiwum_odtwarza_sie_przy_gzipie_innej_maszyny(monkeypatch: pytest.MonkeyPatch, system: int) -> None:
+    """``ArchiveFile.packed`` daje na Windows w CI (Python 3.14) inne bajty niż na Macu, na którym powstało nagranie
+    (run 41959078147, bajt systemu w nagłówku 255 zamiast 19): odtwarzanie Archiwum nie zależy od bajtów gzipu maszyny."""
+
+    compress = gzip.compress
+
+    def compress_like_other_machine(data: bytes, compresslevel: int = 9, *, mtime: float | None = None) -> bytes:
+        packed = compress(data, compresslevel=1, mtime=mtime)  # inny poziom: deflate innej biblioteki
+        return packed[:9] + bytes([system]) + packed[10:]
+
+    monkeypatch.setattr(gzip, "compress", compress_like_other_machine)
+    recording = github_wymiana.read_recording(SKILL / "nagrania" / "archiwum-fine-grained.json")
+
+    results = github_skrzynki.replay(
+        "archiwum-fine-grained",
+        github_przypadki_archiwum.CASES,
+        recording,
+        github_skrzynki.replay_archiwum,
+        github_przypadki_archiwum.describe,
+    )
+
+    assert [(result.case, result.problems) for result in results if not result.ok] == []
+    assert len(results) == len(github_przypadki_archiwum.CASES)

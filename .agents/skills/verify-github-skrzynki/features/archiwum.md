@@ -16,7 +16,8 @@ commit (README on `main`); the empty trial repository keeps the case of the Skrz
   `archive` of the tag → that one Archiwum without files.
 - `znalezienie-po-tagu`: with two Archiwa, `archive` of each tag → its own Archiwum.
 - `wysylka-pliku`: `upload` of the gzip packed Logi file with its label → `Asset` with the name, the label and
-  `uploaded`; the Archiwum lists that one file.
+  `uploaded`; the Archiwum lists that one file. The file is the Logi file of `ArchiveFile.packed` in `portable_gzip`,
+  the same bytes on every machine, because the recording holds the hash of the body.
 - `plik-tej-samej-nazwy`: `upload` of a newer version under the same name → `Rejected`, and the first version stays.
 - `pliki-strony`: 101 files in one Archiwum → all of them from two pages of the file list.
 - `podmiana-pliku`: `remove` of the older file → `Removed` and only the other file is left; the newer version under the
@@ -52,9 +53,10 @@ Preconditions:
 
 - GitHub's Release list lags behind a new Release: on 2026-11-05 `archive` right after `open_archive` (201) got an
   empty list (first live run, `archiwum-1-fg.log`), and the second Archiwum showed after 2.8 s. The cases wait for the
-  list (`settle_releases`, up to 90 s). A client that lists right after it opened an Archiwum, as the Kolejka does for a
-  second Logi file of a new period in the same pass, gets `None` and then 422 on `open_archive` (`Rejected`); what the
-  Kolejka makes of that is not driven here.
+  list (`settle_releases`, up to 90 s) before they call the client, so a client that lists right after it opened an
+  Archiwum, as the Kolejka does for a second Logi file of a new period in the same pass, is not driven
+  (`NIESPRAWDZONE | lista-zaraz-po-zalozeniu`): the 422 on `open_archive` of the same tag (`Rejected`) is recorded only
+  after the list showed the Archiwum (`zalozenie-tego-samego-tagu`, `nadazylo_po_s` 2.8).
 - `make_latest: "false"` does not keep the Archiwum out of `releases/latest`: with the Archiwum as the only Release
   GitHub answered it there on 2026-11-05 (`najnowsze_id`). The cases record it and do not judge it: Centrum and the
   Wydanie tool read Wydania only from the public tool repository (GLOSSARY, Archiwum Logów okresu).

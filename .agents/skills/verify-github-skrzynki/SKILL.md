@@ -96,6 +96,10 @@ Offline: every recording in `nagrania/` (`skrzynka-<kind of key>.json` and `arch
 key that ran, `aktualnosc.json`)
 through the same cases with `ReplayTransport` or a replaying `GitHubProxy`. A request the recording does not have, in
 another order or with another body, and a recorded request the client no longer sends, are failures.
+A recording holds the hash of each request body, so every body must come out the same on every machine. The Archiwum
+file is the Logi file of `ArchiveFile.packed` repacked by `portable_gzip` (stored deflate blocks), because the bytes
+of `gzip.compress` differ by Python and zlib: the header's system byte is 19 on the Mac's Python 3.12, 3 on Linux and
+255 from Python 3.13, so a recording made on the Mac failed on Windows in CI (run 41959078147, 63/68).
 
 ## Evidence and verdict
 
@@ -158,7 +162,7 @@ Run it locally only to reproduce a red Mutation checks step or the night's issue
 It must end with `MUTACJE OK`: 401 taken as Rejected, 404 not a refusal, 422 not a rejection, the second page of a
 list lost, `include_closed` ignored, the close reason read from `state`, a refused list that does not refuse the key,
 the second page of the Archiwum's files lost, `remove` of another file, the first Release taken as the Archiwum of the
-tag, a file that arrived read as cut off, the file's label lost, the download link without `/download/`, `Link`
+tag, a file that arrived read as cut off, the Kolejka packing another text than the Logi file, the file's label lost, the download link without `/download/`, `Link`
 without its next page, a 404 of compare taken as no answer, any merged PR taken as the tip of `main`, a fake of the
 deleted issue that answers 410 and a fake of a file of the same name that answers 400 all end the replay in `VERIFY
 FAIL`. A mutation reported as `NIEAKTUALNA`
