@@ -166,8 +166,13 @@ and `_Server` in `server.py` (`DEFINITIONS` in `sprawdz_model_kolejki.py`). Only
 rest of their files, is drift. Name these three files here without their
 `src/…` path in backticks: such a path makes the whole file covered.
 
-**Sync commit: `6cc9e712`** (2026-11-05). The checker and the model share it:
+**Sync commit: `0deaca72`** (2026-11-05). The checker and the model share it:
 at this commit both were confirmed to describe the code above. Since the
+previous sync `6cc9e712` only `0deaca72` (#880) changed a covered file, and only
+the module docstring and the docstring of `GitHubReportBox.open_archive`: the
+empty repository answered 422 to both keys in the recordings of
+`verify-github-skrzynki`; no box call, status set or outcome changed, and
+`sprawdz_model_kolejki.py` gave `MODEL KOLEJKI OK` at it. At `6cc9e712`, since the
 previous sync `50fd9abb` only `6cc9e712` (round 2 of #860) changed a covered
 file: `GitHubReportBox.open_archive` reads GitHub's 409 to a new Release in a
 repository without a commit as `Rejected` instead of `Unreachable`, so the
@@ -261,7 +266,7 @@ them, `6f94edb8` was the sync of both, and since the checker's earlier sync
 model describes. To see whether they need another look:
 
 ```bash
-git log --oneline 6cc9e712..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
+git log --oneline 0deaca72..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
 ```
 
 A change to the three definitions above shows as a `UWAGA:` line of

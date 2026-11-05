@@ -797,7 +797,7 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
     Case(
         "archiwum-w-pustym-repo",
         "Rejected, a Archiwum dalej nie ma (None)",
-        "report_box: „repozytorium bez commitu odmawia założenia Archiwum (409, Rejected)”",
+        "report_box: „repozytorium bez commitu odmawia założenia Archiwum (422 albo 409, Rejected)”",
         _prepare_archive,
         _open_archive,
         _is((Rejected(), None)),
