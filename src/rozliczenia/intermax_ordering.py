@@ -16,6 +16,7 @@ dnia sprzed niej w tym dniu.
 
 from __future__ import annotations
 
+import hashlib
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
@@ -100,7 +101,9 @@ def order_register(
     Komunikatem Uporządkowania; nieudane usunięcie starszych Kopii to ostrzeżenie: INTERMAX jest już uporządkowany.
     ``clock`` to zegar w sekundach, z którego liczone są czasy etapów, ``waiting`` zegar i przerwa krótkiej ponownej
     próby podmiany, której odmawia OneDrive, a ``disk`` kroki podmiany na dysku. Komórki zakazanych kolumn
-    przeczytanych wierszy poznaje ``forbidden`` (reguła danych, ADR 0025), a wklejone wiersze, które rozpoznaje
+    przeczytanych wierszy poznaje ``forbidden`` (reguła danych, ADR 0025), który po zapisie wie też, do którego
+    wiersza dnia zapisanej wersji INTERMAX poszło każde Surowe zlecenie (``ForbiddenValues.moved``), a wklejone wiersze,
+    które rozpoznaje
     Planowanie, i odcisk przeczytanego INTERMAX Kopia wejścia Uruchomienia ``copy`` (#842).
     """
 
@@ -153,10 +156,11 @@ def order_register(
             register.check(written, sheet, block, day)
 
         with _stops(lambda: messages.unsupported_shape(register_path, sheet.name), UnsupportedShape):
+            ordered = register.ordered(sheet, block, day)
             outcome = replace_register(
                 register_path,
                 register.content,
-                register.ordered(sheet, block, day),
+                ordered,
                 written_as_planned,
                 before="ordering",
                 copies=copies_directory,
@@ -166,6 +170,12 @@ def order_register(
             )
         if isinstance(outcome, Refusal):
             raise StopError(_refused(outcome, register_path, copies_directory))
+        if forbidden is not None:
+            moved = {
+                placement.order.row: (placement.row, raw_orders.SHIFT if placement.order.shifted else 0)
+                for placement in day.placements
+            }
+            forbidden.moved(register.digest, hashlib.sha256(ordered).hexdigest(), sheet.name, moved)
         return outcome
 
     replaced = phases.save(save)

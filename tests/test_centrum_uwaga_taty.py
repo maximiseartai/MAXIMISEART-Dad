@@ -174,11 +174,13 @@ def test_uwaga_po_uporzadkowaniu_intermax_nie_wynosi_adresu_ani_numeru_umowy_z_w
     )
 
 
-def test_po_uporzadkowaniu_intermax_uwaga_zna_adres_przesunietego_wiersza_a_slowo_z_urzadzen_wychodzi_bez_zmian(
+def test_po_uporzadkowaniu_intermax_uwaga_zna_adres_przesunietego_wiersza_w_obu_jego_polozeniach(
     tmp_path: Path,
 ) -> None:
-    # Pierwszy wiersz wklejenia (zlecenie 101) jest przesunięty o dwie kolumny w lewo (ADR 0019): pod nagłówkiem
-    # ADRES stoi w nim URZĄDZENIA („Instalacja”), a jego ADRES i NUMER UMOWY stoją dwie kolumny wcześniej.
+    # Pierwszy wiersz wklejenia (zlecenie 101) jest przesunięty o dwie kolumny w lewo (ADR 0019): jego ADRES i NUMER
+    # UMOWY stoją dwie kolumny przed nagłówkiem. Pierwszy wiersz wklejenia ma jednak zawsze dwa położenia (ADR 0025,
+    # opcja 3 z #913), a w położeniu bez przesunięcia pod nagłówkiem ADRES stoi jego URZĄDZENIA („Instalacja”), więc
+    # strażnik maskuje to słowo w wolnym tekście Uwagi taty, choć w URZĄDZENIA innych wierszy Kopii wejścia nie.
     started = ordering_centrum(tmp_path)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
     assert started.run_to_end()["result"]["result"] == "OK"
@@ -188,7 +190,10 @@ def test_po_uporzadkowaniu_intermax_uwaga_zna_adres_przesunietego_wiersza_a_slow
     plain_draft = started.client.post("/api/dad-notes/draft", json=plain)
     shifted_draft = started.client.post("/api/dad-notes/draft", json=shifted)
 
-    assert plain_draft.json()["body"] == f"Instalacja internetu u klienta trwała długo\n\n{VERSION_LINE}"
+    assert plain_draft.json()["body"].splitlines()[:2] == [
+        "[adres] internetu u klienta trwała długo",
+        "Reguła danych: zamaskowano wartość kolumny ADRES w: treść Uwagi taty.",
+    ]
     assert shifted_draft.json()["body"].splitlines()[:3] == [
         "Zlecenie [adres], umowa [numer Orange]",
         "Reguła danych: zamaskowano wartość kolumny ADRES w: treść Uwagi taty.",

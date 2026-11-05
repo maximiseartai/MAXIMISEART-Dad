@@ -1170,26 +1170,30 @@ def test_kopia_intermax_bez_wiersza_nad_wklejeniem_stawia_dzien_gdzie_indziej_ni
     assert lines[3].startswith("Pierwsza różnica: Wpisy INTERMAX (intermax_entries).rows")
 
 
-def test_logi_z_wierszem_intermax_bez_pewnego_polozenia_daja_granice_kopii_a_nie_zgodnosc(
+def test_logi_z_wierszami_intermax_z_dwoma_polozeniami_odtwarzaja_sie_z_zastrzezeniem_o_komorkach_poza_kopia(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Wklejony wiersz bez Wykonawcy nie ma pewnego położenia, więc Kopia wejścia nie ma jego daty, numeru zlecenia i
-    uwag: narzędzie nie odtwarza takiego Uruchomienia i mówi, który arkusz i wiersz są poza Kopią."""
+    """Przesunięty pierwszy wiersz wklejenia i wiersz z datą jako tekstem (ślad przesunięcia) mają dwa położenia, więc
+    Kopia wejścia nie ma komórek, które w drugim położeniu stałyby pod ``ADRES`` albo ``NUMER UMOWY`` (rodzaj zlecenia
+    pierwszego wiersza niesie osobno). Narzędzie odtwarza takie Uruchomienie z tym samym Zatrzymaniem, a w granicach
+    mówi, które wiersze i komórki są poza Kopią (ADR 0025)."""
 
-    raw = (PASTED[0], replace(PASTED[1], worker=""), PASTED[2])
+    raw = (PASTED[0], replace(PASTED[1], cells=((3, "26.10.2026 09:00"),)), PASTED[2])
     produced = _intermax(tmp_path / "taty", Intermax(raw=raw))
     [sheet] = produced.record["input_copy"][0]["sheets"]
-    [uncertain] = sheet["uncertain_rows"]
+    first, traced = sheet["uncertain_rows"]
 
     code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie")
 
-    assert code == 3
-    assert lines[0] == (
-        f"NIE DA SIĘ ODTWORZYĆ: Kopia wejścia ma wiersze INTERMAX bez pewnego położenia (arkusz {sheet['sheet']}, wiersze "
-        f"{uncertain}): brak w nich komórek DATA GODZ. POCZ., NUMER ZL., ZWROT i UWAGI, a strażnik mógł zamaskować w Kopii "
-        "wartości z drugiego położenia (#913), więc odtworzenie nie zbuduje tych wierszy"
-    )
-    assert not any(line.startswith(("Pierwsza różnica", "Porównano")) for line in lines)
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    assert sheet["order_kinds"] == {str(first): "WHOLESALE_INSTALLATION"}
+    assert (
+        f"- Kopia wejścia ma wiersze INTERMAX z dwoma położeniami (arkusz {sheet['sheet']}, wiersze {first}, {traced}): "
+        "nie ma w nich komórek, które w którymś położeniu stałyby pod ADRES, NUMER UMOWY albo za UWAGI (w przesuniętym "
+        "pierwszym wierszu wklejenia URZĄDZENIA i CZYNNOŚCI ZREALIZOWANE, w innym DATA GODZ. POCZ., NUMER ZL., ZWROT i "
+        "UWAGI), więc odtworzony wiersz ich nie ma, a reguła, która je czyta (rodzaj zlecenia i Wpis, data), może "
+        "zdecydować inaczej (ADR 0025)"
+    ) in lines
 
 
 def _guarded_with(produced: Produced, folder: Path, word: str) -> Path:

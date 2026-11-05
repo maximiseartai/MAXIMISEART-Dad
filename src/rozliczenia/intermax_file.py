@@ -2,19 +2,21 @@
 
 ``Register.read`` czyta bajty INTERMAX przez jedyne miejsce odczytu bajtów skoroszytu (``workbook_files``) i
 znajduje arkusze zleceń po nagłówkach z wiersza 1, tak jak Przygotowanie pliku zbiorczego (``COLUMNS``), z
-kolumnami ``AKCJE`` i ``UWAGI``. Arkusz zleceń daje swoje wiersze od dołu jako fakty (``raw_orders.RowFacts``),
-bez openpyxl: ~42 tys. wierszy taty to dziesiątki MB XML, a rozpoznanie potrzebuje tylko dołu arkusza. Komórki
-``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych pracy Centrum (``forbidden``,
-ADR 0025) w każdym miejscu, w którym mogą stać (``raw_orders.shifts``): pod nagłówkiem, w przesuniętym pierwszym
-wierszu wklejenia dwie kolumny na lewo od niego, a w wierszu bez pewnego położenia w obu miejscach. Zakazane kolumny
-to te z nagłówkiem zakazanej kolumny w wierszu 1 (``client_data.forbidden_columns``): INTERMAX nie ma stałego układu
-kolumn, więc kolumnę zna się po nagłówku, tak jak kolumny ``COLUMNS``.
+kolumnami ``AKCJE`` i ``UWAGI``. Arkusz zleceń daje swoje wiersze od dołu jako fakty (``raw_orders.RowFacts``, z
+kolumnami Hiperłączy z bajtów arkusza), bez openpyxl: ~42 tys. wierszy taty to dziesiątki MB XML, a rozpoznanie
+potrzebuje tylko dołu arkusza. Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły
+danych pracy Centrum (``forbidden``, ADR 0025) w każdym położeniu, w którym mogą stać (``raw_orders.Shifts.possible``):
+wiersz z jednym położeniem pod nagłówkiem (w przesuniętym pierwszym wierszu wklejenia dwie kolumny na lewo od niego),
+a wiersz z dwoma położeniami w obu, z miejscem komórki (``client_data.CellPlace``). Zakazane kolumny to te z
+nagłówkiem zakazanej kolumny w wierszu 1 (``client_data.forbidden_columns``): INTERMAX nie ma stałego układu kolumn,
+więc kolumnę zna się po nagłówku, tak jak kolumny ``COLUMNS``.
 
 Kopia wejścia Uruchomienia z Centrum (``copy``, #842) dostaje bajty, z których ``Register.read`` czyta INTERMAX, z
 chwilą zmiany sprzed odczytu, a z każdego arkusza zleceń nagłówki i wklejenie (``raw_orders.pasted_rows``): te same
 fakty wierszy, które rozpoznaje Planowanie, nie cały Rejestr. Wiersz ma w Kopii komórki od A do ``UWAGI``, te, które
 Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, także przesunięty pierwszy wiersz,
-bez zakazanych kolumn. Wiersz bez pewnego położenia ma w Kopii tylko komórki dozwolone w obu położeniach. Kolumn
+bez zakazanych kolumn. Wiersz z dwoma położeniami ma w Kopii tylko komórki dozwolone w obu położeniach, a wiersz ze
+śladem przesunięcia poza pierwszym wierszem bloku jest w ``traced_rows`` arkusza (fakt domeny złamany). Kolumn
 z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie ich nie zapisuje, nie mają nagłówka, a jedna z nich u taty
 niesie części adresu ze słowami sklejonymi ``_``, których strażnik nie rozpozna jako wartości ``ADRES``. Nad
 wklejeniem Kopia ma tylko numery ostatniego uporządkowanego i żółtego wiersza (``raw_orders.above_paste``), od których
@@ -46,6 +48,7 @@ komórki Wpisu z Wpisem z planu dnia; różnica to ``WriteMismatch``. Bajty zapi
 
 from __future__ import annotations
 
+import hashlib
 import html
 import re
 import zipfile
@@ -67,6 +70,7 @@ from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH, from_excel
 from openpyxl.workbook.properties import WorkbookProperties
 
 from . import client_data, raw_orders, workbook_files
+from .hyperlinks import SheetHyperlinks, read_sheet_hyperlinks
 from .input_copy import InputCopy, WorkbookCopy, modified_at
 from .preparation_register import ACTIVITIES, COLUMNS, DATE, DEVICES, WORKER
 from .raw_orders import SHIFT, CellFacts, DayPlan, IntermaxEntry, OperatorColor, OrderColumns, RawBlock, RowFacts
@@ -105,6 +109,8 @@ _SHEET_VIEW: Final = re.compile(rb"<sheetView\b([^>]*?)(?:/>|>.*?</sheetView>)",
 _PANE: Final = re.compile(rb"<pane\b([^>]*?)\s*/>")
 _CONTRACT_NUMBER: Final = "NUMER UMOWY/ZLECENIA ORANGE"
 """Nagłówek docelowy kolumny ``NUMER UMOWY`` w ``COLUMNS`` Rejestru."""
+_NUMBER: Final = "NUMER ZL."
+"""Nagłówek docelowy kolumny ``NUMER ZL.`` w ``COLUMNS`` Rejestru, w której stoi Hiperłącze wiersza z aplikacji."""
 _TAB_SELECTED: Final = re.compile(rb'(<sheetView\b[^>]*?)\stabSelected="(?:1|true)"')
 _WORKBOOK_VIEW: Final = re.compile(rb"<workbookView\b([^>]*?)(/?>)")
 _STYLE_LISTS: Final = (b"fonts", b"fills", b"borders", b"cellXfs")
@@ -224,30 +230,49 @@ class OrderSheet:
     def _shifts(self) -> raw_orders.Shifts:
         return raw_orders.shifts(self._facts_from_bottom(), self.columns)
 
+    @cached_property
+    def _links(self) -> SheetHyperlinks | None:
+        """Hiperłącza arkusza z bajtów INTERMAX; ``None``: zepsuty blok Hiperłączy albo relacje arkusza."""
+
+        try:
+            return read_sheet_hyperlinks(self._register.content, self.name)
+        except (ElementTree.ParseError, KeyError):
+            return None
+
     def rows_from_bottom(self) -> Iterator[RowFacts]:
         """Wiersze arkusza od ostatniego do drugiego jako fakty dla rozpoznania Surowych zleceń.
 
-        Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych Rejestru przy każdym
-        przesunięciu, przy którym mogą stać (``raw_orders.Shifts.possible``): pod nagłówkiem, w przesuniętym pierwszym
-        wierszu wklejenia o ``SHIFT`` kolumn na lewo od niego, a w wierszu bez pewnego położenia w obu miejscach.
+        Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych Rejestru w każdym
+        położeniu, w którym mogą stać (``raw_orders.Shifts.possible``): wiersz z jednym położeniem pod nagłówkiem (w
+        przesuniętym pierwszym wierszu wklejenia o ``SHIFT`` kolumn na lewo od niego), a wiersz z dwoma położeniami w
+        obu, z miejscem komórki w INTERMAX, więc strażnik nie maskuje ich w zwykłych kolumnach innych wierszy.
         """
 
         forbidden = self._register.forbidden
         for facts in self._facts_from_bottom():
             if forbidden is not None:
-                for offset in self._shifts.possible(facts):
+                possible = self._shifts.possible(facts)
+                for offset in possible:
                     for column, number in self._forbidden_columns:
-                        forbidden.remember_value(column, facts.value(number - offset))
+                        place = None
+                        if len(possible) > 1:
+                            register = self._register
+                            place = client_data.CellPlace(
+                                register.path.name, register.digest, self.name, facts.number, number - offset
+                            )
+                        forbidden.remember_value(column, facts.value(number - offset), place)
             yield facts
 
     def copied(self, workbook: WorkbookCopy) -> None:
         """Arkusz w Kopii wejścia ``workbook``: nagłówki i wklejone wiersze z komórkami od A do ``UWAGI``, tymi, które
         Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, bez zakazanych kolumn;
-        ``UnsupportedShape`` przed dopisaniem arkusza, gdy wierszy nie da się rozdzielić. Wiersz bez pewnego położenia
+        ``UnsupportedShape`` przed dopisaniem arkusza, gdy wierszy nie da się rozdzielić. Wiersz z dwoma położeniami
         (``raw_orders.Shifts.possible``) ma tylko komórki, które przy każdym jego możliwym przesunięciu stoją pod
-        nagłówkiem od A do ``UWAGI`` innym niż zakazany. Wiersze idą przez ``rows_from_bottom``, więc pamięć reguły
-        danych zna ich zakazane komórki. Z dołu arkusza Kopia dostaje też numery ostatniego uporządkowanego i żółtego
-        wiersza (``raw_orders.above_paste``)."""
+        nagłówkiem od A do ``UWAGI`` innym niż zakazany (bez ``URZĄDZENIA`` z rodzajem zlecenia w ``order_kinds``), a
+        wiersz ze śladem przesunięcia poza pierwszym wierszem bloku jest z rodzajami śladu w ``traced_rows``. Wiersze idą
+        przez ``rows_from_bottom``, więc pamięć reguły danych zna
+        ich zakazane komórki. Z dołu arkusza Kopia dostaje też numery ostatniego uporządkowanego i żółtego wiersza
+        (``raw_orders.above_paste``)."""
 
         columns = range(1, self.columns.last + 1)
         shifts = self._shifts
@@ -265,24 +290,29 @@ class OrderSheet:
             [facts.number for facts in pasted if len(shifts.possible(facts)) > 1],
             last_ordered_row=above.last_ordered,
             yellow_row=above.yellow,
+            traced_rows={facts.number: traced for facts in pasted if (traced := shifts.traced(facts))},
         )
+        kinds: dict[int, raw_orders.OrderKind] = {}
+        sheet.order_kinds = kinds
         for facts in pasted:
             shift, possible = shifts.read(facts.number), shifts.possible(facts)
-            sheet.row(
-                facts.number,
-                {
-                    column + shift: cell.value
-                    for column, cell in facts.cells.items()
-                    if all(column + offset in allowed for offset in possible)
-                },
-            )
+            cells = {
+                column + shift: cell.value
+                for column, cell in facts.cells.items()
+                if all(column + offset in allowed for offset in possible)
+            }
+            sheet.row(facts.number, cells)
+            kind = raw_orders.order_kind(facts.value(self.columns.devices - shift))
+            if self.columns.devices not in cells and kind is not raw_orders.OrderKind.OTHER:
+                kinds[facts.number] = kind
 
     def _facts_from_bottom(self) -> Iterator[RowFacts]:
         sheet = self.sheet_xml
+        links = self._links
         for row in reversed(sheet.data.rows):
             if row.number < 2:
                 return
-            yield self._register._facts(_row_tag(sheet.xml, row), row.number, _cells(sheet.xml[row.start : row.end]))
+            yield self._register._facts(_row_tag(sheet.xml, row), row.number, _cells(sheet.xml[row.start : row.end]), links)
 
 
 def _row_tag(xml: bytes, row: SheetRow) -> bytes:
@@ -365,6 +395,12 @@ class Register:
                     continue
         return register
 
+    @cached_property
+    def digest(self) -> str:
+        """Skrót SHA-256 przeczytanych bajtów, ten sam co w odcisku Kopii wejścia."""
+
+        return hashlib.sha256(self.content).hexdigest()
+
     def _header_values(self, part: str) -> list[object] | None:
         """Wartości wiersza 1 arkusza od kolumny A; ``None``: arkusz bez wiersza 1."""
 
@@ -402,6 +438,7 @@ class Register:
             devices=cast(int, named[DEVICES.target_header]),
             activities=cast(int, named[ACTIVITIES.target_header]),
             contract_number=cast(int, named[_CONTRACT_NUMBER]),
+            number=cast(int, named[_NUMBER]),
         )
 
     def _value(self, cell: _Cell) -> object:
@@ -427,17 +464,19 @@ class Register:
                 text = html.unescape(raw)
         return None if is_blank(text) else text
 
-    def _facts(self, row_tag: bytes, number: int, cells: Sequence[_Cell]) -> RowFacts:
+    def _facts(self, row_tag: bytes, number: int, cells: Sequence[_Cell], links: SheetHyperlinks | None) -> RowFacts:
         styles = self._styles
         attributes = _row_attributes(row_tag)
         row_style = attributes.get(b"s") if attributes.get(b"customFormat") == b"1" else None
+        facts = {
+            cell.column: CellFacts(self._value(cell), styles.faces[cell.style], styles.yellow[cell.style]) for cell in cells
+        }
+        values = [None if (found := facts.get(column)) is None else found.value for column in range(1, max(facts, default=0) + 1)]
         return RowFacts(
             number,
-            {
-                cell.column: CellFacts(self._value(cell), styles.faces[cell.style], styles.yellow[cell.style])
-                for cell in cells
-            },
+            facts,
             row_style is not None and styles.yellow[int(row_style)],
+            None if links is None else frozenset(links.row(number, values)),
         )
 
     def ordered(self, sheet: OrderSheet, block: RawBlock, plan: DayPlan) -> bytes:

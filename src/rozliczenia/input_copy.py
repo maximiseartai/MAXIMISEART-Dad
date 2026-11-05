@@ -31,6 +31,8 @@ from typing import Literal
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.formula import ArrayFormula
 
+from .raw_orders import OrderKind, ShiftTrace
+
 TypedKind = Literal["datetime", "time", "timedelta", "other"]
 
 
@@ -71,10 +73,16 @@ class CopiedSheet:
 
     ``shifted_row``: wiersz, którego komórki czytnik czyta o ``raw_orders.SHIFT`` kolumn na lewo od swojego nagłówka
     (przesunięty pierwszy wiersz wklejenia INTERMAX), a w Kopii stoją pod nim; ``None``: bez takiego wiersza.
-    ``uncertain_rows``: wiersze bez pewnego położenia (wklejenie INTERMAX, ``raw_orders.Shifts.possible``), które mają
+    ``uncertain_rows``: wiersze z dwoma położeniami (wklejenie INTERMAX, ``raw_orders.Shifts.possible``), które mają
     w Kopii tylko komórki dozwolone przy każdym ich możliwym przesunięciu, więc brak komórki nie znaczy w nich pustej.
     ``last_ordered_row`` i ``yellow_row``: ostatni uporządkowany i żółty wiersz nad wklejeniem INTERMAX
     (``raw_orders.above_paste``), sam numer, bez treści; ``None``: bez takiego wiersza i arkusze innych plików.
+    ``traced_rows``: wiersz ze śladem przesunięcia, który nie jest pierwszym wierszem bloku wklejenia, z rodzajami
+    śladu (``raw_orders.ShiftTrace``): łamie fakt domeny, że przesunięty przychodzi tylko pierwszy wklejony wiersz.
+    ``order_kinds``: rodzaj zlecenia (``raw_orders.OrderKind`` inny niż ``OTHER``) wiersza z dwoma położeniami, którego
+    ``URZĄDZENIA`` Kopia nie niesie, bo w drugim położeniu ta komórka stoi pod ``ADRES``: z niego Planowanie bierze
+    Kolor usterki i Wpis, więc odtworzenie Uruchomienia (#847) potrzebuje go bez komórki. To wartość z zamkniętej listy,
+    a nie treść komórki.
     """
 
     name: str
@@ -86,6 +94,8 @@ class CopiedSheet:
     uncertain_rows: tuple[int, ...] = ()
     last_ordered_row: int | None = None
     yellow_row: int | None = None
+    traced_rows: Mapping[int, tuple[ShiftTrace, ...]] = field(default_factory=dict)
+    order_kinds: Mapping[int, OrderKind] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -111,8 +121,8 @@ Values = Sequence[object] | Mapping[int, object]
 @dataclass
 class SheetCopy:
     """Arkusz w trakcie odczytu: nagłówek (numer kolumny → nagłówek), zakazane kolumny (numery od 1), przesunięty
-    wiersz, wiersze bez pewnego położenia i wiersze nad wklejeniem (``CopiedSheet``) i odwołania do przeczytanych
-    wierszy."""
+    wiersz, wiersze z dwoma położeniami, wiersze nad wklejeniem i wiersze ze śladem przesunięcia (``CopiedSheet``) i
+    odwołania do przeczytanych wierszy."""
 
     name: str
     header_row: int
@@ -122,6 +132,8 @@ class SheetCopy:
     uncertain_rows: tuple[int, ...] = ()
     last_ordered_row: int | None = None
     yellow_row: int | None = None
+    traced_rows: Mapping[int, tuple[ShiftTrace, ...]] = field(default_factory=dict)
+    order_kinds: Mapping[int, OrderKind] = field(default_factory=dict)
     _rows: list[tuple[int, Values]] = field(default_factory=list)
     _empty: list[int] = field(default_factory=list)
 
@@ -151,6 +163,8 @@ class SheetCopy:
             self.uncertain_rows,
             self.last_ordered_row,
             self.yellow_row,
+            dict(self.traced_rows),
+            dict(self.order_kinds),
         )
 
 
@@ -176,12 +190,16 @@ class WorkbookCopy:
         *,
         last_ordered_row: int | None = None,
         yellow_row: int | None = None,
+        traced_rows: Mapping[int, tuple[ShiftTrace, ...]] | None = None,
+        order_kinds: Mapping[int, OrderKind] | None = None,
     ) -> SheetCopy:
         """Arkusz ``name`` z nagłówkiem w wierszu ``header_row``, bez kolumn ``forbidden`` (numery od 1), których komórki
         czytnik oddaje pamięci reguły danych; ``shifted_row``: przesunięty wiersz (``CopiedSheet.shifted_row``), którego
-        wartości czytnik oddaje już pod ich nagłówkiem, a ``uncertain_rows`` wiersze bez pewnego położenia, którym
+        wartości czytnik oddaje już pod ich nagłówkiem, a ``uncertain_rows`` wiersze z dwoma położeniami, którym
         czytnik oddaje tylko komórki dozwolone w każdym położeniu (``CopiedSheet.uncertain_rows``);
-        ``last_ordered_row`` i ``yellow_row``: wiersze nad wklejeniem INTERMAX (``CopiedSheet.last_ordered_row``)."""
+        ``last_ordered_row`` i ``yellow_row``: wiersze nad wklejeniem INTERMAX (``CopiedSheet.last_ordered_row``);
+        ``traced_rows``: wiersze ze śladem przesunięcia poza pierwszym wierszem bloku (``CopiedSheet.traced_rows``), a
+        ``order_kinds`` rodzaje zlecenia wierszy bez ``URZĄDZENIA`` w Kopii (``CopiedSheet.order_kinds``)."""
 
         sheet = SheetCopy(
             name,
@@ -192,6 +210,8 @@ class WorkbookCopy:
             tuple(uncertain_rows),
             last_ordered_row,
             yellow_row,
+            dict(traced_rows or {}),
+            dict(order_kinds or {}),
         )
         self._sheets.append(sheet)
         return sheet

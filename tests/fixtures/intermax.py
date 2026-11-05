@@ -75,8 +75,10 @@ class Order:
     ``operator`` stoi w ``CZYNNOŚCI`` (``None``: pusta komórka), a ``kind`` w ``URZĄDZENIA``, jak z aplikacji.
     ``cells``: kolumna (od 1, nieprzesunięta) → wartość w miejsce wartości z numeru, np. liczba w ``NUMER UMOWY``.
     ``shifted``: wiersz stoi dwie kolumny na lewo od nagłówków, jak pierwszy wiersz każdego wklejenia (pierwszy wiersz
-    ``Intermax.raw`` przesuwa ``Intermax.shifted``), a ``app_look``: wiersz w ``Intermax.ordered`` ma wygląd z
-    aplikacji (Roboto 4), jak zlecenie wklejone nad uporządkowanymi.
+    ``Intermax.raw`` przesuwa ``Intermax.shifted``), a ``in_place_from``: tata postawił go z powrotem na miejsce od tej
+    kolumny (nieprzesuniętej) w prawo. ``links``: kolumny (nieprzesunięte) z Hiperłączem, jak z aplikacji tylko
+    ``NUMER ZL.``. ``app_look``: wiersz w ``Intermax.ordered`` ma wygląd z aplikacji (Roboto 4), jak zlecenie wklejone
+    nad uporządkowanymi.
     """
 
     when: datetime
@@ -87,6 +89,8 @@ class Order:
     cells: tuple[tuple[int, datetime | str | int], ...] = ()
     shifted: bool = False
     app_look: bool = False
+    in_place_from: int | None = None
+    links: tuple[int, ...] = (NUMBER,)
 
     def values(self) -> dict[int, datetime | str | int]:
         """Wartości kolumn od B do AK na swoim miejscu (nieprzesunięte)."""
@@ -230,16 +234,17 @@ class Intermax:
         for index, order in enumerate(raw):
             if index in blank_before:
                 number += 1
-            shift = 2 if (self.shifted and index == 0) or order.shifted else 0
+            shifted = (self.shifted and index == 0) or order.shifted
+            in_place = APP_LAST + 1 if order.in_place_from is None else order.in_place_from
             for column in range(1, APP_LAST + 1):
                 cell = sheet.cell(number, column)
                 cell.font = _APP_FONT
                 cell.fill = _APP_FILLS[index % 2]
             for column, value in order.values().items():
-                cell = sheet.cell(number, column - shift, value)
+                cell = sheet.cell(number, column - (2 if shifted and column < in_place else 0), value)
                 if column == DATE:
                     cell.number_format = self.raw_date_format
-                if column == NUMBER:
+                if column in order.links:
                     cell.hyperlink = order.link
             rows.append(number)
             number += 1

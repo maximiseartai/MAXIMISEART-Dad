@@ -13,8 +13,12 @@ komórki ma wypełnienie stylu wiersza: u taty żółty wiersz to zwykle styl ca
 Sam blok, bez przeglądu nad nim i bez przeszkód, oddaje ``pasted``: z niego Przygotowanie pliku zbiorczego wie,
 z których dni są Surowe zlecenia. Ten sam blok daje ``pasted_rows``: jego wiersze jako fakty, które Kopia wejścia
 Uporządkowania niesie, a ``shifts`` przesunięcia wierszy: wiersz, którego komórki rozpoznanie czyta dwie kolumny na
-lewo od swojego nagłówka, i wiersze, w których komórki mogą stać przesunięte albo nie, bo rozpoznanie ich nie
-przeczytało jako Surowych zleceń.
+lewo od swojego nagłówka, i wiersze z dwoma położeniami, w których komórki mogą stać przesunięte albo nie.
+
+Przesunięty przychodzi tylko pierwszy wklejony wiersz (fakt domeny od Maksa, 5.11.2026; kopia INTERMAX taty: 1 z 84
+wklejonych wierszy). Prywatność na nim nie stoi: dwa położenia ma pierwszy wiersz bloku, wiersz z wyglądem z
+aplikacji nad uporządkowanymi i każdy wiersz ze śladem przesunięcia (``shift_traces``), także z wyglądem
+uporządkowanym. Wiersz ze śladem poza pierwszym wierszem bloku łamie fakt domeny (``Shifts.traced``).
 
 Przeszkody: wiersz z wyglądem z aplikacji nad uporządkowanym wierszem, Surowe zlecenie bez daty z godziną albo bez
 Wykonawcy i blok z więcej niż jednego dnia. Pierwsza wymaga przeglądu nad blokiem (``_above``): od ostatniego
@@ -41,7 +45,7 @@ zawierają treści wierszy poza datą i Wykonawcą potrzebnymi do kolejności or
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
@@ -66,7 +70,7 @@ class OrderColumns:
     """Kolumny arkusza zleceń (od 1) po nagłówkach z wiersza 1: kolumny zlecenia od ``first`` do ``last`` (UWAGI).
 
     ``devices``, ``activities`` i ``contract_number`` to ``URZĄDZENIA``, ``CZYNNOŚCI`` i ``NUMER UMOWY``, w których
-    staje Kolor operatora.
+    staje Kolor operatora, a ``number`` to ``NUMER ZL.``, w którym stoi Hiperłącze wiersza z aplikacji.
     """
 
     first: int
@@ -76,6 +80,7 @@ class OrderColumns:
     devices: int
     activities: int
     contract_number: int
+    number: int
 
 
 @dataclass(frozen=True)
@@ -120,6 +125,12 @@ _KINDS: Final[Mapping[str, OrderKind]] = MappingProxyType(
 """``URZĄDZENIA`` (``_name``) → rodzaj zlecenia; każda inna wartość to ``OrderKind.OTHER``."""
 
 
+def order_kind(devices: object) -> OrderKind:
+    """Rodzaj Surowego zlecenia z wartości ``URZĄDZENIA`` (``_KINDS``); tekst ``OrderKind.value`` daje ten sam rodzaj."""
+
+    return _KINDS.get(_name(devices), OrderKind.OTHER)
+
+
 @dataclass(frozen=True)
 class _EntryRule:
     """Reguła taty dla instalacji hurt operatora: jego nazwa w regule, ``URZĄDZENIA`` i dopisek w ``CZYNNOŚCI``."""
@@ -154,11 +165,13 @@ class CellFacts:
 
 @dataclass(frozen=True)
 class RowFacts:
-    """Wiersz arkusza: numer, komórki po kolumnie od 1 (tylko te, które są w pliku) i żółte wypełnienie stylu wiersza."""
+    """Wiersz arkusza: numer, komórki po kolumnie od 1 (tylko te, które są w pliku), żółte wypełnienie stylu wiersza i
+    kolumny komórek z wartością i Hiperłączem (``None``: Hiperłączy arkusza nie dało się przeczytać)."""
 
     number: int
     cells: Mapping[int, CellFacts]
     yellow: bool
+    links: frozenset[int] | None = frozenset()
 
     def value(self, column: int) -> object:
         cell = self.cells.get(column)
@@ -351,22 +364,64 @@ def above_paste(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> 
     return AbovePaste(None if ordered is None else ordered.number, yellow)
 
 
+class ShiftTrace(Enum):
+    """Ślad przesunięcia wiersza czytanego pod nagłówkami: rzecz, której wiersz na miejscu nie ma, a wiersz przesunięty
+    o ``SHIFT`` kolumn w lewo (w całości albo w części) ma; ``value`` to opis w uwadze Logów."""
+
+    LEFT_OF_DATE = "wartość dwie kolumny na lewo od DATA GODZ. POCZ."
+    NO_DATE = "brak daty z godziną pod DATA GODZ. POCZ."
+    LINK = "Hiperłącze poza NUMER ZL."
+    LINKS_UNREADABLE = "Hiperłącza arkusza nieczytelne"
+    MIXED_FACES = "komórka Calibri 8 obok komórek z wartością w innym kroju"
+
+
+def shift_traces(
+    *,
+    left_of_date: object,
+    date: object,
+    links: Collection[int] | None,
+    number: int,
+    faces: Collection[tuple[str | None, float | None]],
+) -> tuple[ShiftTrace, ...]:
+    """Ślady przesunięcia wiersza czytanego pod nagłówkami, po kolei jak w ``ShiftTrace``.
+
+    ``left_of_date``: wartość ``SHIFT`` kolumn na lewo od ``DATA GODZ. POCZ.`` (u taty kolumna A bez nagłówka; ``None``:
+    pusta albo poza arkuszem), ``date``: wartość pod ``DATA GODZ. POCZ.``, ``links``: kolumny (od 1) z Hiperłączem
+    (``None``: nieczytelne), ``number``: kolumna ``NUMER ZL.``, ``faces``: krój i rozmiar komórek z wartością w kolumnach,
+    z których czytelnik bierze wygląd uporządkowany (bez ``WYKONAWCA``). Komórka ze spacjami jest pusta.
+    """
+
+    found: list[ShiftTrace] = []
+    if not _blank(left_of_date):
+        found.append(ShiftTrace.LEFT_OF_DATE)
+    if not _is_date(date):
+        found.append(ShiftTrace.NO_DATE)
+    if links is None:
+        found.append(ShiftTrace.LINKS_UNREADABLE)
+    elif any(column != number for column in links):
+        found.append(ShiftTrace.LINK)
+    if ordered_look(faces) and any(face != _ORDERED_FACE for face in faces):
+        found.append(ShiftTrace.MIXED_FACES)
+    return tuple(found)
+
+
 @dataclass(frozen=True)
 class Shifts:
     """O ile kolumn na lewo od swojego nagłówka stoją w pliku komórki wierszy arkusza zleceń (``shifts``).
 
     ``shifted_row``: pierwszy wiersz bloku Surowych zleceń, który rozpoznanie czyta przesunięty o ``SHIFT`` kolumn w
-    lewo; ``None``: bez niego. Tak przychodzi jednak pierwszy wiersz każdego wklejenia, także drugiego w tym samym
-    bloku, a pierwszy wiersz bloku bez daty z godziną na miejscu nie musi być przesunięty (data jako tekst). Pewne
-    położenie ma więc tylko wiersz uporządkowany i wiersz bloku, który rozpoznanie przeczytało jako Surowe zlecenie;
-    w każdym innym wierszu z wartościami (wiersz bloku bez daty z godziną albo bez Wykonawcy, wiersz z wyglądem z
-    aplikacji nad uporządkowanymi) komórki mogą stać przy obu przesunięciach.
+    lewo; ``None``: bez niego. Dwa położenia (``possible``) ma pierwszy wiersz bloku (``first_row``), także z datą z
+    godziną na miejscu, bo przesunięcie to fakt domeny, a nie pewność, wiersz z wyglądem z aplikacji nad
+    uporządkowanymi i każdy wiersz ze śladem przesunięcia (``shift_traces``), także uporządkowany. Każdy inny wiersz ma
+    jedno położenie: to, w którym czyta go rozpoznanie.
     """
 
     shifted_row: int | None
     columns: OrderColumns
-    placed: frozenset[int]
-    """Wiersze bloku, które rozpoznanie przeczytało jako Surowe zlecenia."""
+    first_row: int | None
+    """Pierwszy wiersz bloku Surowych zleceń; ``None``: bez bloku."""
+    pasted: frozenset[int]
+    """Wiersze bloku Surowych zleceń."""
 
     def read(self, row: int) -> int:
         """Przesunięcie, z którym rozpoznanie czyta wiersz ``row``: ``SHIFT`` w ``shifted_row``, inaczej 0."""
@@ -374,21 +429,38 @@ class Shifts:
         return SHIFT if row == self.shifted_row else 0
 
     def possible(self, row: RowFacts) -> tuple[int, ...]:
-        """Przesunięcia, przy których komórki wiersza mogą stać w pliku: samo ``read``, gdy położenie jest pewne, a
-        inaczej 0 i ``SHIFT``."""
+        """Przesunięcia, przy których komórki wiersza mogą stać w pliku: najpierw ``read``, a przy dwóch położeniach
+        też drugie z 0 i ``SHIFT``."""
 
-        if row.number in self.placed or _is_ordered(row, self.columns):
-            return (self.read(row.number),)
-        return (0, SHIFT)
+        read = self.read(row.number)
+        if row.number == self.first_row or self.traced(row) or (
+            row.number not in self.pasted and not _is_ordered(row, self.columns)
+        ):
+            return (read, SHIFT - read)
+        return (read,)
+
+    def traced(self, row: RowFacts) -> tuple[ShiftTrace, ...]:
+        """Ślady przesunięcia wiersza poza pierwszym wierszem bloku: każdy łamie fakt domeny, bo przesunięty przychodzi
+        tylko pierwszy wklejony wiersz."""
+
+        if row.number == self.first_row:
+            return ()
+        columns = self.columns
+        return shift_traces(
+            left_of_date=row.value(columns.date - SHIFT),
+            date=row.value(columns.date),
+            links=row.links,
+            number=columns.number,
+            faces=[cell.face for cell in _order_cells(row, columns)],
+        )
 
 
 def shifts(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Shifts:
     """Przesunięcia wierszy arkusza zleceń z tego samego rozpoznania bloku co w ``recognize`` i ``pasted``."""
 
     raw = _bottom(iter(rows_from_bottom), columns)[0]
-    shifted = _shifted(raw, columns)
-    placed = frozenset(row.number for row in raw if isinstance(_order(row, columns, row.number == shifted), RawOrder))
-    return Shifts(shifted, columns, placed)
+    first = raw[0].number if raw else None
+    return Shifts(_shifted(raw, columns), columns, first, frozenset(row.number for row in raw))
 
 
 def _bottom(rows: Iterator[RowFacts], columns: OrderColumns) -> tuple[list[RowFacts], int | None, int | None, RowFacts | None]:
@@ -508,7 +580,7 @@ def _order(row: RowFacts, columns: OrderColumns, shifted: bool) -> RawOrder | Un
     if worker is None:
         return WithoutWorker(row.number, columns.worker - offset)
     operator = row.value(columns.activities - offset)
-    kind = _KINDS.get(_name(row.value(columns.devices - offset)), OrderKind.OTHER)
+    kind = order_kind(row.value(columns.devices - offset))
     return RawOrder(row.number, shifted, when, str(worker), None if operator is None else str(operator).strip(), kind)
 
 
@@ -565,6 +637,10 @@ def _above(
 
 def _is_date(value: object) -> bool:
     return isinstance(value, datetime)
+
+
+def _blank(value: object) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
 
 
 def _order_cells(row: RowFacts, columns: OrderColumns) -> list[CellFacts]:

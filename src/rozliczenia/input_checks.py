@@ -11,9 +11,9 @@ Sprawdzanie Przygotowania pliku zbiorczego szuka też Surowych zleceń na dole k
 Zatrzymanie.
 
 Komórki zakazanych kolumn przeczytanych arkuszy Rejestru i Surowych zleceń zna pamięć reguły danych pracy Centrum
-(``forbidden``, ADR 0025), którą Centrum podaje obok czytników; proces bez Centrum jej nie ma. Wiersz Rejestru bez
-wyglądu uporządkowanego może być przesuniętym pierwszym wierszem wklejenia, więc pamięć zna jego komórki w obu
-położeniach (#918). Wiersze Rejestru z Odczytu danych zna też Kopia wejścia Uruchomienia (``copy``, #841).
+(``forbidden``, ADR 0025), którą Centrum podaje obok czytników; proces bez Centrum jej nie ma. Pierwszy wiersz bloku
+wklejenia i wiersz ze śladem przesunięcia mogą stać przesunięte, więc pamięć zna ich komórki w obu położeniach, z
+miejscem komórki (#918, ADR 0025). Wiersze Rejestru z Odczytu danych zna też Kopia wejścia Uruchomienia (``copy``, #841).
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
 from pathlib import Path
 from typing import Final, TypeAlias
 
@@ -146,23 +147,29 @@ def read_register(
 ) -> list[RegisterSheet]:
     """Arkusze ze zleceniami Rejestru zleceń albo zatrzymanie, gdy Rejestru nie da się odczytać albo nie ma nagłówków.
 
-    ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza pod ich nagłówkiem, a w wierszu bez
-    wyglądu uporządkowanego (``RegisterSheet.uncertain_rows``) także ``raw_orders.SHIFT`` kolumn na lewo od niego (#918).
-    ``copy`` poznaje każdy przeczytany wiersz (``_copied``) i chwilę zmiany Rejestru sprzed jego odczytu.
+    ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza pod ich nagłówkiem, a wiersza z dwoma
+    położeniami (``RegisterSheet.uncertain_rows``) pod nagłówkiem i ``raw_orders.SHIFT`` kolumn na lewo od niego, z
+    miejscem komórki w Rejestrze (#918, ADR 0025). ``copy`` poznaje każdy przeczytany wiersz (``_copied``), wiersze ze
+    śladem przesunięcia i chwilę zmiany Rejestru sprzed jego odczytu.
     """
 
     modified = input_copy.modified_at(register)
     with _stops(messages.register_unusable):
         read = readers.register(register, period)
     if forbidden is not None:
+        digest = hashlib.sha256(read.content).hexdigest()
         for sheet in read.sheets:
-            for row in sheet.register_rows:
-                for column, header in _FORBIDDEN_HEADERS:
-                    forbidden.remember_value(column, row.cells[header].value)
             numbers = {column.target_header: number for column, number in sheet.positions.items()}
-            for values in sheet.uncertain_rows.values():
+            for row in sheet.register_rows:
+                values = sheet.uncertain_rows.get(row.number)
                 for column, header in _FORBIDDEN_HEADERS:
-                    forbidden.remember_value(column, values.get(numbers[header] - raw_orders.SHIFT))
+                    if values is None:
+                        forbidden.remember_value(column, row.cells[header].value)
+                        continue
+                    for offset in (0, raw_orders.SHIFT):
+                        at = numbers[header] - offset
+                        place = client_data.CellPlace(register.name, digest, sheet.name, row.number, at)
+                        forbidden.remember_value(column, values.get(at), place)
     if copy is not None:
         _copied(register, read, modified, copy)
     return read.sheets
@@ -183,6 +190,7 @@ def _copied(register: Path, read: RegisterRead, modified: datetime | None, copy:
             1,
             {number: column.register_header for column, number in positions.items()},
             {number for column, number in positions.items() if column.target_header in forbidden},
+            traced_rows=sheet.traced_rows,
         )
         for row in sheet.register_rows:
             copied.row(row.number, {number: row.cells[column.target_header].value for column, number in positions.items()})

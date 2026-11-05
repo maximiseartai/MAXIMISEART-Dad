@@ -188,7 +188,7 @@ def test_ilosci_tylko_dla_inea_przy_slowie_w_dowolnym_miejscu_urzadzen_bez_wzgle
 
 
 # Kolumny arkusza zleceń INTERMAX w testach rozpoznania: tylko te, które czyta Kolor operatora i Wpis.
-COLUMNS = OrderColumns(first=1, date=2, worker=3, last=8, devices=4, activities=5, contract_number=6)
+COLUMNS = OrderColumns(first=1, date=2, worker=3, last=8, devices=4, activities=5, contract_number=6, number=7)
 # Nazwy operatorów z GLOSSARY.md (Kolor operatora, Wpis urządzenia i czynności INTERMAX) w zapisie z niego.
 OPERATORS = ("TMOBILE", "T-Mobile", "ORANGE", "Netia", "INEA", "P4", "Plus", "VECTRA", "SYSTEMIA")
 WHOLESALE_INSTALLATION = "Instalacja Hurt"

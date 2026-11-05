@@ -71,7 +71,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from functools import cache
@@ -79,12 +79,13 @@ from pathlib import Path
 import platform
 import re
 import threading
-from typing import Annotated, Final, Literal, Protocol, assert_never, get_args
+from typing import Annotated, Final, Literal, Protocol, assert_never, cast, get_args
 
+from openpyxl.utils import column_index_from_string
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic.fields import FieldInfo
 
-from rozliczenia.client_data import ForbiddenValues, Guarded
+from rozliczenia.client_data import CellPlace, CopiedCell, ForbiddenValues, Guarded
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.atomic_file import replace_atomically
@@ -126,6 +127,7 @@ from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.message import Message
 from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.progress import ProgressSnapshot
+from rozliczenia.raw_orders import SHIFT
 
 RUN_LOGS_DIRECTORY: Final = "uruchomienia"
 LABEL: Final[Label] = "logi-uruchomienia"
@@ -548,16 +550,23 @@ class LoggedRow(_Record):
     cells: Annotated[dict[str, LoggedCell], READ_VALUES]
 
 
+LoggedOrderKind = Literal["FAULT", "WHOLESALE_INSTALLATION", "OTHER"]
+"""Nazwa rodzaju zlecenia ``raw_orders.OrderKind`` w Kopii wejścia (``LoggedSheet.order_kinds``)."""
+
+
 class LoggedSheet(_Record):
     """Przeczytany arkusz: wiersz nagłówka, nagłówki po literze kolumny (bez zakazanych kolumn), wiersze i puste wiersze
     z odczytanego zakresu, które proces liczy (Rejestr zleceń).
 
     ``shifted_row``: przesunięty pierwszy wiersz wklejenia INTERMAX, którego komórki Uporządkowanie czyta w pliku dwie
     kolumny na lewo od nagłówka, a tu stoją pod nim (``input_copy.CopiedSheet.shifted_row``); ``None``: bez niego i
-    pliki sprzed #842. ``uncertain_rows``: wiersze wklejenia bez pewnego położenia, które mają tylko komórki dozwolone
+    pliki sprzed #842. ``uncertain_rows``: wiersze wklejenia z dwoma położeniami, które mają tylko komórki dozwolone
     w każdym ich możliwym położeniu (``input_copy.CopiedSheet.uncertain_rows``). ``last_ordered_row`` i ``yellow_row``:
     ostatni uporządkowany i żółty wiersz nad wklejeniem INTERMAX, od których Planowanie liczy wiersz dnia, bez treści
     (``input_copy.CopiedSheet.last_ordered_row``); ``None``: bez takiego wiersza, inne pliki i pliki sprzed #847.
+    ``order_kinds``: rodzaj zlecenia (nazwa ``raw_orders.OrderKind``) wiersza z dwoma położeniami bez ``URZĄDZENIA`` w
+    Kopii (``input_copy.CopiedSheet.order_kinds``); nazwa, a nie tekst rodzaju, bo tekst rodzaju to też wartość
+    ``URZĄDZENIA``, którą strażnik maskuje jako wartość z drugiego położenia.
     """
 
     sheet: str
@@ -569,6 +578,7 @@ class LoggedSheet(_Record):
     uncertain_rows: list[int] = []
     last_ordered_row: int | None = None
     yellow_row: int | None = None
+    order_kinds: dict[int, LoggedOrderKind] = {}
 
     @classmethod
     def of(cls, sheet: CopiedSheet) -> LoggedSheet:
@@ -585,6 +595,7 @@ class LoggedSheet(_Record):
             uncertain_rows=list(sheet.uncertain_rows),
             last_ordered_row=sheet.last_ordered_row,
             yellow_row=sheet.yellow_row,
+            order_kinds={row: cast(LoggedOrderKind, kind.name) for row, kind in sheet.order_kinds.items()},
         )
 
 
@@ -683,8 +694,9 @@ class RunLog(_Record):
     odciskiem i przeczytanymi Wierszami danych po regule danych. Pusta lista: Uruchomienie skończyło się przed odczytem.
     ``None``: Logi Urwanego Uruchomienia, pliki sprzed tego pola i Uporządkowania INTERMAX sprzed #842."""
     input_copy_notes: list[str] = []
-    """Uwagi techniczne strażnika reguły danych o wartościach zamaskowanych w Kopii wejścia (``guarded``), osobno od
-    ``technical_notes``, które pokazuje karta Uruchomienia z Logów."""
+    """Uwagi techniczne o Kopii wejścia, osobno od ``technical_notes``, które pokazuje karta Uruchomienia z Logów: wiersz
+    ze śladem przesunięcia, który łamie fakt domeny (``_domain_fact_notes``), i uwagi strażnika reguły danych o
+    wartościach zamaskowanych w Kopii (``guarded``)."""
 
     @classmethod
     def of(cls, run: EndedRun, *, tool: Tool, environment: Environment, dad_actions: DadActions) -> RunLog:
@@ -694,6 +706,7 @@ class RunLog(_Record):
         priced = engine_summary if isinstance(engine_summary, PricingSummary) else None
         if isinstance(facts, PricingStopped):
             priced = facts.summary
+        copied = None if run.input_copy is None else run.input_copy.files()
         return cls(
             schema_version=2,
             run_id=info.id,
@@ -736,7 +749,8 @@ class RunLog(_Record):
             trace=None if stopped is None else stopped.stop.trace,
             diagnosis=None,
             dad_actions=dad_actions,
-            input_copy=None if run.input_copy is None else [LoggedInputFile.of(file) for file in run.input_copy.files()],
+            input_copy=None if copied is None else [LoggedInputFile.of(file) for file in copied],
+            input_copy_notes=[] if copied is None else _domain_fact_notes(copied),
         )
 
     @classmethod
@@ -809,6 +823,20 @@ class StartedFacts(Protocol):
     def started_at(self) -> datetime: ...
 
 
+def _domain_fact_notes(files: Sequence[CopiedFile]) -> list[str]:
+    """Uwaga o każdym wierszu Kopii ze śladem przesunięcia poza pierwszym wierszem bloku wklejenia
+    (``CopiedSheet.traced_rows``): fakt domeny, na którym Maks opiera koszt reguły danych, nie zachodzi (ADR 0025)."""
+
+    return [
+        f"Fakt domeny złamany: wiersz {row} arkusza {sheet.name} w {file.name} ma ślad przesunięcia "
+        f"({', '.join(trace.value for trace in traces)}), a nie jest pierwszym wierszem wklejenia; pamięć reguły danych "
+        "zna go w obu położeniach (ADR 0025)."
+        for file in files
+        for sheet in file.sheets
+        for row, traces in sorted(sheet.traced_rows.items())
+    ]
+
+
 def logs_file_name(started_at: datetime, process: contract.ProcessKey, run_id: str) -> str:
     """Nazwa pliku Logów Uruchomienia: sekunda startu w UTC, klucz procesu i identyfikator, więc jedna na Uruchomienie,
     a pliki układają się chronologicznie."""
@@ -831,6 +859,10 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     albo ich okres, Uruchomienie i commit (#936). Klucz słownika (operator, kod pozycji, litera kolumny) to dane, więc go
     maskuje.
 
+    Komórkę Kopii wejścia strażnik sprawdza z jej miejscem w pliku taty i nagłówkiem (``client_data.CopiedCell``):
+    wartość z wiersza z dwoma położeniami maskuje w niej tylko tam, gdzie mówi ``client_data``, a nie w zwykłej kolumnie
+    innego wiersza tego samego pliku. Każde inne pole to wolny tekst z maską każdej wartości.
+
     Pole to ścieżka JSON z nazw pól, a klucz z danych (operator, kod pozycji) jest w niej ``[…]``, żeby uwaga nie
     niosła treści. Uwaga o polu Kopii wejścia idzie do ``input_copy_notes``, a każda inna do ``technical_notes``, które
     pokazuje karta Uruchomienia z Logów: Kopii karta nie pokazuje, więc karta po starcie Centrum zostaje taka jak przed
@@ -845,27 +877,28 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
         (copy_notes if re.split(r"[.\[]", place)[0] == _INPUT_COPY else notes).extend(found.notes)
         return found.text
 
-    def text(value: str, place: str) -> str:
-        return noted(forbidden.guard(value, place or "Logi"), place)
+    def text(value: str, place: str, cell: CopiedCell | None = None) -> str:
+        return noted(forbidden.guard(value, place or "Logi", cell), place)
 
-    def number(value: int | float, place: str) -> object:
-        found = forbidden.guard_number(value, place)
+    def number(value: int | float, place: str, cell: CopiedCell | None) -> object:
+        found = forbidden.guard_number(value, place, cell)
         return value if found is None else noted(found, place)
 
-    def walk(source: object, value: object, place: str, read: bool) -> object:
+    def walk(source: object, value: object, place: str, read: bool, at: _InCopy) -> object:
         """``value`` z JSON-a Logów i ``source``, z którego powstał (``None``: poza modelem Logów); ``read``: w polu
-        ``READ_VALUES``."""
+        ``READ_VALUES``; ``at``: miejsce w Kopii wejścia."""
 
+        at = at.into(source)
         if place in TOOL_FIELDS:
             return value
         if isinstance(value, str):
-            return text(value, place)
+            return text(value, place, at.cell)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return number(value, place) if read else value
+            return number(value, place, at.cell) if read else value
         if isinstance(value, list):
             sources = source if isinstance(source, list) else [None] * len(value)
             return [
-                walk(item, entry, f"{place}[{index}]", read)
+                walk(item, entry, f"{place}[{index}]", read, at)
                 for index, (item, entry) in enumerate(zip(sources, value, strict=True))
             ]
         if isinstance(value, dict):
@@ -873,12 +906,14 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
             for key, entry in value.items():
                 child, field = _child(source, key)
                 marked = field is not None and READ_VALUES in field.metadata
-                items[key if field is not None else text(key, place)] = walk(child, entry, _field(place, key), read or marked)
+                items[key if field is not None else text(key, place)] = walk(
+                    child, entry, _field(place, key), read or marked, at.under(source, key)
+                )
             return items
         return value
 
     dumped = record.model_dump(mode="json")
-    walked = walk(record, dumped, "", False)
+    walked = walk(record, dumped, "", False, _InCopy())
     if walked == dumped:
         return record
     assert isinstance(walked, dict)
@@ -889,6 +924,48 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
 
 _INPUT_COPY: Final = "input_copy"
 """Pole Kopii wejścia w Logach; uwagi strażnika o nim idą do ``input_copy_notes``."""
+
+
+@dataclass(frozen=True)
+class _InCopy:
+    """Miejsce strażnika w Kopii wejścia: plik, arkusz i wiersz, nad którymi jest, a ``cell`` to komórka, której
+    wartość sprawdza (``None``: poza komórką Kopii); ``cells``: w słowniku komórek wiersza."""
+
+    file: LoggedInputFile | None = None
+    sheet: LoggedSheet | None = None
+    row: int | None = None
+    cells: bool = False
+    cell: CopiedCell | None = None
+
+    def into(self, source: object) -> _InCopy:
+        if isinstance(source, LoggedInputFile):
+            return _InCopy(file=source)
+        if isinstance(source, LoggedSheet):
+            return replace(self, sheet=source)
+        if isinstance(source, LoggedRow):
+            return replace(self, row=source.row)
+        return self
+
+    def under(self, source: object, key: str) -> _InCopy:
+        """Miejsce pod kluczem ``key`` słownika ``source``: komórka, gdy to litera w słowniku komórek wiersza."""
+
+        if self.cells:
+            return replace(self, cells=False, cell=self._cell(key))
+        return replace(self, cells=isinstance(source, LoggedRow) and key == "cells")
+
+    def _cell(self, letter: str) -> CopiedCell | None:
+        """Komórka ``letter`` wiersza Kopii w pliku taty: przesunięty pierwszy wiersz wklejenia INTERMAX stoi w Kopii pod
+        nagłówkiem, a w pliku ``SHIFT`` kolumn na lewo; ``None`` (wolny tekst), gdy to nie litera kolumny."""
+
+        if self.file is None or self.sheet is None or self.row is None:
+            return None
+        try:
+            column = column_index_from_string(letter)
+        except ValueError:
+            return None
+        shift = SHIFT if self.row == self.sheet.shifted_row else 0
+        place = CellPlace(self.file.name, self.file.fingerprint.sha256, self.sheet.sheet, self.row, column - shift)
+        return CopiedCell(place, self.sheet.columns.get(letter))
 
 TOOL_FIELDS: Final = frozenset(
     {

@@ -12,6 +12,14 @@ każdego wiersza listy wyników jako wartość ``ADRES``. Pamięć tylko rośnie
 chroni każdą wysyłkę przed wartością z każdego pliku, który ta praca Centrum przeczytała, także Uwagę taty, która nie
 ma swojego Uruchomienia. Proces bez Centrum (Skrypt dla maszyn) nie ma pamięci, bo niczego nie wysyła.
 
+Wiersz Rejestru zleceń z dwoma położeniami (``raw_orders.Shifts``, ``preparation_register``) daje pamięci komórki
+zakazanych kolumn z obu położeń razem z miejscem komórki w pliku (``CellPlace``). Taka wartość nie maskuje wszędzie
+(ADR 0025, opcja 3 z #913): strażnik maskuje ją w każdym tekście poza komórką Kopii wejścia, a w Kopii w jej własnej
+komórce w tej samej wersji pliku (także w wersji zapisanej przez Uporządkowanie, w wierszu dnia, do którego
+przeniosło jej wiersz, ``moved``), pod nagłówkiem innym niż zwykła kolumna wiersza (``CopiedCell.ordinary``: zakazana
+kolumna, wolny tekst, kolumna bez nagłówka) i w każdym pliku o innej nazwie. W zwykłej kolumnie innego wiersza pliku
+o tej samej nazwie (np. ``URZĄDZENIA``, ``NUMER ZL.``) jej nie maskuje.
+
 Strażnik (``ForbiddenValues.guard``) przed zapisem pliku Logów i przed każdą wysyłką maskuje w tekście każdą znaną
 wartość jako ``[adres]`` albo ``[numer Orange]`` i oddaje uwagę techniczną z nazwą kolumny i miejscem w tekście, bez
 wartości. Wartość to ciąg jej słów: tekst ją zawiera, gdy ma te słowa po kolei, całe i bez wielkości liter, a między
@@ -32,7 +40,7 @@ General gubi ``+`` i zera z przodu, więc telefon ``+48600123456`` albo ``004860
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from enum import Enum
 import re
@@ -65,6 +73,24 @@ _HEADERS: Final = {
     normalize_text("NUMER UMOWY"): ForbiddenColumn.ORANGE,
 }
 """Nagłówek kolumny po ``normalize_text`` (Plik zbiorczy, Rejestr zleceń, INTERMAX i starsza kopia Rejestru)."""
+_ORDINARY: Final = frozenset(
+    normalize_text(header)
+    for header in (
+        "DATA GODZ. POCZ.",
+        "DATA",
+        "MIASTO",
+        "UMOWA",
+        "URZĄDZENIA",
+        "CZYNNOŚCI",
+        "NUMER ZL.",
+        "nr zlecenia",
+        "WYKONAWCA",
+        "SKUTECZNE",
+    )
+)
+"""Zwykłe kolumny wiersza Rejestru zleceń i INTERMAX po ``normalize_text``: w nich wartość z miejscem (``CellPlace``)
+nie maskuje komórek innych wierszy tego samego pliku. Każdy inny nagłówek (zakazana kolumna, ``CZYNNOŚCI
+ZREALIZOWANE``, ``ZWROT``, ``UWAGI``, ``AKCJE``, nieznany) i kolumna bez nagłówka to wolny tekst."""
 
 _WORD: Final = re.compile(r"\w+")
 _PHONE: Final = re.compile(
@@ -94,6 +120,47 @@ class Guarded:
     notes: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class CellPlace:
+    """Miejsce komórki w jednej wersji pliku taty: nazwa pliku (bez ścieżki), skrót SHA-256 bajtów tej wersji (jak w
+    odcisku Kopii wejścia), arkusz, wiersz i kolumna w pliku (od 1)."""
+
+    file: str
+    content: str
+    sheet: str
+    row: int
+    column: int
+
+
+@dataclass(frozen=True)
+class CopiedCell:
+    """Komórka Kopii wejścia przed strażnikiem: jej miejsce w pliku taty i nagłówek kolumny (``None``: bez nagłówka)."""
+
+    place: CellPlace
+    header: object
+
+    @property
+    def ordinary(self) -> bool:
+        """Zwykła kolumna wiersza (``_ORDINARY``), w której wartość z miejscem nie maskuje innych wierszy."""
+
+        return self.header is not None and normalize_text(self.header) in _ORDINARY
+
+
+@dataclass
+class _Known:
+    """Zapamiętana wartość: kolumna, pod którą przyszła pierwsza, i miejsca komórek wiersza z dwoma położeniami
+    (``everywhere``: także z wiersza z jednym położeniem, więc strażnik maskuje ją w każdym tekście)."""
+
+    column: ForbiddenColumn
+    everywhere: bool
+    places: set[CellPlace] = field(default_factory=set)
+
+    def masked_in(self, cell: CopiedCell | None) -> bool:
+        if self.everywhere or cell is None or not cell.ordinary or cell.place in self.places:
+            return True
+        return all(place.file != cell.place.file for place in self.places)
+
+
 class ForbiddenValues:
     """Zakazane wartości przeczytane w jednej pracy Centrum i strażnik, który je maskuje w każdej wysyłce.
 
@@ -104,7 +171,7 @@ class ForbiddenValues:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._columns: dict[tuple[str, ...], ForbiddenColumn] = {}
+        self._known: dict[tuple[str, ...], _Known] = {}
         self._lengths: dict[str, tuple[int, ...]] = {}
 
     def remember(self, columns: Iterable[tuple[ForbiddenColumn, int]], values: Sequence[object]) -> None:
@@ -114,32 +181,55 @@ class ForbiddenValues:
             if number <= len(values):
                 self.remember_value(column, values[number - 1])
 
-    def remember_value(self, column: ForbiddenColumn, value: object) -> None:
+    def remember_value(self, column: ForbiddenColumn, value: object, place: CellPlace | None = None) -> None:
         """Zapamiętuje jedną komórkę zakazanej ``column`` przeczytaną z pliku taty; ta sama wartość zostaje przy
-        kolumnie, pod którą przyszła pierwsza."""
+        kolumnie, pod którą przyszła pierwsza.
+
+        ``place``: komórka wiersza z dwoma położeniami, więc wartość maskuje tylko tam, gdzie mówi docstring modułu;
+        ``None``: wiersz z jednym położeniem, więc wartość maskuje wszędzie, także gdy przyszła wcześniej z miejscem.
+        """
 
         words = _value_words(value)
         if words is None:
             return
         with self._lock:
-            if words in self._columns:
-                return
-            self._columns[words] = column
-            lengths = self._lengths.get(words[0], ())
-            if len(words) not in lengths:
-                self._lengths[words[0]] = tuple(sorted((*lengths, len(words)), reverse=True))
+            known = self._known.get(words)
+            if known is None:
+                known = self._known[words] = _Known(column, everywhere=place is None)
+                lengths = self._lengths.get(words[0], ())
+                if len(words) not in lengths:
+                    self._lengths[words[0]] = tuple(sorted((*lengths, len(words)), reverse=True))
+            if place is None:
+                known.everywhere = True
+            else:
+                known.places.add(place)
 
-    def guard(self, text: str, place: str) -> Guarded:
-        """Tekst bez zakazanych wartości i z zamaskowanym wolnym tekstem; ``place`` nazywa miejsce w uwadze technicznej.
+    def moved(self, before: str, after: str, sheet: str, rows: Mapping[int, tuple[int, int]]) -> None:
+        """Wiersze arkusza ``sheet``, które Uporządkowanie przeniosło, zapisując z wersji pliku o skrócie ``before``
+        wersję o skrócie ``after``: wiersz → (nowy wiersz, o ile kolumn w prawo). Wartość z miejscem w takim wierszu ma
+        w wersji ``after`` komórkę w nowym miejscu, a Kopia wejścia tego Uruchomienia (wersja ``before``) ją bez zmian."""
+
+        with self._lock:
+            for known in self._known.values():
+                for place in list(known.places):
+                    target = rows.get(place.row) if (place.content, place.sheet) == (before, sheet) else None
+                    if target is not None:
+                        known.places.add(CellPlace(place.file, after, sheet, target[0], place.column + target[1]))
+
+    def guard(self, text: str, place: str, cell: CopiedCell | None = None) -> Guarded:
+        """Tekst bez zakazanych wartości i z zamaskowanym wolnym tekstem; ``place`` nazywa miejsce w uwadze technicznej,
+        a ``cell`` to komórka Kopii wejścia, z której jest tekst (``None``: każdy inny tekst, w nim maska każdej
+        wartości).
 
         Tekst bez zakazanych wartości, telefonów i ulic wraca bez zmian i bez uwag.
         """
 
-        masked, columns = self._masked(text)
+        masked, columns = self._masked(text, cell)
         return Guarded(free_text(masked), _notes(columns, place))
 
-    def guard_number(self, value: int | float, place: str) -> Guarded | None:
-        """Liczba z komórki pliku taty albo ze strony efenix po strażniku, w tekście, który pokazuje Excel (``shown``).
+    def guard_number(self, value: int | float, place: str, cell: CopiedCell | None = None) -> Guarded | None:
+        """Liczba z komórki pliku taty albo ze strony efenix po strażniku, w tekście, który pokazuje Excel (``shown``);
+        ``cell`` jak w ``guard``.
 
         ``None``: tekst liczby nie ma zakazanej wartości ani telefonu. Inaczej cała liczba staje się maską: zakazanej
         kolumny z uwagą techniczną jak w ``guard`` albo ``[telefon]`` bez uwagi, więc z liczby nie zostaje żadna cyfra.
@@ -148,15 +238,16 @@ class ForbiddenValues:
         """
 
         text = shown(value)
-        _, columns = self._masked(text)
+        _, columns = self._masked(text, cell)
         if columns:
             return Guarded(" ".join(column.mask for column in _ordered(columns)), _notes(columns, place))
         if (isinstance(value, int) or value.is_integer()) and _PHONE.search(text):
             return Guarded(_PHONE_MASK, ())
         return None
 
-    def _masked(self, text: str) -> tuple[str, set[ForbiddenColumn]]:
-        """Tekst z maską w miejscu każdej zapamiętanej wartości i kolumny tych wartości."""
+    def _masked(self, text: str, cell: CopiedCell | None) -> tuple[str, set[ForbiddenColumn]]:
+        """Tekst z maską w miejscu każdej zapamiętanej wartości, którą strażnik maskuje w ``cell``, i kolumny tych
+        wartości."""
 
         words = list(_WORD.finditer(text))
         folded = [word.group(0).casefold() for word in words]
@@ -165,7 +256,7 @@ class ForbiddenValues:
         position = index = 0
         with self._lock:
             while index < len(words):
-                hit = self._longest(folded, index)
+                hit = self._longest(folded, index, cell)
                 if hit is None:
                     index += 1
                     continue
@@ -177,14 +268,15 @@ class ForbiddenValues:
         pieces.append(text[position:])
         return "".join(pieces), masked
 
-    def _longest(self, folded: Sequence[str], index: int) -> tuple[int, ForbiddenColumn] | None:
-        """Najdłuższa zapamiętana wartość od słowa ``index``: jej długość w słowach i kolumna."""
+    def _longest(self, folded: Sequence[str], index: int, cell: CopiedCell | None) -> tuple[int, ForbiddenColumn] | None:
+        """Najdłuższa zapamiętana wartość od słowa ``index``, którą strażnik maskuje w ``cell``: długość w słowach i
+        kolumna."""
 
         for length in self._lengths.get(folded[index], ()):
             if index + length <= len(folded):
-                column = self._columns.get(tuple(folded[index : index + length]))
-                if column is not None:
-                    return length, column
+                known = self._known.get(tuple(folded[index : index + length]))
+                if known is not None and known.masked_in(cell):
+                    return length, known.column
         return None
 
 

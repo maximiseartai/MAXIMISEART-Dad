@@ -127,6 +127,18 @@ zlecenia (instalacja, usterka); poza Wpisem urządzenia i czynności INTERMAX
 resztę dopisują ręcznie tata i pracownicy po Uporządkowaniu INTERMAX.
 _Avoid_: eksport, nowe dane
 
+## Ślad przesunięcia
+
+Cecha wiersza Rejestru zleceń, której wiersz na swoim miejscu nie ma, a wiersz
+przesunięty o dwie kolumny w lewo, w całości albo w części, ma: wartość w kolumnie
+dwie na lewo od `DATA GODZ. POCZ.`, brak daty z godziną pod `DATA GODZ. POCZ.`,
+Hiperłącze poza `NUMER ZL.` (albo Hiperłącza arkusza, których nie da się
+przeczytać) i komórka Calibri 8 obok komórek z wartością w innym kroju. Przesunięty
+przychodzi tylko pierwszy wklejony wiersz, więc ślad w innym wierszu, także
+uporządkowanym, znaczy, że ten fakt nie zaszedł: reguła danych zna taki wiersz w
+obu położeniach, a Logi Uruchomienia mają o nim uwagę.
+_Avoid_: niepewny wiersz, wiersz bez pewnego położenia
+
 ## Uporządkowanie INTERMAX
 
 Proces, który tata uruchamia w Centrum rozliczeń po wklejeniu Surowych
@@ -624,9 +636,10 @@ Wycena w efenix Wiersze danych Pliku zbiorczego (Wycena z wartościami, które
 policzył Excel, także `Kwota`), a Uporządkowanie INTERMAX wklejone wiersze
 z dołu każdego arkusza zleceń, które przetwarzało, nie cały Rejestr zleceń,
 w kolumnach od A do `UWAGI`, które Uporządkowanie przenosi do dnia, także
-przesunięty pierwszy wiersz pod jego nagłówkami, a wiersz, którego położenia
-Uporządkowanie nie ustaliło, tylko z komórkami dozwolonymi przesunięty i nie, a
-nad wklejeniem tylko numery ostatniego uporządkowanego i żółtego wiersza, od
+przesunięty pierwszy wiersz pod jego nagłówkami, a wiersz z dwoma położeniami
+(pierwszy wiersz wklejenia i wiersz ze Śladem przesunięcia) tylko z komórkami
+dozwolonymi przesunięty i nie, z rodzajem zlecenia, gdy nie ma w niej jego
+`URZĄDZENIA`, a nad wklejeniem tylko numery ostatniego uporządkowanego i żółtego wiersza, od
 których Planowanie liczy wiersz dnia. Wiersz ma numer i wartości komórek po literze
 kolumny, a arkusz nagłówki kolumn; według reguły danych bez kolumn `ADRES` i
 `NUMER UMOWY/ZLECENIA ORANGE` (w Pliku zbiorczym kolumn B i I, także pod innym
@@ -686,7 +699,11 @@ wartości `ADRES` ani `NUMER UMOWY/ZLECENIA ORANGE` ani dane adresowe z efenix,
 każda inna kolumna wiersza może. W wolnym tekście telefony są `[telefon]`, a
 ulice `[ulica]`. Przed zapisem Logów i każdą wysyłką strażnik maskuje każdą
 zakazaną wartość z przeczytanych plików i dopisuje uwagę techniczną z kolumną i
-miejscem, bez wartości.
+miejscem, bez wartości. Wiersz Rejestru zleceń, który może stać przesunięty
+(pierwszy wiersz wklejenia i wiersz ze Śladem przesunięcia), strażnik zna w obu
+położeniach, a wartość z niego maskuje w jej komórce, pod `ADRES` i `NUMER
+UMOWY`, w wolnym tekście i w innych plikach, ale nie w zwykłej kolumnie innego
+wiersza, np. w `URZĄDZENIA` albo `NUMER ZL.`.
 _Avoid_: reguła prywatności (dawne listy pól każdej wysyłki), anonimizacja
 
 ## Token do Zgłoszeń

@@ -5,7 +5,7 @@ Testy czytają pliki z katalogu Logów obok dziennika Centrum, tak jak Maks dost
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass, field, replace
 from datetime import datetime, time as time_of_day, timedelta, timezone
@@ -26,6 +26,7 @@ import time
 from typing import Any, Final, NoReturn
 
 from openpyxl import load_workbook
+from openpyxl.styles import Font
 from openpyxl.worksheet.formula import ArrayFormula
 from playwright.sync_api import Browser, sync_playwright
 import pytest
@@ -85,9 +86,11 @@ from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import (
     PERIOD,
+    RAW_ORDER_FONT,
     default_register_rows,
     incomplete_period_rows,
     paste_raw_orders,
+    put_into_register,
     register_order,
     type_into_register,
 )
@@ -638,29 +641,49 @@ def test_adres_i_numer_orange_cytowane_przez_komunikat_nie_wychodza_w_logach_ani
         ]
 
 
-# --- Położenia wklejonego wiersza w Rejestrze zleceń (#918) ----------------------------------------------------------
+# --- Położenia wklejonego wiersza w Rejestrze zleceń (#918, #913) ---------------------------------------------------
 # Przygotowanie czyta Rejestr po nagłówkach, a wiersz wklejony z aplikacji firmowej może stać przesunięty o dwie
-# kolumny w lewo (ADR 0019), w całości albo poza częścią, którą tata postawił z powrotem na miejsce. Wiersz próbny niesie
-# syntetyczny adres i numer Orange w swoich kolumnach ``ADRES`` i ``NUMER UMOWY``, gdziekolwiek stoją w pliku, a tata
-# cytuje je potem w Uwadze. Wiersz bez wyglądu uporządkowanego nie ma pewnego położenia, więc pamięć reguły danych zna
-# jego komórki pod nagłówkiem i dwie kolumny na lewo od niego. Wiersz uporządkowany zna tylko pod nagłówkiem, więc jego
-# ``NUMER ZL.``, który w przesuniętym wierszu stałby tam, gdzie numer Orange, wychodzi bez maski (ADR 0025).
+# kolumny w lewo (ADR 0019), w całości albo poza częścią, którą tata postawił z powrotem na miejsce, także z krojem
+# Rejestru (wklejenie z formatowaniem docelowym, poprawka jednej komórki). Wiersz próbny niesie syntetyczny adres i numer
+# Orange w swoich kolumnach ``ADRES`` i ``NUMER UMOWY``, gdziekolwiek stoją w pliku, a tata cytuje je potem w Uwadze.
+# Dwa położenia (pod nagłówkiem i dwie kolumny na lewo od niego) ma pierwszy wiersz bloku wklejenia i każdy wiersz ze
+# śladem przesunięcia, także z wyglądem uporządkowanym (tabela decyzji opcji 3, ADR 0025). Wartość z dwóch położeń
+# strażnik maskuje w jej komórce Kopii i w wolnym tekście, ale nie w zwykłej kolumnie innego wiersza, więc ``NUMER ZL.``
+# uporządkowanych wierszy wychodzi bez maski.
 PROBE_ADDRESS = "Przemiatana Wrzosowa 12 Kórnik"
 PROBE_ORANGE = "4809876543"
 ABOVE_ORDERED = 8
 """Pusty wiersz Rejestru między zleceniami z 9 i 12 września: wklejony tu wiersz stoi nad uporządkowanymi w okresie."""
 ORDER_NUMBERS = {2: "ZL-SYN-001", 4: "ZL-SYN-002", 6: "ZL-SYN-003", 9: "ZL-SYN-004", 11: "ZL-SYN-005", 13: "ZL-SYN-006"}
 """``NUMER ZL.`` (kolumna I) uporządkowanych wierszy Rejestru, które Przygotowanie okresu czyta."""
+WHEN = datetime(2026, 9, 10, 11)
+REGISTER_FACE = Font(name="Calibri", size=8)
+"""Krój uporządkowanego wiersza Rejestru."""
+WORKER_FACE = Font(name="Calibri", size=9, bold=True)
 
 
-def _register_probe(when: object = datetime(2026, 9, 10, 11), orange: object = PROBE_ORANGE) -> dict[str, object]:
+def _register_probe(when: object = WHEN, orange: object = PROBE_ORANGE) -> dict[str, object]:
     probe = {"DATA GODZ. POCZ.": when, "ADRES": PROBE_ADDRESS, "NUMER UMOWY": orange}
-    return {**register_order(77, datetime(2026, 9, 10, 11)), **probe}
+    return {**register_order(77, WHEN), **probe}
 
 
-def _above_ordered(probe: dict[str, object] | None = None, in_place_from: str | None = None) -> Callable[[Path], object]:
+def _above_ordered(
+    probe: dict[str, object] | None = None,
+    in_place_from: str | None = None,
+    font: Callable[[str], Font | None] = lambda header: RAW_ORDER_FONT,
+    typed: Mapping[str, tuple[object, Font]] | None = None,
+) -> Callable[[Path], object]:
+    """Wiersz próbny wklejony w wiersz ``ABOVE_ORDERED``; ``typed``: komórki (litera kolumny → wartość i krój), które
+    tata wpisał w niego potem."""
+
     row = _register_probe() if probe is None else probe
-    return lambda register: paste_raw_orders(register, [row], first=ABOVE_ORDERED, in_place_from=in_place_from)
+
+    def paste(register: Path) -> None:
+        paste_raw_orders(register, [row], first=ABOVE_ORDERED, in_place_from=in_place_from, font=font)
+        for letter, (value, face) in (typed or {}).items():
+            put_into_register(register, f"{letter}{ABOVE_ORDERED}", value, face)
+
+    return paste
 
 
 def _worker_typed_by_tata(register: Path) -> None:
@@ -671,43 +694,133 @@ def _worker_typed_by_tata(register: Path) -> None:
     type_into_register(register, ABOVE_ORDERED, "WYKONAWCA", "adrian.testowy")
 
 
-def _after_period(in_place_from: str | None = None) -> Callable[[Path], object]:
+def _after_period(
+    in_place_from: str | None = None, font: Callable[[str], Font | None] = lambda header: RAW_ORDER_FONT
+) -> Callable[[Path], object]:
     """Wklejenie na dole Rejestru z dnia po okresie: Przygotowanie go nie zatrzymuje, ale czyta, bo leży w zakresie
     dat okresu z dniem zapasu."""
 
     later = [register_order(90 + hour, datetime(2026, 9, 15, 12 + hour)) for hour in range(2)]
     pasted = [_register_probe(datetime(2026, 9, 15, 10)), *later]
-    return lambda register: paste_raw_orders(register, pasted, in_place_from=in_place_from)
+    return lambda register: paste_raw_orders(register, pasted, in_place_from=in_place_from, font=font)
 
 
-REGISTER_POSITIONS: dict[str, tuple[Callable[[Path], object], str | None]] = {
-    "przesuniety_z_data_z_godzina_w_A": (_above_ordered(), "WIERSZ_BEZ_DATY"),
-    "przesuniety_z_data_jako_tekst": (_above_ordered(_register_probe("10.09.2026 11:00")), "WIERSZ_BEZ_DATY"),
-    "przesuniety_bez_daty": (_above_ordered(_register_probe(None)), "WIERSZ_BEZ_DATY"),
-    "przesuniety_z_numerem_orange_jako_liczba": (_above_ordered(_register_probe(orange=4809876543)), "WIERSZ_BEZ_DATY"),
-    "na_miejscu_od_adres": (_above_ordered(in_place_from="ADRES"), "WIERSZ_BEZ_DATY"),
-    "na_miejscu_od_czynnosci": (_above_ordered(in_place_from="CZYNNOŚCI"), "WIERSZ_BEZ_DATY"),
-    "na_miejscu_od_numer_zl": (_above_ordered(in_place_from="NUMER ZL."), "WIERSZ_BEZ_DATY"),
-    "na_miejscu_od_skuteczne": (_above_ordered(in_place_from="SKUTECZNE"), "WIERSZ_BEZ_DATY"),
-    "przesuniety_z_wykonawca_wpisanym_przez_tate": (_worker_typed_by_tata, "WIERSZ_BEZ_DATY"),
-    "nieprzesuniety": (_above_ordered(in_place_from="DATA GODZ. POCZ."), None),
-    "pierwszy_wiersz_wklejenia_po_okresie": (_after_period(), None),
-    "pierwszy_wiersz_wklejenia_po_okresie_na_miejscu_od_czynnosci": (_after_period(in_place_from="CZYNNOŚCI"), None),
-    "pierwszy_wiersz_wklejenia_po_okresie_na_miejscu_od_skuteczne": (_after_period(in_place_from="SKUTECZNE"), None),
+@dataclass(frozen=True)
+class RegisterPosition:
+    """Wiersz tabeli położeń Rejestru: wklejenie wiersza próbnego, kod Zatrzymania podglądu (``None``: bez niego) i czy
+    adres wiersza próbnego jest w pliku (``False``: tata nadpisał go datą, więc pilnuje się numeru Orange)."""
+
+    paste: Callable[[Path], object]
+    stop: str | None
+    address_in_file: bool = True
+
+
+DATE_INTO_ADDRESS = {"C": (WHEN, REGISTER_FACE)}
+"""Poprawka po Zatrzymaniu: data z wiersza wyżej wklejona w C, gdzie przesunięty wiersz ma adres."""
+REGISTER_POSITIONS: dict[str, RegisterPosition] = {
+    # R1 tabeli decyzji: przesunięty z aplikacji, pierwszy wiersz bloku
+    "przesuniety_z_data_z_godzina_w_A": RegisterPosition(_above_ordered(), "WIERSZ_BEZ_DATY"),
+    "przesuniety_z_data_jako_tekst": RegisterPosition(_above_ordered(_register_probe("10.09.2026 11:00")), "WIERSZ_BEZ_DATY"),
+    "przesuniety_bez_daty": RegisterPosition(_above_ordered(_register_probe(None)), "WIERSZ_BEZ_DATY"),
+    "przesuniety_z_numerem_orange_jako_liczba": RegisterPosition(
+        _above_ordered(_register_probe(orange=4809876543)), "WIERSZ_BEZ_DATY"
+    ),
+    # R2: na miejscu od kolumny w prawo
+    "na_miejscu_od_adres": RegisterPosition(_above_ordered(in_place_from="ADRES"), "WIERSZ_BEZ_DATY"),
+    "na_miejscu_od_czynnosci": RegisterPosition(_above_ordered(in_place_from="CZYNNOŚCI"), "WIERSZ_BEZ_DATY"),
+    "na_miejscu_od_numer_zl": RegisterPosition(_above_ordered(in_place_from="NUMER ZL."), "WIERSZ_BEZ_DATY"),
+    "na_miejscu_od_skuteczne": RegisterPosition(_above_ordered(in_place_from="SKUTECZNE"), "WIERSZ_BEZ_DATY"),
+    # R3
+    "przesuniety_z_wykonawca_wpisanym_przez_tate": RegisterPosition(_worker_typed_by_tata, "WIERSZ_BEZ_DATY"),
+    # R4
+    "nieprzesuniety": RegisterPosition(_above_ordered(in_place_from="DATA GODZ. POCZ."), None),
+    # R5
+    "pierwszy_wiersz_wklejenia_po_okresie": RegisterPosition(_after_period(), None),
+    "pierwszy_wiersz_wklejenia_po_okresie_na_miejscu_od_czynnosci": RegisterPosition(
+        _after_period(in_place_from="CZYNNOŚCI"), None
+    ),
+    "pierwszy_wiersz_wklejenia_po_okresie_na_miejscu_od_skuteczne": RegisterPosition(
+        _after_period(in_place_from="SKUTECZNE"), None
+    ),
+    # R6
+    "nieprzesuniety_z_data_w_A_i_slowem_pod_data": RegisterPosition(
+        _above_ordered(
+            _register_probe("brak"), in_place_from="DATA GODZ. POCZ.", typed={"A": (WHEN, RAW_ORDER_FONT)}
+        ),
+        "WIERSZ_BEZ_DATY",
+    ),
+    # R7: wklejenie z formatowaniem docelowym, cały wiersz Calibri 8 (wygląd uporządkowany, ślad w datach)
+    "przesuniety_caly_w_kroju_rejestru": RegisterPosition(
+        _above_ordered(font=lambda header: REGISTER_FACE), "WIERSZ_BEZ_DATY"
+    ),
+    # R8: wiersz uporządkowany, potem przesunięty w całości albo do CZYNNOŚCI
+    "uporzadkowany_potem_przesuniety": RegisterPosition(
+        _above_ordered(font=lambda header: WORKER_FACE if header == "WYKONAWCA" else REGISTER_FACE), "WIERSZ_BEZ_DATY"
+    ),
+    "uporzadkowany_potem_przesuniety_do_czynnosci": RegisterPosition(
+        _above_ordered(
+            in_place_from="CZYNNOŚCI", font=lambda header: WORKER_FACE if header == "WYKONAWCA" else REGISTER_FACE
+        ),
+        "WIERSZ_BEZ_DATY",
+    ),
+    # R9: z aplikacji z jedną komórką albo kilkoma w kroju Rejestru (D2 z przeglądu #952)
+    "przesuniety_z_tak_w_skuteczne_w_kroju_rejestru": RegisterPosition(
+        _above_ordered(typed={"L": ("tak", REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
+    ),
+    "przesuniety_z_czynnosciami_zrealizowanymi_w_kroju_rejestru": RegisterPosition(
+        _above_ordered(typed={"M": ("montaż", REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
+    ),
+    "przesuniety_z_miastem_w_kroju_rejestru": RegisterPosition(
+        _above_ordered(typed={"D": ("POZNAŃ", REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
+    ),
+    "przesuniety_z_tak_i_czynnosciami_z_wiersza_wyzej": RegisterPosition(
+        _above_ordered(typed={"L": ("tak", REGISTER_FACE), "M": ("montaż", REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
+    ),
+    "przesuniety_z_data_wklejona_na_adres": RegisterPosition(
+        _above_ordered(typed=DATE_INTO_ADDRESS), "ZLE_SKUTECZNE", address_in_file=False
+    ),
+    "przesuniety_z_data_na_adresie_wykonawca_i_tak": RegisterPosition(
+        _above_ordered(
+            typed={**DATE_INTO_ADDRESS, "J": ("adrian.testowy", WORKER_FACE), "L": ("tak", REGISTER_FACE)}
+        ),
+        None,
+        address_in_file=False,
+    ),
+    "na_miejscu_od_czynnosci_z_tak_w_kroju_rejestru": RegisterPosition(
+        _above_ordered(in_place_from="CZYNNOŚCI", typed={"L": ("tak", REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
+    ),
+    # R10: wklejenie na dole po okresie w komórki Calibri 8
+    "wklejenie_po_okresie_w_kroju_rejestru": RegisterPosition(_after_period(font=lambda header: REGISTER_FACE), None),
+    # R11: pusta komórka bez kroju, pusta albo ze spacjami w kroju Rejestru (D1 z przeglądu #952)
+    "przesuniety_w_stylu_domyslnym": RegisterPosition(_above_ordered(font=lambda header: None), "WIERSZ_BEZ_DATY"),
+    "przesuniety_z_pusta_komorka_w_kroju_rejestru": RegisterPosition(
+        _above_ordered(typed={"L": (None, REGISTER_FACE), "M": (None, REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
+    ),
+    "przesuniety_z_komorka_ze_spacjami_w_kroju_rejestru": RegisterPosition(
+        _above_ordered(typed={"L": ("  ", REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
+    ),
+    # R14: wiersz uporządkowany na miejscu z jedną komórką w innym kroju
+    "uporzadkowany_na_miejscu_z_miastem_w_kroju_aplikacji": RegisterPosition(
+        _above_ordered(
+            in_place_from="DATA GODZ. POCZ.",
+            font=lambda header: RAW_ORDER_FONT if header == "MIASTO" else REGISTER_FACE,
+        ),
+        None,
+    ),
 }
 
 
 @pytest.mark.parametrize("position", REGISTER_POSITIONS.values(), ids=REGISTER_POSITIONS.keys())
 def test_adres_i_numer_orange_wklejonego_wiersza_rejestru_nie_wychodza_z_przygotowania_w_zadnym_polozeniu(
-    tmp_path: Path, position: tuple[Callable[[Path], object], str | None]
+    tmp_path: Path, position: RegisterPosition
 ) -> None:
     """Podgląd Przygotowania na Rejestrze z wierszem próbnym w każdym położeniu: adres i numer Orange nie wychodzą do
     pliku Logów, do Skrzynki Zgłoszeń ani w Uwadze taty, a ``NUMER ZL.`` uporządkowanych wierszy jest w Kopii wejścia
-    bez maski. Podgląd kończy się Zatrzymaniem na wierszu bez daty pod ``DATA GODZ. POCZ.`` albo bez Zatrzymania."""
+    bez maski. Podgląd kończy się Zatrzymaniem na wierszu bez daty pod ``DATA GODZ. POCZ.``, na ``SKUTECZNE`` albo bez
+    Zatrzymania."""
 
-    paste, stop = position
     centrum = preparing_centrum(tmp_path)
-    paste(centrum.fixture.register_path)
+    position.paste(centrum.fixture.register_path)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
 
     run_to_end(centrum, dry_run=True)
@@ -718,9 +831,10 @@ def test_adres_i_numer_orange_wklejonego_wiersza_rejestru_nie_wychodza_z_przygot
     assert box.wait_until(lambda fake: logs_arrived(fake, 1))
     [record] = records(centrum)
     stops = [message["code"] for message in record["messages"] if message["kind"] == "stop"]
-    assert stops == ([] if stop is None else [stop])
+    assert stops == ([] if position.stop is None else [position.stop])
     texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)] + in_box(box) + [draft.json()["body"]]
-    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in texts)] == []
+    secrets = (PROBE_ADDRESS, PROBE_ORANGE) if position.address_in_file else (PROBE_ORANGE,)
+    assert [value for value in secrets if any(value in text for text in texts)] == []
     [copied] = record["input_copy"]
     [sheet] = copied["sheets"]
     assert {row["row"]: row["cells"]["I"] for row in sheet["rows"] if row["row"] in ORDER_NUMBERS} == ORDER_NUMBERS

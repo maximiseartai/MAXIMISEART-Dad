@@ -290,13 +290,15 @@ def paste_raw_orders(
     gap: int = 2,
     first: int | None = None,
     in_place_from: str | None = None,
+    font: Callable[[str], Font | None] = lambda header: RAW_ORDER_FONT,
 ) -> int:
     """Wkleja ``orders`` do arkusza ``ZLECENIA`` jak z aplikacji, Roboto 4: od wiersza ``first``, a bez niego na dół,
     ``gap`` pustych wierszy niżej.
 
     Pierwszy wiersz jest przesunięty o dwie kolumny w lewo, więc wklejenie nie ma wartości ``AKCJE``; ``in_place_from``:
-    tata postawił go z powrotem na miejsce od kolumny z tym nagłówkiem w prawo. Zwraca numer pierwszego wklejonego
-    wiersza.
+    tata postawił go z powrotem na miejsce od kolumny z tym nagłówkiem w prawo. ``font``: krój komórki zlecenia pod
+    nagłówkiem (``None``: styl domyślny), np. Calibri 8 przy wklejeniu z formatowaniem docelowym. Zwraca numer
+    pierwszego wklejonego wiersza.
     """
 
     workbook = load_workbook(path)
@@ -312,11 +314,29 @@ def paste_raw_orders(
                     shift = 2 if index == 0 and columns[header] < in_place else 0
                     cell = sheet.cell(first + index, columns[header] - shift)
                     cell.value = value  # type: ignore[assignment]  # syntetyczne zlecenia mają tekst i daty
-                    cell.font = RAW_ORDER_FONT
+                    chosen = font(header)
+                    if chosen is not None:
+                        cell.font = chosen
         workbook.save(path)
     finally:
         workbook.close()
     return first
+
+
+def put_into_register(path: Path, cell: str, value: object, font: Font) -> None:
+    """Tata wpisuje ``value`` w komórkę ``cell`` arkusza ``ZLECENIA`` (np. ``A8``, także w kolumnie bez nagłówka)
+    krojem ``font``; data z godziną dostaje format daty."""
+
+    workbook = load_workbook(path)
+    try:
+        target = workbook["ZLECENIA"][cell]
+        target.value = value
+        target.font = font
+        if isinstance(value, datetime):
+            target.number_format = "dd.mm.yyyy hh:mm"
+        workbook.save(path)
+    finally:
+        workbook.close()
 
 
 def type_into_register(path: Path, row: int, header: str, value: object) -> None:

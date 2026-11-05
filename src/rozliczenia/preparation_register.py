@@ -2,8 +2,9 @@
 
 Rejestr jest tylko czytany, przez moduł skoroszytu. Arkusze ze zleceniami są rozpoznawane po komplecie
 wymaganych nagłówków w pierwszym wierszu, a komórki z wartościami, Wyróżnieniami i Hiperłączami
-są zwracane pod nagłówkiem docelowym każdej kolumny ``COLUMNS``. Wiersz bez wyglądu uporządkowanego może stać
-przesunięty, więc arkusz oddaje go też z wartościami całego wiersza (``RegisterSheet.uncertain_rows``). Dla okresu
+są zwracane pod nagłówkiem docelowym każdej kolumny ``COLUMNS``. Wiersz z dwoma położeniami (pierwszy wiersz bloku
+wklejenia i wiersz ze śladem przesunięcia, ta sama reguła co w Uporządkowaniu INTERMAX, ``raw_orders.shift_traces``)
+arkusz oddaje też z wartościami całego wiersza (``RegisterSheet.uncertain_rows``). Dla okresu
 czytane są tylko wiersze od pierwszego do ostatniego, którego data może leżeć w okresie. ``read_register`` to
 produkcyjny czytnik Rejestru dla ``input_checks.Readers``, który tłumaczy jego ``WorkbookError``.
 """
@@ -21,6 +22,7 @@ from openpyxl.utils import get_column_letter
 from . import preparation_messages as messages
 from . import raw_orders, workbook_files
 from .message import StopError
+from .raw_orders import ShiftTrace
 from .settlement_period import SettlementPeriod
 from .workbook_files import ReadRow, ReadWorkbook, RegisterRow, header_columns, is_blank
 from .worker_config import normalize_text
@@ -53,6 +55,7 @@ class Column:
 
 
 DATE = Column("DATA GODZ. POCZ.", "DATA")
+NUMBER = Column("NUMER ZL.", "NUMER ZL.", ("nr zlecenia",))
 ADDRESS = Column("ADRES", "ADRES")
 WORKER = Column("WYKONAWCA", "WYKONAWCA")
 SUCCESSFUL = Column("SKUTECZNE", "SKUTECZNE")
@@ -67,7 +70,7 @@ COLUMNS: tuple[Column, ...] = (
     CONTRACT,
     DEVICES,
     ACTIVITIES,
-    Column("NUMER ZL.", "NUMER ZL.", ("nr zlecenia",)),
+    NUMBER,
     WORKER,
     Column("NUMER UMOWY", "NUMER UMOWY/ZLECENIA ORANGE", ("NUMER UMOWY/ZLECENIA ORANGE",)),
     SUCCESSFUL,
@@ -87,10 +90,14 @@ class RegisterSheet:
     empty_rows: tuple[int, ...]
     _positions: tuple[int, ...]  # numery kolumn ``COLUMNS`` w arkuszu (od 1)
     uncertain_rows: Mapping[int, Mapping[int, object]] = field(default_factory=lambda: MappingProxyType({}))
-    """Wiersze z danymi bez wyglądu uporządkowanego (``raw_orders.ordered_look``) → wartości całego wiersza po numerze
-    kolumny (od 1). Taki wiersz może być wklejony z aplikacji firmowej, a pierwszy wiersz każdego wklejenia stoi
-    ``raw_orders.SHIFT`` kolumn na lewo od nagłówków, więc jego komórki mogą stać pod nagłówkiem albo tyle kolumn na lewo
-    od niego (#918)."""
+    """Wiersze z danymi z dwoma położeniami → wartości całego wiersza po numerze kolumny (od 1): komórki mogą stać pod
+    nagłówkiem albo ``raw_orders.SHIFT`` kolumn na lewo od niego (#918). To pierwszy wiersz bloku wklejenia (wiersz bez
+    wyglądu uporządkowanego, ``raw_orders.ordered_look``, nad którym najbliższy wiersz z danymi odczytu ma ten wygląd
+    albo nie ma żadnego), bo pierwszy wiersz każdego wklejenia z aplikacji firmowej przychodzi przesunięty, i każdy
+    wiersz ze śladem przesunięcia (``traced_rows``), także z wyglądem uporządkowanym."""
+    traced_rows: Mapping[int, tuple[ShiftTrace, ...]] = field(default_factory=lambda: MappingProxyType({}))
+    """Wiersze ze śladem przesunięcia (``raw_orders.shift_traces``), które nie są pierwszym wierszem bloku wklejenia:
+    łamią fakt domeny, że przesunięty przychodzi tylko pierwszy wklejony wiersz."""
 
     def column_letter(self, column: Column) -> str:
         """Litera kolumny arkusza z nagłówkiem ``column``, np. ``L`` dla ``SKUTECZNE``."""
@@ -218,13 +225,40 @@ def _read_register_sheets(workbook: ReadWorkbook, positions: dict[str, list[int]
         ]
         rows = tuple(found.row for empty, found in read if not empty)
         empty_rows = tuple(found.row.number for empty, found in read if empty)
-        uncertain = {
-            found.row.number: MappingProxyType(dict(enumerate(found.values, start=1)))
-            for empty, found in read
-            if not empty and not _ordered_look(found)
-        }
-        sheets.append(RegisterSheet(sheet.title, rows, empty_rows, tuple(columns), MappingProxyType(uncertain)))
+        uncertain: dict[int, Mapping[int, object]] = {}
+        traced: dict[int, tuple[ShiftTrace, ...]] = {}
+        above: bool | None = None  # wygląd uporządkowany najbliższego wiersza z danymi nad wierszem; None: nie ma go
+        for empty, found in read:
+            if empty:
+                continue
+            ordered = _ordered_look(found)
+            first = not ordered and above is not False
+            traces = () if first else _traces(found, columns)
+            if first or traces:
+                uncertain[found.row.number] = MappingProxyType(dict(enumerate(found.values, start=1)))
+            if traces:
+                traced[found.row.number] = traces
+            above = ordered
+        sheets.append(
+            RegisterSheet(
+                sheet.title, rows, empty_rows, tuple(columns), MappingProxyType(uncertain), MappingProxyType(traced)
+            )
+        )
     return sheets
+
+
+def _traces(found: ReadRow, columns: Sequence[int]) -> tuple[ShiftTrace, ...]:
+    """Ślady przesunięcia wiersza Rejestru czytanego pod nagłówkami ``COLUMNS`` (``columns``: ich kolumny od 1)."""
+
+    numbers = dict(zip(TARGET_HEADERS, columns, strict=True))
+    left = numbers[DATE.target_header] - raw_orders.SHIFT
+    return raw_orders.shift_traces(
+        left_of_date=found.values[left - 1] if 1 <= left <= len(found.values) else None,
+        date=found.row.cells[DATE.target_header].value,
+        links={numbers[header] for header, cell in found.row.cells.items() if cell.hyperlink is not None},
+        number=numbers[NUMBER.target_header],
+        faces=_faces(found),
+    )
 
 
 def _ordered_look(found: ReadRow) -> bool:
@@ -232,8 +266,14 @@ def _ordered_look(found: ReadRow) -> bool:
     poza ``WYKONAWCA``. To część kolumn zlecenia, więc wiersz z tym wyglądem tutaj ma go też w Uporządkowaniu, a wiersz,
     który ma go tylko w ``AKCJE``, ``ZWROT`` albo ``UWAGI``, tutaj go nie ma."""
 
-    return raw_orders.ordered_look(
+    return raw_orders.ordered_look(_faces(found))
+
+
+def _faces(found: ReadRow) -> list[tuple[str | None, float | None]]:
+    """Krój i rozmiar komórek z wartością spod nagłówków ``COLUMNS`` poza ``WYKONAWCA``."""
+
+    return [
         face
         for header, face in found.faces.items()
         if header != WORKER.target_header and not is_blank(found.row.cells[header].value)
-    )
+    ]
