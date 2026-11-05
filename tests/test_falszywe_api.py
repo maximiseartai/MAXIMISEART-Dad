@@ -72,7 +72,7 @@ def _claude(
 @POSIX_ONLY
 @pytest.mark.parametrize(
     ("settings", "switch"),
-    [("settings.json", "CLAUDE_CODE_USE_VERTEX"), ("settings.local.json", "CLAUDE_CODE_USE_BEDROCK")],
+    [(("settings.json", "settings.local.json")[index % 2], name) for index, name in enumerate(ustawienia_claude.PROVIDERS)],
 )
 def test_claude_pyta_falszywe_api_takze_gdy_ustawienia_checkoutu_wlaczaja_innego_dostawce(
     calls: Path, tmp_path: Path, settings: str, switch: str

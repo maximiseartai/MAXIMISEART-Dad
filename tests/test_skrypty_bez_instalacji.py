@@ -195,7 +195,7 @@ def test_claude_w_kodzie_skryptu_lapie_straznik() -> None:
     [
         'subprocess.run(["claude", "--version"])',
         '"""Docstring: ``env.ANTHROPIC_BASE_URL`` z ustawień użytkownika wygrywa ze środowiskiem."""',
-        'env = {"ANTHROPIC_BASE_URL_ZAPAS": url, "ANTHROPIC_API_KEY": key}  # ANTHROPIC_BASE_URL w komentarzu',
+        'env = {"ANTHROPIC_BASE_URL_ZAPAS": url, "MOJ_ANTHROPIC_BASE_URL": url}  # ANTHROPIC_BASE_URL w komentarzu',
     ],
 )
 def test_wersja_claude_opis_i_inna_zmienna_nie_budza_straznika(code: str) -> None:
