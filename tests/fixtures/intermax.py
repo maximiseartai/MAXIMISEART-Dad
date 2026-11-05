@@ -46,6 +46,7 @@ HEADERS = (
 )
 FIRST = 2  # B: AKCJE
 DATE = 3  # C
+ADDRESS = 5  # E: ADRES
 DEVICES = 7  # G: URZĄDZENIA
 ACTIVITIES = 8  # H: CZYNNOŚCI
 NUMBER = 9  # I: NUMER ZL.
@@ -72,6 +73,7 @@ class Order:
     """Zlecenie syntetyczne: chwila, Wykonawca i numer, z którego powstają pozostałe wartości wiersza.
 
     ``operator`` stoi w ``CZYNNOŚCI`` (``None``: pusta komórka), a ``kind`` w ``URZĄDZENIA``, jak z aplikacji.
+    ``cells``: kolumna (od 1, nieprzesunięta) → wartość w miejsce wartości z numeru, np. liczba w ``NUMER UMOWY``.
     """
 
     when: datetime
@@ -79,14 +81,15 @@ class Order:
     number: int
     operator: str | None = "INEA"
     kind: str = "Instalacja"
+    cells: tuple[tuple[int, datetime | str | int], ...] = ()
 
-    def values(self) -> dict[int, datetime | str]:
+    def values(self) -> dict[int, datetime | str | int]:
         """Wartości kolumn od B do AK na swoim miejscu (nieprzesunięte)."""
 
-        values: dict[int, datetime | str] = {
+        values: dict[int, datetime | str | int] = {
             DATE: self.when,
             4: "Miasto",
-            5: f"Ulica {self.number}",
+            ADDRESS: f"Ulica {self.number}",
             6: "Umowa",
             DEVICES: self.kind,
             NUMBER: f"ZL-{self.number}",
@@ -96,6 +99,7 @@ class Order:
         if self.operator is not None:
             values[ACTIVITIES] = self.operator
         values.update({column: f"APP{column}-{self.number}" for column in range(LAST + 1, APP_LAST + 1)})
+        values.update(self.cells)
         return values
 
     @property

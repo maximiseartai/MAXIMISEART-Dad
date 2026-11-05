@@ -12,7 +12,7 @@ ostatnim uporządkowanym a blokiem, w którym co najmniej połowa kolumn zleceni
 komórki ma wypełnienie stylu wiersza: u taty żółty wiersz to zwykle styl całego wiersza bez żadnej komórki.
 Sam blok, bez przeglądu nad nim i bez przeszkód, oddaje ``pasted``: z niego Przygotowanie pliku zbiorczego wie,
 z których dni są Surowe zlecenia. Ten sam blok daje ``shifted_row``: wiersz, którego komórki stoją dwie kolumny
-na lewo od swojego nagłówka.
+na lewo od swojego nagłówka, a ``pasted_rows`` jego wiersze jako fakty, które Kopia wejścia Uporządkowania niesie.
 
 Przeszkody: wiersz z wyglądem z aplikacji nad uporządkowanym wierszem, Surowe zlecenie bez daty z godziną albo bez
 Wykonawcy i blok z więcej niż jednego dnia. Pierwsza wymaga przeglądu nad blokiem (``_above``): od ostatniego
@@ -322,6 +322,13 @@ def pasted(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> tuple
     """
 
     return tuple(_pasted(_bottom(iter(rows_from_bottom), columns)[0], columns))
+
+
+def pasted_rows(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> tuple[RowFacts, ...]:
+    """Wiersze z wartościami pod ostatnim uporządkowanym wierszem, od góry: wklejenie, z którego ``recognize`` i
+    ``pasted`` biorą blok Surowych zleceń, bez pustych i żółtych wierszy między nimi; pusta krotka bez wklejenia."""
+
+    return tuple(_bottom(iter(rows_from_bottom), columns)[0])
 
 
 def shifted_row(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> int | None:

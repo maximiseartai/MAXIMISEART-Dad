@@ -7,7 +7,9 @@ okres dzisiejszej daty z zegara procesu, ustalony przy starcie (ADR 0019).
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,9 +17,10 @@ from typing import Any
 from uuid import uuid4
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.utils import get_column_letter
 import pytest
 
-from rozliczenia import intermax_copies
+from rozliczenia import intermax_copies, workbook_files
 from rozliczenia.centrum.run_logs import RunLog
 
 from tests.fixtures.centrum import phase_states, views_until
@@ -31,7 +34,17 @@ from tests.fixtures.centrum_intermax import (
     open_in_excel,
     ordering_centrum,
 )
-from tests.fixtures.intermax import ACTIVITIES, DEVICES, ORDER_SHEET, Intermax, Order, rewrite_parts
+from tests.fixtures.intermax import (
+    ADDRESS,
+    CONTRACT_NUMBER,
+    FIRST,
+    HEADERS,
+    LAST,
+    ORDER_SHEET,
+    Intermax,
+    Order,
+    rewrite_parts,
+)
 from tests.fixtures.intermax_disk import denied, failing_replace
 
 COPY = "INTERMAX przed uporządkowaniem 2026-10-26 14-05-07.xlsx"
@@ -702,8 +715,8 @@ def test_logi_uporzadkowania_maja_wiersze_wpisow_na_operatora_i_instalacje_hurt_
     text = path.read_text(encoding="utf-8")
     for order in raw:
         for column, value in order.values().items():
-            if isinstance(value, str) and column not in (DEVICES, ACTIVITIES) and value not in ("Miasto", "Umowa"):
-                assert value not in text, value
+            if column in (ADDRESS, CONTRACT_NUMBER) or column > LAST:
+                assert str(value) not in text, value
     assert "akt pętli" not in text and "nokia" not in text, "bez wartości Wpisu"
 
 
@@ -728,3 +741,166 @@ def test_start_z_okresem_nie_przyjmuje_uporzadkowania_intermax(tmp_path: Path) -
 
     assert refused.status_code == 422
     assert copies(centrum) == []
+
+
+# --- Kopia wejścia (#842) ------------------------------------------------------------------------------------------------
+# Logi Uporządkowania INTERMAX niosą wklejone wiersze, które Uporządkowanie przetwarzało, bez kolumn ``ADRES`` i
+# ``NUMER UMOWY``, z odciskiem przeczytanych bajtów INTERMAX (reguła danych, ADR 0025).
+
+OLDER_SHEET = "ZLECENIA OD 08_11_2021"
+COPY_COLUMNS = {
+    get_column_letter(column): header
+    for column, header in enumerate(HEADERS, start=FIRST)
+    if column not in (ADDRESS, CONTRACT_NUMBER)
+}
+"""Nagłówki od A do ``UWAGI`` w Kopii wejścia (A go nie ma): bez ``ADRES`` (E) i ``NUMER UMOWY`` (K) i bez kolumn z
+aplikacji za ``UWAGI``."""
+READ_AT = datetime(2023, 11, 14, 22, 13, 20, tzinfo=timezone.utc)
+"""Chwila zmiany INTERMAX przed Uruchomieniem, a ``SAVED_AGAIN_AT`` po zapisie zaraz po odczycie."""
+SAVED_AGAIN_AT = datetime(2027, 1, 15, 8, 0, tzinfo=timezone.utc)
+ADDRESS_VALUE = "Syntetyczna Bursztynowa 14/2 Poznań"
+OTHER_ADDRESS = "Syntetyczna Malinowa 7 Swarzędz"
+ORANGE_VALUE = "4801234567"
+PHONE = "600 123 456"
+STREET = "ul. Kwiatowa 5"
+PHONE_WITH_PREFIX = 48600123456
+"""Telefon wpisany z ``+48``, który format General trzyma jako liczbę bez ``+``."""
+FREE_TEXT = f"montaż {ADDRESS_VALUE} umowa {ORANGE_VALUE} tel. {PHONE}, {STREET}"
+MASKED = "montaż [adres] umowa [numer Orange] tel. [telefon], [ulica]"
+
+
+def _copied_cells(order: Order) -> dict[str, object]:
+    """Komórki zlecenia w Kopii wejścia: od A do ``UWAGI`` pod nagłówkiem, bez ``ADRES`` i ``NUMER UMOWY``, data z
+    godziną z rodzajem."""
+
+    return {
+        get_column_letter(column): {"type": "datetime", "text": value.isoformat()} if isinstance(value, datetime) else value
+        for column, value in order.values().items()
+        if column <= LAST and column not in (ADDRESS, CONTRACT_NUMBER)
+    }
+
+
+def _sent(centrum: OrderingCentrum) -> list[str]:
+    """Wszystko, co Maks dostaje w Skrzynce, gdy wyjdą Logi: issue z komentarzami i rozpakowane pliki w Archiwach."""
+
+    box = centrum.surroundings.report_box
+    assert box.wait_until(
+        lambda fake: any(issue.label == "logi-uruchomienia" and issue.comments for issue in fake.background_issues)
+        and any(archive.assets for archive in fake.archives)
+    )
+    issues = [part for issue in [*box.background_issues, *box.issues] for part in (issue.title, issue.body, *issue.comments)]
+    return issues + [asset.text for archive in box.archives for asset in archive.assets]
+
+
+def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_oraz_odcisk_przeczytanego_intermax(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Kopia wejścia Uporządkowania to każdy arkusz zleceń INTERMAX z nagłówkami bez ``ADRES`` i ``NUMER UMOWY`` i z
+    wklejonymi wierszami, które Planowanie rozpoznaje, a nie z uporządkowanymi dniami nad nimi ani starszym arkuszem bez
+    wklejenia, z komórkami od A do ``UWAGI``, które Uporządkowanie przenosi do dnia. Przesunięty pierwszy wiersz ma
+    komórki pod ich nagłówkiem, bez kolumn z aplikacji, które w pliku wpadły pod ``ZWROT`` i ``UWAGI``. Odcisk to rozmiar i skrót bajtów, które
+    Uporządkowanie przeczytało (INTERMAX po zapisie jest już inny), i chwila zmiany sprzed odczytu, choć plik zapisano
+    znowu zaraz po nim."""
+
+    pasted = list(Intermax().raw)
+    pasted[2] = replace(pasted[2], cells=((1, "A-SYN"),))
+    centrum = ordering_centrum(tmp_path, Intermax(older_sheet=True, raw=pasted))
+    os.utime(centrum.register, (READ_AT.timestamp(), READ_AT.timestamp()))
+    content = centrum.register.read_bytes()
+    file_bytes = workbook_files._file_bytes
+
+    def read_then_saved(path: Path) -> bytes:
+        read = file_bytes(path)
+        if path == centrum.register:
+            os.utime(path, (SAVED_AGAIN_AT.timestamp(), SAVED_AGAIN_AT.timestamp()))
+        return read
+
+    # Jedyny odczyt bajtów skoroszytu w src/ (tests/test_jeden_odczyt_skoroszytu.py).
+    monkeypatch.setattr(workbook_files, "_file_bytes", read_then_saved)
+
+    view = centrum.run_to_end()
+
+    assert view["result"]["result"] == "OK", view["result"]["stops"]
+    assert centrum.register.read_bytes() != content, "Uporządkowanie zapisało INTERMAX"
+    [logs] = centrum.run_logs()
+    [copied] = logs["input_copy"]
+    fingerprint = {"size": len(content), "modified_at": READ_AT.isoformat().replace("+00:00", "Z"), "sha256": hashlib.sha256(content).hexdigest()}
+    assert (copied["name"], copied["fingerprint"]) == (REGISTER_NAME, fingerprint)
+    older, sheet = copied["sheets"]
+    assert older == {"sheet": OLDER_SHEET, "header_row": 1, "columns": COPY_COLUMNS, "rows": [], "empty_rows": [], "shifted_row": None}
+    first = centrum.layout.first_raw
+    assert (sheet["sheet"], sheet["header_row"], sheet["columns"], sheet["empty_rows"]) == (ORDER_SHEET, 1, COPY_COLUMNS, [])
+    assert sheet["shifted_row"] == first
+    assert sheet["rows"][2]["cells"]["A"] == "A-SYN"
+    assert sheet["rows"] == [
+        {"row": first + index, "cells": _copied_cells(order)} for index, order in enumerate(centrum.layout.raw)
+    ]
+    assert logs["input_copy_notes"] == []
+
+
+def test_adres_i_numer_umowy_z_wklejenia_intermax_nie_wychodza_do_logow_ani_skrzynki_takze_jako_liczba_i_w_przesunietym_wierszu(
+    tmp_path: Path,
+) -> None:
+    """Komórek ``ADRES`` i ``NUMER UMOWY`` nie ma w Kopii wejścia, także w przesuniętym pierwszym wierszu wklejenia,
+    gdzie stoją dwie kolumny na lewo od nagłówka. Ich wartości w innej komórce (numer Orange, który Excel trzyma jako
+    liczbę, w ``UWAGI``, adres i numer w wolnym tekście ``CZYNNOŚCI ZREALIZOWANE``) strażnik maskuje z uwagą techniczną
+    o miejscu w Kopii, a telefon i ulicę bez uwagi; nic z tego nie wychodzi do pliku Logów ani do Skrzynki Zgłoszeń."""
+
+    raw = (
+        Order(datetime(2026, 10, 26, 14), "jan.nowak", 101, cells=((ADDRESS, ADDRESS_VALUE), (CONTRACT_NUMBER, int(ORANGE_VALUE)), (LAST, int(ORANGE_VALUE)))),
+        Order(datetime(2026, 10, 26, 10), "anna.kowalska", 102, cells=((ADDRESS, OTHER_ADDRESS), (13, FREE_TEXT))),
+        Order(datetime(2026, 10, 26, 9), "bartek.zielinski", 103, cells=((14, PHONE_WITH_PREFIX),)),
+    )
+    centrum = ordering_centrum(tmp_path, Intermax(raw=raw))
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+
+    view = centrum.run_to_end()
+
+    assert view["result"]["result"] == "OK", view["result"]["stops"]
+    sent = _sent(centrum)
+    [logs] = centrum.run_logs()
+    [copied] = logs["input_copy"]
+    [sheet] = copied["sheets"]
+    cells = [row["cells"] for row in sheet["rows"]]
+    assert [letter for row in cells for letter in ("E", "K") if letter in row] == []
+    assert (cells[0]["O"], cells[1]["M"], cells[2]["N"]) == ("[numer Orange]", MASKED, "[telefon]")
+    note = "Reguła danych: zamaskowano wartość kolumny {} w: input_copy[0].sheets[0].rows[{}].cells.[…]."
+    assert logs["input_copy_notes"] == [
+        note.format("NUMER UMOWY/ZLECENIA ORANGE", 0),
+        note.format("ADRES", 1),
+        note.format("NUMER UMOWY/ZLECENIA ORANGE", 1),
+    ]
+    assert any(MASKED in part for part in sent), "Kopia wejścia w pliku Logów w Archiwum"
+    texts = [path.read_text(encoding="utf-8") for path in sorted((tmp_path / "logs" / "uruchomienia").glob("*"))] + sent
+    leaked = (ADDRESS_VALUE, OTHER_ADDRESS, ORANGE_VALUE, PHONE, STREET, str(PHONE_WITH_PREFIX))
+    assert [value for value in leaked if any(value in text for text in texts)] == []
+
+
+def test_arkusz_zlecen_ktorego_wierszy_nie_da_sie_rozdzielic_zatrzymuje_uporzadkowanie_tym_samym_komunikatem_a_kopia_go_nie_ma(
+    tmp_path: Path,
+) -> None:
+    """Starszy arkusz zleceń, którego wierszy nie da się rozdzielić: Uporządkowanie zatrzymuje się Komunikatem
+    Planowania o tym arkuszu, jak bez Kopii wejścia, a Kopia ma odcisk INTERMAX i arkusz z wklejeniem bez tamtego.
+    Planowanie nie doszło do wklejenia, a adres z jego wolnego tekstu i tak jest zamaskowany, bo Kopia poznaje
+    zakazane komórki wierszy, które niesie."""
+
+    raw = (
+        Order(datetime(2026, 10, 26, 14), "jan.nowak", 101, cells=((ADDRESS, ADDRESS_VALUE),)),
+        Order(datetime(2026, 10, 26, 10), "anna.kowalska", 102, cells=((13, f"montaż {ADDRESS_VALUE}"),)),
+    )
+    centrum = ordering_centrum(tmp_path, Intermax(older_sheet=True, raw=raw))
+    older = "xl/worksheets/sheet2.xml"
+    rewrite_parts(centrum.register, lambda name, data: data.replace(b"<sheetData>", b"<sheetData><!-- x -->") if name == older else data)
+    content = centrum.register.read_bytes()
+
+    result = _stopped(centrum)["result"]
+
+    assert (result["stop_kind"], result["stops"][0]["where"]) == ("for_maks", f"plik {REGISTER_NAME}, folder OneDrive, arkusz {OLDER_SHEET}")
+    assert result["stops"][0]["what"] == "Wklejone zlecenia mają układ, którego narzędzie nie porządkuje. INTERMAX nie został zmieniony."
+    [logs] = centrum.run_logs()
+    [copied] = logs["input_copy"]
+    assert copied["fingerprint"]["sha256"] == hashlib.sha256(content).hexdigest()
+    [sheet] = copied["sheets"]
+    assert (sheet["sheet"], [row["cells"]["M"] for row in sheet["rows"] if "M" in row["cells"]]) == (ORDER_SHEET, ["montaż [adres]"])
+    [path] = (tmp_path / "logs" / "uruchomienia").glob("*.json")
+    assert ADDRESS_VALUE not in path.read_text(encoding="utf-8")

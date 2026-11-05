@@ -16,6 +16,7 @@ from . import intermax_messages as messages
 from .client_data import ForbiddenValues
 from .decision import Conversation
 from .domain import ProgressObserver
+from .input_copy import InputCopy
 from .intermax_ordering import OrderingSummary
 from .intermax_replace import LOCAL_DISK, Disk, Waiting
 from .process_run import Finished, Process
@@ -42,7 +43,7 @@ class OrderingInputs:
     Uruchomienie po północy z poniedziałku na wtorek dalej należy do okresu, w którym wystartowało.
     ``waiting``: zegar w sekundach i przerwa krótkiej ponownej próby podmiany, której odmawia OneDrive, a ``disk``
     kroki podmiany INTERMAX na dysku, a ``forbidden`` pamięć reguły danych pracy Centrum (``None``: bez wysyłki, bez
-    pamięci).
+    pamięci), a ``copy`` Kopia wejścia Uruchomienia z Centrum (``None``: bez Logów, bez Kopii).
     """
 
     register_path: Path
@@ -51,6 +52,7 @@ class OrderingInputs:
     waiting: Waiting = field(default_factory=Waiting)
     disk: Disk = LOCAL_DISK
     forbidden: ForbiddenValues | None = None
+    copy: InputCopy | None = field(default=None, compare=False)
     period: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -72,6 +74,7 @@ def _execute(inputs: OrderingInputs, observer: ProgressObserver, _conversation: 
         disk=inputs.disk,
         observer=observer,
         forbidden=inputs.forbidden,
+        copy=inputs.copy,
     )
 
 

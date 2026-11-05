@@ -16,8 +16,8 @@ Zatrzymanie okna efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń s
 przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w przebiegu oraz jego działania aż do tego, które się
 nie udało; a Zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn.
 Wiersze danych niesie tylko Kopia wejścia (``input_copy``, #841): każdy plik taty, który Uruchomienie przeczytało, z
-odciskiem i przeczytanymi wierszami bez kolumn ``ADRES`` i numeru Orange, zebrana po końcu procesu z tego, co czytniki
-oddały Kopii wejścia Uruchomienia (``EndedRun.input_copy``). Poza nią komórkę cytuje tylko Komunikat
+odciskiem i przeczytanymi wierszami bez kolumn ``ADRES`` i numeru Orange (w Uporządkowaniu INTERMAX wklejone wiersze,
+#842), zebrana po końcu procesu z tego, co czytniki oddały Kopii wejścia Uruchomienia (``EndedRun.input_copy``). Poza nią komórkę cytuje tylko Komunikat
 (``ZLE_SKUTECZNE``), a pliki mają tylko nazwę, nigdy pełną ścieżkę. Przed zapisem pliku i przed wysyłką Logi przechodzą
 przez strażnika reguły danych pracy Centrum (``guarded``, ADR 0025): wartość ``ADRES`` albo numeru Orange z przeczytanych
 plików, także wpisana w inną komórkę Kopii wejścia albo zapisana przez Excel jako liczba, staje się maską z uwagą
@@ -538,13 +538,18 @@ class LoggedRow(_Record):
 
 class LoggedSheet(_Record):
     """Przeczytany arkusz: wiersz nagłówka, nagłówki po literze kolumny (bez zakazanych kolumn), wiersze i puste wiersze
-    z odczytanego zakresu, które proces liczy (Rejestr zleceń)."""
+    z odczytanego zakresu, które proces liczy (Rejestr zleceń).
+
+    ``shifted_row``: przesunięty pierwszy wiersz wklejenia INTERMAX, którego komórki stały w pliku dwie kolumny na lewo
+    od nagłówka, a tu stoją pod nim (``input_copy.CopiedSheet.shifted_row``); ``None``: bez niego i pliki sprzed #842.
+    """
 
     sheet: str
     header_row: int
     columns: dict[str, str]
     rows: list[LoggedRow]
     empty_rows: list[int]
+    shifted_row: int | None = None
 
     @classmethod
     def of(cls, sheet: CopiedSheet) -> LoggedSheet:
@@ -557,6 +562,7 @@ class LoggedSheet(_Record):
                 for row in sheet.rows
             ],
             empty_rows=list(sheet.empty_rows),
+            shifted_row=sheet.shifted_row,
         )
 
 
@@ -647,7 +653,7 @@ class RunLog(_Record):
     input_copy: list[LoggedInputFile] | None = None
     """Kopia wejścia (``input_copy``, #841): pliki taty, które Uruchomienie przeczytało, w kolejności odczytu, każdy z
     odciskiem i przeczytanymi Wierszami danych po regule danych. Pusta lista: Uruchomienie skończyło się przed odczytem.
-    ``None``: Uporządkowanie INTERMAX (jeszcze bez Kopii), Logi Urwanego Uruchomienia i pliki sprzed tego pola."""
+    ``None``: Logi Urwanego Uruchomienia, pliki sprzed tego pola i Uporządkowania INTERMAX sprzed #842."""
     input_copy_notes: list[str] = []
     """Uwagi techniczne strażnika reguły danych o wartościach zamaskowanych w Kopii wejścia (``guarded``), osobno od
     ``technical_notes``, które pokazuje karta Uruchomienia z Logów."""
