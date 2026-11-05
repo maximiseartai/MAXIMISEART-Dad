@@ -250,7 +250,7 @@ class _Ran:
     code: int | None  # None: polecenie przekroczyło limit
     last: str  # ostatnia linia wyjścia
     hang: str | None  # linia pytest-timeout
-    seconds: float | None  # czas polecenia; None: przekroczyło limit
+    seconds: float  # czas polecenia, także tego, które przekroczyło limit
 
 
 def _run(
@@ -263,7 +263,7 @@ def _run(
         env = environment(copy, concurrent=concurrent)
         done = potomne.run([sys.executable, *command], cwd=copy, env=env, timeout=limit_s, stop=stop)
     except subprocess.TimeoutExpired:
-        return _Ran(None, f"brak wyniku po {limit_s:g} s", None, None)
+        return _Ran(None, f"brak wyniku po {limit_s:g} s", None, time.monotonic() - started)
     seconds = time.monotonic() - started
     lines = (done.stdout.strip() or done.stderr.strip()).splitlines()
     hangs = (PYTEST_TIMEOUT.fullmatch(line.strip()) for line in f"{done.stdout}\n{done.stderr}".splitlines())
@@ -274,7 +274,8 @@ def _run(
 def _verdict(
     mutation: Mutation, *, limit_s: float, stop: threading.Event, concurrent: bool, deadline: float | None, commit: str | None
 ) -> tuple[Verdict, str, float | None]:
-    """Werdykt, ostatnia linia wyjścia i czas polecenia mutacji; bez czasu, gdy polecenie nie skończyło się w limicie."""
+    """Werdykt, ostatnia linia wyjścia i czas polecenia mutacji, z każdym werdyktem polecenia, które biegło (także po
+    limicie); bez czasu tylko mutacja, której polecenie nie biegło (NIEAKTUALNA, BEZ WERDYKTU przed startem)."""
 
     left = limit_s if deadline is None else deadline - time.monotonic()
     if left <= 0:
@@ -286,11 +287,13 @@ def _verdict(
         ran = _run(copy, mutation.command, min(limit_s, left), stop, concurrent=concurrent)
     if ran.code is None:
         # Koniec czasu wywołującego, a nie limit polecenia, nie mówi, czy mutacja zawiesza polecenie.
-        return (Verdict.OVER_LIMIT, f"{ran.last} ({OVER_LIMIT_NOTE})", None) if left >= limit_s else (Verdict.NO_VERDICT, ran.last, None)
-    if ran.hang is not None:
-        return Verdict.HANG, ran.hang, ran.seconds
-    caught = ran.last.startswith(mutation.expected) if mutation.expected is not None else ran.code != 0
-    return (Verdict.CAUGHT if caught else Verdict.SURVIVED), ran.last, ran.seconds
+        judged = (Verdict.OVER_LIMIT, f"{ran.last} ({OVER_LIMIT_NOTE})") if left >= limit_s else (Verdict.NO_VERDICT, ran.last)
+    elif ran.hang is not None:
+        judged = Verdict.HANG, ran.hang
+    else:
+        caught = ran.last.startswith(mutation.expected) if mutation.expected is not None else ran.code != 0
+        judged = (Verdict.CAUGHT if caught else Verdict.SURVIVED), ran.last
+    return *judged, ran.seconds
 
 
 def _baseline(mutations: Sequence[Mutation], limit_s: float, commit: str | None = None) -> dict[tuple[str, ...], str]:
@@ -605,8 +608,10 @@ def check_all(
     trwało ponad ``NEAR_LIMIT`` limitu ``limit_s``, linia ``CZAS BLISKO LIMITU`` na stderr przed linią końcową wymienia ze
     skryptem, częścią i limitem, zanim limit da PRZEKROCZONY CZAS (#911, #927). Log CI skryptu skilla ma obie, bo
     ``tools/ci/mutacje_skilli.py`` łączy stderr ze stdout. To nie werdykt, więc stdout (werdykty i linia końcowa) i kod
-    wyjścia się nie zmieniają. Mutacja bez czasu (NIEAKTUALNA, PRZEKROCZONY CZAS, BEZ WERDYKTU) nie ma linii ``CZAS``:
-    jej polecenie nie skończyło się albo nie zaczęło.
+    wyjścia się nie zmieniają. Czas ma każda mutacja, której polecenie biegło, także po limicie, więc linię ``CZAS`` i
+    ostrzeżenie dostaje też PRZEKROCZONY CZAS, który brama typów zmienia w WYKRYTA PRZEZ BRAMĘ TYPÓW, i ZAWIESZENIE,
+    które ``in_ci`` liczy jako wykrycie; bez linii ``CZAS`` jest tylko mutacja, której polecenie nie biegło (NIEAKTUALNA, BEZ
+    WERDYKTU przed startem).
 
     Bez ``base`` (skrypty mutacji skilli) mutację, którą polecenie przepuściło, sprawdza jeszcze ``type_gate`` z ``gate``. Z
     ``base``, czyli w przeglądzie z wiersza poleceń, porażką jest wszystko poza WYKRYTA, także ZAWIESZENIE, a mutacja
