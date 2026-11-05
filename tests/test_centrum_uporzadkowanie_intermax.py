@@ -1205,6 +1205,7 @@ POSITIONS = {
                     (ADDRESS, datetime(2026, 10, 20, 13)),
                     shifted=True,
                     app_look=True,
+                    links=(),
                 ),
                 Order(datetime(2026, 10, 20, 14), "jan.nowak", 1004),
             ),

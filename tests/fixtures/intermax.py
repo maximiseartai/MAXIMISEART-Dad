@@ -352,7 +352,7 @@ def _ordered_days(sheet: Worksheet, ordered: Sequence[Order]) -> int:
                 cell.border = _BORDER
             if column == DATE:
                 cell.number_format = DATE_FORMAT
-            if column == NUMBER:
+            if column in order.links:
                 cell.hyperlink = order.link
         row += 1
     return row - 1
