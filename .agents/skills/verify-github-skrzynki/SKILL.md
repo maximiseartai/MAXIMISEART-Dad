@@ -68,7 +68,10 @@ room for a run. `DOCTOR FAIL | <reasons>` (exit 2) names what to fix; `na-zywo` 
 `--feature skrzynka` drives the Skrzynka Zgłoszeń, `--feature aktualnosc` Aktualność narzędzia, `all` both; each
 live run ends with `--feature wiernosc-atrap` on the new recordings. A Skrzynka run takes about 8 minutes (it creates
 101 issues and 101 comments for the paging cases, one write per second as GitHub asks), so start it as a background
-command and wait for its notification. Keep `--run-dir` out of `/tmp`.
+command and wait for its notification. Keep `--run-dir` out of `/tmp`. GitHub limits how much one account creates
+per hour: on 2026-11-05 the third Skrzynka run within 25 minutes got `Unreachable` already in preparation (its line says
+`przygotowanie: założenie issue dało Unreachable() (…)` with GitHub's answer), so leave about an hour between Skrzynka
+runs, also between the two keys.
 
 Each feature is a table of cases (`CASES` in `github_przypadki_skrzynki.py` and `github_przypadki_aktualnosci.py`). A
 case prepares the trial repository through the harness or the client without recording (labels, closing an issue as
