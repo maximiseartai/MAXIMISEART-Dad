@@ -198,7 +198,8 @@ def remove(path: Path, *, missing_ok: bool = False) -> None:
     """Harness: remove a file of the run, even while the server reads it (``_while_open``).
 
     The drive deletes, moves and replaces files and folders only through ``remove``, ``remove_tree``,
-    ``remove_empty_folder``, ``move`` and ``replace_file``."""
+    ``remove_empty_folder``, ``move`` and ``replace_file``; ``centrum_self_test.py`` fails on the forms of the table of
+    its ``_removals`` anywhere else in ``drive/``."""
 
     _while_open(lambda: path.unlink(missing_ok=missing_ok))
 
