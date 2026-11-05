@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext, suppress
 from dataclasses import dataclass, field, replace
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -671,6 +671,16 @@ def test_atrapa_ze_zmieniona_budowa_daje_kazda_roznice(chrome: str, tmp_path: Pa
     assert set(atrapa.requested()) <= READING
 
 
+# Wyjątek z terminem, zgoda Maksa 5.11.2026 (#979; Część #980, #982): na Windows CI worker xdist pada w tym teście
+# („node down: Not properly terminated”) przy innym wariancie w każdym runie `main`. Kwarantanna (xfail) tego nie łapie,
+# bo raport padniętego workera składa kontroler xdist bez znaczników testu, więc test na Windows nie biegnie do terminu.
+OKNO_EMMETTA_BEZ_WINDOWS_DO = date(2026, 11, 12)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" and datetime.now().astimezone().date() <= OKNO_EMMETTA_BEZ_WINDOWS_DO,
+    reason="#979: worker xdist pada na Windows CI; wyjątek do 2026-11-12",
+)
 @pytest.mark.parametrize("variant", EMMETT.values(), ids=EMMETT.keys())
 def test_okno_emmetta_po_kliknieciu_maksa_narzedzie_porownuje_z_atrapa_samym_odczytem(
     chromium: Chromium, tmp_path: Path, variant: Emmett
