@@ -240,8 +240,20 @@ that Centrum changes often: `lifespan` in `app.py`, `listen_locally` and
 and `_Server` in `server.py`. `model/definicje.json` lists the four covered files as whole files and these three
 by their definitions: only a change to these definitions, not to the rest of their files, is drift.
 
-**Sync commit: `bbff4de6`** (2026-11-05). The checker and the model share it:
-at this commit both were confirmed to describe the code above. Since the
+**Sync commit: `b8d79f8c`** (2026-11-05). The checker and the model share it:
+at this commit both were confirmed to describe the code above. It merges
+`main` with #875 (sync `2b2af53e4` below) into #919 (sync `bbff4de6` below), so
+it holds `keyed_box.py` of `bbff4de6` (#915), `outbox.py` with `_send_all` of
+`19f54659` (#846) and `_deliver_to_known` of `bbff4de6`, and `lifespan` of
+`a839dc2e`; no covered file changed in the merge beyond them, and the two
+changes of `outbox.py` touch different functions. The checker is that of
+`2b2af53e4`, because #919 changed only the anchor of one mutation in
+`check_outbox_mutations.py`. The model keeps the branches of both in `Szukaj`
+and `Plik`; `znane` sets `Postep` FALSE and `OpoznienieListy` TRUE, so still no
+configuration has both at once. At it `sprawdz_model_kolejki.py` gave
+`MODEL KOLEJKI OK` on every configuration and `explore_outbox.py`
+`KOLEJKA OK` in `znane-issue` and the four scopes with a lagging list.
+At `bbff4de6`, on the branch of #919, since the
 previous sync `a839dc2e` only `bbff4de6` (#915) changed a covered file:
 `_deliver_to_known` asks `KeyedBox.known_issue`, which reads the list as
 `labelled_issues` does and calls a missing number `Gone` only when a write with
