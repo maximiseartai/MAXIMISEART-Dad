@@ -830,11 +830,6 @@ UNCHECKED: Final = (
         "limit-zapytan",
         "403/429 limitu zapytań: wywołanie go wyczerpałoby limit konta Maksa",
     ),
-    (
-        "archiwum-pliki",
-        "założenie Archiwum, wysyłka pliku, lista plików ponad stronę, plik tej samej nazwy (422) i usunięcie pliku: "
-        "Release wymaga commitu, a repozytorium próbne jest puste; potrzebne drugie repozytorium próbne z commitem",
-    ),
 )
 
 

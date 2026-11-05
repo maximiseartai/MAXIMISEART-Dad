@@ -1,0 +1,1817 @@
+{
+ "nagrano": "2026-11-05T03:16:38+00:00",
+ "commit": "9607687c0ef89e606df50fe3573505910ea2b647",
+ "klucz": "fine-grained",
+ "repozytorium": "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum",
+ "przypadki": {
+  "archiwum-brak": {
+   "fakty": {
+    "tag": "logi-verify-20261105T031358-f14414",
+    "tytul": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+    "opis": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n",
+    "nazwa": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz"
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": []
+    }
+   ],
+   "wynik": "None"
+  },
+  "zalozenie": {
+   "fakty": {
+    "tag": "logi-verify-20261105T031358-f14414",
+    "tytul": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+    "opis": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n",
+    "nazwa": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz"
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases",
+     "zadanie_sha256": "78a21adbf5d171af63799eb07fbbddccccfb93029f29b4a67e1c67aa7fc621b4",
+     "zadanie_dlugosc": 283,
+     "status": 201,
+     "link": null,
+     "cialo": {
+      "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414",
+      "id": 434741443,
+      "tag_name": "logi-verify-20261105T031358-f14414",
+      "name": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+      "draft": false,
+      "prerelease": false,
+      "published_at": "2026-11-05T03:14:09Z",
+      "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n"
+     }
+    }
+   ],
+   "wynik": "Archive(434741443, ())"
+  },
+  "zalozenie-tego-samego-tagu": {
+   "fakty": {
+    "tag": "logi-verify-20261105T031358-f14414",
+    "tytul": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+    "opis": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n",
+    "nazwa": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+    "archiwum": 434741443,
+    "nadazylo_po_s": 3.1,
+    "najnowsze_status": 200,
+    "najnowsze_id": 434741443
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases",
+     "zadanie_sha256": "78a21adbf5d171af63799eb07fbbddccccfb93029f29b4a67e1c67aa7fc621b4",
+     "zadanie_dlugosc": 283,
+     "status": 422,
+     "link": null,
+     "cialo": {
+      "message": "Validation Failed",
+      "errors": [
+       {
+        "resource": "Release",
+        "code": "already_exists",
+        "field": "tag_name"
+       }
+      ],
+      "status": "422"
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414",
+       "id": 434741443,
+       "tag_name": "logi-verify-20261105T031358-f14414",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:09Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n"
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741443/assets?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": []
+    }
+   ],
+   "wynik": "(Rejected(), Archive(434741443, ()))"
+  },
+  "znalezienie-po-tagu": {
+   "fakty": {
+    "tag": "logi-verify-20261105T031358-f14414",
+    "archiwum": 434741443,
+    "tag_drugiego": "logi-verify-20261105T031358-f14414-strony",
+    "drugie": 434741508,
+    "nadazylo_po_s": 2.7
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414-strony",
+       "id": 434741508,
+       "tag_name": "logi-verify-20261105T031358-f14414-strony",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: drugie Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:15Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414",
+       "id": 434741443,
+       "tag_name": "logi-verify-20261105T031358-f14414",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:09Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n"
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741443/assets?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": []
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414-strony",
+       "id": 434741508,
+       "tag_name": "logi-verify-20261105T031358-f14414-strony",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: drugie Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:15Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414",
+       "id": 434741443,
+       "tag_name": "logi-verify-20261105T031358-f14414",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:09Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n"
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741508/assets?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": []
+    }
+   ],
+   "wynik": "(Archive(434741443, ()), Archive(434741508, ()))"
+  },
+  "wysylka-pliku": {
+   "fakty": {
+    "tag": "logi-verify-20261105T031358-f14414",
+    "tytul": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+    "opis": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n",
+    "nazwa": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+    "archiwum": 434741443,
+    "tekst": "{\"diagnosis\": null, \"run\": \"20261105T031358-f14414\"}\n",
+    "etykieta": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz (wersja 20261105T031358-f14414-0001)"
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "https://uploads.github.com/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741443/assets?name=20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz&label=20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz+%28wersja+20261105T031358-f14414-0001%29",
+     "zadanie_sha256": "e5c72522d9ecc20d3a3759b8d740ab953ef67400dacb97cafa3c0f6ed07e5426",
+     "zadanie_dlugosc": 76,
+     "status": 201,
+     "link": null,
+     "cialo": {
+      "id": 711878042,
+      "name": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+      "label": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz (wersja 20261105T031358-f14414-0001)",
+      "state": "uploaded"
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414-strony",
+       "id": 434741508,
+       "tag_name": "logi-verify-20261105T031358-f14414-strony",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: drugie Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:15Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414",
+       "id": 434741443,
+       "tag_name": "logi-verify-20261105T031358-f14414",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:09Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n"
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741443/assets?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "id": 711878042,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz (wersja 20261105T031358-f14414-0001)",
+       "state": "uploaded"
+      }
+     ]
+    }
+   ],
+   "wynik": "(Asset(id=711878042, name='20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz', label='20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz (wersja 20261105T031358-f14414-0001)', uploaded=True), Archive(434741443, (Asset(711878042, 20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz, True))))"
+  },
+  "plik-tej-samej-nazwy": {
+   "fakty": {
+    "tag": "logi-verify-20261105T031358-f14414",
+    "tytul": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+    "opis": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n",
+    "nazwa": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+    "archiwum": 434741443,
+    "plik": [
+     711878042,
+     "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+     "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz (wersja 20261105T031358-f14414-0001)"
+    ],
+    "tekst_po_diagnozie": "{\"diagnosis\": \"BRAK_WZORCA\", \"run\": \"20261105T031358-f14414\"}\n",
+    "etykieta_po_diagnozie": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz (wersja 20261105T031358-f14414-0002)"
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "https://uploads.github.com/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741443/assets?name=20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz&label=20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz+%28wersja+20261105T031358-f14414-0002%29",
+     "zadanie_sha256": "fb0beea99654d9dd79eefd078057b436f5e29d9e370c32883777fd171ab96604",
+     "zadanie_dlugosc": 85,
+     "status": 422,
+     "link": null,
+     "cialo": {
+      "message": "Validation Failed",
+      "errors": [
+       {
+        "resource": "ReleaseAsset",
+        "code": "already_exists",
+        "field": "name"
+       }
+      ]
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414-strony",
+       "id": 434741508,
+       "tag_name": "logi-verify-20261105T031358-f14414-strony",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: drugie Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:15Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414",
+       "id": 434741443,
+       "tag_name": "logi-verify-20261105T031358-f14414",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:09Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n"
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741443/assets?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "id": 711878042,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz (wersja 20261105T031358-f14414-0001)",
+       "state": "uploaded"
+      }
+     ]
+    }
+   ],
+   "wynik": "(Rejected(), Archive(434741443, (Asset(711878042, 20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz, True))))"
+  },
+  "pliki-strony": {
+   "fakty": {
+    "tag": "logi-verify-20261105T031358-f14414-strony",
+    "archiwum": 434741508,
+    "pliki": [
+     [
+      711878171,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000065.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000065.json.gz (wersja 20261105T031358-f14414-0001)"
+     ],
+     [
+      711878208,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000066.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000066.json.gz (wersja 20261105T031358-f14414-0002)"
+     ],
+     [
+      711878256,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000067.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000067.json.gz (wersja 20261105T031358-f14414-0003)"
+     ],
+     [
+      711878347,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000068.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000068.json.gz (wersja 20261105T031358-f14414-0004)"
+     ],
+     [
+      711878401,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000069.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000069.json.gz (wersja 20261105T031358-f14414-0005)"
+     ],
+     [
+      711878441,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000006a.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000006a.json.gz (wersja 20261105T031358-f14414-0006)"
+     ],
+     [
+      711878476,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000006b.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000006b.json.gz (wersja 20261105T031358-f14414-0007)"
+     ],
+     [
+      711878515,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000006c.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000006c.json.gz (wersja 20261105T031358-f14414-0008)"
+     ],
+     [
+      711878564,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000006d.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000006d.json.gz (wersja 20261105T031358-f14414-0009)"
+     ],
+     [
+      711878622,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000006e.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000006e.json.gz (wersja 20261105T031358-f14414-0010)"
+     ],
+     [
+      711878657,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000006f.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000006f.json.gz (wersja 20261105T031358-f14414-0011)"
+     ],
+     [
+      711878808,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000070.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000070.json.gz (wersja 20261105T031358-f14414-0012)"
+     ],
+     [
+      711878910,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000071.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000071.json.gz (wersja 20261105T031358-f14414-0013)"
+     ],
+     [
+      711878959,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000072.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000072.json.gz (wersja 20261105T031358-f14414-0014)"
+     ],
+     [
+      711879023,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000073.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000073.json.gz (wersja 20261105T031358-f14414-0015)"
+     ],
+     [
+      711879055,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000074.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000074.json.gz (wersja 20261105T031358-f14414-0016)"
+     ],
+     [
+      711879105,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000075.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000075.json.gz (wersja 20261105T031358-f14414-0017)"
+     ],
+     [
+      711879138,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000076.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000076.json.gz (wersja 20261105T031358-f14414-0018)"
+     ],
+     [
+      711879176,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000077.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000077.json.gz (wersja 20261105T031358-f14414-0019)"
+     ],
+     [
+      711879214,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000078.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000078.json.gz (wersja 20261105T031358-f14414-0020)"
+     ],
+     [
+      711879259,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000079.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000079.json.gz (wersja 20261105T031358-f14414-0021)"
+     ],
+     [
+      711879299,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000007a.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000007a.json.gz (wersja 20261105T031358-f14414-0022)"
+     ],
+     [
+      711879346,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000007b.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000007b.json.gz (wersja 20261105T031358-f14414-0023)"
+     ],
+     [
+      711879398,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000007c.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000007c.json.gz (wersja 20261105T031358-f14414-0024)"
+     ],
+     [
+      711879453,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000007d.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000007d.json.gz (wersja 20261105T031358-f14414-0025)"
+     ],
+     [
+      711879494,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000007e.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000007e.json.gz (wersja 20261105T031358-f14414-0026)"
+     ],
+     [
+      711879535,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000007f.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000007f.json.gz (wersja 20261105T031358-f14414-0027)"
+     ],
+     [
+      711879760,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000080.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000080.json.gz (wersja 20261105T031358-f14414-0028)"
+     ],
+     [
+      711879802,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000081.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000081.json.gz (wersja 20261105T031358-f14414-0029)"
+     ],
+     [
+      711879844,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000082.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000082.json.gz (wersja 20261105T031358-f14414-0030)"
+     ],
+     [
+      711879875,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000083.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000083.json.gz (wersja 20261105T031358-f14414-0031)"
+     ],
+     [
+      711879916,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000084.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000084.json.gz (wersja 20261105T031358-f14414-0032)"
+     ],
+     [
+      711879960,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000085.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000085.json.gz (wersja 20261105T031358-f14414-0033)"
+     ],
+     [
+      711879984,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000086.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000086.json.gz (wersja 20261105T031358-f14414-0034)"
+     ],
+     [
+      711880029,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000087.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000087.json.gz (wersja 20261105T031358-f14414-0035)"
+     ],
+     [
+      711880072,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000088.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000088.json.gz (wersja 20261105T031358-f14414-0036)"
+     ],
+     [
+      711880116,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000089.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000089.json.gz (wersja 20261105T031358-f14414-0037)"
+     ],
+     [
+      711880158,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000008a.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000008a.json.gz (wersja 20261105T031358-f14414-0038)"
+     ],
+     [
+      711880190,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000008b.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000008b.json.gz (wersja 20261105T031358-f14414-0039)"
+     ],
+     [
+      711880229,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000008c.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000008c.json.gz (wersja 20261105T031358-f14414-0040)"
+     ],
+     [
+      711880283,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000008d.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000008d.json.gz (wersja 20261105T031358-f14414-0041)"
+     ],
+     [
+      711880339,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000008e.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000008e.json.gz (wersja 20261105T031358-f14414-0042)"
+     ],
+     [
+      711880380,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000008f.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000008f.json.gz (wersja 20261105T031358-f14414-0043)"
+     ],
+     [
+      711880434,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000090.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000090.json.gz (wersja 20261105T031358-f14414-0044)"
+     ],
+     [
+      711880483,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000091.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000091.json.gz (wersja 20261105T031358-f14414-0045)"
+     ],
+     [
+      711880553,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000092.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000092.json.gz (wersja 20261105T031358-f14414-0046)"
+     ],
+     [
+      711880605,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000093.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000093.json.gz (wersja 20261105T031358-f14414-0047)"
+     ],
+     [
+      711880646,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000094.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000094.json.gz (wersja 20261105T031358-f14414-0048)"
+     ],
+     [
+      711880694,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000095.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000095.json.gz (wersja 20261105T031358-f14414-0049)"
+     ],
+     [
+      711880741,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000096.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000096.json.gz (wersja 20261105T031358-f14414-0050)"
+     ],
+     [
+      711880784,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000097.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000097.json.gz (wersja 20261105T031358-f14414-0051)"
+     ],
+     [
+      711880829,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000098.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000098.json.gz (wersja 20261105T031358-f14414-0052)"
+     ],
+     [
+      711880855,
+      "20261105T031358-f14414-settlement-00000000000000000000000000000099.json.gz",
+      "20261105T031358-f14414-settlement-00000000000000000000000000000099.json.gz (wersja 20261105T031358-f14414-0053)"
+     ],
+     [
+      711880896,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000009a.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000009a.json.gz (wersja 20261105T031358-f14414-0054)"
+     ],
+     [
+      711880942,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000009b.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000009b.json.gz (wersja 20261105T031358-f14414-0055)"
+     ],
+     [
+      711881011,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000009c.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000009c.json.gz (wersja 20261105T031358-f14414-0056)"
+     ],
+     [
+      711881043,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000009d.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000009d.json.gz (wersja 20261105T031358-f14414-0057)"
+     ],
+     [
+      711881078,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000009e.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000009e.json.gz (wersja 20261105T031358-f14414-0058)"
+     ],
+     [
+      711881127,
+      "20261105T031358-f14414-settlement-0000000000000000000000000000009f.json.gz",
+      "20261105T031358-f14414-settlement-0000000000000000000000000000009f.json.gz (wersja 20261105T031358-f14414-0059)"
+     ],
+     [
+      711881179,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a0.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a0.json.gz (wersja 20261105T031358-f14414-0060)"
+     ],
+     [
+      711881220,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a1.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a1.json.gz (wersja 20261105T031358-f14414-0061)"
+     ],
+     [
+      711881268,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a2.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a2.json.gz (wersja 20261105T031358-f14414-0062)"
+     ],
+     [
+      711881308,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a3.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a3.json.gz (wersja 20261105T031358-f14414-0063)"
+     ],
+     [
+      711881373,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a4.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a4.json.gz (wersja 20261105T031358-f14414-0064)"
+     ],
+     [
+      711881422,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a5.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a5.json.gz (wersja 20261105T031358-f14414-0065)"
+     ],
+     [
+      711881469,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a6.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a6.json.gz (wersja 20261105T031358-f14414-0066)"
+     ],
+     [
+      711881528,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a7.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a7.json.gz (wersja 20261105T031358-f14414-0067)"
+     ],
+     [
+      711881576,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a8.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a8.json.gz (wersja 20261105T031358-f14414-0068)"
+     ],
+     [
+      711881717,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a9.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000a9.json.gz (wersja 20261105T031358-f14414-0069)"
+     ],
+     [
+      711881777,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000aa.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000aa.json.gz (wersja 20261105T031358-f14414-0070)"
+     ],
+     [
+      711881821,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000ab.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000ab.json.gz (wersja 20261105T031358-f14414-0071)"
+     ],
+     [
+      711881873,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000ac.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000ac.json.gz (wersja 20261105T031358-f14414-0072)"
+     ],
+     [
+      711881938,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000ad.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000ad.json.gz (wersja 20261105T031358-f14414-0073)"
+     ],
+     [
+      711881965,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000ae.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000ae.json.gz (wersja 20261105T031358-f14414-0074)"
+     ],
+     [
+      711882001,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000af.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000af.json.gz (wersja 20261105T031358-f14414-0075)"
+     ],
+     [
+      711882041,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b0.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b0.json.gz (wersja 20261105T031358-f14414-0076)"
+     ],
+     [
+      711882090,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b1.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b1.json.gz (wersja 20261105T031358-f14414-0077)"
+     ],
+     [
+      711882160,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b2.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b2.json.gz (wersja 20261105T031358-f14414-0078)"
+     ],
+     [
+      711882228,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b3.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b3.json.gz (wersja 20261105T031358-f14414-0079)"
+     ],
+     [
+      711882279,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b4.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b4.json.gz (wersja 20261105T031358-f14414-0080)"
+     ],
+     [
+      711882343,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b5.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b5.json.gz (wersja 20261105T031358-f14414-0081)"
+     ],
+     [
+      711882399,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b6.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b6.json.gz (wersja 20261105T031358-f14414-0082)"
+     ],
+     [
+      711882464,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b7.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b7.json.gz (wersja 20261105T031358-f14414-0083)"
+     ],
+     [
+      711882516,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b8.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b8.json.gz (wersja 20261105T031358-f14414-0084)"
+     ],
+     [
+      711882558,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b9.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000b9.json.gz (wersja 20261105T031358-f14414-0085)"
+     ],
+     [
+      711882605,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000ba.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000ba.json.gz (wersja 20261105T031358-f14414-0086)"
+     ],
+     [
+      711882640,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000bb.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000bb.json.gz (wersja 20261105T031358-f14414-0087)"
+     ],
+     [
+      711882678,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000bc.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000bc.json.gz (wersja 20261105T031358-f14414-0088)"
+     ],
+     [
+      711882722,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000bd.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000bd.json.gz (wersja 20261105T031358-f14414-0089)"
+     ],
+     [
+      711882738,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000be.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000be.json.gz (wersja 20261105T031358-f14414-0090)"
+     ],
+     [
+      711882774,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000bf.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000bf.json.gz (wersja 20261105T031358-f14414-0091)"
+     ],
+     [
+      711882791,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c0.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c0.json.gz (wersja 20261105T031358-f14414-0092)"
+     ],
+     [
+      711882842,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c1.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c1.json.gz (wersja 20261105T031358-f14414-0093)"
+     ],
+     [
+      711882871,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c2.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c2.json.gz (wersja 20261105T031358-f14414-0094)"
+     ],
+     [
+      711882900,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c3.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c3.json.gz (wersja 20261105T031358-f14414-0095)"
+     ],
+     [
+      711882956,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c4.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c4.json.gz (wersja 20261105T031358-f14414-0096)"
+     ],
+     [
+      711883040,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c5.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c5.json.gz (wersja 20261105T031358-f14414-0097)"
+     ],
+     [
+      711883621,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c6.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c6.json.gz (wersja 20261105T031358-f14414-0098)"
+     ],
+     [
+      711883704,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c7.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c7.json.gz (wersja 20261105T031358-f14414-0099)"
+     ],
+     [
+      711883760,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c8.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c8.json.gz (wersja 20261105T031358-f14414-0100)"
+     ],
+     [
+      711883813,
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c9.json.gz",
+      "20261105T031358-f14414-settlement-000000000000000000000000000000c9.json.gz (wersja 20261105T031358-f14414-0101)"
+     ]
+    ]
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414-strony",
+       "id": 434741508,
+       "tag_name": "logi-verify-20261105T031358-f14414-strony",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: drugie Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:15Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414",
+       "id": 434741443,
+       "tag_name": "logi-verify-20261105T031358-f14414",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:09Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n"
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741508/assets?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "id": 711878171,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000065.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000065.json.gz (wersja 20261105T031358-f14414-0001)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711878208,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000066.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000066.json.gz (wersja 20261105T031358-f14414-0002)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711878256,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000067.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000067.json.gz (wersja 20261105T031358-f14414-0003)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711878347,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000068.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000068.json.gz (wersja 20261105T031358-f14414-0004)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711878401,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000069.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000069.json.gz (wersja 20261105T031358-f14414-0005)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711878441,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000006a.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000006a.json.gz (wersja 20261105T031358-f14414-0006)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711878476,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000006b.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000006b.json.gz (wersja 20261105T031358-f14414-0007)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711878515,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000006c.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000006c.json.gz (wersja 20261105T031358-f14414-0008)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711878564,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000006d.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000006d.json.gz (wersja 20261105T031358-f14414-0009)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711878622,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000006e.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000006e.json.gz (wersja 20261105T031358-f14414-0010)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711878657,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000006f.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000006f.json.gz (wersja 20261105T031358-f14414-0011)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711878808,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000070.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000070.json.gz (wersja 20261105T031358-f14414-0012)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711878910,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000071.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000071.json.gz (wersja 20261105T031358-f14414-0013)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711878959,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000072.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000072.json.gz (wersja 20261105T031358-f14414-0014)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879023,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000073.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000073.json.gz (wersja 20261105T031358-f14414-0015)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879055,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000074.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000074.json.gz (wersja 20261105T031358-f14414-0016)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879105,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000075.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000075.json.gz (wersja 20261105T031358-f14414-0017)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879138,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000076.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000076.json.gz (wersja 20261105T031358-f14414-0018)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879176,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000077.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000077.json.gz (wersja 20261105T031358-f14414-0019)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879214,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000078.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000078.json.gz (wersja 20261105T031358-f14414-0020)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879259,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000079.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000079.json.gz (wersja 20261105T031358-f14414-0021)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879299,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000007a.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000007a.json.gz (wersja 20261105T031358-f14414-0022)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879346,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000007b.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000007b.json.gz (wersja 20261105T031358-f14414-0023)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879398,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000007c.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000007c.json.gz (wersja 20261105T031358-f14414-0024)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879453,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000007d.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000007d.json.gz (wersja 20261105T031358-f14414-0025)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879494,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000007e.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000007e.json.gz (wersja 20261105T031358-f14414-0026)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879535,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000007f.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000007f.json.gz (wersja 20261105T031358-f14414-0027)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879760,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000080.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000080.json.gz (wersja 20261105T031358-f14414-0028)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879802,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000081.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000081.json.gz (wersja 20261105T031358-f14414-0029)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879844,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000082.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000082.json.gz (wersja 20261105T031358-f14414-0030)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879875,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000083.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000083.json.gz (wersja 20261105T031358-f14414-0031)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879916,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000084.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000084.json.gz (wersja 20261105T031358-f14414-0032)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879960,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000085.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000085.json.gz (wersja 20261105T031358-f14414-0033)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711879984,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000086.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000086.json.gz (wersja 20261105T031358-f14414-0034)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880029,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000087.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000087.json.gz (wersja 20261105T031358-f14414-0035)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880072,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000088.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000088.json.gz (wersja 20261105T031358-f14414-0036)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880116,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000089.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000089.json.gz (wersja 20261105T031358-f14414-0037)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880158,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000008a.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000008a.json.gz (wersja 20261105T031358-f14414-0038)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880190,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000008b.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000008b.json.gz (wersja 20261105T031358-f14414-0039)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880229,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000008c.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000008c.json.gz (wersja 20261105T031358-f14414-0040)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880283,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000008d.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000008d.json.gz (wersja 20261105T031358-f14414-0041)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880339,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000008e.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000008e.json.gz (wersja 20261105T031358-f14414-0042)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880380,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000008f.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000008f.json.gz (wersja 20261105T031358-f14414-0043)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880434,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000090.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000090.json.gz (wersja 20261105T031358-f14414-0044)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880483,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000091.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000091.json.gz (wersja 20261105T031358-f14414-0045)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880553,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000092.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000092.json.gz (wersja 20261105T031358-f14414-0046)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880605,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000093.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000093.json.gz (wersja 20261105T031358-f14414-0047)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880646,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000094.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000094.json.gz (wersja 20261105T031358-f14414-0048)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880694,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000095.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000095.json.gz (wersja 20261105T031358-f14414-0049)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880741,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000096.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000096.json.gz (wersja 20261105T031358-f14414-0050)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880784,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000097.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000097.json.gz (wersja 20261105T031358-f14414-0051)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880829,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000098.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000098.json.gz (wersja 20261105T031358-f14414-0052)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880855,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000099.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000099.json.gz (wersja 20261105T031358-f14414-0053)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880896,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000009a.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000009a.json.gz (wersja 20261105T031358-f14414-0054)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711880942,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000009b.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000009b.json.gz (wersja 20261105T031358-f14414-0055)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881011,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000009c.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000009c.json.gz (wersja 20261105T031358-f14414-0056)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881043,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000009d.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000009d.json.gz (wersja 20261105T031358-f14414-0057)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881078,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000009e.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000009e.json.gz (wersja 20261105T031358-f14414-0058)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881127,
+       "name": "20261105T031358-f14414-settlement-0000000000000000000000000000009f.json.gz",
+       "label": "20261105T031358-f14414-settlement-0000000000000000000000000000009f.json.gz (wersja 20261105T031358-f14414-0059)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881179,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000a0.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000a0.json.gz (wersja 20261105T031358-f14414-0060)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881220,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000a1.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000a1.json.gz (wersja 20261105T031358-f14414-0061)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881268,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000a2.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000a2.json.gz (wersja 20261105T031358-f14414-0062)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881308,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000a3.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000a3.json.gz (wersja 20261105T031358-f14414-0063)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881373,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000a4.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000a4.json.gz (wersja 20261105T031358-f14414-0064)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881422,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000a5.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000a5.json.gz (wersja 20261105T031358-f14414-0065)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881469,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000a6.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000a6.json.gz (wersja 20261105T031358-f14414-0066)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881528,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000a7.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000a7.json.gz (wersja 20261105T031358-f14414-0067)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881576,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000a8.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000a8.json.gz (wersja 20261105T031358-f14414-0068)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881717,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000a9.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000a9.json.gz (wersja 20261105T031358-f14414-0069)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881777,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000aa.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000aa.json.gz (wersja 20261105T031358-f14414-0070)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881821,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000ab.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000ab.json.gz (wersja 20261105T031358-f14414-0071)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881873,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000ac.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000ac.json.gz (wersja 20261105T031358-f14414-0072)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881938,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000ad.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000ad.json.gz (wersja 20261105T031358-f14414-0073)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711881965,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000ae.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000ae.json.gz (wersja 20261105T031358-f14414-0074)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882001,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000af.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000af.json.gz (wersja 20261105T031358-f14414-0075)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882041,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000b0.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000b0.json.gz (wersja 20261105T031358-f14414-0076)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882090,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000b1.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000b1.json.gz (wersja 20261105T031358-f14414-0077)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882160,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000b2.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000b2.json.gz (wersja 20261105T031358-f14414-0078)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882228,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000b3.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000b3.json.gz (wersja 20261105T031358-f14414-0079)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882279,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000b4.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000b4.json.gz (wersja 20261105T031358-f14414-0080)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882343,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000b5.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000b5.json.gz (wersja 20261105T031358-f14414-0081)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882399,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000b6.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000b6.json.gz (wersja 20261105T031358-f14414-0082)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882464,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000b7.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000b7.json.gz (wersja 20261105T031358-f14414-0083)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882516,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000b8.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000b8.json.gz (wersja 20261105T031358-f14414-0084)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882558,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000b9.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000b9.json.gz (wersja 20261105T031358-f14414-0085)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882605,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000ba.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000ba.json.gz (wersja 20261105T031358-f14414-0086)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882640,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000bb.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000bb.json.gz (wersja 20261105T031358-f14414-0087)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882678,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000bc.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000bc.json.gz (wersja 20261105T031358-f14414-0088)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882722,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000bd.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000bd.json.gz (wersja 20261105T031358-f14414-0089)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882738,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000be.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000be.json.gz (wersja 20261105T031358-f14414-0090)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882774,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000bf.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000bf.json.gz (wersja 20261105T031358-f14414-0091)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882791,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000c0.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000c0.json.gz (wersja 20261105T031358-f14414-0092)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882842,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000c1.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000c1.json.gz (wersja 20261105T031358-f14414-0093)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882871,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000c2.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000c2.json.gz (wersja 20261105T031358-f14414-0094)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882900,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000c3.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000c3.json.gz (wersja 20261105T031358-f14414-0095)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711882956,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000c4.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000c4.json.gz (wersja 20261105T031358-f14414-0096)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711883040,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000c5.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000c5.json.gz (wersja 20261105T031358-f14414-0097)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711883621,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000c6.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000c6.json.gz (wersja 20261105T031358-f14414-0098)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711883704,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000c7.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000c7.json.gz (wersja 20261105T031358-f14414-0099)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711883760,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000c8.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000c8.json.gz (wersja 20261105T031358-f14414-0100)",
+       "state": "uploaded"
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741508/assets?per_page=100&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "id": 711883813,
+       "name": "20261105T031358-f14414-settlement-000000000000000000000000000000c9.json.gz",
+       "label": "20261105T031358-f14414-settlement-000000000000000000000000000000c9.json.gz (wersja 20261105T031358-f14414-0101)",
+       "state": "uploaded"
+      }
+     ]
+    }
+   ],
+   "wynik": "Archive(434741508, 101 plików)"
+  },
+  "podmiana-pliku": {
+   "fakty": {
+    "tag": "logi-verify-20261105T031358-f14414",
+    "tytul": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+    "opis": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n",
+    "nazwa": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+    "archiwum": 434741443,
+    "plik": [
+     711878042,
+     "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+     "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz (wersja 20261105T031358-f14414-0001)"
+    ],
+    "tekst_po_diagnozie": "{\"diagnosis\": \"BRAK_WZORCA\", \"run\": \"20261105T031358-f14414\"}\n",
+    "etykieta_po_diagnozie": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz (wersja 20261105T031358-f14414-0002)",
+    "inny": [
+     711883920,
+     "20261105T031358-f14414-settlement-00000000000000000000000000000002.json.gz",
+     "20261105T031358-f14414-settlement-00000000000000000000000000000002.json.gz (wersja 20261105T031358-f14414-0001)"
+    ]
+   },
+   "wymiany": [
+    {
+     "metoda": "DELETE",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/assets/711878042",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 204,
+     "link": null,
+     "cialo": {
+      "$tekst": ""
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414-strony",
+       "id": 434741508,
+       "tag_name": "logi-verify-20261105T031358-f14414-strony",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: drugie Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:15Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414",
+       "id": 434741443,
+       "tag_name": "logi-verify-20261105T031358-f14414",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:09Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n"
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741443/assets?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "id": 711883920,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000002.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000002.json.gz (wersja 20261105T031358-f14414-0001)",
+       "state": "uploaded"
+      }
+     ]
+    },
+    {
+     "metoda": "POST",
+     "sciezka": "https://uploads.github.com/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741443/assets?name=20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz&label=20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz+%28wersja+20261105T031358-f14414-0002%29",
+     "zadanie_sha256": "fb0beea99654d9dd79eefd078057b436f5e29d9e370c32883777fd171ab96604",
+     "zadanie_dlugosc": 85,
+     "status": 201,
+     "link": null,
+     "cialo": {
+      "id": 711884035,
+      "name": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+      "label": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz (wersja 20261105T031358-f14414-0002)",
+      "state": "uploaded"
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414-strony",
+       "id": 434741508,
+       "tag_name": "logi-verify-20261105T031358-f14414-strony",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: drugie Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:15Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414",
+       "id": 434741443,
+       "tag_name": "logi-verify-20261105T031358-f14414",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:09Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n"
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741443/assets?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "id": 711884035,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz (wersja 20261105T031358-f14414-0002)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711883920,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000002.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000002.json.gz (wersja 20261105T031358-f14414-0001)",
+       "state": "uploaded"
+      }
+     ]
+    }
+   ],
+   "wynik": "(Asset(id=711884035, name='20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz', label='20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz (wersja 20261105T031358-f14414-0002)', uploaded=True), Removed(), Archive(434741443, (Asset(711883920, 20261105T031358-f14414-settlement-00000000000000000000000000000002.json.gz, True))), Archive(434741443, (Asset(711884035, 20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz, True), Asset(711883920, 20261105T031358-f14414-settlement-00000000000000000000000000000002.json.gz, True))))"
+  },
+  "adres-pobrania": {
+   "fakty": {
+    "tag": "logi-verify-20261105T031358-f14414",
+    "tytul": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+    "opis": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n",
+    "nazwa": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+    "tekst_po_diagnozie": "{\"diagnosis\": \"BRAK_WZORCA\", \"run\": \"20261105T031358-f14414\"}\n",
+    "adres_pobrania": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/download/logi-verify-20261105T031358-f14414/20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+    "pobrane_sha256": "fb0beea99654d9dd79eefd078057b436f5e29d9e370c32883777fd171ab96604",
+    "pobrane_dlugosc": 85,
+    "pobrane_rozpakowane": "{\"diagnosis\": \"BRAK_WZORCA\", \"run\": \"20261105T031358-f14414\"}\n",
+    "strona_z_kluczem_status": 404
+   },
+   "wymiany": [],
+   "wynik": "('https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/download/logi-verify-20261105T031358-f14414/20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz', 'fb0beea99654d9dd79eefd078057b436f5e29d9e370c32883777fd171ab96604')"
+  },
+  "zly-klucz": {
+   "fakty": {
+    "tag": "logi-verify-20261105T031358-f14414",
+    "archiwum": 434741443,
+    "inny": [
+     711883920,
+     "20261105T031358-f14414-settlement-00000000000000000000000000000002.json.gz",
+     "20261105T031358-f14414-settlement-00000000000000000000000000000002.json.gz (wersja 20261105T031358-f14414-0001)"
+    ],
+    "tag_nowego": "logi-verify-20261105T031358-f14414-zly-klucz",
+    "nazwa": "20261105T031358-f14414-settlement-00000000000000000000000000000003.json.gz"
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials",
+      "status": "401"
+     }
+    },
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases",
+     "zadanie_sha256": "820f69f56f41a36b099967105fbc78f9d31da0652696744cb8728d98abcf7656",
+     "zadanie_dlugosc": 136,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials",
+      "status": "401"
+     }
+    },
+    {
+     "metoda": "POST",
+     "sciezka": "https://uploads.github.com/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741443/assets?name=20261105T031358-f14414-settlement-00000000000000000000000000000003.json.gz&label=20261105T031358-f14414-settlement-00000000000000000000000000000003.json.gz",
+     "zadanie_sha256": "55d659db7c7c9b33c5e29e3461b2dd6f02babebcb61599393532e8a8882375ef",
+     "zadanie_dlugosc": 26,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials"
+     }
+    },
+    {
+     "metoda": "DELETE",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/assets/711883920",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials",
+      "status": "401"
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414-strony",
+       "id": 434741508,
+       "tag_name": "logi-verify-20261105T031358-f14414-strony",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: drugie Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:15Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum/releases/tag/logi-verify-20261105T031358-f14414",
+       "id": 434741443,
+       "tag_name": "logi-verify-20261105T031358-f14414",
+       "name": "verify-github-skrzynki 20261105T031358-f14414: Archiwum",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-05T03:14:09Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T031358-f14414 -->\n\nArchiwum Logów okresu w repozytorium próbnym z commitem.\n"
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/434741443/assets?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "id": 711884035,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz (wersja 20261105T031358-f14414-0002)",
+       "state": "uploaded"
+      },
+      {
+       "id": 711883920,
+       "name": "20261105T031358-f14414-settlement-00000000000000000000000000000002.json.gz",
+       "label": "20261105T031358-f14414-settlement-00000000000000000000000000000002.json.gz (wersja 20261105T031358-f14414-0001)",
+       "state": "uploaded"
+      }
+     ]
+    }
+   ],
+   "wynik": "{archive: Refused(), open_archive: Refused(), upload: Refused(), remove: Refused(), archive kluczem klienta: Archive(434741443, (Asset(711883920, 20261105T031358-f14414-settlement-00000000000000000000000000000002.json.gz, True), Asset(711884035, 20261105T031358-f14414-settlement-00000000000000000000000000000001.json.gz, True)))}"
+  }
+ }
+}
