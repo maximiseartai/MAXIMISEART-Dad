@@ -18,4 +18,8 @@ class Kwarantanna:
     do: date  # ostatni dzień kwarantanny, najwyżej 7 dni od dziś
 
 
-KWARANTANNA: dict[str, Kwarantanna] = {}
+KWARANTANNA: dict[str, Kwarantanna] = {
+    # Windows: Zatrzymanie dla taty bez części strony zamiast strony 404 zlecenia; przyczyna nieustalona (#972).
+    "tests/test_centrum_logi_uruchomienia.py::test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu"
+    "_i_slad_zlecen_sprzed_niego[D-strona-bledu-http-404]": Kwarantanna(972, date(2026, 11, 12)),
+}

@@ -133,6 +133,10 @@ class Changed(enum.Enum):
     STALE_AMOUNT = "kwota końcowa nie odświeża się po zapisie ilości"
     QUANTITY_ANSWER = "zapis ilości odpowiada stroną HTML, a nie JSON z kwotą końcową"
     QUANTITY_VALUE = "pole Ilość pozycji 012 ma wartość, która nie jest liczbą całkowitą (1.5)"
+    SECOND_NUMBER_FIELD = (
+        "lista po wpisaniu numeru ma w #wyniki drugie pole Numer, jak odpowiedź jej własnego szukania przekierowana na listę"
+    )
+    NUMBER_FIELD_GONE = "lista po wpisaniu numeru nie ma już pola Numer"
 
 
 class Unread(enum.Enum):
@@ -741,6 +745,21 @@ _LIST_SCRIPT = """
 """
 
 
+# Odpowiedź szukania, które lista wysyła sama, wkłada do ``#wyniki`` w dowolnej chwili, także stronę listy z drugim polem
+# Numer, gdy efenix przekierował ją na listę; tu deterministycznie, gdy okno już wpisało numer (#971).
+_SECOND_NUMBER_FIELD_SCRIPT = """
+document.getElementById('field_numer').addEventListener('input', () => {
+  document.getElementById('wyniki').innerHTML = '<input type="text" id="field_numer" class="form-control">';
+});
+"""
+
+
+# Pole Numer znika z listy, gdy okno już wpisało numer, więc Enter nie ma go na stronie ani raz.
+_NUMBER_FIELD_GONE_SCRIPT = """
+document.getElementById('field_numer').addEventListener('input', (event) => event.target.remove());
+"""
+
+
 # Skrypt i elementy strony, które przy wczytaniu i przy opuszczeniu strony wysyłają zapis, zmianę statusu i wylogowanie
 # każdą drogą przeglądarki: okno, beacon, ``fetch`` z ``keepalive``, WebSocket, worker, service worker, przejście. Na
 # początku skrypt czyści stronę, więc strona, na której w ogóle biegnie, nie ma już budowy efenix.
@@ -784,6 +803,10 @@ def _list_page(changed: Changed | Unread | None, host: str) -> str:
 
 def _list_script(changed: Changed | Unread | None) -> str:
     script = _LIST_SCRIPT.replace("__BY_LIST__", BY_LIST).replace("__FIELDS__", " ".join(LIST_SEARCH_FIELDS))
+    if changed is Changed.SECOND_NUMBER_FIELD:
+        script += _SECOND_NUMBER_FIELD_SCRIPT
+    if changed is Changed.NUMBER_FIELD_GONE:
+        script += _NUMBER_FIELD_GONE_SCRIPT
     if changed is Unread.SCRIPTS:
         return script.replace("{numer: numer.value", "{nr: numer.value")
     return _HOSTILE_SCRIPT + script if changed is Unread.HOSTILE else script

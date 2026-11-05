@@ -796,7 +796,9 @@ def test_dwa_klikniecia_w_trakcie_wysylki_daja_jedno_zgloszenie_a_centrum_odpowi
     with_key(centrum)
     box = centrum.surroundings.report_box
     run_id = stopped_for_maks(centrum)
-    diagnose(centrum, run_id)
+    # Podgląd z Diagnozy pyta skrzynkę w tle: bez czekania jego pytanie mogłoby stanąć na wstrzymaniu i ustawić
+    # ``searching`` przed kliknięciem (#973).
+    diagnosed_to_end(centrum, run_id)
     box.search_hold = threading.Event()
     box.searching.clear()
 
