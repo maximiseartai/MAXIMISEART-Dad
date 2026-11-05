@@ -32,8 +32,53 @@ def _check(config: str) -> tuple[str, ...]:
 
 MUTATIONS = (
     Mutation(
+        "lista issue bez issue, które KeyedBox sam założył (keyed_box.py labelled_issues: _opened, #879)",
+        (Edit(MODEL, "Widoczne(q) == {i \\in 1..Len(issues) : i \\notin niewidoczne \\/ i \\in pamiec[q]}\n",
+              "Widoczne(q) == {i \\in 1..Len(issues) : i \\notin niewidoczne}\n"),),
+        _check("okres"),
+        "druga Kontrola ilości okresu zakłada drugie issue okresu, zanim lista pokaże pierwsze",
+        NEW,
+    ),
+    Mutation(
+        "zakładanie bez wstrzymania po zakładaniu bez odpowiedzi (keyed_box.py _held, #879)",
+        (Edit(MODEL, "Wstrzymane(q, r) == odczyt[q][r]\n", "Wstrzymane(q, r) == FALSE\n"),),
+        _check("okres"),
+        "ponowienie albo start Centrum po zgubionej odpowiedzi zakłada drugie issue okresu, zanim lista pokaże pierwsze",
+        NEW,
+    ),
+    Mutation(
+        "wstrzymanie liczone od chwili zakładania, a nie od chwili listy (keyed_box.py _held: listed_at, #879)",
+        (Edit(MODEL, "Wstrzymane(q, r) == odczyt[q][r]\n", "Wstrzymane(q, r) == Swieze(q, r)\n"),),
+        _check("okres"),
+        "lista sprzed przedawnienia zapisu nie pokazuje issue, a zakładanie po przedawnieniu zakłada drugie",
+        NEW,
+    ),
+    Mutation(
+        "zapisy tylko w pamięci, więc nowe Centrum ich nie zna (keyed_box.py OPENING_FILE, #879)",
+        (Edit(MODEL, "    /\\ UNCHANGED <<niewidoczne, zakladanie, wydanieNiewidoczne, falszywe, plik,",
+              "    /\\ zakladanie' = [r \\in Rodzaje |-> \"brak\"]\n    /\\ UNCHANGED <<niewidoczne, wydanieNiewidoczne, falszywe, plik,"),),
+        _check("okres"),
+        "start Centrum zaraz po założeniu issue okresu zakłada drugie, zanim lista pokaże pierwsze",
+        NEW,
+    ),
+    Mutation(
+        "zakładanie Archiwum bez wstrzymania po zakładaniu bez odpowiedzi (keyed_box.py _held, #887)",
+        (Edit(MODEL, "       \\/ /\\ ~Wstrzymane(q, \"archiwum\") /\\ ~PusteRepo /\\ wydania > 0\n",
+              "       \\/ /\\ ~PusteRepo /\\ wydania > 0\n"),),
+        _check("archiwum-lista"),
+        "ponowienie po zgubionej odpowiedzi na założenie Archiwum dostaje 422 i dopisek, że plik czeka",
+        NEW,
+    ),
+    Mutation(
+        "Archiwum bez Archiwum, które KeyedBox sam założył (keyed_box.py archive: _archives, #887)",
+        (Edit(MODEL, "(wydanieNiewidoczne /\\ ~pamiecWydania[q])", "wydanieNiewidoczne"),),
+        _check("archiwum-lista"),
+        "drugie Logi nowego okresu dostają odmowę drugiego Archiwum (422) i dopisek, że plik czeka",
+        NEW,
+    ),
+    Mutation(
         "issue okresu zakładane bez szukania (_deliver_to_period: if found is None)",
-        (Edit(MODEL, "          /\\ IF Najnowsze = 0\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ PoArchiwum(q, \"zaloz\", \"find_issue",
+        (Edit(MODEL, "          /\\ IF Najnowsze(q) = 0\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ PoArchiwum(q, \"zaloz\", \"find_issue",
               "          /\\ IF TRUE\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ PoArchiwum(q, \"zaloz\", \"find_issue"),),
         _check("okres"),
         "druga Kontrola ilości okresu zakłada drugie issue",
@@ -41,7 +86,7 @@ MUTATIONS = (
     ),
     Mutation(
         "Zgłoszenie zakładane bez szukania (_deliver_report: if found is not None)",
-        (Edit(MODEL, "          /\\ IF Najnowsze = 0\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ Idz(q, \"zaloz\", \"labelled_issues",
+        (Edit(MODEL, "          /\\ IF Najnowsze(q) = 0\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ Idz(q, \"zaloz\", \"labelled_issues",
               "          /\\ IF TRUE\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ Idz(q, \"zaloz\", \"labelled_issues"),),
         _check("zgloszenie"),
         "drugie Zgłoszenie tego problemu zakłada drugie issue",
@@ -49,9 +94,9 @@ MUTATIONS = (
     ),
     Mutation(
         "Zgłoszenie, które wróciło, przejęte bez komentarza (_deliver_report: Delivered(found, ()) zamiast _settle)",
-        (Edit(MODEL, "             ELSE /\\ nr' = Ustaw(nr, q, Najnowsze) /\\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))\n"
+        (Edit(MODEL, "             ELSE /\\ nr' = Ustaw(nr, q, Najnowsze(q)) /\\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))\n"
               "                  /\\ Idz(q, \"czytaj\", \"_deliver_report:",
-              "             ELSE /\\ nr' = Ustaw(nr, q, Najnowsze) /\\ kom' = Ustaw(kom, q, <<>>)\n"
+              "             ELSE /\\ nr' = Ustaw(nr, q, Najnowsze(q)) /\\ kom' = Ustaw(kom, q, <<>>)\n"
               "                  /\\ Idz(q, \"dostarczona\", \"_deliver_report:"),),
         _check("zgloszenie"),
         "drugie Zgłoszenie tego problemu dostaje znacznik, choć Skrzynka go nie ma",
@@ -88,7 +133,7 @@ MUTATIONS = (
     ),
     Mutation(
         "Uwaga taty bez szukania issue po znaczniku (_deliver_new_issue: found)",
-        (Edit(MODEL, "          /\\ IF Swoje(biez[q]) = 0\n", "          /\\ IF TRUE\n"),),
+        (Edit(MODEL, "          /\\ IF Swoje(biez[q], q) = 0\n", "          /\\ IF TRUE\n"),),
         _check("nowe"),
         "Uwaga, której odpowiedź na założenie issue zginęła, dostaje drugie issue",
         NEW,
@@ -121,8 +166,9 @@ MUTATIONS = (
     ),
     Mutation(
         "Uwaga taty zakłada dwa issue (_deliver_new_issue)",
-        (Edit(MODEL, "    /\\ \\/ /\\ issues' = nowe\n",
-              "    /\\ \\/ /\\ issues' = Append(nowe, [klucz |-> Klucz, tresc |-> <<Cialo(w)>>])\n"),),
+        (Edit(MODEL, "          /\\ issues' = nowe /\\ niewidoczne' = zaLista /\\ Zapis(q, \"issue\", TRUE)\n",
+              "          /\\ issues' = Append(nowe, [klucz |-> Klucz, tresc |-> <<Cialo(w)>>]) /\\ niewidoczne' = zaLista\n"
+              "          /\\ Zapis(q, \"issue\", TRUE)\n"),),
         _check("nowe"),
         "każda Uwaga taty ma dwa issue, także bez awarii",
         NEW,
@@ -266,9 +312,10 @@ MUTATIONS = (
     ),
     Mutation(
         "Archiwum okresu zakładane bez szukania (_deliver_archive: listed is None)",
-        (Edit(MODEL, "               /\\ IF wydania = 0\n", "               /\\ IF TRUE\n"),),
+        (Edit(MODEL, "               /\\ IF wydania = 0 \\/ (wydanieNiewidoczne /\\ ~pamiecWydania[q])\n",
+              "               /\\ IF TRUE\n"),),
         _check("archiwum"),
-        "Diagnoza zakłada drugie Archiwum (Release) okresu",
+        "Diagnoza dostaje odmowę drugiego Archiwum okresu (422) i komentarz z dopiskiem, że plik czeka",
         NEW,
     ),
     Mutation(

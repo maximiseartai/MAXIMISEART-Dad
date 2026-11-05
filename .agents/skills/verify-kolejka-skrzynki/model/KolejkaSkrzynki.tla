@@ -28,6 +28,12 @@
 (* Archiwum, która trwa (repozytorium bez commitu: 409), zatrzymuje tylko  *)
 (* plik: części każdej wysyłki dochodzą (Zbieganie przy PusteRepo).        *)
 (*                                                                         *)
+(* Listy GitHuba (issue, Release'y) pokazują nowe issue i Archiwum z      *)
+(* opóźnieniem (#879, #887): KeyedBox dopisuje do list to, co sam założył, *)
+(* a nie zakłada, gdy ostatnia lista przyszła mniej niż LIST_LAG_S po      *)
+(* zakładaniu bez odpowiedzi albo przez inny KeyedBox (zapis w pliku obok  *)
+(* klucza, keyed_box.py OPENING_FILE).                                     *)
+(*                                                                         *)
 (* Jedna akcja to jeden krok kodu: jedno zapytanie do Skrzynki, jeden      *)
 (* zapis pliku tymczasowego, jedna zamiana pliku, jedno usunięcie, jedna   *)
 (* decyzja pod blokadą. Komentarz przy akcji i przy każdej straży wskazuje *)
@@ -56,6 +62,7 @@ CONSTANTS
     MaxOdmowArchiwum, \* Refused albo Rejected z kroku Archiwum (Token bez uprawnienia do treści repozytorium): ArchiveWaits
     PusteRepo,      \* repozytorium Skrzynki bez commitu przez cały przebieg: GitHub odpowiada 409 „Git Repository is
                     \* empty.” na każde założenie Archiwum (report_box.py GitHubReportBox.open_archive: Rejected)
+    OpoznienieListy, \* listy GitHuba (labelled_issues, archive) pokazują nowe issue i Archiwum po kilku sekundach
     \* Znane znaleziska (oczekiwane.json), każde przy jednej obietnicy: ślady przyczyn, po których wariant
     \* ...PozaZnanymi tej obietnicy ją pomija. Pozostałe obietnice tego przebiegu sprawdza dalej w całości.
     WybaczoneJednoIssue, WybaczoneDokladnieRaz, WybaczoneCzesciWKolejnosci, WybaczoneZbieganie
@@ -89,6 +96,8 @@ VARIABLES
                    \* "skomentowany" (delivered_parts = len(parts), archived false: czeka tylko na Archiwum),
                    \* "oznaczony" (wszystkie części i plik w Archiwum) albo "usuniety"
     tmp,           \* wysyłki, których plik <nazwa>.json.tmp leży w folderze (replace_atomically przerwane)
+    zakladanie,    \* plik keyed_box.py OPENING_FILE po rodzaju ("issue" albo "archiwum"): "swieze", gdy ma zapis
+                   \* sprzed mniej niż LIST_LAG_S, inaczej "brak" (zapis dawny albo go nie ma)
     \* Skrzynka Zgłoszeń (GitHub): przeżywa wszystko.
     issues,        \* issue po numerze: [klucz, tresc]; klucz "L" (wiersz rozpoznawczy okresu albo odcisk
                    \* Zgłoszenia), "N" (Uwaga taty, bez wiersza) albo "Z" (issue o znanym numerze);
@@ -96,6 +105,9 @@ VARIABLES
     archiwum,      \* pliki Archiwum okresu (assets Release), każdy jako wersja w wysyłki, której jest; GitHub nie
                    \* trzyma dwóch plików jednej nazwy, więc upload, gdy plik wysyłki już jest, to Rejected
     wydania,       \* ile Release'ów z tagiem okresu (Archiwów okresu) założyła kolejka
+    niewidoczne,   \* issue, których lista issue GitHuba (labelled_issues) jeszcze nie pokazuje
+    wydanieNiewidoczne, \* lista Release'ów (archive) jeszcze nie pokazuje Archiwum okresu
+    falszywe,      \* duch: GitHub odrzucił drugie Archiwum tagu (422), a części poszły z dopiskiem, że plik czeka
     \* Pamięć procesu: znika z procesem.
     zyje,          \* proces kolejki q: "nie", "tak" (ma port, przyjmuje zapytania HTTP) albo "zamkniety"
                    \* (uvicorn zamknął gniazdo, a proces jeszcze kończy pracę: _GRACEFUL_SHUTDOWN_S)
@@ -119,6 +131,11 @@ VARIABLES
     blokada,       \* kolejka, która trzyma blokadę systemową pliku przejscie.lock folderu (_folder_lock); 0: żadna.
                    \* Każda kolejka otwiera plik osobno; blokadę zwalnia zamknięcie pliku i koniec procesu
     zamkniecia,    \* ile razy stary proces zamknął port
+    pamiec,        \* KeyedBox._opened kolejki q: issue, które założyła i dopisuje do listy, która ich nie pokazuje
+    odpowiedz,     \* KeyedBox._answered kolejki q po rodzaju: zapis w pliku to jej zapis, na który przyszła odpowiedź
+    odczyt,        \* KeyedBox._listed_at kolejki q po rodzaju: ostatnia lista przyszła mniej niż LIST_LAG_S po zapisie
+                   \* z pliku bez jej odpowiedzi (albo przed nim), więc _held wstrzymuje zakładanie
+    pamiecWydania, \* KeyedBox._archives kolejki q: Archiwum, które założyła i dopisuje do archive, które go nie pokazuje
     \* Zapytania HTTP, które tworzą wysyłki (Outbox.post).
     nadawca,       \* krok post wysyłki w: "czeka", "zamiana", "budzi", "koniec"
     przez,         \* kolejka, której post zapisuje wysyłkę w
@@ -137,10 +154,15 @@ watek == <<pc, draining, again, armed, stopped, nieczytany, bezBlokady, undelete
 archiwa == <<archiwum, wydania, podwojny>>
 nadawanie == <<nadawca, przez, zakolejkowane, odrzucone>>
 awarie == <<sieci, zgubione, odmowy, odmowyArchiwum, bledyPliku, wylaczenia>>
-vars == <<dysk, issues, archiwa, zyje, watek, passes, blokada, zamkniecia, nadawanie, awarie, krok, slady>>
+opoznienie == <<niewidoczne, zakladanie, pamiec, odpowiedz, odczyt, wydanieNiewidoczne, pamiecWydania, falszywe>>
+vars == <<dysk, issues, archiwa, zyje, watek, passes, blokada, zamkniecia, nadawanie, awarie, krok, slady, opoznienie>>
 
 \* Znane znaleziska (SKILL.md, oczekiwane.json): ślad przyczyny, po której obietnica pada.
 ZnaneZnaleziska == {}
+
+\* Rodzaje zapisów, których skutek widać tylko na liście (keyed_box.py: etykieta issue, _archive_kind). Wysłania i
+\* usunięcia pliku Archiwum (_file_kind) model nie wstrzymuje: lista plików nie ma tu opóźnienia (SKILL.md).
+Rodzaje == {"issue", "archiwum"}
 
 Kroki == {"spi", "petla", "plik", "szukaj", "czytaj", "zaloz", "komentuj", "dostarczona", "zamiana", "usun", "zwolnij",
           "decyzja", "archiwum", "wydanie", "usunplik", "wyslij"}
@@ -167,6 +189,10 @@ TypeOK ==
     /\ nadawca \in [W -> {"czeka", "zamiana", "budzi", "koniec"}]
     /\ przez \in [W -> Q] /\ zakolejkowane \subseteq W /\ odrzucone \subseteq W
     /\ slady \subseteq ZnaneZnaleziska
+    /\ niewidoczne \subseteq 1..Len(issues) /\ zakladanie \in [Rodzaje -> {"brak", "swieze"}]
+    /\ pamiec \in [Q -> SUBSET (1..Len(issues))] /\ odpowiedz \in [Q -> [Rodzaje -> BOOLEAN]]
+    /\ odczyt \in [Q -> [Rodzaje -> BOOLEAN]] /\ wydanieNiewidoczne \in BOOLEAN /\ pamiecWydania \in [Q -> BOOLEAN]
+    /\ falszywe \in BOOLEAN
 
 Init ==
     /\ plik = [w \in W |-> "nadejdzie"]
@@ -190,6 +216,9 @@ Init ==
     /\ sieci = 0 /\ zgubione = 0 /\ odmowy = 0 /\ odmowyArchiwum = 0 /\ bledyPliku = 0 /\ wylaczenia = 0
     /\ krok = "start"
     /\ slady = {}
+    /\ niewidoczne = {} /\ zakladanie = [r \in Rodzaje |-> "brak"] /\ pamiec = [q \in Q |-> {}]
+    /\ odpowiedz = [q \in Q |-> [r \in Rodzaje |-> FALSE]] /\ odczyt = [q \in Q |-> [r \in Rodzaje |-> FALSE]]
+    /\ wydanieNiewidoczne = FALSE /\ pamiecWydania = [q \in Q |-> FALSE] /\ falszywe = FALSE
 
 \* --- Skrzynka -----------------------------------------------------------------
 
@@ -201,12 +230,14 @@ Od(w, a) == [i \in 1..(Liczba(w) - a + 1) |-> a + i - 1]
 Reszta(w) == IF Naglowek THEN Od(w, 1) ELSE Od(w, 2)
 Najwyzszy(z) == IF z = {} THEN 0 ELSE CHOOSE i \in z : \A j \in z : j <= i
 Najnizszy(z) == CHOOSE i \in z : \A j \in z : i <= j
+\* keyed_box.py KeyedBox.labelled_issues kolejki q: issue z listy GitHuba i te, które KeyedBox q sam założył (_opened).
+Widoczne(q) == {i \in 1..Len(issues) : i \notin niewidoczne \/ i \in pamiec[q]}
 \* report_box.py newest_with_line na liście labelled_issues: najnowsze issue z wierszem; 0 to None.
-Najnowsze == Najwyzszy({i \in 1..Len(issues) : issues[i].klucz = "L"})
+Najnowsze(q) == Najwyzszy({i \in Widoczne(q) : issues[i].klucz = "L"})
 \* Znacznik e należy do wysyłki w (outbox.py _marks: ta sama etykieta i run_id, każda wersja).
 Moj(e, w) == e[1] \in W /\ Id(e[1]) = Id(w)
-\* outbox.py _deliver_new_issue: najnowsze issue, którego treść ma znacznik wysyłki w; 0 to brak.
-Swoje(w) == Najwyzszy({i \in 1..Len(issues) : Moj(issues[i].tresc[1], w)})
+\* outbox.py _deliver_new_issue: najnowsze issue na liście kolejki q, którego treść ma znacznik wysyłki w; 0 to brak.
+Swoje(w, q) == Najwyzszy({i \in Widoczne(q) : Moj(issues[i].tresc[1], w)})
 \* Część k wysyłki w jest w issue i w tej wersji albo nowszej (Diagnoza ją poprawiła).
 Ma(i, w, k) == \E j \in 1..Len(issues[i].tresc) :
                  Moj(issues[i].tresc[j], w) /\ issues[i].tresc[j][2] = k /\ issues[i].tresc[j][1] >= w
@@ -253,6 +284,7 @@ DokladnieRaz ==
     /\ \A w \in W : Cardinality(Pliki(w)) <= 1
     /\ ~podwojny
     /\ \A w \in zakolejkowane : plik[w] \in {"oznaczony", "usuniety"} => BezStarszych(w)
+    /\ ~falszywe
 
 \* Część k > 1 w issue ma przed sobą część k-1 tej samej wysyłki: issue czyta się po kolei.
 CzesciWKolejnosci ==
@@ -314,6 +346,20 @@ Czeka(q, opis) ==
     /\ arch' = Ustaw(arch, q, "czeka")
     /\ Idz(q, po[q], opis)
 
+\* Zapis rodzaju r w pliku jest świeży i nie jest zapisem kolejki q z odpowiedzią.
+Swieze(q, r) == zakladanie[r] = "swieze" /\ ~odpowiedz[q][r]
+\* keyed_box.py _held: decyduje chwila ostatniej listy (odczyt), a zapis innej kolejki po niej zawsze wstrzymuje.
+Wstrzymane(q, r) == odczyt[q][r]
+\* _noted przed zapytaniem: zapis rodzaju r kolejki q w pliku; inne kolejki mają listę sprzed niego (odczyt), a
+\* _answered żadnej nie zna jego identyfikatora; z odpowiedzią (zna) jest to zapis q.
+\* Bez OpoznienieListy listy pokazują każdy zapis od razu, więc wstrzymanie tylko opóźnia: model go wtedy pomija.
+Zapis(q, r, zna) ==
+    IF OpoznienieListy
+    THEN /\ zakladanie' = [zakladanie EXCEPT ![r] = "swieze"]
+         /\ odpowiedz' = [x \in Q |-> [odpowiedz[x] EXCEPT ![r] = (x = q /\ zna)]]
+         /\ odczyt' = [x \in Q |-> IF x = q THEN odczyt[x] ELSE [odczyt[x] EXCEPT ![r] = TRUE]]
+    ELSE UNCHANGED <<zakladanie, odpowiedz, odczyt>>
+
 \* --- Wątek skrzynka-kolejka ----------------------------------------------------
 
 \* outbox.py Outbox._drain: początek pętli while, _claimed, potem _folder_lock. Kolejka, która zastanie
@@ -340,7 +386,7 @@ Petla(q) ==
        ELSE /\ passes' = Ustaw(passes, Proc(q), "prosba")
             /\ UNCHANGED <<blokada, lista, nieczytany, bezBlokady, odmowaArch>>
             /\ Idz(q, "decyzja", "_drain: _claimed zastaje przejscie innej kolejki, prosi o nastepne")
-    /\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, stopped, undeleted, rejected, biez, nr, kom,
+    /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, again, armed, stopped, undeleted, rejected, biez, nr, kom,
                    bezZnacznika, arch, po, zamkniecia, nadawanie, awarie, slady>>
 
 \* outbox.py Outbox._send_all, jeden plik: _undeleted (_remove), _rejected (pomija), _queued (odczyt:
@@ -385,7 +431,7 @@ Plik(q) ==
                          /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
                          \* _deliver: każdy cel najpierw pyta Skrzynkę o issue z etykietą.
                          /\ Idz(q, "szukaj", "_deliver: wysylka z pliku")
-    /\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, nr, kom, bezZnacznika,
+    /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, nr, kom, bezZnacznika,
                    odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, sieci, zgubione, odmowy,
                    odmowyArchiwum, wylaczenia>>
 
@@ -394,6 +440,8 @@ Plik(q) ==
 \* Znalezione issue dostaje części przez _settle (Czytaj), nowe issue przez open_issue (Zaloz).
 Szukaj(q) ==
     /\ pc[q] = "szukaj"
+    \* keyed_box.py labelled_issues: _listed_at, chwila tej listy wobec zapisu z pliku (_held przy zakładaniu).
+    /\ odczyt' = [odczyt EXCEPT ![q]["issue"] = Swieze(q, "issue")]
     /\ \/ /\ sieci < MaxBrakSieci
           /\ sieci' = sieci + 1
           /\ Stop(q, "labelled_issues: Unreachable (brak sieci), przejscie staje")
@@ -402,10 +450,10 @@ Szukaj(q) ==
           /\ UNCHANGED <<sieci, stopped, nieczytany, slady>>
           \* _deliver_to_period: bez issue okresu krok Archiwum, potem nowe issue, a w znalezionym _settle z każdą
           \* częścią (krok Archiwum po odczycie komentarzy, w Czytaj).
-          /\ IF Najnowsze = 0
+          /\ IF Najnowsze(q) = 0
              THEN /\ UNCHANGED <<nr, kom>>
                   /\ PoArchiwum(q, "zaloz", "find_issue: brak issue okresu")
-             ELSE /\ nr' = Ustaw(nr, q, Najnowsze) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
+             ELSE /\ nr' = Ustaw(nr, q, Najnowsze(q)) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
                   /\ UNCHANGED po
                   /\ Idz(q, "czytaj", "labelled_issues: jest issue okresu, _settle z kazda czescia")
        \/ /\ Cel = "zgloszenie"
@@ -414,10 +462,10 @@ Szukaj(q) ==
           \* znalezionym _settle z tą częścią jako komentarzem returned_report. Zgłoszenie, którego treść ma znacznik tej
           \* części, założyła przerwana próba tej wysyłki, więc _settle przejmuje je bez komentarza.
           /\ UNCHANGED slady
-          /\ IF Najnowsze = 0
+          /\ IF Najnowsze(q) = 0
              THEN /\ UNCHANGED <<nr, kom>>
                   /\ Idz(q, "zaloz", "labelled_issues: brak otwartego Zgloszenia z odciskiem")
-             ELSE /\ nr' = Ustaw(nr, q, Najnowsze) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
+             ELSE /\ nr' = Ustaw(nr, q, Najnowsze(q)) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
                   /\ Idz(q, "czytaj", "_deliver_report: jest Zgloszenie z odciskiem, _settle z komentarzem returned_report")
        \/ /\ Cel = "znane"
           /\ UNCHANGED <<sieci, stopped, nieczytany, slady, po>>
@@ -428,11 +476,12 @@ Szukaj(q) ==
           /\ UNCHANGED <<sieci, stopped, nieczytany, slady, po>>
           \* _deliver_new_issue: issue z treścią ze znacznikiem tej Uwagi (najnowsze, także zamknięte) dostaje resztę
           \* części przez _settle, a bez niego nowe issue.
-          /\ IF Swoje(biez[q]) = 0
+          /\ IF Swoje(biez[q], q) = 0
              THEN /\ UNCHANGED <<nr, kom>>
                   /\ Idz(q, "zaloz", "labelled_issues: brak issue ze znacznikiem tej Uwagi")
-             ELSE /\ nr' = Ustaw(nr, q, Swoje(biez[q])) /\ kom' = Ustaw(kom, q, Dopisz(Reszta(biez[q])))
+             ELSE /\ nr' = Ustaw(nr, q, Swoje(biez[q], q)) /\ kom' = Ustaw(kom, q, Dopisz(Reszta(biez[q])))
                   /\ Idz(q, "czytaj", "labelled_issues: jest issue ze znacznikiem tej Uwagi, _settle z reszta czesci")
+    /\ UNCHANGED <<niewidoczne, zakladanie, pamiec, odpowiedz, wydanieNiewidoczne, pamiecWydania, falszywe>>
     /\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, bezZnacznika,
                    arch, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
                    odmowyArchiwum, bledyPliku, wylaczenia>>
@@ -481,38 +530,56 @@ Czytaj(q) ==
              ELSE IF plan = <<>>
              THEN PoArchiwum(q, "dostarczona", "comments: kazda czesc juz jest w Skrzynce, Delivered")
              ELSE PoArchiwum(q, "komentuj", "comments: brakujace czesci komentarzami, starsza wersja poprawka, _RETIRED")
-    /\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, bezZnacznika,
+    /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, bezZnacznika,
                    arch, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
                    odmowyArchiwum, bledyPliku, wylaczenia, slady>>
 
 \* keyed_box.py KeyedBox.open_issue, wołane przez outbox.py _deliver_new_issue, _deliver_report i
-\* _deliver_to_period z Post.opening (treść: nagłówek albo część 1 i wiersz rozpoznawczy).
+\* _deliver_to_period z Post.opening (treść: nagłówek albo część 1 i wiersz rozpoznawczy). Najpierw _held: chwila
+\* zakładania w pliku sprzed mniej niż LIST_LAG_S, która nie jest zakładaniem tego KeyedBox z odpowiedzią Sent, daje
+\* Unreachable bez zapytania; potem _noted zapisuje chwilę tego zakładania (OSError: Unreachable bez zapytania), a
+\* odmowa (Rejected) przywraca plik sprzed zapisu.
 Zaloz(q) ==
     LET w == biez[q]
         nowe == Append(issues, [klucz |-> Klucz, tresc |-> <<Cialo(w)>>])
+        \* Nowe issue, którego lista GitHuba jeszcze nie pokazuje.
+        zaLista == IF OpoznienieListy THEN niewidoczne \cup {Len(nowe)} ELSE niewidoczne
     IN
     /\ pc[q] = "zaloz"
-    /\ \/ /\ issues' = nowe
+    /\ \/ /\ Wstrzymane(q, "issue")
+          /\ Stop(q, "open_issue: _held, lista sprzed LIST_LAG_S po zakladaniu bez odpowiedzi, Unreachable bez zapytania")
+          /\ UNCHANGED <<issues, nr, kom, rejected, sieci, zgubione, odmowy, slady, odrzucone, bledyPliku, opoznienie>>
+       \/ /\ OpoznienieListy /\ ~Wstrzymane(q, "issue") /\ bledyPliku < MaxBledowPliku
+          /\ bledyPliku' = bledyPliku + 1
+          /\ Stop(q, "open_issue: _noted, zapis chwili zakladania rzuca OSError, Unreachable bez zapytania")
+          /\ UNCHANGED <<issues, nr, kom, rejected, sieci, zgubione, odmowy, slady, odrzucone, opoznienie>>
+       \/ /\ ~Wstrzymane(q, "issue")
+          /\ issues' = nowe /\ niewidoczne' = zaLista /\ Zapis(q, "issue", TRUE)
+          /\ pamiec' = IF OpoznienieListy THEN Ustaw(pamiec, q, pamiec[q] \cup {Len(nowe)}) ELSE pamiec
           /\ nr' = Ustaw(nr, q, Len(nowe)) /\ kom' = Ustaw(kom, q, Dopisz(Reszta(w)))
-          /\ UNCHANGED <<stopped, nieczytany, rejected, sieci, zgubione, odmowy, slady, odrzucone>>
+          /\ UNCHANGED <<stopped, nieczytany, rejected, sieci, zgubione, odmowy, slady, odrzucone, bledyPliku,
+                         wydanieNiewidoczne, pamiecWydania, falszywe>>
           /\ IF Reszta(w) = <<>>
              THEN Idz(q, "dostarczona", "open_issue: Sent, cala wysylka w tresci issue")
              ELSE Idz(q, "komentuj", "open_issue: Sent, reszta czesci komentarzami (_comment_all)")
-       \/ /\ sieci < MaxBrakSieci
+       \/ /\ ~Wstrzymane(q, "issue") /\ sieci < MaxBrakSieci
           /\ sieci' = sieci + 1
+          /\ Zapis(q, "issue", FALSE)
           /\ Stop(q, "open_issue: Unreachable przed skutkiem, przejscie staje")
-          /\ UNCHANGED <<issues, nr, kom, rejected, zgubione, odmowy, slady, odrzucone>>
-       \/ /\ zgubione < MaxZgubionych
-          /\ zgubione' = zgubione + 1 /\ issues' = nowe
+          /\ UNCHANGED <<issues, nr, kom, rejected, zgubione, odmowy, slady, odrzucone, bledyPliku, niewidoczne, pamiec,
+                         wydanieNiewidoczne, pamiecWydania, falszywe>>
+       \/ /\ ~Wstrzymane(q, "issue") /\ zgubione < MaxZgubionych
+          /\ zgubione' = zgubione + 1 /\ issues' = nowe /\ niewidoczne' = zaLista
+          /\ Zapis(q, "issue", FALSE)
           /\ Stop(q, "open_issue: Skrzynka zaklada issue, odpowiedz ginie (Unreachable), przejscie staje")
-          /\ UNCHANGED <<nr, kom, rejected, sieci, odmowy, odrzucone, slady>>
-       \/ /\ odmowy < MaxOdmowTresci
+          /\ UNCHANGED <<nr, kom, rejected, sieci, odmowy, odrzucone, slady, bledyPliku, pamiec, wydanieNiewidoczne,
+                         pamiecWydania, falszywe>>
+       \/ /\ ~Wstrzymane(q, "issue") /\ odmowy < MaxOdmowTresci
           /\ odmowy' = odmowy + 1 /\ odrzucone' = odrzucone \cup {w}
-          /\ Odrzuc(q, w, "open_issue: Rejected, plik czeka do nastepnego startu")
-          /\ UNCHANGED <<issues, nr, kom, stopped, nieczytany, sieci, zgubione, slady>>
+          /\ Odrzuc(q, w, "open_issue: Rejected, plik zakladania jak przed zapisem, plik czeka do nastepnego startu")
+          /\ UNCHANGED <<issues, nr, kom, stopped, nieczytany, sieci, zgubione, slady, bledyPliku, opoznienie>>
     /\ UNCHANGED <<dysk, archiwa, zyje, draining, again, armed, undeleted, lista, biez, bezZnacznika, arch, po, odmowaArch,
-                   passes, blokada, bezBlokady, zamkniecia, nadawca, przez, zakolejkowane, odmowyArchiwum, bledyPliku,
-                   wylaczenia>>
+                   passes, blokada, bezBlokady, zamkniecia, nadawca, przez, zakolejkowane, odmowyArchiwum, wylaczenia>>
 
 \* keyed_box.py KeyedBox.comment (_comment_all, _settle przez _put) albo KeyedBox.edit_comment (_put: komentarz
 \* części w starszej wersji dostaje tekst tej wersji w tym samym miejscu issue; _settle: komentarz części, której ta
@@ -547,7 +614,7 @@ Komentuj(q) ==
           /\ odmowy' = odmowy + 1 /\ odrzucone' = odrzucone \cup {w}
           /\ Odrzuc(q, w, zapytanie \o ": Rejected, plik czeka do nastepnego startu")
           /\ UNCHANGED <<issues, kom, stopped, nieczytany, sieci, zgubione>>
-    /\ UNCHANGED <<dysk, archiwa, zyje, draining, again, armed, undeleted, lista, biez, nr, bezZnacznika, arch, po,
+    /\ UNCHANGED <<opoznienie, dysk, archiwa, zyje, draining, again, armed, undeleted, lista, biez, nr, bezZnacznika, arch, po,
                    odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawca, przez, zakolejkowane, odmowyArchiwum,
                    bledyPliku, wylaczenia, slady>>
 
@@ -565,19 +632,23 @@ CzytajArchiwum(q) ==
     /\ pc[q] = "archiwum"
     /\ IF odmowaArch[q]
        THEN /\ UNCHANGED <<sieci, odmowyArchiwum, stopped, nieczytany>>
+            /\ UNCHANGED odczyt
             /\ Czeka(q, "_deliver_archive: archive_open = False, Archiwum odmowilo w tym przejsciu")
        ELSE \/ /\ sieci < MaxBrakSieci
                /\ sieci' = sieci + 1
-               /\ UNCHANGED <<odmowyArchiwum, arch>>
+               /\ UNCHANGED <<odmowyArchiwum, arch, odczyt>>
                /\ Stop(q, "archive: Unreachable (brak sieci), przejscie staje")
             \/ /\ odmowyArchiwum < MaxOdmowArchiwum
                /\ odmowyArchiwum' = odmowyArchiwum + 1
-               /\ UNCHANGED <<sieci, stopped, nieczytany>>
+               /\ UNCHANGED <<sieci, stopped, nieczytany, odczyt>>
                /\ Czeka(q, "archive: Refused (Token bez uprawnienia do tresci repozytorium), ArchiveWaits")
             \/ /\ UNCHANGED <<sieci, odmowyArchiwum, stopped, nieczytany>>
-               /\ IF wydania = 0
+               \* keyed_box.py archive: _listed_at Archiwum i plików wobec zapisu z pliku zakładania (_held).
+               /\ odczyt' = [odczyt EXCEPT ![q]["archiwum"] = Swieze(q, "archiwum")]
+               \* Archiwum z listy Release'ów albo to, które KeyedBox sam założył (_archives).
+               /\ IF wydania = 0 \/ (wydanieNiewidoczne /\ ~pamiecWydania[q])
                   THEN /\ UNCHANGED arch
-                       /\ Idz(q, "wydanie", "archive: brak Archiwum okresu, open_archive")
+                       /\ Idz(q, "wydanie", "archive: brak Archiwum okresu na liscie, open_archive")
                   ELSE IF \E i \in moje : archiwum[i] >= w
                   THEN /\ arch' = Ustaw(arch, q, "jest")
                        /\ Idz(q, po[q], "archive: plik jest w tej wersji albo nowszej, InArchive")
@@ -586,7 +657,7 @@ CzytajArchiwum(q) ==
                        /\ Idz(q, "usunplik", "archive: plik starszej wersji ustepuje, remove")
                   ELSE /\ UNCHANGED arch
                        /\ Idz(q, "wyslij", "archive: pliku nie ma, upload")
-    /\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom,
+    /\ UNCHANGED <<niewidoczne, zakladanie, pamiec, odpowiedz, wydanieNiewidoczne, pamiecWydania, falszywe, dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom,
                    bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
                    bledyPliku, wylaczenia, slady>>
 
@@ -596,28 +667,45 @@ OdmowaPustegoRepo(q) ==
     /\ UNCHANGED <<stopped, nieczytany>>
     /\ Czeka(q, "open_archive: 409 Git Repository is empty, Rejected, ArchiveWaits")
 
-\* keyed_box.py KeyedBox.open_archive (Release z tagiem okresu, bez plików) w _deliver_archive. W repozytorium bez
-\* commitu (PusteRepo) GitHub nie zakłada Release, tylko odpowiada 409 (OdmowaPustegoRepo).
+\* keyed_box.py KeyedBox.open_archive (Release z tagiem okresu, bez plików) w _deliver_archive, wstrzymany jak
+\* zakładanie issue (_held, _noted, Zapis). W repozytorium bez commitu (PusteRepo) GitHub nie zakłada Release, tylko
+\* odpowiada 409 (OdmowaPustegoRepo), a gdy Release tego tagu już jest, 422 (Rejected, report_box.py open_archive):
+\* ArchiveWaits, choć Archiwum przyjęłoby plik (duch falszywe).
 ZalozArchiwum(q) ==
+    LET zaListe == OpoznienieListy
+    IN
     /\ pc[q] = "wydanie"
-    /\ \/ /\ ~PusteRepo
-          /\ wydania' = wydania + 1
-          /\ UNCHANGED <<sieci, zgubione, odmowyArchiwum, stopped, nieczytany, arch>>
+    /\ \/ /\ Wstrzymane(q, "archiwum")
+          /\ UNCHANGED <<wydania, sieci, zgubione, odmowyArchiwum, arch, opoznienie>>
+          /\ Stop(q, "open_archive: _held, lista sprzed LIST_LAG_S po zakladaniu bez odpowiedzi, Unreachable bez zapytania")
+       \/ /\ ~Wstrzymane(q, "archiwum") /\ ~PusteRepo /\ wydania = 0
+          /\ wydania' = wydania + 1 /\ wydanieNiewidoczne' = zaListe /\ pamiecWydania' = IF zaListe THEN Ustaw(pamiecWydania, q, TRUE) ELSE pamiecWydania
+          /\ Zapis(q, "archiwum", TRUE)
+          /\ UNCHANGED <<sieci, zgubione, odmowyArchiwum, stopped, nieczytany, arch, niewidoczne, pamiec, falszywe>>
           /\ Idz(q, "wyslij", "open_archive: Archive bez plikow, upload")
-       \/ /\ PusteRepo
-          /\ UNCHANGED <<wydania, sieci, zgubione, odmowyArchiwum>>
+       \/ /\ ~Wstrzymane(q, "archiwum") /\ ~PusteRepo /\ wydania > 0
+          /\ falszywe' = TRUE
+          /\ UNCHANGED <<wydania, sieci, zgubione, odmowyArchiwum, niewidoczne, zakladanie, pamiec, odpowiedz, odczyt,
+                         wydanieNiewidoczne, pamiecWydania>>
+          /\ UNCHANGED <<stopped, nieczytany>>
+          /\ Czeka(q, "open_archive: 422, Release tego tagu juz jest, Rejected, ArchiveWaits")
+       \/ /\ ~Wstrzymane(q, "archiwum") /\ PusteRepo
+          /\ UNCHANGED <<wydania, sieci, zgubione, odmowyArchiwum, opoznienie>>
           /\ OdmowaPustegoRepo(q)
-       \/ /\ sieci < MaxBrakSieci
+       \/ /\ ~Wstrzymane(q, "archiwum") /\ sieci < MaxBrakSieci
           /\ sieci' = sieci + 1
-          /\ UNCHANGED <<wydania, zgubione, odmowyArchiwum, arch>>
+          /\ Zapis(q, "archiwum", FALSE)
+          /\ UNCHANGED <<wydania, zgubione, odmowyArchiwum, arch, niewidoczne, pamiec, wydanieNiewidoczne, pamiecWydania,
+                         falszywe>>
           /\ Stop(q, "open_archive: Unreachable przed skutkiem, przejscie staje")
-       \/ /\ ~PusteRepo /\ zgubione < MaxZgubionych
-          /\ zgubione' = zgubione + 1 /\ wydania' = wydania + 1
-          /\ UNCHANGED <<sieci, odmowyArchiwum, arch>>
+       \/ /\ ~Wstrzymane(q, "archiwum") /\ ~PusteRepo /\ wydania = 0 /\ zgubione < MaxZgubionych
+          /\ zgubione' = zgubione + 1 /\ wydania' = wydania + 1 /\ wydanieNiewidoczne' = zaListe
+          /\ Zapis(q, "archiwum", FALSE)
+          /\ UNCHANGED <<sieci, odmowyArchiwum, arch, niewidoczne, pamiec, pamiecWydania, falszywe>>
           /\ Stop(q, "open_archive: Skrzynka zaklada Archiwum, odpowiedz ginie, przejscie staje")
-       \/ /\ odmowyArchiwum < MaxOdmowArchiwum
+       \/ /\ ~Wstrzymane(q, "archiwum") /\ odmowyArchiwum < MaxOdmowArchiwum
           /\ odmowyArchiwum' = odmowyArchiwum + 1
-          /\ UNCHANGED <<wydania, sieci, zgubione, stopped, nieczytany>>
+          /\ UNCHANGED <<wydania, sieci, zgubione, stopped, nieczytany, opoznienie>>
           /\ Czeka(q, "open_archive: Refused albo Rejected, ArchiveWaits")
     /\ UNCHANGED <<dysk, issues, archiwum, podwojny, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom,
                    bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, odmowy, bledyPliku,
@@ -646,7 +734,7 @@ UsunPlik(q) ==
           /\ odmowyArchiwum' = odmowyArchiwum + 1
           /\ UNCHANGED <<archiwum, podwojny, sieci, zgubione, stopped, nieczytany>>
           /\ Czeka(q, "remove: Refused, ArchiveWaits")
-    /\ UNCHANGED <<dysk, issues, wydania, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom,
+    /\ UNCHANGED <<opoznienie, dysk, issues, wydania, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom,
                    bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, odmowy, bledyPliku,
                    wylaczenia, slady>>
 
@@ -678,7 +766,7 @@ WyslijPlik(q) ==
           /\ odmowyArchiwum' = odmowyArchiwum + 1
           /\ UNCHANGED <<archiwum, sieci, zgubione, stopped, nieczytany>>
           /\ Czeka(q, "upload: Refused, ArchiveWaits")
-    /\ UNCHANGED <<dysk, issues, wydania, podwojny, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom,
+    /\ UNCHANGED <<opoznienie, dysk, issues, wydania, podwojny, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom,
                    bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, odmowy, bledyPliku,
                    wylaczenia, slady>>
 
@@ -709,7 +797,7 @@ Znacznik(q) ==
                /\ UNCHANGED tmp
                /\ IF czeka THEN Idz(q, "plik", "znacznik czesci: write_text pliku .json.tmp rzuca OSError (suppress)")
                   ELSE Idz(q, "usun", "znacznik: write_text pliku .json.tmp rzuca OSError (suppress), _remove")
-    /\ UNCHANGED <<plik, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom, arch, po,
+    /\ UNCHANGED <<opoznienie, plik, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom, arch, po,
                    passes, blokada, bezBlokady, zamkniecia, nadawanie, sieci, zgubione, odmowy, odmowyArchiwum,
                    wylaczenia, slady>>
 
@@ -737,7 +825,7 @@ Zamiana(q) ==
           /\ bezZnacznika' = Ustaw(bezZnacznika, q, TRUE)
           /\ UNCHANGED <<plik, bledyPliku>>
           /\ Idz(q, dalej, "znacznik: pliku .json.tmp juz nie ma, os.replace rzuca OSError (suppress)")
-    /\ UNCHANGED <<issues, archiwa, zyje, draining, again, armed, stopped, nieczytany, undeleted, rejected, lista, biez, nr,
+    /\ UNCHANGED <<opoznienie, issues, archiwa, zyje, draining, again, armed, stopped, nieczytany, undeleted, rejected, lista, biez, nr,
                    kom, arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, sieci, zgubione,
                    odmowy, odmowyArchiwum, wylaczenia, slady>>
 
@@ -756,7 +844,7 @@ Usun(q) ==
           /\ undeleted' = Ustaw(undeleted, q, undeleted[q] \cup {w})
           /\ UNCHANGED plik
           /\ Idz(q, "plik", "_remove: unlink rzuca OSError, plik zostaje, nazwa w _undeleted")
-    /\ UNCHANGED <<tmp, issues, archiwa, zyje, draining, again, armed, stopped, nieczytany, rejected, lista, biez, nr, kom,
+    /\ UNCHANGED <<opoznienie, tmp, issues, archiwa, zyje, draining, again, armed, stopped, nieczytany, rejected, lista, biez, nr, kom,
                    arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, sieci, zgubione, odmowy,
                    odmowyArchiwum, wylaczenia, slady>>
 
@@ -769,7 +857,7 @@ Zwolnij(q) ==
     /\ again' = IF passes[Proc(q)] = "prosba" THEN Ustaw(again, q, TRUE) ELSE again
     /\ passes' = Ustaw(passes, Proc(q), "wolny")
     /\ Idz(q, "decyzja", "_drain: koniec _folder_lock, _released")
-    /\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, armed, stopped, nieczytany, bezBlokady, undeleted, rejected,
+    /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, armed, stopped, nieczytany, bezBlokady, undeleted, rejected,
                    lista, biez, nr, kom, bezZnacznika, arch, po, odmowaArch, zamkniecia, nadawanie, awarie, slady>>
 
 \* outbox.py Outbox._drain pod self._changed: z _again następne przejście; bez niego _draining = False
@@ -787,7 +875,7 @@ Decyzja(q) ==
             /\ UNCHANGED again
             /\ Idz(q, "spi", IF stopped[q] \/ nieczytany[q] \/ odmowaArch[q] \/ bezBlokady[q]
                              THEN "_drain: koniec watku, budzenie za RETRY_S" ELSE "_drain: koniec watku")
-    /\ UNCHANGED <<dysk, issues, archiwa, zyje, stopped, nieczytany, undeleted, rejected, lista, biez, nr, kom, bezZnacznika,
+    /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, stopped, nieczytany, undeleted, rejected, lista, biez, nr, kom, bezZnacznika,
                    arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, awarie, slady>>
 
 Watek(q) ==
@@ -803,7 +891,7 @@ Budzenie(q) ==
     /\ armed' = Ustaw(armed, q, FALSE)
     /\ Budz(q)
     /\ krok' = "_woken po RETRY_S: send_in_background"
-    /\ UNCHANGED <<dysk, issues, archiwa, zyje, stopped, nieczytany, undeleted, rejected, lista, biez, nr, kom, bezZnacznika,
+    /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, stopped, nieczytany, undeleted, rejected, lista, biez, nr, kom, bezZnacznika,
                    arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, awarie, slady>>
 
 \* --- Zapytania HTTP: Outbox.post ------------------------------------------------
@@ -861,7 +949,7 @@ Nadaj(w) ==
           /\ krok' = "post: send_in_background"
           /\ UNCHANGED <<plik, tmp, przez, zakolejkowane, bledyPliku>>
     /\ nadawca[w] /= "czeka" => zyje[przez[w]] /= "nie"
-    /\ UNCHANGED <<issues, archiwa, zyje, armed, stopped, nieczytany, undeleted, rejected, lista, biez, nr, kom, bezZnacznika,
+    /\ UNCHANGED <<opoznienie, issues, archiwa, zyje, armed, stopped, nieczytany, undeleted, rejected, lista, biez, nr, kom, bezZnacznika,
                    arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, odrzucone, sieci, zgubione, odmowy,
                    odmowyArchiwum, wylaczenia, slady>>
 
@@ -889,6 +977,10 @@ Zabij(S) ==
     /\ passes' = [p \in Procesy |-> IF \E q \in S : Proc(q) = p THEN "wolny" ELSE passes[p]]
     \* Koniec procesu zamyka jego pliki, a z nimi system zwalnia blokadę folderu.
     /\ blokada' = IF blokada \in S THEN 0 ELSE blokada
+    /\ pamiec' = [q \in Q |-> IF q \in S THEN {} ELSE pamiec[q]]
+    /\ odpowiedz' = [q \in Q |-> IF q \in S THEN [r \in Rodzaje |-> FALSE] ELSE odpowiedz[q]]
+    /\ odczyt' = [q \in Q |-> IF q \in S THEN [r \in Rodzaje |-> FALSE] ELSE odczyt[q]]
+    /\ pamiecWydania' = [q \in Q |-> IF q \in S THEN FALSE ELSE pamiecWydania[q]]
     /\ plik' = [w \in W |-> IF nadawca[w] = "zamiana" /\ przez[w] \in S THEN "przepadl" ELSE plik[w]]
     /\ nadawca' = [w \in W |-> IF nadawca[w] \in {"zamiana", "budzi"} /\ przez[w] \in S THEN "koniec" ELSE nadawca[w]]
     \* Przerwanie między przyjęciem części przez Skrzynkę a znacznikiem dostarczenia zostawia plik bez znacznika, a
@@ -902,7 +994,7 @@ Wylacz ==
     /\ wylaczenia' = wylaczenia + 1
     /\ Zabij(Q)
     /\ krok' = "komputer gasnie w tym kroku"
-    /\ UNCHANGED <<tmp, issues, archiwa, biez, nr, zamkniecia, przez, zakolejkowane, odrzucone, sieci, zgubione, odmowy,
+    /\ UNCHANGED <<niewidoczne, zakladanie, wydanieNiewidoczne, falszywe, tmp, issues, archiwa, biez, nr, zamkniecia, przez, zakolejkowane, odrzucone, sieci, zgubione, odmowy,
                    odmowyArchiwum, bledyPliku>>
 
 \* app.py lifespan: Outbox.resume przed pierwszym zapytaniem HTTP usuwa pliki *.tmp (każdy w
@@ -916,10 +1008,13 @@ Start(q) ==
     /\ IF DwaProcesy \/ q = 1 THEN MaPort = {} ELSE zyje[1] = "tak"
     /\ zyje' = Ustaw(zyje, q, "tak")
     /\ tmp' = {}
+    \* Nowy KeyedBox: bez _opened i _answered; plik zakładania zostaje na dysku.
+    /\ pamiec' = Ustaw(pamiec, q, {}) /\ odpowiedz' = Ustaw(odpowiedz, q, [r \in Rodzaje |-> FALSE])
+    /\ odczyt' = Ustaw(odczyt, q, [r \in Rodzaje |-> FALSE]) /\ pamiecWydania' = Ustaw(pamiecWydania, q, FALSE)
     /\ draining' = Ustaw(draining, q, TRUE)
     /\ pc' = Ustaw(pc, q, "petla")
     /\ krok' = "Centrum startuje: Outbox.resume usuwa *.tmp, send_in_background"
-    /\ UNCHANGED <<plik, issues, archiwa, again, armed, stopped, nieczytany, bezBlokady, undeleted, rejected, lista, biez,
+    /\ UNCHANGED <<niewidoczne, zakladanie, wydanieNiewidoczne, falszywe, plik, issues, archiwa, again, armed, stopped, nieczytany, bezBlokady, undeleted, rejected, lista, biez,
                    nr, kom, bezZnacznika, arch, po, odmowaArch, passes, blokada, zamkniecia, nadawanie, awarie, slady>>
 
 \* Tata zamyka Centrum albo opiekun ponownego startu je restartuje: uvicorn zamyka gniazdo (port wolny
@@ -931,17 +1026,45 @@ Zamknij(q) ==
     /\ zamkniecia' = zamkniecia + 1
     /\ zyje' = Ustaw(zyje, q, "zamkniety")
     /\ krok' = "server.py serve: uvicorn zamyka gniazdo, proces jeszcze konczy prace"
-    /\ UNCHANGED <<dysk, issues, archiwa, watek, passes, blokada, nadawanie, awarie, slady>>
+    /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, watek, passes, blokada, nadawanie, awarie, slady>>
 
 \* Proces po zamknięciu portu kończy się, a jego wątki daemon giną z nim.
 KoniecProcesu(q) ==
     /\ zyje[q] = "zamkniety"
     /\ Zabij({q})
     /\ krok' = "stary proces Centrum konczy sie, watek kolejki ginie z nim"
-    /\ UNCHANGED <<tmp, issues, archiwa, biez, nr, zamkniecia, przez, zakolejkowane, odrzucone, awarie>>
+    /\ UNCHANGED <<niewidoczne, zakladanie, wydanieNiewidoczne, falszywe, tmp, issues, archiwa, biez, nr, zamkniecia, przez, zakolejkowane, odrzucone, awarie>>
+
+\* GitHub: lista issue (labelled_issues) zaczyna pokazywać nowe issue (verify-github-skrzynki: po 3,0-6,8 s).
+Nadaza ==
+    /\ \E i \in niewidoczne : niewidoczne' = niewidoczne \ {i}
+    /\ krok' = "lista issue GitHuba pokazuje nowe issue"
+    /\ UNCHANGED <<dysk, issues, archiwa, zyje, watek, passes, blokada, zamkniecia, nadawanie, awarie, slady, zakladanie,
+                   pamiec, odpowiedz, odczyt, wydanieNiewidoczne, pamiecWydania, falszywe>>
+
+\* GitHub: lista Release'ów (archive) zaczyna pokazywać nowe Archiwum (verify-github-skrzynki, #887: po 2,8 s).
+NadazaWydanie ==
+    /\ wydanieNiewidoczne
+    /\ wydanieNiewidoczne' = FALSE
+    /\ krok' = "lista Release'ow GitHuba pokazuje nowe Archiwum"
+    /\ UNCHANGED <<dysk, issues, archiwa, zyje, watek, passes, blokada, zamkniecia, nadawanie, awarie, slady, niewidoczne,
+                   zakladanie, pamiec, odpowiedz, odczyt, pamiecWydania, falszywe>>
+
+\* keyed_box.py _held: zapis w pliku dawnieje LIST_LAG_S po swojej chwili (0 <= now - moment), a lista z pytania
+\* zadanego później już go pokazuje. Założenie (SKILL.md): zapytanie do report_box._TIMEOUT_S i opóźnienie listy
+\* mieszczą się w LIST_LAG_S, a każdy zapis najpierw zapisuje swoją chwilę, więc dawnieje dopiero, gdy jego lista pokazuje
+\* każdy zapis tego rodzaju. Lista, która przyszła wcześniej (odczyt), wstrzymuje dalej.
+Przedawnienie(r) ==
+    /\ zakladanie[r] = "swieze"
+    /\ IF r = "issue" THEN niewidoczne = {} ELSE ~wydanieNiewidoczne
+    /\ zakladanie' = [zakladanie EXCEPT ![r] = "brak"]
+    /\ krok' = "mija LIST_LAG_S od zapisu w pliku zakladania"
+    /\ UNCHANGED <<dysk, issues, archiwa, zyje, watek, passes, blokada, zamkniecia, nadawanie, awarie, slady, niewidoczne,
+                   pamiec, odpowiedz, odczyt, wydanieNiewidoczne, pamiecWydania, falszywe>>
 
 Next ==
     \/ \E q \in Q : Watek(q) \/ Budzenie(q) \/ Start(q) \/ Zamknij(q) \/ KoniecProcesu(q)
+    \/ Nadaza \/ NadazaWydanie \/ \E r \in Rodzaje : Przedawnienie(r)
     \/ \E w \in W : Nadaj(w)
     \/ Wylacz
 
@@ -951,6 +1074,7 @@ Next ==
 Sprawiedliwosc ==
     /\ \A q \in Q : WF_vars(Watek(q)) /\ WF_vars(Budzenie(q)) /\ WF_vars(KoniecProcesu(q)) /\ WF_vars(Start(q))
     /\ \A w \in W : WF_vars(Nadaj(w))
+    /\ WF_vars(Nadaza) /\ WF_vars(NadazaWydanie) /\ \A r \in Rodzaje : WF_vars(Przedawnienie(r))
 
 Spec == Init /\ [][Next]_vars /\ Sprawiedliwosc
 

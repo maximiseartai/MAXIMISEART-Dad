@@ -281,7 +281,13 @@ ALL = [
     [
         ("", "", ALL, "KOLEJKA SKRZYNKI OK", 0),
         ("", "sprawdz_model_kolejki.py", ALL, "KOLEJKA SKRZYNKI: PADŁO sprawdz_model_kolejki.py", 1),
-        ("", "explore_outbox.py --scope watek-okresu", ALL, "KOLEJKA SKRZYNKI: PADŁO explore_outbox.py --scope watek-okresu", 1),
+        (
+            "",
+            "explore_outbox.py --scope watek-okresu",
+            ALL,
+            "KOLEJKA SKRZYNKI: PADŁO explore_outbox.py --scope watek-okresu --scope watek-okresu-lista",
+            1,
+        ),
         ("3/3", "", ALL[3:], "KOLEJKA SKRZYNKI OK", 0),
         ("1/3", "", ALL[:1], "KOLEJKA SKRZYNKI OK", 0),
         ("6/6", "", [], "KOLEJKA SKRZYNKI: PADŁO (MUTACJE_CZESC to K/N z 1 <= K <= N <= 5, nie '6/6')", 1),

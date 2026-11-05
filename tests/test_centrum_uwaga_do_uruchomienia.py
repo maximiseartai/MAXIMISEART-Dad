@@ -12,6 +12,7 @@ import pytest
 
 from rozliczenia import settlement_process
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
+from rozliczenia.centrum.keyed_box import LIST_LAG_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Rejected, Unreachable
 from rozliczenia.telemetry import MetricsStore
 
@@ -329,12 +330,14 @@ def test_komentarz_do_usunietego_issue_uwagi_kolejka_porzuca_raz_i_wiecej_o_nie_
     box(centrum).issues.remove(issue)
     write_key(centrum)
 
+    centrum.surroundings.clock.pause(LIST_LAG_S)  # następne Centrum nie zakłada issue tuż po poprzednim (#879)
     centrum.restart()
     with centrum.client:
         assert wait_for(lambda: logs_sent(centrum, run_id)), "Logi nie dotarły po ponownym starcie"
         assert wait_for(lambda: queued(centrum) == []), "kolejka nie wysłała wszystkiego po komentarzu do usuniętej Uwagi"
     assert [note.title for note in box(centrum).issues_with("uwaga-taty")] == ["Inna Uwaga", "Uwaga za komentarzem"]
 
+    centrum.surroundings.clock.pause(LIST_LAG_S)  # następne Centrum nie zakłada issue tuż po poprzednim (#879)
     centrum.restart()
     with centrum.client:
         later = centrum.client.post("/api/dad-notes", json={"title": "Następna Uwaga"})

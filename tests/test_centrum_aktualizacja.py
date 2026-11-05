@@ -22,6 +22,7 @@ import pytest
 
 from rozliczenia.centrum import restart_guardian
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
+from rozliczenia.centrum.keyed_box import LIST_LAG_S
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Unreachable
@@ -692,6 +693,7 @@ def test_druga_nieudana_aktualizacja_po_zamknieciu_zgloszenia_karta_od_razu_pozw
     with github_out_of_reach(repository):
         update_until_done(centrum)
         assert send_report(centrum) == {"state": "sent"}
+        centrum.surroundings.clock.pause(LIST_LAG_S)  # Maks zamyka Zgłoszenie, gdy lista issue już je pokazuje (#879)
         box.close(1)
 
         again = update_with_slow_box(centrum)

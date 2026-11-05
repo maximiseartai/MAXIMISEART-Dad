@@ -15,6 +15,7 @@ from typing import Any, Final
 
 import pytest
 
+from rozliczenia.centrum.keyed_box import LIST_LAG_S
 from rozliczenia.centrum.report_box import Refused, SendOutcome, Sent, Unreachable
 
 from tests.fixtures.centrum import TOOL_COMMIT, FakeIssue, FakeReportBox, finished_view, without_times
@@ -371,6 +372,7 @@ def test_gdy_maks_zamknal_issue_okresu_powtorzony_przebieg_zaklada_nowe(tmp_path
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
     first = sent_check(centrum)
+    centrum.surroundings.clock.pause(LIST_LAG_S)  # Maks zamyka issue okresu, gdy lista issue już je pokazuje (#879)
     box(centrum).close(first.number)
 
     second = repeated(centrum)

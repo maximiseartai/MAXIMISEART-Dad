@@ -6,13 +6,23 @@ werdyktu jest sprawdzona tu raz; każde wejście ma swój test tłumaczenia prze
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 import pytest
 
-from rozliczenia.centrum.keyed_box import ACCEPTED_KEPT_S, NO_ANSWER_KEPT_S, REFUSED_KEPT_S, KeyedBox, NoKey
+from rozliczenia.centrum.keyed_box import (
+    ACCEPTED_KEPT_S,
+    NO_ANSWER_KEPT_S,
+    OPENING_FILE,
+    REFUSED_KEPT_S,
+    KeyedBox,
+    NoKey,
+)
 from rozliczenia.centrum.report_box import Commented, Refused, Rejected, Sent, Unreachable
 
 from tests.fixtures.centrum import FakeIssue, FakeReportBox
@@ -256,3 +266,45 @@ def test_jedno_sprawdzenie_klucza_naraz_a_odczyt_czeka_najwyzej_podany_czas() ->
 
     accepted(skrzynka)
     assert len(skrzynka.box.listed) == 1
+
+
+# Plik chwil zakładania, który nie wstrzymuje: chwila sprzed restartu komputera (zegar Centrum liczy od jego startu,
+# więc jest większa od dzisiejszych) i treść w innej postaci (następne zakładanie ją nadpisze).
+OPENINGS_FREE = {
+    "chwila-z-przyszlosci": json.dumps({"uwaga-taty": [1_000_000.0, "inny-zapis"]}),
+    "nie-json": "uwaga-taty 3.0",
+    "nie-slownik": "[3.0]",
+    "nie-para": json.dumps({"uwaga-taty": 3.0}),
+    "nie-liczba": json.dumps({"uwaga-taty": [True, "inny-zapis"]}),
+}
+
+
+@pytest.mark.parametrize("text", OPENINGS_FREE.values(), ids=OPENINGS_FREE.keys())
+def test_plik_chwil_zakladania_bez_swiezej_chwili_nie_wstrzymuje_zakladania(tmp_path: Path, text: str) -> None:
+    opening = tmp_path / OPENING_FILE
+    opening.write_text(text, encoding="utf-8")
+    keyed = KeyedBox(FakeReportBox(), lambda: KEY, clock=ManualClock(seconds=5.0), opening=opening)
+
+    assert keyed.open_issue("uwaga-taty", "tytuł", "treść") == Sent(1)
+    assert json.loads(opening.read_text(encoding="utf-8"))["uwaga-taty"][0] == 5.0
+
+
+def test_nieczytelny_plik_chwil_zakladania_wstrzymuje_zakladanie_bez_zapytania(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pliku, którego nie da się odczytać, nie da się wykluczyć: inne Centrum mogło właśnie założyć issue (#879)."""
+
+    opening = tmp_path / OPENING_FILE
+    read_text = Path.read_text
+
+    def locked(path: Path, *args: Any, **kwargs: Any) -> str:
+        if path == opening:  # odczyt odmawia jak przy pliku, który trzyma antywirus; zapis by przeszedł
+            raise PermissionError(13, "Odmowa dostępu", str(path))
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", locked)
+    box = FakeReportBox()
+    keyed = KeyedBox(box, lambda: KEY, clock=ManualClock(), opening=opening)
+
+    assert keyed.open_issue("uwaga-taty", "tytuł", "treść") == Unreachable()
+    assert box.keys == []

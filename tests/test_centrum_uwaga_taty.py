@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from rozliczenia.centrum.keyed_box import LIST_LAG_S
 from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, RETRY_S
 from rozliczenia.centrum.report_box import Refused, SendOutcome, Unreachable
 
@@ -266,6 +267,8 @@ def test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_ce
     assert (note["title"], note["number"]) == (TITLE, None)
 
     restarted = with_key(tmp_path)
+    # Zakładanie bez odpowiedzi wstrzymuje następne Centrum na LIST_LAG_S (#879); nowe Centrum ma nowy zegar od zera.
+    restarted.clock.pause(LIST_LAG_S)
     with restarted.client:
         assert restarted.report_box.wait_until(lambda box: len(box.issues) == 1)
         assert wait_for(lambda: case_states(restarted.client, "uwaga") == ["wyslana"])
