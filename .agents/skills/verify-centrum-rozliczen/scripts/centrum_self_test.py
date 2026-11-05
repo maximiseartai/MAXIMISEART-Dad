@@ -41,27 +41,28 @@ REQUIRED_FEATURE_HEADINGS = (
 )
 ROW_MARKER = "CENTRUM-SYN-ROW"  # create_centrum_fixture.py puts it in every synthetic workbook
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-# Every way to delete or move a file or folder fails on Windows while another process holds it open (WinError 32,
-# #921), so the drive reaches them only through the retrying helpers of ``drive/common.py`` (``DRIVE_HELPERS``).
-# The forms and the rule that catches each are the table of PR #925; ``REMOVAL_SAMPLES`` holds one sample of each.
+# Deleting, moving or replacing a file or folder fails on Windows while another process holds it open (WinError 32,
+# #921), so the drive does it only through the retrying helpers of ``drive/common.py`` (``DRIVE_HELPERS``). The
+# forms the guard catches and its boundary are the table in ``_removals``; ``REMOVAL_SAMPLES`` holds samples of each.
 OS_REMOVALS = frozenset({"remove", "unlink", "rename", "replace", "renames", "rmdir", "removedirs"})
 SHUTIL_REMOVALS = frozenset({"move", "rmtree"})
 REMOVING_MODULES = {"os": OS_REMOVALS, "shutil": SHUTIL_REMOVALS, "pathlib": frozenset()}
 # Attributes no other object of the drive has: any access counts, also an alias such as ``Path.unlink``.
 REMOVING_ATTRIBUTES = frozenset({"unlink", "rename", "rmdir", "rmtree", "removedirs", "renames", "move_into"})
 # Path methods whose names other objects share (``str.replace``, ``page.mouse.move``): a call with the Path signature
-# (one positional argument, no keyword), or any access on a pathlib class.
+# (one positional argument, or only ``target=``), or any access on a pathlib class.
 ONE_TARGET_METHODS = frozenset({"replace", "move"})
 PATHLIB_CLASSES = frozenset({"Path", "PurePath", "PosixPath", "WindowsPath", "PurePosixPath", "PureWindowsPath"})
 DRIVE_HELPERS = frozenset({"_while_open", "remove", "remove_tree", "remove_empty_folder", "move", "replace_file"})
-# What the guard cannot see, so review still must: a shell command (``rm``, ``del``, ``Remove-Item``), ``importlib``
-# or ``__import__``, ``getattr`` with a name computed at run time, ``operator.methodcaller``, ``tempfile`` cleanup.
 REMOVAL_SAMPLES = (
     "p.unlink()",
     "p.unlink(missing_ok=True)",
     "p.rename(q)",
     "p.rmdir()",
     "p.replace(q)",
+    "p.replace(target=q)",
+    "p.move(target=q)",
+    "p.rename(target=q)",
     "p.move(q)",
     "p.move_into(folder)",
     "drop = Path.unlink",
@@ -76,6 +77,9 @@ REMOVAL_SAMPLES = (
     "import os\nos.rmdir(p)",
     "import os\nos.removedirs(p)",
     "import os as system\nsystem.remove(p)",
+    "import os\nsystem = os\nsystem.remove(p)",
+    "import os\nsystem = os\nplatform = system\nplatform.replace(p, q)",
+    "import shutil\nfiles = shutil\nfiles.rmtree(p)",
     "import os.path\nos.remove(p)",
     "import shutil\nshutil.move(p, q)",
     "import shutil\nshutil.rmtree(p)",
@@ -94,6 +98,8 @@ REMOVAL_SAMPLES = (
 LOOKALIKE_SAMPLES = (
     "text.replace('a', 'b')",
     "text.replace(*pair)",
+    "text.replace('a', 'b', count=1)",
+    "import dataclasses\nchange = dataclasses\nchange.replace(item)",
     "moment.replace(tzinfo=zone)",
     "import dataclasses\ndataclasses.replace(item)",
     "import dataclasses\ndataclasses.replace(item, name='x')",
@@ -139,8 +145,27 @@ def _check_feature_map(errors: list[str]) -> None:
 
 
 def _removals(source: str, helpers: frozenset[str] = frozenset()) -> list[str]:
-    """Each deletion or move of a file or folder in ``source`` outside the top-level functions ``helpers``, as
-    ``<line>: <form>``."""
+    """Each deletion, move or replacement of a file or folder in ``source`` in one of the forms below, outside the
+    top-level functions ``helpers``, as ``<line>: <form>``.
+
+    The guard catches exactly these forms (a sample of each is in ``REMOVAL_SAMPLES``):
+
+    1. any access to an attribute of ``REMOVING_ATTRIBUTES`` (``p.unlink()``, ``p.rename(target=q)``, ``p.rmdir()``,
+       ``os.unlink``, ``Path.unlink`` as a value, ``p.move_into(d)``);
+    2. an attribute of ``OS_REMOVALS`` or ``SHUTIL_REMOVALS`` on a name bound to ``os`` or ``shutil`` by
+       ``import os|shutil [as x]`` or by an assignment ``x = os`` (also chained, ``y = x``);
+    3. ``from os|shutil import <name of those sets>``, and ``from os|shutil|pathlib import *``;
+    4. ``replace`` or ``move`` on a pathlib class (``Path.replace``, ``pathlib.Path.move``, ``P.replace`` after
+       ``from pathlib import Path as P``);
+    5. a call ``x.replace(...)`` or ``x.move(...)`` with the Path signature, one positional argument or only
+       ``target=``, unless ``x`` is an imported module (``dataclasses.replace(item)``);
+    6. ``getattr(x, "<name>")`` with a constant name of those sets.
+
+    Its boundary, which review still checks: a bound method assigned to a name (``swap = p.replace; swap(q)``), the
+    modules ``posix`` and ``nt``, a copy onto a file the server reads (``shutil.copy2``, ``shutil.copyfile``,
+    ``shutil.copytree(..., dirs_exist_ok=True)``; today no copy in ``drive/`` targets one), a shell command (``rm``,
+    ``del``, ``Remove-Item``), ``importlib`` or ``__import__``, a name computed at run time (``getattr`` with a
+    variable, ``vars(os)[...]``, ``operator.methodcaller``), and ``tempfile`` cleanup."""
 
     tree = ast.parse(source)
     skipped = {
@@ -162,6 +187,23 @@ def _removals(source: str, helpers: frozenset[str] = frozenset()) -> list[str]:
                     modules[bound] = root
         elif isinstance(node, ast.ImportFrom) and node.module == "pathlib":
             pathlib_classes.update(alias.asname or alias.name for alias in node.names if alias.name in PATHLIB_CLASSES)
+    assignments = [
+        (target.id, node.value.id)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Name)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    ]
+    aliased = True
+    while aliased:  # ``system = os``, also chained: until no assignment binds a new name to an imported module
+        aliased = False
+        for bound, source in assignments:
+            if source in imported and bound not in imported:
+                imported.add(bound)
+                aliased = True
+            if source in modules and modules.get(bound) != modules[source]:
+                modules[bound] = modules[source]
+                aliased = True
 
     def pathlib_class(value: ast.expr) -> bool:
         if isinstance(value, ast.Name):
@@ -194,9 +236,14 @@ def _removals(source: str, helpers: frozenset[str] = frozenset()) -> list[str]:
             if (
                 isinstance(function, ast.Attribute)
                 and function.attr in ONE_TARGET_METHODS
-                and len(node.args) == 1
-                and not any(isinstance(argument, ast.Starred) for argument in node.args)
-                and not node.keywords
+                and (
+                    (
+                        len(node.args) == 1
+                        and not any(isinstance(argument, ast.Starred) for argument in node.args)
+                        and not node.keywords
+                    )
+                    or (not node.args and [keyword.arg for keyword in node.keywords] == ["target"])
+                )
                 and not (isinstance(function.value, ast.Name) and function.value.id in imported)
             ):
                 found.add((node.lineno, f".{function.attr}(target)"))

@@ -170,8 +170,9 @@ def period_row(page: Page, token: str) -> Locator:
     return page.get_by_role("table", name="Tablica okresów").get_by_role("row").filter(has_text=token)
 
 
-# How long `remove` and `move` retry a file the server holds open on Windows; the server reads the harness's files
-# in milliseconds, so this only bounds a change that will never succeed.
+# How long every helper below (`remove`, `remove_tree`, `remove_empty_folder`, `move`, `replace_file`) retries a file
+# the server holds open on Windows; the server reads the harness's files in milliseconds, so this only bounds a change
+# that will never succeed.
 RETRY_OPEN_S = 10.0
 
 
