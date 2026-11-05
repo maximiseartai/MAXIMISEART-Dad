@@ -76,7 +76,7 @@ import re
 import threading
 from typing import Annotated, Final, Literal, Protocol, assert_never, get_args
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from rozliczenia.client_data import ForbiddenValues, Guarded
 from rozliczenia.call_trace import CallTrace
@@ -822,7 +822,8 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     Pole to ścieżka JSON z nazw pól, a klucz z danych (operator, kod pozycji) jest w niej ``[…]``, żeby uwaga nie
     niosła treści. Uwaga o polu Kopii wejścia idzie do ``input_copy_notes``, a każda inna do ``technical_notes``, które
     pokazuje karta Uruchomienia z Logów: Kopii karta nie pokazuje, więc karta po starcie Centrum zostaje taka jak przed
-    nim (ADR 0017). Logi bez niczego do zamaskowania wracają te same.
+    nim (ADR 0017). Pole typowane, które maski nie przyjmuje, zostaje puste albo odpada z uwagą techniczną
+    (``_representable``), więc Logi nie przepadają. Logi bez niczego do zamaskowania wracają te same.
     """
 
     notes: list[str] = []
@@ -868,11 +869,91 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     assert isinstance(walked, dict)
     walked["technical_notes"] = [*walked["technical_notes"], *dict.fromkeys(notes)]
     walked["input_copy_notes"] = [*walked["input_copy_notes"], *dict.fromkeys(copy_notes)]
-    return RunLog.model_validate(walked)
+    return _representable(walked)
 
 
 _INPUT_COPY: Final = "input_copy"
 """Pole Kopii wejścia w Logach; uwagi strażnika o nim idą do ``input_copy_notes``."""
+
+_Path = tuple[str | int, ...]
+
+
+def _representable(walked: dict[str, object]) -> RunLog:
+    """Logi z JSON-a po strażniku (``guarded``), w którym każde pole przyjmuje swoją wartość.
+
+    Pole typowane (kwota ``Decimal``, data, wartość z zamkniętej listy), w którym strażnik zamaskował tekst, maski nie
+    przyjmuje, więc takie Logi nie przeszłyby walidacji i przepadły. Pole dostaje ``None``, a gdy i ``None`` nie
+    przyjmuje, odpada najbliższy element listy nad nim (zlecenie, krok, plik) albo ``None`` dostaje pole nad nim, z
+    uwagą techniczną o tym miejscu. Pole Logów najwyższego poziomu bez ``None`` i poza listą (identyfikator, chwila
+    startu) zostaje błędem walidacji: tych pól proces nie czyta z pliku taty.
+    """
+
+    # Miejsce w Logach przed cięciami → odpadło z listy (``False``: dostało ``None``). Błędy idą od ostatniego, więc
+    # element, który odpada, przesuwa w liście tylko elementy już bez błędów, a miejsca w uwagach są te sprzed cięć.
+    cuts: dict[_Path, bool] = {}
+    while True:
+        try:
+            record = RunLog.model_validate(walked)
+        except ValidationError as failure:
+            path = _existing(walked, failure.errors()[-1]["loc"])
+            if path in cuts:  # pole dostało już ``None``, a go nie przyjmuje: błąd stoi teraz na nim samym
+                path = path[:-1]
+            if not path:
+                raise
+            container = _at(walked, path[:-1])
+            if isinstance(container, list) and isinstance(path[-1], int):
+                del container[path[-1]]
+                cuts = {cut: kind for cut, kind in cuts.items() if cut[: len(path)] != path}
+                cuts[path] = True
+            else:
+                assert isinstance(container, dict)
+                container[path[-1]] = None
+                cuts[path] = False
+            continue
+        notes: dict[bool, list[str]] = {True: [], False: []}  # Kopia wejścia → uwagi
+        for path, removed in sorted(cuts.items()):
+            what = f"pominięto {_place(path)}" if removed else f"pole {_place(path)} jest puste"
+            notes[path[0] == _INPUT_COPY].append(
+                f"Reguła danych: {what}: strażnik zamaskował w nim wartość, której pole nie przyjmuje."
+            )
+        return record.model_copy(
+            update={
+                "technical_notes": [*record.technical_notes, *notes[False]],
+                "input_copy_notes": [*record.input_copy_notes, *notes[True]],
+            }
+        )
+
+
+def _existing(walked: object, location: Sequence[str | int]) -> _Path:
+    """Najdłuższy początek miejsca błędu walidacji ``location``, który jest w JSON-ie ``walked`` (dalej pydantic dopisuje
+    nazwy wariantów typu)."""
+
+    path: list[str | int] = []
+    for key in location:
+        if isinstance(walked, dict) and key in walked:
+            walked = walked[key]
+        elif isinstance(walked, list) and isinstance(key, int):
+            walked = walked[key]
+        else:
+            break
+        path.append(key)
+    return tuple(path)
+
+
+def _at(walked: object, path: _Path) -> object:
+    for key in path:
+        if isinstance(walked, dict):
+            walked = walked[key]
+        elif isinstance(walked, list) and isinstance(key, int):
+            walked = walked[key]
+    return walked
+
+
+def _place(path: _Path) -> str:
+    place = ""
+    for key in path:
+        place = f"{place}[{key}]" if isinstance(key, int) else _field(place, key)
+    return place
 
 
 def _child(source: object, key: str) -> tuple[object, bool]:
