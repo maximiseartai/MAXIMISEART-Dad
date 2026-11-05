@@ -1,7 +1,8 @@
 # Zamknięte okno
 
-Dad closes the efenix tab when the browser sends a request of the run (the browser side calls `page.close()` from its
-`request` event).
+Dad closes the efenix tab when the browser sends a request of the run. The browser side routes every request
+(`page.route`) and calls `page.close()` from the route of the faulted one: a page it opens closes while Chromium holds
+it, any other request after it went on to efenix.
 
 ## Sub-features
 
@@ -18,3 +19,6 @@ Dad closes the Chrome window of the tool in the middle of the Wycena w efenix.
 ## Gotchas
 
 - Closing the whole browser is not separate: the window sees a closed page either way (`BrowserEfenix.closed`).
+- The `request` event of the reload the efenix script starts after „Załaduj do zlecenia”, and a `page.close()` sent
+  while that navigation goes on, sometimes reached Chromium only when the context closed: the case then did not close
+  the tab in 4 tries and ended `LUKA MODELU` (review of round 2 of #867). A held route closes it every time.

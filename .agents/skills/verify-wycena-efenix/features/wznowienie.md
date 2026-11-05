@@ -6,10 +6,13 @@ was, and once after each change he could make by hand in efenix to the order the
 ## Sub-features
 
 - Without Dad's change: efenix and the Plik zbiorczy end like one run without a fault, except #774 (an order stopped
-  between „Załaduj do zlecenia” and reading the reloaded page is left to Dad).
-- `FINISHED`, `REMOVED_EMMETT`, `REMOVED_ADDED`, `OWN`: the second run never changes an order Dad left with a pricing.
-- A pricing that already is gets completed only when the Ślad has it as „Emmett załadowany” and the page is as the
-  process leaves it after Emmett, only by adding quantities in empty positions, never by loading Emmett again.
+  between „Załaduj do zlecenia” and reading the reloaded page is left to Dad) and `przerwanie-przed-zapisem-ilosci`
+  (an order stopped after the Ślad got a quantity ahead and before efenix saved it is left to Dad, #864).
+- `FINISHED`, `REMOVED_EMMETT`, `REMOVED_ADDED`, `OWN`: the second run never changes an order Dad left with a pricing;
+  `REMOVED_ADDED` after a quantity efenix saved is the path of #864.
+- A pricing that already is gets completed only when the Ślad has it as „Emmett załadowany” and the page has exactly
+  Emmett's quantities and those the Ślad has ahead (`entering`), only by adding quantities in empty positions, never
+  by loading Emmett again.
 
 ## How to get to it (user POV)
 

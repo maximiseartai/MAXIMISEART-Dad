@@ -43,7 +43,8 @@ from these sentences, never from a run:
   instead of the order page is `HttpStatus` (#808), a logout or a login form under the order address is a logout, a
   closed tab is `WindowClosed` „cokolwiek zgłosił wtedy Playwright”, and a tab closed while the window waits for Dad's
   login is a closed window at once (#758). Only a page efenix really sent in another shape (a redirect elsewhere) may
-  be a shape. A run that does not stop ends like the reference or leaves the faulted order to Dad (a date efenix did
+  be a shape. The Zatrzymanie after a failed write of the Ślad ahead of a quantity (`EFENIX_SLAD_NIEZAPISANY`, no facts
+  of the window) is never the cause of a fault in efenix, because no fault of this checker touches the disk. A run that does not stop ends like the reference or leaves the faulted order to Dad (a date efenix did
   not save is `DateRefused.NOT_SAVED`); it never makes an order gotowe that differs from one run without a fault.
   Harm: Maks chases a changed efenix that never changed, or Dad gets a Znacznik on an order nobody checked with Emmett.
 - **BEZ_ZMIANY_STATUSU**: the window never changes an order's status (`status_changes == 0`), never clicks Przekazanie
@@ -54,11 +55,13 @@ from these sentences, never from a run:
   Znaczniki efenix are exactly the gotowe orders; a gotowe order has the file's quantities, `Kwota` (AU) and the date
   (`GLOSSARY.md`, Znacznik efenix). Harm: Dad and Maks cannot tell what the tool did to efenix.
 - **WZNOWIENIE**: a second Uruchomienie never changes an order Dad left with a pricing after changing it by hand;
-  changes a pricing that already is only when the Ślad has it as „Emmett załadowany” and the page has only Emmett's
-  quantities and the file's quantities in positions empty at Emmett (`GLOSSARY.md`, Ślad Wyceny Emmetta), only by
-  adding quantities in empty positions, never by loading Emmett again; and without Dad's change ends like one run.
-  An order Dad emptied has no pricing (`efenix_pricing`: „Zlecenie z kwotą w efenix różną od 0 ma już wycenę”), so it
-  may be priced like a new one. Harm: the tool writes over Dad's work in efenix (#757).
+  changes a pricing that already is only when the Ślad has it as „Emmett załadowany” and the page has exactly Emmett's
+  quantities and the quantities the tool started entering, every other position empty (`GLOSSARY.md`, Ślad Wyceny
+  Emmetta: „zapisuje ją w śladzie, zanim wpisze ją w efenix”), only by adding quantities in empty positions, never by
+  loading Emmett again; and without Dad's change ends like one run, except the two accepted risks below. An order Dad
+  emptied has no pricing (`efenix_pricing`: „Zlecenie z kwotą w efenix różną od 0 ma już wycenę”), so it may be priced
+  like a new one. The Ślad is read as `efenix_emmett_trace` says: an entry without `entering` makes the whole file no
+  trace. Harm: the tool writes over Dad's work in efenix (#757, #864).
 - **BEZ_DANYCH**: the Logi (orders, Zatrzymanie, Komunikaty, as `run_logs` builds them), the dziennik and the Ślad
   have no order number, efenix identifier or address (ADR 0025, `efenix_emmett_trace`).
 - **BEZ_WYJATKU** and **BEZ_AWARII**: a run ends with a result or a Zatrzymanie of the window within `CASE_LIMIT_S`, a
@@ -118,22 +121,23 @@ remove that folder (only one with `.katalog-runu`).
 
 A known finding is a violation the code has today, in `KNOWN_FINDINGS` with the story after which it is excused; it
 does not fail the check. Each names in `after` the first runs after which it showed in every whole run (three on
-2026-11-05), and any run or CI part that runs one of them without the finding ends with `ZNALEZISKO ZNIKNĘŁO`: delete the
-entry there and here. A name outside the space is `LUKA MODELU`. A `flaky` one (a race) names none and never reports
+2026-11-05). Each of them counts on its own: a run or CI part that runs one of them and does not show the finding after
+that very case ends with `ZNALEZISKO ZNIKNĘŁO`, naming the cases, also while the finding still shows after the others
+(a fix of the list only). Narrow the entry there and here to the cases after which it still shows, or delete it. A name outside the space is `LUKA MODELU`. A `flaky` one (a race) names none and never reports
 that; its match is the race's exact shape, so any other outcome of the same fault is a new violation.
 
 | Name | Counterexample | Story |
 |---|---|---|
 | `blad-http-poza-strona-zlecenia` | `HTTP_4XX przy POST action_fill_orders.php (okno) #1`: `EFENIX_OKNO_ZATRZYMANE (RESULTS, OtherShape(NO_TABLE))`; the same for `GET index.php` (`ElementCount(#field_numer, 0)`) and `action_save_index.php` (`ANSWER_NOT_JSON`), 4xx and 5xx | `_read_order` names the HTTP status only for the order page (#808); an error answer to the list, the search or a quantity is called a page in another shape, so Maks sees a changed efenix on a server error. |
 | `gotowe-bez-wyceny-emmetta` | `HTTP_4XX przy POST action_load_emmett.php #2`: order 2, whose Emmett contradicts the file, ends gotowe with `Emmett 0x` and a Znacznik efenix instead of an Ostrzeżenie Emmetta; also `REDIRECT` and order 1 | efenix refuses „Załaduj do zlecenia”, its page script reloads anyway, and the window reads the empty page as the Wycena Emmetta: the Ślad gets an empty Emmett and the process adds the file's quantities. |
-| `karta-zamknieta-w-nawigacji` (flaky) | `TAB_CLOSED przy GET page_order_edit.php #3`: `EFENIX_OKNO_ZATRZYMANE (EMMETT, BrowserFailure(Error, RELOAD))`; also `BrowserFailure(Error, OPEN)` at the list again and the order page; 3 to 6 of the 8 closes at a navigation (of 35 tab closes) in each of three whole runs, never another error type or operation | the navigation error reaches the window before `Page.is_closed()` is true, so `_action` does not see the closed tab. Excused only as Playwright's plain `Error` at the operation that opens that page (`_RACE`: `OPEN` at the list and the order page, `RELOAD` after Emmett), so a `TargetClosedError`, an answer, a date, a search or a quantity with a closed tab stays a new violation. A regression that gives exactly this error at every navigation passes as the race: 8 of 35 tab closes are navigations, and some race in every run, so no share of them can tell the two apart. |
-| `wznowienie-dopisuje-usunieta-ilosc` | `TORN przy POST action_save_index.php #2 → ponownie, tata usunął ilość dopisaną przez proces`: `[012=1, 019=2]` → `[012=1, 015=1, 019=2]` | the page looks as before the process added the quantity, and the Ślad keeps only „Emmett załadowany”, not the added quantities. This is #864 (after a normal end the same edit of Dad's gives `EFENIX_WYCENA_INNA`, #757); after its fix every run or part with `TORN` at `action_save_index.php` ends with `ZNALEZISKO ZNIKNĘŁO`, so the PR of that fix deletes this entry here and in `KNOWN_FINDINGS`. |
+| `karta-zamknieta-w-nawigacji` (flaky) | `TAB_CLOSED przy GET page_order_edit.php #3`: `EFENIX_OKNO_ZATRZYMANE (EMMETT, BrowserFailure(Error, RELOAD))`; also `BrowserFailure(Error, OPEN)` at the list again and the order page; 3 to 7 of the 8 closes at a navigation (of 35 tab closes) in each of the whole runs and runs of `--variant zamkniete-okno` on 2026-11-05, never another error type or operation | the navigation error reaches the window before `Page.is_closed()` is true, so `_action` does not see the closed tab. Excused only as Playwright's plain `Error` at the operation that opens that page (`_RACE`: `OPEN` at the list and the order page, `RELOAD` after Emmett), so a `TargetClosedError`, an answer, a date, a search or a quantity with a closed tab stays a new violation. A regression that gives exactly this error at every navigation passes as the race: 8 of 35 tab closes are navigations, and some race in every run, so no share of them can tell the two apart. |
 
 ## Accepted risks
 
 | Name | Story |
 |---|---|
 | `#774` | A stop between „Załaduj do zlecenia” and reading the reloaded page leaves the order with Emmett only and outside the Ślad; the second run gives an error of that order alone, which Dad finishes himself (accepted in #774, „Wyjątek” in `tests/test_wycena_efenix.py`). |
+| `przerwanie-przed-zapisem-ilosci` | A stop other than a logout, or a kill, after the Ślad got a quantity ahead and before efenix saved it (in the whole run of 2026-11-05: `CUT` at the second `action_save_index.php` and at the stylesheet of the page reloaded after Emmett, and every first run that leaves the same state, which shares their second run) leaves in the Ślad a quantity efenix does not have; the page cannot tell it from one Dad removed, so the second run without Dad's change gives an error of that order alone and changes nothing in it (#864; the model's finding 3 in `verify-wznowienie-wyceny-efenix`, the #864 exception of the sweep in `tests/test_wycena_efenix.py`). Matched only when the page has Emmett's quantities and a part of the Ślad's, nothing else. |
 
 ## When the check fails
 
@@ -165,6 +169,8 @@ Each gives `WYCENA EFENIX: NOWE NARUSZENIE`:
   `karta-zamknieta-w-nawigacji` must not excuse;
 - #757: „Emmett załadowany” written before „Załaduj do zlecenia”; a resume without checking that the page is as the
   process left it after Emmett; a pricing without a Ślad completed like one after Emmett;
+- #864: a quantity entered in efenix without its write ahead in the Ślad; a resume that takes an empty position the
+  Ślad has ahead for one efenix did not save (the rule before the fix, which adds back a quantity Dad removed);
 - the window clicking Przekazanie do akceptacji; the Ślad keyed by the order number; a Komunikat that always says
   nothing changed; a Zatrzymanie without the Znaczniki of orders gotowe before it.
 

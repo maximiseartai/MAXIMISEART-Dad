@@ -27,8 +27,10 @@ The invariants (``Rule``), each with the domain sentence it comes from:
   Zatrzymanie (and a ``begun`` entry in the dziennik), a Komunikat that says nothing changed is true, the Znaczniki
   efenix are exactly the gotowe orders, and a gotowe order has the file's quantities, the AU amount and the date.
 - WZNOWIENIE: a second run never changes an order Dad changed by hand, changes an order that already has a pricing only
-  when the Ślad has it as „Emmett załadowany” and the page is as the process leaves it after Emmett (``GLOSSARY.md``),
-  never loads Emmett again over a pricing, and without Dad's change ends like one run (exception accepted in #774).
+  when the Ślad has it as „Emmett załadowany” and the page has exactly Emmett's quantities and the quantities the tool
+  started entering, every other position empty (``GLOSSARY.md``), never loads Emmett again over a pricing, and without
+  Dad's change ends like one run (exceptions accepted in #774 and #864: a stop before „Załaduj do zlecenia” was read,
+  and a stop after the Ślad got a quantity ahead and before efenix saved it).
 - BEZ_DANYCH: the Logi (orders, Zatrzymanie, Komunikaty), the dziennik and the Ślad have no order number, efenix
   identifier or address.
 - BEZ_WYJATKU: a run ends with a result or a Zatrzymanie of the window, never with an unexpected error, and a second run
@@ -64,7 +66,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from openpyxl.styles import PatternFill
-from playwright.sync_api import Browser, Page, Request, sync_playwright
+from playwright.sync_api import Browser, Page, Request, Route, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
 
 from awarie_efenix import DAD, FORBIDDEN_CLICK, LOGOUTS, OUTAGES, Call, Counter, Fault, Plan, Proxy, call_kind
@@ -267,6 +269,7 @@ class Cause(enum.Enum):
     CLOSED = "zamknięte okno (WindowClosed)"
     SHAPE = "strona w innej budowie (ElementCount, OtherShape)"
     UNNAMED = "błąd przeglądarki bez nazwanego działania"
+    TRACE = "Ślad Wyceny Emmetta nie zapisał ilości z wyprzedzeniem (EFENIX_SLAD_NIEZAPISANY)"
 
 
 @dataclass(frozen=True)
@@ -398,10 +401,20 @@ def applies(fault: Fault, role: Role) -> bool:
             return True
 
 
-def classify(facts: PricingStopped, code: str) -> Cause:
-    """Category of a Zatrzymanie of the window from its facts; ``EfenixUnreachable`` carries a browser failure at the
-    list like ``UnexpectedPage`` does, so its Komunikat tells them apart."""
+TRACE_NOT_SAVED: Final = "EFENIX_SLAD_NIEZAPISANY"
+"""Komunikat of the Zatrzymanie after a failed write ahead of a quantity (``efenix_messages.emmett_trace_not_saved``)."""
 
+
+def classify(facts: PricingStopped | None, code: str) -> Cause:
+    """Category of a Zatrzymanie from its facts; ``EfenixUnreachable`` carries a browser failure at the list like
+    ``UnexpectedPage`` does, so its Komunikat tells them apart. A failed write of the Ślad ahead of a quantity stops
+    the Wycena from the process, not the window, so only its Komunikat names it (``efenix_pricing._entered``); no fault
+    of this checker touches the disk, so it is never the expected cause."""
+
+    if code == TRACE_NOT_SAVED:
+        return Cause.TRACE
+    if facts is None:
+        raise ValueError(f"Zatrzymanie {code} bez faktów okna efenix")
     match facts.cause:
         case LoginSign():
             return Cause.LOGIN
@@ -443,10 +456,15 @@ def describe(facts: PricingStopped) -> str:
     return f"{part}, {cause}"
 
 
-def code_of(facts: PricingStopped) -> str:
-    """Komunikat of a Zatrzymanie (``efenix_pricing._efenix_stops``): a sign of logout is „wylogowany”, a closed window
-    „okno zamknięte”, a browser failure at the list before it opened „niedostępny”, the rest „okno zatrzymane”."""
+def code_of(facts: PricingStopped | None, cause: Cause) -> str:
+    """Komunikat of a Zatrzymanie (``efenix_pricing._efenix_stops`` and ``_entered``): a failed write of the Ślad is
+    „Ślad niezapisany”, a sign of logout „wylogowany”, a closed window „okno zamknięte”, a browser failure at the list
+    before it opened „niedostępny”, the rest „okno zatrzymane”."""
 
+    if cause is Cause.TRACE:
+        return TRACE_NOT_SAVED
+    if facts is None:
+        raise ValueError(f"Zatrzymanie {cause.name} bez faktów okna efenix")
     match facts.cause:
         case LoginSign():
             return "EFENIX_WYLOGOWANY"
@@ -604,14 +622,6 @@ KNOWN_FINDINGS: Final[tuple[Known, ...]] = (
         after=(),
         flaky=True,
     ),
-    Known(
-        "wznowienie-dopisuje-usunieta-ilosc",
-        "tata usuwa po przerwaniu ilość, którą proces dopisał po Emmetcie, a ponowne uruchomienie dopisuje ją znowu: "
-        "strona wygląda jak przed jej dopisaniem, a Ślad ma tylko stan „Emmett załadowany”, nie dopisane ilości; "
-        "to #864; jego poprawka kończy cały przebieg ZNALEZISKO ZNIKNĘŁO, więc ten wpis usuwa PR poprawki",
-        lambda violation: violation.rule == "WZNOWIENIE" and violation.tag == "dopisał po tacie" and violation.edit is Edit.REMOVED_ADDED,
-        after=("TORN przy POST action_save_index.php #1 [ilosc]", "TORN przy POST action_save_index.php #2 [ilosc]"),
-    ),
 )
 ACCEPTED_RISKS: Final[tuple[Risk, ...]] = (
     Risk(
@@ -619,6 +629,14 @@ ACCEPTED_RISKS: Final[tuple[Risk, ...]] = (
         "przerwanie między „Załaduj do zlecenia” a odczytem przeładowanej strony zostawia zlecenie z samą Wyceną "
         "Emmetta poza Śladem, a ponowne uruchomienie daje błąd tylko tego zlecenia, które tata kończy sam (#774)",
         lambda violation: violation.rule == "WZNOWIENIE" and violation.tag == "#774",
+    ),
+    Risk(
+        "przerwanie-przed-zapisem-ilosci",
+        "Zatrzymanie inne niż wylogowanie albo zabicie po zapisie ilości z wyprzedzeniem w Śladzie, a przed zapisem jej "
+        "w efenix zostawia w Śladzie ilość, której efenix nie ma; strona nie odróżnia jej od ilości usuniętej przez tatę, "
+        "więc ponowne uruchomienie daje błąd tylko tego zlecenia i niczego w nim nie zmienia (#864, przyjęte w modelu "
+        "verify-wznowienie-wyceny-efenix i w wyjątku SWEEP w tests/test_wycena_efenix.py)",
+        lambda violation: violation.rule == "WZNOWIENIE" and violation.tag == "przerwanie-przed-zapisem-ilosci",
     ),
 )
 
@@ -637,11 +655,13 @@ def marked(source: Path) -> tuple[int, ...]:
 
 
 def trace_states(files: Mapping[str, bytes]) -> dict[str, object]:
-    """The Ślad Wyceny Emmetta of the period from the files of its folder, by order number: ``"gotowe"`` or
-    ``{"emmett": {...}}``.
+    """The Ślad Wyceny Emmetta of the period from the files of its folder, by order number: ``"gotowe"`` or, for
+    „Emmett załadowany”, ``{"emmett": {...}, "entering": {...}}`` with Emmett's quantities and the quantities the tool
+    started entering.
 
-    Read with its key (HMAC-SHA256 of the number), not through ``efenix_emmett_trace``; an unreadable trace is no trace,
-    as its docstring says."""
+    Read with its key (HMAC-SHA256 of the number), not through ``efenix_emmett_trace``. As its docstring says, a trace
+    that cannot be read or has another shape is no trace, also one with a „Emmett załadowany” without ``entering``
+    (the format before the write ahead)."""
 
     try:
         secret = bytes.fromhex(files["klucz"].decode("utf-8"))
@@ -649,8 +669,54 @@ def trace_states(files: Mapping[str, bytes]) -> dict[str, object]:
         entries = sorted(orders.items())
     except (KeyError, ValueError, TypeError, AttributeError):
         return {}
+    if not all(_trace_entry(entry) for _key, entry in entries):
+        return {}
     by_key = {hmac.new(secret, number.encode(), hashlib.sha256).hexdigest(): number for number in NUMBERS}
     return {by_key.get(key, f"nieznany {key[:8]}"): entry for key, entry in entries}
+
+
+def _trace_entry(entry: object) -> bool:
+    if entry == "gotowe":
+        return True
+    return (
+        isinstance(entry, dict)
+        and entry.keys() == {"emmett", "entering"}
+        and all(isinstance(quantities, dict) and all(type(quantity) is int for quantity in quantities.values()) for quantities in entry.values())
+    )
+
+
+def finishes(state: Priced, trace: object) -> bool:
+    """``GLOSSARY.md``, Ślad Wyceny Emmetta: the second run finishes a pricing that already is only for an order „Emmett
+    załadowany” whose page has exactly Emmett's quantities and the quantities the tool started entering, every other
+    position empty."""
+
+    if not isinstance(trace, dict):
+        return False
+    left = {code: quantity for code, quantity in (*trace["emmett"].items(), *trace["entering"].items()) if quantity}
+    return dict(state.quantities) == left
+
+
+def shown_trace(trace: object) -> str:
+    """The Ślad of one order for a report: „gotowe”, nothing, or Emmett's and the ahead quantities other than 0."""
+
+    if not isinstance(trace, dict):
+        return "brak" if trace is None else str(trace)
+    emmett, ahead = ({code: quantity for code, quantity in sorted(trace[key].items()) if quantity} for key in ("emmett", "entering"))
+    return f"„Emmett załadowany” {emmett}, z wyprzedzeniem {ahead}"
+
+
+def unsaved_ahead(state: Priced, trace: object) -> bool:
+    """The model's accepted ``przerwanie-przed-zapisem-ilosci`` (``verify-wznowienie-wyceny-efenix``, #864): the page
+    has Emmett's quantities and some of those the Ślad has ahead, and lacks at least one of the latter, because a stop
+    other than a logout came after the Ślad got it and before efenix saved it; the page cannot tell it from a quantity
+    Dad removed, so the second run leaves the order to Dad."""
+
+    if not isinstance(trace, dict):
+        return False
+    page, emmett, ahead = dict(state.quantities), trace["emmett"], trace["entering"]
+    entered = {code: quantity for code, quantity in ahead.items() if quantity and page.get(code) == quantity}
+    left = {code: quantity for code, quantity in (*emmett.items(), *entered.items()) if quantity}
+    return page == left and any(quantity and page.get(code) != quantity for code, quantity in ahead.items())
 
 
 class Journal:
@@ -735,8 +801,8 @@ class Run:
     error: str | None = None
     snapshots: dict[str, Disk] = field(default_factory=dict)
     injected: bool = True
-    """The browser side did what the fault asks before the run ended (``TAB_CLOSED``, ``LOGIN_*``): a ``page.close()``
-    sent while Chromium starts the first navigation sometimes takes effect only when the context closes."""
+    """The browser side did what the fault asks before the run ended (``TAB_CLOSED``, ``LOGIN_*``); a case whose fault
+    did not take effect in ``RETRIES`` more tries is ``LUKA MODELU``, never a pass."""
 
 
 @dataclass(frozen=True)
@@ -864,7 +930,14 @@ def run_once(
 
 def _dad(page: Page, plan: Plan, log_in: Callable[[], None]) -> threading.Event:
     """Dad in the browser: closes the tab when it sends ``plan.target`` (``TAB_CLOSED``), and on the login page logs in
-    (``LOGIN_LATER``) or closes the tab (``LOGIN_CLOSED``) when it sends ``DAD``. The event is set when he starts it."""
+    (``LOGIN_LATER``) or closes the tab (``LOGIN_CLOSED``) when it sends ``DAD``. The event is set when he starts it.
+
+    The tab closes in the route of ``plan.target``, which Chromium holds until its handler answers: the ``request``
+    event of the reload that the efenix script starts after „Załaduj do zlecenia” sometimes reached Playwright only when
+    the context closed, and a ``page.close()`` sent while that navigation went on sometimes took effect only then too
+    (2026-11-05: 2 of 4 runs of ``--rola strona-po-emmetcie`` without a close, 2 of 15 with a close after
+    ``route.continue_()``). So a navigation closes while held and never reaches efenix, and any other request reaches
+    efenix first, as before."""
 
     counter = Counter()
     acted = threading.Event()
@@ -885,10 +958,25 @@ def _dad(page: Page, plan: Plan, log_in: Callable[[], None]) -> threading.Event:
             elif plan.fault is Fault.LOGIN_CLOSED:
                 close()
             return
-        if plan.fault is Fault.TAB_CLOSED and counter.next(kind) == plan.target:
+
+    def on_route(route: Route) -> None:
+        request = route.request
+        kind = call_kind(request.method, request.url, request.post_data or "")
+        if kind[1] in (FORBIDDEN_CLICK, DAD) or counter.next(kind) != plan.target:
+            route.continue_()
+        elif request.is_navigation_request():
+            # A close sent while Chromium goes on with a navigation sometimes waits for the context to close; held, it
+            # does not. A page's GET changes nothing in efenix, so it need not reach it.
+            close()
+            with suppress(PlaywrightError):
+                route.abort()
+        else:
+            route.continue_()
             close()
 
     page.on("request", on_request)
+    if plan.fault is Fault.TAB_CLOSED:
+        page.route("**/*", on_route)
     return acted
 
 
@@ -1064,12 +1152,13 @@ def check_first(case: Case, run: Run) -> list[Violation]:
     expect = expected(case.fault, case.call, case.role)
     ending = run.outcome.ending
     if isinstance(ending, Stop):
-        facts = ending.facts
-        if ending.kind != "stop" or not isinstance(facts, PricingStopped):
-            add("BEZ_WYJATKU", "nieoczekiwany błąd", f"Zatrzymanie {ending.message.code} bez faktów okna efenix")
+        facts = ending.facts if isinstance(ending.facts, PricingStopped) else None
+        code = ending.message.code
+        if ending.kind != "stop" or (facts is None and code != TRACE_NOT_SAVED):
+            add("BEZ_WYJATKU", "nieoczekiwany błąd", f"Zatrzymanie {code} bez faktów okna efenix")
             return found
-        cause = classify(facts, ending.message.code)
-        shown = f"Zatrzymanie {ending.message.code} ({describe(facts)})"
+        cause = classify(facts, code)
+        shown = f"Zatrzymanie {code}" + ("" if facts is None else f" ({describe(facts)})")
         if not allows(expect, cause):
             allowed = [category.value for category in sorted(expect.stops, key=lambda item: item.name)]
             if expect.same:
@@ -1077,10 +1166,13 @@ def check_first(case: Case, run: Run) -> list[Violation]:
             if expect.left:
                 allowed.append("zlecenie zostawione tacie")
             add("PRZYCZYNA", f"{cause.name} zamiast {'/'.join(sorted(item.name for item in expect.stops)) or 'wyniku'}",
-                f"{shown}: {cause.value}; oczekiwane: {'; '.join(allowed)}", facts.cause)
-        codes = {code_of(facts)} | ({"EFENIX_NIEDOSTEPNY"} if isinstance(facts.cause, BrowserFailure) and facts.stopped_at is None else set())
-        if ending.message.code not in codes:
+                f"{shown}: {cause.value}; oczekiwane: {'; '.join(allowed)}", None if facts is None else facts.cause)
+        unreachable = facts is not None and isinstance(facts.cause, BrowserFailure) and facts.stopped_at is None
+        codes = {code_of(facts, cause)} | ({"EFENIX_NIEDOSTEPNY"} if unreachable else set())
+        if code not in codes:
             add("PRZYCZYNA", "komunikat", f"{shown}: przyczyna wymaga Komunikatu {' albo '.join(sorted(codes))}")
+        if facts is None:
+            return found
         rows = {FIRST_ROW + case.order} | ({None} if case.role in _START else set())
         row = None if facts.stopped_at is None else facts.stopped_at.row
         if row not in rows:
@@ -1106,17 +1198,6 @@ def check_first(case: Case, run: Run) -> list[Violation]:
         tag = "gotowe inne niż bez awarii" if outcomes.get(case.order) == "gotowe" else "przebieg bez Zatrzymania"
         add("PRZYCZYNA", tag, f"przebieg bez Zatrzymania ({shown}); oczekiwane: {'; '.join(allowed) or 'Zatrzymanie'}")
     return found
-
-
-def as_left_after_emmett(state: Priced, emmett: Mapping[str, int], index: int) -> bool:
-    """``GLOSSARY.md``, Ślad Wyceny Emmetta: the page has only Emmett's quantities and the file's quantities in the
-    positions empty at Emmett."""
-
-    page = dict(state.quantities)
-    return all(
-        page.get(code, 0) == emmett[code] if emmett.get(code, 0) else page.get(code, 0) in (0, FILE[index].get(code, 0))
-        for code in emmett.keys() | page.keys()
-    )
 
 
 def check_resume(resume: Resume, run: Run) -> list[Violation]:
@@ -1148,7 +1229,7 @@ def check_resume(resume: Resume, run: Run) -> list[Violation]:
             add("WZNOWIENIE", tag, f"zmienił zlecenie {index + 1}, które tata zmienił ręcznie: {was} → {now} (dopisane {added})")
             continue
         if was.amount != 0 and now != was:
-            finishing = isinstance(emmett, dict) and as_left_after_emmett(was, emmett, index)
+            finishing = finishes(was, trace)
             only_added = (
                 now.emmett_loads == was.emmett_loads
                 and now.day == was.day
@@ -1158,11 +1239,18 @@ def check_resume(resume: Resume, run: Run) -> list[Violation]:
             )
             if not (finishing and only_added):
                 add("WZNOWIENIE", "zmiana wyceny, która już jest",
-                    f"zmienił wycenę zlecenia {index + 1}, która już była ({was} → {now}), a Ślad ma {trace!r}")
+                    f"zmienił wycenę zlecenia {index + 1}, która już była ({was} → {now}), a Ślad ma {shown_trace(trace)}")
         if resume.edit is Edit.NONE and now != REFERENCE_FINAL[index]:
-            accepted = not isinstance(emmett, dict) and was.emmett_loads >= 1 and now == was and outcomes.get(index) == "błąd"
-            add("WZNOWIENIE", "#774" if accepted else "nie jak jeden przebieg",
-                f"zlecenie {index + 1} po ponownym uruchomieniu bez zmian taty: {now} ({outcomes.get(index)}), po jednym przebiegu: {REFERENCE_FINAL[index]}")
+            left_to_dad = now == was and outcomes.get(index) == "błąd"
+            if left_to_dad and not isinstance(emmett, dict) and was.emmett_loads >= 1:
+                tag = "#774"
+            elif left_to_dad and unsaved_ahead(was, trace):
+                tag = "przerwanie-przed-zapisem-ilosci"
+            else:
+                tag = "nie jak jeden przebieg"
+            add("WZNOWIENIE", tag,
+                f"zlecenie {index + 1} po ponownym uruchomieniu bez zmian taty: {now} ({outcomes.get(index)}), po jednym przebiegu: "
+                f"{REFERENCE_FINAL[index]}, a Ślad ma {shown_trace(trace)}")
     return found
 
 
@@ -1332,9 +1420,13 @@ def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequ
         violations = check_first(case, run)
         sort_violations(violations, report)
         _keep(evidence, case.name, run, violations)
-        if run.outcome is not None and isinstance(run.outcome.ending, Stop) and isinstance(run.outcome.ending.facts, PricingStopped):
-            at = run.outcome.ending.facts.stopped_at
+        ending = None if run.outcome is None else run.outcome.ending
+        if isinstance(ending, Stop) and isinstance(ending.facts, PricingStopped):
+            at = ending.facts.stopped_at
             _resumes(resumes, case.name, run.after, 0 if at is None else at.row - FIRST_ROW, case)
+        elif isinstance(ending, Stop) and ending.message.code == TRACE_NOT_SAVED:
+            # Without the window's facts the Zatrzymanie names its order only in the Komunikat: the faulted one.
+            _resumes(resumes, case.name, run.after, case.order, case)
     for case in (case for case in selected if case.fault is Fault.KILLED):
         for moment in ("przed", "po"):
             snapshot = reference.snapshots.get(f"{moment} {case.call}")
@@ -1431,6 +1523,18 @@ def _keep(evidence: Path, name: str, run: Run, violations: Sequence[Violation]) 
     (folder / f"{slug}.json").write_text(json.dumps(content, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
 
 
+def gone_findings(report: Report) -> dict[str, list[str]]:
+    """Each known finding with the cases of its ``after`` that this run or part ran and after which it did not show:
+    each such case on its own, so a fix of one case gives it away while the finding still shows after the others."""
+
+    gone: dict[str, list[str]] = {}
+    for known in KNOWN_FINDINGS:
+        shown = {violation.case for violation in report.known.get(known.name, [])}
+        if missing := sorted(name for name in report.ran.intersection(known.after) if name not in shown):
+            gone[known.name] = missing
+    return gone
+
+
 def summarize(report: Report) -> list[str]:
     lines = list(report.lines)
     groups: dict[tuple[str, str], list[Violation]] = {}
@@ -1443,8 +1547,12 @@ def summarize(report: Report) -> list[str]:
         lines.append(f"znane ustalenie {name}: {len(group)} przypadków, np. {group[0].case} | {group[0].detail}")
     for name, group in sorted(report.accepted.items()):
         lines.append(f"zaakceptowane ryzyko {name}: {len(group)} przypadków, np. {group[0].case}")
-    gone = [known.name for known in KNOWN_FINDINGS if known.name not in report.known and report.ran.intersection(known.after)]
-    lines += [f"ZNALEZISKO ZNIKNĘŁO {name}: usuń je z KNOWN_FINDINGS i z SKILL.md" for name in gone]
+    gone = gone_findings(report)
+    lines += [
+        f"ZNALEZISKO ZNIKNĘŁO {name} po {', '.join(missing)}: zawęź je w KNOWN_FINDINGS i w SKILL.md do przypadków, po "
+        "których dalej występuje, albo je usuń"
+        for name, missing in gone.items()
+    ]
     if report.gaps:
         lines += [f"LUKA MODELU: {gap}" for gap in report.gaps]
         lines.append(f"{VERDICT}: LUKA MODELU ({len(report.gaps)})")
