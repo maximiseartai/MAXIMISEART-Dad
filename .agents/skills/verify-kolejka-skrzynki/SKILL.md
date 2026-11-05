@@ -199,9 +199,9 @@ that Centrum changes often: `lifespan` in `app.py`, `listen_locally` and
 and `_Server` in `server.py`. `model/definicje.json` lists the four covered files as whole files and these three
 by their definitions: only a change to these definitions, not to the rest of their files, is drift.
 
-**Sync commit: `e6242e24`** (2026-11-05). The checker and the model share it:
+**Sync commit: `865ffcdc`** (2026-11-05). The checker and the model share it:
 at this commit both were confirmed to describe the code above. Since the
-previous sync `0deaca72` only `e6242e24` (#879, #887, merged with `main` after it) changed a covered file:
+previous sync `0deaca72` only `e6242e24` (#879, #887, merged with `main` in `865ffcdc`) changed a covered file:
 `KeyedBox` reads GitHub's lists after its own writes and holds a write whose
 effect only a list shows (How the queue knows what is already there), with the
 file `OPENING_FILE` that `create_app` in `app.py` passes (outside `lifespan`);
@@ -312,7 +312,7 @@ them, `6f94edb8` was the sync of both, and since the checker's earlier sync
 model describes. To see whether they need another look:
 
 ```bash
-git log --oneline e6242e24..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
+git log --oneline 865ffcdc..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
 ```
 
 A change to the three definitions above shows as a `UWAGA:` line of
