@@ -28,6 +28,10 @@
 (* Archiwum, która trwa (repozytorium bez commitu: 409), zatrzymuje tylko  *)
 (* plik: części każdej wysyłki dochodzą (Zbieganie przy PusteRepo).        *)
 (*                                                                         *)
+(* Plik, za którym w tym samym przejściu leży nowsza wersja tej samej      *)
+(* wysyłki, kolejka oznacza i usuwa bez wysyłania (_superseded, #846).     *)
+(* Postęp Wyceny w efenix to starsza wersja Logów bez pliku do Archiwum.   *)
+(*                                                                         *)
 (* Listy GitHuba (issue, Release'y) pokazują nowe issue i Archiwum z      *)
 (* opóźnieniem (#879, #887): KeyedBox dopisuje do list to, co założył on  *)
 (* albo inny KeyedBox z odpowiedzią (plik obok klucza, keyed_box.py        *)
@@ -64,6 +68,8 @@ CONSTANTS
     MaxOdmowArchiwum, \* Refused albo Rejected z kroku Archiwum (Token bez uprawnienia do treści repozytorium): ArchiveWaits
     PusteRepo,      \* repozytorium Skrzynki bez commitu przez cały przebieg: GitHub odpowiada 409 „Git Repository is
                     \* empty.” na każde założenie Archiwum (report_box.py GitHubReportBox.open_archive: Rejected)
+    Postep,         \* wysyłka 1 to postęp Wyceny w efenix, starsza wersja Logów wysyłki 2 bez pliku do Archiwum
+                    \* (run_logs.py progress_post, pricing_progress.py)
     OpoznienieListy, \* listy GitHuba (labelled_issues, archive) pokazują nowe issue i Archiwum po kilku sekundach
     \* Znane znaleziska (oczekiwane.json), każde przy jednej obietnicy: ślady przyczyn, po których wariant
     \* ...PozaZnanymi tej obietnicy ją pomija. Pozostałe obietnice tego przebiegu sprawdza dalej w całości.
@@ -79,6 +85,8 @@ ASSUME CzesciNowszej >= 1 /\ (~Diagnoza => CzesciNowszej = Czesci)
 ASSUME Archiwum => Cel = "okres" /\ Naglowek /\ Czesci = 1 /\ CzesciNowszej = 1
 \* Repozytorium bez commitu odmawia tylko założenia Archiwum, więc ma znaczenie tylko z plikiem do Archiwum.
 ASSUME PusteRepo => Archiwum
+\* Postęp to starsza wersja Logów (ten sam run_id i etykieta), a pełne Logi na końcu niosą plik do Archiwum.
+ASSUME Postep => Diagnoza /\ Archiwum
 
 W == 1..Wysylek
 \* Identyfikator wysyłki w (etykieta i run_id w znaczniku): przy Diagnozie wysyłka 2 to wersja wysyłki 1.
@@ -86,6 +94,8 @@ Id(w) == IF Diagnoza THEN 1 ELSE w
 \* Części wysyłki w (Post.parts): nowsza wersja może mieć ich więcej albo mniej niż starsza.
 Liczba(w) == IF Diagnoza /\ w = 2 THEN CzesciNowszej ELSE Czesci
 Najwiecej == IF CzesciNowszej > Czesci THEN CzesciNowszej ELSE Czesci
+\* Wysyłka w niesie plik do Archiwum (Post.archive); postęp Wyceny w efenix (wysyłka 1 przy Postep) go nie ma.
+MaPlik(w) == Archiwum /\ ~(Postep /\ w = 1)
 Q == 1..Kolejki
 \* Proces kolejki q: każda w swoim, gdy DwaProcesy, inaczej obie w jednym (wspólne _PASSES).
 Proc(q) == IF DwaProcesy THEN q ELSE 1
@@ -259,7 +269,7 @@ Ma(i, w, k) == \E j \in 1..Len(issues[i].tresc) :
 WIssue(w) == \E i \in 1..Len(issues) : \A k \in 1..Liczba(w) : Ma(i, w, k)
 \* Pliki wysyłki w w Archiwum (każda wersja) i czy jest wśród nich plik w tej wersji albo nowszej.
 Pliki(w) == {i \in 1..Len(archiwum) : Id(archiwum[i]) = Id(w)}
-WArchiwum(w) == ~Archiwum \/ \E i \in Pliki(w) : archiwum[i] >= w
+WArchiwum(w) == ~MaPlik(w) \/ \E i \in Pliki(w) : archiwum[i] >= w
 \* Wysyłka w jest w Skrzynce cała: każda część w issue i plik w Archiwum.
 Dostarczona(w) == WIssue(w) /\ WArchiwum(w)
 \* Wysyłka w ma w kolejce nowszą wersję (Diagnoza): jej plik może zniknąć bez swoich części, bo Skrzynce należy się
@@ -351,7 +361,7 @@ Odrzuc(q, w, opis) ==
 Dopisz(ks) == [n \in 1..Len(ks) |-> <<ks[n], "dopisz">>]
 \* outbox.py _deliver_to_period: z plikiem do Archiwum najpierw krok Archiwum (_deliver_archive), potem krok dalej.
 PoArchiwum(q, dalej, opis) ==
-    IF Archiwum
+    IF MaPlik(biez[q])
     THEN /\ po' = Ustaw(po, q, dalej) /\ Idz(q, "archiwum", opis)
     ELSE /\ UNCHANGED po /\ Idz(q, dalej, opis)
 \* _deliver_archive daje ArchiveWaits (odmowa uprawnienia albo treści): części idą z dopiskiem (_note), a plik
@@ -407,45 +417,75 @@ Petla(q) ==
     /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, again, armed, stopped, undeleted, rejected, biez, nr, kom,
                    bezZnacznika, arch, po, zamkniecia, nadawanie, awarie, slady>>
 
+\* outbox.py _superseded: za plikiem w w liście tego przejścia jest plik nowszej wersji tej samej wysyłki (ten sam cel
+\* i run_id: Id), poza _rejected i _undeleted; _send_all czyta pliki przejścia na początku (_read).
+Nowszy(q, w) == \E v \in Zakres(Tail(lista[q])) : Id(v) = Id(w) /\ v \notin rejected[q] \cup undeleted[q]
+                                                  /\ plik[v] \in {"czeka", "skomentowany", "oznaczony"}
+
 \* outbox.py Outbox._send_all, jeden plik: _undeleted (_remove), _rejected (pomija), _queued (odczyt:
 \* nieczytelny albo usunięty przez inny proces plik pomija, a OSError ustawia _read_failed), delivered
-\* (_remove), commented (_deliver_archive, sam plik do Archiwum), potem _deliver.
-\* Koniec listy: self._stopped_on = None.
+\* (_remove), plik, za którym jest nowsza wersja tej wysyłki (_superseded: _mark_delivered bez wysyłania; gdy nowszej nie
+\* da się odczytać, ten idzie jak zwykle, a nowsza czeka na budzik), commented (_deliver_archive, sam plik do
+\* Archiwum), potem _deliver. Koniec listy: self._stopped_on = None.
 Plik(q) ==
     /\ pc[q] = "plik"
     /\ IF lista[q] = <<>>
        THEN /\ stopped' = Ustaw(stopped, q, FALSE)
             /\ UNCHANGED <<lista, biez, nieczytany, bledyPliku, slady, arch, po>>
             /\ Idz(q, "zwolnij", "_send_all: koniec plikow, _stopped_on = None")
-       ELSE LET w == Head(lista[q]) IN
-            /\ lista' = Ustaw(lista, q, Tail(lista[q]))
+       ELSE LET w == Head(lista[q])
+                dalej == Ustaw(lista, q, Tail(lista[q]))
+            IN
             /\ biez' = Ustaw(biez, q, w)
             /\ arch' = Ustaw(arch, q, "brak")
             /\ UNCHANGED stopped
             /\ CASE w \in undeleted[q] ->
+                      /\ lista' = dalej
                       /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
                       /\ Idz(q, "usun", "_send_all: plik w _undeleted, _remove")
                  [] w \in rejected[q] ->
+                      /\ lista' = dalej
                       /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
                       /\ Idz(q, "plik", "_send_all: plik w _rejected, czeka do nastepnego startu")
                  [] OTHER ->
                       \/ /\ AwariaOdczytu /\ bledyPliku < MaxBledowPliku /\ plik[w] /= "usuniety"
+                         /\ lista' = dalej
                          /\ bledyPliku' = bledyPliku + 1
                          /\ nieczytany' = Ustaw(nieczytany, q, TRUE)
                          /\ UNCHANGED <<slady, po>>
                          /\ Idz(q, "plik", "_queued: read_text rzuca OSError, _read_failed, _skip_unreadable pomija plik")
                       \/ /\ plik[w] = "usuniety"
+                         /\ lista' = dalej
                          /\ nieczytany' = Ustaw(nieczytany, q, TRUE)
                          /\ UNCHANGED <<bledyPliku, slady, po>>
                          /\ Idz(q, "plik", "_queued: pliku juz nie ma (usunal go inny proces), _read_failed, _skip_unreadable")
                       \/ /\ plik[w] = "oznaczony"
+                         /\ lista' = dalej
                          /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
                          /\ Idz(q, "usun", "_queued: plik ze znacznikiem dostarczenia, _remove")
-                      \/ /\ plik[w] = "skomentowany"
+                      \/ /\ plik[w] \in {"czeka", "skomentowany"} /\ Nowszy(q, w)
+                         /\ lista' = dalej
+                         /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
+                         /\ Idz(q, "dostarczona", "_superseded: za plikiem jest nowsza wersja tej wysylki, znacznik bez wysylania")
+                      \/ /\ plik[w] \in {"czeka", "skomentowany"} /\ Nowszy(q, w)
+                         /\ AwariaOdczytu /\ bledyPliku < MaxBledowPliku
+                         \* _send_all czyta pliki na początku przejścia (_read), więc nowsza wersja, której odczyt padł,
+                         \* nie wypiera tej, a gdy przejście do niej dojdzie, _skip_unreadable ją pomija do budzika
+                         \* RETRY_S (_read_failed): przejście bierze ją z listy już teraz.
+                         /\ lista' = Ustaw(lista, q, SelectSeq(Tail(lista[q]), LAMBDA v : Id(v) /= Id(w)))
+                         /\ bledyPliku' = bledyPliku + 1
+                         /\ nieczytany' = Ustaw(nieczytany, q, TRUE)
+                         /\ po' = IF plik[w] = "skomentowany" THEN Ustaw(po, q, "dostarczona") ELSE po
+                         /\ UNCHANGED slady
+                         /\ Idz(q, IF plik[w] = "skomentowany" THEN "archiwum" ELSE "szukaj",
+                                "_read: pliku nowszej wersji nie da sie odczytac (OSError), _read_failed; ten idzie jak zwykle, nowsza czeka na budzik")
+                      \/ /\ plik[w] = "skomentowany" /\ ~Nowszy(q, w)
+                         /\ lista' = dalej
                          /\ UNCHANGED <<nieczytany, bledyPliku, slady>>
                          /\ po' = Ustaw(po, q, "dostarczona")
                          /\ Idz(q, "archiwum", "_queued: czesci sa w Skrzynce (commented), sam _deliver_archive")
-                      \/ /\ plik[w] = "czeka"
+                      \/ /\ plik[w] = "czeka" /\ ~Nowszy(q, w)
+                         /\ lista' = dalej
                          /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
                          \* _deliver: każdy cel najpierw pyta Skrzynkę o issue z etykietą.
                          /\ Idz(q, "szukaj", "_deliver: wysylka z pliku")

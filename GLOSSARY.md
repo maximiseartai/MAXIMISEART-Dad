@@ -603,7 +603,15 @@ danych nigdy nie niosą wartości `ADRES` ani `NUMER UMOWY/ZLECENIA ORANGE` z
 plików, które Centrum przeczytało: przed zapisem i wysyłką strażnik maskuje
 taką wartość z uwagą techniczną, a telefony i ulice w tekście są zamaskowane.
 Tata ich nie wysyła ani nie ogląda, ale z
-nich wraca karta Uruchomienia po starcie Centrum i w Historii.
+nich wraca karta Uruchomienia po starcie Centrum i w Historii. W trakcie
+Wyceny w efenix ten sam komentarz Uruchomienia w Skrzynce pokazuje co 5 minut
+jej postęp z dziennika Wyceny w efenix (zlecenia skończone z wszystkich, wyniki
+do tej pory, ostatnie zlecenie), a na końcu staje się podsumowaniem Logów, także
+gdy Centrum zamknęło się w jej trakcie: wtedy przy następnym starcie
+podsumowaniem Logów Urwanego Uruchomienia. Gdy Logi z wynikiem nie doszły do
+kolejki po wpisie końca dziennika Wyceny (np. Centrum zamknęło się tuż po
+wyniku), komentarz zostaje postępem: start niczego za taką Wycenę nie wysyła,
+żeby nie zastąpić jej Logów z wynikiem, które mogą już być w Skrzynce.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), dziennik Centrum, raport
 
 ## Kopia wejścia
@@ -617,12 +625,16 @@ policzył Excel, także `Kwota`), a Uporządkowanie INTERMAX wklejone wiersze
 z dołu każdego arkusza zleceń, które przetwarzało, nie cały Rejestr zleceń,
 w kolumnach od A do `UWAGI`, które Uporządkowanie przenosi do dnia, także
 przesunięty pierwszy wiersz pod jego nagłówkami, a wiersz, którego położenia
-Uporządkowanie nie ustaliło, tylko z komórkami dozwolonymi przesunięty i nie. Wiersz ma numer i wartości komórek po literze
+Uporządkowanie nie ustaliło, tylko z komórkami dozwolonymi przesunięty i nie, a
+nad wklejeniem tylko numery ostatniego uporządkowanego i żółtego wiersza, od
+których Planowanie liczy wiersz dnia. Wiersz ma numer i wartości komórek po literze
 kolumny, a arkusz nagłówki kolumn; według reguły danych bez kolumn `ADRES` i
 `NUMER UMOWY/ZLECENIA ORANGE` (w Pliku zbiorczym kolumn B i I, także pod innym
 nagłówkiem), a wolny tekst i liczby po maskowaniu. Odcisk to rozmiar i skrót
 bajtów, z których proces przeczytał plik, i chwila zmiany pliku tuż przed
-odczytem, więc Maks wie, czy jego kopia pliku jest tą samą wersją. Wyglądu komórek (Wyróżnień, formatu liczby,
+odczytem, więc Maks wie, czy jego kopia pliku jest tą samą wersją. Plik ma
+w Kopii nazwę i nazwy dwóch folderów nad nim, te same, które pokazują Komunikaty,
+bez pełnej ścieżki. Wyglądu komórek (Wyróżnień, formatu liczby,
 Hiperłączy) Kopia nie ma, bo proces tylko przenosi go do plików, które tworzy.
 Centrum składa Kopię po końcu procesu razem z resztą Logów, zanim karta pokaże
 wynik, więc tata czeka na wynik także na nią: na kopii prawdziwego Pliku
@@ -636,7 +648,7 @@ Uruchomienie procesu z Centrum rozliczeń, które nie doszło do wyniku, bo
 Centrum zamknęło się w jego trakcie. Nie ma rekordu metryk; Centrum nazywa je
 po następnym starcie i radzi, co sprawdzić. Urwana Wycena w efenix ma Logi
 Uruchomienia, które następny start Centrum zamyka z dziennika Wyceny w efenix,
-pisanego w trakcie zlecenie po zleceniu, i wysyła jak zwykłe Logi: zlecenia
+pisanego od jej startu zlecenie po zleceniu, i wysyła jak zwykłe Logi: zlecenia
 skończone przed zamknięciem Centrum i zlecenie zaczęte bez wyniku, a karta po
 starcie pokazuje te zlecenia. Urwane Uruchomienie innego procesu Logów nie ma.
 Uruchomienie, którego wynik jest już w Historii, a Logów nie ma (Centrum
@@ -694,8 +706,10 @@ go naprawi. Każda wysyłka trafia do Skrzynki dokładnie raz, także gdy Centru
 zgaśnie albo połączenie się zerwie, zanim kolejka zapisze, że ją dostarczyła:
 każdy jej tekst w Skrzynce niesie niewidoczny identyfikator (Uruchomienie i
 rodzaj), a kolejka przed wysłaniem sprawdza, co już tam jest. Nowsza wersja tej
-samej wysyłki, jak Logi Uruchomienia po Diagnozie, zmienia jej komentarz zamiast
-dokładać nowy, a starsza, która dojdzie po nowszej, niczego w Skrzynce nie
+samej wysyłki, jak Logi Uruchomienia po Diagnozie albo po postępie Wyceny w
+efenix, zmienia jej komentarz zamiast dokładać nowy, a gdy starsza jeszcze
+czeka, zastępuje ją w kolejce, więc bez internetu czeka tylko najnowsza.
+Starsza, która dojdzie po nowszej, niczego w Skrzynce nie
 zmienia. Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego
 startu Centrum rozliczeń; tata ma wtedy skontaktować się z Maksem. Plik w
 Archiwum Logów okresu też idzie dokładnie raz, a plik nowszej wersji podmienia

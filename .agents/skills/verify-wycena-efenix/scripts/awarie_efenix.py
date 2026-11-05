@@ -52,6 +52,7 @@ _WATCHER: Final = (
 )
 _PAGES: Final = ("index.php", "page_order_edit.php", "page_login.php")
 _SEARCH: Final = "action_fill_orders.php"
+_PROPOSAL: Final = "action_fill_emmett.php"
 _BY_LIST: Final = "powrot"
 _ELSEWHERE: Final = "/index.php?przekierowanie=1"
 
@@ -68,6 +69,7 @@ class Fault(enum.Enum):
     LOGGED_OUT = "efenix wylogował przy tym żądaniu"
     REDIRECT = "przekierowanie na listę zleceń bez wykonania"
     REFUSED = "200 z result: nok bez wykonania, w ważnej sesji"
+    REFUSED_NO_PROPOSAL = "propozycja Emmetta tego zlecenia to HTTP 500, a „Załaduj do zlecenia” 200 z result: nok bez wykonania"
     HUNG = "odpowiedź po wykonaniu nigdy nie przychodzi"
     LATE_BEFORE = "odpowiedź tuż przed granicą czasu okna"
     LATE_AFTER = "odpowiedź tuż po granicy czasu okna"
@@ -220,6 +222,10 @@ class Proxy:
         with self._lock:
             plan = self.plan
             hit = plan.fault if plan.target == call else None
+            if plan.fault is Fault.REFUSED_NO_PROPOSAL and plan.target is not None:
+                # Dwie awarie przy jednym zleceniu (#908): jego propozycja Emmetta, a potem „Załaduj do zlecenia”.
+                paired = call.method == "POST" and call.occurrence == plan.target.occurrence
+                hit = {_PROPOSAL: Fault.HTTP_5XX, plan.target.path: Fault.REFUSED}.get(call.path) if paired else None
             if hit in OUTAGES:
                 self._outage = hit
             fault = self._outage if self._outage is not None else hit

@@ -22,8 +22,13 @@ niej niczego, część, której znacznik już tam jest w tej wersji, nie idzie d
 wersji dostaje nowy tekst (``edit_comment``), a komentarz części, której nowsza wersja nie ma, dostaje ``_RETIRED``.
 Tak Diagnoza, która wysyła Logi Uruchomienia drugi raz z tym samym identyfikatorem, zmienia komentarz swojego
 Uruchomienia, a starszy plik, który dojdzie po nowszym (np. raz nieczytelny), niczego w issue nie zmienia ani nie
-dopisuje. Wersje jednej wysyłki powstają w jednej pracy Centrum (Diagnozę ma tylko ostatnie Uruchomienie tej pracy,
-``run_logs``), a w niej wersja rośnie z każdą wysyłką, także gdy zegar komputera się cofnie (``Outbox.post``).
+dopisuje. Plik, za którym w tym samym przejściu leży czytelny plik nowszej wersji tej samej wysyłki (ten sam cel i
+``run_id``, ``_superseded``), kolejka oznacza znacznikiem dostarczenia i usuwa bez wysyłania, bo Skrzynce należy się
+nowsza: bez sieci w kolejce zostaje tylko najnowszy postęp Wyceny w efenix (#846, ``pricing_progress``) i tylko Logi z
+ostatnią Diagnozą. Wersje jednej wysyłki powstają w jednej pracy Centrum (Diagnozę ma tylko ostatnie Uruchomienie tej
+pracy, ``run_logs``, a postęp tylko trwające), a w niej wersja rośnie z każdą wysyłką, także gdy zegar komputera się
+cofnie (``Outbox.post``). Logi Urwanego Uruchomienia, które zastępują jego postęp, wysyła następna praca Centrum: ich
+wersja jest nowsza, dopóki zegar komputera nie cofnął się od zgaśnięcia Centrum o więcej niż czas do następnego startu.
 Treści issue kolejka nigdy nie zmienia.
 
 Issue okresu kolejka znajduje po wierszu rozpoznawczym przy każdej próbie wysyłki i dopisuje do niego części jako
@@ -56,7 +61,7 @@ import json
 import re
 import sys
 import threading
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -969,6 +974,22 @@ def _kept(comment: Comment) -> Commented:
     return Commented(comment.id, comment.url)
 
 
+def _superseded(read: Mapping[Path, _Queued | None]) -> frozenset[Path]:
+    """Pliki przejścia, za którymi jest czytelny plik nowszej wersji tej samej wysyłki: ten sam cel i ``run_id``, a
+    nazwa dalej w porządku kolejki (``_version``)."""
+
+    newest: dict[tuple[Target, str], Path] = {}
+    for path in sorted(read):
+        queued = read[path]
+        if queued is not None:
+            newest[queued.post.target, queued.post.run_id] = path
+    return frozenset(
+        path
+        for path, queued in read.items()
+        if queued is not None and newest[queued.post.target, queued.post.run_id] != path
+    )
+
+
 def _waiting(outcome: Failure) -> tuple[WaitingCause, Literal["stop", "next"]]:
     """Przyczyna w dzienniku i co dalej w przejściu kolejki po porażce wysyłki.
 
@@ -1188,29 +1209,34 @@ class Outbox:
     def _send_all(self) -> None:
         """Pliki kolejki po nazwie (czas utworzenia); porażka skrzynki zatrzymuje przejście albo pomija plik (``_waiting``).
 
-        ``_stopped_on`` to potem przyczyna, na której przejście stanęło, albo ``None``, ``_read_failed`` mówi, czy
-        przejście pominęło plik, którego nie dało się odczytać, a ``_archive_refused``, czy Archiwum okresu odmówiło.
-        Plik, którego części już są w Skrzynce (``_Queued.commented``), czeka tylko na Archiwum i idzie bez issue.
+        Przejście czyta pliki na początku, więc plik, za którym jest nowsza wersja tej samej wysyłki (``_superseded``),
+        oznacza bez wysyłania i usuwa. ``_stopped_on`` to potem przyczyna, na której przejście stanęło, albo ``None``,
+        ``_read_failed`` mówi, czy przejście pominęło plik, którego nie dało się odczytać, a ``_archive_refused``, czy
+        Archiwum okresu odmówiło. Plik, którego części już są w Skrzynce (``_Queued.commented``), czeka tylko na Archiwum
+        i idzie bez issue.
         """
 
         self._read_failed = False
         self._archive_refused = False
-        for path in sorted(self._directory.glob("*.json")):
+        paths = sorted(self._directory.glob("*.json"))
+        read = {path: self._read(path) for path in paths if path.name not in self._undeleted | self._rejected}
+        superseded = _superseded(read)
+        for path in paths:
             if path.name in self._undeleted:
                 self._remove(path)
                 continue
             if path.name in self._rejected:
                 continue
-            try:
-                queued = _queued(path)
-            except OSError:
-                self._read_failed = True
-                queued = None
+            queued = read[path]
             if queued is None:
                 self._skip_unreadable(path)
                 continue
             if queued.delivered:
                 self._remove(path)
+                continue
+            if path in superseded:
+                # Znacznik jak po wysłaniu: plik, którego nie da się usunąć, nie czeka w kolejce bez niego.
+                self._mark_delivered(path, queued.post)
                 continue
             post = self._listener.prepare(queued.post, self)
             if post is None:
@@ -1259,6 +1285,15 @@ class Outbox:
                 continue
             self._mark_delivered(path, post)
         self._stopped_on = None
+
+    def _read(self, path: Path) -> _Queued | None:
+        """Plik kolejki w tym przejściu (``_queued``); ``OSError`` ustawia ``_read_failed`` i daje ``None``."""
+
+        try:
+            return _queued(path)
+        except OSError:
+            self._read_failed = True
+            return None
 
     def _stop(self, label: Label, period: str | None, cause: WaitingCause) -> None:
         """Przejście staje na przyczynie dla całej kolejki; linia dziennika tylko przy zmianie przyczyny."""

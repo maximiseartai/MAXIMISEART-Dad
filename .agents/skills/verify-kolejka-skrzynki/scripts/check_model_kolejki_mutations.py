@@ -408,6 +408,33 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
+        "zastąpienie bez nowszej wersji tej samej wysyłki (_superseded: cel i run_id)",
+        (Edit(MODEL, "Nowszy(q, w) == \\E v \\in Zakres(Tail(lista[q])) : Id(v) = Id(w) /\\ ",
+              "Nowszy(q, w) == \\E v \\in Zakres(Tail(lista[q])) : TRUE /\\ "),),
+        _check("okres"),
+        "Kontrola ilości okresu dostaje znacznik bez wysłania, bo za nią w kolejce czeka inna Kontrola tego okresu",
+        NEW,
+    ),
+    Mutation(
+        "nowsza wersja, której odczyt padł, pominięta bez _read_failed (_read: OSError ustawia _read_failed)",
+        (Edit(MODEL, "LAMBDA v : Id(v) /= Id(w)))\n"
+              "                         /\\ bledyPliku' = bledyPliku + 1\n"
+              "                         /\\ nieczytany' = Ustaw(nieczytany, q, TRUE)\n",
+              "LAMBDA v : Id(v) /= Id(w)))\n"
+              "                         /\\ bledyPliku' = bledyPliku + 1\n"
+              "                         /\\ nieczytany' = nieczytany\n"),),
+        _check("diagnoza"),
+        "Logi z Diagnozą, których pliku przejście nie odczytało, czekają w kolejce bez budzika RETRY_S do następnego startu",
+        NEW,
+    ),
+    Mutation(
+        "zastąpiony plik usunięty bez znacznika dostarczenia (_superseded: _mark_delivered)",
+        (Edit(MODEL, '/\\ Idz(q, "dostarczona", "_superseded:', '/\\ Idz(q, "usun", "_superseded:'),),
+        _check("diagnoza"),
+        "plik Logów sprzed Diagnozy, którego nie da się usunąć, czeka w kolejce bez znacznika i bez budzika",
+        NEW,
+    ),
+    Mutation(
         "post zwraca True, choć pliku .json.tmp już nie ma (post: except OSError: return False)",
         (Edit(MODEL, "                /\\ UNCHANGED <<zakolejkowane, bledyPliku>>\n"
               "                /\\ krok' = \"post: pliku .json.tmp",
