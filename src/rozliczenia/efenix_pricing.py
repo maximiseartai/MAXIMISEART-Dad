@@ -215,8 +215,8 @@ class ElementCount:
 
 @dataclass(frozen=True)
 class HttpStatus:
-    """Strona zlecenia, której okno nie przeczytało, albo odpowiedź na „Załaduj do zlecenia” przyszła z odpowiedzią HTTP o
-    statusie błędu ``status`` (4xx, 5xx): to strona błędu serwera efenix, a nie strona albo odpowiedź w innej budowie."""
+    """Odpowiedź efenix, na którą okno czekało, albo strona, której okno nie przeczytało, przyszła ze statusem błędu
+    HTTP ``status`` (4xx, 5xx): to strona błędu serwera efenix, a nie strona albo odpowiedź w innej budowie."""
 
     status: int
 

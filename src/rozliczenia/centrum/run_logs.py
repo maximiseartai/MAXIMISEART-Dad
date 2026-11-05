@@ -463,7 +463,7 @@ class LoggedCause(_Record):
 
 _ELEMENT_COUNT: Final = "element strony nie występuje dokładnie raz"
 _BROWSER_FAILURE: Final = "błąd przeglądarki w działaniu okna"
-_HTTP_STATUS: Final = "strona błędu HTTP serwera efenix zamiast strony zlecenia"
+_HTTP_STATUS: Final = "strona błędu HTTP serwera efenix zamiast strony albo odpowiedzi, na którą czekało okno"
 _AHEAD_NOT_SAVED: Final = "Ślad Wyceny Emmetta nie zapisał ilości z wyprzedzeniem, więc okno jej nie wpisało"
 
 
