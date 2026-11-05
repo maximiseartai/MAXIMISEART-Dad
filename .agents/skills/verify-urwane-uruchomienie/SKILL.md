@@ -15,6 +15,7 @@ pilnuje:
   - src/rozliczenia/process_run.py
   - src/rozliczenia/telemetry.py
   - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
+  - tools/lib/rozjazd_modelu.py
 ci: .agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwane_uruchomienie.py
 ---
 
@@ -26,6 +27,7 @@ CI runs `sprawdz_urwane_uruchomienie.py` (the `ci:` key) in Mutation checks when
 `pilnuje:` or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks
 step. It fails with `URWANE URUCHOMIENIE: ROZJAZD MODELU Z KODEM` when a definition the model describes
 (`model/definicje.json`) changed since the Sync commit, but it cannot tell whether your change to the model is right.
+`tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 `check_model_urwanego_mutations.py` runs on a pull request that changes a file in `model/`, the script itself or
 `sprawdz_urwane_uruchomienie.py`, and in full CI and nightly on `main` after a change of this skill's folder.
 What stays with you on every change to the covered code is „Bring the model in line”: read the diff against the table,
@@ -113,9 +115,12 @@ changes move it without changing a definition, so look for them in the diff: the
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `5e1905142` (2026-11-05, `main` after #860). Every row of the table was checked against the code at this
-commit, and each known finding below was replayed on that code (`historia-niezapisana` on `main` 86677b151, whose
-`src/` is the same).
+Sync commit: `c490d2497` (2026-11-05, the fix of #881 on top of #877). Every row of the table was checked against the
+code at this commit; `save` changed only in what it passes to `_priced` (the pace, which `_priced` now puts over its
+write-ahead window) and in the facts of a Zatrzymanie, while `journal.begun` still comes before `efenix_trace.traced`
+and `_priced`, and `journal.ended` after the result, so the model did not change. Each known finding below was replayed
+on the code of the previous Sync commit `5e1905142` (`historia-niezapisana` on `main` 86677b151, whose `src/` is the
+same).
 
 ## Run
 

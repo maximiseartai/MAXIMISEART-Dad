@@ -1,12 +1,14 @@
-"""Sprzątanie runu ``verify-github-skrzynki``: usuwa z repozytorium próbnego tylko to, co założył ten run.
+"""Sprzątanie runu ``verify-github-skrzynki``: usuwa z repozytoriów próbnych tylko to, co założył ten run.
 
-Run rozpoznaje znacznik ``<!-- verify-github-skrzynki run=<id> -->`` w treści issue i ``verify-github-skrzynki
-run=<id>`` w opisie etykiety, nie nazwa: issue z numerem z rejestru runu (``zalozone.jsonl``), które znacznika nie ma,
-zostaje i trafia do wyniku. Etykietę, którą GitHub założył sam przy issue runu (bez opisu), usuwa tylko wtedy, gdy
-rejestr ją zapisał, a stan sprzed runu jej nie miał. Issue usuwa GraphQL ``deleteIssue`` kluczem ``gh`` Maksa, bo
-zamknięte issue zostałoby w liście z ``include_closed`` następnego runu. Potem porównuje stan repozytorium próbnego
-(etykiety, issue, Release) ze stanem sprzed runu, zapisuje wynik w dowodach i usuwa katalog runu (``.katalog-runu``).
-Dowody zostają.
+Run rozpoznaje znacznik ``<!-- verify-github-skrzynki run=<id> -->`` w treści issue i opisie Release (Archiwum) i
+``verify-github-skrzynki run=<id>`` w opisie etykiety, a identyfikator runu w nazwie tagu i pliku Archiwum, nie nazwa:
+issue z numerem z rejestru runu (``zalozone.jsonl``), które znacznika nie ma, zostaje i trafia do wyniku. Etykietę,
+którą GitHub założył sam przy issue runu (bez opisu), usuwa tylko wtedy, gdy rejestr ją zapisał, a stan sprzed runu jej
+nie miał. Issue usuwa GraphQL ``deleteIssue`` kluczem ``gh`` Maksa, bo zamknięte issue zostałoby w liście z
+``include_closed`` następnego runu. Release ze znacznikiem usuwa razem z jego plikami tylko wtedy, gdy każdy plik ma w
+nazwie identyfikator runu, a potem tag runu. Na koniec porównuje stan obu repozytoriów próbnych (etykiety, issue,
+Release, tagi) ze stanem sprzed runu, zapisuje wynik w dowodach i usuwa katalog runu (``.katalog-runu``). Dowody
+zostają.
 
     .venv/bin/python .agents/skills/verify-github-skrzynki/scripts/github_sprzatanie.py --root <katalog runu>
 """
@@ -23,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import Parser, RunRootError, remove_run_root, require_run_root
 
-from github_wymiana import RUN_MARKER, TRIAL, Admin, Pace, gh_token
+from github_wymiana import RUN_MARKER, TRIAL, TRIAL_ARCHIVE, TRIALS, Admin, Pace, gh_token
 
 RUN_FILE: Final = "run.json"
 # Lista issue GitHuba nadąża za założeniem i usunięciem po kilku sekundach (pomiar 5.11.2026: 98 ze 101 świeżych issue).
@@ -32,12 +34,19 @@ SETTLE_S: Final = 5.0
 LEDGER: Final = "zalozone.jsonl"
 
 
-def state(admin: Admin) -> dict[str, object]:
-    """Stan repozytorium próbnego, który run może zmienić: etykiety z opisem, numery issue i tagi Release."""
+# Tag i plik Archiwum runu mają w nazwie ``verify-<run>`` albo ``<run>-`` (``github_przypadki_archiwum``).
+RUN_TAG: Final = "logi-verify-"
 
-    status, labels = admin.request("GET", f"/repos/{TRIAL}/labels?per_page=100")
-    issues = admin.pages(f"/repos/{TRIAL}/issues?state=all")
-    _, releases = admin.request("GET", f"/repos/{TRIAL}/releases?per_page=100")
+
+def state(admin: Admin) -> dict[str, object]:
+    """Stan każdego repozytorium próbnego, który run może zmienić: etykiety z opisem, numery issue, tagi Release i tagi."""
+
+    return {trial: _state(admin, trial) for trial in TRIALS}
+
+
+def _state(admin: Admin, trial: str) -> dict[str, object]:
+    status, labels = admin.request("GET", f"/repos/{trial}/labels?per_page=100")
+    issues = admin.pages(f"/repos/{trial}/issues?state=all")
     return {
         "etykiety": sorted(
             f"{entry['name']}: {entry.get('description') or ''}" for entry in labels if isinstance(entry, dict)
@@ -45,49 +54,80 @@ def state(admin: Admin) -> dict[str, object]:
         if status == 200 and isinstance(labels, list)
         else f"lista etykiet → {status}",
         "issue": sorted(entry["number"] for entry in issues if isinstance(entry, dict)),
-        "release": sorted(str(entry.get("tag_name")) for entry in releases if isinstance(entry, dict))
-        if isinstance(releases, list)
-        else [],
+        "release": sorted(_names(admin.pages(f"/repos/{trial}/releases?"), "tag_name")),
+        "tagi": sorted(_names(admin.pages(f"/repos/{trial}/tags?"), "name")),
     }
 
 
+def _names(entries: list[object], field: str) -> list[str]:
+    return [str(entry.get(field)) for entry in entries if isinstance(entry, dict)]
+
+
 def leftovers(admin: Admin, run: str | None = None) -> list[str]:
-    """Issue i etykiety ze znacznikiem runu ``run`` (``None``: każdego runu) w repozytorium próbnym."""
+    """Issue, etykiety, Release'y i tagi ze znacznikiem runu ``run`` (``None``: każdego runu) w repozytoriach próbnych."""
 
     marker = RUN_MARKER + (run or "")
-    issues = admin.pages(f"/repos/{TRIAL}/issues?state=all")
-    _, labels = admin.request("GET", f"/repos/{TRIAL}/labels?per_page=100")
-    found = [
-        f"issue {entry['number']}"
-        for entry in issues
-        if isinstance(entry, dict) and marker in str(entry.get("body") or "")
-    ]
-    for entry in labels if isinstance(labels, list) else []:
-        if isinstance(entry, dict) and marker in str(entry.get("description") or ""):
-            found.append(f"etykieta {entry['name']}")
-    _, releases = admin.request("GET", f"/repos/{TRIAL}/releases?per_page=100")
-    for entry in releases if isinstance(releases, list) else []:
-        if isinstance(entry, dict) and marker in str(entry.get("body") or ""):
-            found.append(f"Release {entry.get('tag_name')}")
+    found = []
+    for trial in TRIALS:
+        name = trial.rsplit("/", 1)[1]
+        issues = admin.pages(f"/repos/{trial}/issues?state=all")
+        found += [
+            f"{name}: issue {entry['number']}"
+            for entry in issues
+            if isinstance(entry, dict) and marker in str(entry.get("body") or "")
+        ]
+        _, labels = admin.request("GET", f"/repos/{trial}/labels?per_page=100")
+        for entry in labels if isinstance(labels, list) else []:
+            if isinstance(entry, dict) and marker in str(entry.get("description") or ""):
+                found.append(f"{name}: etykieta {entry['name']}")
+        for entry in admin.pages(f"/repos/{trial}/releases?"):
+            if isinstance(entry, dict) and marker in str(entry.get("body") or ""):
+                found.append(f"{name}: Release {entry.get('tag_name')}")
+        for entry in admin.pages(f"/repos/{trial}/tags?"):
+            if isinstance(entry, dict) and str(entry.get("name")).startswith(RUN_TAG + (run or "")):
+                found.append(f"{name}: tag {entry.get('name')}")
     return found
 
 
-def _clean_releases(admin: Admin, run: str) -> list[str]:
-    """Release (Archiwum) ze znacznikiem runu w opisie i jego tag z identyfikatorem runu; puste repozytorium nie ma żadnego."""
+def _clean_releases(admin: Admin, trial: str, run: str, noted: set[int]) -> list[str]:
+    """Release'y (Archiwa) ze znacznikiem runu w opisie, z listy i z rejestru ``noted`` (każdy pytany wprost, bo lista
+    może nie nadążać), razem z plikami, gdy każdy ma w nazwie identyfikator runu, a potem tagi z identyfikatorem runu
+    poza tagami Release'ów, które zostają (z plikiem bez identyfikatora runu albo bez znacznika runu): Release bez tagu
+    to już inny stan repozytorium niż ten, który sprzątanie zostawia."""
 
     lines = []
-    _, releases = admin.request("GET", f"/repos/{TRIAL}/releases?per_page=100")
-    for entry in releases if isinstance(releases, list) else []:
-        if not isinstance(entry, dict) or f"{RUN_MARKER}{run}" not in str(entry.get("body") or ""):
+    standing = set[str]()
+    found = {entry["id"]: entry for entry in admin.pages(f"/repos/{trial}/releases?") if isinstance(entry, dict)}
+    for release in sorted(noted - set(found)):
+        status, entry = admin.request("GET", f"/repos/{trial}/releases/{release}")
+        if status == 200 and isinstance(entry, dict):
+            found[release] = entry
+    for release, entry in sorted(found.items()):
+        if f"{RUN_MARKER}{run}" not in str(entry.get("body") or ""):
+            standing.add(str(entry.get("tag_name")))
             continue
-        status, _ = admin.request("DELETE", f"/repos/{TRIAL}/releases/{entry['id']}")
+        foreign = [
+            str(asset.get("name"))
+            for asset in admin.pages(f"/repos/{trial}/releases/{release}/assets?")
+            if isinstance(asset, dict) and not str(asset.get("name")).startswith(f"{run}-")
+        ]
+        if foreign:
+            lines.append(f"BŁĄD: Release {entry.get('tag_name')} zostaje, bo ma pliki bez identyfikatora runu: {foreign[:3]}")
+            standing.add(str(entry.get("tag_name")))
+            continue
+        status, _ = admin.request("DELETE", f"/repos/{trial}/releases/{release}")
+        if status != 204:
+            standing.add(str(entry.get("tag_name")))
         lines.append(
-            f"usunięty Release {entry.get('tag_name')}" if status == 204 else f"BŁĄD usunięcia Release: {status}"
+            f"usunięty Release {entry.get('tag_name')} z plikami" if status == 204 else f"BŁĄD usunięcia Release: {status}"
         )
-        tag = str(entry.get("tag_name"))
-        if run in tag:
-            status, _ = admin.request("DELETE", f"/repos/{TRIAL}/git/refs/tags/{tag}")
-            lines.append(f"usunięty tag {tag}" if status == 204 else f"tag {tag}: {status}")
+    for entry in admin.pages(f"/repos/{trial}/tags?"):
+        tag = str(entry.get("name")) if isinstance(entry, dict) else ""
+        if tag in standing:
+            lines.append(f"tag {tag} zostaje z Release'em, który zostaje")
+        elif tag.startswith(f"{RUN_TAG}{run}"):
+            status, _ = admin.request("DELETE", f"/repos/{trial}/git/refs/tags/{tag}")
+            lines.append(f"usunięty tag {tag}" if status == 204 else f"BŁĄD usunięcia tagu {tag}: {status}")
     return lines
 
 
@@ -147,16 +187,17 @@ def clean(root: Path) -> tuple[bool, list[str]]:
     noted = {entry["issue"] for entry in ledger if "issue" in entry}
     deleted, kept = _clean_issues(admin, marker, noted, lines)
     _, labels = admin.request("GET", f"/repos/{TRIAL}/labels?per_page=100")
-    before_names = (
-        {line.split(":", 1)[0] for line in before["etykiety"]} if isinstance(before["etykiety"], list) else set()
-    )
+    before_labels = before[TRIAL]["etykiety"]
+    before_names = {line.split(":", 1)[0] for line in before_labels} if isinstance(before_labels, list) else set()
     by_github = {entry["etykieta"] for entry in ledger if entry.get("zrodlo") == "github"}
     for label in labels if isinstance(labels, list) else []:
         name, description = str(label.get("name")), str(label.get("description") or "")
         if f"{RUN_MARKER}{run}" in description or (name in by_github and name not in before_names):
             status, _ = admin.request("DELETE", f"/repos/{TRIAL}/labels/{name}")
             lines.append(f"usunięta etykieta {name}" if status == 204 else f"BŁĄD usunięcia etykiety {name}: {status}")
-    lines += _clean_releases(admin, run)
+    releases = {entry["release"] for entry in ledger if "release" in entry}
+    for trial in TRIALS:
+        lines += _clean_releases(admin, trial, run, releases if trial == TRIAL_ARCHIVE else set())
     after = state(admin)
     for _ in range(SETTLE_ROUNDS):  # lista issue GitHuba nadąża za usunięciem po kilku sekundach
         if after == before:

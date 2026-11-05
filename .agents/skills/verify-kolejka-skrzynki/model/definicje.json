@@ -1,0 +1,18 @@
+{
+  "src/rozliczenia/centrum/outbox.py": "cały plik",
+  "src/rozliczenia/centrum/keyed_box.py": "cały plik",
+  "src/rozliczenia/centrum/report_box.py": "cały plik",
+  "src/rozliczenia/centrum/atomic_file.py": "cały plik",
+  "src/rozliczenia/centrum/app.py": [
+    "lifespan"
+  ],
+  "src/rozliczenia/centrum/launcher.py": [
+    "listen_locally",
+    "_listen_when_released"
+  ],
+  "src/rozliczenia/centrum/server.py": [
+    "_GRACEFUL_SHUTDOWN_S",
+    "serve",
+    "_Server"
+  ]
+}

@@ -1,7 +1,8 @@
 """Sprawdzenie modelu TLA+ Dziennika Wyceny w efenix i Logów Urwanego Uruchomienia: rozjazd z kodem w CI i werdykty.
 
 Model opisuje definicje z ``model/definicje.json`` skilla ``verify-urwane-uruchomienie`` w commicie synchronizacji z jego
-``SKILL.md``: funkcje, klasy, przypisania i metody (``Klasa.metoda``). Zmiana innej części tych plików (``run_logs.py``,
+``SKILL.md``: funkcje, klasy, przypisania i metody (``Klasa.metoda``); rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py``
+(``tests/test_rozjazd_modelu.py``). Zmiana innej części tych plików (``run_logs.py``,
 ``app.py`` i ``runs.py`` zmieniają się często) rozjazdem nie jest. Testy rozjazdu biegną na repozytorium z plikami
 zbudowanymi z tej tabeli, nie na kodzie ``src/``: sprawdzają skrypt, a kod opisany modelem sprawdza krok ``ci:`` skilla.
 
@@ -27,9 +28,16 @@ import pytest
 from tests.fixtures.git_repo import commit, git
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools" / "lib"))
+
+import rozjazd_modelu  # noqa: E402
+
 SCRIPT = ROOT / ".agents" / "skills" / "verify-urwane-uruchomienie" / "scripts" / "sprawdz_urwane_uruchomienie.py"
 DEFINITIONS = ROOT / ".agents" / "skills" / "verify-urwane-uruchomienie" / "model" / "definicje.json"
 TOOLS = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts" / "sprawdz_aktualizacje.py"
+OWNER = ROOT / "tools" / "lib" / "rozjazd_modelu.py"
+# Właścicielka rozjazdu dopobiera historię przez potomne.run.
+POTOMNE = ROOT / "tools" / "lib" / "potomne.py"
 DRIFT = "URWANE URUCHOMIENIE: ROZJAZD MODELU Z KODEM"
 
 
@@ -81,7 +89,7 @@ def _file_of(name: str) -> str:
 def _repository(root: Path) -> str:
     """Repozytorium ze skryptami skilli, tabelą definicji i plikami, które ją spełniają; zwraca commit synchronizacji."""
 
-    for script in (SCRIPT, DEFINITIONS, TOOLS):
+    for script in (SCRIPT, DEFINITIONS, TOOLS, OWNER, POTOMNE):
         copy = root / script.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(script, copy)
@@ -177,34 +185,6 @@ def test_w_ci_definicja_ktorej_nie_ma_jest_rozjazdem(tmp_path: Path) -> None:
     assert f"{_file_of('RunCards.recorded')} RunCards.recorded." in done.stdout
 
 
-def test_definicja_to_przypisanie_w_funkcji_albo_metoda_swojej_klasy() -> None:
-    """``app`` i ``interrupted`` w ``create_app`` to przypisania w funkcji, a ``RunLog.interrupted`` i
-    ``RunLogs.interrupted`` to metody o tej samej nazwie w dwóch klasach."""
-
-    module = _load()
-    source = "\n".join(
-        [
-            "def create_app():",
-            "    interrupted = Pricings(1)",
-            "    app = FastAPI(dependencies=[interrupted])",
-            "    return app",
-            "class RunLog:",
-            "    def interrupted(self): return 1",
-            "class RunLogs:",
-            "    def interrupted(self): return 2",
-            "",
-        ]
-    )
-    changed = source.replace("Pricings(1)", "Pricings(2)")
-
-    found = {name: module._definition(source, name) for name in ("interrupted", "app", "RunLog.interrupted", "RunLogs.interrupted")}
-
-    assert None not in found.values(), found
-    assert found["RunLog.interrupted"] != found["RunLogs.interrupted"]
-    assert (module._definition(changed, "interrupted") != found["interrupted"], module._definition(changed, "app") == found["app"]) == (True, True)
-    assert (module._definition(source, "RunLogs.obok"), module._definition(source, "Brak.interrupted")) == (None, None)
-
-
 def test_w_ci_brak_commitu_synchronizacji_konczy_sprawdzenie_porazka(tmp_path: Path) -> None:
     _repository(tmp_path)
 
@@ -212,7 +192,7 @@ def test_w_ci_brak_commitu_synchronizacji_konczy_sprawdzenie_porazka(tmp_path: P
 
     assert done.returncode == 1, done.stdout + done.stderr
     assert done.stdout.splitlines()[-1] == DRIFT
-    assert f"commitu synchronizacji {'0' * 40} nie ma w tej historii" in done.stdout
+    assert f"Sync commit {'0' * 40} nie ma w tej historii" in done.stdout
 
 
 def _verdicts(
@@ -231,7 +211,7 @@ def _verdicts(
         json.dumps({name: {"znane": findings} for name, findings in known.items()}), encoding="utf-8"
     )
     monkeypatch.setattr(module, "MODEL", tmp_path)
-    monkeypatch.setattr(module, "_drift", lambda tools, root, skill_md: None)
+    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: None)
     monkeypatch.setenv("TLC_JAVA", "java")
     monkeypatch.setenv("TLC_JAR", "tla2tools.jar")
     forgiven: list[frozenset[tuple[str, str]]] = []

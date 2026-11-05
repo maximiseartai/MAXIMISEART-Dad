@@ -1,6 +1,7 @@
 """Skrzynka Zgłoszeń na GitHubie: odpowiedzi REST zamienione na wyniki skrzynki, z podstawionym transportem HTTP.
 
-Żaden test nie łączy się z prawdziwym GitHubem.
+Żaden test nie łączy się z prawdziwym GitHubem. Nagrania prawdziwego GitHuba skilla ``verify-github-skrzynki``
+odtwarzają się tak samo na każdej maszynie, choć bajty gzipu ``ArchiveFile.packed`` zależą od Pythona i zlib.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -48,6 +50,13 @@ from rozliczenia.centrum.outbox import ArchiveFile, Outbox, PeriodThread, Post, 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.sluchacz_kolejki import QueueListener
+
+SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
+sys.path.insert(0, str(SKILL / "scripts"))
+
+import github_przypadki_archiwum  # noqa: E402
+import github_skrzynki  # noqa: E402
+import github_wymiana  # noqa: E402
 
 TITLE = "BRAK_WZORCA: Nie znaleziono wzorca."
 BODY = "## Komunikat\n"
@@ -560,6 +569,28 @@ def test_archiwum_okresu_to_release_z_tagiem_z_listy_wydan_repozytorium_z_jego_p
     assert all(request.headers["Authorization"] == f"Bearer {KEY}" for request in transport.requests)
 
 
+def test_pliki_archiwum_sa_zbierane_ze_wszystkich_stron() -> None:
+    full_page = [{"id": index, "name": f"{index}.json.gz", "label": "", "state": "uploaded"} for index in range(100)]
+    transport = ScriptedTransport(
+        pages([{"id": 5, "tag_name": TAG}], full_page, [{"id": 100, "name": ASSET, "label": "", "state": "uploaded"}])
+    )
+
+    outcome = GitHubReportBox(transport=transport).archive(TAG, key=KEY)
+
+    assert isinstance(outcome, Archive)
+    assert [asset.id for asset in outcome.assets] == list(range(101))
+    assert [request.url.rsplit("=", 1)[1] for request in transport.requests] == ["1", "1", "2"]
+
+
+@pytest.mark.parametrize("operation", ["archive", "open_archive", "upload", "remove"])
+def test_odmowa_autoryzacji_przy_archiwum_to_odmowa_skrzynki(operation: str) -> None:
+    transport = ScriptedTransport(lambda: HttpResponse(401, b'{"message": "Bad credentials"}'))
+
+    outcome = OPERATIONS[operation](GitHubReportBox(transport=transport), KEY)
+
+    assert outcome == Refused()
+
+
 def test_bez_release_z_tagiem_okresu_archiwum_jeszcze_nie_ma() -> None:
     transport = ScriptedTransport(pages([{"id": 4, "tag_name": "logi-01_07_09_2026"}]))
 
@@ -657,12 +688,25 @@ EMPTY_REPOSITORY_ANSWERS = {
 }
 
 
+# Odpowiedzi GitHuba na plik o nazwie, która już jest w Release, i na Release z tagiem, który już ma Release
+# (repozytorium próbne z commitem 2026-11-05, nagrania ``verify-github-skrzynki``).
+SAME_NAME = {
+    "message": "Validation Failed",
+    "errors": [{"resource": "ReleaseAsset", "code": "already_exists", "field": "name"}],
+}
+SAME_TAG = {
+    "message": "Validation Failed",
+    "errors": [{"resource": "Release", "code": "already_exists", "field": "tag_name"}],
+    "status": "422",
+}
+
+
 @dataclass
 class GitHubOnTransport:
     """GitHub REST dla Skrzynki w pamięci, za transportem HTTP: issue z komentarzami i Release'y z plikami.
 
     Zna tylko zapytania, które wysyła ``GitHubReportBox``, i jak GitHub nie trzyma dwóch plików jednej nazwy w jednym
-    Release (422). ``refuse_releases``: klucz bez uprawnienia do treści repozytorium (403 przy każdym zapytaniu o
+    Release ani dwóch Release'ów jednego tagu (422). ``refuse_releases``: klucz bez uprawnienia do treści repozytorium (403 przy każdym zapytaniu o
     Release'y i ich pliki). ``empty_repository``: repozytorium bez żadnego commitu, jak repozytorium Skrzynki
     2026-11-04: lista Release'ów jest pusta, a założenie Release to ta odpowiedź (``EMPTY_REPOSITORY_ANSWERS``).
     """
@@ -705,6 +749,8 @@ class GitHubOnTransport:
                 return self._page(list(self.releases.values()), query)
             case "POST", ["releases"] if self.empty_repository is not None:
                 return self._answer(*self.empty_repository)
+            case "POST", ["releases"] if any(r["tag_name"] == body["tag_name"] for r in self.releases.values()):
+                return self._answer(422, SAME_TAG)
             case "POST", ["releases"]:
                 release = {"id": next(self._ids), "tag_name": body["tag_name"], "name": body["name"]}
                 self.releases[release["id"]] = release
@@ -714,7 +760,7 @@ class GitHubOnTransport:
             case "POST", ["releases", release_id, "assets"]:
                 name, label = query["name"][0], query["label"][0]
                 if any(a["release"] == int(release_id) and a["name"] == name for a in self.assets.values()):
-                    return self._answer(422, {"errors": [{"code": "already_exists"}]})
+                    return self._answer(422, SAME_NAME)
                 asset_id = next(self._ids)
                 self.data[asset_id] = request.body or b""
                 self.assets[asset_id] = {"id": asset_id, "name": name, "label": label, "state": "uploaded", "release": int(release_id)}
@@ -740,6 +786,27 @@ class GitHubOnTransport:
     @staticmethod
     def _answer(status: int, document: object) -> HttpResponse:
         return HttpResponse(status, json.dumps(document).encode())
+
+
+def test_archiwum_z_tagiem_ktory_juz_ma_release_to_odmowa_tresci_a_archiwum_zostaje_jedno() -> None:
+    box = GitHubReportBox(transport=GitHubOnTransport())
+    opened = box.open_archive(TAG, "Logi Uruchomień", "Opis.", key=KEY)
+
+    outcome = box.open_archive(TAG, "Logi Uruchomień", "Opis.", key=KEY)
+
+    assert (outcome, box.archive(TAG, key=KEY)) == (Rejected(), opened)
+
+
+def test_plik_o_nazwie_ktora_jest_juz_w_archiwum_to_odmowa_tresci_a_pierwszy_plik_zostaje() -> None:
+    box = GitHubReportBox(transport=GitHubOnTransport())
+    opened = box.open_archive(TAG, "Logi Uruchomień", "Opis.", key=KEY)
+    assert isinstance(opened, Archive)
+    first = box.upload(opened.id, ASSET, f"{ASSET} (wersja 1)", b"\x1f\x8bpierwszy", key=KEY)
+    assert isinstance(first, Asset)
+
+    outcome = box.upload(opened.id, ASSET, f"{ASSET} (wersja 2)", b"\x1f\x8bdrugi", key=KEY)
+
+    assert (outcome, box.archive(TAG, key=KEY)) == (Rejected(), Archive(opened.id, (first,)))
 
 
 LOGS = PeriodThread("logi-uruchomienia", "- Logi Uruchomienia okresu: 08_14_09_2026", "reuse", "Logi Uruchomienia 08_14_09_2026")
@@ -858,3 +925,29 @@ def test_odmowa_archiwum_zatrzymuje_tylko_plik_logow_a_zgloszenie_za_nimi_dochod
     lines = log.read_text("utf-8")
     assert ("przyczyna=odmowa-archiwum" in lines, "przyczyna=brak-sieci" in lines) == (True, False)
     assert keyed.judge(wait_s=0) == "accepted"
+
+
+@pytest.mark.parametrize("system", [3, 19, 255, 10], ids=["linux", "macos-python-3-12", "python-3-13", "windows-zlib"])
+def test_nagranie_archiwum_odtwarza_sie_przy_gzipie_innej_maszyny(monkeypatch: pytest.MonkeyPatch, system: int) -> None:
+    """``ArchiveFile.packed`` daje na Windows w CI (Python 3.14) inne bajty niż na Macu, na którym powstało nagranie
+    (run 41959078147, bajt systemu w nagłówku 255 zamiast 19): odtwarzanie Archiwum nie zależy od bajtów gzipu maszyny."""
+
+    compress = gzip.compress
+
+    def compress_like_other_machine(data: bytes, compresslevel: int = 9, *, mtime: float | None = None) -> bytes:
+        packed = compress(data, compresslevel=1, mtime=mtime)  # inny poziom: deflate innej biblioteki
+        return packed[:9] + bytes([system]) + packed[10:]
+
+    monkeypatch.setattr(gzip, "compress", compress_like_other_machine)
+    recording = github_wymiana.read_recording(SKILL / "nagrania" / "archiwum-fine-grained.json")
+
+    results = github_skrzynki.replay(
+        "archiwum-fine-grained",
+        github_przypadki_archiwum.CASES,
+        recording,
+        github_skrzynki.replay_archiwum,
+        github_przypadki_archiwum.describe,
+    )
+
+    assert [(result.case, result.problems) for result in results if not result.ok] == []
+    assert len(results) == len(github_przypadki_archiwum.CASES)

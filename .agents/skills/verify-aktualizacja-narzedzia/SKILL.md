@@ -6,6 +6,7 @@ pilnuje:
   - src/rozliczenia/centrum/tool_updates.py
   - src/rozliczenia/centrum/restart_guardian.py
   - src/rozliczenia/centrum/launcher.py
+  - tools/lib/rozjazd_modelu.py
 ci: .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
 ---
 
@@ -16,7 +17,9 @@ ci: .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
 CI runs `sprawdz_aktualizacje.py` (the `ci:` key) in Mutation checks on Windows whenever a change
 touches this skill, so run it locally only while you bring the model in line or to reproduce a red
 Mutation checks step. It fails with `AKTUALIZACJA: ROZJAZD MODELU Z KODEM` when covered code changed since the
-model's Sync commit, but it cannot tell whether your change to the model is right. What stays with you on every change to the covered code is „Bring the model in
+model's Sync commit, but it cannot tell whether your change to the model is right.
+`tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
+What stays with you on every change to the covered code is „Bring the model in
 line, then run”: read the diff against the table, change the model, break a new path in it, and run
 the check while you do. A change whose model nobody brought in line is not verified, whatever CI says.
 
@@ -135,7 +138,7 @@ the next start skips it), and the card from `_view_of`. The model does not
 hold the Centrum log, so it lets every start skip the result: the card then
 says nothing, never „updated”.
 
-Covered files: `src/rozliczenia/centrum/tool_update.py`,
+Covered files, each as a whole file (`model/definicje.json`): `src/rozliczenia/centrum/tool_update.py`,
 `src/rozliczenia/centrum/tool_updates.py`,
 `src/rozliczenia/centrum/restart_guardian.py`,
 `src/rozliczenia/centrum/launcher.py`.
@@ -279,7 +282,7 @@ The last line is the verdict:
 | `AKTUALIZACJA: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding no longer happens. If you fixed it, set `"wynik": "przechodzi"` for it in `model/oczekiwane.json` and remove it from the findings below. |
 | `AKTUALIZACJA: BŁĄD MODELU (n)` | 2 | TLC gave no verdict (a syntax error in the model), or `TypeOK` broke. Nothing is known about the promise. |
 
-`UWAGA: pokryty kod zmienił się od …` means a covered file changed after the
+`UWAGA: kod opisany modelem zmienił się od …` means a covered file changed after the
 sync commit. Until you have done „Bring the model in line”, the verdict above
 it means nothing.
 
