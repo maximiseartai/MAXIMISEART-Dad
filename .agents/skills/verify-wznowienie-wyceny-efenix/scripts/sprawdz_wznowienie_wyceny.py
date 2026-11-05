@@ -47,8 +47,9 @@ DEFINITIONS = {
     "src/rozliczenia/efenix_pricing.py": ("save", "_mark", "_efenix_stops", "_priced", "_outcome", "_after_emmett", "_entered"),
     "src/rozliczenia/efenix_emmett_trace.py": ("EmmettTrace", "_replace", "_read_secret", "_read", "_is_entry"),
     "src/rozliczenia/efenix_positions.py": ("as_left_after_emmett", "to_enter", "priced_differently", "same_amount", "emmett_conflicts"),
-    # Okno efenix: kiedy efenix zapisał Wycenę Emmetta i ilość, a kiedy okno zgłasza ``LoggedOut`` bez zapisu ilości.
-    "src/rozliczenia/efenix_browser.py": ("load_emmett", "enter_quantity"),
+    # Okno efenix: kiedy efenix zapisał Wycenę Emmetta i ilość, a kiedy okno zgłasza ``LoggedOut`` bez zapisu ilości;
+    # ``_finished`` zgłasza odpowiedź 4xx/5xx na „Załaduj do zlecenia” i zapis ilości, zanim okno ją przeczyta (#878).
+    "src/rozliczenia/efenix_browser.py": ("load_emmett", "enter_quantity", "_finished"),
 }
 # Dopobranie historii płytkiego klonu CI nie czeka do limitu czasu runnera.
 FETCH_TIMEOUT_S = 300
