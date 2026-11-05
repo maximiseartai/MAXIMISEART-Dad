@@ -9,18 +9,22 @@ które nie przeszły albo których nie sprawdzono. Resztę sprawdza ``test_centr
 danych (``guarded``, ADR 0025) ma tu klucz słownika Logów z zakazaną wartością: klucze pochodzą dziś z zamkniętych
 list (operator z reguły taty, kod pozycji efenix, litera kolumny), więc przez HTTP żadna taka wartość do klucza nie
 trafia, i liczbę policzoną przez narzędzie w kształcie telefonu, której syntetyczne pliki taty przez HTTP nie dają.
+Pełne Logi z każdym polem schematu (``FULL_LOGS``) niesie tylko ten plik: przemiatanie kształtów pól (#936) daje
+strażnikowi każdy ich tekst jako wartość z pliku taty, a przez HTTP jedno Uruchomienie nie wypełnia wszystkich pól.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from decimal import Decimal
 import gzip
-from typing import Any
+import json
+from typing import Any, Final
 
 import pytest
 
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, REPOSITORY
-from rozliczenia.centrum.run_logs import RunLog, UnrepresentableLogs, guarded, logi_post, summary_markdown
+from rozliczenia.centrum.run_logs import RunLog, guarded, logi_post, summary_markdown
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 
@@ -253,13 +257,269 @@ def test_maska_w_chwili_zmiany_pliku_kopii_wejscia_daje_puste_pole_z_uwaga_kopii
     assert kept.technical_notes == []
 
 
-def test_maska_w_chwili_startu_uruchomienia_konczy_sie_nazwanym_bledem_a_nie_zawieszeniem() -> None:
-    """Granica (#936): pole Logów najwyższego poziomu bez ``None`` (chwila startu) nie ma czego stracić, więc Logi z
-    maską w nim nie powstają, a strażnik kończy się nazwanym błędem z tym polem. Maska zależy od wartości zapamiętanych
-    z plików taty (tu numer Orange ``846240Z`` w części ułamkowej sekundy), a nie od tego, skąd pochodzi pole."""
+_FULL_STEP: Final[dict[str, Any]] = {
+    "action": "Wycena Emmetta",
+    "started_at": "2026-10-23T20:48:01.300000Z",
+    "duration_ms": 250,
+    "found": 1,
+    "execution_date": "2026-10-20",
+    "amount": "67.89",
+    "quantities": {"014": 3},
+    "position": "Pozycja testowa",
+    "quantity": 4,
+    "accepted": True,
+    "results": [{"same_number": True, "status": "Status syntetyczny", "realizator": "realizator.testowy", "address": ["lokal"]}],
+    "status": "Status otwarty",
+    "realizator": "otwierajacy.testowy",
+}
+# Pełne Logi: każde pole schematu ma wartość, a każda wartość jest jedna w Logach. Tekst spoza zamkniętych list i pól
+# narzędzia to syntetyczna treść plików taty i strony efenix.
+FULL_LOGS: Final[dict[str, Any]] = {
+    "schema_version": 2,
+    "run_id": RUN_ID,
+    "process": "efenix",
+    "mode": "zapis",
+    "period": "08_14_09_2026",
+    "started_at": "2026-10-23T20:47:20.846240Z",
+    "ended_at": "2026-10-23T20:49:31.857060Z",
+    "duration_ms": 131_011,
+    "tool": {"wydanie": "0.10.0", "commit": "3c1d0a9e5b7f4c2d8e6a1b0f9c8d7e6a5b4c3d2e"},
+    "result": "WYMAGA_SPRAWDZENIA",
+    "ending": "after_engine",
+    "stop_kind": "for_maks",
+    "issue_count": 3,
+    "messages": [
+        {"kind": "warning", "code": "EFENIX_SPRZECZNOSC", "what": "Syntetyczny opis różnicy", "where": "Wiersz osiemnasty", "action": "Popraw ilość ręcznie"}
+    ],
+    "technical_notes": ["Syntetyczna uwaga techniczna"],
+    "summary": {
+        "figures": [{"label": "Zlecenia wycenione", "value": 4, "unit": "count"}],
+        "counts": {"title": "Pozycje syntetyczne", "counts": [{"label": "Montaż gniazda", "count": 2}], "zero_warns": False},
+        "files": [{"name": "Plik zbiorczy syntetyczny.xlsx", "kind": "collective_file"}],
+        "worker_settlements": [{"worker": "Wykonawca Testowy", "file": "Rozliczenie Testowe.xlsx", "orders": 3, "empty": False}],
+        "intermax_copy": "Kopia INTERMAX syntetyczna.xlsx",
+    },
+    "phases": [
+        {
+            "phase": "Planowanie",
+            "state": "completed",
+            "duration_ms": 5,
+            "started_at": "2026-10-23T20:47:21.100000Z",
+            "ended_at": "2026-10-23T20:47:21.105000Z",
+        }
+    ],
+    "templates": [
+        {
+            "wykonawca": "Wykonawca Szablonowy",
+            "outcome": "ZAPISANO",
+            "rows": 7,
+            "duration_ms": 40,
+            "started_at": "2026-10-23T20:47:22.200000Z",
+            "ended_at": "2026-10-23T20:47:22.240000Z",
+        }
+    ],
+    "inea_only_cleared": {"AK": 2},
+    "intermax_entries": {"rows": {"Operator Syntetyczny": [12, 13]}, "without_entry": [{"row": 14, "operator": "Operator Hurtowy"}]},
+    "efenix_orders": [
+        {
+            "row": 18,
+            "outcome": "ostrzeżenie Emmetta",
+            "code": "EFENIX_KOD_ZLECENIA",
+            "file": {"012": 1, "013": "Ilość tekstem"},
+            "file_amount": "123.45",
+            "steps": [_FULL_STEP],
+        }
+    ],
+    "efenix_stop": {
+        "cause": {
+            "part": "Strona syntetyczna",
+            "what": "Przyczyna syntetyczna",
+            "positions": ["015"],
+            "element": "selektor-syntetyczny",
+            "count": 2,
+            "status": 503,
+            "error_type": "PlaywrightTimeout",
+            "operation": "kliknięcie",
+        },
+        "row": 19,
+        "order": 2,
+        "orders": 4,
+        "steps": [{**_FULL_STEP, "action": "szukanie", "started_at": "2026-10-23T20:48:30.100000Z"}],
+        "failed": {**_FULL_STEP, "action": "ilość", "started_at": "2026-10-23T20:48:40.200000Z"},
+    },
+    "environment": {
+        "system": "Windows-11-10.0.26100-SP0",
+        "python": "3.12.10",
+        "files": [{"name": "Rejestr syntetyczny.xlsx", "size": 2048, "online_only": False}],
+    },
+    "trace": {
+        "exception_type": "rozliczenia.efenix_pricing.PricingStopped",
+        "frames": [{"file": "src/rozliczenia/efenix_pricing.py", "line": 120, "function": "price_orders"}],
+        "causes": [
+            {"exception_type": "TimeoutError", "frames": [{"file": "src/rozliczenia/efenix_window.py", "line": 45, "function": "wait_for_page"}]}
+        ],
+    },
+    "diagnosis": {
+        "diagnosed_at": "2026-10-23T20:52:00.400000Z",
+        "explanation": {"code": "BRAK_WZORCA", "what": "Opis diagnozy", "where": "Miejsce diagnozy", "action": "Działanie diagnozy"},
+        "next_action": "report",
+        "checks": [{"label": "Wzorzec syntetyczny", "state": "failed", "detail": "Szczegół sprawdzenia", "code": "BRAK_WZORCA_KOD"}],
+    },
+    "dad_actions": {
+        "entries": [
+            {"at": "2026-10-23T20:40:00.500000Z", "action": "start Centrum"},
+            {"at": "2026-10-23T20:41:00.600000Z", "action": "widok", "page": "okresy", "kind": "cold_start"},
+            {"at": "2026-10-23T20:47:20.700000Z", "action": "przycisk", "operation": "startRun", "process": "efenix", "mode": "zapis"},
+        ],
+        "omitted": 0,
+    },
+    "interruption": {"row": 20, "place": 3, "total": 4, "omitted": 1},
+    "input_copy": [
+        {
+            "name": "Plik zbiorczy taty.xlsx",
+            "fingerprint": {"size": 4096, "modified_at": "2026-10-22T08:00:00.900000Z", "sha256": "ab" * 32},
+            "sheets": [
+                {
+                    "sheet": "Arkusz syntetyczny",
+                    "header_row": 17,
+                    "columns": {"C": "WYKONAWCA"},
+                    "rows": [
+                        {
+                            "row": 18,
+                            "cells": {"C": "Komórka syntetyczna", "D": {"type": "datetime", "text": "2026-10-21 00:00:00"}, "E": 12.5, "F": True},
+                        }
+                    ],
+                    "empty_rows": [21],
+                    "shifted_row": 22,
+                    "uncertain_rows": [23],
+                    "last_ordered_row": 16,
+                    "yellow_row": 15,
+                }
+            ],
+            "folders": ["Folder nadrzędny", "Folder okresu"],
+        }
+    ],
+    "input_copy_notes": ["Syntetyczna uwaga kopii"],
+}
+
+
+def full_logs(**changes: Any) -> RunLog:
+    return RunLog.model_validate({**FULL_LOGS, **changes})
+
+
+def _json_at(logs: RunLog, place: str) -> str:
+    """Pole ``place`` (nazwy pól po kropce) w JSON-ie Logów ``logs``."""
+
+    value: Any = logs.model_dump(mode="json")
+    for key in place.split("."):
+        value = value[key]
+    return json.dumps(value, ensure_ascii=False)
+
+
+# Pola Logów, które niosą tylko słowa i chwile narzędzia (ADR 0025, #936), i wartość z każdego z nich w pełnych Logach.
+TOOL_FIELDS: Final = {
+    "run_id": RUN_ID,
+    "process": "efenix",
+    "mode": "zapis",
+    "period": "08_14_09_2026",
+    "started_at": "2026-10-23T20:47:20.846240Z",
+    "ended_at": "2026-10-23T20:49:31.857060Z",
+    "tool": "3c1d0a9e5b7f4c2d8e6a1b0f9c8d7e6a5b4c3d2e",
+    "result": "WYMAGA_SPRAWDZENIA",
+    "ending": "after_engine",
+    "stop_kind": "for_maks",
+    "phases": "Planowanie",
+    "trace": "price_orders",
+    "dad_actions": "startRun",
+    "environment.system": "Windows-11-10.0.26100-SP0",
+    "environment.python": "3.12.10",
+}
+
+
+@pytest.mark.parametrize(("place", "value"), TOOL_FIELDS.items(), ids=TOOL_FIELDS.keys())
+def test_pole_ze_slowami_i_chwilami_narzedzia_zostaje_w_logach_choc_plik_taty_ma_te_wartosc_w_kolumnie_adres(
+    place: str, value: str
+) -> None:
+    """Strażnik porównuje słowa, a nie pochodzenie wartości (#936): wartość z kolumny ``ADRES`` pliku taty równa słowu
+    albo chwili narzędzia zostaje w polu, które niesie tylko to, co dało narzędzie. Logi powstają i idą do issue swojego
+    okresu jako swoje Uruchomienie, a w Komunikacie, który cytuje komórkę, ta wartość jest maską."""
 
     forbidden = ForbiddenValues()
-    forbidden.remember_value(ForbiddenColumn.ORANGE, "846240Z")
+    forbidden.remember_value(ForbiddenColumn.ADDRESS, value)
+    logs = full_logs(messages=[{**FULL_LOGS["messages"][0], "where": f"Komórka „{value}”."}])
+    assert forbidden.guard(_json_at(logs, place), place).notes, "pole ma wartość z kolumny ADRES"
 
-    with pytest.raises(UnrepresentableLogs, match=r"bez miejsca na maskę strażnika w polu started_at \(#936\)"):
-        guarded(record(), forbidden)
+    kept = guarded(logs, forbidden)
+
+    assert _json_at(kept, place) == _json_at(logs, place)
+    assert kept.messages[0].where == "Komórka „[adres]”."
+    post = logi_post(kept)
+    assert (post.run_id, post.period) == (RUN_ID, "08_14_09_2026")
+
+
+def _texts(value: object) -> Iterator[tuple[str, bool]]:
+    """Każdy tekst JSON-a Logów: klucz (``True``) albo wartość tekstowa (``False``)."""
+
+    if isinstance(value, dict):
+        for key, entry in value.items():
+            yield key, True
+            yield from _texts(entry)
+    elif isinstance(value, list):
+        for entry in value:
+            yield from _texts(entry)
+    elif isinstance(value, str):
+        yield value, False
+
+
+def _schema_words() -> tuple[set[str], set[str]]:
+    """Nazwy pól i wartości zamkniętych list schematu Logów (``RunLog.model_json_schema``)."""
+
+    names: set[str] = set()
+    closed: set[str] = set()
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            names.update(node.get("properties", {}))
+            closed.update(str(value) for value in node.get("enum", ()))
+            if "const" in node:
+                closed.add(str(node["const"]))
+            for entry in node.values():
+                walk(entry)
+        elif isinstance(node, list):
+            for entry in node:
+                walk(entry)
+
+    walk(RunLog.model_json_schema())
+    return names, closed
+
+
+def test_kazdy_tekst_pelnych_logow_jako_adres_z_pliku_taty_daje_logi_bez_niego_poza_slowami_narzedzia() -> None:
+    """Przemiatanie kształtów pól (#936): każdy tekst pełnych Logów, wartość i klucz, po kolei jako wartość kolumny
+    ``ADRES`` z pliku taty. Logi powstają za każdym razem, także gdy to nazwa pola schematu, słowo zamkniętej listy albo
+    wartość pola narzędzia, a pola narzędzia mają wartość z rekordu. Wartość spoza słów narzędzia nie zostaje nigdzie w
+    tekście Logów, a nazwa pola, której nie ma w żadnej wartości, nie zmienia Logów wcale."""
+
+    logs = full_logs()
+    texts = list(_texts(logs.model_dump(mode="json")))
+    names, closed = _schema_words()
+    assert names <= {text for text, key in texts if key}, "pełne Logi mają każde pole schematu"
+    values = "\n".join(text for text, key in texts if not key)
+    tool_words = "\n".join([*names, *closed, *(_json_at(logs, place) for place in TOOL_FIELDS)])
+
+    swept = 0
+    for word in sorted({text for text, _ in texts}):
+        forbidden = ForbiddenValues()
+        forbidden.remember_value(ForbiddenColumn.ADDRESS, word)
+        if not forbidden.guard(word, "").notes:
+            continue  # krótsza niż ``MIN_VALUE``: strażnik jej nie szuka
+        swept += 1
+
+        kept = guarded(logs, forbidden)
+
+        assert logi_post(kept).run_id == RUN_ID, word
+        assert [place for place in TOOL_FIELDS if _json_at(kept, place) != _json_at(logs, place)] == [], word
+        if not forbidden.guard(tool_words, "").notes:
+            assert not forbidden.guard(kept.text, "").notes, f"{word!r} zostało w Logach"
+        if word in names and not forbidden.guard(values, "").notes:
+            assert kept == logs, word
+    assert swept > len(names)
