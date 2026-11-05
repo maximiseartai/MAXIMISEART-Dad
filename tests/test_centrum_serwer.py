@@ -1,5 +1,6 @@
 """Serwer Centrum rozliczeń: ``start`` i ``stop`` w dzienniku, póki Centrum trzyma port, i port, który zamknięte Centrum
-zwalnia od razu, także gdy jego kolejka Skrzynki Zgłoszeń jeszcze wysyła."""
+zwalnia od razu, także gdy jego kolejka Skrzynki Zgłoszeń jeszcze wysyła, oraz zatrzymanie Centrum w teście, które
+czeka na koniec każdego jego wątku."""
 
 from __future__ import annotations
 
@@ -155,3 +156,36 @@ def test_zamkniete_centrum_zwalnia_port_od_razu_takze_gdy_kolejka_czeka_na_skrzy
 
     assert closed, "Centrum czekało z zamknięciem na wysyłkę kolejki"
     assert port_free
+
+
+class _EndingThread(threading.Thread):
+    """Wątek, którego kod już się skończył (zniknął z ``threading.enumerate()``), a wątek systemu jeszcze żyje.
+
+    Tak kończy się każdy wątek: ``Thread._delete`` zdejmuje go z ``enumerate()``, zanim skończy się wątek systemu, a
+    ``is_alive()`` do tej chwili zwraca True; tu ta chwila trwa, dopóki test nie ustawi ``end``.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(name="konczacy-sie", daemon=True)
+        self.code_ended = threading.Event()
+        self.end = threading.Event()
+
+    def _delete(self) -> None:
+        super()._delete()  # type: ignore[misc]
+        self.code_ended.set()
+        self.end.wait()
+
+
+def test_zatrzymanie_centrum_w_tescie_czeka_na_koniec_watku_systemu_a_nie_tylko_jego_kodu() -> None:
+    # #862: ``stop`` uznał Centrum za zatrzymane, gdy ``skrzynka-klucz`` zniknął już z ``enumerate()``, a jeszcze żył.
+    since = new_line()
+    ending = _EndingThread()
+    ending.start()
+    assert ending.code_ended.wait(30), "wątek nie doszedł do końca swojego kodu"
+
+    with pytest.raises(AssertionError, match="żyją wątki konczacy-sie"):
+        join_threads_since(since, timeout_s=0)
+    ending.end.set()
+    join_threads_since(since)
+
+    assert not ending.is_alive()
