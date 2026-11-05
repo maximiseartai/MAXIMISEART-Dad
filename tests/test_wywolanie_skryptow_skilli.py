@@ -27,9 +27,6 @@ CONTRACT_NAMES = {"root", "run_dir", "variant", "wariant", "katalog_runu"}
 CWD_CALLS = {"chdir", "getcwd", "cwd"}
 
 OUTSIDE_CONTRACT = {
-    ("verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py", "'.verification'"): (
-        "pamięć podręczna narzędzi modelu TLA+, nie run"
-    ),
     ("verify-centrum-rozliczen/scripts/create_centrum_fixture.py", "add_argument(--wariant)"): (
         "dane fixture, które runner wybiera dla funkcji wydajnosc; jedna wartość, nie lista wariantów weryfikacji"
     ),

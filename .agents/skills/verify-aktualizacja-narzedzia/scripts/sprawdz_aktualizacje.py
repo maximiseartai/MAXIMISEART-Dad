@@ -18,7 +18,6 @@ kodem 1, bez TLC.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -30,14 +29,24 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from narzedzia_tlc import JDK4PY, TLA_SHA256, TLA_URL, TLA_WERSJA, ChwilowaAwaria, pobierz, z_ponowieniem
+from narzedzia_tlc import (
+    BLAD_POBIERANIA,
+    JDK4PY,
+    KATALOG,
+    TLA_URL,
+    ChwilowaAwaria,
+    jar_tla,
+    ma_przypieta_sume,
+    pobierz,
+    z_ponowieniem,
+)
 import rozjazd_modelu
 
 SKILL = Path(__file__).resolve().parents[1]
 ROOT = SKILL.parents[2]
 MODEL = SKILL / "model"
 SPEC = "AktualizacjaNarzedzia.tla"
-CACHE = ROOT / ".verification" / "formal-aktualizacja"
+CACHE = ROOT / KATALOG
 
 PASSES, VIOLATES = "przechodzi", "narusza"
 DRIFT = "AKTUALIZACJA: ROZJAZD MODELU Z KODEM"
@@ -187,20 +196,16 @@ def _java() -> str:
 def _tla_tools() -> Path:
     """``tla2tools.jar`` w przypiętej wersji, sprawdzony sumą SHA-256."""
 
-    jar = CACHE / f"tla2tools-{TLA_WERSJA}.jar"
-    if not jar.is_file() or _sha256(jar) != TLA_SHA256:
+    jar = jar_tla(CACHE)
+    if not ma_przypieta_sume(jar):
         CACHE.mkdir(parents=True, exist_ok=True)
         partial = jar.with_suffix(".part")
         pobierz(TLA_URL, partial)
-        if _sha256(partial) != TLA_SHA256:
+        if not ma_przypieta_sume(partial):
             partial.unlink()
-            sys.exit(f"BŁĄD: {TLA_URL} ma inną sumę SHA-256 niż przypięta.")
+            sys.exit(f"{BLAD_POBIERANIA}: {TLA_URL} ma inną sumę SHA-256 niż przypięta; to nie wynik modelu.")
         os.replace(partial, jar)
     return jar
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _run(java: str, jar: Path, name: str, forgiven: frozenset[str]) -> str | None:

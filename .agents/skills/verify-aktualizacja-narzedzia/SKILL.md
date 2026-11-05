@@ -274,7 +274,11 @@ Git ignores. After that a run takes about 6 s, offline. The pins and the
 download live in `tools/lib/narzedzia_tlc.py`: a network error, HTTP 5xx or
 429 is retried twice, and a download that still fails ends with a line
 `BŁĄD POBIERANIA NARZĘDZIA TLC`, which is a failed download, not a model
-verdict. CI keeps the folder in `actions/cache`, keyed by that file (#930).
+verdict, and so does a downloaded jar with another SHA-256. A jar in the
+folder with another SHA-256 is downloaded again. CI keeps the folder in its
+cache, keyed by that file (#930), and saves it only with the jar of the
+pinned SHA-256 (step `Check the TLC tools before saving them` of the
+Mutation checks jobs, #940).
 `--config NAME` runs one configuration, and `--strict` makes known findings
 exit 1.
 
