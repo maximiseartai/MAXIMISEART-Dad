@@ -135,8 +135,11 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `2b2af53e4` (2026-11-05, #846 after its split, the start of #888 back and #910 out, merged with `main`
-after #912 and #914). Every row of the table was checked against the code at this commit. Since the Sync commit of `main` `4cb7154e4` (round 2
+Sync commit: `71c72aa87` (2026-11-05, the cleanup of #837). Every row of the table was checked against the code at this
+commit. Since `2b2af53e4` (#846 after its split, the start of #888 back and #910 out, merged with `main` after #912 and
+#914) only `guarded` changed: a mask in a typed field of the Logs (a `Decimal`, a date, a closed list) empties the field
+or drops its list element with a technical note instead of raising `ValidationError`, and the model has no step in
+which the guard raises, so no action changed. Since the Sync commit of `main` `4cb7154e4` (round 2
 of #888) #846 changed these definitions: the first line of the journal goes to the disk at the start of the Wycena
 (`run_started` → `_append_locked`, model `ZapiszStart`, its torn first line in `Zgasniecie` and its failed write that
 leaves the line, and a `Wpis` that writes the first line only while `_header` is set); `PricingJournal.progress` gives a
