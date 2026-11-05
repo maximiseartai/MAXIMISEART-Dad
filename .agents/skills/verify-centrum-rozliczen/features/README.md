@@ -57,12 +57,9 @@ in `<feature>.md` next to this file, driven by the skill's
 - Change files on disk only inside the run root, and restore what a step moved.
   Delete, move and replace files and folders only with `remove`, `remove_tree`, `remove_empty_folder`, `move` and
   `replace_file` (`drive/common.py`), which retry while the server holds the file open: on Windows that refuses the
-  change (`WinError 32`, #921). `centrum_self_test.py` fails on the forms in the table of `_removals`: pathlib's
-  `unlink`, `rename`, `rmdir`, `replace`, `move`, `move_into` (also with `target=` and as `Path.unlink`), `os` and
-  `shutil` deletions and moves (also through `import … as`, `x = os` and `from os|shutil import …`), and `getattr`
-  with a constant name. Review still checks its boundary: a bound method assigned to a name
-  (`swap = p.replace; swap(q)`), the modules `posix` and `nt`, a copy onto a file the server reads (`shutil.copy2`,
-  `copyfile`, `copytree(..., dirs_exist_ok=True)`), a shell command, `importlib` and a name computed at run time. Take the key away with `drop_report_key`, which leaves the file empty and, without `missing_ok`,
+  change (`WinError 32`, #921).
+  A guard against a bare deletion in a new drive is #934; until then review checks it.
+  Take the key away with `drop_report_key`, which leaves the file empty and, without `missing_ok`,
   fails when the step never wrote a key.
 - Capture with `Run.capture`, which waits for running transitions; a screenshot
   taken mid-transition shows content at partial opacity. A close-up is
