@@ -1071,6 +1071,75 @@ def test_strona_efenix_inna_niz_w_odczycie_z_logow_daje_roznice_w_sladzie_zlecen
     assert lines[3] == "Pierwsza różnica: Komunikaty (messages)[1: kod EFENIX_INNY_STATUS].code"
 
 
+def test_kopia_wejscia_bez_folderow_nad_plikiem_daje_roznice_w_kopii_a_nie_zgodnosc(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Kopia wejścia bez nazw folderów nad plikiem (Logi sprzed #847): odbudowa kładzie Plik zbiorczy w folderze okresu,
+    więc Kopia odtworzenia ma foldery, których Kopia w Logach nie ma, a pierwszą różnicą jest Kopia wejścia."""
+
+    produced = _settlement(tmp_path / "taty")
+    changed = _changed(produced, tmp_path, lambda record: record["input_copy"][0].pop("folders"))
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (1, "ODTWORZENIE RÓŻNE"), lines
+    name = produced.record["input_copy"][0]["name"]
+    assert lines[3:6] == [
+        f"Pierwsza różnica: Kopia wejścia (input_copy)[0: plik {name}].folders[0]",
+        "  Logi:        (brak)",
+        '  Odtworzenie: "okresy"',
+    ]
+
+
+def test_inna_data_wykonania_w_sladzie_zlecen_efenix_daje_roznice_w_sladzie_przy_tych_samych_komunikatach(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Dzień, który okno wpisało w datę wykonania, Atrapa z Logów bierze z Pliku zbiorczego, nie z kroku śladu: inny
+    dzień w śladzie zleceń efenix w Logach nie zmienia Komunikatów, a odtworzenie zgłasza różnicę w tym kroku śladu."""
+
+    produced = _efenix(tmp_path / "taty")
+
+    def other_day(record: dict[str, Any]) -> None:
+        [typed] = [step for step in record["efenix_orders"][0]["steps"] if step["action"] == "data wykonania"]
+        typed["execution_date"] = "2026-09-10"
+
+    changed = _changed(produced, tmp_path, other_day)
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (1, "ODTWORZENIE RÓŻNE"), lines
+    row = produced.record["efenix_orders"][0]["row"]
+    assert lines[3].startswith(f"Pierwsza różnica: ślad zleceń efenix (efenix_orders)[0: wiersz {row}].steps["), lines
+    assert (lines[3].endswith("].execution_date"), lines[4]) == (True, '  Logi:        "2026-09-10"'), lines
+
+
+# Lista w Logach dłuższa i krótsza niż w odtworzeniu przy równym początku: etap Zapisywania dopisany drugi raz i usunięty.
+LENGTHS = {
+    "dluzsza_w_logach": (lambda phases: phases.append(phases[-1]), "4: etap Zapisywanie", "Logi", "Odtworzenie"),
+    "krotsza_w_logach": (lambda phases: phases.pop(), "3: etap Zapisywanie", "Odtworzenie", "Logi"),
+}
+
+
+@pytest.mark.parametrize("case", LENGTHS)
+def test_lista_innej_dlugosci_w_logach_daje_roznice_w_pierwszym_elemencie_bez_pary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    """Etapy w Logach z jednym więcej albo jednym mniej na końcu niż w odtworzeniu: wspólny początek się zgadza, więc
+    pierwszą różnicą jest element bez pary, z wartością tam, gdzie jest, i „(brak)” tam, gdzie go nie ma."""
+
+    change, place, present, absent = LENGTHS[case]
+    produced = _settlement(tmp_path / "taty")
+    changed = _changed(produced, tmp_path, lambda record: change(record["phases"]))
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (1, "ODTWORZENIE RÓŻNE"), lines
+    assert lines[3] == f"Pierwsza różnica: etapy (phases)[{place}]", lines
+    shown = dict(line.strip().split(":", 1) for line in lines[4:6])
+    assert (shown[absent].strip(), '"phase": "Zapisywanie"' in shown[present]) == ("(brak)", True), lines
+
+
+
 def test_kopia_intermax_bez_wiersza_nad_wklejeniem_stawia_dzien_gdzie_indziej_niz_u_taty(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
