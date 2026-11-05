@@ -1233,7 +1233,7 @@ def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_
     text = log_files(centrum)[0].read_text(encoding="utf-8")
     traced_text = json.dumps(record["efenix_orders"], ensure_ascii=False)
     assert [order.number for order in STOPPED_AT_SECOND if order.number.removeprefix("#") in traced_text] == []
-    assert [marker for marker in ("TESTOWA", "Testowa") if marker in text] == [], "ADRES"
+    assert [marker for marker in ("TESTOWA", "Testowa", "Miasto-Dzielnica") if marker in text] == [], "ADRES"
 
 
 def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_i_bez_adresu(tmp_path: Path) -> None:
@@ -1678,8 +1678,8 @@ def test_wycena_w_efenix_ktora_doszla_do_konca_nie_zostawia_dziennika_ktory_star
 ) -> None:
     """Wycena w efenix doszła do wyniku. Następny start Centrum nie zamyka jej dziennika jako Urwanego Uruchomienia, także
     gdy zostały tylko jej Logi albo tylko jej wiersz Historii (Centrum zgasło po rekordzie metryk, a przed Logami, #722),
-    albo gdy jej Logi są, ale urwane w połowie: karta po starcie ma wynik, Skrzynka nie dostaje drugich Logów, a dziennik
-    znika."""
+    albo gdy jej Logi są, ale urwane w połowie. Skrzynka nie dostaje drugich Logów, a dziennik znika; karta po starcie ma
+    wynik, a przy urwanych Logach karty nie ma: wynik był, tylko go nie znamy."""
 
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
