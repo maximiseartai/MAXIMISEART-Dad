@@ -148,9 +148,9 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `772d8aa86` (2026-11-05, #936 merged with `main` after #910). Every row of the table was checked against
+Sync commit: `ba4092817` (2026-11-05, #936 merged with `main` after #910 and #916). Every row of the table was checked against
 the code at this commit. Since the Sync commit `18bf04e33` of `main` only `guarded` changed (#936): it leaves the fields
-that carry only tool words and moments (`_TOOL_FIELDS`: `process`, `mode`, `period`, `run_id`, `started_at`,
+that carry only tool words and moments (`TOOL_FIELDS`: `process`, `mode`, `period`, `run_id`, `started_at`,
 `ended_at`, `ending` and the rest) and the keys of the Logs models without a mask, so no mask loses the whole Logs; the
 model has no step in which the guard masks or raises, so no action changed. Since the Sync commit `917cf6fc6` of `main`
 #910 changed these definitions: the
