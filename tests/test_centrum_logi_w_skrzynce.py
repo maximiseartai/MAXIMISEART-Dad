@@ -40,7 +40,7 @@ from tests.fixtures.centrum import TOOL_COMMIT, FakeIssue, FakeReportBox, finish
 from tests.fixtures.centrum_intermax import Clock, ordering_centrum
 from tests.fixtures.efenix import Order as EfenixOrder
 from tests.fixtures.efenix import write_collective_file
-from tests.fixtures.intermax import Intermax, Order
+from tests.fixtures.intermax import ADDRESS, CONTRACT_NUMBER, Intermax, Order
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.centrum_processes import (
     SettlingCentrum,
@@ -52,7 +52,7 @@ from tests.fixtures.centrum_processes import (
     stopped_for_maks,
 )
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.preparation import INTERNAL_SETTLEMENT_NAME, incomplete_period_rows
+from tests.fixtures.preparation import INTERNAL_SETTLEMENT_NAME, incomplete_period_rows, paste_raw_orders, register_order
 from tests.fixtures.settlement import PERIOD
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ_ZGLOSZEN"
@@ -1176,26 +1176,119 @@ def test_kopia_intermax_bez_wiersza_nad_wklejeniem_stawia_dzien_gdzie_indziej_ni
     assert lines[3].startswith("Pierwsza różnica: Wpisy INTERMAX (intermax_entries).rows")
 
 
-def test_logi_z_wierszem_intermax_bez_pewnego_polozenia_daja_granice_kopii_a_nie_zgodnosc(
+def test_logi_z_wierszem_intermax_bez_wykonawcy_maja_go_w_kopii_w_jednym_polozeniu_i_odtwarzaja_sie_zgodnie(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Wklejony wiersz bez Wykonawcy nie ma pewnego położenia, więc Kopia wejścia nie ma jego daty, numeru zlecenia i
-    uwag: narzędzie nie odtwarza takiego Uruchomienia i mówi, który arkusz i wiersz są poza Kopią."""
+    """Wklejony wiersz bez Wykonawcy, który nie jest pierwszym wierszem bloku, pamięć reguły danych zna w jednym
+    położeniu, pod nagłówkiem (ADR 0025), więc Kopia wejścia ma jego datę i numer zlecenia, a narzędzie odtwarza
+    Uruchomienie zgodnie."""
 
     raw = (PASTED[0], replace(PASTED[1], worker=""), PASTED[2])
     produced = _intermax(tmp_path / "taty", Intermax(raw=raw))
     [sheet] = produced.record["input_copy"][0]["sheets"]
-    [uncertain] = sheet["uncertain_rows"]
+    [row] = [row for row in sheet["rows"] if row["row"] == sheet["rows"][1]["row"]]
 
     code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie")
 
-    assert code == 3
-    assert lines[0] == (
-        f"NIE DA SIĘ ODTWORZYĆ: Kopia wejścia ma wiersze INTERMAX bez pewnego położenia (arkusz {sheet['sheet']}, wiersze "
-        f"{uncertain}): brak w nich komórek DATA GODZ. POCZ., NUMER ZL., ZWROT i UWAGI, a strażnik mógł zamaskować w Kopii "
-        "wartości z drugiego położenia (#913), więc odtworzenie nie zbuduje tych wierszy"
-    )
-    assert not any(line.startswith(("Pierwsza różnica", "Porównano")) for line in lines)
+    assert (sheet["uncertain_rows"], {"C", "I"} <= set(row["cells"])) == ([], True)
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
+def test_logi_z_przesunietym_wierszem_w_srodku_wklejenia_maja_uwage_o_fakcie_domeny_i_odtwarzaja_sie_z_zastrzezeniem(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Przesunięty wiersz w środku wklejenia (pierwszy wiersz drugiego wklejenia) ma datę z godziną dwie kolumny przed
+    ``DATA GODZ. POCZ.``: łamie fakt domeny, więc pamięć zna go w obu położeniach, a Logi mają o nim uwagę. Kopia nie
+    ma jego komórek dozwolonych tylko w jednym położeniu, więc narzędzie odtwarza Uruchomienie z zastrzeżeniem o nich."""
+
+    raw = (PASTED[0], PASTED[1], replace(PASTED[2], shifted=True), *PASTED[3:])
+    produced = _intermax(tmp_path / "taty", Intermax(raw=raw))
+    record = produced.record
+    [sheet] = record["input_copy"][0]["sheets"]
+    shifted = sheet["rows"][2]["row"]
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie")
+
+    assert sheet["uncertain_rows"] == [shifted]
+    assert [note for note in record["input_copy_notes"] if note.startswith("Fakt domeny złamany")] == [
+        f"Fakt domeny złamany: wiersz {shifted} arkusza {sheet['sheet']} w {record['input_copy'][0]['name']} ma datę z "
+        "godziną dwie kolumny na lewo od DATA GODZ. POCZ., a nie jest pierwszym wierszem bloku wklejenia; pamięć reguły "
+        "danych zna go w obu położeniach (ADR 0025)."
+    ]
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    assert any(line.startswith("- Kopia wejścia ma wiersze INTERMAX w obu położeniach") for line in lines), lines
+
+
+# Pierwszy wiersz bloku wklejenia przychodzi z aplikacji przesunięty o dwie kolumny w lewo (fakt domeny, ADR 0025): jego
+# adres i numer Orange pamięć reguły danych zna tylko w położeniu przesuniętym, więc nie wychodzą, także zacytowane w
+# wolnym tekście innego wiersza i w Uwadze taty, a URZĄDZENIA żadnego wiersza (w położeniu na miejscu stałoby tam, gdzie
+# ADRES przesuniętego) nie są w Kopii zamaskowane.
+FIRST_ADDRESS = "Przemiatana Wrzosowa 12 Kórnik"
+FIRST_ORANGE = "4809876543"
+QUOTED = f"montaż {FIRST_ADDRESS} umowa {FIRST_ORANGE}"
+DONE = 13
+"""``CZYNNOŚCI ZREALIZOWANE`` (M) INTERMAX, wolny tekst technika."""
+
+
+def _leaked(texts: list[str]) -> list[str]:
+    return [value for value in (FIRST_ADDRESS, FIRST_ORANGE) if any(value in text for text in texts)]
+
+
+def test_przesuniety_pierwszy_wiersz_wklejenia_intermax_nie_wypuszcza_adresu_ani_numeru_orange_a_kopia_ma_urzadzenia_i_odtwarza_sie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Uporządkowanie INTERMAX z przesuniętym pierwszym wierszem wklejenia: jego adres i numer Orange nie wychodzą do
+    pliku Logów, do Skrzynki ani w Uwadze taty, Kopia wejścia ma ``URZĄDZENIA`` każdego wiersza bez maski, a Logi
+    odtwarzają się zgodnie."""
+
+    first = replace(PASTED[0], cells=((ADDRESS, FIRST_ADDRESS), (CONTRACT_NUMBER, FIRST_ORANGE)))
+    raw = (first, *PASTED[1:4], replace(PASTED[4], cells=((DONE, QUOTED),)))
+    root = tmp_path / "taty"
+    centrum = ordering_centrum(root, Intermax(raw=raw), clock=Clock([ORDERED_AT]))
+    (root / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    centrum.run_to_end()
+    note = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": QUOTED}).json()["body"]
+    archived = _archive_file(centrum.surroundings.report_box, root)
+    record = json.loads(gzip.decompress(archived.read_bytes()))
+    [sheet] = record["input_copy"][0]["sheets"]
+
+    code, lines = _replayed(capsys, archived, "--na-tym-drzewie")
+
+    files = [path.read_text(encoding="utf-8") for path in (root / "logs" / "uruchomienia").glob("*")]
+    assert _leaked([*files, gzip.decompress(archived.read_bytes()).decode("utf-8"), note]) == []
+    assert [row["cells"]["G"] for row in sheet["rows"]] == [order.kind for order in raw]
+    assert (sheet["shifted_row"], sheet["uncertain_rows"]) == (sheet["rows"][0]["row"], [])
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
+def test_przesuniety_pierwszy_wiersz_wklejenia_rejestru_nie_wypuszcza_adresu_ani_numeru_orange_z_przygotowania_i_odtwarza_sie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Przygotowanie z przesuniętym pierwszym wierszem wklejenia na dole Rejestru zleceń (z dnia po okresie, więc go
+    czyta, a nie zatrzymuje się): jego adres i numer Orange nie wychodzą do pliku Logów, do Skrzynki ani w Uwadze taty,
+    Kopia wejścia ma ``URZĄDZENIA`` każdego wiersza bez maski, a Logi odtwarzają się zgodnie."""
+
+    root = tmp_path / "taty"
+    root.mkdir()
+    centrum = preparing_centrum(root)
+    probe = {**register_order(90, datetime(2026, 9, 15, 10)), "ADRES": FIRST_ADDRESS, "NUMER UMOWY": FIRST_ORANGE}
+    later = {**register_order(91, datetime(2026, 9, 15, 12)), "CZYNNOŚCI ZREALIZOWANE": QUOTED}
+    paste_raw_orders(centrum.fixture.register_path, [probe, later])
+    (root / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    run_to_end(centrum, dry_run=False)
+    note = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": QUOTED}).json()["body"]
+    archived = _archive_file(centrum.surroundings.report_box, root)
+    record = json.loads(gzip.decompress(archived.read_bytes()))
+    [sheet] = record["input_copy"][0]["sheets"]
+    devices = next(letter for letter, name in sheet["columns"].items() if name == "URZĄDZENIA")
+
+    code, lines = _replayed(capsys, archived, "--na-tym-drzewie", "--konfiguracja", root / "config")
+
+    files = [path.read_text(encoding="utf-8") for path in (root / "logs" / "uruchomienia").glob("*")]
+    assert _leaked([*files, gzip.decompress(archived.read_bytes()).decode("utf-8"), note]) == []
+    assert [row["cells"][devices] for row in sheet["rows"] if devices in row["cells"]][-1] == "dekoder"
+    assert not any("[" in str(row["cells"].get(devices, "")) for row in sheet["rows"])
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 
 
 def _guarded_with(produced: Produced, folder: Path, word: str) -> Path:

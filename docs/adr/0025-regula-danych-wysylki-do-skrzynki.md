@@ -18,6 +18,10 @@ Zmienia:
   Logach i Uwadze taty rozstrzyga odtąd reguła danych. Treści wyjątków, stawek,
   pełnych ścieżek i klucza dalej nic nie wysyła.
 
+Zmieniona 5.11.2026 (decyzja Maksa, #913, #918, zastępuje PR #966): położenie
+wiersza Rejestru zleceń i INTERMAX w pamięci reguły danych (sekcja „Położenie
+wiersza”).
+
 Publiczne repozytorium bez zmian: PR-y, commity, issue i testy nie niosą
 treści wierszy, numerów zleceń ani Wykonawców taty, a testy mają tylko dane
 syntetyczne.
@@ -123,34 +127,10 @@ telefony na okres.
   Diagnozie, INTERMAX w Uporządkowaniu, na jego karcie i przy szukaniu
   Surowych zleceń w Przygotowaniu), oddaje przy odczycie komórki zakazanych
   kolumn pamięci reguły danych, a Wycena w efenix dane adresowe każdego
-  wiersza listy wyników. W przesuniętym pierwszym wierszu wklejenia INTERMAX
-  (ADR 0019) te komórki stoją dwie kolumny na lewo od nagłówka; rozpoznaje go
-  to samo rozpoznanie bloku co Uporządkowanie. Pewne położenie ma jednak tylko
-  wiersz uporządkowany i wiersz, który rozpoznanie przeczytało jako Surowe
-  zlecenie: pierwszy wiersz drugiego wklejenia też przychodzi przesunięty, a
-  pierwszy wiersz z datą jako tekstem nie musi być przesunięty. W każdym innym
-  wierszu pamięć poznaje komórki w obu miejscach, a Kopia wejścia niesie tylko
-  komórki dozwolone w obu położeniach (#842, tabela położeń w PR #905).
-  Odczyt Rejestru zleceń w Przygotowaniu i Diagnozie czyta każdy wiersz po
-  nagłówkach, bez rozpoznania bloku, a szukanie Surowych zleceń zna tylko
-  wiersze pod ostatnim uporządkowanym. Przesunięty wiersz wklejenia nad
-  uporządkowanymi w zakresie dat okresu dawał więc w Kopii wejścia
-  Przygotowania adres pod `DATA` i numer Orange pod `NUMER ZL.`, a strażnik ich
-  nie znał: wychodziły do Logów, do Skrzynki i w Uwadze taty (#918). Dlatego w
-  wierszu Rejestru bez wyglądu uporządkowanego (reguła Uporządkowania na
-  kolumnach, które czyta Przygotowanie: żadna komórka z wartością poza
-  `WYKONAWCA` nie ma Calibri 8) pamięć poznaje komórki pod nagłówkiem i dwie
-  kolumny na lewo od niego, a Kopia wejścia niesie wiersz po nagłówkach i
-  strażnik maskuje w niej obie wartości.
-  Wiersz uporządkowany pamięć zna tylko pod nagłówkiem, więc jego `NUMER ZL.`
-  wychodzi bez maski (tabela położeń odczytu Rejestru w
-  `tests/test_centrum_logi_uruchomienia.py`). Koszt to maska `NUMER ZL.` i
-  tekstu spod `DATA` w wierszu bez tego wyglądu. Na kopii Rejestru taty z
-  20.10.2026 takich wierszy jest 11 z 31 778, w okresie 13_19_10_2026 żadnego
-  z 684. Na jej wersji z wklejeniem z aplikacji jest ich 95, bo Diagnoza
-  Przygotowania czyta cały Rejestr, także wklejenie: po niej Kopia wejścia
-  Uporządkowania w tej samej pracy Centrum ma maskę `NUMER ZL.` w 83 z 84
-  wklejonych wierszy, obok maski `URZĄDZENIA` w 82, która była już przed #918.
+  wiersza listy wyników. Każdy wiersz Rejestru zleceń i INTERMAX pamięć zna w
+  jednym położeniu (sekcja „Położenie wiersza” niżej): pierwszy wiersz bloku
+  wklejenia dwie kolumny na lewo od nagłówków, każdy inny pod nimi, a wiersz ze
+  śladem przesunięcia w obu.
   Pamięć jest jedna na pracę
   Centrum: Centrum tworzy ją przy starcie i podaje czytnikom i producentom, a
   nie jest stanem modułu, więc dwie prace Centrum w jednym procesie (testy)
@@ -162,6 +142,72 @@ telefony na okres.
 - **Zgoda taty.** Tata wie, że wysyłki do prywatnej Skrzynki Zgłoszeń będą
   niosły numery zleceń, Wykonawców, miasta i opisy techników, i zgodził się
   na to z Maksem (grilling 4.11.2026).
+
+## Położenie wiersza (decyzja Maksa z 5.11.2026, #913, #918)
+
+Fakt domeny (Maks): z aplikacji firmowej przychodzi przesunięty o dwie kolumny
+w lewo zawsze pierwszy wiersz wklejenia i tylko on (ADR 0019; kopia INTERMAX taty
+z 25.10.2026: 84 wklejone wiersze, przesunięty pierwszy). Maks wybrał regułę
+deterministyczną opartą na tym fakcie i bierze na siebie ryzyko, że fakt nie
+zajdzie:
+
+- **Pierwszy wiersz bloku wklejenia** to wiersz z wyglądem z aplikacji (żadna
+  komórka z wartością poza `WYKONAWCA` nie ma Calibri 8), nad którym najbliższy
+  wiersz z wartościami jest uporządkowany. W INTERMAX także wiersz, nad którym
+  nie ma nic (`raw_orders.first_in_block`, odczyt od dołu sięga o jeden wiersz z
+  wartościami dalej), także nad uporządkowanymi. W Rejestrze tylko pod wierszem
+  uporządkowanym w odczycie (`preparation_register`): odczyt okresu zaczyna się w
+  środku arkusza, więc nic nad wierszem nie znaczy tam, że zaczyna on blok.
+  Pamięć zna jego `ADRES` i `NUMER UMOWY` tylko dwie kolumny na lewo od
+  nagłówków, także gdy Planowanie czyta go na miejscu (data z godziną pod `DATA
+  GODZ. POCZ.`), i maskuje je wszędzie.
+- **Każdy inny wiersz** pamięć zna tylko pod nagłówkiem i maskuje wszędzie.
+  Drugich położeń z wąską maską, faktów przesunięcia i podpisów nie ma.
+- **Siatka: ślad przesunięcia.** Inny wiersz z datą z godziną dwie kolumny przed
+  `DATA GODZ. POCZ.` (`raw_orders.shift_traced`) łamie fakt domeny. Logi mają o
+  nim uwagę w `input_copy_notes` („Fakt domeny złamany: wiersz N …”; w INTERMAX
+  o wierszach wklejenia w Kopii, w Rejestrze o każdym przeczytanym), a pamięć zna
+  go w obu położeniach (wariant b). Na kopiach plików taty takiego wiersza nie ma
+  (jak jest, po Diagnozie, 41 okresów tygodniowych 2026), więc wariant b nic tam
+  nie kosztuje. W repro 1 (drugi wklejony wiersz przesunięty) wariant a, sama
+  uwaga, dał te same maski i wypuścił do Kopii prawdziwą wartość, a b nie.
+- **Kopia wejścia** niesie wiersz w położeniu, w którym czyta go Planowanie, bez
+  kolumn `ADRES` i `NUMER UMOWY`, więc pierwszy wiersz ma `URZĄDZENIA` i `NUMER
+  ZL.`. Wiersz ze śladem ma tylko komórki dozwolone w obu położeniach i datę z
+  godziną spod `DATA GODZ. POCZ.`; odtworzenie (#847) traktuje go jako
+  zastrzeżenie, nie granicę blokującą.
+
+Sondy przeglądów #917, #952 i #966 (179 przypadków przez HTTP API Centrum, te
+same bajty na `main` b3f1c625a i na tej regule; tabela na Macu Maksa:
+`~/.t3/notes/logi-837/deterministyczna/TABELA.md`):
+
+| klasa | sond | wyciek na `main` | wyciek na tej regule |
+|---|---|---|---|
+| fakt domeny zachodzi | 91 | 11 | 0 |
+| ślad przesunięcia (siatka) | 40 | 0 | 0 |
+| przesunięty inny wiersz niż pierwszy, bez śladu | 19 | 4 | 19 |
+| pierwszy wiersz bloku nie przesunięty w całości | 25 | 6 | 25 |
+| przesunięcie w prawo | 3 | 3 | 3 |
+| `ADRES` jako data z godziną (adresu nie ma w pliku) | 1 | 1 | 1 |
+
+Ryzyko przyjęte przez Maksa to dwie klasy z faktem domeny złamanym bez śladu: 19
+i 25 sond, w każdej adres albo numer Orange wiersza wychodzi, gdy stoi też w
+wolnym tekście, w Uwadze taty albo w zwykłej kolumnie innego wiersza. Testy
+`KNOWN` (xfail strict, termin 5.02.2027, `tests/fixtures/fakt_domeny.py`) mają
+po przypadku z każdej klasy w tabelach położeń INTERMAX i Rejestru. Na kopiach
+plików taty fakt domeny nie zachodzi w 3 z 10 pierwszych wierszy bloków całego
+Rejestru z 20.10.2026 (stoją na miejscu) i w 1 z 4 w 41 okresach 2026, ale ich
+`ADRES` i `NUMER UMOWY` są puste, więc żadna prawdziwa wartość nie jest
+nieznana strażnikowi.
+
+Koszt na kopiach plików taty (tylko odczyt, Mac Maksa, pomiar w PR, `main`
+b3f1c625a → ta reguła): Kopia wejścia Uporządkowania na kopii INTERMAX z
+wklejeniem bez Diagnozy 0 → 0 masek, po Diagnozie Przygotowania 165 (`NUMER ZL.`
+83, `URZĄDZENIA` 82) → 0, komórek 518 → 518; prawdziwych wartości wklejonych
+wierszy (168) w Kopii po strażniku 0 i nieznanych strażnikowi 0. W repro 1, które
+łamie fakt domeny, 81 → 81 masek `URZĄDZENIA`, a w następnym Uporządkowaniu po
+poprawce taty 82 → 82, bez wycieku. Kopia Przygotowania 41 okresów 2026: 0 masek,
+0 uwag o złamanym fakcie domeny.
 
 ## Konsekwencje
 
@@ -235,6 +281,15 @@ nie czyta.
   Maksa dokładała wyjątek w kolejnym ADR.
 - **Strażnik w Kolejce wysyłki.** Tata nie widziałby w podglądzie tego, co
   naprawdę wychodzi, a plik Logów na dysku i plik w Skrzynce różniłyby się.
+- **Dwa położenia każdego wiersza z wyglądem z aplikacji, wartość z drugiego
+  maskowana wąsko (opcja 3, PR #966).** Po trzech rundach przeglądu wciąż
+  wyciekała w kolejnych układach podpisu przesunięcia, a reguła rosła o fakty i
+  wyjątki; Maks odrzucił dwa położenia i maskę w wielu kolumnach.
+- **Oba położenia każdego wiersza bez wyglądu uporządkowanego wszędzie (`main`
+  przed tą decyzją, #952).** Maskowało `URZĄDZENIA` i `NUMER ZL.` w 165
+  komórkach Kopii Uporządkowania po Diagnozie.
+- **Siatka bez drugiego położenia (wariant a).** Te same maski co wariant b, a w
+  repro 1 prawdziwa wartość w Kopii.
 - **Ponowny odczyt plików taty przy wysyłce, żeby poznać zakazane wartości.**
   Przebieg rozliczeń i Kontrola ilości czytają Plik zbiorczy raz (ADR 0013);
   drugi odczyt Rejestru zleceń trwa sekundy.

@@ -2,8 +2,9 @@
 
 Rejestr jest tylko czytany, przez moduł skoroszytu. Arkusze ze zleceniami są rozpoznawane po komplecie
 wymaganych nagłówków w pierwszym wierszu, a komórki z wartościami, Wyróżnieniami i Hiperłączami
-są zwracane pod nagłówkiem docelowym każdej kolumny ``COLUMNS``. Wiersz bez wyglądu uporządkowanego może stać
-przesunięty, więc arkusz oddaje go też z wartościami całego wiersza (``RegisterSheet.uncertain_rows``). Dla okresu
+są zwracane pod nagłówkiem docelowym każdej kolumny ``COLUMNS``. Pierwszy wiersz bloku wklejenia z aplikacji firmowej
+stoi przesunięty, a wiersz ze śladem przesunięcia może tak stać, więc arkusz oddaje je też z wartościami całego wiersza
+(``RegisterSheet.shifted_rows``, ``RegisterSheet.traced_rows``). Dla okresu
 czytane są tylko wiersze od pierwszego do ostatniego, którego data może leżeć w okresie. ``read_register`` to
 produkcyjny czytnik Rejestru dla ``input_checks.Readers``, który tłumaczy jego ``WorkbookError``.
 """
@@ -86,11 +87,18 @@ class RegisterSheet:
     """Wiersze z danymi; komórki pod nagłówkiem docelowym."""
     empty_rows: tuple[int, ...]
     _positions: tuple[int, ...]  # numery kolumn ``COLUMNS`` w arkuszu (od 1)
-    uncertain_rows: Mapping[int, Mapping[int, object]] = field(default_factory=lambda: MappingProxyType({}))
-    """Wiersze z danymi bez wyglądu uporządkowanego (``raw_orders.ordered_look``) → wartości całego wiersza po numerze
-    kolumny (od 1). Taki wiersz może być wklejony z aplikacji firmowej, a pierwszy wiersz każdego wklejenia stoi
-    ``raw_orders.SHIFT`` kolumn na lewo od nagłówków, więc jego komórki mogą stać pod nagłówkiem albo tyle kolumn na lewo
-    od niego (#918)."""
+    shifted_rows: Mapping[int, Mapping[int, object]] = field(default_factory=lambda: MappingProxyType({}))
+    """Pierwsze wiersze bloków wklejenia → wartości całego wiersza po numerze kolumny (od 1): wiersz bez wyglądu
+    uporządkowanego (``raw_orders.ordered_look``), nad którym najbliższy wiersz z danymi odczytu ma ten wygląd. Z
+    aplikacji firmowej przychodzi on zawsze ``raw_orders.SHIFT`` kolumn na lewo od nagłówków (fakt domeny, ADR 0025),
+    więc pamięć reguły danych zna jego ``ADRES`` i ``NUMER UMOWY`` tylko tam (#918). Wiersza bez wiersza z danymi nad nim
+    nie liczy się jako pierwszego, inaczej niż w INTERMAX (``raw_orders.first_in_block``): odczyt okresu zaczyna się w
+    środku arkusza, więc nic nad wierszem w odczycie nie znaczy, że zaczyna on blok, a przesunięty pierwszy wiersz z
+    aplikacji na górze odczytu ma datę z godziną dwie kolumny przed ``DATA GODZ. POCZ.`` (``traced_rows``)."""
+    traced_rows: Mapping[int, Mapping[int, object]] = field(default_factory=lambda: MappingProxyType({}))
+    """Inne wiersze z danymi z datą z godziną ``raw_orders.SHIFT`` kolumn na lewo od ``DATA GODZ. POCZ.`` → wartości
+    całego wiersza: silny ślad przesunięcia łamie fakt domeny, więc pamięć zna je w obu położeniach, a Logi mają o nich
+    uwagę (ADR 0025)."""
 
     def column_letter(self, column: Column) -> str:
         """Litera kolumny arkusza z nagłówkiem ``column``, np. ``L`` dla ``SKUTECZNE``."""
@@ -218,12 +226,29 @@ def _read_register_sheets(workbook: ReadWorkbook, positions: dict[str, list[int]
         ]
         rows = tuple(found.row for empty, found in read if not empty)
         empty_rows = tuple(found.row.number for empty, found in read if empty)
-        uncertain = {
-            found.row.number: MappingProxyType(dict(enumerate(found.values, start=1)))
-            for empty, found in read
-            if not empty and not _ordered_look(found)
-        }
-        sheets.append(RegisterSheet(sheet.title, rows, empty_rows, tuple(columns), MappingProxyType(uncertain)))
+        left = columns[COLUMNS.index(DATE)] - raw_orders.SHIFT
+        shifted: dict[int, Mapping[int, object]] = {}
+        traced: dict[int, Mapping[int, object]] = {}
+        above: bool | None = None  # wygląd uporządkowany najbliższego wiersza z danymi nad wierszem; None: nie ma go
+        for empty, found in read:
+            if empty:
+                continue
+            ordered = _ordered_look(found)
+            if not ordered and above is True:
+                shifted[found.row.number] = MappingProxyType(dict(enumerate(found.values, start=1)))
+            elif raw_orders.shift_traced(found.values[left - 1] if 1 <= left <= len(found.values) else None):
+                traced[found.row.number] = MappingProxyType(dict(enumerate(found.values, start=1)))
+            above = ordered
+        sheets.append(
+            RegisterSheet(
+                sheet.title,
+                rows,
+                empty_rows,
+                tuple(columns),
+                MappingProxyType(shifted),
+                MappingProxyType(traced),
+            )
+        )
     return sheets
 
 

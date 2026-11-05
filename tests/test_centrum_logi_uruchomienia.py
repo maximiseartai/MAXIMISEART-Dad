@@ -92,6 +92,7 @@ from tests.fixtures.centrum_processes import (
 )
 from tests.fixtures.centrum_w_procesie import centrum_process
 from tests.fixtures.efenix import DAY, Order, write_collective_file
+from tests.fixtures.fakt_domeny import known
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import (
@@ -655,9 +656,11 @@ def test_adres_i_numer_orange_cytowane_przez_komunikat_nie_wychodza_w_logach_ani
 # Przygotowanie czyta Rejestr po nagłówkach, a wiersz wklejony z aplikacji firmowej może stać przesunięty o dwie
 # kolumny w lewo (ADR 0019), w całości albo poza częścią, którą tata postawił z powrotem na miejsce. Wiersz próbny niesie
 # syntetyczny adres i numer Orange w swoich kolumnach ``ADRES`` i ``NUMER UMOWY``, gdziekolwiek stoją w pliku, a tata
-# cytuje je potem w Uwadze. Wiersz bez wyglądu uporządkowanego nie ma pewnego położenia, więc pamięć reguły danych zna
-# jego komórki pod nagłówkiem i dwie kolumny na lewo od niego. Wiersz uporządkowany zna tylko pod nagłówkiem, więc jego
-# ``NUMER ZL.``, który w przesuniętym wierszu stałby tam, gdzie numer Orange, wychodzi bez maski (ADR 0025).
+# cytuje je potem w Uwadze. Każdy wiersz ma jedno położenie (decyzja Maksa z 5.11.2026, ADR 0025): pierwszy wiersz bloku
+# wklejenia przesunięty o dwie kolumny w lewo, każdy inny pod nagłówkiem, a inny wiersz z datą z godziną dwie kolumny
+# przed DATA (ślad przesunięcia) w obu, z uwagą w Logach. ``NUMER ZL.`` uporządkowanych wierszy, który w przesuniętym
+# wierszu stałby tam, gdzie numer Orange, wychodzi bez maski. Pierwszy wiersz bloku, który nie jest przesunięty w
+# całości, to ryzyko przyjęte przez Maksa (``KNOWN``).
 PROBE_ADDRESS = "Przemiatana Wrzosowa 12 Kórnik"
 PROBE_ORANGE = "4809876543"
 ABOVE_ORDERED = 8
@@ -693,6 +696,17 @@ def _after_period(in_place_from: str | None = None) -> Callable[[Path], object]:
     return lambda register: paste_raw_orders(register, pasted, in_place_from=in_place_from)
 
 
+def _second_paste(when: object = datetime(2026, 9, 10, 11)) -> Callable[[Path], object]:
+    """Dwa wklejenia nad uporządkowanymi w okresie bez wiersza między nimi: pierwszy wiersz drugiego wklejenia (wiersz
+    próbny) stoi przesunięty w środku bloku, a dwie kolumny przed ``DATA GODZ. POCZ.`` ma swoją datę ``when``."""
+
+    def paste(register: Path) -> None:
+        paste_raw_orders(register, [register_order(90, datetime(2026, 9, 10, 9))], first=ABOVE_ORDERED - 1)
+        paste_raw_orders(register, [_register_probe(when)], first=ABOVE_ORDERED)
+
+    return paste
+
+
 REGISTER_POSITIONS: dict[str, tuple[Callable[[Path], object], str | None]] = {
     "przesuniety_z_data_z_godzina_w_A": (_above_ordered(), "WIERSZ_BEZ_DATY"),
     "przesuniety_z_data_jako_tekst": (_above_ordered(_register_probe("10.09.2026 11:00")), "WIERSZ_BEZ_DATY"),
@@ -707,16 +721,51 @@ REGISTER_POSITIONS: dict[str, tuple[Callable[[Path], object], str | None]] = {
     "pierwszy_wiersz_wklejenia_po_okresie": (_after_period(), None),
     "pierwszy_wiersz_wklejenia_po_okresie_na_miejscu_od_czynnosci": (_after_period(in_place_from="CZYNNOŚCI"), None),
     "pierwszy_wiersz_wklejenia_po_okresie_na_miejscu_od_skuteczne": (_after_period(in_place_from="SKUTECZNE"), None),
+    "przesuniety_pierwszy_wiersz_drugiego_wklejenia": (_second_paste(), "WIERSZ_BEZ_DATY"),
+    "przesuniety_pierwszy_wiersz_drugiego_wklejenia_z_data_jako_tekst": (_second_paste("10.09.2026 11:00"), "WIERSZ_BEZ_DATY"),
+    # wiersz z wyglądem z aplikacji na miejscu na górze odczytu: bez wiersza z danymi nad nim nie zaczyna bloku, bo odczyt
+    # okresu zaczyna się w środku arkusza, więc pamięć zna go pod nagłówkiem
+    "nieprzesuniety_na_gorze_odczytu": (
+        lambda register: paste_raw_orders(
+            register,
+            [{**register_order(1, datetime(2026, 9, 7, 15)), "ADRES": PROBE_ADDRESS, "NUMER UMOWY": PROBE_ORANGE}],
+            first=2,
+            in_place_from="DATA GODZ. POCZ.",
+        ),
+        None,
+    ),
 }
+REGISTER_KNOWN = {
+    name: "pierwszy_na_miejscu"
+    for name in (
+        "na_miejscu_od_adres",
+        "na_miejscu_od_czynnosci",
+        "na_miejscu_od_numer_zl",
+        "nieprzesuniety",
+        "pierwszy_wiersz_wklejenia_po_okresie_na_miejscu_od_czynnosci",
+    )
+} | {"przesuniety_pierwszy_wiersz_drugiego_wklejenia_z_data_jako_tekst": "przesuniety_inny_bez_sladu"}
+"""Położenia poza faktem domeny bez śladu przesunięcia: pierwszy wiersz bloku nie jest przesunięty w całości (``NUMER
+UMOWY`` albo cały wiersz na miejscu) albo przesunięty jest inny wiersz, z datą tekstem; ryzyko przyjęte przez Maksa
+(``tests/fixtures/fakt_domeny.py``)."""
+REGISTER_TRACED = {"przesuniety_pierwszy_wiersz_drugiego_wklejenia"}
+"""Położenia z wierszem ze śladem przesunięcia, który nie jest pierwszym wierszem bloku: Logi mają o nim uwagę."""
 
 
-@pytest.mark.parametrize("position", REGISTER_POSITIONS.values(), ids=REGISTER_POSITIONS.keys())
+@pytest.mark.parametrize(
+    ("name", "position"),
+    [
+        pytest.param(name, position, id=name, marks=known(REGISTER_KNOWN.get(name)))
+        for name, position in REGISTER_POSITIONS.items()
+    ],
+)
 def test_adres_i_numer_orange_wklejonego_wiersza_rejestru_nie_wychodza_z_przygotowania_w_zadnym_polozeniu(
-    tmp_path: Path, position: tuple[Callable[[Path], object], str | None]
+    tmp_path: Path, name: str, position: tuple[Callable[[Path], object], str | None]
 ) -> None:
     """Podgląd Przygotowania na Rejestrze z wierszem próbnym w każdym położeniu: adres i numer Orange nie wychodzą do
     pliku Logów, do Skrzynki Zgłoszeń ani w Uwadze taty, a ``NUMER ZL.`` uporządkowanych wierszy jest w Kopii wejścia
-    bez maski. Podgląd kończy się Zatrzymaniem na wierszu bez daty pod ``DATA GODZ. POCZ.`` albo bez Zatrzymania."""
+    bez maski. Wiersz ze śladem przesunięcia poza pierwszym wierszem bloku ma uwagę w Logach, że fakt domeny jest
+    złamany. Podgląd kończy się Zatrzymaniem na wierszu bez daty pod ``DATA GODZ. POCZ.`` albo bez Zatrzymania."""
 
     paste, stop = position
     centrum = preparing_centrum(tmp_path)
@@ -737,6 +786,8 @@ def test_adres_i_numer_orange_wklejonego_wiersza_rejestru_nie_wychodza_z_przygot
     [copied] = record["input_copy"]
     [sheet] = copied["sheets"]
     assert {row["row"]: row["cells"]["I"] for row in sheet["rows"] if row["row"] in ORDER_NUMBERS} == ORDER_NUMBERS
+    broken = [note for note in record["input_copy_notes"] if note.startswith("Fakt domeny złamany: wiersz ")]
+    assert len(broken) == (name in REGISTER_TRACED), record["input_copy_notes"]
 
 
 def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_okresu(tmp_path: Path) -> None:

@@ -619,9 +619,9 @@ Wycena w efenix Wiersze danych Pliku zbiorczego (Wycena z wartościami, które
 policzył Excel, także `Kwota`), a Uporządkowanie INTERMAX wklejone wiersze
 z dołu każdego arkusza zleceń, które przetwarzało, nie cały Rejestr zleceń,
 w kolumnach od A do `UWAGI`, które Uporządkowanie przenosi do dnia, także
-przesunięty pierwszy wiersz pod jego nagłówkami, a wiersz, którego położenia
-Uporządkowanie nie ustaliło, tylko z komórkami dozwolonymi przesunięty i nie, a
-nad wklejeniem tylko numery ostatniego uporządkowanego i żółtego wiersza, od
+przesunięty pierwszy wiersz pod jego nagłówkami, a wiersz ze Śladem
+przesunięcia tylko z komórkami dozwolonymi przesunięty i nie oraz datą z
+godziną spod `DATA GODZ. POCZ.`, a nad wklejeniem tylko numery ostatniego uporządkowanego i żółtego wiersza, od
 których Planowanie liczy wiersz dnia. Wiersz ma numer i wartości komórek po literze
 kolumny, a arkusz nagłówki kolumn; według reguły danych bez kolumn `ADRES` i
 `NUMER UMOWY/ZLECENIA ORANGE` (w Pliku zbiorczym kolumn B i I, także pod innym
@@ -681,8 +681,21 @@ wartości `ADRES` ani `NUMER UMOWY/ZLECENIA ORANGE` ani dane adresowe z efenix,
 każda inna kolumna wiersza może. W wolnym tekście telefony są `[telefon]`, a
 ulice `[ulica]`. Przed zapisem Logów i każdą wysyłką strażnik maskuje każdą
 zakazaną wartość z przeczytanych plików i dopisuje uwagę techniczną z kolumną i
-miejscem, bez wartości.
+miejscem, bez wartości. Każdy wiersz Rejestru zleceń strażnik zna w jednym
+położeniu: pierwszy wiersz bloku wklejenia dwie kolumny na lewo od nagłówków,
+bo z aplikacji firmowej przychodzi zawsze tak przesunięty, a każdy inny pod
+nagłówkami. Wiersz ze Śladem przesunięcia zna w obu.
 _Avoid_: reguła prywatności (dawne listy pól każdej wysyłki), anonimizacja
+
+## Ślad przesunięcia
+
+Data z godziną dwie kolumny na lewo od `DATA GODZ. POCZ.` (u taty w kolumnie A
+bez nagłówka) w wierszu Rejestru zleceń, który nie jest pierwszym wierszem bloku
+wklejenia. Wiersz na miejscu jej tam nie ma, a przesunięty wiersz z aplikacji ma
+tam swoją datę. Przesunięty przychodzi tylko pierwszy wklejony wiersz, więc ślad
+znaczy, że ten fakt nie zaszedł: reguła danych zna taki wiersz w obu
+położeniach, a Logi Uruchomienia mają o nim uwagę „Fakt domeny złamany”.
+_Avoid_: niepewny wiersz, wiersz bez pewnego położenia
 
 ## Token do Zgłoszeń
 
