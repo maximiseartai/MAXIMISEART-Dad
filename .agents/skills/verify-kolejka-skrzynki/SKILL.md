@@ -11,6 +11,7 @@ pilnuje:
   - src/rozliczenia/centrum/server.py
   - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
   - tools/lib/rozjazd_modelu.py
+  - tools/lib/narzedzia_tlc.py
 ci: .agents/skills/verify-kolejka-skrzynki/scripts/sprawdz_kolejke.py
 ci-czesci: 3
 ---

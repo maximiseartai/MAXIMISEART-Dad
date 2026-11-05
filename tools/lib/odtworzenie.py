@@ -7,9 +7,10 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   wejścia wiersze plików taty.
 - Granice (``Limit``) to to, czego Logi nie niosą. Granica blokująca (Logi bez Kopii wejścia, Urwane Uruchomienie,
   pusta Kopia, wiersz INTERMAX bez pewnego położenia, komórka typu, którego Kopia nie zapisała, Logi Wyceny bez odczytu
-  wyników szukania) kończy odtworzenie bez uruchomienia procesu: wynik takiego odtworzenia nic by nie znaczył. Zastrzeżenie
-  (maski strażnika w Kopii, Wzorce spoza Logów, Surowe zlecenia, dni nad wklejeniem, Atrapa w miejscu efenix) raport
-  podaje przy każdym wyniku, bo może tłumaczyć różnicę.
+  wyników szukania, wiersz Kopii albo zlecenie śladu efenix, które strażnik reguły danych pominął) kończy odtworzenie
+  bez uruchomienia procesu: wynik takiego odtworzenia nic by nie znaczył. Zastrzeżenie (maski strażnika w Kopii, pole
+  albo element, które strażnik pominął poza wejściem, Wzorce spoza Logów, Surowe zlecenia, dni nad wklejeniem, Atrapa w
+  miejscu efenix) raport podaje przy każdym wyniku, bo może tłumaczyć różnicę.
 - Pliki wejścia powstają w katalogu roboczym z Kopii wejścia, pod tą samą nazwą w folderach o tych samych nazwach co
   u taty (``CopiedFile.folders``), więc Komunikaty nazywają te same plik i folder: każdy arkusz z nagłówkami i
   wierszami pod tymi samymi numerami, przesunięty pierwszy wiersz wklejenia INTERMAX znowu przesunięty, a nad
@@ -40,6 +41,7 @@ import enum
 import json
 from pathlib import Path
 import platform
+import re
 from typing import Any, Final
 
 from openpyxl import Workbook
@@ -66,6 +68,7 @@ from rozliczenia.centrum.run_logs import (
     LoggedSheet,
     LoggedTyped,
     RunLog,
+    guard_cuts,
     guarded,
 )
 from rozliczenia.centrum.runs import CONTINUE_HINT, EndedRun, PreparedRun
@@ -254,7 +257,7 @@ def _limits(record: RunLog, kind: _Kind, configuration: Path | None) -> list[Lim
                 blocking=True,
             )
         ]
-    limits = [*_typed_limits(copied), *_masked_limits(record), *kind.limits(record)]
+    limits = [*_guard_limits(record), *_typed_limits(copied), *_masked_limits(record), *kind.limits(record)]
     if kind.configuration:
         limits.append(_configuration_limit(record, configuration, kind.configuration))
     if record.stop_kind == "repeated":
@@ -265,6 +268,31 @@ def _limits(record: RunLog, kind: _Kind, configuration: Path | None) -> list[Lim
             )
         )
     return limits
+
+
+def _guard_limits(record: RunLog) -> list[Limit]:
+    """Miejsca Logów, które strażnik reguły danych pominął albo zostawił puste (``run_logs.guard_cuts``), bo maska trafiła
+    w pole, które jej nie przyjmuje. W wejściu odtworzenia (Kopia wejścia bez odcisku pliku, ślad zleceń efenix, z którego
+    powstaje Atrapa) to granica blokująca: odtworzone wejście nie jest wejściem taty, a różnica wskazałaby fałszywą
+    przyczynę. Poza wejściem to zastrzeżenie: różnica w tym miejscu jest skutkiem maski."""
+
+    limits: list[Limit] = []
+    for cut in guard_cuts(record):
+        lost = "pominął" if cut.removed else "zostawił puste"
+        place = f"{lost} w Logach {cut.place} (maska w polu, które jej nie przyjmuje)"
+        if _replay_input(cut.place):
+            limits.append(Limit(f"strażnik reguły danych {place}, a odtworzenie buduje z niego wejście", blocking=True))
+        else:
+            limits.append(Limit(f"Strażnik reguły danych {place}: różnica w tym miejscu jest skutkiem maski"))
+    return limits
+
+
+def _replay_input(place: str) -> bool:
+    """Czy miejsce Logów ``place`` (ścieżka JSON) to wejście odtworzenia: Kopia wejścia poza odciskiem pliku albo ślad
+    zleceń efenix."""
+
+    top = re.split(r"[.\[]", place)[0]
+    return top == "efenix_orders" or (top == "input_copy" and ".fingerprint" not in place)
 
 
 def _typed_limits(copied: Sequence[LoggedInputFile]) -> list[Limit]:

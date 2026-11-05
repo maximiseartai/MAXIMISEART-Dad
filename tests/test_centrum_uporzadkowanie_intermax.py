@@ -832,7 +832,7 @@ def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_ora
     [copied] = logs["input_copy"]
     fingerprint = {"size": len(content), "modified_at": READ_AT.isoformat().replace("+00:00", "Z"), "sha256": hashlib.sha256(content).hexdigest()}
     assert (copied["name"], copied["fingerprint"]) == (REGISTER_NAME, fingerprint)
-    assert copied["folders"] == [tmp_path.name, "OneDrive"], "foldery nad INTERMAX jak w Komunikatach"
+    assert copied["folders"] == [tmp_path.name, "OneDrive"], "folder INTERMAX i folder nad nim; Komunikaty pokazują tylko folder INTERMAX"
     older, sheet = copied["sheets"]
     assert older == {
         "sheet": OLDER_SHEET,

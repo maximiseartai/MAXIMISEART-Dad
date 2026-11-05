@@ -372,6 +372,15 @@ jobs:
           name: plan
           path: .ci-plan
 
+      # Java (jdk4py) and tla2tools.jar of the TLA+ models of the verify-* skills, whose versions and SHA-256 are pinned
+      # in tools/lib/narzedzia_tlc.py, so a new pin is a new key. A hit spares the download from GitHub Releases and
+      # PyPI, whose passing 504 once turned this job red (#930); a job whose units run no model saves nothing.
+      - name: Cache TLC tools
+        uses: actions/cache@v6
+        with:
+          path: .verification/formal-aktualizacja
+          key: tlc-${{ runner.os }}-${{ hashFiles('tools/lib/narzedzia_tlc.py') }}
+
       # Each baseline and mutation script (or part of one) of the job, also after a red one.
       - name: Run the planned units
         id: units

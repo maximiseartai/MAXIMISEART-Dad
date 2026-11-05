@@ -216,9 +216,12 @@ Dad does not click or see anything. The machine script sends none.
   line `przyczyna=odmowa-archiwum`), the rest of the queue (Zgłoszenia, Uwagi
   taty, Kontrole ilości) goes on, and the file goes by itself once the
   permission and the commit are there, within a minute while Centrum runs.
-- The Logi hold no cell content, but the Komunikaty are the card's, as in a
-  Zgłoszenie: they name Wykonawcy and may quote a cell of the Rejestr zleceń
-  (`ZLE_SKUTECZNE`, `NIEZNANY_WYKONAWCA`). Treat them like a Zgłoszenie.
+- Since #841 the Logi hold cell content: the Kopia wejścia has the Wiersze
+  danych the process read, without the `ADRES` and `NUMER UMOWY/ZLECENIA
+  ORANGE` columns and with free text and numbers masked (ADR 0025). The
+  Komunikaty are the card's, as in a Zgłoszenie: they name Wykonawcy and may
+  quote a cell of the Rejestr zleceń (`ZLE_SKUTECZNE`, `NIEZNANY_WYKONAWCA`).
+  Treat the Logi like a Zgłoszenie.
 - The queue, its log entries and its retries are the ones of the Kontrola
   ilości above; the queue file of the Logi is `<time>-<n>-logi-uruchomienia-<run>.json`.
 - Centrum never creates the `logi-uruchomienia` label; it must exist in the

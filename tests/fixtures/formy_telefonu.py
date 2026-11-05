@@ -78,6 +78,7 @@ NOT_PHONES: tuple[PhoneForm, ...] = (
     PhoneForm("liczba 8 cyfr", 12345678, None, "za krótka na telefon"),
     PhoneForm("liczba 10 cyfr od 48", 4801234567, None, "za krótka na 48 i 9 cyfr; numer Orange zna pamięć"),
     PhoneForm("liczba 11 cyfr nie od 48", 14123456789, None, "bez numeru kierunkowego Polski"),
+    PhoneForm("liczba 11 cyfr od 47", 47600123456, None, "numer kierunkowy innego kraju niż 48, tuż obok 48"),
     PhoneForm("liczba 12 cyfr od 48", 486001234567, None, "za długa na 48 i 9 cyfr"),
     PhoneForm("ułamek z 9 cyframi po przecinku", 0.123456789, None, "telefon w komórce nie ma części ułamkowej"),
     PhoneForm("ułamek policzony przez formułę", 0.12345678901234568, None, "wynik formuły Excela"),

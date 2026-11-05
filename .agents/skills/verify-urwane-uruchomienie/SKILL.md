@@ -14,6 +14,7 @@ pilnuje:
   - src/rozliczenia/process_run.py
   - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
   - tools/lib/rozjazd_modelu.py
+  - tools/lib/narzedzia_tlc.py
 ci: .agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwane_uruchomienie.py
 ---
 
@@ -147,17 +148,20 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `5f0dcbedd` (2026-11-05, #910 merged with `main` after #924, #925 and #926, which changed no definition).
-Every row of the table was checked against the code at this commit. Since the Sync commit `2b2af53e4` (#846 after its
-split) #910 changed these definitions: the version of a
-wysyłka has a rank before its moment (`Rank`, `Version`, `_version_of`, `_superseded` in `outbox.py`; `progress_post`,
-`logi_post`, `_logs_post`, `RunLogs.send` in `run_logs.py`), `RunEnded` carries the result, a failed end entry leaves
-the journal, `JournalAfterLogs` removes the journal once the queue accepted the Logi with the result (`RunLogs.queued`),
-and the start closes every journal with its first line with a stand-in version (`_closed`, `ResultWithoutLogs`). The
-model got the newest version of each comment the queue accepted (`najnowsza`, `Przyjmij` with the rank and the clock,
-`MaxCofniecZegara`), a progress that the queue takes (`Postep`), the action `UsunPoLogach`, the stand-in version in
-`Czytaj` and `Wyslij`, the promise LogiZostaja in place of WynikZostaje, the configuration `zegar`, and its WersjaKoncowa
-and DziennikPoKolejce read the newest version; the known finding `po-wpisie-konca` is gone.
+Sync commit: `917cf6fc6` (2026-11-05, #910 merged with `main` after the cleanup of #837). Every row of the table was
+checked against the code at this commit. Since the Sync commit `917cf6fc6` of `main` #910 changed these definitions: the
+version of a wysyłka has a rank before its moment (`Rank`, `Version`, `_version_of`, `_superseded` in `outbox.py`;
+`progress_post`, `logi_post`, `_logs_post`, `RunLogs.send` in `run_logs.py`), `RunEnded` carries the result, a failed
+end entry leaves the journal, `JournalAfterLogs` removes the journal once the queue accepted the Logi with the result
+(`RunLogs.queued`), and the start closes every journal with its first line with a stand-in version (`_closed`,
+`ResultWithoutLogs`). The model got the newest version of each comment the queue accepted (`najnowsza`, `Przyjmij` with
+the rank and the clock, `MaxCofniecZegara`), a progress that the queue takes (`Postep`), the action `UsunPoLogach`, the
+stand-in version in `Czytaj` and `Wyslij`, the promise LogiZostaja in place of WynikZostaje, the configuration `zegar`,
+and its WersjaKoncowa and DziennikPoKolejce read the newest version; the known finding `po-wpisie-konca` is gone. At
+`917cf6fc6`, since `2b2af53e4` (#846 after its split) only `guarded` changed: a mask in a typed field of the Logs (a
+`Decimal`, a date, a closed list) empties the field or drops its list element with a technical note, a top-level field
+without `None` raises `UnrepresentableLogs` instead of `ValidationError` (#936), and the loop of cuts ends after at most
+as many turns as the Logs have values. The model has no step in which the guard raises, so no action changed.
 
 ## Run
 
