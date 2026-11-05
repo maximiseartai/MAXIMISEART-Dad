@@ -16,9 +16,9 @@ Zlecenie z kwotą w efenix różną od 0 ma już wycenę: proces tylko ją poró
 zgadzają się z plikiem, a w przeciwnym razie to błąd „wycena już jest i się różni”. Wyjątkiem jest wycena, którą proces
 sam zaczął i której nie skończył, bo przerwało ją Zatrzymanie: zlecenie w stanie „Emmett załadowany” Śladu Wyceny
 Emmetta (``efenix_emmett_trace``) i z datą wykonania proces dokańcza jak po Emmetcie, z ilościami Emmetta ze śladu, gdy
-strona ma tylko ilości, które zostawia po Emmetcie (``as_left_after_emmett``): sprzeczność Emmetta ze śladu z plikiem to
-ostrzeżenie bez dopisywania. Strona z inną ilością, także z usuniętą ilością Emmetta, i strona bez daty wykonania to
-błąd „wycena już jest i się różni” bez zmian. Stan „Emmett załadowany” proces zapisuje dopiero po odczycie Wyceny
+strona ma tylko ilości Emmetta i ilości, które proces zaczął wpisywać (``as_left_after_emmett``): sprzeczność Emmetta ze
+śladu z plikiem to ostrzeżenie bez dopisywania. Strona z inną ilością, także z ilością usuniętą albo wpisaną po
+przerwaniu przez tatę, i strona bez daty wykonania to błąd „wycena już jest i się różni” bez zmian. Stan „Emmett załadowany” proces zapisuje dopiero po odczycie Wyceny
 Emmetta ze strony przeładowanej po „Załaduj do zlecenia”, a zlecenie z tym stanem, które skończyło się wynikiem (gotowe,
 ostrzeżenie Emmetta albo błąd), przechodzi w stan „gotowe” śladu, więc wyceny zaczętej przez tatę ani skończonej przez
 proces nigdy nie dokańcza. Przy kwocie 0 proces ustawia pustą datę wykonania z ``DATA`` i sprawdza ją na ponownie
@@ -26,7 +26,9 @@ otwartej stronie zlecenia: dzień, którego kalendarz efenix nie przyjął albo 
 (``DateRefused``) bez Emmetta i bez ilości. Potem ładuje Wycenę Emmetta i zapisuje w śladzie jej ilości; pustej Wyceny
 Emmetta zlecenia w stanie „Emmett załadowany” nie ładuje drugi raz. Sprzeczność Emmetta z plikiem to ostrzeżenie bez
 dopisywania, a w przeciwnym razie proces wpisuje ilości pliku w pozycjach pustych u Emmetta i porównuje kwotę końcową,
-którą odesłał efenix, z ``Kwota`` (AU). Okno efenix (``Efenix``) nie ma działania, które przekazuje zlecenie do
+którą odesłał efenix, z ``Kwota`` (AU). Każdą ilość ślad zapisuje z wyprzedzeniem, zanim okno wpisze ją w efenix: gdy ten
+zapis się nie udaje, proces jej nie wpisuje i się zatrzymuje, a ilość, której efenix nie zapisał, bo okno zgłosiło
+wylogowanie, ślad wycofuje. Okno efenix (``Efenix``) nie ma działania, które przekazuje zlecenie do
 akceptacji, anuluje je albo zmienia jego status. Strona logowania, efenix, którego okno nie otworzyło, zamknięte okno
 efenix i działanie okna, którego okno nie dokończyło, to Zatrzymanie (``LoggedOut``, ``EfenixUnreachable``,
 ``WindowClosed``, ``UnexpectedPage``), a Komunikat Zatrzymania mówi, czy przed nim proces zmienił już coś w efenix.
@@ -329,7 +331,10 @@ class Efenix(Protocol):
         ...
 
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
-        """Wpisuje ``quantity`` w pole „Ilość” pozycji ``position`` otwartego zlecenia; kwota końcowa, którą odesłał efenix."""
+        """Wpisuje ``quantity`` w pole „Ilość” pozycji ``position`` otwartego zlecenia; kwota końcowa, którą odesłał efenix.
+
+        ``LoggedOut`` znaczy, że efenix tej ilości nie zapisał; po każdym innym wyjątku mógł ją zapisać albo nie.
+        """
         ...
 
 
@@ -670,9 +675,9 @@ def _outcome(
         differs = priced_differently(file, opened.quantities, opened.amount, order.amount)
         if differs is None:
             return Ready(hit)
-        if emmett is None or opened.execution_date is None or not as_left_after_emmett(file, emmett, opened.quantities):
+        if emmett is None or opened.execution_date is None or not as_left_after_emmett(emmett, trace.entered(number), opened.quantities):
             return OrderError(differs)
-        return _after_emmett(order, hit, efenix, file, emmett, opened)
+        return _after_emmett(order, number, hit, efenix, trace, file, emmett, opened)
     if opened.execution_date is None:
         if not efenix.set_execution_date(day):
             return OrderError(DateRefused.OUT_OF_RANGE)
@@ -688,26 +693,49 @@ def _outcome(
             return OrderError(missing)
         emmett = opened.quantities
         trace.loaded(number, emmett)
-    return _after_emmett(order, hit, efenix, file, emmett, opened)
+    return _after_emmett(order, number, hit, efenix, trace, file, emmett, opened)
 
 
 def _after_emmett(
-    order: CollectiveOrder, hit: ListedOrder, efenix: Efenix, file: Mapping[str, int], emmett: Mapping[str, int], on_page: OrderPricing
+    order: CollectiveOrder,
+    number: str,
+    hit: ListedOrder,
+    efenix: Efenix,
+    trace: EmmettTrace,
+    file: Mapping[str, int],
+    emmett: Mapping[str, int],
+    on_page: OrderPricing,
 ) -> Ready | OrderError | EmmettWarning:
     """Wycena po Wycenie Emmetta ``emmett``: ostrzeżenie, gdy Emmett przeczy plikowi, a inaczej ilości pliku dopisane na
     stronie ``on_page``."""
 
     if conflicts := emmett_conflicts(file, emmett):
         return EmmettWarning(conflicts)
-    return _entered(order, hit, efenix, file, on_page)
+    return _entered(order, number, hit, efenix, trace, file, on_page)
 
 
 def _entered(
-    order: CollectiveOrder, hit: ListedOrder, efenix: Efenix, file: Mapping[str, int], on_page: OrderPricing
+    order: CollectiveOrder,
+    number: str,
+    hit: ListedOrder,
+    efenix: Efenix,
+    trace: EmmettTrace,
+    file: Mapping[str, int],
+    on_page: OrderPricing,
 ) -> Ready | OrderError:
-    """Ilości pliku wpisane w pozycjach pustych na stronie ``on_page`` i kwota końcowa porównana z ``Kwota`` (AU)."""
+    """Ilości pliku wpisane w pozycjach pustych na stronie ``on_page`` i kwota końcowa porównana z ``Kwota`` (AU).
+
+    Każdą ilość ślad ``trace`` zapisuje z wyprzedzeniem, zanim okno ją wpisze: gdy zapis się nie udał, Wycena zatrzymuje
+    się bez niej. Ilość, której efenix nie zapisał, bo okno zgłosiło wylogowanie, ślad wycofuje.
+    """
 
     amount = on_page.amount
     for position, quantity in to_enter(file, on_page.quantities).items():
-        amount = efenix.enter_quantity(position, quantity)
+        if not trace.entering(number, position, quantity):
+            raise StopError(messages.emmett_trace_not_saved(trace.path, order.row))
+        try:
+            amount = efenix.enter_quantity(position, quantity)
+        except LoggedOut:
+            trace.not_entered(number, position)
+            raise
     return Ready(hit) if same_amount(amount, order.amount) else OrderError(OtherAmount(amount, order.amount))

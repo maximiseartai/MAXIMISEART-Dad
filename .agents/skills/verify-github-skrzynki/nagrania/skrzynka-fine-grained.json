@@ -1,0 +1,2481 @@
+{
+ "nagrano": "2026-11-05T01:37:29+00:00",
+ "commit": "63467871ea80dc84af3de547e2b77d8d133ff57e",
+ "klucz": "fine-grained",
+ "repozytorium": "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba",
+ "przypadki": {
+  "zalozenie": {
+   "fakty": {
+    "etykieta": "zgloszenie",
+    "tytul": "verify-github-skrzynki 20261105T013010-909617: zalozenie",
+    "tresc": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\n## Narzędzie\n\n- Odcisk problemu: 0123456789abcdef\n"
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues",
+     "zadanie_sha256": "6d3bebd5d06954cb77bba67275ea8616b36fee75dc139d4ce6560067041846fe",
+     "zadanie_dlugosc": 227,
+     "status": 201,
+     "link": null,
+     "cialo": {
+      "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221",
+      "id": 6214822621,
+      "number": 221,
+      "state": "open",
+      "closed_at": null,
+      "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\n## Narzędzie\n\n- Odcisk problemu: 0123456789abcdef\n",
+      "state_reason": null
+     }
+    }
+   ],
+   "wynik": "Sent(number=221)"
+  },
+  "lista-bez-etykiety": {
+   "fakty": {
+    "etykieta": "uwaga-taty"
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues?state=all&labels=uwaga-taty&per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": []
+    }
+   ],
+   "wynik": "()"
+  },
+  "zalozenie-bez-etykiety-w-repo": {
+   "fakty": {
+    "etykieta": "uwaga-taty",
+    "tytul": "verify-github-skrzynki 20261105T013010-909617: bez-etykiety",
+    "tresc": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nUwaga taty.\n"
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues",
+     "zadanie_sha256": "9d32e3baa486ddd25a8aefc8285d8e31f9195125bafb571a2c6e0c64b1214055",
+     "zadanie_dlugosc": 185,
+     "status": 201,
+     "link": null,
+     "cialo": {
+      "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/222",
+      "id": 6214822890,
+      "number": 222,
+      "state": "open",
+      "closed_at": null,
+      "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nUwaga taty.\n",
+      "state_reason": null
+     }
+    }
+   ],
+   "wynik": "Sent(number=222)"
+  },
+  "etykieta-z-githuba": {
+   "fakty": {
+    "numer": 222,
+    "etykieta_zalozona": true,
+    "nadazylo_po_s": 5.2
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues?state=open&labels=uwaga-taty&per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/222",
+       "id": 6214822890,
+       "number": 222,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nUwaga taty.\n",
+       "state_reason": null
+      }
+     ]
+    }
+   ],
+   "wynik": "(Issue(222, zamknięcie=None))"
+  },
+  "zalozenie-na-limicie": {
+   "fakty": {
+    "etykieta": "logi-uruchomienia",
+    "tytul": "verify-github-skrzynki 20261105T013010-909617: tresc-65536",
+    "znacznik": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->",
+    "znak": "x",
+    "dlugosc": 65536
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues",
+     "zadanie_sha256": "c515528e4c01bd02eb1a94fe3c76954204e758290e1530318937ab92c090d028",
+     "zadanie_dlugosc": 65653,
+     "status": 201,
+     "link": null,
+     "cialo": {
+      "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/223",
+      "id": 6214824254,
+      "number": 223,
+      "state": "open",
+      "closed_at": null,
+      "body": "<65536 znaków, sha256 bd46a4cb19da5312>",
+      "state_reason": null
+     }
+    }
+   ],
+   "wynik": "Sent(number=223)"
+  },
+  "zalozenie-ponad-limit": {
+   "fakty": {
+    "etykieta": "logi-uruchomienia",
+    "tytul": "verify-github-skrzynki 20261105T013010-909617: tresc-65537",
+    "znacznik": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->",
+    "znak": "x",
+    "dlugosc": 65537
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues",
+     "zadanie_sha256": "32330e07ebfa815fd728f75163426cf436bca8b650ab09eb6fb53ad01f63b32c",
+     "zadanie_dlugosc": 65654,
+     "status": 422,
+     "link": null,
+     "cialo": {
+      "message": "Validation Failed",
+      "errors": [
+       {
+        "message": "body is too long (maximum is 65536 characters)",
+        "resource": "Issue",
+        "field": "body",
+        "code": "invalid"
+       }
+      ],
+      "status": "422"
+     }
+    }
+   ],
+   "wynik": "Rejected()"
+  },
+  "komentarz": {
+   "fakty": {
+    "numer": 221,
+    "tresc": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz.\n"
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/221/comments",
+     "zadanie_sha256": "c85be961e2e131bb0be51997d08d15eaeaadf68dfd0c56578ab8f922ce309d1c",
+     "zadanie_dlugosc": 86,
+     "status": 201,
+     "link": null,
+     "cialo": {
+      "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221#issuecomment-6647103718",
+      "id": 6647103718,
+      "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz.\n"
+     }
+    }
+   ],
+   "wynik": "Commented(id=6647103718, url='https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221#issuecomment-6647103718')"
+  },
+  "komentarz-na-limicie": {
+   "fakty": {
+    "numer": 223,
+    "znacznik": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->",
+    "znak": "😀",
+    "dlugosc": 65536
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/223/comments",
+     "zadanie_sha256": "d5987fcf051d566d39010fe7808b7c919b8f47487bc7dad1543cf272f2679dd4",
+     "zadanie_dlugosc": 785796,
+     "status": 201,
+     "link": null,
+     "cialo": {
+      "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/223#issuecomment-6647104082",
+      "id": 6647104082,
+      "body": "<65536 znaków, sha256 0669190170d60c3b>"
+     }
+    }
+   ],
+   "wynik": "Commented(id=6647104082, url='https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/223#issuecomment-6647104082')"
+  },
+  "komentarz-na-limicie-bajtow": {
+   "fakty": {
+    "numer": 223,
+    "znacznik": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->",
+    "znak": "x",
+    "dlugosc": 262144
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/223/comments",
+     "zadanie_sha256": "149caee3395b2bd6300730bd109bcae78f7d16290d976cd771be20bae337ad44",
+     "zadanie_dlugosc": 262157,
+     "status": 201,
+     "link": null,
+     "cialo": {
+      "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/223#issuecomment-6647104443",
+      "id": 6647104443,
+      "body": "<262144 znaków, sha256 1413ea1fa9bc1feb>"
+     }
+    }
+   ],
+   "wynik": "Commented(id=6647104443, url='https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/223#issuecomment-6647104443')"
+  },
+  "komentarz-ponad-limit": {
+   "fakty": {
+    "numer": 223,
+    "znacznik": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->",
+    "znak": "x",
+    "dlugosc": 262145
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/223/comments",
+     "zadanie_sha256": "af0dbedf0fa8f18ebcc5d01d4ab933060d805eac59c1543274c3e71f90711bb7",
+     "zadanie_dlugosc": 262158,
+     "status": 422,
+     "link": null,
+     "cialo": {
+      "message": "Validation Failed",
+      "errors": [
+       {
+        "resource": "IssueComment",
+        "code": "unprocessable",
+        "field": "data",
+        "message": "Body is too long (maximum is 65536 characters)"
+       }
+      ],
+      "status": "422"
+     }
+    }
+   ],
+   "wynik": "Rejected()"
+  },
+  "komentarz-brak-issue": {
+   "fakty": {
+    "numer": 999999,
+    "tresc": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz do issue, którego nie ma.\n"
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/999999/comments",
+     "zadanie_sha256": "8ab48daf8efa14a56ef6cb9e3ee5c9dac69d01646ca094f21c50f9631e1e0ffe",
+     "zadanie_dlugosc": 116,
+     "status": 404,
+     "link": null,
+     "cialo": {
+      "message": "Not Found",
+      "status": "404"
+     }
+    }
+   ],
+   "wynik": "Refused()"
+  },
+  "poprawka": {
+   "fakty": {
+    "komentarz": 6647103718,
+    "adres": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221#issuecomment-6647103718",
+    "tresc": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz poprawiony.\n"
+   },
+   "wymiany": [
+    {
+     "metoda": "PATCH",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/comments/6647103718",
+     "zadanie_sha256": "f10d1281e9f5ac5bde407da3dba8a78d532f83d8406eaf944a84c04aeaadfca1",
+     "zadanie_dlugosc": 97,
+     "status": 200,
+     "link": null,
+     "cialo": {
+      "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221#issuecomment-6647103718",
+      "id": 6647103718,
+      "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz poprawiony.\n"
+     }
+    }
+   ],
+   "wynik": "Commented(id=6647103718, url='https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221#issuecomment-6647103718')"
+  },
+  "poprawka-brak-komentarza": {
+   "fakty": {
+    "komentarz": 1,
+    "tresc": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nPoprawka komentarza, którego nie ma.\n"
+   },
+   "wymiany": [
+    {
+     "metoda": "PATCH",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/comments/1",
+     "zadanie_sha256": "c78f88b4315c22b43a34665cddfd5af23aa6f0f71062c1c7cebf4d3c921ca54e",
+     "zadanie_dlugosc": 117,
+     "status": 404,
+     "link": null,
+     "cialo": {
+      "message": "Not Found",
+      "status": "404"
+     }
+    }
+   ],
+   "wynik": "Refused()"
+  },
+  "poprawka-ponad-limit": {
+   "fakty": {
+    "komentarz": 6647103718,
+    "adres": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221#issuecomment-6647103718",
+    "znacznik": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->",
+    "znak": "x",
+    "dlugosc": 262145
+   },
+   "wymiany": [
+    {
+     "metoda": "PATCH",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/comments/6647103718",
+     "zadanie_sha256": "af0dbedf0fa8f18ebcc5d01d4ab933060d805eac59c1543274c3e71f90711bb7",
+     "zadanie_dlugosc": 262158,
+     "status": 422,
+     "link": null,
+     "cialo": {
+      "message": "Validation Failed",
+      "errors": [
+       {
+        "resource": "IssueComment",
+        "code": "custom",
+        "field": "body",
+        "message": "body is too long (maximum is 65536 characters)"
+       }
+      ],
+      "status": "422"
+     }
+    }
+   ],
+   "wynik": "Rejected()"
+  },
+  "komentarze": {
+   "fakty": {
+    "numer": 221,
+    "komentarz": 6647103718,
+    "adres": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221#issuecomment-6647103718",
+    "tresc": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz poprawiony.\n"
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/221/comments?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221#issuecomment-6647103718",
+       "id": 6647103718,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz poprawiony.\n"
+      }
+     ]
+    }
+   ],
+   "wynik": "(Comment(6647103718))"
+  },
+  "komentarze-strony": {
+   "fakty": {
+    "numer": 224,
+    "komentarze": [
+     6647106389,
+     6647106665,
+     6647106943,
+     6647107204,
+     6647107444,
+     6647107677,
+     6647108020,
+     6647108340,
+     6647108589,
+     6647108912,
+     6647109166,
+     6647109400,
+     6647109638,
+     6647109964,
+     6647110210,
+     6647110489,
+     6647110727,
+     6647110994,
+     6647111222,
+     6647111529,
+     6647111772,
+     6647112004,
+     6647112250,
+     6647112533,
+     6647112759,
+     6647113033,
+     6647113297,
+     6647113532,
+     6647113781,
+     6647114037,
+     6647114291,
+     6647114550,
+     6647114783,
+     6647115071,
+     6647115368,
+     6647115626,
+     6647115940,
+     6647116169,
+     6647116444,
+     6647116714,
+     6647116958,
+     6647117225,
+     6647117462,
+     6647117754,
+     6647117997,
+     6647118265,
+     6647118482,
+     6647118776,
+     6647119025,
+     6647119307,
+     6647119558,
+     6647119790,
+     6647120076,
+     6647120317,
+     6647120576,
+     6647120816,
+     6647121107,
+     6647121339,
+     6647121602,
+     6647121899,
+     6647122169,
+     6647122475,
+     6647122726,
+     6647123011,
+     6647123300,
+     6647123579,
+     6647123865,
+     6647124155,
+     6647124386,
+     6647124673,
+     6647124919,
+     6647125207,
+     6647125467,
+     6647125735,
+     6647126002,
+     6647126218,
+     6647126492,
+     6647126737,
+     6647126966,
+     6647127249,
+     6647127547,
+     6647127793,
+     6647128058,
+     6647128310,
+     6647128549,
+     6647128817,
+     6647129041,
+     6647129276,
+     6647129537,
+     6647129789,
+     6647130017,
+     6647130265,
+     6647130520,
+     6647130773,
+     6647131032,
+     6647131288,
+     6647131506,
+     6647131762,
+     6647132009,
+     6647132353,
+     6647132555
+    ]
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/224/comments?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647106389",
+       "id": 6647106389,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 1.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647106665",
+       "id": 6647106665,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 2.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647106943",
+       "id": 6647106943,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 3.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647107204",
+       "id": 6647107204,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 4.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647107444",
+       "id": 6647107444,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 5.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647107677",
+       "id": 6647107677,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 6.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647108020",
+       "id": 6647108020,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 7.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647108340",
+       "id": 6647108340,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 8.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647108589",
+       "id": 6647108589,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 9.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647108912",
+       "id": 6647108912,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 10.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647109166",
+       "id": 6647109166,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 11.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647109400",
+       "id": 6647109400,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 12.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647109638",
+       "id": 6647109638,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 13.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647109964",
+       "id": 6647109964,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 14.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647110210",
+       "id": 6647110210,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 15.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647110489",
+       "id": 6647110489,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 16.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647110727",
+       "id": 6647110727,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 17.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647110994",
+       "id": 6647110994,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 18.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647111222",
+       "id": 6647111222,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 19.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647111529",
+       "id": 6647111529,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 20.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647111772",
+       "id": 6647111772,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 21.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647112004",
+       "id": 6647112004,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 22.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647112250",
+       "id": 6647112250,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 23.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647112533",
+       "id": 6647112533,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 24.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647112759",
+       "id": 6647112759,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 25.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647113033",
+       "id": 6647113033,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 26.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647113297",
+       "id": 6647113297,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 27.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647113532",
+       "id": 6647113532,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 28.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647113781",
+       "id": 6647113781,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 29.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647114037",
+       "id": 6647114037,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 30.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647114291",
+       "id": 6647114291,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 31.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647114550",
+       "id": 6647114550,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 32.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647114783",
+       "id": 6647114783,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 33.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647115071",
+       "id": 6647115071,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 34.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647115368",
+       "id": 6647115368,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 35.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647115626",
+       "id": 6647115626,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 36.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647115940",
+       "id": 6647115940,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 37.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647116169",
+       "id": 6647116169,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 38.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647116444",
+       "id": 6647116444,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 39.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647116714",
+       "id": 6647116714,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 40.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647116958",
+       "id": 6647116958,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 41.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647117225",
+       "id": 6647117225,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 42.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647117462",
+       "id": 6647117462,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 43.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647117754",
+       "id": 6647117754,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 44.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647117997",
+       "id": 6647117997,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 45.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647118265",
+       "id": 6647118265,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 46.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647118482",
+       "id": 6647118482,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 47.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647118776",
+       "id": 6647118776,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 48.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647119025",
+       "id": 6647119025,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 49.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647119307",
+       "id": 6647119307,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 50.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647119558",
+       "id": 6647119558,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 51.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647119790",
+       "id": 6647119790,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 52.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647120076",
+       "id": 6647120076,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 53.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647120317",
+       "id": 6647120317,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 54.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647120576",
+       "id": 6647120576,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 55.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647120816",
+       "id": 6647120816,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 56.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647121107",
+       "id": 6647121107,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 57.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647121339",
+       "id": 6647121339,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 58.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647121602",
+       "id": 6647121602,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 59.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647121899",
+       "id": 6647121899,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 60.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647122169",
+       "id": 6647122169,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 61.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647122475",
+       "id": 6647122475,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 62.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647122726",
+       "id": 6647122726,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 63.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647123011",
+       "id": 6647123011,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 64.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647123300",
+       "id": 6647123300,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 65.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647123579",
+       "id": 6647123579,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 66.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647123865",
+       "id": 6647123865,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 67.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647124155",
+       "id": 6647124155,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 68.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647124386",
+       "id": 6647124386,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 69.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647124673",
+       "id": 6647124673,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 70.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647124919",
+       "id": 6647124919,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 71.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647125207",
+       "id": 6647125207,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 72.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647125467",
+       "id": 6647125467,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 73.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647125735",
+       "id": 6647125735,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 74.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647126002",
+       "id": 6647126002,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 75.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647126218",
+       "id": 6647126218,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 76.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647126492",
+       "id": 6647126492,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 77.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647126737",
+       "id": 6647126737,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 78.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647126966",
+       "id": 6647126966,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 79.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647127249",
+       "id": 6647127249,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 80.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647127547",
+       "id": 6647127547,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 81.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647127793",
+       "id": 6647127793,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 82.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647128058",
+       "id": 6647128058,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 83.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647128310",
+       "id": 6647128310,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 84.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647128549",
+       "id": 6647128549,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 85.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647128817",
+       "id": 6647128817,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 86.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647129041",
+       "id": 6647129041,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 87.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647129276",
+       "id": 6647129276,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 88.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647129537",
+       "id": 6647129537,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 89.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647129789",
+       "id": 6647129789,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 90.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647130017",
+       "id": 6647130017,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 91.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647130265",
+       "id": 6647130265,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 92.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647130520",
+       "id": 6647130520,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 93.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647130773",
+       "id": 6647130773,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 94.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647131032",
+       "id": 6647131032,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 95.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647131288",
+       "id": 6647131288,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 96.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647131506",
+       "id": 6647131506,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 97.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647131762",
+       "id": 6647131762,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 98.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647132009",
+       "id": 6647132009,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 99.\n"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647132353",
+       "id": 6647132353,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 100.\n"
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/224/comments?per_page=100&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/224#issuecomment-6647132555",
+       "id": 6647132555,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz 101.\n"
+      }
+     ]
+    }
+   ],
+   "wynik": "(101 komentarzy)"
+  },
+  "komentarze-brak-issue": {
+   "fakty": {
+    "numer": 999999
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/999999/comments?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 404,
+     "link": null,
+     "cialo": {
+      "message": "Not Found",
+      "status": "404"
+     }
+    }
+   ],
+   "wynik": "Refused()"
+  },
+  "lista-strony": {
+   "fakty": {
+    "numery": [
+     225,
+     226,
+     227,
+     228,
+     229,
+     230,
+     231,
+     232,
+     233,
+     234,
+     235,
+     236,
+     237,
+     238,
+     239,
+     240,
+     241,
+     242,
+     243,
+     244,
+     245,
+     246,
+     247,
+     248,
+     249,
+     250,
+     251,
+     252,
+     253,
+     254,
+     255,
+     256,
+     257,
+     258,
+     259,
+     260,
+     261,
+     262,
+     263,
+     264,
+     265,
+     266,
+     267,
+     268,
+     269,
+     270,
+     271,
+     272,
+     273,
+     274,
+     275,
+     276,
+     277,
+     278,
+     279,
+     280,
+     281,
+     282,
+     283,
+     284,
+     285,
+     286,
+     287,
+     288,
+     289,
+     290,
+     291,
+     292,
+     293,
+     294,
+     295,
+     296,
+     297,
+     298,
+     299,
+     300,
+     301,
+     302,
+     303,
+     304,
+     305,
+     306,
+     307,
+     308,
+     309,
+     310,
+     311,
+     312,
+     313,
+     314,
+     315,
+     316,
+     317,
+     318,
+     319,
+     320,
+     321,
+     322,
+     323,
+     324,
+     325
+    ],
+    "nadazylo_po_s": 4.0
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues?state=open&labels=kontrola-ilosci&per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/325",
+       "id": 6214864246,
+       "number": 325,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 101.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/324",
+       "id": 6214864058,
+       "number": 324,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 100.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/323",
+       "id": 6214863833,
+       "number": 323,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 99.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/322",
+       "id": 6214863590,
+       "number": 322,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 98.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/321",
+       "id": 6214863449,
+       "number": 321,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 97.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/320",
+       "id": 6214863215,
+       "number": 320,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 96.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/319",
+       "id": 6214863007,
+       "number": 319,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 95.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/318",
+       "id": 6214862823,
+       "number": 318,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 94.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/317",
+       "id": 6214862604,
+       "number": 317,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 93.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/316",
+       "id": 6214862400,
+       "number": 316,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 92.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/315",
+       "id": 6214862204,
+       "number": 315,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 91.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/314",
+       "id": 6214861995,
+       "number": 314,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 90.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/313",
+       "id": 6214861791,
+       "number": 313,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 89.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/312",
+       "id": 6214861634,
+       "number": 312,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 88.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/311",
+       "id": 6214861356,
+       "number": 311,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 87.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/310",
+       "id": 6214861192,
+       "number": 310,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 86.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/309",
+       "id": 6214860989,
+       "number": 309,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 85.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/308",
+       "id": 6214860806,
+       "number": 308,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 84.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/307",
+       "id": 6214860655,
+       "number": 307,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 83.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/306",
+       "id": 6214860447,
+       "number": 306,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 82.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/305",
+       "id": 6214860251,
+       "number": 305,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 81.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/304",
+       "id": 6214860071,
+       "number": 304,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 80.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/303",
+       "id": 6214859835,
+       "number": 303,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 79.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/302",
+       "id": 6214859656,
+       "number": 302,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 78.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/301",
+       "id": 6214859469,
+       "number": 301,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 77.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/300",
+       "id": 6214859275,
+       "number": 300,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 76.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/299",
+       "id": 6214859131,
+       "number": 299,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 75.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/298",
+       "id": 6214858918,
+       "number": 298,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 74.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/297",
+       "id": 6214858686,
+       "number": 297,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 73.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/296",
+       "id": 6214858502,
+       "number": 296,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 72.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/295",
+       "id": 6214858306,
+       "number": 295,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 71.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/294",
+       "id": 6214858118,
+       "number": 294,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 70.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/293",
+       "id": 6214857942,
+       "number": 293,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 69.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/292",
+       "id": 6214857758,
+       "number": 292,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 68.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/291",
+       "id": 6214857551,
+       "number": 291,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 67.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/290",
+       "id": 6214857403,
+       "number": 290,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 66.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/289",
+       "id": 6214857162,
+       "number": 289,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 65.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/288",
+       "id": 6214857001,
+       "number": 288,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 64.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/287",
+       "id": 6214856793,
+       "number": 287,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 63.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/286",
+       "id": 6214856588,
+       "number": 286,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 62.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/285",
+       "id": 6214856406,
+       "number": 285,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 61.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/284",
+       "id": 6214856230,
+       "number": 284,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 60.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/283",
+       "id": 6214855953,
+       "number": 283,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 59.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/282",
+       "id": 6214855799,
+       "number": 282,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 58.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/281",
+       "id": 6214855575,
+       "number": 281,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 57.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/280",
+       "id": 6214855383,
+       "number": 280,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 56.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/279",
+       "id": 6214855229,
+       "number": 279,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 55.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/278",
+       "id": 6214854986,
+       "number": 278,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 54.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/277",
+       "id": 6214854808,
+       "number": 277,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 53.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/276",
+       "id": 6214854597,
+       "number": 276,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 52.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/275",
+       "id": 6214854389,
+       "number": 275,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 51.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/274",
+       "id": 6214854183,
+       "number": 274,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 50.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/273",
+       "id": 6214854017,
+       "number": 273,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 49.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/272",
+       "id": 6214853852,
+       "number": 272,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 48.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/271",
+       "id": 6214853608,
+       "number": 271,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 47.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/270",
+       "id": 6214853420,
+       "number": 270,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 46.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/269",
+       "id": 6214853206,
+       "number": 269,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 45.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/268",
+       "id": 6214853046,
+       "number": 268,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 44.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/267",
+       "id": 6214852862,
+       "number": 267,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 43.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/266",
+       "id": 6214852622,
+       "number": 266,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 42.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/265",
+       "id": 6214852453,
+       "number": 265,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 41.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/264",
+       "id": 6214852268,
+       "number": 264,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 40.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/263",
+       "id": 6214852040,
+       "number": 263,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 39.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/262",
+       "id": 6214851860,
+       "number": 262,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 38.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/261",
+       "id": 6214851687,
+       "number": 261,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 37.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/260",
+       "id": 6214851478,
+       "number": 260,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 36.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/259",
+       "id": 6214851300,
+       "number": 259,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 35.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/258",
+       "id": 6214851106,
+       "number": 258,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 34.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/257",
+       "id": 6214850866,
+       "number": 257,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 33.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/256",
+       "id": 6214850699,
+       "number": 256,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 32.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/255",
+       "id": 6214850519,
+       "number": 255,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 31.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/254",
+       "id": 6214850310,
+       "number": 254,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 30.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/253",
+       "id": 6214850163,
+       "number": 253,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 29.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/252",
+       "id": 6214849922,
+       "number": 252,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 28.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/251",
+       "id": 6214849728,
+       "number": 251,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 27.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/250",
+       "id": 6214849531,
+       "number": 250,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 26.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/249",
+       "id": 6214849332,
+       "number": 249,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 25.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/248",
+       "id": 6214849142,
+       "number": 248,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 24.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/247",
+       "id": 6214848958,
+       "number": 247,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 23.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/246",
+       "id": 6214848757,
+       "number": 246,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 22.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/245",
+       "id": 6214848596,
+       "number": 245,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 21.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/244",
+       "id": 6214848421,
+       "number": 244,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 20.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/243",
+       "id": 6214848271,
+       "number": 243,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 19.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/242",
+       "id": 6214848027,
+       "number": 242,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 18.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/241",
+       "id": 6214847876,
+       "number": 241,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 17.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/240",
+       "id": 6214847677,
+       "number": 240,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 16.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/239",
+       "id": 6214847454,
+       "number": 239,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 15.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/238",
+       "id": 6214847289,
+       "number": 238,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 14.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/237",
+       "id": 6214847143,
+       "number": 237,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 13.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/236",
+       "id": 6214846978,
+       "number": 236,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 12.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/235",
+       "id": 6214846795,
+       "number": 235,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 11.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/234",
+       "id": 6214846624,
+       "number": 234,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 10.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/233",
+       "id": 6214846451,
+       "number": 233,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 9.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/232",
+       "id": 6214846322,
+       "number": 232,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 8.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/231",
+       "id": 6214846132,
+       "number": 231,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 7.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/230",
+       "id": 6214845974,
+       "number": 230,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 6.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/229",
+       "id": 6214845768,
+       "number": 229,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 5.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/228",
+       "id": 6214845597,
+       "number": 228,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 4.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/227",
+       "id": 6214845435,
+       "number": 227,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 3.\n",
+       "state_reason": null
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/226",
+       "id": 6214845262,
+       "number": 226,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 2.\n",
+       "state_reason": null
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues?state=open&labels=kontrola-ilosci&per_page=100&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/225",
+       "id": 6214845069,
+       "number": 225,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nIssue 1.\n",
+       "state_reason": null
+      }
+     ]
+    }
+   ],
+   "wynik": "(101 issue)"
+  },
+  "lista-zamkniete": {
+   "fakty": {
+    "otwarte": 221,
+    "tresc_otwartego": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\n## Narzędzie\n\n- Odcisk problemu: 0123456789abcdef\n",
+    "nadazylo_po_s": 5.4,
+    "nie_planowane": 326,
+    "zrobione": 327,
+    "zamknieto_od": "2026-11-05T01:34:03+00:00"
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues?state=open&labels=zgloszenie&per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221",
+       "id": 6214822621,
+       "number": 221,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\n## Narzędzie\n\n- Odcisk problemu: 0123456789abcdef\n",
+       "state_reason": null
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues?state=all&labels=zgloszenie&per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/327",
+       "id": 6214865894,
+       "number": 327,
+       "state": "closed",
+       "closed_at": "2026-11-05T01:34:11Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nBez odcisku.\n",
+       "state_reason": "completed"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/326",
+       "id": 6214865486,
+       "number": 326,
+       "state": "closed",
+       "closed_at": "2026-11-05T01:34:09Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\n- Odcisk problemu: 0123456789abcdef\n",
+       "state_reason": "not_planned"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221",
+       "id": 6214822621,
+       "number": 221,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\n## Narzędzie\n\n- Odcisk problemu: 0123456789abcdef\n",
+       "state_reason": null
+      }
+     ]
+    }
+   ],
+   "wynik": "((Issue(221, zamknięcie=None)), (Issue(327, zamknięcie=Closure(reason='completed', at=datetime.datetime(2026, 11, 5, 1, 34, 11, tzinfo=datetime.timezone.utc))), Issue(326, zamknięcie=Closure(reason='not_planned', at=datetime.datetime(2026, 11, 5, 1, 34, 9, tzinfo=datetime.timezone.utc))), Issue(221, zamknięcie=None)))"
+  },
+  "szukanie-odcisku": {
+   "fakty": {
+    "otwarte": 221,
+    "zamkniete": 326
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues?state=open&labels=zgloszenie&per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221",
+       "id": 6214822621,
+       "number": 221,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\n## Narzędzie\n\n- Odcisk problemu: 0123456789abcdef\n",
+       "state_reason": null
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues?state=all&labels=zgloszenie&per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/327",
+       "id": 6214865894,
+       "number": 327,
+       "state": "closed",
+       "closed_at": "2026-11-05T01:34:11Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nBez odcisku.\n",
+       "state_reason": "completed"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/326",
+       "id": 6214865486,
+       "number": 326,
+       "state": "closed",
+       "closed_at": "2026-11-05T01:34:09Z",
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\n- Odcisk problemu: 0123456789abcdef\n",
+       "state_reason": "not_planned"
+      },
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221",
+       "id": 6214822621,
+       "number": 221,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\n## Narzędzie\n\n- Odcisk problemu: 0123456789abcdef\n",
+       "state_reason": null
+      }
+     ]
+    }
+   ],
+   "wynik": "(221, 326)"
+  },
+  "klucz-przyjety": {
+   "fakty": {},
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues?state=open&labels=zgloszenie&per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba/issues/221",
+       "id": 6214822621,
+       "number": 221,
+       "state": "open",
+       "closed_at": null,
+       "body": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\n## Narzędzie\n\n- Odcisk problemu: 0123456789abcdef\n",
+       "state_reason": null
+      }
+     ]
+    }
+   ],
+   "wynik": "'accepted'"
+  },
+  "archiwum-brak": {
+   "fakty": {
+    "tag": "logi-verify-20261105T013010-909617",
+    "tytul": "verify-github-skrzynki 20261105T013010-909617: Archiwum",
+    "tresc": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nArchiwum okresu w repozytorium bez commitu.\n"
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": []
+    }
+   ],
+   "wynik": "None"
+  },
+  "archiwum-w-pustym-repo": {
+   "fakty": {
+    "tag": "logi-verify-20261105T013010-909617",
+    "tytul": "verify-github-skrzynki 20261105T013010-909617: Archiwum",
+    "tresc": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nArchiwum okresu w repozytorium bez commitu.\n"
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases",
+     "zadanie_sha256": "8f6909f7a2e67978e128d7c89a8ecbad25e3f539af11197af9c7e65ef76d22d8",
+     "zadanie_dlugosc": 260,
+     "status": 422,
+     "link": null,
+     "cialo": {
+      "message": "Validation Failed",
+      "errors": [
+       {
+        "resource": "Release",
+        "code": "custom",
+        "message": "Repository is empty."
+       }
+      ],
+      "status": "422"
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": []
+    }
+   ],
+   "wynik": "(Rejected(), None)"
+  },
+  "zly-klucz": {
+   "fakty": {
+    "numer": 221,
+    "komentarz": 6647103718,
+    "tresc": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nZły klucz.\n",
+    "tag": "logi-verify-20261105T013010-909617"
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues",
+     "zadanie_sha256": "5f8fe2a6821c0762d7c07be3e1f88296b3bf0414075ccb029a9b2e6e594097ba",
+     "zadanie_dlugosc": 168,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials",
+      "status": "401"
+     }
+    },
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/221/comments",
+     "zadanie_sha256": "96c2ab5183ab4cac3aedc46bafa579c4975b34cdf5f864921ec028ccec9b5799",
+     "zadanie_dlugosc": 91,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials",
+      "status": "401"
+     }
+    },
+    {
+     "metoda": "PATCH",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/comments/6647103718",
+     "zadanie_sha256": "96c2ab5183ab4cac3aedc46bafa579c4975b34cdf5f864921ec028ccec9b5799",
+     "zadanie_dlugosc": 91,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials",
+      "status": "401"
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/221/comments?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials",
+      "status": "401"
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues?state=open&labels=zgloszenie&per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials",
+      "status": "401"
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues?state=open&labels=zgloszenie&per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials",
+      "status": "401"
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials",
+      "status": "401"
+     }
+    },
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases",
+     "zadanie_sha256": "c848be5623dee7e922f8989b801545ef53a434f36e048dbcdf59a77faa28e202",
+     "zadanie_dlugosc": 215,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials",
+      "status": "401"
+     }
+    },
+    {
+     "metoda": "POST",
+     "sciezka": "https://uploads.github.com/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/1/assets?name=plik.json.gz&label=plik",
+     "zadanie_sha256": "ee98dc6af27a9f1c8cc4aaa2fd05b5f6e7c98f51390253a5263b0d096c3510fe",
+     "zadanie_dlugosc": 2,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials"
+     }
+    },
+    {
+     "metoda": "DELETE",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/releases/assets/1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 401,
+     "link": null,
+     "cialo": {
+      "message": "Bad credentials",
+      "status": "401"
+     }
+    }
+   ],
+   "wynik": "{open_issue: Refused(), comment: Refused(), edit_comment: Refused(), comments: Refused(), labelled_issues: Refused(), KeyedBox.judge: 'refused', archive: Refused(), open_archive: Refused(), upload: Refused(), remove: Refused()}"
+  },
+  "usuniete-issue": {
+   "fakty": {
+    "numer": 328,
+    "komentarz": 6647168086,
+    "tresc": "<!-- verify-github-skrzynki run=20261105T013010-909617 -->\n\nKomentarz po usunięciu.\n"
+   },
+   "wymiany": [
+    {
+     "metoda": "POST",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/328/comments",
+     "zadanie_sha256": "696f7932ece8e43b84c9671ca5d8b09ce6c9efa485ccc7ef388295a3f552aef2",
+     "zadanie_dlugosc": 104,
+     "status": 404,
+     "link": null,
+     "cialo": {
+      "message": "Not Found",
+      "status": "404"
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/328/comments?per_page=100&page=1",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 404,
+     "link": null,
+     "cialo": {
+      "message": "Not Found",
+      "status": "404"
+     }
+    },
+    {
+     "metoda": "PATCH",
+     "sciezka": "/repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/comments/6647168086",
+     "zadanie_sha256": "696f7932ece8e43b84c9671ca5d8b09ce6c9efa485ccc7ef388295a3f552aef2",
+     "zadanie_dlugosc": 104,
+     "status": 404,
+     "link": null,
+     "cialo": {
+      "message": "Not Found",
+      "status": "404"
+     }
+    }
+   ],
+   "wynik": "{comment: Refused(), comments: Refused(), edit_comment: Refused()}"
+  }
+ }
+}

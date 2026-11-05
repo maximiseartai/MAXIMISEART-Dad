@@ -463,6 +463,8 @@ class MetricsPaths:
 
 # Numer startu przodka każdego wątku, którego uruchomił wątek testu (pierwszego wątku tej linii).
 _LINE_STARTS: weakref.WeakKeyDictionary[threading.Thread, int] = weakref.WeakKeyDictionary()
+# Wątki Centrum dopisują się do ``_LINE_STARTS`` w chwili, gdy ``threads_since`` go przegląda.
+_LINE_STARTS_LOCK = threading.Lock()
 _STARTS = itertools.count()
 _thread_start = threading.Thread.start
 
@@ -470,8 +472,9 @@ _thread_start = threading.Thread.start
 def _start_in_line(self: threading.Thread) -> None:
     """Wątek dziedziczy numer startu linii po wątku, który go uruchamia; wątek testu zaczyna nową linię."""
 
-    line = _LINE_STARTS.get(threading.current_thread())
-    _LINE_STARTS[self] = next(_STARTS) if line is None else line
+    with _LINE_STARTS_LOCK:
+        line = _LINE_STARTS.get(threading.current_thread())
+        _LINE_STARTS[self] = next(_STARTS) if line is None else line
     _thread_start(self)
 
 
@@ -488,13 +491,13 @@ def threads_since(since: int, *, named: str | None = None) -> list[threading.Thr
     """Żywe wątki z linii, które wątek testu zaczął od ``since``, także uruchomione później przez wątki tych linii.
 
     ``named``: tylko wątki o tej nazwie.
+    Żywy to ``is_alive()``, nie obecność w ``threading.enumerate()``: wątek znika z ``enumerate()`` na końcu swojego
+    kodu (``Thread._delete``), zanim skończy się wątek systemu, a ``is_alive()`` do tej chwili zwraca True (#862).
     """
 
-    return [
-        thread
-        for thread in threading.enumerate()
-        if _LINE_STARTS.get(thread, -1) >= since and named in (None, thread.name)
-    ]
+    with _LINE_STARTS_LOCK:
+        lines = list(_LINE_STARTS.items())
+    return [thread for thread, line in lines if line >= since and named in (None, thread.name) and thread.is_alive()]
 
 
 def join_threads_since(since: int, timeout_s: float = STOP_S, *, named: str | None = None) -> None:
