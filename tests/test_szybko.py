@@ -709,6 +709,20 @@ def test_skill_md_ktory_przesuwa_sync_commit_na_zmiane_kodu_nie_jest_rozjazdem_d
     assert (answered.returncode, _verdict(answered)) == (0, "SZYBKO OK"), answered.stdout
 
 
+def test_rozjazd_modelu_skilla_ktorego_zmiana_nie_dotyka_zostaje_poza_szybkim_sprawdzeniem(tmp_path: Path) -> None:
+    """Rozjazd, który przyszedł z bazą (czerwony ``main``), naprawia osobny PR; CI tej zmiany podstawy skilla nie uruchamia."""
+
+    repo = _repo(tmp_path)
+    _model_skill(repo)
+    _write(repo, "src/pakiet/b.py", "def inna() -> int:\n    return 2\n")
+    git(repo, "update-ref", "refs/remotes/origin/main", commit(repo, "rozjazd na main"))
+    _write(repo, "src/pakiet/a.py", "def wartosc() -> int:\n    return 0 + 1\n")
+
+    answered = _szybko(repo)
+
+    assert (answered.returncode, _verdict(answered)) == (0, "SZYBKO OK"), answered.stdout
+
+
 def test_nieznana_baza_konczy_sie_jedna_linia_wyniku(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
 

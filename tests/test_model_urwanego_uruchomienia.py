@@ -211,7 +211,7 @@ def _verdicts(
         json.dumps({name: {"znane": findings} for name, findings in known.items()}), encoding="utf-8"
     )
     monkeypatch.setattr(module, "MODEL", tmp_path)
-    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root, dopobierz: None)
+    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: None)
     monkeypatch.setenv("TLC_JAVA", "java")
     monkeypatch.setenv("TLC_JAR", "tla2tools.jar")
     forgiven: list[frozenset[tuple[str, str]]] = []

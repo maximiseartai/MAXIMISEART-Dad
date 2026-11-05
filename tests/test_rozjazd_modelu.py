@@ -155,6 +155,27 @@ def test_plik_definicji_w_innej_postaci_jest_rozjazdem(tmp_path: Path, definitio
     assert found.endswith(STEPS)
 
 
+def test_plik_ktory_sie_nie_parsuje_zmienil_kazda_swoja_definicje(tmp_path: Path) -> None:
+    sync = _repository(tmp_path)
+    _edit(tmp_path, CODE, "def obok() -> int:", "def obok( -> int:")
+    _sync(tmp_path, sync[:9])
+
+    found = rozjazd_modelu.rozjazd(tmp_path / SKILL, tmp_path)
+
+    assert found == f"kod opisany modelem zmienił się od {sync[:9]}: {CODE} zapisz, {CODE} Dziennik.zamknij, {CODE} kolejka. {STEPS}"
+
+
+def test_nieudany_git_diff_calych_plikow_jest_rozjazdem(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    sync = _repository(tmp_path)
+    _sync(tmp_path, sync[:9])
+    answer = rozjazd_modelu._git
+    monkeypatch.setattr(rozjazd_modelu, "_git", lambda root, *arguments: None if arguments[0] == "diff" else answer(root, *arguments))
+
+    found = rozjazd_modelu.rozjazd(tmp_path / SKILL, tmp_path)
+
+    assert found == f"git diff z Sync commit {sync[:9]} się nie udał; porównaj kod ręcznie. {STEPS}"
+
+
 def test_skill_md_bez_sync_commit_jest_rozjazdem(tmp_path: Path) -> None:
     _repository(tmp_path)
 
@@ -165,7 +186,7 @@ def test_sync_commit_spoza_historii_jest_rozjazdem(tmp_path: Path) -> None:
     _repository(tmp_path)
     _sync(tmp_path, "0" * 40)
 
-    found = rozjazd_modelu.rozjazd(tmp_path / SKILL, tmp_path, dopobierz=True)
+    found = rozjazd_modelu.rozjazd(tmp_path / SKILL, tmp_path)
 
     assert found == f"Sync commit {'0' * 40} nie ma w tej historii; pobierz go albo porównaj kod ręcznie. {STEPS}"
 
@@ -189,8 +210,8 @@ def _shallow_clone(tmp_path: Path) -> tuple[Path, str]:
 def test_plytki_klon_dopobiera_historie_do_sync_commit_tylko_gdy_ma_dopobrac(tmp_path: Path) -> None:
     clone, sync = _shallow_clone(tmp_path)
 
-    without = rozjazd_modelu.rozjazd(clone / SKILL, clone)
-    fetched = rozjazd_modelu.rozjazd(clone / SKILL, clone, dopobierz=True)
+    without = rozjazd_modelu.rozjazd(clone / SKILL, clone, dopobierz=False)
+    fetched = rozjazd_modelu.rozjazd(clone / SKILL, clone)
 
     assert without == f"Sync commit {sync[:9]} nie ma w płytkim klonie; dopobierz historię: git fetch --unshallow origin. {STEPS}"
     assert fetched == f"kod opisany modelem zmienił się od {sync[:9]}: {CODE} zapisz. {STEPS}"
@@ -201,7 +222,7 @@ def test_plytki_klon_bez_sieci_mowi_ze_nie_dopobral_historii(tmp_path: Path) -> 
     clone, sync = _shallow_clone(tmp_path)
     git(clone, "remote", "set-url", "origin", (tmp_path / "nie-ma").as_uri())
 
-    found = rozjazd_modelu.rozjazd(clone / SKILL, clone, dopobierz=True)
+    found = rozjazd_modelu.rozjazd(clone / SKILL, clone)
 
     assert found == f"nie udało się dopobrać historii do Sync commit {sync[:9]} (git fetch --unshallow); sprawdź sieć. {STEPS}"
 
@@ -216,7 +237,7 @@ def test_dopobranie_historii_ma_limit_czasu(tmp_path: Path, monkeypatch: pytest.
 
     monkeypatch.setattr(potomne, "run", run)
 
-    found = rozjazd_modelu.rozjazd(clone / SKILL, clone, dopobierz=True)
+    found = rozjazd_modelu.rozjazd(clone / SKILL, clone)
 
     assert limits == [rozjazd_modelu.FETCH_TIMEOUT_S]
     assert found is not None and found.startswith("nie udało się dopobrać historii do Sync commit"), found

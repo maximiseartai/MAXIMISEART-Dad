@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    drift = rozjazd_modelu.rozjazd(SKILL, ROOT, dopobierz=True)
+    drift = rozjazd_modelu.rozjazd(SKILL, ROOT)
     if drift is not None and os.environ.get("GITHUB_ACTIONS") == "true":
         print(f"UWAGA: {drift}\n\n{DRIFT}")
         return 1

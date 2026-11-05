@@ -321,7 +321,7 @@ def _model_drift(root: Path, changed: frozenset[str]) -> list[str]:
     return [
         f"{skill.name}: {found}"
         for skill in rozjazd_modelu.skille(root)
-        if podstawa_na_pull_request(skill, changed)[0] and (found := rozjazd_modelu.rozjazd(skill, root)) is not None
+        if podstawa_na_pull_request(skill, changed)[0] and (found := rozjazd_modelu.rozjazd(skill, root, dopobierz=False)) is not None
     ]
 
 

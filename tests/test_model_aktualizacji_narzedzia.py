@@ -95,7 +95,7 @@ def test_poza_ci_rozjazd_tylko_ostrzega_i_sprawdzenie_modelu_biegnie_dalej(
 ) -> None:
     module = _load()
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
-    monkeypatch.setattr(module.rozjazd_modelu, "rozjazd", lambda skill, root, dopobierz: "pokryty kod zmienił się")
+    monkeypatch.setattr(module.rozjazd_modelu, "rozjazd", lambda skill, root: "pokryty kod zmienił się")
     (tmp_path / "oczekiwane.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(module, "MODEL", tmp_path)  # model bez konfiguracji: sprawdzenie biegnie do końca bez TLC
     monkeypatch.setattr(module, "_java", lambda: "java")

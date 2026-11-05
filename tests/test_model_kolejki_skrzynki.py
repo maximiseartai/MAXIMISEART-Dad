@@ -124,7 +124,7 @@ def test_java_i_jar_ze_zmiennych_srodowiska_zastepuja_narzedzia_aktualizacji(
 
     tools = SimpleNamespace(_java=unavailable, _tla_tools=unavailable)
     monkeypatch.setattr(module, "_tools", lambda: tools)
-    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root, dopobierz: None)
+    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: None)
     (tmp_path / "oczekiwane.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(module, "MODEL", tmp_path)  # model bez konfiguracji: sprawdzenie biegnie do końca bez TLC
     monkeypatch.setenv("TLC_JAVA", "java")
@@ -186,7 +186,7 @@ def test_znane_znalezisko_wybacza_tylko_swoja_obietnice_po_swojej_przyczynie(
     )
     monkeypatch.setattr(module, "MODEL", tmp_path)
     monkeypatch.setattr(module, "_tools", lambda: SimpleNamespace())
-    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root, dopobierz: None)
+    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: None)
     monkeypatch.setenv("TLC_JAVA", "java")
     monkeypatch.setenv("TLC_JAR", str(tmp_path / "tla2tools.jar"))
     # Reszta przebiegów dostaje wybaczenie tylko w stałej obietnicy znaleziska; każda inna konfiguracja to błąd testu.
@@ -211,7 +211,7 @@ def test_konfiguracja_bez_znaleziska_z_kontrprzykladem_to_nowe_naruszenie(
     (tmp_path / "f.cfg").write_text("\\* Opis.\nINVARIANTS TypeOK JednoIssue\n", encoding="utf-8")
     monkeypatch.setattr(module, "MODEL", tmp_path)
     monkeypatch.setattr(module, "_tools", lambda: SimpleNamespace())
-    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root, dopobierz: None)
+    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: None)
     monkeypatch.setenv("TLC_JAVA", "java")
     monkeypatch.setenv("TLC_JAR", str(tmp_path / "tla2tools.jar"))
     monkeypatch.setattr(module, "_tlc", lambda java, jar, name, config: _violation("DokladnieRaz", "{}"))
@@ -226,7 +226,7 @@ def test_w_ci_zmieniona_definicja_procesow_centrum_konczy_sprawdzenie_rozjazdem(
     module = _load()
     moved = "kod opisany modelem zmienił się od abcdef1: src/rozliczenia/centrum/app.py lifespan."
     monkeypatch.setattr(module, "_tools", lambda: SimpleNamespace())
-    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root, dopobierz: moved)
+    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: moved)
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
 
     assert module.main([]) == 1

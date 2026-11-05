@@ -10,7 +10,7 @@ z docstringiem, a bez numerów linii) różni się od tego w Sync commit albo gd
 ``git diff`` z Sync commit go wymienia. Sync commit to pierwsza linia ``Sync commit: `<sha>``` w ``SKILL.md``.
 
 Rozjazdem jest też ``SKILL.md`` bez Sync commit, Sync commit spoza historii i plik definicji w innej postaci, bo model
-nie jest wtedy porównany z kodem. Płytki klon bez Sync commit (CI) dopobiera historię, gdy ``dopobierz``.
+nie jest wtedy porównany z kodem. Płytki klon bez Sync commit (CI) dopobiera historię, chyba że wywołujący tego nie chce.
 """
 
 from __future__ import annotations
@@ -40,8 +40,9 @@ def skille(root: Path) -> list[Path]:
     return sorted(path.parents[1] for path in (root / ".agents" / "skills").glob(f"*/{DEFINICJE}"))
 
 
-def rozjazd(skill: Path, root: Path, *, dopobierz: bool = False) -> str | None:
-    """Czym kod opisany modelem skilla ``skill`` różni się od Sync commit, z krokami naprawy; ``None``, gdy niczym."""
+def rozjazd(skill: Path, root: Path, *, dopobierz: bool = True) -> str | None:
+    """Czym kod opisany modelem skilla ``skill`` różni się od Sync commit, z krokami naprawy; ``None``, gdy niczym.
+    Bez ``dopobierz`` płytki klon bez Sync commit nie pobiera historii (``tools/szybko.py`` nie pobiera ``origin``)."""
 
     found = _found(skill, root, dopobierz)
     if found is None:
