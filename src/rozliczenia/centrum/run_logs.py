@@ -12,10 +12,9 @@ z czasami i odczytem strony po każdym (``LoggedStep``, #843): przy szukaniu ka�
 realizatora, zgodnością numeru i nazwami części adresu, którymi różni się od ``ADRES`` (``LoggedResult``), przy otwarciu
 zlecenia jego status i realizator, a ze strony zlecenia data wykonania, kwota i ilości wszystkich pozycji. Bez numeru
 zlecenia i bez danych adresowych z pliku i z efenix.
-Zatrzymanie okna efenix albo zapisu z wyprzedzeniem w Śladzie Wyceny Emmetta (``efenix_pricing.PricingStopped``) daje
-ślad zleceń sprzed niego i ``LoggedWindowStop``: przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w
-przebiegu oraz jego działania aż do tego, które się nie udało; a Zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad
-wywołań z łańcuchem przyczyn (przy zapisie śladu typ błędu zapisu pliku i miejsce w kodzie).
+Zatrzymanie okna efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń sprzed niego i ``LoggedWindowStop``:
+przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w przebiegu oraz jego działania aż do tego, które się
+nie udało; a Zatrzymanie „do Maksa” z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn.
 Logi nie mają treści komórek: żadne pole nie niesie Wiersza danych, a pliki mają tylko nazwę, nigdy pełną ścieżkę.
 Komórkę cytuje tylko Komunikat (``ZLE_SKUTECZNE``), więc przed zapisem pliku i przed wysyłką Logi przechodzą przez
 strażnika reguły danych pracy Centrum (``guarded``, ADR 0025): wartość ``ADRES`` albo numeru Orange z przeczytanych
