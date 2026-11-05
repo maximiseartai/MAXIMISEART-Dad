@@ -17,9 +17,9 @@ ci-czesci: 8
 
 CI runs `explore_wycena_efenix.py` (the `ci:` key) in Mutation checks whenever a change touches this skill, in up to
 `ci-czesci` parts: part k of n (`MUTACJE_CZESC=k/n`) runs the run without a fault and the k-th of n consecutive slices
-of the cases (`--lista` prints them). The whole space (466 cases, 35 of them kills checked on the reference's states)
-took 485 s on Maks's Mac with 4 browsers under a load of 5 to 9, and the 8 parts, four at a time under a load of 8 to 14,
-took 57 to 75 s each (2026-11-05, reports in `~/.t3/notes/verify-wycena-efenix/r5/`); windows-latest is about 3 times slower
+of the cases (`--lista` prints them). The whole space (468 cases since #908 added `REFUSED_NO_PROPOSAL`; its 466 cases
+before, 35 of them kills checked on the reference's states, took 485 s on Maks's Mac with 4 browsers under a load of 5 to 9, and the 8 parts, four at a time under a load of 8 to 14,
+took 57 to 75 s each, 2026-11-05, reports in `~/.t3/notes/verify-wycena-efenix/r5/`); windows-latest is about 3 times slower
 (`tools/lib/zakres_runu.py`), so a part takes about 3 min there. A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`.
 `tests/test_centrum_logi_uruchomienia.py` runs one small scope through every phase in pytest. `check_wycena_efenix_mutations.py`
@@ -44,9 +44,12 @@ from these sentences, never from a run:
   address is a logout, a closed tab is `WindowClosed` „cokolwiek zgłosił wtedy Playwright”, a tab closed while the
   window waits for Dad's login is a closed window at once (#758), and an error page of the list after his login is
   `HttpStatus` at once (#891). A „Załaduj do zlecenia” efenix answers with 200 and `result: nok` in a valid session
-  leaves the reloaded page with amount 0 after an Emmett dialog that showed a proposal, which is
-  `Shape.EMMETT_NOT_LOADED`, a Zatrzymanie of the window and not a logout („Strona z kwotą 0 po oknie Emmetta, które
-  coś pokazało, to `UnexpectedPage` z `Shape.EMMETT_NOT_LOADED`”, #889); an expired session there stays a logout. Only
+  leaves the reloaded page with amount 0, which is `Shape.EMMETT_NOT_LOADED`, a Zatrzymanie of the window and not a
+  logout (#889), unless Emmett proposed nothing, which the window knows only from an empty Emmett dialog after a
+  proposal that came whole with 2xx; so the same refusal after the proposal of that order failed with HTTP 500
+  (`REFUSED_NO_PROPOSAL`, two faults at one order) is `Shape.EMMETT_NOT_LOADED` too („Strona z kwotą 0 po każdej innej
+  propozycji, także po pustym oknie Emmetta po padniętej propozycji, to `UnexpectedPage` z
+  `Shape.EMMETT_NOT_LOADED`”, #908); an expired session there stays a logout. Only
   a page efenix really sent in another shape (a redirect elsewhere) may be a shape.
   The Zatrzymanie after a failed write of the Ślad ahead of a quantity (`EFENIX_SLAD_NIEZAPISANY`, with the facts of
   the Wycena and `AheadNotSaved`) is never the cause of a fault in efenix, because no fault of this checker touches
@@ -169,6 +172,8 @@ Each gives `WYCENA EFENIX: NOWE NARUSZENIE`:
 - #895: the answer of „Załaduj do zlecenia” read after the reload at every Emmett;
 - #889: amount 0 after „Załaduj do zlecenia” always read as Emmett proposing nothing, so a refusal with 200
   `result: nok` lets the window enter the file's quantities without Emmett;
+- #908: an empty Emmett dialog after a failed proposal read as Emmett proposing nothing, so `REFUSED_NO_PROPOSAL`
+  lets the window enter the file's quantities without Emmett;
 - the window waiting for the reload after „Załaduj do zlecenia” 1 s shorter than for its answer, which only the answer
   just before the time limit meets;
 - a „zaczynam” entry of the dziennik written only after the window's actions at an order;
