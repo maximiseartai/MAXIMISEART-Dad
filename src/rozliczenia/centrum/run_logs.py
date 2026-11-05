@@ -594,8 +594,8 @@ class LoggedFingerprint(_Record):
 class LoggedInputFile(_Record):
     """Plik taty w Kopii wejścia (``input_copy``): sama nazwa, odcisk i przeczytane arkusze.
 
-    ``folders``: nazwy folderu nadrzędnego i folderu pliku, jak w Komunikatach (``input_copy.CopiedFile.folders``);
-    pusta lista w plikach sprzed #847.
+    ``folders``: nazwy folderu nad folderem pliku i folderu pliku (``input_copy.CopiedFile.folders``; Komunikaty
+    INTERMAX pokazują tylko folder pliku); pusta lista w plikach sprzed #847.
     """
 
     name: str
