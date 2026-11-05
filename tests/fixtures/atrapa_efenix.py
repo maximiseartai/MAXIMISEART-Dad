@@ -25,8 +25,10 @@ przyjmuje pisania, a kalendarz po otwarciu okna pokazuje dzisiejszy dzień, dzie
 poprzedniego miesiąca zamienia na dzisiejszy z komunikatem w ``#toast``, „Potwierdź” wysyła wartość pola, a po
 odpowiedzi 2xx wpisuje ją do ``#data_install`` bez czytania treści odpowiedzi. „Dziś” daje test (``today``), a
 ``refuse_dates`` każe serwerowi odpowiadać na zapis daty bez zapisu. Wycenę Emmetta (``#button_emmett``,
-okno ``#dialog_emmett`` z propozycją z ``action_fill_emmett.php`` w ``#emmett-propozycja``, pustą, gdy Emmett nic nie
-proponuje, jak ten element strony efenix bez propozycji, „Załaduj do zlecenia” wysyła ``action_load_emmett.php``,
+okno ``#dialog_emmett`` z propozycją z ``action_fill_emmett.php`` w ``#emmett-propozycja``, którą skrypt wkłada, jak
+skrypt efenix, tylko z odpowiedzi 2xx, a okno pokazuje po każdej odpowiedzi, także po błędzie i zerwanym połączeniu, gdy element zostaje pusty
+jak na stronie efenix przed odpowiedzią; gdy Emmett nic nie proponuje, Atrapa odpowiada pustą treścią, choć co wtedy
+odpowiada efenix, nikt nie zmierzył, „Załaduj do zlecenia” wysyła ``action_load_emmett.php``,
 który czyści wycenę i wpisuje propozycję, a skrypt przeładowuje stronę po każdej odpowiedzi, także po odmowie
 ``AtrapaOrder.emmett_refusal``) i przyciski, których narzędzie nie może użyć:
 Przekazanie do akceptacji (``#button_forward_to_accept``) i anulowanie (``#button_forward_to_cancel``) z oknem
@@ -225,7 +227,9 @@ class AtrapaOrder:
     wyceny. Z ``after_date`` każda z tych czterech zmian strony jest dopiero od zapisu daty wykonania, a z ``after_emmett``
     od przeładowania po załadowaniu Wyceny Emmetta. ``emmett_refusal``: efenix odmawia „Załaduj do zlecenia” tego
     zlecenia (``EmmettRefusal``), aż test to zmieni. ``emmett_in_fields``: okno Emmetta pokazuje propozycję w polach bez
-    tekstu (ilość w ``value``), jedną z postaci, których w efenix nikt nie zmierzył.
+    tekstu (ilość w ``value``), jedną z postaci, których w efenix nikt nie zmierzył. ``emmett_proposal_error``: efenix
+    odpowiada na propozycję Emmetta tego zlecenia (``action_fill_emmett.php``) błędem serwera (500), więc okno Emmetta
+    zostaje puste.
     """
 
     order_id: str
@@ -250,6 +254,7 @@ class AtrapaOrder:
     after_emmett: bool = False
     emmett_refusal: EmmettRefusal | None = None
     emmett_in_fields: bool = False
+    emmett_proposal_error: bool = False
 
     @property
     def amount(self) -> Decimal:
@@ -474,6 +479,10 @@ def atrapa_efenix(
                         self._json({"result": "nok", "error": "Nie załadowano."})
                     case EmmettRefusal.OTHER:
                         self._html("<p>Nie załadowano wyceny Emmetta.</p>")
+            elif method == "POST" and path == FILL_EMMETT and any(
+                order.emmett_proposal_error for order in orders if order.order_id == params.get("order_id")
+            ):
+                self._html("<p>Wystąpił błąd serwera.</p>", HTTPStatus.INTERNAL_SERVER_ERROR)
             elif method == "POST" and path in _CHANGES:
                 with atrapa._lock:
                     found = [order for order in atrapa.orders if order.order_id == params.get(_CHANGES[path])]
@@ -806,11 +815,15 @@ _ORDER_SCRIPT = """
   });
   const emmett = document.getElementById('button_emmett');
   if (emmett) {
+    // Jak $.ajax efenix: propozycję wkłada tylko odpowiedź 2xx przeczytana do końca, a okno pokazuje się po każdej.
     emmett.addEventListener('click', () => {
-      post('action_fill_emmett.php', {order_id: emmett.getAttribute('order_id')}).then((answer) => answer.text()).then((html) => {
-        document.getElementById('emmett-propozycja').innerHTML = html;
-        show('dialog_emmett');
-      });
+      post('action_fill_emmett.php', {order_id: emmett.getAttribute('order_id')})
+        .then((answer) => (answer.ok ? answer.text() : null))
+        .catch(() => null)
+        .then((html) => {
+          if (html !== null) document.getElementById('emmett-propozycja').innerHTML = html;
+          show('dialog_emmett');
+        });
     });
   }
   document.querySelector('#dialog_emmett .btn-ok').addEventListener('click', () => {

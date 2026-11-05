@@ -1,5 +1,6 @@
 ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 3 | pozycje wyceny: 42 | ceny porównane z Wzorcem: 20
 RÓŻNICA | strona zlecenia | zamknięcie okna daty wykonania (#dialog_select_date [data-dismiss="modal"]): 0 zamiast co najmniej 1
+RÓŻNICA | strona zlecenia | propozycja w oknie Emmetta (#dialog_emmett #emmett-propozycja): 0 zamiast 1
 RÓŻNICA | strona zlecenia | przycisk Przekazania do akceptacji (#button_forward_to_accept): 0 zamiast 1
 RÓŻNICA | strona zlecenia | przycisk anulowania (#button_forward_to_cancel): 0 zamiast 1
 RÓŻNICA | strona zlecenia | GET js/page_order_edit.js: odpowiedź 302
@@ -8,4 +9,4 @@ RÓŻNICA | strona zlecenia | Wycena w efenix nie czyta strony zlecenia (#data_i
 RÓŻNICA | strona zlecenia | Wycena w efenix nie czyta strony zlecenia (#data_install „”, 0 × #cena_all2): 1 z 3
 NIESPRAWDZONE | strona zlecenia | postać pustej daty wykonania: żadne z 3 otwartych zleceń nie ma pustej #data_install
 NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
-RÓŻNICE: 7 | NIESPRAWDZONE: 2
+RÓŻNICE: 8 | NIESPRAWDZONE: 2

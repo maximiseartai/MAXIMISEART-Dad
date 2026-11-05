@@ -1619,14 +1619,16 @@ def whole_run(tmp_path_factory: pytest.TempPathFactory, browser: Browser) -> _Wh
     return _WholeRun(original, source, pricing)
 
 
-def _loading_emmett(first: int) -> int | None:
+def _loading_emmett(first: int, outage: Outage) -> int | None:
     """Zlecenie (od 0), przy którego Wycenie Emmetta zaczęło się odcięcie od żądania ``first``: od „Załaduj do zlecenia”
-    do skryptu przeładowanej strony. Okno mogło wtedy nie odczytać Wyceny Emmetta, którą efenix załadował; czy odczytało,
-    zależy od trybu odcięcia i od tego, czy przeglądarka czekała na skrypt strony do końca czasu okna."""
+    do skryptu przeładowanej strony, a przy ``Outage.TORN`` już od propozycji Emmetta, bo skrypt efenix pokazuje okno
+    Emmetta także po rozerwanej odpowiedzi, a „Załaduj do zlecenia” efenix wykonuje, zanim rozerwie odpowiedź. Okno mogło
+    wtedy nie odczytać Wyceny Emmetta, którą efenix załadował; czy odczytało, zależy od trybu odcięcia i od tego, czy
+    przeglądarka czekała na skrypt strony do końca czasu okna."""
 
     loads = [index for index, request in enumerate(WHOLE_RUN) if request == ("POST", LOAD_EMMETT)]
     for order, load in enumerate(loads):
-        if load <= first <= load + 2:
+        if load - (outage is Outage.TORN) <= first <= load + 2:
             return order
     return None
 
@@ -1652,8 +1654,9 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
     zlecenia, przy którym okno stanęło, z jego miejscem w przebiegu i działaniem, które się nie udało, oraz ślad każdego
     zlecenia przed nim. Komunikat, że w efenix nic się nie zmieniło, mówi prawdę. Ponowne uruchomienie po powrocie połączenia, w
     nowym oknie efenix jak u taty, kończy się tym samym stanem efenix i Pliku zbiorczego co jeden przebieg bez przerwy.
-    Wyjątek przyjęty w #774: odcięcie między „Załaduj do zlecenia” a odczytem przeładowanej strony może dać przy ponownym
-    uruchomieniu błąd tylko tego zlecenia, które zostaje z Wyceną Emmetta. Wyjątek przyjęty w #864: zerwany zapis ilości
+    Wyjątek przyjęty w #774: odcięcie między „Załaduj do zlecenia” a odczytem przeładowanej strony, a odpowiedź rozerwana w
+    połowie już od propozycji Emmetta, może dać przy ponownym uruchomieniu błąd tylko tego zlecenia, które zostaje z
+    Wyceną Emmetta. Wyjątek przyjęty w #864: zerwany zapis ilości
     zostawia w Śladzie Wyceny Emmetta ilość zapisaną z wyprzedzeniem, której efenix nie ma, a tego strona nie odróżnia od
     ilości usuniętej przez tatę, więc ponowne uruchomienie daje błąd tylko tego zlecenia i niczego w nim nie zmienia."""
 
@@ -1690,7 +1693,7 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
     assert [result.order.row for result in facts.summary.results] == list(range(18, 18 if at is None else at.row))
     assert _kept(stopped) or after_stop == untouched, (after_stop, untouched)
     assert status_changes == 0
-    left = _loading_emmett(first)
+    left = _loading_emmett(first, outage)
     if left is None and outage is Outage.CUT:
         left = _entering_quantity(first)
     if left is None or not _errors(again):
@@ -1805,6 +1808,34 @@ def test_odmowa_zaladuj_do_zlecenia_po_propozycji_emmetta_w_polach_bez_tekstu_za
     assert isinstance(stopped.ending, Stop) and isinstance(stopped.ending.facts, PricingStopped), _ending(stopped)
     assert (_stop(stopped), stopped.ending.facts.cause) == ("EFENIX_OKNO_ZATRZYMANE", OtherShape(Shape.EMMETT_NOT_LOADED))
     assert (pricing, _marked(source)) == ({"9711": ({}, DAY, 0)}, [])
+
+
+
+@pytest.mark.parametrize(
+    ("refusal", "loads", "marked"),
+    [
+        pytest.param(None, 1, [18], id="zaladowana"),
+        # Znana luka (docstring efenix_browser.py): przy dwóch awariach naraz strona bez Wyceny Emmetta jest dla okna
+        # pustą Wyceną Emmetta, więc zlecenie dostaje ilości z pliku i Znacznik efenix bez Wyceny Emmetta.
+        pytest.param(EmmettRefusal.OTHER, 0, [18], id="znana-luka-odmowa-2xx"),
+    ],
+)
+def test_propozycja_emmetta_z_bledem_serwera_zostawia_okno_emmetta_puste_jak_w_efenix_a_zaladuj_do_zlecenia_i_tak_laduje(
+    tmp_path: Path, page: Page, refusal: EmmettRefusal | None, loads: int, marked: list[int]
+) -> None:
+    """Efenix odpowiada na propozycję Emmetta (``action_fill_emmett.php``) błędem 500, a jego skrypt i tak pokazuje okno
+    Emmetta, puste. „Załaduj do zlecenia” ładuje Wycenę Emmetta, więc Wycena kończy zlecenie jak bez awarii; gdy efenix
+    też odmówi go odpowiedzią 2xx (#889), zlecenie kończy się bez Wyceny Emmetta (znana luka, dwie awarie naraz)."""
+
+    order = Order("#9721", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"012": 1})
+    source = write_collective_file(tmp_path, [order])
+    in_efenix = replace(order.in_efenix("9721"), emmett_proposal_error=True, emmett_refusal=refusal)
+    with atrapa_efenix([in_efenix]) as atrapa:
+        outcome = _run(source, page, atrapa.url)
+        pricing = _pricing(atrapa)
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == ("OK", _figures_of(1, 1), [])
+    assert (pricing, _marked(source)) == ({"9721": ({"012": 1, "019": 2}, DAY, loads)}, marked)
 
 
 @dataclass
