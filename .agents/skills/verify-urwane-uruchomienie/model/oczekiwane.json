@@ -1,39 +1,37 @@
 {
-  "zwykle": {},
-  "odczyt": {
+  "zwykle": {
     "znane": [
       {
-        "obietnica": "DziennikPoKolejce",
-        "przyczyna": "wiersz-pozniejszej-wyceny",
-        "znalezisko": "#870: dziennik Urwanej Wyceny, którego start nie odczytał, następny start usuwa bez Logów, gdy w międzyczasie inna Wycena doszła do wyniku: RunCards._row bierze jej wiersz Historii (start >= start urwanej)"
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "przed-wpisem-konca",
+        "znalezisko": "Centrum zgasło między rekordem metryk a wpisem końca dziennika (CentrumRuns.remember i karta wyniku, milisekundy), więc Wycena z wierszem Historii dostaje przy starcie Logi Urwanego Uruchomienia; jej Logi z wynikiem nie powstały i nie poszły do kolejki, więc w Skrzynce niczego nie zastępują (przyjęte w #870/#871: wpis końca przed rekordem metryk gubiłby w tym oknie Logi Urwanego Uruchomienia)"
       }
+    ]
+  },
+  "odczyt": {
+    "znane": [
+      {"obietnica": "BezUrwanychPoWyniku", "przyczyna": "przed-wpisem-konca", "znalezisko": "jak w zwykle"}
     ]
   },
   "logi-i-kolejka": {
     "znane": [
-      {
-        "obietnica": "DziennikPoKolejce",
-        "przyczyna": "wiersz-pozniejszej-wyceny",
-        "znalezisko": "#870: jak w odczyt, gdy start nie zapisał pliku Logów Urwanego Uruchomienia, a Kolejka wysyłki ich nie przyjęła"
-      }
+      {"obietnica": "BezUrwanychPoWyniku", "przyczyna": "przed-wpisem-konca", "znalezisko": "jak w zwykle"}
     ]
   },
-  "historia": {
+  "koniec": {
     "znane": [
+      {"obietnica": "BezUrwanychPoWyniku", "przyczyna": "przed-wpisem-konca", "znalezisko": "jak w zwykle"},
       {
         "obietnica": "BezUrwanychPoWyniku",
-        "przyczyna": "historia-nieczytelna",
-        "znalezisko": "#871: Wycena z wierszem Historii, a bez pliku Logów (zgaśnięcie między rekordem metryk a Logami albo nieudany zapis Logów) dostaje przy starcie, który nie odczytał Historii, Logi Urwanego Uruchomienia, a w Skrzynce zastępują one Logi z wynikiem"
+        "przyczyna": "wpis-konca-nieudany",
+        "znalezisko": "wpis końca i usunięcie dziennika po nim zawodzą (OSError), a pliku Logów z wynikiem nie ma (zgaśnięcie przed nim albo nieudany zapis): start zamyka dziennik jako Logi Urwanego Uruchomienia, a gdy Logi z wynikiem poszły do kolejki bez pliku, w Skrzynce je zastępują; dwie awarie dziennika naraz i do tego zgaśnięcie albo trzecia awaria, przyjęte w #870/#871; tak samo, gdy żaden wpis się nie zapisał, a nieudany zapis zostawił pierwszą linię, i zawodzi tylko usunięcie dziennika"
       },
-      {
-        "obietnica": "BezUrwanychPoWyniku",
-        "przyczyna": "historia-niezapisana",
-        "znalezisko": "#871: Wycena, której rekord metryk się nie zapisał (run_process łapie błąd i wraca z wynikiem bez wiersza Historii), a bez pliku Logów (nieudany zapis Logów albo zgaśnięcie przed nimi), dostaje przy następnym zwykłym starcie Logi Urwanego Uruchomienia, a w Skrzynce zastępują one Logi z wynikiem"
-      }
+      {"obietnica": "ZaczeteWLogach", "przyczyna": "wpis-nieudany", "znalezisko": "jak w wpisy"}
     ]
   },
   "wpisy": {
     "znane": [
+      {"obietnica": "BezUrwanychPoWyniku", "przyczyna": "przed-wpisem-konca", "znalezisko": "jak w zwykle"},
       {
         "obietnica": "ZaczeteWLogach",
         "przyczyna": "wpis-nieudany",
@@ -43,6 +41,7 @@
   },
   "stare-logi": {
     "znane": [
+      {"obietnica": "BezUrwanychPoWyniku", "przyczyna": "przed-wpisem-konca", "znalezisko": "jak w zwykle"},
       {
         "obietnica": "TeSameZnaki",
         "przyczyna": "zapis-logow-nieudany",
@@ -52,9 +51,8 @@
   },
   "wszystko": {
     "znane": [
-      {"obietnica": "DziennikPoKolejce", "przyczyna": "wiersz-pozniejszej-wyceny", "znalezisko": "jak w odczyt"},
-      {"obietnica": "BezUrwanychPoWyniku", "przyczyna": "historia-nieczytelna", "znalezisko": "jak w historia"},
-      {"obietnica": "BezUrwanychPoWyniku", "przyczyna": "historia-niezapisana", "znalezisko": "jak w historia"},
+      {"obietnica": "BezUrwanychPoWyniku", "przyczyna": "przed-wpisem-konca", "znalezisko": "jak w zwykle"},
+      {"obietnica": "BezUrwanychPoWyniku", "przyczyna": "wpis-konca-nieudany", "znalezisko": "jak w koniec"},
       {"obietnica": "ZaczeteWLogach", "przyczyna": "wpis-nieudany", "znalezisko": "jak w wpisy"}
     ]
   }
