@@ -58,7 +58,8 @@ in `<feature>.md` next to this file, driven by the skill's
   Delete, move and replace files and folders only with `remove`, `remove_tree`, `remove_empty_folder`, `move` and
   `replace_file` (`drive/common.py`), which retry while the server holds the file open: on Windows that refuses the
   change (`WinError 32`, #921).
-  A guard against a bare deletion in a new drive is #934; until then review checks it.
+  `centrum_self_test.py` fails on a drive that does it otherwise in a form of the table in
+  [Guard of deletions in the drive](#guard-of-deletions-in-the-drive), and review checks the guard's boundary (#934).
   Take the key away with `drop_report_key`, which leaves the file empty and, without `missing_ok`,
   fails when the step never wrote a key.
 - Capture with `Run.capture`, which waits for running transitions; a screenshot
@@ -66,6 +67,41 @@ in `<feature>.md` next to this file, driven by the skill's
   `Run.capture` with `clip`, so its number is checked like every other one;
   `tests/test_limit_drive_centrum.py` fails on any other `screenshot`
   call in `drive/`.
+
+### Guard of deletions in the drive
+
+`centrum_self_test.py` reads every `drive/*.py`, except the bodies of the five helpers above in `common.py`, and
+fails on each deletion, move or replacement of a file or folder in these forms (the docstring of `_removals` has
+the same tables, and the self-test fails when they differ).
+The guard knows a module or a pathlib class only by a name an `import` or `from … import` binds, never by an
+assignment.
+
+| Form | The guard catches | Example |
+|---|---|---|
+| 1 | an attribute `unlink`, `rename`, `rmdir`, `rmtree`, `removedirs`, `renames` or `move_into` on anything, called or not | `p.unlink(missing_ok=True)`, `p.rename(target=q)`, `os.renames(p, q)`, `shutil.rmtree(p)`, `drop = Path.unlink`, `fs = os; fs.unlink(p)` |
+| 2 | `remove` or `replace` on a name that `import os [as x]` binds, `move` on a name that `import shutil [as x]` binds, called or not | `os.remove(p)`, `import os as system; system.replace(p, q)`, `shutil.move(p, q)`, `partial(os.remove, p)` |
+| 3 | `from os import <name of form 1 or 2> [as x]`, the same from `shutil`, and `from os import *`, `from shutil import *`, `from pathlib import *` | `from os import replace as swap`, `from shutil import rmtree` |
+| 4 | `replace` or `move` on `Path`, `PosixPath` or `WindowsPath` that `from pathlib import <class> [as x]` binds or that is reached through a name that `import pathlib [as x]` binds, called or not | `Path.replace(p, q)`, `P.move(p, q)`, `pathlib.WindowsPath.replace(p, q)`, `swap = Path.replace` |
+| 5 | a call `x.replace(…)` or `x.move(…)` with one positional argument and no named one, or with only `target=`, where `x` is neither a name that an `import` binds nor a class of form 4 | `p.replace(q)`, `p.move(target=q)`, `Path(p).replace(q)` |
+| 6 | `getattr(x, "<name>", …)` with a constant name of form 1, 2 or 4 | `getattr(p, "unlink")()`, `getattr(os, "remove")(p)` |
+
+Its boundary, which review checks:
+
+| Boundary | Passes the guard |
+|---|---|
+| a module or pathlib class through a name that no import binds (forms 1 and 5 still catch on it) | `fs = os; fs.remove(p)`, `s: ModuleType = os; s.replace(p, q)`, `Q = Path; Q.replace(p, q)`, `self.files = shutil` |
+| `replace` or `move` of an object kept or passed instead of called (form 5 takes only a call) | `swap = p.replace; swap(q)`, `retry(p.move, q)` |
+| a call of form 5 with unpacked arguments | `p.replace(*args)`, `p.move(**named)` |
+| a call of form 5 on a name that an `import` in the file also binds | `import time` and elsewhere `time = p; time.replace(q)` |
+| a pathlib class from an expression | `type(p).replace(p, q)`, `p.__class__.move(p, q)` |
+| another module | `posix`, `nt`, `_winapi`, `ctypes` |
+| a name computed at run time, or a name in a string outside `getattr` | `getattr(p, name)`, `operator.methodcaller("unlink")`, `vars(os)["remove"]`, `sys.modules["os"]`, `importlib`, `__import__`, `eval` |
+| another process | `subprocess` with `rm`, `del`, `Remove-Item` or `move`, `os.system` |
+| no deletion or move | a copy onto a file the server reads (`shutil.copy2`, `copyfile`, `copytree(…, dirs_exist_ok=True)`), a write (`open(p, "w")`, `write_bytes`, `workbook.save`), `tempfile` cleanup |
+| code outside `drive/*.py` | `drive_centrum.py`, `create_centrum_fixture.py`, `serve_centrum.py` |
+
+A false alarm is loud and names the helpers: form 1 on an object that is no file (`frame.rename(columns=…)`),
+form 5 on any object with a one-argument `replace` or `move` (`moment.replace(2026)`), form 6 on any object.
 
 ## Proof and skip reporting
 
