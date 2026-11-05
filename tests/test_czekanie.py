@@ -233,6 +233,7 @@ def test_czekanie_na_ci_na_pierwszym_planie_dostaje_odmowe_z_droga_przez_powiado
     assert "pełny SHA" in hooked.stderr
     assert "watch_pull_request" in hooked.stderr
     assert "run_in_background: true" in hooked.stderr
+    assert "t3_background_wait" in hooked.stderr
 
 
 @pytest.mark.parametrize("command", PGREP_LOOPS)
@@ -242,6 +243,7 @@ def test_petla_na_pgrep_dostaje_odmowe_z_powiadomieniem_zadania_w_tle(command: s
     assert hooked.returncode == 2, hooked.stderr
     assert "pgrep -f znajduje własną powłokę" in hooked.stderr
     assert "run_in_background: true" in hooked.stderr
+    assert "t3_background_wait" in hooked.stderr
 
 
 @pytest.mark.parametrize("command", PASSING)
