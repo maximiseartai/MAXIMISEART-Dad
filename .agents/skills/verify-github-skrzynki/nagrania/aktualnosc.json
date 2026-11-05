@@ -1,0 +1,670 @@
+{
+ "nagrano": "2026-11-05T00:41:15+00:00",
+ "commit": "5e1905142a10220a03028304db8cc4c944f8e8c6",
+ "klucz": "bez klucza",
+ "repozytorium": "maximiseartai/MAXIMISEART-Dad",
+ "przypadki": {
+  "tagi-strony": {
+   "fakty": {
+    "na_stronie": 3,
+    "tagi": {
+     "v0.1.0": "b940a0de2a6e02af19704b0a75657dff9a02a5f0",
+     "v0.1.1": "7aecde6a2a08f380d479876b3b6d8a30a036559c",
+     "v0.2.0": "befb4a56f0fadb47da89cc7344e67fc2d4da45d0",
+     "v0.3.0": "2decd02d071d5e9e28edbbde993b1511a4418985",
+     "v0.3.1": "7c87eae1f05baff2ff694ea9bd8593fe18d7f608",
+     "v0.4.0": "8eada857557ce596c03176c306d7bc7d8b5183d7",
+     "v0.4.1": "addd4998d66363627bd267550c2315cd26f906f8",
+     "v0.4.2": "91170fd24788d89f0136d8da424017bf68a76a5e",
+     "v0.4.3": "5be9e00ae30ac6efd9c3bf7571312087758c1ebf"
+    }
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/tags?per_page=3",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/tags?per_page=3&page=2>; rel=\"next\", <https://api.github.com/repositories/1236051332/tags?per_page=3&page=3>; rel=\"last\"",
+     "cialo": [
+      {
+       "name": "v0.4.3",
+       "commit": {
+        "sha": "5be9e00ae30ac6efd9c3bf7571312087758c1ebf"
+       }
+      },
+      {
+       "name": "v0.4.2",
+       "commit": {
+        "sha": "91170fd24788d89f0136d8da424017bf68a76a5e"
+       }
+      },
+      {
+       "name": "v0.4.1",
+       "commit": {
+        "sha": "addd4998d66363627bd267550c2315cd26f906f8"
+       }
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repositories/1236051332/tags?per_page=3&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/tags?per_page=3&page=1>; rel=\"prev\", <https://api.github.com/repositories/1236051332/tags?per_page=3&page=3>; rel=\"next\", <https://api.github.com/repositories/1236051332/tags?per_page=3&page=3>; rel=\"last\", <https://api.github.com/repositories/1236051332/tags?per_page=3&page=1>; rel=\"first\"",
+     "cialo": [
+      {
+       "name": "v0.4.0",
+       "commit": {
+        "sha": "8eada857557ce596c03176c306d7bc7d8b5183d7"
+       }
+      },
+      {
+       "name": "v0.3.1",
+       "commit": {
+        "sha": "7c87eae1f05baff2ff694ea9bd8593fe18d7f608"
+       }
+      },
+      {
+       "name": "v0.3.0",
+       "commit": {
+        "sha": "2decd02d071d5e9e28edbbde993b1511a4418985"
+       }
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repositories/1236051332/tags?per_page=3&page=3",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/tags?per_page=3&page=2>; rel=\"prev\", <https://api.github.com/repositories/1236051332/tags?per_page=3&page=1>; rel=\"first\"",
+     "cialo": [
+      {
+       "name": "v0.2.0",
+       "commit": {
+        "sha": "befb4a56f0fadb47da89cc7344e67fc2d4da45d0"
+       }
+      },
+      {
+       "name": "v0.1.1",
+       "commit": {
+        "sha": "7aecde6a2a08f380d479876b3b6d8a30a036559c"
+       }
+      },
+      {
+       "name": "v0.1.0",
+       "commit": {
+        "sha": "b940a0de2a6e02af19704b0a75657dff9a02a5f0"
+       }
+      }
+     ]
+    }
+   ],
+   "wynik": "(9 tagów, 3 stron)"
+  },
+  "najnowsze-wydanie": {
+   "fakty": {
+    "tag": "v0.4.3",
+    "commit": "5be9e00ae30ac6efd9c3bf7571312087758c1ebf",
+    "czubek": "5e1905142a10220a03028304db8cc4c944f8e8c6"
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/tags?per_page=100",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "name": "v0.4.3",
+       "commit": {
+        "sha": "5be9e00ae30ac6efd9c3bf7571312087758c1ebf"
+       }
+      },
+      {
+       "name": "v0.4.2",
+       "commit": {
+        "sha": "91170fd24788d89f0136d8da424017bf68a76a5e"
+       }
+      },
+      {
+       "name": "v0.4.1",
+       "commit": {
+        "sha": "addd4998d66363627bd267550c2315cd26f906f8"
+       }
+      },
+      {
+       "name": "v0.4.0",
+       "commit": {
+        "sha": "8eada857557ce596c03176c306d7bc7d8b5183d7"
+       }
+      },
+      {
+       "name": "v0.3.1",
+       "commit": {
+        "sha": "7c87eae1f05baff2ff694ea9bd8593fe18d7f608"
+       }
+      },
+      {
+       "name": "v0.3.0",
+       "commit": {
+        "sha": "2decd02d071d5e9e28edbbde993b1511a4418985"
+       }
+      },
+      {
+       "name": "v0.2.0",
+       "commit": {
+        "sha": "befb4a56f0fadb47da89cc7344e67fc2d4da45d0"
+       }
+      },
+      {
+       "name": "v0.1.1",
+       "commit": {
+        "sha": "7aecde6a2a08f380d479876b3b6d8a30a036559c"
+       }
+      },
+      {
+       "name": "v0.1.0",
+       "commit": {
+        "sha": "b940a0de2a6e02af19704b0a75657dff9a02a5f0"
+       }
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/git/ref/heads/main",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": {
+      "ref": "refs/heads/main",
+      "object": {
+       "sha": "5e1905142a10220a03028304db8cc4c944f8e8c6"
+      }
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/5be9e00ae30ac6efd9c3bf7571312087758c1ebf...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/5be9e00ae30ac6efd9c3bf7571312087758c1ebf...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=36>; rel=\"last\", <https://api.github.com/repositories/1236051332/compare/5be9e00ae30ac6efd9c3bf7571312087758c1ebf...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=3>; rel=\"next\", <https://api.github.com/repositories/1236051332/compare/5be9e00ae30ac6efd9c3bf7571312087758c1ebf...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/5be9e00ae30ac6efd9c3bf7571312087758c1ebf...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/5be9e00ae30ac6efd9c3bf7571312087758c1ebf...5e1905142a10220a03028304db8cc4c944f8e8c6",
+      "status": "ahead",
+      "ahead_by": 36
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/commits/5be9e00ae30ac6efd9c3bf7571312087758c1ebf/pulls",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "id": 5154538460,
+       "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/pull/835",
+       "number": 835,
+       "state": "closed",
+       "body": "<4071 znaków, sha256 736e1b21529a52a4>",
+       "closed_at": "2026-11-04T13:24:16Z",
+       "merged_at": "2026-11-04T13:24:16Z",
+       "merge_commit_sha": "5be9e00ae30ac6efd9c3bf7571312087758c1ebf",
+       "draft": false,
+       "base": {
+        "ref": "main",
+        "sha": "a9315d9cecaa6808c8c1586b97acf8d01c0e303d"
+       }
+      }
+     ]
+    }
+   ],
+   "wynik": "GitHubReleases(newest='5be9e00ae30ac6efd9c3bf7571312087758c1ebf', tag='v0.4.3')"
+  },
+  "opublikowane": {
+   "fakty": {
+    "wydania": [
+     "v0.1.0",
+     "v0.1.1",
+     "v0.2.0",
+     "v0.3.0",
+     "v0.3.1",
+     "v0.4.0",
+     "v0.4.1",
+     "v0.4.2",
+     "v0.4.3"
+    ],
+    "najnowsze": "v0.4.3"
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/releases?per_page=30",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/releases/tag/v0.4.3",
+       "id": 434026535,
+       "tag_name": "v0.4.3",
+       "name": "Wydanie 0.4.3",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-04T14:23:06Z",
+       "body": "Ta wersja przyspiesza ponowne uruchomienie Wyceny w efenix.\n\n- Gdy uruchomisz Wycenę w efenix ponownie, na przykład po wylogowaniu, gotowe zlecenia narzędzie sprawdza od razu, bez czekania.\n- Zlecenia Rozliczone i zlecenia z błędem też przechodzą od razu, bo narzędzie nic w nich nie wpisuje.\n- Zlecenia, w których narzędzie wpisuje wycenę, idą dalej spokojnie, ok. 20 s każde.\n"
+      },
+      {
+       "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/releases/tag/v0.4.2",
+       "id": 433708346,
+       "tag_name": "v0.4.2",
+       "name": "Wydanie 0.4.2",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-04T08:56:31Z",
+       "body": "Ta wersja poprawia Wycenę w efenix.\n\n- Wycena w efenix nie zatrzymuje się już na zleceniu, którego strona w efenix ma mniej pozycji niż zwykle.\n- Zlecenie, którego numeru efenix nie zna, zostaje Ci jako błąd, a Wycena idzie dalej.\n- Zlecenie, które w efenix jest już Rozliczone, widzisz na karcie jako Rozliczone, a nie jako błąd.\n- Gdy w trakcie Wyceny wygaśnie logowanie do efenix, Centrum rozliczeń mówi, żebyś zalogował się i uruchomił ją ponownie.\n- Adres z ukośnikiem w numerze domu i lokalem nie daje już błędu adresu.\n\n## Rozwiązane sprawy taty\n\n- Zgłoszenie #19: EFENIX_OKNO_ZATRZYMANE: Wycena w efenix się zatrzymała, Maks już wie. Wycena zleceń sprzed zatrzymania została w efenix.\n- Zgłoszenie #20: EFENIX_OKNO_ZATRZYMANE: Wycena w efenix się zatrzymała, Maks już wie. W efenix nic się nie zmieniło.\n"
+      },
+      {
+       "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/releases/tag/v0.4.1",
+       "id": 432569542,
+       "tag_name": "v0.4.1",
+       "name": "Wydanie 0.4.1",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-03T10:48:32Z",
+       "body": "Ta wersja pomaga Maksowi szybciej naprawić Wycenę w efenix.\n\n- Gdy Wycena w efenix się zatrzyma, Maks dostaje dokładną informację, przy którym zleceniu i dlaczego.\n- Ta informacja idzie do Maksa sama, nie musisz niczego wysyłać.\n- Wycena w efenix i komunikat przy zatrzymaniu działają tak jak dotąd.\n"
+      },
+      {
+       "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/releases/tag/v0.4.0",
+       "id": 432167553,
+       "tag_name": "v0.4.0",
+       "name": "Wydanie 0.4.0",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-11-03T01:36:12Z",
+       "body": "Nowy krok w Centrum rozliczeń: Wycena w efenix.\n\n- Centrum samo uzupełnia wyceny zleceń w efenix Ilościami usług z Pliku zbiorczego, w oknie efenix, w którym jesteś zalogowany.\n- Każde gotowe zlecenie Centrum zaznacza jasnofioletowym ADRES w Pliku zbiorczym, a zlecenia ze zdjęciami, usterki i Przekazanie do akceptacji zostawia Tobie.\n- Gdy Wycena w efenix się zatrzyma, gotowe zlecenia zostają, a Ty uruchamiasz ją jeszcze raz i Centrum wycenia resztę.\n- Karta Następny krok pokazuje tydzień w czterech krokach (Plik zbiorczy, Uzupełnienie w Excelu, Wycena w efenix, Rozliczenia pracowników), a Rozliczenia pracowników możesz utworzyć także bez Wyceny.\n- Karta Uporządkowania INTERMAX pokazuje, które dni z ostatniego tygodnia są już uporządkowane.\n- Wynik Uruchomienia zostaje na karcie także wtedy, gdy Centrum zamknęło się w trakcie.\n"
+      },
+      {
+       "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/releases/tag/v0.3.1",
+       "id": 426935806,
+       "tag_name": "v0.3.1",
+       "name": "Wydanie 0.3.1",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-10-28T16:47:29Z",
+       "body": "Uporządkowany dzień w INTERMAX wygląda teraz tak jak dni, które porządkujesz ręcznie:\n\n- kolumna A ma ramkę w każdym wierszu dnia,\n- kolumna J z wykonawcą jest pogrubiona,\n- kolumny od P do AK, które przychodzą z aplikacji, są puste.\n\n## Rozwiązane sprawy taty\n\n- Uwaga taty #17: Drobne poprawki do porządkowania\n"
+      },
+      {
+       "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/releases/tag/v0.3.0",
+       "id": 425799638,
+       "tag_name": "v0.3.0",
+       "name": "Wydanie 0.3.0",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-10-27T17:51:15Z",
+       "body": "Uporządkowanie INTERMAX samo wpisuje urządzenie i czynność przy instalacjach hurt:\n\n- Netia, P4, Plus, VECTRA, SYSTEMIA: nokia, akt pętli\n- ORANGE: gniazdo, akt pętli LLU\n- TMOBILE: nokia getewayHomeBox, akt int\n\nUsterki i instalacje ręczne zostają bez zmian. Zlecenia ORANGE na BSA i dopiski po wizycie (stb2, tv, akt int) poprawiasz dalej ręcznie.\n"
+      },
+      {
+       "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/releases/tag/v0.2.0",
+       "id": 425469580,
+       "tag_name": "v0.2.0",
+       "name": "Wydanie 0.2.0",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-10-27T13:03:41Z",
+       "body": "Nowa karta „Uporządkuj INTERMAX” w Centrum rozliczeń porządkuje zlecenia, które wkleiłeś na dół Rejestru zleceń: przesuwa pierwszy wiersz na miejsce, dzieli zlecenia na Wykonawców, koloruje operatorów i ustawia widok na dzisiejszym dniu. Przed każdym porządkowaniem Centrum zapisuje Kopię INTERMAX, którą przywrócisz jednym kliknięciem w Konfiguracji. Przygotowanie pliku zbiorczego nie zacznie, dopóki w okresie są nieuporządkowane zlecenia, a samo „nokia” z „akt int” daje teraz 1 w kolumnie O. Gdy Wzorzec był otwarty w Excelu, Centrum mówi, jak usunąć pozostawiony plik ~$, i nie trzeba go już uruchamiać od nowa. Poprawiłem też kilka komunikatów, okno Uwagi na niskim ekranie i sprawdzanie nowej wersji.\n"
+      },
+      {
+       "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/releases/tag/v0.1.1",
+       "id": 423674967,
+       "tag_name": "v0.1.1",
+       "name": "Wydanie 0.1.1",
+       "draft": false,
+       "prerelease": false,
+       "published_at": "2026-10-25T21:32:24Z",
+       "body": "Przygotowanie pliku zbiorczego wpisuje teraz ilości usług tam, gdzie zna regułę, a nowa strona Uzupełnienie pliku zbiorczego pokazuje, które wiersze zostały Ci do wpisania w Excelu, i zielenieje na żywo, gdy je uzupełniasz. Gdy skończysz, przycisk „Gotowe, rozlicz pracowników” prowadzi prosto do Przebiegu rozliczeń, a karta wyniku otwiera Plik zbiorczy i Rozliczenia pracowników jednym kliknięciem. Centrum ostrzega, zanim klikniesz, gdy potrzebny plik jest otwarty w Excelu. Ikona „Napisz do Maksa” i dzwonek Powiadomień w prawym górnym rogu pozwalają wysłać mi Uwagę i zobaczyć, co się z nią stało. Kolejne wersje zainstalujesz sam przyciskiem „Zaktualizuj narzędzie”, gdy pojawi się karta „Nowa wersja”.\n"
+      }
+     ]
+    }
+   ],
+   "wynik": "(v0.4.3, v0.4.2, v0.4.1, v0.4.0, v0.3.1, v0.3.0, v0.2.0, v0.1.1)"
+  },
+  "linia-scalenie-pr": {
+   "fakty": {
+    "commit": "510a963acb3989d7d3beb15a636d82907f193b6c",
+    "czubek": "5e1905142a10220a03028304db8cc4c944f8e8c6"
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/510a963acb3989d7d3beb15a636d82907f193b6c...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/510a963acb3989d7d3beb15a636d82907f193b6c...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=10>; rel=\"last\", <https://api.github.com/repositories/1236051332/compare/510a963acb3989d7d3beb15a636d82907f193b6c...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=3>; rel=\"next\", <https://api.github.com/repositories/1236051332/compare/510a963acb3989d7d3beb15a636d82907f193b6c...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/510a963acb3989d7d3beb15a636d82907f193b6c...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/510a963acb3989d7d3beb15a636d82907f193b6c...5e1905142a10220a03028304db8cc4c944f8e8c6",
+      "status": "ahead",
+      "ahead_by": 10
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/commits/510a963acb3989d7d3beb15a636d82907f193b6c/pulls",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "id": 5163040459,
+       "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/pull/861",
+       "number": 861,
+       "state": "closed",
+       "body": "<5526 znaków, sha256 51e96a7b099bdc40>",
+       "closed_at": "2026-11-04T23:18:46Z",
+       "merged_at": "2026-11-04T23:18:46Z",
+       "merge_commit_sha": "510a963acb3989d7d3beb15a636d82907f193b6c",
+       "draft": false,
+       "base": {
+        "ref": "main",
+        "sha": "b85ca146c5c8c34e1ab7445cf7a759b4f52d3c9c"
+       }
+      }
+     ]
+    }
+   ],
+   "wynik": "True"
+  },
+  "linia-bez-pr": {
+   "fakty": {
+    "commit": "ad9458f038fc9fc399d42dedb9ce4fddc90a0462",
+    "czubek": "5e1905142a10220a03028304db8cc4c944f8e8c6"
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=1659>; rel=\"last\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=3>; rel=\"next\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6",
+      "status": "ahead",
+      "ahead_by": 1659
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/commits/ad9458f038fc9fc399d42dedb9ce4fddc90a0462/pulls",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": []
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~830?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 404,
+     "link": null,
+     "cialo": {
+      "message": "Not Found",
+      "status": "404"
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~415?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~415?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~415?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~415",
+      "status": "behind",
+      "ahead_by": 0
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~207?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~207?per_page=1&page=732>; rel=\"last\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~207?per_page=1&page=3>; rel=\"next\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~207?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~207?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~207",
+      "status": "ahead",
+      "ahead_by": 732
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~311?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~311?per_page=1&page=64>; rel=\"last\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~311?per_page=1&page=3>; rel=\"next\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~311?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~311?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~311",
+      "status": "ahead",
+      "ahead_by": 64
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~363?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~363?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~363?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~363",
+      "status": "behind",
+      "ahead_by": 0
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~337?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~337?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~337?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~337",
+      "status": "behind",
+      "ahead_by": 0
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~324?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~324?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~324?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~324",
+      "status": "behind",
+      "ahead_by": 0
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~317?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~317?per_page=1&page=27>; rel=\"last\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~317?per_page=1&page=3>; rel=\"next\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~317?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~317?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~317",
+      "status": "ahead",
+      "ahead_by": 27
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~320?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~320?per_page=1&page=2>; rel=\"last\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~320?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~320?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~320",
+      "status": "ahead",
+      "ahead_by": 2
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~322?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~322?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~322?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~322",
+      "status": "behind",
+      "ahead_by": 0
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~321?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~321?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~321?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/ad9458f038fc9fc399d42dedb9ce4fddc90a0462...5e1905142a10220a03028304db8cc4c944f8e8c6~321",
+      "status": "identical",
+      "ahead_by": 0
+     }
+    }
+   ],
+   "wynik": "True"
+  },
+  "poza-linia": {
+   "fakty": {
+    "commit": "07639d26f993352cc8d1ff93ede1041f8a0ba04d",
+    "czubek": "5e1905142a10220a03028304db8cc4c944f8e8c6"
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/07639d26f993352cc8d1ff93ede1041f8a0ba04d...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/07639d26f993352cc8d1ff93ede1041f8a0ba04d...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/07639d26f993352cc8d1ff93ede1041f8a0ba04d...5e1905142a10220a03028304db8cc4c944f8e8c6?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/07639d26f993352cc8d1ff93ede1041f8a0ba04d...5e1905142a10220a03028304db8cc4c944f8e8c6",
+      "status": "ahead",
+      "ahead_by": 1
+     }
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/commits/07639d26f993352cc8d1ff93ede1041f8a0ba04d/pulls",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": null,
+     "cialo": [
+      {
+       "id": 5162619324,
+       "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/pull/860",
+       "number": 860,
+       "state": "closed",
+       "body": "<4945 znaków, sha256 5c0e65530b714a56>",
+       "closed_at": "2026-11-05T00:01:57Z",
+       "merged_at": "2026-11-05T00:01:57Z",
+       "merge_commit_sha": "5e1905142a10220a03028304db8cc4c944f8e8c6",
+       "draft": false,
+       "base": {
+        "ref": "main",
+        "sha": "510a963acb3989d7d3beb15a636d82907f193b6c"
+       }
+      }
+     ]
+    },
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/07639d26f993352cc8d1ff93ede1041f8a0ba04d...5e1905142a10220a03028304db8cc4c944f8e8c6~1?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/07639d26f993352cc8d1ff93ede1041f8a0ba04d...5e1905142a10220a03028304db8cc4c944f8e8c6~1?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/07639d26f993352cc8d1ff93ede1041f8a0ba04d...5e1905142a10220a03028304db8cc4c944f8e8c6~1?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/07639d26f993352cc8d1ff93ede1041f8a0ba04d...5e1905142a10220a03028304db8cc4c944f8e8c6~1",
+      "status": "behind",
+      "ahead_by": 0
+     }
+    }
+   ],
+   "wynik": "False"
+  },
+  "nie-przodek": {
+   "fakty": {
+    "commit": "5e1905142a10220a03028304db8cc4c944f8e8c6",
+    "czubek": "726bb7f10e4d43ed372feeb1aa9002b955b00eca"
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/5e1905142a10220a03028304db8cc4c944f8e8c6...726bb7f10e4d43ed372feeb1aa9002b955b00eca?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 200,
+     "link": "<https://api.github.com/repositories/1236051332/compare/5e1905142a10220a03028304db8cc4c944f8e8c6...726bb7f10e4d43ed372feeb1aa9002b955b00eca?per_page=1&page=1>; rel=\"first\", <https://api.github.com/repositories/1236051332/compare/5e1905142a10220a03028304db8cc4c944f8e8c6...726bb7f10e4d43ed372feeb1aa9002b955b00eca?per_page=1&page=1>; rel=\"prev\"",
+     "cialo": {
+      "html_url": "https://github.com/maximiseartai/MAXIMISEART-Dad/compare/5e1905142a10220a03028304db8cc4c944f8e8c6...726bb7f10e4d43ed372feeb1aa9002b955b00eca",
+      "status": "behind",
+      "ahead_by": 0
+     }
+    }
+   ],
+   "wynik": "None"
+  },
+  "przed-poczatkiem": {
+   "fakty": {
+    "commit": "22bc01ad41dad72a138d25dca5b64e98047f31b7",
+    "czubek": "5e1905142a10220a03028304db8cc4c944f8e8c6",
+    "glebokosc": 471
+   },
+   "wymiany": [
+    {
+     "metoda": "GET",
+     "sciezka": "/repos/maximiseartai/MAXIMISEART-Dad/compare/22bc01ad41dad72a138d25dca5b64e98047f31b7...5e1905142a10220a03028304db8cc4c944f8e8c6~471?per_page=1&page=2",
+     "zadanie_sha256": null,
+     "zadanie_dlugosc": null,
+     "status": 404,
+     "link": null,
+     "cialo": {
+      "message": "Not Found",
+      "status": "404"
+     }
+    }
+   ],
+   "wynik": "'404: GitHub nie zna takiego commitu (_NotFound)'"
+  }
+ }
+}
