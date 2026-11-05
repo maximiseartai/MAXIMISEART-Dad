@@ -111,8 +111,16 @@ telefony na okres.
   25.10.2026 (42 839 wierszy, pomiar do #917) kolumna bez nagłówka ma wartość
   tylko w przesuniętym pierwszym wierszu wklejenia, a każdy z 84 wklejonych
   wierszy ma jedno Hiperłącze, w `NUMER ZL.` tam, gdzie stoi: 83 pod
-  nagłówkiem i 1, w przesuniętym wierszu, dwie kolumny na lewo. W innym
-  układzie arkusza pewne położenie ma tylko wiersz uporządkowany. Komórki
+  nagłówkiem i 1, w przesuniętym wierszu, dwie kolumny na lewo. Pewne, a złe
+  położenie, przy którym pamięć nie pozna prawdziwego `ADRES` i numeru Orange
+  wiersza, daje tylko wiersz, w którym oba ślady kłamią naraz (np. wiersz bez
+  przesunięcia z datą z godziną wpisaną ręcznie w kolumnę bez nagłówka i
+  jednocześnie z Hiperłączem `NUMER ZL.` dwie kolumny na lewo od niego):
+  takiego wiersza nie ma w sondach przeglądu #917 ani na tej kopii INTERMAX,
+  każda reguła, która zostawia pewnym przesunięty pierwszy wiersz kolejnego
+  wklejenia, ma taki kontrprzykład, a ta granica czeka na potwierdzenie
+  Maksa. W innym układzie arkusza pewne położenie ma tylko wiersz
+  uporządkowany. Komórki
   wiersza z pewnym położeniem poznaje pamięć pracy Centrum tam, gdzie stoją,
   więc wiersz z pewnym położeniem nie maskuje w Kopii następnych Uruchomień
   niczego zbędnego (przed #913 przesunięty wiersz kolejnego wklejenia
