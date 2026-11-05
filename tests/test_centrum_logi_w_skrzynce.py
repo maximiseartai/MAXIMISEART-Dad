@@ -1113,10 +1113,18 @@ def test_inna_data_wykonania_w_sladzie_zlecen_efenix_daje_roznice_w_sladzie_przy
     assert (lines[3].endswith("].execution_date"), lines[4]) == (True, '  Logi:        "2026-09-10"'), lines
 
 
+def _twice_saving(phases: list[dict[str, Any]]) -> None:
+    phases.append(phases[-1])
+
+
+def _without_saving(phases: list[dict[str, Any]]) -> None:
+    phases.pop()
+
+
 # Lista w Logach dłuższa i krótsza niż w odtworzeniu przy równym początku: etap Zapisywania dopisany drugi raz i usunięty.
-LENGTHS = {
-    "dluzsza_w_logach": (lambda phases: phases.append(phases[-1]), "4: etap Zapisywanie", "Logi", "Odtworzenie"),
-    "krotsza_w_logach": (lambda phases: phases.pop(), "3: etap Zapisywanie", "Odtworzenie", "Logi"),
+LENGTHS: dict[str, tuple[Callable[[list[dict[str, Any]]], None], str, str, str]] = {
+    "dluzsza_w_logach": (_twice_saving, "4: etap Zapisywanie", "Logi", "Odtworzenie"),
+    "krotsza_w_logach": (_without_saving, "3: etap Zapisywanie", "Odtworzenie", "Logi"),
 }
 
 

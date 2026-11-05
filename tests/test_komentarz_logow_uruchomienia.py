@@ -13,6 +13,7 @@ trafia, i liczbę policzoną przez narzędzie w kształcie telefonu, której syn
 
 from __future__ import annotations
 
+from decimal import Decimal
 import gzip
 from typing import Any
 
@@ -224,7 +225,7 @@ def test_maska_w_kwocie_logow_nie_gubi_logow_tylko_kwote_albo_zlecenie_z_uwaga_o
     kept = guarded(logs, forbidden)
 
     assert kept.efenix_orders is not None
-    assert [(order.row, order.file_amount, order.steps[0].amount) for order in kept.efenix_orders] == [(19, 10, None)]
+    assert [(order.row, order.file_amount, order.steps[0].amount) for order in kept.efenix_orders] == [(19, Decimal("10.00"), None)]
     assert kept.technical_notes[-2:] == [
         "Reguła danych: pominięto efenix_orders[0]: strażnik zamaskował w nim wartość, której pole nie przyjmuje.",
         "Reguła danych: pole efenix_orders[1].steps[0].amount jest puste: strażnik zamaskował w nim wartość, której pole "
