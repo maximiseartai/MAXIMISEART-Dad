@@ -12,6 +12,7 @@ import fnmatch
 import importlib.util
 from pathlib import Path
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -26,6 +27,10 @@ from tests.fixtures.potomne import beating, wait_for
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
+sys.path.insert(0, str(TOOLS / "lib"))
+
+import rozjazd_modelu  # noqa: E402
+
 TOOL = TOOLS / "ci" / "mutacje_skilli.py"
 STEPS = TOOLS / "lib" / "kroki_skilli.py"
 PASSING = 'print("WYKRYTA: proba")\nprint("MUTACJE OK")\n'
@@ -356,6 +361,30 @@ def test_kazdy_modul_silnika_jest_w_pilnuje_verify_rozliczenia_albo_na_liscie_wy
 
     assert sorted(modules - covered - POZA_VERIFY_ROZLICZENIA.keys()) == [], "dopisz moduł do pilnuje: verify-rozliczenia albo do POZA_VERIFY_ROZLICZENIA"
     assert sorted(POZA_VERIFY_ROZLICZENIA.keys() - (modules - covered)) == [], "usuń z POZA_VERIFY_ROZLICZENIA moduł, którego nie ma albo który glob obejmuje"
+
+
+def test_kazdy_skill_z_modelem_tla_wskazuje_kod_modelu_w_pilnuje_sync_commit_i_kroki_naprawy_rozjazdu(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rozjazd modelu z kodem (``tools/lib/rozjazd_modelu.py``) sprawdza skrypt modelu w CI i ``tools/szybko.py`` tylko dla
+    skilla z ``model/definicje.json``, więc ma go każdy skill z modelem TLA+ (``model/*.tla``), a nie ma żaden inny. Każdy
+    plik z ``definicje.json`` leży w ``pilnuje:`` skilla, żeby jego zmiana uruchamiała podstawę i krok szybko, a
+    ``SKILL.md`` ma Sync commit i sekcję z krokami, którymi rozjazd każe go naprawić."""
+
+    tool = _load_tool(monkeypatch)
+    models = sorted({path.parents[1] for path in (ROOT / ".agents" / "skills").glob("*/model/*.tla")})
+    problems = []
+    for skill in models:
+        definitions = rozjazd_modelu.definicje(skill)
+        unguarded = sorted(name for name in definitions if tool.hits(skill, {name}).files.keys() != {name})
+        problems += [f"{skill.name}: {name} poza pilnuje:" for name in unguarded]
+        text = (skill / "SKILL.md").read_text(encoding="utf-8")
+        if rozjazd_modelu.SYNC.search(text) is None:
+            problems.append(f"{skill.name}: SKILL.md bez Sync commit")
+        if not re.search(rf"^#+ {rozjazd_modelu.KROKI}", text, re.MULTILINE):
+            problems.append(f"{skill.name}: SKILL.md bez sekcji „{rozjazd_modelu.KROKI}”")
+
+    assert len(models) >= 4
+    assert rozjazd_modelu.skille(ROOT) == models
+    assert problems == []
 
 
 def test_polecenie_ci_kazdego_skilla_to_skrypt_z_repozytorium(monkeypatch: pytest.MonkeyPatch) -> None:

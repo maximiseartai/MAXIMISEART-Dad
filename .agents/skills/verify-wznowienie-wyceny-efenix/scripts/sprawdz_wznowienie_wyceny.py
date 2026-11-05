@@ -4,8 +4,9 @@ Uruchamia TLC na każdej konfiguracji z ``model/*.cfg``, porównuje wynik z ``mo
 kontrprzykład krokami kodu. Javę i ``tla2tools.jar`` bierze z narzędzi skilla ``verify-aktualizacja-narzedzia``
 (``sprawdz_aktualizacje.py``: przypięte ``jdk4py`` i jar w jego katalogu podręcznym), a zmienne ``TLC_JAVA`` i
 ``TLC_JAR`` je zastępują: kopia checkoutu mutacji nie ma ignorowanego katalogu podręcznego. Na końcu ostrzega, gdy
-któraś definicja z ``DEFINITIONS`` zmieniła się od commitu synchronizacji z ``SKILL.md``. W CI (``GITHUB_ACTIONS=true``)
-rozjazd kończy się od razu linią ``WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM`` i kodem 1, bez TLC.
+któraś definicja z ``model/definicje.json`` zmieniła się od Sync commit z ``SKILL.md``; rozjazd rozstrzyga
+``tools/lib/rozjazd_modelu.py``. W CI (``GITHUB_ACTIONS=true``) rozjazd kończy się od razu linią
+``WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM`` i kodem 1, bez TLC.
 
     .venv/bin/python .agents/skills/verify-wznowienie-wyceny-efenix/scripts/sprawdz_wznowienie_wyceny.py
     py -3 .agents\\skills\\verify-wznowienie-wyceny-efenix\\scripts\\sprawdz_wznowienie_wyceny.py
@@ -14,7 +15,6 @@ rozjazd kończy się od razu linią ``WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM`
 from __future__ import annotations
 
 import argparse
-import ast
 import importlib.util
 import itertools
 import json
@@ -24,6 +24,10 @@ import re
 import sys
 from types import ModuleType
 from typing import NamedTuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+
+import rozjazd_modelu
 
 SKILL = Path(__file__).resolve().parents[1]
 ROOT = SKILL.parents[2]
@@ -41,17 +45,6 @@ PROMISES = {
     "ZnacznikTylkoNaWycenionym": "Znacznik efenix staje przy zleceniu, którego wycena w efenix różni się od pliku.",
     "BladTylkoPoZmianieTaty": "tata dostaje błąd „wycena już jest i się różni” przy zleceniu, którego sam nie zmieniał.",
 }
-# Kod, który opisują akcje modelu (tabela w SKILL.md): rozjazd liczą tylko te definicje, nie całe pliki, bo
-# ``efenix_pricing.py`` zmienia się często obok przebiegu zlecenia (Sprawdzanie, Odczyt danych, Logi).
-DEFINITIONS = {
-    "src/rozliczenia/efenix_pricing.py": ("save", "_mark", "_efenix_stops", "_priced", "_outcome", "_after_emmett", "_entered"),
-    "src/rozliczenia/efenix_emmett_trace.py": ("EmmettTrace", "_replace", "_read_secret", "_read", "_is_entry"),
-    "src/rozliczenia/efenix_positions.py": ("as_left_after_emmett", "to_enter", "priced_differently", "same_amount", "emmett_conflicts"),
-    # Okno efenix: kiedy efenix zapisał Wycenę Emmetta i ilość, a kiedy okno zgłasza ``LoggedOut`` bez zapisu ilości.
-    "src/rozliczenia/efenix_browser.py": ("load_emmett", "enter_quantity"),
-}
-# Dopobranie historii płytkiego klonu CI nie czeka do limitu czasu runnera.
-FETCH_TIMEOUT_S = 300
 _STATE = re.compile(r"^State \d+: ")
 _STUTTERING = re.compile(r"^State \d+: Stuttering")
 _VARIABLE = re.compile(r"^/\\ (\w+) = (.*)$")
@@ -64,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     tools = _tools()
-    drift = _drift(tools, ROOT, (SKILL / "SKILL.md").read_text(encoding="utf-8"))
+    drift = rozjazd_modelu.rozjazd(SKILL, ROOT, dopobierz=True)
     if drift is not None and os.environ.get("GITHUB_ACTIONS") == "true":
         print(f"UWAGA: {drift}\n\n{DRIFT}")
         return 1
@@ -125,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _tools() -> ModuleType:
-    """``sprawdz_aktualizacje.py``: Java, ``tla2tools.jar``, TLC we własnym katalogu i ``git``."""
+    """``sprawdz_aktualizacje.py``: Java, ``tla2tools.jar`` i TLC we własnym katalogu."""
 
     spec = importlib.util.spec_from_file_location("sprawdz_aktualizacje", TOOLS)
     if spec is None or spec.loader is None:
@@ -133,42 +126,6 @@ def _tools() -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-def _drift(tools: ModuleType, root: Path, skill_md: str) -> str | None:
-    """Definicje z ``DEFINITIONS`` inne niż w commicie synchronizacji z ``SKILL.md`` (albo których nie ma); ``None``, gdy
-    żadna. Płytki klon bez tego commitu (CI) najpierw dopobiera historię."""
-
-    sync = re.search(r"Sync commit: `([0-9a-f]{7,40})`", skill_md)
-    if sync is None:
-        return "SKILL.md nie ma commitu synchronizacji."
-    commit = f"{sync.group(1)}^{{commit}}"
-    if tools._git(root, "cat-file", "-e", commit) is None:
-        tools._git(root, "fetch", "--quiet", "--unshallow", "origin", timeout_s=FETCH_TIMEOUT_S)
-    if tools._git(root, "cat-file", "-e", commit) is None:
-        return f"commitu synchronizacji {sync.group(1)} nie ma w tej historii (git fetch --unshallow); porównaj kod ręcznie."
-    moved = []
-    for path, names in DEFINITIONS.items():
-        then = tools._git(root, "show", f"{sync.group(1)}:{path}")
-        now = (root / path).read_text(encoding="utf-8") if (root / path).is_file() else None
-        moved += [f"{path} {name}" for name in names if (found := _definition(now, name)) is None or found != _definition(then, name)]
-    if not moved:
-        return None
-    return f"kod opisany modelem zmienił się od {sync.group(1)}: {', '.join(moved)}. Sprawdź, czy model dalej go opisuje."
-
-
-def _definition(source: str | None, name: str) -> str | None:
-    """Pierwsza definicja ``name`` w ``source`` (funkcja, także zagnieżdżona, klasa albo przypisanie) bez położenia."""
-
-    if source is None:
-        return None
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == name:
-            return ast.dump(node)
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
-        if any(isinstance(target, ast.Name) and target.id == name for target in targets):
-            return ast.dump(node)
-    return None
 
 
 class Verdict(NamedTuple):

@@ -1,7 +1,8 @@
 """Sprawdzenie modelu TLA+ wznowienia Wyceny w efenix: rozjazd z kodem w CI i werdykty znanych znalezisk.
 
-Model opisuje definicje z ``DEFINITIONS`` skryptu skilla ``verify-wznowienie-wyceny-efenix`` w commicie synchronizacji
-z jego ``SKILL.md``. Zmiana innej części tych plików (``efenix_pricing.py`` zmienia się często) rozjazdem nie jest.
+Model opisuje definicje z ``model/definicje.json`` skilla ``verify-wznowienie-wyceny-efenix`` w Sync commit z jego
+``SKILL.md`` (rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py``). Zmiana innej części tych plików (``efenix_pricing.py``
+zmienia się często) rozjazdem nie jest.
 
 Znane znalezisko z ``model/oczekiwane.json`` wybacza tylko swoją obietnicę i tylko zdarzenie, przed którym zdarzyła się
 jego przyczyna: kontrprzykład innej obietnicy albo bez tej przyczyny to nowe naruszenie, jak w ``verify-kolejka-skrzynki``.
@@ -23,8 +24,14 @@ import pytest
 from tests.fixtures.git_repo import commit, git
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools" / "lib"))
+
+import rozjazd_modelu  # noqa: E402
+
 SCRIPT = ROOT / ".agents" / "skills" / "verify-wznowienie-wyceny-efenix" / "scripts" / "sprawdz_wznowienie_wyceny.py"
 TOOLS = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts" / "sprawdz_aktualizacje.py"
+OWNER = ROOT / "tools" / "lib" / "rozjazd_modelu.py"
+DEFINITIONS = ROOT / ".agents" / "skills" / "verify-wznowienie-wyceny-efenix" / "model" / "definicje.json"
 PRICING = "src/rozliczenia/efenix_pricing.py"
 DRIFT = "WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM"
 
@@ -47,7 +54,7 @@ def _load() -> ModuleType:
 def _repository(root: Path) -> str:
     """Repozytorium z kodem opisanym modelem i skryptami skilli; zwraca commit synchronizacji."""
 
-    for script in (SCRIPT, TOOLS, *(ROOT / path for path in COVERED)):
+    for script in (SCRIPT, TOOLS, OWNER, DEFINITIONS, *(ROOT / path for path in COVERED)):
         copy = root / script.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(script, copy)
@@ -109,7 +116,7 @@ def test_w_ci_brak_commitu_synchronizacji_konczy_sprawdzenie_porazka(tmp_path: P
 
     assert done.returncode == 1, done.stdout + done.stderr
     assert done.stdout.splitlines()[-1] == DRIFT
-    assert f"commitu synchronizacji {'0' * 40} nie ma w tej historii" in done.stdout
+    assert f"Sync commit {'0' * 40} nie ma w tej historii" in done.stdout
 
 
 def _verdicts(
@@ -121,7 +128,7 @@ def _verdicts(
     (tmp_path / "k.cfg").write_text("\\* konfiguracja testu\n", encoding="utf-8")
     (tmp_path / "oczekiwane.json").write_text(json.dumps({"k": {"znane": known}}), encoding="utf-8")
     monkeypatch.setattr(module, "MODEL", tmp_path)
-    monkeypatch.setattr(module, "_drift", lambda tools, root, skill_md: None)
+    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root, dopobierz: None)
     monkeypatch.setenv("TLC_JAVA", "java")
     monkeypatch.setenv("TLC_JAR", "tla2tools.jar")
     forgiven: list[frozenset[tuple[str, str]]] = []

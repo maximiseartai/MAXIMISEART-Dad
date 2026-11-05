@@ -4,10 +4,11 @@ Uruchamia TLC na każdej konfiguracji z ``model/*.cfg``, porównuje wynik z
 ``model/oczekiwane.json`` i opowiada każdy kontrprzykład krokami kodu. Javy nie
 trzeba mieć w systemie: przypięte ``jdk4py`` i ``tla2tools.jar`` trafiają raz do
 ``.verification/formal-aktualizacja`` (ignorowanego przez Gita). Na końcu
-ostrzega, gdy pokryty kod zmienił się od commitu synchronizacji z ``SKILL.md``.
-Płytki klon bez tego commitu (CI) najpierw dopobiera historię. W CI
-(``GITHUB_ACTIONS=true``) rozjazd modelu z kodem albo brak commitu kończy
-się od razu linią ``AKTUALIZACJA: ROZJAZD MODELU Z KODEM`` i kodem 1, bez TLC.
+ostrzega, gdy kod z ``model/definicje.json`` zmienił się od Sync commit z
+``SKILL.md`` (rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py``). Płytki klon
+bez tego commitu (CI) najpierw dopobiera historię. W CI (``GITHUB_ACTIONS=true``)
+rozjazd kończy się od razu linią ``AKTUALIZACJA: ROZJAZD MODELU Z KODEM`` i
+kodem 1, bez TLC.
 
     .venv/bin/python .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
     py -3 .agents\\skills\\verify-aktualizacja-narzedzia\\scripts\\sprawdz_aktualizacje.py
@@ -27,6 +28,10 @@ import sys
 import tempfile
 import urllib.request
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+
+import rozjazd_modelu
+
 SKILL = Path(__file__).resolve().parents[1]
 ROOT = SKILL.parents[2]
 MODEL = SKILL / "model"
@@ -39,8 +44,6 @@ TLA_SHA256 = "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
 
 PASSES, VIOLATES = "przechodzi", "narusza"
 DRIFT = "AKTUALIZACJA: ROZJAZD MODELU Z KODEM"
-# Dopobranie historii płytkiego klonu CI (ok. 33 MiB) nie czeka do limitu czasu runnera.
-FETCH_TIMEOUT_S = 300
 # Niezmienniki obietnicy, każdy z wariantem ``…PozaZnanymi`` w modelu, i ich zdanie dla czytelnika.
 PROMISES = {
     "TataMaDzialajacaWersje": "tata zostaje bez wersji, która startuje, albo bez swojego pliku w config/.",
@@ -70,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    drift = _drift(ROOT, (SKILL / "SKILL.md").read_text(encoding="utf-8"))
+    drift = rozjazd_modelu.rozjazd(SKILL, ROOT, dopobierz=True)
     if drift is not None and os.environ.get("GITHUB_ACTIONS") == "true":
         print(f"UWAGA: {drift}\n\n{DRIFT}")
         return 1
@@ -324,37 +327,6 @@ def _tell(trace: list[dict[str, str]]) -> None:
 def _description(name: str) -> str:
     first = (MODEL / f"{name}.cfg").read_text(encoding="utf-8").splitlines()[0]
     return first.removeprefix("\\*").strip()
-
-
-def _drift(root: Path, skill_md: str) -> str | None:
-    """Czym pokryty kod z tabeli w SKILL.md różni się od commitu synchronizacji; ``None``, gdy niczym."""
-
-    sync = re.search(r"Sync commit: `([0-9a-f]{7,40})`", skill_md)
-    covered = sorted(set(re.findall(r"`(src/rozliczenia/[\w/]+\.py)`", skill_md)))
-    if sync is None or not covered:
-        return "SKILL.md nie ma commitu synchronizacji albo tabeli pokrycia."
-    commit = f"{sync.group(1)}^{{commit}}"
-    if _git(root, "cat-file", "-e", commit) is None:
-        # Płytki klon CI ma tylko ostatnie commity; w pełnym klonie ``--unshallow`` pada i niczego nie zmienia.
-        fetched = _git(root, "fetch", "--quiet", "--unshallow", "origin", timeout_s=FETCH_TIMEOUT_S)
-        shallow = _git(root, "rev-parse", "--is-shallow-repository") == "true"
-        if fetched is None and shallow:
-            return f"nie udało się dopobrać historii do commitu synchronizacji {sync.group(1)} (git fetch --unshallow); sprawdź sieć."
-    if _git(root, "cat-file", "-e", commit) is None or (changed := _git(root, "diff", "--name-only", sync.group(1), "--", *covered)) is None:
-        return f"commitu synchronizacji {sync.group(1)} nie ma w tej historii; porównaj pokryty kod ręcznie."
-    if changed:
-        return f"pokryty kod zmienił się od {sync.group(1)}: {', '.join(changed.split())}. Sprawdź, czy model dalej go opisuje."
-    return None
-
-
-def _git(root: Path, *arguments: str, timeout_s: float | None = None) -> str | None:
-    """Wyjście polecenia ``git`` bez końcowych białych znaków; ``None``, gdy się nie udało albo minęło ``timeout_s``."""
-
-    try:
-        done = subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True, check=False, timeout=timeout_s)
-    except subprocess.TimeoutExpired:
-        return None
-    return done.stdout.strip() if done.returncode == 0 else None
 
 
 if __name__ == "__main__":

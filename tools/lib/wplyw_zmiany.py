@@ -133,6 +133,8 @@ STRUCTURE = (
     # Globy ``pilnuje:`` z frontmatteru SKILL.md obejmują całe repozytorium, a graf ich nie widzi.
     "tests/test_mutacje_skilli.py::test_kazdy_glob_pilnuje_trafia_w_plik_repozytorium",
     "tests/test_mutacje_skilli.py::test_kazdy_modul_silnika_jest_w_pilnuje_verify_rozliczenia_albo_na_liscie_wylaczen",
+    # Dane rozjazdu każdego skilla z modelem TLA+ (``model/definicje.json``) wobec jego ``pilnuje:`` i ``SKILL.md``.
+    "tests/test_mutacje_skilli.py::test_kazdy_skill_z_modelem_tla_wskazuje_kod_modelu_w_pilnuje_sync_commit_i_kroki_naprawy_rozjazdu",
     # Kotwice mutacji skilli leżą w plikach całego repozytorium, a skrypty mutacji na pull request nie biegną.
     "tests/test_mutacje_skilli.py::test_kotwica_kazdej_mutacji_skilla_trafia_w_swoj_plik_dokladnie_raz",
     "tests/test_skille_dla_zmiany.py::test_frontmatter_kazdego_skilla_jest_poprawnym_yaml",

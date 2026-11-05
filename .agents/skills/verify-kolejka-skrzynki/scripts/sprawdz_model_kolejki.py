@@ -4,8 +4,8 @@ Uruchamia TLC na każdej konfiguracji z ``model/*.cfg``, porównuje wynik z ``mo
 kontrprzykład krokami kodu. Javę i ``tla2tools.jar`` bierze z narzędzi skilla ``verify-aktualizacja-narzedzia``
 (``sprawdz_aktualizacje.py``: przypięte ``jdk4py`` i jar w jego katalogu podręcznym), a zmienne ``TLC_JAVA`` i
 ``TLC_JAR`` je zastępują: kopia checkoutu mutacji nie ma ignorowanego katalogu podręcznego. Na końcu ostrzega, gdy
-pokryty kod zmienił się od commitu synchronizacji z ``SKILL.md``: pliki z tabeli pokrycia w całości, a z ``DEFINITIONS``
-tylko nazwane definicje. W CI (``GITHUB_ACTIONS=true``) rozjazd kończy się od razu linią
+kod z ``model/definicje.json`` (pliki w całości albo tylko nazwane definicje) zmienił się od Sync commit z ``SKILL.md``;
+rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py``. W CI (``GITHUB_ACTIONS=true``) rozjazd kończy się od razu linią
 ``MODEL KOLEJKI: ROZJAZD MODELU Z KODEM`` i kodem 1, bez TLC.
 
     .venv/bin/python .agents/skills/verify-kolejka-skrzynki/scripts/sprawdz_model_kolejki.py
@@ -15,7 +15,6 @@ tylko nazwane definicje. W CI (``GITHUB_ACTIONS=true``) rozjazd kończy się od 
 from __future__ import annotations
 
 import argparse
-import ast
 import importlib.util
 import json
 import os
@@ -24,6 +23,10 @@ import re
 import sys
 from types import ModuleType
 from typing import NamedTuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+
+import rozjazd_modelu
 
 SKILL = Path(__file__).resolve().parents[1]
 ROOT = SKILL.parents[2]
@@ -42,13 +45,6 @@ PROMISES = {
     "CzesciWKolejnosci": "część k stoi w issue przed częścią k-1 tej samej wysyłki.",
     LIVENESS: "awarie się skończyły, a plik wysyłki bez znacznika zostaje w kolejce.",
 }
-# Kod, na którym stoją akcje Start, Zamknij i KoniecProcesu (stare i nowe Centrum naraz), w plikach, które Centrum
-# zmienia często: rozjazd liczą tylko te definicje, a nie cały plik, jak tabela pokrycia w ``SKILL.md``.
-DEFINITIONS = {
-    "src/rozliczenia/centrum/app.py": ("lifespan",),
-    "src/rozliczenia/centrum/launcher.py": ("listen_locally", "_listen_when_released"),
-    "src/rozliczenia/centrum/server.py": ("_GRACEFUL_SHUTDOWN_S", "serve", "_Server"),
-}
 _STATE = re.compile(r"^State \d+: ")
 _STUTTERING = re.compile(r"^State \d+: Stuttering")
 _BACK = re.compile(r"^Back to state (\d+): ")
@@ -62,8 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     tools = _tools()
-    skill_md = (SKILL / "SKILL.md").read_text(encoding="utf-8")
-    drift = " ".join(found for found in (tools._drift(ROOT, skill_md), _moved_definitions(tools, ROOT, skill_md)) if found) or None
+    drift = rozjazd_modelu.rozjazd(SKILL, ROOT, dopobierz=True)
     if drift is not None and os.environ.get("GITHUB_ACTIONS") == "true":
         print(f"UWAGA: {drift}\n\n{DRIFT}")
         return 1
@@ -130,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _tools() -> ModuleType:
-    """``sprawdz_aktualizacje.py``: Java, ``tla2tools.jar`` i rozjazd pokrytego kodu z commitem synchronizacji."""
+    """``sprawdz_aktualizacje.py``: Java i ``tla2tools.jar``."""
 
     spec = importlib.util.spec_from_file_location("sprawdz_aktualizacje", TOOLS)
     if spec is None or spec.loader is None:
@@ -138,40 +133,6 @@ def _tools() -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-def _moved_definitions(tools: ModuleType, root: Path, skill_md: str) -> str | None:
-    """Definicje z ``DEFINITIONS`` inne niż w commicie synchronizacji (albo których nie ma); ``None``, gdy żadna."""
-
-    sync = re.search(r"Sync commit: `([0-9a-f]{7,40})`", skill_md)
-    if sync is None:
-        return None  # brak commitu zgłasza już _drift
-    moved = []
-    for path, names in DEFINITIONS.items():
-        then = tools._git(root, "show", f"{sync.group(1)}:{path}")
-        now = (root / path).read_text(encoding="utf-8") if (root / path).is_file() else None
-        moved += [
-            f"{path} {name}"
-            for name in names
-            if (found := _definition(now, name)) is None or found != _definition(then, name)
-        ]
-    if not moved:
-        return None
-    return f"kod procesów Centrum zmienił się od {sync.group(1)}: {', '.join(moved)}. Sprawdź Start, Zamknij i KoniecProcesu."
-
-
-def _definition(source: str | None, name: str) -> str | None:
-    """Pierwsza definicja ``name`` w ``source`` (funkcja, także zagnieżdżona, klasa albo przypisanie) bez położenia."""
-
-    if source is None:
-        return None
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == name:
-            return ast.dump(node)
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
-        if any(isinstance(target, ast.Name) and target.id == name for target in targets):
-            return ast.dump(node)
-    return None
 
 
 class Verdict(NamedTuple):
