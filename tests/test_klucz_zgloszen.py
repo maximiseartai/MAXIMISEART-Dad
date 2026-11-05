@@ -510,3 +510,16 @@ def test_pierwszy_blad_pliku_zapisow_w_pracy_centrum_trafia_raz_do_unavailable(
         assert keyed.labelled_issues("uwaga-taty", include_closed=False) == ()
 
     assert [type(failure) for failure in failures] == [PermissionError]
+
+
+def test_zapis_pliku_zapisow_ktory_sie_nie_udaje_wstrzymuje_zakladanie_i_trafia_do_unavailable(tmp_path: Path) -> None:
+    failures: list[OSError] = []
+
+    def refused(path: Path, text: str) -> None:
+        raise PermissionError(13, "Odmowa dostępu", str(path))
+
+    box = FakeReportBox()
+    keyed = KeyedBox(box, lambda: KEY, clock=ManualClock(), opening=NotesFile(tmp_path / OPENING_FILE, refused, failures.append))
+
+    assert keyed.open_issue("uwaga-taty", "tytuł", "treść") == Unreachable()
+    assert (box.keys, [type(failure) for failure in failures]) == ([], [PermissionError])
