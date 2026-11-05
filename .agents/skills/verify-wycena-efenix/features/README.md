@@ -1,9 +1,8 @@
 # Wycena w efenix fault map
 
 This map lists the axes of faults that `explore_wycena_efenix.py` drives through a real Wycena w efenix on the Atrapa
-efenix. Each axis is a `--variant`. The second Uruchomienie after a stop, with and without Dad's changes in efenix, is
-checked by the model of `verify-wznowienie-wyceny-efenix`, not on the Atrapa. Pick an axis and a request role
-(`--rola`) to check one place while you work on it; CI runs them all.
+efenix. Each axis is a `--variant`; second runs with Dad's changes in efenix (`wznowienie`) follow every axis. Pick an
+axis and a request role (`--rola`) to check one place while you work on it; CI runs them all.
 
 ## Baseline preconditions
 
@@ -36,3 +35,4 @@ checked by the model of `verify-wznowienie-wyceny-efenix`, not on the Atrapa. Pi
 - [Zamknięte okno](./zamkniete-okno.md) covers Dad closing the efenix tab while a request is on its way.
 - [Logowanie](./logowanie.md) covers Dad logging in, or closing the tab, while the window waits for his login.
 - [Zabity proces](./zabity-proces.md) covers the tool killed right before or right after efenix ran a request.
+- [Wznowienie](./wznowienie.md) covers the second Uruchomienie after a stop, with and without Dad's changes in efenix.

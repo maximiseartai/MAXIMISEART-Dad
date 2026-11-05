@@ -1,6 +1,7 @@
 """Show that explore_wycena_efenix.py fails on broken variants of the Wycena w efenix, the defects of #802, #808, #758,
-#891, #895 at every „Załaduj do zlecenia”, #889 and #908, a reload waited for shorter than its answer, a closed tab not seen in
-the window's action and a dziennik that names an order only after the window changed it among them.
+#891, #895 at every „Załaduj do zlecenia”, #889 and #908, a reload waited for shorter than its answer, a closed tab not seen
+in the window's action, a dziennik that names an order only after the window changed it, and the resumes of #757 and
+#864, and for each accepted risk of the explorer a broken variant just outside its shape (``BOUNDARIES``).
 
 Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) with the axes and request roles that reach it,
 one browser at a time, and must end the checker's report with the expected line. A mutation whose anchor text is no
@@ -9,8 +10,10 @@ longer in its file is reported as NIEAKTUALNA: update it to the new code.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 import sys
+from typing import Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 
@@ -19,12 +22,61 @@ from mutacje import Edit, Mutation, check_all
 BROWSER = Path("src/rozliczenia/efenix_browser.py")
 PRICING = Path("src/rozliczenia/efenix_pricing.py")
 TRACE = Path("src/rozliczenia/efenix_emmett_trace.py")
+POSITIONS = Path("src/rozliczenia/efenix_positions.py")
 EXPLORER = ".agents/skills/verify-wycena-efenix/scripts/explore_wycena_efenix.py"
 NEW = "WYCENA EFENIX: NOWE NARUSZENIE"
 
 
 def explorer(variant: str, *roles: str) -> tuple[str, ...]:
     return (EXPLORER, "--variant", variant, "--rola", *roles, "--rownolegle", "1")
+
+
+BOUNDARIES: Final[Mapping[str, tuple[Mutation, ...]]] = {
+    "#774": (
+        Mutation(
+            "#774 poza swoim miejscem: wylogowanie przy pierwszej ilości usuwa zlecenie ze Śladu",
+            (
+                Edit(
+                    TRACE,
+                    '            loaded["entering"].pop(position, None)\n            self._save()\n',
+                    '            loaded["entering"].pop(position, None)\n'
+                    "            if not loaded[\"entering\"]:\n"
+                    "                self._orders.pop(self._key(number), None)\n"
+                    "            self._save()\n",
+                ),
+            ),
+            explorer("odpowiedzi", "ilosc"),
+            "po wygaśnięciu sesji przy pierwszej ilości tata dostaje błąd zlecenia, które narzędzie zaczęło",
+            NEW,
+        ),
+        Mutation(
+            "#774 poza swoim stanem: Ślad „gotowe” także po Zatrzymaniu zlecenia",
+            (
+                Edit(
+                    PRICING,
+                    "    outcome = _outcome(order, number, day, window, trace, forbidden)\n    trace.finished(number)\n",
+                    "    try:\n        outcome = _outcome(order, number, day, window, trace, forbidden)\n    finally:\n        trace.finished(number)\n",
+                ),
+            ),
+            explorer("odciecia", "ilosc"),
+            "po odcięciu sieci przy ilości ponowne uruchomienie zostawia tacie zlecenie, które narzędzie zaczęło",
+            NEW,
+        ),
+    ),
+    "przerwanie-przed-zapisem-ilosci": (
+        Mutation(
+            "#864 poza swoim rodzajem przerwania: ilość, której efenix nie zapisał po wylogowaniu, zostaje w Śladzie",
+            (Edit(PRICING, "            self._trace.not_entered(self._number, position)\n", "            pass\n"),),
+            explorer("odpowiedzi", "ilosc"),
+            "po wygaśnięciu sesji przy ilości ponowne uruchomienie zostawia zlecenie tacie, zamiast je dokończyć",
+            NEW,
+        ),
+    ),
+}
+"""Broken variants just outside the shape of each accepted risk and known finding of the explorer (``RiskShape``), by
+its name: the same harm as the risk's, but where, how or with what the risk's story does not say, so each must give a
+new violation and not be excused (#920). ``tests/test_centrum_logi_uruchomienia.py`` reds an entry of
+``ACCEPTED_RISKS`` or ``KNOWN_FINDINGS`` without one here."""
 
 
 MUTATIONS = (
@@ -192,6 +244,74 @@ MUTATIONS = (
         "Centrum zgasło w trakcie zlecenia, a Logi Urwanego Uruchomienia nie mówią, które zlecenie zmieniło się w efenix",
         NEW,
     ),
+    Mutation(
+        "#757: stan „Emmett załadowany” zapisany przed „Załaduj do zlecenia”",
+        (
+            Edit(
+                PRICING,
+                "    if emmett is None or any(emmett.values()):\n        opened = efenix.load_emmett()\n",
+                "    if emmett is None or any(emmett.values()):\n        trace.loaded(number, {})\n        opened = efenix.load_emmett()\n",
+            ),
+        ),
+        explorer("zabity-proces", "zaladuj-do-zlecenia"),
+        "ponowne uruchomienie dokańcza wycenę, którą zaczął tata",
+        NEW,
+    ),
+    Mutation(
+        "#757: wznowienie bez sprawdzenia, czy strona jest taka, jaką proces zostawił po Emmetcie",
+        (
+            Edit(
+                PRICING,
+                "        if emmett is None or opened.execution_date is None or not as_left_after_emmett(emmett, trace.entered(number), opened.quantities):\n",
+                "        if emmett is None or opened.execution_date is None:\n",
+            ),
+        ),
+        explorer("zabity-proces", "ilosc"),
+        "ponowne uruchomienie dopisuje do wyceny, którą tata zmienił",
+        NEW,
+    ),
+    Mutation(
+        "#757: wycena, która już jest, bez Śladu dokańczana jak po Emmetcie",
+        (
+            Edit(
+                PRICING,
+                "    emmett = trace.emmett(number)\n",
+                "    emmett = trace.emmett(number) or (opened.quantities if opened.execution_date is not None and opened.amount != 0 else None)\n",
+            ),
+        ),
+        explorer("zabity-proces", "strona-zlecenia"),
+        "ponowne uruchomienie dopisuje do wyceny zaczętej przez tatę",
+        NEW,
+    ),
+    Mutation(
+        "#864: ilość wpisana w efenix bez zapisu z wyprzedzeniem w Śladzie",
+        (
+            Edit(
+                PRICING,
+                "        if not self._trace.entering(self._number, position, quantity):\n",
+                "        if False:\n",
+            ),
+        ),
+        explorer("odciecia", "ilosc"),
+        "tata dostaje „wycena już jest i się różni” przy zleceniu, które narzędzie samo zaczęło, i kończy je ręcznie",
+        NEW,
+    ),
+    Mutation(
+        "#864: wznowienie przyjmuje pustą pozycję, w której narzędzie zaczęło wpisywać ilość",
+        (
+            Edit(
+                POSITIONS,
+                "    return {position: quantity for position, quantity in on_page.items() if quantity} == left\n",
+                "    return all(on_page.get(position, 0) in (0, quantity) for position, quantity in left.items())"
+                " and all(position in left for position, quantity in on_page.items() if quantity)"
+                " and all(on_page.get(position, 0) == quantity for position, quantity in emmett.items() if quantity)\n",
+            ),
+        ),
+        explorer("odciecia", "ilosc"),
+        "ponowne uruchomienie dopisuje ilość, którą tata usunął po przerwaniu",
+        NEW,
+    ),
+    *(mutation for mutations in BOUNDARIES.values() for mutation in mutations),
     Mutation(
         "okno klika Przekazanie do akceptacji",
         (
