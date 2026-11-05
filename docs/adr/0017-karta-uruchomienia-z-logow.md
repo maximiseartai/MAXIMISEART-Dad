@@ -59,10 +59,19 @@ wyniku usuwa jak w dopisku #870/#871 dziennik bez żadnego zapisanego wpisu.
 Komentarz postępu Wyceny w issue okresu
 (dopisek #846 w ADR 0015) powstaje dopiero, gdy ta linia jest na dysku, więc
 Wycenę przerwaną przed wpisem końca kończą w nim Logi Urwanego Uruchomienia z
-następnego startu. Start zostaje taki, jak w dopisku #870/#871: dziennik z
-wpisem końca usuwa bez wysyłki, bo Logi z wynikiem mogą już być w Skrzynce, więc
-komentarz Wyceny, której Logi z wynikiem nie doszły do kolejki po wpisie końca,
-zostaje postępem. To okno zamyka #910.
+następnego startu.
+
+Dopisek #910: dziennik Wyceny znika dopiero, gdy kolejka przyjęła wersję końcową
+komentarza jej Uruchomienia. Logi z wynikiem, które kolejka przyjęła, usuwają go
+zaraz po sobie; inaczej zostaje do następnego startu, także z wpisem końca albo
+bez niego, gdy wpis końca się nie zapisał. Start wysyła wtedy wersję zastępczą:
+Logi z pliku, a bez pliku wynik bez Logów (wpis końca niesie wynik) albo Logi
+Urwanego Uruchomienia (bez wpisu końca). Ma ona niższy stopień wersji niż Logi z
+wynikiem (dopisek #910 w ADR 0015), więc ich w Skrzynce nie zastępuje. Nieudany
+wpis końca nie usuwa już dziennika: gdy kolejka nie przyjęła też Logów z
+wynikiem, a pliku Logów nie ma, karta po starcie pokazuje Urwane Uruchomienie
+zamiast wyniku, a komentarz ma Logi Urwanego Uruchomienia zamiast napisu, że
+Uruchomienie trwa.
 
 ## Kontekst
 

@@ -433,8 +433,9 @@ NowszyDalej(q, w) == \E v \in Zakres(Tail(lista[q])) \cap czytane[q] : Id(v) = I
 
 \* outbox.py Outbox._send_all, jeden plik: _undeleted (_remove), _rejected (pomija), _queued (odczyt:
 \* nieczytelny albo usunięty przez inny proces plik pomija, a OSError ustawia _read_failed), delivered
-\* (_remove), plik, za którym jest nowsza wersja tej wysyłki (_superseded: _mark_delivered bez wysyłania; gdy nowszej nie
-\* da się odczytać, ten idzie jak zwykle, a nowsza czeka na budzik), commented (_deliver_archive, sam plik do
+\* (_remove), plik, gdy przejście odczytało nowszą wersję tej wysyłki, przed nim albo za nim (_superseded:
+\* _mark_delivered bez wysyłania; gdy nowszej za nim nie da się odczytać, ten idzie jak zwykle, a nowsza czeka na
+\* budzik), commented (_deliver_archive, sam plik do
 \* Archiwum), potem _deliver. Koniec listy: self._stopped_on = None.
 Plik(q) ==
     /\ pc[q] = "plik"

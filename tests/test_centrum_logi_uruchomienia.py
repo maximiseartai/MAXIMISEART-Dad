@@ -43,10 +43,14 @@ from rozliczenia.centrum.run_logs import (
     LoggedInterruption,
     LoggedOrder,
     LoggedStep,
+    OrderDone,
+    PricingProgress,
     RunLog,
     RunLogs,
     Tool,
     logs_file_name,
+    progress_markdown,
+    progress_post,
 )
 from rozliczenia.centrum.report_box import Unreachable
 from rozliczenia.centrum.tool_update import Release
@@ -1708,7 +1712,7 @@ def test_wycena_w_efenix_ktora_doszla_do_konca_nie_zostawia_dziennika_ktory_star
     assert (log_files(centrum), journals(centrum)) == ([] if lost == "logi" else [logs], [])
 
 
-def _pricing_cut_before_result(tmp_path: Path) -> tuple[SettlingCentrum, str, Path]:
+def _pricing_cut_before_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[SettlingCentrum, str, Path]:
     """Wycena w efenix przeszła wszystkie zlecenia, ale Centrum zgasło przed jej wynikiem: dziennik ma każde zlecenie bez
     wpisu końca, a nie ma Logów, wiersza Historii ani wysyłki w kolejce, czyli to Urwane Uruchomienie (ADR 0017).
     Skrzynka Zgłoszeń ma klucz dopiero od następnego startu, więc nic z tej Wyceny do niej nie poszło. Zwraca też folder
@@ -1716,16 +1720,15 @@ def _pricing_cut_before_result(tmp_path: Path) -> tuple[SettlingCentrum, str, Pa
 
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
+        kept = journals_at_result(monkeypatch, centrum.log_path.parent / "dzienniki-wyceny")
         assert _start_pricing(centrum).status_code == 200
         run_id = finished_view(centrum.client)["run"]["id"]
     centrum.client.stop()
     [logs] = log_files(centrum)
     logs.unlink()
     centrum.engines.metrics.efenix.unlink()
-    [journal] = journals(centrum)
-    *before_result, end = journal.read_text(encoding="utf-8").splitlines(keepends=True)
-    assert json.loads(end)["entry"] == "koniec Uruchomienia"
-    journal.write_text("".join(before_result), encoding="utf-8")
+    for path, text in kept.items():
+        path.write_text(text, encoding="utf-8")
     queue = tmp_path / "config" / "zgloszenia" / "kolejka"
     shutil.rmtree(queue)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
@@ -1733,13 +1736,13 @@ def _pricing_cut_before_result(tmp_path: Path) -> tuple[SettlingCentrum, str, Pa
 
 
 def test_logi_urwanego_uruchomienia_po_ponownym_zgasnieciu_centrum_przed_wysylka_ida_przy_nastepnym_starcie_raz(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Start Centrum zamyka dziennik jako Logi Urwanego Uruchomienia, ale Centrum gaśnie znowu przed pierwszym zapytaniem,
     więc przed wysyłką: dziennik zostaje obok pliku Logów. Następny start wysyła te Logi do Skrzynki raz, karta ma Urwane
     Uruchomienie, a dziennik znika."""
 
-    centrum, run_id, _ = _pricing_cut_before_result(tmp_path)
+    centrum, run_id, _ = _pricing_cut_before_result(tmp_path, monkeypatch)
     box = centrum.surroundings.report_box
     centrum.restart()
     centrum.client.stop()
@@ -1756,12 +1759,12 @@ def test_logi_urwanego_uruchomienia_po_ponownym_zgasnieciu_centrum_przed_wysylka
 
 
 def test_dziennik_urwanej_wyceny_ktorego_logow_kolejka_wysylki_nie_przyjela_zostaje_do_nastepnego_startu(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Kolejka wysyłki nie przyjmuje Logów Urwanego Uruchomienia (na miejscu jej folderu stoi plik): dziennik zostaje, a
     start po naprawie folderu wysyła te Logi do Skrzynki i dopiero wtedy dziennik znika."""
 
-    centrum, run_id, queue = _pricing_cut_before_result(tmp_path)
+    centrum, run_id, queue = _pricing_cut_before_result(tmp_path, monkeypatch)
     box = centrum.surroundings.report_box
     queue.write_text("", encoding="utf-8")  # plik zamiast folderu: zapis się nie uda
     centrum.restart()
@@ -2129,17 +2132,19 @@ def test_wpis_dziennika_wyceny_ktorego_nie_da_sie_zapisac_nie_zmienia_postepu(
 
 
 def test_start_dziennika_wyceny_ktorego_nie_dalo_sie_zapisac_idzie_z_pierwszym_wpisem_a_postep_rusza_z_nim(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Katalog dzienników Wyceny zajęty przez plik, gdy tata uruchamia Wycenę w efenix, a okno efenix czeka na jego
     logowanie: start dziennika nie trafia na dysk, więc postępu nie ma. Zanim tata się zaloguje, katalog wraca (np.
     antywirus puścił plik): pierwszy wpis zapisuje przed sobą pierwszą linię, więc dziennik ma start i każde zlecenie, a
-    komentarz Uruchomienia dostaje postęp ze zleceniami i na końcu podsumowanie."""
+    komentarz Uruchomienia dostaje postęp ze zleceniami i na końcu podsumowanie. Kolejka przyjęła Logi z wynikiem, więc
+    dziennik znika z końcem Wyceny."""
 
     blocked = tmp_path / "logs" / "dzienniki-wyceny"
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
     with pricing(tmp_path, logged_in=False) as (centrum, _, atrapa):
+        kept = journals_at_result(monkeypatch, blocked)
         assert _start_pricing(centrum).status_code == 200
         blocked.unlink()
         atrapa.log_in()
@@ -2147,10 +2152,14 @@ def test_start_dziennika_wyceny_ktorego_nie_dalo_sie_zapisac_idzie_z_pierwszym_w
     _, texts = comment_history(centrum)
     centrum.client.stop()
     *progress, summary = texts
-    [journal] = journals(centrum)
-    entries = [entry["entry"] for entry in journal_entries(journal)]
+    [journal] = kept.values()
+    entries = [entry["entry"] for entry in journal_entries_of(journal)]
 
-    assert (entries[:2], entries.count("zlecenie skończone")) == (["start Uruchomienia", "zaczynam zlecenie"], 6)
+    assert (entries[:2], entries.count("zlecenie skończone"), journals(centrum)) == (
+        ["start Uruchomienia", "zaczynam zlecenie"],
+        6,
+        [],
+    )
     assert progress != [], texts
     assert [text for text in progress if NO_ORDERS in text.splitlines()] == [], "postęp przed startem dziennika na dysku"
     assert len(archived_logs(centrum, summary)["efenix_orders"]) == 6
@@ -2865,12 +2874,13 @@ def test_wycena_z_wynikiem_bez_pliku_logow_nie_dostaje_logow_urwanego_uruchomien
     assert [logs_json(box, comment)["ending"] for comment in logs_comments(box)] == ["finished"]
 
 
-def test_wpis_konca_ktory_sie_nie_zapisal_usuwa_dziennik_wyceny_z_wynikiem_a_start_nie_robi_z_niej_urwanego_uruchomienia(
+def test_wpis_konca_ktory_sie_nie_zapisal_zostawia_dziennik_do_przyjecia_logow_z_wynikiem_a_start_nie_robi_z_wyceny_urwanego_uruchomienia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Każdy wpis Wyceny w efenix się zapisuje oprócz wpisu końca, bo po rekordzie metryk antywirus trzyma dziennik, a
-    pliku Logów nie ma (katalog Logów zajęty przez plik). Wycena usuwa wtedy swój dziennik sama, z jedną linią dziennika
-    Centrum, więc następny start nie robi z niej Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem."""
+    pliku Logów nie ma (katalog Logów zajęty przez plik). Kolejka wysyłki przyjmuje Logi z wynikiem, więc dziennik bez
+    wpisu końca znika za nimi (``JournalAfterLogs``), z jedną linią dziennika Centrum, a następny start nie robi z Wyceny
+    Urwanego Uruchomienia i w Skrzynce zostają Logi z wynikiem."""
 
     blocked = tmp_path / "logs" / "uruchomienia"
     blocked.parent.mkdir(parents=True)
@@ -2974,8 +2984,10 @@ def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Centrum gaśnie zaraz po tym, jak Logi z wynikiem Wyceny w efenix poszły do Kolejki wysyłki, a pliku Logów nie ma
-    (katalog Logów zajęty przez plik). Wycena dopisała wpis końca do dziennika przed swoimi Logami, więc następny start
-    usuwa dziennik bez Logów Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem (#871)."""
+    (katalog Logów zajęty przez plik), zanim dziennik zniknął za nimi. Wycena dopisała wpis końca do dziennika przed
+    swoimi Logami, więc następny start nie robi z niej Urwanego Uruchomienia, tylko wysyła wynik bez Logów, a ten ma
+    niższy stopień wersji niż Logi z wynikiem: jedyny komentarz Uruchomienia w Skrzynce zostaje Logami z wynikiem z
+    odnośnikiem do ich pliku w Archiwum, bez żadnej zmiany, a dziennik znika (#871, #910)."""
 
     blocked = tmp_path / "logs" / "uruchomienia"
     blocked.parent.mkdir(parents=True)
@@ -2998,26 +3010,31 @@ def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie
         assert _start_pricing(centrum).status_code == 200
         assert wait_for(reached.is_set, 120)
         sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+        edited = list(box.edited)
         closed = centrum.client
         blocked.unlink()
         centrum.restart()
         assert centrum.client.get("/api/runs/current").status_code == 200
-        after = (records(centrum), journals(centrum))
+        queue = tmp_path / "config" / "zgloszenia" / "kolejka"
+        settled = wait_for(lambda: queued_logs(queue) == [], 10)
+        after = (records(centrum), journals(centrum), box.edited == edited)
         released.set()
         finished_view(closed)
     centrum.client.stop()
+    [comment] = logs_comments(box)
 
-    assert (sent, after) == (True, ([], []))
-    assert [logs_json(box, comment)["ending"] for comment in logs_comments(box)] == ["finished"]
+    assert (sent, settled, after) == (True, True, ([], [], True)), "Logi z wynikiem zmienione po starcie"
+    assert logs_json(box, comment)["ending"] == "finished"
 
 
 def test_bez_sieci_logi_z_wynikiem_zgaszonej_wyceny_w_efenix_czekaja_w_kolejce_po_starcie_i_dochodza_z_plikiem_do_archiwum(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Jak wyżej, ale bez sieci: Skrzynka nie odpowiada od startu Wyceny do chwili po następnym starcie Centrum, więc Logi
-    z wynikiem czekają w Kolejce wysyłki, a pliku Logów na dysku taty nie ma. Start usuwa dziennik z wpisem końca i
-    niczego nie dokłada do kolejki, więc po powrocie sieci jedyny komentarz Uruchomienia w issue okresu to Logi z
-    wynikiem z odnośnikiem do ich pliku w Archiwum Logów okresu, a nie wersja bez pełnych Logów (#871, #910)."""
+    z wynikiem czekają w Kolejce wysyłki, a pliku Logów na dysku taty nie ma. Start wysyła z dziennika z wpisem końca
+    wynik bez Logów, który czeka w kolejce obok nich, a dziennik znika. Kolejka bierze wersję wyższego stopnia, więc po
+    powrocie sieci wynik bez Logów znika bez wysłania, a jedyny komentarz Uruchomienia w issue okresu to Logi z wynikiem z
+    odnośnikiem do ich pliku w Archiwum Logów okresu (#871, #910)."""
 
     blocked = tmp_path / "logs" / "uruchomienia"
     blocked.parent.mkdir(parents=True)
@@ -3062,5 +3079,107 @@ def test_bez_sieci_logi_z_wynikiem_zgaszonej_wyceny_w_efenix_czekaja_w_kolejce_p
     [summary] = texts
     logs = archived_logs(centrum, summary)
 
-    assert (waiting, after) == (True, (1, [], [])), "Logi z wynikiem w kolejce, dziennik i plik Logów po starcie"
+    assert (waiting, after) == (True, (2, [], [])), "Logi z wynikiem i wynik bez Logów w kolejce, dziennik i plik Logów"
     assert (logs["run_id"], logs["ending"]) == (started.json()["run"]["id"], "finished")
+
+
+WITHOUT_LOGS = "- Pełne Logi: nie ma, Centrum nie zapisało ich po wyniku (np. zamknęło się tuż po nim)"
+
+
+def test_centrum_zgaszone_po_wpisie_konca_a_przed_logami_z_wynikiem_konczy_komentarz_postepu_wynikiem_bez_logow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Centrum gaśnie po wpisie końca dziennika Wyceny w efenix, a przed jej Logami z wynikiem: działania po wyniku nie
+    dochodzą do pliku Logów ani do Kolejki wysyłki, a komentarz Uruchomienia w issue okresu ma postęp, który mówi, że
+    Uruchomienie trwa. Następny start ma dziennik z wpisem końca bez pliku Logów, więc ten sam komentarz zmienia się w
+    wynik bez Logów: wynik Wyceny z wpisu końca, wszystkie zlecenia z dziennika i linię, że pełnych Logów nie ma, a
+    dziennik znika (#910)."""
+
+    reached, released = threading.Event(), threading.Event()
+
+    def switched_off(self: RunLogs, run: Any) -> None:  # Centrum gaśnie: Logi z wynikiem nie powstają
+        reached.set()
+        released.wait()
+
+    monkeypatch.setattr(RunLogs, "run_ended", switched_off)
+    with pricing(tmp_path) as (centrum, _, _):
+        assert _start_pricing(centrum).status_code == 200
+        assert wait_for(reached.is_set, 120)
+        box = centrum.surroundings.report_box
+        closed = centrum.client
+        centrum.restart()
+        assert centrum.client.get("/api/runs/current").status_code == 200
+        ended = box.wait_until(
+            lambda fake: [text.splitlines()[-1] for issue in fake.issues_with(PROGRESS_LABEL) for text in issue.comments]
+            == [WITHOUT_LOGS]
+        )
+        after = journals(centrum)
+        released.set()
+        result = finished_view(closed)["result"]["result"]
+    centrum.client.stop()
+    [issue] = box.issues_with(PROGRESS_LABEL)
+    [comment_id] = issue.comment_ids
+    *progress, final = [shown(text) for written, text in box.written if written == comment_id]
+    lines = final.splitlines()
+
+    assert (ended, after, lines[-1]) == (True, [], WITHOUT_LOGS)
+    assert progress != [] and all("- Wynik: jeszcze nie ma, Uruchomienie trwa" in text.splitlines() for text in progress)
+    [orders] = [line for line in lines if line.startswith("- Zlecenia: ")]
+    assert (f"- Wynik: {result}" in lines, orders.startswith(f"- Zlecenia: {len(PRICED)} z {len(PRICED)} ")) == (True, True)
+
+
+def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_przed_logami_urwanego_uruchomienia(
+    tmp_path: Path,
+) -> None:
+    """Zegar komputera taty cofnął się, gdy Centrum było zamknięte (np. bateria CMOS po braku prądu, a bez sieci Windows
+    go nie poprawi), więc postęp Urwanej Wyceny w efenix czeka w Kolejce wysyłki z chwilą w nazwie pliku późniejszą niż
+    każda wysyłka następnej pracy Centrum. Start bez sieci zamyka dziennik Logami Urwanego Uruchomienia, które mają wyższy
+    stopień wersji niż postęp, i usuwa dziennik. Po powrocie sieci postęp znika z kolejki bez wysłania, jedyny komentarz
+    Uruchomienia to podsumowanie Logów Urwanego Uruchomienia, a ich plik jest w Archiwum Logów okresu (#910)."""
+
+    centrum = settling_centrum(tmp_path)
+    box = centrum.surroundings.report_box
+    box.background = frozenset()
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    started = JournalStarted(
+        entry="start Uruchomienia",
+        run_id="c" * 32,
+        process="efenix",
+        mode="zapis",
+        period=PERIOD,
+        started_at=utc("2026-09-16T10:15:00+00:00"),
+    )
+    order = LoggedOrder(row=18, outcome="gotowe", code=None, file={}, file_amount=Decimal(0), steps=[])
+    begun = OrderBegun(at=utc("2026-09-16T10:16:00+00:00"), entry="zaczynam zlecenie", row=18, place=1, total=2)
+    ended = OrderEnded(at=utc("2026-09-16T10:17:00+00:00"), entry="zlecenie skończone", order=order)
+    directory = centrum.log_path.parent / "dzienniki-wyceny"
+    directory.mkdir(parents=True)
+    journal = directory / Path(logs_file_name(started.started_at, "efenix", started.run_id)).with_suffix(".jsonl")
+    journal.write_text("".join(line.model_dump_json() + "\n" for line in (started, begun, ended)), encoding="utf-8")
+    progress = PricingProgress(started, (OrderDone(18, "gotowe", None),), 2, None)
+    queue = tmp_path / "config" / "zgloszenia" / "kolejka"
+    queue.mkdir(parents=True)
+    # Poprzednia praca Centrum zapisała postęp, zanim zegar się cofnął: chwila w nazwie jest „w przyszłości”.
+    (queue / f"20991231T235959000000Z-0007-{PROGRESS_LABEL}-{started.run_id[:8]}.json").write_text(
+        progress_post(progress, progress_markdown(progress, elapsed_s=600)).to_json(), encoding="utf-8"
+    )
+
+    box.search_failure = Unreachable()
+    centrum.restart()
+    with centrum.client:  # start Centrum jak u taty: ``lifespan`` wznawia Kolejkę wysyłki, która nie ma sieci
+        assert centrum.client.get("/api/runs/current").status_code == 200
+        waiting = wait_for(lambda: len(queued_logs(queue)) == 2, 10)
+        after = journals(centrum)
+        box.search_failure = None
+        centrum.surroundings.clock.advance(RETRY_S)
+        _, texts = comment_history(centrum)
+    centrum.client.stop()
+    [summary] = texts
+    logs = archived_logs(centrum, summary)
+
+    assert (waiting, after) == (True, []), "postęp i Logi Urwanego Uruchomienia w kolejce, dziennik po starcie"
+    assert (logs["run_id"], logs["ending"], [order["row"] for order in logs["efenix_orders"]]) == (
+        started.run_id,
+        "interrupted",
+        [18],
+    )

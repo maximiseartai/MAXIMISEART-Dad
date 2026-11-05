@@ -133,7 +133,7 @@ MUTATIONS = (
         (
             Edit(
                 VERIFIED,
-                "    if seen.newest > version:\n        return _newer(post, issue.number, seen, range(",
+                "    if seen.newest is not None and seen.newest > version:\n        return _newer(post, issue.number, seen, range(",
                 "    if False:\n        return _newer(post, issue.number, seen, range(",
             ),
         ),
@@ -356,13 +356,13 @@ MUTATIONS = (
         (
             Edit(
                 VERIFIED,
-                "            newest[queued.post.target, queued.post.run_id] = path\n",
-                "            newest[queued.post.target, \"\"] = path\n",
+                "            key, mine = (queued.post.target, queued.post.run_id), (",
+                "            key, mine = (queued.post.target, \"\"), (",
             ),
             Edit(
                 VERIFIED,
-                "        if queued is not None and newest[queued.post.target, queued.post.run_id] != path\n",
-                "        if queued is not None and newest[queued.post.target, \"\"] != path\n",
+                "        if queued is not None and newest[queued.post.target, queued.post.run_id][1] != path\n",
+                "        if queued is not None and newest[queued.post.target, \"\"][1] != path\n",
             ),
         ),
         (EXPLORER, "--scope", "watek-okresu"),

@@ -16,20 +16,21 @@ Wysyłka jest dokładnie raz (#840): każda część trafia do Skrzynki raz, tak
 zgaśnięcie Centrum) przyjdzie między jej przyjęciem przez skrzynkę a znacznikiem dostarczenia. Każdy tekst, który
 kolejka zapisuje w skrzynce, kończy się niewidocznym znacznikiem (``_mark``, komentarz HTML w osobnej linii): z
 identyfikatorem wysyłki, czyli etykietą (rodzajem) i ``run_id`` (Uruchomieniem), z numerem części (0: nagłówek) i z
-wersją, czyli chwilą i numerem z nazwy pliku kolejki (``_version``), w porządku kolejki. Przed wysłaniem kolejka
-czyta treść i komentarze issue celu (``_settle``): issue ze znacznikiem tej wysyłki w nowszej wersji nie dostaje od
-niej niczego, część, której znacznik już tam jest w tej wersji, nie idzie drugi raz, komentarz części w starszej
-wersji dostaje nowy tekst (``edit_comment``), a komentarz części, której nowsza wersja nie ma, dostaje ``_RETIRED``.
-Tak Diagnoza, która wysyła Logi Uruchomienia drugi raz z tym samym identyfikatorem, zmienia komentarz swojego
-Uruchomienia, a starszy plik, który dojdzie po nowszym (np. raz nieczytelny), niczego w issue nie zmienia ani nie
-dopisuje. Plik, za którym w tym samym przejściu leży czytelny plik nowszej wersji tej samej wysyłki (ten sam cel i
-``run_id``, ``_superseded``), kolejka oznacza znacznikiem dostarczenia i usuwa bez wysyłania, bo Skrzynce należy się
-nowsza: bez sieci w kolejce zostaje tylko najnowszy postęp Wyceny w efenix (#846, ``pricing_progress``) i tylko Logi z
-ostatnią Diagnozą. Wersje jednej wysyłki powstają w jednej pracy Centrum (Diagnozę ma tylko ostatnie Uruchomienie tej
-pracy, ``run_logs``, a postęp tylko trwające), a w niej wersja rośnie z każdą wysyłką, także gdy zegar komputera się
-cofnie (``Outbox.post``). Logi Urwanego Uruchomienia, które zastępują jego postęp, wysyła następna praca Centrum: ich
-wersja jest nowsza, dopóki zegar komputera nie cofnął się od zgaśnięcia Centrum o więcej niż czas do następnego startu.
-Treści issue kolejka nigdy nie zmienia.
+wersją (``Version``): najpierw stopniem, który wybiera nadawca (``Rank``, #910), potem chwilą i numerem z nazwy pliku
+kolejki (``_version``). Przed wysłaniem kolejka czyta treść i komentarze issue celu (``_settle``): issue ze znacznikiem
+tej wysyłki w nowszej wersji nie dostaje od niej niczego, część, której znacznik już tam jest w tej wersji, nie idzie
+drugi raz, komentarz części w starszej wersji dostaje nowy tekst (``edit_comment``), a komentarz części, której nowsza
+wersja nie ma, dostaje ``_RETIRED``. Tak Diagnoza, która wysyła Logi Uruchomienia drugi raz z tym samym
+identyfikatorem, zmienia komentarz swojego Uruchomienia, a starszy plik, który dojdzie po nowszym (np. raz
+nieczytelny), niczego w issue nie zmienia ani nie dopisuje. Plik, gdy przejście odczytało plik nowszej wersji tej samej
+wysyłki (ten sam cel i ``run_id``, ``_superseded``), także zapisany przed nim, kolejka oznacza znacznikiem
+dostarczenia i usuwa bez wysyłania, bo Skrzynce należy się nowsza: bez sieci w kolejce zostaje tylko najnowszy postęp
+Wyceny w efenix (#846, ``pricing_progress``) i tylko Logi z ostatnią Diagnozą. Chwila i numer porządkują tylko wersje
+jednego stopnia, a te powstają w jednej pracy Centrum (Diagnozę ma tylko ostatnie Uruchomienie tej pracy,
+``run_logs``, a postęp tylko trwające), w której wersja rośnie z każdą wysyłką, także gdy zegar komputera się cofnie
+(``Outbox.post``), albo są wersjami zastępczymi jednego dziennika Wyceny z kolejnych startów. Wersja zastępcza z
+następnej pracy Centrum (Logi Urwanego Uruchomienia, wynik bez Logów) jest więc nowsza od każdego postępu, a starsza od
+Logów z wynikiem, choć zegar komputera mógł się cofnąć. Treści issue kolejka nigdy nie zmienia.
 
 Issue okresu kolejka znajduje po wierszu rozpoznawczym przy każdej próbie wysyłki i dopisuje do niego części jako
 komentarze. Bez niego zakłada nowe issue: pierwsza część (albo nagłówek) jest jego treścią, kolejne komentarzami.
@@ -65,6 +66,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
+from enum import IntEnum
 from pathlib import Path
 from typing import Any, BinaryIO, Final, Literal, Protocol, assert_never, get_args
 
@@ -332,13 +334,58 @@ def _noted(text: str, note: str) -> str:
     return f"{paragraph}\n\n{note}\n"
 
 
+class Rank(IntEnum):
+    """Stopień wersji wysyłki (#910): wersja wyższego stopnia jest nowsza od każdej wersji niższego, bez względu na chwilę
+    w nazwie pliku kolejki, a chwila i numer porządkują tylko wersje jednego stopnia.
+
+    Stopień wybiera nadawca, a nie zegar komputera. Logi Uruchomienia (``run_logs``) mają trzy: postęp Wyceny w efenix
+    (``DRAFT``), wersję zastępczą, którą start Centrum odtwarza z dziennika Wyceny (``STAND_IN``: Logi z pliku, Logi
+    Urwanego Uruchomienia albo wynik bez Logów), i Logi z pracy Centrum Uruchomienia (``OWN``: z wynikiem, z Diagnozą).
+    Każda inna wysyłka ma ``OWN``, tak jak wersja bez stopnia, którą zapisało Centrum sprzed #910: żadne Wydanie nie
+    wysyłało postępu ani Logów z dziennika.
+    """
+
+    DRAFT = 0
+    STAND_IN = 1
+    OWN = 2
+
+
+# Numer stopnia przed chwilą w tekście wersji (``Version.text``); ``OWN`` go nie ma.
+_LOWER_RANKS: Final = {str(rank.value): rank for rank in Rank if rank is not Rank.OWN}
+
+
+@dataclass(frozen=True, order=True)
+class Version:
+    """Wersja wysyłki: stopień (``Rank``), potem chwila i numer z nazwy pliku kolejki (``_version``)."""
+
+    rank: Rank
+    name: str
+
+    @property
+    def text(self) -> str:
+        """Wersja w znaczniku wysyłki i w etykiecie pliku w Archiwum: stopień ``OWN`` sama chwila i numer, jak przed #910,
+        a niższy stopień z numerem stopnia przed nimi (``1:20261105T063021123456Z-0001``)."""
+
+        return self.name if self.rank is Rank.OWN else f"{self.rank.value}:{self.name}"
+
+    @classmethod
+    def of(cls, text: str) -> Version:
+        """Wersja z tekstu ``text`` ze znacznika albo etykiety; tekst bez numeru niższego stopnia to stopień ``OWN``."""
+
+        rank, colon, name = text.partition(":")
+        if colon and rank in _LOWER_RANKS and name:
+            return cls(_LOWER_RANKS[rank], name)
+        return cls(Rank.OWN, text)
+
+
 @dataclass(frozen=True)
 class Post:
     """Gotowa wysyłka do Skrzynki Zgłoszeń, wyrenderowana przez wersję narzędzia, która ją utworzyła.
 
     ``header``: treść nowego issue; ``None``: nowe issue otwiera pierwsza część (Kontrola ilości, Uwaga taty).
     ``run_id`` to Uruchomienie, a dla Uwagi taty jej identyfikator. ``archive``: plik do Archiwum okresu, tylko przy
-    wysyłce do issue okresu w jednej części, która idzie z dopiskiem, gdy Archiwum pliku nie przyjmie.
+    wysyłce do issue okresu w jednej części, która idzie z dopiskiem, gdy Archiwum pliku nie przyjmie. ``rank``: stopień
+    wersji tej wysyłki (``Rank``).
     """
 
     target: Target
@@ -348,6 +395,7 @@ class Post:
     header: str | None
     parts: tuple[str, ...]
     archive: ArchiveFile | None = None
+    rank: Rank = Rank.OWN
 
     def __post_init__(self) -> None:
         body, comments = self.opening()
@@ -453,6 +501,7 @@ def _queue_text(post: Post, *, delivered_parts: int, archived: bool) -> str:
             },
             "delivered_parts": delivered_parts,
             "archived": archived,
+            "rank": post.rank.value,
         },
         ensure_ascii=False,
         indent=2,
@@ -505,7 +554,7 @@ def _parse(text: str) -> _Queued | None:
 
     Pliki od #665 do #840 mogą mieć numer issue Uwagi taty (``issue``) i kolejka go pomija: issue wysyłki znajduje po
     znaczniku, a Uwaga ma jedną część, więc żadna jej próba nie zostawiła issue bez całej treści. Pliki schematu 1 i 2
-    nie mają pliku do Archiwum.
+    nie mają pliku do Archiwum. Stopień wersji (``rank``) jest opcjonalny: pliki sprzed #910 go nie mają i mają ``OWN``.
     """
 
     try:
@@ -528,6 +577,7 @@ def _parse(text: str) -> _Queued | None:
             _optional_string(document["header"]),
             tuple(_string(part) for part in document["parts"]),
             archive,
+            _rank(document.get("rank", Rank.OWN.value)),
         )
         delivered_parts = document.get("delivered_parts", 0)
     except (ValueError, KeyError, TypeError):
@@ -535,6 +585,14 @@ def _parse(text: str) -> _Queued | None:
     if type(delivered_parts) is not int or not 0 <= delivered_parts <= len(post.parts) or type(archived) is not bool:
         return None
     return _Queued(post, delivered_parts, archived)
+
+
+def _rank(entry: object) -> Rank:
+    """Stopień wersji z pliku kolejki; inna wartość niż numer stopnia to ``ValueError`` (plik nieczytelny)."""
+
+    if type(entry) is not int:
+        raise TypeError("stopień wersji")
+    return Rank(entry)
 
 
 def _archive_file(entry: object) -> ArchiveFile | None:
@@ -649,40 +707,46 @@ Failure = Refused | Rejected | Unreachable | NoKey
 
 
 def _version(path: Path) -> str:
-    """Wersja wysyłki z pliku ``path``: chwila i numer z początku nazwy (``Outbox.post``), w porządku kolejki.
+    """Chwila i numer z początku nazwy pliku ``path`` (``Outbox.post``), w porządku kolejki.
 
-    W jednej pracy Centrum rośnie z każdą wysyłką także po cofnięciu zegara komputera (``Outbox.post``).
+    W jednej pracy Centrum rosną z każdą wysyłką także po cofnięciu zegara komputera (``Outbox.post``).
     """
 
     return "-".join(path.stem.split("-")[:2])
 
 
-def _mark(post: Post, part: int, version: str) -> str:
+def _version_of(path: Path, post: Post) -> Version:
+    """Wersja wysyłki ``post`` z pliku ``path``: jej stopień, potem chwila i numer z nazwy pliku."""
+
+    return Version(post.rank, _version(path))
+
+
+def _mark(post: Post, part: int, version: Version) -> str:
     """Znacznik części ``part`` (0: nagłówek) wysyłki ``post`` w wersji ``version``; GitHub go nie pokazuje."""
 
-    return f"{_MARK_START}{post.target.label} {post.run_id} część {part} wersja {version} -->"
+    return f"{_MARK_START}{post.target.label} {post.run_id} część {part} wersja {version.text} -->"
 
 
 Marked = tuple[int, str]
 """Część wysyłki (0: nagłówek) i jej tekst ze znacznikiem."""
 
 
-def _marked(text: str, post: Post, part: int, version: str) -> Marked:
+def _marked(text: str, post: Post, part: int, version: Version) -> Marked:
     """Część ``part`` i jej tekst ze znacznikiem w ostatniej linii."""
 
     return part, f"{text}\n{_mark(post, part, version)}"
 
 
-def _marks(text: str, post: Post) -> Iterator[tuple[int, str]]:
+def _marks(text: str, post: Post) -> Iterator[tuple[int, Version]]:
     """Część i wersja każdego znacznika wysyłki ``post`` w ``text``; linia w innej postaci znacznikiem nie jest."""
 
     start = f"{_MARK_START}{post.target.label} {post.run_id} "
     for line in text.splitlines():
         if line.startswith(start) and (found := _MARK_REST.fullmatch(line.removeprefix(start))):
-            yield int(found.group(1)), found.group(2)
+            yield int(found.group(1)), Version.of(found.group(2))
 
 
-def _opening(post: Post, version: str, *, note: str = "") -> tuple[Marked, tuple[Marked, ...]]:
+def _opening(post: Post, version: Version, *, note: str = "") -> tuple[Marked, tuple[Marked, ...]]:
     """``Post.opening`` ze znacznikami: treść nowego issue i komentarze po niej; ``note`` kończy tekst każdej części."""
 
     body, comments = post.opening()
@@ -694,7 +758,7 @@ def _opening(post: Post, version: str, *, note: str = "") -> tuple[Marked, tuple
     )
 
 
-def _deliver(post: Post, version: str, box: KeyedBox, *, archive_open: bool) -> Delivered | Gone | Failure:
+def _deliver(post: Post, version: Version, box: KeyedBox, *, archive_open: bool) -> Delivered | Gone | Failure:
     """Wysyłka w wersji ``version`` do jej celu; ``archive_open`` ``False``: Archiwum odmówiło w tym przejściu."""
 
     match post.target:
@@ -710,7 +774,7 @@ def _deliver(post: Post, version: str, box: KeyedBox, *, archive_open: bool) -> 
             assert_never(post.target)
 
 
-def _deliver_new_issue(post: Post, version: str, issue: NewIssue, box: KeyedBox) -> Delivered | Failure:
+def _deliver_new_issue(post: Post, version: Version, issue: NewIssue, box: KeyedBox) -> Delivered | Failure:
     """Issue z treścią ze znacznikiem tej wysyłki (także zamknięte) albo nowe z pierwszą częścią; reszta komentarzami.
 
     Takie issue założyła przerwana próba tej wysyłki (zerwane połączenie, zgaśnięcie Centrum przed znacznikiem
@@ -730,7 +794,7 @@ def _deliver_new_issue(post: Post, version: str, issue: NewIssue, box: KeyedBox)
     return _comment_all(opened.number, comments, box)
 
 
-def _deliver_report(post: Post, version: str, report: ReportIssue, box: KeyedBox) -> Delivered | Failure:
+def _deliver_report(post: Post, version: Version, report: ReportIssue, box: KeyedBox) -> Delivered | Failure:
     """Nowe issue z jedyną częścią wysyłki albo komentarz z nią do otwartego Zgłoszenia z tym odciskiem.
 
     Jeden problem ma jedno otwarte Zgłoszenie: znalezione dostaje komentarz ``returned_report``. Wyjątkiem jest
@@ -752,7 +816,7 @@ def _deliver_report(post: Post, version: str, report: ReportIssue, box: KeyedBox
     return _settle(post, version, _issue(issues, found), (returned,), box)
 
 
-def _deliver_to_known(post: Post, version: str, known: KnownIssue, box: KeyedBox) -> Delivered | Gone | Failure:
+def _deliver_to_known(post: Post, version: Version, known: KnownIssue, box: KeyedBox) -> Delivered | Gone | Failure:
     """Każda część wysyłki komentarzem do issue ``known.number``, jeśli skrzynka je ma (otwarte albo zamknięte).
 
     Komentarz do issue, które Maks usunął, to 404, czyli odmowa, która zatrzymałaby całą kolejkę, więc kolejka
@@ -768,7 +832,7 @@ def _deliver_to_known(post: Post, version: str, known: KnownIssue, box: KeyedBox
 
 
 def _deliver_to_period(
-    post: Post, version: str, thread: PeriodThread, box: KeyedBox, *, archive_open: bool
+    post: Post, version: Version, thread: PeriodThread, box: KeyedBox, *, archive_open: bool
 ) -> Delivered | Failure:
     """Każda część jako komentarz do issue okresu, a bez niego nowe issue z pierwszą częścią i komentarze z resztą.
 
@@ -795,7 +859,7 @@ def _deliver_to_period(
     seen = _seen(post, issue, box)
     if not isinstance(seen, _Seen):
         return seen
-    if seen.newest > version:
+    if seen.newest is not None and seen.newest > version:
         return _newer(post, issue.number, seen, range(1, len(post.parts) + 1))
     step = _deliver_archive(post, version, box, archive_open=archive_open)
     if isinstance(step, Unreachable | NoKey):
@@ -814,7 +878,7 @@ def _archive_waits(outcome: Delivered | Failure, step: InArchive | ArchiveWaits)
 
 
 def _deliver_archive(
-    post: Post, version: str, box: KeyedBox, *, archive_open: bool
+    post: Post, version: Version, box: KeyedBox, *, archive_open: bool
 ) -> InArchive | ArchiveWaits | Unreachable | NoKey:
     """Plik wysyłki w Archiwum okresu w wersji ``version``, dokładnie raz; wysyłka bez pliku jest już w Archiwum.
 
@@ -851,18 +915,18 @@ def _deliver_archive(
     return InArchive() if isinstance(sent, Asset) else sent
 
 
-def _asset_label(archive: ArchiveFile, version: str) -> str:
-    """Etykieta pliku w Archiwum: jego nazwa i wersja wysyłki (``_version``), jak znacznik wysyłki w komentarzu."""
+def _asset_label(archive: ArchiveFile, version: Version) -> str:
+    """Etykieta pliku w Archiwum: jego nazwa i wersja wysyłki (``Version.text``), jak znacznik wysyłki w komentarzu."""
 
-    return f"{archive.packed_name} (wersja {version})"
+    return f"{archive.packed_name} (wersja {version.text})"
 
 
-def _asset_version(asset: Asset, archive: ArchiveFile) -> str | None:
+def _asset_version(asset: Asset, archive: ArchiveFile) -> Version | None:
     """Wersja wysyłki z etykiety pliku (``_asset_label``); etykieta w innej postaci to ``None``."""
 
     start, end = f"{archive.packed_name} (wersja ", ")"
     seen = asset.label.removeprefix(start).removesuffix(end)
-    return seen if asset.label == f"{start}{seen}{end}" and seen and " " not in seen else None
+    return Version.of(seen) if asset.label == f"{start}{seen}{end}" and seen and " " not in seen else None
 
 
 def _issue(issues: tuple[Issue, ...], number: int) -> Issue:
@@ -884,11 +948,11 @@ def _comment_all(number: int, comments: Sequence[Marked], box: KeyedBox) -> Deli
 @dataclass(frozen=True)
 class _Seen:
     """Znaczniki wysyłki w znalezionym issue: części w treści z wersją, pierwszy komentarz każdej części z wersją i
-    najnowsza wersja tej wysyłki w issue (pusta, gdy żadnej)."""
+    najnowsza wersja tej wysyłki w issue (``None``, gdy żadnej)."""
 
-    in_body: dict[int, str]
-    sent: dict[int, tuple[str, Comment]]
-    newest: str
+    in_body: dict[int, Version]
+    sent: dict[int, tuple[Version, Comment]]
+    newest: Version | None
 
 
 def _seen(post: Post, issue: Issue, box: KeyedBox) -> _Seen | Failure:
@@ -898,16 +962,16 @@ def _seen(post: Post, issue: Issue, box: KeyedBox) -> _Seen | Failure:
     if isinstance(found, Refused | Unreachable | NoKey):
         return found
     in_body = dict(_marks(issue.body, post))
-    newest = max(in_body.values(), default="")
-    sent: dict[int, tuple[str, Comment]] = {}
+    newest = max(in_body.values(), default=None)
+    sent: dict[int, tuple[Version, Comment]] = {}
     for comment in found:
         for part, seen in _marks(comment.body, post):
             sent.setdefault(part, (seen, comment))
-            newest = max(newest, seen)
+            newest = seen if newest is None else max(newest, seen)
     return _Seen(in_body, sent, newest)
 
 
-def _settle(post: Post, version: str, issue: Issue, comments: Sequence[Marked], box: KeyedBox) -> Delivered | Failure:
+def _settle(post: Post, version: Version, issue: Issue, comments: Sequence[Marked], box: KeyedBox) -> Delivered | Failure:
     """Części ``comments`` w istniejącym issue, każda dokładnie raz, z komentarzami issue przeczytanymi przed wysłaniem.
 
     Issue, które ma znacznik tej wysyłki w nowszej wersji (w treści albo w komentarzu), od tej wersji nie dostaje
@@ -918,7 +982,7 @@ def _settle(post: Post, version: str, issue: Issue, comments: Sequence[Marked], 
     seen = _seen(post, issue, box)
     if not isinstance(seen, _Seen):
         return seen
-    if seen.newest > version:
+    if seen.newest is not None and seen.newest > version:
         return _newer(post, issue.number, seen, (part for part, _ in comments))
     return _put_all(post, version, issue.number, comments, seen, box)
 
@@ -930,7 +994,7 @@ def _newer(post: Post, number: int, seen: _Seen, parts: Iterable[int]) -> Delive
 
 
 def _put_all(
-    post: Post, version: str, number: int, comments: Sequence[Marked], seen: _Seen, box: KeyedBox
+    post: Post, version: Version, number: int, comments: Sequence[Marked], seen: _Seen, box: KeyedBox
 ) -> Delivered | Failure:
     """Część ze znacznikiem w treści issue albo w komentarzu w tej wersji już jest; komentarz części w starszej wersji
     dostaje nowy tekst; reszta to nowe komentarze po kolei. Komentarz części, której ta wersja nie ma (nowsza wersja ma
@@ -955,7 +1019,9 @@ def _put_all(
     return Delivered(number, tuple(delivered))
 
 
-def _put(number: int, sent: tuple[str, Comment] | None, text: str, version: str, box: KeyedBox) -> Commented | Failure:
+def _put(
+    number: int, sent: tuple[Version, Comment] | None, text: str, version: Version, box: KeyedBox
+) -> Commented | Failure:
     """Komentarz części: nowy, gdy go nie ma, nowy tekst w komentarzu starszej wersji, a inaczej ten, który już jest."""
 
     if sent is None:
@@ -973,18 +1039,19 @@ def _kept(comment: Comment) -> Commented:
 
 
 def _superseded(read: Mapping[Path, _Queued | None]) -> frozenset[Path]:
-    """Pliki przejścia, za którymi jest czytelny plik nowszej wersji tej samej wysyłki: ten sam cel i ``run_id``, a
-    nazwa dalej w porządku kolejki (``_version``)."""
+    """Pliki przejścia, gdy przejście ma czytelny plik nowszej wersji tej samej wysyłki (ten sam cel i ``run_id``,
+    ``Version``): przed nimi albo za nimi w porządku kolejki, bo wersja zastępcza ze startu Centrum powstaje po Logach z
+    wynikiem, a jest od nich starsza."""
 
-    newest: dict[tuple[Target, str], Path] = {}
-    for path in sorted(read):
-        queued = read[path]
+    newest: dict[tuple[Target, str], tuple[Version, Path]] = {}
+    for path, queued in read.items():
         if queued is not None:
-            newest[queued.post.target, queued.post.run_id] = path
+            key, mine = (queued.post.target, queued.post.run_id), (_version_of(path, queued.post), path)
+            newest[key] = max(newest.get(key, mine), mine)
     return frozenset(
         path
         for path, queued in read.items()
-        if queued is not None and newest[queued.post.target, queued.post.run_id] != path
+        if queued is not None and newest[queued.post.target, queued.post.run_id][1] != path
     )
 
 
@@ -1241,7 +1308,7 @@ class Outbox:
                 continue
             label, period = post.target.label, post.period
             if queued.commented:
-                step = _deliver_archive(post, _version(path), self._box, archive_open=not self._archive_refused)
+                step = _deliver_archive(post, _version_of(path, post), self._box, archive_open=not self._archive_refused)
                 if isinstance(step, Unreachable | NoKey):
                     self._stop(label, period, _waiting(step)[0])
                     return
@@ -1252,7 +1319,7 @@ class Outbox:
                 self._log.box_post_archived(label=label, period=period)
                 self._mark_delivered(path, post)
                 continue
-            outcome = _deliver(post, _version(path), self._box, archive_open=not self._archive_refused)
+            outcome = _deliver(post, _version_of(path, post), self._box, archive_open=not self._archive_refused)
             if isinstance(outcome, Gone):
                 self._log.box_post_dropped(label=label, file=path.name, number=outcome.number)
                 self._remove(path)
