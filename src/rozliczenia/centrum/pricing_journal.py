@@ -269,7 +269,8 @@ class InterruptedPricings:
             record = self._run_logs.interrupted(
                 started, ended_at=read.last_at, orders=read.orders, interruption=read.interruption
             )
-        # Strażnik reguły danych (ADR 0025) przed plikiem i przed wysyłką: plik i komentarz mają te same znaki.
+        # Strażnik reguły danych (ADR 0025) przed plikiem i przed wysyłką: plik i plik w Archiwum Logów okresu mają te
+        # same znaki.
         record = self._run_logs.guard(record)
         try:
             self._run_logs.close(record)

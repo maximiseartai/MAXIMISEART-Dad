@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import gzip
 import json
 from pathlib import Path
 import re
@@ -18,8 +19,8 @@ FEATURE = "logi-uruchomienia"
 LABEL = "logi-uruchomienia"
 # Synthetic key Maks would write; it must never reach the skrzynka, the log, an answer, or the browser.
 KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ_LOGOW"
-# The JSON of the Logi at the end of a comment, inside its <details> block.
-JSON_PART = re.compile(r"\n````json\n(.*)\n````\n\n</details>\n\Z", re.DOTALL)
+# The last line of a comment: the link to the file of its full Logi in the Archiwum Logów okresu (a GitHub Release).
+LINK = re.compile(r"- Pełne Logi: \[(?P<name>[^\]]+)\]\(https://github\.com/[^/]+/[^/]+/releases/download/(?P<tag>[^/]+)/(?P=name)\)")
 # Centrum logs to <root>/logs/centrum-rozliczen.log, so the Logi Uruchomienia are next to it (ADR 0015).
 LOGS = "logs/uruchomienia"
 MODES = {"DRY-RUN": "podgląd", "RUN": "zapis"}
@@ -130,6 +131,14 @@ def _threads(run: Run) -> list[Json]:
     return sorted((issue for issue in issues if issue["labels"] == [LABEL]), key=lambda issue: int(issue["number"]))
 
 
+def _archived(run: Run, tag: str, name: str) -> bytes:
+    """The file ``name`` of the Archiwum ``tag`` in the run's skrzynka, unpacked byte for byte; empty when the Archiwum
+    lacks it."""
+
+    path = run.root / "skrzynka-archiwum" / tag / name
+    return gzip.decompress(path.read_bytes()) if path.is_file() else b""
+
+
 def _ended_in_centrum_log(run: Run) -> list[tuple[str, str, str, str, str]]:
     ended = []
     for line in (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8").splitlines():
@@ -236,7 +245,8 @@ def drive_run_logs(run: Run, page: Page) -> None:
         run.wait_for(lambda: _queued_logs(run) == [], "every Logi waiting in the queue reaches the skrzynka", timeout_s=60)
     finally:
         key_file.unlink()
-    files = sorted(path.read_text(encoding="utf-8") for path in (run.root / LOGS).glob("*.json"))
+    # Bytes, not text: reading text turns the \r\n of a file written in text mode on Windows back into \n.
+    files = sorted(path.read_bytes() for path in (run.root / LOGS).glob("*.json"))
     threads = _threads(run)
     (run.evidence / "api" / "logi-skrzynka.json").write_text(
         json.dumps(
@@ -258,22 +268,37 @@ def drive_run_logs(run: Run, page: Page) -> None:
         f"the skrzynka has one issue labelled {LABEL} per period with Uruchomienia: {', '.join(periods)}",
     )
     comments = [(thread["title"], comment) for thread in threads for comment in thread.get("comments", [])]
-    sent = [(title, part.group(1) if (part := JSON_PART.search(comment)) else comment) for title, comment in comments]
-    by_run: dict[str, list[str]] = {}
-    for _, text in sent:
-        by_run.setdefault(json.loads(text)["run_id"], []).append(text)
+    links = [(title, LINK.fullmatch(comment.rstrip("\n").splitlines()[-1])) for title, comment in comments]
+    run.check(
+        all(link is not None for _, link in links),
+        "each comment ends with the link to its full Logi in the Archiwum Logów okresu",
+    )
+    sent = [(title, link["tag"], _archived(run, link["tag"], link["name"])) for title, link in links if link is not None]
+    by_run: dict[str, list[bytes]] = {}
+    for _, _, text in sent:
+        by_run.setdefault(json.loads(text)["run_id"] if text else "", []).append(text)
     local = {json.loads(text)["run_id"]: text for text in files}
     run.check(
         sorted(by_run) == sorted(local) and all(texts[-1] == local[run_id] for run_id, texts in by_run.items()),
-        f"each of the {len(files)} files of Logi is the newest comment of its Uruchomienie, character for character",
+        f"each of the {len(files)} files of Logi is, unpacked, the file in the Archiwum its comment links, byte for byte",
     )
     run.check(
         all(len(texts) == 1 for texts in by_run.values()),
-        "each Uruchomienie is one comment, also after a Diagnoza, which changes that comment",
+        "each Uruchomienie is one comment, also after a Diagnoza, which changes that comment and its file",
     )
     run.check(
-        all(title == f"Logi Uruchomienia {json.loads(text)['period']}" for title, text in sent),
-        "each comment is in the issue of its own period",
+        all(
+            (title, tag) == (f"Logi Uruchomienia {json.loads(text)['period']}", f"logi-{json.loads(text)['period']}")
+            for title, tag, text in sent
+            if text
+        ),
+        "each comment is in the issue of its own period and links the Archiwum of that period",
+    )
+    listed = json.loads((run.root / "skrzynka-archiwum" / "archiwa.json").read_text(encoding="utf-8"))
+    run.check(
+        sorted(archive["tag"] for archive in listed) == [f"logi-{period}" for period in periods]
+        and sum(len(archive["assets"]) for archive in listed) == len(files),
+        f"the skrzynka has one Archiwum Logów okresu per period with Uruchomienia and one file per Uruchomienie: {len(files)}",
     )
     run.check(
         all(comment.startswith("**Logi Uruchomienia**: ") for _, comment in comments),

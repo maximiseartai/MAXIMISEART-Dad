@@ -1,6 +1,6 @@
 ---
 name: verify-kolejka-skrzynki
-description: Exhaustively check that the Kolejka Skrzynki Zgłoszeń (`Outbox` in `src/rozliczenia/centrum/outbox.py`) delivers every part of every wysyłka (Zgłoszenie, Kontrola ilości, Logi Uruchomienia, Uwaga taty) exactly once, lets a newer version of a wysyłka (Logi Uruchomienia after a Diagnoza) change its comments while an older one that arrives after it changes nothing, keeps one issue per problem and per period, and empties the queue, under every order of network failures, answers lost after the Skrzynka acted, file errors and a killed Centrum. Use when a change touches `_deliver*`, `_settle`, `_put`, `_mark`, `_marks`, `_version`, `Outbox.post`, `_comment_all`, `_waiting`, `Outbox._drain`, `_send_all`, `_remove`, `resume`, the folder lock (`_folder_lock`) or the delivery marker in `outbox.py`, the box calls in `keyed_box.py` or `newest_with_line` in `report_box.py`, `replace_atomically` in `atomic_file.py`, adds a new `Target`, or when `explore_outbox.py` or `sprawdz_model_kolejki.py` fails. A TLA+ model of the same queue (TLC) adds the interleavings the checker leaves out (a wysyłka posted during a pass, the `RETRY_S` wake, two queues of one folder in `_claimed` and in the folder lock, a second Centrum whose port the old one already released, a switch-off at the temporary file and at the rename, and an older version of a wysyłka sent after a newer one).
+description: Exhaustively check that the Kolejka Skrzynki Zgłoszeń (`Outbox` in `src/rozliczenia/centrum/outbox.py`) delivers every part of every wysyłka (Zgłoszenie, Kontrola ilości, Logi Uruchomienia, Uwaga taty) and the file of the Logi in the Archiwum Logów okresu exactly once, lets a newer version of a wysyłka (Logi Uruchomienia after a Diagnoza) change its comments while an older one that arrives after it changes nothing, keeps one issue per problem and per period, and empties the queue, under every order of network failures, answers lost after the Skrzynka acted, file errors and a killed Centrum. Use when a change touches `_deliver*` (also `_deliver_archive`, `_asset_label`, `_asset_version`), `_settle`, `_seen`, `_put_all`, `_put`, `_mark`, `_marks`, `_version`, `Outbox.post`, `_comment_all`, `_waiting`, `Outbox._drain`, `_send_all`, `_archive_waits`, `_remove`, `resume`, the folder lock (`_folder_lock`) or the delivery marker in `outbox.py`, the box calls in `keyed_box.py` (also `archive`, `open_archive`, `upload`, `remove`) or `newest_with_line` in `report_box.py`, `replace_atomically` in `atomic_file.py`, adds a new `Target`, or when `explore_outbox.py` or `sprawdz_model_kolejki.py` fails. A TLA+ model of the same queue (TLC) adds the interleavings the checker leaves out (a wysyłka posted during a pass, the `RETRY_S` wake, two queues of one folder in `_claimed` and in the folder lock, a second Centrum whose port the old one already released, a switch-off at the temporary file and at the rename, and an older version of a wysyłka sent after a newer one).
 pilnuje:
   - src/rozliczenia/centrum/outbox.py
   - src/rozliczenia/centrum/keyed_box.py
@@ -11,7 +11,7 @@ pilnuje:
   - src/rozliczenia/centrum/server.py
   - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
 ci: .agents/skills/verify-kolejka-skrzynki/scripts/sprawdz_kolejke.py
-ci-czesci: 2
+ci-czesci: 3
 ---
 
 # Verify Kolejka Skrzynki Zgłoszeń
@@ -21,11 +21,13 @@ ci-czesci: 2
 CI runs `sprawdz_kolejke.py` (the `ci:` key) in Mutation checks whenever a change touches this skill:
 it runs the checker of the real code (`explore_outbox.py`) and the TLA+ model (`sprawdz_model_kolejki.py`, TLC,
 as the `ci:` of `verify-aktualizacja-narzedzia` does), each to its end. Its units (`UNITS` in
-`sprawdz_kolejke.py`) are the scope `watek-okresu`, the scopes `diagnoza` and `diagnoza-odczyt` together, the other
-four scopes, and the model; CI runs them in up to `ci-czesci` parts (`MUTACJE_CZESC=k/n`, consecutive units per part).
-On Maks's Mac (2026-11-04) `watek-okresu` takes about 22 s, `diagnoza` and `diagnoza-odczyt` about 9 s each, the other
-four scopes together about 8 s and the model about 18 s, so with two parts the first runs the two longest units and
-the second the rest and the model. A
+`sprawdz_kolejke.py`) are the scopes `archiwum` and `archiwum-diagnoza` together, the scope `watek-okresu`, the scopes
+`diagnoza`, `diagnoza-odczyt` and `archiwum-puste-repo` together, the other four scopes, and the model; CI runs them in
+up to `ci-czesci` parts (`MUTACJE_CZESC=k/n`, consecutive units per part). On Maks's Mac (2026-11-04) the two scopes of
+the Archiwum take about 53 s together, `watek-okresu` about 22 s, `diagnoza`, `diagnoza-odczyt` and
+`archiwum-puste-repo` about 37 s together, the other four scopes together about 8 s and the model about 45 s, so with
+three parts the first runs the scopes of the Archiwum, the second the next two units and the third the rest and the
+model. A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`. The model unit
 fails with `MODEL KOLEJKI: ROZJAZD MODELU Z KODEM` when covered code changed since the Sync commit,
 but it cannot tell whether a change to the model is right. `check_outbox_mutations.py` and
@@ -49,8 +51,18 @@ or modeling error?” say also stays with you.
   dokładnie raz”. Harm: a missing part means Maks never sees the rest of Logi
   Uruchomienia, a Kontrola ilości or a Zgłoszenie, and nobody knows it is
   missing, because the queue file is gone; a part twice fills the issue okresu
-  with copies and breaks the JSON that the parts of Logi join into; an older
-  version left means Maks reads Logi without their Diagnoza.
+  with copies; an older version left means Maks reads Logi without their
+  Diagnoza. A wysyłka with a file for the Archiwum Logów okresu (`ArchiveFile`,
+  #844) has exactly one whole file of its name in the Archiwum (GitHub Release)
+  of its tag, with the text of its newest version, and the queue never removed a
+  whole file of its version or a newer one to send it again. Harm: the link in
+  the comment leads nowhere or to Logi without their Diagnoza. While the
+  Archiwum refuses until Maks changes something (a repository without a commit,
+  where GitHub answers 409 to every new Release), the file waits in the queue
+  with the marker of its parts, and every part of every wysyłka still arrives: a
+  refusal of the Archiwum stops only the file, never the wysyłki after it (#860).
+  Harm: a Zgłoszenie or an Uwaga taty behind the Logi waits until Maks adds a
+  commit, and Dad's card says it waits for the internet.
 - **JEDNO_ISSUE**: one problem has one open Zgłoszenie, one period has one issue
   okresu, and one Uwaga taty opens one issue. Harm: Maks gets the same problem
   in several issues, and the Powiadomienie follows only one of them.
@@ -91,7 +103,24 @@ or in a comment in this version, is not sent again; a comment of the part in an
 older version gets this version's text (`_put`, `edit_comment`); every other part
 is a new comment, in order; and a comment of a part this version no longer has
 gets `_RETIRED`, unless it has it from this version already. A `NewIssue` finds
-its issue by the mark in the body (`_deliver_new_issue`). So a Diagnoza, which
+its issue by the mark in the body (`_deliver_new_issue`).
+
+A wysyłka to an issue okresu may carry a file for the Archiwum Logów okresu
+(`Post.archive`, only with one part: the Logi Uruchomienia). It goes right before
+the parts (`_deliver_archive`), in a found issue only when the issue has no newer
+version of the wysyłka (`_seen`, `_newer`). The queue finds the Archiwum by its tag
+(`archive`) or opens it (`open_archive`); the label of each file carries the version
+of its wysyłka (`_asset_label`, `_asset_version`), so a file of this version or a
+newer one stays, and a file of an older version, or one whose upload broke off
+(`uploaded` false), is removed (`remove`) right before this version is uploaded
+(`upload`). GitHub keeps one file of one name, so an upload over a file that is
+there is `Rejected`. A refusal of any step of the Archiwum (`Refused`: a key
+without the permission to write the repository's contents, or `Rejected`, also
+GitHub's 409 to a new Release in a repository without a commit, which
+`GitHubReportBox.open_archive` reads as `Rejected`) is `ArchiveWaits`: the parts go with `_waiting_note`, the queue file gets the marker
+of its parts only (`delivered_parts`, `archived` false), and the pass asks the
+Archiwum no more (`_archive_refused`) and arms the `RETRY_S` wake. Such a file
+later goes only through `_deliver_archive`, without reading the issue. So a Diagnoza, which
 queues the Logi Uruchomienia again with the same identifier, changes the comment
 of its Uruchomienie, and an older queue file that arrives after a newer one
 (read once with an `OSError`) changes and adds nothing, even when it has more
@@ -109,19 +138,24 @@ step of this code that the checker can fail, lose or kill:
 
 | Step in the checker | Code |
 | --- | --- |
-| a box read | `keyed_box.py` `KeyedBox.labelled_issues` (with `newest_with_line` and the body of the issue found), called by `_deliver_report`, `_deliver_to_period`, `_deliver_to_known` and `_deliver_new_issue` in `outbox.py`, and `KeyedBox.comments`, called by `_settle` |
-| a box write | `KeyedBox.open_issue`, `comment` and `edit_comment`, called by `_deliver_new_issue`, `_deliver_report`, `_deliver_to_period`, `_comment_all` and `_settle` (`_put`, `_RETIRED`; also the one comment of a Zgłoszenie that returned) |
+| a box read | `keyed_box.py` `KeyedBox.labelled_issues` (with `newest_with_line` and the body of the issue found), called by `_deliver_report`, `_deliver_to_period`, `_deliver_to_known` and `_deliver_new_issue` in `outbox.py`, and `KeyedBox.comments`, called by `_seen` (`_settle`, `_deliver_to_period`) |
+| a box write | `KeyedBox.open_issue`, `comment` and `edit_comment`, called by `_deliver_new_issue`, `_deliver_report`, `_deliver_to_period`, `_comment_all` and `_put_all` (`_put`, `_RETIRED`; also the one comment of a Zgłoszenie that returned) |
+| a read of the Archiwum | `KeyedBox.archive` in `_deliver_archive`: it answers, the network fails, the key lacks the permission (GitHub's 403, as the real `GitHubReportBox` reads it), or the process dies |
+| a write to the Archiwum | `KeyedBox.open_archive`, `remove` and `upload` in `_deliver_archive`: as a box write, or refused (GitHub's 403 through the real `GitHubReportBox`); an upload may also break off in the middle of the file, which leaves it not whole (`uploaded` false), counted as a network failure; in a repository without a commit (`archiwum-puste-repo`) every `open_archive` GitHub answers gets 409, which `GitHubReportBox.open_archive` reads |
 | a read of a queue file | `Outbox._send_all`: `_queued`, whose `OSError` (`read_text`) sets `_read_failed` and skips the file to the `RETRY_S` wake; it fails only in a scope with a read bound (`diagnoza-odczyt`) |
 | the delivery marker | `Outbox._send_all`: `replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts)))` in `suppress(OSError)` |
 | the removal of a queue file | `Outbox._remove` (`path.unlink`, `_undeleted`) |
 | a pass of the queue | `Outbox._drain` (`_claimed`, `_folder_lock`, `_send_all`, `_released`), run only when the real `Outbox.send_in_background` starts the queue thread (called by `Outbox.post`, `Outbox.resume` and `Outbox._woken`); the checker replaces only `threading.Thread` in `outbox.py`, which hands it the target, and runs one Centrum at a time, so the pass always gets the folder lock |
-| the `RETRY_S` wake | `Outbox._drain`: `self._clock.after(RETRY_S, self._woken)` when `_stopped_on`, `_read_failed` or `_locked_out` is set and no wake is armed; the checker calls an armed wake when nothing else asked for a pass, and a restart drops it with its process |
+| the marker of the parts | `Outbox._send_all` after `Delivered` with `archive_waits`: `_archive_waits`, then `replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts), archived=False))` in `suppress(OSError)` |
+| the `RETRY_S` wake | `Outbox._drain`: `self._clock.after(RETRY_S, self._woken)` when `_stopped_on`, `_read_failed`, `_archive_refused` or `_locked_out` is set and no wake is armed; the checker calls an armed wake when nothing else asked for a pass, and a restart drops it with its process |
 | a restart of Centrum | a new `Outbox` and `KeyedBox` on the same folder, then `Outbox.resume` |
 
 Covered files: `src/rozliczenia/centrum/outbox.py`,
 `src/rozliczenia/centrum/keyed_box.py`, in
 `src/rozliczenia/centrum/report_box.py` `newest_with_line`, by which
-the queue finds the issue of a Zgłoszenie or a period, and
+the queue finds the issue of a Zgłoszenie or a period, and the reading of
+GitHub's answers to the steps of the Archiwum in `GitHubReportBox`, which the
+checker takes from the real adapter (`_github` in `explore_outbox.py`), and
 `src/rozliczenia/centrum/atomic_file.py` `replace_atomically`, which writes
 every queue file and its marker (the model only). The model's `Start`, `Zamknij`
 and `KoniecProcesu`, which let an old and a new Centrum process share the queue
@@ -132,8 +166,33 @@ and `_Server` in `server.py` (`DEFINITIONS` in `sprawdz_model_kolejki.py`). Only
 rest of their files, is drift. Name these three files here without their
 `src/…` path in backticks: such a path makes the whole file covered.
 
-**Sync commit: `83ed9ab9`** (2026-11-04). The checker and the model share it:
+**Sync commit: `6cc9e712`** (2026-11-05). The checker and the model share it:
 at this commit both were confirmed to describe the code above. Since the
+previous sync `50fd9abb` only `6cc9e712` (round 2 of #860) changed a covered
+file: `GitHubReportBox.open_archive` reads GitHub's 409 to a new Release in a
+repository without a commit as `Rejected` instead of `Unreachable`, so the
+refusal is `ArchiveWaits` and stops only the file, not the pass; and
+`replace_atomically` got `newline`, which only the file of the Logi passes
+(`run_logs.py`), so the queue files it writes are as before. The checker got
+`_github` (every refusal of the Archiwum is GitHub's answer read by the real
+`GitHubReportBox`), `Scope.empty_repository` and the scope
+`archiwum-puste-repo`; the model got `PusteRepo`, `OdmowaPustegoRepo`, the
+configuration `puste-repo` and the clause of `Zbieganie` that only a file with
+the marker of its parts may stay while the Archiwum never comes. Both mutation
+scripts follow. At `50fd9abb`, since the
+previous sync `83ed9ab9` only `50fd9abb` (#844) changed a covered file: a
+wysyłka to an issue okresu may carry a file for the Archiwum Logów okresu
+(`ArchiveFile`), which `_deliver_archive` sends before the parts with the new box
+calls `archive`, `open_archive`, `remove` and `upload` of `KeyedBox`; `_settle`
+split into `_seen`, `_newer` and `_put_all`; the queue file got schema 3 with
+`archive` and `archived` and the marker of the parts; and `_drain` arms the wake
+after `_archive_refused`. The checker got the Archiwum in `MemoryBox` with its
+faults (a refused step, an upload that breaks off), the rule of the Archiwum in
+DOKLADNIE_RAZ and the scopes `archiwum` and `archiwum-diagnoza`; the model got
+`archiwum`, `wydania`, the file state `"skomentowany"`, the actions
+`CzytajArchiwum`, `ZalozArchiwum`, `UsunPlik` and `WyslijPlik`, the ghost
+`podwojny`, the constants `Archiwum` and `MaxOdmowArchiwum` and the configuration
+`archiwum`. Both mutation scripts follow. At `83ed9ab9`, since the
 previous sync `ca90b709` only `83ed9ab9` (#840, round 1 of #849) changed a covered
 file: `_settle` sends, changes and retires nothing when the issue has a mark of
 the wysyłka in a newer version, and `Outbox.post` gives every queue file a moment
@@ -202,15 +261,16 @@ them, `6f94edb8` was the sync of both, and since the checker's earlier sync
 model describes. To see whether they need another look:
 
 ```bash
-git log --oneline 83ed9ab9..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
+git log --oneline 6cc9e712..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
 ```
 
 A change to the three definitions above shows as a `UWAGA:` line of
 `sprawdz_model_kolejki.py` (in CI as the drift verdict).
 Read each listed commit against this table and the model's table below. A change matters when it adds,
 removes or reorders a box call, changes what a retry does with an issue it
-finds, changes how a text carries its mark or how `_settle` reads one, changes when the marker is written or the file removed, changes which
-failure stops a pass (`_waiting`), or adds a `Target`. A new `Target` also needs
+finds, changes how a text carries its mark or how `_settle` reads one, changes how a file in the Archiwum carries
+its version or when it is removed and uploaded, changes when the marker is written or the file removed, changes which
+failure stops a pass (`_waiting`), or adds a `Target` or a field of `Post` that goes to the Skrzynka. A new `Target` also needs
 a scope in `SCOPES` and a branch in `_check` in `explore_outbox.py`. Changes to
 the text of a wysyłka, the log lines, the `Listener`, `delivered`, `wait_delivered`
 and the addresses file do not matter here. Move the sync commit forward only
@@ -252,6 +312,13 @@ the checker picks one option:
   network fails before the Skrzynka sees it, the Skrzynka accepts it and the
   answer is lost (`Unreachable` after the effect, as a timed-out POST or PATCH to
   GitHub), or the process dies before it;
+- a read of the Archiwum (`archive`) or a write to it (`open_archive`, `remove`,
+  `upload`): as a box read or write, or the step is refused (GitHub's 403, in a
+  scope with a refusal bound); an upload may also break off in the middle of the
+  file, which leaves it in the Archiwum not whole. In a scope whose repository
+  has no commit, every `open_archive` GitHub answers is its 409. The checker
+  hands each refusal to the real `GitHubReportBox` (`_github`), so the outcome
+  the queue gets is the code's reading of GitHub's answer;
 - the marker or the removal: it works, raises `OSError` (Windows, antivirus or
   OneDrive holding the file), or the process dies before it;
 - a read of a queue file, in a scope with a read bound: it works or raises
@@ -264,7 +331,16 @@ the checker picks one option:
   is left.
 
 Bounds in every scope: at most 2 network failures, 1 lost answer, 1 file error
-and 1 killed or restarted Centrum; `diagnoza` runs with 1 network failure (with
+and 1 killed or restarted Centrum, and no refused step of the Archiwum;
+`archiwum` runs with 1 network failure (an upload that breaks off counts as one)
+and 1 refused step of the Archiwum (with 2 network failures it also passes,
+93 960 schedules in 188 s instead of 15 210 in 28 s on Maks's Mac on 2026-11-04),
+`archiwum-diagnoza` with no network failure, 1 lost answer, no file error, 1
+killed or restarted Centrum, 1 failed read of a queue file and 1 refused step of
+the Archiwum (with 1 network failure it took 366 s on Maks's Mac on
+2026-11-04), `archiwum-puste-repo` with 1 network failure, 1 lost answer, 1 file
+error and 1 killed or restarted Centrum, and an Archiwum that refuses every time
+(5 337 schedules in 15 s on Maks's Mac on 2026-11-04); `diagnoza` runs with 1 network failure (with
 2 it also passes, in 51 s instead of 9 s on Maks's Mac on 2026-11-04, and would be
 the longest unit in CI), and `diagnoza-odczyt` with 1 network failure, 1 lost
 answer, 1 failed read of a queue file, 1 killed or restarted Centrum and no file
@@ -289,9 +365,15 @@ it leaves out and why.
 | `znane-issue` | a comment in two parts to the existing issue of an Uwaga taty (`KnownIssue`) |
 | `diagnoza` | Logi Uruchomienia (`PeriodThread` with a header) in two parts, then their Diagnoza, a newer version of the same wysyłka in one part: it changes part 1 and retires part 2 |
 | `diagnoza-odczyt` | the same Logi and Diagnoza, and the Logi's queue file can be unreadable once: the Diagnoza goes first, and the Logi that arrive after it change and add nothing |
+| `archiwum` | Logi Uruchomienia in one comment with a file for the Archiwum Logów okresu (`PeriodThread` with a header and `archive`): the file goes before the comment, and a refused step of the Archiwum leaves the file in the queue and the comment with its note |
+| `archiwum-diagnoza` | those Logi and their Diagnoza, a newer version that replaces the file (`remove`, then `upload`) and changes the comment; the older queue file can be unreadable once, arrives after the newer one and changes nothing |
+| `archiwum-puste-repo` | those Logi and after them a Zgłoszenie, in a repository without a commit: GitHub answers 409 to every `open_archive`, so the Logi file waits in the queue with the marker of its parts, while the comment of the Logi and the Zgłoszenie arrive |
 
 Not covered: a key that is missing or refused (`NoKey`, `Refused`: the pass
-stops, nothing is sent, and `KeyedBox` keeps a refusal for `REFUSED_KEPT_S`),
+stops, nothing is sent, and `KeyedBox` keeps a refusal for `REFUSED_KEPT_S`), a
+step of the Archiwum `Rejected` for its content (it is `ArchiveWaits` like a
+refusal, which the scopes of the Archiwum check), the Archiwum of another period,
+Maks deleting the Archiwum or a file in it,
 content the Skrzynka rejects (`Rejected`: the file waits for the next start,
 and the same content would be rejected again), Maks closing or deleting an
 issue (`Gone`, `closed="reuse"`; after Maks closed the issue of a Kontrola
@@ -369,6 +451,17 @@ with `MUTACJE OK`. Each of these gives `KOLEJKA: NOWE NARUSZENIE`:
 - an older version that arrives after a newer one and adds its part, `_settle`
   without the check of a newer version (`diagnoza-odczyt`);
 - an Uwaga taty that does not look for its issue by the mark (`nowe-issue`);
+- a file in the Archiwum without the check of the version in its label: the queue removes its own whole file and
+  sends it again (`archiwum`);
+- a file whose upload broke off taken as sent, without `uploaded` (`archiwum`);
+- a wysyłka without the step of the Archiwum (`archiwum`);
+- a file of an older version that is not removed before the upload of the newer one (`archiwum-diagnoza`);
+- an older version that arrives after a newer one and replaces its file (`seen == version`, `archiwum-diagnoza`);
+- a file the Archiwum refused that gets the whole marker and leaves the queue (`archiwum`);
+- a refusal of the Archiwum that arms no `RETRY_S` wake (`archiwum`);
+- GitHub's 409 to a new Release in a repository without a commit read as `Unreachable`, as
+  `GitHubReportBox.open_archive` did before #860 r2, so the pass stops at the Logi and the Zgłoszenie after them never
+  arrives (`report_box.py`, `archiwum-puste-repo`);
 - a network failure that skips the file instead of stopping the pass;
 - an Uwaga taty that opens two issues;
 - no `RETRY_S` wake after a pass that stopped;
@@ -400,23 +493,29 @@ one.
 ### The model's promise
 
 - **JednoIssue**: one period and one problem of a Zgłoszenie have one issue,
-  a comment to a known issue opens none, and one Uwaga taty has one issue: a
-  retry finds the issue an interrupted attempt opened by the mark in its body.
-  Harm as JEDNO_ISSUE.
+  a comment to a known issue opens none, one Uwaga taty has one issue (a
+  retry finds the issue an interrupted attempt opened by the mark in its body),
+  and one period has one Archiwum Logów okresu (`wydania`). Harm as JEDNO_ISSUE.
 - **DokladnieRaz**: a queue file disappears or gets its delivery marker only
   when every part of it is in the Skrzynka, in its version or a newer one of
-  the same wysyłka (a file whose wysyłka has a newer version in the queue may
-  go without them), no part of any wysyłka is in the Skrzynka twice, in one
-  version or two, and once a version was sent no comment of an older version
-  of it is left. Harm as DOKLADNIE_RAZ.
+  the same wysyłka, with its file in the Archiwum (a file whose wysyłka has a
+  newer version in the queue may go without them), a queue file gets the marker
+  of its parts (`"skomentowany"`) only when every part is there, no part of any
+  wysyłka is in the Skrzynka twice, in one version or two, the Archiwum has at
+  most one file of a wysyłka, the queue never removes a file of its version or a
+  newer one to send it again (`podwojny`), and once a version was sent no
+  comment or file of an older version of it is left. Harm as DOKLADNIE_RAZ.
 - **CzesciWKolejnosci**: in every issue, part k > 1 of a wysyłka has part
   k-1 of the same wysyłka (in any version) before it, so the issue reads in
-  order. Harm: Logi Uruchomienia whose JSON blocks do not join into the file.
+  order. Harm: a Kontrola ilości or an Uwaga taty in several parts that does not read in order.
 - **Zbieganie** (liveness): once failures stop, no file without its marker
-  is left of a wysyłka that `post` wrote to the queue, except a file whose
+  (also none with the marker of its parts only) is left of a wysyłka that `post` wrote to the queue, except a file whose
   content the Skrzynka refused (`Rejected`, waits for the next start) or a
   sent file `_remove` could not delete (`_undeleted`, every part in the
-  Skrzynka). A file that was deleted, lost after `post` accepted it, or got
+  Skrzynka). In a repository without a commit (`PusteRepo`), whose Archiwum
+  never comes, a file with the marker of its parts may stay, but none without
+  it: a refusal of the Archiwum stops only the file, not the parts of this or the
+  next wysyłka. A file that was deleted, lost after `post` accepted it, or got
   its marker without every part breaks DokladnieRaz, so Zbieganie looks only at files without a marker,
   and every known finding breaks one promise. Harm as KOLEJKA_PUSTA.
 
@@ -425,7 +524,9 @@ Each element of an issue in the model is the mark of one text, `<<w, k>>`: part
 the queue files. With `Diagnoza` the wysyłka 2 is a newer version of the
 wysyłka 1 (`Id`) in `CzesciNowszej` parts: its comments replace theirs in place,
 as `edit_comment` does, and the comment of a part it lacks gets its mark, as
-`_RETIRED` does.
+`_RETIRED` does. `archiwum` is the files of the one Archiwum Logów okresu, each as
+the version `w` of the wysyłka it belongs to; GitHub's one file per name makes an
+upload over a file of the same wysyłka `Rejected`.
 
 ### Model action and code
 
@@ -437,24 +538,29 @@ The comment above each action and branch in the model names the same code.
 | `Start` | `app.py` `lifespan` → `outbox.py` `Outbox.resume`: unlink every `*.tmp` (also one that the old process still writes: its `post` returns `False`, its marker is lost), then `send_in_background`. Only a process with the port starts (`launcher.py` `listen_locally`); a second queue of one process starts while the first runs |
 | `Nadaj` | `outbox.py` `Outbox.post`: the name from the moment and `next(self._sequence)`, `replace_atomically` (`write_text` of `.json.tmp`, then `replace`; `OSError` → `False`, also the `FileNotFoundError` of `replace` when `resume` of a new process removed the `.tmp`), then `send_in_background` |
 | `Petla` | `Outbox._drain`: `_claimed` (taken → ask for another pass and skip `_send_all`), then `_folder_lock` without waiting (held by a queue of another process → `_locked_out` and skip `_send_all`), then `_read_failed = False` and `sorted(glob("*.json"))` in `_send_all` |
-| `Plik` | `Outbox._send_all` for one file: `_undeleted` → `_remove`, `_rejected` → skip, `_queued` (an `OSError` or a missing file → `_read_failed` and `_skip_unreadable`), `delivered` → `_remove`, else `_deliver`; the end of the list sets `_stopped_on = None` |
+| `Plik` | `Outbox._send_all` for one file: `_undeleted` → `_remove`, `_rejected` → skip, `_queued` (an `OSError` or a missing file → `_read_failed` and `_skip_unreadable`), `delivered` → `_remove`, `commented` → `_deliver_archive` alone, else `_deliver`; the end of the list sets `_stopped_on = None` |
 | `Szukaj` | `keyed_box.py` `KeyedBox.labelled_issues` (`report_box.py` `newest_with_line`) in `_deliver_to_period`, `_deliver_report` (a found Zgłoszenie gets the part as a comment `returned_report`), `_deliver_to_known` and `_deliver_new_issue` (the newest issue whose body has a mark of the wysyłka) |
-| `Czytaj` | `KeyedBox.comments` in `_settle`, then its plan: nothing when the issue has a mark of the wysyłka in a newer version (`Nowsza`); otherwise a part with its mark in the body, or in its first comment in this version or a newer one, is skipped (a Zgłoszenie whose body has the mark of its part is `Delivered(found, ())`), a comment in an older version is changed, the rest is a new comment, and then the comment of each part this version lacks gets `_RETIRED` (`Wycofaj`) |
+| `Czytaj` | `KeyedBox.comments` in `_seen` (`_settle`, `_deliver_to_period`), then its plan: nothing when the issue has a mark of the wysyłka in a newer version (`Nowsza`); otherwise a part with its mark in the body, or in its first comment in this version or a newer one, is skipped (a Zgłoszenie whose body has the mark of its part is `Delivered(found, ())`), a comment in an older version is changed, the rest is a new comment, and then the comment of each part this version lacks gets `_RETIRED` (`Wycofaj`) |
 | `Zaloz` | `KeyedBox.open_issue` in `_deliver_new_issue`, `_deliver_report`, `_deliver_to_period`, with `Post.opening` and the marks (`_opening`) |
+| `CzytajArchiwum` | `KeyedBox.archive` in `_deliver_archive`, after `Szukaj` without an issue okresu or after `Czytaj` without a newer version (`_newer`), or alone for a `commented` file; `archive_open` false (`_archive_refused`) → `ArchiveWaits` without asking; a file of this version or newer stays, an older one → `UsunPlik`, none → `WyslijPlik`, no Archiwum → `ZalozArchiwum`; `Refused` → `ArchiveWaits` |
+| `ZalozArchiwum` | `KeyedBox.open_archive` in `_deliver_archive`; `Refused` or `Rejected` → `ArchiveWaits`; with `PusteRepo` every answer is GitHub's 409, which `report_box.py` `GitHubReportBox.open_archive` reads as `Rejected` → `ArchiveWaits` (`OdmowaPustegoRepo`) |
+| `UsunPlik` | `KeyedBox.remove` of the file of an older version in `_deliver_archive`, right before `upload`; `Refused` → `ArchiveWaits` |
+| `WyslijPlik` | `KeyedBox.upload` with `_asset_label` in `_deliver_archive`; a file of the wysyłka already there → `Rejected` (GitHub) → `ArchiveWaits`, as `Refused` |
 | `Komentuj` | `KeyedBox.comment` in `_comment_all` and `_settle` (`_put`), or `KeyedBox.edit_comment` in `_settle` (`_put`: the comment of an older version gets this version's text in place; `_RETIRED` in the comment of a part this version lacks), one part per step; the first failure ends the wysyłka |
 | `Stop`, `Odrzuc` | `_waiting`: `Unreachable`, `Refused`, `NoKey` → `_stopped_on` and `return`; `Rejected` → `_rejected` and the next file |
-| `Znacznik`, `Zamiana` | `_send_all` after `Delivered`: `_stopped_on = None`, then the marker in `suppress(OSError)`: `atomic_file.py` `replace_atomically` (`write_text` of `.json.tmp`, then `replace`; an `OSError` unlinks the `.tmp`) |
+| `Znacznik`, `Zamiana` | `_send_all` after `Delivered`: `_stopped_on = None`, then the marker in `suppress(OSError)`: `atomic_file.py` `replace_atomically` (`write_text` of `.json.tmp`, then `replace`; an `OSError` unlinks the `.tmp`); with `archive_waits` `_archive_waits` (`_archive_refused`) and the marker of the parts (`"skomentowany"`), and the next file without `_remove`; a `commented` file the Archiwum refused again only `_archive_waits` |
 | `Usun` | `Outbox._remove`: `unlink(missing_ok=True)`, an `OSError` adds the name to `_undeleted` |
 | `Zwolnij` | `Outbox._drain`: the end of `_folder_lock` (the lock file closed), then `finally` with `_released`; a request of the other queue sets `_again` |
-| `Decyzja` | `Outbox._drain` under `_changed`: `_again` → another pass, else `_draining = False` and `clock.after(RETRY_S, _woken)` when `_stopped_on`, `_read_failed` or `_locked_out` is set and no wake is armed |
+| `Decyzja` | `Outbox._drain` under `_changed`: `_again` → another pass, else `_draining = False` and `clock.after(RETRY_S, _woken)` when `_stopped_on`, `_read_failed`, `_archive_refused` or `_locked_out` is set and no wake is armed |
 | `Budzenie` | `Outbox._woken` (`_retry_armed = False`, `send_in_background`), also in a process that already closed its port |
 | `Zamknij`, `KoniecProcesu` | `server.py` `serve`: uvicorn closes the socket, waits up to `_GRACEFUL_SHUTDOWN_S` (5 s) for open connections, then the process ends and the daemon queue thread dies with it |
 | `Wylacz` | none: the computer switches off or the process dies; the queue folder and the Skrzynka stay |
 
 Ghost variables have no counterpart in the code and serve only the promises:
 `zakolejkowane` (`post` returned `True`), `odrzucone` (the Skrzynka answered
-`Rejected` for this wysyłka), `slady` (causes of the known findings, none now)
-and `krok` (the counterexample's words).
+`Rejected` for this wysyłka), `podwojny` (`UsunPlik` removed a file of the
+wysyłka's version or a newer one, so the queue sends that file again), `slady`
+(causes of the known findings, none now) and `krok` (the counterexample's words).
 
 ### Bring the model in line, then run
 
@@ -482,7 +588,7 @@ Run one configuration while you work:
 On Windows use `py -3`. It takes Java and `tla2tools.jar` from
 `verify-aktualizacja-narzedzia` (`sprawdz_aktualizacje.py` downloads them
 once into its ignored cache, no system Java needed); `TLC_JAVA` and `TLC_JAR`
-replace them. All configurations take about 20 s on Maks's Mac (18 s on 2026-11-04). `--strict`
+replace them. All configurations take about 45 s on Maks's Mac (2026-11-04), `archiwum` about 18 s of it. `--strict`
 makes known findings exit 1.
 
 | Last line | Exit | Meaning |
@@ -519,6 +625,8 @@ configuration is checked in full.
 | `odczyt` | one Kontrola; 1 network failure, 1 read error of the queue file, 1 switch-off | passes |
 | `odmowa-tresci` | one Uwaga in 2 parts; 2 refused contents, 1 file error, 1 switch-off | passes |
 | `diagnoza` | Logi Uruchomienia with a header, 2 parts, and their Diagnoza in 1 part, a newer version of the same wysyłka (`Diagnoza = TRUE`, `CzesciNowszej = 1`); 1 network failure, 1 lost answer, 1 file error or read error of the queue file, 1 switch-off | passes |
+| `archiwum` | Logi Uruchomienia with a header in 1 part with a file for the Archiwum (`Archiwum = TRUE`) and their Diagnoza, a newer version that replaces the file; 1 network failure, 1 lost answer, 1 refused step of the Archiwum, 1 file error or read error of the queue file, 1 switch-off | passes |
+| `puste-repo` | the Logi of two Uruchomienia of one period, each with a file for the Archiwum, in a repository without a commit (`PusteRepo = TRUE`): every `open_archive` gets 409; 1 network failure, 1 lost answer, 1 file error, 1 switch-off | passes |
 
 Every configuration checks `TypeOK`, `JednoIssue`, `DokladnieRaz`,
 `CzesciWKolejnosci` and `Zbieganie`. `Zbieganie` holds only under the
@@ -585,6 +693,16 @@ Checked only with the bounds in the configurations. Assumed and not checked:
   there the newer one is shorter; a longer newer version, whose extra parts
   are new comments, is not checked.
 - The queue never edits an issue body, so the model never changes `tresc[1]`.
+- The Archiwum: one per configuration (one period); every file in it is whole
+  (an upload that breaks off, which `_deliver_archive` removes by `uploaded`, is
+  the checker's); `Refused` and `Rejected` of a step are one bounded failure
+  (`MaxOdmowArchiwum`), and `Unreachable` of a step is a network failure; a second
+  Archiwum of one tag, which GitHub would reject, counts in `wydania` instead.
+  Only configurations with `Archiwum` send a file, and their wysyłki have one part.
+  A repository without a commit (`PusteRepo`) lasts the whole behaviour: Maks
+  adding the first commit is not modelled, and what GitHub answers is the
+  model's word for the reading of `GitHubReportBox.open_archive`, which the
+  checker runs for real.
 - More than 1 000 comments of an issue: `GitHubReportBox.comments` reads at most
   ten pages, and a mark after them is not seen.
 - `Refused`, `NoKey` and `Unreachable` are one failure (`Stop`); the refusal
@@ -613,14 +731,17 @@ after a change of this skill's folder. Each mutation removes from the model
 one guard or step whose code it names, on a copy of the checkout
 (`tools/mutacje.py`), and must end with `MODEL KOLEJKI: NOWE NARUSZENIE`:
 
-- JednoIssue: an issue okresu opened without looking for it; a Zgłoszenie
+- JednoIssue: an issue okresu opened without looking for it; an Archiwum opened
+  without looking for it (`archiwum`); a Zgłoszenie
   opened without looking for it; `_claimed` that always lets a queue send
   together with a folder lock that is always free (`dwie-kolejki`), and a pass
   without the folder lock (`dwa-procesy`); an
   Uwaga that opens two issues; an Uwaga that does not look for its issue by
   the mark (`nowe`).
 - DokladnieRaz: no check of the identifier before sending, every part a new
-  comment (`okres`); an older version that arrives after a newer one and adds
+  comment (`okres`); a file in the Archiwum without the check of its version, so
+  the queue removes its own file and sends it again, and a file the Archiwum
+  refused that gets the whole marker (`archiwum`); an older version that arrives after a newer one and adds
   its part (`_settle` without the check of a newer version), a Diagnoza that adds
   a comment instead of changing it, and a part the newer version lacks left in
   place instead of `_RETIRED` (`diagnoza`); a failed comment
@@ -634,7 +755,10 @@ one guard or step whose code it names, on a copy of the checkout
   Centrum removed its `.json.tmp` (`dwa-procesy`).
 - CzesciWKolejnosci: comments posted from the last part.
 - Zbieganie: a network failure that skips the file to the next start; a pass
-  that stops without `_stopped_on`; no `RETRY_S` wake; no `RETRY_S` wake after
+  that stops without `_stopped_on`; no `RETRY_S` wake; no `RETRY_S` wake after a
+  refusal of the Archiwum (`_archive_refused`) and an upload of the newer file
+  without removing the older one, which GitHub keeps rejecting (`archiwum`); GitHub's 409 of a repository without a
+  commit read as `Unreachable` (`OdmowaPustegoRepo` as `Stop`, `puste-repo`); no `RETRY_S` wake after
   an unreadable file (`_read_failed`, `odczyt`) or after a folder lock held by
   another process (`_locked_out`, `dwa-procesy`); a wake that does not
   ask for a pass (`_woken`); `post` without `send_in_background`; `_again`

@@ -22,6 +22,7 @@ from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import Outbox
 from rozliczenia.centrum.report_box import (
+    ArchiveOutcome,
     Comment,
     Commented,
     CommentOutcome,
@@ -29,8 +30,11 @@ from rozliczenia.centrum.report_box import (
     Issue,
     IssuesOutcome,
     Label,
+    OpenArchiveOutcome,
+    RemoveOutcome,
     SendOutcome,
     Sent,
+    UploadOutcome,
 )
 
 from tests.fixtures.clock import ManualClock
@@ -109,6 +113,18 @@ class SharedBox:
         issue["comments"][position - 1] = body
         path.write_text(json.dumps(issue), encoding="utf-8")
         return Commented(comment_id, f"{path.name}#komentarz-{position}")
+
+    def archive(self, tag: str, *, key: str) -> ArchiveOutcome:
+        raise AssertionError("stare Centrum w tych testach wysyła tylko Kontrole ilości, bez plików do Archiwum")
+
+    def open_archive(self, tag: str, title: str, description: str, *, key: str) -> OpenArchiveOutcome:
+        raise AssertionError("stare Centrum w tych testach wysyła tylko Kontrole ilości, bez plików do Archiwum")
+
+    def upload(self, archive_id: int, name: str, label: str, data: bytes, *, key: str) -> UploadOutcome:
+        raise AssertionError("stare Centrum w tych testach wysyła tylko Kontrole ilości, bez plików do Archiwum")
+
+    def remove(self, asset_id: int, *, key: str) -> RemoveOutcome:
+        raise AssertionError("stare Centrum w tych testach wysyła tylko Kontrole ilości, bez plików do Archiwum")
 
     def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
         return tuple(

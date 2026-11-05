@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import itertools
 import json
 import threading
@@ -25,6 +26,9 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.report_box import (
     REPOSITORY,
+    Archive,
+    ArchiveOutcome,
+    Asset,
     CloseReason,
     Closure,
     Comment,
@@ -34,10 +38,15 @@ from rozliczenia.centrum.report_box import (
     Issue,
     IssuesOutcome,
     Label,
+    OpenArchiveOutcome,
     Refused,
+    Rejected,
+    Removed,
+    RemoveOutcome,
     SendOutcome,
     Sent,
     Unreachable,
+    UploadOutcome,
 )
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, ToolFreshness
@@ -116,6 +125,39 @@ class FakeIssue:
 
 
 @dataclass
+class FakeAsset:
+    """Plik w Archiwum okresu fałszywej skrzynki: identyfikator, nazwa, etykieta i bajty, jak je wysłało Centrum."""
+
+    id: int
+    name: str
+    label: str
+    data: bytes
+
+    @property
+    def unpacked(self) -> bytes:
+        """Plik rozpakowany gzipem, bajt w bajt, jak go dostaje Maks po ``gh release download`` i ``gunzip``."""
+
+        return gzip.decompress(self.data)
+
+    @property
+    def text(self) -> str:
+        """Plik rozpakowany (``unpacked``) jako tekst UTF-8."""
+
+        return self.unpacked.decode("utf-8")
+
+
+@dataclass
+class FakeArchive:
+    """Archiwum okresu fałszywej skrzynki (GitHub Release): identyfikator, tag, tytuł, opis i pliki po kolei."""
+
+    id: int
+    tag: str
+    title: str
+    description: str
+    assets: list[FakeAsset] = field(default_factory=list)
+
+
+@dataclass
 class FakeReportBox:
     """Skrzynka Zgłoszeń zastąpiona zapisem założonych issue i przygotowanymi wynikami.
 
@@ -133,6 +175,11 @@ class FakeReportBox:
     komentarz, przed odpowiedzią. ``edited`` to identyfikator każdego poprawionego komentarza po kolei, a
     ``lost_edit_answers`` to numery tych poprawek (od 1), które skrzynka przyjmuje, ale odpowiedź się urywa.
     ``wait_until`` czeka na wysyłkę w tle.
+
+    ``archives`` to Archiwa okresów (GitHub Release) z plikami; plik o nazwie, która w Archiwum już jest, i drugie
+    Archiwum tego samego tagu skrzynka odrzuca (``Rejected``) jak GitHub. ``archive_failure`` to odmowa albo brak sieci
+    przy każdym kroku Archiwum (np. Token do Zgłoszeń bez uprawnienia do zapisu treści repozytorium), a
+    ``archive_requests`` liczy kroki Archiwum, które doszły do skrzynki, także te z odmową.
 
     Issue etykiet z ``background`` to ruch w tle, którego test nie ogląda (np. Logi Uruchomienia w testach
     Zgłoszeń): skrzynka przyjmuje je jak działający GitHub w ``background_issues``, z numerami od
@@ -159,7 +206,11 @@ class FakeReportBox:
     background: frozenset[Label] = frozenset()
     background_issues: list[FakeIssue] = field(default_factory=list)
     background_comment_outcomes: list[CommentOutcome] = field(default_factory=list)
+    archives: list[FakeArchive] = field(default_factory=list)
+    archive_failure: Refused | Unreachable | None = None
+    archive_requests: int = 0
     _changed: threading.Condition = field(default_factory=threading.Condition)
+    _asset_ids: Iterator[int] = field(default_factory=lambda: itertools.count(1))
 
     def wait_until(self, condition: Callable[[FakeReportBox], bool], seconds: float = 30) -> bool:
         """Czeka, aż skrzynka dostanie to, czego test oczekuje (wysyłka w tle); ``False`` po ``seconds``."""
@@ -275,6 +326,62 @@ class FakeReportBox:
         """Maks zamyka issue ``number`` z powodem ``reason`` (``state_reason`` GitHuba) w chwili ``at``."""
 
         self.closed[number] = Closure(reason, at or datetime.now(timezone.utc))
+
+    def archived(self, tag: str) -> dict[str, bytes]:
+        """Pliki Archiwum z tagiem ``tag`` po nazwie, rozpakowane bajt w bajt; bez takiego Archiwum pusto."""
+
+        with self._changed:
+            return {asset.name: asset.unpacked for archive in self.archives if archive.tag == tag for asset in archive.assets}
+
+    def archive(self, tag: str, *, key: str) -> ArchiveOutcome:
+        with self._changed:
+            self.archive_requests += 1
+            if self.archive_failure is not None:
+                return self.archive_failure
+            found = next((archive for archive in self.archives if archive.tag == tag), None)
+            if found is None:
+                return None
+            return Archive(found.id, tuple(Asset(asset.id, asset.name, asset.label, True) for asset in found.assets))
+
+    def open_archive(self, tag: str, title: str, description: str, *, key: str) -> OpenArchiveOutcome:
+        with self._changed:
+            self.archive_requests += 1
+            if self.archive_failure is not None:
+                return self.archive_failure
+            if any(archive.tag == tag for archive in self.archives):
+                return Rejected()
+            opened = FakeArchive(len(self.archives) + 1, tag, title, description)
+            self.archives.append(opened)
+            self._changed.notify_all()
+            return Archive(opened.id, ())
+
+    def upload(self, archive_id: int, name: str, label: str, data: bytes, *, key: str) -> UploadOutcome:
+        with self._changed:
+            self.archive_requests += 1
+            if self.archive_failure is not None:
+                return self.archive_failure
+            archive = next((archive for archive in self.archives if archive.id == archive_id), None)
+            if archive is None:
+                return Refused()
+            if any(asset.name == name for asset in archive.assets):
+                return Rejected()
+            sent = FakeAsset(next(self._asset_ids), name, label, data)
+            archive.assets.append(sent)
+            self._changed.notify_all()
+            return Asset(sent.id, name, label, True)
+
+    def remove(self, asset_id: int, *, key: str) -> RemoveOutcome:
+        with self._changed:
+            self.archive_requests += 1
+            if self.archive_failure is not None:
+                return self.archive_failure
+            for archive in self.archives:
+                for asset in archive.assets:
+                    if asset.id == asset_id:
+                        archive.assets.remove(asset)
+                        self._changed.notify_all()
+                        return Removed()
+            return Refused()
 
 
 def _comment_url(number: int, comment: int) -> str:

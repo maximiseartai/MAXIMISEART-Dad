@@ -669,8 +669,25 @@ rodzaj), a kolejka przed wysłaniem sprawdza, co już tam jest. Nowsza wersja te
 samej wysyłki, jak Logi Uruchomienia po Diagnozie, zmienia jej komentarz zamiast
 dokładać nowy, a starsza, która dojdzie po nowszej, niczego w Skrzynce nie
 zmienia. Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego
-startu Centrum rozliczeń; tata ma wtedy skontaktować się z Maksem.
+startu Centrum rozliczeń; tata ma wtedy skontaktować się z Maksem. Plik w
+Archiwum Logów okresu też idzie dokładnie raz, a plik nowszej wersji podmienia
+plik starszej.
 _Avoid_: outbox, bufor
+
+## Archiwum Logów okresu
+
+Pełne Logi Uruchomień jednego okresu w Skrzynce Zgłoszeń: GitHub Release z
+tagiem `logi-<okres>` w prywatnym repozytorium Zgłoszeń, który Centrum zakłada
+przy pierwszych Logach okresu. Każde Uruchomienie ma w nim jeden plik o nazwie
+pliku Logów z `.gz`, który po rozpakowaniu jest bajt w bajt plikiem Logów z
+komputera taty, a w issue Logów okresu jeden komentarz z podsumowaniem i
+odnośnikiem do tego pliku. Diagnoza podmienia plik swojego Uruchomienia. Nie
+jest Wydaniem: leży w innym repozytorium i pod innym tagiem, a Centrum i
+narzędzie Wydań patrzą tylko na Wydania publicznego repozytorium. Bez
+uprawnienia Tokenu do Zgłoszeń do zapisu treści repozytorium albo w
+repozytorium bez commitu plik czeka w Kolejce wysyłki, a komentarz idzie z
+dopiskiem, że pełne Logi czekają; pozostałe wysyłki kolejki idą dalej.
+_Avoid_: Wydanie, release Logów, załącznik
 
 ## Kontrola ilości
 

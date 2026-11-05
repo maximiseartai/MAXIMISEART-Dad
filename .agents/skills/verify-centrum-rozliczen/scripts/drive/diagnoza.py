@@ -257,8 +257,8 @@ def drive_diagnosis(run: Run, page: Page) -> None:
     run.step(FEATURE, "diagnoza-w-logach")
     run_id = str(run_info["id"])
     [logs] = (run.root / "logs" / "uruchomienia").glob(f"*-{run_id}.json")
-    text = logs.read_text(encoding="utf-8")
-    logged = json.loads(text)["diagnosis"]
+    data = logs.read_bytes()  # bytes: reading text hides the \r\n of a text-mode write on Windows
+    logged = json.loads(data)["diagnosis"]
     run.check(
         logged["explanation"]["code"] == "NIE_ZNALEZIONO_PRZYCZYNY"
         and [{part: check[part] for part in ("label", "state", "detail")} for check in logged["checks"]] == results,
@@ -266,9 +266,16 @@ def drive_diagnosis(run: Run, page: Page) -> None:
     )
     queue = Path(run.fixture["settings"]).parent / "zgloszenia" / "kolejka"
     queued = sorted(queue.glob(f"*-logi-uruchomienia-{run_id[:8]}.json"))
+    first, newest = (json.loads(path.read_text(encoding="utf-8")) for path in (queued[0], queued[-1]))
+    [comment] = newest["parts"]
     run.check(
-        len(queued) >= 2 and text in "".join(json.loads(queued[-1].read_text(encoding="utf-8"))["parts"]),
-        "without a key the Logi with this Diagnoza wait in the queue as one more comment, the file character for character",
+        len(queued) >= 2
+        and (newest["target"], newest["run_id"]) == (first["target"], first["run_id"])
+        and "\n- Diagnoza: " in comment
+        and (newest["archive"]["name"], newest["archive"]["text"].encode("utf-8")) == (logs.name, data),
+        "without a key the Logi with this Diagnoza wait in the queue as a new version of the one comment of the "
+        "Uruchomienie, and their file for the Archiwum Logów okresu, in UTF-8 as the queue packs it, is the file byte "
+        "for byte",
     )
 
     run.step(FEATURE, "diagnoza-nieoczekiwany-wyjatek")
@@ -336,7 +343,7 @@ def drive_diagnosis(run: Run, page: Page) -> None:
         )
         run.check(
             len(queued) == 2 and sorted(queue.glob(its_logs)) == queued,
-            "the same result queues no more Logi: one comment for the Uruchomienie and one for its first Diagnoza",
+            "the same result queues no more Logi: one version for the Uruchomienie and one for its first Diagnoza",
         )
         diagnosis.get_by_role("button", name="Co zostanie wysłane", exact=True).click()
         title, body = shown.locator("figcaption").inner_text(), shown.locator("pre").inner_text()

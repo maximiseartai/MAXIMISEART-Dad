@@ -157,20 +157,44 @@ Dad does not click or see anything. The machine script sends none.
   `Logi Uruchomienia <token>`, whose first line is the identifying line
   `- Logi Uruchomienia okresu: <token>`. Closing it only means "reviewed up to
   here": the next Uruchomienie of that period still comments on it.
-- Each Uruchomienie is one comment: a summary (process, `podgląd` or `zapis`,
-  period, result and ending, time, Komunikat codes, Wydanie and commit,
-  Uruchomienie id and start in UTC), then the full JSON in a `<details>` block.
-  The JSON is the file in `logs\uruchomienia\` on Dad's computer, character for
-  character. Over GitHub's 65 536 characters it continues in the next comments
-  (`Logi Uruchomienia <id>, część k/n`); concatenating the JSON blocks of the
-  parts gives the file.
+- Each Uruchomienie is exactly one comment: a summary (process, `podgląd` or
+  `zapis`, period, result and ending, time, Komunikat codes, Diagnoza, Wydanie
+  and commit, Uruchomienie id and start in UTC), ending with the line
+  `- Pełne Logi: [<file>.json.gz](<link>)`. A Diagnoza changes that comment;
+  it never adds one.
+- The full Logi are in the period's Archiwum Logów okresu: the GitHub Release
+  tagged `logi-<token>` in the same private repository, which Centrum creates
+  with the first Logi of the period (`#844`). It holds one file per
+  Uruchomienie, named like the file in `logs\uruchomienia\` on Dad's computer
+  plus `.gz`; `gunzip` gives that file byte for byte. A Diagnoza
+  replaces the file. The Release is not a Wydanie of the tool: it lives in the
+  Zgłoszenia repository, and Centrum and the release tool only read the
+  Wydania of the public repository. Do not delete it: Centrum would create a
+  new one with the next Logi, without the older files.
+- Download the full Logi of a period, or of one Uruchomienie, with `gh`:
+
+  ```bash
+  gh release download logi-<token> -R MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia -D logi-<token>
+  gh release download logi-<token> -R MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia -D logi-<token> -p '*-<run id>.json.gz'
+  gunzip logi-<token>/*.json.gz
+  ```
+
+- The Token do Zgłoszeń needs write access to the repository's contents
+  (fine-grained permission „Contents: Read and write”) to create the Release
+  and upload files, and the repository needs at least one commit, because a
+  Release tags a branch (GitHub answers `409 Git Repository is empty.`). Without
+  them the comment still goes, with a note that the full Logi wait in the queue
+  on Dad's computer; the file waits there without any Komunikat for Dad (log
+  line `przyczyna=odmowa-archiwum`), the rest of the queue (Zgłoszenia, Uwagi
+  taty, Kontrole ilości) goes on, and the file goes by itself once the
+  permission and the commit are there, within a minute while Centrum runs.
 - The Logi hold no cell content, but the Komunikaty are the card's, as in a
   Zgłoszenie: they name Wykonawcy and may quote a cell of the Rejestr zleceń
   (`ZLE_SKUTECZNE`, `NIEZNANY_WYKONAWCA`). Treat them like a Zgłoszenie.
 - The queue, its log entries and its retries are the ones of the Kontrola
   ilości above; the queue file of the Logi is `<time>-<n>-logi-uruchomienia-<run>.json`.
 - Centrum never creates the `logi-uruchomienia` label; it must exist in the
-  repository.
+  repository. It does create the Release `logi-<token>` of each period.
 
 ## Pull requests as a triage surface
 
