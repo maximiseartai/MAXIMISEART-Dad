@@ -709,6 +709,41 @@ def _after_period(
     return lambda register: paste_raw_orders(register, pasted, in_place_from=in_place_from, font=font)
 
 
+NO_DATE_ADDRESS_AS_DATE = {**_register_probe(None), "ADRES": datetime(2026, 9, 10, 12), "SKUTECZNE": None}
+"""Wiersz próbny z pustą datą z aplikacji i ``ADRES``, który Excel trzyma jako datę z godziną, z pustym ``SKUTECZNE``,
+jak zostawia je aplikacja."""
+
+
+def _link_moved_under_number(row: int, worker: bool) -> Callable[[Path], object]:
+    """Hiperłącze z komórką ``NUMER UMOWY`` przesuniętego wiersza ``row``, która stoi pod ``NUMER ZL.``; ``worker``:
+    tata wpisał Wykonawcę pod ``WYKONAWCA`` (w przesuniętym wierszu tam stoi ``SKUTECZNE``)."""
+
+    def edit(register: Path) -> None:
+        put_into_register(register, f"I{row}", PROBE_ORANGE, RAW_ORDER_FONT, LINK)
+        if worker:
+            put_into_register(register, f"J{row}", "adrian.testowy", WORKER_FACE)
+
+    return edit
+
+
+def _shifted_in_middle_of_paste(register: Path) -> None:
+    """Wklejenie dwóch wierszy nad uporządkowanymi w okresie, a wiersz próbny w jego środku też przesunięty: pusta data
+    z aplikacji, ``ADRES`` jako data z godziną i Hiperłącze pod ``NUMER ZL.``, więc wygląda jak wiersz na miejscu, ale
+    pod ``WYKONAWCA`` nic nie ma."""
+
+    paste_raw_orders(register, [register_order(90, WHEN)], first=ABOVE_ORDERED - 1)
+    paste_raw_orders(register, [NO_DATE_ADDRESS_AS_DATE], first=ABOVE_ORDERED)
+    _link_moved_under_number(ABOVE_ORDERED, worker=False)(register)
+
+
+def _shifted_first_with_worker(register: Path) -> None:
+    """Pierwszy wiersz bloku przesunięty jak w ``_shifted_in_middle_of_paste``, a tata wpisał Wykonawcę pod
+    ``WYKONAWCA``."""
+
+    _above_ordered(NO_DATE_ADDRESS_AS_DATE)(register)
+    _link_moved_under_number(ABOVE_ORDERED, worker=True)(register)
+
+
 @dataclass(frozen=True)
 class RegisterPosition:
     """Wiersz tabeli położeń Rejestru: wklejenie wiersza próbnego, kod Zatrzymania podglądu (``None``: bez niego), czy
@@ -827,6 +862,15 @@ REGISTER_POSITIONS: dict[str, RegisterPosition] = {
         _above_ordered(_register_probe("10.09.2026 11:00"), font=lambda header: REGISTER_FACE, linked="G"),
         "WIERSZ_BEZ_DATY",
         domain_fact_broken=True,
+    ),
+    # H1, H2 z przeglądu #966 r3 w Rejestrze: Hiperłącze z komórką NUMER UMOWY pod NUMER ZL.; bez Wykonawcy pod
+    # WYKONAWCA (środek wklejenia) i w pierwszym wierszu bloku (z Wykonawcą wpisanym przez tatę) nie ma dowodu, że wiersz
+    # stoi na miejscu od NUMER ZL., więc pamięć zna numer Orange spod NUMER ZL.
+    "przesuniety_w_srodku_z_hiperlaczem_pod_numer_zl_bez_wykonawcy": RegisterPosition(
+        _shifted_in_middle_of_paste, "WIERSZ_BEZ_DATY", address_in_file=False
+    ),
+    "przesuniety_pierwszy_z_hiperlaczem_pod_numer_zl_i_wykonawca": RegisterPosition(
+        _shifted_first_with_worker, "ZLE_SKUTECZNE", address_in_file=False
     ),
     # R14: wiersz uporządkowany na miejscu z jedną komórką w innym kroju: bez śladu, jedno położenie
     "uporzadkowany_na_miejscu_z_miastem_w_kroju_aplikacji": RegisterPosition(
@@ -958,6 +1002,42 @@ def test_adres_wiersza_rejestru_na_miejscu_z_data_w_kolumnie_a_nie_wychodzi_z_te
     register = centrum.fixture.register_path
     paste(register)
     put_into_register(register, f"G{IN_PLACE_ROW}", PROBE_ADDRESS, REGISTER_FACE)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+
+    run_to_end(centrum, dry_run=True)
+
+    box = centrum.surroundings.report_box
+    assert box.wait_until(lambda fake: logs_arrived(fake, 1))
+    texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)] + in_box(box)
+    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in texts)] == []
+
+
+PARTLY_IN_PLACE = {
+    "od_wykonawca": ("WYKONAWCA", PROBE_ORANGE),
+    "od_numer_umowy": ("NUMER UMOWY", PROBE_ORANGE),
+    "od_wykonawca_bez_kolizji": ("WYKONAWCA", None),
+    "przesuniety_w_calosci": (None, PROBE_ORANGE),
+}
+"""Sondy R1–R4 z przeglądu #966 r3: nagłówek, od którego tata postawił wiersz próbny z powrotem na miejsce (``None``:
+przesunięty w całości), i wartość pod ``URZĄDZENIA`` uporządkowanego wiersza okresu (``None``: bez kolizji)."""
+
+
+@pytest.mark.parametrize(("in_place_from", "collision"), PARTLY_IN_PLACE.values(), ids=PARTLY_IN_PLACE.keys())
+def test_numer_orange_pierwszego_wiersza_rejestru_przesunietego_w_czesci_nie_wychodzi_z_tej_samej_wartosci_pod_urzadzenia_innego(
+    tmp_path: Path, in_place_from: str | None, collision: str | None
+) -> None:
+    """W1 z przeglądu #966 r3 w Rejestrze: wiersz próbny to pierwszy wiersz bloku przesunięty z Hiperłączem ``NUMER
+    ZL.`` pod ``URZĄDZENIA``, więc trzy fakty przesunięcia są prawdziwe, ale tata postawił z powrotem na miejsce komórki
+    od ``WYKONAWCA`` albo ``NUMER UMOWY``, a jego numer Orange stoi też pod ``URZĄDZENIA`` uporządkowanego wiersza
+    okresu. Trzy fakty nie mówią nic o kolumnach na prawo od ``NUMER ZL.``, więc pamięć zna ``NUMER UMOWY`` pierwszego
+    wiersza w obu położeniach wszędzie (ADR 0025), a numer Orange nie wychodzi z Przygotowania do pliku Logów ani do
+    Skrzynki Zgłoszeń."""
+
+    centrum = preparing_centrum(tmp_path)
+    register = centrum.fixture.register_path
+    _above_ordered(in_place_from=in_place_from, linked="G")(register)
+    if collision is not None:
+        put_into_register(register, f"G{IN_PLACE_ROW}", collision, REGISTER_FACE)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
 
     run_to_end(centrum, dry_run=True)

@@ -634,8 +634,9 @@ z dołu każdego arkusza zleceń, które przetwarzało, nie cały Rejestr zlece�
 w kolumnach od A do `UWAGI`, które Uporządkowanie przenosi do dnia, także
 przesunięty pierwszy wiersz pod jego nagłówkami, każdy z dwoma położeniami,
 więc tylko z komórkami dozwolonymi przesunięty i nie, z datą z godziną spod
-`DATA GODZ. POCZ.` i, gdy jego jedyne Hiperłącze stoi pod `NUMER ZL.`, z
-komórkami od `NUMER ZL.` w prawo, a z rodzajem zlecenia, gdy nie ma w niej jego
+`DATA GODZ. POCZ.` i, gdy jego jedyne Hiperłącze stoi pod `NUMER ZL.`, a pod
+`WYKONAWCA` jest Wykonawca, z komórkami od `NUMER ZL.` w prawo (poza pierwszym
+wierszem bloku wklejenia), a z rodzajem zlecenia, gdy nie ma w niej jego
 `URZĄDZENIA`,
 a nad wklejeniem tylko numery ostatniego uporządkowanego i żółtego wiersza, od
 których Planowanie liczy wiersz dnia. Wiersz ma numer i wartości komórek po literze
@@ -702,10 +703,13 @@ miejscem, bez wartości. Wiersz Rejestru zleceń, który może stać przesunięt
 obu położeniach, a wartość z drugiego położenia maskuje w jej wierszu, pod
 `ADRES` i `NUMER UMOWY`, w wolnym tekście i w innych plikach, ale nie w zwykłej
 kolumnie innego wiersza, np. w `URZĄDZENIA` albo `NUMER ZL.`. Pierwszy wiersz
-bloku wklejenia strażnik zna w obu położeniach wszędzie, chyba że jego
-przesunięcie potwierdzają naraz trzy fakty: data z godziną dwie kolumny przed
-`DATA GODZ. POCZ.`, brak daty z godziną pod nią i jedyne Hiperłącze dwie kolumny
-przed `NUMER ZL.`.
+bloku wklejenia (wiersz z wyglądem z aplikacji, nad którym najbliższy wiersz z
+wartościami jest uporządkowany albo którego nic nie poprzedza, także nad
+uporządkowanymi) strażnik zna w obu położeniach wszędzie. Gdy jego przesunięcie
+potwierdzają naraz trzy fakty: data z godziną dwie kolumny przed `DATA GODZ.
+POCZ.`, brak daty z godziną pod nią i jedyne Hiperłącze dwie kolumny przed `NUMER
+ZL.`, wartość z drugiego położenia zna wszędzie tylko w kolumnach na prawo od
+`NUMER ZL.`, bo te fakty dowodzą przesunięcia komórek tylko do `NUMER ZL.`.
 _Avoid_: reguła prywatności (dawne listy pól każdej wysyłki), anonimizacja
 
 ## Token do Zgłoszeń

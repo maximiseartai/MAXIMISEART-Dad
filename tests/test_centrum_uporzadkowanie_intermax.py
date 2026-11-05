@@ -43,6 +43,7 @@ from tests.fixtures.intermax import (
     LAST,
     NUMBER,
     ORDER_SHEET,
+    WORKER,
     Intermax,
     Order,
     rewrite_parts,
@@ -1203,7 +1204,8 @@ POSITIONS = {
         echo=f"montaż {PROBE_ADDRESS} umowa [numer Orange] po ZL-1003",
     ),
     # U25 (D1 z przeglądu #966): adres i numer Orange pierwszego wiersza na miejscu w zwykłej kolumnie innego wiersza:
-    # położenie podstawowe (na miejscu) pamięć zna wszędzie
+    # położenie podstawowe (na miejscu) pamięć zna wszędzie; pierwszy wiersz bloku nie ma dowodu, że stoi na miejscu od
+    # NUMER ZL. (W3 z przeglądu #966 r3), więc Kopia nie ma jego NUMER ZL.
     "adres_pierwszego_wiersza_na_miejscu_pod_urzadzenia_innego_wiersza": Position(
         Intermax(
             ordered=ORDERED,
@@ -1211,7 +1213,7 @@ POSITIONS = {
             shifted=False,
         ),
         (ORDER_SHEET, 0),
-        "CDFGHIJ",
+        "CDFGHJ",
         None,
     ),
     "numer_orange_pierwszego_wiersza_na_miejscu_pod_numer_zl_innego_wiersza": Position(
@@ -1221,15 +1223,68 @@ POSITIONS = {
             shifted=False,
         ),
         (ORDER_SHEET, 0),
-        "CDFGHIJ",
+        "CDFGHJ",
         None,
     ),
     # U26: ten sam klient w innym wierszu, a w nim NUMER UMOWY pod NUMER ZL. bez Hiperłącza (granica 2 z ADR 0025)
     "numer_umowy_pod_numer_zl_u_klienta_pierwszego_wiersza_na_miejscu": Position(
         Intermax(ordered=ORDERED, raw=(_probe(PASTED[0]), PASTED[1], SAME_CLIENT, *PASTED[3:]), shifted=False),
         (ORDER_SHEET, 0),
-        "CDFGHIJ",
+        "CDFGHJ",
         None,
+    ),
+    # H1, H2 (W3 z przeglądu #966 r3): przesunięty wiersz z pustą datą z aplikacji, ADRES jako datą z godziną i
+    # Hiperłączem z komórką NUMER UMOWY, która stoi pod NUMER ZL.; bez Wykonawcy pod WYKONAWCA (tam stoi puste
+    # SKUTECZNE) nie ma dowodu, że stoi na miejscu od NUMER ZL., a pierwszy wiersz bloku nie ma go nigdy, więc numer
+    # Orange spod NUMER ZL. pamięć zna, a Kopia go nie ma. Adresu w pliku nie ma (ADRES to data), jak w U24 (H3)
+    "przesuniety_w_srodku_bez_sladu_z_hiperlaczem_pod_numer_zl": Position(
+        Intermax(
+            ordered=ORDERED,
+            raw=_pasted(
+                2,
+                _probe(
+                    PASTED[2], (3, ""), (ADDRESS, datetime(2026, 10, 26, 12)), shifted=True, links=(CONTRACT_NUMBER,)
+                ),
+            ),
+        ),
+        (ORDER_SHEET, 2),
+        "BCDFGH",
+        "SUROWE_ZLECENIE_BEZ_WYKONAWCY",
+        address_in_file=False,
+        echo=f"montaż {PROBE_ADDRESS} umowa [numer Orange] po ZL-1003",
+    ),
+    "przesuniety_pierwszy_wiersz_bez_sladu_z_hiperlaczem_pod_numer_zl": Position(
+        Intermax(
+            ordered=ORDERED,
+            raw=_pasted(0, _probe(PASTED[0], (3, ""), (ADDRESS, datetime(2026, 10, 26, 12)), links=(CONTRACT_NUMBER,))),
+        ),
+        (ORDER_SHEET, 0),
+        "BCDFGH",
+        "SUROWE_ZLECENIE_BEZ_WYKONAWCY",
+        address_in_file=False,
+        echo=f"montaż {PROBE_ADDRESS} umowa [numer Orange] po ZL-1003",
+    ),
+    # ten sam, a tata wpisał Wykonawcę pod WYKONAWCA (w przesuniętym wierszu tam stoi SKUTECZNE): pierwszy wiersz bloku
+    # i tak nie ma dowodu, że stoi na miejscu od NUMER ZL.
+    "przesuniety_pierwszy_wiersz_bez_sladu_z_hiperlaczem_pod_numer_zl_i_wykonawca": Position(
+        Intermax(
+            ordered=ORDERED,
+            raw=_pasted(
+                0,
+                _probe(
+                    PASTED[0],
+                    (3, ""),
+                    (ADDRESS, datetime(2026, 10, 26, 12)),
+                    (CONTRACT_NUMBER + 1, PASTED[0].worker),
+                    links=(CONTRACT_NUMBER,),
+                ),
+            ),
+        ),
+        (ORDER_SHEET, 0),
+        "BCDFGHJ",
+        None,
+        address_in_file=False,
+        echo=f"montaż {PROBE_ADDRESS} umowa [numer Orange] po ZL-1003",
     ),
     "numer_umowy_pod_numer_zl_u_klienta_przesunietego_pierwszego_wiersza": Position(
         Intermax(ordered=ORDERED, raw=(_probe(PASTED[0]), PASTED[1], SAME_CLIENT, *PASTED[3:])),
@@ -1262,11 +1317,12 @@ POSITIONS = {
         "SUROWE_ZLECENIE_BEZ_DATY",
         broken=1,
     ),
-    # U2 (D2 z #913): wiersz bez Wykonawcy ma datę z godziną w Kopii
+    # U2 (D2 z #913): wiersz bez Wykonawcy ma datę z godziną w Kopii; bez Wykonawcy nie ma dowodu, że stoi na miejscu
+    # od NUMER ZL., więc Kopia nie ma jego NUMER ZL. (W3 z przeglądu #966 r3)
     "wiersz_bez_wykonawcy": Position(
         Intermax(ordered=ORDERED, raw=_pasted(1, _probe(replace(PASTED[1], worker="")))),
         (ORDER_SHEET, 1),
-        "CDFGHI",
+        "CDFGH",
         "SUROWE_ZLECENIE_BEZ_WYKONAWCY",
     ),
     # U17
@@ -1392,10 +1448,13 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
 
 
 # --- Adres i numer Orange także w zwykłej kolumnie innego wiersza (W1 z przeglądu #966 r2, wariant B) ----------------
-# Wartość wiersza próbnego stoi też pod URZĄDZENIA innego wiersza, a podpis przesunięcia kłamie albo go brak. Pierwszy
-# wiersz bloku bez przesunięcia potwierdzonego trzema faktami (data z godziną w A, pod DATA bez niej, jedyne Hiperłącze
-# pod URZĄDZENIA, ``raw_orders.confirmed_shift``) pamięć reguły danych zna w obu położeniach wszędzie, więc ta komórka
-# wychodzi zamaskowana (decyzja Maksa z 5.11.2026, ADR 0025). Kontrole C1 i C2 to te same wiersze bez kolizji.
+# Wartość wiersza próbnego stoi też pod URZĄDZENIA albo NUMER ZL. innego wiersza, a podpis przesunięcia kłamie, go brak
+# albo zakazana kolumna stoi na miejscu w częściowym przesunięciu. Pierwszy wiersz bloku bez przesunięcia
+# potwierdzonego trzema faktami (data z godziną w A, pod DATA bez niej, jedyne Hiperłącze pod URZĄDZENIA,
+# ``raw_orders.confirmed_shift``) pamięć reguły danych zna w obu położeniach wszędzie, a z nimi tak samo kolumny na
+# prawo od NUMER ZL., więc ta komórka wychodzi zamaskowana (decyzja Maksa z 5.11.2026, ADR 0025, przegląd #966 r3).
+# Pierwszym wierszem bloku jest też wiersz z wyglądem z aplikacji nad uporządkowanymi (G). Kontrole C1, C2, F4, F6 i G3
+# to wiersze bez kolizji albo przesunięte w całości.
 
 STALE_ADDRESS = (2, PROBE_ADDRESS)
 """``AKCJE`` (B) z adresem: tata skopiował przesunięty wiersz dwie kolumny w prawo, zamiast go przenieść."""
@@ -1407,9 +1466,15 @@ KNOWN = {
     name: "Granica wariantu B (zgoda Maksa 5.11.2026, ADR 0025): " + reason
     for names, reason in (
         (
-            ("P3", "P4", "P6", "P7", "P8", "P9"),
+            ("P3", "P4", "P6", "P7"),
             "wiersz, który nie jest pierwszy w bloku, a podpis przesunięcia kłamie albo go brak, wbrew faktowi domeny; "
             "u taty 84 z 84 podpisów zgodnych z położeniem odczytu i 0 kolizji",
+        ),
+        (
+            ("P8", "P9"),
+            "wiersz, który nie jest pierwszy w bloku, przesunięty w części: podpis przesunięcia prawdziwy, ale zakazana "
+            "kolumna stoi na miejscu, wbrew faktowi domeny; u taty 0 wierszy ze śladem przesunięcia poza pierwszym "
+            "wierszem bloku i 0 kolizji",
         ),
         (("T3",), "pierwszy wiersz na miejscu, w którym naraz kłamią wszystkie trzy fakty confirmed_shift"),
     )
@@ -1418,13 +1483,31 @@ KNOWN = {
 """Znane przypadki: powód, termin i zgoda Maksa. Po terminie przypadek znów pada, a naprawiony pada od razu (strict)."""
 
 
-def _colliding(index: int, probe: Order, other: int, value: str) -> tuple[Order, ...]:
-    """Wklejenie z wierszem próbnym ``probe`` na miejscu ``index`` i wartością ``value`` pod ``URZĄDZENIA`` wiersza
-    ``other``."""
+def _under(rows: tuple[Order, ...], other: int, value: str, column: int = DEVICES) -> tuple[Order, ...]:
+    """Wklejenie ``rows`` z wartością ``value`` w kolumnie ``column`` wiersza ``other``."""
 
-    rows = list(_pasted(index, probe))
-    rows[other] = replace(PASTED[other], cells=((DEVICES, value),))
-    return tuple(rows)
+    changed = list(rows)
+    changed[other] = replace(PASTED[other], cells=((column, value),))
+    return tuple(changed)
+
+
+def _colliding(index: int, probe: Order, other: int, value: str, column: int = DEVICES) -> tuple[Order, ...]:
+    """Wklejenie z wierszem próbnym ``probe`` na miejscu ``index`` i wartością ``value`` w kolumnie ``column`` (bez
+    niej ``URZĄDZENIA``) wiersza ``other``."""
+
+    return _under(_pasted(index, probe), other, value, column)
+
+
+UPPER = Order(datetime(2026, 10, 20, 12), "jan.nowak", 201)
+"""Zlecenie wiersza próbnego nad uporządkowanymi: jedyny wiersz swojego bloku wklejenia."""
+
+
+def _above_ordered(probe: Order, value: str | None) -> Intermax:
+    """Wiersz próbny ``probe`` z wyglądem z aplikacji między uporządkowanymi i wklejenie na dole z ``value`` pod
+    ``URZĄDZENIA`` drugiego wiersza (``None``: bez kolizji)."""
+
+    ordered = (*ORDERED, probe, Order(datetime(2026, 10, 20, 14), "jan.nowak", 1004))
+    return Intermax(ordered=ordered, raw=PASTED if value is None else _under(PASTED, 1, value))
 
 
 COLLISIONS = {
@@ -1460,6 +1543,25 @@ COLLISIONS = {
     ),
     "C1": Intermax(ordered=ORDERED, raw=_pasted(0, _probe(PASTED[0], A_DATE)), shifted=False),
     "C2": Intermax(ordered=ORDERED, raw=_pasted(2, _probe(PASTED[2], TEXT_DATE, shifted=True, links=()))),
+    # sondy W1 z przeglądu #966 r3: pierwszy wiersz przesunięty w części, trzy fakty prawdziwe, a NUMER UMOWY na miejscu
+    "F1": Intermax(ordered=ORDERED, raw=_colliding(0, _probe(PASTED[0], in_place_from=WORKER), 2, PROBE_ORANGE)),
+    "F2": Intermax(
+        ordered=ORDERED, raw=_colliding(0, _probe(PASTED[0], in_place_from=CONTRACT_NUMBER), 2, PROBE_ORANGE)
+    ),
+    "F3": Intermax(
+        ordered=ORDERED, raw=_colliding(0, _probe(PASTED[0], in_place_from=WORKER), 2, PROBE_ORANGE, NUMBER)
+    ),
+    "F4": Intermax(ordered=ORDERED, raw=_pasted(0, _probe(PASTED[0], in_place_from=WORKER))),
+    "F5": Intermax(ordered=ORDERED, raw=_colliding(0, _probe(PASTED[0], in_place_from=ADDRESS), 2, PROBE_ADDRESS)),
+    "F6": Intermax(ordered=ORDERED, raw=_colliding(0, _probe(PASTED[0]), 2, PROBE_ORANGE)),
+    # sondy W2 z przeglądu #966 r3: wiersz z wyglądem z aplikacji nad uporządkowanymi, podpisu brak (G1) albo kłamie (G2)
+    "G1": _above_ordered(_probe(UPPER, TEXT_DATE, shifted=True, app_look=True, links=()), PROBE_ADDRESS),
+    "G2": _above_ordered(_probe(UPPER, A_DATE, app_look=True), PROBE_ORANGE),
+    "G3": _above_ordered(_probe(UPPER, TEXT_DATE, shifted=True, app_look=True, links=()), None),
+    # ten sam wiersz co w G2 w wierszu 2, nad wszystkimi uporządkowanymi: nic go nie poprzedza
+    "G4": Intermax(
+        ordered=(_probe(UPPER, A_DATE, app_look=True), *ORDERED), raw=_under(PASTED, 1, PROBE_ORANGE)
+    ),
     # granice: środek bloku (sondy W1 P3, P4, P6–P9) i pierwszy wiersz na miejscu z trzema kłamiącymi faktami
     "P3": Intermax(ordered=ORDERED, raw=_colliding(1, _probe(PASTED[1], A_DATE), 3, PROBE_ADDRESS)),
     "P4": Intermax(ordered=ORDERED, raw=_colliding(1, _probe(PASTED[1], links=UNDER_DEVICES), 3, PROBE_ORANGE)),
@@ -1493,12 +1595,13 @@ def _known(name: str) -> tuple[pytest.MarkDecorator, ...]:
 @pytest.mark.parametrize(
     "intermax", [pytest.param(intermax, id=name, marks=_known(name)) for name, intermax in COLLISIONS.items()]
 )
-def test_adres_i_numer_orange_pierwszego_wiersza_bloku_nie_wychodza_takze_z_tej_samej_wartosci_pod_urzadzenia_innego(
+def test_adres_i_numer_orange_pierwszego_wiersza_bloku_nie_wychodza_takze_z_tej_samej_wartosci_w_zwyklej_kolumnie_innego(
     tmp_path: Path, intermax: Intermax
 ) -> None:
-    """Pierwszy wiersz bloku wklejenia, którego podpis przesunięcia kłamie albo go brak, z adresem albo numerem Orange
-    także pod ``URZĄDZENIA`` innego wiersza: adres i numer Orange nie wychodzą do pliku Logów, do Skrzynki Zgłoszeń ani
-    w Uwadze taty, bo bez trzech faktów przesunięcia pamięć zna oba położenia wszędzie."""
+    """Pierwszy wiersz bloku wklejenia, na dole albo nad uporządkowanymi, którego podpis przesunięcia kłamie, go brak
+    albo jest prawdziwy przy częściowym przesunięciu, z adresem albo numerem Orange także pod ``URZĄDZENIA`` albo
+    ``NUMER ZL.`` innego wiersza: adres i numer Orange nie wychodzą do pliku Logów, do Skrzynki Zgłoszeń ani w Uwadze
+    taty, bo bez trzech faktów przesunięcia pamięć zna oba położenia wszędzie, a z nimi tak samo ``NUMER UMOWY``."""
 
     centrum = ordering_centrum(tmp_path, intermax)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")

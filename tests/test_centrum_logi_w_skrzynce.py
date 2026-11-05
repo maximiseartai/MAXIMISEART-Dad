@@ -1191,8 +1191,9 @@ def test_logi_z_wierszami_intermax_z_dwoma_polozeniami_odtwarzaja_sie_z_zastrzez
         f"- Kopia wejścia ma wiersze INTERMAX z dwoma położeniami (arkusz {sheet['sheet']}, wiersze "
         f"{', '.join(map(str, rows))}): nie ma w nich komórek, które w którymś położeniu stałyby pod ADRES, NUMER UMOWY "
         "albo za UWAGI (w przesuniętym pierwszym wierszu wklejenia URZĄDZENIA i CZYNNOŚCI ZREALIZOWANE, w innym NUMER "
-        "ZL., ZWROT i UWAGI, gdy jego jedyne Hiperłącze nie stoi pod NUMER ZL., i DATA GODZ. POCZ., gdy nie jest datą z "
-        "godziną), więc odtworzony wiersz ich nie ma, a reguła, która je czyta (rodzaj zlecenia i Wpis, data), może "
+        "ZL., ZWROT i UWAGI, gdy jego jedyne Hiperłącze nie stoi pod NUMER ZL., nie ma Wykonawcy pod WYKONAWCA albo "
+        "jest pierwszym wierszem bloku, i DATA GODZ. POCZ., gdy nie jest datą z godziną), więc odtworzony wiersz ich "
+        "nie ma, a reguła, która je czyta (rodzaj zlecenia i Wpis, data), może "
         "zdecydować inaczej (ADR 0025)"
     ) in lines
 

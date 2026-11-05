@@ -699,7 +699,8 @@ def _intermax_limits(record: RunLog) -> list[Limit]:
                 f"Kopia wejścia ma wiersze INTERMAX z dwoma położeniami ({where}): nie ma w nich komórek, które w "
                 "którymś położeniu stałyby pod ADRES, NUMER UMOWY albo za UWAGI (w przesuniętym pierwszym wierszu "
                 "wklejenia URZĄDZENIA i CZYNNOŚCI ZREALIZOWANE, w innym NUMER ZL., ZWROT i UWAGI, gdy jego jedyne "
-                "Hiperłącze nie stoi pod NUMER ZL., i DATA GODZ. POCZ., gdy nie jest datą z godziną), więc odtworzony "
+                "Hiperłącze nie stoi pod NUMER ZL., nie ma Wykonawcy pod WYKONAWCA albo jest pierwszym wierszem bloku, "
+                "i DATA GODZ. POCZ., gdy nie jest datą z godziną), więc odtworzony "
                 "wiersz ich nie ma, a reguła, która je czyta (rodzaj zlecenia i Wpis, data), może zdecydować inaczej "
                 "(ADR 0025)"
             )

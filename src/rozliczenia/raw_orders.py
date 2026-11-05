@@ -396,34 +396,42 @@ def primary_offset(*, left_of_date: object, links: Collection[int] | None, numbe
     """Położenie podstawowe wiersza z dwoma położeniami, którego wartości pamięć reguły danych maskuje wszędzie:
     ``SHIFT``, gdy wiersz ma podpis przesunięcia w lewo (data z godziną dwie kolumny na lewo od ``DATA GODZ. POCZ.``
     albo Hiperłącze dwie kolumny na lewo od ``NUMER ZL.``), a inaczej 0 (na miejscu). Pamięć zna wartości obu położeń,
-    ale wartość z drugiego ma wąski zakres opcji 3 (ADR 0025), poza pierwszym wierszem bloku bez przesunięcia
-    potwierdzonego trzema faktami (``Shifts.everywhere``). Gdy w innym wierszu podpis nie mówi prawdy o zakazanej
-    kolumnie (data w A albo Hiperłącze pod ``URZĄDZENIA`` na wierszu na miejscu, częściowe przesunięcie, brak podpisu w
-    wierszu przesuniętym), prawdziwy adres albo numer Orange wychodzi tam, gdzie ta sama wartość stoi w zwykłej kolumnie
-    innego wiersza; w pierwszym wierszu tylko wtedy, gdy kłamią naraz wszystkie trzy fakty ``confirmed_shift``. Wybór
-    zmienia więc wyciek w tej granicy, a nie tylko koszt maski."""
+    ale wartość z drugiego ma wąski zakres opcji 3 (ADR 0025), poza pierwszym wierszem bloku (``everywhere_from``).
+    Gdy w innym wierszu podpis nie mówi prawdy o zakazanej kolumnie (data w A albo Hiperłącze pod ``URZĄDZENIA`` na
+    wierszu na miejscu, częściowe przesunięcie, brak podpisu w wierszu przesuniętym), prawdziwy adres albo numer Orange
+    wychodzi tam, gdzie ta sama wartość stoi w zwykłej kolumnie innego wiersza; w pierwszym wierszu tylko adres i tylko
+    wtedy, gdy kłamią naraz wszystkie trzy fakty ``confirmed_shift``. Wybór zmienia więc wyciek w tej granicy, a nie
+    tylko koszt maski."""
 
     if _is_date(left_of_date) or (links is not None and number - SHIFT in links):
         return SHIFT
     return 0
 
 
-def in_place_from(*, left_of_date: object, date: object, links: Collection[int] | None, number: int) -> int | None:
+def in_place_from(
+    *, first: bool, left_of_date: object, date: object, worker: object, links: Collection[int] | None, number: int
+) -> int | None:
     """Kolumna, od której wiersz z dwoma położeniami na pewno stoi na miejscu: ``NUMER ZL.``, gdy jedyne Hiperłącze
-    wiersza stoi pod nim, pod ``DATA GODZ. POCZ.`` jest data z godziną, a dwie kolumny na lewo od niej nic; ``None``:
-    któregoś z tych trzech faktów brak.
+    wiersza stoi pod nim, pod ``DATA GODZ. POCZ.`` jest data z godziną, dwie kolumny na lewo od niej nic, a pod
+    ``WYKONAWCA`` jest Wykonawca; ``None``: któregoś z tych czterech faktów brak albo wiersz jest pierwszym wierszem
+    bloku wklejenia (``first``).
 
     Hiperłącze z aplikacji firmowej idzie z komórką ``NUMER ZL.``, a przesunięcie w lewo, w całości albo w części,
     przesuwa wiersz od lewej: ``NUMER ZL.`` na miejscu znaczy, że wszystko od niego w prawo też. Samo Hiperłącze może
     stać w złym miejscu (sondy #917 r3: przesunięty wiersz z Hiperłączem pod ``NUMER ZL.``), więc potwierdzają je data
-    na miejscu i pusta kolumna, w której przesunięty wiersz ma datę. U taty tak wygląda 83 z 83 wklejonych wierszy na
-    miejscu. Granice: przesunięcie w prawo, wpis taty w komórkę z Hiperłączem i przesunięty wiersz z pustą datą z
-    aplikacji, ``ADRES`` jako datą z godziną i Hiperłączem przeniesionym pod ``NUMER ZL.``.
+    na miejscu, pusta kolumna, w której przesunięty wiersz ma datę, i Wykonawca: w przesuniętym wierszu pod
+    ``WYKONAWCA`` stoi ``SKUTECZNE``, które aplikacja zostawia puste (u taty 84 z 84 wklejonych wierszy), więc
+    przesunięty wiersz z pustą datą z aplikacji, ``ADRES`` jako datą z godziną i Hiperłączem przeniesionym pod ``NUMER
+    ZL.`` dowodu nie ma (przegląd #966 r3, W3). U taty dowód ma 83 z 83 wklejonych wierszy na miejscu. Pierwszy wiersz
+    bloku dowodu nie ma, bo pamięć zna jego oba położenia (``everywhere_from``), a Kopia wejścia nie niesie komórek,
+    które w drugim mogą być ``NUMER UMOWY``. Granice: przesunięcie w prawo, wpis taty w komórkę z Hiperłączem i
+    wartość (``SKUTECZNE`` albo Wykonawca) wpisana pod ``WYKONAWCA`` przesuniętego wiersza, zanim tata postawi go na
+    miejscu (na ``main`` taki wiersz wycieka tak samo).
     """
 
-    if links is None or set(links) != {number} or not _is_date(date) or not _blank(left_of_date):
+    if first or links is None or set(links) != {number} or not _is_date(date) or not _blank(left_of_date):
         return None
-    return number
+    return None if _blank(worker) else number
 
 
 def confirmed_shift(*, left_of_date: object, date: object, links: Collection[int] | None, number: int) -> bool:
@@ -433,6 +441,56 @@ def confirmed_shift(*, left_of_date: object, date: object, links: Collection[int
     wszystkich trzech naraz (wariant B, ADR 0025)."""
 
     return _is_date(left_of_date) and not _is_date(date) and links is not None and set(links) == {number - SHIFT}
+
+
+def everywhere_from(
+    *, first: bool, left_of_date: object, date: object, links: Collection[int] | None, number: int
+) -> int | None:
+    """Kolumna (od 1), od której pamięć reguły danych zna zakazane kolumny wiersza z dwoma położeniami w obu
+    położeniach wszędzie, a nie wartość z drugiego wąsko; ``None``: wiersz nie jest pierwszym wierszem bloku wklejenia
+    (``first``).
+
+    Pierwszy wiersz bloku, bo przesunięty przychodzi tylko on, a jego podpis przesunięcia może kłamać (wariant B,
+    decyzja Maksa z 5.11.2026): od kolumny 1, chyba że przesunięcie potwierdzają trzy fakty ``confirmed_shift``. One
+    dowodzą przesunięcia komórek do ``NUMER ZL.`` (jego Hiperłącze stoi ``SHIFT`` kolumn w lewo), ale nie na prawo od
+    niego: tata mógł postawić z powrotem komórki od ``WYKONAWCA`` albo ``NUMER UMOWY`` (częściowe przesunięcie, przegląd
+    #966 r3, W1), a wtedy ``NUMER UMOWY`` stoi na miejscu, czyli w drugim położeniu. Z trzema faktami więc od kolumny za
+    ``NUMER ZL.``."""
+
+    if not first:
+        return None
+    if confirmed_shift(left_of_date=left_of_date, date=date, links=links, number=number):
+        return number + 1
+    return 1
+
+
+def first_in_block(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Iterator[tuple[RowFacts, bool]]:
+    """Wiersze arkusza zleceń od ostatniego w górę, każdy z tym, czy jest pierwszym wierszem swojego bloku wklejenia:
+    wiersz z wyglądem z aplikacji, nad którym najbliższy wiersz z wartościami ma wygląd uporządkowany albo nie ma
+    żadnego. To pierwszy wiersz bloku na dole arkusza i każdego bloku nad uporządkowanymi (przegląd #966 r3, W2), jak w
+    Rejestrze w Przygotowaniu. Wiersz z wyglądem z aplikacji wychodzi dopiero po przeczytaniu najbliższego wiersza z
+    wartościami nad nim, więc odczyt sięga o jeden taki wiersz dalej niż ten, kto przestaje czytać."""
+
+    waiting: list[RowFacts] = []  # wiersz z wyglądem z aplikacji i puste wiersze nad nim
+    for row in rows_from_bottom:
+        if row.blank:
+            if waiting:
+                waiting.append(row)
+            else:
+                yield row, False
+            continue
+        ordered = _is_ordered(row, columns)
+        if waiting:
+            yield waiting[0], ordered
+            yield from ((blank, False) for blank in waiting[1:])
+            waiting = []
+        if ordered:
+            yield row, False
+        else:
+            waiting = [row]
+    if waiting:
+        yield waiting[0], True
+        yield from ((blank, False) for blank in waiting[1:])
 
 
 @dataclass(frozen=True)
@@ -448,7 +506,8 @@ class Shifts:
     shifted_row: int | None
     columns: OrderColumns
     first_row: int | None
-    """Pierwszy wiersz bloku Surowych zleceń; ``None``: bez bloku."""
+    """Pierwszy wiersz bloku Surowych zleceń, a w nim pierwszy wiersz bloku wklejenia z ``first_in_block``; ``None``:
+    bez bloku."""
 
     def read(self, row: int) -> int:
         """Przesunięcie, z którym rozpoznanie czyta wiersz ``row``: ``SHIFT`` w ``shifted_row``, inaczej 0."""
@@ -465,26 +524,27 @@ class Shifts:
         primary = primary_offset(left_of_date=row.value(columns.date - SHIFT), links=row.links, number=columns.number)
         return (primary, SHIFT - primary)
 
-    def in_place_from(self, row: RowFacts) -> int | None:
-        """Kolumna, od której wiersz na pewno stoi na miejscu (``in_place_from``)."""
+    def in_place_from(self, row: RowFacts, first: bool) -> int | None:
+        """Kolumna, od której wiersz na pewno stoi na miejscu (``in_place_from``); ``first``: wiersz jest pierwszym
+        wierszem swojego bloku wklejenia (``first_in_block``)."""
 
         columns = self.columns
         return in_place_from(
+            first=first,
             left_of_date=row.value(columns.date - SHIFT),
             date=row.value(columns.date),
+            worker=row.value(columns.worker),
             links=row.links,
             number=columns.number,
         )
 
-    def everywhere(self, row: RowFacts) -> bool:
-        """Czy pamięć reguły danych zna wartości obu położeń wiersza wszędzie, a nie wartość z drugiego wąsko: tak dla
-        pierwszego wiersza bloku bez przesunięcia potwierdzonego trzema faktami (``confirmed_shift``), bo przy nim
-        podpis przesunięcia może kłamać (przegląd #966 r2, decyzja Maksa 5.11.2026)."""
+    def everywhere_from(self, row: RowFacts, first: bool) -> int | None:
+        """Kolumna, od której pamięć reguły danych zna zakazane kolumny wiersza w obu położeniach wszędzie
+        (``everywhere_from``); ``first`` jak w ``in_place_from``."""
 
-        if row.number != self.first_row:
-            return False
         columns = self.columns
-        return not confirmed_shift(
+        return everywhere_from(
+            first=first,
             left_of_date=row.value(columns.date - SHIFT),
             date=row.value(columns.date),
             links=row.links,
