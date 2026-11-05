@@ -110,6 +110,20 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
+        "brak znanego issue na liście bez odczytu pliku zapisów to Gone (keyed_box.py known_issue: _held, #915)",
+        (Edit(MODEL, "             ELSE IF ~zna \\/ Swieze(q, \"issue\")\n", "             ELSE IF Swieze(q, \"issue\")\n"),),
+        _check("znane"),
+        "komentarz do świeżego issue Uwagi znika z kolejki bez wysyłki, gdy plik zapisów był nieczytelny przy liście",
+        NEW,
+    ),
+    Mutation(
+        "brak znanego issue na liście przy zapisie bez odpowiedzi to Gone (keyed_box.py known_issue: _held, #915)",
+        (Edit(MODEL, "             ELSE IF ~zna \\/ Swieze(q, \"issue\")\n", "             ELSE IF ~zna\n"),),
+        _check("znane"),
+        "komentarz do świeżego issue Uwagi znika z kolejki bez wysyłki, gdy plik zapisów nie przyjął odpowiedzi na nie",
+        NEW,
+    ),
+    Mutation(
         "issue okresu zakładane bez szukania (_deliver_to_period: if found is None)",
         (Edit(MODEL, "          /\\ IF Najnowsze(q, zna) = 0\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ PoArchiwum(q, \"zaloz\", \"find_issue",
               "          /\\ IF TRUE\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ PoArchiwum(q, \"zaloz\", \"find_issue"),),
