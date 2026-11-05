@@ -113,9 +113,12 @@ changes move it without changing a definition, so look for them in the diff: the
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `5e1905142` (2026-11-05, `main` after #860). Every row of the table was checked against the code at this
-commit, and each known finding below was replayed on that code (`historia-niezapisana` on `main` 86677b151, whose
-`src/` is the same).
+Sync commit: `3afc66996` (2026-11-05, PR #863 after its merge of `main` with #882). Every row of the table was checked
+against the code at this commit. The model did not change: #863 makes `guarded` mask also numbers in the fields with
+values from Dad's cells (`READ_VALUES`) and the phone with `48` without `+`, and puts the notes about the Kopia wejścia
+in `input_copy_notes`, but `RunLogs.guard` still calls it in one step and it stays idempotent (`Straz`). Each known
+finding below was replayed at `5e1905142` (`historia-niezapisana` on `main` 86677b151, whose `src/` is the same); #863
+changes none of the code they run through except the guard, which only masks more.
 
 ## Run
 
@@ -220,7 +223,9 @@ one run without all of them. All five were replayed on the code.
 4. **`zapis-logow-nieudany`, TeSameZnaki (open, cannot happen at Dad's yet).** Logi Urwanego Uruchomienia written by a
    Centrum work before the guard (#851) and not sent: the start guards them, `RunLogs.close` fails (`OSError`), and the
    queue gets the masked text while the file keeps the phone number. No Wydanie has the journal (#845) without the
-   guard (v0.4.3 has neither), so no such file exists at Dad's. Replayed with such a file and a folder in place of its
+   guard (v0.4.3 has neither), so no such file exists at Dad's. Logi written by a guard that masks less are the same
+   case: a Wydanie with the journal and the guard from before #863 would leave a phone `48600123456` in the file and
+   `[telefon]` in the Archiwum after a failed `close`. Replayed with such a file and a folder in place of its
    `.tmp`: the file has `600 123 456`, the file in the Archiwum `[telefon]`.
 
 5. **`historia-niezapisana`, BezUrwanychPoWyniku (open, a real defect, #871).** Same harm as 3, another cause: no
@@ -291,7 +296,9 @@ wrong:
 - **`send` runs atomically** on the event loop (`async def` without `await`), and the first request of a work comes
   before any Wycena of that work, because every route has the dependency.
 - **The guard is idempotent**: Logs that passed `guard` pass it again unchanged, so rereading a file written by `close`
-  changes nothing; only Logs written without the guard (`StareLogi`) change.
+  changes nothing; only Logs written without the guard (`StareLogi`) change. A number the guard masked becomes the text
+  of its mask, which it leaves as it is. Idempotent means one version of the guard: Logs written by a Centrum whose
+  guard masked less (before #851 nothing, before #863 the phone with `48` without `+`) are `StareLogi` for a newer one.
 - **`RunLog.model_validate_json(text).text == text`** for a file `close` wrote, and two builds of the same journal give
   Logs with the same orders; their environment, tool and Dad's actions may differ, which the model leaves out. A rebuild
   happens only when the file is missing, so the file and the newest accepted Logi stay the same, unless the clock went
