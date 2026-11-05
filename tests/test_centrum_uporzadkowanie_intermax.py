@@ -35,11 +35,15 @@ from tests.fixtures.centrum_intermax import (
     ordering_centrum,
 )
 from tests.fixtures.intermax import (
+    ACTIVITIES,
     ADDRESS,
     CONTRACT_NUMBER,
+    DATE,
+    DEVICES,
     FIRST,
     HEADERS,
     LAST,
+    NUMBER,
     ORDER_SHEET,
     Intermax,
     Order,
@@ -798,7 +802,9 @@ def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_ora
     """Kopia wejścia Uporządkowania to każdy arkusz zleceń INTERMAX z nagłówkami bez ``ADRES`` i ``NUMER UMOWY`` i z
     wklejonymi wierszami, które Planowanie rozpoznaje, a nie z uporządkowanymi dniami nad nimi ani starszym arkuszem bez
     wklejenia, z komórkami od A do ``UWAGI``, które Uporządkowanie przenosi do dnia. Przesunięty pierwszy wiersz ma
-    komórki pod ich nagłówkiem, bez kolumn z aplikacji, które w pliku wpadły pod ``ZWROT`` i ``UWAGI``. Z dołu arkusza
+    komórki pod ich nagłówkiem, bez kolumn z aplikacji, które w pliku wpadły pod ``ZWROT`` i ``UWAGI``. Wiersz bez
+    przesunięcia z wartością w kolumnie A, którą u taty ma tylko przesunięty, nie ma pewnego położenia (#917), więc ma
+    tylko komórki dozwolone w obu położeniach, także A. Z dołu arkusza
     nad wklejeniem Kopia ma tylko numery ostatniego uporządkowanego i żółtego wiersza, od których Planowanie liczy
     wiersz dnia (#847). Odcisk to rozmiar i skrót bajtów, które
     Uporządkowanie przeczytało, choć zaraz po odczycie OneDrive albo Autozapis Excela zapisał INTERMAX z innymi
@@ -851,9 +857,10 @@ def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_ora
     assert centrum.layout.yellow is not None
     assert (sheet["last_ordered_row"], sheet["yellow_row"]) == (centrum.layout.last_ordered, centrum.layout.yellow)
     assert sheet["rows"][2]["cells"]["A"] == "A-SYN"
-    assert sheet["rows"] == [
-        {"row": first + index, "cells": _copied_cells(order)} for index, order in enumerate(centrum.layout.raw)
-    ]
+    cells = [_copied_cells(order) for order in centrum.layout.raw]
+    cells[2] = {letter: value for letter, value in cells[2].items() if letter not in "CI"}
+    assert sheet["rows"] == [{"row": first + index, "cells": row} for index, row in enumerate(cells)]
+    assert sheet["uncertain_rows"] == [first + 2]
     assert logs["input_copy_notes"] == []
 
 
@@ -926,14 +933,15 @@ def test_arkusz_zlecen_ktorego_wierszy_nie_da_sie_rozdzielic_zatrzymuje_uporzadk
 
 
 # --- Położenia wklejonego wiersza (#842) ---------------------------------------------------------------------------------
-# Tabela położeń z opisu PR #905: wiersz próbny niesie syntetyczny adres i numer Orange tam, gdzie w pliku stoją jego
-# kolumny ``ADRES`` i ``NUMER UMOWY``, a ostatnie zlecenie wklejenia cytuje je w ``CZYNNOŚCI ZREALIZOWANE``, więc
-# strażnik musi je znać, gdziekolwiek stały. Pewne położenie ma wiersz uporządkowany, wiersz z datą z godziną pod
-# ``DATA GODZ. POCZ.`` i wiersz z nią dwie kolumny na lewo od niego, który pod ``DATA GODZ. POCZ.`` ma tekst z literą bez
-# śladu daty (#913, #917); w każdym innym ``ADRES`` i numer Orange mogą stać pod nagłówkiem albo dwie kolumny na lewo od
-# niego, więc Kopia ma z niego tylko komórki dozwolone w obu położeniach, a oba zna pamięć pracy Centrum.
-# ``NUMER ZL.`` uporządkowanego wiersza, który stoi tam, gdzie numer Orange przesuniętego, cytowany w tym samym tekście
-# zostaje: może wyjść (ADR 0025).
+# Tabela położeń z opisu PR #905 i tabela decyzji z opisu PR #917: wiersz próbny niesie syntetyczny adres i numer Orange
+# tam, gdzie w pliku stoją jego kolumny ``ADRES`` i ``NUMER UMOWY``, a ostatnie zlecenie wklejenia cytuje je w
+# ``CZYNNOŚCI ZREALIZOWANE``, więc strażnik musi je znać, gdziekolwiek stały. Pewne położenie ma wiersz uporządkowany i
+# wiersz, w którym data z godziną i Hiperłącze ``NUMER ZL.`` stoją w tym samym położeniu, a żadne z nich w drugim, przy
+# czym wiersz bez przesunięcia ma też pustą kolumnę A (#917). Kształt tekstu pod ``DATA GODZ. POCZ.`` i w kolumnie A
+# (data jako tekst, adres, Wykonawca, słowo) położenia nie ustala. W każdym innym wierszu ``ADRES`` i numer Orange mogą
+# stać pod nagłówkiem albo dwie kolumny na lewo od niego, więc Kopia ma z niego tylko komórki dozwolone w obu
+# położeniach, a oba zna pamięć pracy Centrum. ``NUMER ZL.`` uporządkowanego wiersza, który stoi tam, gdzie numer Orange
+# przesuniętego, cytowany w tym samym tekście zostaje: może wyjść (ADR 0025).
 
 PROBE_ADDRESS = "Przemiatana Wrzosowa 12 Kórnik"
 PROBE_ORANGE = "4809876543"
@@ -942,8 +950,23 @@ ORDERED = (
     Order(datetime(2026, 10, 19, 12), "anna.kowalska", 1002),
     Order(datetime(2026, 10, 20, 8), "jan.nowak", 1003),
 )
-ECHO = f"montaż {PROBE_ADDRESS} umowa {PROBE_ORANGE} po ZL-1003"
-ECHO_MASKED = "montaż [adres] umowa [numer Orange] po ZL-1003"
+
+
+def _echo(address: object) -> str:
+    """``CZYNNOŚCI ZREALIZOWANE`` ostatniego zlecenia: cytuje ``ADRES`` wiersza próbnego, gdy jest tekstem, i jego numer
+    Orange."""
+
+    return f"montaż {address} umowa {PROBE_ORANGE} po ZL-1003" if isinstance(address, str) else f"montaż umowa {PROBE_ORANGE} po ZL-1003"
+
+
+def _echo_masked(address: object) -> str:
+    """``_echo`` po strażniku, który zna ``ADRES`` i numer Orange wiersza próbnego."""
+
+    return "montaż [adres] umowa [numer Orange] po ZL-1003" if isinstance(address, str) else "montaż umowa [numer Orange] po ZL-1003"
+
+
+ECHO = _echo(PROBE_ADDRESS)
+ECHO_MASKED = _echo_masked(PROBE_ADDRESS)
 DONE = 13
 """``CZYNNOŚCI ZREALIZOWANE`` (M), wolny tekst technika."""
 PASTED = (
@@ -956,20 +979,31 @@ PASTED = (
 
 
 def _probe(
-    order: Order, *cells: tuple[int, datetime | str | int], shifted: bool = False, app_look: bool = False
+    order: Order,
+    *cells: tuple[int, datetime | str | int | None],
+    shifted: bool = False,
+    app_look: bool = False,
+    address: datetime | str | None = PROBE_ADDRESS,
+    linked: tuple[int, ...] = (NUMBER,),
 ) -> Order:
-    """Zlecenie ``order`` jako wiersz próbny: adres i numer Orange w kolumnach ``ADRES`` i ``NUMER UMOWY``."""
+    """Zlecenie ``order`` jako wiersz próbny: ``address`` i numer Orange w kolumnach ``ADRES`` i ``NUMER UMOWY``, a
+    Hiperłącze zlecenia w kolumnach ``linked`` (z aplikacji: ``NUMER ZL.``)."""
 
     return replace(
         order,
-        cells=((ADDRESS, PROBE_ADDRESS), (CONTRACT_NUMBER, PROBE_ORANGE), *cells),
+        cells=((ADDRESS, address), (CONTRACT_NUMBER, PROBE_ORANGE), *cells),
         shifted=shifted,
         app_look=app_look,
+        linked=linked,
     )
 
 
-def _pasted(index: int, probe: Order) -> tuple[Order, ...]:
-    return (*PASTED[:index], probe, *PASTED[index + 1 :])
+def _pasted(index: int, probe: Order, address: object = PROBE_ADDRESS) -> tuple[Order, ...]:
+    """Wklejenie ``PASTED`` z wierszem próbnym ``probe`` na miejscu ``index``, w którym ostatnie zlecenie cytuje
+    ``ADRES`` wiersza próbnego ``address`` (``_echo``)."""
+
+    echoing = (*PASTED[:-1], replace(PASTED[-1], cells=((DONE, _echo(address)),)))
+    return (*echoing[:index], probe, *echoing[index + 1 :])
 
 
 def _older_sheet_unsupported(register: Path) -> None:
@@ -986,8 +1020,10 @@ class Position:
     """Wiersz tabeli położeń: INTERMAX z wierszem próbnym i to, co tabela mówi o nim w Kopii wejścia.
 
     ``probe``: arkusz i indeks wiersza próbnego w ``raw`` albo ``older_raw``; ``None``: wiersza nie ma w Kopii.
-    ``letters``: kolumny wiersza próbnego w Kopii, ``uncertain``: wiersz bez pewnego położenia, ``stop``: kod
-    Zatrzymania (``None``: Uporządkowanie kończy się wynikiem OK), ``sheets``: arkusze w Kopii.
+    ``letters``: kolumny wiersza próbnego w Kopii, ``uncertain``: wiersz, którego Uporządkowanie nie czyta w jego pewnym
+    położeniu, ``stop``: kod Zatrzymania (``None``: Uporządkowanie kończy się wynikiem OK), ``sheets``: arkusze w Kopii.
+    ``address``: ``ADRES`` wiersza próbnego; gdy nie jest tekstem (data z godziną albo pusta komórka), strażnik chroni
+    w nim tylko numer Orange.
     """
 
     intermax: Intermax
@@ -997,6 +1033,13 @@ class Position:
     stop: str | None
     sheets: tuple[str, ...] = (ORDER_SHEET,)
     edit: Callable[[Path], None] | None = None
+    address: datetime | str | None = PROBE_ADDRESS
+
+    @property
+    def secrets(self) -> list[str]:
+        """Wartości wiersza próbnego, które nie mogą wyjść: tekst ``ADRES`` i numer Orange."""
+
+        return [*([self.address] if isinstance(self.address, str) else []), PROBE_ORANGE]
 
 
 TEXT_DATE = (3, "26.10.2026 11:00")
@@ -1004,6 +1047,61 @@ TEXT_DATE = (3, "26.10.2026 11:00")
 LEFT_DATE = (1, datetime(2026, 10, 26, 11))
 """Data z godziną w kolumnie A bez nagłówka, dwie kolumny na lewo od ``DATA GODZ. POCZ.``: tam, gdzie stoi data
 przesuniętego wiersza, choć tata może ją wpisać także w wierszu bez przesunięcia."""
+DT = datetime(2026, 10, 26, 11)
+"""Data z godziną w dniu wklejenia."""
+WORD = "brak"
+WORKER_NAME = "anna.kowalska"
+ADDRESS_TEXT = "Wrzosowa 7 Kórnik"
+DATE_TEXTS = {
+    "data_jako_tekst_bez_sladu": "26 października",
+    "data_jako_tekst_z_miesiacem_rzymskim": "26 X",
+    "data_jako_tekst_z_dniem_tygodnia": "pon. 26 paź",
+    "data_jako_tekst_bez_cyfr": "poniedziałek",
+    "adres": ADDRESS_TEXT,
+    "wykonawca": WORKER_NAME,
+    "slowo": WORD,
+}
+"""Teksty pod ``DATA GODZ. POCZ.`` wiersza bez przesunięcia (sondy recenzentów #917): data jako tekst w kilku
+zapisach, adres, Wykonawca i inne słowo; położenia nie ustala żaden z nich."""
+
+
+def _unshifted(
+    date: datetime | str | None,
+    left: datetime | str | None = None,
+    *,
+    index: int = 1,
+    linked: tuple[int, ...] = (NUMBER,),
+    worker: str | None = None,
+    cells: tuple[tuple[int, str], ...] = (),
+) -> Intermax:
+    """INTERMAX z wierszem próbnym bez przesunięcia na miejscu ``index`` wklejenia (0: pierwszy wiersz bloku, wklejonego
+    bez przesunięcia): ``date`` pod ``DATA GODZ. POCZ.``, ``left`` w kolumnie A bez nagłówka (``None``: pusta),
+    Hiperłącze zlecenia w ``linked``, a ``worker`` w ``WYKONAWCA``."""
+
+    order = PASTED[index] if worker is None else replace(PASTED[index], worker=worker)
+    probe = _probe(order, (DATE, date), *(((1, left),) if left is not None else ()), *cells, linked=linked)
+    return Intermax(ordered=ORDERED, raw=_pasted(index, probe), shifted=index != 0)
+
+
+def _shifted(
+    date: datetime | str | None,
+    address: datetime | str | None = PROBE_ADDRESS,
+    *,
+    index: int = 2,
+    linked: tuple[int, ...] = (NUMBER,),
+) -> Intermax:
+    """INTERMAX z przesuniętym wierszem próbnym na miejscu ``index`` (2: pierwszy wiersz kolejnego wklejenia, 0: pierwszy
+    wiersz bloku): wartość ``DATA GODZ. POCZ.`` ``date`` stoi w kolumnie A, ``ADRES`` ``address`` pod ``DATA GODZ.
+    POCZ.``, a Hiperłącze z kolumn ``linked`` dwie kolumny na lewo od nich (z aplikacji: ``NUMER ZL.``)."""
+
+    probe = _probe(PASTED[index], (DATE, date), shifted=index != 0, address=address, linked=linked)
+    return Intermax(ordered=ORDERED, raw=_pasted(index, probe, address))
+
+
+NEXT_PASTE = "przesuniety_pierwszy_wiersz_kolejnego_wklejenia"
+"""Początek nazwy przypadku z przesuniętym pierwszym wierszem kolejnego wklejenia (repro 1 z #905)."""
+UNDATED = "SUROWE_ZLECENIE_BEZ_DATY"
+WITHOUT_WORKER = "SUROWE_ZLECENIE_BEZ_WYKONAWCY"
 POSITIONS = {
     "zwykly_wiersz": Position(
         Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1]))), (ORDER_SHEET, 1), "CDFGHIJ", False, None
@@ -1129,6 +1227,84 @@ POSITIONS = {
         "SUROWE_ZLECENIA_W_KILKU_ARKUSZACH",
         sheets=(OLDER_SHEET, ORDER_SHEET),
     ),
+    # Tabela decyzji z opisu PR #917: wiersz bez przesunięcia (Hiperłącze z aplikacji pod ``NUMER ZL.``) ...
+    "wiersz_z_pusta_data": Position(_unshifted(None), (ORDER_SHEET, 1), "DFGHJ", True, UNDATED),
+    "wiersz_z_data_jako_tekst_bez_sladu": Position(_unshifted("26 października"), (ORDER_SHEET, 1), "DFGHJ", True, UNDATED),
+    **{
+        f"wiersz_z_data_z_godzina_w_kolumnie_a_i_{name}_pod_data": Position(
+            _unshifted(text, DT), (ORDER_SHEET, 1), "ADFGHJ", True, UNDATED
+        )
+        for name, text in DATE_TEXTS.items()
+    },
+    "wiersz_z_data_z_godzina_i_data_jako_tekstem_w_kolumnie_a": Position(
+        _unshifted(DT, "26.10.2026 11:00"), (ORDER_SHEET, 1), "ADFGHJ", True, None
+    ),
+    "wiersz_z_data_z_godzina_i_wykonawca_w_kolumnie_a": Position(
+        _unshifted(DT, WORKER_NAME), (ORDER_SHEET, 1), "ADFGHJ", True, None
+    ),
+    "wiersz_z_data_jako_tekst_i_slowem_w_kolumnie_a": Position(
+        _unshifted("26.10.2026 11:00", WORD), (ORDER_SHEET, 1), "ADFGHJ", True, UNDATED
+    ),
+    "wiersz_bez_wykonawcy_z_data_z_godzina_w_kolumnie_a_i_slowem_pod_data": Position(
+        _unshifted(WORD, DT, worker=""), (ORDER_SHEET, 1), "ADFGH", True, UNDATED
+    ),
+    "wiersz_z_wykonawca_w_czynnosciach_z_data_z_godzina_w_kolumnie_a_i_slowem_pod_data": Position(
+        _unshifted(WORD, DT, cells=((ACTIVITIES, "jan.nowak"),)), (ORDER_SHEET, 1), "ADFGHJ", True, UNDATED
+    ),
+    "wiersz_bez_wykonawcy_z_wykonawca_w_czynnosciach_i_data_z_godzina_w_obu_miejscach": Position(
+        _unshifted(DT, DT, worker="", cells=((ACTIVITIES, "jan.nowak"),)), (ORDER_SHEET, 1), "ADFGH", True, WITHOUT_WORKER
+    ),
+    "wiersz_z_data_z_godzina_bez_hiperlacza": Position(_unshifted(DT, linked=()), (ORDER_SHEET, 1), "DFGHJ", True, None),
+    "wiersz_z_data_z_godzina_z_hiperlaczem_takze_na_urzadzeniach": Position(
+        _unshifted(DT, linked=(NUMBER, DEVICES)), (ORDER_SHEET, 1), "DFGHJ", True, None
+    ),
+    "wiersz_ze_slowem_pod_data_i_hiperlaczem_na_urzadzeniach": Position(
+        _unshifted(WORD, linked=(DEVICES,)), (ORDER_SHEET, 1), "DFGHJ", True, UNDATED
+    ),
+    "wiersz_z_data_z_godzina_w_obu_miejscach_i_hiperlaczem_na_urzadzeniach": Position(
+        _unshifted(DT, DT, linked=(DEVICES,)), (ORDER_SHEET, 1), "ADFGHJ", True, None
+    ),
+    "wiersz_z_data_z_godzina_w_kolumnie_a_i_slowem_pod_data_bez_hiperlacza": Position(
+        _unshifted(WORD, DT, linked=()), (ORDER_SHEET, 1), "ADFGHJ", True, UNDATED
+    ),
+    "wiersz_z_data_z_godzina_w_kolumnie_a_i_slowem_pod_data_z_hiperlaczem_takze_na_urzadzeniach": Position(
+        _unshifted(WORD, DT, linked=(NUMBER, DEVICES)), (ORDER_SHEET, 1), "ADFGHJ", True, UNDATED
+    ),
+    **{
+        f"pierwszy_wiersz_bez_przesuniecia_z_data_z_godzina_w_kolumnie_a_i_{name}_pod_data": Position(
+            _unshifted(text, DT, index=0), (ORDER_SHEET, 0), "CFHIJL", True, None
+        )
+        for name, text in (("slowo", WORD), ("wykonawca", WORKER_NAME), ("data_jako_tekst", "26.10.2026 11:00"))
+    },
+    # ... i wiersz przesunięty (Hiperłącze z aplikacji dwie kolumny na lewo od ``NUMER ZL.``).
+    f"{NEXT_PASTE}_z_adresem_jak_data_jako_tekst": Position(
+        _shifted(DT, "3 Maja 12 Kórnik"), (ORDER_SHEET, 2), "ABDFGH", True, UNDATED, address="3 Maja 12 Kórnik"
+    ),
+    f"{NEXT_PASTE}_bez_adresu": Position(_shifted(DT, None), (ORDER_SHEET, 2), "ABDFGH", True, UNDATED, address=None),
+    f"{NEXT_PASTE}_z_adresem_jako_data_z_godzina": Position(_shifted(DT, DT), (ORDER_SHEET, 2), "ABDFGH", True, WITHOUT_WORKER, address=DT),
+    f"{NEXT_PASTE}_bez_daty": Position(_shifted(None), (ORDER_SHEET, 2), "BDFGH", True, UNDATED),
+    f"{NEXT_PASTE}_z_data_jako_tekst": Position(_shifted("26.10.2026 11:00"), (ORDER_SHEET, 2), "ABDFGH", True, UNDATED),
+    f"{NEXT_PASTE}_z_data_jako_tekst_i_adresem_jako_data_z_godzina": Position(
+        _shifted("26.10.2026 11:00", DT), (ORDER_SHEET, 2), "ABDFGH", True, WITHOUT_WORKER, address=DT
+    ),
+    "przesuniety_pierwszy_wiersz_wklejenia_z_data_jako_tekst_i_adresem_jako_data_z_godzina": Position(
+        _shifted("26.10.2026 11:00", DT, index=0), (ORDER_SHEET, 0), "ABDFGH", True, WITHOUT_WORKER, address=DT
+    ),
+    f"{NEXT_PASTE}_z_hiperlaczem_na_numerze_umowy": Position(
+        _shifted(DT, linked=(CONTRACT_NUMBER,)), (ORDER_SHEET, 2), "ABDFGH", True, UNDATED
+    ),
+    f"{NEXT_PASTE}_bez_daty_z_hiperlaczem_na_numerze_umowy": Position(
+        _shifted(None, linked=(CONTRACT_NUMBER,)), (ORDER_SHEET, 2), "BDFGH", True, UNDATED
+    ),
+    f"{NEXT_PASTE}_z_adresem_jako_data_z_godzina_i_hiperlaczem_na_numerze_umowy": Position(
+        _shifted(DT, DT, linked=(CONTRACT_NUMBER,)), (ORDER_SHEET, 2), "ABDFGH", True, WITHOUT_WORKER, address=DT
+    ),
+    f"{NEXT_PASTE}_bez_daty_z_adresem_jako_data_z_godzina_bez_hiperlacza": Position(
+        _shifted(None, DT, linked=()), (ORDER_SHEET, 2), "BDFGH", True, WITHOUT_WORKER, address=DT
+    ),
+    f"{NEXT_PASTE}_bez_daty_z_adresem_jako_data_z_godzina_i_hiperlaczem_takze_na_numerze_umowy": Position(
+        _shifted(None, DT, linked=(NUMBER, CONTRACT_NUMBER)), (ORDER_SHEET, 2), "BDFGH", True, WITHOUT_WORKER, address=DT
+    ),
 }
 
 
@@ -1154,7 +1330,7 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
         [] if position.stop is None else [position.stop]
     ), result
     texts = [path.read_text(encoding="utf-8") for path in sorted((tmp_path / "logs" / "uruchomienia").glob("*"))] + sent
-    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in texts)] == []
+    assert [value for value in position.secrets if any(value in text for text in texts)] == []
     [copied] = logs["input_copy"]
     sheets = {sheet["sheet"]: sheet for sheet in copied["sheets"]}
     layout = centrum.layout
@@ -1163,7 +1339,7 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
         name: (pasted_rows[name], []) for name in position.sheets
     }
     [echo] = [row["cells"] for row in sheets[ORDER_SHEET]["rows"] if row["row"] == layout.raw_rows[-1]]
-    assert echo["M"] == ECHO_MASKED
+    assert echo["M"] == _echo_masked(position.address)
     probe_row = None
     if position.probe is not None:
         name, index = position.probe
@@ -1192,10 +1368,12 @@ def test_adres_i_numer_orange_wklejonego_wiersza_w_kazdym_polozeniu_zna_uwaga_ta
         position.edit(centrum.register)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
     centrum.run_to_end()
+    cited = f"Klient {position.address}, umowa" if isinstance(position.address, str) else "Umowa"
 
-    draft = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": f"Klient {PROBE_ADDRESS}, umowa {PROBE_ORANGE}"})
+    draft = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": f"{cited} {PROBE_ORANGE}"})
 
-    assert draft.json()["body"].splitlines()[0] == "Klient [adres], umowa [numer Orange]"
+    masked = "Klient [adres], umowa" if isinstance(position.address, str) else "Umowa"
+    assert draft.json()["body"].splitlines()[0] == f"{masked} [numer Orange]"
 
 
 def _masked_cells(sheet: dict[str, Any]) -> list[tuple[int, str]]:
@@ -1293,6 +1471,29 @@ def test_w_arkuszu_z_naglowkiem_dwie_kolumny_przed_data_data_z_godzina_nie_ustal
     assert [message["code"] for message in logs["messages"] if message["kind"] == "stop"] == ["SUROWE_ZLECENIE_BEZ_DATY"]
     texts = [path.read_text(encoding="utf-8") for path in sorted((tmp_path / "logs" / "uruchomienia").glob("*"))] + sent
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in texts)] == []
+    [copied] = logs["input_copy"]
+    [sheet] = copied["sheets"]
+    assert sheet["uncertain_rows"] == list(centrum.layout.raw_rows)
+
+
+def test_arkusz_zlecen_z_nieczytelnym_blokiem_hiperlaczy_nie_daje_pewnego_polozenia_zadnemu_wklejonemu_wierszowi(
+    tmp_path: Path,
+) -> None:
+    """Hiperłącze ``NUMER ZL.`` jest jednym z dwóch śladów, które ustalają położenie wklejonego wiersza (#917). Arkusz
+    zleceń, którego bloku Hiperłączy nie da się przeczytać, nie ma tego śladu: Uporządkowanie kończy się wynikiem, a
+    żaden wklejony wiersz nie ma w Kopii pewnego położenia."""
+
+    centrum = ordering_centrum(tmp_path, Intermax(ordered=ORDERED, raw=PASTED))
+    order_sheet = "xl/worksheets/sheet2.xml"
+    rewrite_parts(
+        centrum.register,
+        lambda name, data: data.replace(b"<hyperlink ", b'<hyperlink display="a&b" ', 1) if name == order_sheet else data,
+    )
+
+    centrum.run_to_end()
+
+    [logs] = centrum.run_logs()
+    assert [message["code"] for message in logs["messages"] if message["kind"] == "stop"] == []
     [copied] = logs["input_copy"]
     [sheet] = copied["sheets"]
     assert sheet["uncertain_rows"] == list(centrum.layout.raw_rows)

@@ -1106,9 +1106,10 @@ def test_logi_z_wierszem_intermax_bez_pewnego_polozenia_daja_granice_kopii_a_nie
 
     assert code == 3
     assert lines[0] == (
-        f"NIE DA SIĘ ODTWORZYĆ: Kopia wejścia ma wiersze INTERMAX bez pewnego położenia (arkusz {sheet['sheet']}, wiersze "
-        f"{uncertain}): brak w nich komórek DATA GODZ. POCZ., NUMER ZL., ZWROT i UWAGI, a strażnik mógł zamaskować w Kopii "
-        "wartości z drugiego położenia (#913), więc odtworzenie nie zbuduje tych wierszy"
+        "NIE DA SIĘ ODTWORZYĆ: Kopia wejścia ma wiersze INTERMAX, których Uporządkowanie nie czyta w ich pewnym położeniu "
+        f"(arkusz {sheet['sheet']}, wiersze {uncertain}): ma z nich tylko komórki dozwolone w każdym ich możliwym "
+        "położeniu, a gdy położenia nie da się ustalić, strażnik mógł zamaskować w Kopii wartości z drugiego położenia "
+        "(#913), więc odtworzenie nie zbuduje tych wierszy"
     )
     assert not any(line.startswith(("Pierwsza różnica", "Porównano")) for line in lines)
 

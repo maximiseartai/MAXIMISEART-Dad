@@ -22,17 +22,7 @@ from hypothesis import strategies as st
 from rozliczenia import client_data
 from rozliczenia.engine import run_settlements
 from rozliczenia.quantity_rules import OrderContent, QuantityColumn, RuleResult, WithoutRule, evaluate
-from rozliczenia.raw_orders import (
-    SHIFT,
-    CellFacts,
-    OrderColumns,
-    Placement,
-    RawBlock,
-    RowFacts,
-    plan_day,
-    recognize,
-    shifts,
-)
+from rozliczenia.raw_orders import CellFacts, OrderColumns, Placement, RawBlock, RowFacts, plan_day, recognize
 from tests.fixtures.formy_telefonu import MASKED, PHONE
 from tests.fixtures.settlement import CellValue, make_fixture, write_quantity_source
 
@@ -198,7 +188,7 @@ def test_ilosci_tylko_dla_inea_przy_slowie_w_dowolnym_miejscu_urzadzen_bez_wzgle
 
 
 # Kolumny arkusza zleceń INTERMAX w testach rozpoznania: tylko te, które czyta Kolor operatora i Wpis.
-COLUMNS = OrderColumns(first=1, date=2, worker=3, last=8, devices=4, activities=5, contract_number=6)
+COLUMNS = OrderColumns(first=1, date=2, worker=3, last=8, devices=4, activities=5, contract_number=6, order_number=7)
 # Nazwy operatorów z GLOSSARY.md (Kolor operatora, Wpis urządzenia i czynności INTERMAX) w zapisie z niego.
 OPERATORS = ("TMOBILE", "T-Mobile", "ORANGE", "Netia", "INEA", "P4", "Plus", "VECTRA", "SYSTEMIA")
 WHOLESALE_INSTALLATION = "Instalacja Hurt"
@@ -335,55 +325,3 @@ def test_wartosc_adresu_przeczytana_z_pliku_jest_zamaskowana_w_kazdym_zapisie_z_
         f"{before}[adres], dalej", ("Reguła danych: zamaskowano wartość kolumny ADRES w: komórka L6.",)
     )
     assert forbidden.guard(f"{before}{written}ów", "komórka L6").notes == (), "dłuższe słowo to inny tekst"
-
-
-# Układ arkusza zleceń taty: A bez nagłówka, DATA GODZ. POCZ. w C, ADRES (zakazana) w E, UWAGI w O.
-INTERMAX_COLUMNS = OrderColumns(first=2, date=3, worker=10, last=15, devices=7, activities=8, contract_number=11)
-INTERMAX_SHIFTS = shifts([], INTERMAX_COLUMNS, forbidden={5, 11}, headed=set(range(2, 16)))
-DATE_TRACES = ("11:00", "11.00", "26.10", "26-10-26", "2026", "26.10.2026 11:00", "2026-10-26")
-"""Ślady daty i godziny z docstringu ``raw_orders._DATE_TRACE``."""
-
-
-def _pasted_row(under_date: object) -> RowFacts:
-    """Wklejony wiersz z wyglądem z aplikacji: data z godziną w kolumnie A, a ``under_date`` pod ``DATA GODZ. POCZ.``."""
-
-    look = ("Roboto", 4.0)
-    cells = {1: CellFacts(datetime(2026, 10, 26, 11), look, False), 3: CellFacts(under_date, look, False)}
-    return RowFacts(12, cells, False)
-
-
-@PROPERTY
-@given(
-    st.sampled_from(DATE_TRACES),
-    st.text(LETTERS + " ", max_size=8),
-    st.sampled_from(("", " ", ",", "(", "godz.", "dn. ")),
-    st.sampled_from(("", " ", ",", ")", ".", "r.")),
-    st.text(LETTERS + " ", max_size=8),
-)
-def test_tekst_z_data_albo_godzina_w_dowolnym_miejscu_pod_data_zostawia_wiersz_w_obu_polozeniach(
-    trace: str, before: str, opening: str, closing: str, after: str
-) -> None:
-    """Wiersz bez przesunięcia może mieć w kolumnie bez nagłówka datę z godziną, a pod ``DATA GODZ. POCZ.`` datę jako
-    tekst (#917): tekst ze śladem daty albo godziny gdziekolwiek, z literami i interpunkcją wokół, w dowolnej wielkości
-    liter, nie przeczy położeniu bez przesunięcia, więc wiersz ma oba położenia (``raw_orders.Shifts``)."""
-
-    assert INTERMAX_SHIFTS.possible(_pasted_row(f"{before}{opening}{trace}{closing}{after}")) == (0, SHIFT)
-
-
-@pytest.mark.parametrize("under_date", [None, "", "  ", "-", "?", "12", "26 10", 46321, 46321.5])
-def test_pusta_data_liczba_albo_tekst_bez_litery_pod_data_zostawia_wiersz_w_obu_polozeniach(under_date: object) -> None:
-    """Pusta komórka, liczba i tekst bez litery pod ``DATA GODZ. POCZ.`` mogą być datą wiersza bez przesunięcia, także
-    z datą z godziną w kolumnie bez nagłówka, więc nie przeczą temu położeniu i wiersz ma oba (#917)."""
-
-    assert INTERMAX_SHIFTS.possible(_pasted_row(under_date)) == (0, SHIFT)
-
-
-@pytest.mark.parametrize(
-    "address", ["Ulica 101", "Wrzosowa 12/4 Kórnik", "OS. LECHA 3 m. 4", "ul. 3 Maja 12", "62-035 Kórnik, Polna 7"]
-)
-def test_adres_pod_data_z_data_z_godzina_w_kolumnie_bez_naglowka_to_wiersz_przesuniety(address: str) -> None:
-    """Przesunięty pierwszy wiersz wklejenia ma datę z godziną dwie kolumny na lewo od ``DATA GODZ. POCZ.``, a pod nią
-    ``ADRES``: tekst z literą bez śladu daty ani godziny, któremu położenie bez przesunięcia przeczy (#917)."""
-
-    assert INTERMAX_SHIFTS.possible(_pasted_row(address)) == (SHIFT,)
-

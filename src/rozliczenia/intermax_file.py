@@ -3,7 +3,8 @@
 ``Register.read`` czyta bajty INTERMAX przez jedyne miejsce odczytu bajtów skoroszytu (``workbook_files``) i
 znajduje arkusze zleceń po nagłówkach z wiersza 1, tak jak Przygotowanie pliku zbiorczego (``COLUMNS``), z
 kolumnami ``AKCJE`` i ``UWAGI``. Arkusz zleceń daje swoje wiersze od dołu jako fakty (``raw_orders.RowFacts``),
-bez openpyxl: ~42 tys. wierszy taty to dziesiątki MB XML, a rozpoznanie potrzebuje tylko dołu arkusza. Komórki
+z kolumnami komórek z Hiperłączem (``hyperlinks.read_sheet_hyperlinks``), bez openpyxl: ~42 tys. wierszy taty to
+dziesiątki MB XML, a rozpoznanie potrzebuje tylko dołu arkusza. Komórki
 ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych pracy Centrum (``forbidden``,
 ADR 0025) w każdym miejscu, w którym mogą stać (``raw_orders.Shifts.possible``): wiersza z pewnym położeniem tam,
 gdzie stoją, pod nagłówkiem albo, w przesuniętym wierszu, dwie kolumny na lewo od niego, a wiersza bez niego w obu
@@ -70,6 +71,7 @@ from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH, from_excel
 from openpyxl.workbook.properties import WorkbookProperties
 
 from . import client_data, raw_orders, workbook_files
+from .hyperlinks import NO_HYPERLINKS, SheetHyperlinks, read_sheet_hyperlinks
 from .input_copy import InputCopy, WorkbookCopy, modified_at
 from .preparation_register import ACTIVITIES, COLUMNS, DATE, DEVICES, WORKER
 from .raw_orders import SHIFT, CellFacts, DayPlan, IntermaxEntry, OperatorColor, OrderColumns, RawBlock, RowFacts
@@ -108,6 +110,8 @@ _SHEET_VIEW: Final = re.compile(rb"<sheetView\b([^>]*?)(?:/>|>.*?</sheetView>)",
 _PANE: Final = re.compile(rb"<pane\b([^>]*?)\s*/>")
 _CONTRACT_NUMBER: Final = "NUMER UMOWY/ZLECENIA ORANGE"
 """Nagłówek docelowy kolumny ``NUMER UMOWY`` w ``COLUMNS`` Rejestru."""
+_ORDER_NUMBER: Final = "NUMER ZL."
+"""Nagłówek docelowy kolumny ``NUMER ZL.`` w ``COLUMNS`` Rejestru."""
 _TAB_SELECTED: Final = re.compile(rb'(<sheetView\b[^>]*?)\stabSelected="(?:1|true)"')
 _WORKBOOK_VIEW: Final = re.compile(rb"<workbookView\b([^>]*?)(/?>)")
 _STYLE_LISTS: Final = (b"fonts", b"fills", b"borders", b"cellXfs")
@@ -224,6 +228,16 @@ class OrderSheet:
         return client_data.forbidden_columns(self._register._header(self.part) or {})
 
     @cached_property
+    def _hyperlinks(self) -> SheetHyperlinks:
+        """Hiperłącza arkusza, czytane raz; zepsuty blok ``<hyperlinks>`` nie daje żadnego, więc żaden wiersz poza
+        uporządkowanymi nie ma wtedy pewnego położenia (``raw_orders.Shifts``)."""
+
+        try:
+            return read_sheet_hyperlinks(self._register.content, self.name)
+        except ElementTree.ParseError:
+            return NO_HYPERLINKS
+
+    @cached_property
     def _shifts(self) -> raw_orders.Shifts:
         return raw_orders.shifts(
             self._facts_from_bottom(),
@@ -287,11 +301,12 @@ class OrderSheet:
             )
 
     def _facts_from_bottom(self) -> Iterator[RowFacts]:
-        sheet = self.sheet_xml
+        sheet, links = self.sheet_xml, self._hyperlinks
         for row in reversed(sheet.data.rows):
             if row.number < 2:
                 return
-            yield self._register._facts(_row_tag(sheet.xml, row), row.number, _cells(sheet.xml[row.start : row.end]))
+            cells = _cells(sheet.xml[row.start : row.end])
+            yield self._register._facts(_row_tag(sheet.xml, row), row.number, cells, links)
 
 
 def _row_tag(xml: bytes, row: SheetRow) -> bytes:
@@ -411,6 +426,7 @@ class Register:
             devices=cast(int, named[DEVICES.target_header]),
             activities=cast(int, named[ACTIVITIES.target_header]),
             contract_number=cast(int, named[_CONTRACT_NUMBER]),
+            order_number=cast(int, named[_ORDER_NUMBER]),
         )
 
     def _value(self, cell: _Cell) -> object:
@@ -436,17 +452,14 @@ class Register:
                 text = html.unescape(raw)
         return None if is_blank(text) else text
 
-    def _facts(self, row_tag: bytes, number: int, cells: Sequence[_Cell]) -> RowFacts:
+    def _facts(self, row_tag: bytes, number: int, cells: Sequence[_Cell], links: SheetHyperlinks) -> RowFacts:
         styles = self._styles
         attributes = _row_attributes(row_tag)
         row_style = attributes.get(b"s") if attributes.get(b"customFormat") == b"1" else None
+        facts = {cell.column: CellFacts(self._value(cell), styles.faces[cell.style], styles.yellow[cell.style]) for cell in cells}
+        values = [facts[column].value if column in facts else None for column in range(1, max(facts, default=0) + 1)]
         return RowFacts(
-            number,
-            {
-                cell.column: CellFacts(self._value(cell), styles.faces[cell.style], styles.yellow[cell.style])
-                for cell in cells
-            },
-            row_style is not None and styles.yellow[int(row_style)],
+            number, facts, row_style is not None and styles.yellow[int(row_style)], frozenset(links.row(number, values))
         )
 
     def ordered(self, sheet: OrderSheet, block: RawBlock, plan: DayPlan) -> bytes:

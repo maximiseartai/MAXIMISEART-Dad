@@ -98,40 +98,38 @@ telefony na okres.
   (ADR 0019) te komórki stoją dwie kolumny na lewo od nagłówka; rozpoznaje go
   to samo rozpoznanie bloku co Uporządkowanie. Pierwszy wiersz drugiego
   wklejenia też przychodzi przesunięty, a pierwszy wiersz z datą jako tekstem
-  nie musi być przesunięty, więc położenie wiersza ustala data z godziną,
-  i to tylko wtedy, gdy wiersz przeczy też drugiemu położeniu (#913, #917).
-  To wymaga układu arkusza taty, który kod sprawdza po nagłówkach z wiersza 1:
-  dwie kolumny na prawo od `DATA GODZ. POCZ.` stoi zakazana kolumna (`ADRES`),
-  a dwie kolumny na lewo kolumna bez nagłówka. Wiersz z datą z godziną pod
-  `DATA GODZ. POCZ.` stoi bez przesunięcia, bo przesunięty miałby datę z
-  godziną jako `ADRES`. Wiersz z datą z godziną dwie kolumny na lewo stoi
-  przesunięty tylko wtedy, gdy pod `DATA GODZ. POCZ.` ma tekst z literą bez
-  śladu daty ani godziny (np. adres): kolumnę bez nagłówka tata może wypełnić
-  także w wierszu bez przesunięcia, a ten ma pod `DATA GODZ. POCZ.` datę,
-  choćby jako tekst, albo nic. Na kopii INTERMAX taty z wklejeniem z
-  25.10.2026 (42 839 wierszy, pomiar do #913 i #917) datę z godziną dwie
-  kolumny na prawo od `DATA GODZ. POCZ.` ma 0 wierszy, a dwie kolumny na lewo
-  1: przesunięty pierwszy wiersz wklejenia, z tekstem adresu pod `DATA GODZ.
-  POCZ.`; taki tekst ma tam jeszcze 1 wiersz uporządkowany. Wyciek zostaje
-  więc możliwy tylko w wierszu bez przesunięcia, w którym tata wpisał datę z
-  godziną w kolumnę bez nagłówka, a pod `DATA GODZ. POCZ.` tekst bez daty
-  (np. słowo). W innym układzie arkusza pewne
-  położenie ma tylko wiersz uporządkowany. Komórki wiersza z pewnym
-  położeniem poznaje pamięć pracy Centrum tam, gdzie stoją, więc wiersz z
-  pewnym położeniem nie maskuje w Kopii następnych Uruchomień niczego
-  zbędnego (przed #913 przesunięty wiersz kolejnego wklejenia maskował
-  `URZĄDZENIA` w 82 z 84 wierszy Kopii na tej kopii INTERMAX). Wiersz bez
-  niego (każdy inny wiersz z wartościami, a w innym układzie arkusza każdy
-  wiersz poza uporządkowanymi) ma `ADRES` i numer Orange w jednym z dwóch miejsc, a w
-  drugim wartość innej kolumny, np. `NUMER ZL.`. Jego komórki z obu miejsc
-  też poznaje pamięć pracy Centrum: Uwaga taty i Logi innego Uruchomienia,
-  które zacytują jego adres, nie czytają tego wiersza ponownie, więc tylko ta
-  pamięć je chroni. Kosztem jest maska wartości z drugiego miejsca w Kopii
-  następnych Uruchomień, gdy tata poprawi wiersz (na tej kopii INTERMAX 1
-  maska w `NUMER ZL.` po wierszu z datą jako tekstem); prywatność wygrywa
-  (decyzja w PR #917). Kopia wejścia niesie z wiersza, którego
-  rozpoznanie nie czyta w jego pewnym położeniu, tylko komórki dozwolone w
-  każdym możliwym położeniu (#842 i #913, tabela położeń w PR #905).
+  nie musi być przesunięty, więc położenie wiersza ustalają dwa niezależne
+  ślady, a nie rozpoznanie ani kształt tekstu, bo adres i data jako tekst mogą
+  wyglądać tak samo (#913, #917): data z godziną i Hiperłącze `NUMER ZL.`,
+  które daje aplikacja firmowa przy wklejeniu i które przesuwa się razem ze
+  swoją komórką. Położenie jest pewne, gdy oba stoją w nim, a żaden w drugim
+  położeniu; wiersz bez przesunięcia ma też pustą kolumnę dwie na lewo od
+  `DATA GODZ. POCZ.`, w której przesunięty ma swoją datę. To wymaga układu
+  arkusza taty, który kod sprawdza po nagłówkach z wiersza 1: dwie kolumny na
+  prawo od `DATA GODZ. POCZ.` stoi zakazana kolumna (`ADRES`), a dwie kolumny
+  na lewo kolumna bez nagłówka. Na kopii INTERMAX taty z wklejeniem z
+  25.10.2026 (42 839 wierszy, pomiar do #917) kolumna bez nagłówka ma wartość
+  tylko w przesuniętym pierwszym wierszu wklejenia, a każdy z 84 wklejonych
+  wierszy ma jedno Hiperłącze, w `NUMER ZL.` tam, gdzie stoi: 83 pod
+  nagłówkiem i 1, w przesuniętym wierszu, dwie kolumny na lewo. W innym
+  układzie arkusza pewne położenie ma tylko wiersz uporządkowany. Komórki
+  wiersza z pewnym położeniem poznaje pamięć pracy Centrum tam, gdzie stoją,
+  więc wiersz z pewnym położeniem nie maskuje w Kopii następnych Uruchomień
+  niczego zbędnego (przed #913 przesunięty wiersz kolejnego wklejenia
+  maskował `URZĄDZENIA` w 82 z 84 wierszy Kopii na tej kopii INTERMAX).
+  Wiersz bez niego (każdy inny wiersz z wartościami, a w innym układzie
+  arkusza każdy wiersz poza uporządkowanymi) ma `ADRES` i numer Orange w
+  jednym z dwóch miejsc, a w drugim wartość innej kolumny, np. `NUMER ZL.`.
+  Jego komórki z obu miejsc też poznaje pamięć pracy Centrum: Uwaga taty i
+  Logi innego Uruchomienia, które zacytują jego adres, nie czytają tego
+  wiersza ponownie, więc tylko ta pamięć je chroni. Kosztem jest maska
+  wartości z drugiego miejsca w Kopii następnych Uruchomień tej pracy
+  Centrum, gdy tata poprawi wiersz (na tej kopii INTERMAX 1 maska w
+  `NUMER ZL.` po wierszu z datą jako tekstem); prywatność wygrywa z
+  odtwarzalnością (decyzja przy #913). Kopia wejścia niesie z wiersza,
+  którego rozpoznanie nie czyta w jego pewnym położeniu, tylko komórki
+  dozwolone w każdym możliwym położeniu (#842 i #913, tabela położeń w PR
+  #905 i tabela decyzji w PR #917).
   Pamięć pracy Centrum jest jedna na pracę
   Centrum: Centrum tworzy ją przy starcie i podaje czytnikom i producentom, a
   nie jest stanem modułu, więc dwie prace Centrum w jednym procesie (testy)

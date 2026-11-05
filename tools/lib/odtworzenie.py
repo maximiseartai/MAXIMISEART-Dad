@@ -6,14 +6,15 @@ Jedyną operacją jest ``replay()``. Kształt danych:
 - Logi Uruchomienia (``run_logs.RunLog`` tego drzewa) dają proces, tryb, okres, wynik i ślad do porównania, a Kopia
   wejścia wiersze plików taty.
 - Granice (``Limit``) to to, czego Logi nie niosą. Granica blokująca (Logi bez Kopii wejścia, Urwane Uruchomienie,
-  pusta Kopia, wiersz INTERMAX bez pewnego położenia, komórka typu, którego Kopia nie zapisała, Logi Wyceny bez odczytu
+  pusta Kopia, wiersz INTERMAX czytany poza pewnym położeniem, komórka typu, którego Kopia nie zapisała, Logi Wyceny bez odczytu
   wyników szukania) kończy odtworzenie bez uruchomienia procesu: wynik takiego odtworzenia nic by nie znaczył. Zastrzeżenie
   (maski strażnika w Kopii, Wzorce spoza Logów, Surowe zlecenia, dni nad wklejeniem, Atrapa w miejscu efenix) raport
   podaje przy każdym wyniku, bo może tłumaczyć różnicę.
 - Pliki wejścia powstają w katalogu roboczym z Kopii wejścia, pod tą samą nazwą w folderach o tych samych nazwach co
   u taty (``CopiedFile.folders``), więc Komunikaty nazywają te same plik i folder: każdy arkusz z nagłówkami i
-  wierszami pod tymi samymi numerami, przesunięty pierwszy wiersz wklejenia INTERMAX znowu przesunięty, a nad
-  wklejeniem ostatni uporządkowany i żółty wiersz w tych samych wierszach co u taty. W miejscu kolumn ``ADRES`` i numeru Orange stoją wartości syntetyczne
+  wierszami pod tymi samymi numerami, przesunięty pierwszy wiersz wklejenia INTERMAX znowu przesunięty, w ``NUMER ZL.``
+  każdego wklejonego wiersza INTERMAX Hiperłącze z adresem syntetycznym, a nad wklejeniem ostatni uporządkowany i żółty
+  wiersz w tych samych wierszach co u taty. W miejscu kolumn ``ADRES`` i numeru Orange stoją wartości syntetyczne
   z numerem wiersza (``SYNTHETIC_ADDRESS``, ``SYNTHETIC_ORANGE``), których żaden plik taty nie ma. Wzorce i
   Konfigurację wykonawców daje folder ``configuration``, bo Logi mają z nich tylko nazwę i rozmiar.
 - Proces biegnie przez ten sam rdzeń (``process_run.run_process``) i ten sam wpis katalogu procesów co w Centrum, z
@@ -95,6 +96,12 @@ SYNTHETIC_ADDRESS: Final = atrapa_z_logow.SYNTHETIC_ADDRESS
 """``ADRES`` wiersza w odtworzonym pliku: ulica z numerem wiersza, którą reguła adresu efenix rozbiera."""
 SYNTHETIC_ORANGE: Final = "ORANGE-ODTWORZENIE-{row}"
 """Numer Orange wiersza w odtworzonym pliku."""
+SYNTHETIC_LINK: Final = "https://odtworzenie.invalid/zlecenie/{row}"
+"""Adres Hiperłącza ``NUMER ZL.`` wklejonego wiersza w odtworzonym INTERMAX."""
+_ORDER_NUMBERS: Final = frozenset(
+    normalize_text(header) for column in COLUMNS if column.target_header == "NUMER ZL." for header in column.register_headers
+)
+"""Nagłówki ``NUMER ZL.`` w INTERMAX, po których kolumnę znajduje Uporządkowanie (``COLUMNS``, ``intermax_file``)."""
 MASKS: Final = ("[adres]", "[numer Orange]", "[telefon]", "[ulica]")
 """Maski strażnika reguły danych (``client_data``), które Kopia wejścia może nieść w miejscu wartości taty."""
 
@@ -504,13 +511,16 @@ def _configured(work: _Work) -> dict[str, Path]:
     return _configuration_files(work.configuration)
 
 
-def _register_file(record: RunLog, work: _Work, folder: str) -> tuple[Path, list[Limit]]:
+def _register_file(record: RunLog, work: _Work, folder: str, *, linked: bool = False) -> tuple[Path, list[Limit]]:
     """Rejestr zleceń albo INTERMAX z Kopii wejścia: arkusze z nagłówkami w wierszu 1 i wierszami pod ich numerami.
 
     Kolumn ``ADRES`` i ``NUMER UMOWY`` Kopia nie ma, więc ich nagłówki stoją w pierwszych kolumnach bez nagłówka między
     kolumnami Kopii (u taty tam stoją), a gdy takich nie ma, za ostatnią; ich komórki mają wartości syntetyczne.
     Przesunięty pierwszy wiersz wklejenia INTERMAX stoi znowu dwie kolumny w lewo, a nad wklejeniem ostatni
-    uporządkowany wiersz (Calibri 8, bez daty) i żółty wiersz stoją tam, gdzie u taty.
+    uporządkowany wiersz (Calibri 8, bez daty) i żółty wiersz stoją tam, gdzie u taty. ``linked`` (wklejenie INTERMAX):
+    komórka ``NUMER ZL.`` każdego wiersza ma Hiperłącze z adresem syntetycznym tam, gdzie stoi. Hiperłączy Kopia nie
+    ma, ale odtworzenie biegnie tylko bez wierszy czytanych poza pewnym położeniem, a pewne położenie wklejonego
+    wiersza INTERMAX wymaga Hiperłącza ``NUMER ZL.`` (``raw_orders.Shifts``).
     """
 
     copied = _the_file(record)
@@ -523,6 +533,7 @@ def _register_file(record: RunLog, work: _Work, folder: str) -> tuple[Path, list
             limits.append(Limit(f"arkusz {sheet.sheet}: nie wiem, gdzie stały kolumny ADRES i NUMER UMOWY"))
         for column, header in forbidden.items():
             created.cell(sheet.header_row, column, header)
+        numbers = [letter for letter, header in sheet.columns.items() if linked and normalize_text(str(header)) in _ORDER_NUMBERS]
         for row in sheet.rows:
             shift = _SHIFT if row.row == sheet.shifted_row else 0
             for letter, value in row.cells.items():
@@ -530,6 +541,8 @@ def _register_file(record: RunLog, work: _Work, folder: str) -> tuple[Path, list
             for column, header in forbidden.items():
                 synthetic = _SYNTHETIC[_REGISTER_FORBIDDEN[header]].format(row=row.row)
                 created.cell(row.row, column - shift, synthetic)
+            for letter in numbers:
+                created.cell(row.row, column_index_from_string(letter) - shift).hyperlink = SYNTHETIC_LINK.format(row=row.row)
         _above_paste(created, sheet)
     path = work.path(folder, *copied.folders, copied.name)
     workbook.save(path)
@@ -598,7 +611,7 @@ def _preparation_limits(record: RunLog) -> list[Limit]:
 
 
 def _intermax(record: RunLog, work: _Work) -> _Setup:
-    register, limits = _register_file(record, work, "intermax")
+    register, limits = _register_file(record, work, "intermax", linked=True)
     moment = _intermax_moment(record, work)
     forbidden, copy = ForbiddenValues(), InputCopy()
     inputs = OrderingInputs(
@@ -635,9 +648,10 @@ def _intermax_limits(record: RunLog) -> list[Limit]:
         where = "; ".join(f"arkusz {name}, wiersze {', '.join(map(str, rows))}" for name, rows in uncertain)
         return [
             Limit(
-                f"Kopia wejścia ma wiersze INTERMAX bez pewnego położenia ({where}): brak w nich komórek DATA GODZ. "
-                "POCZ., NUMER ZL., ZWROT i UWAGI, a strażnik mógł zamaskować w Kopii wartości z drugiego położenia "
-                "(#913), więc odtworzenie nie zbuduje tych wierszy",
+                f"Kopia wejścia ma wiersze INTERMAX, których Uporządkowanie nie czyta w ich pewnym położeniu ({where}): "
+                "ma z nich tylko komórki dozwolone w każdym ich możliwym położeniu, a gdy położenia nie da się ustalić, "
+                "strażnik mógł zamaskować w Kopii wartości z drugiego położenia (#913), więc odtworzenie nie zbuduje "
+                "tych wierszy",
                 blocking=True,
             )
         ]

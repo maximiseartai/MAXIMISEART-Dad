@@ -73,10 +73,11 @@ class Order:
     """Zlecenie syntetyczne: chwila, Wykonawca i numer, z którego powstają pozostałe wartości wiersza.
 
     ``operator`` stoi w ``CZYNNOŚCI`` (``None``: pusta komórka), a ``kind`` w ``URZĄDZENIA``, jak z aplikacji.
-    ``cells``: kolumna (od 1, nieprzesunięta) → wartość w miejsce wartości z numeru, np. liczba w ``NUMER UMOWY``.
-    ``shifted``: wiersz stoi dwie kolumny na lewo od nagłówków, jak pierwszy wiersz każdego wklejenia (pierwszy wiersz
-    ``Intermax.raw`` przesuwa ``Intermax.shifted``), a ``app_look``: wiersz w ``Intermax.ordered`` ma wygląd z
-    aplikacji (Roboto 4), jak zlecenie wklejone nad uporządkowanymi.
+    ``cells``: kolumna (od 1, nieprzesunięta) → wartość w miejsce wartości z numeru, np. liczba w ``NUMER UMOWY``
+    (``None``: pusta komórka). ``shifted``: wiersz stoi dwie kolumny na lewo od nagłówków, jak pierwszy wiersz każdego
+    wklejenia (pierwszy wiersz ``Intermax.raw`` przesuwa ``Intermax.shifted``), a ``app_look``: wiersz w
+    ``Intermax.ordered`` ma wygląd z aplikacji (Roboto 4), jak zlecenie wklejone nad uporządkowanymi. ``linked``:
+    kolumny (od 1, nieprzesunięte) z Hiperłączem zlecenia; z aplikacji tylko ``NUMER ZL.``.
     """
 
     when: datetime
@@ -84,14 +85,15 @@ class Order:
     number: int
     operator: str | None = "INEA"
     kind: str = "Instalacja"
-    cells: tuple[tuple[int, datetime | str | int], ...] = ()
+    cells: tuple[tuple[int, datetime | str | int | None], ...] = ()
     shifted: bool = False
     app_look: bool = False
+    linked: tuple[int, ...] = (NUMBER,)
 
-    def values(self) -> dict[int, datetime | str | int]:
+    def values(self) -> dict[int, datetime | str | int | None]:
         """Wartości kolumn od B do AK na swoim miejscu (nieprzesunięte)."""
 
-        values: dict[int, datetime | str | int] = {
+        values: dict[int, datetime | str | int | None] = {
             DATE: self.when,
             4: "Miasto",
             ADDRESS: f"Ulica {self.number}",
@@ -242,7 +244,7 @@ class Intermax:
                 cell = sheet.cell(number, column - shift, value)
                 if column == DATE:
                     cell.number_format = self.raw_date_format
-                if column == NUMBER:
+                if column in order.linked:
                     cell.hyperlink = order.link
             rows.append(number)
             number += 1
@@ -350,7 +352,7 @@ def _ordered_days(sheet: Worksheet, ordered: Sequence[Order]) -> int:
                 cell.border = _BORDER
             if column == DATE:
                 cell.number_format = DATE_FORMAT
-            if column == NUMBER:
+            if column in order.linked:
                 cell.hyperlink = order.link
         row += 1
     return row - 1

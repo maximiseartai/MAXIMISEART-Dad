@@ -624,8 +624,8 @@ Wycena w efenix Wiersze danych Pliku zbiorczego (Wycena z wartościami, które
 policzył Excel, także `Kwota`), a Uporządkowanie INTERMAX wklejone wiersze
 z dołu każdego arkusza zleceń, które przetwarzało, nie cały Rejestr zleceń,
 w kolumnach od A do `UWAGI`, które Uporządkowanie przenosi do dnia, także
-przesunięty pierwszy wiersz pod jego nagłówkami, a wiersz, którego położenia
-Uporządkowanie nie ustaliło, tylko z komórkami dozwolonymi przesunięty i nie, a
+przesunięty pierwszy wiersz pod jego nagłówkami, a wiersz, którego Uporządkowanie
+nie czyta w jego pewnym położeniu, tylko z komórkami dozwolonymi przesunięty i nie, a
 nad wklejeniem tylko numery ostatniego uporządkowanego i żółtego wiersza, od
 których Planowanie liczy wiersz dnia. Wiersz ma numer i wartości komórek po literze
 kolumny, a arkusz nagłówki kolumn; według reguły danych bez kolumn `ADRES` i
