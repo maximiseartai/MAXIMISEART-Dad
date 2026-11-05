@@ -174,9 +174,9 @@ Dad does not click or see anything. The machine script sends none.
   only once the queue took the final version of the comment, so when Centrum
   stopped during the Wycena or right after its result, the next start of
   Centrum turns the comment into one: the Logi from Dad's disk, the Logi of an
-  Urwane Uruchomienie, or, without a Logs file but with a Historia row (or with
-  a Logs file that cannot be read), the result without the Logi. That one says
-  `- Wynik: <result>, z Historii`, the orders from the journal and
+  Urwane Uruchomienie, or, without a Logs file but with the journal's end entry
+  (or with a Logs file that cannot be read), the result without the Logi. That
+  one says `- Wynik: <result>` from the end entry, the orders from the journal and
   `- Pełne Logi: nie ma, Centrum nie zapisało ich po wyniku (np. zamknęło się
   tuż po nim)` (or that the Logs file cannot be read), with no file in the
   Archiwum Logów okresu. A Wycena whose journal cannot be written has no

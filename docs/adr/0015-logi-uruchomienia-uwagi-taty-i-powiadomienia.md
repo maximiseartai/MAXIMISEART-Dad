@@ -87,9 +87,9 @@ ją tam ma, więc każdy komentarz postępu ma dziennik. Dziennik znika dopiero,
 gdy Kolejka wysyłki przyjęła wersję końcową: na końcu Wyceny jej Logi z
 wynikiem, a gdy ich kolejka nie przyjęła (Centrum zgasło w trakcie albo tuż po
 wyniku, zapis się nie udał), następny start Centrum wysyła ją z dziennika: Logi
-z pliku, Logi Urwanego Uruchomienia albo wynik z Historii bez Logów (komentarz
-z wynikiem z wiersza Historii, zleceniami z dziennika i dopiskiem, dlaczego
-pełnych Logów nie ma, bez pliku w Archiwum Logów okresu). Komentarz postępu nie
+z pliku, Logi Urwanego Uruchomienia albo wynik bez Logów (komentarz z wynikiem
+z wpisu końca dziennika, zleceniami z dziennika i dopiskiem, dlaczego pełnych
+Logów nie ma, bez pliku w Archiwum Logów okresu). Komentarz postępu nie
 zostaje więc nigdy na zawsze z napisem, że Uruchomienie trwa. Wycena, której
 dziennika nie da się zapisać, nie ma postępu, tylko podsumowanie na końcu. Kolejka wysyłki oznacza i usuwa bez wysyłania plik,
 za którym czeka nowsza wersja tej samej wysyłki, więc bez internetu czeka tylko

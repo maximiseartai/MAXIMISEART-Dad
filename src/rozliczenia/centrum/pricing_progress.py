@@ -8,7 +8,7 @@ wpisy, które już ma na dysku, a bez swojej pierwszej linii na dysku nic, więc
 komentarz postępu ma dziennik, a dziennik znika dopiero, gdy Kolejka wysyłki przyjęła wersję końcową tego komentarza
 (``pricing_journal``). Na końcu Wyceny to jej Logi z wynikiem, a gdy ich kolejka nie przyjęła (Centrum zgasło w trakcie
 albo tuż po wyniku, zapis się nie udał), następny start Centrum wysyła ją z dziennika: Logi z pliku, Logi Urwanego
-Uruchomienia albo wynik z Historii bez Logów (``pricing_journal.InterruptedPricings``). Wycena, której dziennika nie da
+Uruchomienia albo wynik bez Logów z wpisu końca (``pricing_journal.InterruptedPricings``). Wycena, której dziennika nie da
 się zapisać, postępu nie ma, tylko podsumowanie na końcu.
 
 Postęp to starsza wersja tej samej wysyłki co Logi tego Uruchomienia (``run_logs.progress_post``: ten sam ``run_id`` i

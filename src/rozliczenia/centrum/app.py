@@ -50,7 +50,7 @@ from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, UNSENT_DIRECTORY, Reports
 from rozliczenia.centrum.preparation_run import PreparationEntry
-from rozliczenia.centrum.pricing_journal import JOURNALS_DIRECTORY, InterruptedPricings, PricingJournal
+from rozliczenia.centrum.pricing_journal import JOURNALS_DIRECTORY, InterruptedPricings, JournalAfterLogs, PricingJournal
 from rozliczenia.centrum.pricing_progress import ProgressComment
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.run_cards import LAST_STARTED_FILE, RunCards, run_cards_router
@@ -273,7 +273,7 @@ def create_app(
         lambda: read_runs(processes, centrum_runs.started()),
     )
     # Dzienniki Urwanych Wycen w efenix stają się ich Logami, zanim karta ostatniego Uruchomienia przeczyta Logi.
-    interrupted = InterruptedPricings(log.directory / JOURNALS_DIRECTORY, run_logs, cards.recorded, log)
+    interrupted = InterruptedPricings(log.directory / JOURNALS_DIRECTORY, run_logs, log)
     interrupted.close()
     # Komentarz postępu Wyceny w efenix w issue Logów okresu, odświeżany z jej dziennika (#846).
     progress = ProgressComment(journal, run_logs, clock=clock)
@@ -301,8 +301,15 @@ def create_app(
         stops,
         previous=cards.last(),
         run_started=run_started,
-        # Dziennik Wyceny za Logami: znika tylko wtedy, gdy kolejka już je przyjęła (``PricingJournal.run_ended``).
-        after_run=[run_logs, journal, QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden), filling],
+        # Wpis końca dziennika Wyceny w efenix przed Logami z wynikiem: start Centrum nie weźmie Uruchomienia, którego Logi
+        # z wynikiem mogą być w Skrzynce, za Urwane (#871). Dziennik znika za Logami, gdy kolejka już je przyjęła (#846).
+        after_run=[
+            journal,
+            run_logs,
+            JournalAfterLogs(journal),
+            QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden),
+            filling,
+        ],
     )
     shutdown.refuse_while(runs.shutdown_refusal)
     # Klon narzędzia, które Centrum aktualizuje (ADR 0009); w testach klon z lokalnym „origin”. Po sukcesie

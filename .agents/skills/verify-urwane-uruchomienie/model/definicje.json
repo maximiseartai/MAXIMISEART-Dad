@@ -1,6 +1,8 @@
 {
   "src/rozliczenia/centrum/pricing_journal.py": [
     "PricingJournal",
+    "RunEnded",
+    "JournalAfterLogs",
     "_remove",
     "_Read",
     "_read",
@@ -17,13 +19,9 @@
     "RunLogs.close",
     "RunLogs._write",
     "RunLogs.send",
-    "RunLogs.queued",
     "LoggedEnding",
-    "logi_post"
-  ],
-  "src/rozliczenia/centrum/run_cards.py": [
-    "RunCards.recorded",
-    "RunCards._row"
+    "logi_post",
+    "RunLogs.queued"
   ],
   "src/rozliczenia/centrum/app.py": [
     "lifespan",
@@ -56,15 +54,5 @@
   ],
   "src/rozliczenia/process_run.py": [
     "run_process"
-  ],
-  "src/rozliczenia/telemetry.py": [
-    "MetricsStore.append",
-    "MetricsStore.read"
-  ],
-  "src/rozliczenia/centrum/metrics.py": [
-    "read_runs",
-    "_records",
-    "_runs",
-    "_run"
   ]
 }

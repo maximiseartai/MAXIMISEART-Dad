@@ -608,8 +608,8 @@ Wyceny w efenix ten sam komentarz Uruchomienia w Skrzynce pokazuje co 5 minut
 jej postęp z dziennika Wyceny w efenix (zlecenia skończone z wszystkich, wyniki
 do tej pory, ostatnie zlecenie), a na końcu staje się podsumowaniem Logów, także
 gdy Centrum zamknęło się w jej trakcie albo tuż po wyniku: wtedy przy
-następnym starcie, a bez pliku Logów z wynikiem z Historii i dopiskiem, że
-pełnych Logów nie ma.
+następnym starcie, a bez pliku Logów z wynikiem z dziennika Wyceny i dopiskiem,
+że pełnych Logów nie ma.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), dziennik Centrum, raport
 
 ## Kopia wejścia
@@ -644,6 +644,8 @@ starcie pokazuje te zlecenia. Urwane Uruchomienie innego procesu Logów nie ma.
 Uruchomienie, którego wynik jest już w Historii, a Logów nie ma (Centrum
 zamknęło się tuż po wyniku), nie jest urwane: karta po starcie pokazuje jego
 wynik z Historii, także gdy wiersz nie ma jeszcze identyfikatora Uruchomienia.
+Wyjątek to Wycena w efenix, którą Centrum zamknęło przed wpisem końca jej
+dziennika: start zamyka ją jako Urwaną Wycenę z Logami Urwanego Uruchomienia.
 _Avoid_: Zatrzymanie (kończy się Komunikatem procesu), przerwane (tak Metryki
 nazywają Zatrzymania)
 

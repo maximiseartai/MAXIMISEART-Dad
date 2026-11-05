@@ -59,8 +59,8 @@ dziennika, bo chwili zgaśnięcia nikt nie zapisał.
 W trakcie Wyceny w efenix jej komentarz Uruchomienia pokazuje postęp z dziennika (``RunLogs.progress``, #846), więc
 każda Wycena z dziennikiem dostaje wersję końcową tego komentarza: Logi z wynikiem na końcu (``run_ended``), a gdy ich
 kolejka nie przyjęła w tej pracy Centrum (``queued``), następny start wysyła z dziennika Logi z pliku, Logi Urwanego
-Uruchomienia albo wynik bez Logów (``ResultWithoutLogs``): wynik z wiersza Historii i zlecenia z dziennika, gdy pliku
-Logów nie ma, a Historia ma wiersz Uruchomienia, albo gdy pliku nie da się odczytać.
+Uruchomienia albo wynik bez Logów (``ResultWithoutLogs``): wynik z wpisu końca dziennika i zlecenia z dziennika, gdy
+pliku Logów nie ma, a dziennik ma wpis końca, albo gdy pliku nie da się odczytać.
 """
 
 from __future__ import annotations
@@ -977,8 +977,8 @@ _LOGS_MISSING: Final[dict[LogsMissing, str]] = {
 @dataclass(frozen=True)
 class ResultWithoutLogs:
     """Wycena w efenix, która doszła do wyniku, a której Logów start Centrum nie ma (``logs``), więc wersja końcowa jej
-    komentarza Uruchomienia (#846): wynik z wiersza Historii (``result``; ``None``: Historia go nie ma) i zlecenia z
-    dziennika Wyceny (``journal``), bez pliku w Archiwum Logów okresu, jak karta z wynikiem z Historii (ADR 0017)."""
+    komentarza Uruchomienia (#846): wynik z wpisu końca dziennika Wyceny (``result``; ``None``: dziennik go nie ma) i
+    zlecenia z dziennika (``journal``), bez pliku w Archiwum Logów okresu."""
 
     journal: PricingProgress
     result: contract.RunResult | None
@@ -986,12 +986,12 @@ class ResultWithoutLogs:
 
 
 def without_logs_markdown(final: ResultWithoutLogs) -> str:
-    """Wynik bez Logów: proces, tryb, okres, wynik z Historii, zlecenia skończone z dziennika i ich wyniki, zlecenie
-    zaczęte bez wyniku, Uruchomienie i dlaczego pełnych Logów nie ma."""
+    """Wynik bez Logów: proces, tryb, okres, wynik z wpisu końca dziennika, zlecenia skończone z dziennika i ich wyniki,
+    zlecenie zaczęte bez wyniku, Uruchomienie i dlaczego pełnych Logów nie ma."""
 
     journal = final.journal
     started = journal.started
-    result = "nieznany, Historia nie ma tego Uruchomienia" if final.result is None else f"{final.result}, z Historii"
+    result = "nieznany, dziennik Wyceny nie ma wpisu końca" if final.result is None else f"{final.result}"
     lines = [f"- Wynik: {result}", f"- Zlecenia: {_orders_done(journal) or 'dziennik Wyceny nie ma żadnego zlecenia'}"]
     if journal.current is not None:
         lines.append(f"- Zlecenie bez wyniku: wiersz {journal.current}")

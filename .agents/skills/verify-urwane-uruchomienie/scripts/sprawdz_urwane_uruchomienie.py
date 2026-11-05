@@ -47,7 +47,7 @@ PROMISES = {
     "PrzezStraznika": "Logi Urwanego Uruchomienia poszły do kolejki bez strażnika reguły danych.",
     "NicPrzedWznowieniem": "wysyłka poszła do kolejki, zanim praca Centrum wywołała Outbox.resume.",
     "ZaczeteWLogach": "zlecenie, które Urwana Wycena zmieniła w efenix, nie jest w jej Logach.",
-    "WersjaKoncowa": "dziennik Wyceny z pierwszą linią zniknął, a Kolejka wysyłki nie przyjęła wersji końcowej jej "
+    "WersjaKoncowa": "dziennik Wyceny, która mogła wysłać postęp, zniknął, a Kolejka wysyłki nie przyjęła wersji końcowej jej "
     "komentarza Uruchomienia, więc w Skrzynce może zostać postęp „Uruchomienie trwa”.",
 }
 LIVENESS_SAID = "awarie się skończyły, tata otwiera i zamyka Centrum, a dziennik zostaje na dysku bez końca."
@@ -59,7 +59,7 @@ _EVENTS = {
     "PrzezStraznika": "bezStrazy",
     "NicPrzedWznowieniem": "przedWznowieniem",
     "ZaczeteWLogach": "bezZlecenia",
-    "WersjaKoncowa": "bezKonca",
+    "WersjaKoncowa": "bezWersji",
 }
 _STATE = re.compile(r"^State \d+: ")
 _STUTTERING = re.compile(r"^State \d+: Stuttering")
@@ -237,10 +237,12 @@ _STEPS = {
     "WpisZaczete": "Wycena {b} pisze „zaczynam zlecenie” {z}",
     "ZmianaWEfenix": "okno efenix zmienia zlecenie {z} Wyceny {b}",
     "WpisSkonczone": "Wycena {b} pisze „zlecenie skończone” {z}",
-    "Historia": "run_process Wyceny {b} kończy się wynikiem i dopisuje rekord metryk (wiersz Historii)",
+    "Zatrzymanie": "Wycena {b} staje przy zleceniu {z} (Zatrzymanie): bez „zlecenie skończone” do wyniku",
+    "Wynik": "run_process Wyceny {b} wraca z wynikiem (rekord metryk, wiersz Historii, zapisany albo nie)",
+    "WpisKonca": "PricingJournal.run_ended: Wycena {b} pisze „koniec Uruchomienia”, zanim powstaną jej Logi",
     "LogiWyniku": "RunLogs._keep zapisuje plik Logów z wynikiem Wyceny {b}",
     "WyslijWynik": "RunLogs._keep: Outbox.post Logów z wynikiem Wyceny {b}",
-    "UsunPoLogach": "PricingJournal.run_ended: kolejka przyjęła Logi, więc dziennik Wyceny {b} znika; koniec Uruchomienia",
+    "UsunPoLogach": "PricingJournal.logs_ended: kolejka przyjęła Logi, więc dziennik Wyceny {b} znika; koniec Uruchomienia",
     "Zgasniecie": "Centrum gaśnie (brak prądu, zabity proces)",
     "Zamkniecie": "tata zamyka Centrum",
 }
@@ -265,12 +267,16 @@ def _step(action: str, before: dict[str, str], after: dict[str, str]) -> str:
         "z": before.get("zlecenie", "?"),
     }
     said = _STEPS.get(action, action).format(**fields)
+    if action == "WpisKonca" and before.get("naglowekCzeka") == "TRUE":
+        kept = "_remove usuwa dziennik" if after.get("dziennik") != before.get("dziennik") else "bez wpisu końca"
+        said = f"PricingJournal.run_ended: żaden wpis Wyceny {fields['b']} się nie zapisał (_header), {kept}"
+    # Nieudany wpis, po którym dziennik powstał: write położył całą pierwszą linię, a flush albo fsync rzucił.
+    left_start = action != "WpisKonca" and after.get("dziennik") != before.get("dziennik")
     failed = [
         what
         for counter, what in (
-            ("awarieWpisu", "zapis dziennika rzuca OSError"),
-            ("awarieMetryk", "MetricsStore.append rzuca OSError, więc wiersza Historii nie ma"),
-            ("awarieLogow","zapis pliku Logów rzuca OSError"),
+            ("awarieWpisu", "wpis rzuca OSError po całej pierwszej linii na dysku" if left_start else "wpis rzuca OSError"),
+            ("awarieLogow", "zapis pliku Logów rzuca OSError"),
             ("awarieKolejki", "Outbox.post zwraca False"),
             ("awarieUsuniecia", "unlink rzuca OSError"),
         )
@@ -285,8 +291,6 @@ def _read(before: dict[str, str], after: dict[str, str]) -> str:
     k = before.get("kursor", "?")
     if after.get("awarieOdczytu") != before.get("awarieOdczytu"):
         return f"close: odczyt dziennika Wyceny {k} rzuca OSError, dziennik zostaje następnemu startowi"
-    if after.get("awarieHistorii") != before.get("awarieHistorii"):
-        return f"close: Historia rzuca OSError (_row: None), więc Wycena {k} „nie doszła do wyniku”: Logi Urwanego Uruchomienia"
     if after.get("krokZamykania") == "usun":
         journals = re.findall(r'"(\w+)"', before.get("dziennik", ""))
         without_start = k.isdigit() and 0 < int(k) <= len(journals) and journals[int(k) - 1] == "bezStartu"
@@ -295,10 +299,7 @@ def _read(before: dict[str, str], after: dict[str, str]) -> str:
         kind = _KINDS.get(_found(r'rodzaj \|-> "(\w+)"', after.get("rekord", "")), "Logi")
         return f"close: {kind} Wyceny {k} po strażniku (z dziennika albo z pliku Logów, guard)"
     if after.get("oczekujace") != before.get("oczekujace"):
-        later = "wiersz-pozniejszej-wyceny" in after.get("oczekujace", "")
-        return f"close: wynik bez Logów Wyceny {k} do _pending (recorded: wiersz Historii" + (
-            " późniejszej Wyceny)" if later else ")"
-        )
+        return f"close: wynik bez Logów Wyceny {k} do _pending (wpis końca bez pliku Logów)"
     return f"close: dziennika Wyceny {k} nie ma"
 
 
@@ -313,7 +314,7 @@ def _tell(trace: list[dict[str, str]]) -> None:
     last = trace[-1] if trace else {}
     print(
         f"   na koniec: dzienniki {_brief(last.get('dziennik', '?'))}, Logi {_logs(last.get('logi', ''))}, "
-        f"Historia {_brief(last.get('historia', '?'))}, z wynikiem {_brief(last.get('wynik', '?'))}, "
+        f"z wynikiem {_brief(last.get('wynik', '?'))}, "
         f"kolejka {_queue(last.get('kolejka', ''))}"
     )
 

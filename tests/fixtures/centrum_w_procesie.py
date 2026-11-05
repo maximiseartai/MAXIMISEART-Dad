@@ -6,9 +6,10 @@ metryki co ``settling_centrum`` testu) z oknem efenix na Atrapie efenix, przez p
 ``stop`` zabija drzewo procesów (POSIX: SIGKILL grupy, Windows: Job Object), więc Centrum nie dokańcza niczego, co było w
 toku, i niczego nie zapisuje przy zamknięciu.
 
-Z ``after_result`` Uruchomienie tego Centrum staje po wyniku (rekord metryk, czyli wiersz Historii, jest już na dysku), a
-przed działaniami po wyniku (``RunHost.after``: Logi Uruchomienia i ich wysyłka): zostawia plik ``after_result`` i czeka,
-więc test zabija Centrum dokładnie w tej chwili.
+Z ``stall`` Uruchomienie tego Centrum staje po wyniku (rekord metryk, czyli wiersz Historii, jest już na dysku): przed
+działaniami po wyniku (``po wyniku``, ``RunHost.after``: wpis końca dziennika, Logi i ich wysyłka) albo po wpisie końca
+dziennika, a przed Logami Uruchomienia i ich wysyłką (``przed Logami``, ``RunLogs.run_ended``). Zostawia plik ``marker``
+i czeka, więc test zabija Centrum dokładnie w tej chwili.
 """
 
 from __future__ import annotations
@@ -23,12 +24,13 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any
+from typing import Any, Literal
 import urllib.error
 import urllib.request
 
 import uvicorn
 
+from rozliczenia.centrum.run_logs import RunLogs
 from rozliczenia.centrum.runs import EndedRun, RunHost
 
 from tests.fixtures.centrum_processes import Surroundings, settling_app
@@ -38,6 +40,7 @@ from tests.fixtures.tool_clone import free_port
 ROOT = Path(__file__).resolve().parents[2]
 _STARTUP_S = 60.0
 _STALLED_S = 600.0
+Stall = Literal["po wyniku", "przed Logami"]
 
 
 @dataclass
@@ -84,17 +87,19 @@ class CentrumProcess:
 
 
 @contextmanager
-def centrum_process(tmp_path: Path, efenix_url: str, *, after_result: Path | None = None) -> Iterator[CentrumProcess]:
+def centrum_process(
+    tmp_path: Path, efenix_url: str, *, stall: tuple[Stall, Path] | None = None
+) -> Iterator[CentrumProcess]:
     """Centrum na plikach ``settling_centrum`` z ``tmp_path`` i oknem efenix pod ``efenix_url``, odpowiadające na zapytania;
-    z ``after_result`` Uruchomienie staje po wyniku, przed działaniami po wyniku (docstring modułu).
+    ze ``stall`` (chwila i plik znacznika) Uruchomienie staje po wyniku (docstring modułu).
 
     Po bloku proces nie żyje, także gdy test go nie zabił.
     """
 
     port = free_port()
     command = [sys.executable, "-m", "tests.fixtures.centrum_w_procesie", str(tmp_path), efenix_url, str(port)]
-    if after_result is not None:
-        command.append(str(after_result))
+    if stall is not None:
+        command += [stall[0], str(stall[1])]
     environment = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
     stop = threading.Event()
     ended: list[subprocess.CompletedProcess[str] | None] = []
@@ -116,23 +121,30 @@ def centrum_process(tmp_path: Path, efenix_url: str, *, after_result: Path | Non
         process.kill()
 
 
-def _stall_after_result(marker: Path) -> None:
-    """Działania po wyniku każdego Uruchomienia czekają, aż test zabije Centrum, a przed tym zostawiają plik ``marker``."""
+def _stall(moment: str, marker: Path) -> None:
+    """Każde Uruchomienie w chwili ``moment`` zostawia plik ``marker`` i czeka, aż test zabije Centrum."""
 
-    def stalled(self: RunHost, run: EndedRun) -> None:
+    def stalled(self: object, run: EndedRun) -> None:
         marker.write_text(run.info.id, encoding="utf-8")
         time.sleep(_STALLED_S)
 
-    RunHost.after = stalled  # type: ignore[method-assign]
+    match moment:
+        case "po wyniku":
+            RunHost.after = stalled  # type: ignore[method-assign]
+        case "przed Logami":
+            RunLogs.run_ended = stalled  # type: ignore[method-assign]
+        case _:
+            raise ValueError(moment)
 
 
-def _main(tmp_path: Path, efenix_url: str, port: int, after_result: Path | None) -> int:
-    if after_result is not None:
-        _stall_after_result(after_result)
+def _main(tmp_path: Path, efenix_url: str, port: int, stall: list[str]) -> int:
+    if stall:
+        moment, marker = stall
+        _stall(moment, Path(marker))
     app = settling_app(tmp_path, Surroundings(efenix_url=efenix_url))
     uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")).run()
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(_main(Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), Path(sys.argv[4]) if sys.argv[4:] else None))
+    raise SystemExit(_main(Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), sys.argv[4:]))

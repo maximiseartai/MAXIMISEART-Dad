@@ -130,13 +130,6 @@ class RunCards:
             return None
         return _interrupted(started, _orders(record)) if record.ending == "interrupted" else self._restored(record)
 
-    def recorded(self, process: contract.ProcessKey, started_at: datetime) -> contract.RunResult | None:
-        """Wynik z wiersza Historii Uruchomienia procesu ``process`` ze startem ``started_at``, czyli wynik, do którego
-        doszło; ``None``: Historia go nie ma, także Historia, której nie da się odczytać."""
-
-        row = self._row(process, started_at)
-        return None if row is None else row.result
-
     def card(self, run_id: str) -> contract.RunCard:
         """Karta Uruchomienia ``run_id`` z jego Logów; ``missing`` bez pliku Logów, z plikiem, którego nie da się odczytać,
         i z Logami Urwanego Uruchomienia, które nie ma wiersza Historii."""
