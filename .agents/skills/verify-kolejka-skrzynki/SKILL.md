@@ -219,8 +219,18 @@ that Centrum changes often: `lifespan` in `app.py`, `listen_locally` and
 and `_Server` in `server.py`. `model/definicje.json` lists the four covered files as whole files and these three
 by their definitions: only a change to these definitions, not to the rest of their files, is drift.
 
-**Sync commit: `7a5acaa9`** (2026-11-05). The checker and the model share it:
+**Sync commit: `a839dc2e`** (2026-11-05). The checker and the model share it:
 at this commit both were confirmed to describe the code above. Since the
+previous sync `7a5acaa9` only `a839dc2e` (#909) changed a covered file,
+`keyed_box.py` (`create_app` in `app.py` is outside `lifespan`): a list at
+which `OPENING_FILE` cannot be read sets `_listed_at` of its kind to `None`,
+and `_held` holds every write of that kind until a list that reads the file;
+content that is not UTF-8 is content in another form; the first error of the
+file goes to `NotesFile.unavailable`. The checker keeps such lists in its state
+and still never fails the read; the model got `OdczytyZapisow` (`zna`,
+`Widoczne(q, zna)`) in `Szukaj` and `CzytajArchiwum` and one file error in
+`archiwum-lista`, and `check_model_kolejki_mutations.py` two mutations. At
+`7a5acaa9`, since the
 previous sync `865ffcdc` only `4ec0d182` and `7a5acaa9` (round 2 of #897)
 changed a covered file, `keyed_box.py` (`create_app` in `app.py` is outside
 `lifespan`): the file `OPENING_FILE` keeps the effects of answered
