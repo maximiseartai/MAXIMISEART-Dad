@@ -148,8 +148,11 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `ba4092817` (2026-11-05, #936 merged with `main` after #910 and #916). Every row of the table was checked against
-the code at this commit. Since the Sync commit `18bf04e33` of `main` only `guarded` changed (#936): it leaves the fields
+Sync commit: `4172f7adc` (2026-11-05, #913 option 3 on `main` after #958). Every row of the table was checked against
+the code at this commit. Since the Sync commit `ba4092817` only `guarded` changed (#913): it checks each cell of the Kopia
+wejścia with its place in Dad's file and its header (`client_data.CopiedCell`), so a value from a row with two positions
+is masked there only in its own cell, under `ADRES` and `NUMER UMOWY` and in free text; the model has no step in which
+the guard masks or raises, so no action changed. Since the Sync commit `18bf04e33` of `main` only `guarded` changed (#936): it leaves the fields
 that carry only tool words and moments (`TOOL_FIELDS`: `process`, `mode`, `period`, `run_id`, `started_at`,
 `ended_at`, `ending` and the rest) and the keys of the Logs models without a mask, so no mask loses the whole Logs; the
 model has no step in which the guard masks or raises, so no action changed. Since the Sync commit `917cf6fc6` of `main`
