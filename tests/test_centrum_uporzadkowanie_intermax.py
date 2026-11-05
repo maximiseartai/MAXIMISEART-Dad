@@ -17,6 +17,7 @@ from typing import Any
 from uuid import uuid4
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 import pytest
 
@@ -42,6 +43,7 @@ from tests.fixtures.intermax import (
     LAST,
     ORDER_SHEET,
     Intermax,
+    Layout,
     Order,
     rewrite_parts,
 )
@@ -1193,3 +1195,64 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
     }
     broken = [note for note in logs["input_copy_notes"] if note.startswith(f"Fakt domeny złamany: wiersz {probe_row} ")]
     assert len(broken) == position.uncertain, logs["input_copy_notes"]
+
+
+# --- Wpis taty w Calibri 8 we wklejonym wierszu (przegląd #984 r1, W1) --------------------------------------------------
+# Tata wpisuje coś czcionką arkusza (Calibri 8) w jedną komórkę wklejonego wiersza, więc wiersz ma wygląd uporządkowany
+# (granica bloku z kroju, bez zmian: reguła z większości komórek przestawia u taty granice dziesiątek bloków), a za
+# pierwszy wiersz bloku uchodzi następny, który stoi na miejscu. Z datą z godziną pod DATA taki pierwszy wiersz pamięć zna
+# w obu położeniach (siatka, ADR 0025), bez uwagi w Logach, więc adres i numer Orange wiersza próbnego nie wychodzą.
+
+
+def _typed_by_tata(row_of: Callable[[Layout], int], column: int, value: object = None) -> Callable[[Path, Layout], None]:
+    """Tata wpisuje w komórkę ``column`` wiersza wklejenia ``row_of`` (albo tylko zmienia jej krój) w Calibri 8."""
+
+    def edit(path: Path, layout: Layout) -> None:
+        workbook = load_workbook(path)
+        try:
+            cell = workbook[ORDER_SHEET].cell(row_of(layout), column)
+            if value is not None:
+                cell.value = value  # type: ignore[assignment]  # syntetyczny wpis taty
+            cell.font = Font(name="Calibri", sz=8)
+            workbook.save(path)
+        finally:
+            workbook.close()
+
+    return edit
+
+
+TYPED_BY_TATA = {
+    # przesunięty pierwszy wiersz: MIASTO (w nim pod AKCJE) w Calibri 8, wiersz próbny drugi
+    "miasto_pierwszego_wiersza": (1, _typed_by_tata(lambda layout: layout.raw_rows[0], 2)),
+    # przesunięty pierwszy wiersz: uwaga taty w UWAGI w Calibri 8, wiersz próbny drugi
+    "uwaga_w_pierwszym_wierszu": (1, _typed_by_tata(lambda layout: layout.raw_rows[0], LAST, "zadzwonić")),
+    # trzeci wiersz na miejscu: MIASTO w Calibri 8, wiersz próbny czwarty
+    "miasto_trzeciego_wiersza": (3, _typed_by_tata(lambda layout: layout.raw_rows[2], 4)),
+}
+"""Sondy I1, I1b i I2 z przeglądu #984 r1: indeks wiersza próbnego w ``PASTED`` i wpis taty."""
+
+
+@pytest.mark.parametrize("case", TYPED_BY_TATA.values(), ids=TYPED_BY_TATA.keys())
+def test_wpis_taty_w_calibri_8_we_wklejonym_wierszu_nie_wypuszcza_adresu_ani_numeru_orange_nastepnego(
+    tmp_path: Path, case: tuple[int, Callable[[Path, Layout], None]]
+) -> None:
+    """Fakt domeny zachodzi, a tata wpisał coś w Calibri 8 w wiersz wklejenia nad wierszem próbnym: adres i numer Orange
+    wiersza próbnego nie wychodzą do pliku Logów, do Skrzynki Zgłoszeń ani w Uwadze taty, a Logi nie mówią o złamanym
+    fakcie domeny. Wiersz próbny, który zaczyna blok i stoi na miejscu, Kopia ma w obu położeniach."""
+
+    index, edit = case
+    centrum = ordering_centrum(tmp_path, Intermax(ordered=ORDERED, raw=_pasted(index, _probe(PASTED[index]))))
+    edit(centrum.register, centrum.layout)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+
+    centrum.run_to_end()
+    note = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": ECHO}).json()["body"]
+
+    texts = [path.read_text(encoding="utf-8") for path in sorted((tmp_path / "logs" / "uruchomienia").glob("*"))]
+    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in [*texts, *_sent(centrum), note])] == []
+    [logs] = centrum.run_logs()
+    assert [note for note in logs["input_copy_notes"] if note.startswith("Fakt domeny złamany")] == []
+    [sheet] = logs["input_copy"][0]["sheets"]
+    probe_row = centrum.layout.raw_rows[index]
+    [cells] = [row["cells"] for row in sheet["rows"] if row["row"] == probe_row]
+    assert (sheet["uncertain_rows"], "C" in cells, "I" in cells) == ([probe_row], True, False)

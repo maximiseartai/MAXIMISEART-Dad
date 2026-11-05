@@ -630,7 +630,7 @@ def _above_paste(created: Worksheet, sheet: LoggedSheet) -> None:
 def _preparation(record: RunLog, work: _Work) -> _Setup:
     # Kopia nie ma wyglądu komórek, a z wyglądu uporządkowanego wiersza Rejestru pamięć reguły danych wie, że jego
     # komórki stoją pod nagłówkiem (#918): wiersze mają krój uporządkowanych wierszy taty. Pierwszy wiersz bloku
-    # wklejenia u taty (bez tego wyglądu) i wiersz ze śladem przesunięcia mają w Kopii maski w miejscu tekstu dwie
+    # wklejenia u taty (bez tego wyglądu) i wiersz, który widocznie łamie fakt domeny, mają w Kopii maski w miejscu tekstu dwie
     # kolumny na lewo od ``ADRES`` i ``NUMER UMOWY`` (u taty ``DATA`` i ``NUMER ZL.``), więc różnicę z nich tłumaczy
     # zastrzeżenie o maskach (``_masked_limits``).
     register, limits = _register_file(record, work, "rejestr", _ORDERED_FONT)
@@ -705,8 +705,9 @@ def _intermax_limits(record: RunLog) -> list[Limit]:
         where = "; ".join(f"arkusz {name}, wiersze {', '.join(map(str, rows))}" for name, rows in uncertain)
         limits.append(
             Limit(
-                f"Kopia wejścia ma wiersze INTERMAX w obu położeniach ({where}): to wiersze ze śladem przesunięcia, "
-                "które nie są pierwszym wierszem bloku, a nie ma w nich komórek, które w którymś położeniu stałyby pod "
+                f"Kopia wejścia ma wiersze INTERMAX w obu położeniach ({where}): to wiersze, które widocznie łamią fakt "
+                "domeny (ślad przesunięcia albo pierwszy wiersz bloku z datą z godziną pod DATA GODZ. POCZ.), a nie ma "
+                "w nich komórek, które w którymś położeniu stałyby pod "
                 "ADRES, NUMER UMOWY albo za UWAGI (NUMER ZL., ZWROT, UWAGI i DATA GODZ. POCZ., gdy nie jest datą z "
                 "godziną), więc odtworzony wiersz ich nie ma, a reguła, która je czyta, może zdecydować inaczej (ADR 0025)"
             )

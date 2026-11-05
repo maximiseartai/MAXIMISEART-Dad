@@ -17,9 +17,9 @@ lewo od swojego nagłówka, i położenia, w których pamięć reguły danych zn
 
 Pamięć reguły danych zna każdy wiersz w jednym położeniu (decyzja Maksa z 5.11.2026, ADR 0025): pierwszy wiersz bloku
 wklejenia (``first_in_block``) przesunięty o ``SHIFT`` kolumn w lewo, bo tak przychodzi z aplikacji firmowej zawsze (fakt
-domeny: przesunięty jest tylko pierwszy wklejony wiersz), a każdy inny pod nagłówkiem. Siatką jest tylko silny ślad
-przesunięcia w innym wierszu, data z godziną ``SHIFT`` kolumn na lewo od ``DATA GODZ. POCZ.`` (``Shifts.traced``): ten
-wiersz pamięć zna w obu położeniach, a Logi mówią, że fakt domeny jest złamany.
+domeny: przesunięty jest tylko pierwszy wklejony wiersz), a każdy inny pod nagłówkiem. Siatką jest tylko wiersz, który
+fakt domeny widocznie łamie (``both_positions``): ten wiersz pamięć zna w obu położeniach, a o wierszu ze śladem
+przesunięcia (``Shifts.traced``) Logi mówią, że fakt jest złamany.
 
 Przeszkody: wiersz z wyglądem z aplikacji nad uporządkowanym wierszem, Surowe zlecenie bez daty z godziną albo bez
 Wykonawcy i blok z więcej niż jednego dnia. Pierwsza wymaga przeglądu nad blokiem (``_above``): od ostatniego
@@ -363,9 +363,8 @@ class Shifts:
     ``shifted_row``: pierwszy wiersz bloku Surowych zleceń, który rozpoznanie czyta przesunięty o ``SHIFT`` kolumn w
     lewo, bo pod ``DATA GODZ. POCZ.`` nie ma daty z godziną; ``None``: bez niego. ``first_row``: pierwszy wiersz bloku
     Surowych zleceń (``None``: bez bloku), w nim pierwszy wiersz bloku wklejenia z ``first_in_block``. Pamięć reguły
-    danych zna wiersz w położeniach ``known``: pierwszy wiersz bloku wklejenia tylko przesunięty, także gdy rozpoznanie
-    czyta go na miejscu (data z godziną pod ``DATA GODZ. POCZ.``), każdy inny tylko pod nagłówkiem, a wiersz ze śladem
-    (``traced``) w obu położeniach.
+    danych zna wiersz w położeniach ``known``: pierwszy wiersz bloku wklejenia tylko przesunięty, każdy inny tylko pod
+    nagłówkiem, a wiersz, który widocznie łamie fakt domeny (``both``), w obu położeniach.
     """
 
     shifted_row: int | None
@@ -381,25 +380,44 @@ class Shifts:
         """Przesunięcia, przy których pamięć reguły danych zna ``ADRES`` i ``NUMER UMOWY`` wiersza; ``first``: wiersz jest
         pierwszym wierszem swojego bloku wklejenia (``first_in_block``)."""
 
-        if first:
-            return (SHIFT,)
-        if self.traced(row, first):
+        if self.both(row, first):
             return (0, SHIFT)
-        return (0,)
+        return (SHIFT,) if first else (0,)
+
+    def both(self, row: RowFacts, first: bool) -> bool:
+        """Czy pamięć zna wiersz w obu położeniach (``both_positions``)."""
+
+        columns = self.columns
+        return both_positions(first=first, left_of_date=row.value(columns.date - SHIFT), date=row.value(columns.date))
 
     def traced(self, row: RowFacts, first: bool) -> bool:
-        """Czy wiersz, który nie jest pierwszym wierszem bloku wklejenia, ma silny ślad przesunięcia
-        (``shift_traced``), więc łamie fakt domeny."""
+        """Czy wiersz, który nie jest pierwszym wierszem bloku wklejenia, ma ślad przesunięcia (``shift_traced``), więc
+        Logi mają o nim uwagę, że fakt domeny jest złamany."""
 
         return not first and shift_traced(row.value(self.columns.date - SHIFT))
 
 
 def shift_traced(left_of_date: object) -> bool:
-    """Silny ślad przesunięcia wiersza czytanego pod nagłówkami: data z godziną ``SHIFT`` kolumn na lewo od ``DATA GODZ.
+    """Ślad przesunięcia wiersza czytanego pod nagłówkami: data z godziną ``SHIFT`` kolumn na lewo od ``DATA GODZ.
     POCZ.`` (``left_of_date``; u taty kolumna A bez nagłówka). Wiersz na miejscu jej tam nie ma, a przesunięty wiersz z
     aplikacji ma tam swoją datę."""
 
     return _is_date(left_of_date)
+
+
+def both_positions(*, first: bool, left_of_date: object, date: object) -> bool:
+    """Siatka reguły położenia (ADR 0025): czy pamięć reguły danych zna wiersz w obu położeniach, a nie w jednym.
+    ``first``: wiersz jest pierwszym wierszem swojego bloku wklejenia, ``left_of_date``: wartość ``SHIFT`` kolumn na
+    lewo od ``DATA GODZ. POCZ.``, ``date``: wartość pod nią.
+
+    Tak, gdy wiersz widocznie łamie fakt domeny: inny wiersz niż pierwszy ma ślad przesunięcia (``shift_traced``) albo
+    pierwszy wiersz bloku ma datę z godziną pod ``DATA GODZ. POCZ.``, czyli stoi tak, jak Planowanie czyta wiersz na
+    miejscu, a przesunięty z aplikacji ma tam swój ``ADRES``. Tak wygląda wiersz, który uchodzi za pierwszy, bo tata wpisał
+    coś w Calibri 8 w wiersz nad nim (przegląd #984 r1); reguła wyglądu z większości komórek przestawia u taty granice
+    dziesiątek bloków. Uwagę w Logach ma tylko ślad (``Shifts.traced``).
+    """
+
+    return _is_date(date) if first else shift_traced(left_of_date)
 
 
 def shifts(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Shifts:

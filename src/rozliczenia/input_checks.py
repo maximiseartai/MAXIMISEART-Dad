@@ -148,8 +148,9 @@ def read_register(
 
     ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza w jednym położeniu (ADR 0025):
     pierwszego wiersza bloku wklejenia (``RegisterSheet.shifted_rows``) ``raw_orders.SHIFT`` kolumn na lewo od nagłówka,
-    każdego innego pod nim, a wiersza ze śladem przesunięcia (``RegisterSheet.traced_rows``) w obu (#918). ``copy``
-    poznaje każdy przeczytany wiersz (``_copied``), wiersze ze śladem i chwilę zmiany Rejestru sprzed jego odczytu.
+    każdego innego pod nim, a wiersza, który widocznie łamie fakt domeny (``RegisterSheet.both_rows``), w obu (#918).
+    ``copy`` poznaje każdy przeczytany wiersz (``_copied``), wiersze ze śladem przesunięcia i chwilę zmiany Rejestru
+    sprzed jego odczytu.
     """
 
     modified = input_copy.modified_at(register)
@@ -160,7 +161,7 @@ def read_register(
             numbers = {column.target_header: number for column, number in sheet.positions.items()}
             for row in sheet.register_rows:
                 shifted = sheet.shifted_rows.get(row.number)
-                moved = shifted if shifted is not None else sheet.traced_rows.get(row.number)
+                moved = shifted if shifted is not None else sheet.both_rows.get(row.number)
                 for column, header in _FORBIDDEN_HEADERS:
                     if shifted is None:
                         forbidden.remember_value(column, row.cells[header].value)

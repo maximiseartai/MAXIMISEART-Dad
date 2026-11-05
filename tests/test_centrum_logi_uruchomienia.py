@@ -56,8 +56,10 @@ from rozliczenia.centrum.run_logs import (
 from rozliczenia.centrum.report_box import Unreachable
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
-from rozliczenia.input_checks import FILE_READERS
+from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.input_checks import FILE_READERS, read_register, register_problem
 from rozliczenia.period_folder import PeriodFolderInaccessible
+from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.telemetry import MetricsStore
 
 from tests.fixtures.atrapa_efenix import (
@@ -102,6 +104,7 @@ from tests.fixtures.preparation import (
     paste_raw_orders,
     register_order,
     type_into_register,
+    write_register,
 )
 from tests.fixtures.run_cards import first_view, restored
 from tests.fixtures.settlement import COLLECTIVE_HEADERS, MARKED, SOURCE_NAME, CellValue, write_quantity_source
@@ -707,6 +710,28 @@ def _second_paste(when: object = datetime(2026, 9, 10, 11)) -> Callable[[Path], 
     return paste
 
 
+def _typed_into_first(register: Path) -> None:
+    """Przesunięty pierwszy wiersz wklejenia nad uporządkowanymi z ``SKUTECZNE`` wpisanym przez tatę w Calibri 8, a pod
+    nim wiersz próbny na miejscu (sonda R1 z przeglądu #984 r1)."""
+
+    paste_raw_orders(register, [register_order(90, datetime(2026, 9, 10, 9)), _register_probe()], first=ABOVE_ORDERED - 1)
+    type_into_register(register, ABOVE_ORDERED - 1, "SKUTECZNE", "tak")
+
+
+def _typed_into_middle(register: Path) -> None:
+    """Trzy wklejone wiersze na dole po okresie, tata poprawia ``MIASTO`` drugiego w Calibri 8, a trzeci, wiersz próbny,
+    cytuje w ``CZYNNOŚCI ZREALIZOWANE`` swój adres i numer Orange (sonda R3 z przeglądu #984 r1)."""
+
+    quoted = {"CZYNNOŚCI ZREALIZOWANE": f"montaż {PROBE_ADDRESS} umowa {PROBE_ORANGE}"}
+    rows = [
+        register_order(91, datetime(2026, 9, 15, 10)),
+        register_order(92, datetime(2026, 9, 15, 11)),
+        {**_register_probe(datetime(2026, 9, 15, 12)), **quoted},
+    ]
+    first = paste_raw_orders(register, rows)
+    type_into_register(register, first + 1, "MIASTO", "POZNAŃ")
+
+
 REGISTER_POSITIONS: dict[str, tuple[Callable[[Path], object], str | None]] = {
     "przesuniety_z_data_z_godzina_w_A": (_above_ordered(), "WIERSZ_BEZ_DATY"),
     "przesuniety_z_data_jako_tekst": (_above_ordered(_register_probe("10.09.2026 11:00")), "WIERSZ_BEZ_DATY"),
@@ -723,8 +748,8 @@ REGISTER_POSITIONS: dict[str, tuple[Callable[[Path], object], str | None]] = {
     "pierwszy_wiersz_wklejenia_po_okresie_na_miejscu_od_skuteczne": (_after_period(in_place_from="SKUTECZNE"), None),
     "przesuniety_pierwszy_wiersz_drugiego_wklejenia": (_second_paste(), "WIERSZ_BEZ_DATY"),
     "przesuniety_pierwszy_wiersz_drugiego_wklejenia_z_data_jako_tekst": (_second_paste("10.09.2026 11:00"), "WIERSZ_BEZ_DATY"),
-    # wiersz z wyglądem z aplikacji na miejscu na górze odczytu: bez wiersza z danymi nad nim nie zaczyna bloku, bo odczyt
-    # okresu zaczyna się w środku arkusza, więc pamięć zna go pod nagłówkiem
+    # wiersz z wyglądem z aplikacji na miejscu w wierszu 2: odczyt okresu zaczyna się tu od góry arkusza, więc wiersz
+    # zaczyna blok, a z datą z godziną pod DATA łamie fakt domeny, więc pamięć zna go w obu położeniach (bez uwagi)
     "nieprzesuniety_na_gorze_odczytu": (
         lambda register: paste_raw_orders(
             register,
@@ -734,6 +759,10 @@ REGISTER_POSITIONS: dict[str, tuple[Callable[[Path], object], str | None]] = {
         ),
         None,
     ),
+    # wpis taty w Calibri 8 w wierszu wklejenia nad wierszem próbnym: pierwszy wiersz bloku z kroju (bez zmian) stoi na
+    # miejscu z datą pod DATA, więc pamięć zna go w obu położeniach
+    "wpis_taty_w_przesunietym_pierwszym_wierszu": (_typed_into_first, "WIERSZ_BEZ_DATY"),
+    "wpis_taty_w_drugim_wierszu_wklejenia_po_okresie": (_typed_into_middle, None),
 }
 REGISTER_KNOWN = {
     name: "pierwszy_na_miejscu"
@@ -741,15 +770,18 @@ REGISTER_KNOWN = {
         "na_miejscu_od_adres",
         "na_miejscu_od_czynnosci",
         "na_miejscu_od_numer_zl",
-        "nieprzesuniety",
         "pierwszy_wiersz_wklejenia_po_okresie_na_miejscu_od_czynnosci",
     )
 } | {"przesuniety_pierwszy_wiersz_drugiego_wklejenia_z_data_jako_tekst": "przesuniety_inny_bez_sladu"}
 """Położenia poza faktem domeny bez śladu przesunięcia: pierwszy wiersz bloku nie jest przesunięty w całości (``NUMER
 UMOWY`` albo cały wiersz na miejscu) albo przesunięty jest inny wiersz, z datą tekstem; ryzyko przyjęte przez Maksa
 (``tests/fixtures/fakt_domeny.py``)."""
-REGISTER_TRACED = {"przesuniety_pierwszy_wiersz_drugiego_wklejenia"}
-"""Położenia z wierszem ze śladem przesunięcia, który nie jest pierwszym wierszem bloku: Logi mają o nim uwagę."""
+REGISTER_TRACED = {"przesuniety_pierwszy_wiersz_drugiego_wklejenia", "wpis_taty_w_przesunietym_pierwszym_wierszu"}
+"""Położenia z wierszem ze śladem przesunięcia, który nie jest pierwszym wierszem bloku: Logi mają o nim uwagę. Przy wpisie
+taty w Calibri 8 w przesuniętym pierwszym wierszu to fałszywa uwaga o nim (znana granica sygnału, ADR 0025)."""
+REGISTER_IN_PLACE_FIRST = {"nieprzesuniety_na_gorze_odczytu": 2}
+"""Położenia, w których wiersz próbny w miejscu wiersza uporządkowanego zaczyna blok, a stoi na miejscu: pamięć zna go w
+obu położeniach, bez uwagi, więc jego ``NUMER ZL.`` jest możliwym numerem Orange."""
 
 
 @pytest.mark.parametrize(
@@ -785,9 +817,47 @@ def test_adres_i_numer_orange_wklejonego_wiersza_rejestru_nie_wychodza_z_przygot
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in texts)] == []
     [copied] = record["input_copy"]
     [sheet] = copied["sheets"]
-    assert {row["row"]: row["cells"]["I"] for row in sheet["rows"] if row["row"] in ORDER_NUMBERS} == ORDER_NUMBERS
+    ordered = {row: number for row, number in ORDER_NUMBERS.items() if row != REGISTER_IN_PLACE_FIRST.get(name)}
+    assert {row["row"]: row["cells"]["I"] for row in sheet["rows"] if row["row"] in ordered} == ordered
     broken = [note for note in record["input_copy_notes"] if note.startswith("Fakt domeny złamany: wiersz ")]
     assert len(broken) == (name in REGISTER_TRACED), record["input_copy_notes"]
+
+
+def test_diagnoza_zna_adres_i_numer_orange_przesunietego_pierwszego_wiersza_na_gorze_rejestru_z_data_jako_tekstem(
+    tmp_path: Path,
+) -> None:
+    """Diagnoza czyta cały Rejestr zleceń od wiersza 2 (``input_checks.register_problem``, jak ``centrum/diagnosis.py``).
+    Wklejenie stoi pod nagłówkami bez uporządkowanych wierszy, a jego pierwszy wiersz jest przesunięty z datą jako tekstem,
+    więc bez śladu przesunięcia: na górze arkusza zaczyna blok, a pamięć reguły danych zna jego adres i numer Orange
+    (przegląd #984 r1, D1)."""
+
+    register = write_register(tmp_path / "Rejestr.xlsx", [])
+    probe = {**register_order(77, datetime(2026, 9, 10, 11)), "DATA GODZ. POCZ.": "10.09.2026 11:00"}
+    probe |= {"ADRES": PROBE_ADDRESS, "NUMER UMOWY": PROBE_ORANGE}
+    paste_raw_orders(register, [probe, register_order(78, datetime(2026, 9, 10, 12))], first=2)
+    memory = ForbiddenValues()
+
+    register_problem(register, FILE_READERS, memory)
+
+    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
+
+
+def test_odczyt_okresu_ze_srodka_rejestru_zna_wiersz_z_aplikacji_na_gorze_odczytu_pod_naglowkiem(tmp_path: Path) -> None:
+    """Odczyt okresu zaczyna się w środku arkusza (nad nim wiersze z sierpnia), a pierwszy jego wiersz to wiersz z
+    wyglądem z aplikacji, który stoi na miejscu: zawężenie zaczyna się od daty z godziną pod ``DATA GODZ. POCZ.``, więc
+    taki wiersz zaczyna blok z tą datą, a pamięć reguły danych zna go w obu położeniach, także jego adres i numer Orange
+    pod nagłówkiem (ADR 0025)."""
+
+    earlier = [register_order(80, datetime(2026, 8, 3, 9)), None, register_order(81, datetime(2026, 8, 4, 9)), None]
+    register = write_register(tmp_path / "Rejestr.xlsx", [*earlier, *default_register_rows()])
+    probe = {**register_order(1, datetime(2026, 9, 7, 15)), "ADRES": PROBE_ADDRESS, "NUMER UMOWY": PROBE_ORANGE}
+    paste_raw_orders(register, [probe], first=len(earlier) + 2, in_place_from="DATA GODZ. POCZ.")
+    memory = ForbiddenValues()
+
+    [sheet] = read_register(register, parse_period_token(PERIOD), FILE_READERS, memory)
+
+    assert sheet.register_rows[0].number == len(earlier) + 2, "odczyt okresu zaczyna się od wiersza próbnego"
+    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
 
 
 def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_okresu(tmp_path: Path) -> None:

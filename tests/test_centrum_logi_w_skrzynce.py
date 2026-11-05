@@ -1216,7 +1216,13 @@ def test_logi_z_przesunietym_wierszem_w_srodku_wklejenia_maja_uwage_o_fakcie_dom
         "danych zna go w obu położeniach (ADR 0025)."
     ]
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
-    assert any(line.startswith("- Kopia wejścia ma wiersze INTERMAX w obu położeniach") for line in lines), lines
+    assert (
+        f"- Kopia wejścia ma wiersze INTERMAX w obu położeniach (arkusz {sheet['sheet']}, wiersze {shifted}): to wiersze, "
+        "które widocznie łamią fakt domeny (ślad przesunięcia albo pierwszy wiersz bloku z datą z godziną pod DATA GODZ. "
+        "POCZ.), a nie ma w nich komórek, które w którymś położeniu stałyby pod ADRES, NUMER UMOWY albo za UWAGI (NUMER "
+        "ZL., ZWROT, UWAGI i DATA GODZ. POCZ., gdy nie jest datą z godziną), więc odtworzony wiersz ich nie ma, a reguła, "
+        "która je czyta, może zdecydować inaczej (ADR 0025)"
+    ) in lines
 
 
 # Pierwszy wiersz bloku wklejenia przychodzi z aplikacji przesunięty o dwie kolumny w lewo (fakt domeny, ADR 0025): jego
