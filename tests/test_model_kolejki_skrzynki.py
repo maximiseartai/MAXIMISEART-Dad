@@ -44,6 +44,8 @@ TOOLS = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts
 OWNER = ROOT / "tools" / "lib" / "rozjazd_modelu.py"
 # Właścicielka rozjazdu dopobiera historię przez potomne.run.
 POTOMNE = ROOT / "tools" / "lib" / "potomne.py"
+# Narzędzia TLC skryptu Aktualizacji narzędzia (przypięte wersje, pobieranie z ponowieniem).
+NARZEDZIA = ROOT / "tools" / "lib" / "narzedzia_tlc.py"
 DEFINITIONS = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "model" / "definicje.json"
 COVERED = "src/rozliczenia/centrum/outbox.py"
 DRIFT = "MODEL KOLEJKI: ROZJAZD MODELU Z KODEM"
@@ -84,7 +86,7 @@ def _violation(invariant: str, causes: str) -> str:
 def test_w_ci_pokryty_kod_zmieniony_od_synchronizacji_konczy_sprawdzenie_modelu_kolejki_porazka(tmp_path: Path) -> None:
     (tmp_path / COVERED).parent.mkdir(parents=True)
     (tmp_path / COVERED).write_text("X = 1\n", encoding="utf-8")
-    for script in (SCRIPT, TOOLS, OWNER, POTOMNE):
+    for script in (SCRIPT, TOOLS, OWNER, POTOMNE, NARZEDZIA):
         copy = tmp_path / script.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(script, copy)

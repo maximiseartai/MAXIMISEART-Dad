@@ -38,6 +38,8 @@ TOOLS = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts
 OWNER = ROOT / "tools" / "lib" / "rozjazd_modelu.py"
 # Właścicielka rozjazdu dopobiera historię przez potomne.run.
 POTOMNE = ROOT / "tools" / "lib" / "potomne.py"
+# Narzędzia TLC skryptu Aktualizacji narzędzia (przypięte wersje, pobieranie z ponowieniem).
+NARZEDZIA = ROOT / "tools" / "lib" / "narzedzia_tlc.py"
 DRIFT = "URWANE URUCHOMIENIE: ROZJAZD MODELU Z KODEM"
 
 
@@ -89,7 +91,7 @@ def _file_of(name: str) -> str:
 def _repository(root: Path) -> str:
     """Repozytorium ze skryptami skilli, tabelą definicji i plikami, które ją spełniają; zwraca commit synchronizacji."""
 
-    for script in (SCRIPT, DEFINITIONS, TOOLS, OWNER, POTOMNE):
+    for script in (SCRIPT, DEFINITIONS, TOOLS, OWNER, POTOMNE, NARZEDZIA):
         copy = root / script.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(script, copy)

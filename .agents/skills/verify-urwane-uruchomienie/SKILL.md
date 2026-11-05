@@ -14,6 +14,7 @@ pilnuje:
   - src/rozliczenia/process_run.py
   - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
   - tools/lib/rozjazd_modelu.py
+  - tools/lib/narzedzia_tlc.py
 ci: .agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwane_uruchomienie.py
 ---
 
