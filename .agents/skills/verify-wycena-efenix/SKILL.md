@@ -86,10 +86,10 @@ from these sentences, never from a run:
 
 Each stop and each kill gets a second run after Dad logs in and the network is back: once as it was, and once after each
 change Dad could make by hand to the order it stopped at (`Edit`: he finished it, removed a quantity of Emmett's or one
-the tool added, or priced the empty order himself). First runs that left the same state after the same kind of
-interruption share one second run (`Interruption`: a logout, after which the Ślad withdraws the quantity efenix did not
-save, or another stop or a kill, after which it keeps it), so a logout never shares a second run, nor its accepted
-risk, with another stop. `REFUSED_NO_PROPOSAL` (#908) stops in place of loading Emmett and leaves the order as it was,
+the tool added, or priced the empty order himself). First runs that left the same state (efenix, the Plik zbiorczy and
+the Ślad, where no Ślad file is not a file without the order) share one second run only when they broke in the place
+and way of the same accepted risks (`RiskShape.window`), so a break outside a risk's window never shares a second run,
+nor its risk, with one inside it. `REFUSED_NO_PROPOSAL` (#908) stops in place of loading Emmett and leaves the order as it was,
 so its second run, with the proposal whole, finishes that order like one run (the model's `Zatrzymanie` in place of
 `ZaladujEmmetta`). The model checks the same promises over every order of steps without a browser; this axis
 checks them on the real window and the Atrapa.
@@ -151,8 +151,8 @@ remove that folder (only one with `.katalog-runu`).
 
 ## Known findings
 
-A known finding is a violation the code has today, in `KNOWN_FINDINGS` with the story after which it is excused; it
-does not fail the check. One that is sure to show names in `after` the first runs after which it showed in every whole
+A known finding is a violation the code has today, in `KNOWN_FINDINGS` with the story after which it is excused and its
+`RiskShape` (Accepted risks below); it does not fail the check. One that is sure to show names in `after` the first runs after which it showed in every whole
 run. Each of them counts on its own: a run or CI part that runs one of them and does not show the finding after
 that very case ends with `ZNALEZISKO ZNIKNĘŁO`, naming the cases, also while the finding still shows after the others
 (a fix of the list only). Narrow the entry there and here to the cases after which it still shows, or delete it. A name outside the space is `LUKA MODELU`. A `flaky` one (a race) names none and never reports
@@ -163,13 +163,24 @@ the window no longer reads that answer, and no entry excuses it.
 
 ## Accepted risks
 
-An accepted risk is a violation of WZNOWIENIE the model accepts as a known finding; `ACCEPTED_RISKS` matches it only in
-its exact shape, and the report lists it apart from new violations without failing.
+An accepted risk is a violation of WZNOWIENIE the model accepts as a known finding, and the report lists it apart from
+new violations without failing. Each entry of `ACCEPTED_RISKS` and `KNOWN_FINDINGS` has a `RiskShape` whose four parts
+are all required, so an entry cannot match on fewer of them (#920):
 
-| Name | Story |
-|---|---|
-| `#774` | A stop or a kill between „Załaduj do zlecenia” and reading the reloaded page (in the whole run of 2026-11-05: `TORN` from Emmett's proposal on, which tears the answer of the „Załaduj do zlecenia” efenix ran, and `LOGGED_OUT` at the reloaded page, and every first run of the same kind that leaves the same state) leaves the order with Emmett only and outside the Ślad; the second run gives an error of that order alone, which Dad finishes himself (the model's finding 1 `przerwanie-po-zaladuj`). Matched only when the Ślad has no entry for the order and the page has exactly Emmett's quantities (`emmett_outside_trace`): a Ślad „gotowe” or a quantity the tool entered is a new violation. |
-| `przerwanie-przed-zapisem-ilosci` | A stop other than a logout, or a kill, after the Ślad got a quantity ahead and before efenix saved it (in the whole run of 2026-11-05: `CUT` at the second `action_save_index.php` and at the stylesheet of the page reloaded after Emmett, and every first run of the same kind that leaves the same state, which shares their second run) leaves in the Ślad a quantity efenix does not have; the page cannot tell it from one Dad removed, so the second run without Dad's change gives an error of that order alone and changes nothing in it (#864; the model's finding 3). Matched only when the page has Emmett's quantities and a part of the Ślad's, nothing else, and run 1 ended without a logout: after a logout at the quantity the Ślad withdraws it (`trace.not_entered`), so the same state there is a new violation. |
+- **step**: the window's step at which run 1 broke (`interrupted_at`): that of its last request as the proxy saw it, a
+  page with its files counting as one step, without a request Chromium sends again after a cut and without what efenix
+  sent the browser to (the page after a redirect, the login page); for a kill, the step of the request it was killed at;
+- **way**: how it broke (`Interruption`: a logout, or another stop or a kill);
+- **left**: what run 1 left of the order, its page in efenix and its Ślad entry;
+- **second run**: how the second run ended the order (page before and after, and the fault of its error).
+
+Each entry also has a broken variant just outside its shape in `BOUNDARIES` of `check_wycena_efenix_mutations.py`,
+which must give a new violation; `tests/test_centrum_logi_uruchomienia.py` reds an entry without one.
+
+| Name | Step | Way | Left | Second run | Story |
+|---|---|---|---|---|---|
+| `#774` | `zaladuj-do-zlecenia`, `strona-po-emmetcie` | any | page with exactly Emmett's quantities, no Ślad entry (`emmett_outside_trace`) | unchanged, `PricedDifferently` (`only_compared`) | A stop or a kill between „Załaduj do zlecenia” and reading the reloaded page leaves Emmett in efenix and no trace, so the second run only compares and gives `EFENIX_WYCENA_INNA` for that order alone, which Dad finishes himself (the model's finding 1 `przerwanie-po-zaladuj`). In the run of 2026-11-05: `TORN` from Emmett's proposal on (the window breaks at the page efenix reloads after the „Załaduj do zlecenia” it ran), `HTTP_5XX` at „Załaduj do zlecenia”, `CUT` and `LOGGED_OUT` at the reloaded page, and kills there. A logout at the page's file breaks at the first quantity, outside this step. |
+| `przerwanie-przed-zapisem-ilosci` | `strona-po-emmetcie`, `ilosc` | not a logout | page with Emmett's quantities and a part of those the Ślad has ahead, nothing else (`unsaved_ahead`) | unchanged, `PricedDifferently` (`only_compared`) | A stop other than a logout, or a kill, after the Ślad got a quantity ahead and before efenix saved it leaves in the Ślad a quantity efenix does not have; the page cannot tell it from one Dad removed, so the second run gives `EFENIX_WYCENA_INNA` for that order alone and changes nothing in it (#864; the model's finding 3). The step is the save of a quantity, or the page after Emmett when its script did not load, so the save sends nothing (in the run of 2026-11-05: `TORN` and `CUT` at that page's files, `CUT` and `REDIRECT` at the second `action_save_index.php`). After a logout the Ślad withdraws the quantity (`trace.not_entered`), so the same state there is a new violation. |
 
 ## When the check fails
 
@@ -212,8 +223,10 @@ Each gives `WYCENA EFENIX: NOWE NARUSZENIE`:
 - #864: a quantity entered in efenix without its write ahead in the Ślad (`_WrittenAhead`); a resume that takes an
   empty position the Ślad has ahead for one efenix did not save (the rule before the fix, which adds back a quantity
   Dad removed);
-- a quantity efenix did not save after a logout kept in the Ślad (`trace.not_entered` skipped), which the accepted risk
-  `przerwanie-przed-zapisem-ilosci` must not excuse;
+- `BOUNDARIES`, each just outside the shape of an accepted risk: for `#774` a logout at the first quantity that removes
+  the order from the Ślad (outside its step) and a Ślad „gotowe” after a Zatrzymanie (outside what it left), for
+  `przerwanie-przed-zapisem-ilosci` a quantity efenix did not save after a logout kept in the Ślad (`trace.not_entered`
+  skipped, outside its way);
 - the window clicking Przekazanie do akceptacji; the Ślad keyed by the order number; a Komunikat that always says
   nothing changed; a Zatrzymanie without the Znaczniki of orders gotowe before it.
 

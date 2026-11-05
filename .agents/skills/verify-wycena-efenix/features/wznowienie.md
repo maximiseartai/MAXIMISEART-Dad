@@ -8,8 +8,9 @@ was, and once after each change he could make by hand in efenix to the order the
 - Without Dad's change in an order: efenix and the Plik zbiorczy end like one run without a fault
   (`BladTylkoPoZmianieTaty` of `verify-wznowienie-wyceny-efenix`), except #774 (an order stopped between „Załaduj do
   zlecenia” and reading the reloaded page is left to Dad) and `przerwanie-przed-zapisem-ilosci` (an order stopped
-  after the Ślad got a quantity ahead and before efenix saved it is left to Dad, #864), the latter only after a stop
-  other than a logout or a kill: after a logout the Ślad withdraws that quantity (`trace.not_entered`).
+  after the Ślad got a quantity ahead and before efenix saved it is left to Dad, #864), each only in its whole
+  `RiskShape`: the window's step and the way run 1 broke, what it left, and how the second run ended the order (the
+  table in `SKILL.md`, Accepted risks).
 - `FINISHED`, `REMOVED_EMMETT`, `REMOVED_ADDED`, `OWN`: the second run never changes an order Dad left with a pricing
   (`ZmianaTatyZostaje`); `REMOVED_ADDED` after a quantity efenix saved is the path of #864.
 - A pricing that already is gets completed only when the Ślad has it as „Emmett załadowany” and the page has exactly
@@ -29,5 +30,8 @@ ilosc` the logout at a quantity.
 
 - An order Dad emptied (amount 0) has no pricing (`efenix_pricing`: „Zlecenie z kwotą w efenix różną od 0 ma już
   wycenę”), so the second run may price it like a new one.
-- Two first runs that left the same state share one second run only after the same kind of interruption
-  (`Interruption`: a logout, or another stop or a kill), so a logout never borrows the accepted risk of another stop.
+- Two first runs that left the same state share one second run only when they broke in the step and way of the same
+  accepted risks (`RiskShape.window`), so a logout at a quantity never borrows #774 of a stop at the page after Emmett,
+  nor #864 of a cut at the quantity. No Ślad file and a Ślad file without the order are two states.
+- A fault the window goes on after breaks it at a later step: a logout at the stylesheet of the page after Emmett breaks
+  at the first quantity, and a torn script of that page breaks at the save of a quantity, which then sends nothing.
