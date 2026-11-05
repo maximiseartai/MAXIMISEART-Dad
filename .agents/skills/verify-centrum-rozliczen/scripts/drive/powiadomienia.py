@@ -12,7 +12,7 @@ import sys
 from playwright.sync_api import Locator, Page, expect
 
 from drive import aktualizacja, uwaga_taty, zgloszenie
-from drive.common import PAGES, Run, drop_report_key, error_toasts, release_only, remove
+from drive.common import PAGES, Run, drop_report_key, edit_issue, error_toasts, release_only, remove
 
 FEATURE = "powiadomienia"
 BELL = "Powiadomienia"
@@ -100,10 +100,7 @@ def _advance_clock(run: Run, minutes: int) -> None:
 def _close_issue(box: Path, number: int, reason: str) -> None:
     """Maks closes issue ``number`` in the skrzynka with GitHub's ``state_reason``."""
 
-    path = box / f"{number}.json"
-    issue = json.loads(path.read_text(encoding="utf-8"))
-    closed = {**issue, "state": "closed", "state_reason": reason, "closed_at": CLOSED_AT}
-    path.write_text(json.dumps(closed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    edit_issue(box, number, state="closed", state_reason=reason, closed_at=CLOSED_AT)
 
 
 def _bell(page: Page) -> Locator:
