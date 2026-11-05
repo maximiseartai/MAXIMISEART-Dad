@@ -617,12 +617,16 @@ policzył Excel, także `Kwota`), a Uporządkowanie INTERMAX wklejone wiersze
 z dołu każdego arkusza zleceń, które przetwarzało, nie cały Rejestr zleceń,
 w kolumnach od A do `UWAGI`, które Uporządkowanie przenosi do dnia, także
 przesunięty pierwszy wiersz pod jego nagłówkami, a wiersz, którego położenia
-Uporządkowanie nie ustaliło, tylko z komórkami dozwolonymi przesunięty i nie. Wiersz ma numer i wartości komórek po literze
+Uporządkowanie nie ustaliło, tylko z komórkami dozwolonymi przesunięty i nie, a
+nad wklejeniem tylko numery ostatniego uporządkowanego i żółtego wiersza, od
+których Planowanie liczy wiersz dnia. Wiersz ma numer i wartości komórek po literze
 kolumny, a arkusz nagłówki kolumn; według reguły danych bez kolumn `ADRES` i
 `NUMER UMOWY/ZLECENIA ORANGE` (w Pliku zbiorczym kolumn B i I, także pod innym
 nagłówkiem), a wolny tekst i liczby po maskowaniu. Odcisk to rozmiar i skrót
 bajtów, z których proces przeczytał plik, i chwila zmiany pliku tuż przed
-odczytem, więc Maks wie, czy jego kopia pliku jest tą samą wersją. Wyglądu komórek (Wyróżnień, formatu liczby,
+odczytem, więc Maks wie, czy jego kopia pliku jest tą samą wersją. Plik ma
+w Kopii nazwę i nazwy dwóch folderów nad nim, te same, które pokazują Komunikaty,
+bez pełnej ścieżki. Wyglądu komórek (Wyróżnień, formatu liczby,
 Hiperłączy) Kopia nie ma, bo proces tylko przenosi go do plików, które tworzy.
 Centrum składa Kopię po końcu procesu razem z resztą Logów, zanim karta pokaże
 wynik, więc tata czeka na wynik także na nią: na kopii prawdziwego Pliku

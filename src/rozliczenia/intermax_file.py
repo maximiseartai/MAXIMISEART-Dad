@@ -16,7 +16,9 @@ fakty wierszy, które rozpoznaje Planowanie, nie cały Rejestr. Wiersz ma w Kopi
 Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, także przesunięty pierwszy wiersz,
 bez zakazanych kolumn. Wiersz bez pewnego położenia ma w Kopii tylko komórki dozwolone w obu położeniach. Kolumn
 z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie ich nie zapisuje, nie mają nagłówka, a jedna z nich u taty
-niesie części adresu ze słowami sklejonymi ``_``, których strażnik nie rozpozna jako wartości ``ADRES``.
+niesie części adresu ze słowami sklejonymi ``_``, których strażnik nie rozpozna jako wartości ``ADRES``. Nad
+wklejeniem Kopia ma tylko numery ostatniego uporządkowanego i żółtego wiersza (``raw_orders.above_paste``), od których
+Planowanie liczy wiersz dnia, bez ich treści (#847).
 
 ``Register.ordered`` daje bajty INTERMAX z planem dnia (ADR 0019, wzorem kopii Wzorca z ADR 0008). Zmieniają się
 tylko:
@@ -244,11 +246,13 @@ class OrderSheet:
         ``UnsupportedShape`` przed dopisaniem arkusza, gdy wierszy nie da się rozdzielić. Wiersz bez pewnego położenia
         (``raw_orders.Shifts.possible``) ma tylko komórki, które przy każdym jego możliwym przesunięciu stoją pod
         nagłówkiem od A do ``UWAGI`` innym niż zakazany. Wiersze idą przez ``rows_from_bottom``, więc pamięć reguły
-        danych zna ich zakazane komórki."""
+        danych zna ich zakazane komórki. Z dołu arkusza Kopia dostaje też numery ostatniego uporządkowanego i żółtego
+        wiersza (``raw_orders.above_paste``)."""
 
         columns = range(1, self.columns.last + 1)
         shifts = self._shifts
         pasted = raw_orders.pasted_rows(self.rows_from_bottom(), self.columns)
+        above = raw_orders.above_paste(self._facts_from_bottom(), self.columns)
         forbidden = {column for _, column in self._forbidden_columns}
         allowed = set(columns) - forbidden
         header = self._register._header_values(self.part) or []
@@ -259,6 +263,8 @@ class OrderSheet:
             forbidden,
             shifts.shifted_row,
             [facts.number for facts in pasted if len(shifts.possible(facts)) > 1],
+            last_ordered_row=above.last_ordered,
+            yellow_row=above.yellow,
         )
         for facts in pasted:
             shift, possible = shifts.read(facts.number), shifts.possible(facts)

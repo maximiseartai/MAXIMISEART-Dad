@@ -334,6 +334,24 @@ def pasted_rows(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> 
 
 
 @dataclass(frozen=True)
+class AbovePaste:
+    """Wiersze nad wklejeniem, od których ``recognize`` liczy wiersz dnia (``RawBlock.anchor``): ostatni uporządkowany
+    wiersz (``None``: bez niego dzień staje pod nagłówkiem) i żółty wiersz między nim a wklejeniem (``None``: bez
+    żółtego wiersza)."""
+
+    last_ordered: int | None
+    yellow: int | None
+
+
+def above_paste(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> AbovePaste:
+    """Ostatni uporządkowany i żółty wiersz z tego samego rozpoznania dołu arkusza co ``recognize``, same numery
+    wierszy: Kopia wejścia niesie je, żeby odtworzenie Uruchomienia postawiło dzień w tych samych wierszach (#847)."""
+
+    _, yellow, _, ordered = _bottom(iter(rows_from_bottom), columns)
+    return AbovePaste(None if ordered is None else ordered.number, yellow)
+
+
+@dataclass(frozen=True)
 class Shifts:
     """O ile kolumn na lewo od swojego nagłówka stoją w pliku komórki wierszy arkusza zleceń (``shifts``).
 
