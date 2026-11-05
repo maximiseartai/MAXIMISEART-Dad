@@ -1,15 +1,18 @@
 """Serwer Centrum rozliczeń: ``start`` i ``stop`` w dzienniku, póki Centrum trzyma port, i port, który zamknięte Centrum
 zwalnia od razu, także gdy jego kolejka Skrzynki Zgłoszeń jeszcze wysyła, oraz zatrzymanie Centrum w teście, które
-czeka na koniec każdego jego wątku."""
+czeka na koniec każdego jego wątku, i klient testowy, który nie otwiera pętli zdarzeń na każde żądanie (#975)."""
 
 from __future__ import annotations
 
+import asyncio.base_events
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 import threading
+from typing import Any
 
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 import pytest
 
 from rozliczenia.centrum.app import create_app
@@ -26,9 +29,9 @@ from tests.fixtures.centrum import (
     FakeReportBox,
     MetricsPaths,
     join_threads_since,
-    new_line,
 )
 from tests.fixtures.clock import ManualClock
+from tests.fixtures.linie_watkow import new_line, threads_since
 
 KONTROLA = Post.of(
     PeriodThread(
@@ -191,3 +194,54 @@ def test_zatrzymanie_centrum_w_tescie_czeka_na_koniec_watku_systemu_a_nie_tylko_
     join_threads_since(since)
 
     assert not ending.is_alive()
+
+
+def test_klient_testowy_bez_with_nie_otwiera_nowej_petli_zdarzen_na_zadanie(monkeypatch: pytest.MonkeyPatch) -> None:
+    # #975: Starlette poza ``with`` otwierał pętlę z parą gniazd TCP na każde żądanie, a na Windows CI ich porty w
+    # TIME_WAIT szły w tysiące na zadanie pytest (``WinError 10055`` przy ``socket.socketpair()``).
+    app = FastAPI()
+
+    @app.get("/ping")
+    async def ping() -> dict[str, str]:
+        return {"stan": "ok"}
+
+    opened: list[object] = []
+    open_loop = asyncio.base_events.BaseEventLoop.__init__
+
+    def opening(self: asyncio.base_events.BaseEventLoop, *args: Any, **kwargs: Any) -> None:
+        opened.append(self)
+        open_loop(self, *args, **kwargs)
+
+    monkeypatch.setattr(asyncio.base_events.BaseEventLoop, "__init__", opening)
+    client = TestClient(app)
+
+    answers = [client.get("/ping").json() for _ in range(20)]
+
+    assert (answers, opened) == ([{"stan": "ok"}] * 20, [])
+
+
+def test_watek_z_obslugi_zadania_we_wspolnej_petli_nalezy_do_linii_testu_a_watek_roboczy_anyio_nie() -> None:
+    # Wspólną pętlę klienta testowego otworzył inny test, a ``CentrumClient.stop`` czeka tylko na wątki linii testu:
+    # wątek, który kod Centrum uruchamia w obsłudze żądania, musi do niej należeć, a bezczynny wątek roboczy AnyIO nie.
+    app = FastAPI()
+    end = threading.Event()
+
+    @app.post("/w-petli")
+    async def in_loop() -> None:
+        threading.Thread(target=end.wait, name="z-petli").start()
+
+    @app.post("/w-watku-roboczym")
+    def in_worker() -> None:
+        threading.Thread(target=end.wait, name="z-watku-roboczego").start()
+
+    client = TestClient(app)
+    since = new_line()
+    try:
+        client.post("/w-petli")
+        client.post("/w-watku-roboczym")
+        names = sorted(thread.name for thread in threads_since(since))
+    finally:
+        end.set()
+    join_threads_since(since)
+
+    assert names == ["z-petli", "z-watku-roboczego"]

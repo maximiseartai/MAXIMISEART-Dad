@@ -45,11 +45,10 @@ from tests.fixtures.centrum import (
     MetricsPaths,
     finished_view,
     join_threads_since,
-    new_line,
-    threads_since,
 )
 from tests.fixtures.centrum_processes import Engines
 from tests.fixtures.clock import ManualClock
+from tests.fixtures.linie_watkow import new_line, threads_since
 from tests.fixtures.preparation import PERIOD, write_collective_template, write_internal_template, write_register
 from tests.fixtures.settlement import CellValue, write_quantity_source, write_template
 

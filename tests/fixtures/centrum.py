@@ -7,7 +7,6 @@ import itertools
 import json
 import threading
 import time
-import weakref
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
@@ -53,6 +52,7 @@ from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease,
 from rozliczenia.centrum.tool_update import Release
 
 from tests.fixtures.clock import ManualClock
+from tests.fixtures.linie_watkow import new_line, threads_since
 from tests.fixtures.widok_skrzynki import shown
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -482,45 +482,6 @@ class MetricsPaths:
             efenix=replace(efenix_process.PROCESS, metrics_path=lambda: self.efenix),
             intermax=replace(intermax_process.PROCESS, metrics_path=lambda: self.intermax),
         )
-
-
-# Numer startu przodka każdego wątku, którego uruchomił wątek testu (pierwszego wątku tej linii).
-_LINE_STARTS: weakref.WeakKeyDictionary[threading.Thread, int] = weakref.WeakKeyDictionary()
-# Wątki Centrum dopisują się do ``_LINE_STARTS`` w chwili, gdy ``threads_since`` go przegląda.
-_LINE_STARTS_LOCK = threading.Lock()
-_STARTS = itertools.count()
-_thread_start = threading.Thread.start
-
-
-def _start_in_line(self: threading.Thread) -> None:
-    """Wątek dziedziczy numer startu linii po wątku, który go uruchamia; wątek testu zaczyna nową linię."""
-
-    with _LINE_STARTS_LOCK:
-        line = _LINE_STARTS.get(threading.current_thread())
-        _LINE_STARTS[self] = next(_STARTS) if line is None else line
-    _thread_start(self)
-
-
-threading.Thread.start = _start_in_line  # type: ignore[method-assign]
-
-
-def new_line() -> int:
-    """Numer, od którego ``threads_since`` liczy wątki, które wątek testu uruchomi od teraz."""
-
-    return next(_STARTS)
-
-
-def threads_since(since: int, *, named: str | None = None) -> list[threading.Thread]:
-    """Żywe wątki z linii, które wątek testu zaczął od ``since``, także uruchomione później przez wątki tych linii.
-
-    ``named``: tylko wątki o tej nazwie.
-    Żywy to ``is_alive()``, nie obecność w ``threading.enumerate()``: wątek znika z ``enumerate()`` na końcu swojego
-    kodu (``Thread._delete``), zanim skończy się wątek systemu, a ``is_alive()`` do tej chwili zwraca True (#862).
-    """
-
-    with _LINE_STARTS_LOCK:
-        lines = list(_LINE_STARTS.items())
-    return [thread for thread, line in lines if line >= since and named in (None, thread.name) and thread.is_alive()]
 
 
 def join_threads_since(since: int, timeout_s: float = STOP_S, *, named: str | None = None) -> None:

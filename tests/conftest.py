@@ -20,6 +20,7 @@ from rozliczenia.centrum.log import CentrumLog
 
 from tests.fixtures.git_config import hermetic_git
 from tests.fixtures.kwarantanna import KWARANTANNA
+from tests.fixtures.linie_watkow import shared_test_loop
 
 # Testy importują narzędzia tak, jak skrypt z ``tools/`` widzi je na ``sys.path``: narzędzia agenta, biblioteki i CI.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
@@ -79,6 +80,19 @@ def git_bez_konfiguracji_komputera(tmp_path_factory: pytest.TempPathFactory) -> 
     """Każdy git testów ma tę samą konfigurację na Macu Maksa i w CI, a git ze środowiskiem bez niej wywraca test."""
 
     with hermetic_git(tmp_path_factory.mktemp("git")):
+        yield
+
+
+@pytest.fixture(autouse=True, scope="session")
+def jedna_petla_testclient() -> Iterator[None]:
+    """Każdy ``TestClient`` poza ``with`` obsługuje żądania w jednej pętli zdarzeń procesu testów, nie w nowej na żądanie.
+
+    Pętla na żądanie to para gniazd TCP na żądanie, a na Windows CI ich porty w TIME_WAIT kończyły pulę portów
+    efemerycznych (``WinError 10055``, #975). Pętla na proces, nie na plik, bo klienta mają też fixture sesji
+    (``world_template`` w ``tests/test_uszkodzone_wejscia.py``).
+    """
+
+    with shared_test_loop():
         yield
 
 

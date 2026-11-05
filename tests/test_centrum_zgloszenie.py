@@ -38,10 +38,10 @@ from tests.fixtures.centrum import (
     centrum as plain_centrum,
     dad_cases,
     join_threads_since,
-    new_line,
 )
 from tests.fixtures.centrum_intermax import OrderingCentrum, ordering_centrum
 from tests.fixtures.clock import ManualClock
+from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.locked_file import lock_file
 from tests.fixtures.centrum_processes import (
     PreparingCentrum,
