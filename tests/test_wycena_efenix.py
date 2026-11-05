@@ -17,6 +17,7 @@ from copy import copy
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from http import HTTPStatus
 import json
 from pathlib import Path
 import hashlib
@@ -29,12 +30,14 @@ import subprocess
 import sys
 import time
 import traceback
+from typing import cast
+from urllib.parse import urlparse
 import zipfile
 
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
 
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Page, Route
 import pytest
 
 from rozliczenia import TOOL_ROOT, efenix_browser, efenix_process, efenix_trace
@@ -46,8 +49,10 @@ from rozliczenia.efenix_checks import ListedOrder, ListedRead
 from rozliczenia.efenix_orders import CollectiveOrder
 from rozliczenia.efenix_pricing import (
     BrowserFailure,
+    Closed,
     Efenix,
     ElementCount,
+    HttpStatus,
     LoggedOut,
     Login,
     Operation,
@@ -920,6 +925,125 @@ def test_zamkniete_okno_efenix_zatrzymuje_wycene_z_komunikatem_dla_taty_a_gotowe
 
     assert isinstance(outcome.ending, Stop)
     assert (_stop(outcome), outcome.ending.stop_kind, _kept(outcome), _marked(source)) == ("EFENIX_OKNO_ZAMKNIETE", "for_tata", kept, marked)
+
+
+class _CloseReportedLate:
+    """Karta ``page``, którą tata zamyka, gdy okno czeka na stronę ``path`` po raz ``number`` (od 1): ta strona nie
+    odpowiada, więc karta zamyka się w trakcie nawigacji. Playwright podaje oknu zamknięcie karty dopiero przy jego
+    następnym pytaniu przeglądarki, po błędzie nawigacji (najgorszy przypadek wyścigu #878; na Chromium bez tej karty
+    pomiar dał błąd przed wiadomością o zamknięciu w 89 na 100 zamknięć, więc test bez niej przechodził czasem i przed
+    poprawką).
+    """
+
+    def __init__(self, page: Page, path: str, number: int) -> None:
+        self._page = page
+        self._unreported = False
+        seen = 0
+
+        def handle(route: Route) -> None:
+            nonlocal seen
+            if urlparse(route.request.url).path.endswith("/" + path):
+                seen += 1
+                if seen == number:
+                    self._unreported = True
+                    page.close()
+                    return
+            route.continue_()
+
+        page.route("**/*", handle)
+
+    def is_closed(self) -> bool:
+        return not self._unreported and self._page.is_closed()
+
+    def __getattr__(self, name: str) -> object:
+        self._unreported = False
+        return getattr(self._page, name)
+
+
+# Strona, w trakcie której nawigacji tata zamyka kartę: lista przy starcie i przed szukaniem drugiego zlecenia, strona
+# zlecenia przy otwarciu i po dacie wykonania, i przeładowanie po „Załaduj do zlecenia”.
+NAVIGATIONS = {
+    "lista-na-starcie": (LIST_PAGE, 1, PagePart.LIST),
+    "strona-zlecenia": (ORDER_PAGE, 1, PagePart.ORDER),
+    "strona-po-dacie": (ORDER_PAGE, 2, PagePart.ORDER),
+    "przeladowanie-po-emmetcie": (ORDER_PAGE, 3, PagePart.EMMETT),
+    "lista-ponownie": (LIST_PAGE, 2, PagePart.LIST),
+}
+
+
+def _full_and_ready() -> list[Order]:
+    """Wiersz 18 dostaje datę wykonania, Wycenę Emmetta i ilość z pliku, a wiersz 19 ma już wycenę zgodną z plikiem."""
+
+    return [
+        Order("#9801", day=date(2026, 9, 3), cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"012": 1}),
+        Order("#9802", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),
+    ]
+
+
+def _full_and_ready_in_efenix(orders: Sequence[Order]) -> list[AtrapaOrder]:
+    return [orders[0].in_efenix("981"), replace(orders[1].in_efenix("982"), execution_date=DAY)]
+
+
+@pytest.mark.parametrize(("path", "number", "part"), NAVIGATIONS.values(), ids=NAVIGATIONS.keys())
+def test_karta_zamknieta_w_trakcie_nawigacji_okna_to_zamkniete_okno_takze_gdy_blad_nawigacji_przychodzi_pierwszy(
+    tmp_path: Path, page: Page, path: str, number: int, part: PagePart
+) -> None:
+    """Tata zamyka kartę, gdy okno otwiera stronę (#878): Playwright przerywa nawigację błędem, zanim powie o zamknięciu
+    karty, a Zatrzymanie to i tak zamknięte okno z Komunikatem dla taty, a nie „okno zatrzymane” do Maksa ani „efenix
+    niedostępny” przy starcie."""
+
+    orders = _full_and_ready()
+    with atrapa_efenix(_full_and_ready_in_efenix(orders)) as atrapa:
+        closing = cast(Page, _CloseReportedLate(page, path, number))
+        outcome = _price(tmp_path, closing, atrapa.url, orders)
+
+    assert isinstance(outcome.ending, Stop)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), outcome.ending.stop_kind, facts.part, facts.cause) == (
+        "EFENIX_OKNO_ZAMKNIETE",
+        "for_tata",
+        part,
+        Closed.DURING_ACTION,
+    )
+
+
+# Żądanie okna, na które efenix odpowiada stroną błędu serwera, numer tego żądania okna, status i część strony, którą
+# Zatrzymanie nazywa. Szukania, które lista wysyła sama, okno nie czyta, więc nie ma go tu.
+ERROR_ANSWERS = {
+    "lista-na-starcie": (LIST_PAGE, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.LIST),
+    "lista-ponownie": (LIST_PAGE, 2, HTTPStatus.NOT_FOUND, PagePart.LIST),
+    "szukanie": (SEARCH, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.RESULTS),
+    "szukanie-404": (SEARCH, 2, HTTPStatus.NOT_FOUND, PagePart.RESULTS),
+    "data-wykonania": (SET_DATE, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.DATE),
+    "zaladuj-do-zlecenia": (LOAD_EMMETT, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.EMMETT),
+    "ilosc": (SAVE_QUANTITY, 1, HTTPStatus.NOT_FOUND, PagePart.QUANTITY),
+}
+
+
+@pytest.mark.parametrize(("path", "number", "status", "part"), ERROR_ANSWERS.values(), ids=ERROR_ANSWERS.keys())
+def test_strona_bledu_serwera_efenix_na_kazde_zadanie_okna_zatrzymuje_wycene_do_maksa_ze_statusem_http(
+    tmp_path: Path, page: Page, path: str, number: int, status: HTTPStatus, part: PagePart
+) -> None:
+    """Odpowiedź efenix ze statusem błędu na listę, szukanie, zapis daty, „Załaduj do zlecenia” albo zapis ilości to
+    Zatrzymanie okna „do Maksa” z przyczyną ``HttpStatus`` i częścią strony (#878), a nie strona albo odpowiedź w innej
+    budowie (pole Numer, którego nie ma, odpowiedź szukania bez tabeli, odpowiedź zapisu ilości, która nie jest JSON) ani
+    zlecenie, które idzie dalej, choć efenix nie przyjął zmiany. Przy starcie adres odpowiada, więc to nie „efenix
+    niedostępny”."""
+
+    orders = _full_and_ready()
+    with atrapa_efenix(_full_and_ready_in_efenix(orders), error_answer=(path, number, status)) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, orders, timeout_ms=3_000)
+
+    assert isinstance(outcome.ending, Stop)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), outcome.ending.stop_kind, facts.part, facts.cause) == (
+        "EFENIX_OKNO_ZATRZYMANE",
+        "for_maks",
+        part,
+        HttpStatus(status),
+    )
 
 
 def _window_moments(atrapa: AtrapaEfenix, path: str, since: int = 0) -> list[float]:
