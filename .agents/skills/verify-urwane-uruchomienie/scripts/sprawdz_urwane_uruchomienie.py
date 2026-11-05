@@ -233,7 +233,8 @@ _STEPS = {
     "WpisZaczete": "Wycena {b} pisze „zaczynam zlecenie” {z}",
     "ZmianaWEfenix": "okno efenix zmienia zlecenie {z} Wyceny {b}",
     "WpisSkonczone": "Wycena {b} pisze „zlecenie skończone” {z}",
-    "Historia": "run_process Wyceny {b} kończy się wynikiem i dopisuje rekord metryk (wiersz Historii)",
+    "Wynik": "run_process Wyceny {b} wraca z wynikiem (rekord metryk, wiersz Historii, zapisany albo nie)",
+    "WpisKonca": "PricingJournal.run_ended: Wycena {b} pisze „koniec Uruchomienia”, zanim powstaną jej Logi",
     "LogiWyniku": "RunLogs._keep zapisuje plik Logów z wynikiem Wyceny {b}",
     "WyslijWynik": "RunLogs._keep: Outbox.post Logów z wynikiem Wyceny {b}, koniec Uruchomienia",
     "Zgasniecie": "Centrum gaśnie (brak prądu, zabity proces)",
@@ -259,8 +260,7 @@ def _step(action: str, before: dict[str, str], after: dict[str, str]) -> str:
         what
         for counter, what in (
             ("awarieWpisu", "wpis rzuca OSError"),
-            ("awarieMetryk", "MetricsStore.append rzuca OSError, więc wiersza Historii nie ma"),
-            ("awarieLogow","zapis pliku Logów rzuca OSError"),
+            ("awarieLogow", "zapis pliku Logów rzuca OSError"),
             ("awarieKolejki", "Outbox.post zwraca False"),
             ("awarieUsuniecia", "unlink rzuca OSError"),
         )
@@ -275,11 +275,8 @@ def _read(before: dict[str, str], after: dict[str, str]) -> str:
     k = before.get("kursor", "?")
     if after.get("awarieOdczytu") != before.get("awarieOdczytu"):
         return f"close: odczyt dziennika Wyceny {k} rzuca OSError, dziennik zostaje następnemu startowi"
-    if after.get("awarieHistorii") != before.get("awarieHistorii"):
-        return f"close: Historia rzuca OSError (_row: None), więc Wycena {k} „nie doszła do wyniku”: Logi Urwanego Uruchomienia"
     if after.get("krokZamykania") == "usun":
-        later = "wiersz-pozniejszej-wyceny" in after.get("powod", "")
-        return f"close: dziennik Wyceny {k} do usunięcia" + (" (recorded: wiersz Historii późniejszej Wyceny)" if later else "")
+        return f"close: dziennik Wyceny {k} do usunięcia (bez pierwszej linii, z wpisem końca albo z Logami z wynikiem)"
     if after.get("krokZamykania") == "zapisz":
         return f"close: Logi Urwanego Uruchomienia Wyceny {k} po strażniku (z dziennika albo z pliku Logów, guard)"
     return f"close: dziennika Wyceny {k} nie ma"
@@ -291,7 +288,7 @@ def _tell(trace: list[dict[str, str]]) -> None:
     last = trace[-1] if trace else {}
     print(
         f"   na koniec: dzienniki {_brief(last.get('dziennik', '?'))}, Logi {_logs(last.get('logi', ''))}, "
-        f"Historia {_brief(last.get('historia', '?'))}, z wynikiem {_brief(last.get('wynik', '?'))}, "
+        f"z wynikiem {_brief(last.get('wynik', '?'))}, "
         f"kolejka {_queue(last.get('kolejka', ''))}"
     )
 

@@ -2,8 +2,8 @@
 (* Ślad Wyceny w efenix, którą przerwało zgaśnięcie Centrum, przez kolejne starty Centrum: dziennik Wyceny w efenix    *)
 (* (src/rozliczenia/centrum/pricing_journal.py: PricingJournal, InterruptedPricings.close i send), Logi Urwanego       *)
 (* Uruchomienia (src/rozliczenia/centrum/run_logs.py: RunLogs.interrupted, guard, close, send) i ich droga do Kolejki  *)
-(* wysyłki (Outbox.post), obok Logów i wiersza Historii Wyceny, która doszła do wyniku. Każda akcja to jeden            *)
-(* niepodzielny krok kodu z tabeli w SKILL.md skilla verify-urwane-uruchomienie. Kolejka kończy się tu na               *)
+(* wysyłki (Outbox.post), obok Logów Wyceny, która doszła do wyniku, i wpisu końca w jej dzienniku. Każda akcja to     *)
+(* jeden niepodzielny krok kodu z tabeli w SKILL.md skilla verify-urwane-uruchomienie. Kolejka kończy się tu na        *)
 (* Outbox.post: co dalej z plikiem kolejki, sprawdza model skilla verify-kolejka-skrzynki.                            *)
 EXTENDS Naturals, Sequences, FiniteSets
 
@@ -11,14 +11,11 @@ CONSTANTS
     Wyceny,              \* Uruchomień Wyceny w efenix, jedno po drugim (Centrum prowadzi jedno naraz)
     LiczbaZlecen,        \* zleceń w każdej Wycenie, po kolei
     MaxZgasniec,         \* zgaśnięć Centrum: brak prądu, zabity proces, zamknięte okno konsoli
-    MaxAwariiWpisu,      \* PricingJournal._write: OSError (wpis przepada, Wycena biegnie dalej)
+    MaxAwariiWpisu,      \* PricingJournal._write: OSError (wpis przepada, Wycena biegnie dalej), także wpis końca
     MaxAwariiOdczytu,    \* InterruptedPricings.close: OSError odczytu dziennika albo pliku Logów (dziennik zostaje)
-    MaxAwariiHistorii,   \* RunCards._row: OSError odczytu Historii (wiersza „nie ma”)
-    MaxAwariiMetryk,     \* run_process: MetricsStore.append rzuca OSError, UnicodeError albo ValueError; run_process go
-                         \* łapie (metrics_saved = False) i wraca z wynikiem bez wiersza Historii
-    MaxAwariiLogow,     \* RunLogs._write (replace_atomically): OSError, pliku Logów nie ma albo zostaje poprzedni
+    MaxAwariiLogow,      \* RunLogs._write (replace_atomically): OSError, pliku Logów nie ma albo zostaje poprzedni
     MaxAwariiKolejki,    \* Outbox.post: False (pliku kolejki nie dało się zapisać)
-    MaxAwariiUsuniecia,  \* InterruptedPricings._remove: OSError z unlink (dziennik zostaje)
+    MaxAwariiUsuniecia,  \* _remove: OSError z unlink (dziennik zostaje), przy starcie i po nieudanym wpisie końca
     TekstDoMaski,        \* ślad zleceń w dzienniku ma tekst, który strażnik reguły danych maskuje (telefon, ulica)
     StareLogi,           \* przed pierwszym startem: Wycena 1 urwana, a jej Logi Urwanego Uruchomienia zapisała, ale nie
                          \* wysłała praca Centrum sprzed strażnika (#851), więc bez maski
@@ -28,8 +25,7 @@ CONSTANTS
 
 Biegi == 1..Wyceny
 Zlecenia == 1..LiczbaZlecen
-Przyczyny == {"wiersz-pozniejszej-wyceny", "historia-nieczytelna", "historia-niezapisana", "zapis-logow-nieudany",
-              "wpis-nieudany"}
+Przyczyny == {"przed-wpisem-konca", "wpis-konca-nieudany", "zapis-logow-nieudany", "wpis-nieudany"}
 
 \* Treść Logów Urwanego Uruchomienia: zlecenia skończone przed zgaśnięciem (efenix_orders), zlecenie zaczęte bez wyniku
 \* (interruption.row, 0: zgasło między zleceniami) i to, czy tekst przeszedł przez strażnika reguły danych.
@@ -39,7 +35,8 @@ Pusta == [skonczone |-> {}, zaczete |-> 0, tekst |-> "strzezone"]
 \* Logi Urwanego Uruchomienia z treścią.
 PlikiLogow == [rodzaj : {"brak", "wynik", "urwane"}, tresc : Tresci]
 BrakLogow == [rodzaj |-> "brak", tresc |-> Pusta]
-Wpisy == [rodzaj : {"zaczete", "skonczone"}, z : Zlecenia]
+\* Wpisy dziennika: „zaczynam zlecenie”, „zlecenie skończone” i „koniec Uruchomienia” (RunEnded, z jest bez znaczenia).
+Wpisy == [rodzaj : {"zaczete", "skonczone", "koniec"}, z : Zlecenia]
 Oczekujace == [bieg : Biegi, tresc : Tresci, niezapisany : BOOLEAN]
 
 VARIABLES
@@ -47,7 +44,6 @@ VARIABLES
     dziennik,        \* dziennik Wyceny r: "brak" | "bezStartu" (urwana pierwsza linia) | "jest"
     wpisy,           \* wpisy dziennika r po pierwszej linii, po kolei (bez urwanych)
     logi,            \* plik Logów Uruchomienia r
-    historia,        \* wiersz Historii (rekord metryk) Wyceny r
     efenix,          \* zlecenia, które Wycena r zmieniła już w efenix
     kolejka,         \* wysyłki, które Outbox.post przyjął: [bieg, rodzaj, tresc]
     \* Pamięć jednej pracy Centrum: znika ze zgaśnięciem i zamknięciem.
@@ -57,29 +53,28 @@ VARIABLES
     kursor,          \* który dziennik z sorted(glob) czyta close
     krokZamykania,   \* "czytaj" | "zapisz" (plik Logów) | "usun" (dziennik)
     rekord,          \* Logi Urwanego Uruchomienia, które close zapisze w pliku
-    powod,           \* przyczyna, dla której close usuwa dziennik (wiersz późniejszej Wyceny)
     oczekujace,      \* InterruptedPricings._pending: Logi do wysłania i ich dzienniki
     doWyslania,      \* to, co send wziął z _pending
     krokWysylki,     \* "post" | "usun" (dziennik po przyjęciu)
     bieg,            \* Wycena, która biegnie w tej pracy Centrum (0: żadna)
-    faza,            \* gdzie jest Wycena: "-" | "zaczete" | "efenix" | "skonczone" | "historia" | "logi" | "post"
+    faza,            \* gdzie jest Wycena: "-" | "zaczete" | "efenix" | "skonczone" | "wynik" | "koniec" | "logi" | "post"
     zlecenie,        \* bieżące zlecenie Wyceny
     naglowekCzeka,   \* PricingJournal._header: pierwsza linia czeka na pierwszy udany wpis
     nastepny,        \* następna Wycena, którą tata może uruchomić
-    zgasniecia, awarieWpisu, awarieOdczytu, awarieHistorii, awarieMetryk, awarieLogow, awarieKolejki, awarieUsuniecia,
+    zgasniecia, awarieWpisu, awarieOdczytu, awarieLogow, awarieKolejki, awarieUsuniecia,
     \* Zmienne pomocnicze: nie mają odpowiednika w kodzie i służą tylko obietnicom.
     zapisanyStart,   \* dziennik r miał kiedyś pierwszą linię
     wynik,           \* Wycena r doszła do wyniku: run_process wrócił z wynikiem, z wierszem Historii albo bez niego
     przepadle,       \* zlecenia Wyceny r, których własny wpis dziennika się nie zapisał (OSError)
+    bezKonca,        \* dlaczego dziennik Wyceny r z wynikiem został na dysku bez wpisu końca
     \* Zdarzenia, które łamią obietnice: zbiór przyczyn w chwili każdego zdarzenia.
     zgubiony, poWyniku, inneZnaki, bezStrazy, przedWznowieniem, bezZlecenia
 
-dysk == <<dziennik, wpisy, logi, historia, efenix, kolejka>>
-pamiec == <<centrum, wznowiona, kursor, krokZamykania, rekord, powod, oczekujace, doWyslania, krokWysylki, bieg, faza,
+dysk == <<dziennik, wpisy, logi, efenix, kolejka>>
+pamiec == <<centrum, wznowiona, kursor, krokZamykania, rekord, oczekujace, doWyslania, krokWysylki, bieg, faza,
             zlecenie, naglowekCzeka>>
-liczniki == <<nastepny, zgasniecia, awarieWpisu, awarieOdczytu, awarieHistorii, awarieMetryk, awarieLogow,
-              awarieKolejki, awarieUsuniecia>>
-duchy == <<zapisanyStart, wynik, przepadle>>
+liczniki == <<nastepny, zgasniecia, awarieWpisu, awarieOdczytu, awarieLogow, awarieKolejki, awarieUsuniecia>>
+duchy == <<zapisanyStart, wynik, przepadle, bezKonca>>
 zdarzenia == <<zgubiony, poWyniku, inneZnaki, bezStrazy, przedWznowieniem, bezZlecenia>>
 vars == <<dysk, pamiec, liczniki, duchy, zdarzenia>>
 
@@ -87,9 +82,8 @@ Zdarz(stare, warunek, przyczyny) == IF warunek THEN stare \cup {przyczyny} ELSE 
 
 TypeOK ==
     /\ dziennik \in [Biegi -> {"brak", "bezStartu", "jest"}]
-    /\ \A r \in Biegi : wpisy[r] \in Seq(Wpisy) /\ Len(wpisy[r]) <= 2 * LiczbaZlecen
+    /\ \A r \in Biegi : wpisy[r] \in Seq(Wpisy) /\ Len(wpisy[r]) <= 2 * LiczbaZlecen + 1
     /\ logi \in [Biegi -> PlikiLogow]
-    /\ historia \in [Biegi -> BOOLEAN]
     /\ efenix \in [Biegi -> SUBSET Zlecenia]
     /\ kolejka \subseteq [bieg : Biegi, rodzaj : {"wynik", "urwane"}, tresc : Tresci]
     /\ centrum \in {"stoi", "zamyka", "wysyla", "dziala"}
@@ -97,15 +91,15 @@ TypeOK ==
     /\ kursor \in 1..(Wyceny + 1)
     /\ krokZamykania \in {"czytaj", "zapisz", "usun"}
     /\ rekord \in Tresci
-    /\ powod \subseteq Przyczyny
     /\ oczekujace \in Seq(Oczekujace) /\ doWyslania \in Seq(Oczekujace)
     /\ krokWysylki \in {"post", "usun"}
     /\ bieg \in 0..Wyceny
-    /\ faza \in {"-", "zaczete", "efenix", "skonczone", "historia", "logi", "post"}
+    /\ faza \in {"-", "zaczete", "efenix", "skonczone", "wynik", "koniec", "logi", "post"}
     /\ zlecenie \in Zlecenia
     /\ naglowekCzeka \in BOOLEAN
     /\ nastepny \in 1..(Wyceny + 1)
     /\ zapisanyStart \in [Biegi -> BOOLEAN] /\ wynik \in [Biegi -> BOOLEAN] /\ przepadle \in [Biegi -> SUBSET Zlecenia]
+    /\ bezKonca \in [Biegi -> SUBSET Przyczyny]
     /\ \A e \in {zgubiony, poWyniku, inneZnaki, bezStrazy, przedWznowieniem, bezZlecenia} : e \subseteq SUBSET Przyczyny
 
 \* Przed pierwszym startem nic nie ma; ze StareLogi Wycena 1 jest już urwana, jej dziennik ma zlecenie 1 skończone, a
@@ -118,26 +112,28 @@ Init ==
     /\ logi = [r \in Biegi |-> IF StareLogi /\ r = 1
                                THEN [rodzaj |-> "urwane", tresc |-> [skonczone |-> {1}, zaczete |-> 0, tekst |-> "surowe"]]
                                ELSE BrakLogow]
-    /\ historia = [r \in Biegi |-> FALSE]
     /\ efenix = [r \in Biegi |-> IF StareLogi /\ r = 1 THEN {1} ELSE {}]
     /\ kolejka = {}
-    /\ centrum = "stoi" /\ wznowiona = FALSE /\ kursor = 1 /\ krokZamykania = "czytaj" /\ rekord = Pusta /\ powod = {}
+    /\ centrum = "stoi" /\ wznowiona = FALSE /\ kursor = 1 /\ krokZamykania = "czytaj" /\ rekord = Pusta
     /\ oczekujace = <<>> /\ doWyslania = <<>> /\ krokWysylki = "post"
     /\ bieg = 0 /\ faza = "-" /\ zlecenie = 1 /\ naglowekCzeka = FALSE
     /\ nastepny = IF StareLogi THEN 2 ELSE 1
-    /\ zgasniecia = 0 /\ awarieWpisu = 0 /\ awarieOdczytu = 0 /\ awarieHistorii = 0 /\ awarieMetryk = 0
-    /\ awarieLogow = 0 /\ awarieKolejki = 0 /\ awarieUsuniecia = 0
+    /\ zgasniecia = 0 /\ awarieWpisu = 0 /\ awarieOdczytu = 0 /\ awarieLogow = 0 /\ awarieKolejki = 0
+    /\ awarieUsuniecia = 0
     /\ zapisanyStart = [r \in Biegi |-> StareLogi /\ r = 1]
     /\ wynik = [r \in Biegi |-> FALSE]
     /\ przepadle = [r \in Biegi |-> {}]
+    /\ bezKonca = [r \in Biegi |-> {}]
     /\ zgubiony = {} /\ poWyniku = {} /\ inneZnaki = {} /\ bezStrazy = {} /\ przedWznowieniem = {} /\ bezZlecenia = {}
 
 \* Wycena r doszła do wyniku: run_process wrócił z wynikiem. Wiersz Historii (rekord metryk) mógł się nie zapisać.
 ZWynikiem(r) == wynik[r]
 \* Kolejka przyjęła Logi Urwanego Uruchomienia r (Outbox.post zwrócił True).
 Przyjete(r) == \E p \in kolejka : p.bieg = r /\ p.rodzaj = "urwane"
-\* RunCards.recorded -> _row: najwcześniejszy wiersz Historii procesu ze startem od startu r, a Wyceny startują po kolei.
-Zapisana(r) == \E r2 \in Biegi : r2 >= r /\ historia[r2]
+\* Kolejka przyjęła Logi z wynikiem r: Logi Urwanego Uruchomienia r zastąpiłyby je w Skrzynce.
+WynikPrzyjety(r) == \E p \in kolejka : p.bieg = r /\ p.rodzaj = "wynik"
+\* pricing_journal._read: dziennik r ma wpis „koniec Uruchomienia” (read.ended).
+Zakonczony(r) == \E i \in 1..Len(wpisy[r]) : wpisy[r][i].rodzaj = "koniec"
 \* Zlecenia, które Wycena r zmieniła w efenix, a których Logi t nie mają ani jako skończonych, ani jako zaczętego bez
 \* wyniku; Logi pokrywają Wycenę, gdy takich nie ma.
 Niepokryte(r, t) == {z \in efenix[r] : z \notin t.skonczone /\ z # t.zaczete}
@@ -166,9 +162,9 @@ PoPoscie(h) ==
     /\ przedWznowieniem' = Zdarz(przedWznowieniem, ~wznowiona, {})
     /\ bezZlecenia' = Zdarz(bezZlecenia, ~Pokrywa(h.bieg, h.tresc), PoWpisach(h.bieg, Niepokryte(h.bieg, h.tresc)))
 
-(* InterruptedPricings._remove: path.unlink(); FileNotFoundError nic nie robi, OSError zostawia dziennik (linia       *)
-(* dziennika Centrum). Dziennik Urwanego Uruchomienia (pierwsza linia, bez wiersza Historii), którego Logów kolejka  *)
-(* nie przyjęła, znika: zdarzenie obietnicy DziennikPoKolejce z przyczyną decyzji.                                  *)
+(* pricing_journal._remove: path.unlink(); FileNotFoundError nic nie robi, OSError zostawia dziennik (linia          *)
+(* dziennika Centrum). Dziennik Urwanego Uruchomienia (pierwsza linia, bez wyniku), którego Logów kolejka nie        *)
+(* przyjęła, znika: zdarzenie obietnicy DziennikPoKolejce z przyczyną decyzji.                                      *)
 UsunPlik(r, przyczyny) ==
     \/ /\ dziennik' = [dziennik EXCEPT ![r] = "brak"] /\ wpisy' = [wpisy EXCEPT ![r] = <<>>]
        /\ zgubiony' = Zdarz(zgubiony, zapisanyStart[r] /\ ~ZWynikiem(r) /\ ~Przyjete(r), przyczyny)
@@ -181,7 +177,6 @@ UsunPlik(r, przyczyny) ==
 Start ==
     /\ centrum = "stoi"
     /\ centrum' = "zamyka" /\ wznowiona' = FALSE /\ kursor' = 1 /\ krokZamykania' = "czytaj" /\ rekord' = Pusta
-    /\ powod' = {}
     /\ oczekujace' = <<>> /\ doWyslania' = <<>> /\ krokWysylki' = "post"
     /\ bieg' = 0 /\ faza' = "-" /\ zlecenie' = 1 /\ naglowekCzeka' = FALSE
     /\ UNCHANGED <<dysk, liczniki, duchy, zdarzenia>>
@@ -189,61 +184,53 @@ Start ==
 \* _closed: record = self._run_logs.guard(record), potem plik Logów (ZapiszLogi).
 Odczytane(tresc) == krokZamykania' = "zapisz" /\ rekord' = Straz(tresc)
 
-(* _closed z dziennika: Logi Urwanego Uruchomienia Wyceny, która doszła do wyniku, to zdarzenie obietnicy           *)
-(* BezUrwanychPoWyniku. Jego przyczyny to przyczyna decyzji („historia-nieczytelna”) i brak własnego wiersza        *)
-(* Historii („historia-niezapisana”), ale tylko dla Wyceny bez pliku Logów z wynikiem: oba znaleziska to Wycena,     *)
-(* której wyniku start nie widzi ani w Historii, ani w pliku Logów. Plik Logów Urwanego Uruchomienia czyta potem      *)
-(* gałąź „record = logged”, która tego zdarzenia już nie powtarza.                                                   *)
-Zbuduj(r, przyczyny) ==
+(* _closed z dziennika bez wpisu końca: Logi Urwanego Uruchomienia Wyceny, która doszła do wyniku, to zdarzenie       *)
+(* obietnicy BezUrwanychPoWyniku. Jego przyczyny to to, dlaczego dziennik nie ma wpisu końca (bezKonca), ale tylko    *)
+(* dla Wyceny bez pliku Logów z wynikiem, a „przed-wpisem-konca” tylko, gdy kolejka nie przyjęła jej Logów z wynikiem: *)
+(* wtedy w Skrzynce nie ma czego zastąpić. Plik Logów Urwanego Uruchomienia czyta potem gałąź „record = logged”,      *)
+(* która tego zdarzenia już nie powtarza.                                                                            *)
+Zbuduj(r) ==
     /\ Odczytane(ZDziennika(r))
     /\ poWyniku' = Zdarz(poWyniku, ZWynikiem(r),
                          IF logi[r].rodzaj = "wynik" THEN {}
-                         ELSE przyczyny \cup (IF historia[r] THEN {} ELSE {"historia-niezapisana"}))
+                         ELSE bezKonca[r] \ (IF WynikPrzyjety(r) THEN {"przed-wpisem-konca"} ELSE {}))
 
-(* InterruptedPricings.close -> _closed(path) dla dziennika na pozycji kursor: _read(path), plik Logów (file_of,      *)
-(* RunLog.model_validate_json) i Historia (recorded) w jednym kroku, bo w create_app nic innego tych plików nie      *)
-(* pisze. OSError z odczytu dziennika albo Logów: close łapie go i zostawia dziennik następnemu startowi.            *)
+(* InterruptedPricings.close -> _closed(path) dla dziennika na pozycji kursor: _read(path) i plik Logów (file_of,     *)
+(* RunLog.model_validate_json) w jednym kroku, bo w create_app nic innego tych plików nie pisze. Historii start nie    *)
+(* czyta. OSError z odczytu dziennika albo Logów: close łapie go i zostawia dziennik następnemu startowi.            *)
 Czytaj ==
-    LET r == kursor IN
+    LET r == kursor
+        koniecZapisany == Zakonczony(r)
+    IN
     /\ centrum = "zamyka" /\ kursor <= Wyceny /\ krokZamykania = "czytaj"
     /\ \/ \* glob nie zwraca dziennika, którego nie ma
           /\ dziennik[r] = "brak"
           /\ kursor' = kursor + 1
-          /\ UNCHANGED <<krokZamykania, rekord, powod, awarieOdczytu, awarieHistorii, poWyniku>>
+          /\ UNCHANGED <<krokZamykania, rekord, awarieOdczytu, poWyniku>>
        \/ \* except OSError: pricing_journal_unavailable(where="start"), continue
           /\ dziennik[r] # "brak" /\ awarieOdczytu < MaxAwariiOdczytu
           /\ awarieOdczytu' = awarieOdczytu + 1 /\ kursor' = kursor + 1
-          /\ UNCHANGED <<krokZamykania, rekord, powod, awarieHistorii, poWyniku>>
-       \/ \* _read: None (bez pierwszej linii) -> _remove
-          /\ dziennik[r] = "bezStartu"
-          /\ krokZamykania' = "usun" /\ powod' = {}
-          /\ UNCHANGED <<kursor, rekord, awarieOdczytu, awarieHistorii, poWyniku>>
+          /\ UNCHANGED <<krokZamykania, rekord, poWyniku>>
+       \/ \* _read: None (bez pierwszej linii) albo read.ended (wpis końca: Uruchomienie doszło do wyniku) -> _remove
+          /\ \/ dziennik[r] = "bezStartu"
+             \/ dziennik[r] = "jest" /\ koniecZapisany
+          /\ krokZamykania' = "usun"
+          /\ UNCHANGED <<kursor, rekord, awarieOdczytu, poWyniku>>
        \/ \* logs.exists() i logged.ending != "interrupted" -> None -> _remove
-          /\ dziennik[r] = "jest" /\ logi[r].rodzaj = "wynik"
-          /\ krokZamykania' = "usun" /\ powod' = {}
-          /\ UNCHANGED <<kursor, rekord, awarieOdczytu, awarieHistorii, poWyniku>>
+          /\ dziennik[r] = "jest" /\ ~koniecZapisany /\ logi[r].rodzaj = "wynik"
+          /\ krokZamykania' = "usun"
+          /\ UNCHANGED <<kursor, rekord, awarieOdczytu, poWyniku>>
        \/ \* record = logged: Logi, które poprzednia praca Centrum zapisała, a nie wysłała
-          /\ dziennik[r] = "jest" /\ logi[r].rodzaj = "urwane"
+          /\ dziennik[r] = "jest" /\ ~koniecZapisany /\ logi[r].rodzaj = "urwane"
           /\ Odczytane(logi[r].tresc)
-          /\ UNCHANGED <<kursor, powod, awarieOdczytu, awarieHistorii, poWyniku>>
-       \/ \* bez pliku Logów rozstrzyga Historia
-          /\ dziennik[r] = "jest" /\ logi[r].rodzaj = "brak"
-          /\ \/ \* elif self._recorded(...) -> None -> _remove; wiersz może być wierszem późniejszej Wyceny (_row: >=)
-                /\ Zapisana(r)
-                /\ krokZamykania' = "usun" /\ powod' = IF ZWynikiem(r) THEN {} ELSE {"wiersz-pozniejszej-wyceny"}
-                /\ UNCHANGED <<kursor, rekord, awarieOdczytu, awarieHistorii, poWyniku>>
-             \/ \* else: record = self._run_logs.interrupted(...)
-                /\ ~Zapisana(r)
-                /\ Zbuduj(r, {})
-                /\ UNCHANGED <<kursor, powod, awarieOdczytu, awarieHistorii>>
-             \/ \* _row: OSError z Historii -> None, czyli „nie doszło do wyniku”
-                /\ Zapisana(r) /\ awarieHistorii < MaxAwariiHistorii
-                /\ awarieHistorii' = awarieHistorii + 1
-                /\ Zbuduj(r, {"historia-nieczytelna"})
-                /\ UNCHANGED <<kursor, powod, awarieOdczytu>>
+          /\ UNCHANGED <<kursor, awarieOdczytu, poWyniku>>
+       \/ \* else: record = self._run_logs.interrupted(...)
+          /\ dziennik[r] = "jest" /\ ~koniecZapisany /\ logi[r].rodzaj = "brak"
+          /\ Zbuduj(r)
+          /\ UNCHANGED <<kursor, awarieOdczytu>>
     /\ UNCHANGED <<dysk, centrum, wznowiona, oczekujace, doWyslania, krokWysylki, bieg, faza, zlecenie, naglowekCzeka,
-                   nastepny, zgasniecia, awarieWpisu, awarieMetryk, awarieLogow, awarieKolejki, awarieUsuniecia, duchy,
-                   zgubiony, inneZnaki, bezStrazy, przedWznowieniem, bezZlecenia>>
+                   nastepny, zgasniecia, awarieWpisu, awarieLogow, awarieKolejki, awarieUsuniecia, duchy, zgubiony,
+                   inneZnaki, bezStrazy, przedWznowieniem, bezZlecenia>>
 
 (* _closed: self._run_logs.close(record) -> RunLogs._write -> replace_atomically (plik tymczasowy, os.replace);       *)
 (* OSError tylko do dziennika Centrum, a Logi i tak idą do _pending.                                               *)
@@ -255,27 +242,26 @@ ZapiszLogi ==
            ELSE logi' = [logi EXCEPT ![kursor] = [rodzaj |-> "urwane", tresc |-> rekord]] /\ UNCHANGED awarieLogow
         /\ oczekujace' = Append(oczekujace, [bieg |-> kursor, tresc |-> rekord, niezapisany |-> niezapisany])
     /\ kursor' = kursor + 1 /\ krokZamykania' = "czytaj"
-    /\ UNCHANGED <<dziennik, wpisy, historia, efenix, kolejka, centrum, wznowiona, rekord, powod, doWyslania,
-                   krokWysylki, bieg, faza, zlecenie, naglowekCzeka, nastepny, zgasniecia, awarieWpisu, awarieOdczytu,
-                   awarieHistorii, awarieMetryk, awarieKolejki, awarieUsuniecia, duchy, zdarzenia>>
+    /\ UNCHANGED <<dziennik, wpisy, efenix, kolejka, centrum, wznowiona, rekord, doWyslania, krokWysylki, bieg, faza,
+                   zlecenie, naglowekCzeka, nastepny, zgasniecia, awarieWpisu, awarieOdczytu, awarieKolejki,
+                   awarieUsuniecia, duchy, zdarzenia>>
 
-\* close: if closed is None: self._remove(path)
+\* close: if closed is None: _remove(path, ...)
 UsunDziennik ==
     /\ centrum = "zamyka" /\ krokZamykania = "usun"
-    /\ UsunPlik(kursor, powod)
+    /\ UsunPlik(kursor, {})
     /\ kursor' = kursor + 1 /\ krokZamykania' = "czytaj"
-    /\ UNCHANGED <<logi, historia, efenix, kolejka, centrum, wznowiona, rekord, powod, oczekujace, doWyslania,
-                   krokWysylki, bieg, faza, zlecenie, naglowekCzeka, nastepny, zgasniecia, awarieWpisu, awarieOdczytu,
-                   awarieHistorii, awarieMetryk, awarieLogow, awarieKolejki, duchy, poWyniku, inneZnaki, bezStrazy,
-                   przedWznowieniem, bezZlecenia>>
+    /\ UNCHANGED <<logi, efenix, kolejka, centrum, wznowiona, rekord, oczekujace, doWyslania, krokWysylki, bieg, faza,
+                   zlecenie, naglowekCzeka, nastepny, zgasniecia, awarieWpisu, awarieOdczytu, awarieLogow,
+                   awarieKolejki, duchy, poWyniku, inneZnaki, bezStrazy, przedWznowieniem, bezZlecenia>>
 
 (* app.py lifespan: outbox.resume() przed pierwszym zapytaniem HTTP (uvicorn kończy start lifespan, zanim przyjmie   *)
 (* zapytanie z kolejki gniazda).                                                                                    *)
 Wznow ==
     /\ centrum = "zamyka" /\ kursor > Wyceny /\ ~wznowiona
     /\ wznowiona' = TRUE
-    /\ UNCHANGED <<dysk, centrum, kursor, krokZamykania, rekord, powod, oczekujace, doWyslania, krokWysylki, bieg,
-                   faza, zlecenie, naglowekCzeka, liczniki, duchy, zdarzenia>>
+    /\ UNCHANGED <<dysk, centrum, kursor, krokZamykania, rekord, oczekujace, doWyslania, krokWysylki, bieg, faza,
+                   zlecenie, naglowekCzeka, liczniki, duchy, zdarzenia>>
 
 (* Pierwsze zapytanie API: zależność send_interrupted -> InterruptedPricings.send bierze całe _pending pod blokadą   *)
 (* (pending, self._pending = self._pending, []); następne zapytania dostają pustą listę.                             *)
@@ -284,8 +270,8 @@ PierwszeZapytanie ==
     /\ wznowiona
     /\ doWyslania' = oczekujace /\ oczekujace' = <<>> /\ krokWysylki' = "post"
     /\ centrum' = IF oczekujace = <<>> THEN "dziala" ELSE "wysyla"
-    /\ UNCHANGED <<dysk, wznowiona, kursor, krokZamykania, rekord, powod, bieg, faza, zlecenie, naglowekCzeka,
-                   liczniki, duchy, zdarzenia>>
+    /\ UNCHANGED <<dysk, wznowiona, kursor, krokZamykania, rekord, bieg, faza, zlecenie, naglowekCzeka, liczniki,
+                   duchy, zdarzenia>>
 
 \* Następne Logi z listy send albo koniec send.
 Dalej ==
@@ -304,28 +290,27 @@ Wyslij ==
        \/ /\ awarieKolejki < MaxAwariiKolejki /\ awarieKolejki' = awarieKolejki + 1
           /\ Dalej
           /\ UNCHANGED <<kolejka, inneZnaki, bezStrazy, przedWznowieniem, bezZlecenia>>
-    /\ UNCHANGED <<dziennik, wpisy, logi, historia, efenix, wznowiona, kursor, krokZamykania, rekord, powod,
-                   oczekujace, bieg, faza, zlecenie, naglowekCzeka, nastepny, zgasniecia, awarieWpisu, awarieOdczytu,
-                   awarieHistorii, awarieMetryk, awarieLogow, awarieUsuniecia, duchy, zgubiony, poWyniku>>
+    /\ UNCHANGED <<dziennik, wpisy, logi, efenix, wznowiona, kursor, krokZamykania, rekord, oczekujace, bieg, faza,
+                   zlecenie, naglowekCzeka, nastepny, zgasniecia, awarieWpisu, awarieOdczytu, awarieLogow,
+                   awarieUsuniecia, duchy, zgubiony, poWyniku>>
 
-\* send: self._remove(path) po przyjęciu przez kolejkę.
+\* send: _remove(path, ...) po przyjęciu przez kolejkę.
 UsunPoWysylce ==
     /\ centrum = "wysyla" /\ krokWysylki = "usun"
     /\ UsunPlik(Head(doWyslania).bieg, {})
     /\ Dalej
-    /\ UNCHANGED <<logi, historia, efenix, kolejka, wznowiona, kursor, krokZamykania, rekord, powod, oczekujace, bieg,
-                   faza, zlecenie, naglowekCzeka, nastepny, zgasniecia, awarieWpisu, awarieOdczytu, awarieHistorii,
-                   awarieMetryk, awarieLogow, awarieKolejki, duchy, poWyniku, inneZnaki, bezStrazy, przedWznowieniem,
-                   bezZlecenia>>
+    /\ UNCHANGED <<logi, efenix, kolejka, wznowiona, kursor, krokZamykania, rekord, oczekujace, bieg, faza, zlecenie,
+                   naglowekCzeka, nastepny, zgasniecia, awarieWpisu, awarieOdczytu, awarieLogow, awarieKolejki, duchy,
+                   poWyniku, inneZnaki, bezStrazy, przedWznowieniem, bezZlecenia>>
 
 (* Tata uruchamia Wycenę w efenix: RunHost.start -> run_started -> PricingJournal.run_started (start w pamięci,      *)
 (* pierwsza linia czeka na pierwszy wpis), zanim ruszy wątek. Każde zapytanie przechodzi najpierw send_interrupted. *)
 StartWyceny ==
     /\ centrum = "dziala" /\ bieg = 0 /\ nastepny <= Wyceny
     /\ bieg' = nastepny /\ nastepny' = nastepny + 1 /\ faza' = "zaczete" /\ zlecenie' = 1 /\ naglowekCzeka' = TRUE
-    /\ UNCHANGED <<dysk, centrum, wznowiona, kursor, krokZamykania, rekord, powod, oczekujace, doWyslania,
-                   krokWysylki, zgasniecia, awarieWpisu, awarieOdczytu, awarieHistorii, awarieMetryk, awarieLogow,
-                   awarieKolejki, awarieUsuniecia, duchy, zdarzenia>>
+    /\ UNCHANGED <<dysk, centrum, wznowiona, kursor, krokZamykania, rekord, oczekujace, doWyslania, krokWysylki,
+                   zgasniecia, awarieWpisu, awarieOdczytu, awarieLogow, awarieKolejki, awarieUsuniecia, duchy,
+                   zdarzenia>>
 
 (* PricingJournal._write: pierwsza linia (gdy czeka) i wpis jednym write, flush i fsync; OSError: wpis przepada,      *)
 (* _header zostaje, Wycena biegnie dalej, a następny wpis _write znów próbuje zapisać (_failed tylko ucisza linię     *)
@@ -346,17 +331,17 @@ WpisZaczete ==
     /\ bieg # 0 /\ faza = "zaczete"
     /\ Wpis("zaczete")
     /\ faza' = "efenix"
-    /\ UNCHANGED <<logi, historia, efenix, kolejka, centrum, wznowiona, kursor, krokZamykania, rekord, powod,
-                   oczekujace, doWyslania, krokWysylki, bieg, zlecenie, nastepny, zgasniecia, awarieOdczytu,
-                   awarieHistorii, awarieMetryk, awarieLogow, awarieKolejki, awarieUsuniecia, wynik, zdarzenia>>
+    /\ UNCHANGED <<logi, efenix, kolejka, centrum, wznowiona, kursor, krokZamykania, rekord, oczekujace, doWyslania,
+                   krokWysylki, bieg, zlecenie, nastepny, zgasniecia, awarieOdczytu, awarieLogow, awarieKolejki,
+                   awarieUsuniecia, wynik, bezKonca, zdarzenia>>
 
 \* _priced -> _outcome: pierwsze działanie okna efenix, które zmienia zlecenie (data wykonania, Wycena Emmetta, ilość).
 ZmianaWEfenix ==
     /\ bieg # 0 /\ faza = "efenix"
     /\ efenix' = [efenix EXCEPT ![bieg] = @ \cup {zlecenie}]
     /\ faza' = "skonczone"
-    /\ UNCHANGED <<dziennik, wpisy, logi, historia, kolejka, centrum, wznowiona, kursor, krokZamykania, rekord, powod,
-                   oczekujace, doWyslania, krokWysylki, bieg, zlecenie, naglowekCzeka, liczniki, duchy, zdarzenia>>
+    /\ UNCHANGED <<dziennik, wpisy, logi, kolejka, centrum, wznowiona, kursor, krokZamykania, rekord, oczekujace,
+                   doWyslania, krokWysylki, bieg, zlecenie, naglowekCzeka, liczniki, duchy, zdarzenia>>
 
 \* save: results.append(result), journal.ended(result, ...), potem następne zlecenie albo koniec przebiegu.
 WpisSkonczone ==
@@ -364,25 +349,44 @@ WpisSkonczone ==
     /\ Wpis("skonczone")
     /\ IF zlecenie < LiczbaZlecen
        THEN zlecenie' = zlecenie + 1 /\ faza' = "zaczete"
-       ELSE faza' = "historia" /\ UNCHANGED zlecenie
-    /\ UNCHANGED <<logi, historia, efenix, kolejka, centrum, wznowiona, kursor, krokZamykania, rekord, powod,
-                   oczekujace, doWyslania, krokWysylki, bieg, nastepny, zgasniecia, awarieOdczytu, awarieHistorii,
-                   awarieMetryk, awarieLogow, awarieKolejki, awarieUsuniecia, wynik, zdarzenia>>
+       ELSE faza' = "wynik" /\ UNCHANGED zlecenie
+    /\ UNCHANGED <<logi, efenix, kolejka, centrum, wznowiona, kursor, krokZamykania, rekord, oczekujace, doWyslania,
+                   krokWysylki, bieg, nastepny, zgasniecia, awarieOdczytu, awarieLogow, awarieKolejki,
+                   awarieUsuniecia, wynik, bezKonca, zdarzenia>>
 
-(* runs._Run.work -> process_run.run_process: silnik doszedł do wyniku, a MetricsStore(...).append(record) zapisuje *)
-(* rekord metryk, czyli wiersz Historii, zanim run_process wróci. OSError, UnicodeError albo ValueError z append    *)
-(* run_process łapie (metrics_saved = False) i wraca z wynikiem bez wiersza Historii, a Uruchomienie biegnie dalej  *)
-(* do Logów z wynikiem.                                                                                            *)
-Historia ==
-    /\ bieg # 0 /\ faza = "historia"
+(* runs._Run.work -> process_run.run_process: silnik doszedł do wyniku, MetricsStore(...).append(record) zapisuje     *)
+(* rekord metryk (wiersz Historii) albo nie (OSError, UnicodeError, ValueError: metrics_saved = False), a run_process  *)
+(* wraca z wynikiem. Wiersza Historii start nie czyta, więc model go nie ma.                                         *)
+Wynik ==
+    /\ bieg # 0 /\ faza = "wynik"
     /\ wynik' = [wynik EXCEPT ![bieg] = TRUE]
-    /\ \/ historia' = [historia EXCEPT ![bieg] = TRUE] /\ UNCHANGED awarieMetryk
-       \/ awarieMetryk < MaxAwariiMetryk /\ awarieMetryk' = awarieMetryk + 1 /\ UNCHANGED historia
-    /\ faza' = "logi"
-    /\ UNCHANGED <<dziennik, wpisy, logi, efenix, kolejka, centrum, wznowiona, kursor, krokZamykania, rekord, powod,
-                   oczekujace, doWyslania, krokWysylki, bieg, zlecenie, naglowekCzeka, nastepny, zgasniecia,
-                   awarieWpisu, awarieOdczytu, awarieHistorii, awarieLogow, awarieKolejki, awarieUsuniecia,
-                   zapisanyStart, przepadle, zdarzenia>>
+    /\ faza' = "koniec"
+    /\ UNCHANGED <<dysk, centrum, wznowiona, kursor, krokZamykania, rekord, oczekujace, doWyslania, krokWysylki, bieg,
+                   zlecenie, naglowekCzeka, liczniki, zapisanyStart, przepadle, bezKonca, zdarzenia>>
+
+(* RunHost.after -> PricingJournal.run_ended, pierwsze działanie po wyniku (after_run w create_app), przed             *)
+(* RunLogs.run_ended: wpis „koniec Uruchomienia” przez _write (write, flush, fsync), tylko gdy dziennik ma pierwszą    *)
+(* linię (not self._header). OSError: _remove usuwa dziennik, bo Uruchomienie doszło do wyniku; gdy i unlink          *)
+(* zawiedzie, dziennik zostaje bez wpisu końca.                                                                     *)
+WpisKonca ==
+    LET r == bieg IN
+    /\ bieg # 0 /\ faza = "koniec"
+    /\ \/ \* bez dziennika: żaden wpis tego Uruchomienia się nie zapisał
+          /\ dziennik[r] = "brak"
+          /\ UNCHANGED <<dziennik, wpisy, awarieWpisu, awarieUsuniecia, zgubiony, bezKonca>>
+       \/ /\ dziennik[r] = "jest"
+          /\ wpisy' = [wpisy EXCEPT ![r] = Append(@, [rodzaj |-> "koniec", z |-> zlecenie])]
+          /\ UNCHANGED <<dziennik, awarieWpisu, awarieUsuniecia, zgubiony, bezKonca>>
+       \/ \* if not self._write(...): _remove(path, ...)
+          /\ dziennik[r] = "jest" /\ awarieWpisu < MaxAwariiWpisu /\ awarieWpisu' = awarieWpisu + 1
+          /\ UsunPlik(r, {})
+          /\ bezKonca' = IF dziennik'[r] = "brak" THEN bezKonca
+                         ELSE [bezKonca EXCEPT ![r] = @ \cup {"wpis-konca-nieudany"}]
+    /\ faza' = "logi" /\ UNCHANGED bieg
+    /\ UNCHANGED <<logi, efenix, kolejka, centrum, wznowiona, kursor, krokZamykania, rekord, oczekujace, doWyslania,
+                   krokWysylki, zlecenie, naglowekCzeka, nastepny, zgasniecia, awarieOdczytu, awarieLogow,
+                   awarieKolejki, zapisanyStart, wynik, przepadle, poWyniku, inneZnaki, bezStrazy, przedWznowieniem,
+                   bezZlecenia>>
 
 \* RunHost.after -> RunLogs.run_ended -> _keep: _write (replace_atomically) Logów z wynikiem; OSError leci dalej.
 LogiWyniku ==
@@ -390,13 +394,12 @@ LogiWyniku ==
     /\ \/ logi' = [logi EXCEPT ![bieg] = [rodzaj |-> "wynik", tresc |-> Pusta]] /\ UNCHANGED awarieLogow
        \/ awarieLogow < MaxAwariiLogow /\ awarieLogow' = awarieLogow + 1 /\ UNCHANGED logi
     /\ faza' = "post"
-    /\ UNCHANGED <<dziennik, wpisy, historia, efenix, kolejka, centrum, wznowiona, kursor, krokZamykania, rekord,
-                   powod, oczekujace, doWyslania, krokWysylki, bieg, zlecenie, naglowekCzeka, nastepny, zgasniecia,
-                   awarieWpisu, awarieOdczytu, awarieHistorii, awarieMetryk, awarieKolejki, awarieUsuniecia, duchy,
-                   zdarzenia>>
+    /\ UNCHANGED <<dziennik, wpisy, efenix, kolejka, centrum, wznowiona, kursor, krokZamykania, rekord, oczekujace,
+                   doWyslania, krokWysylki, bieg, zlecenie, naglowekCzeka, nastepny, zgasniecia, awarieWpisu,
+                   awarieOdczytu, awarieKolejki, awarieUsuniecia, duchy, zdarzenia>>
 
 (* _keep: finally self._outbox.post(logi_post(kept)); potem koniec Uruchomienia (end). Dziennik Wyceny, która doszła *)
-(* do wyniku, zostaje do następnego startu.                                                                         *)
+(* do wyniku, zostaje z wpisem końca do następnego startu.                                                          *)
 WyslijWynik ==
     /\ bieg # 0 /\ faza = "post"
     /\ \/ /\ kolejka' = kolejka \cup {[bieg |-> bieg, rodzaj |-> "wynik", tresc |-> Pusta]}
@@ -405,15 +408,15 @@ WyslijWynik ==
        \/ /\ awarieKolejki < MaxAwariiKolejki /\ awarieKolejki' = awarieKolejki + 1
           /\ UNCHANGED <<kolejka, przedWznowieniem>>
     /\ bieg' = 0 /\ faza' = "-"
-    /\ UNCHANGED <<dziennik, wpisy, logi, historia, efenix, centrum, wznowiona, kursor, krokZamykania, rekord, powod,
-                   oczekujace, doWyslania, krokWysylki, zlecenie, naglowekCzeka, nastepny, zgasniecia, awarieWpisu,
-                   awarieOdczytu, awarieHistorii, awarieMetryk, awarieLogow, awarieUsuniecia, duchy, zgubiony,
-                   poWyniku, inneZnaki, bezStrazy, bezZlecenia>>
+    /\ UNCHANGED <<dziennik, wpisy, logi, efenix, centrum, wznowiona, kursor, krokZamykania, rekord, oczekujace,
+                   doWyslania, krokWysylki, zlecenie, naglowekCzeka, nastepny, zgasniecia, awarieWpisu, awarieOdczytu,
+                   awarieLogow, awarieUsuniecia, duchy, zgubiony, poWyniku, inneZnaki, bezStrazy, bezZlecenia>>
 
 (* Zgaśnięcie Centrum w dowolnej chwili: pamięć znika, dysk i kolejka zostają. Wpis w trakcie zapisu może zostać     *)
-(* urwany; urwana pierwsza linia to dziennik bez startu (_read: None). Urwana Wycena, która zmieniła już coś w efenix, *)
-(* a nie ma dziennika z pierwszą linią, nie dostanie Logów: zdarzenie obietnicy ZaczeteWLogach, w którym brakuje     *)
-(* każdego zlecenia zmienionego w efenix.                                                                          *)
+(* urwany; urwana pierwsza linia to dziennik bez startu (_read: None), a urwany wpis końca to dziennik bez niego.      *)
+(* Urwana Wycena, która zmieniła już coś w efenix, a nie ma dziennika z pierwszą linią, nie dostanie Logów: zdarzenie  *)
+(* obietnicy ZaczeteWLogach, w którym brakuje każdego zlecenia zmienionego w efenix. Zgaśnięcie po wyniku, a przed    *)
+(* wpisem końca, zostawia dziennik Wyceny z wynikiem bez wpisu końca (bezKonca).                                    *)
 Zgasniecie ==
     /\ centrum # "stoi" /\ zgasniecia < MaxZgasniec
     /\ zgasniecia' = zgasniecia + 1
@@ -425,38 +428,40 @@ Zgasniecie ==
     /\ bezZlecenia' = IF bieg # 0 /\ ~ZWynikiem(bieg) /\ efenix[bieg] # {} /\ ~zapisanyStart[bieg]
                       THEN bezZlecenia \cup {PoWpisach(bieg, efenix[bieg])}
                       ELSE bezZlecenia
+    /\ bezKonca' = IF bieg # 0 /\ faza = "koniec" /\ dziennik[bieg] = "jest"
+                   THEN [bezKonca EXCEPT ![bieg] = @ \cup {"przed-wpisem-konca"}]
+                   ELSE bezKonca
     /\ centrum' = "stoi" /\ wznowiona' = FALSE /\ bieg' = 0 /\ faza' = "-" /\ oczekujace' = <<>> /\ doWyslania' = <<>>
-    /\ UNCHANGED <<wpisy, logi, historia, efenix, kolejka, kursor, krokZamykania, rekord, powod, krokWysylki,
-                   zlecenie, naglowekCzeka, nastepny, awarieWpisu, awarieOdczytu, awarieHistorii, awarieMetryk,
-                   awarieLogow, awarieKolejki, awarieUsuniecia, duchy, zgubiony, poWyniku, inneZnaki, bezStrazy,
-                   przedWznowieniem>>
+    /\ UNCHANGED <<wpisy, logi, efenix, kolejka, kursor, krokZamykania, rekord, krokWysylki, zlecenie, naglowekCzeka,
+                   nastepny, awarieWpisu, awarieOdczytu, awarieLogow, awarieKolejki, awarieUsuniecia, zapisanyStart,
+                   wynik, przepadle, zgubiony, poWyniku, inneZnaki, bezStrazy, przedWznowieniem>>
 
 (* Tata zamyka Centrum („Zamknij Centrum rozliczeń”): Shutdown przyjmuje je tylko, gdy żadne Uruchomienie nie trwa  *)
 (* (runs.shutdown_refusal), a samo zapytanie przeszło już send_interrupted.                                       *)
 Zamkniecie ==
     /\ centrum = "dziala" /\ bieg = 0
     /\ centrum' = "stoi"
-    /\ UNCHANGED <<dysk, wznowiona, kursor, krokZamykania, rekord, powod, oczekujace, doWyslania, krokWysylki, bieg,
-                   faza, zlecenie, naglowekCzeka, liczniki, duchy, zdarzenia>>
+    /\ UNCHANGED <<dysk, wznowiona, kursor, krokZamykania, rekord, oczekujace, doWyslania, krokWysylki, bieg, faza,
+                   zlecenie, naglowekCzeka, liczniki, duchy, zdarzenia>>
 
 Next ==
     \/ Start \/ Czytaj \/ ZapiszLogi \/ UsunDziennik \/ Wznow \/ PierwszeZapytanie \/ Wyslij \/ UsunPoWysylce
-    \/ StartWyceny \/ WpisZaczete \/ ZmianaWEfenix \/ WpisSkonczone \/ Historia \/ LogiWyniku \/ WyslijWynik
-    \/ Zgasniecie \/ Zamkniecie
+    \/ StartWyceny \/ WpisZaczete \/ ZmianaWEfenix \/ WpisSkonczone \/ Wynik \/ WpisKonca \/ LogiWyniku
+    \/ WyslijWynik \/ Zgasniecie \/ Zamkniecie
 
 (* Działający kod robi następny krok, tata otwiera Centrum, gdy żadne nie działa, i kiedyś je zamyka, gdy nic nie    *)
 (* trwa (Centrum nie działa bez końca), a przeglądarka wysyła pierwsze zapytanie. Wyceny tata uruchamia, kiedy chce. *)
 Sprawiedliwosc ==
     /\ WF_vars(Start) /\ WF_vars(Czytaj) /\ WF_vars(ZapiszLogi) /\ WF_vars(UsunDziennik) /\ WF_vars(Wznow)
     /\ WF_vars(PierwszeZapytanie) /\ WF_vars(Wyslij) /\ WF_vars(UsunPoWysylce) /\ WF_vars(WpisZaczete)
-    /\ WF_vars(ZmianaWEfenix) /\ WF_vars(WpisSkonczone) /\ WF_vars(Historia) /\ WF_vars(LogiWyniku)
-    /\ WF_vars(WyslijWynik) /\ WF_vars(Zamkniecie)
+    /\ WF_vars(ZmianaWEfenix) /\ WF_vars(WpisSkonczone) /\ WF_vars(Wynik) /\ WF_vars(WpisKonca)
+    /\ WF_vars(LogiWyniku) /\ WF_vars(WyslijWynik) /\ WF_vars(Zamkniecie)
 
 Spec == Init /\ [][Next]_vars /\ Sprawiedliwosc
 
 (* Obietnice (docstring pricing_journal.py). *)
-\* Dziennik Urwanego Uruchomienia (z pierwszą linią, bez wiersza Historii) znika dopiero, gdy kolejka przyjęła jego Logi:
-\* razem ze Zbieganiem to wysyłka co najmniej raz.
+\* Dziennik Urwanego Uruchomienia (z pierwszą linią, bez wyniku) znika dopiero, gdy kolejka przyjęła jego Logi: razem
+\* ze Zbieganiem to wysyłka co najmniej raz.
 DziennikPoKolejce == zgubiony = {}
 \* Logi Urwanego Uruchomienia powstają tylko dla Wyceny, która nie doszła do wyniku: dziennik Wyceny z wynikiem start
 \* usuwa, a nie zamyka.

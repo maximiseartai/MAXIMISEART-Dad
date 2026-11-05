@@ -1,7 +1,8 @@
 """Show that sprawdz_urwane_uruchomienie.py fails when the TLA+ model of the Dziennik Wyceny loses a guard the code has.
 
 Each mutation removes from ``model/UrwaneUruchomienie.tla`` one guard or step whose counterpart in
-``src/rozliczenia/centrum/pricing_journal.py``, ``run_logs.py``, ``app.py`` or ``src/rozliczenia/efenix_pricing.py``
+``src/rozliczenia/centrum/pricing_journal.py``, ``run_logs.py``, ``app.py``, ``src/rozliczenia/efenix_pricing.py`` or
+``process_run.py``
 the mutation names, runs on its own copy of the checkout (``tools/mutacje.py``) and must end the check with
 ``URWANE URUCHOMIENIE: NOWE NARUSZENIE``. A mutation whose anchor text is no longer in the model is reported as
 NIEAKTUALNA: update it to the new model.
@@ -47,30 +48,74 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "start nie pyta Historii (_closed: bez elif self._recorded(...))",
-        (
-            Edit(
-                MODEL,
-                "                /\\ Zapisana(r)\n                /\\ krokZamykania' = \"usun\"",
-                "                /\\ FALSE\n                /\\ krokZamykania' = \"usun\"",
-            ),
-            Edit(MODEL, "                /\\ ~Zapisana(r)\n", "                /\\ TRUE\n"),
-        ),
+        "start nie czyta wpisu końca (_closed: bez read.ended)",
+        (Edit(MODEL, "        koniecZapisany == Zakonczony(r)\n", "        koniecZapisany == FALSE\n"),),
         _check("zwykle"),
-        "Wycena, która zapisała wiersz Historii i zgasła przed Logami, dostaje Logi Urwanego Uruchomienia",
+        "Wycena, która dopisała „koniec Uruchomienia” i zgasła przed Logami, dostaje Logi Urwanego Uruchomienia",
         NEW,
     ),
     Mutation(
-        "plik Logów z wynikiem nie rozstrzyga (_closed: bez return None przy logged.ending != \"interrupted\", "
-        "Logi z wynikiem idą do elif self._recorded(...))",
+        "Wycena bez wpisu końca (create_app: after_run bez journal, PricingJournal.run_ended nie biegnie)",
         (
-            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"wynik\"\n", "          /\\ FALSE\n"),
-            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"brak\"\n",
-                 "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj \\in {\"brak\", \"wynik\"}\n"),
+            Edit(
+                MODEL,
+                "          /\\ wpisy' = [wpisy EXCEPT ![r] = Append(@, [rodzaj |-> \"koniec\", z |-> zlecenie])]\n",
+                "          /\\ UNCHANGED wpisy\n",
+            ),
         ),
-        _check("historia"),
-        "Wycena z Logami z wynikiem, której wiersza Historii start nie widzi (rekord metryk niezapisany albo Historia "
-        "nieczytelna), dostaje Logi Urwanego Uruchomienia",
+        _check("zwykle"),
+        "Wycena, która doszła do wyniku i zgasła przed Logami, dostaje Logi Urwanego Uruchomienia",
+        NEW,
+    ),
+    Mutation(
+        "wpis końca przed rekordem metryk (wpis końca w save albo w run_process przed MetricsStore.append)",
+        (
+            Edit(MODEL, "       ELSE faza' = \"wynik\" /\\ UNCHANGED zlecenie", "       ELSE faza' = \"koniec\" /\\ UNCHANGED zlecenie"),
+            Edit(MODEL, "    /\\ faza' = \"logi\" /\\ UNCHANGED bieg\n", "    /\\ faza' = \"wynik\" /\\ UNCHANGED bieg\n"),
+            Edit(MODEL, "    /\\ faza' = \"koniec\"\n", "    /\\ faza' = \"logi\"\n"),
+        ),
+        _check("zwykle"),
+        "Centrum gaśnie po wpisie końca, a przed wynikiem: dziennik Urwanej Wyceny znika bez Logów Urwanego Uruchomienia",
+        NEW,
+    ),
+    Mutation(
+        "Logi z wynikiem przed wpisem końca (create_app: after_run z run_logs przed journal)",
+        (
+            Edit(MODEL, "    /\\ faza' = \"koniec\"\n", "    /\\ faza' = \"logi\"\n"),
+            Edit(MODEL, "\n    /\\ bieg' = 0 /\\ faza' = \"-\"\n", "\n    /\\ faza' = \"koniec\" /\\ UNCHANGED bieg\n"),
+            Edit(MODEL, "    /\\ faza' = \"logi\" /\\ UNCHANGED bieg\n", "    /\\ faza' = \"-\" /\\ bieg' = 0\n"),
+        ),
+        _check("koniec"),
+        "Logi z wynikiem poszły do kolejki bez pliku, Centrum gaśnie przed wpisem końca: Logi Urwanego Uruchomienia "
+        "zastępują je w Skrzynce",
+        NEW,
+    ),
+    Mutation(
+        "dziennik zostaje po nieudanym wpisie końca (PricingJournal.run_ended: bez _remove)",
+        (
+            Edit(
+                MODEL,
+                "          /\\ UsunPlik(r, {})\n"
+                "          /\\ bezKonca' = IF dziennik'[r] = \"brak\" THEN bezKonca\n"
+                "                         ELSE [bezKonca EXCEPT ![r] = @ \\cup {\"wpis-konca-nieudany\"}]\n",
+                "          /\\ UNCHANGED <<dziennik, wpisy, zgubiony, awarieUsuniecia, bezKonca>>\n",
+            ),
+        ),
+        _check("koniec"),
+        "Wycena, której wpis końca się nie zapisał, dostaje przy starcie Logi Urwanego Uruchomienia",
+        NEW,
+    ),
+    Mutation(
+        "plik Logów z wynikiem nie rozstrzyga (_closed: bez return None przy logged.ending != \"interrupted\")",
+        (
+            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ ~koniecZapisany /\\ logi[r].rodzaj = \"wynik\"\n",
+                 "          /\\ FALSE\n"),
+            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ ~koniecZapisany /\\ logi[r].rodzaj = \"brak\"\n",
+                 "          /\\ dziennik[r] = \"jest\" /\\ ~koniecZapisany /\\ logi[r].rodzaj \\in {\"brak\", \"wynik\"}\n"),
+        ),
+        _check("koniec"),
+        "Wycena z Logami z wynikiem, której wpis końca i usunięcie dziennika się nie udały, dostaje Logi Urwanego "
+        "Uruchomienia",
         NEW,
     ),
     Mutation(
@@ -141,7 +186,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "dziennik zostaje po przyjęciu Logów przez kolejkę (send: bez self._remove(path))",
+        "dziennik zostaje po przyjęciu Logów przez kolejkę (send: bez _remove(path, ...))",
         (Edit(MODEL, "    /\\ UsunPlik(Head(doWyslania).bieg, {})\n",
               "    /\\ UNCHANGED <<dziennik, wpisy, zgubiony, awarieUsuniecia>>\n"),),
         _check("zwykle"),
@@ -149,8 +194,8 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "start nie usuwa dziennika Wyceny z wynikiem (close: bez if closed is None: self._remove(path))",
-        (Edit(MODEL, "    /\\ UsunPlik(kursor, powod)\n", "    /\\ UNCHANGED <<dziennik, wpisy, zgubiony, awarieUsuniecia>>\n"),),
+        "start nie usuwa dziennika Wyceny z wynikiem (close: bez if closed is None: _remove(path, ...))",
+        (Edit(MODEL, "    /\\ UsunPlik(kursor, {})\n", "    /\\ UNCHANGED <<dziennik, wpisy, zgubiony, awarieUsuniecia>>\n"),),
         _check("zwykle"),
         "dzienniki Wycen, które doszły do wyniku, zostają w logs/dzienniki-wyceny na zawsze",
         NEW,
@@ -158,9 +203,10 @@ MUTATIONS = (
     Mutation(
         "Logi Urwanego Uruchomienia z pliku wzięte za Logi z wynikiem (_closed: bez logged.ending != \"interrupted\")",
         (
-            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"wynik\"\n",
-                 "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj \\in {\"wynik\", \"urwane\"}\n"),
-            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"urwane\"\n", "          /\\ FALSE\n"),
+            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ ~koniecZapisany /\\ logi[r].rodzaj = \"wynik\"\n",
+                 "          /\\ dziennik[r] = \"jest\" /\\ ~koniecZapisany /\\ logi[r].rodzaj \\in {\"wynik\", \"urwane\"}\n"),
+            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ ~koniecZapisany /\\ logi[r].rodzaj = \"urwane\"\n",
+                 "          /\\ FALSE\n"),
         ),
         _check("zwykle"),
         "Logi Urwanego Uruchomienia zapisane, a niewysłane przed zgaśnięciem, nie dochodzą nigdy, a dziennik znika",

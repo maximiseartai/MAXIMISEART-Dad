@@ -1,7 +1,9 @@
 {
   "src/rozliczenia/centrum/pricing_journal.py": [
     "PricingJournal",
+    "RunEnded",
     "_read",
+    "_remove",
     "InterruptedPricings"
   ],
   "src/rozliczenia/centrum/run_logs.py": [
@@ -18,16 +20,14 @@
     "LoggedEnding",
     "logi_post"
   ],
-  "src/rozliczenia/centrum/run_cards.py": [
-    "RunCards.recorded",
-    "RunCards._row"
-  ],
   "src/rozliczenia/centrum/app.py": [
     "lifespan",
     "send_interrupted",
     "app",
+    "journal",
     "interrupted",
-    "run_started"
+    "run_started",
+    "runs"
   ],
   "src/rozliczenia/centrum/runs.py": [
     "_Run.work",
@@ -51,15 +51,5 @@
   ],
   "src/rozliczenia/process_run.py": [
     "run_process"
-  ],
-  "src/rozliczenia/telemetry.py": [
-    "MetricsStore.append",
-    "MetricsStore.read"
-  ],
-  "src/rozliczenia/centrum/metrics.py": [
-    "read_runs",
-    "_records",
-    "_runs",
-    "_run"
   ]
 }
