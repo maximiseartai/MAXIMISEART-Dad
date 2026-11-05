@@ -57,7 +57,7 @@ W trakcie Wyceny w efenix jej komentarz Uruchomienia pokazuje postęp z dziennik
 każda Wycena z dziennikiem dostaje wersję końcową tego komentarza: Logi z wynikiem na końcu (``run_ended``), a gdy ich
 kolejka nie przyjęła w tej pracy Centrum (``queued``), następny start wysyła z dziennika Logi z pliku, Logi Urwanego
 Uruchomienia albo wynik bez Logów (``ResultWithoutLogs``): wynik z wiersza Historii i zlecenia z dziennika, gdy pliku
-Logów nie ma albo nie da się go odczytać.
+Logów nie ma, a Historia ma wiersz Uruchomienia, albo gdy pliku nie da się odczytać.
 """
 
 from __future__ import annotations

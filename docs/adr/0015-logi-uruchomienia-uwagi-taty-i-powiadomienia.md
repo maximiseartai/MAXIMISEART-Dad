@@ -68,13 +68,18 @@ zatrzymuje tylko plik, nie inne wysyłki kolejki. Zdania o komentarzu z pełnym 
 Uruchomienia w issue okresu przy starcie i odświeża go co 5 minut postępem z
 dziennika Wyceny w efenix: zlecenia skończone z wszystkich, wyniki do tej pory,
 ostatnie zlecenie i czas od startu, nigdy więcej, niż dziennik ma na dysku.
-Postęp to starsza wersja wysyłki Logów tego Uruchomienia, więc koniec Wyceny
-zamienia ten sam komentarz w podsumowanie, a Urwane Uruchomienie robi to przy
-następnym starcie Centrum: pierwsza linia dziennika trafia na dysk przy starcie
-Wyceny (dopisek #846 w ADR 0017), a postęp idzie dopiero, gdy ją tam ma, więc
-każdy komentarz postępu ma dziennik, który start Centrum zamknie jako Logi
-Urwanego Uruchomienia. Wycena, której dziennika nie da się zapisać, nie ma
-postępu, tylko podsumowanie na końcu. Kolejka wysyłki oznacza i usuwa bez wysyłania plik,
+Postęp to starsza wersja wysyłki Logów tego Uruchomienia, więc wersja końcowa
+zamienia ten sam komentarz w podsumowanie. Pierwsza linia dziennika trafia na
+dysk przy starcie Wyceny (dopisek #846 w ADR 0017), a postęp idzie dopiero, gdy
+ją tam ma, więc każdy komentarz postępu ma dziennik. Dziennik znika dopiero,
+gdy Kolejka wysyłki przyjęła wersję końcową: na końcu Wyceny jej Logi z
+wynikiem, a gdy ich kolejka nie przyjęła (Centrum zgasło w trakcie albo tuż po
+wyniku, zapis się nie udał), następny start Centrum wysyła ją z dziennika: Logi
+z pliku, Logi Urwanego Uruchomienia albo wynik z Historii bez Logów (komentarz
+z wynikiem z wiersza Historii, zleceniami z dziennika i dopiskiem, dlaczego
+pełnych Logów nie ma, bez pliku w Archiwum Logów okresu). Komentarz postępu nie
+zostaje więc nigdy na zawsze z napisem, że Uruchomienie trwa. Wycena, której
+dziennika nie da się zapisać, nie ma postępu, tylko podsumowanie na końcu. Kolejka wysyłki oznacza i usuwa bez wysyłania plik,
 za którym czeka nowsza wersja tej samej wysyłki, więc bez internetu czeka tylko
 najnowszy postęp (i tylko Logi z ostatnią Diagnozą). Zdanie „Centrum przerwane
 w trakcie zostawia tylko `uruchomienie-start`” w decyzji niżej Wycena w efenix

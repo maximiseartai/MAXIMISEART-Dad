@@ -124,8 +124,10 @@ and is removed (`_mark_delivered`), so one whose removal fails does not wait
 without a marker. Without the network only the newest progress of a Wycena w
 efenix waits (`pricing_progress.py`, #846), and the Logi with their last
 Diagnoza. The progress is an older version of the Logi of its Uruchomienie
-without a file for the Archiwum; the Logi at the end of the Wycena, or of an
-Urwane Uruchomienie at the next start, turn its comment into the summary.
+without a file for the Archiwum; the Logi at the end of the Wycena, or the
+final version the next start sends from its journal (the Logi from the file,
+the Logi of an Urwane Uruchomienie or the result without Logi, also without a
+file for the Archiwum), turn its comment into the summary.
 
 A wysyłka to an issue okresu may carry a file for the Archiwum Logów okresu
 (`Post.archive`, only with one part: the Logi Uruchomienia). It goes right before
@@ -744,9 +746,14 @@ Checked only with the bounds in the configurations. Assumed and not checked:
 - Only the Logi Uruchomienia have a newer version (`ASSUME Diagnoza => ...`):
   `RunLogs.diagnosed` and the progress of a Wycena w efenix (`RunLogs.progress`,
   then the Logi at its end) are the only callers that queue a wysyłka again with
-  the same identifier, in the Centrum process that queued the older one; the Logi
-  of an Urwane Uruchomienie, which replace its progress, come from the next
-  process, later unless the computer's clock went back across the switch-off.
+  the same identifier, in the Centrum process that queued the older one; the
+  final version from the journal of a Wycena whose Logi the queue did not take
+  (`pricing_journal.InterruptedPricings`), which replaces its progress, comes
+  from the next process, later unless the computer's clock went back across the
+  switch-off. When that final version is the result without Logi (no file for
+  the Archiwum) and the Logi with a file still wait in the queue (their Logs
+  file failed and Centrum switched off right after `post`), the newer version
+  has no file: this order is not checked.
   So the model's order of the wysyłki is the order of their versions
   (`Outbox.post` gives a later name also after the clock went back). Only the
   configuration `diagnoza` has versions with different numbers of parts, and

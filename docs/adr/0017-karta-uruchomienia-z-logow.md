@@ -35,7 +35,17 @@ pierwszym zleceniem. Wycena zamknięta przed pierwszym zleceniem, np. gdy okno
 efenix czeka na logowanie taty, też ma więc Logi Urwanego Uruchomienia, bez
 zleceń, a karta po starcie pokazuje zero zleceń przed zamknięciem Centrum.
 Komentarz postępu Wyceny w issue okresu (dopisek #846 w ADR 0015) powstaje
-dopiero, gdy ta linia jest na dysku, więc te Logi zawsze go zastępują.
+dopiero, gdy ta linia jest na dysku, a dziennik znika dopiero, gdy Kolejka
+wysyłki przyjęła wersję końcową tego komentarza: na końcu Wyceny jej Logi z
+wynikiem (działanie po wyniku za Logami usuwa dziennik, gdy kolejka je
+przyjęła). Start Centrum, który zastanie dziennik, wysyła ją z niego, a karta
+po starcie zostaje taka, jak wyżej: czytelny plik Logów idzie do Skrzynki taki,
+jaki jest; bez pliku Logów i bez wiersza Historii idą Logi Urwanego
+Uruchomienia; bez pliku Logów, a z wierszem Historii (Centrum zamknęło się tuż
+po wyniku, #722), i przy pliku Logów, którego nie da się odczytać, idzie wynik
+z Historii bez Logów, z dopiskiem, dlaczego pełnych Logów nie ma, jak na
+karcie. Pliku Logów ten wynik nie tworzy, więc karta dalej pokazuje wynik z
+Historii.
 
 ## Kontekst
 

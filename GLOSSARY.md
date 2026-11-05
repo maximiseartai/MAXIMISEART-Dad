@@ -606,7 +606,10 @@ Tata ich nie wysyła ani nie ogląda, ale z
 nich wraca karta Uruchomienia po starcie Centrum i w Historii. W trakcie
 Wyceny w efenix ten sam komentarz Uruchomienia w Skrzynce pokazuje co 5 minut
 jej postęp z dziennika Wyceny w efenix (zlecenia skończone z wszystkich, wyniki
-do tej pory, ostatnie zlecenie), a na końcu staje się podsumowaniem Logów.
+do tej pory, ostatnie zlecenie), a na końcu staje się podsumowaniem Logów, także
+gdy Centrum zamknęło się w jej trakcie albo tuż po wyniku: wtedy przy
+następnym starcie, a bez pliku Logów z wynikiem z Historii i dopiskiem, że
+pełnych Logów nie ma.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), dziennik Centrum, raport
 
 ## Urwane Uruchomienie

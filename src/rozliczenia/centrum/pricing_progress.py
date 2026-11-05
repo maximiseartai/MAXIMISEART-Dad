@@ -5,15 +5,17 @@ Wycena w efenix trwa u taty do półtorej godziny, a Logi Uruchomienia powstają
 Centrum, nigdy częściej, odświeża go stanem dziennika Wyceny (``PricingJournal.progress``): zlecenia skończone z
 wszystkich, wyniki do tej pory, ostatnie skończone zlecenie, zlecenie w trakcie i czas od startu. Dziennik podaje tylko
 wpisy, które już ma na dysku, a bez swojej pierwszej linii na dysku nic, więc postęp nigdy go nie wyprzedza: każdy
-komentarz postępu ma dziennik, który start Centrum po zgaśnięciu zamknie jako Logi Urwanego Uruchomienia
-(``pricing_journal.InterruptedPricings``), a te zamienią komentarz w podsumowanie. Wycena, której dziennika nie da się
-zapisać, postępu nie ma, tylko podsumowanie na końcu.
+komentarz postępu ma dziennik, a dziennik znika dopiero, gdy Kolejka wysyłki przyjęła wersję końcową tego komentarza
+(``pricing_journal``). Na końcu Wyceny to jej Logi z wynikiem, a gdy ich kolejka nie przyjęła (Centrum zgasło w trakcie
+albo tuż po wyniku, zapis się nie udał), następny start Centrum wysyła ją z dziennika: Logi z pliku, Logi Urwanego
+Uruchomienia albo wynik z Historii bez Logów (``pricing_journal.InterruptedPricings``). Wycena, której dziennika nie da
+się zapisać, postępu nie ma, tylko podsumowanie na końcu.
 
 Postęp to starsza wersja tej samej wysyłki co Logi tego Uruchomienia (``run_logs.progress_post``: ten sam ``run_id`` i
 etykieta), więc kolejka zmienia ten sam komentarz, a bez sieci najnowszy postęp w kolejce zastępuje starszy (``outbox``).
 Koniec postępu wyznacza ``RunLogs``: od działań po wyniku tego Uruchomienia (``RunLogs.run_ended``) nie przyjmuje jego
 postępu, więc żaden nie przychodzi po Logach, które zamieniają komentarz w podsumowanie z odnośnikiem do Archiwum Logów
-okresu, a pierwsze odświeżenie po końcu kończy budzik.
+okresu (postęp nowszy od Logów zastąpiłby je w kolejce), a pierwsze odświeżenie po końcu kończy budzik.
 
 Postęp jest dla Maksa, a nie warunkiem pracy taty: wysyłkę, której kolejka nie przyjęła, ``Outbox.post`` zapisuje w
 dzienniku Centrum, a Wycena biegnie dalej.

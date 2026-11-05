@@ -51,8 +51,8 @@ MUTATIONS = (
         (
             Edit(
                 MODEL,
-                "                /\\ Zapisana(r)\n                /\\ krokZamykania' = \"usun\"",
-                "                /\\ FALSE\n                /\\ krokZamykania' = \"usun\"",
+                "                /\\ Zapisana(r)\n                /\\ oczekujace' = Append",
+                "                /\\ FALSE\n                /\\ oczekujace' = Append",
             ),
             Edit(MODEL, "                /\\ ~Zapisana(r)\n", "                /\\ TRUE\n"),
         ),
@@ -61,10 +61,10 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "plik Logów z wynikiem nie rozstrzyga (_closed: bez return None przy logged.ending != \"interrupted\", "
-        "Logi z wynikiem idą do elif self._recorded(...))",
+        "plik Logów z wynikiem nie rozstrzyga (_closed: Logi z wynikiem z pliku idą do elif self._recorded(...))",
         (
-            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"wynik\"\n", "          /\\ FALSE\n"),
+            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj # \"brak\"\n",
+                 "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"urwane\"\n"),
             Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"brak\"\n",
                  "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj \\in {\"brak\", \"wynik\"}\n"),
         ),
@@ -76,10 +76,9 @@ MUTATIONS = (
     Mutation(
         "plik Logów zapisany przed strażnikiem (_closed: guard dopiero po self._run_logs.close(record))",
         (
-            Edit(MODEL, "Odczytane(tresc) == krokZamykania' = \"zapisz\" /\\ rekord' = Straz(tresc)",
-                 "Odczytane(tresc) == krokZamykania' = \"zapisz\" /\\ rekord' = tresc"),
-            Edit(MODEL, "[bieg |-> kursor, tresc |-> rekord, niezapisany |-> niezapisany]",
-                 "[bieg |-> kursor, tresc |-> Straz(rekord), niezapisany |-> niezapisany]"),
+            Edit(MODEL, "rekord' = [rodzaj |-> rodzaj, tresc |-> Straz(tresc)]", "rekord' = [rodzaj |-> rodzaj, tresc |-> tresc]"),
+            Edit(MODEL, "rodzaj |-> rekord.rodzaj, tresc |-> rekord.tresc,",
+                 "rodzaj |-> rekord.rodzaj, tresc |-> Straz(rekord.tresc),"),
         ),
         _check("zwykle"),
         "plik Logów na dysku ma telefon i ulicę, a plik w Archiwum Logów okresu maskę: różne znaki",
@@ -151,29 +150,81 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "dziennik zostaje po przyjęciu Logów przez kolejkę (send: bez self._remove(path))",
-        (Edit(MODEL, "    /\\ UsunPlik(Head(doWyslania).bieg, {})\n",
-              "    /\\ UNCHANGED <<dziennik, wpisy, zgubiony, awarieUsuniecia>>\n"),),
+        "dziennik zostaje po przyjęciu wersji końcowej przez kolejkę (send: bez _remove(path))",
+        (Edit(MODEL, "    /\\ UsunPlik(Head(doWyslania).bieg, Head(doWyslania).powod)\n",
+              "    /\\ UNCHANGED <<dziennik, wpisy, zgubiony, bezKonca, awarieUsuniecia>>\n"),),
         _check("zwykle"),
-        "każdy start wysyła te same Logi Urwanego Uruchomienia znowu, a dziennik nie znika nigdy",
+        "każdy start wysyła tę samą wersję końcową znowu, a dziennik nie znika nigdy",
         NEW,
     ),
     Mutation(
-        "start nie usuwa dziennika Wyceny z wynikiem (close: bez if closed is None: self._remove(path))",
-        (Edit(MODEL, "    /\\ UsunPlik(kursor, powod)\n", "    /\\ UNCHANGED <<dziennik, wpisy, zgubiony, awarieUsuniecia>>\n"),),
+        "start nie usuwa dziennika bez pierwszej linii (close: bez if closed is None: _remove(path))",
+        (Edit(MODEL, "    /\\ UsunPlik(kursor, powod)\n",
+              "    /\\ UNCHANGED <<dziennik, wpisy, zgubiony, bezKonca, awarieUsuniecia>>\n"),),
         _check("zwykle"),
-        "dzienniki Wycen, które doszły do wyniku, zostają w logs/dzienniki-wyceny na zawsze",
+        "dzienniki urwane przy pierwszym zapisie zostają w logs/dzienniki-wyceny na zawsze",
         NEW,
     ),
     Mutation(
-        "Logi Urwanego Uruchomienia z pliku wzięte za Logi z wynikiem (_closed: bez logged.ending != \"interrupted\")",
+        "Logi Urwanego Uruchomienia z pliku wzięte za Logi z wynikiem (_closed: return None przy pliku Logów "
+        "Urwanego Uruchomienia)",
         (
-            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"wynik\"\n",
-                 "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj \\in {\"wynik\", \"urwane\"}\n"),
-            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"urwane\"\n", "          /\\ FALSE\n"),
+            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj # \"brak\"\n          /\\ Odczytane(",
+                 "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"urwane\"\n"
+                 "          /\\ krokZamykania' = \"usun\" /\\ powod' = {}\n"
+                 "          /\\ UNCHANGED <<kursor, rekord, oczekujace, awarieOdczytu, awarieHistorii, poWyniku>>\n"
+                 "       \\/ /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"wynik\"\n          /\\ Odczytane("),
         ),
         _check("zwykle"),
         "Logi Urwanego Uruchomienia zapisane, a niewysłane przed zgaśnięciem, nie dochodzą nigdy, a dziennik znika",
+        NEW,
+    ),
+    Mutation(
+        "start usuwa bez wysyłki dziennik z plikiem Logów z wynikiem (_closed: return None przy logged.ending != "
+        "\"interrupted\", kod 0764af46)",
+        (
+            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj # \"brak\"\n          /\\ Odczytane(",
+                 "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"wynik\"\n"
+                 "          /\\ krokZamykania' = \"usun\" /\\ powod' = {}\n"
+                 "          /\\ UNCHANGED <<kursor, rekord, oczekujace, awarieOdczytu, awarieHistorii, poWyniku>>\n"
+                 "       \\/ /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"urwane\"\n          /\\ Odczytane("),
+        ),
+        _check("zwykle"),
+        "Wycena, której Centrum zgasło po zapisie Logów z wynikiem, a przed ich wysyłką, zostaje w Skrzynce postępem "
+        "„Uruchomienie trwa”",
+        NEW,
+    ),
+    Mutation(
+        "start usuwa bez wysyłki dziennik z wierszem Historii, a bez pliku Logów (_closed: elif self._recorded(...) -> "
+        "None, kod 0764af46, W2 rundy 2 #846)",
+        (
+            Edit(
+                MODEL,
+                "                /\\ Zapisana(r)\n                /\\ oczekujace' = Append(oczekujace, [bieg |-> r, rodzaj |-> \"bezLogow\", "
+                "tresc |-> Pusta,\n                                                     niezapisany |-> FALSE,\n"
+                "                                                     powod |-> IF ZWynikiem(r) THEN {} ELSE "
+                "{\"wiersz-pozniejszej-wyceny\"}])\n                /\\ kursor' = kursor + 1\n"
+                "                /\\ UNCHANGED <<krokZamykania, rekord, powod, awarieOdczytu, awarieHistorii, poWyniku>>\n",
+                "                /\\ Zapisana(r)\n"
+                "                /\\ krokZamykania' = \"usun\" /\\ powod' = IF ZWynikiem(r) THEN {} ELSE "
+                "{\"wiersz-pozniejszej-wyceny\"}\n"
+                "                /\\ UNCHANGED <<kursor, rekord, oczekujace, awarieOdczytu, awarieHistorii, poWyniku>>\n",
+            ),
+        ),
+        _check("zwykle"),
+        "Centrum zgaszone po wierszu Historii Wyceny, a przed jej Logami, zostawia w Skrzynce na zawsze postęp "
+        "„Uruchomienie trwa”",
+        NEW,
+    ),
+    Mutation(
+        "dziennik usunięty na końcu Wyceny, choć kolejka nie przyjęła jej Logów (PricingJournal.run_ended: bez if "
+        "self._run_logs.queued(run.info.id))",
+        (
+            Edit(MODEL, "          /\\ bieg' = 0 /\\ faza' = \"-\"\n          /\\ UNCHANGED <<kolejka, przedWznowieniem>>\n",
+                 "          /\\ faza' = \"usun\" /\\ UNCHANGED bieg\n          /\\ UNCHANGED <<kolejka, przedWznowieniem>>\n"),
+        ),
+        _check("logi-i-kolejka"),
+        "Logi z wynikiem, których kolejka nie przyjęła, przepadają razem z dziennikiem, a w Skrzynce zostaje postęp",
         NEW,
     ),
 )
