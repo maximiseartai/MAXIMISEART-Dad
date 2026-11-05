@@ -1048,21 +1048,21 @@ def test_cala_przegladarka_zamknieta_w_trakcie_otwierania_strony_zlecenia_to_zam
 
 
 def test_strona_ktora_nie_odpowiada_konczy_dzialanie_okna_zatrzymaniem_w_czasie_okna(tmp_path: Path, page: Page) -> None:
-    """Skrypt strony efenix stoi w pętli, więc strona nie odpowiada: działanie okna kończy się po czasie czekania okna
-    Zatrzymaniem do Maksa, a pytanie, czy karta jest zamknięta (``BrowserEfenix.closed``), ma ten sam limit czasu, więc
-    okno w nim nie wisi (#886). Czas okna to tu 1 s, więc wpisanie numeru i to pytanie trwają razem około 2 s, a nie
-    domyślne 30 s okna ani bez końca."""
+    """Skrypt strony efenix stoi w pętli przez 20 s, więc strona nie odpowiada: działanie okna kończy się po czasie
+    czekania okna (tu 1 s) Zatrzymaniem do Maksa, a pytanie, czy karta jest zamknięta (``BrowserEfenix.closed``), ma ten
+    sam limit czasu, więc okno w nim nie wisi (#886). Karta testu nie ma domyślnego limitu Playwrighta, więc działanie
+    okna bez własnego limitu albo z domyślnym limitem okna (30 s) czekałoby do końca pętli, a strona po Uruchomieniu
+    odpowiadałaby już."""
 
     orders = _full_and_ready()
+    page.set_default_timeout(0)
 
     def hung(efenix: Efenix) -> Efenix:
-        page.evaluate("setTimeout(() => { for (;;) {} }, 0)")
+        page.evaluate("setTimeout(() => { const end = Date.now() + 20_000; while (Date.now() < end) {} }, 0)")
         return efenix
 
     with atrapa_efenix(_full_and_ready_in_efenix(orders)) as atrapa:
-        started = time.monotonic()
         outcome = _run(write_collective_file(tmp_path, orders), page, atrapa.url, timeout_ms=1_000, window=hung)
-        took_s = time.monotonic() - started
 
     assert isinstance(outcome.ending, Stop)
     facts = outcome.ending.facts
@@ -1073,7 +1073,8 @@ def test_strona_ktora_nie_odpowiada_konczy_dzialanie_okna_zatrzymaniem_w_czasie_
         PagePart.LIST,
         BrowserFailure(TIMEOUT, Operation.FILL),
     )
-    assert took_s < 15, took_s
+    with pytest.raises(PlaywrightError, match="Timeout"):
+        page.locator(":root").wait_for(state="attached", timeout=1_000)
 
 
 # Żądanie okna, na które efenix odpowiada stroną błędu serwera, numer tego żądania okna, status i część strony, którą
