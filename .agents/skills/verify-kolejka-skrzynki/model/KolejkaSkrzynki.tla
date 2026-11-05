@@ -51,7 +51,8 @@ EXTENDS Naturals, Sequences, FiniteSets
 
 CONSTANTS
     Cel,            \* cel wysyłki (outbox.py Target): "okres" (PeriodThread), "nowe" (NewIssue),
-                    \* "zgloszenie" (ReportIssue), "znane" (KnownIssue: issue o znanym numerze już jest)
+                    \* "zgloszenie" (ReportIssue), "znane" (KnownIssue: issue o znanym numerze już jest; z
+                    \* OpoznienieListy kolejka właśnie je założyła, a lista GitHuba może go jeszcze nie pokazywać)
     Czesci,         \* części jednej wysyłki (Post.parts, Post.of dzieli treść ponad COMMENT_LIMIT)
     CzesciNowszej,  \* części nowszej wersji (wysyłka 2 przy Diagnozie): Diagnoza zmienia długość Logów
     Naglowek,       \* Post.header: treść nowego issue to nagłówek, a każda część idzie komentarzem (Logi)
@@ -219,6 +220,9 @@ TypeOK ==
     /\ odczyt \in [Q -> [Rodzaje -> BOOLEAN]] /\ wydanieNiewidoczne \in BOOLEAN /\ pamiecWydania \in BOOLEAN
     /\ falszywe \in BOOLEAN
 
+\* Świeże issue o znanym numerze, którego lista GitHuba jeszcze nie pokazuje (Init).
+Swiezo == IF Cel = "znane" /\ OpoznienieListy THEN {1} ELSE {}
+
 Init ==
     /\ plik = [w \in W |-> "nadejdzie"]
     /\ tmp = {}
@@ -241,7 +245,12 @@ Init ==
     /\ sieci = 0 /\ zgubione = 0 /\ odmowy = 0 /\ odmowyArchiwum = 0 /\ bledyPliku = 0 /\ wylaczenia = 0
     /\ krok = "start"
     /\ slady = {}
-    /\ niewidoczne = {} /\ zakladanie = [r \in Rodzaje |-> "brak"] /\ pamiec = {}
+    \* KnownIssue z OpoznienieListy (#915): Uwagę, do której idzie komentarz, kolejka właśnie założyła z odpowiedzią
+    \* (case_delivery.py _CaseDelivery.delivered), więc lista GitHuba może jej jeszcze nie pokazywać, a plik zapisów ma
+    \* jej skutek albo, gdy zapis odpowiedzi rzucił OSError (keyed_box.py _settled), zapis bez odpowiedzi.
+    /\ niewidoczne = Swiezo
+    /\ \/ /\ pamiec = Swiezo /\ zakladanie = [r \in Rodzaje |-> "brak"]
+       \/ /\ Swiezo /= {} /\ pamiec = {} /\ zakladanie = [r \in Rodzaje |-> IF r = "issue" THEN "swieze" ELSE "brak"]
     /\ odczyt = [q \in Q |-> [r \in Rodzaje |-> FALSE]]
     /\ wydanieNiewidoczne = FALSE /\ pamiecWydania = FALSE /\ falszywe = FALSE
 
@@ -543,10 +552,20 @@ Szukaj(q) == \E zna \in OdczytyZapisow :
              ELSE /\ nr' = Ustaw(nr, q, Najnowsze(q, zna)) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
                   /\ Idz(q, "czytaj", "_deliver_report: jest Zgloszenie z odciskiem, _settle z komentarzem returned_report")
        \/ /\ Cel = "znane"
-          /\ UNCHANGED <<sieci, stopped, nieczytany, slady, po>>
-          \* _deliver_to_known: issue jest na liście (Gone model pomija), _settle z każdą częścią.
-          /\ nr' = Ustaw(nr, q, 1) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
-          /\ Idz(q, "czytaj", "_deliver_to_known: issue jest na liscie, _settle z kazda czescia")
+          /\ UNCHANGED <<sieci, nieczytany, slady, po>>
+          \* _deliver_to_known (keyed_box.py KeyedBox.known_issue): issue jest na liście (także z pliku zapisów), więc
+          \* _settle z każdą częścią. Bez niego lista, przy której zapis z etykietą byłby wstrzymany (_held: pliku nie
+          \* dało się odczytać albo czeka w nim zapis bez odpowiedzi, #915), to Unreachable bez decyzji, a inna to Gone:
+          \* box_post_dropped i _remove bez wysyłki. Issue Uwagi w modelu nikt nie usuwa, więc Gone łamie DokladnieRaz.
+          /\ IF 1 \in Widoczne(q, zna)
+             THEN /\ nr' = Ustaw(nr, q, 1) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
+                  /\ UNCHANGED stopped
+                  /\ Idz(q, "czytaj", "_deliver_to_known: issue jest na liscie, _settle z kazda czescia")
+             ELSE IF ~zna \/ Swieze(q, "issue")
+             THEN /\ UNCHANGED <<nr, kom>>
+                  /\ Stop(q, "known_issue: lista bez issue, a zapis z etykieta bylby wstrzymany, Unreachable")
+             ELSE /\ UNCHANGED <<nr, kom, stopped>>
+                  /\ Idz(q, "usun", "_deliver_to_known: lista bez issue, Gone, _remove bez wysylki")
        \/ /\ Cel = "nowe"
           /\ UNCHANGED <<sieci, stopped, nieczytany, slady, po>>
           \* _deliver_new_issue: issue z treścią ze znacznikiem tej Uwagi (najnowsze, także zamknięte) dostaje resztę

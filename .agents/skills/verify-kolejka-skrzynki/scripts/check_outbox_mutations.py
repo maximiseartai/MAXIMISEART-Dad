@@ -81,8 +81,8 @@ MUTATIONS = (
         (
             Edit(
                 VERIFIED,
-                "_issue(found, known.number), _opening(post, version)[1], box)\n",
-                "_issue(found, known.number), _opening(post, version)[1][1:], box)\n",
+                "_settle(post, version, found, _opening(post, version)[1], box)\n",
+                "_settle(post, version, found, _opening(post, version)[1][1:], box)\n",
             ),
         ),
         (EXPLORER, "--scope", "znane-issue"),
@@ -383,8 +383,8 @@ MUTATIONS = (
         (
             Edit(
                 KEYED_BOX,
-                "        return (*listed, *missing)\n",
-                "        return listed\n",
+                "        return (*listed, *missing), complete\n",
+                "        return listed, complete\n",
             ),
         ),
         (EXPLORER, "--scope", "watek-okresu-lista"),

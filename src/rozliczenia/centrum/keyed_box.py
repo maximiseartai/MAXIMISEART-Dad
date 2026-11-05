@@ -39,7 +39,9 @@ komputera do jego restartu), a chwila z przyszłości (po restarcie komputera) j
 Plik ``opening``, którego nie da się odczytać (``OSError``, np. trzyma go antywirus), nie wyklucza zapisu, którego
 ``KeyedBox`` nie zna, więc zapis i lista mają jedną zasadę (#909): zapis jest wstrzymany, gdy nie da się odczytać pliku
 przy nim albo przy ostatniej liście jego rodzaju w tym wątku, a pierwsza lista tego rodzaju, przy której plik się
-odczyta, wstrzymanie zdejmuje. Lista pokazuje wtedy to, co pokazuje GitHub. Plik, którego treść nie jest UTF-8, to
+odczyta, wstrzymanie zdejmuje. Lista pokazuje wtedy to, co pokazuje GitHub. Tę samą zasadę ma brak issue o znanym
+numerze na liście (``known_issue``, #915): kolejka uznaje, że issue zniknęło, tylko gdy zapis z jego etykietą nie byłby
+wstrzymany, bo inaczej lista mogła jeszcze nie pokazać świeżego issue. Plik, którego treść nie jest UTF-8, to
 treść w innej postaci (brak zapisów), którą następny zapis zastąpi. Plik, którego nie da się odczytać ani zapisać na
 stałe, wstrzymuje każdy zapis do Skrzynki: kolejka czeka jak bez sieci i ponawia co budzenie, a dziennik Centrum dostaje
 raz na pracę Centrum linię z typem błędu (``NotesFile.unavailable``), jak przy pliku kolejki, którego nie da się odczytać.
@@ -490,6 +492,31 @@ class KeyedBox:
         takie issue dołącza dopiero wtedy, gdy nie ma go zamkniętego na liście z zamkniętymi; bez jej odpowiedzi dołącza.
         """
 
+        listed = self._labelled(label, include_closed=include_closed)
+        return listed if isinstance(listed, NoKey | Refused | Unreachable) else listed[0]
+
+    def known_issue(self, label: Label, number: int) -> Issue | None | Refused | Unreachable | NoKey:
+        """Issue ``number`` z etykietą ``label`` (otwarte albo zamknięte) z ``labelled_issues``; ``None``: Skrzynka go
+        nie ma (Maks je usunął, #402).
+
+        Brak numeru na liście to decyzja, której kolejka nie cofnie (porzuca wysyłkę), więc ma zasadę zapisu (opis
+        modułu, #909, #915): lista bez numeru mówi, że issue nie ma, tylko gdy zapis z etykietą ``label`` nie byłby
+        teraz wstrzymany. Inaczej (przy liście pliku ``opening`` nie dało się odczytać albo czeka w nim zapis bez
+        odpowiedzi, którego lista mogła jeszcze nie pokazać) to ``Unreachable`` bez decyzji, jak wstrzymany zapis.
+        """
+
+        listed = self._labelled(label, include_closed=True)
+        if isinstance(listed, NoKey | Refused | Unreachable):
+            return listed
+        issues, complete = listed
+        found = next((issue for issue in issues if issue.number == number), None)
+        return found if found is not None or complete else Unreachable()
+
+    def _labelled(
+        self, label: Label, *, include_closed: bool
+    ) -> tuple[tuple[Issue, ...], bool] | Refused | Unreachable | NoKey:
+        """``labelled_issues`` i czy ta lista pokazuje każdy zapis etykiety ``label``: zapis nie byłby teraz wstrzymany."""
+
         key = self._usable()
         if not isinstance(key, str):
             return key
@@ -500,7 +527,8 @@ class KeyedBox:
         with self._lock:
             known = self._notes()
             self._listed_at()[label] = None if known is None else asked_at
-        notes = known or _Notes()
+            notes = known or _Notes()
+            complete = not self._held(label, self._clock(), notes)
         opened = [issue for _, of, issue in notes.opened if of == label]
         numbers = {issue.number for issue in listed}
         missing = [issue for issue in opened if issue.number not in numbers]
@@ -509,7 +537,7 @@ class KeyedBox:
             if not isinstance(every, Refused | Unreachable):
                 closed = {issue.number for issue in every if issue.closure is not None}
                 missing = [issue for issue in missing if issue.number not in closed]
-        return (*listed, *missing)
+        return (*listed, *missing), complete
 
     def find_issue(self, label: Label, line: str, *, include_closed: bool) -> FindOutcome | NoKey:
         """Najnowsze issue z etykietą ``label`` i wierszem ``line`` (odcisk problemu, token okresu)."""
