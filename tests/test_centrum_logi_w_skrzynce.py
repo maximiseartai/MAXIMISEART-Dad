@@ -978,7 +978,8 @@ def test_zatrzymanie_okna_efenix_jest_granica_przy_roznicy_odtworzenia_na_atrapi
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Okno efenix staje na stronie zlecenia, której budowa jest inna niż ta, którą zna (pole Ilość z ułamkiem); Atrapa
-    z odczytów stron w Logach jej nie ma, więc odtworzenie różni się od Logów, a raport nazywa tę granicę."""
+    z odczytów stron w Logach jej nie ma, więc odtworzenie różni się od Logów, a raport nazywa tę granicę i przyczynę z
+    Logów: zlecenie z miejscem w przebiegu i wyjątek okna (#976)."""
 
     stopped = [IN_EFENIX[0], replace(PRICED[1].in_efenix("642"), changed=Changed.QUANTITY_VALUE)]
     produced = _efenix(tmp_path / "taty", stopped, "BLAD_KRYTYCZNY")
@@ -991,6 +992,11 @@ def test_zatrzymanie_okna_efenix_jest_granica_przy_roznicy_odtworzenia_na_atrapi
         "- Zatrzymanie okna efenix (wartość pola Ilość, która nie jest liczbą całkowitą) zależy od strony efenix taty: na "
         "Atrapie się nie powtórzy"
     ) in lines
+    [cause] = [line for line in lines if line.startswith("Przyczyna w Logach: ")]
+    assert cause.startswith(
+        "Przyczyna w Logach: okno efenix przy wierszu 19 (2 z 6): wartość pola Ilość, która nie jest liczbą całkowitą; "
+        "wyjątki rozliczenia.message.StopError ← rozliczenia.efenix_pricing.UnexpectedPage"
+    ), cause
 
 
 def test_plik_ktory_nie_jest_plikiem_logow_konczy_sie_bledem_albo_granica(

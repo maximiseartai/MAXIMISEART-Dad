@@ -271,6 +271,22 @@ def test_zatrzymanie_z_komunikatem_procesu_nie_ma_sladu_wywolan(tmp_path: Path) 
     assert trace_section(report["body"]) == []
 
 
+def test_powtorka_zatrzymania_dla_taty_z_przyczyna_w_wyjatku_ma_w_zgloszeniu_slad_wywolan(tmp_path: Path) -> None:
+    """Zatrzymanie dla taty, którego przyczyną jest wyjątek (Pliku zbiorczego nie ma: ``WorkbookError``), ma ślad
+    wywołań, więc Zgłoszenie jego Powtórki niesie typ wyjątku i jego przyczynę z ramkami kodu narzędzia (#976)."""
+
+    centrum = settling_centrum(tmp_path)
+    centrum.collective_file.unlink()
+    assert run_to_end(centrum, dry_run=True)["result"]["stop_kind"] == "for_tata"
+    repeated = run_to_end(centrum, dry_run=True)
+    assert repeated["result"]["stop_kind"] == "repeated"
+
+    section = trace_section(diagnose(centrum, repeated["run"]["id"])["report"]["body"])
+
+    assert section[1:3] == ["- Wyjątek: rozliczenia.message.StopError", "- Przyczyna: rozliczenia.workbook_files.WorkbookError"]
+    assert section[section.index("```text") + 1].startswith("src/rozliczenia/"), section
+
+
 def queued_reports(centrum: PreparingCentrum) -> list[dict[str, Any]]:
     """Pliki Zgłoszeń w kolejce Skrzynki (bez Logów Uruchomienia, które czekają obok)."""
 

@@ -26,7 +26,8 @@ Jedyną operacją jest ``replay()``. Kształt danych:
 - Porównanie (``first_difference``) idzie po polach Logów w kolejności przyczyn: Kopia wejścia (czy pliki z Kopii
   czytają się tak samo), wynik, zakończenie i Rodzaj Zatrzymania, Komunikaty, uwagi techniczne, podsumowanie, liczba
   problemów, etapy, Szablony pracownika, Ilości tylko dla INEA, Wpisy INTERMAX, ślad zleceń i Zatrzymanie okna efenix
-  oraz ślad wywołań. Czasy i chwile kroków, odciski plików, środowisko, dziennik działań taty i uwagi strażnika o Kopii
+  oraz ślad wywołań. Raport podaje przyczynę Zatrzymania z Logów (``stop_cause``): przyczynę techniczną Zatrzymania
+  okna efenix i łańcuch wyjątków śladu wywołań z drogą startu okna, która zawiodła (#976). Czasy i chwile kroków, odciski plików, środowisko, dziennik działań taty i uwagi strażnika o Kopii
   wejścia są poza porównaniem: zależą od komputera i chwili, a nie od kodu i wejścia.
 
 Odtworzenie pisze tylko w katalogu roboczym (``work``): pliki wejścia, Rozliczenia i Kopie INTERMAX, które proces
@@ -182,6 +183,8 @@ class Report:
             f"Uruchomienie: {title}, {record.mode}, okres {record.period}, {record.file_name}",
             f"Kod: {code}",
         ]
+        if (cause := stop_cause(record)) is not None:
+            lines.append(f"Przyczyna w Logach: {cause}")
         if self.difference is not None:
             lines += [
                 f"Pierwsza różnica: {self.difference.field}",
@@ -199,6 +202,33 @@ class Report:
             lines.append("Granice:")
             lines += [f"- {text}" for text in rest]
         return lines
+
+
+def stop_cause(record: RunLog) -> str | None:
+    """Przyczyna Zatrzymania z Logów dla Maksa (#976); ``None``: Logi bez Zatrzymania okna efenix i bez śladu wywołań.
+
+    Z Zatrzymania okna efenix: miejsce (przy starcie okna albo wiersz zlecenia z miejscem w przebiegu) i przyczyna
+    techniczna ze szczegółami (działanie przeglądarki, typ błędu, status HTTP, element). Ze śladu wywołań: łańcuch
+    wyjątków od Zatrzymania do źródła, w którym zaraz po Zatrzymaniu stoi wyjątek okna, czyli droga startu, która
+    zawiodła (``EfenixUnreachable``, ``BrowserNotStarted``), i ostatnia ramka kodu narzędzia bezpośredniej przyczyny
+    (bez przyczyny: samego wyjątku), czyli miejsce, w którym ta droga powstała.
+    """
+
+    parts: list[str] = []
+    stop = record.efenix_stop
+    if stop is not None:
+        cause = stop.cause
+        where = "przy starcie okna" if stop.row is None else f"przy wierszu {stop.row} ({stop.order} z {stop.orders})"
+        status = None if cause.status is None else f"HTTP {cause.status}"
+        details = [detail for detail in (cause.operation, cause.error_type, status, cause.element) if detail is not None]
+        parts.append(f"okno efenix {where}: {cause.what}" + (f" ({', '.join(details)})" if details else ""))
+    trace = record.trace
+    if trace is not None:
+        chain = [trace.exception_type, *(cause.exception_type for cause in trace.causes)]
+        frames = trace.causes[0].frames if trace.causes else trace.frames
+        raised = "" if not frames else f", powstał w {frames[-1].file}:{frames[-1].line} w {frames[-1].function}"
+        parts.append(f"wyjątki {' ← '.join(chain)}{raised}")
+    return "; ".join(parts) or None
 
 
 def replay(

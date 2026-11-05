@@ -33,7 +33,8 @@ czekałoby bez końca. Działanie w zamkniętej karcie albo oknie, także zamkni
 ``WindowClosed``, cokolwiek zgłosił wtedy Playwright, także gdy błąd nawigacji przerwanej zamknięciem karty przyszedł,
 zanim Playwright powiedział o zamknięciu (``BrowserEfenix.closed``). Przeglądarkę daje rozmówca: stronę (``window``), Chromium
 Playwrighta (``chromium``) albo widoczne okno zainstalowanego Google Chrome w trwałym profilu narzędzia (``chrome``),
-które nie startuje (``BrowserNotStarted``), gdy Chrome nie ma albo jego profil trzyma inne okno. Każda przeglądarka
+które nie startuje (``BrowserNotStarted``), gdy Chrome nie ma albo jego profil trzyma inne okno, a każde okno także
+wtedy, gdy nie wystartował sterownik Playwrighta (``Operation.DRIVER``). Każda przeglądarka
 okna, także Chromium testów, startuje z argumentami ``launch_options``: bez losowania portu lokalnego każdego połączenia
 (``TcpPortRandomizationWin``), przy którym Windows odmawia czasem połączenia, choć porty są wolne.
 
@@ -944,6 +945,25 @@ def _playwright_disabling(playwright: Playwright, channel: str | None) -> tuple[
 
 
 @contextmanager
+def _playwright() -> Iterator[Playwright]:
+    """Playwright okna na czas bloku; ``BrowserNotStarted`` z ``Operation.DRIVER``, gdy jego sterownik nie wystartował.
+
+    Sterownik to osobny proces z własną pętlą zdarzeń, której start zgłasza ``OSError`` (np. ``socketpair`` pętli na
+    Windows bez wolnych gniazd, #975, albo brak programu sterownika) albo błąd Playwrighta. To droga startu okna, a nie
+    nieoczekiwany wyjątek: Logi Uruchomienia nazywają ją i niosą typ wyjątku z ramkami (#976).
+    """
+
+    try:
+        playwright = sync_playwright().start()
+    except (PlaywrightError, OSError) as error:
+        raise BrowserNotStarted(BrowserFailure(exception_type(error), Operation.DRIVER)) from error
+    try:
+        yield playwright
+    finally:
+        playwright.stop()
+
+
+@contextmanager
 def chrome(
     url: str,
     profile: Path,
@@ -962,7 +982,7 @@ def chrome(
     wystartowała.
     """
 
-    with sync_playwright() as playwright:
+    with _playwright() as playwright:
         try:
             options = launch_options(playwright, channel=channel, arguments=arguments)
             context = playwright.chromium.launch_persistent_context(
@@ -984,7 +1004,7 @@ def chrome(
 def chromium(url: str, *, headless: bool = True) -> Iterator[BrowserEfenix]:
     """Okno efenix w nowym Chromium Playwrighta (Skrypt dla maszyn); przeglądarka zamyka się z oknem."""
 
-    with sync_playwright() as playwright:
+    with _playwright() as playwright:
         browser = playwright.chromium.launch(headless=headless, **launch_options(playwright))
         try:
             with window(browser.new_page(), url) as efenix:
