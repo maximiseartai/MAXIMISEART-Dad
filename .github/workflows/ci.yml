@@ -253,6 +253,7 @@ jobs:
         shell: pwsh
         run: |
           netsh int ipv4 show dynamicport tcp
+          netsh int ipv4 show excludedportrange protocol=tcp
           reg query "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v TcpTimedWaitDelay 2>$null
           "TIME_WAIT przed: " + (netstat -an -p tcp | Select-String 'TIME_WAIT').Count
           Start-Process pwsh -ArgumentList '-NoProfile','-File',"$env:GITHUB_WORKSPACE\.github\scripts\diag975-probnik.ps1",'-Out',"$env:RUNNER_TEMP\diag975.csv" -WindowStyle Hidden
@@ -324,6 +325,13 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
           include-hidden-files: true
+
+      # DIAGNOSTYKA #975 (do usunięcia przed końcem PR): pojemność runnera w parach socketpair, ostatnia w zadaniu.
+      - name: DIAG975 sonda
+        if: ${{ always() && runner.os == 'Windows' }}
+        continue-on-error: true
+        shell: pwsh
+        run: '& python .github/scripts/diag975_sonda.py'
 
   mutations:
     # A mutation check's verdict does not depend on the Python version, so it runs once, beside pytest.
