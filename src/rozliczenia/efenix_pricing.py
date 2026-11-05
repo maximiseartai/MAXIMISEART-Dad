@@ -180,6 +180,7 @@ class Shape(enum.Enum):
     ANSWER_NOT_JSON = "odpowiedź zapisu ilości, która nie jest JSON"
     ANSWER_RESULT = "odpowiedź zapisu ilości z wynikiem innym niż ok i nok"
     LOGIN_FORM = "formularz logowania efenix pod adresem strony zlecenia, bez przekierowania"
+    ANSWER_REDIRECT = "odpowiedź na „Załaduj do zlecenia” przekierowana poza stronę logowania"
 
 
 class LoginSign(enum.Enum):
@@ -188,7 +189,7 @@ class LoginSign(enum.Enum):
     PAGE = "strona logowania zamiast strony, o którą prosiło okno"
     REDIRECT = "odpowiedź efenix przekierowana na stronę logowania"
     SESSION_WARNING = "odpowiedź szukania z samym ostrzeżeniem efenix o wygasłej sesji"
-    REFUSED = "odpowiedź zapisu ilości z wynikiem nok"
+    REFUSED = "odpowiedź zapisu ilości albo „Załaduj do zlecenia” z wynikiem nok"
     NO_LOGIN = "tata nie zalogował się w czasie, w którym okno czeka na logowanie"
 
 
@@ -209,8 +210,8 @@ class ElementCount:
 
 @dataclass(frozen=True)
 class HttpStatus:
-    """Strona zlecenia, której okno nie przeczytało, przyszła z odpowiedzią HTTP o statusie błędu ``status`` (4xx, 5xx):
-    to strona błędu serwera efenix, a nie strona zlecenia w innej budowie."""
+    """Strona zlecenia, której okno nie przeczytało, albo odpowiedź na „Załaduj do zlecenia” przyszła z odpowiedzią HTTP o
+    statusie błędu ``status`` (4xx, 5xx): to strona błędu serwera efenix, a nie strona albo odpowiedź w innej budowie."""
 
     status: int
 
