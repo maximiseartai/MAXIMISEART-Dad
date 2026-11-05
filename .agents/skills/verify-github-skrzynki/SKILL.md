@@ -1,11 +1,10 @@
 ---
 name: verify-github-skrzynki
-description: Verify Centrum's two GitHub clients against the real GitHub - Skrzynka Zgłoszeń (`GitHubReportBox` and `KeyedBox` - issues, comments, edits, labelled lists with paging and `include_closed`, Archiwum okresu as a Release, bad key, deleted issue, content limits) on the private trial repository `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba`, and Aktualność narzędzia (`tool_freshness` - tags with paging, the newest Wydanie on `main`, GitHub Releases, compare and the first-parent line) by reading the public tool repository - with every exchange recorded, a verdict on outcomes expected from the domain, an offline replay of the recordings, and a check that the test fakes answer like the recorded GitHub. Use after a change to `report_box.py`, `keyed_box.py`, `tool_freshness.py`, `tool_update.py`, their test fakes, or when a review asks what GitHub really answers.
+description: Verify Centrum's two GitHub clients against the real GitHub - Skrzynka Zgłoszeń (`GitHubReportBox` and `KeyedBox` - issues, comments, edits, labelled lists with paging and `include_closed`, Archiwum okresu as a Release, bad key, deleted issue, content limits) on the private trial repository `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba`, and Aktualność narzędzia (`tool_freshness` - tags with paging, the newest Wydanie on `main`, GitHub Releases, compare and the first-parent line) by reading the public tool repository - with every exchange recorded, a verdict on outcomes expected from the domain, an offline replay of the recordings, and a check that the test fakes answer like the recorded GitHub. Use after a change to `report_box.py`, `keyed_box.py`, `tool_freshness.py`, their test fakes, or when a review asks what GitHub really answers.
 pilnuje:
   - src/rozliczenia/centrum/report_box.py
   - src/rozliczenia/centrum/keyed_box.py
   - src/rozliczenia/centrum/tool_freshness.py
-  - src/rozliczenia/centrum/tool_update.py
   - tests/test_skrzynka_zgloszen_github.py
   - tests/test_aktualnosc_narzedzia.py
 ci: .agents/skills/verify-github-skrzynki/scripts/github_skrzynki.py odtworz
@@ -68,10 +67,10 @@ room for a run. `DOCTOR FAIL | <reasons>` (exit 2) names what to fix; `na-zywo` 
 `--feature skrzynka` drives the Skrzynka Zgłoszeń, `--feature aktualnosc` Aktualność narzędzia, `all` both; each
 live run ends with `--feature wiernosc-atrap` on the new recordings. A Skrzynka run takes about 8 minutes (it creates
 101 issues and 101 comments for the paging cases, one write per second as GitHub asks), so start it as a background
-command and wait for its notification. Keep `--run-dir` out of `/tmp`. GitHub limits how much one account creates
-per hour: on 2026-11-05 the third Skrzynka run within 25 minutes got `Unreachable` already in preparation (its line says
-`przygotowanie: założenie issue dało Unreachable() (…)` with GitHub's answer), so leave about an hour between Skrzynka
-runs, also between the two keys.
+command and wait for its notification. Keep `--run-dir` out of `/tmp`. On 2026-11-05 the third Skrzynka run within 25 minutes
+got `Unreachable()` already in preparation, with no answer from GitHub in its log, and a run an hour later passed. The
+cause is not confirmed (GitHub's limit on content one account creates is a guess), so leave about an hour between
+Skrzynka runs, also between the two keys, and treat a preparation `Unreachable` soon after another run as that.
 
 Each feature is a table of cases (`CASES` in `github_przypadki_skrzynki.py` and `github_przypadki_aktualnosci.py`). A
 case prepares the trial repository through the harness or the client without recording (labels, closing an issue as
