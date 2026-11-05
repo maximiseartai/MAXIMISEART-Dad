@@ -976,8 +976,8 @@ def _disabled_features(browser: Browser) -> list[set[str]]:
 EXPLORER = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "scripts" / "explore_wycena_efenix.py"
 EXPLORER_SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "SKILL.md"
 # Poniżej limitu pytest testu, który je uruchamia, żeby sprawdzenie, które się nie kończy, padło z tym, co zdążyło
-# wypisać. Zakres testu z ponownymi uruchomieniami trwał 26 s na Macu przy 4 przeglądarkach, a windows-latest jest około
-# 3 razy wolniejszy.
+# wypisać. Zakres testu z ponownymi uruchomieniami trwał 26 s na Macu przy 4 przeglądarkach, a na Windows w CI całe
+# zadania pytest z tym plikiem trwały 50 i 71 s (run 41985714991).
 EXPLORER_LIMIT_S = 200
 
 

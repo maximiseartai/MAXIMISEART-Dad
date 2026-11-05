@@ -1,7 +1,7 @@
 """Show that explore_wycena_efenix.py fails on broken variants of the Wycena w efenix, the defects of #802, #808, #758,
 #891, #895 at every „Załaduj do zlecenia”, #889 and #908, a reload waited for shorter than its answer, a closed tab not seen
 in the window's action, a dziennik that names an order only after the window changed it, and the resumes of #757 and
-#864 with a quantity kept in the Ślad after a logout among them.
+#864 with a quantity kept in the Ślad after a logout and a Ślad „gotowe” after a Zatrzymanie among them.
 
 Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) with the axes and request roles that reach it,
 one browser at a time, and must end the checker's report with the expected line. A mutation whose anchor text is no
@@ -259,6 +259,19 @@ MUTATIONS = (
         ),
         explorer("odciecia", "ilosc"),
         "ponowne uruchomienie dopisuje ilość, którą tata usunął po przerwaniu",
+        NEW,
+    ),
+    Mutation(
+        "Ślad „gotowe” także po Zatrzymaniu zlecenia",
+        (
+            Edit(
+                PRICING,
+                "    outcome = _outcome(order, number, day, window, trace, forbidden)\n    trace.finished(number)\n",
+                "    try:\n        outcome = _outcome(order, number, day, window, trace, forbidden)\n    finally:\n        trace.finished(number)\n",
+            ),
+        ),
+        explorer("odciecia", "ilosc"),
+        "po odcięciu sieci przy ilości ponowne uruchomienie zostawia tacie zlecenie, które narzędzie zaczęło",
         NEW,
     ),
     Mutation(

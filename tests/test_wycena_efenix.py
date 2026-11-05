@@ -1823,15 +1823,20 @@ def test_propozycja_emmetta_ktora_padla_zostawia_okno_emmetta_puste_jak_w_efenix
 ) -> None:
     """Propozycja Emmetta (``action_fill_emmett.php``) pada błędem serwera, zerwaną treścią albo zerwanym połączeniem, a
     skrypt efenix i tak pokazuje okno Emmetta, puste. „Załaduj do zlecenia” ładuje Wycenę Emmetta, bo efenix bierze ją u
-    siebie, a nie z okna, więc strona z kwotą różną od 0 kończy zlecenie jak bez awarii."""
+    siebie, a nie z okna, więc strona z kwotą różną od 0 kończy zlecenie jak bez awarii. Przeglądarka dostaje propozycję
+    tak, jak padła: 500, nagłówki 200 i zerwaną treść, albo nic (bez tego test zerwanej treści sprawdzałby całą)."""
 
     order = Order("#9721", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"012": 1})
     source = write_collective_file(tmp_path, [order])
     in_efenix = replace(order.in_efenix("9721"), emmett_proposal_failure=failure)
+    proposal: list[int | str] = []
+    page.on("response", lambda response: proposal.append(response.status) if response.url.endswith(FILL_EMMETT) else None)
+    page.on("requestfailed", lambda request: proposal.append("zerwana") if request.url.endswith(FILL_EMMETT) else None)
     with atrapa_efenix([in_efenix]) as atrapa:
         outcome = _run(source, page, atrapa.url)
         pricing = _pricing(atrapa)
 
+    assert proposal == {ProposalFailure.SERVER_ERROR: [500], ProposalFailure.TORN: [200, "zerwana"], ProposalFailure.CUT: ["zerwana"]}[failure]
     assert (outcome.result, _figures(outcome), _errors(outcome)) == ("OK", _figures_of(1, 1), [])
     assert (pricing, _marked(source)) == ({"9721": ({"012": 1, "019": 2}, DAY, 1)}, [18])
 

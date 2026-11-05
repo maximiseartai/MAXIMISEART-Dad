@@ -700,6 +700,16 @@ def shown_trace(trace: object) -> str:
     return f"„Emmett załadowany” {emmett}, z wyprzedzeniem {ahead}"
 
 
+def emmett_outside_trace(state: Priced, trace: object, index: int) -> bool:
+    """The state of the model's accepted finding ``przerwanie-po-zaladuj`` (``verify-wznowienie-wyceny-efenix``, #774):
+    efenix loaded Wycena Emmetta, so the page has exactly Emmett's quantities and nothing else, and the Ślad has no entry
+    for the order („leaves Emmett in efenix and no trace”), because run 1 ended between „Załaduj do zlecenia” and
+    ``trace.loaded``. A Ślad „gotowe”, or a page with a quantity the tool entered, is another state."""
+
+    emmett = {code: quantity for code, quantity in EMMETT[index].items() if quantity}
+    return trace is None and state.emmett_loads >= 1 and dict(state.quantities) == emmett
+
+
 def unsaved_ahead(state: Priced, trace: object) -> bool:
     """The state of the model's accepted finding ``przerwanie-przed-zapisem-ilosci`` (``verify-wznowienie-wyceny-efenix``,
     #864): the page has Emmett's quantities and some of those the Ślad has ahead, and lacks at least one of the latter,
@@ -1323,7 +1333,7 @@ def check_resume(resume: Resume, run: Run) -> list[Violation]:
                     f"zmienił wycenę zlecenia {index + 1}, która już była ({was} → {now}), a Ślad ma {shown_trace(trace)}")
         if not changed_by_dad and now != REFERENCE_FINAL[index]:
             left_to_dad = now == was and outcomes.get(index) == "błąd"
-            if left_to_dad and not isinstance(emmett, dict) and was.emmett_loads >= 1:
+            if left_to_dad and emmett_outside_trace(was, trace, index):
                 tag = STOPPED_AFTER_LOAD
             elif left_to_dad and unsaved_ahead(was, trace):
                 tag = UNSAVED_AHEAD
