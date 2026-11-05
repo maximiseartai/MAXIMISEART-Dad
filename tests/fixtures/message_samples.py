@@ -325,6 +325,9 @@ EFENIX_SAMPLES: Samples = {
     ],
     "efenix_unreachable": [partial(efenix_messages.efenix_unreachable, kept=kept) for kept in (False, True)],
     "browser_not_started": [efenix_messages.browser_not_started],
+    "emmett_trace_not_saved": [
+        lambda: efenix_messages.emmett_trace_not_saved(Path("C:/Narzedzie/config/slad-wyceny-emmetta") / f"{PERIOD}.json", 19)
+    ],
     "order_error": [partial(efenix_messages.order_error, SOURCE, 23, problem) for problem in _ORDER_FAULTS],
     "emmett_conflict": [
         lambda: efenix_messages.emmett_conflict(SOURCE, 23, [Conflict("012", 2, 1), Conflict("020", 1, 0)]),
