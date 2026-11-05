@@ -31,7 +31,7 @@ import pytest
 
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, REPOSITORY
 from rozliczenia.centrum.run_logs import READ_VALUES, TOOL_FIELDS, RunLog, guarded, logi_post, summary_markdown
-from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, shown
+from rozliczenia.client_data import MIN_VALUE, CellPlace, ForbiddenColumn, ForbiddenValues, shown
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 
 RUN_ID = "627b45fe219e4274b722953c34d4af54"
@@ -184,6 +184,30 @@ def test_zakazana_wartosc_w_kluczu_slownika_logow_jest_zamaskowana_z_uwaga_o_pol
     assert post.archive is not None
     assert gzip.decompress(post.archive.packed()).decode("utf-8") == kept.text
     assert all("Kwarcowa" not in text for text in (*post.parts, kept.text))
+
+
+def test_komorke_kopii_przesunietego_wiersza_straznik_sprawdza_w_jej_kolumnie_w_pliku_taty() -> None:
+    """Przesunięty pierwszy wiersz wklejenia stoi w Kopii wejścia pod nagłówkami, a w pliku taty dwie kolumny na lewo:
+    wartość z miejscem komórki w pliku (kolumna G wiersza 11) strażnik maskuje w komórce Kopii I tego wiersza, a w
+    komórce Kopii G nie, bo w pliku to kolumna E (ADR 0025)."""
+
+    content = "0" * 64
+    sheet = {
+        "sheet": "ZLECENIA",
+        "header_row": 1,
+        "columns": {"G": "URZĄDZENIA", "I": "NUMER ZL."},
+        "rows": [{"row": 11, "cells": {"G": "SYN-PRZESUNIETA", "I": "SYN-PRZESUNIETA"}}],
+        "empty_rows": [],
+        "shifted_row": 11,
+    }
+    copied = {"name": "INTERMAX.xlsx", "fingerprint": {"size": 1, "modified_at": None, "sha256": content}, "sheets": [sheet]}
+    forbidden = ForbiddenValues()
+    forbidden.remember_value(ForbiddenColumn.ADDRESS, "SYN-PRZESUNIETA", CellPlace("INTERMAX.xlsx", content, "ZLECENIA", 11, 7))
+
+    kept = guarded(record(input_copy=[copied]), forbidden)
+
+    assert kept.input_copy is not None
+    assert kept.input_copy[0].sheets[0].rows[0].cells == {"G": "SYN-PRZESUNIETA", "I": "[adres]"}
 
 
 def test_liczba_policzona_przez_narzedzie_w_ksztalcie_telefonu_zostaje_a_ta_sama_liczba_z_komorki_jest_telefonem() -> None:

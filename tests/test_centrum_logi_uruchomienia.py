@@ -707,12 +707,15 @@ def _after_period(
 
 @dataclass(frozen=True)
 class RegisterPosition:
-    """Wiersz tabeli położeń Rejestru: wklejenie wiersza próbnego, kod Zatrzymania podglądu (``None``: bez niego) i czy
-    adres wiersza próbnego jest w pliku (``False``: tata nadpisał go datą, więc pilnuje się numeru Orange)."""
+    """Wiersz tabeli położeń Rejestru: wklejenie wiersza próbnego, kod Zatrzymania podglądu (``None``: bez niego), czy
+    adres wiersza próbnego jest w pliku (``False``: tata nadpisał go datą albo Excel trzyma go jako datę, więc pilnuje
+    się numeru Orange) i czy Logi mówią, że fakt domeny jest złamany (wiersz ze śladem przesunięcia z wyglądem
+    uporządkowanym, więc nie pierwszy wiersz bloku wklejenia)."""
 
     paste: Callable[[Path], object]
     stop: str | None
     address_in_file: bool = True
+    domain_fact_broken: bool = False
 
 
 DATE_INTO_ADDRESS = {"C": (WHEN, REGISTER_FACE)}
@@ -724,6 +727,10 @@ REGISTER_POSITIONS: dict[str, RegisterPosition] = {
     "przesuniety_bez_daty": RegisterPosition(_above_ordered(_register_probe(None)), "WIERSZ_BEZ_DATY"),
     "przesuniety_z_numerem_orange_jako_liczba": RegisterPosition(
         _above_ordered(_register_probe(orange=4809876543)), "WIERSZ_BEZ_DATY"
+    ),
+    # bez żadnego śladu (pusta DATA, ADRES jako data z godziną, bez Hiperłącza): chroni go sam pierwszy wiersz bloku
+    "przesuniety_z_pusta_data_i_adresem_jako_data": RegisterPosition(
+        _above_ordered({**_register_probe(None), "ADRES": datetime(2026, 9, 10, 12)}), "ZLE_SKUTECZNE", address_in_file=False
     ),
     # R2: na miejscu od kolumny w prawo
     "na_miejscu_od_adres": RegisterPosition(_above_ordered(in_place_from="ADRES"), "WIERSZ_BEZ_DATY"),
@@ -751,33 +758,38 @@ REGISTER_POSITIONS: dict[str, RegisterPosition] = {
     ),
     # R7: wklejenie z formatowaniem docelowym, cały wiersz Calibri 8 (wygląd uporządkowany, ślad w datach)
     "przesuniety_caly_w_kroju_rejestru": RegisterPosition(
-        _above_ordered(font=lambda header: REGISTER_FACE), "WIERSZ_BEZ_DATY"
+        _above_ordered(font=lambda header: REGISTER_FACE), "WIERSZ_BEZ_DATY", domain_fact_broken=True
     ),
     # R8: wiersz uporządkowany, potem przesunięty w całości albo do CZYNNOŚCI
     "uporzadkowany_potem_przesuniety": RegisterPosition(
-        _above_ordered(font=lambda header: WORKER_FACE if header == "WYKONAWCA" else REGISTER_FACE), "WIERSZ_BEZ_DATY"
+        _above_ordered(font=lambda header: WORKER_FACE if header == "WYKONAWCA" else REGISTER_FACE),
+        "WIERSZ_BEZ_DATY",
+        domain_fact_broken=True,
     ),
     "uporzadkowany_potem_przesuniety_do_czynnosci": RegisterPosition(
         _above_ordered(
             in_place_from="CZYNNOŚCI", font=lambda header: WORKER_FACE if header == "WYKONAWCA" else REGISTER_FACE
         ),
         "WIERSZ_BEZ_DATY",
+        domain_fact_broken=True,
     ),
     # R9: z aplikacji z jedną komórką albo kilkoma w kroju Rejestru (D2 z przeglądu #952)
     "przesuniety_z_tak_w_skuteczne_w_kroju_rejestru": RegisterPosition(
-        _above_ordered(typed={"L": ("tak", REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
+        _above_ordered(typed={"L": ("tak", REGISTER_FACE)}), "WIERSZ_BEZ_DATY", domain_fact_broken=True
     ),
     "przesuniety_z_czynnosciami_zrealizowanymi_w_kroju_rejestru": RegisterPosition(
-        _above_ordered(typed={"M": ("montaż", REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
+        _above_ordered(typed={"M": ("montaż", REGISTER_FACE)}), "WIERSZ_BEZ_DATY", domain_fact_broken=True
     ),
     "przesuniety_z_miastem_w_kroju_rejestru": RegisterPosition(
-        _above_ordered(typed={"D": ("POZNAŃ", REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
+        _above_ordered(typed={"D": ("POZNAŃ", REGISTER_FACE)}), "WIERSZ_BEZ_DATY", domain_fact_broken=True
     ),
     "przesuniety_z_tak_i_czynnosciami_z_wiersza_wyzej": RegisterPosition(
-        _above_ordered(typed={"L": ("tak", REGISTER_FACE), "M": ("montaż", REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
+        _above_ordered(typed={"L": ("tak", REGISTER_FACE), "M": ("montaż", REGISTER_FACE)}),
+        "WIERSZ_BEZ_DATY",
+        domain_fact_broken=True,
     ),
     "przesuniety_z_data_wklejona_na_adres": RegisterPosition(
-        _above_ordered(typed=DATE_INTO_ADDRESS), "ZLE_SKUTECZNE", address_in_file=False
+        _above_ordered(typed=DATE_INTO_ADDRESS), "ZLE_SKUTECZNE", address_in_file=False, domain_fact_broken=True
     ),
     "przesuniety_z_data_na_adresie_wykonawca_i_tak": RegisterPosition(
         _above_ordered(
@@ -785,12 +797,17 @@ REGISTER_POSITIONS: dict[str, RegisterPosition] = {
         ),
         None,
         address_in_file=False,
+        domain_fact_broken=True,
     ),
     "na_miejscu_od_czynnosci_z_tak_w_kroju_rejestru": RegisterPosition(
-        _above_ordered(in_place_from="CZYNNOŚCI", typed={"L": ("tak", REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
+        _above_ordered(in_place_from="CZYNNOŚCI", typed={"L": ("tak", REGISTER_FACE)}),
+        "WIERSZ_BEZ_DATY",
+        domain_fact_broken=True,
     ),
     # R10: wklejenie na dole po okresie w komórki Calibri 8
-    "wklejenie_po_okresie_w_kroju_rejestru": RegisterPosition(_after_period(font=lambda header: REGISTER_FACE), None),
+    "wklejenie_po_okresie_w_kroju_rejestru": RegisterPosition(
+        _after_period(font=lambda header: REGISTER_FACE), None, domain_fact_broken=True
+    ),
     # R11: pusta komórka bez kroju, pusta albo ze spacjami w kroju Rejestru (D1 z przeglądu #952)
     "przesuniety_w_stylu_domyslnym": RegisterPosition(_above_ordered(font=lambda header: None), "WIERSZ_BEZ_DATY"),
     "przesuniety_z_pusta_komorka_w_kroju_rejestru": RegisterPosition(
@@ -806,6 +823,7 @@ REGISTER_POSITIONS: dict[str, RegisterPosition] = {
             font=lambda header: RAW_ORDER_FONT if header == "MIASTO" else REGISTER_FACE,
         ),
         None,
+        domain_fact_broken=True,
     ),
 }
 
@@ -838,6 +856,8 @@ def test_adres_i_numer_orange_wklejonego_wiersza_rejestru_nie_wychodza_z_przygot
     [copied] = record["input_copy"]
     [sheet] = copied["sheets"]
     assert {row["row"]: row["cells"]["I"] for row in sheet["rows"] if row["row"] in ORDER_NUMBERS} == ORDER_NUMBERS
+    broken = [note for note in record["input_copy_notes"] if note.startswith("Fakt domeny złamany: wiersz ")]
+    assert len(broken) == position.domain_fact_broken, record["input_copy_notes"]
 
 
 def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_okresu(tmp_path: Path) -> None:

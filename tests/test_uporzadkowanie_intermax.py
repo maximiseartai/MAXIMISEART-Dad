@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import os
 import re
 import sys
@@ -25,6 +26,7 @@ from openpyxl.utils.cell import coordinate_from_string, get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import TOOL_ROOT
+from rozliczenia.client_data import CellPlace, CopiedCell, ForbiddenValues
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.intermax_ordering import OrderingSummary, RegisterDay, register_days
@@ -38,6 +40,7 @@ from rozliczenia.workbook_files import Problem, WorkbookError
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.intermax import (
     ACTIVITIES,
+    ADDRESS,
     APP_LAST,
     BLANK_HEIGHT,
     CONTRACT_NUMBER,
@@ -68,10 +71,15 @@ REGISTER_NAME = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
 
 
 def _run(
-    tmp_path: Path, *, now: datetime = NOW, clock: ManualClock | None = None, disk: FaultyDisk | None = None
+    tmp_path: Path,
+    *,
+    now: datetime = NOW,
+    clock: ManualClock | None = None,
+    disk: FaultyDisk | None = None,
+    forbidden: ForbiddenValues | None = None,
 ) -> Outcome[OrderingSummary]:
     """Uruchomienie Uporządkowania; ``clock`` to zegar procesu krótkiej ponownej próby podmiany, ``disk`` usterki
-    kroków podmiany INTERMAX."""
+    kroków podmiany INTERMAX, ``forbidden`` pamięć reguły danych pracy Centrum."""
 
     waiting = clock or ManualClock()
     inputs = OrderingInputs(
@@ -80,6 +88,7 @@ def _run(
         lambda: now,
         Waiting(waiting, waiting.pause),
         (disk or FaultyDisk()).disk(),
+        forbidden=forbidden,
     )
     return run_process(
         PROCESS, inputs, Tata(), view=lambda _inputs, summary: summary, metrics_path=tmp_path / "m.jsonl", clock=ManualClock()
@@ -2094,3 +2103,36 @@ def test_wiersz_wklejenia_pozostawiony_na_miejscu_to_niezgodnosc_zapisu(tmp_path
         stop = _stop(_run(tmp_path, disk=FaultyDisk(write=writing(left_in_place))))
 
     assert (stop.message.code, stop.stop_kind) == ("ZAPIS_INTERMAX_NIEZGODNY", "for_maks")
+
+
+def test_wiersz_z_dwoma_polozeniami_przeniesiony_do_dnia_ma_wlasna_komorke_w_zapisanej_wersji_intermax(
+    tmp_path: Path,
+) -> None:
+    """Pierwszy wiersz wklejenia stoi na miejscu, ale z datą z godziną w A i słowem pod ``DATA GODZ. POCZ.``, więc
+    rozpoznanie czyta go przesunięty i Uporządkowanie stawia go w dniu dwie kolumny w prawo: jego ``ADRES`` stoi potem
+    pod ``URZĄDZENIA`` wiersza dnia. Pierwszy wiersz wklejenia ma dwa położenia, więc pamięć reguły danych zna ten adres
+    z miejscem komórki: w zapisanej wersji INTERMAX ta komórka wiersza dnia jest jego, więc strażnik ją maskuje, a w
+    przeczytanej wersji ta sama komórka należy do innego wiersza i maski w niej nie ma (ADR 0025)."""
+
+    address = "Syntetyczna Bursztynowa 14/2 Poznań"
+    raw = Intermax().raw
+    first = replace(raw[0], cells=((ADDRESS, address), (DATE, "brak"), (1, datetime(2026, 10, 26, 14))))
+    path, _ = _register(tmp_path, Intermax(shifted=False, raw=(first, *raw[1:])))
+    read = hashlib.sha256(path.read_bytes()).hexdigest()
+    forbidden = ForbiddenValues()
+
+    _ordered(_run(tmp_path, forbidden=forbidden))
+
+    written = path.read_bytes()
+    workbook = load_workbook(BytesIO(written), read_only=True)
+    try:
+        sheet = workbook[ORDER_SHEET]
+        [row] = [cells[0].row for cells in sheet.iter_rows(min_col=DEVICES, max_col=DEVICES) if cells[0].value == address]
+    finally:
+        workbook.close()
+
+    def guarded_in(content: str) -> str:
+        cell = CopiedCell(CellPlace(REGISTER_NAME, content, ORDER_SHEET, row, DEVICES), "URZĄDZENIA")
+        return forbidden.guard(address, "komórka", cell).text
+
+    assert (guarded_in(hashlib.sha256(written).hexdigest()), guarded_in(read)) == ("[adres]", address)

@@ -1193,6 +1193,30 @@ POSITIONS = {
         False,
         "SUROWE_ZLECENIA_NAD_UPORZADKOWANYMI",
     ),
+    # U17: ten sam bez śladu (pusta DATA, ADRES jako data z godziną, bez Hiperłącza): chroni go sama reguła wiersza z
+    # wyglądem z aplikacji nad uporządkowanymi
+    "przesuniety_wiersz_z_aplikacji_nad_uporzadkowanymi_bez_sladu": Position(
+        Intermax(
+            ordered=(
+                *ORDERED,
+                _probe(
+                    Order(datetime(2026, 10, 20, 12), "jan.nowak", 202),
+                    (3, ""),
+                    (ADDRESS, datetime(2026, 10, 20, 13)),
+                    shifted=True,
+                    app_look=True,
+                ),
+                Order(datetime(2026, 10, 20, 14), "jan.nowak", 1004),
+            ),
+            raw=PASTED,
+        ),
+        None,
+        "",
+        False,
+        "SUROWE_ZLECENIA_NAD_UPORZADKOWANYMI",
+        address_in_file=False,
+        echo=f"montaż {PROBE_ADDRESS} umowa [numer Orange] po ZL-1003",
+    ),
     # U22
     "zatrzymanie_zanim_planowanie_doszlo_do_wklejenia": Position(
         Intermax(ordered=ORDERED, older_sheet=True, raw=_pasted(2, _probe(PASTED[2], shifted=True))),
@@ -1311,7 +1335,9 @@ def test_po_wierszu_z_dwoma_polozeniami_nastepne_uporzadkowanie_ma_urzadzenia_ka
     view = centrum.run_to_end()
 
     assert view["result"]["result"] == "OK", view["result"]["stops"]
-    first, repaired = centrum.run_logs()
+    logs = centrum.run_logs()
+    [repaired] = [record for record in logs if record["result"] == "OK"]
+    [first] = [record for record in logs if record is not repaired]
     [sheet] = repaired["input_copy"][0]["sheets"]
     cells = {row["row"]: row["cells"] for row in sheet["rows"]}
     first_row, *rest = centrum.layout.raw_rows
