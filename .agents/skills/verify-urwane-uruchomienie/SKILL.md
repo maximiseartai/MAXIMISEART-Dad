@@ -147,8 +147,9 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `2b2af53e4` (2026-11-05, #910 before its code). Every row of the table was checked against the code at this
-commit. Since the Sync commit `2b2af53e4` (#846 after its split) #910 changed these definitions: the version of a
+Sync commit: `5f0dcbedd` (2026-11-05, #910 merged with `main` after #924, #925 and #926, which changed no definition).
+Every row of the table was checked against the code at this commit. Since the Sync commit `2b2af53e4` (#846 after its
+split) #910 changed these definitions: the version of a
 wysyłka has a rank before its moment (`Rank`, `Version`, `_version_of`, `_superseded` in `outbox.py`; `progress_post`,
 `logi_post`, `_logs_post`, `RunLogs.send` in `run_logs.py`), `RunEnded` carries the result, a failed end entry leaves
 the journal, `JournalAfterLogs` removes the journal once the queue accepted the Logi with the result (`RunLogs.queued`),
