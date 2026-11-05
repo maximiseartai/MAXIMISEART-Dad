@@ -361,54 +361,67 @@ Nowszy(q, w) == \E v \in Zakres(Tail(lista[q])) : Id(v) = Id(w) /\ v \notin reje
 \* outbox.py Outbox._send_all, jeden plik: _undeleted (_remove), _rejected (pomija), _queued (odczyt:
 \* nieczytelny albo usunięty przez inny proces plik pomija, a OSError ustawia _read_failed), delivered
 \* (_remove), plik, za którym jest nowsza wersja tej wysyłki (_superseded: _mark_delivered bez wysyłania; gdy nowszej nie
-\* da się odczytać, ten idzie jak zwykle), commented (_deliver_archive, sam plik do Archiwum), potem _deliver.
-\* Koniec listy: self._stopped_on = None.
+\* da się odczytać, ten idzie jak zwykle, a nowsza czeka na budzik), commented (_deliver_archive, sam plik do
+\* Archiwum), potem _deliver. Koniec listy: self._stopped_on = None.
 Plik(q) ==
     /\ pc[q] = "plik"
     /\ IF lista[q] = <<>>
        THEN /\ stopped' = Ustaw(stopped, q, FALSE)
             /\ UNCHANGED <<lista, biez, nieczytany, bledyPliku, slady, arch, po>>
             /\ Idz(q, "zwolnij", "_send_all: koniec plikow, _stopped_on = None")
-       ELSE LET w == Head(lista[q]) IN
-            /\ lista' = Ustaw(lista, q, Tail(lista[q]))
+       ELSE LET w == Head(lista[q])
+                dalej == Ustaw(lista, q, Tail(lista[q]))
+            IN
             /\ biez' = Ustaw(biez, q, w)
             /\ arch' = Ustaw(arch, q, "brak")
             /\ UNCHANGED stopped
             /\ CASE w \in undeleted[q] ->
+                      /\ lista' = dalej
                       /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
                       /\ Idz(q, "usun", "_send_all: plik w _undeleted, _remove")
                  [] w \in rejected[q] ->
+                      /\ lista' = dalej
                       /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
                       /\ Idz(q, "plik", "_send_all: plik w _rejected, czeka do nastepnego startu")
                  [] OTHER ->
                       \/ /\ AwariaOdczytu /\ bledyPliku < MaxBledowPliku /\ plik[w] /= "usuniety"
+                         /\ lista' = dalej
                          /\ bledyPliku' = bledyPliku + 1
                          /\ nieczytany' = Ustaw(nieczytany, q, TRUE)
                          /\ UNCHANGED <<slady, po>>
                          /\ Idz(q, "plik", "_queued: read_text rzuca OSError, _read_failed, _skip_unreadable pomija plik")
                       \/ /\ plik[w] = "usuniety"
+                         /\ lista' = dalej
                          /\ nieczytany' = Ustaw(nieczytany, q, TRUE)
                          /\ UNCHANGED <<bledyPliku, slady, po>>
                          /\ Idz(q, "plik", "_queued: pliku juz nie ma (usunal go inny proces), _read_failed, _skip_unreadable")
                       \/ /\ plik[w] = "oznaczony"
+                         /\ lista' = dalej
                          /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
                          /\ Idz(q, "usun", "_queued: plik ze znacznikiem dostarczenia, _remove")
                       \/ /\ plik[w] \in {"czeka", "skomentowany"} /\ Nowszy(q, w)
+                         /\ lista' = dalej
                          /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
                          /\ Idz(q, "dostarczona", "_superseded: za plikiem jest nowsza wersja tej wysylki, znacznik bez wysylania")
                       \/ /\ plik[w] \in {"czeka", "skomentowany"} /\ Nowszy(q, w)
                          /\ AwariaOdczytu /\ bledyPliku < MaxBledowPliku
+                         \* _send_all czyta pliki na początku przejścia (_read), więc nowsza wersja, której odczyt padł,
+                         \* nie wypiera tej, a gdy przejście do niej dojdzie, _skip_unreadable ją pomija do budzika
+                         \* RETRY_S (_read_failed): przejście bierze ją z listy już teraz.
+                         /\ lista' = Ustaw(lista, q, SelectSeq(Tail(lista[q]), LAMBDA v : Id(v) /= Id(w)))
                          /\ bledyPliku' = bledyPliku + 1
                          /\ nieczytany' = Ustaw(nieczytany, q, TRUE)
                          /\ po' = IF plik[w] = "skomentowany" THEN Ustaw(po, q, "dostarczona") ELSE po
                          /\ UNCHANGED slady
                          /\ Idz(q, IF plik[w] = "skomentowany" THEN "archiwum" ELSE "szukaj",
-                                "_read: pliku nowszej wersji nie da sie odczytac (OSError), _read_failed; ten idzie jak zwykle")
+                                "_read: pliku nowszej wersji nie da sie odczytac (OSError), _read_failed; ten idzie jak zwykle, nowsza czeka na budzik")
                       \/ /\ plik[w] = "skomentowany" /\ ~Nowszy(q, w)
+                         /\ lista' = dalej
                          /\ UNCHANGED <<nieczytany, bledyPliku, slady>>
                          /\ po' = Ustaw(po, q, "dostarczona")
                          /\ Idz(q, "archiwum", "_queued: czesci sa w Skrzynce (commented), sam _deliver_archive")
                       \/ /\ plik[w] = "czeka" /\ ~Nowszy(q, w)
+                         /\ lista' = dalej
                          /\ UNCHANGED <<nieczytany, bledyPliku, slady, po>>
                          \* _deliver: każdy cel najpierw pyta Skrzynkę o issue z etykietą.
                          /\ Idz(q, "szukaj", "_deliver: wysylka z pliku")

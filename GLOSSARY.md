@@ -613,7 +613,7 @@ Uruchomienie procesu z Centrum rozliczeń, które nie doszło do wyniku, bo
 Centrum zamknęło się w jego trakcie. Nie ma rekordu metryk; Centrum nazywa je
 po następnym starcie i radzi, co sprawdzić. Urwana Wycena w efenix ma Logi
 Uruchomienia, które następny start Centrum zamyka z dziennika Wyceny w efenix,
-pisanego w trakcie zlecenie po zleceniu, i wysyła jak zwykłe Logi: zlecenia
+pisanego od jej startu zlecenie po zleceniu, i wysyła jak zwykłe Logi: zlecenia
 skończone przed zamknięciem Centrum i zlecenie zaczęte bez wyniku, a karta po
 starcie pokazuje te zlecenia. Urwane Uruchomienie innego procesu Logów nie ma.
 Uruchomienie, którego wynik jest już w Historii, a Logów nie ma (Centrum

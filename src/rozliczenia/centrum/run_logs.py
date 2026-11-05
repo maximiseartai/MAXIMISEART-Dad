@@ -948,8 +948,11 @@ class RunLogs:
         self._cloud = cloud_files
         self._lock = threading.Lock()
         self._last: RunLog | None = None  # Logi ostatniego Uruchomienia tak, jak ostatnio poszły do pliku i Skrzynki
+        self._ended: set[str] = set()  # Uruchomienia tej pracy Centrum po wyniku: ich postęp się skończył (``progress``)
 
     def run_ended(self, run: EndedRun) -> None:
+        with self._lock:  # postęp, który już idzie do kolejki, jest w niej przed Logami, a następny nie pójdzie
+            self._ended.add(run.info.id)
         environment = self._environment(run.info.process, run.info.period)
         record = RunLog.of(run, tool=self._tool(), environment=environment, dad_actions=self._dad_actions.take())
         with self._lock:
@@ -1047,14 +1050,22 @@ class RunLogs:
 
         return self._outbox.post(logi_post(record))
 
-    def progress(self, progress: PricingProgress, *, elapsed_s: float) -> bool:
-        """Postęp Wyceny w efenix do Kolejki wysyłki jako starsza wersja wysyłki Logów tego Uruchomienia
+    def progress(self, run_id: str, progress: PricingProgress | None, *, elapsed_s: float) -> bool:
+        """Postęp Wyceny w efenix ``run_id`` do Kolejki wysyłki jako starsza wersja wysyłki Logów tego Uruchomienia
         (``progress_post``), po strażniku reguły danych tej pracy Centrum jak Logi: zamaskowana wartość to uwaga techniczna
-        na końcu komentarza. ``False``: kolejka go nie przyjęła (typ błędu jest w dzienniku Centrum)."""
+        na końcu komentarza. ``progress`` ``None``: dziennik nie ma jeszcze na dysku swojej pierwszej linii, więc nic nie
+        idzie. ``False``: Uruchomienie doszło do działań po wyniku (``run_ended``), więc jego postęp się skończył i nic nie
+        idzie, bo postęp po Logach byłby ich nowszą wersją i cofnąłby podsumowanie. Postęp, którego kolejka nie przyjęła,
+        daje ``True``: typ błędu jest w dzienniku Centrum, a następne odświeżenie spróbuje znowu."""
 
-        guarded = self._forbidden.guard(progress_markdown(progress, elapsed_s=elapsed_s), "postęp Wyceny w efenix")
-        notes = "".join(f"\n- Uwaga techniczna: {note}" for note in guarded.notes)
-        return self._outbox.post(progress_post(progress, guarded.text + notes))
+        with self._lock:
+            if run_id in self._ended:
+                return False
+            if progress is not None:
+                guarded = self._forbidden.guard(progress_markdown(progress, elapsed_s=elapsed_s), "postęp Wyceny w efenix")
+                notes = "".join(f"\n- Uwaga techniczna: {note}" for note in guarded.notes)
+                self._outbox.post(progress_post(progress, guarded.text + notes))
+            return True
 
     def _tool(self) -> Tool:
         commit = self._commit()

@@ -216,7 +216,7 @@ def create_app(
         forbidden=forbidden,
     )
     # Dziennik Wyceny w efenix w trakcie Uruchomienia, obok Logów: przeżywa nagłe zgaśnięcie Centrum (#845).
-    journal = PricingJournal(log.directory / JOURNALS_DIRECTORY, log)
+    journal = PricingJournal(log.directory / JOURNALS_DIRECTORY, log, process=EFENIX.key)
     # Logi Uruchomienia: jeden plik JSON na Uruchomienie obok dziennika Centrum, poza Gitem i OneDrive (ADR 0015).
     run_logs = RunLogs(
         log.directory / RUN_LOGS_DIRECTORY,
@@ -275,12 +275,12 @@ def create_app(
     interrupted = InterruptedPricings(log.directory / JOURNALS_DIRECTORY, run_logs, cards.recorded, log)
     interrupted.close()
     # Komentarz postępu Wyceny w efenix w issue Logów okresu, odświeżany z jej dziennika (#846).
-    progress = ProgressComment(journal, run_logs, process=EFENIX.key, clock=clock)
+    progress = ProgressComment(journal, run_logs, clock=clock)
 
     def run_started(info: RunInfo, started_at: datetime) -> None:
         journal.run_started(info, started_at)
-        progress.run_started(info, started_at)
         cards.run_started(info, started_at)
+        progress.run_started(info, started_at)  # ostatni: postęp jest dla Maksa, a nie warunkiem pracy taty
 
     # Powiadomienia o Uwagach taty, wysłanych Zgłoszeniach, Wydaniach i zakończonych Wycenach w efenix z Logów
     # Uruchomienia; przeczytane obok Ustawień taty (ADR 0015).
@@ -300,8 +300,7 @@ def create_app(
         stops,
         previous=cards.last(),
         run_started=run_started,
-        # Koniec postępu przed Logami: żaden postęp nie przychodzi po podsumowaniu.
-        after_run=[progress, run_logs, QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden), filling],
+        after_run=[run_logs, QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden), filling],
     )
     shutdown.refuse_while(runs.shutdown_refusal)
     # Klon narzędzia, które Centrum aktualizuje (ADR 0009); w testach klon z lokalnym „origin”. Po sukcesie

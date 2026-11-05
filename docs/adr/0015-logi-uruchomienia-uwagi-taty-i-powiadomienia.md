@@ -70,7 +70,11 @@ dziennika Wyceny w efenix: zlecenia skończone z wszystkich, wyniki do tej pory,
 ostatnie zlecenie i czas od startu, nigdy więcej, niż dziennik ma na dysku.
 Postęp to starsza wersja wysyłki Logów tego Uruchomienia, więc koniec Wyceny
 zamienia ten sam komentarz w podsumowanie, a Urwane Uruchomienie robi to przy
-następnym starcie Centrum. Kolejka wysyłki oznacza i usuwa bez wysyłania plik,
+następnym starcie Centrum: pierwsza linia dziennika trafia na dysk przy starcie
+Wyceny (dopisek #846 w ADR 0017), a postęp idzie dopiero, gdy ją tam ma, więc
+każdy komentarz postępu ma dziennik, który start Centrum zamknie jako Logi
+Urwanego Uruchomienia. Wycena, której dziennika nie da się zapisać, nie ma
+postępu, tylko podsumowanie na końcu. Kolejka wysyłki oznacza i usuwa bez wysyłania plik,
 za którym czeka nowsza wersja tej samej wysyłki, więc bez internetu czeka tylko
 najnowszy postęp (i tylko Logi z ostatnią Diagnozą). Zdanie „Centrum przerwane
 w trakcie zostawia tylko `uruchomienie-start`” w decyzji niżej Wycena w efenix

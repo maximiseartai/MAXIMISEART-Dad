@@ -322,6 +322,18 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
+        "nowsza wersja, której odczyt padł, pominięta bez _read_failed (_read: OSError ustawia _read_failed)",
+        (Edit(MODEL, "LAMBDA v : Id(v) /= Id(w)))\n"
+              "                         /\\ bledyPliku' = bledyPliku + 1\n"
+              "                         /\\ nieczytany' = Ustaw(nieczytany, q, TRUE)\n",
+              "LAMBDA v : Id(v) /= Id(w)))\n"
+              "                         /\\ bledyPliku' = bledyPliku + 1\n"
+              "                         /\\ nieczytany' = nieczytany\n"),),
+        _check("diagnoza"),
+        "Logi z Diagnozą, których pliku przejście nie odczytało, czekają w kolejce bez budzika RETRY_S do następnego startu",
+        NEW,
+    ),
+    Mutation(
         "zastąpiony plik usunięty bez znacznika dostarczenia (_superseded: _mark_delivered)",
         (Edit(MODEL, '/\\ Idz(q, "dostarczona", "_superseded:', '/\\ Idz(q, "usun", "_superseded:'),),
         _check("diagnoza"),

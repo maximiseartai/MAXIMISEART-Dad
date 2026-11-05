@@ -29,6 +29,14 @@ zamknięciem Centrum z każdym wynikiem. Plik Logów powstaje dalej tylko pełny
 dziennik nie jest niepełnym plikiem Logów, tylko osobnym plikiem, który czyta
 wyłącznie start Centrum. Krótkie procesy dziennika nie piszą.
 
+Dopisek #846 (część #837): pierwsza linia dziennika, start Uruchomienia, trafia
+na dysk już przy starcie Wyceny w efenix, zanim ruszy jej wątek, a nie z
+pierwszym zleceniem. Wycena zamknięta przed pierwszym zleceniem, np. gdy okno
+efenix czeka na logowanie taty, też ma więc Logi Urwanego Uruchomienia, bez
+zleceń, a karta po starcie pokazuje zero zleceń przed zamknięciem Centrum.
+Komentarz postępu Wyceny w issue okresu (dopisek #846 w ADR 0015) powstaje
+dopiero, gdy ta linia jest na dysku, więc te Logi zawsze go zastępują.
+
 ## Kontekst
 
 Centrum trzymało tylko bieżące Uruchomienie procesu w pamięci, więc karta

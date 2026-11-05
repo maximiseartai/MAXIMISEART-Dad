@@ -169,8 +169,11 @@ Dad does not click or see anything. The machine script sends none.
   since the start, never more than the journal has. The comment says `- Wynik:
   jeszcze nie ma, Uruchomienie trwa` and `- Pełne Logi: w tym komentarzu, gdy
   Uruchomienie się skończy`; the end of the Wycena turns the same comment into
-  the summary, and for an Urwane Uruchomienie the next start of Centrum does.
-  Without the network only the newest progress waits in the queue.
+  the summary, and for an Urwane Uruchomienie the next start of Centrum does,
+  because the journal has its first line on disk from the start of the Wycena
+  and the progress goes only once it is there. A Wycena whose journal cannot be
+  written has no progress comment, only the summary at its end. Without the
+  network only the newest progress waits in the queue.
 - The full Logi are in the period's Archiwum Logów okresu: the GitHub Release
   tagged `logi-<token>` in the same private repository, which Centrum creates
   with the first Logi of the period (`#844`). It holds one file per
