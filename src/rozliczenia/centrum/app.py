@@ -51,7 +51,12 @@ from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, UNSENT_DIRECTORY, Reports
 from rozliczenia.centrum.preparation_run import PreparationEntry
-from rozliczenia.centrum.pricing_journal import JOURNALS_DIRECTORY, InterruptedPricings, PricingJournal
+from rozliczenia.centrum.pricing_journal import (
+    JOURNALS_DIRECTORY,
+    InterruptedPricings,
+    JournalAfterLogs,
+    PricingJournal,
+)
 from rozliczenia.centrum.pricing_progress import ProgressComment
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.run_cards import LAST_STARTED_FILE, RunCards, run_cards_router
@@ -311,6 +316,7 @@ def create_app(
         after_run=[
             journal,
             run_logs,
+            JournalAfterLogs(journal, run_logs),
             QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden),
             filling,
         ],

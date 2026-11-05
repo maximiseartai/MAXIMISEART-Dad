@@ -710,7 +710,10 @@ samej wysyłki, jak Logi Uruchomienia po Diagnozie albo po postępie Wyceny w
 efenix, zmienia jej komentarz zamiast dokładać nowy, a gdy starsza jeszcze
 czeka, zastępuje ją w kolejce, więc bez internetu czeka tylko najnowsza.
 Starsza, która dojdzie po nowszej, niczego w Skrzynce nie
-zmienia. Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego
+zmienia. Która wersja jest nowsza, mówi najpierw jej stopień, który wybiera
+nadawca, a nie zegar komputera: postęp Wyceny w efenix jest starszy od każdej
+wersji końcowej, a wersja, którą start Centrum odtwarza z dziennika Wyceny, od
+Logów z wynikiem. Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego
 startu Centrum rozliczeń; tata ma wtedy skontaktować się z Maksem. Plik w
 Archiwum Logów okresu też idzie dokładnie raz, a plik nowszej wersji podmienia
 plik starszej.

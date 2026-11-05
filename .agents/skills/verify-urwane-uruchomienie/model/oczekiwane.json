@@ -5,11 +5,6 @@
         "obietnica": "BezUrwanychPoWyniku",
         "przyczyna": "przed-wpisem-konca",
         "znalezisko": "Centrum zgasło między rekordem metryk a wpisem końca dziennika (CentrumRuns.remember i karta wyniku, milisekundy), więc Wycena z wierszem Historii dostaje przy starcie Logi Urwanego Uruchomienia; jej Logi z wynikiem nie powstały i nie poszły do kolejki, więc w Skrzynce niczego nie zastępują (przyjęte w #870/#871: wpis końca przed rekordem metryk gubiłby w tym oknie Logi Urwanego Uruchomienia)"
-      },
-      {
-        "obietnica": "WersjaKoncowa",
-        "przyczyna": "po-wpisie-konca",
-        "znalezisko": "Wycena, której dziennik ma pierwszą linię na dysku (więc mogła wysłać postęp), doszła do wyniku, a jej Logi z wynikiem nie doszły do kolejki po wpisie końca (Centrum zgasło między wpisem końca a ich przyjęciem, kolejka ich nie przyjęła albo wpis końca się nie zapisał i run_ended usunął dziennik przed Logami): dziennik znika (start usuwa dziennik z wpisem końca albo z plikiem Logów z wynikiem bez wysyłki, jak w #888), więc komentarz Uruchomienia w issue okresu zostaje postępem „Uruchomienie trwa”; start niczego nie wysyła, żeby nie zastąpić Logów z wynikiem, które kolejka mogła już przyjąć (#871); okno zamyka #910"
       }
     ]
   },
@@ -19,11 +14,6 @@
         "obietnica": "BezUrwanychPoWyniku",
         "przyczyna": "przed-wpisem-konca",
         "znalezisko": "jak w zwykle"
-      },
-      {
-        "obietnica": "WersjaKoncowa",
-        "przyczyna": "po-wpisie-konca",
-        "znalezisko": "jak w zwykle"
       }
     ]
   },
@@ -32,11 +22,6 @@
       {
         "obietnica": "BezUrwanychPoWyniku",
         "przyczyna": "przed-wpisem-konca",
-        "znalezisko": "jak w zwykle"
-      },
-      {
-        "obietnica": "WersjaKoncowa",
-        "przyczyna": "po-wpisie-konca",
         "znalezisko": "jak w zwykle"
       }
     ]
@@ -51,17 +36,12 @@
       {
         "obietnica": "BezUrwanychPoWyniku",
         "przyczyna": "wpis-konca-nieudany",
-        "znalezisko": "wpis końca i usunięcie dziennika po nim zawodzą (OSError), a pliku Logów z wynikiem nie ma (zgaśnięcie przed nim albo nieudany zapis): start zamyka dziennik jako Logi Urwanego Uruchomienia, a gdy Logi z wynikiem poszły do kolejki bez pliku, w Skrzynce je zastępują; dwie awarie dziennika naraz i do tego zgaśnięcie albo trzecia awaria, przyjęte w #870/#871; tak samo, gdy żaden wpis się nie zapisał, a nieudany zapis zostawił pierwszą linię, i zawodzi tylko usunięcie dziennika"
+        "znalezisko": "wpis końca zawodzi (OSError), więc dziennik zostaje bez niego, a start nie ma pliku Logów z wynikiem (Centrum zgasło przed nim albo jego zapis zawiódł) i nie ma od kogo wiedzieć, że Wycena doszła do wyniku: zamyka dziennik jako Logi Urwanego Uruchomienia; tylko gdy kolejka nie przyjęła Logów z wynikiem (JournalAfterLogs nie usunął dziennika: zgaśnięcie przed nim albo Outbox.post False), bo inaczej są one wersją wyższego stopnia i Logi Urwanego Uruchomienia niczego w kolejce ani w Skrzynce nie zmieniają; tak samo, gdy żaden wpis się nie zapisał, a nieudany zapis zostawił pierwszą linię, i zawodzi tylko usunięcie dziennika (przyjęte w #870/#871, w #910 zamiast komentarza „Uruchomienie trwa” na zawsze)"
       },
       {
         "obietnica": "ZaczeteWLogach",
         "przyczyna": "wpis-nieudany",
         "znalezisko": "jak w wpisy"
-      },
-      {
-        "obietnica": "WersjaKoncowa",
-        "przyczyna": "po-wpisie-konca",
-        "znalezisko": "jak w zwykle"
       }
     ]
   },
@@ -73,14 +53,14 @@
         "znalezisko": "jak w zwykle"
       },
       {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "wpis-konca-nieudany",
+        "znalezisko": "jak w koniec"
+      },
+      {
         "obietnica": "ZaczeteWLogach",
         "przyczyna": "wpis-nieudany",
         "znalezisko": "wpis dziennika, który się nie zapisał, zostawia zmianę w efenix swojego zlecenia bez śladu w Logach (przyjęte w docstringu pricing_journal.py: „Nieudany zapis wpisu … Wycena biegnie dalej”)"
-      },
-      {
-        "obietnica": "WersjaKoncowa",
-        "przyczyna": "po-wpisie-konca",
-        "znalezisko": "jak w zwykle"
       }
     ]
   },
@@ -95,11 +75,6 @@
         "obietnica": "TeSameZnaki",
         "przyczyna": "zapis-logow-nieudany",
         "znalezisko": "Logi sprzed strażnika, których start nie przepisał (OSError zapisu), zostają na dysku bez maski, a do Archiwum Logów okresu idą z maską; u taty takich Logów nie ma, bo dziennik (#845) i strażnik (#851) wejdą w jednym Wydaniu"
-      },
-      {
-        "obietnica": "WersjaKoncowa",
-        "przyczyna": "po-wpisie-konca",
-        "znalezisko": "jak w zwykle"
       }
     ]
   },
@@ -119,10 +94,14 @@
         "obietnica": "ZaczeteWLogach",
         "przyczyna": "wpis-nieudany",
         "znalezisko": "jak w wpisy"
-      },
+      }
+    ]
+  },
+  "zegar": {
+    "znane": [
       {
-        "obietnica": "WersjaKoncowa",
-        "przyczyna": "po-wpisie-konca",
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "przed-wpisem-konca",
         "znalezisko": "jak w zwykle"
       }
     ]

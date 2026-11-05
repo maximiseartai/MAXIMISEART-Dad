@@ -173,14 +173,15 @@ Dad does not click or see anything. The machine script sends none.
   Wycena and the progress goes only once it is there, so when Centrum stopped
   during the Wycena, before the journal's end entry, the next start of Centrum
   turns the comment into the summary of the Logi of an Urwane Uruchomienie.
-  When the Logi with the result did not reach the queue after the end entry
-  (Centrum stopped right after the result, the end entry or the Logs failed, or
-  the queue refused them), the comment stays a progress comment, because the
-  start sends nothing for a Wycena with an end entry so as not to replace Logi
-  with the result that may already be in the Skrzynka (`#910` closes this
-  window). A Wycena whose journal cannot be written has no progress comment,
-  only the summary at its end. Without the network only the newest progress
-  waits in the queue.
+  When the queue did not accept the Logi with the result (Centrum stopped right
+  after the result, the Logs were not made, or the queue refused them), the
+  journal stays and the next start turns the comment into a stand-in summary
+  from it (`#910`): the Logi from their file, or the result without Logi
+  (`- Pełne Logi: nie ma, …`). A version carries a rank before its moment, so a
+  progress never replaces a summary and a stand-in summary never replaces Logi
+  with the result, also after the computer's clock went back. A Wycena whose
+  journal cannot be written has no progress comment, only the summary at its
+  end. Without the network only the newest version waits in the queue.
 - The full Logi are in the period's Archiwum Logów okresu: the GitHub Release
   tagged `logi-<token>` in the same private repository, which Centrum creates
   with the first Logi of the period (`#844`). It holds one file per

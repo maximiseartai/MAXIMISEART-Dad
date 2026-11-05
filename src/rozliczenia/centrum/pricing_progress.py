@@ -5,19 +5,17 @@ Wycena w efenix trwa u taty do półtorej godziny, a Logi Uruchomienia powstają
 Centrum, nigdy częściej, odświeża go stanem dziennika Wyceny (``PricingJournal.progress``): zlecenia skończone z
 wszystkich, wyniki do tej pory, ostatnie skończone zlecenie, zlecenie w trakcie i czas od startu. Dziennik podaje tylko
 wpisy, które już ma na dysku, a bez swojej pierwszej linii na dysku nic, więc postęp nigdy go nie wyprzedza: każdy
-komentarz postępu ma dziennik. Na końcu Wyceny komentarz staje się podsumowaniem z jej Logów z wynikiem, a Wycenę, którą
-przerwało zgaśnięcie Centrum przed wpisem końca dziennika, następny start Centrum zamyka Logami Urwanego Uruchomienia
-(``pricing_journal.InterruptedPricings``), które też zamieniają komentarz w podsumowanie. Wycena, której Logi z wynikiem
-nie doszły do kolejki po wpisie końca (Centrum zgasło między wpisem końca a ich przyjęciem, wpis końca się nie zapisał,
-Logi nie powstały albo kolejka ich nie przyjęła), zostawia komentarz postępu bez wersji końcowej, bo start Centrum za
-Wycenę z wynikiem niczego nie wysyła, żeby nie zastąpić Logów z wynikiem, które kolejka już przyjęła (#871); to okno
-zamyka #910. Wycena, której dziennika nie da się zapisać, postępu nie ma, tylko podsumowanie na końcu.
+komentarz postępu ma dziennik. Na końcu Wyceny komentarz staje się podsumowaniem z jej Logów z wynikiem, a gdy kolejka
+ich nie przyjęła (Centrum zgasło przed nimi, Logi nie powstały albo kolejka odmówiła), dziennik zostaje i następny start
+Centrum zamyka go wersją zastępczą (``pricing_journal.InterruptedPricings``): Logami z pliku, Logami Urwanego
+Uruchomienia albo wynikiem bez Logów, które też zamieniają komentarz w podsumowanie (#910). Wycena, której dziennika nie
+da się zapisać, postępu nie ma, tylko podsumowanie na końcu.
 
-Postęp to starsza wersja tej samej wysyłki co Logi tego Uruchomienia (``run_logs.progress_post``: ten sam ``run_id`` i
-etykieta), więc kolejka zmienia ten sam komentarz, a bez sieci najnowszy postęp w kolejce zastępuje starszy (``outbox``).
+Postęp to wersja tej samej wysyłki co Logi tego Uruchomienia (``run_logs.progress_post``: ten sam ``run_id`` i
+etykieta) najniższego stopnia (``outbox.Rank.DRAFT``), więc kolejka zmienia ten sam komentarz, bez sieci najnowszy postęp
+w kolejce zastępuje starszy, a każda wersja końcowa zastępuje postęp, także po cofnięciu zegara komputera (``outbox``).
 Koniec postępu wyznacza ``RunLogs``: od działań po wyniku tego Uruchomienia (``RunLogs.run_ended``) nie przyjmuje jego
-postępu, więc żaden nie przychodzi po Logach, które zamieniają komentarz w podsumowanie z odnośnikiem do Archiwum Logów
-okresu (postęp nowszy od Logów zastąpiłby je w kolejce), a pierwsze odświeżenie po końcu kończy budzik.
+postępu, więc po Logach z wynikiem żaden nie idzie do kolejki, a pierwsze odświeżenie po końcu kończy budzik.
 
 Postęp jest dla Maksa, a nie warunkiem pracy taty: wysyłkę, której kolejka nie przyjęła, ``Outbox.post`` zapisuje w
 dzienniku Centrum, a Wycena biegnie dalej.
