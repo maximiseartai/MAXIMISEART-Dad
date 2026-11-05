@@ -173,6 +173,16 @@ its answer, which the hold does not see (configuration `dwa-procesy`). The file
 is replaced atomically (`NotesFile.replace`, `replace_atomically` from `create_app`) and keeps only the effects of the
 last `LIST_LAG_S` and the writes without an answer of the last `PENDING_KEPT_S`
 (an hour).
+A file that cannot be read (`OSError`, an antivirus holding it) cannot rule
+out a write `KeyedBox` does not know, so a write and a list follow one rule
+(#909): a write is held while the file could not be read at it or at the last
+list of its kind in this thread (`_listed_at` is `None`), and the next list of
+that kind that reads the file lifts the hold; the list itself shows only what
+GitHub shows. Content that is not UTF-8 is content in another form (no
+writes), which the next write replaces. A file that can never be read or
+written holds every write: the queue waits as without a network and retries at
+every wake, and the Centrum log gets `skrzynka-zapisy-niedostepne typ=<error>`
+once per Centrum run (`NotesFile.unavailable`, `CentrumLog.box_notes_unavailable`).
 
 ## Does the change touch it?
 
@@ -191,7 +201,7 @@ step of this code that the checker can fail, lose or kill:
 | a pass of the queue | `Outbox._drain` (`_claimed`, `_folder_lock`, `_send_all`, `_released`), run only when the real `Outbox.send_in_background` starts the queue thread (called by `Outbox.post`, `Outbox.resume` and `Outbox._woken`); the checker replaces only `threading.Thread` in `outbox.py`, which hands it the target, and runs one Centrum at a time, so the pass always gets the folder lock |
 | the marker of the parts | `Outbox._send_all` after `Delivered` with `archive_waits`: `_archive_waits`, then `replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts), archived=False))` in `suppress(OSError)` |
 | the `RETRY_S` wake | `Outbox._drain`: `self._clock.after(RETRY_S, self._woken)` when `_stopped_on`, `_read_failed`, `_archive_refused` or `_locked_out` is set and no wake is armed; the checker calls an armed wake when nothing else asked for a pass, moves its clock by `RETRY_S` first (the only time that passes), and a restart drops it with its process |
-| a held write | `KeyedBox._ready` (`_notes`, `_held`, `_noted`) before `open_issue`, `open_archive`, `upload` and `remove`: `Unreachable` without a request; the checker never fails the read or write of `OPENING_FILE`, which lives in the run directory and survives a restart |
+| a held write | `KeyedBox._ready` (`_notes`, `_held`, `_noted`) before `open_issue`, `open_archive`, `upload` and `remove`: `Unreachable` without a request; the checker never fails the read or write of `OPENING_FILE`, which lives in the run directory and survives a restart: the model fails both (`bledyPliku`: the read in `Szukaj` and `CzytajArchiwum`, `OdczytyZapisow`, the note and the answer in `Zaloz`), and the unit tests in `test_klucz_zgloszen.py` and `test_kolejka_skrzynki_zgloszen.py` fail the read at a list and for good (#909) |
 | a restart of Centrum | a new `Outbox` and `KeyedBox` on the same folder, then `Outbox.resume` |
 
 Covered files: `src/rozliczenia/centrum/outbox.py`,
@@ -633,10 +643,10 @@ The comment above each action and branch in the model names the same code.
 | `Nadaj` | `outbox.py` `Outbox.post`: the name from the moment and `next(self._sequence)`, `replace_atomically` (`write_text` of `.json.tmp`, then `replace`; `OSError` → `False`, also the `FileNotFoundError` of `replace` when `resume` of a new process removed the `.tmp`), then `send_in_background` |
 | `Petla` | `Outbox._drain`: `_claimed` (taken → ask for another pass and skip `_send_all`), then `_folder_lock` without waiting (held by a queue of another process → `_locked_out` and skip `_send_all`), then `_read_failed = False` and `sorted(glob("*.json"))` in `_send_all` |
 | `Plik` | `Outbox._send_all` for one file: `_undeleted` → `_remove`, `_rejected` → skip, `_queued` (an `OSError` or a missing file → `_read_failed` and `_skip_unreadable`), `delivered` → `_remove`, `commented` → `_deliver_archive` alone, else `_deliver`; the end of the list sets `_stopped_on = None` |
-| `Szukaj` | `keyed_box.py` `KeyedBox.labelled_issues` (`report_box.py` `newest_with_line`; the list shows the issues `GitHub` lists and those any `KeyedBox` opened with an answer, from the file, `Widoczne`, and records whether a write without an answer in the file is less than `LIST_LAG_S` before this list, `odczyt`, `_listed_at` of the queue thread) in `_deliver_to_period`, `_deliver_report` (a found Zgłoszenie gets the part as a comment `returned_report`), `_deliver_to_known` and `_deliver_new_issue` (the newest issue whose body has a mark of the wysyłka) |
+| `Szukaj` | `keyed_box.py` `KeyedBox.labelled_issues` (`report_box.py` `newest_with_line`; the list shows the issues `GitHub` lists and those any `KeyedBox` opened with an answer, from the file, `Widoczne`, and records whether a write without an answer in the file is less than `LIST_LAG_S` before this list, `odczyt`, `_listed_at` of the queue thread; a read of the file that fails, `zna` FALSE in `OdczytyZapisow`, shows only GitHub's list and sets `odczyt`, so the next opening is held) in `_deliver_to_period`, `_deliver_report` (a found Zgłoszenie gets the part as a comment `returned_report`), `_deliver_to_known` and `_deliver_new_issue` (the newest issue whose body has a mark of the wysyłka) |
 | `Czytaj` | `KeyedBox.comments` in `_seen` (`_settle`, `_deliver_to_period`), then its plan: nothing when the issue has a mark of the wysyłka in a newer version (`Nowsza`); otherwise a part with its mark in the body, or in its first comment in this version or a newer one, is skipped (a Zgłoszenie whose body has the mark of its part is `Delivered(found, ())`), a comment in an older version is changed, the rest is a new comment, and then the comment of each part this version lacks gets `_RETIRED` (`Wycofaj`) |
 | `Zaloz` | `KeyedBox.open_issue` in `_deliver_new_issue`, `_deliver_report`, `_deliver_to_period`, with `Post.opening` and the marks (`_opening`): held (`_held`, `Wstrzymane`) → `Unreachable` without a request; the note of the write fails (`_noted`, `OSError`) → `Unreachable` without a request; otherwise the write in the file and the request (`Zapis`): `Sent` replaces it by the issue (`pamiec`), unless writing the file then fails (`_settled`, `OSError`: the write without an answer stays), no answer keeps it, `Rejected` restores the file (`_settled`) |
-| `CzytajArchiwum` | `KeyedBox.archive` in `_deliver_archive` (the Archiwum is on the list of Releases or is one a `KeyedBox` opened with an answer, `_Notes.archives`, `pamiecWydania`; records `odczyt` as `Szukaj` does), after `Szukaj` without an issue okresu or after `Czytaj` without a newer version (`_newer`), or alone for a `commented` file; `archive_open` false (`_archive_refused`) → `ArchiveWaits` without asking; a file of this version or newer stays, an older one → `UsunPlik`, none → `WyslijPlik`, no Archiwum → `ZalozArchiwum`; `Refused` → `ArchiveWaits` |
+| `CzytajArchiwum` | `KeyedBox.archive` in `_deliver_archive` (the Archiwum is on the list of Releases or is one a `KeyedBox` opened with an answer, `_Notes.archives`, `pamiecWydania`; records `odczyt` and a failed read of the file as `Szukaj` does), after `Szukaj` without an issue okresu or after `Czytaj` without a newer version (`_newer`), or alone for a `commented` file; `archive_open` false (`_archive_refused`) → `ArchiveWaits` without asking; a file of this version or newer stays, an older one → `UsunPlik`, none → `WyslijPlik`, no Archiwum → `ZalozArchiwum`; `Refused` → `ArchiveWaits` |
 | `ZalozArchiwum` | `KeyedBox.open_archive` in `_deliver_archive`, held and noted as `Zaloz`; a Release of the tag already there → GitHub's 422 → `Rejected` → `ArchiveWaits` (ghost `falszywe`); `Refused` or `Rejected` → `ArchiveWaits`; with `PusteRepo` every answer is GitHub's 409, which `report_box.py` `GitHubReportBox.open_archive` reads as `Rejected` → `ArchiveWaits` (`OdmowaPustegoRepo`) |
 | `UsunPlik` | `KeyedBox.remove` of the file of an older version in `_deliver_archive`, right before `upload`; `Refused` → `ArchiveWaits` |
 | `WyslijPlik` | `KeyedBox.upload` with `_asset_label` in `_deliver_archive`; a file of the wysyłka already there → `Rejected` (GitHub) → `ArchiveWaits`, as `Refused` |
@@ -685,7 +695,7 @@ On Windows use `py -3`. It takes Java and `tla2tools.jar` from
 `verify-aktualizacja-narzedzia` (`sprawdz_aktualizacje.py` downloads them
 once into its ignored cache, no system Java needed); `TLC_JAVA` and `TLC_JAR`
 replace them. All configurations take about 45 s on Maks's Mac (2026-11-04), `archiwum` about 18 s of it; with the
-lagging lists (#879) about 107 s under load on 2026-11-05, `archiwum` 24 s, `okres` 14 s and `archiwum-lista` 11 s of it. `--strict`
+lagging lists (#879) about 107 s under load on 2026-11-05, `archiwum` 24 s, `okres` 14 s and `archiwum-lista` 11 s of it; with the failed read of the file of `KeyedBox` (#909) `okres` took 14 s and `archiwum-lista` 24 s under load on 2026-11-05. `--strict`
 makes known findings exit 1.
 
 | Last line | Exit | Meaning |
@@ -724,14 +734,13 @@ configuration is checked in full.
 | `diagnoza` | Logi Uruchomienia with a header, 2 parts, and their Diagnoza in 1 part, a newer version of the same wysyłka (`Diagnoza = TRUE`, `CzesciNowszej = 1`); 1 network failure, 1 lost answer, 1 file error or read error of the queue file, 1 switch-off | passes |
 | `archiwum` | Logi Uruchomienia with a header in 1 part with a file for the Archiwum (`Archiwum = TRUE`) and their Diagnoza, a newer version that replaces the file; 1 network failure, 1 lost answer, 1 refused step of the Archiwum, 1 file error or read error of the queue file, 1 switch-off | passes |
 | `puste-repo` | the Logi of two Uruchomienia of one period, each with a file for the Archiwum, in a repository without a commit (`PusteRepo = TRUE`): every `open_archive` gets 409; 1 network failure, 1 lost answer, 1 file error, 1 switch-off | passes |
-
-| `archiwum-lista` | the Logi of two Uruchomienia of one period, each with a file for the Archiwum, and GitHub's lists lag (`OpoznienieListy = TRUE`): the second Logi in one pass and a retry after a lost answer find the Archiwum the first opened; 1 lost answer, 1 switch-off | passes |
+| `archiwum-lista` | the Logi of two Uruchomienia of one period, each with a file for the Archiwum, and GitHub's lists lag (`OpoznienieListy = TRUE`): the second Logi in one pass and a retry after a lost answer find the Archiwum the first opened; 1 lost answer, 1 file error (also a failed read of the file of `KeyedBox` at a list, #909), 1 switch-off | passes |
 
 `OpoznienieListy = TRUE` (GitHub's lists lag, #879, #887) in `okres`,
 `dwa-procesy` and `archiwum-lista`. Without it the lists show every write at
 once, the hold could only delay a write, and the model leaves out the hold and
-the file of `KeyedBox` (`Zapis`, `pamiec`, `pamiecWydania` and the failed note
-or answer of a write stay unchanged), which keeps the other configurations as small as
+the file of `KeyedBox` (`Zapis`, `pamiec`, `pamiecWydania`, the failed note
+or answer of a write and the failed read at a list stay unchanged), which keeps the other configurations as small as
 before; `nowe`, `zgloszenie` and `archiwum` with the lag took 29 s, 17 s and over
 600 s on Maks's Mac under load (2026-11-05), and the checker's `*-lista` scopes run
 those targets.

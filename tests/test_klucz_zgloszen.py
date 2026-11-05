@@ -6,6 +6,7 @@ werdyktu jest sprawdzona tu raz; każde wejście ma swój test tłumaczenia prze
 
 from __future__ import annotations
 
+import itertools
 import json
 from pathlib import Path
 import threading
@@ -417,3 +418,95 @@ def test_nieczytelny_plik_chwil_zakladania_wstrzymuje_zakladanie_bez_zapytania(
 
     assert keyed.open_issue("uwaga-taty", "tytuł", "treść") == Unreachable()
     assert box.keys == []
+
+
+def unreadable(monkeypatch: pytest.MonkeyPatch, opening: Path, times: int | None) -> None:
+    """``read_text`` pliku zapisów rzuca ``PermissionError`` ``times`` razy od teraz (``None``: zawsze), jak plik, który
+    trzyma antywirus bez współdzielenia odczytu; zapis by przeszedł."""
+
+    read_text = Path.read_text
+    failures = itertools.count(1)
+
+    def locked(path: Path, *args: Any, **kwargs: Any) -> str:
+        if path == opening and (times is None or next(failures) <= times):
+            raise PermissionError(13, "Odmowa dostępu", str(path))
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", locked)
+
+
+REPORT_LINE = "- Odcisk problemu: abc"
+
+
+def test_chwilowo_nieczytelny_plik_zapisow_przy_liscie_nie_daje_drugiego_issue_tej_samej_wysylki(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sonda rundy 2 #897 (#909): lista issue nie nadążyła za issue pierwszej wysyłki, a odczyt pliku zapisów w liście
+    drugiej pada raz. Kolejka zakłada issue tylko wtedy, gdy lista go nie ma, a takie zakładanie nie daje drugiego."""
+
+    box = FakeReportBox(list_lag=True)
+    clock = ManualClock(seconds=100.0)
+    opening = tmp_path / OPENING_FILE
+    keyed = KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(opening, replace_atomically))
+    assert keyed.find_issue("zgloszenie", REPORT_LINE, include_closed=False) is None
+    assert keyed.open_issue("zgloszenie", "tytuł", REPORT_LINE) == Sent(1)
+
+    clock.pause(2.0)
+    unreadable(monkeypatch, opening, times=1)
+    if keyed.find_issue("zgloszenie", REPORT_LINE, include_closed=False) is None:
+        keyed.open_issue("zgloszenie", "tytuł", REPORT_LINE)
+
+    assert [issue.number for issue in box.issues] == [1]
+    assert keyed.find_issue("zgloszenie", REPORT_LINE, include_closed=False) == 1
+
+
+def test_chwilowo_nieczytelny_plik_zapisow_przy_liscie_archiwow_nie_zaklada_drugiego_archiwum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Jak przy issue (#909): lista Release'ów nie nadążyła za Archiwum, a odczyt pliku zapisów w ``archive`` pada raz;
+    zakładanie po niej nie dostaje odmowy drugiego Archiwum tego tagu (422)."""
+
+    box = FakeReportBox(list_lag=True)
+    clock = ManualClock(seconds=100.0)
+    opening = tmp_path / OPENING_FILE
+    keyed = KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(opening, replace_atomically))
+    assert keyed.archive("logi-2026-10") is None
+    assert isinstance(keyed.open_archive("logi-2026-10", "tytuł", "opis"), Archive)
+
+    clock.pause(2.0)
+    unreadable(monkeypatch, opening, times=1)
+    found = keyed.archive("logi-2026-10")
+    second = keyed.open_archive("logi-2026-10", "tytuł", "opis") if found is None else found
+
+    assert (len(box.archives), isinstance(second, Rejected)) == (1, False)
+    again = keyed.archive("logi-2026-10")
+    assert isinstance(again, Archive) and again.id == 1
+
+
+def test_plik_zapisow_ktory_nie_jest_utf8_nie_wstrzymuje_zakladania_a_zapis_go_zastepuje(tmp_path: Path) -> None:
+    """Treść pliku zapisów, która nie jest UTF-8, to treść w innej postaci, nie plik nieczytelny na stałe (#909)."""
+
+    opening = tmp_path / OPENING_FILE
+    opening.write_bytes(b"\xff\xfe zapisy")
+    box = FakeReportBox()
+    keyed = KeyedBox(box, lambda: KEY, clock=ManualClock(seconds=5.0), opening=NotesFile(opening, replace_atomically))
+
+    assert keyed.open_issue("uwaga-taty", "tytuł", "treść") == Sent(1)
+    assert json.loads(opening.read_text(encoding="utf-8"))["issue"] == [[5.0, "uwaga-taty", 1, "treść"]]
+
+
+def test_pierwszy_blad_pliku_zapisow_w_pracy_centrum_trafia_raz_do_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opening = tmp_path / OPENING_FILE
+    failures: list[OSError] = []
+    unreadable(monkeypatch, opening, times=None)
+    keyed = KeyedBox(
+        FakeReportBox(), lambda: KEY, clock=ManualClock(), opening=NotesFile(opening, replace_atomically, failures.append)
+    )
+
+    for _ in range(3):
+        assert keyed.open_issue("uwaga-taty", "tytuł", "treść") == Unreachable()
+        assert keyed.labelled_issues("uwaga-taty", include_closed=False) == ()
+
+    assert [type(failure) for failure in failures] == [PermissionError]
