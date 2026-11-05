@@ -7,7 +7,7 @@ Centrum nieosiągalna rozsądnym kosztem.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 import itertools
 import json
@@ -1081,6 +1081,66 @@ def test_wysylka_nastepcza_sluchacza_idzie_w_tym_samym_przejsciu_kolejki(tmp_pat
     assert queue.files() == []
 
 
+def _unreadable_at_comment_list(queue: Queue, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Antywirus trzyma plik zapisów Skrzynki przy liście komentarza: pierwszy odczyt, który ma już issue Uwagi."""
+
+    read_text = Path.read_text
+    refused: list[Path] = []
+
+    def held(path: Path, encoding: str | None = None, errors: str | None = None) -> str:
+        text = read_text(path, encoding=encoding, errors=errors)
+        if path == queue.opening and not refused and json.loads(text)["issue"]:
+            refused.append(path)
+            raise PermissionError(13, "Odmowa dostępu", str(path))
+        return text
+
+    monkeypatch.setattr(Path, "read_text", held)
+
+
+def _unwritable_after_opening(queue: Queue, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Antywirus trzyma plik zapisów Skrzynki przy zapisie odpowiedzi na założenie Uwagi: zapis bez odpowiedzi zostaje."""
+
+    write_text = Path.write_text
+    refused: list[Path] = []
+
+    def held(path: Path, data: str, encoding: str | None = None, errors: str | None = None, newline: str | None = None) -> int:
+        if path.name == f"{OPENING_FILE}.tmp" and not refused and json.loads(data)["issue"]:
+            refused.append(path)
+            raise PermissionError(13, "Odmowa dostępu", str(path))
+        return write_text(path, data, encoding=encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr(Path, "write_text", held)
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [_unreadable_at_comment_list, _unwritable_after_opening],
+    ids=["odczyt-przy-liscie", "zapis-odpowiedzi"],
+)
+def test_komentarz_do_swiezego_issue_ktorego_lista_nie_pokazuje_czeka_zamiast_porzucenia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: Callable[[Queue, pytest.MonkeyPatch], None]
+) -> None:
+    """Lista issue jeszcze nie pokazuje Uwagi, którą kolejka właśnie założyła, a plik zapisów Skrzynki nie mówi o niej
+    (#915): nie da się go odczytać przy liście komentarza do niej albo nie przyjął odpowiedzi na jej założenie. Kolejka
+    nie wie, że issue zniknęło, więc komentarz czeka na budzenie ``RETRY_S``, zamiast przepaść jak do usuniętego issue
+    (#402), i trafia do Uwagi raz."""
+
+    queue = Queue(tmp_path, FakeReportBox(list_lag=True), listener=FollowingUp())
+    fault(queue, monkeypatch)
+
+    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, ("Uwaga",)))
+    queue.passed()
+
+    [issue] = queue.box.issues_with("uwaga-taty")
+    assert (issue.comments, len(queue.files()), queue.clock.wakes) == ([], 1, 1)
+    assert "skrzynka-porzucono" not in queue.log()
+    queue.box.list_caught_up()
+    queue.clock.advance(RETRY_S)
+    queue.passed()
+    assert issue.comments == ["Komentarz po Uwadze"]
+    assert queue.files() == []
+
+
 def logs_with_file(run_id: str) -> Post:
     """Logi Uruchomienia ``run_id`` w jednym komentarzu z plikiem do Archiwum Logów okresu, jak ``logi_post``."""
 
@@ -1168,7 +1228,8 @@ def test_plik_zapisow_ktorego_nigdy_nie_da_sie_odczytac_wstrzymuje_wysylke_z_jed
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Plik zapisów Skrzynki nieczytelny na stałe (#909): kolejka nie zakłada issue, którego zapisu nie może wykluczyć,
-    czeka jak bez sieci i ponawia co budzenie, a dziennik mówi raz, który plik; po naprawie pliku wysyłka wychodzi."""
+    czeka jak bez sieci i ponawia co budzenie, a dziennik mówi raz typ błędu (plik wynika z nazwy zdarzenia); po
+    naprawie pliku wysyłka wychodzi."""
 
     queue = Queue(tmp_path, FakeReportBox())
     queue.queued("treść\n")

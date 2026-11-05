@@ -751,15 +751,17 @@ def _deliver_to_known(post: Post, version: str, known: KnownIssue, box: KeyedBox
     """Każda część wysyłki komentarzem do issue ``known.number``, jeśli skrzynka je ma (otwarte albo zamknięte).
 
     Komentarz do issue, które Maks usunął, to 404, czyli odmowa, która zatrzymałaby całą kolejkę, więc kolejka
-    najpierw pyta o issue z etykietą. Gdy lista przyszła bez tego numeru, issue nie ma (``Gone``).
+    najpierw pyta o issue z etykietą (``KeyedBox.known_issue``). Issue nie ma (``Gone``) tylko wtedy, gdy lista bez tego
+    numeru pokazuje każdy zapis tej etykiety; świeże issue, którego lista jeszcze nie pokazuje, a plik zapisów
+    ``KeyedBox`` o nim nie mówi, to ``Unreachable``, więc wysyłka czeka na budzenie (#915).
     """
 
-    found = box.labelled_issues(known.label, include_closed=True)
+    found = box.known_issue(known.label, known.number)
+    if found is None:
+        return Gone(known.number)
     if isinstance(found, Refused | Unreachable | NoKey):
         return found
-    if all(issue.number != known.number for issue in found):
-        return Gone(known.number)
-    return _settle(post, version, _issue(found, known.number), _opening(post, version)[1], box)
+    return _settle(post, version, found, _opening(post, version)[1], box)
 
 
 def _deliver_to_period(

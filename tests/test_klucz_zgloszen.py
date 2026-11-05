@@ -483,6 +483,33 @@ def test_chwilowo_nieczytelny_plik_zapisow_przy_liscie_archiwow_nie_zaklada_drug
     assert isinstance(again, Archive) and again.id == 1
 
 
+def test_lista_archiwum_bez_odczytu_pliku_zapisow_wstrzymuje_wyslanie_i_usuniecie_pliku_archiwum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Jak zakładanie Archiwum (#909): lista plików Archiwum, przy której odczyt pliku zapisów padł, mogła nie pokazać
+    pliku, który już poszedł, więc wysłanie i usunięcie pliku Archiwum czekają bez zapytania do listy z odczytem."""
+
+    box = FakeReportBox()
+    clock = ManualClock(seconds=100.0)
+    opening = tmp_path / OPENING_FILE
+    keyed = KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(opening, replace_atomically))
+    archive = keyed.open_archive("logi-2026-10", "tytuł", "opis")
+    assert isinstance(archive, Archive)
+    sent = keyed.upload(archive.id, "pierwsze.log.gz", "etykieta", b"x")
+    assert isinstance(sent, Asset)
+
+    clock.pause(2.0)
+    unreadable(monkeypatch, opening, times=1)
+    assert isinstance(keyed.archive("logi-2026-10"), Archive)
+    asked = len(box.keys)
+
+    assert keyed.upload(archive.id, "drugie.log.gz", "etykieta", b"y") == Unreachable()
+    assert keyed.remove(sent.id) == Unreachable()
+    assert len(box.keys) == asked
+    assert isinstance(keyed.archive("logi-2026-10"), Archive)
+    assert isinstance(keyed.upload(archive.id, "drugie.log.gz", "etykieta", b"y"), Asset)
+
+
 def test_plik_zapisow_ktory_nie_jest_utf8_nie_wstrzymuje_zakladania_a_zapis_go_zastepuje(tmp_path: Path) -> None:
     """Treść pliku zapisów, która nie jest UTF-8, to treść w innej postaci, nie plik nieczytelny na stałe (#909)."""
 
