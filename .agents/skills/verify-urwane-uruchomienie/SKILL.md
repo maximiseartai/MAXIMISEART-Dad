@@ -148,8 +148,12 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `18bf04e33` (2026-11-05, #910 merged with `main` after the cleanup of #837). Every row of the table was
-checked against the code at this commit. Since the Sync commit `917cf6fc6` of `main` #910 changed these definitions: the
+Sync commit: `ba4092817` (2026-11-05, #936 merged with `main` after #910 and #916). Every row of the table was checked against
+the code at this commit. Since the Sync commit `18bf04e33` of `main` only `guarded` changed (#936): it leaves the fields
+that carry only tool words and moments (`TOOL_FIELDS`: `process`, `mode`, `period`, `run_id`, `started_at`,
+`ended_at`, `ending` and the rest) and the keys of the Logs models without a mask, so no mask loses the whole Logs; the
+model has no step in which the guard masks or raises, so no action changed. Since the Sync commit `917cf6fc6` of `main`
+#910 changed these definitions: the
 version of a wysyłka has a rank before its moment (`Rank`, `Version`, `_version_of`, `_superseded` in `outbox.py`;
 `progress_post`, `logi_post`, `_logs_post`, `RunLogs.send` in `run_logs.py`), `RunEnded` carries the result, a failed
 end entry leaves the journal, `JournalAfterLogs` removes the journal once the queue accepted the Logi with the result
@@ -392,6 +396,9 @@ reason the check can pass while the code is wrong:
   changes nothing; only Logs written without the guard (`StareLogi`) change. A number the guard masked becomes the text
   of its mask, which it leaves as it is. Idempotent means one version of the guard: Logs written by a Centrum whose
   guard masked less (before #851 nothing, before #863 the phone with `48` without `+`) are `StareLogi` for a newer one.
+  It also means the memory of a start: the start guards before it reads any file of Dad's (ADR 0025). With the memory
+  that wrote the Logs, a value equal to a field name in the place of a guard note is masked again in that note (5 of the
+  words of the full Logs in the test of #936, 6 before it), but no step guards Logs twice with one memory.
 - **A journal without its end entry is an Urwane Uruchomienie or one of the known findings `przed-wpisem-konca` and
   `wpis-konca-nieudany`.** A journal written by a build between #845 and #870/#871 has no end entry either, so a Wycena
   of such a build that reached its result without a Logs file gets Logi Urwanego Uruchomienia; no Wydanie has such a

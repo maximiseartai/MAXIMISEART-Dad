@@ -21,7 +21,8 @@ odciskiem i przeczytanymi wierszami bez kolumn ``ADRES`` i numeru Orange (w Upor
 (``ZLE_SKUTECZNE``), a pliki mają tylko nazwę, nigdy pełną ścieżkę. Przed zapisem pliku i przed wysyłką Logi przechodzą
 przez strażnika reguły danych pracy Centrum (``guarded``, ADR 0025): wartość ``ADRES`` albo numeru Orange z przeczytanych
 plików, także wpisana w inną komórkę Kopii wejścia albo zapisana przez Excel jako liczba, staje się maską z uwagą
-techniczną, a telefony i ulice w tekście są zamaskowane.
+techniczną, a telefony i ulice w tekście są zamaskowane. Pola, które niosą tylko słowa i chwile narzędzia (okres,
+Uruchomienie, proces, chwile startu i końca, commit), i nazwy pól schematu zostają bez maski (#936).
 Skrypt dla maszyn nie ma działań po wyniku, więc Logów nie tworzy.
 
 Schemat 2 (#839) daje każdemu krokowi śladu godzinę (UTC) obok czasu trwania: etap ma chwilę rozpoczęcia i końca,
@@ -81,6 +82,7 @@ import threading
 from typing import Annotated, Final, Literal, Protocol, assert_never, get_args
 
 from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic.fields import FieldInfo
 
 from rozliczenia.client_data import ForbiddenValues, Guarded
 from rozliczenia.call_trace import CallTrace
@@ -823,12 +825,17 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     ilości przy zleceniu Wyceny w efenix) w tekście, który pokazuje Excel (``ForbiddenValues.guard_number``), i liczba z
     zakazaną wartością albo telefonem staje się w całości maską. Liczb, które policzyło narzędzie, nie sprawdza.
 
+    Strażnik porównuje słowa, a nie pochodzenie wartości, więc wartość z pliku taty równa słowu albo chwili narzędzia
+    trafiłaby też w pole, które niesie tylko to, co dało narzędzie. Takich pól (``TOOL_FIELDS``) nie maskuje i zostawia
+    w nich wartość z rekordu, a klucza pola modelu Logów (nazwy pola schematu) też nie: maska w nich gubiła całe Logi
+    albo ich okres, Uruchomienie i commit (#936). Klucz słownika (operator, kod pozycji, litera kolumny) to dane, więc go
+    maskuje.
+
     Pole to ścieżka JSON z nazw pól, a klucz z danych (operator, kod pozycji) jest w niej ``[…]``, żeby uwaga nie
     niosła treści. Uwaga o polu Kopii wejścia idzie do ``input_copy_notes``, a każda inna do ``technical_notes``, które
     pokazuje karta Uruchomienia z Logów: Kopii karta nie pokazuje, więc karta po starcie Centrum zostaje taka jak przed
     nim (ADR 0017). Pole typowane, które maski nie przyjmuje, zostaje puste albo odpada z uwagą techniczną
-    (``_representable``), a pole najwyższego poziomu bez ``None`` daje ``UnrepresentableLogs`` (#936). Logi bez
-    niczego do zamaskowania wracają te same.
+    (``_representable``). Logi bez niczego do zamaskowania wracają te same.
     """
 
     notes: list[str] = []
@@ -849,6 +856,8 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
         """``value`` z JSON-a Logów i ``source``, z którego powstał (``None``: poza modelem Logów); ``read``: w polu
         ``READ_VALUES``."""
 
+        if place in TOOL_FIELDS:
+            return value
         if isinstance(value, str):
             return text(value, place)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -862,8 +871,9 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
         if isinstance(value, dict):
             items: dict[str, object] = {}
             for key, entry in value.items():
-                child, marked = _child(source, key)
-                items[text(key, place)] = walk(child, entry, _field(place, key), read or marked)
+                child, field = _child(source, key)
+                marked = field is not None and READ_VALUES in field.metadata
+                items[key if field is not None else text(key, place)] = walk(child, entry, _field(place, key), read or marked)
             return items
         return value
 
@@ -880,13 +890,60 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
 _INPUT_COPY: Final = "input_copy"
 """Pole Kopii wejścia w Logach; uwagi strażnika o nim idą do ``input_copy_notes``."""
 
+TOOL_FIELDS: Final = frozenset(
+    {
+        "run_id",
+        "process",
+        "mode",
+        "period",
+        "started_at",
+        "ended_at",
+        "tool",
+        "result",
+        "ending",
+        "stop_kind",
+        "phases",
+        "trace",
+        "dad_actions",
+        "environment.system",
+        "environment.python",
+    }
+)
+"""Pola Logów (ścieżka JSON jak w uwadze strażnika), które niosą tylko słowa i chwile narzędzia, więc strażnik
+(``guarded``) zostawia w nich wartość z rekordu (#936). Każde ma wartość z kodu narzędzia, a nie z pliku taty:
+``run_id`` to ``uuid4``, ``period`` token okresu z ``parse_period_token`` albo z zegara (INTERMAX), ``process``,
+``mode``, ``result``, ``ending`` i ``stop_kind`` to wartości zamkniętych list schematu, ``started_at`` i ``ended_at``
+chwile zegara Centrum (w Logach Urwanego Uruchomienia z dziennika Wyceny, który pisze Centrum), ``tool`` Wydanie i
+commit z Gita narzędzia, ``phases`` etapy z zamkniętej listy ze stanem, czasem i chwilami projekcji postępu, ``trace``
+typy wyjątków i ramki kodu narzędzia bez treści wyjątku (``call_trace``), ``dad_actions`` chwile, wartości zamkniętych
+list i operacje API z kontraktu bez treści zapytań, a ``system`` i ``python`` Środowiska moduł ``platform``.
+
+Pole spoza listy może nieść treść pliku taty (tekst Komunikatu, Wykonawca, nazwa pliku, odczyt strony efenix, Kopia
+wejścia), więc strażnik maskuje je dalej, także w polu z wartością narzędzia w modelu, który niesie i jedno, i drugie
+(kod Komunikatu, wynik zlecenia efenix). Liczby, które policzyło narzędzie (``schema_version``, ``duration_ms``,
+``issue_count``, ``interruption``), zostają i bez listy, bo strażnik sprawdza tylko liczby z ``READ_VALUES``. Każde
+pole najwyższego poziomu bez ``None`` poza Środowiskiem jest więc na liście, jest liczbą narzędzia albo listą, z której
+maska zabiera najwyżej element, a Środowisko (``environment``) ma poza listą tylko pliki procesu (lista albo ``None``),
+więc maska nie gubi całych Logów (``UnrepresentableLogs``).
+
+Pole z listy strażnik zostawia z całym poddrzewem, więc test struktury w ``tests/test_komentarz_logow_uruchomienia.py``
+przechodzi typ każdego z nich (modele, dataclassy, unie) i czerwienieje, gdy w poddrzewie jest typ, który przyjmuje
+dowolny tekst (``str`` spoza jawnych wyjątków z powodem w teście, słownik, ``Any``), liczba ``READ_VALUES`` albo typ,
+którego test nie zna."""
+
 _Path = tuple[str | int, ...]
 
 
 class UnrepresentableLogs(ValueError):
     """Logi, w których maska strażnika trafiła w pole, które nie może stracić wartości: pole najwyższego poziomu bez
-    ``None`` (#936), albo ``stuck``: cięcia (``_representable``) przestały zmieniać Logi, czyli błąd w cięciach.
-    ``place``: to pole albo miejsce ostatniego cięcia."""
+    ``None`` spoza listy pól narzędzia (``TOOL_FIELDS``), albo ``stuck``: cięcia (``_representable``) przestały zmieniać
+    Logi, czyli błąd w cięciach. ``place``: to pole albo miejsce ostatniego cięcia.
+
+    Schemat Logów nie ma dziś pola najwyższego poziomu bez ``None``, które gubiłoby Logi (#936). Nowe takie pole wywraca
+    przemiatanie pełnych Logów w ``tests/test_komentarz_logow_uruchomienia.py``, które każe pełnym Logom mieć wartość w
+    każdym polu ``RunLog``: każdy tekst i każda liczba tych Logów (od ``MIN_VALUE`` znaków) po kolei jako wartość z pliku
+    taty, także liczba w polu ``READ_VALUES``. Pole, którego wartość w pełnych Logach jest krótsza, przemiatanie
+    przepuszcza."""
 
     def __init__(self, place: str, *, stuck: bool = False) -> None:
         reason = (
@@ -937,8 +994,8 @@ def _representable(walked: dict[str, object]) -> RunLog:
     przyjmuje, więc takie Logi nie przeszłyby walidacji i przepadły. Pole dostaje ``None``, a gdy i ``None`` nie
     przyjmuje, odpada najbliższy element listy nad nim (zlecenie, krok, plik) albo ``None`` dostaje pole nad nim
     (``_cut``), z uwagą techniczną o tym miejscu (``guard_cuts``). Pole Logów najwyższego poziomu bez ``None`` i poza
-    listą (``process``, ``mode``, ``started_at``) nie ma czego stracić, więc daje ``UnrepresentableLogs`` i Logi
-    przepadają (#936): maska zależy od wartości zapamiętanych z plików taty, a nie od tego, skąd pochodzi pole.
+    listą nie ma czego stracić, więc dałoby ``UnrepresentableLogs``, ale każde takie pole niesie słowa narzędzia, których
+    strażnik nie maskuje (``TOOL_FIELDS``, #936).
 
     Każde cięcie zabiera Logom co najmniej jedną wartość, więc cięć jest najwyżej tyle, ile Logi mają wartości:
     po tylu obrotach bez poprawnych Logów pętla kończy się ``UnrepresentableLogs``, a nie wisi z końcem Uruchomienia.
@@ -1030,16 +1087,15 @@ def _place(path: _Path) -> str:
     return place
 
 
-def _child(source: object, key: str) -> tuple[object, bool]:
-    """Wartość pod kluczem ``key`` modelu albo słownika ``source``, z którego powstał JSON Logów, i czy to pole
-    ``READ_VALUES``."""
+def _child(source: object, key: str) -> tuple[object, FieldInfo | None]:
+    """Wartość pod kluczem ``key`` modelu albo słownika ``source``, z którego powstał JSON Logów, i pole modelu z tym
+    kluczem (``None``: klucz słownika, czyli dane, albo JSON poza modelem Logów)."""
 
     if isinstance(source, BaseModel):
-        field = type(source).model_fields.get(key)
-        return getattr(source, key, None), field is not None and READ_VALUES in field.metadata
+        return getattr(source, key, None), type(source).model_fields.get(key)
     if isinstance(source, Mapping):
-        return source.get(key), False
-    return None, False
+        return source.get(key), None
+    return None, None
 
 
 def _field(place: str, key: str) -> str:
@@ -1349,7 +1405,10 @@ class RunLogs:
         Uruchomienia w issue okresu.
 
         Logi z Diagnozą to nowsza wersja tej samej wysyłki (``logi_post``), więc kolejka podmienia plik w Archiwum i
-        zmienia komentarz, które już są w Skrzynce, a gdy Logi jeszcze czekają w kolejce, robi to zaraz po ich wysłaniu.
+        zmienia komentarz, które już są w Skrzynce. Logi, które jeszcze czekają w kolejce, nowsza wersja zastępuje
+        (``outbox._superseded``): przejście kolejki, które zastaje obie, oznacza starsze bez wysyłania i wysyła tylko Logi z
+        Diagnozą, jednym komentarzem bez edycji. Gdy przejście przeczytało Logi, zanim przyszła Diagnoza, wysyła je, a
+        plik w Archiwum i komentarz zmienia następne przejście.
 
         Uruchomienie, którego Logi nie powstały w tej pracy Centrum, nie dostaje niczego, a Diagnoza z tym samym
         wynikiem co ostatnio dopisana też nie.

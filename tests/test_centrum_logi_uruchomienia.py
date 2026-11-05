@@ -631,6 +631,27 @@ def test_adres_i_numer_orange_cytowane_przez_komunikat_nie_wychodza_w_logach_ani
         ]
 
 
+def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_okresu(tmp_path: Path) -> None:
+    """Strażnik porównuje słowa, a nie pochodzenie wartości (#936): Rejestr zleceń z ``ADRES`` równym słowu trybu
+    (``podgląd``) i tokenowi okresu daje Logi w pliku i w Skrzynce z trybem i okresem, które dało narzędzie, w issue Logów
+    tego okresu."""
+
+    rows = default_register_rows()
+    rows[2] = {**(rows[2] or {}), "ADRES": "podgląd"}
+    rows[4] = {**(rows[4] or {}), "ADRES": PERIOD}
+    centrum = preparing_centrum(tmp_path, rows)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+
+    view = run_to_end(centrum, dry_run=True)
+
+    box = centrum.surroundings.report_box
+    assert box.wait_until(lambda fake: logs_arrived(fake, 1))
+    [record] = records(centrum)
+    assert (record["run_id"], record["mode"], record["period"]) == (view["run"]["id"], "podgląd", PERIOD)
+    titles = [issue.title for issue in box.background_issues if issue.label == "logi-uruchomienia"]
+    assert titles == [f"Logi Uruchomienia {PERIOD}"]
+
+
 def test_katalog_logow_bez_prawa_zapisu_daje_ten_sam_wynik_bez_komunikatu(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
     blocked = centrum.log_path.parent / "uruchomienia"
