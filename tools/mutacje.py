@@ -71,6 +71,10 @@ Z ``MUTACJE_CZESC=K/N`` w środowisku ``check_all`` sprawdza tylko K-tą z N cz�
 co N-tą od K-tej, więc część nie zależy od kolejności tabeli, a N części sprawdza każdą mutację dokładnie raz. Podstawa
 części to tylko polecenia jej mutacji, a część bez mutacji kończy się ``MUTACJE OK``. Tak plan CI
 (``tools/plan_ci.py``) dzieli długi skrypt mutacji skilla na zadania bez zmiany skryptu.
+
+``check_all`` drukuje na stderr czas polecenia każdej mutacji (linia ``CZAS``) i ostrzeżenie ``CZAS BLISKO LIMITU`` dla
+mutacji, której polecenie trwało ponad połowę ``--limit-s`` (``NEAR_LIMIT``), więc rosnący czas widać w logu, zanim
+stanie się PRZEKROCZONY CZAS; werdyktów, linii końcowej ani kodu wyjścia to nie zmienia.
 """
 
 from __future__ import annotations
@@ -110,6 +114,8 @@ PARALLEL = 8
 # Cache mypy kroków bramy typów (``--cache-dir`` kroku Windows leży w nim), który kopia bez mutacji daje kopiom mutacji.
 MYPY_CACHE = ".mypy_cache"
 PART = "MUTACJE_CZESC"
+# Część ``--limit-s``, ponad którą czas polecenia mutacji daje ostrzeżenie ``CZAS BLISKO LIMITU`` w ``check_all``.
+NEAR_LIMIT = 0.5
 BASE = "origin/main"
 # Linie, którymi pytest-timeout kończy test po limicie, w pytest_timeout.py 2.4: ``PYTEST_FAILURE_MESSAGE`` metody
 # ``signal`` jako błąd testu (``E   Failed: …``) albo w krótkim podsumowaniu (``FAILED <test> - Failed: …``) i nagłówek
@@ -244,42 +250,50 @@ class _Ran:
     code: int | None  # None: polecenie przekroczyło limit
     last: str  # ostatnia linia wyjścia
     hang: str | None  # linia pytest-timeout
+    seconds: float  # czas polecenia, także tego, które przekroczyło limit
 
 
 def _run(
     copy: Path, command: Sequence[str], limit_s: float, stop: threading.Event | None = None, *, concurrent: bool = False
 ) -> _Ran:
-    """Uruchamia polecenie w kopii; zwraca kod wyjścia, ostatnią linię i linię pytest-timeout, jeśli była."""
+    """Uruchamia polecenie w kopii; zwraca kod wyjścia, ostatnią linię, linię pytest-timeout, jeśli była, i czas."""
 
+    started = time.monotonic()
     try:
         env = environment(copy, concurrent=concurrent)
         done = potomne.run([sys.executable, *command], cwd=copy, env=env, timeout=limit_s, stop=stop)
     except subprocess.TimeoutExpired:
-        return _Ran(None, f"brak wyniku po {limit_s:g} s", None)
+        return _Ran(None, f"brak wyniku po {limit_s:g} s", None, time.monotonic() - started)
+    seconds = time.monotonic() - started
     lines = (done.stdout.strip() or done.stderr.strip()).splitlines()
     hangs = (PYTEST_TIMEOUT.fullmatch(line.strip()) for line in f"{done.stdout}\n{done.stderr}".splitlines())
     hang = next((found["hang"] or found["thread"] for found in hangs if found), None)
-    return _Ran(done.returncode, lines[-1] if lines else f"kod wyjścia {done.returncode}", hang)
+    return _Ran(done.returncode, lines[-1] if lines else f"kod wyjścia {done.returncode}", hang, seconds)
 
 
 def _verdict(
     mutation: Mutation, *, limit_s: float, stop: threading.Event, concurrent: bool, deadline: float | None, commit: str | None
-) -> tuple[Verdict, str]:
+) -> tuple[Verdict, str, float | None]:
+    """Werdykt, ostatnia linia wyjścia i czas polecenia mutacji, z każdym werdyktem polecenia, które biegło (także po
+    limicie); bez czasu tylko mutacja, której polecenie nie biegło (NIEAKTUALNA, BEZ WERDYKTU przed startem)."""
+
     left = limit_s if deadline is None else deadline - time.monotonic()
     if left <= 0:
-        return Verdict.NO_VERDICT, "czas minął, zanim się zaczęła"
+        return Verdict.NO_VERDICT, "czas minął, zanim się zaczęła", None
     with checkout_copy(commit) as copy:
         stale = _apply(copy, mutation.edits)
         if stale:
-            return Verdict.STALE, stale
+            return Verdict.STALE, stale, None
         ran = _run(copy, mutation.command, min(limit_s, left), stop, concurrent=concurrent)
     if ran.code is None:
         # Koniec czasu wywołującego, a nie limit polecenia, nie mówi, czy mutacja zawiesza polecenie.
-        return (Verdict.OVER_LIMIT, f"{ran.last} ({OVER_LIMIT_NOTE})") if left >= limit_s else (Verdict.NO_VERDICT, ran.last)
-    if ran.hang is not None:
-        return Verdict.HANG, ran.hang
-    caught = ran.last.startswith(mutation.expected) if mutation.expected is not None else ran.code != 0
-    return (Verdict.CAUGHT if caught else Verdict.SURVIVED), ran.last
+        judged = (Verdict.OVER_LIMIT, f"{ran.last} ({OVER_LIMIT_NOTE})") if left >= limit_s else (Verdict.NO_VERDICT, ran.last)
+    elif ran.hang is not None:
+        judged = Verdict.HANG, ran.hang
+    else:
+        caught = ran.last.startswith(mutation.expected) if mutation.expected is not None else ran.code != 0
+        judged = (Verdict.CAUGHT if caught else Verdict.SURVIVED), ran.last
+    return *judged, ran.seconds
 
 
 def _baseline(mutations: Sequence[Mutation], limit_s: float, commit: str | None = None) -> dict[tuple[str, ...], str]:
@@ -310,6 +324,15 @@ def verdicts(
     Z ``deadline`` (chwila ``time.monotonic()``) żadne polecenie nie biegnie dłużej niż do niej. Z ``commit`` mutacje
     biegną na kopii tego commitu bez niezacommitowanych zmian checkoutu.
     """
+
+    for verdict, last, _ in _timed(mutations, workers=workers, limit_s=limit_s, deadline=deadline, commit=commit):
+        yield verdict, last
+
+
+def _timed(
+    mutations: Sequence[Mutation], *, workers: int, limit_s: float, deadline: float | None = None, commit: str | None = None
+) -> Iterator[tuple[Verdict, str, float | None]]:
+    """``verdicts`` z czasem polecenia każdej mutacji (``_verdict``)."""
 
     run = partial(_verdict, limit_s=limit_s, concurrent=workers > 1, deadline=deadline, commit=commit)
     yield from _each(run, mutations, workers)
@@ -579,7 +602,16 @@ def _against_base(
 def check_all(
     mutations: Sequence[Mutation], *, parallel: bool = True, limit_s: float = TIMEOUT, base: str | None = None, gate: Gate = static_gate
 ) -> int:
-    """Podstawa i werdykt każdej mutacji; kod 0, gdy CI złapałoby każdą (``in_ci``).
+    """Podstawa, werdykt i czas polecenia każdej mutacji; kod 0, gdy CI złapałoby każdą (``in_ci``).
+
+    Przed linią werdyktu każdej mutacji linia ``CZAS`` na stderr podaje czas jej polecenia, a mutację, której polecenie
+    trwało ponad ``NEAR_LIMIT`` limitu ``limit_s``, linia ``CZAS BLISKO LIMITU`` na stderr przed linią końcową wymienia ze
+    skryptem, częścią i limitem, zanim limit da PRZEKROCZONY CZAS (#911, #927). Log CI skryptu skilla ma obie, bo
+    ``tools/ci/mutacje_skilli.py`` łączy stderr ze stdout. To nie werdykt, więc stdout (werdykty i linia końcowa) i kod
+    wyjścia się nie zmieniają. Czas ma każda mutacja, której polecenie biegło, także po limicie, więc linię ``CZAS`` i
+    ostrzeżenie dostaje też PRZEKROCZONY CZAS, który brama typów zmienia w WYKRYTA PRZEZ BRAMĘ TYPÓW, i ZAWIESZENIE,
+    które ``in_ci`` liczy jako wykrycie; bez linii ``CZAS`` jest tylko mutacja, której polecenie nie biegło (NIEAKTUALNA, BEZ
+    WERDYKTU przed startem).
 
     Bez ``base`` (skrypty mutacji skilli) mutację, którą polecenie przepuściło, sprawdza jeszcze ``type_gate`` z ``gate``. Z
     ``base``, czyli w przeglądzie z wiersza poleceń, porażką jest wszystko poza WYKRYTA, także ZAWIESZENIE, a mutacja
@@ -604,18 +636,38 @@ def check_all(
         return 2
     failures = 0
     workers = PARALLEL if parallel else 1
-    found = list(verdicts(mutations, workers=workers, limit_s=limit_s))
+    timed = list(_timed(mutations, workers=workers, limit_s=limit_s))
+    found = [(verdict, last) for verdict, last, _ in timed]
+    times = [seconds for _, _, seconds in timed]
     if base is not None:
         found = _against_base(mutations, found, base, workers=workers, limit_s=limit_s)
     else:
         found = type_gate(mutations, found, workers=workers, limit_s=limit_s, gate=gate)
-    for mutation, (verdict, shown) in zip(mutations, found, strict=True):
+    for mutation, (verdict, shown), seconds in zip(mutations, found, times, strict=True):
         caught, last = (verdict is Verdict.CAUGHT, shown) if base is not None else in_ci(verdict, shown)
         failures += not caught
         harm = f" ({mutation.harm})" if mutation.harm else ""
+        if seconds is not None:
+            print(f"CZAS: {mutation.name} → {seconds:.0f} s", file=sys.stderr, flush=True)
         print(f"{verdict}: {mutation.name}{harm} → {last}", flush=True)
+    for mutation, seconds in zip(mutations, times, strict=True):
+        if seconds is not None and seconds > NEAR_LIMIT * limit_s:
+            near = f"CZAS BLISKO LIMITU: {_script()}{_shown_part()}: {mutation.name} → {seconds:.0f} s z limitu --limit-s {limit_s:g} s"
+            print(f"{near} (po nim PRZEKROCZONY CZAS: podziel zakres mutacji albo przyspiesz sprawdzenie)", file=sys.stderr, flush=True)
     print("MUTACJE OK" if not failures else f"MUTACJE: {failures} bez oczekiwanego wyniku")
     return 1 if failures else 0
+
+
+def _script() -> str:
+    """Skrypt, który uruchomił ``check_all``, względem korzenia repozytorium, jak w poleceniu CI."""
+
+    path = Path(sys.argv[0]).resolve()
+    return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else sys.argv[0]
+
+
+def _shown_part() -> str:
+    part = os.environ.get(PART)
+    return f" ({PART}={part})" if part else ""
 
 
 def _from_file(path: Path, command: tuple[str, ...], *, own_command: bool = True) -> list[Mutation]:
