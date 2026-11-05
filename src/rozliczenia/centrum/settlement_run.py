@@ -25,6 +25,7 @@ from rozliczenia.settings import SettingsStore
 from rozliczenia.period_folder import PeriodStatus, collective_file_name, period_status_label, scan_period_folders
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.input_copy import InputCopy
 from rozliczenia.input_checks import Readers
 from rozliczenia.settlement_process import SettlementInputs
 from rozliczenia.telemetry import MetricsStore
@@ -87,6 +88,7 @@ class SettlementEntry:
         periods_directory = SETTLEMENT.required_paths(self.store.load())["periods_directory"]
         period = requested_period(request.period)
         source = located_period_folder(periods_directory, period).collective_file
+        copy = InputCopy()
         inputs = SettlementInputs(
             source,
             dry_run=request.dry_run,
@@ -94,10 +96,14 @@ class SettlementEntry:
             worker_template_path=self.configuration.worker_template,
             readers=self.readers,
             forbidden=self.forbidden,
+            copy=copy,
         )
-
         return PreparedRun(
-            declaration=SETTLEMENT, period=period.token, process=SETTLEMENT.core(self.processes), inputs=inputs
+            declaration=SETTLEMENT,
+            period=period.token,
+            process=SETTLEMENT.core(self.processes),
+            inputs=inputs,
+            input_copy=copy,
         )
 
 

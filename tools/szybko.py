@@ -29,6 +29,11 @@ dotkniętych zmianą i workerów xdist, razem z pozostałymi krokami.
 Szybko nie pobiera ``origin``, więc merge jest z bazą z ostatniego ``git fetch``. Nie uruchamia zadań CI
 ``mutations`` (skrypty mutacji skilli), ``Frontend``, E2E ani Timing guard.
 
+Krok ``rozjazd modelu`` pyta ``tools/lib/rozjazd_modelu.py`` o każdy skill z ``model/definicje.json``, którego podstawę
+``ci:`` zmiana uruchomiłaby na pull request (``tools/lib/zakres_runu.py``): czy kod opisany jego modelem TLA+ zmienił się
+od Sync commit z jego ``SKILL.md``. To samo pytanie skrypt modelu zadaje w CI przed TLC i tam pada, więc szybko pada też,
+bez TLC, z nazwą skilla, pliku i definicji i krokami „Bring the model in line” ze ``SKILL.md`` skilla.
+
 Kończy się ``SZYBKO OK`` albo ``SZYBKO FAIL | <kroki>``, z dopiskiem `` | pytest przerwany``, gdy szybko przerwał
 krok pytest.
 
@@ -64,7 +69,9 @@ import ci_lokalnie
 import czasy_ci
 from mutacje import environment
 import potomne
+import rozjazd_modelu
 from wplyw_zmiany import STRUCTURE, Context, Repository, changed_since, run_all, with_structure
+from zakres_runu import podstawa_na_pull_request
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "origin/main"
@@ -307,6 +314,17 @@ def _run_all(steps: list[ci_lokalnie.Step], interruptible: ci_lokalnie.Step | No
     return failed, interrupted
 
 
+def _model_drift(root: Path, changed: frozenset[str]) -> list[str]:
+    """Rozjazdy modelu skilli, których podstawę ``ci:`` zmiana ``changed`` uruchomiłaby na pull request: skrypt modelu w
+    niej pada na nich przed TLC. Szybko nie pobiera ``origin``, więc nie dopobiera historii do Sync commit."""
+
+    return [
+        f"{skill.name}: {found}"
+        for skill in rozjazd_modelu.skille(root)
+        if podstawa_na_pull_request(skill, changed)[0] and (found := rozjazd_modelu.rozjazd(skill, root, dopobierz=False)) is not None
+    ]
+
+
 def _describe(selection: Selection, chosen: Plan, changed: frozenset[str], base: str) -> str:
     kind = f"pełny zestaw ({selection.full_reason})" if selection.full_reason else "dotknięte zmianą"
     names = ", ".join(PurePosixPath(path).name for path in chosen.run) or "brak"
@@ -335,6 +353,8 @@ def main(argv: list[str] | None = None) -> int:
     memory = GreenMemory.of_checkout()
     chosen = plan(memory.to_run(selection), selection.distances, _times(ROOT))
     print(_describe(selection, chosen, changed, args.baza), flush=True)
+    if drift := _model_drift(ROOT, changed):
+        print("FAIL rozjazd modelu (bez TLC)\n" + "\n".join(drift), flush=True)
     junit = memory.path.with_name(f"szybko-junit-{os.getpid()}.xml")
     steps = _steps(ROOT, chosen.run, junit)
     with ExitStack() as copies:
@@ -343,6 +363,7 @@ def main(argv: list[str] | None = None) -> int:
             # Biegnie razem z krokiem pytest, więc bez workerów xdist nie podwaja liczby rdzeni szybko.
             steps.append(_pytest(copy, f"testy struktury po mergu z {args.baza}", (*STRUCTURE, "-n", "0")))
         failed, interrupted = _run_all(steps, next(step for step in steps if step.name == "pytest"))
+    failed = (["rozjazd modelu"] if drift else []) + failed
     memory.remember(selection, junit, chosen.run)
     junit.unlink(missing_ok=True)
     if chosen.deferred:

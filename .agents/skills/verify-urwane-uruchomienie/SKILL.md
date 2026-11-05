@@ -15,6 +15,7 @@ pilnuje:
   - src/rozliczenia/process_run.py
   - src/rozliczenia/telemetry.py
   - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
+  - tools/lib/rozjazd_modelu.py
 ci: .agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwane_uruchomienie.py
 ---
 
@@ -26,6 +27,7 @@ CI runs `sprawdz_urwane_uruchomienie.py` (the `ci:` key) in Mutation checks when
 `pilnuje:` or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks
 step. It fails with `URWANE URUCHOMIENIE: ROZJAZD MODELU Z KODEM` when a definition the model describes
 (`model/definicje.json`) changed since the Sync commit, but it cannot tell whether your change to the model is right.
+`tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 `check_model_urwanego_mutations.py` runs on a pull request that changes a file in `model/`, the script itself or
 `sprawdz_urwane_uruchomienie.py`, and in full CI and nightly on `main` after a change of this skill's folder.
 What stays with you on every change to the covered code is „Bring the model in line”: read the diff against the table,
@@ -113,9 +115,15 @@ changes move it without changing a definition, so look for them in the diff: the
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `5e1905142` (2026-11-05, `main` after #860). Every row of the table was checked against the code at this
-commit, and each known finding below was replayed on that code (`historia-niezapisana` on `main` 86677b151, whose
-`src/` is the same).
+Sync commit: `ef64b4a67` (2026-11-05, PR #863 after its merge of `main` with #883).
+Every row of the table was checked against the code at this commit. The model did not change: #863 makes `guarded` mask
+also numbers in the fields with values from Dad's cells (`READ_VALUES`) and the phone with `48` without `+`, and puts
+the notes about the Kopia wejścia in `input_copy_notes`, but `RunLogs.guard` still calls it in one step and it stays
+idempotent (`Straz`). The fix of #881 (#883) changed `save` only in what it passes to `_priced` (the pace, which
+`_priced` now puts over its write-ahead window) and in the facts of a Zatrzymanie, while `journal.begun` still comes
+before `efenix_trace.traced` and `_priced`, and `journal.ended` after the result. Each known finding below was replayed
+at `5e1905142` (`historia-niezapisana` on `main` 86677b151, whose `src/` is the same); #863 changes none of the code
+they run through except the guard, which only masks more.
 
 ## Run
 
@@ -220,7 +228,9 @@ one run without all of them. All five were replayed on the code.
 4. **`zapis-logow-nieudany`, TeSameZnaki (open, cannot happen at Dad's yet).** Logi Urwanego Uruchomienia written by a
    Centrum work before the guard (#851) and not sent: the start guards them, `RunLogs.close` fails (`OSError`), and the
    queue gets the masked text while the file keeps the phone number. No Wydanie has the journal (#845) without the
-   guard (v0.4.3 has neither), so no such file exists at Dad's. Replayed with such a file and a folder in place of its
+   guard (v0.4.3 has neither), so no such file exists at Dad's. Logi written by a guard that masks less are the same
+   case: a Wydanie with the journal and the guard from before #863 would leave a phone `48600123456` in the file and
+   `[telefon]` in the Archiwum after a failed `close`. Replayed with such a file and a folder in place of its
    `.tmp`: the file has `600 123 456`, the file in the Archiwum `[telefon]`.
 
 5. **`historia-niezapisana`, BezUrwanychPoWyniku (open, a real defect, #871).** Same harm as 3, another cause: no
@@ -291,7 +301,9 @@ wrong:
 - **`send` runs atomically** on the event loop (`async def` without `await`), and the first request of a work comes
   before any Wycena of that work, because every route has the dependency.
 - **The guard is idempotent**: Logs that passed `guard` pass it again unchanged, so rereading a file written by `close`
-  changes nothing; only Logs written without the guard (`StareLogi`) change.
+  changes nothing; only Logs written without the guard (`StareLogi`) change. A number the guard masked becomes the text
+  of its mask, which it leaves as it is. Idempotent means one version of the guard: Logs written by a Centrum whose
+  guard masked less (before #851 nothing, before #863 the phone with `48` without `+`) are `StareLogi` for a newer one.
 - **`RunLog.model_validate_json(text).text == text`** for a file `close` wrote, and two builds of the same journal give
   Logs with the same orders; their environment, tool and Dad's actions may differ, which the model leaves out. A rebuild
   happens only when the file is missing, so the file and the newest accepted Logi stay the same, unless the clock went

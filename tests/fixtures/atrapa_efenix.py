@@ -348,6 +348,7 @@ def atrapa_efenix(
     clock: Callable[[], float] = time.monotonic,
     cookie_session: bool = False,
     outage_from: tuple[Outage, int] | None = None,
+    error_answer: tuple[str, int, HTTPStatus] | None = None,
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
@@ -357,6 +358,8 @@ def atrapa_efenix(
     zegar w sekundach, którego chwilę dostaje każde żądanie. ``outage_from``: rodzaj odcięcia i numer żądania (od 0, każde
     żądanie po kolei, jak w ``requests``), od którego efenix jest odcięty raz, do ``reconnect``. Atrapa pracuje na kopii
     ``orders``, więc zlecenia testu zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie.
+    ``error_answer``: ścieżka, numer jej żądania narzędzia (od 1, bez szukania, które lista wysyła sama) i status błędu
+    HTTP: na to jedno żądanie Atrapa odpowiada stroną błędu serwera z tym statusem, bez wykonania żądania.
     """
 
     atrapa = AtrapaEfenix(copy.deepcopy(list(orders)))
@@ -412,6 +415,12 @@ def atrapa_efenix(
                     atrapa.outage = outage_from[0]
                     cut_off.set()
                 outage = atrapa.outage
+                failing = (
+                    error_answer is not None
+                    and path == error_answer[0]
+                    and not atrapa.requests[-1].by_list
+                    and sum(request.path == path and not request.by_list for request in atrapa.requests) == error_answer[1]
+                )
                 logged_in = atrapa.logged_in and (not cookie_session or _has_session_cookie(self.headers.get("Cookie", "")))
                 orders = copy.deepcopy(atrapa.orders)
             if outage is Outage.CUT:
@@ -420,7 +429,9 @@ def atrapa_efenix(
             self._late = outage is Outage.SLOW
             self._torn = outage is Outage.TORN
             self._stalled = outage is Outage.STALLED
-            if path == LOGIN_ACTION and method == "POST":
+            if failing and error_answer is not None:
+                self._html("<p>Wystąpił błąd serwera.</p>", error_answer[2])
+            elif path == LOGIN_ACTION and method == "POST":
                 with atrapa._lock:
                     atrapa.logged_in = True
                 self._redirect(LIST_PAGE, cookie=cookie_session)

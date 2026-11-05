@@ -16,25 +16,32 @@ otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony alb
 szukanie bez sesji efenix nie przekierowuje. Lista zleceń, której okno nie otworzyło przy starcie (adres nie
 odpowiada), to ``EfenixUnreachable``.
 Każde inne działanie, którego okno nie dokończyło, to ``UnexpectedPage`` z częścią strony: strona bez oczekiwanej
-budowy, element obecny, ale niewidoczny, i każdy błąd Playwrighta w działaniu (czas czekania na stronę, odpowiedź albo
+budowy, odpowiedź efenix ze statusem błędu, element obecny, ale niewidoczny, i każdy błąd Playwrighta w działaniu (czas czekania na stronę, odpowiedź albo
 element, który minął, otwarcie strony, które się nie udało, treść odpowiedzi, której nie da się przeczytać). Każdy z
 tych wyjątków niesie przyczynę techniczną z zamkniętej listy (``efenix_pricing.WindowCause``): element, który nie
-występuje dokładnie raz, z jego selektorem i liczbą, budowę strony, której okno nie zna (``Shape``), a przy błędzie
-Playwrighta typ jego wyjątku i działanie okna, w którym wystąpił (``Operation``), bez treści wyjątku i strony. Czy to
+występuje dokładnie raz, z jego selektorem i liczbą, budowę strony, której okno nie zna (``Shape``), status HTTP
+(``HttpStatus``), a przy błędzie Playwrighta typ jego wyjątku i działanie okna, w którym wystąpił (``Operation``), bez
+treści wyjątku i strony. Status HTTP daje każda odpowiedź efenix ze statusem błędu (4xx, 5xx), na którą okno czeka
+(szukanie, zapis daty, „Załaduj do zlecenia”, zapis ilości), zanim okno ją przeczyta, i strona, którą okno otwiera
+(lista zleceń, także przy starcie, i strona zlecenia), gdy przyszła ze statusem błędu, a okno jej nie przeczytało
+(nawigacja nie zgłasza błędu przy 4xx i 5xx). Czy to
 zerwane połączenie, wolny czy zmieniony efenix, okno nie zgaduje: Maks ustala to z przyczyny w Logach. Na odpowiedź efenix
 okno czeka do jej końca, z całą treścią, a nie tylko do nagłówków, bo na treść, którą sieć wstrzymała w połowie,
 czekałoby bez końca. Działanie w zamkniętej karcie albo oknie, także zamkniętym w trakcie działania, to
-``WindowClosed``, cokolwiek zgłosił wtedy Playwright. Przeglądarkę daje rozmówca: stronę (``window``), Chromium
+``WindowClosed``, cokolwiek zgłosił wtedy Playwright, także gdy błąd nawigacji przerwanej zamknięciem karty przyszedł,
+zanim Playwright powiedział o zamknięciu (``BrowserEfenix.closed``). Przeglądarkę daje rozmówca: stronę (``window``), Chromium
 Playwrighta (``chromium``) albo widoczne okno zainstalowanego Google Chrome w trwałym profilu narzędzia (``chrome``),
 które nie startuje (``BrowserNotStarted``), gdy Chrome nie ma albo jego profil trzyma inne okno. Każda przeglądarka
 okna, także Chromium testów, startuje z argumentami ``launch_options``: bez losowania portu lokalnego każdego połączenia
 (``TcpPortRandomizationWin``), przy którym Windows odmawia czasem połączenia, choć porty są wolne.
 
 Okno z ``Login`` od silnika (``chrome`` zawsze, ``window`` na życzenie) na stronie logowania czeka, aż tata się zaloguje:
-co ``LOGIN_POLL_MS`` sprawdza, czy strona przeszła na inną niż logowanie, albo pyta efenix o listę zleceń w tej samej
-sesji przeglądarki bez przekierowań, nie ruszając strony z formularzem, w którym tata pisze. Gdy lista odpowiada, otwiera ją
-i proces rusza; brak logowania przez ``LOGIN_TIMEOUT_MS`` to ``LoggedOut``, a karta, okno albo przeglądarka zamknięte
-w tym czasie to ``WindowClosed`` najpóźniej po ``LOGIN_POLL_MS``.
+pyta efenix o listę zleceń w tej samej sesji przeglądarki bez przekierowań, nie ruszając strony z formularzem, w którym
+tata pisze, najwyżej co ``LOGIN_POLL_MS``; gdy strona przejdzie ze strony logowania na inną, pyta od razu, jeśli od
+poprzedniego pytania minął ten odstęp, a inaczej po nim. Gdy lista odpowiada, otwiera ją i proces rusza; lista ze
+statusem błędu (4xx, 5xx) to ``UnexpectedPage`` z ``HttpStatus`` jak przy starcie, brak logowania przez
+``LOGIN_TIMEOUT_MS`` to ``LoggedOut``, a karta, okno albo przeglądarka zamknięte w tym czasie to ``WindowClosed``
+najpóźniej po ``LOGIN_POLL_MS``.
 
 Stronę zlecenia czyta tak, jak widzi ją tata: datę wykonania z ``#data_install`` (RRRR-MM-DD albo pusta), kwotę końcową z
 ``#cena_all2`` i ilość każdej pozycji z pola ``input.wycena-ilosc`` o id ``INDEKS_NNN_…`` (kod pozycji to ``NNN``).
@@ -224,7 +231,9 @@ def _action(
     ani czytanie odpowiedzi jej nie omija.
 
     Każdy wyjątek działania w karcie zamkniętej przed nim albo w jego trakcie to zamknięte okno (``WindowClosed``), a nie
-    lista typów: Playwright zgłasza wtedy błąd, a granica mogła go już zamienić na ``UnexpectedPage``.
+    lista typów: Playwright zgłasza wtedy błąd, a granica mogła go już zamienić na ``UnexpectedPage`` albo
+    ``open_list`` na ``EfenixUnreachable``. O zamknięciu mówi ``BrowserEfenix.closed``, które po jednym pytaniu
+    przeglądarki zna zamknięcie karty także wtedy, gdy błąd nawigacji wyprzedził wiadomość Playwrighta o nim.
     """
 
     def decorate(action: Callable[Concatenate[BrowserEfenix, _P], _R]) -> Callable[Concatenate[BrowserEfenix, _P], _R]:
@@ -334,8 +343,19 @@ class BrowserEfenix:
 
     @property
     def closed(self) -> bool:
-        """Karta okna jest zamknięta: tata zamknął ją albo całe okno przeglądarki."""
+        """Karta okna jest zamknięta: tata zamknął ją albo całe okno przeglądarki.
 
+        Najpierw pyta kartę o jej dokument (``:root``), bo karta zamknięta w trakcie nawigacji przerywa ją błędem, który
+        Playwright podaje, zanim powie o zamknięciu karty (``Page.is_closed`` jest jeszcze fałszem, pomiar #878: 89 na 100
+        zamknięć karty, gdy okno czeka na stronę). Odpowiedź przychodzi po wiadomości o zamknięciu karty, które przerwało
+        nawigację, więc po niej ``Page.is_closed`` już je zna (pomiar #886: 247 z 247 zamknięć karty w trakcie
+        nawigacji). Pytanie w zamkniętej karcie albo przeglądarce kończy się błędem, a o zamknięciu mówi wtedy też
+        ``Page.is_closed``. Pytanie ma czas okna, bo przeglądarka albo strona, która nie odpowiada, inaczej zatrzymałaby
+        okno tu bez końca (#886).
+        """
+
+        with suppress(PlaywrightError):
+            self._page.locator(":root").wait_for(state="attached", timeout=self._timeout_ms)
         return self._page.is_closed()
 
     @_action(PagePart.LIST)
@@ -344,24 +364,33 @@ class BrowserEfenix:
 
         try:
             with _doing(Operation.OPEN):
-                self._page.goto(self._url, wait_until="load", timeout=self._timeout_ms)
+                response = self._page.goto(self._url, wait_until="load", timeout=self._timeout_ms)
         except _Failed as failed:
             if not self._opened:
                 raise EfenixUnreachable(failed.failure) from failed.__cause__
             raise
         self._opened = True
         self._ensure_logged_in(PagePart.LIST)
-        self._only(_NUMBER_FIELD, PagePart.LIST)
+        try:
+            self._only(_NUMBER_FIELD, PagePart.LIST)
+        except UnexpectedPage as unread:
+            # Strona błędu serwera efenix: adres odpowiada, więc to nie ``EfenixUnreachable``, także przy starcie.
+            if response is not None and not response.ok:
+                raise UnexpectedPage(PagePart.LIST, HttpStatus(response.status)) from unread
+            raise
 
     def wait_for_login(
         self, login: Login, *, timeout_ms: int = LOGIN_TIMEOUT_MS, clock: Callable[[], float] = time.monotonic
     ) -> None:
         """Otwiera listę zleceń, a na stronie logowania czeka w ``login``, aż tata się zaloguje; ``LoggedOut`` po
-        ``timeout_ms`` bez logowania, a ``WindowClosed`` najpóźniej ``LOGIN_POLL_MS`` po zamknięciu karty, okna albo
-        całej przeglądarki. ``clock`` (sekundy) mierzy czas czekania.
+        ``timeout_ms`` bez logowania (najwyżej ``LOGIN_POLL_MS`` później), ``UnexpectedPage`` listy ze statusem HTTP, gdy
+        lista odpowiada stroną błędu serwera, a ``WindowClosed`` najpóźniej ``LOGIN_POLL_MS`` po zamknięciu karty, okna
+        albo całej przeglądarki. ``clock`` (sekundy) mierzy czas czekania.
 
         Zamkniętą kartę rozpoznaje po ``Page.is_closed`` przed każdym sprawdzeniem, bo czekanie Playwrighta na adres karty
-        zamkniętej przed nim nie zgłasza jej zamknięcia, tylko kończy się po swoim limicie.
+        zamkniętej przed nim nie zgłasza jej zamknięcia, tylko kończy się po swoim limicie. Efenix pyta najwyżej co
+        ``LOGIN_POLL_MS``, także gdy karta nie stoi na stronie logowania i czekanie na zmianę jej adresu wraca od razu
+        (#891).
         """
 
         try:
@@ -380,20 +409,31 @@ class BrowserEfenix:
                         return
                     except LoggedOut:
                         pass
-                remaining_ms = round((deadline - clock()) * 1000)
+                asked = clock()
+                remaining_ms = round((deadline - asked) * 1000)
                 if remaining_ms <= 0:
                     raise LoggedOut(PagePart.LIST, LoginSign.NO_LOGIN)
                 # Czekanie kończy się po limicie, a w karcie zamkniętej w jego trakcie błędem; o zamknięciu mówi ``is_closed``.
                 with suppress(PlaywrightError):
                     self._page.wait_for_url(lambda url: not _on_login_page(url), timeout=min(LOGIN_POLL_MS, remaining_ms))
+                    # Karta zeszła ze strony logowania albo na niej nie stoi: do następnego pytania mija i tak ``LOGIN_POLL_MS``.
+                    rest_ms = LOGIN_POLL_MS - round((clock() - asked) * 1000)
+                    if rest_ms > 0:
+                        self._page.wait_for_timeout(rest_ms)
 
     def _session_open(self) -> bool:
-        """Lista zleceń odpowiada w sesji okna bez przekierowania na logowanie; pytanie nie zmienia strony okna."""
+        """Lista zleceń odpowiada w sesji okna bez przekierowania na logowanie; pytanie nie zmienia strony okna.
+
+        Odpowiedź ze statusem błędu (4xx, 5xx) to ``UnexpectedPage`` listy z tym statusem, jak lista przy starcie: adres
+        odpowiada, a tata mógł się już zalogować, więc czekanie dalej nic nie da (#891).
+        """
 
         try:
             response = self._page.context.request.get(self._url, max_redirects=0, timeout=self._timeout_ms)
         except PlaywrightError:
             return False
+        if response.status >= 400:
+            raise UnexpectedPage(PagePart.LIST, HttpStatus(response.status))
         location = urlparse(response.headers.get("location", "")).path
         return response.ok and not location.endswith(LOGIN_PAGE)
 
@@ -463,8 +503,6 @@ class BrowserEfenix:
                 raise LoggedOut(PagePart.EMMETT, LoginSign.REDIRECT)
             if 300 <= answer.status < 400:
                 raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))
-            if not answer.ok:
-                raise UnexpectedPage(PagePart.EMMETT, HttpStatus(answer.status))
             if _refused(self._text(answer)):
                 raise LoggedOut(PagePart.EMMETT, LoginSign.REFUSED)
         return self._read_order(reload.value)
@@ -561,13 +599,19 @@ class BrowserEfenix:
 
     def _finished(self, wanted: Callable[[Request], bool], act: Callable[[], None]) -> Response:
         """Odpowiedź efenix z całą treścią na żądanie ``wanted``, które wysyła ``act``: okno czeka w czasie ``timeout_ms``
-        na koniec żądania, a nie na nagłówki odpowiedzi, po których treść może się urwać albo stanąć."""
+        na koniec żądania, a nie na nagłówki odpowiedzi, po których treść może się urwać albo stanąć.
+
+        Odpowiedź ze statusem błędu (4xx, 5xx) to ``_ErrorAnswer``, zanim okno ją przeczyta: skrypt strony efenix jej nie
+        użyje, a jej treść to strona błędu serwera, nie odpowiedź w innej budowie. Przekierowanie (3xx) okno czyta dalej.
+        """
 
         with _doing(Operation.ANSWER):
             with self._page.expect_request_finished(wanted, timeout=self._timeout_ms) as finished:
                 act()
             response = finished.value.response()
         assert response is not None, "zakończone żądanie ma odpowiedź"
+        if response.status >= 400:
+            raise _ErrorAnswer(HttpStatus(response.status))
         return response
 
     def _ensure_logged_in(self, part: PagePart) -> None:
@@ -669,6 +713,14 @@ class _Failed(Exception):
         self.failure = failure
 
 
+class _ErrorAnswer(Exception):
+    """Odpowiedź efenix ze statusem błędu na żądanie, na które okno czeka (``_finished``); część strony daje ``_within``."""
+
+    def __init__(self, status: HttpStatus) -> None:
+        super().__init__(status.status)
+        self.status = status
+
+
 @contextmanager
 def _doing(operation: Operation) -> Iterator[None]:
     """Działanie przeglądarki ``operation`` w działaniu okna: błąd Playwrighta w nim to ``_Failed`` z typem błędu."""
@@ -682,10 +734,13 @@ def _doing(operation: Operation) -> Iterator[None]:
 @contextmanager
 def _within(part: PagePart) -> Iterator[None]:
     """Działanie na części ``part`` strony, które skończyło się błędem Playwrighta, to ``UnexpectedPage(part)`` z typem
-    błędu i działaniem przeglądarki (``None``, gdy ``_doing`` go nie nazwał)."""
+    błędu i działaniem przeglądarki (``None``, gdy ``_doing`` go nie nazwał), a odpowiedzią efenix ze statusem błędu
+    (``_ErrorAnswer``) to ``UnexpectedPage(part)`` z tym statusem."""
 
     try:
         yield
+    except _ErrorAnswer as answer:
+        raise UnexpectedPage(part, answer.status) from answer
     except _Failed as failed:
         raise UnexpectedPage(part, failed.failure) from failed.__cause__
     except PlaywrightError as error:

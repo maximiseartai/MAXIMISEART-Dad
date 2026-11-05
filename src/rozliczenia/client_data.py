@@ -21,6 +21,12 @@ wartości od tego samego słowa wygrywa najdłuższa. Wartość krótsza niż ``
 wskazuje klienta, a pasowałaby do zwykłych słów i liczb. Czas strażnika zależy od długości tekstu, nie od liczby
 zapamiętanych wartości. Maskowanie wolnego tekstu (``free_text``) uwagi nie daje, bo telefon i ulica w opisie
 technika to zwykła treść, nie wyciek kolumny.
+
+Komórka, którą Excel trzyma jako liczbę (numer Orange albo telefon wpisany bez innego tekstu), ma tekst, który Excel
+pokazuje (``shown``): liczba całkowita zapisana jako ułamek to jej cyfry. Tak ją zapamiętuje pamięć i tak ją sprawdza
+strażnik liczby (``ForbiddenValues.guard_number``), który maskuje całą liczbę, bo jej cyfry to cała wartość. Format
+General gubi ``+`` i zera z przodu, więc telefon ``+48600123456`` albo ``0048600123456`` to w komórce liczba
+``48600123456``, a strażnik zna ją jako telefon. Tabela form telefonu z wynikiem strażnika i znane granice są w ADR 0025.
 """
 
 from __future__ import annotations
@@ -62,17 +68,22 @@ _HEADERS: Final = {
 
 _WORD: Final = re.compile(r"\w+")
 _PHONE: Final = re.compile(
-    r"(?<![\w+#])(?:(?:\+|00)48[ -]?)?(?:\d{3}[ -]?\d{3}[ -]?\d{3}|\d{2}[ -]\d{3}[ -]\d{2}[ -]\d{2})(?!\w)"
+    r"(?<![\w+#])(?:(?:\+|00)?48[ -]?)?(?:\d{3}[ -]?\d{3}[ -]?\d{3}|\d{2}[ -]\d{3}[ -]\d{2}[ -]\d{2})(?!\w)"
 )
-"""Polski numer telefonu: komórkowy 3-3-3 (ze spacjami, myślnikami albo bez) i stacjonarny 2-3-2-2, z +48 albo bez.
+"""Polski numer telefonu: komórkowy 3-3-3 (ze spacjami, myślnikami albo bez) i stacjonarny 2-3-2-2, z numerem
+kierunkowym ``+48``, ``0048`` albo ``48`` albo bez. ``48`` bez ``+`` i zer to numer, któremu Excel zgubił je w komórce
+(``+48600123456`` to liczba ``48600123456``).
 
-Cyfry zaraz po ``#`` to ``NUMER ZL.`` (``#`` i numer), który może wyjść, więc nie są telefonem.
+Cyfry zaraz po ``#`` to ``NUMER ZL.`` (``#`` i numer), który może wyjść, więc nie są telefonem. Formy telefonu, których
+wzorzec nie zna, to znane granice z ADR 0025.
 """
 _STREET: Final = re.compile(
     r"(?<!\w)(?:ul|os|al|pl)\.[ \t]*(?:\w[\w-]*\.?[ \t]+){1,4}?\d+[^\W\d_]?(?:[ \t]*(?:/|m\.?)[ \t]*\d+[^\W\d_]?)?(?!\w)",
     re.IGNORECASE,
 )
 """„ul.”, „os.”, „al.” albo „pl.” z nazwą do czterech słów i numerem domu (z lokalem po ``/`` albo ``m``)."""
+_PHONE_MASK: Final = "[telefon]"
+_STREET_MASK: Final = "[ulica]"
 
 
 @dataclass(frozen=True)
@@ -124,6 +135,29 @@ class ForbiddenValues:
         Tekst bez zakazanych wartości, telefonów i ulic wraca bez zmian i bez uwag.
         """
 
+        masked, columns = self._masked(text)
+        return Guarded(free_text(masked), _notes(columns, place))
+
+    def guard_number(self, value: int | float, place: str) -> Guarded | None:
+        """Liczba z komórki pliku taty albo ze strony efenix po strażniku, w tekście, który pokazuje Excel (``shown``).
+
+        ``None``: tekst liczby nie ma zakazanej wartości ani telefonu. Inaczej cała liczba staje się maską: zakazanej
+        kolumny z uwagą techniczną jak w ``guard`` albo ``[telefon]`` bez uwagi, więc z liczby nie zostaje żadna cyfra.
+        Telefonem jest tylko liczba całkowita (także zapisana jako ułamek), bo telefon wpisany w komórkę nie ma części
+        ułamkowej: 9 cyfr albo ``48`` i 9 cyfr, gdy Excel zgubił ``+`` albo ``00`` przed ``48``.
+        """
+
+        text = shown(value)
+        _, columns = self._masked(text)
+        if columns:
+            return Guarded(" ".join(column.mask for column in _ordered(columns)), _notes(columns, place))
+        if (isinstance(value, int) or value.is_integer()) and _PHONE.search(text):
+            return Guarded(_PHONE_MASK, ())
+        return None
+
+    def _masked(self, text: str) -> tuple[str, set[ForbiddenColumn]]:
+        """Tekst z maską w miejscu każdej zapamiętanej wartości i kolumny tych wartości."""
+
         words = list(_WORD.finditer(text))
         folded = [word.group(0).casefold() for word in words]
         pieces: list[str] = []
@@ -141,11 +175,7 @@ class ForbiddenValues:
                 position = words[index + length - 1].end()
                 index += length
         pieces.append(text[position:])
-        notes = tuple(
-            f"Reguła danych: zamaskowano wartość kolumny {column.value} w: {place}."
-            for column in sorted(masked, key=lambda column: column.value)
-        )
-        return Guarded(free_text("".join(pieces)), notes)
+        return "".join(pieces), masked
 
     def _longest(self, folded: Sequence[str], index: int) -> tuple[int, ForbiddenColumn] | None:
         """Najdłuższa zapamiętana wartość od słowa ``index``: jej długość w słowach i kolumna."""
@@ -167,20 +197,33 @@ def forbidden_columns(header: Mapping[str, _Position]) -> tuple[tuple[ForbiddenC
 def free_text(text: str) -> str:
     """Wolny tekst z zamaskowanymi telefonami (``[telefon]``) i wzmiankami ulic (``[ulica]``)."""
 
-    return _PHONE.sub("[telefon]", _STREET.sub("[ulica]", text))
+    return _PHONE.sub(_PHONE_MASK, _STREET.sub(_STREET_MASK, text))
+
+
+def shown(value: object) -> str:
+    """Tekst komórki tak, jak ją pokazuje Excel: liczba całkowita zapisana przez Excel jako ułamek (``4801234567.0``)
+    to jej cyfry, a każda inna wartość jej zapis (``str``)."""
+
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _ordered(columns: Iterable[ForbiddenColumn]) -> list[ForbiddenColumn]:
+    return sorted(columns, key=lambda column: column.value)
+
+
+def _notes(columns: Iterable[ForbiddenColumn], place: str) -> tuple[str, ...]:
+    return tuple(f"Reguła danych: zamaskowano wartość kolumny {column.value} w: {place}." for column in _ordered(columns))
 
 
 def _value_words(value: object) -> tuple[str, ...] | None:
-    """Słowa komórki do szukania, bez wielkości liter; ``None``: nie ma czego szukać albo wartość jest za krótka.
-
-    Liczba całkowita zapisana przez Excel jako ułamek (``4801234567.0``) to jej cyfry, tak jak ją pokazuje Excel.
-    """
+    """Słowa komórki do szukania, bez wielkości liter, w tekście, który pokazuje Excel (``shown``); ``None``: nie ma
+    czego szukać albo wartość jest za krótka."""
 
     if value is None or isinstance(value, (bool, datetime, date, time)):
         return None
-    if isinstance(value, float) and value.is_integer():
-        value = int(value)
-    text = " ".join(str(value).split())
+    text = " ".join(shown(value).split())
     first = _WORD.search(text)
     if first is None or len(text) - first.start() < MIN_VALUE:
         return None

@@ -26,6 +26,7 @@ from types import MappingProxyType
 from . import TOOL_ROOT, input_checks, preparation_files, preparation_plan
 from . import preparation_messages as messages
 from .client_data import ForbiddenValues
+from .input_copy import InputCopy
 from .decision import Conversation, Decision, Declined
 from .domain import ProgressObserver, ProgressPhase
 from .input_checks import FILE_READERS, Readers
@@ -146,6 +147,7 @@ def prepare_collective_file(
     clock: Callable[[], float] = time.perf_counter,
     readers: Readers = FILE_READERS,
     forbidden: ForbiddenValues | None = None,
+    copy: InputCopy | None = None,
 ) -> PreparationSummary:
     """Tworzy w Folderze okresu razem Rozliczenie wewnętrzne i Plik zbiorczy.
 
@@ -165,7 +167,8 @@ def prepare_collective_file(
     czekania na Decyzję nie wlicza się do czasów etapów. Bez rozmowy
     Przygotowanie o nic nie pyta. ``clock`` to zegar w sekundach, z którego
     liczone są czasy etapów. ``readers`` czytają Rejestr zleceń i wzorce w Sprawdzaniu i Odczycie danych, a komórki
-    zakazanych kolumn Rejestru poznaje ``forbidden`` (reguła danych, ADR 0025).
+    zakazanych kolumn Rejestru poznaje ``forbidden`` (reguła danych, ADR 0025), a wiersze Rejestru z Odczytu danych
+    Kopia wejścia Uruchomienia ``copy`` (#841).
     """
 
     phases = PhaseRunner(observer, clock=clock)
@@ -192,7 +195,7 @@ def prepare_collective_file(
 
     files, worker_mapping = phases.check(check)
     folder = files.folder
-    register = phases.read(lambda: input_checks.read_register(register_path, folder.period, readers, forbidden))
+    register = phases.read(lambda: input_checks.read_register(register_path, folder.period, readers, forbidden, copy))
 
     def plan_orders() -> tuple[Plan, CollectiveFilePlan, list[Message]]:
         plan = preparation_plan.plan_period_orders(register_path, register, folder.period, config_path, worker_mapping)

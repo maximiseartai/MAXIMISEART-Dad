@@ -12,11 +12,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
 from copy import copy
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from http import HTTPStatus
 import json
 from pathlib import Path
 import hashlib
@@ -29,12 +30,14 @@ import subprocess
 import sys
 import time
 import traceback
+from typing import cast
+from urllib.parse import urljoin, urlparse
 import zipfile
 
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
 
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Error as PlaywrightError, Page, Request as PlaywrightRequest, Route
 import pytest
 
 from rozliczenia import TOOL_ROOT, efenix_browser, efenix_emmett_trace, efenix_process, efenix_trace
@@ -46,6 +49,7 @@ from rozliczenia.efenix_checks import ListedOrder, ListedRead
 from rozliczenia.efenix_orders import CollectiveOrder
 from rozliczenia.efenix_pricing import (
     BrowserFailure,
+    Closed,
     Efenix,
     ElementCount,
     HttpStatus,
@@ -923,6 +927,192 @@ def test_zamkniete_okno_efenix_zatrzymuje_wycene_z_komunikatem_dla_taty_a_gotowe
 
     assert isinstance(outcome.ending, Stop)
     assert (_stop(outcome), outcome.ending.stop_kind, _kept(outcome), _marked(source)) == ("EFENIX_OKNO_ZAMKNIETE", "for_tata", kept, marked)
+
+
+class _CloseReportedLate:
+    """Karta ``page``, którą tata zamyka, gdy okno czeka na stronę ``path`` po raz ``number`` (od 1): ta strona nie
+    odpowiada, więc karta zamyka się w trakcie nawigacji. Playwright podaje oknu zamknięcie karty dopiero przy jego
+    następnym pytaniu przeglądarki, po błędzie nawigacji (najgorszy przypadek wyścigu #878; na Chromium bez tej karty
+    pomiar dał błąd przed wiadomością o zamknięciu w 89 na 100 zamknięć, więc test bez niej przechodził czasem i przed
+    poprawką).
+    """
+
+    def __init__(self, page: Page, path: str, number: int) -> None:
+        self._page = page
+        self._unreported = False
+        seen = 0
+
+        def handle(route: Route) -> None:
+            nonlocal seen
+            if urlparse(route.request.url).path.endswith("/" + path):
+                seen += 1
+                if seen == number:
+                    self._unreported = True
+                    page.close()
+                    return
+            route.continue_()
+
+        page.route("**/*", handle)
+
+    def is_closed(self) -> bool:
+        return not self._unreported and self._page.is_closed()
+
+    def __getattr__(self, name: str) -> object:
+        self._unreported = False
+        return getattr(self._page, name)
+
+
+# Strona, w trakcie której nawigacji tata zamyka kartę: lista przy starcie i przed szukaniem drugiego zlecenia, strona
+# zlecenia przy otwarciu i po dacie wykonania, i przeładowanie po „Załaduj do zlecenia”.
+NAVIGATIONS = {
+    "lista-na-starcie": (LIST_PAGE, 1, PagePart.LIST),
+    "strona-zlecenia": (ORDER_PAGE, 1, PagePart.ORDER),
+    "strona-po-dacie": (ORDER_PAGE, 2, PagePart.ORDER),
+    "przeladowanie-po-emmetcie": (ORDER_PAGE, 3, PagePart.EMMETT),
+    "lista-ponownie": (LIST_PAGE, 2, PagePart.LIST),
+}
+
+
+def _full_and_ready() -> list[Order]:
+    """Wiersz 18 dostaje datę wykonania, Wycenę Emmetta i ilość z pliku, a wiersz 19 ma już wycenę zgodną z plikiem."""
+
+    return [
+        Order("#9801", day=date(2026, 9, 3), cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"012": 1}),
+        Order("#9802", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),
+    ]
+
+
+def _full_and_ready_in_efenix(orders: Sequence[Order]) -> list[AtrapaOrder]:
+    return [orders[0].in_efenix("981"), replace(orders[1].in_efenix("982"), execution_date=DAY)]
+
+
+@pytest.mark.parametrize(("path", "number", "part"), NAVIGATIONS.values(), ids=NAVIGATIONS.keys())
+def test_karta_zamknieta_w_trakcie_nawigacji_okna_to_zamkniete_okno_takze_gdy_blad_nawigacji_przychodzi_pierwszy(
+    tmp_path: Path, page: Page, path: str, number: int, part: PagePart
+) -> None:
+    """Tata zamyka kartę, gdy okno otwiera stronę (#878): Playwright przerywa nawigację błędem, zanim powie o zamknięciu
+    karty, a Zatrzymanie to i tak zamknięte okno z Komunikatem dla taty, a nie „okno zatrzymane” do Maksa ani „efenix
+    niedostępny” przy starcie."""
+
+    orders = _full_and_ready()
+    with atrapa_efenix(_full_and_ready_in_efenix(orders)) as atrapa:
+        closing = cast(Page, _CloseReportedLate(page, path, number))
+        outcome = _price(tmp_path, closing, atrapa.url, orders)
+
+    assert isinstance(outcome.ending, Stop)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), outcome.ending.stop_kind, facts.part, facts.cause) == (
+        "EFENIX_OKNO_ZAMKNIETE",
+        "for_tata",
+        part,
+        Closed.DURING_ACTION,
+    )
+
+
+def test_cala_przegladarka_zamknieta_w_trakcie_otwierania_strony_zlecenia_to_zamkniete_okno(tmp_path: Path) -> None:
+    """Tata zamyka całą przeglądarkę, a nie kartę, gdy okno otwiera stronę zlecenia: pytanie przeglądarki, czy karta jest
+    zamknięta (``BrowserEfenix.closed``), kończy się wtedy błędem, a Zatrzymanie to i tak zamknięte okno z Komunikatem
+    dla taty, a nie „okno zatrzymane” do Maksa ani wyjątek Playwrighta (#886)."""
+
+    orders = _full_and_ready()
+
+    def priced_in_own_browser(url: str) -> Priced:
+        with chromium() as own:
+            page = own.new_page()
+            browser_session = own.new_browser_cdp_session()
+
+            def close_browser(request: PlaywrightRequest) -> None:
+                if urlparse(request.url).path.endswith("/" + ORDER_PAGE):
+                    # Przeglądarka zamyka się, zanim odpowie na to pytanie.
+                    with suppress(PlaywrightError):
+                        browser_session.send("Browser.close")
+
+            page.on("request", close_browser)
+            return _price(tmp_path, page, url, orders)
+
+    with atrapa_efenix(_full_and_ready_in_efenix(orders)) as atrapa:
+        # Własna przeglądarka, którą test zamyka, startuje własny Playwright, a ten wątek ma już Playwright testów.
+        with ThreadPoolExecutor(max_workers=1) as own_thread:
+            outcome = own_thread.submit(priced_in_own_browser, atrapa.url).result()
+
+    assert isinstance(outcome.ending, Stop)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), outcome.ending.stop_kind, facts.part, facts.cause) == (
+        "EFENIX_OKNO_ZAMKNIETE",
+        "for_tata",
+        PagePart.ORDER,
+        Closed.DURING_ACTION,
+    )
+
+
+def test_strona_ktora_nie_odpowiada_konczy_dzialanie_okna_zatrzymaniem_w_czasie_okna(tmp_path: Path, page: Page) -> None:
+    """Skrypt strony efenix stoi w pętli przez 20 s, więc strona nie odpowiada: działanie okna kończy się po czasie
+    czekania okna (tu 1 s) Zatrzymaniem do Maksa, a pytanie, czy karta jest zamknięta (``BrowserEfenix.closed``), ma ten
+    sam limit czasu, więc okno w nim nie wisi (#886). Karta testu nie ma domyślnego limitu Playwrighta, więc działanie
+    okna bez własnego limitu albo z domyślnym limitem okna (30 s) czekałoby do końca pętli, a strona po Uruchomieniu
+    odpowiadałaby już."""
+
+    orders = _full_and_ready()
+    page.set_default_timeout(0)
+
+    def hung(efenix: Efenix) -> Efenix:
+        page.evaluate("setTimeout(() => { const end = Date.now() + 20_000; while (Date.now() < end) {} }, 0)")
+        return efenix
+
+    with atrapa_efenix(_full_and_ready_in_efenix(orders)) as atrapa:
+        outcome = _run(write_collective_file(tmp_path, orders), page, atrapa.url, timeout_ms=1_000, window=hung)
+
+    assert isinstance(outcome.ending, Stop)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), outcome.ending.stop_kind, facts.part, facts.cause) == (
+        "EFENIX_OKNO_ZATRZYMANE",
+        "for_maks",
+        PagePart.LIST,
+        BrowserFailure(TIMEOUT, Operation.FILL),
+    )
+    with pytest.raises(PlaywrightError, match="Timeout"):
+        page.locator(":root").wait_for(state="attached", timeout=1_000)
+
+
+# Żądanie okna, na które efenix odpowiada stroną błędu serwera, numer tego żądania okna, status i część strony, którą
+# Zatrzymanie nazywa. Szukania, które lista wysyła sama, okno nie czyta, więc nie ma go tu.
+ERROR_ANSWERS = {
+    "lista-na-starcie": (LIST_PAGE, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.LIST),
+    "lista-ponownie": (LIST_PAGE, 2, HTTPStatus.NOT_FOUND, PagePart.LIST),
+    "szukanie": (SEARCH, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.RESULTS),
+    "szukanie-404": (SEARCH, 2, HTTPStatus.NOT_FOUND, PagePart.RESULTS),
+    "data-wykonania": (SET_DATE, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.DATE),
+    "zaladuj-do-zlecenia": (LOAD_EMMETT, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.EMMETT),
+    "ilosc": (SAVE_QUANTITY, 1, HTTPStatus.NOT_FOUND, PagePart.QUANTITY),
+}
+
+
+@pytest.mark.parametrize(("path", "number", "status", "part"), ERROR_ANSWERS.values(), ids=ERROR_ANSWERS.keys())
+def test_strona_bledu_serwera_efenix_na_kazde_zadanie_okna_zatrzymuje_wycene_do_maksa_ze_statusem_http(
+    tmp_path: Path, page: Page, path: str, number: int, status: HTTPStatus, part: PagePart
+) -> None:
+    """Odpowiedź efenix ze statusem błędu na listę, szukanie, zapis daty, „Załaduj do zlecenia” albo zapis ilości to
+    Zatrzymanie okna „do Maksa” z przyczyną ``HttpStatus`` i częścią strony (#878), a nie strona albo odpowiedź w innej
+    budowie (pole Numer, którego nie ma, odpowiedź szukania bez tabeli, odpowiedź zapisu ilości, która nie jest JSON) ani
+    zlecenie, które idzie dalej, choć efenix nie przyjął zmiany. Przy starcie adres odpowiada, więc to nie „efenix
+    niedostępny”."""
+
+    orders = _full_and_ready()
+    with atrapa_efenix(_full_and_ready_in_efenix(orders), error_answer=(path, number, status)) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, orders, timeout_ms=3_000)
+
+    assert isinstance(outcome.ending, Stop)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), outcome.ending.stop_kind, facts.part, facts.cause) == (
+        "EFENIX_OKNO_ZATRZYMANE",
+        "for_maks",
+        part,
+        HttpStatus(status),
+    )
 
 
 def _window_moments(atrapa: AtrapaEfenix, path: str, since: int = 0) -> list[float]:
@@ -1995,6 +2185,50 @@ def test_okno_czeka_na_logowanie_taty_15_minut_a_potem_daje_wylogowanie(page: Pa
     assert (logged_in, max(seen)) == (atrapa.url, 900.0)
 
 
+def test_lista_ze_statusem_bledu_po_zalogowaniu_taty_zatrzymuje_czekanie_na_logowanie_ze_statusem_http(page: Page) -> None:
+    """Tata loguje się, a lista zleceń, o którą okno pyta w sesji przeglądarki, odpowiada stroną błędu serwera: to
+    Zatrzymanie okna ze statusem HTTP listy, jak lista przy starcie (#878), a nie pytanie bez końca i po limicie „tata się
+    nie zalogował” (#891). Żądania listy: 1 otwarcie przy starcie, 2 karta taty po zalogowaniu, 3 pytanie okna."""
+
+    with atrapa_efenix([], error_answer=(LIST_PAGE, 3, HTTPStatus.INTERNAL_SERVER_ERROR)) as atrapa:
+        atrapa.expire_session()
+
+        @contextmanager
+        def logging_in() -> Iterator[None]:
+            atrapa.log_in()
+            page.goto(atrapa.url)
+            yield
+
+        with pytest.raises(UnexpectedPage) as stopped, efenix_browser.window(page, atrapa.url, login=logging_in):
+            pass
+
+    assert (stopped.value.part, stopped.value.cause) == (PagePart.LIST, HttpStatus(HTTPStatus.INTERNAL_SERVER_ERROR))
+
+
+def test_czekanie_na_logowanie_pyta_efenix_najwyzej_co_login_poll_ms_takze_gdy_karta_nie_stoi_na_stronie_logowania(
+    page: Page,
+) -> None:
+    """Tata przechodzi ze strony logowania na inną stronę, nie logując się: czekanie, aż karta zejdzie ze strony
+    logowania, kończy się od razu, a okno i tak pyta efenix o listę zleceń najwyżej co ``LOGIN_POLL_MS`` (#891), aż minie
+    limit czekania."""
+
+    with atrapa_efenix([]) as atrapa:
+        atrapa.expire_session()
+
+        @contextmanager
+        def walking_away() -> Iterator[None]:
+            page.goto(urljoin(atrapa.url, LIST_SCRIPT))
+            yield
+
+        with pytest.raises(LoggedOut), efenix_browser.window(page, atrapa.url, login=walking_away, login_timeout_ms=500):
+            pass
+        # Bez otwarcia listy przy starcie.
+        asked = [request.at for request in atrapa.requests if request.path == LIST_PAGE][1:]
+
+    assert len(asked) == 2, asked
+    assert asked[1] - asked[0] >= efenix_browser.LOGIN_POLL_MS / 1000
+
+
 def test_profil_przegladarki_okna_efenix_lezy_w_katalogu_narzedzia_poza_gitem() -> None:
     """Katalog narzędzia leży u taty na dysku lokalnym poza OneDrive (``docs/agents/komputer-taty.md``)."""
 
@@ -2171,8 +2405,10 @@ def test_slad_ktorego_nie_da_sie_zapisac_ani_usunac_po_skonczonym_zleceniu_nie_p
     replace = efenix_emmett_trace._replace
     unlink = Path.unlink
 
-    def replace_unless_finished(path: Path, text: str) -> bool:
-        return not (path.name == trace_name and '"gotowe"' in text) and replace(path, text)
+    def replace_unless_finished(path: Path, text: str) -> OSError | None:
+        if path.name == trace_name and '"gotowe"' in text:
+            return PermissionError("plik trzyma inny program")
+        return replace(path, text)
 
     def unlink_refused(self: Path, missing_ok: bool = False) -> None:
         if self.name == trace_name:
@@ -2223,3 +2459,43 @@ def test_slad_nie_zapisuje_z_wyprzedzeniem_ani_nie_wycofuje_ilosci_zlecenia_bez_
     refused = trace.entering("9901", "019", 2)
 
     assert (refused, trace.entered("9901"), (tmp_path / "slad").exists()) == (False, {}, False)
+
+
+# --- Zapis z wyprzedzeniem po przerwie tempa ludzkiego (#881) -----------------------------------------------------------
+
+
+class _SwitchedOff(BaseException):
+    """Centrum zgasło: proces kończy się w miejscu, w którym był, bez Zatrzymania i bez Znaczników efenix."""
+
+
+def test_zgasniecie_centrum_w_przerwie_tempa_przed_iloscia_daje_wznowienie_ktore_konczy_zlecenie_jak_jeden_przebieg(
+    tmp_path: Path, page: Page
+) -> None:
+    """Emmett wpisuje O (012), a proces ma wpisać T (019). Centrum gaśnie w przerwie tempa ludzkiego przed zapisem T,
+    zanim okno wyśle żądanie: efenix nie ma T, a ślad nie ma jej zapisu z wyprzedzeniem, bo ten stoi po przerwie, tuż przed
+    żądaniem (#881). Ponowne uruchomienie dokańcza więc zlecenie i daje ten sam stan efenix i Znaczniki co jeden przebieg,
+    a nie błąd „wycena już jest i się różni”."""
+
+    filled = {"012": 1, "019": 2}
+    order = Order("#5501", cells={"O": 1, "T": 2}, amount=_au(filled), emmett={"012": 1})
+    source = write_collective_file(tmp_path, [order])
+    clock = _FakeTime()
+    pauses = 0
+
+    def switching_off_before_quantity(seconds: float) -> None:
+        # Przerwy przed zapisami: 1 przed datą wykonania, 2 przed Wyceną Emmetta, 3 przed ilością T.
+        nonlocal pauses
+        clock.pause(seconds)
+        pauses += 1
+        if pauses == 3:
+            raise _SwitchedOff
+
+    with atrapa_efenix([order.in_efenix("951")], clock=clock) as atrapa:
+        with pytest.raises(_SwitchedOff):
+            _run(source, page, atrapa.url, pace=Pace(sleep=switching_off_before_quantity, clock=clock))
+        switched_off = _pricing(atrapa)["5501"]
+        again = _run(source, page, atrapa.url)
+        pricing = _pricing(atrapa)
+
+    assert switched_off == ({"012": 1}, DAY, 1)
+    assert (again.result, _errors(again), pricing, _marked(source)) == ("OK", [], {"5501": (filled, DAY, 1)}, [18])

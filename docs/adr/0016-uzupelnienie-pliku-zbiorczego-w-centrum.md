@@ -32,8 +32,10 @@ godzinami, z Plikiem zbiorczym otwartym w Excelu, więc strona, która wymaga za
   nadpisze w Excelu wartość narzędzia, strona pokazuje jego wartość, jak plik. Przeglądarka nie dostaje wyniku
   Reguł ilości obok wartości z pliku, bo ich porównanie to Kontrola ilości, która zostaje dla Maksa.
   Teksty wierszy nie wchodzą do `OrderFacts`, więc nie trafiają do Kontroli ilości ani do Logów Uruchomienia.
-- **Dane nie wychodzą z komputera.** Te pola nie trafiają do Logów Uruchomienia, Zgłoszenia, Uwagi taty,
-  dziennika Centrum ani pomiaru widoku. Dziennik dostaje przy nieudanym odczycie tylko token okresu, kod
+- **Dane nie wychodzą z komputera.** Odczyt tych stron nie trafia do Logów Uruchomienia, Zgłoszenia, Uwagi taty,
+  dziennika Centrum ani pomiaru widoku. Od #841 te same pola Wierszy danych niesie Kopia wejścia w Logach
+  Uruchomienia procesu, który przeczytał je z pliku taty, według reguły danych
+  ([ADR 0025](0025-regula-danych-wysylki-do-skrzynki.md)). Dziennik dostaje przy nieudanym odczycie tylko token okresu, kod
   Komunikatu, stan pliku blokady Excela i nazwę typu błędu.
 - **Odczyt mimo blokady Excela.** Jedyna funkcja czytająca Plik zbiorczy dostaje jawne pozwolenie na odczyt mimo
   pliku blokady `~$…`. To nie jest drugi czytnik: Przebieg rozliczeń dalej odmawia pliku otwartego w Excelu,
