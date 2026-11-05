@@ -267,8 +267,8 @@ MUTATIONS = (
                 "        if False:\n",
             ),
         ),
-        # W archiwum też ją łapie, ale po 38 024 harmonogramach (190 s na Macu Maksa 2026-11-05, po #897 ponad 600 s
-        # na Windows CI); archiwum-lista po 4 130 (29 s).
+        # W archiwum też ją łapie, ale po 38 024 harmonogramach (61 s na Macu Maksa 2026-11-05 po #911, przed nim 190 s
+        # i ponad 600 s na Windows CI); archiwum-lista po 4 130 (9 s).
         (EXPLORER, "--scope", "archiwum-lista"),
         "plik Logów, który już jest w Archiwum, idzie tam drugi raz przy ponowieniu po zgubionej odpowiedzi",
         NEW,

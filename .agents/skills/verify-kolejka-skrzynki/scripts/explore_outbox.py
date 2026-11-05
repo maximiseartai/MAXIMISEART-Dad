@@ -37,8 +37,9 @@ the in-memory ``MemoryBox`` (GitHub's issues and comments, and its Releases with
 the clock moves only when the ``RETRY_S`` wake fires and keeps the wakes ``after`` arms, and the key is always there and
 accepted. In a scope with ``list_lag`` GitHub's issue list does not show an issue until ``LIST_LAG_S`` after it was
 opened, the longest lag ``KeyedBox`` allows for (#879), so only the wake lets it catch up: a restart of Centrum takes no
-time. ``KeyedBox`` keeps the moments of its openings in the file ``OPENING_FILE`` of the run directory, which a restart
-keeps, as Dad's ``config`` folder does. Only a step of the
+time. ``KeyedBox`` keeps the moments of its openings in the file ``OPENING_FILE``, which a restart keeps, as Dad's
+``config`` folder does; the checker keeps that file in memory (``_NotesInMemory``), because it never fails it. Only a
+step of the
 Archiwum may be refused (a key without the permission to write the repository's contents, GitHub's 403, or a repository
 without a commit, its 409 to a new Release). The checker does not decide what such an answer means: it hands GitHub's
 answer to the real ``report_box.GitHubReportBox`` (``_github``) and gives the queue its outcome.
@@ -49,9 +50,9 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import os
 import pathlib
 import re
-import shutil
 import sys
 import tempfile
 from collections.abc import Callable, Iterator, Sequence
@@ -136,6 +137,28 @@ DRAIN_FAILURE = "wysyłka do Skrzynki Zgłoszeń"
 
 class Crash(BaseException):
     """The process dies at this step (Dad closes Centrum, the computer switches off)."""
+
+
+class _NotesInMemory:
+    """``OPENING_FILE`` of one schedule in memory: the ``path`` and ``replace`` of ``NotesFile`` that ``KeyedBox`` gets.
+
+    ``create_app`` hands ``KeyedBox`` the file through ``NotesFile`` with ``replace_atomically``; the checker hands it
+    this object as both, so every Centrum of a schedule reads what the last one wrote, as from Dad's ``config``
+    folder, and the file is missing (``FileNotFoundError``) until the first write. The checker never fails the read or
+    the write of this file (SKILL.md), so the disk added nothing but time: since #897 the file took about 40% of a scope
+    (#911), and on Windows CI ``archiwum-diagnoza`` ran past the 600 s limit of ``tools/mutacje.py``.
+    """
+
+    def __init__(self) -> None:
+        self._text: str | None = None
+
+    def read_text(self, encoding: str) -> str:
+        if self._text is None:
+            raise FileNotFoundError(OPENING_FILE)
+        return self._text
+
+    def replace(self, path: object, text: str) -> None:
+        self._text = text
 
 
 @dataclass
@@ -787,14 +810,20 @@ def _kind(scope: str, rule: str, faults: Faults) -> Kind:
 
 
 class _Log(CentrumLog):
-    def __init__(self, path: Path, failures: list[str]) -> None:
-        super().__init__(path)
+    """The Centrum log of the queue without a file: the checker judges only the exceptions of a pass (BEZ_WYJATKU), and
+    a line written to disk added only time, as ``_NotesInMemory`` says (#911)."""
+
+    def __init__(self, failures: list[str]) -> None:
+        super().__init__(Path("centrum.log"))  # never written: ``_write`` drops every line
         self._failures = failures
 
     def unexpected_failure(self, failure: BaseException, *, where: str) -> None:
         super().unexpected_failure(failure, where=where)
         if where == DRAIN_FAILURE:
             self._failures.append(f"{type(failure).__name__}: {failure}")
+
+    def _write(self, event: str, **facts: str | int) -> None:
+        return None
 
 
 class _Clock:
@@ -1068,7 +1097,6 @@ def _state(
     versions: dict[str, str],
     pending: int,
     keyed: KeyedBox,
-    opening: Path,
 ) -> object:
     """What decides every future of a pass boundary and how its breaks are judged: the Skrzynka, the queue files,
     the files ``_remove`` could not delete, the faults so far and those left, the passes left and the exceptions.
@@ -1166,6 +1194,17 @@ def _state(
     )
 
 
+def _emptied(work: Path) -> None:
+    """Every file the last schedule left in ``work`` removed, its folders kept: the queue folder, ``config`` and
+    ``zgloszenia`` hold no state of their own (the queue folder appears with the first ``Outbox.post`` of every scope
+    anyway, and the folder lock opens ``PASS_LOCK`` with ``"ab"``), and deleting and creating them again for every
+    schedule only cost time, most of it on Windows CI (#911)."""
+
+    for folder, _, names in os.walk(work):
+        for name in names:
+            os.remove(os.path.join(folder, name))
+
+
 def execute(
     name: str, prefix: Sequence[int], work: Path, visited: set[object]
 ) -> tuple[Scheduler, list[Violation]]:
@@ -1177,7 +1216,7 @@ def execute(
     """
 
     scope = SCOPES[name]
-    shutil.rmtree(work, ignore_errors=True)
+    _emptied(work)
     queue = work / "config" / "zgloszenia" / "kolejka"
     scheduler = Scheduler(prefix, scope.bounds)
     clock = _Clock()
@@ -1189,15 +1228,17 @@ def execute(
         Callable[[], None]
     ] = []  # targets of threads the code started, not run yet
     keyed: list[KeyedBox] = []  # the KeyedBox of the Centrum that runs now
+    notes = _NotesInMemory()  # survives a restart, as the file in Dad's config folder does
 
     def started() -> Outbox:
         clock.armed.clear()  # a timer and a thread die with their process
         started_threads.clear()
-        keyed[:] = [KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(work / "config" / OPENING_FILE, replace_atomically))]
+        opening = NotesFile(notes, notes.replace)  # type: ignore[arg-type]  # read_text is all KeyedBox reads of path
+        keyed[:] = [KeyedBox(box, lambda: KEY, clock=clock, opening=opening)]
         return Outbox(
             queue,
             keyed[0],
-            _Log(work / "centrum.log", failures),
+            _Log(failures),
             clock=clock,
             listener=_Unchanged(),
         )
@@ -1281,7 +1322,6 @@ def execute(
                     versions,
                     len(pending),
                     keyed[0],
-                    work / "config" / OPENING_FILE,
                 )
                 if state in visited and len(scheduler.taken) >= len(prefix):
                     return scheduler, []

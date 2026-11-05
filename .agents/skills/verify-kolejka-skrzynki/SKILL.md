@@ -26,12 +26,11 @@ as the `ci:` of `verify-aktualizacja-narzedzia` does), each to its end. Its unit
 `sprawdz_kolejke.py`) are the scopes `archiwum` and `archiwum-diagnoza` together, the scopes `watek-okresu` and
 `watek-okresu-lista`, the scopes `diagnoza`, `diagnoza-odczyt`, `archiwum-puste-repo` and `archiwum-lista` together, the
 other six scopes with `postep`, and the model; CI runs them in up to `ci-czesci` parts (`MUTACJE_CZESC=k/n`, consecutive
-units per part). On Maks's Mac (2026-11-05, beside other agents) the two scopes of the Archiwum take about 89 s
-together, `watek-okresu` about 32 s, `diagnoza`, `diagnoza-odczyt` and `archiwum-puste-repo` about 43 s together, the
-other scopes with `postep` about 39 s and the model about 65 s, so with three parts the first runs the scopes of the
-Archiwum, the second the next two units and the third the rest and the model. The scopes with a lagging list (#879) add
-about 8 s each to their units (`watek-okresu-lista`, `archiwum-lista`) or together (`nowe-issue-lista`,
-`zgloszenie-lista`) on Maks's Mac under load (2026-11-05). A
+units per part). On Maks's Mac (2026-11-05, after #911) the two scopes of the Archiwum take about 67 s together, the
+scopes of the issue okresu about 26 s, the third unit about 39 s, the other scopes with `postep` about 35 s and the model
+about 65 s, so with three parts the first runs the scopes of the Archiwum, the second the next two units and the third
+the rest and the model. On Windows CI the same units took about 7 times as long before #911 (1163 s, 304 s, 505 s and
+355 s in run 41993938633 against 145 s, 40 s, 69 s and 57 s on the Mac). A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`. The model unit
 fails with `MODEL KOLEJKI: ROZJAZD MODELU Z KODEM` when covered code changed since the Sync commit,
 but it cannot tell whether a change to the model is right.
@@ -229,7 +228,7 @@ step of this code that the checker can fail, lose or kill:
 | a pass of the queue | `Outbox._drain` (`_claimed`, `_folder_lock`, `_send_all`, `_released`), run only when the real `Outbox.send_in_background` starts the queue thread (called by `Outbox.post`, `Outbox.resume` and `Outbox._woken`); the checker replaces only `threading.Thread` in `outbox.py`, which hands it the target, and runs one Centrum at a time, so the pass always gets the folder lock |
 | the marker of the parts | `Outbox._send_all` after `Delivered` with `archive_waits`: `_archive_waits`, then `replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts), archived=False))` in `suppress(OSError)` |
 | the `RETRY_S` wake | `Outbox._drain`: `self._clock.after(RETRY_S, self._woken)` when `_stopped_on`, `_read_failed`, `_archive_refused` or `_locked_out` is set and no wake is armed; the checker calls an armed wake when nothing else asked for a pass, moves its clock by `RETRY_S` first (the only time that passes), and a restart drops it with its process |
-| a held write | `KeyedBox._ready` (`_notes`, `_held`, `_noted`) before `open_issue`, `open_archive`, `upload` and `remove`: `Unreachable` without a request; the checker never fails the read or write of `OPENING_FILE`, which lives in the run directory and survives a restart: the model fails both (`bledyPliku`: the read in `Szukaj` and `CzytajArchiwum`, `OdczytyZapisow`, the note and the answer in `Zaloz`), and the unit tests in `test_klucz_zgloszen.py` and `test_kolejka_skrzynki_zgloszen.py` fail the read at a list and for good (#909) |
+| a held write | `KeyedBox._ready` (`_notes`, `_held`, `_noted`) before `open_issue`, `open_archive`, `upload` and `remove`: `Unreachable` without a request; the checker never fails the read or write of `OPENING_FILE`, which it keeps in memory for the schedule (`_NotesInMemory`, #911) and which survives a restart: the model fails both (`bledyPliku`: the read in `Szukaj` and `CzytajArchiwum`, `OdczytyZapisow`, the note and the answer in `Zaloz`), and the unit tests in `test_klucz_zgloszen.py` and `test_kolejka_skrzynki_zgloszen.py` fail the read at a list and for good (#909) |
 | a restart of Centrum | a new `Outbox` and `KeyedBox` on the same folder, then `Outbox.resume` |
 
 Covered files: `src/rozliczenia/centrum/outbox.py`,
@@ -468,7 +467,10 @@ temporary directory with `Outbox.post`, then runs passes of the real queue
 (`_drain`) in its own thread. Only the start of the queue thread is replaced:
 the real `send_in_background` decides, from `_draining`, whether a thread
 starts, and the checker runs the target of each started thread. Behind `KeyedBox` stands `MemoryBox`, GitHub's
-issues, labels, bodies and comments in memory. Before each step in the table
+issues, labels, bodies and comments in memory. The file of `KeyedBox`'s writes (`OPENING_FILE`) and the Centrum log stay
+in memory too, and between two schedules the checker removes only the files of the run directory, not its folders: the
+checker fails none of them, and on disk they only took time (#911: from 91 s to 41 s for `archiwum-diagnoza` on Maks's
+Mac on 2026-11-05, with the same 19 874 schedules). Before each step in the table
 the checker picks one option:
 
 - a box read: it answers, the network fails (`Unreachable`), or the process dies;
@@ -636,7 +638,7 @@ with `MUTACJE OK`. Each of these gives `KOLEJKA: NOWE NARUSZENIE`:
   without the check of a newer version (`diagnoza-odczyt`);
 - an Uwaga taty that does not look for its issue by the mark (`nowe-issue`);
 - a file in the Archiwum without the check of the version in its label: the queue removes its own whole file and
-  sends it again (`archiwum-lista`: `archiwum` catches it too, but after over 600 s on Windows CI since #897);
+  sends it again (`archiwum-lista`: `archiwum` catches it too, but after 38 024 schedules instead of 4 130);
 - a file whose upload broke off taken as sent, without `uploaded` (`archiwum`);
 - a wysyłka without the step of the Archiwum (`archiwum`);
 - a file of an older version that is not removed before the upload of the newer one (`archiwum-diagnoza`);
