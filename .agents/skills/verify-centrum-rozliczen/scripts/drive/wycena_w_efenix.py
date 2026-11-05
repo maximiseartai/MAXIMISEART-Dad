@@ -187,7 +187,7 @@ def _price(run: Run, page: Page, source: Path) -> None:
         expect(table.get_by_role("row").first.get_by_role("cell").nth(1)).to_have_text(number)
         expect(table.get_by_role("row").first.get_by_role("cell").nth(2)).to_have_text(worker)
     expect(page.get_by_role("table", name="Błędy")).to_contain_text("efenix nie zna zlecenia o numerze z NUMER ZL.")
-    expect(page.get_by_role("table", name="Ostrzeżenia Emmetta")).to_contain_text("Emmett 2, plik 1")
+    expect(page.get_by_role("table", name="Ostrzeżenia Emmetta")).to_contain_text("efenix 2, plik 1")
     expect(page.get_by_role("table", name="Rozliczone").get_by_role("row").first.get_by_role("cell").nth(3)).to_have_text("")
     run.check(
         True,

@@ -261,7 +261,6 @@ def _app(
         efenix_window=EfenixWindow(
             surroundings.efenix_url,
             tmp_path / "przegladarka-efenix",
-            tmp_path / "slad-wyceny-emmetta",
             channel=None,
             headless=True,
             arguments=surroundings.efenix_arguments,
