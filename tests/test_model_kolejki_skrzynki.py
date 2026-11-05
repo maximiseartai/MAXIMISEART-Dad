@@ -6,9 +6,10 @@ gdy padło którekolwiek; w częściach ``MUTACJE_CZESC=k/n`` każda jednostka b
 Znane znalezisko z ``model/oczekiwane.json`` wybacza tylko swoją obietnicę i tylko przebieg, który przeszedł przez jego
 przyczynę: kontrprzykład innej obietnicy albo bez tej przyczyny to nowe naruszenie (werdykt FAIL #638).
 
-Model opisuje kod z commitu synchronizacji w ``SKILL.md`` skilla ``verify-kolejka-skrzynki``. Javę, ``tla2tools.jar``
-i porównanie z commitem bierze ze skryptu skilla ``verify-aktualizacja-narzedzia``, a zmienne ``TLC_JAVA`` i
-``TLC_JAR`` (kopia checkoutu mutacji) zastępują jego Javę i jar.
+Model opisuje kod z ``model/definicje.json`` skilla ``verify-kolejka-skrzynki`` w Sync commit z jego ``SKILL.md``, a
+rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py`` (``tests/test_rozjazd_modelu.py``). Javę i ``tla2tools.jar`` bierze ze
+skryptu skilla ``verify-aktualizacja-narzedzia``, a zmienne ``TLC_JAVA`` i ``TLC_JAR`` (kopia checkoutu mutacji)
+zastępują jego Javę i jar.
 """
 
 from __future__ import annotations
@@ -33,12 +34,17 @@ sys.path.insert(0, str(ROOT / "tools" / "lib"))
 
 import mutacje  # noqa: E402
 import kroki_skilli  # noqa: E402
+import rozjazd_modelu  # noqa: E402
 
 SCRIPT = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "scripts" / "sprawdz_model_kolejki.py"
 BASELINE = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "scripts" / "sprawdz_kolejke.py"
 EXPLORER = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "scripts" / "explore_outbox.py"
 SKILL_MD = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "SKILL.md"
 TOOLS = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts" / "sprawdz_aktualizacje.py"
+OWNER = ROOT / "tools" / "lib" / "rozjazd_modelu.py"
+# Właścicielka rozjazdu dopobiera historię przez potomne.run.
+POTOMNE = ROOT / "tools" / "lib" / "potomne.py"
+DEFINITIONS = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "model" / "definicje.json"
 COVERED = "src/rozliczenia/centrum/outbox.py"
 DRIFT = "MODEL KOLEJKI: ROZJAZD MODELU Z KODEM"
 APP = ROOT / "src" / "rozliczenia" / "centrum" / "app.py"
@@ -78,16 +84,19 @@ def _violation(invariant: str, causes: str) -> str:
 def test_w_ci_pokryty_kod_zmieniony_od_synchronizacji_konczy_sprawdzenie_modelu_kolejki_porazka(tmp_path: Path) -> None:
     (tmp_path / COVERED).parent.mkdir(parents=True)
     (tmp_path / COVERED).write_text("X = 1\n", encoding="utf-8")
-    for script in (SCRIPT, TOOLS):
+    for script in (SCRIPT, TOOLS, OWNER, POTOMNE):
         copy = tmp_path / script.relative_to(ROOT)
-        copy.parent.mkdir(parents=True)
+        copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(script, copy)
+    definitions = tmp_path / DEFINITIONS.relative_to(ROOT)
+    definitions.parent.mkdir(parents=True)
+    definitions.write_text(json.dumps({COVERED: rozjazd_modelu.CALY_PLIK}), encoding="utf-8")
     git(tmp_path, "init", "--quiet")
     sync = commit(tmp_path, "synchronizacja")
     (tmp_path / COVERED).write_text("X = 2\n", encoding="utf-8")
     commit(tmp_path, "zmiana pokrytego kodu")
     skill = tmp_path / SCRIPT.relative_to(ROOT).parents[1]
-    (skill / "SKILL.md").write_text(f"Covered: `{COVERED}`.\n\n**Sync commit: `{sync[:8]}`** (main).\n", encoding="utf-8")
+    (skill / "SKILL.md").write_text(f"**Sync commit: `{sync[:8]}`** (main).\n", encoding="utf-8")
 
     done = subprocess.run(
         [sys.executable, str(skill / "scripts" / SCRIPT.name)],
@@ -102,7 +111,7 @@ def test_w_ci_pokryty_kod_zmieniony_od_synchronizacji_konczy_sprawdzenie_modelu_
 
     assert done.returncode == 1, done.stdout + done.stderr
     assert done.stdout.splitlines()[-1] == DRIFT
-    assert f"pokryty kod zmienił się od {sync[:8]}: {COVERED}" in done.stdout
+    assert f"kod opisany modelem zmienił się od {sync[:8]}: {COVERED}." in done.stdout
 
 
 def test_java_i_jar_ze_zmiennych_srodowiska_zastepuja_narzedzia_aktualizacji(
@@ -113,9 +122,9 @@ def test_java_i_jar_ze_zmiennych_srodowiska_zastepuja_narzedzia_aktualizacji(
     def unavailable() -> str:
         raise AssertionError("kopia checkoutu mutacji nie ma katalogu podręcznego z Javą i jarem")
 
-    tools = SimpleNamespace(_drift=lambda root, skill_md: None, _java=unavailable, _tla_tools=unavailable)
+    tools = SimpleNamespace(_java=unavailable, _tla_tools=unavailable)
     monkeypatch.setattr(module, "_tools", lambda: tools)
-    monkeypatch.setattr(module, "_moved_definitions", lambda tools, root, skill_md: None)
+    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: None)
     (tmp_path / "oczekiwane.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(module, "MODEL", tmp_path)  # model bez konfiguracji: sprawdzenie biegnie do końca bez TLC
     monkeypatch.setenv("TLC_JAVA", "java")
@@ -176,8 +185,8 @@ def test_znane_znalezisko_wybacza_tylko_swoja_obietnice_po_swojej_przyczynie(
         encoding="utf-8",
     )
     monkeypatch.setattr(module, "MODEL", tmp_path)
-    monkeypatch.setattr(module, "_tools", lambda: SimpleNamespace(_drift=lambda root, skill_md: None))
-    monkeypatch.setattr(module, "_moved_definitions", lambda tools, root, skill_md: None)
+    monkeypatch.setattr(module, "_tools", lambda: SimpleNamespace())
+    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: None)
     monkeypatch.setenv("TLC_JAVA", "java")
     monkeypatch.setenv("TLC_JAR", str(tmp_path / "tla2tools.jar"))
     # Reszta przebiegów dostaje wybaczenie tylko w stałej obietnicy znaleziska; każda inna konfiguracja to błąd testu.
@@ -201,8 +210,8 @@ def test_konfiguracja_bez_znaleziska_z_kontrprzykladem_to_nowe_naruszenie(
     (tmp_path / "oczekiwane.json").write_text(json.dumps({"f": {"wynik": "przechodzi"}}), encoding="utf-8")
     (tmp_path / "f.cfg").write_text("\\* Opis.\nINVARIANTS TypeOK JednoIssue\n", encoding="utf-8")
     monkeypatch.setattr(module, "MODEL", tmp_path)
-    monkeypatch.setattr(module, "_tools", lambda: SimpleNamespace(_drift=lambda root, skill_md: None))
-    monkeypatch.setattr(module, "_moved_definitions", lambda tools, root, skill_md: None)
+    monkeypatch.setattr(module, "_tools", lambda: SimpleNamespace())
+    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: None)
     monkeypatch.setenv("TLC_JAVA", "java")
     monkeypatch.setenv("TLC_JAR", str(tmp_path / "tla2tools.jar"))
     monkeypatch.setattr(module, "_tlc", lambda java, jar, name, config: _violation("DokladnieRaz", "{}"))
@@ -215,9 +224,9 @@ def test_w_ci_zmieniona_definicja_procesow_centrum_konczy_sprawdzenie_rozjazdem(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     module = _load()
-    moved = "kod procesów Centrum zmienił się od abcdef1: src/rozliczenia/centrum/app.py lifespan."
-    monkeypatch.setattr(module, "_tools", lambda: SimpleNamespace(_drift=lambda root, skill_md: None))
-    monkeypatch.setattr(module, "_moved_definitions", lambda tools, root, skill_md: moved)
+    moved = "kod opisany modelem zmienił się od abcdef1: src/rozliczenia/centrum/app.py lifespan."
+    monkeypatch.setattr(module, "_tools", lambda: SimpleNamespace())
+    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: moved)
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
 
     assert module.main([]) == 1
@@ -246,8 +255,7 @@ def _no_change(text: str) -> str:
 def test_rozjazd_liczy_w_plikach_procesu_centrum_tylko_definicje_procesow_centrum(
     tmp_path: Path, path: Path, edit: Callable[[str], str], moved: str | None
 ) -> None:
-    module = _load()
-    for source in (APP, LAUNCHER, SERVER):
+    for source in (APP, LAUNCHER, SERVER, DEFINITIONS):
         copy = tmp_path / source.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         copy.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
@@ -258,12 +266,15 @@ def test_rozjazd_liczy_w_plikach_procesu_centrum_tylko_definicje_procesow_centru
     assert edit is _no_change or changed != copy.read_text(encoding="utf-8"), "kotwica zmiany nie pasuje do kodu"
     copy.write_text(changed, encoding="utf-8")
 
-    found = module._moved_definitions(module._tools(), tmp_path, f"**Sync commit: `{sync[:8]}`**")
+    skill = tmp_path / DEFINITIONS.relative_to(ROOT).parents[1]
+    (skill / "SKILL.md").write_text(f"**Sync commit: `{sync[:8]}`**\n", encoding="utf-8")
+
+    found = rozjazd_modelu.rozjazd(skill, tmp_path)
 
     if moved is None:
         assert found is None
     else:
-        assert found == f"kod procesów Centrum zmienił się od {sync[:8]}: {moved}. Sprawdź Start, Zamknij i KoniecProcesu."
+        assert found is not None and found.startswith(f"kod opisany modelem zmienił się od {sync[:8]}: {moved}. "), found
 
 
 # Jednostki sprawdzenia kodu i modelu w kolejności ``UNITS``; atrapa sprawdzenia wypisuje pierwszy zakres jednostki.

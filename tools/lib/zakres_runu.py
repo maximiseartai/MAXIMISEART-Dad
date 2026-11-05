@@ -49,7 +49,7 @@ from wplyw_zmiany import Context, Repository, run_all, with_structure
 
 __all__ = [
     "E2E", "KROKI", "MUTACJE", "PRZEGLADARKA", "STRAZ", "TIMING", "TORY", "Krok", "KrokSkilla", "Tor", "ZakresRunu", "Zdarzenie", "pliki_testow",
-    "potrzebuja_chromium", "zakres",
+    "podstawa_na_pull_request", "potrzebuja_chromium", "zakres",
 ]
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -238,33 +238,36 @@ def _dlaczego(step: Step, zdarzenie: Zdarzenie, zmiana: frozenset[str]) -> tuple
         case Zdarzenie.PUSH:
             return True, ""
         case Zdarzenie.PULL_REQUEST:
-            return _podstawa(step, zmiana) if step.verdict is None else _skrypt_modelu(step, zmiana)
+            return podstawa_na_pull_request(step.skill, zmiana) if step.verdict is None else _skrypt_modelu(step, zmiana)
         case Zdarzenie.NOC:
             if step.verdict is not None:
                 return _skrypt(step, zmiana)
-            return _podstawa(step, zmiana) if step.parts > 1 else (False, ON_PULL_REQUEST)
+            return podstawa_na_pull_request(step.skill, zmiana) if step.parts > 1 else (False, ON_PULL_REQUEST)
 
 
-def _zawsze(step: Step, zmiana: frozenset[str]) -> str | None:
-    """Powód, z którego krok biegnie przy każdej zmianie: skill bez czytelnego ``pilnuje`` albo zmiana z ``SKILL_STEPS``."""
+def _zawsze(skill: Path, zmiana: frozenset[str]) -> str | None:
+    """Powód, z którego krok skilla biegnie przy każdej zmianie: skill bez czytelnego ``pilnuje`` albo zmiana z ``SKILL_STEPS``."""
 
-    if always := hits(step.skill, zmiana).always:
+    if always := hits(skill, zmiana).always:
         return always
     if infrastructure := run_all(zmiana, Context.SKILL_STEPS):
         return _changes(infrastructure)
     return None
 
 
-def _podstawa(step: Step, zmiana: frozenset[str]) -> tuple[bool, str]:
-    if reason := _zawsze(step, zmiana):
+def podstawa_na_pull_request(skill: Path, zmiana: frozenset[str]) -> tuple[bool, str]:
+    """Czy na pull request ze zmianą ``zmiana`` biegnie podstawa ``ci:`` skilla ``skill`` (folder), i dlaczego; nocą
+    ta sama zmiana wybiera podstawę z ``ci-czesci``."""
+
+    if reason := _zawsze(skill, zmiana):
         return True, reason
-    if found := hits(step.skill, zmiana).files:
+    if found := hits(skill, zmiana).files:
         return True, _changes(found)
     return False, "zmiany nie trafiają w pilnuje ani w folder skilla"
 
 
 def _skrypt(step: Step, zmiana: frozenset[str]) -> tuple[bool, str]:
-    if reason := _zawsze(step, zmiana):
+    if reason := _zawsze(step.skill, zmiana):
         return True, reason
     try:
         paths = watched(step)

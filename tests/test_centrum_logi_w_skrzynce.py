@@ -120,7 +120,10 @@ def archived(centrum: SettlingCentrum, comment: str, *, tag: str = ARCHIVE) -> b
 
 
 def queued_logs(centrum: SettlingCentrum) -> list[Path]:
-    return sorted((centrum.tmp_path / "config" / "zgloszenia" / "kolejka").glob(f"*-{LABEL}-*"))
+    """Pliki kolejki z Logami Uruchomienia, bez ``.json.tmp``, który kolejka zostawia na chwilę przepisania pliku
+    (``replace_atomically``, na Windows z ponowieniami zamiany; #885)."""
+
+    return sorted((centrum.tmp_path / "config" / "zgloszenia" / "kolejka").glob(f"*-{LABEL}-*.json"))
 
 
 def test_pierwsze_uruchomienie_okresu_zaklada_issue_i_archiwum_logow_a_kolejne_dopisuja_komentarze_i_pliki_takze_po_zamknieciu(
@@ -617,6 +620,8 @@ def test_kolejne_uruchomienie_okresu_bez_uprawnienia_do_archiwum_ma_komentarz_z_
     assert note.startswith(f"Plik `{name}` czeka w Kolejce wysyłki na komputerze taty")
     assert list(box(centrum).archived(ARCHIVE)) == [f"{local_path(centrum, first).name}.gz"]
 
+    # Przejście nastawia ponowienie dopiero po przepisaniu pliku kolejki, które idzie po linii dziennika (#885).
+    assert wait_for(lambda: centrum.surroundings.clock.wakes == 1)
     box(centrum).archive_failure = None
     centrum.surroundings.clock.advance(RETRY_S)
 
@@ -652,6 +657,8 @@ def test_bez_uprawnienia_do_archiwum_komentarz_idzie_z_dopiskiem_a_plik_czeka_be
     assert centrum.client.get("/api/configuration").json()["reports"] == "ready"
     assert (box(centrum).archive_requests, box(centrum).archives) == (1, [])
 
+    # Przejście nastawia ponowienie dopiero po przepisaniu pliku kolejki, które idzie po linii dziennika (#885).
+    assert wait_for(lambda: centrum.surroundings.clock.wakes == 1)
     box(centrum).archive_failure = None
     centrum.surroundings.clock.advance(RETRY_S)
 

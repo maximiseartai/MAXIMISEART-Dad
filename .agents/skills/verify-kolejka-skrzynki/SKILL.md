@@ -10,6 +10,7 @@ pilnuje:
   - src/rozliczenia/centrum/launcher.py
   - src/rozliczenia/centrum/server.py
   - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
+  - tools/lib/rozjazd_modelu.py
 ci: .agents/skills/verify-kolejka-skrzynki/scripts/sprawdz_kolejke.py
 ci-czesci: 3
 ---
@@ -30,7 +31,9 @@ model about 65 s, so with three parts the first runs the scopes of the Archiwum,
 third the rest and the model. A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`. The model unit
 fails with `MODEL KOLEJKI: ROZJAZD MODELU Z KODEM` when covered code changed since the Sync commit,
-but it cannot tell whether a change to the model is right. `check_outbox_mutations.py` and
+but it cannot tell whether a change to the model is right.
+`tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
+`check_outbox_mutations.py` and
 `check_model_kolejki_mutations.py` run in full CI on `main` and nightly on `main` (`mutacje-nocne.yml`)
 after a change of this skill's folder. `check_model_kolejki_mutations.py` also runs on a pull request that changes a
 file in `model/`, the script itself or `sprawdz_model_kolejki.py` (ADR 0021), so a model change that leaves a mutation
@@ -182,9 +185,8 @@ and `KoniecProcesu`, which let an old and a new Centrum process share the queue
 folder (configuration `dwa-procesy`), also cover three definitions in files
 that Centrum changes often: `lifespan` in `app.py`, `listen_locally` and
 `_listen_when_released` in `launcher.py`, and `_GRACEFUL_SHUTDOWN_S`, `serve`
-and `_Server` in `server.py` (`DEFINITIONS` in `sprawdz_model_kolejki.py`). Only a change to these definitions, not to the
-rest of their files, is drift. Name these three files here without their
-`src/…` path in backticks: such a path makes the whole file covered.
+and `_Server` in `server.py`. `model/definicje.json` lists the four covered files as whole files and these three
+by their definitions: only a change to these definitions, not to the rest of their files, is drift.
 
 **Sync commit: `ed6e5833`** (2026-11-05). The checker and the model share it:
 at this commit both were confirmed to describe the code above. It merges

@@ -1,8 +1,9 @@
 """Wymiany HTTP z GitHubem: nagrywanie na żywo, odtwarzanie z nagrań i granice, poza które przebieg nie wychodzi.
 
 Skrzynka Zgłoszeń (``GitHubReportBox``) dostaje transport: na żywo ``LiveTransport`` przenosi jej żądania z adresu
-Skrzynki (``report_box.REPOSITORY``) na repozytorium próbne ``TRIAL`` i nigdzie indziej, przez ``urllib_transport``
-klienta, a w odtwarzaniu ``ReplayTransport`` odpowiada nagranymi odpowiedziami w nagranej kolejności. Aktualność
+Skrzynki (``report_box.REPOSITORY``) na jedno z repozytoriów próbnych ``TRIALS`` (puste ``TRIAL`` albo ``TRIAL_ARCHIVE``
+z commitem, w którym da się założyć Archiwum okresu) i nigdzie indziej, przez ``urllib_transport`` klienta, a w
+odtwarzaniu ``ReplayTransport`` odpowiada nagranymi odpowiedziami w nagranej kolejności. Aktualność
 narzędzia (``tool_freshness``) nie ma transportu, tylko adres API, więc pyta lokalnego ``GitHubProxy``: na żywo
 przekazuje on każde GET do ``api.github.com`` (tylko repozytorium narzędzia, bez klucza jak u taty albo z kluczem
 ``gh``), a w odtwarzaniu odpowiada z nagrania.
@@ -18,6 +19,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 import hashlib
+from http.client import HTTPMessage
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -26,8 +28,9 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Final, Generic, TypeVar
+from typing import IO, Final, Generic, TypeVar
 import urllib.error
+import urllib.parse
 import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
@@ -42,6 +45,12 @@ from rozliczenia.centrum.report_box import (
 API: Final = "https://api.github.com"
 UPLOADS: Final = "https://uploads.github.com"
 TRIAL: Final = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba"
+# Repozytorium próbne z jednym commitem (README na ``main``): Release, a więc Archiwum okresu, wymaga commitu.
+TRIAL_ARCHIVE: Final = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum"
+TRIALS: Final = (TRIAL, TRIAL_ARCHIVE)
+WEB: Final = "https://github.com"
+# Plik Release pobrany przez API przekierowuje na podpisany adres pod tą domeną.
+DOWNLOAD_HOST: Final = ".githubusercontent.com"
 TOOL_REPOSITORY: Final = "maximiseartai/MAXIMISEART-Dad"
 RUN_MARKER: Final = "verify-github-skrzynki run="
 LONG_TEXT: Final = 2000
@@ -51,7 +60,7 @@ KEPT: Final = frozenset(
         "number", "body", "state", "state_reason", "closed_at", "id", "html_url",
         "name", "commit", "sha", "object", "status", "ahead_by",
         "merge_commit_sha", "merged_at", "base", "ref",
-        "tag_name", "published_at", "draft", "prerelease",
+        "tag_name", "published_at", "draft", "prerelease", "label",
         "message", "errors", "resource", "code", "field",
     }
 )  # fmt: skip
@@ -232,27 +241,39 @@ class Recorder:
             self.current = None
 
 
-def to_trial(url: str) -> str:
-    """Adres Skrzynki (API albo wysyłka plików Archiwum) przeniesiony na repozytorium próbne; każdy inny adres to
-    ``OutsideTrial``."""
+def to_trial(url: str, trial: str = TRIAL) -> str:
+    """Adres Skrzynki (API albo wysyłka plików Archiwum) przeniesiony na repozytorium próbne ``trial``; każdy inny adres
+    to ``OutsideTrial``."""
 
+    if trial not in TRIALS:
+        raise OutsideTrial(f"repozytorium {trial} nie jest repozytorium próbnym")
     for host in (API, UPLOADS):
         if url.startswith(f"{host}/repos/{REPOSITORY}/"):
-            return f"{host}/repos/{TRIAL}/" + url.removeprefix(f"{host}/repos/{REPOSITORY}/")
+            return f"{host}/repos/{trial}/" + url.removeprefix(f"{host}/repos/{REPOSITORY}/")
     raise OutsideTrial(f"klient Skrzynki pyta poza adres Skrzynki: {url}")
+
+
+def from_trial_web(url: str) -> str:
+    """Adres strony repozytorium próbnego Archiwum (np. ``browser_download_url`` pliku) jako adres w Skrzynce; adres
+    spoza ``TRIAL_ARCHIVE`` to ``OutsideTrial``."""
+
+    if not url.startswith(f"{WEB}/{TRIAL_ARCHIVE}/"):
+        raise OutsideTrial(f"adres spoza repozytorium próbnego Archiwum: {url}")
+    return f"{WEB}/{REPOSITORY}/" + url.removeprefix(f"{WEB}/{TRIAL_ARCHIVE}/")
 
 
 @dataclass
 class LiveTransport:
-    """Transport klienta Skrzynki na żywo: każde żądanie do repozytorium próbnego przez ``urllib_transport``."""
+    """Transport klienta Skrzynki na żywo: każde żądanie do repozytorium próbnego ``trial`` przez ``urllib_transport``."""
 
     recorder: Recorder
     pace: Pace
     sent: list[str] = field(default_factory=list)
     last: str = "-"
+    trial: str = TRIAL
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
-        url = to_trial(request.url)
+        url = to_trial(request.url, self.trial)
         if request.method != "GET":
             self.pace.write()
         digest, length = _digest(request.body)
@@ -418,10 +439,11 @@ class GitHubProxy:
 
 @dataclass
 class Admin:
-    """Harness runu: REST i GraphQL GitHuba kluczem ``gh`` Maksa, tylko w repozytorium próbnym i tylko do odczytu poza nim.
+    """Harness runu: REST i GraphQL GitHuba kluczem ``gh`` Maksa, tylko w repozytoriach próbnych i tylko do odczytu poza
+    nimi.
 
-    Robi to, co w Skrzynce robi Maks ręcznie (etykiety, zamknięcie, usunięcie issue), i sprzątanie. Każde żądanie
-    trafia do ``log``.
+    Robi to, co w Skrzynce robi Maks ręcznie (etykiety, zamknięcie, usunięcie issue, pobranie pliku z Archiwum), i
+    sprzątanie. Każde żądanie trafia do ``log``.
     """
 
     token: str
@@ -429,7 +451,7 @@ class Admin:
     log: list[str] = field(default_factory=list)
 
     def request(self, method: str, path: str, payload: object = None) -> tuple[int, object]:
-        allowed = path.startswith(f"/repos/{TRIAL}/") or path == f"/repos/{TRIAL}"
+        allowed = any(path.startswith(f"/repos/{trial}/") or path == f"/repos/{trial}" for trial in TRIALS)
         if method != "GET" and not allowed:
             raise OutsideTrial(f"harness zmienia poza repozytorium próbnym: {method} {path}")
         if method == "GET" and not (allowed or path in {"/rate_limit", "/user"}):
@@ -476,6 +498,48 @@ class Admin:
         except ValueError:
             return status, raw[:200].decode("utf-8", "replace")
 
+    def download(self, asset_id: int) -> bytes:
+        """Treść pliku ``asset_id`` z Archiwum repozytorium próbnego ``TRIAL_ARCHIVE``, tak jak dostałby ją Maks.
+
+        API odpowiada przekierowaniem na podpisany adres pod ``DOWNLOAD_HOST``; ten adres harness pobiera bez klucza,
+        a każdy inny adres przekierowania to ``OutsideTrial``.
+        """
+
+        path = f"/repos/{TRIAL_ARCHIVE}/releases/assets/{asset_id}"
+        status, location = self._head(API + path, {"Accept": "application/octet-stream"})
+        self.log.append(f"harness: GET {path} (plik) → {status}")
+        target = urllib.parse.urlsplit(location or "")
+        if status != 302 or target.scheme != "https" or not (target.hostname or "").endswith(DOWNLOAD_HOST):
+            raise OutsideTrial(f"pobranie pliku {asset_id}: {status} na {target.scheme}://{target.hostname}")
+        with urllib.request.urlopen(urllib.request.Request(str(location)), timeout=30) as response:
+            data: bytes = response.read()
+        self.log.append(f"harness: GET {target.hostname} (podpisany adres pliku) → {response.status}")
+        return data
+
+    def web_status(self, url: str) -> int:
+        """Status odpowiedzi strony GitHuba ``url`` z repozytorium próbnego Archiwum (bez śledzenia przekierowania) na
+        prośbę z kluczem ``gh``: czy adres pobrania pliku prywatnego repozytorium działa bez sesji przeglądarki."""
+
+        if not url.startswith(f"{WEB}/{TRIAL_ARCHIVE}/releases/download/"):
+            raise OutsideTrial(f"harness pyta o stronę spoza Archiwum repozytorium próbnego: {url}")
+        status, _ = self._head(url, {})
+        self.log.append(f"harness: GET {url.removeprefix(WEB)} (strona) → {status}")
+        return status
+
+    def _head(self, url: str, headers: Mapping[str, str]) -> tuple[int, str | None]:
+        """Status i ``Location`` odpowiedzi na GET ``url`` kluczem ``gh``, bez śledzenia przekierowania i bez treści."""
+
+        request = urllib.request.Request(
+            url,
+            headers={**headers, "Authorization": f"Bearer {self.token}", "User-Agent": "verify-github-skrzynki"},
+        )
+        try:
+            with urllib.request.build_opener(_Unredirected()).open(request, timeout=30) as response:
+                return response.status, response.headers.get("Location")
+        except urllib.error.HTTPError as error:
+            with error:
+                return error.code, error.headers.get("Location")
+
     def pages(self, path: str) -> list[object]:
         """Wszystkie strony listy ``path`` (z ``?`` w adresie) po 100."""
 
@@ -488,6 +552,21 @@ class Admin:
             if len(entries) < 100:
                 return found
         raise RuntimeError(f"harness: lista {path} ma ponad 49 stron")
+
+
+class _Unredirected(urllib.request.HTTPRedirectHandler):
+    """Przekierowanie zostaje odpowiedzią: klucz nie idzie na adres przekierowania."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+        newurl: str,
+    ) -> None:
+        return None
 
 
 def write_recording(path: Path, document: Mapping[str, object]) -> None:
