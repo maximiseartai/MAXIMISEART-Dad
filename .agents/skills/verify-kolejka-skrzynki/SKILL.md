@@ -170,7 +170,7 @@ it restarts). Only the queue writes to the Skrzynka, inside a pass with the
 folder lock, so one process at a time reads and writes the file; without the
 lock a second process could list before the first one's write and open after
 its answer, which the hold does not see (configuration `dwa-procesy`). The file
-is replaced atomically (`replace_atomically`) and keeps only the effects of the
+is replaced atomically (`NotesFile.replace`, `replace_atomically` from `create_app`) and keeps only the effects of the
 last `LIST_LAG_S` and the writes without an answer of the last `PENDING_KEPT_S`
 (an hour).
 

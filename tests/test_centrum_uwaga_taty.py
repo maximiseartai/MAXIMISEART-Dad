@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from rozliczenia.centrum.keyed_box import LIST_LAG_S
+from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE
 from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, RETRY_S
 from rozliczenia.centrum.report_box import Refused, SendOutcome, Unreachable
 
@@ -62,6 +62,30 @@ def test_uwaga_z_tytulem_i_trescia_to_jedno_issue_uwaga_taty_z_wersja_narzedzia(
     assert (note["title"], note["commit"], note["number"]) == (TITLE, TOOL_COMMIT, issue.number)
     assert BODY not in json.dumps(note, ensure_ascii=False)
     assert wait_for(lambda: queued(tmp_path) == [])
+
+
+def test_uwaga_przy_chwilowo_zablokowanym_pliku_zapisow_skrzynki_wychodzi_od_razu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Antywirus na chwilę trzyma plik zapisów Skrzynki: jego zamiana czeka jak przy innych plikach Centrum, więc Uwaga
+    nie czeka na budzenie kolejki i nie wygląda jak brak sieci (#879)."""
+
+    opening = tmp_path / "config" / OPENING_FILE
+    replace = Path.replace
+    refused: list[Path] = []
+
+    def held_once(path: Path, target: Any) -> Path:
+        if Path(target) == opening and not refused:
+            refused.append(path)
+            raise PermissionError(13, "Odmowa dostępu", str(target))
+        return replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", held_once)
+    started = with_key(tmp_path)
+
+    response = started.client.post("/api/dad-notes", json={"title": TITLE, "body": BODY})
+
+    assert (response.json(), len(refused), len(started.report_box.issues)) == ({"state": "sent"}, 1, 1)
 
 
 @pytest.mark.parametrize(

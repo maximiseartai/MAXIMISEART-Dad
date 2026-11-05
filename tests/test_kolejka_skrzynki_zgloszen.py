@@ -19,7 +19,8 @@ from types import SimpleNamespace
 import pytest
 
 from rozliczenia.centrum import outbox as outbox_module
-from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE, KeyedBox
+from rozliczenia.centrum.atomic_file import replace_atomically
+from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE, KeyedBox, NotesFile
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import (
     PART_LIMIT,
@@ -91,7 +92,7 @@ class Queue:
     def restarted(self) -> Outbox:
         """Kolejka nowego startu Centrum na tym samym folderze."""
 
-        keyed = KeyedBox(self.box, lambda: self.key, clock=self.clock, opening=self.directory.parents[1] / OPENING_FILE)
+        keyed = KeyedBox(self.box, lambda: self.key, clock=self.clock, opening=NotesFile(self.directory.parents[1] / OPENING_FILE, replace_atomically))
         return Outbox(
             self.directory,
             keyed,

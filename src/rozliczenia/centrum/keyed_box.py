@@ -49,7 +49,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, Literal, TypeVar
 
-from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.report_box import (
     Archive,
     ArchiveOutcome,
@@ -94,6 +93,15 @@ LIST_LAG_S: Final = 30.0
 PENDING_KEPT_S: Final = 60 * 60.0
 
 _Outcome = TypeVar("_Outcome")
+
+
+@dataclass(frozen=True)
+class NotesFile:
+    """Plik zapisów ``KeyedBox`` (opis modułu) i jego zamiana: u taty ``atomic_file.replace_atomically`` (``create_app``),
+    która czeka na plik, który ktoś na chwilę trzyma, jak przy innych plikach Centrum, i nie zostawia urwanego pliku."""
+
+    path: Path
+    replace: Callable[[Path, str], None]
 
 
 @dataclass
@@ -189,7 +197,7 @@ class KeyedBox:
     """
 
     def __init__(
-        self, box: ReportBox, key: Callable[[], str | None], *, clock: Callable[[], float], opening: Path | None = None
+        self, box: ReportBox, key: Callable[[], str | None], *, clock: Callable[[], float], opening: NotesFile | None = None
     ) -> None:
         self._box = box
         self._key = key
@@ -305,7 +313,7 @@ class KeyedBox:
         if self._opening is None:
             return self._remembered.fresh(now)
         try:
-            text = self._opening.read_text(encoding="utf-8")
+            text = self._opening.path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return _Notes()
         except (OSError, UnicodeError):
@@ -316,8 +324,8 @@ class KeyedBox:
         """Pod blokadą: zapisuje ``notes`` w pliku ``opening`` (bez pliku w pamięci); ``False``: zapis się nie udał.
 
         Zapisuje do Skrzynki tylko kolejka, w przejściu z blokadą folderu kolejki (``outbox._folder_lock``), więc plik
-        zmienia naraz najwyżej jeden proces. Zamiana jest atomowa i czeka na plik, który ktoś na chwilę trzyma
-        (``replace_atomically``, jak inne pliki Centrum), więc zgaśnięcie w jej trakcie zostawia poprzednie zapisy, a
+        zmienia naraz najwyżej jeden proces. Zamiana (``NotesFile.replace``) jest atomowa i czeka na plik, który ktoś
+        na chwilę trzyma, więc zgaśnięcie w jej trakcie zostawia poprzednie zapisy, a
         plik, z którego ``fresh`` usunęła dawne wpisy, ma najwyżej zapisy z ostatnich ``LIST_LAG_S`` i zapisy bez
         odpowiedzi z ostatnich ``PENDING_KEPT_S``.
         """
@@ -326,7 +334,7 @@ class KeyedBox:
             self._remembered = notes
             return True
         try:
-            replace_atomically(self._opening, notes.dumped())
+            self._opening.replace(self._opening.path, notes.dumped())
         except OSError:
             return False
         return True

@@ -59,7 +59,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from rozliczenia.centrum import keyed_box as keyed_box_module
 from rozliczenia.centrum import outbox as outbox_module
-from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE, KeyedBox
+from rozliczenia.centrum.atomic_file import replace_atomically
+from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE, KeyedBox, NotesFile
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import (
     RETRY_S,
@@ -1106,7 +1107,7 @@ def execute(
     def started() -> Outbox:
         clock.armed.clear()  # a timer and a thread die with their process
         started_threads.clear()
-        keyed[:] = [KeyedBox(box, lambda: KEY, clock=clock, opening=work / "config" / OPENING_FILE)]
+        keyed[:] = [KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(work / "config" / OPENING_FILE, replace_atomically))]
         return Outbox(
             queue,
             keyed[0],

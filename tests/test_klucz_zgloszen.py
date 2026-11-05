@@ -23,7 +23,9 @@ from rozliczenia.centrum.keyed_box import (
     REFUSED_KEPT_S,
     KeyedBox,
     NoKey,
+    NotesFile,
 )
+from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.report_box import Archive, Asset, Commented, Refused, Rejected, Sent, Unreachable
 
 from tests.fixtures.centrum import FakeIssue, FakeReportBox
@@ -269,6 +271,13 @@ def test_jedno_sprawdzenie_klucza_naraz_a_odczyt_czeka_najwyzej_podany_czas() ->
     assert len(skrzynka.box.listed) == 1
 
 
+def _numbers(listed: object) -> list[int]:
+    """Numery issue z listy ``KeyedBox``; inna odpowiedź (odmowa, brak sieci, brak klucza) psuje test."""
+
+    assert isinstance(listed, tuple), listed
+    return [issue.number for issue in listed]
+
+
 def _notes(pending: dict[str, list[object]]) -> str:
     """Plik zapisów ``KeyedBox`` z zapisami bez odpowiedzi ``pending`` i bez skutków."""
 
@@ -293,7 +302,7 @@ def test_plik_zapisow_bez_swiezego_zapisu_nie_wstrzymuje_zakladania_a_odpowiedz_
 ) -> None:
     opening = tmp_path / OPENING_FILE
     opening.write_text(text, encoding="utf-8")
-    keyed = KeyedBox(FakeReportBox(), lambda: KEY, clock=ManualClock(seconds=5.0), opening=opening)
+    keyed = KeyedBox(FakeReportBox(), lambda: KEY, clock=ManualClock(seconds=5.0), opening=NotesFile(opening, replace_atomically))
 
     assert keyed.open_issue("uwaga-taty", "tytuł", "treść") == Sent(1)
     notes = json.loads(opening.read_text(encoding="utf-8"))
@@ -307,7 +316,7 @@ def test_issue_ktore_maks_zamknal_zaraz_po_zalozeniu_nie_wraca_na_liste_otwartyc
     clock = ManualClock(seconds=100.0)
     keyed = KeyedBox(box, lambda: KEY, clock=clock)
     assert keyed.open_issue("zgloszenie", "tytuł", "- Odcisk problemu: abc") == Sent(1)
-    assert [issue.number for issue in keyed.labelled_issues("zgloszenie", include_closed=False)] == [1]
+    assert _numbers(keyed.labelled_issues("zgloszenie", include_closed=False)) == [1]
 
     box.list_caught_up()
     box.close(1)
@@ -315,8 +324,9 @@ def test_issue_ktore_maks_zamknal_zaraz_po_zalozeniu_nie_wraca_na_liste_otwartyc
 
     assert keyed.labelled_issues("zgloszenie", include_closed=False) == ()
     assert keyed.find_issue("zgloszenie", "- Odcisk problemu: abc", include_closed=False) is None
-    [closed] = keyed.labelled_issues("zgloszenie", include_closed=True)
-    assert (closed.number, closed.closure is not None) == (1, True)
+    every = keyed.labelled_issues("zgloszenie", include_closed=True)
+    assert isinstance(every, tuple)
+    assert [(issue.number, issue.closure is not None) for issue in every] == [(1, True)]
 
 
 def test_nowe_centrum_zaraz_po_zapisie_starego_zna_jego_issue_i_nie_czeka(tmp_path: Path) -> None:
@@ -325,12 +335,12 @@ def test_nowe_centrum_zaraz_po_zapisie_starego_zna_jego_issue_i_nie_czeka(tmp_pa
     box = FakeReportBox(list_lag=True)
     clock = ManualClock(seconds=100.0)
     opening = tmp_path / OPENING_FILE
-    old = KeyedBox(box, lambda: KEY, clock=clock, opening=opening)
+    old = KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(opening, replace_atomically))
     assert old.open_issue("zgloszenie", "pierwsze", "- Odcisk problemu: abc") == Sent(1)
 
     clock.pause(2.0)
-    new = KeyedBox(box, lambda: KEY, clock=clock, opening=opening)
-    assert [issue.number for issue in new.labelled_issues("zgloszenie", include_closed=False)] == [1]
+    new = KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(opening, replace_atomically))
+    assert _numbers(new.labelled_issues("zgloszenie", include_closed=False)) == [1]
     assert new.open_issue("zgloszenie", "drugie", "- Odcisk problemu: def") == Sent(2)
 
 
@@ -338,17 +348,17 @@ def test_nowe_centrum_po_zakladaniu_bez_odpowiedzi_czeka_na_liste_po_lag(tmp_pat
     box = FakeReportBox(list_lag=True, lost_answers=1)
     clock = ManualClock(seconds=100.0)
     opening = tmp_path / OPENING_FILE
-    old = KeyedBox(box, lambda: KEY, clock=clock, opening=opening)
+    old = KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(opening, replace_atomically))
     assert old.open_issue("zgloszenie", "pierwsze", "- Odcisk problemu: abc") == Unreachable()
 
-    new = KeyedBox(box, lambda: KEY, clock=clock, opening=opening)
+    new = KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(opening, replace_atomically))
     assert new.labelled_issues("zgloszenie", include_closed=False) == ()
     assert new.open_issue("zgloszenie", "pierwsze", "- Odcisk problemu: abc") == Unreachable()
     assert len(box.issues) == 1
 
     clock.pause(LIST_LAG_S)
     box.list_caught_up()
-    assert [issue.number for issue in new.labelled_issues("zgloszenie", include_closed=False)] == [1]
+    assert _numbers(new.labelled_issues("zgloszenie", include_closed=False)) == [1]
 
 
 def test_lista_innego_watku_nie_zdejmuje_wstrzymania_zakladania(tmp_path: Path) -> None:
@@ -358,7 +368,7 @@ def test_lista_innego_watku_nie_zdejmuje_wstrzymania_zakladania(tmp_path: Path) 
     clock = ManualClock(seconds=100.0)
     opening = tmp_path / OPENING_FILE
     opening.write_text(_notes({"zgloszenie": [100.0, "zapis-innego-centrum"]}), encoding="utf-8")
-    keyed = KeyedBox(box, lambda: KEY, clock=clock, opening=opening)
+    keyed = KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(opening, replace_atomically))
     clock.pause(1.0)
     keyed.labelled_issues("zgloszenie", include_closed=False)
 
@@ -376,7 +386,7 @@ def test_plik_zapisow_po_wielu_uruchomieniach_ma_tylko_swieze_wpisy(tmp_path: Pa
     clock = ManualClock(seconds=1000.0)
     opening = tmp_path / OPENING_FILE
     opening.write_text(_notes({"plik zgubiony.log.gz": [1000.0, "wyslanie-bez-odpowiedzi"]}), encoding="utf-8")
-    keyed = KeyedBox(box, lambda: KEY, clock=clock, opening=opening)
+    keyed = KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(opening, replace_atomically))
     archive = keyed.open_archive("logi-2026-10", "tytuł", "opis")
     assert isinstance(archive, Archive)
     for run in range(5):
@@ -386,29 +396,6 @@ def test_plik_zapisow_po_wielu_uruchomieniach_ma_tylko_swieze_wpisy(tmp_path: Pa
 
     notes = json.loads(opening.read_text(encoding="utf-8"))
     assert (notes["zapisy"], notes["archiwa"], [entry[3] for entry in notes["pliki"]]) == ({}, [], ["uruchomienie-4.log.gz"])
-
-
-def test_chwilowa_odmowa_zamiany_pliku_zapisow_czeka_i_zaklada_od_razu(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Antywirus na chwilę trzyma plik zapisów: zapis czeka jak przy innych plikach Centrum, bez ``Unreachable``."""
-
-    opening = tmp_path / OPENING_FILE
-    replace = Path.replace
-    refused: list[Path] = []
-
-    def held_once(path: Path, target: Any) -> Path:
-        if Path(target) == opening and not refused:
-            refused.append(path)
-            raise PermissionError(13, "Odmowa dostępu", str(target))
-        return replace(path, target)
-
-    monkeypatch.setattr(Path, "replace", held_once)
-    box = FakeReportBox()
-    keyed = KeyedBox(box, lambda: KEY, clock=ManualClock(), opening=opening)
-
-    assert keyed.open_issue("uwaga-taty", "tytuł", "treść") == Sent(1)
-    assert len(refused) == 1
 
 
 def test_nieczytelny_plik_chwil_zakladania_wstrzymuje_zakladanie_bez_zapytania(
@@ -426,7 +413,7 @@ def test_nieczytelny_plik_chwil_zakladania_wstrzymuje_zakladanie_bez_zapytania(
 
     monkeypatch.setattr(Path, "read_text", locked)
     box = FakeReportBox()
-    keyed = KeyedBox(box, lambda: KEY, clock=ManualClock(), opening=opening)
+    keyed = KeyedBox(box, lambda: KEY, clock=ManualClock(), opening=NotesFile(opening, replace_atomically))
 
     assert keyed.open_issue("uwaga-taty", "tytuł", "treść") == Unreachable()
     assert box.keys == []
