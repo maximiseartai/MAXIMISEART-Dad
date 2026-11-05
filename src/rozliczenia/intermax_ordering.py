@@ -30,6 +30,7 @@ from . import raw_orders, workbook_files
 from . import intermax_messages as messages
 from .client_data import ForbiddenValues
 from .domain import ProgressObserver, ProgressPhase
+from .input_copy import InputCopy
 from .intermax_file import OrderSheet, Register, UnsupportedShape
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Replaced, Waiting, replace_register
 from .message import Message, StopError
@@ -90,6 +91,7 @@ def order_register(
     observer: ProgressObserver | None = None,
     clock: Callable[[], float] = time.perf_counter,
     forbidden: ForbiddenValues | None = None,
+    copy: InputCopy | None = None,
 ) -> OrderingSummary:
     """Porządkuje Surowe zlecenia dnia w INTERMAX ``register_path``.
 
@@ -98,7 +100,8 @@ def order_register(
     Komunikatem Uporządkowania; nieudane usunięcie starszych Kopii to ostrzeżenie: INTERMAX jest już uporządkowany.
     ``clock`` to zegar w sekundach, z którego liczone są czasy etapów, ``waiting`` zegar i przerwa krótkiej ponownej
     próby podmiany, której odmawia OneDrive, a ``disk`` kroki podmiany na dysku. Komórki zakazanych kolumn
-    przeczytanych wierszy poznaje ``forbidden`` (reguła danych, ADR 0025).
+    przeczytanych wierszy poznaje ``forbidden`` (reguła danych, ADR 0025), a wklejone wiersze, które rozpoznaje
+    Planowanie, i odcisk przeczytanego INTERMAX Kopia wejścia Uruchomienia ``copy`` (#842).
     """
 
     phases = PhaseRunner(observer, clock=clock)
@@ -114,7 +117,7 @@ def order_register(
 
     def read() -> Register:
         try:
-            register = Register.read(register_path, forbidden=forbidden)
+            register = Register.read(register_path, forbidden=forbidden, copy=copy)
         except WorkbookError as error:
             raise StopError(messages.register_unusable(error)) from error
         if not register.order_sheets:

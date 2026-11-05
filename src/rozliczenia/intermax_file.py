@@ -5,7 +5,18 @@ znajduje arkusze zleceń po nagłówkach z wiersza 1, tak jak Przygotowanie plik
 kolumnami ``AKCJE`` i ``UWAGI``. Arkusz zleceń daje swoje wiersze od dołu jako fakty (``raw_orders.RowFacts``),
 bez openpyxl: ~42 tys. wierszy taty to dziesiątki MB XML, a rozpoznanie potrzebuje tylko dołu arkusza. Komórki
 ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych pracy Centrum (``forbidden``,
-ADR 0025), w przesuniętym pierwszym wierszu wklejenia (``raw_orders.shifted_row``) dwie kolumny na lewo od nagłówka.
+ADR 0025) w każdym miejscu, w którym mogą stać (``raw_orders.shifts``): pod nagłówkiem, w przesuniętym pierwszym
+wierszu wklejenia dwie kolumny na lewo od niego, a w wierszu bez pewnego położenia w obu miejscach. Zakazane kolumny
+to te z nagłówkiem zakazanej kolumny w wierszu 1 (``client_data.forbidden_columns``): INTERMAX nie ma stałego układu
+kolumn, więc kolumnę zna się po nagłówku, tak jak kolumny ``COLUMNS``.
+
+Kopia wejścia Uruchomienia z Centrum (``copy``, #842) dostaje bajty, z których ``Register.read`` czyta INTERMAX, z
+chwilą zmiany sprzed odczytu, a z każdego arkusza zleceń nagłówki i wklejenie (``raw_orders.pasted_rows``): te same
+fakty wierszy, które rozpoznaje Planowanie, nie cały Rejestr. Wiersz ma w Kopii komórki od A do ``UWAGI``, te, które
+Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, także przesunięty pierwszy wiersz,
+bez zakazanych kolumn. Wiersz bez pewnego położenia ma w Kopii tylko komórki dozwolone w obu położeniach. Kolumn
+z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie ich nie zapisuje, nie mają nagłówka, a jedna z nich u taty
+niesie części adresu ze słowami sklejonymi ``_``, których strażnik nie rozpozna jako wartości ``ADRES``.
 
 ``Register.ordered`` daje bajty INTERMAX z planem dnia (ADR 0019, wzorem kopii Wzorca z ADR 0008). Zmieniają się
 tylko:
@@ -54,6 +65,7 @@ from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH, from_excel
 from openpyxl.workbook.properties import WorkbookProperties
 
 from . import client_data, raw_orders, workbook_files
+from .input_copy import InputCopy, WorkbookCopy, modified_at
 from .preparation_register import ACTIVITIES, COLUMNS, DATE, DEVICES, WORKER
 from .raw_orders import SHIFT, CellFacts, DayPlan, IntermaxEntry, OperatorColor, OrderColumns, RawBlock, RowFacts
 from .row_look import BORDER
@@ -207,23 +219,57 @@ class OrderSheet:
         return client_data.forbidden_columns(self._register._header(self.part) or {})
 
     @cached_property
-    def _shifted_row(self) -> int | None:
-        return raw_orders.shifted_row(self._facts_from_bottom(), self.columns)
+    def _shifts(self) -> raw_orders.Shifts:
+        return raw_orders.shifts(self._facts_from_bottom(), self.columns)
 
     def rows_from_bottom(self) -> Iterator[RowFacts]:
         """Wiersze arkusza od ostatniego do drugiego jako fakty dla rozpoznania Surowych zleceń.
 
-        Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych Rejestru, a w
-        przesuniętym pierwszym wierszu wklejenia komórki o ``SHIFT`` kolumn na lewo od nagłówka.
+        Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych Rejestru przy każdym
+        przesunięciu, przy którym mogą stać (``raw_orders.Shifts.possible``): pod nagłówkiem, w przesuniętym pierwszym
+        wierszu wklejenia o ``SHIFT`` kolumn na lewo od niego, a w wierszu bez pewnego położenia w obu miejscach.
         """
 
         forbidden = self._register.forbidden
         for facts in self._facts_from_bottom():
             if forbidden is not None:
-                offset = SHIFT if facts.number == self._shifted_row else 0
-                for column, number in self._forbidden_columns:
-                    forbidden.remember_value(column, facts.value(number - offset))
+                for offset in self._shifts.possible(facts):
+                    for column, number in self._forbidden_columns:
+                        forbidden.remember_value(column, facts.value(number - offset))
             yield facts
+
+    def copied(self, workbook: WorkbookCopy) -> None:
+        """Arkusz w Kopii wejścia ``workbook``: nagłówki i wklejone wiersze z komórkami od A do ``UWAGI``, tymi, które
+        Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, bez zakazanych kolumn;
+        ``UnsupportedShape`` przed dopisaniem arkusza, gdy wierszy nie da się rozdzielić. Wiersz bez pewnego położenia
+        (``raw_orders.Shifts.possible``) ma tylko komórki, które przy każdym jego możliwym przesunięciu stoją pod
+        nagłówkiem od A do ``UWAGI`` innym niż zakazany. Wiersze idą przez ``rows_from_bottom``, więc pamięć reguły
+        danych zna ich zakazane komórki."""
+
+        columns = range(1, self.columns.last + 1)
+        shifts = self._shifts
+        pasted = raw_orders.pasted_rows(self.rows_from_bottom(), self.columns)
+        forbidden = {column for _, column in self._forbidden_columns}
+        allowed = set(columns) - forbidden
+        header = self._register._header_values(self.part) or []
+        sheet = workbook.sheet(
+            self.name,
+            1,
+            {column: header[column - 1] for column in columns if column <= len(header)},
+            forbidden,
+            shifts.shifted_row,
+            [facts.number for facts in pasted if len(shifts.possible(facts)) > 1],
+        )
+        for facts in pasted:
+            shift, possible = shifts.read(facts.number), shifts.possible(facts)
+            sheet.row(
+                facts.number,
+                {
+                    column + shift: cell.value
+                    for column, cell in facts.cells.items()
+                    if all(column + offset in allowed for offset in possible)
+                },
+            )
 
     def _facts_from_bottom(self) -> Iterator[RowFacts]:
         sheet = self.sheet_xml
@@ -286,18 +332,35 @@ class Register:
 
     @classmethod
     def read(
-        cls, path: Path, *, despite_excel_lock: bool = False, forbidden: client_data.ForbiddenValues | None = None
+        cls,
+        path: Path,
+        *,
+        despite_excel_lock: bool = False,
+        forbidden: client_data.ForbiddenValues | None = None,
+        copy: InputCopy | None = None,
     ) -> Register:
         """INTERMAX z dysku; ``WorkbookError``, gdy go nie ma, jest otwarty w Excelu, niedostępny albo nieczytelny.
 
         ``despite_excel_lock``: INTERMAX otwarty w Excelu to jego ostatnia zapisana wersja, a nie ``WorkbookError``.
+        ``copy``: Kopia wejścia Uruchomienia, która dostaje przeczytane bajty z chwilą zmiany sprzed odczytu i arkusze
+        zleceń (``OrderSheet.copied``); arkusza, którego wierszy nie da się rozdzielić, nie dostaje, a Komunikat o nim
+        daje Planowanie, więc Kopia nie zmienia Zatrzymania.
         """
 
         read = workbook_files.saved_workbook_content if despite_excel_lock else workbook_files.workbook_content
-        return cls(path, read(path), forbidden)
+        modified = None if copy is None else modified_at(path)
+        register = cls(path, read(path), forbidden)
+        if copy is not None:
+            workbook = copy.workbook(path, register.content, modified)
+            for sheet in register.order_sheets:
+                try:
+                    sheet.copied(workbook)
+                except UnsupportedShape:
+                    continue
+        return register
 
-    def _header(self, part: str) -> dict[str, int] | None:
-        """Nagłówki z wiersza 1 arkusza (po ``normalize_text``) → kolumna od 1; ``None``: arkusz bez wiersza 1."""
+    def _header_values(self, part: str) -> list[object] | None:
+        """Wartości wiersza 1 arkusza od kolumny A; ``None``: arkusz bez wiersza 1."""
 
         header_row = _HEADER_ROW.search(self._parts[part])
         if header_row is None:
@@ -306,7 +369,13 @@ class Register:
         header: list[object] = [None] * max((cell.column for cell in cells), default=0)
         for cell in cells:
             header[cell.column - 1] = self._value(cell)
-        return header_columns(header)
+        return header
+
+    def _header(self, part: str) -> dict[str, int] | None:
+        """Nagłówki z wiersza 1 arkusza (po ``normalize_text``) → kolumna od 1; ``None``: arkusz bez wiersza 1."""
+
+        values = self._header_values(part)
+        return None if values is None else header_columns(values)
 
     def _order_columns(self, part: str) -> OrderColumns | None:
         found = self._header(part)

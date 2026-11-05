@@ -613,7 +613,11 @@ z plików taty, i odcisk każdego z tych plików, żeby Maks mógł odtworzyć
 Uruchomienie na tych samych danych. Przygotowanie pliku zbiorczego ma w niej
 zlecenia Rejestru zleceń, które przeczytało dla okresu, a Przebieg rozliczeń i
 Wycena w efenix Wiersze danych Pliku zbiorczego (Wycena z wartościami, które
-policzył Excel, także `Kwota`). Wiersz ma numer i wartości komórek po literze
+policzył Excel, także `Kwota`), a Uporządkowanie INTERMAX wklejone wiersze
+z dołu każdego arkusza zleceń, które przetwarzało, nie cały Rejestr zleceń,
+w kolumnach od A do `UWAGI`, które Uporządkowanie przenosi do dnia, także
+przesunięty pierwszy wiersz pod jego nagłówkami, a wiersz, którego położenia
+Uporządkowanie nie ustaliło, tylko z komórkami dozwolonymi przesunięty i nie. Wiersz ma numer i wartości komórek po literze
 kolumny, a arkusz nagłówki kolumn; według reguły danych bez kolumn `ADRES` i
 `NUMER UMOWY/ZLECENIA ORANGE` (w Pliku zbiorczym kolumn B i I, także pod innym
 nagłówkiem), a wolny tekst i liczby po maskowaniu. Odcisk to rozmiar i skrót
