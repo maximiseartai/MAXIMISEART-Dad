@@ -17,11 +17,10 @@ from decimal import Decimal
 import gzip
 from typing import Any
 
-from pydantic import ValidationError
 import pytest
 
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, REPOSITORY
-from rozliczenia.centrum.run_logs import RunLog, guarded, logi_post, summary_markdown
+from rozliczenia.centrum.run_logs import RunLog, UnrepresentableLogs, guarded, logi_post, summary_markdown
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 
@@ -254,12 +253,13 @@ def test_maska_w_chwili_zmiany_pliku_kopii_wejscia_daje_puste_pole_z_uwaga_kopii
     assert kept.technical_notes == []
 
 
-def test_maska_w_chwili_startu_uruchomienia_zostaje_bledem_walidacji_logow() -> None:
-    """Granica: pole Logów najwyższego poziomu bez ``None`` (chwila startu) nie ma czego pominąć, więc Logi z maską w
-    nim nie powstają; tę chwilę daje zegar Centrum, nie plik taty."""
+def test_maska_w_chwili_startu_uruchomienia_konczy_sie_nazwanym_bledem_a_nie_zawieszeniem() -> None:
+    """Granica (#936): pole Logów najwyższego poziomu bez ``None`` (chwila startu) nie ma czego stracić, więc Logi z
+    maską w nim nie powstają, a strażnik kończy się nazwanym błędem z tym polem. Maska zależy od wartości zapamiętanych
+    z plików taty (tu numer Orange ``846240Z`` w części ułamkowej sekundy), a nie od tego, skąd pochodzi pole."""
 
     forbidden = ForbiddenValues()
     forbidden.remember_value(ForbiddenColumn.ORANGE, "846240Z")
 
-    with pytest.raises(ValidationError, match="started_at"):
+    with pytest.raises(UnrepresentableLogs, match=r"bez miejsca na maskę strażnika w polu started_at \(#936\)"):
         guarded(record(), forbidden)
