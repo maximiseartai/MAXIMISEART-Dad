@@ -12,6 +12,9 @@ potrzebuje ani ``noqa``, ani ``per-file-ignores``, a E402 dalej łapie import po
 ``Path(__file__).resolve().parents[N]`` sama, a stała z korzeniem repozytorium stoi dopiero pod importami.
 Kopia w innej postaci albo z liczbą ``parents``, która nie trafia w korzeń repozytorium, czerwieni
 ``test_skrypt_dopisuje_katalogi_do_sys_path_jedna_linia``.
+
+Skrypt, który uruchamia Claude Code, robi to tylko przez ``tools/lib/falszywe_api.py``
+(``test_claude_ze_skryptu_biegnie_tylko_przez_falszywe_api``).
 """
 
 from __future__ import annotations
@@ -41,6 +44,9 @@ BOOTSTRAP_SHAPE = re.compile(
     r"sys\.path\.insert\(0, str\(Path\(__file__\)\.resolve\(\)\.parents\[(\d+)\](?: / '([^']+)')?\)\)"
 )
 READING = frozenset({"copy", "count", "index"})
+FAKE_API = ROOT / "tools" / "lib" / "falszywe_api.py"
+BASE_URL = "ANTHROPIC_BASE_URL"
+BASE_URL_WORD = re.compile(rf"(?<![A-Za-z0-9_]){BASE_URL}(?![A-Za-z0-9_])")
 
 
 def _entry(path: Path) -> tuple[bool, bool]:
@@ -145,3 +151,92 @@ def test_skrypt_odpowiada_na_help_bez_zainstalowanego_pakietu(tmp_path: Path, sc
 def test_skrypt_bez_parsera_laduje_sie_bez_zainstalowanego_pakietu(tmp_path: Path, script: Path) -> None:
     _assert_runs(tmp_path, LOADED_WITHOUT_INSTALL, script)
 
+
+def _text(node: ast.AST) -> str | None:
+    """Tekst stałej ``str`` albo ``bytes`` (``os.environb``, ``env={b"…": …}``); inaczej ``None``."""
+
+    if isinstance(node, ast.Constant) and isinstance(node.value, (str, bytes)):
+        return node.value if isinstance(node.value, str) else node.value.decode("latin-1")
+    return None
+
+
+def _claude_launches(tree: ast.AST) -> Iterator[tuple[int, str]]:
+    bare = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Expr)}
+    for node in ast.walk(tree):
+        text = _text(node)
+        if isinstance(node, ast.keyword) and node.arg == BASE_URL:
+            yield node.lineno, f"nazywa {BASE_URL}"
+        elif isinstance(node, ast.Constant) and text is not None and id(node) not in bare:
+            if BASE_URL_WORD.search(text):
+                yield node.lineno, f"nazywa {BASE_URL}"
+        elif isinstance(node, (ast.List, ast.Tuple)) and node.elts:
+            first, *rest = (_text(element) for element in node.elts)
+            if first == "claude" and rest[:1] != ["--version"]:
+                yield node.lineno, "uruchamia claude"
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        'env = dict(os.environ, ANTHROPIC_BASE_URL="http://127.0.0.1:8317")',
+        'os.environ.update(ANTHROPIC_BASE_URL=url)',
+        'env = {**os.environ, "ANTHROPIC_BASE_URL": url}',
+        'os.environ["ANTHROPIC_BASE_URL"] = url',
+        'os.putenv("ANTHROPIC_BASE_URL", url)',
+        'os.environ.setdefault("ANTHROPIC_BASE_URL", url)',
+        'os.environ.update({"ANTHROPIC_BASE_URL": url})',
+        'subprocess.run("ANTHROPIC_BASE_URL=http://127.0.0.1:8317 claude -p x", shell=True)',
+        'settings = f\'{{"env": {{"ANTHROPIC_BASE_URL": "{url}"}}}}\'',
+        'os.environb[b"ANTHROPIC_BASE_URL"] = b"http://127.0.0.1:8317"',
+        'subprocess.run(command, env={b"ANTHROPIC_" b"BASE_URL": url})',
+    ],
+)
+def test_adres_api_w_kodzie_skryptu_lapie_straznik(code: str) -> None:
+    # 5.11.2026 adres fałszywego API tylko w środowisku procesu przegrał z hubem z ustawień użytkownika (#956).
+    assert list(_claude_launches(ast.parse(code))) == [(1, f"nazywa {BASE_URL}")]
+
+
+@pytest.mark.parametrize("code", ['subprocess.run(["claude", "-p", "x"])', 'subprocess.run((b"claude", b"-p", b"x"))'])
+def test_claude_w_kodzie_skryptu_lapie_straznik(code: str) -> None:
+    assert list(_claude_launches(ast.parse(code))) == [(1, "uruchamia claude")]
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        'subprocess.run(["claude", "--version"])',
+        '"""Docstring: ``env.ANTHROPIC_BASE_URL`` z ustawień użytkownika wygrywa ze środowiskiem."""',
+        'env = {"ANTHROPIC_BASE_URL_ZAPAS": url, "MOJ_ANTHROPIC_BASE_URL": url}  # ANTHROPIC_BASE_URL w komentarzu',
+    ],
+)
+def test_wersja_claude_opis_i_inna_zmienna_nie_budza_straznika(code: str) -> None:
+    assert list(_claude_launches(ast.parse(code))) == []
+
+
+def test_claude_ze_skryptu_biegnie_tylko_przez_falszywe_api() -> None:
+    """Polecenie ``["claude", …]`` inne niż ``claude --version`` i nazwa ``ANTHROPIC_BASE_URL`` są tylko w ``FAKE_API``.
+
+    5.11.2026 wyrocznia z adresem fałszywego API tylko w środowisku procesu zapytała prawdziwy model przez hub z
+    ustawień użytkownika i uruchomiła ok. 100 sesji (#956). Test czyta kod tylko w dwóch miejscach: w stałych ``str``
+    i ``bytes`` (sąsiednie literały ``"ANTHROPIC_" "BASE_URL"`` parser skleja w jedną stałą, części f-stringu też są
+    stałymi), gdzie szuka nazwy jako osobnego słowa i stałej ``"claude"`` na początku listy albo krotki, oraz w
+    nazwach argumentów słownych (``dict(os.environ, ANTHROPIC_BASE_URL=…)``).
+    Granica: wszystko, co powstaje w czasie biegu (``"ANTHROPIC_" + "BASE_URL"``, odczyt z pliku,
+    ``[shutil.which("claude"), …]``), docstring i goły napis, skrypty inne niż ``.py``. W czasie biegu chroni lista
+    dozwolona środowiska ``falszywe_api.claude``: ``claude`` nie dostaje ze środowiska wyroczni nic spoza niej.
+    """
+
+    found = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {what} poza tools/lib/falszywe_api.py"
+        for path in SCRIPTS
+        if path != FAKE_API
+        for line, what in _claude_launches(ast.parse(path.read_text(encoding="utf-8")))
+    ]
+
+    assert not found, "\n".join(
+        [
+            *found,
+            "Claude Code uruchom przez falszywe_api.claude z tools/lib/falszywe_api.py: tylko tam ustawienia "
+            "użytkownika nie dochodzą do claude, adres fałszywego API idzie w --settings, a claude bez kontaktu ginie.",
+        ]
+    )
