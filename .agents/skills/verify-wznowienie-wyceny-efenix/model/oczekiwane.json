@@ -1,0 +1,59 @@
+{
+  "zwykle": {},
+  "przerwania": {
+    "znane": [
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "przerwanie-po-zaladuj",
+        "znalezisko": "przerwanie między „Załaduj do zlecenia” a odczytem strony zostawia Emmetta w efenix bez śladu, więc ponowne Uruchomienie daje błąd „wycena już jest i się różni” (przyjęte: test_przerwanie_po_zaladuj_do_zlecenia_przed_odczytem_wyceny_emmetta_daje_przy_ponownym_uruchomieniu_blad_tylko_tego_zlecenia)"
+      }
+    ]
+  },
+  "tata-po-przerwaniu": {
+    "znane": [
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "przerwanie-po-zaladuj",
+        "znalezisko": "jak w przerwania"
+      },
+      {
+        "obietnica": "ZmianaTatyZostaje",
+        "przyczyna": "przerwanie-po-ilosci",
+        "znalezisko": "Zatrzymanie albo zgaśnięcie po zapisie ilości, a przed trace.finished, zostawia „Emmett załadowany”, więc ilość, którą tata potem usunął, ponowne Uruchomienie dopisuje z powrotem i daje Znacznik"
+      }
+    ]
+  },
+  "slad": {
+    "znane": [
+      {
+        "obietnica": "ZmianaTatyZostaje",
+        "przyczyna": "slad-zostal-po-gotowe",
+        "znalezisko": "zapis „gotowe” śladu się nie udaje i unlink też nie, więc na dysku zostaje „Emmett załadowany” przy skończonym zleceniu, a ilość, którą tata potem usunął, ponowne Uruchomienie dopisuje z powrotem"
+      }
+    ]
+  },
+  "wszystko": {
+    "znane": [
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "przerwanie-po-zaladuj",
+        "znalezisko": "jak w przerwania"
+      },
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "slad-nie-zapisany-po-zaladuj",
+        "znalezisko": "zapis „Emmett załadowany” się nie udaje (unlink usuwa plik śladu), a Uruchomienie przerywa się przed końcem zlecenia, więc ponowne Uruchomienie nie ma śladu i daje błąd „wycena już jest i się różni”; kierunek bezpieczny jak przy przerwanie-po-zaladuj"
+      },
+      {
+        "obietnica": "ZmianaTatyZostaje",
+        "przyczyna": "przerwanie-po-ilosci",
+        "znalezisko": "jak w tata-po-przerwaniu"
+      },
+      {
+        "obietnica": "ZmianaTatyZostaje",
+        "przyczyna": "slad-zostal-po-gotowe",
+        "znalezisko": "jak w slad"
+      }
+    ]
+  }
+}

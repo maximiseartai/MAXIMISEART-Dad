@@ -1,0 +1,203 @@
+---
+name: verify-wznowienie-wyceny-efenix
+description: Model-check with TLA+ (TLC) that Wycena w efenix, across the Uruchomienia of one period, never loads Wycena Emmetta over an order that has quantities, never writes into an order with a pricing that Dad changed by hand (also never adds back a quantity he removed), puts a Znacznik efenix only beside an order priced as in the file, and gives Dad „wycena już jest i się różni” only for an order he changed, under every order of window Zatrzymania, Centrum switching off, failed writes of the Ślad Wyceny Emmetta and Dad's own changes in efenix between Uruchomienia. Use when a change touches `save`, `_priced`, `_outcome`, `_after_emmett`, `_entered`, `_mark` or `_efenix_stops` in `src/rozliczenia/efenix_pricing.py`, `EmmettTrace` in `src/rozliczenia/efenix_emmett_trace.py`, or `as_left_after_emmett`, `to_enter`, `priced_differently` in `src/rozliczenia/efenix_positions.py`, or when a resumed Wycena w efenix changed an order it should only have compared.
+pilnuje:
+  - src/rozliczenia/efenix_pricing.py
+  - src/rozliczenia/efenix_emmett_trace.py
+  - src/rozliczenia/efenix_positions.py
+  - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
+ci: .agents/skills/verify-wznowienie-wyceny-efenix/scripts/sprawdz_wznowienie_wyceny.py
+---
+
+# Verify wznowienie Wyceny w efenix (TLA+)
+
+## What CI runs and what stays local
+
+CI runs `sprawdz_wznowienie_wyceny.py` (the `ci:` key) in Mutation checks whenever a change touches this skill's
+`pilnuje:` or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks
+step. It fails with `WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM` when a definition the model describes (`DEFINITIONS` in
+the script) changed since the model's Sync commit, but it cannot tell whether your change to the model is right.
+`check_model_wznowienia_mutations.py` runs on a pull request that changes a file in `model/`, the script itself or
+`sprawdz_wznowienie_wyceny.py`, and in full CI and nightly on `main` after a change of this skill's folder.
+What stays with you on every change to the covered code is „Bring the model in line, then run”: read the diff against
+the table, change the model, break the new path in it, and run the check while you do. A change whose model nobody
+brought in line is not verified, whatever CI says.
+
+## The promises
+
+Wycena w efenix writes on a server Dad works on every day: a quantity is saved the moment the field loses focus, and
+„Załaduj do zlecenia” (Wycena Emmetta) wipes every quantity of the order (ADR 0024). Between Uruchomienia only the Ślad
+Wyceny Emmetta (`config/slad-wyceny-emmetta/<okres>.json`) tells the tool which pricing it started itself. The model
+checks four promises over every order of steps:
+
+- **NieCzysciWycenyTaty**: the tool loads Wycena Emmetta only into an order with no quantity, so it never wipes a
+  pricing, Dad's or its own.
+- **ZmianaTatyZostaje**: in an order with a pricing in which Dad changed or removed something by hand, the tool writes
+  nothing; it does not add back a quantity he removed. That page is the error „wycena już jest i się różni” with no
+  change (`_outcome` docstring, #757).
+- **ZnacznikTylkoNaWycenionym**: a Znacznik efenix appears in `ADRES` only beside an order whose pricing in efenix equals
+  the file at the moment of marking.
+- **BladTylkoPoZmianieTaty**: Dad gets „wycena już jest i się różni” (`EFENIX_WYCENA_INNA`) only for an order he
+  changed himself; an order the tool started is finished by the next Uruchomienie.
+
+Harm: for the first, Dad's or the tool's work on an order disappears from efenix and the company sees an empty or
+Emmett-only pricing. For the second, a quantity Dad deliberately removed goes back to the company with his name on
+it, and the Uruchomienie says OK and marks the order. For the third, Dad trusts a Znacznik and skips an order that is
+wrong in efenix. For the fourth, Dad has to finish by hand an order the tool left half-done.
+
+## Does the change touch it?
+
+The check runs a hand-written TLA+ model, `model/WznowienieWyceny.tla`, not the code. It describes the code only while
+you keep the two in step. Each model action is one indivisible step of this code:
+
+| Model action | Code |
+| --- | --- |
+| `Start` | `efenix_pricing.py` `price_orders.save`: `EmmettTrace(trace_file)` reads the trace file once (`_read`, `_read_secret`; a missing or unreadable file or key is no trace), then the orders of the scope in order |
+| `Otworz` | `_outcome`: `efenix.search`, `listing`, `open_order`, then the decision on the page: amount 0 goes to Wycena Emmetta; `priced_differently(...) is None` is `Ready`; `emmett is None or ... not as_left_after_emmett(...)` (`efenix_positions.py`) is `OrderError(differs)`; otherwise `_after_emmett` with `to_enter` of the page |
+| `ZaladujEmmetta` | `_outcome`: `efenix.load_emmett()` up to the click of „Załaduj do zlecenia”, after which efenix holds Wycena Emmetta (`efenix_browser.BrowserEfenix.load_emmett`, `_answer(_LOAD_EMMETT, …)`) |
+| `OdczytPoEmmetcie` | `load_emmett` reads the reloaded page (`_read_order`), then `trace.loaded(number, emmett)` (`EmmettTrace.loaded`, `_save`) |
+| `Wpisz` | `_entered`: `efenix.enter_quantity(position, quantity)` up to the moment efenix saved the quantity (`_answer(_SAVE_QUANTITY, …)`) |
+| `Potwierdz` | `enter_quantity` after the save: the JSON answer and the amount on the page; after the last position `_entered` compares the amount with `Kwota` (`same_amount`) |
+| `KoniecZlecenia` | `_priced`: `trace.finished(number)` after `_outcome` returned (`EmmettTrace.finished` writes „gotowe” only for an order in state „Emmett załadowany”), then `journal.ended` and the next order |
+| `Zatrzymanie` | `LoggedOut`, `UnexpectedPage`, `WindowClosed`, `EfenixUnreachable` from any window action (`_efenix_stops`): `StopError` passes through `_priced` without `trace.finished`, and `save` (`except StopError`) calls `_mark` with the results before it |
+| `Znaczniki` | `save`: `_mark` (`mark_ready` for every `Ready` row), also after `StopError`, then the end of the Uruchomienie |
+| `Zgasniecie` | none: Centrum switches off or is killed; memory is gone, the trace file and efenix stay, no Znaczniki |
+| `Tata` | none: Dad changes a quantity in efenix by hand while no Uruchomienie runs (`AtrapaEfenix.edit` in the tests) |
+| `Zapisz` (in `OdczytPoEmmetcie`, `KoniecZlecenia`) | `EmmettTrace._save`: `_replace` (temporary file and `os.replace`) of the whole trace from memory; when it fails, `self._path.unlink` in `suppress(OSError)`, and when that fails too, the previous file stays |
+
+The script compares these definitions with the Sync commit (`DEFINITIONS` in `scripts/sprawdz_wznowienie_wyceny.py`):
+`save`, `_mark`, `_efenix_stops`, `_priced`, `_outcome`, `_after_emmett`, `_entered` in
+`src/rozliczenia/efenix_pricing.py`; `EmmettTrace`, `_replace`, `_read_secret`, `_read`, `_is_entry` in
+`src/rozliczenia/efenix_emmett_trace.py`; `as_left_after_emmett`, `to_enter`, `priced_differently`, `same_amount`,
+`emmett_conflicts` in `src/rozliczenia/efenix_positions.py`. A change elsewhere in these files (Sprawdzanie, Odczyt
+danych, Logi, the window's classification of failures) does not move the model. A change that makes another function
+write in efenix, write the trace file or decide whether an order is finished does, though no definition above changes:
+add it to the table and to `DEFINITIONS`.
+
+Sync commit: `510a963ac` (2026-11-05, `main` after #861). Every row of the table was checked against the code at
+this commit, and each path below was replayed on that code with the Atrapa efenix.
+
+## Run
+
+```sh
+.venv/bin/python .agents/skills/verify-wznowienie-wyceny-efenix/scripts/sprawdz_wznowienie_wyceny.py
+py -3 .agents\skills\verify-wznowienie-wyceny-efenix\scripts\sprawdz_wznowienie_wyceny.py
+```
+
+`--config NAME` runs one configuration, `--strict` fails also on known findings. Java and `tla2tools.jar` come from
+`verify-aktualizacja-narzedzia` (`sprawdz_aktualizacje.py` installs pinned `jdk4py` and the jar into `.verification/`
+on first use; `TLC_JAVA` and `TLC_JAR` override them). The whole check takes about 10 s.
+
+The last line is the verdict:
+
+- `WZNOWIENIE WYCENY OK` or `WZNOWIENIE WYCENY OK, ZNANE ZNALEZISKA: n`: every configuration ends as
+  `model/oczekiwane.json` says. Exit 0 (1 with `--strict` and known findings).
+- `WZNOWIENIE WYCENY: NOWE NARUSZENIE (n)`: a promise breaks on a path that is not a known finding. Exit 1.
+- `WZNOWIENIE WYCENY: ZNALEZISKO ZNIKNĘŁO (n)`: a known finding no longer happens. Describe the change below and
+  remove it from `model/oczekiwane.json`. Exit 1.
+- `WZNOWIENIE WYCENY: BŁĄD MODELU (n)`: TLC gave no verdict or `TypeOK` broke. Exit 2.
+- `WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM` (CI only): a definition in `DEFINITIONS` changed since the Sync commit.
+
+Each counterexample is told as numbered steps in the code's words, with the quantities in efenix
+(`[A |-> …, B |-> …]` per order) and the trace file on disk per order.
+
+## Read a result
+
+Read every result with the pstack `/statechart` skill: give it `model/WznowienieWyceny.tla` and one configuration with
+the `Wybaczone…` constants as they are (empty), and it shows each broken promise as its shortest path in plain words;
+for a configuration of up to 500 states (`tata-po-przerwaniu`) it also draws the whole chart of how one order moves
+between „pusta”, „sam Emmett” and „pełna” across Uruchomienia.
+
+Then tell a real bug from a modeling error: replay the path on the code, one step per action, as a test with the
+Atrapa efenix (`tests/test_wycena_efenix.py`: `_run(..., window=...)` to stop the window after a server write,
+`atrapa.edit` for Dad, `monkeypatch` of `efenix_emmett_trace._replace` and `Path.unlink` for a failed trace write). A
+path that does not happen on the code means the model is wrong until you show it is not.
+
+## Configurations
+
+| Configuration | What can happen | Expected |
+| --- | --- | --- |
+| `zwykle` | two orders, three Uruchomienia, one change by Dad, no failures | passes |
+| `przerwania` | two orders, three Uruchomienia, Zatrzymanie and switch-off at every step, no change by Dad | known `przerwanie-po-zaladuj` |
+| `tata-po-przerwaniu` | one order, three Uruchomienia, Zatrzymanie and switch-off, one change by Dad | known `przerwanie-po-zaladuj`, `przerwanie-po-ilosci` |
+| `slad` | two orders, three Uruchomienia, two failed trace writes (with and without a failed `unlink`), one change by Dad | known `slad-zostal-po-gotowe` |
+| `wszystko` | everything above at once, one failed trace write | the four known findings |
+
+## Known findings
+
+Each finding is forgiven only for its promise and only when its cause happened before the event that breaks it (the
+variable `slady` in the model); any other path is a new violation.
+
+1. **`przerwanie-po-zaladuj`, BladTylkoPoZmianieTaty (accepted).** A Zatrzymanie or switch-off between the click of
+   „Załaduj do zlecenia” and the read of the reloaded page leaves Emmett in efenix and no trace, so the next
+   Uruchomienie only compares and gives `EFENIX_WYCENA_INNA`. Path: `Start`, `Otworz`, `ZaladujEmmetta`, `Zgasniecie`,
+   `Start`, `Otworz`. The docstring of `efenix_emmett_trace.py` accepts this, and
+   `test_przerwanie_po_zaladuj_do_zlecenia_przed_odczytem_wyceny_emmetta_daje_przy_ponownym_uruchomieniu_blad_tylko_tego_zlecenia`
+   pins it. It is the safe direction: nothing changes in efenix.
+2. **`slad-nie-zapisany-po-zaladuj`, BladTylkoPoZmianieTaty (accepted).** The write of „Emmett załadowany” fails and
+   `unlink` removes the trace file; when the same Uruchomienie stops before the order ends, the next one has no trace
+   and gives `EFENIX_WYCENA_INNA`. Same direction and same cost as 1.
+3. **`przerwanie-po-ilosci`, ZmianaTatyZostaje (open, not decided).** A Zatrzymanie or switch-off after efenix saved a
+   quantity but before `trace.finished` leaves „Emmett załadowany” on disk. If Dad then removes a quantity the tool
+   entered, `as_left_after_emmett` accepts the page (an empty position is allowed), and the next Uruchomienie enters
+   it again, says OK and puts a Znacznik. Path: `Start`, `Otworz`, `ZaladujEmmetta`, `OdczytPoEmmetcie`, `Wpisz`,
+   `Zatrzymanie` (or `Zgasniecie`), `Znaczniki`, `Tata` (removes B), `Start`, `Otworz`, `Wpisz`. Replayed at the Sync
+   commit with a window whose `enter_quantity` raises `UnexpectedPage` after the server saved T (019): first
+   `EFENIX_OKNO_ZATRZYMANE`, after `atrapa.edit` that pops 019 the second Uruchomienie ends `OK`, efenix has
+   `{"012": 1, "019": 2}` again and row 18 has a Znacznik. The same removal after a complete Uruchomienie gives
+   `EFENIX_WYCENA_INNA` (`test_zlecenie_skonczone_przez_proces_w_ktorym_tata_usunal_potem_ilosc_ponowne_uruchomienie_tylko_porownuje`).
+   The page alone cannot tell „the tool did not reach B yet” from „Dad removed B”.
+4. **`slad-zostal-po-gotowe`, ZmianaTatyZostaje (open, not decided).** The write of „gotowe” fails and the `unlink`
+   fails too, so the earlier „Emmett załadowany” stays on disk beside a finished order; Dad's later removal of a
+   quantity is added back as in 3. Replayed at the Sync commit with `_replace` returning `False` for the write of
+   „gotowe” and `Path.unlink` raising `PermissionError`: the second Uruchomienie ends `OK` with 019 back.
+
+Decide 3 and 4 with Maks; when the code changes, the finding disappears and the check says `ZNALEZISKO ZNIKNĘŁO`.
+
+## Bring the model in line
+
+When a definition from `DEFINITIONS` changes:
+
+1. Read the diff against the table above. Find each action whose code changed, or the new step that has none.
+2. Change the model so each action is again one indivisible step of the code, with the code's names in its comment.
+   Never weaken a promise or narrow a configuration to make the check pass.
+3. Break the new path in the model on purpose (remove the guard you just added) and see the check fail; add that break
+   to `scripts/check_model_wznowienia_mutations.py` with the code counterpart in its name.
+4. Run the check. A new violation is a finding: replay it on the code (see Read a result) before you call it a bug,
+   report it with the path, and do not change product code unless asked.
+5. Move the Sync commit forward only after every row of the table describes the code at the new commit, and write in
+   one sentence what changed in the model and why.
+
+## Scope
+
+Verified: the four promises over every order of the actions above for the bounds of each configuration (one or two
+orders, two positions, quantities 0..2, three Uruchomienia, one change by Dad, up to two failed trace writes). An order
+is the same in any scope: the tool handles one at a time and the trace keeps them apart, so two orders show the
+interplay of one trace file.
+
+Left out, each a reason the check can pass while the code is wrong:
+
+- **Dad changing efenix during an Uruchomienie.** Every configuration has `TataWTrakcie = FALSE`. With `TRUE`, TLC
+  breaks NieCzysciWycenyTaty: Dad enters a quantity between `open_order` and „Załaduj do zlecenia”, and Emmett wipes
+  it (and ZnacznikTylkoNaWycenionym: he changes the order between its result and `_mark`). efenix has no
+  check-and-load, so this is a limit of the design (ADR 0024: the tool works in Dad's session while he does not work
+  in efenix), not a finding of this check.
+- **The execution date** (`set_execution_date`, `DateRefused`) and the checks before the page (`listing`, statuses,
+  `missing_positions`): they change nothing in efenix that a later Uruchomienie decides on, except the date, whose
+  write before Emmett is harmless (amount stays 0).
+- **Emmett contradicting the file** (`EmmettWarning`): the model's Emmett agrees with the file.
+- **The window's classification of failures** (which exception for which HTTP answer): every failure is one
+  `Zatrzymanie`. The Atrapa tests in `tests/test_wycena_efenix.py` (`SWEEP`) drive that.
+- **`mark_ready` refusing** (Excel holds the file, the file changed): the model marks always; a refusal only leaves
+  ready orders unmarked until the next Uruchomienie.
+- **Dad editing the Plik zbiorczy** between Uruchomienia, and the Dziennik Wyceny (`pricing_journal.py`), which only
+  records.
+
+## Files
+
+- `model/WznowienieWyceny.tla`: the model, with the code each action describes.
+- `model/*.cfg`: the configurations (first line describes it), `model/oczekiwane.json`: the expected result.
+- `scripts/sprawdz_wznowienie_wyceny.py`: runs TLC on every configuration and tells each counterexample.
+- `scripts/check_model_wznowienia_mutations.py`: proves the check fails when the model loses a guard the code has;
+  run it through `.venv/bin/python .agents/skills/verify-wznowienie-wyceny-efenix/scripts/check_model_wznowienia_mutations.py`
+  only to reproduce a red Mutation checks step or while you change the model.
