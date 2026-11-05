@@ -10,7 +10,9 @@ każdemu czytnikowi Wierszy danych, który czyta dla niego plik taty, i każdemu
 jej przy odczycie komórki zakazanych kolumn (``remember``, ``remember_value``), a Wycena w efenix dane adresowe
 każdego wiersza listy wyników jako wartość ``ADRES``. Pamięć tylko rośnie i nie trafia na dysk, więc strażnik
 chroni każdą wysyłkę przed wartością z każdego pliku, który ta praca Centrum przeczytała, także Uwagę taty, która nie
-ma swojego Uruchomienia. Proces bez Centrum (Skrypt dla maszyn) nie ma pamięci, bo niczego nie wysyła.
+ma swojego Uruchomienia. Wyjątkiem jest wiersz INTERMAX bez pewnego położenia: komórkę, która może stać pod zakazaną
+kolumną albo pod inną, poznaje tylko pamięć Uruchomienia w jego Kopii wejścia (``input_copy.InputCopy``, #913).
+Proces bez Centrum (Skrypt dla maszyn) nie ma pamięci, bo niczego nie wysyła.
 
 Strażnik (``ForbiddenValues.guard``) przed zapisem pliku Logów i przed każdą wysyłką maskuje w tekście każdą znaną
 wartość jako ``[adres]`` albo ``[numer Orange]`` i oddaje uwagę techniczną z nazwą kolumny i miejscem w tekście, bez

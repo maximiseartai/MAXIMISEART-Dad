@@ -96,13 +96,32 @@ telefony na okres.
   kolumn pamięci reguły danych, a Wycena w efenix dane adresowe każdego
   wiersza listy wyników. W przesuniętym pierwszym wierszu wklejenia INTERMAX
   (ADR 0019) te komórki stoją dwie kolumny na lewo od nagłówka; rozpoznaje go
-  to samo rozpoznanie bloku co Uporządkowanie. Pewne położenie ma jednak tylko
-  wiersz uporządkowany i wiersz, który rozpoznanie przeczytało jako Surowe
-  zlecenie: pierwszy wiersz drugiego wklejenia też przychodzi przesunięty, a
-  pierwszy wiersz z datą jako tekstem nie musi być przesunięty. W każdym innym
-  wierszu pamięć poznaje komórki w obu miejscach, a Kopia wejścia niesie tylko
-  komórki dozwolone w obu położeniach (#842, tabela położeń w PR #905).
-  Pamięć jest jedna na pracę
+  to samo rozpoznanie bloku co Uporządkowanie. Pierwszy wiersz drugiego
+  wklejenia też przychodzi przesunięty, a pierwszy wiersz z datą jako tekstem
+  nie musi być przesunięty, więc położenie wiersza ustala data z godziną:
+  wiersz z nią pod `DATA GODZ. POCZ.` stoi bez przesunięcia, a wiersz z nią dwie
+  kolumny na lewo od tego nagłówka stoi przesunięty (#913). To wymaga układu
+  arkusza taty, który kod sprawdza po nagłówkach z wiersza 1: dwie kolumny na
+  prawo od `DATA GODZ. POCZ.` stoi zakazana kolumna (`ADRES`), więc przesunięty
+  wiersz nie ma tam daty, a dwie kolumny na lewo nie ma nagłówka, więc wiersz
+  bez przesunięcia nic tam nie ma. Na kopii INTERMAX taty z wklejeniem z
+  25.10.2026 (42 839 wierszy, pomiar do #913) datę z godziną dwie kolumny na
+  prawo od `DATA GODZ. POCZ.` ma 0 wierszy, a dwie kolumny na lewo 1:
+  przesunięty pierwszy wiersz wklejenia. W innym układzie arkusza pewne
+  położenie ma tylko wiersz uporządkowany. Komórki wiersza z pewnym
+  położeniem poznaje pamięć pracy Centrum tam, gdzie stoją. Wiersz bez niego
+  (bez daty z godziną w żadnym z tych miejsc albo w innym układzie arkusza)
+  ma `ADRES` i numer Orange w jednym z dwóch miejsc, a w drugim wartość innej
+  kolumny, np. `URZĄDZENIA`. Komórki z obu miejsc poznaje więc tylko pamięć
+  Uruchomienia, które niesie ten wiersz w Kopii wejścia, a strażnik maskuje je
+  w Logach tego Uruchomienia, także zacytowane w innym wierszu. Pamięć pracy
+  Centrum ich nie zna, bo maskowałaby wartość `URZĄDZENIA` w prawie każdym
+  wierszu Kopii każdego następnego Uruchomienia (na tej kopii INTERMAX 82 z 84
+  wierszy, #913), a odczyt INTERMAX bez Kopii (karta) ich nie poznaje, bo
+  komórki INTERMAX wynosi tylko Kopia. Kopia wejścia niesie z wiersza, którego
+  rozpoznanie nie czyta w jego pewnym położeniu, tylko komórki dozwolone w
+  każdym możliwym położeniu (#842 i #913, tabela położeń w PR #905).
+  Pamięć pracy Centrum jest jedna na pracę
   Centrum: Centrum tworzy ją przy starcie i podaje czytnikom i producentom, a
   nie jest stanem modułu, więc dwie prace Centrum w jednym procesie (testy)
   jej nie dzielą. Tylko rośnie i nie trafia na dysk, więc chroni także Uwagę

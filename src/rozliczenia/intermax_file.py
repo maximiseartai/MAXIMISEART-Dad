@@ -4,17 +4,21 @@
 znajduje arkusze zleceń po nagłówkach z wiersza 1, tak jak Przygotowanie pliku zbiorczego (``COLUMNS``), z
 kolumnami ``AKCJE`` i ``UWAGI``. Arkusz zleceń daje swoje wiersze od dołu jako fakty (``raw_orders.RowFacts``),
 bez openpyxl: ~42 tys. wierszy taty to dziesiątki MB XML, a rozpoznanie potrzebuje tylko dołu arkusza. Komórki
-``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych pracy Centrum (``forbidden``,
-ADR 0025) w każdym miejscu, w którym mogą stać (``raw_orders.shifts``): pod nagłówkiem, w przesuniętym pierwszym
-wierszu wklejenia dwie kolumny na lewo od niego, a w wierszu bez pewnego położenia w obu miejscach. Zakazane kolumny
-to te z nagłówkiem zakazanej kolumny w wierszu 1 (``client_data.forbidden_columns``): INTERMAX nie ma stałego układu
-kolumn, więc kolumnę zna się po nagłówku, tak jak kolumny ``COLUMNS``.
+``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza z pewnym położeniem (``raw_orders.Shifts.possible``) poznaje
+pamięć reguły danych pracy Centrum (``forbidden``, ADR 0025) tam, gdzie stoją: pod nagłówkiem albo, w przesuniętym
+wierszu, dwie kolumny na lewo od niego. Wiersz bez pewnego położenia ma je w jednym z dwóch miejsc, a w drugim
+wartość innej kolumny (np. ``URZĄDZENIA``), więc komórki z obu miejsc poznaje tylko pamięć Uruchomienia, które
+niesie ten wiersz w Kopii wejścia (``possibly_forbidden``, #913), a odczyt bez Kopii (karta) ich nie poznaje: tylko
+Kopia wynosi komórki INTERMAX. Zakazane kolumny to te z nagłówkiem zakazanej kolumny w wierszu 1
+(``client_data.forbidden_columns``): INTERMAX nie ma stałego układu kolumn, więc kolumnę zna się po nagłówku, tak
+jak kolumny ``COLUMNS``.
 
 Kopia wejścia Uruchomienia z Centrum (``copy``, #842) dostaje bajty, z których ``Register.read`` czyta INTERMAX, z
 chwilą zmiany sprzed odczytu, a z każdego arkusza zleceń nagłówki i wklejenie (``raw_orders.pasted_rows``): te same
 fakty wierszy, które rozpoznaje Planowanie, nie cały Rejestr. Wiersz ma w Kopii komórki od A do ``UWAGI``, te, które
 Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, także przesunięty pierwszy wiersz,
-bez zakazanych kolumn. Wiersz bez pewnego położenia ma w Kopii tylko komórki dozwolone w obu położeniach. Kolumn
+bez zakazanych kolumn. Wiersz, którego rozpoznanie nie czyta w jego pewnym położeniu, ma w Kopii tylko komórki
+dozwolone przy każdym jego możliwym przesunięciu. Kolumn
 z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie ich nie zapisuje, nie mają nagłówka, a jedna z nich u taty
 niesie części adresu ze słowami sklejonymi ``_``, których strażnik nie rozpozna jako wartości ``ADRES``.
 
@@ -220,31 +224,39 @@ class OrderSheet:
 
     @cached_property
     def _shifts(self) -> raw_orders.Shifts:
-        return raw_orders.shifts(self._facts_from_bottom(), self.columns)
+        return raw_orders.shifts(
+            self._facts_from_bottom(),
+            self.columns,
+            forbidden={number for _, number in self._forbidden_columns},
+            headed=set((self._register._header(self.part) or {}).values()),
+        )
 
     def rows_from_bottom(self) -> Iterator[RowFacts]:
         """Wiersze arkusza od ostatniego do drugiego jako fakty dla rozpoznania Surowych zleceń.
 
-        Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych Rejestru przy każdym
-        przesunięciu, przy którym mogą stać (``raw_orders.Shifts.possible``): pod nagłówkiem, w przesuniętym pierwszym
-        wierszu wklejenia o ``SHIFT`` kolumn na lewo od niego, a w wierszu bez pewnego położenia w obu miejscach.
+        Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych przy każdym
+        przesunięciu, przy którym mogą stać (``raw_orders.Shifts.possible``): wiersza z pewnym położeniem pamięć pracy
+        Centrum Rejestru (``Register.forbidden``), a wiersza bez niego, z obu miejsc, tylko pamięć Uruchomienia
+        (``Register.possibly_forbidden``).
         """
 
-        forbidden = self._register.forbidden
         for facts in self._facts_from_bottom():
-            if forbidden is not None:
-                for offset in self._shifts.possible(facts):
+            possible = self._shifts.possible(facts)
+            memory = self._register.forbidden if len(possible) == 1 else self._register.possibly_forbidden
+            if memory is not None:
+                for offset in possible:
                     for column, number in self._forbidden_columns:
-                        forbidden.remember_value(column, facts.value(number - offset))
+                        memory.remember_value(column, facts.value(number - offset))
             yield facts
 
     def copied(self, workbook: WorkbookCopy) -> None:
         """Arkusz w Kopii wejścia ``workbook``: nagłówki i wklejone wiersze z komórkami od A do ``UWAGI``, tymi, które
         Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, bez zakazanych kolumn;
-        ``UnsupportedShape`` przed dopisaniem arkusza, gdy wierszy nie da się rozdzielić. Wiersz bez pewnego położenia
-        (``raw_orders.Shifts.possible``) ma tylko komórki, które przy każdym jego możliwym przesunięciu stoją pod
-        nagłówkiem od A do ``UWAGI`` innym niż zakazany. Wiersze idą przez ``rows_from_bottom``, więc pamięć reguły
-        danych zna ich zakazane komórki."""
+        ``UnsupportedShape`` przed dopisaniem arkusza, gdy wierszy nie da się rozdzielić. Wiersz, którego rozpoznanie
+        nie czyta w jego pewnym położeniu (bez pewnego położenia albo przesunięty, a czytany bez przesunięcia,
+        ``raw_orders.Shifts.possible``), ma tylko komórki, które przy każdym jego możliwym przesunięciu stoją pod
+        nagłówkiem od A do ``UWAGI`` innym niż zakazany, i jest w ``uncertain_rows``. Wiersze idą przez
+        ``rows_from_bottom``, więc pamięć reguły danych zna ich zakazane komórki."""
 
         columns = range(1, self.columns.last + 1)
         shifts = self._shifts
@@ -258,7 +270,7 @@ class OrderSheet:
             {column: header[column - 1] for column in columns if column <= len(header)},
             forbidden,
             shifts.shifted_row,
-            [facts.number for facts in pasted if len(shifts.possible(facts)) > 1],
+            [facts.number for facts in pasted if shifts.possible(facts) != (shifts.read(facts.number),)],
         )
         for facts in pasted:
             shift, possible = shifts.read(facts.number), shifts.possible(facts)
@@ -296,13 +308,22 @@ class _SheetXml:
 class Register:
     """INTERMAX odczytany raz: bajty, części zip, style, teksty wspólne i arkusze zleceń.
 
-    ``forbidden``: pamięć reguły danych pracy Centrum, która poznaje komórki zakazanych kolumn wierszy arkuszy zleceń.
+    ``forbidden``: pamięć reguły danych pracy Centrum, która poznaje komórki zakazanych kolumn wierszy arkuszy zleceń z
+    pewnym położeniem, a ``possibly_forbidden`` pamięć Uruchomienia (``InputCopy.possibly_forbidden``), która poznaje
+    je w wierszach bez niego (``OrderSheet.rows_from_bottom``).
     """
 
-    def __init__(self, path: Path, content: bytes, forbidden: client_data.ForbiddenValues | None = None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        content: bytes,
+        forbidden: client_data.ForbiddenValues | None = None,
+        possibly_forbidden: client_data.ForbiddenValues | None = None,
+    ) -> None:
         self.path = path
         self.content = content
         self.forbidden = forbidden
+        self.possibly_forbidden = possibly_forbidden
         with workbook_files.unreadable_as_error(path):
             archive = zipfile.ZipFile(BytesIO(content))
             self._infos = archive.infolist()
@@ -344,12 +365,13 @@ class Register:
         ``despite_excel_lock``: INTERMAX otwarty w Excelu to jego ostatnia zapisana wersja, a nie ``WorkbookError``.
         ``copy``: Kopia wejścia Uruchomienia, która dostaje przeczytane bajty z chwilą zmiany sprzed odczytu i arkusze
         zleceń (``OrderSheet.copied``); arkusza, którego wierszy nie da się rozdzielić, nie dostaje, a Komunikat o nim
-        daje Planowanie, więc Kopia nie zmienia Zatrzymania.
+        daje Planowanie, więc Kopia nie zmienia Zatrzymania. Jej pamięć Uruchomienia (``InputCopy.possibly_forbidden``)
+        poznaje komórki zakazanych kolumn wierszy bez pewnego położenia.
         """
 
         read = workbook_files.saved_workbook_content if despite_excel_lock else workbook_files.workbook_content
         modified = None if copy is None else modified_at(path)
-        register = cls(path, read(path), forbidden)
+        register = cls(path, read(path), forbidden, None if copy is None else copy.possibly_forbidden)
         if copy is not None:
             workbook = copy.workbook(path, register.content, modified)
             for sheet in register.order_sheets:

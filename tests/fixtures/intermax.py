@@ -16,7 +16,7 @@ from __future__ import annotations
 import html
 import re
 import zipfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -172,6 +172,9 @@ class Intermax:
     """Arkusz, który tata zostawił aktywny i zaznaczony przy ostatnim zapisie."""
     frozen: bool = True
     """Zamrożony nagłówek arkusza zleceń, jak u taty; bez niego widok bez panelu."""
+    headers: Mapping[int, str] = field(default_factory=dict)
+    """Nagłówki wiersza 1 arkusza z wklejeniem (kolumna od 1 → nagłówek) w miejsce nagłówków ``HEADERS`` i kolumny A,
+    która u taty nagłówka nie ma."""
     """Zapis jak w Excelu (teksty wspólne, liczby bez ``t``); bez tego teksty wbudowane z openpyxl."""
 
     def write(self, path: Path) -> Layout:
@@ -188,7 +191,7 @@ class Intermax:
             older_sheet = _order_sheet(workbook, "ZLECENIA OD 08_11_2021")
             older_last = _ordered_days(older_sheet, older)
             older_raw_rows = self._paste(older_sheet, self.older_raw, older_last + 1 + self.gap, frozenset())
-        sheet = _order_sheet(workbook, ORDER_SHEET, frozen=self.frozen)
+        sheet = _order_sheet(workbook, ORDER_SHEET, frozen=self.frozen, headers=self.headers)
         workbook.active = len(workbook.worksheets) - 1
         last_ordered = _ordered_days(sheet, self.ordered)
         yellow = None
@@ -307,12 +310,12 @@ def rewrite_parts(path: Path, change: Callable[[str, bytes], bytes], added: dict
             target.writestr(name, data)
 
 
-def _order_sheet(workbook: Workbook, title: str, *, frozen: bool = True) -> Worksheet:
+def _order_sheet(workbook: Workbook, title: str, *, frozen: bool = True, headers: Mapping[int, str] | None = None) -> Worksheet:
     sheet = workbook.create_sheet(title)
     assert isinstance(sheet, Worksheet)
     if frozen:
         sheet.freeze_panes = "A2"
-    for column, header in enumerate(HEADERS, start=FIRST):
+    for column, header in {**dict(enumerate(HEADERS, start=FIRST)), **(headers or {})}.items():
         sheet.cell(1, column, header).font = Font(name="Calibri", sz=11, b=True)
     for column, header in enumerate(("BOS", "TYP", "STATUS 1"), start=LAST + 1):
         sheet.cell(1, column, header)

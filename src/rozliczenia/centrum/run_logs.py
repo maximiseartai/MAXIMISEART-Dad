@@ -21,7 +21,9 @@ odciskiem i przeczytanymi wierszami bez kolumn ``ADRES`` i numeru Orange (w Upor
 (``ZLE_SKUTECZNE``), a pliki mają tylko nazwę, nigdy pełną ścieżkę. Przed zapisem pliku i przed wysyłką Logi przechodzą
 przez strażnika reguły danych pracy Centrum (``guarded``, ADR 0025): wartość ``ADRES`` albo numeru Orange z przeczytanych
 plików, także wpisana w inną komórkę Kopii wejścia albo zapisana przez Excel jako liczba, staje się maską z uwagą
-techniczną, a telefony i ulice w tekście są zamaskowane.
+techniczną, a telefony i ulice w tekście są zamaskowane. Wartości, które mogą stać pod zakazaną kolumną tylko w wierszu
+bez pewnego położenia, zna pamięć Uruchomienia, które go przeczytało, a nie pamięć pracy Centrum: maskuje je ``RunLog.of``
+(#913).
 Skrypt dla maszyn nie ma działań po wyniku, więc Logów nie tworzy.
 
 Schemat 2 (#839) daje każdemu krokowi śladu godzinę (UTC) obok czasu trwania: etap ma chwilę rozpoczęcia i końca,
@@ -542,8 +544,9 @@ class LoggedSheet(_Record):
 
     ``shifted_row``: przesunięty pierwszy wiersz wklejenia INTERMAX, którego komórki Uporządkowanie czyta w pliku dwie
     kolumny na lewo od nagłówka, a tu stoją pod nim (``input_copy.CopiedSheet.shifted_row``); ``None``: bez niego i
-    pliki sprzed #842. ``uncertain_rows``: wiersze wklejenia bez pewnego położenia, które mają tylko komórki dozwolone
-    w każdym ich możliwym położeniu (``input_copy.CopiedSheet.uncertain_rows``).
+    pliki sprzed #842. ``uncertain_rows``: wiersze wklejenia, których Uporządkowanie nie czyta w ich pewnym położeniu
+    (bez niego albo przesunięte, a czytane bez przesunięcia), więc mają tylko komórki dozwolone w każdym możliwym
+    położeniu i brak komórki nie znaczy w nich pustej (``input_copy.CopiedSheet.uncertain_rows``).
     """
 
     sheet: str
@@ -664,13 +667,17 @@ class RunLog(_Record):
 
     @classmethod
     def of(cls, run: EndedRun, *, tool: Tool, environment: Environment, dad_actions: DadActions) -> RunLog:
+        """Logi Uruchomienia ``run`` po strażniku pamięci tego Uruchomienia (``InputCopy.possibly_forbidden``, #913):
+        wartości z wiersza bez pewnego położenia maskuje tylko w Logach Uruchomienia, które go przeczytało, a pamięć
+        pracy Centrum (``guarded`` w ``RunLogs``) ich nie zna."""
+
         info, stopped, snapshot = run.info, run.stopped, run.snapshot
         engine_summary = None if run.shown is None else run.shown.engine_summary
         facts = None if stopped is None else stopped.stop.facts
         priced = engine_summary if isinstance(engine_summary, PricingSummary) else None
         if isinstance(facts, PricingStopped):
             priced = facts.summary
-        return cls(
+        record = cls(
             schema_version=2,
             run_id=info.id,
             process=info.process,
@@ -714,6 +721,7 @@ class RunLog(_Record):
             dad_actions=dad_actions,
             input_copy=None if run.input_copy is None else [LoggedInputFile.of(file) for file in run.input_copy.files()],
         )
+        return record if run.input_copy is None else guarded(record, run.input_copy.possibly_forbidden)
 
     @classmethod
     def interrupted(

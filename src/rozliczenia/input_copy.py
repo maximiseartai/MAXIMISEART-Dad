@@ -17,6 +17,12 @@ polu Logów.
 
 Kopia niesie wartości komórek, bo na nich proces podejmuje decyzje: wynik, Komunikaty i ślad. Wygląd komórek
 (Wyróżnienia, format liczby, Hiperłącza) proces tylko przenosi do plików, które tworzy, więc go nie ma.
+
+Wiersz INTERMAX bez pewnego położenia (``raw_orders.Shifts.possible``) ma wartość ``ADRES`` i numeru Orange w jednym
+z dwóch miejsc, a w drugim wartość innej kolumny, np. ``URZĄDZENIA``. Komórki z obu miejsc poznaje więc pamięć
+Uruchomienia (``possibly_forbidden``, #913), nie pamięć pracy Centrum: strażnik maskuje je w Logach tego Uruchomienia
+(``run_logs.RunLog.of``), także zacytowane w innym wierszu Kopii, a następne Uruchomienie, które czyta poprawiony
+wiersz, nie dostaje maski w miejscu wartości ``URZĄDZENIA`` każdego wiersza. Tylko Kopia wynosi komórki INTERMAX.
 """
 
 from __future__ import annotations
@@ -30,6 +36,8 @@ from typing import Literal
 
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.formula import ArrayFormula
+
+from .client_data import ForbiddenValues
 
 TypedKind = Literal["datetime", "time", "timedelta", "other"]
 
@@ -71,8 +79,10 @@ class CopiedSheet:
 
     ``shifted_row``: wiersz, którego komórki czytnik czyta o ``raw_orders.SHIFT`` kolumn na lewo od swojego nagłówka
     (przesunięty pierwszy wiersz wklejenia INTERMAX), a w Kopii stoją pod nim; ``None``: bez takiego wiersza.
-    ``uncertain_rows``: wiersze bez pewnego położenia (wklejenie INTERMAX, ``raw_orders.Shifts.possible``), które mają
-    w Kopii tylko komórki dozwolone przy każdym ich możliwym przesunięciu, więc brak komórki nie znaczy w nich pustej.
+    ``uncertain_rows``: wiersze, których czytnik nie czyta w ich pewnym położeniu (wklejenie INTERMAX bez pewnego
+    położenia albo przesunięte, a czytane bez przesunięcia, ``raw_orders.Shifts.possible``), które mają w Kopii tylko
+    komórki dozwolone przy każdym ich możliwym przesunięciu, pod nagłówkiem, pod którym czyta je czytnik, innym niż
+    zakazany, więc brak komórki nie znaczy w nich pustej.
     """
 
     name: str
@@ -100,7 +110,7 @@ Values = Sequence[object] | Mapping[int, object]
 @dataclass
 class SheetCopy:
     """Arkusz w trakcie odczytu: nagłówek (numer kolumny → nagłówek), zakazane kolumny (numery od 1), przesunięty
-    wiersz i wiersze bez pewnego położenia (``CopiedSheet``) i odwołania do przeczytanych wierszy."""
+    wiersz i wiersze czytane poza pewnym położeniem (``CopiedSheet``) i odwołania do przeczytanych wierszy."""
 
     name: str
     header_row: int
@@ -158,8 +168,8 @@ class WorkbookCopy:
     ) -> SheetCopy:
         """Arkusz ``name`` z nagłówkiem w wierszu ``header_row``, bez kolumn ``forbidden`` (numery od 1), których komórki
         czytnik oddaje pamięci reguły danych; ``shifted_row``: przesunięty wiersz (``CopiedSheet.shifted_row``), którego
-        wartości czytnik oddaje już pod ich nagłówkiem, a ``uncertain_rows`` wiersze bez pewnego położenia, którym
-        czytnik oddaje tylko komórki dozwolone w każdym położeniu (``CopiedSheet.uncertain_rows``)."""
+        wartości czytnik oddaje już pod ich nagłówkiem, a ``uncertain_rows`` wiersze czytane poza pewnym położeniem,
+        którym czytnik oddaje tylko komórki dozwolone w każdym położeniu (``CopiedSheet.uncertain_rows``)."""
 
         sheet = SheetCopy(name, header_row, _numbered(header), frozenset(forbidden), shifted_row, tuple(uncertain_rows))
         self._sheets.append(sheet)
@@ -171,10 +181,15 @@ class WorkbookCopy:
 
 
 class InputCopy:
-    """Kopia wejścia jednego Uruchomienia procesu z Centrum; pliki w kolejności odczytu."""
+    """Kopia wejścia jednego Uruchomienia procesu z Centrum; pliki w kolejności odczytu.
+
+    ``possibly_forbidden``: pamięć reguły danych tego Uruchomienia, z wartościami, które w przeczytanym wierszu bez
+    pewnego położenia mogą stać pod zakazaną kolumną; maskuje je strażnik Logów tego Uruchomienia.
+    """
 
     def __init__(self) -> None:
         self._files: list[WorkbookCopy] = []
+        self.possibly_forbidden = ForbiddenValues()
 
     def workbook(self, path: Path, content: bytes, modified: datetime | None) -> WorkbookCopy:
         """Plik ``path`` przeczytany z bajtów ``content``; ``modified``: chwila zmiany pliku sprzed odczytu bajtów

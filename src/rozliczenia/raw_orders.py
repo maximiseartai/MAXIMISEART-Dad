@@ -13,8 +13,8 @@ komórki ma wypełnienie stylu wiersza: u taty żółty wiersz to zwykle styl ca
 Sam blok, bez przeglądu nad nim i bez przeszkód, oddaje ``pasted``: z niego Przygotowanie pliku zbiorczego wie,
 z których dni są Surowe zlecenia. Ten sam blok daje ``pasted_rows``: jego wiersze jako fakty, które Kopia wejścia
 Uporządkowania niesie, a ``shifts`` przesunięcia wierszy: wiersz, którego komórki rozpoznanie czyta dwie kolumny na
-lewo od swojego nagłówka, i wiersze, w których komórki mogą stać przesunięte albo nie, bo rozpoznanie ich nie
-przeczytało jako Surowych zleceń.
+lewo od swojego nagłówka, i to, gdzie komórki wiersza stoją na pewno, a w których wierszach mogą stać przesunięte
+albo nie.
 
 Przeszkody: wiersz z wyglądem z aplikacji nad uporządkowanym wierszem, Surowe zlecenie bez daty z godziną albo bez
 Wykonawcy i blok z więcej niż jednego dnia. Pierwsza wymaga przeglądu nad blokiem (``_above``): od ostatniego
@@ -41,7 +41,7 @@ zawierają treści wierszy poza datą i Wykonawcą potrzebnymi do kolejności or
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
@@ -339,16 +339,23 @@ class Shifts:
 
     ``shifted_row``: pierwszy wiersz bloku Surowych zleceń, który rozpoznanie czyta przesunięty o ``SHIFT`` kolumn w
     lewo; ``None``: bez niego. Tak przychodzi jednak pierwszy wiersz każdego wklejenia, także drugiego w tym samym
-    bloku, a pierwszy wiersz bloku bez daty z godziną na miejscu nie musi być przesunięty (data jako tekst). Pewne
-    położenie ma więc tylko wiersz uporządkowany i wiersz bloku, który rozpoznanie przeczytało jako Surowe zlecenie;
-    w każdym innym wierszu z wartościami (wiersz bloku bez daty z godziną albo bez Wykonawcy, wiersz z wyglądem z
-    aplikacji nad uporządkowanymi) komórki mogą stać przy obu przesunięciach.
+    bloku, a pierwszy wiersz bloku bez daty z godziną na miejscu nie musi być przesunięty (data jako tekst).
+
+    Położenie wiersza ustala więc data z godziną, a nie rozpoznanie: wiersz z nią pod ``DATA GODZ. POCZ.`` stoi bez
+    przesunięcia, a wiersz z nią ``SHIFT`` kolumn na lewo od tego nagłówka stoi przesunięty. Tak jest tylko w układzie
+    arkusza taty (``dated``), który to wyklucza: ``SHIFT`` kolumn na prawo od ``DATA GODZ. POCZ.`` stoi zakazana kolumna
+    (``ADRES``), więc w przesuniętym wierszu pod ``DATA GODZ. POCZ.`` nie ma daty, a ``SHIFT`` kolumn na lewo nie ma
+    nagłówka, więc w wierszu bez przesunięcia nic tam nie stoi. Na kopii INTERMAX taty z wklejeniem z 25.10.2026
+    (42 839 wierszy, pomiar do #913) datę z godziną ``SHIFT`` kolumn na prawo od ``DATA GODZ. POCZ.`` ma 0 wierszy, a
+    ``SHIFT`` kolumn na lewo 1: przesunięty pierwszy wiersz wklejenia. Pewne położenie ma też wiersz uporządkowany.
+    Wiersz z wartościami bez daty z godziną w żadnym z tych miejsc albo w obu, a w innym układzie arkusza każdy wiersz
+    poza uporządkowanymi, może mieć komórki przy obu przesunięciach.
     """
 
     shifted_row: int | None
     columns: OrderColumns
-    placed: frozenset[int]
-    """Wiersze bloku, które rozpoznanie przeczytało jako Surowe zlecenia."""
+    dated: bool
+    """Arkusz w układzie, w którym data z godziną ustala położenie wiersza (``shifts``)."""
 
     def read(self, row: int) -> int:
         """Przesunięcie, z którym rozpoznanie czyta wiersz ``row``: ``SHIFT`` w ``shifted_row``, inaczej 0."""
@@ -356,21 +363,27 @@ class Shifts:
         return SHIFT if row == self.shifted_row else 0
 
     def possible(self, row: RowFacts) -> tuple[int, ...]:
-        """Przesunięcia, przy których komórki wiersza mogą stać w pliku: samo ``read``, gdy położenie jest pewne, a
-        inaczej 0 i ``SHIFT``."""
+        """Przesunięcia, przy których komórki wiersza mogą stać w pliku: jedno, gdy położenie jest pewne (wiersz
+        uporządkowany: ``read``), a inaczej 0 i ``SHIFT``."""
 
-        if row.number in self.placed or _is_ordered(row, self.columns):
+        if _is_ordered(row, self.columns):
             return (self.read(row.number),)
-        return (0, SHIFT)
+        dated = tuple(offset for offset in (0, SHIFT) if _is_date(row.value(self.columns.date - offset)))
+        return dated if self.dated and len(dated) == 1 else (0, SHIFT)
 
 
-def shifts(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Shifts:
-    """Przesunięcia wierszy arkusza zleceń z tego samego rozpoznania bloku co w ``recognize`` i ``pasted``."""
+def shifts(
+    rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, *, forbidden: Collection[int], headed: Collection[int]
+) -> Shifts:
+    """Przesunięcia wierszy arkusza zleceń z tego samego rozpoznania bloku co w ``recognize`` i ``pasted``.
 
-    raw = _bottom(iter(rows_from_bottom), columns)[0]
-    shifted = _shifted(raw, columns)
-    placed = frozenset(row.number for row in raw if isinstance(_order(row, columns, row.number == shifted), RawOrder))
-    return Shifts(shifted, columns, placed)
+    ``forbidden``: kolumny zakazane reguły danych, a ``headed`` kolumny z nagłówkiem w wierszu 1 (numery od 1); z nich
+    ``Shifts.dated``.
+    """
+
+    shifted = _shifted(_bottom(iter(rows_from_bottom), columns)[0], columns)
+    dated = columns.date + SHIFT in forbidden and columns.date - SHIFT not in headed
+    return Shifts(shifted, columns, dated)
 
 
 def _bottom(rows: Iterator[RowFacts], columns: OrderColumns) -> tuple[list[RowFacts], int | None, int | None, RowFacts | None]:
