@@ -1347,7 +1347,10 @@ class RunLogs:
         Uruchomienia w issue okresu.
 
         Logi z Diagnozą to nowsza wersja tej samej wysyłki (``logi_post``), więc kolejka podmienia plik w Archiwum i
-        zmienia komentarz, które już są w Skrzynce, a gdy Logi jeszcze czekają w kolejce, robi to zaraz po ich wysłaniu.
+        zmienia komentarz, które już są w Skrzynce. Logi, które jeszcze czekają w kolejce, nowsza wersja zastępuje
+        (``outbox._superseded``): przejście kolejki, które zastaje obie, oznacza starsze bez wysyłania i wysyła tylko Logi z
+        Diagnozą, jednym komentarzem bez edycji. Gdy przejście przeczytało Logi, zanim przyszła Diagnoza, wysyła je, a
+        plik w Archiwum i komentarz zmienia następne przejście.
 
         Uruchomienie, którego Logi nie powstały w tej pracy Centrum, nie dostaje niczego, a Diagnoza z tym samym
         wynikiem co ostatnio dopisana też nie.
