@@ -980,11 +980,14 @@ def _disabled_features(browser: Browser) -> list[set[str]]:
 # Sprawdzenie skilla verify-wycena-efenix: przyczynę Zatrzymania okna efenix, którą dostają Logi, przy każdej awarii każdego
 # żądania prawdziwej Wyceny w efenix sprawdza jego skrypt (explore_wycena_efenix.py) z tabelą oczekiwań z domeny. Cały
 # zakres biegnie w CI jako podstawa skilla w częściach, a tu we własnym procesie z limitem (#651) zakres, który przechodzi
-# przez każdą fazę sprawdzenia: przebieg bez awarii, awarie i stan, który zostawia zabity proces.
+# przez każdą fazę sprawdzenia: przebieg bez awarii, awarie, stan, który zostawia zabity proces, i ponowne uruchomienia
+# po nich ze zmianami taty w efenix.
 EXPLORER = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "scripts" / "explore_wycena_efenix.py"
 EXPLORER_SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "SKILL.md"
-# Poniżej limitu pytest, żeby sprawdzenie, które się nie kończy, padło z tym, co zdążyło wypisać.
-EXPLORER_LIMIT_S = 100
+# Poniżej limitu pytest testu, który je uruchamia, żeby sprawdzenie, które się nie kończy, padło z tym, co zdążyło
+# wypisać. Zakres testu z ponownymi uruchomieniami trwał 26 s na Macu przy 4 przeglądarkach, a na Windows w CI całe
+# zadania pytest z tym plikiem trwały 50 i 71 s (run 41985714991).
+EXPLORER_LIMIT_S = 200
 
 
 def _explorer_in_own_process(*arguments: str, environment: dict[str, str] | None = None) -> tuple[int | None, list[str]]:
@@ -1007,19 +1010,62 @@ def _explorer_in_own_process(*arguments: str, environment: dict[str, str] | None
 
 
 @pytest.mark.dlugi
-def test_odmowa_zaladuj_do_zlecenia_i_zabity_proces_przy_niej_trzymaja_niezmienniki_bez_znanych_ustalen(
+@pytest.mark.timeout(EXPLORER_LIMIT_S + 40)
+def test_odmowa_zaladuj_do_zlecenia_zabity_proces_przy_niej_i_wznowienie_po_nich_trzymaja_niezmienniki_bez_znanych_ustalen(
     tmp_path: Path,
 ) -> None:
+    """Jedynym wybaczonym naruszeniem jest przyjęte ustalenie 1 modelu ``verify-wznowienie-wyceny-efenix``
+    (``przerwanie-po-zaladuj``, #774): błąd serwera po wykonaniu „Załaduj do zlecenia” i zabity proces po nim zostawiają
+    zlecenie z Wyceną Emmetta poza Śladem, więc ponowne uruchomienie daje błąd tylko tego zlecenia."""
+
     code, lines = _explorer_in_own_process(
         "--run-dir", str(tmp_path), "--variant", "odpowiedzi", "zabity-proces", "--rola", "zaladuj-do-zlecenia", "--rownolegle", "4"
     )
 
     assert (code, lines[-1:]) == (0, ["WYCENA EFENIX OK"]), "\n".join(lines)
-    assert not any(line.startswith("znane ustalenie ") for line in lines), "\n".join(lines)
+    excused = [line.partition(":")[0] for line in lines if line.startswith(("znane ustalenie ", "zaakceptowane ryzyko "))]
+    assert excused == ["zaakceptowane ryzyko #774"], "\n".join(lines)
+    assert any(" ponownych uruchomień " in line for line in lines), "\n".join(lines)
     [evidence] = (tmp_path / "evidence").iterdir()
     assert (evidence / "raport.txt").read_text(encoding="utf-8").splitlines()[-1] == "WYCENA EFENIX OK"
-    assert not (evidence / "kontrprzyklady").exists()
+    counterexamples = [json.loads(path.read_text(encoding="utf-8")) for path in (evidence / "kontrprzyklady").iterdir()]
+    assert [violation.partition(" | ")[0] for found in counterexamples for violation in found["naruszenia"]] == ["WZNOWIENIE"]
     assert list((tmp_path / "runs").iterdir()) == []
+
+
+EXPLORER_MUTATIONS = (
+    Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "scripts" / "check_wycena_efenix_mutations.py"
+)
+
+
+def test_kazde_przyjete_ryzyko_i_znane_ustalenie_przegladu_ma_mutacje_tuz_za_granica_swojego_ksztaltu() -> None:
+    """Przyjęte ryzyko albo znane ustalenie, które wybacza szerzej niż jego opis, przepuszcza zepsuty kod jako znany
+    (#867 runda 3, #916 rundy 1 i 2; #920). Każdy wpis ``ACCEPTED_RISKS`` i ``KNOWN_FINDINGS`` sprawdzenia ma więc w
+    ``BOUNDARIES`` skryptu mutacji skilla co najmniej jedną mutację tuż za granicą swojego kształtu, która jest w jego
+    tabeli i musi dać nowe naruszenie; że je daje, sprawdza skrypt mutacji. Nazwy wpisów pochodzą z kodu sprawdzenia,
+    które czyta własny proces, bo jego kodu nie wykonuje proces pytest (#651)."""
+
+    import subprocess
+
+    read = (
+        "import json, sys\n"
+        f"sys.path.insert(0, {str(EXPLORER.parent)!r})\n"
+        "import explore_wycena_efenix as explorer, check_wycena_efenix_mutations as table\n"
+        "entries = [entry.name for entry in (*explorer.ACCEPTED_RISKS, *explorer.KNOWN_FINDINGS)]\n"
+        "boundaries = {name: [[m.name, m.expected == table.NEW, m in table.MUTATIONS] for m in ms] for name, ms in table.BOUNDARIES.items()}\n"
+        "print(json.dumps([entries, boundaries]))\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-X", "utf8", "-c", read], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60, check=False
+    )
+    assert done.returncode == 0, done.stdout.decode("utf-8", "replace")
+    entries, boundaries = json.loads(done.stdout.decode("utf-8").splitlines()[-1])
+
+    assert entries, "sprawdzenie bez przyjętych ryzyk: test nic by nie pilnował"
+    assert sorted(boundaries) == sorted(entries), f"{EXPLORER_MUTATIONS.name}: BOUNDARIES ma inne wpisy niż sprawdzenie"
+    for name, mutations in boundaries.items():
+        assert mutations, f"{name}: bez mutacji tuż za granicą kształtu"
+        assert all(new and listed for _mutation, new, listed in mutations), f"{name}: {mutations}"
 
 
 def test_czesci_przegladu_z_ci_czesci_skladaja_sie_na_caly_zakres_kazdy_przypadek_raz() -> None:
