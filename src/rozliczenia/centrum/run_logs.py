@@ -52,6 +52,12 @@ Urwana Wycena w efenix (#845) ma Logi z dziennika Wyceny w efenix (``pricing_jou
 ``interrupted``, bez wyniku (``result`` ``None``), czasu, etapów i Komunikatów, ze śladem zleceń skończonych przed
 zgaśnięciem Centrum i ze zleceniem zaczętym bez wyniku (``LoggedInterruption``). Koniec takich Logów to ostatni wpis
 dziennika, bo chwili zgaśnięcia nikt nie zapisał.
+
+W trakcie Wyceny w efenix jej komentarz Uruchomienia pokazuje postęp z dziennika (``RunLogs.progress``, #846), więc
+każda Wycena z dziennikiem dostaje wersję końcową tego komentarza: Logi z wynikiem na końcu (``run_ended``), a gdy ich
+kolejka nie przyjęła w tej pracy Centrum (``queued``), następny start wysyła z dziennika Logi z pliku, Logi Urwanego
+Uruchomienia albo wynik bez Logów (``ResultWithoutLogs``): wynik z wiersza Historii i zlecenia z dziennika, gdy pliku
+Logów nie ma albo nie da się go odczytać.
 """
 
 from __future__ import annotations
@@ -797,7 +803,8 @@ def progress_markdown(progress: PricingProgress, *, elapsed_s: float) -> str:
 
     started = progress.started
     done = progress.done
-    lines = ["- Wynik: jeszcze nie ma, Uruchomienie trwa", f"- Zlecenia: {_orders_done(progress)}"]
+    orders = _orders_done(progress) or "dziennik Wyceny nie ma jeszcze żadnego zlecenia"
+    lines = ["- Wynik: jeszcze nie ma, Uruchomienie trwa", f"- Zlecenia: {orders}"]
     if done:
         last = done[-1]
         code = "" if last.code is None else f", `{last.code}`"
@@ -809,16 +816,56 @@ def progress_markdown(progress: PricingProgress, *, elapsed_s: float) -> str:
         f"- Uruchomienie: {started.run_id}, start {started.started_at:%Y-%m-%d %H:%M:%S} UTC",
         "- Pełne Logi: w tym komentarzu, gdy Uruchomienie się skończy",
     ]
-    return f"**Logi Uruchomienia**: {declaration_of(started.process).title}, {started.mode}, okres {started.period}\n\n" + (
-        "\n".join(lines)
-    )
+    return _comment_title(started) + "\n".join(lines)
 
 
-def _orders_done(progress: PricingProgress) -> str:
-    """Ile zleceń skończonych z wszystkich i ile każdego wyniku, w kolejności ``OrderOutcome``."""
+LogsMissing = Literal["niezapisane", "nieczytelne"]
+"""Dlaczego start Centrum nie ma Logów Wyceny z wynikiem: pliku nie ma albo nie da się go odczytać."""
+
+_LOGS_MISSING: Final[dict[LogsMissing, str]] = {
+    "niezapisane": "nie ma, Centrum nie zapisało ich po wyniku (np. zamknęło się tuż po nim)",
+    "nieczytelne": "plik Logów na komputerze taty jest, ale nie da się go odczytać",
+}
+
+
+@dataclass(frozen=True)
+class ResultWithoutLogs:
+    """Wycena w efenix, która doszła do wyniku, a której Logów start Centrum nie ma (``logs``), więc wersja końcowa jej
+    komentarza Uruchomienia (#846): wynik z wiersza Historii (``result``; ``None``: Historia go nie ma) i zlecenia z
+    dziennika Wyceny (``journal``), bez pliku w Archiwum Logów okresu, jak karta z wynikiem z Historii (ADR 0017)."""
+
+    journal: PricingProgress
+    result: contract.RunResult | None
+    logs: LogsMissing
+
+
+def without_logs_markdown(final: ResultWithoutLogs) -> str:
+    """Wynik bez Logów: proces, tryb, okres, wynik z Historii, zlecenia skończone z dziennika i ich wyniki, zlecenie
+    zaczęte bez wyniku, Uruchomienie i dlaczego pełnych Logów nie ma."""
+
+    journal = final.journal
+    started = journal.started
+    result = "nieznany, Historia nie ma tego Uruchomienia" if final.result is None else f"{final.result}, z Historii"
+    lines = [f"- Wynik: {result}", f"- Zlecenia: {_orders_done(journal) or 'dziennik Wyceny nie ma żadnego zlecenia'}"]
+    if journal.current is not None:
+        lines.append(f"- Zlecenie bez wyniku: wiersz {journal.current}")
+    lines += [
+        f"- Uruchomienie: {started.run_id}, start {started.started_at:%Y-%m-%d %H:%M:%S} UTC",
+        f"- Pełne Logi: {_LOGS_MISSING[final.logs]}",
+    ]
+    return _comment_title(started) + "\n".join(lines)
+
+
+def _comment_title(started: StartedFacts) -> str:
+    return f"**Logi Uruchomienia**: {declaration_of(started.process).title}, {started.mode}, okres {started.period}\n\n"
+
+
+def _orders_done(progress: PricingProgress) -> str | None:
+    """Ile zleceń skończonych z wszystkich i ile każdego wyniku, w kolejności ``OrderOutcome``; ``None`` przed
+    pierwszym wpisem „zaczynam zlecenie”."""
 
     if progress.total is None:
-        return "dziennik Wyceny nie ma jeszcze żadnego zlecenia"
+        return None
     counted = Counter(order.outcome for order in progress.done)
     outcomes = ", ".join(f"{outcome} {counted[outcome]}" for outcome in get_args(OrderOutcome) if counted[outcome])
     return f"{len(progress.done)} z {progress.total} skończone" + (f" ({outcomes})" if outcomes else "")
@@ -949,6 +996,9 @@ class RunLogs:
         self._lock = threading.Lock()
         self._last: RunLog | None = None  # Logi ostatniego Uruchomienia tak, jak ostatnio poszły do pliku i Skrzynki
         self._ended: set[str] = set()  # Uruchomienia tej pracy Centrum po wyniku: ich postęp się skończył (``progress``)
+        # Uruchomienia tej pracy Centrum, których Logi przyjęła Kolejka wysyłki (``queued``); ``_keep`` tylko dodaje,
+        # jedną operacją ``set.add``, także bez blokady.
+        self._queued: set[str] = set()
 
     def run_ended(self, run: EndedRun) -> None:
         with self._lock:  # postęp, który już idzie do kolejki, jest w niej przed Logami, a następny nie pójdzie
@@ -991,14 +1041,21 @@ class RunLogs:
 
     def _keep(self, record: RunLog) -> None:
         """Plik Logów (nowy albo nadpisany) po strażniku reguły danych, a do Skrzynki komentarz w issue okresu i plik w
-        Archiwum Logów okresu z tymi samymi bajtami co plik (``_write``)."""
+        Archiwum Logów okresu z tymi samymi bajtami co plik (``_write``); Logi, które kolejka przyjęła, zna ``queued``."""
 
         kept = guarded(record, self._forbidden)
         try:
             self._write(kept)
         finally:
             # Katalog Logów, który nie przyjął pliku, nie zatrzymuje Logów w drodze do Maksa.
-            self._outbox.post(logi_post(kept))
+            if self._outbox.post(logi_post(kept)):
+                self._queued.add(kept.run_id)
+
+    def queued(self, run_id: str) -> bool:
+        """Czy Kolejka wysyłki przyjęła w tej pracy Centrum Logi Uruchomienia ``run_id`` (``run_ended``), także gdy ich
+        pliku nie dało się zapisać: wersja końcowa jego komentarza Uruchomienia jest już w drodze do Skrzynki."""
+
+        return run_id in self._queued
 
     def interrupted(
         self,
@@ -1028,13 +1085,14 @@ class RunLogs:
         return self._directory / logs_file_name(started.started_at, started.process, started.run_id)
 
     def guard(self, record: RunLog) -> RunLog:
-        """Logi ``record`` po strażniku reguły danych tej pracy Centrum (``guarded``), jak w ``_keep``: Logi Urwanego
-        Uruchomienia przechodzą przez niego przed plikiem (``close``) i wysyłką (``send``)."""
+        """Logi ``record`` po strażniku reguły danych tej pracy Centrum (``guarded``), jak w ``_keep``: Logi z dziennika
+        Wyceny przy starcie Centrum przechodzą przez niego przed plikiem (``close``) i wysyłką (``send``)."""
 
         return guarded(record, self._forbidden)
 
     def close(self, record: RunLog) -> None:
-        """Plik Logów Urwanego Uruchomienia, jeszcze bez wysyłki (``send``); ``OSError``: pliku nie udało się zapisać."""
+        """Plik Logów z dziennika Wyceny przy starcie Centrum (Logi Urwanego Uruchomienia albo Logi z pliku po strażniku),
+        jeszcze bez wysyłki (``send``); ``OSError``: pliku nie udało się zapisać."""
 
         self._write(record)
 
@@ -1045,10 +1103,18 @@ class RunLogs:
 
         replace_atomically(self._directory / record.file_name, record.text, newline="")
 
-    def send(self, record: RunLog) -> bool:
-        """Logi ``record`` do Kolejki wysyłki; ``False``: kolejka ich nie przyjęła (typ błędu jest w dzienniku Centrum)."""
+    def send(self, final: RunLog | ResultWithoutLogs) -> bool:
+        """Wersja końcowa komentarza Uruchomienia z dziennika Wyceny przy starcie Centrum do Kolejki wysyłki: Logi
+        (``logi_post``) albo wynik bez Logów po strażniku reguły danych tej pracy Centrum, jedna wysyłka z tym samym
+        identyfikatorem co postęp, więc zastępuje go w kolejce i w Skrzynce; ``False``: kolejka jej nie przyjęła (typ błędu
+        jest w dzienniku Centrum)."""
 
-        return self._outbox.post(logi_post(record))
+        match final:
+            case RunLog():
+                return self._outbox.post(logi_post(final))
+            case ResultWithoutLogs(journal=journal):
+                comment = self._guarded(without_logs_markdown(final), "wynik Wyceny w efenix bez Logów")
+                return self._outbox.post(_logs_post(journal.started.period, journal.started.run_id, comment, None))
 
     def progress(self, run_id: str, progress: PricingProgress | None, *, elapsed_s: float) -> bool:
         """Postęp Wyceny w efenix ``run_id`` do Kolejki wysyłki jako starsza wersja wysyłki Logów tego Uruchomienia
@@ -1062,10 +1128,15 @@ class RunLogs:
             if run_id in self._ended:
                 return False
             if progress is not None:
-                guarded = self._forbidden.guard(progress_markdown(progress, elapsed_s=elapsed_s), "postęp Wyceny w efenix")
-                notes = "".join(f"\n- Uwaga techniczna: {note}" for note in guarded.notes)
-                self._outbox.post(progress_post(progress, guarded.text + notes))
+                comment = self._guarded(progress_markdown(progress, elapsed_s=elapsed_s), "postęp Wyceny w efenix")
+                self._outbox.post(progress_post(progress, comment))
             return True
+
+    def _guarded(self, text: str, place: str) -> str:
+        """Komentarz bez pliku Logów po strażniku reguły danych: zamaskowana wartość to uwaga techniczna na jego końcu."""
+
+        guarded = self._forbidden.guard(text, place)
+        return guarded.text + "".join(f"\n- Uwaga techniczna: {note}" for note in guarded.notes)
 
     def _tool(self) -> Tool:
         commit = self._commit()

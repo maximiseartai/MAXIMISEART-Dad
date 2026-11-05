@@ -215,8 +215,6 @@ def create_app(
         search_deadline_s=report_search_deadline_s,
         forbidden=forbidden,
     )
-    # Dziennik Wyceny w efenix w trakcie Uruchomienia, obok Logów: przeżywa nagłe zgaśnięcie Centrum (#845).
-    journal = PricingJournal(log.directory / JOURNALS_DIRECTORY, log, process=EFENIX.key)
     # Logi Uruchomienia: jeden plik JSON na Uruchomienie obok dziennika Centrum, poza Gitem i OneDrive (ADR 0015).
     run_logs = RunLogs(
         log.directory / RUN_LOGS_DIRECTORY,
@@ -230,6 +228,9 @@ def create_app(
         dad_actions=dad_actions,
         forbidden=forbidden,
     )
+    # Dziennik Wyceny w efenix w trakcie Uruchomienia, obok Logów: przeżywa nagłe zgaśnięcie Centrum (#845) i znika, gdy
+    # kolejka przyjęła Logi jego Uruchomienia (#846).
+    journal = PricingJournal(log.directory / JOURNALS_DIRECTORY, log, process=EFENIX.key, run_logs=run_logs)
     # Jedno Uruchomienie procesu albo Aktualizacja narzędzia naraz; w ich trakcie zamknięcie Centrum jest odrzucone.
     stops = Stops(
         reports,
@@ -300,7 +301,8 @@ def create_app(
         stops,
         previous=cards.last(),
         run_started=run_started,
-        after_run=[run_logs, QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden), filling],
+        # Dziennik Wyceny za Logami: znika tylko wtedy, gdy kolejka już je przyjęła (``PricingJournal.run_ended``).
+        after_run=[run_logs, journal, QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden), filling],
     )
     shutdown.refuse_while(runs.shutdown_refusal)
     # Klon narzędzia, które Centrum aktualizuje (ADR 0009); w testach klon z lokalnym „origin”. Po sukcesie

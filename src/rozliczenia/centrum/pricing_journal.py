@@ -17,25 +17,35 @@ taty; pierwsza linia, której nie dało się zapisać, idzie razem z następnym 
 (``PricingJournal.progress``, #846) jest tylko z tego, co dziennik ma na dysku, więc bez jego pierwszej linii go nie ma.
 Dziennik ma tylko dane Logów Uruchomienia: bez numeru zlecenia i bez danych adresowych.
 
-Start Centrum czyta każdy dziennik przy budowie aplikacji, przed kartą ostatniego Uruchomienia
-(``InterruptedPricings.close``):
+Dziennik z pierwszą linią to więc ślad komentarza Uruchomienia, który w Skrzynce może jeszcze mówić, że Uruchomienie
+trwa, i znika dopiero wtedy, gdy Kolejka wysyłki przyjęła wersję końcową tego komentarza. Na końcu Wyceny to Logi z
+wynikiem: działanie po wyniku za Logami Uruchomienia (``PricingJournal.run_ended``) usuwa dziennik, gdy kolejka je
+przyjęła (``RunLogs.queued``). Dziennik, którego Logów kolejka nie przyjęła, bo Centrum zgasło po wyniku, a przed nimi,
+zapis się nie udał albo Logi nie powstały, zostaje do następnego startu, a ten wysyła wersję końcową z dziennika.
 
-- dziennik bez Logów i bez wiersza Historii, czyli Urwanego Uruchomienia (ADR 0017), zamyka jako Logi Urwanego
+Start Centrum czyta każdy dziennik przy budowie aplikacji, przed kartą ostatniego Uruchomienia
+(``InterruptedPricings.close``), i wersję końcową bierze z tego, co zastaje na dysku taty:
+
+- dziennik z czytelnym plikiem Logów wysyła te Logi: Logi Urwanego Uruchomienia, które poprzedni start zapisał, ale nie
+  wysłał, albo Logi z wynikiem, których przyjęcia przez kolejkę nikt nie zapisał;
+- dziennik bez pliku Logów i bez wiersza Historii, czyli Urwanego Uruchomienia (ADR 0017), zamyka jako Logi Urwanego
   Uruchomienia (``RunLogs.interrupted``): zlecenia skończone przed zgaśnięciem, zlecenie zaczęte bez wyniku i liczbę
   wpisów, których nie dało się odczytać; karta po starcie pokazuje te zlecenia z tych Logów;
-- dziennik z Logami Urwanego Uruchomienia, które jeszcze nie poszły (Centrum zgasło przed wysyłką), też wysyła;
-- dziennik z innymi Logami albo z wierszem Historii usuwa: to Uruchomienie doszło do wyniku, także Wycena w efenix, która
-  doszła do końca, bo jej dziennik zostaje do następnego startu;
-- dziennik bez pierwszej linii (urwany pierwszy zapis, przed którym w efenix nic się nie zmieniło) usuwa.
+- dziennik bez pliku Logów, a z wierszem Historii, i dziennik z plikiem Logów, którego nie da się odczytać, wysyła wynik
+  bez Logów (``run_logs.ResultWithoutLogs``): wynik z wiersza Historii, zlecenia z dziennika i dlaczego pełnych Logów
+  nie ma, a karta po starcie pokazuje wynik z Historii (ADR 0017);
+- dziennik bez pierwszej linii (urwany pierwszy zapis, przed którym w efenix nic się nie zmieniło i do którego żaden
+  postęp nie poszedł) usuwa.
 
-Logi Urwanego Uruchomienia, nowe i te z pliku, start przepuszcza przez strażnika reguły danych pracy Centrum
-(``RunLogs.guard``, ADR 0025) i zapisuje w pliku Logów takie, jakie pójdą do Skrzynki, więc plik i komentarz mają te
-same znaki także po Logach, które zapisała praca Centrum sprzed strażnika.
+Logi, nowe i te z pliku, start przepuszcza przez strażnika reguły danych pracy Centrum (``RunLogs.guard``, ADR 0025) i
+zapisuje w pliku Logów takie, jakie pójdą do Skrzynki, więc plik i komentarz mają te same znaki także po Logach, które
+zapisała praca Centrum sprzed strażnika; wynik bez Logów przechodzi przez strażnika przy wysyłce (``RunLogs.send``).
 
-Logi Urwanego Uruchomienia idą do Skrzynki Zgłoszeń jak zwykłe Logi, ale dopiero przy pierwszym zapytaniu API tej pracy
+Wersja końcowa z dziennika idzie do Skrzynki Zgłoszeń jak zwykłe Logi, ale dopiero przy pierwszym zapytaniu API tej pracy
 Centrum (``InterruptedPricings.send``): przychodzi ono po ``lifespan``, a więc po ``Outbox.resume``, więc kolejka nie
-dostaje wysyłki przed swoim startem (model ``verify-kolejka-skrzynki``). Dziennik znika, gdy kolejka przyjęła jego Logi,
-a Centrum zgaszone przed tym wysyła je przy następnym starcie, więc wysyłka jest co najmniej raz, jak w całej kolejce.
+dostaje wysyłki przed swoim startem (model ``verify-kolejka-skrzynki``). Ma ten sam identyfikator wysyłki co postęp i
+jest od niego nowsza, więc zastępuje go w kolejce i w Skrzynce. Dziennik znika, gdy kolejka ją przyjęła, a Centrum
+zgaszone przed tym wysyła ją przy następnym starcie, więc wysyłka jest co najmniej raz, jak w całej kolejce.
 """
 
 from __future__ import annotations
@@ -57,18 +67,21 @@ from rozliczenia.centrum.run_logs import (
     LoggedOrder,
     OrderDone,
     PricingProgress,
+    ResultWithoutLogs,
     RunLog,
     RunLogs,
     logs_file_name,
 )
+from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.efenix_pricing import OrderResult
 from rozliczenia.message import Message
 
 JOURNALS_DIRECTORY: Final = "dzienniki-wyceny"
 _SUFFIX: Final = ".jsonl"
 
-Recorded = Callable[[contract.ProcessKey, datetime], bool]
-"""Czy Historia ma wiersz Uruchomienia procesu ze startem w tej chwili (``RunCards.recorded``)."""
+Recorded = Callable[[contract.ProcessKey, datetime], contract.RunResult | None]
+"""Wynik z wiersza Historii Uruchomienia procesu ze startem w tej chwili (``RunCards.recorded``); ``None``: Historia go
+nie ma."""
 
 
 class _Record(BaseModel):
@@ -121,12 +134,14 @@ def _path(directory: Path, started: JournalStarted) -> Path:
 
 class PricingJournal:
     """Dziennik bieżącej Wyceny w efenix (Uruchomienia procesu ``process``) w katalogu ``directory``
-    (``efenix_pricing.OrderJournal`` w Centrum)."""
+    (``efenix_pricing.OrderJournal`` w Centrum) i działanie po jej wyniku za Logami Uruchomienia ``run_logs``
+    (``runs.AfterRun``)."""
 
-    def __init__(self, directory: Path, log: CentrumLog, *, process: contract.ProcessKey) -> None:
+    def __init__(self, directory: Path, log: CentrumLog, *, process: contract.ProcessKey, run_logs: RunLogs) -> None:
         self.process: Final = process
         self._directory = directory
         self._log = log
+        self._run_logs = run_logs
         self._lock = threading.Lock()
         self._started: JournalStarted | None = None
         self._header = False  # pierwszej linii nie ma jeszcze na dysku
@@ -174,6 +189,20 @@ class PricingJournal:
         order = LoggedOrder.of(result, None if message is None else message.code)
         self._write(OrderEnded(at=_utc_now(), entry="zlecenie skończone", order=order))
 
+    def run_ended(self, run: EndedRun) -> None:
+        """Działanie po wyniku, za Logami Uruchomienia (``RunLogs.run_ended``): dziennik Uruchomienia ``run`` znika, gdy
+        Kolejka wysyłki przyjęła jego Logi (``RunLogs.queued``), bo wersja końcowa jego komentarza jest już w drodze do
+        Skrzynki. Inaczej zostaje, a następny start Centrum wyśle ją z dziennika (``InterruptedPricings``). Dziennik bez
+        pierwszej linii na dysku nie ma czego usuwać. Dziennik należy do ``run``, bo następne Uruchomienie startuje
+        (``run_started``) dopiero po końcu tego."""
+
+        with self._lock:
+            started = self._started
+            if started is None or started.run_id != run.info.id or self._header:
+                return
+        if self._run_logs.queued(run.info.id):
+            _remove(_path(self._directory, started), self._log, where="wpis")
+
     def _write(self, entry: OrderBegun | OrderEnded) -> None:
         with self._lock:
             started = self._started
@@ -209,14 +238,34 @@ class PricingJournal:
         return True
 
 
+def _remove(path: Path, log: CentrumLog, *, where: Literal["wpis", "start"]) -> None:
+    """Usuwa dziennik ``path``; ``OSError`` zostawia go z linią dziennika Centrum."""
+
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError as failure:
+        log.pricing_journal_unavailable(failure, where=where)
+
+
 @dataclass(frozen=True)
 class _Read:
-    """Dziennik odczytany przy starcie Centrum: start, zlecenia skończone, zlecenie zaczęte bez wyniku i ostatni wpis."""
+    """Dziennik odczytany przy starcie Centrum: start, zlecenia skończone, zlecenie zaczęte bez wyniku, ostatni wpis i
+    liczba zleceń przebiegu z ostatniego „zaczynam zlecenie” (``None`` przed pierwszym)."""
 
     started: JournalStarted
     orders: list[LoggedOrder]
     interruption: LoggedInterruption
     last_at: datetime
+    total: int | None
+
+    @property
+    def progress(self) -> PricingProgress:
+        """To, co dziennik ma, w kształcie postępu: zlecenia skończone, ile wszystkich i zlecenie zaczęte bez wyniku."""
+
+        done = tuple(OrderDone(order.row, order.outcome, order.code) for order in self.orders)
+        return PricingProgress(self.started, done, self.total, self.interruption.row)
 
 
 def _read(path: Path) -> _Read | None:
@@ -225,6 +274,7 @@ def _read(path: Path) -> _Read | None:
     started: JournalStarted | None = None
     orders: list[LoggedOrder] = []
     last: OrderBegun | OrderEnded | None = None
+    total: int | None = None
     omitted = 0
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
@@ -237,7 +287,7 @@ def _read(path: Path) -> _Read | None:
                 if started is None:
                     started = entry
             case OrderBegun():
-                last = entry
+                last, total = entry, entry.total
             case OrderEnded():
                 orders.append(entry.order)
                 last = entry
@@ -250,11 +300,12 @@ def _read(path: Path) -> _Read | None:
         total=None if begun is None else begun.total,
         omitted=omitted,
     )
-    return _Read(started, orders, interruption, started.started_at if last is None else last.at)
+    return _Read(started, orders, interruption, started.started_at if last is None else last.at, total)
 
 
 class InterruptedPricings:
-    """Dzienniki z katalogu ``directory`` przy starcie Centrum: Logi Urwanych Uruchomień do zamknięcia i wysłania."""
+    """Dzienniki z katalogu ``directory`` przy starcie Centrum: wersje końcowe komentarzy Uruchomień, których kolejka nie
+    przyjęła w ich pracy Centrum, do zamknięcia i wysłania."""
 
     def __init__(self, directory: Path, run_logs: RunLogs, recorded: Recorded, log: CentrumLog) -> None:
         self._directory = directory
@@ -262,12 +313,12 @@ class InterruptedPricings:
         self._recorded = recorded
         self._log = log
         self._lock = threading.Lock()
-        self._pending: list[tuple[Path, RunLog]] = []  # Logi Urwanych Uruchomień do wysłania i ich dzienniki
+        self._pending: list[tuple[Path, RunLog | ResultWithoutLogs]] = []  # wersje końcowe do wysłania i ich dzienniki
 
     def close(self) -> None:
-        """Przy budowie aplikacji: zamyka każdy dziennik Urwanego Uruchomienia jako jego Logi, a dzienniki Uruchomień z
-        wynikiem usuwa. Dziennika, którego nie da się odczytać, nie rusza: spróbuje następny start. Logi, których pliku nie
-        dało się zapisać, i tak idą do Maksa."""
+        """Przy budowie aplikacji: każdy dziennik z pierwszą linią zamyka jako wersję końcową komentarza jego Uruchomienia
+        (docstring modułu), a dziennik bez niej usuwa. Dziennika, którego nie da się odczytać, nie rusza: spróbuje
+        następny start. Logi, których pliku nie dało się zapisać, i tak idą do Maksa."""
 
         try:
             paths = sorted(self._directory.glob(f"*{_SUFFIX}"))
@@ -281,23 +332,24 @@ class InterruptedPricings:
                 self._log.pricing_journal_unavailable(failure, where="start")
                 continue
             if closed is None:
-                self._remove(path)
+                _remove(path, self._log, where="start")
             else:
                 with self._lock:
                     self._pending.append((path, closed))
 
     async def send(self) -> None:
-        """Zależność każdej trasy API: przy pierwszym zapytaniu tej pracy Centrum, już po ``Outbox.resume``, Logi
-        zamkniętych dzienników idą do Kolejki wysyłki, a dziennik, którego Logi kolejka przyjęła, znika."""
+        """Zależność każdej trasy API: przy pierwszym zapytaniu tej pracy Centrum, już po ``Outbox.resume``, wersje końcowe
+        z zamkniętych dzienników idą do Kolejki wysyłki, a dziennik, którego wersję kolejka przyjęła, znika."""
 
         with self._lock:
             pending, self._pending = self._pending, []
-        for path, record in pending:
-            if self._run_logs.send(record):
-                self._remove(path)
+        for path, final in pending:
+            if self._run_logs.send(final):
+                _remove(path, self._log, where="start")
 
-    def _closed(self, path: Path) -> RunLog | None:
-        """Logi Urwanego Uruchomienia z dziennika ``path`` do wysłania; ``None``: dziennik do usunięcia."""
+    def _closed(self, path: Path) -> RunLog | ResultWithoutLogs | None:
+        """Wersja końcowa komentarza Uruchomienia z dziennika ``path`` do wysłania; ``None``: dziennik bez pierwszej linii,
+        do usunięcia."""
 
         read = _read(path)
         if read is None:
@@ -306,14 +358,13 @@ class InterruptedPricings:
         logs = self._run_logs.file_of(started)
         if logs.exists():
             try:
-                logged = RunLog.model_validate_json(logs.read_text(encoding="utf-8"))
-            except ValueError:
-                return None  # Logi są, choć nieczytelne: Uruchomienie miało wynik
-            if logged.ending != "interrupted":
-                return None
-            record = logged  # Logi, które poprzednia praca Centrum zapisała, a nie wysłała, także sprzed strażnika
-        elif self._recorded(started.process, started.started_at):
-            return None
+                record = RunLog.model_validate_json(logs.read_text(encoding="utf-8"))
+            except ValueError:  # Logi są, choć nieczytelne: Uruchomienie miało wynik
+                return ResultWithoutLogs(read.progress, self._recorded(started.process, started.started_at), "nieczytelne")
+            # Logi, które poprzednia praca Centrum zapisała, a których przyjęcia przez kolejkę nikt nie zapisał, także
+            # Logi Urwanego Uruchomienia sprzed strażnika.
+        elif (result := self._recorded(started.process, started.started_at)) is not None:
+            return ResultWithoutLogs(read.progress, result, "niezapisane")
         else:
             record = self._run_logs.interrupted(
                 started, ended_at=read.last_at, orders=read.orders, interruption=read.interruption
@@ -327,11 +378,3 @@ class InterruptedPricings:
             # Katalog Logów, który nie przyjął pliku, nie zatrzymuje Logów w drodze do Maksa (jak ``RunLogs._keep``).
             self._log.pricing_journal_unavailable(failure, where="start")
         return record
-
-    def _remove(self, path: Path) -> None:
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
-        except OSError as failure:
-            self._log.pricing_journal_unavailable(failure, where="start")
