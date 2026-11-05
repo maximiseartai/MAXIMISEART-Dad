@@ -1092,7 +1092,7 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
 ) -> None:
     """Każde położenie wklejonego wiersza z tabeli położeń (opis PR #905): adres i numer Orange wiersza próbnego nie
     wychodzą do pliku Logów ani do Skrzynki Zgłoszeń, także zacytowane w ``CZYNNOŚCI ZREALIZOWANE`` innego zlecenia,
-    które strażnik maskuje. Kopia ma tylko wiersze wklejenia, a wiersz próbny w niej kolumny z tabeli; wiersz bez
+    które strażnik maskuje. Kopia ma tylko wiersze wklejenia, bez pustych, a wiersz próbny w niej kolumny z tabeli; wiersz bez
     pewnego położenia jest w ``uncertain_rows`` swojego arkusza. Uporządkowanie kończy się tak, jak bez Kopii."""
 
     centrum = ordering_centrum(tmp_path, position.intermax)
@@ -1113,8 +1113,8 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
     sheets = {sheet["sheet"]: sheet for sheet in copied["sheets"]}
     layout = centrum.layout
     pasted_rows = {ORDER_SHEET: list(layout.raw_rows), OLDER_SHEET: list(layout.older_raw_rows)}
-    assert {name: [row["row"] for row in sheet["rows"]] for name, sheet in sheets.items()} == {
-        name: pasted_rows[name] for name in position.sheets
+    assert {name: ([row["row"] for row in sheet["rows"]], sheet["empty_rows"]) for name, sheet in sheets.items()} == {
+        name: (pasted_rows[name], []) for name in position.sheets
     }
     [echo] = [row["cells"] for row in sheets[ORDER_SHEET]["rows"] if row["row"] == layout.raw_rows[-1]]
     assert echo["M"] == ECHO_MASKED
