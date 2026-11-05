@@ -49,6 +49,9 @@ class Row(NamedTuple):
 
 TABLE = [
     # --- otwarcie okna i logowanie ---
+    Row("efenix_browser", "_playwright", "BrowserNotStarted(BrowserFailure(exception_type(error), Operation.DRIVER))",
+        "sterownik Playwrighta nie wystartował (OSError pętli zdarzeń, np. WinError 10055, #975, albo brak programu "
+        "sterownika)", "start sterownika Playwrighta"),
     Row("efenix_browser", "chrome", "BrowserNotStarted(BrowserFailure(exception_type(error), Operation.START))",
         "Chrome nie wystartował (brak Chrome, profil trzyma inne okno)", "start przeglądarki"),
     Row("efenix_browser", "open_list", "EfenixUnreachable(failed.failure)",

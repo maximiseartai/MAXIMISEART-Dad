@@ -141,6 +141,7 @@ __all__ = [
 class Operation(enum.Enum):
     """Działanie przeglądarki w oknie efenix, które skończyło się błędem Playwrighta."""
 
+    DRIVER = "start sterownika Playwrighta"
     START = "start przeglądarki"
     OPEN = "otwarcie strony"
     RELOAD = "czekanie na przeładowanie strony przez skrypt efenix"
@@ -276,7 +277,8 @@ class WindowClosed(WindowStop):
 
 
 class BrowserNotStarted(WindowStop):
-    """Przeglądarka okna efenix nie wystartowała: nie ma jej na komputerze albo jej profil trzyma inne okno."""
+    """Przeglądarka okna efenix nie wystartowała: nie ma jej na komputerze, jej profil trzyma inne okno albo nie
+    wystartował sterownik Playwrighta (``Operation.DRIVER``)."""
 
     def __init__(self, failure: BrowserFailure) -> None:
         super().__init__(None, failure)

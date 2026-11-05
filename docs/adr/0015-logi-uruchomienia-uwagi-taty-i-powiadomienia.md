@@ -165,8 +165,9 @@ co stało się z tym, co wysłał.
   podsumowanie karty z planem plików, czasy etapów, Szablony pracownika z
   Wykonawcą, wynikiem, liczbą wierszy i czasem, środowisko (system, Python,
   nazwy i rozmiary plików procesu z flagą „tylko online” OneDrive), przy
-  nieoczekiwanym wyjątku i przy własnym Zatrzymaniu „do Maksa”, które ma
-  przyczynę w wyjątku, ślad wywołań jak w Zgłoszeniu (z typem i ramkami
+  nieoczekiwanym wyjątku i przy własnym Zatrzymaniu, które ma przyczynę w
+  wyjątku (do #976 tylko „do Maksa”, od #976 także dla taty, np. okno efenix,
+  które nie wystartowało), ślad wywołań jak w Zgłoszeniu (z typem i ramkami
   każdej przyczyny z łańcucha `__cause__`), przy Zatrzymaniu okna efenix
   przyczyna techniczna z zamkniętej listy, wiersz i miejsce zlecenia w
   przebiegu oraz ślad zleceń sprzed niego, i po Diagnozie jej wynik.
