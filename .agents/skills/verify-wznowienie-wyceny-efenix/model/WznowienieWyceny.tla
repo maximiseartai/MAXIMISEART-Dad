@@ -206,7 +206,7 @@ Wpisz ==
 
 (* _WrittenAhead.enter_quantity: okno zgłasza LoggedOut (odpowiedź zapisu z wynikiem nok albo przekierowana na       *)
 (* logowanie), więc efenix ilości nie zapisał; trace.not_entered(number, position) wycofuje pozycję ze śladu, a       *)
-(* StopError przechodzi przez _priced bez trace.finished.                                                            *)
+(* LoggedOut przechodzi przez _priced bez trace.finished, a _efenix_stops w save() daje z niego StopError.           *)
 Odmowa ==
     /\ MozeSieZatrzymac /\ proces = "dziala" /\ krok = "wpisz"
     /\ Zapisz(zlecenie, Zaladowany(wPamieci[zlecenie].wpisuje \ {Pierwsza(doWpisania)}))
@@ -240,8 +240,9 @@ Przerwanie ==
     slady' = [slady EXCEPT ![zlecenie] = @ \cup (IF krok = "odczyt" THEN {"przerwanie-po-zaladuj"} ELSE {})
                                          \cup (IF krok = "wpisz" THEN {"przerwanie-przed-zapisem-ilosci"} ELSE {})]
 
-\* Niedokończone działanie okna (LoggedOut, UnexpectedPage, WindowClosed, EfenixUnreachable): StopError przechodzi
-\* przez _priced bez trace.finished, a save() (except StopError) oznacza gotowe zlecenia sprzed niego.
+\* Niedokończone działanie okna (LoggedOut, UnexpectedPage, WindowClosed, EfenixUnreachable): wyjątek okna przechodzi
+\* przez _priced bez trace.finished, _efenix_stops w save() daje z niego StopError, a save() (except StopError)
+\* oznacza gotowe zlecenia sprzed niego.
 Zatrzymanie ==
     /\ MozeSieZatrzymac /\ proces = "dziala" /\ krok \in {"otworz", "emmett", "odczyt", "wpisz", "potwierdz"}
     /\ Przerwanie
