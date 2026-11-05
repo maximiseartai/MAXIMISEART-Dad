@@ -52,8 +52,11 @@ Bez pliku ``--propozycja`` wynik ma więc zawsze linię ``NIESPRAWDZONE`` o budo
 Plik zapisuje człowiek, jeśli Maks zdecyduje, że może kliknąć przycisk Emmetta na zleceniu taty (#953): kliknięcie
 wysyła to samo żądanie, które okno Wyceny w efenix wysyła przed każdym „Załaduj do zlecenia”, okno Emmetta pokazuje
 propozycję, a w DevTools Chrome (prawy klik na propozycji, „Zbadaj”) element ``<div id="emmett-propozycja">`` kopiuje
-Copy → Copy outerHTML do pliku; okno zamyka „Zamknij”, nigdy „Załaduj do zlecenia”. Narzędzie składa plik w swojej karcie bez skryptów i sieci (od elementu ``#emmett-propozycja``,
-a plik bez niego, np. sama odpowiedź z zakładki Network, w całości) i porównuje jego budowę z propozycją Atrapy
+Copy → Copy outerHTML i zapisuje schowek do pliku poleceniem ``pbpaste > ~/.t3/notes/953/propozycja.html`` (nie przez
+TextEdit, który zapisuje RTF); okno zamyka „Zamknij”, nigdy „Załaduj do zlecenia”. Narzędzie składa plik w swojej karcie
+bez skryptów i sieci tak, jak skrypt strony efenix odpowiedź: jako treść elementu, więc ``<script>``, ``<style>`` czy
+``<meta>`` z początku pliku zostają w propozycji. Czyta go od elementu ``#emmett-propozycja``, a plik bez niego, np. sama
+odpowiedź z zakładki Network, w całości, więc obie postacie tej samej propozycji dają ten sam wynik. Budowę porównuje z propozycją Atrapy
 (``atrapa_efenix.emmett_proposal``): każdy element (nazwy i klasy od propozycji), tekst i atrybut z maską (kod pozycji
 to ``INDEKS_NNN_NNN``, ciąg cyfr 9, ciąg liter a), którego nie ma po drugiej stronie, to różnica, a liczba kodów pozycji
 w propozycji stoi w nagłówku wyniku. Propozycja, która nic nie pokazuje (jak w oknie Emmetta, gdy Emmett nic nie
@@ -66,6 +69,15 @@ taty, potem narzędzie, z ``--propozycja`` tylko z plikiem propozycji:
     google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodnosc"
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\\.efenix-zgodnosc"
     .venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php> --cdp http://127.0.0.1:9222 [--numer <numer>] [--propozycja <plik>]
+
+Pomiar z propozycją (#953), gdy plik jest już zapisany:
+
+    .venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php> --propozycja ~/.t3/notes/953/propozycja.html
+
+Czasu przebiegu w prawdziwym efenix nikt nie zmierzył: narzędzie wysyła po kolei najwyżej 17 odczytów (lista, jej
+skrypt, szukanie, do ``ORDERS_TO_OPEN`` stron zleceń, skrypt strony zlecenia i trzy odczyty bez sesji), więc trwa mniej
+więcej tyle, ile tyle odpowiedzi efenix (na Atrapie 0,98 s: ``pytest --durations`` testu zgodnej Atrapy 5.11.2026), a odpowiedź, która nie przyjdzie w ``--limit-ms``
+(domyślnie 30 s), kończy je kodem 1.
 
 Na czas sprawdzania w Chrome otwiera się okno narzędzia, w którym widać złożony HTML stron bez stylów i skryptów;
 narzędzie zamyka je na końcu. Wzorzec pliku zbiorczego to domyślnie ten z konfiguracji narzędzia
@@ -233,13 +245,15 @@ _READ_TABLE: Final = """([html, orderPage]) => {
         })),
     };
 }"""
-# Budowa jedynego elementu ``selector`` (``whole``: bez niego cała strona) bez treści do maskowania: każdy element w nim
-# (ścieżka nazw i klas od niego, ``null``, ``null``), każdy tekst inny niż białe znaki (ścieżka elementu, ``null``, tekst)
-# i każdy atrybut poza ``class`` (ścieżka, nazwa, wartość); ``null``, gdy elementu nie ma dokładnie raz, a ``whole`` nie
-# ma. Pusta lista to element, który nic nie pokazuje: bez elementu i bez tekstu, jak w ``load_emmett``.
-_READ_SKELETON: Final = """([selector, whole]) => {
-    const matching = document.querySelectorAll(selector);
-    const root = matching.length === 1 ? matching[0] : whole ? document.body : null;
+# Budowa jedynego elementu ``selector`` (z ``within``: w elemencie o tym ``id``, a bez ``selector`` w nim cały ``within``)
+# bez treści do maskowania: każdy element w nim (ścieżka nazw i klas od niego, ``null``, ``null``), każdy tekst inny niż
+# białe znaki (ścieżka elementu, ``null``, tekst) i każdy atrybut poza ``class`` (ścieżka, nazwa, wartość); ``null``, gdy
+# elementu nie ma dokładnie raz, a ``within`` nie ma. Pusta lista to element, który nic nie pokazuje: bez elementu i bez
+# tekstu, jak w ``load_emmett``.
+_READ_SKELETON: Final = """([selector, within]) => {
+    const scope = within ? document.getElementById(within) : document;
+    const matching = scope.querySelectorAll(selector);
+    const root = matching.length === 1 ? matching[0] : within ? scope : null;
     if (!root) return null;
     const name = (element) => [element.localName, ...[...element.classList].sort()].join('.');
     const found = [];
@@ -260,6 +274,17 @@ _READ_SKELETON: Final = """([selector, whole]) => {
     walk(root, '');
     return found;
 }"""
+# Plik ``--propozycja`` i propozycja Atrapy złożone jak w efenix: skrypt strony zlecenia wkłada odpowiedź
+# ``action_fill_emmett.php`` jako treść ``#emmett-propozycja`` (jQuery ``.html()``), więc ``<script>``, ``<style>``,
+# ``<meta>``, ``<link>`` i ``<title>`` z jej początku zostają w propozycji, a nie trafiają do ``<head>``, jak przy
+# składaniu całej strony. Pojemnik ma własne ``id``, żeby skopiowany element ``#emmett-propozycja`` był w nim raz.
+_COMPOSE_PROPOSAL: Final = """([within, html]) => {
+    const box = document.createElement('div');
+    box.id = within;
+    document.body.replaceChildren(box);
+    box.innerHTML = html;
+}"""
+_PROPOSAL_BOX: Final = "zgodnosc-plik-propozycji"
 # Karta pozycji: ``id`` pól Ilość, ``id`` pól ceny wpisywanej i ceny z tekstu karty.
 _READ_CARDS: Final = """([card, quantity]) => [...document.querySelectorAll(card)].map((element) => ({
     quantity: [...element.querySelectorAll(quantity)].map((input) => input.id),
@@ -623,35 +648,44 @@ def _check_proposal_before(page: Page, report: Report) -> None:
 def _check_proposal(page: Page, html: str, report: Report) -> None:
     """Propozycja Emmetta z pliku ``--propozycja`` ma budowę propozycji Atrapy (``atrapa_efenix.emmett_proposal``).
 
-    Budowa to elementy, teksty i atrybuty (``_READ_SKELETON``) z maską ``_masked``: plik z elementem
-    ``#emmett-propozycja`` (skopiowany element) czyta od niego, a inny (sama odpowiedź) w całości. Propozycja, która nic
-    nie pokazuje, to część niesprawdzona: tak samo pusta jest propozycja Atrapy, gdy Emmett nic nie proponuje, ale budowy
-    ilości z niej nie widać.
+    Budowa to elementy, teksty i atrybuty (``_READ_SKELETON``) z maską ``_masked``, a plik narzędzie składa jako treść
+    elementu, jak skrypt strony efenix odpowiedź w ``#emmett-propozycja`` (``_COMPOSE_PROPOSAL``): plik z elementem
+    ``#emmett-propozycja`` (skopiowany element) czyta od niego, a inny (sama odpowiedź) w całości, więc obie postacie
+    tej samej propozycji mają tę samą budowę. Propozycja, która nic nie pokazuje, to część niesprawdzona: tak samo pusta
+    jest propozycja Atrapy, gdy Emmett nic nie proponuje, ale budowy ilości z niej nie widać.
     """
 
     report.proposal_read = True
-    _show(page, html)
-    found = _skeleton(page, PROPOSAL_ALONE, whole=True)
+    found = _composed(page, html)
     report.checked["pozycje w propozycji Emmetta"] = len({code for _path, _attribute, value in found if value for code in POSITION_CODE.findall(value)})
     if not found:
         report.unchecked.append(
             (Part.PROPOSAL, "propozycja z pliku --propozycja nic nie pokazuje: zapisz propozycję zlecenia, któremu Emmett proponuje ilości")
         )
         return
-    _show(page, emmett_proposal({position.code: 1 for position in CATALOG if position.kind == "ILOSC"}))
-    efenix, atrapa = _shown(found), _shown(_skeleton(page, "body"))
+    efenix = _shown(found)
+    atrapa = _shown(_composed(page, emmett_proposal({position.code: 1 for position in CATALOG if position.kind == "ILOSC"})))
     for line in sorted(efenix - atrapa):
         report.differ(Part.PROPOSAL, f"w efenix, nie w Atrapie: {line}")
     for line in sorted(atrapa - efenix):
         report.differ(Part.PROPOSAL, f"w Atrapie, nie w efenix: {line}")
 
 
-def _skeleton(page: Page, selector: str, *, whole: bool = False) -> list[tuple[str, str | None, str | None]]:
-    """``_READ_SKELETON`` przez ``page.evaluate``, które, inaczej niż lokator, nie czeka na przejście strony (``<meta
-    http-equiv="refresh">``), na które narzędzie odpowiada 204; element, którego nie ma dokładnie raz, bez ``whole``: pusta
-    lista."""
+def _composed(page: Page, html: str) -> list[tuple[str, str | None, str | None]]:
+    """Budowa propozycji ``html`` złożonej jak w efenix (``_COMPOSE_PROPOSAL``): od jedynego ``#emmett-propozycja`` w
+    niej, a bez niego cała."""
 
-    found = page.evaluate(_READ_SKELETON, [selector, whole])
+    _show(page, "")
+    page.evaluate(_COMPOSE_PROPOSAL, [_PROPOSAL_BOX, html])
+    return _skeleton(page, PROPOSAL_ALONE, within=_PROPOSAL_BOX)
+
+
+def _skeleton(page: Page, selector: str, *, within: str | None = None) -> list[tuple[str, str | None, str | None]]:
+    """``_READ_SKELETON`` przez ``page.evaluate``, które, inaczej niż lokator, nie czeka na przejście strony (``<meta
+    http-equiv="refresh">``), na które narzędzie odpowiada 204; element, którego nie ma dokładnie raz, bez ``within``:
+    pusta lista."""
+
+    found = page.evaluate(_READ_SKELETON, [selector, within])
     return [] if found is None else [(path, attribute, value) for path, attribute, value in found]
 
 
@@ -808,7 +842,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help=(
             "Plik HTML z propozycją Emmetta zapisaną w Chrome (element #emmett-propozycja albo odpowiedź"
-            " action_fill_emmett.php); narzędzie porównuje jej budowę z Atrapą, a samo action_fill_emmett.php nie wysyła."
+            " action_fill_emmett.php), zapisany ze schowka poleceniem pbpaste > ~/.t3/notes/953/propozycja.html;"
+            " narzędzie porównuje jej budowę z Atrapą, a samo action_fill_emmett.php nie wysyła."
         ),
     )
     parser.add_argument("--limit-ms", type=int, default=TIMEOUT_MS, help="Limit czekania na odpowiedź efenix (ms).")

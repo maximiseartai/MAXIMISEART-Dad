@@ -1,0 +1,11 @@
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 43 | ceny porównane z Wzorcem: 20 | pozycje w propozycji Emmetta: 2
+RÓŻNICA | propozycja Emmetta | w efenix, nie w Atrapie: meta
+RÓŻNICA | propozycja Emmetta | w efenix, nie w Atrapie: meta[charset] „a-9”
+RÓŻNICA | propozycja Emmetta | w efenix, nie w Atrapie: script
+RÓŻNICA | propozycja Emmetta | w efenix, nie w Atrapie: script „a()”
+RÓŻNICA | propozycja Emmetta | w efenix, nie w Atrapie: style
+RÓŻNICA | propozycja Emmetta | w efenix, nie w Atrapie: style „.a{}”
+RÓŻNICA | propozycja Emmetta | w efenix, nie w Atrapie: title
+RÓŻNICA | propozycja Emmetta | w efenix, nie w Atrapie: title „a”
+NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
+RÓŻNICE: 8 | NIESPRAWDZONE: 1

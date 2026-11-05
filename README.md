@@ -321,8 +321,25 @@ jest na liście odczytów, bo nie wiadomo, czy serwer efenix przy niej czegoś n
 zapisuje), więc wynik ma o jej budowie linię `NIESPRAWDZONE`. Jej budowę mierzy
 `--propozycja <plik>` z propozycją, którą człowiek zapisał w Chrome po kliknięciu
 przycisku Emmetta i zamknął okno „Zamknij”, nigdy „Załaduj do zlecenia”; czy
-wolno to kliknąć na zleceniu taty, decyduje Maks (#953), a jak zapisać plik,
-mówi `--help`.
+wolno to kliknąć na zleceniu taty, decyduje Maks (#953). W DevTools Chrome
+(prawy klik na propozycji, „Zbadaj”) element `<div id="emmett-propozycja">`
+kopiuje Copy → Copy outerHTML, a schowek zapisuje do pliku poleceniem `pbpaste`,
+nie przez TextEdit, który zapisuje RTF:
+
+```sh
+pbpaste > ~/.t3/notes/953/propozycja.html
+.venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php> --propozycja ~/.t3/notes/953/propozycja.html
+```
+
+Plik może też być samą odpowiedzią `action_fill_emmett.php` z zakładki Network:
+narzędzie składa go jak strona efenix, jako treść propozycji, więc daje ten sam
+wynik co skopiowany element.
+
+Czasu przebiegu w prawdziwym efenix nikt jeszcze nie zmierzył: narzędzie wysyła
+po kolei najwyżej 17 odczytów, więc trwa mniej więcej tyle, ile 17 odpowiedzi
+efenix (na Atrapie 0,98 s w teście zgodnej Atrapy z `pytest --durations`,
+5.11.2026), a odpowiedź, która nie przyjdzie w
+`--limit-ms` (domyślnie 30 s), kończy je kodem `1`.
 
 Kody wyjścia: `0` bez różnic, gdy niesprawdzone są tylko przycisk kalendarza
 i, bez `--propozycja`, budowa propozycji Emmetta, `2` różnice albo inne części

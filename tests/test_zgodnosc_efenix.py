@@ -161,6 +161,8 @@ def _copied(html: str) -> Callable[[str], str]:
 
 # Propozycja Emmetta Atrapy z pozycją z przypisania kolumn i spoza niego, w tym z ilością dwucyfrową.
 EMMETT = {"012": 2, "005": 12}
+# Propozycja Atrapy, przed którą odpowiedź ma elementy, które parser HTML z początku całej strony wkłada do ``<head>``.
+HEAD_FIRST = '<meta charset="utf-8"><title>Emmett</title><style>.ilosc{}</style><script>pokaz()</script>' + emmett_proposal(EMMETT)
 
 
 def _sending(url: str) -> str:
@@ -265,6 +267,18 @@ CHANGED = {
         proposal=_copied(emmett_proposal(EMMETT, in_fields=True).replace("<input ", '<input class="wycena-ilosc form-control" ')),
     ),
     "propozycja-pusta": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-pusta.txt", proposal=_copied("")),
+    # Sama odpowiedź (zakładka Network) z elementami, które parser całej strony przeniósłby do ``<head>``, a które w
+    # ``#emmett-propozycja`` efenix zostają, i ten sam element skopiowany w DevTools: obie dają te same różnice.
+    "propozycja-z-odpowiedzi-ze-skryptem-i-stylem": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-ze-skryptem-i-stylem.txt", proposal=lambda _url: HEAD_FIRST
+    ),
+    "propozycja-skopiowana-ze-skryptem-i-stylem": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-ze-skryptem-i-stylem.txt", proposal=_copied(HEAD_FIRST)
+    ),
+    # Odpowiedź z samym skryptem: Emmett nic nie proponuje, ale okno Emmetta w efenix ma dziecko, więc coś pokazało (#908).
+    "propozycja-z-odpowiedzi-z-samym-skryptem": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-z-samym-skryptem.txt", proposal=lambda _url: "<script>pokaz()</script>"
+    ),
     "propozycja-z-elementami-ktore-wysylaja": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-z-elementami-ktore-wysylaja.txt", proposal=_sending
     ),
@@ -534,6 +548,19 @@ def test_nieczytelny_plik_propozycji_konczy_narzedzie_bledem_przed_efenix(chrome
 
     assert (checked.code, checked.stdout, checked.stderr) == (1, "", f"BŁĄD | plik --propozycja {proposal}: nie da się go przeczytać jako tekstu UTF-8\n")
     assert atrapa.requested() == []
+
+
+def test_przejscie_w_karcie_skladania_zostawia_zlozony_html(chrome: str) -> None:
+    # Przejście ramki kończy się przed zdarzeniem ``load``, na które czeka złożenie strony, więc po nim widać, czy ramka
+    # przeszła na inną stronę (bez odpowiedzi 204 przeglądarka pokazałaby w niej stronę błędu połączenia).
+    with atrapa_efenix(ORDERS) as atrapa, sync_playwright() as playwright:
+        browser = playwright.chromium.connect_over_cdp(chrome)
+        with zgodnosc_efenix.parser_page(browser, timeout_ms=10_000) as page:
+            page.set_content(f'<p>Złożony HTML</p><iframe src="{atrapa.url}"></iframe>')
+            shown = (page.locator("p").inner_text(), [frame.content() for frame in page.main_frame.child_frames])
+
+        assert shown == ("Złożony HTML", ["<html><head></head><body></body></html>"])
+        assert atrapa.requested() == []
 
 
 def test_lista_dozwolonych_zadan_ma_tylko_odczyty() -> None:
