@@ -914,6 +914,7 @@ CHANGED: dict[Changed, tuple[PagePart, WindowCause, str]] = {
     Changed.QUANTITY_ANSWER: (PagePart.QUANTITY, OtherShape(Shape.ANSWER_NOT_JSON, "012"), "ilość"),
     Changed.QUANTITY_VALUE: (PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, "012"), "otwarcie zlecenia"),
     Changed.SECOND_NUMBER_FIELD: (PagePart.LIST, ElementCount("#field_numer", 2), "szukanie"),
+    Changed.NUMBER_FIELD_GONE: (PagePart.LIST, ElementCount("#field_numer", 0), "szukanie"),
 }
 
 

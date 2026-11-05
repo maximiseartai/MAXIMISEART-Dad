@@ -136,6 +136,7 @@ class Changed(enum.Enum):
     SECOND_NUMBER_FIELD = (
         "lista po wpisaniu numeru ma w #wyniki drugie pole Numer, jak odpowiedź jej własnego szukania przekierowana na listę"
     )
+    NUMBER_FIELD_GONE = "lista po wpisaniu numeru nie ma już pola Numer"
 
 
 class Unread(enum.Enum):
@@ -753,6 +754,12 @@ document.getElementById('field_numer').addEventListener('input', () => {
 """
 
 
+# Pole Numer znika z listy, gdy okno już wpisało numer, więc Enter nie ma go na stronie ani raz.
+_NUMBER_FIELD_GONE_SCRIPT = """
+document.getElementById('field_numer').addEventListener('input', (event) => event.target.remove());
+"""
+
+
 # Skrypt i elementy strony, które przy wczytaniu i przy opuszczeniu strony wysyłają zapis, zmianę statusu i wylogowanie
 # każdą drogą przeglądarki: okno, beacon, ``fetch`` z ``keepalive``, WebSocket, worker, service worker, przejście. Na
 # początku skrypt czyści stronę, więc strona, na której w ogóle biegnie, nie ma już budowy efenix.
@@ -798,6 +805,8 @@ def _list_script(changed: Changed | Unread | None) -> str:
     script = _LIST_SCRIPT.replace("__BY_LIST__", BY_LIST).replace("__FIELDS__", " ".join(LIST_SEARCH_FIELDS))
     if changed is Changed.SECOND_NUMBER_FIELD:
         script += _SECOND_NUMBER_FIELD_SCRIPT
+    if changed is Changed.NUMBER_FIELD_GONE:
+        script += _NUMBER_FIELD_GONE_SCRIPT
     if changed is Unread.SCRIPTS:
         return script.replace("{numer: numer.value", "{nr: numer.value")
     return _HOSTILE_SCRIPT + script if changed is Unread.HOSTILE else script
