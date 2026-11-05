@@ -17,7 +17,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import json
-import os
 from pathlib import Path
 import statistics
 from typing import Any
@@ -29,7 +28,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from playwright.sync_api import Browser, BrowserContext, CDPSession, Page, Request, expect
 
 from drive import DEFAULT_REPEATS
-from drive.common import DAD_TIME_ZONE, LAST_COMPLETE, PAGES, DriveFailure, Run
+from drive.common import DAD_TIME_ZONE, LAST_COMPLETE, PAGES, DriveFailure, Run, replace_file
 
 SKILL_ROOT = Path(__file__).resolve().parents[2]
 BASELINE = SKILL_ROOT / "wydajnosc-baseline.json"
@@ -379,7 +378,7 @@ def _save_whole(workbook: Workbook, path: Path) -> None:
     partial = path.with_name(f"zapis-{path.name}")
     workbook.save(partial)
     workbook.close()
-    os.replace(partial, path)
+    replace_file(partial, path)
 
 
 def _live_filling(browsing: Browsing, measured: Measured, collective_file: Path) -> None:

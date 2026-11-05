@@ -17,6 +17,7 @@ from drive.common import (
     last_opened_is,
     next_step_names_current_step,
     period_row,
+    remove,
     sent_requests,
     settle,
 )
@@ -214,7 +215,7 @@ def drive_period_board(run: Run, page: Page) -> None:
         expect(page.get_by_role("button", name="Rozliczenia pracowników: 1, okres 15_21_09_2026", exact=True)).to_be_visible()
         run.check(True, "back on Okresy from the menu, the board is read again: a Rozliczenie pracownika added meanwhile counts")
     finally:
-        added.unlink()
+        remove(added)
 
     run.step(feature, "tablica-odczyt-w-tle-nieudany")
     page.get_by_role("link", name="Metryki", exact=True).click()

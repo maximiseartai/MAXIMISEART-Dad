@@ -13,13 +13,14 @@ trafia, i liczbę policzoną przez narzędzie w kształcie telefonu, której syn
 
 from __future__ import annotations
 
+from decimal import Decimal
 import gzip
 from typing import Any
 
 import pytest
 
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, REPOSITORY
-from rozliczenia.centrum.run_logs import RunLog, guarded, logi_post, summary_markdown
+from rozliczenia.centrum.run_logs import RunLog, UnrepresentableLogs, guarded, logi_post, summary_markdown
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 
@@ -190,3 +191,75 @@ def test_liczba_policzona_przez_narzedzie_w_ksztalcie_telefonu_zostaje_a_ta_sama
     [logged] = file.sheets[0].rows
     assert (file.fingerprint.size, logged.row, logged.cells) == (size, row, {"AS": PHONE, "AT": PHONE})
     assert (kept.technical_notes, kept.input_copy_notes) == ([], [])
+
+
+def _step(amount: str | None) -> dict[str, Any]:
+    return {
+        "action": "otwarcie zlecenia",
+        "started_at": "2026-10-23T20:47:20.846240Z",
+        "duration_ms": 20,
+        "found": None,
+        "execution_date": None,
+        "amount": amount,
+        "quantities": None,
+        "position": None,
+        "quantity": None,
+        "accepted": None,
+    }
+
+
+def test_maska_w_kwocie_logow_nie_gubi_logow_tylko_kwote_albo_zlecenie_z_uwaga_o_polu() -> None:
+    """Kwota w Logach jest liczbą ``Decimal``, więc maska strażnika (numer Orange ``12345`` w ``12345.67``) w niej nie
+    stoi: kwota strony, która może być pusta, jest pusta, a zlecenie z kwotą z pliku, która pusta być nie może, odpada,
+    każde z uwagą techniczną o polu bez wartości; reszta Logów wychodzi, a numer z nich znika."""
+
+    forbidden = ForbiddenValues()
+    forbidden.remember_value(ForbiddenColumn.ORANGE, 12345)
+    orders = [
+        {"row": 18, "outcome": "gotowe", "code": None, "file": {}, "file_amount": "12345.67", "steps": [_step(None)]},
+        {"row": 19, "outcome": "gotowe", "code": None, "file": {}, "file_amount": "10.00", "steps": [_step("12345.67")]},
+    ]
+    logs = record(process="efenix", efenix_orders=orders)
+
+    kept = guarded(logs, forbidden)
+
+    assert kept.efenix_orders is not None
+    assert [(order.row, order.file_amount, order.steps[0].amount) for order in kept.efenix_orders] == [(19, Decimal("10.00"), None)]
+    assert kept.technical_notes[-2:] == [
+        "Reguła danych: pominięto efenix_orders[0]: strażnik zamaskował w nim wartość, której pole nie przyjmuje.",
+        "Reguła danych: pole efenix_orders[1].steps[0].amount jest puste: strażnik zamaskował w nim wartość, której pole "
+        "nie przyjmuje.",
+    ]
+    assert "12345" not in kept.text
+
+
+def test_maska_w_chwili_zmiany_pliku_kopii_wejscia_daje_puste_pole_z_uwaga_kopii_a_nie_karty() -> None:
+    """Chwila zmiany pliku w Kopii wejścia jest datą, więc numer Orange ``123456Z`` w niej (część ułamkowa sekundy z
+    oznaczeniem UTC) zostawia pole puste, a uwaga idzie do uwag Kopii, których karta nie pokazuje."""
+
+    forbidden = ForbiddenValues()
+    forbidden.remember_value(ForbiddenColumn.ORANGE, "123456Z")
+    fingerprint = {"size": 10, "modified_at": "2026-10-23T20:47:20.123456Z", "sha256": "0" * 64}
+    logs = record(input_copy=[{"name": "plik.xlsx", "fingerprint": fingerprint, "sheets": []}])
+
+    kept = guarded(logs, forbidden)
+
+    assert kept.input_copy is not None
+    assert kept.input_copy[0].fingerprint.modified_at is None
+    assert kept.input_copy_notes[-1] == (
+        "Reguła danych: pole input_copy[0].fingerprint.modified_at jest puste: strażnik zamaskował w nim wartość, "
+        "której pole nie przyjmuje."
+    )
+    assert kept.technical_notes == []
+
+
+def test_maska_w_chwili_startu_uruchomienia_konczy_sie_nazwanym_bledem_a_nie_zawieszeniem() -> None:
+    """Granica (#936): pole Logów najwyższego poziomu bez ``None`` (chwila startu) nie ma czego stracić, więc Logi z
+    maską w nim nie powstają, a strażnik kończy się nazwanym błędem z tym polem. Maska zależy od wartości zapamiętanych
+    z plików taty (tu numer Orange ``846240Z`` w części ułamkowej sekundy), a nie od tego, skąd pochodzi pole."""
+
+    forbidden = ForbiddenValues()
+    forbidden.remember_value(ForbiddenColumn.ORANGE, "846240Z")
+
+    with pytest.raises(UnrepresentableLogs, match=r"bez miejsca na maskę strażnika w polu started_at \(#936\)"):
+        guarded(record(), forbidden)

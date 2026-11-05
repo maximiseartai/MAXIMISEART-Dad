@@ -2,8 +2,9 @@
 
 Checks the frontmatter, the feature-map headings, that every helper named in
 SKILL.md exists and answers ``--help``, the gate of ``wydajnosc`` on made-up
-numbers (no browser), that evidence text is strict UTF-8 and screenshots are PNG
-files, and that no workbook content (the fixture's row marker) reached the
+numbers (no browser), that the retrying helpers of ``drive/common.py`` outlast a
+file the server holds open and take the key away only after a step wrote it, that
+evidence text is strict UTF-8 and screenshots are PNG files, and that no workbook content (the fixture's row marker) reached the
 evidence.
 """
 
@@ -39,8 +40,6 @@ REQUIRED_FEATURE_HEADINGS = (
 )
 ROW_MARKER = "CENTRUM-SYN-ROW"  # create_centrum_fixture.py puts it in every synthetic workbook
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-
-
 def _check_skill(errors: list[str]) -> None:
     skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
     frontmatter = skill.split("---")[1] if skill.startswith("---") else ""
@@ -69,6 +68,49 @@ def _check_feature_map(errors: list[str]) -> None:
         headings = [line for line in lines if line.startswith("## ")]
         if headings != list(REQUIRED_FEATURE_HEADINGS):
             errors.append(f"{path.name} must have exactly the H2s {REQUIRED_FEATURE_HEADINGS}, in order")
+
+
+def _check_retry_while_open(errors: list[str]) -> None:
+    """``remove`` and ``move`` outlast a file the server holds open for a moment: Windows refuses twice, then allows."""
+
+    from drive.common import _while_open
+
+    refusals = 2
+
+    def held_for_a_moment() -> None:
+        nonlocal refusals
+        if refusals:
+            refusals -= 1
+            raise PermissionError(32, "The process cannot access the file because it is being used by another process")
+
+    try:
+        _while_open(held_for_a_moment)
+    except PermissionError:
+        errors.append("drive/common.py gives up on a file the server holds open for a moment (#921)")
+
+
+def _check_drop_report_key(errors: list[str]) -> None:
+    """``drop_report_key`` empties a key the step wrote, and refuses one it never wrote unless ``missing_ok``."""
+
+    import tempfile
+
+    from drive.common import DriveFailure, drop_report_key
+
+    with tempfile.TemporaryDirectory() as scratch:
+        key_file = Path(scratch) / "zgloszenia-klucz.txt"
+        key_file.write_text("KLUCZ\n", encoding="utf-8")
+        drop_report_key(key_file)
+        if key_file.read_bytes() != b"":
+            errors.append("drop_report_key leaves the key in its file")
+        for missing_ok in (False, True):
+            try:
+                drop_report_key(key_file, missing_ok=missing_ok)
+            except DriveFailure:
+                if missing_ok:
+                    errors.append("drop_report_key(missing_ok=True) refuses a file without a key")
+            else:
+                if not missing_ok:
+                    errors.append("drop_report_key takes away a key the step never wrote, which the removal refused")
 
 
 def _check_performance_gate(errors: list[str]) -> None:
@@ -212,6 +254,8 @@ def main(argv: list[str] | None = None) -> int:
     errors: list[str] = []
     _check_skill(errors)
     _check_feature_map(errors)
+    _check_retry_while_open(errors)
+    _check_drop_report_key(errors)
     _check_performance_gate(errors)
     _check_machine_lock(errors)
     if args.evidence_root:

@@ -94,9 +94,10 @@ class CopiedSheet:
 class CopiedFile:
     """Przeczytany plik taty: sama nazwa (nigdy pełna ścieżka), odcisk i przeczytane arkusze.
 
-    ``folders``: nazwy folderu nadrzędnego i folderu pliku, od góry, tyle, ile pokazują Komunikaty
-    (``message.file_label`` i ``message.folder_label``), żeby Uruchomienie odtworzone z Kopii miało te same Komunikaty
-    (#847); bez pełnej ścieżki.
+    ``folders``: nazwy folderu nad folderem pliku i folderu pliku, od góry, bez pełnej ścieżki, żeby Uruchomienie
+    odtworzone z Kopii (#847) leżało w tych samych folderach i miało te same Komunikaty. Komunikaty Pliku zbiorczego
+    pokazują oba (``message.folder_label``), a Komunikaty INTERMAX tylko folder pliku (``message.file_label``), więc
+    folder nad nim jest w Kopii, a w Komunikatach go nie ma.
     """
 
     name: str

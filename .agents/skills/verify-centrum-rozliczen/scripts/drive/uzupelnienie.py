@@ -20,9 +20,12 @@ from drive.common import (
     ROW_MARKER,
     Run,
     last_opened_is,
+    move,
     next_step_names_current_step,
     period_files,
     period_row,
+    remove,
+    remove_empty_folder,
 )
 from drive.przygotowanie_pliku_zbiorczego import HIDE_TAB, SHOW_TAB, drive_preparation
 
@@ -281,7 +284,7 @@ def _settled_result_card(run: Run, page: Page, filling: Locator, collective_file
         run.check(True, "after Przebieg the result card has no hint about saving in Excel")
         run.capture(page, "256-uzupelnienie-wynik-po-przebiegu")
     finally:
-        worker_settlements.rmdir()
+        remove_empty_folder(worker_settlements)
     page.evaluate(RETURN_TO_TAB)
     expect(hint).to_have_count(1)
     run.check(True, "without the Folder rozliczeń pracowników the hint is back on the card")
@@ -567,7 +570,7 @@ def drive_filling(run: Run, page: Page) -> None:
     finally:
         # The harness's value must not reach Przebieg rozliczeń, which continues from this Plik zbiorczy.
         collective_file.write_bytes(original)
-        lock.unlink(missing_ok=True)
+        remove(lock, missing_ok=True)
 
     run.step(FEATURE, "uzupelnienie-bez-pliku")
     page.goto(f"{run.url.rstrip('/')}/#/uzupelnienie/{EMPTY_PERIOD}")
@@ -605,7 +608,7 @@ def drive_filling(run: Run, page: Page) -> None:
     left = Path(run.fixture["periods_directory"]) / EMPTY_PERIOD / f"Rozliczenie {EMPTY_PERIOD} - zbiorcze.xlsx"
     aside = left.with_name(f".{left.name}.na-bok")
     if on_disk:
-        left.rename(aside)
+        move(left, aside)
         run.check(True, f"harness: the Plik zbiorczy tablica-okresow left in {EMPTY_PERIOD} is set aside for this step")
     try:
         page.get_by_role("button", name="Gotowe, rozlicz pracowników", exact=True).click()
@@ -618,7 +621,7 @@ def drive_filling(run: Run, page: Page) -> None:
         run.capture(page, "254-uzupelnienie-gotowe-bez-okresu")
     finally:
         if on_disk:
-            aside.rename(left)
+            move(aside, left)
     page.goto(run.url)
     page.reload()
 
@@ -729,7 +732,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     run.capture(page, "223-uzupelnienie-blokada-excela")
 
     run.step(FEATURE, "uzupelnienie-odczyt-nieudany")
-    lock.unlink()
+    remove(lock)
     saved = collective_file.read_bytes()
     collective_file.write_bytes(b"Excel zapisuje")
     status = page.get_by_role("status").filter(has_text="Stan z")
@@ -762,7 +765,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
 
     run.step(FEATURE, "uzupelnienie-gotowe")
     # `uzupelnienie-odczyt-nieudany` already removed it.
-    lock.unlink(missing_ok=True)
+    remove(lock, missing_ok=True)
     run.check(not lock.exists(), "harness: Dad closed Excel, so no lock file keeps Uruchom disabled")
     expected = _without_quantity(_ready(run, "uzupelnienie-gotowe-podsumowanie"))
     answer = _go_to_settlement(run, page, LAST_COMPLETE, "uzupelnienie-gotowe")
@@ -904,7 +907,7 @@ def _drive_after_settlement(run: Run, page: Page, collective_file: Path) -> None
         if switched:
             page.locator("header").get_by_role("button", name="Włącz motyw ciemny", exact=True).click()
     finally:
-        worker_settlements.rmdir()
+        remove_empty_folder(worker_settlements)
     page.goto(run.url)
 
 

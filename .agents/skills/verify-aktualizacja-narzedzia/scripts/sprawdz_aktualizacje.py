@@ -3,7 +3,8 @@
 Uruchamia TLC na każdej konfiguracji z ``model/*.cfg``, porównuje wynik z
 ``model/oczekiwane.json`` i opowiada każdy kontrprzykład krokami kodu. Javy nie
 trzeba mieć w systemie: przypięte ``jdk4py`` i ``tla2tools.jar`` trafiają raz do
-``.verification/formal-aktualizacja`` (ignorowanego przez Gita). Na końcu
+``.verification/formal-aktualizacja`` (ignorowanego przez Gita); wersje i pobieranie
+z ponowieniem ma ``tools/lib/narzedzia_tlc.py``. Na końcu
 ostrzega, gdy kod z ``model/definicje.json`` zmienił się od Sync commit z
 ``SKILL.md`` (rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py``). Płytki klon
 bez tego commitu (CI) najpierw dopobiera historię. W CI (``GITHUB_ACTIONS=true``)
@@ -26,10 +27,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
+from narzedzia_tlc import JDK4PY, TLA_SHA256, TLA_URL, TLA_WERSJA, ChwilowaAwaria, pobierz, z_ponowieniem
 import rozjazd_modelu
 
 SKILL = Path(__file__).resolve().parents[1]
@@ -37,10 +38,6 @@ ROOT = SKILL.parents[2]
 MODEL = SKILL / "model"
 SPEC = "AktualizacjaNarzedzia.tla"
 CACHE = ROOT / ".verification" / "formal-aktualizacja"
-
-JDK4PY = "jdk4py==25.0.2.1"
-TLA_URL = "https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar"
-TLA_SHA256 = "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
 
 PASSES, VIOLATES = "przechodzi", "narusza"
 DRIFT = "AKTUALIZACJA: ROZJAZD MODELU Z KODEM"
@@ -145,7 +142,6 @@ def _java() -> str:
 
     target = CACHE / "jdk"
     if not (target / "jdk4py").is_dir():
-        shutil.rmtree(target, ignore_errors=True)
         command = [
             sys.executable,
             "-m",
@@ -166,7 +162,14 @@ def _java() -> str:
                     "BŁĄD: ten Python nie ma pip, a uv nie jest dostępne; nie da się zainstalować jdk4py."
                 )
             command = [uv, "pip", "install", "--python", sys.executable, "--quiet"]
-        subprocess.run([*command, "--target", str(target), JDK4PY], check=True)
+
+        def install() -> None:
+            shutil.rmtree(target, ignore_errors=True)
+            done = subprocess.run([*command, "--target", str(target), JDK4PY], check=False)
+            if done.returncode != 0:
+                raise ChwilowaAwaria(f"instalacja skończyła się kodem {done.returncode}")
+
+        z_ponowieniem(JDK4PY, install)
     found = subprocess.run(
         [
             sys.executable,
@@ -184,15 +187,11 @@ def _java() -> str:
 def _tla_tools() -> Path:
     """``tla2tools.jar`` w przypiętej wersji, sprawdzony sumą SHA-256."""
 
-    jar = CACHE / "tla2tools-1.7.4.jar"
+    jar = CACHE / f"tla2tools-{TLA_WERSJA}.jar"
     if not jar.is_file() or _sha256(jar) != TLA_SHA256:
         CACHE.mkdir(parents=True, exist_ok=True)
         partial = jar.with_suffix(".part")
-        with (
-            urllib.request.urlopen(TLA_URL, timeout=120) as response,
-            partial.open("wb") as file,
-        ):
-            shutil.copyfileobj(response, file)
+        pobierz(TLA_URL, partial)
         if _sha256(partial) != TLA_SHA256:
             partial.unlink()
             sys.exit(f"BŁĄD: {TLA_URL} ma inną sumę SHA-256 niż przypięta.")

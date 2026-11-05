@@ -32,6 +32,8 @@ from rozliczenia import intermax_copies
 from rozliczenia.centrum import app
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
+from rozliczenia.centrum.run_logs import RunLog, guarded
+from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 
 from tests.fixtures.atrapa_efenix import PRICES, TODAY, AtrapaOrder, Changed, amount_of, atrapa_efenix
 from tests.fixtures.centrum import TOOL_COMMIT, FakeIssue, FakeReportBox, finished_view, views_until
@@ -1071,6 +1073,83 @@ def test_strona_efenix_inna_niz_w_odczycie_z_logow_daje_roznice_w_sladzie_zlecen
     assert lines[3] == "Pierwsza różnica: Komunikaty (messages)[1: kod EFENIX_INNY_STATUS].code"
 
 
+def test_kopia_wejscia_bez_folderow_nad_plikiem_daje_roznice_w_kopii_a_nie_zgodnosc(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Kopia wejścia bez nazw folderów nad plikiem (Logi sprzed #847): odbudowa kładzie Plik zbiorczy w folderze okresu,
+    więc Kopia odtworzenia ma foldery, których Kopia w Logach nie ma, a pierwszą różnicą jest Kopia wejścia."""
+
+    produced = _settlement(tmp_path / "taty")
+    changed = _changed(produced, tmp_path, lambda record: record["input_copy"][0].pop("folders"))
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (1, "ODTWORZENIE RÓŻNE"), lines
+    name = produced.record["input_copy"][0]["name"]
+    assert lines[3:6] == [
+        f"Pierwsza różnica: Kopia wejścia (input_copy)[0: plik {name}].folders[0]",
+        "  Logi:        (brak)",
+        '  Odtworzenie: "okresy"',
+    ]
+
+
+def test_inna_data_wykonania_w_sladzie_zlecen_efenix_daje_roznice_w_sladzie_przy_tych_samych_komunikatach(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Dzień, który okno wpisało w datę wykonania, Atrapa z Logów bierze z Pliku zbiorczego, nie z kroku śladu: inny
+    dzień w śladzie zleceń efenix w Logach nie zmienia Komunikatów, a odtworzenie zgłasza różnicę w tym kroku śladu."""
+
+    produced = _efenix(tmp_path / "taty")
+
+    def other_day(record: dict[str, Any]) -> None:
+        [typed] = [step for step in record["efenix_orders"][0]["steps"] if step["action"] == "data wykonania"]
+        typed["execution_date"] = "2026-09-10"
+
+    changed = _changed(produced, tmp_path, other_day)
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (1, "ODTWORZENIE RÓŻNE"), lines
+    row = produced.record["efenix_orders"][0]["row"]
+    assert lines[3].startswith(f"Pierwsza różnica: ślad zleceń efenix (efenix_orders)[0: wiersz {row}].steps["), lines
+    assert (lines[3].endswith("].execution_date"), lines[4]) == (True, '  Logi:        "2026-09-10"'), lines
+
+
+def _twice_saving(phases: list[dict[str, Any]]) -> None:
+    phases.append(phases[-1])
+
+
+def _without_saving(phases: list[dict[str, Any]]) -> None:
+    phases.pop()
+
+
+# Lista w Logach dłuższa i krótsza niż w odtworzeniu przy równym początku: etap Zapisywania dopisany drugi raz i usunięty.
+LENGTHS: dict[str, tuple[Callable[[list[dict[str, Any]]], None], str, str, str]] = {
+    "dluzsza_w_logach": (_twice_saving, "4: etap Zapisywanie", "Logi", "Odtworzenie"),
+    "krotsza_w_logach": (_without_saving, "3: etap Zapisywanie", "Odtworzenie", "Logi"),
+}
+
+
+@pytest.mark.parametrize("case", LENGTHS)
+def test_lista_innej_dlugosci_w_logach_daje_roznice_w_pierwszym_elemencie_bez_pary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    """Etapy w Logach z jednym więcej albo jednym mniej na końcu niż w odtworzeniu: wspólny początek się zgadza, więc
+    pierwszą różnicą jest element bez pary, z wartością tam, gdzie jest, i „(brak)” tam, gdzie go nie ma."""
+
+    change, place, present, absent = LENGTHS[case]
+    produced = _settlement(tmp_path / "taty")
+    changed = _changed(produced, tmp_path, lambda record: change(record["phases"]))
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (1, "ODTWORZENIE RÓŻNE"), lines
+    assert lines[3] == f"Pierwsza różnica: etapy (phases)[{place}]", lines
+    shown = dict(line.strip().split(":", 1) for line in lines[4:6])
+    assert (shown[absent].strip(), '"phase": "Zapisywanie"' in shown[present]) == ("(brak)", True), lines
+
+
+
 def test_kopia_intermax_bez_wiersza_nad_wklejeniem_stawia_dzien_gdzie_indziej_niz_u_taty(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1112,6 +1191,65 @@ def test_logi_z_wierszem_intermax_bez_pewnego_polozenia_daja_granice_kopii_a_nie
         "(#913), więc odtworzenie nie zbuduje tych wierszy"
     )
     assert not any(line.startswith(("Pierwsza różnica", "Porównano")) for line in lines)
+
+
+def _guarded_with(produced: Produced, folder: Path, word: str) -> Path:
+    """Plik Logów z Archiwum po strażniku, który zapamiętał ``word`` jako ADRES z pliku taty, jak ``guarded`` w Centrum."""
+
+    forbidden = ForbiddenValues()
+    forbidden.remember_value(ForbiddenColumn.ADDRESS, word)
+    kept = guarded(RunLog.model_validate(produced.record), forbidden)
+    path = folder / produced.archived.stem
+    path.write_text(kept.text, encoding="utf-8")
+    return path
+
+
+# Słowo z pliku taty, które strażnik maskuje w polu z zamkniętą listą, kod wyjścia odtworzenia i linia raportu: zlecenie
+# śladu efenix („gotowe” w ``outcome``) i wiersz Kopii wejścia („datetime” w typie komórki z datą) to wejście
+# odtworzenia, więc granica blokuje, a Komunikat („warning” w rodzaju) jest poza wejściem, więc zostaje zastrzeżeniem.
+CUTS = {
+    "zlecenie_sladu_efenix": (
+        "gotowe",
+        3,
+        "NIE DA SIĘ ODTWORZYĆ: strażnik reguły danych pominął w Logach efenix_orders[0] (maska w polu, które jej nie "
+        "przyjmuje), a odtworzenie buduje z niego wejście",
+    ),
+    "wiersz_kopii_wejscia": (
+        "datetime",
+        3,
+        "NIE DA SIĘ ODTWORZYĆ: strażnik reguły danych pominął w Logach input_copy[0].sheets[0].rows[0] (maska w polu, "
+        "które jej nie przyjmuje), a odtworzenie buduje z niego wejście",
+    ),
+    "komunikat": (
+        "warning",
+        1,
+        "- Strażnik reguły danych pominął w Logach messages[0] (maska w polu, które jej nie przyjmuje): różnica w tym "
+        "miejscu jest skutkiem maski",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", CUTS)
+def test_element_ktory_straznik_pominal_w_logach_jest_granica_a_nie_falszywa_przyczyna_roznicy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    """Maska strażnika w polu z zamkniętą listą zabiera z Logów Wyceny w efenix cały element z uwagą techniczną.
+    Zlecenie śladu albo wiersz Kopii to wejście odtworzenia, więc odtworzenie kończy się granicą z tym miejscem, a nie
+    różnicą z fałszywą przyczyną (nieznany numer w efenix); pominięty Komunikat stoi pod „Granice:” przy różnicy."""
+
+    word, expected_code, expected = CUTS[case]
+    produced = _efenix(tmp_path / "taty")
+    cut = _guarded_with(produced, tmp_path, word)
+
+    code, lines = _replayed(capsys, cut, "--na-tym-drzewie", *produced.arguments)
+
+    assert code == expected_code, lines
+    if expected_code == 3:
+        assert lines[0] == expected, lines
+        assert not any(line.startswith("Pierwsza różnica") for line in lines), lines
+    else:
+        assert (lines[0], lines[3].startswith("Pierwsza różnica: Komunikaty (messages)")) == ("ODTWORZENIE RÓŻNE", True)
+        assert expected in lines[lines.index("Granice:") + 1 :], lines
 
 
 def test_logi_bez_kopii_wejscia_daja_granice_a_nie_zgodnosc(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

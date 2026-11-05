@@ -17,6 +17,8 @@
   Wtedy stoi w linii `LICZY CI`, a nie `LICZY NOC`.
   Biegnie w pełnym CI `main` i nocą na `main` (`mutacje-nocne.yml`), gdy od bazy nocy (`tools/mutacje_nocne.py`) zmienił się plik w folderze skilla, runner mutacji (`tools/mutacje.py`, `tools/ci/mutacje_skilli.py`, `tools/lib/kroki_skilli.py`) albo sprawdzenie, które uruchamiają jego mutacje.
   Skrypt, który padł nocą, trafia linią `SKRYPT <skrypt>` do issue `Przeżyte mutacje skilli z #N` z etykietą `ready-for-agent` PR-u, który ostatni zmienił folder skilla.
+- Skrypt mutacji drukuje w logu czas polecenia każdej mutacji (linia `CZAS`), a mutację, której polecenie trwało ponad połowę limitu `--limit-s` z `tools/mutacje.py`, wymienia linią `CZAS BLISKO LIMITU` ze skryptem, częścią i limitem.
+  To nie porażka, ale zanim limit da `PRZEKROCZONY CZAS` i czerwony `main` (#911), przenieś taką mutację do mniejszego zakresu sprawdzenia albo przyspiesz sprawdzenie.
 - Zmiana `requirements.txt`, `.github/workflows/ci.yml` albo `.gitattributes` (`Context.SKILL_STEPS` w `tools/lib/wplyw_zmiany.py`) uruchamia każdą podstawę skilla na PR, a nocą każdy skrypt mutacji i każdą podstawę z `ci-czesci`, a skill bez czytelnego `pilnuje:` biegnie przy każdej zmianie.
 - Importów ani plików, które krok czyta, wybór nie liczy, więc to, czego `pilnuje:` nie obejmuje, łapie dopiero pełne CI `main`, na którym biegnie każdy krok.
 - Glob, który wymienia moduły z nazwy, nie obejmuje nowego modułu, więc nowy moduł silnika dopisz do `pilnuje:`, które obejmuje też `tools/uruchom_proces.py`, albo z powodem do `POZA_VERIFY_ROZLICZENIA` w `tests/test_mutacje_skilli.py`.

@@ -145,9 +145,10 @@ def box(centrum: SettlingCentrum) -> FakeReportBox:
 
 
 def queued(centrum: SettlingCentrum) -> list[Path]:
-    """Kontrole ilości w kolejce; Logi Uruchomienia mają w niej własne pliki."""
+    """Kontrole ilości w kolejce, bez ``.json.tmp``, który kolejka zostawia na chwilę przepisania pliku
+    (``replace_atomically``, na Windows z ponowieniami zamiany; #885); Logi Uruchomienia mają w niej własne pliki."""
 
-    return sorted((centrum.tmp_path / "config" / "zgloszenia" / "kolejka").glob(f"*-{LABEL}-*"))
+    return sorted((centrum.tmp_path / "config" / "zgloszenia" / "kolejka").glob(f"*-{LABEL}-*.json"))
 
 
 def sent_check(centrum: SettlingCentrum) -> FakeIssue:
@@ -433,6 +434,33 @@ def test_kontrola_ilosci_bez_sieci_czeka_w_kolejce_i_wychodzi_przy_nastepnym_sta
     assert issue.body == expected_body(view["run"]["id"])
     assert wait_for(lambda: queued(centrum) == [])
     assert list((tmp_path / "config" / "zgloszenia").glob("Zgłoszenie *.md")) == []
+
+
+def test_logi_i_kontrola_ilosci_jednego_przebiegu_czekaja_razem_i_przy_starcie_wychodza_obie(tmp_path: Path) -> None:
+    """Logi Uruchomienia i Kontrola ilości jednego Przebiegu rozliczeń mają to samo Uruchomienie, ale inny cel w
+    Skrzynce: bez sieci czekają w kolejce razem, a przy następnym starcie Centrum wychodzą obie, bo żadna nie jest
+    nowszą wersją drugiej."""
+
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    box(centrum).background = frozenset()  # Logi też bez sieci, a nie w ruchu w tle, który zawsze dochodzi
+    box(centrum).search_failure = Unreachable()
+    folder = tmp_path / "config" / "zgloszenia" / "kolejka"
+
+    view = run_to_end(centrum, dry_run=False)
+
+    assert wait_for(lambda: "przyczyna=brak-sieci" in centrum.log_path.read_text(encoding="utf-8"))
+    assert wait_for(lambda: len(queued(centrum)) == 1 and bool(list(folder.glob("*-logi-uruchomienia-*.json"))))
+
+    box(centrum).search_failure = None
+    centrum.restart()
+    with centrum.client:
+        issue = sent_check(centrum)
+        assert box(centrum).wait_until(lambda fake: bool(fake.issues_with("logi-uruchomienia"))), "Logi nie dotarły"
+        assert wait_for(lambda: sorted(folder.glob("*.json")) == [])
+
+    assert issue.body == expected_body(view["run"]["id"])
+    [logs] = box(centrum).issues_with("logi-uruchomienia")
+    assert [view["run"]["id"] in comment for comment in logs.comments] == [True]
 
 
 def test_ponowienie_przy_starcie_nie_opoznia_startu_centrum(tmp_path: Path) -> None:

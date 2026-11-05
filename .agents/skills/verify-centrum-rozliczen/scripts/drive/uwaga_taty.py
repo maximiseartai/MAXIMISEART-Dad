@@ -16,7 +16,18 @@ from playwright.sync_api import FloatRect, Locator, Page, Request, ViewportSize,
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from drive import kontrola_ilosci
-from drive.common import PAGES, Run, current_run, ended_run_shown, ensure_files_set, error_toasts, finished_result, history_rows
+from drive.common import (
+    PAGES,
+    Run,
+    current_run,
+    drop_report_key,
+    ended_run_shown,
+    ensure_files_set,
+    error_toasts,
+    finished_result,
+    history_rows,
+    remove,
+)
 from drive.metryki import _local
 
 FEATURE = "uwaga-taty"
@@ -432,7 +443,7 @@ def _drive_full_window_list(run: Run, page: Page) -> None:
         expect(dialog).to_have_count(0)
     finally:
         if before is None:
-            registry.unlink(missing_ok=True)
+            remove(registry, missing_ok=True)
         else:
             registry.write_bytes(before)
 
@@ -442,7 +453,7 @@ def drive_dad_note(run: Run, page: Page) -> None:
     key_file = config / "zgloszenia-klucz.txt"
     box = run.root / "skrzynka-zgloszen"
     pacing = run.root / "pacing" / "skrzynka-ms.txt"
-    key_file.unlink(missing_ok=True)
+    drop_report_key(key_file, missing_ok=True)
     notes_before = len(_notes(config))
     issues_before = len(_issues(box))
     run.check(_queued(config) == [], "the skrzynka queue is empty before the first Uwaga")
@@ -609,7 +620,7 @@ def drive_dad_note(run: Run, page: Page) -> None:
         run.capture(page, "175-uwaga-wysylanie", live=True)
         expect(dialog.get_by_role("status")).to_have_text(SENT, timeout=15_000)
     finally:
-        pacing.unlink(missing_ok=True)
+        remove(pacing, missing_ok=True)
     run.capture(page, "176-uwaga-wyslana")
     issues = _issues(box)
     (run.evidence / "api" / "uwaga-skrzynka.json").write_text(
@@ -642,7 +653,7 @@ def drive_dad_note(run: Run, page: Page) -> None:
     try:
         _drive_pinned(run, page, config, box)
     finally:
-        key_file.unlink()
+        drop_report_key(key_file)
 
 
 def _send(page: Page, send: Locator) -> object:
@@ -684,7 +695,7 @@ def _drive_refused(run: Run, page: Page, config: Path, box: Path) -> list[Path]:
         expect(row).to_contain_text(REFUSED_CONTENT)
         run.capture(page, "174c-uwaga-odrzucona-powiadomienia")
     finally:
-        rejecting.unlink(missing_ok=True)
+        remove(rejecting, missing_ok=True)
     return waiting
 
 
@@ -1100,7 +1111,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
         run.check(_issue(box, issue["number"]).get("comments", []) == [], "while the skrzynka rejects the Logi, the Uwaga has no comment")
         _as_maks_sees(run, page, _issue(box, issue["number"]), "198-uwaga-logi-odrzucone")
     finally:
-        rejecting.unlink(missing_ok=True)
+        remove(rejecting, missing_ok=True)
     refused = _drive_refused(run, page, config, box)
 
     run.step(FEATURE, "uwaga-logi-dotarly")
@@ -1130,7 +1141,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     key_file = config / "zgloszenia-klucz.txt"
     key = key_file.read_text(encoding="utf-8")
     print("  harness: without the key the preview's Logi wait in the queue", flush=True)
-    key_file.unlink()
+    drop_report_key(key_file)
     try:
         page.reload()
         missing = _preview(run, page, period, "uwaga-podglad-bez-logow")
@@ -1140,7 +1151,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     print("  harness: Maks writes the key again; the Logi file leaves the queue, as when Centrum could not write it", flush=True)
     [logs_file] = _queue_files(config, LOGS_LABEL, missing)
     logs_text = logs_file.read_bytes()
-    logs_file.unlink()
+    remove(logs_file)
     try:
         body, issue = _send_pinned(run, page, box, missing, NO_LOGS, "bez-logow")
         run.check(

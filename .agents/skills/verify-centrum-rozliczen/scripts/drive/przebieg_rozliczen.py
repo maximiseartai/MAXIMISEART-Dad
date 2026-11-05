@@ -27,6 +27,7 @@ from drive.common import (
     period_files,
     period_row,
     priced_in_efenix,
+    remove,
     start_card_warns_while_open,
     stop_banner,
 )
@@ -133,7 +134,7 @@ def _template_lock_left_behind(run: Run, page: Page) -> None:
         expect(stop_banner(page)).to_contain_text(f"pozostawiony plik {lock.name}")
         page.evaluate(COUNT_RETURNS)
     finally:
-        lock.unlink(missing_ok=True)
+        remove(lock, missing_ok=True)
     print(f"  harness: Dad deletes {lock.name} while Centrum keeps the focus", flush=True)
     page.get_by_role("button", name="Nowe Uruchomienie procesu", exact=True).click()
     page.get_by_role("radio", name="Przebieg rozliczeń").click()
@@ -327,7 +328,7 @@ def drive_settlement(run: Run, page: Page) -> None:
         expect(header_link).to_have_count(0)
         run.check(page.url.endswith("#/uruchomienia"), "the header link leads back to the live view; there it is gone")
     finally:
-        pacing.unlink(missing_ok=True)
+        remove(pacing, missing_ok=True)
 
     run.step(feature, "przebieg-zapisane")
     outcome = page.get_by_label("Wynik")

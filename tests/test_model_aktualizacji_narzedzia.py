@@ -3,11 +3,17 @@
 Model opisuje kod z ``model/definicje.json`` skilla ``verify-aktualizacja-narzedzia`` w Sync commit z jego ``SKILL.md``.
 Rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py`` (``tests/test_rozjazd_modelu.py``), a skrypt w CI kończy się nim
 porażką, zanim ruszy TLC.
+
+Narzędzia TLC (``tla2tools.jar``) skrypt pobiera z GitHub Releases: chwilowy 5xx ponawia, a gdy pobieranie zawiedzie do
+końca, mówi, że zawiodło narzędzie, nie model (#930).
 """
 
 from __future__ import annotations
 
+import email.message
+import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -15,6 +21,7 @@ import shutil
 import subprocess
 import sys
 from types import ModuleType
+import urllib.error
 
 import pytest
 
@@ -25,6 +32,8 @@ SCRIPT = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "script
 OWNER = ROOT / "tools" / "lib" / "rozjazd_modelu.py"
 # Właścicielka rozjazdu dopobiera historię przez potomne.run.
 POTOMNE = ROOT / "tools" / "lib" / "potomne.py"
+# Właściciel przypiętych narzędzi TLC i ich pobierania z ponowieniem.
+NARZEDZIA = ROOT / "tools" / "lib" / "narzedzia_tlc.py"
 COVERED = "src/rozliczenia/centrum/tool_update.py"
 DRIFT = "AKTUALIZACJA: ROZJAZD MODELU Z KODEM"
 
@@ -35,7 +44,7 @@ def _repo(root: Path) -> str:
     (root / COVERED).parent.mkdir(parents=True)
     (root / COVERED).write_text("X = 1\n", encoding="utf-8")
     skill = root / SCRIPT.relative_to(ROOT).parents[1]
-    for script in (SCRIPT, OWNER, POTOMNE):
+    for script in (SCRIPT, OWNER, POTOMNE, NARZEDZIA):
         copy = root / script.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(script, copy)
@@ -106,3 +115,71 @@ def test_poza_ci_rozjazd_tylko_ostrzega_i_sprawdzenie_modelu_biegnie_dalej(
     printed = capsys.readouterr().out
     assert "UWAGA: pokryty kod zmienił się" in printed
     assert DRIFT not in printed
+
+
+JAR = b"tla2tools z atrapy"
+
+
+def _download_answers(
+    module: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answers: list[int | OSError]
+) -> list[str]:
+    """Atrapa ``urlopen`` odpowiada kolejno z ``answers``: kod HTTP (200 daje jar) albo błąd sieci; zwraca adresy prób."""
+
+    calls: list[str] = []
+
+    def urlopen(url: str, timeout: float) -> io.BytesIO:
+        calls.append(url)
+        code = answers[len(calls) - 1]
+        if isinstance(code, OSError):
+            raise code
+        if code != 200:
+            raise urllib.error.HTTPError(url, code, "Gateway Time-out", email.message.Message(), None)
+        return io.BytesIO(JAR)
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr(sys.modules["narzedzia_tlc"], "PRZERWY_S", (0.0, 0.0))
+    monkeypatch.setattr(module, "CACHE", tmp_path)
+    monkeypatch.setattr(module, "TLA_SHA256", hashlib.sha256(JAR).hexdigest())
+    return calls
+
+
+@pytest.mark.parametrize(
+    "awaria", [504, 500, 429, urllib.error.URLError("Connection reset by peer")], ids=["504", "500", "429", "siec"]
+)
+def test_chwilowa_awaria_github_releases_nie_przerywa_pobrania_tla2tools_bo_skrypt_ponawia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, awaria: int | OSError
+) -> None:
+    module = _load()
+    calls = _download_answers(module, tmp_path, monkeypatch, [awaria, 200])
+
+    jar = module._tla_tools()
+
+    assert jar.read_bytes() == JAR
+    assert calls == [module.TLA_URL, module.TLA_URL]
+
+
+def test_pobranie_tla2tools_ktore_zawodzi_do_konca_konczy_sie_bledem_pobierania_a_nie_modelu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load()
+    calls = _download_answers(module, tmp_path, monkeypatch, [504, 502, 503])
+
+    with pytest.raises(SystemExit) as stopped:
+        module._tla_tools()
+
+    assert str(stopped.value).startswith(f"BŁĄD POBIERANIA NARZĘDZIA TLC: {module.TLA_URL} po 3 próbach (HTTP 503 ")
+    assert len(calls) == 3
+    assert not list(tmp_path.glob("*.jar"))
+
+
+def test_adres_tla2tools_ktorego_nie_ma_konczy_sie_bledem_pobierania_bez_ponawiania(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load()
+    calls = _download_answers(module, tmp_path, monkeypatch, [404, 200])
+
+    with pytest.raises(SystemExit) as stopped:
+        module._tla_tools()
+
+    assert str(stopped.value).startswith(f"BŁĄD POBIERANIA NARZĘDZIA TLC: {module.TLA_URL} odpowiada HTTP 404 ")
+    assert len(calls) == 1

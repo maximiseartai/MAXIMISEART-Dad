@@ -11,7 +11,7 @@ import urllib.request
 
 from playwright.sync_api import Locator, Page, expect
 
-from drive.common import Run, release_only, served_version, version_line
+from drive.common import Run, move, release_only, remove, served_version, version_line
 
 FEATURE = "aktualizacja"
 BUTTON = "Zaktualizuj narzędzie"
@@ -101,16 +101,16 @@ def _without_internet(run: Run) -> Iterator[None]:
     away = origin.with_name("origin-poza-zasiegiem.git")
     markers = [run.root / "github" / "brak-sieci", run.root / "skrzynka-zgloszen" / "brak-sieci"]
     print("  harness: no internet (the local origin moved out of reach, GitHub and the skrzynka unreachable)", flush=True)
-    origin.rename(away)
+    move(origin, away)
     for marker in markers:
         marker.parent.mkdir(exist_ok=True)
         marker.touch()
     try:
         yield
     finally:
-        away.rename(origin)
+        move(away, origin)
         for marker in markers:
-            marker.unlink(missing_ok=True)
+            remove(marker, missing_ok=True)
         print("  harness: the internet is back", flush=True)
 
 
@@ -299,7 +299,7 @@ def drive_update(run: Run, page: Page) -> None:
             "with the internet back, the double click started exactly one more Aktualizacja narzędzia",
         )
     finally:
-        pacing.unlink(missing_ok=True)
+        remove(pacing, missing_ok=True)
 
     try:
         run.step(FEATURE, "aktualizacja-ponowny-start")
@@ -315,7 +315,7 @@ def drive_update(run: Run, page: Page) -> None:
         )
         run.capture(page, "100-aktualizacja-ponowny-start", live=True)
     finally:
-        restart_pacing.unlink(missing_ok=True)
+        remove(restart_pacing, missing_ok=True)
 
     try:
         run.step(FEATURE, "aktualizacja-zaktualizowano")
@@ -381,7 +381,7 @@ def drive_update(run: Run, page: Page) -> None:
             _drive_start_from_shortcut(run, page)
             _drive_ok_on_old_version(run, page, tool["not_starting"])
         finally:
-            restart_pacing.unlink(missing_ok=True)
+            remove(restart_pacing, missing_ok=True)
         # Later features (pomiar-u-taty) expect Konfiguracja without an alert: one more click on the restored
         # Wydanie replaces the failed installation with `Masz najnowszą wersję.`, which the last reload drops.
         print("  harness: the newest Wydanie in the local origin is the newest commit again", flush=True)
@@ -408,8 +408,8 @@ def drive_update(run: Run, page: Page) -> None:
             "with GitHub's newest Wydanie on the tool's commit, the server forgets the result about the other Wydanie",
         )
     finally:
-        main_commit.unlink(missing_ok=True)
-        pacing.with_name("instalacja-ms.txt").unlink(missing_ok=True)
+        remove(main_commit, missing_ok=True)
+        remove(pacing.with_name("instalacja-ms.txt"), missing_ok=True)
         release_only(origin, newest)
 
 
@@ -443,7 +443,7 @@ def _drive_failed_installation(
     view = run.api("/api/tool-update", "aktualizacja-instalowanie")
     run.check(view == {"state": "running", "step": "installing"}, "the server reports the step `installing`")
     run.capture(page, "130-aktualizacja-instalowanie", live=True)
-    (run.root / "pacing" / "instalacja-ms.txt").unlink()
+    remove(run.root / "pacing" / "instalacja-ms.txt")
 
     run.step(FEATURE, "aktualizacja-instalacja-nieudana")
     message = card.get_by_role("alert").filter(has_text=LIBRARIES_FAILED)
@@ -506,7 +506,7 @@ def _drive_new_version_not_starting(
     print("  Dad goes to Uruchomienia while Centrum restarts", flush=True)
     page.get_by_role("link", name="Uruchomienia", exact=True).click()
     expect(page.get_by_role("heading", name="Uruchomienia", exact=True)).to_be_visible()
-    (run.root / "pacing" / "ponowny-start-ms.txt").unlink()
+    remove(run.root / "pacing" / "ponowny-start-ms.txt")
 
     run.step(FEATURE, "aktualizacja-nie-wystartowala")
     message = page.get_by_role("alert").filter(has_text=NEW_VERSION_FAILED)
@@ -605,7 +605,7 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
         json.dumps({"wynik": "ok", "przed": newest, "po": not_starting, "biblioteki": False}) + "\n", encoding="utf-8"
     )
     run.check(not _answers(run), "the harness put „ok” back before the old version started")
-    (run.root / "pacing" / "ponowny-start-ms.txt").unlink()
+    remove(run.root / "pacing" / "ponowny-start-ms.txt")
 
     message = page.get_by_role("alert").filter(has_text=UNEXPECTED)
     expect(message).to_be_visible(timeout=RESTART_TIMEOUT_MS)

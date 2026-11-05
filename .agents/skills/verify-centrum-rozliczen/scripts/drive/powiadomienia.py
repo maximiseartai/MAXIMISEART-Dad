@@ -12,7 +12,7 @@ import sys
 from playwright.sync_api import Locator, Page, expect
 
 from drive import aktualizacja, uwaga_taty, zgloszenie
-from drive.common import PAGES, Run, error_toasts, release_only
+from drive.common import PAGES, Run, drop_report_key, error_toasts, release_only, remove
 
 FEATURE = "powiadomienia"
 BELL = "Powiadomienia"
@@ -54,7 +54,7 @@ def _publish(run: Run, newest_tag: str, newest_commit: str | None, releases: lis
     (github / "wydanie.txt").write_text(newest_tag, encoding="utf-8")
     main_commit = github / "main-commit.txt"
     if newest_commit is None:
-        main_commit.unlink(missing_ok=True)
+        remove(main_commit, missing_ok=True)
     else:
         main_commit.write_text(newest_commit, encoding="utf-8")
     (github / "wydania.json").write_text(json.dumps(releases, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -242,16 +242,16 @@ def drive_notifications(run: Run, page: Page) -> None:
         expect(_bell(page)).to_have_accessible_name(BELL)
         run.capture(page, "184-powiadomienia-brak-sieci")
     finally:
-        (box / "brak-sieci").unlink(missing_ok=True)
+        remove(box / "brak-sieci", missing_ok=True)
     try:
         _drive_new_version(run, page, note, report, report_what)
     finally:
         for name in ("wydanie.txt", "main-commit.txt", "wydania.json", "brak-sieci"):
-            (run.root / "github" / name).unlink(missing_ok=True)
+            remove(run.root / "github" / name, missing_ok=True)
     _drive_unavailable_files(run, page, config, box)
     log = (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
     run.check(KEY not in log and KEY not in page.content(), "the key is neither in the Centrum log nor in the browser")
-    key_file.unlink()
+    drop_report_key(key_file)
 
 
 def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: dict[str, object], what: str) -> None:
