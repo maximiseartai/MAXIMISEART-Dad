@@ -10,22 +10,28 @@ danych (``guarded``, ADR 0025) ma tu klucz słownika Logów z zakazaną wartośc
 list (operator z reguły taty, kod pozycji efenix, litera kolumny), więc przez HTTP żadna taka wartość do klucza nie
 trafia, i liczbę policzoną przez narzędzie w kształcie telefonu, której syntetyczne pliki taty przez HTTP nie dają.
 Pełne Logi z każdym polem schematu (``FULL_LOGS``) niesie tylko ten plik: przemiatanie kształtów pól (#936) daje
-strażnikowi każdy ich tekst jako wartość z pliku taty, a przez HTTP jedno Uruchomienie nie wypełnia wszystkich pól.
+strażnikowi każdą ich wartość jako wartość z pliku taty, a przez HTTP jedno Uruchomienie nie wypełnia wszystkich pól.
+Typy pól, które strażnik zostawia bez maski (``TOOL_FIELDS``), sprawdza tu test struktury na schemacie Logów.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
+from dataclasses import fields, is_dataclass
+from datetime import date, datetime
 from decimal import Decimal
+from enum import Enum
 import gzip
 import json
-from typing import Any, Final
+from types import UnionType
+from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin, get_type_hints
 
+from pydantic import BaseModel
 import pytest
 
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, REPOSITORY
-from rozliczenia.centrum.run_logs import RunLog, guarded, logi_post, summary_markdown
-from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
+from rozliczenia.centrum.run_logs import READ_VALUES, TOOL_FIELDS, RunLog, guarded, logi_post, summary_markdown
+from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, shown
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 
 RUN_ID = "627b45fe219e4274b722953c34d4af54"
@@ -386,7 +392,14 @@ FULL_LOGS: Final[dict[str, Any]] = {
                     "rows": [
                         {
                             "row": 18,
-                            "cells": {"C": "Komórka syntetyczna", "D": {"type": "datetime", "text": "2026-10-21 00:00:00"}, "E": 12.5, "F": True},
+                            "cells": {
+                                "C": "Komórka syntetyczna",
+                                "D": {"type": "datetime", "text": "2026-10-21 00:00:00"},
+                                "E": 12.5,
+                                "F": True,
+                                "G": 4801234567,
+                                "H": 98765.5,
+                            },
                         }
                     ],
                     "empty_rows": [21],
@@ -417,7 +430,7 @@ def _json_at(logs: RunLog, place: str) -> str:
 
 
 # Pola Logów, które niosą tylko słowa i chwile narzędzia (ADR 0025, #936), i wartość z każdego z nich w pełnych Logach.
-TOOL_FIELDS: Final = {
+TOOL_FIELD_VALUES: Final = {
     "run_id": RUN_ID,
     "process": "efenix",
     "mode": "zapis",
@@ -436,7 +449,7 @@ TOOL_FIELDS: Final = {
 }
 
 
-@pytest.mark.parametrize(("place", "value"), TOOL_FIELDS.items(), ids=TOOL_FIELDS.keys())
+@pytest.mark.parametrize(("place", "value"), TOOL_FIELD_VALUES.items(), ids=TOOL_FIELD_VALUES.keys())
 def test_pole_ze_slowami_i_chwilami_narzedzia_zostaje_w_logach_choc_plik_taty_ma_te_wartosc_w_kolumnie_adres(
     place: str, value: str
 ) -> None:
@@ -457,18 +470,39 @@ def test_pole_ze_slowami_i_chwilami_narzedzia_zostaje_w_logach_choc_plik_taty_ma
     assert (post.run_id, post.period) == (RUN_ID, "08_14_09_2026")
 
 
-def _texts(value: object) -> Iterator[tuple[str, bool]]:
-    """Każdy tekst JSON-a Logów: klucz (``True``) albo wartość tekstowa (``False``)."""
+def _scalars(value: object) -> Iterator[tuple[str | int | float, bool]]:
+    """Każda wartość skalarna JSON-a Logów (tekst, także chwila i kwota, i liczba; bez ``bool`` i ``None``) i każdy
+    klucz: (wartość, czy to klucz)."""
 
     if isinstance(value, dict):
         for key, entry in value.items():
             yield key, True
-            yield from _texts(entry)
+            yield from _scalars(entry)
     elif isinstance(value, list):
         for entry in value:
-            yield from _texts(entry)
-    elif isinstance(value, str):
+            yield from _scalars(entry)
+    elif isinstance(value, (str, int, float)) and not isinstance(value, bool):
         yield value, False
+
+
+def _numbers(value: object, read: bool = False) -> Iterator[tuple[int | float, bool]]:
+    """Każda liczba Logów ``value`` i czy stoi w polu ``READ_VALUES`` (komórki pliku taty, ilości przy zleceniu Wyceny w
+    efenix): tylko takie liczby strażnik sprawdza (ADR 0025), a każdą inną policzyło narzędzie."""
+
+    if isinstance(value, BaseModel):
+        for name, field in type(value).model_fields.items():
+            yield from _numbers(getattr(value, name), read or READ_VALUES in field.metadata)
+    elif is_dataclass(value) and not isinstance(value, type):
+        for item in fields(value):
+            yield from _numbers(getattr(value, item.name), read)
+    elif isinstance(value, Mapping):
+        for entry in value.values():
+            yield from _numbers(entry, read)
+    elif isinstance(value, (list, tuple)):
+        for entry in value:
+            yield from _numbers(entry, read)
+    elif isinstance(value, (int, float)) and not isinstance(value, bool):
+        yield value, read
 
 
 def _schema_words() -> tuple[set[str], set[str]]:
@@ -493,33 +527,107 @@ def _schema_words() -> tuple[set[str], set[str]]:
     return names, closed
 
 
-def test_kazdy_tekst_pelnych_logow_jako_adres_z_pliku_taty_daje_logi_bez_niego_poza_slowami_narzedzia() -> None:
-    """Przemiatanie kształtów pól (#936): każdy tekst pełnych Logów, wartość i klucz, po kolei jako wartość kolumny
-    ``ADRES`` z pliku taty. Logi powstają za każdym razem, także gdy to nazwa pola schematu, słowo zamkniętej listy albo
-    wartość pola narzędzia, a pola narzędzia mają wartość z rekordu. Wartość spoza słów narzędzia nie zostaje nigdzie w
-    tekście Logów, a nazwa pola, której nie ma w żadnej wartości, nie zmienia Logów wcale."""
+def test_kazda_wartosc_pelnych_logow_jako_adres_z_pliku_taty_daje_logi_bez_niej_poza_slowami_narzedzia() -> None:
+    """Przemiatanie kształtów pól (#936): każda wartość skalarna pełnych Logów (tekst, chwila, kwota, liczba, także
+    liczba z komórki pliku taty) i każdy klucz po kolei jako wartość kolumny ``ADRES`` z pliku taty. Pełne Logi mają
+    wartość w każdym polu ``RunLog``, a Logi powstają za każdym razem, także gdy to nazwa pola schematu, słowo zamkniętej
+    listy, wartość pola narzędzia albo liczba, którą policzyło narzędzie, a pola narzędzia mają wartość z rekordu.
+    Wartość spoza słów narzędzia nie zostaje nigdzie w tekście Logów, a nazwa pola, której nie ma w żadnym tekście, nie
+    zmienia Logów wcale."""
 
+    assert set(RunLog.model_fields) <= set(FULL_LOGS), "pełne Logi mają wartość w każdym polu Logów"
     logs = full_logs()
-    texts = list(_texts(logs.model_dump(mode="json")))
+    scalars = list(_scalars(logs.model_dump(mode="json")))
     names, closed = _schema_words()
-    assert names <= {text for text, key in texts if key}, "pełne Logi mają każde pole schematu"
-    values = "\n".join(text for text, key in texts if not key)
-    tool_words = "\n".join([*names, *closed, *(_json_at(logs, place) for place in TOOL_FIELDS)])
+    assert names <= {value for value, key in scalars if key}, "pełne Logi mają każde pole schematu"
+    numbers = list(_numbers(logs))
+    assert [number for number, read in numbers if read and len(shown(number)) >= MIN_VALUE], "liczba z komórki w Logach"
+    texts = "\n".join(value for value, key in scalars if isinstance(value, str) and not key)
+    tool_numbers = (shown(number) for number, read in numbers if not read)
+    tool_words = "\n".join([*names, *closed, *tool_numbers, *(_json_at(logs, place) for place in TOOL_FIELD_VALUES)])
 
     swept = 0
-    for word in sorted({text for text, _ in texts}):
+    for value in sorted({value for value, _ in scalars}, key=shown):
         forbidden = ForbiddenValues()
-        forbidden.remember_value(ForbiddenColumn.ADDRESS, word)
-        if not forbidden.guard(word, "").notes:
+        forbidden.remember_value(ForbiddenColumn.ADDRESS, value)
+        if not forbidden.guard(shown(value), "").notes:
             continue  # krótsza niż ``MIN_VALUE``: strażnik jej nie szuka
         swept += 1
 
         kept = guarded(logs, forbidden)
 
-        assert logi_post(kept).run_id == RUN_ID, word
-        assert [place for place in TOOL_FIELDS if _json_at(kept, place) != _json_at(logs, place)] == [], word
+        assert logi_post(kept).run_id == RUN_ID, value
+        assert [place for place in TOOL_FIELD_VALUES if _json_at(kept, place) != _json_at(logs, place)] == [], value
         if not forbidden.guard(tool_words, "").notes:
-            assert not forbidden.guard(kept.text, "").notes, f"{word!r} zostało w Logach"
-        if word in names and not forbidden.guard(values, "").notes:
-            assert kept == logs, word
+            assert not forbidden.guard(kept.text, "").notes, f"{value!r} zostało w Logach"
+        if value in names and not forbidden.guard(texts, "").notes:
+            assert kept == logs, value
     assert swept > len(names)
+
+
+# Pola w poddrzewach ``TOOL_FIELDS``, których typ przyjmuje dowolny tekst, z tym, skąd jest ich wartość (#936). Strażnik
+# zostawia je bez maski, więc każde nowe takie pole trafia tu tylko z powodem, a pole bez powodu czerwieni test niżej.
+TOOL_TEXT: Final = {
+    "RunLog.run_id": "uuid4().hex przy starcie Uruchomienia (runs.py), w Logach Urwanego Uruchomienia z dziennika Centrum",
+    "RunLog.period": "token okresu z parse_period_token żądania przeglądarki albo period_of zegara (INTERMAX)",
+    "Tool.wydanie": "numer Wydania z tagu Gita narzędzia",
+    "Tool.commit": "commit Gita narzędzia",
+    "CallTrace.exception_type": "typ wyjątku z modułem, bez treści wyjątku (call_trace.exception_type)",
+    "CallCause.exception_type": "typ wyjątku z modułem, bez treści wyjątku (call_trace.exception_type)",
+    "CallFrame.file": "plik kodu narzędzia względem katalogu narzędzia, bez bibliotek (call_trace._tool_file)",
+    "CallFrame.function": "nazwa funkcji kodu narzędzia z traceback",
+    "ButtonPressed.operation": "operation_id trasy API z kontraktu, bez treści zapytania (dad_actions._pressed)",
+    "Environment.system": "platform.platform(), bez nazwy komputera",
+    "Environment.python": "platform.python_version()",
+}
+
+_CLOSED: Final = (type(None), bool, int, float, Decimal, date, datetime)
+"""Typy bez dowolnego tekstu; liczbę ``READ_VALUES`` ``_free`` sprawdza osobno."""
+
+
+def _free(annotation: object, owner: str, metadata: Sequence[object] = ()) -> Iterator[str]:
+    """Pola typu ``annotation`` (pole ``owner``, ``Model.pole``), które mogą nieść treść pliku taty: dowolny tekst,
+    słownik, liczbę ``READ_VALUES`` albo typ, którego ta funkcja nie zna."""
+
+    origin, args = get_origin(annotation), get_args(annotation)
+    if READ_VALUES in metadata:
+        yield f"{owner} (READ_VALUES)"
+    elif origin is Annotated:
+        yield from _free(args[0], owner, args[1:])
+    elif origin in (Union, UnionType, list, tuple):
+        for arg in args:
+            if arg is not Ellipsis:
+                yield from _free(arg, owner)
+    elif origin is Literal or annotation in _CLOSED or (isinstance(annotation, type) and issubclass(annotation, Enum)):
+        return
+    elif isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        for name, field in annotation.model_fields.items():
+            yield from _free(field.annotation, f"{annotation.__name__}.{name}", field.metadata)
+    elif isinstance(annotation, type) and is_dataclass(annotation):
+        hints = get_type_hints(annotation, include_extras=True)
+        for item in fields(annotation):
+            yield from _free(hints[item.name], f"{annotation.__name__}.{item.name}")
+    else:
+        yield owner if annotation is str else f"{owner} ({annotation!r})"
+
+
+def test_pole_z_listy_pol_narzedzia_ma_w_typie_tylko_zamkniete_listy_chwile_liczby_narzedzia_i_tekst_z_powodem() -> None:
+    """Strażnik zostawia każde pole z ``TOOL_FIELDS`` bez maski z całym poddrzewem (#936), więc typ każdego z nich,
+    przez modele, dataclassy, listy i unie, ma tylko zamknięte listy, chwile, liczby spoza ``READ_VALUES`` i tekst z
+    ``TOOL_TEXT`` z powodem. Nowe pole z dowolnym tekstem, słownikiem albo liczbą z komórek w takim poddrzewie czerwieni
+    ten test, zanim wyjdzie bez maski."""
+
+    assert set(TOOL_FIELD_VALUES) == TOOL_FIELDS, "test pola z listy ma każde pole z listy"
+    found: set[str] = set()
+    for place in TOOL_FIELDS:
+        *path, name = place.split(".")
+        model: type[BaseModel] = RunLog
+        for step in path:
+            nested = model.model_fields[step].annotation
+            assert isinstance(nested, type) and issubclass(nested, BaseModel), place
+            model = nested
+        field = model.model_fields[name]
+        found.update(_free(field.annotation, f"{model.__name__}.{name}", field.metadata))
+
+    assert sorted(found - set(TOOL_TEXT)) == []
+    assert sorted(set(TOOL_TEXT) - found) == [], "wyjątek bez pola w poddrzewie listy"

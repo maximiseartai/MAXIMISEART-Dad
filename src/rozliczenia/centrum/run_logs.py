@@ -826,7 +826,7 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     zakazaną wartością albo telefonem staje się w całości maską. Liczb, które policzyło narzędzie, nie sprawdza.
 
     Strażnik porównuje słowa, a nie pochodzenie wartości, więc wartość z pliku taty równa słowu albo chwili narzędzia
-    trafiłaby też w pole, które niesie tylko to, co dało narzędzie. Takich pól (``_TOOL_FIELDS``) nie maskuje i zostawia
+    trafiłaby też w pole, które niesie tylko to, co dało narzędzie. Takich pól (``TOOL_FIELDS``) nie maskuje i zostawia
     w nich wartość z rekordu, a klucza pola modelu Logów (nazwy pola schematu) też nie: maska w nich gubiła całe Logi
     albo ich okres, Uruchomienie i commit (#936). Klucz słownika (operator, kod pozycji, litera kolumny) to dane, więc go
     maskuje.
@@ -856,7 +856,7 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
         """``value`` z JSON-a Logów i ``source``, z którego powstał (``None``: poza modelem Logów); ``read``: w polu
         ``READ_VALUES``."""
 
-        if place in _TOOL_FIELDS:
+        if place in TOOL_FIELDS:
             return value
         if isinstance(value, str):
             return text(value, place)
@@ -890,7 +890,7 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
 _INPUT_COPY: Final = "input_copy"
 """Pole Kopii wejścia w Logach; uwagi strażnika o nim idą do ``input_copy_notes``."""
 
-_TOOL_FIELDS: Final = frozenset(
+TOOL_FIELDS: Final = frozenset(
     {
         "run_id",
         "process",
@@ -924,17 +924,26 @@ wejścia), więc strażnik maskuje je dalej, także w polu z wartością narzęd
 ``issue_count``, ``interruption``), zostają i bez listy, bo strażnik sprawdza tylko liczby z ``READ_VALUES``. Każde
 pole najwyższego poziomu bez ``None`` poza Środowiskiem jest więc na liście, jest liczbą narzędzia albo listą, z której
 maska zabiera najwyżej element, a Środowisko (``environment``) ma poza listą tylko pliki procesu (lista albo ``None``),
-więc maska nie gubi całych Logów (``UnrepresentableLogs``)."""
+więc maska nie gubi całych Logów (``UnrepresentableLogs``).
+
+Pole z listy strażnik zostawia z całym poddrzewem, więc test struktury w ``tests/test_komentarz_logow_uruchomienia.py``
+przechodzi typ każdego z nich (modele, dataclassy, unie) i czerwienieje, gdy w poddrzewie jest typ, który przyjmuje
+dowolny tekst (``str`` spoza jawnych wyjątków z powodem w teście, słownik, ``Any``), liczba ``READ_VALUES`` albo typ,
+którego test nie zna."""
 
 _Path = tuple[str | int, ...]
 
 
 class UnrepresentableLogs(ValueError):
     """Logi, w których maska strażnika trafiła w pole, które nie może stracić wartości: pole najwyższego poziomu bez
-    ``None`` spoza listy pól narzędzia (``_TOOL_FIELDS``; schemat Logów takiego nie ma, a nowe pole, które to zmieni,
-    wywraca przemiatanie pełnych Logów w ``tests/test_komentarz_logow_uruchomienia.py``, #936), albo ``stuck``: cięcia
-    (``_representable``) przestały zmieniać Logi, czyli błąd w cięciach. ``place``: to pole albo miejsce ostatniego
-    cięcia."""
+    ``None`` spoza listy pól narzędzia (``TOOL_FIELDS``), albo ``stuck``: cięcia (``_representable``) przestały zmieniać
+    Logi, czyli błąd w cięciach. ``place``: to pole albo miejsce ostatniego cięcia.
+
+    Schemat Logów nie ma dziś pola najwyższego poziomu bez ``None``, które gubiłoby Logi (#936). Nowe takie pole wywraca
+    przemiatanie pełnych Logów w ``tests/test_komentarz_logow_uruchomienia.py``, które każe pełnym Logom mieć wartość w
+    każdym polu ``RunLog``: każdy tekst i każda liczba tych Logów (od ``MIN_VALUE`` znaków) po kolei jako wartość z pliku
+    taty, także liczba w polu ``READ_VALUES``. Pole, którego wartość w pełnych Logach jest krótsza, przemiatanie
+    przepuszcza."""
 
     def __init__(self, place: str, *, stuck: bool = False) -> None:
         reason = (
@@ -986,7 +995,7 @@ def _representable(walked: dict[str, object]) -> RunLog:
     przyjmuje, odpada najbliższy element listy nad nim (zlecenie, krok, plik) albo ``None`` dostaje pole nad nim
     (``_cut``), z uwagą techniczną o tym miejscu (``guard_cuts``). Pole Logów najwyższego poziomu bez ``None`` i poza
     listą nie ma czego stracić, więc dałoby ``UnrepresentableLogs``, ale każde takie pole niesie słowa narzędzia, których
-    strażnik nie maskuje (``_TOOL_FIELDS``, #936).
+    strażnik nie maskuje (``TOOL_FIELDS``, #936).
 
     Każde cięcie zabiera Logom co najmniej jedną wartość, więc cięć jest najwyżej tyle, ile Logi mają wartości:
     po tylu obrotach bez poprawnych Logów pętla kończy się ``UnrepresentableLogs``, a nie wisi z końcem Uruchomienia.

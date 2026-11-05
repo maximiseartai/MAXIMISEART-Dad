@@ -82,7 +82,7 @@ telefony na okres.
   które niesie tylko to, co dało narzędzie, i gubiła całe Logi albo ich okres,
   Uruchomienie i commit, z których odtworzenie (#847) buduje Uruchomienie.
   Strażnik zostawia więc wartość z rekordu w tych polach Logów, a lista jest
-  jedna (`_TOOL_FIELDS` w `run_logs.py`):
+  jedna (`TOOL_FIELDS` w `run_logs.py`):
   - `run_id`: identyfikator `uuid4`;
   - `period`: token okresu z żądania przeglądarki po `parse_period_token`
     albo z zegara (Uporządkowanie INTERMAX);
