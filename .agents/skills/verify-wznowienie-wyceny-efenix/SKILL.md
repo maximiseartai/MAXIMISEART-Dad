@@ -7,6 +7,7 @@ pilnuje:
   - src/rozliczenia/efenix_positions.py
   - src/rozliczenia/efenix_browser.py
   - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
+  - tools/lib/rozjazd_modelu.py
 ci: .agents/skills/verify-wznowienie-wyceny-efenix/scripts/sprawdz_wznowienie_wyceny.py
 ---
 
@@ -16,8 +17,9 @@ ci: .agents/skills/verify-wznowienie-wyceny-efenix/scripts/sprawdz_wznowienie_wy
 
 CI runs `sprawdz_wznowienie_wyceny.py` (the `ci:` key) in Mutation checks whenever a change touches this skill's
 `pilnuje:` or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks
-step. It fails with `WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM` when a definition the model describes (`DEFINITIONS` in
-the script) changed since the model's Sync commit, but it cannot tell whether your change to the model is right.
+step. It fails with `WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM` when a definition the model describes
+(`model/definicje.json`) changed since the model's Sync commit, but it cannot tell whether your change to the model is right.
+`tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 `check_model_wznowienia_mutations.py` runs on a pull request that changes a file in `model/`, the script itself or
 `sprawdz_wznowienie_wyceny.py`, and in full CI and nightly on `main` after a change of this skill's folder.
 What stays with you on every change to the covered code is „Bring the model in line, then run”: read the diff against
@@ -69,7 +71,7 @@ you keep the two in step. Each model action is one indivisible step of this code
 | `Tata` | none: Dad changes a quantity in efenix by hand while no Uruchomienie runs (`AtrapaEfenix.edit` in the tests) |
 | `Udany`, `Nieudany` (`Zapisz`) | `EmmettTrace._save` returns whether it wrote: `_replace` (temporary file and `os.replace`) of the whole trace from memory, which returns its `OSError` (kept in `failure`); when it fails, `self._path.unlink` in `suppress(OSError)`, and when that fails too, the previous file stays |
 
-The script compares these definitions with the Sync commit (`DEFINITIONS` in `scripts/sprawdz_wznowienie_wyceny.py`):
+The script compares these definitions with the Sync commit (`model/definicje.json`):
 `save`, `_mark`, `_efenix_stops`, `_priced`, `_outcome`, `_after_emmett`, `_entered`, `_TraceNotSaved`, `_WrittenAhead`
 in `src/rozliczenia/efenix_pricing.py`; `EmmettTrace`, `_replace`, `_read_secret`, `_read`, `_is_entry` in
 `src/rozliczenia/efenix_emmett_trace.py`; `as_left_after_emmett`, `to_enter`, `priced_differently`, `same_amount`,
@@ -77,7 +79,7 @@ in `src/rozliczenia/efenix_pricing.py`; `EmmettTrace`, `_replace`, `_read_secret
 `src/rozliczenia/efenix_browser.py`. A change elsewhere in these files (Sprawdzanie, Odczyt danych, Logi, the window's
 classification of other failures) does not move the model. A change that makes another function write in efenix,
 write the trace file or decide whether an order is finished does, though no definition above changes: add it to the
-table and to `DEFINITIONS`.
+table and to `model/definicje.json`.
 
 Sync commit: `c490d2497` (2026-11-05, the fix of #881 on top of #877). Every row of the table was checked against the
 code at this commit. The model did not change, only the code names in its comments: the write ahead and its withdrawal
@@ -110,7 +112,7 @@ The last line is the verdict:
 - `WZNOWIENIE WYCENY: ZNALEZISKO ZNIKNĘŁO (n)`: a known finding no longer happens. Describe the change below and
   remove it from `model/oczekiwane.json`. Exit 1.
 - `WZNOWIENIE WYCENY: BŁĄD MODELU (n)`: TLC gave no verdict or `TypeOK` broke. Exit 2.
-- `WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM` (CI only): a definition in `DEFINITIONS` changed since the Sync commit.
+- `WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM` (CI only): a definition in `model/definicje.json` changed since the Sync commit.
 
 Each counterexample is told as numbered steps in the code's words, with the quantities in efenix
 (`[A |-> …, B |-> …, C |-> …]` per order) and the trace file on disk per order (`zaladowany {B}`: „Emmett załadowany”
@@ -194,7 +196,7 @@ fail without them.
 
 ## Bring the model in line
 
-When a definition from `DEFINITIONS` changes:
+When a definition from `model/definicje.json` changes:
 
 1. Read the diff against the table above. Find each action whose code changed, or the new step that has none.
 2. Change the model so each action is again one indivisible step of the code, with the code's names in its comment.
@@ -241,6 +243,7 @@ Left out, each a reason the check can pass while the code is wrong:
 
 - `model/WznowienieWyceny.tla`: the model, with the code each action describes.
 - `model/*.cfg`: the configurations (first line describes it), `model/oczekiwane.json`: the expected result.
+- `model/definicje.json`: the definitions of the code the model describes.
 - `scripts/sprawdz_wznowienie_wyceny.py`: runs TLC on every configuration and tells each counterexample.
 - `scripts/check_model_wznowienia_mutations.py`: proves the check fails when the model loses a guard the code has;
   run it through `.venv/bin/python .agents/skills/verify-wznowienie-wyceny-efenix/scripts/check_model_wznowienia_mutations.py`

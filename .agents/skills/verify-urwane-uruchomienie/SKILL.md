@@ -15,6 +15,7 @@ pilnuje:
   - src/rozliczenia/process_run.py
   - src/rozliczenia/telemetry.py
   - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
+  - tools/lib/rozjazd_modelu.py
 ci: .agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwane_uruchomienie.py
 ---
 
@@ -26,6 +27,7 @@ CI runs `sprawdz_urwane_uruchomienie.py` (the `ci:` key) in Mutation checks when
 `pilnuje:` or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks
 step. It fails with `URWANE URUCHOMIENIE: ROZJAZD MODELU Z KODEM` when a definition the model describes
 (`model/definicje.json`) changed since the Sync commit, but it cannot tell whether your change to the model is right.
+`tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 `check_model_urwanego_mutations.py` runs on a pull request that changes a file in `model/`, the script itself or
 `sprawdz_urwane_uruchomienie.py`, and in full CI and nightly on `main` after a change of this skill's folder.
 What stays with you on every change to the covered code is „Bring the model in line”: read the diff against the table,
