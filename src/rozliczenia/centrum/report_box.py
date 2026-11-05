@@ -25,7 +25,7 @@ Archiwum okresu (#844) to GitHub Release z tagiem w repozytorium Zgłoszeń, nie
 tag): ``archive`` znajduje je po tagu z jego plikami (``Asset``: nazwa, etykieta i czy plik doszedł w całości) albo
 daje ``None``, ``open_archive`` zakłada je bez plików, ``upload`` wysyła plik, a ``remove`` usuwa plik, który ma ustąpić
 nowszemu. Zapis treści repozytorium to inne uprawnienie klucza niż issue: jego brak to ``Refused`` z kroków Archiwum,
-a repozytorium bez commitu odmawia założenia Archiwum (409, ``Rejected``).
+a repozytorium bez commitu odmawia założenia Archiwum (422 albo 409, ``Rejected``).
 ``archive_url`` to adres pobrania pliku z Archiwum, który zna komentarz, zanim plik dojdzie.
 """
 
@@ -219,7 +219,8 @@ _REFUSALS: Final = frozenset({401, 403, 404})
 _RATE_LIMIT: Final = b"rate limit"
 # Odpowiedzi na treść wysyłki (zła albo za długa), nie na klucz ani sieć.
 _REJECTIONS: Final = frozenset({400, 413, 422})
-# Odpowiedź GitHuba na założenie Release w repozytorium bez commitu („Git Repository is empty.”).
+# Odpowiedź na założenie Release w repozytorium bez commitu, którą raz dała Skrzynka 2026-11-04 („Git Repository is
+# empty.”); repozytorium próbne odpowiada 422 (``_REJECTIONS``), nagrania ``verify-github-skrzynki``.
 _EMPTY_REPOSITORY: Final = 409
 # Issue z etykietą przegląda się stronami po 100; dziesięć stron to więcej, niż jedna etykieta kiedykolwiek będzie miała.
 _PAGE_SIZE: Final = 100
@@ -311,8 +312,9 @@ class GitHubReportBox:
     def open_archive(self, tag: str, title: str, description: str, *, key: str) -> OpenArchiveOutcome:
         """Release z tagiem na domyślnej gałęzi, nie oznaczony jako najnowszy: Archiwum nie jest Wydaniem.
 
-        Repozytorium bez żadnego commitu nie ma gałęzi, na której GitHub założyłby tag: odpowiada 409 „Git Repository is
-        empty.” (repozytorium Skrzynki 2026-11-04), a na tag, który już ma Release, 422. Każda z tych odmów trwa, aż Maks
+        Repozytorium bez żadnego commitu nie ma gałęzi, na której GitHub założyłby tag: odpowiada 422 „Repository is empty.”
+        (repozytorium próbne 2026-11-05 oboma rodzajami klucza, nagrania ``verify-github-skrzynki``), raz 409 „Git
+        Repository is empty.” (repozytorium Skrzynki 2026-11-04), a na tag, który już ma Release, 422. Każda z tych odmów trwa, aż Maks
         coś zmieni, więc to ``Rejected``: kolejka zatrzymuje tylko plik w Archiwum, nie wysyłki za nim.
         """
 
