@@ -23,6 +23,7 @@ from rozliczenia import client_data
 from rozliczenia.engine import run_settlements
 from rozliczenia.quantity_rules import OrderContent, QuantityColumn, RuleResult, WithoutRule, evaluate
 from rozliczenia.raw_orders import CellFacts, OrderColumns, Placement, RawBlock, RowFacts, plan_day, recognize
+from tests.fixtures.formy_telefonu import MASKED, PHONE
 from tests.fixtures.settlement import CellValue, make_fixture, write_quantity_source
 
 PROPERTY = settings(derandomize=True, database=None, deadline=None, max_examples=100)
@@ -271,10 +272,10 @@ def test_netia_z_dopiskiem_sa_bez_spacji_to_netia(written: str) -> None:
     assert placed.entry is not None
 
 
-# Reguła danych (ADR 0025, docstring ``client_data``): telefon komórkowy 3-3-3 i stacjonarny 2-3-2-2 z +48 albo bez,
-# wzmianka ulicy „ul.”, „os.”, „al.”, „pl.” z nazwą i numerem, wartość ADRES bez wielkości liter i z dowolnymi znakami
+# Reguła danych (ADR 0025, docstring ``client_data``): telefon w tekście z tabeli form telefonu, który strażnik maskuje w
+# całości, wzmianka ulicy „ul.”, „os.”, „al.”, „pl.” z nazwą i numerem, wartość ADRES bez wielkości liter i z dowolnymi znakami
 # spoza słów między jej słowami: odstępami, końcem linii i tym, czym producent zapisał komórkę (⏎, \| tabeli Markdown).
-PHONES = ("600 123 456", "600-123-456", "600123456", "+48 600 123 456", "+48600123456", "0048 600-123-456", "12 345 67 89")
+PHONES = tuple(form.value for form in MASKED if isinstance(form.value, str) and form.masked == PHONE)
 STREETS = ("ul. Kwiatowa 5", "ul.Kwiatowa 5/3", "os. Tysiąclecia 12 m 4", "al. 3 Maja 5", "pl. Jana Pawła II 2a")
 FREE_TEXT = "abcdefghijklmnopqrstuvwyząćęłńóśźżABCDEFGHIJKLMNOPQRSTUVWYZĄĆĘŁŃÓŚŹŻ .,;:()„”-"
 GUARDED_ADDRESS = "Syntetyczna Rubinowa 7/3 Kraków"

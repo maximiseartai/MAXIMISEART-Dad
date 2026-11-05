@@ -42,6 +42,7 @@ from rozliczenia.centrum.run_view import ProcessView, Shown, WarnedSummary
 from rozliczenia.centrum.stops import NO_DIAGNOSIS, StoppedRun, Stops
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.decision import Decision
+from rozliczenia.input_copy import InputCopy
 from rozliczenia.message import Message
 from rozliczenia.process_run import (
     Finished,
@@ -80,12 +81,17 @@ SummaryT = TypeVar("SummaryT", bound=WarnedSummary)
 
 @dataclass(frozen=True)
 class PreparedRun(Generic[InputsT, SummaryT]):
-    """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu, okres, rdzeń procesu i jego wejście."""
+    """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu, okres, rdzeń procesu i jego wejście.
+
+    ``input_copy``: Kopia wejścia, którą czytniki procesu wypełniają w trakcie Uruchomienia; ``None``: proces jeszcze
+    jej nie ma (Uporządkowanie INTERMAX).
+    """
 
     declaration: ProcessDeclaration[InputsT, SummaryT]
     period: str
     process: Process[InputsT, SummaryT]
     inputs: InputsT
+    input_copy: InputCopy | None = None
 
     @property
     def dry_run(self) -> bool:
@@ -141,6 +147,8 @@ class EndedRun:
     """Postęp z karty: ostatni widok projekcji, który dostała przeglądarka."""
     started_at: datetime
     ended_at: datetime
+    input_copy: InputCopy | None = None
+    """Kopia wejścia Uruchomienia (``PreparedRun.input_copy``) z tym, co czytniki przeczytały do jego końca."""
 
     @property
     def result(self) -> contract.RunResult:
@@ -531,6 +539,7 @@ class _Run:
             progress=self._progress,
             started_at=since,
             ended_at=datetime.now(timezone.utc),
+            input_copy=self._prepared.input_copy,
         )
 
     def _show_report(self, state: contract.ReportState) -> None:

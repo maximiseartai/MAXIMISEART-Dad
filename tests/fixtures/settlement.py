@@ -7,13 +7,14 @@ budowane w katalogu tymczasowym. Nie zawierają prawdziwych danych klientów.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 import yaml
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.formula import ArrayFormula
 
 from rozliczenia.domain import ProgressEvent, ProgressObserver
 from rozliczenia.progress import ProgressProjection
@@ -106,7 +107,7 @@ def write_source(path: Path, *, include_unmapped: bool = True) -> None:
     workbook.save(path)
 
 
-CellValue = str | int | float | datetime | date | None
+CellValue = str | int | float | datetime | date | time | timedelta | ArrayFormula | None
 
 # Nagłówki A17:K17 Wzorca pliku zbiorczego taty, pod którymi Przygotowanie zapisuje kolumny wejścia.
 COLLECTIVE_HEADERS = (

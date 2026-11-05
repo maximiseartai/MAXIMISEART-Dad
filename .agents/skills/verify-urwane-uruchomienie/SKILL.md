@@ -127,10 +127,10 @@ changes move it without changing a definition, so look for them in the diff: the
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `3808bcd9b` (2026-11-05, round 3 of #846, merged with `main` after #893). Every row of the table was
-checked against the code at this commit. Since the previous sync `fa8db43b5` (round 2 of #846) two commits changed a
-definition. `e4b0de239` (#846): a journal goes away only once the queue took the final version of its comment. The end
-of a Wycena removes it after the queue accepted its Logi (`PricingJournal.run_ended` after `RunLogs.run_ended` in
+Sync commit: `3808bcd9b` (2026-11-05, round 3 of #846, merged with `main` after #863 and #886). Every row of the
+table was checked against the code at this commit. Since the previous sync `fa8db43b5` (round 2 of #846) these commits
+changed a definition. `e4b0de239` (#846): a journal goes away only once the queue took the final version of its comment.
+The end of a Wycena removes it after the queue accepted its Logi (`PricingJournal.run_ended` after `RunLogs.run_ended` in
 `after_run`, `RunLogs.queued`), and the start sends from every journal with a first line its Logi from the file (with the
 result too, not only `interrupted`), the result without Logi (`ResultWithoutLogs`, when there is no Logs file and the
 Historia has a row, or the Logs file cannot be read) or the Logi Urwanego Uruchomienia; `RunCards.recorded` gives the
@@ -138,11 +138,14 @@ result of the row, and `_remove` moved out of `InterruptedPricings`. The model g
 `bezKonca`), the kind of each wysyłka and of `rekord`, the branch of `Czytaj` that sends the Logi from the file, the one
 that puts the result without Logi in `_pending` with the cause of its decision, the step `UsunPoLogach`, and three
 mutations; two of them restore the start of `0764af46` (round 2) and break WersjaKoncowa in `zwykle`, one of them on
-the path of W2. On `main`, `c490d2497` (the fix of #881 on top of #877) changed `save` only in what it passes to `_priced` (the
-pace, which `_priced` now puts over its write-ahead window) and in the facts of a Zatrzymanie, while `journal.begun`
-still comes before `efenix_trace.traced` and `_priced`, and `journal.ended` after the result, so it moved no step. The
-known findings were replayed at `5e1905142` (`historia-niezapisana` on `main` 86677b151, whose `src/` is the same); at
-this commit only the end of `wiersz-pozniejszej-wyceny` changed (see there), and the check gives each of them.
+the path of W2. On `main`, #863 makes `guarded` mask also numbers in the fields with values from Dad's cells
+(`READ_VALUES`) and the phone with `48` without `+`, and puts the notes about the Kopia wejścia in `input_copy_notes`,
+but `RunLogs.guard` still calls it in one step and it stays idempotent (`Straz`); the fix of #881 (`c490d2497`, #883)
+changed `save` only in what it passes to `_priced` (the pace, which `_priced` now puts over its write-ahead window) and
+in the facts of a Zatrzymanie, while `journal.begun` still comes before `efenix_trace.traced` and `_priced`, and
+`journal.ended` after the result; neither moved a step. The known findings were replayed at `5e1905142`
+(`historia-niezapisana` on `main` 86677b151, whose `src/` is the same); since then only the end of
+`wiersz-pozniejszej-wyceny` changed (see there) and the guard only masks more, and the check gives each of them.
 
 ## Run
 
@@ -251,7 +254,9 @@ one run without all of them. All five were replayed on the code.
 4. **`zapis-logow-nieudany`, TeSameZnaki (open, cannot happen at Dad's yet).** Logi Urwanego Uruchomienia written by a
    Centrum work before the guard (#851) and not sent: the start guards them, `RunLogs.close` fails (`OSError`), and the
    queue gets the masked text while the file keeps the phone number. No Wydanie has the journal (#845) without the
-   guard (v0.4.3 has neither), so no such file exists at Dad's. Replayed with such a file and a folder in place of its
+   guard (v0.4.3 has neither), so no such file exists at Dad's. Logi written by a guard that masks less are the same
+   case: a Wydanie with the journal and the guard from before #863 would leave a phone `48600123456` in the file and
+   `[telefon]` in the Archiwum after a failed `close`. Replayed with such a file and a folder in place of its
    `.tmp`: the file has `600 123 456`, the file in the Archiwum `[telefon]`.
 
 5. **`historia-niezapisana`, BezUrwanychPoWyniku (open, a real defect, #871).** Same harm as 3, another cause: no
@@ -330,7 +335,9 @@ wrong:
 - **`send` runs atomically** on the event loop (`async def` without `await`), and the first request of a work comes
   before any Wycena of that work, because every route has the dependency.
 - **The guard is idempotent**: Logs that passed `guard` pass it again unchanged, so rereading a file written by `close`
-  changes nothing; only Logs written without the guard (`StareLogi`) change.
+  changes nothing; only Logs written without the guard (`StareLogi`) change. A number the guard masked becomes the text
+  of its mask, which it leaves as it is. Idempotent means one version of the guard: Logs written by a Centrum whose
+  guard masked less (before #851 nothing, before #863 the phone with `48` without `+`) are `StareLogi` for a newer one.
 - **`RunLog.model_validate_json(text).text == text`** for a file `close` wrote, and two builds of the same journal give
   Logs with the same orders; their environment, tool and Dad's actions may differ, which the model leaves out. A rebuild
   happens only when the file is missing, so the file and the newest accepted Logi stay the same, unless the clock went

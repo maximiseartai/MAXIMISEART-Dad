@@ -22,6 +22,7 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 
 from . import workbook_files
 from .client_data import ForbiddenValues
+from .input_copy import InputCopy
 from .order_facts import TataValue, tata_value
 from .preparation_register import ADDRESS, DATE, WORKER, Column
 from .workbook_files import ComputedRow, cell_datetime, is_blank
@@ -91,11 +92,14 @@ class MissingColumns:
     headers: tuple[str, ...]
 
 
-def read_scope(path: Path, forbidden: ForbiddenValues | None = None) -> PricingScope | AmountsNotComputed | MissingColumns:
+def read_scope(
+    path: Path, forbidden: ForbiddenValues | None = None, copy: InputCopy | None = None
+) -> PricingScope | AmountsNotComputed | MissingColumns:
     """Zakres Wyceny w efenix z Pliku zbiorczego ``path``; ``WorkbookError``, gdy pliku nie da się odczytać albo jest
-    otwarty w Excelu. Komórki zakazanych kolumn poznaje ``forbidden`` (reguła danych, ADR 0025)."""
+    otwarty w Excelu. Komórki zakazanych kolumn poznaje ``forbidden`` (reguła danych, ADR 0025), a odczyt Kopia wejścia
+    Uruchomienia ``copy`` (#841)."""
 
-    read = workbook_files.read_computed_rows(path, forbidden=forbidden)
+    read = workbook_files.read_computed_rows(path, forbidden=forbidden, copy=copy)
     return scope(read.header, read.rows, read.content)
 
 

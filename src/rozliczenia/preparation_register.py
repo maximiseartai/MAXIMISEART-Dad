@@ -10,7 +10,7 @@ Rejestru dla ``input_checks.Readers``, który tłumaczy jego ``WorkbookError``.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
@@ -90,6 +90,21 @@ class RegisterSheet:
 
         return get_column_letter(self._positions[COLUMNS.index(column)])
 
+    @property
+    def positions(self) -> dict[Column, int]:
+        """Kolumna ``COLUMNS`` → jej numer w arkuszu (od 1)."""
+
+        return dict(zip(COLUMNS, self._positions, strict=True))
+
+
+@dataclass(frozen=True)
+class RegisterRead:
+    """Odczyt Rejestru zleceń: arkusze ze zleceniami i bajty pliku, z których czytnik je przeczytał (odcisk w Kopii
+    wejścia, ``input_copy``)."""
+
+    sheets: list[RegisterSheet]
+    content: bytes = field(repr=False)
+
 
 def cell_value(row: RegisterRow, column: Column) -> object:
     """Wartość komórki Rejestru pod nagłówkiem ``column`` w wierszu ``row``."""
@@ -97,8 +112,9 @@ def cell_value(row: RegisterRow, column: Column) -> object:
     return row.cells[column.target_header].value
 
 
-def read_register(register_path: Path, period: SettlementPeriod | None = None) -> list[RegisterSheet]:
-    """Arkusze ze zleceniami; ``WorkbookError``, gdy Rejestru nie da się odczytać, i zatrzymanie, gdy nie ma nagłówków.
+def read_register(register_path: Path, period: SettlementPeriod | None = None) -> RegisterRead:
+    """Arkusze ze zleceniami z bajtami Rejestru, z których je przeczytał; ``WorkbookError``, gdy Rejestru nie da się
+    odczytać, i zatrzymanie, gdy nie ma nagłówków.
 
     Z ``period`` arkusz ma tylko wiersze od pierwszego do ostatniego, którego data
     może leżeć w okresie: Planowanie szuka zleceń okresu i wierszy bez daty tylko
@@ -108,8 +124,8 @@ def read_register(register_path: Path, period: SettlementPeriod | None = None) -
     content = workbook_files.workbook_content(register_path)
     if period is None:
         with workbook_files.read_workbook(register_path, content) as workbook:
-            return _read_register_sheets(workbook, _order_sheet_positions(register_path, workbook))
-    return list(_period_sheets(register_path, content, period))
+            return RegisterRead(_read_register_sheets(workbook, _order_sheet_positions(register_path, workbook)), content)
+    return RegisterRead(list(_period_sheets(register_path, content, period)), content)
 
 
 # Centrum robi Podgląd, a potem RUN tego samego okresu w jednym procesie. Arkusze okresu zależą tylko od bajtów

@@ -16,6 +16,7 @@ pilnuje:
   - src/rozliczenia/hyperlinks.py
   - src/rozliczenia/inea_only_quantities.py
   - src/rozliczenia/input_checks.py
+  - src/rozliczenia/input_copy.py
   - src/rozliczenia/intermax_*.py
   - src/rozliczenia/message.py
   - src/rozliczenia/order_facts.py
