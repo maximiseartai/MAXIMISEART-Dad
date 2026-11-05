@@ -59,11 +59,15 @@ budowie, której okno nie zna; po każdej z nich okno strony nie czyta. Po odpow
 wtedy, gdy efenix odmówił, a strona bez Wyceny Emmetta wygląda jak pusta Wycena Emmetta (#877, #889), więc okno porównuje
 ją z oknem Emmetta, którego zawartość (``#emmett-propozycja``, odpowiedź ``action_fill_emmett.php``) czyta przed
 kliknięciem „Załaduj do zlecenia”: strona z kwotą końcową różną od 0 ma Wycenę Emmetta, bo proces ładuje ją tylko do
-zlecenia z kwotą 0, a strona z kwotą 0 ma ją tylko wtedy, gdy okno Emmetta nic nie pokazało (bez elementu i bez tekstu,
-Emmett nic nie zaproponował). Strona z kwotą 0 po oknie Emmetta, które coś pokazało, to ``UnexpectedPage`` z
-``Shape.EMMETT_NOT_LOADED``, bez odczytu postaci propozycji, bo tej też nikt nie zmierzył. Prawdziwy efenix dał Wycenę
-Emmetta z kwotą różną od 0 w każdym ze 108 załadowań przebiegu z 4.11.2026 (Logi Uruchomienia Wydania 0.4.2), więc
-Zatrzymanie przy pustej propozycji, którą efenix pokazałby czymś, zdarza się najwyżej rzadko. Ilość wpisuje w polu i naciska Enter, a skrypt
+zlecenia z kwotą 0, a strona z kwotą 0 ma ją tylko wtedy, gdy okno Emmetta nic nie pokazało (bez elementu i bez tekstu).
+Okno Emmetta jest puste, gdy Emmett nic nie zaproponował, ale też wtedy, gdy ``action_fill_emmett.php`` padło (status
+błędu albo zerwane połączenie): skrypt efenix wkłada propozycję tylko z odpowiedzi 2xx, a okno pokazuje i tak. Znana
+luka: gdy razem z tym efenix odmówi „Załaduj do zlecenia” odpowiedzią 2xx, okno bierze stronę bez Wyceny Emmetta za
+pustą Wycenę Emmetta, a zlecenie kończy się bez niej (klasa #889); to dwie jednoczesne awarie. Strona z kwotą 0 po oknie
+Emmetta, które coś pokazało, to ``UnexpectedPage`` z ``Shape.EMMETT_NOT_LOADED``, bez odczytu postaci propozycji, bo tej
+też nikt nie zmierzył. Prawdziwy efenix dał Wycenę Emmetta z kwotą różną od 0 w każdym ze 108 załadowań przebiegu z
+4.11.2026 (Logi Uruchomienia Wydania 0.4.2), więc Zatrzymanie przy pustej propozycji, którą efenix pokazałby czymś,
+zdarza się najwyżej rzadko. Ilość wpisuje w polu i naciska Enter, a skrypt
 strony zapisuje ją przez ``action_save_index.php``: kwotą końcową jest ``price_all`` z tej odpowiedzi, a ``#cena_all2``,
 które się do niej nie odświeży, to ``UnexpectedPage``. Odpowiedź ``result: nok`` to wygasła sesja (``LoggedOut``).
 

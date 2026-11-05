@@ -207,6 +207,8 @@ CHANGED = {
                 # Karta pozycji 005 z polem Ilość bez ceny w tekście karty.
                 (f'<div class="col-sm-1 mt-2"><span class="text-default"><small>{PRICES["005"]:.2f}</small></span></div>', ""),
                 ('id="cena_all2"', 'id="cena_razem"'),
+                # Okno Emmetta bez elementu, do którego skrypt wkłada propozycję.
+                ('id="emmett-propozycja"', 'id="emmett-wynik"'),
             ),
             ORDER_SCRIPT: _answered(302),
         },
