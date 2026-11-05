@@ -96,11 +96,13 @@ _Avoid_: błąd Emmetta, konflikt z Emmettem
 Zapis na komputerze taty, poza OneDrive i poza Gitem, o zleceniach okresu, do
 których Wycena w efenix sama załadowała Wycenę Emmetta. Zlecenie ma w nim stan
 „Emmett załadowany” z ilościami Wyceny Emmetta, które narzędzie odczytało ze
-strony po „Załaduj do zlecenia”, a po wyniku zlecenia (gotowe, ostrzeżenie
-Emmetta albo błąd) stan „gotowe”. Ponowne uruchomienie dokańcza tylko wycenę
-zlecenia w stanie „Emmett załadowany”, gdy strona ma wyłącznie te ilości Emmetta
-i ilości Pliku zbiorczego w pozycjach pustych u Emmetta; każdą inną wycenę,
-która już jest, także zaczętą przez tatę albo skończoną, tylko porównuje.
+strony po „Załaduj do zlecenia”, i z każdą ilością, którą narzędzie zaczęło
+wpisywać: zapisuje ją w śladzie, zanim wpisze ją w efenix. Po wyniku zlecenia
+(gotowe, ostrzeżenie Emmetta albo błąd) zlecenie ma stan „gotowe”. Ponowne
+uruchomienie dokańcza tylko wycenę zlecenia w stanie „Emmett załadowany”, gdy
+strona ma dokładnie te ilości Emmetta i te ilości narzędzia, a każdą inną
+pozycję pustą; każdą inną wycenę, która już jest, także zaczętą albo zmienioną
+przez tatę albo skończoną, tylko porównuje.
 _Avoid_: historia, pamięć, dziennik
 
 ## Znacznik efenix

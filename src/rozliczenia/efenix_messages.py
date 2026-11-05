@@ -192,6 +192,26 @@ def browser_not_started() -> Message:
     )
 
 
+def emmett_trace_not_saved(trace_file: Path, row: int) -> Message:
+    """Plik Śladu Wyceny Emmetta ``trace_file`` nie zapisał ilości z wyprzedzeniem w zleceniu z wiersza ``row`` Pliku
+    zbiorczego, więc proces tej ilości nie wpisał i się zatrzymał."""
+
+    return Message(
+        code="EFENIX_SLAD_NIEZAPISANY",
+        what=(
+            f"Narzędzie nie zapisało na dysku Śladu Wyceny Emmetta, zanim wpisało ilość w zleceniu z wiersza {row} Pliku"
+            f" zbiorczego, więc tej ilości nie wpisało i {_PROCESS} się zatrzymała. To zlecenie ma w efenix Wycenę Emmetta"
+            f" bez części ilości z pliku. {_KEPT}"
+        ),
+        where=file_label(trace_file),
+        action=(
+            "Uruchom ponownie: gotowe zlecenia narzędzie tylko sprawdzi. Jeśli Wycena zatrzyma się znowu albo to zlecenie"
+            " dostanie błąd „wycena już jest i się różni”, dopisz w nim ilości z Pliku zbiorczego w efenix sam."
+            f" {REPORT_TO_MAINTAINER}"
+        ),
+    )
+
+
 def _after_stop(*, kept: bool) -> str:
     return _KEPT if kept else _UNCHANGED
 

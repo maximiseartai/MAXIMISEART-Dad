@@ -10,9 +10,9 @@ trzeba ilości pliku w pozycjach pustych u Emmetta (``to_enter``), a pozycja pus
 Strona zlecenia efenix bywa bez części pozycji z przypisania: brak pozycji, w której plik ma 0 albo pustą komórkę, nie
 przeszkadza, bo ta pozycja i tak zostałaby w efenix pusta, a brak pozycji, w której plik ma ilość, to błąd zlecenia
 (``missing_positions``).
-Strona zlecenia jest taka, jaką narzędzie zostawia po Wycenie Emmetta (``as_left_after_emmett``), gdy każda pozycja z
-ilością Emmetta ma tę ilość, a każda pozycja pusta u Emmetta jest pusta albo ma ilość pliku. Kwota końcowa efenix i
-``Kwota`` (AU) są równe co do grosza (``same_amount``).
+Strona zlecenia jest taka, jaką narzędzie zostawia po Wycenie Emmetta (``as_left_after_emmett``), gdy ma dokładnie
+ilości Emmetta i ilości, które narzędzie zaczęło wpisywać (Ślad Wyceny Emmetta), a każda inna pozycja jest pusta. Kwota
+końcowa efenix i ``Kwota`` (AU) są równe co do grosza (``same_amount``).
 """
 
 from __future__ import annotations
@@ -200,16 +200,17 @@ def emmett_conflicts(file: Mapping[str, int], emmett: Mapping[str, int]) -> tupl
     )
 
 
-def as_left_after_emmett(file: Mapping[str, int], emmett: Mapping[str, int], on_page: Mapping[str, int]) -> bool:
+def as_left_after_emmett(emmett: Mapping[str, int], entered: Mapping[str, int], on_page: Mapping[str, int]) -> bool:
     """Strona ``on_page`` ma tylko ilości, które zostawia narzędzie po Wycenie Emmetta ``emmett``: w każdej pozycji, w
-    której Emmett wpisał ilość, tę samą ilość, a w każdej pozycji pustej u Emmetta nic albo ilość pliku ``file``."""
+    której Emmett wpisał ilość, tę samą ilość, w każdej pozycji, w której narzędzie zaczęło wpisywać ilość (``entered``),
+    tę ilość, a w każdej innej nic.
 
-    return all(
-        on_page.get(position, 0) == emmett[position]
-        if emmett.get(position, 0)
-        else on_page.get(position, 0) in (0, file.get(position, 0))
-        for position in emmett.keys() | on_page.keys()
-    )
+    Ilość w innej pozycji wpisał ktoś inny niż narzędzie. Pusta pozycja z ``entered`` to ilość usunięta w efenix albo
+    taka, której efenix nie zapisał przed przerwaniem; strona ich nie odróżnia, więc obie to wycena inna niż po narzędziu.
+    """
+
+    left = {position: quantity for position, quantity in (*emmett.items(), *entered.items()) if quantity}
+    return {position: quantity for position, quantity in on_page.items() if quantity} == left
 
 
 def to_enter(file: Mapping[str, int], emmett: Mapping[str, int]) -> dict[str, int]:
