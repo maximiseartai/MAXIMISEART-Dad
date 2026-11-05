@@ -62,9 +62,10 @@ VARIABLES
     doWyslania,      \* to, co send wziął z _pending
     krokWysylki,     \* "post" | "usun" (dziennik po przyjęciu)
     bieg,            \* Wycena, która biegnie w tej pracy Centrum (0: żadna)
-    faza,            \* gdzie jest Wycena: "-" | "zaczete" | "efenix" | "skonczone" | "historia" | "logi" | "post"
+    faza,            \* gdzie jest Wycena: "-" | "start" | "zaczete" | "efenix" | "skonczone" | "historia" | "logi" |
+                     \* "post"
     zlecenie,        \* bieżące zlecenie Wyceny
-    naglowekCzeka,   \* PricingJournal._header: pierwsza linia czeka na pierwszy udany wpis
+    naglowekCzeka,   \* PricingJournal._header: pierwszej linii nie ma jeszcze na dysku (idzie z następnym zapisem)
     nastepny,        \* następna Wycena, którą tata może uruchomić
     zgasniecia, awarieWpisu, awarieOdczytu, awarieHistorii, awarieMetryk, awarieLogow, awarieKolejki, awarieUsuniecia,
     \* Zmienne pomocnicze: nie mają odpowiednika w kodzie i służą tylko obietnicom.
@@ -101,7 +102,7 @@ TypeOK ==
     /\ oczekujace \in Seq(Oczekujace) /\ doWyslania \in Seq(Oczekujace)
     /\ krokWysylki \in {"post", "usun"}
     /\ bieg \in 0..Wyceny
-    /\ faza \in {"-", "zaczete", "efenix", "skonczone", "historia", "logi", "post"}
+    /\ faza \in {"-", "start", "zaczete", "efenix", "skonczone", "historia", "logi", "post"}
     /\ zlecenie \in Zlecenia
     /\ naglowekCzeka \in BOOLEAN
     /\ nastepny \in 1..(Wyceny + 1)
@@ -319,22 +320,41 @@ UsunPoWysylce ==
                    bezZlecenia>>
 
 (* Tata uruchamia Wycenę w efenix: RunHost.start -> run_started -> PricingJournal.run_started (start w pamięci,      *)
-(* pierwsza linia czeka na pierwszy wpis), zanim ruszy wątek. Każde zapytanie przechodzi najpierw send_interrupted. *)
+(* _header), zanim ruszy wątek; pierwsza linia idzie na dysk w tym samym wywołaniu (ZapiszStart). Każde zapytanie   *)
+(* przechodzi najpierw send_interrupted.                                                                           *)
 StartWyceny ==
     /\ centrum = "dziala" /\ bieg = 0 /\ nastepny <= Wyceny
-    /\ bieg' = nastepny /\ nastepny' = nastepny + 1 /\ faza' = "zaczete" /\ zlecenie' = 1 /\ naglowekCzeka' = TRUE
+    /\ bieg' = nastepny /\ nastepny' = nastepny + 1 /\ faza' = "start" /\ zlecenie' = 1 /\ naglowekCzeka' = TRUE
     /\ UNCHANGED <<dysk, centrum, wznowiona, kursor, krokZamykania, rekord, powod, oczekujace, doWyslania,
                    krokWysylki, zgasniecia, awarieWpisu, awarieOdczytu, awarieHistorii, awarieMetryk, awarieLogow,
                    awarieKolejki, awarieUsuniecia, duchy, zdarzenia>>
 
-(* PricingJournal._write: pierwsza linia (gdy czeka) i wpis jednym write, flush i fsync; OSError: wpis przepada,      *)
-(* _header zostaje, Wycena biegnie dalej, a następny wpis _write znów próbuje zapisać (_failed tylko ucisza linię     *)
-(* dziennika Centrum).                                                                                              *)
+(* PricingJournal.run_started -> _append_locked(started): pierwsza linia sama jednym write, flush i fsync (#846);     *)
+(* OSError: dziennika nie ma, _header zostaje, więc pierwsza linia idzie z następnym wpisem (Wpis), a Wycena biegnie *)
+(* dalej. Zgaśnięcie w trakcie tego zapisu zostawia urwaną pierwszą linię (Zgasniecie w fazie "start").            *)
+ZapiszStart ==
+    /\ bieg # 0 /\ faza = "start"
+    /\ \/ /\ dziennik' = [dziennik EXCEPT ![bieg] = "jest"]
+          /\ zapisanyStart' = [zapisanyStart EXCEPT ![bieg] = TRUE]
+          /\ naglowekCzeka' = FALSE
+          /\ UNCHANGED awarieWpisu
+       \/ /\ awarieWpisu < MaxAwariiWpisu /\ awarieWpisu' = awarieWpisu + 1
+          /\ UNCHANGED <<dziennik, zapisanyStart, naglowekCzeka>>
+    /\ faza' = "zaczete"
+    /\ UNCHANGED <<wpisy, logi, historia, efenix, kolejka, centrum, wznowiona, kursor, krokZamykania, rekord, powod,
+                   oczekujace, doWyslania, krokWysylki, bieg, zlecenie, nastepny, zgasniecia, awarieOdczytu,
+                   awarieHistorii, awarieMetryk, awarieLogow, awarieKolejki, awarieUsuniecia, wynik, przepadle,
+                   zdarzenia>>
+
+(* PricingJournal._write -> _append_locked: pierwsza linia (gdy jej jeszcze nie ma na dysku) i wpis jednym write,    *)
+(* flush i fsync, a bez niej sam wpis, więc wpis bez pierwszej linii na dysku daje dziennik bez startu. OSError:     *)
+(* wpis przepada, _header zostaje, Wycena biegnie dalej, a następny wpis _write znów próbuje zapisać (_failed tylko  *)
+(* ucisza linię dziennika Centrum).                                                                                 *)
 Wpis(rodzaj) ==
     LET r == bieg IN
     \/ /\ wpisy' = [wpisy EXCEPT ![r] = Append(@, [rodzaj |-> rodzaj, z |-> zlecenie])]
-       /\ dziennik' = [dziennik EXCEPT ![r] = "jest"]
-       /\ zapisanyStart' = [zapisanyStart EXCEPT ![r] = TRUE]
+       /\ dziennik' = [dziennik EXCEPT ![r] = IF naglowekCzeka THEN "jest" ELSE IF @ = "brak" THEN "bezStartu" ELSE @]
+       /\ zapisanyStart' = [zapisanyStart EXCEPT ![r] = @ \/ naglowekCzeka]
        /\ naglowekCzeka' = FALSE
        /\ UNCHANGED <<awarieWpisu, przepadle>>
     \/ /\ awarieWpisu < MaxAwariiWpisu /\ awarieWpisu' = awarieWpisu + 1
@@ -418,7 +438,7 @@ Zgasniecie ==
     /\ centrum # "stoi" /\ zgasniecia < MaxZgasniec
     /\ zgasniecia' = zgasniecia + 1
     /\ \E urwany \in BOOLEAN :
-        dziennik' = IF urwany /\ bieg # 0 /\ faza \in {"zaczete", "skonczone"} /\ naglowekCzeka
+        dziennik' = IF urwany /\ bieg # 0 /\ faza \in {"start", "zaczete", "skonczone"} /\ naglowekCzeka
                        /\ dziennik[bieg] = "brak"
                     THEN [dziennik EXCEPT ![bieg] = "bezStartu"]
                     ELSE dziennik
@@ -441,14 +461,15 @@ Zamkniecie ==
 
 Next ==
     \/ Start \/ Czytaj \/ ZapiszLogi \/ UsunDziennik \/ Wznow \/ PierwszeZapytanie \/ Wyslij \/ UsunPoWysylce
-    \/ StartWyceny \/ WpisZaczete \/ ZmianaWEfenix \/ WpisSkonczone \/ Historia \/ LogiWyniku \/ WyslijWynik
+    \/ StartWyceny \/ ZapiszStart \/ WpisZaczete \/ ZmianaWEfenix \/ WpisSkonczone \/ Historia \/ LogiWyniku \/ WyslijWynik
     \/ Zgasniecie \/ Zamkniecie
 
 (* Działający kod robi następny krok, tata otwiera Centrum, gdy żadne nie działa, i kiedyś je zamyka, gdy nic nie    *)
 (* trwa (Centrum nie działa bez końca), a przeglądarka wysyła pierwsze zapytanie. Wyceny tata uruchamia, kiedy chce. *)
 Sprawiedliwosc ==
     /\ WF_vars(Start) /\ WF_vars(Czytaj) /\ WF_vars(ZapiszLogi) /\ WF_vars(UsunDziennik) /\ WF_vars(Wznow)
-    /\ WF_vars(PierwszeZapytanie) /\ WF_vars(Wyslij) /\ WF_vars(UsunPoWysylce) /\ WF_vars(WpisZaczete)
+    /\ WF_vars(PierwszeZapytanie) /\ WF_vars(Wyslij) /\ WF_vars(UsunPoWysylce) /\ WF_vars(ZapiszStart)
+    /\ WF_vars(WpisZaczete)
     /\ WF_vars(ZmianaWEfenix) /\ WF_vars(WpisSkonczone) /\ WF_vars(Historia) /\ WF_vars(LogiWyniku)
     /\ WF_vars(WyslijWynik) /\ WF_vars(Zamkniecie)
 

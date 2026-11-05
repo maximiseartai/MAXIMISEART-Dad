@@ -83,14 +83,15 @@ unless named otherwise):
 | `PierwszeZapytanie` | `app.py` `send_interrupted`, a dependency of every API route, → `InterruptedPricings.send`: `pending, self._pending = self._pending, []` |
 | `Wyslij` | `send`: `self._run_logs.send(record)` → `outbox.py` `Outbox.post(logi_post(record))`: True once the queue file exists, False leaves the journal for the next start |
 | `UsunPoWysylce` | `send`: `self._remove(path)` after True |
-| `StartWyceny` | `runs.py` `RunHost.start` → `app.py` `run_started` → `PricingJournal.run_started` (start in memory, first line pending) |
-| `WpisZaczete` | `efenix_pricing.py` `save`: `journal.begun(...)` before `efenix_trace.traced` and `_priced` → `PricingJournal._write` (first line and entry in one `write`, `flush`, `fsync`; `OSError` drops the entry, `_header` stays) |
+| `StartWyceny` | `runs.py` `RunHost.start` → `app.py` `run_started` → `PricingJournal.run_started` (start in memory, `_header` set) |
+| `ZapiszStart` | `PricingJournal.run_started` → `_append_locked(started)`: the first line alone in one `write`, `flush`, `fsync`, before the thread of the Wycena starts (#846); `OSError` leaves no journal and `_header` set, so the first line goes with the next entry |
+| `WpisZaczete` | `efenix_pricing.py` `save`: `journal.begun(...)` before `efenix_trace.traced` and `_priced` → `PricingJournal._write` → `_append_locked` (the first line, while it is not on disk, and the entry in one `write`, `flush`, `fsync`, else the entry alone; `OSError` drops the entry, `_header` stays) |
 | `ZmianaWEfenix` | `_priced` → `_outcome`: the first window action that changes the order (execution date, Wycena Emmetta, a quantity) |
 | `WpisSkonczone` | `save`: `journal.ended(result, ...)` after the result → `PricingJournal._write` |
 | `Historia` | `runs.py` `_Run.work` → `process_run.py` `run_process`: the engine reached its result, and `MetricsStore(...).append(record)` (`telemetry.py`) writes the metrics record (the Historia row) before `run_process` returns; `OSError`, `UnicodeError` or `ValueError` from `append` is caught (`metrics_saved = False`), and `run_process` returns its result without a Historia row |
 | `LogiWyniku` | `_Run.work` → `RunHost.after` → `RunLogs.run_ended` → `_keep`: `_write` of the Logs with the result |
 | `WyslijWynik` | `_keep`: `finally: self._outbox.post(logi_post(kept))`, then the end of the Uruchomienie; the journal stays until the next start |
-| `Zgasniecie` | none: Centrum switches off at any step; memory is gone, disk and queue stay; an entry being written may be torn, and a torn first line is a journal without a start |
+| `Zgasniecie` | none: Centrum switches off at any step; memory is gone, disk and queue stay; an entry being written may be torn, and a torn first line (at the start of the Wycena, or with the first entry after its failed write) is a journal without a start |
 | `Zamkniecie` | „Zamknij Centrum rozliczeń”: `RunHost.shutdown_refusal` accepts it only when no Uruchomienie runs, and the request passed `send_interrupted` first |
 
 The script compares these definitions with the Sync commit (`model/definicje.json`: file → names, `Class.method` is a
@@ -271,7 +272,9 @@ each gives `URWANE URUCHOMIENIE: NOWE NARUSZENIE`:
 - NicPrzedWznowieniem: the Logi sent in `create_app` right after `close`, not in the dependency of the first request.
 - ZaczeteWLogach: `_read` without the order begun without a result; `journal.begun` after the first window action;
   `PricingJournal._write` starting with `if self._failed: return` (`wpisy`: after one failed entry the journal writes
-  nothing more, so an order without a failed entry of its own is missing from the Logi).
+  nothing more, so an order without a failed entry of its own is missing from the Logi); `_append_locked` clearing
+  `_header` also after `OSError` (`wpisy`: the first line whose write at the start failed never reaches the disk, the
+  start of Centrum removes the journal without a start, and the orders changed in efenix are in no Logi).
 - Zbieganie: `send` without `self._remove(path)`; `close` without `if closed is None: self._remove(path)`.
 
 A mutation reported as `NIEAKTUALNA` no longer matches the model: rewrite its anchor against the new model so that it
@@ -302,7 +305,10 @@ Logs file that cannot be parsed (truncated by hand, a schema from a newer versio
 a result and removes the journal), a torn entry in the middle of a journal (counted in `omitted`), a Zatrzymanie of the
 window (the Wycena reaches its result either way), Wyceny started from the Skrypt dla maszyn (Historia rows without a
 journal; at Dad's every Uruchomienie runs from Centrum, ADR 0017), exceptions other than `OSError` in `close` or `send`, Dad's
-actions in the Logs (`DadActionJournal.take`), and the karta after the start (`RunCards.last`).
+actions in the Logs (`DadActionJournal.take`), the karta after the start (`RunCards.last`), and the progress of a Wycena
+(#846: `ProgressComment` and `RunLogs.progress`, an older version of its Logi without a file for the Archiwum, which the
+model of `verify-kolejka-skrzynki` replaces in the queue; `PricingJournal.progress` gives it only once the first line is
+on disk, and `RunLogs.run_ended` ends it before the Logi, neither of which changes a step here).
 
 ## Files
 

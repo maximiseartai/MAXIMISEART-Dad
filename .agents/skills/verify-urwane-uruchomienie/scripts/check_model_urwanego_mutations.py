@@ -111,8 +111,8 @@ MUTATIONS = (
     Mutation(
         "„zaczynam zlecenie” po pierwszym działaniu okna efenix (save: journal.begun po _priced)",
         (
-            Edit(MODEL, "faza' = \"zaczete\" /\\ zlecenie' = 1 /\\ naglowekCzeka' = TRUE",
-                 "faza' = \"efenix\" /\\ zlecenie' = 1 /\\ naglowekCzeka' = TRUE"),
+            Edit(MODEL, "    /\\ faza' = \"zaczete\"\n    /\\ UNCHANGED <<wpisy, logi,",
+                 "    /\\ faza' = \"efenix\"\n    /\\ UNCHANGED <<wpisy, logi,"),
             Edit(MODEL, "    /\\ efenix' = [efenix EXCEPT ![bieg] = @ \\cup {zlecenie}]\n    /\\ faza' = \"skonczone\"",
                  "    /\\ efenix' = [efenix EXCEPT ![bieg] = @ \\cup {zlecenie}]\n    /\\ faza' = \"zaczete\""),
             Edit(MODEL, "    /\\ Wpis(\"zaczete\")\n    /\\ faza' = \"efenix\"", "    /\\ Wpis(\"zaczete\")\n    /\\ faza' = \"skonczone\""),
@@ -133,11 +133,21 @@ MUTATIONS = (
                 "                                      przepadle>>\n"
                 "    \\/ /\\ przepadle[r] = {} /\\ wpisy' = [wpisy EXCEPT ![r] = Append(@, [rodzaj |-> rodzaj, z |-> zlecenie])]\n",
             ),
-            Edit(MODEL, "    \\/ /\\ awarieWpisu < MaxAwariiWpisu /\\ awarieWpisu' = awarieWpisu + 1\n",
+            Edit(MODEL, "<<awarieWpisu, przepadle>>\n    \\/ /\\ awarieWpisu < MaxAwariiWpisu /\\ awarieWpisu' = awarieWpisu + 1\n",
+                 "<<awarieWpisu, przepadle>>\n"
                  "    \\/ /\\ przepadle[r] = {} /\\ awarieWpisu < MaxAwariiWpisu /\\ awarieWpisu' = awarieWpisu + 1\n"),
         ),
         _check("wpisy"),
         "zlecenie, którego żaden wpis nie zawiódł, znika z Logów Urwanego Uruchomienia po nieudanym wpisie innego zlecenia",
+        NEW,
+    ),
+    Mutation(
+        "pierwsza linia, której zapis przy starcie Wyceny się nie udał, nie idzie z następnym wpisem "
+        "(PricingJournal._append_locked: self._header = False także po OSError)",
+        (Edit(MODEL, "          /\\ UNCHANGED <<dziennik, zapisanyStart, naglowekCzeka>>\n",
+              "          /\\ naglowekCzeka' = FALSE /\\ UNCHANGED <<dziennik, zapisanyStart>>\n"),),
+        _check("wpisy"),
+        "dziennik bez pierwszej linii: start Centrum go usuwa, a zlecenia zmienione w efenix nie trafiają do żadnych Logów",
         NEW,
     ),
     Mutation(

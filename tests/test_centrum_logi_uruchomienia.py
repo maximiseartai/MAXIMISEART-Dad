@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import stat
 import sys
 import time
 from typing import Any, Final, NoReturn
@@ -1813,9 +1814,12 @@ def queued_logs(queue: Path) -> list[Path]:
 
 
 @contextmanager
-def pricing(tmp_path: Path, *, offline_until: int | None = None) -> Iterator[tuple[SettlingCentrum, EfenixMinutes]]:
+def pricing(
+    tmp_path: Path, *, offline_until: int | None = None, logged_in: bool = True
+) -> Iterator[tuple[SettlingCentrum, EfenixMinutes, AtrapaEfenix]]:
     """Centrum z Tokenem do Zgłoszeń, którego Skrzynka pokazuje Logi Uruchomienia w ``issues``, i Folder okresu z Plikiem
-    zbiorczym ``PRICED``; okno efenix to Atrapa, na której każde żądanie trwa minutę (``EfenixMinutes``)."""
+    zbiorczym ``PRICED``; okno efenix to Atrapa, na której każde żądanie trwa minutę (``EfenixMinutes``). Bez
+    ``logged_in`` okno efenix czeka na logowanie taty (``AtrapaEfenix.log_in``)."""
 
     surroundings = Surroundings()
     surroundings.report_box.background = frozenset()
@@ -1825,7 +1829,9 @@ def pricing(tmp_path: Path, *, offline_until: int | None = None) -> Iterator[tup
         centrum = settling_centrum(tmp_path, surroundings=surroundings)
         write_collective_file(centrum.period_parent, PRICED)
         (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
-        yield centrum, minutes
+        if not logged_in:
+            atrapa.expire_session()
+        yield centrum, minutes, atrapa
 
 
 def summarized(fake: FakeReportBox) -> int:
@@ -1899,7 +1905,7 @@ def test_wycena_w_efenix_ma_w_issue_okresu_jeden_komentarz_z_rosnacym_postepem_c
     (zlecenia skończone z sześciu, wyniki, ostatnie zlecenie), a na końcu ten sam komentarz staje się podsumowaniem z
     odnośnikiem do pliku w Archiwum Logów okresu. Po końcu żaden postęp już nie przychodzi, choć czas biegnie dalej."""
 
-    with pricing(tmp_path) as (centrum, _):
+    with pricing(tmp_path) as (centrum, _, _):
         started = _start_pricing(centrum)
         assert started.status_code == 200, started.json()
         run_id = started.json()["run"]["id"]
@@ -1933,7 +1939,7 @@ def test_bez_sieci_w_kolejce_czeka_tylko_najnowszy_postep_a_po_powrocie_sieci_is
     najnowszy zastępuje starszy, więc po powrocie sieci w kolejce jest jeden plik Logów, a Skrzynka dostaje od razu postęp
     z 10. minuty, potem następne i podsumowanie, wszystko w jednym komentarzu Uruchomienia."""
 
-    with pricing(tmp_path, offline_until=12) as (centrum, minutes):
+    with pricing(tmp_path, offline_until=12) as (centrum, minutes, _):
         assert _start_pricing(centrum).status_code == 200
         finished_view(centrum.client)
     _, texts = comment_history(centrum)
@@ -1953,12 +1959,62 @@ def test_wycena_ktorej_dziennika_nie_da_sie_zapisac_nie_ma_postepu_tylko_podsumo
     blocked = tmp_path / "logs" / "dzienniki-wyceny"
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
-    with pricing(tmp_path) as (centrum, _):
+    with pricing(tmp_path) as (centrum, _, _):
         assert _start_pricing(centrum).status_code == 200
         finished_view(centrum.client)
     _, texts = comment_history(centrum)
     [summary] = texts
 
+    assert len(archived_logs(centrum, summary)["efenix_orders"]) == 6
+
+
+def test_wpis_dziennika_wyceny_ktorego_nie_da_sie_zapisac_nie_zmienia_postepu(tmp_path: Path) -> None:
+    """Start dziennika Wyceny jest już na dysku, a zanim tata zaloguje się w efenix, plik dziennika przestaje przyjmować
+    wpisy (tylko do odczytu). Wycena przechodzi wszystkie zlecenia, ale żaden ich wpis nie trafia na dysk, więc postęp
+    nie wyprzedza dziennika: każdy mówi, że dziennik nie ma jeszcze żadnego zlecenia, a podsumowanie ma sześć zleceń."""
+
+    with pricing(tmp_path, logged_in=False) as (centrum, _, atrapa):
+        assert _start_pricing(centrum).status_code == 200
+        [journal] = journals(centrum)
+        journal.chmod(stat.S_IREAD)
+        atrapa.log_in()
+        finished_view(centrum.client)
+    _, texts = comment_history(centrum)
+    centrum.client.stop()
+    journal.chmod(stat.S_IREAD | stat.S_IWRITE)
+    *progress, summary = texts
+
+    assert [entry["entry"] for entry in journal_entries(journal)] == ["start Uruchomienia"]
+    assert len(progress) >= 4, progress
+    assert [text for text in progress if NO_ORDERS not in text.splitlines()] == []
+    assert len(archived_logs(centrum, summary)["efenix_orders"]) == 6
+
+
+def test_start_dziennika_wyceny_ktorego_nie_dalo_sie_zapisac_idzie_z_pierwszym_wpisem_a_postep_rusza_z_nim(
+    tmp_path: Path,
+) -> None:
+    """Katalog dzienników Wyceny zajęty przez plik, gdy tata uruchamia Wycenę w efenix, a okno efenix czeka na jego
+    logowanie: start dziennika nie trafia na dysk, więc postępu nie ma. Zanim tata się zaloguje, katalog wraca (np.
+    antywirus puścił plik): pierwszy wpis zapisuje przed sobą pierwszą linię, więc dziennik ma start i każde zlecenie, a
+    komentarz Uruchomienia dostaje postęp ze zleceniami i na końcu podsumowanie."""
+
+    blocked = tmp_path / "logs" / "dzienniki-wyceny"
+    blocked.parent.mkdir(parents=True)
+    blocked.write_text("", encoding="utf-8")
+    with pricing(tmp_path, logged_in=False) as (centrum, _, atrapa):
+        assert _start_pricing(centrum).status_code == 200
+        blocked.unlink()
+        atrapa.log_in()
+        finished_view(centrum.client)
+    _, texts = comment_history(centrum)
+    centrum.client.stop()
+    *progress, summary = texts
+    [journal] = journals(centrum)
+    entries = [entry["entry"] for entry in journal_entries(journal)]
+
+    assert (entries[:2], entries.count("zlecenie skończone")) == (["start Uruchomienia", "zaczynam zlecenie"], 6)
+    assert progress != [], texts
+    assert [text for text in progress if NO_ORDERS in text.splitlines()] == [], "postęp przed startem dziennika na dysku"
     assert len(archived_logs(centrum, summary)["efenix_orders"]) == 6
 
 
@@ -2048,7 +2104,7 @@ def test_druga_wycena_w_efenix_w_tej_samej_pracy_centrum_ma_swoj_komentarz_z_pos
     pierwszej, a nie od sześciu zleceń pierwszej, i każdy komentarz kończy się podsumowaniem swojej Wyceny. Po obu końcach
     żaden postęp już nie przychodzi i Centrum go nie budzi, choć czas biegnie dalej."""
 
-    with pricing(tmp_path) as (centrum, _):
+    with pricing(tmp_path) as (centrum, _, _):
         runs: list[str] = []
         for _ in range(2):
             started = _start_pricing(centrum)

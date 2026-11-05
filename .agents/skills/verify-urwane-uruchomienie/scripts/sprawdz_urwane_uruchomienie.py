@@ -287,6 +287,7 @@ _STEPS = {
     "Wyslij": "send: Outbox.post Logów Urwanego Uruchomienia Wyceny {w}",
     "UsunPoWysylce": "send usuwa dziennik Wyceny {w} po przyjęciu przez kolejkę",
     "StartWyceny": "tata uruchamia Wycenę {b2} (PricingJournal.run_started)",
+    "ZapiszStart": "run_started zapisuje pierwszą linię dziennika Wyceny {b} (_append_locked)",
     "WpisZaczete": "Wycena {b} pisze „zaczynam zlecenie” {z}",
     "ZmianaWEfenix": "okno efenix zmienia zlecenie {z} Wyceny {b}",
     "WpisSkonczone": "Wycena {b} pisze „zlecenie skończone” {z}",
@@ -315,7 +316,7 @@ def _step(action: str, before: dict[str, str], after: dict[str, str]) -> str:
     failed = [
         what
         for counter, what in (
-            ("awarieWpisu", "wpis rzuca OSError"),
+            ("awarieWpisu", "zapis dziennika rzuca OSError"),
             ("awarieMetryk", "MetricsStore.append rzuca OSError, więc wiersza Historii nie ma"),
             ("awarieLogow","zapis pliku Logów rzuca OSError"),
             ("awarieKolejki", "Outbox.post zwraca False"),
