@@ -86,15 +86,25 @@ dysk przy starcie Wyceny (dopisek #846 w ADR 0017), a postęp idzie dopiero, gdy
 ją tam ma, więc każdy komentarz postępu ma dziennik. Wersją końcową są Logi z
 wynikiem na końcu Wyceny albo Logi Urwanego Uruchomienia, którymi następny
 start Centrum zamyka dziennik Wyceny przerwanej przed wpisem końca (dopisek
-#870/#871 w ADR 0017). Za Wycenę z wpisem końca start niczego nie wysyła, żeby
-nie zastąpić Logów z wynikiem, które kolejka już przyjęła (#871), więc Wycena,
-której Logi z wynikiem nie doszły do kolejki po wpisie końca (Centrum zgasło
-między nim a ich przyjęciem, wpis końca się nie zapisał, Logi nie powstały
-albo kolejka ich nie przyjęła), zostawia komentarz z napisem, że Uruchomienie
-trwa. To okno zamyka #910. Wycena, której dziennika nie da się zapisać, nie ma
-postępu, tylko podsumowanie na końcu. Kolejka wysyłki oznacza i usuwa bez wysyłania plik,
-za którym czeka nowsza wersja tej samej wysyłki, więc bez internetu czeka tylko
-najnowszy postęp (i tylko Logi z ostatnią Diagnozą). Zdanie „Centrum przerwane
+#870/#871 w ADR 0017). Wycena, której postęp mógł wyjść, a której Logi z wynikiem
+nie doszły do kolejki, ma po następnym starcie wersję zastępczą (dopisek #910
+niżej). Wycena, której dziennika nie da się zapisać, nie ma postępu, tylko
+podsumowanie na końcu. Kolejka wysyłki oznacza i usuwa bez wysyłania plik, gdy
+czeka nowsza wersja tej samej wysyłki, więc bez internetu czeka tylko najnowszy
+postęp (i tylko Logi z ostatnią Diagnozą).
+
+**Dopisek (#910, 2026-11-05).** Wersja wysyłki ma stopień, który wybiera nadawca,
+a nie zegar komputera, i kolejka porównuje najpierw stopień, a dopiero w nim
+chwilę z nazwy pliku: postęp ma najniższy, wersja zastępcza, którą start
+Centrum wysyła z dziennika Wyceny (Logi z pliku, Logi Urwanego Uruchomienia albo
+wynik bez Logów), środkowy, a Logi z pracy Centrum Uruchomienia i każda inna
+wysyłka najwyższy. Dziennik Wyceny znika dopiero, gdy kolejka przyjęła wersję
+końcową jej komentarza: Logi z wynikiem (zaraz po nich) albo wersję zastępczą
+(przy następnym starcie). Komentarz postępu nie zostaje więc na zawsze z
+napisem, że Uruchomienie trwa, a wersja zastępcza nie zastępuje Logów z wynikiem,
+które kolejka już przyjęła, także po cofnięciu zegara komputera. Wersja bez
+stopnia (sprzed tego dopisku) ma stopień najwyższy: żadne Wydanie nie wysyłało
+postępu ani Logów z dziennika. Zdanie „Centrum przerwane
 w trakcie zostawia tylko `uruchomienie-start`” w decyzji niżej Wycena w efenix
 zmienia dalej tylko o dziennik z dopisku #845: krótkie procesy nie wysyłają
 nic w trakcie.
