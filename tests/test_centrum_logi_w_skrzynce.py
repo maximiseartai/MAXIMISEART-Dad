@@ -32,6 +32,8 @@ from rozliczenia import intermax_copies
 from rozliczenia.centrum import app
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
+from rozliczenia.centrum.run_logs import RunLog, guarded
+from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 
 from tests.fixtures.atrapa_efenix import PRICES, TODAY, AtrapaOrder, Changed, amount_of, atrapa_efenix
 from tests.fixtures.centrum import TOOL_COMMIT, FakeIssue, FakeReportBox, finished_view, views_until
@@ -1188,6 +1190,65 @@ def test_logi_z_wierszem_intermax_bez_pewnego_polozenia_daja_granice_kopii_a_nie
         "wartości z drugiego położenia (#913), więc odtworzenie nie zbuduje tych wierszy"
     )
     assert not any(line.startswith(("Pierwsza różnica", "Porównano")) for line in lines)
+
+
+def _guarded_with(produced: Produced, folder: Path, word: str) -> Path:
+    """Plik Logów z Archiwum po strażniku, który zapamiętał ``word`` jako ADRES z pliku taty, jak ``guarded`` w Centrum."""
+
+    forbidden = ForbiddenValues()
+    forbidden.remember_value(ForbiddenColumn.ADDRESS, word)
+    kept = guarded(RunLog.model_validate(produced.record), forbidden)
+    path = folder / produced.archived.stem
+    path.write_text(kept.text, encoding="utf-8")
+    return path
+
+
+# Słowo z pliku taty, które strażnik maskuje w polu z zamkniętą listą, kod wyjścia odtworzenia i linia raportu: zlecenie
+# śladu efenix („gotowe” w ``outcome``) i wiersz Kopii wejścia („datetime” w typie komórki z datą) to wejście
+# odtworzenia, więc granica blokuje, a Komunikat („warning” w rodzaju) jest poza wejściem, więc zostaje zastrzeżeniem.
+CUTS = {
+    "zlecenie_sladu_efenix": (
+        "gotowe",
+        3,
+        "NIE DA SIĘ ODTWORZYĆ: strażnik reguły danych pominął w Logach efenix_orders[0] (maska w polu, które jej nie "
+        "przyjmuje), a odtworzenie buduje z niego wejście",
+    ),
+    "wiersz_kopii_wejscia": (
+        "datetime",
+        3,
+        "NIE DA SIĘ ODTWORZYĆ: strażnik reguły danych pominął w Logach input_copy[0].sheets[0].rows[0] (maska w polu, "
+        "które jej nie przyjmuje), a odtworzenie buduje z niego wejście",
+    ),
+    "komunikat": (
+        "warning",
+        1,
+        "- Strażnik reguły danych pominął w Logach messages[0] (maska w polu, które jej nie przyjmuje): różnica w tym "
+        "miejscu jest skutkiem maski",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", CUTS)
+def test_element_ktory_straznik_pominal_w_logach_jest_granica_a_nie_falszywa_przyczyna_roznicy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    """Maska strażnika w polu z zamkniętą listą zabiera z Logów Wyceny w efenix cały element z uwagą techniczną.
+    Zlecenie śladu albo wiersz Kopii to wejście odtworzenia, więc odtworzenie kończy się granicą z tym miejscem, a nie
+    różnicą z fałszywą przyczyną (nieznany numer w efenix); pominięty Komunikat stoi pod „Granice:” przy różnicy."""
+
+    word, expected_code, expected = CUTS[case]
+    produced = _efenix(tmp_path / "taty")
+    cut = _guarded_with(produced, tmp_path, word)
+
+    code, lines = _replayed(capsys, cut, "--na-tym-drzewie", *produced.arguments)
+
+    assert code == expected_code, lines
+    if expected_code == 3:
+        assert lines[0] == expected, lines
+        assert not any(line.startswith("Pierwsza różnica") for line in lines), lines
+    else:
+        assert (lines[0], lines[3].startswith("Pierwsza różnica: Komunikaty (messages)")) == ("ODTWORZENIE RÓŻNE", True)
+        assert expected in lines[lines.index("Granice:") + 1 :], lines
 
 
 def test_logi_bez_kopii_wejscia_daja_granice_a_nie_zgodnosc(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
