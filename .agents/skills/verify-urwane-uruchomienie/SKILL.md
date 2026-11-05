@@ -127,7 +127,7 @@ changes move it without changing a definition, so look for them in the diff: the
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `3808bcd9b` (2026-11-05, round 3 of #846, merged with `main` after #863 and #886). Every row of the
+Sync commit: `596a00f10` (2026-11-05, round 3 of #846, merged with `main` after #863 and #886). Every row of the
 table was checked against the code at this commit. Since the previous sync `fa8db43b5` (round 2 of #846) these commits
 changed a definition. `e4b0de239` (#846): a journal goes away only once the queue took the final version of its comment.
 The end of a Wycena removes it after the queue accepted its Logi (`PricingJournal.run_ended` after `RunLogs.run_ended` in
