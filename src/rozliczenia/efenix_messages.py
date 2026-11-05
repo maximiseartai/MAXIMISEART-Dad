@@ -12,7 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Final
 
-from .efenix_checks import DateRefused, OrderProblem, PagePart
+from .efenix_checks import DATE_TOLERANCE, DateRefused, OrderProblem, PagePart
 from .efenix_marking import Refusal
 from .efenix_positions import (
     Excess,
@@ -371,7 +371,11 @@ def _order_error(problem: OrderFault) -> tuple[str, str, str]:
         case OrderProblem.OTHER_ADDRESS:
             return "EFENIX_INNY_ADRES", "Dane adresowe zlecenia w efenix są inne niż ADRES w Pliku zbiorczym.", _PRICE_YOURSELF
         case OrderProblem.OTHER_DATE:
-            return "EFENIX_INNA_DATA", "Data wykonania zlecenia w efenix jest inna niż dzień z DATA w Pliku zbiorczym.", _PRICE_YOURSELF
+            return (
+                "EFENIX_INNA_DATA",
+                f"Data wykonania zlecenia w efenix różni się od dnia z DATA w Pliku zbiorczym o więcej niż {DATE_TOLERANCE.days} dni.",
+                _PRICE_YOURSELF,
+            )
 
 
 def unexpected_failure() -> Message:
