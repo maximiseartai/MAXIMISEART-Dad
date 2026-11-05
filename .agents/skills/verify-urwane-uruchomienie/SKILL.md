@@ -113,12 +113,15 @@ changes move it without changing a definition, so look for them in the diff: the
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `3afc66996` (2026-11-05, PR #863 after its merge of `main` with #882). Every row of the table was checked
-against the code at this commit. The model did not change: #863 makes `guarded` mask also numbers in the fields with
-values from Dad's cells (`READ_VALUES`) and the phone with `48` without `+`, and puts the notes about the Kopia wejścia
-in `input_copy_notes`, but `RunLogs.guard` still calls it in one step and it stays idempotent (`Straz`). Each known
-finding below was replayed at `5e1905142` (`historia-niezapisana` on `main` 86677b151, whose `src/` is the same); #863
-changes none of the code they run through except the guard, which only masks more.
+Sync commit: `c490d2497` (2026-11-05, PR #863 after its merge of `main` with #883).
+Every row of the table was checked against the code at this commit. The model did not change: #863 makes `guarded` mask
+also numbers in the fields with values from Dad's cells (`READ_VALUES`) and the phone with `48` without `+`, and puts
+the notes about the Kopia wejścia in `input_copy_notes`, but `RunLogs.guard` still calls it in one step and it stays
+idempotent (`Straz`). The fix of #881 (#883) changed `save` only in what it passes to `_priced` (the pace, which
+`_priced` now puts over its write-ahead window) and in the facts of a Zatrzymanie, while `journal.begun` still comes
+before `efenix_trace.traced` and `_priced`, and `journal.ended` after the result. Each known finding below was replayed
+at `5e1905142` (`historia-niezapisana` on `main` 86677b151, whose `src/` is the same); #863 changes none of the code
+they run through except the guard, which only masks more.
 
 ## Run
 

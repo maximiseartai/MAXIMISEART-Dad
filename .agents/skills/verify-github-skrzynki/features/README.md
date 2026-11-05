@@ -10,16 +10,20 @@ The feature `<feature>` of `--feature` lives in `<feature>.md` next to this file
 
 - The trial repository `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba` is private and empty: no commit, no Release,
   only GitHub's ten default labels and no issue (`doctor`: `pozostalosci=0`).
-- `gh` is logged in as MAXIMISEART-AI (admin of the trial repository); the fine-grained key file, when used, holds one
+- The archive trial repository `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum` is private and has one
+  commit (README on `main`), no Release, no tag and no issue.
+- `gh` is logged in as MAXIMISEART-AI (admin of both trial repositories); the fine-grained key file, when used, holds one
   line.
 - The public tool repository `maximiseartai/MAXIMISEART-Dad` has at least one Wydanie (a `v*` tag with a GitHub
   Release) on the first-parent line of `main`, and `main` has a merge commit and a commit pushed without a PR.
 
 ## Driving conventions
 
-- Call the client the way Centrum does: `GitHubReportBox` with a transport, `KeyedBox` with a key and a clock,
-  `tool_freshness` functions with an API address. Never call `urllib` or `gh` for a client case.
-- Prepare through the harness (`Admin`), which does what Maks does by hand (labels, closing, deleting an issue), or
+- Call the client the way Centrum does: `GitHubReportBox` with a transport (moved to one trial repository),
+  `KeyedBox` with a key and a clock, `tool_freshness` functions with an API address. Never call `urllib` or `gh` for
+  a client case.
+- Prepare through the harness (`Admin`), which does what Maks does by hand (labels, closing, deleting an issue,
+  downloading a file of the Archiwum), or
   through the client without recording; record only the client calls the case judges.
 - Wait for GitHub's issue list to show what the preparation created (`SkrzynkaLive.settle`) before the client lists.
 - Every body the run writes starts with the run marker, so cleanup finds it.
@@ -29,7 +33,7 @@ The feature `<feature>` of `--feature` lives in `<feature>.md` next to this file
 - A case is verified only by a `PRZYPADEK … | OK` line of a run whose last line is `VERIFY OK`.
 - `NIESPRAWDZONE` lines name what no run checks; a replay checks the client against the recorded answers, not today's
   GitHub, and its `NAGRANIE` lines say when and with which key the answers were recorded.
-- Evidence holds synthetic text and the trial repository's numbers only; never a key.
+- Evidence holds synthetic text and the trial repositories' numbers only; never a key.
 
 ## Feature entry contract
 
