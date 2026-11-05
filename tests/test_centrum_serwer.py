@@ -183,9 +183,11 @@ def test_zatrzymanie_centrum_w_tescie_czeka_na_koniec_watku_systemu_a_nie_tylko_
     ending.start()
     assert ending.code_ended.wait(30), "wątek nie doszedł do końca swojego kodu"
 
-    with pytest.raises(AssertionError, match="żyją wątki konczacy-sie"):
-        join_threads_since(since, timeout_s=0)
-    ending.end.set()
+    try:
+        with pytest.raises(AssertionError, match="żyją wątki konczacy-sie"):
+            join_threads_since(since, timeout_s=0)
+    finally:
+        ending.end.set()
     join_threads_since(since)
 
     assert not ending.is_alive()

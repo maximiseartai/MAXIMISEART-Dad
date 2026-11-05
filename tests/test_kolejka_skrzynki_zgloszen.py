@@ -8,6 +8,7 @@ Centrum nieosiągalna rozsądnym kosztem.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import datetime, timezone
 import itertools
 import json
@@ -1114,6 +1115,34 @@ def test_przejscie_w_ktorym_archiwum_odmowilo_nie_pyta_go_o_pliki_nastepnych_log
     queue.passed()
 
     assert queue.box.archive_requests == 2
+
+
+def test_najdluzszy_komentarz_logow_z_plikiem_zostawia_miejsce_na_dopisek_gdy_archiwum_odmowi(tmp_path: Path) -> None:
+    """Komentarz Logów z plikiem do Archiwum Logów okresu dostaje dopisek „czeka w Kolejce wysyłki”, gdy Archiwum pliku
+    nie przyjmie, więc wysyłka przyjmuje tylko część, która mieści się w komentarzu Skrzynki razem z dopiskiem: z
+    najdłuższą przyjętą częścią i odmową Archiwum komentarz z dopiskiem nie przekracza limitu."""
+
+    def logs(length: int) -> Post | None:
+        try:
+            return replace(logs_with_file(RUN_ID), parts=("ą" * length,))
+        except ValueError:
+            return None
+
+    accepted, refused = 1, TEXT_LIMIT + 1
+    while refused - accepted > 1:
+        middle = (accepted + refused) // 2
+        accepted, refused = (middle, refused) if logs(middle) is not None else (accepted, middle)
+    longest = logs(accepted)
+    assert longest is not None
+    queue = Queue(tmp_path, FakeReportBox(archive_failure=Refused()))
+
+    queue.outbox.post(longest)
+    queue.passed()
+
+    [issue] = queue.box.issues_with(LOGS.label)
+    [comment] = issue.comments
+    assert "czeka w Kolejce wysyłki" in comment
+    assert len(comment) <= TEXT_LIMIT
 
 
 def test_kontrole_ilosci_okresu_w_jednym_przejsciu_ida_do_jednego_issue_zanim_lista_je_pokaze(tmp_path: Path) -> None:

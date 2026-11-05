@@ -76,7 +76,7 @@ import re
 import threading
 from typing import Annotated, Final, Literal, Protocol, assert_never, get_args
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from rozliczenia.client_data import ForbiddenValues, Guarded
 from rozliczenia.call_trace import CallTrace
@@ -594,8 +594,8 @@ class LoggedFingerprint(_Record):
 class LoggedInputFile(_Record):
     """Plik taty w Kopii wejścia (``input_copy``): sama nazwa, odcisk i przeczytane arkusze.
 
-    ``folders``: nazwy folderu nadrzędnego i folderu pliku, jak w Komunikatach (``input_copy.CopiedFile.folders``);
-    pusta lista w plikach sprzed #847.
+    ``folders``: nazwy folderu nad folderem pliku i folderu pliku (``input_copy.CopiedFile.folders``; Komunikaty
+    INTERMAX pokazują tylko folder pliku); pusta lista w plikach sprzed #847.
     """
 
     name: str
@@ -822,7 +822,9 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     Pole to ścieżka JSON z nazw pól, a klucz z danych (operator, kod pozycji) jest w niej ``[…]``, żeby uwaga nie
     niosła treści. Uwaga o polu Kopii wejścia idzie do ``input_copy_notes``, a każda inna do ``technical_notes``, które
     pokazuje karta Uruchomienia z Logów: Kopii karta nie pokazuje, więc karta po starcie Centrum zostaje taka jak przed
-    nim (ADR 0017). Logi bez niczego do zamaskowania wracają te same.
+    nim (ADR 0017). Pole typowane, które maski nie przyjmuje, zostaje puste albo odpada z uwagą techniczną
+    (``_representable``), a pole najwyższego poziomu bez ``None`` daje ``UnrepresentableLogs`` (#936). Logi bez
+    niczego do zamaskowania wracają te same.
     """
 
     notes: list[str] = []
@@ -868,11 +870,160 @@ def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     assert isinstance(walked, dict)
     walked["technical_notes"] = [*walked["technical_notes"], *dict.fromkeys(notes)]
     walked["input_copy_notes"] = [*walked["input_copy_notes"], *dict.fromkeys(copy_notes)]
-    return RunLog.model_validate(walked)
+    return _representable(walked)
 
 
 _INPUT_COPY: Final = "input_copy"
 """Pole Kopii wejścia w Logach; uwagi strażnika o nim idą do ``input_copy_notes``."""
+
+_Path = tuple[str | int, ...]
+
+
+class UnrepresentableLogs(ValueError):
+    """Logi, w których maska strażnika trafiła w pole, które nie może stracić wartości: pole najwyższego poziomu bez
+    ``None`` (#936), albo ``stuck``: cięcia (``_representable``) przestały zmieniać Logi, czyli błąd w cięciach.
+    ``place``: to pole albo miejsce ostatniego cięcia."""
+
+    def __init__(self, place: str, *, stuck: bool = False) -> None:
+        reason = (
+            f"cięcia strażnika przestały zmieniać Logi (ostatnie w polu {place})"
+            if stuck
+            else f"Logi bez miejsca na maskę strażnika w polu {place} (#936)"
+        )
+        super().__init__(reason)
+        self.place = place
+        self.stuck = stuck
+
+
+@dataclass(frozen=True)
+class GuardCut:
+    """Miejsce Logów, które straciło wartość, bo strażnik zamaskował w nim pole, które maski nie przyjmuje
+    (``_representable``): ``removed`` element listy odpadł, inaczej pole jest puste. ``place``: ścieżka JSON jak w
+    uwadze strażnika."""
+
+    place: str
+    removed: bool
+
+
+def guard_cuts(record: RunLog) -> tuple[GuardCut, ...]:
+    """Miejsca, które strażnik pominął albo zostawił puste, z uwag technicznych i uwag o Kopii wejścia Logów."""
+
+    found = (_CUT_NOTE.fullmatch(note) for note in (*record.technical_notes, *record.input_copy_notes))
+    return tuple(
+        GuardCut(match["removed"] or match["emptied"], match["removed"] is not None) for match in found if match
+    )
+
+
+def _cut_note(place: str, removed: bool) -> str:
+    what = f"pominięto {place}" if removed else f"pole {place} jest puste"
+    return f"Reguła danych: {what}: strażnik zamaskował w nim wartość, której pole nie przyjmuje."
+
+
+_CUT_NOTE: Final = re.compile(
+    r"Reguła danych: (?:pominięto (?P<removed>\S+)|pole (?P<emptied>\S+) jest puste): strażnik zamaskował w nim "
+    r"wartość, której pole nie przyjmuje\."
+)
+"""Uwaga ``_cut_note``; miejsce (``_place``) nie ma spacji."""
+
+
+def _representable(walked: dict[str, object]) -> RunLog:
+    """Logi z JSON-a po strażniku (``guarded``), w którym każde pole przyjmuje swoją wartość.
+
+    Pole typowane (kwota ``Decimal``, data, wartość z zamkniętej listy), w którym strażnik zamaskował tekst, maski nie
+    przyjmuje, więc takie Logi nie przeszłyby walidacji i przepadły. Pole dostaje ``None``, a gdy i ``None`` nie
+    przyjmuje, odpada najbliższy element listy nad nim (zlecenie, krok, plik) albo ``None`` dostaje pole nad nim
+    (``_cut``), z uwagą techniczną o tym miejscu (``guard_cuts``). Pole Logów najwyższego poziomu bez ``None`` i poza
+    listą (``process``, ``mode``, ``started_at``) nie ma czego stracić, więc daje ``UnrepresentableLogs`` i Logi
+    przepadają (#936): maska zależy od wartości zapamiętanych z plików taty, a nie od tego, skąd pochodzi pole.
+
+    Każde cięcie zabiera Logom co najmniej jedną wartość, więc cięć jest najwyżej tyle, ile Logi mają wartości:
+    po tylu obrotach bez poprawnych Logów pętla kończy się ``UnrepresentableLogs``, a nie wisi z końcem Uruchomienia.
+    """
+
+    # Miejsce w Logach przed cięciami → odpadło z listy (``False``: dostało ``None``). Błędy idą od ostatniego, więc
+    # element, który odpada, przesuwa w liście tylko elementy już bez błędów, a miejsca w uwagach są te sprzed cięć.
+    cuts: dict[_Path, bool] = {}
+    place: _Path = ()
+    for _ in range(_values(walked) + 1):
+        try:
+            record = RunLog.model_validate(walked)
+        except ValidationError as failure:
+            place, removed = _cut(walked, _existing(walked, failure.errors()[-1]["loc"]))
+            if removed:
+                cuts = {cut: kind for cut, kind in cuts.items() if cut[: len(place)] != place}
+            cuts[place] = removed
+            continue
+        notes: dict[bool, list[str]] = {True: [], False: []}  # Kopia wejścia → uwagi
+        for path, removed in sorted(cuts.items()):
+            notes[path[0] == _INPUT_COPY].append(_cut_note(_place(path), removed))
+        return record.model_copy(
+            update={
+                "technical_notes": [*record.technical_notes, *notes[False]],
+                "input_copy_notes": [*record.input_copy_notes, *notes[True]],
+            }
+        )
+    raise UnrepresentableLogs(_place(place), stuck=True)
+
+
+def _cut(walked: dict[str, object], path: _Path) -> tuple[_Path, bool]:
+    """Najgłębsze miejsce ścieżki błędu walidacji ``path``, które może stracić wartość, i czy odpadło z listy.
+
+    Element listy odpada, a pole z wartością dostaje ``None``. Pole, które już ma ``None``, a wciąż ma błąd, ``None``
+    nie przyjmuje, więc wartość traci miejsce wyżej; ścieżka bez takiego miejsca to ``UnrepresentableLogs``.
+    """
+
+    for depth in range(len(path), 0, -1):
+        place = path[:depth]
+        container, key = _at(walked, place[:-1]), place[-1]
+        if isinstance(container, list) and isinstance(key, int):
+            del container[key]
+            return place, True
+        if isinstance(container, dict) and container[key] is not None:
+            container[key] = None
+            return place, False
+    raise UnrepresentableLogs(_place(path))
+
+
+def _values(value: object) -> int:
+    """Liczba wartości JSON-a (słowników, list i liści) bez ``None``: ile razy najwyżej da się coś z niego zabrać."""
+
+    if isinstance(value, dict):
+        return 1 + sum(_values(entry) for entry in value.values())
+    if isinstance(value, list):
+        return 1 + sum(_values(entry) for entry in value)
+    return 0 if value is None else 1
+
+
+def _existing(walked: object, location: Sequence[str | int]) -> _Path:
+    """Najdłuższy początek miejsca błędu walidacji ``location``, który jest w JSON-ie ``walked`` (dalej pydantic dopisuje
+    nazwy wariantów typu)."""
+
+    path: list[str | int] = []
+    for key in location:
+        if isinstance(walked, dict) and key in walked:
+            walked = walked[key]
+        elif isinstance(walked, list) and isinstance(key, int):
+            walked = walked[key]
+        else:
+            break
+        path.append(key)
+    return tuple(path)
+
+
+def _at(walked: object, path: _Path) -> object:
+    for key in path:
+        if isinstance(walked, dict):
+            walked = walked[key]
+        elif isinstance(walked, list) and isinstance(key, int):
+            walked = walked[key]
+    return walked
+
+
+def _place(path: _Path) -> str:
+    place = ""
+    for key in path:
+        place = f"{place}[{key}]" if isinstance(key, int) else _field(place, key)
+    return place
 
 
 def _child(source: object, key: str) -> tuple[object, bool]:
