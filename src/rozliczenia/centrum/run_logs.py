@@ -555,7 +555,7 @@ class LoggedSheet(_Record):
 
 
 class LoggedFingerprint(_Record):
-    """Odcisk pliku: rozmiar i skrót SHA-256 przeczytanych bajtów, chwila zmiany pliku w chwili odczytu (UTC; ``None``,
+    """Odcisk pliku: rozmiar i skrót SHA-256 przeczytanych bajtów, chwila zmiany pliku tuż przed odczytem (UTC; ``None``,
     gdy system jej nie oddał)."""
 
     size: int

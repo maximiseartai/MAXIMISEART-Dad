@@ -47,7 +47,7 @@ from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
 from openpyxl.worksheet.worksheet import Worksheet
 
 from . import client_data
-from .input_copy import InputCopy, SheetCopy
+from .input_copy import InputCopy, SheetCopy, modified_at
 from .highlights import Highlights
 from .hyperlinks import Hyperlink, read_sheet_hyperlinks
 from .quantity_rules import QuantityColumn
@@ -363,13 +363,15 @@ def _copied(
     copy: InputCopy,
     path: Path,
     content: bytes,
+    modified: datetime | None,
     title: str,
     header: Sequence[object],
     forbidden: Sequence[tuple[client_data.ForbiddenColumn, int]],
 ) -> SheetCopy:
-    """Arkusz Pliku zbiorczego w Kopii wejścia: bajty ``content``, nagłówki z wiersza 17, bez zakazanych kolumn."""
+    """Arkusz Pliku zbiorczego w Kopii wejścia: bajty ``content`` z chwilą zmiany ``modified`` sprzed ich odczytu,
+    nagłówki z wiersza 17, bez zakazanych kolumn."""
 
-    return copy.workbook(path, content).sheet(title, HEADER_ROW, header, {column for _, column in forbidden})
+    return copy.workbook(path, content, modified).sheet(title, HEADER_ROW, header, {column for _, column in forbidden})
 
 
 @dataclass(frozen=True)
@@ -410,6 +412,7 @@ def read_data_rows(
     """
 
     ensure_available(path, despite_excel_lock=despite_excel_lock)
+    modified = modified_at(path)
     original = _file_bytes(path)
     with unreadable_as_error(path):
         content = rows_with_input(original, INPUT_COLUMNS[-1])
@@ -424,7 +427,7 @@ def read_data_rows(
             (),
         )
         remembered_columns = _forbidden_columns(header)
-        copied = None if copy is None else _copied(copy, path, original, sheet.title, header, remembered_columns)
+        copied = None if copy is None else _copied(copy, path, original, modified, sheet.title, header, remembered_columns)
         header, price_list = header[: INPUT_COLUMNS[-1]], header[QUANTITY_COLUMNS[0] - 1 :]
         check_worker_header(path, sheet.title, header)
         with unreadable_as_error(path):
@@ -513,6 +516,7 @@ def read_computed_rows(
     """
 
     ensure_available(path)
+    modified = modified_at(path)
     original = _file_bytes(path)
     with unreadable_as_error(path):
         content = rows_with_input(original, INPUT_COLUMNS[-1])
@@ -537,7 +541,7 @@ def read_computed_rows(
             for row in rows:
                 forbidden.remember(remembered_columns, row.values)
         if copy is not None:
-            copied = _copied(copy, path, original, sheet.title, header, remembered_columns)
+            copied = _copied(copy, path, original, modified, sheet.title, header, remembered_columns)
             for row in rows:
                 copied.row(row.number, row.values)
     finally:

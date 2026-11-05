@@ -27,7 +27,7 @@ from openpyxl.worksheet.formula import ArrayFormula
 from playwright.sync_api import Browser, sync_playwright
 import pytest
 
-from rozliczenia import TOOL_ROOT, settlement_messages
+from rozliczenia import TOOL_ROOT, settlement_messages, workbook_files
 from rozliczenia.centrum import app, contract, runs
 from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES, DadActions
 from rozliczenia.centrum.efenix_run import EfenixWindow
@@ -1779,7 +1779,7 @@ def fingerprint(content: bytes, path: Path) -> dict[str, object]:
 
 def logged_fingerprint(copied: dict[str, Any]) -> dict[str, object]:
     found = dict(copied["fingerprint"])
-    found["modified_at"] = datetime.fromisoformat(found["modified_at"])
+    found["modified_at"] = None if found["modified_at"] is None else datetime.fromisoformat(found["modified_at"])
     return found
 
 
@@ -2024,8 +2024,18 @@ def test_kolumny_adresu_i_numeru_orange_pliku_zbiorczego_nie_wychodza_takze_pod_
     assert [value for value in (ADDRESS_VALUE, ORANGE_VALUE) if any(value in text for text in texts)] == []
 
 
+READ_AT = datetime(2023, 11, 14, 22, 13, 20, tzinfo=timezone.utc)
+"""Chwila zmiany pliku taty przed Uruchomieniem, a ``SAVED_AGAIN_AT`` po zapisie zaraz po odczycie."""
+SAVED_AGAIN_AT = datetime(2027, 1, 15, 8, 0, tzinfo=timezone.utc)
+
+
+def _saved_at(path: Path, moment: datetime) -> None:
+    os.utime(path, (moment.timestamp(), moment.timestamp()))
+
+
 def _register_saved_again(path: Path) -> None:
     path.write_bytes(path.read_bytes() + b"\0")
+    _saved_at(path, SAVED_AGAIN_AT)
 
 
 def _register_gone(path: Path) -> None:
@@ -2037,8 +2047,8 @@ def test_odcisk_rejestru_jest_z_bajtow_ktore_przeczytalo_przygotowanie_takze_gdy
     tmp_path: Path, after_reading: Callable[[Path], None]
 ) -> None:
     """Rejestr zapisany znowu (Autozapis Excela, OneDrive) albo przeniesiony zaraz po odczycie: odcisk w Kopii wejścia
-    to rozmiar i skrót bajtów, z których Przygotowanie przeczytało zlecenia, a Kopia nie czyta pliku drugi raz, więc nie
-    zatrzymuje Przygotowania."""
+    to rozmiar i skrót bajtów, z których Przygotowanie przeczytało zlecenia, i chwila zmiany tej wersji, sprzed odczytu,
+    a Kopia nie czyta pliku drugi raz, więc nie zatrzymuje Przygotowania."""
 
     content: list[bytes] = []
 
@@ -2050,6 +2060,7 @@ def test_odcisk_rejestru_jest_z_bajtow_ktore_przeczytalo_przygotowanie_takze_gdy
 
     readers = replace(FILE_READERS, register=read_then_changed)
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=readers))
+    _saved_at(centrum.fixture.register_path, READ_AT)
 
     view = run_to_end(centrum, dry_run=True)
 
@@ -2057,8 +2068,38 @@ def test_odcisk_rejestru_jest_z_bajtow_ktore_przeczytalo_przygotowanie_takze_gdy
     [record] = records(centrum)
     [copied] = record["input_copy"]
     [read] = content
-    found = copied["fingerprint"]
-    assert (found["size"], found["sha256"]) == (len(read), hashlib.sha256(read).hexdigest())
+    assert logged_fingerprint(copied) == {"size": len(read), "modified_at": READ_AT, "sha256": hashlib.sha256(read).hexdigest()}
+
+
+@pytest.mark.parametrize("process", ["settlement", "efenix"])
+def test_chwila_zmiany_w_odcisku_pliku_zbiorczego_jest_sprzed_odczytu_takze_gdy_plik_zapisano_zaraz_po_nim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, process: str
+) -> None:
+    """Plik zbiorczy zapisany znowu (Autozapis Excela, OneDrive) zaraz po tym, jak Przebieg rozliczeń albo Wycena w
+    efenix przeczytały jego bajty: odcisk w Kopii wejścia ma chwilę zmiany przeczytanej wersji, sprzed odczytu."""
+
+    file_bytes = workbook_files._file_bytes
+
+    def read_then_saved(path: Path) -> bytes:
+        content = file_bytes(path)
+        if path.name == SOURCE_NAME:
+            _saved_at(path, SAVED_AGAIN_AT)
+        return content
+
+    # Jedyny odczyt bajtów skoroszytu w src/ (tests/test_jeden_odczyt_skoroszytu.py).
+    monkeypatch.setattr(workbook_files, "_file_bytes", read_then_saved)
+    with ExitStack() as stack:
+        centrum = COPY_PROCESSES[process](tmp_path, stack)
+        assert isinstance(centrum, SettlingCentrum)
+        _saved_at(centrum.collective_file, READ_AT)
+        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})
+        assert started.status_code == 200, started.json()
+        result = finished_view(centrum.client)["result"]
+
+    assert result["stop_kind"] is None, result["stops"]
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    assert (copied["name"], logged_fingerprint(copied)["modified_at"]) == (SOURCE_NAME, READ_AT)
 
 
 def cells_row(copied: dict[str, Any]) -> int:
@@ -2070,7 +2111,9 @@ def cells_row(copied: dict[str, Any]) -> int:
 
 ORANGE_NUMBER = int(ORANGE_VALUE)
 PHONE_NUMBER = int(PHONE.replace(" ", ""))
-"""Numer Orange i telefon, które tata wpisał w komórkę bez innego tekstu, więc Excel trzyma je jako liczby."""
+PHONE_WITH_PREFIX_NUMBER = int(f"48{PHONE_NUMBER}")
+"""Numer Orange i telefon, które tata wpisał w komórkę bez innego tekstu, więc Excel trzyma je jako liczby; telefon
+wpisany z ``+48`` albo ``0048`` format General trzyma bez ``+`` i zer (``PHONE_WITH_PREFIX_NUMBER``)."""
 
 
 @dataclass(frozen=True)
@@ -2091,10 +2134,12 @@ def _numbers_preparation(tmp_path: Path, _: ExitStack) -> NumbersInCells:
 
 
 def _numbers_settlement(tmp_path: Path, _: ExitStack) -> NumbersInCells:
-    """Excel zapisał numer Orange w I18 jako ułamek (``4.801234567E9``), a ten sam numer w AT18 jako liczbę całkowitą."""
+    """Excel zapisał numer Orange w I18 jako ułamek (``4.801234567E9``), a ten sam numer w AT18 jako liczbę całkowitą;
+    telefon wpisany z ``+48`` w AQ18 to liczba ``48600123456``."""
 
     centrum = settling_centrum(tmp_path)
-    write_quantity_source(centrum.collective_file, [{"I": ORANGE_NUMBER, "AT": ORANGE_NUMBER, "AS": PHONE_NUMBER}])
+    cells: dict[str, CellValue] = {"I": ORANGE_NUMBER, "AT": ORANGE_NUMBER, "AS": PHONE_NUMBER, "AQ": PHONE_WITH_PREFIX_NUMBER}
+    write_quantity_source(centrum.collective_file, [cells])
     as_fraction = re.compile(rb'(<c r="I18"[^>]*><v>)' + ORANGE_VALUE.encode() + rb"(</v>)")
 
     def fraction(name: str, data: bytes) -> bytes:
@@ -2105,7 +2150,7 @@ def _numbers_settlement(tmp_path: Path, _: ExitStack) -> NumbersInCells:
         return changed
 
     rewrite_parts(centrum.collective_file, fraction)
-    return NumbersInCells(centrum, {18: {"AT": "[numer Orange]", "AS": "[telefon]"}})
+    return NumbersInCells(centrum, {18: {"AT": "[numer Orange]", "AS": "[telefon]", "AQ": "[telefon]"}})
 
 
 def _numbers_pricing(tmp_path: Path, stack: ExitStack) -> NumbersInCells:
@@ -2138,8 +2183,9 @@ def test_numer_orange_i_telefon_zapisane_przez_excel_jako_liczba_nie_wychodza_do
 ) -> None:
     """Numer Orange i telefon, które Excel trzyma jako liczbę, strażnik porównuje w tekście, który pokazuje Excel (numer
     zapisany jako ułamek to jego cyfry), więc liczba w innej komórce Kopii wejścia i w ilości przy zleceniu Wyceny w
-    efenix (z pliku, ze strony zlecenia i wpisana w oknie) staje się w całości maską z uwagą techniczną o jej miejscu;
-    nic z tego nie wychodzi do pliku Logów ani do Skrzynki Zgłoszeń."""
+    efenix (z pliku, ze strony zlecenia i wpisana w oknie) staje się w całości maską z uwagą techniczną o jej miejscu,
+    a telefon, także z ``+48`` zgubionym przez format General, maską ``[telefon]``; nic z tego nie wychodzi do pliku
+    Logów ani do Skrzynki Zgłoszeń."""
 
     with ExitStack() as stack:
         setup = NUMBER_PROCESSES[process](tmp_path, stack)
@@ -2173,4 +2219,5 @@ def test_numer_orange_i_telefon_zapisane_przez_excel_jako_liczba_nie_wychodza_do
     texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
     sent = in_box(box) + [part for issue in box.issues for part in (issue.title, issue.body, *issue.comments)]
     assert any("[numer Orange]" in part for part in sent), "Kopia wejścia w pliku Logów w Archiwum"
-    assert [value for value in (ORANGE_VALUE, str(PHONE_NUMBER)) if any(value in text for text in texts + sent)] == []
+    leaked = (ORANGE_VALUE, str(PHONE_NUMBER), str(PHONE_WITH_PREFIX_NUMBER))
+    assert [value for value in leaked if any(value in text for text in texts + sent)] == []

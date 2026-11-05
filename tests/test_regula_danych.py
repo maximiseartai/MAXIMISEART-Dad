@@ -7,7 +7,10 @@ sprawdzają własności w ``test_wlasnosci_dopasowania_tekstu.py``. Wartości s�
 
 from __future__ import annotations
 
+import pytest
+
 from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, Guarded, free_text
+from tests.fixtures.formy_telefonu import CELL_FORMS, PhoneForm
 
 ADDRESS_NOTE = "Reguła danych: zamaskowano wartość kolumny ADRES w: tekst."
 ORANGE_NOTE = "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: tekst."
@@ -63,3 +66,24 @@ def test_numer_zlecenia_po_krzyzyku_nie_jest_telefonem_a_te_same_cyfry_bez_krzyz
     # NUMER ZL. to „#” i numer, który może wyjść (ADR 0025); dziś ma 8 cyfr, a 9 cyfr to kształt telefonu.
     assert free_text("zlecenie #123456789 zrobione") == "zlecenie #123456789 zrobione"
     assert free_text("zlecenie 123456789 zrobione, oddzwonić +48123456789") == "zlecenie [telefon] zrobione, oddzwonić [telefon]"
+
+
+@pytest.mark.parametrize("form", CELL_FORMS, ids=[form.form for form in CELL_FORMS])
+def test_kazda_forma_telefonu_z_tabeli_adr_0025_wychodzi_tak_jak_mowi_tabela(form: PhoneForm) -> None:
+    """Telefon jest ``[telefon]`` w komórce z tekstem, w wolnym tekście i w komórce, którą Excel trzyma jako liczbę
+    (także z ``+48`` albo ``0048`` zgubionym przez format General), znane granice wychodzą bez maski, a ilość, kwota,
+    ``NUMER ZL.`` i data wychodzą bez zmian; uwagi technicznej telefon nie daje (ADR 0025)."""
+
+    forbidden = ForbiddenValues()
+    guarded: Guarded | None
+    expected: Guarded | None
+    if isinstance(form.value, str):
+        text = form.value if form.masked is None else form.masked
+        guarded, expected = forbidden.guard(form.value, "komórka"), Guarded(text, ())
+        in_text = forbidden.guard(f"oddzwonić {form.value}, potem", "tekst")
+        assert in_text == Guarded(f"oddzwonić {text}, potem", ()), "ta sama forma w wolnym tekście"
+    else:
+        guarded = forbidden.guard_number(form.value, "komórka")
+        expected = None if form.masked is None else Guarded(form.masked, ())
+
+    assert guarded == expected, form.why

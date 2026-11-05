@@ -7,11 +7,12 @@ zleceń w Przygotowaniu pliku zbiorczego (``input_checks.read_register``), Plik 
 te, których komórki ten sam czytnik oddaje pamięci reguły danych (``client_data.ForbiddenValues``). Proces bez Centrum
 (Skrypt dla maszyn) Kopii nie ma, bo nie ma Logów.
 
-W trakcie odczytu Kopia trzyma tylko odwołania do bajtów i wartości, które czytnik i tak ma, i chwilę zmiany pliku.
-Plik po regule danych (``files``) powstaje po końcu procesu, zanim karta pokaże wynik: odcisk (rozmiar, chwila zmiany
-i skrót SHA-256 przeczytanych bajtów) i arkusze z kolumnami po nagłówku i wierszami po numerze, bez zakazanych kolumn i
-bez pustych komórek. Wolny tekst i wartości zakazanych kolumn w innych komórkach, także liczby, maskuje strażnik Logów
-(``run_logs.guarded``), jak w każdym innym polu Logów.
+W trakcie odczytu Kopia trzyma tylko odwołania do bajtów i wartości, które czytnik i tak ma, i chwilę zmiany pliku,
+którą czytnik bierze przed odczytem bajtów (``modified_at``). Plik po regule danych (``files``) powstaje po końcu
+procesu, zanim karta pokaże wynik: odcisk (rozmiar, chwila zmiany i skrót SHA-256 przeczytanych bajtów) i arkusze z
+kolumnami po nagłówku i wierszami po numerze, bez zakazanych kolumn i bez pustych komórek. Wolny tekst i wartości
+zakazanych kolumn w innych komórkach, także liczby, maskuje strażnik Logów (``run_logs.guarded``), jak w każdym innym
+polu Logów.
 
 Kopia niesie wartości komórek, bo na nich proces podejmuje decyzje: wynik, Komunikaty i ślad. Wygląd komórek
 (Wyróżnienia, format liczby, Hiperłącza) proces tylko przenosi do plików, które tworzy, więc go nie ma.
@@ -47,8 +48,8 @@ CellValue = bool | int | float | str | Typed
 
 @dataclass(frozen=True)
 class Fingerprint:
-    """Odcisk przeczytanego pliku: ``size`` i ``sha256`` z przeczytanych bajtów, ``modified_at`` z pliku w chwili
-    odczytu (UTC; ``None``, gdy system jej nie oddał)."""
+    """Odcisk przeczytanego pliku: ``size`` i ``sha256`` z przeczytanych bajtów, ``modified_at`` z pliku tuż przed
+    odczytem (UTC; ``None``, gdy system jej nie oddał)."""
 
     size: int
     modified_at: datetime | None
@@ -126,7 +127,7 @@ class SheetCopy:
 
 @dataclass
 class WorkbookCopy:
-    """Plik w trakcie odczytu: nazwa, przeczytane bajty, chwila zmiany z chwili odczytu i arkusze."""
+    """Plik w trakcie odczytu: nazwa, przeczytane bajty, chwila zmiany sprzed odczytu i arkusze."""
 
     name: str
     content: bytes
@@ -152,14 +153,11 @@ class InputCopy:
     def __init__(self) -> None:
         self._files: list[WorkbookCopy] = []
 
-    def workbook(self, path: Path, content: bytes) -> WorkbookCopy:
-        """Plik ``path`` przeczytany z bajtów ``content``; chwila zmiany pliku jest z tej chwili."""
+    def workbook(self, path: Path, content: bytes, modified: datetime | None) -> WorkbookCopy:
+        """Plik ``path`` przeczytany z bajtów ``content``; ``modified``: chwila zmiany pliku sprzed odczytu bajtów
+        (``modified_at``)."""
 
-        try:
-            modified_at: datetime | None = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
-        except OSError:
-            modified_at = None
-        copy = WorkbookCopy(path.name, content, modified_at)
+        copy = WorkbookCopy(path.name, content, modified)
         self._files.append(copy)
         return copy
 
@@ -167,6 +165,17 @@ class InputCopy:
         """Przeczytane pliki po regule danych, z odciskiem; liczone po końcu procesu, w Logach Uruchomienia."""
 
         return tuple(copy.copied() for copy in self._files)
+
+
+def modified_at(path: Path) -> datetime | None:
+    """Chwila zmiany pliku ``path`` teraz (UTC); ``None``, gdy system jej nie oddał. Czytnik bierze ją przed odczytem
+    bajtów, więc plik zapisany znowu w trakcie albo po odczycie (Autozapis Excela, OneDrive) nie zmienia jej w odcisku.
+    Zapis między tą chwilą a początkiem odczytu daje w odcisku chwilę wcześniejszej wersji; o wersji rozstrzyga skrót."""
+
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+    except OSError:
+        return None
 
 
 def _numbered(values: Values) -> Mapping[int, object]:

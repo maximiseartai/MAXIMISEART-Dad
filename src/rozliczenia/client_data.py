@@ -24,7 +24,9 @@ technika to zwykła treść, nie wyciek kolumny.
 
 Komórka, którą Excel trzyma jako liczbę (numer Orange albo telefon wpisany bez innego tekstu), ma tekst, który Excel
 pokazuje (``shown``): liczba całkowita zapisana jako ułamek to jej cyfry. Tak ją zapamiętuje pamięć i tak ją sprawdza
-strażnik liczby (``ForbiddenValues.guard_number``), który maskuje całą liczbę, bo jej cyfry to cała wartość.
+strażnik liczby (``ForbiddenValues.guard_number``), który maskuje całą liczbę, bo jej cyfry to cała wartość. Format
+General gubi ``+`` i zera z przodu, więc telefon ``+48600123456`` albo ``0048600123456`` to w komórce liczba
+``48600123456``, a strażnik zna ją jako telefon. Tabela form telefonu z wynikiem strażnika i znane granice są w ADR 0025.
 """
 
 from __future__ import annotations
@@ -66,11 +68,14 @@ _HEADERS: Final = {
 
 _WORD: Final = re.compile(r"\w+")
 _PHONE: Final = re.compile(
-    r"(?<![\w+#])(?:(?:\+|00)48[ -]?)?(?:\d{3}[ -]?\d{3}[ -]?\d{3}|\d{2}[ -]\d{3}[ -]\d{2}[ -]\d{2})(?!\w)"
+    r"(?<![\w+#])(?:(?:\+|00)?48[ -]?)?(?:\d{3}[ -]?\d{3}[ -]?\d{3}|\d{2}[ -]\d{3}[ -]\d{2}[ -]\d{2})(?!\w)"
 )
-"""Polski numer telefonu: komórkowy 3-3-3 (ze spacjami, myślnikami albo bez) i stacjonarny 2-3-2-2, z +48 albo bez.
+"""Polski numer telefonu: komórkowy 3-3-3 (ze spacjami, myślnikami albo bez) i stacjonarny 2-3-2-2, z numerem
+kierunkowym ``+48``, ``0048`` albo ``48`` albo bez. ``48`` bez ``+`` i zer to numer, któremu Excel zgubił je w komórce
+(``+48600123456`` to liczba ``48600123456``).
 
-Cyfry zaraz po ``#`` to ``NUMER ZL.`` (``#`` i numer), który może wyjść, więc nie są telefonem.
+Cyfry zaraz po ``#`` to ``NUMER ZL.`` (``#`` i numer), który może wyjść, więc nie są telefonem. Formy telefonu, których
+wzorzec nie zna, to znane granice z ADR 0025.
 """
 _STREET: Final = re.compile(
     r"(?<!\w)(?:ul|os|al|pl)\.[ \t]*(?:\w[\w-]*\.?[ \t]+){1,4}?\d+[^\W\d_]?(?:[ \t]*(?:/|m\.?)[ \t]*\d+[^\W\d_]?)?(?!\w)",
@@ -138,13 +143,15 @@ class ForbiddenValues:
 
         ``None``: tekst liczby nie ma zakazanej wartości ani telefonu. Inaczej cała liczba staje się maską: zakazanej
         kolumny z uwagą techniczną jak w ``guard`` albo ``[telefon]`` bez uwagi, więc z liczby nie zostaje żadna cyfra.
+        Telefonem jest tylko liczba całkowita (także zapisana jako ułamek), bo telefon wpisany w komórkę nie ma części
+        ułamkowej: 9 cyfr albo ``48`` i 9 cyfr, gdy Excel zgubił ``+`` albo ``00`` przed ``48``.
         """
 
         text = shown(value)
         _, columns = self._masked(text)
         if columns:
             return Guarded(" ".join(column.mask for column in _ordered(columns)), _notes(columns, place))
-        if _PHONE.search(text):
+        if (isinstance(value, int) or value.is_integer()) and _PHONE.search(text):
             return Guarded(_PHONE_MASK, ())
         return None
 

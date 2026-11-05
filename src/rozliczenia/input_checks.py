@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Final, TypeAlias
 
@@ -145,9 +146,10 @@ def read_register(
     """Arkusze ze zleceniami Rejestru zleceń albo zatrzymanie, gdy Rejestru nie da się odczytać albo nie ma nagłówków.
 
     ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza, a ``copy`` każdy przeczytany wiersz
-    (``_copied``).
+    (``_copied``) i chwilę zmiany Rejestru sprzed jego odczytu.
     """
 
+    modified = input_copy.modified_at(register)
     with _stops(messages.register_unusable):
         read = readers.register(register, period)
     if forbidden is not None:
@@ -156,16 +158,17 @@ def read_register(
                 for column, header in _FORBIDDEN_HEADERS:
                     forbidden.remember_value(column, row.cells[header].value)
     if copy is not None:
-        _copied(register, read, copy)
+        _copied(register, read, modified, copy)
     return read.sheets
 
 
-def _copied(register: Path, read: RegisterRead, copy: input_copy.InputCopy) -> None:
-    """Odczyt Rejestru w Kopii wejścia: bajty, z których czytnik przeczytał arkusze, i komórki każdej kolumny
-    ``COLUMNS`` bez zakazanych (``_FORBIDDEN_HEADERS``) w jej kolumnie arkusza pod nagłówkiem Rejestru (wiersz 1) oraz
-    puste wiersze z odczytanego zakresu; bez drugiego odczytu pliku, więc Kopia nie zatrzymuje Przygotowania."""
+def _copied(register: Path, read: RegisterRead, modified: datetime | None, copy: input_copy.InputCopy) -> None:
+    """Odczyt Rejestru w Kopii wejścia: bajty, z których czytnik przeczytał arkusze, z chwilą zmiany ``modified`` sprzed
+    odczytu, komórki każdej kolumny ``COLUMNS`` bez zakazanych (``_FORBIDDEN_HEADERS``) w jej kolumnie arkusza pod
+    nagłówkiem Rejestru (wiersz 1) oraz puste wiersze z odczytanego zakresu; bez drugiego odczytu pliku, więc Kopia nie
+    zatrzymuje Przygotowania."""
 
-    workbook = copy.workbook(register, read.content)
+    workbook = copy.workbook(register, read.content, modified)
     forbidden = {header for _, header in _FORBIDDEN_HEADERS}
     for sheet in read.sheets:
         positions = sheet.positions
