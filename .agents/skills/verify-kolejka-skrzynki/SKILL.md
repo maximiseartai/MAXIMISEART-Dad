@@ -197,8 +197,21 @@ and `_Server` in `server.py` (`DEFINITIONS` in `sprawdz_model_kolejki.py`). Only
 rest of their files, is drift. Name these three files here without their
 `src/…` path in backticks: such a path makes the whole file covered.
 
-**Sync commit: `6cc9e712`** (2026-11-05). The checker and the model share it:
+**Sync commit: `e6242e24`** (2026-11-05). The checker and the model share it:
 at this commit both were confirmed to describe the code above. Since the
+previous sync `6cc9e712` only `e6242e24` (#879, #887) changed a covered file:
+`KeyedBox` reads GitHub's lists after its own writes and holds a write whose
+effect only a list shows (How the queue knows what is already there), with the
+file `OPENING_FILE` that `create_app` in `app.py` passes (outside `lifespan`);
+`outbox.py` and `report_box.py` did not change. The checker got `list_lag`,
+a clock that moves with the `RETRY_S` wake, the rule against a waiting note
+without a refusal of the Archiwum and the scopes `watek-okresu-lista`,
+`nowe-issue-lista`, `zgloszenie-lista` and `archiwum-lista`; the model got
+`OpoznienieListy`, `niewidoczne`, `wydanieNiewidoczne`, `zakladanie`, `pamiec`,
+`pamiecWydania`, `odpowiedz`, `odczyt`, the ghost `falszywe`, the actions
+`Nadaza`, `NadazaWydanie` and `Przedawnienie`, GitHub's 422 to a second
+Archiwum and the configuration `archiwum-lista`. Both mutation scripts follow.
+At `6cc9e712`, since the
 previous sync `50fd9abb` only `6cc9e712` (round 2 of #860) changed a covered
 file: `GitHubReportBox.open_archive` reads GitHub's 409 to a new Release in a
 repository without a commit as `Rejected` instead of `Unreachable`, so the
@@ -292,7 +305,7 @@ them, `6f94edb8` was the sync of both, and since the checker's earlier sync
 model describes. To see whether they need another look:
 
 ```bash
-git log --oneline 6cc9e712..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
+git log --oneline e6242e24..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
 ```
 
 A change to the three definitions above shows as a `UWAGA:` line of
