@@ -1,6 +1,6 @@
 ---
 name: verify-wznowienie-wyceny-efenix
-description: Model-check with TLA+ (TLC) that Wycena w efenix, across the Uruchomienia of one period, never loads Wycena Emmetta over an order that has quantities, never writes into an order with a pricing that Dad changed by hand (also never adds back a quantity he removed), puts a Znacznik efenix only beside an order priced as in the file, and gives Dad „wycena już jest i się różni” only for an order he changed, under every order of window Zatrzymania, Centrum switching off, failed writes of the Ślad Wyceny Emmetta (also the write ahead of each quantity) and Dad's own changes in efenix between Uruchomienia. Use when a change touches `save`, `_priced`, `_outcome`, `_after_emmett`, `_entered`, `_mark` or `_efenix_stops` in `src/rozliczenia/efenix_pricing.py`, `EmmettTrace` in `src/rozliczenia/efenix_emmett_trace.py`, `as_left_after_emmett`, `to_enter`, `priced_differently` in `src/rozliczenia/efenix_positions.py`, or `load_emmett`, `enter_quantity` in `src/rozliczenia/efenix_browser.py`, or when a resumed Wycena w efenix changed an order it should only have compared.
+description: Model-check with TLA+ (TLC) that Wycena w efenix, across the Uruchomienia of one period, never loads Wycena Emmetta over an order that has quantities, never writes into an order with a pricing that Dad changed by hand (also never adds back a quantity he removed), puts a Znacznik efenix only beside an order priced as in the file, and gives Dad „wycena już jest i się różni” only for an order he changed, under every order of window Zatrzymania, Centrum switching off, failed writes of the Ślad Wyceny Emmetta (also the write ahead of each quantity) and Dad's own changes in efenix between Uruchomienia. Use when a change touches `save`, `_priced`, `_outcome`, `_after_emmett`, `_entered`, `_WrittenAhead`, `_TraceNotSaved`, `_mark` or `_efenix_stops` in `src/rozliczenia/efenix_pricing.py`, `EmmettTrace` in `src/rozliczenia/efenix_emmett_trace.py`, `as_left_after_emmett`, `to_enter`, `priced_differently` in `src/rozliczenia/efenix_positions.py`, or `load_emmett`, `enter_quantity` in `src/rozliczenia/efenix_browser.py`, or when a resumed Wycena w efenix changed an order it should only have compared.
 pilnuje:
   - src/rozliczenia/efenix_pricing.py
   - src/rozliczenia/efenix_emmett_trace.py
@@ -57,23 +57,23 @@ you keep the two in step. Each model action is one indivisible step of this code
 | --- | --- |
 | `Start` | `efenix_pricing.py` `price_orders.save`: `EmmettTrace(trace_file)` reads the trace file once (`_read`, `_read_secret`; a missing or unreadable file or key, or an entry without `entering`, is no trace), then the orders of the scope in order |
 | `Otworz` | `_outcome`: `efenix.search`, `listing`, `open_order`, then the decision on the page: amount 0 goes to Wycena Emmetta; `priced_differently(...) is None` is `Ready`; `emmett is None or ... not as_left_after_emmett(emmett, trace.entered(number), ...)` (`efenix_positions.py`: the page has exactly Emmett's quantities and the quantities the trace has as `entering`, every other position empty) is `OrderError(differs)`; otherwise `_after_emmett` with `to_enter` of the page |
-| `ZaladujEmmetta` | `_outcome`: `efenix.load_emmett()` up to the click of „Załaduj do zlecenia”, after which efenix holds Wycena Emmetta (`efenix_browser.BrowserEfenix.load_emmett`, `_answer(_LOAD_EMMETT, …)`); an answer that refuses it (redirect, 4xx/5xx, `result: nok`) raises before the page is read, so it is `Zatrzymanie` in place of this step and efenix holds no Wycena Emmetta (#877) |
+| `ZaladujEmmetta` | `_outcome`: `efenix.load_emmett()` up to the click of „Załaduj do zlecenia”, after which efenix holds Wycena Emmetta (`efenix_browser.BrowserEfenix.load_emmett`, `_answer(_LOAD_EMMETT, …)`); an answer that refuses it (redirect, 4xx/5xx, `result: nok`) raises before the page is read, so it is `Zatrzymanie` in place of this step when efenix did not load Wycena Emmetta, and `Zatrzymanie` right after it (known finding 1) when efenix loaded it and still answered 5xx (#877) |
 | `OdczytPoEmmetcie` | `load_emmett` reads the reloaded page (`_read_order`), then `trace.loaded(number, emmett)` (`EmmettTrace.loaded`, `_save`: state „Emmett załadowany” with an empty `entering`); a failed write does not stop |
 | `BrakPozycji` | `_outcome`: `missing_positions(..., PageRead.AFTER_EMMETT)` is `OrderError` after `load_emmett` and before `trace.loaded` |
-| `Zapowiedz` | `_entered`: `trace.entering(number, position, quantity)` (`EmmettTrace.entering`, `_save`) before each `enter_quantity`; when it returns `False`, `StopError(messages.emmett_trace_not_saved(...))` without the quantity, and `save` (`except StopError`) calls `_mark` |
-| `Wpisz` | `_entered`: `efenix.enter_quantity(position, quantity)` up to the moment efenix saved the quantity (`BrowserEfenix.enter_quantity`, `_answer(_SAVE_QUANTITY, …)`) |
-| `Odmowa` | `_entered`: `except LoggedOut: trace.not_entered(number, position)` and `raise`; `BrowserEfenix.enter_quantity` raises `LoggedOut` only for a save answer redirected to the login page or with `result: nok`, so efenix did not save the quantity |
+| `Zapowiedz` | `_WrittenAhead.enter_quantity` (the window `_priced` builds under the paced window of `Pacing.window`, so after the human-pace pause before the quantity): `trace.entering(number, position, quantity)` (`EmmettTrace.entering`, `_save`) right before the window's `enter_quantity`; when it returns `False`, `_TraceNotSaved` (cause `trace.failure`) without the quantity, which `_efenix_stops` turns into `StopError(messages.emmett_trace_not_saved(...), facts=PricingStopped(...))`, and `save` (`except StopError`) calls `_mark` |
+| `Wpisz` | `_WrittenAhead.enter_quantity` → the traced window's `enter_quantity(position, quantity)` up to the moment efenix saved the quantity (`BrowserEfenix.enter_quantity`, `_answer(_SAVE_QUANTITY, …)`) |
+| `Odmowa` | `_WrittenAhead.enter_quantity`: `except LoggedOut: trace.not_entered(number, position)` and `raise`; `BrowserEfenix.enter_quantity` raises `LoggedOut` only for a save answer redirected to the login page or with `result: nok`, so efenix did not save the quantity |
 | `Potwierdz` | `enter_quantity` after the save: the JSON answer and the amount on the page; after the last position `_entered` compares the amount with `Kwota` (`same_amount`) |
 | `KoniecZlecenia` | `_priced`: `trace.finished(number)` after `_outcome` returned (`EmmettTrace.finished` writes „gotowe” only for an order in state „Emmett załadowany”), then `journal.ended` and the next order |
-| `Zatrzymanie` | `LoggedOut`, `UnexpectedPage`, `WindowClosed`, `EfenixUnreachable` from any window action (`_efenix_stops`): `StopError` passes through `_priced` without `trace.finished`, and `save` (`except StopError`) calls `_mark` with the results before it |
+| `Zatrzymanie` | `LoggedOut`, `UnexpectedPage`, `WindowClosed`, `EfenixUnreachable` from any window action: the window's exception passes through `_priced` without `trace.finished`, `_efenix_stops` in `save` turns it into `StopError`, and `save` (`except StopError`) calls `_mark` with the results before it |
 | `Znaczniki` | `save`: `_mark` (`mark_ready` for every `Ready` row), also after `StopError`, then the end of the Uruchomienie |
 | `Zgasniecie` | none: Centrum switches off or is killed; memory is gone, the trace file and efenix stay, no Znaczniki |
 | `Tata` | none: Dad changes a quantity in efenix by hand while no Uruchomienie runs (`AtrapaEfenix.edit` in the tests) |
-| `Udany`, `Nieudany` (`Zapisz`) | `EmmettTrace._save` returns whether it wrote: `_replace` (temporary file and `os.replace`) of the whole trace from memory; when it fails, `self._path.unlink` in `suppress(OSError)`, and when that fails too, the previous file stays |
+| `Udany`, `Nieudany` (`Zapisz`) | `EmmettTrace._save` returns whether it wrote: `_replace` (temporary file and `os.replace`) of the whole trace from memory, which returns its `OSError` (kept in `failure`); when it fails, `self._path.unlink` in `suppress(OSError)`, and when that fails too, the previous file stays |
 
 The script compares these definitions with the Sync commit (`model/definicje.json`):
-`save`, `_mark`, `_efenix_stops`, `_priced`, `_outcome`, `_after_emmett`, `_entered` in
-`src/rozliczenia/efenix_pricing.py`; `EmmettTrace`, `_replace`, `_read_secret`, `_read`, `_is_entry` in
+`save`, `_mark`, `_efenix_stops`, `_priced`, `_outcome`, `_after_emmett`, `_entered`, `_TraceNotSaved`, `_WrittenAhead`
+in `src/rozliczenia/efenix_pricing.py`; `EmmettTrace`, `_replace`, `_read_secret`, `_read`, `_is_entry` in
 `src/rozliczenia/efenix_emmett_trace.py`; `as_left_after_emmett`, `to_enter`, `priced_differently`, `same_amount`,
 `emmett_conflicts` in `src/rozliczenia/efenix_positions.py`; `load_emmett`, `enter_quantity` in
 `src/rozliczenia/efenix_browser.py`. A change elsewhere in these files (Sprawdzanie, Odczyt danych, Logi, the window's
@@ -81,11 +81,17 @@ classification of other failures) does not move the model. A change that makes a
 write the trace file or decide whether an order is finished does, though no definition above changes: add it to the
 table and to `model/definicje.json`.
 
-Sync commit: `ba0b16db8` (2026-11-05, #877). Since `dde575566` only `load_emmett` changed: a refused „Załaduj do zlecenia” now stops before the page is read instead of reading the reloaded page as an empty Wycena Emmetta, which is the `Zatrzymanie` the model already has in place of `ZaladujEmmetta`; the model did not change and the check gave `WZNOWIENIE WYCENY OK, ZNANE ZNALEZISKA: 11` at it. At `dde575566` (the fix of #864 and #865) every row of the table was checked against the
-code at this commit, and each path below was replayed on that code with the Atrapa efenix. The model gained the write
-ahead of each quantity (`Zapowiedz`), its withdrawal after `LoggedOut` (`Odmowa`), the strict `JakPoEmmetcie` and a
-third position, because the code now records each quantity in the trace before efenix can save it, and with one
-position to enter the model could not see a resume in the middle of an order.
+Sync commit: `c490d2497` (2026-11-05, the fix of #881 on top of #877). Every row of the table was checked against the
+code at this commit. The model did not change, only the code names in its comments: the write ahead and its withdrawal
+moved from `_entered` to the window `_WrittenAhead`, which the paced window wraps, so the write ahead comes after the
+human-pace pause instead of before it, and a failed write ahead stops through `_efenix_stops` with `PricingStopped`; the
+model has no time, so `Zapowiedz` and `Wpisz` stay two steps with a stop between (known finding 3). On the previous
+Sync commit `ba0b16db8` (#877) only `load_emmett` changed: a refused „Załaduj do zlecenia” stops before the page is
+read instead of reading the reloaded page as an empty Wycena Emmetta, which is the `Zatrzymanie` the model already has
+in place of `ZaladujEmmetta`, or right after it when efenix loaded Wycena Emmetta anyway. On `dde575566` (the fix of
+#864 and #865) the model gained the write ahead of each quantity (`Zapowiedz`), its withdrawal after `LoggedOut`
+(`Odmowa`), the strict `JakPoEmmetcie` and a third position, and each path below was replayed on that code with the
+Atrapa efenix.
 
 ## Run
 
@@ -155,8 +161,14 @@ each leaves efenix unchanged or keeps everything Dad entered or removed.
 3. **`przerwanie-przed-zapisem-ilosci`, BladTylkoPoZmianieTaty.** A Zatrzymanie other than `LoggedOut`, or a
    switch-off, after the write ahead of a quantity and before efenix saved it leaves in the trace a quantity efenix does
    not have. The page cannot tell it from a quantity Dad removed, so the next Uruchomienie gives `EFENIX_WYCENA_INNA` and
-   changes nothing. The window includes the human-pace pause before the save (`efenix_pace`, 2 s), in which only a
-   switch-off can happen. `test_odciecie_efenix_od_kazdego_zadania_wyceny_…[12-action_save_index.php-CUT]` pins it.
+   changes nothing. `test_odciecie_efenix_od_kazdego_zadania_wyceny_…[12-action_save_index.php-CUT]` pins it. Since
+   #881 the write ahead comes after the human-pace pause (`efenix_pace`, 2 s), right before the window's save action
+   (`_WrittenAhead` under `Pacing.window`), so a switch-off in the pause no longer causes this finding:
+   `test_zgasniecie_centrum_w_przerwie_tempa_przed_iloscia_daje_wznowienie_ktore_konczy_zlecenie_jak_jeden_przebieg`
+   resumes such an order like one run. The window is now the save action itself: the field fill, Enter and the request.
+   A tab Dad closes in the pause still causes it, because the window learns of the closed tab only in that action
+   (`WindowClosed` with `Closed.DURING_ACTION`, which cannot tell a closed tab before the request from one during it).
+   The model has no time, so it is unchanged: `Zapowiedz` and `Wpisz` were and stay two steps with a stop between.
 4. **`tata-wpisal-ilosc-ze-sladu`, ZmianaTatyZostaje.** After the stop of 3, Dad enters by hand exactly the quantity the
    tool was about to enter in that position: the page is the same as after the tool's own save, so the next Uruchomienie
    enters the remaining quantities of the file. Nothing Dad entered or removed changes; the two pages cannot be told

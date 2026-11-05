@@ -86,6 +86,12 @@ class Row:
 
 
 EMPTY_REPOSITORY_TEST: Final = "test_odmowa_archiwum_zatrzymuje_tylko_plik_logow_a_zgloszenie_za_nimi_dochodzi_w_tym_samym_przejsciu_bez_komunikatu"
+# Kolejka wysyłki na atrapie GitHuba w pamięci (``GitHubOnTransport``): zakłada Archiwum, wysyła plik, po Diagnozie usuwa
+# go i wysyła nowszy.
+QUEUE_ARCHIVE_TEST: Final = "test_skrzynka_githuba_zaklada_archiwum_okresu_wysyla_plik_a_po_diagnozie_podmienia_go_bez_drugiego_pliku"
+SAME_TAG_TEST: Final = "test_archiwum_z_tagiem_ktory_juz_ma_release_to_odmowa_tresci_a_archiwum_zostaje_jedno"
+SAME_NAME_TEST: Final = "test_plik_o_nazwie_ktora_jest_juz_w_archiwum_to_odmowa_tresci_a_pierwszy_plik_zostaje"
+ARCHIVE_TEST: Final = "test_archiwum_okresu_to_release_z_tagiem_z_listy_wydan_repozytorium_z_jego_plikami"
 
 
 def _box(name: str) -> str:
@@ -227,6 +233,94 @@ MAPPING: Final = (
         "usuniete-issue",
         "poprawka",
         (_box("test_odmowa_przy_poprawce_komentarza_to_odmowa_skrzynki[404]"),),
+    ),
+    Row(
+        "archiwum",
+        "archiwum-brak",
+        "archiwa",
+        (_box("test_bez_release_z_tagiem_okresu_archiwum_jeszcze_nie_ma"),),
+    ),
+    Row(
+        "archiwum",
+        "zalozenie",
+        "zalozenie-archiwum",
+        (
+            _box("test_zalozone_archiwum_to_release_z_tagiem_ktory_nie_jest_najnowszym_wydaniem"),
+            _box(QUEUE_ARCHIVE_TEST),
+        ),
+    ),
+    Row(
+        "archiwum",
+        "zalozenie-tego-samego-tagu",
+        "zalozenie-archiwum",
+        (_box(SAME_TAG_TEST),),
+    ),
+    Row(
+        "archiwum",
+        "znalezienie-po-tagu",
+        "archiwa",
+        (_box(ARCHIVE_TEST), _box(QUEUE_ARCHIVE_TEST),),
+    ),
+    Row(
+        "archiwum",
+        "wysylka-pliku",
+        "wysylka-pliku",
+        (
+            _box("test_plik_idzie_na_adres_wysylki_plikow_z_nazwa_i_etykieta_a_wynik_to_plik_archiwum"),
+            _box(QUEUE_ARCHIVE_TEST),
+        ),
+    ),
+    Row(
+        "archiwum",
+        "wysylka-pliku",
+        "pliki-archiwum",
+        (_box(ARCHIVE_TEST), _box(QUEUE_ARCHIVE_TEST),),
+    ),
+    Row(
+        "archiwum",
+        "plik-tej-samej-nazwy",
+        "wysylka-pliku",
+        (_box(SAME_NAME_TEST),),
+    ),
+    Row(
+        "archiwum",
+        "pliki-strony",
+        "pliki-archiwum",
+        (_box("test_pliki_archiwum_sa_zbierane_ze_wszystkich_stron"),),
+    ),
+    Row(
+        "archiwum",
+        "podmiana-pliku",
+        "usuniecie-pliku",
+        (_box("test_usuniety_plik_archiwum_to_odpowiedz_bez_tresci"), _box(QUEUE_ARCHIVE_TEST),),
+    ),
+    Row(
+        "archiwum",
+        "podmiana-pliku",
+        "wysylka-pliku",
+        (_box(QUEUE_ARCHIVE_TEST),),
+    ),
+    Row(
+        "archiwum",
+        "podmiana-pliku",
+        "pliki-archiwum",
+        (_box(QUEUE_ARCHIVE_TEST),),
+    ),
+    # Zły klucz w każdym kroku Archiwum: atrapa 401 ``Bad credentials``, jak GitHub; lista Archiwów po nim idzie kluczem
+    # klienta (200).
+    *(
+        Row(
+            "archiwum",
+            "zly-klucz",
+            kind,
+            (_box(f"test_odmowa_autoryzacji_przy_archiwum_to_odmowa_skrzynki[{operation}]"), *also),
+        )
+        for kind, operation, also in (
+            ("archiwa", "archive", (_box(ARCHIVE_TEST),)),
+            ("zalozenie-archiwum", "open_archive", ()),
+            ("wysylka-pliku", "upload", ()),
+            ("usuniecie-pliku", "remove", ()),
+        )
     ),
     Row(
         "aktualnosc",

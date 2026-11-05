@@ -66,10 +66,11 @@ Preconditions:
 - An issue opened with a label the repository does not have gets the label: GitHub creates it (with an OAuth key and
   with the fine-grained key, both recorded). Cleanup removes it only because the run's ledger saw it appear.
 - `open_archive` in a repository without a commit: 422 `Repository is empty.` with both keys on 2026-11-05, while
-  the constant `_EMPTY_REPOSITORY` in `report_box.py` and the fake `GitHubOnTransport` say 409 `Git Repository is
-  empty.` (#860, the real Skrzynka 2026-11-04); the docstring of `open_archive` names both answers. Both give
-  `Rejected`. Why the real Skrzynka answered 409 is not settled.
-- The Archiwum's files (upload, a list of files over a page, a file of the same name, removal) need a Release, and a
-  Release needs a commit: the empty trial repository cannot have one, so they are `NIESPRAWDZONE` until a second trial
-  repository with a commit exists.
+  the constant `_EMPTY_REPOSITORY` in `report_box.py` says 409 `Git Repository is empty.` (#860, the real Skrzynka
+  2026-11-04); the docstring of `open_archive` names both answers, and the fake `GitHubOnTransport` plays both
+  (`EMPTY_REPOSITORY_ANSWERS` in `tests/test_skrzynka_zgloszen_github.py`). Both give `Rejected`. Why the real
+  Skrzynka answered 409 is not settled.
+- The Archiwum's files (upload, a list of files over a page, a file of the same name, removal, the download link) need
+  a Release, and a Release needs a commit, so the feature `archiwum` drives them in the second trial repository, which
+  has one.
 - Editing another account's comment and GitHub's rate limits are not driven (`NIESPRAWDZONE`).

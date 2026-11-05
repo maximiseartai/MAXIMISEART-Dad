@@ -2171,8 +2171,10 @@ def test_slad_ktorego_nie_da_sie_zapisac_ani_usunac_po_skonczonym_zleceniu_nie_p
     replace = efenix_emmett_trace._replace
     unlink = Path.unlink
 
-    def replace_unless_finished(path: Path, text: str) -> bool:
-        return not (path.name == trace_name and '"gotowe"' in text) and replace(path, text)
+    def replace_unless_finished(path: Path, text: str) -> OSError | None:
+        if path.name == trace_name and '"gotowe"' in text:
+            return PermissionError("plik trzyma inny program")
+        return replace(path, text)
 
     def unlink_refused(self: Path, missing_ok: bool = False) -> None:
         if self.name == trace_name:
@@ -2223,3 +2225,43 @@ def test_slad_nie_zapisuje_z_wyprzedzeniem_ani_nie_wycofuje_ilosci_zlecenia_bez_
     refused = trace.entering("9901", "019", 2)
 
     assert (refused, trace.entered("9901"), (tmp_path / "slad").exists()) == (False, {}, False)
+
+
+# --- Zapis z wyprzedzeniem po przerwie tempa ludzkiego (#881) -----------------------------------------------------------
+
+
+class _SwitchedOff(BaseException):
+    """Centrum zgasło: proces kończy się w miejscu, w którym był, bez Zatrzymania i bez Znaczników efenix."""
+
+
+def test_zgasniecie_centrum_w_przerwie_tempa_przed_iloscia_daje_wznowienie_ktore_konczy_zlecenie_jak_jeden_przebieg(
+    tmp_path: Path, page: Page
+) -> None:
+    """Emmett wpisuje O (012), a proces ma wpisać T (019). Centrum gaśnie w przerwie tempa ludzkiego przed zapisem T,
+    zanim okno wyśle żądanie: efenix nie ma T, a ślad nie ma jej zapisu z wyprzedzeniem, bo ten stoi po przerwie, tuż przed
+    żądaniem (#881). Ponowne uruchomienie dokańcza więc zlecenie i daje ten sam stan efenix i Znaczniki co jeden przebieg,
+    a nie błąd „wycena już jest i się różni”."""
+
+    filled = {"012": 1, "019": 2}
+    order = Order("#5501", cells={"O": 1, "T": 2}, amount=_au(filled), emmett={"012": 1})
+    source = write_collective_file(tmp_path, [order])
+    clock = _FakeTime()
+    pauses = 0
+
+    def switching_off_before_quantity(seconds: float) -> None:
+        # Przerwy przed zapisami: 1 przed datą wykonania, 2 przed Wyceną Emmetta, 3 przed ilością T.
+        nonlocal pauses
+        clock.pause(seconds)
+        pauses += 1
+        if pauses == 3:
+            raise _SwitchedOff
+
+    with atrapa_efenix([order.in_efenix("951")], clock=clock) as atrapa:
+        with pytest.raises(_SwitchedOff):
+            _run(source, page, atrapa.url, pace=Pace(sleep=switching_off_before_quantity, clock=clock))
+        switched_off = _pricing(atrapa)["5501"]
+        again = _run(source, page, atrapa.url)
+        pricing = _pricing(atrapa)
+
+    assert switched_off == ({"012": 1}, DAY, 1)
+    assert (again.result, _errors(again), pricing, _marked(source)) == ("OK", [], {"5501": (filled, DAY, 1)}, [18])
