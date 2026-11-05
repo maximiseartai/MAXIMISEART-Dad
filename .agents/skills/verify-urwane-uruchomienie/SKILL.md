@@ -104,8 +104,9 @@ method): `PricingJournal`, `RunEnded`, `_read`, `_remove`, `InterruptedPricings`
 `outbox.py`; `_start`, `_listen_when_released` in `launcher.py`; `replace_atomically` in `atomic_file.py`; `save` in
 `efenix_pricing.py`; `run_process` in `process_run.py`. Every code name in the table above is one of them, except four
 left out on purpose: `RunLog` as a whole (the schema of the Logs file, which changes with every new field; the model
-reads only `ending`, whose values are `LoggedEnding`), `_priced` and `_outcome` (`ZmianaWEfenix` needs only that `save`
-calls `journal.begun` before them, which `save` holds), `metrics_saved` and the Historia (no step of this path reads
+reads only `ending`, whose values are `LoggedEnding`), `_priced`, `_outcome`, `efenix_trace.traced` and `StopError`
+(`ZmianaWEfenix` and `Zatrzymanie` need only their place in `save` after `journal.begun` and before `journal.ended`,
+which `save` holds), `metrics_saved` and the Historia (no step of this path reads
 them since #870/#871: `RunCards` and the metrics files are the card's, ADR 0017), and `create_app` (see below). Three
 changes move the model without changing a definition, so look for them in the diff: the call `interrupted.close()` in
 `create_app` leaving its place right after `interrupted = InterruptedPricings(...)`, the `journal` that `create_app`
@@ -115,15 +116,17 @@ definitions. Add such code to the table and to `model/definicje.json`. The table
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `ef64b4a67` (2026-11-05, PR #863 after its merge of `main` with #883).
-Every row of the table was checked against the code at this commit. The model did not change: #863 makes `guarded` mask
-also numbers in the fields with values from Dad's cells (`READ_VALUES`) and the phone with `48` without `+`, and puts
-the notes about the Kopia wejścia in `input_copy_notes`, but `RunLogs.guard` still calls it in one step and it stays
-idempotent (`Straz`). The fix of #881 (#883) changed `save` only in what it passes to `_priced` (the pace, which
-`_priced` now puts over its write-ahead window) and in the facts of a Zatrzymanie, while `journal.begun` still comes
-before `efenix_trace.traced` and `_priced`, and `journal.ended` after the result. Each known finding below was replayed
-at `5e1905142` (`historia-niezapisana` on `main` 86677b151, whose `src/` is the same); #863 changes none of the code
-they run through except the guard, which only masks more.
+Sync commit: `4cb7154e4` (2026-11-05, round 2 of #888 on `main` after #863 and #886).
+Every row of the table was checked against the code at this commit, and each of the four known findings below was
+replayed on it. Since the previous Sync commit `ef64b4a67` (#863), the model lost the Historia and got the end entry
+(`WpisKonca`), because the start now decides from the journal alone (#870/#871), and it got a failed write that leaves
+the whole first line on the disk and the `Zatrzymanie` at an order: with them a Wycena can reach its result with that
+line as its only entry, and `run_ended` without `_remove` for such a journal gave it Logi Urwanego Uruchomienia that
+replaced its Logi with the result. Of the definitions above, #863 changed only `guarded`, which now masks also numbers
+in the fields with values from Dad's cells (`READ_VALUES`) and the phone with `48` without `+`, and puts the notes about
+the Kopia wejścia in `input_copy_notes`; `RunLogs.guard` still calls it in one step and it stays idempotent (`Straz`).
+#886 changed none of them, and `save` still calls `journal.begun` before `efenix_trace.traced` and `_priced`, and
+`journal.ended` after the result.
 
 ## Run
 
