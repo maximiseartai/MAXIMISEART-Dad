@@ -53,14 +53,55 @@ COMPARED_WITH_REFUSED = Mutation(
     NEW,
 )
 
+OWN_BYTES_REPLACED = Mutation(
+    "podmiana, gdy INTERMAX zmienił się po odczycie, najpierw zapisuje na nim nowy plik runu",
+    (
+        Edit(
+            REPLACE,
+            "                disk.replace(temporary, target)\n",
+            "                seen = target.read_bytes()\n"
+            "                if seen != current:\n"
+            "                    target.write_bytes(content)\n"
+            "                try:\n"
+            "                    disk.replace(temporary, target)\n"
+            "                except BaseException:\n"
+            "                    if seen != current:\n"
+            "                        target.write_bytes(seen)\n"
+            "                    raise\n",
+        ),
+    ),
+    EXPLORER,
+    "zmiana pracownika, którą OneDrive wgrał po odczycie, przepada pod plikiem runu zapisanym przed podmianą",
+    NEW,
+)
+COPY_OF_NEW = Mutation(
+    "Kopia INTERMAX z nowym plikiem runu, gdy INTERMAX zmienił się przed zapisem Kopii",
+    (
+        Edit(
+            REPLACE,
+            "            disk.create(copy.path, current)\n",
+            "            disk.create(copy.path, current if register.read_bytes() == current else content)\n",
+        ),
+    ),
+    EXPLORER,
+    "po zmianie pracownika żadna Kopia nie ma ani tej zmiany, ani INTERMAX, który run przeczytał",
+    NEW,
+)
+
+CHANGE_AFTER_READ: Final[Mapping[str, tuple[Mutation, ...]]] = {
+    "came_before": (READ_BEFORE_PAUSE,),
+    "refusals_after": (COMPARED_WITH_REFUSED,),
+    "lost": (OWN_BYTES_REPLACED,),
+}
 BOUNDARIES: Final[Mapping[str, Mapping[str, tuple[Mutation, ...]]]] = {
-    name: {"came_before": (READ_BEFORE_PAUSE,), "refusals_after": (COMPARED_WITH_REFUSED,)}
-    for name in ("BEZ_UTRATY_ZMIAN", "KOPIA_ZASTAPIONEGO")
+    "BEZ_UTRATY_ZMIAN": CHANGE_AFTER_READ,
+    "KOPIA_ZASTAPIONEGO": {**CHANGE_AFTER_READ, "copy": (COPY_OF_NEW,)},
 }
 """Broken variants just outside each part of the shape of each known finding of the explorer (``FindingShape``), by
 its name and part: the same harm as the finding's, but with that one part other than its story says, so each must give
 a new violation (#920). ``tests/test_mutacje_skilli.py`` reds an entry of ``KNOWN_FINDINGS`` with a part without one
-here. Both findings share their shape, and the same worker's change breaks both rules."""
+here. Both findings share the parts of how the worker's change was lost, and the same worker's change breaks both
+rules; only KOPIA_ZASTAPIONEGO has a part for the Kopia."""
 
 MUTATIONS = (
     Mutation(

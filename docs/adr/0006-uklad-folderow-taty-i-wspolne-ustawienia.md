@@ -79,7 +79,9 @@ Windows.
 - W układzie folderów taty Folder okresu zawsze istnieje przed zapisem, więc
   pliki okresu trafiają do niego dwoma przeniesieniami. Ryzyko z
   [ADR 0005](0005-przerwana-publikacja-plikow-okresu.md) (samo Rozliczenie
-  wewnętrzne po przerwanym zapisie) dotyczy tam każdego zapisu. Nadal jest
+  wewnętrzne po procesie zamkniętym między dwoma przeniesieniami albo po
+  nieudanym drugim, zanim wycofanie usunęło pierwszy plik) dotyczy tam każdego
+  zapisu. Nadal jest
   wykrywane przez Nienadpisywanie.
 - Puste pliki okresu przygotowane z góry blokują Przygotowanie pliku zbiorczego
   (Nienadpisywanie). Tata zakłada z góry tylko foldery tygodni, a pliki tworzy

@@ -642,9 +642,9 @@ class RiskShape:
     new violation (``tests/test_mutacje_skilli.py``). A part that admits every member of its enum restricts nothing and
     has none: the way of ``#774``, and the step of ``przerwanie-przed-zapisem-ilosci``, whose place is its state
     (``left``), because the Ślad has a quantity ahead only after the window read the reloaded page, and each request
-    of the order after that is that page, its files or a quantity; a step outside them takes a request outside
-    ``EXPECTED_CALLS`` or an order run 1 went past, which other checks report. ``None`` (another order, or a step the
-    proxy cannot tell) stays outside every step."""
+    of the order after that is that page, its files or a quantity. ``ROLE_OF`` tells a request by its occurrence
+    (``Counter``), so a request of an earlier step sent again after that page is an occurrence of the next order or of
+    none, and ``interrupted_at`` gives ``None``, which stays outside every step, as does a step the proxy cannot tell."""
 
     at: frozenset[Role]
     interruptions: frozenset[Interruption]

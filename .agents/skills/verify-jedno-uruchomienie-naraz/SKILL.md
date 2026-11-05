@@ -36,7 +36,9 @@ table, above all the parts modelled by hand, whose change the check cannot see.
   Uruchomienie thread is a daemon, so the end of the Python process kills it
   mid-work. Dad saw it start and then gets no result; its metrics record and the
   end entry in the Centrum log are missing; a temporary folder can stay behind; a
-  kill during publication is the [ADR 0005](../../../docs/adr/0005-przerwana-publikacja-plikow-okresu.md) case.
+  kill between the two moves of publication, or after a failed second move and
+  before its rollback removed the first file, is the
+  [ADR 0005](../../../docs/adr/0005-przerwana-publikacja-plikow-okresu.md) case.
   The same holds for an Aktualizacja narzędzia until its restart guardian has
   started: killed mid-Git or mid-pip, it leaves the clone for the next start to
   roll back.

@@ -29,6 +29,25 @@ WITHOUT_ROLLBACK = Mutation(
     NEW,
 )
 
+ROLLBACK_RETRIED = Mutation(
+    "wycofanie ponawia usunięcie opublikowanego pliku, którego nie udało się usunąć",
+    (
+        Edit(
+            VERIFIED,
+            "            except OSError as exc:\n"
+            "                raise StopError(messages.write_failed_with_file_left(period_directory, target.name)) from exc\n",
+            "            except OSError:\n"
+            "                try:\n"
+            "                    target.unlink(missing_ok=True)\n"
+            "                except OSError as exc:\n"
+            "                    raise StopError(messages.write_failed_with_file_left(period_directory, target.name)) from exc\n",
+        ),
+    ),
+    EXPLORER,
+    "proces zamknięty po nieudanym wycofaniu, przed jego ponowieniem, zostawia samo Rozliczenie wewnętrzne bez komunikatu",
+    NEW,
+)
+
 BOUNDARIES: Final[Mapping[str, Mapping[str, tuple[Mutation, ...]]]] = {
     "ADR 0005": {
         # Not killed at all: the run goes on after the failed rename and stops with Rozliczenie wewnętrzne left.
@@ -42,6 +61,8 @@ BOUNDARIES: Final[Mapping[str, Mapping[str, tuple[Mutation, ...]]]] = {
                 NEW,
             ),
         ),
+        # The rollback's os.unlink failed (issue #92), and the process was killed before the retry.
+        "unlink_failed": (ROLLBACK_RETRIED,),
     },
 }
 """Broken variants just outside each part of the shape of each accepted risk and known finding of the explorer

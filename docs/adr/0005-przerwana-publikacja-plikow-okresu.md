@@ -41,7 +41,9 @@ razu woła `unlink`. Okno trwa więc mikrosekundy, jak między dwoma `os.rename`
 a wymaga jeszcze nieudanego `os.rename`, więc zdarza się rzadziej. Skutek jest
 ten sam: w Folderze okresu zostaje samo Rozliczenie wewnętrzne, a następne
 Uruchomienie zatrzymuje się na `PLIK_OKRESU_ISTNIEJE` i wskazuje ten plik, bo
-`ensure_period_files_absent` sprawdza go pierwszy. Nic nie zostaje nadpisane.
+to jedyny plik okresu w Folderze okresu. Gdy obok leży plik taty o nazwie
+Pliku zbiorczego (Konsekwencje), też wskazuje Rozliczenie wewnętrzne, bo
+`ensure_period_files_absent` sprawdza je pierwsze. Nic nie zostaje nadpisane.
 Jeśli proces zginie w trakcie samego `unlink`, plik albo zniknął (nie zostaje
 żaden plik okresu), albo został (jak wyżej). Opis niedokończonego zapisu w
 instrukcji taty (samo Rozliczenie wewnętrzne bez Pliku zbiorczego po
@@ -63,7 +65,8 @@ Odrzucone kierunki:
 
 - `explore_publication.py` zgłasza oba przypadki jako `ZAAKCEPTOWANE RYZYKO`
   (`ACCEPTED_RISKS`), a nie jako znane ustalenie. Inny ślad naruszenia
-  RAZEM_ALBO_ZADEN nadal jest błędem sprawdzenia.
+  RAZEM_ALBO_ZADEN nadal jest błędem sprawdzenia, także zabicie po nieudanym
+  `os.unlink` wycofania (przypadek #92 niżej).
 - Gdy drugi `os.rename` nie powiedzie się, bo tata (albo OneDrive) w tej samej
   chwili położył w Folderze okresu plik o nazwie Pliku zbiorczego, po zabiciu
   w trakcie wycofania obok Rozliczenia wewnętrznego leży ten plik taty. Wtedy opis

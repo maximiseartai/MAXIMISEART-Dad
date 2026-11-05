@@ -180,8 +180,8 @@ Each part of each entry also has a broken variant just outside it in `BOUNDARIES
 `check_wycena_efenix_mutations.py`, the same harm with that one part other than the story says, which must give a new
 violation; `tests/test_mutacje_skilli.py` reds an entry with a part without one. A part that admits every member of its
 enum restricts nothing and has none: the way of `#774`, and the step of `przerwanie-przed-zapisem-ilosci`, whose place
-is its state, because the Ślad has a quantity ahead only after the window read the reloaded page; a step outside it
-takes a request outside `EXPECTED_CALLS` or an order run 1 went past, which other checks report.
+is its state, because the Ślad has a quantity ahead only after the window read the reloaded page, and a request of an
+earlier step sent again after it counts as an occurrence of the next order or of none, which is outside every step.
 
 | Name | Step | Way | Left | Second run | Story |
 |---|---|---|---|---|---|

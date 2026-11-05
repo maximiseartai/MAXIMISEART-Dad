@@ -88,11 +88,13 @@ class Entry:
 @dataclass(frozen=True)
 class Broken:
     """How an Uruchomienie procesu that broke RAZEM_ALBO_ZADEN ended, each part of a risk's shape (``RiskShape``): the
-    step before which its process was killed (``Pending.step``, ``None`` when it was not killed) and its period files
-    it left in the Folder okresu."""
+    step before which the kill of its process ended it (``Pending.step``; ``None`` when it was not killed, or when the
+    code caught the kill and the run did not end ``PRZERWANE``), its period files it left in the Folder okresu, and
+    whether an ``os.unlink`` of the run failed."""
 
     killed_before: tuple[str, str] | None
     left: tuple[str, ...]
+    unlink_failed: bool
 
 
 @dataclass(frozen=True)
@@ -650,20 +652,27 @@ class RiskShape:
 
     - ``killed_before``: the steps before which the process was killed (``Pending.step``); a run that was not killed
       (``None``) is outside every shape;
-    - ``left``: the run's period files left in the Folder okresu, exactly.
+    - ``left``: the run's period files left in the Folder okresu, exactly;
+    - ``unlink_failed``: whether an ``os.unlink`` of the run failed; a rollback whose ``os.unlink`` failed is the case
+      of issue #92 (``BLAD_ZAPISU_POZOSTAL_PLIK``), which ADR 0005 does not cover.
 
     Each part has in ``check_publication_mutations.BOUNDARIES`` a broken variant just outside it, which must give a new
     violation (``tests/test_mutacje_skilli.py``)."""
 
     killed_before: frozenset[tuple[str, str]]
     left: tuple[str, ...]
+    unlink_failed: bool
 
     def __post_init__(self) -> None:
         if not self.killed_before or not self.left:
             raise ValueError("kształt bez kroku zabicia albo bez plików, które zostały")
 
     def holds(self, broken: Broken) -> bool:
-        return broken.killed_before in self.killed_before and broken.left == self.left
+        return (
+            broken.killed_before in self.killed_before
+            and broken.left == self.left
+            and broken.unlink_failed == self.unlink_failed
+        )
 
 
 @dataclass(frozen=True)
@@ -684,9 +693,13 @@ ACCEPTED_RISKS: tuple[Risk, ...] = (
     Risk(
         "ADR 0005",
         "RAZEM_ALBO_ZADEN",
-        "proces zamknięty między dwoma os.rename w _publish zostawia w istniejącym Folderze okresu samo Rozliczenie "
-        "wewnętrzne (ADR 0005); tak samo zamknięty po nieudanym drugim os.rename, zanim wycofanie usunęło pierwszy plik",
-        RiskShape(killed_before=frozenset({("os.rename", "_publish"), ("os.unlink", "_publish")}), left=(INTERNAL,)),
+        "proces zamknięty między dwoma os.rename w _publish albo po nieudanym drugim os.rename, zanim wycofanie usunęło "
+        "pierwszy plik, zostawia w istniejącym Folderze okresu samo Rozliczenie wewnętrzne (ADR 0005, oba przypadki)",
+        RiskShape(
+            killed_before=frozenset({("os.rename", "_publish"), ("os.unlink", "_publish")}),
+            left=(INTERNAL,),
+            unlink_failed=False,
+        ),
     ),
 )
 
@@ -826,7 +839,7 @@ def _razem_albo_zaden(run: Run, layout: Layout, owned: tuple[str, ...]) -> Viola
         "RAZEM_ALBO_ZADEN",
         ("RAZEM_ALBO_ZADEN", run.result, owned, unlink_failed, run.killed_before),
         f"{run.name} kończy się: {run.result}, a w Folderze okresu zostaje z jego plików: {left}",
-        Broken(run.killed_before, owned),
+        Broken(run.killed_before if run.result == "PRZERWANE" else None, owned, unlink_failed),
     )
 
 

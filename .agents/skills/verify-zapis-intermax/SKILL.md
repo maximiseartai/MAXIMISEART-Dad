@@ -228,15 +228,18 @@ Not covered:
    (`came_before`), and OneDrive refused the replace no more after it
    (`refusals_after` 0). A worker's change followed by a refusal is one the run
    had a pause to see, and one that arrived in that pause is one the re-read
-   after it sees, so losing either is a new violation. What the replace put the
-   run's file over is then the worker's change of the INTERMAX the run read,
-   because only the worker changes INTERMAX in the model and at most once, so
-   the shape has no part for it; a Kopia of other bytes than those read breaks
-   KOPIA_ZASTAPIONEGO in schedules without a worker's change too. The same
-   rules broken in any other schedule are a new violation.
+   after it sees, so losing either is a new violation. The run read the
+   original and its replace put its file over the worker's change (`lost`), not
+   over the run's own bytes or over a change it read. KOPIA_ZASTAPIONEGO also
+   needs a Kopia of the bytes the run read (`copy`, `current` of
+   `replace_register`); a Kopia of other bytes, such as the run's new file when
+   INTERMAX changed before the Kopia, is a new violation. BEZ_UTRATY_ZMIAN says
+   nothing of the Kopia, so its shape admits any. The same rules broken in any
+   other schedule are a new violation.
 
-   Each part has a broken variant just outside it in `BOUNDARIES` of
-   `check_intermax_mutations.py`, which must give a new violation;
+   Each part that restricts has a broken variant just outside it in
+   `BOUNDARIES` of `check_intermax_mutations.py`, which must give a new
+   violation;
    `tests/test_mutacje_skilli.py` reds a finding with a part without one.
 
 A known finding lives in `KNOWN_FINDINGS` in `explore_intermax.py` with the
@@ -287,6 +290,11 @@ temporary copy of the checkout (`tools/mutacje.py`) and must end with
 - a retried replace that compares INTERMAX read after the pause with the bytes
   read right after OneDrive's refusal instead of those the run read
   (`BOUNDARIES`: outside `refusals_after` of both findings);
+- a replace that, when INTERMAX changed after the read, first writes the run's
+  new file over it and puts it back if the replace fails (`BOUNDARIES`: outside
+  `lost` of both findings);
+- a Kopia of the run's new file when INTERMAX changed before the Kopia
+  (`BOUNDARIES`: outside `copy` of KOPIA_ZASTAPIONEGO);
 - Kopie sorted by name instead of by the moment in their name;
 - a Kopia that overwrites a Kopia of the same name (no `O_EXCL`): the second
   restore in the same second overwrites the Kopia of the first, and then stops

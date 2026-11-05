@@ -49,6 +49,7 @@ is a ``BaseException`` raised at a point, so ``finally`` blocks still run, which
 from __future__ import annotations
 
 import argparse
+import enum
 import errno
 import os
 import shutil
@@ -56,7 +57,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -457,19 +458,49 @@ def _check(world: World, outcome: Outcome, failure: str) -> list[tuple[str, str]
     return list(dict.fromkeys(broken))
 
 
+class Version(enum.Enum):
+    """Whose bytes INTERMAX had, as far as the model tells them apart: the original, the worker's change or other bytes
+    (the run's own file, a Kopia brought back, nothing read)."""
+
+    ORIGINAL = "oryginał"
+    WORKER = "zmiana pracownika"
+    OTHER = "inne bajty"
+
+
+class Copy(enum.Enum):
+    """Whether a Kopia INTERMAX holds the bytes the run read."""
+
+    OF_READ = "Kopia ma bajty, które run przeczytał"
+    OTHER = "żadna Kopia nie ma bajtów, które run przeczytał"
+
+
 @dataclass(frozen=True)
 class Came:
-    """When the worker's change came after the run read INTERMAX, each part of a finding's shape (``FindingShape``):
-    the point of the run it came before (``None``: no change came after the read) and how many times OneDrive refused
-    the replace after it."""
+    """How the run lost the worker's change it did not read, each part of a finding's shape (``FindingShape``): the
+    point of the run the change came before after the read (``None``: no change came after the read), how many times
+    OneDrive refused the replace after it, what the run read and what its replace put its file over, and whether a
+    Kopia holds the bytes the run read."""
 
     before: str | None
     refusals_after: int
+    lost: tuple[Version, Version]
+    copy: Copy
+
+
+def _version(world: World, content: bytes | None) -> Version:
+    if content == world.original:
+        return Version.ORIGINAL
+    return Version.WORKER if content == world.worker_bytes else Version.OTHER
 
 
 def _came(world: World, faults: Sequence[tuple[str, str]]) -> Came:
     before = next((step for kind, step in faults if kind == AFTER_READ), None)
-    return Came(before, 0 if world.changed_at is None else world.refused - world.changed_at)
+    return Came(
+        before,
+        0 if world.changed_at is None else world.refused - world.changed_at,
+        (_version(world, world.read), _version(world, world.replaced)),
+        Copy.OF_READ if world.read in world.kopie().values() else Copy.OTHER,
+    )
 
 
 @dataclass(frozen=True)
@@ -481,22 +512,31 @@ class FindingShape:
       before a retry, after which the run reads INTERMAX again, so a change it puts its file over there is one it had
       time to see;
     - ``refusals_after``: how many times OneDrive refused the replace after the change came; after a refusal the run
-      reads INTERMAX again too.
+      reads INTERMAX again too;
+    - ``lost``: what the run read and what its replace put its file over: the original and the worker's change, and not
+      the run's own bytes or a change the run read;
+    - ``copy``: what the Kopia holds; the story of KOPIA_ZASTAPIONEGO is a Kopia of the bytes read (``current`` of
+      ``replace_register``), and BEZ_UTRATY_ZMIAN says nothing of the Kopia, so its shape admits every ``Copy``.
 
-    What the replace put the run's file over is then the worker's change of the INTERMAX the run read, because only the
-    worker changes INTERMAX in the model and at most once, so the shape needs no part for it. Each part has in
-    ``check_intermax_mutations.BOUNDARIES`` a broken variant just outside it, which must give a new violation
-    (``tests/test_mutacje_skilli.py``)."""
+    Each part that restricts has in ``check_intermax_mutations.BOUNDARIES`` a broken variant just outside it, which must
+    give a new violation (``tests/test_mutacje_skilli.py``)."""
 
     came_before: frozenset[str]
     refusals_after: int
+    lost: frozenset[tuple[Version, Version]]
+    copy: frozenset[Copy]
 
     def __post_init__(self) -> None:
-        if not self.came_before:
-            raise ValueError("kształt bez punktu, przed którym przyszła zmiana pracownika")
+        if not self.came_before or not self.lost or not self.copy:
+            raise ValueError("kształt bez punktu, przed którym przyszła zmiana pracownika, bez tego, co run stracił, albo bez Kopii")
 
     def holds(self, came: Came) -> bool:
-        return came.before in self.came_before and came.refusals_after == self.refusals_after
+        return (
+            came.before in self.came_before
+            and came.refusals_after == self.refusals_after
+            and came.lost in self.lost
+            and came.copy in self.copy
+        )
 
 
 @dataclass(frozen=True)
@@ -509,9 +549,15 @@ class Finding:
     shape: FindingShape
 
 
-CHANGE_AFTER_READ = FindingShape(came_before=frozenset({READ, EXCEL, WRITE, CHECK, EXISTS, CREATE, REPLACE}), refusals_after=0)
+CHANGE_AFTER_READ = FindingShape(
+    came_before=frozenset({READ, EXCEL, WRITE, CHECK, EXISTS, CREATE, REPLACE}),
+    refusals_after=0,
+    lost=frozenset({(Version.ORIGINAL, Version.WORKER)}),
+    copy=frozenset(Copy),
+)
 """Uporządkowanie and the restore do not check right before os.replace whether INTERMAX still has the bytes they read:
-a worker's change that comes after the read, and after which the run neither paused nor was refused, is lost."""
+a worker's change that comes after the read of the original, and after which the run neither paused nor was refused, is
+lost under the run's file."""
 
 KNOWN_FINDINGS: tuple[Finding, ...] = (
     Finding(
@@ -525,7 +571,7 @@ KNOWN_FINDINGS: tuple[Finding, ...] = (
         "KOPIA_ZASTAPIONEGO",
         "Kopia INTERMAX powstaje z bajtów przeczytanych na początku (current w replace_register), więc "
         "nie ma też zmiany pracownika, która przyszła w trakcie",
-        CHANGE_AFTER_READ,
+        replace(CHANGE_AFTER_READ, copy=frozenset({Copy.OF_READ})),
     ),
 )
 
