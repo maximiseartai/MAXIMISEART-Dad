@@ -20,18 +20,21 @@ częściej niż co ``NO_ANSWER_KEPT_S``. Werdykt ustala najnowsze pytanie, nie n
 
 Listy GitHuba nadążają za zapisem po kilku sekundach: lista issue za nowym issue (#879), lista Release'ów za nowym
 Archiwum okresu (#887). Kolejka Skrzynki szuka na liście tego, co mogła już zapisać, zanim zapisze, więc ``KeyedBox``
-czyta listy po własnych zapisach. Lista issue z etykietą i Archiwum z tagiem (z plikami) pokazują to, co ten
-``KeyedBox`` zapisał w ostatnich ``LIST_LAG_S`` (issue i Archiwum, które założył, pliki, które wysłał, bez plików, które
-usunął). Zapis, którego skutek widać tylko na liście (zakładanie issue z etykietą, zakładanie Archiwum z tagiem,
-wysłanie albo usunięcie pliku Archiwum), jest wstrzymany (``Unreachable`` bez zapytania), gdy ostatnia lista tego samego
-przyszła na pytanie zadane mniej niż ``LIST_LAG_S`` po takim zapisie bez odpowiedzi (GitHub mógł go wykonać) albo przez
-inny ``KeyedBox``: nowe Centrum, gdy stare jeszcze kończy wysyłkę, albo start po zgaśnięciu. Dlatego przed każdym takim
-zapisem ``KeyedBox`` zapisuje jego chwilę w pliku ``opening`` (bez pliku: w pamięci), a odmowa (``Refused``,
-``Rejected``) ją zabiera, bo nic się nie zmieniło. Tak druga wysyłka do
-issue okresu, Zgłoszenia albo Archiwum w tym samym przejściu kolejki trafia do tego, co założyła pierwsza, a ponowienie
-zaraz po zgubionej odpowiedzi czeka na budzenie kolejki, zamiast założyć drugie issue albo dostać odmowę drugiego
-Archiwum tego tagu albo drugiego pliku tej nazwy (422) i dopisek, że plik czeka. Chwila jest z zegara Centrum (``time.monotonic``, wspólny dla procesów
-jednego komputera do jego restartu), a chwila z przyszłości (po restarcie komputera) jest dawna.
+czyta listy po zapisach. Każdy zapis, którego skutek widać tylko na liście (zakładanie issue z etykietą, zakładanie
+Archiwum z tagiem, wysłanie albo usunięcie pliku Archiwum), ``KeyedBox`` najpierw notuje z chwilą i identyfikatorem w
+pliku ``opening`` (bez pliku: w pamięci). Odpowiedź ze skutkiem zamienia ten zapis na skutek (issue, Archiwum, plik,
+usunięcie) z chwilą odpowiedzi, a odmowa (``Refused``, ``Rejected``) go zabiera, bo nic się nie zmieniło. Lista issue z
+etykietą i Archiwum z tagiem (z plikami) pokazują skutki z ostatnich ``LIST_LAG_S``, także zapisane przez inny
+``KeyedBox``: nowe Centrum po zgaśnięciu albo po ponownym starcie zna skutki starego. Lista bez zamkniętych pomija
+issue, które Maks zamknął: skutek, którego ta lista nie ma, dołącza tylko wtedy, gdy lista z zamkniętymi nie ma go
+zamkniętego. Zapis jest wstrzymany (``Unreachable`` bez zapytania), gdy w pliku czeka zapis tego rodzaju bez
+odpowiedzi (zgubiona odpowiedź albo zapis innego Centrum, które jeszcze kończy wysyłkę), a ostatnia lista tego rodzaju
+w tym wątku przyszła na pytanie zadane mniej niż ``LIST_LAG_S`` po nim (albo przed nim): GitHub mógł go wykonać, a
+nikt nie zna jego skutku. Tak druga wysyłka do issue okresu, Zgłoszenia albo Archiwum w tym samym przejściu kolejki
+albo w nowym Centrum trafia do tego, co założyła pierwsza, a ponowienie zaraz po zgubionej odpowiedzi czeka na
+budzenie kolejki, zamiast założyć drugie issue albo dostać odmowę drugiego Archiwum tego tagu albo drugiego pliku tej
+nazwy (422) i dopisek, że plik czeka. Chwila jest z zegara Centrum (``time.monotonic``, wspólny dla procesów jednego
+komputera do jego restartu), a chwila z przyszłości (po restarcie komputera) jest dawna.
 """
 
 from __future__ import annotations
@@ -42,10 +45,11 @@ import json
 import threading
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, Literal, TypeVar
 
+from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.report_box import (
     Archive,
     ArchiveOutcome,
@@ -85,11 +89,71 @@ REFUSED_KEPT_S: Final = 15 * 60
 # też zapytanie do ``report_box._TIMEOUT_S``; mniej niż ``outbox.RETRY_S``, więc ponowienie po budzeniu kolejki już nie
 # czeka.
 LIST_LAG_S: Final = 30.0
+# Zapis bez odpowiedzi dawniejszy niż to nie wstrzyma już żadnego zapisu: lista, na której kolejka opiera zapis, jest
+# najwyżej kilka zapytań (każde do ``report_box._TIMEOUT_S``) przed nim, więc każda późniejsza jest dużo po nim.
+PENDING_KEPT_S: Final = 60 * 60.0
 
 _Outcome = TypeVar("_Outcome")
 
-Writes = dict[str, tuple[float, str]]
-"""Zapisy, których skutek widać tylko na liście, po rodzaju (``KeyedBox._ready``): chwila i identyfikator ostatniego."""
+
+@dataclass
+class _Notes:
+    """Zapisy w pliku ``opening`` (opis modułu): po rodzaju (``KeyedBox._ready``) chwila i identyfikator zapisu bez
+    odpowiedzi, a każdy skutek zapisu z odpowiedzią z jej chwilą: issue z etykietą, Archiwum z tagiem, plik w Archiwum
+    o id i usunięty plik."""
+
+    pending: dict[str, tuple[float, str]] = field(default_factory=dict)
+    opened: list[tuple[float, str, Issue]] = field(default_factory=list)
+    archives: list[tuple[float, str, int]] = field(default_factory=list)
+    uploads: list[tuple[float, int, Asset]] = field(default_factory=list)
+    removals: list[tuple[float, int]] = field(default_factory=list)
+
+    def fresh(self, now: float) -> _Notes:
+        """Bez skutków, których odpowiedź przyszła ``LIST_LAG_S`` temu albo dawniej (listy już je pokazują), i bez zapisów
+        bez odpowiedzi sprzed ``PENDING_KEPT_S``; chwila z przyszłości (sprzed restartu komputera) jest dawna."""
+
+        def fresh(at: float, kept: float = LIST_LAG_S) -> bool:
+            return 0 <= now - at < kept
+
+        return _Notes(
+            {kind: entry for kind, entry in self.pending.items() if fresh(entry[0], PENDING_KEPT_S)},
+            [entry for entry in self.opened if fresh(entry[0])],
+            [entry for entry in self.archives if fresh(entry[0])],
+            [entry for entry in self.uploads if fresh(entry[0])],
+            [entry for entry in self.removals if fresh(entry[0])],
+        )
+
+    def dumped(self) -> str:
+        return json.dumps(
+            {
+                "zapisy": {kind: list(entry) for kind, entry in self.pending.items()},
+                "issue": [[at, label, issue.number, issue.body] for at, label, issue in self.opened],
+                "archiwa": [list(entry) for entry in self.archives],
+                "pliki": [[at, archive, asset.id, asset.name, asset.label] for at, archive, asset in self.uploads],
+                "usuniete": [list(entry) for entry in self.removals],
+            },
+            ensure_ascii=False,
+        )
+
+
+def _parsed(text: str) -> _Notes:
+    """Zapisy z treści pliku ``opening``; treść w innej postaci to brak zapisów."""
+
+    try:
+        found = json.loads(text)
+        return _Notes(
+            {str(kind): (float(moment), str(write)) for kind, (moment, write) in found["zapisy"].items()},
+            [(float(at), str(label), Issue(int(number), str(body))) for at, label, number, body in found["issue"]],
+            [(float(at), str(tag), int(archive)) for at, tag, archive in found["archiwa"]],
+            [
+                (float(at), int(archive), Asset(int(asset), str(name), str(label), True))
+                for at, archive, asset, name, label in found["pliki"]
+            ],
+            [(float(at), int(asset)) for at, asset in found["usuniete"]],
+        )
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return _Notes()
+
 
 KeyJudgement = Literal["accepted", "refused", "unchecked", "missing"]
 """Co wiadomo o kluczu: przyjęty, odrzucony, jeszcze bez odpowiedzi Skrzynki (np. brak sieci) albo brak pliku klucza.
@@ -134,14 +198,9 @@ class KeyedBox:
         self._verdict: _Verdict | None = None
         self._no_answer: tuple[str, float] | None = None  # skrót klucza i chwila ostatniego pytania bez odpowiedzi
         self._probe: threading.Thread | None = None
-        self._opened: list[tuple[float, Label, Issue]] = []  # chwila odpowiedzi, etykieta i issue, które założył
-        self._answered: dict[str, str] = {}  # zapisy tego KeyedBox, na które przyszła odpowiedź
         self._opening = opening
-        self._remembered: Writes = {}  # zapisy bez pliku ``opening``
-        self._listed_at: dict[str, float] = {}  # chwila ostatniego pytania o listę etykiety albo tagu, na które przyszła
-        self._archives: dict[str, tuple[float, int]] = {}  # tag: chwila odpowiedzi i id Archiwum, które założył
-        self._uploads: list[tuple[float, int, Asset]] = []  # chwila odpowiedzi, id Archiwum i plik, który wysłał
-        self._removals: dict[int, float] = {}  # id pliku, który usunął: chwila odpowiedzi
+        self._remembered = _Notes()  # zapisy bez pliku ``opening``
+        self._lists = threading.local()  # listed_at: chwila ostatniego pytania wątku o listę, na które przyszła
         self._names: dict[int, str] = {}  # id pliku Archiwum z ostatnich odpowiedzi ``archive``: jego nazwa
 
     def open_issue(self, label: Label, title: str, body: str) -> SendOutcome | NoKey:
@@ -153,102 +212,121 @@ class KeyedBox:
         ready = self._ready(label)
         if ready is None:
             return Unreachable()
-        asked_at, write, writes = ready
+        asked_at, write, before = ready
         outcome = self._box.open_issue(label, title, body, key=key)
         self._observe(key, asked_at, outcome)
-        if isinstance(outcome, Sent):
-            answered_at = self._clock()
-            with self._lock:
-                self._opened.append((answered_at, label, Issue(outcome.number, body)))
-        self._settled(label, write, writes, created=isinstance(outcome, Sent), refused=isinstance(outcome, Refused | Rejected))
+        sent = outcome.number if isinstance(outcome, Sent) else None
+        self._settled(
+            label,
+            write,
+            before,
+            None if sent is None else lambda notes, at: notes.opened.append((at, label, Issue(sent, body))),
+            refused=isinstance(outcome, Refused | Rejected),
+        )
         return outcome
 
-    def _ready(self, kind: str) -> tuple[float, str, Writes] | None:
-        """Chwila i identyfikator zapisu ``kind`` (etykieta issue, ``_archive_kind`` albo ``_file_kind``) i zapisy w
-        pliku przed nim, zapisane z nim; ``None``: zapis wstrzymany albo pliku ``opening`` nie da się odczytać lub zapisać.
+    def _ready(self, kind: str) -> tuple[float, str, tuple[float, str] | None] | None:
+        """Chwila i identyfikator zapisu ``kind`` (etykieta issue, ``_archive_kind`` albo ``_file_kind``) i zapis bez
+        odpowiedzi tego rodzaju sprzed niego, zapisane w pliku ``opening``; ``None``: zapis wstrzymany albo pliku nie da
+        się odczytać lub zapisać.
 
         Identyfikator, a nie chwila, mówi, czyj jest zapis: ``time.monotonic`` na Windows zmienia się co ok. 15 ms, więc
         dwa zapisy mogą mieć tę samą chwilę.
         """
 
         asked_at = self._clock()
-        writes = self._writes()
-        if writes is None or self._held(kind, asked_at, writes):
-            return None
-        write = uuid.uuid4().hex
-        if not self._noted({**writes, kind: (asked_at, write)}):
-            return None
-        return asked_at, write, writes
+        with self._lock:
+            notes = self._notes()
+            if notes is None or self._held(kind, asked_at, notes):
+                return None
+            write = uuid.uuid4().hex
+            before = notes.pending.get(kind)
+            notes.pending[kind] = (asked_at, write)
+            if not self._noted(notes):
+                return None
+        return asked_at, write, before
 
-    def _settled(self, kind: str, write: str, writes: Writes, *, created: bool, refused: bool) -> None:
-        """Po odpowiedzi na zapis ``write``: ``created`` (wiadomo, co się zmieniło) nie wstrzymuje tego ``KeyedBox``, a
-        ``refused`` (nic się nie zmieniło) przywraca plik sprzed zapisu; bez odpowiedzi zapis zostaje."""
+    def _settled(
+        self,
+        kind: str,
+        write: str,
+        before: tuple[float, str] | None,
+        effect: Callable[[_Notes, float], None] | None,
+        *,
+        refused: bool,
+    ) -> None:
+        """Po odpowiedzi na zapis ``write``: ``effect`` (wiadomo, co się zmieniło) trafia do pliku zamiast zapisu, a
+        ``refused`` (nic się nie zmieniło) przywraca zapis ``before``; bez odpowiedzi zapis zostaje. Plik, którego nie da
+        się odczytać albo zapisać, zostawia zapis bez odpowiedzi, czyli tylko wstrzymuje następne zapisy."""
 
-        if created:
-            with self._lock:
-                self._answered[kind] = write
-        if refused:
-            self._noted(writes)  # bez tego zapisu następne Centrum tylko poczeka
+        if effect is None and not refused:
+            return
+        answered_at = self._clock()
+        with self._lock:
+            notes = self._notes()
+            if notes is None:
+                return
+            if notes.pending.get(kind, (0.0, ""))[1] == write:
+                if refused and before is not None:
+                    notes.pending[kind] = before
+                else:
+                    del notes.pending[kind]
+            if effect is not None:
+                effect(notes, answered_at)
+            self._noted(notes)
 
-    def _held(self, kind: str, now: float, writes: Writes) -> bool:
-        """Czy ostatnia lista ``kind`` mogła nie pokazywać zapisu bez odpowiedzi albo przez inny ``KeyedBox``: przyszła na
+    def _held(self, kind: str, now: float, notes: _Notes) -> bool:
+        """Pod blokadą: czy ostatnia lista ``kind`` mogła nie pokazywać zapisu bez odpowiedzi z pliku: przyszła na
         pytanie zadane mniej niż ``LIST_LAG_S`` po nim (albo przed nim).
 
         Liczy się chwila pytania o listę, nie ``now``: między listą a zapisem kolejka może jeszcze wysyłać plik do
         Archiwum okresu (``outbox._deliver_to_period``), a chwila zapisu, która w tym czasie dawnieje, nie mówi, że
-        lista sprzed niej go pokazała.
+        lista sprzed niej go pokazała. Liczy się też tylko lista tego wątku, czyli ta, na której kolejka opiera zapis:
+        późniejsza lista podglądu Zgłoszenia albo Powiadomień w innym wątku nie mówi, co widziała lista kolejki.
         """
 
-        if kind not in writes:
+        if kind not in notes.pending:
             return False
-        moment, write = writes[kind]
-        with self._lock:
-            answered, listed_at = self._answered.get(kind), self._listed_at.get(_list_of(kind), now)
-        return write != answered and 0 <= now - moment and listed_at - moment < LIST_LAG_S
+        moment, _ = notes.pending[kind]
+        listed_at = self._listed_at().get(_list_of(kind), now)
+        return 0 <= now - moment and listed_at - moment < LIST_LAG_S
 
-    def _writes(self) -> Writes | None:
-        """Zapisy z pliku ``opening``; ``None``: pliku nie da się odczytać (np. trzyma go antywirus), więc zapisu innego
-        ``KeyedBox`` nie da się wykluczyć. Treść w innej postaci to brak zapisów."""
+    def _listed_at(self) -> dict[str, float]:
+        """Chwila ostatniego pytania tego wątku o listę etykiety, tagu albo plików Archiwum, na które przyszła."""
 
+        listed: dict[str, float] = self._lists.__dict__.setdefault("listed_at", {})
+        return listed
+
+    def _notes(self) -> _Notes | None:
+        """Pod blokadą: zapisy z pliku ``opening`` bez dawnych skutków; ``None``: pliku nie da się odczytać (np. trzyma
+        go antywirus), więc zapisu innego ``KeyedBox`` nie da się wykluczyć."""
+
+        now = self._clock()
         if self._opening is None:
-            with self._lock:
-                return dict(self._remembered)
+            return self._remembered.fresh(now)
         try:
             text = self._opening.read_text(encoding="utf-8")
         except FileNotFoundError:
-            return {}
+            return _Notes()
         except (OSError, UnicodeError):
             return None
-        try:
-            found = json.loads(text)
-        except ValueError:
-            return {}
-        if not isinstance(found, dict):
-            return {}
-        return {
-            kind: (float(entry[0]), entry[1])
-            for kind, entry in found.items()
-            if isinstance(entry, list)
-            and len(entry) == 2
-            and isinstance(entry[0], int | float)
-            and not isinstance(entry[0], bool)
-            and isinstance(entry[1], str)
-        }
+        return _parsed(text).fresh(now)
 
-    def _noted(self, writes: Writes) -> bool:
-        """Zapisuje ``writes`` w pliku ``opening`` (bez pliku w pamięci); ``False``: zapis się nie udał.
+    def _noted(self, notes: _Notes) -> bool:
+        """Pod blokadą: zapisuje ``notes`` w pliku ``opening`` (bez pliku w pamięci); ``False``: zapis się nie udał.
 
         Zapisuje do Skrzynki tylko kolejka, w przejściu z blokadą folderu kolejki (``outbox._folder_lock``), więc plik
-        czyta i pisze naraz najwyżej jeden proces. Zapis urwany przez zgaśnięcie zostawia treść w innej postaci, czyli
-        brak zapisów, a jeden ``write_text`` stu kilkudziesięciu znaków urywa się tylko w tej jednej chwili.
+        zmienia naraz najwyżej jeden proces. Zamiana jest atomowa i czeka na plik, który ktoś na chwilę trzyma
+        (``replace_atomically``, jak inne pliki Centrum), więc zgaśnięcie w jej trakcie zostawia poprzednie zapisy, a
+        plik, z którego ``fresh`` usunęła dawne wpisy, ma najwyżej zapisy z ostatnich ``LIST_LAG_S`` i zapisy bez
+        odpowiedzi z ostatnich ``PENDING_KEPT_S``.
         """
 
         if self._opening is None:
-            with self._lock:
-                self._remembered = dict(writes)
+            self._remembered = notes
             return True
         try:
-            self._opening.write_text(json.dumps(writes), encoding="utf-8")
+            replace_atomically(self._opening, notes.dumped())
         except OSError:
             return False
         return True
@@ -269,23 +347,22 @@ class KeyedBox:
         return self._about_issue(lambda key: self._box.edit_comment(comment_id, body, key=key))
 
     def archive(self, tag: str) -> ArchiveOutcome | NoKey:
-        """Archiwum okresu z tagiem ``tag`` z plikami, po zapisach tego ``KeyedBox`` (opis modułu); jego odmowa (brak
+        """Archiwum okresu z tagiem ``tag`` z plikami, po zapisach z pliku ``opening`` (opis modułu); jego odmowa (brak
         uprawnienia do treści repozytorium) nie jest werdyktem."""
 
         asked_at = self._clock()
         outcome = self._about_issue(lambda key: self._box.archive(tag, key=key))
         if outcome is not None and not isinstance(outcome, Archive):
             return outcome
-        now = self._clock()
         with self._lock:
-            self._listed_at[_archive_kind(tag)] = self._listed_at[_FILES_LIST] = asked_at
-            self._forget(now)
-            opened = self._archives.get(tag)
-            found = outcome if outcome is not None else None if opened is None else Archive(opened[1], ())
-            if found is None:
-                return None
-            sent = [asset for _, archive_id, asset in self._uploads if archive_id == found.id]
-            removed = set(self._removals)
+            self._listed_at()[_archive_kind(tag)] = self._listed_at()[_FILES_LIST] = asked_at
+            notes = self._notes() or _Notes()
+        opened = next((archive for _, of, archive in reversed(notes.archives) if of == tag), None)
+        found = outcome if outcome is not None else None if opened is None else Archive(opened, ())
+        if found is None:
+            return None
+        sent = [asset for _, archive, asset in notes.uploads if archive == found.id]
+        removed = {asset for _, asset in notes.removals}
         listed = [asset for asset in found.assets if asset.id not in removed]
         ids = {asset.id for asset in listed} | removed
         merged = Archive(found.id, (*listed, *(asset for asset in sent if asset.id not in ids)))
@@ -296,44 +373,50 @@ class KeyedBox:
     def open_archive(self, tag: str, title: str, description: str) -> OpenArchiveOutcome | NoKey:
         """Nowe Archiwum; ``Unreachable`` bez zapytania, gdy zakładanie Archiwum ``tag`` jest wstrzymane (opis modułu)."""
 
-        outcome = self._listed_write(
-            _archive_kind(tag), lambda key: self._box.open_archive(tag, title, description, key=key), Archive
+        return self._listed_write(
+            _archive_kind(tag),
+            lambda key: self._box.open_archive(tag, title, description, key=key),
+            lambda outcome: (
+                None
+                if not isinstance(outcome, Archive)
+                else lambda notes, at: notes.archives.append((at, tag, outcome.id))
+            ),
         )
-        if isinstance(outcome, Archive):
-            answered_at = self._clock()
-            with self._lock:
-                self._archives[tag] = (answered_at, outcome.id)
-        return outcome
 
     def upload(self, archive_id: int, name: str, label: str, data: bytes) -> UploadOutcome | NoKey:
         """Plik w Archiwum; ``Unreachable`` bez zapytania, gdy zapis plików Archiwum jest wstrzymany (opis modułu)."""
 
-        outcome = self._listed_write(
-            _file_kind(name), lambda key: self._box.upload(archive_id, name, label, data, key=key), Asset
+        return self._listed_write(
+            _file_kind(name),
+            lambda key: self._box.upload(archive_id, name, label, data, key=key),
+            lambda outcome: (
+                None
+                if not isinstance(outcome, Asset)
+                else lambda notes, at: notes.uploads.append((at, archive_id, outcome))
+            ),
         )
-        if isinstance(outcome, Asset):
-            answered_at = self._clock()
-            with self._lock:
-                self._uploads.append((answered_at, archive_id, outcome))
-        return outcome
 
     def remove(self, asset_id: int) -> RemoveOutcome | NoKey:
         """Usunięcie pliku Archiwum; ``Unreachable`` bez zapytania, gdy zapis plików Archiwum jest wstrzymany."""
 
         with self._lock:
             name = self._names.get(asset_id, f"#{asset_id}")
-        outcome = self._listed_write(_file_kind(name), lambda key: self._box.remove(asset_id, key=key), Removed)
-        if isinstance(outcome, Removed):
-            answered_at = self._clock()
-            with self._lock:
-                self._removals[asset_id] = answered_at
-        return outcome
+        return self._listed_write(
+            _file_kind(name),
+            lambda key: self._box.remove(asset_id, key=key),
+            lambda outcome: (
+                None if not isinstance(outcome, Removed) else lambda notes, at: notes.removals.append((at, asset_id))
+            ),
+        )
 
     def _listed_write(
-        self, kind: str, ask: Callable[[str], _Outcome], done: type[Archive | Asset | Removed]
+        self,
+        kind: str,
+        ask: Callable[[str], _Outcome],
+        effect: Callable[[_Outcome], Callable[[_Notes, float], None] | None],
     ) -> _Outcome | NoKey | Refused | Unreachable:
-        """Zapis do Archiwum, którego skutek widać tylko na liście ``kind``: wstrzymany jak zakładanie issue (opis
-        modułu), a jego odmowa nie jest werdyktem o kluczu (``_about_issue``)."""
+        """Zapis do Archiwum, którego skutek (``effect`` odpowiedzi) widać tylko na liście ``kind``: wstrzymany jak
+        zakładanie issue (opis modułu), a jego odmowa nie jest werdyktem o kluczu (``_about_issue``)."""
 
         key = self._usable()
         if not isinstance(key, str):
@@ -341,20 +424,12 @@ class KeyedBox:
         ready = self._ready(kind)
         if ready is None:
             return Unreachable()
-        asked_at, write, writes = ready
+        asked_at, write, before = ready
         outcome = ask(key)
         if not isinstance(outcome, Refused):
             self._observe(key, asked_at, outcome)
-        self._settled(kind, write, writes, created=isinstance(outcome, done), refused=isinstance(outcome, Refused | Rejected))
+        self._settled(kind, write, before, effect(outcome), refused=isinstance(outcome, Refused | Rejected))
         return outcome
-
-    def _forget(self, now: float) -> None:
-        """Pod blokadą: zapisy starsze niż ``LIST_LAG_S``, które listy już pokazują."""
-
-        self._opened = [entry for entry in self._opened if now - entry[0] < LIST_LAG_S]
-        self._archives = {tag: entry for tag, entry in self._archives.items() if now - entry[0] < LIST_LAG_S}
-        self._uploads = [entry for entry in self._uploads if now - entry[0] < LIST_LAG_S]
-        self._removals = {asset: at for asset, at in self._removals.items() if now - at < LIST_LAG_S}
 
     def _about_issue(self, ask: Callable[[str], _Outcome]) -> _Outcome | NoKey | Refused:
         """Pytanie o jedno issue albo o Archiwum okresu: odpowiedź poza odmową jest werdyktem o kluczu."""
@@ -369,7 +444,11 @@ class KeyedBox:
         return outcome
 
     def labelled_issues(self, label: Label, *, include_closed: bool) -> IssuesOutcome | NoKey:
-        """Issue z etykietą ``label`` z listy Skrzynki i te, które ``KeyedBox`` założył w ``LIST_LAG_S``, a lista ich nie ma."""
+        """Issue z etykietą ``label`` z listy Skrzynki i te, które ``KeyedBox`` założył w ``LIST_LAG_S``, a lista ich nie ma.
+
+        Lista bez zamkniętych nie pokazuje ani issue, za którym nie nadążyła, ani issue, które Maks już zamknął, więc
+        takie issue dołącza dopiero wtedy, gdy nie ma go zamkniętego na liście z zamkniętymi; bez jej odpowiedzi dołącza.
+        """
 
         key = self._usable()
         if not isinstance(key, str):
@@ -378,13 +457,18 @@ class KeyedBox:
         listed = self._listed(key, label, include_closed=include_closed)
         if isinstance(listed, Refused | Unreachable):
             return listed
-        now = self._clock()
         with self._lock:
-            self._listed_at[label] = asked_at
-            self._forget(now)
-            opened = [issue for _, of, issue in self._opened if of == label]
+            self._listed_at()[label] = asked_at
+            notes = self._notes() or _Notes()
+        opened = [issue for _, of, issue in notes.opened if of == label]
         numbers = {issue.number for issue in listed}
-        return (*listed, *(issue for issue in opened if issue.number not in numbers))
+        missing = [issue for issue in opened if issue.number not in numbers]
+        if missing and not include_closed:
+            every = self._listed(key, label, include_closed=True)
+            if not isinstance(every, Refused | Unreachable):
+                closed = {issue.number for issue in every if issue.closure is not None}
+                missing = [issue for issue in missing if issue.number not in closed]
+        return (*listed, *missing)
 
     def find_issue(self, label: Label, line: str, *, include_closed: bool) -> FindOutcome | NoKey:
         """Najnowsze issue z etykietą ``label`` i wierszem ``line`` (odcisk problemu, token okresu)."""

@@ -1,6 +1,6 @@
 ---
 name: verify-kolejka-skrzynki
-description: Exhaustively check that the Kolejka Skrzynki Zgłoszeń (`Outbox` in `src/rozliczenia/centrum/outbox.py`) delivers every part of every wysyłka (Zgłoszenie, Kontrola ilości, Logi Uruchomienia, Uwaga taty) and the file of the Logi in the Archiwum Logów okresu exactly once, lets a newer version of a wysyłka (Logi Uruchomienia after a Diagnoza) change its comments while an older one that arrives after it changes nothing, keeps one issue per problem and per period, and empties the queue, under every order of network failures, answers lost after the Skrzynka acted, file errors, a killed Centrum and GitHub's lists that show a new issue or Archiwum seconds late. Use when a change touches `_deliver*` (also `_deliver_archive`, `_asset_label`, `_asset_version`), `_settle`, `_seen`, `_put_all`, `_put`, `_mark`, `_marks`, `_version`, `Outbox.post`, `_comment_all`, `_waiting`, `Outbox._drain`, `_send_all`, `_archive_waits`, `_remove`, `resume`, the folder lock (`_folder_lock`) or the delivery marker in `outbox.py`, the box calls in `keyed_box.py` (also `archive`, `open_archive`, `upload`, `remove`, and its list after its own writes in `_ready`, `_held`, `_settled`, `_writes`, `_noted` and `_forget`) or `newest_with_line` in `report_box.py`, `replace_atomically` in `atomic_file.py`, adds a new `Target`, or when `explore_outbox.py` or `sprawdz_model_kolejki.py` fails. A TLA+ model of the same queue (TLC) adds the interleavings the checker leaves out (a wysyłka posted during a pass, the `RETRY_S` wake, two queues of one folder in `_claimed` and in the folder lock, a second Centrum whose port the old one already released, a switch-off at the temporary file and at the rename, and an older version of a wysyłka sent after a newer one).
+description: Exhaustively check that the Kolejka Skrzynki Zgłoszeń (`Outbox` in `src/rozliczenia/centrum/outbox.py`) delivers every part of every wysyłka (Zgłoszenie, Kontrola ilości, Logi Uruchomienia, Uwaga taty) and the file of the Logi in the Archiwum Logów okresu exactly once, lets a newer version of a wysyłka (Logi Uruchomienia after a Diagnoza) change its comments while an older one that arrives after it changes nothing, keeps one issue per problem and per period, and empties the queue, under every order of network failures, answers lost after the Skrzynka acted, file errors, a killed Centrum and GitHub's lists that show a new issue or Archiwum seconds late. Use when a change touches `_deliver*` (also `_deliver_archive`, `_asset_label`, `_asset_version`), `_settle`, `_seen`, `_put_all`, `_put`, `_mark`, `_marks`, `_version`, `Outbox.post`, `_comment_all`, `_waiting`, `Outbox._drain`, `_send_all`, `_archive_waits`, `_remove`, `resume`, the folder lock (`_folder_lock`) or the delivery marker in `outbox.py`, the box calls in `keyed_box.py` (also `archive`, `open_archive`, `upload`, `remove`, and its list after its own writes in `_ready`, `_held`, `_settled`, `_notes`, `_noted`, `_Notes` and `_parsed`) or `newest_with_line` in `report_box.py`, `replace_atomically` in `atomic_file.py`, adds a new `Target`, or when `explore_outbox.py` or `sprawdz_model_kolejki.py` fails. A TLA+ model of the same queue (TLC) adds the interleavings the checker leaves out (a wysyłka posted during a pass, the `RETRY_S` wake, two queues of one folder in `_claimed` and in the folder lock, a second Centrum whose port the old one already released, a switch-off at the temporary file and at the rename, and an older version of a wysyłka sent after a newer one).
 pilnuje:
   - src/rozliczenia/centrum/outbox.py
   - src/rozliczenia/centrum/keyed_box.py
@@ -144,25 +144,35 @@ the old one (`closed="new_issue"`), which neither check models.
 GitHub's lists lag behind a write by seconds: the list of issues behind a new
 issue (`verify-github-skrzynki`, 3.0–6.8 s), the list of Releases behind a new
 Archiwum (#887, 2.8 s). The queue looks on a list for what an earlier attempt
-may have written, so `KeyedBox` reads its lists after its own writes (#879): the
-list of issues of a label and the Archiwum of a tag with its files show what
-this `KeyedBox` wrote in the last `LIST_LAG_S` (30 s; `_opened`, `_archives`,
-`_uploads`, `_removals`). A write whose effect only a list shows (opening an
-issue of a label, opening the Archiwum of a tag, uploading or removing a file of
-the Archiwum) is held, `Unreachable` without a request, when the last list of
-the same kind was asked for less than `LIST_LAG_S` after such a write whose
-answer this `KeyedBox` did not get, its own lost answer or another `KeyedBox`'s
-write (`_held`, `_listed_at`). Every such write is first noted with its moment
-and an identifier in the file `skrzynka-zakladanie.txt` next to the key
-(`OPENING_FILE`, `_noted`), so a new Centrum, started after a switch-off or while
-the old one still finishes its pass, knows it; a refusal (`Refused`,
-`Rejected`) restores the file, because nothing changed (`_settled`). The time of
-the list counts, not of the write: between the list and the write the queue may
-still send the file of the Archiwum. A held write stops the pass, and the
-`RETRY_S` wake (60 s) comes after the hold. The moment is from Centrum's clock
-(`time.monotonic`, shared by the processes of one computer until it restarts),
-and only the queue writes to the Skrzynka, inside a pass with the folder lock,
-so one process at a time reads and writes the file.
+may have written, so `KeyedBox` reads its lists after the writes (#879). Every
+write whose effect only a list shows (opening an issue of a label, opening the
+Archiwum of a tag, uploading or removing a file of the Archiwum) is first noted
+with its moment and an identifier in the file `skrzynka-zakladanie.txt` next to
+the key (`OPENING_FILE`, `_ready`, `_noted`); the answer with its effect
+replaces it there by the effect with the moment of the answer, and a refusal
+(`Refused`, `Rejected`) restores the file, because nothing changed (`_settled`).
+The list of issues of a label and the Archiwum of a tag with its files show the
+effects of the last `LIST_LAG_S` (30 s; `_Notes.opened`, `archives`, `uploads`,
+`removals`), also those another `KeyedBox` wrote, so a new Centrum after a
+switch-off or a restart knows what the old one wrote and got an answer for. A
+list without closed issues leaves out an issue Maks closed: an effect it lacks
+is added only when the list with closed issues does not have it closed. A write
+of a kind is held, `Unreachable` without a request, while the file has a write
+of that kind without an answer (a lost answer, or another Centrum that still
+finishes its pass) and the last list of that kind in this thread was asked for
+less than `LIST_LAG_S` after it (`_held`, `_listed_at`). The time of the list
+counts, not of the write: between the list and the write the queue may still
+send the file of the Archiwum; and only the list of the queue's own thread
+counts, not a later list of the preview or of Powiadomienia. A held write stops
+the pass, and the `RETRY_S` wake (60 s) comes after the hold. The moment is from
+Centrum's clock (`time.monotonic`, shared by the processes of one computer until
+it restarts). Only the queue writes to the Skrzynka, inside a pass with the
+folder lock, so one process at a time reads and writes the file; without the
+lock a second process could list before the first one's write and open after
+its answer, which the hold does not see (configuration `dwa-procesy`). The file
+is replaced atomically (`replace_atomically`) and keeps only the effects of the
+last `LIST_LAG_S` and the writes without an answer of the last `PENDING_KEPT_S`
+(an hour).
 
 ## Does the change touch it?
 
@@ -181,7 +191,7 @@ step of this code that the checker can fail, lose or kill:
 | a pass of the queue | `Outbox._drain` (`_claimed`, `_folder_lock`, `_send_all`, `_released`), run only when the real `Outbox.send_in_background` starts the queue thread (called by `Outbox.post`, `Outbox.resume` and `Outbox._woken`); the checker replaces only `threading.Thread` in `outbox.py`, which hands it the target, and runs one Centrum at a time, so the pass always gets the folder lock |
 | the marker of the parts | `Outbox._send_all` after `Delivered` with `archive_waits`: `_archive_waits`, then `replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts), archived=False))` in `suppress(OSError)` |
 | the `RETRY_S` wake | `Outbox._drain`: `self._clock.after(RETRY_S, self._woken)` when `_stopped_on`, `_read_failed`, `_archive_refused` or `_locked_out` is set and no wake is armed; the checker calls an armed wake when nothing else asked for a pass, moves its clock by `RETRY_S` first (the only time that passes), and a restart drops it with its process |
-| a held write | `KeyedBox._ready` (`_writes`, `_held`, `_noted`) before `open_issue`, `open_archive`, `upload` and `remove`: `Unreachable` without a request; the checker never fails the read or write of `OPENING_FILE`, which lives in the run directory and survives a restart |
+| a held write | `KeyedBox._ready` (`_notes`, `_held`, `_noted`) before `open_issue`, `open_archive`, `upload` and `remove`: `Unreachable` without a request; the checker never fails the read or write of `OPENING_FILE`, which lives in the run directory and survives a restart |
 | a restart of Centrum | a new `Outbox` and `KeyedBox` on the same folder, then `Outbox.resume` |
 
 Covered files: `src/rozliczenia/centrum/outbox.py`,
@@ -606,14 +616,14 @@ The comment above each action and branch in the model names the same code.
 
 | Model action | Code |
 | --- | --- |
-| `Start` | `app.py` `lifespan` → `outbox.py` `Outbox.resume`: unlink every `*.tmp` (also one that the old process still writes: its `post` returns `False`, its marker is lost), then `send_in_background`. Only a process with the port starts (`launcher.py` `listen_locally`); a second queue of one process starts while the first runs |
+| `Start` | `app.py` `lifespan` → `outbox.py` `Outbox.resume`: unlink every `*.tmp` (also one that the old process still writes: its `post` returns `False`, its marker is lost), then `send_in_background`; its `KeyedBox` has no list of its thread yet (`odczyt`), and the file of `KeyedBox` (`zakladanie`, `pamiec`, `pamiecWydania`) stays. Only a process with the port starts (`launcher.py` `listen_locally`); a second queue of one process starts while the first runs |
 | `Nadaj` | `outbox.py` `Outbox.post`: the name from the moment and `next(self._sequence)`, `replace_atomically` (`write_text` of `.json.tmp`, then `replace`; `OSError` → `False`, also the `FileNotFoundError` of `replace` when `resume` of a new process removed the `.tmp`), then `send_in_background` |
 | `Petla` | `Outbox._drain`: `_claimed` (taken → ask for another pass and skip `_send_all`), then `_folder_lock` without waiting (held by a queue of another process → `_locked_out` and skip `_send_all`), then `_read_failed = False` and `sorted(glob("*.json"))` in `_send_all` |
 | `Plik` | `Outbox._send_all` for one file: `_undeleted` → `_remove`, `_rejected` → skip, `_queued` (an `OSError` or a missing file → `_read_failed` and `_skip_unreadable`), `delivered` → `_remove`, `commented` → `_deliver_archive` alone, else `_deliver`; the end of the list sets `_stopped_on = None` |
-| `Szukaj` | `keyed_box.py` `KeyedBox.labelled_issues` (`report_box.py` `newest_with_line`; the list shows the issues `GitHub` lists and those this queue's `KeyedBox` opened, `Widoczne`, and records whether a write in the file is less than `LIST_LAG_S` before this list, `odczyt`, `_listed_at`) in `_deliver_to_period`, `_deliver_report` (a found Zgłoszenie gets the part as a comment `returned_report`), `_deliver_to_known` and `_deliver_new_issue` (the newest issue whose body has a mark of the wysyłka) |
+| `Szukaj` | `keyed_box.py` `KeyedBox.labelled_issues` (`report_box.py` `newest_with_line`; the list shows the issues `GitHub` lists and those any `KeyedBox` opened with an answer, from the file, `Widoczne`, and records whether a write without an answer in the file is less than `LIST_LAG_S` before this list, `odczyt`, `_listed_at` of the queue thread) in `_deliver_to_period`, `_deliver_report` (a found Zgłoszenie gets the part as a comment `returned_report`), `_deliver_to_known` and `_deliver_new_issue` (the newest issue whose body has a mark of the wysyłka) |
 | `Czytaj` | `KeyedBox.comments` in `_seen` (`_settle`, `_deliver_to_period`), then its plan: nothing when the issue has a mark of the wysyłka in a newer version (`Nowsza`); otherwise a part with its mark in the body, or in its first comment in this version or a newer one, is skipped (a Zgłoszenie whose body has the mark of its part is `Delivered(found, ())`), a comment in an older version is changed, the rest is a new comment, and then the comment of each part this version lacks gets `_RETIRED` (`Wycofaj`) |
-| `Zaloz` | `KeyedBox.open_issue` in `_deliver_new_issue`, `_deliver_report`, `_deliver_to_period`, with `Post.opening` and the marks (`_opening`): held (`_held`, `Wstrzymane`) → `Unreachable` without a request; the note of the write fails (`_noted`, `OSError`) → `Unreachable` without a request; otherwise the write in the file (`Zapis`) and the request; `Rejected` restores the file (`_settled`) |
-| `CzytajArchiwum` | `KeyedBox.archive` in `_deliver_archive` (the Archiwum is on the list of Releases or is the one this queue's `KeyedBox` opened, `_archives`; records `odczyt` as `Szukaj` does), after `Szukaj` without an issue okresu or after `Czytaj` without a newer version (`_newer`), or alone for a `commented` file; `archive_open` false (`_archive_refused`) → `ArchiveWaits` without asking; a file of this version or newer stays, an older one → `UsunPlik`, none → `WyslijPlik`, no Archiwum → `ZalozArchiwum`; `Refused` → `ArchiveWaits` |
+| `Zaloz` | `KeyedBox.open_issue` in `_deliver_new_issue`, `_deliver_report`, `_deliver_to_period`, with `Post.opening` and the marks (`_opening`): held (`_held`, `Wstrzymane`) → `Unreachable` without a request; the note of the write fails (`_noted`, `OSError`) → `Unreachable` without a request; otherwise the write in the file and the request (`Zapis`): `Sent` replaces it by the issue (`pamiec`), unless writing the file then fails (`_settled`, `OSError`: the write without an answer stays), no answer keeps it, `Rejected` restores the file (`_settled`) |
+| `CzytajArchiwum` | `KeyedBox.archive` in `_deliver_archive` (the Archiwum is on the list of Releases or is one a `KeyedBox` opened with an answer, `_Notes.archives`, `pamiecWydania`; records `odczyt` as `Szukaj` does), after `Szukaj` without an issue okresu or after `Czytaj` without a newer version (`_newer`), or alone for a `commented` file; `archive_open` false (`_archive_refused`) → `ArchiveWaits` without asking; a file of this version or newer stays, an older one → `UsunPlik`, none → `WyslijPlik`, no Archiwum → `ZalozArchiwum`; `Refused` → `ArchiveWaits` |
 | `ZalozArchiwum` | `KeyedBox.open_archive` in `_deliver_archive`, held and noted as `Zaloz`; a Release of the tag already there → GitHub's 422 → `Rejected` → `ArchiveWaits` (ghost `falszywe`); `Refused` or `Rejected` → `ArchiveWaits`; with `PusteRepo` every answer is GitHub's 409, which `report_box.py` `GitHubReportBox.open_archive` reads as `Rejected` → `ArchiveWaits` (`OdmowaPustegoRepo`) |
 | `UsunPlik` | `KeyedBox.remove` of the file of an older version in `_deliver_archive`, right before `upload`; `Refused` → `ArchiveWaits` |
 | `WyslijPlik` | `KeyedBox.upload` with `_asset_label` in `_deliver_archive`; a file of the wysyłka already there → `Rejected` (GitHub) → `ArchiveWaits`, as `Refused` |
@@ -627,7 +637,7 @@ The comment above each action and branch in the model names the same code.
 | `Zamknij`, `KoniecProcesu` | `server.py` `serve`: uvicorn closes the socket, waits up to `_GRACEFUL_SHUTDOWN_S` (5 s) for open connections, then the process ends and the daemon queue thread dies with it |
 | `Wylacz` | none: the computer switches off or the process dies; the queue folder, the file `OPENING_FILE` and the Skrzynka stay |
 | `Nadaza`, `NadazaWydanie` | none: GitHub's list of issues shows a new issue, its list of Releases a new Archiwum |
-| `Przedawnienie` | `keyed_box.py` `_held`: a write in the file is `LIST_LAG_S` old, which happens only once its list shows every write of its kind (assumption below); a list asked for earlier keeps holding (`odczyt`) |
+| `Przedawnienie` | `keyed_box.py` `_held`: a write without an answer in the file is `LIST_LAG_S` old, which happens only once its list shows every write of its kind (assumption below); a list asked for earlier keeps holding (`odczyt`) |
 
 Ghost variables have no counterpart in the code and serve only the promises:
 `zakolejkowane` (`post` returned `True`), `odrzucone` (the Skrzynka answered
@@ -707,8 +717,8 @@ configuration is checked in full.
 `OpoznienieListy = TRUE` (GitHub's lists lag, #879, #887) in `okres`,
 `dwa-procesy` and `archiwum-lista`. Without it the lists show every write at
 once, the hold could only delay a write, and the model leaves out the hold and
-the memory of `KeyedBox` (`Zapis`, `pamiec`, `pamiecWydania` and the failed note
-of a write stay unchanged), which keeps the other configurations as small as
+the file of `KeyedBox` (`Zapis`, `pamiec`, `pamiecWydania` and the failed note
+or answer of a write stay unchanged), which keeps the other configurations as small as
 before; `nowe`, `zgloszenie` and `archiwum` with the lag took 29 s, 17 s and over
 600 s on Maks's Mac under load (2026-11-05), and the checker's `*-lista` scopes run
 those targets.
@@ -771,8 +781,10 @@ Checked only with the bounds in the configurations. Assumed and not checked:
   2026-11-05). `Przedawnienie` takes it as given. The list of an Archiwum's files
   does not lag in the model, so it leaves out the hold of uploads and removals
   (`_file_kind`), which the checker's `archiwum-lista` runs; with the Archiwum
-  only through `_archives` the model shows all its files, as `KeyedBox` shows its
-  own uploads.
+  only through `_Notes.archives` the model shows all its files, as `KeyedBox` shows
+  the uploads in the file. The note and the answer of `open_archive` never fail
+  to write the file in the model (`Zaloz` has both), and closed issues are not
+  modelled, so neither is the list with closed issues of `labelled_issues`.
 - `os.replace` is atomic: a switch-off leaves the old file or the new one.
 - Only the Logi Uruchomienia have a newer version (`ASSUME Diagnoza => ...`):
   `RunLogs.diagnosed` is the only caller that queues a wysyłka again with the
@@ -832,7 +844,9 @@ one guard or step whose code it names, on a copy of the checkout
 - JednoIssue (#879): a list of issues without the issues `KeyedBox` opened
   (`Widoczne` without `pamiec`); a write without the hold; the hold judged at the
   write instead of at the list; the writes kept only in memory, so a new Centrum
-  does not know them (all `okres`).
+  does not know them; a new Centrum without the effects of the old one, whose
+  answered writes no longer hold it; a failed write of an effect that drops the
+  write without an answer (all `okres`).
 - DokladnieRaz: an Archiwum without the one `KeyedBox` opened, and an opening of
   the Archiwum without the hold, so the second Logi get GitHub's 422 and the note
   that the file waits (`archiwum-lista`, #887); no check of

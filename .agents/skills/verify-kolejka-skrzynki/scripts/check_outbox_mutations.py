@@ -349,7 +349,7 @@ MUTATIONS = (
         (
             Edit(
                 KEYED_BOX,
-                "        return (*listed, *(issue for issue in opened if issue.number not in numbers))\n",
+                "        return (*listed, *missing)\n",
                 "        return listed\n",
             ),
         ),
@@ -362,7 +362,7 @@ MUTATIONS = (
         (
             Edit(
                 KEYED_BOX,
-                "        return write != answered and 0 <= now - moment and listed_at - moment < LIST_LAG_S\n",
+                "        return 0 <= now - moment and listed_at - moment < LIST_LAG_S\n",
                 "        return False\n",
             ),
         ),
@@ -375,13 +375,13 @@ MUTATIONS = (
         (
             Edit(
                 KEYED_BOX,
-                "        if self._opening is None:\n            with self._lock:\n                return dict(self._remembered)\n",
-                "        if True:\n            with self._lock:\n                return dict(self._remembered)\n",
+                "        if self._opening is None:\n            return self._remembered.fresh(now)\n",
+                "        if True:\n            return self._remembered.fresh(now)\n",
             ),
             Edit(
                 KEYED_BOX,
-                "        if self._opening is None:\n            with self._lock:\n                self._remembered = dict(writes)\n",
-                "        if True:\n            with self._lock:\n                self._remembered = dict(writes)\n",
+                "        if self._opening is None:\n            self._remembered = notes\n",
+                "        if True:\n            self._remembered = notes\n",
             ),
         ),
         (EXPLORER, "--scope", "nowe-issue-lista"),
@@ -389,12 +389,25 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
+        "nowe Centrum nie zna issue, które założyło stare, choć zapis bez odpowiedzi już go nie wstrzymuje (#879)",
+        (
+            Edit(
+                KEYED_BOX,
+                "            [(float(at), str(label), Issue(int(number), str(body))) for at, label, number, body in found[\"issue\"]],\n",
+                "            [],\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "nowe-issue-lista"),
+        "start Centrum zaraz po założeniu issue Uwagi zakłada drugie, zanim lista pokaże pierwsze",
+        NEW,
+    ),
+    Mutation(
         "Archiwum bez Archiwum, które KeyedBox właśnie założył (#887, #879)",
         (
             Edit(
                 KEYED_BOX,
-                "            found = outcome if outcome is not None else None if opened is None else Archive(opened[1], ())\n",
-                "            found = outcome\n",
+                "        found = outcome if outcome is not None else None if opened is None else Archive(opened, ())\n",
+                "        found = outcome\n",
             ),
         ),
         (EXPLORER, "--scope", "archiwum-lista"),
@@ -406,10 +419,13 @@ MUTATIONS = (
         (
             Edit(
                 KEYED_BOX,
-                "        outcome = self._listed_write(\n"
-                "            _file_kind(name), lambda key: self._box.upload(archive_id, name, label, data, key=key), Asset\n"
-                "        )\n",
-                "        outcome = self._about_issue(lambda key: self._box.upload(archive_id, name, label, data, key=key))\n",
+                "        return self._listed_write(\n"
+                "            _file_kind(name),\n"
+                "            lambda key: self._box.upload(archive_id, name, label, data, key=key),\n",
+                "        return self._about_issue(lambda key: self._box.upload(archive_id, name, label, data, key=key))\n"
+                "        return self._listed_write(\n"
+                "            _file_kind(name),\n"
+                "            lambda key: self._box.upload(archive_id, name, label, data, key=key),\n",
             ),
         ),
         (EXPLORER, "--scope", "archiwum-lista"),

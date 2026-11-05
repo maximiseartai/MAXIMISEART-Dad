@@ -60,7 +60,9 @@ there. While
 issue with that label and of every comment to one (``Rejected``, like GitHub's 422).
 The Archiwa Logów okresu (GitHub Releases of that repository) are ``<root>/skrzynka-archiwum/``: ``archiwa.json`` lists
 each Archiwum (id, tag, title, description) and its files (id, name, label), and ``<tag>/<name>`` holds the bytes of each
-file as Centrum uploaded them (gzip). A second file of one name in one Archiwum is ``Rejected``, as on GitHub, and while
+file as Centrum uploaded them (gzip). A second file of one name in one Archiwum is ``Rejected``, as on GitHub, a file
+gets an id no file had before, also one removed (``ostatni-plik.txt`` keeps the last id), as on GitHub, where
+``KeyedBox`` tells a removed file from its new version by the id, and while
 ``<root>/skrzynka-zgloszen/odmawia-archiwum`` exists every step of the Archiwum is ``Refused``, like GitHub's 403 for a
 Token without the permission to write the repository's contents.
 GitHub's rate limit (a 403 that is no refusal) only pytest covers, on the GitHub adapter.
@@ -268,8 +270,10 @@ class FileReportBox:
                 return Refused()
             if any(asset["name"] == name for asset in found["assets"]):
                 return Rejected()
-            asset_id = 1 + max((asset["id"] for entry in listed for asset in entry["assets"]), default=0)
+            last = self._archives / "ostatni-plik.txt"
+            asset_id = 1 + (int(last.read_text(encoding="utf-8")) if last.is_file() else 0)
             (self._archives / found["tag"]).mkdir(parents=True, exist_ok=True)
+            last.write_text(str(asset_id), encoding="utf-8")
             (self._archives / found["tag"] / name).write_bytes(data)
             found["assets"].append({"id": asset_id, "name": name, "label": label})
             self._list(listed)

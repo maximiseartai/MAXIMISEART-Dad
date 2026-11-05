@@ -32,8 +32,8 @@ def _check(config: str) -> tuple[str, ...]:
 
 MUTATIONS = (
     Mutation(
-        "lista issue bez issue, które KeyedBox sam założył (keyed_box.py labelled_issues: _opened, #879)",
-        (Edit(MODEL, "Widoczne(q) == {i \\in 1..Len(issues) : i \\notin niewidoczne \\/ i \\in pamiec[q]}\n",
+        "lista issue bez issue, które KeyedBox założył (keyed_box.py labelled_issues: _Notes.opened, #879)",
+        (Edit(MODEL, "Widoczne(q) == {i \\in 1..Len(issues) : i \\notin niewidoczne \\/ i \\in pamiec}\n",
               "Widoczne(q) == {i \\in 1..Len(issues) : i \\notin niewidoczne}\n"),),
         _check("okres"),
         "druga Kontrola ilości okresu zakłada drugie issue okresu, zanim lista pokaże pierwsze",
@@ -55,10 +55,27 @@ MUTATIONS = (
     ),
     Mutation(
         "zapisy tylko w pamięci, więc nowe Centrum ich nie zna (keyed_box.py OPENING_FILE, #879)",
-        (Edit(MODEL, "    /\\ UNCHANGED <<niewidoczne, zakladanie, wydanieNiewidoczne, falszywe, plik,",
-              "    /\\ zakladanie' = [r \\in Rodzaje |-> \"brak\"]\n    /\\ UNCHANGED <<niewidoczne, wydanieNiewidoczne, falszywe, plik,"),),
+        (Edit(MODEL, "    /\\ UNCHANGED <<niewidoczne, zakladanie, pamiec, pamiecWydania, wydanieNiewidoczne, falszywe, plik,",
+              "    /\\ zakladanie' = [r \\in Rodzaje |-> \"brak\"] /\\ pamiec' = {} /\\ pamiecWydania' = FALSE\n"
+              "    /\\ UNCHANGED <<niewidoczne, wydanieNiewidoczne, falszywe, plik,"),),
         _check("okres"),
         "start Centrum zaraz po założeniu issue okresu zakłada drugie, zanim lista pokaże pierwsze",
+        NEW,
+    ),
+    Mutation(
+        "nowe Centrum bez skutków zapisów starego, choć ich zapisy już nie wstrzymują (keyed_box.py _parsed, #879)",
+        (Edit(MODEL, "    /\\ UNCHANGED <<niewidoczne, zakladanie, pamiec, pamiecWydania, wydanieNiewidoczne, falszywe, plik,",
+              "    /\\ pamiec' = {}\n    /\\ UNCHANGED <<niewidoczne, zakladanie, pamiecWydania, wydanieNiewidoczne, falszywe, plik,"),),
+        _check("okres"),
+        "start Centrum zaraz po założeniu issue okresu z odpowiedzią zakłada drugie, zanim lista pokaże pierwsze",
+        NEW,
+    ),
+    Mutation(
+        "zapis skutku, który rzuca OSError, zabiera zapis bez odpowiedzi (keyed_box.py _settled)",
+        (Edit(MODEL, "          /\\ issues' = nowe /\\ niewidoczne' = zaLista /\\ Zapis(q, \"issue\", FALSE)\n          /\\ nr'",
+              "          /\\ issues' = nowe /\\ niewidoczne' = zaLista /\\ Zapis(q, \"issue\", TRUE)\n          /\\ nr'"),),
+        _check("okres"),
+        "druga Kontrola ilości okresu zakłada drugie issue okresu, gdy plik zapisów nie przyjął pierwszego",
         NEW,
     ),
     Mutation(
@@ -70,8 +87,8 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "Archiwum bez Archiwum, które KeyedBox sam założył (keyed_box.py archive: _archives, #887)",
-        (Edit(MODEL, "(wydanieNiewidoczne /\\ ~pamiecWydania[q])", "wydanieNiewidoczne"),),
+        "Archiwum bez Archiwum, które KeyedBox założył (keyed_box.py archive: _Notes.archives, #887)",
+        (Edit(MODEL, "(wydanieNiewidoczne /\\ ~pamiecWydania)", "wydanieNiewidoczne"),),
         _check("archiwum-lista"),
         "drugie Logi nowego okresu dostają odmowę drugiego Archiwum (422) i dopisek, że plik czeka",
         NEW,
@@ -312,7 +329,7 @@ MUTATIONS = (
     ),
     Mutation(
         "Archiwum okresu zakładane bez szukania (_deliver_archive: listed is None)",
-        (Edit(MODEL, "               /\\ IF wydania = 0 \\/ (wydanieNiewidoczne /\\ ~pamiecWydania[q])\n",
+        (Edit(MODEL, "               /\\ IF wydania = 0 \\/ (wydanieNiewidoczne /\\ ~pamiecWydania)\n",
               "               /\\ IF TRUE\n"),),
         _check("archiwum"),
         "Diagnoza dostaje odmowę drugiego Archiwum okresu (422) i komentarz z dopiskiem, że plik czeka",

@@ -20,7 +20,7 @@ from rozliczenia import efenix_messages, preparation_messages
 from rozliczenia.call_trace import CallCause, CallFrame, CallTrace
 from rozliczenia.centrum import contract, update_messages
 from rozliczenia.centrum.diagnosis import Diagnosis
-from rozliczenia.centrum.keyed_box import LIST_LAG_S, KeyedBox, read_report_key
+from rozliczenia.centrum.keyed_box import KeyedBox, read_report_key
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, REPORT, Case, DadCases
 from rozliczenia.centrum.case_delivery import case_outbox
@@ -621,7 +621,6 @@ def test_po_zamknieciu_zgloszenia_powracajacy_problem_wysyla_nowe_z_odnosnikiem_
     reports = computer.reports()
     first, _, first_body = prepared(reports, computer)
     first.send()
-    computer.clock.pause(LIST_LAG_S)  # Maks zamyka Zgłoszenie, gdy lista issue już je pokazuje (#879)
     computer.box.close(1)
 
     before = reports.handle(source(computer).fingerprint)

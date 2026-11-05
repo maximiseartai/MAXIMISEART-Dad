@@ -21,7 +21,6 @@ from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
-from rozliczenia.centrum.keyed_box import LIST_LAG_S
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Refused, Unreachable
@@ -772,7 +771,6 @@ def test_zgloszenie_zamkniete_wedlug_powiadomien_nie_czeka_juz_po_restarcie(tmp_
     first = stopped_for_maks(centrum)
     diagnose(centrum, first)
     send(centrum, first)
-    centrum.surroundings.clock.pause(LIST_LAG_S)  # Maks zamyka Zgłoszenie, gdy lista issue już je pokazuje (#879)
     box.close(1)
     assert [item["state"] for item in centrum.client.get("/api/notifications").json()["items"]] == ["rozwiazana"]
     centrum.restart()

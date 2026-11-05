@@ -1010,10 +1010,12 @@ def _state(
     ``remove`` and ``upload`` never spans a pass boundary.
     ``_archive_refused`` is in the state although ``_send_all`` sets it anew in every pass, as the wake it arms is.
     Time counts only as what it decides (#879): which issues and Releases GitHub's lists do not show yet, which issues
-    ``KeyedBox`` still adds to a list (``_opened``), and which kinds have a write less than ``LIST_LAG_S`` ago in
-    ``opening``, each with whether this ``KeyedBox`` got its answer (``_answered``) and whether its last list came before
-    the write ended its lag (``_listed_at``), and the Releases, files and removals ``KeyedBox`` adds to what ``archive``
-    answers (``_archives``, ``_uploads``, ``_removals``); a wake moves time past all of them.
+    ``KeyedBox`` still adds to a list (``opened`` in ``opening``), which kinds have a write without an answer less than
+    ``LIST_LAG_S`` ago in ``opening``, each with whether the last list of the queue thread came before the write ended
+    its lag (``_listed_at``), and the Releases, files and removals ``KeyedBox`` adds to what ``archive`` answers
+    (``archives``, ``uploads``, ``removals`` in ``opening``); a wake moves time past all of them. The checker runs every
+    pass in its own thread, so the last list of a pass is still there in the next one; in Centrum each pass has a new
+    thread, so it holds at least as often, and every write follows a list of its kind in the same pass.
     Left out on purpose, because they do not change what is sent: ``_first_comments``
     (``delivered``, ``wait_delivered``), ``_rejected`` (no ``Rejected`` here), ``_read_failed`` and ``_unreadable``
     (``_send_all`` sets the first anew in every pass, and whether it armed a wake is in the state; the second only spares
@@ -1024,6 +1026,9 @@ def _state(
     files = {
         path.name: path.read_text(encoding="utf-8") for path in queue.glob("*.json")
     }
+    with keyed._lock:
+        notes = keyed._notes() or keyed_box_module._Notes()
+    listed = keyed._listed_at()
     def same(text: str) -> str:
         return _VERSION.sub(lambda found: f"wersja {versions.get(found.group(1), '?')} -->", text)
 
@@ -1059,15 +1064,15 @@ def _state(
         threads,
         tuple(sorted(box.unlisted())),
         tuple(sorted(box.unlisted_releases())),
-        tuple(sorted(tag for tag, (at, _) in keyed._archives.items() if clock() - at < LIST_LAG_S)),
-        tuple(sorted(asset.id for at, _, asset in keyed._uploads if clock() - at < LIST_LAG_S)),
-        tuple(sorted(asset for asset, at in keyed._removals.items() if clock() - at < LIST_LAG_S)),
+        tuple(sorted(tag for _, tag, _ in notes.archives)),
+        tuple(sorted(asset.id for _, _, asset in notes.uploads)),
+        tuple(sorted(asset for _, asset in notes.removals)),
         tuple(sorted(keyed._names.items())),
-        tuple(sorted(issue.number for at, _, issue in keyed._opened if clock() - at < LIST_LAG_S)),
+        tuple(sorted(issue.number for _, _, issue in notes.opened)),
         tuple(
             sorted(
-                (kind, keyed._answered.get(kind) == write, keyed._listed_at.get(keyed_box_module._list_of(kind), clock()) - moment < LIST_LAG_S)
-                for kind, (moment, write) in (keyed._writes() or {}).items()
+                (kind, listed.get(keyed_box_module._list_of(kind), clock()) - moment < LIST_LAG_S)
+                for kind, (moment, _) in notes.pending.items()
                 if 0 <= clock() - moment < LIST_LAG_S
             )
         ),
