@@ -207,20 +207,22 @@ FAKE_CLAUDE = '''#!{python}
 import json, os, select, subprocess, sys, time, urllib.request
 sys.path.insert(0, {fixtures!r})
 import ustawienia_claude
+# Ustawienia atrapy z testu: środowisko wyroczni nie dochodzi do claude (lista dozwolona falszywe_api).
+ATRAPA = {atrapa!r}
 if sys.argv[1:] == ["--version"]:
     print("9.9.9 (Claude Code)")
     sys.exit(0)
-with open(os.environ["ATRAPA_WYWOLANIA"], "a", encoding="utf-8") as calls:
+with open(ATRAPA["ATRAPA_WYWOLANIA"], "a", encoding="utf-8") as calls:
     keys = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_SHELL_PREFIX", "WYROCZNIA_ZGODY_HOOK",
             "MAXIMISEART_WYROCZNIA_W_SRODKU", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
     calls.write(json.dumps({{"argv": sys.argv[1:], "cwd": os.getcwd(), "env": {{k: os.environ.get(k) for k in keys}}}}) + "\\n")
-if os.environ.get("ATRAPA_CISZA"):
+if ATRAPA.get("ATRAPA_CISZA"):
     time.sleep(600)
 lines = [json.loads(sys.stdin.readline()) for _ in range(2)]
 assert [line["type"] for line in lines] == ["control_request", "user"], lines
 base = ustawienia_claude.base_url(sys.argv[1:], os.getcwd(), os.environ)
 def api(body):
-    with open(os.environ["ATRAPA_WYWOLANIA"] + ".api", "a", encoding="utf-8") as asked:
+    with open(ATRAPA["ATRAPA_WYWOLANIA"] + ".api", "a", encoding="utf-8") as asked:
         asked.write(json.dumps(base) + "\\n")
     request = urllib.request.Request(base + "/v1/messages", data=json.dumps(body).encode(), method="POST")
     with urllib.request.urlopen(request) as answer:
@@ -231,7 +233,7 @@ command = json.loads(next(e["delta"]["partial_json"] for e in deltas if e["type"
 def emit(event):
     print(json.dumps(event), flush=True)
 emit({{"type": "assistant", "message": {{"content": [{{"type": "tool_use", "name": "Bash", "input": {{"command": command}}}}]}}}})
-with open(os.environ["ATRAPA_WYWOLANIA"] + ".polecenia", "a", encoding="utf-8") as sent:
+with open(ATRAPA["ATRAPA_WYWOLANIA"] + ".polecenia", "a", encoding="utf-8") as sent:
     sent.write(json.dumps(command) + "\\n")
 prefix = os.environ["CLAUDE_CODE_SHELL_PREFIX"]
 if "PYTA" in command:
@@ -274,13 +276,15 @@ def _oracle(
     *arguments: str,
     timeout: float = 60,
     env: dict[str, str] | None = None,
+    atrapa: dict[str, str] | None = None,
     user_settings: dict[str, Any] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     programs = tmp_path / "bin"
     programs.mkdir()
     claude = programs / "claude"
     fixtures = str(Path(ustawienia_claude.__file__).parent)
-    claude.write_text(FAKE_CLAUDE.format(python=sys.executable, fixtures=fixtures), encoding="utf-8")
+    atrapa = {"ATRAPA_WYWOLANIA": str(tmp_path / "wywolania.jsonl"), **(atrapa or {})}
+    claude.write_text(FAKE_CLAUDE.format(python=sys.executable, fixtures=fixtures, atrapa=atrapa), encoding="utf-8")
     claude.chmod(claude.stat().st_mode | stat.S_IXUSR)
     listed = tmp_path / "przypadki.jsonl"
     listed.write_text("".join(json.dumps(case) + "\n" for case in cases), encoding="utf-8")
@@ -294,7 +298,6 @@ def _oracle(
             **os.environ,
             "HOME": str(tmp_path / "dom"),
             "PATH": f"{programs}{os.pathsep}/usr/bin{os.pathsep}/bin",
-            "ATRAPA_WYWOLANIA": str(tmp_path / "wywolania.jsonl"),
             "CLAUDECODE": "1",
             "CLAUDE_CODE_ENTRYPOINT": "sdk-ts",
             "ANTHROPIC_AUTH_TOKEN": "token-huba",
@@ -493,7 +496,7 @@ def test_wyrocznia_konczy_claude_code_ktory_nie_pyta_falszywego_api(tmp_path: Pa
         "600",
         "--kontakt-s",
         "1",
-        env={"ATRAPA_CISZA": "1"},
+        atrapa={"ATRAPA_CISZA": "1"},
     )
 
     assert ran.stdout.splitlines()[1:] == [

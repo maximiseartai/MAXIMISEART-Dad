@@ -368,18 +368,20 @@ FAKE_CLAUDE = '''#!{python}
 import json, os, subprocess, sys, time, urllib.request
 sys.path.insert(0, {fixtures!r})
 import ustawienia_claude
+# Ustawienia atrapy z testu: środowisko wyroczni nie dochodzi do claude (lista dozwolona falszywe_api).
+ATRAPA = {atrapa!r}
 argv = sys.argv[1:]
 if argv == ["--version"]:
     print("9.9.9 (Claude Code)")
     sys.exit(0)
-with open(os.environ["ATRAPA_WYWOLANIA"], "a", encoding="utf-8") as calls:
+with open(ATRAPA["ATRAPA_WYWOLANIA"], "a", encoding="utf-8") as calls:
     keys = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "MAXIMISEART_WYROCZNIA_W_SRODKU", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "MAXIMISEART_PRACA_W_TLE_DZIENNIK")
     calls.write(json.dumps({{"argv": argv, "cwd": os.getcwd(), "env": {{k: os.environ.get(k) for k in keys}}}}) + "\\n")
-if os.environ.get("ATRAPA_CISZA"):
+if ATRAPA.get("ATRAPA_CISZA"):
     time.sleep(600)
 base = ustawienia_claude.base_url(argv, os.getcwd(), os.environ)
 def api(messages):
-    with open(os.environ["ATRAPA_WYWOLANIA"] + ".api", "a", encoding="utf-8") as asked:
+    with open(ATRAPA["ATRAPA_WYWOLANIA"] + ".api", "a", encoding="utf-8") as asked:
         asked.write(json.dumps(base) + "\\n")
     body = json.dumps({{"model": "m", "stream": True, "messages": messages}}).encode()
     with urllib.request.urlopen(urllib.request.Request(base + "/v1/messages", data=body, method="POST")) as answer:
@@ -406,7 +408,7 @@ for _ in range(12):
         continue
     messages.append({{"role": "assistant", "content": [{{"type": "text", "text": delta["text"]}}]}})
     settings = json.load(open(os.path.join(os.getcwd(), ".claude", "settings.json"), encoding="utf-8"))
-    hooks = [] if os.environ.get("ATRAPA_BEZ_HOOKA") else [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
+    hooks = [] if ATRAPA.get("ATRAPA_BEZ_HOOKA") else [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
     event = {{"hook_event_name": "Stop", "stop_hook_active": active, "background_tasks": tasks, "session_crons": []}}
     answers = [
         subprocess.run(h, shell=True, input=json.dumps(event), capture_output=True, text=True,
@@ -414,7 +416,7 @@ for _ in range(12):
         for h in hooks
     ]
     reasons = [json.loads(a)["reason"] for a in answers if a.strip()]
-    if os.environ.get("ATRAPA_JEDNA_ODMOWA") and not active:
+    if ATRAPA.get("ATRAPA_JEDNA_ODMOWA") and not active:
         reasons.append("Odmowa końca tury: w tle sesji biegnie jeszcze nic (fałszywa odmowa).")
     if not reasons:
         sys.exit(0)
@@ -428,13 +430,15 @@ def _oracle(
     tmp_path: Path,
     *arguments: str,
     env: dict[str, str] | None = None,
+    atrapa: dict[str, str] | None = None,
     user_settings: Mapping[str, object] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     programs = tmp_path / "bin"
     programs.mkdir()
     claude = programs / "claude"
     fixtures = str(Path(ustawienia_claude.__file__).parent)
-    claude.write_text(FAKE_CLAUDE.format(python=sys.executable, fixtures=fixtures), encoding="utf-8")
+    atrapa = {"ATRAPA_WYWOLANIA": str(tmp_path / "wywolania.jsonl"), **(atrapa or {})}
+    claude.write_text(FAKE_CLAUDE.format(python=sys.executable, fixtures=fixtures, atrapa=atrapa), encoding="utf-8")
     claude.chmod(claude.stat().st_mode | stat.S_IXUSR)
     (tmp_path / "dom" / ".claude").mkdir(parents=True)
     if user_settings is not None:
@@ -445,7 +449,6 @@ def _oracle(
             **os.environ,
             "HOME": str(tmp_path / "dom"),
             "PATH": f"{programs}{os.pathsep}/usr/bin{os.pathsep}/bin",
-            "ATRAPA_WYWOLANIA": str(tmp_path / "wywolania.jsonl"),
             "CLAUDECODE": "1",
             "CLAUDE_CODE_ENTRYPOINT": "sdk-ts",
             "ANTHROPIC_AUTH_TOKEN": "token-huba",
@@ -526,7 +529,7 @@ def test_wyrocznia_pyta_tylko_falszywe_api_takze_gdy_ustawienia_uzytkownika_maja
 
 @POSIX_ONLY
 def test_wyrocznia_gdy_hook_nie_odmawia_konczy_sie_zmiana(tmp_path: Path) -> None:
-    ran = _oracle(tmp_path, env={"ATRAPA_BEZ_HOOKA": "1"})
+    ran = _oracle(tmp_path, atrapa={"ATRAPA_BEZ_HOOKA": "1"})
 
     assert ran.stdout.splitlines()[1:] == [
         "ZMIANA praca-w-tle | koniec tury bez odmowy (kod 0)",
@@ -539,7 +542,7 @@ def test_wyrocznia_gdy_hook_nie_odmawia_konczy_sie_zmiana(tmp_path: Path) -> Non
 @POSIX_ONLY
 def test_wyrocznia_gdy_hook_odmawia_bez_pracy_w_tle_konczy_sie_zmiana(tmp_path: Path) -> None:
     # Jedna fałszywa odmowa, po której Claude Code kończy turę sam, to też zmiana: każda zatrzymuje agenta.
-    ran = _oracle(tmp_path, "bez-pracy-w-tle", env={"ATRAPA_JEDNA_ODMOWA": "1"})
+    ran = _oracle(tmp_path, "bez-pracy-w-tle", atrapa={"ATRAPA_JEDNA_ODMOWA": "1"})
 
     assert ran.stdout.splitlines()[1:] == [
         "ZMIANA bez-pracy-w-tle | odmowy hooka: 1",
@@ -551,7 +554,7 @@ def test_wyrocznia_gdy_hook_odmawia_bez_pracy_w_tle_konczy_sie_zmiana(tmp_path: 
 @POSIX_ONLY
 def test_wyrocznia_konczy_claude_code_ktory_nie_pyta_falszywego_api(tmp_path: Path) -> None:
     # Claude Code, który pyta inny model, uruchomiłby prawdziwego agenta (5.11.2026: agenci uruchamiali wyrocznię).
-    ran = _oracle(tmp_path, "praca-w-tle", "--kontakt-s", "1", env={"ATRAPA_CISZA": "1"})
+    ran = _oracle(tmp_path, "praca-w-tle", "--kontakt-s", "1", atrapa={"ATRAPA_CISZA": "1"})
 
     assert ran.stdout.splitlines()[1:] == [
         "ZMIANA praca-w-tle | Claude Code nie zapytał fałszywego API",

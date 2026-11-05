@@ -8,8 +8,9 @@ użytkownika (``~/.claude/settings.json``), projektu (``.claude/settings.json``)
 i ``--settings`` (kolejność ze strony ustawień Claude Code); ``--setting-sources`` wybiera spośród ``user``,
 ``project`` i ``local``, a bez niego biorą udział wszystkie. Przełącznik innego dostawcy (``CLAUDE_CODE_USE_BEDROCK``
 i pozostałe z ``PROVIDERS``) włączony wartością 1, true, yes albo on kieruje Claude Code do API tego dostawcy, nie pod
-``ANTHROPIC_BASE_URL`` (Claude Code 2.1.318). Atrapa ładuje ten plik ze ścieżki, więc importuje tylko bibliotekę
-standardową.
+``ANTHROPIC_BASE_URL``, a niepuste gniazdo ``ANTHROPIC_UNIX_SOCKET`` zastępuje połączenie pod ten adres (Claude Code
+2.1.318: ``let f=i.ANTHROPIC_UNIX_SOCKET;if(f)return{...s,unix:f}``). Atrapa ładuje ten plik ze ścieżki, więc
+importuje tylko bibliotekę standardową.
 """
 
 from __future__ import annotations
@@ -28,12 +29,13 @@ PROVIDERS = (
     "CLAUDE_CODE_USE_MANTLE",
     "CLAUDE_CODE_USE_GATEWAY",
 )
+SOCKET = "ANTHROPIC_UNIX_SOCKET"
 
 
 def base_url(argv: Sequence[str], cwd: str, environ: Mapping[str, str]) -> str | None:
     """``ANTHROPIC_BASE_URL``, który wybrałby Claude Code uruchomiony z ``argv`` w ``cwd`` ze środowiskiem ``environ``.
 
-    Gdy włączony jest przełącznik innego dostawcy, wynik to nazwa tego przełącznika, a nie adres.
+    Gdy włączony jest przełącznik innego dostawcy albo gniazdo ``SOCKET``, wynik to nazwa tej zmiennej, a nie adres.
     """
 
     chosen = argv[list(argv).index("--setting-sources") + 1].split(",") if "--setting-sources" in argv else SOURCES
@@ -53,4 +55,6 @@ def base_url(argv: Sequence[str], cwd: str, environ: Mapping[str, str]) -> str |
     for layer in layers:
         env.update(layer.get("env", {}))
     on = [name for name in PROVIDERS if str(env.get(name, "")).strip().lower() in ("1", "true", "yes", "on")]
+    if env.get(SOCKET):
+        on.append(SOCKET)
     return on[0] if on else env.get("ANTHROPIC_BASE_URL")

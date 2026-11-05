@@ -152,18 +152,26 @@ def test_skrypt_bez_parsera_laduje_sie_bez_zainstalowanego_pakietu(tmp_path: Pat
     _assert_runs(tmp_path, LOADED_WITHOUT_INSTALL, script)
 
 
+def _text(node: ast.AST) -> str | None:
+    """Tekst stałej ``str`` albo ``bytes`` (``os.environb``, ``env={b"…": …}``); inaczej ``None``."""
+
+    if isinstance(node, ast.Constant) and isinstance(node.value, (str, bytes)):
+        return node.value if isinstance(node.value, str) else node.value.decode("latin-1")
+    return None
+
+
 def _claude_launches(tree: ast.AST) -> Iterator[tuple[int, str]]:
     bare = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Expr)}
     for node in ast.walk(tree):
+        text = _text(node)
         if isinstance(node, ast.keyword) and node.arg == BASE_URL:
             yield node.lineno, f"nazywa {BASE_URL}"
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in bare:
-            if BASE_URL_WORD.search(node.value):
+        elif isinstance(node, ast.Constant) and text is not None and id(node) not in bare:
+            if BASE_URL_WORD.search(text):
                 yield node.lineno, f"nazywa {BASE_URL}"
         elif isinstance(node, (ast.List, ast.Tuple)) and node.elts:
-            first, *rest = node.elts
-            second = rest[0].value if rest and isinstance(rest[0], ast.Constant) else None
-            if isinstance(first, ast.Constant) and first.value == "claude" and second != "--version":
+            first, *rest = (_text(element) for element in node.elts)
+            if first == "claude" and rest[:1] != ["--version"]:
                 yield node.lineno, "uruchamia claude"
 
 
@@ -179,6 +187,8 @@ def _claude_launches(tree: ast.AST) -> Iterator[tuple[int, str]]:
         'os.environ.update({"ANTHROPIC_BASE_URL": url})',
         'subprocess.run("ANTHROPIC_BASE_URL=http://127.0.0.1:8317 claude -p x", shell=True)',
         'settings = f\'{{"env": {{"ANTHROPIC_BASE_URL": "{url}"}}}}\'',
+        'os.environb[b"ANTHROPIC_BASE_URL"] = b"http://127.0.0.1:8317"',
+        'subprocess.run(command, env={b"ANTHROPIC_" b"BASE_URL": url})',
     ],
 )
 def test_adres_api_w_kodzie_skryptu_lapie_straznik(code: str) -> None:
@@ -186,8 +196,9 @@ def test_adres_api_w_kodzie_skryptu_lapie_straznik(code: str) -> None:
     assert list(_claude_launches(ast.parse(code))) == [(1, f"nazywa {BASE_URL}")]
 
 
-def test_claude_w_kodzie_skryptu_lapie_straznik() -> None:
-    assert list(_claude_launches(ast.parse('subprocess.run(["claude", "-p", "x"])'))) == [(1, "uruchamia claude")]
+@pytest.mark.parametrize("code", ['subprocess.run(["claude", "-p", "x"])', 'subprocess.run((b"claude", b"-p", b"x"))'])
+def test_claude_w_kodzie_skryptu_lapie_straznik(code: str) -> None:
+    assert list(_claude_launches(ast.parse(code))) == [(1, "uruchamia claude")]
 
 
 @pytest.mark.parametrize(
@@ -206,13 +217,13 @@ def test_claude_ze_skryptu_biegnie_tylko_przez_falszywe_api() -> None:
     """Polecenie ``["claude", …]`` inne niż ``claude --version`` i nazwa ``ANTHROPIC_BASE_URL`` są tylko w ``FAKE_API``.
 
     5.11.2026 wyrocznia z adresem fałszywego API tylko w środowisku procesu zapytała prawdziwy model przez hub z
-    ustawień użytkownika i uruchomiła ok. 100 sesji (#956). Nazwę zmiennej test widzi w argumencie słownym
-    (``dict(os.environ, ANTHROPIC_BASE_URL=…)``, ``update(…)``) i w każdym tekście kodu jako osobne słowo: klucz
-    słownika, ``os.environ[…]``, ``putenv``, ``setdefault``, tekst powłoki, część f-stringu.
-    Granica: nie widzi nazwy złożonej w czasie biegu (``"ANTHROPIC_" + "BASE_URL"``, odczyt z pliku), nazwy w samym
-    tekście bez przypisania (docstring), skryptów innych niż ``.py`` ani polecenia złożonego w czasie biegu (tekst
-    powłoki, lista budowana z części, ``[shutil.which("claude"), …]``), które widzi tylko po stałej ``"claude"`` na
-    początku listy albo krotki.
+    ustawień użytkownika i uruchomiła ok. 100 sesji (#956). Test czyta kod tylko w dwóch miejscach: w stałych ``str``
+    i ``bytes`` (sąsiednie literały ``"ANTHROPIC_" "BASE_URL"`` parser skleja w jedną stałą, części f-stringu też są
+    stałymi), gdzie szuka nazwy jako osobnego słowa i stałej ``"claude"`` na początku listy albo krotki, oraz w
+    nazwach argumentów słownych (``dict(os.environ, ANTHROPIC_BASE_URL=…)``).
+    Granica: wszystko, co powstaje w czasie biegu (``"ANTHROPIC_" + "BASE_URL"``, odczyt z pliku,
+    ``[shutil.which("claude"), …]``), docstring i goły napis, skrypty inne niż ``.py``. W czasie biegu chroni lista
+    dozwolona środowiska ``falszywe_api.claude``: ``claude`` nie dostaje ze środowiska wyroczni nic spoza niej.
     """
 
     found = [

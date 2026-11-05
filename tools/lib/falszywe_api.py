@@ -7,9 +7,13 @@ są tu, bo 5.11.2026 ``claude -p`` z adresem fałszywego API tylko w środowisku
 dalej, aż do ok. 100 sesji:
 
 - ``--setting-sources project,local``: Claude Code nie czyta ustawień użytkownika (adres huba, ``apiKeyHelper``);
-- adres fałszywego API i wyłączone przełączniki innych dostawców (``PROVIDERS``: Bedrock, Vertex, Foundry i inne
-  z Claude Code 2.1.318) w ``--settings``, które wygrywają z ``env`` ustawień projektu i lokalnych checkoutu;
-- środowisko ``claude`` bez ``CLAUDE_CODE_*`` sesji, w której biegnie wyrocznia, i bez tokenu huba;
+- adres fałszywego API, puste gniazdo API (``SOCKET``) i wyłączone przełączniki innych dostawców (``PROVIDERS``:
+  Bedrock, Vertex, Foundry i inne z Claude Code 2.1.318) w ``--settings``, które wygrywają z ``env`` ustawień projektu
+  i lokalnych checkoutu;
+- środowisko ``claude`` z listy dozwolonej (``_INHERITED``), zmiennych, które wyrocznia podaje jawnie w ``env``, i
+  zmiennych tego modułu: ze środowiska procesu wyroczni nie dochodzi nic innego (adres API, gniazdo
+  ``ANTHROPIC_UNIX_SOCKET``, pośrednik ``HTTPS_PROXY``, przełącznik dostawcy, token huba, zmienne sesji Claude Code),
+  także ustawione przez ``os.environb`` albo zmienne, których dzisiejszy Claude Code jeszcze nie zna;
 - ``NESTED`` w środowisku ``claude``: ``claude`` w Claude Code uruchomionym przez wyrocznię odmawia (``Nested``),
   a wyrocznia pyta ``nested`` na starcie, żeby odmówić słowami;
 - ``claude``, które przez ``contact_s`` nie zapyta fałszywego API, pyta inny model, więc ginie od razu.
@@ -17,9 +21,11 @@ dalej, aż do ok. 100 sesji:
 Granica: managed settings (``/Library/Application Support/ClaudeCode/managed-settings.json`` na macOS,
 ``/etc/claude-code/managed-settings.json`` na Linuksie, polityka MDM) wygrywają z ``--settings``, więc ich ``env`` albo
 ``apiKeyHelper`` przekierowałyby ``claude`` mimo tych zabezpieczeń; na Macu Maksa ich nie ma (5.11.2026).
-Nowy przełącznik dostawcy z późniejszego Claude Code, którego ``PROVIDERS`` nie zna, ustawiony w ``env`` projektu
-albo ``.claude/settings.local.json``, też by go przekierował. Przed oboma chroni wtedy już tylko ``contact_s``: takie
-``claude`` ginie po ``contact_s`` sekundach, ale jedno zapytanie do innego modelu mogło już pójść.
+Nowy przełącznik dostawcy albo gniazdo z późniejszego Claude Code, których ``--settings`` nie zeruje, ustawione w
+``env`` projektu albo ``.claude/settings.local.json``, też by go przekierowały, bo lista dozwolona chroni tylko przed
+środowiskiem procesu wyroczni. Przed jednym i drugim
+chroni wtedy już tylko ``contact_s``: takie ``claude`` ginie po ``contact_s`` sekundach, ale jedno zapytanie do innego
+modelu mogło już pójść.
 
 Model to ``MODEL`` (reguła zespołu: tylko Opus); fałszywe API go nie uruchamia, a odpowiedź podaje jego nazwę.
 
@@ -46,8 +52,18 @@ MODEL = "claude-opus-5-5"
 CONTACT_S = 30.0
 NESTED = "MAXIMISEART_WYROCZNIA_W_SRODKU"
 _API_KEY = "sk-ant-wyrocznia"
-# Środowisko sesji Claude Code, w której biegnie wyrocznia, i token huba nie idą do ``claude`` wyroczni.
-_DROPPED = ("CLAUDECODE", "ANTHROPIC_AUTH_TOKEN")
+# Jedyne zmienne środowiska procesu wyroczni, które dostaje ``claude``; wyrocznie biegną tylko na macOS i Linuksie.
+_INHERITED = (
+    "PATH",  # ``claude``, ``python3`` hooka i polecenia narzędzia Bash
+    "HOME",  # ``~/.claude.json`` i ``~/.claude`` Claude Code, piaskownica wyroczni zgody w ``~/.cache``
+    "TMPDIR",  # katalog tymczasowy użytkownika na macOS, w którym Claude Code i polecenia zapisują pliki
+    "USER",  # nazwa użytkownika, którą czytają Claude Code i polecenia
+    "LOGNAME",  # to samo pod nazwą POSIX
+    "SHELL",  # powłoka narzędzia Bash Claude Code
+    "LANG",  # kodowanie tekstu poleceń i ich wyniku (polskie litery)
+    "LC_ALL",  # jw., gdy ustawione zamiast LANG
+    "LC_CTYPE",  # jw.
+)
 # Przełączniki dostawców innych niż Messages API spod ``ANTHROPIC_BASE_URL`` w Claude Code 2.1.318; włącza je tylko
 # wartość 1, true, yes albo on, więc ``"0"`` w ``--settings`` wyłącza każdy, także ustawiony w ``env`` projektu.
 PROVIDERS = (
@@ -59,6 +75,8 @@ PROVIDERS = (
     "CLAUDE_CODE_USE_MANTLE",
     "CLAUDE_CODE_USE_GATEWAY",
 )
+# Niepuste gniazdo API wygrywa z ``ANTHROPIC_BASE_URL`` w Claude Code 2.1.318, a pusty tekst je wyłącza.
+SOCKET = "ANTHROPIC_UNIX_SOCKET"
 
 
 class Nested(RuntimeError):
@@ -92,8 +110,8 @@ def claude(
 ) -> Ran:
     """Jedno ``claude`` z ``arguments`` wobec fałszywego API aż do jego końca, ``stop``, ``timeout`` albo braku kontaktu.
 
-    ``answer`` dostaje JSON każdego zapytania i zwraca strumień odpowiedzi (``stream``). ``env`` dodaje zmienne
-    wyroczni do środowiska ``claude``. ``stdin`` to plik (potok nazwany), z którego ``claude`` czyta wejście; bez niego
+    ``answer`` dostaje JSON każdego zapytania i zwraca strumień odpowiedzi (``stream``). Środowisko ``claude`` to
+    zmienne ``_INHERITED`` procesu wyroczni, zmienne wyroczni z ``env`` i zmienne tego modułu, które wygrywają z ``env``. ``stdin`` to plik (potok nazwany), z którego ``claude`` czyta wejście; bez niego
     wejście jest puste. Gdy fałszywe API nie dostanie zapytania przez ``contact_s``, ``claude`` ginie, a ``stop`` jest
     ustawione. W Claude Code, które uruchomiła wyrocznia, ``claude`` niczego nie uruchamia i rzuca ``Nested``.
     """
@@ -155,14 +173,14 @@ def _command(arguments: Sequence[str], port: int) -> list[str]:
         "--setting-sources",
         "project,local",
         "--settings",
-        json.dumps({"env": {**_base(port), **dict.fromkeys(PROVIDERS, "0")}}),
+        json.dumps({"env": {**_base(port), SOCKET: "", **dict.fromkeys(PROVIDERS, "0")}}),
         "--model",
         MODEL,
     ]
 
 
 def _environment(port: int, extra: Mapping[str, str]) -> dict[str, str]:
-    kept = {name: value for name, value in os.environ.items() if not name.startswith("CLAUDE_CODE_") and name not in _DROPPED}
+    kept = {name: os.environ[name] for name in _INHERITED if name in os.environ}
     return {**kept, **extra, **_base(port), "ANTHROPIC_API_KEY": _API_KEY, NESTED: "1"}
 
 
