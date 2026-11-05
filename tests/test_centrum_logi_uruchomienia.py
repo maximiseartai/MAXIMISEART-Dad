@@ -672,9 +672,10 @@ def _above_ordered(
     in_place_from: str | None = None,
     font: Callable[[str], Font | None] = lambda header: RAW_ORDER_FONT,
     typed: Mapping[str, tuple[object, Font]] | None = None,
+    linked: str | None = None,
 ) -> Callable[[Path], object]:
     """Wiersz próbny wklejony w wiersz ``ABOVE_ORDERED``; ``typed``: komórki (litera kolumny → wartość i krój), które
-    tata wpisał w niego potem."""
+    tata wpisał w niego potem, ``linked``: litera komórki z Hiperłączem ``NUMER ZL.``, jak z aplikacji."""
 
     row = _register_probe() if probe is None else probe
 
@@ -682,6 +683,9 @@ def _above_ordered(
         paste_raw_orders(register, [row], first=ABOVE_ORDERED, in_place_from=in_place_from, font=font)
         for letter, (value, face) in (typed or {}).items():
             put_into_register(register, f"{letter}{ABOVE_ORDERED}", value, face)
+        if linked is not None:
+            number = str(row["NUMER ZL."])
+            put_into_register(register, f"{linked}{ABOVE_ORDERED}", number, font("NUMER ZL.") or REGISTER_FACE, LINK)
 
     return paste
 
@@ -718,6 +722,8 @@ class RegisterPosition:
     domain_fact_broken: bool = False
 
 
+LINK = "https://example.invalid/zlecenie/77"
+"""Hiperłącze ``NUMER ZL.`` wiersza próbnego, jak z aplikacji firmowej."""
 DATE_INTO_ADDRESS = {"C": (WHEN, REGISTER_FACE)}
 """Poprawka po Zatrzymaniu: data z wiersza wyżej wklejona w C, gdzie przesunięty wiersz ma adres."""
 REGISTER_POSITIONS: dict[str, RegisterPosition] = {
@@ -816,6 +822,12 @@ REGISTER_POSITIONS: dict[str, RegisterPosition] = {
     "przesuniety_z_komorka_ze_spacjami_w_kroju_rejestru": RegisterPosition(
         _above_ordered(typed={"L": ("  ", REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
     ),
+    # R15: przesunięty w kroju Rejestru z datą jako tekstem w A: jedyny ślad to Hiperłącze NUMER ZL. pod URZĄDZENIA
+    "przesuniety_w_kroju_rejestru_z_hiperlaczem_pod_urzadzenia": RegisterPosition(
+        _above_ordered(_register_probe("10.09.2026 11:00"), font=lambda header: REGISTER_FACE, linked="G"),
+        "WIERSZ_BEZ_DATY",
+        domain_fact_broken=True,
+    ),
     # R14: wiersz uporządkowany na miejscu z jedną komórką w innym kroju: bez śladu, jedno położenie
     "uporzadkowany_na_miejscu_z_miastem_w_kroju_aplikacji": RegisterPosition(
         _above_ordered(
@@ -861,19 +873,22 @@ def test_adres_i_numer_orange_wklejonego_wiersza_rejestru_nie_wychodza_z_przygot
 
 IN_PLACE_ROW = 9
 """Uporządkowany wiersz okresu na miejscu (``ZL-SYN-004``)."""
-OTHER_FACES = {
+TYPED_IN_PLACE = {
     "czynnosci_zrealizowane_w_calibri_11": ("M", "montaż ok", Font(name="Calibri", size=11)),
     "miasto_w_roboto_11": ("D", "POZNAŃ", Font(name="Roboto", size=11)),
+    "tekst_w_kolumnie_A": ("A", "pilne", REGISTER_FACE),
+    "pusta_data": ("C", None, REGISTER_FACE),
 }
 
 
-@pytest.mark.parametrize("typed", OTHER_FACES.values(), ids=OTHER_FACES.keys())
-def test_wiersz_uporzadkowany_z_komorka_w_innym_kroju_nie_lamie_faktu_domeny_a_jego_numer_zlecenia_wychodzi_bez_maski(
-    tmp_path: Path, typed: tuple[str, str, Font]
+@pytest.mark.parametrize("typed", TYPED_IN_PLACE.values(), ids=TYPED_IN_PLACE.keys())
+def test_wiersz_uporzadkowany_z_wpisem_taty_bez_sladu_nie_lamie_faktu_domeny_a_jego_numer_zlecenia_wychodzi_bez_maski(
+    tmp_path: Path, typed: tuple[str, object, Font]
 ) -> None:
-    """Tata wpisał w uporządkowany wiersz okresu, który stoi na miejscu, jedną komórkę w innym kroju (u taty 671 takich
-    wierszy w Rejestrze, przegląd #966): to nie ślad przesunięcia, więc wiersz ma jedno położenie, Logi nie mówią o
-    złamanym fakcie domeny, a jego ``NUMER ZL.`` wychodzi bez maski w Kopii wejścia i w Uwadze taty."""
+    """Tata wpisał w uporządkowany wiersz okresu, który stoi na miejscu, komórkę w innym kroju, słowo w kolumnie A albo
+    usunął datę (u taty 740 takich wierszy w Rejestrze, przegląd #966): to nie silny ślad przesunięcia, więc wiersz ma
+    jedno położenie, Logi nie mówią o złamanym fakcie domeny, a jego ``NUMER ZL.`` wychodzi bez maski w Kopii wejścia i w
+    Uwadze taty."""
 
     centrum = preparing_centrum(tmp_path)
     letter, value, face = typed

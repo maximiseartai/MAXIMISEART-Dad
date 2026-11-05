@@ -1028,7 +1028,8 @@ class Position:
     ``letters``: kolumny wiersza próbnego w Kopii (każdy wklejony wiersz ma dwa położenia), ``stop``: kod
     Zatrzymania (``None``: Uporządkowanie kończy się wynikiem OK), ``sheets``: arkusze w Kopii, ``address_in_file``:
     adres wiersza próbnego stoi w pliku jako tekst (bez tego ``ADRES`` to data z godziną, a pilnuje się numeru Orange),
-    ``echo``: ``CZYNNOŚCI ZREALIZOWANE`` ostatniego zlecenia w Kopii po strażniku.
+    ``echo``: ``CZYNNOŚCI ZREALIZOWANE`` ostatniego zlecenia w Kopii po strażniku, ``broken``: ile wierszy Kopii ma uwagę,
+    że fakt domeny jest złamany (silny ślad przesunięcia poza pierwszym wierszem bloku).
     """
 
     intermax: Intermax
@@ -1039,6 +1040,7 @@ class Position:
     edit: Callable[[Path], None] | None = None
     address_in_file: bool = True
     echo: str = ECHO_MASKED
+    broken: int = 0
 
     @property
     def secrets(self) -> tuple[str, ...]:
@@ -1068,6 +1070,7 @@ POSITIONS = {
         (ORDER_SHEET, 2),
         "ABDFGH",
         "SUROWE_ZLECENIE_BEZ_DATY",
+        broken=1,
     ),
     # U15: ten sam bez Hiperłącza (ślad zostaje w datach)
     "przesuniety_pierwszy_wiersz_kolejnego_wklejenia_bez_hiperlacza": Position(
@@ -1075,6 +1078,7 @@ POSITIONS = {
         (ORDER_SHEET, 2),
         "ABDFGH",
         "SUROWE_ZLECENIE_BEZ_DATY",
+        broken=1,
     ),
     # U8 (repro 2): pierwszy wiersz z datą jako tekstem na miejscu
     "pierwszy_wiersz_z_data_jako_tekst_na_miejscu": Position(
@@ -1099,11 +1103,13 @@ POSITIONS = {
     ),
     # U4 (W1 z #917): ślad, data z godziną dwie kolumny przed DATA w wierszu na miejscu
     "wiersz_z_data_z_godzina_takze_dwie_kolumny_przed_data": Position(
-        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], A_DATE))), (ORDER_SHEET, 1), "ADFGHJ", None
+        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], A_DATE))), (ORDER_SHEET, 1), "ADFGHJ", None,
+        broken=1,
     ),
     # U6: ślad, Hiperłącze NUMER ZL. pod URZĄDZENIA w wierszu na miejscu
     "wiersz_z_hiperlaczem_pod_urzadzenia": Position(
-        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], links=(7,)))), (ORDER_SHEET, 1), "DFGHJ", None
+        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], links=(7,)))), (ORDER_SHEET, 1), "DFGHJ", None,
+        broken=1,
     ),
     # U11 (W3 z #917): przesunięty z ADRES jako datą z godziną i datą jako tekstem w A
     "przesuniety_z_adresem_jako_data_i_tekstem_daty_w_A": Position(
@@ -1116,6 +1122,7 @@ POSITIONS = {
         "SUROWE_ZLECENIE_BEZ_WYKONAWCY",
         address_in_file=False,
         echo=f"montaż {PROBE_ADDRESS} umowa [numer Orange] po ZL-1003",
+        broken=1,
     ),
     # U12: przesunięty z ADRES jako datą z godziną i pustą DATA: ślad tylko w Hiperłączu pod URZĄDZENIA
     "przesuniety_z_adresem_jako_data_i_pusta_data": Position(
@@ -1128,6 +1135,7 @@ POSITIONS = {
         "SUROWE_ZLECENIE_BEZ_WYKONAWCY",
         address_in_file=False,
         echo=f"montaż {PROBE_ADDRESS} umowa [numer Orange] po ZL-1003",
+        broken=1,
     ),
     # U13: przesunięty, na miejscu od ADRES (tata wstawił dwie komórki w C:D)
     "przesuniety_na_miejscu_od_adres": Position(
@@ -1135,6 +1143,7 @@ POSITIONS = {
         (ORDER_SHEET, 2),
         "ABFGHJ",
         "SUROWE_ZLECENIE_BEZ_DATY",
+        broken=1,
     ),
     # U14 (W4 z #917 r3): przesunięty, na miejscu od WYKONAWCA, Hiperłącze zostaje pod URZĄDZENIA
     "przesuniety_na_miejscu_od_wykonawca": Position(
@@ -1142,6 +1151,7 @@ POSITIONS = {
         (ORDER_SHEET, 2),
         "ABDFGJ",
         "SUROWE_ZLECENIE_BEZ_DATY",
+        broken=1,
     ),
     # U21: przesunięty pierwszy wiersz wklejenia, na miejscu od NUMER UMOWY (na main wyciek numeru Orange)
     "przesuniety_pierwszy_wiersz_na_miejscu_od_numer_umowy": Position(
@@ -1159,6 +1169,7 @@ POSITIONS = {
         "NIEOBSLUGIWANY_UKLAD_INTERMAX",
         edit=_hyperlinks_unclosed,
         echo="montaż [adres] umowa [numer Orange] po [numer Orange]",
+        broken=len(PASTED) - 1,
     ),
     # U24 (W3 z przeglądu #966): przesunięty w środku wklejenia bez śladu (pusta DATA z aplikacji, ADRES jako data z
     # godziną, bez Hiperłącza): chroni go same dwa położenia każdego wklejonego wiersza; granica: Kopia niesie ADRES
@@ -1209,11 +1220,30 @@ POSITIONS = {
         "CDFHIJ",
         None,
     ),
+    # U27 (K2 z przeglądu #966): adres przesuniętego pierwszego wiersza pod URZĄDZENIA innego wiersza: położenie
+    # podstawowe (przesunięte, data w A) pamięć zna wszędzie
+    "adres_przesunietego_pierwszego_wiersza_pod_urzadzenia_innego_wiersza": Position(
+        Intermax(ordered=ORDERED, raw=(_probe(PASTED[0]), PASTED[1], replace(PASTED[2], cells=((DEVICES, PROBE_ADDRESS),)), *PASTED[3:])),
+        (ORDER_SHEET, 0),
+        "CDFHIJ",
+        None,
+    ),
+    # U28: wiersz uporządkowany (Calibri 8) nad wklejeniem, przesunięty, z datą w A: ślad daje mu dwa położenia
+    "przesuniety_wiersz_uporzadkowany_nad_wklejeniem": Position(
+        Intermax(
+            ordered=(*ORDERED, _probe(Order(datetime(2026, 10, 20, 12), "jan.nowak", 203), shifted=True, links=())),
+            raw=PASTED,
+        ),
+        None,
+        "",
+        None,
+    ),
     "pusty_wiersz_nad_kolejnym_wklejeniem": Position(
         Intermax(ordered=ORDERED, raw=_pasted(2, _probe(PASTED[2], shifted=True)), blank_in_paste=frozenset({2})),
         (ORDER_SHEET, 2),
         "ABDFGH",
         "SUROWE_ZLECENIE_BEZ_DATY",
+        broken=1,
     ),
     # U2 (D2 z #913): wiersz bez Wykonawcy ma datę z godziną w Kopii
     "wiersz_bez_wykonawcy": Position(
@@ -1267,6 +1297,7 @@ POSITIONS = {
         "ABDFGH",
         "NIEOBSLUGIWANY_UKLAD_INTERMAX",
         edit=_older_sheet_unsupported,
+        broken=1,
     ),
     "wklejenie_z_kilku_dni": Position(
         Intermax(
@@ -1339,6 +1370,8 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
     assert {name: sheet["uncertain_rows"] for name, sheet in sheets.items()} == {
         name: pasted_rows[name] for name in position.sheets
     }
+    broken = [note for note in logs["input_copy_notes"] if note.startswith("Fakt domeny złamany: wiersz ")]
+    assert len(broken) == position.broken, logs["input_copy_notes"]
 
 
 # --- Koszt reguły danych w zwykłych kolumnach (opcja 3, #913, #918) ----------------------------------------------------

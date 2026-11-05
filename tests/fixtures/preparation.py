@@ -323,15 +323,17 @@ def paste_raw_orders(
     return first
 
 
-def put_into_register(path: Path, cell: str, value: object, font: Font) -> None:
+def put_into_register(path: Path, cell: str, value: object, font: Font, hyperlink: str | None = None) -> None:
     """Tata wpisuje ``value`` w komórkę ``cell`` arkusza ``ZLECENIA`` (np. ``A8``, także w kolumnie bez nagłówka)
-    krojem ``font``; data z godziną dostaje format daty."""
+    krojem ``font``; data z godziną dostaje format daty, a ``hyperlink``: Hiperłącze komórki, jak z aplikacji."""
 
     workbook = load_workbook(path)
     try:
         target = workbook["ZLECENIA"][cell]
         target.value = value
         target.font = font
+        if hyperlink is not None:
+            target.hyperlink = hyperlink
         if isinstance(value, datetime):
             target.number_format = "dd.mm.yyyy hh:mm"
         workbook.save(path)
