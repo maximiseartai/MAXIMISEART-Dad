@@ -552,7 +552,7 @@ KNOWN_FINDINGS: Final[tuple[Known, ...]] = (
         "wznowienie-dopisuje-usunieta-ilosc",
         "tata usuwa po przerwaniu ilość, którą proces dopisał po Emmetcie, a ponowne uruchomienie dopisuje ją znowu: "
         "strona wygląda jak przed jej dopisaniem, a Ślad ma tylko stan „Emmett załadowany”, nie dopisane ilości; "
-        "GLOSSARY.md (Ślad Wyceny Emmetta) dziś na to pozwala",
+        "to #864; jego poprawka kończy cały przebieg ZNALEZISKO ZNIKNĘŁO, więc ten wpis usuwa PR poprawki",
         lambda violation: violation.rule == "WZNOWIENIE" and violation.tag == "dopisał po tacie" and violation.edit is Edit.REMOVED_ADDED,
     ),
 )
