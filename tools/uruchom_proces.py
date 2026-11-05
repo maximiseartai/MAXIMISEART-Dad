@@ -9,7 +9,7 @@ Użycie (z katalogu repozytorium):
     python tools/uruchom_proces.py preparation --register REJESTR --periods-directory FOLDER --period TOKEN
         [--dry-run] [--config PLIK] [--internal-template PLIK] [--collective-template PLIK] [--metrics PLIK]
     python tools/uruchom_proces.py intermax --register REJESTR [--copies FOLDER] [--metrics PLIK]
-    python tools/uruchom_proces.py efenix --source PLIK_ZBIORCZY --efenix-url ADRES [--metrics PLIK] [--slad FOLDER]
+    python tools/uruchom_proces.py efenix --source PLIK_ZBIORCZY --efenix-url ADRES [--metrics PLIK]
 
 ``settlement`` to Przebieg rozliczeń, ``preparation`` Przygotowanie pliku
 zbiorczego, ``intermax`` Uporządkowanie INTERMAX (klucze procesu z kontraktu
