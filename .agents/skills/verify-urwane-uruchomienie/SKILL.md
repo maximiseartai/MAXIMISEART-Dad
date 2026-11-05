@@ -113,7 +113,7 @@ changes move it without changing a definition, so look for them in the diff: the
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `c490d2497` (2026-11-05, PR #863 after its merge of `main` with #883).
+Sync commit: `ef64b4a67` (2026-11-05, PR #863 after its merge of `main` with #883).
 Every row of the table was checked against the code at this commit. The model did not change: #863 makes `guarded` mask
 also numbers in the fields with values from Dad's cells (`READ_VALUES`) and the phone with `48` without `+`, and puts
 the notes about the Kopia wejścia in `input_copy_notes`, but `RunLogs.guard` still calls it in one step and it stays
