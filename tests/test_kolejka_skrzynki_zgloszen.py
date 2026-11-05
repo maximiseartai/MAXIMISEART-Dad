@@ -1141,6 +1141,24 @@ def test_komentarz_do_swiezego_issue_ktorego_lista_nie_pokazuje_czeka_zamiast_po
     assert queue.files() == []
 
 
+def test_komentarz_do_issue_ktore_lista_juz_pokazuje_dochodzi_takze_bez_odczytu_pliku_zapisow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wstrzymanie (#915) dotyczy tylko numeru, którego lista nie pokazuje: gdy lista issue ma już Uwagę, komentarz do
+    niej dochodzi w tym samym przejściu także przy liście, przy której pliku zapisów Skrzynki nie da się odczytać, bo o
+    issue na liście nic nie trzeba rozstrzygać."""
+
+    queue = Queue(tmp_path, FakeReportBox(), listener=FollowingUp())
+    _unreadable_at_comment_list(queue, monkeypatch)
+
+    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, ("Uwaga",)))
+    queue.passed()
+
+    [issue] = queue.box.issues_with("uwaga-taty")
+    assert "skrzynka-zapisy-niedostepne" in queue.log()
+    assert (issue.comments, queue.files(), queue.clock.wakes) == (["Komentarz po Uwadze"], [], 0)
+
+
 def logs_with_file(run_id: str) -> Post:
     """Logi Uruchomienia ``run_id`` w jednym komentarzu z plikiem do Archiwum Logów okresu, jak ``logi_post``."""
 
