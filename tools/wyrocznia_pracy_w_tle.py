@@ -12,8 +12,9 @@ które Claude Code uruchamia poza swoją grupą procesów, kończy się samo. ``
 skończył turę bez odmowy. Hook pisze dziennik do pliku w katalogu tymczasowym wyroczni
 (``praca_w_tle.LOG_ENV``), nie do ``~/.cache/maximiseart/praca_w_tle.jsonl``. Inny wynik to ``ZMIANA`` z opisem. Ostatnia linia to ``WYROCZNIA OK | …`` (kod 0) tylko
 wtedy, gdy każdy przypadek jest ``ZGODNE``; inaczej ``WYROCZNIA ZMIANA | …`` (kod 1). Bez ``claude`` na PATH albo na
-Windows kończy się kodem 2, tak samo wyrocznia uruchomiona w Claude Code, którego sama uruchomiła (``NESTED``). Claude
-Code, który przez ``--kontakt-s`` sekund nie zapyta fałszywego API, wyrocznia kończy (``ZMIANA``), bo pyta wtedy prawdziwy model.
+Windows kończy się kodem 2, tak samo wyrocznia uruchomiona w Claude Code, które uruchomiła wyrocznia. Claude Code
+uruchamia ``tools/lib/falszywe_api.py`` tak, by mogło pytać tylko fałszywe API, a gdy przez ``--kontakt-s`` sekund go
+nie zapyta, kończy je, a wyrocznia zgłasza ``ZMIANA``.
 
     .venv/bin/python tools/wyrocznia_pracy_w_tle.py               # oba przypadki, ok. 5 s
     .venv/bin/python tools/wyrocznia_pracy_w_tle.py praca-w-tle   # wybrany przypadek
@@ -24,12 +25,8 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 from dataclasses import dataclass
-import http.server
-import json
-import os
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 import tempfile
 import threading
@@ -38,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/hooks"))
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import falszywe_api
 import potomne
 import praca_w_tle
 
@@ -45,9 +43,6 @@ ROOT = Path(__file__).resolve().parents[1]
 MARKER = "WYROCZNIA-PRACY-W-TLE"
 WAITING = "Czekam na powiadomienie o procesie w tle."
 LIMIT_S = 120.0
-CONTACT_S = 30.0
-# Zmienna, którą wyrocznia daje Claude Code: wyrocznia uruchomiona w nim odmawia, zamiast uruchamiać kolejne claude.
-NESTED = "WYROCZNIA_PRACY_W_TLE_W_SRODKU"
 
 
 @dataclass(frozen=True)
@@ -74,8 +69,8 @@ class Outcome:
     asked: bool
 
 
-class _Api(http.server.BaseHTTPRequestHandler):
-    """Fałszywe Messages API przypadku: Bash, po jego wyniku koniec tury, po drugiej odmowie hooka ``stop``."""
+class _Api:
+    """Stan fałszywego Messages API przypadku: Bash, po jego wyniku koniec tury, po drugiej odmowie hooka ``stop``."""
 
     case = CASES[0]
     lock = threading.Lock()
@@ -83,41 +78,29 @@ class _Api(http.server.BaseHTTPRequestHandler):
     tool_result = False
     asked = False
     stop = threading.Event()
-    contacted = threading.Event()
-
-    def log_message(self, format: str, *args: object) -> None:
-        pass
-
-    def do_POST(self) -> None:
-        body = json.loads(self.rfile.read(int(self.headers.get("content-length") or 0)))
-        messages = body.get("messages") if isinstance(body, dict) else None
-        stream = answer(type(self), messages if isinstance(messages, list) else [])
-        self.send_response(200)
-        self.send_header("content-type", "text/event-stream")
-        self.send_header("content-length", str(len(stream)))
-        self.end_headers()
-        self.wfile.write(stream)
 
 
-def answer(api: type[_Api], messages: list[object]) -> bytes:
-    """Odpowiedź API na zapytanie z ``messages``; liczy odmowy hooka i zapamiętuje wynik Basha w stanie ``api``."""
+def answer(body: dict[str, object]) -> bytes:
+    """Odpowiedź API na zapytanie ``body``; liczy odmowy hooka i zapamiętuje wynik Basha w stanie ``_Api``."""
 
-    api.contacted.set()
+    api = _Api
+    found = body.get("messages")
+    messages = found if isinstance(found, list) else []
     texts = [_texts(message) for message in messages]
     if not texts or MARKER not in "".join(texts[0]):
-        return reply({"type": "text", "text": "ok"})  # zapytanie poboczne Claude Code (tytuł, podsumowanie)
+        return falszywe_api.stream({"type": "text", "text": "ok"})  # zapytanie poboczne Claude Code (tytuł, podsumowanie)
     api.asked = True
     refusals = sum(any(praca_w_tle.REFUSAL in text for text in message) for message in texts)
     with api.lock:
         if api.stop.is_set():  # Claude Code przed końcem pyta jeszcze raz; wynik przypadku już jest
-            return reply({"type": "text", "text": WAITING})
+            return falszywe_api.stream({"type": "text", "text": WAITING})
         api.refusals = max(api.refusals, refusals)
         api.tool_result = api.tool_result or any(_has_tool_result(message) for message in messages)
         if refusals >= 2:
             api.stop.set()
         if api.tool_result:
-            return reply({"type": "text", "text": WAITING})
-    return reply({"type": "tool_use", "id": "toolu_wyrocznia", "name": "Bash", "input": api.case.bash})
+            return falszywe_api.stream({"type": "text", "text": WAITING})
+    return falszywe_api.stream({"type": "tool_use", "id": "toolu_wyrocznia", "name": "Bash", "input": api.case.bash})
 
 
 def _texts(message: object) -> list[str]:
@@ -138,122 +121,42 @@ def _has_tool_result(message: object) -> bool:
     return any(isinstance(part, dict) and part.get("type") == "tool_result" for part in content or [])
 
 
-def reply(block: dict[str, object]) -> bytes:
-    """Strumień odpowiedzi API z jednym blokiem: ``tool_use`` kończy się ``stop_reason`` ``tool_use``, tekst ``end_turn``."""
-
-    tool = block["type"] == "tool_use"
-    message: dict[str, object] = {
-        "id": "msg_wyrocznia",
-        "type": "message",
-        "role": "assistant",
-        "model": "claude-haiku-5-5",
-        "content": [],
-        "stop_reason": None,
-        "stop_sequence": None,
-        "usage": {"input_tokens": 1, "output_tokens": 1},
-    }
-    start: dict[str, object]
-    delta: dict[str, object]
-    if tool:
-        start = {**block, "input": {}}
-        delta = {"type": "input_json_delta", "partial_json": json.dumps(block["input"])}
-    else:
-        start = {"type": "text", "text": ""}
-        delta = {"type": "text_delta", "text": block["text"]}
-    events = [
-        ("message_start", {"type": "message_start", "message": message}),
-        ("content_block_start", {"type": "content_block_start", "index": 0, "content_block": start}),
-        ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": delta}),
-        ("content_block_stop", {"type": "content_block_stop", "index": 0}),
-        (
-            "message_delta",
-            {
-                "type": "message_delta",
-                "delta": {"stop_reason": "tool_use" if tool else "end_turn", "stop_sequence": None},
-                "usage": {"output_tokens": 1},
-            },
-        ),
-        ("message_stop", {"type": "message_stop"}),
-    ]
-    return "".join(f"event: {name}\ndata: {json.dumps(data)}\n\n" for name, data in events).encode()
-
-
-def environment(port: int, log: Path) -> dict[str, str]:
-    """Środowisko ``claude``: bez zmiennych sesji Claude Code, w której biegnie wyrocznia, z fałszywym API i ``NESTED``.
-
-    Dziennik hooka idzie do ``log`` (``praca_w_tle.LOG_ENV``), bo odmowy z prób wyroczni nie należą do dziennika
-    prawdziwych sesji w katalogu domowym.
-    """
-
-    kept = {
-        name: value
-        for name, value in os.environ.items()
-        if not name.startswith("CLAUDE_CODE_") and name not in ("CLAUDECODE", "ANTHROPIC_AUTH_TOKEN")
-    }
-    return {
-        **kept,
-        **_fake_api(port),
-        "ANTHROPIC_API_KEY": "sk-ant-wyrocznia-pracy-w-tle",
-        NESTED: "1",
-        praca_w_tle.LOG_ENV: str(log),
-    }
-
-
-def _fake_api(port: int) -> dict[str, str]:
-    return {"ANTHROPIC_BASE_URL": f"http://127.0.0.1:{port}"}
-
-
-def command_line(case: Case, port: int) -> list[str]:
-    """``claude -p`` przypadku: ustawienia tylko projektu i adres fałszywego API także w ``--settings``.
-
-    ``env`` z ustawień użytkownika (na Macu Maksa ``ANTHROPIC_BASE_URL`` huba) wygrywa ze środowiskiem procesu, więc bez
-    ``--setting-sources project,local`` i ``--settings`` Claude Code pytał prawdziwy model (5.11.2026).
-    """
+def command_line(case: Case) -> list[str]:
+    """Argumenty ``claude -p`` przypadku; ustawienia, adres fałszywego API i model dodaje ``falszywe_api.claude``."""
 
     return [
-        "claude",
         "-p",
         f"{MARKER} {case.name}: uruchom polecenie.",
-        "--setting-sources",
-        "project,local",
-        "--settings",
-        json.dumps({"env": _fake_api(port)}),
         "--output-format",
         "stream-json",
         "--verbose",
         "--permission-mode",
         "bypassPermissions",
         "--allow-dangerously-skip-permissions",
-        "--model",
-        "claude-haiku-5-5",
         "--max-turns",
         "10",
     ]
 
 
-def ask(case: Case, port: int, log: Path, limit_s: float, contact_s: float = CONTACT_S) -> Outcome:
-    """Jedno ``claude -p`` przypadku aż do jego końca, drugiej odmowy hooka albo ``limit_s``."""
+def ask(case: Case, log: Path, limit_s: float, contact_s: float) -> Outcome:
+    """Jedno ``claude -p`` przypadku aż do jego końca, drugiej odmowy hooka albo ``limit_s``.
+
+    Dziennik hooka idzie do ``log`` (``praca_w_tle.LOG_ENV``), bo odmowy z prób wyroczni nie należą do dziennika
+    prawdziwych sesji w katalogu domowym.
+    """
 
     _Api.case, _Api.refusals, _Api.tool_result, _Api.asked = case, 0, False, False
     _Api.stop.clear()
-    _Api.contacted.clear()
-
-    def watchdog() -> None:
-        # Claude Code, który nie pyta fałszywego API, pyta inny model: wyrocznia kończy go od razu.
-        if not _Api.contacted.wait(contact_s):
-            _Api.stop.set()
-
-    threading.Thread(target=watchdog, daemon=True).start()
-    returncode: int | None = None
-    try:
-        returncode = potomne.run(
-            command_line(case, port), cwd=ROOT, env=environment(port, log), timeout=limit_s, stop=_Api.stop
-        ).returncode
-    except (potomne.Stopped, subprocess.TimeoutExpired):
-        pass
-    finally:
-        _Api.contacted.set()
-    return Outcome(_Api.refusals, _Api.tool_result, returncode, _Api.asked)
+    ran = falszywe_api.claude(
+        command_line(case),
+        answer=answer,
+        cwd=ROOT,
+        env={praca_w_tle.LOG_ENV: str(log)},
+        timeout=limit_s,
+        stop=_Api.stop,
+        contact_s=contact_s,
+    )
+    return Outcome(_Api.refusals, _Api.tool_result, ran.returncode, _Api.asked)
 
 
 def verdict(case: Case, got: Outcome) -> tuple[str, str]:
@@ -282,31 +185,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--kontakt-s",
         type=float,
-        default=CONTACT_S,
-        help=f"Po ilu sekundach bez zapytania do fałszywego API wyrocznia kończy Claude Code (domyślnie {CONTACT_S:g} s).",
+        default=falszywe_api.CONTACT_S,
+        help="Po ilu sekundach bez zapytania do fałszywego API wyrocznia kończy Claude Code "
+        f"(domyślnie {falszywe_api.CONTACT_S:g} s).",
     )
     args = parser.parse_args(argv)
     chosen = [case for case in CASES if not args.nazwy or case.name in args.nazwy]
-    if os.environ.get(NESTED):
-        print(f"WYROCZNIA BRAK | uruchomiona w Claude Code samej wyroczni ({NESTED})")
+    nested = falszywe_api.nested()
+    if nested:
+        print(f"WYROCZNIA BRAK | {nested}")
         return 2
     if sys.platform == "win32" or shutil.which("claude") is None:
         print("WYROCZNIA BRAK | potrzebny claude na PATH na macOS albo Linuksie")
         return 2
     version = potomne.run(["claude", "--version"], cwd=ROOT, timeout=60).stdout.strip()
     print(f"Claude Code {version}, przypadki {len(chosen)}", flush=True)
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Api)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
     counts: dict[str, int] = {}
-    try:
-        with tempfile.TemporaryDirectory(prefix="wyrocznia-pracy-w-tle-") as folder:
-            log = Path(folder) / "praca_w_tle.jsonl"
-            for case in chosen:
-                result, seen = verdict(case, ask(case, server.server_address[1], log, args.limit_s, args.kontakt_s))
-                counts[result] = counts.get(result, 0) + 1
-                print(f"{result} {case.name} | {seen}", flush=True)
-    finally:
-        server.shutdown()
+    with tempfile.TemporaryDirectory(prefix="wyrocznia-pracy-w-tle-") as folder:
+        log = Path(folder) / "praca_w_tle.jsonl"
+        for case in chosen:
+            result, seen = verdict(case, ask(case, log, args.limit_s, args.kontakt_s))
+            counts[result] = counts.get(result, 0) + 1
+            print(f"{result} {case.name} | {seen}", flush=True)
     summary = ", ".join(f"{name} {count}" for name, count in sorted(counts.items()))
     failed = bool(counts.get("ZMIANA")) or not chosen
     print(f"WYROCZNIA {'ZMIANA' if failed else 'OK'} | Claude Code {version} | {summary or 'brak przypadków'}")

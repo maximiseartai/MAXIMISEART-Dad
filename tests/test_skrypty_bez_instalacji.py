@@ -12,6 +12,9 @@ potrzebuje ani ``noqa``, ani ``per-file-ignores``, a E402 dalej łapie import po
 ``Path(__file__).resolve().parents[N]`` sama, a stała z korzeniem repozytorium stoi dopiero pod importami.
 Kopia w innej postaci albo z liczbą ``parents``, która nie trafia w korzeń repozytorium, czerwieni
 ``test_skrypt_dopisuje_katalogi_do_sys_path_jedna_linia``.
+
+Skrypt, który uruchamia Claude Code, robi to tylko przez ``tools/lib/falszywe_api.py``
+(``test_claude_ze_skryptu_biegnie_tylko_przez_falszywe_api``).
 """
 
 from __future__ import annotations
@@ -41,6 +44,7 @@ BOOTSTRAP_SHAPE = re.compile(
     r"sys\.path\.insert\(0, str\(Path\(__file__\)\.resolve\(\)\.parents\[(\d+)\](?: / '([^']+)')?\)\)"
 )
 READING = frozenset({"copy", "count", "index"})
+FAKE_API = ROOT / "tools" / "lib" / "falszywe_api.py"
 
 
 def _entry(path: Path) -> tuple[bool, bool]:
@@ -145,3 +149,37 @@ def test_skrypt_odpowiada_na_help_bez_zainstalowanego_pakietu(tmp_path: Path, sc
 def test_skrypt_bez_parsera_laduje_sie_bez_zainstalowanego_pakietu(tmp_path: Path, script: Path) -> None:
     _assert_runs(tmp_path, LOADED_WITHOUT_INSTALL, script)
 
+
+def _claude_launches(tree: ast.AST) -> Iterator[tuple[int, str]]:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and node.value == "ANTHROPIC_BASE_URL":
+            yield node.lineno, "ustawia adres API"
+        elif isinstance(node, (ast.List, ast.Tuple)) and node.elts:
+            first, *rest = node.elts
+            second = rest[0].value if rest and isinstance(rest[0], ast.Constant) else None
+            if isinstance(first, ast.Constant) and first.value == "claude" and second != "--version":
+                yield node.lineno, "uruchamia claude"
+
+
+def test_claude_ze_skryptu_biegnie_tylko_przez_falszywe_api() -> None:
+    """Polecenie ``["claude", …]`` inne niż ``claude --version`` i stała ``ANTHROPIC_BASE_URL`` są tylko w ``FAKE_API``.
+
+    5.11.2026 wyrocznia z adresem fałszywego API tylko w środowisku procesu zapytała prawdziwy model przez hub z
+    ustawień użytkownika i uruchomiła ok. 100 sesji (#956). Granica: polecenie złożone w czasie biegu (tekst powłoki,
+    lista budowana z części) test widzi tylko po stałej ``"claude"`` na początku listy albo krotki.
+    """
+
+    found = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {what} poza tools/lib/falszywe_api.py"
+        for path in SCRIPTS
+        if path != FAKE_API
+        for line, what in _claude_launches(ast.parse(path.read_text(encoding="utf-8")))
+    ]
+
+    assert not found, "\n".join(
+        [
+            *found,
+            "Claude Code uruchom przez falszywe_api.claude z tools/lib/falszywe_api.py: tylko tam ustawienia "
+            "użytkownika nie dochodzą do claude, adres fałszywego API idzie w --settings, a claude bez kontaktu ginie.",
+        ]
+    )

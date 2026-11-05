@@ -5,12 +5,13 @@ uruchomiło ``sleep 60`` z ``run_in_background`` i skończyło turę (5.11.2026)
 budowa ``background_tasks`` w binarce 2.1.318 podaje dla ich typu. Każdy test hooka uruchamia go tak jak
 Claude Code: JSON na stdin, a odmowa to ``{"decision": "block", "reason": …}`` na stdout z kodem 0. Dziennik hooka
 leży w katalogu domowym, więc każdy test ma własny. Wyrocznię ``tools/wyrocznia_pracy_w_tle.py`` test uruchamia z
-atrapą ``claude``, która woła fałszywe API wyroczni i uruchamia hooki ``Stop`` z ``.claude/settings.json`` tak, jak
-robi to Claude Code 2.1.318.
+atrapą ``claude``, która woła API pod adresem, jaki wybrałby Claude Code (``tests/fixtures/ustawienia_claude.py``), i
+uruchamia hooki ``Stop`` z ``.claude/settings.json`` tak, jak robi to Claude Code 2.1.318.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 import json
 import os
@@ -20,6 +21,8 @@ import subprocess
 import sys
 
 import pytest
+
+from tests.fixtures import ustawienia_claude
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOK = ROOT / "tools" / "hooks" / "praca_w_tle.py"
@@ -137,6 +140,20 @@ def test_odmowa_trwa_takze_przy_stop_hook_active_dopoki_zadanie_zyje(tmp_path: P
     assert [row["stop_hook_active"] for row in _log(tmp_path)] == [True]
 
 
+# Typy z budowy background_tasks w binarce 2.1.318, które same raportują wywołującemu (REPORTING hooka).
+REPORTING = (
+    "subagent",
+    "workflow",
+    "MCP task",
+    "teammate",
+    "dream",
+    "auto-mode scan",
+    "memory import",
+    "memory save",
+    "cloud session",
+)
+
+
 @pytest.mark.parametrize(
     "tasks",
     [
@@ -146,8 +163,13 @@ def test_odmowa_trwa_takze_przy_stop_hook_active_dopoki_zadanie_zyje(tmp_path: P
             {"id": "w1", "type": "workflow", "status": "running", "name": "x"},
             {"id": "t1", "type": "MCP task", "status": "running"},
         ],
+        *[[{"id": "r1", "type": kind, "status": status}] for kind in REPORTING for status in ("running", "pending")],
     ],
-    ids=["pusta-lista", "podagent-workflow-zadanie-mcp"],
+    ids=[
+        "pusta-lista",
+        "podagent-workflow-zadanie-mcp",
+        *[f"{kind}-{status}" for kind in REPORTING for status in ("running", "pending")],
+    ],
 )
 def test_bez_basha_ani_monitora_w_tle_tura_konczy_sie_bez_slowa_i_bez_dziennika(
     tmp_path: Path, tasks: list[object]
@@ -344,18 +366,21 @@ def test_checkout_bez_skryptu_hooka_nie_blokuje_konca_tury(tmp_path: Path) -> No
 FAKE_CLAUDE = '''#!{python}
 """Atrapa claude: zachowuje się jak Claude Code 2.1.318 w ``claude -p`` wobec fałszywego API wyroczni."""
 import json, os, subprocess, sys, time, urllib.request
+sys.path.insert(0, {fixtures!r})
+import ustawienia_claude
 argv = sys.argv[1:]
 if argv == ["--version"]:
     print("9.9.9 (Claude Code)")
     sys.exit(0)
 with open(os.environ["ATRAPA_WYWOLANIA"], "a", encoding="utf-8") as calls:
-    keys = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "WYROCZNIA_PRACY_W_TLE_W_SRODKU", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "MAXIMISEART_PRACA_W_TLE_DZIENNIK")
+    keys = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "MAXIMISEART_WYROCZNIA_W_SRODKU", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "MAXIMISEART_PRACA_W_TLE_DZIENNIK")
     calls.write(json.dumps({{"argv": argv, "cwd": os.getcwd(), "env": {{k: os.environ.get(k) for k in keys}}}}) + "\\n")
 if os.environ.get("ATRAPA_CISZA"):
     time.sleep(600)
-# Ustawienia z --settings wygrywają ze środowiskiem, jak env z ustawień użytkownika.
-base = json.loads(argv[argv.index("--settings") + 1])["env"]["ANTHROPIC_BASE_URL"]
+base = ustawienia_claude.base_url(argv, os.getcwd(), os.environ)
 def api(messages):
+    with open(os.environ["ATRAPA_WYWOLANIA"] + ".api", "a", encoding="utf-8") as asked:
+        asked.write(json.dumps(base) + "\\n")
     body = json.dumps({{"model": "m", "stream": True, "messages": messages}}).encode()
     with urllib.request.urlopen(urllib.request.Request(base + "/v1/messages", data=body, method="POST")) as answer:
         events = [json.loads(line[6:]) for line in answer.read().decode().splitlines() if line.startswith("data: ")]
@@ -399,13 +424,21 @@ sys.exit(3)
 '''
 
 
-def _oracle(tmp_path: Path, *arguments: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def _oracle(
+    tmp_path: Path,
+    *arguments: str,
+    env: dict[str, str] | None = None,
+    user_settings: Mapping[str, object] | None = None,
+) -> subprocess.CompletedProcess[str]:
     programs = tmp_path / "bin"
     programs.mkdir()
     claude = programs / "claude"
-    claude.write_text(FAKE_CLAUDE.format(python=sys.executable), encoding="utf-8")
+    fixtures = str(Path(ustawienia_claude.__file__).parent)
+    claude.write_text(FAKE_CLAUDE.format(python=sys.executable, fixtures=fixtures), encoding="utf-8")
     claude.chmod(claude.stat().st_mode | stat.S_IXUSR)
-    (tmp_path / "dom").mkdir()
+    (tmp_path / "dom" / ".claude").mkdir(parents=True)
+    if user_settings is not None:
+        (tmp_path / "dom" / ".claude" / "settings.json").write_text(json.dumps(user_settings), encoding="utf-8")
     return subprocess.run(
         [sys.executable, str(ORACLE), *arguments],
         env={
@@ -458,6 +491,8 @@ def test_wyrocznia_uruchamia_claude_p_w_checkoucie_tylko_z_ustawieniami_projektu
     assert argv[:2] == ["-p", "WYROCZNIA-PRACY-W-TLE bez-pracy-w-tle: uruchom polecenie."]
     assert argv[argv.index("--setting-sources") + 1] == "project,local"
     assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
+    # Reguła zespołu: Claude Code wyroczni, gdyby jednak zapytał model, pyta Opusa.
+    assert argv[argv.index("--model") + 1] == "claude-opus-5-5"
     assert call["cwd"] == str(ROOT)
     env = call["env"]
     assert isinstance(env, dict)
@@ -465,13 +500,28 @@ def test_wyrocznia_uruchamia_claude_p_w_checkoucie_tylko_z_ustawieniami_projektu
     assert env == {
         "ANTHROPIC_BASE_URL": settings["env"]["ANTHROPIC_BASE_URL"],
         "ANTHROPIC_AUTH_TOKEN": None,
-        "WYROCZNIA_PRACY_W_TLE_W_SRODKU": "1",
+        "MAXIMISEART_WYROCZNIA_W_SRODKU": "1",
         "CLAUDECODE": None,
         "CLAUDE_CODE_ENTRYPOINT": None,
         "MAXIMISEART_PRACA_W_TLE_DZIENNIK": str(log),
     }
     assert (log.name, tmp_path / "dom" in log.parents, log.exists()) == ("praca_w_tle.jsonl", False, False)
     assert settings["env"]["ANTHROPIC_BASE_URL"].startswith("http://127.0.0.1:")
+
+
+@POSIX_ONLY
+def test_wyrocznia_pyta_tylko_falszywe_api_takze_gdy_ustawienia_uzytkownika_maja_adres_huba(tmp_path: Path) -> None:
+    # 5.11.2026 env.ANTHROPIC_BASE_URL huba z ~/.claude/settings.json wygrał z adresem fałszywego API w środowisku (#956).
+    hub = {"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9", "ANTHROPIC_AUTH_TOKEN": "token-huba"}}
+
+    ran = _oracle(tmp_path, user_settings=hub)
+
+    assert ran.stdout.splitlines()[-1] == "WYROCZNIA OK | Claude Code 9.9.9 (Claude Code) | ZGODNE 2", ran.stderr
+    envs = [call["env"] for call in _calls(tmp_path)]
+    fake = {str(env["ANTHROPIC_BASE_URL"]) for env in envs if isinstance(env, dict)}
+    asked = [json.loads(line) for line in (tmp_path / "wywolania.jsonl.api").read_text(encoding="utf-8").splitlines()]
+    assert (bool(asked), set(asked) <= fake) == (True, True)
+    assert all(url.startswith("http://127.0.0.1:") and url != "http://127.0.0.1:9" for url in fake)
 
 
 @POSIX_ONLY
@@ -512,10 +562,10 @@ def test_wyrocznia_konczy_claude_code_ktory_nie_pyta_falszywego_api(tmp_path: Pa
 
 @POSIX_ONLY
 def test_wyrocznia_uruchomiona_w_claude_code_wyroczni_nie_uruchamia_claude(tmp_path: Path) -> None:
-    ran = _oracle(tmp_path, env={"WYROCZNIA_PRACY_W_TLE_W_SRODKU": "1"})
+    ran = _oracle(tmp_path, env={"MAXIMISEART_WYROCZNIA_W_SRODKU": "1"})
 
     assert (ran.returncode, ran.stdout.splitlines(), _calls(tmp_path)) == (
         2,
-        ["WYROCZNIA BRAK | uruchomiona w Claude Code samej wyroczni (WYROCZNIA_PRACY_W_TLE_W_SRODKU)"],
+        ["WYROCZNIA BRAK | uruchomiona w Claude Code wyroczni (MAXIMISEART_WYROCZNIA_W_SRODKU)"],
         [],
     )

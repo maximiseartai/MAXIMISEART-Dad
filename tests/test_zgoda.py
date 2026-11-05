@@ -2,8 +2,8 @@
 
 Hook uruchamia Claude Code przy pytaniu o zgodę (zdarzenie ``PermissionRequest``), więc test podaje mu to zdarzenie
 tak jak Claude Code: JSON na stdin, a decyzja to JSON na stdout. Wyrocznię ``tools/wyrocznia_zgody.py`` test uruchamia
-z atrapą ``claude``, która woła fałszywe API wyroczni i uruchamia hook z ``.claude/settings.json`` przez prefiks
-powłoki wyroczni, tak jak robi to Claude Code 2.1.310.
+z atrapą ``claude``, która woła API pod adresem, jaki wybrałby Claude Code (``tests/fixtures/ustawienia_claude.py``),
+i uruchamia hook z ``.claude/settings.json`` przez prefiks powłoki wyroczni, tak jak robi to Claude Code 2.1.310.
 """
 
 from __future__ import annotations
@@ -20,6 +20,8 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+
+from tests.fixtures import ustawienia_claude
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOK = ROOT / "tools" / "hooks" / "zgoda.py"
@@ -203,16 +205,23 @@ def test_przypadki_wyroczni_maja_dziesiec_przestojow_i_polecenia_ktore_claude_co
 FAKE_CLAUDE = '''#!{python}
 """Atrapa claude: zachowuje się jak Claude Code 2.1.310 w trybie T3 wobec fałszywego API wyroczni."""
 import json, os, select, subprocess, sys, time, urllib.request
+sys.path.insert(0, {fixtures!r})
+import ustawienia_claude
 if sys.argv[1:] == ["--version"]:
     print("9.9.9 (Claude Code)")
     sys.exit(0)
 with open(os.environ["ATRAPA_WYWOLANIA"], "a", encoding="utf-8") as calls:
-    keys = ("ANTHROPIC_BASE_URL", "CLAUDE_CODE_SHELL_PREFIX", "WYROCZNIA_ZGODY_HOOK", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
+    keys = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_SHELL_PREFIX", "WYROCZNIA_ZGODY_HOOK",
+            "MAXIMISEART_WYROCZNIA_W_SRODKU", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
     calls.write(json.dumps({{"argv": sys.argv[1:], "cwd": os.getcwd(), "env": {{k: os.environ.get(k) for k in keys}}}}) + "\\n")
+if os.environ.get("ATRAPA_CISZA"):
+    time.sleep(600)
 lines = [json.loads(sys.stdin.readline()) for _ in range(2)]
 assert [line["type"] for line in lines] == ["control_request", "user"], lines
-base = os.environ["ANTHROPIC_BASE_URL"]
+base = ustawienia_claude.base_url(sys.argv[1:], os.getcwd(), os.environ)
 def api(body):
+    with open(os.environ["ATRAPA_WYWOLANIA"] + ".api", "a", encoding="utf-8") as asked:
+        asked.write(json.dumps(base) + "\\n")
     request = urllib.request.Request(base + "/v1/messages", data=json.dumps(body).encode(), method="POST")
     with urllib.request.urlopen(request) as answer:
         return answer.read().decode()
@@ -260,17 +269,25 @@ while True:
 
 
 def _oracle(
-    tmp_path: Path, cases: list[dict[str, Any]], *arguments: str, timeout: float = 60
+    tmp_path: Path,
+    cases: list[dict[str, Any]],
+    *arguments: str,
+    timeout: float = 60,
+    env: dict[str, str] | None = None,
+    user_settings: dict[str, Any] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     programs = tmp_path / "bin"
     programs.mkdir()
     claude = programs / "claude"
-    claude.write_text(FAKE_CLAUDE.format(python=sys.executable), encoding="utf-8")
+    fixtures = str(Path(ustawienia_claude.__file__).parent)
+    claude.write_text(FAKE_CLAUDE.format(python=sys.executable, fixtures=fixtures), encoding="utf-8")
     claude.chmod(claude.stat().st_mode | stat.S_IXUSR)
     listed = tmp_path / "przypadki.jsonl"
     listed.write_text("".join(json.dumps(case) + "\n" for case in cases), encoding="utf-8")
     # Piaskownica wyroczni powstaje w ``~/.cache``, więc każdy test ma własny katalog domowy.
-    (tmp_path / "dom").mkdir()
+    (tmp_path / "dom" / ".claude").mkdir(parents=True)
+    if user_settings is not None:
+        (tmp_path / "dom" / ".claude" / "settings.json").write_text(json.dumps(user_settings), encoding="utf-8")
     return subprocess.run(
         [sys.executable, str(ORACLE), "--przypadki", str(listed), *arguments],
         env={
@@ -280,6 +297,8 @@ def _oracle(
             "ATRAPA_WYWOLANIA": str(tmp_path / "wywolania.jsonl"),
             "CLAUDECODE": "1",
             "CLAUDE_CODE_ENTRYPOINT": "sdk-ts",
+            "ANTHROPIC_AUTH_TOKEN": "token-huba",
+            **(env or {}),
         },
         capture_output=True,
         text=True,
@@ -426,13 +445,77 @@ def test_wyrocznia_uruchamia_claude_code_jak_t3_w_katalogu_checkoutu_z_falszywym
         "default",
     ]
     assert {"--verbose", "--allow-dangerously-skip-permissions"} <= set(argv)
+    # Reguła zespołu: Claude Code wyroczni, gdyby jednak zapytał model, pyta Opusa.
+    assert (argv[argv.index("--model") + 1], argv[argv.index("--setting-sources") + 1]) == (
+        "claude-opus-5-5",
+        "project,local",
+    )
     assert call["cwd"] == str(ROOT)
     assert call["env"]["ANTHROPIC_BASE_URL"].startswith("http://127.0.0.1:")
+    assert json.loads(argv[argv.index("--settings") + 1]) == {"env": {"ANTHROPIC_BASE_URL": call["env"]["ANTHROPIC_BASE_URL"]}}
     env = (call["env"]["CLAUDE_CODE_SHELL_PREFIX"], call["env"]["CLAUDECODE"], call["env"]["CLAUDE_CODE_ENTRYPOINT"])
     assert env == (str(PREFIX), None, None)
+    assert (call["env"]["ANTHROPIC_AUTH_TOKEN"], call["env"]["MAXIMISEART_WYROCZNIA_W_SRODKU"]) == (None, "1")
     assert call["env"]["WYROCZNIA_ZGODY_HOOK"] == _permission_hooks()[0]["command"]
     (command,) = [json.loads(line) for line in (tmp_path / "wywolania.jsonl.polecenia").read_text().splitlines()]
     assert re.fullmatch(r"rm -f ~/\.cache/wyrocznia-zgody-\w+/far/x # PYTA HOOK", command), command
+
+
+@POSIX_ONLY
+def test_wyrocznia_pyta_tylko_falszywe_api_takze_gdy_ustawienia_uzytkownika_maja_adres_huba(tmp_path: Path) -> None:
+    # 5.11.2026 env.ANTHROPIC_BASE_URL huba z ~/.claude/settings.json wygrał z adresem fałszywego API w środowisku (#956).
+    hub = {"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9", "ANTHROPIC_AUTH_TOKEN": "token-huba"}}
+
+    ran = _oracle(
+        tmp_path,
+        [
+            {"nazwa": "odmowa", "polecenie": "rm -f @FAR@/x # PYTA HOOK", "pyta_o_zgode": True},
+            {"nazwa": "kontrola", "polecenie": "rm -f @FAR@/y", "pyta_o_zgode": False},
+        ],
+        user_settings=hub,
+    )
+
+    assert ran.stdout.splitlines()[-1] == "WYROCZNIA OK | Claude Code 9.9.9 (Claude Code) | ZGODNE 2", ran.stderr
+    fake = {call["env"]["ANTHROPIC_BASE_URL"] for call in _rows(tmp_path / "wywolania.jsonl")}
+    asked = [json.loads(line) for line in (tmp_path / "wywolania.jsonl.api").read_text(encoding="utf-8").splitlines()]
+    # Każda atrapa pyta dwa razy (polecenie, potem wynik narzędzia), zawsze adres z wywołania wyroczni.
+    assert (len(asked), set(asked) <= fake) == (4, True)
+    assert all(url.startswith("http://127.0.0.1:") and url != "http://127.0.0.1:9" for url in fake)
+
+
+@POSIX_ONLY
+def test_wyrocznia_konczy_claude_code_ktory_nie_pyta_falszywego_api(tmp_path: Path) -> None:
+    # Host czeka 600 s: przypadek kończy brak kontaktu, bo taki Claude Code pyta inny model.
+    ran = _oracle(
+        tmp_path,
+        [{"nazwa": "cisza", "polecenie": "rm -f @FAR@/x # PYTA HOOK", "pyta_o_zgode": True}],
+        "--host-s",
+        "600",
+        "--kontakt-s",
+        "1",
+        env={"ATRAPA_CISZA": "1"},
+    )
+
+    assert ran.stdout.splitlines()[1:] == [
+        "ZMIANA cisza | Claude Code nie zapytał fałszywego API",
+        "WYROCZNIA ZMIANA | Claude Code 9.9.9 (Claude Code) | ZMIANA 1",
+    ], ran.stderr
+    assert ran.returncode == 1
+
+
+@POSIX_ONLY
+def test_wyrocznia_uruchomiona_w_claude_code_wyroczni_nie_uruchamia_claude(tmp_path: Path) -> None:
+    ran = _oracle(
+        tmp_path,
+        [{"nazwa": "odmowa", "polecenie": "rm -f @FAR@/x # PYTA HOOK", "pyta_o_zgode": True}],
+        env={"MAXIMISEART_WYROCZNIA_W_SRODKU": "1"},
+    )
+
+    assert (ran.returncode, ran.stdout.splitlines(), (tmp_path / "wywolania.jsonl").exists()) == (
+        2,
+        ["WYROCZNIA BRAK | uruchomiona w Claude Code wyroczni (MAXIMISEART_WYROCZNIA_W_SRODKU)"],
+        False,
+    )
 
 
 @POSIX_ONLY
