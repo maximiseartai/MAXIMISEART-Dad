@@ -1091,10 +1091,10 @@ def test_kopia_intermax_bez_wiersza_nad_wklejeniem_stawia_dzien_gdzie_indziej_ni
 def test_logi_z_wierszem_intermax_bez_pewnego_polozenia_daja_granice_kopii_a_nie_zgodnosc(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Wklejony wiersz bez Wykonawcy nie ma pewnego położenia, więc Kopia wejścia nie ma jego daty, numeru zlecenia i
-    uwag: narzędzie nie odtwarza takiego Uruchomienia i mówi, który arkusz i wiersz są poza Kopią."""
+    """Wklejony wiersz z datą jako tekst nie ma pewnego położenia (#913), więc Kopia wejścia nie ma jego daty, numeru
+    zlecenia i uwag: narzędzie nie odtwarza takiego Uruchomienia i mówi, który arkusz i wiersz są poza Kopią."""
 
-    raw = (PASTED[0], replace(PASTED[1], worker=""), PASTED[2])
+    raw = (PASTED[0], replace(PASTED[1], cells=((3, "26.10.2026 9:00"),)), PASTED[2])
     produced = _intermax(tmp_path / "taty", Intermax(raw=raw))
     [sheet] = produced.record["input_copy"][0]["sheets"]
     [uncertain] = sheet["uncertain_rows"]
