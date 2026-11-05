@@ -247,31 +247,9 @@ jobs:
 
       # pytest with the job's files longest first, then its steps (E2E, timing guard), each with its own time limit,
       # also after red tests. On a pull request the tests that failed run once more; passing then makes them flaky.
-      # DIAGNOSTYKA #975 (do usunięcia przed końcem PR): zakres portów i TIME_WAIT przed testami, próbnik w tle.
-      - name: DIAG975 start
-        if: ${{ runner.os == 'Windows' }}
-        shell: pwsh
-        run: |
-          netsh int ipv4 show dynamicport tcp
-          netsh int ipv4 show excludedportrange protocol=tcp
-          reg query "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v TcpTimedWaitDelay 2>$null
-          "TIME_WAIT przed: " + (netstat -an -p tcp | Select-String 'TIME_WAIT').Count
-          Start-Process pwsh -ArgumentList '-NoProfile','-File',"$env:GITHUB_WORKSPACE\.github\scripts\diag975-probnik.ps1",'-Out',"$env:RUNNER_TEMP\diag975.csv" -WindowStyle Hidden
-          exit 0
-
       - name: Run the planned units
         id: units
         run: python tools/plan_ci.py wykonaj --plan .ci-plan/plan.json --zadanie ${{ matrix.id }}
-
-      - name: DIAG975 raport
-        if: ${{ always() && runner.os == 'Windows' }}
-        shell: pwsh
-        run: |
-          Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" | Where-Object { $_.CommandLine -like '*diag975-probnik*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-          $rows = Get-Content "$env:RUNNER_TEMP\diag975.csv" | ForEach-Object { $c = $_ -split ','; [pscustomobject]@{ t = $c[0]; tw = [int]$c[1]; all = [int]$c[2] } }
-          $max = $rows | Sort-Object tw -Descending | Select-Object -First 1
-          "DIAG975 | zadanie ${{ matrix.id }} | próbek $($rows.Count) | TIME_WAIT max $($max.tw) o $($max.t) (TCP razem $($max.all)) | TIME_WAIT po " + (netstat -an -p tcp | Select-String 'TIME_WAIT').Count
-          $rows | ForEach-Object { "$($_.t) $($_.tw) $($_.all)" }
 
       # Tests that passed only on their retry; the workflow zgloszenia.yml files an issue "Flaky test: <test>" for each.
       - name: Upload the flaky tests
@@ -325,14 +303,6 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
           include-hidden-files: true
-
-      # DIAGNOSTYKA #975 (do usunięcia przed końcem PR): pojemność runnera w parach socketpair, ostatnia w zadaniu.
-      - name: DIAG975 sonda
-        if: ${{ always() && runner.os == 'Windows' }}
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: pwsh
-        run: '& python .github/scripts/diag975_sonda.py'
 
   mutations:
     # A mutation check's verdict does not depend on the Python version, so it runs once, beside pytest.
