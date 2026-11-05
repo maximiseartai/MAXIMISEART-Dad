@@ -81,6 +81,7 @@ from rozliczenia.efenix_pricing import (
     Login,
     LoginSign,
     OrderError,
+    Operation,
     OrderResult,
     OtherShape,
     PagePart,
@@ -89,6 +90,7 @@ from rozliczenia.efenix_pricing import (
     Ready,
     Settled,
     Shape,
+    WindowCause,
 )
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.message import Message
@@ -494,7 +496,8 @@ def edited(state: Priced, index: int, edit: Edit) -> Priced | None:
 
 @dataclass(frozen=True)
 class Violation:
-    """A broken invariant ``rule`` in ``case``; ``tag`` names the kind of break for known findings and accepted risks."""
+    """A broken invariant ``rule`` in ``case``; ``tag`` names the kind of break for known findings and accepted risks,
+    and ``cause`` the cause of the Zatrzymanie it broke at, if any."""
 
     rule: str
     tag: str
@@ -503,17 +506,58 @@ class Violation:
     fault: Fault | None = None
     role: Role | None = None
     edit: Edit | None = None
+    cause: WindowCause | None = None
 
 
 @dataclass(frozen=True)
-class Known:
-    """A violation the code has today, which the report lists apart from new ones: ``matches`` recognises it.
-    ``flaky``: a race that a whole run may miss, so its absence is no sign it is gone."""
+class Risk:
+    """A violation the report lists apart from new ones: ``matches`` recognises it."""
 
     name: str
     story: str
     matches: Callable[[Violation], bool]
+
+
+@dataclass(frozen=True)
+class Known(Risk):
+    """A violation the code has today. ``after``: the first runs (``Case.name``) after which it always shows, so a
+    run, or a part of one, that ran one of them without it reports it gone; ``flaky``: a race that names none, because
+    no run is sure to show it, so its absence is no sign it is gone."""
+
+    after: tuple[str, ...]
     flaky: bool = False
+
+    def __post_init__(self) -> None:
+        if self.flaky == bool(self.after):
+            raise ValueError(f"znane ustalenie {self.name} nazywa przypadki, po których występuje, albo jest flaky")
+
+
+_RACE: Final[Mapping[Role, Operation]] = {
+    Role.LIST_START: Operation.OPEN,
+    Role.LIST_AGAIN: Operation.OPEN,
+    Role.ORDER_OPEN: Operation.OPEN,
+    Role.ORDER_DATED: Operation.OPEN,
+    Role.RELOADED: Operation.RELOAD,
+}
+"""The page the window opens at each request role of a navigation, and the operation the race of
+``karta-zamknieta-w-nawigacji`` names there."""
+
+
+def _navigation_race(violation: Violation) -> bool:
+    """The tab closed while the window opens a page: Playwright's plain ``Error`` of that navigation, at the operation
+    that opens it, before ``Page.is_closed()`` is true (whole runs of 2026-11-05: ``BrowserFailure(Error, OPEN)`` at the
+    list and the order page, ``BrowserFailure(Error, RELOAD)`` after Emmett, never another type or operation)."""
+
+    cause, opens = violation.cause, None if violation.role is None else _RACE.get(violation.role)
+    return (
+        violation.rule == "PRZYCZYNA"
+        and violation.fault is Fault.TAB_CLOSED
+        and opens is not None
+        and violation.tag.split(" zamiast ")[0] in ("NETWORK", "UNREACHABLE")
+        and isinstance(cause, BrowserFailure)
+        and cause.error_type.rpartition(".")[2] == "Error"
+        and cause.operation is opens
+    )
 
 
 KNOWN_FINDINGS: Final[tuple[Known, ...]] = (
@@ -526,6 +570,14 @@ KNOWN_FINDINGS: Final[tuple[Known, ...]] = (
         and violation.fault in (Fault.HTTP_4XX, Fault.HTTP_5XX)
         and violation.tag.startswith("SHAPE zamiast")
         and violation.role in (Role.LIST_START, Role.LIST_AGAIN, Role.SEARCH, Role.QUANTITY),
+        after=(
+            "HTTP_4XX przy GET index.php #1 [lista-na-starcie]",
+            "HTTP_5XX przy GET index.php #2 [lista-ponownie]",
+            "HTTP_4XX przy POST action_fill_orders.php (okno) #1 [szukanie]",
+            "HTTP_5XX przy POST action_fill_orders.php (okno) #2 [szukanie]",
+            "HTTP_4XX przy POST action_save_index.php #1 [ilosc]",
+            "HTTP_5XX przy POST action_save_index.php #2 [ilosc]",
+        ),
     ),
     Known(
         "gotowe-bez-wyceny-emmetta",
@@ -537,15 +589,19 @@ KNOWN_FINDINGS: Final[tuple[Known, ...]] = (
         and violation.tag == "gotowe inne niż bez awarii"
         and violation.role is Role.LOAD
         and violation.fault in (Fault.HTTP_4XX, Fault.REDIRECT),
+        after=(
+            "HTTP_4XX przy POST action_load_emmett.php #1 [zaladuj-do-zlecenia]",
+            "REDIRECT przy POST action_load_emmett.php #2 [zaladuj-do-zlecenia]",
+        ),
     ),
     Known(
         "karta-zamknieta-w-nawigacji",
         "karta zamknięta, gdy okno otwiera stronę (lista, strona zlecenia, przeładowanie po Emmetcie), czasem daje "
-        "„okno zatrzymane” albo „efenix niedostępny” z błędem przeglądarki zamiast „okno zamknięte”: błąd nawigacji "
-        "przychodzi do okna, zanim Page.is_closed() jest prawdą, więc _action nie widzi zamkniętej karty",
-        lambda violation: violation.rule == "PRZYCZYNA"
-        and violation.fault in (Fault.TAB_CLOSED, Fault.LOGIN_CLOSED)
-        and violation.tag.split(" zamiast ")[0] in ("NETWORK", "TIMEOUT", "UNREACHABLE"),
+        "„okno zatrzymane” albo „efenix niedostępny” z BrowserFailure(Error, OPEN) albo (Error, RELOAD) tej nawigacji "
+        "zamiast „okno zamknięte”: błąd nawigacji przychodzi do okna, zanim Page.is_closed() jest prawdą, więc _action "
+        "nie widzi zamkniętej karty",
+        _navigation_race,
+        after=(),
         flaky=True,
     ),
     Known(
@@ -554,10 +610,11 @@ KNOWN_FINDINGS: Final[tuple[Known, ...]] = (
         "strona wygląda jak przed jej dopisaniem, a Ślad ma tylko stan „Emmett załadowany”, nie dopisane ilości; "
         "to #864; jego poprawka kończy cały przebieg ZNALEZISKO ZNIKNĘŁO, więc ten wpis usuwa PR poprawki",
         lambda violation: violation.rule == "WZNOWIENIE" and violation.tag == "dopisał po tacie" and violation.edit is Edit.REMOVED_ADDED,
+        after=("TORN przy POST action_save_index.php #1 [ilosc]", "TORN przy POST action_save_index.php #2 [ilosc]"),
     ),
 )
-ACCEPTED_RISKS: Final[tuple[Known, ...]] = (
-    Known(
+ACCEPTED_RISKS: Final[tuple[Risk, ...]] = (
+    Risk(
         "#774",
         "przerwanie między „Załaduj do zlecenia” a odczytem przeładowanej strony zostawia zlecenie z samą Wyceną "
         "Emmetta poza Śladem, a ponowne uruchomienie daje błąd tylko tego zlecenia, które tata kończy sam (#774)",
@@ -998,8 +1055,8 @@ def check_first(case: Case, run: Run) -> list[Violation]:
     extra: dict[str, object] = {"fault": case.fault, "role": case.role}
     found = common_checks(case.name, run, INITIAL, extra)
 
-    def add(rule: str, tag: str, detail: str) -> None:
-        found.append(Violation(rule, tag, case.name, detail, case.fault, case.role))
+    def add(rule: str, tag: str, detail: str, cause: WindowCause | None = None) -> None:
+        found.append(Violation(rule, tag, case.name, detail, case.fault, case.role, cause=cause))
 
     if run.error is not None or run.outcome is None:
         add("BEZ_WYJATKU", "wyjątek", f"Uruchomienie skończyło się wyjątkiem: {run.error}")
@@ -1020,7 +1077,7 @@ def check_first(case: Case, run: Run) -> list[Violation]:
             if expect.left:
                 allowed.append("zlecenie zostawione tacie")
             add("PRZYCZYNA", f"{cause.name} zamiast {'/'.join(sorted(item.name for item in expect.stops)) or 'wyniku'}",
-                f"{shown}: {cause.value}; oczekiwane: {'; '.join(allowed)}")
+                f"{shown}: {cause.value}; oczekiwane: {'; '.join(allowed)}", facts.cause)
         codes = {code_of(facts)} | ({"EFENIX_NIEDOSTEPNY"} if isinstance(facts.cause, BrowserFailure) and facts.stopped_at is None else set())
         if ending.message.code not in codes:
             add("PRZYCZYNA", "komunikat", f"{shown}: przyczyna wymaga Komunikatu {' albo '.join(sorted(codes))}")
@@ -1197,6 +1254,8 @@ class Report:
     known: dict[str, list[Violation]] = field(default_factory=dict)
     accepted: dict[str, list[Violation]] = field(default_factory=dict)
     gaps: list[str] = field(default_factory=list)
+    ran: set[str] = field(default_factory=set)
+    """Names of the first runs whose fault took effect."""
 
 
 def sort_violations(violations: Sequence[Violation], report: Report) -> None:
@@ -1209,8 +1268,17 @@ def sort_violations(violations: Sequence[Violation], report: Report) -> None:
             report.new.append(violation)
 
 
+def known_gaps() -> list[str]:
+    """Each case a known finding names in ``after`` is a case of the space, or its absence would go unseen."""
+
+    space = {case.name for case in cases(list(AXES), None)}
+    return [f"znane ustalenie {known.name} nazywa przypadek spoza przestrzeni: {name}" for known in KNOWN_FINDINGS for name in known.after if name not in space]
+
+
 def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequence[str] | None, workers: int) -> Report:
-    report = Report()
+    report = Report(gaps=known_gaps())
+    if report.gaps:
+        return report
     started = time.monotonic()
     blank = initial_disk(run_root)
     counter = iter(range(1_000_000))
@@ -1260,6 +1328,7 @@ def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequ
         if not isinstance(run, Run):
             report.new.append(Violation("BEZ_WYJATKU", "błąd sprawdzenia", case.name, f"sprawdzenie nie przeszło: {run!r}", case.fault, case.role))
             continue
+        report.ran.add(case.name)
         violations = check_first(case, run)
         sort_violations(violations, report)
         _keep(evidence, case.name, run, violations)
@@ -1362,7 +1431,7 @@ def _keep(evidence: Path, name: str, run: Run, violations: Sequence[Violation]) 
     (folder / f"{slug}.json").write_text(json.dumps(content, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
 
 
-def summarize(report: Report, *, whole: bool) -> list[str]:
+def summarize(report: Report) -> list[str]:
     lines = list(report.lines)
     groups: dict[tuple[str, str], list[Violation]] = {}
     for violation in report.new:
@@ -1374,7 +1443,7 @@ def summarize(report: Report, *, whole: bool) -> list[str]:
         lines.append(f"znane ustalenie {name}: {len(group)} przypadków, np. {group[0].case} | {group[0].detail}")
     for name, group in sorted(report.accepted.items()):
         lines.append(f"zaakceptowane ryzyko {name}: {len(group)} przypadków, np. {group[0].case}")
-    gone = [known.name for known in KNOWN_FINDINGS if known.name not in report.known and not known.flaky] if whole else []
+    gone = [known.name for known in KNOWN_FINDINGS if known.name not in report.known and report.ran.intersection(known.after)]
     lines += [f"ZNALEZISKO ZNIKNĘŁO {name}: usuń je z KNOWN_FINDINGS i z SKILL.md" for name in gone]
     if report.gaps:
         lines += [f"LUKA MODELU: {gap}" for gap in report.gaps]
@@ -1435,8 +1504,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         if not args.zostaw_run:
             remove_run_root(run.root)
-    whole = set(args.variant) == set(AXES) and args.rola is None and not os.environ.get("MUTACJE_CZESC")
-    lines = summarize(report, whole=whole)
+    lines = summarize(report)
     lines.insert(0, f"dowody: {run.evidence}")
     (run.evidence / "raport.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines), flush=True)

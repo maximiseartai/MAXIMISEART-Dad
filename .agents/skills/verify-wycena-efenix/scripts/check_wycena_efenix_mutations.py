@@ -1,5 +1,5 @@
 """Show that explore_wycena_efenix.py fails on broken variants of the Wycena w efenix, the defects of #802, #808, #757
-and #758 among them.
+and #758 and a closed tab not seen in the window's action among them.
 
 Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) with the axes and request roles that reach it,
 one browser at a time, and must end the checker's report with the expected line. A mutation whose anchor text is no
@@ -95,6 +95,19 @@ MUTATIONS = (
         ),
         explorer("logowanie", "lista-na-starcie"),
         "Centrum czeka 15 minut na logowanie w oknie, którego już nie ma",
+        NEW,
+    ),
+    Mutation(
+        "zamknięta karta w działaniu okna nie jest zamkniętym oknem",
+        (
+            Edit(
+                BROWSER,
+                "                if efenix.closed and not isinstance(error, WindowClosed):\n",
+                "                if False and not isinstance(error, WindowClosed):\n",
+            ),
+        ),
+        explorer("zamkniete-okno", "data-wykonania", "strona-zlecenia"),
+        "tata zamyka okno, a dostaje „okno zatrzymane” i Maks szuka zmienionego efenix",
         NEW,
     ),
     Mutation(

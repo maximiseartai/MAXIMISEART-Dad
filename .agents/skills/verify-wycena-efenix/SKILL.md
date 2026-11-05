@@ -1,6 +1,6 @@
 ---
 name: verify-wycena-efenix
-description: Exhaustively break each request of a real Wycena w efenix (the window `efenix_browser.window` in Playwright's Chromium on the Atrapa efenix, behind a fault proxy) with every kind of fault (network cut, torn, stalled or slow; HTTP 4xx and 5xx; logout; redirect; a hung answer; an answer just before or after the window's time limit; the login page under an order address; a closed tab; Dad's login wait; the tool killed) and check the Zatrzymanie's cause and Komunikat, the efenix state, the Znaczniki efenix, the Logi and the Ślad Wyceny Emmetta, then resume each stop with and without Dad's changes in efenix. Use when a change touches `efenix_browser`, `efenix_pricing`, `efenix_emmett_trace`, `efenix_marking` or another `efenix_*` module, the Dziennik Wyceny w efenix, the Atrapa efenix, or when `explore_wycena_efenix.py` or `the explorer tests in `tests/test_centrum_logi_uruchomienia.py` fail.
+description: Exhaustively break each request of a real Wycena w efenix (the window `efenix_browser.window` in Playwright's Chromium on the Atrapa efenix, behind a fault proxy) with every kind of fault (network cut, torn, stalled or slow; HTTP 4xx and 5xx; logout; redirect; a hung answer; an answer just before or after the window's time limit; the login page under an order address; a closed tab; Dad's login wait; the tool killed) and check the Zatrzymanie's cause and Komunikat, the efenix state, the Znaczniki efenix, the Logi and the Ślad Wyceny Emmetta, then resume each stop with and without Dad's changes in efenix. Use when a change touches `efenix_browser`, `efenix_pricing`, `efenix_emmett_trace`, `efenix_marking` or another `efenix_*` module, the Dziennik Wyceny w efenix, the Atrapa efenix, or when `explore_wycena_efenix.py` or the explorer tests in `tests/test_centrum_logi_uruchomienia.py` fail.
 pilnuje:
   - src/rozliczenia/efenix_*.py
   - src/rozliczenia/centrum/pricing_journal.py
@@ -92,7 +92,7 @@ quantities; order 2 (row 19) ends with an Ostrzeżenie Emmetta. The window's tim
 - `--lista` prints the cases of this part (`MUTACJE_CZESC`) without a browser; `--zostaw-run` keeps the run files.
 - The last line is the verdict: `WYCENA EFENIX OK`, `WYCENA EFENIX: NOWE NARUSZENIE (n)`, `WYCENA EFENIX: LUKA MODELU
   (n)` (the window sends requests `EXPECTED_CALLS` does not know: the space is stale) or `WYCENA EFENIX: ZNALEZISKO
-  ZNIKNĘŁO (n)` (only in a whole run).
+  ZNIKNĘŁO (n)` (a run or a part ran a case after which a known finding always shows, and it did not).
 
 ## Evidence
 
@@ -117,15 +117,17 @@ remove that folder (only one with `.katalog-runu`).
 ## Known findings
 
 A known finding is a violation the code has today, in `KNOWN_FINDINGS` with the story after which it is excused; it
-does not fail the check. When a code change fixes it, a whole run ends with `ZNALEZISKO ZNIKNĘŁO`: delete the entry
-there and here. A `flaky` one (a race) never reports that.
+does not fail the check. Each names in `after` the first runs after which it showed in every whole run (three on
+2026-11-05), and any run or CI part that runs one of them without the finding ends with `ZNALEZISKO ZNIKNĘŁO`: delete the
+entry there and here. A name outside the space is `LUKA MODELU`. A `flaky` one (a race) names none and never reports
+that; its match is the race's exact shape, so any other outcome of the same fault is a new violation.
 
 | Name | Counterexample | Story |
 |---|---|---|
 | `blad-http-poza-strona-zlecenia` | `HTTP_4XX przy POST action_fill_orders.php (okno) #1`: `EFENIX_OKNO_ZATRZYMANE (RESULTS, OtherShape(NO_TABLE))`; the same for `GET index.php` (`ElementCount(#field_numer, 0)`) and `action_save_index.php` (`ANSWER_NOT_JSON`), 4xx and 5xx | `_read_order` names the HTTP status only for the order page (#808); an error answer to the list, the search or a quantity is called a page in another shape, so Maks sees a changed efenix on a server error. |
 | `gotowe-bez-wyceny-emmetta` | `HTTP_4XX przy POST action_load_emmett.php #2`: order 2, whose Emmett contradicts the file, ends gotowe with `Emmett 0x` and a Znacznik efenix instead of an Ostrzeżenie Emmetta; also `REDIRECT` and order 1 | efenix refuses „Załaduj do zlecenia”, its page script reloads anyway, and the window reads the empty page as the Wycena Emmetta: the Ślad gets an empty Emmett and the process adds the file's quantities. |
-| `karta-zamknieta-w-nawigacji` (flaky) | `TAB_CLOSED przy GET page_order_edit.php #3`: `EFENIX_OKNO_ZATRZYMANE (EMMETT, BrowserFailure(Error, RELOAD))`; at the list at start `EFENIX_NIEDOSTEPNY`; 3 to 6 of 35 tab closes in each of three whole runs | the navigation error reaches the window before `Page.is_closed()` is true, so `_action` does not see the closed tab. |
-| `wznowienie-dopisuje-usunieta-ilosc` | `TORN przy POST action_save_index.php #2 → ponownie, tata usunął ilość dopisaną przez proces`: `[012=1, 019=2]` → `[012=1, 015=1, 019=2]` | the page looks as before the process added the quantity, and the Ślad keeps only „Emmett załadowany”, not the added quantities. This is #864 (after a normal end the same edit of Dad's gives `EFENIX_WYCENA_INNA`, #757); its fix makes a whole run end with `ZNALEZISKO ZNIKNĘŁO`, so the PR of that fix deletes this entry here and in `KNOWN_FINDINGS`, or this PR does if the fix reaches `main` first. |
+| `karta-zamknieta-w-nawigacji` (flaky) | `TAB_CLOSED przy GET page_order_edit.php #3`: `EFENIX_OKNO_ZATRZYMANE (EMMETT, BrowserFailure(Error, RELOAD))`; also `BrowserFailure(Error, OPEN)` at the list again and the order page; 3 to 6 of the 8 closes at a navigation (of 35 tab closes) in each of three whole runs, never another error type or operation | the navigation error reaches the window before `Page.is_closed()` is true, so `_action` does not see the closed tab. Excused only as Playwright's plain `Error` at the operation that opens that page (`_RACE`: `OPEN` at the list and the order page, `RELOAD` after Emmett), so a `TargetClosedError`, an answer, a date, a search or a quantity with a closed tab stays a new violation. |
+| `wznowienie-dopisuje-usunieta-ilosc` | `TORN przy POST action_save_index.php #2 → ponownie, tata usunął ilość dopisaną przez proces`: `[012=1, 019=2]` → `[012=1, 015=1, 019=2]` | the page looks as before the process added the quantity, and the Ślad keeps only „Emmett załadowany”, not the added quantities. This is #864 (after a normal end the same edit of Dad's gives `EFENIX_WYCENA_INNA`, #757); after its fix every run or part with `TORN` at `action_save_index.php` ends with `ZNALEZISKO ZNIKNĘŁO`, so the PR of that fix deletes this entry here and in `KNOWN_FINDINGS`. |
 
 ## Accepted risks
 
@@ -159,6 +161,8 @@ Each gives `WYCENA EFENIX: NOWE NARUSZENIE`:
 - #802: a browser failure without the window's operation; the window waiting for the headers of an answer instead of
   the whole answer (a stalled answer hangs the run);
 - #758: a tab closed during Dad's login wait not seen until the wait ends;
+- a tab closed during the window's action not seen at all (`_action` without its closed check), which the race entry
+  `karta-zamknieta-w-nawigacji` must not excuse;
 - #757: „Emmett załadowany” written before „Załaduj do zlecenia”; a resume without checking that the page is as the
   process left it after Emmett; a pricing without a Ślad completed like one after Emmett;
 - the window clicking Przekazanie do akceptacji; the Ślad keyed by the order number; a Komunikat that always says
