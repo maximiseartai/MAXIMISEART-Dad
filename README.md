@@ -317,23 +317,33 @@ ma o nim linię `NIESPRAWDZONE`: sprawdź ręcznie w efenix na zleceniu „Do
 wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty.
 
 Propozycji Emmetta narzędzie samo nie pobiera (`action_fill_emmett.php` nie
-jest na liście odczytów, bo nie wiadomo, czy serwer efenix przy niej czegoś nie
-zapisuje), więc wynik ma o jej budowie linię `NIESPRAWDZONE`. Jej budowę mierzy
-`--propozycja <plik>` z propozycją, którą człowiek zapisał w Chrome po kliknięciu
-przycisku Emmetta i zamknął okno „Zamknij”, nigdy „Załaduj do zlecenia”; czy
-wolno to kliknąć na zleceniu taty, decyduje Maks (#953). W DevTools Chrome
-(prawy klik na propozycji, „Zbadaj”) element `<div id="emmett-propozycja">`
-kopiuje Copy → Copy outerHTML, a schowek zapisuje do pliku poleceniem `pbpaste`,
-nie przez TextEdit, który zapisuje RTF:
+jest na liście odczytów), więc wynik ma o jej budowie linię `NIESPRAWDZONE`.
+Przycisk Emmetta pokazuje w okienku podgląd, co i z jakimi ilościami Emmett
+uzupełni, a ilości wpisuje do zlecenia dopiero „Załaduj do zlecenia”. Tak
+pamięta to Maks, ale co serwer efenix robi przy podglądzie, nikt nie sprawdził.
+
+Budowę propozycji mierzy `--propozycja <plik>` z odpowiedzią
+`action_fill_emmett.php` z zakładki Network DevTools Chrome, zapisaną jedną z
+dwóch dróg:
+
+1. zalecana: przy zwykłej pracy taty, gdy i tak wycenia zlecenie Emmettem;
+2. podgląd: na zleceniu „Do wyceny” przycisk Emmetta, potem „Zamknij”, nigdy
+   „Załaduj do zlecenia”.
+
+DevTools (Cmd+Option+I) z zakładką Network otwórz przed kliknięciem przycisku
+Emmetta, a plik zapisz przed „Załaduj do zlecenia”, po którym strona się
+przeładowuje i zakładka Network jest pusta. W wierszu `action_fill_emmett.php` wybierz prawym klikiem Copy → Copy
+response, a schowek zapisz do pliku poleceniem `pbpaste`, nie przez TextEdit,
+który zapisuje RTF:
 
 ```sh
 pbpaste > ~/.t3/notes/953/propozycja.html
 .venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php> --propozycja ~/.t3/notes/953/propozycja.html
 ```
 
-Plik może też być samą odpowiedzią `action_fill_emmett.php` z zakładki Network:
-narzędzie składa go jak strona efenix, jako treść propozycji, więc daje ten sam
-wynik co skopiowany element.
+Odpowiedź, którą jQuery strony efenix składa inaczej niż narzędzie (np.
+zaczyna się od `<tr>` albo `<td>`), i element skopiowany z zakładki Elements
+narzędzie zgłasza jako `NIESPRAWDZONE` z powodem.
 
 Czasu przebiegu w prawdziwym efenix nikt jeszcze nie zmierzył: narzędzie wysyła
 po kolei najwyżej 17 odczytów, więc trwa mniej więcej tyle, ile 17 odpowiedzi

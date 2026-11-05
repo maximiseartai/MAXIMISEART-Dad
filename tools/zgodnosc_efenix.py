@@ -44,23 +44,37 @@ polega okno Wyceny w efenix. Przycisku kalendarza daty wykonania (``#button-cale
 przy pustej dacie wykonania, a efenix pokazuje go najpewniej tylko wtedy, więc wynik zawsze ma linię ``NIESPRAWDZONE``
 z prośbą o sprawdzenie ręczne (``DATE_BUTTON_BY_HAND``).
 
-Propozycji Emmetta narzędzie samo nie czyta: ``action_fill_emmett.php`` nie jest na liście ``ALLOWED``, bo nic nie
-pokazuje, co robi z nim serwer efenix. Skrypt strony zlecenia efenix (rekonesans z 1.11.2026) wysyła w nim tylko
-``order_id`` z przycisku Emmetta, odpowiedź 2xx wkłada do ``#emmett-propozycja`` i pokazuje okno Emmetta, a jego treść
-mówi, że wycenę czyści dopiero „Załaduj do zlecenia”; czy serwer przy propozycji czegoś nie zapisuje, z tego nie wynika.
-Bez pliku ``--propozycja`` wynik ma więc zawsze linię ``NIESPRAWDZONE`` o budowie propozycji (``PROPOSAL_BY_HAND``).
-Plik zapisuje człowiek, jeśli Maks zdecyduje, że może kliknąć przycisk Emmetta na zleceniu taty (#953): kliknięcie
-wysyła to samo żądanie, które okno Wyceny w efenix wysyła przed każdym „Załaduj do zlecenia”, okno Emmetta pokazuje
-propozycję, a w DevTools Chrome (prawy klik na propozycji, „Zbadaj”) element ``<div id="emmett-propozycja">`` kopiuje
-Copy → Copy outerHTML i zapisuje schowek do pliku poleceniem ``pbpaste > ~/.t3/notes/953/propozycja.html`` (nie przez
-TextEdit, który zapisuje RTF); okno zamyka „Zamknij”, nigdy „Załaduj do zlecenia”. Narzędzie składa plik w swojej karcie
-bez skryptów i sieci tak, jak skrypt strony efenix odpowiedź: jako treść elementu, więc ``<script>``, ``<style>`` czy
-``<meta>`` z początku pliku zostają w propozycji. Czyta go od elementu ``#emmett-propozycja``, a plik bez niego, np. sama
-odpowiedź z zakładki Network, w całości, więc obie postacie tej samej propozycji dają ten sam wynik. Budowę porównuje z propozycją Atrapy
-(``atrapa_efenix.emmett_proposal``): każdy element (nazwy i klasy od propozycji), tekst i atrybut z maską (kod pozycji
-to ``INDEKS_NNN_NNN``, ciąg cyfr 9, ciąg liter a), którego nie ma po drugiej stronie, to różnica, a liczba kodów pozycji
-w propozycji stoi w nagłówku wyniku. Propozycja, która nic nie pokazuje (jak w oknie Emmetta, gdy Emmett nic nie
-proponuje), to część niesprawdzona.
+Propozycji Emmetta narzędzie samo nie czyta: ``action_fill_emmett.php`` nie jest na liście ``ALLOWED``. Skrypt strony
+zlecenia efenix (rekonesans z 1.11.2026) wysyła w nim tylko ``order_id`` z przycisku Emmetta, odpowiedź 2xx wkłada do
+``#emmett-propozycja`` i pokazuje okno Emmetta z podglądem, co i z jakimi ilościami Emmett uzupełni. Ilości wpisuje
+dopiero „Załaduj do zlecenia” (``action_load_emmett.php``), a okno bez zmian w zleceniu zamyka „Zamknij”; tak pamięta to
+Maks i tak działa Atrapa, ale co serwer efenix robi przy ``action_fill_emmett.php``, nikt nie sprawdził. Bez pliku
+``--propozycja`` wynik ma więc zawsze linię ``NIESPRAWDZONE`` o budowie propozycji (``PROPOSAL_BY_HAND``).
+
+Plik ``--propozycja`` to odpowiedź ``action_fill_emmett.php`` z zakładki Network DevTools Chrome, którą człowiek zapisuje
+jedną z dwóch dróg:
+
+1. zalecana: przy zwykłej pracy taty, gdy i tak wycenia zlecenie Emmettem;
+2. podgląd: na zleceniu „Do wyceny” przycisk Emmetta, a potem „Zamknij” (według Maksa bez zapisu w zleceniu).
+
+W obu drogach DevTools (Cmd+Option+I) z zakładką Network jest otwarte przed kliknięciem przycisku Emmetta, a w oknie
+Emmetta nikt nie klika „Załaduj do zlecenia” przed zapisem pliku, bo po nim skrypt strony przeładowuje stronę, co czyści
+zakładkę Network; w drodze 2 nikt go nie klika nigdy. Wiersz ``action_fill_emmett.php``:
+prawy klik, Copy → Copy response, a schowek zapisuje do pliku poleceniem ``pbpaste > ~/.t3/notes/953/propozycja.html``
+(nie przez TextEdit, który zapisuje RTF).
+
+Narzędzie składa plik w swojej karcie bez skryptów i sieci jako treść ``div``, tak jak jQuery ``.html()`` strony efenix
+składa odpowiedź w ``#emmett-propozycja``, więc ``<script>``, ``<style>`` czy ``<meta>`` z jej początku zostają w
+propozycji. Odpowiedź, którą jQuery choć jednej wersji z tych, z którymi działa strona efenix, składa inaczej (pierwszy
+znacznik z ``wrapMap`` jQuery, np. ``<tr>``, ``<td>``, ``<tbody>``, albo samozamykający się znacznik inny niż pusty, np.
+``<li/>``), to część niesprawdzona z powodem, tak samo jak plik z elementem ``#emmett-propozycja`` skopiowanym z
+zakładki Elements, z którego budowy odpowiedzi nie da się odtworzyć. Skryptów z odpowiedzi narzędzie nie uruchamia:
+każdy ``<script>`` w niej to różnica, a tego, co skrypt narysowałby w efenix, wynik nie pokazuje. Narzędzie zakłada
+odpowiedź ``text/html`` (Network → Headers → ``Content-Type``), którą jQuery podaje do ``.html()`` jako napis.
+Budowę porównuje z propozycją Atrapy (``atrapa_efenix.emmett_proposal``): każdy element (nazwy i klasy od propozycji),
+tekst i atrybut z maską (kod pozycji to ``INDEKS_NNN_NNN``, ciąg cyfr 9, ciąg liter a), którego nie ma po drugiej
+stronie, to różnica, a liczba kodów pozycji w propozycji stoi w nagłówku wyniku. Propozycja, która nic nie pokazuje
+(jak w oknie Emmetta, gdy Emmett nic nie proponuje), to część niesprawdzona.
 
 Uruchomienie: Chrome z osobnym profilem i zdalnym debugowaniem (macOS, Linux, Windows), w nim logowanie do efenix kontem
 taty, potem narzędzie, z ``--propozycja`` tylko z plikiem propozycji:
@@ -207,9 +221,25 @@ LOGIN_ELEMENTS: Final = (
 )
 PRICING_CARD: Final = ".card.rounded-lg.kolorek"
 # Propozycja w oknie Emmetta z ``ORDER_ELEMENTS``: element, do którego skrypt strony wkłada odpowiedź
-# ``action_fill_emmett.php``; w pliku ``--propozycja`` sam element, bez okna Emmetta.
+# ``action_fill_emmett.php``, i jego ``id``.
 PROPOSAL: Final = next(element.selector for element in ORDER_ELEMENTS if element.name == "propozycja w oknie Emmetta")
-PROPOSAL_ALONE: Final = PROPOSAL.split()[-1]
+PROPOSAL_ID: Final = PROPOSAL.split()[-1].removeprefix("#")
+# Kiedy jQuery ``.html(napis)``, którym skrypt strony zlecenia efenix wkłada odpowiedź do ``#emmett-propozycja``, składa
+# napis inaczej niż ``innerHTML`` w ``div`` (``_COMPOSE_PROPOSAL``). Wersji jQuery efenix nikt nie zna (strona ładuje
+# ``bootstrap/js/jquery.min.js``), a Bootstrap 4 strony działa z jQuery od 1.9.1 do 3.x, więc warunki są z kodu jQuery
+# 1.12.4 (jak 1.9–2.2) i 3.7.1, każdy w obu postaciach:
+# - pierwszy znacznik napisu (``rtagName``) to klucz ``wrapMap``: jQuery składa napis w tabeli, ``<select>``, ``<map>``…
+#   i zostawia w propozycji części, które ``innerHTML`` w ``div`` gubi (``<tr>``, ``<td>``, ``<tbody>``);
+# - samozamykający się znacznik inny niż pusty (``rxhtmlTag``): jQuery przed 3.5 (``htmlPrefilter``) zamyka go od razu,
+#   a ``innerHTML`` czyta jak otwarcie, więc ``<li/>`` z tekstem za nim to w jednej wersji pusty element, a w drugiej nie.
+# Gdy ``rnoInnerhtml`` (``<script``, ``<style``, ``<link``) jQuery też nie używa ``innerHTML`` od razu, ale składa napis
+# tym samym ``innerHTML`` w ``div`` (``buildFragment`` z ``wrapMap._default``) i uruchamia skrypty, które w budowie są.
+JQUERY_FIRST_TAG: Final = (re.compile(r"<([\w:-]+)", re.ASCII), re.compile(r"<([a-z][^/\0>\x20\t\r\n\f]*)", re.ASCII | re.IGNORECASE))
+JQUERY_WRAPPED: Final = frozenset(
+    {"option", "optgroup", "legend", "area", "param", "thead", "tbody", "tfoot", "colgroup", "caption", "col", "tr", "td", "th"}
+)
+# ``rxhtmlTag`` jQuery 1.12.4; ten z 3.0–3.4 łapie tylko część tych samych znaczników (nazwa od litery).
+JQUERY_SELF_CLOSING: Final = re.compile(r"<(?!area|br|col|embed|hr|img|input|link|meta|param)(([\w:-]+)[^>]*)/>", re.ASCII | re.IGNORECASE)
 CODE_TOKEN: Final = "INDEKS_NNN_NNN"
 # Część, której narzędzie nie sprawdza nigdy, a Maks sprawdza ręcznie; zawsze w wyniku jako ``NIESPRAWDZONE``.
 DATE_BUTTON_BY_HAND: Final = (
@@ -245,15 +275,13 @@ _READ_TABLE: Final = """([html, orderPage]) => {
         })),
     };
 }"""
-# Budowa jedynego elementu ``selector`` (z ``within``: w elemencie o tym ``id``, a bez ``selector`` w nim cały ``within``)
-# bez treści do maskowania: każdy element w nim (ścieżka nazw i klas od niego, ``null``, ``null``), każdy tekst inny niż
-# białe znaki (ścieżka elementu, ``null``, tekst) i każdy atrybut poza ``class`` (ścieżka, nazwa, wartość); ``null``, gdy
-# elementu nie ma dokładnie raz, a ``within`` nie ma. Pusta lista to element, który nic nie pokazuje: bez elementu i bez
-# tekstu, jak w ``load_emmett``.
+# Budowa jedynego elementu ``selector`` (z ``within``: całego elementu o tym ``id``, pierwszego w dokumencie) bez treści
+# do maskowania: każdy element w nim (ścieżka nazw i klas od niego, ``null``, ``null``), każdy tekst inny niż białe znaki
+# (ścieżka elementu, ``null``, tekst) i każdy atrybut poza ``class`` (ścieżka, nazwa, wartość); ``null``, gdy elementu
+# nie ma dokładnie raz. Pusta lista to element, który nic nie pokazuje: bez elementu i bez tekstu, jak w ``load_emmett``.
 _READ_SKELETON: Final = """([selector, within]) => {
-    const scope = within ? document.getElementById(within) : document;
-    const matching = scope.querySelectorAll(selector);
-    const root = matching.length === 1 ? matching[0] : within ? scope : null;
+    const matching = within ? [document.getElementById(within)] : document.querySelectorAll(selector);
+    const root = matching.length === 1 ? matching[0] : null;
     if (!root) return null;
     const name = (element) => [element.localName, ...[...element.classList].sort()].join('.');
     const found = [];
@@ -274,10 +302,11 @@ _READ_SKELETON: Final = """([selector, within]) => {
     walk(root, '');
     return found;
 }"""
-# Plik ``--propozycja`` i propozycja Atrapy złożone jak w efenix: skrypt strony zlecenia wkłada odpowiedź
-# ``action_fill_emmett.php`` jako treść ``#emmett-propozycja`` (jQuery ``.html()``), więc ``<script>``, ``<style>``,
-# ``<meta>``, ``<link>`` i ``<title>`` z jej początku zostają w propozycji, a nie trafiają do ``<head>``, jak przy
-# składaniu całej strony. Pojemnik ma własne ``id``, żeby skopiowany element ``#emmett-propozycja`` był w nim raz.
+# Plik ``--propozycja`` (odpowiedź ``action_fill_emmett.php``) i propozycja Atrapy złożone jak w efenix, gdy jQuery
+# ``.html()`` składa napis jak ``innerHTML`` w ``div`` (poza ``JQUERY_WRAPPED`` i ``JQUERY_SELF_CLOSING``): jako treść
+# ``div``, więc ``<script>``, ``<style>``, ``<meta>``, ``<link>`` i ``<title>`` z jej początku zostają w propozycji, a nie
+# trafiają do ``<head>``, jak przy składaniu całej strony. Strona zlecenia efenix i karta narzędzia są obie bez
+# ``<!DOCTYPE>``, w trybie quirks, w którym parser czyta np. ``<p><table>`` inaczej niż w trybie standardów.
 _COMPOSE_PROPOSAL: Final = """([within, html]) => {
     const box = document.createElement('div');
     box.id = within;
@@ -648,16 +677,28 @@ def _check_proposal_before(page: Page, report: Report) -> None:
 def _check_proposal(page: Page, html: str, report: Report) -> None:
     """Propozycja Emmetta z pliku ``--propozycja`` ma budowę propozycji Atrapy (``atrapa_efenix.emmett_proposal``).
 
-    Budowa to elementy, teksty i atrybuty (``_READ_SKELETON``) z maską ``_masked``, a plik narzędzie składa jako treść
-    elementu, jak skrypt strony efenix odpowiedź w ``#emmett-propozycja`` (``_COMPOSE_PROPOSAL``): plik z elementem
-    ``#emmett-propozycja`` (skopiowany element) czyta od niego, a inny (sama odpowiedź) w całości, więc obie postacie
-    tej samej propozycji mają tę samą budowę. Propozycja, która nic nie pokazuje, to część niesprawdzona: tak samo pusta
-    jest propozycja Atrapy, gdy Emmett nic nie proponuje, ale budowy ilości z niej nie widać.
+    Plik to odpowiedź ``action_fill_emmett.php``, a narzędzie składa go jak skrypt strony efenix w ``#emmett-propozycja``
+    tylko wtedy, gdy jQuery każdej wersji, z którą działa strona, składa ją jak ``innerHTML`` w ``div``
+    (``_COMPOSE_PROPOSAL``); inny plik (``_not_composed``) to część niesprawdzona z powodem. Budowa to elementy, teksty i
+    atrybuty (``_READ_SKELETON``) z maską ``_masked``. Propozycja, która nic nie pokazuje, to część niesprawdzona: tak
+    samo pusta jest propozycja Atrapy, gdy Emmett nic nie proponuje, ale budowy ilości z niej nie widać.
     """
 
     report.proposal_read = True
+    if (reason := _not_composed(html)) is not None:
+        report.unchecked.append((Part.PROPOSAL, f"propozycja z pliku --propozycja nie jest sprawdzana: {reason}"))
+        return
     found = _composed(page, html)
     report.checked["pozycje w propozycji Emmetta"] = len({code for _path, _attribute, value in found if value for code in POSITION_CODE.findall(value)})
+    if any(attribute == "id" and value == PROPOSAL_ID for _path, attribute, value in found):
+        report.unchecked.append(
+            (
+                Part.PROPOSAL,
+                f"plik --propozycja ma element #{PROPOSAL_ID}, a nie samą odpowiedź action_fill_emmett.php: zapisz odpowiedź"
+                " z zakładki Network (--help)",
+            )
+        )
+        return
     if not found:
         report.unchecked.append(
             (Part.PROPOSAL, "propozycja z pliku --propozycja nic nie pokazuje: zapisz propozycję zlecenia, któremu Emmett proponuje ilości")
@@ -671,19 +712,32 @@ def _check_proposal(page: Page, html: str, report: Report) -> None:
         report.differ(Part.PROPOSAL, f"w Atrapie, nie w efenix: {line}")
 
 
+def _not_composed(html: str) -> str | None:
+    """Dlaczego jQuery ``.html()`` którejś wersji składa odpowiedź ``html`` inaczej niż ``innerHTML`` w ``div``
+    (``JQUERY_WRAPPED``, ``JQUERY_SELF_CLOSING``); ``None``, gdy każda składa ją tak samo."""
+
+    for first_tag in JQUERY_FIRST_TAG:
+        if (tag := first_tag.search(html)) is not None and tag[1].lower() in JQUERY_WRAPPED:
+            return (
+                f"pierwszy znacznik odpowiedzi to dla jQuery <{tag[1].lower()}>, więc jQuery strony efenix składa ją w"
+                " <table>, <select> albo <map> i zostawia w propozycji części, które narzędzie by zgubiło"
+            )
+    if (tag := JQUERY_SELF_CLOSING.search(html)) is not None:
+        return f"ma samozamykający się znacznik <{tag[2].lower()}/>, który jQuery przed 3.5 składa inaczej niż nowsze"
+    return None
+
+
 def _composed(page: Page, html: str) -> list[tuple[str, str | None, str | None]]:
-    """Budowa propozycji ``html`` złożonej jak w efenix (``_COMPOSE_PROPOSAL``): od jedynego ``#emmett-propozycja`` w
-    niej, a bez niego cała."""
+    """Budowa całej propozycji ``html`` złożonej jak w efenix (``_COMPOSE_PROPOSAL``)."""
 
     _show(page, "")
     page.evaluate(_COMPOSE_PROPOSAL, [_PROPOSAL_BOX, html])
-    return _skeleton(page, PROPOSAL_ALONE, within=_PROPOSAL_BOX)
+    return _skeleton(page, "", within=_PROPOSAL_BOX)
 
 
 def _skeleton(page: Page, selector: str, *, within: str | None = None) -> list[tuple[str, str | None, str | None]]:
     """``_READ_SKELETON`` przez ``page.evaluate``, które, inaczej niż lokator, nie czeka na przejście strony (``<meta
-    http-equiv="refresh">``), na które narzędzie odpowiada 204; element, którego nie ma dokładnie raz, bez ``within``:
-    pusta lista."""
+    http-equiv="refresh">``), na które narzędzie odpowiada 204; element, którego nie ma dokładnie raz, to pusta lista."""
 
     found = page.evaluate(_READ_SKELETON, [selector, within])
     return [] if found is None else [(path, attribute, value) for path, attribute, value in found]
@@ -841,9 +895,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         default=None,
         help=(
-            "Plik HTML z propozycją Emmetta zapisaną w Chrome (element #emmett-propozycja albo odpowiedź"
-            " action_fill_emmett.php), zapisany ze schowka poleceniem pbpaste > ~/.t3/notes/953/propozycja.html;"
-            " narzędzie porównuje jej budowę z Atrapą, a samo action_fill_emmett.php nie wysyła."
+            "Plik z odpowiedzią action_fill_emmett.php z zakładki Network Chrome (Copy → Copy response), zapisany ze"
+            " schowka poleceniem pbpaste > ~/.t3/notes/953/propozycja.html przy zwykłej wycenie Emmettem albo po"
+            " podglądzie Emmetta zamkniętym „Zamknij” (opis wyżej); narzędzie porównuje jej budowę z Atrapą, a samo"
+            " action_fill_emmett.php nie wysyła."
         ),
     )
     parser.add_argument("--limit-ms", type=int, default=TIMEOUT_MS, help="Limit czekania na odpowiedź efenix (ms).")

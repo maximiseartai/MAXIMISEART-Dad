@@ -25,6 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import queue
+import re
 import socket
 import subprocess
 import sys
@@ -153,10 +154,10 @@ class Variant:
     proposal: Callable[[str], str] | None = None
 
 
-def _copied(html: str) -> Callable[[str], str]:
-    """Plik propozycji, jak Maks kopiuje go w DevTools Chrome: element ``#emmett-propozycja`` z propozycją ``html``."""
+def _response(html: str) -> Callable[[str], str]:
+    """Plik propozycji, jak Maks zapisuje go z zakładki Network Chrome: sama odpowiedź ``html``."""
 
-    return lambda _url: f'<div id="emmett-propozycja">\n\t\t\t\t\t{html}\n\t\t\t\t</div>'
+    return lambda _url: html
 
 
 # Propozycja Emmetta Atrapy z pozycją z przypisania kolumn i spoza niego, w tym z ilością dwucyfrową.
@@ -171,12 +172,11 @@ def _sending(url: str) -> str:
 
     folder = url.rpartition("/")[0]
     return (
-        f'<div id="emmett-propozycja">{emmett_proposal(EMMETT)}'
+        f"{emmett_proposal(EMMETT)}"
         f'<img src="{folder}/{LOAD_EMMETT}?order_id=ID-TAJNE-72"><iframe src="{folder}/{FILL_EMMETT}"></iframe>'
         f'<link rel="stylesheet" href="{folder}/{SAVE_QUANTITY}"><link rel="prefetch" href="{folder}/{FILL_EMMETT}?order_id=ID-TAJNE-72">'
         f'<meta http-equiv="refresh" content="0;url={folder}/{CHANGE_STATUS}?order_id=ID-TAJNE-72&amp;xstatus=Anulowane">'
         f"<script>fetch('{folder}/{FILL_EMMETT}', {{method: 'POST', body: 'order_id=ID-TAJNE-72'}}); navigator.sendBeacon('{folder}/{LOGOUT}');</script>"
-        "</div>"
     )
 
 
@@ -264,20 +264,40 @@ CHANGED = {
     # Propozycja w polach z klasami bez tekstu (kod w ``name``, ilość w ``value``), a nie w tekście listy, jak w Atrapie.
     "propozycja-w-polach": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-w-polach.txt",
-        proposal=_copied(emmett_proposal(EMMETT, in_fields=True).replace("<input ", '<input class="wycena-ilosc form-control" ')),
+        proposal=_response(emmett_proposal(EMMETT, in_fields=True).replace("<input ", '<input class="wycena-ilosc form-control" ')),
     ),
-    "propozycja-pusta": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-pusta.txt", proposal=_copied("")),
-    # Sama odpowiedź (zakładka Network) z elementami, które parser całej strony przeniósłby do ``<head>``, a które w
-    # ``#emmett-propozycja`` efenix zostają, i ten sam element skopiowany w DevTools: obie dają te same różnice.
-    "propozycja-z-odpowiedzi-ze-skryptem-i-stylem": Variant(
-        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-ze-skryptem-i-stylem.txt", proposal=lambda _url: HEAD_FIRST
-    ),
-    "propozycja-skopiowana-ze-skryptem-i-stylem": Variant(
-        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-ze-skryptem-i-stylem.txt", proposal=_copied(HEAD_FIRST)
+    "propozycja-pusta": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-pusta.txt", proposal=_response("")),
+    # Odpowiedź z elementami, które parser całej strony przeniósłby do ``<head>``, a które w ``#emmett-propozycja``
+    # efenix zostają.
+    "propozycja-ze-skryptem-i-stylem": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-ze-skryptem-i-stylem.txt", proposal=_response(HEAD_FIRST)
     ),
     # Odpowiedź z samym skryptem: Emmett nic nie proponuje, ale okno Emmetta w efenix ma dziecko, więc coś pokazało (#908).
-    "propozycja-z-odpowiedzi-z-samym-skryptem": Variant(
-        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-z-samym-skryptem.txt", proposal=lambda _url: "<script>pokaz()</script>"
+    "propozycja-z-samym-skryptem": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-z-samym-skryptem.txt", proposal=_response("<script>pokaz()</script>")
+    ),
+    # Odpowiedzi, które jQuery strony efenix składa w ``<table>`` (pierwszy znacznik z ``wrapMap``) i zostawia ``<td>``,
+    # ``<tr>`` i ``<tbody>``, a ``innerHTML`` w ``div`` je gubi, więc bez nich lista wyglądałaby jak w Atrapie, a pusty
+    # ``<tbody>`` jak propozycja, która nic nie pokazuje.
+    "propozycja-w-komorce-tabeli": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-w-komorce-tabeli.txt", proposal=_response(f"<td>{emmett_proposal(EMMETT)}</td>")
+    ),
+    "propozycja-w-wierszu-tabeli": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-w-wierszu-tabeli.txt",
+        proposal=_response(f"\n<tr><td>{emmett_proposal(EMMETT)}</td></tr>"),
+    ),
+    "propozycja-z-pustym-tbody": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-z-pustym-tbody.txt", proposal=_response("<tbody></tbody>")
+    ),
+    # ``<li/>`` z tekstem za nim: jQuery przed 3.5 składa pusty ``<li>`` i tekst obok, a nowsze i ``innerHTML`` tekst w nim.
+    "propozycja-z-samozamykajacym-sie-znacznikiem": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-z-samozamykajacym-sie-znacznikiem.txt",
+        proposal=_response(emmett_proposal(EMMETT).replace("<li>", "<li/>")),
+    ),
+    # Element skopiowany z zakładki Elements zamiast odpowiedzi z Network, która jest w nim tylko po złożeniu przez jQuery.
+    "propozycja-jako-skopiowany-element": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-jako-skopiowany-element.txt",
+        proposal=_response(f'<div id="emmett-propozycja">\n\t\t\t\t\t{emmett_proposal(EMMETT)}\n\t\t\t\t</div>'),
     ),
     "propozycja-z-elementami-ktore-wysylaja": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-z-elementami-ktore-wysylaja.txt", proposal=_sending
@@ -299,11 +319,12 @@ SAME = {
     ),
     "szukanie-numeru": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-numeru.txt", number=ORDERS[1].number),
     "propozycja-jak-w-atrapie": Variant(
-        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-jak-w-atrapie.txt", proposal=_copied(emmett_proposal(EMMETT))
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-jak-w-atrapie.txt", proposal=_response(emmett_proposal(EMMETT))
     ),
-    # Sama odpowiedź ``action_fill_emmett.php`` (zakładka Network), bez elementu ``#emmett-propozycja``.
-    "propozycja-z-odpowiedzi": Variant(
-        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-jak-w-atrapie.txt", proposal=lambda _url: emmett_proposal(EMMETT)
+    # Ta sama odpowiedź z komentarzem i białymi znakami przed listą, które jQuery składa jak ``innerHTML``.
+    "propozycja-z-komentarzem-przed-lista": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-jak-w-atrapie.txt",
+        proposal=_response(f"\n<!-- Emmett -->\n{emmett_proposal(EMMETT)}\n"),
     ),
 }
 
@@ -561,6 +582,24 @@ def test_przejscie_w_karcie_skladania_zostawia_zlozony_html(chrome: str) -> None
 
         assert shown == ("Złożony HTML", ["<html><head></head><body></body></html>"])
         assert atrapa.requested() == []
+
+
+@pytest.mark.parametrize(
+    ("html", "tags"),
+    [
+        # jQuery 3.x pomija znacznik od ``_``, więc jego pierwszym znacznikiem jest ``<TD>``, a jQuery 1.x czyta ``<_x>``.
+        ("<_x><TD>INDEKS_012_078: 2</TD>", ["<td>"]),
+        # jQuery 1.x czyta nazwę do kropki (``tr``), a 3.x całą (``tr.x``).
+        ("<tr.x>INDEKS_012_078: 2", ["<tr>"]),
+        ("<ul><li>INDEKS_012_078: 2</li></ul><br/><col/>", []),
+    ],
+    ids=["znacznik-jquery-3", "znacznik-jquery-1", "puste-samozamykajace"],
+)
+def test_odpowiedz_ktora_jquery_ktorejs_wersji_sklada_inaczej_jest_niesprawdzona(html: str, tags: list[str]) -> None:
+    # Powód podaje najpierw znacznik, który jQuery wziął za pierwszy; bez powodu jQuery składa jak narzędzie.
+    reason = zgodnosc_efenix._not_composed(html)
+
+    assert re.findall(r"<[^>]*>", reason or "")[:1] == tags
 
 
 def test_lista_dozwolonych_zadan_ma_tylko_odczyty() -> None:
