@@ -87,8 +87,11 @@ classification of other failures) does not move the model. A change that makes a
 decide whether an order is finished does, though no definition above changes: add it to the table and to
 `model/definicje.json`.
 
-Sync commit: `ed73f88ce` (2026-11-05, #960: Wycena w efenix completes every order to the Plik zbiorczy only upwards).
-Every row of the table was checked against the code at this commit. Since the previous Sync commit `c2db26d6c` the
+Sync commit: `aac769579` (2026-11-05, #953: merge of `main` after #960). Every row of the table was checked against the
+code at this commit. Since `ed73f88ce` only `load_emmett` changed, and only by a name: the rule whether the Emmett dialog
+shows anything is the public `SHOWS_ANYTHING`, which the compatibility tool also uses, instead of the private
+`_SHOWS_ANYTHING`, with the same JavaScript, so the model did not change. On the previous Sync commit `ed73f88ce`
+(2026-11-05, #960: Wycena w efenix completes every order to the Plik zbiorczy only upwards), since `c2db26d6c` the
 decision of `_outcome` changed on purpose (ADR 0026): `completion` replaced `to_enter`, `emmett_conflicts`,
 `priced_differently` and `as_left_after_emmett`, both paths (a page without quantities after Emmett, a page with
 quantities without Emmett) go through `_completed`, and the Ślad Wyceny Emmetta with its write ahead
