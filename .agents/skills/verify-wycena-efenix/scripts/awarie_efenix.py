@@ -20,7 +20,8 @@ the explorer handle: the tab closed when the browser sends the request (``TAB_CL
 right before or right after efenix ran it (``KILLED``, snapshots taken by ``before_executed`` and ``after_executed``).
 Three more belong to one kind of request: the login page under the address of an order page (``LOGIN_PAGE``, #808), and
 the session ended when the list opens, after which Dad logs in or closes the tab while the window waits for him
-(``LOGIN_LATER``, ``LOGIN_CLOSED``, #758).
+(``LOGIN_LATER``, ``LOGIN_CLOSED``, #758), or Dad logs in and the list the window asks for next is an error page of
+the server (``LOGIN_ERROR``, #891).
 """
 
 from __future__ import annotations
@@ -73,15 +74,18 @@ class Fault(enum.Enum):
     KILLED = "proces narzędzia zabity tuż przed albo zaraz po wykonaniu żądania"
     LOGIN_LATER = "efenix wylogował przed otwarciem listy, a tata zalogował się w oknie"
     LOGIN_CLOSED = "efenix wylogował przed otwarciem listy, a tata zamknął kartę zamiast się zalogować"
+    LOGIN_ERROR = "efenix wylogował przed otwarciem listy, tata zalogował się w oknie, a lista po nim to błąd serwera"
 
 
 OUTAGES: Final = frozenset({Fault.CUT, Fault.TORN, Fault.STALLED, Fault.SLOW})
 """Faults of the network: from the faulted request on, until ``Proxy.reconnect``."""
-LOGOUTS: Final = frozenset({Fault.LOGGED_OUT, Fault.LOGIN_LATER, Fault.LOGIN_CLOSED})
+DAD_LOGINS: Final = frozenset({Fault.LOGIN_LATER, Fault.LOGIN_CLOSED, Fault.LOGIN_ERROR})
+"""Faults where Dad acts on the login page the window waits at: he logs in or closes the tab."""
+LOGOUTS: Final = frozenset({Fault.LOGGED_OUT, *DAD_LOGINS})
 """Faults that end the Atrapa session at the faulted request, until Dad logs in."""
 DAD: Final = "__tata"
-"""Request that the login page sends 0.3 s after it shows, when Dad acts in it (``LOGIN_LATER``, ``LOGIN_CLOSED``): the
-browser side logs him in or closes the tab when it sees it."""
+"""Request that the login page sends 0.3 s after it shows, when Dad acts in it (``DAD_LOGINS``): the browser side logs
+him in or closes the tab when it sees it, and after it, at ``LOGIN_ERROR``, the proxy answers the next list with HTTP 500."""
 
 
 @dataclass(frozen=True, order=True)
@@ -169,6 +173,7 @@ class Proxy:
     forbidden_clicks: int = 0
     url: str = ""
     _outage: Fault | None = None
+    _error_list: bool = False
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _released: threading.Event = field(default_factory=threading.Event)
     _started: float = field(default_factory=time.monotonic)
@@ -220,6 +225,13 @@ class Proxy:
         if fault in LOGOUTS:
             self.expire_session()
         return call, fault
+
+    def _take_error_list(self) -> bool:
+        """``LOGIN_ERROR``: whether this list, the first after Dad's login, is the server's error page (only once)."""
+
+        with self._lock:
+            taken, self._error_list = self._error_list, False
+            return taken
 
     def _held(self, seconds: float | None = None) -> None:
         self._released.wait(seconds)
@@ -289,9 +301,13 @@ def _handler(proxy: Proxy) -> type[BaseHTTPRequestHandler]:
             if own in (FORBIDDEN_CLICK, DAD):
                 with proxy._lock:
                     proxy.forbidden_clicks += own == FORBIDDEN_CLICK
+                    proxy._error_list |= own == DAD and proxy.plan.fault is Fault.LOGIN_ERROR
                 self._send(_Answer(HTTPStatus.NO_CONTENT, (), b""))
                 return
             call, fault = proxy._decide(method, self.path, body.decode("utf-8", "replace"))
+            if method == "GET" and call.path == "index.php" and proxy._take_error_list():
+                self._send(_error_page(HTTPStatus.INTERNAL_SERVER_ERROR))
+                return
             if fault is Fault.CUT:
                 self._cut()
                 return
@@ -353,7 +369,7 @@ def _handler(proxy: Proxy) -> type[BaseHTTPRequestHandler]:
             finally:
                 connection.close()
             if response.status == HTTPStatus.OK and method == "GET" and call.path in _PAGES:
-                dad = proxy.plan.fault in (Fault.LOGIN_LATER, Fault.LOGIN_CLOSED) and call.path == "page_login.php"
+                dad = proxy.plan.fault in DAD_LOGINS and call.path == "page_login.php"
                 acts = f"<script>setTimeout(() => fetch('{DAD}'), 300);</script>" if dad else ""
                 content = content.replace(
                     b"</head>", f'<link rel="stylesheet" href="{STYLESHEET}?v=1">{_WATCHER}{acts}</head>'.encode(), 1

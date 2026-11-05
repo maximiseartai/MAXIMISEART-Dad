@@ -1,4 +1,4 @@
-"""Exhaustively break each request of a Wycena w efenix and check the Zatrzymanie, the efenix state and the resume.
+"""Exhaustively break each request of a Wycena w efenix and check the Zatrzymanie and the efenix state.
 
 The checker runs the real process (``run_process`` with ``efenix_process.PROCESS``, the window ``efenix_browser.window``
 in Playwright's Chromium, ``pace=None``) on the Atrapa efenix (``tests/fixtures/atrapa_efenix.py``) with two orders of a
@@ -8,15 +8,13 @@ ends with an Ostrzeżenie Emmetta. Between the window and the Atrapa sits the pr
 
 First a run without a fault (the reference) gives the window's requests, which must be exactly ``EXPECTED_CALLS``
 (otherwise the space is stale: ``LUKA MODELU``), and the state of the Atrapa, the Plik zbiorczy, the Ślad Wyceny Emmetta
-and the dziennik before and after each request, which is what a killed tool leaves (``Fault.KILLED``). Then each request
-gets each ``Fault`` in its own run (run 1), and every run that stopped or was killed gets a second Uruchomienie (run 2)
-after Dad logs in and the network is back, once as it is and once after each change Dad could make by hand in efenix
-between them (``Edit``): he finishes the order himself, removes a quantity Emmett gave, removes a quantity the process
-added, or prices the empty order himself without Emmett. Second runs from the same state are run once.
+and the dziennik before and after each request, which is what a killed tool leaves (``Fault.KILLED``, checked as it
+is). Then each request gets each other ``Fault`` in its own run. The second Uruchomienie after a stop, with and without
+Dad's changes in efenix, is the model's (``verify-wznowienie-wyceny-efenix``), not this checker's.
 
 The invariants (``Rule``), each with the domain sentence it comes from:
 
-- PRZYCZYNA: a Zatrzymanie names the fault the way the docstrings of ``efenix_browser`` and ``efenix_pricing.WindowCause``
+- PRZYCZYNA: a Zatrzymanie names the fault the way the docstrings of ``efenix_browser`` and ``efenix_pricing.StopCause``
   sort it, at the order of the faulted request: a broken network or a late answer is a browser failure with a named
   operation (or ``EfenixUnreachable`` before the list opened), an error page of the order page is ``HttpStatus``, a
   login is ``LoggedOut``, a closed tab is ``WindowClosed``; only a page efenix really sent in another shape may be a
@@ -26,15 +24,11 @@ The invariants (``Rule``), each with the domain sentence it comes from:
 - ZMIANA_ZE_SLADEM: every order that changed in efenix has the action that changed it in its trace in the result or the
   Zatrzymanie (and a ``begun`` entry in the dziennik), a Komunikat that says nothing changed is true, the Znaczniki
   efenix are exactly the gotowe orders, and a gotowe order has the file's quantities, the AU amount and the date.
-- WZNOWIENIE: a second run never changes an order Dad changed by hand, changes an order that already has a pricing only
-  when the Ślad has it as „Emmett załadowany” and the page has exactly Emmett's quantities and the quantities the tool
-  started entering, every other position empty (``GLOSSARY.md``), never loads Emmett again over a pricing, and without
-  Dad's change ends like one run (exceptions accepted in #774 and #864: a stop before „Załaduj do zlecenia” was read,
-  and a stop after the Ślad got a quantity ahead and before efenix saved it).
+  What a killed tool leaves has a „zaczynam” entry in the dziennik for each order changed in efenix, no Znaczniki
+  efenix, and the file's pricing in efenix for each order the dziennik ended gotowe.
 - BEZ_DANYCH: the Logi (orders, Zatrzymanie, Komunikaty), the dziennik and the Ślad have no order number, efenix
   identifier or address.
-- BEZ_WYJATKU: a run ends with a result or a Zatrzymanie of the window, never with an unexpected error, and a second run
-  ends with a result.
+- BEZ_WYJATKU: a run ends with a result or a Zatrzymanie of the window, never with an unexpected error.
 
 Run ``--doctor`` first. ``--variant`` picks fault axes, ``--rola`` request roles; CI splits the cases into parts with
 ``MUTACJE_CZESC=k/n`` (``part``). The last line is the verdict.
@@ -69,11 +63,12 @@ from openpyxl.styles import PatternFill
 from playwright.sync_api import Browser, Page, Request, Route, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
 
-from awarie_efenix import DAD, FORBIDDEN_CLICK, LOGOUTS, OUTAGES, Call, Counter, Fault, Plan, Proxy, call_kind
+from awarie_efenix import DAD, DAD_LOGINS, FORBIDDEN_CLICK, LOGOUTS, OUTAGES, Call, Counter, Fault, Plan, Proxy, call_kind
 from rozliczenia import efenix_browser, efenix_process
 from rozliczenia.centrum.run_logs import LoggedMessage, LoggedOrder, LoggedWindowStop
 from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.efenix_pricing import (
+    AheadNotSaved,
     BrowserFailure,
     Closed,
     Efenix,
@@ -92,14 +87,14 @@ from rozliczenia.efenix_pricing import (
     Ready,
     Settled,
     Shape,
-    WindowCause,
+    StopCause,
 )
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.message import Message
 from rozliczenia.process_run import Outcome, Stop, run_process
 from rozliczenia.workbook_files import read_data_rows
 from skrypt_skilla import Parser, create_run_root, new_run, part, remove_run_root
-from tests.fixtures.atrapa_efenix import AtrapaOrder, amount_of, atrapa_efenix
+from tests.fixtures.atrapa_efenix import EFENIX_EMMETT_RELOAD_MS, AtrapaOrder, amount_of, atrapa_efenix
 from tests.fixtures.efenix import Order, number_in_trace, write_collective_file
 from tests.fixtures.interlocutor import Tata
 from tests.fixtures.settlement import PERIOD
@@ -259,7 +254,7 @@ ALLOWED_PATHS: Final = frozenset(call.path for call, _role, _order in EXPECTED_C
 
 
 class Cause(enum.Enum):
-    """Domain category of a Zatrzymanie, from the docstrings of ``efenix_browser`` and ``WindowCause``."""
+    """Domain category of a Zatrzymanie, from the docstrings of ``efenix_browser`` and ``StopCause``."""
 
     NETWORK = "błąd przeglądarki z nazwanym działaniem (sieć albo czas okna)"
     TIMEOUT = "czas okna minął (TimeoutError z nazwanym działaniem)"
@@ -362,6 +357,8 @@ def _expected(fault: Fault, call: Call, role: Role) -> Expect:
             return Expect(frozenset({Cause.CLOSED}))
         case Fault.LOGIN_LATER:
             return Expect(same=True)
+        case Fault.LOGIN_ERROR:
+            return Expect(frozenset({Cause.HTTP}))
         case Fault.KILLED:
             return Expect()
 
@@ -395,7 +392,7 @@ def applies(fault: Fault, role: Role) -> bool:
     match fault:
         case Fault.LOGIN_PAGE:
             return role in _ORDER_PAGES
-        case Fault.LOGIN_LATER | Fault.LOGIN_CLOSED:
+        case Fault.LOGIN_LATER | Fault.LOGIN_CLOSED | Fault.LOGIN_ERROR:
             return role is Role.LIST_START
         case _:
             return True
@@ -405,17 +402,15 @@ TRACE_NOT_SAVED: Final = "EFENIX_SLAD_NIEZAPISANY"
 """Komunikat of the Zatrzymanie after a failed write ahead of a quantity (``efenix_messages.emmett_trace_not_saved``)."""
 
 
-def classify(facts: PricingStopped | None, code: str) -> Cause:
+def classify(facts: PricingStopped, code: str) -> Cause:
     """Category of a Zatrzymanie from its facts; ``EfenixUnreachable`` carries a browser failure at the list like
     ``UnexpectedPage`` does, so its Komunikat tells them apart. A failed write of the Ślad ahead of a quantity stops
-    the Wycena from the process, not the window, so only its Komunikat names it (``efenix_pricing._entered``); no fault
-    of this checker touches the disk, so it is never the expected cause."""
+    the Wycena outside a page of efenix with ``AheadNotSaved`` (``efenix_pricing._WrittenAhead``); no fault of this
+    checker touches the disk, so it is never the expected cause."""
 
-    if code == TRACE_NOT_SAVED:
-        return Cause.TRACE
-    if facts is None:
-        raise ValueError(f"Zatrzymanie {code} bez faktów okna efenix")
     match facts.cause:
+        case AheadNotSaved():
+            return Cause.TRACE
         case LoginSign():
             return Cause.LOGIN
         case Closed():
@@ -453,19 +448,19 @@ def describe(facts: PricingStopped) -> str:
             cause = f"HttpStatus({status})"
         case LoginSign() | Closed():
             cause = f"{type(facts.cause).__name__}.{facts.cause.name}"
+        case AheadNotSaved(position):
+            cause = f"AheadNotSaved({position})"
     return f"{part}, {cause}"
 
 
-def code_of(facts: PricingStopped | None, cause: Cause) -> str:
-    """Komunikat of a Zatrzymanie (``efenix_pricing._efenix_stops`` and ``_entered``): a failed write of the Ślad is
-    „Ślad niezapisany”, a sign of logout „wylogowany”, a closed window „okno zamknięte”, a browser failure at the list
+def code_of(facts: PricingStopped) -> str:
+    """Komunikat of a Zatrzymanie (``efenix_pricing._efenix_stops``): a failed write of the Ślad is „Ślad
+    niezapisany”, a sign of logout „wylogowany”, a closed window „okno zamknięte”, a browser failure at the list
     before it opened „niedostępny”, the rest „okno zatrzymane”."""
 
-    if cause is Cause.TRACE:
-        return TRACE_NOT_SAVED
-    if facts is None:
-        raise ValueError(f"Zatrzymanie {cause.name} bez faktów okna efenix")
     match facts.cause:
+        case AheadNotSaved():
+            return TRACE_NOT_SAVED
         case LoginSign():
             return "EFENIX_WYLOGOWANY"
         case Closed():
@@ -473,49 +468,14 @@ def code_of(facts: PricingStopped | None, cause: Cause) -> str:
         case _:
             return "EFENIX_OKNO_ZATRZYMANE"
 
-# --- Dad's changes between the two runs ---------------------------------------------------------------------------
-
-
-class Edit(enum.Enum):
-    NONE = "bez zmian taty"
-    FINISHED = "tata dokończył wycenę sam"
-    REMOVED_EMMETT = "tata usunął ilość Emmetta"
-    REMOVED_ADDED = "tata usunął ilość dopisaną przez proces"
-    OWN = "tata zaczął sam wyceniać puste zlecenie, bez Emmetta"
-
-
-def edited(state: Priced, index: int, edit: Edit) -> Priced | None:
-    """``state`` of order ``index`` after Dad's ``edit``; ``None`` when the edit does not apply to it."""
-
-    quantities = dict(state.quantities)
-    emmett_positions = sorted(code for code in quantities if EMMETT[index].get(code))
-    added_positions = sorted(code for code in quantities if not EMMETT[index].get(code))
-    match edit:
-        case Edit.NONE:
-            return state
-        case Edit.FINISHED:
-            return replace(state, quantities=tuple(sorted(FILE[index].items())), day=DAYS[index])
-        case Edit.REMOVED_EMMETT if emmett_positions:
-            quantities.pop(emmett_positions[0])
-            return replace(state, quantities=tuple(sorted(quantities.items())))
-        case Edit.REMOVED_ADDED if added_positions:
-            quantities.pop(added_positions[0])
-            return replace(state, quantities=tuple(sorted(quantities.items())))
-        case Edit.OWN if state.amount == 0:
-            # A position Emmett leaves empty, or else the file's last one: Dad types the file's quantity, not Emmett's.
-            own = next((code for code in sorted(FILE[index]) if not EMMETT[index].get(code)), sorted(FILE[index])[-1])
-            return replace(state, quantities=((own, FILE[index][own]),), day=DAYS[index])
-        case _:
-            return None
-
-
-# --- Known findings and accepted risks -------------------------------------------------------------------------
+# --- Known findings -------------------------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class Violation:
-    """A broken invariant ``rule`` in ``case``; ``tag`` names the kind of break for known findings and accepted risks,
-    and ``cause`` the cause of the Zatrzymanie it broke at, if any."""
+    """A broken invariant ``rule`` in ``case``; ``tag`` names the kind of break for known findings,
+    ``cause`` and ``part`` the cause and page part of the Zatrzymanie it broke at, if any, and ``fault_sent`` whether
+    the faulted request reached efenix before the run ended (``False``: the fault never happened)."""
 
     rule: str
     tag: str
@@ -523,25 +483,20 @@ class Violation:
     detail: str
     fault: Fault | None = None
     role: Role | None = None
-    edit: Edit | None = None
-    cause: WindowCause | None = None
+    cause: StopCause | None = None
+    part: PagePart | None = None
+    fault_sent: bool = True
 
 
 @dataclass(frozen=True)
-class Risk:
-    """A violation the report lists apart from new ones: ``matches`` recognises it."""
+class Known:
+    """A violation the code has today, which ``matches`` recognises. ``after``: the first runs (``Case.name``) after
+    which it always shows, so a run, or a part of one, that ran one of them without it reports it gone; ``flaky``: a
+    race that names none, because no run is sure to show it, so its absence is no sign it is gone."""
 
     name: str
     story: str
     matches: Callable[[Violation], bool]
-
-
-@dataclass(frozen=True)
-class Known(Risk):
-    """A violation the code has today. ``after``: the first runs (``Case.name``) after which it always shows, so a
-    run, or a part of one, that ran one of them without it reports it gone; ``flaky``: a race that names none, because
-    no run is sure to show it, so its absence is no sign it is gone."""
-
     after: tuple[str, ...]
     flaky: bool = False
 
@@ -550,81 +505,39 @@ class Known(Risk):
             raise ValueError(f"znane ustalenie {self.name} nazywa przypadki, po których występuje, albo jest flaky")
 
 
-_RACE: Final[Mapping[Role, Operation]] = {
-    Role.LIST_START: Operation.OPEN,
-    Role.LIST_AGAIN: Operation.OPEN,
-    Role.ORDER_OPEN: Operation.OPEN,
-    Role.ORDER_DATED: Operation.OPEN,
-    Role.RELOADED: Operation.RELOAD,
-}
-"""The page the window opens at each request role of a navigation, and the operation the race of
-``karta-zamknieta-w-nawigacji`` names there."""
+def _body_read_after_reload(violation: Violation) -> bool:
+    """#895: the window reads the answer of „Załaduj do zlecenia” after the efenix script has begun to reload the page,
+    Chromium has dropped that body, and ``Response.text`` raises Playwright's plain ``Error`` („Network.getResponseBody:
+    No resource with given identifier found”), named ``BrowserFailure(Error, ANSWER)`` at ``EMMETT`` (``load_emmett``
+    reads the body inside the reload since #882). Excused only as exactly this cause in a first run whose faulted
+    request never reached efenix, so no fault took part in the stop; a fault the browser makes itself (a closed tab,
+    Dad's login) is never excused, because its request may not reach the proxy at all. The run without a fault stays
+    strict, so a regression that gives this cause at every „Załaduj do zlecenia” fails it."""
 
-
-def _navigation_race(violation: Violation) -> bool:
-    """The tab closed while the window opens a page: Playwright's plain ``Error`` of that navigation, at the operation
-    that opens it, before ``Page.is_closed()`` is true (whole runs of 2026-11-05: ``BrowserFailure(Error, OPEN)`` at the
-    list and the order page, ``BrowserFailure(Error, RELOAD)`` after Emmett, never another type or operation)."""
-
-    cause, opens = violation.cause, None if violation.role is None else _RACE.get(violation.role)
+    cause = violation.cause
     return (
         violation.rule == "PRZYCZYNA"
-        and violation.fault is Fault.TAB_CLOSED
-        and opens is not None
-        and violation.tag.split(" zamiast ")[0] in ("NETWORK", "UNREACHABLE")
+        and not violation.fault_sent
+        and violation.fault is not Fault.TAB_CLOSED
+        and violation.fault not in DAD_LOGINS
+        and violation.part is PagePart.EMMETT
         and isinstance(cause, BrowserFailure)
         and cause.error_type.rpartition(".")[2] == "Error"
-        and cause.operation is opens
+        and cause.operation is Operation.ANSWER
     )
 
 
 KNOWN_FINDINGS: Final[tuple[Known, ...]] = (
     Known(
-        "blad-http-poza-strona-zlecenia",
-        "HTTP 4xx albo 5xx w odpowiedzi na listę zleceń, szukanie albo zapis ilości daje przyczynę „strona w innej "
-        "budowie” (ElementCount #field_numer, NO_TABLE, ANSWER_NOT_JSON), a nie status HTTP: _read_order sprawdza status "
-        "tylko na stronie zlecenia (#808), więc Maks widzi zmieniony efenix przy błędzie serwera",
-        lambda violation: violation.rule == "PRZYCZYNA"
-        and violation.fault in (Fault.HTTP_4XX, Fault.HTTP_5XX)
-        and violation.tag.startswith("SHAPE zamiast")
-        and violation.role in (Role.LIST_START, Role.LIST_AGAIN, Role.SEARCH, Role.QUANTITY),
-        after=(
-            "HTTP_4XX przy GET index.php #1 [lista-na-starcie]",
-            "HTTP_5XX przy GET index.php #2 [lista-ponownie]",
-            "HTTP_4XX przy POST action_fill_orders.php (okno) #1 [szukanie]",
-            "HTTP_5XX przy POST action_fill_orders.php (okno) #2 [szukanie]",
-            "HTTP_4XX przy POST action_save_index.php #1 [ilosc]",
-            "HTTP_5XX przy POST action_save_index.php #2 [ilosc]",
-        ),
-    ),
-    Known(
-        "karta-zamknieta-w-nawigacji",
-        "karta zamknięta, gdy okno otwiera stronę (lista, strona zlecenia, przeładowanie po Emmetcie), czasem daje "
-        "„okno zatrzymane” albo „efenix niedostępny” z BrowserFailure(Error, OPEN) albo (Error, RELOAD) tej nawigacji "
-        "zamiast „okno zamknięte”: błąd nawigacji przychodzi do okna, zanim Page.is_closed() jest prawdą, więc _action "
-        "nie widzi zamkniętej karty",
-        _navigation_race,
+        "odczyt-tresci-po-przeladowaniu",
+        "okno czyta treść odpowiedzi „Załaduj do zlecenia” (action_load_emmett.php, #882) po jej końcu, a skrypt efenix "
+        "przeładowuje stronę sam 1 s po tej odpowiedzi: gdy odczyt przyjdzie po przeładowaniu, Chromium nie ma już tej "
+        "treści i Wycena zatrzymuje się na Emmetcie z BrowserFailure(Error, ANSWER) bez żadnej awarii (#895)",
+        _body_read_after_reload,
         after=(),
         flaky=True,
     ),
 )
-ACCEPTED_RISKS: Final[tuple[Risk, ...]] = (
-    Risk(
-        "#774",
-        "przerwanie między „Załaduj do zlecenia” a odczytem przeładowanej strony zostawia zlecenie z samą Wyceną "
-        "Emmetta poza Śladem, a ponowne uruchomienie daje błąd tylko tego zlecenia, które tata kończy sam (#774)",
-        lambda violation: violation.rule == "WZNOWIENIE" and violation.tag == "#774",
-    ),
-    Risk(
-        "przerwanie-przed-zapisem-ilosci",
-        "Zatrzymanie inne niż wylogowanie albo zabicie po zapisie ilości z wyprzedzeniem w Śladzie, a przed zapisem jej "
-        "w efenix zostawia w Śladzie ilość, której efenix nie ma; strona nie odróżnia jej od ilości usuniętej przez tatę, "
-        "więc ponowne uruchomienie daje błąd tylko tego zlecenia i niczego w nim nie zmienia (#864, przyjęte w modelu "
-        "verify-wznowienie-wyceny-efenix i w wyjątku SWEEP w tests/test_wycena_efenix.py)",
-        lambda violation: violation.rule == "WZNOWIENIE" and violation.tag == "przerwanie-przed-zapisem-ilosci",
-    ),
-)
-
 # --- Observing a run -------------------------------------------------------------------------------------------
 
 
@@ -670,40 +583,6 @@ def _trace_entry(entry: object) -> bool:
     )
 
 
-def finishes(state: Priced, trace: object) -> bool:
-    """``GLOSSARY.md``, Ślad Wyceny Emmetta: the second run finishes a pricing that already is only for an order „Emmett
-    załadowany” whose page has exactly Emmett's quantities and the quantities the tool started entering, every other
-    position empty."""
-
-    if not isinstance(trace, dict):
-        return False
-    left = {code: quantity for code, quantity in (*trace["emmett"].items(), *trace["entering"].items()) if quantity}
-    return dict(state.quantities) == left
-
-
-def shown_trace(trace: object) -> str:
-    """The Ślad of one order for a report: „gotowe”, nothing, or Emmett's and the ahead quantities other than 0."""
-
-    if not isinstance(trace, dict):
-        return "brak" if trace is None else str(trace)
-    emmett, ahead = ({code: quantity for code, quantity in sorted(trace[key].items()) if quantity} for key in ("emmett", "entering"))
-    return f"„Emmett załadowany” {emmett}, z wyprzedzeniem {ahead}"
-
-
-def unsaved_ahead(state: Priced, trace: object) -> bool:
-    """The model's accepted ``przerwanie-przed-zapisem-ilosci`` (``verify-wznowienie-wyceny-efenix``, #864): the page
-    has Emmett's quantities and some of those the Ślad has ahead, and lacks at least one of the latter, because a stop
-    other than a logout came after the Ślad got it and before efenix saved it; the page cannot tell it from a quantity
-    Dad removed, so the second run leaves the order to Dad."""
-
-    if not isinstance(trace, dict):
-        return False
-    page, emmett, ahead = dict(state.quantities), trace["emmett"], trace["entering"]
-    entered = {code: quantity for code, quantity in ahead.items() if quantity and page.get(code) == quantity}
-    left = {code: quantity for code, quantity in (*emmett.items(), *entered.items()) if quantity}
-    return page == left and any(quantity and page.get(code) != quantity for code, quantity in ahead.items())
-
-
 class Journal:
     """Dziennik Wyceny w efenix of a run, as Centrum writes it (``efenix_pricing.OrderJournal``): one line per entry."""
 
@@ -733,6 +612,21 @@ class Journal:
                 rows.add(entry["begun"])
         return rows
 
+    @staticmethod
+    def ended_outcomes(text: str) -> dict[int, str]:
+        """Outcome of each order the dziennik has ended („zlecenie skończone”), by its row."""
+
+        outcomes = {}
+        for line in text.splitlines():
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            ended = entry.get("ended") if isinstance(entry, dict) else None
+            if isinstance(ended, dict) and isinstance(ended.get("row"), int) and isinstance(ended.get("outcome"), str):
+                outcomes[ended["row"]] = ended["outcome"]
+        return outcomes
+
 
 @dataclass(frozen=True)
 class Disk:
@@ -746,16 +640,6 @@ class Disk:
     @property
     def state(self) -> tuple[Priced, ...]:
         return tuple(priced(order) for order in self.orders)
-
-    def key(self) -> str:
-        """Same key, same second run: Atrapa state, Plik zbiorczy bytes and the decoded Ślad."""
-
-        return json.dumps(
-            [[str(state) for state in self.state], hashlib.sha256(self.source).hexdigest(), trace_states(self.traces)],
-            sort_keys=True,
-            default=str,
-        )
-
 
 def read_files(directory: Path) -> dict[str, bytes]:
     if not directory.is_dir():
@@ -857,10 +741,13 @@ def run_once(
     *,
     snapshots: bool = False,
 ) -> Run:
-    """One Uruchomienie on a new Atrapa with ``orders`` behind the proxy with ``plan``, on the files in ``place``."""
+    """One Uruchomienie on a new Atrapa with ``orders`` behind the proxy with ``plan``, on the files in ``place``.
+
+    The Atrapa reloads the page after „Załaduj do zlecenia” as late as efenix does (``EFENIX_EMMETT_RELOAD_MS``), not
+    as early as its tests do, so the window meets that reload when it would at Dad's."""
 
     taken: dict[str, Disk] = {}
-    with atrapa_efenix(orders) as atrapa:
+    with atrapa_efenix(orders, emmett_reload_ms=EFENIX_EMMETT_RELOAD_MS) as atrapa:
 
         def snapshot(moment: str) -> Callable[[Call], None]:
             def take(call: Call) -> None:
@@ -886,7 +773,7 @@ def run_once(
                     # The window may stop on the navigation error before Playwright reports the tab closed.
                     with suppress(PlaywrightError):
                         page.wait_for_event("close", timeout=CLOSE_WAIT_MS)
-                injected = plan.fault not in (Fault.TAB_CLOSED, Fault.LOGIN_LATER, Fault.LOGIN_CLOSED) or (
+                injected = (plan.fault is not Fault.TAB_CLOSED and plan.fault not in DAD_LOGINS) or (
                     acted.is_set() and (page.is_closed() or not closing)
                 )
                 # The tab goes first: a held answer closed under an open tab makes Chromium send the request again.
@@ -915,7 +802,8 @@ def run_once(
 
 def _dad(page: Page, plan: Plan, log_in: Callable[[], None]) -> threading.Event:
     """Dad in the browser: closes the tab when it sends ``plan.target`` (``TAB_CLOSED``), and on the login page logs in
-    (``LOGIN_LATER``) or closes the tab (``LOGIN_CLOSED``) when it sends ``DAD``. The event is set when he starts it.
+    (``LOGIN_LATER``, ``LOGIN_ERROR``) or closes the tab (``LOGIN_CLOSED``) when it sends ``DAD``. The event is set when
+    he starts it.
 
     The tab closes in the route of ``plan.target``, which Chromium holds until its handler answers: the ``request``
     event of the reload that the efenix script starts after „Załaduj do zlecenia” sometimes reached Playwright only when
@@ -937,7 +825,7 @@ def _dad(page: Page, plan: Plan, log_in: Callable[[], None]) -> threading.Event:
         if kind[1] == FORBIDDEN_CLICK:
             return
         if kind[1] == DAD:
-            if plan.fault is Fault.LOGIN_LATER:
+            if plan.fault in (Fault.LOGIN_LATER, Fault.LOGIN_ERROR):
                 log_in()
                 acted.set()
             elif plan.fault is Fault.LOGIN_CLOSED:
@@ -995,21 +883,6 @@ class Case:
     @property
     def name(self) -> str:
         return f"{self.fault.name} przy {self.call} [{self.role.value}]"
-
-
-@dataclass(frozen=True)
-class Resume:
-    """A second run from what ``source`` left, after Dad's ``edit`` of order ``order``."""
-
-    source: str
-    disk: Disk
-    order: int
-    edit: Edit
-    case: Case
-
-    @property
-    def name(self) -> str:
-        return f"{self.source} → ponownie, {self.edit.value} (zlecenie {self.order + 1})"
 
 
 def _outcomes(summary: PricingSummary | None) -> dict[int, str]:
@@ -1112,13 +985,69 @@ def common_checks(name: str, run: Run, before: Sequence[Priced], extra: Mapping[
             full = state.quantities == tuple(sorted(FILE[index].items())) and state.day == DAYS[index]
             if name == "gotowe" and not (full and state.amount == amount_of(FILE[index])):
                 add("ZMIANA_ZE_SLADEM", "gotowe bez wyceny pliku", f"zlecenie {index + 1} jest gotowe, a w efenix ma {state}")
+    if leaked := leaks(run):
+        add("BEZ_DANYCH", "dane zleceń", f"Logi, dziennik albo Ślad mają: {', '.join(leaked)}")
+    return found
+
+
+def leaks(run: Run) -> list[str]:
+    """BEZ_DANYCH: order numbers, efenix identifiers and address words in the Logi, the dziennik or the Ślad."""
+
     text = run.logs.casefold()
     leaked = [word for word in FORBIDDEN_TEXT if word.casefold() in text]
     trace_text = "\n".join(content.decode("utf-8", "replace") for content in run.after.traces.values())
     leaked += [f"{number} w Śladzie" for number in NUMBERS if number_in_trace(number, trace_text)]
     leaked += [f"{word} w Śladzie" for word in FORBIDDEN_TEXT if word not in NUMBERS and word.casefold() in trace_text.casefold()]
-    if leaked:
-        add("BEZ_DANYCH", "dane zleceń", f"Logi, dziennik albo Ślad mają: {', '.join(leaked)}")
+    return leaked
+
+
+def killed_run(snapshot: Disk, source: Path) -> Run:
+    """What the tool killed at the moment of ``snapshot`` leaves, as a run without an outcome: no Logi, no Komunikat,
+    only efenix, the Plik zbiorczy (written to ``source`` to read its Znaczniki), the Ślad and the dziennik."""
+
+    source.write_bytes(snapshot.source)
+    return Run(
+        outcome=None,
+        before=INITIAL,
+        after=snapshot,
+        calls=[],
+        actions=[],
+        status_changes=0,
+        forbidden_clicks=0,
+        marked=marked(source),
+        traces=trace_states(snapshot.traces),
+        logs=logs_text(None, snapshot.journal, snapshot.traces),
+    )
+
+
+def check_killed(name: str, case: Case, run: Run) -> list[Violation]:
+    """ZMIANA_ZE_SLADEM, BEZ_ZMIANY_STATUSU and BEZ_DANYCH of what a tool killed at ``case`` leaves: no order changed
+    its status; every order changed in efenix has its „zaczynam” entry in the dziennik (``pricing_journal``: „zaczynam
+    zlecenie” … „przed pierwszym działaniem okna efenix przy zleceniu, więc przed każdym zapisem w efenix”); the Plik
+    zbiorczy has no Znacznik efenix, because Zapisywanie sets them at its end (``efenix_pricing``: „na końcu Znaczniki
+    efenix”); an order the dziennik ended gotowe has the file's quantities, ``Kwota`` (AU) and the date in efenix; and
+    the dziennik and the Ślad have no order data."""
+
+    found: list[Violation] = []
+
+    def add(rule: str, tag: str, detail: str) -> None:
+        found.append(Violation(rule, tag, name, detail, case.fault, case.role))
+
+    after = run.after.state
+    if [state.status for state in after] != [state.status for state in INITIAL]:
+        add("BEZ_ZMIANY_STATUSU", "status", f"status zlecenia zmienił się: {[str(state) for state in after]}")
+    journal = run.after.journal.decode("utf-8", "replace")
+    begun, ended = Journal.begun_rows(journal), Journal.ended_outcomes(journal)
+    for index, (was, now) in enumerate(zip(INITIAL, after, strict=True)):
+        if was != now and FIRST_ROW + index not in begun:
+            add("ZMIANA_ZE_SLADEM", "zmiana bez dziennika", f"zlecenie {index + 1} zmieniło się w efenix ({was} → {now}) bez wpisu „zaczynam” w dzienniku")
+        full = now.quantities == tuple(sorted(FILE[index].items())) and now.day == DAYS[index] and now.amount == amount_of(FILE[index])
+        if ended.get(FIRST_ROW + index) == "gotowe" and not full:
+            add("ZMIANA_ZE_SLADEM", "gotowe bez wyceny pliku", f"dziennik ma zlecenie {index + 1} jako gotowe, a w efenix ma {now}")
+    if run.marked:
+        add("ZMIANA_ZE_SLADEM", "znaczniki", f"Znaczniki efenix w wierszach {list(run.marked)} przed końcem Zapisywania")
+    if leaked := leaks(run):
+        add("BEZ_DANYCH", "dane zleceń", f"dziennik albo Ślad mają: {', '.join(leaked)}")
     return found
 
 
@@ -1128,8 +1057,10 @@ def check_first(case: Case, run: Run) -> list[Violation]:
     extra: dict[str, object] = {"fault": case.fault, "role": case.role}
     found = common_checks(case.name, run, INITIAL, extra)
 
-    def add(rule: str, tag: str, detail: str, cause: WindowCause | None = None) -> None:
-        found.append(Violation(rule, tag, case.name, detail, case.fault, case.role, cause=cause))
+    sent = case.call in run.calls
+
+    def add(rule: str, tag: str, detail: str, cause: StopCause | None = None, part: PagePart | None = None) -> None:
+        found.append(Violation(rule, tag, case.name, detail, case.fault, case.role, cause=cause, part=part, fault_sent=sent))
 
     if run.error is not None or run.outcome is None:
         add("BEZ_WYJATKU", "wyjątek", f"Uruchomienie skończyło się wyjątkiem: {run.error}")
@@ -1139,11 +1070,11 @@ def check_first(case: Case, run: Run) -> list[Violation]:
     if isinstance(ending, Stop):
         facts = ending.facts if isinstance(ending.facts, PricingStopped) else None
         code = ending.message.code
-        if ending.kind != "stop" or (facts is None and code != TRACE_NOT_SAVED):
+        if ending.kind != "stop" or facts is None:
             add("BEZ_WYJATKU", "nieoczekiwany błąd", f"Zatrzymanie {code} bez faktów okna efenix")
             return found
         cause = classify(facts, code)
-        shown = f"Zatrzymanie {code}" + ("" if facts is None else f" ({describe(facts)})")
+        shown = f"Zatrzymanie {code} ({describe(facts)})"
         if not allows(expect, cause):
             allowed = [category.value for category in sorted(expect.stops, key=lambda item: item.name)]
             if expect.same:
@@ -1151,20 +1082,20 @@ def check_first(case: Case, run: Run) -> list[Violation]:
             if expect.left:
                 allowed.append("zlecenie zostawione tacie")
             add("PRZYCZYNA", f"{cause.name} zamiast {'/'.join(sorted(item.name for item in expect.stops)) or 'wyniku'}",
-                f"{shown}: {cause.value}; oczekiwane: {'; '.join(allowed)}", None if facts is None else facts.cause)
+                f"{shown}: {cause.value}; oczekiwane: {'; '.join(allowed)}", facts.cause, facts.part)
         unreachable = facts is not None and isinstance(facts.cause, BrowserFailure) and facts.stopped_at is None
-        codes = {code_of(facts, cause)} | ({"EFENIX_NIEDOSTEPNY"} if unreachable else set())
+        codes = {code_of(facts)} | ({"EFENIX_NIEDOSTEPNY"} if unreachable else set())
         if code not in codes:
             add("PRZYCZYNA", "komunikat", f"{shown}: przyczyna wymaga Komunikatu {' albo '.join(sorted(codes))}")
-        if facts is None:
-            return found
         rows = {FIRST_ROW + case.order} | ({None} if case.role in _START else set())
         row = None if facts.stopped_at is None else facts.stopped_at.row
         if row not in rows:
-            add("PRZYCZYNA", "wiersz", f"{shown} przy wierszu {row}, a awaria dotyczy zlecenia z wiersza {FIRST_ROW + case.order}")
+            add("PRZYCZYNA", "wiersz", f"{shown} przy wierszu {row}, a awaria dotyczy zlecenia z wiersza {FIRST_ROW + case.order}",
+                facts.cause, facts.part)
         one_answer = case.fault not in OUTAGES and case.fault not in LOGOUTS
         if one_answer and facts.part is not None and facts.part not in PARTS[case.role]:
-            add("PRZYCZYNA", "część strony", f"{shown}: część {facts.part.name}, a {case.role.value} to {sorted(part.name for part in PARTS[case.role])}")
+            add("PRZYCZYNA", "część strony", f"{shown}: część {facts.part.name}, a {case.role.value} to {sorted(part.name for part in PARTS[case.role])}",
+                facts.cause, facts.part)
         return found
     outcomes = _outcomes(run.outcome.view)
     after = run.after.state
@@ -1182,60 +1113,6 @@ def check_first(case: Case, run: Run) -> list[Violation]:
             allowed.append("zlecenie zostawione tacie")
         tag = "gotowe inne niż bez awarii" if outcomes.get(case.order) == "gotowe" else "przebieg bez Zatrzymania"
         add("PRZYCZYNA", tag, f"przebieg bez Zatrzymania ({shown}); oczekiwane: {'; '.join(allowed) or 'Zatrzymanie'}")
-    return found
-
-
-def check_resume(resume: Resume, run: Run) -> list[Violation]:
-    """WZNOWIENIE, BEZ_WYJATKU and the common checks of a second run."""
-
-    extra: dict[str, object] = {"fault": resume.case.fault, "role": resume.case.role, "edit": resume.edit}
-    start = run.before
-    found = common_checks(resume.name, run, start, extra)
-
-    def add(rule: str, tag: str, detail: str) -> None:
-        found.append(Violation(rule, tag, resume.name, detail, resume.case.fault, resume.case.role, resume.edit))
-
-    if run.error is not None or run.outcome is None:
-        add("BEZ_WYJATKU", "wyjątek", f"ponowne Uruchomienie skończyło się wyjątkiem: {run.error}")
-        return found
-    if isinstance(run.outcome.ending, Stop):
-        add("BEZ_WYJATKU", "zatrzymanie", f"ponowne Uruchomienie zatrzymało się: {run.outcome.ending.message.code}")
-        return found
-    traces = trace_states(resume.disk.traces)
-    outcomes = _outcomes(run.outcome.view)
-    final = run.after.state
-    for index in range(2):
-        was, now = start[index], final[index]
-        trace = traces.get(NUMBERS[index])
-        emmett = trace.get("emmett") if isinstance(trace, dict) else None
-        if resume.edit is not Edit.NONE and index == resume.order and now != was and was.amount != 0:
-            added = sorted(set(dict(now.quantities).items()) - set(dict(was.quantities).items()))
-            tag = "dopisał po tacie" if now.emmett_loads == was.emmett_loads else "Emmett po tacie"
-            add("WZNOWIENIE", tag, f"zmienił zlecenie {index + 1}, które tata zmienił ręcznie: {was} → {now} (dopisane {added})")
-            continue
-        if was.amount != 0 and now != was:
-            finishing = finishes(was, trace)
-            only_added = (
-                now.emmett_loads == was.emmett_loads
-                and now.day == was.day
-                and all(dict(was.quantities).get(code, 0) == 0 and not emmett.get(code) for code, _quantity in now.quantities if dict(was.quantities).get(code) != _quantity)
-                if isinstance(emmett, dict)
-                else False
-            )
-            if not (finishing and only_added):
-                add("WZNOWIENIE", "zmiana wyceny, która już jest",
-                    f"zmienił wycenę zlecenia {index + 1}, która już była ({was} → {now}), a Ślad ma {shown_trace(trace)}")
-        if resume.edit is Edit.NONE and now != REFERENCE_FINAL[index]:
-            left_to_dad = now == was and outcomes.get(index) == "błąd"
-            if left_to_dad and not isinstance(emmett, dict) and was.emmett_loads >= 1:
-                tag = "#774"
-            elif left_to_dad and unsaved_ahead(was, trace):
-                tag = "przerwanie-przed-zapisem-ilosci"
-            else:
-                tag = "nie jak jeden przebieg"
-            add("WZNOWIENIE", tag,
-                f"zlecenie {index + 1} po ponownym uruchomieniu bez zmian taty: {now} ({outcomes.get(index)}), po jednym przebiegu: "
-                f"{REFERENCE_FINAL[index]}, a Ślad ma {shown_trace(trace)}")
     return found
 
 
@@ -1259,7 +1136,7 @@ AXES: Final[Mapping[str, tuple[Fault, ...]]] = {
     "odpowiedzi": (Fault.HTTP_4XX, Fault.HTTP_5XX, Fault.LOGGED_OUT, Fault.REDIRECT, Fault.HUNG, Fault.LOGIN_PAGE),
     "granica-czasu": (Fault.LATE_BEFORE, Fault.LATE_AFTER),
     "zamkniete-okno": (Fault.TAB_CLOSED,),
-    "logowanie": (Fault.LOGIN_LATER, Fault.LOGIN_CLOSED),
+    "logowanie": (Fault.LOGIN_LATER, Fault.LOGIN_CLOSED, Fault.LOGIN_ERROR),
     "zabity-proces": (Fault.KILLED,),
 }
 """Fault axes, the ``--variant`` names; second runs with Dad's changes follow every axis."""
@@ -1325,7 +1202,6 @@ class Report:
     lines: list[str] = field(default_factory=list)
     new: list[Violation] = field(default_factory=list)
     known: dict[str, list[Violation]] = field(default_factory=dict)
-    accepted: dict[str, list[Violation]] = field(default_factory=dict)
     gaps: list[str] = field(default_factory=list)
     ran: set[str] = field(default_factory=set)
     """Names of the first runs whose fault took effect."""
@@ -1333,9 +1209,7 @@ class Report:
 
 def sort_violations(violations: Sequence[Violation], report: Report) -> None:
     for violation in violations:
-        if risk := next((risk for risk in ACCEPTED_RISKS if risk.matches(violation)), None):
-            report.accepted.setdefault(risk.name, []).append(violation)
-        elif known := next((known for known in KNOWN_FINDINGS if known.matches(violation)), None):
+        if known := next((known for known in KNOWN_FINDINGS if known.matches(violation)), None):
             report.known.setdefault(known.name, []).append(violation)
         else:
             report.new.append(violation)
@@ -1394,7 +1268,6 @@ def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequ
         for index, run in zip(again, repeated, strict=True):
             runs[index] = run
     report.gaps += [f"awaria nie zadziałała w {RETRIES + 1} próbach: {case.name}" for case, run in zip(first, runs, strict=True) if isinstance(run, Run) and not run.injected]
-    resumes: dict[str, Resume] = {}
     for case, run in zip(first, runs, strict=True):
         if isinstance(run, Run) and not run.injected:
             continue
@@ -1405,50 +1278,24 @@ def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequ
         violations = check_first(case, run)
         sort_violations(violations, report)
         _keep(evidence, case.name, run, violations)
-        ending = None if run.outcome is None else run.outcome.ending
-        if isinstance(ending, Stop) and isinstance(ending.facts, PricingStopped):
-            at = ending.facts.stopped_at
-            _resumes(resumes, case.name, run.after, 0 if at is None else at.row - FIRST_ROW, case)
-        elif isinstance(ending, Stop) and ending.message.code == TRACE_NOT_SAVED:
-            # Without the window's facts the Zatrzymanie names its order only in the Komunikat: the faulted one.
-            _resumes(resumes, case.name, run.after, case.order, case)
-    for case in (case for case in selected if case.fault is Fault.KILLED):
+    killed = [case for case in selected if case.fault is Fault.KILLED]
+    for case in killed:
         for moment in ("przed", "po"):
+            name = f"{case.name}, {moment} wykonaniem"
             snapshot = reference.snapshots.get(f"{moment} {case.call}")
             if snapshot is None:
                 report.gaps.append(f"brak stanu przebiegu {moment} {case.call}")
                 continue
-            _resumes(resumes, f"{case.name}, {moment} wykonaniem", snapshot, case.order, case)
-    unique = list(resumes.values())
-    second = in_pool(
-        [task(resume.disk, Plan(limit_s=LIMIT_MS / 1000)) for resume in unique],
-        workers,
-        lambda index: unique[index].name,
-    )
-    for resume, run in zip(unique, second, strict=True):
-        if not isinstance(run, Run):
-            report.new.append(Violation("BEZ_WYJATKU", "błąd sprawdzenia", resume.name, f"sprawdzenie nie przeszło: {run!r}"))
-            continue
-        violations = check_resume(resume, run)
-        sort_violations(violations, report)
-        _keep(evidence, resume.name, run, violations)
+            left = killed_run(snapshot, run_root / f"zabicie-{next(counter):05d}.xlsx")
+            report.ran.add(name)
+            violations = check_killed(name, case, left)
+            sort_violations(violations, report)
+            _keep(evidence, name, left, violations)
     report.lines.append(
-        f"{VERDICT} | {len(first)} przebiegów z awarią, {sum(case.fault is Fault.KILLED for case in selected)} zabić, "
-        f"{len(unique)} ponownych uruchomień | {time.monotonic() - started:.0f} s, {workers} przeglądarki"
+        f"{VERDICT} | {len(first)} przebiegów z awarią, {2 * len(killed)} stanów po zabiciu | "
+        f"{time.monotonic() - started:.0f} s, {workers} przeglądarki"
     )
     return report
-
-
-def _resumes(resumes: dict[str, Resume], name: str, disk: Disk, order: int, case: Case) -> None:
-    for edit in Edit:
-        state = edited(disk.state[order], order, edit)
-        if state is None:
-            continue
-        orders = [copy.deepcopy(item) for item in disk.orders]
-        orders[order].quantities = dict(state.quantities)
-        orders[order].execution_date = state.day
-        changed = replace(disk, orders=tuple(orders))
-        resumes.setdefault(f"{changed.key()} {edit.name} {order}", Resume(name, changed, order, edit, case))
 
 
 def reference_violations(reference: Run) -> list[Violation]:
@@ -1530,8 +1377,6 @@ def summarize(report: Report) -> list[str]:
         lines += [f"  {violation.case} | {violation.detail}" for violation in group[:3]]
     for name, group in sorted(report.known.items()):
         lines.append(f"znane ustalenie {name}: {len(group)} przypadków, np. {group[0].case} | {group[0].detail}")
-    for name, group in sorted(report.accepted.items()):
-        lines.append(f"zaakceptowane ryzyko {name}: {len(group)} przypadków, np. {group[0].case}")
     gone = gone_findings(report)
     lines += [
         f"ZNALEZISKO ZNIKNĘŁO {name} po {', '.join(missing)}: zawęź je w KNOWN_FINDINGS i w SKILL.md do przypadków, po "
@@ -1558,7 +1403,7 @@ def doctor() -> list[str]:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(**efenix_browser.launch_options(playwright))
             try:
-                with atrapa_efenix(efenix_orders()) as atrapa, Proxy(atrapa.url, Plan(), atrapa.expire_session) as proxy:
+                with atrapa_efenix(efenix_orders(), emmett_reload_ms=EFENIX_EMMETT_RELOAD_MS) as atrapa, Proxy(atrapa.url, Plan(), atrapa.expire_session) as proxy:
                     page = browser.new_page()
                     response = page.goto(proxy.url, wait_until="load", timeout=10_000)
                     if response is None or not response.ok or page.locator("#field_numer").count() != 1:

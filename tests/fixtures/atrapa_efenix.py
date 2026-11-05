@@ -199,7 +199,9 @@ CATALOG = (
     Position("032", Decimal("1.00"), "CENA"),
 )
 PRICES = {position.code: position.price for position in CATALOG}
-# Przeładowanie strony po załadowaniu Wyceny Emmetta (w efenix po 1 s; tu krócej, żeby testy szły szybko).
+EFENIX_EMMETT_RELOAD_MS = 1000
+"""Przeładowanie strony, które skrypt efenix robi po odpowiedzi „Załaduj do zlecenia”: w efenix po 1 s."""
+# W Atrapie domyślnie krócej, żeby testy szły szybko.
 _EMMETT_RELOAD_MS = 200
 
 
@@ -349,6 +351,7 @@ def atrapa_efenix(
     cookie_session: bool = False,
     outage_from: tuple[Outage, int] | None = None,
     error_answer: tuple[str, int, HTTPStatus] | None = None,
+    emmett_reload_ms: int = _EMMETT_RELOAD_MS,
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
@@ -356,7 +359,9 @@ def atrapa_efenix(
     wygasa raz, jak przy wylogowaniu w trakcie przebiegu; po ponownym zalogowaniu już nie wygasa. ``today``: dzisiejszy
     dzień kalendarza daty wykonania. ``refuse_dates``: serwer odpowiada na zapis daty wykonania bez zapisu. ``clock``:
     zegar w sekundach, którego chwilę dostaje każde żądanie. ``outage_from``: rodzaj odcięcia i numer żądania (od 0, każde
-    żądanie po kolei, jak w ``requests``), od którego efenix jest odcięty raz, do ``reconnect``. Atrapa pracuje na kopii
+    żądanie po kolei, jak w ``requests``), od którego efenix jest odcięty raz, do ``reconnect``. ``emmett_reload_ms``: po
+    ilu milisekundach od odpowiedzi „Załaduj do zlecenia” skrypt strony ją przeładowuje (w efenix
+    ``EFENIX_EMMETT_RELOAD_MS``, domyślnie krócej). Atrapa pracuje na kopii
     ``orders``, więc zlecenia testu zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie.
     ``error_answer``: ścieżka, numer jej żądania narzędzia (od 1, bez szukania, które lista wysyła sama) i status błędu
     HTTP: na to jedno żądanie Atrapa odpowiada stroną błędu serwera z tym statusem, bez wykonania żądania.
@@ -440,7 +445,7 @@ def atrapa_efenix(
             elif path == LIST_SCRIPT and method == "GET":
                 self._html(_list_script(changed), content_type="text/javascript")
             elif path == ORDER_SCRIPT and method == "GET":
-                self._html(_order_script(changed, today), content_type="text/javascript")
+                self._html(_order_script(changed, today, emmett_reload_ms), content_type="text/javascript")
             elif not logged_in and path == SAVE_QUANTITY:
                 self._json({"result": "nok", "error": "Brak sesji."})
             elif not logged_in and path == SEARCH and method == "POST":
@@ -506,7 +511,7 @@ def atrapa_efenix(
                     closing.wait()
                     self.close_connection = True
                 elif found:
-                    self._html(_order_page(found[0], found[0].changed or changed, today, self.headers.get("Host", "")))
+                    self._html(_order_page(found[0], found[0].changed or changed, today, self.headers.get("Host", ""), emmett_reload_ms))
                 else:
                     self._html("<p>Nie ma takiego zlecenia.</p>", HTTPStatus.NOT_FOUND)
             else:
@@ -829,7 +834,7 @@ _ORDER_SCRIPT = """
 """
 
 
-def _order_page(order: AtrapaOrder, changed: Changed | Unread | None, today: date, host: str) -> str:
+def _order_page(order: AtrapaOrder, changed: Changed | Unread | None, today: date, host: str, reload_ms: int) -> str:
     day = "" if order.execution_date is None else order.execution_date.isoformat()
     if changed is Changed.DATE_FORMAT and order.execution_date is not None:
         day = f"{order.execution_date:%d.%m.%Y}"
@@ -863,16 +868,16 @@ def _order_page(order: AtrapaOrder, changed: Changed | Unread | None, today: dat
         + _dialog("dialog_emmett", "Emmett", '<div id="emmett-propozycja"></div>', "Załaduj do zlecenia")
         + (_hostile(host) if changed is Unread.HOSTILE else "")
         + (
-            f"<script>{_order_script(changed, today)}</script>"
+            f"<script>{_order_script(changed, today, reload_ms)}</script>"
             if changed is Unread.SCRIPTS
             else f'<script src="{ORDER_SCRIPT}{";v=1" if changed is Unread.SCRIPT_ADDRESSES else "?v=1"}"></script>'
         ),
     )
 
 
-def _order_script(changed: Changed | Unread | None, today: date) -> str:
+def _order_script(changed: Changed | Unread | None, today: date, reload_ms: int) -> str:
     script = (
-        _ORDER_SCRIPT.replace("__RELOAD__", str(_EMMETT_RELOAD_MS))
+        _ORDER_SCRIPT.replace("__RELOAD__", str(reload_ms))
         .replace("__REFRESH__", "false" if changed is Changed.STALE_AMOUNT else "true")
         .replace("__DATE_DIALOG__", "false" if changed is Changed.DATE_DIALOG else "true")
         .replace("__TODAY__", today.isoformat())

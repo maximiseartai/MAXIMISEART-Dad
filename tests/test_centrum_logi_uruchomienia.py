@@ -967,7 +967,7 @@ def _disabled_features(browser: Browser) -> list[set[str]]:
 # Sprawdzenie skilla verify-wycena-efenix: przyczynę Zatrzymania okna efenix, którą dostają Logi, przy każdej awarii każdego
 # żądania prawdziwej Wyceny w efenix sprawdza jego skrypt (explore_wycena_efenix.py) z tabelą oczekiwań z domeny. Cały
 # zakres biegnie w CI jako podstawa skilla w częściach, a tu we własnym procesie z limitem (#651) zakres, który przechodzi
-# przez każdą fazę sprawdzenia: przebieg bez awarii, awarie, zabity proces i ponowne uruchomienia ze zmianami taty.
+# przez każdą fazę sprawdzenia: przebieg bez awarii, awarie i stan, który zostawia zabity proces.
 EXPLORER = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "scripts" / "explore_wycena_efenix.py"
 EXPLORER_SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "SKILL.md"
 # Poniżej limitu pytest, żeby sprawdzenie, które się nie kończy, padło z tym, co zdążyło wypisać.
@@ -994,7 +994,7 @@ def _explorer_in_own_process(*arguments: str, environment: dict[str, str] | None
 
 
 @pytest.mark.dlugi
-def test_odmowa_zaladuj_do_zlecenia_trzyma_niezmienniki_a_zabity_proces_przy_niej_daje_tylko_ryzyko_774(
+def test_odmowa_zaladuj_do_zlecenia_i_zabity_proces_przy_niej_trzymaja_niezmienniki_bez_znanych_ustalen(
     tmp_path: Path,
 ) -> None:
     code, lines = _explorer_in_own_process(
@@ -1003,11 +1003,9 @@ def test_odmowa_zaladuj_do_zlecenia_trzyma_niezmienniki_a_zabity_proces_przy_nie
 
     assert (code, lines[-1:]) == (0, ["WYCENA EFENIX OK"]), "\n".join(lines)
     assert not any(line.startswith("znane ustalenie ") for line in lines), "\n".join(lines)
-    assert any(line.startswith("zaakceptowane ryzyko #774: ") for line in lines), "\n".join(lines)
     [evidence] = (tmp_path / "evidence").iterdir()
-    counterexamples = [path.read_text(encoding="utf-8") for path in (evidence / "kontrprzyklady").iterdir()]
     assert (evidence / "raport.txt").read_text(encoding="utf-8").splitlines()[-1] == "WYCENA EFENIX OK"
-    assert not any("← HTTP_4XX" in text or "← REDIRECT" in text for text in counterexamples), counterexamples
+    assert not (evidence / "kontrprzyklady").exists()
     assert list((tmp_path / "runs").iterdir()) == []
 
 

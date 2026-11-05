@@ -2,12 +2,15 @@
 
 The tool's process dies right before or right after efenix ran a request. Nothing runs after it: no Znaczniki, no Logi.
 The checker takes what the run without a fault had at that moment (Atrapa orders, Plik zbiorczy, Ślad, dziennik) and
-starts the second run from it.
+checks it as it is.
 
 ## Sub-features
 
-- Before and after each request of the reference run (70 states; equal states run once).
+- Before and after each request of the reference run (2 states per request).
+- No order changed its status, and the dziennik and the Ślad have no order data.
 - Every order changed in efenix before the kill has a „zaczynam” entry in the dziennik.
+- The Plik zbiorczy has no Znacznik efenix (Zapisywanie sets them at its end), and an order the dziennik ended gotowe
+  has the file's pricing in efenix.
 
 ## How to get to it (user POV)
 
