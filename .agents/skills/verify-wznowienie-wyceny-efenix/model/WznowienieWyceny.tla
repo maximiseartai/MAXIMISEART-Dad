@@ -106,9 +106,10 @@ Dokoncz(q) ==
        THEN Wynik(WynikDokonczenia(q), q) /\ krok' = "koniec"
        ELSE krok' = "wpisz" /\ UNCHANGED <<wynik, zlyWynikPoTacie, bladBezPowodu>>
 
-(* _outcome: search, listing, open_order i decyzja na otwartej stronie (data wykonania poza modelem): strona bez        *)
-(* żadnej ilości (not any(opened.quantities.values())) idzie do Wyceny Emmetta, a strona z ilościami prosto do          *)
-(* _completed, bez Emmetta.                                                                                           *)
+(* _outcome: search, listing, open_order, przy pustej dacie wykonania _dated na stronie z ilościami albo bez (data     *)
+(* poza modelem: _dated nie zmienia ilości), i decyzja na otwartej stronie: strona bez żadnej ilości                   *)
+(* (not any(opened.quantities.values())) idzie do Wyceny Emmetta, a strona z ilościami prosto do _completed, bez       *)
+(* Emmetta.                                                                                                           *)
 Otworz ==
     LET q == efenix[zlecenie] IN
     /\ proces = "dziala" /\ krok = "otworz"
