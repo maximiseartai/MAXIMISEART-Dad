@@ -489,8 +489,9 @@ checks and their mutations pass there.
 
 On Windows use `py -3` instead of `.venv/bin/python`. In a worktree, create its
 `.venv` first (`python3 tools/setup_worktree.py`). It needs nothing beyond the
-repo's Python and takes about 30 to 80 s, depending on the machine. `--scope NAME` runs one scope, and
-`--strict` counts known findings and accepted risks as violations too.
+repo's Python and takes about 30 to 80 s, depending on the machine. `--scope NAME` runs one scope,
+`--strict` counts known findings and accepted risks as violations too, and `--stop-at-new` ends at the first schedule
+with a new violation, so its counterexample is not the shortest one (the mutation commands use it).
 
 The last line is the verdict:
 
@@ -666,7 +667,13 @@ CI proves the check can still fail: the night on `main` runs
 `.agents/skills/verify-kolejka-skrzynki/scripts/check_outbox_mutations.py`
 after a change of this skill's folder. It applies each broken variant of
 `outbox.py` to a temporary copy of the checkout (`tools/mutacje.py`) and must end
-with `MUTACJE OK`. Each of these gives `KOLEJKA: NOWE NARUSZENIE`:
+with `MUTACJE OK`. Each mutation runs one scope with `--stop-at-new`, because it needs only the verdict, while
+its base, the same command without the mutation, still explores every schedule of the scope. Run to the end, a
+mutation explored every schedule after its violation: the one of `archiwum-diagnoza` 23 787 after a violation in
+the first, and with eight mutations at once on the four vCPU of Windows CI it ran over the 600 s limit (#963). On
+Maks's Mac on 2026-11-05, with six of them at once, the slowest mutation took 7.7 s with the stop instead of 61.7 s,
+and every one ended with the same verdict and only rules its full run reports.
+Each of these gives `KOLEJKA: NOWE NARUSZENIE`:
 
 - a failed comment skipped, in `_comment_all` (`nowe-issue`) and in `_settle` (`znane-issue`);
 - a Zgłoszenie that returned taken over without a comment (`zgloszenie-wrocilo`);

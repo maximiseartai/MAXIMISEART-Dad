@@ -28,13 +28,12 @@ from rozliczenia.efenix_checks import DateRefused, OrderProblem
 from rozliczenia.efenix_marking import Refusal
 from rozliczenia.efenix_pricing import PagePart
 from rozliczenia.efenix_positions import (
-    Conflict,
+    Excess,
     MissingPositions,
     NotWholeQuantities,
     OrderFault,
     OtherAmount,
     PageRead,
-    PricedDifferently,
     UnpairedColumns,
 )
 from rozliczenia.message import Message
@@ -307,8 +306,6 @@ _ORDER_FAULTS: tuple[OrderFault, ...] = (
     *DateRefused,
     UnpairedColumns(("N", "AR")),
     NotWholeQuantities(("O",)),
-    PricedDifferently(Decimal("150.00"), Decimal("125.5"), ("005", "012")),
-    PricedDifferently(Decimal("150.00"), Decimal("125.5"), ()),
     OtherAmount(Decimal("1234.50"), Decimal("1200")),
     *(MissingPositions(("012", "019"), read) for read in PageRead),
 )
@@ -325,12 +322,9 @@ EFENIX_SAMPLES: Samples = {
     ],
     "efenix_unreachable": [partial(efenix_messages.efenix_unreachable, kept=kept) for kept in (False, True)],
     "browser_not_started": [efenix_messages.browser_not_started],
-    "emmett_trace_not_saved": [
-        lambda: efenix_messages.emmett_trace_not_saved(Path("C:/Narzedzie/config/slad-wyceny-emmetta") / f"{PERIOD}.json", 19)
-    ],
     "order_error": [partial(efenix_messages.order_error, SOURCE, 23, problem) for problem in _ORDER_FAULTS],
-    "emmett_conflict": [
-        lambda: efenix_messages.emmett_conflict(SOURCE, 23, [Conflict("012", 2, 1), Conflict("020", 1, 0)]),
+    "emmett_warning": [
+        lambda: efenix_messages.emmett_warning(SOURCE, 23, [Excess("012", 2, 1), Excess("020", 1, 0)]),
     ],
     "marks_not_saved": [partial(efenix_messages.marks_not_saved, SOURCE, refusal) for refusal in Refusal],
     "unexpected_failure": [efenix_messages.unexpected_failure],

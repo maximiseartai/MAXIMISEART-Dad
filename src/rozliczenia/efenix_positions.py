@@ -2,17 +2,14 @@
 
 Przypisanie (``POSITION_OF_COLUMN``) to konfiguracja narzędzia ze specyfikacji #741, wersjonowana z narzędziem, nie
 dane taty: kolumna Pliku zbiorczego → kod pozycji efenix (``NNN`` z ``INDEKS_NNN``). Kolumny Ilości usług bez pary to
-``UNPAIRED_COLUMNS``. Pozycja efenix bez kolumny ma w Pliku zbiorczym ilość 0, więc ilość wpisana w niej w efenix
-zawsze różni się od pliku. Reguły biorą ilości pliku po kodach (``file_quantities``) i ilości ze strony zlecenia
-(kod → ilość, pole puste to 0): wycena, która już jest, różni się od pliku ilością albo kwotą (``priced_differently``); Wycena Emmetta
-jest sprzeczna z plikiem w pozycjach, w których Emmett wpisał ilość inną niż plik (``emmett_conflicts``); dopisać
-trzeba ilości pliku w pozycjach pustych u Emmetta (``to_enter``), a pozycja pusta u Emmetta przy 0 w pliku zostaje pusta.
+``UNPAIRED_COLUMNS``. Pozycja efenix bez kolumny ma w Pliku zbiorczym ilość 0. Reguły biorą ilości pliku po kodach
+(``file_quantities``) i ilości ze strony zlecenia (kod → ilość, pole puste to 0).
+Wycenę zlecenia proces dokańcza do Pliku zbiorczego tylko w górę (ADR 0026, ``completion``): w każdej pozycji, w której
+strona ma mniej niż plik, wpisuje ilość z pliku, także w miejsce ilości Emmetta, a pozycji, w której strona ma więcej niż
+plik (także ilość w pozycji z 0 w pliku albo bez kolumny), nie obniża i nie czyści, tylko zgłasza ją jako nadmiar.
 Strona zlecenia efenix bywa bez części pozycji z przypisania: brak pozycji, w której plik ma 0 albo pustą komórkę, nie
 przeszkadza, bo ta pozycja i tak zostałaby w efenix pusta, a brak pozycji, w której plik ma ilość, to błąd zlecenia
-(``missing_positions``).
-Strona zlecenia jest taka, jaką narzędzie zostawia po Wycenie Emmetta (``as_left_after_emmett``), gdy ma dokładnie
-ilości Emmetta i ilości, które narzędzie zaczęło wpisywać (Ślad Wyceny Emmetta), a każda inna pozycja jest pusta. Kwota
-końcowa efenix i ``Kwota`` (AU) są równe co do grosza (``same_amount``).
+(``missing_positions``). Kwota końcowa efenix i ``Kwota`` (AU) są równe co do grosza (``same_amount``).
 """
 
 from __future__ import annotations
@@ -31,22 +28,19 @@ from .order_facts import NON_NUMERIC
 __all__ = [
     "POSITION_OF_COLUMN",
     "UNPAIRED_COLUMNS",
-    "Conflict",
+    "Completion",
+    "Excess",
     "MissingPositions",
     "NotWholeQuantities",
     "OrderFault",
     "OtherAmount",
     "PageRead",
-    "PricedDifferently",
     "UnpairedColumns",
-    "as_left_after_emmett",
     "column_of",
-    "emmett_conflicts",
+    "completion",
     "file_quantities",
     "missing_positions",
-    "priced_differently",
     "same_amount",
-    "to_enter",
 ]
 
 POSITION_OF_COLUMN: Final[Mapping[str, str]] = MappingProxyType(
@@ -93,15 +87,6 @@ class NotWholeQuantities:
     columns: tuple[str, ...]
 
 
-@dataclass(frozen=True)
-class PricedDifferently:
-    """Wycena w efenix już jest i różni się od Pliku zbiorczego: obie kwoty i pozycje z inną ilością (rosnąco)."""
-
-    efenix_amount: Decimal
-    file_amount: Decimal
-    positions: tuple[str, ...]
-
-
 class PageRead(enum.Enum):
     """Odczyt strony zlecenia w Wycenie w efenix, po którym proces sprawdza, czy są na niej pozycje z ilością w pliku."""
 
@@ -127,17 +112,28 @@ class OtherAmount:
     file_amount: Decimal
 
 
-OrderFault = OrderProblem | DateRefused | UnpairedColumns | NotWholeQuantities | MissingPositions | PricedDifferently | OtherAmount
+OrderFault = OrderProblem | DateRefused | UnpairedColumns | NotWholeQuantities | MissingPositions | OtherAmount
 """Powód, dla którego zlecenie zostaje tacie jako błąd."""
 
 
 @dataclass(frozen=True)
-class Conflict:
-    """Pozycja, w której Emmett wpisał ilość inną niż Plik zbiorczy."""
+class Excess:
+    """Pozycja ``position``, w której efenix ma ilość ``efenix`` większą niż ``file`` z Pliku zbiorczego (0 w pozycji bez
+    ilości w pliku albo bez kolumny)."""
 
     position: str
-    emmett: int
+    efenix: int
     file: int
+
+
+@dataclass(frozen=True)
+class Completion:
+    """Dokończenie wyceny zlecenia do Pliku zbiorczego: ilości pliku do wpisania w pozycjach, w których strona ma mniej
+    niż plik (``to_enter``, rosnąco po kodzie), i pozycje, w których strona ma więcej niż plik (``excess``, rosnąco po
+    kodzie), których proces nie zmienia."""
+
+    to_enter: Mapping[str, int]
+    excess: tuple[Excess, ...]
 
 
 def column_of(position: str) -> str | None:
@@ -179,41 +175,15 @@ def same_amount(efenix: Decimal, file: Decimal) -> bool:
     return efenix.quantize(cent) == file.quantize(cent)
 
 
-def priced_differently(
-    file: Mapping[str, int], on_page: Mapping[str, int], efenix_amount: Decimal, file_amount: Decimal
-) -> PricedDifferently | None:
-    """Wycena, która już jest w efenix, różni się od pliku ilością którejś pozycji albo kwotą; ``None``, gdy się zgadza."""
+def completion(file: Mapping[str, int], on_page: Mapping[str, int]) -> Completion:
+    """Dokończenie wyceny strony ``on_page`` do pliku ``file`` tylko w górę: ilość pliku w każdej pozycji, w której strona
+    ma mniej, i nadmiar w każdej pozycji, w której strona ma więcej. Pozycja z równą ilością nie trafia do żadnego z nich,
+    więc wycena zgodna z plikiem daje dokończenie puste."""
 
-    positions = tuple(sorted(position for position in file.keys() | on_page.keys() if file.get(position, 0) != on_page.get(position, 0)))
-    if positions or not same_amount(efenix_amount, file_amount):
-        return PricedDifferently(efenix_amount, file_amount, positions)
-    return None
-
-
-def emmett_conflicts(file: Mapping[str, int], emmett: Mapping[str, int]) -> tuple[Conflict, ...]:
-    """Pozycje, w których Emmett wpisał ilość, a plik ma inną (także 0), rosnąco po kodzie."""
-
-    return tuple(
-        Conflict(position, quantity, file.get(position, 0))
-        for position, quantity in sorted(emmett.items())
-        if quantity != 0 and quantity != file.get(position, 0)
+    to_enter = {position: quantity for position, quantity in sorted(file.items()) if on_page.get(position, 0) < quantity}
+    excess = tuple(
+        Excess(position, quantity, file.get(position, 0))
+        for position, quantity in sorted(on_page.items())
+        if quantity > file.get(position, 0)
     )
-
-
-def as_left_after_emmett(emmett: Mapping[str, int], entered: Mapping[str, int], on_page: Mapping[str, int]) -> bool:
-    """Strona ``on_page`` ma tylko ilości, które zostawia narzędzie po Wycenie Emmetta ``emmett``: w każdej pozycji, w
-    której Emmett wpisał ilość, tę samą ilość, w każdej pozycji, w której narzędzie zaczęło wpisywać ilość (``entered``),
-    tę ilość, a w każdej innej nic.
-
-    Ilość w innej pozycji wpisał ktoś inny niż narzędzie. Pusta pozycja z ``entered`` to ilość usunięta w efenix albo
-    taka, której efenix nie zapisał przed przerwaniem; strona ich nie odróżnia, więc obie to wycena inna niż po narzędziu.
-    """
-
-    left = {position: quantity for position, quantity in (*emmett.items(), *entered.items()) if quantity}
-    return {position: quantity for position, quantity in on_page.items() if quantity} == left
-
-
-def to_enter(file: Mapping[str, int], emmett: Mapping[str, int]) -> dict[str, int]:
-    """Ilości pliku do wpisania w pozycjach pustych u Emmetta; pozycji z 0 w pliku ``file`` nie ma, więc zostaje pusta."""
-
-    return {position: quantity for position, quantity in sorted(file.items()) if emmett.get(position, 0) == 0}
+    return Completion(MappingProxyType(to_enter), excess)

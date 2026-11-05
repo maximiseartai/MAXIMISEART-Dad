@@ -1,9 +1,8 @@
 """Show that sprawdz_wznowienie_wyceny.py fails when the TLA+ model of resuming Wycena w efenix loses a guard the code has.
 
 Each mutation removes from ``model/WznowienieWyceny.tla`` one guard or step whose counterpart in
-``src/rozliczenia/efenix_pricing.py``, ``src/rozliczenia/efenix_emmett_trace.py`` or ``src/rozliczenia/efenix_positions.py``
-the mutation names, runs on its own copy of the checkout (``tools/mutacje.py``) and must end the check with
-``WZNOWIENIE WYCENY: NOWE NARUSZENIE``. A mutation whose anchor text is no longer in the model is reported as
+``src/rozliczenia/efenix_pricing.py`` or ``src/rozliczenia/efenix_positions.py`` the mutation names, runs on its own
+copy of the checkout (``tools/mutacje.py``) and must end the check with ``WZNOWIENIE WYCENY: NOWE NARUSZENIE``. A mutation whose anchor text is no longer in the model is reported as
 NIEAKTUALNA: update it to the new model.
 
 The copy of the checkout has no ignored TLC cache, so this script hands Java and ``tla2tools.jar`` of this checkout
@@ -33,67 +32,50 @@ def _check(config: str) -> tuple[str, ...]:
 
 MUTATIONS = (
     Mutation(
-        "Wycena Emmetta także do zlecenia z wyceną (_outcome: bez gałęzi opened.amount != 0)",
-        (Edit(MODEL, "    /\\ IF Kwota(q) # 0\n       THEN IF q = Plik", "    /\\ IF FALSE\n       THEN IF q = Plik"),),
+        "Wycena Emmetta także do zlecenia z ilościami (_outcome: bez not any(opened.quantities.values()))",
+        (Edit(MODEL, "    /\\ IF q # Pusta\n       THEN Dokoncz(q)", "    /\\ IF FALSE\n       THEN Dokoncz(q)"),),
         _check("zwykle"),
         "ponowne Uruchomienie ładuje Emmetta do zlecenia z wyceną i czyści ilości, także tacie",
         NEW,
     ),
     Mutation(
-        "dokańczanie wyceny bez śladu (_outcome: bez emmett is None)",
-        (Edit(MODEL, "ELSE IF w.stan # \"zaladowany\" \\/ ~JakPoEmmetcie(q, w.wpisuje)", "ELSE IF ~JakPoEmmetcie(q, w.wpisuje)"),),
+        "dokończenie także w dół (completion: to_enter z każdą pozycją, w której strona ma inną ilość niż plik)",
+        (Edit(MODEL, "DoWpisania(q) == {p \\in Pozycje : q[p] < Plik[p]}", "DoWpisania(q) == {p \\in Pozycje : q[p] # Plik[p]}"),),
         _check("zwykle"),
-        "każdą wycenę, która wygląda jak po Emmetcie, ponowne Uruchomienie dokańcza, także tę, z której tata usunął ilość",
+        "ilość, którą tata wpisał w efenix ponad plik, ponowne Uruchomienie obniża do pliku (NieObnizaIlosci)",
         NEW,
     ),
     Mutation(
-        "dokańczanie wyceny ze śladu bez porównania strony (_outcome: bez as_left_after_emmett)",
-        (Edit(MODEL, "ELSE IF w.stan # \"zaladowany\" \\/ ~JakPoEmmetcie(q, w.wpisuje)", "ELSE IF w.stan # \"zaladowany\""),),
-        _check("tata-po-przerwaniu"),
-        "do wyceny, w której tata po Zatrzymaniu zmienił ilość Emmetta, ponowne Uruchomienie dopisuje ilości pliku",
+        "ilość z pliku tylko w pozycjach pustych (completion: to_enter jak przed #960, bez pozycji z mniejszą ilością)",
+        (
+            Edit(
+                MODEL,
+                "DoWpisania(q) == {p \\in Pozycje : q[p] < Plik[p]}",
+                "DoWpisania(q) == {p \\in Pozycje : q[p] = 0 /\\ Plik[p] # 0}",
+            ),
+        ),
+        _check("zwykle"),
+        "ilość Emmetta mniejsza niż plik (S, #960) zostaje, więc tata dostaje błąd kwoty w zleceniu, którego nie zmieniał",
         NEW,
     ),
     Mutation(
-        "pozycja ze śladu może być pusta (as_left_after_emmett: entered dopuszcza 0)",
-        (Edit(MODEL, "ELSE IF p \\in E THEN q[p] = Plik[p] ELSE", "ELSE IF p \\in E THEN q[p] \\in {0, Plik[p]} ELSE"),),
-        _check("tata-po-przerwaniu"),
-        "ilość, którą narzędzie wpisało przed przerwaniem, a tata potem usunął, ponowne Uruchomienie dopisuje z powrotem (#864)",
-        NEW,
-    ),
-    Mutation(
-        "pozycja spoza śladu z ilością pliku (as_left_after_emmett: pusta u Emmetta może mieć ilość pliku)",
-        (Edit(MODEL, "ELSE IF p \\in E THEN q[p] = Plik[p] ELSE q[p] = 0", "ELSE IF p \\in E THEN q[p] = Plik[p] ELSE q[p] \\in {0, Plik[p]}"),),
-        _check("tata-po-przerwaniu"),
-        "po przerwaniu tata wpisuje sam ilość pliku w pustej pozycji, a ponowne Uruchomienie dopisuje do jego wyceny resztę",
-        NEW,
-    ),
-    Mutation(
-        "bez zapisu z wyprzedzeniem (_WrittenAhead.enter_quantity: bez trace.entering przed żądaniem)",
-        (Edit(MODEL, "        wpis == Zaladowany(wPamieci[zlecenie].wpisuje \\cup {p}) IN", "        wpis == wPamieci[zlecenie] IN"),),
-        _check("tata-po-przerwaniu"),
-        "Zatrzymanie po zapisie ilości zostawia ślad bez niej, więc ilość, którą tata potem usunął, wraca (#864)",
-        NEW,
-    ),
-    Mutation(
-        "wpisanie mimo nieudanego zapisu z wyprzedzeniem (_WrittenAhead.enter_quantity: bez _TraceNotSaved, gdy trace.entering zwraca False)",
-        (Edit(MODEL, "       \\/ Nieudany(zlecenie, wpis) /\\ krok' = \"znaczniki\"", "       \\/ Nieudany(zlecenie, wpis) /\\ krok' = \"wpisz\""),),
-        _check("wszystko"),
-        "ilość wpisana bez śladu na dysku po przerwaniu i usunięciu przez tatę wraca w ponownym Uruchomieniu",
-        NEW,
-    ),
-    Mutation(
-        "bez wycofania pozycji po wylogowaniu przy zapisie ilości (_WrittenAhead.enter_quantity: bez trace.not_entered)",
-        (Edit(MODEL, "    /\\ Zapisz(zlecenie, Zaladowany(wPamieci[zlecenie].wpisuje \\ {Pierwsza(doWpisania)}))\n",
-              "    /\\ UNCHANGED <<naDysku, wPamieci, awarieSladu, slady>>\n"),),
-        _check("tata-po-przerwaniu"),
-        "wylogowanie przy zapisie ilości daje przy ponownym Uruchomieniu błąd zlecenia, którego tata nie zmieniał",
+        "bez Ostrzeżenia Emmetta (_completed: bez if plan.excess)",
+        (
+            Edit(
+                MODEL,
+                'WynikDokonczenia(q) == IF Nadmiar(q) # {} THEN "ostrzezenie" ELSE',
+                'WynikDokonczenia(q) == IF FALSE THEN "ostrzezenie" ELSE',
+            ),
+        ),
+        _check("zwykle"),
+        "zlecenie z ilością taty ponad plik kończy się błędem kwoty zamiast Ostrzeżenia Emmetta z pozycją",
         NEW,
     ),
     Mutation(
         "Znacznik przy każdym zleceniu z wynikiem (_mark: bez isinstance(result.outcome, Ready))",
-        (Edit(MODEL, "znacznik[o] \\/ wynik[o] = \"gotowe\"]", "znacznik[o] \\/ wynik[o] # \"brak\"]"),),
-        _check("przerwania"),
-        "Znacznik efenix staje przy zleceniu z błędem „wycena już jest i się różni”",
+        (Edit(MODEL, 'znacznik[o] \\/ wynik[o] = "gotowe"]', 'znacznik[o] \\/ wynik[o] # "brak"]'),),
+        _check("zwykle"),
+        "Znacznik efenix staje przy zleceniu z Ostrzeżeniem Emmetta",
         NEW,
     ),
 )
