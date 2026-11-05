@@ -186,6 +186,7 @@ class Shape(enum.Enum):
     ANSWER_RESULT = "odpowiedź zapisu ilości z wynikiem innym niż ok i nok"
     LOGIN_FORM = "formularz logowania efenix pod adresem strony zlecenia, bez przekierowania"
     ANSWER_REDIRECT = "odpowiedź na „Załaduj do zlecenia” przekierowana poza stronę logowania"
+    EMMETT_NOT_LOADED = "strona przeładowana po „Załaduj do zlecenia” bez wyceny, choć okno Emmetta pokazało propozycję"
 
 
 class LoginSign(enum.Enum):
@@ -194,7 +195,7 @@ class LoginSign(enum.Enum):
     PAGE = "strona logowania zamiast strony, o którą prosiło okno"
     REDIRECT = "odpowiedź efenix przekierowana na stronę logowania"
     SESSION_WARNING = "odpowiedź szukania z samym ostrzeżeniem efenix o wygasłej sesji"
-    REFUSED = "odpowiedź zapisu ilości albo „Załaduj do zlecenia” z wynikiem nok"
+    REFUSED = "odpowiedź zapisu ilości z wynikiem nok"
     NO_LOGIN = "tata nie zalogował się w czasie, w którym okno czeka na logowanie"
 
 

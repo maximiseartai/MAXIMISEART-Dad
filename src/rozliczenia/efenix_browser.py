@@ -51,13 +51,19 @@ zakresu efenix, które dzień spoza zakresu zamienia na dzisiejszy. Gdy w polu n
 zamyka kalendarz bez „Potwierdź”; inaczej klika „Potwierdź” i czeka na odpowiedź ``action_set_date_of_instalation.php``.
 Tekstowi ``#data_install`` po niej nie wierzy, bo skrypt efenix wpisuje go przy każdej odpowiedzi. Wycenę Emmetta ładuje przyciskiem
 ``#button_emmett`` i „Załaduj do zlecenia” w ``#dialog_emmett``: czeka na odpowiedź ``action_load_emmett.php`` i na
-przeładowanie strony, które robi skrypt efenix, i czyta stronę od nowa. Skrypt przeładowuje ją także wtedy, gdy efenix
-odmówił, a strona bez Wyceny Emmetta wygląda jak pusta Wycena Emmetta, więc o tym, czy Emmett się załadował, mówi
-odpowiedź: sukces to status 2xx bez ``result: nok``, a każda inna to odmowa, po której okno strony nie czyta. Odmowa
-z przekierowaniem na ``page_login.php`` albo z ``result: nok`` to ``LoggedOut``, ze statusem błędu (4xx, 5xx)
+przeładowanie strony, które robi skrypt efenix, i czyta stronę od nowa. Czy efenix załadował Wycenę Emmetta, okno
+rozstrzyga bez treści tej odpowiedzi, bo Chromium porzuca ją, gdy przeładowanie wyprzedzi odczyt (#895), a jej postaci
+nikt nie zmierzył. Odpowiedź z przekierowaniem na ``page_login.php`` to ``LoggedOut``, ze statusem błędu (4xx, 5xx)
 ``UnexpectedPage`` ze statusem (``HttpStatus``), a z przekierowaniem gdzie indziej ``UnexpectedPage`` z odpowiedzią w
-budowie, której okno nie zna. Treści odpowiedzi 2xx okno nie sprawdza poza ``result: nok``, bo tej treści efenix nikt
-nie zmierzył. Ilość wpisuje w polu i naciska Enter, a skrypt
+budowie, której okno nie zna; po każdej z nich okno strony nie czyta. Po odpowiedzi 2xx skrypt przeładowuje stronę także
+wtedy, gdy efenix odmówił, a strona bez Wyceny Emmetta wygląda jak pusta Wycena Emmetta (#877, #889), więc okno porównuje
+ją z oknem Emmetta, którego zawartość (``#emmett-propozycja``, odpowiedź ``action_fill_emmett.php``) czyta przed
+kliknięciem „Załaduj do zlecenia”: strona z kwotą końcową różną od 0 ma Wycenę Emmetta, bo proces ładuje ją tylko do
+zlecenia z kwotą 0, a strona z kwotą 0 ma ją tylko wtedy, gdy okno Emmetta nic nie pokazało (bez elementu i bez tekstu,
+Emmett nic nie zaproponował). Strona z kwotą 0 po oknie Emmetta, które coś pokazało, to ``UnexpectedPage`` z
+``Shape.EMMETT_NOT_LOADED``, bez odczytu postaci propozycji, bo tej też nikt nie zmierzył. Prawdziwy efenix dał Wycenę
+Emmetta z kwotą różną od 0 w każdym ze 108 załadowań przebiegu z 4.11.2026 (Logi Uruchomienia Wydania 0.4.2), więc
+Zatrzymanie przy pustej propozycji, którą efenix pokazałby czymś, zdarza się najwyżej rzadko. Ilość wpisuje w polu i naciska Enter, a skrypt
 strony zapisuje ją przez ``action_save_index.php``: kwotą końcową jest ``price_all`` z tej odpowiedzi, a ``#cena_all2``,
 które się do niej nie odświeży, to ``UnexpectedPage``. Odpowiedź ``result: nok`` to wygasła sesja (``LoggedOut``).
 
@@ -155,6 +161,7 @@ _DATE_FIELD: Final = "#field_data_instalacji"
 _SET_DATE: Final = "action_set_date_of_instalation.php"
 _EMMETT_BUTTON: Final = "#button_emmett"
 _EMMETT_DIALOG: Final = "#dialog_emmett"
+_PROPOSAL: Final = "#emmett-propozycja"
 _FILL_EMMETT: Final = "action_fill_emmett.php"
 _LOAD_EMMETT: Final = "action_load_emmett.php"
 _SAVE_QUANTITY: Final = "action_save_index.php"
@@ -217,6 +224,8 @@ _PICK_DAY: Final = """(field, [year, month, day]) => {
 _DISMISS: Final = '[data-dismiss="modal"]'
 _LOGIN_FORM: Final = 'form[action*="action_login.php"]'
 _SHOWS: Final = "([selector, text]) => document.querySelector(selector)?.textContent.trim() === text"
+# Element pokazuje cokolwiek: ma element albo tekst; ``false`` tylko dla pustego (same białe znaki).
+_SHOWS_ANYTHING: Final = "(element) => element.childElementCount > 0 || element.textContent.trim() !== ''"
 
 
 _P = ParamSpec("_P")
@@ -283,6 +292,7 @@ ORDER_ELEMENTS: Final = (
     PageElement("zamknięcie okna daty wykonania", f"{_DATE_DIALOG} {_DISMISS}", many=True),
     PageElement("przycisk Emmetta", _EMMETT_BUTTON, clicked=True),
     PageElement("okno Emmetta", _EMMETT_DIALOG),
+    PageElement("propozycja w oknie Emmetta", f"{_EMMETT_DIALOG} {_PROPOSAL}"),
     PageElement("„Załaduj do zlecenia” w oknie Emmetta", f"{_EMMETT_DIALOG} {_OK}"),
 )
 LIST_SCRIPT_USES: Final = (
@@ -293,7 +303,7 @@ ORDER_SCRIPT_USES: Final = (
     ScriptUse("„Potwierdź” okna daty wykonania zapisuje datę", (_DATE_DIALOG[1:], _OK[1:], _SET_DATE)),
     ScriptUse(
         "przycisk Emmetta pokazuje propozycję, a „Załaduj do zlecenia” ją ładuje",
-        (_EMMETT_BUTTON[1:], _FILL_EMMETT, _EMMETT_DIALOG[1:], _LOAD_EMMETT),
+        (_EMMETT_BUTTON[1:], _FILL_EMMETT, _PROPOSAL[1:], _EMMETT_DIALOG[1:], _LOAD_EMMETT),
     ),
     ScriptUse(
         "wyjście z pola Ilość zapisuje ilość, a kwotę końcową z odpowiedzi pokazuje na stronie",
@@ -488,14 +498,18 @@ class BrowserEfenix:
 
     @_action(PagePart.EMMETT)
     def load_emmett(self) -> OrderPricing:
-        """Ładuje Wycenę Emmetta do otwartego zlecenia i czyta stronę po przeładowaniu, które robi skrypt efenix.
+        """Ładuje Wycenę Emmetta do otwartego zlecenia z kwotą 0 i czyta stronę po przeładowaniu, które robi skrypt efenix.
 
-        Po odmowie „Załaduj do zlecenia” okno nie czeka na przeładowanie i strony nie czyta: skrypt efenix przeładowuje ją
-        i wtedy, a strona bez Wyceny Emmetta wyglądałaby jak pusta Wycena Emmetta (#877).
+        Po odmowie „Załaduj do zlecenia” odpowiedzią z przekierowaniem albo statusem błędu okno nie czeka na przeładowanie
+        i strony nie czyta. Strona po odpowiedzi 2xx z kwotą 0 po oknie Emmetta, które pokazało propozycję, to odmowa
+        (#877, #889). Treści odpowiedzi okno nie czyta, więc przeładowanie, które ją porzuca, nic nie zmienia (#895).
         """
 
         self._click(self._only(_EMMETT_BUTTON, PagePart.EMMETT))
         self._shown(_EMMETT_DIALOG, PagePart.EMMETT)
+        proposal = self._only(f"{_EMMETT_DIALOG} {_PROPOSAL}", PagePart.EMMETT)
+        with _doing(Operation.READ):
+            proposed = proposal.evaluate(_SHOWS_ANYTHING, timeout=self._timeout_ms)
         load = self._only(f"{_EMMETT_DIALOG} {_OK}", PagePart.EMMETT)
         with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms) as reload:
             answer = self._answer(_LOAD_EMMETT, lambda _params: True, lambda: self._click(load))
@@ -503,9 +517,10 @@ class BrowserEfenix:
                 raise LoggedOut(PagePart.EMMETT, LoginSign.REDIRECT)
             if 300 <= answer.status < 400:
                 raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))
-            if _refused(self._text(answer)):
-                raise LoggedOut(PagePart.EMMETT, LoginSign.REFUSED)
-        return self._read_order(reload.value)
+        loaded = self._read_order(reload.value)
+        if proposed is not False and loaded.amount == 0:
+            raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.EMMETT_NOT_LOADED))
+        return loaded
 
     @_action(PagePart.QUANTITY)
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
@@ -787,16 +802,6 @@ def _amount(shown: str, part: PagePart) -> Decimal:
 
 def _on_login_page(url: str) -> bool:
     return urlparse(url).path.endswith("/" + LOGIN_PAGE)
-
-
-def _refused(text: str) -> bool:
-    """Treść odpowiedzi efenix to JSON z ``result: nok``."""
-
-    try:
-        answer = json.loads(text)
-    except ValueError:
-        return False
-    return isinstance(answer, dict) and answer.get("result") == "nok"
 
 
 def _redirected_to_login(response: Response) -> bool:
