@@ -3,8 +3,9 @@
 Jedyne miejsce tych wersji i jedyna droga pobrania. Pobiera je skrypt skilla ``verify-aktualizacja-narzedzia``
 (``sprawdz_aktualizacje.py``) do katalogu podręcznego ``.verification/formal-aktualizacja``, a skrypty modeli innych
 skilli biorą narzędzia od niego. Zadania CI, które uruchamiają modele (Mutation checks w ``ci.yml`` i skrypty mutacji
-skilli w ``mutacje-nocne.yml``), trzymają ten katalog w ``actions/cache`` z kluczem od skrótu tego pliku, więc nowa
-wersja albo suma to nowy klucz.
+skilli w ``mutacje-nocne.yml``), trzymają ten katalog w cache z kluczem od skrótu tego pliku, więc nowa wersja albo
+suma to nowy klucz. Zapisują go tylko wtedy, gdy ``tools/ci/zapis_narzedzi_tlc.py`` zobaczy w nim jar o przypiętej sumie
+(``ma_przypieta_sume``), bo klucz raz zapisany z katalogiem bez jara dawałby każdemu runowi trafienie bez jara (#940).
 
 Chwilowa awaria źródła (błąd sieci, HTTP 5xx albo 429) nie kończy sprawdzenia: ``z_ponowieniem`` ponawia próbę po
 przerwach ``PRZERWY_S``, bo jedno 504 GitHub Releases czerwieniło CI PR-ów i noc na ``main`` (#930). Gdy zawiedzie
@@ -15,6 +16,7 @@ awarii pobierania z wynikiem modelu.
 from __future__ import annotations
 
 from collections.abc import Callable
+import hashlib
 import http.client
 from pathlib import Path
 import shutil
@@ -26,11 +28,14 @@ import urllib.request
 __all__ = [
     "BLAD_POBIERANIA",
     "JDK4PY",
+    "KATALOG",
     "PRZERWY_S",
     "TLA_SHA256",
     "TLA_URL",
     "TLA_WERSJA",
     "ChwilowaAwaria",
+    "jar_tla",
+    "ma_przypieta_sume",
     "pobierz",
     "z_ponowieniem",
 ]
@@ -42,6 +47,20 @@ TLA_SHA256 = "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
 # Przerwy przed drugą i trzecią próbą: chwilowe 504 GitHub Releases mija zwykle w sekundach.
 PRZERWY_S = (5.0, 20.0)
 BLAD_POBIERANIA = "BŁĄD POBIERANIA NARZĘDZIA TLC"
+# Katalog podręczny narzędzi względem korzenia repozytorium, ignorowany przez Gita; ``path`` kroków cache w workflowach.
+KATALOG = Path(".verification") / "formal-aktualizacja"
+
+
+def jar_tla(katalog: Path) -> Path:
+    """Miejsce ``tla2tools.jar`` przypiętej wersji w katalogu podręcznym ``katalog``."""
+
+    return katalog / f"tla2tools-{TLA_WERSJA}.jar"
+
+
+def ma_przypieta_sume(plik: Path) -> bool:
+    """Czy ``plik`` istnieje i ma przypiętą sumę SHA-256 ``tla2tools.jar``."""
+
+    return plik.is_file() and hashlib.sha256(plik.read_bytes()).hexdigest() == TLA_SHA256
 
 
 class ChwilowaAwaria(Exception):

@@ -57,6 +57,7 @@ JOBS_ELSEWHERE = {
 # Fragment polecenia `run:` w odtwarzanym zadaniu CI, którego narzędzie nie odtwarza, i co je zastępuje.
 COMMANDS_ELSEWHERE = {
     "tools/ci/czasy_ci.py": "pomiar czasów zadania (artefakt czasy-ci), nic nie sprawdza",
+    "tools/ci/zapis_narzedzi_tlc.py": "decyzja o zapisie cache narzędzi TLC (#940), nie sprawdza zmiany",
 }
 OUTPUT_ON_FAILURE = 40
 EVERY_COMMIT_JOBS = ("ruff", "mypy", "pytest")
