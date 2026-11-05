@@ -162,6 +162,15 @@ Dad does not click or see anything. The machine script sends none.
   and commit, Uruchomienie id and start in UTC), ending with the line
   `- Pełne Logi: [<file>.json.gz](<link>)`. A Diagnoza changes that comment;
   it never adds one.
+- A Wycena w efenix, which takes up to an hour and a half at Dad's, opens that
+  comment when it starts and refreshes it every 5 minutes with its progress
+  from the Wycena's journal on Dad's disk (`#846`): orders finished out of all,
+  results so far, the last finished order, the order in progress and the time
+  since the start, never more than the journal has. The comment says `- Wynik:
+  jeszcze nie ma, Uruchomienie trwa` and `- Pełne Logi: w tym komentarzu, gdy
+  Uruchomienie się skończy`; the end of the Wycena turns the same comment into
+  the summary, and for an Urwane Uruchomienie the next start of Centrum does.
+  Without the network only the newest progress waits in the queue.
 - The full Logi are in the period's Archiwum Logów okresu: the GitHub Release
   tagged `logi-<token>` in the same private repository, which Centrum creates
   with the first Logi of the period (`#844`). It holds one file per

@@ -64,6 +64,19 @@ taty, a komentarz idzie z dopiskiem, że pełne Logi czekają. Odmowa Archiwum
 zatrzymuje tylko plik, nie inne wysyłki kolejki. Zdania o komentarzu z pełnym JSON w
 `<details>` i o częściach w decyzji niżej opisują stan sprzed tego dopisku.
 
+**Dopisek (#846, 2026-11-05).** Wycena w efenix zakłada swój komentarz
+Uruchomienia w issue okresu przy starcie i odświeża go co 5 minut postępem z
+dziennika Wyceny w efenix: zlecenia skończone z wszystkich, wyniki do tej pory,
+ostatnie zlecenie i czas od startu, nigdy więcej, niż dziennik ma na dysku.
+Postęp to starsza wersja wysyłki Logów tego Uruchomienia, więc koniec Wyceny
+zamienia ten sam komentarz w podsumowanie, a Urwane Uruchomienie robi to przy
+następnym starcie Centrum. Kolejka wysyłki oznacza i usuwa bez wysyłania plik,
+za którym czeka nowsza wersja tej samej wysyłki, więc bez internetu czeka tylko
+najnowszy postęp (i tylko Logi z ostatnią Diagnozą). Zdanie „Centrum przerwane
+w trakcie zostawia tylko `uruchomienie-start`” w decyzji niżej Wycena w efenix
+zmienia dalej tylko o dziennik z dopisku #845: krótkie procesy nie wysyłają
+nic w trakcie.
+
 ## Kontekst
 
 Wszystko, co Maks wiedział o pracy narzędzia u taty, to rekord metryk (czasy,

@@ -601,7 +601,10 @@ danych nigdy nie niosą wartości `ADRES` ani `NUMER UMOWY/ZLECENIA ORANGE` z
 plików, które Centrum przeczytało: przed zapisem i wysyłką strażnik maskuje
 taką wartość z uwagą techniczną, a telefony i ulice w tekście są zamaskowane.
 Tata ich nie wysyła ani nie ogląda, ale z
-nich wraca karta Uruchomienia po starcie Centrum i w Historii.
+nich wraca karta Uruchomienia po starcie Centrum i w Historii. W trakcie
+Wyceny w efenix ten sam komentarz Uruchomienia w Skrzynce pokazuje co 5 minut
+jej postęp z dziennika Wyceny w efenix (zlecenia skończone z wszystkich, wyniki
+do tej pory, ostatnie zlecenie), a na końcu staje się podsumowaniem Logów.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), dziennik Centrum, raport
 
 ## Urwane Uruchomienie
@@ -666,8 +669,10 @@ go naprawi. Każda wysyłka trafia do Skrzynki dokładnie raz, także gdy Centru
 zgaśnie albo połączenie się zerwie, zanim kolejka zapisze, że ją dostarczyła:
 każdy jej tekst w Skrzynce niesie niewidoczny identyfikator (Uruchomienie i
 rodzaj), a kolejka przed wysłaniem sprawdza, co już tam jest. Nowsza wersja tej
-samej wysyłki, jak Logi Uruchomienia po Diagnozie, zmienia jej komentarz zamiast
-dokładać nowy, a starsza, która dojdzie po nowszej, niczego w Skrzynce nie
+samej wysyłki, jak Logi Uruchomienia po Diagnozie albo po postępie Wyceny w
+efenix, zmienia jej komentarz zamiast dokładać nowy, a gdy starsza jeszcze
+czeka, zastępuje ją w kolejce, więc bez internetu czeka tylko najnowsza.
+Starsza, która dojdzie po nowszej, niczego w Skrzynce nie
 zmienia. Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego
 startu Centrum rozliczeń; tata ma wtedy skontaktować się z Maksem. Plik w
 Archiwum Logów okresu też idzie dokładnie raz, a plik nowszej wersji podmienia

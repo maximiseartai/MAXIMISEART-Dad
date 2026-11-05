@@ -343,6 +343,38 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
+        "bez zastępowania starszej wersji w kolejce (_superseded): każdy postęp idzie do Skrzynki",
+        (Edit(VERIFIED, "            if path in superseded:\n", "            if False:\n"),),
+        (EXPLORER, "--scope", "postep"),
+        "bez sieci kolejka wysyła każdy postęp Wyceny po kolei zamiast najnowszego",
+        NEW,
+    ),
+    Mutation(
+        "zastępowanie po samym celu, bez run_id: druga Kontrola ilości okresu usuwa pierwszą",
+        (
+            Edit(
+                VERIFIED,
+                "            newest[queued.post.target, queued.post.run_id] = path\n",
+                "            newest[queued.post.target, \"\"] = path\n",
+            ),
+            Edit(
+                VERIFIED,
+                "        if queued is not None and newest[queued.post.target, queued.post.run_id] != path\n",
+                "        if queued is not None and newest[queued.post.target, \"\"] != path\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "watek-okresu"),
+        "Kontrola ilości okresu znika z kolejki, bo za nią czeka inna Kontrola tego okresu",
+        NEW,
+    ),
+    Mutation(
+        "zastąpiony plik usunięty bez znacznika dostarczenia",
+        (Edit(VERIFIED, "                self._mark_delivered(path, queued.post)\n", "                self._remove(path)\n"),),
+        (EXPLORER, "--scope", "postep"),
+        "plik starszego postępu, którego nie da się usunąć, czeka w kolejce bez znacznika i bez budzika",
+        NEW,
+    ),
+    Mutation(
         "send_in_background nie uruchamia wątku",
         (
             Edit(

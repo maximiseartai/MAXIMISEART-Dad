@@ -23,12 +23,12 @@ wersji dostaje nowy tekst (``edit_comment``), a komentarz części, której nows
 Tak Diagnoza, która wysyła Logi Uruchomienia drugi raz z tym samym identyfikatorem, zmienia komentarz swojego
 Uruchomienia, a starszy plik, który dojdzie po nowszym (np. raz nieczytelny), niczego w issue nie zmienia ani nie
 dopisuje. Plik, za którym w tym samym przejściu leży czytelny plik nowszej wersji tej samej wysyłki (ten sam cel i
-``run_id``, ``_superseded``), kolejka usuwa bez wysyłania, bo Skrzynce należy się nowsza: bez sieci w kolejce zostaje
-tylko najnowszy postęp Wyceny w efenix (#846, ``pricing_progress``) i tylko Logi z ostatnią Diagnozą. Wersje jednej
-wysyłki powstają w jednej pracy Centrum (Diagnozę ma tylko ostatnie Uruchomienie tej pracy, ``run_logs``, a postęp
-tylko trwające), a w niej wersja rośnie z każdą wysyłką, także gdy zegar komputera się cofnie (``Outbox.post``). Logi
-Urwanego Uruchomienia, które zastępują jego postęp, wysyła następna praca Centrum: ich wersja jest nowsza, dopóki zegar
-komputera nie cofnął się od zgaśnięcia Centrum o więcej niż czas do następnego startu.
+``run_id``, ``_superseded``), kolejka oznacza znacznikiem dostarczenia i usuwa bez wysyłania, bo Skrzynce należy się
+nowsza: bez sieci w kolejce zostaje tylko najnowszy postęp Wyceny w efenix (#846, ``pricing_progress``) i tylko Logi z
+ostatnią Diagnozą. Wersje jednej wysyłki powstają w jednej pracy Centrum (Diagnozę ma tylko ostatnie Uruchomienie tej
+pracy, ``run_logs``, a postęp tylko trwające), a w niej wersja rośnie z każdą wysyłką, także gdy zegar komputera się
+cofnie (``Outbox.post``). Logi Urwanego Uruchomienia, które zastępują jego postęp, wysyła następna praca Centrum: ich
+wersja jest nowsza, dopóki zegar komputera nie cofnął się od zgaśnięcia Centrum o więcej niż czas do następnego startu.
 Treści issue kolejka nigdy nie zmienia.
 
 Issue okresu kolejka znajduje po wierszu rozpoznawczym przy każdej próbie wysyłki i dopisuje do niego części jako
@@ -1208,7 +1208,7 @@ class Outbox:
         """Pliki kolejki po nazwie (czas utworzenia); porażka skrzynki zatrzymuje przejście albo pomija plik (``_waiting``).
 
         Przejście czyta pliki na początku, więc plik, za którym jest nowsza wersja tej samej wysyłki (``_superseded``),
-        usuwa bez wysyłania. ``_stopped_on`` to potem przyczyna, na której przejście stanęło, albo ``None``,
+        oznacza bez wysyłania i usuwa. ``_stopped_on`` to potem przyczyna, na której przejście stanęło, albo ``None``,
         ``_read_failed`` mówi, czy przejście pominęło plik, którego nie dało się odczytać, a ``_archive_refused``, czy
         Archiwum okresu odmówiło. Plik, którego części już są w Skrzynce (``_Queued.commented``), czeka tylko na Archiwum
         i idzie bez issue.
@@ -1229,8 +1229,12 @@ class Outbox:
             if queued is None:
                 self._skip_unreadable(path)
                 continue
-            if queued.delivered or path in superseded:
+            if queued.delivered:
                 self._remove(path)
+                continue
+            if path in superseded:
+                # Znacznik jak po wysłaniu: plik, którego nie da się usunąć, nie czeka w kolejce bez niego.
+                self._mark_delivered(path, queued.post)
                 continue
             post = self._listener.prepare(queued.post, self)
             if post is None:
