@@ -1,7 +1,7 @@
 """Skill ``verify-github-skrzynki``: granice przebiegu na żywo i nagrania prawdziwego GitHuba.
 
-Przebieg na żywo pisze tylko do repozytorium próbnego, więc transport klienta Skrzynki odmawia każdego innego adresu,
-także prawdziwej Skrzynki, zanim cokolwiek wyśle. Nagrania leżą w repozytorium publicznym, więc nie mają klucza ani
+Przebieg na żywo pisze tylko do repozytoriów próbnych (pustego i Archiwum z commitem), więc transport klienta Skrzynki
+odmawia każdego innego adresu, także prawdziwej Skrzynki, zanim cokolwiek wyśle. Nagrania leżą w repozytorium publicznym, więc nie mają klucza ani
 nagłówków żądań. Odtwarzanie nagrań (podstawa ``ci:``) biegnie w Mutation checks; tu sprawdza się tylko, że odtwarzanie
 odmawia żądania spoza nagrania.
 """
@@ -28,8 +28,10 @@ sys.path.insert(0, str(SKILL / "scripts"))
 import github_wymiana  # noqa: E402
 
 TRIAL = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba"
+TRIAL_ARCHIVE = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum"
 
 
+@pytest.mark.parametrize("trial", [TRIAL, TRIAL_ARCHIVE], ids=["puste", "archiwum"])
 @pytest.mark.parametrize(
     "url",
     [
@@ -38,11 +40,51 @@ TRIAL = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba"
     ],
     ids=["api", "wysylka-plikow"],
 )
-def test_zadanie_skrzynki_idzie_do_repozytorium_probnego(url: str) -> None:
-    moved = github_wymiana.to_trial(url)
+def test_zadanie_skrzynki_idzie_do_repozytorium_probnego(url: str, trial: str) -> None:
+    moved = github_wymiana.to_trial(url, trial)
 
-    assert f"/repos/{TRIAL}/" in moved
+    assert f"/repos/{trial}/" in moved
     assert f"/repos/{REPOSITORY}/" not in moved
+
+
+@pytest.mark.parametrize("trial", [REPOSITORY, "maximiseartai/MAXIMISEART-Dad"], ids=["skrzynka", "repo-narzedzia"])
+def test_transport_przebiegu_odmawia_repozytorium_docelowego_spoza_prob_przed_wysylka(trial: str) -> None:
+    sent: list[str] = []
+    transport = github_wymiana.LiveTransport(github_wymiana.Recorder(), github_wymiana.Pace(), sent, trial=trial)
+
+    with pytest.raises(github_wymiana.OutsideTrial):
+        transport(HttpRequest("POST", f"https://api.github.com/repos/{REPOSITORY}/releases", {}, b"{}"))
+
+    assert sent == []
+
+
+def test_adres_pobrania_pliku_z_archiwum_proby_to_ten_sam_adres_w_skrzynce() -> None:
+    page = f"https://github.com/{TRIAL_ARCHIVE}/releases/download/logi-08_14_09_2026/logi.json.gz"
+
+    assert github_wymiana.from_trial_web(page) == (
+        f"https://github.com/{REPOSITORY}/releases/download/logi-08_14_09_2026/logi.json.gz"
+    )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        f"https://github.com/{REPOSITORY}/releases/download/t/a.gz",
+        f"https://github.com/{TRIAL}/releases/download/t/a.gz",
+        "https://github.com/maximiseartai/MAXIMISEART-Dad/releases/download/v0.1.0/a.gz",
+        f"https://example.com/{TRIAL_ARCHIVE}/releases/download/t/a.gz",
+    ],
+    ids=["skrzynka", "puste-probne", "repo-narzedzia", "inny-host"],
+)
+def test_strona_poza_archiwum_proby_jest_poza_przebiegiem(url: str) -> None:
+    admin = github_wymiana.Admin("klucz-nieuzywany", github_wymiana.Pace())
+
+    with pytest.raises(github_wymiana.OutsideTrial):
+        github_wymiana.from_trial_web(url)
+    with pytest.raises(github_wymiana.OutsideTrial):
+        admin.web_status(url)
+
+    assert admin.log == []
 
 
 @pytest.mark.parametrize(
@@ -73,8 +115,9 @@ def test_transport_przebiegu_odmawia_adresu_spoza_skrzynki_przed_wysylka(
         ("POST", f"/repos/{REPOSITORY}/issues"),
         ("DELETE", "/repos/maximiseartai/MAXIMISEART-Dad/git/refs/tags/v0.1.0"),
         ("GET", "/user/repos"),
+        ("DELETE", f"/repos/{TRIAL_ARCHIVE}-inne/releases/1"),
     ],
-    ids=["skrzynka", "repo-narzedzia", "odczyt-poza-proba"],
+    ids=["skrzynka", "repo-narzedzia", "odczyt-poza-proba", "repo-o-tym-samym-poczatku"],
 )
 def test_harness_odmawia_poza_repozytorium_probnym(method: str, path: str) -> None:
     admin = github_wymiana.Admin("klucz-nieuzywany", github_wymiana.Pace())
@@ -92,7 +135,8 @@ def test_nagrania_sa_i_nie_maja_klucza_ani_naglowkow_zadan() -> None:
     recordings = sorted((SKILL / "nagrania").glob("*.json"))
     texts = {path.name: path.read_text(encoding="utf-8") for path in recordings}
 
-    assert {"aktualnosc.json"} <= set(texts) and any(name.startswith("skrzynka-") for name in texts), sorted(texts)
+    assert {"aktualnosc.json"} <= set(texts), sorted(texts)
+    assert all(any(name.startswith(f"{feature}-") for name in texts) for feature in ("skrzynka", "archiwum")), sorted(texts)
     assert [name for name, text in texts.items() if _TOKEN.search(text) or "Authorization" in text] == []
     for name, text in texts.items():
         for case in json.loads(text)["przypadki"].values():

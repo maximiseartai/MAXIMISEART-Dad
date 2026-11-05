@@ -1,6 +1,6 @@
 ---
 name: verify-github-skrzynki
-description: Verify Centrum's two GitHub clients against the real GitHub - Skrzynka Zgłoszeń (`GitHubReportBox` and `KeyedBox` - issues, comments, edits, labelled lists with paging and `include_closed`, Archiwum okresu as a Release, bad key, deleted issue, content limits) on the private trial repository `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba`, and Aktualność narzędzia (`tool_freshness` - tags with paging, the newest Wydanie on `main`, GitHub Releases, compare and the first-parent line) by reading the public tool repository - with every exchange recorded, a verdict on outcomes expected from the domain, an offline replay of the recordings, and a check that the test fakes answer like the recorded GitHub. Use after a change to `report_box.py`, `keyed_box.py`, `tool_freshness.py`, their test fakes, or when a review asks what GitHub really answers.
+description: Verify Centrum's two GitHub clients against the real GitHub - Skrzynka Zgłoszeń (`GitHubReportBox` and `KeyedBox` - issues, comments, edits, labelled lists with paging and `include_closed`, bad key, deleted issue, content limits) on the private empty trial repository `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba`, the Archiwum Logów okresu (`archive`, `open_archive`, `upload`, `remove` and `archive_url` - a Release with files over a page, a tag or file of the same name, the replaced file, the download link) on the trial repository with a commit `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum`, and Aktualność narzędzia (`tool_freshness` - tags with paging, the newest Wydanie on `main`, GitHub Releases, compare and the first-parent line) by reading the public tool repository - with every exchange recorded, a verdict on outcomes expected from the domain, an offline replay of the recordings, and a check that the test fakes answer like the recorded GitHub. Use after a change to `report_box.py`, `keyed_box.py`, `tool_freshness.py`, their test fakes, or when a review asks what GitHub really answers.
 pilnuje:
   - src/rozliczenia/centrum/report_box.py
   - src/rozliczenia/centrum/keyed_box.py
@@ -32,16 +32,19 @@ finding for the PR, not something to make pass.
 
 ## Boundaries
 
-- Writes go only to the trial repository `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba` (private, empty: no
-  commit, no Release). The client transport (`github_wymiana.LiveTransport`) moves each request from the Skrzynka
-  address (`report_box.REPOSITORY`) to the trial repository and raises `OutsideTrial` for any other address; the
-  harness (`Admin`) refuses writes outside it. `src/` is not changed: the client gets the transport, as in the tests.
+- Writes go only to the two trial repositories (`github_wymiana.TRIALS`, both private): `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba`
+  (empty: no commit, no Release) for `skrzynka`, and `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum` (one
+  commit, README on `main`) for `archiwum`, because a Release needs a commit. The client transport
+  (`github_wymiana.LiveTransport`) moves each request from the Skrzynka address (`report_box.REPOSITORY`) to its
+  feature's trial repository and raises `OutsideTrial` for any other address; the harness (`Admin`) refuses writes
+  outside them and follows no redirect with a key. `src/` is not changed: the client gets the transport, as in the
+  tests.
 - The real Skrzynka `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia` is never asked. The public tool repository
   `maximiseartai/MAXIMISEART-Dad` is only read (GET through `GitHubProxy`).
 - Keys: the client key is `gh auth token` (OAuth, `gho_`) or `--klucz-plik <file>`, Maks's fine-grained token for the
-  trial repository like Dad's (Issues RW, Contents RW, Metadata R): `~/.config/maximiseart/token-repo-probne.txt`. The
+  trial repositories like Dad's (Issues RW, Contents RW, Metadata R): `~/.config/maximiseart/token-repo-probne.txt`. The
   script reads the file and never prints it; evidence and recordings name only the kind of key. Cleanup and the
-  harness always use the `gh` key (admin of the trial repository: only it can delete issues).
+  harness always use the `gh` key (admin of both trial repositories: only it can delete issues and tags).
 - Aktualność asks without a key, like Centrum. GitHub allows 60 such requests per hour per address and the agents on
   this Mac share it; `--aktualnosc-z-kluczem` asks with the `gh` key instead, and the verdict then says so in
   `NIESPRAWDZONE`.
@@ -49,34 +52,38 @@ finding for the PR, not something to make pass.
 ## Doctor
 
 ```bash
-.venv/bin/python .agents/skills/verify-github-skrzynki/scripts/github_skrzynki.py doctor [--feature skrzynka|aktualnosc] [--klucz-plik <file>] [--aktualnosc-z-kluczem]
+.venv/bin/python .agents/skills/verify-github-skrzynki/scripts/github_skrzynki.py doctor [--feature skrzynka|archiwum|aktualnosc] [--klucz-plik <file>] [--aktualnosc-z-kluczem]
 ```
 
 Read only. `DOCTOR OK | klucz=<kind> | sprzatanie=<kind> | repo=… prywatne | limit=… | pozostalosci=0 |
-limit_aktualnosci=…` means: the client key sees the trial repository, the `gh` key is its admin, it is private and
-has no issue, label or Release with a run marker, none of the Skrzynka labels exists yet, and both rate limits leave
-room for a run. `DOCTOR FAIL | <reasons>` (exit 2) names what to fix; `na-zywo` runs the doctor first and stops on it.
+limit_aktualnosci=…` means: the client key sees the feature's trial repository, the `gh` key is its admin, it is
+private, neither trial repository has an issue, label, Release or tag of a run, none of the Skrzynka labels exists yet
+(`skrzynka`), the archive trial repository has a commit and no Release or tag at all (`archiwum`), and both rate
+limits leave room for a run. `DOCTOR FAIL | <reasons>` (exit 2) names what to fix; `na-zywo` runs the doctor first and stops on it.
 
 ## Launch and drive
 
 ```bash
 .venv/bin/python .agents/skills/verify-github-skrzynki/scripts/github_skrzynki.py na-zywo --feature all --zapisz-nagrania --run-dir ~/.t3/notes/verify-github-skrzynki
 .venv/bin/python .agents/skills/verify-github-skrzynki/scripts/github_skrzynki.py na-zywo --feature skrzynka --klucz-plik ~/.config/maximiseart/token-repo-probne.txt --zapisz-nagrania --run-dir ~/.t3/notes/verify-github-skrzynki
+.venv/bin/python .agents/skills/verify-github-skrzynki/scripts/github_skrzynki.py na-zywo --feature archiwum --klucz-plik ~/.config/maximiseart/token-repo-probne.txt --zapisz-nagrania --run-dir ~/.t3/notes/verify-github-skrzynki
 ```
 
-`--feature skrzynka` drives the Skrzynka Zgłoszeń, `--feature aktualnosc` Aktualność narzędzia, `all` both; each
-live run ends with `--feature wiernosc-atrap` on the new recordings. A Skrzynka run takes about 8 minutes (it creates
-101 issues and 101 comments for the paging cases, one write per second as GitHub asks), so start it as a background
-command and wait for its notification. Keep `--run-dir` out of `/tmp`. On 2026-11-05 the third Skrzynka run within 25 minutes
+`--feature skrzynka` drives the Skrzynka Zgłoszeń, `--feature archiwum` the Archiwum Logów okresu,
+`--feature aktualnosc` Aktualność narzędzia, `all` all three; each live run ends with `--feature wiernosc-atrap` on the new
+recordings. A Skrzynka run takes about 8 minutes (it creates 101 issues and 101 comments for the paging cases, one
+write per second as GitHub asks) and an Archiwum run about 3 (101 files for the paging case), so start them as
+background commands and wait for the notification. Keep `--run-dir` out of `/tmp`. On 2026-11-05 the third Skrzynka run within 25 minutes
 got `Unreachable()` already in preparation, with no answer from GitHub in its log, and a run an hour later passed. The
 cause is not confirmed (GitHub's limit on content one account creates is a guess), so leave about an hour between
 Skrzynka runs, also between the two keys, and treat a preparation `Unreachable` soon after another run as that.
 
-Each feature is a table of cases (`CASES` in `github_przypadki_skrzynki.py` and `github_przypadki_aktualnosci.py`). A
+Each feature is a table of cases (`CASES` in `github_przypadki_skrzynki.py`, `github_przypadki_archiwum.py` and
+`github_przypadki_aktualnosci.py`). A
 case prepares the trial repository through the harness or the client without recording (labels, closing an issue as
 Maks does, deleting one, the 101 issues), calls the client once with recording, and judges the outcome. The expected
-outcome comes from `GLOSSARY.md`, ADR 0007 and 0014 and the docstrings of `report_box`, `keyed_box` and
-`tool_freshness`, never from a run; Aktualność takes its truth from Git (`git ls-remote` and `git log --first-parent`).
+outcome comes from `GLOSSARY.md`, ADR 0007, 0014 and 0015 and the docstrings of `report_box`, `keyed_box`,
+`outbox._deliver_archive` and `tool_freshness`, never from a run; Aktualność takes its truth from Git (`git ls-remote` and `git log --first-parent`).
 The recipes and the expected outcome of each case are in `features/<feature>.md`.
 
 ## Replay
@@ -85,7 +92,8 @@ The recipes and the expected outcome of each case are in `features/<feature>.md`
 .venv/bin/python .agents/skills/verify-github-skrzynki/scripts/github_skrzynki.py odtworz [--feature skrzynka|aktualnosc|wiernosc-atrap|all]
 ```
 
-Offline: every recording in `nagrania/` (`skrzynka-<kind of key>.json` for each key that ran, `aktualnosc.json`)
+Offline: every recording in `nagrania/` (`skrzynka-<kind of key>.json` and `archiwum-<kind of key>.json` for each
+key that ran, `aktualnosc.json`)
 through the same cases with `ReplayTransport` or a replaying `GitHubProxy`. A request the recording does not have, in
 another order or with another body, and a recorded request the client no longer sends, are failures.
 
@@ -107,8 +115,8 @@ another order or with another body, and a recorded request the client no longer 
 Recordings hold method, path without host (uploads keep `uploads.github.com`), SHA-256 and length of the request
 body (no headers, so no key), status, `Link` and the response body cut to the fields the clients read and GitHub's
 error fields (`github_wymiana.KEPT`); texts over 2000 characters become their length and hash. They hold no data of
-Dad's: only synthetic run text, issue numbers and comment ids of the trial repository, and tags and commits of the
-public tool repository.
+Dad's: only synthetic run text, issue numbers, comment, Release and file ids of the trial repositories, and tags and
+commits of the public tool repository.
 
 ## Cleanup
 
@@ -121,9 +129,11 @@ A live run cleans up in its `finally`. By hand, after a run that was killed:
 It deletes only what carries this run's marker: issues whose body has `<!-- verify-github-skrzynki run=<id> -->`
 (GraphQL `deleteIssue`, because a closed issue would stay in the next run's `include_closed` list), labels whose
 description has `verify-github-skrzynki run=<id>`, the label GitHub created for the run's issue (only when the run's
-ledger recorded it and the state before the run did not have it), and Releases with the marker and their tag. It asks
-each issue of the run's ledger directly too, because GitHub's issue list lags behind (see the Skrzynka gotchas), and
-retries until the list matches the state before the run. Then it removes the run directory (`.katalog-runu`) and
+ledger recorded it and the state before the run did not have it), Releases with the marker in their description
+together with their files (only when every file has the run id in its name), and tags named `logi-verify-<id>…`. It
+asks each issue and Release of the run's ledger directly too, because GitHub's lists lag behind (see the Skrzynka
+gotchas), and retries until labels, issues, Releases and tags of both trial repositories match the state before the
+run. Then it removes the run directory (`.katalog-runu`) and
 keeps the evidence. It never cleans by name.
 
 ## When the check fails
@@ -147,8 +157,11 @@ Run it locally only to reproduce a red Mutation checks step or the night's issue
 
 It must end with `MUTACJE OK`: 401 taken as Rejected, 404 not a refusal, 422 not a rejection, the second page of a
 list lost, `include_closed` ignored, the close reason read from `state`, a refused list that does not refuse the key,
-`Link` without its next page, a 404 of compare taken as no answer, any merged PR taken as the tip of `main`, and a
-fake of the deleted issue that answers 410 all end the replay in `VERIFY FAIL`. A mutation reported as `NIEAKTUALNA`
+the second page of the Archiwum's files lost, `remove` of another file, the first Release taken as the Archiwum of the
+tag, a file that arrived read as cut off, the file's label lost, the download link without `/download/`, `Link`
+without its next page, a 404 of compare taken as no answer, any merged PR taken as the tip of `main`, a fake of the
+deleted issue that answers 410 and a fake of a file of the same name that answers 400 all end the replay in `VERIFY
+FAIL`. A mutation reported as `NIEAKTUALNA`
 no longer matches its file: rewrite its anchor against the new code so it breaks the same behaviour again.
 
 ## Helpers

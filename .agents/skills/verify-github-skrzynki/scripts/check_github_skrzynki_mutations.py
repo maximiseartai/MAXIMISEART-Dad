@@ -100,6 +100,73 @@ MUTATIONS = (
         FAIL,
     ),
     Mutation(
+        "zgubiona druga strona listy plików Archiwum",
+        (
+            Edit(
+                BOX,
+                "tuple(asset for asset in map(_asset, assets) if asset is not None)",
+                "tuple(asset for asset in map(_asset, assets[:_PAGE_SIZE]) if asset is not None)",
+            ),
+        ),
+        _replay("archiwum"),
+        "kolejka nie widzi pliku Uruchomienia poza pierwszą setką i wysyła go drugi raz (422, plik czeka)",
+        FAIL,
+    ),
+    Mutation(
+        "remove usuwa inny plik niż ten, który ustępuje",
+        (
+            Edit(
+                BOX,
+                'url=f"{_API}/repos/{REPOSITORY}/releases/assets/{asset_id}",',
+                'url=f"{_API}/repos/{REPOSITORY}/releases/assets/{asset_id + 1}",',
+            ),
+        ),
+        _replay("archiwum"),
+        "Diagnoza kasuje plik innego Uruchomienia, a jej plik dostaje 422",
+        FAIL,
+    ),
+    Mutation(
+        "Archiwum to pierwszy Release z listy, a nie ten z tagiem okresu",
+        (
+            Edit(
+                BOX,
+                "for entry in releases if _tag(entry) == tag), None)",
+                "for entry in releases if _tag(entry) is not None), None)",
+            ),
+        ),
+        _replay("archiwum"),
+        "Logi okresu trafiają do Archiwum innego okresu",
+        FAIL,
+    ),
+    Mutation(
+        "plik, który doszedł, wygląda na urwany",
+        (Edit(BOX, 'entry.get("state") == "uploaded"', 'entry.get("state") == "starter"'),),
+        _replay("archiwum"),
+        "kolejka usuwa i wysyła plik od nowa przy każdej wysyłce",
+        FAIL,
+    ),
+    Mutation(
+        "etykieta pliku zgubiona przy odczycie",
+        (Edit(BOX, 'label if isinstance(label, str) else ""', '""'),),
+        _replay("archiwum"),
+        "kolejka nie zna wersji pliku w Archiwum i podmienia nowszy starszym",
+        FAIL,
+    ),
+    Mutation(
+        "odnośnik do pliku bez /download/",
+        (Edit(BOX, '{REPOSITORY}/releases/download/{urllib.parse.quote(tag)}', '{REPOSITORY}/releases/{urllib.parse.quote(tag)}'),),
+        _replay("archiwum"),
+        "odnośnik w komentarzu Logów prowadzi do strony Archiwum zamiast do pliku",
+        FAIL,
+    ),
+    Mutation(
+        "atrapa pliku tej samej nazwy odpowiada 400 zamiast 422, którym odpowiada GitHub",
+        (Edit(BOX_TESTS, "return self._answer(422, SAME_NAME)", "return self._answer(400, SAME_NAME)"),),
+        _replay("wiernosc-atrap"),
+        "test przechodzi na odpowiedzi, której GitHub nie daje",
+        FAIL,
+    ),
+    Mutation(
         "nagłówek Link bez następnej strony",
         (Edit(FRESHNESS, "return None if found is None else found[1]", "return None"),),
         _replay("aktualnosc"),
