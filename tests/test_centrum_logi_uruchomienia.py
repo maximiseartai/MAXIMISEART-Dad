@@ -3116,6 +3116,43 @@ def test_wpis_konca_ktory_sie_nie_zapisal_usuwa_dziennik_wyceny_z_wynikiem_a_sta
     assert (records(centrum), [logs_json(box, comment)["ending"] for comment in logs_comments(box)]) == ([], ["finished"])
 
 
+def test_wpis_konca_ktory_sie_nie_zapisal_zostawia_dziennik_wyceny_ktorej_logow_kolejka_nie_przyjela_a_start_wysyla_te_logi(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Po rekordzie metryk antywirus trzyma dziennik Wyceny w efenix, więc wpis końca się nie zapisuje, a na miejscu
+    folderu Kolejki wysyłki stoi plik, więc kolejka nie przyjmuje jej Logów z wynikiem. Dziennik zostaje: bez niego
+    komentarz Uruchomienia, którego wersja końcowa nie jest w drodze do Skrzynki, zostałby postępem (#846). Start po
+    naprawie folderu wysyła Logi z wynikiem z pliku, a dziennik znika."""
+
+    queue = tmp_path / "config" / "zgloszenia" / "kolejka"
+    with atrapa_efenix(IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa)
+        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        queue.parent.mkdir(parents=True, exist_ok=True)
+        queue.write_text("", encoding="utf-8")  # plik zamiast folderu: zapis się nie uda
+        metrics = centrum.engines.metrics.efenix
+
+        def after_result(path: Path, mode: str) -> bool:
+            return path.parent.name == "dzienniki-wyceny" and mode == "a" and metrics.exists()
+
+        with _refused(monkeypatch, "open", after_result):
+            assert _start_pricing(centrum).status_code == 200
+            run_id = finished_view(centrum.client)["run"]["id"]
+        centrum.client.stop()
+    [journal] = journals(centrum)
+    entries = [entry["entry"] for entry in journal_entries(journal)]
+    queue.unlink()
+    centrum.restart()
+    assert centrum.client.get("/api/runs/current").status_code == 200
+    box = centrum.surroundings.report_box
+    sent = box.wait_until(lambda fake: len(logs_comments(fake)) == 1)
+    centrum.client.stop()
+
+    assert ("koniec Uruchomienia" in entries, sent, journals(centrum)) == (False, True, [])
+    [comment] = logs_comments(box)
+    assert (logs_json(box, comment)["run_id"], logs_json(box, comment)["ending"]) == (run_id, "finished")
+
+
 class _Unconfirmed:
     """Plik dziennika, którego zapis dysk przyjął (``write`` i ``flush``), ale nie potwierdził: ``fsync`` na jego deskryptorze
     zgłasza błąd wejścia-wyjścia."""
