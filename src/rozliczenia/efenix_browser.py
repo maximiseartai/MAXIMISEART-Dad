@@ -10,8 +10,8 @@ tę samą, którą skrypt wkłada do ``#wyniki``, bo lista po wczytaniu sama szu
 jej odpowiedź trafia do ``#wyniki`` w dowolnej chwili. Kolumny tabeli rozpoznaje po nagłówkach (``Numer dokumentu``,
 ``Status``, ``Wykonawca``, ``Dane adresowe``), tekst komórki bez jej ``<small>`` (identyfikator Fenix, województwo),
 login realizatora z ``small.text-default`` komórki Wykonawca (obok niego w ``<small>`` stoi data), a stronę zlecenia
-otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony albo odpowiedzi daty i ilości na ``page_login.php`` to
-``LoggedOut``. Na szukanie bez tabeli wyników efenix odpowiada samym ostrzeżeniem (``SearchWarning``, pomiar 4.11.2026,
+otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony albo odpowiedzi daty, Wyceny Emmetta i ilości na
+``page_login.php`` to ``LoggedOut``. Na szukanie bez tabeli wyników efenix odpowiada samym ostrzeżeniem (``SearchWarning``, pomiar 4.11.2026,
 #828): „Nie znaleziono pasujących wyników” to brak wyników, a ostrzeżenie o wygasłej sesji to ``LoggedOut``, bo na
 szukanie bez sesji efenix nie przekierowuje. Lista zleceń, której okno nie otworzyło przy starcie (adres nie
 odpowiada), to ``EfenixUnreachable``.
@@ -49,7 +49,13 @@ zakresu efenix, które dzień spoza zakresu zamienia na dzisiejszy. Gdy w polu n
 zamyka kalendarz bez „Potwierdź”; inaczej klika „Potwierdź” i czeka na odpowiedź ``action_set_date_of_instalation.php``.
 Tekstowi ``#data_install`` po niej nie wierzy, bo skrypt efenix wpisuje go przy każdej odpowiedzi. Wycenę Emmetta ładuje przyciskiem
 ``#button_emmett`` i „Załaduj do zlecenia” w ``#dialog_emmett``: czeka na odpowiedź ``action_load_emmett.php`` i na
-przeładowanie strony, które robi skrypt efenix, i czyta stronę od nowa. Ilość wpisuje w polu i naciska Enter, a skrypt
+przeładowanie strony, które robi skrypt efenix, i czyta stronę od nowa. Skrypt przeładowuje ją także wtedy, gdy efenix
+odmówił, a strona bez Wyceny Emmetta wygląda jak pusta Wycena Emmetta, więc o tym, czy Emmett się załadował, mówi
+odpowiedź: sukces to status 2xx bez ``result: nok``, a każda inna to odmowa, po której okno strony nie czyta. Odmowa
+z przekierowaniem na ``page_login.php`` albo z ``result: nok`` to ``LoggedOut``, ze statusem błędu (4xx, 5xx)
+``UnexpectedPage`` ze statusem (``HttpStatus``), a z przekierowaniem gdzie indziej ``UnexpectedPage`` z odpowiedzią w
+budowie, której okno nie zna. Treści odpowiedzi 2xx okno nie sprawdza poza ``result: nok``, bo tej treści efenix nikt
+nie zmierzył. Ilość wpisuje w polu i naciska Enter, a skrypt
 strony zapisuje ją przez ``action_save_index.php``: kwotą końcową jest ``price_all`` z tej odpowiedzi, a ``#cena_all2``,
 które się do niej nie odświeży, to ``UnexpectedPage``. Odpowiedź ``result: nok`` to wygasła sesja (``LoggedOut``).
 
@@ -464,13 +470,25 @@ class BrowserEfenix:
 
     @_action(PagePart.EMMETT)
     def load_emmett(self) -> OrderPricing:
-        """Ładuje Wycenę Emmetta do otwartego zlecenia i czyta stronę po przeładowaniu, które robi skrypt efenix."""
+        """Ładuje Wycenę Emmetta do otwartego zlecenia i czyta stronę po przeładowaniu, które robi skrypt efenix.
+
+        Po odmowie „Załaduj do zlecenia” okno nie czeka na przeładowanie i strony nie czyta: skrypt efenix przeładowuje ją
+        i wtedy, a strona bez Wyceny Emmetta wyglądałaby jak pusta Wycena Emmetta (#877).
+        """
 
         self._click(self._only(_EMMETT_BUTTON, PagePart.EMMETT))
         self._shown(_EMMETT_DIALOG, PagePart.EMMETT)
         load = self._only(f"{_EMMETT_DIALOG} {_OK}", PagePart.EMMETT)
         with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms) as reload:
-            self._answer(_LOAD_EMMETT, lambda _params: True, lambda: self._click(load))
+            answer = self._answer(_LOAD_EMMETT, lambda _params: True, lambda: self._click(load))
+            if _redirected_to_login(answer):
+                raise LoggedOut(PagePart.EMMETT, LoginSign.REDIRECT)
+            if 300 <= answer.status < 400:
+                raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))
+            if not answer.ok:
+                raise UnexpectedPage(PagePart.EMMETT, HttpStatus(answer.status))
+            if _refused(self._text(answer)):
+                raise LoggedOut(PagePart.EMMETT, LoginSign.REFUSED)
         return self._read_order(reload.value)
 
     @_action(PagePart.QUANTITY)
@@ -753,6 +771,16 @@ def _amount(shown: str, part: PagePart) -> Decimal:
 
 def _on_login_page(url: str) -> bool:
     return urlparse(url).path.endswith("/" + LOGIN_PAGE)
+
+
+def _refused(text: str) -> bool:
+    """Treść odpowiedzi efenix to JSON z ``result: nok``."""
+
+    try:
+        answer = json.loads(text)
+    except ValueError:
+        return False
+    return isinstance(answer, dict) and answer.get("result") == "nok"
 
 
 def _redirected_to_login(response: Response) -> bool:

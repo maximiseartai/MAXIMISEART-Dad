@@ -55,6 +55,7 @@ from rozliczenia.efenix_pricing import (
     HttpStatus,
     LoggedOut,
     Login,
+    LoginSign,
     Operation,
     OrderPricing,
     OtherShape,
@@ -84,6 +85,7 @@ from tests.fixtures.atrapa_efenix import (
     AtrapaEfenix,
     AtrapaOrder,
     Changed,
+    EmmettRefusal,
     Outage,
     amount_of,
     atrapa_efenix,
@@ -1662,6 +1664,53 @@ def test_przerwanie_po_zaladuj_do_zlecenia_przed_odczytem_wyceny_emmetta_daje_pr
         "9903": (filled, date(2026, 9, 3), 1),
     }
     assert _marked(source) == [18, 20]
+
+
+@pytest.mark.parametrize(
+    ("refusal", "code", "cause"),
+    [
+        pytest.param(EmmettRefusal.FORBIDDEN, "EFENIX_OKNO_ZATRZYMANE", HttpStatus(403), id="403-bez-zaladowania"),
+        pytest.param(EmmettRefusal.SERVER_ERROR, "EFENIX_OKNO_ZATRZYMANE", HttpStatus(500), id="500-po-zaladowaniu"),
+        pytest.param(EmmettRefusal.ELSEWHERE, "EFENIX_OKNO_ZATRZYMANE", OtherShape(Shape.ANSWER_REDIRECT), id="przekierowanie-na-liste"),
+        pytest.param(EmmettRefusal.LOGGED_OUT, "EFENIX_WYLOGOWANY", LoginSign.REDIRECT, id="przekierowanie-na-logowanie"),
+        pytest.param(EmmettRefusal.NOK, "EFENIX_WYLOGOWANY", LoginSign.REFUSED, id="result-nok"),
+    ],
+)
+def test_odmowa_zaladuj_do_zlecenia_zatrzymuje_wycene_bez_znacznika_i_sladu_a_ponowne_uruchomienie_daje_ostrzezenie_emmetta(
+    tmp_path: Path, page: Page, refusal: EmmettRefusal, code: str, cause: WindowCause
+) -> None:
+    """Zlecenie 2 ma pustą wycenę i Emmetta, który przeczy plikowi w T, a efenix odmawia jego „Załaduj do zlecenia”;
+    skrypt strony i tak ją przeładowuje, a strona bez Wyceny Emmetta wygląda jak pusta Wycena Emmetta (#877).
+
+    Odmowa to Zatrzymanie okna z przyczyną z odpowiedzi efenix: zlecenie 2 nie dostaje ilości z pliku ani Znacznika
+    efenix, a Ślad nie ma jego stanu „Emmett załadowany”. Ponowne uruchomienie po odmowie bez załadowania ładuje Emmetta
+    i kończy zlecenie 2 Ostrzeżeniem Emmetta jak jeden przebieg; po 500, po którym efenix ma już Emmetta poza Śladem, tylko
+    porównuje jego wycenę (#774).
+    """
+
+    orders = [
+        Order("#9701", day=date(2026, 9, 1), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),
+        Order("#9702", day=date(2026, 9, 2), cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"019": 5}),
+    ]
+    source = write_collective_file(tmp_path, orders)
+    in_efenix = [orders[0].in_efenix("971"), replace(orders[1].in_efenix("972"), emmett_refusal=refusal)]
+    with atrapa_efenix(in_efenix) as atrapa:
+        stopped = _run(source, page, atrapa.url)
+        refused = _pricing(atrapa)["9702"]
+        marked = _marked(source)
+        atrapa.log_in()
+        atrapa.edit("9702", lambda order: setattr(order, "emmett_refusal", None))
+        again = _run(source, page, atrapa.url)
+
+    loaded = refusal is EmmettRefusal.SERVER_ERROR
+    assert isinstance(stopped.ending, Stop) and isinstance(stopped.ending.facts, PricingStopped), _ending(stopped)
+    facts = stopped.ending.facts
+    assert (_stop(stopped), _kept(stopped), facts.part, facts.cause) == (code, True, PagePart.EMMETT, cause)
+    assert (refused, marked) == (({"019": 5} if loaded else {}, date(2026, 9, 2), int(loaded)), [18])
+    assert (_errors(again), _marked(source)) == (
+        [("EFENIX_WYCENA_INNA" if loaded else "EFENIX_SPRZECZNOSC_Z_EMMETTEM", "wiersz 19")],
+        [18],
+    )
 
 
 @pytest.mark.parametrize(

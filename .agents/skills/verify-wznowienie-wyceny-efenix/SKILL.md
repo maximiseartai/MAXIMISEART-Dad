@@ -55,7 +55,7 @@ you keep the two in step. Each model action is one indivisible step of this code
 | --- | --- |
 | `Start` | `efenix_pricing.py` `price_orders.save`: `EmmettTrace(trace_file)` reads the trace file once (`_read`, `_read_secret`; a missing or unreadable file or key, or an entry without `entering`, is no trace), then the orders of the scope in order |
 | `Otworz` | `_outcome`: `efenix.search`, `listing`, `open_order`, then the decision on the page: amount 0 goes to Wycena Emmetta; `priced_differently(...) is None` is `Ready`; `emmett is None or ... not as_left_after_emmett(emmett, trace.entered(number), ...)` (`efenix_positions.py`: the page has exactly Emmett's quantities and the quantities the trace has as `entering`, every other position empty) is `OrderError(differs)`; otherwise `_after_emmett` with `to_enter` of the page |
-| `ZaladujEmmetta` | `_outcome`: `efenix.load_emmett()` up to the click of „Załaduj do zlecenia”, after which efenix holds Wycena Emmetta (`efenix_browser.BrowserEfenix.load_emmett`, `_answer(_LOAD_EMMETT, …)`) |
+| `ZaladujEmmetta` | `_outcome`: `efenix.load_emmett()` up to the click of „Załaduj do zlecenia”, after which efenix holds Wycena Emmetta (`efenix_browser.BrowserEfenix.load_emmett`, `_answer(_LOAD_EMMETT, …)`); an answer that refuses it (redirect, 4xx/5xx, `result: nok`) raises before the page is read, so it is `Zatrzymanie` in place of this step and efenix holds no Wycena Emmetta (#877) |
 | `OdczytPoEmmetcie` | `load_emmett` reads the reloaded page (`_read_order`), then `trace.loaded(number, emmett)` (`EmmettTrace.loaded`, `_save`: state „Emmett załadowany” with an empty `entering`); a failed write does not stop |
 | `BrakPozycji` | `_outcome`: `missing_positions(..., PageRead.AFTER_EMMETT)` is `OrderError` after `load_emmett` and before `trace.loaded` |
 | `Zapowiedz` | `_entered`: `trace.entering(number, position, quantity)` (`EmmettTrace.entering`, `_save`) before each `enter_quantity`; when it returns `False`, `StopError(messages.emmett_trace_not_saved(...))` without the quantity, and `save` (`except StopError`) calls `_mark` |
@@ -79,7 +79,7 @@ classification of other failures) does not move the model. A change that makes a
 write the trace file or decide whether an order is finished does, though no definition above changes: add it to the
 table and to `DEFINITIONS`.
 
-Sync commit: `dde575566` (2026-11-05, the fix of #864 and #865). Every row of the table was checked against the
+Sync commit: `ba0b16db8` (2026-11-05, #877). Since `dde575566` only `load_emmett` changed: a refused „Załaduj do zlecenia” now stops before the page is read instead of reading the reloaded page as an empty Wycena Emmetta, which is the `Zatrzymanie` the model already has in place of `ZaladujEmmetta`; the model did not change and the check gave `WZNOWIENIE WYCENY OK, ZNANE ZNALEZISKA: 11` at it. At `dde575566` (the fix of #864 and #865) every row of the table was checked against the
 code at this commit, and each path below was replayed on that code with the Atrapa efenix. The model gained the write
 ahead of each quantity (`Zapowiedz`), its withdrawal after `LoggedOut` (`Odmowa`), the strict `JakPoEmmetcie` and a
 third position, because the code now records each quantity in the trace before efenix can save it, and with one
