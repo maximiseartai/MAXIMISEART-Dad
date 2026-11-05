@@ -1,6 +1,6 @@
 ---
 name: verify-wycena-efenix
-description: Exhaustively break each request of a real Wycena w efenix (the window `efenix_browser.window` in Playwright's Chromium on the Atrapa efenix, behind a fault proxy) with every kind of fault (network cut, torn, stalled or slow; HTTP 4xx and 5xx; logout; redirect; a hung answer; an answer just before or after the window's time limit; the login page under an order address; a closed tab; Dad's login wait; the tool killed) and check the Zatrzymanie's cause and Komunikat, the efenix state, the Znaczniki efenix, the Logi and the Ślad Wyceny Emmetta, and what a killed tool leaves. Use when a change touches `efenix_browser`, `efenix_pricing`, `efenix_emmett_trace`, `efenix_marking` or another `efenix_*` module, the Dziennik Wyceny w efenix, the Atrapa efenix, or when `explore_wycena_efenix.py` or the explorer tests in `tests/test_centrum_logi_uruchomienia.py` fail.
+description: Exhaustively break each request of a real Wycena w efenix (the window `efenix_browser.window` in Playwright's Chromium on the Atrapa efenix, behind a fault proxy) with every kind of fault (network cut, torn, stalled or slow; HTTP 4xx and 5xx; logout; redirect; a „Załaduj do zlecenia” refused with a 200 answer; a hung answer; an answer just before or after the window's time limit; the login page under an order address; a closed tab; Dad's login wait; the tool killed) and check the Zatrzymanie's cause and Komunikat, the efenix state, the Znaczniki efenix, the Logi and the Ślad Wyceny Emmetta, and what a killed tool leaves. Use when a change touches `efenix_browser`, `efenix_pricing`, `efenix_emmett_trace`, `efenix_marking` or another `efenix_*` module, the Dziennik Wyceny w efenix, the Atrapa efenix, or when `explore_wycena_efenix.py` or the explorer tests in `tests/test_centrum_logi_uruchomienia.py` fail.
 pilnuje:
   - src/rozliczenia/efenix_*.py
   - src/rozliczenia/centrum/pricing_journal.py
@@ -17,9 +17,9 @@ ci-czesci: 8
 
 CI runs `explore_wycena_efenix.py` (the `ci:` key) in Mutation checks whenever a change touches this skill, in up to
 `ci-czesci` parts: part k of n (`MUTACJE_CZESC=k/n`) runs the run without a fault and the k-th of n consecutive slices
-of the cases (`--lista` prints them). The whole space (463 cases then, now 464 with `LOGIN_ERROR`; 35 of them kills
-checked on the reference's states) took 396 s on Maks's Mac with 4 browsers under a load of 10 to 17, and parts 1/8,
-5/8 and 8/8 took 45 s, 61 s and 63 s (2026-11-05, reports in `~/.t3/notes/verify-wycena-efenix/r4-podzial/`); windows-latest is about 3 times slower
+of the cases (`--lista` prints them). The whole space (466 cases, 35 of them kills checked on the reference's states)
+took 485 s on Maks's Mac with 4 browsers under a load of 5 to 9, and the 8 parts, four at a time under a load of 8 to 14,
+took 57 to 75 s each (2026-11-05, reports in `~/.t3/notes/verify-wycena-efenix/r5/`); windows-latest is about 3 times slower
 (`tools/lib/zakres_runu.py`), so a part takes about 3 min there. A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`.
 `tests/test_centrum_logi_uruchomienia.py` runs one small scope through every phase in pytest. `check_wycena_efenix_mutations.py`
@@ -43,7 +43,11 @@ from these sentences, never from a run:
   of efenix (4xx, 5xx) the window waits for is `HttpStatus` (#808, #878), a logout or a login form under the order
   address is a logout, a closed tab is `WindowClosed` „cokolwiek zgłosił wtedy Playwright”, a tab closed while the
   window waits for Dad's login is a closed window at once (#758), and an error page of the list after his login is
-  `HttpStatus` at once (#891). Only a page efenix really sent in another shape (a redirect elsewhere) may be a shape.
+  `HttpStatus` at once (#891). A „Załaduj do zlecenia” efenix answers with 200 and `result: nok` in a valid session
+  leaves the reloaded page with amount 0 after an Emmett dialog that showed a proposal, which is
+  `Shape.EMMETT_NOT_LOADED`, a Zatrzymanie of the window and not a logout („Strona z kwotą 0 po oknie Emmetta, które
+  coś pokazało, to `UnexpectedPage` z `Shape.EMMETT_NOT_LOADED`”, #889); an expired session there stays a logout. Only
+  a page efenix really sent in another shape (a redirect elsewhere) may be a shape.
   The Zatrzymanie after a failed write of the Ślad ahead of a quantity (`EFENIX_SLAD_NIEZAPISANY`, with the facts of
   the Wycena and `AheadNotSaved`) is never the cause of a fault in efenix, because no fault of this checker touches
   the disk. A run that does not stop ends like the reference or leaves the faulted order to Dad (a date efenix did
@@ -72,7 +76,8 @@ The second Uruchomienie after a stop, with and without Dad's changes in efenix, 
 No server to keep: each run starts its own Atrapa efenix (`tests/fixtures/atrapa_efenix.py`) and proxy
 (`scripts/awarie_efenix.py`) on free ports of `127.0.0.1`, and each worker its own headless Chromium of Playwright.
 The scenario is two synthetic orders (`file_orders()`): order 1 (row 18) ends gotowe after the date, Emmett and two
-quantities; order 2 (row 19) ends with an Ostrzeżenie Emmetta. The window's time limit is 3 s and the login wait 4 s.
+quantities; order 2 (row 19) ends with an Ostrzeżenie Emmetta. The window's time limit is 4 s (3 s and the 1 s reload after „Załaduj do zlecenia”, which it
+waits for in the same limit) and the login wait 4 s.
 The Atrapa reloads the page 1 s after „Załaduj do zlecenia”, as efenix does (`EFENIX_EMMETT_RELOAD_MS`), not after the
 200 ms of its tests.
 
@@ -92,7 +97,9 @@ The Atrapa reloads the page 1 s after „Załaduj do zlecenia”, as efenix does
 ```
 
 - `--variant`: `odciecia`, `odpowiedzi`, `granica-czasu`, `zamkniete-okno`, `logowanie`, `zabity-proces`, or `all`
-  (default). The map in `features/` describes each axis.
+  (default). The map in `features/` describes each axis. An answer just before the window's time limit to „Załaduj do
+  zlecenia”, to the page reloaded after it or to that page's files comes earlier by the 1 s reload (`early_s`), because
+  the window waits for all of them in one time limit; at „Załaduj do zlecenia” it ends like the run without a fault.
 - `--rola`: the request roles of `Role` (`strona-zlecenia`, `zaladuj-do-zlecenia`, `ilosc`, …).
 - `--lista` prints the cases of this part (`MUTACJE_CZESC`) without a browser; `--zostaw-run` keeps the run files.
 - The last line is the verdict: `WYCENA EFENIX OK`, `WYCENA EFENIX: NOWE NARUSZENIE (n)`, `WYCENA EFENIX: LUKA MODELU
@@ -128,9 +135,8 @@ that very case ends with `ZNALEZISKO ZNIKNĘŁO`, naming the cases, also while t
 (a fix of the list only). Narrow the entry there and here to the cases after which it still shows, or delete it. A name outside the space is `LUKA MODELU`. A `flaky` one (a race) names none and never reports
 that; its match is the race's exact shape, so any other outcome of the same fault is a new violation.
 
-| Name | Counterexample | Story |
-|---|---|---|
-| `odczyt-tresci-po-przeladowaniu` (flaky, #895) | `HUNG przy GET css/efenix.css #8 [plik-strony-po-emmetcie]` and `LATE_AFTER przy GET js/page_order_edit.js #5 [plik-strony-po-dacie]` on windows-latest (run 41963463871, part 2/2 on 2026-11-05): `EFENIX_OKNO_ZATRZYMANE (EMMETT, BrowserFailure(Error, ANSWER))` at order 1 right after `action_load_emmett.php` and the reload `page_order_edit.php #3`, before the faulted request was sent | `load_emmett` reads the body of the answer to „Załaduj do zlecenia” (since #882), and when the reload the efenix script starts after it comes first, Chromium has dropped that body (`Response.text`: „Network.getResponseBody: No resource with given identifier found”); a read 0.3 s late breaks it on the 200 ms reload of the Atrapa's tests, so the explorer's Atrapa reloads after 1 s, as efenix does. Excused only as exactly this cause, at `EMMETT`, in a first run whose faulted request never reached the proxy and whose fault is not one the browser makes (a closed tab, Dad's login), so any other cause, or this one after a fault, stays a new violation; the run without a fault stays strict, so a read after the reload at every Emmett fails it. |
+None today. The race of #895 (the answer of „Załaduj do zlecenia” read after the reload dropped it) ended with #899:
+the window no longer reads that answer, and no entry excuses it.
 
 ## When the check fails
 
@@ -160,8 +166,11 @@ Each gives `WYCENA EFENIX: NOWE NARUSZENIE`:
 - #758: a tab closed during Dad's login wait not seen until the wait ends;
 - #891: an error page of the list after Dad's login read as more waiting for his login;
 - a tab closed during the window's action not seen at all (`_action` without its closed check);
-- #895: the answer of „Załaduj do zlecenia” read after the reload at every Emmett, which the race entry
-  `odczyt-tresci-po-przeladowaniu` must not excuse;
+- #895: the answer of „Załaduj do zlecenia” read after the reload at every Emmett;
+- #889: amount 0 after „Załaduj do zlecenia” always read as Emmett proposing nothing, so a refusal with 200
+  `result: nok` lets the window enter the file's quantities without Emmett;
+- the window waiting for the reload after „Załaduj do zlecenia” 1 s shorter than for its answer, which only the answer
+  just before the time limit meets;
 - a „zaczynam” entry of the dziennik written only after the window's actions at an order;
 - the window clicking Przekazanie do akceptacji; the Ślad keyed by the order number; a Komunikat that always says
   nothing changed; a Zatrzymanie without the Znaczniki of orders gotowe before it.

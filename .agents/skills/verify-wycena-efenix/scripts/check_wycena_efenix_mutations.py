@@ -1,6 +1,6 @@
 """Show that explore_wycena_efenix.py fails on broken variants of the Wycena w efenix, the defects of #802, #808, #758,
-#891 and #895 at every „Załaduj do zlecenia”, a closed tab not seen in the window's action and a dziennik that names an
-order only after the window changed it among them.
+#891, #895 at every „Załaduj do zlecenia” and #889, a reload waited for shorter than its answer, a closed tab not seen in
+the window's action and a dziennik that names an order only after the window changed it among them.
 
 Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) with the axes and request roles that reach it,
 one browser at a time, and must end the checker's report with the expected line. A mutation whose anchor text is no
@@ -43,7 +43,7 @@ MUTATIONS = (
     ),
     Mutation(
         "#808: strona przeładowana po Wycenie Emmetta czytana bez jej odpowiedzi",
-        (Edit(BROWSER, "        return self._read_order(reload.value)\n", "        return self._read_order(None)\n"),),
+        (Edit(BROWSER, "        loaded = self._read_order(reload.value)\n", "        loaded = self._read_order(None)\n"),),
         explorer("odpowiedzi", "strona-po-emmetcie"),
         "błąd serwera po „Załaduj do zlecenia” wygląda jak zmieniony efenix",
         NEW,
@@ -131,12 +131,35 @@ MUTATIONS = (
         (
             Edit(
                 BROWSER,
-                "            if _refused(self._text(answer)):\n",
-                "            self._page.wait_for_timeout(1500)\n            if _refused(self._text(answer)):\n",
+                "                raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))\n        loaded = ",
+                "                raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))\n"
+                "            self._page.wait_for_timeout(1500)\n"
+                "            self._text(answer)\n"
+                "        loaded = ",
             ),
         ),
         explorer("odpowiedzi", "zaladuj-do-zlecenia"),
-        "każda Wycena staje na pierwszym Emmetcie, a wpis wyścigu odczyt-tresci-po-przeladowaniu tego nie wybacza",
+        "każda Wycena staje na pierwszym Emmetcie, choć efenix załadował Wycenę Emmetta",
+        NEW,
+    ),
+    Mutation(
+        "#889: kwota 0 po „Załaduj do zlecenia” zawsze znaczy, że Emmett nic nie zaproponował",
+        (Edit(BROWSER, "        if proposed is not False and loaded.amount == 0:\n", "        if False and loaded.amount == 0:\n"),),
+        explorer("odpowiedzi", "zaladuj-do-zlecenia"),
+        "efenix odmówił Wyceny Emmetta, a okno wpisuje ilości pliku do zlecenia bez Emmetta",
+        NEW,
+    ),
+    Mutation(
+        "okno czeka na przeładowanie po „Załaduj do zlecenia” o sekundę krócej niż na odpowiedź",
+        (
+            Edit(
+                BROWSER,
+                'self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms) as reload:',
+                'self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms - 1000) as reload:',
+            ),
+        ),
+        explorer("granica-czasu", "zaladuj-do-zlecenia"),
+        "efenix odpowiada wolno, ale w czasie okna, a Wycena staje na Emmetcie",
         NEW,
     ),
     Mutation(

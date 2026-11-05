@@ -17,9 +17,10 @@ The invariants (``Rule``), each with the domain sentence it comes from:
 - PRZYCZYNA: a Zatrzymanie names the fault the way the docstrings of ``efenix_browser`` and ``efenix_pricing.StopCause``
   sort it, at the order of the faulted request: a broken network or a late answer is a browser failure with a named
   operation (or ``EfenixUnreachable`` before the list opened), an error page of the order page is ``HttpStatus``, a
-  login is ``LoggedOut``, a closed tab is ``WindowClosed``; only a page efenix really sent in another shape may be a
-  shape (``ElementCount``, ``OtherShape``). A run that does not stop ends like the reference, or leaves the faulted
-  order to Dad; it never makes another order gotowe than the reference does.
+  login is ``LoggedOut``, a closed tab is ``WindowClosed``, a „Załaduj do zlecenia” efenix answered with 2xx without
+  loading Emmett is ``Shape.EMMETT_NOT_LOADED``; only a page efenix really sent in another shape may be a shape
+  (``ElementCount``, ``OtherShape``). A run that does not stop ends like the reference, or leaves the faulted order to
+  Dad; it never makes another order gotowe than the reference does.
 - BEZ_ZMIANY_STATUSU: the window never changes an order's status and never clicks a button outside its list.
 - ZMIANA_ZE_SLADEM: every order that changed in efenix has the action that changed it in its trace in the result or the
   Zatrzymanie (and a ``begun`` entry in the dziennik), a Komunikat that says nothing changed is true, the Znaczniki
@@ -78,7 +79,6 @@ from rozliczenia.efenix_pricing import (
     Login,
     LoginSign,
     OrderError,
-    Operation,
     OrderResult,
     OtherShape,
     PagePart,
@@ -87,7 +87,6 @@ from rozliczenia.efenix_pricing import (
     Ready,
     Settled,
     Shape,
-    StopCause,
 )
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.message import Message
@@ -100,8 +99,12 @@ from tests.fixtures.interlocutor import Tata
 from tests.fixtures.settlement import PERIOD
 
 VERDICT: Final = "WYCENA EFENIX"
-LIMIT_MS: Final = 3_000
-"""The window's time limit in the checker, as in the sweep of ``tests/test_wycena_efenix.py``."""
+LIMIT_MS: Final = 3_000 + EFENIX_EMMETT_RELOAD_MS
+"""The window's time limit in the checker: the 3 s of the sweep of ``tests/test_wycena_efenix.py`` and the reload the
+efenix script makes after „Załaduj do zlecenia”, which the window waits for in the same time limit as its answer, so an
+answer to it just before the limit (``early_s``) comes as late as one to any other request."""
+EARLY_S: Final = 0.6
+"""How long before the end of the window's wait an answer ``Fault.LATE_BEFORE`` comes (``Plan.early_s``)."""
 RETRIES: Final = 3
 """Runs again a case whose fault the browser side did not inject (``Run.injected``) at most this many times."""
 CLOSE_WAIT_MS: Final = 5_000
@@ -263,6 +266,7 @@ class Cause(enum.Enum):
     LOGIN = "wylogowanie (LoggedOut albo formularz logowania)"
     CLOSED = "zamknięte okno (WindowClosed)"
     SHAPE = "strona w innej budowie (ElementCount, OtherShape)"
+    NOT_LOADED = "efenix nie załadował Wyceny Emmetta po odpowiedzi 2xx (OtherShape EMMETT_NOT_LOADED)"
     UNNAMED = "błąd przeglądarki bez nazwanego działania"
     TRACE = "Ślad Wyceny Emmetta nie zapisał ilości z wyprzedzeniem (EFENIX_SLAD_NIEZAPISANY)"
 
@@ -310,7 +314,13 @@ def _expected(fault: Fault, call: Call, role: Role) -> Expect:
     comes; a tab closed while the window waits for Dad's login is a closed window at once (``Closed.DURING_LOGIN``,
     #758), and a login in that time lets the run go on. The answer to the list's own search goes into the page
     (``efenix_browser``: „jej odpowiedź trafia do #wyniki w dowolnej chwili”), so a redirect that puts the list page
-    there may give the list another shape."""
+    there may give the list another shape. A „Załaduj do zlecenia” efenix answers with 200 and ``result: nok`` in a
+    valid session leaves the order without Wycena Emmetta, and the window tells it from the reloaded page, not from the
+    answer it never reads: amount 0 after an Emmett dialog that showed a proposal is ``Shape.EMMETT_NOT_LOADED``, a
+    Zatrzymanie of the window, not a logout (``efenix_browser``: „Strona z kwotą 0 po oknie Emmetta, które coś
+    pokazało, to UnexpectedPage z Shape.EMMETT_NOT_LOADED”); an expired session stays a logout. An answer to „Załaduj
+    do zlecenia” just before the end of the window's wait, which includes the reload the efenix script makes after it
+    (``early_s``), ends like the reference: the window waits for the answer and the reload within its time limit."""
 
     start = {Cause.UNREACHABLE} if role in _START else set()
     style = call.path.endswith(".css")
@@ -321,6 +331,8 @@ def _expected(fault: Fault, call: Call, role: Role) -> Expect:
             return Expect(frozenset({Cause.TIMEOUT, *start}))
         case Fault.HUNG | Fault.LATE_AFTER:
             return Expect(frozenset({Cause.TIMEOUT, *start}), same=role is Role.BY_LIST)
+        case Fault.LATE_BEFORE if role is Role.LOAD:
+            return Expect(same=True)
         case Fault.LATE_BEFORE:
             return Expect(frozenset({Cause.TIMEOUT, *start}), same=True)
         case Fault.HTTP_4XX | Fault.HTTP_5XX:
@@ -353,6 +365,8 @@ def _expected(fault: Fault, call: Call, role: Role) -> Expect:
             return Expect(other)
         case Fault.LOGIN_PAGE:
             return Expect(frozenset({Cause.LOGIN}))
+        case Fault.REFUSED:
+            return Expect(frozenset({Cause.NOT_LOADED}))
         case Fault.TAB_CLOSED | Fault.LOGIN_CLOSED:
             return Expect(frozenset({Cause.CLOSED}))
         case Fault.LOGIN_LATER:
@@ -387,11 +401,15 @@ PARTS: Final[Mapping[Role, frozenset[PagePart]]] = {
 
 def applies(fault: Fault, role: Role) -> bool:
     """A login page without a redirect comes only instead of an order page (#808: efenix shows its login form there),
-    and Dad meets the login only when the window opens the list."""
+    Dad meets the login only when the window opens the list, and efenix refuses with 200 ``result: nok`` the „Załaduj do
+    zlecenia” (#889, ``EmmettRefusal.NOK`` of the Atrapa); a ``result: nok`` of the quantity save is the expired
+    session, which ``LOGGED_OUT`` gives there."""
 
     match fault:
         case Fault.LOGIN_PAGE:
             return role in _ORDER_PAGES
+        case Fault.REFUSED:
+            return role is Role.LOAD
         case Fault.LOGIN_LATER | Fault.LOGIN_CLOSED | Fault.LOGIN_ERROR:
             return role is Role.LIST_START
         case _:
@@ -400,6 +418,25 @@ def applies(fault: Fault, role: Role) -> bool:
 
 TRACE_NOT_SAVED: Final = "EFENIX_SLAD_NIEZAPISANY"
 """Komunikat of the Zatrzymanie after a failed write ahead of a quantity (``efenix_messages.emmett_trace_not_saved``)."""
+
+
+_RELOAD_WAIT = {Role.LOAD, Role.RELOADED, Role.RELOADED_FILE}
+"""Requests the window waits for in the time limit of „Załaduj do zlecenia”, which runs from its click to the end of the
+reload (``efenix_browser.load_emmett``: ``expect_navigation`` around the answer)."""
+
+
+def early_s(role: Role) -> float:
+    """How long before the window's time limit an answer ``LATE_BEFORE`` to a request of ``role`` comes: the answer to
+    „Załaduj do zlecenia”, the reloaded page and its files share one time limit with the reload the efenix script starts
+    1 s after that answer (``EFENIX_EMMETT_RELOAD_MS``), so their answer comes earlier by the reload."""
+
+    return EARLY_S + (EFENIX_EMMETT_RELOAD_MS / 1000 if role in _RELOAD_WAIT else 0)
+
+
+def plan_of(case: Case | None) -> Plan:
+    if case is None:
+        return Plan(limit_s=LIMIT_MS / 1000, early_s=EARLY_S)
+    return Plan(case.fault, case.call, LIMIT_MS / 1000, early_s=early_s(case.role))
 
 
 def classify(facts: PricingStopped, code: str) -> Cause:
@@ -419,6 +456,8 @@ def classify(facts: PricingStopped, code: str) -> Cause:
             return Cause.HTTP
         case OtherShape(shape=Shape.LOGIN_FORM):
             return Cause.LOGIN
+        case OtherShape(shape=Shape.EMMETT_NOT_LOADED):
+            return Cause.NOT_LOADED
         case BrowserFailure(operation=None):
             return Cause.UNNAMED
         case BrowserFailure() if code == "EFENIX_NIEDOSTEPNY":
@@ -473,9 +512,7 @@ def code_of(facts: PricingStopped) -> str:
 
 @dataclass(frozen=True)
 class Violation:
-    """A broken invariant ``rule`` in ``case``; ``tag`` names the kind of break for known findings,
-    ``cause`` and ``part`` the cause and page part of the Zatrzymanie it broke at, if any, and ``fault_sent`` whether
-    the faulted request reached efenix before the run ended (``False``: the fault never happened)."""
+    """A broken invariant ``rule`` in ``case``; ``tag`` names the kind of break for known findings."""
 
     rule: str
     tag: str
@@ -483,9 +520,6 @@ class Violation:
     detail: str
     fault: Fault | None = None
     role: Role | None = None
-    cause: StopCause | None = None
-    part: PagePart | None = None
-    fault_sent: bool = True
 
 
 @dataclass(frozen=True)
@@ -505,39 +539,7 @@ class Known:
             raise ValueError(f"znane ustalenie {self.name} nazywa przypadki, po których występuje, albo jest flaky")
 
 
-def _body_read_after_reload(violation: Violation) -> bool:
-    """#895: the window reads the answer of „Załaduj do zlecenia” after the efenix script has begun to reload the page,
-    Chromium has dropped that body, and ``Response.text`` raises Playwright's plain ``Error`` („Network.getResponseBody:
-    No resource with given identifier found”), named ``BrowserFailure(Error, ANSWER)`` at ``EMMETT`` (``load_emmett``
-    reads the body inside the reload since #882). Excused only as exactly this cause in a first run whose faulted
-    request never reached efenix, so no fault took part in the stop; a fault the browser makes itself (a closed tab,
-    Dad's login) is never excused, because its request may not reach the proxy at all. The run without a fault stays
-    strict, so a regression that gives this cause at every „Załaduj do zlecenia” fails it."""
-
-    cause = violation.cause
-    return (
-        violation.rule == "PRZYCZYNA"
-        and not violation.fault_sent
-        and violation.fault is not Fault.TAB_CLOSED
-        and violation.fault not in DAD_LOGINS
-        and violation.part is PagePart.EMMETT
-        and isinstance(cause, BrowserFailure)
-        and cause.error_type.rpartition(".")[2] == "Error"
-        and cause.operation is Operation.ANSWER
-    )
-
-
-KNOWN_FINDINGS: Final[tuple[Known, ...]] = (
-    Known(
-        "odczyt-tresci-po-przeladowaniu",
-        "okno czyta treść odpowiedzi „Załaduj do zlecenia” (action_load_emmett.php, #882) po jej końcu, a skrypt efenix "
-        "przeładowuje stronę sam 1 s po tej odpowiedzi: gdy odczyt przyjdzie po przeładowaniu, Chromium nie ma już tej "
-        "treści i Wycena zatrzymuje się na Emmetcie z BrowserFailure(Error, ANSWER) bez żadnej awarii (#895)",
-        _body_read_after_reload,
-        after=(),
-        flaky=True,
-    ),
-)
+KNOWN_FINDINGS: Final[tuple[Known, ...]] = ()
 # --- Observing a run -------------------------------------------------------------------------------------------
 
 
@@ -692,14 +694,12 @@ class Place:
     def journal(self) -> Path:
         return self.root / "dziennik.jsonl"
 
-    def prepare(self, disk: Disk) -> None:
-        """The files ``disk`` left, with a new dziennik, as each Uruchomienie has its own."""
+    def prepare(self, source: bytes) -> None:
+        """The Plik zbiorczy ``source`` without a Ślad and with an empty dziennik, as before the first Uruchomienie."""
 
         self.source.parent.mkdir(parents=True)
-        self.source.write_bytes(disk.source)
+        self.source.write_bytes(source)
         self.traces.mkdir()
-        for name, content in disk.traces.items():
-            (self.traces / name).write_bytes(content)
         self.journal.write_bytes(b"")
 
     def disk(self, orders: Sequence[AtrapaOrder]) -> Disk:
@@ -733,21 +733,14 @@ def logs_text(outcome: Outcome[PricingSummary] | None, journal: bytes, traces: M
     return "\n".join(parts)
 
 
-def run_once(
-    browser: Browser,
-    place: Place,
-    orders: Sequence[AtrapaOrder],
-    plan: Plan,
-    *,
-    snapshots: bool = False,
-) -> Run:
-    """One Uruchomienie on a new Atrapa with ``orders`` behind the proxy with ``plan``, on the files in ``place``.
+def run_once(browser: Browser, place: Place, plan: Plan, *, snapshots: bool = False) -> Run:
+    """One Uruchomienie on a new Atrapa with ``efenix_orders()`` behind the proxy with ``plan``, on the files in ``place``.
 
     The Atrapa reloads the page after „Załaduj do zlecenia” as late as efenix does (``EFENIX_EMMETT_RELOAD_MS``), not
     as early as its tests do, so the window meets that reload when it would at Dad's."""
 
     taken: dict[str, Disk] = {}
-    with atrapa_efenix(orders, emmett_reload_ms=EFENIX_EMMETT_RELOAD_MS) as atrapa:
+    with atrapa_efenix(efenix_orders(), emmett_reload_ms=EFENIX_EMMETT_RELOAD_MS) as atrapa:
 
         def snapshot(moment: str) -> Callable[[Call], None]:
             def take(call: Call) -> None:
@@ -942,8 +935,8 @@ def _changes(before: Priced, after: Priced) -> set[str]:
     return needed
 
 
-def common_checks(name: str, run: Run, before: Sequence[Priced], extra: Mapping[str, object]) -> list[Violation]:
-    """BEZ_ZMIANY_STATUSU, ZMIANA_ZE_SLADEM and BEZ_DANYCH of any run, with ``before`` the state it started from."""
+def common_checks(name: str, run: Run, extra: Mapping[str, object]) -> list[Violation]:
+    """BEZ_ZMIANY_STATUSU, ZMIANA_ZE_SLADEM and BEZ_DANYCH of any run, which starts from ``INITIAL``."""
 
     found: list[Violation] = []
 
@@ -955,11 +948,11 @@ def common_checks(name: str, run: Run, before: Sequence[Priced], extra: Mapping[
         add("BEZ_ZMIANY_STATUSU", "status", f"zmiany statusu {run.status_changes}, kliknięcia spoza listy {run.forbidden_clicks}")
     if outside := sorted({call.path for call in run.calls} - ALLOWED_PATHS):
         add("BEZ_ZMIANY_STATUSU", "żądanie spoza listy", f"okno wysłało żądania spoza listy dozwolonych: {', '.join(outside)}")
-    if [state.status for state in after] != [state.status for state in before]:
+    if [state.status for state in after] != [state.status for state in INITIAL]:
         add("BEZ_ZMIANY_STATUSU", "status", f"status zlecenia zmienił się: {[str(state) for state in after]}")
     steps = _steps(run.outcome)
     begun = Journal.begun_rows(run.after.journal.decode("utf-8", "replace"))
-    for index, (was, now) in enumerate(zip(before, after, strict=True)):
+    for index, (was, now) in enumerate(zip(INITIAL, after, strict=True)):
         if was == now:
             continue
         missing = _changes(was, now) - steps.get(index, set())
@@ -974,7 +967,7 @@ def common_checks(name: str, run: Run, before: Sequence[Priced], extra: Mapping[
             add("ZMIANA_ZE_SLADEM", "zmiana bez dziennika", f"zlecenie {index + 1} zmieniło się w efenix bez wpisu „zaczynam” w dzienniku")
     outcome = run.outcome
     if outcome is not None:
-        if isinstance(outcome.ending, Stop) and "W efenix nic się nie zmieniło." in outcome.ending.message.what and tuple(after) != tuple(before):
+        if isinstance(outcome.ending, Stop) and "W efenix nic się nie zmieniło." in outcome.ending.message.what and tuple(after) != INITIAL:
             add("ZMIANA_ZE_SLADEM", "komunikat bez zmian", "Komunikat mówi, że w efenix nic się nie zmieniło, a zmieniło się")
         outcomes = _outcomes(_summary(outcome))
         ready = tuple(sorted(FIRST_ROW + index for index, name in outcomes.items() if name == "gotowe"))
@@ -1055,12 +1048,10 @@ def check_first(case: Case, run: Run) -> list[Violation]:
     """PRZYCZYNA, BEZ_WYJATKU and the common checks of a run with ``case``."""
 
     extra: dict[str, object] = {"fault": case.fault, "role": case.role}
-    found = common_checks(case.name, run, INITIAL, extra)
+    found = common_checks(case.name, run, extra)
 
-    sent = case.call in run.calls
-
-    def add(rule: str, tag: str, detail: str, cause: StopCause | None = None, part: PagePart | None = None) -> None:
-        found.append(Violation(rule, tag, case.name, detail, case.fault, case.role, cause=cause, part=part, fault_sent=sent))
+    def add(rule: str, tag: str, detail: str) -> None:
+        found.append(Violation(rule, tag, case.name, detail, case.fault, case.role))
 
     if run.error is not None or run.outcome is None:
         add("BEZ_WYJATKU", "wyjątek", f"Uruchomienie skończyło się wyjątkiem: {run.error}")
@@ -1082,7 +1073,7 @@ def check_first(case: Case, run: Run) -> list[Violation]:
             if expect.left:
                 allowed.append("zlecenie zostawione tacie")
             add("PRZYCZYNA", f"{cause.name} zamiast {'/'.join(sorted(item.name for item in expect.stops)) or 'wyniku'}",
-                f"{shown}: {cause.value}; oczekiwane: {'; '.join(allowed)}", facts.cause, facts.part)
+                f"{shown}: {cause.value}; oczekiwane: {'; '.join(allowed)}")
         unreachable = facts is not None and isinstance(facts.cause, BrowserFailure) and facts.stopped_at is None
         codes = {code_of(facts)} | ({"EFENIX_NIEDOSTEPNY"} if unreachable else set())
         if code not in codes:
@@ -1090,12 +1081,10 @@ def check_first(case: Case, run: Run) -> list[Violation]:
         rows = {FIRST_ROW + case.order} | ({None} if case.role in _START else set())
         row = None if facts.stopped_at is None else facts.stopped_at.row
         if row not in rows:
-            add("PRZYCZYNA", "wiersz", f"{shown} przy wierszu {row}, a awaria dotyczy zlecenia z wiersza {FIRST_ROW + case.order}",
-                facts.cause, facts.part)
+            add("PRZYCZYNA", "wiersz", f"{shown} przy wierszu {row}, a awaria dotyczy zlecenia z wiersza {FIRST_ROW + case.order}")
         one_answer = case.fault not in OUTAGES and case.fault not in LOGOUTS
         if one_answer and facts.part is not None and facts.part not in PARTS[case.role]:
-            add("PRZYCZYNA", "część strony", f"{shown}: część {facts.part.name}, a {case.role.value} to {sorted(part.name for part in PARTS[case.role])}",
-                facts.cause, facts.part)
+            add("PRZYCZYNA", "część strony", f"{shown}: część {facts.part.name}, a {case.role.value} to {sorted(part.name for part in PARTS[case.role])}")
         return found
     outcomes = _outcomes(run.outcome.view)
     after = run.after.state
@@ -1133,13 +1122,13 @@ def cases(variants: Sequence[str], roles: Sequence[str] | None) -> list[Case]:
 
 AXES: Final[Mapping[str, tuple[Fault, ...]]] = {
     "odciecia": (Fault.CUT, Fault.TORN, Fault.STALLED, Fault.SLOW),
-    "odpowiedzi": (Fault.HTTP_4XX, Fault.HTTP_5XX, Fault.LOGGED_OUT, Fault.REDIRECT, Fault.HUNG, Fault.LOGIN_PAGE),
+    "odpowiedzi": (Fault.HTTP_4XX, Fault.HTTP_5XX, Fault.LOGGED_OUT, Fault.REDIRECT, Fault.REFUSED, Fault.HUNG, Fault.LOGIN_PAGE),
     "granica-czasu": (Fault.LATE_BEFORE, Fault.LATE_AFTER),
     "zamkniete-okno": (Fault.TAB_CLOSED,),
     "logowanie": (Fault.LOGIN_LATER, Fault.LOGIN_CLOSED, Fault.LOGIN_ERROR),
     "zabity-proces": (Fault.KILLED,),
 }
-"""Fault axes, the ``--variant`` names; second runs with Dad's changes follow every axis."""
+"""Fault axes, the ``--variant`` names."""
 
 
 class Hang(Exception):
@@ -1192,11 +1181,6 @@ def in_pool(tasks: Sequence[Callable[[Browser], object]], workers: int, label: C
     return results
 
 
-def initial_disk(root: Path) -> Disk:
-    source = write_collective_file(root / "wzor", file_orders())
-    return Disk(tuple(efenix_orders()), source.read_bytes(), {}, b"")
-
-
 @dataclass
 class Report:
     lines: list[str] = field(default_factory=list)
@@ -1227,19 +1211,19 @@ def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequ
     if report.gaps:
         return report
     started = time.monotonic()
-    blank = initial_disk(run_root)
+    blank = write_collective_file(run_root / "wzor", file_orders()).read_bytes()
     counter = iter(range(1_000_000))
 
-    def place(disk: Disk) -> Place:
+    def place() -> Place:
         prepared = Place(run_root / f"run-{next(counter):05d}")
-        prepared.prepare(disk)
+        prepared.prepare(blank)
         return prepared
 
-    def task(disk: Disk, plan: Plan, *, snapshots: bool = False) -> Callable[[Browser], object]:
-        return lambda browser: run_once(browser, place(disk), disk.orders, plan, snapshots=snapshots)
+    def task(case: Case | None, *, snapshots: bool = False) -> Callable[[Browser], object]:
+        return lambda browser: run_once(browser, place(), plan_of(case), snapshots=snapshots)
 
     [reference] = in_pool(
-        [task(blank, Plan(limit_s=LIMIT_MS / 1000), snapshots=True)],
+        [task(None, snapshots=True)],
         1,
         lambda _index: "przebieg bez awarii",
     )
@@ -1247,7 +1231,7 @@ def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequ
         report.gaps.append(f"przebieg bez awarii nie przeszedł: {reference!r}")
         return report
     (evidence / "przebieg-bez-awarii.txt").write_text("\n".join(reference.actions) + "\n", encoding="utf-8")
-    broken = reference_violations(reference) + common_checks("przebieg bez awarii", reference, INITIAL, {})
+    broken = reference_violations(reference) + common_checks("przebieg bez awarii", reference, {})
     if broken:
         _keep(evidence, "przebieg bez awarii", reference, broken)
         report.new += broken
@@ -1257,11 +1241,11 @@ def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequ
         return report
     selected = list(part(cases(variants, roles)))
     first = [case for case in selected if case.fault is not Fault.KILLED]
-    runs = in_pool([task(blank, Plan(case.fault, case.call, LIMIT_MS / 1000)) for case in first], workers, lambda index: first[index].name)
+    runs = in_pool([task(case) for case in first], workers, lambda index: first[index].name)
     for _attempt in range(RETRIES):
         again = [index for index, run in enumerate(runs) if isinstance(run, Run) and not run.injected]
         repeated = in_pool(
-            [task(blank, Plan(first[index].fault, first[index].call, LIMIT_MS / 1000)) for index in again],
+            [task(first[index]) for index in again],
             workers,
             lambda number: first[again[number]].name,
         )

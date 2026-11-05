@@ -14,8 +14,9 @@ A request is a ``Call``: method, path without the query, the kind of search (the
 by itself after loading) and its occurrence among calls of the same kind, so a fault hits the same request in every run
 whatever the order of requests that the browser sends side by side. ``Fault`` lists what can go wrong with it: the
 network (``CUT``, ``TORN``, ``STALLED``, ``SLOW`` from that request on until ``reconnect``), one answer (HTTP 4xx without
-running the request, HTTP 5xx after running it, a redirect elsewhere, an answer that never comes, an answer just before
-or just after the window's time limit), efenix logging the window out at that request, and two that the browser side and
+running the request, HTTP 5xx after running it, a redirect elsewhere, 200 with ``result: nok`` without running it, an
+answer that never comes, an answer just before or just after the window's time limit), efenix logging the window out at
+that request, and two that the browser side and
 the explorer handle: the tab closed when the browser sends the request (``TAB_CLOSED``) and the tool's process killed
 right before or right after efenix ran it (``KILLED``, snapshots taken by ``before_executed`` and ``after_executed``).
 Three more belong to one kind of request: the login page under the address of an order page (``LOGIN_PAGE``, #808), and
@@ -66,6 +67,7 @@ class Fault(enum.Enum):
     HTTP_5XX = "HTTP 500 po wykonaniu"
     LOGGED_OUT = "efenix wylogował przy tym żądaniu"
     REDIRECT = "przekierowanie na listę zleceń bez wykonania"
+    REFUSED = "200 z result: nok bez wykonania, w ważnej sesji"
     HUNG = "odpowiedź po wykonaniu nigdy nie przychodzi"
     LATE_BEFORE = "odpowiedź tuż przed granicą czasu okna"
     LATE_AFTER = "odpowiedź tuż po granicy czasu okna"
@@ -317,6 +319,9 @@ def _handler(proxy: Proxy) -> type[BaseHTTPRequestHandler]:
                 return
             if fault is Fault.REDIRECT:
                 self._send(_Answer(HTTPStatus.FOUND, (("Location", _ELSEWHERE),), b""))
+                return
+            if fault is Fault.REFUSED:
+                self._send(_Answer(HTTPStatus.OK, (("Content-Type", "application/json"),), b'{"result": "nok", "error": "Nie zapisano."}'))
                 return
             if fault is Fault.LOGIN_PAGE:
                 login = self._executed("GET", b"", Call("GET", "page_login.php", "", 0), "/page_login.php")

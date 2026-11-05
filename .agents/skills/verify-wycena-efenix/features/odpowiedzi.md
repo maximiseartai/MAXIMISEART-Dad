@@ -1,8 +1,9 @@
 # Odpowiedzi
 
 One answer of efenix is wrong while the network is fine: HTTP 4xx without running the request (404 for a page file,
-403 otherwise), HTTP 500 after running it, efenix logging out at that request, a redirect to the list of orders, an
-answer that never comes after the request ran, and the login page under the address of an order page.
+403 otherwise), HTTP 500 after running it, efenix logging out at that request, a redirect to the list of orders, 200
+with `result: nok` without running „Załaduj do zlecenia” (`REFUSED`, #889), an answer that never comes after the
+request ran, and the login page under the address of an order page.
 
 ## Sub-features
 
@@ -11,6 +12,8 @@ answer that never comes after the request ran, and the login page under the addr
 - A logout is `EFENIX_WYLOGOWANY` (or the login form under the order address, `Shape.LOGIN_FORM`).
 - A date efenix did not save leaves the order to Dad (`DateRefused.NOT_SAVED`).
 - A refused „Załaduj do zlecenia” stops or leaves the order to Dad; it never ends gotowe without Emmett.
+- „Załaduj do zlecenia” refused with 200 `result: nok` in a valid session is `EFENIX_OKNO_ZATRZYMANE` with
+  `Shape.EMMETT_NOT_LOADED` (the reloaded page has amount 0 after a dialog that showed a proposal), never a logout.
 
 ## How to get to it (user POV)
 

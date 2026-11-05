@@ -1,11 +1,13 @@
 # Granica czasu
 
-efenix runs the request and answers 0.6 s before or 0.6 s after the window's time limit (`LIMIT_MS`, 3 s in the
-checker, 30 s at Dad's).
+efenix runs the request and answers 0.6 s before or 0.6 s after the window's time limit (`LIMIT_MS`, 4 s in the
+checker, 30 s at Dad's). The answer to „Załaduj do zlecenia”, to the page reloaded after it and to that page's files
+comes 1 s earlier still, because the window waits for them and the 1 s reload in one time limit (`early_s`).
 
 ## Sub-features
 
-- Just before: the run ends like the reference, or stops on the time limit; never with another cause.
+- Just before: the run ends like the reference, or stops on the time limit; never with another cause. At „Załaduj do
+  zlecenia” it ends like the reference only, because nothing but the answer and the reload shares its time limit.
 - Just after: a stop on the time limit at that request's order.
 
 ## How to get to it (user POV)
