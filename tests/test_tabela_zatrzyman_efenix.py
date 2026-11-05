@@ -105,6 +105,15 @@ TABLE = [
         "pole daty bez kalendarza pickadate", "inna budowa"),
     Row("efenix_browser", "set_execution_date", "LoggedOut(PagePart.DATE, LoginSign.REDIRECT)",
         "odpowiedź zapisu daty przekierowana na page_login.php", "E"),
+    # --- Wycena Emmetta: odmowa „Załaduj do zlecenia” (#877) ---
+    Row("efenix_browser", "load_emmett", "LoggedOut(PagePart.EMMETT, LoginSign.REDIRECT)",
+        "odpowiedź „Załaduj do zlecenia” przekierowana na page_login.php", "E"),
+    Row("efenix_browser", "load_emmett", "UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))",
+        "odpowiedź „Załaduj do zlecenia” przekierowana gdzie indziej niż na page_login.php", "inna budowa"),
+    Row("efenix_browser", "load_emmett", "UnexpectedPage(PagePart.EMMETT, HttpStatus(answer.status))",
+        "odpowiedź „Załaduj do zlecenia” 4xx/5xx (strona błędu serwera efenix)", "D"),
+    Row("efenix_browser", "load_emmett", "LoggedOut(PagePart.EMMETT, LoginSign.REFUSED)",
+        "odpowiedź „Załaduj do zlecenia” 2xx z result: nok (wygasła sesja)", "E"),
     # --- pole Ilość ---
     Row("efenix_browser", "enter_quantity", "UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.UNKNOWN_POSITION, position))",
         "pozycji do wpisania nie ma wśród pól ostatnio odczytanej strony", "inna budowa"),
