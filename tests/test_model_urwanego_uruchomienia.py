@@ -5,8 +5,9 @@ Model opisuje definicje z ``model/definicje.json`` skilla ``verify-urwane-urucho
 ``app.py`` i ``runs.py`` zmieniają się często) rozjazdem nie jest. Testy rozjazdu biegną na repozytorium z plikami
 zbudowanymi z tej tabeli, nie na kodzie ``src/``: sprawdzają skrypt, a kod opisany modelem sprawdza krok ``ci:`` skilla.
 
-Znane znalezisko z ``model/oczekiwane.json`` wybacza tylko swoją obietnicę i tylko zdarzenie z jego przyczyną:
-kontrprzykład innej obietnicy albo bez tej przyczyny to nowe naruszenie, a Zbieganie (żywotność) nie ma znanych znalezisk.
+Znane znalezisko z ``model/oczekiwane.json`` wybacza tylko w swojej konfiguracji, tylko swoją obietnicę i tylko
+zdarzenie z jego przyczyną: kontrprzykład innej obietnicy, bez tej przyczyny albo w konfiguracji, która go nie oczekuje,
+to nowe naruszenie, a Zbieganie (żywotność) nie ma znanych znalezisk.
 """
 
 from __future__ import annotations
@@ -124,6 +125,7 @@ def _check_in_ci(root: Path, sync: str) -> subprocess.CompletedProcess[str]:
         pytest.param("RunCards._row", id="wiersz-historii"),
         pytest.param("send_interrupted", id="wysylka-przy-zapytaniu"),
         pytest.param("lifespan", id="start-kolejki"),
+        pytest.param("run_process", id="zapis-wiersza-historii"),
     ],
 )
 def test_w_ci_zmieniona_definicja_opisana_modelem_konczy_sprawdzenie_porazka(tmp_path: Path, name: str) -> None:
@@ -214,13 +216,20 @@ def test_w_ci_brak_commitu_synchronizacji_konczy_sprawdzenie_porazka(tmp_path: P
 
 
 def _verdicts(
-    module: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, known: list[dict[str, str]], answers: list[object]
+    module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    known: dict[str, list[dict[str, str]]],
+    answers: list[object],
 ) -> list[frozenset[tuple[str, str]]]:
-    """Konfiguracja ``k`` ze znanymi znaleziskami ``known``; kolejne przebiegi TLC dają ``answers``. Zwraca wybaczone
+    """Konfiguracje ``known`` (nazwa → jej znane znaleziska); kolejne przebiegi TLC dają ``answers``. Zwraca wybaczone
     znaleziska każdego przebiegu."""
 
-    (tmp_path / "k.cfg").write_text("\\* konfiguracja testu\n", encoding="utf-8")
-    (tmp_path / "oczekiwane.json").write_text(json.dumps({"k": {"znane": known}}), encoding="utf-8")
+    for name in known:
+        (tmp_path / f"{name}.cfg").write_text("\\* konfiguracja testu\n", encoding="utf-8")
+    (tmp_path / "oczekiwane.json").write_text(
+        json.dumps({name: {"znane": findings} for name, findings in known.items()}), encoding="utf-8"
+    )
     monkeypatch.setattr(module, "MODEL", tmp_path)
     monkeypatch.setattr(module, "_drift", lambda tools, root, skill_md: None)
     monkeypatch.setenv("TLC_JAVA", "java")
@@ -269,11 +278,46 @@ def test_znane_znalezisko_wybacza_tylko_swoja_obietnice_po_swojej_przyczynie(
     def verdict(found: tuple[str, set[str]] | None) -> object:
         return module.Verdict(None) if found is None else module.Verdict(found[0], frozenset(found[1]))
 
-    forgiven = _verdicts(module, monkeypatch, tmp_path, _KNOWN, [verdict(own), verdict(rest)])
+    forgiven = _verdicts(module, monkeypatch, tmp_path, {"k": _KNOWN}, [verdict(own), verdict(rest)])
 
     assert module.main([]) == code
     assert capsys.readouterr().out.splitlines()[-1] == last
     assert forgiven == [frozenset(), frozenset({("DziennikPoKolejce", "wiersz-pozniejszej-wyceny")})]
+
+
+def test_konfiguracja_wybacza_tylko_znane_znaleziska_ktore_oczekiwane_podaja_dla_niej(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Przyczyna znaleziska innej konfiguracji nie jest wybaczona: nowa droga do niej w konfiguracji, która jej nie
+    oczekuje, to nowe naruszenie. Każde znalezisko ma swój przebieg bez pozostałych znanych swojej konfiguracji."""
+
+    module = _load()
+    later = ("DziennikPoKolejce", "wiersz-pozniejszej-wyceny")
+    unread = ("BezUrwanychPoWyniku", "historia-nieczytelna")
+    unwritten = ("BezUrwanychPoWyniku", "historia-niezapisana")
+
+    def finding(found: tuple[str, str]) -> dict[str, str]:
+        return {"obietnica": found[0], "przyczyna": found[1], "znalezisko": "test"}
+
+    answers = [
+        module.Verdict(unread[0], frozenset({unread[1]})),
+        module.Verdict(unwritten[0], frozenset({unwritten[1]})),
+        module.Verdict(None),
+        module.Verdict(later[0], frozenset({later[1]})),
+        module.Verdict(None),
+    ]
+    known = {"historia": [finding(unread), finding(unwritten)], "odczyt": [finding(later)]}
+    forgiven = _verdicts(module, monkeypatch, tmp_path, known, answers)
+
+    assert module.main([]) == 0
+    assert capsys.readouterr().out.splitlines()[-1] == "URWANE URUCHOMIENIE OK, ZNANE ZNALEZISKA: 3"
+    assert forgiven == [
+        frozenset({unwritten}),
+        frozenset({unread}),
+        frozenset({unread, unwritten}),
+        frozenset(),
+        frozenset({later}),
+    ]
 
 
 def _tlc_output(monkeypatch: pytest.MonkeyPatch, module: ModuleType, tmp_path: Path, output: str) -> None:

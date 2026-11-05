@@ -83,20 +83,19 @@ def main(argv: list[str] | None = None) -> int:
     java = os.environ.get("TLC_JAVA") or tools._java()
     jar = Path(os.environ.get("TLC_JAR") or tools._tla_tools())
 
-    all_known = frozenset(
-        (finding["obietnica"], finding["przyczyna"]) for entry in expected.values() for finding in entry.get("znane", ())
-    )
     new, gone, known, broken = [], [], [], []
     for name in names:
         findings = expected.get(name, {}).get("znane", [])
         print(f"\n== {name}: {_description(name)}")
         # TLC kończy na pierwszym kontrprzykładzie, więc każde znane znalezisko ma swój przebieg bez pozostałych
-        # znanych (czy ono dalej jest), a konfiguracja jeden przebieg bez wszystkich znanych (czy nic poza nimi).
-        # Wybaczenie dotyczy tylko obietnicy znaleziska i zdarzenia, w którego chwili była jego przyczyna.
+        # znanych tej konfiguracji (czy ono dalej jest), a konfiguracja jeden przebieg bez wszystkich swoich znanych (czy
+        # nic poza nimi). Wybaczenie dotyczy tylko znalezisk, które ``model/oczekiwane.json`` podaje dla tej
+        # konfiguracji, tylko ich obietnicy i tylko zdarzenia, w którego chwili była ich przyczyna.
+        config_known = frozenset((finding["obietnica"], finding["przyczyna"]) for finding in findings)
         for finding in findings:
             promise, cause = finding["obietnica"], finding["przyczyna"]
             print(f"   znane znalezisko „{cause}”, {promise}: {finding['znalezisko']}")
-            own = _run(java, jar, name, all_known - {(promise, cause)})
+            own = _run(java, jar, name, config_known - {(promise, cause)})
             print(f"   wynik: {_said(own)}, oczekiwany: {VIOLATES} {promise} po „{cause}”")
             if own is None:
                 broken.append(name)
@@ -109,8 +108,8 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 known.append(name)
         if findings:
-            print("   reszta przebiegów, bez wszystkich znanych znalezisk:")
-        rest = _run(java, jar, name, all_known if findings else frozenset())
+            print("   reszta przebiegów, bez wszystkich znanych znalezisk tej konfiguracji:")
+        rest = _run(java, jar, name, config_known)
         print(f"   wynik: {_said(rest)}, oczekiwany: {PASSES}")
         if rest is None:
             broken.append(name)
@@ -291,7 +290,7 @@ _STEPS = {
     "WpisZaczete": "Wycena {b} pisze „zaczynam zlecenie” {z}",
     "ZmianaWEfenix": "okno efenix zmienia zlecenie {z} Wyceny {b}",
     "WpisSkonczone": "Wycena {b} pisze „zlecenie skończone” {z}",
-    "Historia": "run_process Wyceny {b} zapisuje rekord metryk (wiersz Historii)",
+    "Historia": "run_process Wyceny {b} kończy się wynikiem i dopisuje rekord metryk (wiersz Historii)",
     "LogiWyniku": "RunLogs._keep zapisuje plik Logów z wynikiem Wyceny {b}",
     "WyslijWynik": "RunLogs._keep: Outbox.post Logów z wynikiem Wyceny {b}, koniec Uruchomienia",
     "Zgasniecie": "Centrum gaśnie (brak prądu, zabity proces)",
@@ -317,7 +316,8 @@ def _step(action: str, before: dict[str, str], after: dict[str, str]) -> str:
         what
         for counter, what in (
             ("awarieWpisu", "wpis rzuca OSError"),
-            ("awarieLogow", "zapis pliku Logów rzuca OSError"),
+            ("awarieMetryk", "MetricsStore.append rzuca OSError, więc wiersza Historii nie ma"),
+            ("awarieLogow","zapis pliku Logów rzuca OSError"),
             ("awarieKolejki", "Outbox.post zwraca False"),
             ("awarieUsuniecia", "unlink rzuca OSError"),
         )
@@ -348,7 +348,8 @@ def _tell(trace: list[dict[str, str]]) -> None:
     last = trace[-1] if trace else {}
     print(
         f"   na koniec: dzienniki {_brief(last.get('dziennik', '?'))}, Logi {_logs(last.get('logi', ''))}, "
-        f"Historia {_brief(last.get('historia', '?'))}, kolejka {_queue(last.get('kolejka', ''))}"
+        f"Historia {_brief(last.get('historia', '?'))}, z wynikiem {_brief(last.get('wynik', '?'))}, "
+        f"kolejka {_queue(last.get('kolejka', ''))}"
     )
 
 

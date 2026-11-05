@@ -51,13 +51,26 @@ MUTATIONS = (
         (
             Edit(
                 MODEL,
-                "/\\ logi[r].rodzaj = \"brak\" /\\ Zapisana(r)\n          /\\ krokZamykania' = \"usun\"",
-                "/\\ logi[r].rodzaj = \"brak\" /\\ FALSE\n          /\\ krokZamykania' = \"usun\"",
+                "                /\\ Zapisana(r)\n                /\\ krokZamykania' = \"usun\"",
+                "                /\\ FALSE\n                /\\ krokZamykania' = \"usun\"",
             ),
-            Edit(MODEL, "/\\ logi[r].rodzaj = \"brak\" /\\ ~Zapisana(r)\n", "/\\ logi[r].rodzaj = \"brak\"\n"),
+            Edit(MODEL, "                /\\ ~Zapisana(r)\n", "                /\\ TRUE\n"),
         ),
         _check("zwykle"),
         "Wycena, która zapisała wiersz Historii i zgasła przed Logami, dostaje Logi Urwanego Uruchomienia",
+        NEW,
+    ),
+    Mutation(
+        "plik Logów z wynikiem nie rozstrzyga (_closed: bez return None przy logged.ending != \"interrupted\", "
+        "Logi z wynikiem idą do elif self._recorded(...))",
+        (
+            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"wynik\"\n", "          /\\ FALSE\n"),
+            Edit(MODEL, "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"brak\"\n",
+                 "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj \\in {\"brak\", \"wynik\"}\n"),
+        ),
+        _check("historia"),
+        "Wycena z Logami z wynikiem, której wiersza Historii start nie widzi (rekord metryk niezapisany albo Historia "
+        "nieczytelna), dostaje Logi Urwanego Uruchomienia",
         NEW,
     ),
     Mutation(
@@ -108,6 +121,23 @@ MUTATIONS = (
         ),
         _check("zwykle"),
         "Centrum gaśnie po zmianie w efenix, a przed wpisem: zlecenia nie ma w Logach Urwanego Uruchomienia",
+        NEW,
+    ),
+    Mutation(
+        "dziennik milknie po pierwszym nieudanym wpisie (PricingJournal._write: if self._failed: return na początku)",
+        (
+            Edit(
+                MODEL,
+                "    \\/ /\\ wpisy' = [wpisy EXCEPT ![r] = Append(@, [rodzaj |-> rodzaj, z |-> zlecenie])]\n",
+                "    \\/ /\\ przepadle[r] # {} /\\ UNCHANGED <<wpisy, dziennik, zapisanyStart, naglowekCzeka, awarieWpisu,\n"
+                "                                      przepadle>>\n"
+                "    \\/ /\\ przepadle[r] = {} /\\ wpisy' = [wpisy EXCEPT ![r] = Append(@, [rodzaj |-> rodzaj, z |-> zlecenie])]\n",
+            ),
+            Edit(MODEL, "    \\/ /\\ awarieWpisu < MaxAwariiWpisu /\\ awarieWpisu' = awarieWpisu + 1\n",
+                 "    \\/ /\\ przepadle[r] = {} /\\ awarieWpisu < MaxAwariiWpisu /\\ awarieWpisu' = awarieWpisu + 1\n"),
+        ),
+        _check("wpisy"),
+        "zlecenie, którego żaden wpis nie zawiódł, znika z Logów Urwanego Uruchomienia po nieudanym wpisie innego zlecenia",
         NEW,
     ),
     Mutation(

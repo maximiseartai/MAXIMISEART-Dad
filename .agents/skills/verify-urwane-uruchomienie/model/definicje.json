@@ -44,5 +44,11 @@
   ],
   "src/rozliczenia/efenix_pricing.py": [
     "save"
+  ],
+  "src/rozliczenia/process_run.py": [
+    "run_process"
+  ],
+  "src/rozliczenia/telemetry.py": [
+    "MetricsStore.append"
   ]
 }

@@ -5,7 +5,7 @@
       {
         "obietnica": "DziennikPoKolejce",
         "przyczyna": "wiersz-pozniejszej-wyceny",
-        "znalezisko": "dziennik Urwanej Wyceny, którego start nie odczytał, następny start usuwa bez Logów, gdy w międzyczasie inna Wycena doszła do wyniku: RunCards._row bierze jej wiersz Historii (start >= start urwanej)"
+        "znalezisko": "#870: dziennik Urwanej Wyceny, którego start nie odczytał, następny start usuwa bez Logów, gdy w międzyczasie inna Wycena doszła do wyniku: RunCards._row bierze jej wiersz Historii (start >= start urwanej)"
       }
     ]
   },
@@ -14,7 +14,7 @@
       {
         "obietnica": "DziennikPoKolejce",
         "przyczyna": "wiersz-pozniejszej-wyceny",
-        "znalezisko": "jak w odczyt, gdy start nie zapisał pliku Logów Urwanego Uruchomienia, a Kolejka wysyłki ich nie przyjęła"
+        "znalezisko": "#870: jak w odczyt, gdy start nie zapisał pliku Logów Urwanego Uruchomienia, a Kolejka wysyłki ich nie przyjęła"
       }
     ]
   },
@@ -23,7 +23,12 @@
       {
         "obietnica": "BezUrwanychPoWyniku",
         "przyczyna": "historia-nieczytelna",
-        "znalezisko": "Wycena z wierszem Historii, a bez pliku Logów (zgaśnięcie między rekordem metryk a Logami albo nieudany zapis Logów) dostaje przy starcie, który nie odczytał Historii, Logi Urwanego Uruchomienia, a w Skrzynce zastępują one Logi z wynikiem"
+        "znalezisko": "#871: Wycena z wierszem Historii, a bez pliku Logów (zgaśnięcie między rekordem metryk a Logami albo nieudany zapis Logów) dostaje przy starcie, który nie odczytał Historii, Logi Urwanego Uruchomienia, a w Skrzynce zastępują one Logi z wynikiem"
+      },
+      {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "historia-niezapisana",
+        "znalezisko": "#871: Wycena, której rekord metryk się nie zapisał (run_process łapie błąd i wraca z wynikiem bez wiersza Historii), a bez pliku Logów (nieudany zapis Logów albo zgaśnięcie przed nimi), dostaje przy następnym zwykłym starcie Logi Urwanego Uruchomienia, a w Skrzynce zastępują one Logi z wynikiem"
       }
     ]
   },
@@ -32,7 +37,7 @@
       {
         "obietnica": "ZaczeteWLogach",
         "przyczyna": "wpis-nieudany",
-        "znalezisko": "wpis dziennika, który się nie zapisał, zostawia zmianę w efenix bez śladu w Logach (przyjęte w docstringu pricing_journal.py: „Nieudany zapis wpisu … Wycena biegnie dalej”)"
+        "znalezisko": "wpis dziennika, który się nie zapisał, zostawia zmianę w efenix swojego zlecenia bez śladu w Logach (przyjęte w docstringu pricing_journal.py: „Nieudany zapis wpisu … Wycena biegnie dalej”)"
       }
     ]
   },
@@ -49,6 +54,7 @@
     "znane": [
       {"obietnica": "DziennikPoKolejce", "przyczyna": "wiersz-pozniejszej-wyceny", "znalezisko": "jak w odczyt"},
       {"obietnica": "BezUrwanychPoWyniku", "przyczyna": "historia-nieczytelna", "znalezisko": "jak w historia"},
+      {"obietnica": "BezUrwanychPoWyniku", "przyczyna": "historia-niezapisana", "znalezisko": "jak w historia"},
       {"obietnica": "ZaczeteWLogach", "przyczyna": "wpis-nieudany", "znalezisko": "jak w wpisy"}
     ]
   }
