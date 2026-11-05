@@ -670,6 +670,17 @@ def _emmett_refusal(orders: Sequence[AtrapaOrder], params: Mapping[str, str]) ->
     return next((order.emmett_refusal for order in orders if order.order_id == params.get("order_id")), None)
 
 
+def emmett_proposal(quantities: Mapping[str, int], *, in_fields: bool = False) -> str:
+    """Odpowiedź Atrapy na ``action_fill_emmett.php``: propozycja Emmetta z ilościami ``quantities`` (kod → ilość),
+    którą skrypt strony wkłada do ``#emmett-propozycja``: lista ``<ul>`` z kodem i ilością w tekście każdego ``<li>``,
+    a z ``in_fields`` pola bez tekstu z kodem w ``name`` i ilością w ``value``; bez ilości pusta treść."""
+
+    if in_fields:
+        return "".join(f'<input name="INDEKS_{escape(code)}_078" value="{quantity}">' for code, quantity in sorted(quantities.items()))
+    rows = "".join(f"<li>INDEKS_{escape(code)}_078: {quantity}</li>" for code, quantity in sorted(quantities.items()))
+    return f"<ul>{rows}</ul>" if rows else ""
+
+
 def _change(
     path: str, order: AtrapaOrder, params: Mapping[str, str], *, refuse_dates: bool, prices: Mapping[str, Decimal]
 ) -> str | dict[str, str]:
@@ -687,10 +698,7 @@ def _change(
             order.quantities.pop(code, None)
         return {"result": "ok", "price_index": f"{prices[code] * quantity:.2f}", "price_all": f"{amount_of(order.quantities, prices):.2f}"}
     if path == FILL_EMMETT:
-        if order.emmett_in_fields:
-            return "".join(f'<input name="INDEKS_{escape(code)}_078" value="{quantity}">' for code, quantity in sorted(order.emmett.items()))
-        rows = "".join(f"<li>INDEKS_{escape(code)}_078: {quantity}</li>" for code, quantity in sorted(order.emmett.items()))
-        return f"<ul>{rows}</ul>" if rows else ""
+        return emmett_proposal(order.emmett, in_fields=order.emmett_in_fields)
     if path == LOAD_EMMETT:
         order.quantities = dict(order.emmett)
         order.emmett_loads += 1

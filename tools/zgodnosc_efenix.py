@@ -24,7 +24,8 @@ w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service work
 - strona zlecenia (do ``ORDERS_TO_OPEN`` zleceń z tabeli, najpierw „Do wyceny”, aż znajdzie pustą datę wykonania):
   ``efenix_browser.read_order`` (data wykonania ``RRRR-MM-DD`` albo pusta, kwota końcowa, pola Ilość), a na pierwszym
   zleceniu elementy ``efenix_browser.ORDER_ELEMENTS`` (okno daty wykonania, przycisk i okno Emmetta; przycisk Emmetta
-  widoczny w samym HTML, bez stylów efenix), przyciski Przekazania do akceptacji i anulowania, które ma Atrapa, skrypt
+  widoczny w samym HTML, bez stylów efenix, a propozycja w oknie Emmetta ``#emmett-propozycja`` pusta, bez elementu i
+  tekstu, jak w Atrapie, zanim skrypt strony włoży do niej propozycję), przyciski Przekazania do akceptacji i anulowania, które ma Atrapa, skrypt
   ``js/page_order_edit.js`` (pod adresem z listy ``ALLOWED``) z nazwami ``efenix_browser.ORDER_SCRIPT_USES``
   (pickadate z ``onSet``, „Potwierdź” daty, Emmett, zapis ilości z ``price_all``) i karty pozycji
   ``.card.rounded-lg.kolorek``: karta z polem Ilość ma cenę w tekście ``.col-sm-1.mt-2 > span.text-default > small``,
@@ -41,23 +42,41 @@ w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service work
 Skryptów stron narzędzie nie uruchamia, więc ich działania nie widzi: sprawdza tylko, że skrypt ma nazwy, na których
 polega okno Wyceny w efenix. Przycisku kalendarza daty wykonania (``#button-calendar``) nie sprawdza: okno klika go tylko
 przy pustej dacie wykonania, a efenix pokazuje go najpewniej tylko wtedy, więc wynik zawsze ma linię ``NIESPRAWDZONE``
-z prośbą o sprawdzenie ręczne (``DATE_BUTTON_BY_HAND``). ``action_fill_emmett.php`` (propozycja Emmetta) nie jest na
-liście, bo bez kodu serwera nie wiadomo, czy niczego nie zapisuje.
+z prośbą o sprawdzenie ręczne (``DATE_BUTTON_BY_HAND``).
 
-Uruchomienie: Chrome z osobnym profilem i zdalnym debugowaniem, w nim logowanie do efenix kontem taty, potem narzędzie:
+Propozycji Emmetta narzędzie samo nie czyta: ``action_fill_emmett.php`` nie jest na liście ``ALLOWED``, bo nic nie
+pokazuje, co robi z nim serwer efenix. Skrypt strony zlecenia efenix (rekonesans z 1.11.2026) wysyła w nim tylko
+``order_id`` z przycisku Emmetta, odpowiedź 2xx wkłada do ``#emmett-propozycja`` i pokazuje okno Emmetta, a jego treść
+mówi, że wycenę czyści dopiero „Załaduj do zlecenia”; czy serwer przy propozycji czegoś nie zapisuje, z tego nie wynika.
+Bez pliku ``--propozycja`` wynik ma więc zawsze linię ``NIESPRAWDZONE`` o budowie propozycji (``PROPOSAL_BY_HAND``).
+Plik zapisuje człowiek, jeśli Maks zdecyduje, że może kliknąć przycisk Emmetta na zleceniu taty (#953): kliknięcie
+wysyła to samo żądanie, które okno Wyceny w efenix wysyła przed każdym „Załaduj do zlecenia”, okno Emmetta pokazuje
+propozycję, a w DevTools Chrome (prawy klik na propozycji, „Zbadaj”) element ``<div id="emmett-propozycja">`` kopiuje
+Copy → Copy outerHTML do pliku; okno zamyka „Zamknij”, nigdy „Załaduj do zlecenia”. Narzędzie składa plik w swojej karcie bez skryptów i sieci (od elementu ``#emmett-propozycja``,
+a plik bez niego, np. sama odpowiedź z zakładki Network, w całości) i porównuje jego budowę z propozycją Atrapy
+(``atrapa_efenix.emmett_proposal``): każdy element (nazwy i klasy od propozycji), tekst i atrybut z maską (kod pozycji
+to ``INDEKS_NNN_NNN``, ciąg cyfr 9, ciąg liter a), którego nie ma po drugiej stronie, to różnica, a liczba kodów pozycji
+w propozycji stoi w nagłówku wyniku. Propozycja, która nic nie pokazuje (jak w oknie Emmetta, gdy Emmett nic nie
+proponuje), to część niesprawdzona.
 
+Uruchomienie: Chrome z osobnym profilem i zdalnym debugowaniem (macOS, Linux, Windows), w nim logowanie do efenix kontem
+taty, potem narzędzie, z ``--propozycja`` tylko z plikiem propozycji:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodnosc"
     google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodnosc"
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\\.efenix-zgodnosc"
-    .venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php>
+    .venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php> --cdp http://127.0.0.1:9222 [--numer <numer>] [--propozycja <plik>]
 
 Na czas sprawdzania w Chrome otwiera się okno narzędzia, w którym widać złożony HTML stron bez stylów i skryptów;
 narzędzie zamyka je na końcu. Wzorzec pliku zbiorczego to domyślnie ten z konfiguracji narzędzia
 (``config/Wzorzec pliku zbiorczego.xlsx``, jak w Centrum rozliczeń), a inny podaje ``--wzorzec``.
 
-Wynik: linie ``RÓŻNICA | <część> | <co>`` i ``NIESPRAWDZONE | <część> | <co>``, na końcu liczby jednych i drugich. Kod 0:
-bez różnic, a niesprawdzony jest tylko przycisk kalendarza; kod 2: różnice albo inne części niesprawdzone. Wynik nie zawiera numerów zleceń, adresów, loginów ani cen: tylko nazwy elementów, liczby, kody pozycji
-z kolumnami i postać daty i kwoty (cyfry jako ``9``). Kod 1: brak Chrome pod ``--cdp``, nieczytelny Wzorzec, efenix nie
-odpowiada albo Chrome nie jest zalogowany; opis na stderr.
+Wynik (na stdout): linie ``RÓŻNICA | <część> | <co>`` i ``NIESPRAWDZONE | <część> | <co>``, na końcu liczby jednych i
+drugich. Kod 0: bez różnic, a niesprawdzone są tylko przycisk kalendarza i, bez ``--propozycja``, budowa propozycji
+Emmetta; kod 2: różnice albo inne części niesprawdzone. Wynik nie zawiera numerów zleceń, adresów, loginów ani cen: tylko nazwy elementów, liczby, kody pozycji
+z kolumnami, postać daty i kwoty (cyfry jako ``9``) i budowę propozycji Emmetta z maską. Kod 1: brak Chrome pod
+``--cdp``, nieczytelny Wzorzec albo plik ``--propozycja``, efenix nie odpowiada albo Chrome nie jest zalogowany; opis na
+stderr.
 """
 
 from __future__ import annotations
@@ -113,7 +132,7 @@ from rozliczenia.efenix_positions import POSITION_OF_COLUMN
 from rozliczenia.efenix_pricing import UnexpectedPage
 from rozliczenia.workbook_files import WorkbookError
 
-from tests.fixtures.atrapa_efenix import CATALOG, LIST_ROWS_PER_PAGE, LIST_SEARCH_FIELDS
+from tests.fixtures.atrapa_efenix import CATALOG, LIST_ROWS_PER_PAGE, LIST_SEARCH_FIELDS, emmett_proposal
 
 LIST_PAGE: Final = "index.php"
 LIST_SCRIPT: Final = "js/index.js"
@@ -159,6 +178,7 @@ class Part(enum.Enum):
     PRICING = "pozycje wyceny"
     LOGGED_OUT = "bez sesji"
     LOGIN = "strona logowania"
+    PROPOSAL = "propozycja Emmetta"
 
 
 # Elementy, których Wycena w efenix nie używa, a Atrapa ma: przyciski, których okno nie może kliknąć, i formularz
@@ -174,11 +194,22 @@ LOGIN_ELEMENTS: Final = (
     PageElement("pole fingerprint", 'input[name="fingerprint"]'),
 )
 PRICING_CARD: Final = ".card.rounded-lg.kolorek"
+# Propozycja w oknie Emmetta z ``ORDER_ELEMENTS``: element, do którego skrypt strony wkłada odpowiedź
+# ``action_fill_emmett.php``; w pliku ``--propozycja`` sam element, bez okna Emmetta.
+PROPOSAL: Final = next(element.selector for element in ORDER_ELEMENTS if element.name == "propozycja w oknie Emmetta")
+PROPOSAL_ALONE: Final = PROPOSAL.split()[-1]
+CODE_TOKEN: Final = "INDEKS_NNN_NNN"
 # Część, której narzędzie nie sprawdza nigdy, a Maks sprawdza ręcznie; zawsze w wyniku jako ``NIESPRAWDZONE``.
 DATE_BUTTON_BY_HAND: Final = (
     Part.ORDER,
     "przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu "
     f"„{PRICING_STATUS}” bez daty wykonania, że jest przycisk otwierający okno wyboru daty",
+)
+# Budowa propozycji Emmetta bez pliku ``--propozycja``: narzędzie nie wysyła ``action_fill_emmett.php``.
+PROPOSAL_BY_HAND: Final = (
+    Part.PROPOSAL,
+    "budowa propozycji Emmetta nie jest sprawdzana: narzędzie nie wysyła action_fill_emmett.php; zmierz ją plikiem"
+    " --propozycja z propozycją zapisaną w Chrome (--help)",
 )
 
 # Tabela odpowiedzi szukania przeczytana w ``<template>``, w którym nic nie biegnie i nic się nie wczytuje. Linki
@@ -201,6 +232,33 @@ _READ_TABLE: Final = """([html, orderPage]) => {
             badges: [...row.querySelectorAll('td .badge')].map(text),
         })),
     };
+}"""
+# Budowa jedynego elementu ``selector`` (``whole``: bez niego cała strona) bez treści do maskowania: każdy element w nim
+# (ścieżka nazw i klas od niego, ``null``, ``null``), każdy tekst inny niż białe znaki (ścieżka elementu, ``null``, tekst)
+# i każdy atrybut poza ``class`` (ścieżka, nazwa, wartość); ``null``, gdy elementu nie ma dokładnie raz, a ``whole`` nie
+# ma. Pusta lista to element, który nic nie pokazuje: bez elementu i bez tekstu, jak w ``load_emmett``.
+_READ_SKELETON: Final = """([selector, whole]) => {
+    const matching = document.querySelectorAll(selector);
+    const root = matching.length === 1 ? matching[0] : whole ? document.body : null;
+    if (!root) return null;
+    const name = (element) => [element.localName, ...[...element.classList].sort()].join('.');
+    const found = [];
+    const walk = (node, path) => {
+        for (const child of node.childNodes) {
+            if (child.nodeType === Node.TEXT_NODE && child.textContent.trim() !== '') {
+                found.push([path, null, child.textContent]);
+            } else if (child.nodeType === Node.ELEMENT_NODE) {
+                const inner = path ? `${path} > ${name(child)}` : name(child);
+                found.push([inner, null, null]);
+                for (const attribute of child.attributes) {
+                    if (attribute.name !== 'class') found.push([inner, attribute.name, attribute.value]);
+                }
+                walk(child, inner);
+            }
+        }
+    };
+    walk(root, '');
+    return found;
 }"""
 # Karta pozycji: ``id`` pól Ilość, ``id`` pól ceny wpisywanej i ceny z tekstu karty.
 _READ_CARDS: Final = """([card, quantity]) => [...document.querySelectorAll(card)].map((element) => ({
@@ -233,20 +291,23 @@ class ToolError(Exception):
 
 @dataclass
 class Report:
-    """Różnice i części niesprawdzone; ``checked`` to liczby tego, co narzędzie obejrzało."""
+    """Różnice i części niesprawdzone; ``checked`` to liczby tego, co narzędzie obejrzało, a ``proposal_read``: czy
+    narzędzie przeczytało propozycję Emmetta z pliku ``--propozycja``."""
 
     differences: list[tuple[Part, str]] = field(default_factory=list)
     unchecked: list[tuple[Part, str]] = field(default_factory=list)
     checked: dict[str, int] = field(default_factory=dict)
+    proposal_read: bool = False
 
     def differ(self, part: Part, what: str) -> None:
         self.differences.append((part, what))
 
     def lines(self) -> list[str]:
-        """Wynik dla Maksa; po częściach niesprawdzonych stoi zawsze ``DATE_BUTTON_BY_HAND``."""
+        """Wynik dla Maksa; po częściach niesprawdzonych stoi zawsze ``DATE_BUTTON_BY_HAND``, a bez pliku
+        ``--propozycja`` także ``PROPOSAL_BY_HAND``."""
 
         head = " | ".join(f"{name}: {count}" for name, count in self.checked.items())
-        unchecked = [*self.unchecked, DATE_BUTTON_BY_HAND]
+        unchecked = [*self.unchecked, DATE_BUTTON_BY_HAND, *([] if self.proposal_read else [PROPOSAL_BY_HAND])]
         lines = [f"ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | {head}"]
         lines += [f"RÓŻNICA | {part.value} | {what}" for part, what in self.differences]
         lines += [f"NIESPRAWDZONE | {part.value} | {what}" for part, what in unchecked]
@@ -339,12 +400,25 @@ def template_costs(path: Path) -> dict[str, Decimal | None]:
     return costs
 
 
-def check(signed_in: _Efenix, signed_out: _Efenix, page: Page, costs: Mapping[str, Decimal | None], *, number: str = "") -> Report:
-    """Sprawdza efenix odczytami ``signed_in`` (sesja taty) i ``signed_out`` (bez ciasteczek); HTML składa w ``page``."""
+def check(
+    signed_in: _Efenix,
+    signed_out: _Efenix,
+    page: Page,
+    costs: Mapping[str, Decimal | None],
+    *,
+    number: str = "",
+    proposal: str | None = None,
+) -> Report:
+    """Sprawdza efenix odczytami ``signed_in`` (sesja taty) i ``signed_out`` (bez ciasteczek); HTML składa w ``page``.
+
+    ``proposal``: HTML propozycji Emmetta z pliku ``--propozycja``, który narzędzie porównuje z propozycją Atrapy.
+    """
 
     report = Report()
     _check_signed_in(signed_in, page, costs, report, number=number)
     _check_signed_out(signed_out, page, report)
+    if proposal is not None:
+        _check_proposal(page, proposal, report)
     return report
 
 
@@ -501,6 +575,7 @@ def _check_orders(efenix: _Efenix, page: Page, order_ids: Sequence[str], costs: 
             unread[_shape(page)] += 1
         if not structure_checked:
             _check_elements(page, Part.ORDER, (*ORDER_ELEMENTS, *UNUSED_ORDER_ELEMENTS), report)
+            _check_proposal_before(page, report)
             _check_script(efenix, page, address, Part.ORDER, ORDER_SCRIPT, ORDER_SCRIPT_USES, report)
             _check_positions(page, costs, report)
             structure_checked = True
@@ -535,6 +610,66 @@ def _check_elements(page: Page, part: Part, elements: Sequence[PageElement], rep
             report.differ(part, f"{element.name} ({element.selector}): {found} zamiast {'co najmniej 1' if element.many else '1'}")
         elif element.clicked and not located.first.is_visible():
             report.differ(part, f"{element.name} ({element.selector}) jest ukryty w HTML strony")
+
+
+def _check_proposal_before(page: Page, report: Report) -> None:
+    """Propozycja w oknie Emmetta na stronie zlecenia nic nie pokazuje, zanim skrypt strony włoży do niej odpowiedź
+    ``action_fill_emmett.php``, jak w Atrapie; strona bez niej dokładnie raz to różnica z ``ORDER_ELEMENTS``."""
+
+    if _skeleton(page, PROPOSAL):
+        report.differ(Part.ORDER, f"propozycja w oknie Emmetta ({PROPOSAL}) coś pokazuje przed propozycją Emmetta, a w Atrapie jest pusta")
+
+
+def _check_proposal(page: Page, html: str, report: Report) -> None:
+    """Propozycja Emmetta z pliku ``--propozycja`` ma budowę propozycji Atrapy (``atrapa_efenix.emmett_proposal``).
+
+    Budowa to elementy, teksty i atrybuty (``_READ_SKELETON``) z maską ``_masked``: plik z elementem
+    ``#emmett-propozycja`` (skopiowany element) czyta od niego, a inny (sama odpowiedź) w całości. Propozycja, która nic
+    nie pokazuje, to część niesprawdzona: tak samo pusta jest propozycja Atrapy, gdy Emmett nic nie proponuje, ale budowy
+    ilości z niej nie widać.
+    """
+
+    report.proposal_read = True
+    _show(page, html)
+    found = _skeleton(page, PROPOSAL_ALONE, whole=True)
+    report.checked["pozycje w propozycji Emmetta"] = len({code for _path, _attribute, value in found if value for code in POSITION_CODE.findall(value)})
+    if not found:
+        report.unchecked.append(
+            (Part.PROPOSAL, "propozycja z pliku --propozycja nic nie pokazuje: zapisz propozycję zlecenia, któremu Emmett proponuje ilości")
+        )
+        return
+    _show(page, emmett_proposal({position.code: 1 for position in CATALOG if position.kind == "ILOSC"}))
+    efenix, atrapa = _shown(found), _shown(_skeleton(page, "body"))
+    for line in sorted(efenix - atrapa):
+        report.differ(Part.PROPOSAL, f"w efenix, nie w Atrapie: {line}")
+    for line in sorted(atrapa - efenix):
+        report.differ(Part.PROPOSAL, f"w Atrapie, nie w efenix: {line}")
+
+
+def _skeleton(page: Page, selector: str, *, whole: bool = False) -> list[tuple[str, str | None, str | None]]:
+    """``_READ_SKELETON`` przez ``page.evaluate``, które, inaczej niż lokator, nie czeka na przejście strony (``<meta
+    http-equiv="refresh">``), na które narzędzie odpowiada 204; element, którego nie ma dokładnie raz, bez ``whole``: pusta
+    lista."""
+
+    found = page.evaluate(_READ_SKELETON, [selector, whole])
+    return [] if found is None else [(path, attribute, value) for path, attribute, value in found]
+
+
+def _shown(skeleton: Sequence[tuple[str, str | None, str | None]]) -> set[str]:
+    """Linie budowy bez treści: element, tekst w nim (``„…”``) albo atrybut (``[nazwa] „…”``) z maską ``_masked``."""
+
+    lines = set()
+    for path, attribute, value in skeleton:
+        where = path or "(bez elementu)"
+        lines.add(where if value is None else f"{where}{f'[{attribute}]' if attribute else ''} „{_masked(value)}”")
+    return lines
+
+
+def _masked(text: str) -> str:
+    """Tekst bez treści: kod pozycji to ``INDEKS_NNN_NNN``, ciąg cyfr to 9, ciąg liter to a, białe znaki jedna spacja."""
+
+    parts = POSITION_CODE.split(" ".join(text.split()))
+    return CODE_TOKEN.join(re.sub(r"\d+", "9", re.sub(r"[^\W\d_]+", "a", part)) for part in parts)
 
 
 def _check_script(efenix: _Efenix, page: Page, page_url: str, part: Part, script: str, uses: Sequence[ScriptUse], report: Report) -> None:
@@ -642,6 +777,13 @@ def _check_signed_out(efenix: _Efenix, page: Page, report: Report) -> None:
     _check_elements(page, Part.LOGIN, LOGIN_ELEMENTS, report)
 
 
+def _proposal_file(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ToolError(f"plik --propozycja {path}: nie da się go przeczytać jako tekstu UTF-8") from error
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--efenix-url", required=True, help=f"Adres listy zleceń efenix (…/{LIST_PAGE}).")
@@ -660,6 +802,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="Wzorzec pliku zbiorczego z kosztami pozycji w wierszu 14 (domyślnie Wzorzec z konfiguracji narzędzia, jak w Centrum).",
     )
+    parser.add_argument(
+        "--propozycja",
+        type=Path,
+        default=None,
+        help=(
+            "Plik HTML z propozycją Emmetta zapisaną w Chrome (element #emmett-propozycja albo odpowiedź"
+            " action_fill_emmett.php); narzędzie porównuje jej budowę z Atrapą, a samo action_fill_emmett.php nie wysyła."
+        ),
+    )
     parser.add_argument("--limit-ms", type=int, default=TIMEOUT_MS, help="Limit czekania na odpowiedź efenix (ms).")
     args = parser.parse_args(argv)
     try:
@@ -667,6 +818,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if address.scheme not in ("http", "https") or not address.path.endswith("/" + LIST_PAGE):
             raise ToolError(f"--efenix-url to adres listy zleceń efenix kończący się na /{LIST_PAGE}")
         costs = template_costs(args.wzorzec or default_collective_template_path())
+        proposal = None if args.propozycja is None else _proposal_file(args.propozycja)
         with sync_playwright() as playwright:
             try:
                 browser = playwright.chromium.connect_over_cdp(args.cdp)
@@ -685,6 +837,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         page,
                         costs,
                         number=args.numer,
+                        proposal=proposal,
                     )
             finally:
                 signed_out.dispose()

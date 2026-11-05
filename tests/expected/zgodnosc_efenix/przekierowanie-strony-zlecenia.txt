@@ -2,4 +2,5 @@ ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 0
 RÓŻNICA | strona zlecenia | GET page_order_edit.php przekierowuje na action_logout.php
 NIESPRAWDZONE | pozycje wyceny | bez strony zlecenia
 NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
-RÓŻNICE: 1 | NIESPRAWDZONE: 2
+NIESPRAWDZONE | propozycja Emmetta | budowa propozycji Emmetta nie jest sprawdzana: narzędzie nie wysyła action_fill_emmett.php; zmierz ją plikiem --propozycja z propozycją zapisaną w Chrome (--help)
+RÓŻNICE: 1 | NIESPRAWDZONE: 3

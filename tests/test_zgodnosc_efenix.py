@@ -4,7 +4,8 @@ Każdy test uruchamia narzędzie jak Maks: osobnym procesem, który łączy się
 Chrome z sesją taty), a sprawdza to, co widać z zewnątrz: wynik (plik expect w ``tests/expected/zgodnosc_efenix/``),
 kod wyjścia, żądania, które dostała Atrapa, i jej stan. Zgodna Atrapa daje wynik bez różnic, a Atrapa ze zmienioną
 budową każdą różnicę; każdy wynik ma prośbę o ręczne sprawdzenie przycisku kalendarza daty wykonania. Każde żądanie, które dostaje Atrapa, jest z listy dozwolonych odczytów, także gdy skrypty i
-elementy stron same wysyłają zapis albo wylogowanie. Wynik nie zawiera numerów zleceń, adresów, loginów ani
+elementy stron same wysyłają zapis albo wylogowanie, a nigdy propozycja Emmetta (``action_fill_emmett.php``): jej budowę
+narzędzie czyta tylko z pliku ``--propozycja`` i porównuje z propozycją Atrapy. Wynik nie zawiera numerów zleceń, adresów, loginów ani
 identyfikatorów, które Atrapa pokazuje, ani cen.
 
 Budowę, której Atrapa nie umie zmienić sama (``Changed``, ``Unread``), zmienia serwer przed Atrapą (``_in_front``):
@@ -41,6 +42,7 @@ from rozliczenia.efenix_positions import POSITION_OF_COLUMN
 
 from tests.fixtures.atrapa_efenix import (
     CHANGE_STATUS,
+    FILL_EMMETT,
     LIST_PAGE,
     LIST_SCRIPT,
     LIST_SEARCH_FIELDS,
@@ -59,6 +61,7 @@ from tests.fixtures.atrapa_efenix import (
     Changed,
     Unread,
     atrapa_efenix,
+    emmett_proposal,
 )
 from tests.fixtures.efenix import write_template_costs
 from tests.fixtures.expect import assert_expected
@@ -70,6 +73,11 @@ ROOT = Path(__file__).resolve().parents[1]
 DATE_BUTTON_BY_HAND = (
     "NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix"
     " na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty"
+)
+# Linia każdego wyniku bez pliku ``--propozycja`` (#953): narzędzie nie wysyła propozycji Emmetta.
+PROPOSAL_BY_HAND = (
+    "NIESPRAWDZONE | propozycja Emmetta | budowa propozycji Emmetta nie jest sprawdzana: narzędzie nie wysyła"
+    " action_fill_emmett.php; zmierz ją plikiem --propozycja z propozycją zapisaną w Chrome (--help)"
 )
 TOOL = ROOT / "tools" / "zgodnosc_efenix.py"
 # Żądania, które niczego w efenix nie zmieniają: lista, szukanie, strona zlecenia, skrypty obu stron i strona logowania.
@@ -131,6 +139,8 @@ class Variant:
     """Atrapa efenix pod narzędziem, koszty we Wzorcu i plik expect wyniku.
 
     ``rewrites``: strona Atrapy (ścieżka jak ``ORDER_PAGE``) → zmiana jej odpowiedzi, którą robi serwer przed Atrapą.
+    ``proposal``: treść pliku ``--propozycja`` z adresu listy zleceń, pod którym narzędzie widzi Atrapę (``None``: bez
+    pliku).
     """
 
     expected: Path
@@ -140,6 +150,32 @@ class Variant:
     costs: Mapping[str, CellValue] = field(default_factory=lambda: COSTS)
     number: str = ""
     rewrites: Mapping[str, Rewrite] = field(default_factory=dict)
+    proposal: Callable[[str], str] | None = None
+
+
+def _copied(html: str) -> Callable[[str], str]:
+    """Plik propozycji, jak Maks kopiuje go w DevTools Chrome: element ``#emmett-propozycja`` z propozycją ``html``."""
+
+    return lambda _url: f'<div id="emmett-propozycja">\n\t\t\t\t\t{html}\n\t\t\t\t</div>'
+
+
+# Propozycja Emmetta Atrapy z pozycją z przypisania kolumn i spoza niego, w tym z ilością dwucyfrową.
+EMMETT = {"012": 2, "005": 12}
+
+
+def _sending(url: str) -> str:
+    """Propozycja Atrapy z elementami, które przeglądarka wysyła sama (obraz, ramka, styl, prefetch, przejście, skrypt),
+    z adresami propozycji i Załadowania Emmetta, zmiany statusu i wylogowania pod adresem efenix ``url``."""
+
+    folder = url.rpartition("/")[0]
+    return (
+        f'<div id="emmett-propozycja">{emmett_proposal(EMMETT)}'
+        f'<img src="{folder}/{LOAD_EMMETT}?order_id=ID-TAJNE-72"><iframe src="{folder}/{FILL_EMMETT}"></iframe>'
+        f'<link rel="stylesheet" href="{folder}/{SAVE_QUANTITY}"><link rel="prefetch" href="{folder}/{FILL_EMMETT}?order_id=ID-TAJNE-72">'
+        f'<meta http-equiv="refresh" content="0;url={folder}/{CHANGE_STATUS}?order_id=ID-TAJNE-72&amp;xstatus=Anulowane">'
+        f"<script>fetch('{folder}/{FILL_EMMETT}', {{method: 'POST', body: 'order_id=ID-TAJNE-72'}}); navigator.sendBeacon('{folder}/{LOGOUT}');</script>"
+        "</div>"
+    )
 
 
 # Strona zlecenia z częścią pozycji Atrapy, jak zlecenia efenix z mniejszą liczbą pozycji wyceny (#822): bez dwóch
@@ -218,6 +254,20 @@ CHANGED = {
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-bez-sesji-przekierowuje-na-logowanie.txt",
         rewrites={SEARCH: _to_login_if_warned},
     ),
+    # Propozycja w oknie Emmetta ma tekst na stronie zlecenia, zanim skrypt włoży do niej propozycję.
+    "propozycja-pokazuje-cos-przed-propozycja": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-pokazuje-cos-przed-propozycja.txt",
+        rewrites={ORDER_PAGE: _replaced(('<div id="emmett-propozycja"></div>', '<div id="emmett-propozycja">Wczytywanie propozycji</div>'))},
+    ),
+    # Propozycja w polach z klasami bez tekstu (kod w ``name``, ilość w ``value``), a nie w tekście listy, jak w Atrapie.
+    "propozycja-w-polach": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-w-polach.txt",
+        proposal=_copied(emmett_proposal(EMMETT, in_fields=True).replace("<input ", '<input class="wycena-ilosc form-control" ')),
+    ),
+    "propozycja-pusta": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-pusta.txt", proposal=_copied("")),
+    "propozycja-z-elementami-ktore-wysylaja": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-z-elementami-ktore-wysylaja.txt", proposal=_sending
+    ),
     "logowanie-bez-formularza-i-pol": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "logowanie-bez-formularza-i-pol.txt",
         rewrites={
@@ -234,6 +284,13 @@ SAME = {
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "strona-zlecenia-z-czescia-pozycji.txt", orders=SUBSET
     ),
     "szukanie-numeru": Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-numeru.txt", number=ORDERS[1].number),
+    "propozycja-jak-w-atrapie": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-jak-w-atrapie.txt", proposal=_copied(emmett_proposal(EMMETT))
+    ),
+    # Sama odpowiedź ``action_fill_emmett.php`` (zakładka Network), bez elementu ``#emmett-propozycja``.
+    "propozycja-z-odpowiedzi": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "propozycja-jak-w-atrapie.txt", proposal=lambda _url: emmett_proposal(EMMETT)
+    ),
 }
 
 
@@ -312,10 +369,17 @@ def _checked(
         before(atrapa)
         state, pages = atrapa.state(), _pages(endpoint)
         with _in_front(atrapa, variant.rewrites) if variant.rewrites else nullcontext(atrapa.url) as url:
-            checked = _run(endpoint, url, template, "--numer", variant.number)
+            extra = ["--numer", variant.number]
+            if variant.proposal is not None:
+                proposal = tmp_path / "propozycja.html"
+                proposal.write_text(variant.proposal(url), encoding="utf-8")
+                extra += ["--propozycja", str(proposal)]
+            checked = _run(endpoint, url, template, *extra)
         assert (atrapa.state(), _pages(endpoint)) == (state, pages)
     assert not [text for text in PRIVATE if text in checked.stdout + checked.stderr]
     assert DATE_BUTTON_BY_HAND in checked.stdout.splitlines()
+    assert (PROPOSAL_BY_HAND in checked.stdout.splitlines()) == (variant.proposal is None)
+    assert FILL_EMMETT not in {path for _method, path in atrapa.requested()}
     return checked, atrapa
 
 
@@ -458,6 +522,17 @@ def test_bez_wzorca_pliku_zbiorczego_narzedzie_konczy_sie_bledem_przed_efenix(ch
         checked = _run(chrome, atrapa.url, missing)
 
     assert (checked.code, checked.stdout, checked.stderr) == (1, "", f"BŁĄD | Wzorzec pliku zbiorczego {missing}: brak pliku\n")
+    assert atrapa.requested() == []
+
+
+def test_nieczytelny_plik_propozycji_konczy_narzedzie_bledem_przed_efenix(chrome: str, tmp_path: Path) -> None:
+    template = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", COSTS)
+    proposal = tmp_path / "propozycja.html"
+    proposal.write_bytes(b"<ul><li>INDEKS_012_078: \xff</li></ul>")
+    with atrapa_efenix(ORDERS, cookie_session=True) as atrapa:
+        checked = _run(chrome, atrapa.url, template, "--propozycja", str(proposal))
+
+    assert (checked.code, checked.stdout, checked.stderr) == (1, "", f"BŁĄD | plik --propozycja {proposal}: nie da się go przeczytać jako tekstu UTF-8\n")
     assert atrapa.requested() == []
 
 

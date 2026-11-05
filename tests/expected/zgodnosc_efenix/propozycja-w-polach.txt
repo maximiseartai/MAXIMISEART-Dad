@@ -1,0 +1,9 @@
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | pozycje wyceny: 43 | ceny porównane z Wzorcem: 20 | pozycje w propozycji Emmetta: 2
+RÓŻNICA | propozycja Emmetta | w efenix, nie w Atrapie: input.form-control.wycena-ilosc
+RÓŻNICA | propozycja Emmetta | w efenix, nie w Atrapie: input.form-control.wycena-ilosc[name] „INDEKS_NNN_NNN”
+RÓŻNICA | propozycja Emmetta | w efenix, nie w Atrapie: input.form-control.wycena-ilosc[value] „9”
+RÓŻNICA | propozycja Emmetta | w Atrapie, nie w efenix: ul
+RÓŻNICA | propozycja Emmetta | w Atrapie, nie w efenix: ul > li
+RÓŻNICA | propozycja Emmetta | w Atrapie, nie w efenix: ul > li „INDEKS_NNN_NNN: 9”
+NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
+RÓŻNICE: 6 | NIESPRAWDZONE: 1

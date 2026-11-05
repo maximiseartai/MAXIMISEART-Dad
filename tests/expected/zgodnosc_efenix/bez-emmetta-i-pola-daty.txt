@@ -2,4 +2,5 @@ ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | 
 RÓŻNICA | strona zlecenia | pole kalendarza w oknie daty wykonania (#dialog_select_date #field_data_instalacji): 0 zamiast 1
 RÓŻNICA | strona zlecenia | przycisk Emmetta (#button_emmett): 0 zamiast 1
 NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
-RÓŻNICE: 2 | NIESPRAWDZONE: 1
+NIESPRAWDZONE | propozycja Emmetta | budowa propozycji Emmetta nie jest sprawdzana: narzędzie nie wysyła action_fill_emmett.php; zmierz ją plikiem --propozycja z propozycją zapisaną w Chrome (--help)
+RÓŻNICE: 2 | NIESPRAWDZONE: 2
