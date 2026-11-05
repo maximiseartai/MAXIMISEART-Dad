@@ -971,11 +971,14 @@ def _disabled_features(browser: Browser) -> list[set[str]]:
 # Sprawdzenie skilla verify-wycena-efenix: przyczynę Zatrzymania okna efenix, którą dostają Logi, przy każdej awarii każdego
 # żądania prawdziwej Wyceny w efenix sprawdza jego skrypt (explore_wycena_efenix.py) z tabelą oczekiwań z domeny. Cały
 # zakres biegnie w CI jako podstawa skilla w częściach, a tu we własnym procesie z limitem (#651) zakres, który przechodzi
-# przez każdą fazę sprawdzenia: przebieg bez awarii, awarie i stan, który zostawia zabity proces.
+# przez każdą fazę sprawdzenia: przebieg bez awarii, awarie, stan, który zostawia zabity proces, i ponowne uruchomienia
+# po nich ze zmianami taty w efenix.
 EXPLORER = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "scripts" / "explore_wycena_efenix.py"
 EXPLORER_SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "SKILL.md"
-# Poniżej limitu pytest, żeby sprawdzenie, które się nie kończy, padło z tym, co zdążyło wypisać.
-EXPLORER_LIMIT_S = 100
+# Poniżej limitu pytest testu, który je uruchamia, żeby sprawdzenie, które się nie kończy, padło z tym, co zdążyło
+# wypisać. Zakres testu z ponownymi uruchomieniami trwał 26 s na Macu przy 4 przeglądarkach, a windows-latest jest około
+# 3 razy wolniejszy.
+EXPLORER_LIMIT_S = 200
 
 
 def _explorer_in_own_process(*arguments: str, environment: dict[str, str] | None = None) -> tuple[int | None, list[str]]:
@@ -998,18 +1001,26 @@ def _explorer_in_own_process(*arguments: str, environment: dict[str, str] | None
 
 
 @pytest.mark.dlugi
-def test_odmowa_zaladuj_do_zlecenia_i_zabity_proces_przy_niej_trzymaja_niezmienniki_bez_znanych_ustalen(
+@pytest.mark.timeout(EXPLORER_LIMIT_S + 40)
+def test_odmowa_zaladuj_do_zlecenia_zabity_proces_przy_niej_i_wznowienie_po_nich_trzymaja_niezmienniki_bez_znanych_ustalen(
     tmp_path: Path,
 ) -> None:
+    """Jedynym wybaczonym naruszeniem jest przyjęte ustalenie 1 modelu ``verify-wznowienie-wyceny-efenix``
+    (``przerwanie-po-zaladuj``, #774): błąd serwera po wykonaniu „Załaduj do zlecenia” i zabity proces po nim zostawiają
+    zlecenie z Wyceną Emmetta poza Śladem, więc ponowne uruchomienie daje błąd tylko tego zlecenia."""
+
     code, lines = _explorer_in_own_process(
         "--run-dir", str(tmp_path), "--variant", "odpowiedzi", "zabity-proces", "--rola", "zaladuj-do-zlecenia", "--rownolegle", "4"
     )
 
     assert (code, lines[-1:]) == (0, ["WYCENA EFENIX OK"]), "\n".join(lines)
-    assert not any(line.startswith("znane ustalenie ") for line in lines), "\n".join(lines)
+    excused = [line.partition(":")[0] for line in lines if line.startswith(("znane ustalenie ", "zaakceptowane ryzyko "))]
+    assert excused == ["zaakceptowane ryzyko #774"], "\n".join(lines)
+    assert any(" ponownych uruchomień " in line for line in lines), "\n".join(lines)
     [evidence] = (tmp_path / "evidence").iterdir()
     assert (evidence / "raport.txt").read_text(encoding="utf-8").splitlines()[-1] == "WYCENA EFENIX OK"
-    assert not (evidence / "kontrprzyklady").exists()
+    counterexamples = [json.loads(path.read_text(encoding="utf-8")) for path in (evidence / "kontrprzyklady").iterdir()]
+    assert [violation.partition(" | ")[0] for found in counterexamples for violation in found["naruszenia"]] == ["WZNOWIENIE"]
     assert list((tmp_path / "runs").iterdir()) == []
 
 

@@ -1,6 +1,7 @@
 """Show that explore_wycena_efenix.py fails on broken variants of the Wycena w efenix, the defects of #802, #808, #758,
 #891, #895 at every „Załaduj do zlecenia” and #889, a reload waited for shorter than its answer, a closed tab not seen in
-the window's action and a dziennik that names an order only after the window changed it among them.
+the window's action, a dziennik that names an order only after the window changed it, and the resumes of #757 and #864
+with a quantity kept in the Ślad after a logout among them.
 
 Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) with the axes and request roles that reach it,
 one browser at a time, and must end the checker's report with the expected line. A mutation whose anchor text is no
@@ -19,6 +20,7 @@ from mutacje import Edit, Mutation, check_all
 BROWSER = Path("src/rozliczenia/efenix_browser.py")
 PRICING = Path("src/rozliczenia/efenix_pricing.py")
 TRACE = Path("src/rozliczenia/efenix_emmett_trace.py")
+POSITIONS = Path("src/rozliczenia/efenix_positions.py")
 EXPLORER = ".agents/skills/verify-wycena-efenix/scripts/explore_wycena_efenix.py"
 NEW = "WYCENA EFENIX: NOWE NARUSZENIE"
 
@@ -177,6 +179,80 @@ MUTATIONS = (
         ),
         explorer("zabity-proces", "data-wykonania"),
         "Centrum zgasło w trakcie zlecenia, a Logi Urwanego Uruchomienia nie mówią, które zlecenie zmieniło się w efenix",
+        NEW,
+    ),
+    Mutation(
+        "#757: stan „Emmett załadowany” zapisany przed „Załaduj do zlecenia”",
+        (
+            Edit(
+                PRICING,
+                "    if emmett is None or any(emmett.values()):\n        opened = efenix.load_emmett()\n",
+                "    if emmett is None or any(emmett.values()):\n        trace.loaded(number, {})\n        opened = efenix.load_emmett()\n",
+            ),
+        ),
+        explorer("zabity-proces", "zaladuj-do-zlecenia"),
+        "ponowne uruchomienie dokańcza wycenę, którą zaczął tata",
+        NEW,
+    ),
+    Mutation(
+        "#757: wznowienie bez sprawdzenia, czy strona jest taka, jaką proces zostawił po Emmetcie",
+        (
+            Edit(
+                PRICING,
+                "        if emmett is None or opened.execution_date is None or not as_left_after_emmett(emmett, trace.entered(number), opened.quantities):\n",
+                "        if emmett is None or opened.execution_date is None:\n",
+            ),
+        ),
+        explorer("zabity-proces", "ilosc"),
+        "ponowne uruchomienie dopisuje do wyceny, którą tata zmienił",
+        NEW,
+    ),
+    Mutation(
+        "#757: wycena, która już jest, bez Śladu dokańczana jak po Emmetcie",
+        (
+            Edit(
+                PRICING,
+                "    emmett = trace.emmett(number)\n",
+                "    emmett = trace.emmett(number) or (opened.quantities if opened.execution_date is not None and opened.amount != 0 else None)\n",
+            ),
+        ),
+        explorer("zabity-proces", "strona-zlecenia"),
+        "ponowne uruchomienie dopisuje do wyceny zaczętej przez tatę",
+        NEW,
+    ),
+    Mutation(
+        "#864: ilość wpisana w efenix bez zapisu z wyprzedzeniem w Śladzie",
+        (
+            Edit(
+                PRICING,
+                "        if not self._trace.entering(self._number, position, quantity):\n",
+                "        if False:\n",
+            ),
+        ),
+        explorer("odciecia", "ilosc"),
+        "tata dostaje „wycena już jest i się różni” przy zleceniu, które narzędzie samo zaczęło, i kończy je ręcznie",
+        NEW,
+    ),
+    Mutation(
+        "#864: wznowienie przyjmuje pustą pozycję, w której narzędzie zaczęło wpisywać ilość",
+        (
+            Edit(
+                POSITIONS,
+                "    return {position: quantity for position, quantity in on_page.items() if quantity} == left\n",
+                "    return all(on_page.get(position, 0) in (0, quantity) for position, quantity in left.items())"
+                " and all(position in left for position, quantity in on_page.items() if quantity)"
+                " and all(on_page.get(position, 0) == quantity for position, quantity in emmett.items() if quantity)\n",
+            ),
+        ),
+        explorer("odciecia", "ilosc"),
+        "ponowne uruchomienie dopisuje ilość, którą tata usunął po przerwaniu",
+        NEW,
+    ),
+    Mutation(
+        "ilość, której efenix nie zapisał po wylogowaniu, zostaje w Śladzie",
+        (Edit(PRICING, "            self._trace.not_entered(self._number, position)\n", "            pass\n"),),
+        explorer("odpowiedzi", "ilosc"),
+        "po wygaśnięciu sesji przy ilości ponowne uruchomienie zostawia zlecenie tacie, zamiast je dokończyć",
         NEW,
     ),
     Mutation(
