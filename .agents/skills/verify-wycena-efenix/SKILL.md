@@ -17,11 +17,12 @@ ci-czesci: 8
 
 CI runs `explore_wycena_efenix.py` (the `ci:` key) in Mutation checks whenever a change touches this skill, in up to
 `ci-czesci` parts: part k of n (`MUTACJE_CZESC=k/n`) runs the run without a fault and the k-th of n consecutive slices
-of the cases (`--lista` prints them), with the second runs of its own stops and kills. The whole space (466 cases, 35
-of them kills checked on the reference's states, and 55 distinct second runs) took 506 s on Maks's Mac with 4 browsers
-under a load of about 7, and the 8 parts, four at a time under a load of 6 to 9, took 63 to 86 s each (2026-11-05,
-reports in `~/.t3/notes/wycena-wznowienie-901/`; without second runs the same parts took 57 to 75 s, so `ci-czesci`
-stays 8); windows-latest is about 3 times slower (`tools/lib/zakres_runu.py`), so a part takes about 3 to 4 min there. A
+of the cases (`--lista` prints them), with the second runs of its own stops and kills. The whole space (468 cases since
+#908 added `REFUSED_NO_PROPOSAL`, 35 of them kills checked on the reference's states, and 55 distinct second runs) took
+509 s on Maks's Mac with 4 browsers under a load of about 11, and the 8 parts, four at a time under a load of 9 to 15,
+took 62 to 84 s each (2026-11-05, reports in `~/.t3/notes/wycena-wznowienie-901/merge-914/`; without second runs the
+parts took 57 to 75 s, so `ci-czesci` stays 8). On Windows in CI the two parts of n=2 took 259 and 338 s (run
+41985714991), about as long as on the Mac, so a part of n=8 takes about 1 to 1.5 min there. A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`.
 `tests/test_centrum_logi_uruchomienia.py` runs one small scope through every phase in pytest. `check_wycena_efenix_mutations.py`
 runs in full CI on `main` and nightly on `main` (`mutacje-nocne.yml`) after a change of this skill's folder. Run them
@@ -45,9 +46,12 @@ from these sentences, never from a run:
   address is a logout, a closed tab is `WindowClosed` „cokolwiek zgłosił wtedy Playwright”, a tab closed while the
   window waits for Dad's login is a closed window at once (#758), and an error page of the list after his login is
   `HttpStatus` at once (#891). A „Załaduj do zlecenia” efenix answers with 200 and `result: nok` in a valid session
-  leaves the reloaded page with amount 0 after an Emmett dialog that showed a proposal, which is
-  `Shape.EMMETT_NOT_LOADED`, a Zatrzymanie of the window and not a logout („Strona z kwotą 0 po oknie Emmetta, które
-  coś pokazało, to `UnexpectedPage` z `Shape.EMMETT_NOT_LOADED`”, #889); an expired session there stays a logout. Only
+  leaves the reloaded page with amount 0, which is `Shape.EMMETT_NOT_LOADED`, a Zatrzymanie of the window and not a
+  logout (#889), unless Emmett proposed nothing, which the window knows only from an empty Emmett dialog after a
+  proposal that came whole with 2xx; so the same refusal after the proposal of that order failed with HTTP 500
+  (`REFUSED_NO_PROPOSAL`, two faults at one order) is `Shape.EMMETT_NOT_LOADED` too („Strona z kwotą 0 po każdej innej
+  propozycji, także po pustym oknie Emmetta po padniętej propozycji, to `UnexpectedPage` z
+  `Shape.EMMETT_NOT_LOADED`”, #908); an expired session there stays a logout. Only
   a page efenix really sent in another shape (a redirect elsewhere) may be a shape.
   The Zatrzymanie after a failed write of the Ślad ahead of a quantity (`EFENIX_SLAD_NIEZAPISANY`, with the facts of
   the Wycena and `AheadNotSaved`) is never the cause of a fault in efenix, because no fault of this checker touches
@@ -85,7 +89,9 @@ change Dad could make by hand to the order it stopped at (`Edit`: he finished it
 the tool added, or priced the empty order himself). First runs that left the same state after the same kind of
 interruption share one second run (`Interruption`: a logout, after which the Ślad withdraws the quantity efenix did not
 save, or another stop or a kill, after which it keeps it), so a logout never shares a second run, nor its accepted
-risk, with another stop. The model checks the same promises over every order of steps without a browser; this axis
+risk, with another stop. `REFUSED_NO_PROPOSAL` (#908) stops in place of loading Emmett and leaves the order as it was,
+so its second run, with the proposal whole, finishes that order like one run (the model's `Zatrzymanie` in place of
+`ZaladujEmmetta`). The model checks the same promises over every order of steps without a browser; this axis
 checks them on the real window and the Atrapa.
 
 ## Launch
@@ -196,6 +202,8 @@ Each gives `WYCENA EFENIX: NOWE NARUSZENIE`:
 - #895: the answer of „Załaduj do zlecenia” read after the reload at every Emmett;
 - #889: amount 0 after „Załaduj do zlecenia” always read as Emmett proposing nothing, so a refusal with 200
   `result: nok` lets the window enter the file's quantities without Emmett;
+- #908: an empty Emmett dialog after a failed proposal read as Emmett proposing nothing, so `REFUSED_NO_PROPOSAL`
+  lets the window enter the file's quantities without Emmett;
 - the window waiting for the reload after „Załaduj do zlecenia” 1 s shorter than for its answer, which only the answer
   just before the time limit meets;
 - a „zaczynam” entry of the dziennik written only after the window's actions at an order;

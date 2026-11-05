@@ -1,7 +1,7 @@
 """Show that explore_wycena_efenix.py fails on broken variants of the Wycena w efenix, the defects of #802, #808, #758,
-#891, #895 at every „Załaduj do zlecenia” and #889, a reload waited for shorter than its answer, a closed tab not seen in
-the window's action, a dziennik that names an order only after the window changed it, and the resumes of #757 and #864
-with a quantity kept in the Ślad after a logout among them.
+#891, #895 at every „Załaduj do zlecenia”, #889 and #908, a reload waited for shorter than its answer, a closed tab not seen
+in the window's action, a dziennik that names an order only after the window changed it, and the resumes of #757 and
+#864 with a quantity kept in the Ślad after a logout among them.
 
 Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) with the axes and request roles that reach it,
 one browser at a time, and must end the checker's report with the expected line. A mutation whose anchor text is no
@@ -146,9 +146,22 @@ MUTATIONS = (
     ),
     Mutation(
         "#889: kwota 0 po „Załaduj do zlecenia” zawsze znaczy, że Emmett nic nie zaproponował",
-        (Edit(BROWSER, "        if proposed is not False and loaded.amount == 0:\n", "        if False and loaded.amount == 0:\n"),),
+        (Edit(BROWSER, "        if not nothing_proposed and loaded.amount == 0:\n", "        if False and loaded.amount == 0:\n"),),
         explorer("odpowiedzi", "zaladuj-do-zlecenia"),
         "efenix odmówił Wyceny Emmetta, a okno wpisuje ilości pliku do zlecenia bez Emmetta",
+        NEW,
+    ),
+    Mutation(
+        "#908: puste okno Emmetta po padniętej propozycji znaczy, że Emmett nic nie zaproponował",
+        (
+            Edit(
+                BROWSER,
+                "        nothing_proposed = shown is False and _came_whole(asked.value)\n",
+                "        nothing_proposed = shown is False\n",
+            ),
+        ),
+        explorer("odpowiedzi", "zaladuj-do-zlecenia"),
+        "propozycja Emmetta padła, efenix odmówił Wyceny Emmetta, a okno wpisuje ilości pliku do zlecenia bez Emmetta",
         NEW,
     ),
     Mutation(
@@ -260,9 +273,9 @@ MUTATIONS = (
         (
             Edit(
                 BROWSER,
-                "        self._click(self._only(_EMMETT_BUTTON, PagePart.EMMETT))\n",
+                "        button = self._only(_EMMETT_BUTTON, PagePart.EMMETT)\n",
                 '        self._click(self._only("#button_forward_to_accept", PagePart.EMMETT))\n'
-                "        self._click(self._only(_EMMETT_BUTTON, PagePart.EMMETT))\n",
+                "        button = self._only(_EMMETT_BUTTON, PagePart.EMMETT)\n",
             ),
         ),
         explorer("zamkniete-okno", "szukanie"),

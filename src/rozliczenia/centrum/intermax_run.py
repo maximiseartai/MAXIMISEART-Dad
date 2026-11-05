@@ -35,6 +35,7 @@ from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun, RunHost
 from rozliczenia import intermax_copies, intermax_messages, intermax_ordering, intermax_restore
 from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.input_copy import InputCopy
 from rozliczenia.intermax_copies import Copy
 from rozliczenia.intermax_replace import Disk, Waiting
 from rozliczenia.intermax_process import OrderingInputs
@@ -121,11 +122,22 @@ class IntermaxEntry:
         """Wejście procesu z Ustawień taty; ``contract.Refusal``, gdy Rejestr zleceń nie jest wskazany."""
 
         register = _register(self.store.load())
+        copy = InputCopy()
         inputs = OrderingInputs(
-            register, self.copies_directory, now=self.now, waiting=self.waiting, disk=self.disk, forbidden=self.forbidden
+            register,
+            self.copies_directory,
+            now=self.now,
+            waiting=self.waiting,
+            disk=self.disk,
+            forbidden=self.forbidden,
+            copy=copy,
         )
         return PreparedRun(
-            declaration=INTERMAX, period=inputs.period, process=INTERMAX.core(self.processes), inputs=inputs
+            declaration=INTERMAX,
+            period=inputs.period,
+            process=INTERMAX.core(self.processes),
+            inputs=inputs,
+            input_copy=copy,
         )
 
     def copies(self) -> contract.IntermaxCopies:

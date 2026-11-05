@@ -83,8 +83,8 @@ SummaryT = TypeVar("SummaryT", bound=WarnedSummary)
 class PreparedRun(Generic[InputsT, SummaryT]):
     """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu, okres, rdzeń procesu i jego wejście.
 
-    ``input_copy``: Kopia wejścia, którą czytniki procesu wypełniają w trakcie Uruchomienia; ``None``: proces jeszcze
-    jej nie ma (Uporządkowanie INTERMAX).
+    ``input_copy``: Kopia wejścia, którą czytniki procesu wypełniają w trakcie Uruchomienia; ``None``: Uruchomienie bez
+    Kopii.
     """
 
     declaration: ProcessDeclaration[InputsT, SummaryT]

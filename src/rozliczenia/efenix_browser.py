@@ -57,15 +57,17 @@ nikt nie zmierzył. Odpowiedź z przekierowaniem na ``page_login.php`` to ``Logg
 ``UnexpectedPage`` ze statusem (``HttpStatus``), a z przekierowaniem gdzie indziej ``UnexpectedPage`` z odpowiedzią w
 budowie, której okno nie zna; po każdej z nich okno strony nie czyta. Po odpowiedzi 2xx skrypt przeładowuje stronę także
 wtedy, gdy efenix odmówił, a strona bez Wyceny Emmetta wygląda jak pusta Wycena Emmetta (#877, #889), więc okno porównuje
-ją z oknem Emmetta, którego zawartość (``#emmett-propozycja``, odpowiedź ``action_fill_emmett.php``) czyta przed
-kliknięciem „Załaduj do zlecenia”: strona z kwotą końcową różną od 0 ma Wycenę Emmetta, bo proces ładuje ją tylko do
-zlecenia z kwotą 0, a strona z kwotą 0 ma ją tylko wtedy, gdy okno Emmetta nic nie pokazało (bez elementu i bez tekstu).
-Okno Emmetta jest puste, gdy Emmett nic nie zaproponował, ale też wtedy, gdy ``action_fill_emmett.php`` padło (status
-błędu albo zerwane połączenie): skrypt efenix wkłada propozycję tylko z odpowiedzi 2xx, a okno pokazuje i tak. Znana
-luka: gdy razem z tym efenix odmówi „Załaduj do zlecenia” odpowiedzią 2xx, okno bierze stronę bez Wyceny Emmetta za
-pustą Wycenę Emmetta, a zlecenie kończy się bez niej (klasa #889); to dwie jednoczesne awarie. Strona z kwotą 0 po oknie
-Emmetta, które coś pokazało, to ``UnexpectedPage`` z ``Shape.EMMETT_NOT_LOADED``, bez odczytu postaci propozycji, bo tej
-też nikt nie zmierzył. Prawdziwy efenix dał Wycenę Emmetta z kwotą różną od 0 w każdym ze 108 załadowań przebiegu z
+ją z propozycją Emmetta, którą sprawdza przed kliknięciem „Załaduj do zlecenia”: strona z kwotą końcową różną od 0
+ma Wycenę Emmetta, bo proces ładuje ją tylko do zlecenia z kwotą 0, a strona z kwotą 0 ma ją tylko wtedy, gdy Emmett nic
+nie zaproponował. To okno wie tylko wtedy, gdy okno Emmetta (``#emmett-propozycja``) nic nie pokazało (bez elementu i
+bez tekstu), a odpowiedź ``action_fill_emmett.php`` przyszła cała ze statusem 2xx: okno Emmetta jest puste także po
+statusie błędu, przekierowaniu i zerwanym połączeniu, bo skrypt efenix wkłada propozycję tylko z odpowiedzi 2xx, a okno
+pokazuje i tak (#908). Tę odpowiedź okno czyta po pokazaniu okna Emmetta, które skrypt efenix pokazuje dopiero po jej
+końcu albo zerwaniu (synchroniczne ``$.ajax``), a przed kliknięciem, po którym strona się przeładuje, więc odczyt na nic
+nie czeka i nie ściga się z przeładowaniem. Strona z kwotą 0 po każdej innej propozycji, także po pustym oknie Emmetta po
+padniętej propozycji, to ``UnexpectedPage`` z ``Shape.EMMETT_NOT_LOADED``, bez odczytu postaci propozycji, bo tej też
+nikt nie zmierzył; po padniętej propozycji „Załaduj do zlecenia” i tak ładuje Wycenę Emmetta, bo efenix bierze ją u
+siebie, a nie z okna, więc strona z kwotą różną od 0 kończy zlecenie jak bez awarii. Prawdziwy efenix dał Wycenę Emmetta z kwotą różną od 0 w każdym ze 108 załadowań przebiegu z
 4.11.2026 (Logi Uruchomienia Wydania 0.4.2), więc Zatrzymanie przy pustej propozycji, którą efenix pokazałby czymś,
 zdarza się najwyżej rzadko. Ilość wpisuje w polu i naciska Enter, a skrypt
 strony zapisuje ją przez ``action_save_index.php``: kwotą końcową jest ``price_all`` z tej odpowiedzi, a ``#cena_all2``,
@@ -505,15 +507,21 @@ class BrowserEfenix:
         """Ładuje Wycenę Emmetta do otwartego zlecenia z kwotą 0 i czyta stronę po przeładowaniu, które robi skrypt efenix.
 
         Po odmowie „Załaduj do zlecenia” odpowiedzią z przekierowaniem albo statusem błędu okno nie czeka na przeładowanie
-        i strony nie czyta. Strona po odpowiedzi 2xx z kwotą 0 po oknie Emmetta, które pokazało propozycję, to odmowa
-        (#877, #889). Treści odpowiedzi okno nie czyta, więc przeładowanie, które ją porzuca, nic nie zmienia (#895).
+        i strony nie czyta. Strona po odpowiedzi 2xx z kwotą 0 to odmowa (#877, #889), chyba że Emmett nic nie
+        zaproponował: okno Emmetta nic nie pokazało, a propozycja przyszła cała ze statusem 2xx (#908). Treści odpowiedzi
+        „Załaduj do zlecenia” okno nie czyta, więc przeładowanie, które ją porzuca, nic nie zmienia (#895).
         """
 
-        self._click(self._only(_EMMETT_BUTTON, PagePart.EMMETT))
+        button = self._only(_EMMETT_BUTTON, PagePart.EMMETT)
+        with _doing(Operation.ANSWER), self._page.expect_request(
+            lambda request: _is_post(request, _FILL_EMMETT), timeout=self._timeout_ms
+        ) as asked:
+            self._click(button)
         self._shown(_EMMETT_DIALOG, PagePart.EMMETT)
         proposal = self._only(f"{_EMMETT_DIALOG} {_PROPOSAL}", PagePart.EMMETT)
         with _doing(Operation.READ):
-            proposed = proposal.evaluate(_SHOWS_ANYTHING, timeout=self._timeout_ms)
+            shown = proposal.evaluate(_SHOWS_ANYTHING, timeout=self._timeout_ms)
+        nothing_proposed = shown is False and _came_whole(asked.value)
         load = self._only(f"{_EMMETT_DIALOG} {_OK}", PagePart.EMMETT)
         with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms) as reload:
             answer = self._answer(_LOAD_EMMETT, lambda _params: True, lambda: self._click(load))
@@ -522,7 +530,7 @@ class BrowserEfenix:
             if 300 <= answer.status < 400:
                 raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))
         loaded = self._read_order(reload.value)
-        if proposed is not False and loaded.amount == 0:
+        if not nothing_proposed and loaded.amount == 0:
             raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.EMMETT_NOT_LOADED))
         return loaded
 
@@ -779,6 +787,26 @@ def _is_search(request: Request, number: str) -> bool:
 
 def _is_post(request: Request, path: str) -> bool:
     return request.method == "POST" and urlparse(request.url).path.endswith("/" + path)
+
+
+def _came_whole(request: Request) -> bool:
+    """Czy efenix odpowiedział na skończone żądanie ``request`` całą odpowiedzią ze statusem 2xx: bez statusu błędu,
+    przekierowania i zerwania połączenia przed nagłówkami albo w trakcie treści.
+
+    Na koniec żądania, które już się skończyło, Playwright nie czeka: odpowiedź bez nagłówków to ``None``, a treść
+    zerwana w połowie to błąd odczytu treści (pomiar 5.11.2026 w Chromium Playwrighta, synchroniczne XHR jak efenix i
+    ``fetch`` jak Atrapa, #908). Każdy inny błąd odczytu, np. zamknięta karta, też znaczy, że okno odpowiedzi nie zna.
+    """
+
+    with _doing(Operation.ANSWER):
+        response = request.response()
+    if response is None or not response.ok:
+        return False
+    try:
+        response.body()
+    except PlaywrightError:
+        return False
+    return True
 
 
 def _form(request: Request) -> dict[str, list[str]]:
