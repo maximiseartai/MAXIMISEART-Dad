@@ -247,8 +247,8 @@ that Centrum changes often: `lifespan` in `app.py`, `listen_locally` and
 and `_Server` in `server.py`. `model/definicje.json` lists the four covered files as whole files and these three
 by their definitions: only a change to these definitions, not to the rest of their files, is drift.
 
-**Sync commit: `5f0dcbedd`** (2026-11-05, #910 merged with `main` after #924, #925
-and #926, which changed no covered file). The checker and the model share it:
+**Sync commit: `18bf04e33`** (2026-11-05, #910 merged with `main` after #924, #925,
+#926, #929, #931 and #937, which changed no covered file). The checker and the model share it:
 at this commit both were confirmed to describe the code above. Since `2b2af53e4` #910 changed `outbox.py`: the version of a wysyłka is
 its rank, then its moment (`Rank`, `Version`, `Post.rank`, the key `rank` of a
 queue file, `_version_of`), `_settle`, `_put_all`, `_put`, `_deliver_archive`

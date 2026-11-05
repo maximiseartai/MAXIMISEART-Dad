@@ -148,7 +148,7 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `917cf6fc6` (2026-11-05, #910 merged with `main` after the cleanup of #837). Every row of the table was
+Sync commit: `18bf04e33` (2026-11-05, #910 merged with `main` after the cleanup of #837). Every row of the table was
 checked against the code at this commit. Since the Sync commit `917cf6fc6` of `main` #910 changed these definitions: the
 version of a wysyłka has a rank before its moment (`Rank`, `Version`, `_version_of`, `_superseded` in `outbox.py`;
 `progress_post`, `logi_post`, `_logs_post`, `RunLogs.send` in `run_logs.py`), `RunEnded` carries the result, a failed
