@@ -30,10 +30,10 @@ from openpyxl.worksheet.formula import ArrayFormula
 from playwright.sync_api import Browser, sync_playwright
 import pytest
 
-from rozliczenia import TOOL_ROOT, settlement_messages, workbook_files
+from rozliczenia import settlement_messages, workbook_files
 from rozliczenia.centrum import app, contract, runs
 from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES, DadActions
-from rozliczenia.centrum.efenix_run import EfenixWindow
+from rozliczenia.centrum.efenix_run import EFENIX_URL, EfenixWindow
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.pricing_journal import JournalStarted, OrderBegun, OrderEnded, PricingJournal
@@ -900,8 +900,8 @@ def test_narzedzie_poza_klonem_gita_ma_logi_bez_commitu_i_bez_wydania(tmp_path: 
 # --- Wycena w efenix z Centrum (#750) -----------------------------------------------------------------------------------
 
 LOGIN = "Zaloguj się w oknie efenix"
-# Zlecenia sześciu Wykonawców (wiersze 18–23): jedno gotowe, dwa nieznane w efenix i trzy sprzeczne z Emmettem, więc
-# każdy wynik ma inną liczbę zleceń.
+# Zlecenia sześciu Wykonawców (wiersze 18–23): jedno gotowe, dwa nieznane w efenix i trzy z Ostrzeżeniem Emmetta (Emmett
+# ma O większe niż plik), więc każdy wynik ma inną liczbę zleceń.
 PRICED = [
     Order("#ZLQX01", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
     Order("#ZLQX02", worker="beata.testowa", address="UL. PRYWATNA 7/1", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
@@ -910,18 +910,18 @@ PRICED = [
     Order("#ZLQX05", worker="ewa.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})), emmett={"012": 3}),
     Order("#ZLQX06", worker="filip.testowy", cells={"O": 1}, amount=float(amount_of({"012": 1})), emmett={"012": 2}),
 ]
-# Zlecenia z ``PRICED``, które zna Atrapa efenix: gotowe i sprzeczne z Emmettem.
+# Zlecenia z ``PRICED``, które zna Atrapa efenix: gotowe i z Ostrzeżeniem Emmetta.
 IN_EFENIX = [PRICED[0].in_efenix("611"), PRICED[2].in_efenix("613"), PRICED[4].in_efenix("615"), PRICED[5].in_efenix("616")]
 
 
-def test_okno_efenix_taty_pracuje_w_tempie_ludzkim_a_slad_wyceny_emmetta_trzyma_w_config_narzedzia() -> None:
-    """Centrum taty daje Wycenie w efenix tempo ludzkie na prawdziwym zegarze i Ślad Wyceny Emmetta w ``config/``
-    narzędzia, poza OneDrive i poza Gitem (ADR 0015). Testy i weryfikacja na Atrapie efenix mają okno bez tempa i z własnym
-    folderem śladu, a okna taty nie otwierają, bo prowadzi do prawdziwego efenix (ADR 0024)."""
+def test_okno_efenix_taty_pracuje_w_tempie_ludzkim_z_prawdziwym_efenix() -> None:
+    """Centrum taty daje Wycenie w efenix tempo ludzkie na prawdziwym zegarze i adres prawdziwego efenix. Testy i
+    weryfikacja na Atrapie efenix mają okno bez tempa, a okna taty nie otwierają, bo prowadzi do prawdziwego efenix (ADR
+    0024)."""
 
     window = EfenixWindow.of_tata()
 
-    assert (window.pace, window.trace_directory.parent) == (Pace(sleep=time.sleep, clock=time.monotonic), TOOL_ROOT / "config")
+    assert (window.pace, window.url) == (Pace(sleep=time.sleep, clock=time.monotonic), EFENIX_URL)
 
 
 def test_wycena_w_efenix_z_centrum_pracuje_w_tempie_ludzkim_okna_efenix(tmp_path: Path) -> None:
@@ -966,7 +966,7 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
     """Okres z Plikiem zbiorczym ma przycisk Wyceny w efenix bez Podglądu bez zapisu. W trakcie czekania na logowanie
     inne Uruchomienie nie startuje, a karta po wyniku ma błędy i ostrzeżenia Emmetta z numerem zlecenia i Wykonawcą
     oraz liczby pominiętych. Nowe Powiadomienie (kropka na dzwonku) ma tytuł wyniku, okres i liczby zleceń, a prowadzi
-    do karty tego Uruchomienia z jego Logów. Ślad Wyceny Emmetta okresu trafia do folderu śladów okna efenix Centrum."""
+    do karty tego Uruchomienia z jego Logów."""
 
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
@@ -984,7 +984,6 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
     card = centrum.client.get(f"/api/runs/{notification['run_id']}/card").json()
 
     assert (notifications["unread"], notification["unread"]) == (1, True)
-    assert (tmp_path / "slad-wyceny-emmetta" / f"{PERIOD}.json").is_file()
     assert (notification["headline"], notification["period"], notification["orders"], notification["stopped"]) == (
         "Wycena w efenix gotowa · wymaga sprawdzenia",
         PERIOD,
@@ -1027,7 +1026,7 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
         (23, "ZLQX06", "filip.testowy"),
     ]
     assert notes["errors"][0]["what"].startswith("efenix nie zna zlecenia o numerze z NUMER ZL.")
-    assert notes["warnings"][0]["what"].startswith("Wycena Emmetta ma inne ilości niż Plik zbiorczy")
+    assert notes["warnings"][0]["what"].startswith("efenix ma więcej niż Plik zbiorczy")
     assert notes["settled"] == []
 
 
@@ -1130,9 +1129,9 @@ def _explorer_in_own_process(*arguments: str, environment: dict[str, str] | None
 def test_odmowa_zaladuj_do_zlecenia_zabity_proces_przy_niej_i_wznowienie_po_nich_trzymaja_niezmienniki_bez_znanych_ustalen(
     tmp_path: Path,
 ) -> None:
-    """Jedynym wybaczonym naruszeniem jest przyjęte ustalenie 1 modelu ``verify-wznowienie-wyceny-efenix``
-    (``przerwanie-po-zaladuj``, #774): błąd serwera po wykonaniu „Załaduj do zlecenia” i zabity proces po nim zostawiają
-    zlecenie z Wyceną Emmetta poza Śladem, więc ponowne uruchomienie daje błąd tylko tego zlecenia."""
+    """Bez żadnego wybaczonego naruszenia: błąd serwera po wykonaniu „Załaduj do zlecenia” i zabity proces po nim
+    zostawiają zlecenie z samą Wyceną Emmetta, a ponowne uruchomienie dokańcza je do pliku jak jeden przebieg (ADR 0026;
+    dawniej przyjęte ryzyko #774)."""
 
     code, lines = _explorer_in_own_process(
         "--run-dir", str(tmp_path), "--variant", "odpowiedzi", "zabity-proces", "--rola", "zaladuj-do-zlecenia", "--rownolegle", "4"
@@ -1140,7 +1139,7 @@ def test_odmowa_zaladuj_do_zlecenia_zabity_proces_przy_niej_i_wznowienie_po_nich
 
     assert (code, lines[-1:]) == (0, ["WYCENA EFENIX OK"]), "\n".join(lines)
     excused = [line.partition(":")[0] for line in lines if line.startswith(("znane ustalenie ", "zaakceptowane ryzyko "))]
-    assert excused == ["zaakceptowane ryzyko #774"], "\n".join(lines)
+    assert excused == [], "\n".join(lines)
     assert any(" ponownych uruchomień " in line for line in lines), "\n".join(lines)
     [evidence] = (tmp_path / "evidence").iterdir()
     assert (evidence / "raport.txt").read_text(encoding="utf-8").splitlines()[-1] == "WYCENA EFENIX OK"
@@ -1286,48 +1285,6 @@ HYPOTHESES = {
 }
 
 
-def test_logi_zatrzymania_po_nieudanym_zapisie_sladu_wyceny_emmetta_maja_pozycje_slad_zlecen_i_blad_zapisu_pliku(
-    tmp_path: Path,
-) -> None:
-    """Pliku Śladu Wyceny Emmetta nie da się zastąpić (w jego miejscu jest folder), więc zapis ilości z wyprzedzeniem w
-    zleceniu z wiersza 19 się nie udaje, a Wycena staje „do Maksa” (#881). Logi Uruchomienia mają to, co przy Zatrzymaniu
-    okna: przyczynę z kodem pozycji, wiersz, miejsce „2 z 2”, udane działania okna przy tym zleceniu bez działania, które
-    się nie udało (okno ilości nie wpisało), ślad gotowego zlecenia z wiersza 18, a w śladzie wywołań błąd zapisu pliku
-    śladu w ``_replace``."""
-
-    with atrapa_efenix([PRICED[0].in_efenix("611"), STOPPED_AT_SECOND[1].in_efenix("617")]) as atrapa:
-        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
-        (tmp_path / "slad-wyceny-emmetta" / f"{PERIOD}.json").mkdir(parents=True)
-        write_collective_file(centrum.period_parent, STOPPED_AT_SECOND)
-        assert _start_pricing(centrum).status_code == 200
-        assert finished_view(centrum.client)["result"]["result"] == "BLAD_KRYTYCZNY"
-    [record] = records(centrum)
-    stop, trace = record["efenix_stop"], record["trace"]
-
-    assert ([(message["kind"], message["code"]) for message in record["messages"]], record["stop_kind"]) == (
-        [("stop", "EFENIX_SLAD_NIEZAPISANY")],
-        "for_maks",
-    )
-    assert {key: value for key, value in stop["cause"].items() if value is not None} == {
-        "what": "Ślad Wyceny Emmetta nie zapisał ilości z wyprzedzeniem, więc okno jej nie wpisało",
-        "positions": ["012"],
-    }
-    assert (stop["row"], stop["order"], stop["orders"], stop["failed"]) == (19, 2, 2, None)
-    assert [step["action"] for step in stop["steps"]] == [
-        "szukanie",
-        "otwarcie zlecenia",
-        "data wykonania",
-        "otwarcie zlecenia",
-        "Wycena Emmetta",
-    ]
-    assert [(order["row"], order["outcome"]) for order in record["efenix_orders"]] == [(18, "gotowe")]
-    assert [trace["exception_type"], *(cause["exception_type"] for cause in trace["causes"])][:2] == [
-        "rozliczenia.message.StopError",
-        "rozliczenia.efenix_pricing._TraceNotSaved",
-    ]
-    assert [frame["function"] for frame in trace["causes"][-1]["frames"]][-1:] == ["_replace"]
-
-
 @pytest.mark.parametrize(("second", "cause", "steps", "failed"), HYPOTHESES.values(), ids=HYPOTHESES.keys())
 def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_i_slad_zlecen_sprzed_niego(
     tmp_path: Path, second: AtrapaOrder, cause: dict[str, Any], steps: list[str], failed: str
@@ -1383,10 +1340,10 @@ def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_i_b
     assert traced == [
         (18, "gotowe", None, ["szukanie", "otwarcie zlecenia"]),
         (19, "błąd", "EFENIX_NIEZNANY_NUMER", ["szukanie"]),
-        (20, "ostrzeżenie Emmetta", "EFENIX_SPRZECZNOSC_Z_EMMETTEM", emmett_steps),
+        (20, "ostrzeżenie Emmetta", "EFENIX_WIECEJ_NIZ_PLIK", emmett_steps),
         (21, "błąd", "EFENIX_NIEZNANY_NUMER", ["szukanie"]),
-        (22, "ostrzeżenie Emmetta", "EFENIX_SPRZECZNOSC_Z_EMMETTEM", emmett_steps),
-        (23, "ostrzeżenie Emmetta", "EFENIX_SPRZECZNOSC_Z_EMMETTEM", emmett_steps),
+        (22, "ostrzeżenie Emmetta", "EFENIX_WIECEJ_NIZ_PLIK", emmett_steps),
+        (23, "ostrzeżenie Emmetta", "EFENIX_WIECEJ_NIZ_PLIK", emmett_steps),
     ]
     emmett = record["efenix_orders"][2]
     assert (emmett["file"], emmett["steps"][-1]["quantities"]["012"], emmett["steps"][0]["found"]) == ({"012": 1}, 2, 1)
@@ -1785,7 +1742,7 @@ def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwan
     assert traced == [
         (18, "gotowe", None, ["szukanie", "otwarcie zlecenia", "data wykonania", "otwarcie zlecenia", "Wycena Emmetta", "ilość"]),
         (19, "gotowe", None, ["szukanie", "otwarcie zlecenia"]),
-        (20, "ostrzeżenie Emmetta", "EFENIX_SPRZECZNOSC_Z_EMMETTEM", ["szukanie", "otwarcie zlecenia", "data wykonania", "otwarcie zlecenia", "Wycena Emmetta"]),
+        (20, "ostrzeżenie Emmetta", "EFENIX_WIECEJ_NIZ_PLIK", ["szukanie", "otwarcie zlecenia", "data wykonania", "otwarcie zlecenia", "Wycena Emmetta"]),
     ]
     assert record["interruption"] == {"row": 21, "place": 4, "total": 5, "omitted": 1}
     assert dad_actions(record) == [

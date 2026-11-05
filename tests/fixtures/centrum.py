@@ -627,7 +627,6 @@ def centrum(tmp_path: Path, *, today: date = date(2026, 10, 19)) -> Centrum:
         efenix_window=EfenixWindow(
             "http://127.0.0.1:9/index.php",
             tmp_path / "przegladarka-efenix",
-            tmp_path / "slad-wyceny-emmetta",
             channel=None,
             headless=True,
             pace=None,

@@ -1111,11 +1111,6 @@ browser_not_started [EFENIX_BRAK_PRZEGLADARKI]
   Gdzie: okno efenix
   Co zrobić: Zamknij okno efenix, jeśli zostało otwarte z poprzedniej Wyceny w efenix, i uruchom ponownie. Jeśli na komputerze nie ma Google Chrome albo błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
-emmett_trace_not_saved [EFENIX_SLAD_NIEZAPISANY]
-  Co się stało: Narzędzie nie zapisało na dysku Śladu Wyceny Emmetta, zanim wpisało ilość w zleceniu z wiersza 19 Pliku zbiorczego, więc tej ilości nie wpisało i Wycena w efenix się zatrzymała. To zlecenie ma w efenix Wycenę Emmetta bez części ilości z pliku. Wycena zleceń sprzed zatrzymania została w efenix.
-  Gdzie: plik 08_14_09_2026.json, folder slad-wyceny-emmetta
-  Co zrobić: Uruchom ponownie: gotowe zlecenia narzędzie tylko sprawdzi. Jeśli Wycena zatrzyma się znowu albo to zlecenie dostanie błąd „wycena już jest i się różni”, dopisz w nim ilości z Pliku zbiorczego w efenix sam. Przekaż ten komunikat osobie utrzymującej narzędzie.
-
 order_error #1 [EFENIX_BRAK_NUMERU]
   Co się stało: Wiersz nie ma numeru zlecenia w NUMER ZL. Zlecenie zostało w efenix bez zmian.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
@@ -1176,40 +1171,30 @@ order_error #12 [EFENIX_ILOSC_NIECALKOWITA]
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Popraw ilość w Pliku zbiorczym albo wyceń zlecenie w efenix sam.
 
-order_error #13 [EFENIX_WYCENA_INNA]
-  Co się stało: Zlecenie ma już wycenę w efenix i różni się ona od Pliku zbiorczego: kwota w efenix 150,00 zł, Kwota (AU) 125,50 zł. Inne ilości: pozycja INDEKS_005 (bez kolumny w Pliku zbiorczym), pozycja INDEKS_012 (kolumna O). Zlecenie zostało w efenix bez zmian.
-  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
-  Co zrobić: Sprawdź wycenę w efenix i Plik zbiorczy, popraw tę, która jest błędna, i uruchom ponownie.
-
-order_error #14 [EFENIX_WYCENA_INNA]
-  Co się stało: Zlecenie ma już wycenę w efenix i różni się ona od Pliku zbiorczego: kwota w efenix 150,00 zł, Kwota (AU) 125,50 zł. Zlecenie zostało w efenix bez zmian.
-  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
-  Co zrobić: Sprawdź wycenę w efenix i Plik zbiorczy, popraw tę, która jest błędna, i uruchom ponownie.
-
-order_error #15 [EFENIX_INNA_KWOTA]
+order_error #13 [EFENIX_INNA_KWOTA]
   Co się stało: Po dopisaniu ilości z Pliku zbiorczego kwota w efenix to 1234,50 zł, a Kwota (AU) 1200,00 zł. Ilości z pliku są już wpisane w efenix.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź wycenę w efenix i Plik zbiorczy, popraw tę, która jest błędna, i uruchom ponownie.
 
-order_error #16 [EFENIX_BRAK_POZYCJI]
+order_error #14 [EFENIX_BRAK_POZYCJI]
   Co się stało: Strona zlecenia w efenix nie ma pozycji, w których Plik zbiorczy ma ilość: pozycja INDEKS_012 (kolumna O), pozycja INDEKS_019 (kolumna T). Zlecenie zostało w efenix bez zmian.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź ilości w tych kolumnach Pliku zbiorczego i pozycje zlecenia w efenix, a potem wyceń zlecenie w efenix sam.
 
-order_error #17 [EFENIX_BRAK_POZYCJI]
+order_error #15 [EFENIX_BRAK_POZYCJI]
   Co się stało: Strona zlecenia w efenix nie ma pozycji, w których Plik zbiorczy ma ilość: pozycja INDEKS_012 (kolumna O), pozycja INDEKS_019 (kolumna T). Narzędzie ustawiło już datę wykonania z DATA, ale nie załadowało Wyceny Emmetta i nie wpisało ilości.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź ilości w tych kolumnach Pliku zbiorczego i pozycje zlecenia w efenix, a potem wyceń zlecenie w efenix sam.
 
-order_error #18 [EFENIX_BRAK_POZYCJI]
+order_error #16 [EFENIX_BRAK_POZYCJI]
   Co się stało: Strona zlecenia w efenix nie ma pozycji, w których Plik zbiorczy ma ilość: pozycja INDEKS_012 (kolumna O), pozycja INDEKS_019 (kolumna T). Wycena Emmetta jest już załadowana, a narzędzie niczego do niej nie dopisało.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź ilości w tych kolumnach Pliku zbiorczego i pozycje zlecenia w efenix, a potem wyceń zlecenie w efenix sam.
 
-emmett_conflict [EFENIX_SPRZECZNOSC_Z_EMMETTEM]
-  Co się stało: Wycena Emmetta ma inne ilości niż Plik zbiorczy: pozycja INDEKS_012 (kolumna O): Emmett 2, plik 1; pozycja INDEKS_020 (bez kolumny w Pliku zbiorczym): Emmett 1, plik 0. Wycena Emmetta jest załadowana, a narzędzie niczego do niej nie dopisało.
+emmett_warning [EFENIX_WIECEJ_NIZ_PLIK]
+  Co się stało: efenix ma więcej niż Plik zbiorczy: pozycja INDEKS_012 (kolumna O): efenix 2, plik 1; pozycja INDEKS_020 (bez kolumny w Pliku zbiorczym): efenix 1, plik 0. Narzędzie tych ilości nie zmieniło, a pozostałe ilości z pliku wpisało.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
-  Co zrobić: Rozstrzygnij, czy rację ma Emmett, czy Plik zbiorczy, i popraw wycenę w efenix sam.
+  Co zrobić: Jeśli rację ma efenix, popraw Plik zbiorczy i uruchom ponownie. Jeśli rację ma plik, zmniejsz tę ilość w efenix sam.
 
 marks_not_saved #1 [EFENIX_ZNACZNIKI_PLIK_OTWARTY]
   Co się stało: Gotowe zlecenia nie dostały Znacznika efenix, bo Plik zbiorczy jest otwarty w Excelu. Ich wycena została w efenix. Ponowne uruchomienie oznaczy je bez zmian w efenix i pokaże listę błędów i ostrzeżeń.

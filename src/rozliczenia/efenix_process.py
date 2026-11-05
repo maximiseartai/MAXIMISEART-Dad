@@ -7,11 +7,9 @@ Historia odrzuca, a z niej Droga okresu liczy Wycenę w efenix.
 Okno efenix daje rozmówca (``EfenixInputs.open_efenix``): Centrum rozliczeń otwiera widoczne okno Google Chrome w profilu
 narzędzia i czeka w nim na logowanie taty (``efenix_browser.chrome``), Skrypt dla maszyn otwiera Chromium Playwrighta
 (``efenix_browser.chromium``), a testy okno na Atrapie efenix. Czas czekania na logowanie wstrzymuje zegar rdzenia
-(``EngineConversation.waiting``), tak jak Decyzja taty. Tempo ludzkie okna (``efenix_pace``) i folder Śladu Wyceny
-Emmetta (``efenix_emmett_trace``) wybiera każdy rozmówca: Centrum taty bierze je z okna taty
-(``centrum.efenix_run.EfenixWindow.of_tata``), a testy, weryfikacja i Skrypt dla maszyn na Atrapie efenix wyłączają tempo
-(``None``) i podają własny folder. Ślad okresu leży w pliku ``<okres>.json`` tego folderu, obok klucza, pod którym są w
-nim zlecenia.
+(``EngineConversation.waiting``), tak jak Decyzja taty. Tempo ludzkie okna (``efenix_pace``) wybiera każdy rozmówca:
+Centrum taty bierze je z okna taty (``centrum.efenix_run.EfenixWindow.of_tata``), a testy, weryfikacja i Skrypt dla
+maszyn na Atrapie efenix wyłączają je (``None``).
 """
 
 from __future__ import annotations
@@ -48,7 +46,7 @@ class EfenixInputs:
 
     Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da). Wycena w efenix nie ma podglądu bez zapisu.
     ``clock`` to zegar w sekundach czasów etapów i śladu zleceń (ten sam, którym rdzeń liczy ``Czas uruchomienia``).
-    ``pace``: tempo ludzkie okna; ``None`` wyłącza przerwy. ``trace_directory``: folder Śladów Wyceny Emmetta.
+    ``pace``: tempo ludzkie okna; ``None`` wyłącza przerwy.
     ``forbidden``: pamięć reguły danych pracy Centrum (``None``: bez wysyłki, bez pamięci). ``copy``: Kopia wejścia
     Uruchomienia z Centrum (``None``: bez Logów, bez Kopii).
     ``journal``: dziennik Wyceny w efenix w trakcie przebiegu; Centrum podaje swój (``centrum.pricing_journal``), a Skrypt
@@ -58,7 +56,6 @@ class EfenixInputs:
     source: Path
     open_efenix: OpenEfenix
     pace: Pace | None
-    trace_directory: Path
     clock: Callable[[], float] = field(default=time.perf_counter, compare=False)
     forbidden: ForbiddenValues | None = None
     journal: OrderJournal = field(default=NO_JOURNAL, compare=False)
@@ -80,7 +77,6 @@ def _execute(inputs: EfenixInputs, observer: ProgressObserver, conversation: Eng
     return efenix_pricing.price_orders(
         inputs.source,
         inputs.open_efenix,
-        inputs.trace_directory / f"{inputs.period}.json",
         observer=observer,
         clock=inputs.clock,
         waiting=conversation.waiting,

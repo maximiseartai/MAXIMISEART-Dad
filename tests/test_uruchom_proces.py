@@ -45,7 +45,7 @@ from tests.fixtures.settlement import (
 )
 from tests.fixtures.atrapa_efenix import amount_of, atrapa_efenix
 from tests.fixtures.efenix import Order as EfenixOrder
-from tests.fixtures.efenix import number_in_trace, write_collective_file
+from tests.fixtures.efenix import write_collective_file
 from tests.fixtures.intermax import Intermax
 from tests.fixtures.workbooks import hyperlinks
 
@@ -473,14 +473,14 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
         EfenixOrder("#9401", cells={"O": 2}, amount=au),  # wiersz 18: gotowe po dopisaniu
         EfenixOrder("#9402"),  # 19: inny status
         EfenixOrder("#9403", cells={"O": 2}, amount=au + 10),  # 20: kwota inna niż AU
-        EfenixOrder("#9404", cells={"O": 2}, amount=au, emmett={"012": 1}),  # 21: sprzeczność z Emmettem
+        EfenixOrder("#9404", cells={"O": 2}, amount=au, emmett={"012": 3}),  # 21: Ostrzeżenie Emmetta, O większe niż w pliku
     ]
     source = write_collective_file(tmp_path, orders)
     metrics = tmp_path / "metrics.jsonl"
     efenix = [order.in_efenix(f"90{index}") for index, order in enumerate(orders)]
     with atrapa_efenix([efenix[0], replace(efenix[1], status="Do akceptacji"), *efenix[2:]]) as atrapa:
         exit_code, result = _run(
-            "efenix", "--source", source, "--efenix-url", atrapa.url, "--metrics", metrics, "--slad", tmp_path / "slad"
+            "efenix", "--source", source, "--efenix-url", atrapa.url, "--metrics", metrics
         )
         changes = atrapa.status_changes()
 
@@ -504,15 +504,13 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
     assert [(warning["code"], warning["where"].rpartition(", ")[2]) for warning in result["warnings"]] == [
         ("EFENIX_INNY_STATUS", "wiersz 19"),
         ("EFENIX_INNA_KWOTA", "wiersz 20"),
-        ("EFENIX_SPRZECZNOSC_Z_EMMETTEM", "wiersz 21"),
+        ("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 21"),
     ]
     amounts = f"kwota w efenix to {au:.2f} zł, a Kwota (AU) {au + 10:.2f} zł".replace(".", ",")
     assert amounts in result["warnings"][1]["what"]
-    assert "pozycja INDEKS_012 (kolumna O): Emmett 1, plik 2" in result["warnings"][2]["what"]
+    assert "pozycja INDEKS_012 (kolumna O): efenix 3, plik 2" in result["warnings"][2]["what"]
     assert [phase["state"] for phase in result["progress"]["phases"]] == ["completed"] * 4
     assert "9401" not in json.dumps(result) and "9401" not in metrics.read_text(encoding="utf-8")
-    # Ślad Wyceny Emmetta okresu trafia do --slad, bez numerów zleceń.
-    assert not number_in_trace("9401", (tmp_path / "slad" / f"{source.parent.name}.json").read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize(
@@ -553,7 +551,7 @@ def _tool_copy(tmp_path: Path) -> Path:
     return Path(shutil.copy(SCRIPT, tool / "tools"))
 
 
-def test_wycena_w_efenix_bez_podanych_plikow_zapisuje_metryki_i_slad_emmetta_w_katalogu_narzedzia(tmp_path: Path) -> None:
+def test_wycena_w_efenix_bez_podanych_plikow_zapisuje_metryki_w_katalogu_narzedzia(tmp_path: Path) -> None:
     script = _tool_copy(tmp_path)
     tool = script.parents[1]
     order = EfenixOrder("#9401", cells={"O": 2}, amount=float(amount_of({"012": 2})))
@@ -563,7 +561,7 @@ def test_wycena_w_efenix_bez_podanych_plikow_zapisuje_metryki_i_slad_emmetta_w_k
 
     assert (exit_code, result["stop"], result["metrics_saved"]) == (0, None, True)
     assert len((tool / ".wycena-efenix-metrics.jsonl").read_text(encoding="utf-8").splitlines()) == 1
-    assert (tool / "config" / "slad-wyceny-emmetta" / f"{source.parent.name}.json").is_file()
+    assert not (tool / "config").exists()
 
 
 def test_bez_podanych_plikow_oba_procesy_czytaja_konfiguracje_wykonawcow_i_wzorce_z_folderu_config_narzedzia(
