@@ -231,8 +231,19 @@ that Centrum changes often: `lifespan` in `app.py`, `listen_locally` and
 and `_Server` in `server.py`. `model/definicje.json` lists the four covered files as whole files and these three
 by their definitions: only a change to these definitions, not to the rest of their files, is drift.
 
-**Sync commit: `ed6e5833`** (2026-11-05). The checker and the model share it:
+**Sync commit: `766ccbfe`** (2026-11-05). The checker and the model share it:
 at this commit both were confirmed to describe the code above. It merges
+`main` with #897 into #846, so it holds the covered code of both syncs below,
+`outbox.py` of `ed6e5833` (#846) and `keyed_box.py` of `7a5acaa9` (#897), and no
+covered file changed in the merge beyond them. The checker keeps both
+additions side by side: `Scope.later` with NAJNOWSZA_WERSJA and `list_lag` with
+the rule against a waiting note without a refusal of the Archiwum, and its
+state counts both the versions still to post and the lists' lag. The model
+keeps both constants, `Postep` and `OpoznienieListy`, and every configuration
+sets both: `postep` runs without lagging lists and `archiwum-lista` without a
+progress, so no configuration has both at once. `sprawdz_kolejke.py` gave
+`KOLEJKA SKRZYNKI OK` at it (about 7 min under load on Maks's Mac).
+At `ed6e5833` (2026-11-05), which merges
 `main` into #846 after its round 2, which changed no covered file but brought
 the model's `Plik` in line with `_send_all`: a newer version whose read failed
 at the start of the pass leaves this pass, as `_skip_unreadable` skips it to the
@@ -373,7 +384,7 @@ them, `6f94edb8` was the sync of both, and since the checker's earlier sync
 model describes. To see whether they need another look:
 
 ```bash
-git log --oneline ed6e5833..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
+git log --oneline 766ccbfe..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
 ```
 
 A change to the three definitions above shows as a `UWAGA:` line of
