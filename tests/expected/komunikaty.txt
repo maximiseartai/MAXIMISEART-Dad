@@ -1152,7 +1152,7 @@ order_error #7 [EFENIX_INNY_ADRES]
   Co zrobić: Sprawdź zlecenie w efenix i wyceń je sam.
 
 order_error #8 [EFENIX_INNA_DATA]
-  Co się stało: Data wykonania zlecenia w efenix jest inna niż dzień z DATA w Pliku zbiorczym. Zlecenie zostało w efenix bez zmian.
+  Co się stało: Data wykonania zlecenia w efenix różni się od dnia z DATA w Pliku zbiorczym o więcej niż 3 dni. Zlecenie zostało w efenix bez zmian.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź zlecenie w efenix i wyceń je sam.
 
