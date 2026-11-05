@@ -163,6 +163,15 @@ class Outage(enum.Enum):
     )
 
 
+class ProposalFailure(enum.Enum):
+    """Jak pada propozycja Emmetta zlecenia (``action_fill_emmett.php``, ``AtrapaOrder.emmett_proposal_failure``); skrypt
+    strony i tak pokazuje okno Emmetta, puste, jak skrypt efenix."""
+
+    SERVER_ERROR = "HTTP 500 bez propozycji"
+    TORN = "odpowiedź z propozycją zerwana w połowie treści"
+    CUT = "połączenie zerwane bez odpowiedzi"
+
+
 class EmmettRefusal(enum.Enum):
     """Jak efenix odmawia „Załaduj do zlecenia” zlecenia (``AtrapaOrder.emmett_refusal``); skrypt strony i tak ją
     przeładowuje, bo czeka tylko na koniec odpowiedzi, a nie na jej status."""
@@ -209,10 +218,10 @@ EFENIX_EMMETT_RELOAD_MS = 1000
 _EMMETT_RELOAD_MS = 200
 
 
-def amount_of(quantities: Mapping[str, int]) -> Decimal:
-    """Kwota końcowa wyceny z ilościami ``quantities`` (kod → ilość) w cenach Atrapy."""
+def amount_of(quantities: Mapping[str, int], prices: Mapping[str, Decimal] = PRICES) -> Decimal:
+    """Kwota końcowa wyceny z ilościami ``quantities`` (kod → ilość) w cenach ``prices`` (domyślnie cenach Atrapy)."""
 
-    return sum((PRICES[code] * quantity for code, quantity in quantities.items()), Decimal("0.00"))
+    return sum((prices[code] * quantity for code, quantity in quantities.items()), Decimal("0.00"))
 
 
 @dataclass
@@ -229,9 +238,8 @@ class AtrapaOrder:
     wyceny. Z ``after_date`` każda z tych czterech zmian strony jest dopiero od zapisu daty wykonania, a z ``after_emmett``
     od przeładowania po załadowaniu Wyceny Emmetta. ``emmett_refusal``: efenix odmawia „Załaduj do zlecenia” tego
     zlecenia (``EmmettRefusal``), aż test to zmieni. ``emmett_in_fields``: okno Emmetta pokazuje propozycję w polach bez
-    tekstu (ilość w ``value``), jedną z postaci, których w efenix nikt nie zmierzył. ``emmett_proposal_error``: efenix
-    odpowiada na propozycję Emmetta tego zlecenia (``action_fill_emmett.php``) błędem serwera (500), więc okno Emmetta
-    zostaje puste.
+    tekstu (ilość w ``value``), jedną z postaci, których w efenix nikt nie zmierzył. ``emmett_proposal_failure``: propozycja
+    Emmetta tego zlecenia (``action_fill_emmett.php``) pada (``ProposalFailure``), więc okno Emmetta zostaje puste.
     """
 
     order_id: str
@@ -256,7 +264,7 @@ class AtrapaOrder:
     after_emmett: bool = False
     emmett_refusal: EmmettRefusal | None = None
     emmett_in_fields: bool = False
-    emmett_proposal_error: bool = False
+    emmett_proposal_failure: ProposalFailure | None = None
 
     @property
     def amount(self) -> Decimal:
@@ -361,6 +369,7 @@ def atrapa_efenix(
     outage_from: tuple[Outage, int] | None = None,
     error_answer: tuple[str, int, HTTPStatus] | None = None,
     emmett_reload_ms: int = _EMMETT_RELOAD_MS,
+    prices: Mapping[str, Decimal] = PRICES,
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
@@ -374,6 +383,8 @@ def atrapa_efenix(
     ``orders``, więc zlecenia testu zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie.
     ``error_answer``: ścieżka, numer jej żądania narzędzia (od 1, bez szukania, które lista wysyła sama) i status błędu
     HTTP: na to jedno żądanie Atrapa odpowiada stroną błędu serwera z tym statusem, bez wykonania żądania.
+    ``prices``: cena każdej pozycji ``CATALOG`` po kodzie na stronie zlecenia i w odpowiedzi na zapis ilości, domyślnie
+    ceny Atrapy (``PRICES``); odtworzenie Uruchomienia podaje ceny z kwot w Logach (``tools/lib/atrapa_z_logow.py``).
     """
 
     atrapa = AtrapaEfenix(copy.deepcopy(list(orders)))
@@ -472,7 +483,7 @@ def atrapa_efenix(
                     case EmmettRefusal.SERVER_ERROR:
                         with atrapa._lock:
                             [order] = [order for order in atrapa.orders if order.order_id == params.get("order_id")]
-                            _change(path, order, params, refuse_dates=refuse_dates)
+                            _change(path, order, params, refuse_dates=refuse_dates, prices=prices)
                         self._html("<p>Wystąpił błąd serwera.</p>", HTTPStatus.INTERNAL_SERVER_ERROR)
                     case EmmettRefusal.ELSEWHERE:
                         self._redirect(LIST_PAGE)
@@ -484,14 +495,20 @@ def atrapa_efenix(
                         self._json({"result": "nok", "error": "Nie załadowano."})
                     case EmmettRefusal.OTHER:
                         self._html("<p>Nie załadowano wyceny Emmetta.</p>")
-            elif method == "POST" and path == FILL_EMMETT and any(
-                order.emmett_proposal_error for order in orders if order.order_id == params.get("order_id")
-            ):
-                self._html("<p>Wystąpił błąd serwera.</p>", HTTPStatus.INTERNAL_SERVER_ERROR)
+            elif method == "POST" and path == FILL_EMMETT and (failed_proposal := _failing_proposal(orders, params)) is not None:
+                order, failure = failed_proposal
+                match failure:
+                    case ProposalFailure.SERVER_ERROR:
+                        self._html("<p>Wystąpił błąd serwera.</p>", HTTPStatus.INTERNAL_SERVER_ERROR)
+                    case ProposalFailure.TORN:
+                        self._torn = True
+                        self._html(str(_change(path, order, params, refuse_dates=refuse_dates, prices=prices)))
+                    case ProposalFailure.CUT:
+                        self._cut()
             elif method == "POST" and path in _CHANGES:
                 with atrapa._lock:
                     found = [order for order in atrapa.orders if order.order_id == params.get(_CHANGES[path])]
-                    answer = _change(path, found[0], params, refuse_dates=refuse_dates) if found else None
+                    answer = _change(path, found[0], params, refuse_dates=refuse_dates, prices=prices) if found else None
                 if answer is None:
                     self._html("<p>Nie ma takiego zlecenia.</p>", HTTPStatus.NOT_FOUND)
                 elif isinstance(answer, dict) and changed is Changed.QUANTITY_ANSWER:
@@ -526,7 +543,9 @@ def atrapa_efenix(
                     closing.wait()
                     self.close_connection = True
                 elif found:
-                    self._html(_order_page(found[0], found[0].changed or changed, today, self.headers.get("Host", ""), emmett_reload_ms))
+                    self._html(
+                        _order_page(found[0], found[0].changed or changed, today, self.headers.get("Host", ""), emmett_reload_ms, prices)
+                    )
                 else:
                     self._html("<p>Nie ma takiego zlecenia.</p>", HTTPStatus.NOT_FOUND)
             else:
@@ -538,6 +557,16 @@ def atrapa_efenix(
             self.close_connection = True
             self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
             self.connection.close()
+
+        def _tear(self) -> None:
+            """Zrywa połączenie w połowie treści zamknięciem bez RST: przeglądarka dostaje zawsze połowę treści, a potem
+            koniec połączenia przed ``Content-Length`` (``net::ERR_CONTENT_LENGTH_MISMATCH``). RST zaraz po połowie treści
+            (``_cut``) przeglądarka czasem gubiła razem z nią i nie kończyła żądania w czasie okna (5.11.2026, propozycja
+            Emmetta: 3 z 6 przebiegów, #908)."""
+
+            self.close_connection = True
+            with suppress(OSError):
+                self.connection.shutdown(socket.SHUT_RDWR)
 
         def _wait_if_late(self) -> None:
             if self._late:
@@ -557,7 +586,7 @@ def atrapa_efenix(
                     closing.wait()
                     self.close_connection = True
                 else:
-                    self._cut()
+                    self._tear()
                 return
             self.wfile.write(body)
 
@@ -626,14 +655,26 @@ class _Server(ThreadingHTTPServer):
 _CHANGES = {SAVE_QUANTITY: "order_id", FILL_EMMETT: "order_id", LOAD_EMMETT: "order_id", SET_DATE: "id", GET_DATE: "id", CHANGE_STATUS: "order_id"}
 
 
+def _failing_proposal(orders: Sequence[AtrapaOrder], params: Mapping[str, str]) -> tuple[AtrapaOrder, ProposalFailure] | None:
+    """Zlecenie, którego ``order_id`` przyszło w ``params``, z tym, jak pada jego propozycja Emmetta, gdy pada."""
+
+    for order in orders:
+        if order.order_id == params.get("order_id") and order.emmett_proposal_failure is not None:
+            return order, order.emmett_proposal_failure
+    return None
+
+
 def _emmett_refusal(orders: Sequence[AtrapaOrder], params: Mapping[str, str]) -> EmmettRefusal | None:
     """Odmowa „Załaduj do zlecenia” zlecenia, którego ``order_id`` przyszło w ``params``."""
 
     return next((order.emmett_refusal for order in orders if order.order_id == params.get("order_id")), None)
 
 
-def _change(path: str, order: AtrapaOrder, params: Mapping[str, str], *, refuse_dates: bool) -> str | dict[str, str]:
-    """Odpowiedź Atrapy na działanie ``path`` na zleceniu ``order`` i zmiana jego stanu (pod blokadą Atrapy)."""
+def _change(
+    path: str, order: AtrapaOrder, params: Mapping[str, str], *, refuse_dates: bool, prices: Mapping[str, Decimal]
+) -> str | dict[str, str]:
+    """Odpowiedź Atrapy na działanie ``path`` na zleceniu ``order`` w cenach ``prices`` i zmiana jego stanu (pod blokadą
+    Atrapy)."""
 
     if path == SAVE_QUANTITY:
         code = params.get("index", "").removeprefix("INDEKS_").partition("_")[0]
@@ -644,7 +685,7 @@ def _change(path: str, order: AtrapaOrder, params: Mapping[str, str], *, refuse_
             order.quantities[code] = quantity
         else:
             order.quantities.pop(code, None)
-        return {"result": "ok", "price_index": f"{PRICES[code] * quantity:.2f}", "price_all": f"{order.amount:.2f}"}
+        return {"result": "ok", "price_index": f"{prices[code] * quantity:.2f}", "price_all": f"{amount_of(order.quantities, prices):.2f}"}
     if path == FILL_EMMETT:
         if order.emmett_in_fields:
             return "".join(f'<input name="INDEKS_{escape(code)}_078" value="{quantity}">' for code, quantity in sorted(order.emmett.items()))
@@ -855,7 +896,9 @@ _ORDER_SCRIPT = """
 """
 
 
-def _order_page(order: AtrapaOrder, changed: Changed | Unread | None, today: date, host: str, reload_ms: int) -> str:
+def _order_page(
+    order: AtrapaOrder, changed: Changed | Unread | None, today: date, host: str, reload_ms: int, prices: Mapping[str, Decimal]
+) -> str:
     day = "" if order.execution_date is None else order.execution_date.isoformat()
     if changed is Changed.DATE_FORMAT and order.execution_date is not None:
         day = f"{order.execution_date:%d.%m.%Y}"
@@ -882,8 +925,8 @@ def _order_page(order: AtrapaOrder, changed: Changed | Unread | None, today: dat
         f"<div><small>Ulica - numer</small> {escape(order.address)}</div>"
         '<div class="card"><button type="button" id="button_forward_to_accept">Przekaż do akceptacji.</button>'
         '<button type="button" id="button_forward_to_cancel">Anuluj to zlecenie.</button></div>'
-        f'<div class="card"><span>Wycena</span>{emmett}{"".join(_position(order, position, changed) for position in CATALOG if not (position.code in order.without and _broken(order)))}'
-        f'<h1><span id="cena_all2">{order.amount:.2f}</span></h1></div>'
+        f'<div class="card"><span>Wycena</span>{emmett}{"".join(_position(order, position, changed, prices) for position in CATALOG if not (position.code in order.without and _broken(order)))}'
+        f'<h1><span id="cena_all2">{amount_of(order.quantities, prices):.2f}</span></h1></div>'
         + _dialog("dialog_forward_yes_no", "Zmiana statusu", "", "Tak")
         + _dialog("dialog_select_date", "Wybierz datę wykonania", day_field, "Potwierdź")
         + _dialog("dialog_emmett", "Emmett", '<div id="emmett-propozycja"></div>', "Załaduj do zlecenia")
@@ -907,12 +950,14 @@ def _order_script(changed: Changed | Unread | None, today: date, reload_ms: int)
     return _HOSTILE_SCRIPT + script if changed is Unread.HOSTILE else script
 
 
-def _position(order: AtrapaOrder, position: Position, changed: Changed | Unread | None) -> str:
-    """Karta pozycji jak w efenix: pole Ilość z ceną w tekście karty albo samo pole ceny wpisywanej, bez ceny w tekście."""
+def _position(order: AtrapaOrder, position: Position, changed: Changed | Unread | None, prices: Mapping[str, Decimal]) -> str:
+    """Karta pozycji jak w efenix: pole Ilość z ceną z ``prices`` w tekście karty albo samo pole ceny wpisywanej, bez
+    ceny w tekście."""
 
     suffix = "079" if changed is Unread.PRICE_LIST and position.code == "005" else "078"
     field_id = f"INDEKS_{position.code}_{suffix}"
-    shown = f'<div class="col-sm-1 mt-2"><span class="text-default"><small>{_price_text(position.price, changed)}</small></span></div>'
+    price = prices[position.code]
+    shown = f'<div class="col-sm-1 mt-2"><span class="text-default"><small>{_price_text(price, changed)}</small></span></div>'
     if position.kind == "CENA" or (changed is Unread.PRICE_LIST and position.code == "007"):
         field = f'<input type="text" id="{field_id}" order_id="{escape(order.order_id)}" class="form-control form-control-sm wycena-cena" value="0.00">'
         value = Decimal("0.00")
@@ -923,7 +968,7 @@ def _position(order: AtrapaOrder, position: Position, changed: Changed | Unread 
             f'<input step="1" type="number" id="{field_id}" order_id="{escape(order.order_id)}" '
             f'class="form-control form-control-sm wycena-ilosc" min="0" max="999999" value="{quantity}">'
         )
-        value = position.price * quantity
+        value = price * quantity
         if changed is Changed.QUANTITY_VALUE and position.code == "012":
             field = field.replace(f'value="{quantity}"', 'value="1.5"')
     return (

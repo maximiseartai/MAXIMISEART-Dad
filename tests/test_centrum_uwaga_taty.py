@@ -88,6 +88,32 @@ def test_uwaga_przy_chwilowo_zablokowanym_pliku_zapisow_skrzynki_wychodzi_od_raz
     assert (response.json(), len(refused), len(started.report_box.issues)) == ({"state": "sent"}, 1, 1)
 
 
+def test_uwaga_przy_pliku_zapisow_skrzynki_nieczytelnym_na_stale_czeka_a_dziennik_mowi_raz_ktory_plik(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pliku zapisów Skrzynki nie da się odczytać ani zapisać (#909): Uwaga czeka w kolejce jak bez internetu, a dziennik
+    Centrum dostaje jedną linię z typem błędu, po której Maks wie, że to nie sieć."""
+
+    opening = tmp_path / "config" / OPENING_FILE
+    read_text = Path.read_text
+
+    def locked(path: Path, *args: Any, **kwargs: Any) -> str:
+        if path == opening:
+            raise PermissionError(13, "Odmowa dostępu", str(path))
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", locked)
+    started = with_key(tmp_path)
+
+    response = started.client.post("/api/dad-notes", json={"title": TITLE, "body": BODY})
+    started.client.post("/api/dad-notes", json={"title": "Druga uwaga", "body": BODY})
+
+    assert response.json() == {"state": "waiting", "waits_for": "internet"}
+    assert started.report_box.issues == []
+    log = started.log_path.read_text(encoding="utf-8")
+    assert log.count("skrzynka-zapisy-niedostepne typ=PermissionError") == 1
+
+
 @pytest.mark.parametrize(
     ("text", "body"),
     [

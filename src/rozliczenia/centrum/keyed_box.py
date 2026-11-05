@@ -35,6 +35,14 @@ albo w nowym Centrum trafia do tego, co założyła pierwsza, a ponowienie zaraz
 budzenie kolejki, zamiast założyć drugie issue albo dostać odmowę drugiego Archiwum tego tagu albo drugiego pliku tej
 nazwy (422) i dopisek, że plik czeka. Chwila jest z zegara Centrum (``time.monotonic``, wspólny dla procesów jednego
 komputera do jego restartu), a chwila z przyszłości (po restarcie komputera) jest dawna.
+
+Plik ``opening``, którego nie da się odczytać (``OSError``, np. trzyma go antywirus), nie wyklucza zapisu, którego
+``KeyedBox`` nie zna, więc zapis i lista mają jedną zasadę (#909): zapis jest wstrzymany, gdy nie da się odczytać pliku
+przy nim albo przy ostatniej liście jego rodzaju w tym wątku, a pierwsza lista tego rodzaju, przy której plik się
+odczyta, wstrzymanie zdejmuje. Lista pokazuje wtedy to, co pokazuje GitHub. Plik, którego treść nie jest UTF-8, to
+treść w innej postaci (brak zapisów), którą następny zapis zastąpi. Plik, którego nie da się odczytać ani zapisać na
+stałe, wstrzymuje każdy zapis do Skrzynki: kolejka czeka jak bez sieci i ponawia co budzenie, a dziennik Centrum dostaje
+raz na pracę Centrum linię z typem błędu (``NotesFile.unavailable``), jak przy pliku kolejki, którego nie da się odczytać.
 """
 
 from __future__ import annotations
@@ -95,13 +103,19 @@ PENDING_KEPT_S: Final = 60 * 60.0
 _Outcome = TypeVar("_Outcome")
 
 
+def _unnoticed(failure: OSError) -> None:
+    """Bez dziennika: nieudany odczyt albo zapis pliku zapisów tylko wstrzymuje zapisy (opis modułu)."""
+
+
 @dataclass(frozen=True)
 class NotesFile:
     """Plik zapisów ``KeyedBox`` (opis modułu) i jego zamiana: u taty ``atomic_file.replace_atomically`` (``create_app``),
-    która czeka na plik, który ktoś na chwilę trzyma, jak przy innych plikach Centrum, i nie zostawia urwanego pliku."""
+    która czeka na plik, który ktoś na chwilę trzyma, jak przy innych plikach Centrum, i nie zostawia urwanego pliku.
+    ``unavailable`` dostaje pierwszy błąd odczytu albo zapisu pliku w tej pracy Centrum (u taty dziennik Centrum)."""
 
     path: Path
     replace: Callable[[Path, str], None]
+    unavailable: Callable[[OSError], None] = _unnoticed
 
 
 @dataclass
@@ -209,6 +223,7 @@ class KeyedBox:
         self._opening = opening
         self._remembered = _Notes()  # zapisy bez pliku ``opening``
         self._lists = threading.local()  # listed_at: chwila ostatniego pytania wątku o listę, na które przyszła
+        self._unavailable_noted = False  # pierwszy błąd pliku ``opening`` w tej pracy Centrum już w ``unavailable``
         self._names: dict[int, str] = {}  # id pliku Archiwum z ostatnich odpowiedzi ``archive``: jego nazwa
 
     def open_issue(self, label: Label, title: str, body: str) -> SendOutcome | NoKey:
@@ -284,8 +299,9 @@ class KeyedBox:
             self._noted(notes)
 
     def _held(self, kind: str, now: float, notes: _Notes) -> bool:
-        """Pod blokadą: czy ostatnia lista ``kind`` mogła nie pokazywać zapisu bez odpowiedzi z pliku: przyszła na
-        pytanie zadane mniej niż ``LIST_LAG_S`` po nim (albo przed nim).
+        """Pod blokadą: czy ostatnia lista ``kind`` mogła nie pokazywać zapisu z pliku: przy niej pliku nie dało się
+        odczytać (opis modułu) albo przyszła na pytanie zadane mniej niż ``LIST_LAG_S`` po zapisie bez odpowiedzi (albo
+        przed nim).
 
         Liczy się chwila pytania o listę, nie ``now``: między listą a zapisem kolejka może jeszcze wysyłać plik do
         Archiwum okresu (``outbox._deliver_to_period``), a chwila zapisu, która w tym czasie dawnieje, nie mówi, że
@@ -293,21 +309,25 @@ class KeyedBox:
         późniejsza lista podglądu Zgłoszenia albo Powiadomień w innym wątku nie mówi, co widziała lista kolejki.
         """
 
+        listed_at = self._listed_at().get(_list_of(kind), now)
+        if listed_at is None:
+            return True
         if kind not in notes.pending:
             return False
         moment, _ = notes.pending[kind]
-        listed_at = self._listed_at().get(_list_of(kind), now)
         return 0 <= now - moment and listed_at - moment < LIST_LAG_S
 
-    def _listed_at(self) -> dict[str, float]:
-        """Chwila ostatniego pytania tego wątku o listę etykiety, tagu albo plików Archiwum, na które przyszła."""
+    def _listed_at(self) -> dict[str, float | None]:
+        """Chwila ostatniego pytania tego wątku o listę etykiety, tagu albo plików Archiwum, na które przyszła; ``None``:
+        przy tej liście pliku ``opening`` nie dało się odczytać."""
 
-        listed: dict[str, float] = self._lists.__dict__.setdefault("listed_at", {})
+        listed: dict[str, float | None] = self._lists.__dict__.setdefault("listed_at", {})
         return listed
 
     def _notes(self) -> _Notes | None:
         """Pod blokadą: zapisy z pliku ``opening`` bez dawnych skutków; ``None``: pliku nie da się odczytać (np. trzyma
-        go antywirus), więc zapisu innego ``KeyedBox`` nie da się wykluczyć."""
+        go antywirus), więc zapisu innego ``KeyedBox`` nie da się wykluczyć. Treść, która nie jest UTF-8, to treść w
+        innej postaci (``_parsed``)."""
 
         now = self._clock()
         if self._opening is None:
@@ -316,9 +336,19 @@ class KeyedBox:
             text = self._opening.path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return _Notes()
-        except (OSError, UnicodeError):
+        except UnicodeError:
+            return _Notes()
+        except OSError as failure:
+            self._unavailable(failure)
             return None
         return _parsed(text).fresh(now)
+
+    def _unavailable(self, failure: OSError) -> None:
+        """Pod blokadą: pierwszy błąd pliku ``opening`` w tej pracy Centrum idzie do ``NotesFile.unavailable``."""
+
+        if self._opening is not None and not self._unavailable_noted:
+            self._unavailable_noted = True
+            self._opening.unavailable(failure)
 
     def _noted(self, notes: _Notes) -> bool:
         """Pod blokadą: zapisuje ``notes`` w pliku ``opening`` (bez pliku w pamięci); ``False``: zapis się nie udał.
@@ -335,7 +365,8 @@ class KeyedBox:
             return True
         try:
             self._opening.replace(self._opening.path, notes.dumped())
-        except OSError:
+        except OSError as failure:
+            self._unavailable(failure)
             return False
         return True
 
@@ -363,8 +394,9 @@ class KeyedBox:
         if outcome is not None and not isinstance(outcome, Archive):
             return outcome
         with self._lock:
-            self._listed_at()[_archive_kind(tag)] = self._listed_at()[_FILES_LIST] = asked_at
-            notes = self._notes() or _Notes()
+            known = self._notes()
+            self._listed_at()[_archive_kind(tag)] = self._listed_at()[_FILES_LIST] = None if known is None else asked_at
+        notes = known or _Notes()
         opened = next((archive for _, of, archive in reversed(notes.archives) if of == tag), None)
         found = outcome if outcome is not None else None if opened is None else Archive(opened, ())
         if found is None:
@@ -466,8 +498,9 @@ class KeyedBox:
         if isinstance(listed, Refused | Unreachable):
             return listed
         with self._lock:
-            self._listed_at()[label] = asked_at
-            notes = self._notes() or _Notes()
+            known = self._notes()
+            self._listed_at()[label] = None if known is None else asked_at
+        notes = known or _Notes()
         opened = [issue for _, of, issue in notes.opened if of == label]
         numbers = {issue.number for issue in listed}
         missing = [issue for issue in opened if issue.number not in numbers]

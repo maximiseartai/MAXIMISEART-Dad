@@ -186,7 +186,10 @@ class Shape(enum.Enum):
     ANSWER_RESULT = "odpowiedź zapisu ilości z wynikiem innym niż ok i nok"
     LOGIN_FORM = "formularz logowania efenix pod adresem strony zlecenia, bez przekierowania"
     ANSWER_REDIRECT = "odpowiedź na „Załaduj do zlecenia” przekierowana poza stronę logowania"
-    EMMETT_NOT_LOADED = "strona przeładowana po „Załaduj do zlecenia” bez wyceny, choć okno Emmetta pokazało propozycję"
+    EMMETT_NOT_LOADED = (
+        "strona przeładowana po „Załaduj do zlecenia” bez wyceny, choć okno Emmetta pokazało propozycję albo propozycja"
+        " nie przyszła cała ze statusem 2xx"
+    )
 
 
 class LoginSign(enum.Enum):

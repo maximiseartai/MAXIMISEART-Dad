@@ -81,6 +81,7 @@ class Queue:
         self, tmp_path: Path, box: FakeReportBox, key: str | None = KEY, listener: QueueListener | None = None
     ) -> None:
         self.directory = tmp_path / "config" / "zgloszenia" / "kolejka"
+        self.opening = tmp_path / "config" / OPENING_FILE
         self.log_path = tmp_path / "logs" / "centrum-rozliczen.log"
         self.box = box
         self.key = key
@@ -92,11 +93,13 @@ class Queue:
     def restarted(self) -> Outbox:
         """Kolejka nowego startu Centrum na tym samym folderze."""
 
-        keyed = KeyedBox(self.box, lambda: self.key, clock=self.clock, opening=NotesFile(self.directory.parents[1] / OPENING_FILE, replace_atomically))
+        log = CentrumLog(self.log_path)
+        notes = NotesFile(self.opening, replace_atomically, log.box_notes_unavailable)
+        keyed = KeyedBox(self.box, lambda: self.key, clock=self.clock, opening=notes)
         return Outbox(
             self.directory,
             keyed,
-            CentrumLog(self.log_path),
+            log,
             clock=self.clock,
             listener=self.listener,
         )
@@ -1127,6 +1130,73 @@ def test_kontrole_ilosci_okresu_w_jednym_przejsciu_ida_do_jednego_issue_zanim_li
     assert issue.body == f"{THREAD.line}\n\nCzęść 1/1\n\npierwsza\n"
     assert issue.comments == ["Część 1/1\n\ndruga\n"]
     assert queue.files() == []
+
+
+def test_kontrola_ilosci_przy_liscie_bez_odczytu_pliku_zapisow_czeka_na_budzenie_zamiast_drugiego_issue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Antywirus trzyma plik zapisów Skrzynki akurat przy liście drugiej Kontroli ilości okresu, a lista issue jeszcze nie
+    pokazuje issue, które założyła pierwsza (#909). Druga czeka na budzenie ``RETRY_S`` i trafia do tego issue."""
+
+    queue = Queue(tmp_path, FakeReportBox(list_lag=True))
+    queue.queued("pierwsza\n", "druga\n")
+    read_text = Path.read_text
+    refused: list[Path] = []
+
+    def held_after_first_issue(path: Path, encoding: str | None = None, errors: str | None = None) -> str:
+        text = read_text(path, encoding=encoding, errors=errors)
+        if path == queue.opening and not refused and json.loads(text)["issue"]:
+            refused.append(path)
+            raise PermissionError(13, "Odmowa dostępu", str(path))
+        return text
+
+    monkeypatch.setattr(Path, "read_text", held_after_first_issue)
+    queue.outbox.resume()
+    queue.passed()
+
+    assert (len(queue.box.issues), len(queue.files()), queue.clock.wakes) == (1, 1, 1)
+    queue.box.list_caught_up()
+    queue.clock.advance(RETRY_S)
+    queue.passed()
+    [issue] = queue.box.issues_with(THREAD.label)
+    assert issue.comments == ["Część 1/1\n\ndruga\n"]
+    assert queue.files() == []
+    assert queue.log().count("skrzynka-zapisy-niedostepne typ=PermissionError") == 1
+
+
+def test_plik_zapisow_ktorego_nigdy_nie_da_sie_odczytac_wstrzymuje_wysylke_z_jedna_linia_dziennika_do_naprawy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Plik zapisów Skrzynki nieczytelny na stałe (#909): kolejka nie zakłada issue, którego zapisu nie może wykluczyć,
+    czeka jak bez sieci i ponawia co budzenie, a dziennik mówi raz, który plik; po naprawie pliku wysyłka wychodzi."""
+
+    queue = Queue(tmp_path, FakeReportBox())
+    queue.queued("treść\n")
+    read_text = Path.read_text
+    broken = [True]
+
+    def locked(path: Path, encoding: str | None = None, errors: str | None = None) -> str:
+        if path == queue.opening and broken[0]:
+            raise PermissionError(13, "Odmowa dostępu", str(path))
+        return read_text(path, encoding=encoding, errors=errors)
+
+    monkeypatch.setattr(Path, "read_text", locked)
+    queue.outbox.resume()
+    queue.passed()
+    for _ in range(3):
+        assert queue.clock.wakes == 1
+        queue.clock.advance(RETRY_S)
+        queue.passed()
+
+    assert (queue.box.issues, len(queue.files())) == ([], 1)
+    events = [line.split(" ")[1:3] for line in queue.log().splitlines()]
+    assert events == [["skrzynka-zapisy-niedostepne", "typ=PermissionError"], ["skrzynka-czeka", f"etykieta={THREAD.label}"]]
+    assert "przyczyna=brak-sieci" in queue.log().splitlines()[1]
+
+    broken[0] = False
+    queue.clock.advance(RETRY_S)
+    assert queue.box.wait_until(lambda box: len(box.issues) == 1)
+    assert wait_for(lambda: queue.files() == [])
 
 
 def test_zgubiona_odpowiedz_na_zalozenie_uwagi_i_nowa_wysylka_zanim_lista_ja_pokaze_nie_daja_drugiego_issue(

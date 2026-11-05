@@ -201,6 +201,12 @@ class CentrumLog:
 
         self._write("skrzynka-nieczytelny", plik=file)
 
+    def box_notes_unavailable(self, failure: OSError) -> None:
+        """Pliku zapisów Skrzynki Zgłoszeń (``keyed_box.OPENING_FILE``) nie da się odczytać albo zapisać, więc zapisy do
+        Skrzynki czekają; tylko typ błędu, raz na pracę Centrum."""
+
+        self._write("skrzynka-zapisy-niedostepne", typ=type(failure).__name__)
+
     def view_timed(
         self,
         *,

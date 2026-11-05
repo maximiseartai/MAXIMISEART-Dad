@@ -798,7 +798,9 @@ def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_ora
     """Kopia wejścia Uporządkowania to każdy arkusz zleceń INTERMAX z nagłówkami bez ``ADRES`` i ``NUMER UMOWY`` i z
     wklejonymi wierszami, które Planowanie rozpoznaje, a nie z uporządkowanymi dniami nad nimi ani starszym arkuszem bez
     wklejenia, z komórkami od A do ``UWAGI``, które Uporządkowanie przenosi do dnia. Przesunięty pierwszy wiersz ma
-    komórki pod ich nagłówkiem, bez kolumn z aplikacji, które w pliku wpadły pod ``ZWROT`` i ``UWAGI``. Odcisk to rozmiar i skrót bajtów, które
+    komórki pod ich nagłówkiem, bez kolumn z aplikacji, które w pliku wpadły pod ``ZWROT`` i ``UWAGI``. Z dołu arkusza
+    nad wklejeniem Kopia ma tylko numery ostatniego uporządkowanego i żółtego wiersza, od których Planowanie liczy
+    wiersz dnia (#847). Odcisk to rozmiar i skrót bajtów, które
     Uporządkowanie przeczytało, choć zaraz po odczycie OneDrive albo Autozapis Excela zapisał INTERMAX z innymi
     bajtami, i chwila zmiany sprzed odczytu."""
 
@@ -830,6 +832,7 @@ def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_ora
     [copied] = logs["input_copy"]
     fingerprint = {"size": len(content), "modified_at": READ_AT.isoformat().replace("+00:00", "Z"), "sha256": hashlib.sha256(content).hexdigest()}
     assert (copied["name"], copied["fingerprint"]) == (REGISTER_NAME, fingerprint)
+    assert copied["folders"] == [tmp_path.name, "OneDrive"], "foldery nad INTERMAX jak w Komunikatach"
     older, sheet = copied["sheets"]
     assert older == {
         "sheet": OLDER_SHEET,
@@ -839,10 +842,14 @@ def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_ora
         "empty_rows": [],
         "shifted_row": None,
         "uncertain_rows": [],
+        "last_ordered_row": centrum.layout.last_ordered,
+        "yellow_row": None,
     }
     first = centrum.layout.first_raw
     assert (sheet["sheet"], sheet["header_row"], sheet["columns"], sheet["empty_rows"]) == (ORDER_SHEET, 1, COPY_COLUMNS, [])
     assert sheet["shifted_row"] == first
+    assert centrum.layout.yellow is not None
+    assert (sheet["last_ordered_row"], sheet["yellow_row"]) == (centrum.layout.last_ordered, centrum.layout.yellow)
     assert sheet["rows"][2]["cells"]["A"] == "A-SYN"
     assert sheet["rows"] == [
         {"row": first + index, "cells": _copied_cells(order)} for index, order in enumerate(centrum.layout.raw)

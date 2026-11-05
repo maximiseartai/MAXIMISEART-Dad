@@ -88,6 +88,7 @@ from tests.fixtures.atrapa_efenix import (
     Changed,
     EmmettRefusal,
     Outage,
+    ProposalFailure,
     amount_of,
     atrapa_efenix,
 )
@@ -1572,11 +1573,11 @@ WHOLE_RUN = (
     ("GET", LIST_PAGE), ("GET", LIST_SCRIPT), ("POST", SEARCH), *_ONE_ORDER,
     ("GET", LIST_PAGE), ("GET", LIST_SCRIPT), ("POST", SEARCH), ("POST", SEARCH), *_ONE_ORDER,
 )
-# Przegląd w CI: zerwane połączenie od każdego żądania, a pozostałe tryby od pierwszego szukania i pierwszego zapisu ilości,
-# odpowiedzi, których treść czyta samo okno. Pełny przegląd, każde żądanie w każdym trybie (116 przypadków, ok. 8 min
+# Przegląd w CI: zerwane połączenie od każdego żądania, a pozostałe tryby od pierwszego szukania, pierwszej propozycji
+# Emmetta i pierwszego zapisu ilości, odpowiedzi, których treść czyta samo okno. Pełny przegląd, każde żądanie w każdym trybie (116 przypadków, ok. 8 min
 # procesora), uruchamiasz przed zmianą okna efenix albo odcięcia Atrapy efenix:
 # ``PELNY_PRZEGLAD_EFENIX=1 .venv/bin/python -m pytest tests/test_wycena_efenix.py -n 8 -k od_kazdego_zadania``.
-_READ_BY_WINDOW = (WHOLE_RUN.index(("POST", SEARCH)), WHOLE_RUN.index(("POST", SAVE_QUANTITY)))
+_READ_BY_WINDOW = tuple(WHOLE_RUN.index(("POST", path)) for path in (SEARCH, FILL_EMMETT, SAVE_QUANTITY))
 SWEEP = [
     pytest.param(first, outage, id=f"{first:02d}-{path.replace('/', '-')}-{outage.name}")
     for first, (_method, path) in enumerate(WHOLE_RUN)
@@ -1683,6 +1684,11 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
     facts = stopped.ending.facts
     assert isinstance(facts, PricingStopped)
     assert not isinstance(facts.cause, BrowserFailure) or facts.cause.operation is not None, facts.cause
+    if WHOLE_RUN[first] == ("POST", FILL_EMMETT) and outage in (Outage.CUT, Outage.TORN):
+        # Skrypt efenix pokazuje okno Emmetta także po zerwanej propozycji (``page_order_edit.js``), więc okno dochodzi do
+        # „Załaduj do zlecenia” i staje na jego odpowiedzi, a nie na oknie Emmetta, które się nie pokazało.
+        assert facts.part is PagePart.EMMETT and isinstance(facts.cause, BrowserFailure), (facts.part, facts.cause)
+        assert facts.cause.operation is Operation.ANSWER, facts.cause
     # Lista zleceń drugiego zlecenia to żądanie 14: odcięcie przed nim zatrzymuje okno przy zleceniu 1 (wiersz 18).
     early: dict[int, list[int | None]] = {0: [None], 1: [None, 18]}
     rows = early.get(first, [18] if first < WHOLE_RUN.index(("GET", LIST_PAGE), 1) else [19])
@@ -1811,31 +1817,50 @@ def test_odmowa_zaladuj_do_zlecenia_po_propozycji_emmetta_w_polach_bez_tekstu_za
 
 
 
-@pytest.mark.parametrize(
-    ("refusal", "loads", "marked"),
-    [
-        pytest.param(None, 1, [18], id="zaladowana"),
-        # Znana luka (docstring efenix_browser.py): przy dwóch awariach naraz strona bez Wyceny Emmetta jest dla okna
-        # pustą Wyceną Emmetta, więc zlecenie dostaje ilości z pliku i Znacznik efenix bez Wyceny Emmetta.
-        pytest.param(EmmettRefusal.OTHER, 0, [18], id="znana-luka-odmowa-2xx"),
-    ],
-)
-def test_propozycja_emmetta_z_bledem_serwera_zostawia_okno_emmetta_puste_jak_w_efenix_a_zaladuj_do_zlecenia_i_tak_laduje(
-    tmp_path: Path, page: Page, refusal: EmmettRefusal | None, loads: int, marked: list[int]
+@pytest.mark.parametrize("failure", list(ProposalFailure), ids=lambda failure: failure.name)
+def test_propozycja_emmetta_ktora_padla_zostawia_okno_emmetta_puste_jak_w_efenix_a_zaladuj_do_zlecenia_i_tak_laduje(
+    tmp_path: Path, page: Page, failure: ProposalFailure
 ) -> None:
-    """Efenix odpowiada na propozycję Emmetta (``action_fill_emmett.php``) błędem 500, a jego skrypt i tak pokazuje okno
-    Emmetta, puste. „Załaduj do zlecenia” ładuje Wycenę Emmetta, więc Wycena kończy zlecenie jak bez awarii; gdy efenix
-    też odmówi go odpowiedzią 2xx (#889), zlecenie kończy się bez Wyceny Emmetta (znana luka, dwie awarie naraz)."""
+    """Propozycja Emmetta (``action_fill_emmett.php``) pada błędem serwera, zerwaną treścią albo zerwanym połączeniem, a
+    skrypt efenix i tak pokazuje okno Emmetta, puste. „Załaduj do zlecenia” ładuje Wycenę Emmetta, bo efenix bierze ją u
+    siebie, a nie z okna, więc strona z kwotą różną od 0 kończy zlecenie jak bez awarii."""
 
     order = Order("#9721", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"012": 1})
     source = write_collective_file(tmp_path, [order])
-    in_efenix = replace(order.in_efenix("9721"), emmett_proposal_error=True, emmett_refusal=refusal)
+    in_efenix = replace(order.in_efenix("9721"), emmett_proposal_failure=failure)
     with atrapa_efenix([in_efenix]) as atrapa:
         outcome = _run(source, page, atrapa.url)
         pricing = _pricing(atrapa)
 
     assert (outcome.result, _figures(outcome), _errors(outcome)) == ("OK", _figures_of(1, 1), [])
-    assert (pricing, _marked(source)) == ({"9721": ({"012": 1, "019": 2}, DAY, loads)}, marked)
+    assert (pricing, _marked(source)) == ({"9721": ({"012": 1, "019": 2}, DAY, 1)}, [18])
+
+
+@pytest.mark.parametrize("failure", list(ProposalFailure), ids=lambda failure: failure.name)
+def test_propozycja_emmetta_ktora_padla_a_potem_odmowa_zaladuj_do_zlecenia_2xx_zatrzymuje_wycene_bez_ilosci_i_znacznika(
+    tmp_path: Path, page: Page, failure: ProposalFailure
+) -> None:
+    """Propozycja Emmetta pada (błąd serwera, zerwana treść, zerwane połączenie), więc okno Emmetta jest puste jak przy
+    Emmetcie, który nic nie zaproponował, a efenix odmawia „Załaduj do zlecenia” odpowiedzią 2xx i nic nie ładuje (#908,
+    dwie awarie naraz). Pustą Wyceną Emmetta jest strona z kwotą 0 tylko po propozycji, która przyszła cała ze statusem
+    2xx, więc ta strona to Zatrzymanie okna (``Shape.EMMETT_NOT_LOADED``): zlecenie nie dostaje ilości z pliku ani
+    Znacznika efenix i nie jest gotowe bez Wyceny Emmetta (jak #877, #889)."""
+
+    order = Order("#9721", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"012": 1})
+    source = write_collective_file(tmp_path, [order])
+    in_efenix = replace(order.in_efenix("9721"), emmett_proposal_failure=failure, emmett_refusal=EmmettRefusal.OTHER)
+    with atrapa_efenix([in_efenix]) as atrapa:
+        stopped = _run(source, page, atrapa.url)
+        pricing = _pricing(atrapa)
+
+    assert isinstance(stopped.ending, Stop) and isinstance(stopped.ending.facts, PricingStopped), _ending(stopped)
+    facts = stopped.ending.facts
+    assert (_stop(stopped), facts.part, facts.cause) == (
+        "EFENIX_OKNO_ZATRZYMANE",
+        PagePart.EMMETT,
+        OtherShape(Shape.EMMETT_NOT_LOADED),
+    )
+    assert (pricing, _marked(source)) == ({"9721": ({}, DAY, 0)}, [])
 
 
 @dataclass
