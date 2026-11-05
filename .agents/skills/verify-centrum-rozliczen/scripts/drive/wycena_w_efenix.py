@@ -19,6 +19,7 @@ from drive.common import (
     finished_result,
     last_opened_is,
     period_choice,
+    remove_tree,
 )
 
 FEATURE = "wycena-w-efenix"
@@ -93,7 +94,7 @@ def drive_efenix_pricing(run: Run, page: Page) -> None:
     try:
         _price(run, page, source)
     finally:
-        shutil.rmtree(period_folder)
+        remove_tree(period_folder)
 
 
 def _price(run: Run, page: Page, source: Path) -> None:

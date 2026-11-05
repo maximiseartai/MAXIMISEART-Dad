@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import signal
 import sys
 from typing import Any
@@ -14,7 +13,16 @@ from typing import Any
 from playwright.sync_api import Page, expect
 
 from drive import kontrola_ilosci
-from drive.common import LAST_COMPLETE, Run, current_run, ensure_files_set, finished_result, history_rows
+from drive.common import (
+    LAST_COMPLETE,
+    Run,
+    current_run,
+    ensure_files_set,
+    finished_result,
+    history_rows,
+    move,
+    remove_tree,
+)
 from drive.metryki import _local
 
 FEATURE = "karta-z-logow"
@@ -158,7 +166,7 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
     aside_logs = run.root / "odlozone" / name
     print("  harness: the preview's file of Logi is moved aside, as if Centrum died after the Historia row", flush=True)
     aside_logs.parent.mkdir(exist_ok=True)
-    shutil.move(run.root / LOGS / name, aside_logs)
+    move(run.root / LOGS / name, aside_logs)
     try:
         kontrola_ilosci._start(run, "karta-start-bez-logow")
         _uruchomienia(run, page)
@@ -191,7 +199,7 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
         run.capture(page, "211b-karta-bez-szczegolow")
     finally:
         if aside_logs.exists():
-            shutil.move(aside_logs, run.root / LOGS / name)
+            move(aside_logs, run.root / LOGS / name)
 
     run.step(FEATURE, "karta-przerwana")
     period_folder = Path(run.fixture["periods_directory"]) / LAST_COMPLETE
@@ -199,7 +207,7 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
     if period_folder.exists():
         print(f"  harness: the Folder okresu {LAST_COMPLETE} is moved aside so the incomplete-period Decyzja comes", flush=True)
         aside.parent.mkdir(exist_ok=True)
-        shutil.move(period_folder, aside)
+        move(period_folder, aside)
     try:
         metrics_before, starts_before, logs_before = _metrics_count(run), _unfinished_starts(run), set(_logged(run))
         _new_run(page, "Przygotowanie pliku zbiorczego")
@@ -245,8 +253,8 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
         run.check(current_run(run, "karta-po-nowym")["state"] == "idle", "Nowe Uruchomienie procesu starts nothing")
     finally:
         if aside.exists():
-            shutil.rmtree(period_folder, ignore_errors=True)
-            shutil.move(aside, period_folder)
+            remove_tree(period_folder, missing_ok=True)
+            move(aside, period_folder)
 
     run.step(FEATURE, "karta-z-historii")
     page.get_by_role("tab", name="Historia", exact=True).click()

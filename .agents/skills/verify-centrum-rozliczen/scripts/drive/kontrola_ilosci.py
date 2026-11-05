@@ -12,7 +12,7 @@ import urllib.request
 from playwright.sync_api import Page, expect
 
 from drive import przebieg_rozliczen
-from drive.common import LAST_COMPLETE, REPO_ROOT, ROW_MARKER, Run
+from drive.common import LAST_COMPLETE, REPO_ROOT, ROW_MARKER, Run, drop_report_key, remove
 
 FEATURE = "kontrola-ilosci"
 LABEL = "kontrola-ilosci"
@@ -148,7 +148,7 @@ def drive_quantity_check(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "kontrola-wyslana-po-starcie")
     print(f"  harness: the internet is back; the skrzynka answers after {BOX_PACING_MS} ms", flush=True)
-    offline.unlink()
+    remove(offline)
     pacing.parent.mkdir(exist_ok=True)
     pacing.write_text(str(BOX_PACING_MS), encoding="utf-8")
     try:
@@ -169,7 +169,7 @@ def drive_quantity_check(run: Run, page: Page) -> None:
             timeout_s=30,
         )
     finally:
-        pacing.unlink(missing_ok=True)
+        remove(pacing, missing_ok=True)
     checks = _checks_in_box(box)
     run.check(len(checks) == checks_before + 1, "the skrzynka got exactly one Kontrola ilości")
     sent = checks[-1]
@@ -195,4 +195,4 @@ def drive_quantity_check(run: Run, page: Page) -> None:
     log = _log(run)
     run.check(KEY not in log and ROW_MARKER not in log, "the Centrum log has neither the key nor workbook content")
     run.check(KEY not in body, "the key is not in the Kontrola")
-    key_file.unlink()
+    drop_report_key(key_file)

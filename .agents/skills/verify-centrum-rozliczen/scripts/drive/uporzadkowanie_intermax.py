@@ -10,7 +10,7 @@ from typing import Any
 from playwright.sync_api import Locator, Page, expect
 import yaml
 
-from drive.common import DAD_TIME_ZONE, Run, current_run, ended_run_shown, finished_result, stop_banner
+from drive.common import DAD_TIME_ZONE, Run, current_run, ended_run_shown, finished_result, remove, stop_banner
 
 FEATURE = "uporzadkowanie-intermax"
 CARD = "Uporządkuj INTERMAX"
@@ -144,7 +144,7 @@ def drive_intermax_ordering(run: Run, page: Page) -> None:
         run.check(True, "the days of INTERMAX open in Excel come from its last saved version")
         run.capture(page, "232-intermax-otwarty")
     finally:
-        lock.unlink()
+        remove(lock)
     page.reload()
     _to_card(run, page)
     expect(_button(page)).to_be_enabled()

@@ -13,7 +13,7 @@ from typing import Any
 
 from playwright.sync_api import Locator, Page, ViewportSize, expect
 
-from drive.common import DAD_TIME_ZONE, LAST_COMPLETE, REPO_ROOT, Run, choose_periods_directory, history_rows
+from drive.common import DAD_TIME_ZONE, LAST_COMPLETE, REPO_ROOT, Run, choose_periods_directory, history_rows, move
 
 # The chart shows the newest Uruchomienia procesu of the chosen process and mode; older ones are in the history.
 CHART_RUNS = 12
@@ -221,7 +221,7 @@ def drive_metrics(run: Run, page: Page) -> None:
     run.step(feature, "metryki-pusty-stan")
     moved = [Path(fixture_metrics[name]) for name in ("preparation", "settlement")]
     for path in moved:
-        path.rename(path.with_name(path.name + ".odlozony"))
+        move(path, path.with_name(path.name + ".odlozony"))
     try:
         run.check(run.api("/api/metrics", "metryki-brak-plikow")["runs"] == [], "no metrics files is an empty list")
         page.reload()
@@ -229,7 +229,7 @@ def drive_metrics(run: Run, page: Page) -> None:
         run.capture(page, "27-metryki-pusty-stan")
     finally:
         for path in moved:
-            path.with_name(path.name + ".odlozony").rename(path)
+            move(path.with_name(path.name + ".odlozony"), path)
 
 
 def _chart_runs(runs: list[dict[str, Any]], process: str, mode: str) -> list[dict[str, Any]]:
