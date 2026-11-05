@@ -545,7 +545,7 @@ def test_logi_przebiegu_rozliczen_nie_maja_adresu_numeru_orange_ani_pelnych_scie
         "OK",
     ]
     box = centrum.surroundings.report_box
-    assert box.wait_until(lambda fake: sum(len(issue.comments) for issue in fake.background_issues) == 3)
+    assert box.wait_until(lambda fake: logs_arrived(fake, 3))
     sent = in_box(box)
     texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
     assert len(texts) == 3
@@ -601,10 +601,9 @@ def test_adres_i_numer_orange_cytowane_przez_komunikat_nie_wychodza_w_logach_ani
     assert [view["result"]["stop_kind"] for view in (first, second)] == ["for_tata", "repeated"]
     assert (diagnosis.status_code, sent.json()) == (200, {"state": "sent"})
     box = centrum.surroundings.report_box
-    # Logi obu Uruchomień, a Diagnoza drugiego zmienia jego komentarz (#849), więc jego tekst to Logi po Diagnozie.
-    assert box.wait_until(
-        lambda fake: sum(len(issue.comments) for issue in fake.background_issues) == 2 and len(fake.edited) == 1
-    )
+    # Logi obu Uruchomień, a tekst drugich to Logi po Diagnozie: Diagnoza zmienia ich komentarz (#849) albo, gdy przyszła
+    # przed wysyłką, zastępuje je w kolejce, więc idą od razu z nią.
+    assert box.wait_until(lambda fake: logs_arrived(fake, 2) and "- Diagnoza: " in logs_comments(fake)[1])
     assert ADDRESS_VALUE.upper() in json.dumps(card_messages(second), ensure_ascii=False), "karta taty cytuje komórkę"
     texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
     texts += [part for issue in [*box.issues, *box.background_issues] for part in (issue.title, issue.body, *issue.comments)]
@@ -2523,9 +2522,7 @@ def test_adres_i_numer_orange_z_kopii_wejscia_nie_wychodza_do_logow_ani_skrzynki
 
     assert result["stop_kind"] is None, result["stops"]
     box: FakeReportBox = centrum.surroundings.report_box
-    assert box.wait_until(
-        lambda fake: any(issue.label == "logi-uruchomienia" and issue.comments for issue in fake.background_issues)
-    )
+    assert box.wait_until(lambda fake: logs_arrived(fake, 1))
     [record] = records(centrum)
     [copied] = record["input_copy"]
     headers = [header for sheet in copied["sheets"] for header in sheet["columns"].values()]
@@ -2563,9 +2560,7 @@ def test_kolumny_adresu_i_numeru_orange_pliku_zbiorczego_nie_wychodza_takze_pod_
 
     assert view["result"]["stop_kind"] is None, view["result"]["stops"]
     box: FakeReportBox = centrum.surroundings.report_box
-    assert box.wait_until(
-        lambda fake: any(issue.label == "logi-uruchomienia" and issue.comments for issue in fake.background_issues)
-    )
+    assert box.wait_until(lambda fake: logs_arrived(fake, 1))
     [record] = records(centrum)
     [copied] = record["input_copy"]
     [sheet_copy] = copied["sheets"]
@@ -2749,9 +2744,7 @@ def test_numer_orange_i_telefon_zapisane_przez_excel_jako_liczba_nie_wychodza_do
 
     assert result["stop_kind"] is None, result["stops"]
     box: FakeReportBox = centrum.surroundings.report_box
-    assert box.wait_until(
-        lambda fake: any(issue.label == "logi-uruchomienia" and issue.comments for issue in fake.background_issues)
-    )
+    assert box.wait_until(lambda fake: logs_arrived(fake, 1))
     [record] = records(centrum)
     [copied] = record["input_copy"]
     [sheet] = copied["sheets"]
