@@ -18,9 +18,4 @@ class Kwarantanna:
     do: date  # ostatni dzień kwarantanny, najwyżej 7 dni od dziś
 
 
-KWARANTANNA: dict[str, Kwarantanna] = {
-    # Okno czyta treść odpowiedzi „Załaduj do zlecenia”, którą przeładowanie strony porzuca (#895); zdejmij z naprawą #895.
-    "tests/test_centrum_logi_uruchomienia.py::test_dziennik_wyceny_w_efenix_ktorego_nie_da_sie_zapisac_nie_zatrzymuje_wyceny_i_ma_jedna_linie_na_wycene_w_dzienniku_centrum": Kwarantanna(
-        896, date(2026, 11, 12)
-    ),
-}
+KWARANTANNA: dict[str, Kwarantanna] = {}
