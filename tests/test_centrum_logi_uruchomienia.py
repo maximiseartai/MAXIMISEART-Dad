@@ -990,7 +990,7 @@ def _explorer_in_own_process(*arguments: str, environment: dict[str, str] | None
 
 
 @pytest.mark.dlugi
-def test_odmowa_zaladuj_do_zlecenia_i_zabity_proces_przy_niej_daja_znane_ustalenie_i_ryzyko_774_a_reszta_trzyma_niezmienniki(
+def test_odmowa_zaladuj_do_zlecenia_trzyma_niezmienniki_a_zabity_proces_przy_niej_daje_tylko_ryzyko_774(
     tmp_path: Path,
 ) -> None:
     code, lines = _explorer_in_own_process(
@@ -998,12 +998,12 @@ def test_odmowa_zaladuj_do_zlecenia_i_zabity_proces_przy_niej_daja_znane_ustalen
     )
 
     assert (code, lines[-1:]) == (0, ["WYCENA EFENIX OK"]), "\n".join(lines)
-    assert any(line.startswith("znane ustalenie gotowe-bez-wyceny-emmetta: ") for line in lines), "\n".join(lines)
+    assert not any(line.startswith("znane ustalenie ") for line in lines), "\n".join(lines)
     assert any(line.startswith("zaakceptowane ryzyko #774: ") for line in lines), "\n".join(lines)
     [evidence] = (tmp_path / "evidence").iterdir()
     counterexamples = [path.read_text(encoding="utf-8") for path in (evidence / "kontrprzyklady").iterdir()]
     assert (evidence / "raport.txt").read_text(encoding="utf-8").splitlines()[-1] == "WYCENA EFENIX OK"
-    assert any("POST action_load_emmett.php #1  ← HTTP_4XX" in text for text in counterexamples)
+    assert not any("← HTTP_4XX" in text or "← REDIRECT" in text for text in counterexamples), counterexamples
     assert list((tmp_path / "runs").iterdir()) == []
 
 

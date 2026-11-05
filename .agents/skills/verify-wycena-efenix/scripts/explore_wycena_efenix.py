@@ -598,21 +598,6 @@ KNOWN_FINDINGS: Final[tuple[Known, ...]] = (
         ),
     ),
     Known(
-        "gotowe-bez-wyceny-emmetta",
-        "efenix odmawia „Załaduj do zlecenia” (HTTP 4xx albo przekierowanie, bez wykonania), skrypt strony i tak ją "
-        "przeładowuje, a okno czyta pustą stronę jako Wycenę Emmetta: proces zapisuje w Śladzie pustego Emmetta, "
-        "dopisuje ilości pliku i stawia Znacznik efenix bez Emmetta, także zleceniu, którego Emmett jest sprzeczny z "
-        "plikiem (zamiast Ostrzeżenia Emmetta)",
-        lambda violation: violation.rule == "PRZYCZYNA"
-        and violation.tag == "gotowe inne niż bez awarii"
-        and violation.role is Role.LOAD
-        and violation.fault in (Fault.HTTP_4XX, Fault.REDIRECT),
-        after=(
-            "HTTP_4XX przy POST action_load_emmett.php #1 [zaladuj-do-zlecenia]",
-            "REDIRECT przy POST action_load_emmett.php #2 [zaladuj-do-zlecenia]",
-        ),
-    ),
-    Known(
         "karta-zamknieta-w-nawigacji",
         "karta zamknięta, gdy okno otwiera stronę (lista, strona zlecenia, przeładowanie po Emmetcie), czasem daje "
         "„okno zatrzymane” albo „efenix niedostępny” z BrowserFailure(Error, OPEN) albo (Error, RELOAD) tej nawigacji "
