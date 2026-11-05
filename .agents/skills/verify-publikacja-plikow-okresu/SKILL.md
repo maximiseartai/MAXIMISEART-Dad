@@ -157,9 +157,19 @@ A break of a rule that a recorded decision accepts. It is printed as
    two separate `os.rename` calls. If the process dies between them, only
    Rozliczenie wewnętrzne is left. The next run stops on `PLIK_OKRESU_ISTNIEJE`,
    and Dad's instructions say how to recognise and remove the leftover file.
+   The check prints it twice, once for each step the process died before: the
+   second `os.rename`, and the `os.unlink` of the rollback after that rename
+   failed (a file system error or Dad's own file of that name). ADR 0005 names
+   only the first; the second leaves the same file in the same microseconds.
 
-An entry lives in `ACCEPTED_RISKS` in `explore_publication.py` and names its
-decision. If a change to the publication code makes it disappear, delete the
+An entry lives in `ACCEPTED_RISKS` in `explore_publication.py`, names its
+decision and has its shape (`RiskShape`, each part required, #920): the steps
+of `_publish` before which the process was killed (`killed_before`) and the
+run's period files left, exactly (`left`). A run that was not killed, or that
+left other files, breaks the rule anew. Each part has a broken variant just
+outside it in `BOUNDARIES` of `check_publication_mutations.py`, which must give
+a new violation; `tests/test_mutacje_skilli.py` reds an entry with a part
+without one. If a change to the publication code makes it disappear, delete the
 entry here and there, and mark the ADR as superseded.
 
 ## When the check fails
@@ -171,8 +181,9 @@ is the code that made the call. Then sort it into one of three cases:
 - **Real bug**: the story is something that can happen to Dad on Windows, and
   the end state breaks the rule as stated above. Report it with the story in
   those words. Fix the product code only if the user asks. If the user accepts
-  the risk instead, record the decision in an ADR, add the printed signature to
-  `ACCEPTED_RISKS` with a one-line description naming the ADR, and add it to
+  the risk instead, record the decision in an ADR, add to `ACCEPTED_RISKS` an
+  entry naming the ADR with the shape of its story (`RiskShape`), add to
+  `BOUNDARIES` a broken variant just outside each part of it, and add it to
   Accepted risks here.
 - **Modeling error**: the story contains a step Windows would not do, such as a
   rename that replaces a file, or a step the code cannot reach. Fix the
@@ -195,7 +206,9 @@ py -3 .agents\skills\verify-publikacja-plikow-okresu\scripts\check_publication_m
 ```
 
 It must end with `MUTACJE OK`: `os.replace` instead of `os.rename`, a removed
-rollback, a failed rollback reported as plain `BLAD_ZAPISU`, recording a file
+rollback (`BOUNDARIES`: a run that is not killed, outside `killed_before`), the
+period files moved in the reverse order (`BOUNDARIES`: only the Plik zbiorczy
+left, outside `left`), a failed rollback reported as plain `BLAD_ZAPISU`, recording a file
 for rollback before it is moved, and a failed staging cleanup reported as
 `BLAD_ZAPISU` all give `NOWE NARUSZENIE`. `shutil.move` gives `LUKA MODELU`. A mutation reported as
 `NIEAKTUALNA` no longer matches `preparation_files.py`. Rewrite its `anchor` and

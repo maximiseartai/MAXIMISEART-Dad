@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import fnmatch
+import json
 import importlib.util
 from pathlib import Path
 import os
@@ -23,6 +24,7 @@ from types import ModuleType
 import pytest
 
 from tests.fixtures.git_repo import copy_files, git
+from tests.fixtures.granice_ksztaltow import GAPS
 from tests.fixtures.potomne import beating, wait_for
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -538,3 +540,151 @@ def test_klucz_ci_bez_skryptu_z_repozytorium_daje_fail(tmp_path: Path, command: 
     assert result.returncode == 1
     assert "FAIL PODSTAWA verify-d: ci w .agents/skills/verify-d/SKILL.md nie zaczyna się skryptem .py z repozytorium" in result.stdout
     assert result.stdout.splitlines()[-1] == "MUTACJE SKILLI FAIL | PODSTAWA verify-d"
+
+
+SHAPE_GAPS = ROOT / "tests" / "fixtures" / "granice_ksztaltow.py"
+
+
+def _shape_gaps(root: Path) -> dict[str, list[str]]:
+    """Luki granic kształtów każdego eksploratora skilla ``verify-*`` w ``root``, po ścieżce eksploratora. Kod
+    eksploratora wykonuje własny proces z limitem czasu, nie proces pytest (#651)."""
+
+    gaps = {}
+    for explorer in sorted((root / ".agents" / "skills").glob("verify-*/scripts/explore_*.py")):
+        done = subprocess.run(
+            [sys.executable, "-X", "utf8", str(SHAPE_GAPS), str(TOOLS), str(explorer)],
+            cwd=root,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=120,
+            check=False,
+        )
+        assert done.returncode in (0, GAPS), done.stdout + done.stderr
+        gaps[explorer.relative_to(root).as_posix()] = json.loads(done.stdout.splitlines()[-1])
+    return gaps
+
+
+def test_kazde_przyjete_ryzyko_i_znane_ustalenie_eksploratora_ma_mutacje_tuz_za_granica_kazdej_czesci_ksztaltu() -> None:
+    """Przyjęte ryzyko albo znane ustalenie, które wybacza szerzej niż jego historia, przepuszcza zepsuty kod jako znany
+    (#867 runda 3, #916 rundy 1 i 2). Każdy wpis ``ACCEPTED_RISKS`` i ``KNOWN_FINDINGS`` eksploratora skilla
+    ``verify-*`` ma jawny kształt i w ``BOUNDARIES`` skryptu mutacji skilla mutację tuż za granicą każdej jego części
+    (``tests/fixtures/granice_ksztaltow.py``); nazwy wpisów i części pochodzą z kodu eksploratora."""
+
+    gaps = _shape_gaps(ROOT)
+
+    assert len(gaps) >= 5, gaps
+    assert {explorer: found for explorer, found in gaps.items() if found} == {}
+
+
+_SHAPED = '''from dataclasses import dataclass
+import enum
+
+
+class Rodzaj(enum.Enum):
+    A = "a"
+    B = "b"
+
+
+@dataclass(frozen=True)
+class Ksztalt:
+    krok: frozenset[str]
+    rodzaj: frozenset[Rodzaj]
+    stan: int
+
+
+@dataclass(frozen=True)
+class Wpis:
+    name: str
+    shape: Ksztalt
+
+
+ACCEPTED_RISKS = (Wpis("ryzyko", Ksztalt(frozenset({"zapis"}), frozenset(Rodzaj), 1)),)
+KNOWN_FINDINGS = {("ZNANE", 1): Wpis("ustalenie", Ksztalt(frozenset({"zapis"}), frozenset({Rodzaj.A}), 2))}
+'''
+_TABLE = '''from pathlib import Path
+
+from mutacje import Edit, Mutation
+
+
+def m(name, expected="X: NOWE NARUSZENIE", explorer="explore_x.py"):
+    return Mutation(name, (Edit(Path("a.py"), "a", "b"),), (f".agents/skills/verify-x/scripts/{explorer}",), "", expected)
+
+
+BOUNDARIES = {
+    "ryzyko": {"krok": (m("krok ryzyka"),), "stan": (m("stan ryzyka"),)},
+    "ustalenie": {"krok": (m("krok ustalenia"),), "rodzaj": (m("rodzaj ustalenia"),), "stan": (m("stan ustalenia"),)},
+}
+MUTATIONS = tuple(
+    mutation
+    for parts in BOUNDARIES.values()
+    for mutations in (parts.values() if isinstance(parts, dict) else [parts])
+    for mutation in mutations
+)
+'''
+
+
+@pytest.mark.parametrize(
+    ("explorer", "table", "expected"),
+    [
+        pytest.param(_SHAPED, _TABLE, [], id="kazda-czesc-poza-calym-wyliczeniem-ma-mutacje"),
+        pytest.param(
+            _SHAPED,
+            _TABLE.replace('"stan": (m("stan ryzyka"),)', '"rodzaj": (m("rodzaj ryzyka"),)'),
+            [
+                "ryzyko: część stan bez mutacji tuż za granicą w check_x_mutations.py",
+                "ryzyko: check_x_mutations.py wymienia część rodzaj, której kształt nie zawęża",
+            ],
+            id="czesc-bez-mutacji-a-cale-wyliczenie-z-mutacja",
+        ),
+        pytest.param(
+            _SHAPED,
+            _TABLE.replace('m("stan ustalenia")', 'm("stan ustalenia", "X OK")'),
+            ["ustalenie, część stan: mutacja stan ustalenia nie jest w MUTATIONS albo nie kończy się „NOWE NARUSZENIE”"],
+            id="mutacja-bez-nowego-naruszenia",
+        ),
+        pytest.param(
+            _SHAPED,
+            _TABLE + "MUTATIONS = MUTATIONS[:-1]\n",
+            ["ustalenie, część stan: mutacja stan ustalenia nie jest w MUTATIONS albo nie kończy się „NOWE NARUSZENIE”"],
+            id="mutacja-spoza-tabeli",
+        ),
+        pytest.param(
+            _SHAPED,
+            _TABLE.replace('m("stan ustalenia")', 'm("stan ustalenia", explorer="explore_y.py")'),
+            ["ustalenie, część stan: mutacja stan ustalenia nie uruchamia explore_x.py"],
+            id="mutacja-innego-eksploratora",
+        ),
+        pytest.param(
+            _SHAPED.replace('Wpis("ryzyko"', 'Wpis("inne"'),
+            _TABLE,
+            [
+                "check_x_mutations.py: BOUNDARIES ma wpis ryzyko, którego eksplorator nie ma",
+                "inne: część krok bez mutacji tuż za granicą w check_x_mutations.py",
+                "inne: część stan bez mutacji tuż za granicą w check_x_mutations.py",
+            ],
+            id="wpis-bez-swojej-nazwy-w-tabeli",
+        ),
+        pytest.param(
+            _SHAPED,
+            _TABLE.replace('"ryzyko": {"krok": (m("krok ryzyka"),), "stan": (m("stan ryzyka"),)}', '"ryzyko": (m("krok ryzyka"),)'),
+            ["ryzyko: check_x_mutations.py daje mutacje wpisu bez części, której każda dotyczy (mapa część → mutacje)"],
+            id="mutacje-wpisu-bez-czesci",
+        ),
+        pytest.param(
+            "ACCEPTED_RISKS = {('R', 1): 'opis'}\nKNOWN_FINDINGS = ()\n",
+            "",
+            ["ACCEPTED_RISKS opis: wpis bez nazwy albo bez jawnego kształtu (dataklasa w ``shape``)"],
+            id="sygnatura-albo-predykat-zamiast-ksztaltu",
+        ),
+    ],
+)
+def test_straznik_granic_czerwieni_wpis_bez_jawnego_ksztaltu_albo_czesc_bez_mutacji_tuz_za_granica(
+    tmp_path: Path, explorer: str, table: str, expected: list[str]
+) -> None:
+    _skill(tmp_path, "verify-x", {"explore_x.py": explorer, **({"check_x_mutations.py": table} if table else {})})
+
+    gaps = _shape_gaps(tmp_path)
+
+    assert gaps == {".agents/skills/verify-x/scripts/explore_x.py": expected}

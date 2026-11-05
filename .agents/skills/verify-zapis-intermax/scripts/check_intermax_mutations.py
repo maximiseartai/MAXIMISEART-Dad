@@ -1,4 +1,5 @@
-"""Show that explore_intermax.py fails on broken variants of the INTERMAX save.
+"""Show that explore_intermax.py fails on broken variants of the INTERMAX save, and for each part of the shape of each
+known finding of the explorer on a broken variant just outside it (``BOUNDARIES``).
 
 Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) and must end the checker's report with the
 expected line. A mutation whose anchor text is no longer in its file is reported as NIEAKTUALNA: update it to the new
@@ -7,8 +8,10 @@ code.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 import sys
+from typing import Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 
@@ -20,6 +23,44 @@ COPIES = Path("src/rozliczenia/intermax_copies.py")
 SAVE = Path("src/rozliczenia/workbook_save.py")
 EXPLORER = (".agents/skills/verify-zapis-intermax/scripts/explore_intermax.py",)
 NEW = "INTERMAX: NOWE NARUSZENIE"
+
+READ_BEFORE_PAUSE = Mutation(
+    "ponowny odczyt INTERMAX przed przerwą zamiast po niej",
+    (
+        Edit(REPLACE, "            waiting.pause(_PAUSE_S)\n            try:\n", "            try:\n"),
+        Edit(
+            REPLACE,
+            "            if not unchanged:\n                raise _Refused(Refusal.ONEDRIVE_HOLDS)\n",
+            "            if not unchanged:\n                raise _Refused(Refusal.ONEDRIVE_HOLDS)\n            waiting.pause(_PAUSE_S)\n",
+        ),
+    ),
+    EXPLORER,
+    "zmiana pracownika, którą OneDrive wgrał w przerwie przed ponowną próbą, przepada przy tej próbie",
+    NEW,
+)
+COMPARED_WITH_REFUSED = Mutation(
+    "ponowny odczyt INTERMAX porównany z bajtami tuż po odmowie OneDrive zamiast z przeczytanymi",
+    (
+        Edit(
+            REPLACE,
+            "            waiting.pause(_PAUSE_S)\n            try:\n                unchanged = disk.read(target) == current\n",
+            "            try:\n                seen = disk.read(target)\n                waiting.pause(_PAUSE_S)\n"
+            "                unchanged = disk.read(target) == seen\n",
+        ),
+    ),
+    EXPLORER,
+    "zmiana pracownika, którą OneDrive wgrał przed odmową podmiany, przepada przy ponownej próbie",
+    NEW,
+)
+
+BOUNDARIES: Final[Mapping[str, Mapping[str, tuple[Mutation, ...]]]] = {
+    name: {"came_before": (READ_BEFORE_PAUSE,), "refusals_after": (COMPARED_WITH_REFUSED,)}
+    for name in ("BEZ_UTRATY_ZMIAN", "KOPIA_ZASTAPIONEGO")
+}
+"""Broken variants just outside each part of the shape of each known finding of the explorer (``FindingShape``), by
+its name and part: the same harm as the finding's, but with that one part other than its story says, so each must give
+a new violation (#920). ``tests/test_mutacje_skilli.py`` reds an entry of ``KNOWN_FINDINGS`` with a part without one
+here. Both findings share their shape, and the same worker's change breaks both rules."""
 
 MUTATIONS = (
     Mutation(
@@ -98,20 +139,6 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "ponowny odczyt INTERMAX przed przerwą zamiast po niej",
-        (
-            Edit(REPLACE, "            waiting.pause(_PAUSE_S)\n            try:\n", "            try:\n"),
-            Edit(
-                REPLACE,
-                "            if not unchanged:\n                raise _Refused(Refusal.ONEDRIVE_HOLDS)\n",
-                "            if not unchanged:\n                raise _Refused(Refusal.ONEDRIVE_HOLDS)\n            waiting.pause(_PAUSE_S)\n",
-            ),
-        ),
-        EXPLORER,
-        "zmiana pracownika, którą OneDrive wgrał w przerwie przed ponowną próbą, przepada przy tej próbie",
-        NEW,
-    ),
-    Mutation(
         "stare Kopie sortowane odwrotnie",
         (
             Edit(
@@ -187,6 +214,7 @@ MUTATIONS = (
         "Zatrzymanie przy INTERMAX otwartym w Excelu usuwa wcześniejsze Kopie taty",
         NEW,
     ),
+    *dict.fromkeys(mutation for parts in BOUNDARIES.values() for mutations in parts.values() for mutation in mutations),
 )
 
 if __name__ == "__main__":

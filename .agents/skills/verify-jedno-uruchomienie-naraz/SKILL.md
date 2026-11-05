@@ -191,7 +191,10 @@ None. The two earlier ones (a „Uruchom” between the refusal check and the
 accepted shutdown, and a „Uruchom” after it) went away when `shutdown_refusal`
 started closing `RunHost` to new Uruchomienia and Aktualizacje under its lock.
 A finding the user accepts goes into `KNOWN_FINDINGS` in `explore_runs.py` and
-here, with the printed signature and one line naming the decision.
+here, as an entry with a `name`, one line naming the decision and a `shape`: a
+dataclass whose fields are the parts of its story, not the printed signature.
+The mutation script then needs `BOUNDARIES` with a broken variant just outside
+each part (`tests/test_mutacje_skilli.py`, #920).
 
 ## When the check fails
 
@@ -205,8 +208,8 @@ requests, `wątek Uruchomienie n` is the thread `RunHost.start` spawned,
 - **Real bug**: the story can happen with two Centrum tabs on Dad's computer,
   and the end state breaks a rule as stated above. Report it with the story in
   those words. Fix the product code only if the user asks. If the user accepts
-  it instead, add the printed signature to `KNOWN_FINDINGS` with one line naming
-  the decision, and add it to Known findings here.
+  it instead, add it to `KNOWN_FINDINGS` as Known findings above says, and add it
+  to Known findings here.
 - **Modeling error**: the story contains a step the real system cannot take,
   such as a request arriving after uvicorn stopped accepting, or a thread
   passing a lock another thread holds. Fix the model primitives or the actors in

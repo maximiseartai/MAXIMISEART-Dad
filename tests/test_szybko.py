@@ -40,6 +40,13 @@ BY_CHANGE_ONLY = {
         "graf wybiera go przy zmianie SKILL.md i pliku model/ skilla, także nowego modelu .tla, i tools/lib/rozjazd_modelu.py, "
         "a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
+    "tests/test_mutacje_skilli.py::test_kazde_przyjete_ryzyko_i_znane_ustalenie_eksploratora_ma_mutacje_tuz_za_granica_kazdej_czesci_ksztaltu": (
+        "graf wybiera go przy zmianie każdego pliku scripts/ skilla, także nowego eksploratora, i tests/fixtures/"
+        "granice_ksztaltow.py, a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
+    ),
+    "tests/test_mutacje_skilli.py::test_straznik_granic_czerwieni_wpis_bez_jawnego_ksztaltu_albo_czesc_bez_mutacji_tuz_za_granica": (
+        "sprawdza strażnika granic kształtów na skillach testu, a nie całe repozytorium"
+    ),
     "tests/test_mutacje.py": "sprawdza silnik mutacji na repozytoriach testu, a nie całe repozytorium",
     "tests/test_mutacje_nocne.py": (
         "sprawdza narzędzie na repozytoriach testu i atrapie GitHuba; mutacje-nocne.yml czyta ścieżką, którą graf widzi"
