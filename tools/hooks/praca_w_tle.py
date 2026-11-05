@@ -65,7 +65,8 @@ def refusal(tasks: list[str]) -> str:
         "wywołujący (rodzic, T3, claude -p) dostaje odpowiedź bez niego, a powiadomienie o końcu zadania może nie "
         "obudzić agenta. Nie kończ tury słowami „czekam na powiadomienie”. Poczekaj na koniec zadania na pierwszym "
         "planie (w T3 t3_background_wait z jego ID) i zapisz wynik, albo zatrzymaj je (TaskStop z jego ID), uruchom tę "
-        "pracę Bashem bez run_in_background (timeout do 600000 ms, dłuższą dziel na części) i zapisz wynik. Proces, "
+        "pracę Bashem bez run_in_background (timeout do 600000 ms, dłuższą dziel na części) i zapisz wynik. Monitor "
+        "to też zadanie w tle, a samo sleep nie jest pracą: na pierwszym planie sprawdzaj stan, na który czekasz. Proces, "
         "który ma żyć po turze, bo prosi o to człowiek (serwer), zatrzymaj jako zadanie i uruchom odłączony "
         "(nohup … & w Bashu na pierwszym planie)."
     )

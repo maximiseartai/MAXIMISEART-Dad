@@ -10,6 +10,7 @@ robi to Claude Code 2.1.318.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -84,12 +85,16 @@ def test_zapis_wejscia_claude_code_z_sleep_w_tle_zatrzymuje_koniec_tury_i_trafia
 
     assert "shell bi6lxbxlb „sleep 60”" in reason
     assert ["t3_background_wait" in reason, "TaskStop" in reason, "run_in_background" in reason] == [True, True, True]
+    # Próba z modelem (5.11.2026): po odmowie agent zatrzymał zadanie i uruchomił Monitor, który znów dostał odmowę.
+    assert "Monitor to też zadanie w tle" in reason
     (row,) = _log(tmp_path)
-    assert {key: row[key] for key in ("decyzja", "szczegoly", "session_id", "prompt_id", "stop_hook_active")} == {
+    assert datetime.fromisoformat(str(row.pop("czas"))).utcoffset() == timedelta(0)
+    assert row == {
         "decyzja": "odmowa",
         "szczegoly": ["shell bi6lxbxlb „sleep 60”"],
         "session_id": REAL["session_id"],
         "prompt_id": REAL["prompt_id"],
+        "cwd": REAL["cwd"],
         "stop_hook_active": False,
     }
 
@@ -259,7 +264,7 @@ if argv == ["--version"]:
     print("9.9.9 (Claude Code)")
     sys.exit(0)
 with open(os.environ["ATRAPA_WYWOLANIA"], "a", encoding="utf-8") as calls:
-    keys = ("ANTHROPIC_BASE_URL", "WYROCZNIA_PRACY_W_TLE_W_SRODKU", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
+    keys = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "WYROCZNIA_PRACY_W_TLE_W_SRODKU", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
     calls.write(json.dumps({{"argv": argv, "cwd": os.getcwd(), "env": {{k: os.environ.get(k) for k in keys}}}}) + "\\n")
 if os.environ.get("ATRAPA_CISZA"):
     time.sleep(600)
@@ -299,6 +304,8 @@ for _ in range(12):
         for h in hooks
     ]
     reasons = [json.loads(a)["reason"] for a in answers if a.strip()]
+    if os.environ.get("ATRAPA_JEDNA_ODMOWA") and not active:
+        reasons.append("Odmowa końca tury: w tle sesji biegnie jeszcze nic (fałszywa odmowa).")
     if not reasons:
         sys.exit(0)
     messages.append({{"role": "user", "content": "Stop hook feedback:\\n" + reasons[0]}})
@@ -323,6 +330,7 @@ def _oracle(tmp_path: Path, *arguments: str, env: dict[str, str] | None = None) 
             "ATRAPA_WYWOLANIA": str(tmp_path / "wywolania.jsonl"),
             "CLAUDECODE": "1",
             "CLAUDE_CODE_ENTRYPOINT": "sdk-ts",
+            "ANTHROPIC_AUTH_TOKEN": "token-huba",
             **(env or {}),
         },
         capture_output=True,
@@ -368,6 +376,7 @@ def test_wyrocznia_uruchamia_claude_p_w_checkoucie_tylko_z_ustawieniami_projektu
     assert call["cwd"] == str(ROOT)
     assert call["env"] == {
         "ANTHROPIC_BASE_URL": settings["env"]["ANTHROPIC_BASE_URL"],
+        "ANTHROPIC_AUTH_TOKEN": None,
         "WYROCZNIA_PRACY_W_TLE_W_SRODKU": "1",
         "CLAUDECODE": None,
         "CLAUDE_CODE_ENTRYPOINT": None,
@@ -383,6 +392,18 @@ def test_wyrocznia_gdy_hook_nie_odmawia_konczy_sie_zmiana(tmp_path: Path) -> Non
         "ZMIANA praca-w-tle | koniec tury bez odmowy (kod 0)",
         "ZGODNE bez-pracy-w-tle | koniec tury bez odmowy (kod 0)",
         "WYROCZNIA ZMIANA | Claude Code 9.9.9 (Claude Code) | ZGODNE 1, ZMIANA 1",
+    ], ran.stderr
+    assert ran.returncode == 1
+
+
+@POSIX_ONLY
+def test_wyrocznia_gdy_hook_odmawia_bez_pracy_w_tle_konczy_sie_zmiana(tmp_path: Path) -> None:
+    # Jedna fałszywa odmowa, po której Claude Code kończy turę sam, to też zmiana: każda zatrzymuje agenta.
+    ran = _oracle(tmp_path, "bez-pracy-w-tle", env={"ATRAPA_JEDNA_ODMOWA": "1"})
+
+    assert ran.stdout.splitlines()[1:] == [
+        "ZMIANA bez-pracy-w-tle | odmowy hooka: 1",
+        "WYROCZNIA ZMIANA | Claude Code 9.9.9 (Claude Code) | ZMIANA 1",
     ], ran.stderr
     assert ran.returncode == 1
 

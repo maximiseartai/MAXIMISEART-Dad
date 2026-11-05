@@ -253,8 +253,6 @@ def verdict(case: Case, got: Outcome) -> tuple[str, str]:
         seen = "Bash nie oddał wyniku"
     elif got.refusals:
         seen = f"odmowy hooka: {got.refusals}"
-    elif got.returncode is None:
-        seen = "bez odmowy i bez końca tury przed limitem"
     else:
         seen = f"koniec tury bez odmowy (kod {got.returncode})"
     expected = got.tool_result and (got.refusals >= 2 if case.refusals else got.refusals == 0 and got.returncode == 0)
