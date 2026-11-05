@@ -136,12 +136,14 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `917cf6fc6` (2026-11-05, the cleanup of #837). Every row of the table was checked against the code at this
-commit. Since `2b2af53e4` (#846 after its split, the start of #888 back and #910 out, merged with `main` after #912 and
-#914) only `guarded` changed: a mask in a typed field of the Logs (a `Decimal`, a date, a closed list) empties the field
-or drops its list element with a technical note, a top-level field without `None` raises `UnrepresentableLogs` instead
-of `ValidationError` (#936), and the loop of cuts ends after at most as many turns as the Logs have values. The model
-has no step in which the guard raises, so no action changed. Since the Sync commit of `main` `4cb7154e4` (round 2
+Sync commit: `6e299b469` (2026-11-05, #936). Every row of the table was checked against the code at this commit. Since
+`917cf6fc6` only `guarded` changed: it leaves the fields that carry only tool words and moments (`_TOOL_FIELDS`:
+`process`, `mode`, `period`, `run_id`, `started_at`, `ended_at`, `ending` and the rest) and the keys of the Logs models
+without a mask, so no mask loses the whole Logs; the model has no step in which the guard masks or raises, so no action
+changed. Since `2b2af53e4` (#846 after its split, the start of #888 back and #910 out, merged with `main` after #912 and
+#914) `guarded` had changed once before: a mask in a typed field of the Logs (a `Decimal`, a date, a closed list)
+empties the field or drops its list element with a technical note, and the loop of cuts ends after at most as many
+turns as the Logs have values. Since the Sync commit of `main` `4cb7154e4` (round 2
 of #888) #846 changed these definitions: the first line of the journal goes to the disk at the start of the Wycena
 (`run_started` → `_append_locked`, model `ZapiszStart`, its torn first line in `Zgasniecie` and its failed write that
 leaves the line, and a `Wpis` that writes the first line only while `_header` is set); `PricingJournal.progress` gives a
@@ -375,6 +377,9 @@ reason the check can pass while the code is wrong:
   changes nothing; only Logs written without the guard (`StareLogi`) change. A number the guard masked becomes the text
   of its mask, which it leaves as it is. Idempotent means one version of the guard: Logs written by a Centrum whose
   guard masked less (before #851 nothing, before #863 the phone with `48` without `+`) are `StareLogi` for a newer one.
+  It also means the memory of a start: the start guards before it reads any file of Dad's (ADR 0025). With the memory
+  that wrote the Logs, a value equal to a field name in the place of a guard note is masked again in that note (5 of the
+  words of the full Logs in the test of #936, 6 before it), but no step guards Logs twice with one memory.
 - **A journal without its end entry is an Urwane Uruchomienie or one of the known findings `przed-wpisem-konca` and
   `wpis-konca-nieudany`.** A journal written by a build between #845 and #870/#871 has no end entry either, so a Wycena
   of such a build that reached its result without a Logs file gets Logi Urwanego Uruchomienia; no Wydanie has such a
