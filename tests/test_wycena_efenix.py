@@ -1788,6 +1788,25 @@ def test_odmowa_zaladuj_do_zlecenia_zatrzymuje_wycene_bez_znacznika_i_sladu_a_po
     )
 
 
+def test_odmowa_zaladuj_do_zlecenia_po_propozycji_emmetta_w_polach_bez_tekstu_zatrzymuje_wycene_bez_znacznika(
+    tmp_path: Path, page: Page
+) -> None:
+    """Okno Emmetta pokazuje propozycję tylko w polach, bez tekstu (postaci propozycji efenix nikt nie zmierzył), a efenix
+    odmawia „Załaduj do zlecenia” odpowiedzią 200 z inną treścią (#889). Pole to też propozycja, więc strona z kwotą 0 po
+    przeładowaniu to Zatrzymanie okna, a nie pusta Wycena Emmetta: zlecenie nie dostaje ilości z pliku ani Znacznika."""
+
+    order = Order("#9711", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"019": 5})
+    source = write_collective_file(tmp_path, [order])
+    in_efenix = replace(order.in_efenix("9711"), emmett_refusal=EmmettRefusal.OTHER, emmett_in_fields=True)
+    with atrapa_efenix([in_efenix]) as atrapa:
+        stopped = _run(source, page, atrapa.url)
+        pricing = _pricing(atrapa)
+
+    assert isinstance(stopped.ending, Stop) and isinstance(stopped.ending.facts, PricingStopped), _ending(stopped)
+    assert (_stop(stopped), stopped.ending.facts.cause) == ("EFENIX_OKNO_ZATRZYMANE", OtherShape(Shape.EMMETT_NOT_LOADED))
+    assert (pricing, _marked(source)) == ({"9711": ({}, DAY, 0)}, [])
+
+
 @dataclass
 class _ReloadFirst:
     """Karta ``page``, w której każdy odczyt treści odpowiedzi „Załaduj do zlecenia” czeka, aż skrypt efenix przeładuje

@@ -224,7 +224,8 @@ class AtrapaOrder:
     zlecenia. ``without``: kody pozycji, których karty strona tego zlecenia nie ma, jak strony efenix z częścią pozycji
     wyceny. Z ``after_date`` każda z tych czterech zmian strony jest dopiero od zapisu daty wykonania, a z ``after_emmett``
     od przeładowania po załadowaniu Wyceny Emmetta. ``emmett_refusal``: efenix odmawia „Załaduj do zlecenia” tego
-    zlecenia (``EmmettRefusal``), aż test to zmieni.
+    zlecenia (``EmmettRefusal``), aż test to zmieni. ``emmett_in_fields``: okno Emmetta pokazuje propozycję w polach bez
+    tekstu (ilość w ``value``), jedną z postaci, których w efenix nikt nie zmierzył.
     """
 
     order_id: str
@@ -248,6 +249,7 @@ class AtrapaOrder:
     after_date: bool = False
     after_emmett: bool = False
     emmett_refusal: EmmettRefusal | None = None
+    emmett_in_fields: bool = False
 
     @property
     def amount(self) -> Decimal:
@@ -630,6 +632,8 @@ def _change(path: str, order: AtrapaOrder, params: Mapping[str, str], *, refuse_
             order.quantities.pop(code, None)
         return {"result": "ok", "price_index": f"{PRICES[code] * quantity:.2f}", "price_all": f"{order.amount:.2f}"}
     if path == FILL_EMMETT:
+        if order.emmett_in_fields:
+            return "".join(f'<input name="INDEKS_{escape(code)}_078" value="{quantity}">' for code, quantity in sorted(order.emmett.items()))
         rows = "".join(f"<li>INDEKS_{escape(code)}_078: {quantity}</li>" for code, quantity in sorted(order.emmett.items()))
         return f"<ul>{rows}</ul>" if rows else ""
     if path == LOAD_EMMETT:
