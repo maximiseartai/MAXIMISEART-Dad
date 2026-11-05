@@ -5,11 +5,13 @@ Wycena w efenix trwa u taty do półtorej godziny, a Logi Uruchomienia powstają
 Centrum, nigdy częściej, odświeża go stanem dziennika Wyceny (``PricingJournal.progress``): zlecenia skończone z
 wszystkich, wyniki do tej pory, ostatnie skończone zlecenie, zlecenie w trakcie i czas od startu. Dziennik podaje tylko
 wpisy, które już ma na dysku, a bez swojej pierwszej linii na dysku nic, więc postęp nigdy go nie wyprzedza: każdy
-komentarz postępu ma dziennik, a dziennik znika dopiero, gdy Kolejka wysyłki przyjęła wersję końcową tego komentarza
-(``pricing_journal``). Na końcu Wyceny to jej Logi z wynikiem, a gdy ich kolejka nie przyjęła (Centrum zgasło w trakcie
-albo tuż po wyniku, zapis się nie udał), następny start Centrum wysyła ją z dziennika: Logi z pliku, Logi Urwanego
-Uruchomienia albo wynik bez Logów z wpisu końca (``pricing_journal.InterruptedPricings``). Wycena, której dziennika nie da
-się zapisać, postępu nie ma, tylko podsumowanie na końcu.
+komentarz postępu ma dziennik. Na końcu Wyceny komentarz staje się podsumowaniem z jej Logów z wynikiem, a Wycenę, którą
+przerwało zgaśnięcie Centrum przed wpisem końca dziennika, następny start Centrum zamyka Logami Urwanego Uruchomienia
+(``pricing_journal.InterruptedPricings``), które też zamieniają komentarz w podsumowanie. Wycena, której Logi z wynikiem
+nie doszły do kolejki po wpisie końca (Centrum zgasło między wpisem końca a ich przyjęciem, wpis końca się nie zapisał,
+Logi nie powstały albo kolejka ich nie przyjęła), zostawia komentarz postępu bez wersji końcowej, bo start Centrum za
+Wycenę z wynikiem niczego nie wysyła, żeby nie zastąpić Logów z wynikiem, które kolejka już przyjęła (#871); to okno
+zamyka #910. Wycena, której dziennika nie da się zapisać, postępu nie ma, tylko podsumowanie na końcu.
 
 Postęp to starsza wersja tej samej wysyłki co Logi tego Uruchomienia (``run_logs.progress_post``: ten sam ``run_id`` i
 etykieta), więc kolejka zmienia ten sam komentarz, a bez sieci najnowszy postęp w kolejce zastępuje starszy (``outbox``).

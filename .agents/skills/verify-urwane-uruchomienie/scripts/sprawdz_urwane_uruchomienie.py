@@ -49,6 +49,8 @@ PROMISES = {
     "ZaczeteWLogach": "zlecenie, które Urwana Wycena zmieniła w efenix, nie jest w jej Logach.",
     "WersjaKoncowa": "dziennik Wyceny, która mogła wysłać postęp, zniknął, a Kolejka wysyłki nie przyjęła wersji końcowej jej "
     "komentarza Uruchomienia, więc w Skrzynce może zostać postęp „Uruchomienie trwa”.",
+    "WynikZostaje": "po Logach z wynikiem, które kolejka przyjęła, do kolejki poszła wersja bez Logów tego Uruchomienia, "
+    "która zastąpi je w Skrzynce.",
 }
 LIVENESS_SAID = "awarie się skończyły, tata otwiera i zamyka Centrum, a dziennik zostaje na dysku bez końca."
 # Zmienna historii każdej obietnicy: zbiór przyczyn w chwili każdego zdarzenia, które ją łamie.
@@ -60,6 +62,7 @@ _EVENTS = {
     "NicPrzedWznowieniem": "przedWznowieniem",
     "ZaczeteWLogach": "bezZlecenia",
     "WersjaKoncowa": "bezWersji",
+    "WynikZostaje": "wyparty",
 }
 _STATE = re.compile(r"^State \d+: ")
 _STUTTERING = re.compile(r"^State \d+: Stuttering")
@@ -226,14 +229,15 @@ def _trace(output: str) -> list[dict[str, str]]:
 # Akcja modelu i krok kodu, który opisuje (tabela w SKILL.md), w słowach kontrprzykładu.
 _STEPS = {
     "Start": "tata otwiera Centrum: port, create_app, InterruptedPricings.close czyta dzienniki",
-    "ZapiszLogi": "close zapisuje plik Logów Wyceny {k} po strażniku (RunLogs.close)",
+    "ZapiszLogi": "close zapisuje plik Logów Urwanego Uruchomienia Wyceny {k} (RunLogs.close)",
     "UsunDziennik": "close usuwa dziennik Wyceny {k} (_remove)",
     "Wznow": "lifespan: Outbox.resume",
-    "PierwszeZapytanie": "pierwsze zapytanie API: send_interrupted bierze wersje końcowe z _pending",
-    "Wyslij": "send: Outbox.post wersji końcowej ({r}) Wyceny {w}",
+    "PierwszeZapytanie": "pierwsze zapytanie API: send_interrupted bierze Logi z _pending",
+    "Wyslij": "send: Outbox.post Logów Urwanego Uruchomienia Wyceny {w}",
     "UsunPoWysylce": "send usuwa dziennik Wyceny {w} po przyjęciu przez kolejkę",
     "StartWyceny": "tata uruchamia Wycenę {b2} (PricingJournal.run_started)",
     "ZapiszStart": "run_started zapisuje pierwszą linię dziennika Wyceny {b} (_append_locked)",
+    "Postep": "budzik postępu: RunLogs.progress wysyła postęp Wyceny {b} z dziennika",
     "WpisZaczete": "Wycena {b} pisze „zaczynam zlecenie” {z}",
     "ZmianaWEfenix": "okno efenix zmienia zlecenie {z} Wyceny {b}",
     "WpisSkonczone": "Wycena {b} pisze „zlecenie skończone” {z}",
@@ -242,14 +246,10 @@ _STEPS = {
     "WpisKonca": "PricingJournal.run_ended: Wycena {b} pisze „koniec Uruchomienia”, zanim powstaną jej Logi",
     "LogiWyniku": "RunLogs._keep zapisuje plik Logów z wynikiem Wyceny {b}",
     "WyslijWynik": "RunLogs._keep: Outbox.post Logów z wynikiem Wyceny {b}",
-    "UsunPoLogach": "PricingJournal.logs_ended: kolejka przyjęła Logi, więc dziennik Wyceny {b} znika; koniec Uruchomienia",
+    "KoniecUruchomienia": "reszta działań po wyniku Wyceny {b}, koniec Uruchomienia",
     "Zgasniecie": "Centrum gaśnie (brak prądu, zabity proces)",
     "Zamkniecie": "tata zamyka Centrum",
 }
-
-
-# Rodzaj wersji końcowej w modelu i w słowach kontrprzykładu.
-_KINDS = {"wynik": "Logi z wynikiem", "urwane": "Logi Urwanego Uruchomienia", "bezLogow": "wynik bez Logów"}
 
 
 def _step(action: str, before: dict[str, str], after: dict[str, str]) -> str:
@@ -257,11 +257,10 @@ def _step(action: str, before: dict[str, str], after: dict[str, str]) -> str:
 
     if action == "Czytaj":
         return _read(before, after)
-    head = re.search(r"bieg \|-> (\d+), rodzaj \|-> \"(\w+)\"", before.get("doWyslania", ""))
+    head = re.search(r"bieg \|-> (\d+)", before.get("doWyslania", ""))
     fields = {
         "k": before.get("kursor", "?"),
         "w": head.group(1) if head else "?",
-        "r": _KINDS.get(head.group(2), "?") if head else "?",
         "b": before.get("bieg", "?"),
         "b2": after.get("bieg", "?"),
         "z": before.get("zlecenie", "?"),
@@ -292,20 +291,10 @@ def _read(before: dict[str, str], after: dict[str, str]) -> str:
     if after.get("awarieOdczytu") != before.get("awarieOdczytu"):
         return f"close: odczyt dziennika Wyceny {k} rzuca OSError, dziennik zostaje następnemu startowi"
     if after.get("krokZamykania") == "usun":
-        journals = re.findall(r'"(\w+)"', before.get("dziennik", ""))
-        without_start = k.isdigit() and 0 < int(k) <= len(journals) and journals[int(k) - 1] == "bezStartu"
-        return f"close: dziennik Wyceny {k} do usunięcia" + (" (bez pierwszej linii)" if without_start else "")
+        return f"close: dziennik Wyceny {k} do usunięcia (bez pierwszej linii, z wpisem końca albo z Logami z wynikiem)"
     if after.get("krokZamykania") == "zapisz":
-        kind = _KINDS.get(_found(r'rodzaj \|-> "(\w+)"', after.get("rekord", "")), "Logi")
-        return f"close: {kind} Wyceny {k} po strażniku (z dziennika albo z pliku Logów, guard)"
-    if after.get("oczekujace") != before.get("oczekujace"):
-        return f"close: wynik bez Logów Wyceny {k} do _pending (wpis końca bez pliku Logów)"
+        return f"close: Logi Urwanego Uruchomienia Wyceny {k} po strażniku (z dziennika albo z pliku Logów, guard)"
     return f"close: dziennika Wyceny {k} nie ma"
-
-
-def _found(pattern: str, value: str) -> str:
-    found = re.search(pattern, value)
-    return found.group(1) if found else "?"
 
 
 def _tell(trace: list[dict[str, str]]) -> None:

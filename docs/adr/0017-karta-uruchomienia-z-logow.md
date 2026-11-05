@@ -32,38 +32,37 @@ wyłącznie start Centrum. Krótkie procesy dziennika nie piszą.
 
 Dopisek #870/#871: o tym, czy Uruchomienie z dziennikiem doszło do wyniku,
 mówi sam dziennik, nie Historia. Pierwsze działanie po wyniku dopisuje do
-niego „koniec Uruchomienia” z wynikiem (z `fsync`), zanim powstaną Logi z
-wynikiem i zanim pójdą do Skrzynki, a dziennik, w którym nie zapisała się
-nawet pierwsza linia, Centrum od razu usuwa (nieudany zapis mógł zostawić ją
-na dysku, a Zatrzymanie przy zleceniu zakończyć Wycenę przed następnym
-wpisem). Start nie czyta Historii, bo reguła „pierwszy wiersz od startu” jest
-prawdziwa tylko dla ostatniego startu (wiersz późniejszej Wyceny zabierał
-dziennik urwanej bez Logów), a Historia nieczytelna albo bez rekordu metryk
-dawała Wycenie z wynikiem Logi Urwanego Uruchomienia, które w Skrzynce
-zastępowały Logi z wynikiem. Zgaśnięcie między rekordem metryk a wpisem końca
-(milisekundy) zostawia dziennik bez wpisu końca: start zamyka go jako Logi
-Urwanego Uruchomienia, a karta po starcie pokazuje Urwane Uruchomienie, choć
-Historia ma wiersz. Logi z wynikiem jeszcze wtedy nie istnieją, więc w
-Skrzynce niczego nie zastępują. Wpis końca przed rekordem metryk odrzucony: w
-tym samym oknie dziennik Urwanej Wyceny znikałby bez żadnych Logów.
+niego „koniec Uruchomienia” (z `fsync`), zanim powstaną Logi z wynikiem i
+zanim pójdą do Skrzynki, a dziennik, w którym ten wpis się nie zapisał,
+Centrum od razu usuwa, tak samo jak dziennik, w którym nie zapisał się żaden
+wpis (nieudany zapis mógł zostawić na dysku jego pierwszą linię, a
+Zatrzymanie przy zleceniu zakończyć Wycenę przed następnym wpisem). Start
+usuwa dziennik z wpisem końca i nie czyta
+Historii, bo reguła „pierwszy wiersz od startu” jest prawdziwa tylko dla
+ostatniego startu (wiersz późniejszej Wyceny zabierał dziennik urwanej bez
+Logów), a Historia nieczytelna albo bez rekordu metryk dawała Wycenie z
+wynikiem Logi Urwanego Uruchomienia, które w Skrzynce zastępowały Logi z
+wynikiem. Zgaśnięcie między rekordem metryk a wpisem końca (milisekundy)
+zostawia dziennik bez wpisu końca: start zamyka go jako Logi Urwanego
+Uruchomienia, a karta po starcie pokazuje Urwane Uruchomienie, choć Historia
+ma wiersz. Logi z wynikiem jeszcze wtedy nie istnieją, więc w Skrzynce
+niczego nie zastępują. Wpis końca przed rekordem metryk odrzucony: w tym
+samym oknie dziennik Urwanej Wyceny znikałby bez żadnych Logów.
 
 Dopisek #846 (część #837): pierwsza linia dziennika, start Uruchomienia, trafia
 na dysk już przy starcie Wyceny w efenix, zanim ruszy jej wątek, a nie z
 pierwszym zleceniem. Wycena zamknięta przed pierwszym zleceniem, np. gdy okno
 efenix czeka na logowanie taty, też ma więc Logi Urwanego Uruchomienia, bez
 zleceń, a karta po starcie pokazuje zero zleceń przed zamknięciem Centrum.
-Komentarz postępu Wyceny w issue okresu (dopisek #846 w ADR 0015) powstaje
-dopiero, gdy ta linia jest na dysku, a dziennik znika dopiero, gdy Kolejka
-wysyłki przyjęła wersję końcową tego komentarza: na końcu Wyceny jej Logi z
-wynikiem (działanie po wyniku za Logami usuwa dziennik, gdy kolejka je
-przyjęła, także gdy wpis końca się nie zapisał). Start Centrum, który zastanie
-dziennik, wysyła ją z niego, a karta po starcie zostaje taka, jak wyżej:
-czytelny plik Logów idzie do Skrzynki taki, jaki jest; bez pliku Logów i bez
-wpisu końca idą Logi Urwanego Uruchomienia; bez pliku Logów, a z wpisem końca
-(Centrum zamknęło się tuż po wyniku), i przy pliku Logów, którego nie da się
-odczytać, idzie wynik bez Logów: wynik z wpisu końca, zlecenia z dziennika i
-dopisek, dlaczego pełnych Logów nie ma. Pliku Logów ten wynik nie tworzy, więc
-karta po starcie dalej pokazuje wynik z Historii.
+Dziennik, którego pierwszej linii nie potwierdził żaden zapis, Centrum po
+wyniku usuwa jak w dopisku #870/#871 dziennik bez żadnego zapisanego wpisu.
+Komentarz postępu Wyceny w issue okresu
+(dopisek #846 w ADR 0015) powstaje dopiero, gdy ta linia jest na dysku, więc
+Wycenę przerwaną przed wpisem końca kończą w nim Logi Urwanego Uruchomienia z
+następnego startu. Start zostaje taki, jak w dopisku #870/#871: dziennik z
+wpisem końca usuwa bez wysyłki, bo Logi z wynikiem mogą już być w Skrzynce, więc
+komentarz Wyceny, której Logi z wynikiem nie doszły do kolejki po wpisie końca,
+zostaje postępem. To okno zamyka #910.
 
 ## Kontekst
 

@@ -2,10 +2,8 @@
   "src/rozliczenia/centrum/pricing_journal.py": [
     "PricingJournal",
     "RunEnded",
-    "JournalAfterLogs",
-    "_remove",
-    "_Read",
     "_read",
+    "_remove",
     "InterruptedPricings"
   ],
   "src/rozliczenia/centrum/run_logs.py": [
@@ -19,9 +17,9 @@
     "RunLogs.close",
     "RunLogs._write",
     "RunLogs.send",
+    "RunLogs.progress",
     "LoggedEnding",
-    "logi_post",
-    "RunLogs.queued"
+    "logi_post"
   ],
   "src/rozliczenia/centrum/app.py": [
     "lifespan",

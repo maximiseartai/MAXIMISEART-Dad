@@ -83,15 +83,16 @@ ostatnie zlecenie i czas od startu, nigdy więcej, niż dziennik ma na dysku.
 Postęp to starsza wersja wysyłki Logów tego Uruchomienia, więc wersja końcowa
 zamienia ten sam komentarz w podsumowanie. Pierwsza linia dziennika trafia na
 dysk przy starcie Wyceny (dopisek #846 w ADR 0017), a postęp idzie dopiero, gdy
-ją tam ma, więc każdy komentarz postępu ma dziennik. Dziennik znika dopiero,
-gdy Kolejka wysyłki przyjęła wersję końcową: na końcu Wyceny jej Logi z
-wynikiem, a gdy ich kolejka nie przyjęła (Centrum zgasło w trakcie albo tuż po
-wyniku, zapis się nie udał), następny start Centrum wysyła ją z dziennika: Logi
-z pliku, Logi Urwanego Uruchomienia albo wynik bez Logów (komentarz z wynikiem
-z wpisu końca dziennika, zleceniami z dziennika i dopiskiem, dlaczego pełnych
-Logów nie ma, bez pliku w Archiwum Logów okresu). Komentarz postępu nie
-zostaje więc nigdy na zawsze z napisem, że Uruchomienie trwa. Wycena, której
-dziennika nie da się zapisać, nie ma postępu, tylko podsumowanie na końcu. Kolejka wysyłki oznacza i usuwa bez wysyłania plik,
+ją tam ma, więc każdy komentarz postępu ma dziennik. Wersją końcową są Logi z
+wynikiem na końcu Wyceny albo Logi Urwanego Uruchomienia, którymi następny
+start Centrum zamyka dziennik Wyceny przerwanej przed wpisem końca (dopisek
+#870/#871 w ADR 0017). Za Wycenę z wpisem końca start niczego nie wysyła, żeby
+nie zastąpić Logów z wynikiem, które kolejka już przyjęła (#871), więc Wycena,
+której Logi z wynikiem nie doszły do kolejki po wpisie końca (Centrum zgasło
+między nim a ich przyjęciem, wpis końca się nie zapisał, Logi nie powstały
+albo kolejka ich nie przyjęła), zostawia komentarz z napisem, że Uruchomienie
+trwa. To okno zamyka #910. Wycena, której dziennika nie da się zapisać, nie ma
+postępu, tylko podsumowanie na końcu. Kolejka wysyłki oznacza i usuwa bez wysyłania plik,
 za którym czeka nowsza wersja tej samej wysyłki, więc bez internetu czeka tylko
 najnowszy postęp (i tylko Logi z ostatnią Diagnozą). Zdanie „Centrum przerwane
 w trakcie zostawia tylko `uruchomienie-start`” w decyzji niżej Wycena w efenix

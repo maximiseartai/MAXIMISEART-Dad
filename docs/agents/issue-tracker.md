@@ -170,18 +170,17 @@ Dad does not click or see anything. The machine script sends none.
   jeszcze nie ma, Uruchomienie trwa` and `- Pełne Logi: w tym komentarzu, gdy
   Uruchomienie się skończy`; the end of the Wycena turns the same comment into
   the summary. The journal has its first line on disk from the start of the
-  Wycena, the progress goes only once it is there, and the journal goes away
-  only once the queue took the final version of the comment, so when Centrum
-  stopped during the Wycena or right after its result, the next start of
-  Centrum turns the comment into one: the Logi from Dad's disk, the Logi of an
-  Urwane Uruchomienie, or, without a Logs file but with the journal's end entry
-  (or with a Logs file that cannot be read), the result without the Logi. That
-  one says `- Wynik: <result>` from the end entry, the orders from the journal and
-  `- Pełne Logi: nie ma, Centrum nie zapisało ich po wyniku (np. zamknęło się
-  tuż po nim)` (or that the Logs file cannot be read), with no file in the
-  Archiwum Logów okresu. A Wycena whose journal cannot be written has no
-  progress comment, only the summary at its end. Without the network only the
-  newest progress waits in the queue.
+  Wycena and the progress goes only once it is there, so when Centrum stopped
+  during the Wycena, before the journal's end entry, the next start of Centrum
+  turns the comment into the summary of the Logi of an Urwane Uruchomienie.
+  When the Logi with the result did not reach the queue after the end entry
+  (Centrum stopped right after the result, the end entry or the Logs failed, or
+  the queue refused them), the comment stays a progress comment, because the
+  start sends nothing for a Wycena with an end entry so as not to replace Logi
+  with the result that may already be in the Skrzynka (`#910` closes this
+  window). A Wycena whose journal cannot be written has no progress comment,
+  only the summary at its end. Without the network only the newest progress
+  waits in the queue.
 - The full Logi are in the period's Archiwum Logów okresu: the GitHub Release
   tagged `logi-<token>` in the same private repository, which Centrum creates
   with the first Logi of the period (`#844`). It holds one file per

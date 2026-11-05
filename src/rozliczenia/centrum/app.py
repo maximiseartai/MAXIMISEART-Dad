@@ -51,7 +51,7 @@ from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, UNSENT_DIRECTORY, Reports
 from rozliczenia.centrum.preparation_run import PreparationEntry
-from rozliczenia.centrum.pricing_journal import JOURNALS_DIRECTORY, InterruptedPricings, JournalAfterLogs, PricingJournal
+from rozliczenia.centrum.pricing_journal import JOURNALS_DIRECTORY, InterruptedPricings, PricingJournal
 from rozliczenia.centrum.pricing_progress import ProgressComment
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.run_cards import LAST_STARTED_FILE, RunCards, run_cards_router
@@ -221,6 +221,8 @@ def create_app(
         search_deadline_s=report_search_deadline_s,
         forbidden=forbidden,
     )
+    # Dziennik Wyceny w efenix w trakcie Uruchomienia, obok Logów: przeżywa nagłe zgaśnięcie Centrum (#845).
+    journal = PricingJournal(log.directory / JOURNALS_DIRECTORY, log, process=EFENIX.key)
     # Logi Uruchomienia: jeden plik JSON na Uruchomienie obok dziennika Centrum, poza Gitem i OneDrive (ADR 0015).
     run_logs = RunLogs(
         log.directory / RUN_LOGS_DIRECTORY,
@@ -234,9 +236,6 @@ def create_app(
         dad_actions=dad_actions,
         forbidden=forbidden,
     )
-    # Dziennik Wyceny w efenix w trakcie Uruchomienia, obok Logów: przeżywa nagłe zgaśnięcie Centrum (#845) i znika, gdy
-    # kolejka przyjęła Logi jego Uruchomienia (#846).
-    journal = PricingJournal(log.directory / JOURNALS_DIRECTORY, log, process=EFENIX.key, run_logs=run_logs)
     # Jedno Uruchomienie procesu albo Aktualizacja narzędzia naraz; w ich trakcie zamknięcie Centrum jest odrzucone.
     stops = Stops(
         reports,
@@ -308,11 +307,10 @@ def create_app(
         previous=cards.last(),
         run_started=run_started,
         # Wpis końca dziennika Wyceny w efenix przed Logami z wynikiem: start Centrum nie weźmie Uruchomienia, którego Logi
-        # z wynikiem mogą być w Skrzynce, za Urwane (#871). Dziennik znika za Logami, gdy kolejka już je przyjęła (#846).
+        # z wynikiem mogą być w Skrzynce, za Urwane (#871).
         after_run=[
             journal,
             run_logs,
-            JournalAfterLogs(journal),
             QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden),
             filling,
         ],

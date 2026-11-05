@@ -607,9 +607,11 @@ nich wraca karta Uruchomienia po starcie Centrum i w Historii. W trakcie
 Wyceny w efenix ten sam komentarz Uruchomienia w Skrzynce pokazuje co 5 minut
 jej postęp z dziennika Wyceny w efenix (zlecenia skończone z wszystkich, wyniki
 do tej pory, ostatnie zlecenie), a na końcu staje się podsumowaniem Logów, także
-gdy Centrum zamknęło się w jej trakcie albo tuż po wyniku: wtedy przy
-następnym starcie, a bez pliku Logów z wynikiem z dziennika Wyceny i dopiskiem,
-że pełnych Logów nie ma.
+gdy Centrum zamknęło się w jej trakcie: wtedy przy następnym starcie
+podsumowaniem Logów Urwanego Uruchomienia. Gdy Logi z wynikiem nie doszły do
+kolejki po wpisie końca dziennika Wyceny (np. Centrum zamknęło się tuż po
+wyniku), komentarz zostaje postępem: start niczego za taką Wycenę nie wysyła,
+żeby nie zastąpić jej Logów z wynikiem, które mogą już być w Skrzynce.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), dziennik Centrum, raport
 
 ## Kopia wejścia
