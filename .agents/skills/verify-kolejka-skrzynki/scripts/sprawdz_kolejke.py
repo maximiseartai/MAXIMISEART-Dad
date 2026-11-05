@@ -26,11 +26,16 @@ from skrypt_skilla import part
 # ``archiwum`` i ``archiwum-diagnoza`` trwają razem ok. 53 s, ``watek-okresu`` ok. 22 s, ``diagnoza``,
 # ``diagnoza-odczyt`` i ``archiwum-puste-repo`` razem ok. 37 s, cztery pozostałe zakresy razem ok. 8 s, a model ok.
 # 45 s, więc przy trzech częściach pierwsza bierze zakresy Archiwum, druga dwie następne jednostki, a trzecia resztę i
-# model (ok. 53 s, 59 s i 53 s).
+# model (ok. 53 s, 59 s i 53 s). Zakresy z opóźnieniem listy (#879) dokładają po kilka sekund do jednostek swoich
+# celów: ``watek-okresu-lista`` i ``archiwum-lista`` ok. 8 s każdy, ``nowe-issue-lista`` i ``zgloszenie-lista`` razem
+# ok. 8 s (Mac Maksa pod obciążeniem, 2026-11-05).
 UNITS = (
     ("explore_outbox.py", ("--scope", "archiwum", "--scope", "archiwum-diagnoza")),
-    ("explore_outbox.py", ("--scope", "watek-okresu")),
-    ("explore_outbox.py", ("--scope", "diagnoza", "--scope", "diagnoza-odczyt", "--scope", "archiwum-puste-repo")),
+    ("explore_outbox.py", ("--scope", "watek-okresu", "--scope", "watek-okresu-lista")),
+    (
+        "explore_outbox.py",
+        ("--scope", "diagnoza", "--scope", "diagnoza-odczyt", "--scope", "archiwum-puste-repo", "--scope", "archiwum-lista"),
+    ),
     (
         "explore_outbox.py",
         (
@@ -40,6 +45,10 @@ UNITS = (
             "zgloszenie-wrocilo",
             "--scope",
             "nowe-issue",
+            "--scope",
+            "nowe-issue-lista",
+            "--scope",
+            "zgloszenie-lista",
             "--scope",
             "znane-issue",
         ),

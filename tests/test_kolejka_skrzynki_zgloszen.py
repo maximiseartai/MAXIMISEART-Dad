@@ -19,7 +19,8 @@ from types import SimpleNamespace
 import pytest
 
 from rozliczenia.centrum import outbox as outbox_module
-from rozliczenia.centrum.keyed_box import KeyedBox
+from rozliczenia.centrum.atomic_file import replace_atomically
+from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE, KeyedBox, NotesFile
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import (
     PART_LIMIT,
@@ -91,7 +92,7 @@ class Queue:
     def restarted(self) -> Outbox:
         """Kolejka nowego startu Centrum na tym samym folderze."""
 
-        keyed = KeyedBox(self.box, lambda: self.key, clock=self.clock)
+        keyed = KeyedBox(self.box, lambda: self.key, clock=self.clock, opening=NotesFile(self.directory.parents[1] / OPENING_FILE, replace_atomically))
         return Outbox(
             self.directory,
             keyed,
@@ -213,6 +214,7 @@ def test_bez_sieci_wysylka_czeka_w_pliku_i_idzie_przy_nastepnej_wysylce_po_kolei
     [waiting] = queue.files()
     assert waiting.endswith(f"-kontrola-ilosci-{RUN_ID[:8]}.json")
     assert "pierwsza" not in queue.log()
+    queue.clock.pause(LIST_LAG_S)  # po zakładaniu bez odpowiedzi KeyedBox tyle nie zakłada issue (#879)
 
     queue.outbox.post(post(["druga\n"], run_id=NEXT_RUN_IDS[0]))
 
@@ -444,14 +446,15 @@ def test_druga_kolejka_na_tym_folderze_nie_wysyla_pliku_w_trakcie_wysylki_pierws
 
 def test_przejscie_pominiete_przez_druga_kolejke_robi_pierwsza_po_swoim(tmp_path: Path) -> None:
     hold = threading.Event()
-    queue = Queue(tmp_path, FakeReportBox(open_hold=hold, outcomes=[Unreachable()]))
+    queue = Queue(tmp_path, FakeReportBox(search_hold=hold, search_failure=Unreachable()))
     queue.queued("treść\n")
     queue.outbox.resume()
-    assert queue.box.opening.wait(30)
+    assert queue.box.searching.wait(30)
     restarted = queue.restarted()
     restarted.resume()
     assert not restarted.wait_delivered("", THREAD.label, timeout_s=30)
 
+    queue.box.search_failure = None  # tylko pytanie, które już trwa, zostaje bez odpowiedzi
     hold.set()
 
     assert queue.box.wait_until(lambda box: len(box.issues) == 1)
@@ -888,6 +891,7 @@ def test_po_wyslaniu_kolejka_zna_adres_pierwszego_komentarza_uruchomienia(tmp_pa
     queue.outbox.post(run_logs)
     assert wait_for(lambda: "przyczyna=brak-sieci" in queue.log())
     waiting = queue.outbox.delivered(RUN_ID, "logi-uruchomienia")
+    queue.clock.pause(LIST_LAG_S)  # po zakładaniu bez odpowiedzi KeyedBox tyle nie zakłada issue (#879)
     queue.outbox.resume()
     assert queue.box.wait_until(lambda box: bool(box.issues) and bool(box.issues[0].comments))
     assert wait_for(lambda: queue.outbox.delivered(RUN_ID, "logi-uruchomienia") is not None)
@@ -1107,3 +1111,102 @@ def test_przejscie_w_ktorym_archiwum_odmowilo_nie_pyta_go_o_pliki_nastepnych_log
     queue.passed()
 
     assert queue.box.archive_requests == 2
+
+
+def test_kontrole_ilosci_okresu_w_jednym_przejsciu_ida_do_jednego_issue_zanim_lista_je_pokaze(tmp_path: Path) -> None:
+    """Lista issue GitHuba pokazuje nowe issue po kilku sekundach (#879). Druga Kontrola ilości okresu, która w tym samym
+    przejściu idzie zaraz po tym, jak pierwsza założyła issue okresu, trafia do niego komentarzem."""
+
+    queue = Queue(tmp_path, FakeReportBox(list_lag=True))
+    queue.queued("pierwsza\n", "druga\n")
+
+    queue.outbox.resume()
+    queue.passed()
+
+    [issue] = queue.box.issues_with(THREAD.label)
+    assert issue.body == f"{THREAD.line}\n\nCzęść 1/1\n\npierwsza\n"
+    assert issue.comments == ["Część 1/1\n\ndruga\n"]
+    assert queue.files() == []
+
+
+def test_zgubiona_odpowiedz_na_zalozenie_uwagi_i_nowa_wysylka_zanim_lista_ja_pokaze_nie_daja_drugiego_issue(
+    tmp_path: Path,
+) -> None:
+    """GitHub założył issue Uwagi taty, a odpowiedź zginęła (#879). Nowa wysyłka budzi przejście od razu, zanim lista
+    issue pokaże to issue; Uwaga czeka wtedy na budzenie ``RETRY_S`` zamiast założyć drugie issue."""
+
+    queue = Queue(tmp_path, FakeReportBox(lost_answers=1, list_lag=True))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, ("Uwaga",)))
+    queue.passed()
+
+    queue.outbox.post(report())
+    queue.passed()
+
+    assert len(queue.box.issues_with("uwaga-taty")) == 1
+    queue.box.list_caught_up()
+    queue.clock.advance(RETRY_S)
+    queue.passed()
+    [note] = queue.box.issues_with("uwaga-taty")
+    assert (note.body, note.comments) == ("Uwaga", [])
+    assert [issue.body for issue in queue.box.sent] == [REPORT_BODY]
+    assert queue.files() == []
+
+
+def test_zgubiona_odpowiedz_na_zalozenie_uwagi_i_start_centrum_zanim_lista_ja_pokaze_nie_daja_drugiego_issue(
+    tmp_path: Path,
+) -> None:
+    """Centrum gaśnie po zgubionej odpowiedzi na założenie issue Uwagi taty i startuje znów, zanim lista issue je pokaże
+    (#879): nowe Centrum zna chwilę tamtego zakładania z pliku obok klucza i czeka na budzenie ``RETRY_S``."""
+
+    queue = Queue(tmp_path, FakeReportBox(lost_answers=1, list_lag=True))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, ("Uwaga",)))
+    queue.passed()
+
+    queue.outbox = queue.restarted()
+    queue.outbox.resume()
+    queue.passed()
+
+    assert len(queue.box.issues_with("uwaga-taty")) == 1
+    queue.box.list_caught_up()
+    queue.clock.advance(RETRY_S)  # budzi też kolejkę poprzedniego Centrum, która w teście jeszcze żyje
+    assert wait_for(lambda: queue.files() == [])
+    [note] = queue.box.issues_with("uwaga-taty")
+    assert (note.body, note.comments) == ("Uwaga", [])
+
+
+def test_dwie_uwagi_taty_jedna_po_drugiej_zakladaja_dwa_issue_bez_czekania_na_liste(tmp_path: Path) -> None:
+    """Zakładanie, na które przyszła odpowiedź, nie wstrzymuje następnego zakładania z tą etykietą w tym Centrum (#879)."""
+
+    queue = Queue(tmp_path, FakeReportBox(list_lag=True))
+
+    queue.outbox.post(Post(NewIssue("uwaga-taty", "Pierwsza"), None, RUN_ID, None, ("Pierwsza",)))
+    queue.passed()
+    queue.outbox.post(Post(NewIssue("uwaga-taty", "Druga"), None, NEXT_RUN_IDS[0], None, ("Druga",)))
+    queue.passed()
+
+    assert [note.body for note in queue.box.issues_with("uwaga-taty")] == ["Pierwsza", "Druga"]
+    assert queue.files() == []
+
+
+def test_logi_dwoch_uruchomien_nowego_okresu_w_jednym_przejsciu_ida_do_archiwum_zanim_lista_je_pokaze(
+    tmp_path: Path,
+) -> None:
+    """Lista Archiwów (GitHub Releases) pokazuje nowe Archiwum po kilku sekundach (#887, #879). Drugie Logi nowego okresu
+    w tym samym przejściu dokładają plik do Archiwum, które założyły pierwsze, zamiast dostać odmowę drugiego Archiwum
+    tego tagu i komentarz z dopiskiem, że plik czeka."""
+
+    queue = Queue(tmp_path, FakeReportBox(list_lag=True))
+    queue.directory.mkdir(parents=True)
+    run_ids = (RUN_ID, NEXT_RUN_IDS[0])
+    for second, run_id in enumerate(run_ids):
+        name = f"20261023T1015{second:02d}000000Z-0001-logi-uruchomienia-{run_id[:8]}.json"
+        (queue.directory / name).write_text(logs_with_file(run_id).to_json(), encoding="utf-8")
+
+    queue.outbox.resume()
+    queue.passed()
+
+    [issue] = queue.box.issues_with(LOGS.label)
+    assert not any("czeka w Kolejce wysyłki" in comment for comment in issue.comments)
+    assert sorted(queue.box.archived("logi-08_14_09_2026")) == sorted(f"{run_id}.json.gz" for run_id in run_ids)
+    assert len(queue.box.archives) == 1
+    assert queue.files() == []

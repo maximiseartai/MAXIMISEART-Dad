@@ -44,7 +44,8 @@ from rozliczenia.centrum.metrics import metrics_router, read_runs
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE, Notifications, ReadNotifications, notifications_router
 from rozliczenia.centrum.period_board import periods_router
 from rozliczenia.centrum.platform import Platform
-from rozliczenia.centrum.keyed_box import KeyedBox, read_report_key
+from rozliczenia.centrum.atomic_file import replace_atomically
+from rozliczenia.centrum.keyed_box import OPENING_FILE, KeyedBox, NotesFile, read_report_key
 from rozliczenia.centrum.report_box import GitHubReportBox, ReportBox
 from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
@@ -189,7 +190,12 @@ def create_app(
     config = settings_path.parent
     cases = DadCases(config, log, pause=pause)
     # Zgłoszenia do Maksa: skrzynka obok platformy, klucz obok Ustawień taty (ADR 0007).
-    box = KeyedBox(report_box or GitHubReportBox(), lambda: read_report_key(config), clock=clock)
+    box = KeyedBox(
+        report_box or GitHubReportBox(),
+        lambda: read_report_key(config),
+        clock=clock,
+        opening=NotesFile(config / OPENING_FILE, replace_atomically),
+    )
     # Diagnoza: commit `main` z GitHuba, atrybuty OneDrive i werdykt Skrzynki o kluczu to granice komputera taty.
     surroundings = Surroundings(
         replace(freshness, release=release.fresh),
