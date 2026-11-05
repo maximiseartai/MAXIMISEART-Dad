@@ -112,6 +112,17 @@ def test_polecenie_czerwone_bez_mutacji_nie_daje_werdyktu() -> None:
     assert "WYKRYTA" not in answered.stdout
 
 
+def test_czerwona_podstawa_pokazuje_przyczyne_z_stderr_choc_stdout_konczy_sie_sprzataniem() -> None:
+    # Jak przejazd verify-centrum-rozliczen na Windows w #932: porażka na stderr, a stdout kończy linia sprzątania.
+    base = "import sys; print('STEP krok-1'); print('DRIVE FAIL | przyczyna', file=sys.stderr); print('CLEANUP OK'); sys.exit(1)"
+
+    answered = _mutacje("--zmiana", *_appended(PACKAGE, ""), "--", "-c", base)
+
+    assert answered.returncode == 2
+    assert answered.stdout.splitlines()[0].endswith("→ CLEANUP OK")
+    assert answered.stderr.splitlines() == ["  stdout | STEP krok-1", "  stdout | CLEANUP OK", "  stderr | DRIVE FAIL | przyczyna"]
+
+
 @pytest.mark.parametrize(
     ("checker", "verdict", "code"),
     [

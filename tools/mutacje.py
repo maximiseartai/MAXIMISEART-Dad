@@ -122,6 +122,9 @@ BASE = "origin/main"
 # zrzutu stosów metody ``thread`` (``terminal.sep("+", title="Timeout")``). Cała linia, bo ten sam tekst w cudzysłowie
 # drukuje też asercja testu, który go sprawdza.
 PYTEST_TIMEOUT = re.compile(r"(?:E\s+|FAILED \S+ - )?(?P<hang>Failed: Timeout \(>[0-9.]+s\) from pytest-timeout\.)|(?P<thread>\++ Timeout \++)")
+# Tyle ostatnich linii stdout i tyle stderr czerwonej podstawy ``check_all`` drukuje pod jej linią: przejazd
+# verify-centrum-rozliczen kończy stdout linią sprzątania, a porażkę (DRIVE FAIL, VERIFY FAIL) pisze na stderr (#932).
+BASE_TAIL = 40
 
 
 class Verdict(StrEnum):
@@ -251,12 +254,14 @@ class _Ran:
     last: str  # ostatnia linia wyjścia
     hang: str | None  # linia pytest-timeout
     seconds: float  # czas polecenia, także tego, które przekroczyło limit
+    tail: tuple[str, ...] = ()  # ostatnie linie stdout, potem stderr (``BASE_TAIL`` każdego), z nazwą strumienia
 
 
 def _run(
     copy: Path, command: Sequence[str], limit_s: float, stop: threading.Event | None = None, *, concurrent: bool = False
 ) -> _Ran:
-    """Uruchamia polecenie w kopii; zwraca kod wyjścia, ostatnią linię, linię pytest-timeout, jeśli była, i czas."""
+    """Uruchamia polecenie w kopii; zwraca kod wyjścia, ostatnią linię, linię pytest-timeout, jeśli była, czas i koniec
+    obu strumieni."""
 
     started = time.monotonic()
     try:
@@ -268,7 +273,10 @@ def _run(
     lines = (done.stdout.strip() or done.stderr.strip()).splitlines()
     hangs = (PYTEST_TIMEOUT.fullmatch(line.strip()) for line in f"{done.stdout}\n{done.stderr}".splitlines())
     hang = next((found["hang"] or found["thread"] for found in hangs if found), None)
-    return _Ran(done.returncode, lines[-1] if lines else f"kod wyjścia {done.returncode}", hang, seconds)
+    tail = tuple(
+        f"{name} | {line}" for name, text in (("stdout", done.stdout), ("stderr", done.stderr)) for line in text.splitlines()[-BASE_TAIL:]
+    )
+    return _Ran(done.returncode, lines[-1] if lines else f"kod wyjścia {done.returncode}", hang, seconds, tail)
 
 
 def _verdict(
@@ -296,8 +304,8 @@ def _verdict(
     return *judged, ran.seconds
 
 
-def _baseline(mutations: Sequence[Mutation], limit_s: float, commit: str | None = None) -> dict[tuple[str, ...], str]:
-    """Polecenia, które bez mutacji padają albo kończą się linią oczekiwaną po mutacji, z ostatnią linią wyjścia."""
+def _baseline(mutations: Sequence[Mutation], limit_s: float, commit: str | None = None) -> dict[tuple[str, ...], _Ran]:
+    """Polecenia, które bez mutacji padają albo kończą się linią oczekiwaną po mutacji, z ich przebiegiem."""
 
     expected: dict[tuple[str, ...], set[str]] = defaultdict(set)
     for mutation in mutations:
@@ -307,7 +315,7 @@ def _baseline(mutations: Sequence[Mutation], limit_s: float, commit: str | None 
         for command in sorted(expected):
             ran = _run(copy, command, limit_s)
             if ran.code != 0 or any(ran.last.startswith(line) for line in expected[command]):
-                red[command] = ran.last
+                red[command] = ran
     return red
 
 
@@ -589,7 +597,7 @@ def _against_base(
     for index in survived:
         last, command = found[index][1], mutations[index].command
         if command in red:
-            result[index] = (Verdict.SURVIVED, f"{last} (na merge-base {commit[:8]} podstawa czerwona: {red[command]})")
+            result[index] = (Verdict.SURVIVED, f"{last} (na merge-base {commit[:8]} podstawa czerwona: {red[command].last})")
             continue
         verdict, base_last = on_base[index]
         if verdict is Verdict.CAUGHT:
@@ -603,6 +611,9 @@ def check_all(
     mutations: Sequence[Mutation], *, parallel: bool = True, limit_s: float = TIMEOUT, base: str | None = None, gate: Gate = static_gate
 ) -> int:
     """Podstawa, werdykt i czas polecenia każdej mutacji; kod 0, gdy CI złapałoby każdą (``in_ci``).
+
+    Pod linią ``PODSTAWA CZERWONA`` stderr dostaje koniec stdout i stderr polecenia podstawy (``BASE_TAIL`` linii
+    każdego), bo ostatnia linia nie zawsze mówi, co padło, a kopii commitu z wyjściem już nie ma (#932).
 
     Przed linią werdyktu każdej mutacji linia ``CZAS`` na stderr podaje czas jej polecenia, a mutację, której polecenie
     trwało ponad ``NEAR_LIMIT`` limitu ``limit_s``, linia ``CZAS BLISKO LIMITU`` na stderr przed linią końcową wymienia ze
@@ -629,8 +640,11 @@ def check_all(
             print("MUTACJE OK")
             return 0
     red = _baseline(mutations, limit_s)
-    for command, last in red.items():
-        print(f"PODSTAWA CZERWONA: {' '.join(command)} → {last}", flush=True)
+    for command, ran in red.items():
+        print(f"PODSTAWA CZERWONA: {' '.join(command)} → {ran.last}", flush=True)
+        # Na stderr, jak linia CZAS: przyczyna porażki podstawy, której kopia commitu z dowodami już nie ma (#932).
+        for line in ran.tail:
+            print(f"  {line}", file=sys.stderr, flush=True)
     if red:
         print("MUTACJE: polecenie bez mutacji pada albo daje wynik mutacji, więc wynik po mutacji niczego nie dowodzi")
         return 2
