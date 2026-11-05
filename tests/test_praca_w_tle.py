@@ -1,7 +1,8 @@
 """Hook ``tools/hooks/praca_w_tle.py`` i jego wyrocznia: agent nie kończy tury, dopóki w tle jego sesji biegnie Bash albo Monitor.
 
 Wejścia mają kształt wejścia hooka ``Stop`` z Claude Code 2.1.318: ``REAL`` to zapis z próby ``claude -p``, które
-uruchomiło ``sleep 60`` z ``run_in_background`` i skończyło turę (5.11.2026). Każdy test hooka uruchamia go tak jak
+uruchomiło ``sleep 60`` z ``run_in_background`` i skończyło turę (5.11.2026), a pozostałe zadania mają pola, które
+budowa ``background_tasks`` w binarce 2.1.318 podaje dla ich typu. Każdy test hooka uruchamia go tak jak
 Claude Code: JSON na stdin, a odmowa to ``{"decision": "block", "reason": …}`` na stdout z kodem 0. Dziennik hooka
 leży w katalogu domowym, więc każdy test ma własny. Wyrocznię ``tools/wyrocznia_pracy_w_tle.py`` test uruchamia z
 atrapą ``claude``, która woła fałszywe API wyroczni i uruchamia hooki ``Stop`` z ``.claude/settings.json`` tak, jak
@@ -48,7 +49,17 @@ REAL = {
     "session_crons": [],
 }
 SHELL = REAL["background_tasks"][0]  # type: ignore[index]
-MONITOR = {"id": "m1", "type": "monitor", "status": "running", "description": "CI logs", "server": "x", "tool": "y"}
+# Narzędzie Monitor tworzy zadanie local_bash, a hook dostaje je jako shell z poleceniem, jak Bash z run_in_background.
+AGENT_MONITOR = {
+    "id": "bm1",
+    "type": "shell",
+    "status": "running",
+    "description": "Logi CI",
+    "command": "tail -f ci.log | grep --line-buffered FAIL",
+}
+# Obserwacja artefaktu (monitor_ws), którą Claude Code włącza sam po publikacji: hook nie dostaje pola ambient.
+ARTIFACT_WATCH = {"id": "wsx1", "type": "monitor", "status": "running", "description": "Watching artifact comments"}
+MCP_MONITOR = {"id": "m1", "type": "monitor", "status": "running", "description": "CI logs", "server": "x", "tool": "y"}
 SUBAGENT = {
     "id": "a1",
     "type": "subagent",
@@ -87,6 +98,7 @@ def test_zapis_wejscia_claude_code_z_sleep_w_tle_zatrzymuje_koniec_tury_i_trafia
     assert ["t3_background_wait" in reason, "TaskStop" in reason, "run_in_background" in reason] == [True, True, True]
     # Próba z modelem (5.11.2026): po odmowie agent zatrzymał zadanie i uruchomił Monitor, który znów dostał odmowę.
     assert "Monitor to też zadanie w tle" in reason
+    assert "serwer), zatrzymaj jako zadanie i uruchom odłączony (nohup … & w Bashu na pierwszym planie)" in reason
     (row,) = _log(tmp_path)
     assert datetime.fromisoformat(str(row.pop("czas"))).utcoffset() == timedelta(0)
     assert row == {
@@ -102,19 +114,19 @@ def test_zapis_wejscia_claude_code_z_sleep_w_tle_zatrzymuje_koniec_tury_i_trafia
 @pytest.mark.parametrize(
     ("tasks", "named"),
     [
-        ([MONITOR], ["monitor m1 „CI logs”"]),
+        ([AGENT_MONITOR], ["shell bm1 „tail -f ci.log | grep --line-buffered FAIL”"]),
         ([{**SHELL, "status": "pending"}], ["shell bi6lxbxlb"]),
-        ([SUBAGENT, SHELL, MONITOR], ["shell bi6lxbxlb", "monitor m1"]),
+        ([SUBAGENT, SHELL, AGENT_MONITOR, ARTIFACT_WATCH], ["shell bi6lxbxlb", "shell bm1"]),
     ],
-    ids=["monitor", "pending", "zywe-bash-i-monitor-obok-podagenta"],
+    ids=["monitor-agenta", "pending", "zywe-bash-i-monitor-obok-podagenta-i-obserwacji-artefaktu"],
 )
-def test_zywe_zadanie_basha_albo_monitor_w_tle_zatrzymuje_koniec_tury(
+def test_zywe_zadanie_basha_albo_monitor_agenta_w_tle_zatrzymuje_koniec_tury(
     tmp_path: Path, tasks: list[object], named: list[str]
 ) -> None:
     reason = _reason(_hook(_stop(tasks), tmp_path))
 
     assert [name in reason for name in named] == [True] * len(named)
-    assert "a1" not in reason
+    assert ["a1" in reason, "wsx1" in reason] == [False, False]
 
 
 def test_odmowa_trwa_takze_przy_stop_hook_active_dopoki_zadanie_zyje(tmp_path: Path) -> None:
@@ -150,11 +162,22 @@ def test_bez_basha_ani_monitora_w_tle_tura_konczy_sie_bez_slowa_i_bez_dziennika(
     ("tasks", "doubt"),
     [
         ([{**SHELL, "status": "completed"}], "shell bi6lxbxlb o nieznanym statusie 'completed'"),
-        ([{**MONITOR, "status": None}], "monitor m1 o nieznanym statusie None"),
+        (
+            [{**SHELL, "status": None}],
+            "zadanie bi6lxbxlb z type 'shell' i status None, z których nie każde jest tekstem",
+        ),
+        (
+            [{**SHELL, "type": ["shell"]}],
+            "zadanie bi6lxbxlb z type ['shell'] i status 'running', z których nie każde jest tekstem",
+        ),
+        (
+            [{**SHELL, "status": ["running"]}],
+            "zadanie bi6lxbxlb z type 'shell' i status ['running'], z których nie każde jest tekstem",
+        ),
         (["shell"], "wpis listy zadań nie jest obiektem: str"),
         ({"0": SHELL}, "wejście bez listy background_tasks"),
     ],
-    ids=["status-skonczony", "bez-statusu", "wpis-nie-obiekt", "lista-nie-lista"],
+    ids=["status-skonczony", "bez-statusu", "type-lista", "status-lista", "wpis-nie-obiekt", "lista-nie-lista"],
 )
 def test_watpliwosc_przepuszcza_koniec_tury_i_trafia_do_dziennika(tmp_path: Path, tasks: object, doubt: str) -> None:
     hooked = _hook(_stop(tasks), tmp_path)
@@ -163,11 +186,40 @@ def test_watpliwosc_przepuszcza_koniec_tury_i_trafia_do_dziennika(tmp_path: Path
     assert [(row["decyzja"], row["szczegoly"]) for row in _log(tmp_path)] == [("przepuszczam", [doubt])]
 
 
+WATCHED = "przepuszczony: typ monitor ma też obserwacja artefaktu, której Claude Code nie odróżnia w wejściu hooka"
+
+
+@pytest.mark.parametrize(
+    ("tasks", "doubts"),
+    [
+        ([ARTIFACT_WATCH], [f"monitor wsx1 „Watching artifact comments” (running) {WATCHED}"]),
+        ([{**MCP_MONITOR, "status": "pending"}, SUBAGENT], [f"monitor m1 „CI logs” (pending) {WATCHED}"]),
+        (
+            [{"id": "n1", "type": "nowy typ", "status": "running"}],
+            ["nowy typ n1 (running) przepuszczony: nieznany typ zadania"],
+        ),
+    ],
+    ids=["obserwacja-artefaktu", "monitor-mcp-obok-podagenta", "nieznany-typ"],
+)
+def test_monitor_i_nieznany_typ_w_tle_przepuszczaja_koniec_tury_z_powodem_w_dzienniku(
+    tmp_path: Path, tasks: list[dict[str, object]], doubts: list[str]
+) -> None:
+    # Po publikacji artefaktu Claude Code 2.1.318 sam obserwuje go do końca sesji jako monitor (recenzja #955, r1).
+    hooked = _hook(_stop(tasks), tmp_path)
+
+    assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, b"", b"")
+    assert [(row["decyzja"], row["szczegoly"]) for row in _log(tmp_path)] == [("przepuszczam", doubts)]
+
+
 def test_watpliwosc_obok_zywego_zadania_nie_znosi_odmowy(tmp_path: Path) -> None:
-    _reason(_hook(_stop([{**MONITOR, "status": "dziwny"}, SHELL]), tmp_path))
+    _reason(_hook(_stop([{**SHELL, "id": "b2", "status": "dziwny"}, ARTIFACT_WATCH, SHELL]), tmp_path))
 
     assert [row["szczegoly"] for row in _log(tmp_path)] == [
-        ["shell bi6lxbxlb „sleep 60”", "monitor m1 o nieznanym statusie 'dziwny'"]
+        [
+            "shell bi6lxbxlb „sleep 60”",
+            "shell b2 o nieznanym statusie 'dziwny'",
+            f"monitor wsx1 „Watching artifact comments” (running) {WATCHED}",
+        ]
     ]
 
 
@@ -175,12 +227,11 @@ def test_watpliwosc_obok_zywego_zadania_nie_znosi_odmowy(tmp_path: Path) -> None
     ("stdin", "doubt"),
     [
         ("", "nieczytelne wejście: JSONDecodeError"),
-        ("[" * 100000, "nieczytelne wejście: RecursionError"),
         (b"\xff\xfe{", "nieczytelne wejście: UnicodeDecodeError"),
         ("null", "wejście bez listy background_tasks"),
         (json.dumps({"hook_event_name": "Stop", "stop_hook_active": False}), "wejście bez listy background_tasks"),
     ],
-    ids=["pusto", "gleboki-json", "nie-utf8", "null", "bez-background-tasks"],
+    ids=["pusto", "nie-utf8", "null", "bez-background-tasks"],
 )
 def test_nieczytelne_wejscie_hooka_przechodzi_i_trafia_do_dziennika(
     tmp_path: Path, stdin: str | bytes, doubt: str
@@ -189,6 +240,20 @@ def test_nieczytelne_wejscie_hooka_przechodzi_i_trafia_do_dziennika(
 
     assert (hooked.returncode, hooked.stdout) == (0, b"")
     assert [(row["decyzja"], row["szczegoly"]) for row in _log(tmp_path)] == [("przepuszczam", [doubt])]
+
+
+def test_json_glebszy_niz_stos_pythona_przechodzi_i_trafia_do_dziennika(tmp_path: Path) -> None:
+    # Na macOS dekoder rzuca RecursionError, a na Linuksie z Pythonem 3.14 JSONDecodeError (CI #955): oba to wątpliwość.
+    hooked = _hook("[" * 100000, tmp_path)
+
+    assert (hooked.returncode, hooked.stdout) == (0, b"")
+    (row,) = _log(tmp_path)
+    details = row["szczegoly"]
+    assert isinstance(details, list)
+    assert (row["decyzja"], [str(detail).startswith("nieczytelne wejście: ") for detail in details]) == (
+        "przepuszczam",
+        [True],
+    )
 
 
 def test_niedostepny_dziennik_nie_zmienia_odmowy(tmp_path: Path) -> None:
@@ -201,6 +266,26 @@ def test_niedostepny_dziennik_nie_zmienia_odmowy(tmp_path: Path) -> None:
         0,
         True,
     )
+
+
+@pytest.mark.parametrize("error", ["KeyError", "RuntimeError"])
+def test_katalog_domowy_nie_do_ustalenia_nie_zmienia_odmowy(tmp_path: Path, error: str) -> None:
+    # Path.home() bez HOME rzuca KeyError (Python 3.9, użytkownik spoza passwd) albo RuntimeError (Windows, 3.12+).
+    broken = (
+        f"import pathlib, runpy, sys\n"
+        f"def home(cls): raise {error}('HOME')\n"
+        f"pathlib.Path.home = classmethod(home)\n"
+        f"sys.argv = [{str(HOOK)!r}]\n"
+        f"runpy.run_path({str(HOOK)!r}, run_name='__main__')\n"
+    )
+    env = {name: value for name, value in os.environ.items() if name != "MAXIMISEART_PRACA_W_TLE_DZIENNIK"}
+
+    hooked = subprocess.run(
+        [sys.executable, "-c", broken], input=json.dumps(REAL).encode("utf-8"), capture_output=True, env=env, check=False
+    )
+
+    assert json.loads(hooked.stdout)["decision"] == "block"
+    assert (hooked.returncode, f"niedostępny: {error}('HOME')".encode() in hooked.stderr) == (0, True)
 
 
 def _configured_hooks() -> list[dict[str, object]]:
@@ -264,7 +349,7 @@ if argv == ["--version"]:
     print("9.9.9 (Claude Code)")
     sys.exit(0)
 with open(os.environ["ATRAPA_WYWOLANIA"], "a", encoding="utf-8") as calls:
-    keys = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "WYROCZNIA_PRACY_W_TLE_W_SRODKU", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
+    keys = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "WYROCZNIA_PRACY_W_TLE_W_SRODKU", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "MAXIMISEART_PRACA_W_TLE_DZIENNIK")
     calls.write(json.dumps({{"argv": argv, "cwd": os.getcwd(), "env": {{k: os.environ.get(k) for k in keys}}}}) + "\\n")
 if os.environ.get("ATRAPA_CISZA"):
     time.sleep(600)
@@ -356,8 +441,8 @@ def test_wyrocznia_z_odmowa_hooka_przy_pracy_w_tle_i_bez_niej_konczy_sie_ok(tmp_
         "WYROCZNIA OK | Claude Code 9.9.9 (Claude Code) | ZGODNE 2",
     ], ran.stderr
     assert ran.returncode == 0
-    # Wyrocznia kończy Claude Code po drugiej odmowie, a do tej chwili hook mógł odmówić jeszcze raz.
-    assert [row["stop_hook_active"] for row in _log(tmp_path / "dom")][:2] == [False, True]
+    # Dziennik hooka w biegu wyroczni leży poza katalogiem domowym, żeby nie mieszać prób z prawdziwymi sesjami.
+    assert _log(tmp_path / "dom") == []
 
 
 @POSIX_ONLY
@@ -374,13 +459,18 @@ def test_wyrocznia_uruchamia_claude_p_w_checkoucie_tylko_z_ustawieniami_projektu
     assert argv[argv.index("--setting-sources") + 1] == "project,local"
     assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
     assert call["cwd"] == str(ROOT)
-    assert call["env"] == {
+    env = call["env"]
+    assert isinstance(env, dict)
+    log = Path(env["MAXIMISEART_PRACA_W_TLE_DZIENNIK"])
+    assert env == {
         "ANTHROPIC_BASE_URL": settings["env"]["ANTHROPIC_BASE_URL"],
         "ANTHROPIC_AUTH_TOKEN": None,
         "WYROCZNIA_PRACY_W_TLE_W_SRODKU": "1",
         "CLAUDECODE": None,
         "CLAUDE_CODE_ENTRYPOINT": None,
+        "MAXIMISEART_PRACA_W_TLE_DZIENNIK": str(log),
     }
+    assert (log.name, tmp_path / "dom" in log.parents, log.exists()) == ("praca_w_tle.jsonl", False, False)
     assert settings["env"]["ANTHROPIC_BASE_URL"].startswith("http://127.0.0.1:")
 
 

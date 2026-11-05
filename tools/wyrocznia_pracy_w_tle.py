@@ -9,7 +9,8 @@ bypass (jak T3) w katalogu tego checkoutu, czyli z jego ``.claude/settings.json`
 Przypadki (``CASES``): ``praca-w-tle`` uruchamia ``sleep 60`` z ``run_in_background``, a ``ZGODNE`` znaczy, że hook
 odmówił końca tury dwa razy, drugi raz przy ``stop_hook_active``; wtedy wyrocznia kończy Claude Code, a ``sleep 60``,
 które Claude Code uruchamia poza swoją grupą procesów, kończy się samo. ``bez-pracy-w-tle`` uruchamia ``true`` na pierwszym planie, a ``ZGODNE`` znaczy, że Claude Code sam
-skończył turę bez odmowy. Inny wynik to ``ZMIANA`` z opisem. Ostatnia linia to ``WYROCZNIA OK | …`` (kod 0) tylko
+skończył turę bez odmowy. Hook pisze dziennik do pliku w katalogu tymczasowym wyroczni
+(``praca_w_tle.LOG_ENV``), nie do ``~/.cache/maximiseart/praca_w_tle.jsonl``. Inny wynik to ``ZMIANA`` z opisem. Ostatnia linia to ``WYROCZNIA OK | …`` (kod 0) tylko
 wtedy, gdy każdy przypadek jest ``ZGODNE``; inaczej ``WYROCZNIA ZMIANA | …`` (kod 1). Bez ``claude`` na PATH albo na
 Windows kończy się kodem 2, tak samo wyrocznia uruchomiona w Claude Code, którego sama uruchomiła (``NESTED``). Claude
 Code, który przez ``--kontakt-s`` sekund nie zapyta fałszywego API, wyrocznia kończy (``ZMIANA``), bo pyta wtedy prawdziwy model.
@@ -30,6 +31,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/hooks"))
@@ -176,15 +178,25 @@ def reply(block: dict[str, object]) -> bytes:
     return "".join(f"event: {name}\ndata: {json.dumps(data)}\n\n" for name, data in events).encode()
 
 
-def environment(port: int) -> dict[str, str]:
-    """Środowisko ``claude``: bez zmiennych sesji Claude Code, w której biegnie wyrocznia, z fałszywym API i ``NESTED``."""
+def environment(port: int, log: Path) -> dict[str, str]:
+    """Środowisko ``claude``: bez zmiennych sesji Claude Code, w której biegnie wyrocznia, z fałszywym API i ``NESTED``.
+
+    Dziennik hooka idzie do ``log`` (``praca_w_tle.LOG_ENV``), bo odmowy z prób wyroczni nie należą do dziennika
+    prawdziwych sesji w katalogu domowym.
+    """
 
     kept = {
         name: value
         for name, value in os.environ.items()
         if not name.startswith("CLAUDE_CODE_") and name not in ("CLAUDECODE", "ANTHROPIC_AUTH_TOKEN")
     }
-    return {**kept, **_fake_api(port), "ANTHROPIC_API_KEY": "sk-ant-wyrocznia-pracy-w-tle", NESTED: "1"}
+    return {
+        **kept,
+        **_fake_api(port),
+        "ANTHROPIC_API_KEY": "sk-ant-wyrocznia-pracy-w-tle",
+        NESTED: "1",
+        praca_w_tle.LOG_ENV: str(log),
+    }
 
 
 def _fake_api(port: int) -> dict[str, str]:
@@ -219,7 +231,7 @@ def command_line(case: Case, port: int) -> list[str]:
     ]
 
 
-def ask(case: Case, port: int, limit_s: float, contact_s: float = CONTACT_S) -> Outcome:
+def ask(case: Case, port: int, log: Path, limit_s: float, contact_s: float = CONTACT_S) -> Outcome:
     """Jedno ``claude -p`` przypadku aż do jego końca, drugiej odmowy hooka albo ``limit_s``."""
 
     _Api.case, _Api.refusals, _Api.tool_result, _Api.asked = case, 0, False, False
@@ -235,7 +247,7 @@ def ask(case: Case, port: int, limit_s: float, contact_s: float = CONTACT_S) -> 
     returncode: int | None = None
     try:
         returncode = potomne.run(
-            command_line(case, port), cwd=ROOT, env=environment(port), timeout=limit_s, stop=_Api.stop
+            command_line(case, port), cwd=ROOT, env=environment(port, log), timeout=limit_s, stop=_Api.stop
         ).returncode
     except (potomne.Stopped, subprocess.TimeoutExpired):
         pass
@@ -287,10 +299,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     threading.Thread(target=server.serve_forever, daemon=True).start()
     counts: dict[str, int] = {}
     try:
-        for case in chosen:
-            result, seen = verdict(case, ask(case, server.server_address[1], args.limit_s, args.kontakt_s))
-            counts[result] = counts.get(result, 0) + 1
-            print(f"{result} {case.name} | {seen}", flush=True)
+        with tempfile.TemporaryDirectory(prefix="wyrocznia-pracy-w-tle-") as folder:
+            log = Path(folder) / "praca_w_tle.jsonl"
+            for case in chosen:
+                result, seen = verdict(case, ask(case, server.server_address[1], log, args.limit_s, args.kontakt_s))
+                counts[result] = counts.get(result, 0) + 1
+                print(f"{result} {case.name} | {seen}", flush=True)
     finally:
         server.shutdown()
     summary = ", ".join(f"{name} {count}" for name, count in sorted(counts.items()))

@@ -1,30 +1,41 @@
 #!/usr/bin/env python3
-"""Hook ``Stop`` Claude Code: agent nie kończy tury, dopóki w tle jego sesji biegnie polecenie Basha albo Monitor.
+"""Hook ``Stop`` Claude Code: agent nie kończy tury, dopóki w tle jego sesji biegnie polecenie Basha albo jego Monitor.
 
 Tura oddana z pracą w tle wygląda na skończoną, choć wyniku jeszcze nie ma: wywołujący (rodzic, T3, ``claude -p``)
 dostaje odpowiedź bez wyniku, a agent stoi. W nocy 4/5.11.2026 tak stanęło pięciu delegatów T3 („czekam na
-powiadomienie o procesie w tle”), a zakaz w briefie nie pomógł.
+powiadomienie o procesie w tle”) i za każdym razem było to polecenie Basha z ``run_in_background``; zakaz w briefie nie
+pomógł.
 
 Claude Code (2.1.318, ``claude -p`` w ``tools/wyrocznia_pracy_w_tle.py``) podaje hookowi ``Stop`` listę
 ``background_tasks`` z zadaniami sesji w statusie ``running`` albo ``pending`` (skończone z niej znikają), każde z
-``id``, ``type`` i ``status``. Polecenie Basha z ``run_in_background`` i Monitor mają ``type`` ``shell``, a Monitor MCP
-``monitor``. Hook odmawia (JSON ``{"decision": "block", "reason": …}`` na stdout, kod 0; ``reason`` trafia do agenta
-jako polecenie dalszej pracy), gdy na liście jest zadanie typu z ``TYPES`` o statusie z ``ALIVE``. Odmawia także przy
-``stop_hook_active``: Claude Code ustawia je po pierwszej odmowie do końca tury, także po wywołaniach narzędzi, więc
-przepuszczenie przy nim oddałoby turę z pracą w tle już przy drugiej próbie. Pętlę bez końca ucina sam Claude Code:
-po ośmiu odmowach z rzędu bez wywołania narzędzia kończy turę z ostrzeżeniem (``CLAUDE_CODE_STOP_HOOK_BLOCK_CAP``),
-a wywołanie narzędzia zeruje ten licznik.
+``id``, ``type`` i ``status``. Typ ``shell`` mają zadania ``local_bash``: polecenie Basha z ``run_in_background`` i
+Monitor agenta (narzędzie Monitor tworzy ``local_bash`` z ``kind`` ``monitor``). Hook odmawia (JSON
+``{"decision": "block", "reason": …}`` na stdout, kod 0; ``reason`` trafia do agenta jako polecenie dalszej pracy),
+gdy na liście jest zadanie typu ``BLOCKING`` o statusie z ``ALIVE``. Odmawia także przy ``stop_hook_active``: Claude
+Code ustawia je po pierwszej odmowie do końca tury, także po wywołaniach narzędzi, więc przepuszczenie przy nim oddałoby
+turę z pracą w tle już przy drugiej próbie. Pętlę bez końca ucina sam Claude Code: po ośmiu odmowach z rzędu bez
+wywołania narzędzia kończy turę z ostrzeżeniem (``CLAUDE_CODE_STOP_HOOK_BLOCK_CAP``), a wywołanie narzędzia zeruje ten
+licznik.
+
+Typ ``monitor`` hook przepuszcza i zapisuje w dzienniku (``UNSURE``): mają go ``monitor_mcp`` (monitor serwera MCP) i
+``monitor_ws``, a ``monitor_ws`` to także obserwacja artefaktu, którą Claude Code włącza sam po jego publikacji i która
+trwa do końca sesji. Claude Code pomija ją w swoich listach po polu ``ambient``, ale hookowi go nie podaje: rekord
+obserwacji ma tylko ``id``, ``type``, ``status`` i ``description``, jak każdy ``monitor_ws``, więc żadne pole nie
+odróżnia go od monitora, który agent uruchomił sam (binarka 2.1.318, budowa ``background_tasks``).
 
 Wszystko inne przechodzi (kod 0, nic na stdout), bo fałszywa odmowa zatrzymałaby każdego agenta projektu: pusta lista,
-inne typy zadań (podagent, workflow, sesja w chmurze, które same raportują wywołującemu), zaplanowane wybudzenia
-(``session_crons``), a także wątpliwość: wejście nieczytelne albo bez listy ``background_tasks``, wpis listy, który
-nie jest obiektem, i zadanie ``shell`` albo ``monitor`` o statusie spoza ``ALIVE``. Wątpliwość i każdą odmowę hook
-dopisuje do dziennika ``~/.cache/maximiseart/praca_w_tle.jsonl`` (``LOG``); błąd zapisu dziennika trafia na stderr
-i nie zmienia decyzji. Hook po ``timeout`` z ustawień Claude Code zabija bez decyzji i tura się kończy (próba
-5.11.2026 na 2.1.318), więc hook czyta listę w czasie liniowym.
+znane typy, które same raportują wywołującemu (``REPORTING``: podagent, workflow, sesja w chmurze i inne), zaplanowane
+wybudzenia (``session_crons``), a także wątpliwość: wejście nieczytelne albo bez listy ``background_tasks``, wpis
+listy, który nie jest obiektem, ``type`` albo ``status``, które nie są tekstem, typ spoza ``BLOCKING`` i ``REPORTING``,
+typ ``monitor`` i zadanie ``shell`` o statusie spoza ``ALIVE``. Wątpliwość i każdą odmowę hook dopisuje do dziennika
+``~/.cache/maximiseart/praca_w_tle.jsonl`` (``LOG``, inny plik daje zmienna ``LOG_ENV``, której używa wyrocznia);
+błąd zapisu dziennika trafia na stderr i nie zmienia decyzji. Hook po ``timeout`` z ustawień Claude Code zabija bez
+decyzji i tura się kończy (próba 5.11.2026 na 2.1.318), więc hook czyta listę w czasie liniowym.
 
 Granica: inne harnessy niż Claude Code (Codex, opencode) i podagent narzędzia Agent łapie tylko przegląd. Hook nie
-jest wpięty w ``SubagentStop``, bo tam lista należy do całej sesji, a nie do podagenta.
+jest wpięty w ``SubagentStop``, bo tam lista należy do całej sesji, a nie do podagenta. Monitor wtyczki (``monitors``
+w manifeście wtyczki, uruchamiany bez prośby agenta) to też ``local_bash`` z ``kind`` ``monitor``, więc hook
+odmówiłby przy nim jak przy Bashu; żadna wtyczka na Macu Maksa go nie deklaruje (5.11.2026).
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
 (``per-file-target-version`` w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową.
 """
@@ -33,17 +44,33 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import sys
 
-TYPES = frozenset({"shell", "monitor"})
+BLOCKING = "shell"
+UNSURE = "monitor"
+REPORTING = frozenset(
+    {
+        "subagent",
+        "workflow",
+        "MCP task",
+        "teammate",
+        "dream",
+        "auto-mode scan",
+        "memory import",
+        "memory save",
+        "cloud session",
+    }
+)
 ALIVE = frozenset({"running", "pending"})
 LOG = Path(".cache") / "maximiseart" / "praca_w_tle.jsonl"
+LOG_ENV = "MAXIMISEART_PRACA_W_TLE_DZIENNIK"
 REFUSAL = "Odmowa końca tury: w tle sesji biegnie jeszcze"
 
 
 def judge(event: object) -> tuple[list[str], list[str]]:
-    """Opisy żywych zadań z ``TYPES`` i wątpliwości z wejścia hooka ``Stop``; odmowa tylko przy żywych zadaniach."""
+    """Opisy żywych zadań ``BLOCKING`` i wątpliwości z wejścia hooka ``Stop``; odmowa tylko przy żywych zadaniach."""
 
     tasks = event.get("background_tasks") if isinstance(event, dict) else None
     if not isinstance(tasks, list):
@@ -52,10 +79,21 @@ def judge(event: object) -> tuple[list[str], list[str]]:
     for task in tasks:
         if not isinstance(task, dict):
             doubts.append(f"wpis listy zadań nie jest obiektem: {type(task).__name__}")
-        elif task.get("type") in TYPES and task.get("status") in ALIVE:
-            alive.append(f"{task['type']} {task.get('id')} „{task.get('command') or task.get('description')}”")
-        elif task.get("type") in TYPES:
-            doubts.append(f"{task['type']} {task.get('id')} o nieznanym statusie {task.get('status')!r}")
+            continue
+        kind, status, name = task.get("type"), task.get("status"), task.get("id")
+        if not isinstance(kind, str) or not isinstance(status, str):
+            doubts.append(f"zadanie {name} z type {kind!r} i status {status!r}, z których nie każde jest tekstem")
+        elif kind == BLOCKING and status in ALIVE:
+            alive.append(f"{kind} {name} „{task.get('command') or task.get('description')}”")
+        elif kind == BLOCKING:
+            doubts.append(f"{kind} {name} o nieznanym statusie {status!r}")
+        elif kind == UNSURE:
+            doubts.append(
+                f"{kind} {name} „{task.get('description')}” ({status}) przepuszczony: typ monitor ma też obserwacja "
+                "artefaktu, której Claude Code nie odróżnia w wejściu hooka"
+            )
+        elif kind not in REPORTING:
+            doubts.append(f"{kind} {name} ({status}) przepuszczony: nieznany typ zadania")
     return alive, doubts
 
 
@@ -84,7 +122,7 @@ def _log(event: object, decision: str, details: list[str]) -> None:
         "stop_hook_active": fields.get("stop_hook_active"),
     }
     try:
-        path = Path.home() / LOG
+        path = Path(os.environ.get(LOG_ENV) or Path.home() / LOG)
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as log:
             log.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -101,7 +139,7 @@ def main() -> int:
     alive, doubts = judge(event)
     if alive:
         _log(event, "odmowa", alive + doubts)
-        # json.dumps zapisuje polskie litery jako ``\u0142``, bo konsola Windows nie zapisze ich w swoim kodowaniu.
+        # json.dumps zapisuje polskie litery jako ``ł``, bo konsola Windows nie zapisze ich w swoim kodowaniu.
         print(json.dumps({"decision": "block", "reason": refusal(alive)}))
     elif doubts:
         _log(event, "przepuszczam", doubts)
