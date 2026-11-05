@@ -398,6 +398,39 @@ def test_dzien_z_data_spoza_zakresu_kalendarza_efenix_to_blad_bez_zapisu_daty_be
     assert requested.count(("POST", SET_DATE)) == (1 if result == "OK" else 0)
 
 
+@pytest.mark.parametrize(
+    ("days", "result", "errors", "pricing"),
+    [
+        pytest.param(-3, "OK", [], ({"012": 1}, 1), id="3-dni-przed"),
+        pytest.param(2, "OK", [], ({"012": 1}, 1), id="2-dni-po"),
+        pytest.param(3, "OK", [], ({"012": 1}, 1), id="3-dni-po"),
+        pytest.param(-4, "WYMAGA_SPRAWDZENIA", [("EFENIX_INNA_DATA", "wiersz 18")], ({}, 0), id="4-dni-przed"),
+        pytest.param(4, "WYMAGA_SPRAWDZENIA", [("EFENIX_INNA_DATA", "wiersz 18")], ({}, 0), id="4-dni-po"),
+    ],
+)
+def test_data_wykonania_rozna_od_data_najwyzej_o_3_dni_zostaje_w_efenix_a_wieksza_roznica_to_inna_data(
+    tmp_path: Path,
+    page: Page,
+    days: int,
+    result: str,
+    errors: list[tuple[str, str]],
+    pricing: tuple[dict[str, int], int],
+) -> None:
+    """Tata po runie z 4.11.2026 (#961): data wykonania w efenix różna od dnia z ``DATA`` najwyżej o 3 dni w którąkolwiek
+    stronę jest prawidłowa, więc proces wycenia zlecenie dalej i daty nie zmienia."""
+
+    executed = DAY + timedelta(days=days)
+    order = Order("#5651", cells={"O": 1}, amount=_au({"012": 1}), emmett={"012": 1})
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=executed)]) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [order])
+        after = _pricing(atrapa)
+        requested = atrapa.requested()
+
+    quantities, emmett_loads = pricing
+    assert (outcome.result, _errors(outcome), after) == (result, errors, {"5651": (quantities, executed, emmett_loads)})
+    assert requested.count(("POST", SET_DATE)) == 0
+
+
 def test_data_wykonania_ktorej_efenix_nie_zapisal_po_potwierdz_to_blad_bez_emmetta_i_bez_ilosci(tmp_path: Path, page: Page) -> None:
     """Skrypt strony wpisuje dzień do ``#data_install`` po każdej odpowiedzi, także gdy serwer daty nie zapisał."""
 
@@ -615,7 +648,7 @@ def test_kazda_niezgodnosc_z_efenix_to_blad_zlecenia_z_powodem_a_proces_idzie_da
         Order("#8005"),  # 23: inny status
         Order("#8006"),  # 24: inny realizator
         Order("#8007"),  # 25: inny adres
-        Order("#8008"),  # 26: inna data wykonania
+        Order("#8008"),  # 26: data wykonania 4 dni po DATA
         Order("#8009", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # 27: gotowe, po wszystkich błędach
     ]
     efenix = [
@@ -626,7 +659,7 @@ def test_kazda_niezgodnosc_z_efenix_to_blad_zlecenia_z_powodem_a_proces_idzie_da
         replace(orders[5].in_efenix("905"), status="Do akceptacji"),
         replace(orders[6].in_efenix("906"), realizator="zenon.testowy"),
         replace(orders[7].in_efenix("907"), address="Miasto-Dzielnica ul.Testowa 14 Lokal 3"),
-        replace(orders[8].in_efenix("908"), execution_date=date(2026, 9, 10)),
+        replace(orders[8].in_efenix("908"), execution_date=date(2026, 9, 13)),
         replace(orders[9].in_efenix("909"), execution_date=DAY),
     ]
     with atrapa_efenix(efenix) as atrapa:

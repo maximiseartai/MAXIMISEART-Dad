@@ -3,8 +3,9 @@
 Kolejność sprawdzeń to kolejność ``OrderProblem``, a pierwsza niezgodność jest błędem zlecenia: numer i data w Pliku
 zbiorczym (``searched_number``), potem wiersze listy efenix po szukaniu (``listing``): dokładnie jedno zlecenie o
 ``Numer dokumentu`` równym numerowi, status „Do wyceny” albo „Rozliczone”, realizator równy ``WYKONAWCA`` bez wielkości
-liter i ``Dane adresowe`` równe ``ADRES`` (``efenix_address``), a na końcu data wykonania pusta albo równa dniowi z
-``DATA`` (``date_problem``). Zlecenie „Rozliczone” zgodne z plikiem nie jest niezgodnością, tylko Zleceniem rozliczonym
+liter i ``Dane adresowe`` równe ``ADRES`` (``efenix_address``), a na końcu data wykonania pusta albo różna od dnia z ``DATA``
+najwyżej o ``DATE_TOLERANCE`` w którąkolwiek stronę (``date_problem``; tata, po runie z 4.11.2026, #961). Datę w tej
+tolerancji proces zostawia w efenix bez zmian. Zlecenie „Rozliczone” zgodne z plikiem nie jest niezgodnością, tylko Zleceniem rozliczonym
 (``Settled``), którego proces nie otwiera. Pustą datę wykonania proces ustawia z ``DATA``, a dzień, którego efenix nie
 przyjął, to ``DateRefused``. Każdy wiersz listy po szukaniu ma też odczyt dla Logów Uruchomienia (``read_listed``):
 te same porównania numeru i adresu, ale z nazwami różniących się części adresu zamiast danych adresowych.
@@ -14,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 import enum
 from typing import Final
 
@@ -22,6 +23,7 @@ from .efenix_address import AddressPart, address_differences, same_address
 from .efenix_orders import CollectiveOrder
 
 __all__ = [
+    "DATE_TOLERANCE",
     "PRICING_STATUS",
     "SETTLED_STATUS",
     "DateRefused",
@@ -38,6 +40,8 @@ __all__ = [
 
 PRICING_STATUS: Final = "Do wyceny"
 SETTLED_STATUS: Final = "Rozliczone"
+DATE_TOLERANCE: Final = timedelta(days=3)
+"""Największa różnica między datą wykonania w efenix a dniem z ``DATA``, w obie strony, która nie jest niezgodnością."""
 
 
 class PagePart(enum.Enum):
@@ -160,6 +164,9 @@ def _is_status(hit: ListedOrder, status: str) -> bool:
 
 
 def date_problem(order: CollectiveOrder, executed: date | None) -> OrderProblem | None:
-    """Data wykonania z efenix jest inna niż dzień z ``DATA``; pusta data wykonania nie jest niezgodnością."""
+    """Data wykonania z efenix różni się od dnia z ``DATA`` o więcej niż ``DATE_TOLERANCE``; pusta data wykonania nie jest
+    niezgodnością."""
 
-    return OrderProblem.OTHER_DATE if executed is not None and executed != order.day else None
+    if executed is None:
+        return None
+    return OrderProblem.OTHER_DATE if order.day is None or abs(executed - order.day) > DATE_TOLERANCE else None
