@@ -45,6 +45,8 @@ BOOTSTRAP_SHAPE = re.compile(
 )
 READING = frozenset({"copy", "count", "index"})
 FAKE_API = ROOT / "tools" / "lib" / "falszywe_api.py"
+BASE_URL = "ANTHROPIC_BASE_URL"
+BASE_URL_WORD = re.compile(rf"(?<![A-Za-z0-9_]){BASE_URL}(?![A-Za-z0-9_])")
 
 
 def _entry(path: Path) -> tuple[bool, bool]:
@@ -151,9 +153,13 @@ def test_skrypt_bez_parsera_laduje_sie_bez_zainstalowanego_pakietu(tmp_path: Pat
 
 
 def _claude_launches(tree: ast.AST) -> Iterator[tuple[int, str]]:
+    bare = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Expr)}
     for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and node.value == "ANTHROPIC_BASE_URL":
-            yield node.lineno, "ustawia adres API"
+        if isinstance(node, ast.keyword) and node.arg == BASE_URL:
+            yield node.lineno, f"nazywa {BASE_URL}"
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in bare:
+            if BASE_URL_WORD.search(node.value):
+                yield node.lineno, f"nazywa {BASE_URL}"
         elif isinstance(node, (ast.List, ast.Tuple)) and node.elts:
             first, *rest = node.elts
             second = rest[0].value if rest and isinstance(rest[0], ast.Constant) else None
@@ -161,12 +167,52 @@ def _claude_launches(tree: ast.AST) -> Iterator[tuple[int, str]]:
                 yield node.lineno, "uruchamia claude"
 
 
+@pytest.mark.parametrize(
+    "code",
+    [
+        'env = dict(os.environ, ANTHROPIC_BASE_URL="http://127.0.0.1:8317")',
+        'os.environ.update(ANTHROPIC_BASE_URL=url)',
+        'env = {**os.environ, "ANTHROPIC_BASE_URL": url}',
+        'os.environ["ANTHROPIC_BASE_URL"] = url',
+        'os.putenv("ANTHROPIC_BASE_URL", url)',
+        'os.environ.setdefault("ANTHROPIC_BASE_URL", url)',
+        'os.environ.update({"ANTHROPIC_BASE_URL": url})',
+        'subprocess.run("ANTHROPIC_BASE_URL=http://127.0.0.1:8317 claude -p x", shell=True)',
+        'settings = f\'{{"env": {{"ANTHROPIC_BASE_URL": "{url}"}}}}\'',
+    ],
+)
+def test_adres_api_w_kodzie_skryptu_lapie_straznik(code: str) -> None:
+    # 5.11.2026 adres fałszywego API tylko w środowisku procesu przegrał z hubem z ustawień użytkownika (#956).
+    assert list(_claude_launches(ast.parse(code))) == [(1, f"nazywa {BASE_URL}")]
+
+
+def test_claude_w_kodzie_skryptu_lapie_straznik() -> None:
+    assert list(_claude_launches(ast.parse('subprocess.run(["claude", "-p", "x"])'))) == [(1, "uruchamia claude")]
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        'subprocess.run(["claude", "--version"])',
+        '"""Docstring: ``env.ANTHROPIC_BASE_URL`` z ustawień użytkownika wygrywa ze środowiskiem."""',
+        'env = {"ANTHROPIC_BASE_URL_ZAPAS": url, "ANTHROPIC_API_KEY": key}  # ANTHROPIC_BASE_URL w komentarzu',
+    ],
+)
+def test_wersja_claude_opis_i_inna_zmienna_nie_budza_straznika(code: str) -> None:
+    assert list(_claude_launches(ast.parse(code))) == []
+
+
 def test_claude_ze_skryptu_biegnie_tylko_przez_falszywe_api() -> None:
-    """Polecenie ``["claude", …]`` inne niż ``claude --version`` i stała ``ANTHROPIC_BASE_URL`` są tylko w ``FAKE_API``.
+    """Polecenie ``["claude", …]`` inne niż ``claude --version`` i nazwa ``ANTHROPIC_BASE_URL`` są tylko w ``FAKE_API``.
 
     5.11.2026 wyrocznia z adresem fałszywego API tylko w środowisku procesu zapytała prawdziwy model przez hub z
-    ustawień użytkownika i uruchomiła ok. 100 sesji (#956). Granica: polecenie złożone w czasie biegu (tekst powłoki,
-    lista budowana z części) test widzi tylko po stałej ``"claude"`` na początku listy albo krotki.
+    ustawień użytkownika i uruchomiła ok. 100 sesji (#956). Nazwę zmiennej test widzi w argumencie słownym
+    (``dict(os.environ, ANTHROPIC_BASE_URL=…)``, ``update(…)``) i w każdym tekście kodu jako osobne słowo: klucz
+    słownika, ``os.environ[…]``, ``putenv``, ``setdefault``, tekst powłoki, część f-stringu.
+    Granica: nie widzi nazwy złożonej w czasie biegu (``"ANTHROPIC_" + "BASE_URL"``, odczyt z pliku), nazwy w samym
+    tekście bez przypisania (docstring), skryptów innych niż ``.py`` ani polecenia złożonego w czasie biegu (tekst
+    powłoki, lista budowana z części, ``[shutil.which("claude"), …]``), które widzi tylko po stałej ``"claude"`` na
+    początku listy albo krotki.
     """
 
     found = [

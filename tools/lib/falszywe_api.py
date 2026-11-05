@@ -1,16 +1,25 @@
 """Claude Code wyroczni hooka, który może pytać tylko lokalne fałszywe Messages API, nigdy prawdziwego modelu.
 
 Wyrocznie hooków (``tools/wyrocznia_zgody.py``, ``tools/wyrocznia_pracy_w_tle.py``) uruchamiają prawdziwe ``claude``,
-a model udaje fałszywe API na ``127.0.0.1``. ``claude`` to jedyna droga takiego uruchomienia, a jego cztery zabezpieczenia
+a model udaje fałszywe API na ``127.0.0.1``. ``claude`` to jedyna droga takiego uruchomienia, a jego zabezpieczenia
 są tu, bo 5.11.2026 ``claude -p`` z adresem fałszywego API tylko w środowisku procesu zapytał prawdziwy model przez hub
 (``env.ANTHROPIC_BASE_URL`` w ``~/.claude/settings.json`` wygrywa ze środowiskiem), a ten model uruchamiał wyrocznię
 dalej, aż do ok. 100 sesji:
 
 - ``--setting-sources project,local``: Claude Code nie czyta ustawień użytkownika (adres huba, ``apiKeyHelper``);
-- adres fałszywego API także w ``--settings``, które wygrywają z ``env`` ustawień projektu i lokalnych checkoutu;
-- ``NESTED`` w środowisku ``claude``: wyrocznia uruchomiona w takim Claude Code pyta ``nested`` na starcie i odmawia,
-  zamiast uruchomić kolejne;
+- adres fałszywego API i wyłączone przełączniki innych dostawców (``PROVIDERS``: Bedrock, Vertex, Foundry i inne
+  z Claude Code 2.1.318) w ``--settings``, które wygrywają z ``env`` ustawień projektu i lokalnych checkoutu;
+- środowisko ``claude`` bez ``CLAUDE_CODE_*`` sesji, w której biegnie wyrocznia, i bez tokenu huba;
+- ``NESTED`` w środowisku ``claude``: ``claude`` w Claude Code uruchomionym przez wyrocznię odmawia (``Nested``),
+  a wyrocznia pyta ``nested`` na starcie, żeby odmówić słowami;
 - ``claude``, które przez ``contact_s`` nie zapyta fałszywego API, pyta inny model, więc ginie od razu.
+
+Granica: managed settings (``/Library/Application Support/ClaudeCode/managed-settings.json`` na macOS,
+``/etc/claude-code/managed-settings.json`` na Linuksie, polityka MDM) wygrywają z ``--settings``, więc ich ``env`` albo
+``apiKeyHelper`` przekierowałyby ``claude`` mimo tych zabezpieczeń; na Macu Maksa ich nie ma (5.11.2026).
+Nowy przełącznik dostawcy z późniejszego Claude Code, którego ``PROVIDERS`` nie zna, ustawiony w ``env`` projektu
+albo ``.claude/settings.local.json``, też by go przekierował. Przed oboma chroni wtedy już tylko ``contact_s``: takie
+``claude`` ginie po ``contact_s`` sekundach, ale jedno zapytanie do innego modelu mogło już pójść.
 
 Model to ``MODEL`` (reguła zespołu: tylko Opus); fałszywe API go nie uruchamia, a odpowiedź podaje jego nazwę.
 
@@ -20,7 +29,6 @@ Model to ``MODEL`` (reguła zespołu: tylko Opus); fałszywe API go nie uruchami
         return 2
     ran = falszywe_api.claude(["-p", "…"], answer=lambda body: falszywe_api.stream(block), cwd=ROOT, env={}, timeout=60, stop=stop)
 """
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
@@ -40,6 +48,21 @@ NESTED = "MAXIMISEART_WYROCZNIA_W_SRODKU"
 _API_KEY = "sk-ant-wyrocznia"
 # Środowisko sesji Claude Code, w której biegnie wyrocznia, i token huba nie idą do ``claude`` wyroczni.
 _DROPPED = ("CLAUDECODE", "ANTHROPIC_AUTH_TOKEN")
+# Przełączniki dostawców innych niż Messages API spod ``ANTHROPIC_BASE_URL`` w Claude Code 2.1.318; włącza je tylko
+# wartość 1, true, yes albo on, więc ``"0"`` w ``--settings`` wyłącza każdy, także ustawiony w ``env`` projektu.
+PROVIDERS = (
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+    "CLAUDE_CODE_USE_ANTHROPIC_AWS",
+    "CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD",
+    "CLAUDE_CODE_USE_MANTLE",
+    "CLAUDE_CODE_USE_GATEWAY",
+)
+
+
+class Nested(RuntimeError):
+    """``claude`` wołane w Claude Code, które uruchomiła wyrocznia: kolejne uruchomienie dałoby łańcuch sesji."""
 
 
 @dataclass(frozen=True)
@@ -72,9 +95,12 @@ def claude(
     ``answer`` dostaje JSON każdego zapytania i zwraca strumień odpowiedzi (``stream``). ``env`` dodaje zmienne
     wyroczni do środowiska ``claude``. ``stdin`` to plik (potok nazwany), z którego ``claude`` czyta wejście; bez niego
     wejście jest puste. Gdy fałszywe API nie dostanie zapytania przez ``contact_s``, ``claude`` ginie, a ``stop`` jest
-    ustawione. Wołający najpierw pyta ``nested``.
+    ustawione. W Claude Code, które uruchomiła wyrocznia, ``claude`` niczego nie uruchamia i rzuca ``Nested``.
     """
 
+    reason = nested()
+    if reason:
+        raise Nested(reason)
     contacted = threading.Event()
 
     class Api(http.server.BaseHTTPRequestHandler):
@@ -129,7 +155,7 @@ def _command(arguments: Sequence[str], port: int) -> list[str]:
         "--setting-sources",
         "project,local",
         "--settings",
-        json.dumps({"env": _base(port)}),
+        json.dumps({"env": {**_base(port), **dict.fromkeys(PROVIDERS, "0")}}),
         "--model",
         MODEL,
     ]

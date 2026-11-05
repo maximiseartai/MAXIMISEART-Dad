@@ -452,7 +452,7 @@ def test_wyrocznia_uruchamia_claude_code_jak_t3_w_katalogu_checkoutu_z_falszywym
     )
     assert call["cwd"] == str(ROOT)
     assert call["env"]["ANTHROPIC_BASE_URL"].startswith("http://127.0.0.1:")
-    assert json.loads(argv[argv.index("--settings") + 1]) == {"env": {"ANTHROPIC_BASE_URL": call["env"]["ANTHROPIC_BASE_URL"]}}
+    assert json.loads(argv[argv.index("--settings") + 1])["env"]["ANTHROPIC_BASE_URL"] == call["env"]["ANTHROPIC_BASE_URL"]
     env = (call["env"]["CLAUDE_CODE_SHELL_PREFIX"], call["env"]["CLAUDECODE"], call["env"]["CLAUDE_CODE_ENTRYPOINT"])
     assert env == (str(PREFIX), None, None)
     assert (call["env"]["ANTHROPIC_AUTH_TOKEN"], call["env"]["MAXIMISEART_WYROCZNIA_W_SRODKU"]) == (None, "1")
