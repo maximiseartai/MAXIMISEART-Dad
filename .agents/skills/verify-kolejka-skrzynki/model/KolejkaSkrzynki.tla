@@ -55,7 +55,8 @@ CONSTANTS
     MaxBrakSieci,   \* Unreachable, Refused albo NoKey przed skutkiem: _waiting daje "stop"
     MaxZgubionych,  \* Unreachable po skutku: Skrzynka przyjęła zapis, a odpowiedź zginęła (POST po _TIMEOUT_S)
     MaxOdmowTresci, \* Rejected (400, 413, 422 w report_box._REJECTIONS): _waiting daje "next"
-    MaxBledowPliku, \* OSError z dysku: zapis pliku tymczasowego, zamiana, usunięcie (atomic_file, _remove)
+    MaxBledowPliku, \* OSError z dysku: zapis pliku tymczasowego, zamiana, usunięcie (atomic_file, _remove); z
+                    \* OpoznienieListy także zapis i odczyt pliku zapisów KeyedBox (_noted, _settled, _notes)
     AwariaOdczytu,  \* OSError także z odczytu pliku kolejki (outbox.py _queued)
     MaxWylaczen,    \* komputer gaśnie albo proces ginie w dowolnym kroku
     Kolejki,        \* 1 albo 2: dwie kolejki jednego folderu (_claimed, _released)
@@ -240,14 +241,18 @@ Od(w, a) == [i \in 1..(Liczba(w) - a + 1) |-> a + i - 1]
 Reszta(w) == IF Naglowek THEN Od(w, 1) ELSE Od(w, 2)
 Najwyzszy(z) == IF z = {} THEN 0 ELSE CHOOSE i \in z : \A j \in z : j <= i
 Najnizszy(z) == CHOOSE i \in z : \A j \in z : i <= j
-\* keyed_box.py KeyedBox.labelled_issues kolejki q: issue z listy GitHuba i te, które KeyedBox q sam założył (_opened).
-Widoczne(q) == {i \in 1..Len(issues) : i \notin niewidoczne \/ i \in pamiec}
+\* keyed_box.py KeyedBox.labelled_issues kolejki q: issue z listy GitHuba i skutki z pliku zapisów (pamiec,
+\* _Notes.opened), wspólnego dla każdego KeyedBox, także nowego procesu; bez odczytu pliku (zna FALSE) sama lista.
+Widoczne(q, zna) == {i \in 1..Len(issues) : i \notin niewidoczne \/ (zna /\ i \in pamiec)}
 \* report_box.py newest_with_line na liście labelled_issues: najnowsze issue z wierszem; 0 to None.
-Najnowsze(q) == Najwyzszy({i \in Widoczne(q) : issues[i].klucz = "L"})
+Najnowsze(q, zna) == Najwyzszy({i \in Widoczne(q, zna) : issues[i].klucz = "L"})
 \* Znacznik e należy do wysyłki w (outbox.py _marks: ta sama etykieta i run_id, każda wersja).
 Moj(e, w) == e[1] \in W /\ Id(e[1]) = Id(w)
 \* outbox.py _deliver_new_issue: najnowsze issue na liście kolejki q, którego treść ma znacznik wysyłki w; 0 to brak.
-Swoje(w, q) == Najwyzszy({i \in Widoczne(q) : Moj(issues[i].tresc[1], w)})
+Swoje(w, q, zna) == Najwyzszy({i \in Widoczne(q, zna) : Moj(issues[i].tresc[1], w)})
+\* keyed_box.py _notes przy liście (labelled_issues, archive): odczyt pliku zapisów się udaje (TRUE) albo rzuca OSError
+\* (FALSE, jeden z bledyPliku). Bez OpoznienieListy listy pokazują każdy zapis od razu, więc plik nic nie zmienia.
+OdczytyZapisow == IF OpoznienieListy /\ bledyPliku < MaxBledowPliku THEN {TRUE, FALSE} ELSE {TRUE}
 \* Część k wysyłki w jest w issue i w tej wersji albo nowszej (Diagnoza ją poprawiła).
 Ma(i, w, k) == \E j \in 1..Len(issues[i].tresc) :
                  Moj(issues[i].tresc[j], w) /\ issues[i].tresc[j][2] = k /\ issues[i].tresc[j][1] >= w
@@ -482,10 +487,12 @@ Plik(q) ==
 \* keyed_box.py KeyedBox.labelled_issues (z report_box.py newest_with_line), wołane przez outbox.py
 \* _deliver_to_period, _deliver_report, _deliver_to_known i _deliver_new_issue. Odczyt nie zmienia Skrzynki.
 \* Znalezione issue dostaje części przez _settle (Czytaj), nowe issue przez open_issue (Zaloz).
-Szukaj(q) ==
+Szukaj(q) == \E zna \in OdczytyZapisow :
     /\ pc[q] = "szukaj"
-    \* keyed_box.py labelled_issues: _listed_at, chwila tej listy wobec zapisu z pliku (_held przy zakładaniu).
-    /\ odczyt' = [odczyt EXCEPT ![q]["issue"] = Swieze(q, "issue")]
+    /\ bledyPliku' = IF zna THEN bledyPliku ELSE bledyPliku + 1
+    \* keyed_box.py labelled_issues: _listed_at, chwila tej listy wobec zapisu z pliku (_held przy zakładaniu); bez
+    \* odczytu pliku None, więc _held wstrzymuje zakładanie do listy, przy której plik się odczyta (#909).
+    /\ odczyt' = [odczyt EXCEPT ![q]["issue"] = ~zna \/ Swieze(q, "issue")]
     /\ \/ /\ sieci < MaxBrakSieci
           /\ sieci' = sieci + 1
           /\ Stop(q, "labelled_issues: Unreachable (brak sieci), przejscie staje")
@@ -494,10 +501,10 @@ Szukaj(q) ==
           /\ UNCHANGED <<sieci, stopped, nieczytany, slady>>
           \* _deliver_to_period: bez issue okresu krok Archiwum, potem nowe issue, a w znalezionym _settle z każdą
           \* częścią (krok Archiwum po odczycie komentarzy, w Czytaj).
-          /\ IF Najnowsze(q) = 0
+          /\ IF Najnowsze(q, zna) = 0
              THEN /\ UNCHANGED <<nr, kom>>
                   /\ PoArchiwum(q, "zaloz", "find_issue: brak issue okresu")
-             ELSE /\ nr' = Ustaw(nr, q, Najnowsze(q)) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
+             ELSE /\ nr' = Ustaw(nr, q, Najnowsze(q, zna)) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
                   /\ UNCHANGED po
                   /\ Idz(q, "czytaj", "labelled_issues: jest issue okresu, _settle z kazda czescia")
        \/ /\ Cel = "zgloszenie"
@@ -506,10 +513,10 @@ Szukaj(q) ==
           \* znalezionym _settle z tą częścią jako komentarzem returned_report. Zgłoszenie, którego treść ma znacznik tej
           \* części, założyła przerwana próba tej wysyłki, więc _settle przejmuje je bez komentarza.
           /\ UNCHANGED slady
-          /\ IF Najnowsze(q) = 0
+          /\ IF Najnowsze(q, zna) = 0
              THEN /\ UNCHANGED <<nr, kom>>
                   /\ Idz(q, "zaloz", "labelled_issues: brak otwartego Zgloszenia z odciskiem")
-             ELSE /\ nr' = Ustaw(nr, q, Najnowsze(q)) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
+             ELSE /\ nr' = Ustaw(nr, q, Najnowsze(q, zna)) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
                   /\ Idz(q, "czytaj", "_deliver_report: jest Zgloszenie z odciskiem, _settle z komentarzem returned_report")
        \/ /\ Cel = "znane"
           /\ UNCHANGED <<sieci, stopped, nieczytany, slady, po>>
@@ -520,15 +527,15 @@ Szukaj(q) ==
           /\ UNCHANGED <<sieci, stopped, nieczytany, slady, po>>
           \* _deliver_new_issue: issue z treścią ze znacznikiem tej Uwagi (najnowsze, także zamknięte) dostaje resztę
           \* części przez _settle, a bez niego nowe issue.
-          /\ IF Swoje(biez[q], q) = 0
+          /\ IF Swoje(biez[q], q, zna) = 0
              THEN /\ UNCHANGED <<nr, kom>>
                   /\ Idz(q, "zaloz", "labelled_issues: brak issue ze znacznikiem tej Uwagi")
-             ELSE /\ nr' = Ustaw(nr, q, Swoje(biez[q], q)) /\ kom' = Ustaw(kom, q, Dopisz(Reszta(biez[q])))
+             ELSE /\ nr' = Ustaw(nr, q, Swoje(biez[q], q, zna)) /\ kom' = Ustaw(kom, q, Dopisz(Reszta(biez[q])))
                   /\ Idz(q, "czytaj", "labelled_issues: jest issue ze znacznikiem tej Uwagi, _settle z reszta czesci")
     /\ UNCHANGED <<niewidoczne, zakladanie, pamiec, wydanieNiewidoczne, pamiecWydania, falszywe>>
     /\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, bezZnacznika,
                    arch, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
-                   odmowyArchiwum, bledyPliku, wylaczenia>>
+                   odmowyArchiwum, wylaczenia>>
 
 \* Co _settle robi z częścią k wysyłki w w issue i: "jest", gdy znacznik tej części stoi w treści issue albo w
 \* pierwszym komentarzu z nim w tej wersji lub nowszej, "popraw", gdy ten komentarz ma starszą wersję, a inaczej
@@ -685,22 +692,26 @@ CzytajArchiwum(q) ==
     IN
     /\ pc[q] = "archiwum"
     /\ IF odmowaArch[q]
-       THEN /\ UNCHANGED <<sieci, odmowyArchiwum, stopped, nieczytany>>
+       THEN /\ UNCHANGED <<sieci, odmowyArchiwum, stopped, nieczytany, bledyPliku>>
             /\ UNCHANGED odczyt
             /\ Czeka(q, "_deliver_archive: archive_open = False, Archiwum odmowilo w tym przejsciu")
        ELSE \/ /\ sieci < MaxBrakSieci
                /\ sieci' = sieci + 1
-               /\ UNCHANGED <<odmowyArchiwum, arch, odczyt>>
+               /\ UNCHANGED <<odmowyArchiwum, arch, odczyt, bledyPliku>>
                /\ Stop(q, "archive: Unreachable (brak sieci), przejscie staje")
             \/ /\ odmowyArchiwum < MaxOdmowArchiwum
                /\ odmowyArchiwum' = odmowyArchiwum + 1
-               /\ UNCHANGED <<sieci, stopped, nieczytany, odczyt>>
+               /\ UNCHANGED <<sieci, stopped, nieczytany, odczyt, bledyPliku>>
                /\ Czeka(q, "archive: Refused (Token bez uprawnienia do tresci repozytorium), ArchiveWaits")
-            \/ /\ UNCHANGED <<sieci, odmowyArchiwum, stopped, nieczytany>>
-               \* keyed_box.py archive: _listed_at Archiwum i plików wobec zapisu z pliku zakładania (_held).
-               /\ odczyt' = [odczyt EXCEPT ![q]["archiwum"] = Swieze(q, "archiwum")]
-               \* Archiwum z listy Release'ów albo to, które KeyedBox sam założył (_archives).
-               /\ IF wydania = 0 \/ (wydanieNiewidoczne /\ ~pamiecWydania)
+            \/ \E zna \in OdczytyZapisow :
+               /\ UNCHANGED <<sieci, odmowyArchiwum, stopped, nieczytany>>
+               /\ bledyPliku' = IF zna THEN bledyPliku ELSE bledyPliku + 1
+               \* keyed_box.py archive: _listed_at Archiwum i plików wobec zapisu z pliku zakładania (_held); bez odczytu
+               \* pliku None, więc _held wstrzymuje zapisy Archiwum do odczytu przy następnej liście (#909).
+               /\ odczyt' = [odczyt EXCEPT ![q]["archiwum"] = ~zna \/ Swieze(q, "archiwum")]
+               \* Archiwum z listy Release'ów albo skutek z pliku zapisów (pamiecWydania, _Notes.archives), wspólnego dla
+               \* każdego KeyedBox; bez odczytu pliku sama lista.
+               /\ IF wydania = 0 \/ (wydanieNiewidoczne /\ ~(zna /\ pamiecWydania))
                   THEN /\ UNCHANGED arch
                        /\ Idz(q, "wydanie", "archive: brak Archiwum okresu na liscie, open_archive")
                   ELSE IF \E i \in moje : archiwum[i] >= w
@@ -713,7 +724,7 @@ CzytajArchiwum(q) ==
                        /\ Idz(q, "wyslij", "archive: pliku nie ma, upload")
     /\ UNCHANGED <<niewidoczne, zakladanie, pamiec, wydanieNiewidoczne, pamiecWydania, falszywe, dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, biez, nr, kom,
                    bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
-                   bledyPliku, wylaczenia, slady>>
+                   wylaczenia, slady>>
 
 \* report_box.py GitHubReportBox.open_archive: 409 „Git Repository is empty.” to Rejected, a _deliver_archive daje z niego
 \* ArchiveWaits: części idą z dopiskiem, a przejście idzie dalej do następnych plików.

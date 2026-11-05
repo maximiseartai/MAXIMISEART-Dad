@@ -1106,6 +1106,11 @@ def _state(
     with keyed._lock:
         notes = keyed._notes() or keyed_box_module._Notes()
     listed = keyed._listed_at()
+
+    def held(kind: str, moment: float) -> bool:
+        at = listed.get(keyed_box_module._list_of(kind), clock())
+        return at is None or at - moment < LIST_LAG_S
+
     def same(text: str) -> str:
         return _VERSION.sub(lambda found: f"wersja {versions.get(found.group(1), '?')} -->", text)
 
@@ -1150,11 +1155,14 @@ def _state(
         tuple(sorted(issue.number for _, _, issue in notes.opened)),
         tuple(
             sorted(
-                (kind, listed.get(keyed_box_module._list_of(kind), clock()) - moment < LIST_LAG_S)
+                (kind, held(kind, moment))
                 for kind, (moment, _) in notes.pending.items()
                 if 0 <= clock() - moment < LIST_LAG_S
             )
         ),
+        # A list at which the file could not be read holds every write of its kind (``_held``); the checker never fails
+        # the read, so this stays empty, and it is here so that such a state differs from one without it.
+        tuple(sorted(kind for kind, at in listed.items() if at is None)),
     )
 
 

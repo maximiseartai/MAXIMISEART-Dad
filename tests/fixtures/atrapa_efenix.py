@@ -163,6 +163,15 @@ class Outage(enum.Enum):
     )
 
 
+class ProposalFailure(enum.Enum):
+    """Jak pada propozycja Emmetta zlecenia (``action_fill_emmett.php``, ``AtrapaOrder.emmett_proposal_failure``); skrypt
+    strony i tak pokazuje okno Emmetta, puste, jak skrypt efenix."""
+
+    SERVER_ERROR = "HTTP 500 bez propozycji"
+    TORN = "odpowiedź z propozycją zerwana w połowie treści"
+    CUT = "połączenie zerwane bez odpowiedzi"
+
+
 class EmmettRefusal(enum.Enum):
     """Jak efenix odmawia „Załaduj do zlecenia” zlecenia (``AtrapaOrder.emmett_refusal``); skrypt strony i tak ją
     przeładowuje, bo czeka tylko na koniec odpowiedzi, a nie na jej status."""
@@ -229,9 +238,8 @@ class AtrapaOrder:
     wyceny. Z ``after_date`` każda z tych czterech zmian strony jest dopiero od zapisu daty wykonania, a z ``after_emmett``
     od przeładowania po załadowaniu Wyceny Emmetta. ``emmett_refusal``: efenix odmawia „Załaduj do zlecenia” tego
     zlecenia (``EmmettRefusal``), aż test to zmieni. ``emmett_in_fields``: okno Emmetta pokazuje propozycję w polach bez
-    tekstu (ilość w ``value``), jedną z postaci, których w efenix nikt nie zmierzył. ``emmett_proposal_error``: efenix
-    odpowiada na propozycję Emmetta tego zlecenia (``action_fill_emmett.php``) błędem serwera (500), więc okno Emmetta
-    zostaje puste.
+    tekstu (ilość w ``value``), jedną z postaci, których w efenix nikt nie zmierzył. ``emmett_proposal_failure``: propozycja
+    Emmetta tego zlecenia (``action_fill_emmett.php``) pada (``ProposalFailure``), więc okno Emmetta zostaje puste.
     """
 
     order_id: str
@@ -256,7 +264,7 @@ class AtrapaOrder:
     after_emmett: bool = False
     emmett_refusal: EmmettRefusal | None = None
     emmett_in_fields: bool = False
-    emmett_proposal_error: bool = False
+    emmett_proposal_failure: ProposalFailure | None = None
 
     @property
     def amount(self) -> Decimal:
@@ -484,10 +492,16 @@ def atrapa_efenix(
                         self._json({"result": "nok", "error": "Nie załadowano."})
                     case EmmettRefusal.OTHER:
                         self._html("<p>Nie załadowano wyceny Emmetta.</p>")
-            elif method == "POST" and path == FILL_EMMETT and any(
-                order.emmett_proposal_error for order in orders if order.order_id == params.get("order_id")
-            ):
-                self._html("<p>Wystąpił błąd serwera.</p>", HTTPStatus.INTERNAL_SERVER_ERROR)
+            elif method == "POST" and path == FILL_EMMETT and (failed_proposal := _failing_proposal(orders, params)) is not None:
+                order, failure = failed_proposal
+                match failure:
+                    case ProposalFailure.SERVER_ERROR:
+                        self._html("<p>Wystąpił błąd serwera.</p>", HTTPStatus.INTERNAL_SERVER_ERROR)
+                    case ProposalFailure.TORN:
+                        self._torn = True
+                        self._html(str(_change(path, order, params, refuse_dates=refuse_dates)))
+                    case ProposalFailure.CUT:
+                        self._cut()
             elif method == "POST" and path in _CHANGES:
                 with atrapa._lock:
                     found = [order for order in atrapa.orders if order.order_id == params.get(_CHANGES[path])]
@@ -539,6 +553,16 @@ def atrapa_efenix(
             self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
             self.connection.close()
 
+        def _tear(self) -> None:
+            """Zrywa połączenie w połowie treści zamknięciem bez RST: przeglądarka dostaje zawsze połowę treści, a potem
+            koniec połączenia przed ``Content-Length`` (``net::ERR_CONTENT_LENGTH_MISMATCH``). RST zaraz po połowie treści
+            (``_cut``) przeglądarka czasem gubiła razem z nią i nie kończyła żądania w czasie okna (5.11.2026, propozycja
+            Emmetta: 3 z 6 przebiegów, #908)."""
+
+            self.close_connection = True
+            with suppress(OSError):
+                self.connection.shutdown(socket.SHUT_RDWR)
+
         def _wait_if_late(self) -> None:
             if self._late:
                 closing.wait()
@@ -557,7 +581,7 @@ def atrapa_efenix(
                     closing.wait()
                     self.close_connection = True
                 else:
-                    self._cut()
+                    self._tear()
                 return
             self.wfile.write(body)
 
@@ -624,6 +648,15 @@ class _Server(ThreadingHTTPServer):
 
 # Działania na zleceniu i pole, w którym przychodzi jego identyfikator.
 _CHANGES = {SAVE_QUANTITY: "order_id", FILL_EMMETT: "order_id", LOAD_EMMETT: "order_id", SET_DATE: "id", GET_DATE: "id", CHANGE_STATUS: "order_id"}
+
+
+def _failing_proposal(orders: Sequence[AtrapaOrder], params: Mapping[str, str]) -> tuple[AtrapaOrder, ProposalFailure] | None:
+    """Zlecenie, którego ``order_id`` przyszło w ``params``, z tym, jak pada jego propozycja Emmetta, gdy pada."""
+
+    for order in orders:
+        if order.order_id == params.get("order_id") and order.emmett_proposal_failure is not None:
+            return order, order.emmett_proposal_failure
+    return None
 
 
 def _emmett_refusal(orders: Sequence[AtrapaOrder], params: Mapping[str, str]) -> EmmettRefusal | None:

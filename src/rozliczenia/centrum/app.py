@@ -195,7 +195,7 @@ def create_app(
         report_box or GitHubReportBox(),
         lambda: read_report_key(config),
         clock=clock,
-        opening=NotesFile(config / OPENING_FILE, replace_atomically),
+        opening=NotesFile(config / OPENING_FILE, replace_atomically, log.box_notes_unavailable),
     )
     # Diagnoza: commit `main` z GitHuba, atrybuty OneDrive i werdykt Skrzynki o kluczu to granice komputera taty.
     surroundings = Surroundings(
