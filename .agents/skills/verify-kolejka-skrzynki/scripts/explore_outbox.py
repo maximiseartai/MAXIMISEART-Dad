@@ -1360,9 +1360,18 @@ class ScopeReport:
     name: str
     schedules: int = 0
     shortest: dict[tuple[str, Kind], Violation] = field(default_factory=dict)
+    stopped: bool = False  # ended at the first schedule with a new violation (``--stop-at-new``)
 
 
-def explore(name: str) -> ScopeReport:
+def explore(name: str, *, stop_at_new: bool = False) -> ScopeReport:
+    """Every schedule of scope ``name``; with ``stop_at_new`` only up to the first one with a new violation.
+
+    A mutation of ``check_outbox_mutations.py`` needs only the verdict, and a new violation makes it
+    ``KOLEJKA: NOWE NARUSZENIE`` whatever the schedules after it show. Without the stop, the mutation of
+    ``archiwum-diagnoza`` explored all 23 787 schedules (51 s on Maks's Mac on 2026-11-05) after it saw its violation in the
+    first one, and with eight mutations at once on the four vCPU of Windows CI it ran over the 600 s limit (#963).
+    """
+
     report = ScopeReport(name)
     with tempfile.TemporaryDirectory(prefix="kolejka-skrzynki-") as directory:
         prefix: list[int] | None = []
@@ -1377,6 +1386,9 @@ def explore(name: str) -> ScopeReport:
                 seen = report.shortest.get(key)
                 if seen is None or len(violation.trace) < len(seen.trace):
                     report.shortest[key] = violation
+            if stop_at_new and any(violation.kind == "new" for violation in violations):
+                report.stopped = True
+                break
             prefix = next_prefix(scheduler)
     return report
 
@@ -1391,8 +1403,9 @@ def summarize(reports: Sequence[ScopeReport], *, strict: bool = False) -> Outcom
     lines: list[str] = []
     new = known = accepted = gone = 0
     for report in reports:
+        stopped = " Koniec na pierwszym nowym naruszeniu (--stop-at-new)." if report.stopped else ""
         lines.append(
-            f"== {report.name}: {SCOPES[report.name].description} Harmonogramy: {report.schedules}."
+            f"== {report.name}: {SCOPES[report.name].description} Harmonogramy: {report.schedules}.{stopped}"
         )
         for (rule, kind), violation in sorted(report.shortest.items()):
             excuses = {"known": KNOWN_FINDINGS, "accepted": ACCEPTED_RISKS}.get(
@@ -1421,8 +1434,10 @@ def summarize(reports: Sequence[ScopeReport], *, strict: bool = False) -> Outcom
             *((e, "accepted") for e in ACCEPTED_RISKS),
         ]
         for excuse, expected_kind in expected:
+            # A scope that stopped early did not reach every schedule, so a finding it did not see may still be there.
             if (
-                excuse.scope == report.name
+                not report.stopped
+                and excuse.scope == report.name
                 and (excuse.rule, expected_kind) not in report.shortest
             ):
                 gone += 1
@@ -1460,10 +1475,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="report known findings and accepted risks as violations too",
     )
-    arguments = parser.parse_args(argv)
-    outcome = summarize(
-        [explore(name) for name in (arguments.scope or SCOPES)], strict=arguments.strict
+    parser.add_argument(
+        "--stop-at-new",
+        action="store_true",
+        help="end at the first schedule with a new violation: the verdict of a mutation run, not its shortest counterexample",
     )
+    arguments = parser.parse_args(argv)
+    reports: list[ScopeReport] = []
+    for name in arguments.scope or SCOPES:
+        reports.append(explore(name, stop_at_new=arguments.stop_at_new))
+        if reports[-1].stopped:
+            break  # the verdict is already NOWE NARUSZENIE
+    outcome = summarize(reports, strict=arguments.strict)
     print("\n".join(outcome.lines))
     return outcome.exit_code
 
