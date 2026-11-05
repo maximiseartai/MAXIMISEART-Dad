@@ -848,8 +848,8 @@ def test_wylogowanie_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene_a_komunika
 
 
 TIMEOUT = "playwright._impl._errors.TimeoutError"
-# Część strony, której zabrakło przy każdej zmianie budowy Atrapy (tabela wyników, strona zlecenia, okno daty wykonania,
-# Emmett albo kwota), przyczyna techniczna z tabeli decyzji (``tests/test_tabela_zatrzyman_efenix.py``) i działanie
+# Część strony, której zabrakło przy każdej zmianie budowy Atrapy (lista, tabela wyników, strona zlecenia, okno daty
+# wykonania, Emmett albo kwota), przyczyna techniczna z tabeli decyzji (``tests/test_tabela_zatrzyman_efenix.py``) i działanie
 # okna, które się nie udało.
 CHANGED: dict[Changed, tuple[PagePart, WindowCause, str]] = {
     Changed.STATUS_HEADER: (PagePart.RESULTS, OtherShape(Shape.COLUMNS), "szukanie"),
@@ -862,6 +862,7 @@ CHANGED: dict[Changed, tuple[PagePart, WindowCause, str]] = {
     Changed.STALE_AMOUNT: (PagePart.QUANTITY, BrowserFailure(TIMEOUT, Operation.AMOUNT), "ilość"),
     Changed.QUANTITY_ANSWER: (PagePart.QUANTITY, OtherShape(Shape.ANSWER_NOT_JSON, "012"), "ilość"),
     Changed.QUANTITY_VALUE: (PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, "012"), "otwarcie zlecenia"),
+    Changed.SECOND_NUMBER_FIELD: (PagePart.LIST, ElementCount("#field_numer", 2), "szukanie"),
 }
 
 

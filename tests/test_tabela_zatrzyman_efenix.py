@@ -84,6 +84,9 @@ TABLE = [
         "formularz logowania pod adresem strony zlecenia, bez przekierowania, a odczyt strony się nie udał", "E"),
     Row("efenix_browser", "_single", "UnexpectedPage(part, ElementCount(selector, count))",
         "element okna (#field_numer, #data_install, #cena_all2, przyciski i okna dialogowe) nie dokładnie raz", "C"),
+    Row("efenix_browser", "_still_single", "UnexpectedPage(part, ElementCount(selector, count))",
+        "#field_numer nie dokładnie raz po wpisaniu numeru albo Enter, które się nie udały: odpowiedź szukania listy "
+        "włożyła do #wyniki stronę listy po sprawdzeniu pola (#971)", "C"),
     Row("efenix_browser", "_close", "UnexpectedPage(part, ElementCount(selector, count))",
         "okno dialogowe bez przycisku zamknięcia [data-dismiss=\"modal\"]", "C"),
     Row("efenix_browser", "_amount", "UnexpectedPage(part, OtherShape(Shape.AMOUNT_TEXT))",

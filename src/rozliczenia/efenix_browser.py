@@ -21,7 +21,9 @@ element, który minął, otwarcie strony, które się nie udało, treść odpowi
 tych wyjątków niesie przyczynę techniczną z zamkniętej listy (``efenix_pricing.WindowCause``): element, który nie
 występuje dokładnie raz, z jego selektorem i liczbą, budowę strony, której okno nie zna (``Shape``), status HTTP
 (``HttpStatus``), a przy błędzie Playwrighta typ jego wyjątku i działanie okna, w którym wystąpił (``Operation``), bez
-treści wyjątku i strony. Status HTTP daje każda odpowiedź efenix ze statusem błędu (4xx, 5xx), na którą okno czeka
+treści wyjątku i strony. Wpisanie numeru i Enter w polu ``Numer``, które się nie udały, bo pola nie ma już na stronie
+dokładnie raz, to element z jego liczbą, a nie błąd Playwrighta: odpowiedź szukania listy mogła w tym czasie włożyć do
+``#wyniki`` stronę listy (#971). Status HTTP daje każda odpowiedź efenix ze statusem błędu (4xx, 5xx), na którą okno czeka
 (szukanie, zapis daty, „Załaduj do zlecenia”, zapis ilości), zanim okno ją przeczyta, i strona, którą okno otwiera
 (lista zleceń, także przy starcie, i strona zlecenia), gdy przyszła ze statusem błędu, a okno jej nie przeczytało
 (nawigacja nie zgłasza błędu przy 4xx i 5xx). Czy to
@@ -231,6 +233,7 @@ _DISMISS: Final = '[data-dismiss="modal"]'
 _LOGIN_FORM: Final = 'form[action*="action_login.php"]'
 _SHOWS: Final = "([selector, text]) => document.querySelector(selector)?.textContent.trim() === text"
 # Element pokazuje cokolwiek: ma element albo tekst; ``false`` tylko dla pustego (same białe znaki).
+_COUNT: Final = "(selector) => ({count: document.querySelectorAll(selector).length})"
 _SHOWS_ANYTHING: Final = "(element) => element.childElementCount > 0 || element.textContent.trim() !== ''"
 
 
@@ -460,9 +463,14 @@ class BrowserEfenix:
         if urlparse(self._page.url).path != urlparse(self._url).path:
             self.open_list()
         field = self._page.locator(_NUMBER_FIELD)
-        with _within(PagePart.LIST), _doing(Operation.FILL):
+        with _within(PagePart.LIST), self._still_single(_NUMBER_FIELD, PagePart.LIST), _doing(Operation.FILL):
             field.fill(number, timeout=self._timeout_ms)
-        answer = self._finished(lambda request: _is_search(request, number), lambda: self._enter(field))
+
+        def enter() -> None:
+            with self._still_single(_NUMBER_FIELD, PagePart.LIST):
+                self._enter(field)
+
+        answer = self._finished(lambda request: _is_search(request, number), enter)
         html = self._text(answer)
         with _doing(Operation.READ):
             return read_results(self._page, html)
@@ -586,6 +594,26 @@ class BrowserEfenix:
     def _only(self, selector: str, part: PagePart) -> Locator:
         with _doing(Operation.READ):
             return _single(self._page, selector, part)
+
+    @contextmanager
+    def _still_single(self, selector: str, part: PagePart) -> Iterator[None]:
+        """Działanie przeglądarki na elemencie ``selector``, który był na stronie dokładnie raz: gdy się nie udało, a
+        elementu nie ma już dokładnie raz, strona zmieniła budowę między sprawdzeniem a działaniem, więc to
+        ``ElementCount`` jak w ``_single``, a nie błąd przeglądarki. Tak jest z polem ``Numer``, gdy odpowiedź szukania,
+        które lista wysyła sama, wkłada do ``#wyniki`` stronę listy, na którą przekierował ją efenix (#971). Liczenie ma
+        czas okna, bo strona, która nie odpowiada, zatrzymałaby okno tu bez końca (#886)."""
+
+        try:
+            yield
+        except _Failed as failed:
+            try:
+                counted = self._page.wait_for_function(_COUNT, arg=selector, timeout=self._timeout_ms)
+                count = int(counted.json_value()["count"])
+            except PlaywrightError:
+                raise failed from failed.__cause__
+            if count != 1:
+                raise UnexpectedPage(part, ElementCount(selector, count)) from failed.__cause__
+            raise
 
     def _shown(self, selector: str, part: PagePart) -> None:
         located = self._only(selector, part)
