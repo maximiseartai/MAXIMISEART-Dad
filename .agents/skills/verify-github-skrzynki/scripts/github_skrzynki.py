@@ -2,10 +2,10 @@
 
 Tryby (opis w ``SKILL.md`` skilla ``verify-github-skrzynki``):
 
-- ``doctor``: tylko odczyt; klucz klienta i jego rodzaj, klucz ``gh`` do sprzątania, repozytorium próbne (prywatne, bez
-  pozostałości runów), limity zapytań.
-- ``na-zywo``: przypadki ``--feature`` (``skrzynka``, ``aktualnosc``) przez prawdziwy kod klienta na repozytorium
-  próbnym i publicznym repozytorium narzędzia, z nagraniem każdej wymiany, potem ``wiernosc-atrap`` na nowych
+- ``doctor``: tylko odczyt; klucz klienta i jego rodzaj, klucz ``gh`` do sprzątania, repozytoria próbne (prywatne, bez
+  pozostałości runów, Archiwum z commitem), limity zapytań.
+- ``na-zywo``: przypadki ``--feature`` (``skrzynka``, ``archiwum``, ``aktualnosc``) przez prawdziwy kod klienta na
+  repozytoriach próbnych i publicznym repozytorium narzędzia, z nagraniem każdej wymiany, potem ``wiernosc-atrap`` na nowych
   nagraniach i sprzątanie; z ``--zapisz-nagrania`` nagrania zastępują ``nagrania/`` skilla.
 - ``odtworz``: bez sieci; ten sam klient na nagraniach ``nagrania/`` i wierność atrap testów (podstawa ``ci:``).
 
@@ -39,6 +39,7 @@ from rozliczenia.centrum.report_box import GitHubReportBox
 from skrypt_skilla import Parser, create_run_root, new_run
 
 import github_przypadki_aktualnosci as aktualnosc
+import github_przypadki_archiwum as archiwum
 import github_przypadki_skrzynki as skrzynka
 import github_sprzatanie
 import github_wiernosc
@@ -47,6 +48,8 @@ from github_wymiana import (
     RUN_MARKER,
     TOOL_REPOSITORY,
     TRIAL,
+    TRIAL_ARCHIVE,
+    TRIALS,
     Admin,
     Case,
     Exchange,
@@ -64,8 +67,10 @@ from github_wymiana import (
 )
 
 ROOT = Path(__file__).resolve().parents[4]
-FEATURES = ("skrzynka", "aktualnosc", "wiernosc-atrap")
-LIVE: Final = ("skrzynka", "aktualnosc")
+FEATURES = ("skrzynka", "archiwum", "aktualnosc", "wiernosc-atrap")
+LIVE: Final = ("skrzynka", "archiwum", "aktualnosc")
+# Funkcje, które piszą do repozytoriów próbnych: ich przebieg ma katalog runu, stan sprzed runu i sprzątanie.
+WRITING: Final = ("skrzynka", "archiwum")
 SKILL: Final = Path(__file__).resolve().parents[1]
 RECORDINGS: Final = SKILL / "nagrania"
 REPLAY_KEY: Final = "github_pat_ODTWORZENIE"
@@ -176,6 +181,33 @@ def live_skrzynka(key: str, admin: Admin, root: Path, pace: Pace) -> list[Result
     for label in labels if status == 200 and isinstance(labels, list) else []:
         if isinstance(label, dict) and label.get("name") == skrzynka.ABSENT_LABEL:
             live.note({"etykieta": skrzynka.ABSENT_LABEL, "zrodlo": "github"})
+    return results
+
+
+def live_archiwum(key: str, admin: Admin, root: Path, pace: Pace) -> list[Result]:
+    recorder = Recorder()
+    box = GitHubReportBox(transport=LiveTransport(recorder, pace, trial=TRIAL_ARCHIVE))
+    run = json.loads((root / github_sprzatanie.RUN_FILE).read_text(encoding="utf-8"))["run"]
+    setup = LiveTransport(Recorder(), pace, trial=TRIAL_ARCHIVE)
+    live = archiwum.ArchiwumLive(
+        run, key, GitHubReportBox(transport=setup), setup, admin, root / github_sprzatanie.LEDGER
+    )
+    client = skrzynka.Client(box, key)
+    results = []
+    for case in archiwum.CASES:
+
+        def check(
+            facts: Facts, case: Case[archiwum.ArchiwumLive, skrzynka.Client] = case
+        ) -> tuple[object, list[Exchange], list[str]]:
+            with recorder.case() as exchanges:
+                outcome = case.check(client, facts)
+            for release in archiwum.created(outcome):
+                live.note({"release": release})
+            return outcome, exchanges, []
+
+        result, outcome = _run_case(case, None, partial(case.prepare, live, {}), check, archiwum.describe)
+        live.earlier[case.id] = (result.facts, outcome)
+        results.append(result)
     return results
 
 
@@ -295,6 +327,16 @@ def replay_skrzynka(
     return outcome, transport.finish()
 
 
+def replay_archiwum(
+    case: Case[archiwum.ArchiwumLive, skrzynka.Client],
+    facts: Facts,
+    exchanges: list[Exchange],
+) -> tuple[object, list[str]]:
+    transport = ReplayTransport(exchanges)
+    outcome = case.check(skrzynka.Client(GitHubReportBox(transport=transport), REPLAY_KEY), facts)
+    return outcome, transport.finish()
+
+
 def replay_aktualnosc(
     case: Case[aktualnosc.AktualnoscLive, aktualnosc.Client],
     facts: Facts,
@@ -330,31 +372,35 @@ def doctor(key: str, admin: Admin, *, features: Sequence[str], freshness_with_ke
     problems: list[str] = []
     facts = [f"klucz={token_kind(key)}", f"sprzatanie={token_kind(admin.token)}"]
     if (
-        not TRIAL.startswith(report_box.REPOSITORY + "-")
+        not all(trial.startswith(report_box.REPOSITORY + "-") for trial in TRIALS)
         or tool_freshness.REPOSITORY_API != f"{API}/repos/{TOOL_REPOSITORY}"
     ):
         problems.append(
             f"adresy klientów nie są tymi, które skill zna: {report_box.REPOSITORY}, {tool_freshness.REPOSITORY_API}"
         )
-    if "skrzynka" in features:
-        status, repository = admin.request("GET", f"/repos/{TRIAL}")
+    trials = [trial for trial, feature in ((TRIAL, "skrzynka"), (TRIAL_ARCHIVE, "archiwum")) if feature in features]
+    client = Admin(key, Pace())
+    for trial in trials:
+        status, repository = admin.request("GET", f"/repos/{trial}")
         if status != 200 or not isinstance(repository, dict):
-            problems.append(f"repozytorium próbne {TRIAL} → {status}")
+            problems.append(f"repozytorium próbne {trial} → {status}")
         else:
-            if repository.get("full_name") != TRIAL or repository.get("private") is not True:
+            if repository.get("full_name") != trial or repository.get("private") is not True:
                 problems.append(
-                    f"{TRIAL} nie jest prywatnym repozytorium próbnym: {repository.get('full_name')}, prywatne={repository.get('private')}"
+                    f"{trial} nie jest prywatnym repozytorium próbnym: {repository.get('full_name')}, prywatne={repository.get('private')}"
                 )
             if (
                 not isinstance(repository.get("permissions"), dict)
                 or repository["permissions"].get("admin") is not True
             ):
-                problems.append("klucz gh nie jest administratorem repozytorium próbnego: sprzątanie nie usunie issue")
-            facts.append(f"repo={TRIAL} prywatne")
-        client = Admin(key, Pace())
-        status, _ = client.request("GET", f"/repos/{TRIAL}")
+                problems.append(f"klucz gh nie jest administratorem {trial}: sprzątanie nie usunie issue ani tagów")
+            facts.append(f"repo={trial} prywatne")
+        status, _ = client.request("GET", f"/repos/{trial}")
         if status != 200:
-            problems.append(f"klucz klienta nie widzi repozytorium próbnego ({status})")
+            problems.append(f"klucz klienta nie widzi repozytorium próbnego {trial} ({status})")
+    if "archiwum" in features:
+        problems += _archive_baseline(admin)
+    if trials:
         status, limits = client.request("GET", "/rate_limit")
         remaining = limits.get("resources", {}).get("core", {}).get("remaining") if isinstance(limits, dict) else None
         facts.append(f"limit={remaining}")
@@ -366,6 +412,7 @@ def doctor(key: str, admin: Admin, *, features: Sequence[str], freshness_with_ke
             problems.append(
                 f"pozostałości wcześniejszych runów: {', '.join(left[:5])} (sprzątnij je skryptem sprzątania ich runu)"
             )
+    if "skrzynka" in features:
         _, labels = admin.request("GET", f"/repos/{TRIAL}/labels?per_page=100")
         names = {entry.get("name") for entry in labels} if isinstance(labels, list) else set()
         present = sorted(names & {*skrzynka.LABELS_MADE, skrzynka.ABSENT_LABEL})
@@ -392,17 +439,33 @@ def doctor(key: str, admin: Admin, *, features: Sequence[str], freshness_with_ke
     )
 
 
+def _archive_baseline(admin: Admin) -> list[str]:
+    """Repozytorium próbne Archiwum jak w ``features/README.md``: co najmniej jeden commit, bez Release'ów i tagów."""
+
+    problems = []
+    status, commits = admin.request("GET", f"/repos/{TRIAL_ARCHIVE}/commits?per_page=1")
+    if status != 200 or not commits:
+        problems.append(f"{TRIAL_ARCHIVE} nie ma commitu (lista commitów {status}): Release potrzebuje commitu")
+    for name in ("releases", "tags"):
+        status, entries = admin.request("GET", f"/repos/{TRIAL_ARCHIVE}/{name}?per_page=100")
+        if status != 200 or entries != []:
+            problems.append(f"{TRIAL_ARCHIVE} ma {name} albo lista dała {status}: przebieg zaczyna bez nich")
+    return problems
+
+
 # --- wynik ----------------------------------------------------------------------------------------------------------
 
 
 def unchecked(kinds: dict[str, str]) -> list[str]:
     lines = [f"NIESPRAWDZONE | skrzynka/{name} | {why}" for name, why in skrzynka.UNCHECKED]
-    box_kinds = sorted(kind for name, kind in kinds.items() if feature_of(name) == "skrzynka")
-    if box_kinds and FINE_GRAINED not in box_kinds:
-        lines.append(
-            f"NIESPRAWDZONE | skrzynka/klucz-taty | przebieg kluczem {', '.join(box_kinds)}, a klucz taty to {FINE_GRAINED} "
-            "(Issues i Contents RW): uruchom na-zywo --klucz-plik z tokenem fine-grained repozytorium próbnego"
-        )
+    lines += [f"NIESPRAWDZONE | archiwum/{name} | {why}" for name, why in archiwum.UNCHECKED]
+    for feature in WRITING:
+        box_kinds = sorted(kind for name, kind in kinds.items() if feature_of(name) == feature)
+        if box_kinds and FINE_GRAINED not in box_kinds:
+            lines.append(
+                f"NIESPRAWDZONE | {feature}/klucz-taty | przebieg kluczem {', '.join(box_kinds)}, a klucz taty to "
+                f"{FINE_GRAINED} (Issues i Contents RW): uruchom na-zywo --klucz-plik z tokenem fine-grained repozytoriów próbnych"
+            )
     if kinds.get("aktualnosc") not in (None, "bez klucza"):
         lines.append(
             f"NIESPRAWDZONE | aktualnosc/bez-klucza | Aktualność pytana kluczem {kinds['aktualnosc']}, a Centrum taty pyta bez klucza"
@@ -421,7 +484,7 @@ def recording(feature: str, results: list[Result], kind: str) -> dict[str, objec
         "nagrano": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "commit": head,
         "klucz": kind,
-        "repozytorium": TRIAL if feature == "skrzynka" else TOOL_REPOSITORY,
+        "repozytorium": {"skrzynka": TRIAL, "archiwum": TRIAL_ARCHIVE}.get(feature, TOOL_REPOSITORY),
         "przypadki": {
             result.case: {
                 "fakty": result.facts,
@@ -512,15 +575,15 @@ def live_all(
 ) -> int:
     run = new_run(arguments.run_dir, f"github-{stamp}")
     (run.evidence / "doctor.txt").write_text(doctor_line + "\n", encoding="utf-8")
-    box = f"skrzynka-{token_slug(key)}"
-    kinds = {box: token_kind(key)} if "skrzynka" in features else {}
+    names = {feature: f"{feature}-{token_slug(key)}" for feature in WRITING if feature in features}
+    kinds = {name: token_kind(key) for name in names.values()}
     freshness_key = admin.token if arguments.aktualnosc_z_kluczem else None
     if "aktualnosc" in features:
         kinds["aktualnosc"] = "bez klucza" if freshness_key is None else f"{token_kind(admin.token)} (gh)"
     results: dict[str, list[Result]] = {}
     lines = [doctor_line]
     restored = True
-    if "skrzynka" in features:
+    if names:
         root = create_run_root(run.root)
         before = github_sprzatanie.state(admin)
         (root / github_sprzatanie.RUN_FILE).write_text(
@@ -530,19 +593,22 @@ def live_all(
             ),
             encoding="utf-8",
         )
+        drives = {"skrzynka": live_skrzynka, "archiwum": live_archiwum}
         try:
-            results[box] = live_skrzynka(key, admin, root, admin.pace)
-        except Exception:  # noqa: BLE001 - przerwany przebieg to VERIFY FAIL, a sprzątanie biegnie i tak
-            results[box] = [
-                Result(
-                    "przebieg",
-                    {},
-                    [],
-                    "-",
-                    "-",
-                    [f"wyjątek harnessu: {traceback.format_exc(limit=3)}"],
-                )
-            ]
+            for feature, name in names.items():
+                try:
+                    results[name] = drives[feature](key, admin, root, admin.pace)
+                except Exception:  # noqa: BLE001 - przerwany przebieg to VERIFY FAIL, a sprzątanie biegnie i tak
+                    results[name] = [
+                        Result(
+                            "przebieg",
+                            {},
+                            [],
+                            "-",
+                            "-",
+                            [f"wyjątek harnessu: {traceback.format_exc(limit=3)}"],
+                        )
+                    ]
         finally:
             restored, cleaned = github_sprzatanie.clean(root)
             lines.append(cleaned[-1])
@@ -585,6 +651,8 @@ def replay_all(features: Sequence[str], evidence: Path) -> int:
         kinds[name] = str(document.get("klucz"))
         if feature_of(name) == "skrzynka" and "skrzynka" in features:
             results[name] = replay(name, skrzynka.CASES, document, replay_skrzynka, skrzynka.describe)
+        elif feature_of(name) == "archiwum" and "archiwum" in features:
+            results[name] = replay(name, archiwum.CASES, document, replay_archiwum, archiwum.describe)
         elif feature_of(name) == "aktualnosc" and "aktualnosc" in features:
             results[name] = replay(name, aktualnosc.CASES, document, replay_aktualnosc, aktualnosc.describe)
     if "wiernosc-atrap" in features:

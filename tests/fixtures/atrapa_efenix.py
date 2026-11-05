@@ -26,7 +26,8 @@ poprzedniego miesiąca zamienia na dzisiejszy z komunikatem w ``#toast``, „Pot
 odpowiedzi 2xx wpisuje ją do ``#data_install`` bez czytania treści odpowiedzi. „Dziś” daje test (``today``), a
 ``refuse_dates`` każe serwerowi odpowiadać na zapis daty bez zapisu. Wycenę Emmetta (``#button_emmett``,
 okno ``#dialog_emmett`` z propozycją z ``action_fill_emmett.php``, „Załaduj do zlecenia” wysyła ``action_load_emmett.php``,
-który czyści wycenę i wpisuje propozycję, a skrypt przeładowuje stronę) i przyciski, których narzędzie nie może użyć:
+który czyści wycenę i wpisuje propozycję, a skrypt przeładowuje stronę po każdej odpowiedzi, także po odmowie
+``AtrapaOrder.emmett_refusal``) i przyciski, których narzędzie nie może użyć:
 Przekazanie do akceptacji (``#button_forward_to_accept``) i anulowanie (``#button_forward_to_cancel``) z oknem
 ``#dialog_forward_yes_no``, którego ``.btn-ok`` wysyła ``action_change_status.php`` (``order_id``, ``xstatus``,
 ``comment``, jak efenix) i stoi na stronie przed oknem Emmetta. Okna zamyka przycisk ``[data-dismiss="modal"]``.
@@ -159,6 +160,17 @@ class Outage(enum.Enum):
     )
 
 
+class EmmettRefusal(enum.Enum):
+    """Jak efenix odmawia „Załaduj do zlecenia” zlecenia (``AtrapaOrder.emmett_refusal``); skrypt strony i tak ją
+    przeładowuje, bo czeka tylko na koniec odpowiedzi, a nie na jej status."""
+
+    FORBIDDEN = "HTTP 403 bez załadowania Wyceny Emmetta"
+    SERVER_ERROR = "HTTP 500 po załadowaniu Wyceny Emmetta"
+    ELSEWHERE = "przekierowanie na listę zleceń bez załadowania Wyceny Emmetta"
+    LOGGED_OUT = "sesja wygasa przy tym żądaniu: przekierowanie na stronę logowania bez załadowania Wyceny Emmetta"
+    NOK = "200 z JSON result: nok bez załadowania Wyceny Emmetta"
+
+
 @dataclass(frozen=True)
 class Position:
     """Pozycja wyceny Atrapy: kod ``NNN``, wymyślona cena i rodzaj pola (``ILOSC`` albo ``CENA``)."""
@@ -209,7 +221,8 @@ class AtrapaOrder:
     tego zlecenia nie odpowiada do końca bloku, jak efenix, który stanął, więc test może zgasić Centrum w trakcie
     zlecenia. ``without``: kody pozycji, których karty strona tego zlecenia nie ma, jak strony efenix z częścią pozycji
     wyceny. Z ``after_date`` każda z tych czterech zmian strony jest dopiero od zapisu daty wykonania, a z ``after_emmett``
-    od przeładowania po załadowaniu Wyceny Emmetta.
+    od przeładowania po załadowaniu Wyceny Emmetta. ``emmett_refusal``: efenix odmawia „Załaduj do zlecenia” tego
+    zlecenia (``EmmettRefusal``), aż test to zmieni.
     """
 
     order_id: str
@@ -232,6 +245,7 @@ class AtrapaOrder:
     without: frozenset[str] = frozenset()
     after_date: bool = False
     after_emmett: bool = False
+    emmett_refusal: EmmettRefusal | None = None
 
     @property
     def amount(self) -> Decimal:
@@ -426,6 +440,23 @@ def atrapa_efenix(
                 with atrapa._lock:
                     atrapa.logged_in = False
                 self._redirect(LOGIN_PAGE)
+            elif method == "POST" and path == LOAD_EMMETT and (refusal := _emmett_refusal(orders, params)) is not None:
+                match refusal:
+                    case EmmettRefusal.FORBIDDEN:
+                        self._html("<p>Brak dostępu.</p>", HTTPStatus.FORBIDDEN)
+                    case EmmettRefusal.SERVER_ERROR:
+                        with atrapa._lock:
+                            [order] = [order for order in atrapa.orders if order.order_id == params.get("order_id")]
+                            _change(path, order, params, refuse_dates=refuse_dates)
+                        self._html("<p>Wystąpił błąd serwera.</p>", HTTPStatus.INTERNAL_SERVER_ERROR)
+                    case EmmettRefusal.ELSEWHERE:
+                        self._redirect(LIST_PAGE)
+                    case EmmettRefusal.LOGGED_OUT:
+                        with atrapa._lock:
+                            atrapa.logged_in = False
+                        self._redirect(LOGIN_PAGE)
+                    case EmmettRefusal.NOK:
+                        self._json({"result": "nok", "error": "Nie załadowano."})
             elif method == "POST" and path in _CHANGES:
                 with atrapa._lock:
                     found = [order for order in atrapa.orders if order.order_id == params.get(_CHANGES[path])]
@@ -562,6 +593,12 @@ class _Server(ThreadingHTTPServer):
 
 # Działania na zleceniu i pole, w którym przychodzi jego identyfikator.
 _CHANGES = {SAVE_QUANTITY: "order_id", FILL_EMMETT: "order_id", LOAD_EMMETT: "order_id", SET_DATE: "id", GET_DATE: "id", CHANGE_STATUS: "order_id"}
+
+
+def _emmett_refusal(orders: Sequence[AtrapaOrder], params: Mapping[str, str]) -> EmmettRefusal | None:
+    """Odmowa „Załaduj do zlecenia” zlecenia, którego ``order_id`` przyszło w ``params``."""
+
+    return next((order.emmett_refusal for order in orders if order.order_id == params.get("order_id")), None)
 
 
 def _change(path: str, order: AtrapaOrder, params: Mapping[str, str], *, refuse_dates: bool) -> str | dict[str, str]:
