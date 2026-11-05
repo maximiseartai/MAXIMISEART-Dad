@@ -24,7 +24,8 @@ w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service work
 - strona zlecenia (do ``ORDERS_TO_OPEN`` zleceń z tabeli, najpierw „Do wyceny”, aż znajdzie pustą datę wykonania):
   ``efenix_browser.read_order`` (data wykonania ``RRRR-MM-DD`` albo pusta, kwota końcowa, pola Ilość), a na pierwszym
   zleceniu elementy ``efenix_browser.ORDER_ELEMENTS`` (okno daty wykonania, przycisk i okno Emmetta; przycisk Emmetta
-  widoczny w samym HTML, bez stylów efenix), przyciski Przekazania do akceptacji i anulowania, które ma Atrapa, skrypt
+  widoczny w samym HTML, bez stylów efenix, a propozycja w oknie Emmetta ``#emmett-propozycja`` pusta, bez elementu i
+  tekstu, jak w Atrapie, zanim skrypt strony włoży do niej propozycję), przyciski Przekazania do akceptacji i anulowania, które ma Atrapa, skrypt
   ``js/page_order_edit.js`` (pod adresem z listy ``ALLOWED``) z nazwami ``efenix_browser.ORDER_SCRIPT_USES``
   (pickadate z ``onSet``, „Potwierdź” daty, Emmett, zapis ilości z ``price_all``) i karty pozycji
   ``.card.rounded-lg.kolorek``: karta z polem Ilość ma cenę w tekście ``.col-sm-1.mt-2 > span.text-default > small``,
@@ -41,23 +42,37 @@ w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service work
 Skryptów stron narzędzie nie uruchamia, więc ich działania nie widzi: sprawdza tylko, że skrypt ma nazwy, na których
 polega okno Wyceny w efenix. Przycisku kalendarza daty wykonania (``#button-calendar``) nie sprawdza: okno klika go tylko
 przy pustej dacie wykonania, a efenix pokazuje go najpewniej tylko wtedy, więc wynik zawsze ma linię ``NIESPRAWDZONE``
-z prośbą o sprawdzenie ręczne (``DATE_BUTTON_BY_HAND``). ``action_fill_emmett.php`` (propozycja Emmetta) nie jest na
-liście, bo bez kodu serwera nie wiadomo, czy niczego nie zapisuje.
+z prośbą o sprawdzenie ręczne (``DATE_BUTTON_BY_HAND``).
 
-Uruchomienie: Chrome z osobnym profilem i zdalnym debugowaniem, w nim logowanie do efenix kontem taty, potem narzędzie:
+Propozycji Emmetta narzędzie nie czyta: ``action_fill_emmett.php`` nie jest na liście ``ALLOWED``. Skrypt strony
+zlecenia efenix (rekonesans z 1.11.2026) wysyła w nim tylko ``order_id`` z przycisku Emmetta, odpowiedź 2xx wkłada do
+``#emmett-propozycja`` i pokazuje okno Emmetta z podglądem, co i z jakimi ilościami Emmett uzupełni. Ilości wpisuje
+dopiero „Załaduj do zlecenia” (``action_load_emmett.php``), a okno bez zmian w zleceniu zamyka „Zamknij”; tak pamięta to
+Maks i tak działa Atrapa, ale co serwer efenix robi przy ``action_fill_emmett.php``, nikt nie sprawdził. Wynik ma więc
+zawsze linię ``NIESPRAWDZONE`` o budowie propozycji (``PROPOSAL_BY_HAND``).
 
+Uruchomienie: Chrome z osobnym profilem i zdalnym debugowaniem (macOS, Linux, Windows), w nim logowanie do efenix kontem
+taty, potem narzędzie:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodnosc"
     google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.efenix-zgodnosc"
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\\.efenix-zgodnosc"
-    .venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php>
+    .venv/bin/python tools/zgodnosc_efenix.py --efenix-url <adres listy zleceń, …/index.php> --cdp http://127.0.0.1:9222 [--numer <numer>]
+
+Czasu przebiegu w prawdziwym efenix nikt nie zmierzył: narzędzie wysyła po kolei najwyżej 17 odczytów (lista, jej
+skrypt, szukanie, do ``ORDERS_TO_OPEN`` stron zleceń, skrypt strony zlecenia i trzy odczyty bez sesji), więc trwa mniej
+więcej tyle, ile tyle odpowiedzi efenix (na Atrapie 0,98 s: ``pytest --durations`` testu zgodnej Atrapy 5.11.2026), a odpowiedź, która nie przyjdzie w ``--limit-ms``
+(domyślnie 30 s), kończy je kodem 1.
 
 Na czas sprawdzania w Chrome otwiera się okno narzędzia, w którym widać złożony HTML stron bez stylów i skryptów;
 narzędzie zamyka je na końcu. Wzorzec pliku zbiorczego to domyślnie ten z konfiguracji narzędzia
 (``config/Wzorzec pliku zbiorczego.xlsx``, jak w Centrum rozliczeń), a inny podaje ``--wzorzec``.
 
-Wynik: linie ``RÓŻNICA | <część> | <co>`` i ``NIESPRAWDZONE | <część> | <co>``, na końcu liczby jednych i drugich. Kod 0:
-bez różnic, a niesprawdzony jest tylko przycisk kalendarza; kod 2: różnice albo inne części niesprawdzone. Wynik nie zawiera numerów zleceń, adresów, loginów ani cen: tylko nazwy elementów, liczby, kody pozycji
-z kolumnami i postać daty i kwoty (cyfry jako ``9``). Kod 1: brak Chrome pod ``--cdp``, nieczytelny Wzorzec, efenix nie
-odpowiada albo Chrome nie jest zalogowany; opis na stderr.
+Wynik (na stdout): linie ``RÓŻNICA | <część> | <co>`` i ``NIESPRAWDZONE | <część> | <co>``, na końcu liczby jednych i
+drugich. Kod 0: bez różnic, a niesprawdzone są tylko przycisk kalendarza i budowa propozycji Emmetta; kod 2: różnice
+albo inne części niesprawdzone. Wynik nie zawiera numerów zleceń, adresów, loginów ani cen: tylko nazwy elementów,
+liczby, kody pozycji z kolumnami i postać daty i kwoty (cyfry jako ``9``). Kod 1: brak Chrome pod ``--cdp``,
+nieczytelny Wzorzec, efenix nie odpowiada albo Chrome nie jest zalogowany; opis na stderr.
 """
 
 from __future__ import annotations
@@ -159,6 +174,7 @@ class Part(enum.Enum):
     PRICING = "pozycje wyceny"
     LOGGED_OUT = "bez sesji"
     LOGIN = "strona logowania"
+    PROPOSAL = "propozycja Emmetta"
 
 
 # Elementy, których Wycena w efenix nie używa, a Atrapa ma: przyciski, których okno nie może kliknąć, i formularz
@@ -174,11 +190,21 @@ LOGIN_ELEMENTS: Final = (
     PageElement("pole fingerprint", 'input[name="fingerprint"]'),
 )
 PRICING_CARD: Final = ".card.rounded-lg.kolorek"
+# Propozycja w oknie Emmetta z ``ORDER_ELEMENTS``: element, do którego skrypt strony wkłada odpowiedź
+# ``action_fill_emmett.php``.
+PROPOSAL: Final = next(element.selector for element in ORDER_ELEMENTS if element.name == "propozycja w oknie Emmetta")
 # Część, której narzędzie nie sprawdza nigdy, a Maks sprawdza ręcznie; zawsze w wyniku jako ``NIESPRAWDZONE``.
 DATE_BUTTON_BY_HAND: Final = (
     Part.ORDER,
     "przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu "
     f"„{PRICING_STATUS}” bez daty wykonania, że jest przycisk otwierający okno wyboru daty",
+)
+# Budowa propozycji Emmetta: narzędzie nie wysyła ``action_fill_emmett.php``, a pomiar propozycji z prawdziwego efenix
+# jest w osobnym PR (Część #953); zawsze w wyniku jako ``NIESPRAWDZONE``.
+PROPOSAL_BY_HAND: Final = (
+    Part.PROPOSAL,
+    "budowa propozycji Emmetta nie jest sprawdzana: narzędzie nie wysyła action_fill_emmett.php; pomiar propozycji"
+    " w osobnym PR (Część #953)",
 )
 
 # Tabela odpowiedzi szukania przeczytana w ``<template>``, w którym nic nie biegnie i nic się nie wczytuje. Linki
@@ -201,6 +227,12 @@ _READ_TABLE: Final = """([html, orderPage]) => {
             badges: [...row.querySelectorAll('td .badge')].map(text),
         })),
     };
+}"""
+# Czy pierwszy element ``selector`` coś pokazuje: ma element albo tekst inny niż białe znaki, jak w regule okna Wyceny
+# po propozycji Emmetta (``_SHOWS_ANYTHING`` w ``efenix_browser``, #908); ``false`` bez elementu.
+_SHOWS_ANYTHING: Final = """(selector) => {
+    const element = document.querySelector(selector);
+    return element !== null && (element.childElementCount > 0 || element.textContent.trim() !== '');
 }"""
 # Karta pozycji: ``id`` pól Ilość, ``id`` pól ceny wpisywanej i ceny z tekstu karty.
 _READ_CARDS: Final = """([card, quantity]) => [...document.querySelectorAll(card)].map((element) => ({
@@ -243,10 +275,10 @@ class Report:
         self.differences.append((part, what))
 
     def lines(self) -> list[str]:
-        """Wynik dla Maksa; po częściach niesprawdzonych stoi zawsze ``DATE_BUTTON_BY_HAND``."""
+        """Wynik dla Maksa; po częściach niesprawdzonych stoją zawsze ``DATE_BUTTON_BY_HAND`` i ``PROPOSAL_BY_HAND``."""
 
         head = " | ".join(f"{name}: {count}" for name, count in self.checked.items())
-        unchecked = [*self.unchecked, DATE_BUTTON_BY_HAND]
+        unchecked = [*self.unchecked, DATE_BUTTON_BY_HAND, PROPOSAL_BY_HAND]
         lines = [f"ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | {head}"]
         lines += [f"RÓŻNICA | {part.value} | {what}" for part, what in self.differences]
         lines += [f"NIESPRAWDZONE | {part.value} | {what}" for part, what in unchecked]
@@ -501,6 +533,7 @@ def _check_orders(efenix: _Efenix, page: Page, order_ids: Sequence[str], costs: 
             unread[_shape(page)] += 1
         if not structure_checked:
             _check_elements(page, Part.ORDER, (*ORDER_ELEMENTS, *UNUSED_ORDER_ELEMENTS), report)
+            _check_proposal_before(page, report)
             _check_script(efenix, page, address, Part.ORDER, ORDER_SCRIPT, ORDER_SCRIPT_USES, report)
             _check_positions(page, costs, report)
             structure_checked = True
@@ -535,6 +568,14 @@ def _check_elements(page: Page, part: Part, elements: Sequence[PageElement], rep
             report.differ(part, f"{element.name} ({element.selector}): {found} zamiast {'co najmniej 1' if element.many else '1'}")
         elif element.clicked and not located.first.is_visible():
             report.differ(part, f"{element.name} ({element.selector}) jest ukryty w HTML strony")
+
+
+def _check_proposal_before(page: Page, report: Report) -> None:
+    """Propozycja w oknie Emmetta na stronie zlecenia nic nie pokazuje, zanim skrypt strony włoży do niej odpowiedź
+    ``action_fill_emmett.php``, jak w Atrapie; strona bez niej to różnica z ``ORDER_ELEMENTS``."""
+
+    if page.evaluate(_SHOWS_ANYTHING, PROPOSAL):
+        report.differ(Part.ORDER, f"propozycja w oknie Emmetta ({PROPOSAL}) coś pokazuje przed propozycją Emmetta, a w Atrapie jest pusta")
 
 
 def _check_script(efenix: _Efenix, page: Page, page_url: str, part: Part, script: str, uses: Sequence[ScriptUse], report: Report) -> None:

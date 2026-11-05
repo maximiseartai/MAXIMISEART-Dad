@@ -52,7 +52,9 @@ with that label, only the ``open`` ones unless closed issues are asked for too;
 Centrum takes the newest one whose body has its exact line (the fingerprint
 line of a Zgłoszenie's problem, or the period line of a Kontrola ilości, which
 then goes into that file's ``comments``). The key is never written
-there. While
+there. The skrzynka puts each issue file and ``archiwa.json`` in place at once (``replace_atomically``), as GitHub
+never shows half an issue: the drive reads them from its own process, and on Windows a plain write leaves the file
+empty for a moment (#963). While
 ``<root>/skrzynka-zgloszen/brak-sieci`` exists the skrzynka is unreachable, while
 ``<root>/skrzynka-zgloszen/odmawia-klucza`` exists it refuses the key for every question
 (``Refused``, like GitHub's 401 for an expired token), and while
@@ -143,6 +145,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia import efenix_process, intermax_process, preparation_process, settlement_process
 from rozliczenia.centrum.app import create_app
+from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.efenix_run import EfenixWindow
@@ -306,9 +309,7 @@ class FileReportBox:
         return list(json.loads(path.read_text(encoding="utf-8"))) if path.is_file() else []
 
     def _list(self, archives: list[dict[str, Any]]) -> None:
-        self._archives.mkdir(parents=True, exist_ok=True)
-        text = json.dumps(archives, ensure_ascii=False, indent=2) + "\n"
-        (self._archives / "archiwa.json").write_text(text, encoding="utf-8")
+        _save(self._archives / "archiwa.json", archives)
 
     def open_issue(self, label: Label, title: str, body: str, *, key: str) -> SendOutcome:
         if self._pacing.exists():
@@ -330,9 +331,7 @@ class FileReportBox:
                 "labels": [label],
                 "state": "open",
             }
-            (self._directory / f"{number}.json").write_text(
-                json.dumps(issue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-            )
+            _save(self._directory / f"{number}.json", issue)
         return Sent(number)
 
     def comment(self, number: int, body: str, *, key: str) -> CommentOutcome:
@@ -386,7 +385,7 @@ class FileReportBox:
             else:
                 texts[position - 1] = body
             issue["raw_comments"], issue["comments"] = texts, [shown(text) for text in texts]
-            path.write_text(json.dumps(issue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            _save(path, issue)
         return Commented(number * 1000 + position, f"skrzynka-zgloszen/{number}.json#komentarz-{position}")
 
     def _rejects(self, label: str) -> bool:
@@ -410,6 +409,13 @@ class FileReportBox:
             for issue in issues
             if issue["labels"] == [label] and (include_closed or issue["state"] == "open")
         )
+
+
+def _save(path: Path, content: object) -> None:
+    """``content`` as JSON in place of ``path`` at once: a reader in another process sees the old file or the new one,
+    never an empty or cut one (module doc, #963)."""
+
+    replace_atomically(path, json.dumps(content, ensure_ascii=False, indent=2) + "\n")
 
 
 def _raw_comments(issue: dict[str, Any]) -> list[str]:

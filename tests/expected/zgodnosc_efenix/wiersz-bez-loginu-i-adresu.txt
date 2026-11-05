@@ -2,4 +2,5 @@ ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 2 | 
 RÓŻNICA | tabela wyników | Wycena w efenix nie czyta loginu realizatora „(login)” z kolumny Wykonawca: 1 z 3 wierszy
 RÓŻNICA | tabela wyników | Wycena w efenix nie czyta Dane adresowe: 1 z 3 wierszy
 NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
-RÓŻNICE: 2 | NIESPRAWDZONE: 1
+NIESPRAWDZONE | propozycja Emmetta | budowa propozycji Emmetta nie jest sprawdzana: narzędzie nie wysyła action_fill_emmett.php; pomiar propozycji w osobnym PR (Część #953)
+RÓŻNICE: 2 | NIESPRAWDZONE: 2
