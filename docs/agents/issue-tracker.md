@@ -179,6 +179,14 @@ Dad does not click or see anything. The machine script sends none.
   gunzip logi-<token>/*.json.gz
   ```
 
+- Replay one Uruchomienie on the Mac from its Logi with
+  `tools/odtworz_uruchomienie.py` (`#847`): give it the link from the comment
+  or the file. It rebuilds Dad's files from the Kopia wejścia, runs the same
+  process and mode on a copy of the commit named in the Logi (a Wycena w efenix
+  on the Atrapa efenix fed with the page reads), and prints whether the replay
+  agrees with the Logi, the first difference, or why the Logi cannot be
+  replayed (`--help`).
+
 - The Token do Zgłoszeń needs write access to the repository's contents
   (fine-grained permission „Contents: Read and write”) to create the Release
   and upload files, and the repository needs at least one commit, because a

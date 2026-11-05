@@ -58,7 +58,9 @@ from rozliczenia.telemetry import MetricsStore
 _STREAM_POLL_SECONDS: Final = 0.05
 _KEEPALIVE_SECONDS: Final = 15.0
 _RECONNECT_MS: Final = 1000
-_CONTINUE_HINT: Final = "przy decyzji wybierz „Kontynuuj”"
+CONTINUE_HINT: Final = "przy decyzji wybierz „Kontynuuj”"
+"""Jak w Centrum wyraża się zgodę w Decyzji taty (``Conversation.continue_hint``); ten sam tekst ma Komunikat po
+odmowie w Uruchomieniu odtworzonym z Logów (``tools/odtworz_uruchomienie.py``)."""
 # Ostatnia siatka adaptera: wyniku nie dało się pokazać, choć rdzeń zapisał już metryki.
 _RESULT_NOT_SHOWN: Final = Message(
     code="BLAD_WYNIKU",
@@ -556,7 +558,7 @@ class _Run:
 
     @property
     def continue_hint(self) -> str:
-        return _CONTINUE_HINT
+        return CONTINUE_HINT
 
     def confirm(self, decision: Decision) -> bool:
         self._decided.clear()

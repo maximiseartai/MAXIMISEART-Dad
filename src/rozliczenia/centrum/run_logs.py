@@ -543,7 +543,9 @@ class LoggedSheet(_Record):
     ``shifted_row``: przesunięty pierwszy wiersz wklejenia INTERMAX, którego komórki Uporządkowanie czyta w pliku dwie
     kolumny na lewo od nagłówka, a tu stoją pod nim (``input_copy.CopiedSheet.shifted_row``); ``None``: bez niego i
     pliki sprzed #842. ``uncertain_rows``: wiersze wklejenia bez pewnego położenia, które mają tylko komórki dozwolone
-    w każdym ich możliwym położeniu (``input_copy.CopiedSheet.uncertain_rows``).
+    w każdym ich możliwym położeniu (``input_copy.CopiedSheet.uncertain_rows``). ``last_ordered_row`` i ``yellow_row``:
+    ostatni uporządkowany i żółty wiersz nad wklejeniem INTERMAX, od których Planowanie liczy wiersz dnia, bez treści
+    (``input_copy.CopiedSheet.last_ordered_row``); ``None``: bez takiego wiersza, inne pliki i pliki sprzed #847.
     """
 
     sheet: str
@@ -553,6 +555,8 @@ class LoggedSheet(_Record):
     empty_rows: list[int]
     shifted_row: int | None = None
     uncertain_rows: list[int] = []
+    last_ordered_row: int | None = None
+    yellow_row: int | None = None
 
     @classmethod
     def of(cls, sheet: CopiedSheet) -> LoggedSheet:
@@ -567,6 +571,8 @@ class LoggedSheet(_Record):
             empty_rows=list(sheet.empty_rows),
             shifted_row=sheet.shifted_row,
             uncertain_rows=list(sheet.uncertain_rows),
+            last_ordered_row=sheet.last_ordered_row,
+            yellow_row=sheet.yellow_row,
         )
 
 
@@ -580,11 +586,16 @@ class LoggedFingerprint(_Record):
 
 
 class LoggedInputFile(_Record):
-    """Plik taty w Kopii wejścia (``input_copy``): sama nazwa, odcisk i przeczytane arkusze."""
+    """Plik taty w Kopii wejścia (``input_copy``): sama nazwa, odcisk i przeczytane arkusze.
+
+    ``folders``: nazwy folderu nadrzędnego i folderu pliku, jak w Komunikatach (``input_copy.CopiedFile.folders``);
+    pusta lista w plikach sprzed #847.
+    """
 
     name: str
     fingerprint: LoggedFingerprint
     sheets: list[LoggedSheet]
+    folders: list[str] = []
 
     @classmethod
     def of(cls, copied: CopiedFile) -> LoggedInputFile:
@@ -595,6 +606,7 @@ class LoggedInputFile(_Record):
                 size=fingerprint.size, modified_at=fingerprint.modified_at, sha256=fingerprint.sha256
             ),
             sheets=[LoggedSheet.of(sheet) for sheet in copied.sheets],
+            folders=list(copied.folders),
         )
 
 

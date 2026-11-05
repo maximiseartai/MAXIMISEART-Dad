@@ -73,6 +73,8 @@ class CopiedSheet:
     (przesunięty pierwszy wiersz wklejenia INTERMAX), a w Kopii stoją pod nim; ``None``: bez takiego wiersza.
     ``uncertain_rows``: wiersze bez pewnego położenia (wklejenie INTERMAX, ``raw_orders.Shifts.possible``), które mają
     w Kopii tylko komórki dozwolone przy każdym ich możliwym przesunięciu, więc brak komórki nie znaczy w nich pustej.
+    ``last_ordered_row`` i ``yellow_row``: ostatni uporządkowany i żółty wiersz nad wklejeniem INTERMAX
+    (``raw_orders.above_paste``), sam numer, bez treści; ``None``: bez takiego wiersza i arkusze innych plików.
     """
 
     name: str
@@ -82,15 +84,23 @@ class CopiedSheet:
     empty_rows: tuple[int, ...]
     shifted_row: int | None = None
     uncertain_rows: tuple[int, ...] = ()
+    last_ordered_row: int | None = None
+    yellow_row: int | None = None
 
 
 @dataclass(frozen=True)
 class CopiedFile:
-    """Przeczytany plik taty: sama nazwa (nigdy pełna ścieżka), odcisk i przeczytane arkusze."""
+    """Przeczytany plik taty: sama nazwa (nigdy pełna ścieżka), odcisk i przeczytane arkusze.
+
+    ``folders``: nazwy folderu nadrzędnego i folderu pliku, od góry, tyle, ile pokazują Komunikaty
+    (``message.file_label`` i ``message.folder_label``), żeby Uruchomienie odtworzone z Kopii miało te same Komunikaty
+    (#847); bez pełnej ścieżki.
+    """
 
     name: str
     fingerprint: Fingerprint
     sheets: tuple[CopiedSheet, ...]
+    folders: tuple[str, ...] = ()
 
 
 Values = Sequence[object] | Mapping[int, object]
@@ -100,7 +110,8 @@ Values = Sequence[object] | Mapping[int, object]
 @dataclass
 class SheetCopy:
     """Arkusz w trakcie odczytu: nagłówek (numer kolumny → nagłówek), zakazane kolumny (numery od 1), przesunięty
-    wiersz i wiersze bez pewnego położenia (``CopiedSheet``) i odwołania do przeczytanych wierszy."""
+    wiersz, wiersze bez pewnego położenia i wiersze nad wklejeniem (``CopiedSheet``) i odwołania do przeczytanych
+    wierszy."""
 
     name: str
     header_row: int
@@ -108,6 +119,8 @@ class SheetCopy:
     forbidden: frozenset[int]
     shifted_row: int | None = None
     uncertain_rows: tuple[int, ...] = ()
+    last_ordered_row: int | None = None
+    yellow_row: int | None = None
     _rows: list[tuple[int, Values]] = field(default_factory=list)
     _empty: list[int] = field(default_factory=list)
 
@@ -135,17 +148,21 @@ class SheetCopy:
             tuple(self._empty),
             self.shifted_row,
             self.uncertain_rows,
+            self.last_ordered_row,
+            self.yellow_row,
         )
 
 
 @dataclass
 class WorkbookCopy:
-    """Plik w trakcie odczytu: nazwa, przeczytane bajty, chwila zmiany sprzed odczytu i arkusze."""
+    """Plik w trakcie odczytu: nazwa, przeczytane bajty, chwila zmiany sprzed odczytu, arkusze i nazwy folderów nad
+    plikiem (``CopiedFile.folders``)."""
 
     name: str
     content: bytes
     modified_at: datetime | None
     _sheets: list[SheetCopy] = field(default_factory=list)
+    folders: tuple[str, ...] = ()
 
     def sheet(
         self,
@@ -155,19 +172,32 @@ class WorkbookCopy:
         forbidden: Collection[int],
         shifted_row: int | None = None,
         uncertain_rows: Sequence[int] = (),
+        *,
+        last_ordered_row: int | None = None,
+        yellow_row: int | None = None,
     ) -> SheetCopy:
         """Arkusz ``name`` z nagłówkiem w wierszu ``header_row``, bez kolumn ``forbidden`` (numery od 1), których komórki
         czytnik oddaje pamięci reguły danych; ``shifted_row``: przesunięty wiersz (``CopiedSheet.shifted_row``), którego
         wartości czytnik oddaje już pod ich nagłówkiem, a ``uncertain_rows`` wiersze bez pewnego położenia, którym
-        czytnik oddaje tylko komórki dozwolone w każdym położeniu (``CopiedSheet.uncertain_rows``)."""
+        czytnik oddaje tylko komórki dozwolone w każdym położeniu (``CopiedSheet.uncertain_rows``);
+        ``last_ordered_row`` i ``yellow_row``: wiersze nad wklejeniem INTERMAX (``CopiedSheet.last_ordered_row``)."""
 
-        sheet = SheetCopy(name, header_row, _numbered(header), frozenset(forbidden), shifted_row, tuple(uncertain_rows))
+        sheet = SheetCopy(
+            name,
+            header_row,
+            _numbered(header),
+            frozenset(forbidden),
+            shifted_row,
+            tuple(uncertain_rows),
+            last_ordered_row,
+            yellow_row,
+        )
         self._sheets.append(sheet)
         return sheet
 
     def copied(self) -> CopiedFile:
         fingerprint = Fingerprint(len(self.content), self.modified_at, hashlib.sha256(self.content).hexdigest())
-        return CopiedFile(self.name, fingerprint, tuple(sheet.copied() for sheet in self._sheets))
+        return CopiedFile(self.name, fingerprint, tuple(sheet.copied() for sheet in self._sheets), self.folders)
 
 
 class InputCopy:
@@ -180,7 +210,8 @@ class InputCopy:
         """Plik ``path`` przeczytany z bajtów ``content``; ``modified``: chwila zmiany pliku sprzed odczytu bajtów
         (``modified_at``)."""
 
-        copy = WorkbookCopy(path.name, content, modified)
+        folders = tuple(folder for folder in (path.parent.parent.name, path.parent.name) if folder)
+        copy = WorkbookCopy(path.name, content, modified, folders=folders)
         self._files.append(copy)
         return copy
 
