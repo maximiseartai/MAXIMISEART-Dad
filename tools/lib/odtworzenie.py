@@ -16,9 +16,8 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   u taty (``CopiedFile.folders``), więc Komunikaty nazywają te same plik i folder: każdy arkusz z nagłówkami i
   wierszami pod tymi samymi numerami, przesunięty pierwszy wiersz wklejenia INTERMAX znowu przesunięty, a nad
   wklejeniem ostatni uporządkowany i żółty wiersz w tych samych wierszach co u taty. Wiersze Rejestru zleceń
-  Przygotowania mają krój uporządkowanych wierszy taty (Calibri 8), bo pierwszy wiersz bloku bez niego pamięć reguły
-  danych zna też dwie kolumny na lewo od nagłówka (#918), a wiersze wklejenia INTERMAX krój wiersza z aplikacji; tym
-  samym krojem co komórki z Kopii, bo komórka w innym kroju to ślad przesunięcia. W miejscu kolumn
+  Przygotowania mają krój uporządkowanych wierszy taty (Calibri 8), bo wiersz bez niego pamięć reguły danych zna też
+  dwie kolumny na lewo od nagłówka (#918), a wiersze wklejenia INTERMAX krój wiersza z aplikacji. W miejscu kolumn
   ``ADRES`` i numeru Orange stoją wartości syntetyczne z numerem wiersza (``SYNTHETIC_ADDRESS``, ``SYNTHETIC_ORANGE``),
   których żaden plik taty nie ma. Wzorce i Konfigurację wykonawców daje folder ``configuration``, bo Logi mają z nich
   tylko nazwę i rozmiar.
@@ -550,8 +549,7 @@ def _register_file(record: RunLog, work: _Work, folder: str, font: Font) -> tupl
     Wiersz z dwoma położeniami bez ``URZĄDZENIA`` w Kopii ma w niej tekst swojego rodzaju zlecenia
     (``LoggedSheet.order_kinds``), więc Planowanie daje mu ten sam Kolor usterki i Wpis.
     Przesunięty pierwszy wiersz wklejenia INTERMAX stoi znowu dwie kolumny w lewo, a nad wklejeniem ostatni
-    uporządkowany wiersz (Calibri 8, bez daty) i żółty wiersz stoją tam, gdzie u taty. ``font``: krój komórek z Kopii
-    i komórek syntetycznych, bo komórka w innym kroju to ślad przesunięcia (``raw_orders.ShiftTrace.MIXED_FACES``).
+    uporządkowany wiersz (Calibri 8, bez daty) i żółty wiersz stoją tam, gdzie u taty. ``font``: krój komórek z Kopii.
     """
 
     copied = _the_file(record)
@@ -571,7 +569,7 @@ def _register_file(record: RunLog, work: _Work, folder: str, font: Font) -> tupl
                 created.cell(row.row, column_index_from_string(letter) - shift, _cell(value)).font = font
             for column, header in forbidden.items():
                 synthetic = _SYNTHETIC[_REGISTER_FORBIDDEN[header]].format(row=row.row)
-                created.cell(row.row, column - shift, synthetic).font = font
+                created.cell(row.row, column - shift, synthetic)
             if row.row in sheet.order_kinds and devices is not None:
                 kind = OrderKind[sheet.order_kinds[row.row]].value
                 created.cell(row.row, column_index_from_string(devices) - shift, kind).font = font
@@ -611,7 +609,7 @@ def _above_paste(created: Worksheet, sheet: LoggedSheet) -> None:
 def _preparation(record: RunLog, work: _Work) -> _Setup:
     # Kopia nie ma wyglądu komórek, a z wyglądu uporządkowanego wiersza Rejestru bez śladu przesunięcia pamięć reguły
     # danych wie, że jego komórki stoją pod nagłówkiem (#918): wiersze mają krój uporządkowanych wierszy taty. Wiersz z
-    # dwoma położeniami u taty (pierwszy wiersz bloku wklejenia, wiersz ze śladem) ma w Kopii maski w swoich komórkach dwie
+    # dwoma położeniami u taty (bez wyglądu uporządkowanego albo ze śladem) ma w Kopii maski w swoich komórkach dwie
     # kolumny na lewo od ``ADRES`` i ``NUMER UMOWY`` (u taty ``DATA`` i ``NUMER ZL.``), więc różnicę z niego tłumaczy
     # zastrzeżenie o maskach (``_masked_limits``).
     register, limits = _register_file(record, work, "rejestr", _ORDERED_FONT)
@@ -688,9 +686,9 @@ def _intermax_limits(record: RunLog) -> list[Limit]:
             Limit(
                 f"Kopia wejścia ma wiersze INTERMAX z dwoma położeniami ({where}): nie ma w nich komórek, które w "
                 "którymś położeniu stałyby pod ADRES, NUMER UMOWY albo za UWAGI (w przesuniętym pierwszym wierszu "
-                "wklejenia URZĄDZENIA i CZYNNOŚCI ZREALIZOWANE, w innym DATA GODZ. POCZ., NUMER ZL., ZWROT i UWAGI), więc "
-                "odtworzony wiersz ich nie ma, a reguła, która je czyta (rodzaj zlecenia i Wpis, data), może zdecydować "
-                "inaczej (ADR 0025)"
+                "wklejenia URZĄDZENIA i CZYNNOŚCI ZREALIZOWANE, w innym NUMER ZL., ZWROT i UWAGI, a DATA GODZ. POCZ., gdy "
+                "nie jest datą z godziną albo ślad wskazuje przesunięcie), więc odtworzony wiersz ich nie ma, a reguła, "
+                "która je czyta (rodzaj zlecenia i Wpis, data), może zdecydować inaczej (ADR 0025)"
             )
         )
     return [

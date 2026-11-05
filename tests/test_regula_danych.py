@@ -153,6 +153,22 @@ def test_wartosc_z_wiersza_z_dwoma_polozeniami_jest_maskowana_tylko_w_swoim_wier
     ), "każdy tekst poza komórką Kopii to wolny tekst"
 
 
+def test_wartosc_z_miejscem_w_dwoch_plikach_nie_maskuje_zwyklej_kolumny_innego_wiersza_zadnego_z_nich() -> None:
+    """Ta sama wartość z wiersza z dwoma położeniami w dwóch plikach (Rejestr pod dwiema nazwami): w zwykłej kolumnie
+    innego wiersza każdego z nich zostaje, a w trzecim pliku jest zamaskowana."""
+
+    forbidden = ForbiddenValues()
+    forbidden.remember_value(ForbiddenColumn.ORANGE, PLACED, SECOND)
+    forbidden.remember_value(ForbiddenColumn.ORANGE, PLACED, replace(SECOND, file="ZLECENIA INTERMAX - kopia.xlsx"))
+
+    files = (REGISTER, "ZLECENIA INTERMAX - kopia.xlsx", "Rozliczenie 08_14_09_2026 - zbiorcze.xlsx")
+    assert [forbidden.guard(PLACED, "komórka", CopiedCell(replace(OTHER_ROW, file=file), "NUMER ZL.")).text for file in files] == [
+        PLACED,
+        PLACED,
+        "[numer Orange]",
+    ]
+
+
 @pytest.mark.parametrize("first_from_two_positions", [True, False], ids=["najpierw_z_miejscem", "najpierw_wszedzie"])
 def test_wartosc_poznana_takze_z_wiersza_z_jednym_polozeniem_jest_maskowana_wszedzie(first_from_two_positions: bool) -> None:
     forbidden = ForbiddenValues()

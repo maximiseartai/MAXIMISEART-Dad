@@ -1173,27 +1173,45 @@ def test_kopia_intermax_bez_wiersza_nad_wklejeniem_stawia_dzien_gdzie_indziej_ni
 def test_logi_z_wierszami_intermax_z_dwoma_polozeniami_odtwarzaja_sie_z_zastrzezeniem_o_komorkach_poza_kopia(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Przesunięty pierwszy wiersz wklejenia i wiersz z datą jako tekstem (ślad przesunięcia) mają dwa położenia, więc
-    Kopia wejścia nie ma komórek, które w drugim położeniu stałyby pod ``ADRES`` albo ``NUMER UMOWY`` (rodzaj zlecenia
-    pierwszego wiersza niesie osobno). Narzędzie odtwarza takie Uruchomienie z tym samym Zatrzymaniem, a w granicach
-    mówi, które wiersze i komórki są poza Kopią (ADR 0025)."""
+    """Każdy wklejony wiersz ma dwa położenia, więc Kopia wejścia nie ma komórek, które w drugim położeniu stałyby pod
+    ``ADRES`` albo ``NUMER UMOWY`` (rodzaj zlecenia przesuniętego pierwszego wiersza niesie osobno, a datę z godziną
+    wiersza na miejscu zostawia). Narzędzie odtwarza takie Uruchomienie z tym samym Zatrzymaniem na wierszu z datą jako
+    tekstem, a w granicach mówi, które wiersze i komórki są poza Kopią (ADR 0025)."""
 
     raw = (PASTED[0], replace(PASTED[1], cells=((3, "26.10.2026 09:00"),)), PASTED[2])
     produced = _intermax(tmp_path / "taty", Intermax(raw=raw))
     [sheet] = produced.record["input_copy"][0]["sheets"]
-    first, traced = sheet["uncertain_rows"]
+    rows = sheet["uncertain_rows"]
 
     code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie")
 
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
-    assert sheet["order_kinds"] == {str(first): "WHOLESALE_INSTALLATION"}
+    assert (len(rows), sheet["order_kinds"]) == (len(raw), {str(rows[0]): "WHOLESALE_INSTALLATION"})
     assert (
-        f"- Kopia wejścia ma wiersze INTERMAX z dwoma położeniami (arkusz {sheet['sheet']}, wiersze {first}, {traced}): "
-        "nie ma w nich komórek, które w którymś położeniu stałyby pod ADRES, NUMER UMOWY albo za UWAGI (w przesuniętym "
-        "pierwszym wierszu wklejenia URZĄDZENIA i CZYNNOŚCI ZREALIZOWANE, w innym DATA GODZ. POCZ., NUMER ZL., ZWROT i "
-        "UWAGI), więc odtworzony wiersz ich nie ma, a reguła, która je czyta (rodzaj zlecenia i Wpis, data), może "
-        "zdecydować inaczej (ADR 0025)"
+        f"- Kopia wejścia ma wiersze INTERMAX z dwoma położeniami (arkusz {sheet['sheet']}, wiersze "
+        f"{', '.join(map(str, rows))}): nie ma w nich komórek, które w którymś położeniu stałyby pod ADRES, NUMER UMOWY "
+        "albo za UWAGI (w przesuniętym pierwszym wierszu wklejenia URZĄDZENIA i CZYNNOŚCI ZREALIZOWANE, w innym NUMER "
+        "ZL., ZWROT i UWAGI, a DATA GODZ. POCZ., gdy nie jest datą z godziną albo ślad wskazuje przesunięcie), więc "
+        "odtworzony wiersz ich nie ma, a reguła, która je czyta (rodzaj zlecenia i Wpis, data), może zdecydować inaczej "
+        "(ADR 0025)"
     ) in lines
+
+
+def test_logi_uporzadkowania_z_pierwszym_wierszem_na_miejscu_odtwarzaja_sie_zgodnie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Pierwszy wklejony wiersz stoi na miejscu (tata postawił go po Zatrzymaniu): ma dwa położenia, a Kopia wejścia
+    zostawia jego datę z godziną spod ``DATA GODZ. POCZ.``, więc udane Uporządkowanie odtwarza się z tym samym wynikiem
+    i Wpisami (#847, przegląd #966 W2)."""
+
+    produced = _intermax(tmp_path / "taty", Intermax(raw=PASTED, shifted=False))
+    [sheet] = produced.record["input_copy"][0]["sheets"]
+    [first] = [row for row in sheet["rows"] if row["row"] == sheet["uncertain_rows"][0]]
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie")
+
+    assert (code, lines[0], produced.record["result"]) == (0, "ODTWORZENIE ZGODNE", "OK"), lines
+    assert (first["cells"]["C"], sheet["shifted_row"]) == ({"type": "datetime", "text": PASTED[0].when.isoformat()}, None)
 
 
 def _guarded_with(produced: Produced, folder: Path, word: str) -> Path:

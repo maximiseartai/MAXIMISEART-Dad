@@ -11,9 +11,9 @@ Sprawdzanie Przygotowania pliku zbiorczego szuka też Surowych zleceń na dole k
 Zatrzymanie.
 
 Komórki zakazanych kolumn przeczytanych arkuszy Rejestru i Surowych zleceń zna pamięć reguły danych pracy Centrum
-(``forbidden``, ADR 0025), którą Centrum podaje obok czytników; proces bez Centrum jej nie ma. Pierwszy wiersz bloku
-wklejenia i wiersz ze śladem przesunięcia mogą stać przesunięte, więc pamięć zna ich komórki w obu położeniach, z
-miejscem wiersza (#918, ADR 0025). Wiersze Rejestru z Odczytu danych zna też Kopia wejścia Uruchomienia (``copy``, #841).
+(``forbidden``, ADR 0025), którą Centrum podaje obok czytników; proces bez Centrum jej nie ma. Wiersz bez wyglądu
+uporządkowanego i wiersz ze śladem przesunięcia mogą stać przesunięte, więc pamięć zna ich komórki w obu położeniach,
+z drugiego z miejscem wiersza (#918, ADR 0025). Wiersze Rejestru z Odczytu danych zna też Kopia wejścia Uruchomienia (``copy``, #841).
 """
 
 from __future__ import annotations
@@ -148,8 +148,9 @@ def read_register(
     """Arkusze ze zleceniami Rejestru zleceń albo zatrzymanie, gdy Rejestru nie da się odczytać albo nie ma nagłówków.
 
     ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza pod ich nagłówkiem, a wiersza z dwoma
-    położeniami (``RegisterSheet.uncertain_rows``) pod nagłówkiem i ``raw_orders.SHIFT`` kolumn na lewo od niego, z
-    miejscem wiersza w Rejestrze (#918, ADR 0025). ``copy`` poznaje każdy przeczytany wiersz (``_copied``), wiersze ze
+    położeniami (``RegisterSheet.uncertain_rows``) pod nagłówkiem i ``raw_orders.SHIFT`` kolumn na lewo od niego: z
+    położenia podstawowego (``RegisterSheet.left_shifted``) wszędzie, a z drugiego z miejscem wiersza w Rejestrze (#918,
+    ADR 0025). ``copy`` poznaje każdy przeczytany wiersz (``_copied``), wiersze ze
     śladem przesunięcia i chwilę zmiany Rejestru sprzed jego odczytu.
     """
 
@@ -162,13 +163,14 @@ def read_register(
             numbers = {column.target_header: number for column, number in sheet.positions.items()}
             for row in sheet.register_rows:
                 values = sheet.uncertain_rows.get(row.number)
-                place = client_data.RowPlace(register.name, digest, sheet.name, row.number)
+                second = client_data.RowPlace(register.name, digest, sheet.name, row.number)
+                primary = raw_orders.SHIFT if row.number in sheet.left_shifted else 0
                 for column, header in _FORBIDDEN_HEADERS:
                     if values is None:
                         forbidden.remember_value(column, row.cells[header].value)
                         continue
-                    for offset in (0, raw_orders.SHIFT):
-                        forbidden.remember_value(column, values.get(numbers[header] - offset), place)
+                    forbidden.remember_value(column, values.get(numbers[header] - primary))
+                    forbidden.remember_value(column, values.get(numbers[header] - raw_orders.SHIFT + primary), second)
     if copy is not None:
         _copied(register, read, modified, copy)
     return read.sheets

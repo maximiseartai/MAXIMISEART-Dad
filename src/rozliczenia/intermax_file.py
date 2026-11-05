@@ -6,8 +6,8 @@ kolumnami ``AKCJE`` i ``UWAGI``. Arkusz zleceń daje swoje wiersze od dołu jako
 kolumnami Hiperłączy z bajtów arkusza), bez openpyxl: ~42 tys. wierszy taty to dziesiątki MB XML, a rozpoznanie
 potrzebuje tylko dołu arkusza. Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły
 danych pracy Centrum (``forbidden``, ADR 0025) w każdym położeniu, w którym mogą stać (``raw_orders.Shifts.possible``):
-wiersz z jednym położeniem pod nagłówkiem (w przesuniętym pierwszym wierszu wklejenia dwie kolumny na lewo od niego),
-a wiersz z dwoma położeniami w obu, z miejscem wiersza (``client_data.RowPlace``). Zakazane kolumny to te z
+wiersz z jednym położeniem pod nagłówkiem, a wiersz z dwoma położeniami w obu, z drugiego położenia z miejscem wiersza
+(``client_data.RowPlace``). Zakazane kolumny to te z
 nagłówkiem zakazanej kolumny w wierszu 1 (``client_data.forbidden_columns``): INTERMAX nie ma stałego układu kolumn,
 więc kolumnę zna się po nagłówku, tak jak kolumny ``COLUMNS``.
 
@@ -15,8 +15,9 @@ Kopia wejścia Uruchomienia z Centrum (``copy``, #842) dostaje bajty, z których
 chwilą zmiany sprzed odczytu, a z każdego arkusza zleceń nagłówki i wklejenie (``raw_orders.pasted_rows``): te same
 fakty wierszy, które rozpoznaje Planowanie, nie cały Rejestr. Wiersz ma w Kopii komórki od A do ``UWAGI``, te, które
 Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, także przesunięty pierwszy wiersz,
-bez zakazanych kolumn. Wiersz z dwoma położeniami ma w Kopii tylko komórki dozwolone w obu położeniach, a wiersz ze
-śladem przesunięcia poza pierwszym wierszem bloku jest w ``traced_rows`` arkusza (fakt domeny złamany). Kolumn
+bez zakazanych kolumn. Wiersz z dwoma położeniami (każdy wklejony) ma w Kopii tylko komórki dozwolone w obu położeniach
+i datę z godziną spod ``DATA GODZ. POCZ.``, gdy jego położenie podstawowe to położenie odczytu, a wiersz ze śladem
+przesunięcia poza pierwszym wierszem bloku jest w ``traced_rows`` arkusza (fakt domeny złamany). Kolumn
 z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie ich nie zapisuje, nie mają nagłówka, a jedna z nich u taty
 niesie części adresu ze słowami sklejonymi ``_``, których strażnik nie rozpozna jako wartości ``ADRES``. Nad
 wklejeniem Kopia ma tylko numery ostatniego uporządkowanego i żółtego wiersza (``raw_orders.above_paste``), od których
@@ -55,6 +56,7 @@ import zipfile
 from functools import cached_property
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Final, cast
@@ -243,22 +245,19 @@ class OrderSheet:
         """Wiersze arkusza od ostatniego do drugiego jako fakty dla rozpoznania Surowych zleceń.
 
         Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych Rejestru w każdym
-        położeniu, w którym mogą stać (``raw_orders.Shifts.possible``): wiersz z jednym położeniem pod nagłówkiem (w
-        przesuniętym pierwszym wierszu wklejenia o ``SHIFT`` kolumn na lewo od niego), a wiersz z dwoma położeniami w
-        obu, z miejscem wiersza w INTERMAX, więc strażnik nie maskuje ich w zwykłych kolumnach innych wierszy.
+        położeniu, w którym mogą stać (``raw_orders.Shifts.possible``): wiersz z jednym położeniem pod nagłówkiem, a
+        wiersz z dwoma położeniami w obu, z położenia podstawowego wszędzie, a z drugiego z miejscem wiersza w INTERMAX,
+        więc strażnik nie maskuje ich w zwykłych kolumnach innych wierszy.
         """
 
         forbidden = self._register.forbidden
         for facts in self._facts_from_bottom():
             if forbidden is not None:
-                possible = self._shifts.possible(facts)
                 register = self._register
-                place = None
-                if len(possible) > 1:
-                    place = client_data.RowPlace(register.path.name, register.digest, self.name, facts.number)
-                for offset in possible:
+                second = client_data.RowPlace(register.path.name, register.digest, self.name, facts.number)
+                for index, offset in enumerate(self._shifts.possible(facts)):
                     for column, number in self._forbidden_columns:
-                        forbidden.remember_value(column, facts.value(number - offset), place)
+                        forbidden.remember_value(column, facts.value(number - offset), second if index else None)
             yield facts
 
     def copied(self, workbook: WorkbookCopy) -> None:
@@ -266,7 +265,9 @@ class OrderSheet:
         Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, bez zakazanych kolumn;
         ``UnsupportedShape`` przed dopisaniem arkusza, gdy wierszy nie da się rozdzielić. Wiersz z dwoma położeniami
         (``raw_orders.Shifts.possible``) ma tylko komórki, które przy każdym jego możliwym przesunięciu stoją pod
-        nagłówkiem od A do ``UWAGI`` innym niż zakazany (bez ``URZĄDZENIA`` z rodzajem zlecenia w ``order_kinds``), a
+        nagłówkiem od A do ``UWAGI`` innym niż zakazany (bez ``URZĄDZENIA`` z rodzajem zlecenia w ``order_kinds``), i
+        datę z godziną spod ``DATA GODZ. POCZ.``, gdy położenie podstawowe to położenie odczytu: data z godziną nie jest
+        wartością zakazanej kolumny, a bez niej odtworzenie nie powtórzy Uruchomienia (#847), a
         wiersz ze śladem przesunięcia poza pierwszym wierszem bloku jest z rodzajami śladu w ``traced_rows``. Wiersze idą
         przez ``rows_from_bottom``, więc pamięć reguły danych zna
         ich zakazane komórki. Z dołu arkusza Kopia dostaje też numery ostatniego uporządkowanego i żółtego wiersza
@@ -299,6 +300,9 @@ class OrderSheet:
                 for column, cell in facts.cells.items()
                 if all(column + offset in allowed for offset in possible)
             }
+            when = facts.value(self.columns.date - shift)
+            if possible[0] == shift and isinstance(when, datetime):
+                cells[self.columns.date] = when
             sheet.row(facts.number, cells)
             kind = raw_orders.order_kind(facts.value(self.columns.devices - shift))
             if self.columns.devices not in cells and kind is not raw_orders.OrderKind.OTHER:

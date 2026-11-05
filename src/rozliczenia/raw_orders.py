@@ -16,9 +16,9 @@ Uporządkowania niesie, a ``shifts`` przesunięcia wierszy: wiersz, którego kom
 lewo od swojego nagłówka, i wiersze z dwoma położeniami, w których komórki mogą stać przesunięte albo nie.
 
 Przesunięty przychodzi tylko pierwszy wklejony wiersz (fakt domeny od Maksa, 5.11.2026; kopia INTERMAX taty: 1 z 84
-wklejonych wierszy). Prywatność na nim nie stoi: dwa położenia ma pierwszy wiersz bloku, wiersz z wyglądem z
-aplikacji nad uporządkowanymi i każdy wiersz ze śladem przesunięcia (``shift_traces``), także z wyglądem
-uporządkowanym. Wiersz ze śladem poza pierwszym wierszem bloku łamie fakt domeny (``Shifts.traced``).
+wklejonych wierszy). Prywatność na nim nie stoi: dwa położenia ma każdy wiersz z wyglądem z aplikacji i każdy wiersz
+uporządkowany ze śladem przesunięcia (``shift_traces``). Fakt domeny daje tylko sygnał: wiersz ze śladem poza
+pierwszym wierszem bloku łamie go (``Shifts.traced``).
 
 Przeszkody: wiersz z wyglądem z aplikacji nad uporządkowanym wierszem, Surowe zlecenie bez daty z godziną albo bez
 Wykonawcy i blok z więcej niż jednego dnia. Pierwsza wymaga przeglądu nad blokiem (``_above``): od ostatniego
@@ -365,44 +365,42 @@ def above_paste(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> 
 
 
 class ShiftTrace(Enum):
-    """Ślad przesunięcia wiersza czytanego pod nagłówkami: rzecz, której wiersz na miejscu nie ma, a wiersz przesunięty
-    o ``SHIFT`` kolumn w lewo (w całości albo w części) ma; ``value`` to opis w uwadze Logów."""
+    """Silny ślad przesunięcia wiersza czytanego pod nagłówkami: rzecz, której wiersz na miejscu nie ma, a wiersz
+    przesunięty o ``SHIFT`` kolumn w lewo (w całości albo w części) z aplikacji firmowej ma; ``value`` to opis w uwadze
+    Logów. Brak daty pod ``DATA GODZ. POCZ.`` i mieszany krój śladem nie są: u taty ma je 740 wierszy na miejscu (#966)."""
 
-    LEFT_OF_DATE = "wartość dwie kolumny na lewo od DATA GODZ. POCZ."
-    NO_DATE = "brak daty z godziną pod DATA GODZ. POCZ."
+    LEFT_OF_DATE = "data z godziną dwie kolumny na lewo od DATA GODZ. POCZ."
     LINK = "Hiperłącze poza NUMER ZL."
     LINKS_UNREADABLE = "Hiperłącza arkusza nieczytelne"
-    MIXED_FACES = "komórka Calibri 8 obok komórek z wartością w innym kroju"
 
 
-def shift_traces(
-    *,
-    left_of_date: object,
-    date: object,
-    links: Collection[int] | None,
-    number: int,
-    faces: Collection[tuple[str | None, float | None]],
-) -> tuple[ShiftTrace, ...]:
-    """Ślady przesunięcia wiersza czytanego pod nagłówkami, po kolei jak w ``ShiftTrace``.
+def shift_traces(*, left_of_date: object, links: Collection[int] | None, number: int) -> tuple[ShiftTrace, ...]:
+    """Silne ślady przesunięcia wiersza czytanego pod nagłówkami, po kolei jak w ``ShiftTrace``.
 
     ``left_of_date``: wartość ``SHIFT`` kolumn na lewo od ``DATA GODZ. POCZ.`` (u taty kolumna A bez nagłówka; ``None``:
-    pusta albo poza arkuszem), ``date``: wartość pod ``DATA GODZ. POCZ.``, ``links``: kolumny (od 1) z Hiperłączem
-    (``None``: nieczytelne), ``number``: kolumna ``NUMER ZL.``, ``faces``: krój i rozmiar komórek z wartością w kolumnach,
-    z których czytelnik bierze wygląd uporządkowany (bez ``WYKONAWCA``). Komórka ze spacjami jest pusta.
+    pusta albo poza arkuszem), ``links``: kolumny (od 1) z Hiperłączem (``None``: nieczytelne), ``number``: kolumna
+    ``NUMER ZL.``.
     """
 
     found: list[ShiftTrace] = []
-    if not _blank(left_of_date):
+    if _is_date(left_of_date):
         found.append(ShiftTrace.LEFT_OF_DATE)
-    if not _is_date(date):
-        found.append(ShiftTrace.NO_DATE)
     if links is None:
         found.append(ShiftTrace.LINKS_UNREADABLE)
     elif any(column != number for column in links):
         found.append(ShiftTrace.LINK)
-    if ordered_look(faces) and any(face != _ORDERED_FACE for face in faces):
-        found.append(ShiftTrace.MIXED_FACES)
     return tuple(found)
+
+
+def primary_offset(*, left_of_date: object, links: Collection[int] | None, number: int) -> int:
+    """Położenie podstawowe wiersza z dwoma położeniami, którego wartości pamięć reguły danych maskuje wszędzie:
+    ``SHIFT``, gdy wiersz ma podpis przesunięcia w lewo (data z godziną dwie kolumny na lewo od ``DATA GODZ. POCZ.``
+    albo Hiperłącze dwie kolumny na lewo od ``NUMER ZL.``), a inaczej 0 (na miejscu). Drugie położenie ma zakres opcji 3
+    (ADR 0025), więc wybór zmienia tylko koszt maski, nie to, czy pamięć zna wartość."""
+
+    if _is_date(left_of_date) or (links is not None and number - SHIFT in links):
+        return SHIFT
+    return 0
 
 
 @dataclass(frozen=True)
@@ -410,18 +408,15 @@ class Shifts:
     """O ile kolumn na lewo od swojego nagłówka stoją w pliku komórki wierszy arkusza zleceń (``shifts``).
 
     ``shifted_row``: pierwszy wiersz bloku Surowych zleceń, który rozpoznanie czyta przesunięty o ``SHIFT`` kolumn w
-    lewo; ``None``: bez niego. Dwa położenia (``possible``) ma pierwszy wiersz bloku (``first_row``), także z datą z
-    godziną na miejscu, bo przesunięcie to fakt domeny, a nie pewność, wiersz z wyglądem z aplikacji nad
-    uporządkowanymi i każdy wiersz ze śladem przesunięcia (``shift_traces``), także uporządkowany. Każdy inny wiersz ma
-    jedno położenie: to, w którym czyta go rozpoznanie.
+    lewo; ``None``: bez niego. Dwa położenia (``possible``) ma każdy wiersz z wyglądem z aplikacji (każdy wiersz bloku i
+    wiersz nad uporządkowanymi), bo przesunięty może być każdy, i wiersz uporządkowany ze śladem przesunięcia
+    (``shift_traces``). Wiersz uporządkowany bez śladu ma jedno położenie: pod nagłówkiem.
     """
 
     shifted_row: int | None
     columns: OrderColumns
     first_row: int | None
     """Pierwszy wiersz bloku Surowych zleceń; ``None``: bez bloku."""
-    pasted: frozenset[int]
-    """Wiersze bloku Surowych zleceń."""
 
     def read(self, row: int) -> int:
         """Przesunięcie, z którym rozpoznanie czyta wiersz ``row``: ``SHIFT`` w ``shifted_row``, inaczej 0."""
@@ -429,38 +424,31 @@ class Shifts:
         return SHIFT if row == self.shifted_row else 0
 
     def possible(self, row: RowFacts) -> tuple[int, ...]:
-        """Przesunięcia, przy których komórki wiersza mogą stać w pliku: najpierw ``read``, a przy dwóch położeniach
-        też drugie z 0 i ``SHIFT``."""
+        """Przesunięcia, przy których komórki wiersza mogą stać w pliku: przy jednym położeniu ``read``, a przy dwóch
+        najpierw położenie podstawowe (``primary_offset``), potem drugie."""
 
-        read = self.read(row.number)
-        if row.number == self.first_row or self.traced(row) or (
-            row.number not in self.pasted and not _is_ordered(row, self.columns)
-        ):
-            return (read, SHIFT - read)
-        return (read,)
+        if _is_ordered(row, self.columns) and not self._traces(row):
+            return (self.read(row.number),)
+        columns = self.columns
+        primary = primary_offset(left_of_date=row.value(columns.date - SHIFT), links=row.links, number=columns.number)
+        return (primary, SHIFT - primary)
 
     def traced(self, row: RowFacts) -> tuple[ShiftTrace, ...]:
         """Ślady przesunięcia wiersza poza pierwszym wierszem bloku: każdy łamie fakt domeny, bo przesunięty przychodzi
         tylko pierwszy wklejony wiersz."""
 
-        if row.number == self.first_row:
-            return ()
+        return () if row.number == self.first_row else self._traces(row)
+
+    def _traces(self, row: RowFacts) -> tuple[ShiftTrace, ...]:
         columns = self.columns
-        return shift_traces(
-            left_of_date=row.value(columns.date - SHIFT),
-            date=row.value(columns.date),
-            links=row.links,
-            number=columns.number,
-            faces=[cell.face for cell in _order_cells(row, columns)],
-        )
+        return shift_traces(left_of_date=row.value(columns.date - SHIFT), links=row.links, number=columns.number)
 
 
 def shifts(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Shifts:
     """Przesunięcia wierszy arkusza zleceń z tego samego rozpoznania bloku co w ``recognize`` i ``pasted``."""
 
     raw = _bottom(iter(rows_from_bottom), columns)[0]
-    first = raw[0].number if raw else None
-    return Shifts(_shifted(raw, columns), columns, first, frozenset(row.number for row in raw))
+    return Shifts(_shifted(raw, columns), columns, raw[0].number if raw else None)
 
 
 def _bottom(rows: Iterator[RowFacts], columns: OrderColumns) -> tuple[list[RowFacts], int | None, int | None, RowFacts | None]:
@@ -637,10 +625,6 @@ def _above(
 
 def _is_date(value: object) -> bool:
     return isinstance(value, datetime)
-
-
-def _blank(value: object) -> bool:
-    return value is None or (isinstance(value, str) and not value.strip())
 
 
 def _order_cells(row: RowFacts, columns: OrderColumns) -> list[CellFacts]:

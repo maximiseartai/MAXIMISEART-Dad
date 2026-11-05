@@ -2,9 +2,9 @@
 
 Rejestr jest tylko czytany, przez moduł skoroszytu. Arkusze ze zleceniami są rozpoznawane po komplecie
 wymaganych nagłówków w pierwszym wierszu, a komórki z wartościami, Wyróżnieniami i Hiperłączami
-są zwracane pod nagłówkiem docelowym każdej kolumny ``COLUMNS``. Wiersz z dwoma położeniami (pierwszy wiersz bloku
-wklejenia i wiersz ze śladem przesunięcia, ta sama reguła co w Uporządkowaniu INTERMAX, ``raw_orders.shift_traces``)
-arkusz oddaje też z wartościami całego wiersza (``RegisterSheet.uncertain_rows``). Dla okresu
+są zwracane pod nagłówkiem docelowym każdej kolumny ``COLUMNS``. Wiersz z dwoma położeniami (każdy bez wyglądu
+uporządkowanego i każdy uporządkowany ze śladem przesunięcia, ta sama reguła co w Uporządkowaniu INTERMAX,
+``raw_orders.shift_traces``) arkusz oddaje też z wartościami całego wiersza (``RegisterSheet.uncertain_rows``). Dla okresu
 czytane są tylko wiersze od pierwszego do ostatniego, którego data może leżeć w okresie. ``read_register`` to
 produkcyjny czytnik Rejestru dla ``input_checks.Readers``, który tłumaczy jego ``WorkbookError``.
 """
@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
+from typing import TypedDict
 
 from openpyxl.utils import get_column_letter
 
@@ -91,13 +92,14 @@ class RegisterSheet:
     _positions: tuple[int, ...]  # numery kolumn ``COLUMNS`` w arkuszu (od 1)
     uncertain_rows: Mapping[int, Mapping[int, object]] = field(default_factory=lambda: MappingProxyType({}))
     """Wiersze z danymi z dwoma położeniami → wartości całego wiersza po numerze kolumny (od 1): komórki mogą stać pod
-    nagłówkiem albo ``raw_orders.SHIFT`` kolumn na lewo od niego (#918). To pierwszy wiersz bloku wklejenia (wiersz bez
-    wyglądu uporządkowanego, ``raw_orders.ordered_look``, nad którym najbliższy wiersz z danymi odczytu ma ten wygląd
-    albo nie ma żadnego), bo pierwszy wiersz każdego wklejenia z aplikacji firmowej przychodzi przesunięty, i każdy
-    wiersz ze śladem przesunięcia (``traced_rows``), także z wyglądem uporządkowanym."""
+    nagłówkiem albo ``raw_orders.SHIFT`` kolumn na lewo od niego (#918). To każdy wiersz bez wyglądu uporządkowanego
+    (``raw_orders.ordered_look``), bo przesunięty może być każdy wiersz wklejony z aplikacji firmowej, i każdy wiersz
+    uporządkowany ze śladem przesunięcia (``raw_orders.shift_traces``)."""
     traced_rows: Mapping[int, tuple[ShiftTrace, ...]] = field(default_factory=lambda: MappingProxyType({}))
     """Wiersze ze śladem przesunięcia (``raw_orders.shift_traces``), które nie są pierwszym wierszem bloku wklejenia:
     łamią fakt domeny, że przesunięty przychodzi tylko pierwszy wklejony wiersz."""
+    left_shifted: frozenset[int] = frozenset()
+    """Wiersze z dwoma położeniami, których położenie podstawowe to przesunięte (``raw_orders.primary_offset``)."""
 
     def column_letter(self, column: Column) -> str:
         """Litera kolumny arkusza z nagłówkiem ``column``, np. ``L`` dla ``SKUTECZNE``."""
@@ -227,37 +229,53 @@ def _read_register_sheets(workbook: ReadWorkbook, positions: dict[str, list[int]
         empty_rows = tuple(found.row.number for empty, found in read if empty)
         uncertain: dict[int, Mapping[int, object]] = {}
         traced: dict[int, tuple[ShiftTrace, ...]] = {}
+        left_shifted: set[int] = set()
         above: bool | None = None  # wygląd uporządkowany najbliższego wiersza z danymi nad wierszem; None: nie ma go
         for empty, found in read:
             if empty:
                 continue
             ordered = _ordered_look(found)
             first = not ordered and above is not False
-            traces = () if first else _traces(found, columns)
-            if first or traces:
+            facts = _row_facts(found, columns)
+            traces = raw_orders.shift_traces(**facts)
+            if not ordered or traces:
                 uncertain[found.row.number] = MappingProxyType(dict(enumerate(found.values, start=1)))
-            if traces:
+                if raw_orders.primary_offset(**facts):
+                    left_shifted.add(found.row.number)
+            if traces and not first:
                 traced[found.row.number] = traces
             above = ordered
         sheets.append(
             RegisterSheet(
-                sheet.title, rows, empty_rows, tuple(columns), MappingProxyType(uncertain), MappingProxyType(traced)
+                sheet.title,
+                rows,
+                empty_rows,
+                tuple(columns),
+                MappingProxyType(uncertain),
+                MappingProxyType(traced),
+                frozenset(left_shifted),
             )
         )
     return sheets
 
 
-def _traces(found: ReadRow, columns: Sequence[int]) -> tuple[ShiftTrace, ...]:
-    """Ślady przesunięcia wiersza Rejestru czytanego pod nagłówkami ``COLUMNS`` (``columns``: ich kolumny od 1)."""
+class _RowFacts(TypedDict):
+    left_of_date: object
+    links: frozenset[int]
+    number: int
+
+
+def _row_facts(found: ReadRow, columns: Sequence[int]) -> _RowFacts:
+    """Fakty wiersza Rejestru czytanego pod nagłówkami ``COLUMNS`` (``columns``: ich kolumny od 1), z których
+    ``raw_orders`` bierze ślady przesunięcia i położenie podstawowe: wartość dwie kolumny na lewo od ``DATA GODZ.
+    POCZ.``, kolumny z Hiperłączem pod nagłówkami ``COLUMNS`` i kolumna ``NUMER ZL.``."""
 
     numbers = dict(zip(TARGET_HEADERS, columns, strict=True))
     left = numbers[DATE.target_header] - raw_orders.SHIFT
-    return raw_orders.shift_traces(
+    return _RowFacts(
         left_of_date=found.values[left - 1] if 1 <= left <= len(found.values) else None,
-        date=found.row.cells[DATE.target_header].value,
-        links={numbers[header] for header, cell in found.row.cells.items() if cell.hyperlink is not None},
+        links=frozenset(numbers[header] for header, cell in found.row.cells.items() if cell.hyperlink is not None),
         number=numbers[NUMBER.target_header],
-        faces=_faces(found),
     )
 
 

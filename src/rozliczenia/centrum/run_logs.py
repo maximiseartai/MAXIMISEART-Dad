@@ -827,8 +827,8 @@ def _domain_fact_notes(files: Sequence[CopiedFile]) -> list[str]:
 
     return [
         f"Fakt domeny złamany: wiersz {row} arkusza {sheet.name} w {file.name} ma ślad przesunięcia "
-        f"({', '.join(trace.value for trace in traces)}), a nie jest pierwszym wierszem wklejenia; pamięć reguły danych "
-        "zna go w obu położeniach (ADR 0025)."
+        f"({', '.join(trace.value for trace in traces)}), a nie jest pierwszym wierszem bloku wklejenia; pamięć reguły "
+        "danych zna go w obu położeniach (ADR 0025)."
         for file in files
         for sheet in file.sheets
         for row, traces in sorted(sheet.traced_rows.items())

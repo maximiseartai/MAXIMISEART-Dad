@@ -646,10 +646,10 @@ def test_adres_i_numer_orange_cytowane_przez_komunikat_nie_wychodza_w_logach_ani
 # kolumny w lewo (ADR 0019), w całości albo poza częścią, którą tata postawił z powrotem na miejsce, także z krojem
 # Rejestru (wklejenie z formatowaniem docelowym, poprawka jednej komórki). Wiersz próbny niesie syntetyczny adres i numer
 # Orange w swoich kolumnach ``ADRES`` i ``NUMER UMOWY``, gdziekolwiek stoją w pliku, a tata cytuje je potem w Uwadze.
-# Dwa położenia (pod nagłówkiem i dwie kolumny na lewo od niego) ma pierwszy wiersz bloku wklejenia i każdy wiersz ze
-# śladem przesunięcia, także z wyglądem uporządkowanym (tabela decyzji opcji 3, ADR 0025). Wartość z dwóch położeń
-# strażnik maskuje w jej komórce Kopii i w wolnym tekście, ale nie w zwykłej kolumnie innego wiersza, więc ``NUMER ZL.``
-# uporządkowanych wierszy wychodzi bez maski.
+# Dwa położenia (pod nagłówkiem i dwie kolumny na lewo od niego) ma każdy wiersz bez wyglądu uporządkowanego i każdy
+# uporządkowany ze śladem przesunięcia: datą z godziną dwie kolumny przed ``DATA`` albo Hiperłączem poza ``NUMER ZL.``
+# (tabela decyzji opcji 3, ADR 0025). Wartość z drugiego położenia strażnik maskuje w jej wierszu Kopii i w wolnym
+# tekście, ale nie w zwykłej kolumnie innego wiersza, więc ``NUMER ZL.`` uporządkowanych wierszy wychodzi bez maski.
 PROBE_ADDRESS = "Przemiatana Wrzosowa 12 Kórnik"
 PROBE_ORANGE = "4809876543"
 ABOVE_ORDERED = 8
@@ -816,14 +816,13 @@ REGISTER_POSITIONS: dict[str, RegisterPosition] = {
     "przesuniety_z_komorka_ze_spacjami_w_kroju_rejestru": RegisterPosition(
         _above_ordered(typed={"L": ("  ", REGISTER_FACE)}), "WIERSZ_BEZ_DATY"
     ),
-    # R14: wiersz uporządkowany na miejscu z jedną komórką w innym kroju
+    # R14: wiersz uporządkowany na miejscu z jedną komórką w innym kroju: bez śladu, jedno położenie
     "uporzadkowany_na_miejscu_z_miastem_w_kroju_aplikacji": RegisterPosition(
         _above_ordered(
             in_place_from="DATA GODZ. POCZ.",
             font=lambda header: RAW_ORDER_FONT if header == "MIASTO" else REGISTER_FACE,
         ),
         None,
-        domain_fact_broken=True,
     ),
 }
 
@@ -858,6 +857,40 @@ def test_adres_i_numer_orange_wklejonego_wiersza_rejestru_nie_wychodza_z_przygot
     assert {row["row"]: row["cells"]["I"] for row in sheet["rows"] if row["row"] in ORDER_NUMBERS} == ORDER_NUMBERS
     broken = [note for note in record["input_copy_notes"] if note.startswith("Fakt domeny złamany: wiersz ")]
     assert len(broken) == position.domain_fact_broken, record["input_copy_notes"]
+
+
+IN_PLACE_ROW = 9
+"""Uporządkowany wiersz okresu na miejscu (``ZL-SYN-004``)."""
+OTHER_FACES = {
+    "czynnosci_zrealizowane_w_calibri_11": ("M", "montaż ok", Font(name="Calibri", size=11)),
+    "miasto_w_roboto_11": ("D", "POZNAŃ", Font(name="Roboto", size=11)),
+}
+
+
+@pytest.mark.parametrize("typed", OTHER_FACES.values(), ids=OTHER_FACES.keys())
+def test_wiersz_uporzadkowany_z_komorka_w_innym_kroju_nie_lamie_faktu_domeny_a_jego_numer_zlecenia_wychodzi_bez_maski(
+    tmp_path: Path, typed: tuple[str, str, Font]
+) -> None:
+    """Tata wpisał w uporządkowany wiersz okresu, który stoi na miejscu, jedną komórkę w innym kroju (u taty 671 takich
+    wierszy w Rejestrze, przegląd #966): to nie ślad przesunięcia, więc wiersz ma jedno położenie, Logi nie mówią o
+    złamanym fakcie domeny, a jego ``NUMER ZL.`` wychodzi bez maski w Kopii wejścia i w Uwadze taty."""
+
+    centrum = preparing_centrum(tmp_path)
+    letter, value, face = typed
+    put_into_register(centrum.fixture.register_path, f"{letter}{IN_PLACE_ROW}", value, face)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+
+    run_to_end(centrum, dry_run=True)
+    number = ORDER_NUMBERS[IN_PLACE_ROW]
+    draft = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": f"Zlecenie {number} gotowe"})
+
+    box = centrum.surroundings.report_box
+    assert box.wait_until(lambda fake: logs_arrived(fake, 1))
+    [record] = records(centrum)
+    [sheet] = record["input_copy"][0]["sheets"]
+    cells = {row["row"]: row["cells"] for row in sheet["rows"]}
+    assert (record["input_copy_notes"], cells[IN_PLACE_ROW]["I"]) == ([], number)
+    assert draft.json()["body"].splitlines()[0] == f"Zlecenie {number} gotowe"
 
 
 def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_okresu(tmp_path: Path) -> None:
