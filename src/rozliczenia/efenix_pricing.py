@@ -16,7 +16,9 @@ Wycenę zlecenia proces dokańcza do Pliku zbiorczego tylko w górę (ADR 0026, 
 stronie albo bez, ustawia datę wykonania z ``DATA``, gdy jest pusta, i sprawdza ją na ponownie otwartej stronie (dzień,
 którego kalendarz efenix nie przyjął albo którego efenix nie zapisał, to błąd zlecenia ``DateRefused`` bez Emmetta i bez
 zmian ilości), żeby gotowe zlecenie nie zostało bez daty wykonania. Strona bez żadnej ilości nie ma wyceny: proces ładuje
-do niej Wycenę Emmetta. Strona z ilościami ma już wycenę, zaczętą przez proces, przez tatę albo samą
+do niej Wycenę Emmetta, a czy efenix ją załadował, rozstrzyga z obserwacji okna (``EmmettLoad``): strona po
+przeładowaniu bez żadnej ilości to odmowa „Załaduj do zlecenia” i Zatrzymanie, chyba że Emmett nic nie zaproponował
+(``_emmett``). Strona z ilościami ma już wycenę, zaczętą przez proces, przez tatę albo samą
 Wycenę Emmetta: proces nie ładuje do niej Wyceny Emmetta, bo „Załaduj do zlecenia” czyści wycenę. Potem w obu
 przypadkach proces wpisuje ilość z pliku w każdej pozycji, w której strona ma mniej niż plik,
 także w miejsce ilości Emmetta. Pozycji, w której strona ma więcej niż plik, nie
@@ -108,6 +110,7 @@ __all__ = [
     "Efenix",
     "EfenixUnreachable",
     "ElementCount",
+    "EmmettLoad",
     "HttpStatus",
     "EmmettWarning",
     "ListedOrder",
@@ -127,6 +130,7 @@ __all__ = [
     "PagePart",
     "PricingStopped",
     "PricingSummary",
+    "Proposal",
     "Ready",
     "Settled",
     "Shape",
@@ -295,6 +299,24 @@ class OrderPricing:
     quantities: Mapping[str, int]
 
 
+class Proposal(enum.Enum):
+    """Co okno Emmetta pokazało przed „Załaduj do zlecenia” (#908)."""
+
+    SHOWN = "okno Emmetta coś pokazało"
+    NOTHING = "okno Emmetta nic nie pokazało, a propozycja przyszła cała ze statusem 2xx"
+    LOST = "okno Emmetta nic nie pokazało, a propozycja nie przyszła cała ze statusem 2xx"
+
+
+@dataclass(frozen=True)
+class EmmettLoad:
+    """Obserwacje okna po odpowiedzi 2xx na „Załaduj do zlecenia”: co pokazało okno Emmetta przed kliknięciem
+    (``proposal``) i strona zlecenia po przeładowaniu, które robi skrypt efenix (``page``). Czy efenix załadował Wycenę
+    Emmetta, rozstrzyga z nich Wycena (``_emmett``), a nie okno."""
+
+    proposal: Proposal
+    page: OrderPricing
+
+
 class Efenix(Protocol):
     """Okno efenix w sesji taty z listą dozwolonych działań: szukanie, otwarcie zlecenia, data wykonania, Wycena Emmetta i
     pola „Ilość”. Przekazania do akceptacji, anulowania ani zmiany statusu zlecenia w nim nie ma.
@@ -324,8 +346,13 @@ class Efenix(Protocol):
         """
         ...
 
-    def load_emmett(self) -> OrderPricing:
-        """Ładuje do otwartego zlecenia Wycenę Emmetta (efenix czyści wtedy dotychczasową wycenę) i czyta stronę od nowa."""
+    def load_emmett(self, verdict: Callable[[EmmettLoad], OrderPricing]) -> OrderPricing:
+        """Ładuje do otwartego zlecenia Wycenę Emmetta (efenix czyści wtedy dotychczasową wycenę), czyta stronę od nowa i
+        zwraca stronę, którą przyjął werdykt Wyceny ``verdict`` z obserwacji okna (``EmmettLoad``).
+
+        Werdykt biegnie w działaniu okna, więc jego Zatrzymanie jest, jak każdy wyjątek okna, nieudaną Wyceną Emmetta w
+        śladzie zlecenia (``efenix_trace``).
+        """
         ...
 
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
@@ -665,11 +692,42 @@ def _outcome(order: CollectiveOrder, efenix: Efenix, forbidden: ForbiddenValues 
         if isinstance(dated, OrderError):
             return dated
         opened = dated
-    if not any(opened.quantities.values()):
-        opened = efenix.load_emmett()
+    if not _priced(opened):
+        opened = efenix.load_emmett(_emmett)
         if (missing := missing_positions(file, opened.quantities, PageRead.AFTER_EMMETT)) is not None:
             return OrderError(missing)
     return _completed(order, hit, efenix, file, opened)
+
+
+def _priced(page: OrderPricing) -> bool:
+    """Strona zlecenia ma wycenę: co najmniej jedną ilość (ADR 0026). Proces ładuje Wycenę Emmetta tylko do strony bez
+    wyceny, a strona po niej ma wycenę, gdy efenix ją załadował. Kwocie końcowej proces tu nie wierzy, bo karta ceny
+    wpisywanej (pole ``.wycena-cena`` bez pola Ilość) daje kwotę różną od 0 także stronie bez ilości, a pozycja w cenie 0
+    daje kwotę 0 stronie z ilością."""
+
+    return any(page.quantities.values())
+
+
+def _emmett(load: EmmettLoad) -> OrderPricing:
+    """Strona zlecenia z Wyceną Emmetta, którą efenix załadował: strona po przeładowaniu ma wycenę (``_priced``) albo
+    Emmett nic nie zaproponował (``Proposal.NOTHING``), bo proces ładuje Wycenę Emmetta tylko do strony bez wyceny.
+
+    Strona bez ilości po każdej innej propozycji, także po pustym oknie Emmetta po padniętej propozycji, to
+    ``UnexpectedPage`` z ``Shape.EMMETT_NOT_LOADED``: efenix odmówił „Załaduj do zlecenia” odpowiedzią 2xx (#877, #889), a
+    skrypt efenix i tak przeładował stronę. Postaci propozycji ani treści tej odpowiedzi nikt nie zmierzył, więc werdykt ich
+    nie czyta. Prawdziwy efenix dał stronę z ilością i kwotą różną od 0 po każdym ze 108 załadowań przebiegu z 4.11.2026
+    (Logi Uruchomienia Wydania 0.4.2), więc Zatrzymanie przy pustej propozycji, którą efenix pokazałby czymś, zdarza się
+    najwyżej rzadko.
+
+    Emmett, który zaproponowałby same pozycje bez pola Ilość (karta ceny wpisywanej), dałby stronę bez ilości i
+    Zatrzymanie, choć efenix go załadował. Takiej propozycji nikt nie zmierzył, a Zatrzymanie jest tu stroną bezpieczną, bo
+    po nim proces nie wpisuje ilości z pliku. Każde następne Uruchomienie znowu otworzy jednak tę samą stronę bez ilości,
+    znowu załaduje Emmetta i znowu zatrzyma się na tym zleceniu, dopóki tata sam nie wpisze ilości.
+    """
+
+    if load.proposal is not Proposal.NOTHING and not _priced(load.page):
+        raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.EMMETT_NOT_LOADED))
+    return load.page
 
 
 def _dated(hit: ListedOrder, efenix: Efenix, file: Mapping[str, int], day: date) -> OrderPricing | OrderError:

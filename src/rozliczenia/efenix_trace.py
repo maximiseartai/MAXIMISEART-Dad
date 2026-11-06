@@ -9,7 +9,7 @@ części adresu, którymi ``Dane adresowe`` różnią się od ``ADRES``), z otwa
 listy, który okno otworzyło (okno nie czyta ich ze strony zlecenia), oraz ze strony zlecenia po otwarciu i po Wycenie
 Emmetta datę wykonania, kwotę i ilości wszystkich pozycji po kodach, z daty wykonania wybrany dzień i to, czy kalendarz
 go przyjął, a z pola „Ilość” kod pozycji, wpisaną ilość i kwotę końcową, którą odesłał efenix. Działanie, które się nie udało (wyjątek okna, np.
-``UnexpectedPage``), nie trafia do udanych działań śladu, tylko do ``OrderTrace.failed`` z rodzajem i czasem do
+``UnexpectedPage``, także Zatrzymanie z werdyktu Wyceny o Wycenie Emmetta, który biegnie w działaniu okna), nie trafia do udanych działań śladu, tylko do ``OrderTrace.failed`` z rodzajem i czasem do
 wyjątku, bo przebieg kończy się wtedy Zatrzymaniem, a Logi Uruchomienia mówią, przy którym działaniu.
 """
 
@@ -27,7 +27,7 @@ from .efenix_checks import ListedRead, read_listed
 if TYPE_CHECKING:
     from .efenix_checks import ListedOrder
     from .efenix_orders import CollectiveOrder
-    from .efenix_pricing import Efenix, OrderPricing
+    from .efenix_pricing import Efenix, EmmettLoad, OrderPricing
 
 __all__ = ["Action", "OrderTrace", "TraceStep", "traced"]
 
@@ -104,8 +104,8 @@ class _Traced:
         self._add(TraceStep("data wykonania", at, duration_ms, execution_date=day, accepted=accepted))
         return accepted
 
-    def load_emmett(self) -> OrderPricing:
-        pricing, at, duration_ms = self._done("Wycena Emmetta", self._efenix.load_emmett)
+    def load_emmett(self, verdict: Callable[[EmmettLoad], OrderPricing]) -> OrderPricing:
+        pricing, at, duration_ms = self._done("Wycena Emmetta", lambda: self._efenix.load_emmett(verdict))
         self._add(_page("Wycena Emmetta", at, duration_ms, pricing))
         return pricing
 
