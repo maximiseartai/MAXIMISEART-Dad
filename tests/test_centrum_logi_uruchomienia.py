@@ -1152,14 +1152,15 @@ PRICED = [
 IN_EFENIX = [PRICED[0].in_efenix("611"), PRICED[2].in_efenix("613"), PRICED[4].in_efenix("615"), PRICED[5].in_efenix("616")]
 
 
-def test_okno_efenix_taty_pracuje_w_tempie_ludzkim_z_prawdziwym_efenix() -> None:
-    """Centrum taty daje Wycenie w efenix tempo ludzkie na prawdziwym zegarze i adres prawdziwego efenix. Testy i
-    weryfikacja na Atrapie efenix mają okno bez tempa, a okna taty nie otwierają, bo prowadzi do prawdziwego efenix (ADR
-    0024)."""
+def test_okno_efenix_taty_to_widoczny_chrome_w_tempie_ludzkim_z_prawdziwym_efenix() -> None:
+    """Centrum taty daje Wycenie w efenix widoczne okno zainstalowanego Google Chrome, w którym tata się loguje, tempo
+    ludzkie na prawdziwym zegarze i adres prawdziwego efenix. Testy i weryfikacja na Atrapie efenix mają okno bez tempa,
+    a okna taty nie otwierają, bo prowadzi do prawdziwego efenix (ADR 0024)."""
 
     window = EfenixWindow.of_tata()
 
     assert (window.pace, window.url) == (Pace(sleep=time.sleep, clock=time.monotonic), EFENIX_URL)
+    assert (window.channel, window.headless, window.arguments) == ("chrome", False, ())
 
 
 def test_wycena_w_efenix_z_centrum_pracuje_w_tempie_ludzkim_okna_efenix(tmp_path: Path) -> None:
@@ -1196,6 +1197,75 @@ def _view_where(centrum: SettlingCentrum, wanted: Callable[[dict[str, Any]], boo
         if wanted(view):
             return view
     raise AssertionError("Strumień skończył się przed oczekiwanym widokiem.")
+
+
+def _pricing_setup(centrum: SettlingCentrum) -> dict[str, Any]:
+    [setup] = [process for process in centrum.client.get("/api/runs/setup").json()["processes"] if process["process"] == "efenix"]
+    assert isinstance(setup, dict)
+    return setup
+
+
+def _with_collective_file(centrum: SettlingCentrum, token: str) -> str:
+    """Folder okresu ``token`` z (pustym) Plikiem zbiorczym; zwraca nazwę Pliku zbiorczego."""
+
+    name = f"Rozliczenie {token} - zbiorcze.xlsx"
+    folder = centrum.periods_directory / token
+    folder.mkdir()
+    (folder / name).touch()
+    return name
+
+
+def test_karta_startu_wyceny_w_efenix_to_okresy_z_plikiem_zbiorczym_bez_podgladu_i_bez_potwierdzenia_gotowosci(
+    tmp_path: Path,
+) -> None:
+    """Wycena w efenix wybiera okresy z Plikiem zbiorczym i proponuje ostatni pełny okres. Nie ma Podglądu bez zapisu,
+    więc żaden okres nie ma udanego podglądu, a tata nie potwierdza gotowości plików; karta okresu nazywa jego Plik
+    zbiorczy i przypomina, żeby go zapisać i zamknąć w Excelu."""
+
+    centrum = settling_centrum(tmp_path)
+    older = _with_collective_file(centrum, "01_07_09_2026")
+
+    setup = _pricing_setup(centrum)
+
+    assert (setup["title"], setup["creates"], setup["blocker"]) == ("Wycena w efenix", "Wyceny zleceń i Znaczniki efenix", None)
+    assert (setup["confirms_readiness"], setup["preview_hint"], setup["preselected_period"]) == (False, None, PERIOD)
+    reminder = "Zapisz i zamknij Plik zbiorczy w Excelu"
+    assert [
+        (choice["token"], choice["last_complete"], choice["previewed"], choice["collective_file"], choice["reminder"])
+        for choice in setup["periods"]
+    ] == [(PERIOD, True, False, SOURCE_NAME, reminder), ("01_07_09_2026", False, False, older, reminder)]
+
+
+def test_bez_pliku_zbiorczego_w_ostatnim_pelnym_okresie_wycena_w_efenix_proponuje_najnowszy_okres_z_plikiem_zbiorczym(
+    tmp_path: Path,
+) -> None:
+    centrum = settling_centrum(tmp_path)
+    centrum.collective_file.unlink()
+    _with_collective_file(centrum, "25_31_08_2026")
+    _with_collective_file(centrum, "01_07_09_2026")
+
+    setup = _pricing_setup(centrum)
+
+    assert [choice["token"] for choice in setup["periods"]] == ["01_07_09_2026", "25_31_08_2026"]
+    assert (setup["preselected_period"], setup["blocker"]) == ("01_07_09_2026", None)
+
+
+def test_karta_startu_wyceny_w_efenix_mowi_czego_brakuje_bez_pliku_zbiorczego_i_bez_folderu_okresow(tmp_path: Path) -> None:
+    centrum = settling_centrum(tmp_path)
+    centrum.collective_file.unlink()
+
+    without_collective_file = _pricing_setup(centrum)
+    shutil.rmtree(centrum.periods_directory)
+    without_periods_directory = _pricing_setup(centrum)
+
+    assert (without_collective_file["blocker"], without_collective_file["periods"]) == (
+        "Żaden okres nie ma Pliku zbiorczego. Najpierw przygotuj plik zbiorczy.",
+        [],
+    )
+    assert (without_periods_directory["blocker"], without_periods_directory["periods"]) == (
+        f"Nie ma już folderu okresów {centrum.periods_directory.name}. Wskaż go ponownie.",
+        [],
+    )
 
 
 def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomienie_a_karta_i_powiadomienie_maja_wynik(

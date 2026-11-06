@@ -10,7 +10,7 @@ from collections.abc import Callable
 
 import pytest
 
-from rozliczenia.domain import PhaseFailed, ProgressEvent, ProgressProtocolError
+from rozliczenia.domain import PhaseFailed, ProgressEvent, ProgressProtocolError, StepReached
 from rozliczenia.phase_runner import PhaseRunner
 
 
@@ -110,6 +110,30 @@ def test_przetworzenie_szablonow_pracownika_w_innym_etapie_niz_zapisywanie_jest_
     counts = {"issue_count": lambda _planned: 0} if stage == "plan" else {}
     with pytest.raises(ProgressProtocolError):
         getattr(runner, stage)(lambda: settled_outside_saving(runner), **counts)
+
+
+@pytest.mark.parametrize("stage", ["check", "read", "plan"])
+def test_krok_zapisywania_zgloszony_w_innym_etapie_jest_bledem_kodu(stage: str) -> None:
+    events: list[ProgressEvent] = []
+    runner = PhaseRunner(events.append)
+    if stage != "check":
+        runner.check(lambda: None)
+    if stage == "plan":
+        runner.read(lambda: None)
+
+    counts = {"issue_count": lambda _planned: 0} if stage == "plan" else {}
+    with pytest.raises(ProgressProtocolError):
+        getattr(runner, stage)(lambda: runner.step("Zlecenia", worker="adrian.testowy", done=0, total=1), **counts)
+
+    assert not any(isinstance(event, StepReached) for event in events)
+
+
+def test_krok_zapisywania_poza_trwajacym_zapisywaniem_jest_bledem_kodu() -> None:
+    runner = PhaseRunner(None)
+    run_whole(runner)
+
+    with pytest.raises(ProgressProtocolError):
+        runner.step("Znaczniki efenix w Pliku zbiorczym")
 
 
 def test_przetworzenie_szablonow_pracownika_poza_trwajacym_zapisywaniem_jest_bledem_kodu() -> None:

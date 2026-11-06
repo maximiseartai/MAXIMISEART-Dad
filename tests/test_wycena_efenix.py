@@ -1642,6 +1642,9 @@ def test_plik_ktorego_nie_da_sie_oznaczyc_daje_komunikat_a_ponowne_uruchomienie_
 def test_zatrzymanie_w_polowie_przebiegu_oznacza_zlecenia_gotowe_przed_nim(
     tmp_path: Path, page: Page, expire_after: tuple[str, int], marked: list[int]
 ) -> None:
+    """Po Zatrzymaniu proces stawia Znaczniki efenix gotowym zleceniom, a postęp mówi to tak jak po ostatnim zleceniu:
+    ostatni krok Zapisywania to Znaczniki efenix, nie zlecenie, przy którym okno stanęło."""
+
     orders = [Order(f"#790{index}", cells={"O": 1}, amount=_au({"012": 1})) for index in (1, 2, 3)]
     source = write_collective_file(tmp_path, orders)
     unmarked = source.read_bytes()
@@ -1650,6 +1653,7 @@ def test_zatrzymanie_w_polowie_przebiegu_oznacza_zlecenia_gotowe_przed_nim(
 
     assert (_stop(outcome), _marked(source)) == ("EFENIX_WYLOGOWANY", marked)
     assert (source.read_bytes() == unmarked) == (not marked)
+    assert outcome.progress.step == SavingStep("Znaczniki efenix w Pliku zbiorczym", None, 0, 0)
 
 
 def _resumed_orders() -> list[Order]:
@@ -2351,6 +2355,65 @@ def test_czekanie_na_logowanie_pyta_efenix_najwyzej_co_login_poll_ms_takze_gdy_k
 
     assert len(asked) == 2, asked
     assert asked[1] - asked[0] >= efenix_browser.LOGIN_POLL_MS / 1000
+
+
+def _session_questions(atrapa: AtrapaEfenix) -> int:
+    """Ile razy okno pytało efenix o listę zleceń w czasie czekania na logowanie (bez otwarcia listy przy starcie)."""
+
+    return len([request for request in atrapa.requests if request.path == LIST_PAGE][1:])
+
+
+def test_karta_na_stronie_logowania_bez_logowania_taty_pyta_efenix_o_sesje_co_login_poll_ms_az_do_limitu(page: Page) -> None:
+    """Karta stoi na stronie logowania, a tata się nie loguje: okno pyta efenix o sesję co ``LOGIN_POLL_MS``, a nie raz
+    na domyślny limit czasu karty, więc logowanie taty w innej karcie tej przeglądarki widzi najwyżej po
+    ``LOGIN_POLL_MS``. Limit czekania półtora ``LOGIN_POLL_MS``: pytania na starcie, po ``LOGIN_POLL_MS`` i na końcu
+    limitu; domyślny limit karty to dwa ``LOGIN_POLL_MS``."""
+
+    page.set_default_timeout(2 * efenix_browser.LOGIN_POLL_MS)
+    with atrapa_efenix([]) as atrapa:
+        atrapa.expire_session()
+        with (
+            pytest.raises(LoggedOut),
+            efenix_browser.window(
+                page, atrapa.url, login=nullcontext, login_timeout_ms=efenix_browser.LOGIN_POLL_MS * 3 // 2
+            ),
+        ):
+            pass
+        questions = _session_questions(atrapa)
+
+    assert questions >= 3
+
+
+def test_lista_ktora_nie_odpowiada_w_czasie_czekania_na_logowanie_nie_konczy_czekania_a_po_limicie_to_wylogowanie(
+    page: Page,
+) -> None:
+    """efenix przestaje odpowiadać, gdy okno czeka na logowanie taty: pytanie o sesję kończy się w czasie okna, okno pyta
+    dalej, a po limicie czekania to Zatrzymanie jak bez logowania, nie błąd strony. Czas okna to ćwierć
+    ``LOGIN_POLL_MS``, a domyślny limit karty dwa ``LOGIN_POLL_MS``, dłużej niż limit czekania."""
+
+    page.context.set_default_timeout(2 * efenix_browser.LOGIN_POLL_MS)
+    with atrapa_efenix([]) as atrapa:
+        atrapa.expire_session()
+
+        @contextmanager
+        def efenix_silent() -> Iterator[None]:
+            atrapa.outage = Outage.SLOW
+            yield
+
+        with (
+            pytest.raises(LoggedOut),
+            efenix_browser.window(
+                page,
+                atrapa.url,
+                timeout_ms=efenix_browser.LOGIN_POLL_MS // 4,
+                login=efenix_silent,
+                login_timeout_ms=efenix_browser.LOGIN_POLL_MS * 3 // 2,
+            ),
+        ):
+            pass
+        questions = _session_questions(atrapa)
+
+    assert questions >= 2
 
 
 def test_profil_przegladarki_okna_efenix_lezy_w_katalogu_narzedzia_poza_gitem() -> None:

@@ -613,6 +613,28 @@ def test_diagnoza_przebiegu_sprawdza_wzorzec_pracownika_i_plik_zbiorczy(tmp_path
     assert missing["explanation"]["what"] == "Nie znaleziono Pliku zbiorczego tego okresu. Nie utworzono żadnego pliku pracownika."
 
 
+def test_diagnoza_wyceny_w_efenix_wyjasnia_brak_pliku_zbiorczego_komunikatem_wyceny(tmp_path: Path) -> None:
+    """Wycena w efenix czyta Plik zbiorczy okresu, więc w jej Diagnozie jego brak to przyczyna Zatrzymania, z
+    Komunikatem Wyceny, że w efenix nic się nie zmieniło."""
+
+    centrum = settling_centrum(tmp_path)
+    centrum.engines.fail_engine = True
+    assert centrum.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "dry_run": False}).status_code == 200
+    run_id = finished_view(centrum.client)["run"]["id"]
+    run_logs_handled(centrum)
+
+    passing = diagnose(centrum, run_id)
+    centrum.collective_file.unlink()
+    missing = diagnose(centrum, run_id)
+
+    assert check(passing, "Folder okresu") == ("passed", "Pliki okresu: Plik zbiorczy.")
+    assert check(missing, "Folder okresu")[0] == "failed"
+    assert (missing["explanation"]["what"], missing["next_action"]) == (
+        "Nie znaleziono Pliku zbiorczego. W efenix nic się nie zmieniło.",
+        "rerun",
+    )
+
+
 def test_diagnoza_przebiegu_wyjasnia_zly_wzorzec_rozliczenia_pracownika(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
     run_id = stopped_for_maks(centrum)
