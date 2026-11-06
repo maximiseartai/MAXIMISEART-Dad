@@ -1564,12 +1564,22 @@ def _resumes(resumes: dict[str, Resume], name: str, disk: Disk, order: int, case
 
 
 def reference_violations(reference: Run) -> list[Violation]:
-    """BEZ_AWARII: one run without a fault ends as ``GLOSSARY.md`` says (``REFERENCE_FINAL``, ``REFERENCE_OUTCOMES``)."""
+    """BEZ_AWARII: one run without a fault ends as ``GLOSSARY.md`` says (``REFERENCE_FINAL``, ``REFERENCE_OUTCOMES``).
+
+    The violation names the run's Zatrzymanie with its cause and the last request the window sent, because the line
+    is all a failed test in CI shows: the evidence folder of a test stays in its ``tmp_path`` (#1008)."""
 
     outcomes = _outcomes(None if reference.outcome is None else reference.outcome.view)
+    ending = None if reference.outcome is None else reference.outcome.ending
+    stopped = (
+        f"Zatrzymanie {ending.message.code} ({describe(ending.facts)}), "
+        if isinstance(ending, Stop) and isinstance(ending.facts, PricingStopped)
+        else ""
+    )
+    last = reference.actions[-1].strip() if reference.actions else "brak"
     shown = (
-        f"{reference.error or [outcomes.get(index) for index in range(2)]}, efenix {[str(state) for state in reference.after.state]}, "
-        f"Znaczniki {list(reference.marked)}"
+        f"{stopped}{reference.error or [outcomes.get(index) for index in range(2)]}, efenix {[str(state) for state in reference.after.state]}, "
+        f"Znaczniki {list(reference.marked)}, ostatnie żądanie {last}"
     )
     if (
         reference.error is None
