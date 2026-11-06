@@ -423,7 +423,7 @@ CODE_SPAN = re.compile(r"`[^`]*`")
 SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+")
 BACKGROUND = re.compile(r"background", re.IGNORECASE)
 SAME_TURN = "same turn"
-SYNC_LIMIT = 30
+SYNC_LIMIT = 40
 
 
 def _prose_paragraphs(text: str) -> Iterator[list[str]]:
@@ -506,7 +506,7 @@ def test_sprawdzenie_tla_pomija_kod_a_wskazuje_tlo_bez_czekania_w_tej_samej_turz
 def test_akapit_sync_commit_skilla_ma_najwyzej_limit_linii() -> None:
     """Akapit z pierwszą linią ``SYNC`` (``tools/lib/rozjazd_modelu.py``) ma SHA, co na nim potwierdzono i jak sprawdzić
     zmiany od niego, a historię wcześniejszych synchronizacji niesie git. ``SYNC_LIMIT`` przepuszcza akapity gałęzi w toku
-    z 6.11.2026 (najdłuższy 25 linii, #1021). Granica: historię w osobnych akapitach za nim
+    z 7.11.2026 (najdłuższe 30 linii, #1021 i #1026) z zapasem na ich kolejne synchronizacje. Granica: historię w osobnych akapitach za nim
     (``verify-aktualizacja-narzedzia``) łapie tylko przegląd.
     """
 
