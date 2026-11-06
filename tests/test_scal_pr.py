@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,7 @@ import pytest
 from tests.fixtures import opisy_pr
 from tests.fixtures.git_repo import commit, copy_files, git, repository
 
+import czasy_ci
 import scal_pr
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Atrapa gh to skrypt sh.")
@@ -142,7 +144,7 @@ class FakeGitHub:
                 **files,
             },
         )
-        copy_files(self.checkout, ("tools/scal_pr.py", "tools/ci/status_scalenia.py"))
+        copy_files(self.checkout, ("tools/scal_pr.py", "tools/ci/status_scalenia.py", "tools/lib/wplyw_zmiany.py"))
         git(self.checkout, "checkout", "--quiet", "-b", "main")
         self.start = commit(self.checkout, "start")
         git(self.checkout, "remote", "add", "origin", str(origin))
@@ -599,6 +601,102 @@ def test_pr_ktory_nie_scala_sie_czysto_z_biezacym_main_nie_jest_scalany(
     assert answered.returncode == 1, answered.stdout + answered.stderr
     assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | {reason.format(main=main[:7])}"
     assert github.merges() == []
+
+
+# Test scalenia: test sumy z PR i zmiana sumy na main są zielone osobno, a po scaleniu ``abs`` psuje sumę ujemnych.
+WITH_PYTEST = PYPROJECT + '\n[tool.pytest.ini_options]\npythonpath = ["."]\n'
+SUM_TEST = "from kod import suma\n\n\ndef test_suma_dodatnich() -> None:\n    assert suma(2, 2) == 4\n"
+NEGATIVE_TEST = "\n\ndef test_suma_ujemnych() -> None:\n    assert suma(-1, -1) == -2\n"
+SLOW_TEST = "\n\ndef test_suma_ujemnych() -> None:\n    import time\n\n    time.sleep(60)\n"
+HELPER = "ZERO: int = 0\n"
+HELPED_SUM = "from kod.pomoc import ZERO\n\n\ndef suma(a: int, b: int) -> int:\n    return a + b + ZERO\n"
+ABS_SUM = "from kod.pomoc import ZERO\n\n\ndef suma(a: int, b: int) -> int:\n    return abs(a) + abs(b) + ZERO\n"
+SAME_SUM = "from kod.pomoc import ZERO\n\n\ndef suma(a: int, b: int) -> int:\n    return ZERO + b + a\n"
+SUM_TEST_FILE = "tests/test_suma.py"
+
+
+def _merge_test_github(tmp_path: Path, pull_test: str, main_files: dict[str, str], ci_seconds: float | None) -> tuple[FakeGitHub, str, str]:
+    """PR 1 z PASS, który dopisuje ``pull_test`` do testu sumy, ``main`` z ``main_files`` po jego merge-base i czasy CI
+    pliku testu sumy, jakie ``tools/szybko.py`` pobrał dziś do ``.git/czasy-ci`` (``None``: bez czasów); HEAD PR i ``main``."""
+
+    github = FakeGitHub(tmp_path, {"pyproject.toml": WITH_PYTEST, "kod/__init__.py": HELPED_SUM, "kod/pomoc.py": HELPER, SUM_TEST_FILE: SUM_TEST})
+    head = github.open_pull(1, {SUM_TEST_FILE: SUM_TEST + pull_test})
+    github.comment(1, f"WERDYKT: PASS {head}")
+    main = github.push_main(main_files)
+    if ci_seconds is not None:
+        keys = {f"pytest:{SUM_TEST_FILE}": [{"run": 7, "proba": 1, "zadanie": "pytest (Python 3.14, Linux, 1/2)", "s": ci_seconds, "status": "ok"}]}
+        times = {"wersja": 1, "runy": [{"run": 7, "proba": 1, "sha": "0" * 40, "zdarzenie": "push"}], "tory": {czasy_ci.TOR_LOKALNY: keys}}
+        (github.checkout / ".git" / "czasy-ci").mkdir()
+        (github.checkout / ".git" / "czasy-ci" / "7.json").write_text(json.dumps(times), encoding="utf-8")
+        (github.checkout / ".git" / "czasy-ci" / "pobrane").write_text("", encoding="utf-8")
+    return github, head, main
+
+
+def test_test_dotkniety_zmiana_pr_i_zmiana_main_od_merge_base_biegnie_na_scaleniu_przed_merge(tmp_path: Path) -> None:
+    github, head, main = _merge_test_github(tmp_path, NEGATIVE_TEST, {"kod/__init__.py": SAME_SUM}, 1.0)
+
+    merged = github.run("1")
+
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
+    assert re.fullmatch(
+        rf"SCAL OK \| #1 {head[:7]} \| scalony do main jako {merge_commit[:7]} \(baza {main[:7]}\)"
+        rf" \| test scalenia: {SUM_TEST_FILE} przechodzą \(\d+ s\) \| sprzątanie pominięte: brak tools/sprzatanie.py",
+        _last_line(merged),
+    )
+
+
+@pytest.mark.parametrize(
+    ("pull_test", "timeout_s", "reason"),
+    [
+        (NEGATIVE_TEST, None, f"pada: {SUM_TEST_FILE}::test_suma_ujemnych"),
+        (SLOW_TEST, 5, f"bez wyniku po 5 s: {SUM_TEST_FILE}"),
+    ],
+    ids=["test-pada", "test-ponad-limit-czasu"],
+)
+def test_pr_ktorego_test_pada_na_scaleniu_z_main_choc_oba_byly_zielone_nie_jest_scalany(
+    tmp_path: Path, pull_test: str, timeout_s: int | None, reason: str
+) -> None:
+    github, head, main = _merge_test_github(tmp_path, pull_test, {"kod/__init__.py": ABS_SUM}, 1.0)
+    if timeout_s is not None:
+        tool = github.checkout / "tools" / "scal_pr.py"
+        tool.write_text(tool.read_text(encoding="utf-8").replace("MERGE_TEST_TIMEOUT_S = 300", f"MERGE_TEST_TIMEOUT_S = {timeout_s}"), encoding="utf-8")
+
+    answered = github.run("1")
+
+    assert answered.returncode == 1, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | test scalenia z main {main[:7]} {reason}"
+    assert github.merges() == []
+
+
+@pytest.mark.parametrize(
+    ("main_files", "ci_seconds", "note"),
+    [
+        ({"kod/inne.py": "INNE: int = 1\n"}, 1.0, ""),
+        ({"kod/pomoc.py": "ZERO: int = 0  # suma importuje pomoc, a test sumę: test jest 2 kroki od zmiany main\n"}, 1.0, ""),
+        ({"kod/__init__.py": ABS_SUM}, 500.0, " | test scalenia pominięty: ~500 s w CI ponad limit 180 s, plików testów: 1"),
+        (
+            {"kod/__init__.py": ABS_SUM, "pyproject.toml": WITH_PYTEST + "# reguła wyboru testów\n"},
+            1.0,
+            " | test scalenia pominięty: zmiana pyproject.toml dotyczy każdego testu",
+        ),
+        ({"kod/__init__.py": ABS_SUM}, None, " | test scalenia pominięty: brak czasów CI (pobranie czasy-ci z GitHuba: "),
+    ],
+    ids=["main-nie-dotyka-testow-pr", "main-zmienia-plik-dalej-niz-krok-od-testu", "testy-ponad-limit-czasu-ci", "zmiana-pliku-reguly-wyboru-testow", "bez-czasow-ci"],
+)
+def test_test_scalenia_nie_biegnie_bez_wspolnego_testu_ponad_limit_czasu_ci_i_przy_zmianie_reguly_wyboru(
+    tmp_path: Path, main_files: dict[str, str], ci_seconds: float | None, note: str
+) -> None:
+    github, head, main = _merge_test_github(tmp_path, NEGATIVE_TEST, main_files, ci_seconds)
+
+    answered = github.run("1", "--bez-merge")
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    line = f"SCAL OK | #1 {head[:7]} | gotowy do merge'a z main {main[:7]}, bez merge'a (--bez-merge){note}"
+    # Bez czasów CI linia kończy się przyczyną z ``gh``, której treść należy do atrapy.
+    shown = _last_line(answered) if ci_seconds is not None else _last_line(answered)[: len(line)]
+    assert shown == line
+    assert "== test scalenia" not in answered.stdout
 
 
 def test_main_przesuniety_w_trakcie_sprawdzania_zatrzymuje_merge(tmp_path: Path) -> None:

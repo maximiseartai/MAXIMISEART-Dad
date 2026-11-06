@@ -78,7 +78,6 @@ BASE = "origin/main"
 GREEN = "szybko-zielone.json"
 WORKERS = "4"
 # Tor CI, którego czasy plików waży szybko: Linux, jak komputer agenta, nie Windows.
-TIMES_TOR = "linux-3.14"
 # Sekundy czasów CI na workera. Porażki pytest w szybko z 23–24.10 łapie ten sam plan od 20 s wzwyż, bo prawie
 # wszystkie padły w odległości 0–1 albo w testach struktury, więc budżet stoi blisko tej granicy.
 BUDGET_S = 45.0
@@ -149,11 +148,10 @@ def _select(changed: frozenset[str]) -> Selection:
 
 
 def _times(root: Path) -> dict[str, float]:
-    folder = root / _git("rev-parse", "--git-common-dir").strip() / "czasy-ci"
-    times = czasy_ci.z_mainu(folder, odswiez_po_s=czasy_ci.ODSWIEZ_S)
-    costs = times.pliki(TIMES_TOR)
+    times = czasy_ci.z_mainu(czasy_ci.katalog_checkoutu(root), odswiez_po_s=czasy_ci.ODSWIEZ_S)
+    costs = times.pliki(czasy_ci.TOR_LOKALNY)
     if not costs:
-        why = times.blad or f"brak plików testów toru {TIMES_TOR} w {czasy_ci.ARTEFAKT}"
+        why = times.blad or f"brak plików testów toru {czasy_ci.TOR_LOKALNY} w {czasy_ci.ARTEFAKT}"
         print(f"SZYBKO | bez czasów CI ({why}): każdy plik waży 0, więc biegnie cały wybór", flush=True)
     return costs
 

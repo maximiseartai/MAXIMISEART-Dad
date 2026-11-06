@@ -41,8 +41,9 @@ Wejście, którego brakuje albo którego nie da się odczytać, daje linię ``CZ
 z reszty. Pomiar nie zmienia werdyktu CI: jego kroki w ``ci.yml`` mają ``continue-on-error``.
 
 Odczyt. ``z_mainu`` daje ``Czasy`` z artefaktów ``czasy-ci`` ostatnich ``ILE_RUNOW`` zielonych runów ``ci.yml`` na main
-(``gh``, w CI z ``GH_TOKEN``), które trzyma w katalogu: plan CI w świeżym katalogu runu, ``tools/szybko.py`` w
-``.git/czasy-ci`` wspólnym dla worktree, odświeżanym co ``ODSWIEZ_S``. Bez sieci, bez ``gh`` i bez artefaktu
+(``gh``, w CI z ``GH_TOKEN``), które trzyma w katalogu: plan CI w świeżym katalogu runu, a ``tools/szybko.py``,
+``tools/plan_ci.py`` i ``tools/scal_pr.py`` w ``katalog_checkoutu``, czyli ``.git/czasy-ci`` wspólnym dla worktree,
+odświeżanym co ``ODSWIEZ_S``. Bez sieci, bez ``gh`` i bez artefaktu
 ``Czasy`` są puste, a ``blad`` mówi dlaczego: czytający waży wtedy pracę domyślnie, zamiast padać. Obserwacje
 zadania z kilku prób runu liczą się z ostatniej.
 
@@ -80,6 +81,8 @@ KROKI = {"Run the planned units": "krok:praca"}
 ARTEFAKT = "czasy-ci"
 ILE_RUNOW = 3
 ODSWIEZ_S = 24 * 3600
+# Tor, którego czasy ważą pracę na Macu agenta: budżet ``tools/szybko.py`` i limit testu scalenia ``tools/scal_pr.py``.
+TOR_LOKALNY = "linux-3.14"
 # Tyle najnowszych artefaktów ``czasy-ci`` przegląda odczyt, szukając ``ILE_RUNOW`` z zielonych runów.
 SZUKANE_ARTEFAKTY = 30
 LIMIT_GH_S = 30.0
@@ -355,6 +358,14 @@ def _obserwacje(dokumenty: list[dict[str, Any]]) -> dict[str, dict[str, tuple[Ob
                 wybrane = [Obserwacja(o["run"], o["zadanie"], float(o["s"])) for o in obserwacje if o["proba"] == ostatnia[(tor, o["run"], o["zadanie"])]]
                 tory[tor][klucz] = (*tory[tor].get(klucz, ()), *wybrane)
     return tory
+
+
+def katalog_checkoutu(root: Path) -> Path:
+    """Katalog ``czasy-ci`` w katalogu gita checkoutu ``root``, wspólny dla jego worktree: tu ``z_mainu`` trzyma artefakty
+    poza CI."""
+
+    wspolny = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=root, capture_output=True, text=True, encoding="utf-8", check=True)
+    return (root / wspolny.stdout.strip() / ARTEFAKT).resolve()
 
 
 def z_mainu(katalog: Path, *, odswiez_po_s: float = 0) -> Czasy:

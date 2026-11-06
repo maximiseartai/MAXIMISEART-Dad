@@ -352,14 +352,6 @@ def rozplanuj(wyceny: Sequence[Wycena], zdarzenie: Zdarzenie, runy: tuple[int, .
     return Plan(zdarzenie, cel, runy, tuple(zadania), bledy)
 
 
-def _git(*argumenty: str) -> str:
-    return subprocess.run(["git", *argumenty], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=True).stdout
-
-
-def _katalog_czasow() -> Path:
-    return (ROOT / _git("rev-parse", "--git-common-dir").strip() / "czasy-ci").resolve()
-
-
 def _wypisz(plan: Plan, praca: ZakresRunu, wyceny: Sequence[Wycena]) -> None:
     run = STALE_ZADANIA + len(plan.zadania)
     zrodlo = ", ".join(map(str, plan.runy)) or "brak (wagi domyślne)"
@@ -384,7 +376,7 @@ def _wypisz(plan: Plan, praca: ZakresRunu, wyceny: Sequence[Wycena]) -> None:
 
 
 def _plan(args: argparse.Namespace) -> int:
-    katalog = args.czasy or _katalog_czasow()
+    katalog = args.czasy or czasy_ci.katalog_checkoutu(ROOT)
     czasy = czasy_ci.z_mainu(katalog, odswiez_po_s=0 if args.czasy else czasy_ci.ODSWIEZ_S)
     if czasy.blad:
         print(f"CZASY CI | {czasy.blad}; plan waży pracę bez pomiaru domyślnie")

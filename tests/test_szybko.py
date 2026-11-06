@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 
+import czasy_ci  # noqa: E402
 import szybko  # noqa: E402
 from wplyw_zmiany import STRUCTURE  # noqa: E402
 
@@ -237,7 +238,7 @@ def _commit_times(repo: Path, expensive: dict[str, float]) -> None:
 
     times = {test: 0.1 for test in BASE_FILES if test.startswith("tests/test_")} | expensive
     keys = {f"pytest:{test}": [{"run": 7, "proba": 1, "zadanie": "pytest (Python 3.14, Linux, 1/2)", "s": s, "status": "ok"}] for test, s in times.items()}
-    artifact = {"wersja": 1, "runy": [{"run": 7, "proba": 1, "sha": "0" * 40, "zdarzenie": "push"}], "tory": {szybko.TIMES_TOR: keys}}
+    artifact = {"wersja": 1, "runy": [{"run": 7, "proba": 1, "sha": "0" * 40, "zdarzenie": "push"}], "tory": {czasy_ci.TOR_LOKALNY: keys}}
     _write(repo, ".git/czasy-ci/7.json", json.dumps(artifact))
     _write(repo, ".git/czasy-ci/pobrane", "")
     commit(repo, "pliki testów z czasami")

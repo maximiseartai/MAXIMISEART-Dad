@@ -71,6 +71,9 @@ Maks zgodził się 26.10 na takie wpisy z góry, więc nie wymagają osobnej zgo
   Do taty nie trafi, bo Wydanie wymaga zielonego pełnego CI i zielonych testów z kwarantanny.
 - Dwa PR-y zielone osobno mogą się zepsuć dopiero razem na `main` (2 razy w 28 dniach do 26.10).
   Issue czerwonego `main` rozpoznaje takie zderzenie; gdy zderzenia się powtarzają, wraca decyzja o merge queue.
+- Od 6.11 (#959) `tools/scal_pr.py` przed merge'em uruchamia na scalonym drzewie test scalenia: pliki testów w odległości najwyżej 1 w grafie wpływu zmiany i od zmiany PR, i od zmiany `main` od merge-base, gdy ich czas CI mieści się w limicie 180 s.
+  Zamiast merge queue łapie tylko tanią część zderzeń: na 19 merge'ach z 6.11 biegł 4 razy po 4–8 s, a 7 droższych przecięć (od 437 s w CI, 93 s na Macu agenta) i zmian `tests/conftest.py` pominął z powodem w linii `SCAL OK`, a liczenie przecięcia dodało do merge'a najwyżej 1,6 s.
+  Decyzja o merge queue zostaje Maksa.
 - Przy 100 PR dziennie limit 20 zadań jest zajęty przez 16–17 godzin na dobę i wydłuża bramkę.
   W symulacji tego kształtu (nieblokujące Change mutations, trwający run `main` się kończy) p50 to 19,3 min i p90 46,3 min przy 20 zadaniach naraz, a 6,3 i 11,0 min przy 40.
 - Dalsze skracanie bramki to przyspieszanie samych testów, nie zdejmowanie ich z bramki.
