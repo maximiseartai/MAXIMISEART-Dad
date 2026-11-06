@@ -1,5 +1,31 @@
 """Dowodzi, że test albo sprawdzenie pada na zepsutym kodzie (mutacji); użyj raz dla każdego testu dodanego albo zmienionego w zmianie.
 
+Przepis z korzenia checkoutu; po ``--`` stoją argumenty Pythona, który uruchomił narzędzie:
+
+    # jedna mutacja: plik, kotwica (jej tekst stoi w pliku dokładnie raz) i zamiana
+    .venv/bin/python tools/mutacje.py --zmiana src/rozliczenia/x.py 'if n > LIMIT:' 'if False:' \\
+        -- -m pytest -q -n 0 tests/test_x.py -k nazwa_testu
+    # mutacje z pliku JSON, naraz
+    .venv/bin/python tools/mutacje.py --rownolegle --plik mutacje.json -- -m pytest -q -n 0 tests/test_x.py
+
+    mutacje.json: "polecenie" (zamiast polecenia po --) i "oczekiwane" (początek ostatniej linii wyjścia, który
+    wykrywa mutację zamiast kodu wyjścia) są opcjonalne
+    [
+      {"nazwa": "bez limitu", "zmiany": [["src/rozliczenia/x.py", "if n > LIMIT:", "if False:"]]},
+      {"nazwa": "dwa miejsca", "zmiany": [["src/rozliczenia/x.py", "n = 1", "n = 2"], ["tools/y.py", "z", "w"]],
+       "polecenie": ["-m", "pytest", "-q", "-n", "0", "tests/test_y.py"], "oczekiwane": "SPRAWDZENIE: NARUSZENIE"}
+    ]
+
+Pytest w jednym procesie to ``-n 0``: ``-p no:xdist`` pada na ``--dist`` z ``addopts`` w ``pyproject.toml``. Ścieżka
+i ``-k`` muszą wybrać test, bo polecenie bez mutacji (podstawa) musi przejść, zanim mutacja czegoś dowiedzie. Mutację
+NIEWYKRYTA narzędzie powtarza na merge-base HEAD z ``--baza`` (domyślnie origin/main; gałąź zbudowana na innej podaje
+ją), a WYKRYTA tam to REGRES. Poza CI jedno uruchomienie ma najwyżej 100 mutacji (``ciezkie_ci.TARGETED``). Dowodem
+jest tylko WYKRYTA, a narzędzie kończy się wtedy kodem 0 i linią ``MUTACJE OK``.
+
+Zasady werdyktów, kopii, bramy typów, nocy, ``--jak-ci`` i ``MUTACJE_CZESC`` drukuje ``--zasady``.
+
+Zasady werdyktów i przebiegu
+
 Każda mutacja dostaje własną kopię checkoutu: odłączony ``git worktree`` z HEAD w katalogu
 tymczasowym z naniesionymi niezacommitowanymi zmianami (także dodanymi do indeksu), więc ``git``
 działa w niej jak w checkoucie. Checkout zostaje nietknięty, więc nie ma czego przywracać ani
@@ -48,6 +74,9 @@ plik testów zmieniony od merge-base, robi z każdej mutacji osobną mutację z 
 zadania. Odtwarza więc skład zadania tego runu, a nie planu z dzisiejszych czasów. Nie odtwarza podziału na workery:
 CI biegnie z ``-n auto``, a tu cały skład dzieli jeden proces, więc sąsiad z innego workera CI też jest w nim. Plik,
 który plan dzieli na udziały, biegnie cały.
+
+    .venv/bin/python tools/mutacje.py --jak-ci 41204010349 --zmiana src/rozliczenia/x.py 'stary kod' 'nowy kod'
+
 Mutacje biegną po kolei, bo równoległe testy przekraczają swoje limity czasu; ``--rownolegle`` puszcza
 naraz najwyżej ``PARALLEL`` (tyle, ile rdzeni ma komputer, i najwyżej 8), a ich polecenia dostają
 ``PYTEST_XDIST_AUTO_NUM_WORKERS=1`` (chyba że wywołujący je ustawił), bo gołe ``pytest -n auto`` w teście każdej z nich
@@ -55,14 +84,6 @@ bierze wszystkie rdzenie komputera.
 Polecenia i kopie biegną przez ``tools/lib/potomne.py``: procesy potomne polecenia giną z jego końcem, a
 przekroczony czas, przerwanie (Ctrl-C) i zabicie narzędzia kończą polecenie i usuwają kopie.
 
-    .venv/bin/python tools/mutacje.py --zmiana src/rozliczenia/x.py 'stary kod' 'nowy kod' \\
-        -- -m pytest -q tests/test_x.py -k nazwa_testu
-    .venv/bin/python tools/mutacje.py --plik mutacje.json -- -m pytest -q tests/test_x.py
-    .venv/bin/python tools/mutacje.py --jak-ci 41204010349 --zmiana src/rozliczenia/x.py 'stary kod' 'nowy kod'
-
-Plik JSON to lista ``{"nazwa", "zmiany": [[plik, kotwica, zamiana], ...]}`` z opcjonalnym
-``"polecenie"`` (argumenty Pythona), które zastępuje polecenie po ``--``, i opcjonalnym
-``"oczekiwane"``, początkiem ostatniej linii wyjścia, który wykrywa mutację zamiast kodu wyjścia.
 Lista dłuższa niż ``ciezkie_ci.TARGETED`` mutacji to ręczne ``change-mutations``: poza CI narzędzie odmawia
 jej startu (kod 2 i linia ``CIĘŻKIE CI ODMOWA``) na zasadach ``tools/lib/ciezkie_ci.py``. Skrypty
 ``check_<co>_mutations.py`` skilli ``verify-*`` używają tego samego silnika przez ``check_all``, który
@@ -91,6 +112,7 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from functools import partial
 import importlib
+from itertools import pairwise
 import json
 import os
 from pathlib import Path
@@ -101,7 +123,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Protocol, TypeVar
+from typing import NamedTuple, Protocol, TypeVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 # plan_ci i wplyw_zmiany importuje dopiero --jak-ci: plan_ci sam importuje ten moduł.
@@ -130,6 +152,10 @@ PYTEST_TIMEOUT = re.compile(r"(?:E\s+|FAILED \S+ - )?(?P<hang>Failed: Timeout \(
 # Tyle ostatnich linii stdout i tyle stderr czerwonej podstawy ``check_all`` drukuje pod jej linią: przejazd
 # verify-centrum-rozliczen kończy stdout linią sprzątania, a porażkę (DRIVE FAIL, VERIFY FAIL) pisze na stderr (#932).
 BASE_TAIL = 40
+RULES_HEADING = "Zasady werdyktów i przebiegu"
+RECIPE, _, RULES = (__doc__ or "").partition(f"\n{RULES_HEADING}\n")
+PYTEST_EXIT_USAGE_ERROR = 4
+PYTEST_EXIT_NO_TESTS_COLLECTED = 5
 
 
 class Verdict(StrEnum):
@@ -285,6 +311,24 @@ def _tail(stdout: str, stderr: str) -> tuple[str, ...]:
     """Ostatnie ``BASE_TAIL`` linii stdout, potem tyle samo stderr, każda z nazwą swojego strumienia."""
 
     return tuple(f"{name} | {line}" for name, text in (("stdout", stdout), ("stderr", stderr)) for line in text.splitlines()[-BASE_TAIL:])
+
+
+def _without_test(command: Sequence[str], ran: _Ran) -> bool:
+    """Czy polecenie to pytest, który nie uruchomił żadnego testu: odrzucił ścieżkę albo opcję albo nic nie wybrał."""
+
+    return ("-m", "pytest") in pairwise(command) and ran.code in {PYTEST_EXIT_USAGE_ERROR, PYTEST_EXIT_NO_TESTS_COLLECTED}
+
+
+def _no_test_line(command: Sequence[str], ran: _Ran) -> str:
+    """Linia pod ``PODSTAWA CZERWONA`` podstawy pytest bez testu (``_without_test``): przyczyna w poleceniu, nie w kodzie."""
+
+    if ran.code == PYTEST_EXIT_NO_TESTS_COLLECTED:
+        why = "pytest nie wybrał żadnego testu (kod 5), więc popraw ścieżkę albo -k"
+    elif any(argument.endswith("no:xdist") for argument in command):
+        why = "pytest odrzucił -p no:xdist (kod 4), bo addopts w pyproject.toml ma --dist, więc zamiast niego daj -n 0"
+    else:
+        why = "pytest odrzucił ścieżkę albo opcję (kod 4, błąd w końcu stderr niżej), więc ją popraw"
+    return f"PODSTAWA BEZ TESTU: {why} w poleceniu po --; to błąd polecenia, nie kodu"
 
 
 def _verdict(
@@ -581,8 +625,8 @@ def _against_base(
 ) -> list[tuple[Verdict, str]]:
     """Mutacje NIEWYKRYTA na HEAD, które na merge-base HEAD z ``base`` są WYKRYTA, jako REGRES.
 
-    Mutacja, której merge-base nie rozstrzyga (podstawa czerwona, inny werdykt niż NIEWYKRYTA), zostaje NIEWYKRYTA z
-    dopiskiem, co dał merge-base; ta, która tam też jest NIEWYKRYTA, zostaje bez zmian.
+    Mutacja, której merge-base nie rozstrzyga (podstawa czerwona, pytest bez testu, bo test jest nowy, inny werdykt niż
+    NIEWYKRYTA), zostaje NIEWYKRYTA z dopiskiem, co dał merge-base; ta, która tam też jest NIEWYKRYTA, zostaje bez zmian.
     """
 
     survived = [index for index, (verdict, _) in enumerate(found) if verdict is Verdict.SURVIVED]
@@ -605,7 +649,9 @@ def _against_base(
     for index in survived:
         last, command = found[index][1], mutations[index].command
         if command in red:
-            result[index] = (Verdict.SURVIVED, f"{last} (na merge-base {commit[:8]} podstawa czerwona: {red[command].last})")
+            ran = red[command]
+            why = "polecenie bez testu, więc test jest nowy i REGRES nie dotyczy" if _without_test(command, ran) else "podstawa czerwona"
+            result[index] = (Verdict.SURVIVED, f"{last} (na merge-base {commit[:8]} {why}: {ran.last})")
             continue
         verdict, base_last = on_base[index]
         if verdict is Verdict.CAUGHT:
@@ -622,7 +668,8 @@ def check_all(
 
     Pod linią ``PODSTAWA CZERWONA`` stderr dostaje koniec stdout i stderr polecenia podstawy (``BASE_TAIL`` linii
     każdego), także podstawy, która przekroczyła ``limit_s``, bo ostatnia linia nie zawsze mówi, co padło, a kopii
-    commitu z wyjściem już nie ma (#932, #947).
+    commitu z wyjściem już nie ma (#932, #947). Podstawa pytest, z którą nie biegł żaden test (``_without_test``), ma
+    między nimi linię ``PODSTAWA BEZ TESTU`` z przyczyną w poleceniu.
 
     Przed linią werdyktu każdej mutacji linia ``CZAS`` na stderr podaje czas jej polecenia, a mutację, której polecenie
     trwało ponad ``NEAR_LIMIT`` limitu ``limit_s``, linia ``CZAS BLISKO LIMITU`` na stderr przed linią końcową wymienia ze
@@ -651,6 +698,8 @@ def check_all(
     red = _baseline(mutations, limit_s)
     for command, ran in red.items():
         print(f"PODSTAWA CZERWONA: {' '.join(command)} → {ran.last}", flush=True)
+        if _without_test(command, ran):
+            print(_no_test_line(command, ran), flush=True)
         # Na stderr, jak linia CZAS: przyczyna porażki podstawy, której kopia commitu z dowodami już nie ma (#932).
         for line in ran.tail:
             print(f"  {line}", file=sys.stderr, flush=True)
@@ -719,8 +768,42 @@ def near_limits(output: str) -> list[NearLimit]:
     return [NearLimit(found["script"], found["part"] or "", found["name"], int(found["seconds"]), float(found["limit"])) for found in _NEAR.finditer(output)]
 
 
+def _texts(value: object, count: int | None = None) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value) and count in {None, len(value)}
+
+
+class _Key(NamedTuple):
+    required: bool
+    valid: Callable[[object], bool]
+
+
+_ENTRY = {
+    "nazwa": _Key(required=True, valid=lambda value: isinstance(value, str)),
+    "zmiany": _Key(required=True, valid=lambda value: isinstance(value, list) and bool(value) and all(_texts(edit, 3) for edit in value)),
+    "polecenie": _Key(required=False, valid=_texts),
+    "oczekiwane": _Key(required=False, valid=lambda value: isinstance(value, str)),
+}
+FILE_SHAPE = '[{"nazwa": "...", "zmiany": [["plik", "kotwica", "zamiana"], ...]}, ...] z opcjonalnymi "polecenie": [...] i "oczekiwane": "..."'
+
+
+def _entry_problem(entry: object) -> str | None:
+    if not isinstance(entry, dict):
+        return "nie jest obiektem"
+    if unknown := sorted(entry.keys() - _ENTRY.keys()):
+        return f"ma nieznany klucz {unknown[0]!r}"
+    wrong = [key for key, (required, valid) in _ENTRY.items() if (key in entry or required) and not (key in entry and valid(entry[key]))]
+    return f"ma zły albo brakujący klucz {wrong[0]!r}" if wrong else None
+
+
 def _from_file(path: Path, command: tuple[str, ...], *, own_command: bool = True) -> list[Mutation]:
+    """Mutacje z pliku JSON; plik innej postaci niż ``FILE_SHAPE`` to ``ValueError``, która ją podaje."""
+
     entries = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(entries, list):
+        raise ValueError(f"{path}: plik mutacji to lista, nie {type(entries).__name__}; postać: {FILE_SHAPE}")
+    for number, entry in enumerate(entries, 1):
+        if problem := _entry_problem(entry):
+            raise ValueError(f"{path}: wpis {number} {problem}; postać: {FILE_SHAPE}")
     if not own_command and (named := [entry["nazwa"] for entry in entries if "polecenie" in entry]):
         raise ValueError(f"--jak-ci składa polecenie samo, a wpisy {', '.join(named)} mają własne")
     return [
@@ -800,7 +883,7 @@ def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     split = arguments.index("--") if "--" in arguments else len(arguments)
     command = tuple(arguments[split + 1 :])
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=RECIPE, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--zmiana",
         nargs=3,
@@ -822,7 +905,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Polecenie z plików każdego zadania pytest runu CI RUN (bez numeru: ostatniego runu gałęzi), w którym stoją zmienione testy, bez polecenia po --.",
     )
     ciezkie_ci.argument(parser)
+    parser.add_argument("--zasady", action="store_true", help="Drukuje zasady werdyktów, kopii, bramy typów, nocy, --jak-ci i MUTACJE_CZESC.")
     args = parser.parse_args(arguments[:split])
+    if args.zasady:
+        print(RULES.strip())
+        return 0
     jak_ci = args.jak_ci is not None
     if jak_ci and command:
         parser.error("--jak-ci składa polecenie samo, więc nie podawaj go po --")
@@ -834,7 +921,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as error:
         parser.error(str(error))
     if not mutations or not (jak_ci or all(mutation.command for mutation in mutations)):
-        parser.error("podaj mutację (--zmiana albo --plik) i polecenie po --, np. -- -m pytest -q tests/test_x.py, albo --jak-ci")
+        parser.error("podaj mutację (--zmiana albo --plik) i polecenie po --, np. -- -m pytest -q -n 0 tests/test_x.py -k nazwa_testu, albo --jak-ci")
     if jak_ci:
         try:
             mutations = _ci_mutations(mutations, args.jak_ci, args.baza)
