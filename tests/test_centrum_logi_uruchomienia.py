@@ -2499,7 +2499,7 @@ def test_logi_z_pliku_w_katalogu_ktorego_nie_da_sie_wylistowac_ida_do_skrzynki_b
     ).model_copy(update={"technical_notes": ["Logi z pliku"]})
     path = centrum.log_path.parent / "uruchomienia" / name
     path.parent.mkdir(parents=True)
-    path.write_text(logs.text, encoding="utf-8")
+    path.write_text(logs.text, encoding="utf-8", newline="")
     written = path.read_bytes()
 
     with unlisted(monkeypatch, path.parent):
