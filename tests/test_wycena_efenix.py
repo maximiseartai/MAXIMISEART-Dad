@@ -115,8 +115,13 @@ def browser() -> Iterator[Browser]:
 
 @pytest.fixture
 def page(browser: Browser) -> Iterator[Page]:
+    """Karta pierwszego Uruchomienia testu; na końcu testu zamyka się każdy kontekst przeglądarki, także konteksty
+    następnych Uruchomień (``_next_tab``)."""
+
     with page_of(browser) as opened:
         yield opened
+    for context in browser.contexts:
+        context.close()
 
 
 def _price(tmp_path: Path, page: Page, url: str, orders: Sequence[Order], *, timeout_ms: int = 10_000) -> Priced:
@@ -173,18 +178,25 @@ def _run(
 
 
 def _next_tab(page: Page) -> Page:
-    """Karta następnego Uruchomienia: karta ``page`` poprzedniego zamyka się, jak przeglądarka okna, więc jej skrypt
-    efenix nie wysyła już żądań do efenix w trakcie następnego Uruchomienia (testy porównują jego żądania), a nowa jest
-    w tej samej przeglądarce, z jej ciasteczkami, jak trwały profil okna taty, który pamięta logowanie między
-    Uruchomieniami.
+    """Karta następnego Uruchomienia: kontekst karty ``page`` poprzedniego zamyka się, jak przeglądarka okna, więc jej
+    skrypt efenix nie wysyła już żądań do efenix w trakcie następnego Uruchomienia (testy porównują jego żądania), a nowa
+    karta jest w nowym kontekście tej samej przeglądarki. Atrapa tych testów trzyma logowanie u siebie (bez
+    ``cookie_session``), więc nowy kontekst bez ciasteczek widzi tę samą sesję efenix, jak trwały profil okna taty, który
+    pamięta logowanie między Uruchomieniami.
 
     ``page`` to karta, w której biegło Uruchomienie, i jeszcze otwarta: zamknięcie innej karty zostawiało kartę
     przerwanego Uruchomienia otwartą, a jej przeładowanie po „Załaduj do zlecenia” trafiało do Atrapy w trakcie
-    ponownego Uruchomienia (#892)."""
+    ponownego Uruchomienia (#892).
+
+    Zamyka się kontekst, nie sama karta, tak jak okno taty zamyka przeglądarkę (``efenix_browser.chrome``):
+    ``page.close()`` wysłane, gdy skrypt strony zaczyna przeładowanie po odmowie „Załaduj do zlecenia”, kończy się
+    dopiero z zamknięciem kontekstu, więc test wisiał do limitu pytest (#1003)."""
 
     assert page in _USED_TABS and not page.is_closed(), "_next_tab dostaje kartę ostatniego Uruchomienia, jeszcze otwartą"
-    page.close()
-    return page.context.new_page()
+    browser = page.context.browser
+    assert browser is not None
+    page.context.close()
+    return browser.new_context().new_page()
 
 
 def _figures(outcome: Priced) -> dict[str, int]:
