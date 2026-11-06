@@ -357,3 +357,68 @@ def test_czesci_podstawy_kazdej_liczby_do_ci_czesci_skladaja_sie_na_kazdy_zakres
     )
     assert sorted(scopes) == sorted(listed.stdout.splitlines())
     assert [arguments for name, arguments in baseline.UNITS if name == SCRIPT.name] == [()]
+
+
+# Kod bez wątku kolejki (mutacja „send_in_background nie uruchamia wątku”): nowe naruszenie w pierwszym harmonogramie
+# każdego zakresu. Biegnie we własnym interpreterze (reguła ``IN_PROCESS_EXPLORERS``).
+WITHOUT_QUEUE_THREAD = """
+import sys
+
+sys.path.insert(0, sys.argv[1])
+import explore_outbox
+
+explore_outbox.outbox_module.Outbox.send_in_background = lambda self: None
+raise SystemExit(explore_outbox.main(sys.argv[2:]))
+"""
+
+
+def _explored_without_queue_thread(*arguments: str) -> tuple[int, list[str]]:
+    done = subprocess.run(
+        [sys.executable, "-c", WITHOUT_QUEUE_THREAD, str(EXPLORER.parent), "--scope", "zgloszenie", "--scope", "nowe-issue", *arguments],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+    lines = done.stdout.splitlines()
+    assert lines, done.stderr
+    return done.returncode, [line for line in lines if line.startswith("== ")] + lines[-1:]
+
+
+def test_przebieg_mutacji_konczy_sie_na_pierwszym_harmonogramie_z_nowym_naruszeniem() -> None:
+    """``--stop-at-new`` (#963, #967): mutacji wystarczy werdykt, więc eksplorator kończy na pierwszym harmonogramie z
+    nowym naruszeniem i nie zaczyna następnego zakresu. Bez flagi ten sam zepsuty kod przechodzi każdy harmonogram
+    każdego zakresu, a pełny przebieg mutacji przekroczył w CI limit 600 s ``tools/mutacje.py``."""
+
+    full_code, full = _explored_without_queue_thread()
+    stopped_code, stopped = _explored_without_queue_thread("--stop-at-new")
+
+    assert (full_code, len(full), "Harmonogramy: 1." in full[0]) == (1, 3, False), full
+    assert full[-1].startswith("KOLEJKA: NOWE NARUSZENIE"), full
+    assert (stopped_code, len(stopped)) == (1, 2), stopped
+    assert stopped[0].startswith("== zgloszenie: "), stopped
+    assert stopped[0].endswith(" Harmonogramy: 1. Koniec na pierwszym nowym naruszeniu (--stop-at-new)."), stopped
+    assert stopped[-1].startswith("KOLEJKA: NOWE NARUSZENIE"), stopped
+
+
+def test_przebieg_mutacji_bez_nowego_naruszenia_przechodzi_kazdy_harmonogram_jak_bez_flagi() -> None:
+    """Podstawa skryptu mutacji to to samo polecenie z ``--stop-at-new`` na kodzie bez mutacji: musi przejść każdy
+    harmonogram, bo mutacja, której naruszenie leży w dalszym harmonogramie, inaczej przeszłaby niewykryta."""
+
+    def explored(*arguments: str) -> str:
+        done = subprocess.run(
+            [sys.executable, str(EXPLORER), "--scope", "zgloszenie", *arguments],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+            check=False,
+        )
+        assert done.returncode == 0, done.stdout + done.stderr
+        return done.stdout
+
+    stopped = explored("--stop-at-new")
+
+    assert stopped == explored()
+    assert "Harmonogramy: 1." not in stopped

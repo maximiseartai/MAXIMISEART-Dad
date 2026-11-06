@@ -49,8 +49,9 @@ zadania. Odtwarza więc skład zadania tego runu, a nie planu z dzisiejszych cza
 CI biegnie z ``-n auto``, a tu cały skład dzieli jeden proces, więc sąsiad z innego workera CI też jest w nim. Plik,
 który plan dzieli na udziały, biegnie cały.
 Mutacje biegną po kolei, bo równoległe testy przekraczają swoje limity czasu; ``--rownolegle`` puszcza
-naraz najwyżej ``PARALLEL``, a ich polecenia dostają ``PYTEST_XDIST_AUTO_NUM_WORKERS=1`` (chyba że wywołujący je
-ustawił), bo gołe ``pytest -n auto`` w teście każdej z nich bierze wszystkie rdzenie komputera.
+naraz najwyżej ``PARALLEL`` (tyle, ile rdzeni ma komputer, i najwyżej 8), a ich polecenia dostają
+``PYTEST_XDIST_AUTO_NUM_WORKERS=1`` (chyba że wywołujący je ustawił), bo gołe ``pytest -n auto`` w teście każdej z nich
+bierze wszystkie rdzenie komputera.
 Polecenia i kopie biegną przez ``tools/lib/potomne.py``: procesy potomne polecenia giną z jego końcem, a
 przekroczony czas, przerwanie (Ctrl-C) i zabicie narzędzia kończą polecenie i usuwają kopie.
 
@@ -109,8 +110,10 @@ import potomne
 
 ROOT = Path(__file__).resolve().parents[1]
 TIMEOUT = 600
-# Tyle mutacji naraz dawał ThreadPoolExecutor (rdzenie + 4) na 4 vCPU runnera CI; na 16 rdzeniach Maca dawał 20.
-PARALLEL = 8
+# Mutacji naraz najwyżej tyle, ile rdzeni ma komputer (4 vCPU runnera Windows CI), i najwyżej 8 (16 rdzeni Maca dzielą
+# agenci). Osiem eksploratorów naraz na 4 vCPU dzieliło procesor, więc czas mutacji zależał od tego, ile ciężkich mutacji
+# plan CI wrzucił do jednej części (do 600 s limitu, #963, #968).
+PARALLEL = min(8, os.cpu_count() or 1)
 # Cache mypy kroków bramy typów (``--cache-dir`` kroku Windows leży w nim), który kopia bez mutacji daje kopiom mutacji.
 MYPY_CACHE = ".mypy_cache"
 PART = "MUTACJE_CZESC"

@@ -603,8 +603,14 @@ def test_skrypt_mutacji_skilla_daje_zagniezdzonemu_pytest_n_auto_jednego_workera
     assert answered.stdout.splitlines() == ["WYKRYTA: m → workery 1", "MUTACJE OK"], answered.stderr
 
 
-def test_naraz_biegnie_najwyzej_osiem_mutacji(tmp_path: Path) -> None:
-    """Każda mutacja czeka, aż wystartuje osiem, i podaje, ile biegnie naraz; dziewiąta startuje dopiero po końcu innej."""
+# Narzędzie na komputerze z ``cores`` rdzeniami: ``os.cpu_count`` podmieniony przed jego startem.
+ON_CORES = "import os, runpy, sys; _, cores, *sys.argv = sys.argv; os.cpu_count = lambda: int(cores); runpy.run_path(sys.argv[0], run_name='__main__')"
+
+
+@pytest.mark.parametrize(("cores", "at_once"), [(3, 3), (16, 8)], ids=["runner-ci-mniej-rdzeni-niz-8", "mac-wiecej-rdzeni-niz-8"])
+def test_naraz_biegnie_najwyzej_tyle_mutacji_ile_rdzeni_i_najwyzej_osiem(tmp_path: Path, cores: int, at_once: int) -> None:
+    """Każda mutacja czeka, aż wystartuje ``at_once``, i podaje, ile biegnie naraz; następna startuje dopiero po końcu
+    innej. Osiem eksploratorów naraz na 4 vCPU runnera CI dzieliło procesor, a czas mutacji rósł do limitu (#968)."""
 
     started, running = tmp_path / "wystartowaly", tmp_path / "biegna"
     started.mkdir()
@@ -616,7 +622,7 @@ def test_naraz_biegnie_najwyzej_osiem_mutacji(tmp_path: Path) -> None:
         "    (started / me).touch()\n"
         "    (running / me).touch()\n"
         "    deadline = time.monotonic() + 20\n"
-        "    while len(list(started.iterdir())) < 8 and time.monotonic() < deadline:\n"
+        f"    while len(list(started.iterdir())) < {at_once} and time.monotonic() < deadline:\n"
         "        time.sleep(0.05)\n"
         "    time.sleep(0.5)\n"
         "    print('naraz', len(list(running.iterdir())))\n"
@@ -624,10 +630,20 @@ def test_naraz_biegnie_najwyzej_osiem_mutacji(tmp_path: Path) -> None:
         "    raise SystemExit(1)\n"
     )
 
-    answered = _in_repository(_small_repository(tmp_path), "--rownolegle", "--plik", str(_plan(tmp_path, 9)), "--", "-c", counts)
+    repo = _small_repository(tmp_path)
+    answered = subprocess.run(
+        [sys.executable, "-c", ON_CORES, str(cores), str(repo / "tools" / "mutacje.py"), "--rownolegle", "--plik", str(_plan(tmp_path, at_once + 1)), "--", "-c", counts],
+        cwd=repo,
+        env=WITHOUT_XDIST_WORKERS,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
 
     seen = [int(line.rsplit(" ", 1)[1]) for line in answered.stdout.splitlines() if line.startswith("WYKRYTA: m")]
-    assert (len(seen), max(seen, default=0)) == (9, 8), answered.stdout + answered.stderr
+    assert (len(seen), max(seen, default=0)) == (at_once + 1, at_once), answered.stdout + answered.stderr
 
 
 
