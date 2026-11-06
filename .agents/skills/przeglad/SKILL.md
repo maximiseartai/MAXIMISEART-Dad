@@ -31,6 +31,7 @@ Czysty PR z nowym sprawdzeniem, w którym nie odtworzyłeś dziury, dostaje wię
 Drobnych podaj najwyżej 3, najważniejsze.
 Defekt, który zmiana PR wywołuje albo ujawnia, liczy się do werdyktu także wtedy, gdy siedzi w pliku, którego PR nie zmienia (np. nowa konfiguracja uruchamia niezmieniony kod w nowym stanie).
 Istniejące wcześniej to tylko defekt, który powtarzasz na merge-base bez tej zmiany, i do werdyktu się nie liczy.
+Przypadek zbudowany tylko z pliku spoza dziedziny, którą wyznacza decyzja Maksa w ADR (dziś pliki łamiące pewniki wklejenia INTERMAX, [ADR 0025](../../../docs/adr/0025-regula-danych-wysylki-do-skrzynki.md), sekcja „Pewniki i granica dziedziny”), nie jest defektem.
 Styl, nazwy i formatowanie zostawiasz ruffowi, mypy i lintom frontendu.
 
 ## Dowody

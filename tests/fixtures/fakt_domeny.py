@@ -1,11 +1,12 @@
-"""Ryzyko przyjęte przez Maksa przy regule położenia wiersza (decyzje z 5.11.2026 i 6.11.2026, ADR 0025): klasy
-przypadków, w których adres albo numer Orange wychodzi, i termin ich przeglądu.
+"""Ryzyko przyjęte przez Maksa przy regule położenia wiersza (decyzja z 6.11.2026, ADR 0025): klasy plików poza
+dziedziną, w których adres albo numer Orange wychodzi, i termin ich przeglądu.
 
 Reguła zna każdy wiersz w jednym położeniu: pierwszy wiersz bloku wklejenia przesunięty o dwie kolumny w lewo, każdy
 inny pod nagłówkiem. W obu zna pierwszy wiersz bloku, którego przesunięcia nie widać (``raw_orders.shift_visible``: data
 z godziną dwie kolumny przed ``DATA GODZ. POCZ.``, a pod nią nie), i inny wiersz z datą z godziną dwie kolumny przed
 ``DATA GODZ. POCZ.`` (``raw_orders.both_positions``). Klasy A i B łamią fakt domeny bez śladu, a w klasie C fakt
-zachodzi, ale reguła bierze za pierwszy wiersz bloku z widocznym przesunięciem wiersz, który stoi na miejscu. Przypadek
+zachodzi, ale reguła bierze za pierwszy wiersz bloku z widocznym przesunięciem wiersz, który stoi na miejscu. Każda klasa
+łamie pewnik wklejenia (ADR 0025, sekcja „Pewniki i granica dziedziny”), więc nie jest powodem do FAIL. Przypadek
 klasy z ``KNOWN`` jest ``xfail`` strict: po terminie znów pada, a naprawiony pada od razu.
 """
 
@@ -19,11 +20,11 @@ KNOWN_UNTIL = date(2027, 2, 5)
 """Termin przeglądu ryzyka przyjętego przez Maksa: po nim przypadki ``KNOWN`` znów padają."""
 KNOWN = {
     # klasa B
-    "pierwszy_na_miejscu": "Fakt domeny złamany (ryzyko przyjęte przez Maksa 5.11.2026, ADR 0025): pierwszy wiersz bloku "
+    "pierwszy_na_miejscu": "Fakt domeny złamany (ryzyko przyjęte przez Maksa 6.11.2026, ADR 0025): pierwszy wiersz bloku "
     "wklejenia z widocznym przesunięciem jest przesunięty tylko w części albo stoi na miejscu, a pamięć reguły danych zna "
     "go tylko przesuniętego",
     # klasa A
-    "przesuniety_inny_bez_sladu": "Fakt domeny złamany (ryzyko przyjęte przez Maksa 5.11.2026, ADR 0025): przesunięty jest "
+    "przesuniety_inny_bez_sladu": "Fakt domeny złamany (ryzyko przyjęte przez Maksa 6.11.2026, ADR 0025): przesunięty jest "
     "wiersz inny niż pierwszy, bez daty z godziną dwie kolumny przed DATA, więc pamięć reguły danych zna go tylko pod "
     "nagłówkiem",
     # klasa C
