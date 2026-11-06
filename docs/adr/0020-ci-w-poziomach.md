@@ -71,6 +71,8 @@ Maks zgodził się 26.10 na takie wpisy z góry, więc nie wymagają osobnej zgo
   Do taty nie trafi, bo Wydanie wymaga zielonego pełnego CI i zielonych testów z kwarantanny.
 - Dwa PR-y zielone osobno mogą się zepsuć dopiero razem na `main` (2 razy w 28 dniach do 26.10).
   Issue czerwonego `main` rozpoznaje takie zderzenie; gdy zderzenia się powtarzają, wraca decyzja o merge queue.
+  Od #959 (6.11) zderzeniem jest tylko czerwony `main`, którego każda nowa porażka to test, którego wejścia zmieniły oba PR-y (graf `tools/lib/wplyw_zmiany.py`), a zielony `main`, który przyszedł bez zmiany wejść tych testów, zdejmuje etykietę `zderzenie`.
+  Na 6 issues `zderzenie` z 5–6.11 żadne nie było zderzeniem: pierwszy warunek odrzuca 4 z nich (flaky test jednej strony, padnięte Mutation checks), a drugi jeszcze 1, więc decyzję o merge queue wywołuje mniej fałszywych alarmów.
 - Od 6.11 (#959) `tools/scal_pr.py` przed merge'em uruchamia na scalonym drzewie test scalenia: pliki testów w odległości najwyżej 1 w grafie wpływu zmiany i od zmiany PR, i od zmiany `main` od merge-base, gdy ich czas CI mieści się w limicie 180 s.
   Zamiast merge queue łapie tylko tanią część zderzeń: na 19 merge'ach z 6.11 biegł 4 razy po 4–8 s, a 7 droższych przecięć (od 437 s w CI, 93 s na Macu agenta) i zmian `tests/conftest.py` pominął z powodem w linii `SCAL OK`, a liczenie przecięcia dodało do merge'a najwyżej 1,6 s.
   Decyzja o merge queue zostaje Maksa.
