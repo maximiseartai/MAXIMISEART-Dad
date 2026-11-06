@@ -55,6 +55,6 @@ Wariant L1 (ta decyzja) względem stanu wyjściowego:
 
 ## Konsekwencje
 
-- Werdykt w złej postaci (brak linii `Znaleziska:`, `PASS` z Ważnym, SHA innego commitu) odrzuca `--werdykt` przed publikacją, a nie `tools/scal_pr.py` przy merge'u.
+- Werdykt w złej postaci (brak linii `Znaleziska:`, `PASS` z Ważnym, SHA innego commitu) odrzuca `--werdykt` przed publikacją, a `PASS` w złej postaci opublikowany z pominięciem `--werdykt` odrzuca też `tools/scal_pr.py` przy merge'u (od 7.11.2026, po #994, #1001 i #1004).
 - Przez tydzień od merge'a koordynator liczy na żywo: odsetek PR-ów z `PASS` w pierwszej rundzie, błędy przepuszczone przez przegląd (znalezione po merge'u) i czerwony `main`.
   Po tygodniu Maks decyduje na tych liczbach, czy skill zostaje, a do tego czasu `docs/agents/przeglad.md` nie wraca.

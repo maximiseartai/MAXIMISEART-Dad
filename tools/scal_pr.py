@@ -7,7 +7,7 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
 1. PR jest otwarty, nie jest szkicem i nie pochodzi z forka (z forka ruff i mypy biegłyby na obcym kodzie);
 2. check ``Required CI status`` z GitHub Actions na HEAD PR skończył się sukcesem (jak w rulesecie ``main``:
    CheckRun z workflow, nie status commitu, który może ustawić każdy z prawem zapisu);
-3. najnowszy werdykt dla HEAD PR to ``PASS``;
+3. najnowszy werdykt dla HEAD PR to ``PASS`` w postaci, którą publikuje ``--werdykt`` (niżej);
 4. opis PR ma każdy nagłówek ``##`` wzoru z ``.agents/skills/pr/SKILL.md``, każdy jako osobną linię i w kolejności
    wzoru, więc każdy PR ma te same sekcje, a sekcja dopisana do wzoru od razu obowiązuje;
 5. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
@@ -37,12 +37,15 @@ Mutacje zmienionych linii nie biegną na PR i nie czeka na nie: biegną nocą na
 
 Werdykty to komentarze i recenzje PR kont z prawem zapisu (``OWNER``, ``MEMBER``, ``COLLABORATOR``), w kolejności
 utworzenia; nieopublikowana recenzja (``PENDING``) się nie liczy. Werdykt to komentarz albo recenzja, której pierwsza
-niepusta linia, bez odstępów na brzegach, to dokładnie ``WERDYKT: PASS <SHA>`` (zgoda) albo ``WERDYKT: FAIL <SHA>``
-(sprzeciw), gdzie ``<SHA>`` to pełny SHA HEAD PR małymi literami; dalsze linie to znaleziska i ich nie czyta.
-Sprzeciwem jest też recenzja w stanie ``CHANGES_REQUESTED``. Inny tekst, także ``FAIL`` w prozie albo werdykt ze
-skróconym SHA, nie jest werdyktem. Zgodę pisze niezależny recenzent, nie autor zmiany: ``PASS`` mówi, że przegląd
-nie znalazł problemów, a skille ``verify-*`` z linii ``SKILLE VERIFY`` ``tools/skille_dla_zmiany.py`` przeszły na
-tym SHA (ich polecenia z linii ``LICZY CI`` w CI, reszta workflow u agenta). Rozstrzyga najnowszy werdykt dla HEAD:
+niepusta linia, bez odstępów na brzegach, to dokładnie ``WERDYKT: PASS <SHA>`` albo ``WERDYKT: FAIL <SHA>``, gdzie
+``<SHA>`` to pełny SHA HEAD PR małymi literami. ``FAIL`` jest sprzeciwem bez względu na dalsze linie, tak jak
+recenzja w stanie ``CHANGES_REQUESTED``. ``PASS`` jest zgodą tylko wtedy, gdy cała treść przechodzi reguły
+``--werdykt`` (niżej), bez względu na to, jak go opublikowano; inaczej to odmowa ``werdykt: PASS dla <sha> nie
+przechodzi reguł --werdykt (<przyczyny>)`` z poleceniem ``--werdykt``, bo ręczny komentarz omijał te reguły (#994,
+#1001, #1004). Inny tekst, także ``FAIL`` w prozie albo werdykt ze skróconym SHA, nie jest werdyktem. Zgodę pisze
+niezależny recenzent, nie autor zmiany: ``PASS`` mówi, że przegląd nie znalazł problemów, a skille ``verify-*``
+z linii ``SKILLE VERIFY`` ``tools/skille_dla_zmiany.py`` przeszły na tym SHA (ich polecenia z linii ``LICZY CI``
+w CI, reszta workflow u agenta). Rozstrzyga najnowszy werdykt dla HEAD:
 sprzeciw po ``PASS`` odbiera zgodę, nowszy ``PASS`` ją przywraca, a werdykt starszego commitu nie przechodzi na nowy
 push. Komentarz edytowany liczy się z treścią po edycji, ale w miejscu utworzenia, a ukryty komentarz nadal się liczy.
 
@@ -106,10 +109,15 @@ Dwa tryby służą recenzentowi (skill ``przeglad``, tryb recenzenta) i niczego 
 kontekst przeglądu: pełny SHA HEAD PR, bazę i merge-base z nią, ``git diff --stat`` i zmienione pliki od merge-base,
 wynik ``tools/skille_dla_zmiany.py`` z HEAD PR liczony od merge-base (w kopii commitu HEAD, więc ``pilnuje:`` skilli
 jest z PR) i poprzednie werdykty PR w kolejności utworzenia, każdy z datą, autorem, dwiema pierwszymi liniami i tym,
-czy dotyczy HEAD. Gdy ostatni werdykt jest dla innego commitu, linia ``RUNDA`` podaje polecenie diffu od niego do
-HEAD. Kończy się linią ``PRZEGLĄD OK | #N <sha>``.
+czy dotyczy HEAD (``PASS`` poza regułami ``--werdykt`` z dopiskiem). Gdy ostatni werdykt jest dla innego commitu,
+linia ``RUNDA`` podaje polecenie diffu od niego do HEAD. Linia ``CI`` podaje stan ``Required CI status`` na HEAD
+z rollupu checków: ``success`` znaczy, że polecenia z linii ``LICZY CI`` przeszły (``tools/plan_ci.py``), więc ich
+logów nie trzeba czytać; ``pending``, gdy któreś zadanie jeszcze biegnie, także zanim Required się zacznie;
+``failure`` z padłymi zadaniami runu Required i poleceniem ``gh run view <run> --log-failed``; ``brak``, gdy CI na
+HEAD nie biegło. Kończy się linią ``PRZEGLĄD OK | #N <sha>``.
 
-``--werdykt <plik>`` publikuje plik jako komentarz PR (``gh pr comment --body-file``), gdy pierwsza niepusta linia
+``--werdykt <plik>`` publikuje plik jako komentarz PR (``gh pr comment --body-file``), gdy przechodzi te same reguły
+co zgoda przy merge'u: pierwsza niepusta linia
 to ``WERDYKT: PASS <SHA>`` albo ``WERDYKT: FAIL <SHA>`` z pełnym SHA bieżącego HEAD PR, druga to ``Znaleziska: N
 (Ważne a, Drobne b)`` z ``N = a + b``, ``PASS`` ma zero Ważnych, ``FAIL`` co najmniej jedno, a Drobnych jest
 najwyżej trzy. Inaczej niczego nie publikuje i kończy się linią ``WERDYKT ODMOWA | #N | <przyczyny>``, w której
@@ -127,6 +135,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import Enum
 from html.parser import HTMLParser
 import json
 from pathlib import Path
@@ -136,6 +145,7 @@ import statistics
 import subprocess
 import sys
 import time
+from typing import Literal
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
@@ -148,6 +158,8 @@ from wplyw_zmiany import Context, Repository, run_all
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_CHECK = "Required CI status"
+RUN_ID = re.compile(r"/actions/runs/(\d+)/")
+JOB_NOT_FAILED = frozenset({"SUCCESS", "SKIPPED", "NEUTRAL"})
 VERDICT_LINE = re.compile(r"WERDYKT: (PASS|FAIL) ([0-9a-f]{40})")
 FINDINGS_LINE = re.compile(r"Znaleziska: (\d+) \(Ważne (\d+), Drobne (\d+)\)")
 MAX_MINOR = 3
@@ -187,6 +199,7 @@ class Pull:
     repository: str
     body: str
     closed_by_github: frozenset[int]
+    checks: tuple[dict[str, str | None], ...]
 
 
 class _Refused(Exception):
@@ -207,16 +220,49 @@ def _gh(*arguments: str, stdin: str | None = None) -> str:
     return done.stdout
 
 
+def _required(rollup: list[dict[str, str | None]]) -> list[dict[str, str | None]]:
+    """Checki ``Required CI status`` z GitHub Actions (CheckRun z workflow), nie status commitu, który ustawi każdy z prawem zapisu."""
+
+    return [check for check in rollup if check.get("name") == REQUIRED_CHECK and check.get("workflowName")]
+
+
 def _ci_problem(rollup: list[dict[str, str | None]]) -> str | None:
-    results = []
-    for check in rollup:
-        if check.get("name") == REQUIRED_CHECK and check.get("workflowName"):
-            completed = check.get("status") == "COMPLETED"
-            results.append((check.get("conclusion") if completed else check.get("status")) or "?")
+    results = [(check.get("conclusion") if check.get("status") == "COMPLETED" else check.get("status")) or "?" for check in _required(rollup)]
     if not results:
         return f"CI: brak „{REQUIRED_CHECK}” z GitHub Actions na HEAD"
     failed = [result for result in results if result != "SUCCESS"]
     return f"CI: „{REQUIRED_CHECK}” {', '.join(failed)}" if failed else None
+
+
+def _run_id(check: dict[str, str | None]) -> str | None:
+    found = RUN_ID.search(check.get("detailsUrl") or "")
+    return found[1] if found else None
+
+
+def _ci_line(rollup: list[dict[str, str | None]], head: str) -> str:
+    where = f"CI | {REQUIRED_CHECK}"
+    required = _required(rollup)
+    actions = [check for check in rollup if check.get("workflowName") and check.get("name") != REQUIRED_CHECK]
+    red = [check for check in required if check.get("status") == "COMPLETED" and check.get("conclusion") != "SUCCESS"]
+    runs = {run for check in red if (run := _run_id(check))}
+    failed = sorted(
+        {
+            str(check.get("name"))
+            for check in actions
+            if check.get("status") == "COMPLETED" and check.get("conclusion") not in JOB_NOT_FAILED and (not red or _run_id(check) in runs)
+        }
+    )
+    jobs = f"padłe zadania: {', '.join(failed)}" if failed else ""
+    logs = f"logi padłych zadań: gh run view {' '.join(sorted(runs))} --log-failed" if runs else "logi padłych zadań"
+    if red:
+        why = jobs or f"bez padłego zadania, przyczynę podaje log „{REQUIRED_CHECK}”"
+        return f"{where} failure na HEAD {head} | {why} | polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko {logs}"
+    running = [check for check in [*required, *actions] if check.get("status") != "COMPLETED"]
+    if running:
+        return f"{where} pending na HEAD {head} (w toku: {len(running)}{f'; {jobs}' if jobs else ''}) | polecenia z linii LICZY CI jeszcze bez wyniku"
+    if required:
+        return f"{where} success na HEAD {head} | polecenia z linii LICZY CI przeszły, ich logów nie przeszukuj"
+    return f"{where} brak na HEAD {head} | CI nie biegło na tym HEAD (PR z konfliktem z bazą nie dostaje CI)"
 
 
 def _body_problem(body: str) -> str | None:
@@ -235,16 +281,42 @@ def _body_problem(body: str) -> str | None:
     return f"opis: brak {', '.join(f'„{heading}”' for heading in missing)} w kolejności wzoru {TEMPLATE.relative_to(ROOT).as_posix()}"
 
 
-def _verdict(verdict: dict[str, object], head: str) -> str | None:
-    """``PASS`` albo ``FAIL`` dla ``head``; ``None``, gdy komentarz albo recenzja nie jest werdyktem dla ``head``."""
+class _Stance(Enum):
+    CONSENT = "PASS"
+    OBJECTION = "FAIL"
+    BROKEN_CONSENT = "PASS poza regułami --werdykt"
 
+
+@dataclass(frozen=True)
+class _Verdict:
+    when: str
+    login: str
+    first_lines: tuple[str, ...]
+    decision: Literal["PASS", "FAIL"] | None
+    commit: str | None
+    stance: _Stance | None
+    problems: tuple[str, ...]
+
+
+def _read_verdict(verdict: dict[str, object], head: str) -> _Verdict | None:
     if verdict["authorAssociation"] not in TRUSTED or verdict.get("state") == "PENDING":
         return None
-    if verdict.get("state") == "CHANGES_REQUESTED":
-        return "FAIL"
     lines = _text_lines(verdict["body"])
     found = VERDICT_LINE.fullmatch(lines[0]) if lines else None
-    return found[1] if found and found[2] == head else None
+    changes_requested = verdict.get("state") == "CHANGES_REQUESTED"
+    if found is None and not changes_requested:
+        return None
+    decision: Literal["PASS", "FAIL"] | None = None if found is None else "PASS" if found[1] == "PASS" else "FAIL"
+    commit = found[2] if found else None
+    problems = tuple(_verdict_file_problems(str(verdict["body"]), head)) if decision == "PASS" and commit == head else ()
+    if changes_requested or (decision == "FAIL" and commit == head):
+        stance: _Stance | None = _Stance.OBJECTION
+    else:
+        stance = None if commit != head else _Stance.BROKEN_CONSENT if problems else _Stance.CONSENT
+    author = verdict.get("author")
+    login = str(author.get("login", "?")) if isinstance(author, dict) else "?"
+    when = str(verdict.get("createdAt") or verdict.get("submittedAt") or "?")
+    return _Verdict(when, login, tuple(lines[:2]), decision, commit, stance, problems)
 
 
 def _text_lines(body: object) -> list[str]:
@@ -253,15 +325,17 @@ def _text_lines(body: object) -> list[str]:
     return [line.strip() for line in str(body).splitlines() if line.strip()]
 
 
-def _verdict_problem(verdicts: tuple[dict[str, object], ...], head: str) -> str | None:
-    """Przyczyna odmowy z najnowszego werdyktu dla ``head`` z werdyktów w kolejności utworzenia."""
-
+def _verdict_problem(pull: Pull) -> str | None:
+    head, publish = pull.head, f"tools/scal_pr.py {pull.number} --werdykt PLIK"
     latest = None
-    for verdict in verdicts:
-        latest = _verdict(verdict, head) or latest
+    for verdict in pull.verdicts:
+        read = _read_verdict(verdict, head)
+        latest = read if read is not None and read.stance is not None else latest
     if latest is None:
-        return f"werdykt: brak komentarza ani recenzji „WERDYKT: PASS {head}”"
-    return None if latest == "PASS" else f"werdykt: FAIL dla {head[:7]} bez nowszego „WERDYKT: PASS {head}”"
+        return f"werdykt: brak komentarza ani recenzji „WERDYKT: PASS {head}”; opublikuj werdykt przez {publish}"
+    if latest.stance is _Stance.BROKEN_CONSENT:
+        return f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt ({'; '.join(latest.problems)}); popraw plik werdyktu i opublikuj go przez {publish}"
+    return None if latest.stance is _Stance.CONSENT else f"werdykt: FAIL dla {head[:7]} bez nowszego „WERDYKT: PASS {head}”"
 
 
 @dataclass(frozen=True)
@@ -390,6 +464,7 @@ def _pull(number: int) -> Pull:
         repository,
         pull["body"],
         closed_by_github,
+        tuple(pull["statusCheckRollup"]),
     )
 
 
@@ -404,7 +479,7 @@ def _check(pull: Pull) -> tuple[str, str]:
 
     checked = status_scalenia.PullRequest(pull.number, pull.title, pull.head)
     base = status_scalenia.fetch(pull.base, [checked])
-    problems = [*pull.problems, *filter(None, [_verdict_problem(pull.verdicts, pull.head)])]
+    problems = [*pull.problems, *filter(None, [_verdict_problem(pull)])]
     if problems:
         raise _Refused("; ".join(problems))
     where = f"{pull.base} {base[:7]}"
@@ -579,24 +654,15 @@ def _verdict_history(pull: Pull) -> list[str]:
     """Linie werdyktów PR w kolejności utworzenia i linia ``RUNDA`` o ostatnim z nich."""
 
     shown, last, failed = [], None, set()
-    for verdict in pull.verdicts:
-        if verdict["authorAssociation"] not in TRUSTED or verdict.get("state") == "PENDING":
+    for verdict in filter(None, (_read_verdict(verdict, pull.head) for verdict in pull.verdicts)):
+        if verdict.decision is None or verdict.commit is None:
+            shown.append(f"WERDYKT | {verdict.when} {verdict.login} | recenzja CHANGES_REQUESTED | {' | '.join(verdict.first_lines)}")
             continue
-        lines = _text_lines(verdict["body"])
-        found = VERDICT_LINE.fullmatch(lines[0]) if lines else None
-        if found is None and verdict.get("state") != "CHANGES_REQUESTED":
-            continue
-        author = verdict.get("author")
-        login = author.get("login", "?") if isinstance(author, dict) else "?"
-        when = verdict.get("createdAt") or verdict.get("submittedAt") or "?"
-        if found is None:
-            shown.append(f"WERDYKT | {when} {login} | recenzja CHANGES_REQUESTED | {' | '.join(lines[:2])}")
-            continue
-        last = (found[1], found[2])
-        if found[1] == "FAIL":
-            failed.add(found[2])
-        which = "HEAD" if found[2] == pull.head else "inny commit"
-        shown.append(f"WERDYKT | {when} {login} | {which} | {' | '.join(lines[:2])}")
+        last = (verdict.decision, verdict.commit)
+        if verdict.decision == "FAIL":
+            failed.add(verdict.commit)
+        which = "inny commit" if verdict.commit != pull.head else f"HEAD, {verdict.stance.value}" if verdict.stance is _Stance.BROKEN_CONSENT else "HEAD"
+        shown.append(f"WERDYKT | {verdict.when} {verdict.login} | {which} | {' | '.join(verdict.first_lines)}")
     if last is None:
         return [*shown, "RUNDA | 1: PR nie ma werdyktu"]
     rounds = f"rund z FAIL: {len(failed)}, ostatni werdykt {last[0]} dla {last[1][:7]}"
@@ -615,6 +681,7 @@ def _review_context(number: int) -> int:
     print(_git("diff", "--stat", fork, pull.head).rstrip())
     print(f"PLIKI | {len(files)}", *files, sep="\n")
     print(f"SKILLE | {SKILLS_FOR_CHANGE.as_posix()} {fork} na HEAD PR", *_skills_for_change(pull.head, fork), sep="\n")
+    print(_ci_line(list(pull.checks), pull.head))
     print(*_verdict_history(pull), sep="\n")
     print(f"PRZEGLĄD OK | #{pull.number} {pull.head[:7]}")
     return 0

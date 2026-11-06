@@ -7,7 +7,7 @@ description: Przegląd PR w tym repozytorium, wspólny dla autora i recenzenta -
 
 Ten skill ma wspólne reguły przeglądu i dwa tryby, które różnią się tylko krokami końcowymi: tryb autora, który czyta reguły, zanim zleci przegląd PR, i tryb recenzenta, który publikuje werdykt na PR.
 `PASS` mówi też, że skille `verify-*` z linii `SKILLE VERIFY` przeszły na tym SHA (gotowość w [`AGENTS.md`](../../../AGENTS.md)).
-Postać werdyktu, którą przyjmuje `tools/scal_pr.py`, podaje jego `--help`.
+Zlecenie przeglądu i brief koordynatora dodają tylko cel i punkty do sprawdzenia, a co jest Ważne, jakie dowody i jak opublikować werdykt, ustala ten skill.
 
 ## Co jest porażką
 
@@ -49,6 +49,7 @@ Pełnych mutacji i pełnego CI recenzent nie uruchamia lokalnie, bo liczy je CI 
 Pierwsza linia to `WERDYKT: PASS <pełny SHA HEAD>` albo `WERDYKT: FAIL <pełny SHA HEAD>`.
 Druga podaje liczbę znalezisk w postaci `Znaleziska: N (Ważne a, Drobne b)`.
 Dalej znaleziska od najważniejszego, każde z oznaczeniem, plik:linia i dowodem, a na końcu krótko, co sprawdzone i z jakim wynikiem.
+`tools/scal_pr.py <PR> --werdykt <plik>` sprawdza tę postać przed publikacją, a merge liczy `PASS` tylko w niej, także gdy ktoś opublikował go inaczej, więc werdykt publikuj tylko tym poleceniem.
 
 ## Kolejne rundy
 
@@ -66,7 +67,15 @@ Autor nie przegląda własnego diffu przed pushem i nie zleca przeglądu przed p
 1. Wypchnij gałąź i utwórz PR według skilla [`pr`](../pr/SKILL.md).
    Krok kończy się, gdy masz numer PR i pełny SHA HEAD.
 2. Zleć przegląd zaraz po pushu, równolegle z CI, nowemu agentowi, który nie pisał kodu i nie zna Twojej rozmowy.
-   Podaj mu ten skill w trybie recenzenta, numer PR i katalog biegu, bez własnej oceny diffu.
+   Zlecenie ma tylko te linie, bez własnej oceny diffu i bez reguł, które ma ten skill:
+
+   ```text
+   Przegląd PR #<N> według skilla .agents/skills/przeglad/SKILL.md w trybie recenzenta.
+   Katalog werdyktu: ~/.t3/notes/<bieg>/recenzje/<N>/
+   Cel Maksa: <jedno zdanie>
+   Do sprawdzenia: <punkty albo „nic ponad skill”>
+   ```
+
    Krok kończy się, gdy recenzent oddaje ścieżkę pliku werdyktu i linię `WERDYKT OK`.
 3. Po `FAIL` popraw każde Ważne, a Drobne popraw albo zapisz z powodem w opisie PR, i zleć kolejną rundę według sekcji „Kolejne rundy”.
    Krok kończy się, gdy na HEAD PR jest `PASS` albo po trzeciej rundzie z `FAIL`, po której zmieniasz podejście albo dzielisz PR.
@@ -75,11 +84,13 @@ Autor nie przegląda własnego diffu przed pushem i nie zleca przeglądu przed p
 
 Niezależny recenzent, który nie pisał kodu, przegląda HEAD PR i publikuje werdykt przez `tools/scal_pr.py`.
 Kto zleca przegląd, podaje numer PR i katalog biegu, w którym leży plik werdyktu (`~/.t3/notes/<bieg>/recenzje/<PR>/`), a bez biegu plik leży w `~/.t3/notes/recenzje/<PR>/`.
+Recenzent pracuje we własnym odłączonym checkoucie HEAD PR (`git fetch origin pull/<PR>/head`, potem `git worktree add --detach <katalog> FETCH_HEAD` i `tools/setup_worktree.py` w nim), nie zmienia gałęzi PR, nie pushuje, nie scala i nie uruchamia subagentów.
 
 1. Uruchom `.venv/bin/python tools/scal_pr.py <PR> --przeglad`.
-   Drukuje pełny SHA HEAD, merge-base z bazą, `git diff --stat`, zmienione pliki, wynik `tools/skille_dla_zmiany.py` dla HEAD PR i poprzednie werdykty z ich SHA i dwiema pierwszymi liniami.
+   Drukuje pełny SHA HEAD, merge-base z bazą, `git diff --stat`, zmienione pliki, wynik `tools/skille_dla_zmiany.py` dla HEAD PR, stan `Required CI status` na HEAD (linia `CI`) i poprzednie werdykty z ich SHA i dwiema pierwszymi liniami.
    Krok kończy się, gdy masz SHA HEAD i merge-base; poprzedni werdykt znaczy, że to kolejna runda (sekcja „Kolejne rundy”).
 2. Przejrzyj diff według sekcji „Co jest porażką” i „Dowody”, a skille z linii `SKILLE VERIFY` wykonaj według sekcji `What CI runs and what stays local` każdego z nich.
+   Linia `CI` z kroku 1 mówi, czy polecenia z linii `LICZY CI` przeszły: przy `success` logów zadań CI nie przeszukuj, a przy `failure` czytaj tylko logi padłych zadań, które podaje.
    Każde potwierdzone znalezisko z oznaczeniem, plik:linia i dowodem od razu dopisz do pliku `runda-<k>.md` w katalogu werdyktu, żeby przerwany przegląd zostawił znaleziska.
    Krok kończy się, gdy przejrzałeś cały diff, a każde znalezisko jest w pliku.
 3. Dopisz na górę pliku dwie linie z sekcji „Postać werdyktu”, a na koniec krótko, co sprawdzone i z jakim wynikiem.

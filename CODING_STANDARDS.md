@@ -150,6 +150,10 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 - A docstring, `--help`, ADR, `SKILL.md` or document states what the code does now, and only what a check or a run shows: a number names the run or the command it came from.
 - A change that makes a sentence of `AGENTS.md`, this file, `GLOSSARY.md`, a skill or an ADR untrue fixes that sentence in the same change.
 
+| Rule | Guard |
+|---|---|
+| A sentence in `src/`, `tests/`, `tools/` or `docs/adr/` that names Maks's consent or decision (`zgoda Maksa`, `decyzja Maksa` in any form) gives, within two lines of it, the issue or PR (`#N`) or the GitHub address of the issue or PR where he said it, so the reviewer checks it in one step; the claims from before the check sit in `KNOWN_UNSOURCED` with their reasons. Whether the reference holds his words stays with review, because one GitHub account writes every comment (#983 cited `#979` for a consent Maks had not given). | `tests/test_dokumenty_regul.py::test_kazde_powolanie_na_maksa_ma_odwolanie_do_githuba` |
+
 ## Review Context
 
 - Treat ADR 0001 as the constraint that Python remains the single source of settlement rules, with no VBA adapter (ADR 0011).
