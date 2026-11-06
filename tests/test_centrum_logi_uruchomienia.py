@@ -2431,7 +2431,38 @@ def test_dziennik_urwany_przy_pierwszym_wpisie_start_usuwa_bez_logow(tmp_path: P
     assert (journals(centrum), log_files(centrum)) == ([], [])
 
 
-# --- Komentarz postępu Wyceny w efenix (#846) ----------------------------------------------------------------------------
+def test_plik_logow_ktorego_system_nie_daje_odczytac_zostawia_dziennik_do_nastepnego_startu(tmp_path: Path) -> None:
+    """System odmawia odczytu pliku Logów Uruchomienia z dziennikiem Wyceny (tu w jego miejscu stoi katalog), więc start
+    Centrum nie wie, czy Logi są i jakie: niczego za to Uruchomienie nie wysyła i zostawia dziennik następnemu startowi, z
+    linią dziennika Centrum."""
+
+    centrum = settling_centrum(tmp_path)
+    started = JournalStarted(
+        entry="start Uruchomienia",
+        run_id="d" * 32,
+        process="efenix",
+        mode="zapis",
+        period=PERIOD,
+        started_at=utc("2026-09-16T10:15:00+00:00"),
+    )
+    directory = centrum.log_path.parent / "dzienniki-wyceny"
+    directory.mkdir(parents=True)
+    journal = directory / Path(logs_file_name(started.started_at, "efenix", started.run_id)).with_suffix(".jsonl")
+    journal.write_text(f"{started.model_dump_json()}\n", encoding="utf-8")
+    (centrum.log_path.parent / "uruchomienia" / logs_file_name(started.started_at, "efenix", started.run_id)).mkdir(
+        parents=True
+    )
+
+    centrum.restart()
+    centrum.client.get("/api/runs/current")
+    centrum.client.stop()
+    lines = [line for line in centrum.log_path.read_text(encoding="utf-8").splitlines() if "dziennik-wyceny" in line]
+
+    assert journals(centrum) == [journal]
+    assert [line.endswith("miejsce=start") for line in lines] == [True]
+
+
+# --- Komentarz postępu Wyceny w efenix (#846)----------------------------------------------------------------------------
 # Wycena w efenix trwa u taty do półtorej godziny, a Maks chce widzieć jej postęp, zanim się skończy. Testy dają jej czas
 # na udawanym zegarze Centrum: każde żądanie do Atrapy efenix trwa na nim minutę (``EfenixMinutes``), więc Wycena sześciu
 # zleceń ``PRICED`` trwa kilkadziesiąt minut, a postęp odświeża się w jej trakcie. Maks czyta w Skrzynce jeden komentarz

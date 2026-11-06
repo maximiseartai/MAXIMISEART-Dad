@@ -7,7 +7,7 @@ kliknięciu skrótu na pulpicie taty.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import shutil
 import threading
@@ -15,7 +15,11 @@ from typing import Any
 
 import pytest
 
-from rozliczenia.centrum.run_logs import RunLogs
+from rozliczenia.centrum.contract import ProcessKey
+from rozliczenia.centrum.dad_actions import DadActions
+from rozliczenia.centrum.logs_disk import Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
+from rozliczenia.centrum.run_cards import RunCards
+from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, RunLog, RunLogs, StartFacts, Tool
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.telemetry import MetricsStore
 from tests.fixtures.centrum import finished_view, without_times
@@ -369,3 +373,131 @@ def test_uruchomienie_bez_logow_nie_ma_karty(tmp_path: Path) -> None:
     missing = (200, {"state": "missing"})
     assert [(answer.status_code, answer.json()) for answer in answers] == [missing] * len(asked)
     assert (broken.status_code, broken.json()) == missing
+
+
+# --- Logi na dysku (``logs_disk``): jedna odpowiedź o Logach Uruchomienia dla kart i dla startu Centrum ----------------
+
+RUN_ID = "0123456789abcdef0123456789abcdef"
+SECOND = datetime(2026, 10, 23, 14, 5, 7, tzinfo=timezone.utc)
+
+
+def start(run_id: str = RUN_ID, *, process: ProcessKey = "efenix", started_at: datetime = SECOND) -> StartFacts:
+    return StartFacts(run_id=run_id, process=process, mode="zapis", period=PERIOD, started_at=started_at)
+
+
+def interrupted_logs(started: StartFacts) -> RunLog:
+    """Logi Urwanego Uruchomienia ``started`` bez zleceń, jakie start Centrum zamyka z dziennika Wyceny w efenix."""
+
+    return RunLog.interrupted(
+        started,
+        ended_at=started.started_at + timedelta(minutes=5),
+        orders=[],
+        interruption=LoggedInterruption(row=None, place=None, total=None, omitted=0),
+        tool=Tool(wydanie=None, commit=None),
+        environment=Environment(system="Windows-11", python="3.12.7", files=None),
+        dad_actions=DadActions(entries=[], omitted=0),
+    )
+
+
+def written(directory: Path, record: RunLog, name: str | None = None) -> Path:
+    """Plik Logów ``record`` w katalogu Logów pod nazwą z jego startu albo pod ``name``."""
+
+    path = directory / "uruchomienia" / (name or name_of(record))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(record.text, encoding="utf-8")
+    return path
+
+
+def test_nazwa_pliku_logow_to_sekunda_startu_w_utc_proces_i_identyfikator_a_dysk_znajduje_po_niej_logi(
+    tmp_path: Path,
+) -> None:
+    """Plik po zapisie, który się nie skończył (``.tmp``), ma inną nazwę, więc nie jest Logami Uruchomienia."""
+
+    started = start(started_at=SECOND.replace(microsecond=654321))
+    record = interrupted_logs(started)
+    written(tmp_path, record)
+    later = interrupted_logs(start("f" * 32, started_at=SECOND + timedelta(hours=1)))
+    written(tmp_path, later, name_of(later) + ".tmp")
+    disk = LogsOnDisk(tmp_path)
+
+    assert name_of(started) == f"20261023T140507Z-efenix-{RUN_ID}.json"
+    assert (disk.logs(RUN_ID), disk.logs("f" * 32), disk.newest("efenix")) == (Found(record), Missing(), record)
+
+
+@pytest.mark.parametrize(
+    ("content", "read"),
+    [(None, Missing()), (b"{", Unreadable()), ("Logi".encode("utf-16"), Unreadable())],
+    ids=["bez-pliku", "zly-json", "nie-utf-8"],
+)
+def test_logi_uruchomienia_bez_pliku_albo_nieczytelne(tmp_path: Path, content: bytes | None, read: object) -> None:
+    if content is not None:
+        path = tmp_path / "uruchomienia" / name_of(start())
+        path.parent.mkdir()
+        path.write_bytes(content)
+
+    assert LogsOnDisk(tmp_path).logs(RUN_ID) == read
+
+
+def test_logi_ktorych_system_nie_daje_odczytac_to_odmowa_a_nie_nieczytelne(tmp_path: Path) -> None:
+    (tmp_path / "uruchomienia" / name_of(start())).mkdir(parents=True)
+
+    assert isinstance(LogsOnDisk(tmp_path).logs(RUN_ID), Refused)
+
+
+def test_identyfikator_spoza_centrum_nie_ma_logow_choc_nazwa_pliku_sie_nim_konczy(tmp_path: Path) -> None:
+    written(tmp_path, interrupted_logs(start()))
+    disk = LogsOnDisk(tmp_path)
+
+    asked = [f"efenix-{RUN_ID}", RUN_ID.upper(), f"{RUN_ID}.json", "*", ""]
+    assert [disk.logs(run_id) for run_id in asked] == [Missing()] * len(asked)
+
+
+@pytest.mark.parametrize(
+    ("earlier", "later"), [("0" * 32, "f" * 32), ("f" * 32, "0" * 32)], ids=["pozniejszy-dalej", "pozniejszy-blizej"]
+)
+def test_najnowsze_logi_z_tej_samej_sekundy_to_logi_z_pozniejszym_startem(tmp_path: Path, earlier: str, later: str) -> None:
+    older = interrupted_logs(start(started_at=SECOND - timedelta(days=1)))
+    first = interrupted_logs(start(earlier, started_at=SECOND.replace(microsecond=100_000)))
+    second = interrupted_logs(start(later, started_at=SECOND.replace(microsecond=200_000)))
+    for record in (older, first, second):
+        written(tmp_path, record)
+
+    assert LogsOnDisk(tmp_path).newest("efenix") == second
+
+
+def test_widok_logow_liczy_sie_raz_na_wersje_pliku(tmp_path: Path) -> None:
+    """Diagnoza nadpisuje plik Logów, więc widok tego pliku liczy się znowu, a pliku bez zmian nie."""
+
+    record = interrupted_logs(start())
+    path = written(tmp_path, record)
+    seen: list[str] = []
+
+    def view(logs: RunLog) -> datetime:
+        seen.append(logs.run_id)
+        return logs.ended_at
+
+    viewed = LogsOnDisk(tmp_path).viewed(view)
+    before = (viewed.of("efenix"), viewed.of("efenix"), viewed.of("settlement"))
+    diagnosed = record.model_copy(update={"ended_at": record.ended_at + timedelta(minutes=1), "technical_notes": ["Diagnoza"]})
+    path.write_text(diagnosed.text, encoding="utf-8")
+    after = viewed.of("efenix")
+
+    assert (before, after, seen) == (([record.ended_at], [record.ended_at], []), [diagnosed.ended_at], [RUN_ID] * 2)
+
+
+def test_logi_urwanego_uruchomienia_nie_sa_karta_ostatniego_uruchomienia_procesu(tmp_path: Path) -> None:
+    """Karta ostatniego Uporządkowania INTERMAX bierze Logi z wynikiem, a Logi Urwanego Uruchomienia go nie mają."""
+
+    written(tmp_path, interrupted_logs(start(process="intermax")))
+
+    assert RunCards(LogsOnDisk(tmp_path), list).latest("intermax") is None
+
+
+def test_logi_ostatniego_startu_ktorych_system_nie_daje_odczytac_to_start_bez_karty(tmp_path: Path) -> None:
+    """Logi są, więc Uruchomienie miało wynik: karta po starcie nie mówi, że urwało się w trakcie (a7ee70d7b)."""
+
+    disk = LogsOnDisk(tmp_path)
+    disk.started(start(process="settlement"))
+    (tmp_path / "uruchomienia" / name_of(start(process="settlement"))).mkdir(parents=True)
+
+    assert RunCards(disk, list).last() is None
