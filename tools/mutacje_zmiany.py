@@ -852,7 +852,7 @@ class ZakresMutacji:
     teksty: Mapping[str, str]  # plik zmiany → jego treść w checkoucie
     fragmenty: Mapping[str, Sequence[Hunk]]
     mutanty: tuple[Mutant, ...]  # ``selected`` każdego pliku zmiany, po ``do`` tylko z zakresu do commitu
-    wyjatki: Mapping[str, Mapping[int, Allowance]]  # wyjątki ``# mutacje-zmiany:`` każdego pliku; puste przy złym wyjątku
+    wyjatki: Mapping[str, Mapping[int, Allowance]]  # ``exceptions`` każdego pliku; puste przy złym wyjątku
     zly_wyjatek: str | None  # pierwszy wyjątek w złej postaci: część kończy się wtedy kodem 2
     niesprawdzone: tuple[str, ...]  # pliki, które commit zmienia, a ``tools/na_scalonych_pr.py`` podmienił (``overlay``)
 

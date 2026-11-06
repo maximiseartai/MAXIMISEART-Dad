@@ -22,7 +22,7 @@ from tests.fixtures.git_repo import commit, copy_files, git, repository
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
-from mutacje_zmiany import Hunk, ZakresMutacji, exceptions, fingerprint, mutants, selected  # noqa: E402
+from mutacje_zmiany import CODE, Hunk, ZakresMutacji, exceptions, fingerprint, mutants, selected  # noqa: E402
 import pokrycie_procesu  # noqa: E402
 
 MODULE = "src/rozliczenia/warunek.py"
@@ -579,7 +579,55 @@ def test_koniec_nocy_to_najdalszy_commit_do_ktorego_zakres_miesci_limit_a_co_naj
     assert (commits.index(koniec), len(caly.do(koniec).mutanty)) == (end, inside)
 
 
-@pytest.mark.parametrize(("comment", "parts"), [("# mutacje-zmiany: bez terminu", 1), ("# mutacje-zmiany: na próbę | do 2999-01-01 | zgoda Maks", 0)])
+def test_mutacje_linii_ktora_blame_przypisuje_commitowi_sprzed_bazy_licza_sie_do_konca_nocy_od_pierwszego_commitu(tmp_path: Path) -> None:
+    """Diff od bazy widzi przeniesioną linię ``a`` jako dodaną, a ``git blame`` przypisuje ją bazie: każdy zakres ``do``
+    zawiera jej mutacje, więc koniec nocy liczy je od pierwszego commitu, a nie pomija."""
+
+    repo = repository(tmp_path / "repo", {"README.md": "repozytorium\n"})
+    # Baza nie jest pierwszym commitem: ``git blame -l`` drukuje go jako granicę ``^`` bez ostatniego znaku skrótu.
+    commit(repo, "pierwszy")
+    (repo / "src" / "pakiet").mkdir(parents=True)
+    (repo / "src" / "pakiet" / "m.py").write_text("a = 1 > 0\nb = 2 > 0\n", encoding="utf-8")
+    (repo / "src" / "pakiet" / "n.py").write_text(FUNKCJA, encoding="utf-8")
+    base = commit(repo, "baza")
+    (repo / "src" / "pakiet" / "m.py").write_text("b = 2 > 0\na = 1 > 0\nb = 2 > 0\n", encoding="utf-8")
+    commit(repo, "b także przed a")
+    (repo / "src" / "pakiet" / "m.py").write_text("b = 2 > 0\na = 1 > 0\n", encoding="utf-8")
+    przed_trzecim = commit(repo, "bez drugiego b")
+    _dopisz(repo, "trzeci", "n")
+    caly = ZakresMutacji.od(base, repo)
+    sprzed_bazy = [mutant for mutant in caly.mutanty if mutant.path == "src/pakiet/m.py"]
+    assert sprzed_bazy
+    assert [mutant.lines for mutant in sprzed_bazy] == [frozenset({2})] * len(sprzed_bazy)
+
+    koniec = caly.najdalszy_koniec(len(sprzed_bazy))
+
+    assert (koniec, caly.do(koniec).mutanty) == (przed_trzecim, tuple(sprzed_bazy))
+
+
+def test_zaden_plik_kodu_repozytorium_nie_ma_wyjatku_mutacji_w_zlej_postaci() -> None:
+    """Część nocy czyta wyjątki całego pliku ``src/`` albo ``tools/`` zmienionego od bazy, a zły wyjątek kończy ją kodem 2:
+    noc jest czerwona i nie przesuwa bazy, więc każda następna trafia w ten sam komentarz (#1020, komentarz pola, który
+    tylko wspominał postać wyjątku). Najczęściej wspominają ją narzędzia mutacji, więc muszą być wśród sprawdzonych."""
+
+    paths = subprocess.run(
+        ["git", "ls-files", "-z", "--", *CODE], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=True
+    ).stdout.split("\0")[:-1]
+    # Glob, a nie ścieżka każdego narzędzia: ścieżka pliku w teście wciąga jego importy do wyboru testów planu CI.
+    narzedzia_mutacji = {path.relative_to(ROOT).as_posix() for path in (ROOT / "tools").glob("mutacje*.py")}
+    assert (len(narzedzia_mutacji) >= 3, narzedzia_mutacji <= set(paths)) == (True, True)
+
+    zle: list[str] = []
+    for path in paths:
+        try:
+            exceptions((ROOT / path).read_text(encoding="utf-8"), path)
+        except ValueError as error:
+            zle.append(str(error))
+
+    assert zle == []
+
+
+@pytest.mark.parametrize(("comment", "parts"), [("# mutacje-zmiany: bez terminu", 1),("# mutacje-zmiany: na próbę | do 2999-01-01 | zgoda Maks", 0)])
 def test_zly_wyjatek_daje_czesc_ktora_go_zglosi_takze_bez_mutacji(tmp_path: Path, comment: str, parts: int) -> None:
     repo = repository(tmp_path / "repo", {"src/pakiet/a.py": FUNKCJA})
     base = commit(repo, "baza")
