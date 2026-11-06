@@ -1,7 +1,7 @@
 """Zakres runu CI (``tools/lib/zakres_runu.py``): co CI uruchamia dla zdarzenia i zmiany, każda reguła raz, na ``zakres``.
 
-Testy budują repozytorium z własnymi skillami (``kroki_skilli`` patrzy na nie przez ``ROOT`` i ``SKILLS``) i pytają o
-zakres jawnej zmiany, bez gita i bez uruchamiania kroków. Plan CI (``tests/test_plan_ci.py``) i
+Testy budują repozytorium z własnymi skillami (``zakres`` patrzy na nie przez łatki ``kroki_skilli.ROOT`` i ``SKILLS``,
+a ``kroki_skilli.Katalog`` dostaje jego korzeń) i pytają o zakres jawnej zmiany, bez gita i bez uruchamiania kroków. Plan CI (``tests/test_plan_ci.py``) i
 ``tools/skille_dla_zmiany.py`` (``tests/test_skille_dla_zmiany.py``) mają tylko testy tłumaczenia zakresu na swoje wyjście.
 """
 
@@ -288,6 +288,65 @@ def test_krok_skilla_potrzebuje_chromium_gdy_skrypt_skilla_importuje_playwright_
     praca = zakres(Zdarzenie.NOC, frozenset({changed}), repo)
 
     assert [w.krok.browser for w in praca.wybrane if w.krok.key == SCRIPT_A] == [browser]
+
+
+# --- katalog kroków skilli z korzenia checkoutu ---
+
+
+BASELINE_K = ".agents/skills/verify-a/scripts/sprawdz_a.py"
+SCRIPT_K = ".agents/skills/verify-a/scripts/check_a_mutations.py"
+LOST_K = ".agents/skills/verify-b/scripts/check_mutation_proba.py"
+# Skill a z podstawą w dwóch częściach i tabelą jednej mutacji, b bez pilnuje ze zgubionym skryptem, z ze złym
+# ci-czesci, inny bez kroków. Podstawa a, tabela a i zgubiony skrypt są tylko w tym checkoucie.
+KATALOG = {
+    "src/pakiet/routing.py": "Z = 3\n",
+    ".agents/skills/verify-a/SKILL.md": _with_ci("verify-a", BASELINE_K).replace("ci: ", "ci-czesci: 2\nci: "),
+    BASELINE_K: "print('a')\n",
+    SCRIPT_K: WITH_TABLE,
+    ".agents/skills/verify-b/SKILL.md": "",
+    ".agents/skills/verify-b/scripts/check_b_mutations.py": PASSING,
+    LOST_K: "MUTATIONS = ()\n",
+    ".agents/skills/verify-z/SKILL.md": f"---\nname: verify-z\nci-czesci: 0\nci: {BASELINE_K}\n---\n",
+    ".agents/skills/inny/SKILL.md": "---\nname: inny\n---\n",
+}
+
+
+def test_katalog_skilli_checkoutu_ma_kroki_i_bledy_jego_skilli(tmp_path: Path) -> None:
+    repo = repository(tmp_path / "repo", KATALOG)
+
+    katalog = kroki_skilli.Katalog.skanuj(repo)
+
+    assert [(step.key, step.name, step.command, step.parts, step.root, step.folder) for step in katalog.kroki] == [
+        ("verify-a/ci", "PODSTAWA verify-a", (BASELINE_K,), 2, repo, ".agents/skills/verify-a/"),
+        ("verify-a/check_a_mutations.py", SCRIPT_K, (SCRIPT_K,), 1, repo, ".agents/skills/verify-a/"),
+        ("verify-b/check_b_mutations.py", ".agents/skills/verify-b/scripts/check_b_mutations.py", (".agents/skills/verify-b/scripts/check_b_mutations.py",), 1, repo, ".agents/skills/verify-b/"),
+    ]
+    assert dict(katalog.bledy) == {
+        LOST_K: "nazwa spoza wzorca scripts/check_*_mutations.py",
+        "PODSTAWA verify-z": "ci-czesci w .agents/skills/verify-z/SKILL.md nie jest liczbą części od 1",
+    }
+    assert [skill.name for skill in katalog.skille("verify-*")] == ["verify-a", "verify-b", "verify-z"]
+    assert [skill.name for skill in katalog.skille()] == ["inny", "verify-a", "verify-b", "verify-z"]
+
+
+def test_krok_katalogu_po_kluczu_planu(tmp_path: Path) -> None:
+    katalog = kroki_skilli.Katalog.skanuj(repository(tmp_path / "repo", KATALOG))
+
+    assert (katalog.krok("skill:verify-a/ci").name, katalog.krok(f"skill:{SCRIPT_A}").name) == ("PODSTAWA verify-a", SCRIPT_K)
+    with pytest.raises(KeyError, match="verify-a/ci"):
+        katalog.krok("verify-a/ci")
+
+
+def test_reguly_kroku_skilla_licza_od_korzenia_checkoutu_skilla(tmp_path: Path) -> None:
+    repo = repository(tmp_path / "repo", KATALOG)
+    katalog = kroki_skilli.Katalog.skanuj(repo)
+    skill = repo / ".agents" / "skills" / "verify-a"
+
+    found = kroki_skilli.hits(skill, {".agents/skills/verify-a/opis.md", "src/pakiet/routing.py", "docs/opis.md"})
+
+    assert found == kroki_skilli.Hits({".agents/skills/verify-a/opis.md": kroki_skilli.FOLDER, "src/pakiet/routing.py": "src/pakiet/rout*.py"}, None)
+    assert kroki_skilli.watched(katalog.krok(f"skill:{SCRIPT_A}")) == (".agents/skills/verify-a/", *kroki_skilli.RUNNER, BASELINE_K)
+    assert kroki_skilli.ci_command(skill / "SKILL.md") == (BASELINE_K,)
 
 
 MODEL = ".agents/skills/verify-m/model/M.tla"
