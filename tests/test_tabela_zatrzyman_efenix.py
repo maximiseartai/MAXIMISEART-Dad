@@ -127,9 +127,9 @@ TABLE = [
     Row("efenix_browser", "load_emmett", "UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))",
         "odpowiedź „Załaduj do zlecenia” przekierowana gdzie indziej niż na page_login.php", "inna budowa"),
     Row("efenix_browser", "load_emmett", "UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.EMMETT_NOT_LOADED))",
-        "odpowiedź „Załaduj do zlecenia” 2xx, a strona po przeładowaniu ma kwotę 0, choć okno Emmetta pokazało propozycję "
-        "(result: nok, inna treść, #889) albo propozycja nie przyszła cała ze statusem 2xx (#908); treści odpowiedzi "
-        "„Załaduj do zlecenia” okno nie czyta (#895)", "inna budowa"),
+        "odpowiedź „Załaduj do zlecenia” 2xx, a strona po przeładowaniu nie ma żadnej ilości, choć okno Emmetta "
+        "pokazało propozycję (result: nok, inna treść, #889) albo propozycja nie przyszła cała ze statusem 2xx (#908); "
+        "treści odpowiedzi „Załaduj do zlecenia” okno nie czyta (#895)", "inna budowa"),
     # --- pole Ilość ---
     Row("efenix_browser", "enter_quantity", "UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.UNKNOWN_POSITION, position))",
         "pozycji do wpisania nie ma wśród pól ostatnio odczytanej strony", "inna budowa"),

@@ -155,8 +155,14 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "#889: kwota 0 po „Załaduj do zlecenia” zawsze znaczy, że Emmett nic nie zaproponował",
-        (Edit(BROWSER, "        if not nothing_proposed and loaded.amount == 0:\n", "        if False and loaded.amount == 0:\n"),),
+        "#889: strona bez ilości po „Załaduj do zlecenia” zawsze znaczy, że Emmett nic nie zaproponował",
+        (
+            Edit(
+                BROWSER,
+                "        if not nothing_proposed and not any(loaded.quantities.values()):\n",
+                "        if False and not any(loaded.quantities.values()):\n",
+            ),
+        ),
         explorer("odpowiedzi", "zaladuj-do-zlecenia"),
         "efenix odmówił Wyceny Emmetta, a okno wpisuje ilości pliku do zlecenia bez Emmetta",
         NEW,
