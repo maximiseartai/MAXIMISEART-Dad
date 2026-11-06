@@ -61,7 +61,7 @@ CI runs `run_verification.py --variant all` in the E2E step of pytest on Windows
 `quantity_rules_conformance.py` (the `ci:` key) in Mutation checks, and
 `check_quantity_rules_mutations.py` in full CI on `main` and nightly on `main` (`mutacje-nocne.yml`). Run
 them locally only to reproduce a red CI step or the night's issue, or the one variant you work on. What stays
-with you on the Mac, as background commands: `preparation-real-templates` and `chain-real-templates`
+with you on the Mac, in the background with a wait for their end in the same turn: `preparation-real-templates` and `chain-real-templates`
 on the real Wzorce in `config/` after changes to formatting or template handling, because CI has no
 real Wzorce.
 
@@ -105,8 +105,8 @@ py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py --variant pr
 both period files, including the Rejestr Hiperłącze of every written `NUMER ZL.` cell.
 Its route and counts are in `features/prepare-collective-file.md`.
 
-When `config/` holds the real Wzorce, also run the local variant on the Mac, as a
-background command, after changes to formatting or template handling in
+When `config/` holds the real Wzorce, also run the local variant on the Mac, in the
+background with a wait for its end in the same turn, after changes to formatting or template handling in
 Przygotowanie pliku zbiorczego:
 
 ```powershell

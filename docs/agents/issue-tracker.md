@@ -7,7 +7,7 @@ Use `gh` for all operations.
 ## Conventions
 
 - Create an issue with `gh issue create --title "..." --body "..."`.
-- Read an issue with `gh issue view <number> --comments`.
+- Read an issue with its comments with `gh issue view <number> --json title,body,comments --jq '.title, .body, (.comments[] | "--- \(.author.login) \(.createdAt)\n\(.body)")'`; `--comments` alone prints only the comments when its output is piped, as in an agent's shell.
 - List issues with `gh issue list`, using JSON output when comments and labels are needed.
 - Comment with `gh issue comment <number> --body "..."`.
 - Apply or remove labels with `gh issue edit <number> --add-label "..."` or `--remove-label "..."`.
@@ -248,7 +248,7 @@ work complete.
 
 ## When a skill says "fetch the relevant ticket"
 
-Run `gh issue view <number> --comments`.
+Read it with its comments, as in Conventions above.
 
 ## Wayfinding operations
 

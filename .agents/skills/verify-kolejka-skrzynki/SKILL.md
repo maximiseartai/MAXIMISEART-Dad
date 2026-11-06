@@ -248,224 +248,22 @@ and `_Server` in `server.py`. `model/definicje.json` lists the four covered file
 by their definitions: only a change to these definitions, not to the rest of their files, is drift.
 
 **Sync commit: `6908b5c3a`** (2026-11-05, #919 merged with `main` after #910, #924
-and #949). The checker and the model share it:
-at this commit both were confirmed to describe the code above. It holds the
-covered code of `18bf04e33` (the sync of `main` below) and, beyond it, only
-`KeyedBox.known_issue` and `_labelled` in `keyed_box.py` and `_deliver_to_known`
-in `outbox.py` of `bbff4de6` (#915), which hands `_settle` the found issue and
-the `Version` of #910. The model keeps both: `Nr`, `czytane` and `NowszyDalej`
-of #910 in `Plik`, the branches `Unreachable` and `Gone` of #915 in `Szukaj`,
-and `znane` sets `StarszaPozniej` and `Postep` FALSE and `OpoznienieListy` TRUE.
-The checker is that of #949: `OPENING_FILE` lives in memory (`_NotesInMemory`,
-handed to `KeyedBox` through `NotesFile`), and `znane-issue` asks
-`known_issue`, which reads that file at every list. At it
+and #949). The checker and the model share it: at this commit both were
+confirmed to describe the code above. The model holds the order of versions of
+#910 (`Nr`, `czytane`, `NowszyDalej` in `Plik`) and the branches `Unreachable`
+and `Gone` of #915 in `Szukaj`; `znane` sets `StarszaPozniej` and `Postep`
+FALSE and `OpoznienieListy` TRUE. The checker is that of #949: `OPENING_FILE`
+lives in memory (`_NotesInMemory`, handed to `KeyedBox` through `NotesFile`),
+and `znane-issue` asks `known_issue`, which reads that file at every list. At it
 `sprawdz_model_kolejki.py` gave `MODEL KOLEJKI OK` on all 15 configurations,
 `check_model_kolejki_mutations.py` 51 of 51 `WYKRYTA`, `explore_outbox.py`
 `KOLEJKA OK` on all 15 scopes and `check_outbox_mutations.py` `MUTACJE OK` in
-all 3 parts.
-On `main`, the sync of #910 was `18bf04e33` (2026-11-05, #910 merged with `main`
-after #924, #925, #926, #929, #931 and #937, which changed no covered file).
-Since `2b2af53e4` #910 changed `outbox.py`: the version of a wysyłka is
-its rank, then its moment (`Rank`, `Version`, `Post.rank`, the key `rank` of a
-queue file, `_version_of`), `_settle`, `_put_all`, `_put`, `_deliver_archive`
-and `_asset_version` compare versions, and `_superseded` takes the newest
-version of each wysyłka the pass read, also one posted before it. The model got
-the order of the versions as data (`Nr`), the constant `StarszaPozniej`, the
-files the pass read (`czytane`), `NowszyDalej`, the configuration `starsza` and
-three mutations. The checker is unchanged: every post of its scopes has the rank
-`OWN`, so a later wysyłka is a newer version, and `sprawdz_kolejke.py` gave
-`KOLEJKA SKRZYNKI OK` on the code of #910 (8 min 49 s under load on Maks's Mac).
-On the branch of #919, the sync was `b8d79f8c` (2026-11-05). It merges
-`main` with #875 (sync `2b2af53e4` below) into #919 (sync `bbff4de6` below), so
-it holds `keyed_box.py` of `bbff4de6` (#915), `outbox.py` with `_send_all` of
-`19f54659` (#846) and `_deliver_to_known` of `bbff4de6`, and `lifespan` of
-`a839dc2e`; no covered file changed in the merge beyond them, and the two
-changes of `outbox.py` touch different functions. The checker is that of
-`2b2af53e4`, because #919 changed only the anchor of one mutation in
-`check_outbox_mutations.py`. The model keeps the branches of both in `Szukaj`
-and `Plik`; `znane` sets `Postep` FALSE and `OpoznienieListy` TRUE, so still no
-configuration has both at once. At it `sprawdz_model_kolejki.py` gave
-`MODEL KOLEJKI OK` on every configuration and `explore_outbox.py`
-`KOLEJKA OK` in `znane-issue` and the four scopes with a lagging list.
-At `bbff4de6`, on the branch of #919, since the
-previous sync `a839dc2e` only `bbff4de6` (#915) changed a covered file:
-`_deliver_to_known` asks `KeyedBox.known_issue`, which reads the list as
-`labelled_issues` does and calls a missing number `Gone` only when a write with
-its label would not be held (`_held`), else `Unreachable`; `labelled_issues`
-became `_labelled` with that answer. The checker did not change (its
-`znane-issue` lists always read the file, and the anchor of one mutation in
-`check_outbox_mutations.py` moved); the model's `znane` got `OpoznienieListy`, a
-fresh issue that the list does not show (`Swiezo`: the file has its effect or,
-after a failed write of the answer, a write without an answer), the branches
-`Unreachable` and `Gone` in `Szukaj`, and `check_model_kolejki_mutations.py`
-two mutations.
-At `2b2af53e4` both were confirmed to describe the code of #846. It merges
-`main` with #912 into #846, so it holds `outbox.py` of `ed6e5833` (#846) and
-`keyed_box.py` of `a839dc2e` (#909, the sync of `main` below); no covered file
-changed in the merge beyond them, and the model and the checker of #909 merged
-without a conflict next to those of #846. `sprawdz_kolejke.py` gave
-`KOLEJKA SKRZYNKI OK` at it (8 min 20 s under load on Maks's Mac).
-At `766ccbfe` (2026-11-05), which merges `main` with #897 into #846, it held the
-covered code of `ed6e5833` (#846) and `7a5acaa9` (#897), and no
-covered file changed in the merge beyond them. The checker keeps both
-additions side by side: `Scope.later` with NAJNOWSZA_WERSJA and `list_lag` with
-the rule against a waiting note without a refusal of the Archiwum, and its
-state counts both the versions still to post and the lists' lag. The model
-keeps both constants, `Postep` and `OpoznienieListy`, and every configuration
-sets both: `postep` runs without lagging lists and `archiwum-lista` without a
-progress, so no configuration has both at once.
-At `ed6e5833` (2026-11-05), which merges
-`main` into #846 after its round 2, which changed no covered file but brought
-the model's `Plik` in line with `_send_all`: a newer version whose read failed
-at the start of the pass leaves this pass, as `_skip_unreadable` skips it to the
-`RETRY_S` wake, instead of being read again and sent in the same pass, and
-`check_model_kolejki_mutations.py` got the mutation of that branch. Since the
-previous sync `6cc9e712` two commits changed a covered file. `19f54659` (#846):
-`_send_all` reads every queue file at the start of the pass (`_read`) and marks
-and removes unsent the file behind which the same pass has a newer version of
-the same wysyłka (`_superseded`). The checker got `Scope.later` (a newer
-version arrives through `Outbox.post` between passes, at a moment the schedule
-picks, in `diagnoza`, `archiwum-diagnoza` and `postep`), the rule
-NAJNOWSZA_WERSJA and the scope `postep`; the model got `Nowszy` and the branches
-of `Plik` for a superseded file, the constant `Postep` (the older version is a
-progress without a file for the Archiwum, `MaPlik`) and the configuration
-`postep`. Both mutation scripts follow.
-Below both, the sync of #909 was `a839dc2e` (2026-11-05). Since the
-previous sync `7a5acaa9` only `a839dc2e` (#909) changed a covered file,
-`keyed_box.py` (`create_app` in `app.py` is outside `lifespan`): a list at
-which `OPENING_FILE` cannot be read sets `_listed_at` of its kind to `None`,
-and `_held` holds every write of that kind until a list that reads the file;
-content that is not UTF-8 is content in another form; the first error of the
-file goes to `NotesFile.unavailable`. The checker keeps such lists in its state
-and still never fails the read; the model got `OdczytyZapisow` (`zna`,
-`Widoczne(q, zna)`) in `Szukaj` and `CzytajArchiwum` and one file error in
-`archiwum-lista`, and `check_model_kolejki_mutations.py` two mutations. At
-`7a5acaa9`, since the
-previous sync `865ffcdc` only `4ec0d182` and `7a5acaa9` (round 2 of #897)
-changed a covered file, `keyed_box.py` (`create_app` in `app.py` is outside
-`lifespan`): the file `OPENING_FILE` keeps the effects of answered
-writes (`_Notes`), so every `KeyedBox`, also a new Centrum's, adds them to its
-lists, and only a write without an answer holds; a list without closed issues
-adds an effect only when the list with closed ones does not have it closed; the
-time of the list is per thread; the file goes through the `replace_atomically`
-that `create_app` passes (`NotesFile`). The
-checker reads the file instead of the memory of `KeyedBox`; the model has
-`pamiec` and `pamiecWydania` in the file (they survive a restart), no
-`odpowiedz`, an answer that clears the hold of every queue and the failed write
-of an effect in `Zaloz`, so the pass without the folder lock breaks JednoIssue
-in `dwa-procesy` again. Both mutation scripts follow. At `865ffcdc`, since the
-previous sync `0deaca72` only `e6242e24` (#879, #887, merged with `main` in `865ffcdc`) changed a covered file:
-`KeyedBox` reads GitHub's lists after its own writes and holds a write whose
-effect only a list shows (How the queue knows what is already there), with the
-file `OPENING_FILE` that `create_app` in `app.py` passes (outside `lifespan`);
-`outbox.py` and `report_box.py` did not change. The checker got `list_lag`,
-a clock that moves with the `RETRY_S` wake, the rule against a waiting note
-without a refusal of the Archiwum and the scopes `watek-okresu-lista`,
-`nowe-issue-lista`, `zgloszenie-lista` and `archiwum-lista`; the model got
-`OpoznienieListy`, `niewidoczne`, `wydanieNiewidoczne`, `zakladanie`, `pamiec`,
-`pamiecWydania`, `odpowiedz`, `odczyt`, the ghost `falszywe`, the actions
-`Nadaza`, `NadazaWydanie` and `Przedawnienie`, GitHub's 422 to a second
-Archiwum and the configuration `archiwum-lista`. Both mutation scripts follow.
-At `0deaca72`, since the
-previous sync `6cc9e712` only `0deaca72` (#880) changed a covered file, and only
-the module docstring and the docstring of `GitHubReportBox.open_archive`: the
-empty repository answered 422 to both keys in the recordings of
-`verify-github-skrzynki`; no box call, status set or outcome changed, and
-`sprawdz_model_kolejki.py` gave `MODEL KOLEJKI OK` at it. At `6cc9e712`, since the
-previous sync `50fd9abb` only `6cc9e712` (round 2 of #860) changed a covered
-file: `GitHubReportBox.open_archive` reads GitHub's 409 to a new Release in a
-repository without a commit as `Rejected` instead of `Unreachable`, so the
-refusal is `ArchiveWaits` and stops only the file, not the pass; and
-`replace_atomically` got `newline`, which only the file of the Logi passes
-(`run_logs.py`), so the queue files it writes are as before. The checker got
-`_github` (every refusal of the Archiwum is GitHub's answer read by the real
-`GitHubReportBox`), `Scope.empty_repository` and the scope
-`archiwum-puste-repo`; the model got `PusteRepo`, `OdmowaPustegoRepo`, the
-configuration `puste-repo` and the clause of `Zbieganie` that only a file with
-the marker of its parts may stay while the Archiwum never comes. Both mutation
-scripts follow. At `50fd9abb`, since the
-previous sync `83ed9ab9` only `50fd9abb` (#844) changed a covered file: a
-wysyłka to an issue okresu may carry a file for the Archiwum Logów okresu
-(`ArchiveFile`), which `_deliver_archive` sends before the parts with the new box
-calls `archive`, `open_archive`, `remove` and `upload` of `KeyedBox`; `_settle`
-split into `_seen`, `_newer` and `_put_all`; the queue file got schema 3 with
-`archive` and `archived` and the marker of the parts; and `_drain` arms the wake
-after `_archive_refused`. The checker got the Archiwum in `MemoryBox` with its
-faults (a refused step, an upload that breaks off), the rule of the Archiwum in
-DOKLADNIE_RAZ and the scopes `archiwum` and `archiwum-diagnoza`; the model got
-`archiwum`, `wydania`, the file state `"skomentowany"`, the actions
-`CzytajArchiwum`, `ZalozArchiwum`, `UsunPlik` and `WyslijPlik`, the ghost
-`podwojny`, the constants `Archiwum` and `MaxOdmowArchiwum` and the configuration
-`archiwum`. Both mutation scripts follow. At `83ed9ab9`, since the
-previous sync `ca90b709` only `83ed9ab9` (#840, round 1 of #849) changed a covered
-file: `_settle` sends, changes and retires nothing when the issue has a mark of
-the wysyłka in a newer version, and `Outbox.post` gives every queue file a moment
-after the one before. The checker got the read of a queue file as a step that can
-fail and the scope `diagnoza-odczyt`; the model got `CzesciNowszej` (in the
-configuration `diagnoza` the Diagnoza is one part shorter), `_RETIRED` (`Wycofaj`),
-the check of a newer version in `Czytaj` (`Nowsza`) and the clause of
-`DokladnieRaz` that no comment of an older version is left once a newer one was
-sent. Both mutation scripts follow. At `ca90b709`, since the
-previous sync `0b63b1ca` only `ca90b709` (#840) changed a covered file: every text
-of the queue carries the mark of its wysyłka (`_mark`, `_version`), `_settle`
-reads the comments of a found issue (`KeyedBox.comments`) and sends only the
-parts that are not there, changes a comment of an older version
-(`KeyedBox.edit_comment`) and retires a part a newer version lacks,
-`_deliver_new_issue` lists the issues of its label and finds its issue by the
-mark, `_deliver_to_period` lists issues instead of `find_issue`, and `Opened`,
-with the issue number in the queue file, is gone. The checker got
-`MemoryBox.comments` and `edit_comment`, the rule DOKLADNIE_RAZ in place of
-WSZYSTKIE_CZESCI, the scope `diagnoza`, and lost the accepted risk of a second
-issue of an Uwaga; the model got `Czytaj`, edits in `Komentuj`, the constant
-`Diagnoza` with the configuration `diagnoza` and the promise `DokladnieRaz` in
-place of `WszystkieCzesci`, and lost `ZapiszNumer`, `ZamienNumer`, `numer`,
-`bezOchrony` and the risks in `slady`. Both mutation scripts follow. At
-`0b63b1ca`, since the previous sync `f7f55067` only `0b63b1ca` (#820) changed a covered file:
-`_deliver_report` reads the open Zgłoszenia with `labelled_issues` and
-`newest_with_line` instead of `find_issue`, takes over without a comment only
-the issue whose body is its one part, and comments that part to any other open
-Zgłoszenie with its odcisk line (`_comment_all`, `returned_report`). The
-checker got the scope `zgloszenie-wrocilo` and the mutation of a returned
-Zgłoszenie taken over without a comment; the model's `Szukaj` got the same two
-branches, the configuration `zgloszenie` a second Zgłoszenie of the same
-odcisk, and `check_model_kolejki_mutations.py` the same mutation. No retry,
-marker, removal or `_waiting` changed and no `Target` was added. At
-`f7f55067`, since the previous sync `a27e0695` only `f7f55067` (#724) changed a covered file: `Post`
-raises `ValueError` for a `ReportIssue` with more than one part, and
-`_deliver_report` opens the issue of a Zgłoszenie with its one part and posts
-no comment. The checker lost the scope `zgloszenie-w-czesciach` and the known
-finding in it, and the model the configuration of the same name and the
-finding `przejecie`; the model takes a Zgłoszenie in one part as an `ASSUME`.
-No other box call, retry, marker, removal or `_waiting` changed and no
-`Target` was added. At `a27e0695`, since the previous sync `05430811` only
-`a27e0695` (#718) changed a covered file:
-`Outbox` takes one `Listener` (`prepare`, `delivered`, `rejected`) instead
-of `prepare`, `on_delivered` and `on_rejected`, and `_send_all` queues the
-wysyłki that `Listener.delivered` returns with `post` at the place where the
-old `on_delivered` of the Sprawy taty called `post` itself; `ReportIssue`
-carries the fingerprint, its line comes from it, and the queue file keeps the
-line as before. No box call, retry, marker, removal or `_waiting` changed and
-no `Target` was added, so neither check changed: the checker passes a
-listener that changes nothing, and the model leaves the listener out as
-before. At `05430811`, since the
-previous sync `b23f4180` only `73d7f1ba8` (tools to `tools/ci` and
-`tools/lib`) changed a covered file, a comment in `app.py` outside `lifespan`,
-and the import path of `sprawdz_kolejke.py`; neither check changed. At
-`b23f4180` (#666) a pass of the queue started to hold the system lock of
-`przejscie.lock` in the queue folder, `_folder_lock`, and a queue that finds it
-held by another Centrum process arms the `RETRY_S` wake. The checker runs one
-Centrum at a time and always gets the lock, so #666 changed only the model. Before it, `2900e8c2` (#664
-merged with `main` after #665: a queue file that `_queued` cannot read arms
-the `RETRY_S` wake, and after a refused comment the queue file keeps the
-number of the Uwaga's issue) was the sync of both; the checker never fails a
-read and leaves `Rejected` out, so neither fix changed its schedules. Before
-them, `6f94edb8` was the sync of both, and since the checker's earlier sync
-`8122ab4c` only `15362856` changed a covered file: `Outbox` calls
-`on_rejected` after a refused content, which neither the checker nor the
-model describes. To see whether they need another look:
+all 3 parts. What earlier syncs confirmed is in the history of this file and in
+the messages of their commits. To see whether the checker and the model need
+another look:
 
 ```bash
-git log --oneline 2b2af53e4..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
+git log --oneline <Sync commit>..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
 ```
 
 A change to the three definitions above shows as a `UWAGA:` line of
@@ -831,7 +629,9 @@ wysyłka's version or a newer one, so the queue sends that file again), `slady`
    with the code it mirrors. A new guard in the model needs a counterpart in
    the code; name it in the guard's comment.
 5. Move the Sync commit forward only when the checker and every row of both
-   tables match the code at the new commit.
+   tables match the code at the new commit. Rewrite the Sync paragraph for the
+   new commit instead of adding to it, and put what changed since the previous
+   sync in the commit message.
 
 Run one configuration while you work:
 
