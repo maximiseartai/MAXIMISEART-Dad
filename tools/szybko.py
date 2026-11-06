@@ -77,7 +77,6 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = "origin/main"
 GREEN = "szybko-zielone.json"
 WORKERS = "4"
-# Tor CI, którego czasy plików waży szybko: Linux, jak komputer agenta, nie Windows.
 # Sekundy czasów CI na workera. Porażki pytest w szybko z 23–24.10 łapie ten sam plan od 20 s wzwyż, bo prawie
 # wszystkie padły w odległości 0–1 albo w testach struktury, więc budżet stoi blisko tej granicy.
 BUDGET_S = 45.0

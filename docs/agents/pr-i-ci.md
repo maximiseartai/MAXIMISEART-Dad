@@ -89,6 +89,9 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 - Przed merge'em `tools/scal_pr.py` uruchamia na scalonym drzewie pliki testów dotknięte i zmianą PR, i zmianą `main` od merge-base PR, w odległości najwyżej 1 od obu w grafie `tools/lib/wplyw_zmiany.py`.
 - Gdy `main` od merge-base się nie zmienił albo takich plików nie ma, nic nie biegnie.
 - Porażka to `SCAL ODMOWA` z nazwami testów, które padły, a test z kwarantanny nie czerwieni wyniku, jak w CI.
+- Czerwony `main` nie blokuje merge'u niewinnego PR: gdy test scalenia pada, te same pliki testów biegną jeszcze raz na samym `main`.
+  Test, który pada i tam, nie jest winą PR: merge przechodzi, a linia `SCAL OK` go wymienia (`na samym main … pada już: …`).
+  Odmowę daje tylko test, który pada na scaleniu, a na samym `main` nie.
 - Gdy suma czasów CI tych plików przekracza limit (`MERGE_TEST_BUDGET_S`), czasów CI nie ma albo któraś strona zmienia plik reguły wyboru testów, test scalenia nie biegnie, a linia `SCAL OK` mówi dlaczego (`test scalenia pominięty: …`).
 - Ile to kosztuje i czego nie łapie, mówi [ADR 0020](../adr/0020-ci-w-poziomach.md) (Konsekwencje).
 

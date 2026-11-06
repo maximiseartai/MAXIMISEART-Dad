@@ -81,7 +81,8 @@ KROKI = {"Run the planned units": "krok:praca"}
 ARTEFAKT = "czasy-ci"
 ILE_RUNOW = 3
 ODSWIEZ_S = 24 * 3600
-# Tor, którego czasy ważą pracę na Macu agenta: budżet ``tools/szybko.py`` i limit testu scalenia ``tools/scal_pr.py``.
+# Tor, którego czasy ważą pracę na Macu agenta (Linux jak komputer agenta, nie Windows): budżet ``tools/szybko.py`` i
+# limit testu scalenia ``tools/scal_pr.py``.
 TOR_LOKALNY = "linux-3.14"
 # Tyle najnowszych artefaktów ``czasy-ci`` przegląda odczyt, szukając ``ILE_RUNOW`` z zielonych runów.
 SZUKANE_ARTEFAKTY = 30

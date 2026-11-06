@@ -14,13 +14,17 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
    scalonym drzewie (``status_scalenia.merge_verdict``, jak status ``scalenie z main``, ale teraz, nie po pushu);
 6. na tym scalonym drzewie przechodzi test scalenia, gdy jest potrzebny i mieści się w limicie (niżej).
 
-Test scalenia łapie PR, który z bieżącą bazą daje czerwony ``main``, choć oba były zielone, bo baza od merge-base PR
+Test scalenia łapie PR, który z bieżącą bazą daje czerwony ``main``, choć sam był zielony, bo baza od merge-base PR
 zmieniła coś, czego PR używa. Gdy baza od merge-base się nie zmieniła, nie liczy niczego. Inaczej bierze pliki testów
 dotknięte i zmianą PR, i zmianą bazy od merge-base, w odległości najwyżej ``MERGE_TEST_DISTANCE`` od każdej z nich
 w grafie ``tools/lib/wplyw_zmiany.py`` liczonym na scalonym drzewie: plik testów zmieniony albo zależny wprost od pliku
 zmienionego po obu stronach. Gdy takich plików nie ma, nic nie biegnie (liczenie trwało ~1,5 s na merge'ach z 6.11.2026).
 Gdy są, biegną pytestem w kopii scalonego drzewa, z jego ``tests/conftest.py``, więc test z kwarantanny
-(``tests/fixtures/kwarantanna.py``) nie czerwieni wyniku, jak w CI. Porażka to odmowa z nazwami testów, które padły.
+(``tests/fixtures/kwarantanna.py``) nie czerwieni wyniku, jak w CI. Gdy któryś test pada, te same pliki testów biegną
+jeszcze raz na drzewie samej bazy, bo czerwony ``main`` nie blokuje merge'ów (ADR 0020): odmowa z nazwami testów
+zachodzi tylko wtedy, gdy któryś test pada na scaleniu, a na samej bazie nie (albo nie ma go na bazie). Gdy każdy
+padnięty test pada też na samej bazie, PR przechodzi, a linia ``SCAL OK`` wymienia te testy (``na samym main … pada
+już: …``). Ten drugi bieg kosztuje tylko po porażce. Pytest, który pada bez nazwy testu, to odmowa z przyczyną ze stderr.
 Test scalenia nie biegnie, a linia ``SCAL OK`` mówi dlaczego (``test scalenia pominięty: …``), gdy któraś strona
 zmienia plik reguły wyboru testów (``Context.TESTS``: ``conftest.py`` każdego testu, konfiguracja), bo taki plik dotyczy
 każdego testu, gdy suma czasów CI tych plików (tor ``czasy_ci.TOR_LOKALNY``, plik bez pomiaru waży medianę) przekracza
@@ -121,6 +125,7 @@ albo FAIL> | <adres komentarza>``.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from dataclasses import dataclass
 from html.parser import HTMLParser
 import json
@@ -417,7 +422,8 @@ def _changed(fork: str, commit: str) -> frozenset[str]:
 
 def _merge_test(copy: Path, where: str, base: str, head: str) -> str:
     """Dopisek linii ``SCAL OK`` o teście scalenia w ``copy`` ze scalonym drzewem ``base`` i ``head``; pusty, gdy test
-    nie był potrzebny. Rzuca ``_Refused``, gdy test pada albo nie daje wyniku w limicie czasu."""
+    nie był potrzebny. Rzuca ``_Refused``, gdy test pada na scaleniu, a na samej bazie nie, albo nie daje wyniku w
+    limicie czasu."""
 
     fork = _git("merge-base", base, head).strip()
     base_changed = _changed(fork, base)
@@ -445,8 +451,28 @@ def _merge_test(copy: Path, where: str, base: str, head: str) -> str:
     if cost > MERGE_TEST_BUDGET_S:
         return f" | test scalenia pominięty: ~{cost:.0f} s w CI ponad limit {MERGE_TEST_BUDGET_S:.0f} s, plików testów: {len(tests)}"
     print(f"== test scalenia z {where} (~{cost:.0f} s w CI): {names}", flush=True)
-    workers = os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS", MERGE_TEST_WORKERS)
     started = time.monotonic()
+    failed = _failed_tests(copy, tests, f"test scalenia z {where}")
+    if not failed:
+        return f" | test scalenia: {names} przechodzą ({time.monotonic() - started:.0f} s)"
+    # Czerwony ``main`` nie blokuje merge'ów (ADR 0020): porażka, która jest już na samej bazie, nie jest winą PR.
+    potomne.run(["git", "read-tree", "-u", "--reset", base], cwd=copy).check_returncode()
+    on_base = [test for test in tests if (copy / test).is_file() and any(name.partition("::")[0] == test for name in failed)]
+    print(f"== te same pliki na samym {where}: {', '.join(on_base) or 'brak'}", flush=True)
+    failed_on_base = _failed_tests(copy, on_base, f"test scalenia na samym {where}") if on_base else []
+    pull_failed = [name for name in failed if name not in failed_on_base]
+    already = [name for name in failed if name in failed_on_base]
+    if pull_failed:
+        also = f" (na samym {where} pada też: {', '.join(already)})" if already else ""
+        raise _Refused(f"test scalenia z {where} pada: {', '.join(pull_failed)}{also}")
+    return f" | test scalenia: {names} bez porażek przez PR, a na samym {where} pada już: {', '.join(already)} ({time.monotonic() - started:.0f} s)"
+
+
+def _failed_tests(copy: Path, tests: Sequence[str], what: str) -> list[str]:
+    """Testy z ``tests``, które padły pytestem w ``copy``, po kolei z wyjścia. Rzuca ``_Refused``, gdy pytest nie daje
+    wyniku w limicie czasu albo pada, nie nazywając testu (wtedy z przyczyną ze stderr, np. nieznana opcja)."""
+
+    workers = os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS", MERGE_TEST_WORKERS)
     try:
         done = potomne.run(
             [sys.executable, "-m", "pytest", "-q", "-rfE", "-n", "auto", *tests],
@@ -455,13 +481,15 @@ def _merge_test(copy: Path, where: str, base: str, head: str) -> str:
             timeout=MERGE_TEST_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired:
-        raise _Refused(f"test scalenia z {where} bez wyniku po {MERGE_TEST_TIMEOUT_S} s: {names}") from None
-    if done.returncode:
-        print(done.stdout.rstrip(), flush=True)
-        failed = ", ".join(dict.fromkeys(FAILED_TEST.findall(done.stdout)))
-        last = (done.stdout.strip().splitlines() or ["bez wyjścia"])[-1]
-        raise _Refused(f"test scalenia z {where} pada: {failed or f'pytest kod {done.returncode}: {last}'}")
-    return f" | test scalenia: {names} przechodzą ({time.monotonic() - started:.0f} s)"
+        raise _Refused(f"{what} bez wyniku po {MERGE_TEST_TIMEOUT_S} s: {', '.join(tests)}") from None
+    if not done.returncode:
+        return []
+    print(done.stdout.rstrip(), done.stderr.rstrip(), sep="\n", flush=True)
+    if failed := list(dict.fromkeys(FAILED_TEST.findall(done.stdout))):
+        return failed
+    lines = (done.stderr.strip() or done.stdout.strip()).splitlines()
+    reason = next((line.strip() for line in reversed(lines) if "error" in line.lower()), lines[-1].strip() if lines else "bez wyjścia")
+    raise _Refused(f"{what} pada: pytest kod {done.returncode}: {reason}")
 
 
 def _close_fixed(pull: Pull, *, merged: bool, merge_commit: str | None) -> str:
