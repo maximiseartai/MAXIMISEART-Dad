@@ -34,9 +34,11 @@ from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, RunLog, StartedFacts, StartFacts, logs_file_name
 
 LAST_STARTED_FILE: Final = "ostatnie-uruchomienie.json"
-# Nazwa pliku Logów (``name_of``); identyfikator Uruchomienia z Centrum to ``uuid4().hex``.
+# Identyfikator Uruchomienia z Centrum (``uuid4().hex``); inny nie ma Logów, więc nie dotyka dysku.
+_RUN_ID: Final = re.compile(r"[0-9a-f]{32}")
+# Nazwa pliku Logów (``name_of``).
 _NAME: Final = re.compile(
-    rf"(?P<second>\d{{8}}T\d{{6}}Z)-(?P<process>{'|'.join(get_args(contract.ProcessKey))})-(?P<run_id>[0-9a-f]{{32}})\.json"
+    rf"(?P<second>\d{{8}}T\d{{6}}Z)-(?P<process>{'|'.join(get_args(contract.ProcessKey))})-(?P<run_id>{_RUN_ID.pattern})\.json"
 )
 
 T = TypeVar("T")
@@ -87,8 +89,8 @@ class Unreadable:
 
 @dataclass(frozen=True)
 class Refused:
-    """Plik Logów jest, ale system odmówił jego odczytu (``failure``, np. plik trzyma antywirus): następna próba może się
-    udać."""
+    """System odmówił odczytu pliku Logów albo wylistowania katalogu Logów (``failure``, np. plik trzyma antywirus), więc
+    nie wiadomo, czy Logi są i jakie: następna próba może się udać."""
 
     failure: OSError
 
@@ -147,16 +149,27 @@ class LogsOnDisk:
         )
 
     def logs(self, run_id: str) -> LogsRead:
-        """Logi Uruchomienia ``run_id``; identyfikator, którego Centrum nie nadaje, nie ma pliku Logów (``Missing``)."""
+        """Logi Uruchomienia ``run_id``; identyfikator, którego Centrum nie nadaje, nie ma pliku Logów (``Missing``) bez
+        zaglądania na dysk."""
 
-        name = next((name for name, parsed in _names(self._logs) if parsed.run_id == run_id), None)
+        if _RUN_ID.fullmatch(run_id) is None:
+            return Missing()
+        try:
+            names = _names(self._logs)
+        except OSError as failure:
+            return Refused(failure)
+        name = next((name for name, parsed in names if parsed.run_id == run_id), None)
         return Missing() if name is None else _read_logs(self._logs / name)
 
     def newest(self, process: contract.ProcessKey) -> RunLog | None:
         """Najnowsze Logi procesu ``process``: z plików najnowszej sekundy startu w nazwie te z późniejszym startem w
         Logach. ``None``: żadnych albo żadnych czytelnych w tej sekundzie, bo starsze nie są najnowszymi."""
 
-        names = sorted((pair for pair in _names(self._logs) if pair[1].process == process), key=lambda pair: pair[0])
+        try:
+            listed = _names(self._logs)
+        except OSError:
+            return None
+        names = sorted((pair for pair in listed if pair[1].process == process), key=lambda pair: pair[0])
         if not names:
             return None
         second = names[-1][1].second
@@ -183,9 +196,14 @@ class ViewedLogs(Generic[T]):
         self._known: dict[str, tuple[tuple[int, int], T | None]] = {}
 
     def of(self, process: contract.ProcessKey) -> list[T]:
-        """Widoki Logów procesu ``process`` od najnowszych; pliki, których nie da się odczytać, pomija."""
+        """Widoki Logów procesu ``process`` od najnowszych; pliki, których nie da się odczytać, pomija, a bez wylistowania
+        katalogu Logów nie ma żadnych."""
 
-        names = sorted((name for name, parsed in _names(self._logs) if parsed.process == process), reverse=True)
+        try:
+            listed = _names(self._logs)
+        except OSError:
+            return []
+        names = sorted((name for name, parsed in listed if parsed.process == process), reverse=True)
         with self._lock:
             viewed = [self._of(self._logs / name) for name in names]
         return [view for view in viewed if view is not None]
@@ -206,11 +224,12 @@ class ViewedLogs(Generic[T]):
 
 
 def _names(logs: Path) -> list[tuple[str, _Name]]:
-    """Pliki Logów Uruchomienia w katalogu ``logs`` z częściami nazwy; bez katalogu żadnych."""
+    """Pliki Logów Uruchomienia w katalogu ``logs`` z częściami nazwy; bez katalogu żadnych. ``OSError``: katalog jest,
+    ale system nie daje go wylistować, więc nie wiadomo, jakie pliki w nim są."""
 
     try:
         names = [path.name for path in logs.iterdir()]
-    except OSError:
+    except (FileNotFoundError, NotADirectoryError):
         return []
     return [(name, parsed) for name in names if (parsed := _parsed(name)) is not None]
 

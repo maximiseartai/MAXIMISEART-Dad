@@ -37,7 +37,7 @@ from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES, DadAc
 from rozliczenia.centrum.efenix_run import EFENIX_URL, EfenixWindow
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S
-from rozliczenia.centrum.pricing_journal import JournalStarted, OrderBegun, OrderEnded, PricingJournal
+from rozliczenia.centrum.pricing_journal import JournalStarted, OrderBegun, OrderEnded, PricingJournal, RunEnded
 from rozliczenia.centrum.pricing_progress import PROGRESS_S
 from rozliczenia.centrum.run_logs import (
     Environment,
@@ -106,7 +106,7 @@ from tests.fixtures.preparation import (
     type_into_register,
     write_register,
 )
-from tests.fixtures.run_cards import first_view, restored
+from tests.fixtures.run_cards import first_view, restored, unlisted
 from tests.fixtures.settlement import COLLECTIVE_HEADERS, MARKED, SOURCE_NAME, CellValue, write_quantity_source
 from tests.fixtures.tool_clone import ToolRepository, git_command, git_failing_on, tool_repository
 from tests.fixtures.widok_skrzynki import shown
@@ -2462,7 +2462,62 @@ def test_plik_logow_ktorego_system_nie_daje_odczytac_zostawia_dziennik_do_nastep
     assert [line.endswith("miejsce=start") for line in lines] == [True]
 
 
-# --- Komentarz postępu Wyceny w efenix (#846)----------------------------------------------------------------------------
+@pytest.mark.parametrize("ended", [False, True], ids=["bez-wpisu-konca", "z-wpisem-konca"])
+def test_logi_z_pliku_w_katalogu_ktorego_nie_da_sie_wylistowac_ida_do_skrzynki_bez_wersji_zastepczej(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ended: bool
+) -> None:
+    """Dziennik Wyceny w efenix ma obok czytelny plik Logów, których przyjęcia przez kolejkę nikt nie zapisał, a start
+    Centrum nie może wylistować katalogu Logów. Start nie bierze tego za brak pliku: nie nadpisuje Logów Logami Urwanego
+    Uruchomienia ani nie wysyła wyniku bez Logów, a Logi z pliku, bajt w bajt, trafiają do Skrzynki najpóźniej po
+    następnym starcie, kiedy dziennik znika."""
+
+    centrum = settling_centrum(tmp_path)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    started = JournalStarted(
+        entry="start Uruchomienia",
+        run_id="d" * 32,
+        process="efenix",
+        mode="zapis",
+        period=PERIOD,
+        started_at=utc("2026-09-16T10:15:00+00:00"),
+    )
+    entries = [started.model_dump_json()]
+    if ended:
+        entries.append(RunEnded(at=started.started_at + timedelta(minutes=9), entry="koniec Uruchomienia").model_dump_json())
+    name = logs_file_name(started.started_at, "efenix", started.run_id)
+    journal = centrum.log_path.parent / "dzienniki-wyceny" / Path(name).with_suffix(".jsonl")
+    journal.parent.mkdir(parents=True)
+    journal.write_text("".join(f"{entry}\n" for entry in entries), encoding="utf-8")
+    logs = RunLog.interrupted(
+        started,
+        ended_at=started.started_at + timedelta(minutes=5),
+        orders=[],
+        interruption=LoggedInterruption(row=None, place=None, total=None, omitted=0),
+        tool=Tool(wydanie=None, commit=TOOL_COMMIT),
+        environment=Environment(system="Windows-11", python="3.12.7", files=None),
+        dad_actions=DadActions(entries=[], omitted=0),
+    ).model_copy(update={"technical_notes": ["Logi z pliku"]})
+    path = centrum.log_path.parent / "uruchomienia" / name
+    path.parent.mkdir(parents=True)
+    path.write_text(logs.text, encoding="utf-8")
+    written = path.read_bytes()
+
+    with unlisted(monkeypatch, path.parent):
+        centrum.restart()
+        centrum.client.get("/api/runs/current")
+        centrum.client.stop()
+    after_refusal = path.read_bytes()
+    centrum.restart()
+    centrum.client.get("/api/runs/current")
+    box = centrum.surroundings.report_box
+    sent = box.wait_until(lambda fake: logs_arrived(fake, 1))
+    centrum.client.stop()
+
+    assert (sent, after_refusal == written, journals(centrum)) == (True, True, [])
+    assert [logs_file(box, comment) for comment in logs_comments(box)] == [written]
+
+
+# --- Komentarz postępu Wyceny w efenix (#846) ----------------------------------------------------------------------------
 # Wycena w efenix trwa u taty do półtorej godziny, a Maks chce widzieć jej postęp, zanim się skończy. Testy dają jej czas
 # na udawanym zegarze Centrum: każde żądanie do Atrapy efenix trwa na nim minutę (``EfenixMinutes``), więc Wycena sześciu
 # zleceń ``PRICED`` trwa kilkadziesiąt minut, a postęp odświeża się w jej trakcie. Maks czyta w Skrzynce jeden komentarz

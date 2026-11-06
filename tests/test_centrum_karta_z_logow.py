@@ -35,7 +35,7 @@ from tests.fixtures.centrum_processes import (
 )
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD
-from tests.fixtures.run_cards import first_view, restored
+from tests.fixtures.run_cards import first_view, restored, unlisted
 
 INTERRUPTED = "Centrum rozliczeń zamknęło się w trakcie tego Uruchomienia, więc nie ma jego wyniku."
 PREVIEW_ADVICE = "Podgląd niczego nie zapisał. Uruchom go ponownie."
@@ -450,6 +450,45 @@ def test_identyfikator_spoza_centrum_nie_ma_logow_choc_nazwa_pliku_sie_nim_koncz
 
     asked = [f"efenix-{RUN_ID}", RUN_ID.upper(), f"{RUN_ID}.json", "*", ""]
     assert [disk.logs(run_id) for run_id in asked] == [Missing()] * len(asked)
+
+
+def test_identyfikator_spoza_centrum_nie_ma_logow_bez_zagladania_do_katalogu_logow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Identyfikator z adresu karty, którego Centrum nie nadaje (np. ``../``), nie dochodzi do dysku: przy katalogu Logów,
+    którego system nie daje wylistować, jest dalej bez Logów, a nie odmową."""
+
+    directory = tmp_path / "uruchomienia"
+    directory.mkdir()
+    disk = LogsOnDisk(tmp_path)
+
+    asked = ["../x", "A" * 32, RUN_ID.upper(), f"{RUN_ID}.json", "*", ""]
+    with unlisted(monkeypatch, directory):
+        answers = [disk.logs(run_id) for run_id in asked]
+        refused = disk.logs(RUN_ID)
+    assert (answers, isinstance(refused, Refused)) == ([Missing()] * len(asked), True)
+
+
+def test_katalog_logow_ktorego_system_nie_daje_wylistowac_to_odmowa_a_nie_brak_logow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nie wiadomo, czy Logi ostatniego startu są, więc karta po starcie nie mówi, że Uruchomienie urwało się w trakcie,
+    tak jak przy Logach, których nie da się odczytać, a Logów procesu nie ma żadnych. Z wylistowanym katalogiem bez pliku
+    Logów ostatniego startu to Urwane Uruchomienie."""
+
+    disk = LogsOnDisk(tmp_path)
+    disk.started(start(process="settlement"))
+    record = interrupted_logs(start("f" * 32, process="intermax"))
+    written(tmp_path, record)
+    cards = RunCards(disk, list)
+    viewed = disk.viewed(lambda logs: logs.run_id)
+
+    listed = (disk.logs(RUN_ID), cards.last() is None, disk.newest("intermax"), viewed.of("intermax"))
+    with unlisted(monkeypatch, tmp_path / "uruchomienia"):
+        read = disk.logs(RUN_ID)
+        refused = (cards.last(), disk.newest("intermax"), viewed.of("intermax"))
+    assert listed == (Missing(), False, record, ["f" * 32])
+    assert (isinstance(read, Refused), refused) == (True, (None, None, []))
 
 
 @pytest.mark.parametrize(
