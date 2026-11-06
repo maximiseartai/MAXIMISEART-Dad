@@ -22,7 +22,7 @@ from tests.fixtures.git_repo import commit, copy_files, git, repository
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
-from mutacje_zmiany import Hunk, exceptions, fingerprint, mutants, selected  # noqa: E402
+from mutacje_zmiany import Hunk, ZakresMutacji, exceptions, fingerprint, mutants, selected  # noqa: E402
 import pokrycie_procesu  # noqa: E402
 
 MODULE = "src/rozliczenia/warunek.py"
@@ -520,6 +520,96 @@ def test_czesc_bierze_kolejne_mutacje_wiec_pokrycie_biegnie_na_testach_mniejszej
 
     counted = [next(line for line in done.stdout.splitlines() if line.startswith("Mutacje: ")) for done in parts]
     assert [line.partition(" od ")[0] for line in counted] == [f"Mutacje: 2 (część {number}/2 z 4) w 1 plikach src/ i tools/" for number in (1, 2)]
+
+
+FUNKCJA = "def a(x: int) -> bool:\n    return x > 1\n"
+
+
+def _dopisz(repo: Path, subject: str, *names: str) -> str:
+    """Commit, który dopisuje funkcję do każdego ``src/pakiet/<nazwa>.py``: dwie mutacje, granica porównania i cofnięcie."""
+
+    for name in names:
+        with (repo / "src" / "pakiet" / f"{name}.py").open("a", encoding="utf-8") as code:
+            code.write(f"\n\ndef {subject}_{name}(x: int) -> bool:\n    return x < 3\n")
+    return commit(repo, subject)
+
+
+def _historia_zakresu(tmp_path: Path) -> tuple[Path, str, list[str]]:
+    """``main`` z bazą i czterema commitami: bez mutacji (README), 2 mutacje w ``m1``, 4 w ``m2`` i ``m3`` i druga funkcja
+    w ``m1`` tuż za pierwszą. Cofnięcie fragmentu ``m1`` psuje wtedy linie obu commitów, więc wchodzi do zakresu z
+    pierwszym, a ostatni commit ma już tylko granicę porównania: razem 7 mutacji."""
+
+    repo = repository(tmp_path / "repo", {"README.md": "repozytorium\n", **{f"src/pakiet/m{number}.py": FUNKCJA for number in (1, 2, 3)}})
+    base = commit(repo, "baza")
+    (repo / "README.md").write_text("repozytorium z historią\n", encoding="utf-8")
+    commits = [commit(repo, "readme")]
+    commits += [_dopisz(repo, "pierwszy", "m1"), _dopisz(repo, "drugi", "m2", "m3"), _dopisz(repo, "trzeci", "m1")]
+    return repo, base, commits
+
+
+def test_czesci_zakresu_skladaja_sie_w_kolejnosci_plikow_i_linii_na_cala_liste_mutacji_kazda_raz(tmp_path: Path) -> None:
+    repo, base, _ = _historia_zakresu(tmp_path)
+
+    zakres = ZakresMutacji.od(base, repo)
+
+    assert len(zakres.mutanty) == 7
+    assert [(mutant.path, mutant.line) for mutant in zakres.mutanty] == sorted((mutant.path, mutant.line) for mutant in zakres.mutanty)
+    for count in range(1, len(zakres.mutanty) + 2):
+        parts = [list(zakres.czesc(number, count)) for number in range(1, count + 1)]
+        assert [mutant for part in parts for mutant in part] == list(zakres.mutanty), count
+        # Plan daje tyle części, ile trzeba na jego mutacje, więc żadna z nich nie może zostać pusta.
+        assert all(parts) or count > len(zakres.mutanty)
+
+
+@pytest.mark.parametrize(
+    ("limit", "end", "inside"),
+    [(0, 1, 2), (1, 1, 2), (2, 1, 2), (5, 1, 2), (6, 2, 6), (7, 3, 7), (100, 3, 7)],
+)
+def test_koniec_nocy_to_najdalszy_commit_do_ktorego_zakres_miesci_limit_a_co_najmniej_pierwszy_z_mutacjami(
+    tmp_path: Path, limit: int, end: int, inside: int
+) -> None:
+    """Zakres do kolejnych commitów ma 0, 2, 6 i 7 mutacji, więc limit mniejszy niż 2 i tak daje noc do pierwszego commitu
+    z mutacjami."""
+
+    repo, base, commits = _historia_zakresu(tmp_path)
+    caly = ZakresMutacji.od(base, repo)
+
+    koniec = caly.najdalszy_koniec(limit)
+
+    assert (commits.index(koniec), len(caly.do(koniec).mutanty)) == (end, inside)
+
+
+@pytest.mark.parametrize(("comment", "parts"), [("# mutacje-zmiany: bez terminu", 1), ("# mutacje-zmiany: na próbę | do 2999-01-01 | zgoda Maks", 0)])
+def test_zly_wyjatek_daje_czesc_ktora_go_zglosi_takze_bez_mutacji(tmp_path: Path, comment: str, parts: int) -> None:
+    repo = repository(tmp_path / "repo", {"src/pakiet/a.py": FUNKCJA})
+    base = commit(repo, "baza")
+    (repo / "src" / "pakiet" / "a.py").write_text(f"{FUNKCJA}{comment}\n", encoding="utf-8")
+    head = commit(repo, "komentarz")
+
+    zakres = ZakresMutacji.od(base, repo)
+
+    shape = "src/pakiet/a.py:3: wyjątek musi mieć postać `# mutacje-zmiany: <powód> | do RRRR-MM-DD | zgoda <kto>`"
+    assert (zakres.mutanty, zakres.zly_wyjatek) == ((), shape if parts else None)
+    assert (zakres.liczba_czesci(24), zakres.do(head).liczba_czesci(24)) == (parts, parts)
+
+
+@pytest.mark.parametrize("trial", [True, False], ids=["proba-na-scalonych-pr", "noc"])
+def test_narzedzie_podmienione_przez_probe_na_scalonych_pr_jest_niesprawdzone_a_nie_zmiana_zakresu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, trial: bool
+) -> None:
+    """Commit zmienia ``tools/narzedzie.py``, a próba podstawiła w jego miejscu narzędzie z checkoutu (zmiana w drzewie)."""
+
+    repo = repository(tmp_path / "repo", {"tools/narzedzie.py": FUNKCJA})
+    base = commit(repo, "baza")
+    (repo / "tools" / "narzedzie.py").write_text(FUNKCJA.replace("x > 1", "x > 2"), encoding="utf-8")
+    commit(repo, "zmiana narzędzia")
+    (repo / "tools" / "narzedzie.py").write_text(FUNKCJA.replace("x > 1", "x > 5"), encoding="utf-8")
+    monkeypatch.setenv("MAXIMISEART_NA_SCALONYCH_PR", str(int(trial)))
+
+    zakres = ZakresMutacji.od(base, repo)
+
+    paths = {mutant.path for mutant in zakres.mutanty}
+    assert (zakres.niesprawdzone, paths) == ((("tools/narzedzie.py",), set()) if trial else ((), {"tools/narzedzie.py"}))
 
 
 def test_wyjatek_w_linii_mutacji_ja_pomija_a_wygasly_juz_nie(tmp_path: Path) -> None:

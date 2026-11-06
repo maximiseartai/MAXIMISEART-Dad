@@ -118,8 +118,8 @@ from __future__ import annotations
 
 import argparse
 import ast
-from collections import defaultdict
-from collections.abc import Iterable, Iterator, Sequence
+from collections import Counter, defaultdict
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 import datetime
 import difflib
@@ -127,6 +127,7 @@ import hashlib
 import io
 import itertools
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -189,9 +190,9 @@ class Hunk:
     old: tuple[str, ...]
 
 
-def _git(*arguments: str) -> str:
+def _git(*arguments: str, root: Path | None = None) -> str:
     return subprocess.run(
-        ["git", *arguments], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=True
+        ["git", *arguments], cwd=ROOT if root is None else root, capture_output=True, text=True, encoding="utf-8", check=True
     ).stdout
 
 
@@ -203,15 +204,16 @@ def _short(text: str, limit: int = 60) -> str:
 CODE = (":(glob)src/**/*.py", ":(glob)tools/**/*.py")
 
 
-def changes(fork: str) -> dict[str, list[Hunk]]:
+def changes(fork: str, root: Path | None = None) -> dict[str, list[Hunk]]:
     """Fragmenty zmiany każdego pliku ``src/**/*.py`` i ``tools/**/*.py`` z checkoutu; nowy plik to jeden fragment."""
 
+    root = ROOT if root is None else root
     found: dict[str, list[Hunk]] = defaultdict(list)
     current: str | None = None
     old_left = new_left = 0  # linie fragmentu, których parser jeszcze nie przeczytał: nie są nagłówkiem
     # Przeniesiony plik (``-M``) psuje tylko linie, które przy przeniesieniu się zmieniły.
     # Usunięty plik nie ma linii do zepsucia, więc każdy nagłówek ``+++`` to ``b/<ścieżka>``.
-    for line in _git("diff", "-U0", "-M", "--diff-filter=d", "--no-color", fork, "--", *CODE).split("\n"):
+    for line in _git("diff", "-U0", "-M", "--diff-filter=d", "--no-color", fork, "--", *CODE, root=root).split("\n"):
         if old_left and line.startswith("-"):
             old_left -= 1
             if current is not None:
@@ -225,12 +227,12 @@ def changes(fork: str) -> dict[str, list[Hunk]]:
             old_left, new_left = int(match["old_count"] or 1), int(match["new_count"] or 1)
             if current is not None:
                 found[current].append(Hunk(int(match["new"]), new_left, ()))
-    for name in _git("ls-files", "--others", "--exclude-standard", "--", *CODE).splitlines():
-        found[name] = [Hunk(1, len(_rows((ROOT / name).read_text(encoding="utf-8"))), ())]
-    return {path: hunks for path, hunks in found.items() if (ROOT / path).is_file()}
+    for name in _git("ls-files", "--others", "--exclude-standard", "--", *CODE, root=root).splitlines():
+        found[name] = [Hunk(1, len(_rows((root / name).read_text(encoding="utf-8"))), ())]
+    return {path: hunks for path, hunks in found.items() if (root / path).is_file()}
 
 
-def overlay(fork: str) -> tuple[frozenset[str], tuple[str, ...]]:
+def overlay(fork: str, root: Path | None = None) -> tuple[frozenset[str], tuple[str, ...]]:
     """Pliki ``tools/``, które ``tools/na_scalonych_pr.py`` podmienił narzędziami z checkoutu, i te z nich, które zmienia commit.
 
     Podmieniony plik to sprawdzane narzędzie, nie zmiana. Zmiany commitu w takim pliku nie widać, bo kopia ma w jego
@@ -239,9 +241,11 @@ def overlay(fork: str) -> tuple[frozenset[str], tuple[str, ...]]:
 
     if os.environ.get(ciezkie_ci.FROM_MERGED_PRS) != "1":
         return frozenset(), ()
-    listed = _git("diff", "-z", "--name-only", "HEAD", "--", "tools") + _git("ls-files", "-z", "--others", "--exclude-standard", "--", "tools")
+    listed = _git("diff", "-z", "--name-only", "HEAD", "--", "tools", root=root) + _git(
+        "ls-files", "-z", "--others", "--exclude-standard", "--", "tools", root=root
+    )
     replaced = frozenset(name for name in listed.split("\0") if name)
-    committed = set(_git("diff", "-z", "--name-only", fork, "HEAD", "--", "tools").split("\0"))
+    committed = set(_git("diff", "-z", "--name-only", fork, "HEAD", "--", "tools", root=root).split("\0"))
     return replaced, tuple(sorted(replaced & committed))
 
 
@@ -825,31 +829,108 @@ def share(every: Sequence[Mutant], number: int, count: int) -> Sequence[Mutant]:
     return every[len(every) * (number - 1) // count : len(every) * number // count]
 
 
-def last_changes(every: Sequence[Mutant]) -> list[frozenset[str]]:
+def last_changes(every: Sequence[Mutant], root: Path | None = None) -> list[frozenset[str]]:
     """Commity linii pierwszych rodziców, które ostatnie zmieniły linie każdej mutacji z ``every`` w checkoucie
     (``git blame --first-parent``: zmianę z gałęzi PR-u dostaje jego commit scalenia, a linię niezacommitowaną zera).
     Wiersze blame dzieli tylko koniec linii gita (``_rows``): linia z U+2028 albo form feed to dalej jeden wiersz."""
 
     blamed = {
-        path: [row.split(maxsplit=1)[0].lstrip("^") for row in _rows(_git("blame", "--first-parent", "-l", "-s", "--", path))]
+        path: [row.split(maxsplit=1)[0].lstrip("^") for row in _rows(_git("blame", "--first-parent", "-l", "-s", "--", path, root=root))]
         for path in dict.fromkeys(mutant.path for mutant in every)
     }
     return [frozenset(blamed[mutant.path][line - 1] for line in mutant.lines) for mutant in every]
 
 
-def until(every: Sequence[Mutant], commit: str) -> list[Mutant]:
+def until(every: Sequence[Mutant], commit: str, root: Path | None = None) -> list[Mutant]:
     """Mutacje z ``every``, z których linii co najmniej jedną ostatni zmienił commit, który ``commit`` zawiera na linii
     pierwszych rodziców: zakres nocy do ``commit`` (``tools/mutacje_nocne.py``). Mutację linii zmienionych później dostaje
     następna noc, której bazą jest ``commit``."""
 
-    contained = set(_git("rev-list", "--first-parent", commit).split())
-    return [mutant for mutant, commits in zip(every, last_changes(every), strict=True) if commits & contained]
+    contained = set(_git("rev-list", "--first-parent", commit, root=root).split())
+    return [mutant for mutant, commits in zip(every, last_changes(every, root), strict=True) if commits & contained]
 
 
 def tests_of(repository: wplyw_zmiany.Repository, paths: Iterable[str]) -> dict[str, list[str]]:
     """Testy dotknięte każdym plikiem z ``paths``: tylko spośród nich biegną testy mutacji tego pliku."""
 
     return {path: list(repository.impact(frozenset({path})).tests) for path in paths}
+
+
+@dataclass(frozen=True)
+class ZakresMutacji:
+    """Mutacje zmienionych linii ``src/`` i ``tools/`` od bazy do checkoutu ``root``, w kolejności części: po plikach,
+    w pliku po liniach.
+
+    Jedyne źródło listy mutacji planu nocy i części (ADR 0021): plan pyta o koniec zakresu nocy, liczbę części i
+    mutacje każdej z nich, a część o swoje mutacje, więc obie dostają tę samą listę, bo składa ją tylko ta klasa.
+    """
+
+    root: Path
+    baza: str  # wspólny przodek HEAD i podanej bazy: od niego liczą plan i część
+    teksty: Mapping[str, str]  # plik zmiany → jego treść w checkoucie
+    fragmenty: Mapping[str, Sequence[Hunk]]
+    mutanty: tuple[Mutant, ...]  # ``selected`` każdego pliku zmiany, po ``do`` tylko z zakresu do commitu
+    wyjatki: Mapping[str, Mapping[int, Allowance]]  # wyjątki ``# mutacje-zmiany:`` każdego pliku; puste przy złym wyjątku
+    zly_wyjatek: str | None  # pierwszy wyjątek w złej postaci: część kończy się wtedy kodem 2
+    niesprawdzone: tuple[str, ...]  # pliki, które commit zmienia, a ``tools/na_scalonych_pr.py`` podmienił (``overlay``)
+
+    @classmethod
+    def od(cls, baza: str, root: Path) -> ZakresMutacji:
+        """Zakres od wspólnego przodka HEAD i ``baza``: zmiana bez plików podmienionych przez ``overlay``, mutacje
+        ``selected`` i wyjątki. Nieznana baza rzuca ``subprocess.CalledProcessError``."""
+
+        fork = _git("merge-base", "HEAD", baza, root=root).strip()
+        replaced, unseen = overlay(fork, root)
+        hunks = {path: found for path, found in changes(fork, root).items() if path not in replaced}
+        texts = {path: (root / path).read_text(encoding="utf-8") for path in hunks}
+        every = tuple(mutant for path, text in texts.items() for mutant in selected(path, text, hunks[path]))
+        try:
+            allowed = {path: exceptions(text, path) for path, text in texts.items()}
+        except ValueError as error:
+            return cls(root, fork, texts, hunks, every, {}, str(error), unseen)
+        return cls(root, fork, texts, hunks, every, allowed, None, unseen)
+
+    def do(self, commit: str) -> ZakresMutacji:
+        """Tylko mutacje, z których linii co najmniej jedną ostatni zmienił (``git blame --first-parent``) commit, który
+        ``commit`` zawiera na linii pierwszych rodziców; mutacje linii zmienionych później dostaje następna noc."""
+
+        return replace(self, mutanty=tuple(until(self.mutanty, commit, self.root)))
+
+    def najdalszy_koniec(self, limit: int) -> str:
+        """Commit, do którego noc mutuje zmiany: HEAD, gdy mutacji jest najwyżej ``limit``, a inaczej najdalszy commit
+        linii pierwszych rodziców od bazy, do którego ``do`` zostawia ich najwyżej ``limit``, ale co najmniej pierwszy
+        commit z mutacjami, także gdy sam ma ich więcej."""
+
+        if len(self.mutanty) <= limit:
+            return _git("rev-parse", "HEAD", root=self.root).strip()
+        line = _git("rev-list", "--first-parent", "--reverse", f"{self.baza}..HEAD", root=self.root).split()
+        position = {commit: number for number, commit in enumerate(line)}
+        # Mutacja wchodzi do zakresu z najwcześniejszym commitem, który zmienił którąś jej linię (jak w ``do``), a commit
+        # spoza linii od bazy (sprzed niej) każdy zakres już zawiera, więc liczy się od pierwszego commitu.
+        from_commit = Counter(min(position.get(commit, 0) for commit in commits) for commits in last_changes(self.mutanty, self.root))
+        total = 0
+        for number in range(len(line)):
+            if total and total + from_commit[number] > limit:
+                return line[number - 1]
+            total += from_commit[number]
+        return line[-1]
+
+    @property
+    def liczba_mutacji(self) -> int:
+        """Mutacje, które zgłoszą części: przy złym wyjątku co najmniej jedna, bo część zgłasza go porażką, a bez części
+        noc byłaby zielona i przesunęła bazę za niego."""
+
+        return max(len(self.mutanty), 1) if self.zly_wyjatek is not None else len(self.mutanty)
+
+    def liczba_czesci(self, na_czesc: int) -> int:
+        """Ile części po najwyżej ``na_czesc`` mutacji potrzebuje ``liczba_mutacji``."""
+
+        return math.ceil(self.liczba_mutacji / na_czesc)
+
+    def czesc(self, numer: int, liczba: int) -> Sequence[Mutant]:
+        """Mutacje części ``numer`` z ``liczba``: jej kolejny kawałek listy, każda mutacja w jednej części."""
+
+        return share(self.mutanty, numer, liczba)
 
 
 def _mutate(
