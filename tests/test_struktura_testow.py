@@ -11,6 +11,8 @@ from itertools import pairwise
 from pathlib import Path
 import re
 
+import pytest
+
 from tests.fixtures.skladnia import dotted, imports
 
 TESTS = Path(__file__).resolve().parent
@@ -229,10 +231,10 @@ def _constant(expression: ast.expr, bound: dict[str, list[ast.expr | None]], see
 
 
 def _measured(
-    expression: ast.expr, bound: dict[str, list[ast.expr | None]], names: dict[str, str], seen: frozenset[str] = frozenset()
+    expression: ast.expr, bound: dict[str, list[ast.expr | None]], names: dict[str, str], measured_names: set[str]
 ) -> bool:
     """Zmierzony czas: wyrażenie z nazwą czasu (``elapsed``, ``duration``, ``_ms``, ``_s``), z odczytem zegara
-    albo z nazwą, której moduł przypisuje takie wyrażenie (``took = time.monotonic() - started``)."""
+    albo z nazwą z ``measured_names`` (``_measured_names``)."""
 
     if _constant(expression, bound):
         return False
@@ -242,11 +244,29 @@ def _measured(
         name = node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else None
         if name is not None and TIME_NAME.search(name) and not (isinstance(node, ast.Name) and _constant(node, bound)):
             return True
-        if isinstance(node, ast.Name) and node.id not in seen and any(
-            value is not None and _measured(value, bound, names, seen | {node.id}) for value in bound.get(node.id, ())
-        ):
+        if isinstance(node, ast.Name) and node.id in measured_names:
             return True
     return False
+
+
+def _measured_names(bound: dict[str, list[ast.expr | None]], names: dict[str, str]) -> set[str]:
+    """Nazwy, którym moduł przypisuje zmierzony czas (``took = time.monotonic() - started``), także przez inne nazwy.
+
+    Najmniejszy punkt stały raz na moduł: przejście każdej ścieżki wiązań osobno rośnie wykładniczo z liczbą nazw
+    wiązanych w module wiele razy (#1010: ``tests/test_wycena_efenix.py`` po #995 trwał 25 s).
+    """
+
+    measured: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for name, values in bound.items():
+            if name not in measured and any(
+                value is not None and _measured(value, bound, names, measured) for value in values
+            ):
+                measured.add(name)
+                changed = True
+    return measured
 
 
 def _negated(compare: ast.Compare, statement: ast.Assert, parents: dict[ast.AST, ast.AST]) -> bool:
@@ -272,6 +292,7 @@ def _constant_time_bounds(tree: ast.Module) -> Iterator[tuple[ast.Compare, str]]
 
     names = imports(tree)
     bound = _bindings(tree)
+    measured_names = _measured_names(bound, names)
     parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
     for statement in ast.walk(tree):
         if not isinstance(statement, ast.Assert):
@@ -289,7 +310,7 @@ def _constant_time_bounds(tree: ast.Module) -> Iterator[tuple[ast.Compare, str]]
                     continue
                 if negated:
                     measured, limit = limit, measured
-                if _measured(measured, bound, names) and _constant(limit, bound):
+                if _measured(measured, bound, names, measured_names) and _constant(limit, bound):
                     node: ast.AST = statement
                     while node in parents and not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         node = parents[node]
@@ -322,3 +343,15 @@ def test_zmierzony_czas_nie_jest_ograniczony_stala_liczba() -> None:
             "CONSTANT_TIME_BOUNDS pod kluczem z nawiasu, z powodem.",
         ]
     )
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        "import time\nstarted = time.monotonic()\ntook = time.monotonic() - started\nassert took < 2\n",
+        "import time\nstarted = time.monotonic()\ntook = raw * 1\nraw = time.monotonic() - started\nassert took < 2\n",
+    ],
+    ids=["nazwa-z-odczytu-zegara", "nazwa-przez-inna-nazwe"],
+)
+def test_czas_przypisany_nazwie_bez_slowa_czasu_jest_zmierzonym_czasem(module: str) -> None:
+    assert [ast.unparse(compare) for compare, _ in _constant_time_bounds(ast.parse(module))] == ["took < 2"]
