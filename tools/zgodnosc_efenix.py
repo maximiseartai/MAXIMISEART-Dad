@@ -66,8 +66,12 @@ miejsca tekstu, przy czym kolejne takie same węzły to jeden (liczba pozycji pr
 strony zlecenia efenix (także strona zlecenia w ramce innej strony), z oknem Emmetta zamkniętym w każdej karcie (zamknięte
 przed odczytem, strona przeładowana, odpowiedź jeszcze nie przyszła), otwartym w kilku kartach, z kartą, której odczyt
 padł (karta zmieniła stronę w trakcie odczytu), i z propozycją, która nic nie pokazuje (pusta albo same białe znaki: Emmett
-nic nie zaproponował albo propozycja padła, a tego narzędzie nie rozróżni). Okno Emmetta bez jednego
-``#emmett-propozycja`` to ``RÓŻNICA``, bo w nim okno Wyceny czyta propozycję.
+nic nie zaproponował albo propozycja padła, a tego narzędzie nie rozróżni). Strona, która w widocznym oknie Emmetta nie
+ma na całej stronie dokładnie jednego ``#dialog_emmett #emmett-propozycja``, to ``RÓŻNICA``, bo tylko taką propozycję
+czyta okno Wyceny. Widoczność odczyt sprawdza tylko dla okna,
+nie dla propozycji: czyta drzewo DOM, jak reguła okna Wyceny (``efenix_browser.SHOWS_ANYTHING``), więc propozycja
+ukryta stylem w widocznym oknie (``display: none`` albo ``visibility: hidden`` na ``#emmett-propozycja``) ma zgodną
+budowę, choć tata widzi puste okno (próba na Atrapie 6.11.2026, #953).
 
 Uruchomienie: Chrome z osobnym profilem i zdalnym debugowaniem (macOS, Linux, Windows), w nim logowanie do efenix kontem
 taty, potem narzędzie:
@@ -293,8 +297,9 @@ _SHOWS_ANYTHING: Final = f"""(selector) => {{
     return element !== null && ({SHOWS_ANYTHING})(element);
 }}"""
 # Okno Emmetta w karcie z kliknięciem Emmetta: ``null``, gdy okna nie ma albo nie jest widoczne (bez pudełka, jak przy
-# ``display: none``, albo ``visibility: hidden``), a w widocznym liczba propozycji (``#emmett-propozycja``), wynik reguły okna Wyceny dla
-# jedynej propozycji i jej drzewo. Węzeł drzewa to tekst z maską (litera to a, cyfra to 9, białe znaki jak jedna spacja;
+# ``display: none``, albo ``visibility: hidden``), a w widocznym liczba propozycji na całej stronie (``PROPOSAL``, liczona
+# jak w oknie Wyceny), wynik reguły okna Wyceny dla jedynej propozycji i jej drzewo, bez sprawdzania widoczności
+# propozycji i jej węzłów. Węzeł drzewa to tekst z maską (litera to a, cyfra to 9, białe znaki jak jedna spacja;
 # sam biały znak pomija) albo element: znacznik, klasy (cyfra to 9), nazwy atrybutów poza ``class`` bez wartości i węzły
 # w środku, a w skrypcie, stylu, szablonie, ramce i ``noscript`` bez nich. Komentarz pomija. Funkcja tylko czyta.
 _READ_WINDOW: Final = (
@@ -302,7 +307,7 @@ _READ_WINDOW: Final = (
     const dialog = document.querySelector(dialogSelector);
     if (dialog === null) return null;
     if (dialog.getClientRects().length === 0 || getComputedStyle(dialog).visibility === 'hidden') return null;
-    const proposals = dialog.querySelectorAll(proposalSelector);
+    const proposals = document.querySelectorAll(proposalSelector);
     if (proposals.length !== 1) return {proposals: proposals.length, shows: false, nodes: []};
     const opaque = ['script', 'style', 'template', 'iframe', 'noscript'];
     const mask = (text) => text.replace(/\\s+/g, ' ').trim().replace(/\\p{L}/gu, 'a').replace(/\\p{N}/gu, '9');
