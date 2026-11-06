@@ -84,8 +84,9 @@ class _PortalInLine:
 def _one_loop_portal(self: TestClient) -> Iterator[Any]:
     """Pętla żądania ``TestClient``: w ``with`` ta z ``lifespan``, poza nim wspólna, nie nowa pętla na żądanie.
 
-    Starlette poza ``with`` otwiera na każde żądanie nową pętlę z parą gniazd TCP, a na Windows ich porty w TIME_WAIT
-    kończyły pulę portów efemerycznych: ``WinError 10055`` przy ``socket.socketpair()`` (#975).
+    Starlette poza ``with`` otwiera na każde żądanie nową pętlę z parą gniazd TCP (``socket.socketpair()``). Że ich
+    porty w TIME_WAIT wyczerpywały na Windows pulę portów efemerycznych (``WinError 10055``), to hipoteza #975, której
+    pomiar z #981 nie potwierdził; pomiary i powód wspólnej pętli opisuje fixture ``jedna_petla_testclient``.
     """
 
     if self.portal is not None:

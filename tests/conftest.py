@@ -87,9 +87,15 @@ def git_bez_konfiguracji_komputera(tmp_path_factory: pytest.TempPathFactory) -> 
 def jedna_petla_testclient() -> Iterator[None]:
     """Każdy ``TestClient`` poza ``with`` obsługuje żądania w jednej pętli zdarzeń procesu testów, nie w nowej na żądanie.
 
-    Pętla na żądanie to para gniazd TCP na żądanie, a na Windows CI ich porty w TIME_WAIT kończyły pulę portów
-    efemerycznych (``WinError 10055``, #975). Pętla na proces, nie na plik, bo klienta mają też fixture sesji
-    (``world_template`` w ``tests/test_uszkodzone_wejscia.py``).
+    Pętla na żądanie to para gniazd TCP na żądanie. Po zmianie (#981) pętli na plik testów jest o rzędy wielkości
+    mniej (pełny zestaw na Macu: ``test_uszkodzone_wejscia.py`` 18 358 → 0, ``test_centrum_logi_uruchomienia.py``
+    1 584 → 54). W zadaniach Windows CI z ``test_uszkodzone_wejscia.py`` portów w TIME_WAIT było 18–150 zamiast
+    4 381–4 627, a w zadaniach z innymi plikami spadek był mniejszy albo żaden.
+    Testy na Windows CI padały na ``WinError 10055`` przy ``socket.socketpair()`` (#975). Że to wyczerpana pula
+    portów, to tylko hipoteza: w pomiarze #981 szczyt to 5 029 z 16 384 portów, a w jego runach 10055 się nie
+    pojawił. Fixture zostaje, bo klient poza ``with`` nie otwiera już pętli na każde żądanie; klient w ``with`` ma
+    swoją pętlę z ``lifespan``. Pętla na proces, nie na plik, bo klienta mają też fixture sesji (``world_template``
+    w ``tests/test_uszkodzone_wejscia.py``).
     """
 
     with shared_test_loop():
