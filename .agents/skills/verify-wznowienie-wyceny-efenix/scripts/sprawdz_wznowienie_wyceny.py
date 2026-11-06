@@ -212,7 +212,7 @@ def _trace(output: str) -> list[dict[str, str]]:
 _STEPS = {
     "Start": "tata uruchamia Wycenę w efenix",
     "Otworz": "okno otwiera zlecenie {z} i decyduje (_outcome, completion)",
-    "ZaladujEmmetta": "okno klika „Załaduj do zlecenia” w zleceniu {z}: efenix ma Wycenę Emmetta (load_emmett)",
+    "ZaladujEmmetta": "okno klika „Załaduj do zlecenia” w zleceniu {z}: efenix ma Wycenę Emmetta (load_emmett, _emmett)",
     "OdczytPoEmmetcie": "okno czyta stronę zlecenia {z} po Emmetcie i liczy, co dopisać (_completed, completion)",
     "BrakPozycji": "strona zlecenia {z} po Emmetcie nie ma pozycji z ilością w pliku: błąd zlecenia",
     "Wpisz": "okno wpisuje ilość z pliku w zleceniu {z}, efenix ją zapisuje (enter_quantity)",

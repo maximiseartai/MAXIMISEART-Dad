@@ -54,6 +54,7 @@ from rozliczenia.efenix_pricing import (
     Closed,
     Efenix,
     ElementCount,
+    EmmettLoad,
     HttpStatus,
     LoggedOut,
     Login,
@@ -1114,9 +1115,9 @@ class _ClosingBeforeAction:
         self._before()
         return self._efenix.set_execution_date(day)
 
-    def load_emmett(self) -> OrderPricing:
+    def load_emmett(self, verdict: Callable[[EmmettLoad], OrderPricing]) -> OrderPricing:
         self._before()
-        return self._efenix.load_emmett()
+        return self._efenix.load_emmett(verdict)
 
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
         self._before()
@@ -2750,7 +2751,7 @@ class _SlowEfenix:
     def set_execution_date(self, day: date) -> bool:
         raise AssertionError("ślad nie woła działań, których nie woła przebieg")
 
-    def load_emmett(self) -> OrderPricing:
+    def load_emmett(self, verdict: Callable[[EmmettLoad], OrderPricing]) -> OrderPricing:
         raise AssertionError("ślad nie woła działań, których nie woła przebieg")
 
     def enter_quantity(self, position: str, quantity: int) -> Decimal:

@@ -48,11 +48,11 @@ from these sentences, never from a run:
   address is a logout, a closed tab is `WindowClosed` „cokolwiek zgłosił wtedy Playwright”, a tab closed while the
   window waits for Dad's login is a closed window at once (#758), and an error page of the list after his login is
   `HttpStatus` at once (#891). A „Załaduj do zlecenia” efenix answers with 200 and `result: nok` in a valid session
-  leaves the reloaded page with amount 0, which is `Shape.EMMETT_NOT_LOADED`, a Zatrzymanie of the window and not a
-  logout (#889), unless Emmett proposed nothing, which the window knows only from an empty Emmett dialog after a
+  leaves the reloaded page without any quantity, which is `Shape.EMMETT_NOT_LOADED`, a Zatrzymanie of the window and
+  not a logout (#889), unless Emmett proposed nothing, which the window knows only from an empty Emmett dialog after a
   proposal that came whole with 2xx; so the same refusal after the proposal of that order failed with HTTP 500
-  (`REFUSED_NO_PROPOSAL`, two faults at one order) is `Shape.EMMETT_NOT_LOADED` too („Strona z kwotą 0 po każdej innej
-  propozycji, także po pustym oknie Emmetta po padniętej propozycji, to `UnexpectedPage` z
+  (`REFUSED_NO_PROPOSAL`, two faults at one order) is `Shape.EMMETT_NOT_LOADED` too (`efenix_pricing._emmett`: „Strona
+  bez ilości po każdej innej propozycji, także po pustym oknie Emmetta po padniętej propozycji, to `UnexpectedPage` z
   `Shape.EMMETT_NOT_LOADED`”, #908); an expired session there stays a logout. Only
   a page efenix really sent in another shape (a redirect elsewhere) may be a shape.
   A run that does not stop ends like the reference or leaves the faulted order to Dad (a date efenix did

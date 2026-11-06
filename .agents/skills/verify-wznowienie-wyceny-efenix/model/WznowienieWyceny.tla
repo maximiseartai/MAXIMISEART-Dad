@@ -108,7 +108,7 @@ Dokoncz(q) ==
 
 (* _outcome: search, listing, open_order, przy pustej dacie wykonania _dated na stronie z ilościami albo bez (data     *)
 (* poza modelem: _dated nie zmienia ilości), i decyzja na otwartej stronie: strona bez żadnej ilości                   *)
-(* (not any(opened.quantities.values())) idzie do Wyceny Emmetta, a strona z ilościami prosto do _completed, bez       *)
+(* (not _priced(opened)) idzie do Wyceny Emmetta, a strona z ilościami prosto do _completed, bez                       *)
 (* Emmetta.                                                                                                           *)
 Otworz ==
     LET q == efenix[zlecenie] IN
@@ -119,7 +119,7 @@ Otworz ==
     /\ UNCHANGED <<efenix, proces, zlecenie, znacznik, tataZmienial, uruchomienia, zmian, slady,
                    czysciTate, obniza, zlyZnacznik>>
 
-\* load_emmett: „Załaduj do zlecenia” zapisuje Wycenę Emmetta na serwerze i czyści każdą inną ilość zlecenia.
+\* load_emmett(_emmett): „Załaduj do zlecenia” zapisuje Wycenę Emmetta na serwerze i czyści każdą inną ilość zlecenia.
 ZaladujEmmetta ==
     /\ proces = "dziala" /\ krok = "emmett"
     /\ czysciTate' = Zdarz(czysciTate, efenix[zlecenie] # Pusta)
@@ -129,7 +129,8 @@ ZaladujEmmetta ==
     /\ UNCHANGED <<proces, zlecenie, doWpisania, wynik, znacznik, tataZmienial, uruchomienia, zmian, slady,
                    zlyWynikPoTacie, zlyZnacznik, bladBezPowodu>>
 
-\* load_emmett czyta stronę po przeładowaniu, potem _completed na niej (completion od ilości Emmetta).
+\* load_emmett czyta stronę po przeładowaniu, werdykt _emmett ją przyjmuje, potem _completed na niej (completion od
+\* ilości Emmetta).
 OdczytPoEmmetcie ==
     /\ proces = "dziala" /\ krok = "odczyt"
     /\ Dokoncz(efenix[zlecenie])
