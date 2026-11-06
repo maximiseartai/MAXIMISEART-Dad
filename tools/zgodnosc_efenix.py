@@ -66,9 +66,10 @@ miejsca tekstu, przy czym kolejne takie same węzły to jeden (liczba pozycji pr
 strony zlecenia efenix (także strona zlecenia w ramce innej strony), z oknem Emmetta zamkniętym w każdej karcie (zamknięte
 przed odczytem, strona przeładowana, odpowiedź jeszcze nie przyszła), otwartym w kilku kartach, z kartą, której odczyt
 padł (karta zmieniła stronę w trakcie odczytu), i z propozycją, która nic nie pokazuje (pusta albo same białe znaki: Emmett
-nic nie zaproponował albo propozycja padła, a tego narzędzie nie rozróżni). Strona, która w widocznym oknie Emmetta nie
-ma na całej stronie dokładnie jednego ``#dialog_emmett #emmett-propozycja``, to ``RÓŻNICA``, bo tylko taką propozycję
-czyta okno Wyceny. Widoczność odczyt sprawdza tylko dla okna,
+nic nie zaproponował albo propozycja padła, a tego narzędzie nie rozróżni). Karta, w której widać okno Emmetta, a jej
+strona po skryptach nie ma dokładnie jednego ``#dialog_emmett`` (widocznego albo nie) albo potem dokładnie jednego
+``#dialog_emmett #emmett-propozycja``, to ``RÓŻNICA``, bo tak liczy okno Wyceny: najpierw okno na całej stronie, potem
+propozycję w nim. Widoczność odczyt sprawdza tylko dla okna,
 nie dla propozycji: czyta drzewo DOM, jak reguła okna Wyceny (``efenix_browser.SHOWS_ANYTHING``), więc propozycja
 ukryta stylem w widocznym oknie (``display: none`` albo ``visibility: hidden`` na ``#emmett-propozycja``) ma zgodną
 budowę, choć tata widzi puste okno (próba na Atrapie 6.11.2026, #953).
@@ -296,19 +297,20 @@ _SHOWS_ANYTHING: Final = f"""(selector) => {{
     const element = document.querySelector(selector);
     return element !== null && ({SHOWS_ANYTHING})(element);
 }}"""
-# Okno Emmetta w karcie z kliknięciem Emmetta: ``null``, gdy okna nie ma albo nie jest widoczne (bez pudełka, jak przy
-# ``display: none``, albo ``visibility: hidden``), a w widocznym liczba propozycji na całej stronie (``PROPOSAL``, liczona
-# jak w oknie Wyceny), wynik reguły okna Wyceny dla jedynej propozycji i jej drzewo, bez sprawdzania widoczności
-# propozycji i jej węzłów. Węzeł drzewa to tekst z maską (litera to a, cyfra to 9, białe znaki jak jedna spacja;
+# Okno Emmetta w karcie z kliknięciem Emmetta: ``null``, gdy żadne okno strony nie jest widoczne (bez pudełka, jak przy
+# ``display: none``, albo ``visibility: hidden``), a przy widocznym liczba okien (``DIALOG``) i propozycji (``PROPOSAL``)
+# na całej stronie, liczonych jak w oknie Wyceny (``_single``), oraz przy jednym oknie i jednej propozycji wynik reguły
+# okna Wyceny dla propozycji i jej drzewo, bez sprawdzania widoczności propozycji i jej węzłów. Węzeł drzewa to tekst z maską (litera to a, cyfra to 9, białe znaki jak jedna spacja;
 # sam biały znak pomija) albo element: znacznik, klasy (cyfra to 9), nazwy atrybutów poza ``class`` bez wartości i węzły
 # w środku, a w skrypcie, stylu, szablonie, ramce i ``noscript`` bez nich. Komentarz pomija. Funkcja tylko czyta.
 _READ_WINDOW: Final = (
     """([dialogSelector, proposalSelector]) => {
-    const dialog = document.querySelector(dialogSelector);
-    if (dialog === null) return null;
-    if (dialog.getClientRects().length === 0 || getComputedStyle(dialog).visibility === 'hidden') return null;
+    const dialogs = document.querySelectorAll(dialogSelector);
+    const visible = (dialog) => dialog.getClientRects().length > 0 && getComputedStyle(dialog).visibility !== 'hidden';
+    if (![...dialogs].some(visible)) return null;
     const proposals = document.querySelectorAll(proposalSelector);
-    if (proposals.length !== 1) return {proposals: proposals.length, shows: false, nodes: []};
+    const counted = {dialogs: dialogs.length, proposals: proposals.length};
+    if (dialogs.length !== 1 || proposals.length !== 1) return {...counted, shows: false, nodes: []};
     const opaque = ['script', 'style', 'template', 'iframe', 'noscript'];
     const mask = (text) => text.replace(/\\s+/g, ' ').trim().replace(/\\p{L}/gu, 'a').replace(/\\p{N}/gu, '9');
     const read = (node) => {
@@ -325,7 +327,7 @@ _READ_WINDOW: Final = (
         };
     };
     const nodes = (parent) => [...parent.childNodes].map(read).filter((node) => node !== null);
-    return {proposals: 1, shows: (__SHOWS_ANYTHING__)(proposals[0]), nodes: nodes(proposals[0])};
+    return {...counted, shows: (__SHOWS_ANYTHING__)(proposals[0]), nodes: nodes(proposals[0])};
 }"""
 ).replace("__SHOWS_ANYTHING__", SHOWS_ANYTHING)
 # Karta pozycji: ``id`` pól Ilość, ``id`` pól ceny wpisywanej i ceny z tekstu karty.
@@ -364,6 +366,7 @@ class _Node(TypedDict, total=False):
 
 
 class _Window(TypedDict):
+    dialogs: int
     proposals: int
     shows: bool
     nodes: list[_Node]
@@ -808,6 +811,9 @@ def measure_proposal(browser: Browser, efenix_url: str, report: Report, *, timeo
     if window is None:
         return
     print(CLOSE_EMMETT, file=sys.stderr, flush=True)
+    if window["dialogs"] != 1:
+        report.differ(Part.PROPOSAL, f"strona z oknem Emmetta po kliknięciu Emmetta ma {window['dialogs']} × {DIALOG} zamiast 1")
+        return
     if window["proposals"] != 1:
         report.differ(Part.PROPOSAL, f"okno Emmetta po kliknięciu Emmetta ma {window['proposals']} × {PROPOSAL} zamiast 1")
         return
