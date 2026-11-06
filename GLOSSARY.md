@@ -693,8 +693,9 @@ _Avoid_: reguła prywatności (dawne listy pól każdej wysyłki), anonimizacja
 
 Data z godziną dwie kolumny na lewo od `DATA GODZ. POCZ.` (u taty w kolumnie A
 bez nagłówka) w wierszu Rejestru zleceń, który nie jest pierwszym wierszem bloku
-wklejenia. Wiersz na miejscu jej tam nie ma, a przesunięty wiersz z aplikacji ma
-tam swoją datę. Przesunięty przychodzi tylko pierwszy wklejony wiersz, więc ślad
+wklejenia. Wiersz na miejscu u taty jej tam nie ma (kolumna A Rejestru jest
+pusta, a Uporządkowanie ją czyści), a przesunięty wiersz z aplikacji ma tam
+swoją datę. Przesunięty przychodzi tylko pierwszy wklejony wiersz, więc ślad
 znaczy, że ten fakt nie zaszedł: reguła danych zna taki wiersz w obu
 położeniach, a Logi Uruchomienia mają o nim uwagę „Fakt domeny złamany”.
 _Avoid_: niepewny wiersz, wiersz bez pewnego położenia

@@ -20,8 +20,10 @@ Zmienia:
 
 Zmieniona 5.11.2026 (decyzja Maksa, #913, #918, zastępuje PR #966): położenie
 wiersza Rejestru zleceń i INTERMAX w pamięci reguły danych (sekcja „Położenie
-wiersza”). Uzupełniona 6.11.2026 (decyzja Maksa po przeglądzie #984 r2): pierwszy
-wiersz bloku ma jedno położenie tylko wtedy, gdy jego przesunięcie widać.
+wiersza”). Uzupełniona 6.11.2026: pierwszy wiersz bloku ma jedno położenie tylko
+wtedy, gdy jego przesunięcie widać (decyzja koordynatora w granicach decyzji Maksa
+z 5.11.2026, po przeglądzie #984 r2), a ryzyko klasy C przyjął Maks (decyzja Maksa
+z 6.11.2026, po przeglądzie #984 r3).
 
 Publiczne repozytorium bez zmian: PR-y, commity, issue i testy nie niosą
 treści wierszy, numerów zleceń ani Wykonawców taty, a testy mają tylko dane
@@ -177,7 +179,8 @@ zajdzie:
     wybiera, który wiersz jest kandydatem, ale sam kształt treści nigdy nie
     zdejmuje z pierwszego wiersza drugiego położenia. Tak stoi wiersz, który
     uchodzi za pierwszy, bo tata wpisał coś w Calibri 8 w wiersz wklejenia nad nim
-    (przegląd #984 r1 i r2), i wiersz na górze odczytu okresu ze środka arkusza
+    (przegląd #984 r1 i r2), gdy nie ma daty z godziną w kolumnie A (z nią to klasa
+    C niżej), i wiersz na górze odczytu okresu ze środka arkusza
     (zawężenie zaczyna się od daty z godziną pod `DATA GODZ. POCZ.`). Granica
     bloku z kroju zostaje: reguła z większości komórek przestawia u taty granice
     dziesiątek bloków (odrzucone warianty).
@@ -200,22 +203,40 @@ same bajty na `main` b3f1c625a i na tej regule; tabela na Macu Maksa:
 | przesunięcie w prawo | 3 | 3 | 3 |
 | `ADRES` jako data z godziną (adresu nie ma w pliku) | 1 | 1 | 1 |
 
-Ryzyko przyjęte przez Maksa to dwie klasy z faktem domeny złamanym bez śladu: 19
-i 16 sond. W drugiej pierwszy wiersz ma widoczne przesunięcie (data z godziną dwie
-kolumny przed `DATA GODZ. POCZ.`, pod nią nie), a jest przesunięty tylko w części
-albo stoi na miejscu. W każdej adres albo numer Orange wiersza wychodzi, gdy stoi
-też w wolnym tekście, w Uwadze taty albo w zwykłej kolumnie innego wiersza. Testy
-`KNOWN` (xfail strict, termin 5.02.2027, `tests/fixtures/fakt_domeny.py`) mają
-po przypadku z każdej klasy w tabelach położeń INTERMAX i Rejestru. Wpis taty w
-Calibri 8 we wklejonym wierszu nie wypuszcza wartości, z datą z godziną, z datą
-tekstem i bez daty w wierszu pod nim (sondy przeglądu #984 r1 i r2: I1, I1b, I2,
-R1, R3, N1–N6t, RN1–RN3, D9, D10).
+Ryzyko przyjęte przez Maksa to trzy klasy:
+
+- **A** (5.11.2026): przesunięty inny wiersz niż pierwszy, bez śladu; 19 sond.
+- **B** (5.11.2026): pierwszy wiersz bloku ma widoczne przesunięcie (data z
+  godziną dwie kolumny przed `DATA GODZ. POCZ.`, pod nią nie), a jest przesunięty
+  tylko w części albo stoi na miejscu; 16 sond.
+- **C** (6.11.2026): fakt domeny zachodzi, ale wiersz na miejscu, który nie jest
+  pierwszym przesuniętym wierszem wklejenia, ma datę z godziną w kolumnie A i bez
+  daty z godziną pod `DATA GODZ. POCZ.`, a reguła bierze go za pierwszy wiersz
+  bloku: pod wpisem taty w Calibri 8, także na początku bloku nad
+  uporządkowanymi. Przesunięcie widać, więc pamięć zna go tylko przesuniętego.
+  Sondy przeglądu #984 r3 C4, RC1–RC3, DC4 i DC5 wypuszczają wtedy wartości albo
+  zostawiają je strażnikowi nieznane (na `main` 0), a C1–C3, C5 i C6 w INTERMAX
+  wyciekają tak samo jak na `main`. U taty kolumna A Rejestru jest pusta w 31 779
+  wierszach kopii z 20.10.2026, w INTERMAX z wklejeniem ma tylko datę prawdziwego
+  przesuniętego pierwszego wiersza, a Uporządkowanie ją czyści, więc taki wiersz
+  wymaga wartości wpisanej ręcznie w kolumnę bez nagłówka.
+
+W każdej klasie adres albo numer Orange wiersza wychodzi, gdy stoi też w wolnym
+tekście, w Uwadze taty albo w zwykłej kolumnie innego wiersza. Testy `KNOWN`
+(xfail strict, termin 5.02.2027, `tests/fixtures/fakt_domeny.py`) mają przypadek
+każdej klasy w testach INTERMAX (A i B w tabeli położeń, C we wpisach taty i w
+Diagnozie) i Rejestru (A, B i C w tabeli położeń). Wpis taty w Calibri 8 we
+wklejonym wierszu nie wypuszcza wartości, gdy wiersz pod nim nie ma daty z
+godziną w kolumnie A: z datą z godziną, z datą tekstem i bez daty pod `DATA GODZ.
+POCZ.` (sondy przeglądu #984 r1 i r2: I1, I1b, I2, R1, R3, N1–N6t, RN1–RN3, D9,
+D10).
 
 Znana granica sygnału: gdy tata wpisze coś w Calibri 8 w przesunięty pierwszy
 wiersz wklejenia, ten wiersz ma wygląd uporządkowany, więc jego data z godziną w
 kolumnie przed `DATA GODZ. POCZ.` daje fałszywą uwagę „Fakt domeny złamany”, a
-granica bloku przesuwa się o wiersz. Wartości nie wychodzą (pierwszy wiersz za
-nim stoi na miejscu, więc jego przesunięcia nie widać i ma oba położenia). Na
+granica bloku przesuwa się o wiersz. Wartości nie wychodzą, gdy pierwszy wiersz
+za nim nie ma daty z godziną w kolumnie A: stoi na miejscu, więc jego przesunięcia
+nie widać i ma oba położenia (z datą w kolumnie A to klasa C). Na
 kopii Rejestru taty z 20.10.2026 w 41 okresach 2026 uwag o złamanym fakcie
 domeny jest 0.
 

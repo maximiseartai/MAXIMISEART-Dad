@@ -21,7 +21,8 @@ from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 import pytest
 
-from rozliczenia import intermax_copies, workbook_files
+from rozliczenia import input_checks, intermax_copies, workbook_files
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.centrum.run_logs import RunLog
 
 from tests.fixtures.centrum import phase_states, views_until
@@ -1008,6 +1009,8 @@ class Position:
 
 TEXT_DATE = (3, "26.10.2026 11:00")
 """``DATA GODZ. POCZ.`` jako tekst, nie data z godziną."""
+A_DATE = (1, datetime(2026, 10, 26, 10))
+"""Data z godziną w kolumnie A (dwie kolumny przed ``DATA GODZ. POCZ.``, bez nagłówka) wiersza na miejscu."""
 POSITIONS = {
     "zwykly_wiersz": Position(
         Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1]))), (ORDER_SHEET, 1), "CDFGHIJ", False, None
@@ -1042,7 +1045,7 @@ POSITIONS = {
     "przesuniety_wiersz_w_srodku_z_data_jako_tekst": Position(
         Intermax(ordered=ORDERED, raw=_pasted(2, _probe(PASTED[2], TEXT_DATE, shifted=True))),
         (ORDER_SHEET, 2),
-        "",
+        "ABCDFGHINO",
         False,
         "SUROWE_ZLECENIE_BEZ_DATY",
         known="przesuniety_inny_bez_sladu",
@@ -1123,6 +1126,26 @@ POSITIONS = {
         "ACDFGHJ",
         True,
         None,
+        traced=False,
+    ),
+    # pierwszy wiersz bloku na miejscu z datą z godziną w A, a pod DATA z datą tekstem: przesunięcie widać, więc pamięć
+    # zna go tylko przesuniętego (klasa B)
+    "pierwszy_wiersz_na_miejscu_z_data_w_kolumnie_a": Position(
+        Intermax(ordered=ORDERED, raw=_pasted(0, _probe(PASTED[0], A_DATE, TEXT_DATE)), shifted=False),
+        (ORDER_SHEET, 0),
+        "CFGHIJLM",
+        False,
+        None,
+        known="pierwszy_na_miejscu",
+    ),
+    # pierwszy wiersz bloku na miejscu z tekstem w A i datą tekstem pod DATA: przesunięcie widać tylko z daty z godziną,
+    # więc oba położenia bez uwagi
+    "pierwszy_wiersz_na_miejscu_z_tekstem_w_kolumnie_a": Position(
+        Intermax(ordered=ORDERED, raw=_pasted(0, _probe(PASTED[0], (1, "pilne"), TEXT_DATE)), shifted=False),
+        (ORDER_SHEET, 0),
+        "CFHIJL",
+        True,
+        "SUROWE_ZLECENIE_BEZ_DATY",
         traced=False,
     ),
     "zatrzymanie_zanim_planowanie_doszlo_do_wklejenia": Position(
@@ -1212,12 +1235,14 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
     assert len(broken) == (position.uncertain and position.traced), logs["input_copy_notes"]
 
 
-# --- Wpis taty w Calibri 8 we wklejonym wierszu (przegląd #984 r1 i r2, W1) -------------------------------------------
+# --- Wpis taty w Calibri 8 we wklejonym wierszu (przegląd #984 r1, r2 i r3) --------------------------------------------
 # Tata wpisuje coś czcionką arkusza (Calibri 8) w jedną komórkę wklejonego wiersza, więc wiersz ma wygląd uporządkowany
 # (granica bloku z kroju, bez zmian: reguła z większości komórek przestawia u taty granice dziesiątek bloków), a za
-# pierwszy wiersz bloku uchodzi następny, który stoi na miejscu. Jego przesunięcia nie widać, z datą z godziną pod DATA,
-# z datą tekstem czy bez daty, więc pamięć zna go w obu położeniach (siatka, ADR 0025), bez uwagi w Logach, a adres i
-# numer Orange wiersza próbnego nie wychodzą.
+# pierwszy wiersz bloku uchodzi następny, który stoi na miejscu. Gdy w kolumnie A nie ma daty z godziną, jego przesunięcia
+# nie widać (z datą z godziną pod DATA, z datą tekstem czy bez daty), więc pamięć zna go w obu położeniach (siatka, ADR
+# 0025), bez uwagi w Logach, a adres i numer Orange wiersza próbnego nie wychodzą. Z datą z godziną w A, a bez niej pod
+# DATA, przesunięcie widać, choć wiersz stoi na miejscu: pamięć zna go tylko przesuniętego, a wartości wychodzą (klasa C,
+# ryzyko przyjęte przez Maksa 6.11.2026, ``KNOWN``).
 
 
 def _typed_by_tata(order: int, column: int, value: object = None) -> Callable[[Path], None]:
@@ -1252,64 +1277,72 @@ def _at_bottom(index: int, *cells: tuple[int, datetime | str | int]) -> Intermax
     return Intermax(ordered=ORDERED, raw=_pasted(index, _probe(PASTED[index], *cells)))
 
 
-TYPED_BY_TATA: dict[str, tuple[Intermax, Callable[[Path], None], int | None, str]] = {
+def _on_top(*cells: tuple[int, datetime | str | int]) -> Intermax:
+    """Wklejenie od wiersza 2, bez uporządkowanych nad nim, wiersz próbny drugi."""
+
+    return Intermax(ordered=(), yellow=None, gap=0, raw=_pasted(1, _probe(PASTED[1], *cells)))
+
+
+def _above_ordered(*cells: tuple[int, datetime | str | int]) -> Intermax:
+    """Wklejenie nad uporządkowanymi z przesuniętym pierwszym wierszem ``ABOVE_FIRST``, wiersz próbny drugi."""
+
+    probe = _probe(Order(datetime(2026, 10, 19, 11), "anna.kowalska", 202), *cells, app_look=True)
+    return Intermax(ordered=(ORDERED[0], ABOVE_FIRST, probe, *ORDERED[1:]), raw=PASTED)
+
+
+@dataclass(frozen=True)
+class Typed:
+    """Wpis taty w Calibri 8 we wklejonym wierszu: INTERMAX z wierszem próbnym, wpis taty, indeks wiersza próbnego w
+    ``PASTED`` (``None``: wiersz próbny nad uporządkowanymi, poza Kopią), jego kolumny w Kopii i klasa ryzyka przyjętego
+    przez Maksa (``KNOWN``)."""
+
+    intermax: Intermax
+    edit: Callable[[Path], None]
+    probe: int | None
+    letters: str
+    known: str | None = None
+
+
+TYPED_BY_TATA = {
     # przesunięty pierwszy wiersz: MIASTO (w nim pod AKCJE) w Calibri 8, wiersz próbny drugi
-    "miasto_pierwszego_wiersza": (_at_bottom(1), _typed_by_tata(101, 2), 1, IN_PLACE),
+    "miasto_pierwszego_wiersza": Typed(_at_bottom(1), _typed_by_tata(101, 2), 1, IN_PLACE),
     # przesunięty pierwszy wiersz: uwaga taty w UWAGI w Calibri 8, wiersz próbny drugi
-    "uwaga_w_pierwszym_wierszu": (_at_bottom(1), _typed_by_tata(101, LAST, "zadzwonić"), 1, IN_PLACE),
+    "uwaga_w_pierwszym_wierszu": Typed(_at_bottom(1), _typed_by_tata(101, LAST, "zadzwonić"), 1, IN_PLACE),
     # trzeci wiersz na miejscu: MIASTO w Calibri 8, wiersz próbny czwarty
-    "miasto_trzeciego_wiersza": (_at_bottom(3), _typed_by_tata(103, 4), 3, IN_PLACE),
-    "miasto_pierwszego_wiersza_wiersz_probny_z_data_jako_tekst": (
-        _at_bottom(1, TEXT_DATE),
-        _typed_by_tata(101, 2),
-        1,
-        READ_SHIFTED,
+    "miasto_trzeciego_wiersza": Typed(_at_bottom(3), _typed_by_tata(103, 4), 3, IN_PLACE),
+    "miasto_pierwszego_wiersza_wiersz_probny_z_data_jako_tekst": Typed(
+        _at_bottom(1, TEXT_DATE), _typed_by_tata(101, 2), 1, READ_SHIFTED
     ),
-    "miasto_trzeciego_wiersza_wiersz_probny_z_data_jako_tekst": (
-        _at_bottom(3, TEXT_DATE),
-        _typed_by_tata(103, 4),
-        3,
-        READ_SHIFTED,
+    "miasto_trzeciego_wiersza_wiersz_probny_z_data_jako_tekst": Typed(
+        _at_bottom(3, TEXT_DATE), _typed_by_tata(103, 4), 3, READ_SHIFTED
     ),
-    # wklejenie od wiersza 2, bez uporządkowanych nad nim
-    "blok_na_gorze_arkusza_wiersz_probny_z_data_jako_tekst": (
-        Intermax(ordered=(), yellow=None, gap=0, raw=_pasted(1, _probe(PASTED[1], TEXT_DATE))),
-        _typed_by_tata(101, 2),
-        1,
-        READ_SHIFTED,
+    "blok_na_gorze_arkusza_wiersz_probny_z_data_jako_tekst": Typed(
+        _on_top(TEXT_DATE), _typed_by_tata(101, 2), 1, READ_SHIFTED
     ),
-    # wklejenie nad uporządkowanymi, wiersz próbny drugi: Kopia go nie ma
-    "blok_nad_uporzadkowanymi_wiersz_probny_z_data_jako_tekst": (
-        Intermax(
-            ordered=(
-                ORDERED[0],
-                ABOVE_FIRST,
-                _probe(Order(datetime(2026, 10, 19, 11), "anna.kowalska", 202), TEXT_DATE, app_look=True),
-                *ORDERED[1:],
-            ),
-            raw=PASTED,
-        ),
-        _typed_by_tata(201, 2),
-        None,
-        "",
+    "blok_nad_uporzadkowanymi_wiersz_probny_z_data_jako_tekst": Typed(
+        _above_ordered(TEXT_DATE), _typed_by_tata(201, 2), None, ""
+    ),
+    # sonda C4 z przeglądu #984 r3: jak wyżej, a wiersz próbny ma datę z godziną w kolumnie A
+    "blok_nad_uporzadkowanymi_wiersz_probny_z_data_w_kolumnie_a": Typed(
+        _above_ordered(A_DATE, TEXT_DATE), _typed_by_tata(201, 2), None, "", known="na_miejscu_z_data_w_a"
     ),
 }
-"""Sondy I1, I1b, I2 z przeglądu #984 r1 i N1, N2, N6t, N5t z r2: INTERMAX, wpis taty, indeks wiersza próbnego w
-``PASTED`` (``None``: wiersz próbny nad uporządkowanymi, poza Kopią) i jego kolumny w Kopii."""
+"""Sondy I1, I1b, I2 z przeglądu #984 r1, N1, N2, N6t, N5t z r2 i C4 z r3."""
 
 
-@pytest.mark.parametrize("case", TYPED_BY_TATA.values(), ids=TYPED_BY_TATA.keys())
+@pytest.mark.parametrize(
+    "case", [pytest.param(case, id=name, marks=known(case.known)) for name, case in TYPED_BY_TATA.items()]
+)
 def test_wpis_taty_w_calibri_8_we_wklejonym_wierszu_nie_wypuszcza_adresu_ani_numeru_orange_nastepnego(
-    tmp_path: Path, case: tuple[Intermax, Callable[[Path], None], int | None, str]
+    tmp_path: Path, case: Typed
 ) -> None:
     """Fakt domeny zachodzi, a tata wpisał coś w Calibri 8 w wiersz wklejenia nad wierszem próbnym: adres i numer Orange
     wiersza próbnego nie wychodzą do pliku Logów, do Skrzynki Zgłoszeń ani w Uwadze taty, a Logi nie mówią o złamanym
     fakcie domeny. Wiersz próbny, który zaczyna blok i stoi na miejscu, Kopia ma w obu położeniach, bez ``NUMER ZL.``
     spod nagłówka."""
 
-    intermax, edit, index, letters = case
-    centrum = ordering_centrum(tmp_path, intermax)
-    edit(centrum.register)
+    centrum = ordering_centrum(tmp_path, case.intermax)
+    case.edit(centrum.register)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
 
     centrum.run_to_end()
@@ -1320,8 +1353,52 @@ def test_wpis_taty_w_calibri_8_we_wklejonym_wierszu_nie_wypuszcza_adresu_ani_num
     [logs] = centrum.run_logs()
     assert [note for note in logs["input_copy_notes"] if note.startswith("Fakt domeny złamany")] == []
     [sheet] = logs["input_copy"][0]["sheets"]
-    probe_row = None if index is None else centrum.layout.raw_rows[index]
+    probe_row = None if case.probe is None else centrum.layout.raw_rows[case.probe]
     cells = [row["cells"] for row in sheet["rows"] if row["row"] == probe_row]
     assert (sheet["uncertain_rows"], ["".join(sorted(found)) for found in cells]) == (
-        ([], []) if probe_row is None else ([probe_row], [letters])
+        ([], []) if probe_row is None else ([probe_row], [case.letters])
     )
+
+
+TYPED_IN_DIAGNOSIS = {
+    # sonda D9 z przeglądu #984 r2: MIASTO przesuniętego pierwszego wiersza w Calibri 8
+    "miasto_pierwszego_wiersza": (_at_bottom(1, TEXT_DATE), _typed_by_tata(101, 4), None),
+    # sonda D10 z r2: wklejenie od wiersza 2, SKUTECZNE przesuniętego pierwszego wiersza w Calibri 8
+    "skuteczne_pierwszego_wiersza_na_gorze_arkusza": (_on_top(TEXT_DATE), _typed_by_tata(101, 12, "tak"), None),
+    # sondy DC4 i DC5 z r3: jak wyżej, a wiersz próbny ma datę z godziną w kolumnie A
+    "miasto_pierwszego_wiersza_wiersz_probny_z_data_w_kolumnie_a": (
+        _at_bottom(1, A_DATE, TEXT_DATE),
+        _typed_by_tata(101, 4),
+        "na_miejscu_z_data_w_a",
+    ),
+    "skuteczne_pierwszego_wiersza_na_gorze_arkusza_wiersz_probny_z_data_w_kolumnie_a": (
+        _on_top(A_DATE, TEXT_DATE),
+        _typed_by_tata(101, 12, "tak"),
+        "na_miejscu_z_data_w_a",
+    ),
+}
+"""INTERMAX z wierszem próbnym drugim na miejscu, z datą tekstem pod DATA, wpis taty i klasa ryzyka (``KNOWN``)."""
+
+
+@pytest.mark.parametrize(
+    ("intermax", "edit"),
+    [
+        pytest.param(intermax, edit, id=name, marks=known(klass))
+        for name, (intermax, edit, klass) in TYPED_IN_DIAGNOSIS.items()
+    ],
+)
+def test_diagnoza_intermax_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpisem_taty_w_calibri_8(
+    tmp_path: Path, intermax: Intermax, edit: Callable[[Path], None]
+) -> None:
+    """Diagnoza czyta cały INTERMAX jako Rejestr zleceń (``input_checks.register_problem``, jak ``centrum/diagnosis.py``).
+    Tata wpisał coś w Calibri 8 w przesunięty pierwszy wiersz wklejenia, więc za pierwszy wiersz bloku uchodzi wiersz
+    próbny pod nim, który stoi na miejscu: pamięć reguły danych zna jego adres i numer Orange pod nagłówkami."""
+
+    path = tmp_path / "INTERMAX.xlsx"
+    intermax.write(path)
+    edit(path)
+    memory = ForbiddenValues()
+
+    input_checks.register_problem(path, input_checks.FILE_READERS, memory)
+
+    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
