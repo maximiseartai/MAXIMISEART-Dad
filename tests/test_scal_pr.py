@@ -684,7 +684,8 @@ def test_test_ktory_pada_juz_na_samym_main_nie_blokuje_merge_pr_i_stoi_w_linii_s
             {SUM_TEST_FILE: SUM_TEST + NEGATIVE_TEST},
             ABS_SUM,
             ('"-rfE"', '"--nieznana-opcja"'),
-            "pada: pytest kod 4: __main__.py: error: unrecognized arguments: --nieznana-opcja",
+            # Nazwę programu w błędzie argparse daje wersja Pythona: ``__main__.py`` do 3.13, ``python -m pytest`` od 3.14.
+            "pada: pytest kod 4: {prog}: error: unrecognized arguments: --nieznana-opcja",
         ),
     ],
     ids=["test-pada", "test-pada-a-inny-pada-juz-na-main", "test-ponad-limit-czasu", "pytest-nie-startuje"],
@@ -700,7 +701,8 @@ def test_pr_ktorego_test_pada_na_scaleniu_z_main_choc_oba_byly_zielone_nie_jest_
     answered = github.run("1")
 
     assert answered.returncode == 1, answered.stdout + answered.stderr
-    assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | test scalenia z main {main[:7]} {reason.format(main=main[:7])}"
+    expected = re.escape(f"SCAL ODMOWA | #1 {head[:7]} | test scalenia z main {main[:7]} {reason.format(main=main[:7], prog=chr(0))}")
+    assert re.fullmatch(expected.replace(re.escape(chr(0)), ".+"), _last_line(answered)), _last_line(answered)
     assert github.merges() == []
 
 
