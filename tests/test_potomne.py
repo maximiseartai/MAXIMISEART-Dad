@@ -71,6 +71,15 @@ def test_po_limicie_drzewo_ginie_a_run_rzuca_timeout(tmp_path: Path) -> None:
     assert not beating(beats)
 
 
+def test_po_limicie_run_oddaje_wyjscie_wypisane_przed_limitem(tmp_path: Path) -> None:
+    code = "import sys, threading; print('a', flush=True); print('b', file=sys.stderr, flush=True); threading.Event().wait()"
+
+    with pytest.raises(potomne.TimeoutExpired) as expired:
+        potomne.run([sys.executable, "-c", code], cwd=tmp_path, timeout=5)
+
+    assert expired.value.printed == ("a\n", "b\n")
+
+
 def test_wnuk_uruchomiony_zanim_narzedzie_wroci_ze_startu_polecenia_ginie_z_drzewem(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

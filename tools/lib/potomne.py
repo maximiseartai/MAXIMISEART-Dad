@@ -64,6 +64,17 @@ class Stopped(Exception):
     """Wołający ustawił ``stop``: drzewo polecenia już nie żyje."""
 
 
+class TimeoutExpired(subprocess.TimeoutExpired):
+    """Limit czasu ``run``: drzewo polecenia już nie żyje, a ``printed`` to stdout i stderr, które zdążyło wypisać.
+
+    Nazwa jak w ``subprocess``, bo wywołujący pokazują nazwę klasy wyjątku (brama pre-push).
+    """
+
+    def __init__(self, command: list[str], timeout: float, stdout: str, stderr: str) -> None:
+        super().__init__(command, timeout, stdout, stderr)
+        self.printed = (stdout, stderr)
+
+
 class _GitFailed(subprocess.CalledProcessError):
     def __str__(self) -> str:
         return f"{super().__str__()}\n{self.stderr.strip()}"
@@ -82,7 +93,8 @@ def run(
 
     Czeka na koniec polecenia, nie na zamknięcie jego wyjścia, i po nim zabija potomków, którzy je przeżyli.
     ``echo`` drukuje wyjście na bieżąco; stderr trafia wtedy do stdout. stdin to DEVNULL, tekst UTF-8 z
-    ``errors="replace"``. Po ``timeout`` rzuca ``subprocess.TimeoutExpired``, a po ``stop`` ``Stopped``.
+    ``errors="replace"``. Po ``timeout`` rzuca ``TimeoutExpired`` (``subprocess.TimeoutExpired`` z wyjściem wypisanym
+    do limitu), a po ``stop`` ``Stopped``.
     """
 
     arguments = list(command)
@@ -99,15 +111,21 @@ def run(
         encoding="utf-8",
         errors="replace",
     )
+    expired: subprocess.TimeoutExpired | None = None
     try:
         assert tree.process.stdout is not None
         output = _Reader(tree.process.stdout, echo=echo)
         errors = None if tree.process.stderr is None else _Reader(tree.process.stderr, echo=False)
-        _wait(tree.process, math.inf if timeout is None else timeout, stop)
+        try:
+            _wait(tree.process, math.inf if timeout is None else timeout, stop)
+        except subprocess.TimeoutExpired as error:
+            expired = error
     finally:
         tree.kill()
     deadline = time.monotonic() + _DRAIN_S
     stdout, stderr = output.text(deadline), "" if errors is None else errors.text(deadline)
+    if expired is not None:
+        raise TimeoutExpired(arguments, expired.timeout, stdout, stderr) from None
     return subprocess.CompletedProcess(arguments, tree.process.returncode, stdout, stderr)
 
 
