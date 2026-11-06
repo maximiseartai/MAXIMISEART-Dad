@@ -156,6 +156,7 @@ RULES_HEADING = "Zasady werdyktów i przebiegu"
 RECIPE, _, RULES = (__doc__ or "").partition(f"\n{RULES_HEADING}\n")
 PYTEST_EXIT_USAGE_ERROR = 4
 PYTEST_EXIT_NO_TESTS_COLLECTED = 5
+PYTEST_COMMAND_ERRORS = ("ERROR: file or directory not found: ", ": error: unrecognized arguments: ")
 
 
 class Verdict(StrEnum):
@@ -314,9 +315,19 @@ def _tail(stdout: str, stderr: str) -> tuple[str, ...]:
 
 
 def _without_test(command: Sequence[str], ran: _Ran) -> bool:
-    """Czy polecenie to pytest, który nie uruchomił żadnego testu: odrzucił ścieżkę albo opcję albo nic nie wybrał."""
+    """Czy polecenie to pytest, który nie uruchomił żadnego testu: odrzucił ścieżkę albo opcję albo nic nie wybrał.
 
-    return ("-m", "pytest") in pairwise(command) and ran.code in {PYTEST_EXIT_USAGE_ERROR, PYTEST_EXIT_NO_TESTS_COLLECTED}
+    Kod 4 daje też ``conftest.py``, którego nie da się zaimportować, czyli zepsuty kod, więc kod 4 liczy się tu tylko
+    z komunikatem pytest o poleceniu w końcu stderr (``PYTEST_COMMAND_ERRORS``).
+    """
+
+    if ("-m", "pytest") not in pairwise(command):
+        return False
+    if ran.code == PYTEST_EXIT_NO_TESTS_COLLECTED:
+        return True
+    return ran.code == PYTEST_EXIT_USAGE_ERROR and any(
+        line.startswith("stderr | ") and error in line for line in ran.tail for error in PYTEST_COMMAND_ERRORS
+    )
 
 
 def _no_test_line(command: Sequence[str], ran: _Ran) -> str:

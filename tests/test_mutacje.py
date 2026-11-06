@@ -217,9 +217,10 @@ def test_pierwsza_strona_pomocy_ma_przepis_z_plikiem_json_ktory_narzedzie_przyjm
         ({"nazwa": "m"}, "plik mutacji to lista, nie dict"),
         ([{"nazwa": "m", "zmiana": [["a.py", "x", "y"]]}], "wpis 1 ma nieznany klucz 'zmiana'"),
         ([{"nazwa": "m", "zmiany": [["a.py", "x"]]}], "wpis 1 ma zły albo brakujący klucz 'zmiany'"),
+        ([{"nazwa": "m", "zmiany": []}], "wpis 1 ma zły albo brakujący klucz 'zmiany'"),
         ([{"nazwa": "m", "zmiany": [["a.py", "x", "y"]]}, {"nazwa": "n", "zmiany": [["a.py", "x", "y"]], "polecenie": "-c"}], "wpis 2 ma zły albo brakujący klucz 'polecenie'"),
     ],
-    ids=["nie-lista", "nieznany-klucz", "zmiana-bez-zamiany", "polecenie-tekstem"],
+    ids=["nie-lista", "nieznany-klucz", "zmiana-bez-zamiany", "zmiany-puste", "polecenie-tekstem"],
 )
 def test_plik_mutacji_innej_postaci_jest_odrzucony_z_postacia_pliku(tmp_path: Path, entries: object, problem: str) -> None:
     plan = tmp_path / "mutacje.json"
@@ -246,6 +247,16 @@ def test_podstawa_pytest_bez_testu_mowi_ze_to_blad_polecenia(command: tuple[str,
     lines = answered.stdout.splitlines()
     expected = [f"PODSTAWA BEZ TESTU: {cause} w poleceniu po --; to błąd polecenia, nie kodu"] if cause else []
     assert (answered.returncode, lines[0].startswith("PODSTAWA CZERWONA: "), lines[1:-1]) == (2, True, expected), answered.stdout
+
+
+def test_podstawa_z_conftest_ktorego_nie_da_sie_zaimportowac_to_czerwony_kod_a_nie_blad_polecenia(tmp_path: Path) -> None:
+    (tmp_path / "conftest.py").write_text('raise NameError("zepsuty")\n', encoding="utf-8")
+    (tmp_path / "test_a.py").write_text("def test_a() -> None:\n    pass\n", encoding="utf-8")
+
+    answered = _mutacje("--zmiana", *_appended(PACKAGE, ""), "--", "-m", "pytest", "-q", "-n", "0", str(tmp_path / "test_a.py"))
+
+    lines = answered.stdout.splitlines()
+    assert (answered.returncode, lines[0].startswith("PODSTAWA CZERWONA: "), [line for line in lines if "BEZ TESTU" in line]) == (2, True, []), answered.stdout
 
 
 def test_pusta_lista_mutacji_niczego_nie_dowodzi() -> None:
