@@ -87,8 +87,13 @@ classification of other failures) does not move the model. A change that makes a
 decide whether an order is finished does, though no definition above changes: add it to the table and to
 `model/definicje.json`.
 
-Sync commit: `a5d275cdc` (2026-11-05: the execution date also on a pricing that already is). Every row of the table was
-checked against the code at this commit. Since `aac769579` only `_outcome` changed, and the new `_dated`, which
+Sync commit: `48d371c3f` (2026-11-06: a refusal of „Załaduj do zlecenia” on a page without quantities but with an
+amount other than 0 stops the Wycena). Every row of the table was checked against the code at this commit. Since
+`a5d275cdc` only `load_emmett` changed: the window tells a refusal answered with 2xx by a reloaded page without any
+quantity instead of an amount 0, as `_outcome` sends to Wycena Emmetta only a page without any quantity (ADR 0026), so
+the model, whose refusal is `Zatrzymanie` at step `emmett` and which has no amount apart from the quantities, did not
+change beyond the row of `ZaladujEmmetta`. On the previous Sync commit `a5d275cdc` (2026-11-05: the execution date also
+on a pricing that already is) every row of the table was checked against the code. Since `aac769579` only `_outcome` changed, and the new `_dated`, which
 `model/definicje.json` now lists: the date step moved out of the branch of a page without quantities and runs on every
 page with an empty date, so the model, which has no date, did not change beyond the comment of `Otworz`. On the
 previous Sync commit `aac769579` (2026-11-05, #953: merge of `main` after #960) every row of the table was checked
