@@ -8,13 +8,13 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   którego liczy też część), inaczej koniec zakresu ostatniego udanego runu tego workflow na ``main``
   (``do`` z jego artefaktu ``zakres-nocy``, a run bez tego artefaktu policzył wszystko do swojego ``headSha``), a bez
   takiego runu (albo gdy jego commit nie jest przodkiem HEAD) ostatni commit linii pierwszych rodziców HEAD sprzed 24 h.
-  Mutacje od bazy liczy jak ``tools/mutacje_zmiany.py`` (``selected``, bez testów), a zły wyjątek ``# mutacje-zmiany:``
-  liczy jako jedną mutację, żeby część go zgłosiła.
+  Mutacje od bazy liczy bez testów ``mutacje_zmiany.ZakresMutacji``, ten sam, który daje części jej mutacje, a zły
+  wyjątek ``# mutacje-zmiany:`` liczy jako jedną mutację, żeby część go zgłosiła.
 - Część ma najwyżej ``NA_CZESC`` mutacji: tyle, że kończy się w limicie czasu części także z najdroższymi mutacjami
   zmierzonych nocy, w testach linii i w testach pliku. Noc mutuje najwyżej ``CZESCI_NA_NOC`` części, żeby nie dostała więcej,
   niż przerobi. Gdy od bazy jest więcej mutacji, ``do`` to najdalszy commit linii
   pierwszych rodziców od bazy, do którego mutacje zmian mieszczą się w tym limicie (co najmniej pierwszy commit z
-  mutacjami, także większy), a noc mutuje tylko zmiany do niego (``mutacje_zmiany.until``). Bazą następnej nocy jest
+  mutacjami, także większy), a noc mutuje tylko zmiany do niego (``ZakresMutacji.do``). Bazą następnej nocy jest
   ``do``, więc zaległość przechodzi na kolejne noce, a nie przepada. Plan pisze do ``GITHUB_OUTPUT`` ``baza``, ``do``,
   ``czesci`` i ``liczba``, a z ``--zakres`` plik JSON z ``baza`` i ``do`` (artefakt ``zakres-nocy``). ``czesci`` to
   macierz zadań części: numer i ``przegladarka``, gdy testy, które mogą sprawdzać mutacje części (dotknięte jej
@@ -57,14 +57,12 @@ Bazę, koniec zakresu i liczbę części nocy drukuje lokalnie bez testów:
 from __future__ import annotations
 
 import argparse
-from collections import Counter
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 import io
 import itertools
 import json
-import math
 import os
 from pathlib import Path
 import re
@@ -159,54 +157,13 @@ def _koniec_runu(github: GitHub, run: dict[str, Any]) -> str:
         return str(json.loads(archiwum.read(ZAKRES))["do"])
 
 
-def mutacje_od(od: str) -> tuple[list[mutacje_zmiany.Mutant], bool]:
-    """Mutacje zmiany od ``od`` do checkoutu w kolejności, w której ``tools/mutacje_zmiany.py`` dzieli je na części,
-    policzone bez testów, i czy zmiana ma zły wyjątek ``# mutacje-zmiany:``."""
-
-    fragmenty = mutacje_zmiany.changes(od)
-    teksty = {sciezka: (mutacje_zmiany.ROOT / sciezka).read_text(encoding="utf-8") for sciezka in fragmenty}
-    mutanty = [mutant for sciezka, tekst in teksty.items() for mutant in mutacje_zmiany.selected(sciezka, tekst, fragmenty[sciezka])]
-    try:
-        for sciezka, tekst in teksty.items():
-            mutacje_zmiany.exceptions(tekst, sciezka)
-    except ValueError as blad:
-        print(f"MUTACJE NOCNE | {blad}; część mutacji to zgłosi")
-        return mutanty, True
-    return mutanty, False
-
-
-def koniec_nocy(root: Path, od: str, mutanty: Sequence[mutacje_zmiany.Mutant]) -> str:
-    """Commit, do którego noc od ``od`` mutuje zmiany: HEAD, gdy ``mutanty`` mieszczą się w ``CZESCI_NA_NOC`` częściach,
-    a inaczej najdalszy commit linii pierwszych rodziców, do którego mutacje zmian (``mutacje_zmiany.until``) się w nich
-    mieszczą, ale co najmniej pierwszy commit z mutacjami, nawet gdy sam ma ich więcej."""
-
-    limit = NA_CZESC * CZESCI_NA_NOC
-    if len(mutanty) <= limit:
-        return _git(root, "rev-parse", "HEAD")
-    linia = _git(root, "rev-list", "--first-parent", "--reverse", f"{od}..HEAD").split()
-    pozycja = {commit: numer for numer, commit in enumerate(linia)}
-    # Mutacja wchodzi do zakresu z najwcześniejszym commitem, który zmienił którąś jej linię (jak w ``until``), a commit
-    # spoza linii od ``od`` (sprzed ``od``) każdy zakres już zawiera, więc liczy się od pierwszego commitu.
-    od_commitu = Counter(min(pozycja.get(commit, 0) for commit in commity) for commity in mutacje_zmiany.last_changes(mutanty))
-    suma = 0
-    for numer in range(len(linia)):
-        if suma and suma + od_commitu[numer] > limit:
-            return linia[numer - 1]
-        suma += od_commitu[numer]
-    return linia[-1]
-
-
-def czesci(liczba: int) -> int:
-    return math.ceil(liczba / NA_CZESC)
-
-
-def macierz(mutanty: Sequence[mutacje_zmiany.Mutant], n: int, repository: Repository) -> list[dict[str, int | bool]]:
-    """Wpis macierzy każdej z ``n`` części: jej numer i ``przegladarka``, gdy testy jej mutacji sięgają Atrapy efenix,
+def macierz(noc: mutacje_zmiany.ZakresMutacji, n: int, repository: Repository) -> list[dict[str, int | bool]]:
+    """Wpis macierzy każdej z ``n`` części nocy: jej numer i ``przegladarka``, gdy testy jej mutacji sięgają Atrapy efenix,
     więc zadanie części instaluje Chromium jak zadanie pytest planu CI (``zakres_runu.potrzebuja_chromium``)."""
 
     wpisy: list[dict[str, int | bool]] = []
     for numer in range(1, n + 1):
-        sciezki = {mutant.path for mutant in mutacje_zmiany.share(mutanty, numer, n)}
+        sciezki = {mutant.path for mutant in noc.czesc(numer, n)}
         testy = [test for dotkniete in mutacje_zmiany.tests_of(repository, sciezki).values() for test in dotkniete]
         wpisy.append({"czesc": numer, "przegladarka": bool(potrzebuja_chromium(testy, repository))})
     return wpisy
@@ -216,16 +173,16 @@ def zaplanuj(github: GitHub, od: str, zakres: Path | None) -> int:
     """Plan nocy: baza, koniec jej zakresu i macierz części w ``GITHUB_OUTPUT``, a z ``zakres`` plik artefaktu ``zakres-nocy``."""
 
     od_sha, skad = baza(github, ROOT, od, datetime.now(UTC))
-    wszystkie, zly_wyjatek = mutacje_od(od_sha)
-    do_sha = koniec_nocy(ROOT, od_sha, wszystkie)
-    mutanty = mutacje_zmiany.until(wszystkie, do_sha)
-    # Zły wyjątek liczy się jak jedna mutacja, żeby część go zgłosiła.
-    liczba = max(len(mutanty), 1) if zly_wyjatek else len(mutanty)
-    wpisy = macierz(mutanty, czesci(liczba), Repository.scan(ROOT))
+    caly = mutacje_zmiany.ZakresMutacji.od(od_sha, ROOT)
+    if caly.zly_wyjatek is not None:
+        print(f"MUTACJE NOCNE | {caly.zly_wyjatek}; część mutacji to zgłosi")
+    do_sha = caly.najdalszy_koniec(NA_CZESC * CZESCI_NA_NOC)
+    noc = caly.do(do_sha)
+    wpisy = macierz(noc, noc.liczba_czesci(NA_CZESC), Repository.scan(ROOT))
     z_chromium = sum(bool(wpis["przegladarka"]) for wpis in wpisy)
-    if zalegle := len(wszystkie) - len(mutanty):
+    if zalegle := len(caly.mutanty) - len(noc.mutanty):
         print(f"MUTACJE NOCNE | zaległość: {zalegle} mutacji zmian po {do_sha} czeka na następne noce")
-    print(f"MUTACJE NOCNE PLAN | baza {od_sha} ({skad}) | do {do_sha} | mutacje {liczba} | części {len(wpisy)} | z Chromium {z_chromium}")
+    print(f"MUTACJE NOCNE PLAN | baza {od_sha} ({skad}) | do {do_sha} | mutacje {noc.liczba_mutacji} | części {len(wpisy)} | z Chromium {z_chromium}")
     if wyjscie := os.environ.get("GITHUB_OUTPUT"):
         with open(wyjscie, "a", encoding="utf-8") as plik:
             plik.write(f"baza={od_sha}\ndo={do_sha}\nczesci={json.dumps(wpisy)}\nliczba={len(wpisy)}\n")

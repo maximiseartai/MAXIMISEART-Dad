@@ -50,7 +50,7 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
   Zadanie części zostaje zielone, a przebieg przesuwa bazę, więc część z drogimi mutacjami nie zatrzymuje nocy, a następna noc nie dostaje tego samego zakresu.
 - Noc ma najwyżej 40 części, czyli 960 mutacji, a zadania części biegną najwyżej po 20 naraz, bo 60 zadań organizacji dzielą też runy CI PR-ów.
   Gdy od bazy jest więcej mutacji, noc mutuje tylko zmiany do najdalszego commitu linii pierwszych rodziców `main`, do którego ich mutacje mieszczą się w limicie, ale co najmniej do pierwszego commitu z mutacjami, także większego (`do`).
-  Mutacja należy do zakresu, gdy którąś z jej linii ostatni zmienił (`git blame --first-parent`) commit, który `do` zawiera, a plan i części liczą to tą samą funkcją (`mutacje_zmiany.until`).
+  Mutacja należy do zakresu, gdy którąś z jej linii ostatni zmienił (`git blame --first-parent`) commit, który `do` zawiera, a plan i części liczą listę mutacji od bazy, zakres do `do` i podział na części jedną klasą, `ZakresMutacji` w `tools/mutacje_zmiany.py`.
   Przebieg biegnie na HEAD `main`, więc mutuje dzisiejszy kod, a linie zmienione po `do` mutuje następna noc, której bazą jest `do`; linia zmieniona przed `do` i jeszcze raz po nim wchodzi do obu.
   Plan pisze, ile mutacji czeka na następne noce (`MUTACJE NOCNE | zaległość:`).
 - Każda przeżyta mutacja trafia do issue `Przeżyte mutacje z #N` z etykietą `ready-for-agent` PR-u, który ostatni zmienił zmienione linie, które ona psuje (`git blame` na `main`, commit scalenia, a bez numeru w jego temacie API GitHuba).
