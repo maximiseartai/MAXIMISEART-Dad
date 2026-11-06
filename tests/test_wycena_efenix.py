@@ -80,6 +80,7 @@ from tests.fixtures.atrapa_efenix import (
     LOAD_EMMETT,
     ORDER_PAGE,
     ORDER_SCRIPT,
+    PRICES,
     FILL_EMMETT,
     SAVE_QUANTITY,
     SEARCH,
@@ -2038,23 +2039,36 @@ def test_przerwanie_po_zaladuj_do_zlecenia_przed_odczytem_wyceny_emmetta_ponowne
     assert _marked(source) == [18, 19, 20]
 
 
+# Ceny Atrapy, w których pozycja T (019) kosztuje 0: Wycena Emmetta z samym T daje stronę z ilością i kwotą 0.
+_T_FOR_FREE = {**PRICES, "019": Decimal("0.00")}
+
+
 @pytest.mark.parametrize(
-    ("refusal", "code", "cause"),
+    ("refusal", "code", "cause", "prices"),
     [
-        pytest.param(EmmettRefusal.FORBIDDEN, "EFENIX_OKNO_ZATRZYMANE", HttpStatus(403), id="403-bez-zaladowania"),
-        pytest.param(EmmettRefusal.SERVER_ERROR, "EFENIX_OKNO_ZATRZYMANE", HttpStatus(500), id="500-po-zaladowaniu"),
-        pytest.param(EmmettRefusal.ELSEWHERE, "EFENIX_OKNO_ZATRZYMANE", OtherShape(Shape.ANSWER_REDIRECT), id="przekierowanie-na-liste"),
-        pytest.param(EmmettRefusal.LOGGED_OUT, "EFENIX_WYLOGOWANY", LoginSign.REDIRECT, id="przekierowanie-na-logowanie"),
+        pytest.param(EmmettRefusal.FORBIDDEN, "EFENIX_OKNO_ZATRZYMANE", HttpStatus(403), PRICES, id="403-bez-zaladowania"),
+        pytest.param(EmmettRefusal.SERVER_ERROR, "EFENIX_OKNO_ZATRZYMANE", HttpStatus(500), PRICES, id="500-po-zaladowaniu"),
         pytest.param(
-            EmmettRefusal.NOK, "EFENIX_OKNO_ZATRZYMANE", OtherShape(Shape.EMMETT_NOT_LOADED), id="result-nok"
+            EmmettRefusal.ELSEWHERE, "EFENIX_OKNO_ZATRZYMANE", OtherShape(Shape.ANSWER_REDIRECT), PRICES, id="przekierowanie-na-liste"
+        ),
+        pytest.param(EmmettRefusal.LOGGED_OUT, "EFENIX_WYLOGOWANY", LoginSign.REDIRECT, PRICES, id="przekierowanie-na-logowanie"),
+        pytest.param(
+            EmmettRefusal.NOK, "EFENIX_OKNO_ZATRZYMANE", OtherShape(Shape.EMMETT_NOT_LOADED), PRICES, id="result-nok"
         ),
         pytest.param(
-            EmmettRefusal.OTHER, "EFENIX_OKNO_ZATRZYMANE", OtherShape(Shape.EMMETT_NOT_LOADED), id="200-inna-tresc"
+            EmmettRefusal.OTHER, "EFENIX_OKNO_ZATRZYMANE", OtherShape(Shape.EMMETT_NOT_LOADED), PRICES, id="200-inna-tresc"
+        ),
+        pytest.param(
+            EmmettRefusal.OTHER,
+            "EFENIX_OKNO_ZATRZYMANE",
+            OtherShape(Shape.EMMETT_NOT_LOADED),
+            _T_FOR_FREE,
+            id="200-inna-tresc-a-po-niej-wycena-emmetta-z-kwota-0",
         ),
     ],
 )
 def test_odmowa_zaladuj_do_zlecenia_zatrzymuje_wycene_bez_znacznika_i_sladu_a_ponowne_uruchomienie_daje_ostrzezenie_emmetta(
-    tmp_path: Path, page: Page, refusal: EmmettRefusal, code: str, cause: WindowCause
+    tmp_path: Path, page: Page, refusal: EmmettRefusal, code: str, cause: WindowCause, prices: dict[str, Decimal]
 ) -> None:
     """Zlecenie 2 ma pustą wycenę i Emmetta, który ma w T więcej niż plik, a efenix odmawia jego „Załaduj do zlecenia”;
     skrypt strony i tak ją przeładowuje, a strona bez Wyceny Emmetta wygląda jak pusta Wycena Emmetta (#877).
@@ -2063,7 +2077,11 @@ def test_odmowa_zaladuj_do_zlecenia_zatrzymuje_wycene_bez_znacznika_i_sladu_a_po
     sesji, inna treść, #889) z przeładowanej strony bez wyceny, choć okno Emmetta pokazało propozycję: zlecenie 2 nie
     dostaje ilości z pliku ani Znacznika efenix. Ponowne uruchomienie po odmowie bez załadowania ładuje Emmetta, a po 500,
     po którym efenix ma już Emmetta, dokańcza jego wycenę bez ponownego ładowania: w obu przypadkach zlecenie 2 kończy
-    się jak jeden przebieg, z O z pliku, T od Emmetta i Ostrzeżeniem Emmetta.
+    się jak jeden przebieg, z O z pliku, T od Emmetta i Ostrzeżeniem Emmetta. Wycenę Emmetta Wycena poznaje po ilości na
+    stronie, a nie po kwocie, więc także wtedy, gdy T kosztuje 0, a strona po niej ma ilość i kwotę 0.
+
+    Logi Zatrzymania mają przy zleceniu 2 udane działania okna aż do Wyceny Emmetta, a Wycenę Emmetta jako działanie,
+    które się nie udało, także przy odmowie odpowiedzią 2xx.
     """
 
     orders = [
@@ -2072,7 +2090,7 @@ def test_odmowa_zaladuj_do_zlecenia_zatrzymuje_wycene_bez_znacznika_i_sladu_a_po
     ]
     source = write_collective_file(tmp_path, orders)
     in_efenix = [orders[0].in_efenix("971"), replace(orders[1].in_efenix("972"), emmett_refusal=refusal)]
-    with atrapa_efenix(in_efenix) as atrapa:
+    with atrapa_efenix(in_efenix, prices=prices) as atrapa:
         stopped = _run(source, page, atrapa.url)
         refused = _pricing(atrapa)["9702"]
         marked = _marked(source)
@@ -2085,6 +2103,11 @@ def test_odmowa_zaladuj_do_zlecenia_zatrzymuje_wycene_bez_znacznika_i_sladu_a_po
     assert isinstance(stopped.ending, Stop) and isinstance(stopped.ending.facts, PricingStopped), _ending(stopped)
     facts = stopped.ending.facts
     assert (_stop(stopped), _kept(stopped), facts.part, facts.cause) == (code, True, PagePart.EMMETT, cause)
+    assert facts.stopped_at is not None and facts.stopped_at.failed is not None, facts.stopped_at
+    assert ([step.action for step in facts.stopped_at.steps], facts.stopped_at.failed.action) == (
+        ["szukanie", "otwarcie zlecenia", "data wykonania", "otwarcie zlecenia"],
+        "Wycena Emmetta",
+    )
     assert (refused, marked) == (({"019": 5} if loaded else {}, date(2026, 9, 2), int(loaded)), [18])
     assert (_errors(again), _marked(source)) == ([("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 19")], [18])
     assert resumed == ({"012": 1, "019": 5}, date(2026, 9, 2), 1)
