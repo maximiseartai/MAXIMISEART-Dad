@@ -4,6 +4,7 @@ modułu na repozytorium Gita w katalogu testu."""
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 import sys
 
 import pytest
@@ -37,6 +38,35 @@ GRAPH = {
     "docs/wzorce/zestaw/wpis.md": "zgodny\n",
     # Test kopiuje katalog, a napis niesie tylko koniec jego ścieżki: początek przychodzi w argumencie.
     "tests/test_zestaw.py": "from pathlib import Path\n\n\ndef _kopia(docs: Path) -> Path:\n    return docs / 'wzorce' / 'zestaw'\n",
+    "tests/test_koniec.py": "PLIK = 'dane/wpis.md'\n",
+    "tests/test_glob_konca.py": "from pathlib import Path\n\n\ndef _wpisy(docs: Path) -> list[Path]:\n    return sorted((docs / 'dane').glob('*.md'))\n",
+    "src/pakiet/pod/__init__.py": "",
+    "src/pakiet/pod/wzgledny.py": "from ..a import wartosc\n",
+    "tests/test_wzgledny.py": "from pakiet.pod.wzgledny import wartosc\n",
+    "tests/skrypty/hak": "#!/usr/bin/env python3\nimport pakiet.a\n",
+    "tests/test_hak.py": "HAK = 'tests/skrypty/hak'\n",
+}
+# Pliki, których test nie używa, choć coś w nich przypomina zależność.
+UNUSED = {
+    "tests/fixtures/opis.json": '{"plik": "src/pakiet/b.py"}\n',
+    "tests/test_opis.py": "OPIS = 'tests/fixtures/opis.json'\n",
+    "src/pakiet/proces.py": "PLIK = 'wpis.md'\n",
+    "tests/test_proces.py": "from pakiet.proces import PLIK\n",
+    "tools/raport.py": "",
+    "tools/raport.md": "opis\n",
+    "tests/test_raport.py": "import raport\n",
+    ".agents/skills/a/scripts/narzedzie.py": "import drive\n",
+    ".agents/skills/a/scripts/drive/__init__.py": "",
+    ".agents/skills/b/scripts/drive/__init__.py": "",
+    "tests/test_skill_a.py": "SKRYPT = '.agents/skills/a/scripts/narzedzie.py'\n",
+    ".claude/settings.json": "{}\n",
+    "tests/test_dom.py": "from pathlib import Path\n\nUSTAWIENIA = Path.home() / '.claude'\n",
+    "tests/test_buduje.py": "KATALOG = 'src/pakiet'\n",
+    "tests/skrypty/uruchom.sh": "#!/usr/bin/env python3\nimport pakiet.b\n",
+    "tests/test_skrypt_sh.py": "SKRYPT = 'tests/skrypty/uruchom.sh'\n",
+    "tests/skrypty/uruchom": "#!/usr/bin/env node\nrequire('src/pakiet/b.py')\n",
+    "tests/test_skrypt_node.py": "SKRYPT = 'tests/skrypty/uruchom'\n",
+    "tests/expected/test_raport.txt": "raport\n",
 }
 CONFIGURATION_READER = "from pathlib import Path\n\nKONFIGURACJA = Path('pyproject.toml')\n"
 
@@ -59,6 +89,10 @@ def _repo(path: Path, files: dict[str, str]) -> Path:
         ("docs/wzorce/zestaw/wpis.md", "tests/test_zestaw.py"),
         ("skille/a/OPIS.md", "tests/test_opisy.py"),
         ("src/witryna/strona.html", "tests/test_strona.py"),
+        ("docs/dane/wpis.md", "tests/test_koniec.py"),
+        ("docs/dane/wpis.md", "tests/test_glob_konca.py"),
+        ("src/pakiet/a.py", "tests/test_wzgledny.py"),
+        ("src/pakiet/a.py", "tests/test_hak.py"),
     ],
     ids=[
         "moduł, który test importuje przez inny moduł",
@@ -67,6 +101,10 @@ def _repo(path: Path, files: dict[str, str]) -> Path:
         "plik katalogu, który test wskazuje końcem jego ścieżki",
         "plik z globu na katalogu",
         "plik danych pakietu, który czyta jego moduł",
+        "plik, który test wskazuje końcem jego ścieżki",
+        "plik z globu na katalogu wskazanym końcem ścieżki",
+        "moduł z importu względnego modułu, który test importuje",
+        "moduł, który importuje skrypt Pythona bez rozszerzenia",
     ],
 )
 def test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy(tmp_path: Path, changed: str, touched: str) -> None:
@@ -76,6 +114,47 @@ def test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy(tmp_path: Path, chan
 
     assert touched in tests
     assert "tests/test_zawsze_pada.py" not in tests
+
+
+@pytest.mark.parametrize(
+    ("changed", "untouched"),
+    [
+        ("src/pakiet/b.py", "tests/test_opis.py"),
+        ("docs/dane/wpis.md", "tests/test_proces.py"),
+        ("tools/raport.md", "tests/test_raport.py"),
+        (".agents/skills/b/scripts/drive/__init__.py", "tests/test_skill_a.py"),
+        (".claude/settings.json", "tests/test_dom.py"),
+        ("src/pakiet/b.py", "tests/test_buduje.py"),
+        ("src/pakiet/b.py", "tests/test_skrypt_sh.py"),
+        ("src/pakiet/b.py", "tests/test_skrypt_node.py"),
+        ("tests/expected/test_raport.txt", "tests/expected/test_raport.txt"),
+    ],
+    ids=[
+        "plik nazwany w danych JSON, które test czyta",
+        "plik nazwany bez katalogu w module poza testami",
+        "plik obok modułu z tą samą nazwą bez rozszerzenia",
+        "pakiet innego skilla z tą samą nazwą co pakiet obok skryptu",
+        "katalog nazwany w teście bez ukośnika",
+        "katalog pakietu nazwany w teście",
+        "skrypt z rozszerzeniem innym niż .py i shebangiem Pythona",
+        "skrypt bez rozszerzenia z shebangiem innego języka",
+        "plik test_ w tests, który nie jest Pythonem",
+    ],
+)
+def test_test_nie_jest_dotkniety_zmiana_pliku_ktorego_nie_uzywa(tmp_path: Path, changed: str, untouched: str) -> None:
+    repo = _repo(tmp_path, {**GRAPH, **UNUSED})
+
+    assert untouched not in Repository.scan(repo).impact(frozenset({changed})).tests
+
+
+def test_skan_katalogu_poza_repozytorium_gita_pada_zamiast_dac_puste_repozytorium(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Puste repozytorium nie wybrałoby żadnego testu, jak zmiana, której nic nie dotyczy.
+    folder = tmp_path / "bez_gita"
+    folder.mkdir()
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.resolve()))
+
+    with pytest.raises(subprocess.CalledProcessError):
+        Repository.scan(folder)
 
 
 def test_odleglosc_od_zmiany_to_najkrotsza_droga_w_grafie_zaleznosci(tmp_path: Path) -> None:
@@ -173,6 +252,14 @@ def test_czytelnik_zmienionego_pliku_kazdego_testu_ma_odleglosc_najwyzej_2(
     assert impact.distances["tests/test_konfiguracja.py"] == distance
     assert "pyproject.toml" not in impact.distances
     assert "tests/test_konfiguracja.py" not in unchanged.distances
+
+
+def test_plik_kazdego_testu_nie_ma_odleglosci_takze_gdy_nazywa_sam_siebie(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, {**GRAPH, "tests/conftest.py": "RADA = 'tests/conftest.py'\n"})
+
+    impact = Repository.scan(repo).impact(frozenset({"tests/conftest.py"}))
+
+    assert "tests/conftest.py" not in impact.distances
 
 
 def test_test_ktory_importuje_usuniety_modul_jest_dotkniety_a_usuniety_test_nie(tmp_path: Path) -> None:
