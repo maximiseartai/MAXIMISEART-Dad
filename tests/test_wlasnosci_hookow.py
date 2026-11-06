@@ -11,7 +11,8 @@ wyrocznia niezależna od hooka: ``shlex`` (tekst jest jednym argumentem, cudzys�
 ``bash -n`` (wygenerowane polecenie jest poprawne składniowo). Przykłady są deterministyczne (``derandomize=True``,
 bez bazy przykładów) tylko przy tych samych modułach w procesie: Hypothesis losuje też stałe z kodu repozytorium,
 który proces już załadował, więc inny zestaw testów (noc mutacji zmian) dostaje inne przykłady. Czas mierzy stosunek
-czasów dwóch długości wejścia, więc nie zależy od szybkości runnera.
+czasu werdyktu długiego polecenia do tylu werdyktów krótkiego, ile razy jest dłuższe, w rundach tuż po sobie, więc nie
+zależy od szybkości runnera, a chwilowy tłok na nim trafia obie strony stosunku.
 """
 
 from __future__ import annotations
@@ -751,22 +752,32 @@ def test_wygenerowane_polecenia_sa_poprawne_dla_basha(case: Case) -> None:
 
 
 TIMER = """
-import importlib.util, json, sys, time
+import importlib.util, json, statistics, sys, time
 spec = importlib.util.spec_from_file_location("czekanie", sys.argv[1])
 hook = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = hook
 spec.loader.exec_module(hook)
-for command in json.load(sys.stdin):
-    best = float("inf")
-    for _ in range(3):
-        start = time.perf_counter()
-        hook.judge(command, False)
-        best = min(best, time.perf_counter() - start)
-    print(best)
+growth, rounds = int(sys.argv[2]), int(sys.argv[3])
+short, long = json.load(sys.stdin)
+ratios = []
+for _ in range(rounds):
+    start = time.perf_counter()
+    for _ in range(growth):
+        hook.judge(short, False)
+    middle = time.perf_counter()
+    hook.judge(long, False)
+    ratios.append((time.perf_counter() - middle) / (middle - start))
+print(statistics.median(ratios))
 """
-# Wejście 16 razy dłuższe: czas liniowy rośnie ok. 16 razy, a kwadratowy ok. 256 razy.
+# Długie polecenie to ``GROWTH`` krótkich: liniowy werdykt trwa tyle co ``GROWTH`` werdyktów krótkiego (stosunek ok. 1),
+# a kwadratowy ``GROWTH`` razy dłużej. Obie połowy rundy trwają przy kodzie liniowym tyle samo i biegną tuż po sobie,
+# więc wywłaszczenie przez sąsiada na tłocznym runnerze trafia każdą z nich tak samo często, a spowolnienie całego
+# runnera skraca się w stosunku; mediana rund pomija rundy, w które trafiło. Dawniej długie i krótkie polecenie biegły
+# osobno, a w runie 41975021886 werdykt długiego (47 ms) wyszedł 68,6 raza dłuższy od krótkiego (0,69 ms) przy limicie
+# 64, choć na Macu ten przykład rośnie liniowo (#906).
 GROWTH = 16
-LINEAR_LIMIT = GROWTH * 4
+ROUNDS = 5
+LINEAR_LIMIT = 4
 # Tylko na zawieszenie (wzorzec wykładniczy): werdykt daje stosunek czasów, a nie ten limit.
 HANG_S = 30
 FRAGMENTS = (
@@ -839,16 +850,16 @@ def test_czas_werdyktu_rosnie_najwyzej_liniowo_z_dlugoscia_polecenia(prefix: str
     commands = [prefix + unit * repeats, prefix + unit * repeats * GROWTH]
 
     timed = subprocess.run(
-        [sys.executable, "-c", TIMER, str(CZEKANIE)],
+        [sys.executable, "-c", TIMER, str(CZEKANIE), str(GROWTH), str(ROUNDS)],
         input=json.dumps(commands),
         capture_output=True,
         text=True,
         check=True,
         timeout=HANG_S,
     )
-    short, long = (float(line) for line in timed.stdout.split())
+    ratio = float(timed.stdout)
 
-    assert long / max(short, 1e-6) <= LINEAR_LIMIT, (short, long)
+    assert ratio <= LINEAR_LIMIT, (ratio, len(commands[1]))
 
 
 MODES = st.one_of(
