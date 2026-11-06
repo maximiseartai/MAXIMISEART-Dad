@@ -1964,6 +1964,15 @@ def test_bez_naglowka_zlecen_w_wierszu_1_zatrzymanie_dla_taty_bez_zapisu(tmp_pat
     assert (stop.message.code, stop.stop_kind) == ("BRAK_ARKUSZA_ZLECEN", "for_tata")
 
 
+def test_karta_przed_wklejeniem_bez_arkusza_zlecen_mowi_to_samo_co_uporzadkowanie(tmp_path: Path) -> None:
+    path, _ = _register(tmp_path)
+    _edited(path, lambda sheet: setattr(sheet.cell(1, FIRST + HEADERS.index("AKCJE")), "value", "AKCJE X"))
+
+    days = register_days(path, _TODAY)
+
+    assert isinstance(days, Message) and days.code == "BRAK_ARKUSZA_ZLECEN", days
+
+
 def test_nieudane_usuniecie_starszej_kopii_to_ostrzezenie_przy_uporzadkowanym_intermax(tmp_path: Path) -> None:
     path, _ = _register(tmp_path)
     original = path.read_bytes()
