@@ -71,6 +71,8 @@ Maks zgodził się 26.10 na takie wpisy z góry, więc nie wymagają osobnej zgo
   Do taty nie trafi, bo Wydanie wymaga zielonego pełnego CI i zielonych testów z kwarantanny.
 - Dwa PR-y zielone osobno mogą się zepsuć dopiero razem na `main` (2 razy w 28 dniach do 26.10).
   Issue czerwonego `main` rozpoznaje takie zderzenie; gdy zderzenia się powtarzają, wraca decyzja o merge queue.
+  Od #959 (6.11) zderzeniem jest tylko czerwony `main`, którego każda nowa porażka to test, którego wejścia zmieniły oba PR-y (graf `tools/lib/wplyw_zmiany.py`), a zielony `main`, który przyszedł bez zmiany wejść tych testów, zdejmuje etykietę `zderzenie`.
+  Na 6 issues `zderzenie` z 5–6.11 żadne nie było zderzeniem: pierwszy warunek odrzuca 4 z nich (flaky test jednej strony, padnięte Mutation checks), a drugi jeszcze 1, więc decyzję o merge queue wywołuje mniej fałszywych alarmów.
 - Przy 100 PR dziennie limit 20 zadań jest zajęty przez 16–17 godzin na dobę i wydłuża bramkę.
   W symulacji tego kształtu (nieblokujące Change mutations, trwający run `main` się kończy) p50 to 19,3 min i p90 46,3 min przy 20 zadaniach naraz, a 6,3 i 11,0 min przy 40.
 - Dalsze skracanie bramki to przyspieszanie samych testów, nie zdejmowanie ich z bramki.

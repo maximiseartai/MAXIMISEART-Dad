@@ -88,6 +88,8 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 
 - Czerwony `main` nie blokuje merge'ów, a naprawia go od razu osobny PR.
   PR, nad którym pracujesz, zostaje przy swojej zmianie.
+- Etykieta `zderzenie` w issue czerwonego `main` znaczy, że PR-y zielone osobno padły razem: każda nowa porażka jest w teście, którego wejścia zmieniły oba PR-y.
+  Zielony `main`, który przyszedł bez zmiany wejść tych testów, zdejmuje ją z komentarzem, że porażka była niestabilna.
 
 ## Każdy commit gałęzi
 
