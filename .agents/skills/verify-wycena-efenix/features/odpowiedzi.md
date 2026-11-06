@@ -14,9 +14,10 @@ request ran, and the login page under the address of an order page.
 - A date efenix did not save leaves the order to Dad (`DateRefused.NOT_SAVED`).
 - A refused „Załaduj do zlecenia” stops or leaves the order to Dad; it never ends gotowe without Emmett.
 - „Załaduj do zlecenia” refused with 200 `result: nok` in a valid session is `EFENIX_OKNO_ZATRZYMANE` with
-  `Shape.EMMETT_NOT_LOADED` (the reloaded page has amount 0 after a dialog that showed a proposal), never a logout.
+  `Shape.EMMETT_NOT_LOADED` (the reloaded page has no quantity after a dialog that showed a proposal), never a logout.
 - The same refusal after a failed proposal, whose empty Emmett dialog looks like Emmett proposing nothing, is
-  `Shape.EMMETT_NOT_LOADED` too: only a proposal that came whole with 2xx makes amount 0 an empty Wycena Emmetta (#908).
+  `Shape.EMMETT_NOT_LOADED` too: only a proposal that came whole with 2xx makes a page without any quantity an empty
+  Wycena Emmetta (#908).
 
 ## How to get to it (user POV)
 

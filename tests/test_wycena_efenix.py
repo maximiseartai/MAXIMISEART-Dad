@@ -2094,7 +2094,7 @@ def test_odmowa_zaladuj_do_zlecenia_po_propozycji_emmetta_w_polach_bez_tekstu_za
     tmp_path: Path, page: Page
 ) -> None:
     """Okno Emmetta pokazuje propozycję tylko w polach, bez tekstu (postaci propozycji efenix nikt nie zmierzył), a efenix
-    odmawia „Załaduj do zlecenia” odpowiedzią 200 z inną treścią (#889). Pole to też propozycja, więc strona z kwotą 0 po
+    odmawia „Załaduj do zlecenia” odpowiedzią 200 z inną treścią (#889). Pole to też propozycja, więc strona bez ilości po
     przeładowaniu to Zatrzymanie okna, a nie pusta Wycena Emmetta: zlecenie nie dostaje ilości z pliku ani Znacznika."""
 
     order = Order("#9711", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"019": 5})
@@ -2107,6 +2107,31 @@ def test_odmowa_zaladuj_do_zlecenia_po_propozycji_emmetta_w_polach_bez_tekstu_za
     assert isinstance(stopped.ending, Stop) and isinstance(stopped.ending.facts, PricingStopped), _ending(stopped)
     assert (_stop(stopped), stopped.ending.facts.cause) == ("EFENIX_OKNO_ZATRZYMANE", OtherShape(Shape.EMMETT_NOT_LOADED))
     assert (pricing, _marked(source)) == ({"9711": ({}, DAY, 0)}, [])
+
+
+def test_odmowa_zaladuj_do_zlecenia_na_stronie_bez_ilosci_z_kwota_z_ceny_wpisywanej_zatrzymuje_wycene_bez_ilosci_z_pliku(
+    tmp_path: Path, page: Page
+) -> None:
+    """Strona zlecenia nie ma żadnej ilości, ale ma kwotę końcową różną od 0 z karty ceny wpisywanej (bez pola Ilość),
+    więc proces ładuje do niej Wycenę Emmetta (ADR 0026), a efenix odmawia „Załaduj do zlecenia” odpowiedzią 200 z inną
+    treścią (#889). Przeładowana strona dalej nie ma żadnej ilości, choć okno Emmetta pokazało propozycję, więc to
+    Zatrzymanie okna, a nie Wycena Emmetta: zlecenie nie dostaje ilości z pliku ani Znacznika efenix."""
+
+    order = Order("#9731", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"019": 5})
+    source = write_collective_file(tmp_path, [order])
+    in_efenix = replace(order.in_efenix("9731"), quantities={"045": 5}, emmett_refusal=EmmettRefusal.OTHER)
+    with atrapa_efenix([in_efenix]) as atrapa:
+        stopped = _run(source, page, atrapa.url)
+        pricing = _pricing(atrapa)
+
+    assert isinstance(stopped.ending, Stop) and isinstance(stopped.ending.facts, PricingStopped), _ending(stopped)
+    facts = stopped.ending.facts
+    assert (_stop(stopped), facts.part, facts.cause) == (
+        "EFENIX_OKNO_ZATRZYMANE",
+        PagePart.EMMETT,
+        OtherShape(Shape.EMMETT_NOT_LOADED),
+    )
+    assert (pricing, _marked(source)) == ({"9731": ({"045": 5}, DAY, 0)}, [])
 
 
 
@@ -2140,7 +2165,7 @@ def test_propozycja_emmetta_ktora_padla_a_potem_odmowa_zaladuj_do_zlecenia_2xx_z
 ) -> None:
     """Propozycja Emmetta pada (błąd serwera, zerwana treść, zerwane połączenie), więc okno Emmetta jest puste jak przy
     Emmetcie, który nic nie zaproponował, a efenix odmawia „Załaduj do zlecenia” odpowiedzią 2xx i nic nie ładuje (#908,
-    dwie awarie naraz). Pustą Wyceną Emmetta jest strona z kwotą 0 tylko po propozycji, która przyszła cała ze statusem
+    dwie awarie naraz). Pustą Wyceną Emmetta jest strona bez ilości tylko po propozycji, która przyszła cała ze statusem
     2xx, więc ta strona to Zatrzymanie okna (``Shape.EMMETT_NOT_LOADED``): zlecenie nie dostaje ilości z pliku ani
     Znacznika efenix i nie jest gotowe bez Wyceny Emmetta (jak #877, #889)."""
 
