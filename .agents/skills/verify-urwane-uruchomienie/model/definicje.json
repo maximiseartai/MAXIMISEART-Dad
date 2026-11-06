@@ -31,6 +31,7 @@
     "_read_logs",
     "_names",
     "_NAME",
+    "_RUN_ID",
     "LogsRead"
   ],
   "src/rozliczenia/centrum/app.py": [

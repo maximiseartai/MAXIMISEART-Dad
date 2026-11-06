@@ -102,7 +102,7 @@ unless named otherwise):
 | Model action | Code |
 | --- | --- |
 | `Start` | `launcher.py` `_start`: `_listen_when_released` takes the port, then `create_app`; in it `InterruptedPricings(...).close()` lists `sorted(glob("*.jsonl"))`. Only the process with the port builds the app, so two closes never run at once. The clock may have gone back while Centrum was closed (`MaxCofniecZegara`): the moments of this work may then be earlier than those of any version already in the queue |
-| `Czytaj` | `InterruptedPricings.close` → `_closed(path)` for one journal: `pricing_journal._read` (no first line → `None`), `logs_disk.py` `LogsOnDisk.logs(run_id)` → `_read_logs` of the file whose name (`_names`, `_NAME`) has the run's identifier, matched in `_closed` (`Found` → those Logi, with the result or Urwane; `Unreadable` → `ResultWithoutLogs` `"nieczytelne"`, which the model leaves out; `Missing` with the end entry `RunEnded` (`read.end`) → `ResultWithoutLogs` `"niezapisane"`; `Missing` without it → `RunLogs.interrupted`); Logi then `RunLogs.guard`. The Historia is not read. An `OSError` from the journal, or from the Logs file (`Refused`, which `_closed` raises again), is caught by `close`, which leaves the journal. One step, because nothing else writes these files while `create_app` runs |
+| `Czytaj` | `InterruptedPricings.close` → `_closed(path)` for one journal: `pricing_journal._read` (no first line → `None`), `logs_disk.py` `LogsOnDisk.logs(run_id)` → `_read_logs` of the file whose name (`_names`, `_NAME`, `_RUN_ID`) has the run's identifier, matched in `_closed` (`Found` → those Logi, with the result or Urwane; `Unreadable` → `ResultWithoutLogs` `"nieczytelne"`, which the model leaves out; `Missing` with the end entry `RunEnded` (`read.end`) → `ResultWithoutLogs` `"niezapisane"`; `Missing` without it → `RunLogs.interrupted`); Logi then `RunLogs.guard`. The Historia is not read. An `OSError` from the journal, from the Logs file, or from listing the Logs folder for another reason than no folder (`Refused`, which `_closed` raises again), is caught by `close`, which leaves the journal; the model's read failure is each of them. One step, because nothing else writes these files while `create_app` runs |
 | `ZapiszLogi` | `_closed`: `RunLogs.close(record)` → `_write` → `atomic_file.replace_atomically`; `OSError` only to the Centrum log, and the record still goes to `_pending` |
 | `UsunDziennik` | `close`: `if closed is None: _remove(path, ...)`, a journal without its first line (`unlink`; `OSError` leaves the journal) |
 | `Wznow` | `app.py` `lifespan`: `outbox.resume()` before uvicorn accepts the first request |
@@ -129,7 +129,7 @@ The script compares these definitions with the Sync commit (`model/definicje.jso
 method): `PricingJournal`, `RunEnded`, `JournalAfterLogs`, `_Read`, `_read`, `_remove`, `InterruptedPricings` in
 `pricing_journal.py`; `RunLog.interrupted`, `guarded`, `RunLogs.run_ended`, `_keep`, `queued`, `interrupted`,
 `guard`, `close`, `_write`, `send`, `progress`, `LoggedEnding`, `ResultWithoutLogs`, `logi_post`,
-`progress_post`, `_logs_post` in `run_logs.py`; `LogsOnDisk.logs`, `_read_logs`, `_names`, `_NAME`, `LogsRead` in
+`progress_post`, `_logs_post` in `run_logs.py`; `LogsOnDisk.logs`, `_read_logs`, `_names`, `_NAME`, `_RUN_ID`, `LogsRead` in
 `logs_disk.py`; `lifespan`, `send_interrupted`, the assignments `app`, `journal`, `disk`,
 `interrupted` and `runs` (its `after_run` puts `journal`, `run_logs` and `JournalAfterLogs` in this order) and
 `run_started` in `app.py`; `_Run.work`, `RunHost.start`, `RunHost.after`, `RunHost.shutdown_refusal` in `runs.py`;
@@ -150,11 +150,16 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `7cfe46274` (2026-11-06, candidate 8 of the architecture review of 6.11, part 1). Every row of the table
-was checked against the code at this commit. Since the Sync commit `ed73f88ce` only the read of the Logs file in
+Sync commit: `fa352a225` (2026-11-07, candidate 8 of the architecture review of 6.11, part 1, review round 2). Every
+row of the table was checked against the code at this commit. Since the Sync commit `7cfe46274` only `LogsOnDisk.logs`
+and `_names` changed: listing the Logs folder fails with `Refused` instead of reading as no Logs file, unless the folder
+is missing, and an identifier that Centrum does not give (`_RUN_ID`) is `Missing` without the disk; `_closed` raises
+`Refused` again as before, so the read failure in `Czytaj` (`awarieOdczytu`) now also stands for a folder the system
+does not list, and no action changed. On the previous Sync commit `7cfe46274`, since the Sync commit `ed73f88ce` only the read of the Logs file in
 `Czytaj` moved into `logs_disk.py` (`LogsOnDisk.logs` in place of `RunLogs.file_of` and `RunLog.model_validate_json`,
-with the same outcome for a readable, an unreadable, a refused and a missing file), and `create_app` builds `disk` for
-`InterruptedPricings` and for the last-start file in `run_started`, so no action changed. On the previous Sync commit
+with the same outcome for a readable, an unreadable, a refused and a missing file, but a Logs folder the system did not
+list read as no file until `fa352a225`), and `create_app` builds `disk` for `InterruptedPricings` and for the
+last-start file in `run_started`, so no action changed. On the previous Sync commit
 `ed73f88ce` (#960), since the Sync commit `ba4092817` only `save` changed (#960): it no longer reads the Ślad Wyceny Emmetta, and the Zatrzymanie
 after its failed write ahead (#881) is gone with it, so `save` stops only on a window stop; `journal.begun` before the
 first window action and `journal.ended` after the result kept their place, so no action changed and the model gained no
