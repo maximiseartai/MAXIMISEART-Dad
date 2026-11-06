@@ -176,8 +176,13 @@ def _next_tab(page: Page) -> Page:
     """Karta następnego Uruchomienia: karta ``page`` poprzedniego zamyka się, jak przeglądarka okna, więc jej skrypt
     efenix nie wysyła już żądań do efenix w trakcie następnego Uruchomienia (testy porównują jego żądania), a nowa jest
     w tej samej przeglądarce, z jej ciasteczkami, jak trwały profil okna taty, który pamięta logowanie między
-    Uruchomieniami."""
+    Uruchomieniami.
 
+    ``page`` to karta, w której biegło Uruchomienie, i jeszcze otwarta: zamknięcie innej karty zostawiało kartę
+    przerwanego Uruchomienia otwartą, a jej przeładowanie po „Załaduj do zlecenia” trafiało do Atrapy w trakcie
+    ponownego Uruchomienia (#892)."""
+
+    assert page in _USED_TABS and not page.is_closed(), "_next_tab dostaje kartę ostatniego Uruchomienia, jeszcze otwartą"
     page.close()
     return page.context.new_page()
 
@@ -1856,10 +1861,12 @@ def test_przerwanie_wylogowaniem_i_ponowne_uruchomienie_daje_ten_sam_stan_efenix
         priced_once = (_pricing(atrapa), atrapa.status_changes())
     clock = _FakeTime()
     with atrapa_efenix(in_efenix(), expire_after=expire_after, clock=clock) as atrapa:
-        stopped = _run(resumed, _next_tab(page), atrapa.url)
+        stopped_tab = _next_tab(page)
+        stopped = _run(resumed, stopped_tab, atrapa.url)
+        again_tab = _next_tab(stopped_tab)
         atrapa.log_in()
         since = len(atrapa.requests)
-        again = _run(resumed, _next_tab(page), atrapa.url, pace=Pace(sleep=clock.pause, clock=clock), clock=clock)
+        again = _run(resumed, again_tab, atrapa.url, pace=Pace(sleep=clock.pause, clock=clock), clock=clock)
         priced_again = (_pricing(atrapa), atrapa.status_changes())
         searched_again, written_again = (
             _window_moments(atrapa, SEARCH, since),
