@@ -1593,35 +1593,74 @@ def _address_style_past_cell_xfs(parts: dict[str, bytes]) -> dict[str, bytes]:
     return _replaced("xl/worksheets/sheet1.xml", rb'(<c r="B18") s="\d+"', rb'\1 s="%d"' % count)(parts)
 
 
-UNSUPPORTED_SHAPES = {
-    "bez-relacji-skoroszytu": (_replaced("_rels/.rels", rb'relationships/officeDocument"', b'relationships/document"'), "B", [18]),
-    "bez-relacji-stylow": (_replaced("xl/_rels/workbook.xml.rels", rb'relationships/styles"', b'relationships/stylez"'), "B", [18]),
+def _shaped(tmp_path: Path, order: Order, shape: Callable[[dict[str, bytes]], dict[str, bytes]]) -> Path:
+    """Plik zbiorczy z jednym zleceniem ``order`` w kształcie ``shape``."""
+
+    source = write_collective_file(tmp_path, [order])
+    changed = shape(dict(_parts(source)))
+    rewrite_parts(source, lambda name, data: changed.get(name, data))
+    return source
+
+
+PRICED_SHAPES = {
+    "bez-relacji-skoroszytu": _replaced("_rels/.rels", rb'relationships/officeDocument"', b'relationships/document"'),
+    "bez-relacji-stylow": _replaced("xl/_rels/workbook.xml.rels", rb'relationships/styles"', b'relationships/stylez"'),
+    "komentarz-w-cellxfs": _replaced("xl/styles.xml", rb'<cellXfs count="\d+">', rb"\g<0><!--<xf/>-->"),
+    "styl-adresu-za-cellxfs": _address_style_past_cell_xfs,
+}
+"""Kształty, których Excel nie zapisuje, a które odczyt zakresu Wyceny przyjmuje, więc proces dochodzi z nimi do zapisu
+Znaczników."""
+
+
+@pytest.mark.parametrize("shape", PRICED_SHAPES.values(), ids=PRICED_SHAPES.keys())
+@pytest.mark.parametrize(
+    ("extra", "ending"),
+    [
+        pytest.param(0, ("BLAD_KRYTYCZNY", "rozliczenia.efenix_marking.UnsupportedShape"), id="gotowe-zlecenie"),
+        pytest.param(1, ("WYMAGA_SPRAWDZENIA", None), id="bez-gotowych-zlecen"),
+    ],
+)
+def test_wycena_pliku_w_ksztalcie_ktorego_zapis_znacznikow_nie_przenosi_to_blad_kodu_bez_zmiany_pliku(
+    tmp_path: Path, page: Page, shape: Callable[[dict[str, bytes]], dict[str, bytes]], extra: int, ending: tuple[str, str | None]
+) -> None:
+    """Gotowe zlecenie w pliku, którego kształtu zapis Znaczników nie przenosi: Uruchomienie kończy się błędem kodu, a
+    ślad wywołań w Logach Uruchomienia mówi Maksowi, że to kształt pliku (``UnsupportedShape``), nie inny błąd. Plik
+    zostaje bez zmian: nie dostaje stylu, którego Przebieg rozliczeń potem nie odczyta. Bez gotowych zleceń
+    (kwota w efenix inna niż AU) zapis Znaczników pliku nie czyta, więc Uruchomienie kończy się zwykłym wynikiem."""
+
+    order = Order("#7451", cells={"O": 1}, amount=_au({"012": 1}) + extra, quantities={"012": 1})
+    source = _shaped(tmp_path, order, shape)
+    before = source.read_bytes()
+    with atrapa_efenix([order.in_efenix("751")]) as atrapa:
+        outcome = _run(source, page, atrapa.url)
+
+    trace = outcome.ending.trace if isinstance(outcome.ending, Stop) else None
+    assert (outcome.result, trace and trace.exception_type, source.read_bytes() == before) == (*ending, True), _ending(outcome)
+
+
+UNREACHED_SHAPES = {
     "aktywna-karta-za-ostatnia": (_replaced("xl/workbook.xml", rb'activeTab="0"', b'activeTab="1"'), "B", [18]),
     "aktywna-karta-bez-relacji": (_replaced("xl/workbook.xml", rb'r:id="rId1"', b'r:id="rId9"'), "B", [18]),
     "gotowy-wiersz-poza-arkuszem": (lambda _parts: {}, "B", [99]),
     "gotowy-wiersz-bez-komorki-adresu": (lambda _parts: {}, "C", [18]),
-    "komentarz-w-cellxfs": (_replaced("xl/styles.xml", rb'<cellXfs count="\d+">', rb"\g<0><!--<xf/>-->"), "B", [18]),
-    "styl-adresu-za-cellxfs": (_address_style_past_cell_xfs, "B", [18]),
 }
 
 
-@pytest.mark.parametrize(("shape", "column", "rows"), UNSUPPORTED_SHAPES.values(), ids=UNSUPPORTED_SHAPES.keys())
-def test_plik_zbiorczy_w_ksztalcie_ktorego_zapis_znacznikow_nie_przenosi_to_blad_kodu_a_bez_gotowych_zlecen_nic(
+@pytest.mark.parametrize(("shape", "column", "rows"), UNREACHED_SHAPES.values(), ids=UNREACHED_SHAPES.keys())
+def test_zapis_znacznikow_w_ksztalcie_do_ktorego_wycena_nie_dochodzi_to_blad_kodu_bez_zmiany_pliku(
     tmp_path: Path, shape: Callable[[dict[str, bytes]], dict[str, bytes]], column: str, rows: list[int]
 ) -> None:
-    """Kształt, którego Excel nie zapisuje, to ``UnsupportedShape`` przed zapisem, więc plik zostaje bez zmian, a bez
-    gotowych zleceń zapis Znaczników nie czyta pliku i kończy się bez błędu. Odczyt zakresu Wyceny nie dopuszcza
-    większości tych kształtów, więc test prowadzi sam zapis Znaczników."""
+    """Kształt, którego zapis Znaczników nie przenosi, to ``UnsupportedShape`` przed zapisem, a plik zostaje bez zmian.
+    Uruchomienie Wyceny tu nie dochodzi, więc test prowadzi sam zapis Znaczników: aktywnej karty bez arkusza odczyt
+    zakresu nie czyta (``UNREADABLE``), a numery wierszy i kolumnę ``ADRES`` proces bierze z odczytu tych samych bajtów,
+    i gotowe zlecenie ma ``ADRES`` zgodny z efenix, więc jego wiersz i komórka ``ADRES`` zawsze są w arkuszu."""
 
-    order = Order("#7451", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
-    source = write_collective_file(tmp_path, [order])
-    changed = shape(dict(_parts(source)))
-    rewrite_parts(source, lambda name, data: changed.get(name, data))
+    source = _shaped(tmp_path, Order("#7451", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}), shape)
     content = source.read_bytes()
 
     with pytest.raises(UnsupportedShape):
         mark_ready(source, content, column, rows)
-    assert (mark_ready(source, content, column, []), source.read_bytes() == content) == (None, True)
+    assert source.read_bytes() == content
 
 
 @contextmanager
