@@ -20,10 +20,12 @@ Zmienia:
 
 Zmieniona 5.11.2026 (decyzja Maksa, #913, #918, zastępuje PR #966): położenie
 wiersza Rejestru zleceń i INTERMAX w pamięci reguły danych (sekcja „Położenie
-wiersza”). Uzupełniona 6.11.2026: pierwszy wiersz bloku ma jedno położenie tylko
-wtedy, gdy jego przesunięcie widać (decyzja koordynatora w granicach decyzji Maksa
-z 5.11.2026, po przeglądzie #984 r2), a ryzyko klasy C przyjął Maks (decyzja Maksa
-z 6.11.2026, po przeglądzie #984 r3).
+wiersza”). Uzupełniona 6.11.2026 (decyzja Maksa, po przeglądzie #984 r2 i r3):
+fakty wklejenia INTERMAX to pewniki, a plik, który je łamie, jest poza dziedziną
+(sekcja „Pewniki i granica dziedziny”); pierwszy wiersz bloku ma jedno położenie
+tylko wtedy, gdy jego przesunięcie widać, a klasy ryzyka A, B i C Maks przyjął.
+Wcześniej A i B stały tu jako decyzja Maksa z 5.11.2026, a pierwszy wiersz tylko
+przy widocznym przesunięciu jako decyzja koordynatora.
 
 Publiczne repozytorium bez zmian: PR-y, commity, issue i testy nie niosą
 treści wierszy, numerów zleceń ani Wykonawców taty, a testy mają tylko dane
@@ -146,13 +148,12 @@ telefony na okres.
   niosły numery zleceń, Wykonawców, miasta i opisy techników, i zgodził się
   na to z Maksem (grilling 4.11.2026).
 
-## Położenie wiersza (decyzja Maksa z 5.11.2026, #913, #918)
+## Położenie wiersza (decyzje Maksa z 5.11.2026 i 6.11.2026, #913, #918)
 
 Fakt domeny (Maks): z aplikacji firmowej przychodzi przesunięty o dwie kolumny
 w lewo zawsze pierwszy wiersz wklejenia i tylko on (ADR 0019; kopia INTERMAX taty
 z 25.10.2026: 84 wklejone wiersze, przesunięty pierwszy). Maks wybrał regułę
-deterministyczną opartą na tym fakcie i bierze na siebie ryzyko, że fakt nie
-zajdzie:
+deterministyczną opartą na tym fakcie:
 
 - **Pierwszy wiersz bloku wklejenia** to wiersz z wyglądem z aplikacji (żadna
   komórka z wartością poza `WYKONAWCA` nie ma Calibri 8), nad którym najbliższy
@@ -203,13 +204,14 @@ same bajty na `main` b3f1c625a i na tej regule; tabela na Macu Maksa:
 | przesunięcie w prawo | 3 | 3 | 3 |
 | `ADRES` jako data z godziną (adresu nie ma w pliku) | 1 | 1 | 1 |
 
-Ryzyko przyjęte przez Maksa to trzy klasy:
+Ryzyko przyjęte przez Maksa (6.11.2026) to trzy klasy plików poza dziedziną
+(sekcja „Pewniki i granica dziedziny” niżej):
 
-- **A** (5.11.2026): przesunięty inny wiersz niż pierwszy, bez śladu; 19 sond.
-- **B** (5.11.2026): pierwszy wiersz bloku ma widoczne przesunięcie (data z
+- **A**: przesunięty inny wiersz niż pierwszy, bez śladu; 19 sond.
+- **B**: pierwszy wiersz bloku ma widoczne przesunięcie (data z
   godziną dwie kolumny przed `DATA GODZ. POCZ.`, pod nią nie), a jest przesunięty
   tylko w części albo stoi na miejscu; 16 sond.
-- **C** (6.11.2026): fakt domeny zachodzi, ale wiersz na miejscu, który nie jest
+- **C**: fakt domeny zachodzi, ale wiersz na miejscu, który nie jest
   pierwszym przesuniętym wierszem wklejenia, ma datę z godziną w kolumnie A i bez
   daty z godziną pod `DATA GODZ. POCZ.`, a reguła bierze go za pierwszy wiersz
   bloku: pod wpisem taty w Calibri 8, także na początku bloku nad
@@ -253,6 +255,29 @@ wierszy bloków w Diagnozie całego Rejestru 10, w Uporządkowaniu INTERMAX 7
 wierszu ostatniego wklejenia INTERMAX, więc oba położenia ma 10 z 10, 6 z 7 i 4 z
 4. Pamięć nie poznaje przez to żadnej nowej wartości (ich `ADRES` i `NUMER UMOWY`
 są puste albo znane), a masek w Kopii jest tyle samo.
+
+## Pewniki i granica dziedziny (decyzja Maksa z 6.11.2026)
+
+Dwa fakty wklejenia taty do INTERMAX to pewniki, nie przypuszczenia:
+
+1. Przesunięty o dwie kolumny w lewo jest zawsze tylko pierwszy wklejony wiersz;
+   każdy następny stoi pod nagłówkami.
+2. Granica bloku wklejenia, czyli koniec ostatniego uporządkowanego dnia, jest
+   pewna: tata nic nie zmienia w wklejonych Surowych zleceniach i od razu
+   uruchamia Uporządkowanie INTERMAX.
+
+Plik, który łamie 1 albo 2, jest poza dziedziną reguły. Takie są klasy ryzyka A,
+B i C z sekcji „Położenie wiersza” i znana granica sygnału (wpis taty w Calibri 8
+we wklejonym wierszu łamie 2); Maks przyjął je wszystkie.
+
+Ostrożna część kodu zostaje bez zmian: siatka, oba położenia wiersza ze Śladem
+przesunięcia i uwaga „Fakt domeny złamany” w Logach. Nie obiecuje braku wycieku
+poza dziedziną, a u taty kosztuje 0.
+
+Przegląd: przypadek (sonda, test, repro), który wypuszcza wartość albo zostawia
+ją strażnikowi nieznaną tylko w pliku łamiącym 1 albo 2, nie jest defektem, nie
+daje `FAIL` i nie otwiera reguły od nowa. Defektem zostaje wyciek w pliku, w
+którym oba pewniki zachodzą.
 
 ## Konsekwencje
 
@@ -350,6 +375,10 @@ nie czyta.
   datą tekstem albo bez daty robił z tego wiersza pierwszy wiersz bloku znany
   tylko przesunięty: 10 sond przeglądu (N1–N6t, RN1–RN3, D9, D10) wypuszczało adres
   i numer Orange albo zostawiało je strażnikowi nieznane (na `main` 0).
+- **Reguła bez wycieku także w plikach łamiących pewniki.** Opcja 3 i rundy
+  przeglądu #984 pokazały, że każda łata dla takiego pliku dokłada fakty i
+  wyjątki, a wyciek przechodzi do kolejnego układu; Maks (6.11.2026) wyznaczył
+  granicę dziedziny pewnikami.
 - **Ponowny odczyt plików taty przy wysyłce, żeby poznać zakazane wartości.**
   Przebieg rozliczeń i Kontrola ilości czytają Plik zbiorczy raz (ADR 0013);
   drugi odczyt Rejestru zleceń trwa sekundy.
