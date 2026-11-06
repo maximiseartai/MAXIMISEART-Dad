@@ -171,7 +171,10 @@ dostają: T-Mobile zielony, Orange pomarańczowy, każdy inny operator jasny
 niebieski, a Netia ciemniejszy niebieski w `CZYNNOŚCI` i jasny niebieski w
 `NUMER UMOWY`. INEA i zlecenie bez operatora zostają bez wypełnienia. Nazwa
 operatora nie zależy od wielkości liter, spacji, myślników ani dopisku `S.A.`:
-`T-Mobile` to TMOBILE, a `Netia S.A.` to Netia. Usterka
+`T-Mobile` to TMOBILE, a `Netia S.A.` to Netia. Dopisek `S.A.` bez spacji
+przed nim, jak `NetiaSA` czy `NetiaS.A.`, też zostawia tego samego operatora
+(decyzja Maksa z 6.11.2026), a inne doklejone litery, jak `NetiaSAT`, dają
+innego operatora. Usterka
 i usterka hurt mają zamiast tego różowe `URZĄDZENIA`. W Rejestrze zleceń jest
 Wyróżnieniem jak każde inne; inne kolory w Rejestrze to ręczne zaznaczenia
 taty i jego pracowników.
