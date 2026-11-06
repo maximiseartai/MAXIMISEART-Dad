@@ -237,6 +237,8 @@ def test_skrypt_mutacji_skilla_pokazuje_czas_kazdej_mutacji_i_ostrzega_o_tej_kto
     assert slow and fast and warned, shown
     # Wolna śpi 3,5 s więcej niż szybka, a żadna nie biegnie dłużej niż cały skrypt na zegarze testu.
     assert (3 <= int(slow[1]) <= round(took), int(fast[1]) < int(slow[1]), warned[1] == slow[1]) == (True, True, True), shown
+    # Z linii ostrzeżenia noc odtwarza skrypt, część, mutację, czas i limit, które zgłasza w issue PR-u (#935).
+    assert mutacje.near_limits(answered.stderr) == [mutacje.NearLimit(script, "1/1", "wolna", int(slow[1]), 6)], shown
 
 
 def test_czesci_tabeli_sprawdzaja_kazda_mutacje_raz_kazda_z_podstawa_tylko_polecen_swoich_mutacji(tmp_path: Path) -> None:

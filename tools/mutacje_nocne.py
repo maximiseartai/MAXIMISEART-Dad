@@ -41,8 +41,12 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   planu wgrywa swój zapis wykonania jako artefakt ``mutacje-skilli-<id zadania>``. ``zglos --plan-skilli`` daje każdy
   skrypt, który padł, linią ``SKRYPT <skrypt>`` do issue ``Przeżyte mutacje skilli z #N`` PR-u, który ostatni zmienił
   folder skilla od bazy (bez takiej zmiany: inną ścieżkę z ``kroki_skilli.watched``, a dla podstawy z ``pilnuje``,
-  a bez niej ostatni PR nocy); linii, którą issue już ma, nie dostaje drugi raz. Zadanie bez zapisu tego planu albo bez wyniku jednostki czerwieni run,
-  tak jak skrypt, który padł w nocy bez commitu od bazy, bo nie ma PR-u, który by go dostał.
+  a bez niej ostatni PR nocy); linii, którą issue już ma, nie dostaje drugi raz. Do tego samego issue idzie każde
+  ostrzeżenie ``CZAS BLISKO LIMITU`` z zapisu zadania (``blisko_limitu``, ``NearLimit`` z ``tools/mutacje.py``): mutacja skryptu, której
+  polecenie trwało ponad połowę limitu, linią ``CZAS BLISKO LIMITU <skrypt> | <mutacja> | <czas> z limitu …``. Czas
+  zmienia się co noc, więc issue, które ma już linię z tym skryptem i mutacją, nie dostaje jej drugi raz (#935).
+  Zadanie bez zapisu tego planu albo bez wyniku jednostki czerwieni run, tak jak skrypt, który padł, albo ostrzeżenie w
+  nocy bez commitu od bazy, bo nie ma PR-u, który by je dostał.
 
 Bazę, koniec zakresu i liczbę części nocy drukuje lokalnie bez testów:
 
@@ -54,7 +58,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 import io
 import itertools
@@ -72,6 +76,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import kroki_skilli
+from mutacje import PART, NearLimit
 import mutacje_zmiany
 import plan_ci
 from wplyw_zmiany import Context, Repository
@@ -337,10 +342,11 @@ def autor(github: GitHub, root: Path, scalenie: str, commit: str) -> Autor:
     return Autor(int(scalone[0]["number"])) if scalone else Autor(None, commit)
 
 
-def wyniki_skilli(plan: plan_ci.Plan, katalog: Path) -> tuple[list[str], list[str]]:
-    """Kroki skilli (``skill:<skill>/<skrypt>``), które padły w zadaniach ``plan``, i przyczyny zadań bez wyniku."""
+def wyniki_skilli(plan: plan_ci.Plan, katalog: Path) -> tuple[list[str], list[tuple[str, NearLimit]], list[str]]:
+    """Kroki skilli (``skill:<skill>/<skrypt>``), które padły w zadaniach ``plan``, ostrzeżenia ``CZAS BLISKO LIMITU``
+    z kluczem kroku i przyczyny zadań bez wyniku."""
 
-    padly, problemy = set(), []
+    padly, blisko, problemy = set(), [], []
     for zadanie in plan.zadania:
         try:
             zapis = json.loads((katalog / f"{ARTEFAKT_SKILLI}{zadanie.id}" / plan_ci.WYKONANIE.name).read_text(encoding="utf-8"))
@@ -355,35 +361,59 @@ def wyniki_skilli(plan: plan_ci.Plan, katalog: Path) -> tuple[list[str], list[st
         if brak := sorted(zaplanowane - {jednostka["klucz"] for jednostka in zapis["jednostki"]}):
             problemy.append(f"{zadanie.nazwa}: jednostki bez wyniku: {', '.join(brak)}")
         padly |= zaplanowane & {jednostka["klucz"] for jednostka in zapis["jednostki"] if jednostka["status"] != "ok"}
-    return sorted(padly), problemy
+        blisko += [(wpis.pop("klucz"), NearLimit(**wpis)) for wpis in zapis["blisko_limitu"]]
+    return sorted(padly), blisko, problemy
 
 
-def przypisz_skrypty(github: GitHub, root: Path, od: str, padly: Sequence[str]) -> tuple[dict[Autor, list[str]], list[str]]:
-    """Skrypty mutacji skilli, które padły, według PR-u, który ostatni zmienił folder skilla od ``od``, i przyczyny
-    porażki skryptów, których nie ma komu przypisać, bo ``main`` nie ma commitu od ``od``."""
+@dataclass
+class Skrypty:
+    """Co z nocnych kroków skilli trafia do issue jednego PR-u: skrypty, które padły, i ostrzeżenia ``CZAS BLISKO LIMITU``."""
+
+    padly: list[str] = field(default_factory=list)
+    blisko: list[NearLimit] = field(default_factory=list)
+
+
+def przypisz_skrypty(
+    github: GitHub, root: Path, od: str, padly: Sequence[str], blisko: Sequence[tuple[str, NearLimit]] = ()
+) -> tuple[dict[Autor, Skrypty], list[str]]:
+    """Skrypty mutacji skilli, które padły, i ostrzeżenia ``CZAS BLISKO LIMITU`` ich mutacji według PR-u, który ostatni
+    zmienił folder skilla od ``od``, i przyczyny porażki tych, których nie ma komu przypisać, bo ``main`` nie ma commitu
+    od ``od``."""
 
     kroki = {f"skill:{krok.key}": krok for krok in kroki_skilli.steps({})}
     linia_main = _git(root, "rev-list", "--first-parent", "--reverse", f"{od}..HEAD").split()
-    wynik: dict[Autor, list[str]] = {}
+    autorzy = {klucz: _autor_kroku(github, root, od, linia_main, kroki[klucz]) for klucz in {*padly, *(klucz for klucz, _ in blisko)}}
+    wynik: dict[Autor, Skrypty] = {}
     problemy: list[str] = []
     for klucz in padly:
-        krok = kroki[klucz]
-        folder = f"{krok.skill.relative_to(kroki_skilli.ROOT).as_posix()}/"
-        try:
-            # Część podstawy z ci-czesci psuje skrypt skilla albo kod, który skill pilnuje.
-            sciezki = kroki_skilli.watched(krok) if krok.verdict else (folder, *(kroki_skilli.guarded(krok.skill / "SKILL.md") or ()))
-        except Exception:  # noqa: BLE001 - tabela, której nie da się wczytać, wskazuje tylko folder skilla
-            sciezki = (folder,)
-        # Grupa bez ścieżek daje ostatni commit nocy.
-        for grupa in ((sciezki[0],), (*sciezki[1:], *Context.SKILL_STEPS.paths()), ()):
-            if commit := _git(root, "log", "-1", "--format=%H", f"{od}..HEAD", "--", *grupa):
-                break
-        else:
+        if (kto := autorzy[klucz]) is None:
             # Skill bez pilnuje biegnie także w nocy bez commitu od bazy, a wtedy jego porażka nie ma PR ani issue.
-            problemy.append(f"skrypt {krok.command[0]} padł, a od bazy {od} main nie ma commitu, którego PR by go dostał")
+            problemy.append(f"skrypt {kroki[klucz].command[0]} padł, a od bazy {od} main nie ma commitu, którego PR by go dostał")
             continue
-        wynik.setdefault(autor(github, root, linia_main[_wniesienie(root, linia_main, commit)], commit), []).append(krok.command[0])
+        wynik.setdefault(kto, Skrypty()).padly.append(kroki[klucz].command[0])
+    for klucz, ostrzezenie in blisko:
+        if (kto := autorzy[klucz]) is None:
+            problemy.append(f"{_klucz_blisko(ostrzezenie)}: od bazy {od} main nie ma commitu, którego PR by je dostał")
+            continue
+        wynik.setdefault(kto, Skrypty()).blisko.append(ostrzezenie)
     return wynik, problemy
+
+
+def _autor_kroku(github: GitHub, root: Path, od: str, linia_main: Sequence[str], krok: kroki_skilli.Step) -> Autor | None:
+    """PR, który ostatni zmienił folder skilla kroku od ``od`` (bez takiej zmiany: inną ścieżkę z ``kroki_skilli.watched``,
+    a dla podstawy z ``pilnuje``, a bez niej ostatni PR nocy), albo ``None``, gdy ``main`` nie ma commitu od ``od``."""
+
+    folder = f"{krok.skill.relative_to(kroki_skilli.ROOT).as_posix()}/"
+    try:
+        # Część podstawy z ci-czesci psuje skrypt skilla albo kod, który skill pilnuje.
+        sciezki = kroki_skilli.watched(krok) if krok.verdict else (folder, *(kroki_skilli.guarded(krok.skill / "SKILL.md") or ()))
+    except Exception:  # noqa: BLE001 - tabela, której nie da się wczytać, wskazuje tylko folder skilla
+        sciezki = (folder,)
+    # Grupa bez ścieżek daje ostatni commit nocy.
+    for grupa in ((sciezki[0],), (*sciezki[1:], *Context.SKILL_STEPS.paths()), ()):
+        if commit := _git(root, "log", "-1", "--format=%H", f"{od}..HEAD", "--", *grupa):
+            return autor(github, root, linia_main[_wniesienie(root, linia_main, commit)], commit)
+    return None
 
 
 @dataclass(frozen=True)
@@ -456,8 +486,9 @@ def _ma(tekst: str, linia: str) -> bool:
     return any(obecna.strip() == linia or obecna.strip().startswith(f"{linia} |") for obecna in tekst.splitlines())
 
 
-def akcje_skryptow(github: GitHub, przypisane: dict[Autor, list[str]], run: str) -> list[Akcja]:
-    """Issue ``Przeżyte mutacje skilli z #N`` dla PR bez niego, a komentarz z liniami ``SKRYPT``, których jego issue nie ma."""
+def akcje_skryptow(github: GitHub, przypisane: dict[Autor, Skrypty], run: str) -> list[Akcja]:
+    """Issue ``Przeżyte mutacje skilli z #N`` dla PR bez niego, a komentarz z liniami ``SKRYPT`` i ``CZAS BLISKO LIMITU``,
+    których jego issue nie ma. Ostrzeżenie porównuje bez czasu, który zmienia się co noc, więc mutacja trafia do issue raz."""
 
     istniejace: dict[str, dict[str, Any]] = {}
     for znalezione in _strony(github, f"{REPO}/issues?labels={ETYKIETY[1]}&state=all"):
@@ -466,26 +497,62 @@ def akcje_skryptow(github: GitHub, przypisane: dict[Autor, list[str]], run: str)
     wynik: list[Akcja] = []
     for kto, skrypty in przypisane.items():
         tytul = f"Przeżyte mutacje skilli z {kto.w_tytule}"
-        linie = [f"SKRYPT {skrypt}" for skrypt in skrypty]
         issue = istniejace.get(tytul)
+        znane = "" if issue is None else "\n".join(
+            [issue.get("body") or "", *(komentarz["body"] or "" for komentarz in _strony(github, f"{REPO}/issues/{issue['number']}/comments"))]
+        )
+        padly = [linia for linia in (f"SKRYPT {skrypt}" for skrypt in skrypty.padly) if not _ma(znane, linia)]
+        blisko = [_linia_blisko(ostrzezenie) for ostrzezenie in skrypty.blisko if not _ma(znane, _klucz_blisko(ostrzezenie))]
         if issue is None:
-            tresc = [
-                f"Nocne skrypty mutacji skilli `main` ([run]({run})) padły po zmianie folderu skilla, którą ostatnio wniósł {kto.nazwa}:",
-                "",
-                *blok_kodu(linie),
-                "",
-                "Log runu pokazuje, która mutacja przeżyła sprawdzenie skilla (`NIEWYKRYTA`), straciła kotwicę (`NIEAKTUALNA`) "
-                "albo czy padła podstawa; część z planu odtwarzasz z `MUTACJE_CZESC=<k>/<n>`.",
-                "Dla każdej linii `SKRYPT` popraw sprawdzenie skilla albo tabelę mutacji, albo napisz w komentarzu "
-                "`SKRYPT <skrypt> | nie warto, bo <powód>`, a potem zamknij issue (ADR 0021).",
-            ]
-            wynik.append(Zaloz(tytul, "\n".join(tresc)))
+            tresc = []
+            if padly:
+                tresc += [
+                    f"Nocne skrypty mutacji skilli `main` ([run]({run})) padły po zmianie folderu skilla, którą ostatnio wniósł {kto.nazwa}:",
+                    "",
+                    *blok_kodu(padly),
+                    "",
+                    "Log runu pokazuje, która mutacja przeżyła sprawdzenie skilla (`NIEWYKRYTA`), straciła kotwicę (`NIEAKTUALNA`) "
+                    "albo czy padła podstawa; część z planu odtwarzasz z `MUTACJE_CZESC=<k>/<n>`.",
+                    "Dla każdej linii `SKRYPT` popraw sprawdzenie skilla albo tabelę mutacji, albo napisz w komentarzu "
+                    "`SKRYPT <skrypt> | nie warto, bo <powód>`.",
+                    "",
+                ]
+            if blisko:
+                tresc += [
+                    f"Mutacje nocnych skryptów mutacji skilli `main` ([run]({run})) po zmianie, którą ostatnio wniósł {kto.nazwa}, "
+                    "trwały ponad połowę limitu czasu mutacji:",
+                    "",
+                    *blok_kodu(blisko),
+                    "",
+                    RADA_BLISKO,
+                    "",
+                ]
+            wynik.append(Zaloz(tytul, "\n".join([*tresc, "Gdy każda linia ma poprawkę albo odpowiedź, zamknij issue (ADR 0021)."])))
             continue
-        znane = "\n".join([issue.get("body") or "", *(komentarz["body"] or "" for komentarz in _strony(github, f"{REPO}/issues/{issue['number']}/comments"))])
-        if nowe := [linia for linia in linie if not _ma(znane, linia)]:
-            tresc = [f"Nowe skrypty, które padły w [runie]({run}):", "", *blok_kodu(nowe)]
+        tresc = [f"Nowe skrypty, które padły w [runie]({run}):", "", *blok_kodu(padly)] if padly else []
+        if blisko:
+            tresc += [*([""] if tresc else []), f"Mutacje blisko limitu czasu w [runie]({run}):", "", *blok_kodu(blisko), "", RADA_BLISKO]
+        if tresc:
             wynik.append(Uzupelnij(issue["number"], "\n".join(tresc), issue["state"] == "closed"))
     return wynik
+
+
+RADA_BLISKO = (
+    "To jeszcze nie porażka, ale po limicie mutacja da `PRZEKROCZONY CZAS`, a skrypt padnie: dla każdej linii `CZAS BLISKO LIMITU` "
+    "przenieś mutację do mniejszego zakresu sprawdzenia albo przyspiesz sprawdzenie, albo napisz w komentarzu "
+    "`CZAS BLISKO LIMITU <skrypt> | <mutacja> | nie warto, bo <powód>`. Noc zgłasza mutację raz, choć jej czas zmienia się co noc."
+)
+
+
+def _klucz_blisko(ostrzezenie: NearLimit) -> str:
+    """Początek linii ostrzeżenia w issue: bez czasu, który zmienia się co noc, więc po nim noc nie zgłasza go drugi raz."""
+
+    return f"CZAS BLISKO LIMITU {ostrzezenie.script} | {ostrzezenie.name}"
+
+
+def _linia_blisko(ostrzezenie: NearLimit) -> str:
+    czesc = f" ({PART}={ostrzezenie.part})" if ostrzezenie.part else ""
+    return f"{_klucz_blisko(ostrzezenie)} | {ostrzezenie.seconds} s z limitu --limit-s {ostrzezenie.limit_s:g} s{czesc}"
 
 
 def wykonaj(github: GitHub, wykonane: Sequence[Akcja]) -> list[str]:
@@ -508,9 +575,10 @@ def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: 
     przezyte, problemy = zapisy(katalog, liczba)
     linie = wykonaj(github, akcje(github, przypisz(github, root, od, przezyte), run))
     padly: list[str] = []
+    blisko: list[tuple[str, NearLimit]] = []
     if plan_skilli is not None:
-        padly, problemy_skilli = wyniki_skilli(plan_skilli, katalog)
-        przypisane, bez_pr = przypisz_skrypty(github, root, od, padly)
+        padly, blisko, problemy_skilli = wyniki_skilli(plan_skilli, katalog)
+        przypisane, bez_pr = przypisz_skrypty(github, root, od, padly, blisko)
         problemy += problemy_skilli + bez_pr
         linie += wykonaj(github, akcje_skryptow(github, przypisane, run))
     print("\n".join(linie) or "MUTACJE NOCNE | nic nowego do zgłoszenia")
@@ -518,6 +586,7 @@ def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: 
         print(f"MUTACJE NOCNE FAIL | {'; '.join(problemy)}")
         return 1
     skille = "" if plan_skilli is None else f" | zadania skilli {len(plan_skilli.zadania)} | padło skryptów {len(padly)}"
+    skille += f" | blisko limitu czasu {len(blisko)}" if blisko else ""
     bez_werdyktu = sum(mutacja.bez_werdyktu for mutacja in przezyte)
     werdykty = f"przeżyło {len(przezyte) - bez_werdyktu}" + (f" | bez werdyktu {bez_werdyktu}" if bez_werdyktu else "")
     print(f"MUTACJE NOCNE OK | części {liczba} | {werdykty}{skille}")

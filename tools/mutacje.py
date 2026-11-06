@@ -74,7 +74,9 @@ części to tylko polecenia jej mutacji, a część bez mutacji kończy się ``M
 
 ``check_all`` drukuje na stderr czas polecenia każdej mutacji (linia ``CZAS``) i ostrzeżenie ``CZAS BLISKO LIMITU`` dla
 mutacji, której polecenie trwało ponad połowę ``--limit-s`` (``NEAR_LIMIT``), więc rosnący czas widać w logu, zanim
-stanie się PRZEKROCZONY CZAS; werdyktów, linii końcowej ani kodu wyjścia to nie zmienia.
+stanie się PRZEKROCZONY CZAS; werdyktów, linii końcowej ani kodu wyjścia to nie zmienia. Ostrzeżenie (``NearLimit``)
+czyta z wyjścia skryptu ``near_limits``, a nocne skrypty mutacji skilli zgłaszają je raz na mutację w issue PR-u
+(``tools/mutacje_nocne.py``).
 """
 
 from __future__ import annotations
@@ -621,9 +623,9 @@ def check_all(
 
     Przed linią werdyktu każdej mutacji linia ``CZAS`` na stderr podaje czas jej polecenia, a mutację, której polecenie
     trwało ponad ``NEAR_LIMIT`` limitu ``limit_s``, linia ``CZAS BLISKO LIMITU`` na stderr przed linią końcową wymienia ze
-    skryptem, częścią i limitem, zanim limit da PRZEKROCZONY CZAS (#911, #927). Log CI skryptu skilla ma obie, bo
-    ``tools/ci/mutacje_skilli.py`` łączy stderr ze stdout. To nie werdykt, więc stdout (werdykty i linia końcowa) i kod
-    wyjścia się nie zmieniają. Czas ma każda mutacja, której polecenie biegło, także po limicie, więc linię ``CZAS`` i
+    skryptem, częścią i limitem (``NearLimit.line``), zanim limit da PRZEKROCZONY CZAS (#911, #927). Log CI skryptu skilla
+    ma obie, bo ``tools/ci/mutacje_skilli.py`` łączy stderr ze stdout i z niego czyta ostrzeżenia (#935). To nie werdykt,
+    więc stdout (werdykty i linia końcowa) i kod wyjścia się nie zmieniają. Czas ma każda mutacja, której polecenie biegło, także po limicie, więc linię ``CZAS`` i
     ostrzeżenie dostaje też PRZEKROCZONY CZAS, który brama typów zmienia w WYKRYTA PRZEZ BRAMĘ TYPÓW, i ZAWIESZENIE,
     które ``in_ci`` liczy jako wykrycie; bez linii ``CZAS`` jest tylko mutacja, której polecenie nie biegło (NIEAKTUALNA, BEZ
     WERDYKTU przed startem).
@@ -670,8 +672,7 @@ def check_all(
         print(f"{verdict}: {mutation.name}{harm} → {last}", flush=True)
     for mutation, seconds in zip(mutations, times, strict=True):
         if seconds is not None and seconds > NEAR_LIMIT * limit_s:
-            near = f"CZAS BLISKO LIMITU: {_script()}{_shown_part()}: {mutation.name} → {seconds:.0f} s z limitu --limit-s {limit_s:g} s"
-            print(f"{near} (po nim PRZEKROCZONY CZAS: podziel zakres mutacji albo przyspiesz sprawdzenie)", file=sys.stderr, flush=True)
+            print(NearLimit(_script(), os.environ.get(PART, ""), mutation.name, round(seconds), limit_s).line, file=sys.stderr, flush=True)
     print("MUTACJE OK" if not failures else f"MUTACJE: {failures} bez oczekiwanego wyniku")
     return 1 if failures else 0
 
@@ -683,9 +684,36 @@ def _script() -> str:
     return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else sys.argv[0]
 
 
-def _shown_part() -> str:
-    part = os.environ.get(PART)
-    return f" ({PART}={part})" if part else ""
+@dataclass(frozen=True)
+class NearLimit:
+    """Ostrzeżenie ``CZAS BLISKO LIMITU``: mutacja ``name`` skryptu ``script`` (część ``part`` z ``MUTACJE_CZESC``, pusta
+    bez niej), której polecenie trwało ``seconds`` z limitu ``limit_s``. ``check_all`` drukuje je linią ``line``, a
+    ``near_limits`` czyta je z wyjścia skryptu, więc noc dostaje je przez zapis wykonania planu CI (#935)."""
+
+    script: str
+    part: str
+    name: str
+    seconds: int
+    limit_s: float
+
+    @property
+    def line(self) -> str:
+        part = f" ({PART}={self.part})" if self.part else ""
+        near = f"CZAS BLISKO LIMITU: {self.script}{part}: {self.name} → {self.seconds} s z limitu --limit-s {self.limit_s:g} s"
+        return f"{near} (po nim PRZEKROCZONY CZAS: podziel zakres mutacji albo przyspiesz sprawdzenie)"
+
+
+# ``NearLimit.line`` na początku linii; nazwa mutacji kończy się przed ostatnią strzałką przed czasem.
+_NEAR = re.compile(
+    rf"^CZAS BLISKO LIMITU: (?P<script>\S+)(?: \({PART}=(?P<part>[0-9]+/[0-9]+)\))?: (?P<name>.+) → (?P<seconds>[0-9]+) s z limitu --limit-s (?P<limit>\S+) s \(po nim ",
+    re.MULTILINE,
+)
+
+
+def near_limits(output: str) -> list[NearLimit]:
+    """Ostrzeżenia ``CZAS BLISKO LIMITU``, które ``check_all`` wydrukował w ``output``, w ich kolejności."""
+
+    return [NearLimit(found["script"], found["part"] or "", found["name"], int(found["seconds"]), float(found["limit"])) for found in _NEAR.finditer(output)]
 
 
 def _from_file(path: Path, command: tuple[str, ...], *, own_command: bool = True) -> list[Mutation]:

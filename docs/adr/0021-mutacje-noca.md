@@ -8,6 +8,7 @@ Zastępuje też część ADR 0020 o skryptach mutacji skilli na PR: biegną noc�
 Opiera się na [ADR 0014](0014-tata-dostaje-tylko-wydania.md) i ADR 0020, według których granicą bezpieczeństwa taty jest Wydanie, a nie PR.
 Zmieniona 31.10 (#701, zgoda Maksa w wątku T3: „okej zgadzam się na wdrożenie tego”): skrypt mutacji modelu TLA+ skilla biegnie też na PR, który zmienia jego model (sekcja Decyzja).
 Zmieniona 3.11 (cel Maksa w triage 3.11: noc ma znów każdej nocy dawać wynik i zbiegać do zielonego po zaległości): noc ma limit mutacji, a zaległość przechodzi na kolejne noce; część mieści się w limicie czasu także z najdroższymi zmierzonymi mutacjami, a mutacja bez werdyktu po limicie części trafia do issue zamiast zatrzymać noc (sekcje Decyzja, Konsekwencje i Odrzucone warianty).
+Zmieniona 6.11 (#935, Maks 5.11: „gotowe dla agenta”): ostrzeżenie `CZAS BLISKO LIMITU` skryptu mutacji skilla z nocy trafia do issue PR-u (sekcja Decyzja).
 
 ## Kontekst
 
@@ -68,6 +69,8 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
 - Skrypty mutacji skilli też nie biegną na PR: Mutation checks na PR to same podstawy `ci:` skilli, których `pilnuje:` albo folder trafia zmiana.
   Ta sama noc uruchamia skrypty skilli, których folder, runner mutacji albo sprawdzenie zmieniło się od jej bazy, w zadaniach planu `tools/plan_ci.py plan --zdarzenie noc`, a pełne CI `main` dalej uruchamia każdy skrypt.
   Skrypt, który padł, trafia linią `SKRYPT <skrypt>` do issue `Przeżyte mutacje skilli z #N` z etykietą `ready-for-agent` PR-u, który ostatni zmienił folder skilla, bez powtórzeń; zadanie bez zapisu czerwieni przebieg.
+  Mutacja skryptu, której polecenie trwało ponad połowę limitu czasu mutacji (`CZAS BLISKO LIMITU`, `tools/mutacje.py`), trafia do tego samego issue linią `CZAS BLISKO LIMITU <skrypt> | <mutacja> | <czas> s z limitu --limit-s <limit> s`, także gdy skrypt przeszedł.
+  Trafia tam raz, bo issue porównuje skrypt i mutację bez czasu, który zmienia się co noc, więc rosnący czas mutacji widać w issue, zanim `PRZEKROCZONY CZAS` zaczerwieni skrypt (#911, #935).
   `tools/skille_dla_zmiany.py` wymienia te skrypty w linii `LICZY NOC`, więc agent nie uruchamia ich przed pushem.
 - Wyjątkiem jest skrypt mutacji modelu TLA+, którego każda mutacja psuje plik w folderze `model/` skilla (dziś `check_model_kolejki_mutations.py` skilla `verify-kolejka-skrzynki`).
   Biegnie na PR, gdy PR zmienia plik w tym folderze (`*.tla`, `*.cfg`, `oczekiwane.json`), sam skrypt albo sprawdzenie, które uruchamiają jego mutacje (`sprawdz_model_kolejki.py`), a wybiera go to samo `model_watched` dla planu PR i dla linii `LICZY CI` w `tools/skille_dla_zmiany.py`: oba czytają jeden wynik zakresu runu PR (`tools/lib/zakres_runu.py`, #720).

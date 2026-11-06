@@ -12,8 +12,10 @@ zakresu swojego zdarzenia między zadania Mutation checks i uruchamia je tym sam
 Skrypt nie może zgubić się po cichu. FAIL dostaje plik ``.py`` w skillu z ``mutation`` w nazwie, który nie pasuje do
 wzorca, skrypt mutacji wskazany w ``SKILL.md`` skilla, którego nie ma, i zły klucz ``ci:`` albo ``ci-czesci:``. FAIL
 dostaje też skrypt, który przekroczył limit czasu, skończył się kodem innym niż 0 albo nie wydrukował na końcu
-``MUTACJE OK``. Skrypt biegnie przez ``tools/lib/potomne.py``: jego procesy potomne giną po jego końcu i po limicie, a
-cały skrypt ginie razem z runnerem, choćby zabitym przez SIGKILL. Kończy się ``MUTACJE SKILLI OK`` albo
+``MUTACJE OK``. Ostrzeżenia ``CZAS BLISKO LIMITU`` z wyjścia skryptu (``tools/mutacje.py``) ``run`` oddaje obok
+wyniku, a plan CI zapisuje je w zapisie wykonania, z którego noc zgłasza je w issue PR-u. Skrypt biegnie przez
+``tools/lib/potomne.py``: jego procesy potomne giną po jego końcu i po limicie, a cały skrypt ginie razem z runnerem,
+choćby zabitym przez SIGKILL. Kończy się ``MUTACJE SKILLI OK`` albo
 ``MUTACJE SKILLI FAIL | <skrypty>``.
 
     py -3 tools/ci/mutacje_skilli.py                  # Windows
@@ -24,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Mapping
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import subprocess
@@ -34,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 from kroki_skilli import ROOT, Step
+import mutacje
 import potomne
 from zakres_runu import Zdarzenie, zakres
 
@@ -41,11 +45,19 @@ from zakres_runu import Zdarzenie, zakres
 LIMIT_S = 30 * 60
 
 
-def run(step: Step, limit_s: float = LIMIT_S, env: Mapping[str, str] | None = None) -> str | None:
-    """Uruchamia krok z echem wyjścia i zmiennymi ``env``; zwraca powód porażki albo ``None``.
+@dataclass(frozen=True)
+class Wynik:
+    """Powód porażki kroku (``None``: przeszedł) i ostrzeżenia ``CZAS BLISKO LIMITU`` z wyjścia jego ``check_all``."""
+
+    powod: str | None
+    blisko_limitu: tuple[mutacje.NearLimit, ...] = ()
+
+
+def run(step: Step, limit_s: float = LIMIT_S, env: Mapping[str, str] | None = None) -> Wynik:
+    """Uruchamia krok z echem wyjścia i zmiennymi ``env``.
 
     Skrypt mutacji kończy się linią ``VERDICT``, podstawie wystarczy kod 0. Plan CI daje części skryptu
-    ``MUTACJE_CZESC`` przez ``env``.
+    ``MUTACJE_CZESC`` przez ``env``. Krok po limicie nie oddaje ostrzeżeń, bo jego wyjścia już nie ma.
     """
 
     command = step.command
@@ -58,12 +70,13 @@ def run(step: Step, limit_s: float = LIMIT_S, env: Mapping[str, str] | None = No
             echo=True,
         )
     except subprocess.TimeoutExpired:
-        return f"przekroczył limit {limit_s:.0f} s"
+        return Wynik(f"przekroczył limit {limit_s:.0f} s")
+    near = tuple(mutacje.near_limits(done.stdout))
     if done.returncode != 0:
-        return f"kod wyjścia {done.returncode}"
+        return Wynik(f"kod wyjścia {done.returncode}", near)
     if step.verdict is not None and [line.strip() for line in done.stdout.splitlines() if line.strip()][-1:] != [step.verdict]:
-        return f"brak końcowej linii {step.verdict}"
-    return None
+        return Wynik(f"brak końcowej linii {step.verdict}", near)
+    return Wynik(None, near)
 
 
 
@@ -81,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         shown = step.name if step.verdict else f"{step.name}: {' '.join(step.command)}"
         print(f"== {shown}", flush=True)
         started = time.monotonic()
-        reason = run(step, args.limit_s)
+        reason = run(step, args.limit_s).powod
         elapsed = f"({time.monotonic() - started:.0f} s)"
         print(f"OK   {step.name} {elapsed}" if reason is None else f"FAIL {step.name} {elapsed}: {reason}", flush=True)
         if reason is not None:
