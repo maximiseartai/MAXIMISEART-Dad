@@ -467,6 +467,20 @@ def test_noc_po_udanym_przebiegu_z_wygaslym_zakresem_konczy_sie_fail_zamiast_pom
         mutacje_nocne.baza(github, repo, "", TERAZ)
 
 
+def test_reczna_noc_z_od_bez_wspolnego_przodka_z_head_konczy_sie_fail_z_przyczyna(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, shas = _repo_z_datami(tmp_path, monkeypatch)
+    for modul in (mutacje_nocne, mutacje_zmiany):
+        monkeypatch.setattr(modul, "ROOT", repo)
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
+
+    kod = mutacje_nocne.main(["plan", "--od", shas["obcy"]])
+
+    assert (kod, capsys.readouterr().out.splitlines()[-1]) == (1, f"MUTACJE NOCNE FAIL | --od {shas['obcy']} nie ma wspólnego przodka z HEAD")
+    assert not (tmp_path / "output").exists()
+
+
 ZLY_WYJATEK = "src/pakiet/a.py:4: wyjątek musi mieć postać `# mutacje-zmiany: <powód> | do RRRR-MM-DD | zgoda <kto>`"
 
 
@@ -575,15 +589,18 @@ def _dopisz(repo: Path, numer: int, *pliki: int) -> str:
     return commit(repo, f"Zmień m{numer} (#{numer})")
 
 
-def _plan_nocy(github: GitHubWPamieci, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], noc: int) -> dict[str, str]:
-    """``baza``, ``do``, ``liczba`` części i ``mutacje`` z planu nocy oraz ``zakres``, plik artefaktu ``zakres-nocy``."""
+def _plan_nocy(
+    github: GitHubWPamieci, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], noc: int, od: str = ""
+) -> dict[str, str]:
+    """``baza``, ``do``, ``liczba`` części i ``mutacje`` z planu nocy (z ``od`` ręcznego runu), ``linia`` planu oraz
+    ``zakres``, plik artefaktu ``zakres-nocy``."""
 
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / f"output-{noc}"))
     zakres = tmp_path / f"zakres-{noc}.json"
-    assert mutacje_nocne.zaplanuj(github, "", zakres) == 0
+    assert mutacje_nocne.zaplanuj(github, od, zakres) == 0
     plan = capsys.readouterr().out.splitlines()[-1]
     output = dict(linia.split("=", 1) for linia in (tmp_path / f"output-{noc}").read_text(encoding="utf-8").splitlines())
-    return {**output, "mutacje": plan.split(" | mutacje ")[1].split(" |")[0], "zakres": str(zakres)}
+    return {**output, "mutacje": plan.split(" | mutacje ")[1].split(" |")[0], "zakres": str(zakres), "linia": plan}
 
 
 def test_noc_z_zalegloscia_mutuje_najwyzej_limit_a_kolejne_noce_przerabiaja_ja_do_head_takze_po_czerwonej(
@@ -723,6 +740,46 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
     commit(repo, "Dopisz b (#3)")
     nastepna = _plan_nocy(github, tmp_path, monkeypatch, capsys, 3)
     assert (nastepna["baza"], nastepna["mutacje"]) == (plan["do"], "2")
+
+
+def test_reczna_noc_z_od_spoza_linii_main_liczy_od_wspolnego_przodka_te_same_mutacje_co_jej_czesci(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ręczny run z ``od`` z gałęzi bocznej, której zmiany ``b.py`` nie ma na ``main``. Noc mutuje zmiany ``main`` od
+    wspólnego przodka HEAD i ``od``, czyli tylko PR #1 w ``a.py`` (granica porównania i cofnięcie fragmentu), a nie cofnięcie
+    zmiany gałęzi bocznej: tyle mutacji liczy plan i tyle razem mutują jego części."""
+
+    pliki = {
+        ".gitignore": "__pycache__/\n",
+        "src/rozliczenia/__init__.py": "",
+        "src/rozliczenia/a.py": FUNKCJA,
+        "src/rozliczenia/b.py": FUNKCJA.replace("def a", "def b"),
+        "tests/test_a.py": "from rozliczenia.a import a\n\n\ndef test_a() -> None:\n    assert a(3) is True\n    assert a(2) is False\n",
+    }
+    # Pliki wchodzą commitem po korzeniu, jak na ``main``: ``git blame`` skraca SHA commitu korzenia.
+    repo = repository(tmp_path / "repo", {"README.md": "repozytorium\n"})
+    git(repo, "checkout", "--quiet", "-b", "main")
+    commit(repo, "korzeń")
+    for sciezka, tresc in pliki.items():
+        (repo / sciezka).parent.mkdir(parents=True, exist_ok=True)
+        (repo / sciezka).write_text(tresc, encoding="utf-8")
+    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/mutacje_zmiany.py", "tools/ci/pytest_pokrycie.py", "tools/ci/pokrycie_procesu.py"))
+    wspolny = commit(repo, "baza")
+    git(repo, "checkout", "--quiet", "-b", "boczna")
+    (repo / "src" / "rozliczenia" / "b.py").write_text("def b(x: int) -> bool:\n    return x < 5 and x > 0\n", encoding="utf-8")
+    boczny = commit(repo, "Zmiana gałęzi bocznej")
+    git(repo, "checkout", "--quiet", "main")
+    (repo / "src" / "rozliczenia" / "a.py").write_text(FUNKCJA.replace("x > 1", "x > 2"), encoding="utf-8")
+    head = commit(repo, "Zmień a (#1)")
+    for modul in (mutacje_nocne, mutacje_zmiany):
+        monkeypatch.setattr(modul, "ROOT", repo)
+
+    plan = _plan_nocy(GitHubWPamieci(), tmp_path, monkeypatch, capsys, 2, od=boczny)
+    czesci = [_czesc(repo, plan, numer, tmp_path / "zapisy") for numer in range(1, int(plan["liczba"]) + 1)]
+
+    assert (plan["mutacje"], [czesc.stdout.splitlines()[-1] for czesc in czesci]) == ("2", ["MUTACJE ZMIANY OK | mutacje=2 | wyjątki=0 | innego systemu=0"])
+    assert plan["linia"] == f"MUTACJE NOCNE PLAN | baza {wspolny} (merge-base HEAD z --od {boczny}) | do {head} | mutacje 2 | części 1 | z Chromium 0"
+    assert (plan["baza"], json.loads(Path(plan["zakres"]).read_text(encoding="utf-8"))["baza"]) == (wspolny, wspolny)
 
 
 # Najgorsze czasy nocy 31.10–3.11 (runy 41179652907, 41285996039, 41408995300, 41601085650, ADR 0021). Pokrycie części
