@@ -684,8 +684,9 @@ zakazaną wartość z przeczytanych plików i dopisuje uwagę techniczną z kolu
 miejscem, bez wartości. Każdy wiersz Rejestru zleceń strażnik zna w jednym
 położeniu: pierwszy wiersz bloku wklejenia dwie kolumny na lewo od nagłówków,
 bo z aplikacji firmowej przychodzi zawsze tak przesunięty, a każdy inny pod
-nagłówkami. Wiersz ze Śladem przesunięcia i pierwszy wiersz bloku z datą z
-godziną pod `DATA GODZ. POCZ.` (stoi na miejscu) zna w obu.
+nagłówkami. Pierwszy wiersz zna tylko przesunięty, gdy jego przesunięcie widać:
+dwie kolumny przed `DATA GODZ. POCZ.` ma datę z godziną, a pod nią nie. Inny
+pierwszy wiersz bloku i wiersz ze Śladem przesunięcia zna w obu.
 _Avoid_: reguła prywatności (dawne listy pól każdej wysyłki), anonimizacja
 
 ## Ślad przesunięcia

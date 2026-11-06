@@ -147,8 +147,8 @@ def read_register(
     """Arkusze ze zleceniami Rejestru zleceń albo zatrzymanie, gdy Rejestru nie da się odczytać albo nie ma nagłówków.
 
     ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza w jednym położeniu (ADR 0025):
-    pierwszego wiersza bloku wklejenia (``RegisterSheet.shifted_rows``) ``raw_orders.SHIFT`` kolumn na lewo od nagłówka,
-    każdego innego pod nim, a wiersza, który widocznie łamie fakt domeny (``RegisterSheet.both_rows``), w obu (#918).
+    pierwszego wiersza bloku wklejenia z widocznym przesunięciem (``RegisterSheet.shifted_rows``) ``raw_orders.SHIFT``
+    kolumn na lewo od nagłówka, wiersza z siatki (``RegisterSheet.both_rows``) w obu, a każdego innego pod nim (#918).
     ``copy`` poznaje każdy przeczytany wiersz (``_copied``), wiersze ze śladem przesunięcia i chwilę zmiany Rejestru
     sprzed jego odczytu.
     """

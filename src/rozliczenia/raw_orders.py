@@ -17,9 +17,9 @@ lewo od swojego nagłówka, i położenia, w których pamięć reguły danych zn
 
 Pamięć reguły danych zna każdy wiersz w jednym położeniu (decyzja Maksa z 5.11.2026, ADR 0025): pierwszy wiersz bloku
 wklejenia (``first_in_block``) przesunięty o ``SHIFT`` kolumn w lewo, bo tak przychodzi z aplikacji firmowej zawsze (fakt
-domeny: przesunięty jest tylko pierwszy wklejony wiersz), a każdy inny pod nagłówkiem. Siatką jest tylko wiersz, który
-fakt domeny widocznie łamie (``both_positions``): ten wiersz pamięć zna w obu położeniach, a o wierszu ze śladem
-przesunięcia (``Shifts.traced``) Logi mówią, że fakt jest złamany.
+domeny: przesunięty jest tylko pierwszy wklejony wiersz), a każdy inny pod nagłówkiem. Siatka (``both_positions``) daje
+oba położenia pierwszemu wierszowi bloku, którego przesunięcia nie widać (``shift_visible``), i innemu wierszowi ze
+śladem przesunięcia, a o tym drugim (``Shifts.traced``) Logi mówią, że fakt jest złamany.
 
 Przeszkody: wiersz z wyglądem z aplikacji nad uporządkowanym wierszem, Surowe zlecenie bez daty z godziną albo bez
 Wykonawcy i blok z więcej niż jednego dnia. Pierwsza wymaga przeglądu nad blokiem (``_above``): od ostatniego
@@ -364,7 +364,7 @@ class Shifts:
     lewo, bo pod ``DATA GODZ. POCZ.`` nie ma daty z godziną; ``None``: bez niego. ``first_row``: pierwszy wiersz bloku
     Surowych zleceń (``None``: bez bloku), w nim pierwszy wiersz bloku wklejenia z ``first_in_block``. Pamięć reguły
     danych zna wiersz w położeniach ``known``: pierwszy wiersz bloku wklejenia tylko przesunięty, każdy inny tylko pod
-    nagłówkiem, a wiersz, który widocznie łamie fakt domeny (``both``), w obu położeniach.
+    nagłówkiem, a wiersz z siatki (``both``) w obu położeniach.
     """
 
     shifted_row: int | None
@@ -405,19 +405,29 @@ def shift_traced(left_of_date: object) -> bool:
     return _is_date(left_of_date)
 
 
+def shift_visible(left_of_date: object, date: object) -> bool:
+    """Przesunięcie wiersza widać: ślad przesunięcia (``shift_traced``), a pod ``DATA GODZ. POCZ.`` (``date``) nie ma
+    daty z godziną. Tak stoi u taty każdy przesunięty pierwszy wiersz z aplikacji."""
+
+    return shift_traced(left_of_date) and not _is_date(date)
+
+
 def both_positions(*, first: bool, left_of_date: object, date: object) -> bool:
     """Siatka reguły położenia (ADR 0025): czy pamięć reguły danych zna wiersz w obu położeniach, a nie w jednym.
     ``first``: wiersz jest pierwszym wierszem swojego bloku wklejenia, ``left_of_date``: wartość ``SHIFT`` kolumn na
     lewo od ``DATA GODZ. POCZ.``, ``date``: wartość pod nią.
 
-    Tak, gdy wiersz widocznie łamie fakt domeny: inny wiersz niż pierwszy ma ślad przesunięcia (``shift_traced``) albo
-    pierwszy wiersz bloku ma datę z godziną pod ``DATA GODZ. POCZ.``, czyli stoi tak, jak Planowanie czyta wiersz na
-    miejscu, a przesunięty z aplikacji ma tam swój ``ADRES``. Tak wygląda wiersz, który uchodzi za pierwszy, bo tata wpisał
-    coś w Calibri 8 w wiersz nad nim (przegląd #984 r1); reguła wyglądu z większości komórek przestawia u taty granice
-    dziesiątek bloków. Uwagę w Logach ma tylko ślad (``Shifts.traced``).
+    Pierwszy wiersz bloku pamięć zna tylko przesunięty, gdy jego przesunięcie widać (``shift_visible``). Każdy inny
+    pierwszy wiersz (z datą z godziną pod ``DATA GODZ. POCZ.``, z datą tekstem, bez daty) zna w obu, bez uwagi w Logach,
+    bo sam kształt treści nie mówi, gdzie wiersz stoi. Tak wygląda wiersz, który uchodzi za pierwszy, bo tata wpisał coś
+    w Calibri 8 w wiersz nad nim (przegląd #984 r1 i r2); granica bloku zostaje z kroju, bo reguła wyglądu z większości
+    komórek przestawia u taty granice dziesiątek bloków. Inny wiersz pamięć zna w obu, gdy ma ślad przesunięcia
+    (``shift_traced``), czyli widocznie łamie fakt domeny; tylko o nim Logi mają uwagę (``Shifts.traced``).
     """
 
-    return _is_date(date) if first else shift_traced(left_of_date)
+    if first:
+        return not shift_visible(left_of_date, date)
+    return shift_traced(left_of_date)
 
 
 def shifts(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Shifts:

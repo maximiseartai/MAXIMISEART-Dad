@@ -92,11 +92,12 @@ class RegisterSheet:
     uporządkowanego (``raw_orders.ordered_look``), nad którym najbliższy wiersz z danymi odczytu ma ten wygląd albo nie
     ma żadnego, jak w INTERMAX (``raw_orders.first_in_block``). Z aplikacji firmowej przychodzi on zawsze
     ``raw_orders.SHIFT`` kolumn na lewo od nagłówków (fakt domeny, ADR 0025), więc pamięć reguły danych zna jego
-    ``ADRES`` i ``NUMER UMOWY`` tylko tam (#918), chyba że ma datę z godziną pod ``DATA GODZ. POCZ.`` (``both_rows``).
-    Tak stoi wiersz na górze odczytu okresu ze środka arkusza, bo zawężenie zaczyna się od takiej daty."""
+    ``ADRES`` i ``NUMER UMOWY`` tylko tam (#918), gdy jego przesunięcie widać (``raw_orders.shift_visible``). Pierwszy
+    wiersz bez widocznego przesunięcia jest w ``both_rows``, np. wiersz na górze odczytu okresu ze środka arkusza, bo
+    zawężenie zaczyna się od daty z godziną pod ``DATA GODZ. POCZ.``."""
     both_rows: Mapping[int, Mapping[int, object]] = field(default_factory=lambda: MappingProxyType({}))
-    """Wiersze z danymi, które widocznie łamią fakt domeny (``raw_orders.both_positions``), → wartości całego wiersza:
-    pamięć zna je w obu położeniach (ADR 0025)."""
+    """Wiersze z danymi z siatki (``raw_orders.both_positions``: pierwszy wiersz bloku bez widocznego przesunięcia i
+    inny wiersz ze śladem przesunięcia) → wartości całego wiersza: pamięć zna je w obu położeniach (ADR 0025)."""
     traced_rows: frozenset[int] = frozenset()
     """Wiersze z ``both_rows`` ze śladem przesunięcia, które nie są pierwszym wierszem bloku: Logi mają o nich uwagę."""
 

@@ -6,18 +6,17 @@ kolumnami ``AKCJE`` i ``UWAGI``. Arkusz zleceń daje swoje wiersze od dołu jako
 bez openpyxl: ~42 tys. wierszy taty to dziesiątki MB XML, a rozpoznanie potrzebuje tylko dołu arkusza. Komórki
 ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych pracy Centrum (``forbidden``,
 ADR 0025) w jednym położeniu (``raw_orders.Shifts.known``): pierwszy wiersz bloku wklejenia dwie kolumny na lewo od
-nagłówka, każdy inny pod nim, a wiersz, który widocznie łamie fakt domeny, w obu. Zakazane kolumny
-to te z nagłówkiem zakazanej kolumny w wierszu 1 (``client_data.forbidden_columns``): INTERMAX nie ma stałego układu
+nagłówka, każdy inny pod nim, a wiersz z siatki (``raw_orders.both_positions``) w obu. Zakazane kolumny to te z
+nagłówkiem zakazanej kolumny w wierszu 1 (``client_data.forbidden_columns``): INTERMAX nie ma stałego układu
 kolumn, więc kolumnę zna się po nagłówku, tak jak kolumny ``COLUMNS``.
 
 Kopia wejścia Uruchomienia z Centrum (``copy``, #842) dostaje bajty, z których ``Register.read`` czyta INTERMAX, z
 chwilą zmiany sprzed odczytu, a z każdego arkusza zleceń nagłówki i wklejenie (``raw_orders.pasted_rows``): te same
 fakty wierszy, które rozpoznaje Planowanie, nie cały Rejestr. Wiersz ma w Kopii komórki od A do ``UWAGI``, te, które
 Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, także przesunięty pierwszy wiersz,
-bez zakazanych kolumn. Wiersz, który widocznie łamie fakt domeny (``raw_orders.Shifts.both``), ma w Kopii tylko
-komórki dozwolone w obu położeniach i datę z godziną spod ``DATA GODZ. POCZ.``, a wiersz ze śladem przesunięcia arkusz
-ma w ``traced_rows``. Kolumn
-z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie ich nie zapisuje, nie mają nagłówka, a jedna z nich u taty
+bez zakazanych kolumn. Wiersz z siatki (``raw_orders.Shifts.both``) ma w Kopii tylko komórki dozwolone w obu
+położeniach i datę z godziną spod ``DATA GODZ. POCZ.``, a wiersz ze śladem przesunięcia arkusz ma w ``traced_rows``.
+Kolumn z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie ich nie zapisuje, nie mają nagłówka, a jedna z nich u taty
 niesie części adresu ze słowami sklejonymi ``_``, których strażnik nie rozpozna jako wartości ``ADRES``. Nad
 wklejeniem Kopia ma tylko numery ostatniego uporządkowanego i żółtego wiersza (``raw_orders.above_paste``), od których
 Planowanie liczy wiersz dnia, bez ich treści (#847).
@@ -232,8 +231,8 @@ class OrderSheet:
 
         Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych Rejestru w położeniu
         z ``raw_orders.Shifts.known``: pierwszy wiersz każdego bloku wklejenia (``raw_orders.first_in_block``, także nad
-        uporządkowanymi) o ``SHIFT`` kolumn na lewo od nagłówka, każdy inny pod nim, a wiersz, który widocznie łamie fakt
-        domeny (``raw_orders.Shifts.both``), w obu położeniach.
+        uporządkowanymi) o ``SHIFT`` kolumn na lewo od nagłówka, każdy inny pod nim, a wiersz z siatki
+        (``raw_orders.Shifts.both``) w obu położeniach.
         """
 
         forbidden = self._register.forbidden
@@ -247,10 +246,9 @@ class OrderSheet:
     def copied(self, workbook: WorkbookCopy) -> None:
         """Arkusz w Kopii wejścia ``workbook``: nagłówki i wklejone wiersze z komórkami od A do ``UWAGI``, tymi, które
         Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, bez zakazanych kolumn;
-        ``UnsupportedShape`` przed dopisaniem arkusza, gdy wierszy nie da się rozdzielić. Wiersz, który widocznie łamie
-        fakt domeny (``raw_orders.Shifts.both``), jest w ``uncertain_rows`` (ze śladem przesunięcia także w
-        ``traced_rows``) i ma tylko
-        komórki, które przy obu przesunięciach stoją pod nagłówkiem od A do ``UWAGI`` innym niż zakazany, oraz datę z
+        ``UnsupportedShape`` przed dopisaniem arkusza, gdy wierszy nie da się rozdzielić. Wiersz z siatki
+        (``raw_orders.Shifts.both``) jest w ``uncertain_rows`` (ze śladem przesunięcia także w ``traced_rows``) i ma
+        tylko komórki, które przy obu przesunięciach stoją pod nagłówkiem od A do ``UWAGI`` innym niż zakazany, oraz datę z
         godziną spod ``DATA GODZ. POCZ.`` (data z godziną nie jest wartością zakazanej kolumny, a bez niej odtworzenie
         nie powtórzy Uruchomienia, #847). Wiersze idą przez ``rows_from_bottom``, więc pamięć reguły danych zna ich
         zakazane komórki. Z dołu arkusza Kopia dostaje też numery ostatniego uporządkowanego i żółtego wiersza

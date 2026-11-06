@@ -2,8 +2,10 @@
 których fakt domeny nie zachodzi, a adres albo numer Orange wychodzi, i termin ich przeglądu.
 
 Reguła zna każdy wiersz w jednym położeniu: pierwszy wiersz bloku wklejenia przesunięty o dwie kolumny w lewo, każdy
-inny pod nagłówkiem, a inny wiersz z datą z godziną dwie kolumny przed ``DATA GODZ. POCZ.`` w obu. Przypadek klasy z
-``KNOWN`` jest ``xfail`` strict: po terminie znów pada, a naprawiony pada od razu.
+inny pod nagłówkiem. W obu zna pierwszy wiersz bloku, którego przesunięcia nie widać (``raw_orders.shift_visible``: data
+z godziną dwie kolumny przed ``DATA GODZ. POCZ.``, a pod nią nie), i inny wiersz z datą z godziną dwie kolumny przed
+``DATA GODZ. POCZ.`` (``raw_orders.both_positions``). Przypadek klasy z ``KNOWN`` jest ``xfail`` strict: po terminie
+znów pada, a naprawiony pada od razu.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ KNOWN_UNTIL = date(2027, 2, 5)
 """Termin przeglądu ryzyka przyjętego przez Maksa: po nim przypadki ``KNOWN`` znów padają."""
 KNOWN = {
     "pierwszy_na_miejscu": "Fakt domeny złamany (ryzyko przyjęte przez Maksa 5.11.2026, ADR 0025): pierwszy wiersz bloku "
-    "wklejenia nie jest przesunięty w całości, a pamięć reguły danych zna go tylko przesuniętego",
+    "wklejenia z widocznym przesunięciem nie jest przesunięty w całości, a pamięć reguły danych zna go tylko przesuniętego",
     "przesuniety_inny_bez_sladu": "Fakt domeny złamany (ryzyko przyjęte przez Maksa 5.11.2026, ADR 0025): przesunięty jest "
     "wiersz inny niż pierwszy, bez daty z godziną dwie kolumny przed DATA, więc pamięć reguły danych zna go tylko pod "
     "nagłówkiem",
