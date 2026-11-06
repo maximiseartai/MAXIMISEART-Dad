@@ -62,8 +62,8 @@ _ORDERED_FACE: Final = ("Calibri", 8.0)
 _BLANK_ROWS_WITHOUT_YELLOW: Final = 10
 _EARLIER_ROWS: Final = 10
 """Tyle kolejnych uporządkowanych wierszy z wcześniejszym dniem kończy przegląd nad blokiem."""
-_COMPANY_SUFFIX: Final = re.compile(r"[\s-]+S\.?\s*A\.?\s*$", re.IGNORECASE)
-"""Dopisek ``S.A.`` za nazwą operatora (także ``SA``, ``S.A``), oddzielony spacją albo myślnikiem."""
+_COMPANY_SUFFIX: Final = re.compile(r"[\s-]*S\.?\s*A\.?\s*$", re.IGNORECASE)
+"""Dopisek ``S.A.`` za nazwą operatora (także ``SA``, ``S.A``), oddzielony spacją, myślnikiem albo niczym: ``NetiaSA``."""
 
 
 @dataclass(frozen=True)
@@ -594,7 +594,7 @@ def _name(value: object) -> str:
 
 
 def _operator(text: str) -> str:
-    """Nazwa operatora z ``CZYNNOŚCI`` jak ``_name``, a do tego bez dopisku ``S.A.``: ``Netia S.A.`` to ``netia``."""
+    """Nazwa operatora z ``CZYNNOŚCI`` jak ``_name``, a do tego bez dopisku ``S.A.``: ``Netia S.A.`` i ``NetiaSA`` to ``netia``."""
 
     return _name(_COMPANY_SUFFIX.sub("", text))
 

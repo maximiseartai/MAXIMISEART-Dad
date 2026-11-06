@@ -16,7 +16,7 @@ from pathlib import Path
 import re
 
 import pytest
-from hypothesis import assume, given, settings
+from hypothesis import assume, example, given, settings
 from hypothesis import strategies as st
 
 from rozliczenia import client_data
@@ -229,7 +229,7 @@ def test_kolor_operatora_i_wpis_nie_zaleza_od_wielkosci_liter_spacji_myslnikow_a
     written = data.draw(_spaced(name))
     suffix = data.draw(st.sampled_from(("", "S.A.", "SA", "S.A", "S. A.")))
     if suffix:
-        written += data.draw(st.sampled_from((" ", "-", " - ", "  "))) + data.draw(_mixed_case(suffix))
+        written += data.draw(st.sampled_from(("", " ", "-", " - ", "  "))) + data.draw(_mixed_case(suffix))
     written = data.draw(st.sampled_from(("", " ", "  "))) + written + data.draw(st.sampled_from(("", " ", "  ")))
 
     placed = _placement(written, data.draw(_spaced(WHOLESALE_INSTALLATION)))
@@ -252,10 +252,13 @@ def test_kolor_operatora_i_wpis_nie_zaleza_od_wielkosci_liter_spacji_myslnikow_a
 
 @PROPERTY
 @given(st.sampled_from(OPERATORS), st.text(LETTERS, max_size=3), st.text(LETTERS, max_size=3))
+@example("Netia", "", "SAT")
+@example("Netia", "X", "SA")
 def test_nazwa_operatora_z_doklejonymi_literami_to_inny_operator(name: str, before: str, after: str) -> None:
     assume(before or after)
-    # Doklejone ``SA`` (``NetiaSA``) czeka na Decyzję Maksa: GLOSSARY nie mówi, czy dopisek bez spacji to dalej Netia.
-    assume(after.casefold() != "sa")
+    # Samo ``SA`` doklejone za nazwą (``NetiaSA``) to dopisek ``S.A.`` bez spacji, więc ten sam operator (decyzja Maksa
+    # z 6.11.2026, GLOSSARY.md, Kolor operatora), co sprawdza ``test_netia_z_dopiskiem_sa_bez_spacji_to_netia``.
+    assume(before or after.casefold() != "sa")
     other = _placement(OTHER_OPERATOR, WHOLESALE_INSTALLATION)
 
     placed = _placement(before + name + after, WHOLESALE_INSTALLATION)
@@ -263,8 +266,8 @@ def test_nazwa_operatora_z_doklejonymi_literami_to_inny_operator(name: str, befo
     assert (placed.color, placed.entry) == (other.color, None), before + name + after
 
 
-@pytest.mark.parametrize("written", ["NetiaSA", "NetiaS.A."])
-@pytest.mark.xfail(strict=True, reason="Decyzja Maksa: czy dopisek S.A. bez spacji przed nim to dalej Netia (GLOSSARY: nazwa nie zależy od spacji)")
+# Decyzja Maksa z 6.11.2026 (GLOSSARY.md, Kolor operatora): dopisek S.A. bez spacji przed nim to dalej Netia.
+@pytest.mark.parametrize("written", ["NetiaSA", "NetiaS.A.", "netiasa", "NetiaS. A."])
 def test_netia_z_dopiskiem_sa_bez_spacji_to_netia(written: str) -> None:
     placed, netia = _placement(written, WHOLESALE_INSTALLATION), _placement("Netia", WHOLESALE_INSTALLATION)
 
