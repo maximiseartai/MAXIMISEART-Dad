@@ -155,6 +155,10 @@ class KrokSkilla:
     krok: Step
     powod: str
     czesci: tuple[tuple[int, int], ...] = ()
+    # Zmienione pliki, które same uruchamiają krok (folder skilla, reguła kroku, ``Context.SKILL_STEPS``), także gdy
+    # biegnie z innego powodu; puste: biegnie bez takiego pliku (skill bez ``pilnuje``, push). Nocą z nich
+    # ``tools/mutacje_nocne.py`` wybiera PR, którego issue dostaje krok.
+    pliki: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -194,7 +198,9 @@ def zakres(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path = ROOT) -> Z
     why = {step: _dlaczego(step, zdarzenie, zmiana) for step in found}
     running = [step for step in found if why[step][0]]
     wybrane = tuple(
-        KrokSkilla(step, why[step][1], _czesci(step, zdarzenie)) for step in running if step.verdict or not repeats(step, running)
+        KrokSkilla(step, why[step][1], _czesci(step, zdarzenie), why[step][2])
+        for step in running
+        if step.verdict or not repeats(step, running)
     )
     pominiete = tuple((step, why[step][1]) for step in found if not why[step][0])
     przegladarka = potrzebuja_chromium(pliki, Repository.scan(root)) if pliki else frozenset()
@@ -231,18 +237,22 @@ def _czesci(step: Step, zdarzenie: Zdarzenie) -> tuple[tuple[int, int], ...]:
     return ()
 
 
-def _dlaczego(step: Step, zdarzenie: Zdarzenie, zmiana: frozenset[str]) -> tuple[bool, str]:
-    """Czy krok skilla biegnie w runie ``zdarzenie`` przy zmianie ``zmiana``, i dlaczego."""
+# Czy krok biegnie, dlaczego i zmienione pliki, które go uruchamiają (``KrokSkilla.pliki``).
+Powod = tuple[bool, str, frozenset[str]]
+
+
+def _dlaczego(step: Step, zdarzenie: Zdarzenie, zmiana: frozenset[str]) -> Powod:
+    """Czy krok skilla biegnie w runie ``zdarzenie`` przy zmianie ``zmiana``, dlaczego i które zmienione pliki go uruchamiają."""
 
     match zdarzenie:
         case Zdarzenie.PUSH:
-            return True, ""
+            return True, "", frozenset()
         case Zdarzenie.PULL_REQUEST:
-            return podstawa_na_pull_request(step.skill, zmiana) if step.verdict is None else _skrypt_modelu(step, zmiana)
+            return _podstawa(step.skill, zmiana) if step.verdict is None else _skrypt_modelu(step, zmiana)
         case Zdarzenie.NOC:
             if step.verdict is not None:
                 return _skrypt(step, zmiana)
-            return podstawa_na_pull_request(step.skill, zmiana) if step.parts > 1 else (False, ON_PULL_REQUEST)
+            return _podstawa(step.skill, zmiana) if step.parts > 1 else (False, ON_PULL_REQUEST, frozenset())
 
 
 def _zawsze(skill: Path, zmiana: frozenset[str]) -> str | None:
@@ -259,37 +269,62 @@ def podstawa_na_pull_request(skill: Path, zmiana: frozenset[str]) -> tuple[bool,
     """Czy na pull request ze zmianą ``zmiana`` biegnie podstawa ``ci:`` skilla ``skill`` (folder), i dlaczego; nocą
     ta sama zmiana wybiera podstawę z ``ci-czesci``."""
 
+    runs, reason, _ = _podstawa(skill, zmiana)
+    return runs, reason
+
+
+def _podstawa(skill: Path, zmiana: frozenset[str]) -> Powod:
+    found = hits(skill, zmiana).files
+    files = _uruchamiaja(zmiana, {*found, *_touched(zmiana, (_folder(skill),))})
     if reason := _zawsze(skill, zmiana):
-        return True, reason
-    if found := hits(skill, zmiana).files:
-        return True, _changes(found)
-    return False, "zmiany nie trafiają w pilnuje ani w folder skilla"
+        return True, reason, files
+    if found:
+        return True, _changes(found), files
+    return False, "zmiany nie trafiają w pilnuje ani w folder skilla", files
 
 
-def _skrypt(step: Step, zmiana: frozenset[str]) -> tuple[bool, str]:
-    if reason := _zawsze(step.skill, zmiana):
-        return True, reason
+def _skrypt(step: Step, zmiana: frozenset[str]) -> Powod:
     try:
         paths = watched(step)
     except Exception as error:  # noqa: BLE001 - skrypt, którego tabeli nie da się wczytać, biegnie i pokazuje swój błąd
-        return True, f"nie da się wczytać tabeli mutacji: {error}"
-    if touched := _touched(zmiana, paths):
-        return True, _changes(touched)
-    return False, "zmiany nie dotykają folderu skilla, runnera mutacji ani sprawdzeń, które uruchamiają mutacje skryptu"
+        unreadable = f"nie da się wczytać tabeli mutacji: {error}"
+        paths = (_folder(step.skill),)
+    else:
+        unreadable = ""
+    touched = _touched(zmiana, paths)
+    files = _uruchamiaja(zmiana, touched)
+    if reason := _zawsze(step.skill, zmiana) or unreadable:
+        return True, reason, files
+    if touched:
+        return True, _changes(touched), files
+    return False, "zmiany nie dotykają folderu skilla, runnera mutacji ani sprawdzeń, które uruchamiają mutacje skryptu", files
 
 
-def _skrypt_modelu(step: Step, zmiana: frozenset[str]) -> tuple[bool, str]:
+def _skrypt_modelu(step: Step, zmiana: frozenset[str]) -> Powod:
     """Na pull request biegnie tylko skrypt mutacji modelu, przy zmianie ścieżki z ``model_watched``."""
 
     try:
         paths = model_watched(step)
     except Exception as error:  # noqa: BLE001 - zmieniony skrypt, którego tabeli nie da się wczytać, biegnie i pokazuje swój błąd
-        return (True, f"nie da się wczytać tabeli mutacji: {error}") if step.command[0] in zmiana else (False, NIGHTLY)
+        changed = step.command[0] in zmiana
+        return (True, f"nie da się wczytać tabeli mutacji: {error}", frozenset({step.command[0]})) if changed else (False, NIGHTLY, frozenset())
     if paths is None:
-        return False, NIGHTLY
+        return False, NIGHTLY, frozenset()
     if touched := _touched(zmiana, paths):
-        return True, _changes(touched)
-    return False, MODEL_UNTOUCHED
+        return True, _changes(touched), frozenset(touched)
+    return False, MODEL_UNTOUCHED, frozenset()
+
+
+def _folder(skill: Path) -> str:
+    """Folder skilla od korzenia z ``/`` na końcu: skill leży w ``<korzeń>/.agents/skills/<skill>`` (``tests/test_miejsce_skilli.py``)."""
+
+    return f"{PurePosixPath(*skill.parts[-3:])}/"
+
+
+def _uruchamiaja(zmiana: frozenset[str], trafione: Iterable[str]) -> frozenset[str]:
+    """Pliki ``trafione`` przez regułę kroku i ścieżki ``zmiana`` z ``Context.SKILL_STEPS``: każdy sam uruchamia krok."""
+
+    return frozenset({*trafione, *run_all(zmiana, Context.SKILL_STEPS)})
 
 
 def _touched(zmiana: frozenset[str], paths: tuple[str, ...]) -> set[str]:
