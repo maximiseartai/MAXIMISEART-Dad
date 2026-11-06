@@ -277,11 +277,12 @@ Zbuduj(r) ==
     /\ Odczytane([rodzaj |-> "urwane", tresc |-> ZDziennika(r)])
     /\ poWyniku' = Zdarz(poWyniku, ZWynikiem(r), bezKonca[r] \ (IF WynikPrzyjety(r) THEN {"przed-wpisem-konca"} ELSE {}))
 
-(* InterruptedPricings.close -> _closed(path) dla dziennika na pozycji kursor: _read(path) i plik Logów (file_of,     *)
-(* RunLog.model_validate_json) w jednym kroku, bo w create_app nic innego tych plików nie pisze. Historii start nie    *)
-(* czyta. OSError z odczytu dziennika albo Logów: close łapie go i zostawia dziennik następnemu startowi. Dziennik z   *)
-(* pierwszą linią został, bo kolejka nie przyjęła Logów z wynikiem w pracy Uruchomienia (JournalAfterLogs) albo to    *)
-(* Urwane Uruchomienie, więc start zamyka go wersją zastępczą (Rank.STAND_IN), a usuwa tylko dziennik bez niej.       *)
+(* InterruptedPricings.close -> _closed(path) dla dziennika na pozycji kursor: _read(path) i plik Logów (logs_disk:    *)
+(* LogsOnDisk.logs, _read_logs) w jednym kroku, bo w create_app nic innego tych plików nie pisze. Historii start nie   *)
+(* czyta. OSError z odczytu dziennika albo Logów (Refused): close łapie go i zostawia dziennik następnemu startowi.    *)
+(* Dziennik z pierwszą linią został, bo kolejka nie przyjęła Logów z wynikiem w pracy Uruchomienia (JournalAfterLogs)  *)
+(* albo to Urwane Uruchomienie, więc start zamyka go wersją zastępczą (Rank.STAND_IN), a usuwa tylko dziennik bez      *)
+(* niej.                                                                                                               *)
 Czytaj ==
     LET r == kursor
         koniecZapisany == Zakonczony(r)

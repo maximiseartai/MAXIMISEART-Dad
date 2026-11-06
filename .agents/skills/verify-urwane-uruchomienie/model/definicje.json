@@ -14,7 +14,6 @@
     "RunLogs.run_ended",
     "RunLogs._keep",
     "RunLogs.interrupted",
-    "RunLogs.file_of",
     "RunLogs.guard",
     "RunLogs.close",
     "RunLogs._write",
@@ -27,11 +26,19 @@
     "progress_post",
     "_logs_post"
   ],
+  "src/rozliczenia/centrum/logs_disk.py": [
+    "LogsOnDisk.logs",
+    "_read_logs",
+    "_names",
+    "_NAME",
+    "LogsRead"
+  ],
   "src/rozliczenia/centrum/app.py": [
     "lifespan",
     "send_interrupted",
     "app",
     "journal",
+    "disk",
     "interrupted",
     "run_started",
     "runs"
