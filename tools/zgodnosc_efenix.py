@@ -69,9 +69,10 @@ padł (karta zmieniła stronę w trakcie odczytu), i z propozycją, która nic n
 nic nie zaproponował albo propozycja padła, a tego narzędzie nie rozróżni). Karta, w której widać okno Emmetta, a jej
 strona po skryptach nie ma dokładnie jednego ``#dialog_emmett`` (widocznego albo nie) albo potem dokładnie jednego
 ``#dialog_emmett #emmett-propozycja``, to ``RÓŻNICA``. Kolejność jest jak w oknie Wyceny: najpierw okno na całej stronie,
-potem propozycja w nim. Chwila liczenia jest inna: Wycena liczy okna zaraz po kliknięciu Emmetta, zanim okno się pokaże,
-a narzędzie dopiero po Enter, więc ukryte okno dopisane przez skrypt strony po pokazaniu propozycji Wycena przepuszcza,
-a narzędzie zgłasza jako ``RÓŻNICA`` (próba na Atrapie 6.11.2026, przegląd #1004). Widoczność odczyt sprawdza tylko dla okna,
+potem propozycja w nim. Chwila liczenia jest inna: Wycena liczy okna zaraz po kliknięciu Emmetta i potem czeka na jedno
+widoczne okno, a narzędzie liczy je po Enter. Na drugie okno, które skrypt strony dopisze po kliknięciu, Wycena może więc
+zareagować inaczej niż ``ElementCount`` albo wcale, a narzędzie zawsze zgłasza ``RÓŻNICA`` (próba na Atrapie 6.11.2026:
+ukryte okno dopisane 300 ms po pokazaniu propozycji Wycena przepuszcza). Widoczność odczyt sprawdza tylko dla okna,
 nie dla propozycji: czyta drzewo DOM, jak reguła okna Wyceny (``efenix_browser.SHOWS_ANYTHING``), więc propozycja
 ukryta stylem w widocznym oknie (``display: none`` albo ``visibility: hidden`` na ``#emmett-propozycja``) ma zgodną
 budowę, choć tata widzi puste okno (próba na Atrapie 6.11.2026, #953).
