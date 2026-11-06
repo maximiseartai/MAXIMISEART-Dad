@@ -251,12 +251,43 @@ def test_bez_zmian_od_bazy_noc_pomija_tylko_skill_z_pilnuje_i_tabela_a_push_bieg
     assert ({w.powod for w in praca.wybrane} == {""}) == (event is Zdarzenie.PUSH)
 
 
-def test_pilnuje_nie_bedace_lista_globow_uruchamia_skrypt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    repo = _repo(tmp_path, monkeypatch, {**SKILLS, ".agents/skills/verify-a/SKILL.md": "---\npilnuje: src/pakiet/routing.py\n---\n"})
+@pytest.mark.parametrize(
+    ("skill_md", "reason"),
+    [
+        ("---\npilnuje: src/pakiet/routing.py\n---\n", "pilnuje w .agents/skills/verify-a/SKILL.md nie jest listą globów pod kluczem"),
+        ("---\npilnuje:\nname: verify-a\n---\n", "pilnuje w .agents/skills/verify-a/SKILL.md nie ma żadnego globu"),
+        # Frontmatter bez linii zamykającej nie ma kluczy, a nie psuje znalezienia kroków wszystkich skilli.
+        ("---\nname: verify-a\npilnuje:\n  - src/pakiet/rout*.py\n", ".agents/skills/verify-a/SKILL.md nie ma klucza pilnuje"),
+    ],
+    ids=["pilnuje-nie-lista", "pilnuje-bez-globu", "frontmatter-niezamkniety"],
+)
+def test_pilnuje_ktorego_nie_da_sie_odczytac_uruchamia_skrypt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, skill_md: str, reason: str) -> None:
+    repo = _repo(tmp_path, monkeypatch, {**SKILLS, ".agents/skills/verify-a/SKILL.md": skill_md})
 
     praca = zakres(Zdarzenie.NOC, frozenset(), repo)
 
-    assert _decisions(praca)[SCRIPT_A] == (True, "pilnuje w .agents/skills/verify-a/SKILL.md nie jest listą globów pod kluczem")
+    assert _decisions(praca)[SCRIPT_A] == (True, reason)
+
+
+@pytest.mark.parametrize(
+    ("script", "browser"),
+    [
+        ("from playwright.sync_api import sync_playwright\n", True),
+        ("import playwright.sync_api\n", True),
+        ("from .playwright import okno\n", False),
+        ("def niedokonczona(\n", True),
+    ],
+    ids=["from-import", "import", "import-wzgledny", "skrypt-bez-skladni"],
+)
+def test_krok_skilla_potrzebuje_chromium_gdy_skrypt_skilla_importuje_playwright_albo_sie_nie_parsuje(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str, browser: bool
+) -> None:
+    changed = ".agents/skills/verify-a/scripts/sprawdz_a.py"
+    repo = _repo(tmp_path, monkeypatch, {**SKILLS, changed: script})
+
+    praca = zakres(Zdarzenie.NOC, frozenset({changed}), repo)
+
+    assert [w.krok.browser for w in praca.wybrane if w.krok.key == SCRIPT_A] == [browser]
 
 
 MODEL = ".agents/skills/verify-m/model/M.tla"
@@ -351,6 +382,28 @@ def test_ze_zmianami_od_bazy_podstawa_ci_biegnie_przy_trafieniu_w_pilnuje_albo_f
     decision = _decisions(zakres(Zdarzenie.PULL_REQUEST, frozenset({changed}), repo))["verify-d/ci"]
 
     assert decision == ((True, f"zmienione: {changed}") if runs else (False, "zmiany nie trafiają w pilnuje ani w folder skilla"))
+
+
+@pytest.mark.parametrize(
+    ("changed", "reason"),
+    [
+        (("src/pakiet/routa.py", "src/pakiet/routb.py", "src/pakiet/routing.py"), "zmienione: src/pakiet/routa.py, src/pakiet/routb.py, src/pakiet/routing.py"),
+        (
+            ("src/pakiet/routa.py", "src/pakiet/routb.py", "src/pakiet/routc.py", "src/pakiet/routing.py"),
+            "zmienione: src/pakiet/routa.py, src/pakiet/routb.py, src/pakiet/routc.py i 1 innych",
+        ),
+    ],
+    ids=["trzy", "cztery"],
+)
+def test_powod_podstawy_wymienia_najwyzej_trzy_zmienione_pliki_i_liczbe_pozostalych(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: tuple[str, ...], reason: str
+) -> None:
+    files = {**SKILLS, ".agents/skills/verify-d/SKILL.md": _with_ci("verify-d", BASELINE_D), BASELINE_D: "print('sprawdzone')\n"}
+    repo = _repo(tmp_path, monkeypatch, files)
+
+    decision = _decisions(zakres(Zdarzenie.PULL_REQUEST, frozenset(changed), repo))["verify-d/ci"]
+
+    assert decision == (True, reason)
 
 
 @pytest.mark.parametrize(

@@ -261,22 +261,25 @@ def _run(
     copy: Path, command: Sequence[str], limit_s: float, stop: threading.Event | None = None, *, concurrent: bool = False
 ) -> _Ran:
     """Uruchamia polecenie w kopii; zwraca kod wyjścia, ostatnią linię, linię pytest-timeout, jeśli była, czas i koniec
-    obu strumieni."""
+    obu strumieni, także polecenia, które przekroczyło limit (to, co zdążyło wypisać)."""
 
     started = time.monotonic()
     try:
         env = environment(copy, concurrent=concurrent)
         done = potomne.run([sys.executable, *command], cwd=copy, env=env, timeout=limit_s, stop=stop)
-    except subprocess.TimeoutExpired:
-        return _Ran(None, f"brak wyniku po {limit_s:g} s", None, time.monotonic() - started)
+    except potomne.TimeoutExpired as expired:
+        return _Ran(None, f"brak wyniku po {limit_s:g} s", None, time.monotonic() - started, _tail(*expired.printed))
     seconds = time.monotonic() - started
     lines = (done.stdout.strip() or done.stderr.strip()).splitlines()
     hangs = (PYTEST_TIMEOUT.fullmatch(line.strip()) for line in f"{done.stdout}\n{done.stderr}".splitlines())
     hang = next((found["hang"] or found["thread"] for found in hangs if found), None)
-    tail = tuple(
-        f"{name} | {line}" for name, text in (("stdout", done.stdout), ("stderr", done.stderr)) for line in text.splitlines()[-BASE_TAIL:]
-    )
-    return _Ran(done.returncode, lines[-1] if lines else f"kod wyjścia {done.returncode}", hang, seconds, tail)
+    return _Ran(done.returncode, lines[-1] if lines else f"kod wyjścia {done.returncode}", hang, seconds, _tail(done.stdout, done.stderr))
+
+
+def _tail(stdout: str, stderr: str) -> tuple[str, ...]:
+    """Ostatnie ``BASE_TAIL`` linii stdout, potem tyle samo stderr, każda z nazwą swojego strumienia."""
+
+    return tuple(f"{name} | {line}" for name, text in (("stdout", stdout), ("stderr", stderr)) for line in text.splitlines()[-BASE_TAIL:])
 
 
 def _verdict(
@@ -613,7 +616,8 @@ def check_all(
     """Podstawa, werdykt i czas polecenia każdej mutacji; kod 0, gdy CI złapałoby każdą (``in_ci``).
 
     Pod linią ``PODSTAWA CZERWONA`` stderr dostaje koniec stdout i stderr polecenia podstawy (``BASE_TAIL`` linii
-    każdego), bo ostatnia linia nie zawsze mówi, co padło, a kopii commitu z wyjściem już nie ma (#932).
+    każdego), także podstawy, która przekroczyła ``limit_s``, bo ostatnia linia nie zawsze mówi, co padło, a kopii
+    commitu z wyjściem już nie ma (#932, #947).
 
     Przed linią werdyktu każdej mutacji linia ``CZAS`` na stderr podaje czas jej polecenia, a mutację, której polecenie
     trwało ponad ``NEAR_LIMIT`` limitu ``limit_s``, linia ``CZAS BLISKO LIMITU`` na stderr przed linią końcową wymienia ze

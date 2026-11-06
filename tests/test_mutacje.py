@@ -22,7 +22,7 @@ import pytest
 
 from tests.fixtures.brama_typow import FAKE_GATE
 from tests.fixtures.git_repo import commit, git, repository
-from tests.fixtures.potomne import beating
+from tests.fixtures.potomne import beating, potomne
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -112,15 +112,44 @@ def test_polecenie_czerwone_bez_mutacji_nie_daje_werdyktu() -> None:
     assert "WYKRYTA" not in answered.stdout
 
 
-def test_czerwona_podstawa_pokazuje_przyczyne_z_stderr_choc_stdout_konczy_sie_sprzataniem() -> None:
-    # Jak przejazd verify-centrum-rozliczen na Windows w #932: porażka na stderr, a stdout kończy linia sprzątania.
-    base = "import sys; print('STEP krok-1'); print('DRIVE FAIL | przyczyna', file=sys.stderr); print('CLEANUP OK'); sys.exit(1)"
+@pytest.mark.parametrize(
+    ("end", "limit_s", "last"),
+    [("sys.exit(1)", "600", "CLEANUP OK"), ("threading.Event().wait()", "5", "brak wyniku po 5 s")],
+    ids=["pada", "po-limicie"],
+)
+def test_czerwona_podstawa_pokazuje_pod_swoja_linia_koniec_stdout_i_stderr(end: str, limit_s: str, last: str) -> None:
+    """Jak przejazd verify-centrum-rozliczen na Windows w #932: porażka na stderr, a stdout kończy linia sprzątania.
 
-    answered = _mutacje("--zmiana", *_appended(PACKAGE, ""), "--", "-c", base)
+    Podstawa po ``--limit-s`` pokazuje to, co zdążyła wypisać (#947). Koniec strumieni idzie na stderr, a log CI łączy
+    stderr ze stdout, więc stoi tam pod linią ``PODSTAWA CZERWONA``; z dłuższego stdout zostaje jego koniec, nie początek.
+    """
 
-    assert answered.returncode == 2
-    assert answered.stdout.splitlines()[0].endswith("→ CLEANUP OK")
-    assert answered.stderr.splitlines() == ["  stdout | STEP krok-1", "  stdout | CLEANUP OK", "  stderr | DRIVE FAIL | przyczyna"]
+    steps = mutacje.BASE_TAIL + 5
+    base = (
+        f"import sys, threading; print(*(f'STEP krok-{{n}}' for n in range({steps})), sep=chr(10)); "
+        f"print('DRIVE FAIL | przyczyna', file=sys.stderr); print('CLEANUP OK', flush=True); {end}"
+    )
+
+    def answered(stderr: int) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(TOOL), "--limit-s", limit_s, "--zmiana", *_appended(PACKAGE, ""), "--", "-c", base],
+            stdout=subprocess.PIPE,
+            stderr=stderr,
+            text=True,
+            encoding="utf-8",
+            timeout=120,
+            check=False,
+        )
+
+    merged, split = answered(subprocess.STDOUT), answered(subprocess.PIPE)
+
+    lines = merged.stdout.splitlines()
+    tail = [f"  stdout | STEP krok-{number}" for number in range(steps - mutacje.BASE_TAIL + 1, steps)]
+    end_lines = [*tail, "  stdout | CLEANUP OK", "  stderr | DRIVE FAIL | przyczyna"]
+    refused = "MUTACJE: polecenie bez mutacji pada albo daje wynik mutacji, więc wynik po mutacji niczego nie dowodzi"
+    assert (merged.returncode, lines[0].startswith("PODSTAWA CZERWONA: "), lines[0].endswith(f"→ {last}")) == (2, True, True), merged.stdout
+    assert lines[1:] == [*end_lines, refused], merged.stdout
+    assert (split.stdout.splitlines()[1:], split.stderr.splitlines()) == ([refused], end_lines), (split.stdout, split.stderr)
 
 
 @pytest.mark.parametrize(
@@ -142,6 +171,20 @@ def test_mutacja_z_oczekiwana_linia_jest_wykryta_tylko_gdy_bez_mutacji_jej_nie_m
 
     assert answered.returncode == code, answered.stdout
     assert answered.stdout.splitlines()[0].startswith(verdict), answered.stdout
+
+
+def test_bez_polecenia_po_myslnikach_narzedzie_odmawia_z_podpowiedzia() -> None:
+    answered = _mutacje("--zmiana", *_appended(PACKAGE, "raise SystemExit(3)"))
+
+    hint = "podaj mutację (--zmiana albo --plik) i polecenie po --, np. -- -m pytest -q tests/test_x.py, albo --jak-ci"
+    assert (answered.returncode, answered.stderr.splitlines()[-1].partition(": error: ")[2]) == (2, hint), answered.stdout
+
+
+def test_pomoc_podaje_domyslna_galaz_bazy_regresu() -> None:
+    answered = _mutacje("--help")
+
+    assert answered.returncode == 0
+    assert "--baza BAZA Gałąź, z której merge-base z HEAD daje REGRES i plan --jak-ci (domyślnie origin/main)." in " ".join(answered.stdout.split())
 
 
 def test_pusta_lista_mutacji_niczego_nie_dowodzi() -> None:
@@ -381,6 +424,18 @@ def test_mutacja_niewykryta_bez_merge_base_z_baza_zostaje_niewykryta_z_powodem_n
     assert answered.stderr.startswith("MERGE-BASE: brak merge-base HEAD z glowna, więc REGRES niesprawdzony, a NIEWYKRYTA bez porównania"), answered.stderr
 
 
+def test_wykryta_mutacja_bez_merge_base_z_baza_nie_zglasza_niesprawdzonego_regresu(tmp_path: Path) -> None:
+    """REGRES sprawdza się tylko dla mutacji NIEWYKRYTA, więc bez niej brak merge-base niczego nie pomija."""
+
+    repo = _small_repository(tmp_path)
+    caught = "import rozliczenia; raise SystemExit(rozliczenia.WARTOSC)"
+
+    answered = _in_repository(repo, "--baza", "glowna", "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 1", "--", "-c", caught)
+
+    assert (answered.returncode, answered.stdout.splitlines()) == (0, ["WYKRYTA: mutacja → kod wyjścia 1", "MUTACJE OK"]), answered.stderr
+    assert [line for line in answered.stderr.splitlines() if not line.startswith("CZAS: mutacja → ")] == [], answered.stderr
+
+
 def test_merge_base_rowny_czystemu_checkoutowi_nie_uruchamia_mutacji_drugi_raz(tmp_path: Path) -> None:
     # Bez .gitignore pliki __pycache__ narzędzi byłyby niezacommitowaną zmianą checkoutu.
     repo = repository(tmp_path / "repo", {PACKAGE: "WARTOSC = 0\n", ".gitignore": "__pycache__/\n"})
@@ -491,12 +546,17 @@ def _plan(path: Path, count: int) -> Path:
     return plan
 
 
-def _in_repository(repo: Path, *arguments: str, env: dict[str, str] = WITHOUT_XDIST_WORKERS) -> subprocess.CompletedProcess[str]:
+def _in_repository(
+    repo: Path, *arguments: str, env: dict[str, str] = WITHOUT_XDIST_WORKERS, merged: bool = False
+) -> subprocess.CompletedProcess[str]:
+    """Narzędzie z ``tools/`` repozytorium testu; z ``merged`` stderr trafia do stdout, jak w logu CI."""
+
     return subprocess.run(
         [sys.executable, str(repo / "tools" / "mutacje.py"), *arguments],
         cwd=repo,
         env=env,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT if merged else subprocess.PIPE,
         text=True,
         encoding="utf-8",
         timeout=120,
@@ -524,6 +584,23 @@ def test_mutacje_naraz_daja_zagniezdzonemu_pytest_n_auto_jednego_workera(
     )
 
     assert answered.stdout.splitlines() == [f"WYKRYTA: mutacja → workery {seen}", "MUTACJE OK"], answered.stderr
+
+
+def test_skrypt_mutacji_skilla_daje_zagniezdzonemu_pytest_n_auto_jednego_workera(tmp_path: Path) -> None:
+    """``check_all`` skryptu mutacji skilla puszcza mutacje naraz, więc ich polecenia dostają jednego workera xdist."""
+
+    workers = "import os, rozliczenia; print('workery', os.environ.get('PYTEST_XDIST_AUTO_NUM_WORKERS', 'brak')); raise SystemExit(rozliczenia.WARTOSC)"
+    script = (
+        "import sys\nsys.path.insert(0, 'tools')\nfrom pathlib import Path\nfrom mutacje import Edit, Mutation, check_all\n"
+        f"mutation = Mutation('m', (Edit(Path({PACKAGE!r}), 'WARTOSC = 0', 'WARTOSC = 1'),), ('-c', {workers!r}))\n"
+        "raise SystemExit(check_all([mutation]))\n"
+    )
+
+    answered = subprocess.run(
+        [sys.executable, "-c", script], cwd=_small_repository(tmp_path), env=WITHOUT_XDIST_WORKERS, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False
+    )
+
+    assert answered.stdout.splitlines() == ["WYKRYTA: m → workery 1", "MUTACJE OK"], answered.stderr
 
 
 def test_naraz_biegnie_najwyzej_osiem_mutacji(tmp_path: Path) -> None:
@@ -699,7 +776,8 @@ LINUX_1 = "pytest (Python 3.14, Linux, 1/2)"
 
 def _ci_repository(tmp_path: Path, plans: dict[str, list[plan_ci.Zadanie]], runs: list[int]) -> tuple[Path, dict[str, str], Path]:
     """Repozytorium z gałęzią ``praca``, która zmienia ``tests/test_zmieniony.py`` od ``glowna``, środowisko z atrapą
-    ``gh`` na ``PATH`` i plik jej wywołań; atrapa podaje artefakt ``plan`` runów z ``plans`` i listę runów ``runs``."""
+    ``gh`` na ``PATH`` i plik jej wywołań; atrapa podaje artefakt ``plan`` runów z ``plans`` i listę runów ``runs``, a
+    pobranie runu 998 kończy błędem tylko na stdout."""
 
     neighbour = "import rozliczenia\n\n\ndef test_sasiad():\n    assert rozliczenia.WARTOSC == 0\n"
     files = {
@@ -728,6 +806,7 @@ def _ci_repository(tmp_path: Path, plans: dict[str, list[plan_ci.Zadanie]], runs
         "arguments = sys.argv[1:]\n"
         "with (here / 'wywolania').open('a', encoding='utf-8') as log:\n    log.write(' '.join(arguments) + chr(10))\n"
         "if arguments[:2] == ['run', 'list']:\n    print((here / 'runy.json').read_text(encoding='utf-8'))\n"
+        "elif arguments[:3] == ['run', 'download', '998']:\n    print('gh: błąd tylko na stdout')\n    sys.exit(1)\n"
         "elif arguments[:2] == ['run', 'download'] and (here / f'plan-{arguments[2]}.json').exists():\n"
         "    shutil.copy(here / f'plan-{arguments[2]}.json', pathlib.Path(arguments[arguments.index('--dir') + 1]) / 'plan.json')\n"
         "else:\n    sys.exit(f'gh: atrapa nie zna {arguments}')\n",
@@ -757,12 +836,14 @@ def test_jak_ci_uruchamia_mutacje_z_plikami_zadania_runu_w_ktorym_stoi_zmieniony
 
     repo, env, _ = _ci_repository(tmp_path, {"123": PLAN}, [])
 
-    answered = _in_repository(repo, "--jak-ci", "123", "--baza", "glowna", *CHANGE, env=env)
+    answered = _in_repository(repo, "--jak-ci", "123", "--baza", "glowna", *CHANGE, env=env, merged=True)
 
+    # Linia JAK CI wychodzi przed linią CZAS ze stderr, choć narzędzie pisze ją przed długim przebiegiem mutacji.
     lines = answered.stdout.splitlines()
     command = "-m pytest -q -n 1 -p no:cacheprovider tests/test_sasiad.py tests/test_zmieniony.py"
-    assert (answered.returncode, lines[0], lines[2:]) == (0, f"JAK CI: run 123, {LINUX_1}: {command}", ["MUTACJE OK"]), answered.stdout + answered.stderr
-    assert lines[1].startswith(f"WYKRYTA: mutacja [{LINUX_1}] → 1 failed, 1 passed"), answered.stdout
+    assert (answered.returncode, lines[0], lines[3:]) == (0, f"JAK CI: run 123, {LINUX_1}: {command}", ["MUTACJE OK"]), answered.stdout
+    assert lines[1].startswith(f"CZAS: mutacja [{LINUX_1}] → "), answered.stdout
+    assert lines[2].startswith(f"WYKRYTA: mutacja [{LINUX_1}] → 1 failed, 1 passed"), answered.stdout
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="atrapa gh to skrypt sh")
@@ -812,8 +893,9 @@ def test_jak_ci_bez_numeru_bierze_ostatni_run_ci_galezi(tmp_path: Path, tracked:
         ((), [456], True, "HEAD nie jest na gałęzi, więc podaj numer runu CI: --jak-ci <id runu>"),
         (("789",), [], False, "run 789 nie stawia w zadaniu pytest toru linux-3.14 pliku testów zmienionego od glowna"),
         (("999",), [], False, "gh run download padł: gh: atrapa nie zna"),
+        (("998",), [], False, "gh run download padł: gh: błąd tylko na stdout"),
     ],
-    ids=["galaz-bez-runu", "odlaczony-head", "run-bez-zmienionego-testu-na-torze", "run-bez-artefaktu"],
+    ids=["galaz-bez-runu", "odlaczony-head", "run-bez-zmienionego-testu-na-torze", "run-bez-artefaktu", "blad-gh-na-stdout"],
 )
 def test_jak_ci_bez_zadania_do_odtworzenia_odmawia_z_powodem(
     tmp_path: Path, arguments: tuple[str, ...], runs: list[int], detached: bool, error: str
@@ -906,6 +988,63 @@ def test_brama_typow_bez_wyniku_przed_koncem_czasu_wywolujacego_daje_bez_werdykt
     ], answered.stdout + answered.stderr
 
 
+def _type_gate(repo: Path, gate: str, found: str, *, deadline: str = "None") -> subprocess.CompletedProcess[str]:
+    """``type_gate`` z bramą ``gate`` (źródło funkcji ``brama``) dla werdyktów ``found`` jednej mutacji ``NIC = 0`` →
+    ``NIC = 1``; drukuje werdykt po bramie."""
+
+    script = (
+        "import sys, time\nsys.path.insert(0, 'tools')\nfrom pathlib import Path\nimport mutacje\n"
+        f"{gate}\nmutation = mutacje.Mutation('m', (mutacje.Edit(Path({PACKAGE!r}), 'NIC = 0', 'NIC = 1'),), {IMPORT!r})\n"
+        f"for verdict, last in mutacje.type_gate([mutation], {found}, workers=1, deadline={deadline}, gate=brama):\n"
+        "    print(f'{verdict}: {last}')\n"
+    )
+    repo = repository(repo, {PACKAGE: "NIC = 0\n"})
+    commit(repo, "baza")
+    return subprocess.run([sys.executable, "-c", script], cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False)
+
+
+def test_brama_typow_nie_biegnie_gdy_polecenie_zlapalo_kazda_mutacje(tmp_path: Path) -> None:
+    """Brama to ruff i mypy obu systemów na kopii checkoutu, więc biegnie tylko dla mutacji, którą polecenie przepuściło."""
+
+    gate = "def brama(copy, **_):\n    print('brama biegła')\n    return mutacje.Checked((mutacje.Finding('ruff', 'ruff', 'F821', 'x'),))\n"
+
+    answered = _type_gate(tmp_path / "repo", gate, "[(mutacje.Verdict.CAUGHT, 'kod wyjścia 1')]")
+
+    assert (answered.stdout.splitlines(), answered.stderr) == (["WYKRYTA: kod wyjścia 1"], "")
+
+
+def test_kopia_mutacji_dostaje_cache_mypy_bramy_z_kopii_bez_mutacji(tmp_path: Path) -> None:
+    """Mypy na kopii mutacji sprawdza od nowa tylko to, co mutacja zmienia, bo dostaje cache z przebiegu bez mutacji."""
+
+    gate = (
+        "def brama(copy, **_):\n"
+        "    cache = copy / mutacje.MYPY_CACHE / 'z-kopii-bez-mutacji'\n"
+        f"    if 'NIC = 0' in (copy / {PACKAGE!r}).read_text(encoding='utf-8'):\n"
+        "        cache.mkdir(parents=True)\n"
+        "        return mutacje.Checked()\n"
+        "    return mutacje.Checked((mutacje.Finding('mypy', 'mypy', 'misc', f'cache bez mutacji: {cache.is_dir()}'),))\n"
+    )
+
+    answered = _type_gate(tmp_path / "repo", gate, "[(mutacje.Verdict.SURVIVED, 'kod wyjścia 0')]")
+
+    assert answered.stdout.splitlines() == ["WYKRYTA PRZEZ BRAMĘ TYPÓW: mypy: cache bez mutacji: True"], answered.stderr
+
+
+def test_brama_typow_kopii_z_mutacja_konczy_sie_z_czasem_wywolujacego(tmp_path: Path) -> None:
+    """Krok bramy na kopii z mutacją, który nie zdąży przed końcem czasu wywołującego, daje BEZ WERDYKTU, nie przeżytą."""
+
+    gate = (
+        "def brama(copy, *, deadline, **_):\n"
+        f"    needed = 30 if 'NIC = 1' in (copy / {PACKAGE!r}).read_text(encoding='utf-8') else 0\n"
+        "    late = deadline is not None and deadline - time.monotonic() < needed\n"
+        "    return mutacje.Checked((), 'mypy: brak wyniku przed końcem czasu' if late else None)\n"
+    )
+
+    answered = _type_gate(tmp_path / "repo", gate, "[(mutacje.Verdict.SURVIVED, 'kod wyjścia 0')]", deadline="time.monotonic() + 10")
+
+    assert answered.stdout.splitlines() == ["BEZ WERDYKTU: brama typów, mypy: brak wyniku przed końcem czasu"], answered.stderr
+
+
 # Atrapa ``python -m ruff`` i ``python -m mypy`` w katalogu kroku (``-m`` szuka najpierw w nim): odpowiedź z
 # ``<narzędzie>.json`` w JSON tylko z opcją, z którą brama prosi o JSON, a bez niej linia tekstu.
 FAKE_TOOL = """\
@@ -951,6 +1090,12 @@ def _mypy_line(severity: str, code: str, message: str) -> str:
             ],
             id="wyjscie-bez-json-i-pozostalosci",
         ),
+        pytest.param(
+            lambda folder: (1, "[1]", ""),
+            lambda folder: (1, '"tekst"\n' + _mypy_line("error", "name-defined", 'Name "x" is not defined') + "\n", ""),
+            [("ruff", "ruff", None, "[1]"), ("mypy", "mypy", "name-defined", 'src/a.py:3: error: Name "x" is not defined  [name-defined]')],
+            id="json-innego-ksztaltu",
+        ),
         pytest.param(lambda folder: (0, "[]", ""), lambda folder: (0, "nic", ""), [], id="kroki-przechodza"),
     ],
 )
@@ -987,3 +1132,14 @@ def test_krok_bramy_typow_bez_wyniku_w_limicie_daje_kopie_bez_werdyktu(tmp_path:
     checked = mutacje.static_gate(tmp_path, limit_s=1, stop=threading.Event(), deadline=None)
 
     assert checked == mutacje.Checked((), "ruff: brak wyniku po 1 s")
+
+
+def test_przerwanie_narzedzia_konczy_krok_bramy_typow_bez_czekania_na_limit(tmp_path: Path) -> None:
+    (tmp_path / "ruff").mkdir()
+    (tmp_path / "ruff" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "ruff" / "__main__.py").write_text("import time\ntime.sleep(60)\n", encoding="utf-8")
+    stop = threading.Event()
+    stop.set()
+
+    with pytest.raises(potomne.Stopped):
+        mutacje.static_gate(tmp_path, limit_s=20, stop=stop, deadline=None)
