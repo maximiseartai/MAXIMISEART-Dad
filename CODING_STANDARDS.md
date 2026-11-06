@@ -44,7 +44,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 
 | Rule | Guard |
 |---|---|
-| The engine (`src/rozliczenia/*.py`) never imports Centrum rozliczeń, the modules in `STDLIB_ONLY` import only the standard library and each other when loaded, and the modules of the restart guardian's copy (`_COPIED` in `restart_guardian.py`) import only the standard library and `_COPIED`. | `tests/test_granice_importow.py` |
+| The engine (`src/rozliczenia/*.py`) never imports Centrum rozliczeń, the modules in `STDLIB_ONLY` import only the standard library and each other when loaded, and the modules of the restart guardian's copy (`_COPIED` in `restart_guardian.py`) import only the standard library and `_COPIED`; the efenix model (`tools/lib/model_efenix.py`) imports only the standard library and the Atrapa efenix (`tests/fixtures/atrapa_efenix.py`) only it and the model, because tests compare Wycena w efenix with them. | `tests/test_granice_importow.py` |
 | A `match` handles every variant of its subject or ends with `case _`, a condition is never a value that is always true (an Enum member, a `Path`, a dataclass, an `Iterable`), and a `# type: ignore` names its error code. | mypy codes `exhaustive-match`, `truthy-bool`, `truthy-iterable` and `ignore-without-code` (`enable_error_code` in `pyproject.toml`), for both systems in `tools/ci_lokalnie.py` |
 | In `src/`, a signature names its type instead of `Any`: the concrete type, `object`, or a `TypeVar`. | ruff `ANN401` (`pyproject.toml`) |
 

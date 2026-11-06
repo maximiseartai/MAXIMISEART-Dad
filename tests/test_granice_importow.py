@@ -8,6 +8,10 @@ spoza standardowej aktualizacja, którą opiekun kończy, mogła właśnie zmien
 kopii (``test_opiekun_ponownego_startu.py``) łapie brak modułu dopiero po minucie czekania na nową wersję, a
 bibliotekę spoza standardowej, którą Python ma, przepuszcza.
 
+Model efenix (``tools/lib/model_efenix.py``) importuje tylko bibliotekę standardową, a Atrapa efenix
+(``tests/fixtures/atrapa_efenix.py``) tylko ją i model: z nimi testy i narzędzia porównują Wycenę w efenix, więc nie
+biorą niczego z kodu pod testem (``src``).
+
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica: import przez ``importlib`` albo ``__import__`` z napisu łapie tylko
 przegląd.
@@ -23,6 +27,12 @@ import sys
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 GUARDIAN = SRC / "rozliczenia" / "centrum" / "restart_guardian.py"
+ROOT = SRC.parent
+# Wyrocznia Wyceny w efenix i moduły spoza biblioteki standardowej, które wolno jej importować.
+EFENIX_ORACLE = {
+    ROOT / "tools" / "lib" / "model_efenix.py": frozenset[str](),
+    ROOT / "tests" / "fixtures" / "atrapa_efenix.py": frozenset({"model_efenix"}),
+}
 STDLIB_ONLY = {
     "rozliczenia/__init__.py": "pakiet, który wczytuje każdy moduł poniżej",
     "rozliczenia/centrum/__init__.py": "pakiet, który wczytuje każdy moduł Centrum",
@@ -163,5 +173,25 @@ def test_kopia_opiekuna_ponownego_startu_importuje_tylko_biblioteke_standardowa_
             "Opiekun ponownego startu działa z kopii _COPIED (src/rozliczenia/centrum/restart_guardian.py) bez "
             "bibliotek narzędzia. Dopisz moduł bez zależności do _COPIED albo przenieś kod, który go potrzebuje, "
             "poza moduły kopii.",
+        ]
+    )
+
+
+def test_model_i_atrapa_efenix_nie_importuja_kodu_pod_testem() -> None:
+    found = {
+        f"{path.relative_to(ROOT).as_posix()}:{node.lineno}: {ast.unparse(node)}"
+        for path, allowed in EFENIX_ORACLE.items()
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+        for module in ([alias.name for alias in node.names] if isinstance(node, ast.Import) else [node.module or ""])
+        if (isinstance(node, ast.ImportFrom) and node.level) or not (_is_stdlib(module) or module in allowed)
+    }
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            "Model efenix (tools/lib/model_efenix.py) importuje tylko bibliotekę standardową, a Atrapa efenix "
+            "(tests/fixtures/atrapa_efenix.py) tylko ją i model: test porównuje z nimi Wycenę w efenix, więc nie biorą "
+            "niczego z kodu pod testem. Napisz potrzebny kod w modelu albo w Atrapie.",
         ]
     )

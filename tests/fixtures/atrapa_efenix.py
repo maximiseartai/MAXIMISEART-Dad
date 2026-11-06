@@ -1,5 +1,9 @@
 """Atrapa efenix: lokalny serwer HTTP z wymyślonymi zleceniami w budowie stron efenix (ADR 0024).
 
+Stan zleceń i sesji oraz decyzje serwera efenix trzyma model ``tools/lib/model_efenix.py`` (``StanEfenix``,
+``SerwerEfenix``): Atrapa tłumaczy żądanie okna na działanie modelu, a jego wynik na odpowiedź HTTP. W Atrapie zostają
+budowa stron, skrypty stron, ścieżki, ciasteczko sesji i awarie sieci.
+
 Odtwarza tylko to, czego używa okno efenix narzędzia: identyfikatory pól (``#field_numer``, ``#wyniki``, ``#data_install``,
 ``#field_signum``, ``#field_password``), adresy odpowiedzi (``action_fill_orders.php``, ``page_order_edit.php?id=``,
 ``page_login.php``) i kształt komórek tabeli wyników (``Numer dokumentu<br><small>Identyfikator Fenix</small>``, status
@@ -59,9 +63,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
-import copy
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 import enum
 from html import escape
@@ -74,6 +77,25 @@ import threading
 import time
 from typing import Any
 from urllib.parse import parse_qs, urlparse
+
+# Model efenix leży w ``tools/lib``, który każdy, kto importuje Atrapę, ma na ``sys.path``: pytest (``tests/conftest.py``)
+# i narzędzia oraz skrypty skilli, które dodają go same.
+from model_efenix import (
+    CATALOG as CATALOG,
+    PRICES as PRICES,
+    TODAY as TODAY,
+    Action,
+    EfenixOrder,
+    EmmettRefusal as EmmettRefusal,
+    NoOrder,
+    NoSession,
+    Position as Position,
+    ProposalFailure as ProposalFailure,
+    Saved,
+    StanEfenix,
+    amount_of as amount_of,
+    earliest_execution_date,
+)
 
 LIST_PAGE = "index.php"
 SEARCH = "action_fill_orders.php"
@@ -109,15 +131,10 @@ _NOT_FOUND = '\r\n\n\r\n\r\n<p class="alert alert-danger"><strong>Ostrzeżenie: 
 _SESSION_EXPIRED = '\r\n\n\r\n\r\n<p class="alert alert-danger"><strong>Ostrzeżenie: </strong>Twoja sesja wygasła - zaloguj się ponownie !</p>'
 # Ostrzeżenie, którego okno nie zna, bez tabeli wyników (``Changed.RESULTS_WARNING``, tekst wymyślony).
 _OTHER_WARNING = '<p class="alert alert-danger"><strong>Ostrzeżenie: </strong>Lista zleceń jest chwilowo niedostępna !</p>'
-TODAY = date(2026, 10, 12)
-"""Dzień, który kalendarz Atrapy ma za dzisiejszy, gdy test nie poda innego: dni z ``DATA`` testów (wrzesień 2026) są
-w zakresie, który przyjmuje efenix."""
-
-
-def earliest_execution_date(today: date) -> date:
-    """Pierwszy dzień poprzedniego miesiąca: najwcześniejsza data wykonania, którą przyjmuje kalendarz efenix."""
-
-    return (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+EFENIX_EMMETT_RELOAD_MS = 1000
+"""Przeładowanie strony, które skrypt efenix robi po odpowiedzi „Załaduj do zlecenia”: w efenix po 1 s."""
+# W Atrapie domyślnie krócej, żeby testy szły szybko.
+_EMMETT_RELOAD_MS = 200
 
 
 class Changed(enum.Enum):
@@ -169,115 +186,25 @@ class Outage(enum.Enum):
     )
 
 
-class ProposalFailure(enum.Enum):
-    """Jak pada propozycja Emmetta zlecenia (``action_fill_emmett.php``, ``AtrapaOrder.emmett_proposal_failure``); skrypt
-    strony i tak pokazuje okno Emmetta, puste, jak skrypt efenix."""
-
-    SERVER_ERROR = "HTTP 500 bez propozycji"
-    TORN = "odpowiedź z propozycją zerwana w połowie treści"
-    CUT = "połączenie zerwane bez odpowiedzi"
-
-
-class EmmettRefusal(enum.Enum):
-    """Jak efenix odmawia „Załaduj do zlecenia” zlecenia (``AtrapaOrder.emmett_refusal``); skrypt strony i tak ją
-    przeładowuje, bo czeka tylko na koniec odpowiedzi, a nie na jej status."""
-
-    FORBIDDEN = "HTTP 403 bez załadowania Wyceny Emmetta"
-    SERVER_ERROR = "HTTP 500 po załadowaniu Wyceny Emmetta"
-    ELSEWHERE = "przekierowanie na listę zleceń bez załadowania Wyceny Emmetta"
-    LOGGED_OUT = "sesja wygasa przy tym żądaniu: przekierowanie na stronę logowania bez załadowania Wyceny Emmetta"
-    NOK = "200 z JSON result: nok bez załadowania Wyceny Emmetta"
-    OTHER = "200 z inną treścią (strona HTML) bez załadowania Wyceny Emmetta"
-
-
-@dataclass(frozen=True)
-class Position:
-    """Pozycja wyceny Atrapy: kod ``NNN``, wymyślona cena i rodzaj pola (``ILOSC`` albo ``CENA``)."""
-
-    code: str
-    price: Decimal
-    kind: str = "ILOSC"
-
-
-# Kody pozycji stron efenix (z przypisania kolumn Wyceny w efenix i bez niego); ceny są wymyślone, bo ceny efenix to
-# ceny umowy taty z firmą.
-CATALOG = (
-    *(
-        Position(code, Decimal(price))
-        for code, price in [
-            ("005", "11.00"), ("007", "12.00"), ("008", "13.00"), ("009", "14.00"), ("010", "15.00"), ("012", "21.00"),
-            ("013", "22.00"), ("014", "23.00"), ("015", "24.00"), ("016", "3.00"), ("017", "25.00"), ("018", "26.00"),
-            ("019", "4.00"), ("020", "27.00"), ("021", "28.00"), ("023", "61.00"), ("024", "62.00"), ("025", "63.00"),
-            ("026", "64.00"), ("027", "41.00"), ("028", "42.00"), ("029", "31.00"), ("022", "29.00"), ("033", "32.00"),
-            ("034", "33.00"), ("035", "34.00"), ("036", "35.00"), ("037", "36.00"), ("038", "37.00"), ("039", "38.00"),
-            ("040", "39.00"), ("041", "43.00"), ("042", "44.00"), ("044", "45.00"), ("046", "46.00"), ("047", "47.00"),
-            ("050", "51.00"), ("051", "52.00"), ("052", "53.00"), ("053", "54.00"), ("054", "55.00"),
-        ]
-    ),
-    Position("045", Decimal("1.00"), "CENA"),
-    Position("032", Decimal("1.00"), "CENA"),
-)
-PRICES = {position.code: position.price for position in CATALOG}
-EFENIX_EMMETT_RELOAD_MS = 1000
-"""Przeładowanie strony, które skrypt efenix robi po odpowiedzi „Załaduj do zlecenia”: w efenix po 1 s."""
-# W Atrapie domyślnie krócej, żeby testy szły szybko.
-_EMMETT_RELOAD_MS = 200
-
-
-def amount_of(quantities: Mapping[str, int], prices: Mapping[str, Decimal] = PRICES) -> Decimal:
-    """Kwota końcowa wyceny z ilościami ``quantities`` (kod → ilość) w cenach ``prices`` (domyślnie cenach Atrapy)."""
-
-    return sum((prices[code] * quantity for code, quantity in quantities.items()), Decimal("0.00"))
-
-
 @dataclass
-class AtrapaOrder:
-    """Wymyślone zlecenie Atrapy w tym, co pokazują lista i strona zlecenia efenix.
+class AtrapaOrder(EfenixOrder):
+    """Zlecenie efenix (``EfenixOrder``) z pokrętłami budowy i odpowiedzi jego strony w Atrapie.
 
-    ``quantities``: ilości wyceny (kod → ilość różna od 0), ``emmett``: propozycja Emmetta w tym samym kształcie,
-    ``emmett_loads``: ile razy załadowano do zlecenia Wycenę Emmetta, a ``emmett_over_pricing``: ile z tych razy
-    zlecenie miało w chwili żądania wycenę inną niż ta Wycena Emmetta, którą „Załaduj do zlecenia” zastąpił (wycenę taty
-    albo ilości wpisane przez proces). ``changed``: strona tylko tego zlecenia w innej
-    budowie (``Changed``), a ``cut``: strona tego zlecenia zrywa połączenie bez odpowiedzi, jak sieć, która zniknęła, więc
-    zlecenia przed nim przechodzą jak w efenix. ``error_status``: strona tego zlecenia to strona błędu serwera z tym
-    statusem HTTP, a ``login_form``: formularz logowania pod adresem strony zlecenia, bez przekierowania. ``hung``: strona
-    tego zlecenia nie odpowiada do końca bloku, jak efenix, który stanął, więc test może zgasić Centrum w trakcie
-    zlecenia. ``without``: kody pozycji, których karty strona tego zlecenia nie ma, jak strony efenix z częścią pozycji
-    wyceny. Z ``after_date`` każda z tych czterech zmian strony jest dopiero od zapisu daty wykonania, a z ``after_emmett``
-    od przeładowania po załadowaniu Wyceny Emmetta. ``emmett_refusal``: efenix odmawia „Załaduj do zlecenia” tego
-    zlecenia (``EmmettRefusal``), aż test to zmieni. ``emmett_in_fields``: okno Emmetta pokazuje propozycję w polach bez
-    tekstu (ilość w ``value``), jedną z postaci, których w efenix nikt nie zmierzył. ``emmett_proposal_failure``: propozycja
-    Emmetta tego zlecenia (``action_fill_emmett.php``) pada (``ProposalFailure``), więc okno Emmetta zostaje puste.
+    ``changed``: strona tylko tego zlecenia w innej budowie (``Changed``), a ``cut``: strona tego zlecenia zrywa
+    połączenie bez odpowiedzi, jak sieć, która zniknęła, więc zlecenia przed nim przechodzą jak w efenix.
+    ``error_status``: strona tego zlecenia to strona błędu serwera z tym statusem HTTP, a ``login_form``: formularz
+    logowania pod adresem strony zlecenia, bez przekierowania. ``hung``: strona tego zlecenia nie odpowiada do końca
+    bloku, jak efenix, który stanął, więc test może zgasić Centrum w trakcie zlecenia. Te trzy, jak brak pozycji
+    ``without``, są dopiero od zmiany strony (``page_changed``). ``emmett_in_fields``: okno Emmetta pokazuje propozycję
+    w polach bez tekstu (ilość w ``value``), jedną z postaci, których w efenix nikt nie zmierzył.
     """
 
-    order_id: str
-    number: str
-    realizator: str
-    address: str
-    status: str = "Do wyceny"
-    execution_date: date | None = None
-    executor: str = "Firma Testowa Jan Fikcyjny"
-    region: str = "WOJEWODZTWO-Miasto-Gmina-Dzielnica"
-    operator: str = "OPERATOR"
-    quantities: dict[str, int] = field(default_factory=dict)
-    emmett: dict[str, int] = field(default_factory=dict)
-    emmett_loads: int = 0
-    emmett_over_pricing: int = 0
     changed: Changed | None = None
     cut: bool = False
     error_status: HTTPStatus | None = None
     login_form: bool = False
     hung: bool = False
-    without: frozenset[str] = frozenset()
-    after_date: bool = False
-    after_emmett: bool = False
-    emmett_refusal: EmmettRefusal | None = None
     emmett_in_fields: bool = False
-    emmett_proposal_failure: ProposalFailure | None = None
-
-    @property
-    def amount(self) -> Decimal:
-        return amount_of(self.quantities)
 
 
 @dataclass(frozen=True)
@@ -296,24 +223,22 @@ class Request:
 
 @dataclass
 class AtrapaEfenix:
-    """Stan Atrapy: zlecenia, sesja i dziennik żądań; ``url`` to adres listy zleceń."""
+    """Atrapa w bloku ``atrapa_efenix``: stan efenix (``stan``), dziennik żądań i odcięcie; ``url`` to adres listy
+    zleceń."""
 
-    orders: list[AtrapaOrder]
+    stan: StanEfenix[AtrapaOrder]
     url: str = ""
-    logged_in: bool = True
     outage: Outage | None = None
     requests: list[Request] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def expire_session(self) -> None:
-        with self._lock:
-            self.logged_in = False
+        self.stan.expire_session()
 
     def log_in(self) -> None:
         """Tata zalogował się w efenix (w tej samej sesji, w której pracuje okno narzędzia)."""
 
-        with self._lock:
-            self.logged_in = True
+        self.stan.log_in()
 
     def reconnect(self) -> None:
         """Połączenie z efenix wróciło: Atrapa znów odpowiada na każde żądanie (odpowiedzi wstrzymane przez ``SLOW`` i
@@ -325,15 +250,12 @@ class AtrapaEfenix:
     def edit(self, number: str, change: Callable[[AtrapaOrder], object]) -> None:
         """Tata sam zmienia w efenix zlecenie ``number``: ``change`` dostaje jego stan w Atrapie."""
 
-        with self._lock:
-            [order] = [order for order in self.orders if order.number == number]
-            change(order)
+        self.stan.edit(number, change)
 
     def state(self) -> tuple[list[AtrapaOrder], bool]:
         """Kopia zleceń i sesji do porównania stanu przed przebiegiem i po nim."""
 
-        with self._lock:
-            return copy.deepcopy(self.orders), self.logged_in
+        return self.stan.state()
 
     def requested(self) -> list[tuple[str, str]]:
         with self._lock:
@@ -382,13 +304,15 @@ def atrapa_efenix(
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
-    ``expire_after``: ścieżka i liczba jej żądań narzędzia (bez szukania, które lista wysyła sama), po których sesja
-    wygasa raz, jak przy wylogowaniu w trakcie przebiegu; po ponownym zalogowaniu już nie wygasa. ``today``: dzisiejszy
+    ``expire_after``: ścieżka działania serwera (``_ACTIONS``) i liczba tych działań narzędzia (bez szukania, które lista
+    wysyła sama), po których sesja wygasa raz, jak przy wylogowaniu w trakcie przebiegu; po ponownym zalogowaniu już nie
+    wygasa. Liczy się działanie, które doszło do serwera, a nie żądanie odcięte (``outage_from``), z błędem
+    (``error_answer``) albo bez ciasteczka sesji (``StanEfenix.count``). ``today``: dzisiejszy
     dzień kalendarza daty wykonania. ``refuse_dates``: serwer odpowiada na zapis daty wykonania bez zapisu. ``clock``:
     zegar w sekundach, którego chwilę dostaje każde żądanie. ``outage_from``: rodzaj odcięcia i numer żądania (od 0, każde
     żądanie po kolei, jak w ``requests``), od którego efenix jest odcięty raz, do ``reconnect``. ``emmett_reload_ms``: po
     ilu milisekundach od odpowiedzi „Załaduj do zlecenia” skrypt strony ją przeładowuje (w efenix
-    ``EFENIX_EMMETT_RELOAD_MS``, domyślnie krócej). Atrapa pracuje na kopii
+    ``EFENIX_EMMETT_RELOAD_MS``, domyślnie krócej). Model pracuje na kopii
     ``orders``, więc zlecenia testu zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie.
     ``error_answer``: ścieżka, numer jej żądania narzędzia (od 1, bez szukania, które lista wysyła sama) i status błędu
     HTTP: na to jedno żądanie Atrapa odpowiada stroną błędu serwera z tym statusem, bez wykonania żądania.
@@ -396,8 +320,15 @@ def atrapa_efenix(
     ceny Atrapy (``PRICES``); odtworzenie Uruchomienia podaje ceny z kwot w Logach (``tools/lib/atrapa_z_logow.py``).
     """
 
-    atrapa = AtrapaEfenix(copy.deepcopy(list(orders)))
-    expired = threading.Event()
+    stan = StanEfenix(
+        orders,
+        today=today,
+        refuse_dates=refuse_dates,
+        prices=prices,
+        expire_after=None if expire_after is None else (_ACTIONS[expire_after[0]], expire_after[1]),
+    )
+    serwer = stan.serwer
+    atrapa = AtrapaEfenix(stan)
     cut_off = threading.Event()
     # Koniec bloku przerywa opóźnione odpowiedzi i zamyka otwarte połączenia, więc żaden wątek obsługi nie czeka dłużej
     # niż Atrapa, a po bloku nic już pod jej adresem nie odpowiada.
@@ -441,22 +372,17 @@ def atrapa_efenix(
             params = {name: values[0] for name, values in parse_qs(url.query).items()} | form
             with atrapa._lock:
                 atrapa.requests.append(Request(method, path, params, clock()))
-                if expire_after is not None and path == expire_after[0] and not expired.is_set():
-                    if sum(request.path == path and not request.by_list for request in atrapa.requests) > expire_after[1]:
-                        atrapa.logged_in = False
-                        expired.set()
                 if outage_from is not None and len(atrapa.requests) > outage_from[1] and not cut_off.is_set():
                     atrapa.outage = outage_from[0]
                     cut_off.set()
                 outage = atrapa.outage
+                by_list = atrapa.requests[-1].by_list
                 failing = (
                     error_answer is not None
                     and path == error_answer[0]
-                    and not atrapa.requests[-1].by_list
+                    and not by_list
                     and sum(request.path == path and not request.by_list for request in atrapa.requests) == error_answer[1]
                 )
-                logged_in = atrapa.logged_in and (not cookie_session or _has_session_cookie(self.headers.get("Cookie", "")))
-                orders = copy.deepcopy(atrapa.orders)
             if outage is Outage.CUT:
                 self._cut()
                 return
@@ -466,8 +392,7 @@ def atrapa_efenix(
             if failing and error_answer is not None:
                 self._html("<p>Wystąpił błąd serwera.</p>", error_answer[2])
             elif path == LOGIN_ACTION and method == "POST":
-                with atrapa._lock:
-                    atrapa.logged_in = True
+                stan.log_in()
                 self._redirect(LIST_PAGE, cookie=cookie_session)
             elif path == LOGIN_PAGE:
                 self._html(_login_page(changed))
@@ -475,90 +400,142 @@ def atrapa_efenix(
                 self._html(_list_script(changed), content_type="text/javascript")
             elif path == ORDER_SCRIPT and method == "GET":
                 self._html(_order_script(changed, today, emmett_reload_ms), content_type="text/javascript")
-            elif not logged_in and path == SAVE_QUANTITY:
-                self._json({"result": "nok", "error": "Brak sesji."})
-            elif not logged_in and path == SEARCH and method == "POST":
-                self._html(_SESSION_EXPIRED)
-            elif not logged_in:
-                self._redirect(LOGIN_PAGE)
+            elif cookie_session and not _has_session_cookie(self.headers.get("Cookie", "")):
+                # Żądanie bez ciasteczka sesji nie należy do sesji efenix, więc nie dochodzi do serwera.
+                self._no_session(method, path)
+            elif (method, path) in _ACTION_ROUTES:
+                self._act(method, path, params, by_list=by_list)
+            elif not stan.logged_in:
+                self._no_session(method, path)
             elif path == LOGOUT:
-                with atrapa._lock:
-                    atrapa.logged_in = False
+                stan.expire_session()
                 self._redirect(LOGIN_PAGE)
-            elif method == "POST" and path == LOAD_EMMETT and (refusal := _emmett_refusal(orders, params)) is not None:
-                match refusal:
-                    case EmmettRefusal.FORBIDDEN:
-                        self._html("<p>Brak dostępu.</p>", HTTPStatus.FORBIDDEN)
-                    case EmmettRefusal.SERVER_ERROR:
-                        with atrapa._lock:
-                            [order] = [order for order in atrapa.orders if order.order_id == params.get("order_id")]
-                            _change(path, order, params, refuse_dates=refuse_dates, prices=prices)
-                        self._html("<p>Wystąpił błąd serwera.</p>", HTTPStatus.INTERNAL_SERVER_ERROR)
-                    case EmmettRefusal.ELSEWHERE:
-                        self._redirect(LIST_PAGE)
-                    case EmmettRefusal.LOGGED_OUT:
-                        with atrapa._lock:
-                            atrapa.logged_in = False
-                        self._redirect(LOGIN_PAGE)
-                    case EmmettRefusal.NOK:
-                        self._json({"result": "nok", "error": "Nie załadowano."})
-                    case EmmettRefusal.OTHER:
-                        self._html("<p>Nie załadowano wyceny Emmetta.</p>")
-            elif method == "POST" and path == FILL_EMMETT and (failed_proposal := _failing_proposal(orders, params)) is not None:
-                order, failure = failed_proposal
-                match failure:
-                    case ProposalFailure.SERVER_ERROR:
-                        self._html("<p>Wystąpił błąd serwera.</p>", HTTPStatus.INTERNAL_SERVER_ERROR)
-                    case ProposalFailure.TORN:
-                        self._torn = True
-                        self._html(str(_change(path, order, params, refuse_dates=refuse_dates, prices=prices)))
-                    case ProposalFailure.CUT:
-                        self._cut()
-            elif method == "POST" and path in _CHANGES:
-                with atrapa._lock:
-                    found = [order for order in atrapa.orders if order.order_id == params.get(_CHANGES[path])]
-                    answer = _change(path, found[0], params, refuse_dates=refuse_dates, prices=prices) if found else None
-                if answer is None:
-                    self._html("<p>Nie ma takiego zlecenia.</p>", HTTPStatus.NOT_FOUND)
-                elif isinstance(answer, dict) and changed is Changed.QUANTITY_ANSWER:
-                    self._html("<p>Zapisano.</p>")
-                elif isinstance(answer, dict):
-                    self._json(answer)
-                else:
-                    self._html(answer)
             elif path == LIST_PAGE and method == "GET":
                 self._html(_list_page(changed, self.headers.get("Host", "")))
-            elif path == SEARCH and method == "POST":
-                closing.wait(answer_delay_s)
-                number = params.get("numer", "").strip()
-                if not params.get("na_stronie"):
-                    self._html(_NO_ROW_LIMIT)
-                elif changed is Changed.RESULTS_WARNING:
-                    self._html(_OTHER_WARNING)
-                else:
-                    found = [] if params.get("xrodzaj") == "" else [order for order in orders if number in order.number]
-                    self._html(_results(found, changed) if found else _NOT_FOUND)
-            elif path == ORDER_PAGE and method == "GET" and changed is Unread.ORDER_REDIRECT:
-                self._redirect(LOGOUT)
-            elif path == ORDER_PAGE and method == "GET":
-                found = [order for order in orders if order.order_id == params.get("id")]
-                if found and found[0].cut:
-                    self._cut()
-                elif found and found[0].error_status is not None and _broken(found[0]):
-                    self._html("<p>Wystąpił błąd serwera.</p>", found[0].error_status)
-                elif found and found[0].login_form and _broken(found[0]):
-                    self._html(_login_page(None))
-                elif found and found[0].hung and _broken(found[0]):
-                    closing.wait()
-                    self.close_connection = True
-                elif found:
-                    self._html(
-                        _order_page(found[0], found[0].changed or changed, today, self.headers.get("Host", ""), emmett_reload_ms, prices)
-                    )
-                else:
-                    self._html("<p>Nie ma takiego zlecenia.</p>", HTTPStatus.NOT_FOUND)
             else:
                 self._html("<p>Nie ma takiej strony.</p>", HTTPStatus.NOT_FOUND)
+
+        def _no_session(self, method: str, path: str) -> None:
+            """Odpowiedź efenix bez sesji: zapis ilości ``result: nok``, szukanie samo ostrzeżenie o wygasłej sesji (pomiar
+            4.11.2026, #828), a reszta przekierowanie na stronę logowania."""
+
+            if path == SAVE_QUANTITY:
+                self._json({"result": "nok", "error": "Brak sesji."})
+            elif path == SEARCH and method == "POST":
+                self._html(_SESSION_EXPIRED)
+            else:
+                self._redirect(LOGIN_PAGE)
+
+        def _act(self, method: str, path: str, params: Mapping[str, str], *, by_list: bool) -> None:
+            """Działanie serwera efenix (``SerwerEfenix``) na żądanie ``path`` i jego wynik jako odpowiedź HTTP."""
+
+            order_id = params.get(_ACTION_ROUTES[method, path], "")
+            if path == SEARCH:
+                self._search(params, serwer.search(params.get("numer", "").strip(), own=not by_list))
+            elif path == ORDER_PAGE:
+                self._order(method, path, serwer.page(order_id))
+            elif path == SET_DATE:
+                saved = serwer.set_date(order_id, date.fromisoformat(params["date"]))
+                if self._done(method, path, saved):
+                    self._html("ok" if saved else "Nie zapisano daty.")
+            elif path == GET_DATE:
+                day = serwer.date_of(order_id)
+                if self._done(method, path, day):
+                    self._html("0" if day is None else str(day))
+            elif path == FILL_EMMETT:
+                self._proposal(method, path, serwer.proposal(order_id))
+            elif path == LOAD_EMMETT:
+                self._loaded(method, path, serwer.load_emmett(order_id))
+            elif path == SAVE_QUANTITY:
+                code = params.get("index", "").removeprefix("INDEKS_").partition("_")[0]
+                value = params.get("parametr", "")
+                self._saved(method, path, serwer.save_quantity(order_id, code, int(value) if value.isdigit() else None))
+            elif self._done(method, path, serwer.change_status(order_id, params.get("xstatus", ""))):
+                self._html("ok")
+
+        def _done(self, method: str, path: str, result: object) -> bool:
+            """Czy serwer wykonał działanie; bez sesji albo zlecenia odpowiada tak jak efenix i mówi ``False``."""
+
+            if isinstance(result, NoSession):
+                self._no_session(method, path)
+            elif isinstance(result, NoOrder):
+                self._html("<p>Nie ma takiego zlecenia.</p>", HTTPStatus.NOT_FOUND)
+            return not isinstance(result, NoSession | NoOrder)
+
+        def _search(self, params: Mapping[str, str], found: tuple[AtrapaOrder, ...] | NoSession) -> None:
+            if isinstance(found, NoSession):
+                self._no_session("POST", SEARCH)
+                return
+            closing.wait(answer_delay_s)
+            if not params.get("na_stronie"):
+                self._html(_NO_ROW_LIMIT)
+            elif changed is Changed.RESULTS_WARNING:
+                self._html(_OTHER_WARNING)
+            else:
+                shown = () if params.get("xrodzaj") == "" else found
+                self._html(_results(shown, changed) if shown else _NOT_FOUND)
+
+        def _order(self, method: str, path: str, order: AtrapaOrder | NoOrder | NoSession) -> None:
+            if isinstance(order, NoSession):
+                self._no_session(method, path)
+            elif changed is Unread.ORDER_REDIRECT:
+                self._redirect(LOGOUT)
+            elif not self._done(method, path, order) or isinstance(order, NoOrder):
+                return
+            elif order.cut:
+                self._cut()
+            elif order.error_status is not None and order.page_changed:
+                self._html("<p>Wystąpił błąd serwera.</p>", order.error_status)
+            elif order.login_form and order.page_changed:
+                self._html(_login_page(None))
+            elif order.hung and order.page_changed:
+                closing.wait()
+                self.close_connection = True
+            else:
+                self._html(_order_page(order, order.changed or changed, today, self.headers.get("Host", ""), emmett_reload_ms, prices))
+
+        def _proposal(self, method: str, path: str, order: AtrapaOrder | NoOrder | NoSession) -> None:
+            if not self._done(method, path, order) or isinstance(order, NoOrder | NoSession):
+                return
+            match order.emmett_proposal_failure:
+                case ProposalFailure.SERVER_ERROR:
+                    self._html("<p>Wystąpił błąd serwera.</p>", HTTPStatus.INTERNAL_SERVER_ERROR)
+                case ProposalFailure.TORN:
+                    self._torn = True
+                    self._html(_proposal(order))
+                case ProposalFailure.CUT:
+                    self._cut()
+                case None:
+                    self._html(_proposal(order))
+
+        def _loaded(self, method: str, path: str, refusal: EmmettRefusal | None | NoOrder | NoSession) -> None:
+            match refusal:
+                case NoSession() | NoOrder():
+                    self._done(method, path, refusal)
+                case None:
+                    self._html("ok")
+                case EmmettRefusal.FORBIDDEN:
+                    self._html("<p>Brak dostępu.</p>", HTTPStatus.FORBIDDEN)
+                case EmmettRefusal.SERVER_ERROR:
+                    self._html("<p>Wystąpił błąd serwera.</p>", HTTPStatus.INTERNAL_SERVER_ERROR)
+                case EmmettRefusal.ELSEWHERE:
+                    self._redirect(LIST_PAGE)
+                case EmmettRefusal.LOGGED_OUT:
+                    self._redirect(LOGIN_PAGE)
+                case EmmettRefusal.NOK:
+                    self._json({"result": "nok", "error": "Nie załadowano."})
+                case EmmettRefusal.OTHER:
+                    self._html("<p>Nie załadowano wyceny Emmetta.</p>")
+
+        def _saved(self, method: str, path: str, saved: Saved | None | NoOrder | NoSession) -> None:
+            if not self._done(method, path, saved) or isinstance(saved, NoOrder | NoSession):
+                return
+            if changed is Changed.QUANTITY_ANSWER:
+                self._html("<p>Zapisano.</p>")
+            elif saved is None:
+                self._json({"result": "nok", "error": "Zły indeks."})
+            else:
+                self._json({"result": "ok", "price_index": f"{saved.price:.2f}", "price_all": f"{saved.amount:.2f}"})
 
         def _cut(self) -> None:
             """Zrywa połączenie bez odpowiedzi: zamknięcie z ``SO_LINGER`` 0 wysyła RST (``net::ERR_CONNECTION_RESET``)."""
@@ -660,61 +637,37 @@ class _Server(ThreadingHTTPServer):
                     connection.shutdown(socket.SHUT_RDWR)
 
 
-# Działania na zleceniu i pole, w którym przychodzi jego identyfikator.
-_CHANGES = {SAVE_QUANTITY: "order_id", FILL_EMMETT: "order_id", LOAD_EMMETT: "order_id", SET_DATE: "id", GET_DATE: "id", CHANGE_STATUS: "order_id"}
+# Żądania, które są działaniem serwera efenix, i pole, w którym przychodzi identyfikator zlecenia (szukanie bez niego).
+_ACTION_ROUTES: Mapping[tuple[str, str], str] = {
+    ("POST", SEARCH): "",
+    ("GET", ORDER_PAGE): "id",
+    ("POST", SET_DATE): "id",
+    ("POST", GET_DATE): "id",
+    ("POST", FILL_EMMETT): "order_id",
+    ("POST", LOAD_EMMETT): "order_id",
+    ("POST", SAVE_QUANTITY): "order_id",
+    ("POST", CHANGE_STATUS): "order_id",
+}
+# Działanie modelu, które liczy ``expire_after`` ze ścieżką żądania.
+_ACTIONS: Mapping[str, Action] = {
+    SEARCH: Action.SEARCH,
+    ORDER_PAGE: Action.OPEN,
+    SET_DATE: Action.DATE,
+    FILL_EMMETT: Action.PROPOSAL,
+    LOAD_EMMETT: Action.EMMETT,
+    SAVE_QUANTITY: Action.QUANTITY,
+    CHANGE_STATUS: Action.STATUS,
+}
 
 
-def _failing_proposal(orders: Sequence[AtrapaOrder], params: Mapping[str, str]) -> tuple[AtrapaOrder, ProposalFailure] | None:
-    """Zlecenie, którego ``order_id`` przyszło w ``params``, z tym, jak pada jego propozycja Emmetta, gdy pada."""
+def _proposal(order: AtrapaOrder) -> str:
+    """Propozycja Emmetta zlecenia w oknie Emmetta: lista ``INDEKS_NNN_078: ilość`` albo pola z ilością w ``value``
+    (``emmett_in_fields``), a gdy Emmett nic nie proponuje, pusta treść."""
 
-    for order in orders:
-        if order.order_id == params.get("order_id") and order.emmett_proposal_failure is not None:
-            return order, order.emmett_proposal_failure
-    return None
-
-
-def _emmett_refusal(orders: Sequence[AtrapaOrder], params: Mapping[str, str]) -> EmmettRefusal | None:
-    """Odmowa „Załaduj do zlecenia” zlecenia, którego ``order_id`` przyszło w ``params``."""
-
-    return next((order.emmett_refusal for order in orders if order.order_id == params.get("order_id")), None)
-
-
-def _change(
-    path: str, order: AtrapaOrder, params: Mapping[str, str], *, refuse_dates: bool, prices: Mapping[str, Decimal]
-) -> str | dict[str, str]:
-    """Odpowiedź Atrapy na działanie ``path`` na zleceniu ``order`` w cenach ``prices`` i zmiana jego stanu (pod blokadą
-    Atrapy)."""
-
-    if path == SAVE_QUANTITY:
-        code = params.get("index", "").removeprefix("INDEKS_").partition("_")[0]
-        if code not in PRICES or not params.get("parametr", "").isdigit():
-            return {"result": "nok", "error": "Zły indeks."}
-        quantity = int(params["parametr"])
-        if quantity:
-            order.quantities[code] = quantity
-        else:
-            order.quantities.pop(code, None)
-        return {"result": "ok", "price_index": f"{prices[code] * quantity:.2f}", "price_all": f"{amount_of(order.quantities, prices):.2f}"}
-    if path == FILL_EMMETT:
-        if order.emmett_in_fields:
-            return "".join(f'<input name="INDEKS_{escape(code)}_078" value="{quantity}">' for code, quantity in sorted(order.emmett.items()))
-        rows = "".join(f"<li>INDEKS_{escape(code)}_078: {quantity}</li>" for code, quantity in sorted(order.emmett.items()))
-        return f"<ul>{rows}</ul>" if rows else ""
-    if path == LOAD_EMMETT:
-        if order.quantities and order.quantities != order.emmett:
-            order.emmett_over_pricing += 1
-        order.quantities = dict(order.emmett)
-        order.emmett_loads += 1
-        return "ok"
-    if path == SET_DATE:
-        if refuse_dates:
-            return "Nie zapisano daty."
-        order.execution_date = date.fromisoformat(params["date"])
-        return "ok"
-    if path == GET_DATE:
-        return "0" if order.execution_date is None else order.execution_date.isoformat()
-    order.status = params.get("xstatus", "")
-    return "ok"
+    if order.emmett_in_fields:
+        return "".join(f'<input name="INDEKS_{escape(code)}_078" value="{quantity}">' for code, quantity in sorted(order.emmett.items()))
+    rows = "".join(f"<li>INDEKS_{escape(code)}_078: {quantity}</li>" for code, quantity in sorted(order.emmett.items()))
+    return f"<ul>{rows}</ul>" if rows else ""
 
 
 def _page(title: str, body: str) -> str:
@@ -958,7 +911,7 @@ def _order_page(
         f"<div><small>Ulica - numer</small> {escape(order.address)}</div>"
         '<div class="card"><button type="button" id="button_forward_to_accept">Przekaż do akceptacji.</button>'
         '<button type="button" id="button_forward_to_cancel">Anuluj to zlecenie.</button></div>'
-        f'<div class="card"><span>Wycena</span>{emmett}{"".join(_position(order, position, changed, prices) for position in CATALOG if not (position.code in order.without and _broken(order)))}'
+        f'<div class="card"><span>Wycena</span>{emmett}{"".join(_position(order, position, changed, prices) for position in order.positions)}'
         f'<h1><span id="cena_all2">{sign}{amount_of(order.quantities, prices):.2f}</span></h1></div>'
         + _dialog("dialog_forward_yes_no", "Zmiana statusu", "", "Tak")
         + _dialog("dialog_select_date", "Wybierz datę wykonania", day_field, "Potwierdź")
@@ -1027,15 +980,6 @@ def _price_text(price: Decimal, changed: Changed | Unread | None) -> str:
 
 def _has_session_cookie(header: str) -> bool:
     return "=".join(SESSION_COOKIE) in (part.strip() for part in header.split(";"))
-
-
-def _broken(order: AtrapaOrder) -> bool:
-    """Strona zlecenia ``order`` jest już zmieniona: strona błędu, formularz logowania, strona bez odpowiedzi albo bez
-    pozycji ``without`` (``after_date``: od zapisu daty wykonania, ``after_emmett``: po Wycenie Emmetta)."""
-
-    if order.after_emmett:
-        return order.emmett_loads > 0
-    return not order.after_date or order.execution_date is not None
 
 
 def _login_page(changed: Changed | Unread | None) -> str:

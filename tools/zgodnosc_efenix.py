@@ -135,8 +135,10 @@ from playwright.sync_api import APIRequestContext, Browser, Page, ProxySettings,
 from playwright.sync_api import Error as PlaywrightError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-# Korzeń repozytorium dla Atrapy efenix (``tests.fixtures``), z której narzędzie bierze kody pozycji i pola szukania.
+# Korzeń repozytorium dla Atrapy efenix (``tests.fixtures``), z której narzędzie bierze kody pozycji i pola szukania, i
+# ``tools/lib`` dla jej modelu efenix.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 from rozliczenia import workbook_files
 from rozliczenia.efenix_address import readable
