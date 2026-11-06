@@ -296,12 +296,13 @@ def _proposal(body: str) -> Rewrite:
 
 
 def _clicked(browser: Browser, address: str) -> Page:
-    """Maks otwiera zlecenie pod ``address`` w nowej karcie, klika przycisk Emmetta i czeka na okno Emmetta."""
+    """Maks otwiera zlecenie pod ``address`` w nowej karcie, klika przycisk Emmetta i czeka, aż zobaczy okno Emmetta
+    (gdy strona ma ich kilka, pierwsze widoczne)."""
 
     tab = browser.contexts[0].new_page()
     tab.goto(address)
     tab.click("#button_emmett")
-    tab.locator(DIALOG).wait_for(state="visible")
+    tab.locator(DIALOG).filter(visible=True).first.wait_for(state="visible")
     return tab
 
 
@@ -400,6 +401,47 @@ EMMETT = {
         read=False,
         rewrites={ORDER_PAGE: _replaced(('id="dialog_emmett"', 'id="dialog_inny"'))},
     ),
+    # Strona zlecenia ma ``#emmett-propozycja`` poza oknem Emmetta, więc okno, które Maks widzi, nie ma propozycji.
+    "propozycja-poza-oknem": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-propozycja-poza-oknem.txt",
+        rewrites={ORDER_PAGE: _replaced(('<div id="emmett-propozycja"></div>', ""), ("</body>", '<div id="emmett-propozycja"></div></body>'))},
+    ),
+    # Za widocznym oknem Emmetta strona ma drugie, ukryte, z propozycją: okno Wyceny liczy okna na całej stronie, także
+    # ukryte.
+    "druga-propozycja-w-ukrytym-drugim-oknie": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-druga-propozycja-w-ukrytym-drugim-oknie.txt",
+        rewrites={
+            ORDER_PAGE: _replaced(("</body>", '<div id="dialog_emmett" style="display: none"><div id="emmett-propozycja"></div></div></body>'))
+        },
+    ),
+    # Skrypt strony przenosi jedyną propozycję do dopisanego, ukrytego drugiego okna: HTML strony ma jedno okno z
+    # propozycją, a widoczne okno po skryptach nie ma żadnej.
+    "propozycja-przeniesiona-do-ukrytego-drugiego-okna": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-dwa-okna-po-skrypcie.txt",
+        rewrites={
+            ORDER_PAGE: _replaced(
+                (
+                    "</body>",
+                    "<script>const second = document.createElement('div'); second.id = 'dialog_emmett';"
+                    " second.style.display = 'none'; second.append(document.getElementById('emmett-propozycja'));"
+                    " document.body.append(second);</script></body>",
+                )
+            )
+        },
+    ),
+    # Skrypt strony po kliknięciu Emmetta dopisuje przed widocznym oknem drugie, ukryte: widać drugie okno strony.
+    "ukryte-okno-przed-widocznym": Emmett(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-dwa-okna-po-skrypcie.txt",
+        rewrites={
+            ORDER_SCRIPT: _replaced(
+                (
+                    "show('dialog_emmett');",
+                    "show('dialog_emmett');"
+                    " document.body.prepend(Object.assign(document.createElement('div'), {id: 'dialog_emmett', hidden: true}));",
+                )
+            )
+        },
+    ),
     "okno-otwarte-w-dwoch-kartach": Emmett(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-okno-w-dwoch-kartach.txt", _click_in_two_tabs, read=False
     ),
@@ -430,13 +472,15 @@ EMMETT = {
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-propozycja-w-polach-bez-tekstu.txt",
         orders=(ORDERS[0], replace(ORDERS[1], emmett={"012": 3}, emmett_in_fields=True), ORDERS[2]),
     ),
+    # Klasy i atrybuty nie po kolei: budowa ma je w porządku alfabetycznym, więc te same w innej kolejności to ta sama
+    # budowa, nie różnica.
     "propozycja-z-innymi-klasami": Emmett(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-propozycja-z-innymi-klasami.txt",
-        rewrites={FILL_EMMETT: _proposal('<ul class="list-group"><li class="list-group-item pozycja-12">INDEKS_012_078: 3</li></ul>')},
+        rewrites={FILL_EMMETT: _proposal('<ul class="list-group"><li class="pozycja-12 list-group-item">INDEKS_012_078: 3</li></ul>')},
     ),
     "propozycja-z-innymi-atrybutami": Emmett(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-propozycja-z-innymi-atrybutami.txt",
-        rewrites={FILL_EMMETT: _proposal('<ul><li data-indeks="012" title="ul.Ukryta 9">INDEKS_012_078: 3</li></ul>')},
+        rewrites={FILL_EMMETT: _proposal('<ul><li title="ul.Ukryta 9" data-indeks="012">INDEKS_012_078: 3</li></ul>')},
     ),
     "skrypt-w-odpowiedzi-rysuje-liste": Emmett(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-skrypt-w-odpowiedzi-rysuje-liste.txt",
@@ -727,10 +771,10 @@ def _close_new(browser: Browser, before: Sequence[Page]) -> None:
             tab.close()
 
 
-def _tabs(browser: Browser, before: Sequence[Page]) -> list[tuple[str, bool]]:
-    """Adres każdej karty Maksa (poza ``before``) i czy jest w niej widoczne okno Emmetta."""
+def _tabs(browser: Browser, before: Sequence[Page]) -> list[tuple[str, list[bool]]]:
+    """Adres każdej karty Maksa (poza ``before``) i czy jest w niej widoczne każde okno Emmetta na stronie."""
 
-    return [(tab.url, tab.locator(DIALOG).is_visible()) for tab in browser.contexts[0].pages if tab not in before]
+    return [(tab.url, [dialog.is_visible() for dialog in tab.locator(DIALOG).all()]) for tab in browser.contexts[0].pages if tab not in before]
 
 
 @pytest.mark.parametrize(
