@@ -9,6 +9,7 @@ Opiera się na [ADR 0014](0014-tata-dostaje-tylko-wydania.md) i ADR 0020, wedłu
 Zmieniona 31.10 (#701, zgoda Maksa w wątku T3: „okej zgadzam się na wdrożenie tego”): skrypt mutacji modelu TLA+ skilla biegnie też na PR, który zmienia jego model (sekcja Decyzja).
 Zmieniona 3.11 (cel Maksa w triage 3.11: noc ma znów każdej nocy dawać wynik i zbiegać do zielonego po zaległości): noc ma limit mutacji, a zaległość przechodzi na kolejne noce; część mieści się w limicie czasu także z najdroższymi zmierzonymi mutacjami, a mutacja bez werdyktu po limicie części trafia do issue zamiast zatrzymać noc (sekcje Decyzja, Konsekwencje i Odrzucone warianty).
 Zmieniona 6.11 (#935, Maks 5.11: „gotowe dla agenta”): ostrzeżenie `CZAS BLISKO LIMITU` skryptu mutacji skilla z nocy trafia do issue PR-u (sekcja Decyzja).
+Zmieniona 6.11 (przegląd architektury 6.11, decyzja koordynatora w trybie auto Maksa): ręczny run z `od` spoza linii `main` liczy od wspólnego przodka HEAD i `od`, jak części (sekcja Decyzja).
 
 ## Kontekst
 
@@ -29,6 +30,7 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
 - Workflow `mutacje-nocne.yml` biegnie raz na dobę na `main` i ręcznie z opcjonalnym `od`.
   Mutuje linie `src/` i `tools/` zmienione od bazy tym samym `tools/mutacje_zmiany.py`: jedna mutacja na linię, cofnięcie fragmentu, wyjątki `# mutacje-zmiany:`.
   Bazą jest commit, do którego doszedł ostatni udany przebieg (`do` z jego artefaktu `zakres-nocy`, a w runie bez niego jego commit), a bez udanego przebiegu commit sprzed 24 h.
+  Ręczny run z `od` spoza linii `main` liczy od wspólnego przodka HEAD i `od` (`git merge-base`), od którego liczy też każda część, więc plan i części mutują te same zmiany, a cofnięcie zmian gałęzi `od` nie wchodzi do nocy; `od` bez wspólnego przodka z HEAD kończy plan błędem.
 - Mutacje dzielą się na części, kolejne na liście posortowanej po plikach, żeby każda część liczyła pokrycie tylko dla kilku plików.
   Część ma 6 pełnych kolejek po 4 mutacje naraz, czyli 24 mutacje (`NA_CZESC` w `tools/mutacje_nocne.py`), a jej limit czasu to 175 min w zadaniu 180 min.
   Koszt mutacji zależy od pliku o dwa rzędy wielkości, a przed pokryciem plan go nie zna.
