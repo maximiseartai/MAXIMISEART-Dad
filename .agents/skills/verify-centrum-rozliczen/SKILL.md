@@ -29,8 +29,8 @@ picks this check on a pull request. A red run leaves its evidence in the `eviden
 `evidence-mutacje-2-1`), and its job name in the plan says which part.
 The `check_centrum_<feature>_mutations.py` scripts run in full CI on `main` and nightly on `main` (`mutacje-nocne.yml`)
 after a change of this skill's folder. Run `all` and the mutations locally only to reproduce a red Mutation checks step
-or the night's issue. What stays with you: drive the feature you change, as a background
-command, and look at its screenshots after a UI change, because a passing run does not judge visual
+or the night's issue. What stays with you: drive the feature you change and look at its
+screenshots after a UI change, because a passing run does not judge visual
 quality. `wydajnosc` is never part of `all` and runs only locally (`features/wydajnosc.md`).
 
 ## Launch
@@ -60,7 +60,7 @@ CPU (no other run, measurement or test run) and holds the machine only while it
 measures, about 5 minutes. Every other run waits at most 15 minutes for a
 measurement in progress and never for a measurement still waiting for a quiet
 CPU. `MASZYNA ZAJĘTA | …` lines say what a run or measurement waits for. Run
-`wydajnosc` as a background command and read its last line instead of piping it
+`wydajnosc` in the background, wait for its end in the same turn and read its last line instead of piping it
 through `tail`; do the same with any run while
 `tools/quiet_machine.py --status` shows `pomiar`, because waiting for it can
 outlast a 10-minute command limit. Success prints
