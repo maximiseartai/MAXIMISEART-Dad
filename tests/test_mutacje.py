@@ -120,8 +120,8 @@ def test_polecenie_czerwone_bez_mutacji_nie_daje_werdyktu() -> None:
 def test_czerwona_podstawa_pokazuje_pod_swoja_linia_koniec_stdout_i_stderr(end: str, limit_s: str, last: str) -> None:
     """Jak przejazd verify-centrum-rozliczen na Windows w #932: porażka na stderr, a stdout kończy linia sprzątania.
 
-    Podstawa po ``--limit-s`` pokazuje to, co zdążyła wypisać (#947). Log CI łączy stderr ze stdout, więc koniec
-    strumieni stoi pod linią ``PODSTAWA CZERWONA``, a z dłuższego stdout zostaje jego koniec, nie początek.
+    Podstawa po ``--limit-s`` pokazuje to, co zdążyła wypisać (#947). Koniec strumieni idzie na stderr, a log CI łączy
+    stderr ze stdout, więc stoi tam pod linią ``PODSTAWA CZERWONA``; z dłuższego stdout zostaje jego koniec, nie początek.
     """
 
     steps = mutacje.BASE_TAIL + 5
@@ -130,22 +130,26 @@ def test_czerwona_podstawa_pokazuje_pod_swoja_linia_koniec_stdout_i_stderr(end: 
         f"print('DRIVE FAIL | przyczyna', file=sys.stderr); print('CLEANUP OK', flush=True); {end}"
     )
 
-    answered = subprocess.run(
-        [sys.executable, str(TOOL), "--limit-s", limit_s, "--zmiana", *_appended(PACKAGE, ""), "--", "-c", base],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        timeout=120,
-        check=False,
-    )
+    def answered(stderr: int) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(TOOL), "--limit-s", limit_s, "--zmiana", *_appended(PACKAGE, ""), "--", "-c", base],
+            stdout=subprocess.PIPE,
+            stderr=stderr,
+            text=True,
+            encoding="utf-8",
+            timeout=120,
+            check=False,
+        )
 
-    lines = answered.stdout.splitlines()
+    merged, split = answered(subprocess.STDOUT), answered(subprocess.PIPE)
+
+    lines = merged.stdout.splitlines()
     tail = [f"  stdout | STEP krok-{number}" for number in range(steps - mutacje.BASE_TAIL + 1, steps)]
     end_lines = [*tail, "  stdout | CLEANUP OK", "  stderr | DRIVE FAIL | przyczyna"]
     refused = "MUTACJE: polecenie bez mutacji pada albo daje wynik mutacji, więc wynik po mutacji niczego nie dowodzi"
-    assert (answered.returncode, lines[0].startswith("PODSTAWA CZERWONA: "), lines[0].endswith(f"→ {last}")) == (2, True, True), answered.stdout
-    assert lines[1:] == [*end_lines, refused], answered.stdout
+    assert (merged.returncode, lines[0].startswith("PODSTAWA CZERWONA: "), lines[0].endswith(f"→ {last}")) == (2, True, True), merged.stdout
+    assert lines[1:] == [*end_lines, refused], merged.stdout
+    assert (split.stdout.splitlines()[1:], split.stderr.splitlines()) == ([refused], end_lines), (split.stdout, split.stderr)
 
 
 @pytest.mark.parametrize(
