@@ -449,17 +449,19 @@ def _uruchom(nazwa: str, polecenia: Sequence[tuple[tuple[str, ...], float]], po_
     return {"klucz": nazwa, "s": s, "status": status}
 
 
-def _krok_skilla(klucz: str, znalezione: Mapping[str, Step]) -> dict[str, object]:
-    """Krok skilla albo część ``#k/n`` skryptu mutacji; wynik zgłasza pod kluczem całego kroku, jak udział pliku testów."""
+def _krok_skilla(klucz: str, znalezione: Mapping[str, Step]) -> tuple[dict[str, object], list[dict[str, object]]]:
+    """Krok skilla albo część ``#k/n`` skryptu mutacji; wynik zgłasza pod kluczem całego kroku, jak udział pliku testów,
+    a obok jego ostrzeżenia ``CZAS BLISKO LIMITU`` (``mutacje.NearLimit``) pod tym samym kluczem."""
 
     nazwa, _, czesc = klucz.partition("#")
     print(f"== {klucz}", flush=True)
     start = time.monotonic()
     krok = znalezione.get(nazwa)
-    powod = "planu nie ma wśród kroków skilli" if krok is None else mutacje_skilli.run(krok, env={mutacje.PART: czesc} if czesc else None)
+    wynik = mutacje_skilli.Wynik("planu nie ma wśród kroków skilli") if krok is None else mutacje_skilli.run(krok, env={mutacje.PART: czesc} if czesc else None)
     s = round(time.monotonic() - start, 1)
-    print(f"OK   {klucz} ({s:.0f} s)" if powod is None else f"FAIL {klucz} ({s:.0f} s): {powod}", flush=True)
-    return {"klucz": nazwa, "s": s, "status": "ok" if powod is None else "fail"}
+    print(f"OK   {klucz} ({s:.0f} s)" if wynik.powod is None else f"FAIL {klucz} ({s:.0f} s): {wynik.powod}", flush=True)
+    blisko = [{"klucz": nazwa, **asdict(ostrzezenie)} for ostrzezenie in wynik.blisko_limitu]
+    return {"klucz": nazwa, "s": s, "status": "ok" if wynik.powod is None else "fail"}, blisko
 
 
 def _krok_pytest(plan: Plan, zadanie: Zadanie, pliki: Mapping[str, list[tuple[int, int]]]) -> dict[str, object]:
@@ -500,7 +502,8 @@ def _ponow(zadanie: Zadanie, testy: Sequence[str]) -> bool:
 
 def wykonaj(plan: Plan, zadanie_id: str) -> int:
     """Pytest z plikami i udziałami zadania, potem jego kroki CI i kroki skilli po kolei, także po porażce. Kod 1, gdy
-    coś padło."""
+    coś padło. Zapis ``WYKONANIE`` ma wynik każdej jednostki i ostrzeżenia ``CZAS BLISKO LIMITU`` kroków skilli
+    (``blisko_limitu``), które noc zgłasza w issue PR-u (``tools/mutacje_nocne.py``)."""
 
     zadanie = next((z for z in plan.zadania if z.id == zadanie_id), None)
     if zadanie is None:
@@ -520,12 +523,17 @@ def wykonaj(plan: Plan, zadanie_id: str) -> int:
             kroki.append(KROKI[nazwa.removeprefix("krok:")])
     wyniki = [_krok_pytest(plan, zadanie, pliki)] if pliki else []
     wyniki += [_uruchom(f"krok:{krok.nazwa}", _polecenia(krok)) for krok in kroki]
+    blisko: list[dict[str, object]] = []
     if skille:
         # Po kolei: mutacje kilku skilli naraz na czterech rdzeniach runnera przekraczają swoje limity czasu.
         znalezione = {f"skill:{krok.key}": krok for krok in steps({})}
-        wyniki += [_krok_skilla(klucz, znalezione) for klucz in skille]
+        for klucz in skille:
+            wynik, ostrzezenia = _krok_skilla(klucz, znalezione)
+            wyniki.append(wynik)
+            blisko += ostrzezenia
     WYKONANIE.parent.mkdir(parents=True, exist_ok=True)
-    WYKONANIE.write_text(json.dumps({"plan": plan.digest, "zadanie": zadanie.id, "jednostki": wyniki}, indent=1), encoding="utf-8")
+    zapis = {"plan": plan.digest, "zadanie": zadanie.id, "jednostki": wyniki, "blisko_limitu": blisko}
+    WYKONANIE.write_text(json.dumps(zapis, indent=1), encoding="utf-8")
     padly = [str(wynik["klucz"]) for wynik in wyniki if wynik["status"] != "ok"]
     print(f"WYKONANIE FAIL | {', '.join(padly)}" if padly else f"WYKONANIE OK | {zadanie.nazwa}")
     return 1 if padly else 0

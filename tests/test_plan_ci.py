@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
 import czasy_ci  # noqa: E402
 import kroki_skilli  # noqa: E402
+from mutacje import NearLimit  # noqa: E402
 import mutacje_skilli  # noqa: E402
 import niestabilne_testy  # noqa: E402
 import plan_ci  # noqa: E402
@@ -691,6 +692,37 @@ def test_zadanie_mutation_checks_uruchamia_po_kolei_swoje_kroki_skilli_a_czesc_s
     ]
     # Podstawa biegnie cała, a każda część skryptu mutacji dostaje swój numer.
     assert log.read_text(encoding="utf-8").splitlines() == ["sprawdz.py bez-czesci", "check_a_mutations.py 1/2", "check_a_mutations.py 2/2"]
+
+
+def test_zapis_zadania_mutation_checks_ma_ostrzezenia_czas_blisko_limitu_skryptu_mutacji_pod_kluczem_kroku(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Zapis wykonania, z którego noc zgłasza ostrzeżenia w issue PR-u (#935), ma każde ostrzeżenie ``CZAS BLISKO LIMITU``
+    skryptu mutacji z czasem, limitem i częścią; ostrzeżenie nie zmienia wyniku kroku."""
+
+    near = NearLimit(".agents/skills/verify-a/scripts/check_a_mutations.py", "1/2", "podmiana → bez odczytu", 308, 600)
+    other = NearLimit(".agents/skills/verify-a/scripts/check_a_mutations.py", "1/2", "druga", 301, 600)
+    # Wcięta linia to koniec wyjścia czerwonej podstawy pod ``PODSTAWA CZERWONA``, a nie ostrzeżenie tego skryptu.
+    script = (
+        "import sys\nMUTATIONS = ()\nif __name__ == '__main__':\n"
+        f"    print({near.line!r}, file=sys.stderr, flush=True)\n    print({other.line!r}, file=sys.stderr, flush=True)\n"
+        f"    print('  ' + {NearLimit('inny.py', '', 'cudza', 500, 600).line!r}, file=sys.stderr, flush=True)\n    print('MUTACJE OK')\n"
+    )
+    (tmp_path / ".agents" / "skills" / "verify-a" / "scripts").mkdir(parents=True)
+    (tmp_path / ".agents" / "skills" / "verify-a" / "SKILL.md").write_text("", encoding="utf-8")
+    (tmp_path / ".agents" / "skills" / "verify-a" / "scripts" / "check_a_mutations.py").write_text(script, encoding="utf-8")
+    for module in (kroki_skilli, mutacje_skilli):
+        monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(kroki_skilli, "SKILLS", tmp_path / ".agents" / "skills")
+    monkeypatch.chdir(tmp_path)
+    step = "skill:verify-a/check_a_mutations.py"
+    job = plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/2)", (f"{step}#1/2",), 1.0)
+
+    code = plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.NOC, plan_ci.CEL_S, (), (job,)), job.id)
+
+    record = json.loads(plan_ci.WYKONANIE.read_text(encoding="utf-8"))
+    assert (code, [(unit["klucz"], unit["status"]) for unit in record["jednostki"]]) == (0, [(step, "ok")]), capsys.readouterr().out
+    assert record["blisko_limitu"] == [{"klucz": step, **dataclasses.asdict(near)}, {"klucz": step, **dataclasses.asdict(other)}]
 
 
 SKILL = {

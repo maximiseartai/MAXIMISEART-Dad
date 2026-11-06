@@ -9,6 +9,7 @@ zapamiętuje założone issue i komentarze, więc drugi przebieg widzi skutki pi
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 import hashlib
 import functools
@@ -35,6 +36,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
 import kroki_skilli  # noqa: E402
+from mutacje import NearLimit  # noqa: E402
 import mutacje_nocne  # noqa: E402
 import mutacje_zmiany  # noqa: E402
 import plan_ci  # noqa: E402
@@ -953,13 +955,21 @@ PLAN_SKILLI = plan_ci.Plan(
 )
 
 
-def _wykonania(katalog: Path, wyniki: dict[str, tuple[str, dict[str, str]]]) -> Path:
-    """Zapis wykonania każdego zadania (id → digest planu, klucz → status) w artefakcie, który wgrywa zadanie nocy."""
+def _wykonania(
+    katalog: Path, wyniki: dict[str, tuple[str, dict[str, str]]], blisko: dict[str, list[tuple[str, NearLimit]]] | None = None
+) -> Path:
+    """Zapis wykonania każdego zadania (id → digest planu, klucz → status) w artefakcie, który wgrywa zadanie nocy, z
+    ostrzeżeniami ``CZAS BLISKO LIMITU`` zadania (id → klucz kroku i ostrzeżenie) w postaci zapisu ``plan_ci.wykonaj``."""
 
     for zadanie, (digest, jednostki) in wyniki.items():
         sciezka = katalog / f"{mutacje_nocne.ARTEFAKT_SKILLI}{zadanie}" / plan_ci.WYKONANIE.name
         sciezka.parent.mkdir(parents=True)
-        tresc = {"plan": digest, "zadanie": zadanie, "jednostki": [{"klucz": klucz, "s": 1.0, "status": status} for klucz, status in jednostki.items()]}
+        tresc = {
+            "plan": digest,
+            "zadanie": zadanie,
+            "jednostki": [{"klucz": klucz, "s": 1.0, "status": status} for klucz, status in jednostki.items()],
+            "blisko_limitu": [{"klucz": klucz, **asdict(ostrzezenie)} for klucz, ostrzezenie in (blisko or {}).get(zadanie, [])],
+        }
         sciezka.write_text(json.dumps(tresc), encoding="utf-8")
     return katalog
 
@@ -993,6 +1003,45 @@ def test_skrypt_mutacji_skilla_ktory_padl_noca_trafia_do_issue_pr_ktory_ostatni_
     assert github.wyslane == wyslane
     assert wyjscie.splitlines()[-1] == "MUTACJE NOCNE OK | części 0 | przeżyło 0 | zadania skilli 2 | padło skryptów 2"
 
+
+
+def test_mutacja_skryptu_skilla_blisko_limitu_czasu_trafia_raz_do_issue_pr_ktory_ostatni_zmienil_folder_skilla_z_czasem_i_limitem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ostrzeżenie ``CZAS BLISKO LIMITU`` z nocy (#935) idzie do issue PR-u jak skrypt, który padł, ale z czasem, limitem
+    i własną treścią; następna noc daje tej mutacji inny czas, a issue nie dostaje jej drugi raz. Issue, które PR już
+    ma, dostaje ostrzeżenie komentarzem i wraca otwarte."""
+
+    repo, baza = _historia_skilli(tmp_path)
+    monkeypatch.setattr(kroki_skilli, "ROOT", repo)
+    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
+    skrypt_b = "SKRYPT .agents/skills/verify-b/scripts/check_b_mutations.py | nie warto, bo mutacja psuje tylko log"
+    github = GitHubWPamieci(issues=[{"number": 8, "title": "Przeżyte mutacje skilli z #23", "state": "closed", "body": f"```\n{skrypt_b}\n```", "comments": [], "labels": []}])
+    wolna = NearLimit(".agents/skills/verify-a/scripts/check_a_mutations.py", "2/2", "podmiana → bez odczytu", 308, 600)
+    inna = NearLimit(".agents/skills/verify-b/scripts/check_b_mutations.py", "", "druga", 350, 600)
+    przeszly = {"mutacje-1": (PLAN_SKILLI.digest, {SKRYPT_A: "ok"}), "mutacje-2": (PLAN_SKILLI.digest, {SKRYPT_A: "ok", SKRYPT_B: "ok"})}
+    pierwsza = _wykonania(tmp_path / "pierwsza", przeszly, {"mutacje-2": [(SKRYPT_A, wolna)]})
+    # Następnej nocy ta sama mutacja trwa dłużej i trafia do innej części, a mutacja verify-b dochodzi.
+    druga = _wykonania(tmp_path / "druga", przeszly, {"mutacje-1": [(SKRYPT_A, replace(wolna, part="1/2", seconds=412))], "mutacje-2": [(SKRYPT_B, inna)]})
+
+    kody = [mutacje_nocne.zglos(github, repo, baza, pierwsza, 0, RUN, PLAN_SKILLI)]
+    pierwsze_wyjscie = capsys.readouterr().out.splitlines()
+    kody.append(mutacje_nocne.zglos(github, repo, baza, druga, 0, RUN, PLAN_SKILLI))
+
+    tresci = {issue["title"]: (issue["body"], issue["comments"]) for issue in github.issues}
+    stan_b = (github.issues[0]["state"], github.issues[0]["labels"])
+    assert kody == [0, 0], pierwsze_wyjscie
+    assert pierwsze_wyjscie[-1] == "MUTACJE NOCNE OK | części 0 | przeżyło 0 | zadania skilli 2 | padło skryptów 0 | blisko limitu czasu 1"
+    assert sorted(tresci) == ["Przeżyte mutacje skilli z #21", "Przeżyte mutacje skilli z #23"]
+    tresc_a, komentarze_a = tresci["Przeżyte mutacje skilli z #21"]
+    linie_a = [linia for linia in tresc_a.splitlines() if linia.startswith("CZAS BLISKO LIMITU ")]
+    assert linie_a == [
+        "CZAS BLISKO LIMITU .agents/skills/verify-a/scripts/check_a_mutations.py | podmiana → bez odczytu | 308 s z limitu --limit-s 600 s (MUTACJE_CZESC=2/2)"
+    ]
+    assert ("SKRYPT" not in tresc_a, "padły" not in tresc_a, "PRZEKROCZONY CZAS" in tresc_a, komentarze_a) == (True, True, True, [])
+    komentarz_b = "\n".join(komentarz["body"] for komentarz in tresci["Przeżyte mutacje skilli z #23"][1])
+    assert "CZAS BLISKO LIMITU .agents/skills/verify-b/scripts/check_b_mutations.py | druga | 350 s z limitu --limit-s 600 s\n" in komentarz_b
+    assert ("padły" not in komentarz_b, "PRZEKROCZONY CZAS" in komentarz_b, stan_b) == (True, True, ("open", ["ready-for-agent"]))
 
 
 def test_skrypt_mutacji_skilla_ktory_padl_noca_po_zmianie_bibliotek_trafia_do_issue_pr_ktory_je_zmienil(
@@ -1055,7 +1104,7 @@ def test_czesc_podstawy_ktora_padla_noca_obok_przechodzacej_w_tym_samym_zadaniu_
     zapis = tmp_path / "zapisy" / f"{mutacje_nocne.ARTEFAKT_SKILLI}mutacje-1" / plan_ci.WYKONANIE.name
     zapis.parent.mkdir(parents=True)
     jednostki = [{"klucz": klucz, "s": 1.0, "status": status} for status in ("fail", "ok")]
-    zapis.write_text(json.dumps({"plan": plan.digest, "zadanie": "mutacje-1", "jednostki": jednostki}), encoding="utf-8")
+    zapis.write_text(json.dumps({"plan": plan.digest, "zadanie": "mutacje-1", "jednostki": jednostki, "blisko_limitu": []}), encoding="utf-8")
 
     kod = mutacje_nocne.zglos(github, repo, baza, tmp_path / "zapisy", 0, RUN, plan)
 
@@ -1093,7 +1142,7 @@ def test_czesc_podstawy_skilla_bez_pilnuje_ktorego_folder_sie_nie_zmienil_trafia
     assert f"SKRYPT {podstawa}\n" in github.issues[0]["body"]
 
 
-def test_skrypt_skilla_ktory_padl_w_nocy_bez_commitow_czerwieni_przebieg_bo_nie_ma_pr_ktory_by_go_dostal(
+def test_skrypt_skilla_ktory_padl_albo_ostrzegl_o_czasie_w_nocy_bez_commitow_czerwieni_przebieg_bo_nie_ma_pr_ktory_by_go_dostal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Skill bez pilnuje biegnie każdej nocy, także takiej, w której main nie dostał commitu od bazy.
@@ -1110,7 +1159,8 @@ def test_skrypt_skilla_ktory_padl_w_nocy_bez_commitow_czerwieni_przebieg_bo_nie_
     baza = commit(repo, "Dodaj verify-d (#24)")
     klucz = "skill:verify-d/ci"
     plan = plan_ci.Plan(Zdarzenie.NOC, 225.0, (), (plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/1)", (f"{klucz}#1/2", f"{klucz}#2/2"), 100.0),))
-    zapisy = _wykonania(tmp_path / "zapisy", {"mutacje-1": (plan.digest, {klucz: "fail"})})
+    blisko = NearLimit(podstawa, "1/2", "wolna", 308, 600)
+    zapisy = _wykonania(tmp_path / "zapisy", {"mutacje-1": (plan.digest, {klucz: "fail"})}, {"mutacje-1": [(klucz, blisko)]})
     (tmp_path / "plan.json").write_text(plan.do_json(), encoding="utf-8")
 
     kod = mutacje_nocne.main(["zglos", "--baza", baza, "--zapisy", str(zapisy), "--czesci", "0", "--run", RUN, "--plan-skilli", str(tmp_path / "plan.json")])
@@ -1118,7 +1168,10 @@ def test_skrypt_skilla_ktory_padl_w_nocy_bez_commitow_czerwieni_przebieg_bo_nie_
     wyjscie = capsys.readouterr().out.splitlines()
     assert kod == 1, wyjscie
     assert github.wyslane == []
-    assert wyjscie[-1] == f"MUTACJE NOCNE FAIL | skrypt {podstawa} padł, a od bazy {baza} main nie ma commitu, którego PR by go dostał"
+    assert wyjscie[-1] == (
+        f"MUTACJE NOCNE FAIL | skrypt {podstawa} padł, a od bazy {baza} main nie ma commitu, którego PR by go dostał; "
+        f"CZAS BLISKO LIMITU {podstawa} | wolna: od bazy {baza} main nie ma commitu, którego PR by je dostał"
+    )
 
 def test_zadanie_skilli_bez_zapisu_tego_planu_albo_bez_wyniku_jednostki_czerwieni_przebieg(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
