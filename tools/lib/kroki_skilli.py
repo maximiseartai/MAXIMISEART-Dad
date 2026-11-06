@@ -2,8 +2,13 @@
 
 Skrypt mutacji skilla to ``.agents/skills/<skill>/scripts/check_<co>_mutations.py``: dowodzi, że sprawdzenie skilla
 pada na zepsutych wariantach kodu, i kończy się linią ``MUTACJE OK``. Nowy skrypt o takiej nazwie jest krokiem bez wpisu
-w ``ci.yml``. Skrypt nie może zgubić się po cichu: ``znajdz`` daje FAIL plikowi ``.py`` w skillu z ``mutation`` w nazwie,
-który nie pasuje do wzorca, i skryptowi mutacji wskazanemu w ``SKILL.md`` skilla, którego nie ma.
+w ``ci.yml``. Skrypt nie może zgubić się po cichu: ``Katalog.skanuj`` daje FAIL plikowi ``.py`` w skillu z ``mutation``
+w nazwie, który nie pasuje do wzorca, i skryptowi mutacji wskazanemu w ``SKILL.md`` skilla, którego nie ma.
+
+Katalog kroków skilli checkoutu to ``Katalog.skanuj(root)``. Reguły jednego skilla albo kroku (``hits``, ``guarded``,
+``ci_command``, ``watched``, ``model_watched``, ``repeats``) biorą korzeń checkoutu z położenia skilla, bo skill leży
+zawsze w ``<root>/.agents/skills/<skill>`` (``tests/test_miejsce_skilli.py``). ``znajdz`` i ``steps`` dają katalog
+checkoutu z globalnego ``ROOT``.
 
 Skill może zadeklarować we frontmatterze ``SKILL.md`` klucz ``ci:``: polecenie (skrypt ``.py`` z repozytorium, ścieżka
 od korzenia, i jego argumenty), którym CI sprawdza skill na niezmienionym kodzie, czyli krok ``PODSTAWA``, także w skillu
@@ -19,7 +24,7 @@ Kiedy który krok biegnie, rozstrzyga zakres runu (``tools/lib/zakres_runu.py``)
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from fnmatch import fnmatchcase
 from functools import cache
 import importlib.util
@@ -29,7 +34,9 @@ import re
 from typing import Any, NamedTuple
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILLS = ROOT / ".agents" / "skills"
+# Folder skilli od korzenia checkoutu.
+FOLDER_SKILLI = (".agents", "skills")
+SKILLS = ROOT.joinpath(*FOLDER_SKILLI)
 PATTERN = "check_*_mutations.py"
 # Wywołanie skryptu mutacji w SKILL.md; ścieżka bez ``.agents`` na początku liczy się od folderu skilla.
 MENTION = re.compile(r"[\w.\\/-]*scripts[\\/]check_\w+_mutations\.py")
@@ -43,15 +50,21 @@ FOLDER = "folder skilla"
 MODEL = "model"
 
 
-def _name(path: Path) -> str:
-    return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else path.as_posix()
+def _root(skill: Path) -> Path:
+    """Korzeń checkoutu skilla ``skill`` (folder w ``<root>/.agents/skills``)."""
+
+    return skill.parents[len(FOLDER_SKILLI)]
+
+
+def _name(path: Path, root: Path) -> str:
+    return path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
 
 
 @cache
 def _mutations(script: Path) -> tuple[Any, ...]:
     spec = importlib.util.spec_from_file_location(f"_mutacje_{script.parents[1].name}", script)
     if spec is None or spec.loader is None:
-        raise ImportError(f"nie da się wczytać {_name(script)}")
+        raise ImportError(f"nie da się wczytać {_name(script, _root(script.parents[1]))}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return tuple(module.MUTATIONS)
@@ -86,14 +99,14 @@ def guarded(skill_md: Path) -> tuple[str, ...] | None:
     if not keys:
         return None
     if front[keys[0]] != "pilnuje:":
-        raise ValueError(f"pilnuje w {_name(skill_md)} nie jest listą globów pod kluczem")
+        raise ValueError(f"pilnuje w {_name(skill_md, _root(skill_md.parent))} nie jest listą globów pod kluczem")
     globs = []
     for line in front[keys[0] + 1 :]:
         if not line.startswith("  - "):
             break
         globs.append(line.removeprefix("  - ").strip())
     if not globs:
-        raise ValueError(f"pilnuje w {_name(skill_md)} nie ma żadnego globu")
+        raise ValueError(f"pilnuje w {_name(skill_md, _root(skill_md.parent))} nie ma żadnego globu")
     return tuple(globs)
 
 
@@ -107,7 +120,7 @@ def ci_parts(skill_md: Path) -> int:
     if not values:
         return 1
     if not values[0].strip().isdigit() or int(values[0]) < 1:
-        raise ValueError(f"ci-czesci w {_name(skill_md)} nie jest liczbą części od 1")
+        raise ValueError(f"ci-czesci w {_name(skill_md, _root(skill_md.parent))} nie jest liczbą części od 1")
     return int(values[0])
 
 
@@ -120,9 +133,10 @@ def ci_command(skill_md: Path) -> tuple[str, ...] | None:
     values = _values(skill_md, "ci")
     if not values:
         return None
+    root = _root(skill_md.parent)
     command = tuple(values[0].split())
-    if not command or not command[0].endswith(".py") or not (ROOT / command[0]).is_file():
-        raise ValueError(f"ci w {_name(skill_md)} nie zaczyna się skryptem .py z repozytorium")
+    if not command or not command[0].endswith(".py") or not (root / command[0]).is_file():
+        raise ValueError(f"ci w {_name(skill_md, root)} nie zaczyna się skryptem .py z repozytorium")
     return command
 
 
@@ -143,9 +157,9 @@ def hits(skill: Path, changed: Iterable[str]) -> Hits:
         globs = guarded(skill / "SKILL.md")
     except ValueError as error:
         return Hits({}, str(error))
+    own = f"{_name(skill, _root(skill))}/"
     if globs is None:
-        return Hits({}, f"{_name(skill)}/SKILL.md nie ma klucza pilnuje")
-    own = f"{_name(skill)}/"
+        return Hits({}, f"{own}SKILL.md nie ma klucza pilnuje")
     found = {}
     for name in sorted(changed):
         glob = FOLDER if name.startswith(own) else next((glob for glob in globs if fnmatchcase(name, glob)), None)
@@ -169,22 +183,35 @@ class Step(NamedTuple):
     parts: int
     browser: bool
 
+    @property
+    def root(self) -> Path:
+        """Korzeń checkoutu skilla: skill leży zawsze w ``<root>/.agents/skills/<skill>``."""
 
-def _lost(scripts: list[Path]) -> dict[str, str]:
-    """Skrypty mutacji, których runner by nie uruchomił, z powodem."""
+        return _root(self.skill)
 
+    @property
+    def folder(self) -> str:
+        """Folder skilla od korzenia z ``/`` na końcu, np. ``.agents/skills/verify-x/``."""
+
+        return f"{_name(self.skill, self.root)}/"
+
+
+def _lost(root: Path, scripts: list[Path]) -> dict[str, str]:
+    """Skrypty mutacji checkoutu ``root``, których runner by nie uruchomił, z powodem."""
+
+    skills = root.joinpath(*FOLDER_SKILLI)
     lost = {
-        _name(path): f"nazwa spoza wzorca scripts/{PATTERN}"
-        for path in SKILLS.glob("*/**/*.py")
+        _name(path, root): f"nazwa spoza wzorca scripts/{PATTERN}"
+        for path in skills.glob("*/**/*.py")
         if "mutation" in path.name.lower() and path not in scripts
     }
-    for skill_md in SKILLS.glob("*/SKILL.md"):
+    for skill_md in skills.glob("*/SKILL.md"):
         for mentioned in set(MENTION.findall(skill_md.read_text(encoding="utf-8"))):
             relative = mentioned.replace("\\", "/").removeprefix("./")
-            base = ROOT if relative.startswith(".agents/") else skill_md.parent
+            base = root if relative.startswith(".agents/") else skill_md.parent
             path = Path(os.path.normpath(base / relative))
             if path not in scripts:
-                lost.setdefault(_name(path), f"wskazany w {_name(skill_md)}, a nie ma go pod tą nazwą")
+                lost.setdefault(_name(path, root), f"wskazany w {_name(skill_md, root)}, a nie ma go pod tą nazwą")
     return lost
 
 
@@ -215,11 +242,16 @@ def _count(script: Path) -> int:
 
 
 def steps(failed: dict[str, str]) -> list[Step]:
-    """Kroki wszystkich skilli, podstawa każdego skilla z kluczem ``ci`` przed jego skryptami; zły klucz ``ci`` albo
-    ``ci-czesci`` trafia do ``failed``."""
+    """Kroki wszystkich skilli checkoutu ``ROOT``, podstawa każdego skilla z kluczem ``ci`` przed jego skryptami; zły
+    klucz ``ci`` albo ``ci-czesci`` trafia do ``failed``."""
 
-    skills: dict[Path, list[Path]] = {skill_md.parent: [] for skill_md in SKILLS.glob("*/SKILL.md") if _values(skill_md, "ci")}
-    for script in sorted(SKILLS.glob(f"*/scripts/{PATTERN}")):
+    return _steps(ROOT, failed)
+
+
+def _steps(root: Path, failed: dict[str, str]) -> list[Step]:
+    folder = root.joinpath(*FOLDER_SKILLI)
+    skills: dict[Path, list[Path]] = {skill_md.parent: [] for skill_md in folder.glob("*/SKILL.md") if _values(skill_md, "ci")}
+    for script in sorted(folder.glob(f"*/scripts/{PATTERN}")):
         skills.setdefault(script.parents[1], []).append(script)
     found = []
     for skill, scripts in sorted(skills.items()):
@@ -232,7 +264,8 @@ def steps(failed: dict[str, str]) -> list[Step]:
         if command:
             found.append(Step(skill, f"{skill.name}/ci", f"{BASELINE} {skill.name}", command, None, parts, browser))
         found += [
-            Step(skill, f"{skill.name}/{script.name}", _name(script), (_name(script),), VERDICT, _count(script), browser) for script in scripts
+            Step(skill, f"{skill.name}/{script.name}", _name(script, root), (_name(script, root),), VERDICT, _count(script), browser)
+            for script in scripts
         ]
     return found
 
@@ -241,8 +274,8 @@ def watched(step: Step) -> tuple[str, ...]:
     """Ścieżki, których zmiana uruchamia skrypt mutacji ``step``: folder skilla (z ``/`` na końcu), ``RUNNER`` i
     sprawdzenia, które uruchamiają jego mutacje; tabela, której nie da się wczytać, to wyjątek z ``exec_module``."""
 
-    checkers = sorted({mutation.command[0] for mutation in _mutations(ROOT / step.command[0])})
-    return (f"{_name(step.skill)}/", *RUNNER, *checkers)
+    checkers = sorted({mutation.command[0] for mutation in _mutations(step.root / step.command[0])})
+    return (step.folder, *RUNNER, *checkers)
 
 
 def model_watched(step: Step) -> tuple[str, ...] | None:
@@ -250,8 +283,8 @@ def model_watched(step: Step) -> tuple[str, ...] | None:
     na końcu), sam skrypt i sprawdzenia, które uruchamiają jego mutacje; ``None``, gdy skrypt nie ma mutacji albo któraś
     psuje plik spoza ``MODEL``. Tabela, której nie da się wczytać, to wyjątek z ``exec_module``."""
 
-    model = f"{_name(step.skill)}/{MODEL}/"
-    mutations = _mutations(ROOT / step.command[0])
+    model = f"{step.folder}{MODEL}/"
+    mutations = _mutations(step.root / step.command[0])
     edited = {edit.file.as_posix() for mutation in mutations for edit in mutation.edits}
     if not edited or not all(name.startswith(model) for name in edited):
         return None
@@ -261,20 +294,49 @@ def model_watched(step: Step) -> tuple[str, ...] | None:
 def repeats(step: Step, chosen: Iterable[Step]) -> bool:
     """Podstawę uruchamia bez mutacji (podstawa ``check_all``) wybrany skrypt mutacji jej skilla."""
 
-    scripts = [ROOT / other.command[0] for other in chosen if other.skill == step.skill and other.verdict]
+    scripts = [other.root / other.command[0] for other in chosen if other.skill == step.skill and other.verdict]
     try:
         return any(step.command == tuple(mutation.command) for script in scripts for mutation in _mutations(script))
     except Exception:  # noqa: BLE001 - tabeli, której nie da się wczytać, podstawa nie zastąpi: biegnie polecenie ci
         return False
 
 
-def znajdz() -> tuple[list[Step], dict[str, str]]:
-    """Kroki wszystkich skilli (``steps``) i FAIL-e ich znalezienia: zgubione skrypty mutacji, zły klucz ``ci:`` albo
-    ``ci-czesci:`` i brak jakiegokolwiek skryptu mutacji."""
+class Katalog(NamedTuple):
+    """Kroki skilli checkoutu ``root`` i FAIL-e ich znalezienia, jak ``Repository.scan`` w ``tools/lib/wplyw_zmiany.py``.
 
-    scripts = sorted(SKILLS.glob(f"*/scripts/{PATTERN}"))
-    failed = _lost(scripts)
-    found = steps(failed)
-    if not scripts and not failed:
-        failed[f"scripts/{PATTERN}"] = f"brak skryptów .agents/skills/*/scripts/{PATTERN}"
-    return found, failed
+    Krotka nazwana, nie dataclass: testy wczytują kopię modułu bez wpisu w ``sys.modules``, którego dataclass potrzebuje.
+    ``kroki``: podstawa każdego skilla z kluczem ``ci`` przed jego skryptami mutacji, skille po nazwie. ``bledy``: FAIL
+    po nazwie: zgubione skrypty mutacji, zły klucz ``ci:`` albo ``ci-czesci:`` i brak jakiegokolwiek skryptu mutacji.
+    """
+
+    root: Path
+    kroki: tuple[Step, ...]
+    bledy: Mapping[str, str]
+
+    @classmethod
+    def skanuj(cls, root: Path) -> Katalog:
+        """Katalog skilli z ``SKILL.md`` i skryptów w ``<root>/.agents/skills``."""
+
+        scripts = sorted(root.joinpath(*FOLDER_SKILLI).glob(f"*/scripts/{PATTERN}"))
+        failed = _lost(root, scripts)
+        found = _steps(root, failed)
+        if not scripts and not failed:
+            failed[f"scripts/{PATTERN}"] = f"brak skryptów .agents/skills/*/scripts/{PATTERN}"
+        return cls(root, tuple(found), failed)
+
+    def krok(self, klucz: str) -> Step:
+        """Krok po kluczu planu ``skill:<skill>/<skrypt>`` albo ``skill:<skill>/ci``; ``KeyError``, gdy go nie ma."""
+
+        return {f"skill:{step.key}": step for step in self.kroki}[klucz]
+
+    def skille(self, wzorzec: str = "*") -> list[Path]:
+        """Foldery skilli z ``SKILL.md``, których nazwa pasuje do ``wzorzec`` (glob), po nazwie."""
+
+        return sorted(skill_md.parent for skill_md in self.root.joinpath(*FOLDER_SKILLI).glob(f"{wzorzec}/SKILL.md"))
+
+
+def znajdz() -> tuple[list[Step], dict[str, str]]:
+    """Kroki i FAIL-e katalogu checkoutu ``ROOT`` (``Katalog.skanuj``)."""
+
+    katalog = Katalog.skanuj(ROOT)
+    return list(katalog.kroki), dict(katalog.bledy)
