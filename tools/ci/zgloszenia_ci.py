@@ -13,12 +13,18 @@ potem je wykonuje; z ``--bez-zapisu`` tylko je drukuje.
   ostatni zielony commit linii pierwszych rodziców `main`, PR-y scalone pomiędzy, przyczyny z linii ``REQUIRED FAIL``
   i polecenie ``git bisect``. Push na `main` z zielonym Required zamyka komentarzem z linkiem do runu otwarte issue,
   którego czerwony commit jest jego przodkiem.
-- **Zderzenie** (Q26). Gdy scalenie PR B czerwieni `main` nową porażką, B ma zielone Required na swoim HEAD, a po
+- **Zderzenie** (Q26, #959). Gdy scalenie PR B czerwieni `main` nową porażką, B ma zielone Required na swoim HEAD, a po
   utworzeniu runu tej bramki weszły do `main` PR-y A (także z zielonym Required na HEAD), których bramka B nie widziała,
-  issue dostaje etykietę ``zderzenie`` z numerami A i B i liczbą zderzeń z ostatnich 7 dni. Porażka jest nowa, gdy
-  `main` był zielony tuż przed scaleniem albo gdy czerwony rodzic nie miał tej porażki (test z linii ``FAILED``/``ERROR``
-  pytest, a zadanie bez takiej linii po nazwie toru, bez numeru kawałka). Zderzenie na już czerwonym `main` zakłada
-  własne issue obok otwartego.
+  issue dostaje etykietę ``zderzenie`` z numerami A i B i liczbą zderzeń z ostatnich 7 dni, ale tylko wtedy, gdy każda
+  nowa porażka jest testem, którego wejścia zmieniły i PR-y A, i PR B (``Repository.impact`` z
+  ``tools/lib/wplyw_zmiany.py`` na grafie checkoutu, zmiana PR to diff jego scalenia z pierwszym rodzicem). Test, którego
+  dotyka tylko jedna strona, sprawdziła już bramka tej strony, więc jego porażka to flaky test albo błąd jednego PR, a
+  porażka całego zadania bez nazwy testu (np. Mutation checks) nie wskazuje wejść, więc zderzeniem nie jest. Porażka jest
+  nowa, gdy `main` był zielony tuż przed scaleniem albo gdy czerwony rodzic nie miał tej porażki (test z linii
+  ``FAILED``/``ERROR`` pytest, a zadanie bez takiej linii po nazwie toru, bez numeru kawałka). Zderzenie na już
+  czerwonym `main` zakłada własne issue obok otwartego. Zielony `main`, który zamyka issue zderzenia, zdejmuje z niego
+  etykietę, gdy żadna zmiana od czerwonego commitu nie dotyka wejść jego nowych porażek: `main` zazielenił się bez
+  poprawki, więc porażka była niestabilna, a licznik 7 dni liczy tylko zderzenia, których nic takiego nie podważyło.
 
 Historię `main` narzędzie czyta z Gita checkoutu (w workflow pełna historia `main`), a resztę z ``gh api`` (w workflow
 z ``GH_TOKEN``, lokalnie z logowaniem Maksa).
@@ -45,6 +51,7 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 import niestabilne_testy
+import wplyw_zmiany
 
 ROOT = Path(__file__).resolve().parents[2]
 REPO = "repos/{owner}/{repo}"
@@ -132,7 +139,7 @@ class Zderzenie:
     niewidziane: tuple[PR, ...]  # PR-y scalone po utworzeniu runu zielonej bramki PR ``scalony``
     scalony: PR
     w_oknie: int  # zderzenia z ostatnich 7 dni, z tym
-    nowe: tuple[str, ...]  # porażki, których nie miał czerwony rodzic; pusta, gdy rodzic był zielony
+    nowe: tuple[str, ...]  # porażki, których nie miał rodzic (przy zielonym rodzicu wszystkie), w testach obu stron
 
 
 @dataclass(frozen=True)
@@ -168,13 +175,13 @@ class CzerwonyMain:
             a, b = _numery(self.zderzenie.niewidziane), f"#{self.zderzenie.scalony.numer}"
             linie += [
                 f"**Zderzenie:** {a} i {b} były zielone osobno, a zielona bramka {b} testowała `main` sprzed scalenia {a}.",
+                "Każda nowa porażka jest w teście, którego wejścia zmieniły oba (`tools/lib/wplyw_zmiany.py`).",
                 f"To {self.zderzenie.w_oknie}. zderzenie w ostatnich 7 dniach; gdy się powtarzają, wraca decyzja o merge queue (ADR 0020).",
                 "",
             ]
-            if self.zderzenie.nowe:
-                nowe = self.zderzenie.nowe
-                reszta = [f"… i {len(nowe) - NAJWIECEJ_NOWYCH} więcej"] if len(nowe) > NAJWIECEJ_NOWYCH else []
-                linie += ["Porażki, których nie było na czerwonym rodzicu:", "", *blok_kodu([*nowe[:NAJWIECEJ_NOWYCH], *reszta]), ""]
+            nowe = self.zderzenie.nowe
+            reszta = [f"… i {len(nowe) - NAJWIECEJ_NOWYCH} więcej"] if len(nowe) > NAJWIECEJ_NOWYCH else []
+            linie += ["Nowe porażki (których nie było na rodzicu):", "", *blok_kodu([*nowe[:NAJWIECEJ_NOWYCH], *reszta]), ""]
         if self.przyczyny:
             linie += ["Przyczyny z `Required CI status`:", "", "```", *self.przyczyny, "```", ""]
         if self.zielony is not None:
@@ -217,6 +224,7 @@ class Skomentuj:
 class Zamknij:
     issue: int
     tresc: str
+    zdejmij: tuple[str, ...] = ()  # etykiety, które zamknięcie zdejmuje z issue
 
 
 Akcja = Zaloz | Skomentuj | Zamknij
@@ -240,10 +248,12 @@ def wykonaj(github: GitHub, wykonane: Sequence[Akcja], *, bez_zapisu: bool) -> l
             case Skomentuj(issue, tresc):
                 github.wyslij("POST", f"{REPO}/issues/{issue}/comments", {"body": tresc})
                 linie.append(f"ZGŁOSZENIA | komentarz w #{issue}")
-            case Zamknij(issue, tresc):
+            case Zamknij(issue, tresc, zdejmij):
                 github.wyslij("POST", f"{REPO}/issues/{issue}/comments", {"body": tresc})
+                for etykieta in zdejmij:
+                    github.wyslij("DELETE", f"{REPO}/issues/{issue}/labels/{urllib.parse.quote(etykieta)}", {})
                 github.wyslij("PATCH", f"{REPO}/issues/{issue}", {"state": "closed", "state_reason": "completed"})
-                linie.append(f"ZGŁOSZENIA | zamknięte #{issue}")
+                linie.append(f"ZGŁOSZENIA | zamknięte #{issue}" + "".join(f", zdjęta etykieta {etykieta}" for etykieta in zdejmij))
     return linie
 
 
@@ -253,8 +263,8 @@ def _opis(akcja: Akcja) -> str:
             return f"załóż issue „{tytul}” z etykietami {', '.join(etykiety)}"
         case Skomentuj(issue, _):
             return f"skomentuj #{issue}"
-        case Zamknij(issue, _):
-            return f"zamknij #{issue} z komentarzem"
+        case Zamknij(issue, _, zdejmij):
+            return f"zamknij #{issue} z komentarzem" + "".join(f", zdejmij etykietę {etykieta}" for etykieta in zdejmij)
 
 
 # --- flaky testy ---
@@ -324,11 +334,9 @@ def _main(github: GitHub, root: Path, run: Run, teraz: datetime) -> list[Akcja]:
         return []
     otwarte = _issues(github, CZERWONY_MAIN, "open")
     if required["conclusion"] == "success":
-        zamkniecie = f"Zielony `main` na commicie {run.sha} ([run]({run.url}))."
-        return [Zamknij(issue["number"], zamkniecie) for issue in otwarte if (znak := _ZNACZNIK.search(issue.get("body") or "")) and _przodek(root, znak["sha"], run.sha)]
+        return [_zamkniecie(github, root, issue, znak["sha"], run) for issue in otwarte if (znak := _ZNACZNIK.search(issue.get("body") or "")) and _przodek(root, znak["sha"], run.sha)]
     przyczyny = tuple(_przyczyny(github, required["id"]))
-    nowe = _nowe_porazki(github, run, _git(root, "rev-parse", f"{run.sha}^1"))
-    zderzenie = None if nowe is None else _zderzenie(github, root, run.sha, teraz, nowe)
+    zderzenie = _zderzenie(github, root, run, teraz)
     if otwarte and zderzenie is None:
         linie = [f"Nadal czerwony na commicie {run.sha} ([run]({run.url})).", *(["", "```", *przyczyny, "```"] if przyczyny else [])]
         return [Skomentuj(otwarte[0]["number"], "\n".join(linie))]
@@ -339,21 +347,46 @@ def _main(github: GitHub, root: Path, run: Run, teraz: datetime) -> list[Akcja]:
     return [Zaloz(czerwony.tytul, czerwony.tresc, czerwony.etykiety)]
 
 
-def _nowe_porazki(github: GitHub, run: Run, rodzic: str) -> tuple[str, ...] | None:
-    """Porażki runu, których nie miał rodzic: pusta krotka, gdy rodzic był zielony, a ``None``, gdy żadnej nowej nie ma
-    albo stanu rodzica nie da się porównać (CI w toku, anulowane, bez logów)."""
+def _zamkniecie(github: GitHub, root: Path, issue: Mapping[str, Any], czerwony: str, zielony: Run) -> Zamknij:
+    tresc = f"Zielony `main` na commicie {zielony.sha} ([run]({zielony.url}))."
+    if ZDERZENIE not in {etykieta["name"] for etykieta in issue.get("labels") or ()} or not _zazielenil_sie_sam(github, root, czerwony, zielony.sha):
+        return Zamknij(issue["number"], tresc)
+    sam = f"`main` zazielenił się bez poprawki, porażka niestabilna: żadna zmiana od {czerwony[:9]} nie dotyka wejść testów nowych porażek (`tools/lib/wplyw_zmiany.py`), więc to nie było zderzenie i zdejmuję etykietę `{ZDERZENIE}`."
+    return Zamknij(issue["number"], f"{tresc}\n\n{sam}", (ZDERZENIE,))
+
+
+def _zazielenil_sie_sam(github: GitHub, root: Path, czerwony: str, zielony: str) -> bool:
+    """Czy nowe porażki czerwonego commitu to testy, których wejść nie dotyka żadna zmiana do zielonego commitu."""
+
+    run_czerwony = _RUN.search((_required(github, czerwony) or {}).get("details_url") or "")
+    nowe = None if run_czerwony is None else _nowe_porazki(github, int(run_czerwony["run"]), _git(root, "rev-parse", f"{czerwony}^1"))
+    if nowe is None or (pliki := _pliki_testow(nowe)) is None:
+        return False
+    zmiana = frozenset(_git(root, "diff", "--name-only", "--no-renames", czerwony, zielony).splitlines())
+    return not pliki & set(wplyw_zmiany.Repository.scan(root).impact(zmiana).tests)
+
+
+def _nowe_porazki(github: GitHub, run_id: int, rodzic: str) -> tuple[str, ...] | None:
+    """Porażki runu, których nie miał rodzic, a gdy rodzic był zielony, wszystkie porażki runu; ``None``, gdy żadnej
+    nowej nie ma albo stanu rodzica nie da się porównać (CI w toku, anulowane, bez logów)."""
 
     check = _required(github, rodzic)
     if check is None or check["status"] != "completed":
         return None
-    if check["conclusion"] == "success":
-        return ()
     run_rodzica = _RUN.search(check.get("details_url") or "")
-    if check["conclusion"] != "failure" or run_rodzica is None:
+    if check["conclusion"] == "success":
+        przed: frozenset[str] = frozenset()
+    elif check["conclusion"] != "failure" or run_rodzica is None or not (przed := _porazki(github, int(run_rodzica["run"]))):
         return None
-    przed = _porazki(github, int(run_rodzica["run"]))
-    nowe = tuple(sorted(_porazki(github, run.id) - przed))
-    return nowe if przed and nowe else None
+    return tuple(sorted(_porazki(github, run_id) - przed)) or None
+
+
+def _pliki_testow(porazki: Sequence[str]) -> frozenset[str] | None:
+    """Pliki testów porażek; ``None``, gdy któraś porażka to całe zadanie bez nazwy testu."""
+
+    if any(not porazka.startswith("tests/") for porazka in porazki):
+        return None
+    return frozenset(porazka.split("::")[0] for porazka in porazki)
 
 
 def _porazki(github: GitHub, run_id: int) -> frozenset[str]:
@@ -395,46 +428,73 @@ def _ostatni_zielony(github: GitHub, root: Path, czerwony: str) -> tuple[str, st
     return None
 
 
-def _scalenia(root: Path, *zakres: str) -> list[tuple[datetime, PR]]:
+@dataclass(frozen=True)
+class Scalenie:
+    chwila: datetime
+    commit: str
+    pr: PR
+
+
+def _scalenia(root: Path, *zakres: str) -> list[Scalenie]:
     """PR-y scalone na linii pierwszych rodziców w ``zakres`` (merge albo squash), od najstarszego, z chwilą scalenia."""
 
     # Rekord kończy NUL: separatory \x1c-\x1f to dla str.strip() białe znaki.
-    zapisy = _git(root, "log", "--first-parent", "--format=%cI%x1f%s%x1f%b%x00", *zakres).split("\x00")[:-1]
+    zapisy = _git(root, "log", "--first-parent", "--format=%cI%x1f%H%x1f%s%x1f%b%x00", *zakres).split("\x00")[:-1]
     znalezione = []
     for zapis in reversed(zapisy):
-        czas, temat, tresc = zapis.lstrip("\n").split("\x1f", 2)
+        czas, commit, temat, tresc = zapis.lstrip("\n").split("\x1f", 3)
         if (scalenie := MERGE.fullmatch(temat)) is not None:
             tytul = next((linia.strip() for linia in tresc.splitlines() if linia.strip()), temat)
-            znalezione.append((_chwila(czas), PR(int(scalenie["numer"]), tytul)))
+            znalezione.append(Scalenie(_chwila(czas), commit, PR(int(scalenie["numer"]), tytul)))
         elif (squash := SQUASH.fullmatch(temat)) is not None:
-            znalezione.append((_chwila(czas), PR(int(squash["numer"]), squash["tytul"])))
+            znalezione.append(Scalenie(_chwila(czas), commit, PR(int(squash["numer"]), squash["tytul"])))
     return znalezione
 
 
 def _pr(root: Path, zielony: str, czerwony: str) -> tuple[PR, ...]:
-    return tuple(pr for _, pr in _scalenia(root, f"{zielony}..{czerwony}"))
+    return tuple(scalenie.pr for scalenie in _scalenia(root, f"{zielony}..{czerwony}"))
 
 
-def _zderzenie(github: GitHub, root: Path, czerwony: str, teraz: datetime, nowe: tuple[str, ...]) -> Zderzenie | None:
-    """Zderzenie PR B, którego scalenie to ``czerwony``, z PR-ami scalonymi po utworzeniu runu jego zielonej bramki."""
+def _zderzenie(github: GitHub, root: Path, run: Run, teraz: datetime) -> Zderzenie | None:
+    """Zderzenie PR B, którego scalenie to commit runu, z PR-ami scalonymi po utworzeniu runu jego zielonej bramki."""
 
-    scalony = _scalenia(root, "-1", czerwony)
+    scalony = _scalenia(root, "-1", run.sha)
     if not scalony:
         return None
-    b = scalony[0][1]
-    check_b = _required(github, github.json(f"{REPO}/pulls/{b.numer}")["head"]["sha"])
+    b = scalony[0]
+    check_b = _required(github, github.json(f"{REPO}/pulls/{b.pr.numer}")["head"]["sha"])
     if check_b is None or check_b["conclusion"] != "success":
         return None
     # Bramka testuje scalenie PR z `main` z chwili utworzenia runu (także w ponowionej próbie), nie ze startu Required.
     run_b = _RUN.search(check_b.get("details_url") or "")
     start_b = _chwila(github.json(f"{REPO}/actions/runs/{run_b['run']}")["created_at"] if run_b else check_b["started_at"])
-    niewidziane = [pr for czas, pr in _scalenia(root, f"--max-count={HISTORIA}", f"{czerwony}^1") if czas > start_b]
-    zielone = [pr for pr in niewidziane if (check := _required(github, github.json(f"{REPO}/pulls/{pr.numer}")["head"]["sha"])) and check["conclusion"] == "success"]
+    niewidziane = [a for a in _scalenia(root, f"--max-count={HISTORIA}", f"{run.sha}^1") if a.chwila > start_b]
+    zielone = [a for a in niewidziane if (check := _required(github, github.json(f"{REPO}/pulls/{a.pr.numer}")["head"]["sha"])) and check["conclusion"] == "success"]
     if not niewidziane or zielone != niewidziane:
+        return None
+    nowe = _nowe_porazki(github, run.id, _git(root, "rev-parse", f"{run.sha}^1"))
+    if nowe is None or not _w_testach_obu_stron(root, [a.commit for a in niewidziane], b.commit, nowe):
         return None
     od = teraz - OKNO_ZDERZEN
     wczesniejsze = [issue for issue in _issues(github, ZDERZENIE, "all", od) if _chwila(issue["created_at"]) >= od]
-    return Zderzenie(tuple(zielone), b, len(wczesniejsze) + 1, nowe)
+    return Zderzenie(tuple(a.pr for a in niewidziane), b.pr, len(wczesniejsze) + 1, nowe)
+
+
+def _w_testach_obu_stron(root: Path, a: Sequence[str], b: str, porazki: Sequence[str]) -> bool:
+    """Czy każda porażka jest testem, którego wejścia zmieniły i scalenia ``a``, i scalenie ``b``."""
+
+    if (pliki := _pliki_testow(porazki)) is None:
+        return False
+    repozytorium = wplyw_zmiany.Repository.scan(root)
+    strona_a = repozytorium.impact(frozenset(sciezka for commit in a for sciezka in _zmiana(root, commit))).tests
+    strona_b = repozytorium.impact(_zmiana(root, b)).tests
+    return pliki <= set(strona_a) & set(strona_b)
+
+
+def _zmiana(root: Path, scalenie: str) -> frozenset[str]:
+    """Ścieżki, które scalenie zmieniło względem pierwszego rodzica, czyli `main` sprzed niego."""
+
+    return frozenset(_git(root, "diff", "--name-only", "--no-renames", f"{scalenie}^1", scalenie).splitlines())
 
 
 def _chwila(tekst: str) -> datetime:

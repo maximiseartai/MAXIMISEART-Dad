@@ -6,7 +6,7 @@ odpowiedzi z runów 26.10.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from datetime import UTC, datetime
 import io
 import json
@@ -226,27 +226,46 @@ def test_zgloszenia_czytaja_artefakt_w_ktorym_ci_yml_wysyla_flaky_testy() -> Non
     assert [wysylka["name"].startswith(zgloszenia_ci.ARTEFAKT_FLAKY_TESTOW) for wysylka in flaky_testy] == [True]
 
 
+# Testy repozytorium `main` i moduły, które importują: PR #n zmienia ``modul<n>.py``, więc ``tests/test_a.py`` i
+# ``tests/test_sprzatanie.py`` są testami #10 i #11, ``tests/test_centrum.py`` tylko #11, ``tests/test_wycena.py``
+# tylko #10, a ``tests/test_x.py`` żadnego.
+TESTY_MAIN = {
+    "tests/test_a.py": "import modul10\nimport modul11\n",
+    "tests/test_sprzatanie.py": "import modul10\nimport modul11\n",
+    "tests/test_centrum.py": "import modul11\n",
+    "tests/test_wycena.py": "import modul10\n",
+    "tests/test_x.py": "",
+}
+
+
+def _scal(repo: Path, monkeypatch: pytest.MonkeyPatch, numer: int, chwila: str, plik: str, *, squash: bool = False) -> tuple[str, str]:
+    """PR ``numer`` zmienia ``plik`` i wchodzi do `main` o ``chwila`` merge'em albo squashem; daje HEAD PR i scalenie."""
+
+    monkeypatch.setenv("GIT_COMMITTER_DATE", chwila)
+    git(repo, "switch", "--quiet", "--create", f"pr-{numer}", "main")
+    (repo / plik).write_text(f"X = {numer}\n", encoding="utf-8")
+    head = commit(repo, f"zmiana {numer}")
+    git(repo, "switch", "--quiet", "main")
+    if squash:
+        git(repo, "merge", "--squash", "--quiet", f"pr-{numer}")
+        commit(repo, f"fix: zmiana {numer} (#{numer})")
+    else:
+        git(repo, "merge", "--no-ff", "--quiet", "-m", f"Merge pull request #{numer} from maximiseartai/pr-{numer}", "-m", f"fix: zmiana {numer}", f"pr-{numer}")
+    return head, git(repo, "rev-parse", "HEAD")
+
+
 @pytest.fixture
 def main(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, str]]:
     """`main`: początek, merge PR #9 (9:40), squash PR #10 (10:00) i czerwony merge PR #11 (10:30)."""
 
     repo = tmp_path / "repo"
-    repo.mkdir()
+    (repo / "tests").mkdir(parents=True)
     git(repo, "init", "--quiet", "--initial-branch=main")
-    (repo / "a.txt").write_text("0\n", encoding="utf-8")
+    for sciezka, tresc in {"a.txt": "0\n", **{f"modul{numer}.py": "X = 0\n" for numer in (9, 10, 11)}, **TESTY_MAIN}.items():
+        (repo / sciezka).write_text(tresc, encoding="utf-8")
     shas = {"poczatek": commit(repo, "początek")}
     for numer, chwila in ((9, "2026-10-26T09:40:00+00:00"), (10, "2026-10-26T10:00:00+00:00"), (11, "2026-10-26T10:30:00+00:00")):
-        monkeypatch.setenv("GIT_COMMITTER_DATE", chwila)
-        git(repo, "switch", "--quiet", "--create", f"pr-{numer}", "main")
-        (repo / f"pr{numer}.txt").write_text(f"{numer}\n", encoding="utf-8")
-        shas[f"head{numer}"] = commit(repo, f"zmiana {numer}")
-        git(repo, "switch", "--quiet", "main")
-        if numer == 10:
-            git(repo, "merge", "--squash", "--quiet", f"pr-{numer}")
-            commit(repo, f"fix: zmiana {numer} (#{numer})")
-        else:
-            git(repo, "merge", "--no-ff", "--quiet", "-m", f"Merge pull request #{numer} from maximiseartai/pr-{numer}", "-m", f"fix: zmiana {numer}", f"pr-{numer}")
-        shas[f"pr{numer}"] = git(repo, "rev-parse", "HEAD")
+        shas[f"head{numer}"], shas[f"pr{numer}"] = _scal(repo, monkeypatch, numer, chwila, f"modul{numer}.py", squash=numer == 10)
     monkeypatch.chdir(repo)
     yield shas
 
@@ -256,7 +275,7 @@ def _required(sha: str, wynik: str, run_id: int) -> dict[str, Any]:
     return {f"{REPO}/commits/{sha}/check-runs?check_name=Required%20CI%20status&per_page=100": {"check_runs": [check]}}
 
 
-def _zadania(run_id: int, porazki: list[str]) -> dict[str, Any]:
+def _zadania(run_id: int, porazki: Sequence[str]) -> dict[str, Any]:
     """Zadania runu: Required i, gdy ``porazki``, padnięte zadanie pytest z tymi testami w podsumowaniu pytest."""
 
     zadania = [{"id": run_id * 10 + 1, "name": "Required CI status", "conclusion": "failure"}]
@@ -279,22 +298,24 @@ def _czerwony_run(
     main_10: str = "success",
     required_b: str = "success",
     required_9: str = "success",
-    porazki_10: list[str] | None = None,
-    porazki_11: list[str] | None = None,
+    porazki_10: Sequence[str] = (),
+    porazki_11: Sequence[str] = ("tests/test_a.py::test_scalenie",),
 ) -> Nagrany:
     """Run 300 pushu na `main` z czerwonym Required na merge'u #11, po merge'u #10 z Required ``main_10`` (run 200)
     i zielonym merge'u #9; run bramki #11 z wynikiem ``required_b`` utworzony ``bramka_b``, a bramka #9 z wynikiem
-    ``required_9``. ``porazki_10`` i ``porazki_11`` to testy z porażką w runach 200 i 300."""
+    ``required_9``. ``porazki_10`` i ``porazki_11`` to testy z porażką w runach 200 i 300; domyślna porażka runu 300
+    jest w teście, którego wejścia zmieniły #10 i #11."""
 
     log = "2026-10-26T10:41:00.1Z REQUIRED FAIL | pytest=failure\n2026-10-26T10:41:00.2Z REQUIRED FAIL | pytest (Python 3.14, 2/3): jednostki z porażką: pytest:tests/test_a.py\n"
     return Nagrany(
         {
             f"{REPO}/actions/runs/300": _run(300, "push", main["pr11"]),
             **_artefakty(300, {}),
-            **_zadania(300, porazki_11 or []),
-            **_zadania(200, porazki_10 or []),
+            **_zadania(300, porazki_11),
+            **_zadania(200, porazki_10),
             f"{REPO}/actions/jobs/3001/logs": log.encode(),
             **_issues("czerwony-main", "open", otwarte or []),
+            **_required(main["pr11"], "failure", 300),
             **_required(main["pr10"], main_10, 200),
             **_required(main["pr9"], "success", 199),
             **{f"{REPO}/pulls/{numer}": {"head": {"sha": main[f"head{numer}"]}} for numer in (9, 10, 11)},
@@ -384,6 +405,82 @@ def test_zderzenie_tylko_gdy_kazdy_pr_niewidziany_przez_bramke_byl_zielony(main:
     assert akcja.tytul == f"Czerwony main od {main['pr11'][:9]}" + (" (zderzenie #9, #10 i #11)" if required_9 == "success" else "")
 
 
+def _zadanie_bez_testu(github: Nagrany, run_id: int, nazwa: str) -> None:
+    """Padnięte zadanie runu ``run_id`` bez podsumowania pytest w logu, jak podstawa skilla w Mutation checks."""
+
+    github.odpowiedzi[f"{REPO}/actions/runs/{run_id}/jobs?per_page=100"]["jobs"].append({"id": run_id * 10 + 9, "name": nazwa, "conclusion": "failure"})
+    github.odpowiedzi[f"{REPO}/actions/jobs/{run_id * 10 + 9}/logs"] = b"2026-10-26T10:40:00.1Z PODSTAWA CZERWONA\n"
+
+
+@pytest.mark.parametrize(
+    ("porazki", "zadanie", "etykiety"),
+    [
+        (["tests/test_a.py::test_scalenie"], None, ("czerwony-main", "zderzenie")),
+        (["tests/test_centrum.py::test_karta"], None, ("czerwony-main",)),
+        (["tests/test_wycena.py::test_okno"], None, ("czerwony-main",)),
+        (["tests/test_x.py::test_y"], None, ("czerwony-main",)),
+        (["tests/test_a.py::test_scalenie", "tests/test_centrum.py::test_karta"], None, ("czerwony-main",)),
+        (["tests/test_a.py::test_scalenie"], "Mutation checks (3/10)", ("czerwony-main",)),
+    ],
+    ids=["test obu PR-ów", "test tylko B", "test tylko A", "test żadnego", "test obu i test tylko B", "test obu i zadanie bez testu"],
+)
+def test_zderzenie_tylko_gdy_kazda_nowa_porazka_jest_w_tescie_ktorego_wejscia_zmienily_oba_pr_y(
+    main: dict[str, str], porazki: list[str], zadanie: str | None, etykiety: tuple[str, ...]
+) -> None:
+    """Na 6 issues zderzenia z 5–6.11 żadne nie było zderzeniem: flaky test, którego wejść nie zmienił jeden z PR-ów
+    (#898, #932), i padnięte Mutation checks (#963, #1012) to nie skutek połączenia zmian."""
+
+    github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", porazki_11=porazki)
+    if zadanie is not None:
+        _zadanie_bez_testu(github, 300, zadanie)
+
+    [akcja] = zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ)
+
+    assert isinstance(akcja, Zaloz)
+    assert akcja.etykiety == etykiety
+
+
+@pytest.mark.parametrize(
+    ("plik", "etykiety", "zadanie", "zdjeta"),
+    [
+        ("modul9.py", ["czerwony-main", "zderzenie"], None, True),
+        ("modul10.py", ["czerwony-main", "zderzenie"], None, False),
+        ("modul9.py", ["czerwony-main"], None, False),
+        ("modul9.py", ["czerwony-main", "zderzenie"], "Mutation checks (3/10)", False),
+    ],
+    ids=["bez zmiany wejść", "z poprawką wejść", "issue bez zderzenia", "porażka zadania bez testu"],
+)
+def test_zielony_main_zdejmuje_etykiete_zderzenia_gdy_zazielenil_sie_bez_zmiany_wejsc_padajacych_testow(
+    main: dict[str, str], monkeypatch: pytest.MonkeyPatch, plik: str, etykiety: list[str], zadanie: str | None, zdjeta: bool
+) -> None:
+    """Czerwony merge #11 z porażką w teście #10 i #11, potem PR #12 zmienia ``plik`` i `main` jest zielony: #900 z 5.11
+    zazielenił się tak bez poprawki, a licznik zderzeń z 7 dni liczył go dalej."""
+
+    _, zielony = _scal(Path.cwd(), monkeypatch, 12, "2026-10-26T10:50:00+00:00", plik)
+    otwarte = [{"number": 77, "labels": [{"name": etykieta} for etykieta in etykiety], "body": f"<!-- czerwony-main {main['pr11']} -->"}]
+    github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", otwarte=otwarte)
+    if zadanie is not None:
+        _zadanie_bez_testu(github, 300, zadanie)
+    github.odpowiedzi |= {
+        f"{REPO}/actions/runs/400": _run(400, "push", zielony, "success"),
+        **_artefakty(400, {}),
+        f"{REPO}/actions/runs/400/jobs?per_page=100": {"jobs": [{"id": 41, "name": "Required CI status", "conclusion": "success"}]},
+    }
+
+    akcje = zgloszenia_ci.akcje(github, Path.cwd(), 400, TERAZ)
+    linie = zgloszenia_ci.wykonaj(github, akcje, bez_zapisu=False)
+
+    assert linie == ["ZGŁOSZENIA | zamknięte #77" + (", zdjęta etykieta zderzenie" if zdjeta else "")]
+    assert [wyslane[:2] for wyslane in github.wyslane] == [
+        ("POST", f"{REPO}/issues/77/comments"),
+        *([("DELETE", f"{REPO}/issues/77/labels/zderzenie")] if zdjeta else []),
+        ("PATCH", f"{REPO}/issues/77"),
+    ]
+    komentarz = github.wyslane[0][2]["body"]
+    assert isinstance(komentarz, str) and komentarz.startswith(f"Zielony `main` na commicie {zielony}")
+    assert ("`main` zazielenił się bez poprawki, porażka niestabilna" in komentarz) == zdjeta
+
+
 def test_kolejny_czerwony_main_z_ta_sama_porazka_komentuje_otwarte_issue_zamiast_drugiego(main: dict[str, str]) -> None:
     stara = ["tests/test_centrum.py::test_kontrola_ilosci[a - b]"]
     otwarte = [{"number": 77, "body": f"<!-- czerwony-main {main['pr10']} -->"}]
@@ -403,7 +500,7 @@ def test_zderzenie_na_czerwonym_main_liczy_sie_po_nowej_porazce(main: dict[str, 
 
     assert isinstance(akcja, Zaloz)
     assert (akcja.tytul, akcja.etykiety) == (f"Czerwony main od {main['pr11'][:9]} (zderzenie #10 i #11)", ("czerwony-main", "zderzenie"))
-    assert "Porażki, których nie było na czerwonym rodzicu:\n\n```\n" + nowa + "\n```" in akcja.tresc
+    assert "Nowe porażki (których nie było na rodzicu):\n\n```\n" + nowa + "\n```" in akcja.tresc
     assert ("był czerwony już przed tym scaleniem (#77)" in akcja.tresc) == bool(otwarte)
     assert f"Ostatni zielony commit: {main['pr9']}" in akcja.tresc
 
@@ -463,7 +560,7 @@ def test_zadanie_bez_podsumowania_pytest_porownuje_sie_po_nazwie(main: dict[str,
     [akcja] = zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ)
 
     assert isinstance(akcja, Zaloz) and akcja.etykiety == ("czerwony-main", "zderzenie")
-    assert "Porażki, których nie było na czerwonym rodzicu:\n\n```\n" + nowa + "\n```" in akcja.tresc
+    assert "Nowe porażki (których nie było na rodzicu):\n\n```\n" + nowa + "\n```" in akcja.tresc
 
 
 def test_issue_zderzenia_wymienia_najwyzej_dwadziescia_nowych_porazek(main: dict[str, str]) -> None:
@@ -473,15 +570,18 @@ def test_issue_zderzenia_wymienia_najwyzej_dwadziescia_nowych_porazek(main: dict
     [akcja] = zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ)
 
     assert isinstance(akcja, Zaloz)
-    assert _blok_kodu(akcja.tresc.split("Porażki, których nie było na czerwonym rodzicu:")[1]) == ["```", *nowe[:20], "… i 1 więcej", "```"]
+    assert _blok_kodu(akcja.tresc.split("Nowe porażki (których nie było na rodzicu):")[1]) == ["```", *nowe[:20], "… i 1 więcej", "```"]
 
 
 @pytest.mark.parametrize(
     ("na_rodzicu", "etykiety"),
-    [("pytest (Python 3.11, 2/3)", ("czerwony-main",)), ("pytest (Python 3.14, Linux, 1/2)", ("czerwony-main", "zderzenie"))],
+    [("pytest (Python 3.11, 2/3)", ("czerwony-main", "zderzenie")), ("pytest (Python 3.14, Linux, 1/2)", ("czerwony-main",))],
     ids=["ten sam tor w innym kawałku", "inny tor"],
 )
 def test_zadanie_bez_podsumowania_pytest_porownuje_sie_z_rodzicem_po_torze(main: dict[str, str], na_rodzicu: str, etykiety: tuple[str, ...]) -> None:
+    """Padnięte zadanie toru, które padło też na rodzicu, nie jest nową porażką, a nowe nie wskazuje testu, więc nie jest
+    zderzeniem: zostaje nowa porażka w teście obu PR-ów albo dwie, z których jedna to całe zadanie."""
+
     github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", main_10="failure")
     for run_id, nazwa in ((200, na_rodzicu), (300, "pytest (Python 3.11, 1/2)")):
         github.odpowiedzi[f"{REPO}/actions/runs/{run_id}/jobs?per_page=100"]["jobs"].append({"id": run_id * 10 + 5, "name": nazwa, "conclusion": "failure"})
