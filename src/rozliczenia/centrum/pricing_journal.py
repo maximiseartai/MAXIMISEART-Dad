@@ -75,6 +75,7 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
 
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.logs_disk import Found, LogsOnDisk, Missing, Refused, Unreadable
 from rozliczenia.centrum.run_logs import (
     LoggedInterruption,
     LoggedOrder,
@@ -361,19 +362,20 @@ def _read(path: Path) -> _Read | None:
 
 class InterruptedPricings:
     """Dzienniki z katalogu ``directory`` przy starcie Centrum: wersje zastępcze komentarzy Uruchomień, których Logów
-    kolejka nie przyjęła w ich pracy Centrum, do zamknięcia i wysłania."""
+    kolejka nie przyjęła w ich pracy Centrum, do zamknięcia i wysłania; pliki Logów czyta z Logów na dysku ``disk``."""
 
-    def __init__(self, directory: Path, run_logs: RunLogs, log: CentrumLog) -> None:
+    def __init__(self, directory: Path, run_logs: RunLogs, disk: LogsOnDisk, log: CentrumLog) -> None:
         self._directory = directory
         self._run_logs = run_logs
+        self._disk = disk
         self._log = log
         self._lock = threading.Lock()
         self._pending: list[tuple[Path, RunLog | ResultWithoutLogs]] = []  # wersje zastępcze do wysłania i dzienniki
 
     def close(self) -> None:
         """Przy budowie aplikacji: każdy dziennik z pierwszą linią zamyka jako wersję zastępczą komentarza jego
-        Uruchomienia (docstring modułu), a dziennik bez niej usuwa. Dziennika, którego nie da się odczytać, nie rusza:
-        spróbuje następny start. Logi, których pliku nie dało się zapisać, i tak idą do Maksa."""
+        Uruchomienia (docstring modułu), a dziennik bez niej usuwa. Dziennika, którego nie da się odczytać, ani dziennika,
+        którego pliku Logów system nie daje odczytać (``logs_disk.Refused``), nie rusza: spróbuje następny start. Logi, których pliku nie dało się zapisać, i tak idą do Maksa."""
 
         try:
             paths = sorted(self._directory.glob(f"*{_SUFFIX}"))
@@ -411,20 +413,21 @@ class InterruptedPricings:
             return None
         started = read.started
         result = None if read.end is None else read.end.result
-        logs = self._run_logs.file_of(started)
-        if logs.exists():
-            try:
-                record = RunLog.model_validate_json(logs.read_text(encoding="utf-8"))
-            except ValueError:  # Logi są, choć nieczytelne: Uruchomienie miało wynik
+        match self._disk.logs(started.run_id):
+            case Found(logs=record):
+                # Logi, które poprzednia praca Centrum zapisała, a których przyjęcia przez kolejkę nikt nie zapisał, także
+                # Logi Urwanego Uruchomienia sprzed strażnika.
+                pass
+            case Unreadable():  # Logi są, choć nieczytelne: Uruchomienie miało wynik
                 return ResultWithoutLogs(read.progress, result, "nieczytelne")
-            # Logi, które poprzednia praca Centrum zapisała, a których przyjęcia przez kolejkę nikt nie zapisał, także
-            # Logi Urwanego Uruchomienia sprzed strażnika.
-        elif read.end is not None:
-            return ResultWithoutLogs(read.progress, result, "niezapisane")
-        else:
-            record = self._run_logs.interrupted(
-                started, ended_at=read.last_at, orders=read.orders, interruption=read.interruption
-            )
+            case Refused(failure=failure):  # ``close`` zostawia dziennik do następnego startu
+                raise failure
+            case Missing() if read.end is not None:
+                return ResultWithoutLogs(read.progress, result, "niezapisane")
+            case Missing():
+                record = self._run_logs.interrupted(
+                    started, ended_at=read.last_at, orders=read.orders, interruption=read.interruption
+                )
         # Strażnik reguły danych (ADR 0025) przed plikiem i przed wysyłką: plik i plik w Archiwum Logów okresu mają te
         # same znaki.
         record = self._run_logs.guard(record)

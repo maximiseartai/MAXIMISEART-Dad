@@ -40,6 +40,7 @@ from rozliczenia.centrum.efenix_run import EfenixEntry, EfenixWindow
 from rozliczenia.centrum.filling import FillingReads, filling_router
 from rozliczenia.centrum.intermax_run import IntermaxEntry, intermax_copies_router, intermax_router
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.logs_disk import LogsOnDisk
 from rozliczenia.centrum.metrics import metrics_router, read_runs
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE, Notifications, ReadNotifications, notifications_router
 from rozliczenia.centrum.period_board import periods_router
@@ -59,8 +60,8 @@ from rozliczenia.centrum.pricing_journal import (
 )
 from rozliczenia.centrum.pricing_progress import ProgressComment
 from rozliczenia.centrum.processes import Processes
-from rozliczenia.centrum.run_cards import LAST_STARTED_FILE, RunCards, run_cards_router
-from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, RunLogs
+from rozliczenia.centrum.run_cards import RunCards, run_cards_router
+from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, RunLogs, StartFacts
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE, CentrumRuns
 from rozliczenia.centrum.runs import ProcessEntry, RunHost, runs_router
 from rozliczenia.centrum.settings import settings_router
@@ -276,21 +277,19 @@ def create_app(
         surroundings.cloud_files,
         forbidden,
     )
+    # Pliki Logów Uruchomienia i plik ostatniego startu w katalogu Logów (ADR 0017).
+    disk = LogsOnDisk(log.directory)
     # Karty Uruchomień z pliku startu, Logów Uruchomienia i Historii: ostatnie po starcie Centrum i wiersz Historii (ADR 0017).
-    cards = RunCards(
-        log.directory / RUN_LOGS_DIRECTORY,
-        log.directory / LAST_STARTED_FILE,
-        lambda: read_runs(processes, centrum_runs.started()),
-    )
+    cards = RunCards(disk, lambda: read_runs(processes, centrum_runs.started()))
     # Dzienniki Urwanych Wycen w efenix stają się ich Logami, zanim karta ostatniego Uruchomienia przeczyta Logi.
-    interrupted = InterruptedPricings(log.directory / JOURNALS_DIRECTORY, run_logs, log)
+    interrupted = InterruptedPricings(log.directory / JOURNALS_DIRECTORY, run_logs, disk, log)
     interrupted.close()
     # Komentarz postępu Wyceny w efenix w issue Logów okresu, odświeżany z jej dziennika (#846).
     progress = ProgressComment(journal, run_logs, clock=clock)
 
     def run_started(info: RunInfo, started_at: datetime) -> None:
         journal.run_started(info, started_at)
-        cards.run_started(info, started_at)
+        disk.started(StartFacts.of_run(info, started_at))
         progress.run_started(info, started_at)  # ostatni: postęp jest dla Maksa, a nie warunkiem pracy taty
 
     # Powiadomienia o Uwagach taty, wysłanych Zgłoszeniach, Wydaniach i zakończonych Wycenach w efenix z Logów

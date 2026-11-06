@@ -18,7 +18,7 @@ CONSTANTS
     MaxAwariiWpisu,      \* PricingJournal._append_locked: OSError (wpis przepada, Wycena biegnie dalej), także pierwsza
                          \* linia przy starcie i wpis końca; po write może zostać cała pierwsza linia (flush albo fsync
                          \* rzuca)
-    MaxAwariiOdczytu,    \* InterruptedPricings.close: OSError odczytu dziennika albo pliku Logów (dziennik zostaje)
+    MaxAwariiOdczytu,    \* InterruptedPricings.close: OSError odczytu dziennika, pliku albo katalogu Logów (dziennik zostaje)
     MaxAwariiLogow,      \* RunLogs._write (replace_atomically): OSError, pliku Logów nie ma albo zostaje poprzedni
     MaxAwariiKolejki,    \* Outbox.post: False (pliku kolejki nie dało się zapisać)
     MaxAwariiUsuniecia,  \* _remove: OSError z unlink (dziennik zostaje), przy starcie, po wyniku i za Logami
@@ -277,11 +277,12 @@ Zbuduj(r) ==
     /\ Odczytane([rodzaj |-> "urwane", tresc |-> ZDziennika(r)])
     /\ poWyniku' = Zdarz(poWyniku, ZWynikiem(r), bezKonca[r] \ (IF WynikPrzyjety(r) THEN {"przed-wpisem-konca"} ELSE {}))
 
-(* InterruptedPricings.close -> _closed(path) dla dziennika na pozycji kursor: _read(path) i plik Logów (file_of,     *)
-(* RunLog.model_validate_json) w jednym kroku, bo w create_app nic innego tych plików nie pisze. Historii start nie    *)
-(* czyta. OSError z odczytu dziennika albo Logów: close łapie go i zostawia dziennik następnemu startowi. Dziennik z   *)
-(* pierwszą linią został, bo kolejka nie przyjęła Logów z wynikiem w pracy Uruchomienia (JournalAfterLogs) albo to    *)
-(* Urwane Uruchomienie, więc start zamyka go wersją zastępczą (Rank.STAND_IN), a usuwa tylko dziennik bez niej.       *)
+(* InterruptedPricings.close -> _closed(path) dla dziennika na pozycji kursor: _read(path) i plik Logów (logs_disk:    *)
+(* LogsOnDisk.logs, _read_logs) w jednym kroku, bo w create_app nic innego tych plików nie pisze. Historii start nie   *)
+(* czyta. OSError z odczytu dziennika albo Logów albo z listowania katalogu Logów, który jest (Refused): close łapie   *)
+(* go i zostawia dziennik następnemu startowi. Dziennik z pierwszą linią został, bo kolejka nie przyjęła Logów z       *)
+(* wynikiem w pracy Uruchomienia (JournalAfterLogs) albo to Urwane Uruchomienie, więc start zamyka go wersją zastępczą *)
+(* (Rank.STAND_IN), a usuwa tylko dziennik bez niej.                                                                   *)
 Czytaj ==
     LET r == kursor
         koniecZapisany == Zakonczony(r)

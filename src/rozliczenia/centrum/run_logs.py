@@ -808,6 +808,25 @@ class StartedFacts(Protocol):
     def started_at(self) -> datetime: ...
 
 
+@dataclass(frozen=True)
+class StartFacts:
+    """Bezpieczne fakty startu jednego Uruchomienia (``StartedFacts``): te same co nagłówek jego Logów, plik ostatniego
+    startu (``logs_disk``) i pierwsza linia dziennika Wyceny w efenix."""
+
+    run_id: str
+    process: contract.ProcessKey
+    mode: Literal["podgląd", "zapis"]
+    period: str
+    started_at: datetime
+
+    @classmethod
+    def of_run(cls, info: contract.RunInfo, started_at: datetime) -> StartFacts:
+        """Fakty startu Uruchomienia ``info``, które Centrum startuje teraz (``RunHost.start`` → ``run_started``)."""
+
+        mode: Literal["podgląd", "zapis"] = "podgląd" if info.dry_run else "zapis"
+        return cls(run_id=info.id, process=info.process, mode=mode, period=info.period, started_at=started_at)
+
+
 def _domain_fact_notes(files: Sequence[CopiedFile]) -> list[str]:
     """Uwaga o każdym wierszu Kopii ze śladem przesunięcia poza pierwszym wierszem bloku wklejenia
     (``CopiedSheet.traced_rows``): fakt domeny, na którym stoi reguła położenia wiersza, nie zachodzi (ADR 0025)."""
@@ -1477,11 +1496,6 @@ class RunLogs:
             environment=self._environment(started.process, started.period),
             dad_actions=self._dad_actions.take(),
         )
-
-    def file_of(self, started: StartedFacts) -> Path:
-        """Plik Logów Uruchomienia ``started``, także taki, którego jeszcze nie ma."""
-
-        return self._directory / logs_file_name(started.started_at, started.process, started.run_id)
 
     def guard(self, record: RunLog) -> RunLog:
         """Logi ``record`` po strażniku reguły danych tej pracy Centrum (``guarded``), jak w ``_keep``: Logi Urwanego

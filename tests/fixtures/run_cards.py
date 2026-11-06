@@ -1,11 +1,17 @@
-"""Karta Uruchomienia z Logów Uruchomienia (#427) widziana z przeglądarki: czego test oczekuje po starcie Centrum."""
+"""Karta Uruchomienia z Logów Uruchomienia (#427) widziana z przeglądarki: czego test oczekuje po starcie Centrum, i katalog
+Logów, którego system nie daje wylistować."""
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 import copy
+import os
+from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+import pytest
 
 from tests.fixtures.centrum import views_until
 
@@ -25,3 +31,22 @@ def first_view(client: TestClient) -> dict[str, Any]:
     """Pierwszy widok strumienia SSE, z którym przeglądarka zaczyna po starcie Centrum."""
 
     return views_until(client, "idle", "running", "awaiting_decision", "finished")[0]
+
+
+@contextmanager
+def unlisted(monkeypatch: pytest.MonkeyPatch, directory: Path) -> Iterator[None]:
+    """System odmawia wylistowania katalogu ``directory`` (``os.listdir``, ``os.scandir``), choć plik w nim da się
+    odczytać po nazwie: prawa bez odczytu katalogu, antywirus albo brak uchwytów; tak samo na Windows i na Macu."""
+
+    def refusing(listing: Callable[..., Any]) -> Callable[..., Any]:
+        def listed(path: Any = ".") -> Any:
+            if isinstance(path, str | os.PathLike) and Path(path) == directory:
+                raise PermissionError(13, "odmowa dostępu", str(path))
+            return listing(path)
+
+        return listed
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "listdir", refusing(os.listdir))
+        patch.setattr(os, "scandir", refusing(os.scandir))
+        yield
