@@ -6,6 +6,7 @@ Testy zachowania budują własne repozytorium z kopią narzędzia. Testy struktu
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 import importlib.util
 from pathlib import Path
 import re
@@ -21,6 +22,10 @@ from tests.fixtures.git_repo import commit, copy_files, git
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 SKILLS = ROOT / ".agents" / "skills"
+sys.path.insert(0, str(TOOLS / "lib"))
+
+from rozjazd_modelu import SYNC  # noqa: E402
+
 VERDICT = "SKILLE VERIFY: "
 REPO = {
     ".agents/skills/verify-a/SKILL.md": "---\nname: verify-a\ndescription: a\npilnuje:\n  - src/a/*\n  - tools/narzedzie.py\n---\n",
@@ -411,3 +416,125 @@ def test_agents_md_nie_wymienia_skilli_verify() -> None:
     named = [md.parent.name for md in sorted(SKILLS.glob("verify-*/SKILL.md")) if md.parent.name in agents]
 
     assert named == [], "routing skilli verify-* żyje w ich pilnuje:, a AGENTS.md odsyła do tools/skille_dla_zmiany.py"
+
+
+NOT_PROSE = re.compile(r"\s*(?:#+\s|\||```)")
+CODE_SPAN = re.compile(r"`[^`]*`")
+SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+")
+BACKGROUND = re.compile(r"background", re.IGNORECASE)
+SAME_TURN = "same turn"
+SYNC_LIMIT = 30
+
+
+def _prose_paragraphs(text: str) -> Iterator[list[str]]:
+    paragraph: list[str] = []
+    fenced = False
+    front_matter = text.startswith("---\n")
+    for number, line in enumerate(text.splitlines(), start=1):
+        if front_matter:
+            front_matter = number == 1 or line != "---"
+            continue
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        if not fenced and line.strip() and not NOT_PROSE.match(line):
+            paragraph.append(line)
+            continue
+        if paragraph:
+            yield paragraph
+        paragraph = []
+    if paragraph:
+        yield paragraph
+
+
+def _background_without_waiting(text: str) -> list[str]:
+    sentences = (
+        sentence
+        for paragraph in _prose_paragraphs(text)
+        for sentence in SENTENCE_BREAK.split(CODE_SPAN.sub("", " ".join(line.strip() for line in paragraph)))
+    )
+    return [sentence for sentence in sentences if BACKGROUND.search(sentence) and SAME_TURN not in sentence]
+
+
+def _sync_paragraph_length(text: str) -> int | None:
+    return next((len(paragraph) for paragraph in _prose_paragraphs(text) if SYNC.search("\n".join(paragraph))), None)
+
+
+def test_skill_kaze_czekac_na_polecenie_w_tle_w_tej_samej_turze() -> None:
+    """Zdanie ``SKILL.md`` o tle każe czekać na koniec polecenia w tej samej turze (``AGENTS.md``, hook ``praca_w_tle.py``).
+
+    Granica: zdanie o tle w kodzie, w tabeli, w pliku ``features/`` skilla i inne słowa niż „background” łapie tylko
+    przegląd.
+    """
+
+    found = {
+        str(md.relative_to(ROOT)): sentences
+        for md in sorted(SKILLS.glob("*/SKILL.md"))
+        if (sentences := _background_without_waiting(md.read_text(encoding="utf-8")))
+    }
+
+    assert found == {}, (
+        "Polecenie w tle: każ w tym samym zdaniu czekać na jego koniec „in the same turn” (AGENTS.md), "
+        "a nie oddać turę i czekać na powiadomienie; polecenie do 600 s uruchom na pierwszym planie."
+    )
+
+
+def test_sprawdzenie_tla_pomija_kod_a_wskazuje_tlo_bez_czekania_w_tej_samej_turze() -> None:
+    document = "\n".join(
+        [
+            "---",
+            "description: Runs in the background.",
+            "---",
+            "Start it as a background command",
+            "and wait for the notification. Then read its last line.",
+            "Start it in the background and wait for its end",
+            "in the same turn.",
+            "The queue calls `send_in_background` and `run_in_background`.",
+            "| table | in the background |",
+            "```",
+            "run it in the background",
+            "```",
+            "Run `x` in the background, then read it.",
+        ]
+    )
+
+    assert _background_without_waiting(document) == [
+        "Start it as a background command and wait for the notification.",
+        "Run  in the background, then read it.",
+    ]
+
+
+def test_akapit_sync_commit_skilla_ma_najwyzej_limit_linii() -> None:
+    """Akapit z pierwszą linią ``SYNC`` (``tools/lib/rozjazd_modelu.py``) ma SHA, co na nim potwierdzono i jak sprawdzić
+    zmiany od niego, a historię wcześniejszych synchronizacji niesie git. ``SYNC_LIMIT`` przepuszcza akapity gałęzi w toku
+    z 6.11.2026 (najdłuższy 25 linii, #1021). Granica: historię w osobnych akapitach za nim
+    (``verify-aktualizacja-narzedzia``) łapie tylko przegląd.
+    """
+
+    lengths = {md.parent.name: _sync_paragraph_length(md.read_text(encoding="utf-8")) for md in sorted(SKILLS.glob("*/SKILL.md"))}
+    too_long = {skill: length for skill, length in lengths.items() if length is not None and length > SYNC_LIMIT}
+
+    assert "verify-kolejka-skrzynki" in {skill for skill, length in lengths.items() if length is not None}
+    assert too_long == {}, (
+        f"Akapit Sync commit ma więcej niż {SYNC_LIMIT} linii: zostaw SHA, co na nim potwierdzono i jak sprawdzić "
+        "zmiany od niego, a to, co zmieniło się od poprzedniego Sync commit, wpisz w opis commitu."
+    )
+
+
+def test_akapit_sync_commit_to_akapit_z_pierwsza_linia_sync() -> None:
+    document = "\n".join(
+        [
+            "Covered code.",
+            "",
+            "Earlier text.",
+            "**Sync commit: `abc1234`** (2026-11-06).",
+            "Every row was checked.",
+            "",
+            "```bash",
+            "git log",
+            "```",
+            "Sync commit: `def5678` again.",
+        ]
+    )
+
+    assert _sync_paragraph_length(document) == 3
+    assert _sync_paragraph_length("No sync here.") is None
