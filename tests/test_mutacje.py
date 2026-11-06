@@ -772,7 +772,8 @@ LINUX_1 = "pytest (Python 3.14, Linux, 1/2)"
 
 def _ci_repository(tmp_path: Path, plans: dict[str, list[plan_ci.Zadanie]], runs: list[int]) -> tuple[Path, dict[str, str], Path]:
     """Repozytorium z gałęzią ``praca``, która zmienia ``tests/test_zmieniony.py`` od ``glowna``, środowisko z atrapą
-    ``gh`` na ``PATH`` i plik jej wywołań; atrapa podaje artefakt ``plan`` runów z ``plans`` i listę runów ``runs``."""
+    ``gh`` na ``PATH`` i plik jej wywołań; atrapa podaje artefakt ``plan`` runów z ``plans`` i listę runów ``runs``, a
+    pobranie runu 998 kończy błędem tylko na stdout."""
 
     neighbour = "import rozliczenia\n\n\ndef test_sasiad():\n    assert rozliczenia.WARTOSC == 0\n"
     files = {
@@ -801,6 +802,7 @@ def _ci_repository(tmp_path: Path, plans: dict[str, list[plan_ci.Zadanie]], runs
         "arguments = sys.argv[1:]\n"
         "with (here / 'wywolania').open('a', encoding='utf-8') as log:\n    log.write(' '.join(arguments) + chr(10))\n"
         "if arguments[:2] == ['run', 'list']:\n    print((here / 'runy.json').read_text(encoding='utf-8'))\n"
+        "elif arguments[:3] == ['run', 'download', '998']:\n    print('gh: błąd tylko na stdout')\n    sys.exit(1)\n"
         "elif arguments[:2] == ['run', 'download'] and (here / f'plan-{arguments[2]}.json').exists():\n"
         "    shutil.copy(here / f'plan-{arguments[2]}.json', pathlib.Path(arguments[arguments.index('--dir') + 1]) / 'plan.json')\n"
         "else:\n    sys.exit(f'gh: atrapa nie zna {arguments}')\n",
@@ -887,8 +889,9 @@ def test_jak_ci_bez_numeru_bierze_ostatni_run_ci_galezi(tmp_path: Path, tracked:
         ((), [456], True, "HEAD nie jest na gałęzi, więc podaj numer runu CI: --jak-ci <id runu>"),
         (("789",), [], False, "run 789 nie stawia w zadaniu pytest toru linux-3.14 pliku testów zmienionego od glowna"),
         (("999",), [], False, "gh run download padł: gh: atrapa nie zna"),
+        (("998",), [], False, "gh run download padł: gh: błąd tylko na stdout"),
     ],
-    ids=["galaz-bez-runu", "odlaczony-head", "run-bez-zmienionego-testu-na-torze", "run-bez-artefaktu"],
+    ids=["galaz-bez-runu", "odlaczony-head", "run-bez-zmienionego-testu-na-torze", "run-bez-artefaktu", "blad-gh-na-stdout"],
 )
 def test_jak_ci_bez_zadania_do_odtworzenia_odmawia_z_powodem(
     tmp_path: Path, arguments: tuple[str, ...], runs: list[int], detached: bool, error: str
