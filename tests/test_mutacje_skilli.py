@@ -235,9 +235,17 @@ def test_nazwe_kroku_widac_zanim_krok_cokolwiek_wydrukuje(tmp_path: Path) -> Non
     assert (runner.returncode, lines[-1]) == (0, "MUTACJE SKILLI OK"), lines
 
 
-def test_zadanie_mutations_ci_lokalnie_uruchamia_skrypty_mutacji_skilli(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("script", "code", "last", "step"),
+    [
+        (PASSING, 0, "CI LOKALNIE OK | tylko mutations", "OK   mutacje skilli"),
+        ('print("NIEWYKRYTA: proba")\nraise SystemExit(1)\n', 1, "CI LOKALNIE FAIL | mutacje skilli", "FAIL mutacje skilli"),
+    ],
+    ids=["skrypt przechodzi", "skrypt pada"],
+)
+def test_zadanie_mutations_ci_lokalnie_uruchamia_skrypty_mutacji_skilli(tmp_path: Path, script: str, code: int, last: str, step: str) -> None:
     _tool(tmp_path)
-    _skill(tmp_path, "verify-a", {"check_a_mutations.py": PASSING})
+    _skill(tmp_path, "verify-a", {"check_a_mutations.py": script})
 
     # Poza CI zadanie mutations odmawia startu (``tools/lib/ciezkie_ci.py``).
     result = subprocess.run(
@@ -253,8 +261,8 @@ def test_zadanie_mutations_ci_lokalnie_uruchamia_skrypty_mutacji_skilli(tmp_path
     )
 
     lines = result.stdout.splitlines()
-    assert (result.returncode, lines[-1]) == (0, "CI LOKALNIE OK | tylko mutations"), result.stdout + result.stderr
-    assert [line.partition(" (")[0] for line in lines[:-1]] == ["OK   mutacje skilli"], result.stdout
+    assert (result.returncode, lines[-1]) == (code, last), result.stdout + result.stderr
+    assert [line.partition(" (")[0] for line in lines if line.startswith(("OK ", "FAIL "))] == [step], result.stdout
 
 
 def test_skrypt_bez_limitu_z_wiersza_polecen_przerywa_domyslny_limit_czasu(tmp_path: Path) -> None:
