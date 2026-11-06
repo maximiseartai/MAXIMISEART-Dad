@@ -6,17 +6,18 @@ Jedyną operacją jest ``replay()``. Kształt danych:
 - Logi Uruchomienia (``run_logs.RunLog`` tego drzewa) dają proces, tryb, okres, wynik i ślad do porównania, a Kopia
   wejścia wiersze plików taty.
 - Granice (``Limit``) to to, czego Logi nie niosą. Granica blokująca (Logi bez Kopii wejścia, Urwane Uruchomienie,
-  pusta Kopia, wiersz INTERMAX bez pewnego położenia, komórka typu, którego Kopia nie zapisała, Logi Wyceny bez odczytu
-  wyników szukania, wiersz Kopii albo zlecenie śladu efenix, które strażnik reguły danych pominął) kończy odtworzenie
-  bez uruchomienia procesu: wynik takiego odtworzenia nic by nie znaczył. Zastrzeżenie (maski strażnika w Kopii, pole
-  albo element, które strażnik pominął poza wejściem, Wzorce spoza Logów, Surowe zlecenia, dni nad wklejeniem, Atrapa w
-  miejscu efenix) raport podaje przy każdym wyniku, bo może tłumaczyć różnicę.
+  pusta Kopia, komórka typu, którego Kopia nie zapisała, Logi Wyceny bez odczytu wyników szukania, wiersz Kopii albo
+  zlecenie śladu efenix, które strażnik reguły danych pominął) kończy odtworzenie bez uruchomienia procesu: wynik
+  takiego odtworzenia nic by nie znaczył. Zastrzeżenie (maski strażnika w Kopii, wiersz INTERMAX w obu położeniach bez
+  komórek dozwolonych tylko w jednym, pole albo element, które strażnik pominął poza wejściem, Wzorce spoza Logów,
+  Surowe zlecenia, dni nad wklejeniem, Atrapa w miejscu efenix) raport podaje przy każdym wyniku, bo może tłumaczyć
+  różnicę.
 - Pliki wejścia powstają w katalogu roboczym z Kopii wejścia, pod tą samą nazwą w folderach o tych samych nazwach co
   u taty (``CopiedFile.folders``), więc Komunikaty nazywają te same plik i folder: każdy arkusz z nagłówkami i
   wierszami pod tymi samymi numerami, przesunięty pierwszy wiersz wklejenia INTERMAX znowu przesunięty, a nad
   wklejeniem ostatni uporządkowany i żółty wiersz w tych samych wierszach co u taty. Wiersze Rejestru zleceń
-  Przygotowania mają krój uporządkowanych wierszy taty (Calibri 8), bo wiersz bez niego pamięć reguły danych zna też
-  dwie kolumny na lewo od nagłówka (#918), a wiersze wklejenia INTERMAX krój wiersza z aplikacji. W miejscu kolumn
+  Przygotowania mają krój uporządkowanych wierszy taty (Calibri 8), bo pierwszy wiersz bloku bez niego pamięć reguły
+  danych zna dwie kolumny na lewo od nagłówka (#918), a wiersze wklejenia INTERMAX krój wiersza z aplikacji. W miejscu kolumn
   ``ADRES`` i numeru Orange stoją wartości syntetyczne z numerem wiersza (``SYNTHETIC_ADDRESS``, ``SYNTHETIC_ORANGE``),
   których żaden plik taty nie ma. Wzorce i Konfigurację wykonawców daje folder ``configuration``, bo Logi mają z nich
   tylko nazwę i rozmiar.
@@ -628,9 +629,10 @@ def _above_paste(created: Worksheet, sheet: LoggedSheet) -> None:
 
 def _preparation(record: RunLog, work: _Work) -> _Setup:
     # Kopia nie ma wyglądu komórek, a z wyglądu uporządkowanego wiersza Rejestru pamięć reguły danych wie, że jego
-    # komórki stoją pod nagłówkiem (#918): wiersze mają krój uporządkowanych wierszy taty. Wiersz, który u taty go nie
-    # miał, ma w Kopii maski w miejscu tekstu dwie kolumny na lewo od ``ADRES`` i ``NUMER UMOWY`` (u taty ``DATA`` i
-    # ``NUMER ZL.``), więc różnicę z niego tłumaczy zastrzeżenie o maskach (``_masked_limits``).
+    # komórki stoją pod nagłówkiem (#918): wiersze mają krój uporządkowanych wierszy taty. Pierwszy wiersz bloku
+    # wklejenia u taty (bez tego wyglądu) i wiersz z siatki reguły położenia mają w Kopii maski w miejscu tekstu dwie
+    # kolumny na lewo od ``ADRES`` i ``NUMER UMOWY`` (u taty ``DATA`` i ``NUMER ZL.``), więc różnicę z nich tłumaczy
+    # zastrzeżenie o maskach (``_masked_limits``).
     register, limits = _register_file(record, work, "rejestr", _ORDERED_FONT)
     periods = work.folder("okresy")
     configuration = _configured(work)
@@ -698,17 +700,20 @@ def _intermax_limits(record: RunLog) -> list[Limit]:
     if limits:
         return limits
     uncertain = [(sheet.sheet, sheet.uncertain_rows) for sheet in _the_file(record).sheets if sheet.uncertain_rows]
+    limits = []
     if uncertain:
         where = "; ".join(f"arkusz {name}, wiersze {', '.join(map(str, rows))}" for name, rows in uncertain)
-        return [
+        limits.append(
             Limit(
-                f"Kopia wejścia ma wiersze INTERMAX bez pewnego położenia ({where}): brak w nich komórek DATA GODZ. "
-                "POCZ., NUMER ZL., ZWROT i UWAGI, a strażnik mógł zamaskować w Kopii wartości z drugiego położenia "
-                "(#913), więc odtworzenie nie zbuduje tych wierszy",
-                blocking=True,
+                f"Kopia wejścia ma wiersze INTERMAX w obu położeniach ({where}): to wiersze z siatki reguły położenia "
+                "(ślad przesunięcia albo pierwszy wiersz bloku, którego przesunięcia nie widać), a nie ma "
+                "w nich komórek, które w którymś położeniu stałyby pod "
+                "ADRES, NUMER UMOWY albo za UWAGI (NUMER ZL., ZWROT, UWAGI i DATA GODZ. POCZ., gdy nie jest datą z "
+                "godziną), więc odtworzony wiersz ich nie ma, a reguła, która je czyta, może zdecydować inaczej (ADR 0025)"
             )
-        ]
+        )
     return [
+        *limits,
         Limit(
             "dni uporządkowane nad wklejeniem nie są w Kopii wejścia: odtworzony INTERMAX ma nad wklejeniem tylko ostatni "
             "uporządkowany i żółty wiersz, więc odmowa dnia już uporządkowanego i wiersz z wyglądem z aplikacji nad "

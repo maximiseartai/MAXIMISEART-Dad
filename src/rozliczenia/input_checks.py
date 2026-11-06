@@ -146,9 +146,11 @@ def read_register(
 ) -> list[RegisterSheet]:
     """Arkusze ze zleceniami Rejestru zleceń albo zatrzymanie, gdy Rejestru nie da się odczytać albo nie ma nagłówków.
 
-    ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza pod ich nagłówkiem, a w wierszu bez
-    wyglądu uporządkowanego (``RegisterSheet.uncertain_rows``) także ``raw_orders.SHIFT`` kolumn na lewo od niego (#918).
-    ``copy`` poznaje każdy przeczytany wiersz (``_copied``) i chwilę zmiany Rejestru sprzed jego odczytu.
+    ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza w jednym położeniu (ADR 0025):
+    pierwszego wiersza bloku wklejenia z widocznym przesunięciem (``RegisterSheet.shifted_rows``) ``raw_orders.SHIFT``
+    kolumn na lewo od nagłówka, wiersza z siatki (``RegisterSheet.both_rows``) w obu, a każdego innego pod nim (#918).
+    ``copy`` poznaje każdy przeczytany wiersz (``_copied``), wiersze ze śladem przesunięcia i chwilę zmiany Rejestru
+    sprzed jego odczytu.
     """
 
     modified = input_copy.modified_at(register)
@@ -156,13 +158,15 @@ def read_register(
         read = readers.register(register, period)
     if forbidden is not None:
         for sheet in read.sheets:
-            for row in sheet.register_rows:
-                for column, header in _FORBIDDEN_HEADERS:
-                    forbidden.remember_value(column, row.cells[header].value)
             numbers = {column.target_header: number for column, number in sheet.positions.items()}
-            for values in sheet.uncertain_rows.values():
+            for row in sheet.register_rows:
+                shifted = sheet.shifted_rows.get(row.number)
+                moved = shifted if shifted is not None else sheet.both_rows.get(row.number)
                 for column, header in _FORBIDDEN_HEADERS:
-                    forbidden.remember_value(column, values.get(numbers[header] - raw_orders.SHIFT))
+                    if shifted is None:
+                        forbidden.remember_value(column, row.cells[header].value)
+                    if moved is not None:
+                        forbidden.remember_value(column, moved.get(numbers[header] - raw_orders.SHIFT))
     if copy is not None:
         _copied(register, read, modified, copy)
     return read.sheets
@@ -171,8 +175,8 @@ def read_register(
 def _copied(register: Path, read: RegisterRead, modified: datetime | None, copy: input_copy.InputCopy) -> None:
     """Odczyt Rejestru w Kopii wejścia: bajty, z których czytnik przeczytał arkusze, z chwilą zmiany ``modified`` sprzed
     odczytu, komórki każdej kolumny ``COLUMNS`` bez zakazanych (``_FORBIDDEN_HEADERS``) w jej kolumnie arkusza pod
-    nagłówkiem Rejestru (wiersz 1) oraz puste wiersze z odczytanego zakresu; bez drugiego odczytu pliku, więc Kopia nie
-    zatrzymuje Przygotowania."""
+    nagłówkiem Rejestru (wiersz 1), puste wiersze z odczytanego zakresu i wiersze ze śladem przesunięcia
+    (``RegisterSheet.traced_rows``); bez drugiego odczytu pliku, więc Kopia nie zatrzymuje Przygotowania."""
 
     workbook = copy.workbook(register, read.content, modified)
     forbidden = {header for _, header in _FORBIDDEN_HEADERS}
@@ -183,6 +187,7 @@ def _copied(register: Path, read: RegisterRead, modified: datetime | None, copy:
             1,
             {number: column.register_header for column, number in positions.items()},
             {number for column, number in positions.items() if column.target_header in forbidden},
+            traced_rows=sorted(sheet.traced_rows),
         )
         for row in sheet.register_rows:
             copied.row(row.number, {number: row.cells[column.target_header].value for column, number in positions.items()})

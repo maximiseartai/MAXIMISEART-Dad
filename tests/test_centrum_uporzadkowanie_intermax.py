@@ -17,10 +17,12 @@ from typing import Any
 from uuid import uuid4
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 import pytest
 
-from rozliczenia import intermax_copies, workbook_files
+from rozliczenia import input_checks, intermax_copies, workbook_files
+from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.centrum.run_logs import RunLog
 
 from tests.fixtures.centrum import phase_states, views_until
@@ -45,6 +47,7 @@ from tests.fixtures.intermax import (
     Order,
     rewrite_parts,
 )
+from tests.fixtures.fakt_domeny import known
 from tests.fixtures.intermax_disk import denied, failing_replace
 
 COPY = "INTERMAX przed uporządkowaniem 2026-10-26 14-05-07.xlsx"
@@ -925,14 +928,16 @@ def test_arkusz_zlecen_ktorego_wierszy_nie_da_sie_rozdzielic_zatrzymuje_uporzadk
     assert ADDRESS_VALUE not in path.read_text(encoding="utf-8")
 
 
-# --- Położenia wklejonego wiersza (#842) ---------------------------------------------------------------------------------
+# --- Położenia wklejonego wiersza (#842, #913) ---------------------------------------------------------------------------
 # Tabela położeń z opisu PR #905: wiersz próbny niesie syntetyczny adres i numer Orange tam, gdzie w pliku stoją jego
 # kolumny ``ADRES`` i ``NUMER UMOWY``, a ostatnie zlecenie wklejenia cytuje je w ``CZYNNOŚCI ZREALIZOWANE``, więc
-# strażnik musi je znać, gdziekolwiek stały. Pewne położenie ma tylko wiersz uporządkowany i wiersz, który rozpoznanie
-# przeczytało jako Surowe zlecenie; w każdym innym ``ADRES`` i numer Orange mogą stać pod nagłówkiem albo dwie kolumny
-# na lewo od niego, więc Kopia ma z niego tylko komórki dozwolone w obu położeniach, a pamięć reguły danych zna oba.
-# ``NUMER ZL.`` uporządkowanego wiersza, który stoi tam, gdzie numer Orange przesuniętego, cytowany w tym samym tekście
-# zostaje: może wyjść (ADR 0025).
+# strażnik musi je znać tam, gdzie stoją. Każdy wiersz ma jedno położenie (decyzja Maksa z 5.11.2026, ADR 0025):
+# pierwszy wiersz bloku wklejenia przesunięty o dwie kolumny w lewo, każdy inny pod nagłówkiem. W obu jest pierwszy
+# wiersz bloku, którego przesunięcia nie widać (bez daty z godziną dwie kolumny przed DATA albo z nią także pod DATA),
+# bez uwagi, i inny wiersz z datą z godziną dwie kolumny przed DATA (ślad przesunięcia), z uwagą w Logach, że fakt
+# domeny jest złamany. ``NUMER ZL.`` uporządkowanego wiersza, który stoi tam, gdzie numer Orange przesuniętego, cytowany w tym samym tekście
+# zostaje: może wyjść (ADR 0025). Przypadki, w których fakt domeny nie zachodzi, a ślad go nie zdradza, to ryzyko
+# przyjęte przez Maksa (``KNOWN``).
 
 PROBE_ADDRESS = "Przemiatana Wrzosowa 12 Kórnik"
 PROBE_ORANGE = "4809876543"
@@ -985,8 +990,10 @@ class Position:
     """Wiersz tabeli położeń: INTERMAX z wierszem próbnym i to, co tabela mówi o nim w Kopii wejścia.
 
     ``probe``: arkusz i indeks wiersza próbnego w ``raw`` albo ``older_raw``; ``None``: wiersza nie ma w Kopii.
-    ``letters``: kolumny wiersza próbnego w Kopii, ``uncertain``: wiersz bez pewnego położenia, ``stop``: kod
-    Zatrzymania (``None``: Uporządkowanie kończy się wynikiem OK), ``sheets``: arkusze w Kopii.
+    ``letters``: kolumny wiersza próbnego w Kopii, ``uncertain``: wiersz w obu położeniach, ``stop``: kod Zatrzymania
+    (``None``: Uporządkowanie kończy się wynikiem OK), ``sheets``: arkusze w Kopii, ``traced``: wiersz w obu położeniach
+    ma ślad przesunięcia, więc Logi mają uwagę, że fakt domeny jest złamany (``False``: pierwszy wiersz bloku, którego
+    przesunięcia nie widać, bez uwagi), ``known``: klasa ryzyka przyjętego przez Maksa (``KNOWN``).
     """
 
     intermax: Intermax
@@ -996,10 +1003,14 @@ class Position:
     stop: str | None
     sheets: tuple[str, ...] = (ORDER_SHEET,)
     edit: Callable[[Path], None] | None = None
+    traced: bool = True
+    known: str | None = None
 
 
 TEXT_DATE = (3, "26.10.2026 11:00")
 """``DATA GODZ. POCZ.`` jako tekst, nie data z godziną."""
+A_DATE = (1, datetime(2026, 10, 26, 10))
+"""Data z godziną w kolumnie A (dwie kolumny przed ``DATA GODZ. POCZ.``, bez nagłówka) wiersza na miejscu."""
 POSITIONS = {
     "zwykly_wiersz": Position(
         Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1]))), (ORDER_SHEET, 1), "CDFGHIJ", False, None
@@ -1014,19 +1025,30 @@ POSITIONS = {
         True,
         "SUROWE_ZLECENIE_BEZ_DATY",
     ),
+    # pierwszy wiersz bloku na miejscu z datą jako tekstem: przesunięcia nie widać, więc oba położenia bez uwagi, a Kopia
+    # ma tylko komórki dozwolone w obu, tam, gdzie czyta je Planowanie (przesunięte, bo pod DATA nie ma daty z godziną)
     "pierwszy_wiersz_z_data_jako_tekst_na_miejscu": Position(
         Intermax(ordered=ORDERED, raw=_pasted(0, _probe(PASTED[0], TEXT_DATE)), shifted=False),
         (ORDER_SHEET, 0),
         "FHIJL",
         True,
         "SUROWE_ZLECENIE_BEZ_DATY",
+        traced=False,
     ),
     "wiersz_z_data_jako_tekst": Position(
         Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], TEXT_DATE))),
         (ORDER_SHEET, 1),
-        "DFGHJ",
-        True,
+        "CDFGHIJ",
+        False,
         "SUROWE_ZLECENIE_BEZ_DATY",
+    ),
+    "przesuniety_wiersz_w_srodku_z_data_jako_tekst": Position(
+        Intermax(ordered=ORDERED, raw=_pasted(2, _probe(PASTED[2], TEXT_DATE, shifted=True))),
+        (ORDER_SHEET, 2),
+        "ABCDFGHINO",
+        False,
+        "SUROWE_ZLECENIE_BEZ_DATY",
+        known="przesuniety_inny_bez_sladu",
     ),
     "pusty_wiersz_nad_kolejnym_wklejeniem": Position(
         Intermax(ordered=ORDERED, raw=_pasted(2, _probe(PASTED[2], shifted=True)), blank_in_paste=frozenset({2})),
@@ -1038,8 +1060,8 @@ POSITIONS = {
     "wiersz_bez_wykonawcy": Position(
         Intermax(ordered=ORDERED, raw=_pasted(1, _probe(replace(PASTED[1], worker="")))),
         (ORDER_SHEET, 1),
-        "DFGH",
-        True,
+        "CDFGHI",
+        False,
         "SUROWE_ZLECENIE_BEZ_WYKONAWCY",
     ),
     "przesuniety_wiersz_z_aplikacji_nad_uporzadkowanymi": Position(
@@ -1055,6 +1077,76 @@ POSITIONS = {
         "",
         False,
         "SUROWE_ZLECENIA_NAD_UPORZADKOWANYMI",
+    ),
+    # ten sam z datą jako tekstem, więc bez śladu przesunięcia: pierwszy wiersz bloku, którego przesunięcia nie widać, więc
+    # oba położenia
+    "przesuniety_wiersz_z_aplikacji_nad_uporzadkowanymi_z_data_jako_tekst": Position(
+        Intermax(
+            ordered=(
+                *ORDERED,
+                _probe(Order(datetime(2026, 10, 20, 12), "jan.nowak", 201), TEXT_DATE, shifted=True, app_look=True),
+                Order(datetime(2026, 10, 20, 14), "jan.nowak", 1004),
+            ),
+            raw=PASTED,
+        ),
+        None,
+        "",
+        False,
+        "SUROWE_ZLECENIA_NAD_UPORZADKOWANYMI",
+    ),
+    # wiersz z wyglądem z aplikacji w wierszu 2, nad wszystkimi uporządkowanymi, z datą jako tekstem: nic go nie
+    # poprzedza, więc jest pierwszym wierszem bloku, a jego przesunięcia nie widać
+    "przesuniety_wiersz_z_aplikacji_nad_wszystkimi_uporzadkowanymi": Position(
+        Intermax(
+            ordered=(
+                _probe(Order(datetime(2026, 10, 19, 7), "jan.nowak", 202), TEXT_DATE, shifted=True, app_look=True),
+                *ORDERED,
+            ),
+            raw=PASTED,
+        ),
+        None,
+        "",
+        False,
+        "SUROWE_ZLECENIA_NAD_UPORZADKOWANYMI",
+    ),
+    # wiersz na miejscu z datą z godziną także dwie kolumny przed DATA: ślad przesunięcia, więc oba położenia, a Kopia ma
+    # jego datę spod DATA
+    "wiersz_z_data_z_godzina_takze_dwie_kolumny_przed_data": Position(
+        Intermax(ordered=ORDERED, raw=_pasted(1, _probe(PASTED[1], (1, datetime(2026, 10, 26, 11))))),
+        (ORDER_SHEET, 1),
+        "ACDFGHJ",
+        True,
+        None,
+    ),
+    # pierwszy wiersz bloku na miejscu z datą z godziną pod DATA i dwie kolumny przed nią: przesunięcia nie widać, więc
+    # oba położenia bez uwagi, choć ma ślad przesunięcia
+    "pierwszy_wiersz_z_data_z_godzina_takze_dwie_kolumny_przed_data": Position(
+        Intermax(ordered=ORDERED, raw=_pasted(0, _probe(PASTED[0], (1, datetime(2026, 10, 26, 13)))), shifted=False),
+        (ORDER_SHEET, 0),
+        "ACDFGHJ",
+        True,
+        None,
+        traced=False,
+    ),
+    # pierwszy wiersz bloku na miejscu z datą z godziną w A, a pod DATA z datą tekstem: przesunięcie widać, więc pamięć
+    # zna go tylko przesuniętego (klasa B)
+    "pierwszy_wiersz_na_miejscu_z_data_w_kolumnie_a": Position(
+        Intermax(ordered=ORDERED, raw=_pasted(0, _probe(PASTED[0], A_DATE, TEXT_DATE)), shifted=False),
+        (ORDER_SHEET, 0),
+        "CFGHIJLM",
+        False,
+        None,
+        known="pierwszy_na_miejscu",
+    ),
+    # pierwszy wiersz bloku na miejscu z tekstem w A i datą tekstem pod DATA: przesunięcie widać tylko z daty z godziną,
+    # więc oba położenia bez uwagi
+    "pierwszy_wiersz_na_miejscu_z_tekstem_w_kolumnie_a": Position(
+        Intermax(ordered=ORDERED, raw=_pasted(0, _probe(PASTED[0], (1, "pilne"), TEXT_DATE)), shifted=False),
+        (ORDER_SHEET, 0),
+        "CFHIJL",
+        True,
+        "SUROWE_ZLECENIE_BEZ_DATY",
+        traced=False,
     ),
     "zatrzymanie_zanim_planowanie_doszlo_do_wklejenia": Position(
         Intermax(ordered=ORDERED, older_sheet=True, raw=_pasted(2, _probe(PASTED[2], shifted=True))),
@@ -1093,14 +1185,17 @@ POSITIONS = {
 }
 
 
-@pytest.mark.parametrize("position", POSITIONS.values(), ids=POSITIONS.keys())
+@pytest.mark.parametrize(
+    "position", [pytest.param(position, id=name, marks=known(position.known)) for name, position in POSITIONS.items()]
+)
 def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu_wiersza(
     tmp_path: Path, position: Position
 ) -> None:
     """Każde położenie wklejonego wiersza z tabeli położeń (opis PR #905): adres i numer Orange wiersza próbnego nie
     wychodzą do pliku Logów ani do Skrzynki Zgłoszeń, także zacytowane w ``CZYNNOŚCI ZREALIZOWANE`` innego zlecenia,
-    które strażnik maskuje. Kopia ma tylko wiersze wklejenia, bez pustych, a wiersz próbny w niej kolumny z tabeli; wiersz bez
-    pewnego położenia jest w ``uncertain_rows`` swojego arkusza. Uporządkowanie kończy się tak, jak bez Kopii."""
+    które strażnik maskuje, ani w Uwadze taty. Kopia ma tylko wiersze wklejenia, bez pustych, a wiersz próbny w niej
+    kolumny z tabeli; wiersz w obu położeniach jest w ``uncertain_rows`` swojego arkusza, a ze śladem przesunięcia Logi
+    mają o nim uwagę, że fakt domeny jest złamany. Uporządkowanie kończy się tak, jak bez Kopii."""
 
     centrum = ordering_centrum(tmp_path, position.intermax)
     if position.edit is not None:
@@ -1108,6 +1203,7 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
 
     result = centrum.run_to_end()["result"]
+    note = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": ECHO}).json()["body"]
 
     sent = _sent(centrum)
     [logs] = centrum.run_logs()
@@ -1115,7 +1211,7 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
         [] if position.stop is None else [position.stop]
     ), result
     texts = [path.read_text(encoding="utf-8") for path in sorted((tmp_path / "logs" / "uruchomienia").glob("*"))] + sent
-    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in texts)] == []
+    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in [*texts, note])] == []
     [copied] = logs["input_copy"]
     sheets = {sheet["sheet"]: sheet for sheet in copied["sheets"]}
     layout = centrum.layout
@@ -1135,3 +1231,174 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
         name: [probe_row] if position.uncertain and position.probe is not None and position.probe[0] == name else []
         for name in position.sheets
     }
+    broken = [note for note in logs["input_copy_notes"] if note.startswith(f"Fakt domeny złamany: wiersz {probe_row} ")]
+    assert len(broken) == (position.uncertain and position.traced), logs["input_copy_notes"]
+
+
+# --- Wpis taty w Calibri 8 we wklejonym wierszu (przegląd #984 r1, r2 i r3) --------------------------------------------
+# Tata wpisuje coś czcionką arkusza (Calibri 8) w jedną komórkę wklejonego wiersza, więc wiersz ma wygląd uporządkowany
+# (granica bloku z kroju, bez zmian: reguła z większości komórek przestawia u taty granice dziesiątek bloków), a za
+# pierwszy wiersz bloku uchodzi następny, który stoi na miejscu. Gdy w kolumnie A nie ma daty z godziną, jego przesunięcia
+# nie widać (z datą z godziną pod DATA, z datą tekstem czy bez daty), więc pamięć zna go w obu położeniach (siatka, ADR
+# 0025), bez uwagi w Logach, a adres i numer Orange wiersza próbnego nie wychodzą. Z datą z godziną w A, a bez niej pod
+# DATA, przesunięcie widać, choć wiersz stoi na miejscu: pamięć zna go tylko przesuniętego, a wartości wychodzą (klasa C,
+# ryzyko przyjęte przez Maksa 6.11.2026, ``KNOWN``).
+
+
+def _typed_by_tata(order: int, column: int, value: object = None) -> Callable[[Path], None]:
+    """Tata wpisuje w komórkę ``column`` wiersza zlecenia ``order`` (albo tylko zmienia jej krój) w Calibri 8."""
+
+    def edit(path: Path) -> None:
+        workbook = load_workbook(path)
+        try:
+            sheet = workbook[ORDER_SHEET]
+            rows = enumerate(sheet.iter_rows(), start=1)
+            [row] = [number for number, cells in rows if any(cell.value == f"ZL-{order}" for cell in cells)]
+            cell = sheet.cell(row, column)
+            if value is not None:
+                cell.value = value  # type: ignore[assignment]  # syntetyczny wpis taty
+            cell.font = Font(name="Calibri", sz=8)
+            workbook.save(path)
+        finally:
+            workbook.close()
+
+    return edit
+
+
+IN_PLACE = "CDFGHJ"
+"""Kolumny w Kopii wiersza w obu położeniach, który Planowanie czyta pod nagłówkami (z datą z godziną pod DATA)."""
+READ_SHIFTED = "FHIJL"
+"""Kolumny w Kopii wiersza w obu położeniach, który Planowanie czyta przesunięty (bez daty z godziną pod DATA)."""
+ABOVE_FIRST = Order(datetime(2026, 10, 19, 10), "anna.kowalska", 201, shifted=True, app_look=True)
+"""Przesunięty pierwszy wiersz wklejenia nad uporządkowanymi."""
+
+
+def _at_bottom(index: int, *cells: tuple[int, datetime | str | int]) -> Intermax:
+    return Intermax(ordered=ORDERED, raw=_pasted(index, _probe(PASTED[index], *cells)))
+
+
+def _on_top(*cells: tuple[int, datetime | str | int]) -> Intermax:
+    """Wklejenie od wiersza 2, bez uporządkowanych nad nim, wiersz próbny drugi."""
+
+    return Intermax(ordered=(), yellow=None, gap=0, raw=_pasted(1, _probe(PASTED[1], *cells)))
+
+
+def _above_ordered(*cells: tuple[int, datetime | str | int]) -> Intermax:
+    """Wklejenie nad uporządkowanymi z przesuniętym pierwszym wierszem ``ABOVE_FIRST``, wiersz próbny drugi."""
+
+    probe = _probe(Order(datetime(2026, 10, 19, 11), "anna.kowalska", 202), *cells, app_look=True)
+    return Intermax(ordered=(ORDERED[0], ABOVE_FIRST, probe, *ORDERED[1:]), raw=PASTED)
+
+
+@dataclass(frozen=True)
+class Typed:
+    """Wpis taty w Calibri 8 we wklejonym wierszu: INTERMAX z wierszem próbnym, wpis taty, indeks wiersza próbnego w
+    ``PASTED`` (``None``: wiersz próbny nad uporządkowanymi, poza Kopią), jego kolumny w Kopii i klasa ryzyka przyjętego
+    przez Maksa (``KNOWN``)."""
+
+    intermax: Intermax
+    edit: Callable[[Path], None]
+    probe: int | None
+    letters: str
+    known: str | None = None
+
+
+TYPED_BY_TATA = {
+    # przesunięty pierwszy wiersz: MIASTO (w nim pod AKCJE) w Calibri 8, wiersz próbny drugi
+    "miasto_pierwszego_wiersza": Typed(_at_bottom(1), _typed_by_tata(101, 2), 1, IN_PLACE),
+    # przesunięty pierwszy wiersz: uwaga taty w UWAGI w Calibri 8, wiersz próbny drugi
+    "uwaga_w_pierwszym_wierszu": Typed(_at_bottom(1), _typed_by_tata(101, LAST, "zadzwonić"), 1, IN_PLACE),
+    # trzeci wiersz na miejscu: MIASTO w Calibri 8, wiersz próbny czwarty
+    "miasto_trzeciego_wiersza": Typed(_at_bottom(3), _typed_by_tata(103, 4), 3, IN_PLACE),
+    "miasto_pierwszego_wiersza_wiersz_probny_z_data_jako_tekst": Typed(
+        _at_bottom(1, TEXT_DATE), _typed_by_tata(101, 2), 1, READ_SHIFTED
+    ),
+    "miasto_trzeciego_wiersza_wiersz_probny_z_data_jako_tekst": Typed(
+        _at_bottom(3, TEXT_DATE), _typed_by_tata(103, 4), 3, READ_SHIFTED
+    ),
+    "blok_na_gorze_arkusza_wiersz_probny_z_data_jako_tekst": Typed(
+        _on_top(TEXT_DATE), _typed_by_tata(101, 2), 1, READ_SHIFTED
+    ),
+    "blok_nad_uporzadkowanymi_wiersz_probny_z_data_jako_tekst": Typed(
+        _above_ordered(TEXT_DATE), _typed_by_tata(201, 2), None, ""
+    ),
+    # sonda C4 z przeglądu #984 r3: jak wyżej, a wiersz próbny ma datę z godziną w kolumnie A
+    "blok_nad_uporzadkowanymi_wiersz_probny_z_data_w_kolumnie_a": Typed(
+        _above_ordered(A_DATE, TEXT_DATE), _typed_by_tata(201, 2), None, "", known="na_miejscu_z_data_w_a"
+    ),
+}
+"""Sondy I1, I1b, I2 z przeglądu #984 r1, N1, N2, N6t, N5t z r2 i C4 z r3."""
+
+
+@pytest.mark.parametrize(
+    "case", [pytest.param(case, id=name, marks=known(case.known)) for name, case in TYPED_BY_TATA.items()]
+)
+def test_wpis_taty_w_calibri_8_we_wklejonym_wierszu_nie_wypuszcza_adresu_ani_numeru_orange_nastepnego(
+    tmp_path: Path, case: Typed
+) -> None:
+    """Fakt domeny zachodzi, a tata wpisał coś w Calibri 8 w wiersz wklejenia nad wierszem próbnym: adres i numer Orange
+    wiersza próbnego nie wychodzą do pliku Logów, do Skrzynki Zgłoszeń ani w Uwadze taty, a Logi nie mówią o złamanym
+    fakcie domeny. Wiersz próbny, który zaczyna blok i stoi na miejscu, Kopia ma w obu położeniach, bez ``NUMER ZL.``
+    spod nagłówka."""
+
+    centrum = ordering_centrum(tmp_path, case.intermax)
+    case.edit(centrum.register)
+    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+
+    centrum.run_to_end()
+    note = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": ECHO}).json()["body"]
+
+    texts = [path.read_text(encoding="utf-8") for path in sorted((tmp_path / "logs" / "uruchomienia").glob("*"))]
+    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in [*texts, *_sent(centrum), note])] == []
+    [logs] = centrum.run_logs()
+    assert [note for note in logs["input_copy_notes"] if note.startswith("Fakt domeny złamany")] == []
+    [sheet] = logs["input_copy"][0]["sheets"]
+    probe_row = None if case.probe is None else centrum.layout.raw_rows[case.probe]
+    cells = [row["cells"] for row in sheet["rows"] if row["row"] == probe_row]
+    assert (sheet["uncertain_rows"], ["".join(sorted(found)) for found in cells]) == (
+        ([], []) if probe_row is None else ([probe_row], [case.letters])
+    )
+
+
+TYPED_IN_DIAGNOSIS = {
+    # sonda D9 z przeglądu #984 r2: MIASTO przesuniętego pierwszego wiersza w Calibri 8
+    "miasto_pierwszego_wiersza": (_at_bottom(1, TEXT_DATE), _typed_by_tata(101, 4), None),
+    # sonda D10 z r2: wklejenie od wiersza 2, SKUTECZNE przesuniętego pierwszego wiersza w Calibri 8
+    "skuteczne_pierwszego_wiersza_na_gorze_arkusza": (_on_top(TEXT_DATE), _typed_by_tata(101, 12, "tak"), None),
+    # sondy DC4 i DC5 z r3: jak wyżej, a wiersz próbny ma datę z godziną w kolumnie A
+    "miasto_pierwszego_wiersza_wiersz_probny_z_data_w_kolumnie_a": (
+        _at_bottom(1, A_DATE, TEXT_DATE),
+        _typed_by_tata(101, 4),
+        "na_miejscu_z_data_w_a",
+    ),
+    "skuteczne_pierwszego_wiersza_na_gorze_arkusza_wiersz_probny_z_data_w_kolumnie_a": (
+        _on_top(A_DATE, TEXT_DATE),
+        _typed_by_tata(101, 12, "tak"),
+        "na_miejscu_z_data_w_a",
+    ),
+}
+"""INTERMAX z wierszem próbnym drugim na miejscu, z datą tekstem pod DATA, wpis taty i klasa ryzyka (``KNOWN``)."""
+
+
+@pytest.mark.parametrize(
+    ("intermax", "edit"),
+    [
+        pytest.param(intermax, edit, id=name, marks=known(klass))
+        for name, (intermax, edit, klass) in TYPED_IN_DIAGNOSIS.items()
+    ],
+)
+def test_diagnoza_intermax_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpisem_taty_w_calibri_8(
+    tmp_path: Path, intermax: Intermax, edit: Callable[[Path], None]
+) -> None:
+    """Diagnoza czyta cały INTERMAX jako Rejestr zleceń (``input_checks.register_problem``, jak ``centrum/diagnosis.py``).
+    Tata wpisał coś w Calibri 8 w przesunięty pierwszy wiersz wklejenia, więc za pierwszy wiersz bloku uchodzi wiersz
+    próbny pod nim, który stoi na miejscu: pamięć reguły danych zna jego adres i numer Orange pod nagłówkami."""
+
+    path = tmp_path / "INTERMAX.xlsx"
+    intermax.write(path)
+    edit(path)
+    memory = ForbiddenValues()
+
+    input_checks.register_problem(path, input_checks.FILE_READERS, memory)
+
+    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []

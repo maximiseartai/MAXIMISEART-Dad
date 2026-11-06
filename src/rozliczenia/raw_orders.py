@@ -13,8 +13,13 @@ komórki ma wypełnienie stylu wiersza: u taty żółty wiersz to zwykle styl ca
 Sam blok, bez przeglądu nad nim i bez przeszkód, oddaje ``pasted``: z niego Przygotowanie pliku zbiorczego wie,
 z których dni są Surowe zlecenia. Ten sam blok daje ``pasted_rows``: jego wiersze jako fakty, które Kopia wejścia
 Uporządkowania niesie, a ``shifts`` przesunięcia wierszy: wiersz, którego komórki rozpoznanie czyta dwie kolumny na
-lewo od swojego nagłówka, i wiersze, w których komórki mogą stać przesunięte albo nie, bo rozpoznanie ich nie
-przeczytało jako Surowych zleceń.
+lewo od swojego nagłówka, i położenia, w których pamięć reguły danych zna wartości wiersza.
+
+Pamięć reguły danych zna każdy wiersz w jednym położeniu (decyzja Maksa z 5.11.2026, ADR 0025): pierwszy wiersz bloku
+wklejenia (``first_in_block``) przesunięty o ``SHIFT`` kolumn w lewo, bo tak przychodzi z aplikacji firmowej zawsze (fakt
+domeny: przesunięty jest tylko pierwszy wklejony wiersz), a każdy inny pod nagłówkiem. Siatka (``both_positions``) daje
+oba położenia pierwszemu wierszowi bloku, którego przesunięcia nie widać (``shift_visible``), i innemu wierszowi ze
+śladem przesunięcia, a o tym drugim (``Shifts.traced``) Logi mówią, że fakt jest złamany.
 
 Przeszkody: wiersz z wyglądem z aplikacji nad uporządkowanym wierszem, Surowe zlecenie bez daty z godziną albo bez
 Wykonawcy i blok z więcej niż jednego dnia. Pierwsza wymaga przeglądu nad blokiem (``_above``): od ostatniego
@@ -356,39 +361,109 @@ class Shifts:
     """O ile kolumn na lewo od swojego nagłówka stoją w pliku komórki wierszy arkusza zleceń (``shifts``).
 
     ``shifted_row``: pierwszy wiersz bloku Surowych zleceń, który rozpoznanie czyta przesunięty o ``SHIFT`` kolumn w
-    lewo; ``None``: bez niego. Tak przychodzi jednak pierwszy wiersz każdego wklejenia, także drugiego w tym samym
-    bloku, a pierwszy wiersz bloku bez daty z godziną na miejscu nie musi być przesunięty (data jako tekst). Pewne
-    położenie ma więc tylko wiersz uporządkowany i wiersz bloku, który rozpoznanie przeczytało jako Surowe zlecenie;
-    w każdym innym wierszu z wartościami (wiersz bloku bez daty z godziną albo bez Wykonawcy, wiersz z wyglądem z
-    aplikacji nad uporządkowanymi) komórki mogą stać przy obu przesunięciach.
+    lewo, bo pod ``DATA GODZ. POCZ.`` nie ma daty z godziną; ``None``: bez niego. ``first_row``: pierwszy wiersz bloku
+    Surowych zleceń (``None``: bez bloku), w nim pierwszy wiersz bloku wklejenia z ``first_in_block``. Pamięć reguły
+    danych zna wiersz w położeniach ``known``: pierwszy wiersz bloku wklejenia tylko przesunięty, każdy inny tylko pod
+    nagłówkiem, a wiersz z siatki (``both``) w obu położeniach.
     """
 
     shifted_row: int | None
     columns: OrderColumns
-    placed: frozenset[int]
-    """Wiersze bloku, które rozpoznanie przeczytało jako Surowe zlecenia."""
+    first_row: int | None
 
     def read(self, row: int) -> int:
         """Przesunięcie, z którym rozpoznanie czyta wiersz ``row``: ``SHIFT`` w ``shifted_row``, inaczej 0."""
 
         return SHIFT if row == self.shifted_row else 0
 
-    def possible(self, row: RowFacts) -> tuple[int, ...]:
-        """Przesunięcia, przy których komórki wiersza mogą stać w pliku: samo ``read``, gdy położenie jest pewne, a
-        inaczej 0 i ``SHIFT``."""
+    def known(self, row: RowFacts, first: bool) -> tuple[int, ...]:
+        """Przesunięcia, przy których pamięć reguły danych zna ``ADRES`` i ``NUMER UMOWY`` wiersza; ``first``: wiersz jest
+        pierwszym wierszem swojego bloku wklejenia (``first_in_block``)."""
 
-        if row.number in self.placed or _is_ordered(row, self.columns):
-            return (self.read(row.number),)
-        return (0, SHIFT)
+        if self.both(row, first):
+            return (0, SHIFT)
+        return (SHIFT,) if first else (0,)
+
+    def both(self, row: RowFacts, first: bool) -> bool:
+        """Czy pamięć zna wiersz w obu położeniach (``both_positions``)."""
+
+        columns = self.columns
+        return both_positions(first=first, left_of_date=row.value(columns.date - SHIFT), date=row.value(columns.date))
+
+    def traced(self, row: RowFacts, first: bool) -> bool:
+        """Czy wiersz, który nie jest pierwszym wierszem bloku wklejenia, ma ślad przesunięcia (``shift_traced``), więc
+        Logi mają o nim uwagę, że fakt domeny jest złamany."""
+
+        return not first and shift_traced(row.value(self.columns.date - SHIFT))
+
+
+def shift_traced(left_of_date: object) -> bool:
+    """Ślad przesunięcia wiersza czytanego pod nagłówkami: data z godziną ``SHIFT`` kolumn na lewo od ``DATA GODZ.
+    POCZ.`` (``left_of_date``; u taty kolumna A bez nagłówka). Wiersz na miejscu jej tam nie ma, a przesunięty wiersz z
+    aplikacji ma tam swoją datę."""
+
+    return _is_date(left_of_date)
+
+
+def shift_visible(left_of_date: object, date: object) -> bool:
+    """Przesunięcie wiersza widać: ślad przesunięcia (``shift_traced``), a pod ``DATA GODZ. POCZ.`` (``date``) nie ma
+    daty z godziną. Tak stoi u taty każdy przesunięty pierwszy wiersz z aplikacji."""
+
+    return shift_traced(left_of_date) and not _is_date(date)
+
+
+def both_positions(*, first: bool, left_of_date: object, date: object) -> bool:
+    """Siatka reguły położenia (ADR 0025): czy pamięć reguły danych zna wiersz w obu położeniach, a nie w jednym.
+    ``first``: wiersz jest pierwszym wierszem swojego bloku wklejenia, ``left_of_date``: wartość ``SHIFT`` kolumn na
+    lewo od ``DATA GODZ. POCZ.``, ``date``: wartość pod nią.
+
+    Pierwszy wiersz bloku pamięć zna tylko przesunięty, gdy jego przesunięcie widać (``shift_visible``). Każdy inny
+    pierwszy wiersz (z datą z godziną pod ``DATA GODZ. POCZ.``, z datą tekstem, bez daty) zna w obu, bez uwagi w Logach,
+    bo sam kształt treści nie mówi, gdzie wiersz stoi. Tak wygląda wiersz, który uchodzi za pierwszy, bo tata wpisał coś
+    w Calibri 8 w wiersz nad nim (przegląd #984 r1 i r2); granica bloku zostaje z kroju, bo reguła wyglądu z większości
+    komórek przestawia u taty granice dziesiątek bloków. Inny wiersz pamięć zna w obu, gdy ma ślad przesunięcia
+    (``shift_traced``), czyli widocznie łamie fakt domeny; tylko o nim Logi mają uwagę (``Shifts.traced``).
+    """
+
+    if first:
+        return not shift_visible(left_of_date, date)
+    return shift_traced(left_of_date)
 
 
 def shifts(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Shifts:
     """Przesunięcia wierszy arkusza zleceń z tego samego rozpoznania bloku co w ``recognize`` i ``pasted``."""
 
     raw = _bottom(iter(rows_from_bottom), columns)[0]
-    shifted = _shifted(raw, columns)
-    placed = frozenset(row.number for row in raw if isinstance(_order(row, columns, row.number == shifted), RawOrder))
-    return Shifts(shifted, columns, placed)
+    return Shifts(_shifted(raw, columns), columns, raw[0].number if raw else None)
+
+
+def first_in_block(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Iterator[tuple[RowFacts, bool]]:
+    """Wiersze arkusza zleceń od ostatniego w górę, każdy z tym, czy jest pierwszym wierszem swojego bloku wklejenia:
+    wiersz z wyglądem z aplikacji, nad którym najbliższy wiersz z wartościami ma wygląd uporządkowany albo nie ma
+    żadnego. To pierwszy wiersz bloku na dole arkusza i każdego bloku nad uporządkowanymi, jak w Rejestrze w
+    Przygotowaniu. Wiersz z wyglądem z aplikacji wychodzi dopiero po przeczytaniu najbliższego wiersza z wartościami nad
+    nim, więc odczyt sięga o jeden taki wiersz dalej niż ten, kto przestaje czytać."""
+
+    waiting: list[RowFacts] = []  # wiersz z wyglądem z aplikacji i puste wiersze nad nim
+    for row in rows_from_bottom:
+        if row.blank:
+            if waiting:
+                waiting.append(row)
+            else:
+                yield row, False
+            continue
+        ordered = _is_ordered(row, columns)
+        if waiting:
+            yield waiting[0], ordered
+            yield from ((blank, False) for blank in waiting[1:])
+            waiting = []
+        if ordered:
+            yield row, False
+        else:
+            waiting = [row]
+    if waiting:
+        yield waiting[0], True
+        yield from ((blank, False) for blank in waiting[1:])
 
 
 def _bottom(rows: Iterator[RowFacts], columns: OrderColumns) -> tuple[list[RowFacts], int | None, int | None, RowFacts | None]:

@@ -18,6 +18,13 @@ Zmienia:
   Logach i Uwadze taty rozstrzyga odtąd reguła danych. Treści wyjątków, stawek,
   pełnych ścieżek i klucza dalej nic nie wysyła.
 
+Zmieniona 5.11.2026 (decyzja Maksa, #913, #918, zastępuje PR #966): położenie
+wiersza Rejestru zleceń i INTERMAX w pamięci reguły danych (sekcja „Położenie
+wiersza”). Uzupełniona 6.11.2026: pierwszy wiersz bloku ma jedno położenie tylko
+wtedy, gdy jego przesunięcie widać (decyzja koordynatora w granicach decyzji Maksa
+z 5.11.2026, po przeglądzie #984 r2), a ryzyko klasy C przyjął Maks (decyzja Maksa
+z 6.11.2026, po przeglądzie #984 r3).
+
 Publiczne repozytorium bez zmian: PR-y, commity, issue i testy nie niosą
 treści wierszy, numerów zleceń ani Wykonawców taty, a testy mają tylko dane
 syntetyczne.
@@ -123,34 +130,10 @@ telefony na okres.
   Diagnozie, INTERMAX w Uporządkowaniu, na jego karcie i przy szukaniu
   Surowych zleceń w Przygotowaniu), oddaje przy odczycie komórki zakazanych
   kolumn pamięci reguły danych, a Wycena w efenix dane adresowe każdego
-  wiersza listy wyników. W przesuniętym pierwszym wierszu wklejenia INTERMAX
-  (ADR 0019) te komórki stoją dwie kolumny na lewo od nagłówka; rozpoznaje go
-  to samo rozpoznanie bloku co Uporządkowanie. Pewne położenie ma jednak tylko
-  wiersz uporządkowany i wiersz, który rozpoznanie przeczytało jako Surowe
-  zlecenie: pierwszy wiersz drugiego wklejenia też przychodzi przesunięty, a
-  pierwszy wiersz z datą jako tekstem nie musi być przesunięty. W każdym innym
-  wierszu pamięć poznaje komórki w obu miejscach, a Kopia wejścia niesie tylko
-  komórki dozwolone w obu położeniach (#842, tabela położeń w PR #905).
-  Odczyt Rejestru zleceń w Przygotowaniu i Diagnozie czyta każdy wiersz po
-  nagłówkach, bez rozpoznania bloku, a szukanie Surowych zleceń zna tylko
-  wiersze pod ostatnim uporządkowanym. Przesunięty wiersz wklejenia nad
-  uporządkowanymi w zakresie dat okresu dawał więc w Kopii wejścia
-  Przygotowania adres pod `DATA` i numer Orange pod `NUMER ZL.`, a strażnik ich
-  nie znał: wychodziły do Logów, do Skrzynki i w Uwadze taty (#918). Dlatego w
-  wierszu Rejestru bez wyglądu uporządkowanego (reguła Uporządkowania na
-  kolumnach, które czyta Przygotowanie: żadna komórka z wartością poza
-  `WYKONAWCA` nie ma Calibri 8) pamięć poznaje komórki pod nagłówkiem i dwie
-  kolumny na lewo od niego, a Kopia wejścia niesie wiersz po nagłówkach i
-  strażnik maskuje w niej obie wartości.
-  Wiersz uporządkowany pamięć zna tylko pod nagłówkiem, więc jego `NUMER ZL.`
-  wychodzi bez maski (tabela położeń odczytu Rejestru w
-  `tests/test_centrum_logi_uruchomienia.py`). Koszt to maska `NUMER ZL.` i
-  tekstu spod `DATA` w wierszu bez tego wyglądu. Na kopii Rejestru taty z
-  20.10.2026 takich wierszy jest 11 z 31 778, w okresie 13_19_10_2026 żadnego
-  z 684. Na jej wersji z wklejeniem z aplikacji jest ich 95, bo Diagnoza
-  Przygotowania czyta cały Rejestr, także wklejenie: po niej Kopia wejścia
-  Uporządkowania w tej samej pracy Centrum ma maskę `NUMER ZL.` w 83 z 84
-  wklejonych wierszy, obok maski `URZĄDZENIA` w 82, która była już przed #918.
+  wiersza listy wyników. Każdy wiersz Rejestru zleceń i INTERMAX pamięć zna w
+  jednym położeniu (sekcja „Położenie wiersza” niżej): pierwszy wiersz bloku
+  wklejenia dwie kolumny na lewo od nagłówków, każdy inny pod nimi, a wiersz z
+  siatki w obu.
   Pamięć jest jedna na pracę
   Centrum: Centrum tworzy ją przy starcie i podaje czytnikom i producentom, a
   nie jest stanem modułu, więc dwie prace Centrum w jednym procesie (testy)
@@ -162,6 +145,114 @@ telefony na okres.
 - **Zgoda taty.** Tata wie, że wysyłki do prywatnej Skrzynki Zgłoszeń będą
   niosły numery zleceń, Wykonawców, miasta i opisy techników, i zgodził się
   na to z Maksem (grilling 4.11.2026).
+
+## Położenie wiersza (decyzja Maksa z 5.11.2026, #913, #918)
+
+Fakt domeny (Maks): z aplikacji firmowej przychodzi przesunięty o dwie kolumny
+w lewo zawsze pierwszy wiersz wklejenia i tylko on (ADR 0019; kopia INTERMAX taty
+z 25.10.2026: 84 wklejone wiersze, przesunięty pierwszy). Maks wybrał regułę
+deterministyczną opartą na tym fakcie i bierze na siebie ryzyko, że fakt nie
+zajdzie:
+
+- **Pierwszy wiersz bloku wklejenia** to wiersz z wyglądem z aplikacji (żadna
+  komórka z wartością poza `WYKONAWCA` nie ma Calibri 8), nad którym najbliższy
+  wiersz z wartościami w odczycie jest uporządkowany albo nie ma żadnego, także
+  nad uporządkowanymi (`raw_orders.first_in_block`; odczyt INTERMAX od dołu
+  sięga o jeden wiersz z wartościami dalej). Gdy jego przesunięcie widać, czyli
+  dwie kolumny przed `DATA GODZ. POCZ.` ma datę z godziną, a pod nią nie
+  (`raw_orders.shift_visible`; tak stoi u taty każdy przesunięty pierwszy wiersz
+  z aplikacji), pamięć zna jego `ADRES` i `NUMER UMOWY` tylko dwie kolumny na lewo
+  od nagłówków i maskuje je wszędzie.
+- **Każdy inny wiersz** pamięć zna tylko pod nagłówkiem i maskuje wszędzie.
+  Drugich położeń z wąską maską, faktów przesunięcia i podpisów nie ma.
+- **Siatka** (`raw_orders.both_positions`): dwa rodzaje wierszy pamięć zna w obu
+  położeniach. To dodatkowe położenie, a nie reguła, która z treści wiersza
+  wybiera jedno; u taty kosztuje 0:
+  - inny wiersz z datą z godziną dwie kolumny przed `DATA GODZ. POCZ.` (ślad
+    przesunięcia, `raw_orders.shift_traced`). Logi mają o nim uwagę w
+    `input_copy_notes` („Fakt domeny złamany: wiersz N …”; w INTERMAX o wierszach
+    wklejenia w Kopii, w Rejestrze o każdym przeczytanym). Wariant a, sama uwaga,
+    dał w repro 1 (drugi wklejony wiersz przesunięty) te same maski i wypuścił do
+    Kopii prawdziwą wartość, a b nie;
+  - pierwszy wiersz bloku, którego przesunięcia nie widać: z datą z godziną pod
+    `DATA GODZ. POCZ.`, z datą tekstem albo bez daty, bez uwagi. Fakt Maksa dalej
+    wybiera, który wiersz jest kandydatem, ale sam kształt treści nigdy nie
+    zdejmuje z pierwszego wiersza drugiego położenia. Tak stoi wiersz, który
+    uchodzi za pierwszy, bo tata wpisał coś w Calibri 8 w wiersz wklejenia nad nim
+    (przegląd #984 r1 i r2), gdy nie ma daty z godziną w kolumnie A (z nią to klasa
+    C niżej), i wiersz na górze odczytu okresu ze środka arkusza
+    (zawężenie zaczyna się od daty z godziną pod `DATA GODZ. POCZ.`). Granica
+    bloku z kroju zostaje: reguła z większości komórek przestawia u taty granice
+    dziesiątek bloków (odrzucone warianty).
+- **Kopia wejścia** niesie wiersz w położeniu, w którym czyta go Planowanie, bez
+  kolumn `ADRES` i `NUMER UMOWY`, więc przesunięty pierwszy wiersz ma
+  `URZĄDZENIA` i `NUMER ZL.`. Wiersz z siatki ma tylko komórki dozwolone w obu
+  położeniach i datę z godziną spod `DATA GODZ. POCZ.`; odtworzenie (#847)
+  traktuje go jako zastrzeżenie, nie granicę blokującą.
+
+Sondy przeglądów #917, #952 i #966 (179 przypadków przez HTTP API Centrum, te
+same bajty na `main` b3f1c625a i na tej regule; tabela na Macu Maksa:
+`~/.t3/notes/logi-837/deterministyczna/TABELA.md`):
+
+| klasa | sond | wyciek na `main` | wyciek na tej regule |
+|---|---|---|---|
+| fakt domeny zachodzi | 91 | 11 | 0 |
+| ślad przesunięcia (siatka) | 40 | 0 | 0 |
+| przesunięty inny wiersz niż pierwszy, bez śladu | 19 | 4 | 19 |
+| pierwszy wiersz bloku z widocznym przesunięciem nie przesunięty w całości | 25 | 6 | 16 |
+| przesunięcie w prawo | 3 | 3 | 3 |
+| `ADRES` jako data z godziną (adresu nie ma w pliku) | 1 | 1 | 1 |
+
+Ryzyko przyjęte przez Maksa to trzy klasy:
+
+- **A** (5.11.2026): przesunięty inny wiersz niż pierwszy, bez śladu; 19 sond.
+- **B** (5.11.2026): pierwszy wiersz bloku ma widoczne przesunięcie (data z
+  godziną dwie kolumny przed `DATA GODZ. POCZ.`, pod nią nie), a jest przesunięty
+  tylko w części albo stoi na miejscu; 16 sond.
+- **C** (6.11.2026): fakt domeny zachodzi, ale wiersz na miejscu, który nie jest
+  pierwszym przesuniętym wierszem wklejenia, ma datę z godziną w kolumnie A i bez
+  daty z godziną pod `DATA GODZ. POCZ.`, a reguła bierze go za pierwszy wiersz
+  bloku: pod wpisem taty w Calibri 8, także na początku bloku nad
+  uporządkowanymi. Przesunięcie widać, więc pamięć zna go tylko przesuniętego.
+  Sondy przeglądu #984 r3 C4, RC1–RC3, DC4 i DC5 wypuszczają wtedy wartości albo
+  zostawiają je strażnikowi nieznane (na `main` 0), a C1–C3, C5 i C6 w INTERMAX
+  wyciekają tak samo jak na `main`. U taty kolumna A Rejestru jest pusta w 31 779
+  wierszach kopii z 20.10.2026, w INTERMAX z wklejeniem ma tylko datę prawdziwego
+  przesuniętego pierwszego wiersza, a Uporządkowanie ją czyści, więc taki wiersz
+  wymaga wartości wpisanej ręcznie w kolumnę bez nagłówka.
+
+W każdej klasie adres albo numer Orange wiersza wychodzi, gdy stoi też w wolnym
+tekście, w Uwadze taty albo w zwykłej kolumnie innego wiersza. Testy `KNOWN`
+(xfail strict, termin 5.02.2027, `tests/fixtures/fakt_domeny.py`) mają przypadek
+każdej klasy w testach INTERMAX (A i B w tabeli położeń, C we wpisach taty i w
+Diagnozie) i Rejestru (A, B i C w tabeli położeń). Wpis taty w Calibri 8 we
+wklejonym wierszu nie wypuszcza wartości, gdy wiersz pod nim nie ma daty z
+godziną w kolumnie A: z datą z godziną, z datą tekstem i bez daty pod `DATA GODZ.
+POCZ.` (sondy przeglądu #984 r1 i r2: I1, I1b, I2, R1, R3, N1–N6t, RN1–RN3, D9,
+D10).
+
+Znana granica sygnału: gdy tata wpisze coś w Calibri 8 w przesunięty pierwszy
+wiersz wklejenia, ten wiersz ma wygląd uporządkowany, więc jego data z godziną w
+kolumnie przed `DATA GODZ. POCZ.` daje fałszywą uwagę „Fakt domeny złamany”, a
+granica bloku przesuwa się o wiersz. Wartości nie wychodzą, gdy pierwszy wiersz
+za nim nie ma daty z godziną w kolumnie A: stoi na miejscu, więc jego przesunięcia
+nie widać i ma oba położenia (z datą w kolumnie A to klasa C). Na
+kopii Rejestru taty z 20.10.2026 w 41 okresach 2026 uwag o złamanym fakcie
+domeny jest 0.
+
+Koszt na kopiach plików taty (tylko odczyt, Mac Maksa, pomiar w PR, `main`
+b3f1c625a → ta reguła): Kopia wejścia Uporządkowania na kopii INTERMAX z
+wklejeniem bez Diagnozy 0 → 0 masek, po Diagnozie Przygotowania 165 (`NUMER ZL.`
+83, `URZĄDZENIA` 82) → 0, komórek 518 → 518; prawdziwych wartości wklejonych
+wierszy (168) w Kopii po strażniku 0 i nieznanych strażnikowi 0. W repro 1, które
+łamie fakt domeny, 81 → 81 masek `URZĄDZENIA`, a w następnym Uporządkowaniu po
+poprawce taty 82 → 82, bez wycieku. Kopia Przygotowania 41 okresów 2026: 0 masek,
+0 uwag o złamanym fakcie domeny. Granice bloków z kroju bez zmian: pierwszych
+wierszy bloków w Diagnozie całego Rejestru 10, w Uporządkowaniu INTERMAX 7
+(`first_in_block`), w 41 okresach razem 4. Przesunięcie widać tylko w pierwszym
+wierszu ostatniego wklejenia INTERMAX, więc oba położenia ma 10 z 10, 6 z 7 i 4 z
+4. Pamięć nie poznaje przez to żadnej nowej wartości (ich `ADRES` i `NUMER UMOWY`
+są puste albo znane), a masek w Kopii jest tyle samo.
 
 ## Konsekwencje
 
@@ -235,6 +326,30 @@ nie czyta.
   Maksa dokładała wyjątek w kolejnym ADR.
 - **Strażnik w Kolejce wysyłki.** Tata nie widziałby w podglądzie tego, co
   naprawdę wychodzi, a plik Logów na dysku i plik w Skrzynce różniłyby się.
+- **Dwa położenia każdego wiersza z wyglądem z aplikacji, wartość z drugiego
+  maskowana wąsko (opcja 3, PR #966).** Po trzech rundach przeglądu wciąż
+  wyciekała w kolejnych układach podpisu przesunięcia, a reguła rosła o fakty i
+  wyjątki; Maks odrzucił dwa położenia i maskę w wielu kolumnach.
+- **Oba położenia każdego wiersza bez wyglądu uporządkowanego wszędzie (`main`
+  przed tą decyzją, #952).** Maskowało `URZĄDZENIA` i `NUMER ZL.` w 165
+  komórkach Kopii Uporządkowania po Diagnozie.
+- **Siatka bez drugiego położenia (wariant a).** Te same maski co wariant b, a w
+  repro 1 prawdziwa wartość w Kopii.
+- **Wygląd uporządkowany z większości komórek w Calibri 8 bez kolumn, w które tata
+  pisze ręcznie (przegląd #984 r1).** Na kopiach taty robi pierwszymi wierszami
+  bloków stare wiersze wpisane innym krojem albo częściowo przeformatowane: w
+  INTERMAX 94 zamiast 7 (92 na miejscu), w Rejestrze 93 zamiast 6. Większość
+  wśród wszystkich komórek daje 69, większość w kroju aplikacji (Roboto) 60, a
+  pomijanie samych kolumn ręcznych 23 (20 na miejscu).
+- **Pierwszy wiersz z datą z godziną pod `DATA GODZ. POCZ.` tylko pod nagłówkiem
+  (przegląd #984 r1).** Przesunięty pierwszy wiersz z `ADRES` jako datą z godziną
+  wygląda wtedy na wiersz na miejscu: 3 sondy, w których fakt domeny zachodzi,
+  wypuszczają wartości (na `main` 0).
+- **Pierwszy wiersz w obu położeniach tylko z datą z godziną pod `DATA GODZ.
+  POCZ.` (przegląd #984 r2).** Wpis taty w Calibri 8 nad wierszem na miejscu z
+  datą tekstem albo bez daty robił z tego wiersza pierwszy wiersz bloku znany
+  tylko przesunięty: 10 sond przeglądu (N1–N6t, RN1–RN3, D9, D10) wypuszczało adres
+  i numer Orange albo zostawiało je strażnikowi nieznane (na `main` 0).
 - **Ponowny odczyt plików taty przy wysyłce, żeby poznać zakazane wartości.**
   Przebieg rozliczeń i Kontrola ilości czytają Plik zbiorczy raz (ADR 0013);
   drugi odczyt Rejestru zleceń trwa sekundy.

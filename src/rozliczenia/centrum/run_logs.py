@@ -679,8 +679,9 @@ class RunLog(_Record):
     odciskiem i przeczytanymi Wierszami danych po regule danych. Pusta lista: Uruchomienie skończyło się przed odczytem.
     ``None``: Logi Urwanego Uruchomienia, pliki sprzed tego pola i Uporządkowania INTERMAX sprzed #842."""
     input_copy_notes: list[str] = []
-    """Uwagi techniczne strażnika reguły danych o wartościach zamaskowanych w Kopii wejścia (``guarded``), osobno od
-    ``technical_notes``, które pokazuje karta Uruchomienia z Logów."""
+    """Uwagi techniczne o Kopii wejścia, osobno od ``technical_notes``, które pokazuje karta Uruchomienia z Logów: wiersz
+    ze śladem przesunięcia, który łamie fakt domeny (``_domain_fact_notes``), i uwagi strażnika reguły danych o
+    wartościach zamaskowanych w Kopii (``guarded``)."""
 
     @classmethod
     def of(cls, run: EndedRun, *, tool: Tool, environment: Environment, dad_actions: DadActions) -> RunLog:
@@ -690,6 +691,7 @@ class RunLog(_Record):
         priced = engine_summary if isinstance(engine_summary, PricingSummary) else None
         if isinstance(facts, PricingStopped):
             priced = facts.summary
+        copied = None if run.input_copy is None else run.input_copy.files()
         return cls(
             schema_version=2,
             run_id=info.id,
@@ -732,7 +734,8 @@ class RunLog(_Record):
             trace=None if stopped is None else stopped.stop.trace,
             diagnosis=None,
             dad_actions=dad_actions,
-            input_copy=None if run.input_copy is None else [LoggedInputFile.of(file) for file in run.input_copy.files()],
+            input_copy=None if copied is None else [LoggedInputFile.of(file) for file in copied],
+            input_copy_notes=[] if copied is None else _domain_fact_notes(copied),
         )
 
     @classmethod
@@ -803,6 +806,20 @@ class StartedFacts(Protocol):
     def period(self) -> str: ...
     @property
     def started_at(self) -> datetime: ...
+
+
+def _domain_fact_notes(files: Sequence[CopiedFile]) -> list[str]:
+    """Uwaga o każdym wierszu Kopii ze śladem przesunięcia poza pierwszym wierszem bloku wklejenia
+    (``CopiedSheet.traced_rows``): fakt domeny, na którym stoi reguła położenia wiersza, nie zachodzi (ADR 0025)."""
+
+    return [
+        f"Fakt domeny złamany: wiersz {row} arkusza {sheet.name} w {file.name} ma datę z godziną dwie kolumny na lewo od "
+        "DATA GODZ. POCZ., a nie jest pierwszym wierszem bloku wklejenia; pamięć reguły danych zna go w obu położeniach "
+        "(ADR 0025)."
+        for file in files
+        for sheet in file.sheets
+        for row in sheet.traced_rows
+    ]
 
 
 def logs_file_name(started_at: datetime, process: contract.ProcessKey, run_id: str) -> str:

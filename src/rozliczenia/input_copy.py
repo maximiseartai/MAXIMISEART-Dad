@@ -71,10 +71,12 @@ class CopiedSheet:
 
     ``shifted_row``: wiersz, którego komórki czytnik czyta o ``raw_orders.SHIFT`` kolumn na lewo od swojego nagłówka
     (przesunięty pierwszy wiersz wklejenia INTERMAX), a w Kopii stoją pod nim; ``None``: bez takiego wiersza.
-    ``uncertain_rows``: wiersze bez pewnego położenia (wklejenie INTERMAX, ``raw_orders.Shifts.possible``), które mają
-    w Kopii tylko komórki dozwolone przy każdym ich możliwym przesunięciu, więc brak komórki nie znaczy w nich pustej.
-    ``last_ordered_row`` i ``yellow_row``: ostatni uporządkowany i żółty wiersz nad wklejeniem INTERMAX
-    (``raw_orders.above_paste``), sam numer, bez treści; ``None``: bez takiego wiersza i arkusze innych plików.
+    ``uncertain_rows``: wiersze wklejenia INTERMAX w obu położeniach (ze śladem przesunięcia, ``raw_orders.Shifts.traced``),
+    które mają w Kopii tylko komórki dozwolone przy każdym ich możliwym przesunięciu i datę z godziną spod ``DATA GODZ.
+    POCZ.``, więc brak komórki nie znaczy w nich pustej. ``last_ordered_row`` i ``yellow_row``: ostatni uporządkowany i
+    żółty wiersz nad wklejeniem INTERMAX (``raw_orders.above_paste``), sam numer, bez treści; ``None``: bez takiego
+    wiersza i arkusze innych plików. ``traced_rows``: wiersze ze śladem przesunięcia, które nie są pierwszym wierszem
+    bloku wklejenia: łamią fakt domeny, że przesunięty przychodzi tylko pierwszy wklejony wiersz (ADR 0025).
     """
 
     name: str
@@ -86,6 +88,7 @@ class CopiedSheet:
     uncertain_rows: tuple[int, ...] = ()
     last_ordered_row: int | None = None
     yellow_row: int | None = None
+    traced_rows: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -111,8 +114,8 @@ Values = Sequence[object] | Mapping[int, object]
 @dataclass
 class SheetCopy:
     """Arkusz w trakcie odczytu: nagłówek (numer kolumny → nagłówek), zakazane kolumny (numery od 1), przesunięty
-    wiersz, wiersze bez pewnego położenia i wiersze nad wklejeniem (``CopiedSheet``) i odwołania do przeczytanych
-    wierszy."""
+    wiersz, wiersze w obu położeniach, wiersze nad wklejeniem i wiersze ze śladem przesunięcia (``CopiedSheet``) i
+    odwołania do przeczytanych wierszy."""
 
     name: str
     header_row: int
@@ -122,6 +125,7 @@ class SheetCopy:
     uncertain_rows: tuple[int, ...] = ()
     last_ordered_row: int | None = None
     yellow_row: int | None = None
+    traced_rows: tuple[int, ...] = ()
     _rows: list[tuple[int, Values]] = field(default_factory=list)
     _empty: list[int] = field(default_factory=list)
 
@@ -151,6 +155,7 @@ class SheetCopy:
             self.uncertain_rows,
             self.last_ordered_row,
             self.yellow_row,
+            self.traced_rows,
         )
 
 
@@ -176,12 +181,14 @@ class WorkbookCopy:
         *,
         last_ordered_row: int | None = None,
         yellow_row: int | None = None,
+        traced_rows: Sequence[int] = (),
     ) -> SheetCopy:
         """Arkusz ``name`` z nagłówkiem w wierszu ``header_row``, bez kolumn ``forbidden`` (numery od 1), których komórki
         czytnik oddaje pamięci reguły danych; ``shifted_row``: przesunięty wiersz (``CopiedSheet.shifted_row``), którego
-        wartości czytnik oddaje już pod ich nagłówkiem, a ``uncertain_rows`` wiersze bez pewnego położenia, którym
-        czytnik oddaje tylko komórki dozwolone w każdym położeniu (``CopiedSheet.uncertain_rows``);
-        ``last_ordered_row`` i ``yellow_row``: wiersze nad wklejeniem INTERMAX (``CopiedSheet.last_ordered_row``)."""
+        wartości czytnik oddaje już pod ich nagłówkiem, a ``uncertain_rows`` wiersze w obu położeniach, którym czytnik
+        oddaje tylko komórki dozwolone w każdym położeniu (``CopiedSheet.uncertain_rows``); ``last_ordered_row`` i
+        ``yellow_row``: wiersze nad wklejeniem INTERMAX (``CopiedSheet.last_ordered_row``); ``traced_rows``: wiersze ze
+        śladem przesunięcia poza pierwszym wierszem bloku (``CopiedSheet.traced_rows``)."""
 
         sheet = SheetCopy(
             name,
@@ -192,6 +199,7 @@ class WorkbookCopy:
             tuple(uncertain_rows),
             last_ordered_row,
             yellow_row,
+            tuple(traced_rows),
         )
         self._sheets.append(sheet)
         return sheet
