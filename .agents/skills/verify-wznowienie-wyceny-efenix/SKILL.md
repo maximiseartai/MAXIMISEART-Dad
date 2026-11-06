@@ -87,9 +87,15 @@ classification of other failures) does not move the model. A change that makes a
 decide whether an order is finished does, though no definition above changes: add it to the table and to
 `model/definicje.json`.
 
-Sync commit: `48d371c3f` (2026-11-06: a refusal of „Załaduj do zlecenia” on a page without quantities but with an
-amount other than 0 stops the Wycena). Every row of the table was checked against the code at this commit. Since
-`a5d275cdc` only `load_emmett` changed: the window tells a refusal answered with 2xx by a reloaded page without any
+Sync commit: `014b9337a` (2026-11-07: the Wycena, not the window, decides whether efenix loaded Wycena Emmetta).
+Every row of the table was checked against the code at this commit. Since `48d371c3f` `_outcome` and `load_emmett`
+changed, and the new `_priced` and `_emmett`, which `model/definicje.json` now lists: the verdict on the reloaded page
+moved from `load_emmett` to the Wycena's `_emmett`, which the window runs inside its action on its observations
+(`EmmettLoad`), with the same rule, and `_outcome` asks `_priced` instead of `any(opened.quantities.values())`, so the
+model, whose refusal is `Zatrzymanie` at step `emmett`, did not change beyond the comments and the rows of `Otworz`,
+`ZaladujEmmetta` and `OdczytPoEmmetcie`. On the previous Sync commit `48d371c3f` (2026-11-06: a refusal of „Załaduj do
+zlecenia” on a page without quantities but with an amount other than 0 stops the Wycena) every row of the table was
+checked against the code. Since `a5d275cdc` only `load_emmett` changed: the window tells a refusal answered with 2xx by a reloaded page without any
 quantity instead of an amount 0, as `_outcome` sends to Wycena Emmetta only a page without any quantity (ADR 0026), so
 the model, whose refusal is `Zatrzymanie` at step `emmett` and which has no amount apart from the quantities, did not
 change beyond the row of `ZaladujEmmetta`. On the previous Sync commit `a5d275cdc` (2026-11-05: the execution date also
