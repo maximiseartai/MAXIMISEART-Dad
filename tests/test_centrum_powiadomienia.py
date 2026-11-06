@@ -19,8 +19,8 @@ from rozliczenia.centrum.report_box import CloseReason, Refused, Unreachable
 from rozliczenia.centrum.tool_freshness import PublishedRelease
 from rozliczenia.centrum.tool_update import Release
 
-from tests.fixtures.centrum import TOOL_COMMIT, case_states, centrum as plain_centrum, join_threads_since
-from tests.fixtures.centrum_processes import PreparingCentrum, preparing_centrum, stopped_for_maks
+from tests.fixtures.centrum import TOOL_COMMIT, case_states, centrum as plain_centrum, finished_view, join_threads_since
+from tests.fixtures.centrum_processes import PreparingCentrum, preparing_centrum, settling_centrum, stopped_for_maks
 from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.locked_file import lock_file
 from tests.fixtures.potomne import wait_for
@@ -158,6 +158,27 @@ def test_oznacz_przeczytane_gasi_kropke_takze_po_restarcie_a_nowy_stan_znow_jest
         ("uwaga", "Suma godzin na dole tabeli", "przeczytana", True),
         ("uwaga", NOTE_TITLE, "rozwiazana", False),
     ]
+
+
+def test_powiadomienie_o_wycenie_w_efenix_przeczytane_przez_tate_zostaje_na_liscie_bez_kropki(tmp_path: Path) -> None:
+    """Zakończona Wycena w efenix (tu Zatrzymaniem) to nowe Powiadomienie; po oznaczeniu przeczytanych zostaje na liście
+    przy każdym następnym odczycie, już bez kropki."""
+
+    centrum = settling_centrum(tmp_path)
+    centrum.engines.fail_engine = True
+    period = centrum.period_directory.name
+    assert centrum.client.post("/api/runs", json={"process": "efenix", "period": period, "dry_run": False}).status_code == 200
+    finished_view(centrum.client)
+
+    def pricings(answer: dict[str, Any]) -> list[tuple[str, bool]]:
+        return [(item["period"], item["unread"]) for item in answer["items"] if item["kind"] == "wycena_w_efenix"]
+
+    before = centrum.client.get("/api/notifications").json()
+    after = centrum.client.post("/api/notifications/read", json={"ids": [item["id"] for item in before["items"]]}).json()
+    later = centrum.client.get("/api/notifications").json()
+
+    assert [pricings(before), pricings(after), pricings(later)] == [[(period, True)], [(period, False)], [(period, False)]]
+    assert [before["unread"], after["unread"], later["unread"]] == [1, 0, 0]
 
 
 def test_przeczytane_sa_tylko_powiadomienia_ktore_tata_zobaczyl(tmp_path: Path) -> None:
