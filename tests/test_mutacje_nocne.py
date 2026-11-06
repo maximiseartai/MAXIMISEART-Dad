@@ -1115,6 +1115,31 @@ def test_czesc_podstawy_ktora_padla_noca_obok_przechodzacej_w_tym_samym_zadaniu_
     assert f"SKRYPT {PODSTAWA_C}\n" in tresci["Przeżyte mutacje skilli z #22"]
 
 
+def test_skrypt_skilla_po_cofnietej_zmianie_folderu_trafia_do_pr_ktorego_zmiana_go_uruchomila(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Podstawa verify-c biegnie nocą, bo PR #22 zmienił plik z jej pilnuje; folder skilla PR #24 zmienił, a PR #25 cofnął,
+    więc wybór go nie policzył i issue nie dostaje PR-u, który tylko cofnął zmianę."""
+
+    repo, baza = _historia_skilli(tmp_path)
+    monkeypatch.setattr(kroki_skilli, "ROOT", repo)
+    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
+    skill_md = repo / ".agents/skills/verify-c/SKILL.md"
+    przed = skill_md.read_text(encoding="utf-8")
+    skill_md.write_text(przed + "Opis zmieniony.\n", encoding="utf-8")
+    commit(repo, "Opis verify-c (#24)")
+    skill_md.write_text(przed, encoding="utf-8")
+    commit(repo, "Cofnij opis verify-c (#25)")
+    klucz = "skill:verify-c/ci"
+    plan = plan_ci.Plan(Zdarzenie.NOC, 225.0, (), (plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/1)", (f"{klucz}#1/2", f"{klucz}#2/2"), 100.0),))
+    github = GitHubWPamieci()
+
+    kod = mutacje_nocne.zglos(github, repo, baza, _wykonania(tmp_path / "zapisy", {"mutacje-1": (plan.digest, {klucz: "fail"})}), 0, RUN, plan)
+
+    assert kod == 0, capsys.readouterr().out
+    assert [issue["title"] for issue in github.issues] == ["Przeżyte mutacje skilli z #22"]
+
+
 
 def test_czesc_podstawy_skilla_bez_pilnuje_ktorego_folder_sie_nie_zmienil_trafia_do_ostatniego_pr_nocy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

@@ -470,6 +470,54 @@ def test_noca_podstawa_z_ci_czesci_biegnie_kazda_czescia_kazdego_n_a_pull_reques
     assert all(w.czesci == () for w in praca.wybrane if w.krok.verdict is not None)
 
 
+ROUTING, RUNNER, LIBRARIES = "src/pakiet/routing.py", "tools/mutacje.py", "requirements.txt"
+FOLDER_C = ".agents/skills/verify-c/scripts/check_c_mutations.py"
+# Podstawa w częściach skilla bez pilnuje.
+BASELINE_E = ".agents/skills/verify-e/scripts/sprawdz_e.py"
+
+
+@pytest.mark.parametrize(
+    ("changed", "files"),
+    [
+        (
+            {ROUTING, RUNNER, "docs/opis.md"},
+            {
+                "verify-d/ci": {ROUTING},
+                "verify-e/ci": set(),
+                SCRIPT_A: {RUNNER},
+                "verify-b/check_b_mutations.py": {RUNNER},
+                "verify-c/check_c_mutations.py": set(),
+            },
+        ),
+        # Zmiana z SKILL_STEPS i folder skilla bez pilnuje albo bez czytelnej tabeli uruchamiają krok obok innego powodu.
+        (
+            {LIBRARIES, FOLDER_C, BASELINE_E},
+            {
+                "verify-d/ci": {LIBRARIES},
+                "verify-e/ci": {LIBRARIES, BASELINE_E},
+                SCRIPT_A: {LIBRARIES},
+                "verify-b/check_b_mutations.py": {LIBRARIES},
+                "verify-c/check_c_mutations.py": {LIBRARIES, FOLDER_C},
+            },
+        ),
+        # Skill bez pilnuje i skrypt bez czytelnej tabeli biegną bez pliku, który by je uruchomił.
+        ({"docs/opis.md"}, {"verify-e/ci": set(), "verify-b/check_b_mutations.py": set(), "verify-c/check_c_mutations.py": set()}),
+    ],
+    ids=["pilnuje i runner", "biblioteki i folder", "bez trafien"],
+)
+def test_noca_wybrany_krok_skilla_niesie_zmienione_pliki_ktore_go_uruchamiaja(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: set[str], files: dict[str, set[str]]
+) -> None:
+    skill_d = _with_ci("verify-d", BASELINE_D).replace("ci: ", "ci-czesci: 2\nci: ")
+    skill_e = f"---\nname: verify-e\nci-czesci: 2\nci: {BASELINE_E}\n---\n"
+    baselines = {".agents/skills/verify-d/SKILL.md": skill_d, BASELINE_D: "print('d')\n", ".agents/skills/verify-e/SKILL.md": skill_e, BASELINE_E: "print('e')\n"}
+    repo = _repo(tmp_path, monkeypatch, {**SKILLS, **baselines})
+
+    praca = zakres(Zdarzenie.NOC, frozenset(changed), repo)
+
+    assert {w.krok.key: set(w.pliki) for w in praca.wybrane} == files
+
+
 def test_zgubiony_skrypt_mutacji_i_zly_klucz_ci_trafiaja_do_bledow_zakresu_kazdego_zdarzenia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     lost = ".agents/skills/verify-a/scripts/check_mutation_proba.py"
     repo = _repo(tmp_path, monkeypatch, {**SKILLS, lost: "MUTATIONS = ()\n", ".agents/skills/verify-z/SKILL.md": "---\nname: verify-z\nci: brak.py\n---\n"})

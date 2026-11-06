@@ -40,8 +40,8 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   folder, runner mutacji albo sprawdzenie zmieniło się od bazy, i części każdego n podstaw z ``ci-czesci``), a zadanie
   planu wgrywa swój zapis wykonania jako artefakt ``mutacje-skilli-<id zadania>``. ``zglos --plan-skilli`` daje każdy
   skrypt, który padł, linią ``SKRYPT <skrypt>`` do issue ``Przeżyte mutacje skilli z #N`` PR-u, który ostatni zmienił
-  folder skilla od bazy (bez takiej zmiany: inną ścieżkę z ``kroki_skilli.watched``, a dla podstawy z ``pilnuje``,
-  a bez niej ostatni PR nocy); linii, którą issue już ma, nie dostaje drugi raz. Do tego samego issue idzie każde
+  plik zmieniony od bazy, który uruchomił krok w zakresie nocy (``KrokSkilla.pliki``): najpierw plik w folderze skilla,
+  potem inny, a bez takiego pliku ostatni PR nocy; linii, którą issue już ma, nie dostaje drugi raz. Do tego samego issue idzie każde
   ostrzeżenie ``CZAS BLISKO LIMITU`` z zapisu zadania (``blisko_limitu``, ``NearLimit`` z ``tools/mutacje.py``): mutacja skryptu, której
   polecenie trwało ponad połowę limitu, linią ``CZAS BLISKO LIMITU <skrypt> | <mutacja> | <czas> z limitu …``. Czas
   zmienia się co noc, więc issue, które ma już linię z tym skryptem i mutacją, nie dostaje jej drugi raz (#935).
@@ -79,8 +79,8 @@ import kroki_skilli
 from mutacje import PART, NearLimit
 import mutacje_zmiany
 import plan_ci
-from wplyw_zmiany import Context, Repository
-from zakres_runu import potrzebuja_chromium
+from wplyw_zmiany import Repository, changed_since
+from zakres_runu import KrokSkilla, Zdarzenie, potrzebuja_chromium, zakres
 from zgloszenia_ci import MERGE, REPO, SQUASH, GhApi, GitHub, blok_kodu
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -376,13 +376,18 @@ class Skrypty:
 def przypisz_skrypty(
     github: GitHub, root: Path, od: str, padly: Sequence[str], blisko: Sequence[tuple[str, NearLimit]] = ()
 ) -> tuple[dict[Autor, Skrypty], list[str]]:
-    """Skrypty mutacji skilli, które padły, i ostrzeżenia ``CZAS BLISKO LIMITU`` ich mutacji według PR-u, który ostatni
-    zmienił folder skilla od ``od``, i przyczyny porażki tych, których nie ma komu przypisać, bo ``main`` nie ma commitu
-    od ``od``."""
+    """Skrypty mutacji skilli, które padły, i ostrzeżenia ``CZAS BLISKO LIMITU`` ich mutacji według PR-u, którego zmiana
+    od ``od`` uruchomiła krok (``_autor_kroku``), i przyczyny porażki tych, których nie ma komu przypisać, bo ``main``
+    nie ma commitu od ``od``."""
 
     kroki = {f"skill:{krok.key}": krok for krok in kroki_skilli.steps({})}
+    # Ten sam wybór co plan nocy (``tools/plan_ci.py``). Nieśledzone zapisy artefaktów w checkoucie zgłoszenia nie mają
+    # historii, więc ``_autor_kroku`` ich nie znajduje w ``git log``.
+    wybrane = {f"skill:{w.krok.key}": w for w in zakres(Zdarzenie.NOC, changed_since(root, od), root).wybrane}
     linia_main = _git(root, "rev-list", "--first-parent", "--reverse", f"{od}..HEAD").split()
-    autorzy = {klucz: _autor_kroku(github, root, od, linia_main, kroki[klucz]) for klucz in {*padly, *(klucz for klucz, _ in blisko)}}
+    autorzy = {
+        klucz: _autor_kroku(github, root, od, linia_main, kroki[klucz], wybrane.get(klucz)) for klucz in {*padly, *(klucz for klucz, _ in blisko)}
+    }
     wynik: dict[Autor, Skrypty] = {}
     problemy: list[str] = []
     for klucz in padly:
@@ -399,18 +404,21 @@ def przypisz_skrypty(
     return wynik, problemy
 
 
-def _autor_kroku(github: GitHub, root: Path, od: str, linia_main: Sequence[str], krok: kroki_skilli.Step) -> Autor | None:
-    """PR, który ostatni zmienił folder skilla kroku od ``od`` (bez takiej zmiany: inną ścieżkę z ``kroki_skilli.watched``,
-    a dla podstawy z ``pilnuje``, a bez niej ostatni PR nocy), albo ``None``, gdy ``main`` nie ma commitu od ``od``."""
+def _autor_kroku(
+    github: GitHub, root: Path, od: str, linia_main: Sequence[str], krok: kroki_skilli.Step, wybrany: KrokSkilla | None
+) -> Autor | None:
+    """PR, który ostatni zmienił plik uruchamiający krok (``KrokSkilla.pliki`` wyboru nocy), najpierw w folderze skilla,
+    a bez takiego pliku ostatni PR nocy; ``None``, gdy ``main`` nie ma commitu od ``od``.
+
+    Pliki to różnica netto od ``od``, więc PR, który tylko cofnął zmianę pliku, nie dostaje kroku. Krok, którego wybór
+    nocy nie wybrał (``wybrany`` ``None``: plan z innego commitu albo innej bazy), też dostaje ostatni PR nocy."""
 
     folder = f"{krok.skill.relative_to(kroki_skilli.ROOT).as_posix()}/"
-    try:
-        # Część podstawy z ci-czesci psuje skrypt skilla albo kod, który skill pilnuje.
-        sciezki = kroki_skilli.watched(krok) if krok.verdict else (folder, *(kroki_skilli.guarded(krok.skill / "SKILL.md") or ()))
-    except Exception:  # noqa: BLE001 - tabela, której nie da się wczytać, wskazuje tylko folder skilla
-        sciezki = (folder,)
+    pliki = wybrany.pliki if wybrany else frozenset()
+    w_folderze = sorted(plik for plik in pliki if plik.startswith(folder))
+    grupy = [grupa for grupa in (w_folderze, sorted(pliki.difference(w_folderze))) if grupa]
     # Grupa bez ścieżek daje ostatni commit nocy.
-    for grupa in ((sciezki[0],), (*sciezki[1:], *Context.SKILL_STEPS.paths()), ()):
+    for grupa in (*grupy, []):
         if commit := _git(root, "log", "-1", "--format=%H", f"{od}..HEAD", "--", *grupa):
             return autor(github, root, linia_main[_wniesienie(root, linia_main, commit)], commit)
     return None
