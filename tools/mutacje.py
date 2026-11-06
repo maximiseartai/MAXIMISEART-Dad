@@ -156,7 +156,6 @@ RULES_HEADING = "Zasady werdyktów i przebiegu"
 RECIPE, _, RULES = (__doc__ or "").partition(f"\n{RULES_HEADING}\n")
 PYTEST_EXIT_USAGE_ERROR = 4
 PYTEST_EXIT_NO_TESTS_COLLECTED = 5
-PYTEST_COMMAND_ERRORS = ("ERROR: file or directory not found: ", ": error: unrecognized arguments: ")
 
 
 class Verdict(StrEnum):
@@ -315,31 +314,37 @@ def _tail(stdout: str, stderr: str) -> tuple[str, ...]:
 
 
 def _without_test(command: Sequence[str], ran: _Ran) -> bool:
-    """Czy polecenie to pytest, który nie uruchomił żadnego testu: odrzucił ścieżkę albo opcję albo nic nie wybrał.
+    """Czy polecenie to pytest, który nie uruchomił żadnego testu (kod 4 albo 5)."""
 
-    Kod 4 daje też ``conftest.py``, którego nie da się zaimportować, czyli zepsuty kod, więc kod 4 liczy się tu tylko
-    z komunikatem pytest o poleceniu w końcu stderr (``PYTEST_COMMAND_ERRORS``).
+    return ("-m", "pytest") in pairwise(command) and ran.code in {PYTEST_EXIT_USAGE_ERROR, PYTEST_EXIT_NO_TESTS_COLLECTED}
+
+
+def _no_test_cause(command: Sequence[str], ran: _Ran) -> str:
+    """Przyczyna, z którą pytest nie uruchomił testu (``_without_test``).
+
+    Kod 4 daje i polecenie (zła ścieżka, test wybrany przez ``plik::test``, którego nie ma, opcja), i ``conftest.py``,
+    którego nie da się zaimportować, a komunikatów pytest jest więcej, niż da się wyliczyć, więc kod 4 dostaje obie
+    możliwości z odesłaniem do stderr, a błędem polecenia jest tylko kod 5 i ``-p no:xdist``.
     """
 
-    if ("-m", "pytest") not in pairwise(command):
-        return False
     if ran.code == PYTEST_EXIT_NO_TESTS_COLLECTED:
-        return True
-    return ran.code == PYTEST_EXIT_USAGE_ERROR and any(
-        line.startswith("stderr | ") and error in line for line in ran.tail for error in PYTEST_COMMAND_ERRORS
+        return "pytest nie wybrał żadnego testu (kod 5), więc popraw ścieżkę albo -k w poleceniu po --; to błąd polecenia, nie kodu"
+    if any(argument.endswith("no:xdist") for argument in command):
+        return "pytest odrzucił -p no:xdist (kod 4), bo addopts w pyproject.toml ma --dist, więc zamiast niego daj -n 0 w poleceniu po --"
+    return (
+        "pytest nie uruchomił testu (kod 4): zła ścieżka, test albo opcja w poleceniu po -- "
+        "albo conftest.py, którego nie da się zaimportować; który, mówi koniec stderr niżej"
     )
 
 
-def _no_test_line(command: Sequence[str], ran: _Ran) -> str:
-    """Linia pod ``PODSTAWA CZERWONA`` podstawy pytest bez testu (``_without_test``): przyczyna w poleceniu, nie w kodzie."""
+def _merge_base_note(command: Sequence[str], ran: _Ran) -> str:
+    """Dlaczego merge-base nie rozstrzyga mutacji, której podstawa tam jest czerwona."""
 
-    if ran.code == PYTEST_EXIT_NO_TESTS_COLLECTED:
-        why = "pytest nie wybrał żadnego testu (kod 5), więc popraw ścieżkę albo -k"
-    elif any(argument.endswith("no:xdist") for argument in command):
-        why = "pytest odrzucił -p no:xdist (kod 4), bo addopts w pyproject.toml ma --dist, więc zamiast niego daj -n 0"
-    else:
-        why = "pytest odrzucił ścieżkę albo opcję (kod 4, błąd w końcu stderr niżej), więc ją popraw"
-    return f"PODSTAWA BEZ TESTU: {why} w poleceniu po --; to błąd polecenia, nie kodu"
+    if ran.code == PYTEST_EXIT_NO_TESTS_COLLECTED and _without_test(command, ran):
+        return "polecenie bez testu, więc test jest nowy i REGRES nie dotyczy"
+    if _without_test(command, ran):
+        return "pytest nie uruchomił testu (kod 4: test albo plik nowy, zła ścieżka albo opcja, albo zepsuty conftest.py), więc REGRES nie dotyczy"
+    return "podstawa czerwona"
 
 
 def _verdict(
@@ -661,7 +666,7 @@ def _against_base(
         last, command = found[index][1], mutations[index].command
         if command in red:
             ran = red[command]
-            why = "polecenie bez testu, więc test jest nowy i REGRES nie dotyczy" if _without_test(command, ran) else "podstawa czerwona"
+            why = _merge_base_note(command, ran)
             result[index] = (Verdict.SURVIVED, f"{last} (na merge-base {commit[:8]} {why}: {ran.last})")
             continue
         verdict, base_last = on_base[index]
@@ -680,7 +685,7 @@ def check_all(
     Pod linią ``PODSTAWA CZERWONA`` stderr dostaje koniec stdout i stderr polecenia podstawy (``BASE_TAIL`` linii
     każdego), także podstawy, która przekroczyła ``limit_s``, bo ostatnia linia nie zawsze mówi, co padło, a kopii
     commitu z wyjściem już nie ma (#932, #947). Podstawa pytest, z którą nie biegł żaden test (``_without_test``), ma
-    między nimi linię ``PODSTAWA BEZ TESTU`` z przyczyną w poleceniu.
+    między nimi linię ``PODSTAWA BEZ TESTU`` z przyczyną (``_no_test_cause``).
 
     Przed linią werdyktu każdej mutacji linia ``CZAS`` na stderr podaje czas jej polecenia, a mutację, której polecenie
     trwało ponad ``NEAR_LIMIT`` limitu ``limit_s``, linia ``CZAS BLISKO LIMITU`` na stderr przed linią końcową wymienia ze
@@ -710,7 +715,7 @@ def check_all(
     for command, ran in red.items():
         print(f"PODSTAWA CZERWONA: {' '.join(command)} → {ran.last}", flush=True)
         if _without_test(command, ran):
-            print(_no_test_line(command, ran), flush=True)
+            print(f"PODSTAWA BEZ TESTU: {_no_test_cause(command, ran)}", flush=True)
         # Na stderr, jak linia CZAS: przyczyna porażki podstawy, której kopia commitu z dowodami już nie ma (#932).
         for line in ran.tail:
             print(f"  {line}", file=sys.stderr, flush=True)

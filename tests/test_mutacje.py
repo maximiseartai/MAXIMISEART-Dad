@@ -231,32 +231,39 @@ def test_plik_mutacji_innej_postaci_jest_odrzucony_z_postacia_pliku(tmp_path: Pa
     assert (answered.returncode, answered.stderr.splitlines()[-1].partition(": error: ")[2]) == (2, f"{plan}: {problem}; postać: {mutacje.FILE_SHAPE}")
 
 
+KOD_4 = (
+    "pytest nie uruchomił testu (kod 4): zła ścieżka, test albo opcja w poleceniu po -- "
+    "albo conftest.py, którego nie da się zaimportować; który, mówi koniec stderr niżej"
+)
+
+
 @pytest.mark.parametrize(
     ("command", "cause"),
     [
-        (("-m", "pytest", "-q", "-n", "0", "tests/test_ciezkie_ci.py", "-k", "nie_ma_takiego_testu"), "pytest nie wybrał żadnego testu (kod 5), więc popraw ścieżkę albo -k"),
-        (("-m", "pytest", "-q", "-p", "no:xdist", "tests/test_ciezkie_ci.py"), "pytest odrzucił -p no:xdist (kod 4), bo addopts w pyproject.toml ma --dist, więc zamiast niego daj -n 0"),
-        (("-m", "pytest", "-q", "-n", "0", "tests/test_nie_ma_takiego_pliku.py"), "pytest odrzucił ścieżkę albo opcję (kod 4, błąd w końcu stderr niżej), więc ją popraw"),
+        (("-m", "pytest", "-q", "-n", "0", "tests/test_ciezkie_ci.py", "-k", "nie_ma_takiego_testu"), "pytest nie wybrał żadnego testu (kod 5), więc popraw ścieżkę albo -k w poleceniu po --; to błąd polecenia, nie kodu"),
+        (("-m", "pytest", "-q", "-p", "no:xdist", "tests/test_ciezkie_ci.py"), "pytest odrzucił -p no:xdist (kod 4), bo addopts w pyproject.toml ma --dist, więc zamiast niego daj -n 0 w poleceniu po --"),
+        (("-m", "pytest", "-q", "-n", "0", "tests/test_nie_ma_takiego_pliku.py"), KOD_4),
+        (("-m", "pytest", "-q", "-n", "0", "tests/test_ciezkie_ci.py::nie_ma_takiego_testu"), KOD_4),
         (("-c", "raise SystemExit(5)"), None),
     ],
-    ids=["nic-nie-wybrane", "bez-xdist", "brak-pliku", "nie-pytest-z-kodem-5"],
+    ids=["nic-nie-wybrane", "bez-xdist", "brak-pliku", "brak-testu-node-id", "nie-pytest-z-kodem-5"],
 )
-def test_podstawa_pytest_bez_testu_mowi_ze_to_blad_polecenia(command: tuple[str, ...], cause: str | None) -> None:
+def test_podstawa_pytest_bez_testu_podaje_przyczyne(command: tuple[str, ...], cause: str | None) -> None:
     answered = _mutacje("--zmiana", *_appended(PACKAGE, ""), "--", *command)
 
     lines = answered.stdout.splitlines()
-    expected = [f"PODSTAWA BEZ TESTU: {cause} w poleceniu po --; to błąd polecenia, nie kodu"] if cause else []
+    expected = [f"PODSTAWA BEZ TESTU: {cause}"] if cause else []
     assert (answered.returncode, lines[0].startswith("PODSTAWA CZERWONA: "), lines[1:-1]) == (2, True, expected), answered.stdout
 
 
-def test_podstawa_z_conftest_ktorego_nie_da_sie_zaimportowac_to_czerwony_kod_a_nie_blad_polecenia(tmp_path: Path) -> None:
+def test_podstawa_z_conftest_ktorego_nie_da_sie_zaimportowac_nie_jest_nazwana_bledem_polecenia(tmp_path: Path) -> None:
     (tmp_path / "conftest.py").write_text('raise NameError("zepsuty")\n', encoding="utf-8")
     (tmp_path / "test_a.py").write_text("def test_a() -> None:\n    pass\n", encoding="utf-8")
 
     answered = _mutacje("--zmiana", *_appended(PACKAGE, ""), "--", "-m", "pytest", "-q", "-n", "0", str(tmp_path / "test_a.py"))
 
     lines = answered.stdout.splitlines()
-    assert (answered.returncode, lines[0].startswith("PODSTAWA CZERWONA: "), [line for line in lines if "BEZ TESTU" in line]) == (2, True, []), answered.stdout
+    assert (answered.returncode, lines[0].startswith("PODSTAWA CZERWONA: "), [line for line in lines if "BEZ TESTU" in line]) == (2, True, [f"PODSTAWA BEZ TESTU: {KOD_4}"]), answered.stdout
 
 
 def test_pusta_lista_mutacji_niczego_nie_dowodzi() -> None:
@@ -578,16 +585,22 @@ def test_mutacja_niewykryta_na_head_a_wykryta_na_merge_base_daje_regres(
 
 
 OLD_TEST = "def test_stary():\n    pass\n"
+NOWY_TEST_NA_BAZIE = "polecenie bez testu, więc test jest nowy i REGRES nie dotyczy"
+KOD_4_NA_BAZIE = "pytest nie uruchomił testu (kod 4: test albo plik nowy, zła ścieżka albo opcja, albo zepsuty conftest.py), więc REGRES nie dotyczy"
 NEW_TEST = "import rozliczenia\n\n\ndef test_nowy():\n    assert rozliczenia.WARTOSC < 5\n"
 
 
 @pytest.mark.parametrize(
-    ("base", "selected", "there"),
-    [({}, (), r"no tests ran"), ({"tests/test_n.py": OLD_TEST}, ("-k", "test_nowy"), r"1 deselected")],
-    ids=["nowy-plik-testow", "nowy-test-w-pliku"],
+    ("base", "selected", "there", "why"),
+    [
+        ({}, (), r"no tests ran", KOD_4_NA_BAZIE),
+        ({"tests/test_n.py": OLD_TEST}, ("-k", "test_nowy"), r"1 deselected", NOWY_TEST_NA_BAZIE),
+        ({"tests/test_n.py": OLD_TEST}, ("::test_nowy",), r"no tests ran", KOD_4_NA_BAZIE),
+    ],
+    ids=["nowy-plik-testow", "nowy-test-w-pliku", "nowy-test-przez-node-id"],
 )
 def test_niewykryta_z_testem_ktorego_nie_ma_na_merge_base_mowi_ze_regres_nie_dotyczy(
-    tmp_path: Path, base: dict[str, str], selected: tuple[str, ...], there: str
+    tmp_path: Path, base: dict[str, str], selected: tuple[str, ...], there: str, why: str
 ) -> None:
     """Nowy test, którego mutacja przeżyła: na merge-base pytest nie ma czego uruchomić, a to nie czerwona podstawa."""
 
@@ -597,11 +610,12 @@ def test_niewykryta_z_testem_ktorego_nie_ma_na_merge_base_mowi_ze_regres_nie_dot
     (repo / "tests" / "test_n.py").parent.mkdir(exist_ok=True)
     (repo / "tests" / "test_n.py").write_text(f"{base.get('tests/test_n.py', '')}\n\n{NEW_TEST}", encoding="utf-8")
     commit(repo, "nowy test")
-    pytest_command = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", *selected)
+    node = ("tests/test_n.py" + selected[0],) if selected[:1] == ("::test_nowy",) else ("tests/test_n.py", *selected)
+    pytest_command = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", *node)
 
     answered = _in_repository(repo, "--baza", "glowna", "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 1", "--", *pytest_command)
 
-    note = rf"\(na merge-base {forked[:8]} polecenie bez testu, więc test jest nowy i REGRES nie dotyczy: {there} in [0-9.]+s\)"
+    note = rf"\(na merge-base {forked[:8]} {re.escape(why)}: {there} in [0-9.]+s\)"
     assert re.fullmatch(rf"NIEWYKRYTA: mutacja → 1 passed[^(]* in [0-9.]+s {note}", answered.stdout.splitlines()[0]), answered.stdout + answered.stderr
 
 
