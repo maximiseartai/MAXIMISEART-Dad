@@ -497,15 +497,19 @@ def test_dzien_z_data_spoza_zakresu_kalendarza_efenix_to_blad_bez_zapisu_daty_be
     errors: list[tuple[str, str]],
     pricing: tuple[dict[str, int], date | None, int],
 ) -> None:
-    """Kalendarz Atrapy ma za dziś 12 października 2026, więc efenix przyjmuje daty wykonania od 1 września do 12 października."""
+    """Kalendarz Atrapy ma za dziś 12 października 2026, więc efenix przyjmuje daty wykonania od 1 września do 12 października.
+
+    Okna „Wybierz datę wykonania” z dniem, którego kalendarz nie przyjął, okno efenix nie zostawia otwartego w efenix taty:
+    zamyka je bez „Potwierdź”."""
 
     order = Order("#5601", day=day, cells={"O": 1}, amount=_au({"012": 1}))
     with atrapa_efenix([order.in_efenix("901")], today=date(2026, 10, 12)) as atrapa:
         outcome = _price(tmp_path, page, atrapa.url, [order])
         after = _pricing(atrapa)
         requested = atrapa.requested()
+        dialog_hidden = page.locator("#dialog_select_date").is_hidden()
 
-    assert (outcome.result, _errors(outcome), after) == (result, errors, {"5601": pricing})
+    assert (outcome.result, _errors(outcome), after, dialog_hidden) == (result, errors, {"5601": pricing}, True)
     assert requested.count(("POST", SET_DATE)) == (1 if result == "OK" else 0)
 
 
@@ -873,6 +877,43 @@ def test_plik_bez_kwot_au_policzonych_przez_excel_zatrzymuje_wycene_zanim_otworz
 
 
 @pytest.mark.parametrize(
+    ("headers", "code", "missing"),
+    [
+        pytest.param({"F": None}, "EFENIX_BRAK_NAGLOWKOW", "W Pliku zbiorczym brakuje nagłówków: NUMER ZL.", id="bez-numer-zl"),
+        pytest.param(
+            {"H": None, "I": "WYKONAWCA"},
+            "EFENIX_NIECZYTELNY_PLIK_ZBIORCZY",
+            "Plik zbiorczy jest uszkodzony albo nie ma układu Pliku zbiorczego.",
+            id="wykonawca-w-i17-a-nie-w-h17",
+        ),
+    ],
+)
+def test_plik_bez_naglowka_kolumny_wyceny_albo_z_wykonawca_poza_h17_zatrzymuje_wycene_zanim_otworzy_efenix(
+    tmp_path: Path, page: Page, headers: dict[str, str | None], code: str, missing: str
+) -> None:
+    order = Order("#9111", cells={"O": 1}, amount=_au({"012": 1}))
+    with atrapa_efenix([order.in_efenix("911")]) as atrapa:
+        outcome = _run(write_collective_file(tmp_path, [order], headers=headers), page, atrapa.url)
+        requested = atrapa.requested()
+
+    assert isinstance(outcome.ending, Stop)
+    assert (_stop(outcome), outcome.ending.message.what.startswith(missing), requested) == (code, True, [])
+
+
+def test_numer_zl_liczba_niecalkowita_to_numer_z_czescia_ulamkowa_a_nie_numer_innego_zlecenia(tmp_path: Path, page: Page) -> None:
+    """``NUMER ZL.`` liczbą całkowitą to numer bez ``.0``, a liczba z częścią ułamkową to numer z nią: zlecenie 9122 z
+    efenix nie jest zleceniem z ``9122.5`` w Pliku zbiorczym, więc tego numeru efenix nie zna."""
+
+    whole = Order("#9121", cells={"F": 9121.0})
+    fraction = Order("#9122", cells={"F": 9122.5})
+    with atrapa_efenix([whole.in_efenix("912"), fraction.in_efenix("913")]) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [whole, fraction])
+        searched = atrapa.searched()
+
+    assert (searched, _errors(outcome)) == (["9121", "9122.5"], [("EFENIX_NIEZNANY_NUMER", "wiersz 19")])
+
+
+@pytest.mark.parametrize(
     ("expire_after", "searched", "kept"),
     [
         pytest.param(None, [], False, id="przed-szukaniem"),
@@ -898,6 +939,18 @@ def test_wylogowanie_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene_a_komunika
         assert (_stop(outcome), atrapa.searched(), _kept(outcome)) == ("EFENIX_WYLOGOWANY", searched, kept)
 
 
+def test_wylogowanie_w_odpowiedzi_na_date_wykonania_zatrzymuje_wycene_bez_ponownego_otwarcia_zlecenia(tmp_path: Path, page: Page) -> None:
+    """Odpowiedź efenix na „Potwierdź” daty wykonania, która przekierowuje na stronę logowania, to wylogowanie: okno nie
+    otwiera już strony zlecenia, żeby sprawdzić zapisaną datę."""
+
+    order = Order("#9211", cells={"O": 1}, amount=_au({"012": 1}))
+    with atrapa_efenix([order.in_efenix("921")], expire_after=(SET_DATE, 0)) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [order])
+        requested = atrapa.requested()
+
+    assert (_stop(outcome), requested.count(("POST", SET_DATE)), requested.count(("GET", ORDER_PAGE))) == ("EFENIX_WYLOGOWANY", 1, 1)
+
+
 TIMEOUT = "playwright._impl._errors.TimeoutError"
 # Część strony, której zabrakło przy każdej zmianie budowy Atrapy (lista, tabela wyników, strona zlecenia, okno daty
 # wykonania, Emmett albo kwota), przyczyna techniczna z tabeli decyzji (``tests/test_tabela_zatrzyman_efenix.py``) i działanie
@@ -907,6 +960,8 @@ CHANGED: dict[Changed, tuple[PagePart, WindowCause, str]] = {
     Changed.ORDER_LINK: (PagePart.RESULTS, OtherShape(Shape.ROW_CELLS), "szukanie"),
     Changed.RESULTS_WARNING: (PagePart.RESULTS, OtherShape(Shape.NO_TABLE), "szukanie"),
     Changed.DATE_FORMAT: (PagePart.ORDER, OtherShape(Shape.DATE_TEXT), "otwarcie zlecenia"),
+    Changed.DATE_DIGITS: (PagePart.ORDER, OtherShape(Shape.DATE_TEXT), "otwarcie zlecenia"),
+    Changed.SIGNED_AMOUNT: (PagePart.ORDER, OtherShape(Shape.AMOUNT_TEXT), "otwarcie zlecenia"),
     Changed.DATE_DIALOG: (PagePart.DATE, BrowserFailure(TIMEOUT, Operation.ELEMENT), "data wykonania"),
     Changed.EMMETT_BUTTON: (PagePart.EMMETT, ElementCount("#button_emmett", 0), "Wycena Emmetta"),
     Changed.HIDDEN_EMMETT: (PagePart.EMMETT, BrowserFailure(TIMEOUT, Operation.CLICK), "Wycena Emmetta"),
