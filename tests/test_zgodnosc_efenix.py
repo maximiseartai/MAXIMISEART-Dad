@@ -226,6 +226,19 @@ CHANGED = {
             ORDER_SCRIPT: _answered(302),
         },
     ),
+    # Skrypt strony zlecenia bez jednej nazwy każdego działania, na którym polega okno: kalendarz bez ``onSet``, „Potwierdź”
+    # daty wysyła inny adres, „Załaduj do zlecenia” Emmetta też, a kwotę końcową skrypt wpisuje do innego elementu.
+    "skrypt-strony-zlecenia-bez-nazw-dzialan-okna": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "skrypt-strony-zlecenia-bez-nazw-dzialan-okna.txt",
+        rewrites={
+            ORDER_SCRIPT: _replaced(
+                ("onSet", "poWyborze"),
+                (SET_DATE, "action_save_date.php"),
+                (LOAD_EMMETT, "action_emmett_load.php"),
+                ("cena_all2", "cena_razem"),
+            )
+        },
+    ),
     # Szukanie bez sesji przekierowane na stronę logowania, jak Atrapa przed #828, zamiast ostrzeżenia efenix.
     "szukanie-bez-sesji-przekierowuje-na-logowanie": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-bez-sesji-przekierowuje-na-logowanie.txt",

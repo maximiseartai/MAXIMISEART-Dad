@@ -67,13 +67,16 @@ class Order:
         )
 
 
-def write_collective_file(directory: Path, orders: Sequence[Order], *, notes_sheet_first: bool = False) -> Path:
+def write_collective_file(
+    directory: Path, orders: Sequence[Order], *, notes_sheet_first: bool = False, headers: Mapping[str, str | None] | None = None
+) -> Path:
     """Plik zbiorczy okresu ``PERIOD`` w ``directory/PERIOD`` z nagłówkami Wzorca i Wierszem danych każdego zlecenia od 18.
 
     ``Kwota`` (AU) to formuła sumy z wartością policzoną przy „zapisie w Excelu”, jak w pliku taty. Komórka ``ADRES`` z
     czcionką ma też obramowanie i odblokowaną ochronę, jak w pliku taty, oraz Wyróżnienia zlecenia. ``notes_sheet_first``
     stawia przed arkuszem zleceń arkusz „Notatki” z tekstem w komórkach ``B`` tych samych wierszy, a arkusz zleceń zostaje
-    aktywną kartą, którą czyta odczyt Pliku zbiorczego.
+    aktywną kartą, którą czyta odczyt Pliku zbiorczego. ``headers``: komórki wiersza 17 inne niż we Wzorcu (litera
+    kolumny → nagłówek, ``None``: pusta komórka).
     """
 
     folder = directory / PERIOD
@@ -85,6 +88,8 @@ def write_collective_file(directory: Path, orders: Sequence[Order], *, notes_she
     for column, header in enumerate(COLLECTIVE_HEADERS, start=1):
         sheet.cell(17, column).value = header
     sheet["AU17"] = "Kwota"
+    for letter, changed in (headers or {}).items():
+        sheet[f"{letter}17"] = changed
     sheet.column_dimensions["B"].width = 31.5
     sheet.column_dimensions["F"].width = 12.25
     computed: dict[int, float] = {}

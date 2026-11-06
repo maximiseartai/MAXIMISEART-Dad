@@ -127,6 +127,8 @@ class Changed(enum.Enum):
     ORDER_LINK = "wiersz wyników nie ma linku do strony zlecenia"
     RESULTS_WARNING = "szukanie odpowiada ostrzeżeniem, którego okno nie zna, bez tabeli wyników"
     DATE_FORMAT = "data wykonania w innym zapisie niż RRRR-MM-DD"
+    DATE_DIGITS = "data wykonania samymi cyframi RRRRMMDD, które Python czyta jako datę ISO, a okno nie zna"
+    SIGNED_AMOUNT = "kwota końcowa ze znakiem +, którą Python czyta jako liczbę, a okno nie zna"
     DATE_DIALOG = "przycisk kalendarza nie otwiera okna daty wykonania"
     EMMETT_BUTTON = "strona zlecenia nie ma przycisku Emmetta"
     HIDDEN_EMMETT = "przycisk Emmetta jest na stronie, ale niewidoczny"
@@ -930,6 +932,9 @@ def _order_page(
     day = "" if order.execution_date is None else order.execution_date.isoformat()
     if changed is Changed.DATE_FORMAT and order.execution_date is not None:
         day = f"{order.execution_date:%d.%m.%Y}"
+    if changed is Changed.DATE_DIGITS and order.execution_date is not None:
+        day = f"{order.execution_date:%Y%m%d}"
+    sign = "+" if changed is Changed.SIGNED_AMOUNT else ""
     order_id = escape(order.order_id)
     hidden = ' style="display: none"' if changed is Changed.HIDDEN_EMMETT else ""
     emmett = (
@@ -954,7 +959,7 @@ def _order_page(
         '<div class="card"><button type="button" id="button_forward_to_accept">Przekaż do akceptacji.</button>'
         '<button type="button" id="button_forward_to_cancel">Anuluj to zlecenie.</button></div>'
         f'<div class="card"><span>Wycena</span>{emmett}{"".join(_position(order, position, changed, prices) for position in CATALOG if not (position.code in order.without and _broken(order)))}'
-        f'<h1><span id="cena_all2">{amount_of(order.quantities, prices):.2f}</span></h1></div>'
+        f'<h1><span id="cena_all2">{sign}{amount_of(order.quantities, prices):.2f}</span></h1></div>'
         + _dialog("dialog_forward_yes_no", "Zmiana statusu", "", "Tak")
         + _dialog("dialog_select_date", "Wybierz datę wykonania", day_field, "Potwierdź")
         + _dialog("dialog_emmett", "Emmett", '<div id="emmett-propozycja"></div>', "Załaduj do zlecenia")
