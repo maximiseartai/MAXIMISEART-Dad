@@ -497,7 +497,10 @@ def test_pozycja_z_wieksza_iloscia_w_efenix_niz_w_pliku_zostaje_a_reszta_zleceni
 
 
 def test_wycena_ktora_juz_jest_z_iloscmi_pliku_a_kwota_inna_niz_au_to_blad_z_obiema_kwotami_bez_zmian(tmp_path: Path) -> None:
-    order = Order("#5102", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}) + 1, quantities={"012": 1, "019": 2})
+    """Proces niczego nie wpisał, a Komunikat kończy się zdaniem, że ilości z pliku są już w efenix, bez zdania, że
+    zlecenie zostało bez zmian."""
+
+    order =Order("#5102", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}) + 1, quantities={"012": 1, "019": 2})
     efenix = StanEfenix([replace(order.in_efenix("901"), execution_date=DAY)])
     before = efenix.state()
     outcome = _price_in_process(tmp_path, efenix, [order])
@@ -506,6 +509,7 @@ def test_wycena_ktora_juz_jest_z_iloscmi_pliku_a_kwota_inna_niz_au_to_blad_z_obi
     [what] = _what(outcome)
     efenix_amount = amount_of({"012": 1, "019": 2})
     assert f"kwota w efenix to {efenix_amount:.2f} zł, a Kwota (AU) {efenix_amount + 1:.2f} zł".replace(".", ",") in what
+    assert what.endswith(" zł. Ilości z pliku są już wpisane w efenix."), what
     assert (efenix.state(), _read_only(efenix)) == (before, True)
 
 
