@@ -19,8 +19,11 @@ skrypty mutacji skilla, które po merge'u liczy noc na ``main`` (zakres nocy, AD
 ``LICZY CI`` w niej nie stoi. Agent nie uruchamia ich lokalnie poza odtworzeniem czerwonego kroku CI albo issue nocy.
 Gdy git nie wyznaczy zmiany (np. nie ma bazy), ostatnia linia to ``SKILLE VERIFY: nieznane (<powód>)``, a kod wyjścia 1.
 
-    .venv/bin/python tools/skille_dla_zmiany.py            # macOS i Linux
-    py -3 tools/skille_dla_zmiany.py origin/main           # Windows
+Bazę podaje ``--baza``, jak w innych narzędziach zmiany, albo pozycyjnie, bo tak woła kopię narzędzia z HEAD PR
+``tools/scal_pr.py``; obie postacie naraz z różnymi wartościami to błąd użycia.
+
+    .venv/bin/python tools/skille_dla_zmiany.py                    # macOS i Linux
+    py -3 tools/skille_dla_zmiany.py --baza origin/main            # Windows
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ from wplyw_zmiany import changed_since
 from zakres_runu import Zdarzenie, zakres
 
 ROOT = Path(__file__).resolve().parents[1]
+BASE = "origin/main"
 VERDICT = "SKILLE VERIFY"
 IN_CI = "LICZY CI"
 AT_NIGHT = "LICZY NOC"
@@ -45,10 +49,14 @@ SHOWN = 3
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("baza", nargs="?", default="origin/main", help="Commit albo gałąź, od której liczy się zmiana.")
+    parser.add_argument("--baza", help=f"Commit albo gałąź, od której liczy się zmiana (domyślnie {BASE}).")
+    parser.add_argument("pozycyjna", nargs="?", metavar="BAZA", help="To samo co --baza.")
     args = parser.parse_args(argv)
+    if None not in (args.baza, args.pozycyjna) and args.baza != args.pozycyjna:
+        parser.error(f"dwie różne bazy: --baza {args.baza} i {args.pozycyjna}")
+    base = args.baza or args.pozycyjna or BASE
     try:
-        files = changed_since(ROOT, args.baza)
+        files = changed_since(ROOT, base)
     except subprocess.CalledProcessError as error:
         detail = (error.stderr.strip().splitlines() or [f"kod {error.returncode}"])[0]
         print(f"{VERDICT}: nieznane (git {error.cmd[1]}: {detail})")

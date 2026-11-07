@@ -277,6 +277,20 @@ def test_baza_ktorej_nie_ma_daje_nieznane_skille_i_kod_bledu(tmp_path: Path) -> 
     assert "nie-ma-takiej-bazy" in result.stdout
 
 
+def test_baza_z_opcja_baza_i_pozycyjna_daje_ten_sam_wynik_a_dwie_rozne_to_blad_uzycia(tmp_path: Path) -> None:
+    base = _repo(tmp_path)
+    _append(tmp_path, "docs/b.md")
+    commit(tmp_path, "zmiana")
+
+    forms = [[base], ["--baza", base], [f"--baza={base}"], ["--baza", base, base]]
+    conflict = _run(tmp_path, "--baza", base, "HEAD")
+
+    assert [_run(tmp_path, *form).stdout for form in forms] == [_run(tmp_path, base).stdout] * len(forms)
+    assert _skills(_run(tmp_path, "--baza", base)) == ["verify-b"]
+    assert conflict.returncode == 2
+    assert f"dwie różne bazy: --baza {base} i HEAD" in conflict.stderr
+
+
 def _load_tool(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     monkeypatch.syspath_prepend(str(TOOLS))
     spec = importlib.util.spec_from_file_location("skille_dla_zmiany", TOOLS / "skille_dla_zmiany.py")

@@ -10,15 +10,19 @@ najbliższą pozycję spisu: polecenie ``python … tools/ci/…`` w tych dokume
 każdego innego narzędzia. Narzędzie z obowiązkową podkomendą (``add_subparsers(required=True)``) wymienia w tym
 zdaniu w nawiasie co najmniej jedną z nich, np. „(plan --baza origin/main)”, bo agent, który zna je tylko ze spisu,
 inaczej woła narzędzie bez podkomendy; nawias odróżnia podkomendę od tego samego słowa w zdaniu („Drukuje plan runu”).
+Narzędzie, które liczy zmianę od bazy (``changed_since`` albo ``git merge-base HEAD …``), przyjmuje ją jako opcję
+``--baza``, bo agenci piszą ją tak przy każdym takim narzędziu.
 Blok między ``START`` i ``END`` zapisuje ten test z ``ZAPISZ_EXPECT=1``, jak plik expect.
 
 Granica: test nie ocenia, czy zdanie mówi „kiedy” słowami sytuacji agenta (czerwone CI, przed merge'em); to łapie
-tylko przegląd.
+tylko przegląd. Bazy zmiany nie widzi w narzędziu, które liczy zmianę inaczej (``git diff`` od bazy bez merge-base,
+``HEAD`` ze zmiennej) albo przez inny moduł z ``tools/lib/``, ani nie sprawdza, że ``--baza`` naprawdę trafia do zmiany.
 """
 
 from __future__ import annotations
 
 import ast
+import itertools
 from pathlib import Path
 import re
 
@@ -261,3 +265,56 @@ def test_podkomenda_liczy_sie_tylko_cala_w_nawiasie() -> None:
     sentences = ["Drukuje plan runu CI.", "Drukuje plan runu (planem).", "Drukuje plan runu (plan --baza origin/main)."]
 
     assert [_names_subcommand_in_brackets(sentence, ["plan", "wykonaj"]) for sentence in sentences] == [False, False, True]
+
+
+def _called(call: ast.Call) -> str | None:
+    return call.func.attr if isinstance(call.func, ast.Attribute) else call.func.id if isinstance(call.func, ast.Name) else None
+
+
+def _without_baza_option(paths: list[Path]) -> list[Path]:
+    """Narzędzia, które liczą zmianę od bazy (``changed_since`` albo ``git merge-base HEAD …``), a nie mają opcji ``--baza``.
+
+    Opcja liczy się w każdym ``add_argument``, także podkomendy (``plan --baza``); baza pozycyjna obok niej wolno.
+    """
+
+    missing = []
+    for path in paths:
+        nodes = list(ast.walk(ast.parse(path.read_text(encoding="utf-8"))))
+        calls = [node for node in nodes if isinstance(node, ast.Call)]
+        option = any(_called(call) == "add_argument" and any(isinstance(item, ast.Constant) and item.value == "--baza" for item in call.args) for call in calls)
+        sequences = [node.elts if isinstance(node, (ast.List, ast.Tuple)) else node.args for node in nodes if isinstance(node, (ast.List, ast.Tuple, ast.Call))]
+        merge_base = any(
+            (first.value, second.value) == ("merge-base", "HEAD")
+            for items in sequences
+            for first, second in itertools.pairwise(items)
+            if isinstance(first, ast.Constant) and isinstance(second, ast.Constant)
+        )
+        if not option and (merge_base or any(_called(call) == "changed_since" for call in calls)):
+            missing.append(path)
+    return missing
+
+
+def test_narzedzie_ktore_liczy_zmiane_od_bazy_przyjmuje_ja_jako_opcje_baza() -> None:
+    missing = [path.relative_to(ROOT).as_posix() for path in _without_baza_option(_tools())]
+
+    assert missing == [], (
+        f"te narzędzia liczą zmianę od bazy, a nie przyjmują jej jako --baza: {missing}; agenci piszą --baza, jak w "
+        "tools/szybko.py, więc dodaj parser.add_argument(\"--baza\", …) (bazę pozycyjną możesz zostawić obok)."
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "missing"),
+    [
+        ("parser.add_argument('baza', nargs='?')\nchanged_since(ROOT, args.baza)\n", True),
+        ("plan = commands.add_parser('plan')\nplan.add_argument('--baza')\nwplyw_zmiany.changed_since(ROOT, args.baza)\n", False),
+        ("parser.add_argument('--od')\nrun(['git', 'merge-base', 'HEAD', args.od])\n", True),
+        ("run(['git', 'merge-base', '--is-ancestor', commit, 'HEAD'])\n", False),
+    ],
+    ids=["pozycyjna przy changed_since", "--baza podkomendy", "--od przy merge-base HEAD", "merge-base bez bazy zmiany"],
+)
+def test_baze_zmiany_rozpoznaje_changed_since_i_merge_base_head(tmp_path: Path, source: str, missing: bool) -> None:
+    tool = tmp_path / "narzedzie.py"
+    tool.write_text(source, encoding="utf-8")
+
+    assert _without_baza_option([tool]) == ([tool] if missing else [])
