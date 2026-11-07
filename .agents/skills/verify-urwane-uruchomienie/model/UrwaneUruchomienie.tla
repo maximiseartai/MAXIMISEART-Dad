@@ -56,9 +56,9 @@ RodzajeWersji == Rodzaje \cup {"brak", "postep"}
 ZLogami == {"wynik", "urwane"}
 \* Stopień wersji (outbox.py Rank, Post.rank): wybiera go ten, kto wysyła, a nie zegar. Kolejka porównuje najpierw
 \* stopień, a chwilę z nazwy pliku tylko w tym samym stopniu (outbox.py Version).
-StopienPostepu == 0   \* RunLogs.progress -> progress_post: Rank.DRAFT
-StopienZeStartu == 1  \* InterruptedPricings.send -> RunLogs.send: Rank.STAND_IN
-StopienWlasny == 2    \* RunLogs._keep -> logi_post: Rank.OWN
+StopienPostepu == 0   \* RunLogs.progress -> post_of(ProgressVersion): rank_of daje Rank.DRAFT
+StopienZeStartu == 1  \* InterruptedPricings.send -> RunLogs.send -> post_of(wersja zastępcza): Rank.STAND_IN
+StopienWlasny == 2    \* RunLogs._keep -> post_of(OwnLogs): rank_of daje Rank.OWN
 Stopnie == 0..2
 \* Najnowsza przyjęta wersja komentarza Uruchomienia: rodzaj, stopień, czy przyszła w tej pracy Centrum i czy od niej
 \* zegar komputera cofnął się przy którymś starcie (wtedy jej chwila może być późniejsza od chwil nowej pracy).
@@ -268,7 +268,7 @@ Start ==
     /\ UNCHANGED <<dziennik, wpisy, logi, efenix, kolejka, nastepny, zgasniecia, zatrzymania, awarieWpisu,
                    awarieOdczytu, awarieLogow, awarieKolejki, awarieUsuniecia, duchy, zdarzenia>>
 
-\* _closed: record = self._run_logs.guard(record), potem plik Logów (ZapiszLogi).
+\* _closed: logs = self._run_logs.guard(record) (GuardedLogs), potem plik Logów (ZapiszLogi).
 Odczytane(odczytany) == krokZamykania' = "zapisz" /\ rekord' = [odczytany EXCEPT !.tresc = Straz(@)]
 
 (* _closed z dziennika bez wpisu końca i bez pliku Logów: Logi Urwanego Uruchomienia Wyceny, która doszła do wyniku, *)
@@ -370,8 +370,9 @@ Dalej ==
     /\ doWyslania' = Tail(doWyslania) /\ krokWysylki' = "post"
     /\ centrum' = IF Tail(doWyslania) = <<>> THEN "dziala" ELSE "wysyla"
 
-(* send: if self._run_logs.send(final) -> RunLogs.send -> Outbox.post wersji zastępczej (Rank.STAND_IN): Logi       *)
-(* (logi_post) albo wynik bez Logów; True, gdy plik kolejki powstał; False zostawia dziennik następnemu startowi.    *)
+(* send: if self._run_logs.send(final) == "usuń" -> RunLogs.send -> Outbox.post wersji zastępczej                   *)
+(* (post_of, Rank.STAND_IN): Logi albo wynik bez Logów; journal_after daje usuń, gdy plik kolejki powstał,            *)
+(* a zostaw, gdy post zwrócił False, i dziennik czeka na następny start.                                              *)
 Wyslij ==
     LET h == Head(doWyslania) IN
     /\ centrum = "wysyla" /\ krokWysylki = "post"
@@ -502,7 +503,7 @@ Zatrzymanie ==
                    awarieKolejki, awarieUsuniecia, cofniecia, duchy, zdarzenia>>
 
 (* ProgressComment (start Wyceny albo budzik co PROGRESS_S) -> RunLogs.progress: Outbox.post postępu z dziennika      *)
-(* (progress_post, Rank.DRAFT), gdy Journal.progress go daje (pierwsza linia na dysku: bez _header) i dopóki           *)
+(* (post_of(ProgressVersion), Rank.DRAFT), gdy Journal.progress go daje (bez _header) i dopóki                        *)
 (* RunLogs.run_ended nie dodał Uruchomienia do _ended (pod tą samą blokadą). Model liczy postęp jako możliwy od       *)
 (* chwili, gdy pierwsza linia jest na dysku (postepMozliwy); postęp, którego kolejka nie przyjęła, niczego nie        *)
 (* zmienia, więc akcja ma tylko przyjęty. Postęp, który zmienia najnowszą wersję z Logami, to zdarzenie obietnicy      *)
@@ -568,7 +569,7 @@ LogiWyniku ==
                    zatrzymania, awarieWpisu, awarieOdczytu, awarieKolejki, awarieUsuniecia, cofniecia, duchy,
                    zdarzenia>>
 
-(* _keep: finally if self._outbox.post(logi_post(kept)): self._queued.add(run_id); Logi z wynikiem to Rank.OWN.      *)
+(* _keep: finally post_of(OwnLogs(logs)) do Outbox.post, a przy usuń z journal_after self._queued.add.               *)
 (* Potem JournalAfterLogs (zaLogami).                                                                              *)
 WyslijWynik ==
     /\ bieg # 0 /\ faza = "post"

@@ -73,7 +73,7 @@ CONSTANTS
     PusteRepo,      \* repozytorium Skrzynki bez commitu przez cały przebieg: GitHub odpowiada 409 „Git Repository is
                     \* empty.” na każde założenie Archiwum (report_box.py GitHubReportBox.open_archive: Rejected)
     Postep,         \* wysyłka 1 to postęp Wyceny w efenix, starsza wersja Logów wysyłki 2 bez pliku do Archiwum
-                    \* (run_logs.py progress_post, pricing_progress.py)
+                    \* (comment_versions.py ProgressVersion, pricing_progress.py)
     StarszaPozniej, \* wysyłka 2 to wersja zastępcza ze startu Centrum (Rank.STAND_IN: Logi z pliku), starsza od Logów
                     \* z wynikiem wysyłki 1 (Rank.OWN), choć jej plik kolejki powstał później (#910)
     OpoznienieListy, \* listy GitHuba (labelled_issues, archive) pokazują nowe issue i Archiwum po kilku sekundach

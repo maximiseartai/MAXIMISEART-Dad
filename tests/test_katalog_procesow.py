@@ -17,7 +17,8 @@ import pytest
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.catalog import CATALOG, PeriodProcessDeclaration, ProcessDeclaration
 from rozliczenia.centrum.processes import Processes
-from rozliczenia.centrum.run_logs import RunLog, summary_markdown
+from rozliczenia.centrum.comment_versions import summary_markdown
+from rozliczenia.centrum.run_logs import RunLog
 from tests.fixtures.centrum import centrum, finished_view
 from tests.fixtures.centrum_intermax import ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum, run_to_end, settling_centrum

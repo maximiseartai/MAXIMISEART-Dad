@@ -35,6 +35,7 @@ from rozliczenia import settlement_messages, workbook_files
 from rozliczenia.centrum import app, contract, runs
 from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES, DadActions
 from rozliczenia.centrum.efenix_run import EFENIX_URL, EfenixWindow
+from rozliczenia.centrum.comment_versions import ProgressVersion, post_of, progress_markdown
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.logs_disk import EndEntry, Journal, LogsOnDisk, name_of
@@ -50,8 +51,7 @@ from rozliczenia.centrum.run_logs import (
     RunLogs,
     StartFacts,
     Tool,
-    progress_markdown,
-    progress_post,
+    guard_text,
 )
 from rozliczenia.centrum.report_box import Unreachable
 from rozliczenia.centrum.tool_update import Release
@@ -3622,6 +3622,72 @@ def test_uruchomienie_innego_procesu_nie_ma_dziennika_ani_postepu(tmp_path: Path
     assert (disk.journal.progress(settlement.run_id), list(disk.left_behind())) == (None, [])
 
 
+def test_plik_ostatniego_startu_ktorego_nie_da_sie_zapisac_nie_zabiera_wycenie_dziennika(tmp_path: Path) -> None:
+    """Start Wyceny pisze pierwszą linię dziennika, zanim zapisze plik ostatniego startu, więc plik ostatniego startu,
+    którego nie da się zapisać (w miejscu jego pliku tymczasowego stoi katalog), zatrzymuje start Uruchomienia dopiero wtedy, gdy dziennik
+    ma już start na dysku, a postęp jest z niego."""
+
+    log = CentrumLog(tmp_path / "centrum.log")
+    disk = LogsOnDisk(log, journaled="efenix")
+    (tmp_path / "ostatnie-uruchomienie.json.tmp").mkdir()
+
+    with pytest.raises(OSError, match="ostatnie-uruchomienie"):
+        disk.started(PRICING_START)
+    [left] = disk.left_behind()
+
+    assert left.journal is not None
+    assert (left.journal.started, disk.journal.progress(PRICING_START.run_id)) == (
+        PRICING_START,
+        PricingProgress(PRICING_START, (), None, None),
+    )
+
+
+def test_kazdy_wpis_dziennika_wyceny_jest_w_pliku_zanim_dysk_potwierdzi_zapis(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Każdy wpis dziennika jest na dysku (``fsync``), zanim silnik zrobi następny krok, więc brak prądu urywa najwyżej
+    wpis w trakcie zapisu: w chwili potwierdzenia plik dziennika ma już cały wpis, a nie tylko wpisy przed nim."""
+
+    log = CentrumLog(tmp_path / "centrum.log")
+    disk = LogsOnDisk(log, journaled="efenix")
+    synced: list[int] = []
+    sync = os.fsync
+
+    def syncing(descriptor: int) -> None:
+        synced.append(os.fstat(descriptor).st_size)
+        sync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", syncing)
+    disk.started(PRICING_START)
+    disk.journal.begun(18, 1, 2)
+    [journal] = (tmp_path / "dzienniki-wyceny").iterdir()
+    written = journal.read_bytes()
+
+    assert synced == [written.index(b"\n") + 1, len(written)]
+
+
+@pytest.mark.parametrize("refused", ["lista-dziennikow", "dziennik"])
+def test_dziennik_ktorego_start_centrum_nie_moze_wylistowac_ani_odczytac_zostaje_z_linia_dziennika_centrum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, refused: str
+) -> None:
+    """Start Centrum nie może wylistować katalogu dzienników Wyceny albo odczytać dziennika (plik trzyma inny program):
+    dziennik zostaje do następnego startu, a dziennik Centrum ma o tym linię z typem błędu, bo inaczej Maks nie wie,
+    czemu komentarz Uruchomienia wciąż mówi, że trwa."""
+
+    log = CentrumLog(tmp_path / "centrum.log")
+    disk = LogsOnDisk(log, journaled="efenix")
+    disk.started(PRICING_START)
+    method = "glob" if refused == "lista-dziennikow" else "read_text"
+    target = "dzienniki-wyceny" if refused == "lista-dziennikow" else name_of(PRICING_START).replace(".json", ".jsonl")
+
+    with _refused(monkeypatch, method, lambda path, _: path.name == target):
+        left = list(disk.left_behind())
+    [after] = disk.left_behind()
+
+    assert (left, after.journal is not None) == ([], True)
+    assert journal_log_lines(log) == ["dziennik-wyceny-niedostepny typ=PermissionError miejsce=start"]
+
+
 @pytest.mark.parametrize("confirmed", [True, False], ids=["z-pierwsza-linia", "bez-potwierdzonej-pierwszej-linii"])
 def test_wpis_konca_dziennika_z_pierwsza_linia_niesie_wynik_a_dziennik_bez_niej_znika(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, confirmed: bool
@@ -3823,11 +3889,12 @@ def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_prz
     ended = ended_line(utc("2026-09-16T10:17:00+00:00"), order)
     left_journal(centrum.log_path.parent, started, begun, ended)
     progress = PricingProgress(started, (OrderDone(18, "gotowe", None),), 2, None)
+    text = guard_text(progress_markdown(progress, elapsed_s=600), "postęp Wyceny w efenix", ForbiddenValues())
     queue = tmp_path / "config" / "zgloszenia" / "kolejka"
     queue.mkdir(parents=True)
     # Poprzednia praca Centrum zapisała postęp, zanim zegar się cofnął: chwila w nazwie jest „w przyszłości”.
     (queue / f"20991231T235959000000Z-0007-{PROGRESS_LABEL}-{started.run_id[:8]}.json").write_text(
-        progress_post(progress, progress_markdown(progress, elapsed_s=600)).to_json(), encoding="utf-8"
+        post_of(ProgressVersion(progress, text)).to_json(), encoding="utf-8"
     )
 
     box.search_failure = Unreachable()

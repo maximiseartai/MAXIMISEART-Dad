@@ -11,8 +11,8 @@ Centrum zamyka go wersją zastępczą (``pricing_journal.InterruptedPricings``):
 Uruchomienia albo wynikiem bez Logów, które też zamieniają komentarz w podsumowanie (#910). Wycena, której dziennika nie
 da się zapisać, postępu nie ma, tylko podsumowanie na końcu.
 
-Postęp to wersja tej samej wysyłki co Logi tego Uruchomienia (``run_logs.progress_post``: ten sam ``run_id`` i
-etykieta) najniższego stopnia (``outbox.Rank.DRAFT``), więc kolejka zmienia ten sam komentarz, bez sieci najnowszy postęp
+Postęp to wersja tej samej wysyłki co Logi tego Uruchomienia (``comment_versions.ProgressVersion``: ten sam ``run_id``
+i etykieta) najniższego stopnia (``outbox.Rank.DRAFT``), więc kolejka zmienia ten sam komentarz, bez sieci najnowszy postęp
 w kolejce zastępuje starszy, a każda wersja końcowa zastępuje postęp, także po cofnięciu zegara komputera (``outbox``).
 Koniec postępu wyznacza ``RunLogs``: od działań po wyniku tego Uruchomienia (``RunLogs.run_ended``) nie przyjmuje jego
 postępu, więc po Logach z wynikiem żaden nie idzie do kolejki, a pierwsze odświeżenie po końcu kończy budzik.

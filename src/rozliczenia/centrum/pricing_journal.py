@@ -32,17 +32,19 @@ Start Centrum czyta każdy dziennik przy budowie aplikacji, przed kartą ostatni
   Uruchomienia (``RunLogs.interrupted``): zlecenia skończone przed zgaśnięciem, zlecenie zaczęte bez wyniku i liczbę
   wpisów, których nie dało się odczytać; karta po starcie pokazuje te zlecenia z tych Logów;
 - dziennik bez pliku Logów, a z wpisem końca, i dziennik z plikiem Logów, którego nie da się odczytać, wysyła wynik bez
-  Logów (``run_logs.ResultWithoutLogs``): wynik z wpisu końca, zlecenia z dziennika i dlaczego pełnych Logów nie ma;
+  Logów (``comment_versions.ResultWithoutLogs``): wynik z wpisu końca, zlecenia z dziennika i dlaczego pełnych Logów nie ma;
 - dziennik bez pierwszej linii (urwany pierwszy zapis, przed którym w efenix nic się nie zmieniło i do którego żaden
   postęp nie poszedł) usuwa.
 
 Logi, nowe i te z pliku, start przepuszcza przez strażnika reguły danych pracy Centrum (``RunLogs.guard``, ADR 0025) i
-zapisuje w pliku Logów takie, jakie pójdą do Skrzynki, więc plik i komentarz mają te same znaki także po Logach, które
-zapisała praca Centrum sprzed strażnika; wynik bez Logów przechodzi przez strażnika przy wysyłce (``RunLogs.send``).
+zapisuje w pliku Logów takie, jakie pójdą do Skrzynki (``comment_versions.StandInLogs``), więc plik i komentarz mają te
+same znaki także po Logach, które zapisała praca Centrum sprzed strażnika; wynik bez Logów przechodzi przez strażnika przy
+wysyłce (``RunLogs.send``).
 
 Wersja zastępcza idzie do Skrzynki Zgłoszeń jak zwykłe Logi, ale dopiero przy pierwszym zapytaniu API tej pracy Centrum
 (``InterruptedPricings.send``): przychodzi ono po ``lifespan``, a więc po ``Outbox.resume``, więc kolejka nie dostaje
-wysyłki przed swoim startem (model ``verify-kolejka-skrzynki``). Dziennik znika, gdy kolejka ją przyjęła, a Centrum
+wysyłki przed swoim startem (model ``verify-kolejka-skrzynki``). Dziennik znika, gdy kolejka ją przyjęła
+(``comment_versions.journal_after``), a Centrum
 zgaszone przed tym wysyła ją przy następnym starcie, więc wysyłka jest co najmniej raz, jak w całej kolejce.
 """
 
@@ -51,6 +53,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import threading
 
+from rozliczenia.centrum.comment_versions import ResultWithoutLogs, StandInLogs
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import (
     Found,
@@ -62,7 +65,7 @@ from rozliczenia.centrum.logs_disk import (
     Refused,
     Unreadable,
 )
-from rozliczenia.centrum.run_logs import ResultWithoutLogs, RunLog, RunLogs
+from rozliczenia.centrum.run_logs import RunLogs
 from rozliczenia.centrum.runs import EndedRun
 
 
@@ -102,7 +105,7 @@ class InterruptedPricings:
         self._log = log
         self._lock = threading.Lock()
         # wersje zastępcze do wysłania i ich dzienniki
-        self._pending: list[tuple[JournalKey, RunLog | ResultWithoutLogs]] = []
+        self._pending: list[tuple[JournalKey, StandInLogs | ResultWithoutLogs]] = []
 
     def close(self) -> None:
         """Przy budowie aplikacji: każdy dziennik z pierwszą linią zamyka jako wersję zastępczą komentarza jego
@@ -129,10 +132,10 @@ class InterruptedPricings:
         with self._lock:
             pending, self._pending = self._pending, []
         for key, final in pending:
-            if self._run_logs.send(final):
+            if self._run_logs.send(final) == "usuń":
                 self._disk.remove_journal(key)
 
-    def _closed(self, left: LeftJournal) -> RunLog | ResultWithoutLogs | None:
+    def _closed(self, left: LeftJournal) -> StandInLogs | ResultWithoutLogs | None:
         """Wersja zastępcza komentarza Uruchomienia z dziennika ``left`` do wysłania; ``None``: dziennik bez pierwszej
         linii, do usunięcia."""
 
@@ -157,10 +160,10 @@ class InterruptedPricings:
                 )
         # Strażnik reguły danych (ADR 0025) przed plikiem i przed wysyłką: plik i plik w Archiwum Logów okresu mają te
         # same znaki.
-        record = self._run_logs.guard(record)
+        logs = self._run_logs.guard(record)
         try:
-            self._run_logs.close(record)
+            self._run_logs.close(logs)
         except OSError as failure:
             # Katalog Logów, który nie przyjął pliku, nie zatrzymuje Logów w drodze do Maksa (jak ``RunLogs._keep``).
             self._log.pricing_journal_unavailable(failure, where="start")
-        return record
+        return StandInLogs(logs)

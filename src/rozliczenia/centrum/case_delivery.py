@@ -21,11 +21,11 @@ from dataclasses import replace
 from pathlib import Path
 
 from rozliczenia.centrum.clock import Clock
+from rozliczenia.centrum.comment_versions import LABEL as RUN_LOGS_LABEL
 from rozliczenia.centrum.dad_cases import NOTE, REPORT, CaseKind, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import Deliveries, KnownIssue, NewIssue, Outbox, Post, ReportIssue
-from rozliczenia.centrum.run_logs import LABEL as RUN_LOGS_LABEL
 
 
 def case_outbox(
