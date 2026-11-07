@@ -19,8 +19,8 @@ ci: .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
 
 CI runs `sprawdz_aktualizacje.py` (the `ci:` key) in Mutation checks on Windows whenever a change
 touches this skill, so run it locally only while you bring the model in line or to reproduce a red
-Mutation checks step. It fails with `AKTUALIZACJA: ROZJAZD MODELU Z KODEM` when covered code changed since the
-model's Sync commit, but it cannot tell whether your change to the model is right.
+Mutation checks step. It fails with `AKTUALIZACJA: ROZJAZD MODELU Z KODEM` when covered code differs from its
+digests in `model/definicje.json`, but it cannot tell whether your change to the model is right.
 `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 What stays with you on every change to the covered code is „Bring the model in
 line, then run”: read the diff against the table, change the model, break a new path in it, and run
@@ -148,98 +148,13 @@ Covered files, each as a whole file (`model/definicje.json`): `src/rozliczenia/c
 (`listen_locally`, `port_free`, `_bound`), the guardian's start command (`start_command`,
 `centrum_script`) and the clone's `config_dir`.
 
-Sync commit: `1a7d93e3` (2026-11-07, N3a of the untangle of 7.11). Since `0c554b2e` the
-covered files changed only in where they take the clone's layout from: the port probe of
-`restart_guardian._port_released` is `tool_files.port_free`, the same bind as `listen_locally`,
-which moved from `launcher.py` to `tool_files.py`; `_start_centrum` runs
-`tool_files.start_command` (`run_centrum.py --port <port> --no-browser --bez-okienek`, the same
-command); the launcher's parser takes those flags from `tool_files`; the journal lies in
-`config_dir(root)` and the result file of `launcher._roll_back` in `CONFIG_DIR`, both the same
-`config/` as before; `ToolClone.of_system` takes `TOOL_ROOT`; and the guardian's copy
-(`_COPIED`) carries `tool_files.py`. Every row of the table was checked against the code at
-this commit. No step moved, so no action of the model changed.
+The digests in `model/definicje.json` were taken when every row of the table was last checked
+against the code (`tools/przesun_model.py`); what that check found is in the message of the commit
+that changed the digests. To see what changed since:
 
-`0c554b2e` (2026-11-02, #725 and #726). Since `05430811` the
-covered files changed in two places, and every row of the table was checked
-against the code at this commit. `ToolUpdates._after_restart` skips a failure
-whose `przed` is not the running commit and logs `aktualizacja-wynik-stary`
-(`CentrumLog.update_result_stale` in `log.py`): `KartaZ` gives „nothing” for a
-failure on `head = "nowa"`. `restart_guardian.main` goes on after a rollback
-without the port like after a released port: `OpiekunWynik` leads to
-`OpiekunPortStara` for `cofa = "opiekun_bez_portu"` too. The model gained
-`KartaNieStraszy`, and `OkienkoTylkoGdyNicNieDziala` lost its exception; on
-the model of the code before this commit, `kopiowanie` and `wylaczenie-i-dysk`
-break `KartaNieStraszy` and `skrot-w-trakcie` breaks
-`OkienkoTylkoGdyNicNieDziala`.
-
-`05430811` (2026-10-31). Since `33e4b1de` the covered files
-did not change, and no code outside them started to read or write the
-clone, Dad's files, the journal, its lease or the result file. `da260363`
-made the closing Centrum hold the port until the outbox finished sending,
-and `b23f4180` reverted that in `server.py` and `shutdown.py`: the outbox
-now takes `przejscie.lock` without waiting, so `_port_released` waits for
-the same shutdown as before. `73d7f1ba` changed only comments in `app.py`
-and `contract.py`, and the script imports nothing from `tools/`. No action
-of the model changed.
-
-`33e4b1de` (2026-10-29). Since `9f7c2de9` the covered files
-changed only in `ToolUpdates._failed`, which takes the card's next step from
-`update_messages.UpdateFailure` instead of comparing the Komunikat's code. The
-model does not describe the view, so no action of the model changed.
-
-`9f7c2de9` (2026-10-29, #538). Since `06fefb63` the covered files
-changed only in `ToolUpdates._failed` and the `failed` view, which now carry
-`after_restart`: whether the failure came from the restart (a result found at
-start) or from a click. The model does not describe the view, so no action of
-the model changed.
-
-`06fefb63` (2026-10-26, `main` after #540 merged into #534). Since
-`7acf755b` the covered files changed only in `tool_update.GITHUB_REPOSITORY`,
-the repository address after the move to the `maximiseartai` organization
-(#540), which the model does not describe, and in the docstring and one comment
-of `ToolUpdates._after_restart`, which now name the limit of the #491 rule.
-No action of the model changed.
-
-`7acf755b` (#490 and #491): at this commit every row above was checked against
-the code. Outside the covered files, after it only `CentrumLog.update_awaits`
-in `log.py` changed in a way that matters here: an `aktualizacja-koniec` lets a
-result through only with `wynik=ok`. The model lets every start skip the result
-anyway, so no action of the model changed; `5b367eb3` only rewrote the
-`StartCentrumZ` comment to the exact rule.
-
-`7acf755b`: since `9d31b08c` only the skipped
-result's `unlink` in `_after_restart` lost `missing_ok`; it stays inside
-`suppress(OSError)`, so a missing file is still skipped and the model did not
-change.
-
-`9d31b08c`: since `55b84059` only
-`ToolUpdates._after_restart` changed: „ok” with a running commit other than its
-`po` is `NIEOCZEKIWANY_BLAD` (`KartaZ` reads `head`), and a result the Centrum
-log already has is skipped (`StartCentrumZ` may leave the card empty). Both
-known findings and the mixed failures below are gone, and the configuration
-`wylaczenie-i-dysk` checks switch-offs together with disk refusals.
-
-`55b84059` (`main` after #509): the covered files did not change since
-`11588db1`; that sync added the `OSError` from the `unlink` of Dad's file in
-`_roll_back` (`CofanieUsun` under `AwariaKopiowania`), a path the review of
-#478 found. Before it, since `bd7c9ff8`:
-
-- `c89f75c0` and `18db7e34` (#401) run every Git command through `_run_tree`.
-  On Windows it raises `OSError` when the Job Object is not created, `_join`
-  fails, or the tree outlives `_KILL_TIMEOUT_S`. The model gained that
-  exception in `Scalanie` (then `PrzywroceniePoWyjatku`, formerly
-  `PrzywroceniePoLimicie`) and in `rev-parse HEAD` of `_roll_back`
-  (`CofanieUsun`). This sync also fixed a modeling error: a failed
-  `reset --keep` on a clone that already stood on `before` ended the journal
-  in the model, while `_roll_back` raises and keeps it. `CofanieReset` now
-  fails into `cofanie_przywroc_po_bledzie`.
-- `1097cc18` adds `release_at`, which the update does not call.
-- `19d5141f` and `3356ca70` (PR #399 and the card after a failed update)
-  change only the Zgłoszenie in `tool_updates.py`: `_after_restart` still
-  reads the result file once and shows `_view_of(result)` or the failure, and
-  `_update` waits for the box (`wait_for_box`) before the `failed` view, still
-  before `end_update`.
-- `restart_guardian.py` and `launcher.py` did not change.
+```bash
+git diff $(git log -1 --format=%h -- .agents/skills/verify-aktualizacja-narzedzia/model/definicje.json) -- src/rozliczenia/centrum/tool_update.py src/rozliczenia/centrum/tool_updates.py src/rozliczenia/centrum/restart_guardian.py src/rozliczenia/centrum/launcher.py src/rozliczenia/tool_files.py
+```
 
 A change matters when it changes the order of these steps, adds or removes a
 step that touches the clone, Dad's files, the libraries, the result file or the
@@ -254,9 +169,9 @@ Do this for your own change and for a change you review. Update the model
 before you trust a verdict. With an outdated model the check passes on code it
 no longer describes.
 
-1. Read the diff of the covered files since the sync commit
-   (`git diff <sync commit> -- <covered files>`). For each hunk, find its row in
-   the table.
+1. Read the diff of the covered files since their digests (the `git diff`
+   above; the drift line names each changed file and definition). For each
+   hunk, find its row in the table.
 2. Change the matching actions so that one action stays one indivisible step
    of the code. Keep the comment that names the code. TLA+ strings must be
    ASCII (no Polish letters inside `"…"`), but comments may use them.
@@ -270,9 +185,9 @@ no longer describes.
 6. If the change rewrites the code behind a known finding, rewrite that
    finding below and its `znalezisko` in `model/konfiguracje.json` in the same
    change.
-7. Move the sync commit forward only after you have checked every row of the
-   table against the code at the new commit, and only when you commit the
-   model with that code.
+7. Run `tools/przesun_model.py verify-aktualizacja-narzedzia` only after you
+   have checked every row of the table against the code, and commit the new
+   digests with the model and that code.
 
 ## Run
 
@@ -309,8 +224,8 @@ The last line is the verdict:
 | `AKTUALIZACJA: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding no longer happens. If you fixed it, remove it from `znane` of its configuration in `model/konfiguracje.json` and from the findings below. |
 | `AKTUALIZACJA: BŁĄD MODELU (n)` | 2 | TLC gave no verdict (a syntax error in the model), an invariant outside the promises such as `TypeOK` broke, or `model/konfiguracje.json` has another shape. Nothing is known about the promise. |
 
-`UWAGA: kod opisany modelem zmienił się od …` means a covered file changed after the
-sync commit. Until you have done „Bring the model in line”, the verdict above
+`UWAGA: kod opisany modelem zmienił się: …` means a covered file differs from its
+digest. Until you have done „Bring the model in line”, the verdict above
 it means nothing.
 
 ## Configurations
@@ -498,8 +413,8 @@ Assumed, and not checked:
   `config/skrzynka-adresy.jsonl`), `merge` refuses. Git treats an ignored file
   (`*.xlsx`, `logs/`, `config/centrum-ustawienia.yaml` and the rest of
   `.gitignore`) as expendable, so `git merge --ff-only` overwrites Dad's file
-  without refusing (Git 2.50). At the sync commit no tracked file matches
-  `.gitignore` (`git ls-files -ci --exclude-standard` is empty).
+  without refusing (Git 2.50). When the digests were last taken, no tracked file matched
+  `.gitignore` (`git ls-files -ci --exclude-standard` was empty).
 - A shortcut clicked while the guardian runs gives the port back within
   `_SHORTCUT_HOLDS_PORT_S` (10 s), because between `listen_locally` and
   `listener.close()` it only reads the journal on the local disk. The model

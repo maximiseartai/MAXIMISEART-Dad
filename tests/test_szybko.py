@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 
 import czasy_ci  # noqa: E402
+import rozjazd_modelu  # noqa: E402
 import szybko  # noqa: E402
 from wplyw_zmiany import STRUCTURE  # noqa: E402
 
@@ -34,12 +35,15 @@ BY_CHANGE_ONLY = {
     "tests/test_git_w_testach.py": (
         "sprawdza gita sesji testów, a nie całe repozytorium"
     ),
+    "tests/test_jedno_uruchomienie_naraz.py::test_rozjazd_czesci_modelowanej_recznie_konczy_sprawdzenie_przeplotow_porazka_w_ci_przed_sprawdzeniem": (
+        "sprawdza skrypt skilla z podmienionym rozjazdem we własnym procesie, a nie całe repozytorium; graf wybiera go przy zmianie skilla"
+    ),
     "tests/test_komunikaty_expect.py": (
         "skanuje cały src/, ale globem (rglob) na src, który graf widzi, więc wybiera go przy zmianie każdego modułu "
         "src/, katalogu (import message_samples) i pliku tests/expected/komunikaty.txt (literał)"
     ),
-    "tests/test_mutacje_skilli.py::test_kazdy_skill_z_modelem_tla_wskazuje_kod_modelu_w_pilnuje_sync_commit_i_kroki_naprawy_rozjazdu": (
-        "graf wybiera go przy zmianie SKILL.md i pliku model/ skilla, także nowego modelu .tla, i tools/lib/rozjazd_modelu.py, "
+    "tests/test_mutacje_skilli.py::test_kazdy_skill_z_modelem_wskazuje_kod_modelu_w_pilnuje_i_kroki_naprawy_rozjazdu_bez_sync_commit": (
+        "graf wybiera go przy zmianie SKILL.md i pliku model/ skilla, także nowego modelu .tla albo definicje.json, i tools/lib/rozjazd_modelu.py, "
         "a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
     "tests/test_mutacje_skilli.py::test_kazde_przyjete_ryzyko_i_znane_ustalenie_eksploratora_ma_mutacje_tuz_za_granica_kazdej_czesci_ksztaltu": (
@@ -681,37 +685,34 @@ def test_szybko_na_najstarszym_pythonie_nie_ma_osobnego_kroku_importu(tmp_path: 
 MODEL_SKILL = ".agents/skills/verify-model"
 
 
-def _model_skill(repo: Path) -> str:
-    """Skill z modelem kodu ``inna`` z ``src/pakiet/b.py`` i Sync commit na ``origin/main``; zwraca Sync commit."""
+def _model_skill(repo: Path) -> None:
+    """Skill z modelem kodu ``inna`` z ``src/pakiet/b.py`` na ``origin/main``, ze skrótami przeliczonymi na tym kodzie."""
 
-    front = "---\nname: verify-model\npilnuje:\n  - src/pakiet/b.py\n---\n\n## Bring the model in line\n"
-    _write(repo, f"{MODEL_SKILL}/model/definicje.json", json.dumps({"src/pakiet/b.py": ["inna"]}))
-    sync = commit(repo, "model")[:9]
-    _write(repo, f"{MODEL_SKILL}/SKILL.md", f"{front}\nSync commit: `{sync}`.\n")
-    git(repo, "update-ref", "refs/remotes/origin/main", commit(repo, "Sync commit"))
-    return sync
+    _write(repo, f"{MODEL_SKILL}/SKILL.md", "---\nname: verify-model\npilnuje:\n  - src/pakiet/b.py\n---\n\n## Bring the model in line\n")
+    _write(repo, f"{MODEL_SKILL}/model/definicje.json", json.dumps({"src/pakiet/b.py": {"inna": ""}}))
+    rozjazd_modelu.przesun(repo / MODEL_SKILL, repo)
+    git(repo, "update-ref", "refs/remotes/origin/main", commit(repo, "model"))
 
 
-def test_zmiana_kodu_opisanego_modelem_skilla_od_sync_commit_wywraca_szybkie_sprawdzenie_bez_tlc(tmp_path: Path) -> None:
+def test_zmiana_kodu_opisanego_modelem_skilla_wywraca_szybkie_sprawdzenie_bez_tlc(tmp_path: Path) -> None:
     """CI kończy podstawę skilla porażką rozjazdu modelu (#880, #882), więc szybko też pada, z drogą naprawy."""
 
     repo = _repo(tmp_path)
-    sync = _model_skill(repo)
+    _model_skill(repo)
     _write(repo, "src/pakiet/b.py", "def inna() -> int:\n    return 2\n")
 
     answered = _szybko(repo)
 
-    found = f"verify-model: kod opisany modelem zmienił się od {sync}: src/pakiet/b.py inna. Wykonaj kroki „Bring the model in line” z {MODEL_SKILL}/SKILL.md"
+    found = f"verify-model: kod opisany modelem zmienił się: src/pakiet/b.py inna. Wykonaj kroki „Bring the model in line” z {MODEL_SKILL}/SKILL.md"
     assert (answered.returncode, _verdict(answered)) == (1, "SZYBKO FAIL | rozjazd modelu"), answered.stdout
     assert found in answered.stdout
 
 
-def test_skill_md_ktory_przesuwa_sync_commit_na_zmiane_kodu_nie_jest_rozjazdem_dla_szybko(tmp_path: Path) -> None:
+def test_skroty_przeliczone_po_zmianie_kodu_opisanego_modelem_nie_sa_rozjazdem_dla_szybko(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     _model_skill(repo)
     _write(repo, "src/pakiet/b.py", "def inna() -> int:\n    return 2\n")
-    changed = commit(repo, "zmiana kodu opisanego modelem")[:9]
-    _write(repo, f"{MODEL_SKILL}/SKILL.md", (repo / MODEL_SKILL / "SKILL.md").read_text(encoding="utf-8").split("Sync commit")[0] + f"Sync commit: `{changed}`.\n")
+    rozjazd_modelu.przesun(repo / MODEL_SKILL, repo)
 
     answered = _szybko(repo)
 

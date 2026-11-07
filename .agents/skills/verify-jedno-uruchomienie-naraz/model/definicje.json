@@ -1,0 +1,13 @@
+{
+  "src/rozliczenia/centrum/tool_updates.py": {
+    "ToolUpdates.start": "3192def7db29f67f",
+    "ToolUpdates._update": "2ae3ea4589ad7f74",
+    "ToolUpdates._restart": "297309ec0469cce0"
+  },
+  "src/rozliczenia/centrum/intermax_run.py": {
+    "intermax_copies_router": "2ea826125c978feb"
+  },
+  "src/rozliczenia/centrum/server.py": {
+    "serve.stop_when_asked": "757f48ef98699816"
+  }
+}

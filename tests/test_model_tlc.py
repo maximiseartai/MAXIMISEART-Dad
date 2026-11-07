@@ -279,7 +279,7 @@ def test_kazdy_skill_z_modelem_ma_konfiguracje_a_jego_opowiesc_zna_kazda_akcje_n
         spec = (model.skill / "model" / model.specyfikacja).read_text(encoding="utf-8")
         checked[model.skill.name] = (bool(model_tlc.konfiguracje(model)), model.akcje is None or model.akcje == model_tlc.akcje_next(spec))
 
-    assert sorted(model.skill for model in models) == rozjazd_modelu.skille(ROOT)
+    assert sorted(model.skill for model in models) == [skill for skill in rozjazd_modelu.skille(ROOT) if any((skill / "model").glob("*.tla"))]
     assert checked == {name: (True, True) for name in checked}
     assert {model.skill.name for model in models if model.akcje is not None} == {"verify-urwane-uruchomienie", "verify-wznowienie-wyceny-efenix"}
 
@@ -309,7 +309,7 @@ def _without_drift_or_tools(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_w_ci_rozjazd_konczy_sprawdzenie_porazka_przed_tlc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     model = _model(tmp_path, {"f": _config()})
-    moved = "kod opisany modelem zmienił się od abcdef1: src/rozliczenia/centrum/app.py lifespan."
+    moved = "kod opisany modelem zmienił się: src/rozliczenia/centrum/app.py create_app.lifespan."
     asked: list[tuple[Path, Path]] = []
 
     def drift(skill: Path, root: Path) -> str:

@@ -33,7 +33,7 @@ about 65 s, so with three parts the first runs the scopes of the Archiwum, the s
 the rest and the model. On Windows CI the same units took about 7 times as long before #911 (1163 s, 304 s, 505 s and
 355 s in run 41993938633 against 145 s, 40 s, 69 s and 57 s on the Mac). A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`. The model unit
-fails with `MODEL KOLEJKI: ROZJAZD MODELU Z KODEM` when covered code changed since the Sync commit,
+fails with `MODEL KOLEJKI: ROZJAZD MODELU Z KODEM` when covered code differs from its digests in `model/definicje.json`,
 but it cannot tell whether a change to the model is right.
 `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 `check_outbox_mutations.py` and
@@ -42,8 +42,8 @@ after a change of this skill's folder. `check_model_kolejki_mutations.py` also r
 file in `model/`, the script itself or `sprawdz_model_kolejki.py` (ADR 0021), so a model change that leaves a mutation
 with `BŁĄD MODELU` turns the pull request red. Run them locally only to reproduce a red Mutation checks step or the
 night's issue, or one `--scope` or `--config` while you work on it. What stays with you on every change to the covered code is „Does the
-change touch it?” and „Bring the model in line”: read each commit since the sync commit against both
-tables, change the model, break the new path in it, and move the sync commit. A change that adds a new
+change touch it?” and „Bring the model in line”: read the diff since the digests in `model/definicje.json` against both
+tables, change the model, break the new path in it, and recompute the digests. A change that adds a new
 way to the Skrzynka (a new `Target`, a second writer of queue files, a box call outside `KeyedBox`)
 passes both checks without being checked. Sorting a red run as „When the check fails” and „Real bug
 or modeling error?” say also stays with you.
@@ -243,47 +243,22 @@ checker takes from the real adapter (`_github` in `explore_outbox.py`), and
 every queue file and its marker (the model only). The model's `Start`, `Zamknij`
 and `KoniecProcesu`, which let an old and a new Centrum process share the queue
 folder (configuration `dwa-procesy`), also cover four definitions in files
-that Centrum changes often: `lifespan` in `app.py`, `_listen_when_released` in
+that Centrum changes often: `create_app.lifespan` in `app.py`, `_listen_when_released` in
 `launcher.py`, `listen_locally` and its bind `_bound` in `tool_files.py`, and `_GRACEFUL_SHUTDOWN_S`, `serve`
 and `_Server` in `server.py`. `model/definicje.json` lists the four covered files as whole files and these four
 by their definitions: only a change to these definitions, not to the rest of their files, is drift.
 
-**Sync commit: `78d857001`** (2026-11-07, N10a of the untangle of 7.11). Since `1a7d93e3` the
-Zgłoszenie target became the general `OpenIssue` (label, recognition line, title and the heading
-`again` of the comment to an open issue with that line; `reports.report_target` builds the
-Zgłoszenie's), `_deliver_report` is `_deliver_open_issue` with the same box calls in the same order
-and the same comment text, `Post` carries `state` for the listener (written to the queue file, never
-sent), and `KeyedBox` takes the Zgłoszenie label and its memory times from other modules with the same
-values. No action of the model changed; at this commit `sprawdz_model_kolejki.py` gave `MODEL KOLEJKI OK`
-on all 15 configurations and `explore_outbox.py` `KOLEJKA OK` on all 15 scopes.
-
-`1a7d93e3` (2026-11-07, N3a of the untangle of 7.11). Since `872a47f50` only
-`listen_locally` moved, unchanged in what it does, from `launcher.py` to `tool_files.py`, its
-`SO_REUSEADDR` bind now in `_bound`, which the restart guardian's port probe shares: `Start` still
-runs only in the process that took the port. No action of the model changed.
-
-`872a47f50` (2026-11-07, PR 6 of WS-A). The checker and the
-model share it: at this commit both were confirmed to describe the code above.
-Since `6908b5c3a` (#919 merged with `main` after #910, #924 and #949) only the
-docstring of `outbox.py` changed: the progress and the Diagnoza of the Logi now
-come from `run_comments`. The model holds the order of versions of
-#910 (`Nr`, `czytane`, `NowszyDalej` in `Plik`) and the branches `Unreachable`
-and `Gone` of #915 in `Szukaj`; `znane` sets `StarszaPozniej` and `Postep`
-FALSE and `OpoznienieListy` TRUE. The checker is that of #949: `OPENING_FILE`
-lives in memory (`_NotesInMemory`, handed to `KeyedBox` through `NotesFile`),
-and `znane-issue` asks `known_issue`, which reads that file at every list. At it
-`sprawdz_model_kolejki.py` gave `MODEL KOLEJKI OK` on all 15 configurations and
-`explore_outbox.py` `KOLEJKA OK` on all 15 scopes; at `6908b5c3a`, with the same code,
-`check_model_kolejki_mutations.py` gave 51 of 51 `WYKRYTA` and
-`check_outbox_mutations.py` `MUTACJE OK` in all 3 parts. What earlier syncs confirmed is in the history of this file and in
-the messages of their commits. To see whether the checker and the model need
-another look:
+`model/definicje.json` holds a digest of each covered file and definition, taken when the checker and the model were
+last confirmed to describe the code (`tools/przesun_model.py`); what that confirmation found is in the message of the
+commit that changed the digests. The model holds the order of versions of #910 (`Nr`, `czytane`, `NowszyDalej` in
+`Plik`) and the branches `Unreachable` and `Gone` of #915 in `Szukaj`; `znane` sets `StarszaPozniej` and `Postep`
+FALSE and `OpoznienieListy` TRUE. To see what changed since:
 
 ```bash
-git log --oneline <Sync commit>..HEAD -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
+git diff $(git log -1 --format=%h -- .agents/skills/verify-kolejka-skrzynki/model/definicje.json) -- src/rozliczenia/centrum/outbox.py src/rozliczenia/centrum/keyed_box.py src/rozliczenia/centrum/report_box.py src/rozliczenia/centrum/atomic_file.py
 ```
 
-A change to the three definitions above shows as a `UWAGA:` line of
+A change to a covered file or definition shows as a `UWAGA:` line of
 `sprawdz_model_kolejki.py` (in CI as the drift verdict).
 Read each listed commit against this table and the model's table below. A change matters when it adds,
 removes or reorders a box call, changes what a retry does with an issue it
@@ -292,9 +267,9 @@ its version or when it is removed and uploaded, changes when the marker is writt
 failure stops a pass (`_waiting`), or adds a `Target` or a field of `Post` that goes to the Skrzynka. A new `Target` also needs
 a scope in `SCOPES` and a branch in `_check` in `explore_outbox.py`. Changes to
 the text of a wysyłka, the log lines, the `Listener`, `delivered`, `wait_delivered`
-and the addresses file do not matter here. Move the sync commit forward only
-after the checker and the model match the code at the new commit and both
-checks and their mutations pass there.
+and the addresses file do not matter here. Recompute the digests only after
+the checker and the model match the code and both checks and their mutations
+pass on it.
 
 ## Run
 
@@ -543,7 +518,7 @@ so that it breaks the same rule again.
 
 `model/KolejkaSkrzynki.tla` is a hand-written TLA+ model of the same queue,
 which TLC checks in every order of steps and failures. It describes the code
-only while you keep the two in step (Sync commit above). It adds what the
+only while you keep the two in step (digests above). It adds what the
 checker cannot run: threads that interleave (a wysyłka posted during a pass,
 the `RETRY_S` wake, a second queue of one folder, a second Centrum process),
 the temporary file and the rename of `replace_atomically` as separate failure
@@ -633,9 +608,9 @@ wysyłka's version or a newer one, so the queue sends that file again), `slady`
 
 ### Bring the model in line, then run
 
-1. Read the diff of the covered files since the Sync commit
-   (`git diff <sync commit> -- <covered files>`) and find each hunk's row in
-   both tables.
+1. Read the diff of the covered files since their digests (the `git diff` above;
+   the drift line names each changed file and definition) and find each hunk's
+   row in both tables.
 2. Change the matching action so that one action stays one indivisible step
    of the code, and keep the comment that names the code. TLA+ strings must be
    ASCII; comments may use Polish letters.
@@ -645,10 +620,9 @@ wysyłka's version or a newer one, so the queue sends that file again), `slady`
    see the check fail; add the break to `check_model_kolejki_mutations.py`
    with the code it mirrors. A new guard in the model needs a counterpart in
    the code; name it in the guard's comment.
-5. Move the Sync commit forward only when the checker and every row of both
-   tables match the code at the new commit. Rewrite the Sync paragraph for the
-   new commit instead of adding to it, and put what changed since the previous
-   sync in the commit message.
+5. Run `tools/przesun_model.py verify-kolejka-skrzynki` only when the checker
+   and every row of both tables match the code, and put what changed in the
+   model and the definitions it prints in the commit message.
 
 Run one configuration while you work:
 
@@ -671,7 +645,7 @@ makes known findings exit 1.
 | `MODEL KOLEJKI: NOWE NARUSZENIE (n)` | 1 | A promise breaks in a way no known finding explains: another promise than the finding's, or its promise without its cause in `slady`. The counterexample is printed. |
 | `MODEL KOLEJKI: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding no longer happens. If a change fixed it, remove it from `znane` of its configuration in `model/konfiguracje.json` and below. |
 | `MODEL KOLEJKI: BŁĄD MODELU (n)` | 2 | TLC gave no verdict (a syntax error), an invariant outside the promises such as `TypeOK` broke, or `model/konfiguracje.json` has another shape. Nothing is known about the promise. |
-| `MODEL KOLEJKI: ROZJAZD MODELU Z KODEM` | 1 | Only in CI: covered code changed since the Sync commit. Outside CI the same is a `UWAGA:` line above the verdict, and the verdict means nothing until you bring the model in line. |
+| `MODEL KOLEJKI: ROZJAZD MODELU Z KODEM` | 1 | Only in CI: covered code differs from its digests in `model/definicje.json`. Outside CI the same is a `UWAGA:` line above the verdict, and the verdict means nothing until you bring the model in line. |
 
 Each known finding in `znane` of its configuration in `model/konfiguracje.json`
 names the promise it breaks (`obietnica`) and its cause (`przyczyna`), a mark
