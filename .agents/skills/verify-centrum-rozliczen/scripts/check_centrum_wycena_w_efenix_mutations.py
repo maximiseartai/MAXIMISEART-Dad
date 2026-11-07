@@ -84,6 +84,12 @@ MUTATIONS = (
         "tata, który wraca do komputera, nie wie z Powiadomienia, czy zlecenia są już przekazane",
     ),
     Mutation(
+        "„Uruchom ponownie” Wyceny startuje ją od razu",
+        (Edit(BUILD, "rerun:e=>{e.pricing!==null&&e.process!==`intermax`?", "rerun:e=>{false?"),),
+        WYCENA,
+        "Centrum powtarza Wycenę po Zatrzymaniu, choć tata wybiera tryb przy każdym starcie (ADR 0027)",
+    ),
+    Mutation(
         "bez Powiadomienia o zakończonej Wycenie",
         (Edit(NOTIFICATIONS, "            *map(self._pricing, self._pricings()),\n", ""),),
         WYCENA,

@@ -185,6 +185,7 @@ class StatusChange(enum.Enum):
     FORWARD_CANCELS = "przycisk Przekazania do akceptacji otwiera okno zmiany statusu, którego „Tak” wysyła „Anulowane”"
     FORWARD_OTHER_ORDER = "„Tak” w Przekazaniu do akceptacji wysyła identyfikator następnego zlecenia zamiast otwartego"
     FORWARD_TWO_ORDERS = "„Tak” w Przekazaniu do akceptacji wysyła identyfikator otwartego i następnego zlecenia"
+    FORWARD_ORDER_IN_URL = "„Tak” w Przekazaniu do akceptacji wysyła identyfikator następnego zlecenia w adresie, a otwartego w treści"
     FORWARD_GET = "„Tak” w Przekazaniu do akceptacji wysyła „Do akceptacji” żądaniem GET"
     FORWARD_TWO_STATUSES = "„Tak” w Przekazaniu do akceptacji wysyła w treści „Do akceptacji” i „Anulowane”"
     FORWARD_STATUS_IN_URL = "„Tak” w Przekazaniu do akceptacji wysyła „Anulowane” w adresie, a „Do akceptacji” w treści"
@@ -993,6 +994,9 @@ _FORWARD_REQUESTS: Final = {
     StatusChange.FORWARD_TWO_ORDERS: (
         "fetch('action_change_status.php', {method: 'POST', body: 'order_id=' + mainId + '&order_id=' + String(Number(mainId) + 1)"
         " + '&xstatus=' + encodeURIComponent(status) + '&comment='})"
+    ),
+    StatusChange.FORWARD_ORDER_IN_URL: (
+        "post('action_change_status.php?order_id=' + String(Number(mainId) + 1), {order_id: mainId, xstatus: status, comment: ''})"
     ),
     StatusChange.FORWARD_GET: "fetch('action_change_status.php?' + new URLSearchParams({order_id: mainId, xstatus: status, comment: ''}))",
     StatusChange.FORWARD_TWO_STATUSES: (

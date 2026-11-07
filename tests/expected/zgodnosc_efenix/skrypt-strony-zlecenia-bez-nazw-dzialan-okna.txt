@@ -3,7 +3,7 @@ RÓŻNICA | strona zlecenia | skrypt js/page_order_edit.js bez „onSet”: kale
 RÓŻNICA | strona zlecenia | skrypt js/page_order_edit.js bez „action_set_date_of_instalation.php”: „Potwierdź” okna daty wykonania zapisuje datę
 RÓŻNICA | strona zlecenia | skrypt js/page_order_edit.js bez „action_load_emmett.php”: przycisk Emmetta pokazuje propozycję, a „Załaduj do zlecenia” ją ładuje
 RÓŻNICA | strona zlecenia | skrypt js/page_order_edit.js bez „cena_all2”: wyjście z pola Ilość zapisuje ilość, a kwotę końcową z odpowiedzi pokazuje na stronie
-RÓŻNICA | strona zlecenia | skrypt js/page_order_edit.js bez „xstatus”: „Tak” okna zmiany statusu po przycisku Przekazania wysyła nowy status i przeładowuje stronę
+RÓŻNICA | strona zlecenia | skrypt js/page_order_edit.js bez „xstatus”: „Tak” okna zmiany statusu po przycisku Przekazania wysyła nowy status i identyfikator zlecenia z pola #main_id i przeładowuje stronę
 NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
 NIESPRAWDZONE | propozycja Emmetta | budowa propozycji Emmetta nie jest sprawdzana: uruchom narzędzie z --emmett i kliknij w Chrome przycisk Emmetta, gdy narzędzie o to poprosi
 RÓŻNICE: 5 | NIESPRAWDZONE: 2

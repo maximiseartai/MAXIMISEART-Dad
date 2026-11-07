@@ -50,6 +50,7 @@ __all__ = [
     "LOGIN_FORM",
     "LOGIN_PAGE",
     "NUMBER_PARAM",
+    "ORDER_ID_FIELD",
     "ORDER_PAGE",
     "PRICE_ALL",
     "QUANTITY",
@@ -94,8 +95,14 @@ LOAD_EMMETT: Final = "action_load_emmett.php"
 SAVE_QUANTITY: Final = "action_save_index.php"
 CHANGE_STATUS: Final = "action_change_status.php"
 STATUS_PARAM: Final = "xstatus"
-ORDER_PARAM: Final = "order_id"
 """Pole żądania zmiany statusu z nowym statusem zlecenia."""
+ORDER_PARAM: Final = "order_id"
+"""Pole żądania zmiany statusu z identyfikatorem zlecenia; strażnik okna przepuszcza tylko ``id`` z linku otwartego
+zlecenia (``page_order_edit.php?id=``)."""
+ORDER_ID_FIELD: Final = "#main_id"
+"""Ukryte pole strony zlecenia z identyfikatorem zlecenia, który skrypt strony wysyła jako ``order_id`` w żądaniu zmiany
+statusu (skrypt efenix z rekonesansu 1.11.2026). Okno go nie czyta: narzędzie zgodności sprawdza, że jest równy ``id``
+z linku listy, bo inaczej strażnik okna zatrzyma Przekazanie."""
 NUMBER_PARAM: Final = "numer"
 """Pole szukania z numerem, który okno wpisało w pole ``Numer``."""
 PRICE_ALL: Final = "price_all"
@@ -247,8 +254,9 @@ SCRIPT_USES: Final[Mapping[PageKind, tuple[ScriptUse, ...]]] = {
             (QUANTITY.partition(".")[2], "blur", SAVE_QUANTITY, PRICE_ALL, _bare(AMOUNT)),
         ),
         ScriptUse(
-            "„Tak” okna zmiany statusu po przycisku Przekazania wysyła nowy status i przeładowuje stronę",
-            (_bare(_FORWARD_BUTTON), _bare(_FORWARD_DIALOG), CHANGE_STATUS, STATUS_PARAM, "reload"),
+            "„Tak” okna zmiany statusu po przycisku Przekazania wysyła nowy status i identyfikator zlecenia z pola"
+            f" {ORDER_ID_FIELD} i przeładowuje stronę",
+            (_bare(_FORWARD_BUTTON), _bare(_FORWARD_DIALOG), CHANGE_STATUS, STATUS_PARAM, ORDER_PARAM, _bare(ORDER_ID_FIELD), "reload"),
         ),
     ),
 }
