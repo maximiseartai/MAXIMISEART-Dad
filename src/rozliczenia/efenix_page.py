@@ -58,6 +58,7 @@ __all__ = [
     "SEARCH",
     "SET_DATE",
     "SHOWS_ANYTHING",
+    "ORDER_PARAM",
     "STATUS_PARAM",
     "Cell",
     "ColumnFault",
@@ -93,6 +94,7 @@ LOAD_EMMETT: Final = "action_load_emmett.php"
 SAVE_QUANTITY: Final = "action_save_index.php"
 CHANGE_STATUS: Final = "action_change_status.php"
 STATUS_PARAM: Final = "xstatus"
+ORDER_PARAM: Final = "order_id"
 """Pole żądania zmiany statusu z nowym statusem zlecenia."""
 NUMBER_PARAM: Final = "numer"
 """Pole szukania z numerem, który okno wpisało w pole ``Numer``."""

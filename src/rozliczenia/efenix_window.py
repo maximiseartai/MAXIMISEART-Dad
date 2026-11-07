@@ -177,6 +177,7 @@ class StatusChangeBlocked(enum.Enum):
 
     OTHER_STATUS = "żądanie zmiany statusu na inny niż „Do akceptacji” w Przekazaniu do akceptacji"
     OUTSIDE_FORWARD = "żądanie zmiany statusu poza Przekazaniem do akceptacji (także w trybie bez Przekazania)"
+    OTHER_ORDER = "żądanie Przekazania do akceptacji innego zlecenia niż otwarte w oknie"
 
 
 PageCause = ElementCount | HttpStatus | OtherShape | BrowserFailure | StatusChangeBlocked

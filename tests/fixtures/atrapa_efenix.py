@@ -77,7 +77,7 @@ import socket
 import struct
 import threading
 import time
-from typing import Any
+from typing import Any, Final
 from urllib.parse import parse_qs, urlparse
 
 # Model efenix leży w ``tools/lib``, który każdy, kto importuje Atrapę, ma na ``sys.path``: pytest (``tests/conftest.py``)
@@ -183,6 +183,12 @@ class StatusChange(enum.Enum):
     strażnik zmiany statusu okna."""
 
     FORWARD_CANCELS = "przycisk Przekazania do akceptacji otwiera okno zmiany statusu, którego „Tak” wysyła „Anulowane”"
+    FORWARD_OTHER_ORDER = "„Tak” w Przekazaniu do akceptacji wysyła identyfikator następnego zlecenia zamiast otwartego"
+    FORWARD_TWO_ORDERS = "„Tak” w Przekazaniu do akceptacji wysyła identyfikator otwartego i następnego zlecenia"
+    FORWARD_GET = "„Tak” w Przekazaniu do akceptacji wysyła „Do akceptacji” żądaniem GET"
+    FORWARD_TWO_STATUSES = "„Tak” w Przekazaniu do akceptacji wysyła w treści „Do akceptacji” i „Anulowane”"
+    FORWARD_STATUS_IN_URL = "„Tak” w Przekazaniu do akceptacji wysyła „Anulowane” w adresie, a „Do akceptacji” w treści"
+    FORWARD_TWICE = "„Tak” w Przekazaniu do akceptacji wysyła żądanie zmiany statusu drugi raz po odpowiedzi na pierwsze"
     ON_LOAD = "strona zlecenia po wczytaniu sama wysyła zmianę statusu na „Do akceptacji”"
     POPUP = "strona zlecenia po wczytaniu otwiera nowe okno ze zmianą statusu na „Anulowane”"
 
@@ -981,6 +987,27 @@ window.open('action_change_status.php?order_id=' + document.getElementById('main
 """
 
 
+_FORWARD_REQUEST = "post('action_change_status.php', {order_id: mainId, xstatus: status, comment: ''})"
+_FORWARD_REQUESTS: Final = {
+    StatusChange.FORWARD_OTHER_ORDER: "post('action_change_status.php', {order_id: String(Number(mainId) + 1), xstatus: status, comment: ''})",
+    StatusChange.FORWARD_TWO_ORDERS: (
+        "fetch('action_change_status.php', {method: 'POST', body: 'order_id=' + mainId + '&order_id=' + String(Number(mainId) + 1)"
+        " + '&xstatus=' + encodeURIComponent(status) + '&comment='})"
+    ),
+    StatusChange.FORWARD_GET: "fetch('action_change_status.php?' + new URLSearchParams({order_id: mainId, xstatus: status, comment: ''}))",
+    StatusChange.FORWARD_TWO_STATUSES: (
+        "fetch('action_change_status.php', {method: 'POST', body: 'order_id=' + mainId + '&xstatus=' + encodeURIComponent(status)"
+        " + '&xstatus=Anulowane&comment='})"
+    ),
+    StatusChange.FORWARD_STATUS_IN_URL: "post('action_change_status.php?xstatus=Anulowane', {order_id: mainId, xstatus: status, comment: ''})",
+    StatusChange.FORWARD_TWICE: (
+        "post('action_change_status.php', {order_id: mainId, xstatus: status, comment: ''})"
+        ".then(() => post('action_change_status.php', {order_id: mainId, xstatus: status, comment: ''}))"
+    ),
+}
+"""Żądanie, które „Tak” w Przekazaniu do akceptacji wysyła w wariancie Atrapy, w miejsce żądania efenix."""
+
+
 def _order_script(changed: Changed | Unread | None, today: date, reload_ms: int, status_change: StatusChange | None) -> str:
     # Granice kalendarza są granicami ``model_efenix.calendar_day``, z którym okno w procesie wybiera dzień.
     script = (
@@ -994,6 +1021,8 @@ def _order_script(changed: Changed | Unread | None, today: date, reload_ms: int,
         script += _SECOND_EMMETT_DIALOG_SCRIPT
     if status_change is StatusChange.FORWARD_CANCELS:
         script = script.replace("{ status = 'Do akceptacji';", "{ status = 'Anulowane';")
+    if status_change in _FORWARD_REQUESTS:
+        script = script.replace(_FORWARD_REQUEST, _FORWARD_REQUESTS[status_change])
     if status_change is StatusChange.ON_LOAD:
         script += _STATUS_ON_LOAD_SCRIPT
     if status_change is StatusChange.POPUP:

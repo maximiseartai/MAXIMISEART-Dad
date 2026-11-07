@@ -1105,6 +1105,59 @@ def test_przycisk_przekazania_ktorego_tak_wysyla_anulowane_nie_dochodzi_do_efeni
     assert (requests, in_efenix.status, _address_fills(source)) == ([], "Do wyceny", {18: None})
 
 
+@pytest.mark.parametrize(
+    ("status_change", "cause", "reached", "status"),
+    [
+        pytest.param(StatusChange.FORWARD_OTHER_ORDER, StatusChangeBlocked.OTHER_ORDER, [], "Do wyceny", id="inne-zlecenie"),
+        pytest.param(StatusChange.FORWARD_TWO_ORDERS, StatusChangeBlocked.OTHER_ORDER, [], "Do wyceny", id="dwa-zlecenia"),
+        pytest.param(StatusChange.FORWARD_GET, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="get"),
+        pytest.param(StatusChange.FORWARD_TWO_STATUSES, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="dwa-statusy"),
+        pytest.param(StatusChange.FORWARD_STATUS_IN_URL, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="status-w-adresie"),
+        pytest.param(
+            StatusChange.FORWARD_TWICE,
+            StatusChangeBlocked.OUTSIDE_FORWARD,
+            [("POST", "Do akceptacji")],
+            "Do akceptacji",
+            id="drugie-zadanie",
+        ),
+    ],
+)
+def test_w_przekazaniu_do_efenix_dochodzi_tylko_jedno_zadanie_post_do_akceptacji_otwartego_zlecenia(
+    tmp_path: Path, page: Page, status_change: StatusChange, cause: StatusChangeBlocked, reached: list[tuple[str, str]], status: str
+) -> None:
+    """Przekazanie innego zlecenia też jest nieodwracalne, więc strażnik przepuszcza tylko pierwsze żądanie, POST z
+    jednym ``xstatus`` „Do akceptacji” i jednym ``order_id`` zlecenia otwartego w oknie; następne zlecenie efenix bez
+    wyceny zostaje nietknięte."""
+
+    order = Order("#8381", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+    source = write_collective_file(tmp_path, [order])
+    in_efenix = [replace(order.in_efenix("901"), execution_date=DAY), Order("#8382").in_efenix("902")]
+    with atrapa_efenix(in_efenix, status_change=status_change) as atrapa:
+        outcome = _run(source, page, atrapa.url, mode=PricingMode.FORWARD, timeout_ms=3_000)
+        requests = atrapa.status_requests()
+        [opened, other], _logged_in = atrapa.state()
+
+    assert isinstance(outcome.ending, Stop)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), outcome.ending.stop_kind, facts.cause) == ("EFENIX_OKNO_ZATRZYMANE", "for_maks", cause)
+    assert (requests, opened.status, other.status, other.quantities) == (reached, status, "Do wyceny", {})
+    assert _address_fills(source) == {18: None}
+
+
+def test_zmiana_statusu_po_ostatnim_dzialaniu_okna_nie_dochodzi_do_efenix_a_okno_konczy_sie_zatrzymaniem(page: Page) -> None:
+    with atrapa_efenix([Order("#8391").in_efenix("901")]) as atrapa:
+        with pytest.raises(UnexpectedPage) as stopped:
+            with efenix_browser.window(page, atrapa.url):
+                page.evaluate(
+                    "() => fetch('action_change_status.php', {method: 'POST', body: 'order_id=901&xstatus=Anulowane'})"
+                    ".catch(() => 'przerwane')"
+                )
+        requests = atrapa.status_requests()
+
+    assert (stopped.value.cause, requests) == (StatusChangeBlocked.OUTSIDE_FORWARD, [])
+
+
 @pytest.mark.parametrize("mode", list(PricingMode), ids=lambda mode: mode.name.lower())
 @pytest.mark.parametrize("status_change", [StatusChange.ON_LOAD, StatusChange.POPUP], ids=lambda change: change.name.lower())
 def test_zmiana_statusu_ktorej_okno_nie_wyslalo_w_przekazaniu_nie_dochodzi_do_efenix_takze_z_nowego_okna_strony(

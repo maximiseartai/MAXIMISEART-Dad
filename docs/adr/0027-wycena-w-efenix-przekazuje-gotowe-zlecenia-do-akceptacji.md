@@ -35,8 +35,9 @@ anulowałaby zlecenie firmy, czego narzędzie nie umie cofnąć.
   zastępuje Znacznik efenix, a Znacznik efenix nigdy nie zastępuje Znacznika przekazania. Ponowne uruchomienie po
   zgaśnięciu między Przekazaniem a zapisem Znaczników daje więc zleceniu ciemny Znacznik.
 - **Okno efenix przepuszcza tylko swoje żądanie Przekazania.** Żądanie zmiany statusu, którego nowy status nie jest
-  dokładnie „Do akceptacji” albo które nie przyszło w Przekazaniu (w trybie bez Przekazania każde), okno przerywa, zanim
-  dojdzie do efenix, i zatrzymuje Wycenę „do Maksa”. Strażnik stoi na całej przeglądarce okna, więc obejmuje też ramki i
+  dokładnie „Do akceptacji”, które dotyczy innego zlecenia niż otwarte w oknie albo które nie przyszło w Przekazaniu (w
+  trybie bez Przekazania każde), okno przerywa, zanim dojdzie do efenix, i zatrzymuje Wycenę „do Maksa”. Przekazanie
+  innego zlecenia byłoby tak samo nieodwracalne jak anulowanie (przegląd #1067 r1). Strażnik stoi na całej przeglądarce okna, więc obejmuje też ramki i
   okna, które otworzy strona.
 - **Przekazanie to zapis w tempie ludzkim** (przerwa przed nim jak przed każdym zapisem), a ponowne szukanie po nim to
   odczyt bez przerwy.
