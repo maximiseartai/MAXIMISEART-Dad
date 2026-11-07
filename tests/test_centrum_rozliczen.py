@@ -726,7 +726,9 @@ def test_pliki_i_foldery_okresu_otwieraja_sie_jednym_kliknieciem(tmp_path: Path)
 def test_nieistniejacy_plik_okresu_nie_jest_otwierany_a_odmowa_nazywa_go_jak_glossary(
     tmp_path: Path, target: str, name: str
 ) -> None:
-    app, _ = with_periods_directory(tmp_path)
+    app, periods = with_periods_directory(tmp_path)
+    if target != "period_folder":
+        (periods / "22_28_09_2026").mkdir()
 
     response = app.client.post("/api/periods/22_28_09_2026/open", json={"target": target})
 
