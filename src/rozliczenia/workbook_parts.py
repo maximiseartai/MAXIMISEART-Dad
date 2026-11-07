@@ -63,7 +63,8 @@ PACKAGE_REL: Final = "{http://schemas.openxmlformats.org/package/2006/relationsh
 
 _WITHOUT_LEADING_R: Final = re.compile(rb'<(?:c|row)(?=[\s>/])(?! r=")')
 _ROW_START_OR_IRREGULAR: Final = re.compile(rb'<(?:row r="(\d+)"|!|(?:c|row)(?=[\s>/])(?! r="))')
-_COMMENT_OR_CDATA_END: Final = re.compile(rb"-->|\]\]>")
+_IRREGULAR_IN_ROW: Final = re.compile(rb"-->|\]\]>|</?sheetData")
+"""Koniec komentarza albo CDATA zaczętego wyżej albo granica innego ``<sheetData>`` w wierszu ``RowsFromBottom``."""
 _WORKSHEET: Final = re.compile(rb"\s*(?:<\?xml[^>]*\?>\s*)?<worksheet[\s>]")
 _SHARED_FORMULA_MASTER: Final = re.compile(rb'<f\b[^>]*\bt="shared"[^>]*(?<!/)>')
 _TYPE: Final = re.compile(rb"""\st=["']([^"']*)["']""")
@@ -214,12 +215,16 @@ class RowsFromBottom:
     Dla zmiany dołu arkusza, który ma dziesiątki tysięcy wierszy (Rejestr zleceń): dzielenie całego ``SheetData``
     kosztuje tyle co reszta Uporządkowania INTERMAX. Kształt jest ten sam co w ``SheetData``, ale sprawdzany tylko w
     wierszach, które czytający dostał: każdy z nich i jego kolejność za wierszem nad nim, a komentarz albo CDATA także
-    wtedy, gdy w nich się kończy, choć zaczął się wyżej. Wierszy nad nimi czytający nie zna i ich bajtów nie zmienia.
+    wtedy, gdy w nich się kończy, choć zaczął się wyżej, i granica drugiego ``<sheetData>`` w nich. Wierszy nad nimi
+    czytający nie zna i ich bajtów nie zmienia.
     """
 
     def __init__(self, xml: bytes) -> None:
+        start, end = xml.find(b"<sheetData>"), xml.rfind(b"</sheetData>")
+        if start < 0 or end < start:
+            raise IrregularSheetData("sheetData")
         self.xml = xml
-        self.start, self.end = _sheet_data_bounds(xml)
+        self.start, self.end = start + len(b"<sheetData>"), end
         self._rows: list[SheetRow] = []
         self._divided_from = self.end
 
@@ -257,8 +262,8 @@ class RowsFromBottom:
             return False
         begin = max(self.start, self.xml.rfind(b"<row", self.start, end))
         rows = _sheet_rows(self.xml, begin, end)
-        if _COMMENT_OR_CDATA_END.search(self.xml, begin, end):
-            raise IrregularSheetData("komentarz albo CDATA")
+        if _IRREGULAR_IN_ROW.search(self.xml, begin, end):
+            raise IrregularSheetData("komentarz, CDATA albo drugi sheetData")
         if self._rows and rows and rows[-1].number >= self._rows[-1].number:
             raise IrregularSheetData("kolejność wierszy")
         self._rows.extend(reversed(rows))

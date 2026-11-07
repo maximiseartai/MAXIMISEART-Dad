@@ -695,8 +695,8 @@ def _ordered_sheet(sheet: RowsFromBottom, columns: OrderColumns, block: RawBlock
             rows.append(xml[by_number[number].start : by_number[number].end])
         else:
             rows.append(b'<row r="%d"%s/>' % (number, row_looks.blank))
-    head = _with_view(_with_dimension(xml[: region[0].start], last, columns.last), plan.view_row, columns.first)
-    return head + b"".join(rows) + xml[region[-1].end : tail_at] + _moved_hyperlinks(xml[tail_at:], columns, block, plan)
+    head = _with_view(_with_dimension(xml[: sheet.start], last, columns.last), plan.view_row, columns.first)
+    return head + xml[sheet.start : region[0].start] + b"".join(rows) + xml[region[-1].end : tail_at] + _moved_hyperlinks(xml[tail_at:], columns, block, plan)
 
 
 def _order_row(
@@ -810,7 +810,9 @@ def _check_sheet(original: RowsFromBottom, written: bytes, columns: OrderColumns
     xml, region = original.xml, original.above(block.anchor)
     start = region[0].start if region else original.end
     new_start = written_region[0].start if written_region else data.end
-    if _without_view(xml[:start]) != _without_view(written[:new_start]):
+    if _without_view(xml[: original.start]) != _without_view(written[: data.start]) or (
+        xml[original.start : start] != written[data.start : new_start]
+    ):
         raise WriteMismatch("wiersze nad dniem")
     tail, new_tail = xml[original.end :], written[data.end :]
     if _moved_hyperlinks(tail, columns, block, plan) != new_tail:
@@ -847,7 +849,11 @@ def _check_sheet(original: RowsFromBottom, written: bytes, columns: OrderColumns
 
 
 def _without_view(head: bytes) -> bytes:
-    """Nagłówek arkusza zleceń bez tego, co zmienia zapis: ``<dimension>`` i widoku arkusza."""
+    """Nagłówek arkusza zleceń bez tego, co zmienia zapis: ``<dimension>`` i widoku arkusza.
+
+    Oba stoją według schematu arkusza przed ``<sheetData>``, więc nagłówek to bajty przed nim, a nie dziesiątki MB
+    wierszy nad dniem.
+    """
 
     return _SHEET_VIEWS.sub(b"", _DIMENSION.sub(b"", head))
 

@@ -259,12 +259,14 @@ def test_dzien_pod_dlugim_arkuszem_staje_w_segmentach_a_wiersze_nad_nim_zostaja_
     assert without_dimension_and_view.sub(b"", parts(path)[_SHEET]).startswith(above)
 
 
-@pytest.mark.parametrize(("opening", "closing"), [(b"<!-- ", b" -->"), (b"<![CDATA[", b"]]>")])
+@pytest.mark.parametrize(
+    ("opening", "closing"), [(b"<!-- ", b" -->"), (b"<![CDATA[", b"]]>"), (b"", b"</sheetData><sheetData>")]
+)
 def test_komentarz_konczacy_sie_w_czytanym_dole_arkusza_to_zatrzymanie_do_maksa_bez_zapisu(
     tmp_path: Path, opening: bytes, closing: bytes
 ) -> None:
     """Komentarz albo CDATA zaczyna się w starszych dniach, których Uporządkowanie nie czyta, a kończy w tygodniu,
-    który czyta: wiersze w nim nie są wierszami arkusza."""
+    który czyta: wiersze w nim nie są wierszami arkusza. Tak samo granica drugiego ``<sheetData>`` w tygodniu."""
 
     path, layout = _long_register(tmp_path)
 
@@ -946,6 +948,7 @@ CORRUPTIONS: dict[str, Callable[[bytes, Layout], bytes]] = {
     "lista stylów": lambda content, _layout: _part_changed(
         content, _STYLES, lambda xml: re.sub(rb"<borders\b.*?</borders>", b"", xml, flags=re.S)
     ),
+    "nagłówek arkusza": _in_sheet(lambda xml: xml.replace(b"<sheetData>", b'<sheetFormatPr defaultRowHeight="20"/><sheetData>', 1)),
     "wiersze nad dniem": _in_sheet(lambda xml: xml.replace(b'<row r="2" ', b'<row r="2" hidden="1" ', 1)),
     "ogon arkusza": _in_sheet(lambda xml: xml.replace(b'<pageMargins left="0.75"', b'<pageMargins left="0.5"', 1)),
     "wartość zlecenia": _cell_value_changed,
