@@ -1,6 +1,6 @@
 """Ślad zlecenia Wyceny w efenix dla Logów Uruchomienia: każde działanie okna efenix z czasem i tym, co odpowiedział efenix.
 
-Jedyną operacją jest ``traced()``: okno efenix (``efenix_pricing.Efenix``) przy jednym zleceniu Pliku zbiorczego, które
+Jedyną operacją jest ``traced()``: okno efenix (``efenix_window.Efenix``) przy jednym zleceniu Pliku zbiorczego, które
 przekazuje każde działanie oknu pod spodem i zapisuje je w ``OrderTrace`` z chwilą rozpoczęcia (UTC), więc przerwy tempa
 ludzkiego między działaniami widać bez symulacji. Każde działanie niesie odczyt strony efenix po nim (#843), bez numeru
 zlecenia i bez danych adresowych (reguła danych, ADR 0025): z szukania liczbę trafień i każdy wiersz listy
@@ -20,14 +20,11 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal, TypeVar
+from typing import Literal, TypeVar
 
 from .efenix_checks import ListedRead, read_listed
-
-if TYPE_CHECKING:
-    from .efenix_checks import ListedOrder
-    from .efenix_orders import CollectiveOrder
-    from .efenix_pricing import Efenix, EmmettLoad, OrderPricing
+from .efenix_orders import CollectiveOrder
+from .efenix_window import Efenix, EmmettLoad, ListedOrder, OrderPricing
 
 __all__ = ["Action", "OrderTrace", "TraceStep", "traced"]
 

@@ -1,4 +1,4 @@
-"""Okno w procesie: okno efenix Wyceny (``efenix_pricing.Efenix``) wprost na modelu efenix, bez HTTP i przeglądarki.
+"""Okno w procesie: okno efenix Wyceny (``efenix_window.Efenix``) wprost na modelu efenix, bez HTTP i przeglądarki.
 
 ``okno(stan, login)`` daje okno na stanie ``StanEfenix`` z ``tools/lib/model_efenix.py``, tym samym, który pod Atrapą
 efenix trzyma zlecenia i sesję (decyzja Maksa 6.11.2026: to test na Atrapie, ADR 0024). Okno woła działania
@@ -35,16 +35,17 @@ from model_efenix import (
     calendar_day,
 )
 
-from rozliczenia.efenix_checks import ListedOrder, PagePart
-from rozliczenia.efenix_pricing import (
+from rozliczenia.efenix_window import (
     Efenix,
     EmmettLoad,
     HttpStatus,
+    ListedOrder,
     LoggedOut,
     Login,
     LoginSign,
     OrderPricing,
     OtherShape,
+    PagePart,
     Proposal,
     Shape,
     UnexpectedPage,
@@ -79,7 +80,7 @@ def _action(action: Callable[Concatenate[OknoWProcesie[_O], _P], _R]) -> Callabl
 
 
 class OknoWProcesie(Generic[_O]):
-    """Okno efenix na stanie ``stan``; implementuje ``efenix_pricing.Efenix``."""
+    """Okno efenix na stanie ``stan``; implementuje ``efenix_window.Efenix``."""
 
     def __init__(self, stan: StanEfenix[_O]) -> None:
         self._stan = stan
@@ -221,7 +222,7 @@ def _text(cell: str) -> str:
 
 @contextmanager
 def okno(stan: StanEfenix[_O], _login: Login) -> Iterator[Efenix]:
-    """Okno efenix z otwartą listą zleceń na stanie ``stan`` (``efenix_pricing.OpenEfenix`` przez
+    """Okno efenix z otwartą listą zleceń na stanie ``stan`` (``efenix_window.OpenEfenix`` przez
     ``functools.partial(okno, stan)``); bez sesji ``LoggedOut`` listy, bo okno, jak ``efenix_browser.chromium``, na
     logowanie taty nie czeka."""
 

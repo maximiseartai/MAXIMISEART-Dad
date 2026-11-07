@@ -42,7 +42,7 @@ the known findings below against the change.
 Each rule has its domain sentence, and the expected outcome of every fault comes from `expected()`, a table written
 from these sentences, never from a run:
 
-- **PRZYCZYNA**: a Zatrzymanie names the fault the way `efenix_browser` and `efenix_pricing.WindowCause` sort it, at
+- **PRZYCZYNA**: a Zatrzymanie names the fault the way `efenix_browser` and `efenix_window.WindowCause` sort it, at
   the order of the faulted request. A broken network or a late answer is a browser failure with a named operation (or
   `EfenixUnreachable` before the list opened: „Lista zleceń, której okno nie otworzyło przy starcie … to
   `EfenixUnreachable`”; „Czy to zerwane połączenie, wolny czy zmieniony efenix, okno nie zgaduje”). An error page

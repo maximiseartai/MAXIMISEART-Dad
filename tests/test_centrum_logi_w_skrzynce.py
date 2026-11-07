@@ -995,7 +995,7 @@ def test_zatrzymanie_okna_efenix_jest_granica_przy_roznicy_odtworzenia_na_atrapi
     [cause] = [line for line in lines if line.startswith("Przyczyna w Logach: ")]
     assert cause.startswith(
         "Przyczyna w Logach: okno efenix przy wierszu 19 (2 z 6): wartość pola Ilość, która nie jest liczbą całkowitą; "
-        "wyjątki rozliczenia.message.StopError ← rozliczenia.efenix_pricing.UnexpectedPage"
+        "wyjątki rozliczenia.message.StopError ← rozliczenia.efenix_window.UnexpectedPage"
     ), cause
 
 

@@ -152,6 +152,7 @@ from rozliczenia.efenix_browser import TIMEOUT_MS
 from rozliczenia.efenix_page import (
     AMOUNT,
     EXECUTION_DATE,
+    LOGIN_FORM,
     LOGIN_PAGE,
     ORDER_PAGE,
     QUANTITY,
@@ -178,8 +179,8 @@ from rozliczenia.efenix_page import (
     table_faults,
 )
 from rozliczenia.efenix_checks import PRICING_STATUS
+from rozliczenia.efenix_window import ElementCount, UnexpectedPage
 from rozliczenia.efenix_positions import POSITION_OF_COLUMN
-from rozliczenia.efenix_pricing import ElementCount, UnexpectedPage
 from rozliczenia.workbook_files import WorkbookError
 
 from model_efenix import CATALOG, EfenixOrder
@@ -248,7 +249,7 @@ UNUSED_ORDER_ELEMENTS: Final = (
     PageElement("przycisk anulowania", "#button_forward_to_cancel"),
 )
 LOGIN_ELEMENTS: Final = (
-    PageElement("formularz logowania", 'form[action$="action_login.php"]'),
+    PageElement("formularz logowania", LOGIN_FORM),
     PageElement("pole loginu", "input#field_signum"),
     PageElement("pole hasła", "input#field_password"),
     PageElement("pole fingerprint", 'input[name="fingerprint"]'),

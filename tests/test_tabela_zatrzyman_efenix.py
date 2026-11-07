@@ -1,5 +1,5 @@
 """Tabela decyzji Zatrzymań okna efenix (Zgłoszenia #19 i #20 z MAXIMISEART-Dad-zgloszenia): każde miejsce, które
-zgłasza wyjątek okna, i przyczyna techniczna z zamkniętej listy (``efenix_pricing.WindowCause``), którą daje Logom
+zgłasza wyjątek okna, i przyczyna techniczna z zamkniętej listy (``efenix_window.WindowCause``), którą daje Logom
 Uruchomienia.
 
 Hipotezy ze Zgłoszeń, które przyczyna rozróżnia przy ``UnexpectedPage(PagePart.ORDER)``:

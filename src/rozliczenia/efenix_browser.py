@@ -2,7 +2,7 @@
 
 Budowę stron efenix (adresy działań, elementy ``Element``, nazwy w skryptach stron) i jej odczyty (tabela wyników,
 strona zlecenia, okno Emmetta) daje ``efenix_page``, z którego okno bierze każdy selektor. Na zewnątrz okno daje tylko
-typy domeny (``efenix_pricing.Efenix``, ``ListedOrder``, ``OrderPricing``) i zna tylko działania
+typy domeny (``efenix_window.Efenix``, ``ListedOrder``, ``OrderPricing``) i zna tylko działania
 z listy dozwolonych: szukanie po ``Numer`` na liście zleceń, otwarcie strony zlecenia, ustawienie daty wykonania,
 przycisk Emmetta z „Załaduj do zlecenia” i pola „Ilość”. Przycisków Przekazania do akceptacji, anulowania i zmiany
 statusu nie zna. Każdy przycisk okna dialogowego klika w jego oknie (``#dialog_… .btn-ok``), bo strona zlecenia ma
@@ -17,7 +17,7 @@ odpowiada), to ``EfenixUnreachable``.
 Każde inne działanie, którego okno nie dokończyło, to ``UnexpectedPage`` z częścią strony: strona bez oczekiwanej
 budowy, odpowiedź efenix ze statusem błędu, element obecny, ale niewidoczny, i każdy błąd Playwrighta w działaniu (czas czekania na stronę, odpowiedź albo
 element, który minął, otwarcie strony, które się nie udało, treść odpowiedzi, której nie da się przeczytać). Każdy z
-tych wyjątków niesie przyczynę techniczną z zamkniętej listy (``efenix_pricing.WindowCause``): element, który nie
+tych wyjątków niesie przyczynę techniczną z zamkniętej listy (``efenix_window.WindowCause``): element, który nie
 występuje dokładnie raz, z jego selektorem i liczbą, budowę strony, której okno nie zna (``Shape``), status HTTP
 (``HttpStatus``), a przy błędzie Playwrighta typ jego wyjątku i działanie okna, w którym wystąpił (``Operation``), bez
 treści wyjątku i strony. Wpisanie numeru i Enter w polu ``Numer``, które się nie udały, bo pola nie ma już na stronie
@@ -93,7 +93,7 @@ from playwright.sync_api import Locator, Page, Playwright, Request, Response, sy
 
 from . import TOOL_ROOT
 from .call_trace import exception_type
-from .efenix_pricing import (
+from .efenix_window import (
     BrowserFailure,
     BrowserNotStarted,
     Closed,
@@ -140,6 +140,7 @@ from .efenix_page import (
 __all__ = [
     "LOGIN_TIMEOUT_MS",
     "PROFILE_DIRECTORY",
+    "TIMEOUT_MS",
     "BrowserEfenix",
     "LaunchOptions",
     "chrome",
@@ -153,6 +154,7 @@ PROFILE_DIRECTORY: Final = "przegladarka-efenix"
 """Folder profilu przeglądarki narzędzia w katalogu narzędzia: na dysku lokalnym taty, poza OneDrive, w ``.gitignore``."""
 
 TIMEOUT_MS: Final = 30_000
+"""Tyle okno czeka na stronę, odpowiedź albo element efenix; narzędzie zgodności czeka tyle samo."""
 LOGIN_TIMEOUT_MS: Final = 15 * 60_000
 """Tyle okno czeka na logowanie taty, zanim proces zatrzyma się jak po wylogowaniu."""
 LOGIN_POLL_MS: Final = 2_000
@@ -219,7 +221,7 @@ def _sent(efenix: BrowserEfenix) -> Iterator[None]:
 
 
 class BrowserEfenix:
-    """Okno efenix na stronie ``page`` z listą zleceń pod adresem ``url``; implementuje ``efenix_pricing.Efenix``."""
+    """Okno efenix na stronie ``page`` z listą zleceń pod adresem ``url``; implementuje ``efenix_window.Efenix``."""
 
     def __init__(self, page: Page, url: str, *, timeout_ms: int = TIMEOUT_MS) -> None:
         self._page = page

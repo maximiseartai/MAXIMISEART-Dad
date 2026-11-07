@@ -1530,7 +1530,7 @@ def test_okno_efenix_zamkniete_w_trakcie_logowania_zatrzymuje_wycene_od_razu_a_c
     [logged] = [record for record in records(centrum) if record["process"] == "efenix"]
     trace = logged["trace"]
     assert ([trace["exception_type"], *(link["exception_type"] for link in trace["causes"])][:2], logged["stop_kind"]) == (
-        ["rozliczenia.message.StopError", "rozliczenia.efenix_pricing.WindowClosed"],
+        ["rozliczenia.message.StopError", "rozliczenia.efenix_window.WindowClosed"],
         "for_tata",
     )
 
@@ -1630,7 +1630,7 @@ def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_
     ]
     assert [trace["exception_type"], *(cause["exception_type"] for cause in trace["causes"])][:2] == [
         "rozliczenia.message.StopError",
-        "rozliczenia.efenix_pricing.UnexpectedPage",
+        "rozliczenia.efenix_window.UnexpectedPage",
     ]
     text = log_files(centrum)[0].read_text(encoding="utf-8")
     traced_text = json.dumps(record["efenix_orders"], ensure_ascii=False)
@@ -1669,7 +1669,7 @@ START_PATHS = {
         "for_tata",
         "EFENIX_BRAK_PRZEGLADARKI",
         {"what": _BROWSER_FAILURE, "error_type": "FileNotFoundError", "operation": "start sterownika Playwrighta"},
-        [_STOP_ERROR, "rozliczenia.efenix_pricing.BrowserNotStarted", "FileNotFoundError"],
+        [_STOP_ERROR, "rozliczenia.efenix_window.BrowserNotStarted", "FileNotFoundError"],
         "_playwright",
         driver=True,
     ),
@@ -1677,7 +1677,7 @@ START_PATHS = {
         "for_tata",
         "EFENIX_BRAK_PRZEGLADARKI",
         {"what": _BROWSER_FAILURE, "error_type": None, "operation": "start przeglądarki"},
-        [_STOP_ERROR, "rozliczenia.efenix_pricing.BrowserNotStarted", None],
+        [_STOP_ERROR, "rozliczenia.efenix_window.BrowserNotStarted", None],
         "chrome",
         profile_file=True,
     ),
@@ -1685,7 +1685,7 @@ START_PATHS = {
         "for_tata",
         "EFENIX_NIEDOSTEPNY",
         {"part": "LIST", "what": _BROWSER_FAILURE, "error_type": _PLAYWRIGHT_ERROR, "operation": "otwarcie strony"},
-        [_STOP_ERROR, "rozliczenia.efenix_pricing.EfenixUnreachable", _PLAYWRIGHT_ERROR],
+        [_STOP_ERROR, "rozliczenia.efenix_window.EfenixUnreachable", _PLAYWRIGHT_ERROR],
         "open_list",
         outage=(Outage.CUT, 0),
     ),
@@ -1693,7 +1693,7 @@ START_PATHS = {
         "for_maks",
         "EFENIX_OKNO_ZATRZYMANE",
         {"part": "LIST", "what": "strona błędu HTTP serwera efenix zamiast strony albo odpowiedzi, na którą czekało okno", "status": 500},
-        [_STOP_ERROR, "rozliczenia.efenix_pricing.UnexpectedPage", "rozliczenia.efenix_pricing.UnexpectedPage"],
+        [_STOP_ERROR, "rozliczenia.efenix_window.UnexpectedPage", "rozliczenia.efenix_window.UnexpectedPage"],
         "open_list",
         error_answer=(LIST_PAGE, 1, HTTPStatus.INTERNAL_SERVER_ERROR),
     ),

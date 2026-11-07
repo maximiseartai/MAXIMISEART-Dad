@@ -27,7 +27,8 @@ from rozliczenia.centrum.runs import PreparedRun
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.efenix_pace import Pace
-from rozliczenia.efenix_pricing import OpenEfenix, OrderJournal
+from rozliczenia.efenix_pricing import OrderJournal
+from rozliczenia.efenix_window import OpenEfenix
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.period_folder import PeriodStatus, collective_file_name, scan_period_folders
 from rozliczenia.settings import SettingsStore

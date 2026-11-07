@@ -41,6 +41,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Final
 from urllib.parse import parse_qs, urlparse
 
+from rozliczenia.efenix_page import FILL_EMMETT, LOGIN_PAGE, ORDER_PAGE, SEARCH
+
 STYLESHEET: Final = "css/efenix.css"
 FORBIDDEN_CLICK: Final = "__przycisk-spoza-listy"
 _FORBIDDEN_BUTTONS: Final = "#button_forward_to_accept, #button_forward_to_cancel, #dialog_forward_yes_no .btn-ok"
@@ -50,9 +52,7 @@ _WATCHER: Final = (
     f" if (button) navigator.sendBeacon('{FORBIDDEN_CLICK}', button.id || 'tak');"
     " }, true);</script>"
 )
-_PAGES: Final = ("index.php", "page_order_edit.php", "page_login.php")
-_SEARCH: Final = "action_fill_orders.php"
-_PROPOSAL: Final = "action_fill_emmett.php"
+_PAGES: Final = ("index.php", ORDER_PAGE, LOGIN_PAGE)
 _BY_LIST: Final = "powrot"
 _ELSEWHERE: Final = "/index.php?przekierowanie=1"
 
@@ -120,7 +120,7 @@ def call_kind(method: str, url: str, body: str) -> tuple[str, str, str]:
 
     path = urlparse(url).path.lstrip("/") or "index.php"
     search = ""
-    if path == _SEARCH and method == "POST":
+    if path == SEARCH and method == "POST":
         search = "lista" if parse_qs(body).get("rodzaj") == [_BY_LIST] else "okno"
     return method, path, search
 
@@ -225,7 +225,7 @@ class Proxy:
             if plan.fault is Fault.REFUSED_NO_PROPOSAL and plan.target is not None:
                 # Dwie awarie przy jednym zleceniu (#908): jego propozycja Emmetta, a potem „Załaduj do zlecenia”.
                 paired = call.method == "POST" and call.occurrence == plan.target.occurrence
-                hit = {_PROPOSAL: Fault.HTTP_5XX, plan.target.path: Fault.REFUSED}.get(call.path) if paired else None
+                hit = {FILL_EMMETT: Fault.HTTP_5XX, plan.target.path: Fault.REFUSED}.get(call.path) if paired else None
             if hit in OUTAGES:
                 self._outage = hit
             fault = self._outage if self._outage is not None else hit
@@ -330,7 +330,7 @@ def _handler(proxy: Proxy) -> type[BaseHTTPRequestHandler]:
                 self._send(_Answer(HTTPStatus.OK, (("Content-Type", "application/json"),), b'{"result": "nok", "error": "Nie zapisano."}'))
                 return
             if fault is Fault.LOGIN_PAGE:
-                login = self._executed("GET", b"", Call("GET", "page_login.php", "", 0), "/page_login.php")
+                login = self._executed("GET", b"", Call("GET", LOGIN_PAGE, "", 0), f"/{LOGIN_PAGE}")
                 self._send(_Answer(HTTPStatus.OK, login.headers, login.body))
                 return
             proxy.before_executed(call)
@@ -380,7 +380,7 @@ def _handler(proxy: Proxy) -> type[BaseHTTPRequestHandler]:
             finally:
                 connection.close()
             if response.status == HTTPStatus.OK and method == "GET" and call.path in _PAGES:
-                dad = proxy.plan.fault in DAD_LOGINS and call.path == "page_login.php"
+                dad = proxy.plan.fault in DAD_LOGINS and call.path == LOGIN_PAGE
                 acts = f"<script>setTimeout(() => fetch('{DAD}'), 300);</script>" if dad else ""
                 content = content.replace(
                     b"</head>", f'<link rel="stylesheet" href="{STYLESHEET}?v=1">{_WATCHER}{acts}</head>'.encode(), 1

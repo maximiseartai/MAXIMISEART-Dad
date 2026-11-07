@@ -9,7 +9,7 @@ Decyzje serwera (sesja i jej wygaśnięcie, odmowy „Załaduj do zlecenia”, n
 wykonania i ilości) model ``tools/lib/model_efenix.py`` podejmuje dla każdego okna, więc ich macierz biegnie na jego
 interfejsie ``SerwerEfenix``, bez HTTP i przeglądarki.
 
-Kontrakt okien: każdy wiersz ``_ROWS`` to stan efenix i działania okna Wyceny (``efenix_pricing.Efenix``). Okno w procesie
+Kontrakt okien: każdy wiersz ``_ROWS`` to stan efenix i działania okna Wyceny (``efenix_window.Efenix``). Okno w procesie
 (``tests/fixtures/okno_w_procesie.py``) daje na nich przebiegi z pliku ``tests/expected/kontrakt_okna_efenix.txt``
 (obserwacje okna, Zatrzymanie z częścią strony, przyczyną i ``sent``, stan efenix i liczby działań), a okno przeglądarki
 na Atrapie efenix w Chromium daje na każdym wierszu ten sam przebieg. Wiersze powstają z ``Action`` (wylogowanie przed
@@ -53,8 +53,8 @@ from playwright.sync_api import Browser
 import pytest
 
 from rozliczenia import efenix_browser
-from rozliczenia.efenix_checks import ListedOrder
-from rozliczenia.efenix_pricing import Efenix, EmmettLoad, OrderPricing, WindowStop, _emmett
+from rozliczenia.efenix_pricing import _emmett
+from rozliczenia.efenix_window import Efenix, EmmettLoad, ListedOrder, OrderPricing, WindowStop
 from tests.fixtures.atrapa_efenix import (
     FILL_EMMETT,
     LIST_PAGE,

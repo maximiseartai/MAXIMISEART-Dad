@@ -17,7 +17,7 @@ that broke in the place and way of the same accepted risks (``RiskShape.window``
 
 The invariants (``Rule``), each with the domain sentence it comes from:
 
-- PRZYCZYNA: a Zatrzymanie names the fault the way the docstrings of ``efenix_browser`` and ``efenix_pricing.WindowCause``
+- PRZYCZYNA: a Zatrzymanie names the fault the way the docstrings of ``efenix_browser`` and ``efenix_window.WindowCause``
   sort it, at the order of the faulted request: a broken network or a late answer is a browser failure with a named
   operation (or ``EfenixUnreachable`` before the list opened), an error page of the order page is ``HttpStatus``, a
   login is ``LoggedOut``, a closed tab is ``WindowClosed``, a „Załaduj do zlecenia” efenix answered with 2xx without
@@ -77,23 +77,19 @@ from awarie_efenix import DAD, DAD_LOGINS, FORBIDDEN_CLICK, LOGOUTS, OUTAGES, Ca
 from rozliczenia import efenix_browser, efenix_process
 from rozliczenia.centrum.run_logs import LoggedMessage, LoggedOrder, LoggedWindowStop
 from rozliczenia.efenix_mark import MARK_RGB
-from rozliczenia.efenix_pricing import (
+from rozliczenia.efenix_page import FILL_EMMETT, LOAD_EMMETT, LOGIN_PAGE, ORDER_PAGE, SAVE_QUANTITY, SEARCH, SET_DATE
+from rozliczenia.efenix_checks import Settled
+from rozliczenia.efenix_pricing import EmmettWarning, OrderError, OrderResult, PricingStopped, PricingSummary, Ready
+from rozliczenia.efenix_window import (
     BrowserFailure,
     Closed,
     Efenix,
     ElementCount,
-    EmmettWarning,
     HttpStatus,
     Login,
     LoginSign,
-    OrderError,
-    OrderResult,
     OtherShape,
     PagePart,
-    PricingStopped,
-    PricingSummary,
-    Ready,
-    Settled,
     Shape,
 )
 from rozliczenia.efenix_process import EfenixInputs
@@ -247,7 +243,6 @@ def step(role: Role) -> Role:
 
 
 _LIST = "index.php"
-_ORDER = "page_order_edit.php"
 _CSS = "css/efenix.css"
 
 
@@ -258,13 +253,13 @@ def _page(path: str, script: str, role: Role, file_role: Role) -> list[tuple[str
 def _order_calls(quantities: int) -> list[tuple[str, str, str, Role]]:
     script = "js/page_order_edit.js"
     return [
-        *_page(_ORDER, script, Role.ORDER_OPEN, Role.ORDER_FILE),
-        ("POST", "action_set_date_of_instalation.php", "", Role.DATE),
-        *_page(_ORDER, script, Role.ORDER_DATED, Role.DATED_FILE),
-        ("POST", "action_fill_emmett.php", "", Role.PROPOSAL),
-        ("POST", "action_load_emmett.php", "", Role.LOAD),
-        *_page(_ORDER, script, Role.RELOADED, Role.RELOADED_FILE),
-        *[("POST", "action_save_index.php", "", Role.QUANTITY)] * quantities,
+        *_page(ORDER_PAGE, script, Role.ORDER_OPEN, Role.ORDER_FILE),
+        ("POST", SET_DATE, "", Role.DATE),
+        *_page(ORDER_PAGE, script, Role.ORDER_DATED, Role.DATED_FILE),
+        ("POST", FILL_EMMETT, "", Role.PROPOSAL),
+        ("POST", LOAD_EMMETT, "", Role.LOAD),
+        *_page(ORDER_PAGE, script, Role.RELOADED, Role.RELOADED_FILE),
+        *[("POST", SAVE_QUANTITY, "", Role.QUANTITY)] * quantities,
     ]
 
 
@@ -276,11 +271,11 @@ def _expected_calls() -> tuple[tuple[Call, Role, int], ...]:
 
     script = "js/index.js"
     plan = [
-        [*_page(_LIST, script, Role.LIST_START, Role.LIST_FILE_START), ("POST", "action_fill_orders.php", "okno", Role.SEARCH), *_order_calls(2)],
+        [*_page(_LIST, script, Role.LIST_START, Role.LIST_FILE_START), ("POST", SEARCH, "okno", Role.SEARCH), *_order_calls(2)],
         [
             *_page(_LIST, script, Role.LIST_AGAIN, Role.LIST_FILE_AGAIN),
-            ("POST", "action_fill_orders.php", "lista", Role.BY_LIST),
-            ("POST", "action_fill_orders.php", "okno", Role.SEARCH),
+            ("POST", SEARCH, "lista", Role.BY_LIST),
+            ("POST", SEARCH, "okno", Role.SEARCH),
             *_order_calls(0),
         ],
     ]
@@ -290,7 +285,6 @@ def _expected_calls() -> tuple[tuple[Call, Role, int], ...]:
 
 EXPECTED_CALLS: Final = _expected_calls()
 ROLE_OF: Final = {call: (role, order) for call, role, order in EXPECTED_CALLS}
-LOGIN_PAGE: Final = "page_login.php"
 ALLOWED_PATHS: Final = frozenset(call.path for call, _role, _order in EXPECTED_CALLS) | {LOGIN_PAGE}
 """Paths the window may reach: the reference requests and the login page an expired session redirects to."""
 

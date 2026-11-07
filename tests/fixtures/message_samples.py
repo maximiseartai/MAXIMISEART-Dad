@@ -25,8 +25,8 @@ from rozliczenia.centrum import (
 )
 from rozliczenia.centrum.tool_update import LIBRARIES_FAILED, NEW_VERSION_FAILED, ROLLBACK_FAILED, UNEXPECTED
 from rozliczenia.efenix_checks import DateRefused, OrderProblem
+from rozliczenia.efenix_window import PagePart
 from rozliczenia.efenix_marking import Refusal
-from rozliczenia.efenix_pricing import PagePart
 from rozliczenia.efenix_positions import (
     Excess,
     MissingPositions,

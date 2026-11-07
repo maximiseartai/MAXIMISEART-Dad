@@ -21,11 +21,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
-if TYPE_CHECKING:
-    from .efenix_checks import ListedOrder
-    from .efenix_pricing import Efenix, EmmettLoad, OrderPricing
+from .efenix_window import Efenix, EmmettLoad, ListedOrder, OrderPricing
 
 __all__ = ["ACTION_PAUSE_S", "KEEPALIVE_S", "ORDER_S", "Pace", "Pacing"]
 
@@ -82,7 +80,7 @@ class Pacing:
 
 
 class _PacedEfenix:
-    """Okno efenix z przerwami ``pacing`` przed zapisami; implementuje ``efenix_pricing.Efenix``."""
+    """Okno efenix z przerwami ``pacing`` przed zapisami; implementuje ``efenix_window.Efenix``."""
 
     def __init__(self, efenix: Efenix, pacing: Pacing) -> None:
         self._efenix = efenix

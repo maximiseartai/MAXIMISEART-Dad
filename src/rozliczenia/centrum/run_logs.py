@@ -89,25 +89,26 @@ from rozliczenia.centrum.diagnosis import CheckState, Diagnosis
 from rozliczenia.centrum.runs import EndedRun, Ending
 from rozliczenia.domain import ProgressPhase, WorkerStatus
 from rozliczenia.engine import SettlementSummary
+from rozliczenia.efenix_checks import ListedRead, Settled
 from rozliczenia.efenix_pricing import (
+    EmmettWarning,
+    OrderError,
+    OrderResult,
+    PricingStopped,
+    PricingSummary,
+    Ready,
+    StoppedOrder,
+)
+from rozliczenia.efenix_window import (
     BrowserFailure,
     Closed,
     ElementCount,
     HttpStatus,
-    EmmettWarning,
     LoginSign,
-    OrderError,
-    OrderResult,
     OtherShape,
     PagePart,
-    PricingStopped,
-    PricingSummary,
-    Ready,
-    Settled,
-    StoppedOrder,
     WindowCause,
 )
-from rozliczenia.efenix_checks import ListedRead
 from rozliczenia.efenix_positions import file_quantities
 from rozliczenia.efenix_trace import Action, TraceStep
 from rozliczenia.input_copy import CellValue, CopiedFile, CopiedSheet, Typed, TypedKind
@@ -417,7 +418,7 @@ class LoggedOrder(_Record):
 
 
 class LoggedCause(_Record):
-    """Przyczyna techniczna Zatrzymania Wyceny w efenix z zamkniętej listy (``efenix_pricing.WindowCause``), bez treści
+    """Przyczyna techniczna Zatrzymania Wyceny w efenix z zamkniętej listy (``efenix_window.WindowCause``), bez treści
     strony i wyjątku: ``part`` to część strony (nazwa ``PagePart``, ``None`` poza stronami efenix), a ``what`` przyczyna z
     listy.
 
