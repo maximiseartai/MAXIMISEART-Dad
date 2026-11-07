@@ -511,8 +511,9 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
     assert amounts in result["warnings"][1]["what"]
     assert "pozycja INDEKS_012 (kolumna O): efenix 3, plik 2" in result["warnings"][2]["what"]
     assert [phase["state"] for phase in result["progress"]["phases"]] == ["completed"] * 4
-    # Numer zlecenia jako osobny ciąg cyfr: w chwilach (mikrosekundy) i w identyfikatorach szesnastkowych „9401” bywa w środku.
-    number = re.compile(r"(?<![0-9a-f])9401(?![0-9a-f])")
+    # Numer zlecenia jako osobny ciąg cyfr: w chwilach (mikrosekundy) „9401” bywa w środku, a numer sklejony ze słowem
+    # („Zlecenie9401”) dalej jest wyciekiem.
+    number = re.compile(r"(?<![0-9])9401(?![0-9])")
     assert (number.search(json.dumps(result)), number.search(metrics.read_text(encoding="utf-8"))) == (None, None)
 
 

@@ -274,7 +274,7 @@ def test_wartosc_zakazanej_kolumny_w_komorce_ktora_tabela_kontroli_zapisuje_inac
     view = run_to_end(centrum, dry_run=False)
 
     issue = sent_check(centrum)
-    # Bez losowego identyfikatora Uruchomienia (32 znaki szesnastkowe), w którym „4321” wypada raz na ~2300 Uruchomień.
+    # Bez losowego identyfikatora Uruchomienia (32 znaki szesnastkowe), w którym „4321” wypada raz na ~1770 Uruchomień.
     sent = (issue.title + issue.body + "".join(issue.comments)).replace(view["run"]["id"], "")
     assert shown in sent
     assert ("Malachitowa" in sent, "4321" in sent) == (False, False)
