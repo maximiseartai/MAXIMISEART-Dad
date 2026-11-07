@@ -3901,16 +3901,19 @@ def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_prz
     centrum.restart()
     with centrum.client:  # start Centrum jak u taty: ``lifespan`` wznawia Kolejkę wysyłki, która nie ma sieci
         assert centrum.client.get("/api/runs/current").status_code == 200
-        waiting = wait_for(lambda: len(queued_logs(queue)) == 2, 10)
+        # Przejście kolejki ze startu (``lifespan``) mogło przeczytać kolejkę przed Logami z pierwszego zapytania, więc
+        # widzi tylko postęp: sieć wraca dopiero, gdy każde przejście bez sieci stanęło i nastawiło ponowienie (noc 7.11).
+        clock = centrum.surroundings.clock
+        waiting = wait_for(lambda: len(queued_logs(queue)) == 2 and clock.wakes == 1, 10)
         after = journals(centrum)
         box.search_failure = None
-        centrum.surroundings.clock.advance(RETRY_S)
+        clock.advance(RETRY_S)
         _, texts = comment_history(centrum)
     centrum.client.stop()
+
+    assert (waiting, after) == (True, []), "postęp i Logi Urwanego Uruchomienia w kolejce, ponowienie, dziennik po starcie"
     [summary] = texts
     logs = archived_logs(centrum, summary)
-
-    assert (waiting, after) == (True, []), "postęp i Logi Urwanego Uruchomienia w kolejce, dziennik po starcie"
     assert (logs["run_id"], logs["ending"], [order["row"] for order in logs["efenix_orders"]]) == (
         started.run_id,
         "interrupted",

@@ -271,10 +271,11 @@ def test_wartosc_zakazanej_kolumny_w_komorce_ktora_tabela_kontroli_zapisuje_inac
     # Tabela Kontroli ilości pisze koniec linii komórki jako „⏎”, a „|” jako „\|” (ADR 0025: każdy zapis wartości).
     centrum = centrum_with(tmp_path, [{**MARKED, **forbidden}, {**MARKED, "E": typed}])
 
-    run_to_end(centrum, dry_run=False)
+    view = run_to_end(centrum, dry_run=False)
 
     issue = sent_check(centrum)
-    sent = issue.title + issue.body + "".join(issue.comments)
+    # Bez losowego identyfikatora Uruchomienia (32 znaki szesnastkowe), w którym „4321” wypada raz na ~2300 Uruchomień.
+    sent = (issue.title + issue.body + "".join(issue.comments)).replace(view["run"]["id"], "")
     assert shown in sent
     assert ("Malachitowa" in sent, "4321" in sent) == (False, False)
     assert sent.endswith(f"## Uwagi techniczne\n\n- Reguła danych: zamaskowano wartość kolumny {column} w: treść Kontroli ilości.\n")
