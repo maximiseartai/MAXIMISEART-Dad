@@ -5,6 +5,7 @@ pilnuje:
   - src/rozliczenia/efenix_pricing.py
   - src/rozliczenia/efenix_positions.py
   - src/rozliczenia/efenix_browser.py
+  - src/rozliczenia/efenix_window.py
   - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
@@ -86,6 +87,9 @@ The script compares these definitions with the Sync commit (`model/definicje.jso
 classification of other failures) does not move the model. A change that makes another function write in efenix or
 decide whether an order is finished does, though no definition above changes: add it to the table and to
 `model/definicje.json`.
+The window's exceptions (`LoggedOut`, `UnexpectedPage`, `WindowClosed`, `EfenixUnreachable`) and `WindowStop.sent`, which
+`Zatrzymanie` reads, live in `src/rozliczenia/efenix_window.py`, in `pilnuje:` but not in `model/definicje.json`: a change of
+when a window action counts as sent moves the model, though no definition above changes.
 
 Sync commit: `5a87ce2c0` (2026-11-07: the window reads the efenix page through `efenix_page`). Every row of the table
 was checked against the code at this commit. Since `68aafac28` only `load_emmett` and `enter_quantity` changed: their

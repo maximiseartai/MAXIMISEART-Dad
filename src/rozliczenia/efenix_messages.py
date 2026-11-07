@@ -12,7 +12,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Final
 
-from .efenix_checks import DATE_TOLERANCE, DateRefused, OrderProblem, PagePart
+from .efenix_checks import DATE_TOLERANCE, DateRefused, OrderProblem
+from .efenix_window import PagePart
 from .efenix_marking import Refusal
 from .efenix_positions import (
     Excess,

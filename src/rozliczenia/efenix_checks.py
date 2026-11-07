@@ -21,16 +21,15 @@ from typing import Final
 
 from .efenix_address import AddressPart, address_differences, same_address
 from .efenix_orders import CollectiveOrder
+from .efenix_window import ListedOrder
 
 __all__ = [
     "DATE_TOLERANCE",
     "PRICING_STATUS",
     "SETTLED_STATUS",
     "DateRefused",
-    "ListedOrder",
     "ListedRead",
     "OrderProblem",
-    "PagePart",
     "Settled",
     "date_problem",
     "listing",
@@ -42,17 +41,6 @@ PRICING_STATUS: Final = "Do wyceny"
 SETTLED_STATUS: Final = "Rozliczone"
 DATE_TOLERANCE: Final = timedelta(days=3)
 """Największa różnica między datą wykonania w efenix a dniem z ``DATA``, w obie strony, która nie jest niezgodnością."""
-
-
-class PagePart(enum.Enum):
-    """Część strony efenix, którą czyta okno; jej nazwa trafia do Komunikatu zmienionej strony efenix."""
-
-    LIST = "lista zleceń z polem Numer"
-    RESULTS = "tabela wyników szukania"
-    ORDER = "strona zlecenia z datą wykonania i wyceną"
-    DATE = "okno daty wykonania"
-    EMMETT = "Wycena Emmetta"
-    QUANTITY = "pole Ilość i kwota końcowa"
 
 
 class OrderProblem(enum.Enum):
@@ -76,18 +64,6 @@ class DateRefused(enum.Enum):
     narzędzie niczego nie wysłało."""
     NOT_SAVED = enum.auto()
     """Po „Potwierdź” ponownie otwarta strona zlecenia nie ma tego dnia jako daty wykonania."""
-
-
-@dataclass(frozen=True)
-class ListedOrder:
-    """Wiersz listy zleceń efenix po szukaniu: ``Numer dokumentu``, status, realizator (login, ``None`` bez niego),
-    ``Dane adresowe`` bez linii województwa i identyfikator, którym otwiera się stronę zlecenia."""
-
-    number: str
-    status: str
-    realizator: str | None
-    address: str
-    order_id: str
 
 
 @dataclass(frozen=True)

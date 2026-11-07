@@ -54,17 +54,16 @@ from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
 from rozliczenia.efenix_address import AddressPart
-from rozliczenia.efenix_checks import ListedOrder, ListedRead
-from rozliczenia.efenix_marking import UnsupportedShape, mark_ready
-from rozliczenia.efenix_orders import CollectiveOrder
-from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault
-from rozliczenia.efenix_pricing import (
+from rozliczenia.efenix_checks import ListedRead
+from rozliczenia.efenix_pricing import PricingStopped, PricingSummary
+from rozliczenia.efenix_window import (
     BrowserFailure,
     Closed,
     Efenix,
     ElementCount,
     EmmettLoad,
     HttpStatus,
+    ListedOrder,
     LoggedOut,
     Login,
     LoginSign,
@@ -73,12 +72,13 @@ from rozliczenia.efenix_pricing import (
     OrderPricing,
     OtherShape,
     PagePart,
-    PricingStopped,
-    PricingSummary,
     Shape,
     UnexpectedPage,
     WindowCause,
 )
+from rozliczenia.efenix_marking import UnsupportedShape, mark_ready
+from rozliczenia.efenix_orders import CollectiveOrder
+from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.engine import run_settlements
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
@@ -2674,6 +2674,21 @@ def test_okno_bez_logowania_taty_i_przegladarka_ktora_nie_wystartowala_zatrzymuj
     assert (_stop(not_logged_in), _stop(no_browser)) == ("EFENIX_WYLOGOWANY", "EFENIX_BRAK_PRZEGLADARKI")
     assert (_kept(not_logged_in), _kept(no_browser)) == (False, False)
     assert set(requested) <= READING | {("GET", "page_login.php")}
+
+
+def test_chromium_skryptu_dla_maszyn_ktory_nie_wystartowal_zatrzymuje_wycene_jak_okno_taty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Chromium Playwrighta, którego nie ma na komputerze, to w oknie Skryptu dla maszyn (``chromium``) ta sama droga startu
+    co w oknie taty (``chrome``): Zatrzymanie z Komunikatem o przeglądarce, a nie nieoczekiwany wyjątek (#976)."""
+
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "bez-przegladarek"))
+    source = write_collective_file(tmp_path / "bez-chromium", [Order("#5501", cells={"O": 1}, amount=_au({"012": 1}))])
+    # Okno ``chromium`` startuje własny Playwright, a wątek testu może mieć już Playwright przeglądarki testów.
+    with ThreadPoolExecutor(max_workers=1) as own_thread:
+        outcome = own_thread.submit(_run_with, source, lambda _login: efenix_browser.chromium("http://127.0.0.1:9/")).result()
+
+    assert (_stop(outcome), _kept(outcome)) == ("EFENIX_BRAK_PRZEGLADARKI", False)
 
 
 def test_okno_taty_otwiera_liste_zlecen_w_jedynej_karcie_przegladarki(tmp_path: Path) -> None:

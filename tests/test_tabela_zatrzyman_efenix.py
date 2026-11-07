@@ -1,5 +1,5 @@
 """Tabela decyzji Zatrzymań okna efenix (Zgłoszenia #19 i #20 z MAXIMISEART-Dad-zgloszenia): każde miejsce, które
-zgłasza wyjątek okna, i przyczyna techniczna z zamkniętej listy (``efenix_pricing.WindowCause``), którą daje Logom
+zgłasza wyjątek okna, i przyczyna techniczna z zamkniętej listy (``efenix_window.WindowCause``), którą daje Logom
 Uruchomienia.
 
 Hipotezy ze Zgłoszeń, które przyczyna rozróżnia przy ``UnexpectedPage(PagePart.ORDER)``:
@@ -55,6 +55,8 @@ TABLE = [
         "sterownika)", "start sterownika Playwrighta"),
     Row("efenix_browser", "chrome", "BrowserNotStarted(BrowserFailure(exception_type(error), Operation.START))",
         "Chrome nie wystartował (brak Chrome, profil trzyma inne okno)", "start przeglądarki"),
+    Row("efenix_browser", "chromium", "BrowserNotStarted(BrowserFailure(exception_type(error), Operation.START))",
+        "Chromium Playwrighta Skryptu dla maszyn nie wystartował (brak Chromium, #976)", "start przeglądarki"),
     Row("efenix_browser", "open_list", "EfenixUnreachable(failed.failure)",
         "goto listy zleceń przed pierwszym otwarciem efenix: błąd Playwrighta (Operation.OPEN)", "D przy starcie"),
     Row("efenix_browser", "open_list", "UnexpectedPage(PagePart.LIST, HttpStatus(response.status))",

@@ -28,6 +28,7 @@ nic nie pokazuje, gdy nie ma w niej elementu ani tekstu (``SHOWS_ANYTHING``).
 from __future__ import annotations
 
 import enum
+import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -38,13 +39,14 @@ from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import Locator, Page
 
-from .efenix_pricing import ElementCount, ListedOrder, LoggedOut, LoginSign, OrderPricing, OtherShape, PagePart, Shape, UnexpectedPage
+from .efenix_window import ElementCount, ListedOrder, LoggedOut, LoginSign, OrderPricing, OtherShape, PagePart, Shape, UnexpectedPage
 
 __all__ = [
     "AMOUNT",
     "EXECUTION_DATE",
     "FILL_EMMETT",
     "LOAD_EMMETT",
+    "LOGIN_FORM",
     "LOGIN_PAGE",
     "NUMBER_PARAM",
     "ORDER_PAGE",
@@ -105,7 +107,8 @@ _EMMETT_DIALOG: Final = "#dialog_emmett"
 _PROPOSAL: Final = "#emmett-propozycja"
 _OK: Final = ".btn-ok"
 _DISMISS: Final = '[data-dismiss="modal"]'
-_LOGIN_FORM: Final = 'form[action*="action_login.php"]'
+LOGIN_FORM: Final = 'form[action*="action_login.php"]'
+"""Formularz logowania efenix, po którym okno poznaje stronę logowania; narzędzie zgodności szuka go na efenix."""
 _POSITION: Final = re.compile(r"INDEKS_(\d{3})_\d+")
 _AMOUNT_TEXT: Final = re.compile(r"[0-9]+(\.[0-9]+)?")
 _QUANTITY_TEXT: Final = re.compile(r"[0-9]*")
@@ -126,7 +129,7 @@ _READ_RESULTS: Final = """(html) => {
             plain.querySelectorAll('small').forEach((small) => small.remove());
             const badge = cell.querySelector('.badge');
             const login = cell.querySelector('small.text-default');
-            const link = cell.querySelector('a[href*="page_order_edit.php?id="]');
+            const link = cell.querySelector(""" + json.dumps(f'a[href*="{ORDER_PAGE}?id="]') + """);
             return {
                 plain: text(plain),
                 badge: badge ? text(badge) : null,
@@ -476,7 +479,7 @@ def read_order(page: Page) -> tuple[OrderPricing, Mapping[str, str]]:
 def login_form(page: Page) -> bool:
     """Strona ``page`` ma formularz logowania efenix."""
 
-    return page.locator(_LOGIN_FORM).count() > 0
+    return page.locator(LOGIN_FORM).count() > 0
 
 
 def single(page: Page, selector: str, part: PagePart) -> Locator:

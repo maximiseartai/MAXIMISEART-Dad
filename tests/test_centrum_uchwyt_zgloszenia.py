@@ -37,7 +37,7 @@ from rozliczenia.centrum.reports import (
 )
 from rozliczenia.centrum.tool_update import NO_CONNECTION, OTHER_BRANCH, UpdateResult
 from rozliczenia.client_data import ForbiddenValues
-from rozliczenia.efenix_checks import PagePart
+from rozliczenia.efenix_window import PagePart
 from rozliczenia.message import Message
 from rozliczenia.process_run import Stop
 
@@ -268,7 +268,7 @@ def test_zgloszenie_zatrzymania_do_maksa_z_przyczyna_w_wyjatku_ma_typ_kazdej_prz
     message = efenix_messages.window_stopped(PagePart.ORDER, kept=True)
     frames = (CallFrame("src/rozliczenia/efenix_pricing.py", 412, "_efenix_stops"),)
     causes = (
-        CallCause("rozliczenia.efenix_pricing.UnexpectedPage", (CallFrame("src/rozliczenia/efenix_browser.py", 593, "_within"),)),
+        CallCause("rozliczenia.efenix_window.UnexpectedPage", (CallFrame("src/rozliczenia/efenix_browser.py", 593, "_within"),)),
         CallCause("playwright._impl._errors.Error", ()),
     )
     stop = Stop("stop", message, trace=CallTrace("rozliczenia.message.StopError", frames, causes))
@@ -279,7 +279,7 @@ def test_zgloszenie_zatrzymania_do_maksa_z_przyczyna_w_wyjatku_ma_typ_kazdej_prz
     assert section[: section.index("```text")] == [
         "",
         "- Wyjątek: rozliczenia.message.StopError",
-        "- Przyczyna: rozliczenia.efenix_pricing.UnexpectedPage",
+        "- Przyczyna: rozliczenia.efenix_window.UnexpectedPage",
         "- Przyczyna: playwright._impl._errors.Error",
         "",
     ]

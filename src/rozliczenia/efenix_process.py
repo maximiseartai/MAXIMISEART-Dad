@@ -26,7 +26,8 @@ from .input_copy import InputCopy
 from .decision import EngineConversation
 from .domain import ProgressObserver
 from .efenix_pace import Pace
-from .efenix_pricing import NO_JOURNAL, OpenEfenix, OrderJournal, PricingSummary
+from .efenix_pricing import NO_JOURNAL, OrderJournal, PricingSummary
+from .efenix_window import OpenEfenix
 from .period_folder import PeriodFolder, PeriodFolderError
 from .process_run import Finished, Process
 from .telemetry import UNKNOWN_PERIOD

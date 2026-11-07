@@ -11,7 +11,7 @@ bibliotekę spoza standardowej, którą Python ma, przepuszcza.
 Model efenix (``tools/lib/model_efenix.py``) importuje tylko bibliotekę standardową, a Atrapa efenix
 (``tests/fixtures/atrapa_efenix.py``) tylko ją i model: z nimi testy i narzędzia porównują Wycenę w efenix, więc nie
 biorą niczego z kodu pod testem (``src``). Okno w procesie (``tests/fixtures/okno_w_procesie.py``) bierze z kodu pod
-testem tylko typy seamu Wyceny w efenix (klasy i aliasy typów z ``efenix_pricing`` i ``efenix_checks``), a decyzje bierze
+testem tylko typy seamu okna efenix (klasy i aliasy typów z ``efenix_window``), a decyzje bierze
 z modelu: okno, które wołałoby kod Wyceny, przestałoby być niezależną drugą stroną kontraktu z oknem przeglądarki.
 
 Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
@@ -64,7 +64,7 @@ EFENIX_ORACLE = {
 }
 # Okno w procesie i moduły kodu pod testem, z których bierze tylko typy.
 WINDOW_IN_PROCESS = ROOT / "tests" / "fixtures" / "okno_w_procesie.py"
-WINDOW_SEAM = frozenset({"rozliczenia.efenix_checks", "rozliczenia.efenix_pricing"})
+WINDOW_SEAM = frozenset({"rozliczenia.efenix_window"})
 # Wersje komentarza Uruchomienia i jedyne, co biorą przy wczytaniu spoza biblioteki standardowej bez I/O: nazwy z modułu.
 COMMENT_VERSIONS = "rozliczenia/centrum/comment_versions.py"
 PURE_STDLIB = frozenset({"__future__", "collections", "collections.abc", "dataclasses", "typing"})
@@ -114,6 +114,7 @@ STDLIB_ONLY = {
     "rozliczenia/centrum/tool_update.py": "launcher kończy przerwaną Aktualizację narzędzia, zanim wczyta FastAPI",
     "rozliczenia/centrum/start_problems.py": "jeden z Komunikatów startu mówi o brakujących zależnościach",
     "rozliczenia/centrum/launcher.py": "brak FastAPI albo uvicorn staje się Komunikatem startu; resztę wczytuje w funkcji",
+    "rozliczenia/efenix_window.py": "seam okna efenix: okno w procesie bierze z niego typy bez kodu Wyceny, a okna i Wycena nie tworzą cyklu",
 }
 
 
@@ -295,7 +296,7 @@ def test_okno_w_procesie_bierze_z_kodu_pod_testem_tylko_typy_seamu() -> None:
         [
             *sorted(found),
             "Okno w procesie (tests/fixtures/okno_w_procesie.py) bierze z rozliczenia tylko klasy i aliasy typów z "
-            "efenix_pricing i efenix_checks, a decyzje z modelu efenix (tools/lib/model_efenix.py).",
+            "efenix_window, a decyzje z modelu efenix (tools/lib/model_efenix.py).",
         ]
     )
 
