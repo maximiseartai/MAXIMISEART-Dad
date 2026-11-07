@@ -22,7 +22,8 @@ from rozliczenia import TOOL_ROOT, settlement_messages
 from rozliczenia.centrum import contract, run_view
 from rozliczenia.preparation_process import PROCESS as PREPARATION
 from rozliczenia.process_run import Stop
-from rozliczenia.telemetry import COUNTER_NAMES, MetricsStore
+from rozliczenia.settlement_process import PROCESS as SETTLEMENT
+from rozliczenia.telemetry import MetricsStore
 
 from tests.fixtures.centrum_processes import run_to_end, settling_centrum
 from tests.fixtures.preparation import (
@@ -187,7 +188,7 @@ def test_przebieg_rozliczen_ok_konczy_kodem_0_z_podsumowaniem_karty_uruchomienia
         ("Zapisywanie", "completed"),
     ]
     assert (progress["template_total"], progress["templates_completed"]) == (3, 3)
-    [record] = MetricsStore(tmp_path / "metrics.jsonl", COUNTER_NAMES).read()
+    [record] = MetricsStore(tmp_path / "metrics.jsonl", SETTLEMENT.counter_names).read()
     assert (record["mode"], record["result"], record["total_duration_ms"]) == ("RUN", "OK", result["total_duration_ms"])
     assert (result["metrics_saved"], result["technical_notes"]) == (True, [])
     assert str(tmp_path) not in json.dumps(result)
@@ -258,7 +259,7 @@ def test_awaria_podgladu_postepu_odlacza_go_bez_tekstu_wyjatku_i_bez_zmiany_wyni
         ("Puste szablony", 1),
     ]
     assert len(list(target.iterdir())) == 3
-    [record] = MetricsStore(tmp_path / "metrics.jsonl", COUNTER_NAMES).read()
+    [record] = MetricsStore(tmp_path / "metrics.jsonl", SETTLEMENT.counter_names).read()
     assert (record["result"], result["metrics_saved"]) == ("OK", True)
 
 
@@ -281,7 +282,7 @@ def test_plan_ktorego_nie_da_sie_pokazac_to_zatrzymanie_po_silniku_z_tym_samym_w
     assert stderr == ""
     assert (exit_code, result["result"], result["summary"], result["warnings"]) == (1, "BLAD_KRYTYCZNY", None, [])
     assert (result["stop"]["kind"], result["stop"]["message"]["code"]) == ("after_engine", "BLAD_PLANU")
-    [record] = MetricsStore(tmp_path / "metrics.jsonl", COUNTER_NAMES).read()
+    [record] = MetricsStore(tmp_path / "metrics.jsonl", SETTLEMENT.counter_names).read()
     assert (record["mode"], record["result"]) == ("DRY-RUN", "BLAD_KRYTYCZNY")
 
 
@@ -316,7 +317,7 @@ def test_podglad_z_nieznanym_wykonawca_wymaga_sprawdzenia_kodem_2_z_kodem_ostrze
         ("Puste szablony", 1),
     ]
     assert sorted(path.name for path in source.parent.iterdir()) == [SOURCE_NAME]
-    [record] = MetricsStore(tmp_path / "metrics.jsonl", COUNTER_NAMES).read()
+    [record] = MetricsStore(tmp_path / "metrics.jsonl", SETTLEMENT.counter_names).read()
     assert (record["mode"], record["result"]) == ("DRY-RUN", "WYMAGA_SPRAWDZENIA")
 
 
@@ -364,7 +365,7 @@ def test_podsumowanie_i_ostrzezenia_w_kolejnosci_etapow_sa_te_same_w_skrypcie_na
         "warnings"
     ]
     assert ("Problemy", 4) in [(figure["label"], figure["value"]) for figure in view["progress"]["figures"]]
-    [script_record] = MetricsStore(tmp_path / "metrics-skryptu.jsonl", COUNTER_NAMES).read()
+    [script_record] = MetricsStore(tmp_path / "metrics-skryptu.jsonl", SETTLEMENT.counter_names).read()
     [card_record] = centrum.metric_records()
     assert script_record["counters"]["issues"] == card_record["counters"]["issues"] == 4
 
@@ -383,7 +384,7 @@ def test_zatrzymanie_w_sprawdzaniu_konczy_kodem_1_z_kodem_komunikatu_i_bez_pliko
     assert (first["phase"], first["state"]) == ("Sprawdzanie", "failed")
     assert {phase["state"] for phase in rest} == {"pending"}
     assert list(source.parent.iterdir()) == []
-    [record] = MetricsStore(tmp_path / "metrics.jsonl", COUNTER_NAMES).read()
+    [record] = MetricsStore(tmp_path / "metrics.jsonl", SETTLEMENT.counter_names).read()
     assert (record["result"], set(record["counters"].values())) == ("BLAD_KRYTYCZNY", {0})
     assert str(tmp_path) not in json.dumps(result)
 

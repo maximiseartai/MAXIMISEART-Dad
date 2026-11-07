@@ -762,14 +762,14 @@ def _require_writable(tail: bytes, anchor: int) -> None:
                 raise UnsupportedShape("zakres")
 
 
-def _moves(block: RawBlock, plan: DayPlan) -> dict[int, tuple[int, int]]:
+def _moves(plan: DayPlan) -> dict[int, tuple[int, int]]:
     """Wiersz Surowego zlecenia → (przesunięcie kolumn, docelowy wiersz)."""
 
     return {placement.order.row: (SHIFT if placement.order.shifted else 0, placement.row) for placement in plan.placements}
 
 
 def _moved_hyperlinks(tail: bytes, columns: OrderColumns, block: RawBlock, plan: DayPlan) -> bytes:
-    moves = _moves(block, plan)
+    moves = _moves(plan)
 
     def moved(found: re.Match[bytes]) -> bytes:
         reference = found.group(2).decode("ascii")

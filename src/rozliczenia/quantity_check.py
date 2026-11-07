@@ -36,7 +36,7 @@ from .quantity_rules import (
 _RULE_COLUMNS: Final = frozenset(QuantityColumn)
 _SHARED: Final = frozenset({QuantityColumn.AK, QuantityColumn.AM})
 _WITHOUT_RULE_COLUMNS: Final = (QuantityColumn.N, QuantityColumn.T, QuantityColumn.V)
-OTHER_COLUMNS: Final = tuple(column for column in N_AP if column not in _RULE_COLUMNS and column not in DESCRIPTION_COLUMNS)
+_OTHER_COLUMNS: Final = tuple(column for column in N_AP if column not in _RULE_COLUMNS and column not in DESCRIPTION_COLUMNS)
 
 
 @dataclass(frozen=True)
@@ -121,7 +121,7 @@ def check(orders: CollectiveOrders) -> CheckResult:
         result.description_filled.update(
             column for column in DESCRIPTION_COLUMNS if row.quantity(column) != 0 and column not in compared
         )
-        result.other_filled.update(column for column in OTHER_COLUMNS if row.quantity(column) != 0)
+        result.other_filled.update(column for column in _OTHER_COLUMNS if row.quantity(column) != 0)
     return result
 
 
@@ -222,7 +222,7 @@ def blocks(result: CheckResult, *, commit: str | None, run_id: str) -> tuple[str
         "\n## Kolumny z opisu technika: wiersze wypełnione przez tatę\n\n",
         _count_table(DESCRIPTION_COLUMNS, result.description_filled),
         "\n## Pozostałe kolumny N:AP: wiersze wypełnione przez tatę\n\n",
-        _count_table(OTHER_COLUMNS, result.other_filled),
+        _count_table(_OTHER_COLUMNS, result.other_filled),
         tool,
     )
 

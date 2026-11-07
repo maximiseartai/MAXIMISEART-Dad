@@ -9,10 +9,12 @@ from typing import Any
 import pytest
 
 from rozliczenia import preparation_process, settlement_process
-from rozliczenia.telemetry import COUNTER_NAMES, MetricsStore, metric_record
+from rozliczenia.telemetry import MetricsStore, metric_record
 from rozliczenia.template_file import Route, TemplateKind
 from tests.fixtures.message_samples import PREPARATION_SAMPLES, SETTLEMENT_SAMPLES, Samples
 from tests.fixtures.preparation import PERIOD
+
+SETTLEMENT_COUNTERS = settlement_process.PROCESS.counter_names
 
 
 def completed_record() -> dict[str, Any]:
@@ -23,7 +25,7 @@ def completed_record() -> dict[str, Any]:
         total_duration_ms=1000,
         phase_durations_ms={},
         ending="OK",
-        counters=dict.fromkeys(COUNTER_NAMES, 1),
+        counters=dict.fromkeys(SETTLEMENT_COUNTERS, 1),
         routes={(TemplateKind.COLLECTIVE_FILE, Route.OPENPYXL): 1, (TemplateKind.WORKER_SETTLEMENT, Route.COPY): 2},
     )
 
@@ -36,7 +38,7 @@ def stopped_record(stop: Any) -> dict[str, Any]:
         total_duration_ms=400,
         phase_durations_ms={},
         ending=stop,
-        counters=dict.fromkeys(COUNTER_NAMES, 0),
+        counters=dict.fromkeys(SETTLEMENT_COUNTERS, 0),
         routes={},
     )
 
@@ -54,9 +56,9 @@ def test_plik_metryk_czyta_rekordy_wersji_1_bez_rodzaju_zatrzymania_i_wersji_2_b
         "".join(json.dumps(record) + "\n" for record in (old_completed, old_stopped, without_routes)), encoding="utf-8"
     )
 
-    MetricsStore(metrics_path).append(stopped_record({"kind": "for_tata", "code": "ZLE_SKUTECZNE"}))
+    MetricsStore(metrics_path, SETTLEMENT_COUNTERS).append(stopped_record({"kind": "for_tata", "code": "ZLE_SKUTECZNE"}))
 
-    assert MetricsStore(metrics_path).read() == [
+    assert MetricsStore(metrics_path, SETTLEMENT_COUNTERS).read() == [
         old_completed,
         old_stopped,
         without_routes,
@@ -102,10 +104,10 @@ def test_plik_metryk_odrzuca_rekord_bez_licznika_kazdej_drogi_zapisu(tmp_path: P
         record["routes"] = routes
 
     with pytest.raises(ValueError, match="Niepoprawny rekord metryk"):
-        MetricsStore(metrics_path).append(record)
+        MetricsStore(metrics_path, SETTLEMENT_COUNTERS).append(record)
     metrics_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
 
-    assert MetricsStore(metrics_path).read() == []
+    assert MetricsStore(metrics_path, SETTLEMENT_COUNTERS).read() == []
 
 
 @pytest.mark.parametrize(
@@ -128,15 +130,15 @@ def test_plik_metryk_odrzuca_zatrzymanie_bez_rodzaju_i_kodu_komunikatu(tmp_path:
     from_older_tool = {key: value for key, value in record.items() if key != "routes"} | {"schema_version": 2}
 
     with pytest.raises(ValueError, match="Niepoprawny rekord metryk"):
-        MetricsStore(metrics_path).append(record)
+        MetricsStore(metrics_path, SETTLEMENT_COUNTERS).append(record)
     metrics_path.write_text(json.dumps(record) + "\n" + json.dumps(from_older_tool) + "\n", encoding="utf-8")
 
-    assert MetricsStore(metrics_path).read() == []
+    assert MetricsStore(metrics_path, SETTLEMENT_COUNTERS).read() == []
 
 
 def test_plik_metryk_odrzuca_zatrzymanie_w_zakonczonym_uruchomieniu(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Niepoprawny rekord metryk"):
-        MetricsStore(tmp_path / "metrics.jsonl").append(
+        MetricsStore(tmp_path / "metrics.jsonl", SETTLEMENT_COUNTERS).append(
             {**completed_record(), "stop": {"kind": "for_tata", "code": "ZLE_SKUTECZNE"}}
         )
 
@@ -147,20 +149,20 @@ def test_kazdy_kod_komunikatu_procesu_miesci_sie_w_rekordzie_metryk(tmp_path: Pa
     codes = sorted({sample().code for samples in catalog.values() for sample in samples})
 
     for code in codes:
-        MetricsStore(metrics_path).append(stopped_record({"kind": "for_tata", "code": code}))
+        MetricsStore(metrics_path, SETTLEMENT_COUNTERS).append(stopped_record({"kind": "for_tata", "code": code}))
 
-    assert [record["stop"]["code"] for record in MetricsStore(metrics_path).read()] == codes
+    assert [record["stop"]["code"] for record in MetricsStore(metrics_path, SETTLEMENT_COUNTERS).read()] == codes
 
 
 def test_plik_metryk_odrzuca_rekord_ze_sciezka(tmp_path: Path) -> None:
     metrics_path = tmp_path / "metrics.jsonl"
     record = completed_record()
-    MetricsStore(metrics_path).append(record)
+    MetricsStore(metrics_path, SETTLEMENT_COUNTERS).append(record)
 
     with pytest.raises(ValueError, match="Niepoprawny rekord metryk"):
-        MetricsStore(metrics_path).append({**record, "source_path": str(tmp_path / PERIOD)})
+        MetricsStore(metrics_path, SETTLEMENT_COUNTERS).append({**record, "source_path": str(tmp_path / PERIOD)})
 
-    assert MetricsStore(metrics_path).read() == [record]
+    assert MetricsStore(metrics_path, SETTLEMENT_COUNTERS).read() == [record]
     assert metrics_path.read_text(encoding="utf-8").count("\n") == 1
 
 
@@ -172,11 +174,11 @@ def test_plik_metryk_odrzuca_rekord_ze_sciezka(tmp_path: Path) -> None:
 def test_plik_metryk_naprawia_ucieta_ostatnia_linie(tmp_path: Path, torn: bytes) -> None:
     metrics_path = tmp_path / "metrics.jsonl"
     record = completed_record()
-    MetricsStore(metrics_path).append(record)
+    MetricsStore(metrics_path, SETTLEMENT_COUNTERS).append(record)
     with metrics_path.open("ab") as stream:
         stream.write(torn)
 
-    MetricsStore(metrics_path).append(record)
+    MetricsStore(metrics_path, SETTLEMENT_COUNTERS).append(record)
 
     assert [json.loads(line) for line in metrics_path.read_text(encoding="utf-8").splitlines()] == [record, record]
     assert metrics_path.read_bytes().endswith(b"\n")
@@ -187,18 +189,18 @@ def test_plik_metryk_zachowuje_pelny_rekord_innej_wersji_narzedzia(tmp_path: Pat
     metrics_path = tmp_path / "metrics.jsonl"
     record = completed_record()
     other_version = {**record, "counters": {**record["counters"], "nowy_licznik": 3}}
-    MetricsStore(metrics_path).append(record)
+    MetricsStore(metrics_path, SETTLEMENT_COUNTERS).append(record)
     with metrics_path.open("ab") as stream:
         stream.write(json.dumps(other_version).encode("utf-8") + line_end)
 
-    MetricsStore(metrics_path).append(record)
+    MetricsStore(metrics_path, SETTLEMENT_COUNTERS).append(record)
 
     assert [json.loads(line) for line in metrics_path.read_text(encoding="utf-8").splitlines()] == [
         record,
         other_version,
         record,
     ]
-    assert MetricsStore(metrics_path).read() == [record, record]
+    assert MetricsStore(metrics_path, SETTLEMENT_COUNTERS).read() == [record, record]
 
 
 def test_przygotowanie_ma_wlasna_historie_metryk_obok_przebiegu_rozliczen() -> None:

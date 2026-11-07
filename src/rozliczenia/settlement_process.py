@@ -18,9 +18,12 @@ from .engine import default_worker_template_path
 from .input_checks import FILE_READERS, Readers
 from .period_folder import PeriodFolder, PeriodFolderError
 from .process_run import Finished, Process
-from .telemetry import COUNTER_NAMES, UNKNOWN_PERIOD
+from .telemetry import UNKNOWN_PERIOD
 from .worker_config import default_config_path
 
+_COUNTERS = frozenset(
+    {"templates_total", "templates_completed", "rows", "written", "empty", "planned", "skipped", "issues"}
+)
 
 def default_metrics_path() -> Path:
     return TOOL_ROOT / ".rozliczenia-metrics.jsonl"
@@ -92,7 +95,7 @@ def _finished(_inputs: SettlementInputs, summary: SettlementSummary) -> Finished
 
 PROCESS: Process[SettlementInputs, SettlementSummary] = Process(
     name="Przebieg rozliczeń",
-    counter_names=COUNTER_NAMES,
+    counter_names=_COUNTERS,
     metrics_path=default_metrics_path,
     metrics_failure_tail="proces rozliczeń zakończył się niezależnie.",
     execute=_execute,

@@ -85,11 +85,11 @@ class ProcessTemplate:
 
     @classmethod
     def internal(cls, path: Path) -> ProcessTemplate:
-        return cls(preparation_files.internal_template(path), messages.template_unusable)
+        return cls(TemplateFile.internal_settlement(path), messages.template_unusable)
 
     @classmethod
     def collective(cls, path: Path) -> ProcessTemplate:
-        return cls(preparation_files.collective_template(path), messages.template_unusable)
+        return cls(TemplateFile.collective_file(path), messages.template_unusable)
 
     @classmethod
     def worker(cls, path: Path) -> ProcessTemplate:
