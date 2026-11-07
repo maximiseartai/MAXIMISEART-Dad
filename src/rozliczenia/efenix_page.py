@@ -121,6 +121,8 @@ _EMMETT_DIALOG: Final = "#dialog_emmett"
 _PROPOSAL: Final = "#emmett-propozycja"
 _FORWARD_BUTTON: Final = "#button_forward_to_accept"
 _FORWARD_DIALOG: Final = "#dialog_forward_yes_no"
+_INFO_DIALOG: Final = "#dialog_info"
+_INFO_TEXT: Final = "#dialog_info_field_info"
 _OK: Final = ".btn-ok"
 _DISMISS: Final = '[data-dismiss="modal"]'
 LOGIN_FORM: Final = 'form[action*="action_login.php"]'
@@ -197,7 +199,9 @@ class Element(enum.Enum):
 
     Przycisk kalendarza (``DATE_BUTTON``) okno klika tylko przy pustej dacie wykonania, a efenix pokazuje go najpewniej
     tylko wtedy, więc nie jest na każdej stronie zlecenia. Okno zmiany statusu (``FORWARD_DIALOG``) dzieli Przekazanie do
-    akceptacji z anulowaniem zlecenia, więc okno klika jego „Tak” tylko po przycisku Przekazania.
+    akceptacji z anulowaniem zlecenia, więc okno klika jego „Tak” tylko po przycisku Przekazania. Okno informacji
+    (``INFO_DIALOG``) skrypt efenix pokazuje po przycisku Przekazania zamiast okna zmiany statusu, gdy odmawia
+    Przekazania, z tekstem odmowy w ``INFO_TEXT``.
     """
 
     NUMBER = (PageKind.LIST, PageElement("pole Numer", _NUMBER_FIELD))
@@ -213,6 +217,9 @@ class Element(enum.Enum):
     FORWARD_BUTTON = (PageKind.ORDER, PageElement("przycisk Przekazania do akceptacji", _FORWARD_BUTTON))
     FORWARD_DIALOG = (PageKind.ORDER, PageElement("okno zmiany statusu", _FORWARD_DIALOG))
     FORWARD_OK = (PageKind.ORDER, PageElement("„Tak” w oknie zmiany statusu", f"{_FORWARD_DIALOG} {_OK}"))
+    INFO_DIALOG = (PageKind.ORDER, PageElement("okno informacji", _INFO_DIALOG))
+    INFO_TEXT = (PageKind.ORDER, PageElement("tekst w oknie informacji", f"{_INFO_DIALOG} {_INFO_TEXT}"))
+    INFO_DISMISS = (PageKind.ORDER, PageElement("zamknięcie okna informacji", f"{_INFO_DIALOG} {_DISMISS}", many=True))
 
     def __init__(self, page: PageKind, element: PageElement, always_on_page: bool = True) -> None:
         self.page = page
@@ -257,6 +264,10 @@ SCRIPT_USES: Final[Mapping[PageKind, tuple[ScriptUse, ...]]] = {
             "„Tak” okna zmiany statusu po przycisku Przekazania wysyła nowy status i identyfikator zlecenia z pola"
             f" {ORDER_ID_FIELD} i przeładowuje stronę",
             (_bare(_FORWARD_BUTTON), _bare(_FORWARD_DIALOG), CHANGE_STATUS, STATUS_PARAM, ORDER_PARAM, _bare(ORDER_ID_FIELD), "reload"),
+        ),
+        ScriptUse(
+            "przycisk Przekazania pokazuje odmowę efenix tekstem w oknie informacji zamiast okna zmiany statusu",
+            (_bare(_FORWARD_BUTTON), _bare(_INFO_DIALOG), _bare(_INFO_TEXT)),
         ),
     ),
 }

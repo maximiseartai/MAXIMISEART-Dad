@@ -3,7 +3,8 @@ Zatrzymania z przyczyną techniczną z zamkniętej listy.
 
 Jedyna zmiana statusu zlecenia, którą zna okno, to Przekazanie do akceptacji (``Efenix.forward_to_accept``): status
 ``ACCEPTANCE_STATUS``. Żądanie zmiany statusu, którego okno nie wysłało w tym działaniu, albo na inny status okno
-przerywa, zanim dojdzie do efenix (``StatusChangeBlocked``).
+przerywa, zanim dojdzie do efenix (``StatusChangeBlocked``). Zlecenie, któremu efenix odmawia Przekazania, zanim
+pokaże okno zmiany statusu, okno oddaje z przyczyną z zamkniętej listy (``ForwardRefusal``).
 
 Moduł to sam słownik okna, bez decyzji Wyceny i bez przeglądarki: tylko biblioteka standardowa. Implementują go okno w
 przeglądarce (``efenix_browser`` z odczytami ``efenix_page``), okno z tempem ludzkim (``efenix_pace``), okno ze śladem
@@ -34,6 +35,7 @@ __all__ = [
     "EfenixUnreachable",
     "ElementCount",
     "EmmettLoad",
+    "ForwardRefusal",
     "HttpStatus",
     "ListedOrder",
     "LoggedOut",
@@ -180,6 +182,27 @@ class StatusChangeBlocked(enum.Enum):
     OTHER_ORDER = "żądanie Przekazania do akceptacji innego zlecenia niż otwarte w oknie"
 
 
+class ForwardRefusal(enum.Enum):
+    """Odmowa Przekazania do akceptacji przez efenix: po zielonym „Zapisz” skrypt strony zlecenia sprawdza zlecenie i
+    zamiast okna zmiany statusu pokazuje okno informacji z jednym z czterech tekstów (skrypt efenix z rekonesansu
+    1.11.2026), a do efenix nie wysyła niczego. Wartość to tekst, po którym okno rozpoznaje odmowę; każdy inny tekst to
+    ``OTHER_TEXT``, a jego treści okno nie oddaje, bo nikt nie wie, co w nim jest."""
+
+    NO_PHOTOS = "Rozliczyłeś prace ziemne lub rozliczasz zlecenie UST - Nie dołączyłeś do wyceny żadnych zdjęć !"
+    NO_LENGTH = "Podaj długość przyłącza !"
+    NO_PRICING = "Nie wprowadziłeś wyceny zlecenia !"
+    NO_DATE = "Brak wypełnionej daty wykonania !"
+    OTHER_TEXT = "tekst spoza listy odmów"
+
+    @classmethod
+    def of(cls, text: str) -> ForwardRefusal:
+        """Odmowa z tekstem okna informacji ``text`` (odstępy na brzegach i ciągi odstępów jak jeden odstęp nie mają
+        znaczenia); tekst spoza listy to ``OTHER_TEXT``."""
+
+        shown = " ".join(text.split())
+        return next((refusal for refusal in cls if refusal is not cls.OTHER_TEXT and refusal.value == shown), cls.OTHER_TEXT)
+
+
 PageCause = ElementCount | HttpStatus | OtherShape | BrowserFailure | StatusChangeBlocked
 """Przyczyna niedokończonego działania okna (``UnexpectedPage``)."""
 WindowCause = PageCause | LoginSign | Closed
@@ -311,9 +334,11 @@ class Efenix(Protocol):
         """
         ...
 
-    def forward_to_accept(self) -> None:
+    def forward_to_accept(self) -> ForwardRefusal | None:
         """Przekazuje otwarte zlecenie do akceptacji (zielony „Zapisz” i „Tak” w jego oknie) i czeka na odpowiedź efenix.
 
+        Gdy efenix po zielonym „Zapisz” odmawia Przekazania oknem informacji, okno zamyka je bez wysłania czegokolwiek i
+        oddaje odmowę (``ForwardRefusal``); ``None`` znaczy, że okno kliknęło „Tak” i efenix odpowiedział.
         Czy efenix zmienił status, okno nie rozstrzyga: pokazuje to dopiero lista zleceń po ponownym szukaniu. Żądanie
         zmiany statusu na inny status albo poza tym działaniem okno przerywa przed wysłaniem (``UnexpectedPage`` z
         ``StatusChangeBlocked``).

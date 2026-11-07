@@ -28,10 +28,13 @@ Emmetta w karcie, w której Maks sam kliknął przycisk Emmetta. Sprawdza:
   zleceniu elementy ``efenix_page.Element`` strony zlecenia, które efenix ma na każdej (okno daty wykonania, przycisk i okno Emmetta; przycisk Emmetta
   widoczny w samym HTML, bez stylów efenix, a propozycja w oknie Emmetta ``#emmett-propozycja`` pusta, bez elementu i
   tekstu, jak w Atrapie, zanim skrypt strony włoży do niej propozycję; przycisk Przekazania do akceptacji, okno zmiany
-  statusu ``#dialog_forward_yes_no`` i jego „Tak” ``.btn-ok``, bez klikania), przycisk anulowania, który ma Atrapa, skrypt
+  statusu ``#dialog_forward_yes_no`` i jego „Tak” ``.btn-ok``, okno informacji ``#dialog_info`` z tekstem
+  ``#dialog_info_field_info`` i przyciskiem zamknięcia, w którym efenix odmawia Przekazania, bez klikania), przycisk
+  anulowania, który ma Atrapa, skrypt
   ``js/page_order_edit.js`` (pod adresem z listy ``ALLOWED``) z nazwami ``efenix_page.SCRIPT_USES`` strony zlecenia
   (pickadate z ``onSet``, „Potwierdź” daty, Emmett, zapis ilości z ``price_all``, „Tak” okna zmiany statusu z
-  ``action_change_status.php``, ``xstatus``, ``order_id`` i ``main_id``) i karty pozycji
+  ``action_change_status.php``, ``xstatus``, ``order_id`` i ``main_id``, odmowa Przekazania w ``dialog_info`` i
+  ``dialog_info_field_info``) i karty pozycji
   ``.card.rounded-lg.kolorek``: karta z polem Ilość ma cenę w tekście ``.col-sm-1.mt-2 > span.text-default > small``,
   a karta z ceną wpisywaną samo pole ``input.wycena-cena``; każdy kod ``INDEKS_NNN_NNN`` jest pozycją Atrapy
   (``model_efenix.CATALOG``) z tym samym rodzajem karty, przy czym strona może mieć tylko część pozycji Atrapy, jak

@@ -25,7 +25,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Final
 
-from .efenix_window import Efenix, EmmettLoad, ListedOrder, OrderPricing
+from .efenix_window import Efenix, EmmettLoad, ForwardRefusal, ListedOrder, OrderPricing
 
 __all__ = ["ACTION_PAUSE_S", "KEEPALIVE_S", "ORDER_S", "Pace", "Pacing"]
 
@@ -109,6 +109,6 @@ class _PacedEfenix:
         self._pacing.before_write(self._searched)
         return self._efenix.enter_quantity(position, quantity)
 
-    def forward_to_accept(self) -> None:
+    def forward_to_accept(self) -> ForwardRefusal | None:
         self._pacing.before_write(self._searched)
-        self._efenix.forward_to_accept()
+        return self._efenix.forward_to_accept()

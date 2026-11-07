@@ -77,7 +77,10 @@ kwotą końcową jest ``price_all`` z tej odpowiedzi, a ``#cena_all2``, które s
 
 Przekazanie do akceptacji okno robi przyciskiem ``#button_forward_to_accept`` i „Tak” w ``#dialog_forward_yes_no``: czeka
 na koniec żądania ``action_change_status.php`` i na przeładowanie strony, które robi skrypt efenix po odpowiedzi, jak po
-„Załaduj do zlecenia”. Strażnik zmiany statusu (``window``) stoi na całym kontekście przeglądarki okna, więc widzi także
+„Załaduj do zlecenia”. Gdy skrypt efenix po przycisku Przekazania pokaże zamiast okna zmiany statusu okno informacji
+``#dialog_info``, efenix odmówił Przekazania: okno czeka, aż okno informacji przestanie się pojawiać (bootstrap efenix
+nie zamyka okna w trakcie animacji pokazania), czyta tekst ``#dialog_info_field_info`` jako ``ForwardRefusal``, zamyka
+okno informacji i oddaje odmowę, a „Tak” nie klika. Strażnik zmiany statusu (``window``) stoi na całym kontekście przeglądarki okna, więc widzi także
 żądania ramek i kart, które otworzy strona: każde żądanie, w którego ścieżce jest ``action_change_status``, przepuszcza
 tylko wtedy, gdy okno jest w Przekazaniu do akceptacji, to jego pierwsze takie żądanie, a jest to POST z polem ``xstatus``
 dokładnie raz, równym dokładnie „Do akceptacji”, i z polem ``order_id`` dokładnie raz, równym identyfikatorowi
@@ -115,6 +118,7 @@ from .efenix_window import (
     EfenixUnreachable,
     ElementCount,
     EmmettLoad,
+    ForwardRefusal,
     HttpStatus,
     ListedOrder,
     LoggedOut,
@@ -191,6 +195,7 @@ _PICK_DAY: Final = """(field, [year, month, day]) => {
 }"""
 _SHOWS: Final = "([selector, text]) => document.querySelector(selector)?.textContent.trim() === text"
 _COUNT: Final = "(selector) => ({count: document.querySelectorAll(selector).length})"
+_SETTLED: Final = "(selector) => document.querySelector(selector)?.getAnimations({subtree: true}).length === 0"
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
@@ -518,18 +523,41 @@ class BrowserEfenix:
         return total
 
     @_action(PagePart.FORWARD)
-    def forward_to_accept(self) -> None:
+    def forward_to_accept(self) -> ForwardRefusal | None:
         """Przekazuje otwarte zlecenie do akceptacji: przycisk Przekazania, „Tak” w oknie zmiany statusu, koniec żądania
-        ``action_change_status.php`` i przeładowanie strony, które robi skrypt efenix po odpowiedzi."""
+        ``action_change_status.php`` i przeładowanie strony, które robi skrypt efenix po odpowiedzi. Odmowę efenix w
+        oknie informacji oddaje bez „Tak” (``_refusal``)."""
 
         self._click(self._only(Element.FORWARD_BUTTON.selector, PagePart.FORWARD))
-        self._shown(Element.FORWARD_DIALOG, PagePart.FORWARD)
+        if (refusal := self._refusal()) is not None:
+            return refusal
         confirm = self._only(Element.FORWARD_OK.selector, PagePart.FORWARD)
         with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
             answer = self._status_answer(lambda: self._click(confirm))
             if _redirected_to_login(answer):
                 raise LoggedOut(PagePart.FORWARD, LoginSign.REDIRECT)
         self._ensure_logged_in(PagePart.FORWARD)
+        return None
+
+    def _refusal(self) -> ForwardRefusal | None:
+        """Odmowa Przekazania, gdy po przycisku Przekazania skrypt efenix pokazał okno informacji, a nie okno zmiany
+        statusu: okno czeka na pokazanie jednego z nich, a z okna informacji po końcu jego animacji czyta tekst i zamyka
+        je."""
+
+        dialog = self._only(Element.FORWARD_DIALOG.selector, PagePart.FORWARD)
+        info = self._only(Element.INFO_DIALOG.selector, PagePart.FORWARD)
+        with _doing(Operation.ELEMENT):
+            dialog.or_(info).filter(visible=True).first.wait_for(state="visible", timeout=self._timeout_ms)
+            refused = info.is_visible()
+        if not refused:
+            return None
+        with _doing(Operation.ELEMENT):
+            self._page.wait_for_function(_SETTLED, arg=Element.INFO_DIALOG.selector, timeout=self._timeout_ms)
+        text = self._only(Element.INFO_TEXT.selector, PagePart.FORWARD)
+        with _doing(Operation.READ):
+            shown = text.text_content(timeout=self._timeout_ms) or ""
+        self._close(Element.INFO_DIALOG, Element.INFO_DISMISS, PagePart.FORWARD)
+        return ForwardRefusal.of(shown)
 
     def _status_answer(self, act: Callable[[], None]) -> Response:
         """Odpowiedź efenix na żądanie Przekazania do akceptacji, które wysyła ``act``.

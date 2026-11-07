@@ -94,6 +94,19 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
+        "odmowa Przekazania jak Zlecenie przekazane (_forwarded: Forwarded zamiast OrderError(refusal))",
+        (
+            Edit(
+                MODEL,
+                "    /\\ slady' = [slady EXCEPT ![zlecenie] = slad]\n    /\\ wynik' = [wynik EXCEPT ![zlecenie] = \"blad\"]",
+                "    /\\ slady' = [slady EXCEPT ![zlecenie] = slad]\n    /\\ wynik' = [wynik EXCEPT ![zlecenie] = \"przekazane\"]",
+            ),
+        ),
+        _check("wszystko"),
+        "zlecenie, któremu efenix odmówił Przekazania, ma Znacznik przekazania, choć jest „Do wyceny” (ZnacznikTylkoNaWycenionym)",
+        NEW,
+    ),
+    Mutation(
         "zlecenie „Do akceptacji” otwierane jak „Do wyceny” (listing: bez Forwarded)",
         (Edit(MODEL, '    /\\ IF status[zlecenie] = "do akceptacji"\n', "    /\\ IF FALSE\n"),),
         _check("zwykle"),

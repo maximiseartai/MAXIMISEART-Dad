@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Final
 
 from .efenix_checks import DATE_TOLERANCE, DateRefused, OrderProblem
-from .efenix_window import PagePart
+from .efenix_window import ForwardRefusal, PagePart
 from .efenix_marking import Refusal
 from .efenix_positions import (
     Excess,
@@ -237,8 +237,9 @@ def order_error(source: Path, row: int, problem: OrderFault) -> Message:
     """Zlecenie z wiersza ``row`` Pliku zbiorczego, które proces zostawia tacie, bo ``problem``.
 
     Kwota inna niż AU po dopisaniu ilości, data, której efenix nie zapisał po „Potwierdź”, strona bez pozycji z ilością
-    w pliku po dacie wykonania albo po Wycenie Emmetta i Przekazanie do akceptacji, którego efenix nie pokazał, to jedyne
-    błędy, przy których proces mógł już coś zmienić w zleceniu w efenix.
+    w pliku po dacie wykonania albo po Wycenie Emmetta, Przekazanie do akceptacji, którego efenix nie pokazał, i gotowe
+    zlecenie, któremu efenix odmówił Przekazania, to jedyne błędy, przy których proces mógł już coś zmienić w zleceniu w
+    efenix.
     """
 
     code, what, action = _order_error(problem)
@@ -254,7 +255,7 @@ def order_error(source: Path, row: int, problem: OrderFault) -> Message:
 
 def _left_unchanged(problem: OrderFault) -> bool:
     match problem:
-        case OtherAmount() | DateRefused.NOT_SAVED | OrderProblem.NOT_FORWARDED:
+        case OtherAmount() | DateRefused.NOT_SAVED | OrderProblem.NOT_FORWARDED | ForwardRefusal():
             return False
         case MissingPositions(read=read):
             return read is PageRead.OPENED
@@ -283,6 +284,19 @@ def emmett_warning(source: Path, row: int, excess: Sequence[Excess]) -> Message:
 
 
 _PRICE_YOURSELF: Final = "Sprawdź zlecenie w efenix i wyceń je sam."
+_REFUSED: Final = "efenix nie przyjął Przekazania do akceptacji"
+_REFUSAL_PRICED: Final = "Wycena z Pliku zbiorczego jest już uzupełniona w efenix."
+_FORWARD_AGAIN: Final = "przekaż zlecenie do akceptacji sam albo uruchom ponownie przyciskiem „Uzupełnij i zapisz”."
+_MISSING_FOR_FORWARD: Final = {
+    ForwardRefusal.NO_PHOTOS: (
+        "do wyceny nie są dołączone żadne zdjęcia, a są wymagane przy pracach ziemnych i zleceniu UST",
+        "Dołącz zdjęcia do wyceny w efenix",
+    ),
+    ForwardRefusal.NO_LENGTH: ("zlecenie nie ma długości przyłącza", "Podaj długość przyłącza w efenix"),
+    ForwardRefusal.NO_PRICING: ("nie widzi w zleceniu wyceny", "Sprawdź wycenę zlecenia w efenix"),
+    ForwardRefusal.NO_DATE: ("zlecenie nie ma daty wykonania", "Ustaw datę wykonania w efenix"),
+}
+"""Czego efenix brakuje do Przekazania do akceptacji przy każdej znanej odmowie i co tata ma uzupełnić."""
 
 
 def _position(position: str) -> str:
@@ -377,6 +391,15 @@ def _order_error(problem: OrderFault) -> tuple[str, str, str]:
                 f"Data wykonania zlecenia w efenix różni się od dnia z DATA w Pliku zbiorczym o więcej niż {DATE_TOLERANCE.days} dni.",
                 _PRICE_YOURSELF,
             )
+        case ForwardRefusal.OTHER_TEXT:
+            return (
+                "EFENIX_ODMOWA_PRZEKAZANIA",
+                f"{_REFUSED} i pokazał informację, której narzędzie nie zna. {_REFUSAL_PRICED}",
+                "Otwórz zlecenie w efenix, sprawdź, czego efenix brakuje do Przekazania, i przekaż je do akceptacji sam.",
+            )
+        case ForwardRefusal():
+            missing, fix = _MISSING_FOR_FORWARD[problem]
+            return "EFENIX_ODMOWA_PRZEKAZANIA", f"{_REFUSED}: {missing}. {_REFUSAL_PRICED}", f"{fix}, a potem {_FORWARD_AGAIN}"
         case OrderProblem.NOT_FORWARDED:
             return (
                 "EFENIX_NIEPRZEKAZANE",

@@ -38,6 +38,7 @@ from model_efenix import (
 from rozliczenia.efenix_window import (
     Efenix,
     EmmettLoad,
+    ForwardRefusal,
     HttpStatus,
     ListedOrder,
     LoggedOut,
@@ -91,6 +92,9 @@ class OknoWProcesie(Generic[_O]):
         # liście zleceń.
         self._opened: str | None = None
         self._positions: frozenset[str] = frozenset()
+        # Tekst odmowy Przekazania do akceptacji na ostatnio przeczytanej stronie, którą skrypt strony pokaże po przycisku
+        # Przekazania, bez działania serwera.
+        self._refusal: str | None = None
 
     def open_list(self) -> None:
         """Lista zleceń: bez sesji efenix przekierowuje ją na stronę logowania."""
@@ -177,10 +181,13 @@ class OknoWProcesie(Generic[_O]):
         return saved.amount
 
     @_action
-    def forward_to_accept(self) -> None:
+    def forward_to_accept(self) -> ForwardRefusal | None:
         """Przekazanie do akceptacji otwartego zlecenia: zmiana statusu na „Do akceptacji” i strona zlecenia od nowa, jak
-        przeładowanie, na które czeka okno przeglądarki; bez sesji przekierowanie na stronę logowania."""
+        przeładowanie, na które czeka okno przeglądarki; bez sesji przekierowanie na stronę logowania. Strona z odmową
+        Przekazania (``forward_refusal``) daje ją bez działania serwera, jak okno informacji skryptu strony."""
 
+        if self._refusal is not None:
+            return ForwardRefusal.of(self._refusal)
         self._send()
         order_id = self._order_id()
         changed = self._stan.serwer.change_status(order_id, _FORWARDED)
@@ -190,6 +197,7 @@ class OknoWProcesie(Generic[_O]):
             raise UnexpectedPage(PagePart.FORWARD, _NO_ORDER)
         if isinstance(self._stan.serwer.page(order_id), NoSession):
             raise LoggedOut(PagePart.FORWARD, LoginSign.PAGE)
+        return None
 
     def _send(self) -> None:
         """Okno klika przycisk, który wysyła do efenix zmianę zlecenia."""
@@ -216,6 +224,7 @@ class OknoWProcesie(Generic[_O]):
         assert not knobs, f"okno w procesie nie udaje budowy strony Atrapy efenix ({', '.join(sorted(knobs))}): test w przeglądarce"
         quantities = {position.code: order.quantities.get(position.code, 0) for position in order.positions if position.kind == "ILOSC"}
         self._positions = frozenset(quantities)
+        self._refusal = order.forward_refusal
         return OrderPricing(order.execution_date, amount_of(order.quantities, self._stan.prices), quantities)
 
 

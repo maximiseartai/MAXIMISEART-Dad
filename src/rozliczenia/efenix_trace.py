@@ -9,7 +9,8 @@ części adresu, którymi ``Dane adresowe`` różnią się od ``ADRES``), z otwa
 listy, który okno otworzyło (okno nie czyta ich ze strony zlecenia), oraz ze strony zlecenia po otwarciu i po Wycenie
 Emmetta datę wykonania, kwotę i ilości wszystkich pozycji po kodach, z daty wykonania wybrany dzień i to, czy kalendarz
 go przyjął, z pola „Ilość” kod pozycji, wpisaną ilość i kwotę końcową, którą odesłał efenix, a z Przekazania do akceptacji
-sam rodzaj i czas (status po nim pokazuje następne szukanie). Działanie, które się nie udało (wyjątek okna, np.
+odmowę efenix z zamkniętej listy (``ForwardRefusal``, bez tekstu okna informacji) albo sam rodzaj i czas (status po nim
+pokazuje następne szukanie). Działanie, które się nie udało (wyjątek okna, np.
 ``UnexpectedPage``, także Zatrzymanie z werdyktu Wyceny o Wycenie Emmetta, który biegnie w działaniu okna), nie trafia do udanych działań śladu, tylko do ``OrderTrace.failed`` z rodzajem i czasem do
 wyjątku, bo przebieg kończy się wtedy Zatrzymaniem, a Logi Uruchomienia mówią, przy którym działaniu.
 """
@@ -25,7 +26,7 @@ from typing import Literal, TypeVar
 
 from .efenix_checks import ListedRead, read_listed
 from .efenix_orders import CollectiveOrder
-from .efenix_window import Efenix, EmmettLoad, ListedOrder, OrderPricing
+from .efenix_window import Efenix, EmmettLoad, ForwardRefusal, ListedOrder, OrderPricing
 
 __all__ = ["Action", "OrderTrace", "TraceStep", "traced"]
 
@@ -40,7 +41,8 @@ class TraceStep:
     ``found``: trafienia szukania, a ``results``: odczyt każdego z nich po kolei. ``status`` i ``realizator``: wiersz
     listy, którego stronę zlecenia okno otworzyło. ``execution_date``, ``amount`` i ``quantities``: strona zlecenia po
     otwarciu albo po Wycenie Emmetta, a ``amount`` także kwota końcowa po wpisaniu ilości. ``position`` i ``quantity``:
-    pole „Ilość”, w które okno wpisało ilość. ``accepted``: kalendarz przyjął dzień daty wykonania.
+    pole „Ilość”, w które okno wpisało ilość. ``accepted``: kalendarz przyjął dzień daty wykonania. ``refusal``: efenix
+    odmówił Przekazania do akceptacji, więc okno niczego nie wysłało.
     """
 
     action: Action
@@ -56,6 +58,7 @@ class TraceStep:
     results: tuple[ListedRead, ...] | None = None
     status: str | None = None
     realizator: str | None = None
+    refusal: ForwardRefusal | None = None
 
 
 @dataclass
@@ -108,9 +111,10 @@ class _Traced:
         self._add(TraceStep("ilość", at, duration_ms, amount=amount, position=position, quantity=quantity))
         return amount
 
-    def forward_to_accept(self) -> None:
-        _, at, duration_ms = self._done("przekazanie do akceptacji", self._efenix.forward_to_accept)
-        self._add(TraceStep("przekazanie do akceptacji", at, duration_ms))
+    def forward_to_accept(self) -> ForwardRefusal | None:
+        refusal, at, duration_ms = self._done("przekazanie do akceptacji", self._efenix.forward_to_accept)
+        self._add(TraceStep("przekazanie do akceptacji", at, duration_ms, refusal=refusal))
+        return refusal
 
     def _done(self, action: Action, act: Callable[[], _T]) -> tuple[_T, datetime, int]:
         """Wynik działania ``act``, chwila jego rozpoczęcia i czas; działanie, które zgłosiło wyjątek, trafia do

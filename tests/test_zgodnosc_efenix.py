@@ -227,13 +227,15 @@ CHANGED = {
                 ('id="emmett-propozycja"', 'id="emmett-wynik"'),
                 # Okno zmiany statusu Przekazania do akceptacji bez przycisku „Tak” w budowie ``.btn-ok``.
                 ('class="btn btn-ok">Tak<', 'class="btn btn-tak">Tak<'),
+                # Okno informacji, w którym efenix odmawia Przekazania, bez elementu z tekstem odmowy.
+                ('id="dialog_info_field_info"', 'id="dialog_info_tekst"'),
             ),
             ORDER_SCRIPT: _answered(302),
         },
     ),
     # Skrypt strony zlecenia bez jednej nazwy każdego działania, na którym polega okno: kalendarz bez ``onSet``, „Potwierdź”
-    # daty wysyła inny adres, „Załaduj do zlecenia” Emmetta też, kwotę końcową skrypt wpisuje do innego elementu, a nowy
-    # status w innym polu niż ``xstatus``.
+    # daty wysyła inny adres, „Załaduj do zlecenia” Emmetta też, kwotę końcową skrypt wpisuje do innego elementu, nowy
+    # status w innym polu niż ``xstatus``, a odmowę Przekazania w innym elemencie niż ``#dialog_info_field_info``.
     "skrypt-strony-zlecenia-bez-nazw-dzialan-okna": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "skrypt-strony-zlecenia-bez-nazw-dzialan-okna.txt",
         rewrites={
@@ -243,6 +245,7 @@ CHANGED = {
                 (LOAD_EMMETT, "action_emmett_load.php"),
                 ("cena_all2", "cena_razem"),
                 ("xstatus", "nowy_status"),
+                ("dialog_info_field_info", "dialog_info_tekst"),
             )
         },
     ),
@@ -251,6 +254,11 @@ CHANGED = {
     "identyfikator-zlecenia-inny-niz-w-linku": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "identyfikator-zlecenia-inny-niz-w-linku.txt",
         rewrites={ORDER_PAGE: _replaced(('id="main_id" value="', 'id="main_id" value="9'))},
+    ),
+    # Strona zlecenia z drugim polem ``#main_id``: identyfikator, który wyśle skrypt strony, nie jest jednoznaczny.
+    "dwa-pola-identyfikatora-zlecenia": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "dwa-pola-identyfikatora-zlecenia.txt",
+        rewrites={ORDER_PAGE: _replaced(('<div id="toast">', '<input type="hidden" id="main_id" value="0"><div id="toast">'))},
     ),
     # Strona zlecenia bez pola ``#main_id``, a skrypt strony bez nazw ``order_id`` i ``main_id``, z których „Tak” okna
     # zmiany statusu bierze identyfikator zlecenia.

@@ -64,6 +64,7 @@ from rozliczenia.efenix_window import (
     Efenix,
     ElementCount,
     EmmettLoad,
+    ForwardRefusal,
     HttpStatus,
     ListedOrder,
     LoggedOut,
@@ -1086,6 +1087,65 @@ def test_jedno_okno_przegladarki_przekazuje_kazde_gotowe_zlecenie_po_kolei_jedny
     assert (outcome.result, _figures(outcome)) == ("OK", _figures_of(2, 0, forwarded=2))
     assert requests == 2 * [("POST", "Do akceptacji")]
     assert ([order.status for order in forwarded], _address_fills(source)) == (2 * ["Do akceptacji"], {18: FORWARDED_RGB, 19: FORWARDED_RGB})
+
+
+@pytest.mark.parametrize(
+    ("text", "refusal"),
+    [
+        *(pytest.param(refusal.value, refusal, id=refusal.name.lower()) for refusal in ForwardRefusal if refusal is not ForwardRefusal.OTHER_TEXT),
+        pytest.param("Zlecenie zablokowane przez administratora !", ForwardRefusal.OTHER_TEXT, id="tekst-spoza-listy"),
+    ],
+)
+def test_odmowa_przekazania_przez_efenix_to_blad_zlecenia_bez_znacznika_a_nastepne_gotowe_zlecenie_jest_przekazane(
+    tmp_path: Path, page: Page, text: str, refusal: ForwardRefusal
+) -> None:
+    """Skrypt strony efenix po zielonym „Zapisz” sprawdza zlecenie i zamiast okna zmiany statusu pokazuje okno informacji
+    z odmową (skrypt efenix z rekonesansu, każdy z czterech tekstów, i tekst, którego okno nie zna). Zlecenie zostaje
+    tacie jako błąd bez Znacznika, do efenix nie dochodzi jego zmiana statusu, a Wycena idzie dalej i przekazuje
+    następne gotowe zlecenie. Ślad dla Logów ma odmowę z zamkniętej listy."""
+
+    orders = [Order(number, cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}) for number in ("#8371", "#8372")]
+    source = write_collective_file(tmp_path, orders)
+    in_efenix = [
+        replace(orders[0].in_efenix("901"), execution_date=DAY, forward_refusal=text),
+        replace(orders[1].in_efenix("902"), execution_date=DAY),
+    ]
+    with atrapa_efenix(in_efenix) as atrapa:
+        outcome = _run(source, page, atrapa.url, mode=PricingMode.FORWARD, timeout_ms=3_000)
+        requests = atrapa.status_requests()
+        after, _logged_in = atrapa.state()
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == (
+        "WYMAGA_SPRAWDZENIA",
+        _figures_of(2, 0, forwarded=1),
+        [("EFENIX_ODMOWA_PRZEKAZANIA", "wiersz 18")],
+    )
+    assert (requests, [order.status for order in after]) == ([("POST", "Do akceptacji")], ["Do wyceny", "Do akceptacji"])
+    assert _address_fills(source) == {18: None, 19: FORWARDED_RGB}
+    assert outcome.view is not None
+    assert [(step.action, step.refusal) for step in outcome.view.results[0].steps] == [
+        ("szukanie", None),
+        ("otwarcie zlecenia", None),
+        ("przekazanie do akceptacji", refusal),
+    ]
+
+
+def test_odmowa_przekazania_nie_jest_zmiana_w_efenix_w_komunikacie_pozniejszego_zatrzymania(tmp_path: Path) -> None:
+    """Zlecenie gotowe już z wcześniejszego Uruchomienia, któremu efenix odmawia Przekazania, niczego w efenix nie zmienia,
+    więc Zatrzymanie przy następnym zleceniu mówi tacie, że w efenix nic się nie zmieniło."""
+
+    orders = [Order(number, cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}) for number in ("#8381", "#8382")]
+    source = write_collective_file(tmp_path, orders)
+    stan = StanEfenix(
+        [
+            replace(orders[0].in_efenix("901"), execution_date=DAY, forward_refusal=ForwardRefusal.NO_LENGTH.value),
+            replace(orders[1].in_efenix("902"), execution_date=DAY),
+        ],
+        expire_after=(Action.OPEN, 1),
+    )
+    outcome = _run_in_process(source, stan, mode=PricingMode.FORWARD)
+
+    assert (_stop(outcome), _kept(outcome), _read_only(stan)) == ("EFENIX_WYLOGOWANY", False, True)
 
 
 def test_przycisk_przekazania_ktorego_tak_wysyla_anulowane_nie_dochodzi_do_efenix_a_wycena_zatrzymuje_sie_do_maksa(

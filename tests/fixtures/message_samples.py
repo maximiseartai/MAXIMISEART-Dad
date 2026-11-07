@@ -24,7 +24,7 @@ from rozliczenia.centrum import (
     update_messages,
 )
 from rozliczenia.efenix_checks import DateRefused, OrderProblem
-from rozliczenia.efenix_window import PagePart
+from rozliczenia.efenix_window import ForwardRefusal, PagePart
 from rozliczenia.efenix_marking import Refusal
 from rozliczenia.efenix_positions import (
     Excess,
@@ -300,6 +300,7 @@ _ORDER_FAULTS: tuple[OrderFault, ...] = (
     NotWholeQuantities(("O",)),
     OtherAmount(Decimal("1234.50"), Decimal("1200")),
     *(MissingPositions(("012", "019"), read) for read in PageRead),
+    *ForwardRefusal,
 )
 EFENIX_SAMPLES: Samples = {
     "source_unusable": [partial(efenix_messages.source_unusable, WorkbookError(SOURCE, problem)) for problem in Problem],

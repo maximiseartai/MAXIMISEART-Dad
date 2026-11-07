@@ -16,6 +16,7 @@ CONSTANTS
     MozeBrakowacPozycji, \* strona po Wycenie Emmetta może nie mieć pozycji z ilością w pliku (missing_positions)
     TataWTrakcie,      \* tata zmienia efenix także w trakcie Uruchomienia (granica projektu, ADR 0024)
     MozePrzekazac,     \* tata może uruchomić Wycenę w trybie z Przekazaniem (PricingMode.FORWARD, ADR 0027)
+    MozeOdmowicPrzekazania, \* efenix może odmówić Przekazania oknem informacji (ForwardRefusal)
     \* Przyczyny znanych znalezisk, które wariant ...PozaZnanymi danej obietnicy pomija (skrypt skilla je ustawia).
     WybaczoneNieCzysciWycenyTaty, WybaczoneNieObnizaIlosci, WybaczoneZmianaTatyZostaje,
     WybaczoneZnacznikTylkoNaWycenionym, WybaczoneBladTylkoPoZmianieTaty, WybaczonePrzekazujeTylkoGotowe,
@@ -44,7 +45,7 @@ WynikDokonczenia(q) == IF Nadmiar(q) # {} THEN "ostrzezenie" ELSE IF Kwota(q) = 
 \* z Przekazaniem także przekazane, bo gotowe zlecenie proces wtedy przekazuje.
 Oczekiwane(q) == IF Nadmiar(q) # {} THEN {"ostrzezenie"} ELSE {"gotowe", "przekazane"}
 
-ZnaneZnaleziska == {"brak-pozycji-po-emmetcie"}
+ZnaneZnaleziska == {"brak-pozycji-po-emmetcie", "odmowa-przekazania"}
 
 VARIABLES
     efenix,          \* ilości każdego zlecenia na serwerze efenix
@@ -204,6 +205,21 @@ Przekaz ==
     /\ UNCHANGED <<efenix, proces, zlecenie, doWpisania, wynik, znacznik, tryb, tataZmienial, uruchomienia, zmian, slady,
                    czysciTate, obniza, zlyWynikPoTacie, zlyZnacznik, bladBezPowodu>>
 
+(* _forwarded: forward_to_accept okna, w którym efenix po zielonym „Zapisz” pokazuje okno informacji zamiast okna     *)
+(* zmiany statusu (ForwardRefusal, BrowserEfenix._refusal): okno zamyka je i niczego nie wysyła, a wynik to błąd       *)
+(* zlecenia bez Znacznika, także przy zleceniu, którego tata nie zmieniał. Ponowne Uruchomienie z Przekazaniem próbuje  *)
+(* znowu.                                                                                                            *)
+OdmowaPrzekazania ==
+    LET slad == slady[zlecenie] \cup {"odmowa-przekazania"} IN
+    /\ MozeOdmowicPrzekazania /\ proces = "dziala" /\ krok = "przekaz"
+    /\ slady' = [slady EXCEPT ![zlecenie] = slad]
+    /\ wynik' = [wynik EXCEPT ![zlecenie] = "blad"]
+    /\ zlyWynikPoTacie' = IF zlyWynikPoTacie = {} /\ tataZmienial[zlecenie] THEN {slad} ELSE zlyWynikPoTacie
+    /\ bladBezPowodu' = IF bladBezPowodu = {} /\ ~tataZmienial[zlecenie] THEN {slad} ELSE bladBezPowodu
+    /\ krok' = "koniec"
+    /\ UNCHANGED <<efenix, proces, zlecenie, doWpisania, znacznik, status, tryb, tataZmienial, uruchomienia, zmian,
+                   czysciTate, obniza, zlyZnacznik, zlePrzekazanie, zmianaPrzekazanego>>
+
 \* _forwarded: ponowne szukanie i listing; status „Do akceptacji” daje Zlecenie przekazane, inny błąd NOT_FORWARDED.
 Szukaj ==
     /\ proces = "dziala" /\ krok = "szukaj"
@@ -280,7 +296,8 @@ Koniec ==
     /\ UNCHANGED vars
 
 Next ==
-    \/ Start \/ Otworz \/ ZaladujEmmetta \/ OdczytPoEmmetcie \/ BrakPozycji \/ Wpisz \/ Potwierdz \/ Przekaz \/ Szukaj
+    \/ Start \/ Otworz \/ ZaladujEmmetta \/ OdczytPoEmmetcie \/ BrakPozycji \/ Wpisz \/ Potwierdz \/ Przekaz
+    \/ OdmowaPrzekazania \/ Szukaj
     \/ KoniecZlecenia
     \/ Zatrzymanie \/ Znaczniki \/ Zgasniecie
     \/ \E o \in Zlecenia, p \in Pozycje, v \in Ilosci : Tata(o, p, v)

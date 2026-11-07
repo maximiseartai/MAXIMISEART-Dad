@@ -30,6 +30,7 @@ _STEPS = {
     "Wpisz": "okno wpisuje ilość z pliku w zleceniu {z}, efenix ją zapisuje (enter_quantity)",
     "Potwierdz": "efenix odpowiada kwotą w zleceniu {z}",
     "Przekaz": "okno przekazuje zlecenie {z} do akceptacji, efenix zmienia status (forward_to_accept)",
+    "OdmowaPrzekazania": "efenix odmawia Przekazania zlecenia {z} oknem informacji: błąd zlecenia (forward_to_accept, _refusal)",
     "Szukaj": "okno szuka zlecenia {z} ponownie i czyta jego status (_forwarded, listing)",
     "KoniecZlecenia": "zlecenie {z} ma wynik",
     "Zatrzymanie": "okno efenix się nie dokończyło działania: Zatrzymanie (StopError) w zleceniu {z}",

@@ -55,6 +55,7 @@ from rozliczenia.centrum.run_logs import (
 from rozliczenia.centrum.report_box import Unreachable
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
+from rozliczenia.efenix_window import ForwardRefusal
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.input_checks import FILE_READERS, read_register, register_problem
 from rozliczenia.period_folder import PeriodFolderInaccessible
@@ -1440,6 +1441,42 @@ def test_wycena_w_efenix_z_zapisem_przekazuje_gotowe_zlecenie_a_karta_logi_i_pow
     assert [(order["row"], order["outcome"]) for order in record["efenix_orders"]] == [(18, "przekazane"), (19, "przekazane")]
     assert (record["pricing"], card["run"]["pricing"], notification["pricing"]) == ("z Przekazaniem",) * 3
     assert notification["orders"] == {"ready": 0, "forwarded": 2, "settled": 0, "errors": 0, "warnings": 0}
+
+
+def test_odmowa_przekazania_przez_efenix_jest_na_karcie_w_powiadomieniu_i_w_logach_bledem_zlecenia_z_przyczyna_bez_tekstu_efenix(
+    tmp_path: Path,
+) -> None:
+    """Gotowe zlecenie, któremu efenix po zielonym „Zapisz” odmawia Przekazania (brak zdjęć), jest na karcie (lista błędów
+    z Komunikatem), na karcie z Logów (liczba błędów) i w Powiadomieniu błędem zlecenia jak inne, z Komunikatem, czego efenix brakuje, a do efenix nie dochodzi żadna
+    zmiana statusu. Logi Uruchomienia mają odmowę z zamkniętej listy, a nie tekst okna informacji efenix."""
+
+    in_efenix = [replace(FORWARDED_IN_EFENIX[0], forward_refusal=ForwardRefusal.NO_PHOTOS.value), FORWARDED_IN_EFENIX[1]]
+    with atrapa_efenix(in_efenix) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        write_collective_file(centrum.period_parent, FORWARDED)
+        assert _start_pricing(centrum, pricing="z Przekazaniem").status_code == 200
+        finished = finished_view(centrum.client)
+        requests = atrapa.status_requests()
+    [record] = records(centrum)
+    [notification] = [item for item in centrum.client.get("/api/notifications").json()["items"] if item["kind"] == "wycena_w_efenix"]
+    card = centrum.client.get(f"/api/runs/{finished['run']['id']}/card").json()
+    result = finished["result"]
+
+    for summary in (result["summary"], card["result"]["summary"]):
+        figures = {figure["label"]: figure["value"] for figure in summary["figures"]}
+        assert (figures["Błędy zleceń"], figures["Przekazane do akceptacji"], figures["Gotowe do przekazania"]) == (1, 1, 0)
+    assert (result["result"], requests) == ("WYMAGA_SPRAWDZENIA", [])
+    errors = result["order_notes"]["errors"]
+    assert [(note["row"], note["order"], note["worker"]) for note in errors] == [(18, "ZLQF01", "adrian.testowy")]
+    assert errors[0]["what"].startswith("efenix nie przyjął Przekazania do akceptacji: do wyceny nie są dołączone żadne zdjęcia")
+    assert notification["orders"] == {"ready": 0, "forwarded": 1, "settled": 0, "errors": 1, "warnings": 0}
+    [refused, _forwarded] = record["efenix_orders"]
+    assert (refused["outcome"], refused["code"], [(step["action"], step["refusal"]) for step in refused["steps"]][-1]) == (
+        "błąd",
+        "EFENIX_ODMOWA_PRZEKAZANIA",
+        ("przekazanie do akceptacji", "NO_PHOTOS"),
+    )
+    assert "zdjęć" not in json.dumps(record, ensure_ascii=False)
 
 
 def _previous_after_restart(
