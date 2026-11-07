@@ -24,6 +24,8 @@ COVERED = (
     "src/rozliczenia/efenix_pricing.py",
     "src/rozliczenia/efenix_positions.py",
     "src/rozliczenia/efenix_browser.py",
+    "src/rozliczenia/efenix_checks.py",
+    "src/rozliczenia/efenix_mark.py",
 )
 
 
