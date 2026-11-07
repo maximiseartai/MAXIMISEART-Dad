@@ -456,42 +456,31 @@ export const zOpened = z.object({
 });
 
 /**
- * OrderLine
+ * OrderNote
  *
- * Zlecenie Wyceny w efenix na karcie bieżącego Uruchomienia: wiersz Pliku zbiorczego, numer zlecenia i Wykonawca.
+ * Zlecenie Wyceny w efenix na karcie bieżącego Uruchomienia: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i
+ * zdanie „Co się stało” Komunikatu zlecenia, które zostało tacie (``None`` przy każdym innym).
  *
  * Numer zlecenia (``None``: pusty ``NUMER ZL.``) i Wykonawcę widzi tylko tata na swoim komputerze: Logi Uruchomienia ich
  * nie mają.
- */
-export const zOrderLine = z.object({
-    row: z.int(),
-    order: z.string().nullable(),
-    worker: z.string()
-});
-
-/**
- * OrderNote
- *
- * Zlecenie Wyceny w efenix, które zostało tacie, ze zdaniem „Co się stało” jego Komunikatu.
  */
 export const zOrderNote = z.object({
     row: z.int(),
     order: z.string().nullable(),
     worker: z.string(),
-    what: z.string()
+    what: z.string().nullable()
 });
 
 /**
  * OrderNotes
  *
- * Błędy zleceń, ostrzeżenia Emmetta, Zlecenia przekazane i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego
- * Uruchomienia.
+ * Zlecenia Wyceny w efenix z jednym wynikiem na karcie bieżącego Uruchomienia: nazwa wyniku (``title``, ta sama co
+ * jego liczba), ``done``: tata nie ma przy nich nic do zrobienia (Zlecenia przekazane i rozliczone).
  */
 export const zOrderNotes = z.object({
-    errors: z.array(zOrderNote),
-    warnings: z.array(zOrderNote),
-    forwarded: z.array(zOrderLine),
-    settled: z.array(zOrderLine)
+    title: z.string(),
+    done: z.boolean(),
+    notes: z.array(zOrderNote)
 });
 
 /**
@@ -616,24 +605,10 @@ export const zPriceListItem = z.object({
 });
 
 /**
- * PricedOrders
- *
- * Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, przekazane do akceptacji, rozliczone, błędy i
- * ostrzeżenia Emmetta.
- */
-export const zPricedOrders = z.object({
-    ready: z.int(),
-    forwarded: z.int(),
-    settled: z.int(),
-    errors: z.int(),
-    warnings: z.int()
-});
-
-/**
  * PricingNotification
  *
  * Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia
- * (``headline``), okres, tryb (jak ``RunInfo.pricing``), zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”
+ * (``headline``), okres, tryb (jak ``RunInfo.pricing``), liczba zleceń z każdym wynikiem pod jego nazwą, jak na karcie (``None``: Zatrzymanie przed podsumowaniem), i „Co się stało”
  * Komunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów.
  */
 export const zPricingNotification = z.object({
@@ -645,7 +620,7 @@ export const zPricingNotification = z.object({
     headline: z.string(),
     period: z.string(),
     pricing: z.enum(['bez Przekazania', 'z Przekazaniem']).nullable(),
-    orders: zPricedOrders.nullable(),
+    orders: z.array(zCount).nullable(),
     stopped: z.string().nullable()
 });
 
@@ -1555,7 +1530,7 @@ export const zLoggedOutcome = z.object({
  * ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
  * Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
  * Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
- * zostały tacie, Zlecenia przekazane i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
+ * zostały tacie, Zlecenia przekazane i Zlecenia rozliczone, po wyniku, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
  * trzech częściach (``None``: inny proces albo wynik bez podsumowania).
  */
 export const zRunOutcome = z.object({
@@ -1600,7 +1575,7 @@ export const zRunOutcome = z.object({
     ]).nullable(),
     files_unchanged: z.boolean(),
     opens: z.enum(['order_register', 'collective_file']).nullable(),
-    order_notes: zOrderNotes.nullish()
+    order_notes: z.array(zOrderNotes).nullish()
 });
 
 /**

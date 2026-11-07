@@ -76,7 +76,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 import re
-from typing import Annotated, Final, Literal, assert_never, final, get_args
+from typing import Annotated, Final, Literal, assert_never, final
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic.fields import FieldInfo
@@ -89,16 +89,8 @@ from rozliczenia.centrum.diagnosis import CheckState, Diagnosis
 from rozliczenia.centrum.runs import EndedRun, Ending
 from rozliczenia.domain import ProgressPhase, WorkerStatus
 from rozliczenia.engine import SettlementSummary
-from rozliczenia.efenix_checks import Forwarded, ListedRead, Settled
-from rozliczenia.efenix_pricing import (
-    EmmettWarning,
-    OrderError,
-    OrderResult,
-    PricingStopped,
-    PricingSummary,
-    Ready,
-    StoppedOrder,
-)
+from rozliczenia.efenix_checks import ListedRead
+from rozliczenia.efenix_pricing import OrderKind, OrderResult, PricingStopped, PricingSummary, StoppedOrder
 from rozliczenia.efenix_window import (
     BrowserFailure,
     Closed,
@@ -111,7 +103,6 @@ from rozliczenia.efenix_window import (
     WindowAction,
     WindowCause,
 )
-from rozliczenia.efenix_positions import file_quantities
 from rozliczenia.efenix_trace import TraceStep
 from rozliczenia.input_copy import CellValue, CopiedFile, CopiedSheet, Typed, TypedKind
 from rozliczenia.intermax_ordering import OrderingSummary
@@ -374,18 +365,13 @@ class LoggedStep(_Record):
         )
 
 
-OrderOutcome = Literal["gotowe", "przekazane", "rozliczone", "błąd", "ostrzeżenie Emmetta"]
-"""Wynik zlecenia Wyceny w efenix w Logach Uruchomienia; ``rozliczone`` to Zlecenie rozliczone, a ``przekazane`` Zlecenie
-przekazane, które nie są błędem."""
-
-
 class LoggedOrder(_Record):
-    """Ślad zlecenia Wyceny w efenix: wiersz Pliku zbiorczego, wynik z kodem Komunikatu (``None`` przy gotowym,
-    rozliczonym i przekazanym), ilości z pliku po kodach pozycji (``None``, gdy nie dało się ich przepisać), ``Kwota`` (AU) i działania
-    okna."""
+    """Ślad zlecenia Wyceny w efenix: wiersz Pliku zbiorczego, wynik (``OrderKind``, w pliku jego klucz) z kodem
+    Komunikatu (``None`` przy wyniku, który nie zostaje tacie), ilości z pliku po kodach pozycji (``None``, gdy nie dało
+    się ich przepisać), ``Kwota`` (AU) i działania okna."""
 
     row: int
-    outcome: OrderOutcome
+    outcome: OrderKind
     code: str | None
     file: Annotated[dict[str, LoggedQuantity] | None, READ_VALUES]
     file_amount: Decimal
@@ -393,33 +379,17 @@ class LoggedOrder(_Record):
 
     @classmethod
     def all_of(cls, summary: PricingSummary) -> list[LoggedOrder]:
-        """Ślad każdego zlecenia po kolei, z kodem Komunikatu zlecenia, które zostało tacie."""
+        """Ślad każdego zlecenia po kolei."""
 
-        codes = {id(result): message.code for result, message in summary.left_for_tata}
-        return [cls.of(result, codes.get(id(result))) for result in summary.results]
+        return [cls.of(result) for result in summary.results]
 
     @classmethod
-    def of(cls, result: OrderResult, code: str | None) -> LoggedOrder:
-        """Ślad zlecenia ``result`` z kodem Komunikatu ``code`` zlecenia, które zostało tacie."""
-
-        file = file_quantities(result.order)
-        outcome: OrderOutcome
-        match result.outcome:
-            case Ready():
-                outcome = "gotowe"
-            case Settled():
-                outcome = "rozliczone"
-            case Forwarded():
-                outcome = "przekazane"
-            case EmmettWarning():
-                outcome = "ostrzeżenie Emmetta"
-            case OrderError():
-                outcome = "błąd"
+    def of(cls, result: OrderResult) -> LoggedOrder:
         return cls(
             row=result.order.row,
-            outcome=outcome,
-            code=code,
-            file=dict(file) if isinstance(file, Mapping) else None,
+            outcome=result.kind,
+            code=None if result.message is None else result.message.code,
+            file=None if result.file is None else dict(result.file),
             file_amount=result.order.amount,
             steps=[LoggedStep.of(step) for step in result.steps],
         )
@@ -1140,7 +1110,7 @@ class OrderDone:
     zbiorczego, wynik i kod Komunikatu zlecenia (``None`` przy gotowym, rozliczonym i przekazanym)."""
 
     row: int
-    outcome: OrderOutcome
+    outcome: OrderKind
     code: str | None
 
 
@@ -1158,11 +1128,11 @@ class PricingProgress:
     total: int | None
     current: int | None
 
-    def outcomes(self) -> tuple[tuple[OrderOutcome, int], ...]:
-        """Ile zleceń skończonych ma każdy wynik, w kolejności ``OrderOutcome``, bez wyników, których nie ma żadne."""
+    def outcomes(self) -> tuple[tuple[OrderKind, int], ...]:
+        """Ile zleceń skończonych ma każdy wynik, w kolejności ``OrderKind``, bez wyników, których nie ma żadne."""
 
         counted = Counter(order.outcome for order in self.done)
-        return tuple((outcome, counted[outcome]) for outcome in get_args(OrderOutcome) if counted[outcome])
+        return tuple((kind, counted[kind]) for kind in OrderKind if counted[kind])
 
 
 _MINTED: Final = object()

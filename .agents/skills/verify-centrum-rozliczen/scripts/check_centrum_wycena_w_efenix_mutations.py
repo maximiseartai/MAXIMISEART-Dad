@@ -61,7 +61,13 @@ MUTATIONS = (
     ),
     Mutation(
         "karta bez listy zleceń przekazanych",
-        (Edit(RUN_VIEW, "        forwarded=_order_lines(summary, Forwarded),\n", "        forwarded=[],\n"),),
+        (
+            Edit(
+                RUN_VIEW,
+                "_NOTED: Final = (OrderKind.ERROR, OrderKind.WARNING, OrderKind.FORWARDED, OrderKind.SETTLED)",
+                "_NOTED: Final = (OrderKind.ERROR, OrderKind.WARNING, OrderKind.SETTLED)",
+            ),
+        ),
         WYCENA,
         "tata nie widzi, które zlecenia Centrum przekazało do akceptacji",
     ),

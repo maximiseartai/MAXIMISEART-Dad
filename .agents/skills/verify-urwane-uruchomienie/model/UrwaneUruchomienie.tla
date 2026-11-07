@@ -480,7 +480,7 @@ ZmianaWEfenix ==
                    oczekujace, doWyslania, krokWysylki, bieg, zlecenie, naglowekCzeka, wKolejce, liczniki, duchy,
                    zdarzenia>>
 
-\* save: results.append(result), journal.ended(result, ...), potem następne zlecenie albo koniec przebiegu.
+\* save: results.append(result), journal.ended(result), potem następne zlecenie albo koniec przebiegu.
 WpisSkonczone ==
     /\ bieg # 0 /\ faza = "skonczone"
     /\ Wpis("skonczone")

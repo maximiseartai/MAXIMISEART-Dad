@@ -200,9 +200,11 @@ MUTATIONS = (
                 PRICING,
                 "                        journal.begun(order.row, done + 1, total)\n"
                 "                        window = efenix_trace.traced(efenix, order, trace, clock)\n"
-                "                        outcome = _outcome(order, window if pacing is None else pacing.window(window), forbidden, mode)\n",
+                "                        file = file_quantities(order)\n"
+                "                        outcome = _outcome(order, file, window if pacing is None else pacing.window(window), forbidden, mode)\n",
                 "                        window = efenix_trace.traced(efenix, order, trace, clock)\n"
-                "                        outcome = _outcome(order, window if pacing is None else pacing.window(window), forbidden, mode)\n"
+                "                        file = file_quantities(order)\n"
+                "                        outcome = _outcome(order, file, window if pacing is None else pacing.window(window), forbidden, mode)\n"
                 "                        journal.begun(order.row, done + 1, total)\n",
             ),
         ),

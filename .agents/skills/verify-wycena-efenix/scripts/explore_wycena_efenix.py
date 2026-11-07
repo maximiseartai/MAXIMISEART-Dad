@@ -78,8 +78,7 @@ from rozliczenia import efenix_browser, efenix_process
 from rozliczenia.centrum.run_logs import LoggedMessage, LoggedOrder, LoggedWindowStop
 from rozliczenia.efenix_mark import Mark
 from rozliczenia.efenix_page import FILL_EMMETT, LOAD_EMMETT, LOGIN_PAGE, ORDER_PAGE, SAVE_QUANTITY, SEARCH, SET_DATE
-from rozliczenia.efenix_checks import Forwarded, Settled
-from rozliczenia.efenix_pricing import EmmettWarning, OrderError, OrderResult, PricingStopped, PricingSummary, Ready
+from rozliczenia.efenix_pricing import OrderError, OrderResult, PricingStopped, PricingSummary
 from rozliczenia.efenix_window import (
     BrowserFailure,
     Closed,
@@ -709,8 +708,8 @@ class Journal:
     def begun(self, row: int, place: int, total: int) -> None:
         self._write({"begun": row, "place": place, "total": total})
 
-    def ended(self, result: OrderResult, message: Message | None) -> None:
-        self._write({"ended": json.loads(LoggedOrder.of(result, None if message is None else message.code).model_dump_json())})
+    def ended(self, result: OrderResult) -> None:
+        self._write({"ended": json.loads(LoggedOrder.of(result).model_dump_json())})
 
     def _write(self, entry: dict[str, object]) -> None:
         with self.path.open("a", encoding="utf-8") as file:
@@ -1038,21 +1037,7 @@ def _problems(summary: PricingSummary | None) -> dict[int, object]:
 def _outcomes(summary: PricingSummary | None) -> dict[int, str]:
     """Outcome of each order (0, 1) by its row: gotowe, rozliczone, przekazane, błąd or ostrzeżenie Emmetta."""
 
-    names: dict[int, str] = {}
-    for result in () if summary is None else summary.results:
-        match result.outcome:
-            case Ready():
-                name = "gotowe"
-            case Settled():
-                name = "rozliczone"
-            case Forwarded():
-                name = "przekazane"
-            case OrderError():
-                name = "błąd"
-            case EmmettWarning():
-                name = "ostrzeżenie Emmetta"
-        names[result.order.row - FIRST_ROW] = name
-    return names
+    return {result.order.row - FIRST_ROW: result.kind.value for result in (() if summary is None else summary.results)}
 
 
 def _summary(outcome: Outcome[PricingSummary] | None) -> PricingSummary | None:

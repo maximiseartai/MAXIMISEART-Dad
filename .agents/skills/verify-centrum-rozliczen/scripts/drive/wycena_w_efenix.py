@@ -209,14 +209,14 @@ def _price(run: Run, page: Page, source: Path) -> None:
         ),
         "the card counts the ready, the settled, the errors, Emmett's warnings and the skipped orders",
     )
-    for title, row in (("Błędy", 19), ("Ostrzeżenia Emmetta", 20), ("Rozliczone", 21)):
+    for title, row in (("Błędy zleceń", 19), ("Ostrzeżenia Emmetta", 20), ("Rozliczone", 21)):
         table = page.get_by_role("table", name=title)
         number, worker = ORDERS[row]
         expect(table.get_by_role("row")).to_have_count(1)
         expect(table.get_by_role("row").first.get_by_role("cell").nth(0)).to_have_text(f"wiersz {row}")
         expect(table.get_by_role("row").first.get_by_role("cell").nth(1)).to_have_text(number)
         expect(table.get_by_role("row").first.get_by_role("cell").nth(2)).to_have_text(worker)
-    expect(page.get_by_role("table", name="Błędy")).to_contain_text("efenix nie zna zlecenia o numerze z NUMER ZL.")
+    expect(page.get_by_role("table", name="Błędy zleceń")).to_contain_text("efenix nie zna zlecenia o numerze z NUMER ZL.")
     expect(page.get_by_role("table", name="Ostrzeżenia Emmetta")).to_contain_text("efenix 2, plik 1")
     expect(page.get_by_role("table", name="Rozliczone").get_by_role("row").first.get_by_role("cell").nth(3)).to_have_text("")
     expect(page.get_by_role("table", name=DONE_OK_FORWARDED)).to_have_count(0)
@@ -372,7 +372,16 @@ def _forward(run: Run, page: Page, source: Path) -> None:
     [notification] = [item for item in items if item["kind"] == "wycena_w_efenix" and item["run_id"] == shown["id"]]
     run.check(
         (notification["pricing"], notification["orders"])
-        == ("z Przekazaniem", {"ready": 0, "forwarded": 1, "settled": 1, "errors": 1, "warnings": 1}),
+        == (
+            "z Przekazaniem",
+            [
+                {"label": "Gotowe do przekazania", "count": 0},
+                {"label": DONE_OK_FORWARDED, "count": 1},
+                {"label": "Rozliczone", "count": 1},
+                {"label": "Błędy zleceń", "count": 1},
+                {"label": "Ostrzeżenia Emmetta", "count": 1},
+            ],
+        ),
         "the Powiadomienie has the mode and counts the forwarded order",
     )
     page.locator("header").get_by_role("button", name="Powiadomienia", exact=False).click()
@@ -401,7 +410,18 @@ def _notification(run: Run, page: Page, result: Json) -> None:
     run.check(
         notification["unread"] is True
         and (notification["headline"], notification["period"], notification["orders"], notification["stopped"])
-        == (result["headline"], PERIOD, {"ready": 1, "forwarded": 0, "settled": 1, "errors": 1, "warnings": 1}, None)
+        == (
+            result["headline"],
+            PERIOD,
+            [
+                {"label": "Gotowe do przekazania", "count": 1},
+                {"label": DONE_OK_FORWARDED, "count": 0},
+                {"label": "Rozliczone", "count": 1},
+                {"label": "Błędy zleceń", "count": 1},
+                {"label": "Ostrzeżenia Emmetta", "count": 1},
+            ],
+            None,
+        )
         and notification["pricing"] == "bez Przekazania",
         "the ended Wycena is a new Powiadomienie with the result, the period and the ready, settled, error and warning "
         "counts",

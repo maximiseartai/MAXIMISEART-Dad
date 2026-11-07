@@ -278,7 +278,7 @@ def progress_markdown(progress: PricingProgress, *, elapsed_s: float) -> str:
     if done:
         last = done[-1]
         code = "" if last.code is None else f", `{last.code}`"
-        lines.append(f"- Ostatnie zlecenie: wiersz {last.row}, {last.outcome}{code}")
+        lines.append(f"- Ostatnie zlecenie: wiersz {last.row}, {last.outcome.value}{code}")
     if progress.current is not None:
         lines.append(f"- W trakcie: wiersz {progress.current}")
     lines += [
@@ -320,7 +320,7 @@ def _orders_done(progress: PricingProgress) -> str | None:
 
     if progress.total is None:
         return None
-    outcomes = ", ".join(f"{outcome} {count}" for outcome, count in progress.outcomes())
+    outcomes = ", ".join(f"{outcome.value} {count}" for outcome, count in progress.outcomes())
     return f"{len(progress.done)} z {progress.total} skończone" + (f" ({outcomes})" if outcomes else "")
 
 

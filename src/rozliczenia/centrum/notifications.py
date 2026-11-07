@@ -46,6 +46,7 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.report_box import Closure
 from rozliczenia.centrum.run_cards import LoggedRun
+from rozliczenia.centrum.run_view import order_counts
 from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.notification_messages import unavailable
 from rozliczenia.centrum.release_notes import parse, whats_new
@@ -301,15 +302,7 @@ class Notifications:
             headline=card.result.headline,
             period=card.run.period,
             pricing=card.run.pricing,
-            orders=None
-            if orders is None
-            else contract.PricedOrders(
-                ready=orders["gotowe"],
-                forwarded=orders["przekazane"],
-                settled=orders["rozliczone"],
-                errors=orders["błąd"],
-                warnings=orders["ostrzeżenie Emmetta"],
-            ),
+            orders=None if orders is None else order_counts(orders),
             stopped=card.result.stops[0].what if card.result.stops else None,
         )
 

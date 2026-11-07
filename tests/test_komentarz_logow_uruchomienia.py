@@ -87,6 +87,7 @@ from rozliczenia.centrum.run_logs import (
 )
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, shown
+from rozliczenia.efenix_pricing import OrderKind
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.dziennik_wyceny import begun_line, left_journal
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
@@ -208,6 +209,24 @@ def test_podsumowanie_nazywa_wynik_sposob_zakonczenia_i_kody_komunikatow(
     assert [line for line in lines if line not in summary] == []
 
 
+def test_komentarz_postepu_wyceny_mowi_wyniki_zlecen_tymi_samymi_slowami_co_logi_uruchomienia() -> None:
+    """Komentarz postępu Wyceny w efenix liczy zlecenia skończone z każdym wynikiem, w kolejności wyników karty, i mówi
+    ostatnie skończone z wynikiem i kodem Komunikatu, słowami wyniku z Logów Uruchomienia („gotowe”, „błąd”)."""
+
+    started = StartFacts(run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=datetime(2026, 9, 14, 8, tzinfo=timezone.utc))
+    done = (
+        OrderDone(18, OrderKind.ERROR, "EFENIX_NIEZNANY_NUMER"),
+        OrderDone(19, OrderKind.READY, None),
+        OrderDone(20, OrderKind.ERROR, "EFENIX_NIEZNANY_NUMER"),
+    )
+    lines = progress_markdown(PricingProgress(started, done, 4, 21), elapsed_s=90).splitlines()
+
+    assert [line for line in lines if line.startswith(("- Zlecenia:", "- Ostatnie zlecenie:"))] == [
+        "- Zlecenia: 3 z 4 skończone (gotowe 1, błąd 2)",
+        "- Ostatnie zlecenie: wiersz 20, błąd, `EFENIX_NIEZNANY_NUMER`",
+    ]
+
+
 def test_logi_ponad_limit_komentarza_ida_jednym_komentarzem_a_cale_w_pliku_archiwum_logow_okresu() -> None:
     logs = record(
         result="WYMAGA_SPRAWDZENIA",
@@ -234,7 +253,7 @@ def _versions() -> dict[str, CommentVersion]:
     started = StartFacts(
         run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=logs.record.started_at
     )
-    progress = PricingProgress(started, (OrderDone(18, "gotowe", None),), 2, 19)
+    progress = PricingProgress(started, (OrderDone(18, OrderKind.READY, None),), 2, 19)
     text = guard_text("Postęp albo wynik bez Logów.", "komentarz", ForbiddenValues())
     return {
         "postep": ProgressVersion(progress, text),
@@ -298,7 +317,7 @@ def _progress() -> PricingProgress:
     started = StartFacts(
         run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
     )
-    return PricingProgress(started, (OrderDone(18, "gotowe", None),), 2, 19)
+    return PricingProgress(started, (OrderDone(18, OrderKind.READY, None),), 2, 19)
 
 
 def _text_version(kind: str, forbidden: ForbiddenValues) -> ProgressVersion | WithoutLogsVersion:

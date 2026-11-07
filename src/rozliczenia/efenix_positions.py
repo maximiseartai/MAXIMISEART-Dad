@@ -31,6 +31,7 @@ __all__ = [
     "UNPAIRED_COLUMNS",
     "Completion",
     "Excess",
+    "FileQuantities",
     "MissingPositions",
     "NotWholeQuantities",
     "OrderFault",
@@ -113,6 +114,9 @@ class OtherAmount:
     file_amount: Decimal
 
 
+FileQuantities = Mapping[str, int] | UnpairedColumns | NotWholeQuantities
+"""Ilości zlecenia z Pliku zbiorczego po kodach pozycji efenix albo kolumny, których nie da się przepisać."""
+
 OrderFault = OrderProblem | DateRefused | UnpairedColumns | NotWholeQuantities | MissingPositions | OtherAmount | ForwardRefusal
 """Powód, dla którego zlecenie zostaje tacie jako błąd; ``ForwardRefusal`` to gotowe zlecenie, któremu efenix odmówił
 Przekazania do akceptacji."""
@@ -144,7 +148,7 @@ def column_of(position: str) -> str | None:
     return _COLUMN_OF_POSITION.get(position)
 
 
-def file_quantities(order: CollectiveOrder) -> Mapping[str, int] | UnpairedColumns | NotWholeQuantities:
+def file_quantities(order: CollectiveOrder) -> FileQuantities:
     """Ilości zlecenia z Pliku zbiorczego po kodach pozycji efenix, albo kolumny, których nie da się przepisać.
 
     Kolumny bez pary sprawdzane są pierwsze, bo z ilością w nich wycena nie może się zgodzić z ``Kwota`` (AU).

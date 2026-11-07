@@ -38,19 +38,13 @@ from rozliczenia.centrum import contract
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.logs_disk import Found, LogsOnDisk, Missing, Refused, Unreadable
 from rozliczenia.centrum.run_comments import LeftBehindClosed
-from rozliczenia.centrum.run_logs import OrderOutcome, RunLog, StartFacts
+from rozliczenia.centrum.run_logs import RunLog, StartFacts
+from rozliczenia.centrum.run_view import order_counts
 from rozliczenia.centrum.runs import verdict
+from rozliczenia.efenix_pricing import OrderKind
 
 _INTERRUPTED: Final = "Centrum rozliczeń zamknęło się w trakcie tego Uruchomienia, więc nie ma jego wyniku."
 _ORDERS_TITLE: Final = "Zlecenia przed zamknięciem Centrum"
-# Wynik zlecenia Wyceny w efenix z Logów i jego nazwa na karcie, w kolejności karty na żywo.
-_ORDER_LABELS: Final[dict[OrderOutcome, str]] = {
-    "gotowe": "Gotowe do przekazania",
-    "przekazane": "Przekazane do akceptacji",
-    "rozliczone": "Rozliczone",
-    "błąd": "Błędy zleceń",
-    "ostrzeżenie Emmetta": "Ostrzeżenia Emmetta",
-}
 _PREVIEW_ADVICE: Final = "Podgląd niczego nie zapisał. Uruchom go ponownie."
 _WRITE_ADVICE: Final = "Uruchom ponownie. Pliki okresu, które zdążyły powstać, Centrum zostawi i powie, co z nimi zrobić."
 
@@ -65,7 +59,7 @@ class LoggedRun:
 
     card: contract.RunRestored
     ended_at: datetime
-    orders: Counter[OrderOutcome] | None
+    orders: Counter[OrderKind] | None
 
 
 class RunCards:
@@ -223,10 +217,9 @@ def _orders(record: RunLog) -> contract.CountGroup | None:
 
     if record.efenix_orders is None:
         return None
-    counted = Counter(order.outcome for order in record.efenix_orders)
     return contract.CountGroup(
         title=_ORDERS_TITLE,
-        counts=[contract.Count(label=label, count=counted[outcome]) for outcome, label in _ORDER_LABELS.items()],
+        counts=order_counts(Counter(order.outcome for order in record.efenix_orders)),
         zero_warns=False,
     )
 

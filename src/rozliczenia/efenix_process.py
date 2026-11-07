@@ -26,7 +26,7 @@ from .input_copy import InputCopy
 from .decision import EngineConversation
 from .domain import ProgressObserver
 from .efenix_pace import Pace
-from .efenix_pricing import NO_JOURNAL, OrderJournal, PricingMode, PricingSummary
+from .efenix_pricing import NO_JOURNAL, OrderJournal, OrderKind, PricingMode, PricingSummary
 from .efenix_window import OpenEfenix
 from .period_folder import PeriodFolder, PeriodFolderError
 from .process_run import Finished, Process
@@ -88,12 +88,12 @@ def _execute(inputs: EfenixInputs, observer: ProgressObserver, conversation: Eng
 
 def _finished(_inputs: EfenixInputs, summary: PricingSummary) -> Finished:
     return Finished(
-        result="OK" if not summary.left_for_tata else "WYMAGA_SPRAWDZENIA",
+        result="OK" if not summary.warnings else "WYMAGA_SPRAWDZENIA",
         counters={
             "orders": len(summary.results),
-            "ready": summary.ready_count,
-            "errors": summary.error_count,
-            "emmett_warnings": summary.warning_count,
+            "ready": summary.count(OrderKind.READY),
+            "errors": summary.count(OrderKind.ERROR),
+            "emmett_warnings": summary.count(OrderKind.WARNING),
             "with_photos": summary.with_photos,
             "defects": summary.defects,
         },

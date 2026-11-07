@@ -45,15 +45,6 @@ const KINDS: Record<Kind, { tag: string; color: string; icon: LucideIcon }> = {
   wycena_w_efenix: { tag: "Wycena w efenix", color: "var(--chart-4)", icon: ReceiptTextIcon },
 }
 
-// Liczby zleceń w Powiadomieniu o Wycenie w efenix, z etykietami kafelków karty Uruchomienia.
-const PRICED: ReadonlyArray<{ key: keyof NonNullable<Pricing["orders"]>; label: string }> = [
-  { key: "ready", label: "Gotowe do przekazania" },
-  { key: "forwarded", label: "Przekazane do akceptacji" },
-  { key: "settled", label: "Rozliczone" },
-  { key: "errors", label: "Błędy zleceń" },
-  { key: "warnings", label: "Ostrzeżenia Emmetta" },
-]
-
 const SOLVED: Record<Release["solved"][number]["kind"], string> = { uwaga: "Uwaga", zgloszenie: "Zgłoszenie" }
 
 // Stany, przy których tata musi skontaktować się z Maksem, mówi wspólny `SendProblem`.
@@ -234,10 +225,10 @@ function PricingBody({ pricing }: { pricing: Pricing }) {
       </p>
       {orders === null ? null : (
         <dl aria-label="Zlecenia" className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-          {PRICED.map(({ key, label }) => (
-            <div key={key} className="flex items-baseline gap-1.5 whitespace-nowrap">
+          {orders.map(({ label, count }) => (
+            <div key={label} className="flex items-baseline gap-1.5 whitespace-nowrap">
               <dt className="text-muted-foreground">{label}</dt>
-              <dd className="font-medium tabular-nums">{orders[key]}</dd>
+              <dd className="font-medium tabular-nums">{count}</dd>
             </div>
           ))}
         </dl>
