@@ -63,6 +63,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from rozliczenia import efenix_browser, efenix_process, intermax_copies, intermax_process, preparation_process, settlement_process
 from rozliczenia.centrum import contract, run_view
 from rozliczenia.centrum.configuration import ConfigurationFiles
+from rozliczenia.centrum.runs import CONTINUE_HINT
 from rozliczenia.decision import Decision
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.intermax_process import OrderingInputs
@@ -108,7 +109,7 @@ class ProcessResult(_Model):
 
 
 class _Unattended:
-    continue_hint = "uruchom proces w Centrum rozliczeń i przy decyzji wybierz „Kontynuuj”"
+    continue_hint = f"uruchom proces w Centrum rozliczeń i {CONTINUE_HINT}"
 
     def __init__(self, progress_view: Callable[[ProgressSnapshot], contract.Progress]) -> None:
         self._progress_view = progress_view

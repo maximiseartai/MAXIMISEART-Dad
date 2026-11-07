@@ -283,7 +283,7 @@ def progress_markdown(progress: PricingProgress, *, elapsed_s: float) -> str:
         lines.append(f"- W trakcie: wiersz {progress.current}")
     lines += [
         f"- Czas: {int(elapsed_s // 60)} min do tej pory",
-        f"- Uruchomienie: {started.run_id}, start {started.started_at:%Y-%m-%d %H:%M:%S} UTC",
+        _run_line(started),
         "- Pełne Logi: w tym komentarzu, gdy Uruchomienie się skończy",
     ]
     return _comment_title(started) + "\n".join(lines)
@@ -300,14 +300,18 @@ def without_logs_markdown(final: ResultWithoutLogs) -> str:
     if journal.current is not None:
         lines.append(f"- Zlecenie bez wyniku: wiersz {journal.current}")
     lines += [
-        f"- Uruchomienie: {started.run_id}, start {started.started_at:%Y-%m-%d %H:%M:%S} UTC",
+        _run_line(started),
         f"- Pełne Logi: {_LOGS_MISSING[final.logs]}",
     ]
     return _comment_title(started) + "\n".join(lines)
 
 
-def _comment_title(started: StartFacts) -> str:
-    return f"**Logi Uruchomienia**: {declaration_of(started.process).title}, {started.mode}, okres {started.period}\n\n"
+def _comment_title(run: StartFacts | RunLog) -> str:
+    return f"**Logi Uruchomienia**: {declaration_of(run.process).title}, {run.mode}, okres {run.period}\n\n"
+
+
+def _run_line(run: StartFacts | RunLog) -> str:
+    return f"- Uruchomienie: {run.run_id}, start {run.started_at:%Y-%m-%d %H:%M:%S} UTC"
 
 
 def _orders_done(progress: PricingProgress) -> str | None:
@@ -346,14 +350,13 @@ def summary_markdown(record: RunLog) -> str:
     diagnosis = "" if record.diagnosis is None else f"- Diagnoza: {_diagnosis(record.diagnosis)}\n"
     archive = _archive_file(record)
     return (
-        f"**Logi Uruchomienia**: {declaration_of(record.process).title}, {record.mode}, okres {record.period}\n"
-        "\n"
-        f"- Wynik: {_result(record)}\n"
+        _comment_title(record)
+        + f"- Wynik: {_result(record)}\n"
         f"- Czas: {_duration(record.duration_ms)}\n"
         f"- Komunikaty: {_codes(record.messages)}\n"
         f"{diagnosis}"
         f"- Wydanie: {record.tool.wydanie or 'brak'}, commit {commit}\n"
-        f"- Uruchomienie: {record.run_id}, start {record.started_at:%Y-%m-%d %H:%M:%S} UTC\n"
+        f"{_run_line(record)}\n"
         f"- Pełne Logi: [{archive.packed_name}]({archive.link})"
     )
 

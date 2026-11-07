@@ -19,6 +19,7 @@ from typing import Literal
 from rozliczenia.centrum.tool_update import UPDATED
 
 VIEW_TIMING_EVENT = "pomiar"
+UNEXPECTED_FAILURE_EVENT = "nieoczekiwany-wyjatek"
 # Pomiar przychodzi po każdym widoku, więc na jedno uruchomienie Centrum dziennik przyjmuje ich najwyżej
 # tyle (spec #164, US29); kolejne przepadają po cichu, a wpisy o pracy serwera są zapisywane dalej.
 MAX_VIEW_TIMINGS = 200
@@ -152,7 +153,7 @@ class CentrumLog:
     def unexpected_failure(self, failure: BaseException, *, where: str) -> None:
         """Nieoczekiwany wyjątek: tylko nazwa typu i miejsce (np. trasa API), bez tekstu wyjątku."""
 
-        self._write("nieoczekiwany-wyjatek", typ=type(failure).__name__, miejsce=where)
+        self._write(UNEXPECTED_FAILURE_EVENT, typ=type(failure).__name__, miejsce=where)
 
     def fill_unreadable(self, *, period: str, cause: str, excel_lock: str, failure: str) -> None:
         """Nieudany odczyt Pliku zbiorczego dla Uzupełnienia: kod Komunikatu, plik blokady Excela i typ błędu.

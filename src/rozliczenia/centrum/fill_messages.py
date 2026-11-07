@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final
 
-from rozliczenia.message import REPORT_TO_MAINTAINER, Message, file_label
+from rozliczenia.message import KEEP_ON_DEVICE, REPORT_TO_MAINTAINER, Message, file_label
 from rozliczenia.workbook_files import WORKER_HEADER, HEADER_ROW, Problem, WorkbookError
 
 _REFRESH: Final = "odśwież stronę"
@@ -98,8 +98,5 @@ def only_in_cloud(source: Path) -> Message:
         code="PLIK_ZBIORCZY_W_CHMURZE",
         what="Plik zbiorczy jest tylko w OneDrive w chmurze, bez kopii na tym komputerze.",
         where=file_label(source),
-        action=(
-            "W Eksploratorze plików kliknij ten plik prawym przyciskiem myszy, wybierz „Zawsze zachowuj na tym "
-            f"urządzeniu”, poczekaj, aż się pobierze, i {_REFRESH}."
-        ),
+        action=f"{KEEP_ON_DEVICE} i {_REFRESH}.",
     )

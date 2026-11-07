@@ -56,6 +56,8 @@ _YEAR_FOLDER = re.compile(r"Rozliczenia \d{4}")
 _MONTH_PERIODS_FOLDER = "INEA"
 
 PeriodStatus = Literal["no_period_files", "collective_file_prepared", "worker_settlements_ready"]
+PeriodPlace = Literal["internal_settlement", "collective_file", "period_folder", "worker_settlements_folder"]
+"""Folder okresu albo jeden z jego plików, które tata otwiera i które Diagnoza wylicza."""
 WorkerNameCheck = Literal["fine", "invalid", "too_long"]
 _FORBIDDEN_IN_FILE_NAME = frozenset('<>:"/\\|?*')
 _MAX_FILE_NAME_CODE_UNITS = 255  # Windows liczy nazwę pliku w jednostkach UTF-16
@@ -169,6 +171,17 @@ class PeriodFolder:
 
         return self.directory / _WORKER_SETTLEMENTS.format(token=self.period.token)
 
+    def path_of(self, place: PeriodPlace) -> Path:
+        match place:
+            case "internal_settlement":
+                return self.internal_settlement
+            case "collective_file":
+                return self.collective_file
+            case "period_folder":
+                return self.directory
+            case "worker_settlements_folder":
+                return self.worker_settlements
+
     def worker_settlement(self, worker_name: str) -> Path:
         """Rozliczenie pracownika Wykonawcy ``worker_name`` w Folderze rozliczeń pracowników."""
 
@@ -274,6 +287,18 @@ def period_status_label(status: PeriodStatus) -> str:
             return "Plik zbiorczy przygotowany"
         case "worker_settlements_ready":
             return "Rozliczenia pracowników gotowe"
+
+
+def period_place_label(place: PeriodPlace) -> str:
+    match place:
+        case "internal_settlement":
+            return "Rozliczenie wewnętrzne"
+        case "collective_file":
+            return "Plik zbiorczy"
+        case "period_folder":
+            return "Folder okresu"
+        case "worker_settlements_folder":
+            return "Folder rozliczeń pracowników"
 
 
 def _month_periods_folders(periods_directory: Path) -> list[Path]:
