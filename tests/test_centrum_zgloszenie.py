@@ -489,25 +489,41 @@ def test_po_ponownym_starcie_kolejke_ponawia_tylko_budzik_nowego_centrum_jak_w_n
 def test_po_ponownym_starcie_uporzadkowania_intermax_kolejke_ponawia_tylko_budzik_nowego_centrum(
     tmp_path: Path,
 ) -> None:
-    since = new_line()  # klient ``OrderingCentrum`` nie ma ``stop``, więc test czeka na wątki Centrum od tej chwili
     centrum = ordering_centrum(tmp_path)
     centrum.run_to_end()  # bez klucza Logi Uruchomienia czekają, a kolejka nastawia ponowienie za ``RETRY_S``
-    join_threads_since(since)
+    centrum.client.stop()
     box, clock = centrum.surroundings.report_box, centrum.surroundings.clock
     centrum.restart()
     clock.advance(RETRY_S / 2)
     with centrum.client:  # nowe Centrum przy starcie przechodzi kolejkę i bez klucza ponowi ją za ``RETRY_S``
         pass
-    join_threads_since(since)
+    centrum.client.stop()
     write_report_key(centrum.tool)
 
     clock.advance(RETRY_S / 2)  # chwila ponowienia poprzedniego Centrum
-    join_threads_since(since)
+    centrum.client.stop()
     after_previous_alarm = len(box.background_issues)
     clock.advance(RETRY_S / 2)  # chwila ponowienia nowego Centrum
-    join_threads_since(since)
+    centrum.client.stop()
 
     assert (after_previous_alarm, len(box.background_issues)) == (0, 1)
+
+
+def test_ponowny_start_uporzadkowania_intermax_zaczyna_sie_po_koncu_przejscia_kolejki_poprzedniego(
+    tmp_path: Path,
+) -> None:
+    box = FakeReportBox()  # Logi Uruchomienia idą zakładaniem issue, które test wstrzymuje
+    centrum = ordering_centrum(tmp_path, surroundings=Surroundings(report_box=box))
+    write_report_key(centrum.tool)
+    hold = box.open_hold = threading.Event()
+    centrum.run_to_end()
+    assert box.opening.wait(30)  # przejście kolejki czeka na skrzynkę z Logami Uruchomienia
+    release = threading.Timer(0.2, hold.set)
+    release.start()
+
+    centrum.restart()
+
+    assert [issue.label for issue in box.issues] == ["logi-uruchomienia"]
 
 
 def test_zatrzymanie_centrum_nie_czeka_na_budzik_centrum_poprzedniego_testu_nastawiony_po_jego_starcie(

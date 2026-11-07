@@ -1,15 +1,20 @@
 """Serwer Centrum rozliczeń: ``start`` i ``stop`` w dzienniku, póki Centrum trzyma port, i port, który zamknięte Centrum
 zwalnia od razu, także gdy jego kolejka Skrzynki Zgłoszeń jeszcze wysyła, oraz zatrzymanie Centrum w teście, które
-czeka na koniec każdego jego wątku, i klient testowy, który nie otwiera pętli zdarzeń na każde żądanie (#975)."""
+czeka na koniec każdego jego wątku, także każdego Centrum, którego test nie zatrzymał, zanim reguła prywatności czyta
+dziennik, i klient testowy, który nie otwiera pętli zdarzeń na każde żądanie (#975)."""
 
 from __future__ import annotations
 
 import asyncio.base_events
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
+import subprocess
+import sys
 import threading
 from typing import Any
+from xml.etree import ElementTree as ET
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -43,6 +48,7 @@ KONTROLA = Post.of(
     frame=lambda _number, _count, text: text,
 )
 QUEUED = "20261023T101500000000Z-0001-kontrola-ilosci-3f2a9c1b.json"
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _port_free(port: int) -> bool:
@@ -240,18 +246,89 @@ def centra_po_tescie() -> Iterator[list[CentrumClient]]:
     assert [thread.name for client in clients for thread in client.threads()] == []
 
 
-def test_centrum_testu_bez_stop_zatrzymuje_sie_po_tescie_razem_z_watkami(centra_po_tescie: list[CentrumClient]) -> None:
-    # Reguła „test nie zostawia wątku” nie zależy od tego, czy autor zawołał ``stop``: zatrzymuje go conftest po teście.
-    stopping = threading.Event()
+def test_kazde_centrum_testu_bez_stop_zatrzymuje_sie_po_tescie_razem_z_watkami(centra_po_tescie: list[CentrumClient]) -> None:
+    # Reguła „test nie zostawia wątku” nie zależy od tego, czy autor zawołał ``stop``: conftest po teście zatrzymuje
+    # każde Centrum testu, nie tylko pierwsze albo ostatnie.
+    def started(name: str) -> CentrumClient:
+        stopping = threading.Event()
+
+        @asynccontextmanager
+        async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+            threading.Thread(target=stopping.wait, name=name, daemon=True).start()
+            yield
+            stopping.set()
+
+        client = CentrumClient(FastAPI(lifespan=lifespan))
+        client.__enter__()
+        centra_po_tescie.append(client)
+        return client
+
+    first, second = started("praca-pierwszego-centrum"), started("praca-drugiego-centrum")
+
+    assert {"praca-pierwszego-centrum", "praca-drugiego-centrum"} <= {
+        thread.name for client in (first, second) for thread in client.threads()
+    }
+
+
+# Centrum testu, które przy zamknięciu (``lifespan``) pisze do swojego dziennika ścieżkę katalogu tymczasowego testów.
+_PRIVACY_PROBE = """
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI
+
+from rozliczenia.centrum.log import CentrumLog
+
+from tests.fixtures.centrum import CentrumClient
+
+
+def started(tmp_path: Path) -> CentrumClient:
+    log = CentrumLog(tmp_path / "logs" / "centrum-rozliczen.log")
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        threading.Thread(target=stopping.wait, name="praca-centrum", daemon=True).start()
         yield
-        stopping.set()
+        log.run_started(process="settlement", mode="podglad", period=str(tmp_path))
 
     client = CentrumClient(FastAPI(lifespan=lifespan))
     client.__enter__()
-    centra_po_tescie.append(client)
+    return client
 
-    assert "praca-centrum" in [thread.name for thread in client.threads()]
+
+def test_bez_stop(tmp_path: Path) -> None:
+    started(tmp_path)
+
+
+def test_ze_stop(tmp_path: Path) -> None:
+    started(tmp_path).stop()
+"""
+
+
+def test_wpis_dziennika_przy_zamknieciu_centrum_bez_stop_lamie_regule_prywatnosci_jak_po_stop(tmp_path: Path) -> None:
+    # Conftest zatrzymuje Centrum, którego test nie zatrzymał, zanim reguła prywatności (ADR 0004) czyta dziennik, więc
+    # wpis z zamknięcia Centrum sprawdza tak samo, jak po ``stop`` w teście; kolejność autouse z nazw by to odwróciła.
+    (tmp_path / "test_sonda_prywatnosci.py").write_text(_PRIVACY_PROBE, encoding="utf-8")
+    report = tmp_path / "junit.xml"
+    done = subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "tests.conftest", "-p", "no:cacheprovider", "-n", "0"]
+        + [f"--junitxml={report}", "test_sonda_prywatnosci.py"],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(ROOT)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=100,
+        check=False,
+    )
+
+    broken = {
+        case.attrib["name"]: [element.get("message", "") for element in case if element.tag == "error"]
+        for case in ET.parse(report).iter("testcase")
+    }
+    assert done.returncode == 1, done.stdout + done.stderr
+    leak = "Reguła prywatności Centrum (ADR 0004) złamana"
+    assert {name: any(leak in message for message in messages) for name, messages in broken.items()} == {
+        "test_bez_stop": True,
+        "test_ze_stop": True,
+    }
