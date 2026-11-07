@@ -484,11 +484,13 @@ export const zOrderNote = z.object({
 /**
  * OrderNotes
  *
- * Błędy zleceń, ostrzeżenia Emmetta i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego Uruchomienia.
+ * Błędy zleceń, ostrzeżenia Emmetta, Zlecenia przekazane i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego
+ * Uruchomienia.
  */
 export const zOrderNotes = z.object({
     errors: z.array(zOrderNote),
     warnings: z.array(zOrderNote),
+    forwarded: z.array(zOrderLine),
     settled: z.array(zOrderLine)
 });
 
@@ -616,10 +618,12 @@ export const zPriceListItem = z.object({
 /**
  * PricedOrders
  *
- * Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, rozliczone, błędy i ostrzeżenia Emmetta.
+ * Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, przekazane do akceptacji, rozliczone, błędy i
+ * ostrzeżenia Emmetta.
  */
 export const zPricedOrders = z.object({
     ready: z.int(),
+    forwarded: z.int(),
     settled: z.int(),
     errors: z.int(),
     warnings: z.int()
@@ -629,7 +633,7 @@ export const zPricedOrders = z.object({
  * PricingNotification
  *
  * Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia
- * (``headline``), okres, zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”
+ * (``headline``), okres, tryb (jak ``RunInfo.pricing``), zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”
  * Komunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów.
  */
 export const zPricingNotification = z.object({
@@ -640,6 +644,7 @@ export const zPricingNotification = z.object({
     run_id: z.string(),
     headline: z.string(),
     period: z.string(),
+    pricing: z.enum(['bez Przekazania', 'z Przekazaniem']).nullable(),
     orders: zPricedOrders.nullable(),
     stopped: z.string().nullable()
 });
@@ -695,7 +700,8 @@ export const zProcessRun = z.object({
  *
  * ``reminder``, ``confirms_readiness`` i ``preview_hint`` deklaruje proces: przypomnienie przed
  * uruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma
- * podglądu bez zapisu, jak Wycena w efenix).
+ * podglądu bez zapisu, jak Wycena w efenix). ``pricing_modes``: tryby Wyceny w efenix, z których tata wybiera
+ * przyciskiem przy każdym starcie, w kolejności przycisków (pusta lista: proces bez trybów i z jednym „Uruchom”).
  */
 export const zProcessSetup = z.object({
     process: z.enum([
@@ -708,6 +714,7 @@ export const zProcessSetup = z.object({
     reminder: z.string(),
     confirms_readiness: z.boolean(),
     preview_hint: z.string().nullable(),
+    pricing_modes: z.array(z.enum(['bez Przekazania', 'z Przekazaniem'])),
     periods: z.array(zPeriodChoice),
     preselected_period: z.string(),
     blocker: z.string().nullable()
@@ -1106,7 +1113,8 @@ export const zRunCardMissing = z.object({
  * Uruchomienie procesu; ``confirms_readiness`` i ``register_name`` deklaruje proces.
  *
  * ``confirms_readiness``: „Uruchom” potwierdza Gotowość. ``register_name``: nazwa Rejestru zleceń z Komunikatów
- * procesu, pod którą karta proponuje otworzyć go przy Zatrzymaniu.
+ * procesu, pod którą karta proponuje otworzyć go przy Zatrzymaniu. ``pricing``: tryb Wyceny w efenix tego
+ * Uruchomienia (``None``: proces bez trybów).
  */
 export const zRunInfo = z.object({
     id: z.string(),
@@ -1119,6 +1127,7 @@ export const zRunInfo = z.object({
     title: z.string(),
     period: z.string(),
     dry_run: z.boolean(),
+    pricing: z.enum(['bez Przekazania', 'z Przekazaniem']).nullable(),
     confirms_readiness: z.boolean(),
     register_name: z.string()
 });
@@ -1185,6 +1194,8 @@ export const zRunRecorded = z.object({
  * RunRequest
  *
  * Start Uruchomienia procesu; pliki wejściowe wylicza serwer z ustawień i okresu.
+ *
+ * ``pricing``: tryb Wyceny w efenix, który tata wybrał przyciskiem; proces bez trybów przyjmuje tylko domyślny.
  */
 export const zRunRequest = z.object({
     process: z.enum([
@@ -1193,7 +1204,8 @@ export const zRunRequest = z.object({
         'efenix'
     ]),
     period: z.string(),
-    dry_run: z.boolean()
+    dry_run: z.boolean(),
+    pricing: z.enum(['bez Przekazania', 'z Przekazaniem']).optional().default('bez Przekazania')
 });
 
 /**
@@ -1543,7 +1555,7 @@ export const zLoggedOutcome = z.object({
  * ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
  * Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
  * Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
- * zostały tacie, i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
+ * zostały tacie, Zlecenia przekazane i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
  * trzech częściach (``None``: inny proces albo wynik bez podsumowania).
  */
 export const zRunOutcome = z.object({

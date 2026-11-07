@@ -151,11 +151,19 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `025b50132` (2026-11-07, merge of `main` with N3a into Przekazanie do akceptacji). Every row of the table
-was checked against the code at this commit. It joins the two Sync commits below, which changed disjoint definitions
-(no file of `model/definicje.json` changed on both sides since their merge-base), so no action changed.
+Sync commit: `959eb5864` (2026-11-07, merge of the rdzeń of Przekazanie at `4c6596424` into the two buttons of
+Wycena w efenix). Every row of the table was checked against the code at this commit. It joins the two Sync commits
+below, which changed disjoint definitions (no file of `model/definicje.json` changed on both sides since their
+merge-base `14e590600`), so no action changed.
 
 Earlier Sync commits, each checked the same way:
+- `660044485` (the two buttons of Wycena w efenix in Centrum, ADR 0027): Since `7d6eca83d` the start facts
+  (`StartFacts`, the first line of the journal `_first_line`, the last-start file of `LogsOnDisk.started`,
+  `_read_journal` and `RunLog.interrupted`) carry the mode of the Wycena as one more field, read back the same way as
+  `mode`; no step, write or order of the journal changed, so no action changed.
+- `025b50132` (merge of `main` with N3a into Przekazanie do akceptacji): It joins the two Sync commits below, which
+  changed disjoint definitions (no file of `model/definicje.json` changed on both sides since their merge-base), so no
+  action changed.
 - `7d6eca83d` (Przekazanie do akceptacji, ADR 0027): Since `aefc594f1` `save` passes the mode of the Wycena to
   `_outcome`, which in the mode with Przekazanie also forwards a gotowe order to acceptance (one more change in efenix
   between `journal.begun` and `journal.ended`, traced like every other), and `run_logs` has the result `przekazane`; the

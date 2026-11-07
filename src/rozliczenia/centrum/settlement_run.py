@@ -69,6 +69,7 @@ class SettlementEntry:
             reminder=_VIEW.reminder,
             confirms_readiness=_VIEW.confirms_readiness,
             preview_hint=_VIEW.preview_hint,
+            pricing_modes=list(_VIEW.pricing_modes),
             periods=[
                 _choice(
                     row,

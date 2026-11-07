@@ -1028,7 +1028,8 @@ export type OrderNote = {
 /**
  * OrderNotes
  *
- * Błędy zleceń, ostrzeżenia Emmetta i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego Uruchomienia.
+ * Błędy zleceń, ostrzeżenia Emmetta, Zlecenia przekazane i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego
+ * Uruchomienia.
  */
 export type OrderNotes = {
     /**
@@ -1039,6 +1040,10 @@ export type OrderNotes = {
      * Warnings
      */
     warnings: Array<OrderNote>;
+    /**
+     * Forwarded
+     */
+    forwarded: Array<OrderLine>;
     /**
      * Settled
      */
@@ -1316,13 +1321,18 @@ export type PriceListItem = {
 /**
  * PricedOrders
  *
- * Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, rozliczone, błędy i ostrzeżenia Emmetta.
+ * Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, przekazane do akceptacji, rozliczone, błędy i
+ * ostrzeżenia Emmetta.
  */
 export type PricedOrders = {
     /**
      * Ready
      */
     ready: number;
+    /**
+     * Forwarded
+     */
+    forwarded: number;
     /**
      * Settled
      */
@@ -1341,7 +1351,7 @@ export type PricedOrders = {
  * PricingNotification
  *
  * Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia
- * (``headline``), okres, zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”
+ * (``headline``), okres, tryb (jak ``RunInfo.pricing``), zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”
  * Komunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów.
  */
 export type PricingNotification = {
@@ -1373,6 +1383,10 @@ export type PricingNotification = {
      * Period
      */
     period: string;
+    /**
+     * Pricing
+     */
+    pricing: 'bez Przekazania' | 'z Przekazaniem' | null;
     orders: PricedOrders | null;
     /**
      * Stopped
@@ -1458,7 +1472,8 @@ export type ProcessRun = {
  *
  * ``reminder``, ``confirms_readiness`` i ``preview_hint`` deklaruje proces: przypomnienie przed
  * uruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma
- * podglądu bez zapisu, jak Wycena w efenix).
+ * podglądu bez zapisu, jak Wycena w efenix). ``pricing_modes``: tryby Wyceny w efenix, z których tata wybiera
+ * przyciskiem przy każdym starcie, w kolejności przycisków (pusta lista: proces bez trybów i z jednym „Uruchom”).
  */
 export type ProcessSetup = {
     /**
@@ -1485,6 +1500,10 @@ export type ProcessSetup = {
      * Preview Hint
      */
     preview_hint: string | null;
+    /**
+     * Pricing Modes
+     */
+    pricing_modes: Array<'bez Przekazania' | 'z Przekazaniem'>;
     /**
      * Periods
      */
@@ -1981,7 +2000,8 @@ export type RunIdle = {
  * Uruchomienie procesu; ``confirms_readiness`` i ``register_name`` deklaruje proces.
  *
  * ``confirms_readiness``: „Uruchom” potwierdza Gotowość. ``register_name``: nazwa Rejestru zleceń z Komunikatów
- * procesu, pod którą karta proponuje otworzyć go przy Zatrzymaniu.
+ * procesu, pod którą karta proponuje otworzyć go przy Zatrzymaniu. ``pricing``: tryb Wyceny w efenix tego
+ * Uruchomienia (``None``: proces bez trybów).
  */
 export type RunInfo = {
     /**
@@ -2004,6 +2024,10 @@ export type RunInfo = {
      * Dry Run
      */
     dry_run: boolean;
+    /**
+     * Pricing
+     */
+    pricing: 'bez Przekazania' | 'z Przekazaniem' | null;
     /**
      * Confirms Readiness
      */
@@ -2048,7 +2072,7 @@ export type RunInterrupted = {
  * ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
  * Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
  * Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
- * zostały tacie, i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
+ * zostały tacie, Zlecenia przekazane i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
  * trzech częściach (``None``: inny proces albo wynik bez podsumowania).
  */
 export type RunOutcome = {
@@ -2153,6 +2177,8 @@ export type RunRecorded = {
  * RunRequest
  *
  * Start Uruchomienia procesu; pliki wejściowe wylicza serwer z ustawień i okresu.
+ *
+ * ``pricing``: tryb Wyceny w efenix, który tata wybrał przyciskiem; proces bez trybów przyjmuje tylko domyślny.
  */
 export type RunRequest = {
     /**
@@ -2167,6 +2193,10 @@ export type RunRequest = {
      * Dry Run
      */
     dry_run: boolean;
+    /**
+     * Pricing
+     */
+    pricing?: 'bez Przekazania' | 'z Przekazaniem';
 };
 
 /**

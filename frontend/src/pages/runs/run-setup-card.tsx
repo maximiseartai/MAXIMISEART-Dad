@@ -1,7 +1,7 @@
 import * as React from "react"
-import { EyeIcon, FileSpreadsheetIcon, FolderIcon, InfoIcon, PlayIcon, ReceiptTextIcon, TriangleAlertIcon, UsersIcon } from "lucide-react"
+import { EyeIcon, FileSpreadsheetIcon, FolderIcon, InfoIcon, ReceiptTextIcon, TriangleAlertIcon, UsersIcon } from "lucide-react"
 
-import type { PathSetting, PeriodChoice, PeriodProcess, ProcessSetup } from "@/api/centrum"
+import type { PathSetting, PeriodChoice, PeriodProcess, Pricing, ProcessSetup, RunRequest } from "@/api/centrum"
 import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { shortDate } from "@/lib/format"
+import { PRICING } from "@/lib/pricing"
 import { useRuns, type RunDraft } from "@/lib/runs"
 import { useSettings } from "@/lib/settings"
 import { ConfirmRunDialog } from "@/pages/runs/run-dialogs"
@@ -55,15 +56,18 @@ const PROCESS_ICONS: Record<PeriodProcess, React.ReactNode> = {
 
 /**
  * Nowe Uruchomienie procesu: proces (kafelki), okres z preselekcją ostatniego pełnego okresu, pliki
- * z ustawień i jedna akcja główna „Podgląd bez zapisu”. „Uruchom” zapisuje po potwierdzeniu, a w procesie bez
- * podglądu (Wycena w efenix) jest akcją główną. Przebieg rozliczeń i Wycena w efenix nie mają wyboru pliku: Plik
- * zbiorczy wynika z okresu. Plik wejściowy otwarty w Excelu
+ * z ustawień i jedna akcja główna „Podgląd bez zapisu”. „Uruchom” zapisuje po potwierdzeniu. Wycena w efenix nie ma
+ * podglądu, a zamiast „Uruchom” ma przycisk każdego swojego trybu obok siebie, równej wagi i bez domyślnego, bo tata
+ * wybiera tryb przy każdym starcie (ADR 0027). Przebieg rozliczeń i
+ * Wycena w efenix nie mają wyboru pliku: Plik zbiorczy wynika z okresu. Plik wejściowy otwarty w Excelu
  * wyłącza „Uruchom”; podgląd zostaje, bo przy blokadzie po awarii Excela jego Zatrzymanie mówi, co zrobić.
  */
 export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSetup> }) {
   const { draft, setDraft, starting, start } = useRuns()
   const { settings, picker, choose } = useSettings()
   const [confirming, setConfirming] = React.useState(false)
+  // Tryb przycisku, który otworzył potwierdzenie; zostaje po zamknięciu, żeby okno nie zmieniało treści, gdy znika.
+  const [pricing, setPricing] = React.useState<Pricing | null>(null)
   const chosen = processes.find((setup) => setup.process === draft?.process) ?? processes[0]
 
   if (chosen === undefined) {
@@ -89,8 +93,23 @@ export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSe
 
   const choices = chosen.periods.map((choice) => ({ value: choice.token, label: <PeriodLabel choice={choice} /> }))
 
-  const run = (dryRun: boolean) => start({ ...selection, dry_run: dryRun })
+  const run = (dryRun: boolean, chosenPricing: Pricing | null) => {
+    const request: RunRequest = { ...selection, dry_run: dryRun }
+
+    if (chosenPricing !== null) {
+      request.pricing = chosenPricing
+    }
+
+    return start(request)
+  }
+
+  const confirm = (chosenPricing: Pricing | null) => {
+    setPricing(chosenPricing)
+    setConfirming(true)
+  }
+
   const previewHint = chosen.preview_hint
+  const runBlocked = blocked || openInExcel.length > 0 || starting
 
   return (
     <Card>
@@ -214,31 +233,27 @@ export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSe
             {reminder}
           </span>
         )}
-        {previewHint === null ? (
-          <Button
-            size="lg"
-            className="ml-auto h-10 px-4"
-            disabled={blocked || openInExcel.length > 0 || starting}
-            onClick={() => setConfirming(true)}
-          >
-            <PlayIcon data-icon="inline-start" />
-            Uruchom
-          </Button>
+        {chosen.pricing_modes.length > 0 ? (
+          <div className="ml-auto flex items-start gap-3">
+            {chosen.pricing_modes.map((mode) => (
+              <PricingButton key={mode} pricing={mode} disabled={runBlocked} onClick={() => confirm(mode)} />
+            ))}
+          </div>
         ) : (
           <>
             <Button
               variant="ghost"
               size="lg"
               className="ml-auto"
-              disabled={blocked || openInExcel.length > 0 || starting}
-              onClick={() => setConfirming(true)}
+              disabled={runBlocked}
+              onClick={() => confirm(null)}
             >
               Uruchom
             </Button>
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <Button size="lg" className="h-10 px-4" disabled={blocked || starting} onClick={() => run(true)} />
+                  <Button size="lg" className="h-10 px-4" disabled={blocked || starting} onClick={() => run(true, null)} />
                 }
               >
                 <EyeIcon data-icon="inline-start" />
@@ -258,9 +273,28 @@ export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSe
         confirmsReadiness={chosen.confirms_readiness}
         // Bez podglądu bez zapisu w procesie nie ma czego uprzedzać.
         previewed={previewHint === null || (chosenPeriod?.previewed ?? false)}
-        onConfirm={() => run(false)}
+        pricing={pricing}
+        onConfirm={() => run(false, pricing)}
       />
     </Card>
+  )
+}
+
+/** Przycisk trybu Wyceny w efenix z podpisem pod nim, który mówi, kto klika zielony „Zapisz” w efenix. */
+function PricingButton({ pricing, disabled, onClick }: { pricing: Pricing; disabled: boolean; onClick: () => void }) {
+  const mode = PRICING[pricing]
+  const hintId = React.useId()
+
+  return (
+    <div className="flex w-72 flex-col gap-1.5">
+      <Button variant="outline" size="lg" className="h-10 px-4" disabled={disabled} aria-describedby={hintId} onClick={onClick}>
+        <mode.icon data-icon="inline-start" />
+        {mode.label}
+      </Button>
+      <p id={hintId} className="text-center text-xs text-pretty text-muted-foreground">
+        {mode.hint}
+      </p>
+    </div>
   )
 }
 

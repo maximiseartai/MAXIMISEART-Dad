@@ -82,6 +82,7 @@ from rozliczenia.centrum.stops import StoppedRun
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues, forbidden_columns
 from rozliczenia.decision import Decision
 from rozliczenia.efenix_orders import PricingScope, read_scope
+from rozliczenia.efenix_pricing import PricingMode
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.input_copy import InputCopy
@@ -733,14 +734,16 @@ def _efenix(record: RunLog, work: _Work) -> _Setup:
     atrapa = work.stack.enter_context(atrapa_z_logow.started(fed, today))
     url = atrapa.url
     forbidden, copy = ForbiddenValues(), InputCopy()
+    pricing = record.pricing or contract.DEFAULT_PRICING
     inputs = EfenixInputs(
         source,
         lambda _login: efenix_browser.chromium(url),
         pace=None,
         forbidden=forbidden,
         copy=copy,
+        mode=PricingMode(pricing),
     )
-    prepared = PreparedRun(EFENIX, record.period, EFENIX.core(_PROCESSES), inputs, copy)
+    prepared = PreparedRun(EFENIX, record.period, EFENIX.core(_PROCESSES), inputs, copy, pricing=pricing)
     limits = [Limit(text, blocking=blocking) for text, blocking in fed.limits]
     return _Setup(prepared, forbidden, limits)
 
@@ -808,7 +811,9 @@ def _run(record: RunLog, setup: _Setup, work: Path) -> RunLog:
 
     prepared = setup.prepared
     tata = _Tata(prepared, consent=record.ending != "declined")
-    info = prepared.declaration.run_info(run_id=record.run_id, period=record.period, dry_run=prepared.dry_run)
+    info = prepared.declaration.run_info(
+        run_id=record.run_id, period=record.period, dry_run=prepared.dry_run, pricing=prepared.pricing
+    )
     started_at = datetime.now(timezone.utc)
     core = run_process(
         prepared.process,

@@ -35,7 +35,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.catalog import ProcessDeclaration
+from rozliczenia.centrum.catalog import ProcessDeclaration, declaration_of
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.run_view import ProcessView, Shown, WarnedSummary
@@ -58,6 +58,7 @@ from rozliczenia.telemetry import MetricsStore
 _STREAM_POLL_SECONDS: Final = 0.05
 _KEEPALIVE_SECONDS: Final = 15.0
 _RECONNECT_MS: Final = 1000
+_PRICING_ONLY: Final = "{title} nie ma trybu z Przekazaniem do akceptacji."
 CONTINUE_HINT: Final = "przy decyzji wybierz „Kontynuuj”"
 """Jak w Centrum wyraża się zgodę w Decyzji taty (``Conversation.continue_hint``); ten sam tekst ma Komunikat po
 odmowie w Uruchomieniu odtworzonym z Logów (``tools/odtworz_uruchomienie.py``)."""
@@ -86,7 +87,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu, okres, rdzeń procesu i jego wejście.
 
     ``input_copy``: Kopia wejścia, którą czytniki procesu wypełniają w trakcie Uruchomienia; ``None``: Uruchomienie bez
-    Kopii.
+    Kopii. ``pricing``: tryb Wyceny w efenix (``None``: proces bez trybów).
     """
 
     declaration: ProcessDeclaration[InputsT, SummaryT]
@@ -94,6 +95,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     process: Process[InputsT, SummaryT]
     inputs: InputsT
     input_copy: InputCopy | None = None
+    pricing: contract.Pricing | None = None
 
     @property
     def dry_run(self) -> bool:
@@ -484,7 +486,9 @@ class _Run:
         self._host = host
         self._prepared = prepared
         self._stops = stops
-        self.info = prepared.declaration.run_info(run_id=uuid.uuid4().hex, period=prepared.period, dry_run=prepared.dry_run)
+        self.info = prepared.declaration.run_info(
+            run_id=uuid.uuid4().hex, period=prepared.period, dry_run=prepared.dry_run, pricing=prepared.pricing
+        )
         self.started_at = datetime.now(timezone.utc)
         self._progress = prepared.progress_view(ProgressProjection().snapshot)
         self._stale = False
@@ -651,6 +655,9 @@ def runs_router(host: RunHost, entries: Sequence[ProcessEntry]) -> APIRouter:
 
     @router.post("", operation_id="startRun", responses=contract.NOT_FOUND_OR_CONFLICT)
     def start(request: contract.RunRequest) -> contract.RunView:
+        declaration = declaration_of(request.process)
+        if request.pricing not in (declaration.view.pricing_modes or (contract.DEFAULT_PRICING,)):
+            raise contract.Refusal(409, _PRICING_ONLY.format(title=declaration.title))
         return host.start(by_key[request.process].prepare(request))
 
     @router.get("/current", operation_id="getCurrentRun")

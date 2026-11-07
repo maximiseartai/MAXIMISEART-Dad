@@ -48,6 +48,10 @@ Zielony „Zapisz” przy zleceniu w efenix: zlecenie przechodzi ze statusu „D
 wyceny” do „Do akceptacji” i jego wycenę sprawdza firma. Robi je tata albo
 Wycena w efenix w trybie z Przekazaniem, tylko przy zleceniu gotowym (ADR 0027).
 Czerwony „Zapisz” obok niego anuluje zlecenie, a tego narzędzie nie robi nigdy.
+Tata mówi o nim „zapis”, więc w Centrum rozliczeń przyciski trybów Wyceny w efenix
+(„Uzupełnij bez zapisu”, „Uzupełnij i zapisz”) i plakietka trybu na jej karcie
+(„Bez zapisu”, „Z zapisem”) używają jego słowa, a plakietka karty Wyceny nie mówi o
+zapisie plików. Kod i dokumenty mówią Przekazanie do akceptacji.
 _Avoid_: zapis, zatwierdzenie
 
 ## Wycena w efenix
@@ -55,7 +59,8 @@ _Avoid_: zapis, zatwierdzenie
 Proces, który tata uruchamia w Centrum rozliczeń dla okresu po Gotowości:
 w oknie efenix, w którym tata jest zalogowany, uzupełnia wycenę każdego
 zlecenia Pliku zbiorczego, które nie jest Zleceniem ze zdjęciami ani usterką,
-Wyceną Emmetta i Ilościami usług z Pliku zbiorczego. Ma dwa tryby (ADR 0027):
+Wyceną Emmetta i Ilościami usług z Pliku zbiorczego. Ma dwa tryby (ADR 0027),
+które tata wybiera przy każdym starcie jednym z dwóch przycisków, a Centrum żadnego nie pamięta:
 bez Przekazania gotowe zlecenie oznacza Znacznikiem efenix, a z Przekazaniem
 robi jego Przekazanie do akceptacji i oznacza je Znacznikiem przekazania. W obu trybach uzupełnia wycenę w efenix,
 więc tryb bez Przekazania nie jest podglądem. Wycenę dokańcza do
@@ -615,7 +620,7 @@ realizator i nazwy części adresu (ulica, numer domu, lokal), którymi różni 
 od `ADRES`, bez ich wartości, a ze strony zlecenia status, realizator, datę
 wykonania, kwotę i ilość każdej pozycji; zrzutów ekranu nie mają. Mówią wprost,
 czy był to podgląd, w którym nic nie
-zapisano, czy Uruchomienie z zapisem. Zostają na komputerze taty także po
+zapisano, czy Uruchomienie z zapisem, a Logi Wyceny w efenix także jej tryb. Zostają na komputerze taty także po
 zamknięciu Centrum i trafiają same do Skrzynki Zgłoszeń, gdzie wszystkie
 Uruchomienia jednego okresu są w jednym miejscu; Uruchomienie Uporządkowania
 INTERMAX jest tam przy okresie dnia, w którym tata je uruchomił. Według reguły
@@ -788,8 +793,8 @@ zakończonych Wycenach w efenix, pokazany w widoku Powiadomienia w Centrum
 rozliczeń, do którego prowadzi dzwonek. Nieprzeczytane Powiadomienie zapala
 kropkę na dzwonku; wejście do widoku oznacza wszystkie jako przeczytane.
 Powiadomienie o zakończonej Wycenie w efenix, także zakończonej Zatrzymaniem,
-ma tytuł wyniku, okres, liczby zleceń gotowych do przekazania, Zleceń
-rozliczonych, błędów i Ostrzeżeń Emmetta, „Co się stało” Zatrzymania i przycisk karty Uruchomienia:
+ma tytuł wyniku, okres, tryb Wyceny, liczby zleceń gotowych do przekazania, Zleceń
+przekazanych, Zleceń rozliczonych, błędów i Ostrzeżeń Emmetta, „Co się stało” Zatrzymania i przycisk karty Uruchomienia:
 tata w trakcie patrzy na okno efenix albo odchodzi od komputera. Toast wyniku
 w karcie Centrum nie jest Powiadomieniem, a uwagi techniczne z karty
 Uruchomienia, np. o niezapisanych metrykach, też nie.

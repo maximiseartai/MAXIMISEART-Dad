@@ -143,6 +143,9 @@ export type Process = RunInfo["process"]
 /** Proces, którego Uruchomienie tata wybiera z okresem; Uporządkowanie INTERMAX ma własną kartę. */
 export type PeriodProcess = RunRequest["process"]
 
+/** Tryb Wyceny w efenix (ADR 0027): bez Przekazania do akceptacji gotowych zleceń albo z nim. */
+export type Pricing = NonNullable<RunInfo["pricing"]>
+
 /** Karta „Uporządkuj INTERMAX” poza okresami. */
 export type IntermaxSetup = GetIntermaxSetupResponse
 

@@ -115,7 +115,7 @@ from tests.fixtures.workbooks import active_worksheet, rewrite_parts
 
 AnyCentrum = PreparingCentrum | SettlingCentrum
 KEYS = {
-    "schema_version", "run_id", "process", "mode", "period", "started_at", "ended_at", "duration_ms", "tool",
+    "schema_version", "run_id", "process", "mode", "pricing", "period", "started_at", "ended_at", "duration_ms", "tool",
     "result", "ending", "stop_kind", "issue_count", "messages", "technical_notes", "summary", "phases", "templates",
     "inea_only_cleared", "intermax_entries", "efenix_orders", "efenix_stop", "environment", "trace", "diagnosis",
     "dad_actions", "interruption", "input_copy", "input_copy_notes",
@@ -1183,8 +1183,13 @@ def _pricing_centrum(tmp_path: Path, atrapa: AtrapaEfenix, *arguments: str) -> S
     return centrum
 
 
-def _start_pricing(centrum: SettlingCentrum, *, dry_run: bool = False) -> Any:
-    return centrum.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "dry_run": dry_run})
+def _start_pricing(centrum: SettlingCentrum, *, dry_run: bool = False, pricing: str | None = None) -> Any:
+    """Start Wyceny w efenix jak przycisk karty startu; bez ``pricing`` żądanie nie ma trybu (domyślny)."""
+
+    request: dict[str, Any] = {"process": "efenix", "period": PERIOD, "dry_run": dry_run}
+    if pricing is not None:
+        request["pricing"] = pricing
+    return centrum.client.post("/api/runs", json=request)
 
 
 def _view_where(centrum: SettlingCentrum, wanted: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
@@ -1225,6 +1230,7 @@ def test_karta_startu_wyceny_w_efenix_to_okresy_z_plikiem_zbiorczym_bez_podgladu
 
     assert (setup["title"], setup["creates"], setup["blocker"]) == ("Wycena w efenix", "Wyceny zleceń i Znaczniki efenix", None)
     assert (setup["confirms_readiness"], setup["preview_hint"], setup["preselected_period"]) == (False, None, PERIOD)
+    assert setup["pricing_modes"] == ["bez Przekazania", "z Przekazaniem"], "dwa przyciski: bez zapisu i z zapisem"
     reminder = "Zapisz i zamknij Plik zbiorczy w Excelu"
     assert [
         (choice["token"], choice["last_complete"], choice["previewed"], choice["collective_file"], choice["reminder"])
@@ -1291,7 +1297,7 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
     assert (notification["headline"], notification["period"], notification["orders"], notification["stopped"]) == (
         "Wycena w efenix gotowa · wymaga sprawdzenia",
         PERIOD,
-        {"ready": 1, "settled": 0, "errors": 2, "warnings": 3},
+        {"ready": 1, "forwarded": 0, "settled": 0, "errors": 2, "warnings": 3},
         None,
     )
     assert (notification["run_id"], card["state"], card["result"]["headline"]) == (
@@ -1361,14 +1367,15 @@ def test_zlecenie_rozliczone_w_efenix_ma_na_karcie_w_logach_i_w_powiadomieniu_wl
     )
     traced = [(order["row"], order["outcome"], order["code"], [step["action"] for step in order["steps"]]) for order in record["efenix_orders"]]
     assert traced == [(18, "gotowe", None, ["szukanie", "otwarcie zlecenia"]), (19, "rozliczone", None, ["szukanie"])]
-    assert notification["orders"] == {"ready": 1, "settled": 1, "errors": 0, "warnings": 0}
+    assert notification["orders"] == {"ready": 1, "forwarded": 0, "settled": 1, "errors": 0, "warnings": 0}
 
 
 
 def test_zlecenie_do_akceptacji_w_efenix_ma_na_karcie_i_w_logach_wynik_przekazane_a_nie_blad(tmp_path: Path) -> None:
-    """Centrum uruchamia Wycenę w trybie bez Przekazania (ADR 0027, PR 2 dołoży wybór trybu), a zlecenie, które tata już
-    przekazał do akceptacji, to na karcie liczba „Przekazane do akceptacji”, a w Logach Uruchomienia wynik „przekazane”
-    bez kodu Komunikatu i bez otwarcia strony zlecenia; wynik to OK, a efenix nie dostaje żadnej zmiany statusu."""
+    """Start bez trybu to Wycena bez Przekazania (ADR 0027), z tym trybem na karcie i w faktach startu Logów, a zlecenie,
+    które tata już przekazał do akceptacji, to na karcie liczba i lista „Przekazane do akceptacji”, a w Logach
+    Uruchomienia wynik „przekazane” bez kodu Komunikatu i bez otwarcia strony zlecenia; wynik to OK, a efenix nie
+    dostaje żadnej zmiany statusu."""
 
     orders = [
         Order("#ZLQP01", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
@@ -1379,14 +1386,116 @@ def test_zlecenie_do_akceptacji_w_efenix_ma_na_karcie_i_w_logach_wynik_przekazan
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
         write_collective_file(centrum.period_parent, orders)
         assert _start_pricing(centrum).status_code == 200
-        result = finished_view(centrum.client)["result"]
+        finished = finished_view(centrum.client)
         requests = atrapa.status_requests()
     [record] = records(centrum)
+    result = finished["result"]
 
+    assert (finished["run"]["pricing"], record["pricing"]) == ("bez Przekazania", "bez Przekazania")
     figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
     assert (result["result"], figures["Gotowe do przekazania"], figures["Przekazane do akceptacji"], requests) == ("OK", 1, 1, [])
+    forwarded = result["order_notes"]["forwarded"]
+    assert [(line["row"], line["order"], line["worker"]) for line in forwarded] == [(19, "ZLQP02", "beata.testowa")]
     traced = [(order["row"], order["outcome"], order["code"], [step["action"] for step in order["steps"]]) for order in record["efenix_orders"]]
     assert traced == [(18, "gotowe", None, ["szukanie", "otwarcie zlecenia"]), (19, "przekazane", None, ["szukanie"])]
+
+# Zlecenie gotowe do przekazania i zlecenie, które tata już przekazał do akceptacji, każde z jedną pozycją jak w pliku.
+FORWARDED: Final = [
+    Order("#ZLQF01", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
+    Order("#ZLQF02", worker="beata.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
+]
+FORWARDED_IN_EFENIX: Final = [
+    FORWARDED[0].in_efenix("641"),
+    replace(FORWARDED[1].in_efenix("642"), status="Do akceptacji", execution_date=DAY),
+]
+
+
+def test_wycena_w_efenix_z_zapisem_przekazuje_gotowe_zlecenie_a_karta_logi_i_powiadomienie_maja_tryb_i_przekazane(
+    tmp_path: Path,
+) -> None:
+    """Przycisk „Uzupełnij i zapisz” startuje Wycenę z Przekazaniem (ADR 0027): gotowe zlecenie dostaje zielony „Zapisz”
+    w efenix, jedno żądanie zmiany statusu na „Do akceptacji”, i razem ze zleceniem przekazanym wcześniej przez tatę
+    jest na karcie liczbą i listą „Przekazane do akceptacji”, a nie gotowym. Tryb mają karta na żywo, fakty startu Logów
+    Uruchomienia, karta z Logów i Powiadomienie, które liczy też przekazane."""
+
+    with atrapa_efenix(FORWARDED_IN_EFENIX) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        write_collective_file(centrum.period_parent, FORWARDED)
+        started = _start_pricing(centrum, pricing="z Przekazaniem")
+        finished = finished_view(centrum.client)
+        requests = atrapa.status_requests()
+    [record] = records(centrum)
+    [notification] = [item for item in centrum.client.get("/api/notifications").json()["items"] if item["kind"] == "wycena_w_efenix"]
+    card = centrum.client.get(f"/api/runs/{finished['run']['id']}/card").json()
+    result = finished["result"]
+
+    assert (started.status_code, started.json()["run"]["pricing"], requests) == (200, "z Przekazaniem", [("POST", "Do akceptacji")])
+    figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
+    assert (result["result"], figures["Gotowe do przekazania"], figures["Przekazane do akceptacji"]) == ("OK", 0, 2)
+    forwarded = result["order_notes"]["forwarded"]
+    assert [(line["row"], line["order"], line["worker"]) for line in forwarded] == [
+        (18, "ZLQF01", "adrian.testowy"),
+        (19, "ZLQF02", "beata.testowa"),
+    ]
+    assert [(order["row"], order["outcome"]) for order in record["efenix_orders"]] == [(18, "przekazane"), (19, "przekazane")]
+    assert (record["pricing"], card["run"]["pricing"], notification["pricing"]) == ("z Przekazaniem",) * 3
+    assert notification["orders"] == {"ready": 0, "forwarded": 2, "settled": 0, "errors": 0, "warnings": 0}
+
+
+@pytest.mark.parametrize("kept", ["logi", "historia", "dziennik"])
+def test_karta_wyceny_z_zapisem_po_ponownym_starcie_centrum_ma_jej_tryb_z_logow_historii_albo_dziennika(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kept: str
+) -> None:
+    """Karta ostatniego Uruchomienia po ponownym starcie Centrum mówi, że Wycena była z zapisem, skądkolwiek ją wzięła: z
+    Logów Uruchomienia, z wiersza Historii i pliku ostatniego startu, gdy Logów nie ma, albo z dziennika Urwanego
+    Uruchomienia, którego Logi mają ten tryb w faktach startu."""
+
+    with atrapa_efenix(FORWARDED_IN_EFENIX) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        write_collective_file(centrum.period_parent, FORWARDED)
+        journaled = journals_at_result(monkeypatch, centrum.log_path.parent / "dzienniki-wyceny")
+        assert _start_pricing(centrum, pricing="z Przekazaniem").status_code == 200
+        run_id = finished_view(centrum.client)["run"]["id"]
+    centrum.client.stop()
+    if kept != "logi":
+        for logs in log_files(centrum):
+            logs.unlink()
+    if kept == "dziennik":
+        centrum.engines.metrics.efenix.unlink()
+        for path, text in journaled.items():
+            path.write_text(text, encoding="utf-8")
+
+    centrum.restart()
+    previous = centrum.client.get("/api/runs/current").json()["previous"]
+    centrum.client.stop()
+
+    state = {"logi": "restored", "historia": "recorded", "dziennik": "interrupted"}[kept]
+    assert (previous["state"], previous["run"]["id"], previous["run"]["pricing"]) == (state, run_id, "z Przekazaniem")
+    if kept == "dziennik":
+        assert [record["pricing"] for record in records(centrum)] == ["z Przekazaniem"]
+
+
+def test_tryb_z_przekazaniem_ma_tylko_wycena_w_efenix_a_inny_proces_z_nim_dostaje_odmowe(tmp_path: Path) -> None:
+    """Przebieg rozliczeń nie ma trybów, więc jego karta startu nie ma przycisków trybu, a start z Przekazaniem do
+    akceptacji dostaje odmowę 409 i nic nie startuje."""
+
+    centrum = settling_centrum(tmp_path)
+    processes = centrum.client.get("/api/runs/setup").json()["processes"]
+    refused = centrum.client.post(
+        "/api/runs", json={"process": "settlement", "period": PERIOD, "dry_run": True, "pricing": "z Przekazaniem"}
+    )
+    current = centrum.client.get("/api/runs/current").json()
+
+    assert {process["process"]: process["pricing_modes"] for process in processes if process["process"] != "efenix"} == {
+        "preparation": [],
+        "settlement": [],
+    }
+    assert (refused.status_code, refused.json()["message"]) == (
+        409,
+        "Przebieg rozliczeń nie ma trybu z Przekazaniem do akceptacji.",
+    )
+    assert current["state"] == "idle"
+
 
 def _close_window(profile: Path) -> None:
     """Tata zamyka krzyżykiem okno efenix, które Centrum otworzyło (przez port debugowania z profilu przeglądarki)."""

@@ -138,15 +138,23 @@ class ProcessDeclaration(Generic[InputsT, SummaryT]):
 
         return any(setting.field == "periods_directory" for setting in self.settings)
 
-    def run_info(self, *, run_id: str, period: str, dry_run: bool) -> contract.RunInfo:
-        """Uruchomienie procesu na karcie: ta sama reguła na żywo i dla karty z Logów Uruchomienia."""
+    def run_info(
+        self, *, run_id: str, period: str, dry_run: bool, pricing: contract.Pricing | None
+    ) -> contract.RunInfo:
+        """Uruchomienie procesu na karcie: ta sama reguła na żywo i dla karty z Logów Uruchomienia.
 
+        ``pricing`` ``None`` w procesie z trybami to Logi sprzed trybów, a wtedy Wycena w efenix biegła w pierwszym,
+        domyślnym trybie; proces bez trybów nie ma trybu.
+        """
+
+        modes = self.view.pricing_modes
         return contract.RunInfo(
             id=run_id,
             process=self.key,
             title=self.title,
             period=period,
             dry_run=dry_run,
+            pricing=None if not modes else modes[0] if pricing is None else pricing,
             confirms_readiness=self.view.confirms_readiness,
             register_name=self.view.register_name,
         )

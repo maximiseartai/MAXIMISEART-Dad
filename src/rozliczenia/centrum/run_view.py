@@ -14,7 +14,7 @@ from typing import Final, Generic, Protocol, TypeVar
 from rozliczenia.centrum import contract
 from rozliczenia.collective_preparation import PreparationSummary
 from rozliczenia.engine import SettlementSummary
-from rozliczenia.efenix_checks import Settled
+from rozliczenia.efenix_checks import Forwarded, Settled
 from rozliczenia.efenix_pricing import EmmettWarning, PricingSummary
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.intermax_ordering import OrderingSummary
@@ -44,7 +44,7 @@ class Shown(Generic[SummaryT]):
     """Wynik zakończonego procesu: podsumowanie albo plan w kształcie kontraktu i ostrzeżenia z kodami Komunikatów.
 
     ``engine_summary`` to podsumowanie silnika, z którego powstał, dla działań po wyniku (Kontrola ilości). ``notes``:
-    zlecenia, które zostały tacie, i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, tylko na kartę bieżącego
+    zlecenia, które zostały tacie, Zlecenia przekazane i rozliczone, z numerami zleceń i Wykonawcami, tylko na kartę bieżącego
     Uruchomienia.
     """
 
@@ -58,7 +58,7 @@ class Shown(Generic[SummaryT]):
 class ResultView(Generic[InputsT, SummaryT]):
     """Liczby na żywo i wynik jednego procesu w kształcie kontraktu, te same w Skrypcie dla maszyn i na karcie.
 
-    ``_notes``: zlecenia z podsumowania, które zostały tacie, i Zlecenia rozliczone (Wycena w efenix); inne procesy ich
+    ``_notes``: zlecenia z podsumowania, które zostały tacie, Zlecenia przekazane i rozliczone (Wycena w efenix); inne procesy ich
     nie mają.
     """
 
@@ -100,7 +100,8 @@ class ProcessView(ResultView[InputsT, SummaryT]):
     Deklaracja procesu: ``reminder`` to przypomnienie przed uruchomieniem, ``confirms_readiness``
     mówi, czy „Uruchom” potwierdza Gotowość Pliku zbiorczego, ``done`` to tytuł wyniku po zapisie,
     ``result_action`` otwiera to, co proces zapisał, jako akcja po wyniku, a ``register_name`` to nazwa
-    Rejestru zleceń z Komunikatów procesu, pod którą karta proponuje go otworzyć.
+    Rejestru zleceń z Komunikatów procesu, pod którą karta proponuje go otworzyć. ``pricing_modes`` to tryby Wyceny w
+    efenix, które tata wybiera przyciskiem przy każdym starcie, pierwszy domyślny (pusta krotka: proces bez trybów).
     """
 
     reminder: str
@@ -108,6 +109,7 @@ class ProcessView(ResultView[InputsT, SummaryT]):
     done: str
     result_action: contract.ResultAction
     register_name: str = "Rejestr zleceń"
+    pricing_modes: tuple[contract.Pricing, ...] = ()
 
     @property
     def modes(self) -> tuple[contract.RunMode, ...]:
@@ -291,12 +293,20 @@ def _pricing_notes(summary: PricingSummary) -> contract.OrderNotes:
         notes[isinstance(result.outcome, EmmettWarning)].append(
             contract.OrderNote(row=order.row, order=order.number, worker=order.worker, what=message.what)
         )
-    settled = [
+    return contract.OrderNotes(
+        errors=notes[False],
+        warnings=notes[True],
+        forwarded=_order_lines(summary, Forwarded),
+        settled=_order_lines(summary, Settled),
+    )
+
+
+def _order_lines(summary: PricingSummary, outcome: type[Forwarded | Settled]) -> list[contract.OrderLine]:
+    return [
         contract.OrderLine(row=result.order.row, order=result.order.number, worker=result.order.worker)
         for result in summary.results
-        if isinstance(result.outcome, Settled)
+        if isinstance(result.outcome, outcome)
     ]
-    return contract.OrderNotes(errors=notes[False], warnings=notes[True], settled=settled)
 
 
 EFENIX: Final[ProcessView[EfenixInputs, PricingSummary]] = ProcessView(
@@ -304,6 +314,7 @@ EFENIX: Final[ProcessView[EfenixInputs, PricingSummary]] = ProcessView(
     confirms_readiness=False,
     done="Wycena w efenix gotowa",
     result_action="open_collective_file",
+    pricing_modes=("bez Przekazania", "z Przekazaniem"),
     _figures=_elapsed_only,
     _summary=_pricing_summary,
     _notes=_pricing_notes,

@@ -29,6 +29,7 @@ import type {
   PastRun,
   PeriodFile,
   PhaseProgress,
+  Pricing,
   Progress as RunProgress,
   ProgressStep,
   RunInfo,
@@ -52,6 +53,7 @@ import { StopMessage, ThreePartMessage } from "@/components/three-part-message"
 import { WriteAboutRun } from "@/components/write-to-maks"
 import { useChangeEntrance } from "@/lib/content-entrance"
 import { dateTime, seconds } from "@/lib/format"
+import { PRICING } from "@/lib/pricing"
 import { rerunOf, useRuns } from "@/lib/runs"
 import { FillingOnResult } from "@/pages/filling/filling-on-result"
 import { openAndConfirm, openOrderRegisterAndConfirm, type OpenedInPeriod } from "@/pages/periods/open-period-path"
@@ -217,7 +219,7 @@ function FinishedPastCard({ run, onNewRun, children }: { run: RunInfo; onNewRun:
 }
 
 function InterruptedRunCard({ past, onNewRun }: { past: RunInterrupted; onNewRun: () => void }) {
-  const { start } = useRuns()
+  const { rerun } = useRuns()
   const run = past.run
 
   return (
@@ -228,7 +230,7 @@ function InterruptedRunCard({ past, onNewRun }: { past: RunInterrupted; onNewRun
         <ThreePartMessage
           message={past.advice}
           kind="warning"
-          action={<RerunButton onRerun={() => start(rerunOf(run))} />}
+          action={<RerunButton onRerun={() => rerun(run)} />}
         />
         {past.orders == null ? null : (
           <CountTiles title={past.orders.title} counts={past.orders.counts} zeroWarns={past.orders.zero_warns} />
@@ -238,11 +240,17 @@ function InterruptedRunCard({ past, onNewRun }: { past: RunInterrupted; onNewRun
   )
 }
 
-/** Karta Uruchomienia z wiersza Historii, tylko do odczytu: etapy i wynik z Logów Uruchomienia, bez akcji. */
+/**
+ * Karta Uruchomienia z wiersza Historii, tylko do odczytu: tryb, etapy i wynik z Logów Uruchomienia, bez akcji.
+ * Plakietka trybu stoi tu, a nie w nagłówku panelu, bo tryb Wyceny w efenix znają tylko Logi.
+ */
 export function HistoryRunCard({ card }: { card: RunRestored }) {
   return (
     <div className="flex flex-col gap-6">
-      <PastNote>Uruchomienie z {dateTime(card.started_at)}</PastNote>
+      <div className="flex items-center gap-3">
+        <PastNote>Uruchomienie z {dateTime(card.started_at)}</PastNote>
+        <ModeBadge dryRun={card.run.dry_run} pricing={card.run.pricing} />
+      </div>
       <PhaseList phases={card.phases} />
       <OutcomeBody run={card.run} result={card.result} action={null} />
     </div>
@@ -256,14 +264,22 @@ function RunHeader({ run, actions }: { run: RunInfo; actions: React.ReactNode })
       <CardDescription className="tabular-nums">Okres {run.period}</CardDescription>
       <CardTitle className="text-lg">{run.title}</CardTitle>
       <CardAction className="flex items-center gap-2">
-        <ModeBadge dryRun={run.dry_run} />
+        <ModeBadge dryRun={run.dry_run} pricing={run.pricing} />
         {actions}
       </CardAction>
     </CardHeader>
   )
 }
 
-export function ModeBadge({ dryRun }: { dryRun: boolean }) {
+/**
+ * Tryb Uruchomienia: podgląd bez zapisu albo zapis plików, a w Wycenie w efenix (`pricing`) zielony „Zapisz” w efenix.
+ * Wycena nie ma podglądu, więc jej plakietka mówi tylko o zielonym „Zapisz”: na karcie „zapis” znaczy jedno.
+ */
+export function ModeBadge({ dryRun, pricing }: { dryRun: boolean; pricing: Pricing | null }) {
+  if (pricing !== null) {
+    return <Badge variant={pricing === "z Przekazaniem" ? "default" : "outline"}>{PRICING[pricing].badge}</Badge>
+  }
+
   return (
     <Badge variant={dryRun ? "outline" : "default"}>
       {dryRun ? <EyeIcon data-icon="inline-start" /> : null}
@@ -335,12 +351,12 @@ function PhaseIcon({ state }: { state: PhaseProgress["state"] }) {
 }
 
 function RunOutcomeSection({ run, result, reminder }: { run: RunInfo; result: RunOutcome; reminder: string }) {
-  const { start } = useRuns()
+  const { rerun } = useRuns()
   const next = useNextAction(run, result.next_action, reminder)
   // Czy i jak proponować Diagnozę, mówi serwer: przy niej przycisk „Diagnoza” zastępuje następną akcję.
   const offersDiagnosis = result.diagnosis !== null
 
-  const diagnosis = useStopDiagnosis(run.id, result.diagnosis, result.report, () => start(rerunOf(run)))
+  const diagnosis = useStopDiagnosis(run.id, result.diagnosis, result.report, () => rerun(run))
 
   return (
     <>
@@ -383,7 +399,7 @@ function OutcomeBody({
   action: React.ReactNode
   live?: LiveStop | null
   below?: React.ReactNode
-  /** Zlecenia, które zostały tacie, i Zlecenia rozliczone, z numerami i Wykonawcami: zastępują ostrzeżenia w trzech częściach. */
+  /** Zlecenia, które zostały tacie, Zlecenia przekazane i rozliczone, z numerami i Wykonawcami: zastępują ostrzeżenia w trzech częściach. */
   notes?: OrderNotes | null
   filling?: boolean
 }) {
@@ -421,7 +437,8 @@ function OutcomeBody({
         <>
           <OrderNoteList title="Błędy" notes={notes.errors} />
           <OrderNoteList title="Ostrzeżenia Emmetta" notes={notes.warnings} />
-          <OrderNoteList title="Rozliczone" notes={notes.settled} settled />
+          <OrderNoteList title="Przekazane do akceptacji" notes={notes.forwarded} done />
+          <OrderNoteList title="Rozliczone" notes={notes.settled} done />
         </>
       )}
       {result.technical_notes.map((note) => (
@@ -456,16 +473,15 @@ function ResultAlert({
 
 /** Akcja po wyniku, którą proponuje serwer, z potwierdzeniem zapisu przy „Uruchom”. */
 function useNextAction(run: RunInfo, action: NextAction, reminder: string) {
-  const { start } = useRuns()
+  const { start, rerun } = useRuns()
   const [confirming, setConfirming] = React.useState(false)
-  const again = (dryRun: boolean) => start(rerunOf(run, dryRun))
 
   return {
     button: (
       <NextActionButton
         action={action}
         onRun={() => setConfirming(true)}
-        onRerun={() => again(run.dry_run)}
+        onRerun={() => rerun(run)}
         onOpen={(target) => openAndConfirm(run.period, { target })}
       />
     ),
@@ -479,7 +495,7 @@ function useNextAction(run: RunInfo, action: NextAction, reminder: string) {
         confirmsReadiness={run.confirms_readiness}
         // „Uruchom” przy wyniku jest tylko po udanym podglądzie bez zapisu tego okresu.
         previewed
-        onConfirm={() => again(false)}
+        onConfirm={() => start(rerunOf(run, false))}
       />
     ),
   }
@@ -659,12 +675,12 @@ function StepProgress({ step }: { step: ProgressStep }) {
 function OrderNoteList({
   title,
   notes,
-  settled = false,
+  done = false,
 }: {
   title: string
   notes: ReadonlyArray<OrderNote | OrderLine>
-  /** Zlecenia rozliczone w efenix: tata nie ma nic do zrobienia, więc bez ostrzeżenia i bez zdania. */
-  settled?: boolean
+  /** Zlecenia przekazane i rozliczone w efenix: tata nie ma nic do zrobienia, więc bez ostrzeżenia i bez zdania. */
+  done?: boolean
 }) {
   if (notes.length === 0) {
     return null
@@ -673,7 +689,7 @@ function OrderNoteList({
   return (
     <section className="flex flex-col gap-2" aria-label={title}>
       <h3 className="flex items-center gap-2 text-sm font-medium">
-        {settled ? (
+        {done ? (
           <CircleCheckIcon className="size-4 text-muted-foreground" aria-hidden />
         ) : (
           <TriangleAlertIcon className="size-4 text-warning" aria-hidden />
@@ -687,7 +703,7 @@ function OrderNoteList({
               <TableCell className="w-24 text-muted-foreground tabular-nums">wiersz {note.row}</TableCell>
               <TableCell className="w-32 font-medium tabular-nums">{note.order ?? "bez numeru"}</TableCell>
               <TableCell className="w-40 text-muted-foreground">{note.worker}</TableCell>
-              {/* Zlecenie rozliczone nie ma zdania, ale pusta komórka trzyma kolumny w linii z Błędami. */}
+              {/* Zlecenie przekazane i rozliczone nie ma zdania, ale pusta komórka trzyma kolumny w linii z Błędami. */}
               <TableCell className="whitespace-normal">{"what" in note ? note.what : null}</TableCell>
             </TableRow>
           ))}

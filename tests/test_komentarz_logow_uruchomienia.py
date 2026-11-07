@@ -792,6 +792,7 @@ PRICING = RunInfo(
     title="Wycena w efenix",
     period="08_14_09_2026",
     dry_run=False,
+    pricing="bez Przekazania",
     confirms_readiness=False,
     register_name="Rejestr zleceń",
 )
@@ -1141,6 +1142,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
     "run_id": RUN_ID,
     "process": "efenix",
     "mode": "zapis",
+    "pricing": "z Przekazaniem",
     "period": "08_14_09_2026",
     "started_at": "2026-10-23T20:47:20.846240Z",
     "ended_at": "2026-10-23T20:49:31.857060Z",

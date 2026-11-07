@@ -24,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useContentEntrance } from "@/lib/content-entrance"
 import { ago } from "@/lib/format"
 import { useNotifications } from "@/lib/notifications"
+import { ModeBadge } from "@/pages/runs/run-card"
 import { RunCardLink } from "@/pages/runs/run-card-sheet"
 
 type Kind = Notification["kind"]
@@ -47,6 +48,7 @@ const KINDS: Record<Kind, { tag: string; color: string; icon: LucideIcon }> = {
 // Liczby zleceń w Powiadomieniu o Wycenie w efenix, z etykietami kafelków karty Uruchomienia.
 const PRICED: ReadonlyArray<{ key: keyof NonNullable<Pricing["orders"]>; label: string }> = [
   { key: "ready", label: "Gotowe do przekazania" },
+  { key: "forwarded", label: "Przekazane do akceptacji" },
   { key: "settled", label: "Rozliczone" },
   { key: "errors", label: "Błędy zleceń" },
   { key: "warnings", label: "Ostrzeżenia Emmetta" },
@@ -218,19 +220,22 @@ function Body({ notification }: { notification: Notification }) {
 }
 
 /**
- * Wynik Wyceny w efenix, która skończyła się, gdy tata patrzył na okno efenix albo odszedł od komputera: okres, liczby
- * zleceń, „Co się stało” Zatrzymania i karta Uruchomienia z błędami i ostrzeżeniami.
+ * Wynik Wyceny w efenix, która skończyła się, gdy tata patrzył na okno efenix albo odszedł od komputera: okres, tryb,
+ * liczby zleceń, „Co się stało” Zatrzymania i karta Uruchomienia z błędami i ostrzeżeniami.
  */
 function PricingBody({ pricing }: { pricing: Pricing }) {
   const orders = pricing.orders
 
   return (
     <div className="flex flex-col items-start gap-3">
-      <p className="text-sm text-muted-foreground tabular-nums">Okres {pricing.period}</p>
+      <p className="flex items-center gap-2 text-sm text-muted-foreground tabular-nums">
+        Okres {pricing.period}
+        <ModeBadge dryRun={false} pricing={pricing.pricing} />
+      </p>
       {orders === null ? null : (
         <dl aria-label="Zlecenia" className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
           {PRICED.map(({ key, label }) => (
-            <div key={key} className="flex items-baseline gap-1.5">
+            <div key={key} className="flex items-baseline gap-1.5 whitespace-nowrap">
               <dt className="text-muted-foreground">{label}</dt>
               <dd className="font-medium tabular-nums">{orders[key]}</dd>
             </div>

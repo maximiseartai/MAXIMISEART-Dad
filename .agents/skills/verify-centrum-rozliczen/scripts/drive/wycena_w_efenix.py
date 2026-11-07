@@ -40,8 +40,16 @@ ORDERS = {
 # The made-up ADRES of every order in the Plik zbiorczy and its Dane adresowe in the Atrapa (tests.fixtures.efenix.Order):
 # the rule of data (ADR 0025) keeps both out of the Logi.
 ADDRESSES = ("UL. TESTOWA 12/3", "TESTOWA", "Testowa", "Miasto-Dzielnica")
-# Znacznik efenix (rozliczenia.efenix_mark.MARK_RGB), the light purple of ADRES in a ready order's row.
+# Znacznik efenix (rozliczenia.efenix_mark.MARK_RGB), the light purple of ADRES in a ready order's row, and the Znacznik
+# przekazania, the darker purple of an order the Wycena with Przekazanie forwarded to acceptance (ADR 0027).
 MARK_RGB = "E0CCFF"
+FORWARDED_RGB = "B48AFF"
+# The two buttons of the setup card in Dad's words, „zapis” being the green „Zapisz” in efenix, with their captions.
+FILL = "Uzupełnij bez zapisu"
+FORWARD = "Uzupełnij i zapisz"
+FILL_HINT = "Zielony „Zapisz” w efenix klikasz sam"
+FORWARD_HINT = "Zielony „Zapisz” przy gotowych klika Centrum"
+DONE_OK_FORWARDED = "Przekazane do akceptacji"
 
 Json = dict[str, Any]
 
@@ -110,22 +118,40 @@ def _price(run: Run, page: Page, source: Path) -> None:
     expect(page.get_by_role("combobox", name="Okres")).to_contain_text(PERIOD)
     expect(page.get_by_role("group", name="Plik zbiorczy")).to_contain_text(COLLECTIVE_FILE)
     expect(page.get_by_role("button", name="Podgląd bez zapisu")).to_have_count(0)
+    expect(page.get_by_role("button", name="Uruchom", exact=True)).to_have_count(0)
+    fill, forward = (page.get_by_role("button", name=name, exact=True) for name in (FILL, FORWARD))
+    expect(fill).to_have_accessible_description(FILL_HINT)
+    expect(forward).to_have_accessible_description(FORWARD_HINT)
     setup = run.api("/api/runs/setup", "efenix-karta-startu")
     processes = setup["processes"]
     assert isinstance(processes, list)
     [efenix] = [process for process in processes if process["process"] == "efenix"]
     run.check(
-        efenix["preview_hint"] is None and PERIOD in [period["token"] for period in efenix["periods"]],
-        "the setup card offers Wycena w efenix for the period with a Plik zbiorczy, with Uruchom and no Podgląd bez zapisu",
+        efenix["preview_hint"] is None
+        and efenix["pricing_modes"] == ["bez Przekazania", "z Przekazaniem"]
+        and PERIOD in [period["token"] for period in efenix["periods"]],
+        "the setup card offers Wycena w efenix for the period with a Plik zbiorczy, with the two modes and no Podgląd "
+        "bez zapisu",
+    )
+    boxes = [button.bounding_box() for button in (fill, forward)]
+    assert boxes[0] is not None and boxes[1] is not None
+    looks = [button.get_attribute("class") or "" for button in (fill, forward)]
+    run.check(
+        looks[0] == looks[1]
+        and "bg-primary" not in looks[0]
+        and (boxes[0]["y"], boxes[0]["width"], boxes[0]["height"]) == (boxes[1]["y"], boxes[1]["width"], boxes[1]["height"])
+        and boxes[0]["x"] < boxes[1]["x"],
+        "the two buttons stand side by side with one look and size, and neither is the primary one",
     )
     run.capture(page, "260-efenix-karta-startu")
 
     run.step(FEATURE, "logowanie")
-    page.get_by_role("button", name="Uruchom", exact=True).click()
-    confirm = page.get_by_role("alertdialog", name="Uruchomić z zapisem?")
+    fill.click()
+    confirm = page.get_by_role("alertdialog", name="Uzupełnić bez zapisu?")
     expect(confirm).to_contain_text(f"{PROCESS} · okres {PERIOD}")
+    expect(confirm).to_contain_text(FILL_HINT)
     expect(confirm.get_by_text("Nie było podglądu bez zapisu")).to_have_count(0)
-    confirm.get_by_role("button", name="Uruchom", exact=True).click()
+    confirm.get_by_role("button", name=FILL, exact=True).click()
     live = _live(page)
     expect(live.get_by_role("status", name="Krok")).to_have_text(LOGIN, timeout=30_000)
     waiting = current_run(run, "efenix-logowanie")
@@ -137,9 +163,11 @@ def _price(run: Run, page: Page, source: Path) -> None:
         method="POST",
         headers={"Origin": run.url.rstrip("/"), "Content-Type": "application/json"},
     )
+    started = waiting["run"]
+    assert isinstance(started, dict)
     run.check(
-        waiting["state"] == "running" and progress["step"]["label"] == LOGIN,
-        "the Uruchomienie waits for Dad's login in the efenix window and says so on the card",
+        waiting["state"] == "running" and progress["step"]["label"] == LOGIN and started["pricing"] == "bez Przekazania",
+        "the Uruchomienie without Przekazanie waits for Dad's login in the efenix window and says so on the card",
     )
     run.check(run.refused(other, "efenix-drugie-uruchomienie") == 409, "no other Uruchomienie starts while it waits")
     run.capture(page, "261-efenix-logowanie", live=True)
@@ -171,7 +199,7 @@ def _price(run: Run, page: Page, source: Path) -> None:
             {
                 "Zlecenia w zakresie": 4,
                 "Gotowe do przekazania": 1,
-                "Przekazane do akceptacji": 0,
+                DONE_OK_FORWARDED: 0,
                 "Rozliczone": 1,
                 "Błędy zleceń": 1,
                 "Ostrzeżenia Emmetta": 1,
@@ -190,11 +218,14 @@ def _price(run: Run, page: Page, source: Path) -> None:
     expect(page.get_by_role("table", name="Błędy")).to_contain_text("efenix nie zna zlecenia o numerze z NUMER ZL.")
     expect(page.get_by_role("table", name="Ostrzeżenia Emmetta")).to_contain_text("efenix 2, plik 1")
     expect(page.get_by_role("table", name="Rozliczone").get_by_role("row").first.get_by_role("cell").nth(3)).to_have_text("")
+    expect(page.get_by_role("table", name=DONE_OK_FORWARDED)).to_have_count(0)
     run.check(
         True,
         "the card lists each error and warning with its row, order number, Wykonawca and sentence, each Zlecenie "
         "rozliczone with its row, order number and Wykonawca, and a toast",
     )
+    _one_mode_word(run, live, "Bez zapisu")
+    _labels_in_one_line(run, live)
     run.capture(page, "263-efenix-karta")
 
     run.step(FEATURE, "plik-i-logi")
@@ -251,6 +282,106 @@ def _price(run: Run, page: Page, source: Path) -> None:
     run.wait_for(last_opened_is(run, source), "Otwórz Plik zbiorczy opens it")
     run.check(True, "Otwórz Plik zbiorczy opens the Plik zbiorczy with the Znaczniki efenix")
     _notification(run, page, result)
+    _forward(run, page, source)
+
+
+def _one_mode_word(run: Run, live: Locator, badge: str) -> None:
+    """The card of a Wycena names its mode with one meaning of „zapis”, the green „Zapisz” in efenix."""
+
+    expect(live.get_by_text(badge, exact=True)).to_be_visible()
+    other = "Z zapisem" if badge == "Bez zapisu" else "Bez zapisu"
+    expect(live.get_by_text(other, exact=True)).to_have_count(0)
+    run.check(True, f"the card has the badge {badge} and no other word of „zapis” for its mode")
+
+
+def _labels_in_one_line(run: Run, live: Locator) -> None:
+    """#1067 saw „Przekazane do akceptacji” break into two lines in the strip of figures of the card."""
+
+    heights = {
+        label: box["height"]
+        for label in (DONE_OK_FORWARDED, "Rozliczone")
+        if (box := live.get_by_role("term").filter(has_text=label).first.bounding_box()) is not None
+    }
+    run.check(
+        len(heights) == 2 and heights[DONE_OK_FORWARDED] == heights["Rozliczone"],
+        "the label Przekazane do akceptacji stands in one line, as high as Rozliczone",
+    )
+
+
+def _forward(run: Run, page: Page, source: Path) -> None:
+    """A second Wycena of the same period with „Uzupełnij i zapisz”: the ready order of the first one is forwarded."""
+
+    run.step(FEATURE, "z-zapisem")
+    live = _live(page)
+    page.goto(run.url + "#/uruchomienia")
+    expect(live).to_be_visible()
+    live.get_by_role("button", name="Nowe Uruchomienie procesu", exact=True).click()
+    page.get_by_role("radio", name=PROCESS).click()
+    page.get_by_role("combobox", name="Okres").click()
+    page.get_by_role("option", name=period_choice(PERIOD, "Plik zbiorczy przygotowany")).click()
+    page.get_by_role("button", name=FORWARD, exact=True).click()
+    confirm = page.get_by_role("alertdialog", name="Uzupełnić i zapisać?")
+    expect(confirm).to_contain_text(FORWARD_HINT)
+    run.capture(page, "267-efenix-z-zapisem-potwierdzenie")
+    confirm.get_by_role("button", name=FORWARD, exact=True).click()
+    # The window of the first Wycena kept Dad's session in its profile; it asks for the login only when it lost it.
+    asks = [False]
+
+    def login_or_end() -> bool:
+        view = current_run(run, "efenix-z-zapisem-start")
+        progress = view.get("progress")
+        step = progress.get("step") if isinstance(progress, dict) else None
+        asks[0] = isinstance(step, dict) and step.get("label") == LOGIN
+        return asks[0] or view["state"] == "finished" or (isinstance(step, dict) and step.get("total", 0) > 0)
+
+    run.wait_for(login_or_end, "the Wycena with Przekazanie asks for the login or works", timeout_s=30)
+    if asks[0]:
+        _log_in(run)
+    result: Json = finished_result(run, "efenix-z-zapisem-wynik")
+    shown = current_run(run, "efenix-z-zapisem-karta")["run"]
+    assert isinstance(shown, dict)
+    figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
+    run.check(
+        (shown["pricing"], figures["Gotowe do przekazania"], figures[DONE_OK_FORWARDED], figures["Rozliczone"])
+        == ("z Przekazaniem", 0, 1, 1),
+        "the Wycena with Przekazanie forwards the ready order: none ready, one forwarded, the settled one stays",
+    )
+    expect(page.get_by_label("Wynik")).to_contain_text(DONE, timeout=30_000)
+    table = page.get_by_role("table", name=DONE_OK_FORWARDED)
+    number, worker = ORDERS[18]
+    expect(table.get_by_role("row")).to_have_count(1)
+    expect(table.get_by_role("row").first.get_by_role("cell")).to_have_text(["wiersz 18", number, worker, ""])
+    _one_mode_word(run, live, "Z zapisem")
+    _labels_in_one_line(run, live)
+    run.capture(page, "268-efenix-z-zapisem-karta")
+    run.check(
+        _address_fills(source) == {18: FORWARDED_RGB, 19: None, 20: None, 21: None},
+        "the forwarded order's ADRES has the Znacznik przekazania instead of the Znacznik efenix",
+    )
+    record = _logs(run)[-1]
+    run.check(
+        (record["pricing"], [(order["row"], order["outcome"]) for order in record["efenix_orders"]])
+        == ("z Przekazaniem", [(18, "przekazane"), (19, "błąd"), (20, "ostrzeżenie Emmetta"), (21, "rozliczone")]),
+        "the Logi have the mode in their start facts and trace the forwarded order as przekazane",
+    )
+    answer = run.api("/api/notifications", "efenix-z-zapisem-powiadomienia")
+    items = answer["items"]
+    assert isinstance(items, list)
+    [notification] = [item for item in items if item["kind"] == "wycena_w_efenix" and item["run_id"] == shown["id"]]
+    run.check(
+        (notification["pricing"], notification["orders"])
+        == ("z Przekazaniem", {"ready": 0, "forwarded": 1, "settled": 1, "errors": 1, "warnings": 1}),
+        "the Powiadomienie has the mode and counts the forwarded order",
+    )
+    page.locator("header").get_by_role("button", name="Powiadomienia", exact=False).click()
+    row = page.get_by_role("list", name="Powiadomienia").get_by_role("listitem").first
+    expect(row.get_by_text("Z zapisem", exact=True)).to_be_visible()
+    expect(row.get_by_role("term")).to_have_text(
+        ["Gotowe do przekazania", DONE_OK_FORWARDED, "Rozliczone", "Błędy zleceń", "Ostrzeżenia Emmetta"]
+    )
+    expect(row.get_by_role("definition")).to_have_text(["0", "1", "1", "1", "1"])
+    run.check(True, "the Powiadomienie row names the mode and the forwarded count")
+    run.capture(page, "269-efenix-z-zapisem-powiadomienie")
 
 
 def _notification(run: Run, page: Page, result: Json) -> None:
@@ -268,7 +399,8 @@ def _notification(run: Run, page: Page, result: Json) -> None:
     run.check(
         notification["unread"] is True
         and (notification["headline"], notification["period"], notification["orders"], notification["stopped"])
-        == (result["headline"], PERIOD, {"ready": 1, "settled": 1, "errors": 1, "warnings": 1}, None),
+        == (result["headline"], PERIOD, {"ready": 1, "forwarded": 0, "settled": 1, "errors": 1, "warnings": 1}, None)
+        and notification["pricing"] == "bez Przekazania",
         "the ended Wycena is a new Powiadomienie with the result, the period and the ready, settled, error and warning "
         "counts",
     )
@@ -280,8 +412,11 @@ def _notification(run: Run, page: Page, result: Json) -> None:
     expect(row.get_by_label("nowe", exact=True)).to_be_visible()
     expect(row).to_contain_text(f"Okres {PERIOD}")
     counts = row.get_by_role("definition")
-    expect(counts).to_have_text(["1", "1", "1", "1"])
-    expect(row.get_by_role("term")).to_have_text(["Gotowe do przekazania", "Rozliczone", "Błędy zleceń", "Ostrzeżenia Emmetta"])
+    expect(counts).to_have_text(["1", "0", "1", "1", "1"])
+    expect(row.get_by_role("term")).to_have_text(
+        ["Gotowe do przekazania", DONE_OK_FORWARDED, "Rozliczone", "Błędy zleceń", "Ostrzeżenia Emmetta"]
+    )
+    expect(row.get_by_text("Bez zapisu", exact=True)).to_be_visible()
     run.capture(page, "265-efenix-powiadomienie")
     row.get_by_role("button", name="Karta Uruchomienia", exact=True).click()
     sheet = page.get_by_role("dialog")

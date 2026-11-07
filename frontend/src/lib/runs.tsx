@@ -21,7 +21,7 @@ export type RunDraft = Pick<RunRequest, "process" | "period">
 export type RunStart = RunRequest | { process: "intermax" }
 
 /** Ten sam proces jeszcze raz: z okresem i trybem `dryRun`, a Uporządkowanie INTERMAX z Ustawień taty. */
-export function rerunOf(run: RunInfo, dryRun: boolean = run.dry_run): RunStart {
+export function rerunOf(run: RunInfo, dryRun: boolean): RunStart {
   return run.process === "intermax"
     ? { process: "intermax" }
     : { process: run.process, period: run.period, dry_run: dryRun }
@@ -40,6 +40,11 @@ type RunsContextValue = {
   /** Start wysłany, a strumień nie pokazał jeszcze nowego Uruchomienia; do tej pory kolejny start nic nie wysyła. */
   starting: boolean
   start: (request: RunStart) => Promise<boolean>
+  /**
+   * „Uruchom ponownie”: ten sam proces i okres w tym samym trybie podglądu. Wycena w efenix nie startuje od razu, tylko
+   * wraca do karty startu z tym okresem, bo tryb Wyceny tata wybiera przy każdym starcie (ADR 0027).
+   */
+  rerun: (run: RunInfo) => void
   /** Uruchomienie, którego decyzja jest wysłana, a strumień nadal pokazuje, że na nią czeka. */
   deciding: string | null
   decide: (runId: string, answer: DecisionAnswer["answer"]) => void
@@ -145,6 +150,42 @@ export function RunsProvider({ children }: { children: React.ReactNode }) {
     [settleStart, settleDecision]
   )
 
+  const start = React.useCallback(
+    (request: RunStart) => {
+      if (pendingStart.current !== null) {
+        return Promise.resolve(false)
+      }
+
+      const pending: PendingStart = { before: shownRun(latest.current) }
+
+      pendingStart.current = pending
+      setStarting(true)
+
+      return ("period" in request ? startRun(request) : startIntermax()).then(
+        (started) => {
+          pending.accepted = shownRun(started)
+
+          // Ostatni widok strumienia przyszedł przed tą odpowiedzią: `idle` to w nim zwykły stan świeżo
+          // uruchomionego Centrum, a nie zgubione Uruchomienie, więc liczy się tylko przyjęte Uruchomienie.
+          if (pending.accepted === null || shownRun(latest.current) === pending.accepted) {
+            settleStart()
+          }
+
+          setDraft(null)
+
+          return true
+        },
+        (failure: Error) => {
+          settleStart()
+          showFailure(failure)
+
+          return false
+        }
+      )
+    },
+    [settleStart]
+  )
+
   const value = React.useMemo<RunsContextValue>(
     () => ({
       view,
@@ -154,37 +195,15 @@ export function RunsProvider({ children }: { children: React.ReactNode }) {
       dismissed,
       newRun: setDismissed,
       starting,
-      start: (request) => {
-        if (pendingStart.current !== null) {
-          return Promise.resolve(false)
+      start,
+      rerun: (run) => {
+        if (run.pricing !== null && run.process !== "intermax") {
+          setDraft({ process: run.process, period: run.period })
+
+          return
         }
 
-        const pending: PendingStart = { before: shownRun(latest.current) }
-
-        pendingStart.current = pending
-        setStarting(true)
-
-        return ("period" in request ? startRun(request) : startIntermax()).then(
-          (started) => {
-            pending.accepted = shownRun(started)
-
-            // Ostatni widok strumienia przyszedł przed tą odpowiedzią: `idle` to w nim zwykły stan świeżo
-            // uruchomionego Centrum, a nie zgubione Uruchomienie, więc liczy się tylko przyjęte Uruchomienie.
-            if (pending.accepted === null || shownRun(latest.current) === pending.accepted) {
-              settleStart()
-            }
-
-            setDraft(null)
-
-            return true
-          },
-          (failure: Error) => {
-            settleStart()
-            showFailure(failure)
-
-            return false
-          }
-        )
+        start(rerunOf(run, run.dry_run))
       },
       deciding,
       decide: (runId, answer) => {
@@ -207,7 +226,7 @@ export function RunsProvider({ children }: { children: React.ReactNode }) {
         )
       },
     }),
-    [view, disconnected, draft, dismissed, starting, deciding, settleStart, settleDecision]
+    [view, disconnected, draft, dismissed, starting, start, deciding, settleDecision]
   )
 
   return <RunsContext.Provider value={value}>{children}</RunsContext.Provider>
