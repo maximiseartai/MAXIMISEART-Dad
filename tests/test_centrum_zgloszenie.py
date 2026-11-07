@@ -176,6 +176,15 @@ def test_zgloszenie_ma_komunikat_uruchomienie_narzedzie_diagnoze_i_dziennik(tmp_
     assert body.endswith("```\n")
 
 
+def test_zgloszenie_z_narzedzia_bez_commitu_gita_ma_commit_nieznany(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(github=FakeGitHub(tool_commit=None)))
+    run_id = stopped_for_maks(centrum)
+
+    body = diagnose(centrum, run_id)["report"]["body"].splitlines()
+
+    assert body[body.index("## Narzędzie") + 2] == "- Commit: nieznany"
+
+
 def test_zgloszenie_nie_ma_tresci_wierszy_wyjatku_pelnych_sciezek_ani_klucza(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     with_key(centrum)
