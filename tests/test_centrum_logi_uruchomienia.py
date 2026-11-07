@@ -77,11 +77,13 @@ from tests.fixtures.centrum import (
     TOOL_COMMIT,
     FakeGitHub,
     FakeReportBox,
+    ToolDirectory,
     finished_view,
     run_events,
     view_timing,
     views_until,
     without_times,
+    write_report_key,
 )
 from tests.fixtures.centrum_processes import (
     PreparingCentrum,
@@ -559,7 +561,7 @@ def test_pliki_procesu_ktorych_nie_da_sie_wyliczyc_daja_logi_bez_plikow_bez_nieo
 
 def test_logi_przebiegu_rozliczen_nie_maja_adresu_numeru_orange_ani_pelnych_sciezek(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     unmapped = {**MARKED, "H": "ZNACZNIK-WYKONAWCA"}
     without_worker = {**MARKED, "H": None}
     write_quantity_source(centrum.collective_file, [MARKED, unmapped, without_worker])
@@ -589,7 +591,7 @@ def test_logi_przebiegu_rozliczen_nie_maja_adresu_numeru_orange_ani_pelnych_scie
 
 def test_diagnoza_w_logach_nie_ma_adresu_numeru_orange_ani_pelnych_sciezek(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     write_quantity_source(centrum.collective_file, [MARKED, {**MARKED, "H": "ZNACZNIK-WYKONAWCA"}])
     run_id = stopped_for_maks(centrum)
     centrum.collective_file.with_name(f"~${centrum.collective_file.name}").write_bytes(b"")
@@ -621,7 +623,7 @@ def test_adres_i_numer_orange_cytowane_przez_komunikat_nie_wychodza_w_logach_ani
     rows[4] = {**(rows[4] or {}), "NUMER UMOWY": ORANGE_VALUE}
     rows[7] = {**(rows[7] or {}), "SKUTECZNE": f"{ADDRESS_VALUE.upper()}  {ORANGE_VALUE} tel. {PHONE}, {STREET}"}
     centrum = preparing_centrum(tmp_path, rows)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
 
     first = run_to_end(centrum, dry_run=True)
     second = run_to_end(centrum, dry_run=True)
@@ -866,7 +868,7 @@ def test_adres_i_numer_orange_wklejonego_wiersza_rejestru_nie_wychodza_z_przygot
     paste, stop = position
     centrum = preparing_centrum(tmp_path)
     paste(centrum.fixture.register_path)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
 
     run_to_end(centrum, dry_run=True)
     note = {"title": "Pytanie", "body": f"Klient {PROBE_ADDRESS}, umowa {PROBE_ORANGE}"}
@@ -975,7 +977,7 @@ def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_
     rows[2] = {**(rows[2] or {}), "ADRES": "podgląd"}
     rows[4] = {**(rows[4] or {}), "ADRES": PERIOD}
     centrum = preparing_centrum(tmp_path, rows)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
 
     view = run_to_end(centrum, dry_run=True)
 
@@ -1969,7 +1971,7 @@ def _replay_report(capsys: pytest.CaptureFixture[str], logs: Path) -> list[str]:
 def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_i_bez_adresu(tmp_path: Path) -> None:
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         assert _start_pricing(centrum).status_code == 200
         assert finished_view(centrum.client)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
     box = centrum.surroundings.report_box
@@ -2045,7 +2047,7 @@ def test_logi_wyceny_w_efenix_maja_odczyt_kazdej_strony_efenix_ze_statusem_reali
     with atrapa_efenix(READ_IN_EFENIX) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
         write_collective_file(centrum.period_parent, READ)
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         assert _start_pricing(centrum).status_code == 200
         assert finished_view(centrum.client)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
     box = centrum.surroundings.report_box
@@ -2105,7 +2107,7 @@ def test_uwaga_taty_po_wycenie_w_efenix_nie_wynosi_adresu_z_pliku_zbiorczego_ani
 ) -> None:
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         assert _start_pricing(centrum).status_code == 200
         assert finished_view(centrum.client)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
     efenix_address = PRICED[0].efenix_address
@@ -2191,7 +2193,7 @@ def test_dzialania_taty_miedzy_dwoma_uruchomieniami_sa_w_logach_drugiego_z_godzi
     tmp_path: Path,
 ) -> None:
     centrum = settling_centrum(tmp_path)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     first = run_to_end(centrum, dry_run=True)["run"]["id"]
 
     client = centrum.client
@@ -2350,7 +2352,7 @@ def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwan
             stalled = wait_for(lambda: atrapa.state()[0][3].execution_date is not None, 120)
             process.kill()
         after, _ = atrapa.state()
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     [journal] = journals(centrum)
     with journal.open("a", encoding="utf-8") as torn:
         torn.write(TORN)
@@ -2425,7 +2427,7 @@ def test_wycena_w_efenix_ktora_doszla_do_konca_nie_zostawia_dziennika_ktory_star
 
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         assert _start_pricing(centrum).status_code == 200
         run_id = finished_view(centrum.client)["run"]["id"]
     box = centrum.surroundings.report_box
@@ -2469,7 +2471,7 @@ def _pricing_cut_before_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         path.write_text(text, encoding="utf-8")
     queue = tmp_path / "config" / "zgloszenia" / "kolejka"
     shutil.rmtree(queue)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     return centrum, run_id, queue
 
 
@@ -2564,7 +2566,7 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
 
     windows_text_writes(monkeypatch)
     centrum = settling_centrum(tmp_path)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     started = StartFacts(
         run_id="b" * 32,
         process="efenix",
@@ -2668,7 +2670,7 @@ def test_logi_z_pliku_w_katalogu_ktorego_nie_da_sie_wylistowac_ida_do_skrzynki_b
     następnym starcie, kiedy dziennik znika."""
 
     centrum = settling_centrum(tmp_path)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     started = StartFacts(
         run_id="d" * 32,
         process="efenix",
@@ -2773,7 +2775,7 @@ def pricing(
         surroundings.efenix_url = atrapa.url
         centrum = settling_centrum(tmp_path, surroundings=surroundings)
         write_collective_file(centrum.period_parent, PRICED)
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         if not logged_in:
             atrapa.expire_session()
         yield centrum, minutes, atrapa
@@ -2988,7 +2990,7 @@ def test_komentarz_postepu_urwanej_wyceny_w_efenix_zamienia_w_podsumowanie_naste
         surroundings.efenix_url = atrapa.url
         centrum = settling_centrum(tmp_path, surroundings=surroundings)
         write_collective_file(centrum.period_parent, PRICED)
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         kept = journals_at_result(monkeypatch, centrum.log_path.parent / "dzienniki-wyceny")
         atrapa.expire_session()
         started = _start_pricing(centrum)
@@ -3040,7 +3042,7 @@ def test_centrum_zgaszone_w_trakcie_logowania_taty_w_efenix_zamienia_komentarz_p
             queued = wait_for(lambda: len(queued_logs(queue)) == 1, 60)
             process.kill()
     on_disk = [entry["entry"] for journal in journals(centrum) for entry in journal_entries(journal)]
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     centrum.restart()
     with centrum.client:  # start Centrum jak u taty: ``lifespan`` wznawia Kolejkę wysyłki z postępem
         previous = centrum.client.get("/api/runs/current").json()["previous"]
@@ -3322,7 +3324,7 @@ def test_adres_i_numer_orange_z_kopii_wejscia_nie_wychodza_do_logow_ani_skrzynki
 
     with ExitStack() as stack:
         centrum = COPY_PROCESSES[process](tmp_path, stack)
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})
         assert started.status_code == 200, started.json()
         result = finished_view(centrum.client)["result"]
@@ -3356,7 +3358,7 @@ def test_kolumny_adresu_i_numeru_orange_pliku_zbiorczego_nie_wychodza_takze_pod_
     maskuje, więc nie wychodzą do pliku Logów ani do Skrzynki Zgłoszeń."""
 
     centrum = settling_centrum(tmp_path)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     write_quantity_source(centrum.collective_file, [{"B": ADDRESS_VALUE, "I": ORANGE_VALUE, "K": FREE_TEXT}])
     workbook = load_workbook(centrum.collective_file)
     sheet = active_worksheet(workbook)
@@ -3544,7 +3546,7 @@ def test_numer_orange_i_telefon_zapisane_przez_excel_jako_liczba_nie_wychodza_do
     with ExitStack() as stack:
         setup = NUMBER_PROCESSES[process](tmp_path, stack)
         centrum = setup.centrum
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})
         assert started.status_code == 200, started.json()
         result = finished_view(centrum.client)["result"]
@@ -3604,7 +3606,7 @@ def test_dziennik_urwanej_wyceny_nieodczytany_przy_starcie_dostaje_logi_urwanego
     run_1 = "a" * 32
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
         started_at = datetime.now(timezone.utc) - timedelta(hours=1)
         started = StartFacts(run_id=run_1, process="efenix", mode="zapis", period=PERIOD, started_at=started_at)
@@ -3649,7 +3651,7 @@ def test_wycena_z_wynikiem_bez_pliku_logow_nie_dostaje_logow_urwanego_uruchomien
 
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
         with monkeypatch.context() as patch:
             if unseen == "rekord-metryk-niezapisany":
@@ -3684,7 +3686,7 @@ def test_wpis_konca_ktory_sie_nie_zapisal_zostawia_dziennik_do_przyjecia_logow_z
     blocked.write_text("", encoding="utf-8")
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
         metrics = centrum.engines.metrics.efenix
 
@@ -3758,7 +3760,7 @@ def test_wycena_z_wynikiem_ktorej_jedyny_wpis_dziennika_zawiodl_po_zapisie_pierw
     with atrapa_efenix([HYPOTHESES["D-strona-bledu-http"][0]]) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
         write_collective_file(centrum.period_parent, STOPPED_AT_SECOND[1:])
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
         with monkeypatch.context() as patch:
             patch.setattr(Path, "open", opening)
@@ -3957,7 +3959,7 @@ def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie
     reached, released = held_before_removal(monkeypatch)
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
         assert _start_pricing(centrum).status_code == 200
         assert wait_for(reached.is_set, 120)
@@ -4001,7 +4003,7 @@ def test_bez_sieci_logi_z_wynikiem_zgaszonej_wyceny_w_efenix_czekaja_w_kolejce_p
         surroundings.efenix_url = atrapa.url
         centrum = settling_centrum(tmp_path, surroundings=surroundings)
         write_collective_file(centrum.period_parent, PRICED)
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         started = _start_pricing(centrum)
         assert started.status_code == 200, started.json()
         assert wait_for(reached.is_set, 120)
@@ -4083,7 +4085,7 @@ def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_prz
     centrum = settling_centrum(tmp_path)
     box = centrum.surroundings.report_box
     box.background = frozenset()
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     started = StartFacts(
         run_id="c" * 32,
         process="efenix",

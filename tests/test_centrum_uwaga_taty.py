@@ -16,24 +16,31 @@ from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE
 from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, RETRY_S
 from rozliczenia.centrum.report_box import Refused, SendOutcome, Unreachable
 
-from tests.fixtures.centrum import TOOL_COMMIT, Centrum, FakeIssue, case_states, centrum, dad_cases
+from tests.fixtures.centrum import (
+    TOOL_COMMIT,
+    Centrum,
+    FakeIssue,
+    ToolDirectory,
+    case_states,
+    centrum,
+    dad_cases,
+    write_report_key,
+)
 from tests.fixtures.centrum_intermax import ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum, run_to_end, settling_centrum, stopped_for_maks
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD, default_register_rows, paste_raw_orders, register_order
 from tests.fixtures.settlement import write_quantity_source
 
-KEY = "github_pat_SYNTETYCZNY_KLUCZ_ZGLOSZEN"
 TITLE = "Plik zbiorczy otwiera się długo"
 BODY = "Od wczoraj Excel myśli przy nim minutę.\nInne pliki otwierają się od razu."
 # Treść issue kończy się wersją narzędzia taty: pierwsze 7 znaków commitu, jak na Konfiguracji.
 VERSION_LINE = "Uwaga ogólna · wersja narzędzia 3c1d0a9"
 
 
-def with_key(tmp_path: Path) -> Centrum:
+def centrum_with_key(tmp_path: Path) -> Centrum:
     started = centrum(tmp_path)
-    (tmp_path / "config").mkdir(exist_ok=True)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    write_report_key(started.tool)
     return started
 
 
@@ -50,7 +57,7 @@ def dad_note_issues(started: Centrum) -> list[FakeIssue]:
 
 
 def test_uwaga_z_tytulem_i_trescia_to_jedno_issue_uwaga_taty_z_wersja_narzedzia(tmp_path: Path) -> None:
-    started = with_key(tmp_path)
+    started = centrum_with_key(tmp_path)
 
     response = started.client.post("/api/dad-notes", json={"title": TITLE, "body": BODY})
 
@@ -81,7 +88,7 @@ def test_uwaga_przy_chwilowo_zablokowanym_pliku_zapisow_skrzynki_wychodzi_od_raz
         return replace(path, target)
 
     monkeypatch.setattr(Path, "replace", held_once)
-    started = with_key(tmp_path)
+    started = centrum_with_key(tmp_path)
 
     response = started.client.post("/api/dad-notes", json={"title": TITLE, "body": BODY})
 
@@ -103,7 +110,7 @@ def test_uwaga_przy_pliku_zapisow_skrzynki_nieczytelnym_na_stale_czeka_a_dzienni
         return read_text(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", locked)
-    started = with_key(tmp_path)
+    started = centrum_with_key(tmp_path)
 
     response = started.client.post("/api/dad-notes", json={"title": TITLE, "body": BODY})
     started.client.post("/api/dad-notes", json={"title": "Druga uwaga", "body": BODY})
@@ -124,7 +131,7 @@ def test_uwaga_przy_pliku_zapisow_skrzynki_nieczytelnym_na_stale_czeka_a_dzienni
     ids=["z-trescia", "bez-tresci", "tresc-z-samych-spacji"],
 )
 def test_podglad_maks_dostanie_to_dokladnie_wyslane_issue(tmp_path: Path, text: dict[str, str], body: str) -> None:
-    started = with_key(tmp_path)
+    started = centrum_with_key(tmp_path)
 
     draft = started.client.post("/api/dad-notes/draft", json=text)
     sent = started.client.post("/api/dad-notes", json=text)
@@ -142,7 +149,7 @@ def test_uwaga_z_adresem_z_rejestru_telefonem_i_ulica_wychodzi_zamaskowana_z_uwa
     rows = default_register_rows()
     rows[2] = {**(rows[2] or {}), "ADRES": address}
     started = preparing_centrum(tmp_path, rows)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     run_to_end(started, dry_run=True)
     text = {"title": f"Klient {address}", "body": "Dzwonił z +48 600 123 456, mieszka przy ul. Kwiatowa 5/3."}
 
@@ -161,7 +168,7 @@ def test_uwaga_z_adresem_z_rejestru_telefonem_i_ulica_wychodzi_zamaskowana_z_uwa
 
 def test_uwaga_po_uporzadkowaniu_intermax_nie_wynosi_adresu_ani_numeru_umowy_z_wklejonych_wierszy(tmp_path: Path) -> None:
     started = ordering_centrum(tmp_path)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     assert started.run_to_end()["result"]["result"] == "OK"
 
     sent = started.client.post("/api/dad-notes", json={"title": "Zlecenie Ulica 104, umowa UM-104"})
@@ -180,7 +187,7 @@ def test_po_uporzadkowaniu_intermax_uwaga_zna_adres_przesunietego_wiersza_a_slow
     # Pierwszy wiersz wklejenia (zlecenie 101) jest przesunięty o dwie kolumny w lewo (ADR 0019): pod nagłówkiem
     # ADRES stoi w nim URZĄDZENIA („Instalacja”), a jego ADRES i NUMER UMOWY stoją dwie kolumny wcześniej.
     started = ordering_centrum(tmp_path)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     assert started.run_to_end()["result"]["result"] == "OK"
     plain = {"title": "Pytanie", "body": "Instalacja internetu u klienta trwała długo"}
     shifted = {"title": "Pytanie", "body": "Zlecenie Ulica 101, umowa UM-101"}
@@ -274,7 +281,7 @@ def assert_nothing_sent(started: Centrum, tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("title", ["", "   \n"], ids=["pusty", "same-biale-znaki"])
 def test_uwaga_bez_tytulu_jest_odrzucona(tmp_path: Path, title: str) -> None:
-    started = with_key(tmp_path)
+    started = centrum_with_key(tmp_path)
 
     response = started.client.post("/api/dad-notes", json={"title": title, "body": BODY})
 
@@ -283,7 +290,7 @@ def test_uwaga_bez_tytulu_jest_odrzucona(tmp_path: Path, title: str) -> None:
 
 
 def test_tytul_uwagi_w_dwoch_liniach_jest_odrzucony(tmp_path: Path) -> None:
-    started = with_key(tmp_path)
+    started = centrum_with_key(tmp_path)
 
     response = started.client.post("/api/dad-notes", json={"title": "Plik zbiorczy\notwiera się długo"})
 
@@ -299,7 +306,7 @@ def test_tytul_uwagi_w_dwoch_liniach_jest_odrzucony(tmp_path: Path) -> None:
 def test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_centrum(
     tmp_path: Path, key: bool, outcome: SendOutcome | None, waits_for: str
 ) -> None:
-    started = with_key(tmp_path) if key else centrum(tmp_path)
+    started = centrum_with_key(tmp_path) if key else centrum(tmp_path)
     if outcome is not None:
         started.report_box.outcomes.append(outcome)
 
@@ -316,7 +323,7 @@ def test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_ce
     [note] = notes(tmp_path)
     assert (note["title"], note["number"]) == (TITLE, None)
 
-    restarted = with_key(tmp_path)
+    restarted = centrum_with_key(tmp_path)
     # Zakładanie bez odpowiedzi wstrzymuje następne Centrum na LIST_LAG_S (#879); nowe Centrum ma nowy zegar od zera.
     restarted.clock.pause(LIST_LAG_S)
     with restarted.client:
@@ -331,7 +338,7 @@ def test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_ce
 
 
 def test_uwaga_ktorej_kolejka_nie_zapisala_jest_odmowa_bez_sladu_w_stanie_uwag(tmp_path: Path) -> None:
-    started = with_key(tmp_path)
+    started = centrum_with_key(tmp_path)
     (tmp_path / "config" / "zgloszenia").mkdir()
     (tmp_path / "config" / "zgloszenia" / "kolejka").write_text("plik zamiast folderu", encoding="utf-8")
 
@@ -346,7 +353,7 @@ def test_uwaga_ktorej_kolejka_nie_zapisala_jest_odmowa_bez_sladu_w_stanie_uwag(t
 
 
 def test_uwaga_bez_sieci_wysyla_sie_sama_minute_po_powrocie_sieci_bez_restartu(tmp_path: Path) -> None:
-    started = with_key(tmp_path)
+    started = centrum_with_key(tmp_path)
     started.report_box.outcomes.append(Unreachable())
     assert started.client.post("/api/dad-notes", json={"title": TITLE, "body": BODY}).json() == {
         "state": "waiting",

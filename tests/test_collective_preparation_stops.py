@@ -861,7 +861,7 @@ def test_zlamana_regula_konfiguracji_wykonawcow_zatrzymuje_przygotowanie_ze_szcz
         "Co się stało: Nie można odczytać konfiguracji wykonawców. "
         "Dwóch identyfikatorów wskazuje ten sam plik pracownika: Ten Sam / ten sam\n"
         "Gdzie: plik worker_mapping.yaml\n"
-        "Co zrobić: Przekaż to osobie utrzymującej narzędzie."
+        "Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie."
     )
 
 
@@ -876,7 +876,7 @@ def test_nieczytelna_konfiguracja_wykonawcow_zatrzymuje_przygotowanie_bez_powtor
     assert error.message.text == (
         "Co się stało: Nie można odczytać konfiguracji wykonawców.\n"
         "Gdzie: plik worker_mapping.yaml\n"
-        "Co zrobić: Przekaż to osobie utrzymującej narzędzie."
+        "Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie."
     )
 
 

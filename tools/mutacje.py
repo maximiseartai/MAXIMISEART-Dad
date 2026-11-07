@@ -126,10 +126,11 @@ import time
 from typing import NamedTuple, Protocol, TypeVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-# plan_ci i wplyw_zmiany importuje dopiero --jak-ci: plan_ci sam importuje ten moduł.
+# ci_lokalnie (brama typów) importuje dopiero w funkcji, bo sam importuje ten moduł.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 import ciezkie_ci
+import github
 import potomne
 from repo import BASE, ROOT
 import repo
@@ -837,13 +838,13 @@ def ci_jobs(jobs: Iterable[tuple[str, str, Sequence[str]]], tracks: Collection[s
     return found
 
 
-def _output(command: Sequence[str]) -> str:
+def _output(*arguments: str) -> str:
     """Wyjście polecenia ``gh``; porażka to ``ValueError`` z końcem jego błędu."""
 
-    done = potomne.run(command, cwd=ROOT)
-    if done.returncode:
-        raise ValueError(f"{' '.join(command[:3])} padł: {(done.stderr.strip() or done.stdout.strip())[-300:]}")
-    return done.stdout.strip()
+    try:
+        return github.gh(*arguments, limit_s=None).strip()
+    except subprocess.CalledProcessError as error:
+        raise ValueError(f"{' '.join(error.cmd[:3])} padł: {(error.stderr.strip() or error.stdout.strip())[-300:]}") from None
 
 
 def _last_run() -> str:
@@ -856,7 +857,7 @@ def _last_run() -> str:
         branch = repo.git(ROOT, "for-each-ref", "--format=%(upstream:lstrip=3)", head).strip() or head.removeprefix("refs/heads/")
     except subprocess.CalledProcessError as error:
         raise ValueError(f"{' '.join(error.cmd[:3])} padł: {(error.stderr.strip() or error.stdout.strip())[-300:]}") from error
-    runs = json.loads(_output(["gh", "run", "list", "--workflow", "ci.yml", "--branch", branch, "--limit", "1", "--json", "databaseId"]))
+    runs = json.loads(_output("run", "list", "--workflow", "ci.yml", "--branch", branch, "--limit", "1", "--json", "databaseId"))
     if not runs:
         raise ValueError(f"gałąź {branch} nie ma runu CI, więc podaj numer runu: --jak-ci <id runu>")
     return str(runs[0]["databaseId"])
@@ -866,8 +867,8 @@ def _ci_mutations(mutations: Sequence[Mutation], run: str, base: str) -> list[Mu
     """Każda mutacja raz na każde zadanie pytest runu ``run`` (pusty: ``_last_run``), w którym stoi test zmieniony od
     ``base``, z poleceniem ``pytest -n 1`` z plikami tego zadania."""
 
-    # Przez import_module: plan_ci importuje ten moduł, a kopie narzędzi w repozytoriach testów nie mają ani jego, ani wplyw_zmiany.
-    plan_ci = importlib.import_module("plan_ci")
+    # Przez import_module: kopie narzędzi w repozytoriach testów nie mają ani plan_runu, ani wplyw_zmiany.
+    plan_runu = importlib.import_module("plan_runu")
     wplyw_zmiany = importlib.import_module("wplyw_zmiany")
     try:
         tested = wplyw_zmiany.changed_since(ROOT, base)
@@ -875,8 +876,8 @@ def _ci_mutations(mutations: Sequence[Mutation], run: str, base: str) -> list[Mu
         raise ValueError(f"brak merge-base HEAD z {base}, więc nie wiadomo, które testy zmieniono: {error.stderr.strip()}") from error
     run = run or _last_run()
     with tempfile.TemporaryDirectory(prefix="plan-ci-") as folder:
-        _output(["gh", "run", "download", run, "--name", "plan", "--dir", folder])
-        plan = plan_ci.Plan.z_json((Path(folder) / "plan.json").read_text(encoding="utf-8"))
+        _output("run", "download", run, "--name", "plan", "--dir", folder)
+        plan = plan_runu.Plan.z_json((Path(folder) / "plan.json").read_text(encoding="utf-8"))
     tracks = {track.nazwa for track in importlib.import_module("zakres_runu").TORY if track.os.startswith("windows") == (sys.platform == "win32")}
     jobs = ci_jobs([(job.tor, job.nazwa, job.jednostki) for job in plan.zadania], tracks, tested)
     if not jobs:

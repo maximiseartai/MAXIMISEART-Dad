@@ -95,14 +95,14 @@ or modeling error?” say also stays with you.
 - **BEZ_WYJATKU**: no pass of the queue ends in an exception that `_drain` logs
   as `nieoczekiwany-wyjatek` „wysyłka do Skrzynki Zgłoszeń”.
 
-A Zgłoszenie (`ReportIssue`) always has one part, so DOKLADNIE_RAZ holds
-when a retry takes over, without comments, the Zgłoszenie whose body has the
+A Zgłoszenie (`OpenIssue`, built by `reports.report_target`) always has one
+part, so DOKLADNIE_RAZ holds when a retry takes over, without comments, the Zgłoszenie whose body has the
 mark of that part (`_settle`: the attempt before it opened the issue and was cut
 off before the delivery marker). Any other open Zgłoszenie with its odcisk line
-gets the part as one comment headed „Zgłoszenie wróciło” (`returned_report`,
+gets the part as one comment headed „Zgłoszenie wróciło” (`OpenIssue.again`,
 #820), with the same mark. Two
 guards keep it to one part (#724): `Post`
-raises `ValueError` for a `ReportIssue` with more
+raises `ValueError` for an `OpenIssue` with more
 (`test_zgloszenie_w_wiecej_niz_jednej_czesci_to_blad_programu`), and
 `reports.py` fits the body into `PART_LIMIT` (`outbox.py`), first by dropping
 the first frames of the call trace, then the oldest entries of the Centrum log
@@ -218,8 +218,8 @@ step of this code that the checker can fail, lose or kill:
 
 | Step in the checker | Code |
 | --- | --- |
-| a box read | `keyed_box.py` `KeyedBox.labelled_issues` (with `newest_with_line` and the body of the issue found, and the issues `KeyedBox` adds after its own writes), called by `_deliver_report`, `_deliver_to_period` and `_deliver_new_issue` in `outbox.py` and, through `KeyedBox.known_issue`, by `_deliver_to_known`, and `KeyedBox.comments`, called by `_seen` (`_settle`, `_deliver_to_period`) |
-| a box write | `KeyedBox.open_issue`, `comment` and `edit_comment`, called by `_deliver_new_issue`, `_deliver_report`, `_deliver_to_period`, `_comment_all` and `_put_all` (`_put`, `_RETIRED`; also the one comment of a Zgłoszenie that returned) |
+| a box read | `keyed_box.py` `KeyedBox.labelled_issues` (with `newest_with_line` and the body of the issue found, and the issues `KeyedBox` adds after its own writes), called by `_deliver_open_issue`, `_deliver_to_period` and `_deliver_new_issue` in `outbox.py` and, through `KeyedBox.known_issue`, by `_deliver_to_known`, and `KeyedBox.comments`, called by `_seen` (`_settle`, `_deliver_to_period`) |
+| a box write | `KeyedBox.open_issue`, `comment` and `edit_comment`, called by `_deliver_new_issue`, `_deliver_open_issue`, `_deliver_to_period`, `_comment_all` and `_put_all` (`_put`, `_RETIRED`; also the one comment of a Zgłoszenie that returned) |
 | a read of the Archiwum | `KeyedBox.archive` in `_deliver_archive` (with the Archiwum and files `KeyedBox` adds after its own writes): it answers, the network fails, the key lacks the permission (GitHub's 403, as the real `GitHubReportBox` reads it), or the process dies |
 | a write to the Archiwum | `KeyedBox.open_archive`, `remove` and `upload` in `_deliver_archive`: as a box write, or refused (GitHub's 403 through the real `GitHubReportBox`); an upload may also break off in the middle of the file, which leaves it not whole (`uploaded` false), counted as a network failure; in a repository without a commit (`archiwum-puste-repo`) every `open_archive` GitHub answers gets 409, which `GitHubReportBox.open_archive` reads |
 | a read of a queue file | `Outbox._send_all`: `_read` (`_queued`) of every file at the start of the pass, whose `OSError` (`read_text`) sets `_read_failed`, skips the file to the `RETRY_S` wake and keeps it from replacing an older version (`_superseded`); it fails only in a scope with a read bound (`diagnoza-odczyt`, `archiwum-diagnoza`) |
@@ -248,7 +248,16 @@ that Centrum changes often: `lifespan` in `app.py`, `_listen_when_released` in
 and `_Server` in `server.py`. `model/definicje.json` lists the four covered files as whole files and these four
 by their definitions: only a change to these definitions, not to the rest of their files, is drift.
 
-**Sync commit: `1a7d93e3`** (2026-11-07, N3a of the untangle of 7.11). Since `872a47f50` only
+**Sync commit: `78d857001`** (2026-11-07, N10a of the untangle of 7.11). Since `1a7d93e3` the
+Zgłoszenie target became the general `OpenIssue` (label, recognition line, title and the heading
+`again` of the comment to an open issue with that line; `reports.report_target` builds the
+Zgłoszenie's), `_deliver_report` is `_deliver_open_issue` with the same box calls in the same order
+and the same comment text, `Post` carries `state` for the listener (written to the queue file, never
+sent), and `KeyedBox` takes the Zgłoszenie label and its memory times from other modules with the same
+values. No action of the model changed; at this commit `sprawdz_model_kolejki.py` gave `MODEL KOLEJKI OK`
+on all 15 configurations and `explore_outbox.py` `KOLEJKA OK` on all 15 scopes.
+
+`1a7d93e3` (2026-11-07, N3a of the untangle of 7.11). Since `872a47f50` only
 `listen_locally` moved, unchanged in what it does, from `launcher.py` to `tool_files.py`, its
 `SO_REUSEADDR` bind now in `_bound`, which the restart guardian's port probe shares: `Start` still
 runs only in the process that took the port. No action of the model changed.
@@ -382,7 +391,7 @@ it leaves out and why.
 
 | Scope | Wysyłki |
 | --- | --- |
-| `zgloszenie` | one Zgłoszenie (`ReportIssue`) in one part, as every Zgłoszenie is |
+| `zgloszenie` | one Zgłoszenie (`OpenIssue`) in one part, as every Zgłoszenie is |
 | `zgloszenie-wrocilo` | one Zgłoszenie in one part whose odcisk already has an open Zgłoszenie in the Skrzynka: the part goes to it as a comment |
 | `watek-okresu` | two Kontrole ilości to one issue okresu (`PeriodThread`), in two and one part |
 | `nowe-issue` | one Uwaga taty (`NewIssue`) in two parts |
@@ -597,9 +606,9 @@ The comment above each action and branch in the model names the same code.
 | `Nadaj` | `outbox.py` `Outbox.post`: the name from the moment and `next(self._sequence)`, `replace_atomically` (`write_text` of `.json.tmp`, then `replace`; `OSError` → `False`, also the `FileNotFoundError` of `replace` when `resume` of a new process removed the `.tmp`), then `send_in_background` |
 | `Petla` | `Outbox._drain`: `_claimed` (taken → ask for another pass and skip `_send_all`), then `_folder_lock` without waiting (held by a queue of another process → `_locked_out` and skip `_send_all`), then `_read_failed = False` and `sorted(glob("*.json"))` in `_send_all` |
 | `Plik` | `Outbox._send_all` for one file: `_undeleted` → `_remove`, `_rejected` → skip, `_queued` (an `OSError` or a missing file → `_read_failed` and `_skip_unreadable`), `delivered` → `_remove`, a newer version (`Nr`) of the same wysyłka that the pass read at its start (`czytane`, `Nowszy`, `_superseded`), before or after this file in the list → the marker without sending (`Znacznik`, `_mark_delivered`), or, when the newer file is later in the list and cannot be read (`NowszyDalej`, `_read` at the start of the pass, `_read_failed`), this one as usual and the newer one out of the list, as `_skip_unreadable` skips it to the `RETRY_S` wake, `commented` → `_deliver_archive` alone, else `_deliver`; the end of the list sets `_stopped_on = None`. `Znacznik` also sets `stopped` to FALSE after a superseded file, which the code does not: the pass then either stops on a later file, which sets it again, or ends with `_stopped_on = None` |
-| `Szukaj` | `keyed_box.py` `KeyedBox.labelled_issues` (`report_box.py` `newest_with_line`; the list shows the issues `GitHub` lists and those any `KeyedBox` opened with an answer, from the file, `Widoczne`, and records whether a write without an answer in the file is less than `LIST_LAG_S` before this list, `odczyt`, `_listed_at` of the queue thread; a read of the file that fails, `zna` FALSE in `OdczytyZapisow`, shows only GitHub's list and sets `odczyt`, so the next opening is held) in `_deliver_to_period`, `_deliver_report` (a found Zgłoszenie gets the part as a comment `returned_report`), `_deliver_to_known` (`KeyedBox.known_issue`: the issue on the list → `Czytaj`; without it a list at which a write would be held, `~zna` or `Swieze`, → `Unreachable` (`Stop`), any other → `Gone`, `_remove` without sending, #915) and `_deliver_new_issue` (the newest issue whose body has a mark of the wysyłka) |
+| `Szukaj` | `keyed_box.py` `KeyedBox.labelled_issues` (`report_box.py` `newest_with_line`; the list shows the issues `GitHub` lists and those any `KeyedBox` opened with an answer, from the file, `Widoczne`, and records whether a write without an answer in the file is less than `LIST_LAG_S` before this list, `odczyt`, `_listed_at` of the queue thread; a read of the file that fails, `zna` FALSE in `OdczytyZapisow`, shows only GitHub's list and sets `odczyt`, so the next opening is held) in `_deliver_to_period`, `_deliver_open_issue` (a found Zgłoszenie gets the part as a comment headed `OpenIssue.again`), `_deliver_to_known` (`KeyedBox.known_issue`: the issue on the list → `Czytaj`; without it a list at which a write would be held, `~zna` or `Swieze`, → `Unreachable` (`Stop`), any other → `Gone`, `_remove` without sending, #915) and `_deliver_new_issue` (the newest issue whose body has a mark of the wysyłka) |
 | `Czytaj` | `KeyedBox.comments` in `_seen` (`_settle`, `_deliver_to_period`), then its plan: nothing when the issue has a mark of the wysyłka in a newer version (`Nowsza`); otherwise a part with its mark in the body, or in its first comment in this version or a newer one, is skipped (a Zgłoszenie whose body has the mark of its part is `Delivered(found, ())`), a comment in an older version is changed, the rest is a new comment, and then the comment of each part this version lacks gets `_RETIRED` (`Wycofaj`) |
-| `Zaloz` | `KeyedBox.open_issue` in `_deliver_new_issue`, `_deliver_report`, `_deliver_to_period`, with `Post.opening` and the marks (`_opening`): held (`_held`, `Wstrzymane`) → `Unreachable` without a request; the note of the write fails (`_noted`, `OSError`) → `Unreachable` without a request; otherwise the write in the file and the request (`Zapis`): `Sent` replaces it by the issue (`pamiec`), unless writing the file then fails (`_settled`, `OSError`: the write without an answer stays), no answer keeps it, `Rejected` restores the file (`_settled`) |
+| `Zaloz` | `KeyedBox.open_issue` in `_deliver_new_issue`, `_deliver_open_issue`, `_deliver_to_period`, with `Post.opening` and the marks (`_opening`): held (`_held`, `Wstrzymane`) → `Unreachable` without a request; the note of the write fails (`_noted`, `OSError`) → `Unreachable` without a request; otherwise the write in the file and the request (`Zapis`): `Sent` replaces it by the issue (`pamiec`), unless writing the file then fails (`_settled`, `OSError`: the write without an answer stays), no answer keeps it, `Rejected` restores the file (`_settled`) |
 | `CzytajArchiwum` | `KeyedBox.archive` in `_deliver_archive` (the Archiwum is on the list of Releases or is one a `KeyedBox` opened with an answer, `_Notes.archives`, `pamiecWydania`; records `odczyt` and a failed read of the file as `Szukaj` does), after `Szukaj` without an issue okresu or after `Czytaj` without a newer version (`_newer`), or alone for a `commented` file; `archive_open` false (`_archive_refused`) → `ArchiveWaits` without asking; a file of this version or newer stays, an older one → `UsunPlik`, none → `WyslijPlik`, no Archiwum → `ZalozArchiwum`; `Refused` → `ArchiveWaits` |
 | `ZalozArchiwum` | `KeyedBox.open_archive` in `_deliver_archive`, held and noted as `Zaloz`; a Release of the tag already there → GitHub's 422 → `Rejected` → `ArchiveWaits` (ghost `falszywe`); `Refused` or `Rejected` → `ArchiveWaits`; with `PusteRepo` every answer is GitHub's 409, which `report_box.py` `GitHubReportBox.open_archive` reads as `Rejected` → `ArchiveWaits` (`OdmowaPustegoRepo`) |
 | `UsunPlik` | `KeyedBox.remove` of the file of an older version in `_deliver_archive`, right before `upload`; `Refused` → `ArchiveWaits` |

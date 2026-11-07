@@ -41,7 +41,7 @@ na tym systemie, i sam warunek. Kod tylko dla innego systemu w innej postaci (st
 warunek przez ``startswith`` albo zmienną) przeżywa i potrzebuje wyjątku.
 
 Najpierw biegną raz testy dotknięte zmianą, wybrane jak w ``tools/szybko.py`` (``tools/lib/wplyw_zmiany.py``), z pluginem
-``tools/ci/pytest_pokrycie.py``. Zapisuje on, które testy wykonują które zmienione linie i jakikolwiek kod zmienionych
+``tools/lib/pytest_pokrycie.py``. Zapisuje on, które testy wykonują które zmienione linie i jakikolwiek kod zmienionych
 plików, także w procesach Pythona uruchomionych przez test, oraz linie wykonane dla wielu testów naraz: przy imporcie
 modułu i w fixture o zasięgu szerszym niż test. Testy muszą przejść, inaczej wynik mutacji niczego nie dowodzi.
 
@@ -139,7 +139,6 @@ import tempfile
 import time
 import tokenize
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
@@ -727,7 +726,7 @@ def _coverage(
         site = Path(folder) / "site"
         site.mkdir()
         (site / "sitecustomize.py").write_text(pokrycie_procesu.SITECUSTOMIZE, encoding="utf-8")
-        tools = [str(ROOT / "tools" / folder) for folder in ("ci", "lib", ".")]
+        tools = [str(ROOT / "tools" / folder) for folder in ("lib", ".")]
         python_path = os.pathsep.join([str(site), *tools, str(ROOT / "src"), os.environ.get("PYTHONPATH", "")])
         inherited = {name: value for name, value in os.environ.items() if name != pokrycie_procesu.TEST}
         env = {

@@ -112,7 +112,13 @@ MUTATIONS = (
     ),
     Mutation(
         "„nie dotarły” zamienione na „w drodze”",
-        (Edit(CASE_DELIVERY, "        return _rejected_logs_line(run_id)\n", "        return logs_line(run_id, None)\n"),),
+        (
+            Edit(
+                CASE_DELIVERY,
+                "        return _rejected_logs_line(run_id), _LOGS_REJECTED\n",
+                "        return logs_line(run_id, None), _LOGS_REJECTED\n",
+            ),
+        ),
         UWAGA,
         "wysłana Uwaga mówi, że Logi są w drodze, choć Skrzynka je odrzuciła",
     ),

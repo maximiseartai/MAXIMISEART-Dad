@@ -2,9 +2,9 @@
 
 Każda wysyłka (``Post``) to gotowy tekst skierowany do issue okresu (``PeriodThread``: etykieta, wiersz rozpoznawczy
 na początku treści issue, tytuł i co z issue, które Maks zamknął), do nowego issue (``NewIssue``: etykieta i tytuł,
-jak Uwaga taty), do issue o znanym numerze (``KnownIssue``) albo do jednego otwartego Zgłoszenia problemu
-(``ReportIssue``: wiersz odcisku problemu w treści i tytuł, zawsze jedna część; Zgłoszenie, którego odcisk ma już
-otwarte issue, idzie do niego komentarzem „Zgłoszenie wróciło”). Najpierw trafia do własnego pliku JSON w
+jak Uwaga taty), do issue o znanym numerze (``KnownIssue``) albo do jednego otwartego issue z wierszem rozpoznawczym
+w treści (``OpenIssue``, jak Zgłoszenie: zawsze jedna część; gdy issue z tym wierszem jest otwarte, wysyłka idzie do
+niego komentarzem z nagłówkiem celu). Najpierw trafia do własnego pliku JSON w
 ``config/zgloszenia/kolejka/`` (poza Gitem), potem jeden wątek w tle wysyła wszystkie pliki po kolei i usuwa
 wysłane. Porażka (brak klucza, odmowa, brak sieci) zostawia plik bez Komunikatu; wątek rusza znów sam po
 ``RETRY_S``, przy starcie Centrum (``resume``) i po każdej nowej wysyłce. Plik do ``KnownIssue``, którego skrzynka
@@ -74,6 +74,7 @@ from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.clock import Clock
 from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
 from rozliczenia.centrum.log import CentrumLog, WaitingCause
+from rozliczenia.centrum.report_issue import RETURNED_HEADING
 from rozliczenia.centrum.report_box import (
     COMMENT_LIMIT,
     Archive,
@@ -106,9 +107,15 @@ SCHEMA_VERSION: Final = 3
 _TARGET_SCHEMA: Final = 2
 # Pliki kolejki sprzed ``NewIssue`` (#273) mają cel w kluczu ``thread`` i zawsze jest nim issue okresu.
 _PERIOD_THREAD_SCHEMA: Final = 1
+# Rodzaj celu ``OpenIssue`` w pliku kolejki: nazwa z czasu, gdy był nim tylko cel Zgłoszenia, którą czyta też Centrum
+# sprzed ``OpenIssue`` po cofnięciu Aktualizacji.
+_OPEN_ISSUE: Final = "report_issue"
+# Nagłówek celu ``OpenIssue`` w pliku bez klucza ``again``: takie pliki zapisało Centrum sprzed ``OpenIssue``, w którym
+# tym celem było tylko Zgłoszenie (warunek usunięcia przy ``_parse``).
+_AGAIN_BEFORE_OPEN_ISSUE: Final = RETURNED_HEADING
 # Miejsce w komentarzu na nagłówek części, wiersz rozpoznawczy i znacznik wysyłki, ponad tekst bloków.
 _FRAME_RESERVE: Final = 2_000
-# Najwięcej znaków tekstu bloków w jednej części; treść Zgłoszenia (``ReportIssue``) mieści się w jednej.
+# Najwięcej znaków tekstu bloków w jednej części; treść celu ``OpenIssue`` mieści się w jednej.
 PART_LIMIT: Final = COMMENT_LIMIT - _FRAME_RESERVE
 # Najwięcej znaków ``run_id``: identyfikator Uruchomienia, Uwagi taty albo Zgłoszenia (32 znaki ``uuid4().hex``).
 _RUN_ID_LIMIT: Final = 64
@@ -124,12 +131,6 @@ _MARK_REST: Final = re.compile(r"część ([0-9]+) wersja (\S+) -->")
 _TICK: Final = timedelta(microseconds=1)
 # Tekst komentarza części, której nowsza wersja wysyłki już nie ma (Logi po Diagnozie krótsze o część).
 _RETIRED: Final = "Ta część jest pusta: nowsza wersja tej wysyłki ma mniej części."
-# Etykieta Zgłoszenia jak ``dad_cases.REPORT``.
-_REPORT_LABEL: Final[Label] = "zgloszenie"
-# Początek wiersza odcisku problemu w treści Zgłoszenia (``fingerprint_line``).
-_FINGERPRINT_PREFIX: Final = "- Odcisk problemu: "
-# Nagłówek komentarza, którym Zgłoszenie trafia do otwartego Zgłoszenia tego samego odcisku (``returned_report``).
-_RETURNED_HEADING: Final = "## Zgłoszenie wróciło\n\n"
 # Po przejściu, które stanęło na przyczynie dla całej kolejki (brak sieci, brak klucza, odmowa klucza), kolejka
 # próbuje znowu po minucie. Odrzucony klucz nie kosztuje przy tym zapytania: ``KeyedBox`` odpowiada ``Refused`` bez
 # sieci przez kwadrans, a brak klucza to odczyt pliku. Nieudana próba DNS raz na minutę nic nie kosztuje, a dłuższa
@@ -244,44 +245,26 @@ class KnownIssue:
     number: int
 
 
-def fingerprint_line(fingerprint: str) -> str:
-    """Wiersz treści Zgłoszenia z odciskiem problemu, po którym Centrum znajduje otwarte Zgłoszenie w skrzynce."""
+@dataclass(frozen=True)
+class OpenIssue:
+    """Jedno otwarte issue z etykietą ``label`` na wiersz rozpoznawczy ``line``, który nadawca stawia w treści (Zgłoszenie:
+    wiersz odcisku problemu, ``report_issue``).
 
-    return f"{_FINGERPRINT_PREFIX}{fingerprint}"
-
-
-def returned_report(body: str) -> str:
-    """Komentarz do otwartego Zgłoszenia tego odcisku: nagłówek „Zgłoszenie wróciło” i cała treść Zgłoszenia ``body``."""
-
-    return f"{_RETURNED_HEADING}{body}"
-
-
-@dataclass(frozen=True, kw_only=True)
-class ReportIssue:
-    """Zgłoszenie: jedno otwarte issue z etykietą ``zgloszenie`` na odcisk problemu ``fingerprint``.
-
-    Wysyłka Zgłoszenia ma zawsze jedną część, treść issue albo komentarza (``Post`` odrzuca więcej, #724).
-    Dostarczenie szuka otwartego Zgłoszenia z wierszem odcisku (``line``). Bez niego zakłada issue z ``title`` i tą
-    częścią. Otwarte Zgłoszenie dokładnie z tą treścią założyła przerwana próba tej wysyłki: wysyłka je przejmuje bez
-    komentarza. Inne otwarte Zgłoszenie tego odcisku (wcześniejsze, z tego albo innego komputera) dostaje komentarz
-    ``returned_report`` z tą częścią, więc Maks widzi, że problem wraca (#820).
+    Wysyłka ma zawsze jedną część, treść issue albo komentarza (``Post`` odrzuca więcej, #724). Dostarczenie szuka
+    otwartego issue z tym wierszem. Bez niego zakłada issue z ``title`` i tą częścią. Otwarte issue dokładnie z tą treścią
+    założyła przerwana próba tej wysyłki: wysyłka je przejmuje bez komentarza. Inne otwarte issue tego wiersza
+    (wcześniejsze, z tego albo innego komputera) dostaje komentarz z nagłówkiem ``again`` i tą częścią, więc Maks widzi,
+    że problem wraca (#820).
     """
 
-    fingerprint: str
+    label: Label
+    line: str
     title: str
-
-    @property
-    def line(self) -> str:
-        """Wiersz odcisku w treści issue; w pliku kolejki zapisany tak samo."""
-
-        return fingerprint_line(self.fingerprint)
-
-    @property
-    def label(self) -> Label:
-        return _REPORT_LABEL
+    again: str
+    """Nagłówek komentarza do otwartego issue z tym wierszem, przed częścią."""
 
 
-Target = PeriodThread | NewIssue | KnownIssue | ReportIssue
+Target = PeriodThread | NewIssue | KnownIssue | OpenIssue
 """Dokąd w Skrzynce Zgłoszeń idzie wysyłka; dostarczenie rozróżnia cele przez ``match``."""
 
 
@@ -385,7 +368,8 @@ class Post:
     ``header``: treść nowego issue; ``None``: nowe issue otwiera pierwsza część (Kontrola ilości, Uwaga taty).
     ``run_id`` to Uruchomienie, a dla Uwagi taty jej identyfikator. ``archive``: plik do Archiwum okresu, tylko przy
     wysyłce do issue okresu w jednej części, która idzie z dopiskiem, gdy Archiwum pliku nie przyjmie. ``rank``: stopień
-    wersji tej wysyłki (``Rank``).
+    wersji tej wysyłki (``Rank``). ``state``: stan wysyłki, który nadaje i czyta jej słuchacz (``Listener``, Uwaga taty:
+    czy Logi Uruchomienia są w drodze); kolejka zapisuje go w pliku i oddaje bez zmian, a do Skrzynki nie wysyła.
     """
 
     target: Target
@@ -396,6 +380,7 @@ class Post:
     parts: tuple[str, ...]
     archive: ArchiveFile | None = None
     rank: Rank = Rank.OWN
+    state: str | None = None
 
     def __post_init__(self) -> None:
         body, comments = self.opening()
@@ -407,13 +392,13 @@ class Post:
         # Identyfikator wysyłki stoi w znaczniku w jednej linii (``_mark``), a znacznik mieści się w ``_MARK_RESERVE``.
         if not 0 < len(self.run_id) <= _RUN_ID_LIMIT or not self.run_id.isprintable() or " " in self.run_id:
             raise ValueError("Identyfikator wysyłki musi być krótkim napisem bez spacji.")
-        # Przerwaną wysyłkę Zgłoszenia następna próba znajduje po tym wierszu; bez niego założyłaby drugie issue.
-        if isinstance(self.target, ReportIssue) and self.target.line not in body.splitlines():
-            raise ValueError("Treść nowego issue Zgłoszenia musi mieć wiersz odcisku problemu.")
+        # Przerwaną wysyłkę następna próba znajduje po tym wierszu; bez niego założyłaby drugie issue.
+        if isinstance(self.target, OpenIssue) and self.target.line not in body.splitlines():
+            raise ValueError("Treść nowego issue musi mieć wiersz rozpoznawczy celu.")
         # Przerwaną wysyłkę następna próba poznaje po treści issue równej części 1 i przejmuje bez komentarzy, więc
-        # część 2 by przepadła. Nagłówek komentarza ``returned_report`` mieści się w zapasie ``PART_LIMIT``.
-        if isinstance(self.target, ReportIssue) and comments:
-            raise ValueError("Zgłoszenie musi mieścić się w jednej części wysyłki.")
+        # część 2 by przepadła. Nagłówek ``OpenIssue.again`` mieści się w zapasie ``PART_LIMIT``.
+        if isinstance(self.target, OpenIssue) and comments:
+            raise ValueError("Wysyłka do jednego otwartego issue musi mieścić się w jednej części.")
 
     @classmethod
     def of(
@@ -448,7 +433,7 @@ class Post:
         match self.target:
             case PeriodThread(line=line):
                 return f"{line}\n\n{first}", comments
-            case NewIssue() | ReportIssue():
+            case NewIssue() | OpenIssue():
                 return first, comments
             case KnownIssue():
                 return "", self.parts
@@ -502,6 +487,7 @@ def _queue_text(post: Post, *, delivered_parts: int, archived: bool) -> str:
             "delivered_parts": delivered_parts,
             "archived": archived,
             "rank": post.rank.value,
+            "state": post.state,
         },
         ensure_ascii=False,
         indent=2,
@@ -522,8 +508,14 @@ def _target_json(target: Target) -> dict[str, str | int]:
             return {"kind": "new_issue", "label": target.label, "title": target.title}
         case KnownIssue():
             return {"kind": "known_issue", "label": target.label, "number": target.number}
-        case ReportIssue():
-            return {"kind": "report_issue", "label": target.label, "line": target.line, "title": target.title}
+        case OpenIssue():
+            return {
+                "kind": _OPEN_ISSUE,
+                "label": target.label,
+                "line": target.line,
+                "title": target.title,
+                "again": target.again,
+            }
         case _:
             assert_never(target)
 
@@ -537,13 +529,9 @@ def _target(entry: dict[str, Any], kind: object) -> Target | None:
         return NewIssue(entry["label"], _string(entry["title"]))
     if kind == "known_issue":
         return KnownIssue(entry["label"], entry["number"]) if type(entry["number"]) is int else None
-    if kind == "report_issue":
-        # Plik kolejki niesie wiersz odcisku; odcisk to reszta wiersza po jego stałym początku.
-        line = _string(entry["line"])
-        fingerprint = line.removeprefix(_FINGERPRINT_PREFIX)
-        if fingerprint == line:
-            return None
-        return ReportIssue(fingerprint=fingerprint, title=_string(entry["title"]))
+    if kind == _OPEN_ISSUE:
+        again = _string(entry.get("again", _AGAIN_BEFORE_OPEN_ISSUE))
+        return OpenIssue(entry["label"], _string(entry["line"]), _string(entry["title"]), again)
     if kind != "period_thread" or entry["closed"] not in _CLOSED:
         return None
     return PeriodThread(entry["label"], _string(entry["line"]), entry["closed"], _string(entry["title"]))
@@ -555,6 +543,12 @@ def _parse(text: str) -> _Queued | None:
     Pliki od #665 do #840 mogą mieć numer issue Uwagi taty (``issue``) i kolejka go pomija: issue wysyłki znajduje po
     znaczniku, a Uwaga ma jedną część, więc żadna jej próba nie zostawiła issue bez całej treści. Pliki schematu 1 i 2
     nie mają pliku do Archiwum. Stopień wersji (``rank``) jest opcjonalny: pliki sprzed #910 go nie mają i mają ``OWN``.
+    Stan słuchacza (``state``) i nagłówek ``OpenIssue.again`` są opcjonalne: pliki sprzed ``OpenIssue`` ich nie mają.
+
+    Te odczyty są dla plików, które Centrum starszej wersji zostawiło w kolejce taty, bo ich nie wysłało (brak tokenu,
+    sieci, odrzucona treść). Warunek usunięcia: Maks sprawdzi, że w ``config/zgloszenia/kolejka`` u taty nie ma pliku
+    zapisanego przed Wydaniem, które tata ma. Schematy 1–2 i plik bez ``rank`` zapisuje tylko Wydanie starsze niż v0.5.0,
+    a plik bez ``state`` i ``again`` Wydanie sprzed ``OpenIssue``.
     """
 
     try:
@@ -578,6 +572,7 @@ def _parse(text: str) -> _Queued | None:
             tuple(_string(part) for part in document["parts"]),
             archive,
             _rank(document.get("rank", Rank.OWN.value)),
+            _optional_string(document.get("state")),
         )
         delivered_parts = document.get("delivered_parts", 0)
     except (ValueError, KeyError, TypeError):
@@ -768,8 +763,8 @@ def _deliver(post: Post, version: Version, box: KeyedBox, *, archive_open: bool)
             return _deliver_new_issue(post, version, issue, box)
         case KnownIssue() as known:
             return _deliver_to_known(post, version, known, box)
-        case ReportIssue() as report:
-            return _deliver_report(post, version, report, box)
+        case OpenIssue() as target:
+            return _deliver_open_issue(post, version, target, box)
         case _:
             assert_never(post.target)
 
@@ -794,25 +789,25 @@ def _deliver_new_issue(post: Post, version: Version, issue: NewIssue, box: Keyed
     return _comment_all(opened.number, comments, box)
 
 
-def _deliver_report(post: Post, version: Version, report: ReportIssue, box: KeyedBox) -> Delivered | Failure:
-    """Nowe issue z jedyną częścią wysyłki albo komentarz z nią do otwartego Zgłoszenia z tym odciskiem.
+def _deliver_open_issue(post: Post, version: Version, target: OpenIssue, box: KeyedBox) -> Delivered | Failure:
+    """Nowe issue z jedyną częścią wysyłki albo komentarz z nią do otwartego issue z tym wierszem rozpoznawczym.
 
-    Jeden problem ma jedno otwarte Zgłoszenie: znalezione dostaje komentarz ``returned_report``. Wyjątkiem jest
-    Zgłoszenie, którego treść ma znacznik tej części: założyła je ta wysyłka, a przerwanie przyszło przed znacznikiem
-    dostarczenia, więc całe Zgłoszenie już jest w treści i wysyłka je przejmuje bez komentarza (``_settle``).
+    Jeden wiersz ma jedno otwarte issue: znalezione dostaje komentarz z nagłówkiem ``target.again``. Wyjątkiem jest
+    issue, którego treść ma znacznik tej części: założyła je ta wysyłka, a przerwanie przyszło przed znacznikiem
+    dostarczenia, więc cała część już jest w treści i wysyłka je przejmuje bez komentarza (``_settle``).
     """
 
-    issues = box.labelled_issues(report.label, include_closed=False)
+    issues = box.labelled_issues(target.label, include_closed=False)
     if isinstance(issues, Refused | Unreachable | NoKey):
         return issues
-    found = newest_with_line(issues, report.line)
+    found = newest_with_line(issues, target.line)
     if found is None:
         (_, body), _ = _opening(post, version)
-        opened = box.open_issue(report.label, report.title, body)
+        opened = box.open_issue(target.label, target.title, body)
         if not isinstance(opened, Sent):
             return opened
         return Delivered(opened.number, ())
-    returned = _marked(returned_report(post.parts[0]), post, 1, version)
+    returned = _marked(f"{target.again}{post.parts[0]}", post, 1, version)
     return _settle(post, version, _issue(issues, found), (returned,), box)
 
 
@@ -1093,7 +1088,7 @@ class Listener(Protocol):
     inną i zostaje w kolejce do następnego przejścia. ``delivered`` dostaje każdą wysyłkę przyjętą przez skrzynkę i
     numer jej issue, zanim ``wait_delivered`` się obudzi i plik dostanie znacznik, i zwraca wysyłki następcze, które
     kolejka kładzie wtedy w swoich plikach. ``rejected`` dostaje każdą wysyłkę, której treść skrzynka odrzuciła, zanim
-    przejście pójdzie dalej.
+    przejście pójdzie dalej. Wysyłka może nieść stan, który słuchacz nadaje i czyta (``Post.state``).
     """
 
     def prepare(self, post: Post, sent: Deliveries) -> Post | None: ...

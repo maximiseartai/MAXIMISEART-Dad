@@ -15,14 +15,14 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Final, assert_never
 
-from .message import REPORT_TO_MAINTAINER, Message, file_label, folder_label
+from .message import IF_ERROR_RETURNS, OTHERWISE_REFER, Message, file_label, folder_label
 from .period_folder import FolderNotNamedAfterPeriod, NotPeriodToken, PeriodFolderError, collective_file_name_with
 from .workbook_files import WORKER_HEADER, Problem, WorkbookError
 from .worker_config import ContentProblem, SameWorkerFile, WorkerConfigError
 
 _NOTHING_CREATED: Final = "Nie utworzono żadnego pliku pracownika."
 _STAGING_LEFT: Final = "W Folderze okresu został folder tymczasowy, którego nie udało się usunąć."
-_RETRY: Final = "Uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
+_RETRY: Final = f"Uruchom ponownie. {IF_ERROR_RETURNS}"
 _PREVIEW_PROBLEMS: Final = "Uruchom Podgląd bez zapisu: lista problemów pokaże wiersze."
 _SAVE_AND_RETRY: Final = "Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie."
 _FIX_UNMAPPED_WORKER: Final = (
@@ -90,7 +90,7 @@ def _collective_file_inaccessible(source: Path) -> Message:
         where=file_label(source),
         action=(
             "Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy Plik zbiorczy otwiera się w Excelu. "
-            f"Zamknij go i uruchom ponownie. Jeśli błąd wraca, {REPORT_TO_MAINTAINER.lower()}"
+            f"Zamknij go i uruchom ponownie. {IF_ERROR_RETURNS}"
         ),
     )
 
@@ -121,7 +121,7 @@ def _collective_file_unfit(source: Path, detail: str) -> Message:
         dad_file="collective_file",
         what=f"Plik zbiorczy nie nadaje się do Przebiegu rozliczeń. {detail}",
         where=file_label(source),
-        action=f"Popraw Plik zbiorczy w Excelu. {_SAVE_AND_RETRY} Jeśli błąd wraca, {REPORT_TO_MAINTAINER.lower()}",
+        action=f"Popraw Plik zbiorczy w Excelu. {_SAVE_AND_RETRY} {IF_ERROR_RETURNS}",
     )
 
 
@@ -166,11 +166,10 @@ def worker_config_problem(config_path: Path, error: WorkerConfigError) -> Messag
             detail = "Nie można odczytać pliku konfiguracji."
         case content:
             detail = _worker_config_content(content)
-    return Message(
+    return Message.to_maintainer(
         code="ZLA_KONFIGURACJA_WYKONAWCOW",
         what=f"Konfiguracja wykonawców jest niepoprawna. {detail}",
         where=file_label(config_path),
-        action=REPORT_TO_MAINTAINER,
     )
 
 
@@ -208,18 +207,17 @@ def _worker_config_inaccessible(config_path: Path) -> Message:
     Konfiguracja leży w ``config`` na dysku C jak Wzorce, więc tata rzadko sam usunie przyczynę: Komunikat idzie do Maksa.
     """
 
-    return Message(
+    return Message.to_maintainer(
         code="NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW",
         what="Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.",
         where=file_label(config_path),
-        action=REPORT_TO_MAINTAINER,
     )
 
 
 def worker_template_unusable(error: WorkbookError) -> Message:
     """Wzorzec rozliczenia pracownika nie przeszedł Sprawdzania; ``error`` mówi dlaczego."""
 
-    otherwise = f"W innym wypadku {REPORT_TO_MAINTAINER.lower()}"
+    otherwise = OTHERWISE_REFER
     match error.problem:
         case Problem.MISSING:
             detail = f"Nie znaleziono Wzorca rozliczenia pracownika: {error.path.name}."
@@ -377,23 +375,20 @@ def unexpected_failure() -> Message:
 def summary_not_shown() -> Message:
     """Folder rozliczeń pracowników powstał, ale podsumowania nie dało się pokazać."""
 
-    return Message(
+    return Message.to_maintainer(
         code="BLAD_PODSUMOWANIA",
         what="Rozliczenia pracowników powstały, ale nie udało się pokazać podsumowania.",
         where="Przebieg rozliczeń",
-        action=(
-            "Nie uruchamiaj ponownie: Folder rozliczeń pracowników już jest. "
-            "Sprawdź Folder okresu i przekaż ten komunikat osobie utrzymującej narzędzie."
-        ),
+        before="Nie uruchamiaj ponownie: Folder rozliczeń pracowników już jest.",
+        check="Folder okresu",
     )
 
 
 def plan_not_shown() -> Message:
     """DRY-RUN skończył się, ale planu nie dało się pokazać; nic nie zapisano."""
 
-    return Message(
+    return Message.to_maintainer(
         code="BLAD_PLANU",
         what="Nie udało się pokazać planu. Nic nie zapisano.",
         where="Przebieg rozliczeń",
-        action=REPORT_TO_MAINTAINER,
     )

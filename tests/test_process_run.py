@@ -15,7 +15,7 @@ import pytest
 
 from rozliczenia.decision import Conversation, Declined
 from rozliczenia.domain import ProgressObserver
-from rozliczenia.message import REPORT_TO_MAINTAINER, Message, StopError
+from rozliczenia.message import Message, StopError
 from rozliczenia.phase_runner import PhaseRunner
 from rozliczenia.process_run import Finished, Outcome, Process, Stop, run_process
 from rozliczenia.progress import ProgressSnapshot
@@ -98,7 +98,7 @@ def test_core_closes_every_ending_with_a_message(tmp_path: Path, dry_run: bool) 
 
 
 def test_rekord_metryk_zatrzymania_do_maksa_ma_rodzaj_i_kod_bez_tresci_komunikatu(tmp_path: Path) -> None:
-    to_maks = Message("ZLA_KONFIGURACJA", SECRET, "Proces testowy", REPORT_TO_MAINTAINER)
+    to_maks = Message.to_maintainer("ZLA_KONFIGURACJA", SECRET, "Proces testowy")
 
     def stop_to_maks(_inputs: Inputs, _observer: ProgressObserver, _conversation: Conversation) -> NoReturn:
         raise StopError(to_maks)

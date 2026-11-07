@@ -510,9 +510,10 @@ def test_w_trakcie_przywracania_uruchomienie_zamkniecie_i_drugie_przywrocenie_sa
 def test_przywrocenie_w_trakcie_uruchomienia_procesu_jest_odrzucone(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path, incomplete_period_rows())
     centrum.start(dry_run=False)
-    views_until(centrum.client, "awaiting_decision")
+    waiting = views_until(centrum.client, "awaiting_decision")[-1]
 
     refused = centrum.client.post("/api/intermax/copies/restore", json={"name": ORDERED})
+    centrum.client.post(f"/api/runs/{waiting['run']['id']}/decision", json={"answer": "abort"})
 
     assert (refused.status_code, refused.json()) == (
         409,

@@ -33,6 +33,8 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import ciezkie_ci
+import github
 import potomne
 from repo import REMOTE, ROOT
 import repo
@@ -44,19 +46,15 @@ class Merged:
     commit: str
 
 
-def _gh(*arguments: str) -> str:
-    return subprocess.run(["gh", *arguments], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=True).stdout
-
-
 def merged(numbers: list[int], last: int) -> list[Merged]:
     """Scalone PR-y z ``numbers`` i ``last`` ostatnio scalonych, każdy z commitem scalenia."""
 
     found: dict[int, str] = {}
     if last:
-        listed = json.loads(_gh("pr", "list", "--state", "merged", "--limit", str(last), "--json", "number,mergeCommit"))
+        listed = json.loads(github.gh("pr", "list", "--state", "merged", "--limit", str(last), "--json", "number,mergeCommit", limit_s=None))
         found |= {entry["number"]: entry["mergeCommit"]["oid"] for entry in listed}
     for number in numbers:
-        entry = json.loads(_gh("pr", "view", str(number), "--json", "number,state,mergeCommit"))
+        entry = json.loads(github.gh("pr", "view", str(number), "--json", "number,state,mergeCommit", limit_s=None))
         if entry["state"] != "MERGED" or not entry.get("mergeCommit"):
             raise ValueError(f"PR #{number} nie jest scalony")
         found[number] = entry["mergeCommit"]["oid"]
@@ -98,7 +96,7 @@ def run_on(pr: Merged, command: list[str], tools: dict[str, bytes], output: Path
             (copy / name).write_bytes(content)
         env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(copy / "src"), os.environ.get("PYTHONPATH", "")]).rstrip(os.pathsep)}
         # Próba narzędzia na cudzym commicie, nie sprawdzenie przed pushem: ciężkie zadania biegną (tools/lib/ciezkie_ci.py).
-        env["MAXIMISEART_NA_SCALONYCH_PR"] = "1"
+        env[ciezkie_ci.FROM_MERGED_PRS] = "1"
         started = time.monotonic()
         done = potomne.run([sys.executable, *command], cwd=copy, env=env)
         elapsed = time.monotonic() - started

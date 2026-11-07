@@ -57,11 +57,10 @@ Bazę, koniec zakresu i liczbę części nocy drukuje lokalnie bez testów:
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 import io
-import itertools
 import json
 import os
 from pathlib import Path
@@ -71,20 +70,21 @@ import sys
 from typing import Any
 import zipfile
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+from github import MERGE, REPO, SQUASH, Akcja, GhApi, GitHub, Skomentuj, Zaloz, blok_kodu, issues, strony
+from github import wykonaj as wykonaj_akcje
 from kroki_skilli import Katalog, Step
 from mutacje import PART, NearLimit
 import mutacje_zmiany
-import plan_ci
+import plan_runu
 from repo import ROOT
 import repo
 from wplyw_zmiany import Repository, changed_since
 from zakres_runu import KrokSkilla, Zdarzenie, potrzebuja_chromium, zakres
-from zgloszenia_ci import MERGE, REPO, SQUASH, GhApi, GitHub, blok_kodu
 
 WORKFLOW = "mutacje-nocne.yml"
+PREFIKS = "MUTACJE NOCNE"
 # Część to 6 pełnych kolejek po WORKERS mutacji naraz. W nocach 31.10–3.11 (runy 41179652907, 41285996039, 41408995300,
 # 41601085650) mediana mutacji pliku wynosiła 1–210 s, ale 16 mutacji tools/mutacje.py trwało w testach linii pełny limit
 # mutacji (MUTATION_LIMIT_S). Testy kodu pliku jednej mutacji trwały najwyżej 836 s (doszło do nich najwyżej 11 z 32
@@ -101,12 +101,11 @@ ETYKIETY = ("ready-for-agent", "przezyte-mutacje")
 # Artefakt części k w mutacje-nocne.yml: ``mutacje-nocne-<k>`` z plikiem ``--zapis`` narzędzia mutacji.
 ARTEFAKT = "mutacje-nocne-"
 ZAPIS = "czesc.json"
-# Artefakt zadania skryptów mutacji skilli: ``mutacje-skilli-<id zadania planu>`` z zapisem ``plan_ci.WYKONANIE``.
+# Artefakt zadania skryptów mutacji skilli: ``mutacje-skilli-<id zadania planu>`` z zapisem ``plan_runu.WYKONANIE``.
 ARTEFAKT_SKILLI = "mutacje-skilli-"
 # Artefakt planu z plikiem ``--zakres``: baza i koniec zakresu nocy, od którego zaczyna następna noc.
 ARTEFAKT_ZAKRESU = "zakres-nocy"
 ZAKRES = "zakres.json"
-STRONA = 100
 _ID = re.compile(r"(?P<plik>[^:\s]+):[1-9][0-9]* \S.*")
 _KLUCZ = re.compile(r"\| klucz (?P<klucz>[0-9a-f]{12})\b")
 # Koniec linii ``MUTACJA`` mutacji, której część nie dała werdyktu przed limitem czasu.
@@ -300,14 +299,14 @@ def autor(github: GitHub, root: Path, scalenie: str, commit: str) -> Autor:
     return Autor(int(scalone[0]["number"])) if scalone else Autor(None, commit)
 
 
-def wyniki_skilli(plan: plan_ci.Plan, katalog: Path) -> tuple[list[str], list[tuple[str, NearLimit]], list[str]]:
+def wyniki_skilli(plan: plan_runu.Plan, katalog: Path) -> tuple[list[str], list[tuple[str, NearLimit]], list[str]]:
     """Kroki skilli (``skill:<skill>/<skrypt>``), które padły w zadaniach ``plan``, ostrzeżenia ``CZAS BLISKO LIMITU``
     z kluczem kroku i przyczyny zadań bez wyniku."""
 
     padly, blisko, problemy = set(), [], []
     for zadanie in plan.zadania:
         try:
-            zapis = json.loads((katalog / f"{ARTEFAKT_SKILLI}{zadanie.id}" / plan_ci.WYKONANIE.name).read_text(encoding="utf-8"))
+            zapis = json.loads((katalog / f"{ARTEFAKT_SKILLI}{zadanie.id}" / plan_runu.WYKONANIE.name).read_text(encoding="utf-8"))
         except (OSError, ValueError) as blad:
             problemy.append(f"{zadanie.nazwa} bez zapisu: {blad}")
             continue
@@ -383,38 +382,12 @@ def _autor_kroku(
     return None
 
 
-@dataclass(frozen=True)
-class Zaloz:
-    tytul: str
-    tresc: str
-
-
-@dataclass(frozen=True)
-class Uzupelnij:
-    issue: int
-    tresc: str
-    otworz: bool  # issue jest zamknięte
-
-
-Akcja = Zaloz | Uzupelnij
-
-
-def _strony(github: GitHub, sciezka: str) -> Iterator[dict[str, Any]]:
-    laczenie = "&" if "?" in sciezka else "?"
-    for strona in itertools.count(1):
-        partia = github.json(f"{sciezka}{laczenie}per_page={STRONA}&page={strona}")
-        yield from partia
-        if len(partia) < STRONA:
-            return
-
-
 def akcje(github: GitHub, przypisane: dict[Autor, list[Przezyta]], run: str) -> list[Akcja]:
     """Nowe issue dla PR bez issue, a komentarz z nowymi mutacjami dla PR, którego issue nie ma jeszcze ich kluczy."""
 
     istniejace: dict[str, dict[str, Any]] = {}
-    for znalezione in _strony(github, f"{REPO}/issues?labels={ETYKIETY[1]}&state=all"):
-        if "pull_request" not in znalezione:
-            istniejace.setdefault(znalezione["title"], znalezione)
+    for znalezione in issues(github, ETYKIETY[1], "all"):
+        istniejace.setdefault(znalezione["title"], znalezione)
     wynik: list[Akcja] = []
     for kto, mutacje in przypisane.items():
         linie = [mutacja.linia for mutacja in mutacje]
@@ -430,13 +403,13 @@ def akcje(github: GitHub, przypisane: dict[Autor, list[Przezyta]], run: str) -> 
                 *_rada_bez_werdyktu(mutacje),
                 "Gdy każda linia ma test albo powód, zamknij issue (ADR 0021).",
             ]
-            wynik.append(Zaloz(kto.tytul, "\n".join(tresc)))
+            wynik.append(Zaloz(kto.tytul, "\n".join(tresc), ETYKIETY))
             continue
-        znane = "\n".join([issue.get("body") or "", *(komentarz["body"] or "" for komentarz in _strony(github, f"{REPO}/issues/{issue['number']}/comments"))])
+        znane = "\n".join([issue.get("body") or "", *(komentarz["body"] or "" for komentarz in strony(github, f"{REPO}/issues/{issue['number']}/comments"))])
         klucze = {znalezione["klucz"] for znalezione in _KLUCZ.finditer(znane)}
         if nowe := [mutacja for mutacja in mutacje if mutacja.klucz not in klucze]:
             tresc = [f"Nowe przeżyte mutacje z [runu]({run}):", "", *blok_kodu([mutacja.linia for mutacja in nowe]), *_rada_bez_werdyktu(nowe)]
-            wynik.append(Uzupelnij(issue["number"], "\n".join(tresc), issue["state"] == "closed"))
+            wynik.append(_uzupelnij(issue, "\n".join(tresc)))
     return wynik
 
 
@@ -458,15 +431,14 @@ def akcje_skryptow(github: GitHub, przypisane: dict[Autor, Skrypty], run: str) -
     których jego issue nie ma. Ostrzeżenie porównuje bez czasu, który zmienia się co noc, więc mutacja trafia do issue raz."""
 
     istniejace: dict[str, dict[str, Any]] = {}
-    for znalezione in _strony(github, f"{REPO}/issues?labels={ETYKIETY[1]}&state=all"):
-        if "pull_request" not in znalezione:
-            istniejace.setdefault(znalezione["title"], znalezione)
+    for znalezione in issues(github, ETYKIETY[1], "all"):
+        istniejace.setdefault(znalezione["title"], znalezione)
     wynik: list[Akcja] = []
     for kto, skrypty in przypisane.items():
         tytul = f"Przeżyte mutacje skilli z {kto.w_tytule}"
         issue = istniejace.get(tytul)
         znane = "" if issue is None else "\n".join(
-            [issue.get("body") or "", *(komentarz["body"] or "" for komentarz in _strony(github, f"{REPO}/issues/{issue['number']}/comments"))]
+            [issue.get("body") or "", *(komentarz["body"] or "" for komentarz in strony(github, f"{REPO}/issues/{issue['number']}/comments"))]
         )
         padly = [linia for linia in (f"SKRYPT {skrypt}" for skrypt in skrypty.padly) if not _ma(znane, linia)]
         blisko = [_linia_blisko(ostrzezenie) for ostrzezenie in skrypty.blisko if not _ma(znane, _klucz_blisko(ostrzezenie))]
@@ -494,13 +466,13 @@ def akcje_skryptow(github: GitHub, przypisane: dict[Autor, Skrypty], run: str) -
                     RADA_BLISKO,
                     "",
                 ]
-            wynik.append(Zaloz(tytul, "\n".join([*tresc, "Gdy każda linia ma poprawkę albo odpowiedź, zamknij issue (ADR 0021)."])))
+            wynik.append(Zaloz(tytul, "\n".join([*tresc, "Gdy każda linia ma poprawkę albo odpowiedź, zamknij issue (ADR 0021)."]), ETYKIETY))
             continue
         tresc = [f"Nowe skrypty, które padły w [runie]({run}):", "", *blok_kodu(padly)] if padly else []
         if blisko:
             tresc += [*([""] if tresc else []), f"Mutacje blisko limitu czasu w [runie]({run}):", "", *blok_kodu(blisko), "", RADA_BLISKO]
         if tresc:
-            wynik.append(Uzupelnij(issue["number"], "\n".join(tresc), issue["state"] == "closed"))
+            wynik.append(_uzupelnij(issue, "\n".join(tresc)))
     return wynik
 
 
@@ -522,32 +494,22 @@ def _linia_blisko(ostrzezenie: NearLimit) -> str:
     return f"{_klucz_blisko(ostrzezenie)} | {ostrzezenie.seconds} s z limitu --limit-s {ostrzezenie.limit_s:g} s{czesc}"
 
 
-def wykonaj(github: GitHub, wykonane: Sequence[Akcja]) -> list[str]:
-    linie = []
-    for akcja in wykonane:
-        match akcja:
-            case Zaloz(tytul, tresc):
-                numer = github.wyslij("POST", f"{REPO}/issues", {"title": tytul, "body": tresc, "labels": list(ETYKIETY)})["number"]
-                linie.append(f"MUTACJE NOCNE | założone #{numer} „{tytul}”")
-            case Uzupelnij(issue, tresc, otworz):
-                github.wyslij("POST", f"{REPO}/issues/{issue}/comments", {"body": tresc})
-                if otworz:
-                    github.wyslij("PATCH", f"{REPO}/issues/{issue}", {"state": "open"})
-                    github.wyslij("POST", f"{REPO}/issues/{issue}/labels", {"labels": [ETYKIETY[0]]})
-                linie.append(f"MUTACJE NOCNE | {'otwarte ponownie' if otworz else 'komentarz w'} #{issue}")
-    return linie
+def _uzupelnij(issue: dict[str, Any], tresc: str) -> Skomentuj:
+    """Komentarz z nowymi liniami; zamknięte issue wraca otwarte z etykietą pracy dla agenta."""
+
+    return Skomentuj(issue["number"], tresc, ETYKIETY[:1] if issue["state"] == "closed" else ())
 
 
-def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: str, plan_skilli: plan_ci.Plan | None = None) -> int:
+def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: str, plan_skilli: plan_runu.Plan | None = None) -> int:
     przezyte, problemy = zapisy(katalog, liczba)
-    linie = wykonaj(github, akcje(github, przypisz(github, root, od, przezyte), run))
+    linie = wykonaj_akcje(github, akcje(github, przypisz(github, root, od, przezyte), run), PREFIKS)
     padly: list[str] = []
     blisko: list[tuple[str, NearLimit]] = []
     if plan_skilli is not None:
         padly, blisko, problemy_skilli = wyniki_skilli(plan_skilli, katalog)
         przypisane, bez_pr = przypisz_skrypty(github, root, od, padly, blisko)
         problemy += problemy_skilli + bez_pr
-        linie += wykonaj(github, akcje_skryptow(github, przypisane, run))
+        linie += wykonaj_akcje(github, akcje_skryptow(github, przypisane, run), PREFIKS)
     print("\n".join(linie) or "MUTACJE NOCNE | nic nowego do zgłoszenia")
     if problemy:
         print(f"MUTACJE NOCNE FAIL | {'; '.join(problemy)}")
@@ -579,7 +541,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.od and args.baza and args.od != args.baza:
                 plan.error(f"dwie różne bazy: --od {args.od} i --baza {args.baza}")
             return zaplanuj(GhApi(), args.od or args.baza or "", args.zakres)
-        plan_skilli = None if args.plan_skilli is None else plan_ci.Plan.z_json(args.plan_skilli.read_text(encoding="utf-8"))
+        plan_skilli = None if args.plan_skilli is None else plan_runu.Plan.z_json(args.plan_skilli.read_text(encoding="utf-8"))
         return zglos(GhApi(), ROOT, args.baza, args.zapisy, args.czesci, args.run, plan_skilli)
     except (RuntimeError, ValueError, KeyError, OSError, subprocess.CalledProcessError, zipfile.BadZipFile) as blad:
         szczegol = blad.stderr.strip() if isinstance(blad, subprocess.CalledProcessError) else blad

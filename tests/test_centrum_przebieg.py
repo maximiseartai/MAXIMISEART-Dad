@@ -16,8 +16,7 @@ from rozliczenia import settlement_process
 from rozliczenia.centrum import run_view
 from rozliczenia.telemetry import MetricsStore
 
-from tests.fixtures.centrum import finished_view, phase_states, run_events
-from tests.fixtures.centrum import centrum as bare_centrum
+from tests.fixtures.centrum import centrum as bare_centrum, finished_view, phase_states, run_events
 from tests.fixtures.centrum_processes import (
     TODAY,
     WORKER_SETTLEMENTS,

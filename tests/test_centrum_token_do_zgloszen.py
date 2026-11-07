@@ -13,20 +13,13 @@ from typing import Any
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Rejected, Unreachable
 
-from tests.fixtures.centrum import Centrum, case_states, centrum
+from tests.fixtures.centrum import Centrum, ToolDirectory, case_states, centrum, write_report_key
 from tests.fixtures.centrum_processes import PreparingCentrum, preparing_centrum, stopped_for_maks
 from tests.fixtures.potomne import wait_for
 
 KEY = "github_pat_SYNTETYCZNY_TOKEN_DO_ZGLOSZEN"
 REJECTED = {"state": "rejected"}
 FOR_KEY = {"state": "queued", "waits_for": "key"}
-
-
-def write_key(tmp_path: Path) -> None:
-    """Maks wpisuje Token do Zgłoszeń w lokalnym pliku obok Ustawień taty."""
-
-    (tmp_path / "config").mkdir(exist_ok=True)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
 
 
 def queued(tmp_path: Path, label: str) -> list[Path]:
@@ -55,7 +48,7 @@ def test_uwaga_odrzucona_przez_skrzynke_nie_czeka_na_internet_a_nastepna_wychodz
     assert send_note(started, "Druga") == {"state": "waiting", "waits_for": "key"}
     assert note_states(started) == {"Pierwsza": "czeka_na_token", "Druga": "czeka_na_token"}
 
-    write_key(tmp_path)
+    write_report_key(ToolDirectory(tmp_path), KEY)
     started.report_box.outcomes.append(Rejected())
     started.clock.advance(RETRY_S)
 
@@ -71,7 +64,7 @@ def test_uwaga_odrzucona_przez_skrzynke_nie_czeka_na_internet_a_nastepna_wychodz
 def test_uwaga_odrzucona_przy_wyslij_mowi_o_tym_od_razu_a_po_starcie_centrum_kolejka_probuje_jeszcze_raz(
     tmp_path: Path,
 ) -> None:
-    write_key(tmp_path)
+    write_report_key(ToolDirectory(tmp_path), KEY)
     started = centrum(tmp_path)
     started.report_box.outcomes.append(Rejected())
 
@@ -86,7 +79,7 @@ def test_uwaga_odrzucona_przy_wyslij_mowi_o_tym_od_razu_a_po_starcie_centrum_kol
 
 
 def test_uwaga_z_tokenem_bez_sieci_czeka_na_internet_takze_w_powiadomieniach(tmp_path: Path) -> None:
-    write_key(tmp_path)
+    write_report_key(ToolDirectory(tmp_path), KEY)
     started = centrum(tmp_path)
     # Bez sieci Skrzynka nie sprawdziła jeszcze tokenu, więc Centrum nie wie, czy działa, i czeka na internet.
     started.report_box.search_failure = Unreachable()
@@ -114,7 +107,7 @@ def test_zgloszenie_odrzucone_przez_skrzynke_kaze_skontaktowac_sie_z_maksem_zami
     tmp_path: Path,
 ) -> None:
     centrum = preparing_centrum(tmp_path)
-    write_key(tmp_path)
+    write_report_key(ToolDirectory(tmp_path), KEY)
     box = centrum.surroundings.report_box
     run_id = stopped_for_maks(centrum)
     box.outcomes.append(Rejected())
@@ -140,7 +133,7 @@ def test_zgloszenie_czekajace_na_token_staje_sie_odrzucone_gdy_skrzynka_odrzuci_
     assert report(centrum, run_id) == FOR_KEY
     assert case_states(centrum.client, "zgloszenie") == ["czeka_na_token"]
 
-    write_key(tmp_path)
+    write_report_key(ToolDirectory(tmp_path), KEY)
     box.outcomes.append(Rejected())
     centrum.surroundings.clock.advance(RETRY_S)
 
@@ -153,13 +146,13 @@ def test_odrzucona_tresc_zostaje_odrzucona_takze_gdy_potem_token_przestaje_dzial
     centrum = preparing_centrum(tmp_path)
     box = centrum.surroundings.report_box
     run_id = stopped_for_maks(centrum)
-    write_key(tmp_path)
+    write_report_key(ToolDirectory(tmp_path), KEY)
     box.outcomes.append(Rejected())
     assert report(centrum, run_id) == REJECTED
 
     # Token przestaje działać, ale odrzuconej treści i tak nie wyśle żaden token, więc tata dalej słyszy, że tego
     # Zgłoszenia nie da się wysłać.
-    (tmp_path / "config" / "zgloszenia-klucz.txt").unlink()
+    ToolDirectory(tmp_path).report_key.unlink()
 
     assert current_report(centrum) == REJECTED
     assert case_states(centrum.client, "zgloszenie") == ["odrzucona"]

@@ -19,7 +19,6 @@ import pytest
 from rozliczenia.centrum.keyed_box import (
     ACCEPTED_KEPT_S,
     LIST_LAG_S,
-    NO_ANSWER_KEPT_S,
     OPENING_FILE,
     REFUSED_KEPT_S,
     KeyedBox,
@@ -27,7 +26,9 @@ from rozliczenia.centrum.keyed_box import (
     NotesFile,
 )
 from rozliczenia.centrum.atomic_file import replace_atomically
+from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Archive, Asset, Commented, Refused, Rejected, Sent, Unreachable
+from rozliczenia.centrum.tool_freshness import NO_ANSWER_KEPT_S
 
 from tests.fixtures.centrum import FakeIssue, FakeReportBox
 from tests.fixtures.clock import ManualClock
@@ -360,6 +361,21 @@ def test_nowe_centrum_po_zakladaniu_bez_odpowiedzi_czeka_na_liste_po_lag(tmp_pat
     clock.pause(LIST_LAG_S)
     box.list_caught_up()
     assert _numbers(new.labelled_issues("zgloszenie", include_closed=False)) == [1]
+
+
+def test_zakladanie_wstrzymane_po_zakladaniu_bez_odpowiedzi_mija_przed_budzeniem_kolejki(tmp_path: Path) -> None:
+    """Kolejka po porażce próbuje znowu po ``RETRY_S``: lista z tego budzenia zdejmuje wstrzymanie, więc ponowienie nie
+    czeka na następne budzenie."""
+
+    box = FakeReportBox(list_lag=True, lost_answers=1)
+    clock = ManualClock(seconds=100.0)
+    keyed = KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(tmp_path / OPENING_FILE, replace_atomically))
+    assert keyed.open_issue("zgloszenie", "pierwsze", "- Odcisk problemu: abc") == Unreachable()
+
+    clock.pause(RETRY_S)
+    box.list_caught_up()
+    assert _numbers(keyed.labelled_issues("zgloszenie", include_closed=False)) == [1]
+    assert keyed.open_issue("zgloszenie", "drugie", "- Odcisk problemu: def") == Sent(2)
 
 
 def test_lista_innego_watku_nie_zdejmuje_wstrzymania_zakladania(tmp_path: Path) -> None:

@@ -36,7 +36,6 @@ import io
 import json
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -44,6 +43,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import github
 from repo import BASE
 import repo
 
@@ -401,31 +401,21 @@ def _branch_issues(branch: str | None) -> frozenset[int]:
 
 
 def _gh(root: Path, *args: str) -> Any:
-    gh = shutil.which("gh")
-    if gh is None:
-        raise _GitHubSkipped("brak gh")
+    """Odpowiedź JSON ``gh``; każda porażka to ``_GitHubSkipped``, bo raport bez GitHuba jest jak lokalnie."""
+
     try:
-        completed = subprocess.run(
-            [gh, *args],
-            cwd=root,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=TIMEOUT_S,
-            check=False,
-        )
+        answered = github.gh(*args, limit_s=TIMEOUT_S, cwd=root)
+    except FileNotFoundError as error:
+        raise _GitHubSkipped("brak gh") from error
+    except subprocess.CalledProcessError as error:
+        reason = (error.stderr.strip().splitlines() or [f"kod {error.returncode}"])[0]
+        raise _GitHubSkipped(f"gh: {reason}") from error
     except (OSError, subprocess.TimeoutExpired) as error:
         raise _GitHubSkipped(f"gh: {error}") from error
-    if completed.returncode != 0:
-        reason = (completed.stderr.strip().splitlines() or [f"kod {completed.returncode}"])[0]
-        raise _GitHubSkipped(f"gh: {reason}")
     try:
-        return json.loads(completed.stdout)
+        return json.loads(answered)
     except json.JSONDecodeError as error:
         raise _GitHubSkipped(f"gh: {error}") from error
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

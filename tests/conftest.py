@@ -20,7 +20,7 @@ from rozliczenia.centrum.log import CentrumLog
 
 from tests.fixtures.git_config import hermetic_git
 from tests.fixtures.kwarantanna import KWARANTANNA
-from tests.fixtures.linie_watkow import shared_test_loop
+from tests.fixtures.linie_watkow import shared_test_loop, stopped_after_test
 
 # Testy importują narzędzia tak, jak skrypt z ``tools/`` widzi je na ``sys.path``: narzędzia agenta, biblioteki i CI.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
@@ -36,7 +36,7 @@ pytest_plugins = ["tests.fixtures.eksplorator_w_procesie"]
 
 def pytest_itemcollected(item: pytest.Item) -> None:
     """Test z ``KWARANTANNA`` biegnie jako ``xfail(strict=False)``: jego porażka nie czerwieni CI, a junit ma jego wynik
-    z własnością ``kwarantanna``, z której ``tools/plan_ci.py`` zapisuje wyniki testów z kwarantanny zadania."""
+    z własnością ``kwarantanna``, z której ``tools/ci/wykonaj_zadanie.py`` zapisuje wyniki testów z kwarantanny zadania."""
 
     entry = KWARANTANNA.get(item.nodeid)
     if entry is not None:
@@ -185,6 +185,20 @@ def regula_prywatnosci_centrum_rozliczen(
         if _leaks_in_text(line, roots)
     ]
     assert leaks == [], "Reguła prywatności Centrum (ADR 0004) złamana:\n" + "\n".join(leaks)
+
+
+@pytest.fixture(autouse=True)
+def centrum_zatrzymane_po_tescie(bez_skrzynki_zgloszen_na_githubie: None, regula_prywatnosci_centrum_rozliczen: None) -> Iterator[None]:
+    """Po teście zatrzymuje każde Centrum testu (``CentrumClient``), którego test nie zatrzymał, i czeka na jego wątki.
+
+    Test nie zostawia wątku Centrum dla następnego testu na tym samym workerze, choć autor nie zawołał ``stop``; wątek
+    żywy po ``STOP_S`` wywraca test z nazwą wątku. Fixture zależy od reguły prywatności i straży Skrzynki na GitHubie,
+    więc pytest kończy go przed ich sprawdzeniem: dziennik i próby wysyłki z zamknięcia Centrum są już kompletne.
+    Kolejność autouse z jednego conftest wynika z nazw, nie z miejsca definicji, więc trzyma ją dopiero zależność.
+    """
+
+    yield
+    stopped_after_test()
 
 
 @dataclass(frozen=True)

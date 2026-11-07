@@ -1,0 +1,19 @@
+{
+  "schema_version": 3,
+  "target": {
+    "kind": "report_issue",
+    "label": "zgloszenie",
+    "line": "- Odcisk problemu: 3f0c1b2a9d8e7f60",
+    "title": "BRAK_WZORCA: Nie znaleziono wzorca."
+  },
+  "period": "08_14_09_2026",
+  "run_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  "header": null,
+  "parts": [
+    "Zgłoszenie z Centrum rozliczeń.\n\n## Komunikat\n\n- Kod: BRAK_WZORCA\n- Co się stało: Nie znaleziono wzorca.\n- Gdzie: Folder okresu\n- Co zrobić: Przekaż osobie utrzymującej narzędzie.\n\n## Narzędzie\n\n- Commit: 6a797a5\n- Odcisk problemu: 3f0c1b2a9d8e7f60\n\n(plik kolejki schematu 3 z Wydania v0.5.1)\n"
+  ],
+  "archive": null,
+  "delivered_parts": 0,
+  "archived": false,
+  "rank": 2
+}

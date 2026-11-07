@@ -81,22 +81,22 @@ from rozliczenia.centrum.report_box import (
     UploadOutcome,
     newest_with_line,
 )
+from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
+from rozliczenia.centrum.tool_freshness import ANSWER_KEPT_S, NO_ANSWER_KEPT_S
 
 REPORT_KEY_FILE: Final = "zgloszenia-klucz.txt"
 # Ostatni zapis każdego rodzaju, którego skutek widać tylko na liście (``KeyedBox._ready``), obok klucza; poza
 # ``config/zgloszenia``, w którym weryfikacja Kontroli ilości widzi tylko kolejkę.
 OPENING_FILE: Final = "skrzynka-zakladanie.txt"
-# Sprawdzenie klucza pyta o otwarte Zgłoszenia: zwykle jedna strona, a to samo pytanie zadaje podgląd Zgłoszenia.
-_PROBE_LABEL: Final[Label] = "zgloszenie"
-# Jak ``tool_freshness.RememberedRelease``: odpowiedź 10 minut, brak odpowiedzi minutę.
-ACCEPTED_KEPT_S: Final = 10 * 60
-NO_ANSWER_KEPT_S: Final = 60
+# Przyjęty klucz Centrum pamięta jak odpowiedź o Wydaniach (``tool_freshness.RememberedRelease``), a brak odpowiedzi
+# o kluczu jak brak odpowiedzi o Wydaniach (``NO_ANSWER_KEPT_S``).
+ACCEPTED_KEPT_S: Final = ANSWER_KEPT_S
 # Odrzucony klucz nie zmieni się sam: Maks wymienia plik (nowy skrót, więc sprawdzenie od razu) albo uprawnienia tokenu.
 REFUSED_KEPT_S: Final = 15 * 60
 # Tyle po zapisie lista może go jeszcze nie pokazywać. W nagraniach ``verify-github-skrzynki`` (2026-11-05) lista issue
 # nadążyła po 3,0–6,8 s, a lista Release'ów za nowym Archiwum po 2,8 s (#887). Liczy się od chwili zapisu, więc mieści
-# też zapytanie do ``report_box._TIMEOUT_S``; mniej niż ``outbox.RETRY_S``, więc ponowienie po budzeniu kolejki już nie
-# czeka.
+# też zapytanie do ``report_box._TIMEOUT_S``; mniej niż ``outbox.RETRY_S`` (test w ``test_klucz_zgloszen.py``), więc
+# ponowienie po budzeniu kolejki już nie czeka.
 LIST_LAG_S: Final = 30.0
 # Zapis bez odpowiedzi dawniejszy niż to nie wstrzyma już żadnego zapisu: lista, na której kolejka opiera zapis, jest
 # najwyżej kilka zapytań (każde do ``report_box._TIMEOUT_S``) przed nim, więc każda późniejsza jest dużo po nim.
@@ -575,9 +575,12 @@ class KeyedBox:
         self.judge(wait_s=0)
 
     def _check(self, key: str) -> None:
-        """Sprawdzenie w tle: jedno tanie pytanie o otwarte Zgłoszenia, także odrzuconym kluczem, któremu minęła pamięć."""
+        """Sprawdzenie w tle: jedno tanie pytanie o otwarte Zgłoszenia, także odrzuconym kluczem, któremu minęła pamięć.
 
-        self._listed(key, _PROBE_LABEL, include_closed=False)
+        Zwykle jedna strona, a to samo pytanie zadaje podgląd Zgłoszenia.
+        """
+
+        self._listed(key, REPORT_LABEL, include_closed=False)
 
     def _listed(self, key: str, label: Label, *, include_closed: bool) -> IssuesOutcome:
         asked_at = self._clock()

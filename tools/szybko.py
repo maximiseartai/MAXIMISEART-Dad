@@ -16,7 +16,7 @@ ustawiono ``PYTEST_XDIST_AUTO_NUM_WORKERS``.
 
 Z wybranych testów biegną zawsze pliki w odległości najwyżej 1 od zmiany w grafie zależności (``plan``), czyli
 zmienione albo zależne wprost od zmienionego pliku, a dalsze po odległości i czasie w CI rosnąco, dopóki mieszczą
-się w budżecie ``BUDGET_S``. Czas pliku to jego koszt na Linuksie z ostatnich runów main (``tools/ci/czasy_ci.py``,
+się w budżecie ``BUDGET_S``. Czas pliku to jego koszt na Linuksie z ostatnich runów main (``tools/lib/czasy_ci.py``,
 kopia w ``.git/czasy-ci`` odświeżana raz na dobę, a po nieudanym pobraniu w następnym przebiegu); bez niej, na przykład
 bez sieci, każdy plik waży 0 i biegnie, a szybko mówi to linią ``SZYBKO | bez czasów CI (<przyczyna>)``. Test, który importuje albo
 czyta zmieniony plik konfiguracji, ma najwyżej 2, więc biegnie w budżecie przed testami bez drogi w grafie. Resztę liczy pełny pytest w CI, a szybko wypisuje ją przed wynikiem
@@ -63,7 +63,6 @@ import tomllib
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 
 import ci_lokalnie
 import czasy_ci

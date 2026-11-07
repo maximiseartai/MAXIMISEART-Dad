@@ -15,32 +15,28 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 import pytest
-from fastapi.testclient import TestClient
 
 from rozliczenia.input_checks import FILE_READERS
-from rozliczenia.centrum.app import create_app
-from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
-from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Refused, Unreachable
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
-from rozliczenia.centrum.shutdown import Shutdown
 
 from tests.fixtures.centrum import (
-    CENTRUM,
+    REPORT_KEY,
     TOOL_COMMIT,
+    CentrumClient,
     FakeGitHub,
-    FakeOneDrive,
-    FakePlatform,
     FakeReportBox,
+    ToolDirectory,
     case_states,
     centrum as plain_centrum,
+    centrum_app,
     dad_cases,
     join_threads_since,
+    write_report_key,
 )
-from tests.fixtures.centrum_intermax import OrderingCentrum, ordering_centrum
-from tests.fixtures.clock import ManualClock
+from tests.fixtures.centrum_intermax import ordering_centrum
 from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.locked_file import lock_file
 from tests.fixtures.centrum_processes import (
@@ -55,16 +51,6 @@ from tests.fixtures.centrum_processes import (
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD
 from tests.fixtures.settlement import write_quantity_source
-
-KEY = "github_pat_SYNTETYCZNY_KLUCZ_ZGLOSZEN"
-
-
-def with_key(centrum: PreparingCentrum | SettlingCentrum | OrderingCentrum) -> Path:
-    """Klucz do Zgłoszeń w lokalnym pliku obok Ustawień taty, jak go wpisuje Maks."""
-
-    key_file = centrum.tmp_path / "config" / "zgloszenia-klucz.txt"
-    key_file.write_text(KEY + "\n", encoding="utf-8")
-    return key_file
 
 
 def diagnose(centrum: PreparingCentrum | SettlingCentrum, run_id: str) -> dict[str, Any]:
@@ -83,7 +69,7 @@ def send(centrum: PreparingCentrum | SettlingCentrum, run_id: str) -> dict[str, 
 
 def test_wyslane_zgloszenie_jest_dokladnie_podgladem_z_diagnozy(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     run_id = stopped_for_maks(centrum)
     preview = diagnose(centrum, run_id)["report"]
 
@@ -92,27 +78,27 @@ def test_wyslane_zgloszenie_jest_dokladnie_podgladem_z_diagnozy(tmp_path: Path) 
     assert state == {"state": "sent"}
     [report] = centrum.surroundings.report_box.sent
     assert {"title": report.title, "body": report.body} == preview
-    assert centrum.surroundings.report_box.keys == [KEY]
+    assert centrum.surroundings.report_box.keys == [REPORT_KEY]
     assert f"skrzynka-wyslano etykieta=zgloszenie okres={PERIOD} numer=1" in centrum.log_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
     "content",
     [
-        codecs.BOM_UTF8 + (KEY + "\r\n").encode("utf-8"),  # Notatnik, PowerShell 5.1: Set-Content -Encoding UTF8
-        codecs.BOM_UTF16_LE + (KEY + "\r\n").encode("utf-16-le"),  # PowerShell 5.1: > albo Out-File
-        codecs.BOM_UTF16_BE + (KEY + "\r\n").encode("utf-16-be"),  # Notatnik: UTF-16 BE
+        codecs.BOM_UTF8 + (REPORT_KEY + "\r\n").encode("utf-8"),  # Notatnik, PowerShell 5.1: Set-Content -Encoding UTF8
+        codecs.BOM_UTF16_LE + (REPORT_KEY + "\r\n").encode("utf-16-le"),  # PowerShell 5.1: > albo Out-File
+        codecs.BOM_UTF16_BE + (REPORT_KEY + "\r\n").encode("utf-16-be"),  # Notatnik: UTF-16 BE
     ],
     ids=["utf-8-bom", "utf-16-le", "utf-16-be"],
 )
 def test_klucz_zapisany_z_bom_wysyla_zgloszenie(tmp_path: Path, content: bytes) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum).write_bytes(content)
+    write_report_key(centrum.tool).write_bytes(content)
     run_id = stopped_for_maks(centrum)
     diagnose(centrum, run_id)
 
     assert send(centrum, run_id) == {"state": "sent"}
-    assert centrum.surroundings.report_box.keys == [KEY]
+    assert centrum.surroundings.report_box.keys == [REPORT_KEY]
 
 
 def test_zgloszenie_ma_komunikat_uruchomienie_narzedzie_diagnoze_i_dziennik(tmp_path: Path) -> None:
@@ -187,7 +173,7 @@ def test_zgloszenie_z_narzedzia_bez_commitu_gita_ma_commit_nieznany(tmp_path: Pa
 
 def test_zgloszenie_nie_ma_tresci_wierszy_wyjatku_pelnych_sciezek_ani_klucza(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     centrum.engines.fail_engine = True
     run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
     diagnose(centrum, run_id)
@@ -195,9 +181,9 @@ def test_zgloszenie_nie_ma_tresci_wierszy_wyjatku_pelnych_sciezek_ani_klucza(tmp
 
     [report] = centrum.surroundings.report_box.sent
     text = report.title + report.body
-    for forbidden in ("SYN-", "nieprzewidziany błąd", KEY, str(tmp_path), tmp_path.as_posix(), "Traceback"):
+    for forbidden in ("SYN-", "nieprzewidziany błąd", REPORT_KEY, str(tmp_path), tmp_path.as_posix(), "Traceback"):
         assert forbidden not in text
-    assert KEY not in centrum.log_path.read_text(encoding="utf-8")
+    assert REPORT_KEY not in centrum.log_path.read_text(encoding="utf-8")
 
 
 def test_adres_wpisany_jako_wykonawca_wychodzi_w_tytule_zgloszenia_zamaskowany_z_uwaga(tmp_path: Path) -> None:
@@ -206,7 +192,7 @@ def test_adres_wpisany_jako_wykonawca_wychodzi_w_tytule_zgloszenia_zamaskowany_z
     address = "Syntetyczna Kwarcowa 9/2"
     centrum = settling_centrum(tmp_path)
     write_quantity_source(centrum.collective_file, [{"B": address}, {"H": address}])
-    with_key(centrum)
+    write_report_key(centrum.tool)
     run_to_end(centrum, dry_run=False)
     run_id = run_to_end(centrum, dry_run=False)["run"]["id"]
     preview = diagnose(centrum, run_id)["report"]
@@ -242,7 +228,7 @@ def trace_section(body: str) -> list[str]:
 
 def test_nieoczekiwany_wyjatek_daje_w_zgloszeniu_typ_i_ramki_kodu_narzedzia_bez_tresci_wyjatku(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=replace(FILE_READERS, register=raise_with_marker)))
-    with_key(centrum)
+    write_report_key(centrum.tool)
     stopped = run_to_end(centrum, dry_run=True)
     run_id = stopped["run"]["id"]
 
@@ -330,7 +316,7 @@ def test_bez_klucza_zgloszenie_zatrzymania_czeka_w_kolejce_z_trescia_podgladu_be
 
 def test_zgloszenie_zatrzymania_bez_sieci_wysyla_sie_samo_po_powrocie_sieci(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     box = centrum.surroundings.report_box
     box.search_failure = Unreachable()
     run_id = stopped_for_maks(centrum)
@@ -352,7 +338,7 @@ def test_zgloszenie_z_kolejki_wychodzi_po_restarcie_centrum_z_numerem_w_stanie_w
     run_id = stopped_for_maks(centrum)
     diagnose(centrum, run_id)
     assert send(centrum, run_id) == FOR_KEY
-    with_key(centrum)
+    write_report_key(centrum.tool)
 
     centrum.restart()
     with centrum.client:
@@ -371,7 +357,7 @@ def test_numer_zgloszenia_z_kolejki_zostaje_po_restarcie_gdy_windows_na_chwile_b
     run_id = stopped_for_maks(centrum)
     diagnose(centrum, run_id)
     assert send(centrum, run_id) == FOR_KEY
-    with_key(centrum)
+    write_report_key(centrum.tool)
     lock_file(monkeypatch, DAD_CASES_FILE, failures=2)
 
     centrum.restart()
@@ -411,7 +397,7 @@ def test_zgloszenie_ktorego_nie_da_sie_zapisac_w_kolejce_daje_komunikat(tmp_path
 
 def test_niezapisane_zgloszenie_powracajacego_problemu_zostawia_jego_poprzednie_zgloszenie(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     first = stopped_for_maks(centrum)
     diagnose(centrum, first)
     send(centrum, first)
@@ -439,7 +425,7 @@ def test_zatrzymanie_centrum_czeka_na_kazdy_jego_watek_takze_sprzed_ponownego_st
     tmp_path: Path, started: Callable[[Path], PreparingCentrum | SettlingCentrum]
 ) -> None:
     centrum = started(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     hold = centrum.surroundings.report_box.search_hold = threading.Event()
     run_id = stopped_for_maks(centrum)
     diagnose(centrum, run_id)  # Diagnoza pyta skrzynkę o Zgłoszenie w tle, a skrzynka nie odpowiada
@@ -462,7 +448,7 @@ def test_ponowny_start_centrum_zaczyna_sie_po_koncu_przejscia_kolejki_poprzednie
     tmp_path: Path, started: Callable[[Path], PreparingCentrum | SettlingCentrum], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     centrum = started(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     run_id = stopped_for_maks(centrum)
     diagnose(centrum, run_id)
     box = centrum.surroundings.report_box
@@ -489,7 +475,7 @@ def test_po_ponownym_starcie_kolejke_ponawia_tylko_budzik_nowego_centrum_jak_w_n
     with centrum.client:  # nowe Centrum przy starcie przechodzi kolejkę i bez klucza ponowi ją za ``RETRY_S``
         pass
     centrum.client.stop()
-    with_key(centrum)
+    write_report_key(centrum.tool)
 
     clock.advance(RETRY_S / 2)  # chwila ponowienia poprzedniego Centrum
     centrum.client.stop()
@@ -503,25 +489,41 @@ def test_po_ponownym_starcie_kolejke_ponawia_tylko_budzik_nowego_centrum_jak_w_n
 def test_po_ponownym_starcie_uporzadkowania_intermax_kolejke_ponawia_tylko_budzik_nowego_centrum(
     tmp_path: Path,
 ) -> None:
-    since = new_line()  # klient ``OrderingCentrum`` nie ma ``stop``, więc test czeka na wątki Centrum od tej chwili
     centrum = ordering_centrum(tmp_path)
     centrum.run_to_end()  # bez klucza Logi Uruchomienia czekają, a kolejka nastawia ponowienie za ``RETRY_S``
-    join_threads_since(since)
+    centrum.client.stop()
     box, clock = centrum.surroundings.report_box, centrum.surroundings.clock
     centrum.restart()
     clock.advance(RETRY_S / 2)
     with centrum.client:  # nowe Centrum przy starcie przechodzi kolejkę i bez klucza ponowi ją za ``RETRY_S``
         pass
-    join_threads_since(since)
-    with_key(centrum)
+    centrum.client.stop()
+    write_report_key(centrum.tool)
 
     clock.advance(RETRY_S / 2)  # chwila ponowienia poprzedniego Centrum
-    join_threads_since(since)
+    centrum.client.stop()
     after_previous_alarm = len(box.background_issues)
     clock.advance(RETRY_S / 2)  # chwila ponowienia nowego Centrum
-    join_threads_since(since)
+    centrum.client.stop()
 
     assert (after_previous_alarm, len(box.background_issues)) == (0, 1)
+
+
+def test_ponowny_start_uporzadkowania_intermax_zaczyna_sie_po_koncu_przejscia_kolejki_poprzedniego(
+    tmp_path: Path,
+) -> None:
+    box = FakeReportBox()  # Logi Uruchomienia idą zakładaniem issue, które test wstrzymuje
+    centrum = ordering_centrum(tmp_path, surroundings=Surroundings(report_box=box))
+    write_report_key(centrum.tool)
+    hold = box.open_hold = threading.Event()
+    centrum.run_to_end()
+    assert box.opening.wait(30)  # przejście kolejki czeka na skrzynkę z Logami Uruchomienia
+    release = threading.Timer(0.2, hold.set)
+    release.start()
+
+    centrum.restart()
+
+    assert [issue.label for issue in box.issues] == ["logi-uruchomienia"]
 
 
 def test_zatrzymanie_centrum_nie_czeka_na_budzik_centrum_poprzedniego_testu_nastawiony_po_jego_starcie(
@@ -564,7 +566,7 @@ def report_becomes(centrum: PreparingCentrum, expected: object) -> object:
 
 def test_wyslanie_jest_raz_na_zatrzymanie_a_wynik_uruchomienia_pokazuje_potwierdzenie(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     run_id = stopped_for_maks(centrum)
     assert current_report(centrum) == {"state": "ready"}
     diagnose(centrum, run_id)
@@ -578,7 +580,7 @@ def test_wyslanie_jest_raz_na_zatrzymanie_a_wynik_uruchomienia_pokazuje_potwierd
 
 def test_ponowna_diagnoza_po_wyslaniu_pokazuje_wyslane_zgloszenie(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     run_id = stopped_for_maks(centrum)
     diagnose(centrum, run_id)
     send(centrum, run_id)
@@ -601,7 +603,7 @@ def test_zatrzymanie_dla_taty_nie_proponuje_zgloszenia(tmp_path: Path) -> None:
 
 def test_wyslanie_bez_diagnozy_jest_odrzucone(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     run_id = stopped_for_maks(centrum)
 
     refused = centrum.client.post(f"/api/runs/{run_id}/report")
@@ -616,7 +618,7 @@ def test_wyslanie_bez_diagnozy_jest_odrzucone(tmp_path: Path) -> None:
 def key_state(centrum: PreparingCentrum) -> str:
     response = centrum.client.get("/api/configuration")
     assert response.status_code == 200
-    assert KEY not in response.text
+    assert REPORT_KEY not in response.text
     state: str = response.json()["reports"]
     return state
 
@@ -624,7 +626,7 @@ def key_state(centrum: PreparingCentrum) -> str:
 def test_konfiguracja_pokazuje_stan_klucza_do_zgloszen_bez_jego_wartosci(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     missing = key_state(centrum)
-    key_file = with_key(centrum)
+    key_file = write_report_key(centrum.tool)
     ready = key_state(centrum)
     key_file.write_bytes(codecs.BOM_UTF8 + b"\r\n")  # Notatnik zapisał pusty plik
 
@@ -633,9 +635,7 @@ def test_konfiguracja_pokazuje_stan_klucza_do_zgloszen_bez_jego_wartosci(tmp_pat
 
 
 def test_start_centrum_sprawdza_klucz_w_skrzynce_w_tle_bez_zadnego_zapytania(tmp_path: Path) -> None:
-    config = tmp_path / "config"
-    config.mkdir()
-    (config / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     centrum = plain_centrum(tmp_path)
 
     with centrum.client:
@@ -645,27 +645,10 @@ def test_start_centrum_sprawdza_klucz_w_skrzynce_w_tle_bez_zadnego_zapytania(tmp
 
 
 def test_skrzynka_github_odrzuca_klucz_ktorego_nie_da_sie_wyslac_bez_pytania_sieci(tmp_path: Path) -> None:
-    config = tmp_path / "config"
-    config.mkdir()
-    (config / "zgloszenia-klucz.txt").write_text("klucz z Notatnika\n", encoding="utf-8")
-    log = CentrumLog(tmp_path / "logs" / "centrum-rozliczen.log")
-    app = create_app(
-        settings_path=config / "centrum-ustawienia.yaml",
-        platform=FakePlatform(),
-        log=log,
-        shutdown=Shutdown(log),
-        configuration_files=ConfigurationFiles(
-            worker_config=config / "Konfiguracja wykonawców.xlsx",
-            internal_template=config / "Wzorzec rozliczenia wewnętrznego.xlsx",
-            collective_template=config / "Wzorzec pliku zbiorczego.xlsx",
-            worker_template=config / "Wzorzec rozliczenia pracownika.xlsx",
-        ),
-        tool_freshness=FakeGitHub().freshness(),
-        cloud_files=FakeOneDrive().cloud_files(),
-        clock=ManualClock(),
-    )
+    tool = ToolDirectory(tmp_path)
+    write_report_key(tool, "klucz z Notatnika")
 
-    answer = TestClient(app, base_url=CENTRUM, headers={"Origin": CENTRUM}).get("/api/configuration")
+    answer = CentrumClient(centrum_app(tool, report_box=None)).get("/api/configuration")
 
     assert answer.json()["reports"] == "refused_key"
 
@@ -674,11 +657,11 @@ def test_konfiguracja_pokazuje_klucz_odrzucony_gdy_skrzynka_odmawia_klucza(tmp_p
     centrum = preparing_centrum(tmp_path)
     box = centrum.surroundings.report_box
     box.search_failure = Refused()
-    key_file = with_key(centrum)
+    key_file = write_report_key(centrum.tool)
 
     refused = key_state(centrum)
     box.search_failure = None
-    key_file.write_text(KEY + "_NOWY\n", encoding="utf-8")
+    key_file.write_text(REPORT_KEY + "_NOWY\n", encoding="utf-8")
 
     assert (refused, key_state(centrum)) == ("refused_key", "ready")
 
@@ -687,7 +670,7 @@ def test_konfiguracja_bez_sieci_albo_przed_odpowiedzia_skrzynki_pokazuje_gotowe(
     hold = threading.Event()
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(report_box=FakeReportBox(search_hold=hold)))
     box = centrum.surroundings.report_box
-    with_key(centrum)
+    write_report_key(centrum.tool)
 
     silent = key_state(centrum)
     box.search_failure = Unreachable()
@@ -704,7 +687,7 @@ def test_odmowa_przy_wysylce_uwagi_odrzuca_klucz_w_konfiguracji_bez_osobnego_pyt
     centrum = preparing_centrum(tmp_path)
     box = centrum.surroundings.report_box
     box.outcomes.append(Refused())
-    with_key(centrum)
+    write_report_key(centrum.tool)
 
     sent = centrum.client.post("/api/dad-notes", json={"title": "Excel myśli minutę"})
 
@@ -729,7 +712,7 @@ def test_powrot_problemu_z_otwartym_zgloszeniem_po_diagnozie_jest_komentarzem_w_
     tmp_path: Path
 ) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     first = stopped_for_maks(centrum)
     diagnose(centrum, first)
     send(centrum, first)
@@ -746,7 +729,7 @@ def test_powrot_problemu_z_otwartym_zgloszeniem_po_diagnozie_jest_komentarzem_w_
 
 def test_druga_diagnoza_tego_samego_zatrzymania_nie_dubluje_komentarza_powrotu(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     first = stopped_for_maks(centrum)
     diagnose(centrum, first)
     send(centrum, first)
@@ -761,7 +744,7 @@ def test_druga_diagnoza_tego_samego_zatrzymania_nie_dubluje_komentarza_powrotu(t
 
 def test_diagnoza_nie_czeka_na_skrzynke_a_jej_odpowiedz_o_otwartym_zgloszeniu_trafia_na_karte(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     box = centrum.surroundings.report_box
     first = stopped_for_maks(centrum)
     diagnose(centrum, first)
@@ -791,7 +774,7 @@ def test_diagnoza_nie_czeka_na_skrzynke_a_jej_odpowiedz_o_otwartym_zgloszeniu_tr
 
 def test_zgloszenie_zamkniete_wedlug_powiadomien_nie_czeka_juz_po_restarcie(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     box = centrum.surroundings.report_box
     first = stopped_for_maks(centrum)
     diagnose(centrum, first)
@@ -818,7 +801,7 @@ def test_podglad_zgloszenia_czeka_w_tle_na_skrzynke_zgloszen_najwyzej_3_s() -> N
 
 def test_dwa_klikniecia_w_trakcie_wysylki_daja_jedno_zgloszenie_a_centrum_odpowiada_dalej(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     box = centrum.surroundings.report_box
     run_id = stopped_for_maks(centrum)
     # Podgląd z Diagnozy pyta skrzynkę w tle: bez czekania jego pytanie mogłoby stanąć na wstrzymaniu i ustawić

@@ -158,8 +158,9 @@ def _creating(path: Path) -> set[str]:
     """Miejsca modułu (``_places``), które tworzą Komunikat.
 
     Tworzy go wywołanie, którego nazwa po rozwiązaniu importów (``Message as M``) albo atrybut (``message.Message``,
-    ``contract.Message``) kończy się na ``Message``, budowa modelu z danych (``contract.Message.model_validate(…)``,
-    ``model_construct``) i kopia z nowym tekstem części (``_rewrites``). Wywołanie, które tylko przepisuje pola innego
+    ``contract.Message``) kończy się na ``Message``, konstruktor tej klasy (``Message.to_maintainer(…)``), budowa
+    modelu z danych (``contract.Message.model_validate(…)``, ``model_construct``) i kopia z nowym tekstem części
+    (``_rewrites``). Wywołanie, które tylko przepisuje pola innego
     Komunikatu (``_copies``), nowego tekstu nie tworzy.
 
     Granica: ``model_copy`` ze słownikiem ``update`` spoza literału (``update=zmiany``, ``update=dict(...)``),
@@ -197,6 +198,8 @@ def _creating(path: Path) -> set[str]:
                 return imported.get(name, name).endswith("Message")
             case ast.Attribute(value=ast.Attribute(attr=attr), attr="model_validate" | "model_construct"):
                 return attr.endswith("Message")
+            case ast.Attribute(value=ast.Name(id=name)) if imported.get(name, name) == "Message":
+                return True
             case ast.Name(id=name):
                 return imported.get(name, name).endswith("Message")
             case ast.Attribute(attr=attr):

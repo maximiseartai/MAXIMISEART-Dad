@@ -144,7 +144,7 @@ class MergeGitHub(FakeGitHub):
                 **files,
             },
             tool="tools/scal_pr.py",
-            copies=("tools/ci/status_scalenia.py", "tools/lib/wplyw_zmiany.py"),
+            copies=("tools/lib/werdykt_scalenia.py", "tools/lib/github.py", "tools/lib/wplyw_zmiany.py"),
             gh=FAKE_GH,
         )
         _empty_state(self.bin)
@@ -258,10 +258,10 @@ def _empty_state(directory: Path) -> None:
 
 
 def _short_github_timeout(github: MergeGitHub) -> str:
-    """Commit na ``main`` z ``status_scalenia.GITHUB_TIMEOUT_S`` równym 3 s, żeby ``gh``, które zawiesza, kończyło się szybko."""
+    """Commit na ``main`` z ``github.LIMIT_S`` równym 3 s, żeby ``gh``, które zawiesza, kończyło się szybko."""
 
-    scalenia = github.checkout / "tools" / "ci" / "status_scalenia.py"
-    scalenia.write_text(scalenia.read_text(encoding="utf-8").replace("GITHUB_TIMEOUT_S = 60", "GITHUB_TIMEOUT_S = 3"), encoding="utf-8")
+    klient = github.checkout / "tools" / "lib" / "github.py"
+    klient.write_text(klient.read_text(encoding="utf-8").replace("LIMIT_S = 60", "LIMIT_S = 3"), encoding="utf-8")
     git(github.checkout, "commit", "--quiet", "--all", "--message", "gh po 3 s")
     git(github.checkout, "push", "--quiet", "origin", "main")
     return git(github.checkout, "rev-parse", "HEAD")
@@ -1176,8 +1176,8 @@ def test_przeglad_oznacza_pass_dla_head_poza_regulami_werdyktu(tmp_path: Path) -
 
 
 REAL_SKILLS_FOR_CHANGE = (
-    "tools/skille_dla_zmiany.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/ci/mutacje_skilli.py", "tools/plan_ci.py", "tools/lib/niestabilne_testy.py", "tools/mutacje_zmiany.py",
-    "tools/ci/pokrycie_procesu.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py",
+    "tools/skille_dla_zmiany.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/ci/mutacje_skilli.py", "tools/plan_ci.py", "tools/lib/plan_runu.py", "tools/lib/niestabilne_testy.py", "tools/mutacje_zmiany.py",
+    "tools/lib/pokrycie_procesu.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py",
 )
 
 

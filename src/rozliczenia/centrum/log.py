@@ -3,7 +3,7 @@
 Każdy wpis to jedna linia: czas, nazwa zdarzenia i fakty ``klucz=wartość``.
 Do dziennika trafiają tylko fakty wybrane tutaj (port, wersja, kod komunikatu,
 nazwa typu wyjątku), nigdy tekst wyjątku, ścieżki z folderu okresów ani treść
-wierszy (ADR 0004), więc można go przekazać osobie utrzymującej narzędzie.
+wierszy (ADR 0004), więc można go przekazać Maksowi.
 Moduł używa tylko biblioteki standardowej, bo zapisuje też błędy startu, gdy
 brakuje zależności.
 """

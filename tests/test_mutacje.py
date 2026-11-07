@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import ciezkie_ci  # noqa: E402
 import mutacje  # noqa: E402
-import plan_ci  # noqa: E402
+import plan_runu  # noqa: E402
 from zakres_runu import Zdarzenie  # noqa: E402
 
 TOOL = ROOT / "tools" / "mutacje.py"
@@ -908,7 +908,7 @@ def test_mutacja_liczona_jako_wykryta_po_dlugim_poleceniu_pokazuje_jego_czas_i_o
 LINUX_1 = "pytest (Python 3.14, Linux, 1/2)"
 
 
-def _ci_repository(tmp_path: Path, plans: dict[str, list[plan_ci.Zadanie]], runs: list[int]) -> tuple[Path, dict[str, str], Path]:
+def _ci_repository(tmp_path: Path, plans: dict[str, list[plan_runu.Zadanie]], runs: list[int]) -> tuple[Path, dict[str, str], Path]:
     """Repozytorium z gałęzią ``praca``, która zmienia ``tests/test_zmieniony.py`` od ``glowna``, środowisko z atrapą
     ``gh`` na ``PATH`` i plik jej wywołań; atrapa podaje artefakt ``plan`` runów z ``plans`` i listę runów ``runs``, a
     pobranie runu 998 kończy błędem tylko na stdout."""
@@ -931,7 +931,7 @@ def _ci_repository(tmp_path: Path, plans: dict[str, list[plan_ci.Zadanie]], runs
     gh = tmp_path / "gh"
     gh.mkdir()
     for run, jobs in plans.items():
-        (gh / f"plan-{run}.json").write_text(plan_ci.Plan(Zdarzenie.PULL_REQUEST, 300.0, (), tuple(jobs)).do_json(), encoding="utf-8")
+        (gh / f"plan-{run}.json").write_text(plan_runu.Plan(Zdarzenie.PULL_REQUEST, 300.0, (), tuple(jobs)).do_json(), encoding="utf-8")
     (gh / "runy.json").write_text(json.dumps([{"databaseId": run} for run in runs]), encoding="utf-8")
     calls = gh / "wywolania"
     fake_cli(
@@ -950,8 +950,8 @@ def _ci_repository(tmp_path: Path, plans: dict[str, list[plan_ci.Zadanie]], runs
     return repo, {**WITHOUT_XDIST_WORKERS, "PATH": f"{gh}{os.pathsep}{os.environ['PATH']}"}, calls
 
 
-def _job(track: str, name: str, *units: str) -> plan_ci.Zadanie:
-    return plan_ci.Zadanie(f"{track}-{name[-4]}", track, name, units, 60.0)
+def _job(track: str, name: str, *units: str) -> plan_runu.Zadanie:
+    return plan_runu.Zadanie(f"{track}-{name[-4]}", track, name, units, 60.0)
 
 
 PLAN = [

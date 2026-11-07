@@ -24,10 +24,10 @@ from fastapi import APIRouter
 
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.case_delivery import logs_line
+from rozliczenia.centrum.case_delivery import logs_line, note_post
 from rozliczenia.centrum.dad_cases import NOTE, Case, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
-from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, NewIssue, Outbox, Post
+from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, Outbox
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.version import version_label
 
@@ -145,9 +145,8 @@ def send(
     run_id = None if pinned is None else pinned.run.run_id
     note = Case(NOTE, uuid.uuid4().hex, issue.title, commit, datetime.now(timezone.utc), number=None, run_id=run_id)
     cases.add(note)
-    queued = outbox.post(
-        Post(NewIssue(NOTE.label, issue.title), period=None, run_id=note.id, header=None, parts=(issue.body,))
-    )
+    logs_on_the_way = pinned is not None and pinned.logs is None
+    queued = outbox.post(note_post(note.id, issue.title, issue.body, logs_on_the_way=logs_on_the_way))
     if not queued:
         cases.forget(NOTE, note.id)
         raise contract.Refusal(500, _NOT_QUEUED)

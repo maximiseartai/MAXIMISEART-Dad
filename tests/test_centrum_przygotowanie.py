@@ -19,15 +19,14 @@ from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.telemetry import MetricsStore, metric_record
 from rozliczenia.centrum import contract, run_view
 
+from tests.fixtures.centrum import centrum as bare_centrum, finished_view, phase_states, run_events, views_until
 from tests.fixtures.preparation import (
     COLLECTIVE_FILE_NAME,
     INTERNAL_SETTLEMENT_NAME,
     PERIOD,
     incomplete_period_rows,
 )
-from tests.fixtures.centrum import centrum as bare_centrum
 from tests.fixtures.centrum_processes import TODAY, PreparingCentrum, Surroundings, preparing_centrum, run_to_end
-from tests.fixtures.centrum import finished_view, phase_states, run_events, views_until
 from tests.fixtures.potomne import wait_for
 
 # Podsumowanie wyniku na domyślnym syntetycznym Rejestrze zleceń, takie samo w podglądzie i przy Uruchom.
@@ -415,7 +414,7 @@ def test_nieoczekiwany_wyjatek_pokazuje_trzy_czesci_bez_tekstu_wyjatku_i_danych_
         {
             "what": "Wystąpił nieoczekiwany błąd. Nie utworzono żadnego pliku.",
             "where": "Przygotowanie pliku zbiorczego",
-            "action": "Uruchom ponownie. Jeśli błąd wraca, przekaż to osobie utrzymującej narzędzie.",
+            "action": "Uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.",
         }
     ]
     assert phase_states(view)["Odczyt danych"] == "failed"

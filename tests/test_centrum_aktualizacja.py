@@ -43,7 +43,7 @@ from rozliczenia.centrum.tool_update import (
     write_result,
 )
 
-from tests.fixtures.centrum import NO_RELEASE, UPDATE_THREAD, join_threads_since, views_until
+from tests.fixtures.centrum import NO_RELEASE, UPDATE_THREAD, join_threads_since, views_until, write_report_key
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum, run_to_end, stopped_for_maks
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD, incomplete_period_rows
@@ -437,9 +437,10 @@ def test_aktualizacja_w_trakcie_uruchomienia_procesu_jest_odrzucona(tmp_path: Pa
     before = repository.head()
     repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
     centrum.start(dry_run=False)
-    views_until(centrum.client, "awaiting_decision")
+    waiting = views_until(centrum.client, "awaiting_decision")[-1]
 
     refused = centrum.client.post("/api/tool-update")
+    centrum.client.post(f"/api/runs/{waiting['run']['id']}/decision", json={"answer": "abort"})
 
     assert (refused.status_code, refused.json()) == (
         409,
@@ -534,7 +535,6 @@ def test_nieprzewidziana_porazka_daje_komunikat_a_klon_zostaje_bez_zmian(tmp_pat
     assert centrum.client.post("/api/tool-update").status_code == 202
 
 
-
 def test_karta_widzi_porazke_dopiero_gdy_ponowne_klikniecie_jest_przyjete(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -558,7 +558,6 @@ def test_karta_widzi_porazke_dopiero_gdy_ponowne_klikniecie_jest_przyjete(
 
 STILL_WORKS = "Narzędzie działa dalej w poprzedniej wersji."
 TO_MAKS = f"{STILL_WORKS} Przekaż sprawę Maksowi: kliknij „Wyślij do Maksa”."
-KEY = "github_pat_SYNTETYCZNY_KLUCZ_ZGLOSZEN"
 
 
 @contextmanager
@@ -601,10 +600,6 @@ def test_porazka_aktualizacji_karta_dostaje_jako_komunikat_w_trzech_czesciach_a_
     assert log_entries(centrum, "aktualizacja-koniec") == [f"wynik=BRAK_POLACZENIA przed={before} po=- biblioteki=nie"]
 
 
-def with_key(centrum: PreparingCentrum) -> None:
-    (centrum.tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
-
-
 def send_report(centrum: PreparingCentrum) -> dict[str, Any]:
     response = centrum.client.post("/api/tool-update/report")
     assert response.status_code == 200, response.json()
@@ -614,7 +609,7 @@ def send_report(centrum: PreparingCentrum) -> dict[str, Any]:
 
 def test_zgloszenie_nieudanej_aktualizacji_ma_te_same_fakty_co_dziennik(tmp_path: Path) -> None:
     centrum, repository = updating_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     before = repository.head()
     repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
     repository.in_clone("checkout", "--quiet", "-b", "proba-maksa")
@@ -686,7 +681,7 @@ def test_druga_nieudana_aktualizacja_po_zamknieciu_zgloszenia_karta_od_razu_pozw
     tmp_path: Path,
 ) -> None:
     centrum, repository = updating_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     box = centrum.surroundings.report_box
     repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
     with github_out_of_reach(repository):
@@ -704,7 +699,7 @@ def test_druga_nieudana_aktualizacja_po_zamknieciu_zgloszenia_karta_od_razu_pozw
 
 def test_nieudana_aktualizacja_ze_zgloszeniem_otwartym_w_skrzynce_karta_od_razu_mowi_ze_czeka(tmp_path: Path) -> None:
     centrum, repository = updating_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     box = centrum.surroundings.report_box
     repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
     with github_out_of_reach(repository):
@@ -725,7 +720,7 @@ def test_nieudana_aktualizacja_ze_zgloszeniem_otwartym_w_skrzynce_karta_od_razu_
 
 def test_zgloszenie_nieudanej_aktualizacji_bez_sieci_czeka_w_kolejce_i_wychodzi_samo(tmp_path: Path) -> None:
     centrum, repository = updating_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     box = centrum.surroundings.report_box
     box.search_failure = Unreachable()
     repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
@@ -743,7 +738,7 @@ def test_zgloszenie_nieudanej_aktualizacji_bez_sieci_czeka_w_kolejce_i_wychodzi_
 
 def test_zgloszenie_bez_nieudanej_aktualizacji_jest_odrzucone(tmp_path: Path) -> None:
     centrum, _ = updating_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     assert update_until_done(centrum)["state"] == "up_to_date"
 
     refused = centrum.client.post("/api/tool-update/report")
@@ -790,7 +785,7 @@ def test_nowe_biblioteki_karta_widzi_krok_instalowania_a_dziennik_zapisuje_insta
 
 def test_stara_wersja_po_cofnieciu_pokazuje_komunikat_bez_czekania_na_skrzynke_zgloszen(tmp_path: Path) -> None:
     centrum, repository = updating_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     box = centrum.surroundings.report_box
     before = repository.head()
     newest = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})

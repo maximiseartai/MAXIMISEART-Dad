@@ -78,7 +78,7 @@ class Zdarzenie(enum.StrEnum):
 class Krok:
     """Krok CI spoza pytest: polecenia po kolei, każde z limitem; ``{python}``, ``{temp}``, ``{podsumowanie}``.
 
-    Polecenie to jeden napis z argumentami po spacji; jego słowa to argumenty procesu (``tools/plan_ci.py``).
+    Polecenie to jeden napis z argumentami po spacji; jego słowa to argumenty procesu (``tools/ci/wykonaj_zadanie.py``).
     """
 
     nazwa: str

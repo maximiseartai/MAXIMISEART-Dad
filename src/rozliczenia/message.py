@@ -21,22 +21,19 @@ brakującej bibliotece musi działać bez zależności.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-import re
 from typing import Final, Literal
 
 DadFile = Literal["order_register", "collective_file"]
 """Plik taty, który Komunikat każe poprawić: Rejestr zleceń albo Plik zbiorczy."""
 
-REPORT_TO_MAINTAINER: Final = "Przekaż ten komunikat osobie utrzymującej narzędzie."
+_MAINTAINER: Final = "osobie utrzymującej narzędzie"
 KEEP_ON_DEVICE: Final = (
     "W Eksploratorze plików kliknij ten plik prawym przyciskiem myszy, wybierz „Zawsze zachowuj na tym urządzeniu”, "
     "poczekaj, aż się pobierze,"
 )
 """Jak tata pobiera plik, który OneDrive trzyma tylko w chmurze; Komunikat kończy to zdanie swoim „i …”."""
-_SENTENCE_END: Final = re.compile(r"(?<=[.!?])\s+")
-_CONDITIONS: Final = ("jeśli", "w innym wypadku")
 
 
 @dataclass(frozen=True)
@@ -45,6 +42,10 @@ class Message:
 
     ``dad_file``: plik taty, w którym jest poprawka z „Co zrobić”, gdy otwarcie go pomaga; odcisk problemu
     go nie zawiera.
+
+    ``reports_to_maintainer``: Rodzaj Zatrzymania „do Maksa”, bo „Co zrobić” bezwarunkowo każe przekazać Komunikat
+    osobie utrzymującej narzędzie. Ustawia go tylko ``Message.to_maintainer``, który pisze też to zdanie; zdanie
+    warunkowe (``refer_if``) rodzaju nie zmienia, bo najpierw tata ponawia albo poprawia sam.
     """
 
     code: str
@@ -52,20 +53,33 @@ class Message:
     where: str
     action: str
     dad_file: DadFile | None = None
+    reports_to_maintainer: bool = field(default=False, kw_only=True)
+
+    @classmethod
+    def to_maintainer(cls, code: str, what: str, where: str, *, before: str = "", check: str = "") -> Message:
+        """Komunikat „do Maksa”: „Co zrobić” to ``before``, potem „Sprawdź {check} i przekaż” albo samo „Przekaż”."""
+
+        refer = f"Sprawdź {check} i przekaż" if check else "Przekaż"
+        action = f"{refer} ten komunikat {_MAINTAINER}."
+        return cls(code, what, where, f"{before} {action}" if before else action, reports_to_maintainer=True)
 
     @property
     def text(self) -> str:
         return f"Co się stało: {self.what}\nGdzie: {self.where}\nCo zrobić: {self.action}"
 
-    @property
-    def reports_to_maintainer(self) -> bool:
-        """„Co zrobić” bezwarunkowo każe przekazać Komunikat osobie utrzymującej narzędzie.
 
-        Zdanie warunkowe („Jeśli błąd wraca, przekaż…”, „W innym wypadku przekaż…”)
-        nie liczy się: najpierw tata ponawia albo poprawia sam.
-        """
+def refer_if(condition: str, *, request: str = "przekaż ten komunikat", then: str = "") -> str:
+    """Zdanie „Co zrobić”, które kieruje do osoby utrzymującej narzędzie dopiero pod warunkiem, np. gdy błąd wraca.
 
-        return any(_unconditional_referral(sentence) for sentence in _SENTENCE_END.split(self.action))
+    Np. ``refer_if("Jeśli komunikat wraca", request="przekaż go")``. Rodzaju Zatrzymania nie zmienia.
+    """
+
+    return f"{condition}, {request} {_MAINTAINER}{then}."
+
+
+IF_ERROR_RETURNS: Final = refer_if("Jeśli błąd wraca")
+OTHERWISE_REFER: Final = f"W innym wypadku przekaż ten komunikat {_MAINTAINER}."
+"""Skierowanie, gdy tata nie usunie przyczyny sam krokami z poprzedniego zdania; rodzaju nie zmienia jak ``refer_if``."""
 
 
 class StopError(Exception):
@@ -82,12 +96,6 @@ class StopError(Exception):
         super().__init__(message.code)
         self.message = message
         self.facts = facts
-
-
-def _unconditional_referral(sentence: str) -> bool:
-    lowered = sentence.lower()
-    refers = "przekaż" in lowered and "osobie utrzymującej narzędzie" in lowered
-    return refers and not any(condition in lowered for condition in _CONDITIONS)
 
 
 def file_label(path: Path) -> str:

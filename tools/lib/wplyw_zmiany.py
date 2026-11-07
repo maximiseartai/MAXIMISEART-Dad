@@ -144,6 +144,8 @@ STRUCTURE = (
     # ``.gitignore`` czyta tu ``git check-ignore``, nie Python, więc graf nie wiąże go z tym testem.
     "tests/test_centrum_rozliczen.py::test_lokalne_pliki_taty_sa_poza_gitem",
 )
+# Katalogi, z których plik importuje moduł po samej nazwie: sys.path narzędzi i testów (tests/conftest.py, który
+# importuje też skrypty CI, żeby je testować).
 _MODULE_ROOTS = ("src", ".", "tools", "tools/lib", "tools/ci")
 _SKILL_SCRIPTS = ".agents/skills/*/scripts"
 

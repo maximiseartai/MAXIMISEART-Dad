@@ -2,13 +2,15 @@
 
 ``case_outbox`` to jedyna droga, którą Centrum buduje kolejkę Skrzynki Zgłoszeń: z jej słuchaczem doręczeń, który
 wie, która wysyłka jest którą sprawą. Nowe issue z etykietą ``uwaga-taty`` to Uwaga taty o identyfikatorze wysyłki,
-a ``ReportIssue`` to Zgłoszenie o odcisku problemu z celu wysyłki. Przyjęta wysyłka sprawy daje sprawie numer issue
+a jedno otwarte issue z etykietą Zgłoszenia (``reports.report_target``) to Zgłoszenie o odcisku problemu z wiersza
+rozpoznawczego celu. Przyjęta wysyłka sprawy daje sprawie numer issue
 (``DadCases.numbered``), a odrzucona treść zostaje w pamięci Spraw taty (``DadCases.rejected``). Logi, Kontrole
 ilości i komentarze do znanego issue sprawami nie są.
 
 Uwaga przypięta do Uruchomienia niesie w stopce linię jego Logów (``logs_line``). Gdy Logi jeszcze czekają w kolejce,
-szkic mówi, że są w drodze, a słuchacz tuż przed wysłaniem Uwagi wstawia odnośnik, jeśli Logi zdążyły dojść do
-skrzynki, a jeśli nie, mówi, dlaczego ich nie ma. Logi idą przed Uwagą (starszy plik kolejki), więc Uwaga wychodzi bez
+szkic mówi, że są w drodze, a wysyłka Uwagi niesie to w stanie (``note_post``, ``Post.state``). Słuchacz tuż przed
+wysłaniem takiej Uwagi wymienia tę linię na odnośnik, jeśli Logi zdążyły dojść do skrzynki, a jeśli nie, na linię,
+dlaczego ich nie ma. Logi idą przed Uwagą (starszy plik kolejki), więc Uwaga wychodzi bez
 nich tylko wtedy, gdy skrzynka odrzuciła ich treść albo nie było ich w kolejce. Po odrzuconych Logach dostarczenie
 Uwagi oddaje kolejce komentarz do jej issue, który czeka na te Logi i wychodzi z odnośnikiem, gdy dotrą przy którymś
 następnym starcie Centrum, a gdy znikną z kolejki, z tym, że nie dotrą. Tworzy go tylko dostarczenie Uwagi, więc
@@ -19,13 +21,20 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import Final
 
 from rozliczenia.centrum.clock import Clock
 from rozliczenia.centrum.comment_versions import LABEL as RUN_LOGS_LABEL
 from rozliczenia.centrum.dad_cases import NOTE, REPORT, CaseKind, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.outbox import Deliveries, KnownIssue, NewIssue, Outbox, Post, ReportIssue
+from rozliczenia.centrum.outbox import Deliveries, KnownIssue, NewIssue, OpenIssue, Outbox, Post
+from rozliczenia.centrum.report_issue import fingerprint_of
+
+# Stan wysyłki Uwagi (``Post.state``): stopka mówi, że Logi przypiętego Uruchomienia są w drodze.
+_LOGS_ON_THE_WAY: Final = "logi-w-drodze"
+# Stan Uwagi po ``prepare``: wychodzi z linią, że Skrzynka odrzuciła treść Logów, więc po niej idzie komentarz z odnośnikiem.
+_LOGS_REJECTED: Final = "logi-odrzucone"
 
 
 def case_outbox(
@@ -46,6 +55,14 @@ def logs_line(run_id: str, logs: str | None) -> str:
     return f"[Logi Uruchomienia]({logs})" if logs is not None else f"Logi Uruchomienia: w drodze (Uruchomienie {run_id})"
 
 
+def note_post(note_id: str, title: str, body: str, *, logs_on_the_way: bool) -> Post:
+    """Wysyłka Uwagi taty ``note_id``: nowe issue z jej tytułem i treścią. ``logs_on_the_way``: stopka ma linię Logów
+    w drodze (``logs_line`` bez adresu), którą słuchacz wymieni tuż przed wysłaniem."""
+
+    state = _LOGS_ON_THE_WAY if logs_on_the_way else None
+    return Post(NewIssue(NOTE.label, title), period=None, run_id=note_id, header=None, parts=(body,), state=state)
+
+
 class _CaseDelivery:
     """Słuchacz doręczeń kolejki (``outbox.Listener``) dla Spraw taty."""
 
@@ -55,7 +72,8 @@ class _CaseDelivery:
     def prepare(self, post: Post, sent: Deliveries) -> Post | None:
         """Logi w Uwadze przypiętej do Uruchomienia tuż przed wysłaniem; każda inna wysyłka idzie bez zmian.
 
-        Uwaga, której stopka mówi, że Logi są w drodze, dostaje odnośnik albo linię, dlaczego Logów nie ma. Komentarz
+        Uwaga, której stopka mówi, że Logi są w drodze, dostaje w miejsce tej linii odnośnik albo linię, dlaczego Logów
+        nie ma. Komentarz
         z odnośnikiem do issue Uwagi (``run_id`` to Uruchomienie) czeka (``None``), dopóki skrzynka odrzuca Logi w tej
         pracy Centrum, a gdy Logów nie ma ani w Skrzynce, ani w kolejce, idzie z zapisanym tekstem, że nie dotrą.
         """
@@ -67,12 +85,14 @@ class _CaseDelivery:
                 return replace(post, parts=(_logs_arrived(post.run_id, address),))
             return None if sent.rejected(post.run_id, RUN_LOGS_LABEL) else post
         run_id = self._pinned_run(post.run_id)
-        if run_id is None:
+        if run_id is None or not _logs_on_the_way(post, run_id):
             return post
-        first, waiting = post.parts[0], logs_line(run_id, None)
-        if not first.endswith(waiting):
+        lines, waiting = post.parts[0].split("\n"), logs_line(run_id, None)
+        if waiting not in lines:
             return post
-        return replace(post, parts=(first.removesuffix(waiting) + _sent_logs_line(run_id, sent), *post.parts[1:]))
+        line, state = _sent_logs_line(run_id, sent)
+        lines[len(lines) - 1 - lines[::-1].index(waiting)] = line
+        return replace(post, parts=("\n".join(lines), *post.parts[1:]), state=state)
 
     def delivered(self, post: Post, number: int) -> tuple[Post, ...]:
         """Sprawa wysyłki dostaje numer issue; Uwaga, która wyszła przed odrzuconymi Logami swojego Uruchomienia,
@@ -83,8 +103,8 @@ class _CaseDelivery:
             return ()
         kind, case_id = case
         self._cases.numbered(kind, case_id, number)
-        run_id = self._pinned_run(case_id) if kind == NOTE else None
-        if run_id is None or not post.parts[0].endswith(_rejected_logs_line(run_id)):
+        run_id = self._pinned_run(case_id) if post.state == _LOGS_REJECTED else None
+        if run_id is None:
             return ()
         return (Post(KnownIssue(NOTE.label, number), period=None, run_id=run_id, header=None, parts=(_logs_gone(run_id),)),)
 
@@ -106,20 +126,32 @@ def _case(post: Post) -> tuple[CaseKind, str] | None:
     match post.target:
         case NewIssue(label=NOTE.label):
             return NOTE, post.run_id
-        case ReportIssue(fingerprint=fingerprint):
+        case OpenIssue(label=REPORT.label, line=line) if (fingerprint := fingerprint_of(line)) is not None:
             return REPORT, fingerprint
         case _:
             return None
 
 
-def _sent_logs_line(run_id: str, sent: Deliveries) -> str:
-    """Linia Logów przypiętej Uwagi w chwili wysłania: odnośnik albo dlaczego Logów nie ma w Skrzynce."""
+def _logs_on_the_way(post: Post, run_id: str) -> bool:
+    """Czy stopka Uwagi mówi, że Logi Uruchomienia ``run_id`` są w drodze.
+
+    Plik kolejki sprzed ``Post.state`` stanu nie ma, a mówi to końcówka tekstu, jak w Centrum, które go zapisało. Warunek
+    usunięcia tego odczytu jak przy ``outbox._parse``: w kolejce taty nie ma pliku sprzed ``Post.state``.
+    """
+
+    if post.state is not None:
+        return post.state == _LOGS_ON_THE_WAY
+    return post.parts[0].endswith(logs_line(run_id, None))
+
+
+def _sent_logs_line(run_id: str, sent: Deliveries) -> tuple[str, str | None]:
+    """Linia Logów przypiętej Uwagi w chwili wysłania (odnośnik albo dlaczego Logów nie ma w Skrzynce) i stan Uwagi."""
 
     if (address := sent.delivered(run_id, RUN_LOGS_LABEL)) is not None:
-        return logs_line(run_id, address)
+        return logs_line(run_id, address), None
     if sent.rejected(run_id, RUN_LOGS_LABEL):
-        return _rejected_logs_line(run_id)
-    return f"Logi Uruchomienia: nie powstały albo nie da się ich wysłać (Uruchomienie {run_id})"
+        return _rejected_logs_line(run_id), _LOGS_REJECTED
+    return f"Logi Uruchomienia: nie powstały albo nie da się ich wysłać (Uruchomienie {run_id})", None
 
 
 def _rejected_logs_line(run_id: str) -> str:

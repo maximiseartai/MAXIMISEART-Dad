@@ -22,6 +22,9 @@ from rozliczenia.centrum.release_notes import DadCase, ReleaseNotes
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.git_repo import AUTHOR, commit, git
 
+import niestabilne_testy
+import repo
+
 pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
 
 TOOL = Path(__file__).resolve().parents[1] / "tools" / "wydanie.py"
@@ -173,13 +176,13 @@ class Releasing:
             for job, results in (("windows-3.14-1", {test: quarantine}), ("linux-3.14-1", {}))
         ]
         artifacts = [] if quarantine == "brak" else [
-            {"id": int(run) * 10 + index, "name": f"kwarantanna-{record['zadanie']}-1", "expired": False, "record": record}
+            {"id": int(run) * 10 + index, "name": f"{niestabilne_testy.ARTEFAKT_KWARANTANNY}{record['zadanie']}-1", "expired": False, "record": record}
             for index, record in enumerate(records)
         ]
         # Wygasły zapis kwarantanny z porażką: GitHub już go nie oddaje, więc się nie liczy.
         expired = {"zadanie": "linux-3.14-2", "proba": 1, "sha": commit, "wyniki": {test: "padł"}}
         artifacts += [
-            {"id": int(run) * 10 + 8, "name": "kwarantanna-linux-3.14-2-1", "expired": True, "record": expired},
+            {"id": int(run) * 10 + 8, "name": f"{niestabilne_testy.ARTEFAKT_KWARANTANNY}linux-3.14-2-1", "expired": True, "record": expired},
             {"id": int(run) * 10 + 9, "name": "czasy-ci", "expired": False, "record": {}},
         ]
 
@@ -241,7 +244,7 @@ class Releasing:
 
     def _tool(self, *arguments: str) -> subprocess.CompletedProcess[str]:
         environment = {**os.environ, **AUTHOR, "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}"}
-        environment.pop("MAXIMISEART_WYDANIE", None)
+        environment.pop(repo.RELEASE_OVERRIDE, None)
         return subprocess.run(
             [sys.executable, str(TOOL), "--repozytorium", str(self.checkout), *arguments],
             env=environment,

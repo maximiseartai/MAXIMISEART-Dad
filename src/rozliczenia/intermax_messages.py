@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
-from .message import REPORT_TO_MAINTAINER, Message, file_label, folder_label
+from .message import IF_ERROR_RETURNS, Message, file_label, folder_label, refer_if
 from .register_columns import ORDERED_FONT, ORDERED_SIZE
 from .text import row_range
 from .workbook_files import Problem, WorkbookError
@@ -71,7 +71,7 @@ def _register_inaccessible(register: Path) -> Message:
         where=file_label(register),
         action=(
             "Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go "
-            "i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
+            f"i uruchom ponownie. {IF_ERROR_RETURNS}"
         ),
     )
 
@@ -84,7 +84,7 @@ def _register_unreadable(register: Path) -> Message:
         where=file_label(register),
         action=(
             "Otwórz INTERMAX w Excelu i sprawdź, czy się otwiera. Jeśli tak, zapisz go, zamknij i uruchom ponownie. "
-            "Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
+            f"{IF_ERROR_RETURNS}"
         ),
     )
 
@@ -198,11 +198,10 @@ def _day(day: date) -> str:
 def unsupported_shape(register: Path, sheet: str) -> Message:
     """Wklejone zlecenia mają kształt, którego zapis nie przenosi (formuła, scalenie, zakres)."""
 
-    return Message(
+    return Message.to_maintainer(
         code="NIEOBSLUGIWANY_UKLAD_INTERMAX",
         what=f"Wklejone zlecenia mają układ, którego narzędzie nie porządkuje. {_UNCHANGED}",
         where=f"{file_label(register)}, arkusz {sheet}",
-        action=REPORT_TO_MAINTAINER,
     )
 
 
@@ -220,11 +219,10 @@ def register_syncing(register: Path) -> Message:
 def write_check_failed(register: Path) -> Message:
     """Sprawdzenie zapisu wykryło różnicę poza uporządkowanym dniem; INTERMAX nie został podmieniony."""
 
-    return Message(
+    return Message.to_maintainer(
         code="ZAPIS_INTERMAX_NIEZGODNY",
         what=f"Sprawdzenie zapisu wykazało różnicę, więc zapis został odrzucony. {_UNCHANGED}",
         where=file_label(register),
-        action=REPORT_TO_MAINTAINER,
     )
 
 
@@ -236,10 +234,7 @@ def register_write_failed(register: Path) -> Message:
         code="ZAPIS_INTERMAX_NIEUDANY",
         what=f"Nie udało się zapisać INTERMAX. {_UNCHANGED}",
         where=file_label(register),
-        action=(
-            "Sprawdź, czy na dysku jest wolne miejsce, i uruchom ponownie. "
-            "Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
-        ),
+        action=f"Sprawdź, czy na dysku jest wolne miejsce, i uruchom ponownie. {IF_ERROR_RETURNS}",
     )
 
 
@@ -250,11 +245,14 @@ def copy_failed(directory: Path) -> Message:
         code="KOPIA_INTERMAX_NIEUDANA",
         what=f"Nie udało się zrobić Kopii INTERMAX. {_UNCHANGED}",
         where=folder_label(directory),
-        action=(
-            "Sprawdź, czy na dysku jest wolne miejsce, i uruchom ponownie. "
-            "Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
-        ),
+        action=f"Sprawdź, czy na dysku jest wolne miejsce, i uruchom ponownie. {IF_ERROR_RETURNS}",
     )
+
+
+_OLD_COPIES_KEPT = (
+    "Nie musisz nic robić teraz. Jeśli któraś Kopia INTERMAX jest otwarta w Excelu, zamknij ją. "
+    f"{refer_if('Jeśli komunikat wraca', request='przekaż go')}"
+)
 
 
 def old_copies_kept(directory: Path) -> Message:
@@ -264,15 +262,11 @@ def old_copies_kept(directory: Path) -> Message:
         code="STARE_KOPIE_INTERMAX",
         what="INTERMAX został uporządkowany, ale nie udało się usunąć starszych Kopii INTERMAX.",
         where=folder_label(directory),
-        action=(
-            "Nie musisz nic robić teraz. Jeśli któraś Kopia INTERMAX jest otwarta w Excelu, zamknij ją. "
-            "Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie."
-        ),
+        action=_OLD_COPIES_KEPT,
     )
 
 
 _AGAIN = "przywróć kopię jeszcze raz"
-_IF_IT_RETURNS = "Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
 
 
 def copies_unreadable(directory: Path) -> Message:
@@ -282,7 +276,7 @@ def copies_unreadable(directory: Path) -> Message:
         code="KOPIE_INTERMAX_NIEDOSTEPNE",
         what=f"Nie można teraz odczytać folderu Kopii INTERMAX. {_UNCHANGED}",
         where=folder_label(directory),
-        action=f"Odśwież Konfigurację za chwilę. {_IF_IT_RETURNS}",
+        action=f"Odśwież Konfigurację za chwilę. {IF_ERROR_RETURNS}",
     )
 
 
@@ -315,7 +309,7 @@ def copy_unusable(error: WorkbookError) -> Message:
                 code="KOPIA_INTERMAX_NIEDOSTEPNA",
                 what=f"Nie można teraz odczytać tej Kopii INTERMAX. {_UNCHANGED}",
                 where=file_label(error.path),
-                action=f"Spróbuj za chwilę: {_AGAIN}. {_IF_IT_RETURNS}",
+                action=f"Spróbuj za chwilę: {_AGAIN}. {IF_ERROR_RETURNS}",
             )
 
 
@@ -352,7 +346,7 @@ def restore_register_unusable(error: WorkbookError) -> Message:
                     f"pobranie z OneDrive. {_UNCHANGED}"
                 ),
                 where=file_label(error.path),
-                action=f"Poczekaj, aż OneDrive skończy synchronizację, potem {_AGAIN}. {_IF_IT_RETURNS}",
+                action=f"Poczekaj, aż OneDrive skończy synchronizację, potem {_AGAIN}. {IF_ERROR_RETURNS}",
             )
 
 
@@ -389,7 +383,7 @@ def restore_copy_failed(directory: Path) -> Message:
         code="PRZYWRACANIE_KOPIA_NIEUDANA",
         what=f"Nie udało się zrobić Kopii obecnego INTERMAX, więc kopia nie została przywrócona. {_UNCHANGED}",
         where=folder_label(directory),
-        action=f"Sprawdź, czy na dysku jest wolne miejsce, potem {_AGAIN}. {_IF_IT_RETURNS}",
+        action=f"Sprawdź, czy na dysku jest wolne miejsce, potem {_AGAIN}. {IF_ERROR_RETURNS}",
     )
 
 
@@ -412,7 +406,7 @@ def restore_failed(register: Path) -> Message:
         code="PRZYWRACANIE_NIEUDANE",
         what=f"Nie udało się przywrócić kopii. {_UNCHANGED}",
         where=file_label(register),
-        action=f"Sprawdź, czy na dysku jest wolne miejsce, potem {_AGAIN}. {_IF_IT_RETURNS}",
+        action=f"Sprawdź, czy na dysku jest wolne miejsce, potem {_AGAIN}. {IF_ERROR_RETURNS}",
     )
 
 
@@ -423,10 +417,7 @@ def old_copies_kept_after_restore(directory: Path) -> Message:
         code="PRZYWRACANIE_STARE_KOPIE",
         what="Kopia została przywrócona, ale nie udało się usunąć starszych Kopii INTERMAX.",
         where=folder_label(directory),
-        action=(
-            "Nie musisz nic robić teraz. Jeśli któraś Kopia INTERMAX jest otwarta w Excelu, zamknij ją. "
-            "Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie."
-        ),
+        action=_OLD_COPIES_KEPT,
     )
 
 
@@ -437,27 +428,27 @@ def unexpected_failure() -> Message:
         code="BLAD_NIEOCZEKIWANY",
         what=f"Wystąpił nieoczekiwany błąd. {_UNCHANGED}",
         where=_PROCESS,
-        action="Uruchom ponownie. Jeśli błąd wraca, przekaż to osobie utrzymującej narzędzie.",
+        action=f"Uruchom ponownie. {IF_ERROR_RETURNS}",
     )
 
 
 def summary_not_shown() -> Message:
     """INTERMAX jest uporządkowany, ale podsumowania nie dało się pokazać."""
 
-    return Message(
+    return Message.to_maintainer(
         code="BLAD_PODSUMOWANIA",
         what="INTERMAX został uporządkowany, ale nie udało się pokazać podsumowania.",
         where=_PROCESS,
-        action="Nie uruchamiaj ponownie. Sprawdź INTERMAX i przekaż ten komunikat osobie utrzymującej narzędzie.",
+        before="Nie uruchamiaj ponownie.",
+        check="INTERMAX",
     )
 
 
 def plan_not_shown() -> Message:
     """Uporządkowanie nie ma podglądu bez zapisu; rdzeń wymaga Komunikatu na każdy rodzaj zakończenia."""
 
-    return Message(
+    return Message.to_maintainer(
         code="BLAD_PLANU",
         what=f"Nie udało się pokazać planu. {_UNCHANGED}",
         where=_PROCESS,
-        action=REPORT_TO_MAINTAINER,
     )

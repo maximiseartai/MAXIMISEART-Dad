@@ -77,8 +77,8 @@ from rozliczenia.centrum.outbox import (
     NewIssue,
     Outbox,
     PeriodThread,
+    OpenIssue,
     Post,
-    ReportIssue,
 )
 from rozliczenia.centrum.report_box import (
     Archive,
@@ -103,6 +103,7 @@ from rozliczenia.centrum.report_box import (
     Unreachable,
     UploadOutcome,
 )
+from rozliczenia.centrum.reports import report_target
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
 # GitHub's answers to a step of the Archiwum it refuses until Maks changes something: a key without the permission to
@@ -601,9 +602,7 @@ LOGS = PeriodThread(
     "reuse",
     "Logi Uruchomienia 08_14_09_2026",
 )
-REPORT = ReportIssue(
-    fingerprint="4f1c2d", title="Zgłoszenie: Przebieg rozliczeń zatrzymany"
-)
+REPORT = report_target("4f1c2d", "Zgłoszenie: Przebieg rozliczeń zatrzymany")
 THREAD = PeriodThread(
     "kontrola-ilosci",
     "- Kontrola ilości okresu: 08_14_09_2026",
@@ -615,7 +614,7 @@ KNOWN = KnownIssue("uwaga-taty", 1)
 
 
 def _post(
-    target: ReportIssue | PeriodThread | NewIssue | KnownIssue,
+    target: OpenIssue | PeriodThread | NewIssue | KnownIssue,
     run_id: str,
     count: int,
     *,
@@ -624,7 +623,7 @@ def _post(
 ) -> Post:
     """Wysyłka ``run_id`` w ``count`` częściach; ``version`` odróżnia treść nowszej wersji tej samej wysyłki."""
 
-    first = f"{REPORT.line}\n" if isinstance(target, ReportIssue) else ""
+    first = f"{REPORT.line}\n" if isinstance(target, OpenIssue) else ""
     parts = tuple(
         f"{first if number == 1 else ''}część {number}/{count} wysyłki {run_id}{version}"
         for number in range(1, count + 1)
@@ -658,13 +657,13 @@ DIAGNOSED = (
 )
 SCOPES = {
     "zgloszenie": Scope(
-        "Zgłoszenie (ReportIssue) w jednej części, jak każde (Post odrzuca więcej).",
+        "Zgłoszenie (OpenIssue) w jednej części, jak każde (Post odrzuca więcej).",
         (_post(REPORT, "zgl", 1),),
         (),
         BOUNDS,
     ),
     "zgloszenie-wrocilo": Scope(
-        "Zgłoszenie (ReportIssue), którego odcisk ma już otwarte Zgłoszenie: jedyna część idzie do niego komentarzem.",
+        "Zgłoszenie (OpenIssue), którego odcisk ma już otwarte Zgłoszenie: jedyna część idzie do niego komentarzem.",
         (_post(REPORT, "zgl-wrocilo", 1),),
         (("zgloszenie", REPORT.title, f"{REPORT.line}\nwcześniejsze Zgłoszenie"),),
         BOUNDS,
