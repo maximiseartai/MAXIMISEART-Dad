@@ -47,6 +47,8 @@ _Avoid_: aplikacja firmowa, Fenix
 Zielony „Zapisz” przy zleceniu w efenix: zlecenie przechodzi ze statusu „Do
 wyceny” do „Do akceptacji” i jego wycenę sprawdza firma. Robi je tata albo
 Wycena w efenix w trybie z Przekazaniem, tylko przy zleceniu gotowym (ADR 0027).
+Gdy efenix odmawia Przekazania (brak zdjęć, długości przyłącza, wyceny albo daty
+wykonania), Wycena w efenix zostawia zlecenie tacie jako błąd bez Znacznika.
 Czerwony „Zapisz” obok niego anuluje zlecenie, a tego narzędzie nie robi nigdy.
 Tata mówi o nim „zapis”, więc w Centrum rozliczeń przyciski trybów Wyceny w efenix
 („Uzupełnij bez zapisu”, „Uzupełnij i zapisz”) i plakietka trybu na jej karcie

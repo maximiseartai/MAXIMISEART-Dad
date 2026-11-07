@@ -55,7 +55,7 @@ import pytest
 
 from rozliczenia import efenix_browser
 from rozliczenia.efenix_pricing import _emmett
-from rozliczenia.efenix_window import Efenix, EmmettLoad, ListedOrder, OrderPricing, WindowStop
+from rozliczenia.efenix_window import Efenix, EmmettLoad, ForwardRefusal, ListedOrder, OrderPricing, WindowStop
 from tests.fixtures.atrapa_efenix import (
     FILL_EMMETT,
     LIST_PAGE,
@@ -475,6 +475,16 @@ _ROWS = (
     _Row("wylogowanie-status-0", (_new(execution_date=_DAY, quantities={"012": 1}),), _FORWARDING, expire_after=(Action.STATUS, 0)),
     _Row("przekazanie", (_new(execution_date=_DAY, quantities={"012": 1}),), _FORWARDING),
     _Row("przekazanie-bez-zmiany-statusu", (_new(execution_date=_DAY, quantities={"012": 1}, keeps_status=True),), _FORWARDING),
+    _Row(
+        "przekazanie-odmowa-efenix",
+        (_new(execution_date=_DAY, quantities={"012": 1}, forward_refusal=f"  {ForwardRefusal.NO_DATE.value}\n"),),
+        _FORWARDING,
+    ),
+    _Row(
+        "przekazanie-odmowa-tekstem-spoza-listy",
+        (_new(execution_date=_DAY, quantities={"012": 1}, forward_refusal="Zlecenie zablokowane przez administratora !"),),
+        _FORWARDING,
+    ),
     _Row("zaladuj-bez-odmowy", (_new(execution_date=_DAY),), _DATED_EMMETT),
     *(
         _Row(f"zaladuj-odmowa-{refusal.name.lower()}", (_new(execution_date=_DAY, emmett_refusal=refusal),), _DATED_EMMETT)
@@ -573,8 +583,8 @@ def _observed(open_window: Callable[[], AbstractContextManager[Efenix]], steps: 
                     case _Quantity(code, quantity):
                         lines.append(f"ilość {code}={quantity}: kwota {efenix.enter_quantity(code, quantity)}")
                     case _Forward():
-                        efenix.forward_to_accept()
-                        lines.append("przekazanie do akceptacji")
+                        refusal = efenix.forward_to_accept()
+                        lines.append("przekazanie do akceptacji" + ("" if refusal is None else f": odmowa {_text(refusal)}"))
                     case _Logout():
                         log_out()
                         lines.append("tata wylogował się")

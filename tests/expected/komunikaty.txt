@@ -1176,6 +1176,31 @@ order_error #17 [EFENIX_BRAK_POZYCJI]
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź ilości w tych kolumnach Pliku zbiorczego i pozycje zlecenia w efenix, a potem wyceń zlecenie w efenix sam.
 
+order_error #18 [EFENIX_ODMOWA_PRZEKAZANIA]
+  Co się stało: efenix nie przyjął Przekazania do akceptacji: do wyceny nie są dołączone żadne zdjęcia, a są wymagane przy pracach ziemnych i zleceniu UST. Wycena z Pliku zbiorczego jest już uzupełniona w efenix.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Dołącz zdjęcia do wyceny w efenix, a potem przekaż zlecenie do akceptacji sam albo uruchom ponownie przyciskiem „Uzupełnij i zapisz”.
+
+order_error #19 [EFENIX_ODMOWA_PRZEKAZANIA]
+  Co się stało: efenix nie przyjął Przekazania do akceptacji: zlecenie nie ma długości przyłącza. Wycena z Pliku zbiorczego jest już uzupełniona w efenix.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Podaj długość przyłącza w efenix, a potem przekaż zlecenie do akceptacji sam albo uruchom ponownie przyciskiem „Uzupełnij i zapisz”.
+
+order_error #20 [EFENIX_ODMOWA_PRZEKAZANIA]
+  Co się stało: efenix nie przyjął Przekazania do akceptacji: nie widzi w zleceniu wyceny. Wycena z Pliku zbiorczego jest już uzupełniona w efenix.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź wycenę zlecenia w efenix, a potem przekaż zlecenie do akceptacji sam albo uruchom ponownie przyciskiem „Uzupełnij i zapisz”.
+
+order_error #21 [EFENIX_ODMOWA_PRZEKAZANIA]
+  Co się stało: efenix nie przyjął Przekazania do akceptacji: zlecenie nie ma daty wykonania. Wycena z Pliku zbiorczego jest już uzupełniona w efenix.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Ustaw datę wykonania w efenix, a potem przekaż zlecenie do akceptacji sam albo uruchom ponownie przyciskiem „Uzupełnij i zapisz”.
+
+order_error #22 [EFENIX_ODMOWA_PRZEKAZANIA]
+  Co się stało: efenix nie przyjął Przekazania do akceptacji i pokazał informację, której narzędzie nie zna. Wycena z Pliku zbiorczego jest już uzupełniona w efenix.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Otwórz zlecenie w efenix, sprawdź, czego efenix brakuje do Przekazania, i przekaż je do akceptacji sam.
+
 emmett_warning [EFENIX_WIECEJ_NIZ_PLIK]
   Co się stało: efenix ma więcej niż Plik zbiorczy: pozycja INDEKS_012 (kolumna O): efenix 2, plik 1; pozycja INDEKS_020 (bez kolumny w Pliku zbiorczym): efenix 1, plik 0. Narzędzie tych ilości nie zmieniło, a pozostałe ilości z pliku wpisało.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23

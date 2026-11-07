@@ -9,7 +9,7 @@
     "_dated": "086bfa4b2b50697b",
     "_completed": "5dee0ecc1fe5d3c1",
     "_priced_outcome": "1753466382461c9b",
-    "_forwarded": "106c81ca9b13d9de"
+    "_forwarded": "d1d62e554e0935bf"
   },
   "src/rozliczenia/efenix_positions.py": {
     "completion": "04cc1603fa80ed24",
@@ -20,7 +20,8 @@
     "BrowserEfenix.enter_quantity": "e5b13ff875fc0e83",
     "BrowserEfenix._finished": "af03337f484dd240",
     "_came_whole": "74cfead327507694",
-    "BrowserEfenix.forward_to_accept": "a96c5f1977c60c98",
+    "BrowserEfenix.forward_to_accept": "31e7ec56d0c3364c",
+    "BrowserEfenix._refusal": "124ce9ba8ea0a270",
     "BrowserEfenix._status_answer": "92368310cf29e855"
   },
   "src/rozliczenia/efenix_checks.py": {

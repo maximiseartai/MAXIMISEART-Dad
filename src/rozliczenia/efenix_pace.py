@@ -25,7 +25,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Final, TypeVar
 
-from .efenix_window import Efenix, EmmettLoad, ListedOrder, OrderPricing, WindowAction
+from .efenix_window import Efenix, EmmettLoad, ForwardRefusal, ListedOrder, OrderPricing, WindowAction
 
 __all__ = ["ACTION_PAUSE_S", "KEEPALIVE_S", "ORDER_S", "Pace", "Pacing"]
 
@@ -106,8 +106,8 @@ class _PacedEfenix:
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
         return self._paced(WindowAction.QUANTITY, lambda: self._efenix.enter_quantity(position, quantity))
 
-    def forward_to_accept(self) -> None:
-        self._paced(WindowAction.FORWARD, self._efenix.forward_to_accept)
+    def forward_to_accept(self) -> ForwardRefusal | None:
+        return self._paced(WindowAction.FORWARD, self._efenix.forward_to_accept)
 
     def _paced(self, action: WindowAction, act: Callable[[], _T]) -> _T:
         """Działanie ``act`` po przerwie: przed zapisem (``WindowAction.writes``) i przed pierwszym szukaniem zlecenia."""

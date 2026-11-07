@@ -135,7 +135,9 @@ class EfenixOrder:
     wykonania, a z ``after_emmett`` od Wyceny Emmetta. ``emmett_refusal``: efenix odmawia „Załaduj do zlecenia” tego
     zlecenia (``EmmettRefusal``), aż test to zmieni. ``emmett_proposal_failure``: propozycja Emmetta tego zlecenia pada
     (``ProposalFailure``), więc okno Emmetta zostaje puste. ``keeps_status``: efenix odpowiada na zmianę statusu tego
-    zlecenia jak zwykle, ale statusu nie zmienia.
+    zlecenia jak zwykle, ale statusu nie zmienia. ``forward_refusal``: tekst, którym skrypt strony tego zlecenia po
+    przycisku Przekazania do akceptacji odmawia go w oknie informacji, zamiast pokazać okno zmiany statusu (efenix
+    sprawdza tak zdjęcia, długość przyłącza, wycenę i datę wykonania), więc zmiana statusu nie dochodzi do serwera.
     """
 
     order_id: str
@@ -157,6 +159,7 @@ class EfenixOrder:
     emmett_refusal: EmmettRefusal | None = None
     emmett_proposal_failure: ProposalFailure | None = None
     keeps_status: bool = False
+    forward_refusal: str | None = None
 
     @property
     def amount(self) -> Decimal:

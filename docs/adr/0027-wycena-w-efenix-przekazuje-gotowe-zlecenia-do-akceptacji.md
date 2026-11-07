@@ -27,7 +27,9 @@ anulowałaby zlecenie firmy, czego narzędzie nie umie cofnąć.
   wcześniejszego uruchomienia. Błędy i Ostrzeżenia Emmetta zostają tacie nieprzekazane.
 - **Przekazanie potwierdza lista zleceń:** po zielonym „Zapisz” narzędzie szuka zlecenia jeszcze raz, a dopiero status
   „Do akceptacji” z realizatorem i adresem z pliku daje Zlecenie przekazane. Inna lista to błąd zlecenia bez
-  Znacznika, a Komunikat każe tacie sprawdzić zlecenie w efenix.
+  Znacznika, a Komunikat każe tacie sprawdzić zlecenie w efenix. Gdy efenix po zielonym „Zapisz” odmawia Przekazania
+  oknem informacji (brak zdjęć, długości przyłącza, wyceny albo daty wykonania), to też błąd zlecenia bez Znacznika, a
+  nie Zatrzymanie: okno niczego nie wysyła, Komunikat mówi tacie, czego efenix brakuje, a Wycena idzie dalej.
 - **Zlecenie „Do akceptacji” to wynik, nie błąd, w obu trybach**, tak jak Zlecenie rozliczone: narzędzie go nie otwiera i
   niczego w nim nie zmienia.
 - **Zlecenie przekazane ma w `ADRES` ciemniejszy fiolet `B48AFF`, Znacznik przekazania**, a gotowe dalej jasny Znacznik

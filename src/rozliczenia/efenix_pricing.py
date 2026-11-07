@@ -33,7 +33,8 @@ Tryb Wyceny (``PricingMode``, domyślnie ``FILL``) rozstrzyga, co dzieje się z 
 Przekazania (``FILL``) dostaje Znacznik efenix, a Przekazanie do akceptacji zostaje tacie. W trybie z Przekazaniem
 (``FORWARD``) proces przekazuje je do akceptacji (``Efenix.forward_to_accept``) i szuka go ponownie: lista ze statusem
 „Do akceptacji” (``listing``) daje Zlecenie przekazane, a każda inna lista błąd ``OrderProblem.NOT_FORWARDED`` bez
-Znacznika. Błędu ani Ostrzeżenia Emmetta proces nie przekazuje w żadnym trybie. Okno efenix (``efenix_window.Efenix``)
+Znacznika. Odmowa efenix przy Przekazaniu (``ForwardRefusal``) to błąd zlecenia bez Znacznika i bez ponownego szukania,
+a proces idzie do następnego zlecenia. Błędu ani Ostrzeżenia Emmetta proces nie przekazuje w żadnym trybie. Okno efenix (``efenix_window.Efenix``)
 nie ma działania, które anuluje zlecenie albo zmienia jego status na inny niż „Do akceptacji”. Strona logowania, efenix, którego okno nie otworzyło, zamknięte okno
 efenix i działanie okna, którego okno nie dokończyło, to Zatrzymanie (``LoggedOut``, ``EfenixUnreachable``,
 ``WindowClosed``, ``UnexpectedPage``), a Komunikat Zatrzymania mówi, czy przed nim proces zmienił już coś w efenix:
@@ -479,9 +480,11 @@ def _outcome(order: CollectiveOrder, efenix: Efenix, forbidden: ForbiddenValues 
 
 def _forwarded(order: CollectiveOrder, ready: ListedOrder, efenix: Efenix, forbidden: ForbiddenValues | None) -> Forwarded | OrderError:
     """Gotowe zlecenie ``order`` (wiersz listy ``ready``) przekazane do akceptacji i potwierdzone ponownym szukaniem:
-    lista ze statusem „Do akceptacji” i realizatorem i adresem z pliku (``listing``); każda inna to ``NOT_FORWARDED``."""
+    lista ze statusem „Do akceptacji” i realizatorem i adresem z pliku (``listing``); każda inna to ``NOT_FORWARDED``, a
+    odmowa efenix przy Przekazaniu błąd z jej przyczyną."""
 
-    efenix.forward_to_accept()
+    if (refusal := efenix.forward_to_accept()) is not None:
+        return OrderError(refusal)
     confirmed = listing(order, _searched(efenix, ready.number, forbidden))
     return confirmed if isinstance(confirmed, Forwarded) else OrderError(OrderProblem.NOT_FORWARDED)
 

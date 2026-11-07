@@ -23,6 +23,7 @@ from typing import Final
 
 from .efenix_checks import DateRefused, OrderProblem
 from .efenix_orders import PRICED_COLUMNS, CollectiveOrder
+from .efenix_window import ForwardRefusal
 from .order_facts import NON_NUMERIC
 
 __all__ = [
@@ -112,8 +113,9 @@ class OtherAmount:
     file_amount: Decimal
 
 
-OrderFault = OrderProblem | DateRefused | UnpairedColumns | NotWholeQuantities | MissingPositions | OtherAmount
-"""Powód, dla którego zlecenie zostaje tacie jako błąd."""
+OrderFault = OrderProblem | DateRefused | UnpairedColumns | NotWholeQuantities | MissingPositions | OtherAmount | ForwardRefusal
+"""Powód, dla którego zlecenie zostaje tacie jako błąd; ``ForwardRefusal`` to gotowe zlecenie, któremu efenix odmówił
+Przekazania do akceptacji."""
 
 
 @dataclass(frozen=True)

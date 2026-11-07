@@ -335,7 +335,8 @@ class LoggedStep(_Record):
     schematu 1), czas i odczyt strony efenix po nim.
 
     ``results``: każdy wiersz listy po szukaniu, ``status`` i ``realizator``: wiersz listy, którego stronę zlecenia okno
-    otworzyło; ``None`` przy innych działaniach i w plikach sprzed tych pól.
+    otworzyło, ``refusal``: nazwa odmowy efenix przy Przekazaniu do akceptacji (``efenix_window.ForwardRefusal``, bez
+    tekstu okna informacji); ``None`` przy innych działaniach i w plikach sprzed tych pól.
     """
 
     action: WindowAction
@@ -351,6 +352,7 @@ class LoggedStep(_Record):
     results: list[LoggedResult] | None = None
     status: str | None = None
     realizator: str | None = None
+    refusal: str | None = None
 
     @classmethod
     def of(cls, step: TraceStep) -> LoggedStep:
@@ -368,6 +370,7 @@ class LoggedStep(_Record):
             results=None if step.results is None else [LoggedResult.of(read) for read in step.results],
             status=step.status,
             realizator=step.realizator,
+            refusal=None if step.refusal is None else step.refusal.name,
         )
 
 

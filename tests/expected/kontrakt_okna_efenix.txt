@@ -84,6 +84,22 @@ wiersz przekazanie-bez-zmiany-statusu
   stan 901: data 2026-09-09, ilości 012=1, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=2 OPEN=2 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=1
+wiersz przekazanie-odmowa-efenix
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
+  otwarcie 901: data 2026-09-09, kwota 21.00, ilości 012=1, bez pola Ilość -
+  przekazanie do akceptacji: odmowa ForwardRefusal.NO_DATE
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
+  stan 901: data 2026-09-09, ilości 012=1, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
+  sesja trwa
+  działania SEARCH=2 OPEN=1 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
+wiersz przekazanie-odmowa-tekstem-spoza-listy
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
+  otwarcie 901: data 2026-09-09, kwota 21.00, ilości 012=1, bez pola Ilość -
+  przekazanie do akceptacji: odmowa ForwardRefusal.OTHER_TEXT
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
+  stan 901: data 2026-09-09, ilości 012=1, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
+  sesja trwa
+  działania SEARCH=2 OPEN=1 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz zaladuj-bez-odmowy
   szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -

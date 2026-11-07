@@ -8,6 +8,7 @@
       "MozeZgasnac": true,
       "TataWTrakcie": false,
       "MozePrzekazac": true,
+      "MozeOdmowicPrzekazania": false,
       "MozeSieZatrzymac": true,
       "MozeBrakowacPozycji": false
     }
@@ -21,12 +22,13 @@
       "MozeZgasnac": true,
       "TataWTrakcie": false,
       "MozePrzekazac": true,
+      "MozeOdmowicPrzekazania": false,
       "MozeSieZatrzymac": true,
       "MozeBrakowacPozycji": false
     }
   },
   "wszystko": {
-    "opis": "Wszystko naraz: Zatrzymanie, zgaśnięcie, strona po Emmetcie bez pozycji i zmiana taty: dwa zlecenia, trzy Uruchomienia.",
+    "opis": "Wszystko naraz: Zatrzymanie, zgaśnięcie, strona po Emmetcie bez pozycji, odmowa Przekazania przez efenix i zmiana taty: dwa zlecenia, trzy Uruchomienia.",
     "stale": {
       "LiczbaZlecen": 2,
       "MaxUruchomien": 3,
@@ -34,6 +36,7 @@
       "MozeZgasnac": true,
       "TataWTrakcie": false,
       "MozePrzekazac": true,
+      "MozeOdmowicPrzekazania": true,
       "MozeSieZatrzymac": true,
       "MozeBrakowacPozycji": true
     },
@@ -42,6 +45,16 @@
         "obietnica": "BladTylkoPoZmianieTaty",
         "przyczyna": "brak-pozycji-po-emmetcie",
         "znalezisko": "strona po „Załaduj do zlecenia” bez pozycji z ilością w pliku to błąd zlecenia (EFENIX_BRAK_POZYCJI), a Wycena Emmetta zostaje w efenix; w kodzie ponowne Uruchomienie staje na tym samym braku pozycji przy otwarciu, a gdy pozycja wróci, dokańcza zlecenie do pliku; nic w efenix się nie obniża (przyjęte: tata wycenia takie zlecenie sam)"
+      },
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "odmowa-przekazania",
+        "znalezisko": "efenix po zielonym „Zapisz” odmawia Przekazania oknem informacji (brak zdjęć, długości przyłącza, wyceny albo daty wykonania): błąd zlecenia (EFENIX_ODMOWA_PRZEKAZANIA) bez Znacznika, a efenix zostaje bez zmian; ponowne Uruchomienie z Przekazaniem próbuje znowu (przyjęte: decyzja koordynatora 7.11.2026, brak uzupełnia w efenix tata)"
+      },
+      {
+        "obietnica": "ZmianaTatyZostaje",
+        "przyczyna": "odmowa-przekazania",
+        "znalezisko": "efenix po zielonym „Zapisz” odmawia Przekazania oknem informacji (brak zdjęć, długości przyłącza, wyceny albo daty wykonania): błąd zlecenia (EFENIX_ODMOWA_PRZEKAZANIA) bez Znacznika, a efenix zostaje bez zmian; ponowne Uruchomienie z Przekazaniem próbuje znowu (przyjęte: decyzja koordynatora 7.11.2026, brak uzupełnia w efenix tata)"
       }
     ]
   },
@@ -54,6 +67,7 @@
       "MozeZgasnac": false,
       "TataWTrakcie": false,
       "MozePrzekazac": true,
+      "MozeOdmowicPrzekazania": false,
       "MozeSieZatrzymac": false,
       "MozeBrakowacPozycji": false
     }
