@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if None not in (args.baza, args.pozycyjna) and args.baza != args.pozycyjna:
         parser.error(f"dwie różne bazy: --baza {args.baza} i {args.pozycyjna}")
-    base = args.baza or args.pozycyjna or BASE
+    base = next((given for given in (args.baza, args.pozycyjna) if given is not None), BASE)
     try:
         files = changed_since(ROOT, base)
     except subprocess.CalledProcessError as error:

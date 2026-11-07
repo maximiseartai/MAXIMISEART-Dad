@@ -267,14 +267,15 @@ def test_zmiana_runnera_mutacji_nie_wskazuje_skilla_choc_noc_uruchamia_jego_skry
     assert _run(tmp_path, base).stdout.splitlines() == [f"{VERDICT}brak"]
 
 
-def test_baza_ktorej_nie_ma_daje_nieznane_skille_i_kod_bledu(tmp_path: Path) -> None:
+@pytest.mark.parametrize("argv", [["nie-ma-takiej-bazy"], [""], ["--baza", ""]], ids=["nieznana", "pusta-pozycyjna", "pusta-opcja"])
+def test_baza_ktorej_nie_ma_albo_pusta_daje_nieznane_skille_i_kod_bledu(tmp_path: Path, argv: list[str]) -> None:
     _repo(tmp_path)
 
-    result = _run(tmp_path, "nie-ma-takiej-bazy")
+    result = _run(tmp_path, *argv)
 
     assert result.returncode == 1
     assert result.stdout.splitlines()[-1].startswith(f"{VERDICT}nieznane (git merge-base: ")
-    assert "nie-ma-takiej-bazy" in result.stdout
+    assert argv[-1] in result.stdout
 
 
 def test_baza_z_opcja_baza_i_pozycyjna_daje_ten_sam_wynik_a_dwie_rozne_to_blad_uzycia(tmp_path: Path) -> None:

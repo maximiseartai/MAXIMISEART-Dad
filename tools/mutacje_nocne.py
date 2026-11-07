@@ -4,7 +4,7 @@ Mutacje nocne (ADR 0021): mutacje linii zmienionych na ``main`` od ostatniej noc
 
 Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``workflow_dispatch`` z opcjonalnym ``od``).
 
-- ``plan`` ustala bazę: ``--od``, gdy jest (``od`` spoza linii ``main`` zastępuje wspólny przodek HEAD i ``od``, od
+- ``plan`` ustala bazę: ``--od`` (albo ``--baza``), gdy jest (``od`` spoza linii ``main`` zastępuje wspólny przodek HEAD i ``od``, od
   którego liczy też część), inaczej koniec zakresu ostatniego udanego runu tego workflow na ``main``
   (``do`` z jego artefaktu ``zakres-nocy``, a run bez tego artefaktu policzył wszystko do swojego ``headSha``), a bez
   takiego runu (albo gdy jego commit nie jest przodkiem HEAD) ostatni commit linii pierwszych rodziców HEAD sprzed 24 h.
@@ -572,6 +572,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     polecenia = parser.add_subparsers(dest="polecenie", required=True)
     plan = polecenia.add_parser("plan", help="Baza i koniec zakresu nocy, liczba mutacji i części (GITHUB_OUTPUT).")
     plan.add_argument("--od", default="", help="Commit, od którego liczyć zmiany, a spoza linii HEAD jego wspólny przodek z HEAD (domyślnie koniec zakresu ostatniego udanego runu albo 24 h wstecz).")
+    plan.add_argument("--baza", help="To samo co --od, jak w innych narzędziach zmiany; obie z różnymi wartościami to błąd użycia.")
     plan.add_argument("--zakres", type=Path, help=f"Plik JSON z bazą i końcem zakresu nocy (artefakt {ARTEFAKT_ZAKRESU}, z którego następna noc bierze bazę).")
     zgloszenie = polecenia.add_parser("zglos", help="Issue dla przeżytych mutacji ze wszystkich części.")
     zgloszenie.add_argument("--baza", required=True, help="Baza nocy z planu.")
@@ -582,7 +583,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.polecenie == "plan":
-            return zaplanuj(GhApi(), args.od, args.zakres)
+            if args.od and args.baza and args.od != args.baza:
+                plan.error(f"dwie różne bazy: --od {args.od} i --baza {args.baza}")
+            return zaplanuj(GhApi(), args.od or args.baza or "", args.zakres)
         plan_skilli = None if args.plan_skilli is None else plan_ci.Plan.z_json(args.plan_skilli.read_text(encoding="utf-8"))
         return zglos(GhApi(), ROOT, args.baza, args.zapisy, args.czesci, args.run, plan_skilli)
     except (RuntimeError, ValueError, KeyError, OSError, subprocess.CalledProcessError, zipfile.BadZipFile) as blad:

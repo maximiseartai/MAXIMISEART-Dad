@@ -307,10 +307,12 @@ def test_czesc_konczy_sie_w_swoim_limicie_czasu_przed_limitem_zadania_ci_ktore_b
     ("polecenie", "przyczyna"),
     [
         (["plan", "--od", "nie-ma-takiego"], "fatal: Needed a single revision"),
+        (["plan", "--baza", "nie-ma-takiego"], "fatal: Needed a single revision"),
+        (["plan", "--od", "nie-ma-takiego", "--baza", "nie-ma-takiego"], "fatal: Needed a single revision"),
         (["plan"], "HEAD nie ma commitu sprzed 24 h; podaj --od"),
         (["zglos", "--baza", "{baza}", "--zapisy", "{zapisy}", "--czesci", "1", "--run", RUN], "przeżyta mutacja bez postaci <plik>:<linia> <opis>: bez linii"),
     ],
-    ids=["nieznane-od", "bez-commitu-sprzed-24-h", "zapis-bez-pliku-mutacji"],
+    ids=["nieznane-od", "nieznana-baza", "ta-sama-od-i-baza", "bez-commitu-sprzed-24-h", "zapis-bez-pliku-mutacji"],
 )
 def test_noc_bez_bazy_albo_z_zapisem_bez_pliku_mutacji_konczy_sie_fail_z_przyczyna(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], polecenie: list[str], przyczyna: str
@@ -324,6 +326,14 @@ def test_noc_bez_bazy_albo_z_zapisem_bez_pliku_mutacji_konczy_sie_fail_z_przyczy
     kod = mutacje_nocne.main([argument.format(baza=baza, zapisy=zapisy) for argument in polecenie])
 
     assert (kod, capsys.readouterr().out.splitlines()[-1]) == (1, f"MUTACJE NOCNE FAIL | {przyczyna}")
+
+def test_plan_z_roznymi_bazami_od_i_baza_to_blad_uzycia(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as blad:
+        mutacje_nocne.main(["plan", "--od", "wczoraj", "--baza", "dzisiaj"])
+
+    assert blad.value.code == 2
+    assert "dwie różne bazy: --od wczoraj i --baza dzisiaj" in capsys.readouterr().err
+
 
 WARUNEK = "def f(x: int, y: int) -> int:\n    if (\n        x > 1\n        and y > 2\n    ):\n        return 1\n    return 0\n"
 
