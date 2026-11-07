@@ -35,11 +35,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 from kroki_skilli import Katalog, hits
+from repo import BASE, ROOT
 from wplyw_zmiany import changed_since
 from zakres_runu import Zdarzenie, zakres
 
-ROOT = Path(__file__).resolve().parents[1]
-BASE = "origin/main"
 VERDICT = "SKILLE VERIFY"
 IN_CI = "LICZY CI"
 AT_NIGHT = "LICZY NOC"

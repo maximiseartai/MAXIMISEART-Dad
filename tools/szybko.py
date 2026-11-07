@@ -69,12 +69,12 @@ import ci_lokalnie
 import czasy_ci
 from mutacje import environment
 import potomne
+from repo import BASE, ROOT
+import repo
 import rozjazd_modelu
 from wplyw_zmiany import STRUCTURE, Context, Repository, changed_since, run_all, with_structure
 from zakres_runu import podstawa_na_pull_request
 
-ROOT = Path(__file__).resolve().parents[1]
-BASE = "origin/main"
 GREEN = "szybko-zielone.json"
 WORKERS = "4"
 # Sekundy czasów CI na workera. Porażki pytest w szybko z 23–24.10 łapie ten sam plan od 20 s wzwyż, bo prawie
@@ -161,7 +161,7 @@ class GreenMemory:
 
     @classmethod
     def of_checkout(cls) -> GreenMemory:
-        return cls(ROOT / _git("rev-parse", "--git-path", GREEN).strip())
+        return cls(ROOT / repo.git(ROOT, "rev-parse", "--git-path", GREEN).strip())
 
     def to_run(self, selection: Selection) -> list[str]:
         green = self._recalled()
@@ -201,29 +201,18 @@ def _passed(junit: Path, ran: Iterable[str]) -> set[str]:
     return seen - failed
 
 
-def _git(*arguments: str) -> str:
-    completed = subprocess.run(["git", *arguments], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=True)
-    return completed.stdout
-
-
 def _merge_with(base: str) -> str | None:
-    ancestor = subprocess.run(["git", "merge-base", "--is-ancestor", base, "HEAD"], cwd=ROOT, capture_output=True, check=False)
-    if ancestor.returncode == 0:
+    if repo.is_ancestor(ROOT, base, "HEAD"):
         return None
-    merged = subprocess.run(
-        ["git", "merge-tree", "--write-tree", "--name-only", "HEAD", base],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
-    tree, *conflicts = merged.stdout.split("\n\n", 1)[0].splitlines()
-    if merged.returncode != 0:
+    try:
+        merged = repo.git(ROOT, "merge-tree", "--write-tree", "--name-only", "HEAD", base)
+    except subprocess.CalledProcessError as conflict:
+        conflicts = conflict.stdout.split("\n\n", 1)[0].splitlines()[1:]
         print(f"UWAGA: merge z {base} ma konflikt w {', '.join(conflicts)}; testy struktury po mergu pominięte", flush=True)
         return None
+    tree = merged.split("\n\n", 1)[0].splitlines()[0]
     author = ("-c", "user.name=szybko", "-c", "user.email=szybko@localhost")
-    return _git(*author, "commit-tree", tree, "-p", "HEAD", "-p", base, "-m", f"szybko: HEAD z {base}").strip()
+    return repo.git(ROOT, *author, "commit-tree", tree, "-p", "HEAD", "-p", base, "-m", f"szybko: HEAD z {base}").strip()
 
 
 def _pytest_arguments(tests: Iterable[str], junit: Path) -> tuple[str, ...]:

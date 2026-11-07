@@ -43,7 +43,7 @@ REPO = {
 
 TOOLS_FOR_CHANGE = (
     "tools/skille_dla_zmiany.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/ci/mutacje_skilli.py", "tools/plan_ci.py", "tools/lib/niestabilne_testy.py",
-    "tools/mutacje_zmiany.py", "tools/ci/pokrycie_procesu.py", "tools/lib/potomne.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py",
+    "tools/mutacje_zmiany.py", "tools/ci/pokrycie_procesu.py", "tools/lib/potomne.py", "tools/lib/repo.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py",
     "tools/ci/czasy_ci.py", "tools/lib/ciezkie_ci.py", "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py",
 )
 

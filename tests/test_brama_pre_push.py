@@ -177,10 +177,10 @@ def test_push_bez_venv_jest_odrzucony_ze_wskazaniem_setup_worktree(checkout: Pat
     assert _remote_branch(checkout) == ""
 
 
-@pytest.mark.parametrize("potomne_py", ["działa", "z błędem składni"])
-def test_push_czlowieka_przechodzi_bez_sprawdzania_i_bez_komunikatu(checkout: Path, potomne_py: str) -> None:
-    if potomne_py == "z błędem składni":
-        (checkout / "tools" / "lib" / "potomne.py").write_text("def (\n", encoding="utf-8")
+@pytest.mark.parametrize("broken", [None, "potomne.py", "repo.py"])
+def test_push_czlowieka_przechodzi_bez_sprawdzania_i_bez_komunikatu(checkout: Path, broken: str | None) -> None:
+    if broken is not None:
+        (checkout / "tools" / "lib" / broken).write_text("def (\n", encoding="utf-8")
     _stub_ci_lokalnie(checkout, passes=False)
 
     pushed = _git(checkout, "push", "origin", f"HEAD:{BRANCH}", agent=None)

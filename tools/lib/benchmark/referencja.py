@@ -13,9 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from benchmark import ROOT, SCRIPT, BenchmarkError
+from benchmark import SCRIPT, BenchmarkError
 from benchmark.lustro import worker_settlements_folder
-from benchmark.uruchomienie import Przebieg, git_output, remove_worker_settlements, run_przebieg
+from benchmark.uruchomienie import Przebieg, remove_worker_settlements, run_przebieg
+from repo import ROOT
+import repo
 from porownanie_rozliczen import CATEGORIES, compare_worker_settlements
 from potomne import commit_copy
 
@@ -52,10 +54,9 @@ def freeze_reference(
 ) -> Path:
     """Wynik referencyjny lustra z commita ``commit``: jego Przebieg rozliczeń w tymczasowej kopii commitu."""
 
-    resolved = git_output("rev-parse", "--verify", f"{commit}^{{commit}}")
-    if resolved is None:
+    sha = repo.commit(ROOT, commit)
+    if sha is None:
         raise BenchmarkError(f"Nie ma commita {commit}.")
-    sha = resolved.strip()
     target = reference_folder(references, mirror, worker_template) / sha
     if target.exists():
         raise BenchmarkError(f"Wynik referencyjny {sha[:7]} dla {target.parent.name} już jest: {target}.")

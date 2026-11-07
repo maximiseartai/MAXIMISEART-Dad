@@ -44,8 +44,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 import ciezkie_ci
 from mutacje import environment
 import potomne
+from repo import BASE, ROOT
+import repo
 
-ROOT = Path(__file__).resolve().parents[1]
 # Wygenerowany kontrakt i zbudowany frontend muszą zgadzać się ze źródłami (u taty nie ma Node).
 GENERATED = ("frontend/src/api", "src/rozliczenia/centrum/static")
 # Zadanie w ci.yml, w którym biegną kroki zadania narzędzia, gdy nazywa się inaczej.
@@ -100,7 +101,7 @@ def _steps(root: Path) -> list[Step]:
             "kontrakt i build zacommitowane",
             "frontend",
             f"git status --porcelain -- {' '.join(GENERATED)}",
-            ("git", "status", "--porcelain", "--", *GENERATED),
+            repo.command("status", "--porcelain", "--", *GENERATED),
             root,
         ),
     ]
@@ -122,7 +123,7 @@ def _dependencies_fresh(frontend: Path) -> bool:
 def _run(step: Step, root: Path) -> tuple[bool, str]:
     completed = potomne.run(step.command, cwd=step.cwd, env={**environment(root), "PYTHON": sys.executable})
     output = completed.stdout + completed.stderr
-    if step.command[:2] == ("git", "status"):
+    if step.command[:2] == repo.command("status"):
         stale = completed.stdout.strip()
         hint = "\nUruchom 'npm run contract' i 'npm run build' we frontend/ i zacommituj wynik."
         return completed.returncode == 0 and not stale, stale + hint
@@ -151,26 +152,20 @@ def _check(root: Path, jobs: set[str], *, fail_fast: bool = False) -> list[str]:
     return failed
 
 
-def _git(*arguments: str) -> str:
-    completed = subprocess.run(["git", *arguments], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=True)
-    return completed.stdout.strip()
-
-
 def _check_every_commit(base: str, jobs: set[str], *, fail_fast: bool) -> int:
-    known = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"], cwd=ROOT, capture_output=True, check=False)
-    if known.returncode != 0:
+    if repo.commit(ROOT, base) is None:
         print(f"COMMITY FAIL | nieznana baza {base}")
         return 1
-    commits = _git("rev-list", "--reverse", f"{base}..HEAD").split()
+    commits = repo.git(ROOT, "rev-list", "--reverse", f"{base}..HEAD").split()
     if not commits:
         print(f"COMMITY FAIL | brak commitów między {base} a HEAD")
         return 1
-    if _git("status", "--porcelain", "--untracked-files=no"):
+    if repo.git(ROOT, "status", "--porcelain", "--untracked-files=no").strip():
         print("UWAGA: niezacommitowane zmiany nie są sprawdzane", flush=True)
     failed = []
     for commit in commits:
-        print(f"== {_git('log', '-1', '--format=%h %s', commit)}", flush=True)
-        if _git("diff", "--name-only", commit, "HEAD", "--", "pyproject.toml", "requirements.txt"):
+        print(f"== {repo.git(ROOT, 'log', '-1', '--format=%h %s', commit).strip()}", flush=True)
+        if repo.changed(ROOT, commit, "HEAD", paths=("pyproject.toml", "requirements.txt")):
             print("UWAGA: zależności różnią się od HEAD, a .venv jest zainstalowane z HEAD", flush=True)
         with potomne.commit_copy(ROOT, commit) as tree:
             if steps := _check(tree, jobs, fail_fast=fail_fast):
@@ -188,9 +183,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--kazdy-commit",
         nargs="?",
-        const="origin/main",
+        const=BASE,
         metavar="BAZA",
-        help="Sprawdź każdy commit od BAZA (domyślnie origin/main) do HEAD w osobnym worktree.",
+        help=f"Sprawdź każdy commit od BAZA (domyślnie {BASE}) do HEAD w osobnym worktree.",
     )
     parser.add_argument("--tylko", metavar="ZADANIA", help="Tylko te zadania CI, po przecinku, np. ruff,mypy.")
     parser.add_argument(

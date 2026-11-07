@@ -34,7 +34,9 @@ from pathlib import Path
 import re
 import subprocess
 
-ROOT = Path(__file__).resolve().parents[2]
+from repo import BASE, ROOT
+import repo
+
 # Zadanie z ``tools/ci_lokalnie.py`` i początek nazwy jego zadań w ``ci.yml`` albo ``mutacje-nocne.yml``.
 HEAVY = {"change-mutations": "Change mutations", "mutations": "Mutation checks"}
 # Workflow ``mutacje-nocne.yml``: biegnie na ``main``, więc jego run nie dotyczy gałęzi, na której się go odtwarza.
@@ -114,9 +116,9 @@ def _not_reproducing(heavy: list[str], reproduces: str, root: Path, gh: Gh) -> s
         return "to nie jest id ani URL runu Actions"
     run_id = found.group(1) or found.group(2)
     run = json.loads(gh(["run", "view", run_id, "--json", "headBranch,headSha,jobs,workflowName"]))
-    branch = _git(root, "branch", "--show-current", check=True).stdout.strip()
+    branch = repo.git(root, "branch", "--show-current").strip()
     if run["workflowName"] == NIGHTLY:
-        if run["headSha"] != _git(root, "rev-parse", "HEAD", check=True).stdout.strip():
+        if run["headSha"] != repo.git(root, "rev-parse", "HEAD").strip():
             return f"run nocny odtwarza się na jego commicie: git checkout --detach {run['headSha']}"
     elif run["headBranch"] != branch and not _own_commit(root, run["headSha"]):
         return f"run dotyczy gałęzi {run['headBranch']} ({run['headSha'][:8]}), a nie bieżącej {branch or 'HEAD'}"
@@ -129,11 +131,4 @@ def _not_reproducing(heavy: list[str], reproduces: str, root: Path, gh: Gh) -> s
 def _own_commit(root: Path, commit: str) -> bool:
     """``commit`` jest przodkiem HEAD, ale nie ``origin/main``: czerwony run scalonego PR-u nie otwiera mutacji."""
 
-    def ancestor(of: str) -> bool:
-        return _git(root, "merge-base", "--is-ancestor", commit, of, check=False).returncode == 0
-
-    return ancestor("HEAD") and not ancestor("origin/main")
-
-
-def _git(root: Path, *arguments: str, check: bool) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True, encoding="utf-8", check=check)
+    return repo.is_ancestor(root, commit, "HEAD") and not repo.is_ancestor(root, commit, BASE)

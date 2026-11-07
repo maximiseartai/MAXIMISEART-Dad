@@ -38,8 +38,9 @@ from typing import Literal
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 import potomne
+from repo import REMOTE, ROOT
+import repo
 
-ROOT = Path(__file__).resolve().parents[2]
 CHECKS = ("tools/ci_lokalnie.py", "--tylko", "ruff,mypy")
 CHECK_TIMEOUT_S = 300
 GITHUB_TIMEOUT_S = 60
@@ -61,10 +62,6 @@ class Verdict:
 
 class _NoCheckResult(Exception):
     pass
-
-
-def _git(*arguments: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *arguments], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=False)
 
 
 def _gh(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -90,13 +87,10 @@ def _open_pull_requests(base: str) -> list[PullRequest]:
 def fetch(base: str, pulls: list[PullRequest]) -> str:
     """SHA ``base`` w ``origin``; HEAD-y ``pulls`` trafiają do repozytorium przez ich ``refs/pull/N/head``."""
 
-    tracking = f"refs/remotes/origin/{base}"
+    tracking = f"refs/remotes/{REMOTE}/{base}"
     heads = [f"refs/pull/{pull.number}/head" for pull in pulls]
-    command = ["git", "fetch", "--quiet", "--no-tags", "origin", f"+refs/heads/{base}:{tracking}", *heads]
-    potomne.run(command, cwd=ROOT, timeout=GITHUB_TIMEOUT_S).check_returncode()
-    commit = _git("rev-parse", "--verify", f"{tracking}^{{commit}}")
-    commit.check_returncode()
-    return commit.stdout.strip()
+    repo.run_git(ROOT, "fetch", "--quiet", "--no-tags", REMOTE, f"+refs/heads/{base}:{tracking}", *heads, timeout=GITHUB_TIMEOUT_S).check_returncode()
+    return repo.git(ROOT, "rev-parse", "--verify", f"{tracking}^{{commit}}").strip()
 
 
 def _failed_checks(copy: Path) -> list[str]:
@@ -121,13 +115,13 @@ def _base_problem(copy: Path, where: str) -> str | None:
 
 
 def merge_verdict(copy: Path, where: str, base: str, base_problem: str | None, pull: PullRequest) -> Verdict:
-    merged = _git("merge-tree", "--write-tree", "--name-only", "--no-messages", base, pull.head)
-    lines = merged.stdout.splitlines()
-    if merged.returncode == 1:
-        return Verdict("failure", f"Konflikt z {where}: {', '.join(lines[1:])}")
-    if merged.returncode:
-        return Verdict("error", f"git merge-tree z {where}: {merged.stderr.strip()}")
-    potomne.run(["git", "read-tree", "-u", "--reset", lines[0]], cwd=copy).check_returncode()
+    try:
+        tree = repo.git(ROOT, "merge-tree", "--write-tree", "--name-only", "--no-messages", base, pull.head).splitlines()[0]
+    except subprocess.CalledProcessError as unmerged:
+        if unmerged.returncode == 1:
+            return Verdict("failure", f"Konflikt z {where}: {', '.join(unmerged.stdout.splitlines()[1:])}")
+        return Verdict("error", f"git merge-tree z {where}: {unmerged.stderr.strip()}")
+    repo.run_git(copy, "read-tree", "-u", "--reset", tree).check_returncode()
     try:
         failed = _failed_checks(copy)
     except _NoCheckResult as error:

@@ -79,7 +79,7 @@ def _tool(root: Path) -> list[str]:
     """Kopia narzędzia w ``root``; kopii, która już jest, nie nadpisuje, bo test może ją zmieniać."""
 
     names = (
-        "tools/ci/mutacje_skilli.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/lib/potomne.py", "tools/lib/ciezkie_ci.py",
+        "tools/ci/mutacje_skilli.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/lib/potomne.py", "tools/lib/repo.py", "tools/lib/ciezkie_ci.py",
         "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/ci/czasy_ci.py",
     )
     copy_files(root, [name for name in names if not (root / name).exists()])

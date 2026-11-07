@@ -54,7 +54,6 @@ import json
 from pathlib import Path
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 from typing import Literal
@@ -67,9 +66,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import potomne
+from repo import BASE, ROOT
+import repo
 import syntetyczne_wzorce
-
-ROOT = Path(__file__).resolve().parents[1]
 
 PARALLEL = 3
 TIMEOUT = 600
@@ -427,10 +426,9 @@ def equivalence(base_tree: Path, head_tree: Path, scenarios: Sequence[Scenario],
 
 
 def default_base(repository: Path, head: str | None) -> str:
-    """Merge-base ``head`` (bez niego HEAD checkoutu) z ``origin/main``."""
+    """Merge-base ``head`` (bez niego HEAD checkoutu) z ``BASE``."""
 
-    merge_base = subprocess.run(["git", "merge-base", head or "HEAD", "origin/main"], cwd=repository, capture_output=True, text=True, encoding="utf-8", check=True)
-    return merge_base.stdout.strip()
+    return repo.merge_base(repository, head or "HEAD", BASE)
 
 
 def main(argv: list[str] | None = None) -> int:

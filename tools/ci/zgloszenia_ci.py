@@ -51,11 +51,11 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 import niestabilne_testy
+from repo import MAIN, ROOT
+import repo
 import wplyw_zmiany
 
-ROOT = Path(__file__).resolve().parents[2]
 REPO = "repos/{owner}/{repo}"
-MAIN = "main"
 REQUIRED = "Required CI status"
 FLAKY_TEST, CZERWONY_MAIN, ZDERZENIE = "flaky-test", "czerwony-main", "zderzenie"
 # Początek nazwy artefaktu, w którym każde zadanie pytest z ``ci.yml`` wysyła ``niestabilne_testy.FLAKY_TESTY``.
@@ -334,7 +334,7 @@ def _main(github: GitHub, root: Path, run: Run, teraz: datetime) -> list[Akcja]:
         return []
     otwarte = _issues(github, CZERWONY_MAIN, "open")
     if required["conclusion"] == "success":
-        return [_zamkniecie(github, root, issue, znak["sha"], run) for issue in otwarte if (znak := _ZNACZNIK.search(issue.get("body") or "")) and _przodek(root, znak["sha"], run.sha)]
+        return [_zamkniecie(github, root, issue, znak["sha"], run) for issue in otwarte if (znak := _ZNACZNIK.search(issue.get("body") or "")) and repo.is_ancestor(root, znak["sha"], run.sha)]
     przyczyny = tuple(_przyczyny(github, required["id"]))
     zderzenie = _zderzenie(github, root, run, teraz)
     if otwarte and zderzenie is None:
@@ -359,10 +359,10 @@ def _zazielenil_sie_sam(github: GitHub, root: Path, czerwony: str, zielony: str)
     """Czy nowe porażki czerwonego commitu to testy, których wejść nie dotyka żadna zmiana do zielonego commitu."""
 
     run_czerwony = _RUN.search((_required(github, czerwony) or {}).get("details_url") or "")
-    nowe = None if run_czerwony is None else _nowe_porazki(github, int(run_czerwony["run"]), _git(root, "rev-parse", f"{czerwony}^1"))
+    nowe = None if run_czerwony is None else _nowe_porazki(github, int(run_czerwony["run"]), repo.git(root, "rev-parse", f"{czerwony}^1").strip())
     if nowe is None or (pliki := _pliki_testow(nowe)) is None:
         return False
-    zmiana = frozenset(_git(root, "diff", "--name-only", "--no-renames", czerwony, zielony).splitlines())
+    zmiana = repo.changed(root, czerwony, zielony)
     return not pliki & set(wplyw_zmiany.Repository.scan(root).impact(zmiana).tests)
 
 
@@ -403,14 +403,6 @@ def _porazki(github: GitHub, run_id: int) -> frozenset[str]:
     return frozenset(porazki)
 
 
-def _git(root: Path, *argumenty: str) -> str:
-    return subprocess.run(["git", *argumenty], cwd=root, capture_output=True, text=True, encoding="utf-8", check=True).stdout.strip()
-
-
-def _przodek(root: Path, przodek: str, commit: str) -> bool:
-    return subprocess.run(["git", "merge-base", "--is-ancestor", przodek, commit], cwd=root, capture_output=True, check=False).returncode == 0
-
-
 def _required(github: GitHub, commit: str) -> dict[str, Any] | None:
     """Ostatni ``Required CI status`` commitu."""
 
@@ -421,7 +413,7 @@ def _required(github: GitHub, commit: str) -> dict[str, Any] | None:
 def _ostatni_zielony(github: GitHub, root: Path, czerwony: str) -> tuple[str, str] | None:
     """Najnowszy commit linii pierwszych rodziców przed ``czerwony`` z zielonym Required i link do jego runu."""
 
-    for commit in _git(root, "rev-list", "--first-parent", f"--max-count={HISTORIA}", czerwony).split()[1:]:
+    for commit in repo.git(root, "rev-list", "--first-parent", f"--max-count={HISTORIA}", czerwony).split()[1:]:
         check = _required(github, commit)
         if check is not None and check["status"] == "completed" and check["conclusion"] == "success":
             return commit, check.get("details_url") or ""
@@ -439,7 +431,7 @@ def _scalenia(root: Path, *zakres: str) -> list[Scalenie]:
     """PR-y scalone na linii pierwszych rodziców w ``zakres`` (merge albo squash), od najstarszego, z chwilą scalenia."""
 
     # Rekord kończy NUL: separatory \x1c-\x1f to dla str.strip() białe znaki.
-    zapisy = _git(root, "log", "--first-parent", "--format=%cI%x1f%H%x1f%s%x1f%b%x00", *zakres).split("\x00")[:-1]
+    zapisy = repo.git(root, "log", "--first-parent", "--format=%cI%x1f%H%x1f%s%x1f%b%x00", *zakres).strip().split("\x00")[:-1]
     znalezione = []
     for zapis in reversed(zapisy):
         czas, commit, temat, tresc = zapis.lstrip("\n").split("\x1f", 3)
@@ -472,7 +464,7 @@ def _zderzenie(github: GitHub, root: Path, run: Run, teraz: datetime) -> Zderzen
     zielone = [a for a in niewidziane if (check := _required(github, github.json(f"{REPO}/pulls/{a.pr.numer}")["head"]["sha"])) and check["conclusion"] == "success"]
     if not niewidziane or zielone != niewidziane:
         return None
-    nowe = _nowe_porazki(github, run.id, _git(root, "rev-parse", f"{run.sha}^1"))
+    nowe = _nowe_porazki(github, run.id, repo.git(root, "rev-parse", f"{run.sha}^1").strip())
     if nowe is None or not _w_testach_obu_stron(root, [a.commit for a in niewidziane], b.commit, nowe):
         return None
     od = teraz - OKNO_ZDERZEN
@@ -494,7 +486,7 @@ def _w_testach_obu_stron(root: Path, a: Sequence[str], b: str, porazki: Sequence
 def _zmiana(root: Path, scalenie: str) -> frozenset[str]:
     """Ścieżki, które scalenie zmieniło względem pierwszego rodzica, czyli `main` sprzed niego."""
 
-    return frozenset(_git(root, "diff", "--name-only", "--no-renames", f"{scalenie}^1", scalenie).splitlines())
+    return repo.changed(root, f"{scalenie}^1", scalenie)
 
 
 def _chwila(tekst: str) -> datetime:

@@ -511,7 +511,7 @@ def test_skrypt_bez_bazy_liczy_domyslna_baze_od_commitu_glowy_a_bez_niego_od_hea
     with pytest.raises(_BaseComputed) as computed:
         rownowaznosc.main(arguments)
 
-    assert computed.value.args == (rownowaznosc.ROOT, head)
+    assert computed.value.args == (ROOT, head)
 
 
 class _BaseCopied(Exception):
@@ -531,7 +531,7 @@ def test_skrypt_z_baza_kopiuje_te_baze_bez_liczenia_domyslnej(monkeypatch: pytes
     with pytest.raises(_BaseCopied) as copied:
         rownowaznosc.main(["--baza", "abc123"])
 
-    assert copied.value.args == (rownowaznosc.ROOT, "abc123")
+    assert copied.value.args == (ROOT, "abc123")
 
 
 def test_nieznany_commit_glowy_to_blad_gita_a_nie_pusta_baza(tmp_path: Path) -> None:

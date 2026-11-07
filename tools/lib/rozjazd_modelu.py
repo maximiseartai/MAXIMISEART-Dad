@@ -21,7 +21,7 @@ from pathlib import Path
 import re
 import subprocess
 
-import potomne
+import repo
 
 __all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "SYNC", "definicje", "rozjazd", "skille"]
 
@@ -149,7 +149,7 @@ def _fetch(root: Path) -> None:
     ``--unshallow`` pada i niczego nie zmienia."""
 
     try:
-        potomne.run(["git", "fetch", "--quiet", "--unshallow", "origin"], cwd=root, timeout=FETCH_TIMEOUT_S)
+        repo.run_git(root, "fetch", "--quiet", "--unshallow", repo.REMOTE, timeout=FETCH_TIMEOUT_S)
     except subprocess.TimeoutExpired:
         return
 
@@ -157,5 +157,7 @@ def _fetch(root: Path) -> None:
 def _git(root: Path, *arguments: str) -> str | None:
     """Wyjście szybkiego, lokalnego polecenia ``git`` bez końcowych białych znaków; ``None``, gdy się nie udało."""
 
-    done = subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True, encoding="utf-8", check=False)
-    return done.stdout.strip() if done.returncode == 0 else None
+    try:
+        return repo.git(root, *arguments).strip()
+    except subprocess.CalledProcessError:
+        return None

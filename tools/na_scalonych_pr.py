@@ -34,8 +34,8 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import potomne
-
-ROOT = Path(__file__).resolve().parents[1]
+from repo import REMOTE, ROOT
+import repo
 
 
 @dataclass(frozen=True)
@@ -46,10 +46,6 @@ class Merged:
 
 def _gh(*arguments: str) -> str:
     return subprocess.run(["gh", *arguments], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=True).stdout
-
-
-def _git(*arguments: str) -> str:
-    return subprocess.run(["git", *arguments], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=True).stdout
 
 
 def merged(numbers: list[int], last: int) -> list[Merged]:
@@ -73,8 +69,7 @@ def commit_of(revision: str) -> str:
     Etykieta i nazwa pliku wyniku biorą skrót SHA, bo skrót nazwy (``origin/m``) byłby ścieżką z ukośnikiem.
     """
 
-    known = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{revision}^{{commit}}"], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=False)
-    return known.stdout.strip() if known.returncode == 0 else revision
+    return repo.commit(ROOT, revision) or revision
 
 
 def tools_snapshot(revision: str | None) -> dict[str, bytes]:
@@ -86,16 +81,15 @@ def tools_snapshot(revision: str | None) -> dict[str, bytes]:
     if revision is not None:
         with potomne.commit_copy(ROOT, revision) as copy:
             return {path.relative_to(copy).as_posix(): path.read_bytes() for path in (copy / "tools").rglob("*") if path.is_file()}
-    listed = _git("ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "tools").split("\0")
+    listed = repo.git(ROOT, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "tools").split("\0")
     return {name: (ROOT / name).read_bytes() for name in listed if name and (ROOT / name).is_file()}
 
 
 def run_on(pr: Merged, command: list[str], tools: dict[str, bytes], output: Path) -> tuple[int, float, str]:
     """Kod wyjścia, czas w sekundach i ostatnia linia polecenia na kopii commitu scalenia ``pr``."""
 
-    known = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{pr.commit}^{{commit}}"], cwd=ROOT, capture_output=True, check=False)
-    if known.returncode:
-        fetched = potomne.run(["git", "fetch", "--quiet", "origin", pr.commit], cwd=ROOT)
+    if repo.commit(ROOT, pr.commit) is None:
+        fetched = repo.run_git(ROOT, "fetch", "--quiet", REMOTE, pr.commit)
         if fetched.returncode:
             return fetched.returncode, 0.0, f"git fetch {pr.commit[:8]}: {fetched.stderr.strip()}"
     with potomne.commit_copy(ROOT, pr.commit) as copy:
@@ -132,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, subprocess.CalledProcessError) as error:
         print(f"NA SCALONYCH PR FAIL | {error}")
         return 1
-    folder = args.wyniki or ROOT / _git("rev-parse", "--git-path", "na-scalonych-pr").strip()
+    folder = args.wyniki or ROOT / repo.git(ROOT, "rev-parse", "--git-path", "na-scalonych-pr").strip()
     folder.mkdir(parents=True, exist_ok=True)
     prs += [Merged(commit[:8], commit) for commit in map(commit_of, args.commit)]
     failed = []

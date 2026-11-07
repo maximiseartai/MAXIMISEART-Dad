@@ -153,10 +153,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 
 import czasy_ci
 import potomne
+from repo import REMOTE, ROOT
+import repo
 import status_scalenia
 from wplyw_zmiany import Context, Repository, run_all
 
-ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_CHECK = "Required CI status"
 RUN_ID = re.compile(r"/actions/runs/(\d+)/")
 JOB_NOT_FAILED = frozenset({"SUCCESS", "SKIPPED", "NEUTRAL"})
@@ -475,7 +476,7 @@ def _pull(number: int) -> Pull:
 
 
 def _remote_base(base: str) -> str:
-    listed = potomne.run(["git", "ls-remote", "origin", f"refs/heads/{base}"], cwd=ROOT, timeout=status_scalenia.GITHUB_TIMEOUT_S)
+    listed = repo.run_git(ROOT, "ls-remote", REMOTE, f"refs/heads/{base}", timeout=status_scalenia.GITHUB_TIMEOUT_S)
     listed.check_returncode()
     return listed.stdout.partition("\t")[0]
 
@@ -497,20 +498,17 @@ def _check(pull: Pull) -> tuple[str, str]:
         return base, _merge_test(copy, where, base, pull.head)
 
 
-def _changed(fork: str, commit: str) -> frozenset[str]:
-    return frozenset(filter(None, _git("diff", "-z", "--name-only", "--no-renames", fork, commit).split("\0")))
-
-
 def _merge_test(copy: Path, where: str, base: str, head: str) -> str:
     """Dopisek linii ``SCAL OK`` o teście scalenia w ``copy`` ze scalonym drzewem ``base`` i ``head``; pusty, gdy test
     nie był potrzebny. Rzuca ``_Refused``, gdy test pada na scaleniu, a na samej bazie nie, albo nie daje wyniku w
     limicie czasu."""
 
-    fork = _git("merge-base", base, head).strip()
-    base_changed = _changed(fork, base)
+    limit = status_scalenia.GITHUB_TIMEOUT_S
+    fork = repo.merge_base(ROOT, base, head, timeout=limit)
+    base_changed = repo.changed(ROOT, fork, base, timeout=limit)
     if not base_changed:
         return ""
-    pull_changed = _changed(fork, head)
+    pull_changed = repo.changed(ROOT, fork, head, timeout=limit)
     if full := run_all(pull_changed | base_changed, Context.TESTS):
         return f" | test scalenia pominięty: zmiana {', '.join(full)} dotyczy każdego testu"
     repository = Repository.scan(copy)
@@ -537,7 +535,7 @@ def _merge_test(copy: Path, where: str, base: str, head: str) -> str:
     if not failed:
         return f" | test scalenia: {names} przechodzą ({time.monotonic() - started:.0f} s)"
     # Czerwony ``main`` nie blokuje merge'ów (ADR 0020): porażka, która jest już na samej bazie, nie jest winą PR.
-    potomne.run(["git", "read-tree", "-u", "--reset", base], cwd=copy).check_returncode()
+    repo.run_git(copy, "read-tree", "-u", "--reset", base).check_returncode()
     on_base = [test for test in tests if (copy / test).is_file() and any(name.partition("::")[0] == test for name in failed)]
     print(f"== te same pliki na samym {where}: {', '.join(on_base) or 'brak'}", flush=True)
     failed_on_base = _failed_tests(copy, on_base, f"test scalenia na samym {where}") if on_base else []
@@ -632,12 +630,6 @@ def _clean_up() -> str:
     return f"sprzątanie: {result or f'kod {done.returncode}'}"
 
 
-def _git(*arguments: str) -> str:
-    done = potomne.run(["git", *arguments], cwd=ROOT, timeout=status_scalenia.GITHUB_TIMEOUT_S)
-    done.check_returncode()
-    return done.stdout
-
-
 def _skills_for_change(head: str, fork: str) -> list[str]:
     """Wynik ``tools/skille_dla_zmiany.py`` z kopii commitu ``head`` od ``fork``; ostatnia linia to zawsze ``SKILLE VERIFY``."""
 
@@ -680,11 +672,12 @@ def _verdict_history(pull: Pull) -> list[str]:
 def _review_context(number: int) -> int:
     pull = _pull(number)
     base = status_scalenia.fetch(pull.base, [status_scalenia.PullRequest(pull.number, pull.title, pull.head)])
-    fork = _git("merge-base", base, pull.head).strip()
-    files = _git("diff", "--name-only", "--no-renames", fork, pull.head).splitlines()
+    limit = status_scalenia.GITHUB_TIMEOUT_S
+    fork = repo.merge_base(ROOT, base, pull.head, timeout=limit)
+    files = sorted(repo.changed(ROOT, fork, pull.head, timeout=limit))
     print(f"PRZEGLĄD | #{pull.number} {pull.title} | HEAD {pull.head} | baza {pull.base} {base} | merge-base {fork}")
     print(f"ZMIANA | git diff --stat {fork} {pull.head}")
-    print(_git("diff", "--stat", fork, pull.head).rstrip())
+    print(repo.git(ROOT, "diff", "--stat", fork, pull.head, timeout=limit).rstrip())
     print(f"PLIKI | {len(files)}", *files, sep="\n")
     print(f"SKILLE | {SKILLS_FOR_CHANGE.as_posix()} {fork} na HEAD PR", *_skills_for_change(pull.head, fork), sep="\n")
     print(_ci_line(list(pull.checks), pull.head))
