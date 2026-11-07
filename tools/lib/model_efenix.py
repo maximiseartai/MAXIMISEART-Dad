@@ -34,6 +34,14 @@ def earliest_execution_date(today: date) -> date:
     return (today.replace(day=1) - timedelta(days=1)).replace(day=1)
 
 
+def calendar_day(today: date, day: date) -> date:
+    """Dzień, który kalendarz efenix zostawia w polu po wyborze ``day``: ``day`` od ``earliest_execution_date`` do
+    ``today`` włącznie, a każdy inny dzień kalendarz zamienia na ``today``. Skrypt strony Atrapy efenix dostaje te same
+    granice (``earliest_execution_date`` i ``today``)."""
+
+    return day if earliest_execution_date(today) <= day <= today else today
+
+
 @dataclass(frozen=True)
 class Position:
     """Pozycja wyceny: kod ``NNN``, wymyślona cena i rodzaj pola (``ILOSC`` albo ``CENA``)."""
@@ -290,8 +298,10 @@ class SerwerEfenix(Generic[OrderT]):
                 return NoSession.NO_SESSION
             return copy.deepcopy(self._state.order(order_id))
 
-    def set_date(self, order_id: str, day: date) -> bool | NoOrder | NoSession:
-        """Zapis daty wykonania ``day``; ``False``: odpowiedź bez zapisu (``refuse_dates``)."""
+    def set_date(self, order_id: str, day: str) -> bool | NoOrder | NoSession:
+        """Zapis daty wykonania ``day`` w zapisie RRRR-MM-DD, jak wysyła ją strona; ``False``: odpowiedź bez zapisu
+        (``refuse_dates``). Dzień serwer czyta dopiero po sesji, zleceniu i ``refuse_dates``, więc na te trzy odpowiada
+        także przy dniu, którego nie przeczyta (``ValueError``)."""
 
         with self._state.lock:
             if not self._state.session_after(Action.DATE):
@@ -301,7 +311,7 @@ class SerwerEfenix(Generic[OrderT]):
                 return order
             if self._state.refuse_dates:
                 return False
-            order.execution_date = day
+            order.execution_date = date.fromisoformat(day)
             return True
 
     def proposal(self, order_id: str) -> OrderT | NoOrder | NoSession:
