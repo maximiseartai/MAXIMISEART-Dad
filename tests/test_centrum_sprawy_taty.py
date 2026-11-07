@@ -632,6 +632,20 @@ def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz(tmp_path: Path) -> N
     assert (issue.body, issue.comments) == (f"Treść\n{REJECTED_LOGS}", [LOGS_GONE])
 
 
+def test_linia_logow_w_drodze_dostaje_odnosnik_takze_gdy_nie_konczy_tresci_uwagi(tmp_path: Path) -> None:
+    """Słuchacz wymienia linię Logów po stanie wysyłki, nie po końcówce tekstu, więc kolejność stopki nie ma znaczenia."""
+
+    stored = DadCases(old_files(tmp_path), log(tmp_path), pause=ManualClock().pause)
+    skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
+    skrzynka.logs_delivered(PINNED_RUN)
+
+    skrzynka.sent(note_post(PINNED_ID, "Uwaga", f"Treść\n{WAITING_LOGS}\nwersja narzędzia abc1234", logs_on_the_way=True))
+
+    [issue] = skrzynka.box.issues_with("uwaga-taty")
+    linked = f"[Logi Uruchomienia]({skrzynka.outbox.delivered(PINNED_RUN, 'logi-uruchomienia')})"
+    assert issue.body == f"Treść\n{linked}\nwersja narzędzia abc1234"
+
+
 def test_zgloszenie_z_kolejki_wydania_sprzed_naglowka_celu_wraca_do_otwartego_zgloszenia(tmp_path: Path) -> None:
     """Plik kolejki, który zapisało Wydanie v0.5.1 (cel bez nagłówka ``again``), idzie jak wtedy: komentarzem
     „Zgłoszenie wróciło” do otwartego Zgłoszenia tego odcisku, a czekająca sprawa dostaje jego numer."""
