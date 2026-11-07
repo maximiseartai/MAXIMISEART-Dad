@@ -27,7 +27,7 @@ from benchmark import SCRIPT, BenchmarkError
 from repo import ROOT
 import repo
 import potomne
-from rozliczenia import settlement_messages
+from rozliczenia import worker_config_messages
 from rozliczenia.period_folder import PeriodFolder, collective_file_name
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.collective_layout import CHARGE_AMOUNT, CHARGE_DESCRIPTION, QUANTITY_COLUMNS, REMARKS, REMARKS_AMOUNT
@@ -151,7 +151,7 @@ def _worker_ids(config: Path) -> list[str]:
     try:
         return list(load_worker_mapping(config))
     except WorkerConfigError as error:
-        reason = settlement_messages.worker_config_problem(config, error).what
+        reason = worker_config_messages.worker_config_problem(config, error).what
         raise BenchmarkError(f"{reason} Plik: {config}") from None
 
 

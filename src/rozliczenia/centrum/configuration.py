@@ -18,13 +18,13 @@ from typing import Final, Literal, NamedTuple, assert_never
 
 from fastapi import APIRouter
 
-from rozliczenia import input_checks, settlement_messages, workbook_files
+from rozliczenia import input_checks, workbook_files
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.catalog import TemplateRole
 from rozliczenia.centrum.keyed_box import KeyJudgement
 from rozliczenia.centrum.tool_freshness import Judgement, ReleaseSource, ToolFreshness, offers_update
 from rozliczenia.centrum.version import short_commit
-from rozliczenia.input_checks import ProcessTemplate, Readers, WorkerConfigExplanation
+from rozliczenia.input_checks import ProcessTemplate, Readers
 from rozliczenia.message import Message
 from rozliczenia.workbook_files import Problem
 from rozliczenia.tool_files import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_CONFIG, WORKER_TEMPLATE
@@ -235,20 +235,17 @@ class _CheckedTemplates:
         return result
 
 
-def workers_problem(config_path: Path, explain: WorkerConfigExplanation) -> Message | None:
-    """Komunikat ``explain``, którym zatrzymałby się proces przy tej konfiguracji wykonawców; ``None``, gdy się wczytuje."""
+def workers_problem(config_path: Path) -> Message | None:
+    """Komunikat, którym zatrzymałby się proces przy tej konfiguracji wykonawców; ``None``, gdy się wczytuje."""
 
-    workers = input_checks.workers(config_path, explain)
+    workers = input_checks.workers(config_path)
     return workers if isinstance(workers, Message) else None
 
 
 def _workers(config_path: Path) -> contract.Workers:
-    """Wykonawcy wczytani tak jak w obu procesach, w kolejności z konfiguracji wykonawców.
+    """Wykonawcy wczytani tak jak w obu procesach, w kolejności z konfiguracji wykonawców."""
 
-    Karta nie należy do jednego procesu, więc konfigurację, której nie da się użyć, opisuje Komunikat Przebiegu rozliczeń.
-    """
-
-    workers = input_checks.workers(config_path, settlement_messages.worker_config_problem)
+    workers = input_checks.workers(config_path)
     if isinstance(workers, Message):
         return contract.WorkersUnreadable(state="unreadable", message=contract.Message.of(workers))
     return contract.WorkersReady(state="ready", names=list(workers.values()))

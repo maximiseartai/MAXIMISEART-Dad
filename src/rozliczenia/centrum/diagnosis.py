@@ -33,7 +33,7 @@ from typing import Any, Final, Literal
 
 from rozliczenia import input_checks, intermax_ordering, preparation_messages, workbook_files
 from rozliczenia.centrum import contract, diagnosis_messages
-from rozliczenia.centrum.catalog import CheckStep, NeededSetting, PeriodFolderCheck, ProcessDeclaration, WorkerConfigCheck, declaration_of
+from rozliczenia.centrum.catalog import CheckStep, NeededSetting, PeriodFolderCheck, ProcessDeclaration, declaration_of
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import ConfigurationFiles, Template, workers_problem
 from rozliczenia.centrum.keyed_box import KeyJudgement
@@ -41,7 +41,7 @@ from rozliczenia.centrum.log import UNEXPECTED_FAILURE_EVENT, CentrumLog, event_
 from rozliczenia.centrum.tool_freshness import ToolFreshness, offers_update
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.client_data import ForbiddenValues
-from rozliczenia.input_checks import Readers, WorkerConfigExplanation
+from rozliczenia.input_checks import Readers
 from rozliczenia.message import Message
 from rozliczenia.period_folder import (
     PeriodFolder,
@@ -351,10 +351,11 @@ def _template_check(template: Template) -> _CheckRun:
     return check
 
 
-def _worker_config(computer: _Computer, label: str, explain: WorkerConfigExplanation) -> list[CheckResult]:
-    """Konfiguracja wykonawców Komunikatem ``explain``, tym samym, którym zatrzymał się proces Uruchomienia."""
+@_check("Konfiguracja wykonawców")
+def _worker_config(computer: _Computer, label: str) -> list[CheckResult]:
+    """Konfiguracja wykonawców tym samym Komunikatem, którym zatrzymał się proces Uruchomienia."""
 
-    problem = workers_problem(computer.configuration.worker_config, explain)
+    problem = workers_problem(computer.configuration.worker_config)
     return [CheckResult.passed(label, "Wczytuje się.") if problem is None else CheckResult.failed(label, problem)]
 
 
@@ -452,8 +453,8 @@ def _check_of(step: CheckStep) -> _Check:
             return _report_key
         case "centrum_log":
             return _centrum_log
-        case WorkerConfigCheck(explain=explain):
-            return _Check("Konfiguracja wykonawców", lambda computer, label: _worker_config(computer, label, explain))
+        case "worker_config":
+            return _worker_config
         case PeriodFolderCheck(collective_file_missing=missing):
             return _Check("Folder okresu", lambda computer, label: _period_folder(computer, label, missing))
 

@@ -20,7 +20,6 @@ from .period_folder import FolderNotNamedAfterPeriod, NotPeriodToken, PeriodFold
 from . import workbook_messages
 from .workbook_files import WORKER_HEADER, LayoutFault, WorkbookError
 from .workbook_messages import DadWorkbook, WorkbookMessages
-from .worker_config import ContentProblem, SameWorkerFile, WorkerConfigError
 
 _NOTHING_CREATED: Final = "Nie utworzono żadnego pliku pracownika."
 _STAGING_LEFT: Final = "W Folderze okresu został folder tymczasowy, którego nie udało się usunąć."
@@ -120,64 +119,6 @@ def worker_settlements_exist(target_directory: Path) -> Message:
             "Sprawdź, czy wybrano właściwy okres. Rozliczenia pracowników tego okresu już są w Folderze okresu. "
             "Jeśli trzeba je utworzyć od nowa, najpierw przenieś Folder rozliczeń pracowników poza Folder okresu i uruchom ponownie."
         ),
-    )
-
-
-def worker_config_problem(config_path: Path, error: WorkerConfigError) -> Message:
-    """Konfiguracji wykonawców nie da się użyć; Komunikat mówi, czy pliku brak, czy co jest nie tak z jego treścią."""
-
-    match error.reason:
-        case "inaccessible":
-            return _worker_config_inaccessible(config_path)
-        case "missing":
-            detail = "Nie można odczytać pliku konfiguracji."
-        case content:
-            detail = _worker_config_content(content)
-    return Message.to_maintainer(
-        code="ZLA_KONFIGURACJA_WYKONAWCOW",
-        what=f"Konfiguracja wykonawców jest niepoprawna. {detail}",
-        where=file_label(config_path),
-    )
-
-
-def _worker_config_content(problem: ContentProblem) -> str:
-    """Co jest nie tak z treścią konfiguracji wykonawców, bez ścieżki pliku."""
-
-    match problem:
-        case "not_utf8":
-            return "Plik nie jest zapisany w kodowaniu UTF-8."
-        case "not_yaml":
-            return "Plik nie jest poprawnym YAML."
-        case "not_mapping":
-            return "Konfiguracja musi być mapą z sekcją workers."
-        case "unsupported_version":
-            return "Nieobsługiwana wersja konfiguracji."
-        case "no_workers":
-            return "Konfiguracja workers musi zawierać co najmniej jeden wpis."
-        case "not_text_entry":
-            return "Konfiguracja zawiera niepoprawny identyfikator lub nazwę pracownika."
-        case "empty_entry":
-            return "Konfiguracja zawiera pusty identyfikator lub nazwę pracownika."
-        case "repeated_id":
-            return "Konfiguracja zawiera powtórzony identyfikator pracownika."
-        case "invalid_worker_name":
-            return "Konfiguracja zawiera nazwę pracownika nieprawidłową dla nazwy pliku."
-        case "too_long_worker_name":
-            return "Konfiguracja zawiera nazwę pracownika zbyt długą dla nazwy pliku."
-        case SameWorkerFile(first=first, second=second):
-            return f"Dwóch identyfikatorów wskazuje ten sam plik pracownika: {first} / {second}"
-
-
-def _worker_config_inaccessible(config_path: Path) -> Message:
-    """System nie oddał konfiguracji wykonawców (np. plik zajęty przez inny program albo bez dostępu); to nie zła treść.
-
-    Konfiguracja leży w ``config`` na dysku C jak Wzorce, więc tata rzadko sam usunie przyczynę: Komunikat idzie do Maksa.
-    """
-
-    return Message.to_maintainer(
-        code="NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW",
-        what="Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.",
-        where=file_label(config_path),
     )
 
 

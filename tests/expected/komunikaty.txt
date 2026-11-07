@@ -13,71 +13,6 @@ period_file_exists [PLIK_OKRESU_ISTNIEJE]
   Gdzie: folder INEA\08_14_09_2026, plik Rozliczenie wew. 08_14_09_2026.xlsx
   Co zrobić: Sprawdź, czy wybrano właściwy okres. Jeśli plik ma powstać od nowa, przenieś albo usuń istniejący plik i uruchom ponownie.
 
-worker_config_problem #1 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #2 [NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #3 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Plik nie jest zapisany w kodowaniu UTF-8.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #4 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Plik nie jest poprawnym YAML.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #5 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Nieobsługiwana wersja konfiguracji.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #6 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja musi być mapą z sekcją workers.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #7 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja workers musi zawierać co najmniej jeden wpis.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #8 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera niepoprawny identyfikator lub nazwę pracownika.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #9 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera pusty identyfikator lub nazwę pracownika.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #10 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera powtórzony identyfikator pracownika.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #11 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera nazwę pracownika nieprawidłową dla nazwy pliku.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #12 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera nazwę pracownika zbyt długą dla nazwy pliku.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #13 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Dwóch identyfikatorów wskazuje ten sam plik pracownika: Jan Testowy / jan testowy
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
 template_unusable #1 [BRAK_WZORCA]
   Co się stało: Nie znaleziono wzorca, z którego powstają pliki okresu. Nie utworzono żadnego pliku.
   Gdzie: plik Wzorzec pliku zbiorczego.xlsx, folder config
@@ -395,71 +330,6 @@ worker_settlements_exist [FOLDER_ROZLICZEN_ISTNIEJE]
   Gdzie: folder 08_14_09_2026\Rozliczenie pracowników 08_14_09_2026
   Co zrobić: Sprawdź, czy wybrano właściwy okres. Rozliczenia pracowników tego okresu już są w Folderze okresu. Jeśli trzeba je utworzyć od nowa, najpierw przenieś Folder rozliczeń pracowników poza Folder okresu i uruchom ponownie.
 
-worker_config_problem #1 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Nie można odczytać pliku konfiguracji.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #2 [NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #3 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Plik nie jest zapisany w kodowaniu UTF-8.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #4 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Plik nie jest poprawnym YAML.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #5 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Nieobsługiwana wersja konfiguracji.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #6 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja musi być mapą z sekcją workers.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #7 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja workers musi zawierać co najmniej jeden wpis.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #8 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja zawiera niepoprawny identyfikator lub nazwę pracownika.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #9 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja zawiera pusty identyfikator lub nazwę pracownika.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #10 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja zawiera powtórzony identyfikator pracownika.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #11 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja zawiera nazwę pracownika nieprawidłową dla nazwy pliku.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #12 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja zawiera nazwę pracownika zbyt długą dla nazwy pliku.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #13 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Dwóch identyfikatorów wskazuje ten sam plik pracownika: Jan Testowy / jan testowy
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
 worker_template_unusable #1 [ZLY_WZORZEC_PRACOWNIKA]
   Co się stało: Nie można użyć Wzorca rozliczenia pracownika. Nie znaleziono Wzorca rozliczenia pracownika: Wzorzec rozliczenia pracownika.xlsx.
   Gdzie: plik Wzorzec rozliczenia pracownika.xlsx, folder config
@@ -588,6 +458,73 @@ summary_not_shown [BLAD_PODSUMOWANIA]
 plan_not_shown [BLAD_PLANU]
   Co się stało: Nie udało się pokazać planu. Nic nie zapisano.
   Gdzie: Przebieg rozliczeń
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+=== Konfiguracja wykonawców (src/rozliczenia/worker_config_messages.py) ===
+
+worker_config_problem #1 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #2 [NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #3 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Plik nie jest zapisany w kodowaniu UTF-8.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #4 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Plik nie jest poprawnym YAML.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #5 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Nieobsługiwana wersja konfiguracji.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #6 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja musi być mapą z sekcją workers.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #7 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja workers musi zawierać co najmniej jeden wpis.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #8 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera niepoprawny identyfikator lub nazwę pracownika.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #9 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera pusty identyfikator lub nazwę pracownika.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #10 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera powtórzony identyfikator pracownika.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #11 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera nazwę pracownika nieprawidłową dla nazwy pliku.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #12 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera nazwę pracownika zbyt długą dla nazwy pliku.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #13 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Dwóch identyfikatorów wskazuje ten sam plik pracownika: Jan Testowy / jan testowy
+  Gdzie: plik worker_mapping.yaml, folder config
   Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 === Start Centrum rozliczeń (src/rozliczenia/centrum/start_problems.py) ===

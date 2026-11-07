@@ -609,15 +609,9 @@ def test_folder_okresow_bez_odczytu_nazywa_folder_w_kazdym_wejsciu(
     assert diagnosis["explanation"] == stopped["stops"][0]
 
 
-@pytest.mark.parametrize(
-    ("process", "period", "where"),
-    [
-        ("preparation", PERIOD, "plik worker_mapping.yaml"),
-        ("settlement", SETTLEMENT_PERIOD, "plik worker_mapping.yaml, folder config"),
-    ],
-)
+@pytest.mark.parametrize(("process", "period"), [("preparation", PERIOD), ("settlement", SETTLEMENT_PERIOD)])
 def test_konfiguracja_wykonawcow_bez_odczytu_jest_niedostepna_w_zatrzymaniu_diagnozie_i_na_karcie(
-    world_template: Path, tmp_path: Path, process: str, period: str, where: str
+    world_template: Path, tmp_path: Path, process: str, period: str
 ) -> None:
     world = World(tmp_path / "swiat")
     shutil.copytree(world_template, world.root)
@@ -632,12 +626,13 @@ def test_konfiguracja_wykonawcow_bez_odczytu_jest_niedostepna_w_zatrzymaniu_diag
     finally:
         _readable_again(config)
 
+    where = "plik worker_mapping.yaml, folder config"
     assert (stop["what"], stop["where"]) == (WORKER_CONFIG_INACCESSIBLE, where)
     assert (diagnosis["explanation"], diagnosis["confirms_stop"]) == (stop, True)
     assert (card["state"], card["message"]["what"], card["message"]["where"]) == (
         "unreadable",
         WORKER_CONFIG_INACCESSIBLE,
-        "plik worker_mapping.yaml, folder config",
+        where,
     )
 
 

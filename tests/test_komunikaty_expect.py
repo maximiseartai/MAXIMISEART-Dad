@@ -24,7 +24,7 @@ import typing
 import pytest
 
 import rozliczenia
-from rozliczenia import efenix_messages, intermax_messages, settlement_messages, workbook_messages
+from rozliczenia import efenix_messages, intermax_messages, settlement_messages, workbook_messages, worker_config_messages
 from rozliczenia import preparation_messages as messages
 from rozliczenia.centrum import (
     contract,
@@ -58,6 +58,7 @@ from tests.fixtures.message_samples import (
     SETTLEMENT_SAMPLES,
     START_SAMPLES,
     UPDATE_SAMPLES,
+    WORKER_CONFIG_SAMPLES,
     Samples,
 )
 
@@ -65,6 +66,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CATALOGS: dict[str, tuple[ModuleType, Samples]] = {
     "Przygotowanie pliku zbiorczego": (messages, PREPARATION_SAMPLES),
     "Przebieg rozliczeń": (settlement_messages, SETTLEMENT_SAMPLES),
+    "Konfiguracja wykonawców": (worker_config_messages, WORKER_CONFIG_SAMPLES),
     "Start Centrum rozliczeń": (start_problems, START_SAMPLES),
     "Diagnoza": (diagnosis_messages, DIAGNOSIS_SAMPLES),
     "Uzupełnienie pliku zbiorczego": (fill_messages, FILL_SAMPLES),

@@ -23,9 +23,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Final, TypeAlias
+from typing import Final
 
 from . import client_data, input_copy, preparation_files, preparation_register, raw_orders, settlement_files, settlement_messages, workbook_files
+from . import worker_config_messages
 from . import preparation_messages as messages
 from .intermax_file import Register
 from .message import Message, StopError
@@ -66,10 +67,6 @@ class Readers:
 
 
 FILE_READERS: Final = Readers(register=preparation_register.read_register, template=TemplateFile.check)
-
-WorkerConfigExplanation: TypeAlias = Callable[[Path, WorkerConfigError], Message]
-"""Komunikat procesu o konfiguracji wykonawców, której nie da się użyć."""
-
 
 @dataclass(frozen=True)
 class TemplateProblem:
@@ -137,7 +134,7 @@ def check_preparation(
         raise StopError(messages.periods_directory_missing(periods_directory))
     files = PeriodFiles(internal, collective, _locate_period_folder(periods_directory, settlement_period))
     preparation_files.ensure_period_files_absent(files)
-    return files, _worker_mapping(config, messages.worker_config_problem)
+    return files, _worker_mapping(config)
 
 
 def read_register(
@@ -267,15 +264,15 @@ def check_settlement(
     except PeriodFolderError as error:
         raise StopError(settlement_messages.collective_file_invalid(source, error)) from error
     settlement_files.ensure_worker_settlements_absent(folder.worker_settlements)
-    mapping = _worker_mapping(config, settlement_messages.worker_config_problem)
+    mapping = _worker_mapping(config)
     return folder, mapping, ProcessTemplate.worker(worker_template).checked(readers)
 
 
-def workers(config: Path, explain: WorkerConfigExplanation) -> dict[str, str] | Message:
-    """Wykonawcy z konfiguracji wykonawców albo Komunikat ``explain``, którym zatrzymałby się na niej proces."""
+def workers(config: Path) -> dict[str, str] | Message:
+    """Wykonawcy z konfiguracji wykonawców albo Komunikat, którym zatrzymałby się na niej każdy proces."""
 
     try:
-        return _worker_mapping(config, explain)
+        return _worker_mapping(config)
     except StopError as stop:
         return stop.message
 
@@ -288,11 +285,11 @@ def _stops(explain: Callable[[WorkbookError], Message]) -> Iterator[None]:
         raise StopError(explain(error)) from error
 
 
-def _worker_mapping(config: Path, explain: WorkerConfigExplanation) -> dict[str, str]:
+def _worker_mapping(config: Path) -> dict[str, str]:
     try:
         return load_worker_mapping(config)
     except WorkerConfigError as error:
-        raise StopError(explain(config, error)) from error
+        raise StopError(worker_config_messages.worker_config_problem(config, error)) from error
 
 
 def _parse_period(token: str) -> SettlementPeriod:

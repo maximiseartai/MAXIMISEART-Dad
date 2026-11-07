@@ -25,7 +25,6 @@ from .text import plural, row_range
 from . import workbook_messages
 from .workbook_files import WORKER_HEADER, LayoutFault, MergedCells, MissingHeader, WorkbookError
 from .workbook_messages import DadWorkbook, WorkbookMessages
-from .worker_config import ContentProblem, SameWorkerFile, WorkerConfigError
 
 # Napisy Decyzji taty o niepełnym okresie; jej Komunikat to ``incomplete_period``, odmowa ``incomplete_period_refused``.
 INCOMPLETE_PERIOD_TITLE: Final = "Ostrzeżenie: niepełny okres"
@@ -61,64 +60,6 @@ def invalid_period_token(token: str) -> Message:
             "Na przełomie miesięcy miesiąc i rok są z poniedziałku, np. 27_02_11_2026 "
             "(wtorek 27 października – poniedziałek 2 listopada 2026)."
         ),
-    )
-
-
-def worker_config_problem(config_path: Path, error: WorkerConfigError) -> Message:
-    """Konfiguracji wykonawców nie da się użyć; poza brakiem pliku Komunikat mówi, co jest nie tak z jego treścią."""
-
-    match error.reason:
-        case "inaccessible":
-            return _worker_config_inaccessible(config_path)
-        case "missing":
-            what = "Nie można odczytać konfiguracji wykonawców."
-        case content:
-            what = f"Nie można odczytać konfiguracji wykonawców. {_worker_config_content(content)}"
-    return Message.to_maintainer(
-        code="ZLA_KONFIGURACJA_WYKONAWCOW",
-        what=what,
-        where=f"plik {config_path.name}",
-    )
-
-
-def _worker_config_content(problem: ContentProblem) -> str:
-    """Co jest nie tak z treścią konfiguracji wykonawców, bez ścieżki pliku."""
-
-    match problem:
-        case "not_utf8":
-            return "Plik nie jest zapisany w kodowaniu UTF-8."
-        case "not_yaml":
-            return "Plik nie jest poprawnym YAML."
-        case "not_mapping":
-            return "Konfiguracja musi być mapą z sekcją workers."
-        case "unsupported_version":
-            return "Nieobsługiwana wersja konfiguracji."
-        case "no_workers":
-            return "Konfiguracja workers musi zawierać co najmniej jeden wpis."
-        case "not_text_entry":
-            return "Konfiguracja zawiera niepoprawny identyfikator lub nazwę pracownika."
-        case "empty_entry":
-            return "Konfiguracja zawiera pusty identyfikator lub nazwę pracownika."
-        case "repeated_id":
-            return "Konfiguracja zawiera powtórzony identyfikator pracownika."
-        case "invalid_worker_name":
-            return "Konfiguracja zawiera nazwę pracownika nieprawidłową dla nazwy pliku."
-        case "too_long_worker_name":
-            return "Konfiguracja zawiera nazwę pracownika zbyt długą dla nazwy pliku."
-        case SameWorkerFile(first=first, second=second):
-            return f"Dwóch identyfikatorów wskazuje ten sam plik pracownika: {first} / {second}"
-
-
-def _worker_config_inaccessible(config_path: Path) -> Message:
-    """System nie oddał konfiguracji wykonawców (np. plik zajęty przez inny program albo bez dostępu); to nie zła treść.
-
-    Konfiguracja leży w ``config`` na dysku C jak Wzorce, więc tata rzadko sam usunie przyczynę: Komunikat idzie do Maksa.
-    """
-
-    return Message.to_maintainer(
-        code="NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW",
-        what="Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.",
-        where=f"plik {config_path.name}",
     )
 
 

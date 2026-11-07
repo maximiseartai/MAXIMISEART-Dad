@@ -32,7 +32,6 @@ from rozliczenia import (
 from rozliczenia.centrum import contract, run_view
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.run_view import WarnedSummary
-from rozliczenia.input_checks import WorkerConfigExplanation
 from rozliczenia.message import Message
 from rozliczenia.process_run import Process, ProcessInputs
 from rozliczenia.centrum.settings import Settings
@@ -83,14 +82,8 @@ SimpleCheck = Literal[
     "tool_freshness",
     "report_key",
     "centrum_log",
+    "worker_config",
 ]
-
-
-@dataclass(frozen=True)
-class WorkerConfigCheck:
-    """„Konfiguracja wykonawców” Komunikatem ``explain``, którym zatrzymuje się proces."""
-
-    explain: WorkerConfigExplanation
 
 
 @dataclass(frozen=True)
@@ -100,7 +93,7 @@ class PeriodFolderCheck:
     collective_file_missing: Callable[[Path], Message] | None
 
 
-CheckStep = SimpleCheck | WorkerConfigCheck | PeriodFolderCheck
+CheckStep = SimpleCheck | PeriodFolderCheck
 
 
 def first_choose(missing: Sequence[NeededSetting]) -> str:
@@ -207,7 +200,7 @@ PREPARATION: Final = PeriodProcessDeclaration(
         "files_in_onedrive",
         "register",
         "templates",
-        WorkerConfigCheck(preparation_messages.worker_config_problem),
+        "worker_config",
         PeriodFolderCheck(collective_file_missing=None),
         "period_files_in_excel",
         *_TAIL,
@@ -224,7 +217,7 @@ SETTLEMENT: Final = PeriodProcessDeclaration(
         "tata_settings",
         "files_in_onedrive",
         "templates",
-        WorkerConfigCheck(settlement_messages.worker_config_problem),
+        "worker_config",
         PeriodFolderCheck(collective_file_missing=settlement_messages.collective_file_missing),
         "period_files_in_excel",
         *_TAIL,
