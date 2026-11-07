@@ -16,9 +16,10 @@ import sys
 
 import pytest
 
+from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.git_repo import commit, git
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Atrapa gh to skrypt sh.")
+pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".agents" / "skills" / "verify-centrum-na-windowsie" / "scripts" / "run_on_github.py"
@@ -60,11 +61,7 @@ class Checkout:
         git(self.root, "remote", "add", "origin", str(origin))
         git(self.root, "push", "--quiet", "origin", "praca")
         self.bin = tmp_path / "bin"
-        self.bin.mkdir()
-        (self.bin / "gh.py").write_text(FAKE_GH, encoding="utf-8")
-        gh = self.bin / "gh"
-        gh.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{self.bin / "gh.py"}" "$@"\n', encoding="utf-8")
-        gh.chmod(0o755)
+        fake_cli(self.bin, "gh", FAKE_GH)
         self.answer(runs=[], view={})
 
     def answer(self, *, runs: list[dict[str, object]], view: dict[str, dict[str, str]]) -> None:

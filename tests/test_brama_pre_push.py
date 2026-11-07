@@ -16,6 +16,7 @@ import sys
 
 import pytest
 
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, copy_files, repository
 from tests.fixtures.potomne import wait_for
 
@@ -34,7 +35,7 @@ TYPE_ERROR_ONLY_IF = 'import sys\n\nif {}:\n    LICZBA: int = "tekst"\n'
 
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32",
-    reason="Atrapa .venv/bin/python to skrypt sh, a tools/setup_worktree.py nie włącza bramy na Windows.",
+    reason="tools/setup_worktree.py nie włącza bramy na Windows.",
 )
 
 
@@ -84,22 +85,25 @@ def checkout(tmp_path: Path) -> Path:
 def _venv_python(checkout: Path, body: str) -> None:
     """Atrapa ``.venv/bin/python``: ``body`` zamiast ``ci_lokalnie``, a narzędzia linii przed krokami prawdziwym Pythonem."""
 
-    python = checkout / ".venv" / "bin" / "python"
-    python.parent.mkdir(parents=True, exist_ok=True)
-    real = f'case "$1" in tools/praca_w_toku.py|tools/skille_dla_zmiany.py) exec "{sys.executable}" "$@";; esac'
-    python.write_text(f"#!/bin/sh\n{real}\n{body}\n", encoding="utf-8")
-    python.chmod(0o755)
+    real = 'if sys.argv[1:2] in (["tools/praca_w_toku.py"], ["tools/skille_dla_zmiany.py"]):\n    os.execv(sys.executable, [sys.executable, *sys.argv[1:]])'
+    fake_cli(checkout / ".venv" / "bin", "python", f"import os, pathlib, subprocess, sys\n{real}\n{body}\n")
 
 
 def _stub_ci_lokalnie(checkout: Path, *, passes: bool) -> None:
     verdict = "CI LOKALNIE OK" if passes else "CI LOKALNIE FAIL | ruff"
-    _venv_python(checkout, f"echo '{verdict}'\nexit {0 if passes else 1}")
+    _venv_python(checkout, f"print({verdict!r})\nsys.exit({0 if passes else 1})")
 
 
 def _hanging_ci_lokalnie(checkout: Path) -> list[Path]:
     """Atrapa, która wisi z procesem potomnym jak pytest pod ci_lokalnie; zwraca pliki z PID-ami obu."""
 
-    _venv_python(checkout, "sleep 120 &\necho $! > potomek.pid\necho $$ > ci.pid\nwait")
+    _venv_python(
+        checkout,
+        'child = subprocess.Popen(["sleep", "120"])\n'
+        'pathlib.Path("potomek.pid").write_text(str(child.pid))\n'
+        'pathlib.Path("ci.pid").write_text(str(os.getpid()))\n'
+        "child.wait()",
+    )
     return [checkout / "ci.pid", checkout / "potomek.pid"]
 
 
@@ -142,7 +146,7 @@ def _remote_branch(checkout: Path) -> str:
     ],
 )
 def test_push_head_rozstrzygaja_ruff_i_mypy_dla_obu_systemow(checkout: Path, change: dict[str, str], passes: bool) -> None:
-    _venv_python(checkout, f'exec "{sys.executable}" "$@"')
+    _venv_python(checkout, "os.execv(sys.executable, [sys.executable, *sys.argv[1:]])")
     for name, text in change.items():
         (checkout / name).write_text(text, encoding="utf-8")
     head = commit(checkout, "zmiana")

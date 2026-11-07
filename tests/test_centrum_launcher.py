@@ -19,6 +19,7 @@ import pytest
 
 from rozliczenia.centrum import restart_guardian
 
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.tool_clone import REPOSITORY_ROOT, copy_centrum_runtime, free_port
 
 COMMIT = "3c1d0a9e5b7f4c2d8e6a1b0f9c8d7e6a5b4c3d2e"
@@ -33,20 +34,14 @@ def _check_out(runtime: Path, commit: str) -> None:
 
 
 def _browser_recorder(directory: Path) -> tuple[Path, Path]:
-    """Program podstawiony jako przeglądarka (zmienna ``BROWSER``), który zapisuje otwierany adres.
-
-    Dwa Centra mogą otwierać kartę naraz, a ``cmd`` nie dopisuje do pliku, który dopisuje drugi proces, więc
-    rejestrator ponawia dopisanie, zamiast zgubić adres.
-    """
+    """Program podstawiony jako przeglądarka (zmienna ``BROWSER``), który zapisuje otwierany adres."""
 
     record = directory / "otwarte-adresy.txt"
-    if sys.platform == "win32":
-        recorder = directory / "przegladarka.cmd"
-        recorder.write_text(f'@echo off\r\n:zapisz\r\n(echo %~1>>"{record}") 2>nul || goto zapisz\r\n', encoding="utf-8")
-    else:
-        recorder = directory / "przegladarka.sh"
-        recorder.write_text(f'#!/bin/sh\nprintf "%s\\n" "$1" >> "{record}"\n', encoding="utf-8")
-        recorder.chmod(0o755)
+    recorder = fake_cli(
+        directory,
+        "przegladarka",
+        f"import sys\nwith open({str(record)!r}, 'a', encoding='utf-8') as record:\n    record.write(sys.argv[1] + '\\n')\n",
+    )
     return recorder, record
 
 

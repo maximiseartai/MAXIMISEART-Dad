@@ -21,6 +21,7 @@ import time
 import pytest
 
 from tests.fixtures.brama_typow import FAKE_GATE
+from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.git_repo import commit, git, repository
 from tests.fixtures.potomne import beating, potomne
 
@@ -932,7 +933,9 @@ def _ci_repository(tmp_path: Path, plans: dict[str, list[plan_ci.Zadanie]], runs
         (gh / f"plan-{run}.json").write_text(plan_ci.Plan(Zdarzenie.PULL_REQUEST, 300.0, (), tuple(jobs)).do_json(), encoding="utf-8")
     (gh / "runy.json").write_text(json.dumps([{"databaseId": run} for run in runs]), encoding="utf-8")
     calls = gh / "wywolania"
-    (gh / "gh.py").write_text(
+    fake_cli(
+        gh,
+        "gh",
         "import pathlib, shutil, sys\n"
         "here = pathlib.Path(__file__).parent\n"
         "arguments = sys.argv[1:]\n"
@@ -942,10 +945,7 @@ def _ci_repository(tmp_path: Path, plans: dict[str, list[plan_ci.Zadanie]], runs
         "elif arguments[:2] == ['run', 'download'] and (here / f'plan-{arguments[2]}.json').exists():\n"
         "    shutil.copy(here / f'plan-{arguments[2]}.json', pathlib.Path(arguments[arguments.index('--dir') + 1]) / 'plan.json')\n"
         "else:\n    sys.exit(f'gh: atrapa nie zna {arguments}')\n",
-        encoding="utf-8",
     )
-    (gh / "gh").write_text(f'#!/bin/sh\nexec "{sys.executable}" "{gh / "gh.py"}" "$@"\n', encoding="utf-8")
-    (gh / "gh").chmod(0o755)
     return repo, {**WITHOUT_XDIST_WORKERS, "PATH": f"{gh}{os.pathsep}{os.environ['PATH']}"}, calls
 
 
@@ -962,7 +962,7 @@ PLAN = [
 CHANGE = ("--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 1")
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="atrapa gh to skrypt sh")
+@ONLY_FOUND_BY_NAME_ON_POSIX
 def test_jak_ci_uruchamia_mutacje_z_plikami_zadania_runu_w_ktorym_stoi_zmieniony_test(tmp_path: Path) -> None:
     """Sąsiad z zadania runu wykrywa mutację, której sam zmieniony test nie widzi; inne zadania i tor Windows nie biegną."""
 
@@ -978,7 +978,7 @@ def test_jak_ci_uruchamia_mutacje_z_plikami_zadania_runu_w_ktorym_stoi_zmieniony
     assert lines[2].startswith(f"WYKRYTA: mutacja [{LINUX_1}] → 1 failed, 1 passed"), answered.stdout
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="atrapa gh to skrypt sh")
+@ONLY_FOUND_BY_NAME_ON_POSIX
 def test_jak_ci_uruchamia_kazda_mutacje_w_kazdym_zadaniu_runu_ze_zmienionym_testem(tmp_path: Path) -> None:
     """Zmieniony test stoi w dwóch zadaniach, a mutację wykrywa tylko sąsiad z drugiego, więc biegną oba."""
 
@@ -1000,7 +1000,7 @@ def test_jak_ci_uruchamia_kazda_mutacje_w_kazdym_zadaniu_runu_ze_zmienionym_test
     assert [line.partition(" → ")[0] for line in lines[2:]] == [f"NIEWYKRYTA: mutacja [{LINUX_1}]", f"WYKRYTA: mutacja [{second}]", "MUTACJE: 1 bez oczekiwanego wyniku"], answered.stdout
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="atrapa gh to skrypt sh")
+@ONLY_FOUND_BY_NAME_ON_POSIX
 @pytest.mark.parametrize("tracked", [True, False], ids=["galaz-sledzona", "galaz-bez-sledzonej"])
 def test_jak_ci_bez_numeru_bierze_ostatni_run_ci_galezi(tmp_path: Path, tracked: bool) -> None:
     repo, env, calls = _ci_repository(tmp_path, {"456": PLAN}, [456])
@@ -1017,7 +1017,7 @@ def test_jak_ci_bez_numeru_bierze_ostatni_run_ci_galezi(tmp_path: Path, tracked:
     assert asked == [f"run list --workflow ci.yml --branch {branch} --limit 1 --json databaseId", "run download 456 --name plan"]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="atrapa gh to skrypt sh")
+@ONLY_FOUND_BY_NAME_ON_POSIX
 @pytest.mark.parametrize(
     ("arguments", "runs", "detached", "error"),
     [

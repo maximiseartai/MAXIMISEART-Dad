@@ -22,7 +22,6 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import sys
 from types import ModuleType
 from typing import Any, Final
 
@@ -40,6 +39,7 @@ from tests.fixtures.centrum import TOOL_COMMIT, FakeIssue, FakeReportBox, finish
 from tests.fixtures.centrum_intermax import Clock, ordering_centrum
 from tests.fixtures.efenix import Order as EfenixOrder
 from tests.fixtures.efenix import write_collective_file
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.intermax import ADDRESS, CONTRACT_NUMBER, Intermax, Order
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.centrum_processes import (
@@ -1405,23 +1405,16 @@ def test_odtworzenie_biegnie_na_kopii_commitu_z_logow_jej_wlasnym_narzedziem(
 def _fake_gh(folder: Path, archived: Path) -> Iterator[Path]:
     """``gh`` na początku ``PATH``, który zapisuje swoje argumenty i kładzie plik ``archived`` w folderze ``--dir``."""
 
-    folder.mkdir()
-    script = folder / "gh.py"
     calls = folder / "wywolania.json"
-    script.write_text(
+    fake_cli(
+        folder,
+        "gh",
         "import json, shutil, sys\n"
         "from pathlib import Path\n"
         f"Path({str(calls)!r}).write_text(json.dumps(sys.argv[1:]), encoding='utf-8')\n"
         "directory = Path(sys.argv[sys.argv.index('--dir') + 1])\n"
         f"shutil.copy({str(archived)!r}, directory / sys.argv[sys.argv.index('--pattern') + 1])\n",
-        encoding="utf-8",
     )
-    if sys.platform == "win32":
-        (folder / "gh.cmd").write_text(f'@"{sys.executable}" "{script}" %*\r\n', encoding="utf-8")
-    else:
-        launcher = folder / "gh"
-        launcher.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n', encoding="utf-8")
-        launcher.chmod(0o755)
     path = os.environ["PATH"]
     os.environ["PATH"] = f"{folder}{os.pathsep}{path}"
     try:

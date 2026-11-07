@@ -94,6 +94,7 @@ from tests.fixtures.centrum_processes import (
 from tests.fixtures.centrum_w_procesie import centrum_process
 from tests.fixtures.dziennik_wyceny import begun_line, end_line, ended_line, left_journal
 from tests.fixtures.efenix import DAY, Order, write_collective_file
+from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.fakt_domeny import known
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.potomne import wait_for
@@ -108,7 +109,7 @@ from tests.fixtures.preparation import (
 )
 from tests.fixtures.run_cards import first_view, restored, unlisted
 from tests.fixtures.settlement import COLLECTIVE_HEADERS, MARKED, SOURCE_NAME, CellValue, write_quantity_source
-from tests.fixtures.tool_clone import ToolRepository, git_command, git_failing_on, tool_repository
+from tests.fixtures.tool_clone import ToolRepository, git_failing_on, tool_repository
 from tests.fixtures.widok_skrzynki import shown
 from tests.fixtures.workbooks import active_worksheet, rewrite_parts
 
@@ -1079,9 +1080,7 @@ def _git_failing_on_tags(tmp_path: Path) -> Path | None:
 def _git_not_answering(tmp_path: Path) -> Path | None:
     """Git, który na każde polecenie milczy dłużej, niż Centrum czeka na Wydanie, a potem podaje tag Wydania."""
 
-    script = tmp_path / "git_bez_odpowiedzi.py"
-    script.write_text("import time\ntime.sleep(30)\nprint('v9.9.9')\n", encoding="utf-8")
-    return git_command(tmp_path, script)
+    return fake_cli(tmp_path, "git", "import time\ntime.sleep(30)\nprint('v9.9.9')\n")
 
 
 GITS = {
@@ -1106,14 +1105,11 @@ def test_bez_dzialajacego_gita_logi_maja_commit_narzedzia_bez_wydania(
     assert record["tool"] == {"wydanie": None, "commit": repository.head()}
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="program bez rozszerzenia z PATH uruchamia tylko POSIX")
+@ONLY_FOUND_BY_NAME_ON_POSIX
 def test_bez_gita_logi_niczego_nie_uruchamiaja_po_wydanie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     programs = tmp_path / "programy"
-    programs.mkdir()
     started = tmp_path / "uruchomiony"
-    impostor = programs / "None"
-    impostor.write_text(f"#!/bin/sh\ntouch '{started}'\necho v9.9.9\n", encoding="utf-8")
-    impostor.chmod(0o755)
+    fake_cli(programs, "None", f"import pathlib\npathlib.Path({str(started)!r}).touch()\nprint('v9.9.9')\n")
     monkeypatch.setenv("PATH", f"{programs}{os.pathsep}{os.environ['PATH']}")
     repository = tool_repository(tmp_path / "repozytoria")
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(tool=repository, find_git=lambda: None))

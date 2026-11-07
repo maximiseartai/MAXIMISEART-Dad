@@ -15,6 +15,7 @@ import time
 
 import pytest
 
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import built_once, commit, git
 
 TOOL = Path(__file__).resolve().parents[1] / "tools" / "praca_w_toku.py"
@@ -47,11 +48,7 @@ def _fake_gh(directory: Path, answer: str, code: int = 0) -> str:
     fake = directory / "gh-na-niby"
     fake.mkdir(exist_ok=True)
     (fake / "odpowiedz.json").write_text(answer, encoding="utf-8")
-    if sys.platform == "win32":
-        (fake / "gh.cmd").write_text(f'@type "{fake / "odpowiedz.json"}"\n@exit /b {code}\n', encoding="utf-8")
-    else:
-        (fake / "gh").write_text(f"#!/bin/sh\ncat '{fake / 'odpowiedz.json'}'\nexit {code}\n", encoding="utf-8")
-        (fake / "gh").chmod(0o755)
+    fake_cli(fake, "gh", f"import pathlib, sys\nsys.stdout.buffer.write(pathlib.Path({str(fake / 'odpowiedz.json')!r}).read_bytes())\nsys.exit({code})\n")
     return f"{fake}{os.pathsep}{os.environ['PATH']}"
 
 

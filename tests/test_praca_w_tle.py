@@ -16,13 +16,13 @@ from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
-import stat
 import subprocess
 import sys
 
 import pytest
 
 from tests.fixtures import ustawienia_claude
+from tests.fixtures.fake_cli import fake_cli
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOK = ROOT / "tools" / "hooks" / "praca_w_tle.py"
@@ -363,8 +363,7 @@ def test_checkout_bez_skryptu_hooka_nie_blokuje_konca_tury(tmp_path: Path) -> No
     assert [(run.returncode, run.stdout, run.stderr) for run in hooked] == [(0, b"", b"")]
 
 
-FAKE_CLAUDE = '''#!{python}
-"""Atrapa claude: zachowuje się jak Claude Code 2.1.318 w ``claude -p`` wobec fałszywego API wyroczni."""
+FAKE_CLAUDE = '''"""Atrapa claude: zachowuje się jak Claude Code 2.1.318 w ``claude -p`` wobec fałszywego API wyroczni."""
 import json, os, subprocess, sys, time, urllib.request
 sys.path.insert(0, {fixtures!r})
 import ustawienia_claude
@@ -434,12 +433,9 @@ def _oracle(
     user_settings: Mapping[str, object] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     programs = tmp_path / "bin"
-    programs.mkdir()
-    claude = programs / "claude"
     fixtures = str(Path(ustawienia_claude.__file__).parent)
     atrapa = {"ATRAPA_WYWOLANIA": str(tmp_path / "wywolania.jsonl"), **(atrapa or {})}
-    claude.write_text(FAKE_CLAUDE.format(python=sys.executable, fixtures=fixtures, atrapa=atrapa), encoding="utf-8")
-    claude.chmod(claude.stat().st_mode | stat.S_IXUSR)
+    fake_cli(programs, "claude", FAKE_CLAUDE.format(fixtures=fixtures, atrapa=atrapa))
     (tmp_path / "dom" / ".claude").mkdir(parents=True)
     if user_settings is not None:
         (tmp_path / "dom" / ".claude" / "settings.json").write_text(json.dumps(user_settings), encoding="utf-8")

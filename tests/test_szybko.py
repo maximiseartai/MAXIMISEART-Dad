@@ -12,6 +12,7 @@ import sys
 
 import pytest
 
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, git, repository
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -440,8 +441,7 @@ def test_zmiana_konfiguracji_uruchamia_w_budzecie_testy_ktore_ja_czytaja_jak_w_o
 def test_bez_czasow_ci_szybko_mowi_w_jednej_linii_dlaczego(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     offline = tmp_path / "bin"
-    _write(offline, "gh", "#!/bin/sh\necho 'error connecting to api.github.com' >&2\nexit 1\n")
-    (offline / "gh").chmod(0o755)
+    fake_cli(offline, "gh", "import sys\nsys.exit('error connecting to api.github.com')\n")
 
     answered = _szybko(repo, path=offline)
 
@@ -619,8 +619,7 @@ def test_bez_uv_krok_najstarszego_pythona_pada_z_droga_naprawy(tmp_path: Path) -
     assert (answered.returncode, last) == (1, f"SZYBKO FAIL | import src pod Pythonem {oldest}"), answered.stdout
 
 
-FAKE_UV = f"""#!{sys.executable}
-import os, subprocess, sys
+FAKE_UV = """import os, subprocess, sys
 with open(os.environ["WYWOLANIA_UV"], "a", encoding="utf-8") as calls:
     calls.write(("offline" if "--offline" in sys.argv else "online") + "\\n")
 if "--offline" in sys.argv and os.environ["CACHE_UV"] == "zimny":
@@ -637,10 +636,7 @@ def test_uv_pyta_siec_tylko_bez_cache_a_modul_ktory_sie_nie_importuje_wywraca_kr
     repo = _repo(tmp_path)
     _requiring(repo, (3, sys.version_info[1] - 1))
     _write(repo, "src/pakiet/stary.py", "raise ImportError('tylko na nowszym Pythonie')\n")
-    fake = tmp_path / "bin" / "uv"
-    fake.parent.mkdir()
-    fake.write_text(FAKE_UV, encoding="utf-8")
-    fake.chmod(0o755)
+    fake = fake_cli(tmp_path / "bin", "uv", FAKE_UV)
     log = tmp_path / "wywolania.txt"
 
     answered = subprocess.run(
