@@ -155,13 +155,21 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `8537da18d` (2026-11-07, review of #1038, round 2). Every row of the table was checked against the code
-at this commit. Since the Sync commit `a78b703c5` `GuardedLogs` has no subclasses (`final`, `__init_subclass__` raises),
-and the four version types and `_write` raise `TypeError` for anything but `GuardedLogs` or `GuardedText`, which
-`guard`, `guard_logs` and `guard_text` always give on these paths, so the new raise is no step. No step and no order
-changed, so no action changed.
+Sync commit: `5cc955d12` (2026-11-07, PR 5 of WS-A). Every row of the table was checked against the code at this
+commit. Since the Sync commit `8537da18d` the start of Centrum closes and sends through `RunComments` in
+`run_comments.py` instead of `InterruptedPricings`: the matrix of `Czytaj` is the pure `comment_versions.close`, which
+guards every Logi and text inside (so the result without Logi is guarded at the start, before any file of Dad's is
+read, instead of at the first request), `Refused` still raises out of it and leaves the journal, `ZapiszLogi` writes
+through `LogsOnDisk.write` (the old `RunLogs._write`), and `send_left_behind` posts and removes as `send` did, still
+only from the dependency `send_interrupted`. The Logi Urwanego Uruchomienia come from `RecordMaker.interrupted`, still
+only in the branch without a Logs file and without an end entry, and `RunCards.last` takes the proof `closed`, so the
+card still reads the Logi after the start closed the journals. Each step keeps its place and its failures, so no action
+changed.
 
 Earlier Sync commits, each checked the same way:
+- `8537da18d`: `GuardedLogs` has no subclasses (`final`, `__init_subclass__` raises), and the four version types and
+  `_write` raise `TypeError` for anything but `GuardedLogs` or `GuardedText`, which `guard`, `guard_logs` and
+  `guard_text` always give on these paths, so the new raise is no step. No action changed.
 - `a78b703c5`: `GuardedLogs` is a class with slots instead of a frozen dataclass, so `dataclasses.replace`, a copy or a
   changed field no longer gives Logi that skipped `guard_logs`; it holds the same Logi after the guard and the same
   Logi before it for the Diagnoza, and `ZapiszLogi` still writes `logs.text`. No action changed.
