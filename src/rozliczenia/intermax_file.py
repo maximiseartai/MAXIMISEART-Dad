@@ -305,15 +305,26 @@ class OrderSheet:
                 cells[self.columns.date] = when
             sheet.row(facts.number, cells)
 
+    @cached_property
+    def _facts_read(self) -> dict[int, RowFacts]:
+        """Numer wiersza → fakty wiersza, który któryś przegląd arkusza od dołu już przeczytał, liczone raz."""
+
+        return {}
+
     def _facts_from_bottom(self) -> Iterator[RowFacts]:
         """Fakty wierszy od dołu; ``UnsupportedShape``, gdy przeczytanych wierszy nie da się rozdzielić."""
 
-        sheet = self.sheet_xml
+        sheet, read = self.sheet_xml, self._facts_read
         try:
             for row in sheet:
                 if row.number < 2:
                     return
-                yield self._register._facts(_row_tag(sheet.xml, row), row.number, _cells(sheet.xml[row.start : row.end]))
+                facts = read.get(row.number)
+                if facts is None:
+                    facts = read[row.number] = self._register._facts(
+                        _row_tag(sheet.xml, row), row.number, _cells(sheet.xml[row.start : row.end])
+                    )
+                yield facts
         except IrregularSheetData as error:
             raise UnsupportedShape(str(error)) from error
 
