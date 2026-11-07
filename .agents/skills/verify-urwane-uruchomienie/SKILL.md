@@ -151,7 +151,7 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `c66fb02de` (2026-11-07, Przekazanie do akceptacji, ADR 0027). Every row of the table was checked
+Sync commit: `7d6eca83d` (2026-11-07, Przekazanie do akceptacji, ADR 0027). Every row of the table was checked
 against the code at this commit. Since `aefc594f1` `save` passes the mode of the Wycena to `_outcome`, which in the mode
 with Przekazanie also forwards a gotowe order to acceptance (one more change in efenix between `journal.begun` and
 `journal.ended`, traced like every other), and `run_logs` has the result `przekazane`; the journal calls and their
