@@ -18,8 +18,8 @@ aktualizować gałąź z ``origin/main``, i skille ``verify-*`` do załadowania 
 narzędzie się nie uda, brama drukuje ``AKTUALIZACJA: nieznana (…)`` albo ``SKILLE VERIFY: nieznane (…)``, a wynik
 pushu się nie zmienia.
 
-Hook biegnie systemowym Pythonem (na Macu 3.9), więc ten plik, ``tools/lib/repo.py`` i ``tools/lib/potomne.py`` ruff
-sprawdza pod 3.9 (``per-file-target-version`` w ``pyproject.toml``).
+Hook biegnie systemowym Pythonem (na Macu 3.9), więc ten plik, ``tools/lib/repo.py``, ``tools/lib/potomne.py`` i
+``tools/lib/ostatnie_linie.py`` ruff sprawdza pod 3.9 (``per-file-target-version`` w ``pyproject.toml``).
 """
 
 from __future__ import annotations
@@ -63,10 +63,13 @@ class Note:
     unknown: str
 
 
-NOTES = (
-    Note((str(VENV_PYTHON), "tools/praca_w_toku.py", "--aktualizacja"), "AKTUALIZACJA: ", "nieznana"),
-    Note((str(VENV_PYTHON), "tools/skille_dla_zmiany.py"), "SKILLE VERIFY: ", "nieznane"),
-)
+def _notes() -> tuple[Note, ...]:
+    from ostatnie_linie import AKTUALIZACJA, SKILLE_VERIFY  # tylko push agenta zależy od narzędzi agenta
+
+    return (
+        Note((str(VENV_PYTHON), "tools/praca_w_toku.py", "--aktualizacja"), AKTUALIZACJA, "nieznana"),
+        Note((str(VENV_PYTHON), "tools/skille_dla_zmiany.py"), SKILLE_VERIFY, "nieznane"),
+    )
 
 
 def _decide(pushed: set[str]) -> Decision:
@@ -113,7 +116,7 @@ def main() -> int:
     if not VENV_PYTHON.exists():
         print("pre-push: brak .venv; utwórz je przez tools/setup_worktree.py i ponów push.", flush=True)
         return 1
-    for note in NOTES:
+    for note in _notes():
         _print_note(note)
     if sys.platform == "win32":  # tools/setup_worktree.py nie włącza bramy na Windows
         import potomne

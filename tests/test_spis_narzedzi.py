@@ -364,3 +364,46 @@ def test_narzedzie_uruchamia_gh_tylko_przez_github() -> None:
     ]
 
     assert found == [], "\n".join([*found, "Uruchom gh przez github.gh albo github.gh_bajty z tools/lib/github.py."])
+
+
+# Kontrakty napisów między narzędziami CI i ich jedyni właściciele: klucz jednostki planu i zmienna części
+# (``tools/lib/jednostka.py``) oraz początki ostatnich linii, które czyta inne narzędzie.
+CONTRACTS = (
+    (re.compile(r"(?:pytest|krok|skill|narzut):"), TOOLS / "lib" / "jednostka.py"),
+    (re.compile(r".*MUTACJE_CZESC", re.DOTALL), TOOLS / "lib" / "jednostka.py"),
+    (re.compile(r"MUTACJE OK|SKILLE VERIFY|AKTUALIZACJA:|CI LOKALNIE (?:OK|FAIL)"), TOOLS / "lib" / "ostatnie_linie.py"),
+    (re.compile(r"MUTACJE ZMIANY OK"), TOOLS / "mutacje_zmiany.py"),
+)
+
+
+def _texts(tree: ast.AST) -> list[tuple[int, str]]:
+    """Napisy kodu (stałe i początki f-stringów) bez docstringów i innych napisów stojących samotnie jako instrukcja."""
+
+    alone = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)}
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.JoinedStr) and node.values and isinstance(first := node.values[0], ast.Constant):
+            found += [(node.lineno, str(part.value)) for part in node.values if isinstance(part, ast.Constant) and part is not first]
+            found.append((node.lineno, str(first.value)))
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in alone:
+            found.append((node.lineno, node.value))
+    return found
+
+
+def test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela() -> None:
+    """Klucz jednostki planu (``pytest:``, ``krok:``, ``skill:``, ``narzut:``), nazwę zmiennej części ``MUTACJE_CZESC``
+    i początek ostatniej linii, którą czyta inne narzędzie, hook albo CI, pisze w ``tools/`` i skryptach skilli tylko
+    ich właściciel: reszta składa je i rozbiera przez ``jednostka.Klucz``, ``jednostka.Czesc`` i stałe właściciela, więc
+    zmiana napisu po jednej stronie nie zostawia drugiej z cichym „nieznane”. F-string liczy się od swojego początku,
+    a nazwy zmiennej szuka w każdym jego kawałku; napisu złożonego w czasie biegu test nie widzi."""
+
+    paths = sorted({*TOOLS.rglob("*.py"), TOOLS / "hooks" / "pre-push", *SKILLS.glob("*/scripts/**/*.py")})
+    found = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {text[:60]!r} należy do {owner.relative_to(ROOT).as_posix()}"
+        for path in paths
+        for line, text in _texts(ast.parse(path.read_text(encoding="utf-8")))
+        for pattern, owner in CONTRACTS
+        if path != owner and pattern.match(text)
+    ]
+
+    assert found == [], "\n".join([*found, "Weź klucz, część albo prefiks od jego właściciela zamiast pisać napis."])

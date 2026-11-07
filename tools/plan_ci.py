@@ -53,6 +53,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import czasy_ci
+import jednostka
+from jednostka import Klucz, Rodzaj
 from plan_runu import Plan, Zadanie
 from repo import BASE, ROOT
 from wplyw_zmiany import changed_since
@@ -90,8 +92,7 @@ DOMYSLNIE = Domyslnie()
 
 @dataclass(frozen=True)
 class Jednostka:
-    """Praca, którą plan daje zadaniu: ``pytest:<plik>``, udział ``pytest:<plik>#k/n``, ``krok:<nazwa>``,
-    ``skill:<skill>/ci`` (podstawa), ``skill:<skill>/<skrypt>`` albo część skryptu mutacji ``skill:<skill>/<skrypt>#k/n``."""
+    """Praca, którą plan daje zadaniu, pod napisem swojego ``jednostka.Klucz``."""
 
     klucz: str
     s: float  # ściana, którą dodaje do zadania
@@ -116,7 +117,7 @@ class Wycena:
         for klucz, s in self.podzielne.items():
             k = max(1, math.ceil(s / pojemnosc_s)) if pojemnosc_s > 0 else 1
             k = min(k, self.czesci.get(klucz, k))
-            wynik += [Jednostka(klucz, s)] if k == 1 else [Jednostka(f"{klucz}#{i}/{k}", s / k) for i in range(1, k + 1)]
+            wynik += [Jednostka(klucz, s)] if k == 1 else [Jednostka(str(czesc), s / k) for czesc in Klucz.z_tekstu(klucz).czesci(k)]
         return wynik
 
 
@@ -128,19 +129,20 @@ def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy, przegladarka: f
 
     zmierzone = czasy.pliki(tor.pomiary)
     domyslny = statistics.median(zmierzone.values()) if zmierzone else DOMYSLNIE.plik_s
-    kroki = {f"krok:{nazwa}": czasy.praca(tor.pomiary, f"krok:{nazwa}") or KROKI[nazwa].domyslnie_s for nazwa in tor.kroki}
-    wezly = {f"pytest:{wezel}": min(zmierzone.get(wezel.partition("::")[0], domyslny), domyslny) / WORKERY for wezel in pliki if "::" in wezel}
-    zadania = [z for z in czasy.zadania(tor.pomiary) if f"narzut:{tor.szablon}" in z]
-    narzuty = [z[f"narzut:{tor.szablon}"] for z in zadania]
+    kroki = {jednostka.krok(nazwa): czasy.praca(tor.pomiary, jednostka.krok(nazwa)) or KROKI[nazwa].domyslnie_s for nazwa in tor.kroki}
+    wezly = {jednostka.pytest(wezel): min(zmierzone.get(wezel.partition("::")[0], domyslny), domyslny) / WORKERY for wezel in pliki if "::" in wezel}
+    narzut, pytest = jednostka.narzut(tor.szablon), jednostka.krok("pytest")
+    zadania = [z for z in czasy.zadania(tor.pomiary) if narzut in z]
+    narzuty = [z[narzut] for z in zadania]
     # Start pytest: ściana pytest zadania ponad sumę jego testów na workerach (start, kolekcja, ogon workerów).
-    starty = [z["krok:pytest"] - sum(s for k, s in z.items() if k.startswith("pytest:")) / WORKERY for z in zadania if "krok:pytest" in z]
+    starty = [z[pytest] - sum(s for k, s in z.items() if jednostka.rodzaj(k) is Rodzaj.PYTEST) / WORKERY for z in zadania if pytest in z]
     return Wycena(
         tor,
-        {f"pytest:{plik}": zmierzone.get(plik, domyslny) / WORKERY for plik in pliki if "::" not in plik},
+        {jednostka.pytest(plik): zmierzone.get(plik, domyslny) / WORKERY for plik in pliki if "::" not in plik},
         {**wezly, **kroki},
         statistics.median(narzuty) if narzuty else DOMYSLNIE.narzut_s,
         max(0.0, statistics.median(starty)) if starty else DOMYSLNIE.start_s,
-        przegladarka=frozenset(f"pytest:{plik}" for plik in pliki if plik.partition("::")[0] in przegladarka),
+        przegladarka=frozenset(jednostka.pytest(plik) for plik in pliki if plik.partition("::")[0] in przegladarka),
     )
 
 
@@ -151,21 +153,24 @@ def wycen_mutacje(kroki: Sequence[KrokSkilla], czasy: czasy_ci.Czasy) -> Wycena:
 
     tor = MUTACJE
     pomiary = czasy.tory.get(tor.pomiary, {})
-    zmierzone = {klucz: s for klucz in pomiary if klucz.startswith("skill:") and (s := czasy.praca(tor.pomiary, klucz)) is not None}
+    zmierzone = {klucz: s for klucz in pomiary if jednostka.rodzaj(klucz) is Rodzaj.SKILL and (s := czasy.praca(tor.pomiary, klucz)) is not None}
     domyslny = statistics.median(zmierzone.values()) if zmierzone else DOMYSLNIE.krok_skilla_s
-    koszty = {f"skill:{w.krok.key}": zmierzone.get(f"skill:{w.krok.key}", domyslny) for w in kroki}
-    narzuty = [z[f"narzut:{tor.szablon}"] for z in czasy.zadania(tor.pomiary) if f"narzut:{tor.szablon}" in z]
+    koszty = {jednostka.skill(w.krok.key): zmierzone.get(jednostka.skill(w.krok.key), domyslny) for w in kroki}
+    narzut = jednostka.narzut(tor.szablon)
+    narzuty = [z[narzut] for z in czasy.zadania(tor.pomiary) if narzut in z]
     podzielne = [w.krok for w in kroki if (w.krok.verdict or w.krok.parts > 1) and not w.czesci]
-    ustalone = {f"skill:{w.krok.key}#{k}/{n}": koszty[f"skill:{w.krok.key}"] / n for w in kroki for k, n in w.czesci}
+    ustalone = {
+        str(Klucz(Rodzaj.SKILL, w.krok.key, czesc)): koszty[jednostka.skill(w.krok.key)] / czesc.n for w in kroki for czesc in w.czesci
+    }
     return Wycena(
         tor,
-        {f"skill:{krok.key}": koszty[f"skill:{krok.key}"] for krok in podzielne},
-        {f"skill:{w.krok.key}": koszty[f"skill:{w.krok.key}"] for w in kroki if w.krok not in podzielne and not w.czesci} | ustalone,
+        {jednostka.skill(krok.key): koszty[jednostka.skill(krok.key)] for krok in podzielne},
+        {jednostka.skill(w.krok.key): koszty[jednostka.skill(w.krok.key)] for w in kroki if w.krok not in podzielne and not w.czesci} | ustalone,
         statistics.median(narzuty) if narzuty else DOMYSLNIE.narzut_mutacji_s,
         # Wybór kroków i start Pythona przed pierwszym krokiem: do 1 s w runach main 40297447225–40308056465.
         0.0,
-        {f"skill:{krok.key}": krok.parts for krok in podzielne},
-        frozenset(f"skill:{w.krok.key}" for w in kroki if w.krok.browser),
+        {jednostka.skill(krok.key): krok.parts for krok in podzielne},
+        frozenset(jednostka.skill(w.krok.key) for w in kroki if w.krok.browser),
     )
 
 
@@ -174,10 +179,10 @@ def _lpt(jednostki: Iterable[Jednostka], n: int) -> list[list[Jednostka]]:
 
     zadania: list[list[Jednostka]] = [[] for _ in range(n)]
     sumy = [0.0] * n
-    for jednostka in sorted(jednostki, key=lambda j: (-j.s, j.klucz)):
+    for praca in sorted(jednostki, key=lambda j: (-j.s, j.klucz)):
         najlzejsze = sumy.index(min(sumy))
-        zadania[najlzejsze].append(jednostka)
-        sumy[najlzejsze] += jednostka.s
+        zadania[najlzejsze].append(praca)
+        sumy[najlzejsze] += praca.s
     return zadania
 
 
@@ -198,13 +203,15 @@ def _upakuj(wycena: Wycena, cel_s: float) -> list[list[Jednostka]]:
         n += 1
 
 
-def _kolejnosc(jednostka: Jednostka) -> tuple[bool, float, str, bool, str]:
-    """Najdłuższe pliki pierwsze, bo xdist zaczyna od nich, kroki CI po pytest, a podstawa skilla przed jego skryptami."""
+def _kolejnosc(praca: Jednostka) -> tuple[bool, float, str, bool, str]:
+    """Najdłuższe pliki pierwsze, bo xdist zaczyna od nich, kroki CI po pytest, a cała podstawa skilla przed jego
+    skryptami; część podstawy stoi między nimi po kluczu."""
 
-    if jednostka.klucz.startswith("skill:"):
-        skill, _, krok = jednostka.klucz.removeprefix("skill:").partition("/")
-        return (False, 0.0, skill, krok != "ci", jednostka.klucz)
-    return (jednostka.klucz.startswith("krok:"), -jednostka.s, "", False, jednostka.klucz)
+    klucz = Klucz.z_tekstu(praca.klucz)
+    if klucz.rodzaj is Rodzaj.SKILL:
+        skill, _, krok = klucz.nazwa.partition("/")
+        return (False, 0.0, skill, krok != "ci" or klucz.czesc is not None, praca.klucz)
+    return (klucz.rodzaj is Rodzaj.KROK, -praca.s, "", False, praca.klucz)
 
 
 def _limit_runu(zdarzenie: Zdarzenie) -> int:
@@ -233,7 +240,7 @@ def rozplanuj(wyceny: Sequence[Wycena], zdarzenie: Zdarzenie, runy: tuple[int, .
                     nazwa=wycena.tor.zadanie.format(numer=numer, liczba=len(tor)),
                     jednostki=tuple(j.klucz for j in sorted(jednostki, key=_kolejnosc)),
                     sciana_s=round(wycena.narzut_s + wycena.start_s + sum(j.s for j in jednostki) + DOMYSLNIE.koniec_s, 1),
-                    przegladarka=any(j.klucz.partition("#")[0] in wycena.przegladarka for j in jednostki),
+                    przegladarka=any(str(Klucz.z_tekstu(j.klucz).calosc) in wycena.przegladarka for j in jednostki),
                 )
             )
     return Plan(zdarzenie, cel, runy, tuple(zadania), bledy)
@@ -249,8 +256,8 @@ def _wypisz(plan: Plan, praca: ZakresRunu, wyceny: Sequence[Wycena]) -> None:
         dopisek = f", najdłuższa jednostka {najdluzsza.klucz} {najdluzsza.s:.0f} s" if najdluzsza else ""
         print(f"{wycena.tor.nazwa}: narzut {wycena.narzut_s:.0f} s, start {wycena.start_s:.0f} s{dopisek}")
         for zadanie in (z for z in plan.zadania if z.tor == wycena.tor.nazwa):
-            pliki = sum(klucz.startswith("pytest:") for klucz in zadanie.jednostki)
-            reszta = [klucz for klucz in zadanie.jednostki if "#" in klucz or not klucz.startswith("pytest:")]
+            pliki = sum(klucz.rodzaj is Rodzaj.PYTEST for klucz in zadanie.klucze)
+            reszta = [str(klucz) for klucz in zadanie.klucze if klucz.czesc or klucz.rodzaj is not Rodzaj.PYTEST]
             opis = " ".join([f"{pliki} plików"] * bool(pliki) + reszta + ["+ Chromium"] * zadanie.przegladarka)
             print(f"  {zadanie.nazwa}: {zadanie.sciana_s:.0f} s | {opis}")
     for nazwa, powod in praca.bledy:

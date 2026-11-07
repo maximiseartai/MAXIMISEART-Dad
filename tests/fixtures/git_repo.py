@@ -47,7 +47,7 @@ def repository(path: Path, files: dict[str, str]) -> Path:
 
     copy_files(
         path,
-        ("pyproject.toml", "tools/ci_lokalnie.py", "tools/lib/ciezkie_ci.py", "tools/lib/czasy_ci.py", "tools/lib/github.py", "tools/mutacje.py", "tools/lib/potomne.py", "tools/lib/repo.py", "tools/lib/sciezki_w_kodzie.py"),
+        ("pyproject.toml", "tools/ci_lokalnie.py", "tools/lib/ciezkie_ci.py", "tools/lib/czasy_ci.py", "tools/lib/github.py", "tools/lib/jednostka.py", "tools/lib/ostatnie_linie.py", "tools/mutacje.py", "tools/lib/potomne.py", "tools/lib/repo.py", "tools/lib/sciezki_w_kodzie.py"),
     )
     for name, text in files.items():
         (path / name).parent.mkdir(parents=True, exist_ok=True)

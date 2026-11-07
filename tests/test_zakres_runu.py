@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 
+from jednostka import Klucz  # noqa: E402
 import kroki_skilli  # noqa: E402
 from wplyw_zmiany import STRUCTURE, Repository  # noqa: E402
 from zakres_runu import PRZEGLADARKA, TORY, Zdarzenie, ZakresRunu, pliki_testow, potrzebuja_chromium, zakres  # noqa: E402
@@ -336,9 +337,9 @@ def test_katalog_bez_skryptow_mutacji_to_fail_a_zgubiony_skrypt_juz_go_zglasza(t
 def test_krok_katalogu_po_kluczu_planu(tmp_path: Path) -> None:
     katalog = kroki_skilli.Katalog.skanuj(repository(tmp_path / "repo", KATALOG))
 
-    assert (katalog.krok("skill:verify-a/ci").name, katalog.krok(f"skill:{SCRIPT_A}").name) == ("PODSTAWA verify-a", SCRIPT_K)
+    assert (katalog.krok(Klucz.z_tekstu("skill:verify-a/ci")).name, katalog.krok(Klucz.z_tekstu(f"skill:{SCRIPT_A}#2/3")).name) == ("PODSTAWA verify-a", SCRIPT_K)
     with pytest.raises(KeyError, match="verify-a/ci"):
-        katalog.krok("verify-a/ci")
+        katalog.krok(Klucz.z_tekstu("krok:verify-a/ci"))
 
 
 def test_reguly_kroku_skilla_licza_od_korzenia_checkoutu_skilla(tmp_path: Path) -> None:
@@ -349,7 +350,7 @@ def test_reguly_kroku_skilla_licza_od_korzenia_checkoutu_skilla(tmp_path: Path) 
     found = kroki_skilli.hits(skill, {".agents/skills/verify-a/opis.md", "src/pakiet/routing.py", "docs/opis.md"})
 
     assert found == kroki_skilli.Hits({".agents/skills/verify-a/opis.md": kroki_skilli.FOLDER, "src/pakiet/routing.py": "src/pakiet/rout*.py"}, None)
-    assert kroki_skilli.watched(katalog.krok(f"skill:{SCRIPT_A}")) == (".agents/skills/verify-a/", *kroki_skilli.RUNNER, BASELINE_K)
+    assert kroki_skilli.watched(katalog.krok(Klucz.z_tekstu(f"skill:{SCRIPT_A}"))) == (".agents/skills/verify-a/", *kroki_skilli.RUNNER, BASELINE_K)
     assert kroki_skilli.ci_command(skill / "SKILL.md") == (BASELINE_K,)
 
 
@@ -539,7 +540,7 @@ def test_noca_podstawa_z_ci_czesci_biegnie_kazda_czescia_kazdego_n_a_pull_reques
 
     praca = zakres(event, frozenset({".agents/skills/verify-a/scripts/sprawdz_a.py"}), repo)
 
-    assert {w.krok.key: w.czesci for w in praca.wybrane if w.krok.verdict is None} == {"verify-a/ci": parts}
+    assert {w.krok.key: tuple(str(czesc) for czesc in w.czesci) for w in praca.wybrane if w.krok.verdict is None} == {"verify-a/ci": tuple(f"{k}/{n}" for k, n in parts)}
     assert all(w.czesci == () for w in praca.wybrane if w.krok.verdict is not None)
 
 

@@ -46,6 +46,7 @@ import enum
 from functools import cache
 from pathlib import Path, PurePosixPath
 
+from jednostka import Czesc
 from kroki_skilli import Katalog, Step, hits, model_watched, repeats, watched
 from repo import ROOT
 from wplyw_zmiany import Context, Repository, run_all, with_structure
@@ -154,12 +155,12 @@ def pliki_testow(root: Path = ROOT) -> list[str]:
 
 @dataclass(frozen=True)
 class KrokSkilla:
-    """Wybrany krok skilla z powodem (na pushu pusty); ``czesci`` to części ``(k, n)``, które biegną, gdy ustala je
+    """Wybrany krok skilla z powodem (na pushu pusty); ``czesci`` to części, które biegną, gdy ustala je
     zakres (nocą każda część każdego n podstawy z ``ci-czesci``), a puste: plan dzieli krok sam do ``Step.parts``."""
 
     krok: Step
     powod: str
-    czesci: tuple[tuple[int, int], ...] = ()
+    czesci: tuple[Czesc, ...] = ()
     # Zmienione pliki, które same uruchamiają krok (folder skilla, reguła kroku, ``Context.SKILL_STEPS``), także gdy
     # biegnie z innego powodu; puste: biegnie bez takiego pliku (skill bez ``pilnuje``, push). Nocą z nich
     # ``tools/mutacje_nocne.py`` wybiera PR, którego issue dostaje krok.
@@ -239,11 +240,11 @@ def _pytest(
             return (replace(windows, kroki=kroki), linux), with_structure(wybor.tests), f"wybór {len(wybor.tests)} plików"
 
 
-def _czesci(step: Step, zdarzenie: Zdarzenie) -> tuple[tuple[int, int], ...]:
+def _czesci(step: Step, zdarzenie: Zdarzenie) -> tuple[Czesc, ...]:
     """Nocą podstawa z ``ci-czesci: n`` biegnie każdą częścią ``k/m`` każdego m od 1 do n (ADR 0021)."""
 
     if zdarzenie is Zdarzenie.NOC and step.verdict is None and step.parts > 1:
-        return tuple((k, n) for n in range(1, step.parts + 1) for k in range(1, n + 1))
+        return tuple(czesc for n in range(1, step.parts + 1) for czesc in Czesc.calosc(n))
     return ()
 
 

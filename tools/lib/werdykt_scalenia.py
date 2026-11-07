@@ -15,6 +15,7 @@ import sys
 from typing import Literal
 
 import github
+from ostatnie_linie import CI_LOKALNIE_FAIL, CI_LOKALNIE_OK
 import potomne
 from repo import REMOTE, ROOT
 import repo
@@ -55,10 +56,10 @@ def _failed_checks(copy: Path) -> list[str]:
     except subprocess.TimeoutExpired as error:
         raise _NoCheckResult(f"ruff i mypy trwały ponad {CHECK_TIMEOUT_S} s") from error
     result = done.stdout.rstrip().rpartition("\n")[2]
-    if result.startswith("CI LOKALNIE OK"):
+    if result.startswith(CI_LOKALNIE_OK):
         return []
-    if result.startswith("CI LOKALNIE FAIL | "):
-        return result.removeprefix("CI LOKALNIE FAIL | ").split(", ")
+    if result.startswith(CI_LOKALNIE_FAIL):
+        return result.removeprefix(CI_LOKALNIE_FAIL).split(", ")
     raise _NoCheckResult(f"tools/ci_lokalnie.py skończyło się bez wyniku, kod {done.returncode}")
 
 

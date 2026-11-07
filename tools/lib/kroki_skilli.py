@@ -32,12 +32,14 @@ from pathlib import Path
 import re
 from typing import Any, NamedTuple
 
+from jednostka import Klucz, Rodzaj
+from ostatnie_linie import MUTACJE_OK
+
 # Folder skilli od korzenia checkoutu.
 FOLDER_SKILLI = (".agents", "skills")
 PATTERN = "check_*_mutations.py"
 # Wywołanie skryptu mutacji w SKILL.md; ścieżka bez ``.agents`` na początku liczy się od folderu skilla.
 MENTION = re.compile(r"[\w.\\/-]*scripts[\\/]check_\w+_mutations\.py")
-VERDICT = "MUTACJE OK"
 BASELINE = "PODSTAWA"
 # Runner mutacji: jego zmiana może zmienić werdykt każdego skryptu mutacji (uruchomienie kroku, jego polecenie i części).
 RUNNER = ("tools/mutacje.py", "tools/ci/mutacje_skilli.py", "tools/lib/kroki_skilli.py")
@@ -257,7 +259,7 @@ def _steps(root: Path, failed: dict[str, str]) -> list[Step]:
         if command:
             found.append(Step(skill, f"{skill.name}/ci", f"{BASELINE} {skill.name}", command, None, parts, browser))
         found += [
-            Step(skill, f"{skill.name}/{script.name}", _name(script, root), (_name(script, root),), VERDICT, _count(script), browser)
+            Step(skill, f"{skill.name}/{script.name}", _name(script, root), (_name(script, root),), MUTACJE_OK, _count(script), browser)
             for script in scripts
         ]
     return found
@@ -321,10 +323,10 @@ class Katalog(NamedTuple):
             failed[f"scripts/{PATTERN}"] = f"brak skryptów .agents/skills/*/scripts/{PATTERN}"
         return cls(root, tuple(found), failed)
 
-    def krok(self, klucz: str) -> Step:
-        """Krok po kluczu planu ``skill:<skill>/<skrypt>`` albo ``skill:<skill>/ci``; ``KeyError``, gdy go nie ma."""
+    def krok(self, klucz: Klucz) -> Step:
+        """Krok po kluczu jednostki planu (rodzaju ``Rodzaj.SKILL``, część bez znaczenia); ``KeyError``, gdy go nie ma."""
 
-        return {f"skill:{step.key}": step for step in self.kroki}[klucz]
+        return {Klucz(Rodzaj.SKILL, step.key): step for step in self.kroki}[klucz.calosc]
 
     def skille(self, wzorzec: str = "*") -> list[Path]:
         """Foldery skilli z ``SKILL.md``, których nazwa pasuje do ``wzorzec`` (glob), po nazwie."""

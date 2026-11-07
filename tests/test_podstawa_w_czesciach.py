@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
-import mutacje  # noqa: E402
+from jednostka import ZMIENNA_CZESCI  # noqa: E402
 import kroki_skilli  # noqa: E402
 import skrypt_skilla  # noqa: E402
 
@@ -36,15 +36,11 @@ def runner(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     return module
 
 
-def test_skrypt_skilla_czyta_czesc_z_tej_samej_zmiennej_co_silnik_mutacji_i_plan() -> None:
-    assert skrypt_skilla.PART == mutacje.PART
-
-
 @pytest.mark.parametrize("count", range(1, 8))
 def test_n_czesci_bierze_kazda_jednostke_raz_w_jej_kolejnosci_i_zadna_czesc_nie_jest_pusta(count: int) -> None:
     units = tuple(f"j{number}" for number in range(7))
 
-    parts = [skrypt_skilla.part(units, {mutacje.PART: f"{number}/{count}"}) for number in range(1, count + 1)]
+    parts = [skrypt_skilla.part(units, {ZMIENNA_CZESCI: f"{number}/{count}"}) for number in range(1, count + 1)]
 
     assert sum(parts, ()) == units
     assert all(parts)
@@ -53,7 +49,7 @@ def test_n_czesci_bierze_kazda_jednostke_raz_w_jej_kolejnosci_i_zadna_czesc_nie_
 @pytest.mark.parametrize("value", ["8/8", "0/3", "3/2", "1", "a/b"])
 def test_czesc_spoza_jednostek_to_blad_a_nie_pusty_przebieg(value: str) -> None:
     with pytest.raises(ValueError, match="MUTACJE_CZESC to K/N z 1 <= K <= N <= 7"):
-        skrypt_skilla.part(tuple(range(7)), {mutacje.PART: value})
+        skrypt_skilla.part(tuple(range(7)), {ZMIENNA_CZESCI: value})
 
 
 def test_czesci_podstawy_centrum_przejezdzaja_kazda_funkcje_all_raz_w_kolejnosci_all(runner: ModuleType) -> None:
@@ -62,15 +58,15 @@ def test_czesci_podstawy_centrum_przejezdzaja_kazda_funkcje_all_raz_w_kolejnosci
 
     assert count > 1 and count <= len(every)
     for parts in range(1, count + 1):
-        driven = [runner.driven("all", {mutacje.PART: f"{number}/{parts}"}) for number in range(1, parts + 1)]
+        driven = [runner.driven("all", {ZMIENNA_CZESCI: f"{number}/{parts}"}) for number in range(1, parts + 1)]
         assert sum(driven, ()) == every, parts
     assert set(every) == set(runner.REQUIRED_SCREENSHOTS) - set(importlib.import_module("drive").EXPLICIT_FEATURES)
     # Część nie zmienia przebiegu jednej funkcji (mutacje skilla), bo dzieli tylko all.
-    assert runner.driven("zgloszenie", {mutacje.PART: "2/8"}) == ("zgloszenie",)
+    assert runner.driven("zgloszenie", {ZMIENNA_CZESCI: "2/8"}) == ("zgloszenie",)
 
 
 def test_zla_czesc_centrum_konczy_przebieg_porazka_zanim_cokolwiek_wystartuje(runner: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    monkeypatch.setenv(mutacje.PART, "30/30")
+    monkeypatch.setenv(ZMIENNA_CZESCI, "30/30")
 
     code = runner.main(["--feature", "all", "--run-dir", "nie-powstanie"])
 
@@ -104,7 +100,7 @@ def test_czesc_all_przekazuje_drive_tylko_funkcje_swojej_czesci(
     monkeypatch.setattr(runner, "_launch", launch)
     monkeypatch.setattr(runner, "_run_step", step)
     monkeypatch.setattr(runner, "QuietMachine", lambda: SimpleNamespace(run=lambda: nullcontext(0.0)))
-    monkeypatch.setenv(mutacje.PART, "2/8")
+    monkeypatch.setenv(ZMIENNA_CZESCI, "2/8")
     part = list(runner.driven("all"))
 
     code = runner.main(["--feature", "all", "--run-dir", str(tmp_path)])

@@ -2,9 +2,8 @@
 
 Plan układa ``tools/plan_ci.py plan`` (zadanie ``plan`` w ``ci.yml`` i w ``mutacje-nocne.yml``, a lokalnie agent), każde
 zadanie wykonuje swoje jednostki przez ``tools/ci/wykonaj_zadanie.py``, a ``Required CI status`` sprawdza wyniki wobec
-planu przez ``tools/ci/werdykt_required.py``. Jednostka to plik testów ``pytest:<plik>``, udział ``pytest:<plik>#k/n``,
-krok CI ``krok:<nazwa>``, podstawa skilla ``skill:<skill>/ci``, skrypt mutacji ``skill:<skill>/<skrypt>`` albo jego
-część ``skill:<skill>/<skrypt>#k/n``.
+planu przez ``tools/ci/werdykt_required.py``. Jednostka to plik testów, jego udział, krok CI, podstawa skilla, skrypt
+mutacji albo jego część, pod napisem swojego klucza (``tools/lib/jednostka.py``).
 
 Plan ma ``digest``: zadanie wykonuje tylko plan, którego treść się z nim zgadza, i zapisuje go w swoim zapisie czasów,
 a werdykt przyjmuje tylko zapisy tego planu. Limit kroku pytest (``limit_pytest_s``) i limit zadania pytest w macierzy
@@ -20,6 +19,7 @@ import json
 import math
 from pathlib import Path
 
+from jednostka import Klucz, Rodzaj
 from zakres_runu import KROKI, MUTACJE, TORY, Zdarzenie
 
 WERSJA = 1
@@ -45,6 +45,10 @@ class Zadanie:
     jednostki: tuple[str, ...]
     sciana_s: float
     przegladarka: bool = False  # ma krok skilla, którego skrypty importują Playwright
+
+    @property
+    def klucze(self) -> tuple[Klucz, ...]:
+        return tuple(map(Klucz.z_tekstu, self.jednostki))
 
 
 @dataclass(frozen=True)
@@ -75,6 +79,9 @@ class Plan:
         plan = cls(**{**dane, "zdarzenie": Zdarzenie(dane["zdarzenie"]), "runy": tuple(dane["runy"]), "zadania": zadania, "bledy": tuple(dane["bledy"])})
         if plan.digest != digest:
             raise ValueError(f"treść planu nie zgadza się z jego digest {digest[:12]}")
+        # Klucz jednostki w innej postaci to ValueError, jak plan w innej wersji.
+        for klucz in (klucz for zadanie in plan.zadania for klucz in zadanie.jednostki):
+            Klucz.z_tekstu(klucz)
         return plan
 
     def macierz(self, szablon: str) -> list[dict[str, str | bool | int]]:
@@ -96,7 +103,7 @@ class Plan:
         """``timeout-minutes`` zadania pytest: suma limitów jego kroków (pytest, na pull request ponowienie, kroki CI)
         i ``NARZUT_ZADANIA_S``, więc zadanie kończy limit kroku z linią ``LIMIT``, zanim zabije je GitHub."""
 
-        kroki = [KROKI[klucz.removeprefix("krok:")] for klucz in zadanie.jednostki if klucz.startswith("krok:")]
+        kroki = [KROKI[klucz.nazwa] for klucz in zadanie.klucze if klucz.rodzaj is Rodzaj.KROK]
         ponowienie = PONOWIENIE_LIMIT_S if self.zdarzenie is Zdarzenie.PULL_REQUEST else 0
         return math.ceil((NARZUT_ZADANIA_S + limit_pytest_s(zadanie) + ponowienie + sum(sum(krok.limity_s) for krok in kroki)) / 60)
 

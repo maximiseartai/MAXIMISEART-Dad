@@ -27,6 +27,7 @@ WORK_IN_PROGRESS = HOOK.parents[1] / "praca_w_toku.py"
 SKILLS_FOR_CHANGE = (
     "tools/skille_dla_zmiany.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/ci/mutacje_skilli.py", "tools/plan_ci.py", "tools/lib/plan_runu.py", "tools/lib/niestabilne_testy.py", "tools/mutacje_zmiany.py",
     "tools/lib/pokrycie_procesu.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py",
+    "tools/lib/jednostka.py", "tools/lib/ostatnie_linie.py",
 )
 SKILL = "---\nname: verify-kod\ndescription: kod\npilnuje:\n  - kod/*\n---\n"
 BRANCH = "refs/heads/zmiana"

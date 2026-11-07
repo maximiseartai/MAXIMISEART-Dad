@@ -142,6 +142,7 @@ import tokenize
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
+from jednostka import Czesc
 import mutacje
 import pokrycie_procesu
 import potomne
@@ -154,7 +155,9 @@ WORKERS = 4
 MUTATION_LIMIT_S = 900
 # Zadanie części w mutacje-nocne.yml ma 180 min; 5 min zostaje na instalację i wgranie zapisu.
 PART_LIMIT_S = 10500
-# Ostatnia linia części, w której przeżyły mutacje (kod 1): wynik, który ``tools/mutacje_nocne.py`` tylko zgłasza.
+# Początek ostatniej linii części bez porażki i części, w której przeżyły mutacje (kod 1): wyniki, które
+# ``tools/mutacje_nocne.py`` tylko zgłasza.
+OK = "MUTACJE ZMIANY OK"
 SURVIVED = "MUTACJE ZMIANY FAIL | przeżyło"
 # Linia poleceń Windows ma najwyżej 32 767 znaków; dłuższa lista testów idzie jako pliki testów.
 COMMAND_LIMIT = 20_000
@@ -768,11 +771,11 @@ def _allowance(allowed: Mapping[int, Allowance], mutant: Mutant, today: datetime
     return allowance if allowance is not None and allowance.until >= today else None
 
 
-def _part(text: str) -> tuple[int, int]:
-    number, _, count = text.partition("/")
-    if not (number.isdigit() and count.isdigit() and 1 <= int(number) <= int(count)):
-        raise argparse.ArgumentTypeError(f"część K/N z 1 <= K <= N, nie {text!r}")
-    return int(number), int(count)
+def _part(text: str) -> Czesc:
+    try:
+        return Czesc.z_tekstu(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"część {error}") from None
 
 
 def main(argv: list[str] | None = None, *, gate: mutacje.Gate = mutacje.static_gate) -> int:
@@ -788,7 +791,7 @@ def main(argv: list[str] | None = None, *, gate: mutacje.Gate = mutacje.static_g
     parser.add_argument(
         "--do", default="", help="Tylko mutacje linii, które ostatni zmienił commit linii pierwszych rodziców zawarty w tym (zakres nocy z planu)."
     )
-    parser.add_argument("--czesc", metavar="K/N", type=_part, default=(1, 1), help="Tylko K-ty z N kolejnych kawałków listy mutacji.")
+    parser.add_argument("--czesc", metavar="K/N", type=_part, default=Czesc(1, 1), help="Tylko K-ty z N kolejnych kawałków listy mutacji.")
     parser.add_argument("--zapis", type=Path, help="Plik JSON z ostatnią linią i nazwami przeżytych mutacji (artefakt CI).")
     ciezkie_ci.argument(parser)
     args = parser.parse_args(argv)
@@ -802,7 +805,7 @@ def main(argv: list[str] | None = None, *, gate: mutacje.Gate = mutacje.static_g
     if args.zapis is not None:
         args.zapis.parent.mkdir(parents=True, exist_ok=True)
         record = {
-            "czesc": "/".join(map(str, args.czesc)),
+            "czesc": str(args.czesc),
             "wynik": result,
             "przezyte": [entry(mutant, text) for mutant, text in survived],
             "bez_werdyktu": [entry(mutant, text) for mutant, text in unchecked],
@@ -913,11 +916,10 @@ class ZakresMutacji:
 
         return math.ceil(self.liczba_mutacji / na_czesc)
 
-    def czesc(self, numer: int, liczba: int) -> Sequence[Mutant]:
-        """Mutacje części ``numer`` z ``liczba``: jej kolejny kawałek listy, każda mutacja w jednej części."""
+    def czesc(self, czesc: Czesc) -> Sequence[Mutant]:
+        """Mutacje części: jej kolejny kawałek listy, każda mutacja w jednej części."""
 
-        every = self.mutanty
-        return every[len(every) * (numer - 1) // liczba : len(every) * numer // liczba]
+        return czesc.kawalek(self.mutanty)
 
 
 def _mutate(
@@ -928,7 +930,7 @@ def _mutate(
 
     deadline = time.monotonic() + args.limit_czesci_s
     out_of_time = f"MUTACJE ZMIANY FAIL | limit czasu części {args.limit_czesci_s:g} s minął"
-    number, count = args.czesc
+    czesc: Czesc = args.czesc
     try:
         zakres = ZakresMutacji.od(args.baza, ROOT)
     except subprocess.CalledProcessError:
@@ -940,15 +942,15 @@ def _mutate(
     if args.do:
         zakres = zakres.do(args.do)
     texts, hunks, allowed = zakres.teksty, zakres.fragmenty, zakres.wyjatki
-    found = zakres.czesc(number, count)
+    found = zakres.czesc(czesc)
     if not found:
-        where = f" w części {number}/{count}" if zakres.mutanty else ""
-        return 0, f"MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i tools/ od {args.baza}{where}"
+        where = f" w części {czesc}" if zakres.mutanty else ""
+        return 0, f"{OK} | brak mutacji zmienionych linii src/ i tools/ od {args.baza}{where}"
     paths = {mutant.path for mutant in found}
     repository = wplyw_zmiany.Repository.scan(ROOT)
     by_file = tests_of(repository, paths)
     tests = sorted({test for chosen in by_file.values() for test in chosen})
-    part = f" (część {number}/{count} z {len(zakres.mutanty)})" if count > 1 else ""
+    part = f" (część {czesc} z {len(zakres.mutanty)})" if czesc.n > 1 else ""
     print(f"Mutacje: {len(found)}{part} w {len(paths)} plikach src/ i tools/ od {args.baza}. Testy dotknięte zmianą: {len(tests)}.", flush=True)
     near = {path: repository.reaching(path) for path in paths}
     clock = [time.monotonic()]
@@ -1057,7 +1059,7 @@ def _mutate(
         return 3, f"{out_of_time} przed werdyktem {len(unchecked)} mutacji | przeżyło {len(survived)} | {summary}"
     if survived:
         return 1, f"{SURVIVED} {len(survived)} | {summary}"
-    return 0, f"MUTACJE ZMIANY OK | {summary}"
+    return 0, f"{OK} | {summary}"
 
 
 if __name__ == "__main__":

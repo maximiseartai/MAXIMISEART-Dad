@@ -75,7 +75,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 from github import MERGE, REPO, SQUASH, Akcja, GhApi, GitHub, Skomentuj, Zaloz, blok_kodu, issues, strony
 from github import wykonaj as wykonaj_akcje
 from kroki_skilli import Katalog, Step
-from mutacje import PART, NearLimit
+from jednostka import ZMIENNA_CZESCI, Czesc, Klucz
+import jednostka
+from mutacje import NearLimit
 import mutacje_zmiany
 import plan_runu
 from repo import ROOT
@@ -154,10 +156,10 @@ def macierz(noc: mutacje_zmiany.ZakresMutacji, n: int, repository: Repository) -
     więc zadanie części instaluje Chromium jak zadanie pytest planu CI (``zakres_runu.potrzebuja_chromium``)."""
 
     wpisy: list[dict[str, int | bool]] = []
-    for numer in range(1, n + 1):
-        sciezki = {mutant.path for mutant in noc.czesc(numer, n)}
+    for czesc in Czesc.calosc(n):
+        sciezki = {mutant.path for mutant in noc.czesc(czesc)}
         testy = [test for dotkniete in mutacje_zmiany.tests_of(repository, sciezki).values() for test in dotkniete]
-        wpisy.append({"czesc": numer, "przegladarka": bool(potrzebuja_chromium(testy, repository))})
+        wpisy.append({"czesc": czesc.k, "przegladarka": bool(potrzebuja_chromium(testy, repository))})
     return wpisy
 
 
@@ -227,7 +229,7 @@ def zapisy(katalog: Path, liczba: int) -> tuple[list[Przezyta], list[str]]:
         przezyte += [Przezyta(wpis["id"], tuple(wpis["linie"]), wpis["klucz"]) for wpis in zapis.get("przezyte") or []]
         bez_werdyktu = [Przezyta(wpis["id"], tuple(wpis["linie"]), wpis["klucz"], bez_werdyktu=True) for wpis in zapis.get("bez_werdyktu") or []]
         przezyte += bez_werdyktu
-        if not bez_werdyktu and not str(zapis.get("wynik")).startswith(("MUTACJE ZMIANY OK", mutacje_zmiany.SURVIVED)):
+        if not bez_werdyktu and not str(zapis.get("wynik")).startswith((mutacje_zmiany.OK, mutacje_zmiany.SURVIVED)):
             problemy.append(f"część {numer}/{liczba}: {zapis.get('wynik')}")
     return przezyte, problemy
 
@@ -314,7 +316,7 @@ def wyniki_skilli(plan: plan_runu.Plan, katalog: Path) -> tuple[list[str], list[
             problemy.append(f"{zadanie.nazwa}: zapis innego planu niż {plan.digest[:12]}")
             continue
         # Części jednego kroku w zadaniu zgłaszają się pod jego kluczem: krok padł, gdy padła którakolwiek.
-        zaplanowane = {klucz.partition("#")[0] for klucz in zadanie.jednostki}
+        zaplanowane = {str(klucz.zgloszony) for klucz in zadanie.klucze}
         if brak := sorted(zaplanowane - {jednostka["klucz"] for jednostka in zapis["jednostki"]}):
             problemy.append(f"{zadanie.nazwa}: jednostki bez wyniku: {', '.join(brak)}")
         padly |= zaplanowane & {jednostka["klucz"] for jednostka in zapis["jednostki"] if jednostka["status"] != "ok"}
@@ -340,19 +342,19 @@ def przypisz_skrypty(
     katalog = Katalog.skanuj(root)
     # Ten sam wybór co plan nocy (``tools/plan_ci.py``). Nieśledzone zapisy artefaktów w checkoucie zgłoszenia nie mają
     # historii, więc ``_autor_kroku`` ich nie znajduje w ``git log``.
-    wybrane = {f"skill:{w.krok.key}": w for w in zakres(Zdarzenie.NOC, changed_since(root, od), root).wybrane}
+    wybrane = {jednostka.skill(w.krok.key): w for w in zakres(Zdarzenie.NOC, changed_since(root, od), root).wybrane}
     linia_main = repo.git(root, "rev-list", "--first-parent", "--reverse", f"{od}..HEAD").split()
     autorzy = {
-        klucz: _autor_kroku(github, root, od, linia_main, katalog.krok(klucz), wybrane.get(klucz)) for klucz in {*padly, *(klucz for klucz, _ in blisko)}
+        klucz: _autor_kroku(github, root, od, linia_main, katalog.krok(Klucz.z_tekstu(klucz)), wybrane.get(klucz)) for klucz in {*padly, *(klucz for klucz, _ in blisko)}
     }
     wynik: dict[Autor, Skrypty] = {}
     problemy: list[str] = []
     for klucz in padly:
         if (kto := autorzy[klucz]) is None:
             # Skill bez pilnuje biegnie także w nocy bez commitu od bazy, a wtedy jego porażka nie ma PR ani issue.
-            problemy.append(f"skrypt {katalog.krok(klucz).command[0]} padł, a od bazy {od} main nie ma commitu, którego PR by go dostał")
+            problemy.append(f"skrypt {katalog.krok(Klucz.z_tekstu(klucz)).command[0]} padł, a od bazy {od} main nie ma commitu, którego PR by go dostał")
             continue
-        wynik.setdefault(kto, Skrypty()).padly.append(katalog.krok(klucz).command[0])
+        wynik.setdefault(kto, Skrypty()).padly.append(katalog.krok(Klucz.z_tekstu(klucz)).command[0])
     for klucz, ostrzezenie in blisko:
         if (kto := autorzy[klucz]) is None:
             problemy.append(f"{_klucz_blisko(ostrzezenie)}: od bazy {od} main nie ma commitu, którego PR by je dostał")
@@ -451,7 +453,7 @@ def akcje_skryptow(github: GitHub, przypisane: dict[Autor, Skrypty], run: str) -
                     *blok_kodu(padly),
                     "",
                     "Log runu pokazuje, która mutacja przeżyła sprawdzenie skilla (`NIEWYKRYTA`), straciła kotwicę (`NIEAKTUALNA`) "
-                    "albo czy padła podstawa; część z planu odtwarzasz z `MUTACJE_CZESC=<k>/<n>`.",
+                    f"albo czy padła podstawa; część z planu odtwarzasz z `{ZMIENNA_CZESCI}=<k>/<n>`.",
                     "Dla każdej linii `SKRYPT` popraw sprawdzenie skilla albo tabelę mutacji, albo napisz w komentarzu "
                     "`SKRYPT <skrypt> | nie warto, bo <powód>`.",
                     "",
@@ -490,7 +492,7 @@ def _klucz_blisko(ostrzezenie: NearLimit) -> str:
 
 
 def _linia_blisko(ostrzezenie: NearLimit) -> str:
-    czesc = f" ({PART}={ostrzezenie.part})" if ostrzezenie.part else ""
+    czesc = f" ({ZMIENNA_CZESCI}={ostrzezenie.part})" if ostrzezenie.part else ""
     return f"{_klucz_blisko(ostrzezenie)} | {ostrzezenie.seconds} s z limitu --limit-s {ostrzezenie.limit_s:g} s{czesc}"
 
 

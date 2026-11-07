@@ -152,6 +152,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import czasy_ci
 import github
+from ostatnie_linie import SKILLE_VERIFY
 import potomne
 from repo import REMOTE, ROOT
 import repo
@@ -618,7 +619,7 @@ def _clean_up() -> str:
 def _skills_for_change(head: str, fork: str) -> list[str]:
     """Wynik ``tools/skille_dla_zmiany.py`` z kopii commitu ``head`` od ``fork``; ostatnia linia to zawsze ``SKILLE VERIFY``."""
 
-    unknown = "SKILLE VERIFY: nieznane ({})"
+    unknown = SKILLE_VERIFY + "nieznane ({})"
     with potomne.commit_copy(ROOT, head) as copy:
         if not (copy / SKILLS_FOR_CHANGE).is_file():
             return [unknown.format(f"HEAD PR nie ma {SKILLS_FOR_CHANGE.as_posix()}")]
@@ -627,7 +628,7 @@ def _skills_for_change(head: str, fork: str) -> list[str]:
         except subprocess.TimeoutExpired:
             return [unknown.format(f"{SKILLS_FOR_CHANGE.as_posix()} przerwane po {SKILLS_TIMEOUT_S} s")]
     lines = done.stdout.splitlines()
-    if not lines or not lines[-1].startswith("SKILLE VERIFY: "):
+    if not lines or not lines[-1].startswith(SKILLE_VERIFY):
         detail = (done.stderr.strip().splitlines() or [f"kod {done.returncode}"])[-1]
         lines.append(unknown.format(f"{SKILLS_FOR_CHANGE.as_posix()}: {detail}"))
     return lines

@@ -57,7 +57,7 @@ class Wynik:
 def run(step: Step, limit_s: float = LIMIT_S, env: Mapping[str, str] | None = None) -> Wynik:
     """Uruchamia krok z echem wyjścia i zmiennymi ``env`` w checkoucie skilla kroku (``Step.root``).
 
-    Skrypt mutacji kończy się linią ``VERDICT``, podstawie wystarczy kod 0. Plan CI daje części skryptu
+    Skrypt mutacji kończy się linią ``Step.verdict`` (``ostatnie_linie.MUTACJE_OK``), podstawie wystarczy kod 0. Plan CI daje części skryptu
     ``MUTACJE_CZESC`` przez ``env``. Krok po limicie nie oddaje ostrzeżeń, bo jego wyjścia już nie ma.
     """
 

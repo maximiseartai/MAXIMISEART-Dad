@@ -27,7 +27,9 @@ sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
 import czasy_ci  # noqa: E402
 import kroki_skilli  # noqa: E402
+from jednostka import Czesc  # noqa: E402
 from mutacje import NearLimit  # noqa: E402
+from ostatnie_linie import MUTACJE_OK  # noqa: E402
 import niestabilne_testy  # noqa: E402
 import plan_ci  # noqa: E402
 import plan_runu  # noqa: E402
@@ -69,7 +71,7 @@ SKILL_STEPS = {
 def _skill_steps(keys: list[str]) -> list[kroki_skilli.Step]:
     skills = ROOT / ".agents" / "skills"
     return [
-        kroki_skilli.Step(skills / key.split("/")[0], key, key, (key,), None if key.endswith("/ci") else kroki_skilli.VERDICT, SKILL_STEPS[key][1], SKILL_STEPS[key][2])
+        kroki_skilli.Step(skills / key.split("/")[0], key, key, (key,), None if key.endswith("/ci") else MUTACJE_OK, SKILL_STEPS[key][1], SKILL_STEPS[key][2])
         for key in keys
     ]
 
@@ -342,6 +344,17 @@ def test_plan_wczytany_z_pliku_ma_zdarzenie_zapisanego_wiec_zadanie_pr_dalej_ma_
     unknown = plan_runu.Plan(event, plan_ci.CEL_S, (), (job,)).do_json().replace(f'"zdarzenie": "{event}"', '"zdarzenie": "release"')
     with pytest.raises(ValueError, match="release"):
         plan_runu.Plan.z_json(unknown)
+
+
+@pytest.mark.parametrize("unit", ["tests/test_adr.py", "pytest:", "krok:e2e#0/2", "mutacje:verify-a/ci", "skill:verify-a/ci#3/2"])
+def test_plan_z_jednostka_spoza_postaci_klucza_jest_nieczytelny_zanim_zadanie_cokolwiek_uruchomi(unit: str) -> None:
+    """Zadanie i Required czytają jednostki planu tylko w postaci klucza ``<rodzaj>:<nazwa>[#k/n]``, więc plan z inną
+    jednostką to ``ValueError`` przy wczytaniu, jak plan w innej wersji, a nie krok uruchomiony pod złą nazwą."""
+
+    job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py", unit), 401.0)
+
+    with pytest.raises(ValueError, match=re.escape(repr(unit.partition("#")[2]) if "#" in unit else repr(unit))):
+        plan_runu.Plan.z_json(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)).do_json())
 
 
 def test_plan_zmieniony_po_digest_nie_wykonuje_sie_a_required_nie_bierze_zapisow_innego_planu(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -813,7 +826,7 @@ def test_plan_biegnie_kazda_czescia_ustalona_przez_zakres_a_bez_nich_czesciami_j
     step = kroki_skilli.Step(ROOT / ".agents" / "skills" / "verify-e", key, key, (key,), None, 3, False)
     parts = tuple((k, n) for n in range(1, 4) for k in range(1, n + 1)) if fixed else ()
     czasy = _with_skill_times(_times())
-    plan = plan_ci.rozplanuj([plan_ci.wycen_mutacje([KrokSkilla(step, "", parts)], czasy)], Zdarzenie.NOC, czasy.runy)
+    plan = plan_ci.rozplanuj([plan_ci.wycen_mutacje([KrokSkilla(step, "", tuple(Czesc(k, n) for k, n in parts))], czasy)], Zdarzenie.NOC, czasy.runy)
     base = Counter(unit for job in plan.zadania for unit in job.jednostki)
 
     if fixed:
