@@ -291,7 +291,7 @@ def _change_bases(tree: ast.Module) -> list[ast.expr]:
     bases: list[ast.expr] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and _called(node) == "changed_since":
-            bases += node.args[1:2] + [keyword.value for keyword in node.keywords if keyword.arg == "base"]
+            bases += node.args[-1:] + [keyword.value for keyword in node.keywords if keyword.arg == "base"]
         items = node.elts if isinstance(node, (ast.List, ast.Tuple)) else node.args if isinstance(node, ast.Call) else []
         for first, second, base in zip(items, items[1:], items[2:], strict=False):
             if isinstance(first, ast.Constant) and isinstance(second, ast.Constant) and (first.value, second.value) == ("merge-base", "HEAD"):
@@ -418,6 +418,7 @@ def main():
     ("source", "missing"),
     [
         ("parser.add_argument('baza', nargs='?')\nchanged_since(ROOT, args.baza)\n", ["parser"]),
+        ("parser.add_argument('--zmiany-od')\nszybko.changed_since(args.zmiany_od)\n", ["parser"]),
         ("plan = commands.add_parser('plan')\nplan.add_argument('--baza')\nwplyw_zmiany.changed_since(ROOT, args.baza)\n", []),
         ("parser.add_argument('--od')\nrun(['git', 'merge-base', 'HEAD', args.od])\n", ["parser"]),
         ("run(['git', 'merge-base', '--is-ancestor', commit, 'HEAD'])\n", []),
@@ -429,6 +430,7 @@ def main():
     ],
     ids=[
         "pozycyjna przy changed_since",
+        "--zmiany-od przy changed_since z samą bazą",
         "--baza podkomendy",
         "--od przy merge-base HEAD",
         "merge-base bez bazy zmiany",
