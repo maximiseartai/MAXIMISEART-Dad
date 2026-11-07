@@ -862,8 +862,8 @@ def test_realizator_efenix_rowny_wykonawcy_innym_zapisem_tych_samych_liter_to_te
     (``normalize_text``): ta sama litera zapisana w Excelu jako litera z osobnym znakiem diakrytycznym (Unicode NFD), a w
     efenix jako jeden znak (NFC), i inna wielkość liter to ten sam realizator, a nie błąd zlecenia."""
 
-    order = Order("#8301", worker="Józef.Testowy", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
-    efenix = StanEfenix([replace(order.in_efenix("901"), realizator="józef.testowy", execution_date=DAY)])
+    order = Order("#8301", worker="Jo\u0301zef.Testowy", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+    efenix = StanEfenix([replace(order.in_efenix("901"), realizator="j\u00f3zef.testowy", execution_date=DAY)])
 
     outcome = _price_in_process(tmp_path, efenix, [order])
 
