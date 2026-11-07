@@ -109,6 +109,9 @@ _CONTRACT_NUMBER: Final = "NUMER UMOWY/ZLECENIA ORANGE"
 """Nagłówek docelowy kolumny ``NUMER UMOWY`` w ``COLUMNS`` Rejestru."""
 _TAB_SELECTED: Final = re.compile(rb'(<sheetView\b[^>]*?)\stabSelected="(?:1|true)"')
 _WORKBOOK_VIEW: Final = re.compile(rb"<workbookView\b([^>]*?)(/?>)")
+_COMPRESSION: Final = 1
+"""Poziom zlib zapisu: arkusz zleceń taty (dziesiątki MB XML) zajmuje przy nim tyle co po zapisie w Excelu, a domyślny
+poziom 6 kompresuje go kilka razy dłużej i był większością czasu Uporządkowania INTERMAX u taty."""
 _STYLE_LISTS: Final = (b"fonts", b"fills", b"borders", b"cellXfs")
 """Listy ``xl/styles.xml``, na których końcu zapis dopisuje wpisy."""
 
@@ -467,7 +470,7 @@ class Register:
                 copied = zipfile.ZipInfo(info.filename, info.date_time)
                 copied.compress_type = info.compress_type
                 copied.external_attr = info.external_attr
-                target.writestr(copied, parts.get(info.filename, self._parts[info.filename]))
+                target.writestr(copied, parts.get(info.filename, self._parts[info.filename]), compresslevel=_COMPRESSION)
         return out.getvalue()
 
     def check(self, written: bytes, sheet: OrderSheet, block: RawBlock, plan: DayPlan) -> None:
