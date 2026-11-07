@@ -16,13 +16,14 @@ z modelu: okno, które wołałoby kod Wyceny, przestałoby być niezależną dru
 
 Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
 ``PURE_VERSIONS``, więc stopień wersji i los dziennika Wyceny sprawdza test bez plików i wątków. Wysyłkę Logów
-Uruchomienia (``Post`` z etykietą ``logi-uruchomienia``) buduje tylko ``comment_versions.post_of``, a dowód strażnika
+Uruchomienia (``Post`` z etykietą ``logi-uruchomienia``) buduje tylko ``comment_versions.post_of``, a samą etykietę
+poza typem ``report_box.Label`` zna tylko ``comment_versions.LABEL``; dowód strażnika
 reguły danych (``_MINTED``) zna tylko ``run_logs``: inaczej typ Logów po strażniku (``GuardedLogs``) niczego by nie
 dowodził, bo dało się go zbudować bez strażnika.
 
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica: import przez ``importlib`` albo ``__import__`` z napisu łapie tylko
-przegląd, a ``_MINTED`` wzięty przez ``getattr`` z napisu też.
+przegląd, a ``_MINTED`` wzięty przez ``getattr`` z napisu i ``LABEL`` przypisany innej nazwie przed ``Post`` też.
 """
 
 from __future__ import annotations
@@ -325,6 +326,18 @@ def test_wysylke_logow_uruchomienia_buduje_tylko_post_of() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         file = path.relative_to(SRC).as_posix()
         names = {"LABEL"} if file == COMMENT_VERSIONS else _run_logs_label_names(tree)
+        if file != COMMENT_VERSIONS:
+            in_types = {
+                node
+                for subscript in ast.walk(tree)
+                if isinstance(subscript, ast.Subscript) and ast.unparse(subscript.value) in {"Literal", "typing.Literal"}
+                for node in ast.walk(subscript)
+            }
+            found += [
+                f"src/{file}:{node.lineno}: {RUN_LOGS_LABEL!r}"
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Constant) and node.value == RUN_LOGS_LABEL and node not in in_types
+            ]
         allowed = {
             node
             for function in tree.body
@@ -349,6 +362,7 @@ def test_wysylke_logow_uruchomienia_buduje_tylko_post_of() -> None:
         [
             *found,
             "Wysyłkę Logów Uruchomienia (etykieta logi-uruchomienia) buduje tylko post_of z wersji komentarza "
-            f"(src/{COMMENT_VERSIONS}), która niesie tylko tekst po strażniku i wybiera stopień (rank_of).",
+            f"(src/{COMMENT_VERSIONS}), która niesie tylko tekst po strażniku i wybiera stopień (rank_of), a etykietę "
+            "zna tylko comment_versions.LABEL.",
         ]
     )
