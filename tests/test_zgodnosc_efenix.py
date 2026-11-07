@@ -246,6 +246,21 @@ CHANGED = {
             )
         },
     ),
+    # Ukryte pole ``#main_id`` każdej strony zlecenia ma inny identyfikator niż ``id`` z linku listy: skrypt strony
+    # wysłałby go jako ``order_id`` Przekazania, a strażnik okna przepuszcza tylko ``id`` z linku.
+    "identyfikator-zlecenia-inny-niz-w-linku": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "identyfikator-zlecenia-inny-niz-w-linku.txt",
+        rewrites={ORDER_PAGE: _replaced(('id="main_id" value="', 'id="main_id" value="9'))},
+    ),
+    # Strona zlecenia bez pola ``#main_id``, a skrypt strony bez nazw ``order_id`` i ``main_id``, z których „Tak” okna
+    # zmiany statusu bierze identyfikator zlecenia.
+    "przekazanie-bez-identyfikatora-zlecenia": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "przekazanie-bez-identyfikatora-zlecenia.txt",
+        rewrites={
+            ORDER_PAGE: _replaced(('id="main_id"', 'id="glowne_id"')),
+            ORDER_SCRIPT: _replaced(("order_id", "id_zlecenia"), ("main_id", "glowne_id")),
+        },
+    ),
     # Szukanie bez sesji przekierowane na stronę logowania, jak Atrapa przed #828, zamiast ostrzeżenia efenix.
     "szukanie-bez-sesji-przekierowuje-na-logowanie": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-bez-sesji-przekierowuje-na-logowanie.txt",

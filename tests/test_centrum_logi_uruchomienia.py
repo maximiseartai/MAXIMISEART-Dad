@@ -1444,19 +1444,19 @@ def test_wycena_w_efenix_z_zapisem_przekazuje_gotowe_zlecenie_a_karta_logi_i_pow
     assert notification["orders"] == {"ready": 0, "forwarded": 2, "settled": 0, "errors": 0, "warnings": 0}
 
 
-@pytest.mark.parametrize("kept", ["logi", "historia", "dziennik"])
-def test_karta_wyceny_z_zapisem_po_ponownym_starcie_centrum_ma_jej_tryb_z_logow_historii_albo_dziennika(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kept: str
-) -> None:
-    """Karta ostatniego Uruchomienia po ponownym starcie Centrum mówi, że Wycena była z zapisem, skądkolwiek ją wzięła: z
-    Logów Uruchomienia, z wiersza Historii i pliku ostatniego startu, gdy Logów nie ma, albo z dziennika Urwanego
-    Uruchomienia, którego Logi mają ten tryb w faktach startu."""
+def _previous_after_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kept: str, *, pricing: str | None, before_modes: bool = False
+) -> tuple[dict[str, Any], str, list[dict[str, Any]]]:
+    """Karta ostatniego Uruchomienia po ponownym starcie Centrum po Wycenie w trybie ``pricing``, której zostały tylko
+    Logi Uruchomienia (``kept`` „logi”), wiersz Historii i plik ostatniego startu („historia”) albo dziennik i plik
+    ostatniego startu („dziennik”); ``before_modes``: każdy z tych plików bez pola ``pricing``, jak zapisało go Centrum
+    sprzed trybów. Daje kartę, identyfikator Uruchomienia i Logi po starcie."""
 
     with atrapa_efenix(FORWARDED_IN_EFENIX) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
         write_collective_file(centrum.period_parent, FORWARDED)
         journaled = journals_at_result(monkeypatch, centrum.log_path.parent / "dzienniki-wyceny")
-        assert _start_pricing(centrum, pricing="z Przekazaniem").status_code == 200
+        assert _start_pricing(centrum, pricing=pricing).status_code == 200
         run_id = finished_view(centrum.client)["run"]["id"]
     centrum.client.stop()
     if kept != "logi":
@@ -1466,15 +1466,53 @@ def test_karta_wyceny_z_zapisem_po_ponownym_starcie_centrum_ma_jej_tryb_z_logow_
         centrum.engines.metrics.efenix.unlink()
         for path, text in journaled.items():
             path.write_text(text, encoding="utf-8")
+    if before_modes:
+        for path in [*log_files(centrum), centrum.log_path.parent / "ostatnie-uruchomienie.json"]:
+            path.write_text(json.dumps(_without_pricing(json.loads(path.read_text(encoding="utf-8")))), encoding="utf-8")
+        for path in journaled if kept == "dziennik" else []:
+            first, *rest = path.read_text(encoding="utf-8").splitlines(keepends=True)
+            path.write_text(json.dumps(_without_pricing(json.loads(first))) + "\n" + "".join(rest), encoding="utf-8")
 
     centrum.restart()
     previous = centrum.client.get("/api/runs/current").json()["previous"]
     centrum.client.stop()
+    return previous, run_id, records(centrum)
+
+
+def _without_pricing(fields: dict[str, Any]) -> dict[str, Any]:
+    assert "pricing" in fields, "plik ma tryb, więc test usuwa pole, którego nie było przed trybami"
+    return {name: value for name, value in fields.items() if name != "pricing"}
+
+
+@pytest.mark.parametrize("kept", ["logi", "historia", "dziennik"])
+def test_karta_wyceny_z_zapisem_po_ponownym_starcie_centrum_ma_jej_tryb_z_logow_historii_albo_dziennika(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kept: str
+) -> None:
+    """Karta ostatniego Uruchomienia po ponownym starcie Centrum mówi, że Wycena była z zapisem, skądkolwiek ją wzięła: z
+    Logów Uruchomienia, z wiersza Historii i pliku ostatniego startu, gdy Logów nie ma, albo z dziennika Urwanego
+    Uruchomienia, którego Logi mają ten tryb w faktach startu."""
+
+    previous, run_id, logged = _previous_after_restart(tmp_path, monkeypatch, kept, pricing="z Przekazaniem")
 
     state = {"logi": "restored", "historia": "recorded", "dziennik": "interrupted"}[kept]
     assert (previous["state"], previous["run"]["id"], previous["run"]["pricing"]) == (state, run_id, "z Przekazaniem")
     if kept == "dziennik":
-        assert [record["pricing"] for record in records(centrum)] == ["z Przekazaniem"]
+        assert [record["pricing"] for record in logged] == ["z Przekazaniem"]
+
+
+@pytest.mark.parametrize("kept", ["logi", "historia", "dziennik"])
+def test_karta_wyceny_z_plikow_sprzed_trybow_ma_tryb_bez_przekazania(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kept: str
+) -> None:
+    """Logi, plik ostatniego startu i pierwsza linia dziennika sprzed trybów nie mają pola ``pricing``, a Wycena biegła
+    wtedy bez Przekazania (ADR 0027), więc karta ostatniego Uruchomienia mówi „bez Przekazania”, a nie „z Przekazaniem”."""
+
+    previous, run_id, logged = _previous_after_restart(tmp_path, monkeypatch, kept, pricing=None, before_modes=True)
+
+    state = {"logi": "restored", "historia": "recorded", "dziennik": "interrupted"}[kept]
+    assert (previous["state"], previous["run"]["id"], previous["run"]["pricing"]) == (state, run_id, "bez Przekazania")
+    if kept == "dziennik":
+        assert [record.get("pricing") for record in logged] == [None]
 
 
 def test_tryb_z_przekazaniem_ma_tylko_wycena_w_efenix_a_inny_proces_z_nim_dostaje_odmowe(tmp_path: Path) -> None:

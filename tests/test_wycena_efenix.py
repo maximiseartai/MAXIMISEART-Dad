@@ -1069,16 +1069,23 @@ def test_w_tempie_ludzkim_przekazanie_to_zapis_z_przerwa_a_potwierdzajace_szukan
     assert log == [*one_order, "przerwa 15 s", *one_order]
 
 
-def test_okno_przegladarki_przekazuje_gotowe_zlecenie_jednym_zadaniem_zmiany_statusu_na_do_akceptacji(tmp_path: Path, page: Page) -> None:
-    order = Order("#8351", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
-    source = write_collective_file(tmp_path, [order])
-    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
+def test_jedno_okno_przegladarki_przekazuje_kazde_gotowe_zlecenie_po_kolei_jednym_zadaniem_zmiany_statusu_na_do_akceptacji(
+    tmp_path: Path, page: Page
+) -> None:
+    """Strażnik okna przepuszcza Przekazanie zlecenia otwartego ostatnio, nie pierwszego w oknie, więc tryb z
+    Przekazaniem przekazuje każde gotowe zlecenie uruchomienia."""
+
+    orders = [Order(number, cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}) for number in ("#8351", "#8352")]
+    source = write_collective_file(tmp_path, orders)
+    in_efenix = [replace(order.in_efenix(order_id), execution_date=DAY) for order, order_id in zip(orders, ("901", "902"), strict=True)]
+    with atrapa_efenix(in_efenix) as atrapa:
         outcome = _run(source, page, atrapa.url, mode=PricingMode.FORWARD)
         requests = atrapa.status_requests()
-        [in_efenix], _logged_in = atrapa.state()
+        forwarded, _logged_in = atrapa.state()
 
-    assert (outcome.result, _figures(outcome)) == ("OK", _figures_of(1, 0, forwarded=1))
-    assert (requests, in_efenix.status, _address_fills(source)) == ([("POST", "Do akceptacji")], "Do akceptacji", {18: FORWARDED_RGB})
+    assert (outcome.result, _figures(outcome)) == ("OK", _figures_of(2, 0, forwarded=2))
+    assert requests == 2 * [("POST", "Do akceptacji")]
+    assert ([order.status for order in forwarded], _address_fills(source)) == (2 * ["Do akceptacji"], {18: FORWARDED_RGB, 19: FORWARDED_RGB})
 
 
 def test_przycisk_przekazania_ktorego_tak_wysyla_anulowane_nie_dochodzi_do_efenix_a_wycena_zatrzymuje_sie_do_maksa(
@@ -1111,6 +1118,7 @@ def test_przycisk_przekazania_ktorego_tak_wysyla_anulowane_nie_dochodzi_do_efeni
     [
         pytest.param(StatusChange.FORWARD_OTHER_ORDER, StatusChangeBlocked.OTHER_ORDER, [], "Do wyceny", id="inne-zlecenie"),
         pytest.param(StatusChange.FORWARD_TWO_ORDERS, StatusChangeBlocked.OTHER_ORDER, [], "Do wyceny", id="dwa-zlecenia"),
+        pytest.param(StatusChange.FORWARD_ORDER_IN_URL, StatusChangeBlocked.OTHER_ORDER, [], "Do wyceny", id="inne-zlecenie-w-adresie"),
         pytest.param(StatusChange.FORWARD_GET, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="get"),
         pytest.param(StatusChange.FORWARD_TWO_STATUSES, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="dwa-statusy"),
         pytest.param(StatusChange.FORWARD_STATUS_IN_URL, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="status-w-adresie"),

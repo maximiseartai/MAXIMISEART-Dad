@@ -20,6 +20,7 @@ from drive.common import (
     last_opened_is,
     period_choice,
     remove_tree,
+    stop_banner,
 )
 
 FEATURE = "wycena-w-efenix"
@@ -283,6 +284,7 @@ def _price(run: Run, page: Page, source: Path) -> None:
     run.check(True, "Otwórz Plik zbiorczy opens the Plik zbiorczy with the Znaczniki efenix")
     _notification(run, page, result)
     _forward(run, page, source)
+    _rerun_after_stop(run, page, source)
 
 
 def _one_mode_word(run: Run, live: Locator, badge: str) -> None:
@@ -429,3 +431,47 @@ def _notification(run: Run, page: Page, result: Json) -> None:
         lambda: run.api("/api/notifications", "efenix-powiadomienia-przeczytane")["unread"] == 0,
         "entering the view marks the Powiadomienie read",
     )
+
+
+def _rerun_after_stop(run: Run, page: Page, source: Path) -> None:
+    """„Uruchom ponownie” after a stopped Wycena opens the setup card with its process and period and starts nothing,
+    because Dad picks the mode at every start (ADR 0027)."""
+
+    run.step(FEATURE, "uruchom-ponownie")
+    print("  harness: the Plik zbiorczy saved without Excel, so no Kwota (AU) has a computed value", flush=True)
+    workbook = load_workbook(source)
+    try:
+        workbook.save(source)
+    finally:
+        workbook.close()
+    live = _live(page)
+    page.goto(run.url + "#/uruchomienia")
+    expect(live).to_be_visible()
+    live.get_by_role("button", name="Nowe Uruchomienie procesu", exact=True).click()
+    page.get_by_role("radio", name=PROCESS).click()
+    page.get_by_role("combobox", name="Okres").click()
+    page.get_by_role("option", name=period_choice(PERIOD, "Plik zbiorczy przygotowany")).click()
+    page.get_by_role("button", name=FILL, exact=True).click()
+    page.get_by_role("alertdialog", name="Uzupełnić bez zapisu?").get_by_role("button", name=FILL, exact=True).click()
+    result = finished_result(run, "efenix-zatrzymanie")
+    stopped = current_run(run, "efenix-zatrzymanie-karta")["run"]
+    assert isinstance(stopped, dict)
+    rerun = stop_banner(page).get_by_role("button", name="Uruchom ponownie", exact=True)
+    expect(rerun).to_be_visible()
+    run.check(
+        (result["ending"], stopped["process"], stopped["period"]) == ("stop", "efenix", PERIOD),
+        "the Wycena of a Plik zbiorczy without the computed Kwota (AU) stops and offers Uruchom ponownie",
+    )
+    rerun.click()
+    expect(page.get_by_role("radio", name=PROCESS)).to_be_checked()
+    expect(page.get_by_role("combobox", name="Okres")).to_contain_text(PERIOD)
+    for name in (FILL, FORWARD):
+        expect(page.get_by_role("button", name=name, exact=True)).to_be_visible()
+    expect(page.get_by_role("alertdialog")).to_have_count(0)
+    after = current_run(run, "efenix-po-uruchom-ponownie")
+    shown = after.get("run")
+    run.check(
+        after["state"] == "finished" and isinstance(shown, dict) and shown["id"] == stopped["id"],
+        "Uruchom ponownie of a Wycena opens the setup card with Wycena w efenix and its period, and starts nothing",
+    )
+    run.capture(page, "270-efenix-uruchom-ponownie")

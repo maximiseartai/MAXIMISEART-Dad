@@ -31,7 +31,7 @@ Emmetta w karcie, w której Maks sam kliknął przycisk Emmetta. Sprawdza:
   statusu ``#dialog_forward_yes_no`` i jego „Tak” ``.btn-ok``, bez klikania), przycisk anulowania, który ma Atrapa, skrypt
   ``js/page_order_edit.js`` (pod adresem z listy ``ALLOWED``) z nazwami ``efenix_page.SCRIPT_USES`` strony zlecenia
   (pickadate z ``onSet``, „Potwierdź” daty, Emmett, zapis ilości z ``price_all``, „Tak” okna zmiany statusu z
-  ``action_change_status.php`` i ``xstatus``) i karty pozycji
+  ``action_change_status.php``, ``xstatus``, ``order_id`` i ``main_id``) i karty pozycji
   ``.card.rounded-lg.kolorek``: karta z polem Ilość ma cenę w tekście ``.col-sm-1.mt-2 > span.text-default > small``,
   a karta z ceną wpisywaną samo pole ``input.wycena-cena``; każdy kod ``INDEKS_NNN_NNN`` jest pozycją Atrapy
   (``model_efenix.CATALOG``) z tym samym rodzajem karty, przy czym strona może mieć tylko część pozycji Atrapy, jak
@@ -44,7 +44,11 @@ Emmetta w karcie, w której Maks sam kliknął przycisk Emmetta. Sprawdza:
   ``field_signum``, ``field_password`` i ``fingerprint``.
 
 Skryptów stron narzędzie nie uruchamia, więc ich działania nie widzi: sprawdza tylko, że skrypt ma nazwy, na których
-polega okno Wyceny w efenix. Przycisku kalendarza daty wykonania (``#button-calendar``) nie sprawdza: okno klika go tylko
+polega okno Wyceny w efenix. Na każdej otwartej stronie zlecenia sprawdza za to, że ukryte pole ``#main_id``
+(``efenix_page.ORDER_ID_FIELD``) jest raz i ma wartość ``id`` z linku listy, którym narzędzie otworzyło stronę. Strażnik
+okna przepuszcza Przekazanie tylko z ``order_id`` równym temu ``id``, a skrypt strony efenix z rekonesansu 1.11.2026
+wysyła jako ``order_id`` wartość ``#main_id``. Że skrypt robi to dalej, narzędzie widzi tylko po nazwach ``order_id`` i
+``main_id`` w skrypcie, które stoją w nim też przy innych działaniach. Przycisku kalendarza daty wykonania (``#button-calendar``) nie sprawdza: okno klika go tylko
 przy pustej dacie wykonania, a efenix pokazuje go najpewniej tylko wtedy, więc wynik zawsze ma linię ``NIESPRAWDZONE``
 z prośbą o sprawdzenie ręczne (``DATE_BUTTON_BY_HAND``).
 
@@ -155,6 +159,7 @@ from rozliczenia.efenix_page import (
     EXECUTION_DATE,
     LOGIN_FORM,
     LOGIN_PAGE,
+    ORDER_ID_FIELD,
     ORDER_PAGE,
     QUANTITY,
     SCRIPT_USES,
@@ -640,6 +645,7 @@ def _check_orders(efenix: _Efenix, page: Page, order_ids: Sequence[str], costs: 
 
     opened = report.checked["otwarte zlecenia"] = 0
     unread: Counter[str] = Counter()
+    other_ids: Counter[str] = Counter()
     structure_checked = empty_found = False
     for order_id in order_ids[:ORDERS_TO_OPEN]:
         if structure_checked and empty_found:
@@ -654,6 +660,8 @@ def _check_orders(efenix: _Efenix, page: Page, order_ids: Sequence[str], costs: 
             empty_found = empty_found or read_order(page)[0].execution_date is None
         except UnexpectedPage:
             unread[_shape(page)] += 1
+        if (fault := _order_id_fault(page, order_id)) is not None:
+            other_ids[fault] += 1
         if not structure_checked:
             _check_elements(page, Part.ORDER, (*ORDER_ELEMENTS, *UNUSED_ORDER_ELEMENTS), report)
             _check_proposal_before(page, report)
@@ -663,10 +671,25 @@ def _check_orders(efenix: _Efenix, page: Page, order_ids: Sequence[str], costs: 
     report.checked["otwarte zlecenia"] = opened
     for shape, count in unread.items():
         report.differ(Part.ORDER, f"Wycena w efenix nie czyta strony zlecenia ({shape}): {count} z {opened}")
+    for fault, count in other_ids.items():
+        report.differ(Part.ORDER, f"{fault}: {count} z {opened}; na nich strażnik okna zatrzyma Przekazanie do akceptacji")
     if not structure_checked:
         report.unchecked.append((Part.PRICING, "bez strony zlecenia"))
     elif not empty_found:
         report.unchecked.append((Part.ORDER, f"postać pustej daty wykonania: żadne z {opened} otwartych zleceń nie ma pustej {EXECUTION_DATE}"))
+
+
+def _order_id_fault(page: Page, order_id: str) -> str | None:
+    """Różnica pola ``ORDER_ID_FIELD`` strony zlecenia otwartej linkiem z ``id`` ``order_id``: skrypt strony wysyła jego
+    wartość jako ``order_id`` Przekazania, a strażnik okna przepuszcza tylko ``id`` z linku; ``None``, gdy pole jest raz
+    i ma tę wartość. Wartości nie podaje, bo to identyfikator zlecenia."""
+
+    located = page.locator(ORDER_ID_FIELD)
+    if located.count() != 1:
+        return f"strony zlecenia bez jednego pola identyfikatora zlecenia {ORDER_ID_FIELD}"
+    if located.get_attribute("value") != order_id:
+        return f"strony zlecenia z identyfikatorem w polu {ORDER_ID_FIELD} innym niż id z linku listy ({ORDER_PAGE}?id=)"
+    return None
 
 
 def _shape(page: Page) -> str:
