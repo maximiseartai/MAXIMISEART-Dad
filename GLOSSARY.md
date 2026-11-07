@@ -45,8 +45,9 @@ _Avoid_: aplikacja firmowa, Fenix
 ## Przekazanie do akceptacji
 
 Zielony „Zapisz” przy zleceniu w efenix: zlecenie przechodzi ze statusu „Do
-wyceny” do „Do akceptacji” i jego wycenę sprawdza firma. Robi je tylko tata.
-Czerwony „Zapisz” obok niego anuluje zlecenie.
+wyceny” do „Do akceptacji” i jego wycenę sprawdza firma. Robi je tata albo
+Wycena w efenix w trybie z Przekazaniem, tylko przy zleceniu gotowym (ADR 0027).
+Czerwony „Zapisz” obok niego anuluje zlecenie, a tego narzędzie nie robi nigdy.
 _Avoid_: zapis, zatwierdzenie
 
 ## Wycena w efenix
@@ -54,16 +55,18 @@ _Avoid_: zapis, zatwierdzenie
 Proces, który tata uruchamia w Centrum rozliczeń dla okresu po Gotowości:
 w oknie efenix, w którym tata jest zalogowany, uzupełnia wycenę każdego
 zlecenia Pliku zbiorczego, które nie jest Zleceniem ze zdjęciami ani usterką,
-Wyceną Emmetta i Ilościami usług z Pliku zbiorczego, a gotowe oznacza
-Znacznikiem efenix. Nigdy nie robi Przekazania do akceptacji. Wycenę dokańcza do
+Wyceną Emmetta i Ilościami usług z Pliku zbiorczego. Ma dwa tryby (ADR 0027):
+bez Przekazania gotowe zlecenie oznacza Znacznikiem efenix, a z Przekazaniem
+robi jego Przekazanie do akceptacji i oznacza je Znacznikiem przekazania. W obu trybach uzupełnia wycenę w efenix,
+więc tryb bez Przekazania nie jest podglądem. Wycenę dokańcza do
 Pliku zbiorczego tylko w górę (ADR 0026): w każdej pozycji, w której efenix ma
 mniej niż plik, wpisuje ilość z pliku, także w miejsce ilości Emmetta i w
 wycenie, która już jest, a ilości w efenix nigdy nie obniża ani nie czyści.
 Zlecenie, którego nie da się uzupełnić tak, żeby kwota była równa `Kwota` (AU),
 zostawia tacie jako błąd, a pozycję, w której efenix ma więcej niż plik, jako
 Ostrzeżenie Emmetta. Zlecenie
-rozliczone nie jest błędem, a zlecenie o statusie innym niż „Do wyceny” i
-„Rozliczone” jest. Strona zlecenia w
+rozliczone i Zlecenie przekazane nie są błędem, a zlecenie o statusie innym niż
+„Do wyceny”, „Rozliczone” i „Do akceptacji” jest. Strona zlecenia w
 efenix bywa bez części pozycji wyceny: brak pozycji, w której Plik zbiorczy ma
 0 albo pustą komórkę, nie przeszkadza, a brak pozycji, w której ma ilość, to
 błąd tego zlecenia.
@@ -77,6 +80,16 @@ rozliczyła z tatą. Wycena w efenix go nie otwiera, niczego w nim nie zmienia i
 nie stawia mu Znacznika efenix. Tata widzi je jako Rozliczone, osobno od
 gotowych, błędów i Ostrzeżeń Emmetta, a samo nie zmienia wyniku OK.
 _Avoid_: zlecenie zamknięte, zlecenie zakończone
+
+## Zlecenie przekazane
+
+Zlecenie Pliku zbiorczego, które w efenix ma status „Do akceptacji”, a jego
+realizator i dane adresowe zgadzają się z `WYKONAWCA` i `ADRES`: przekazała je
+Wycena w efenix w trybie z Przekazaniem, wcześniejsze uruchomienie albo tata.
+Wycena w efenix niczego w nim nie zmienia i stawia mu Znacznik przekazania. Tata
+widzi je jako Przekazane, osobno od gotowych, Zleceń rozliczonych, błędów i
+Ostrzeżeń Emmetta, a samo nie zmienia wyniku OK.
+_Avoid_: zlecenie zapisane, zlecenie zatwierdzone
 
 ## Wycena Emmetta
 
@@ -107,8 +120,17 @@ tego zlecenia jest uzupełniona w efenix Ilościami usług z Pliku zbiorczego, j
 kwota jest równa `Kwota` (AU), a Przekazanie do akceptacji należy do taty. Nie jest
 Wyróżnieniem i nie przechodzi do Rozliczeń pracowników. Nowy Plik zbiorczy ma
 `ADRES` bez wypełnienia, a żółte `ADRES` stawia tata, gdy zlecenie jest
-rozliczone z firmą.
+rozliczone z firmą. Znacznika efenix Wycena w efenix nigdy nie stawia w miejsce
+Znacznika przekazania.
 _Avoid_: kolor gotowości, zaznaczenie
+
+## Znacznik przekazania
+
+Ciemniejsze fioletowe wypełnienie komórki `ADRES` Zlecenia przekazanego w Pliku
+zbiorczym, które nie zaciemnia tekstu adresu. Zastępuje Znacznik efenix tego
+zlecenia. Tak jak Znacznik efenix nie jest Wyróżnieniem i nie przechodzi do
+Rozliczeń pracowników.
+_Avoid_: ciemny Znacznik efenix, kolor przekazania
 
 ## Surowe zlecenia
 
@@ -827,4 +849,5 @@ Jeśli folder lub pliki docelowe nowego okresu już istnieją, proces zatrzymuje
 się bez ich nadpisywania. Wzorce również pozostają niezmienione, a Rejestr
 zleceń zmieniają tylko Uporządkowanie INTERMAX i przywrócenie Kopii INTERMAX.
 Istniejący Plik zbiorczy zmienia tylko Wycena w efenix i tylko Znacznikiem
-efenix w `ADRES` gotowych zleceń.
+efenix w `ADRES` gotowych zleceń i Znacznikiem przekazania w `ADRES` Zleceń
+przekazanych.
