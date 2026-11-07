@@ -16,14 +16,22 @@ z modelu: okno, które wołałoby kod Wyceny, przestałoby być niezależną dru
 
 Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
 ``PURE_VERSIONS``, więc stopień wersji i los dziennika Wyceny sprawdza test bez plików i wątków. Wysyłkę Logów
-Uruchomienia (``Post`` z etykietą ``logi-uruchomienia``) buduje tylko ``comment_versions.post_of``, a samą etykietę
-poza typem ``report_box.Label`` zna tylko ``comment_versions.LABEL``; dowód strażnika
-reguły danych (``_MINTED``) zna tylko ``run_logs``: inaczej typ Logów po strażniku (``GuardedLogs``) niczego by nie
-dowodził, bo dało się go zbudować bez strażnika.
+Uruchomienia (``Post`` z etykietą ``logi-uruchomienia``) buduje tylko ``comment_versions.post_of``, a jej wynik idzie od
+razu do kolejki (``outbox.post(post_of(wersja))``), więc nikt go nie zmieni przez ``dataclasses.replace``. Etykietę
+Logów (``comment_versions.LABEL``, rozpoznaną po imporcie, a nie po nazwie ``LABEL``) kod poza ``post_of`` tylko podaje
+kolejce w pytaniu ``delivered`` albo ``rejected``, a napis ``logi-uruchomienia`` stoi tylko w ``Literal``.
+
+Logi i tekst po strażniku reguły danych (``GuardedLogs``, ``GuardedText``) daje tylko ``guard_logs`` i ``guard_text``
+z ``run_logs``, inaczej ich typ niczego by nie dowodził. Konstruktor bez dowodu strażnika (``_MINTED``), ``replace``,
+kopię, ``pickle`` i zmianę pola zamyka typ (docstring ``run_logs._MINTED``). Drogi, które typ przepuszcza
+(``object.__new__``, ``object.__setattr__``, ``cast``), łapie test: poza ``run_logs`` te nazwy padają tylko w
+adnotacjach i importach, a napis z nimi i ``_MINTED`` w żadnej postaci.
 
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
-trafia do ``STDLIB_ONLY`` z powodem. Granica: import przez ``importlib`` albo ``__import__`` z napisu łapie tylko
-przegląd, a ``_MINTED`` wzięty przez ``getattr`` z napisu i ``LABEL`` przypisany innej nazwie przed ``Post`` też.
+trafia do ``STDLIB_ONLY`` z powodem. Granica: nazwę albo napis złożony w trakcie działania (``importlib``,
+``__import__``, ``getattr`` z napisu sklejonego z części) łapie tylko przegląd, tak samo jak wysyłkę Logów zmienioną w
+słuchaczu kolejki bez nazwania etykiety (np. po ``run_id``) albo zbudowaną z etykietą wziętą z innej wysyłki
+(``post.target.label``).
 """
 
 from __future__ import annotations
@@ -35,6 +43,8 @@ import importlib
 from pathlib import Path
 import sys
 import typing
+
+import pytest
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 GUARDIAN = SRC / "rozliczenia" / "centrum" / "restart_guardian.py"
@@ -62,6 +72,12 @@ PURE_VERSIONS = {
 }
 RUN_LOGS = "rozliczenia/centrum/run_logs.py"
 RUN_LOGS_LABEL = "logi-uruchomienia"
+VERSIONS = "rozliczenia.centrum.comment_versions"
+# Pytania kolejki, czy wysyłka doszła albo została odrzucona: jedyne, czemu kod poza post_of podaje etykietę Logów.
+QUEUE_QUESTIONS = frozenset({"delivered", "rejected"})
+# Typy po strażniku reguły danych i ten plik, który je nazywa w swoich regułach.
+GUARDED = frozenset({"GuardedLogs", "GuardedText"})
+GUARD_CHECK = ROOT / "tests" / "test_granice_importow.py"
 STDLIB_ONLY = {
     "rozliczenia/__init__.py": "pakiet, który wczytuje każdy moduł poniżej",
     "rozliczenia/centrum/__init__.py": "pakiet, który wczytuje każdy moduł Centrum",
@@ -109,11 +125,21 @@ def _modules_loaded(module: str) -> Iterator[str]:
         yield ".".join(parts[:end])
 
 
+def _from_module(node: ast.ImportFrom, file: str) -> str:
+    """Moduł importu ``from … import`` w pliku ``file`` (``rozliczenia/…``), także względnego."""
+
+    base = node.module or ""
+    if not node.level:
+        return base
+    package = _module_name(file) if file.endswith("__init__.py") else _module_name(file).rpartition(".")[0]
+    anchor = package.split(".")[: len(package.split(".")) - node.level + 1]
+    return ".".join([*anchor, *([base] if base else [])])
+
+
 def _imports(file: str) -> Iterator[Import]:
     """Importy pliku z modułami, które wczytują; ``nested`` dla importu w funkcji."""
 
     tree = ast.parse((SRC / file).read_text(encoding="utf-8"))
-    package = _module_name(file) if file.endswith("__init__.py") else _module_name(file).rpartition(".")[0]
     in_function = {
         node
         for function in ast.walk(tree)
@@ -124,10 +150,7 @@ def _imports(file: str) -> Iterator[Import]:
         if isinstance(node, ast.Import):
             names = [alias.name for alias in node.names]
         elif isinstance(node, ast.ImportFrom):
-            base = node.module or ""
-            if node.level:
-                anchor = package.split(".")[: len(package.split(".")) - node.level + 1]
-                base = ".".join([*anchor, *([base] if base else [])])
+            base = _from_module(node, file)
             names = [base, *(f"{base}.{alias.name}" for alias in node.names if _file_of(f"{base}.{alias.name}"))]
         else:
             continue
@@ -288,81 +311,298 @@ def _python_files() -> Iterator[Path]:
         yield from sorted(folder.rglob("*.py"))
 
 
-def test_dowod_straznika_logow_zna_tylko_run_logs() -> None:
+def _type_nodes(tree: ast.AST) -> set[ast.AST]:
+    """Węzły adnotacji (argumentu, wyniku, zmiennej) i importów: nazwa typu niczego tam nie buduje."""
+
+    roots: list[ast.AST] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.arg) and node.annotation is not None:
+            roots.append(node.annotation)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns is not None:
+            roots.append(node.returns)
+        elif isinstance(node, ast.AnnAssign):
+            roots.append(node.annotation)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            roots.append(node)
+    return {node for root in roots for node in ast.walk(root)}
+
+
+def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
+    """Miejsca, z których Logi albo tekst po strażniku mogą powstać albo się zmienić z pominięciem ``guard_logs`` i
+    ``guard_text`` drogą, której typ nie zamyka (docstring ``run_logs._MINTED``): ``_MINTED`` w każdej postaci, także
+    napis; nazwa ``GuardedLogs`` albo ``GuardedText`` (także pod inną nazwą z importu i jako atrybut modułu) poza
+    adnotacją i importem; napis z tą nazwą (także slot ``_GuardedLogs__…``) poza docstringiem."""
+
+    names = GUARDED | {
+        alias.asname
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+        if alias.name in GUARDED and alias.asname
+    }
+    typed = _type_nodes(tree)
+    docstrings = {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+    }
+    found = []
+    for node in ast.walk(tree):
+        if (
+            (isinstance(node, ast.Name) and node.id == "_MINTED")
+            or (isinstance(node, ast.Attribute) and node.attr == "_MINTED")
+            or (isinstance(node, ast.alias) and node.name == "_MINTED")
+            or (isinstance(node, ast.Constant) and node.value == "_MINTED")
+        ):
+            found.append((getattr(node, "lineno", 0), "_MINTED"))
+        elif node in typed:
+            continue
+        elif (isinstance(node, ast.Name) and node.id in names) or (
+            isinstance(node, ast.Attribute) and node.attr in GUARDED
+        ):
+            found.append((node.lineno, ast.unparse(node)))
+        elif (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node not in docstrings
+            and any(name in node.value for name in GUARDED)
+        ):
+            found.append((node.lineno, repr(node.value)))
+    return found
+
+
+def test_logi_i_tekst_po_strazniku_powstaja_tylko_ze_straznika() -> None:
     found = [
-        f"{path.relative_to(ROOT).as_posix()}:{node.lineno}"
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {code}"
         for path in _python_files()
-        if path != SRC / RUN_LOGS
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
-        if (isinstance(node, ast.Name) and node.id == "_MINTED")
-        or (isinstance(node, ast.Attribute) and node.attr == "_MINTED")
-        or (isinstance(node, ast.alias) and node.name == "_MINTED")
+        if path not in {SRC / RUN_LOGS, GUARD_CHECK}
+        for line, code in _guard_bypasses(ast.parse(path.read_text(encoding="utf-8")))
     ]
 
     assert not found, "\n".join(
         [
             *found,
-            f"Dowód strażnika reguły danych (_MINTED) zna tylko src/{RUN_LOGS}: Logi i tekst po strażniku (GuardedLogs, "
-            "GuardedText) daje tylko guard_logs i guard_text.",
+            f"Logi i tekst po strażniku reguły danych (GuardedLogs, GuardedText) daje tylko guard_logs i guard_text z "
+            f"src/{RUN_LOGS}. Poza nim te nazwy padają tylko w adnotacjach i importach, a napis z nimi i dowód strażnika "
+            "(_MINTED) nigdzie, bo object.__new__, object.__setattr__ i cast typ przepuszcza. Kopia, replace i zmiana "
+            "pola rzucają (docstring _MINTED).",
         ]
     )
 
 
-def _run_logs_label_names(tree: ast.Module) -> set[str]:
-    """Nazwy, pod którymi moduł zna etykietę Logów Uruchomienia (``comment_versions.LABEL``)."""
+# Drogi obok guard_logs i guard_text, których typ nie zamyka (przegląd #1038, runda 1, i docstring run_logs._MINTED).
+GUARD_BYPASSES: typing.Final = {
+    "nowa-wartosc-bez-konstruktora": "logs = object.__new__(GuardedLogs)",
+    "slot-istniejacej-wartosci": 'object.__setattr__(logs, "_GuardedLogs__record", record)',
+    "logi-sprzed-straznika-rzutowane": "logs = cast(GuardedLogs, record)",
+    "rzutowanie-napisem": 'logs = cast("GuardedLogs", record)',
+    "konstruktor-z-modulu": "text = run_logs.GuardedText(text, proof)",
+    "nazwa-z-importu-pod-inna-nazwa": (
+        "from rozliczenia.centrum.run_logs import GuardedLogs as Logs\nlogs = Logs.__new__(Logs)"
+    ),
+    "dowod-z-importu": "from rozliczenia.centrum.run_logs import _MINTED",
+    "dowod-z-atrybutu-modulu": "proof = run_logs._MINTED",
+    "dowod-przez-getattr": 'proof = getattr(run_logs, "_MINTED")',
+    "dowod-ze-slownika-modulu": 'proof = vars(run_logs)["_MINTED"]',
+}
 
-    return {
-        alias.asname or alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module == "rozliczenia.centrum.comment_versions"
-        for alias in node.names
-        if alias.name == "LABEL"
+
+@pytest.mark.parametrize("code", GUARD_BYPASSES.values(), ids=GUARD_BYPASSES.keys())
+def test_sprawdzenie_straznika_lapie_kazda_droge_obok_niego_ktorej_typ_nie_zamyka(code: str) -> None:
+    assert _guard_bypasses(ast.parse(code))
+
+
+def test_sprawdzenie_straznika_przepuszcza_typy_po_strazniku_w_adnotacjach_imporcie_i_docstringu() -> None:
+    code = (
+        "from rozliczenia.centrum.run_logs import GuardedLogs, GuardedText\n"
+        "def keep(logs: GuardedLogs, text: 'GuardedText | None' = None) -> GuardedLogs:\n"
+        '    """Logi po strażniku (``GuardedLogs``) idą dalej bez zmian."""\n'
+        "    last: GuardedLogs | None = logs\n"
+        "    return logs\n"
+    )
+
+    assert _guard_bypasses(ast.parse(code)) == []
+
+
+def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
+    """Miejsca pliku ``file``, które mogą zbudować albo zmienić wysyłkę Logów Uruchomienia poza ``post_of``.
+
+    Etykietę Logów i ``post_of`` test rozpoznaje po pochodzeniu (import z ``comment_versions`` pod dowolną nazwą, także
+    względny, albo atrybut tego modułu), a nie po samej nazwie, bo ``LABEL`` mają też inne wysyłki (Kontrola ilości).
+    Wynik ``post_of`` idzie od razu do kolejki (``outbox.post(post_of(wersja))``), więc nikt go nie zatrzyma, nie zmieni
+    (``dataclasses.replace`` na ``Post``) i nie wyśle w innym stopniu. Etykietę poza ``post_of`` kod tylko podaje
+    kolejce w pytaniu, czy wysyłka Logów doszła albo została odrzucona (``delivered``, ``rejected``): wysyłki z nią nie
+    zbuduje i nie rozpozna jej w słuchaczu kolejki. Napis ``logi-uruchomienia`` stoi poza ``comment_versions`` tylko w
+    ``Literal``.
+    """
+
+    own = file == COMMENT_VERSIONS
+    labels, posts, modules = ({"LABEL"}, {"post_of"}, {VERSIONS}) if own else (set[str](), set[str](), {VERSIONS})
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            module = _from_module(node, file)
+            for alias in node.names:
+                name = alias.asname or alias.name
+                if module == VERSIONS and alias.name == "*":
+                    found.append((node.lineno, ast.unparse(node)))
+                elif module == VERSIONS and alias.name == "LABEL":
+                    labels.add(name)
+                elif module == VERSIONS and alias.name == "post_of":
+                    posts.add(name)
+                elif f"{module}.{alias.name}" == VERSIONS:
+                    modules.add(name)
+        elif isinstance(node, ast.Import):
+            modules |= {alias.asname for alias in node.names if alias.name == VERSIONS and alias.asname}
+
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    in_post_of = {
+        node
+        for function in tree.body
+        if own and isinstance(function, ast.FunctionDef) and function.name == "post_of"
+        for node in ast.walk(function)
     }
+    in_types = {
+        node
+        for subscript in ast.walk(tree)
+        if isinstance(subscript, ast.Subscript) and ast.unparse(subscript.value) in {"Literal", "typing.Literal"}
+        for node in ast.walk(subscript)
+    }
+
+    def named(node: ast.AST, names: set[str], attribute: str) -> bool:
+        return (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in names) or (
+            isinstance(node, ast.Attribute) and node.attr == attribute and ast.unparse(node.value) in modules
+        )
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.expr):
+            continue
+        if named(node, labels, "LABEL"):
+            if not (node in in_post_of if own else _asks_queue(node, parents)):
+                found.append((node.lineno, ast.unparse(node)))
+        elif named(node, posts, "post_of"):
+            if not _queued_at_once(node, parents):
+                found.append((node.lineno, ast.unparse(parents.get(node, node))))
+        elif not own and isinstance(node, ast.Constant) and node.value == RUN_LOGS_LABEL and node not in in_types:
+            found.append((node.lineno, repr(node.value)))
+    return found
+
+
+def _asks_queue(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+    """Etykieta jest argumentem pytania kolejki o wysyłkę: ``….delivered(…)`` albo ``….rejected(…)``."""
+
+    call = parents.get(node)
+    if isinstance(call, ast.keyword):
+        call = parents.get(call)
+    return isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr in QUEUE_QUESTIONS
+
+
+def _queued_at_once(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+    """``post_of`` wołane i jego wynik jedynym argumentem ``….post(…)`` kolejki."""
+
+    call = parents.get(node)
+    queued = parents.get(call) if isinstance(call, ast.Call) and call.func is node else None
+    return (
+        isinstance(queued, ast.Call)
+        and isinstance(queued.func, ast.Attribute)
+        and queued.func.attr == "post"
+        and queued.args == [call]
+        and not queued.keywords
+    )
 
 
 def test_wysylke_logow_uruchomienia_buduje_tylko_post_of() -> None:
-    found = []
-    for path in sorted((SRC / "rozliczenia").rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        file = path.relative_to(SRC).as_posix()
-        names = {"LABEL"} if file == COMMENT_VERSIONS else _run_logs_label_names(tree)
-        if file != COMMENT_VERSIONS:
-            in_types = {
-                node
-                for subscript in ast.walk(tree)
-                if isinstance(subscript, ast.Subscript) and ast.unparse(subscript.value) in {"Literal", "typing.Literal"}
-                for node in ast.walk(subscript)
-            }
-            found += [
-                f"src/{file}:{node.lineno}: {RUN_LOGS_LABEL!r}"
-                for node in ast.walk(tree)
-                if isinstance(node, ast.Constant) and node.value == RUN_LOGS_LABEL and node not in in_types
-            ]
-        allowed = {
-            node
-            for function in tree.body
-            if file == COMMENT_VERSIONS and isinstance(function, ast.FunctionDef) and function.name == "post_of"
-            for node in ast.walk(function)
-        }
-        for call in ast.walk(tree):
-            if call in allowed or not isinstance(call, ast.Call):
-                continue
-            called = call.func.id if isinstance(call.func, ast.Name) else getattr(call.func, "attr", "")
-            if called not in {"Post", "PeriodThread"}:
-                continue
-            if any(
-                (isinstance(node, ast.Name) and node.id in names)
-                or (isinstance(node, ast.Attribute) and node.attr == "LABEL")
-                or (isinstance(node, ast.Constant) and node.value == RUN_LOGS_LABEL)
-                for node in ast.walk(call)
-            ):
-                found.append(f"src/{file}:{call.lineno}: {called}(…)")
+    found = [
+        f"src/{file}:{line}: {code}"
+        for path in sorted((SRC / "rozliczenia").rglob("*.py"))
+        for file in [path.relative_to(SRC).as_posix()]
+        for line, code in _logs_post_breaks(ast.parse(path.read_text(encoding="utf-8")), file)
+    ]
 
     assert not found, "\n".join(
         [
             *found,
             "Wysyłkę Logów Uruchomienia (etykieta logi-uruchomienia) buduje tylko post_of z wersji komentarza "
-            f"(src/{COMMENT_VERSIONS}), która niesie tylko tekst po strażniku i wybiera stopień (rank_of), a etykietę "
-            "zna tylko comment_versions.LABEL.",
+            f"(src/{COMMENT_VERSIONS}), która niesie tylko tekst po strażniku i wybiera stopień (rank_of), a jej wynik "
+            "idzie od razu do kolejki: outbox.post(post_of(wersja)), bez replace. Etykietę Logów (comment_versions.LABEL) "
+            "kod poza post_of tylko podaje kolejce w pytaniu delivered albo rejected.",
         ]
     )
+
+
+# Wysyłki Logów poza post_of (przegląd #1038, runda 1: dwie pierwsze to przypadki recenzenta).
+LOGS_POST_BREAKS: typing.Final = {
+    "zastepcza-w-stopniu-logow-z-wynikiem": (
+        "from dataclasses import replace\n"
+        "from rozliczenia.centrum.comment_versions import OwnLogs, StandInLogs, post_of\n"
+        "from rozliczenia.centrum.outbox import Post, Rank\n"
+        "def own_from_start(logs):\n"
+        "    return replace(post_of(StandInLogs(logs)), rank=Rank.OWN)\n"
+    ),
+    "komentarz-sprzed-straznika": (
+        "from dataclasses import replace\n"
+        "from rozliczenia.centrum.comment_versions import OwnLogs, post_of\n"
+        "def unguarded(logs, record):\n"
+        "    return replace(post_of(OwnLogs(logs)), parts=(record.text + '\\n',))\n"
+    ),
+    "wysylka-zatrzymana-przed-kolejka": (
+        "from rozliczenia.centrum.comment_versions import post_of\n"
+        "def send(outbox, version):\n"
+        "    post = post_of(version)\n"
+        "    outbox.post(post)\n"
+    ),
+    "wysylka-odlozona-przed-kolejka": (
+        "from rozliczenia.centrum.comment_versions import post_of\n"
+        "def hold(held, version):\n"
+        "    held.append(post_of(version))\n"
+    ),
+    "post-of-pod-inna-nazwa":"from rozliczenia.centrum import comment_versions as cv\nmake = cv.post_of\n",
+    "etykieta-w-nowej-wysylce": (
+        "from rozliczenia.centrum.comment_versions import LABEL as RUN_LOGS\n"
+        "thread = PeriodThread(label=RUN_LOGS, line='-', closed='reuse', title='t')\n"
+    ),
+    "etykieta-z-importu-wzglednego": (
+        "from . import comment_versions\n"
+        "thread = PeriodThread(label=comment_versions.LABEL, line='-', closed='reuse', title='t')\n"
+    ),
+    "sluchacz-kolejki-zmienia-wysylke-logow": (
+        "from dataclasses import replace\n"
+        "from rozliczenia.centrum.comment_versions import LABEL\n"
+        "def prepare(post, sent):\n"
+        "    return replace(post, parts=()) if post.target.label == LABEL else post\n"
+    ),
+    "etykieta-napisem": "thread = PeriodThread(label='logi-uruchomienia', line='-', closed='reuse', title='t')\n",
+    "import-gwiazdki": "from rozliczenia.centrum.comment_versions import *\n",
+}
+
+
+@pytest.mark.parametrize("code", LOGS_POST_BREAKS.values(), ids=LOGS_POST_BREAKS.keys())
+def test_sprawdzenie_wysylki_logow_lapie_wysylke_poza_post_of(code: str) -> None:
+    assert _logs_post_breaks(ast.parse(code), "rozliczenia/centrum/proba.py")
+
+
+# Kod, który nie buduje wysyłki Logów (przegląd #1038, runda 1: pierwszy to fałszywy alarm recenzenta).
+LOGS_POST_ALLOWED: typing.Final = {
+    "etykieta-kontroli-ilosci": (
+        "from rozliczenia.centrum import quantity_check_run\n"
+        "from rozliczenia.centrum.outbox import PeriodThread\n"
+        "def checks_thread(period: str) -> PeriodThread:\n"
+        "    return PeriodThread(label=quantity_check_run.LABEL, line=f'- {period}', closed='reuse', title=period)\n"
+    ),
+    "wersja-od-razu-do-kolejki": (
+        "from rozliczenia.centrum.comment_versions import post_of\n"
+        "def keep(outbox, version):\n"
+        "    return outbox.post(post_of(version))\n"
+    ),
+    "pytanie-kolejki-o-logi": (
+        "from rozliczenia.centrum.comment_versions import LABEL as RUN_LOGS_LABEL\n"
+        "def link(sent, run_id):\n"
+        "    return sent.delivered(run_id, RUN_LOGS_LABEL) or sent.rejected(run_id, label=RUN_LOGS_LABEL)\n"
+    ),
+    "etykieta-w-typie": "from typing import Literal\nKind = Literal['logi-uruchomienia', 'kontrola-ilosci']\n",
+}
+
+
+@pytest.mark.parametrize("code", LOGS_POST_ALLOWED.values(), ids=LOGS_POST_ALLOWED.keys())
+def test_sprawdzenie_wysylki_logow_przepuszcza_kod_bez_wysylki_logow(code: str) -> None:
+    assert _logs_post_breaks(ast.parse(code), "rozliczenia/centrum/proba.py") == []

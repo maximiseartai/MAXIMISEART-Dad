@@ -74,7 +74,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from functools import cache
@@ -1183,40 +1183,63 @@ class PricingProgress:
 
 
 _MINTED: Final = object()
-"""Dowód, że wartość wyszła ze strażnika reguły danych (``guard_logs``, ``guard_text``). Zna go tylko ten moduł
-(``tests/test_granice_importow.py``), więc ``GuardedLogs`` i ``GuardedText`` nie powstają inaczej."""
+"""Dowód, że wartość wyszła ze strażnika reguły danych: ``GuardedLogs`` i ``GuardedText`` daje tylko ``guard_logs`` i
+``guard_text``, a każdą inną drogę zamyka typ albo test.
+
+- Konstruktor bez ``_MINTED`` rzuca ``TypeError``, a ``_MINTED`` zna tylko ten moduł.
+- ``dataclasses.replace``: to nie są dataclassy, więc mypy odrzuca wywołanie (``type-var``), a Python rzuca ``TypeError``.
+- Przypisanie i usunięcie pola albo slotu: mypy odrzuca przypisanie (właściwość tylko do odczytu), a ``__setattr__`` i
+  ``__delattr__`` rzucają ``AttributeError``. Dlatego ``copy.copy``, ``copy.deepcopy`` i ``pickle.loads`` też rzucają:
+  odtworzenie wartości ustawia sloty przez ``__setattr__``. ``copy.replace`` rzuca ``TypeError``, bo nie ma
+  ``__replace__``. Wartość jest niezmienna, więc kopia nie jest potrzebna.
+- ``object.__new__``, ``object.__setattr__``, ``typing.cast`` i ``_MINTED`` z modułu typ przepuszcza, więc łapie je test
+  ``tests/test_granice_importow.py``: poza tym modułem ``GuardedLogs`` i ``GuardedText`` padają tylko w adnotacjach i
+  importach, a napis z ich nazwą (sloty to ``_GuardedLogs__…`` i ``_GuardedText__…``) i ``_MINTED`` w żadnej postaci.
+  Granica: nazwę albo napis złożony w trakcie działania łapie tylko przegląd.
+- Pydantic tu nie ma: ``record.model_copy`` daje ``RunLog``, a nie Logi po strażniku."""
 
 
-@dataclass(frozen=True, eq=False)
 class GuardedLogs:
     """Logi Uruchomienia po strażniku reguły danych tej pracy Centrum (``guarded``, ADR 0025), z ``guard_logs``.
 
     Plik Logów (``RunLogs._write``) i wysyłka Logów (``comment_versions.post_of``) biorą tylko takie Logi, więc Logi,
-    które ominęły strażnika (Logi Urwanego Uruchomienia przed 2ff78b6b3), to błąd typu. ``text``: znaki pliku Logów i
-    pliku w Archiwum Logów okresu.
+    które ominęły strażnika (Logi Urwanego Uruchomienia przed 2ff78b6b3), to błąd typu (``_MINTED``). ``text``: znaki
+    pliku Logów i pliku w Archiwum Logów okresu.
     """
 
-    record: RunLog
-    _source: RunLog = field(repr=False)
+    __slots__ = ("__record", "__source")
+    __record: RunLog
+    __source: RunLog
     """Logi, które przeszły przez strażnika: Diagnoza dopisuje się do nich, a nie do ich maski."""
-    _proof: object = field(repr=False)
 
-    def __post_init__(self) -> None:
-        if self._proof is not _MINTED:
+    def __init__(self, record: RunLog, source: RunLog, proof: object) -> None:
+        if proof is not _MINTED:
             raise TypeError("Logi po strażniku daje tylko guard_logs.")
+        object.__setattr__(self, "_GuardedLogs__record", record)
+        object.__setattr__(self, "_GuardedLogs__source", source)
+
+    @property
+    def record(self) -> RunLog:
+        return self.__record
 
     @property
     def text(self) -> str:
-        return self.record.text
+        return self.__record.text
 
     def with_diagnosis(self, diagnosis: LoggedDiagnosis, forbidden: ForbiddenValues) -> GuardedLogs | None:
         """Te Logi z Diagnozą ``diagnosis``, przepuszczone przez strażnika drugi raz razem z nią, jak Logi z wynikiem;
         ``None``: Logi mają już Diagnozę z tym samym wynikiem (``LoggedDiagnosis.same_result``)."""
 
-        last = self._source.diagnosis
+        last = self.__source.diagnosis
         if last is not None and diagnosis.same_result(last):
             return None
-        return guard_logs(self._source.model_copy(update={"diagnosis": diagnosis}), forbidden)
+        return guard_logs(self.__source.model_copy(update={"diagnosis": diagnosis}), forbidden)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError("Logi po strażniku są niezmienne: nowe daje guard_logs.")
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError("Logi po strażniku są niezmienne: nowe daje guard_logs.")
 
 
 def guard_logs(record: RunLog, forbidden: ForbiddenValues) -> GuardedLogs:
@@ -1225,16 +1248,27 @@ def guard_logs(record: RunLog, forbidden: ForbiddenValues) -> GuardedLogs:
     return GuardedLogs(guarded(record, forbidden), record, _MINTED)
 
 
-@dataclass(frozen=True, eq=False)
 class GuardedText:
-    """Tekst komentarza bez pliku Logów (postęp, wynik bez Logów) po strażniku reguły danych, z ``guard_text``."""
+    """Tekst komentarza bez pliku Logów (postęp, wynik bez Logów) po strażniku reguły danych, z ``guard_text``
+    (``_MINTED``)."""
 
-    text: str
-    _proof: object = field(repr=False)
+    __slots__ = ("__text",)
+    __text: str
 
-    def __post_init__(self) -> None:
-        if self._proof is not _MINTED:
+    def __init__(self, text: str, proof: object) -> None:
+        if proof is not _MINTED:
             raise TypeError("Tekst po strażniku daje tylko guard_text.")
+        object.__setattr__(self, "_GuardedText__text", text)
+
+    @property
+    def text(self) -> str:
+        return self.__text
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError("Tekst po strażniku jest niezmienny: nowy daje guard_text.")
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError("Tekst po strażniku jest niezmienny: nowy daje guard_text.")
 
 
 def guard_text(text: str, place: str, forbidden: ForbiddenValues) -> GuardedText:

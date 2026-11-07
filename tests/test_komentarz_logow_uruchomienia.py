@@ -16,13 +16,16 @@ Typy pól, które strażnik zostawia bez maski (``TOOL_FIELDS``), sprawdza tu te
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+import copy
+import dataclasses
 from dataclasses import fields, is_dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 import gzip
 import json
+import pickle
 from types import UnionType
 from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin, get_type_hints
 
@@ -40,7 +43,9 @@ from rozliczenia.centrum.comment_versions import (
     WithoutLogsVersion,
     journal_after,
     post_of,
+    progress_markdown,
     summary_markdown,
+    without_logs_markdown,
 )
 from rozliczenia.centrum.outbox import PeriodThread, Rank
 from rozliczenia.centrum.run_logs import (
@@ -256,6 +261,82 @@ def test_dziennik_wyceny_znika_tylko_po_wersji_koncowej_komentarza_ktora_kolejka
     version = _versions()[kind]
 
     assert (journal_after(version, accepted=True), journal_after(version, accepted=False)) == after
+
+
+def _text_version(kind: str, forbidden: ForbiddenValues) -> ProgressVersion | WithoutLogsVersion:
+    """Postęp albo wynik bez Logów Uruchomienia ``RUN_ID`` z tekstem komentarza po strażniku ``forbidden``, tak jak
+    buduje je ``RunLogs``."""
+
+    started = StartFacts(
+        run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
+    )
+    progress = PricingProgress(started, (OrderDone(18, "gotowe", None),), 2, 19)
+    if kind == "postep":
+        return ProgressVersion(progress, guard_text(progress_markdown(progress, elapsed_s=90), "postęp", forbidden))
+    final = ResultWithoutLogs(progress, "OK", "niezapisane")
+    return WithoutLogsVersion(final, guard_text(without_logs_markdown(final), "wynik bez Logów", forbidden))
+
+
+@pytest.mark.parametrize("kind", ["postep", "wynik-bez-logow"])
+def test_postep_i_wynik_bez_logow_ida_do_skrzynki_z_tekstem_po_strazniku(kind: str) -> None:
+    """Komentarz postępu i wyniku bez Logów idzie do Skrzynki taki, jaki dał strażnik reguły danych pracy Centrum (ADR
+    0025): wartość z kolumny ``ADRES``, która trafiła do jego tekstu (tu w miejscu identyfikatora Uruchomienia), jest
+    maską z uwagą techniczną, a nie wartością sprzed strażnika."""
+
+    forbidden = ForbiddenValues()
+    forbidden.remember_value(ForbiddenColumn.ADDRESS, RUN_ID)
+
+    [comment] = post_of(_text_version(kind, forbidden)).parts
+
+    assert RUN_ID not in comment
+    assert "- Uwaga techniczna: Reguła danych: zamaskowano wartość kolumny ADRES" in comment
+
+
+# Drogi do Logów albo tekstu po strażniku bez guard_logs i guard_text, które zamyka sam typ (docstring run_logs._MINTED).
+NOT_FROM_GUARD: Final[dict[str, Callable[[Any], object]]] = {
+    "replace": lambda value: dataclasses.replace(value, text="ul. Syntetyczna 1"),
+    "kopia": copy.copy,
+    "gleboka-kopia": copy.deepcopy,
+    "pickle": lambda value: pickle.loads(pickle.dumps(value)),
+    "zmiana-pola": lambda value: setattr(value, "text", "ul. Syntetyczna 1"),
+    "zmiana-slotu": lambda value: setattr(value, _slot(value), "ul. Syntetyczna 1"),
+    "usuniecie-slotu": lambda value: delattr(value, _slot(value)),
+}
+
+
+def _slot(value: object) -> str:
+    """Nazwa pierwszego slotu wartości po strażniku po name manglingu (``_Klasa__pole``)."""
+
+    kind = type(value)
+    slots: tuple[str, ...] = getattr(kind, "__slots__")
+    return f"_{kind.__name__}{slots[0]}"
+
+
+@pytest.mark.parametrize("make", NOT_FROM_GUARD.values(), ids=NOT_FROM_GUARD.keys())
+@pytest.mark.parametrize("kind", ["logi", "tekst"])
+def test_logi_i_tekst_po_strazniku_nie_powstaja_z_kopii_ani_zmiany_istniejacych(
+    kind: str, make: Callable[[Any], object]
+) -> None:
+    """Logi i tekst po strażniku reguły danych daje tylko ``guard_logs`` i ``guard_text``: kopia, ``replace`` i zmiana
+    pola odmawiają, bo wartość, która ich nie przeszła, przeszłaby jako po strażniku (przegląd #1038, runda 1)."""
+
+    value = guard_logs(record(), ForbiddenValues()) if kind == "logi" else guard_text("Postęp.", "postęp", ForbiddenValues())
+    text = value.text
+
+    with pytest.raises((TypeError, AttributeError)):
+        make(value)
+
+    assert value.text == text
+
+
+def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_straznika() -> None:
+    logs = guard_logs(record(), ForbiddenValues())
+    text = guard_text("Postęp.", "postęp", ForbiddenValues())
+
+    with pytest.raises(TypeError, match="guard_logs"):
+        type(logs)(logs.record, logs.record, object())
+    with pytest.raises(TypeError, match="guard_text"):
+        type(text)("ul. Syntetyczna 1", object())
 
 
 def test_zakazana_wartosc_w_kluczu_slownika_logow_jest_zamaskowana_z_uwaga_o_polu_bez_wartosci() -> None:
