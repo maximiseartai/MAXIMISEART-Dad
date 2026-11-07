@@ -38,7 +38,6 @@ from rozliczenia.centrum.reports import (
 from rozliczenia.centrum.tool_update import NO_CONNECTION, OTHER_BRANCH, UpdateResult
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.efenix_window import PagePart
-from rozliczenia.message import Message
 from rozliczenia.process_run import Stop
 
 from tests.fixtures.centrum import (
@@ -149,7 +148,7 @@ def dump(state: BaseModel) -> dict[str, Any]:
 
 
 def source(computer: Computer, code: str = NO_CONNECTION) -> UpdateReport:
-    message: Message = update_messages.message_of(code)
+    message = update_messages.UpdateFailure.of(code).message
     return UpdateReport.of(UpdateResult(code, TOOL_COMMIT, None), message, computer.log)
 
 
@@ -302,7 +301,7 @@ def test_zgloszenie_z_bardzo_dlugim_sladem_i_dziennikiem_to_jedna_czesc_bez_rame
 def test_zgloszenie_nieudanej_aktualizacji_z_bardzo_dlugim_dziennikiem_to_jedna_czesc_bez_najstarszych_wpisow(
     computer: Computer,
 ) -> None:
-    message = update_messages.message_of(NO_CONNECTION)
+    message = update_messages.UpdateFailure.of(NO_CONNECTION).message
     report = UpdateReport(UpdateResult(NO_CONNECTION, TOOL_COMMIT, None), message, LONG_ENTRIES, ProblemFingerprint.of_tool_update(message))
 
     body = sent_alone(computer, report)

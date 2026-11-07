@@ -156,9 +156,3 @@ class UpdateFailure:
 
         factory, next_action = _BY_CODE.get(code, _BY_CODE[UNEXPECTED])
         return cls(factory(), next_action)
-
-
-def message_of(code: str) -> Message:
-    """Komunikat porażki o kodzie ``code`` z ``tool_update``, bez dalszego kroku (``UpdateFailure.of``)."""
-
-    return UpdateFailure.of(code).message
