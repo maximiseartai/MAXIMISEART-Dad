@@ -298,8 +298,13 @@ _SHOWS_ANYTHING: Final = f"""(selector) => {{
     const element = document.querySelector(selector);
     return element !== null && ({SHOWS_ANYTHING})(element);
 }}"""
-# Czy któreś z okien Emmetta (``DIALOG``) jest widoczne: ma pudełko (nie ``display: none``) i nie ``visibility: hidden``.
-_ANY_VISIBLE: Final = "(dialogs) => dialogs.some((dialog) => dialog.getClientRects().length > 0 && getComputedStyle(dialog).visibility !== 'hidden')"
+# Dokument karty: chwila, w której zaczęło się jego wczytanie; nowa strona albo przeładowanie ma inną.
+_DOCUMENT: Final = "performance.timeOrigin"
+# Dokument karty (``_DOCUMENT``) i czy w nim któreś z okien Emmetta (``DIALOG``) jest widoczne: ma pudełko (nie
+# ``display: none``) i nie ``visibility: hidden``.
+_ANY_VISIBLE: Final = (
+    f"(dialogs) => [{_DOCUMENT}, dialogs.some((dialog) => dialog.getClientRects().length > 0 && getComputedStyle(dialog).visibility !== 'hidden')]"
+)
 # Drzewo propozycji w oknie Emmetta, bez sprawdzania widoczności propozycji i jej węzłów. Węzeł drzewa to tekst z maską
 # (litera to a, cyfra to 9, białe znaki jak jedna spacja; sam biały znak pomija) albo element: znacznik, klasy (cyfra to
 # 9), nazwy atrybutów poza ``class`` bez wartości i węzły w środku, a w skrypcie, stylu, szablonie, ramce i ``noscript``
@@ -355,6 +360,10 @@ class _Window:
     fault: ElementCount | None
     shows: bool
     nodes: list[_Node]
+
+
+class _PageChanged(Exception):
+    """Karta zmieniła stronę między odczytami okna Emmetta, więc odczyty są z dwóch dokumentów."""
 
 
 class ToolError(Exception):
@@ -831,7 +840,7 @@ def _efenix_window(tabs: Sequence[Page], efenix_url: str, report: Report) -> _Wi
     orders = [tab for tab in tabs if order_tab(tab.url, efenix_url)]
     try:
         windows = [window for tab in orders if (window := _window(tab)) is not None]
-    except PlaywrightError:
+    except (PlaywrightError, _PageChanged):
         report.unchecked.append((Part.PROPOSAL, READ_FAILED))
         return None
     if len(windows) == 1:
@@ -856,14 +865,20 @@ def _efenix_window(tabs: Sequence[Page], efenix_url: str, report: Report) -> _Wi
 def _window(tab: Page) -> _Window | None:
     """Okno Emmetta w karcie ``tab`` po skryptach jej strony: ``None``, gdy żadne okno Emmetta nie jest widoczne, a przy
     widocznym okna i propozycje na całej stronie liczone i ocenione regułą okna Wyceny (``efenix_page.emmett_window``,
-    ``emmett_window_fault``) i drzewo jedynej propozycji. Kilka odczytów karty jeden po drugim: karta, która w ich trakcie
-    zmieni stronę, daje błąd Playwrighta."""
+    ``emmett_window_fault``) i drzewo jedynej propozycji.
 
-    if not tab.locator(DIALOG).evaluate_all(_ANY_VISIBLE):
+    Kilka odczytów karty jeden po drugim, więc wynik jest z jednej strony tylko wtedy, gdy karta ma po ostatnim ten sam
+    dokument (``performance.timeOrigin``) co w pierwszym, który czyta go razem z widocznością okna: karta, która zmieni
+    stronę w trakcie odczytu, daje błąd Playwrighta, a między odczytami ``_PageChanged``."""
+
+    document, visible = tab.locator(DIALOG).evaluate_all(_ANY_VISIBLE)
+    if not visible:
         return None
     counted = emmett_window(tab)
     fault = emmett_window_fault(counted)
     nodes: list[_Node] = [] if fault is not None else tab.locator(PROPOSAL).evaluate(_READ_TREE)
+    if tab.evaluate(_DOCUMENT) != document:
+        raise _PageChanged
     return _Window(fault, counted.shows, nodes)
 
 
