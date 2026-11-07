@@ -27,26 +27,31 @@ from .efenix_positions import (
     column_of,
 )
 from .message import IF_ERROR_RETURNS, Message, file_label, refer_if
-from .workbook_files import Problem, WorkbookError
+from . import workbook_messages
+from .workbook_files import WorkbookError
+from .workbook_messages import DadWorkbook, WorkbookMessages
 
 _PROCESS: Final = "Wycena w efenix"
 _UNCHANGED: Final = "W efenix nic się nie zmieniło."
 _KEPT: Final = "Wycena zleceń sprzed zatrzymania została w efenix."
 _EFENIX: Final = "okno efenix"
+_COLLECTIVE_FILE = DadWorkbook("Plik zbiorczy", "Pliku zbiorczego", "collective_file", _UNCHANGED, "uruchom ponownie")
 
 
 def source_unusable(error: WorkbookError) -> Message:
     """Plik zbiorczy, którego nie da się użyć; ``error`` mówi dlaczego."""
 
-    match error.problem:
-        case Problem.MISSING:
-            return collective_file_missing(error.path)
-        case Problem.OPEN_IN_EXCEL:
-            return _source_open_in_excel(error.path)
-        case Problem.INACCESSIBLE:
-            return _source_inaccessible(error.path)
-        case Problem.UNREADABLE | Problem.LAYOUT | Problem.HAS_DATA:
-            return _source_unreadable(error.path)
+    return workbook_messages.unusable(
+        error,
+        WorkbookMessages(
+            missing=collective_file_missing,
+            open_in_excel=_source_open_in_excel,
+            inaccessible=lambda source: workbook_messages.not_synced(
+                "EFENIX_NIEDOSTEPNY_PLIK_ZBIORCZY", source, _COLLECTIVE_FILE
+            ),
+            unreadable=_source_unreadable,
+        ),
+    )
 
 
 def collective_file_missing(source: Path) -> Message:
@@ -66,20 +71,10 @@ def _source_open_in_excel(source: Path) -> Message:
         dad_file="collective_file",
         what=f"Plik zbiorczy jest otwarty w Excelu, a {_PROCESS} oznacza w nim gotowe zlecenia Znacznikiem efenix. {_UNCHANGED}",
         where=file_label(source),
-        action="Zapisz i zamknij Plik zbiorczy w Excelu, potem uruchom ponownie.",
-    )
-
-
-def _source_inaccessible(source: Path) -> Message:
-    return Message(
-        code="EFENIX_NIEDOSTEPNY_PLIK_ZBIORCZY",
-        dad_file="collective_file",
-        what=(
-            "Nie można teraz odczytać Pliku zbiorczego. Plik może być zajęty przez inny program albo czekać na pobranie "
-            f"z OneDrive. {_UNCHANGED}"
+        action=(
+            "Zapisz i zamknij Plik zbiorczy w Excelu, potem uruchom ponownie. "
+            f"{workbook_messages.lock_hint(source, 'uruchom ponownie')}"
         ),
-        where=file_label(source),
-        action=f"Poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie. {IF_ERROR_RETURNS}",
     )
 
 

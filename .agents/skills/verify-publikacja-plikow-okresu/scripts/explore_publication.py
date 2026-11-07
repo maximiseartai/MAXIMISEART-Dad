@@ -15,9 +15,9 @@ re-running the code once per schedule, and checks two rules:
   left and does not say that no file was created.
 
 Only two things are replaced: workbook writing (``_write_period_file``) by a step
-that creates the staged file, and ``tempfile.TemporaryDirectory`` by a directory
-on the in-memory disk whose removal is one step that may fail, as when OneDrive
-holds the folder. A filesystem call that the in-memory disk does not model
+that creates the staged file, and the staging directory (``tempfile.mkdtemp`` and
+``shutil.rmtree``) by a directory on the in-memory disk whose removal is one step
+that may fail, as when OneDrive holds the folder. A filesystem call that the in-memory disk does not model
 stops the check as LUKA MODELU instead of passing silently.
 
 Schedules that reach a state already explored are cut short: the code is
@@ -41,7 +41,6 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import TracebackType
 from typing import Any, Literal
 
 from greenlet import getcurrent, greenlet  # type: ignore[import-untyped]  # greenlet ships no type hints
@@ -479,44 +478,39 @@ def intercepted(disk: VirtualDisk, scheduler: Scheduler) -> Iterator[None]:
 
 
 class _StagingDirectory:
-    """``tempfile.TemporaryDirectory`` on the in-memory disk; a killed process leaves it behind.
+    """``tempfile.mkdtemp`` and ``shutil.rmtree`` of the staging directory on the in-memory disk.
 
-    Its removal fails like the real one: with ``ignore_cleanup_errors`` the folder
-    stays and the failure is swallowed, otherwise it is raised. A kill during the
-    removal is not explored: the run's outcome is already decided, as with a kill
-    while the result is shown, which the checker does not explore either.
+    A killed process leaves the directory behind: the removal of a run that was killed or cut short takes no step.
+    The removal fails like the real one, as when OneDrive holds the folder: with ``ignore_errors`` the folder stays
+    and the failure is swallowed, otherwise it is raised. A kill during the removal is not explored: the run's
+    outcome is already decided, as with a kill while the result is shown, which the checker does not explore either.
     """
 
-    def __init__(
-        self, disk: VirtualDisk, scheduler: Scheduler, *, prefix: str, dir: Path, ignore_cleanup_errors: bool
-    ) -> None:
+    def __init__(self, disk: VirtualDisk, scheduler: Scheduler) -> None:
+        self.disk = disk
+        self.scheduler = scheduler
+
+    def mkdtemp(self, *, prefix: str, dir: Path) -> str:
         run = _current_run()
         if run is None:
             raise ModelGap("katalog tymczasowy poza uruchomieniem procesu")
-        self.disk = disk
-        self.scheduler = scheduler
-        self.ignore_cleanup_errors = ignore_cleanup_errors
-        self.path = Path(dir) / f"{prefix}{run.name}"
+        path = Path(dir) / f"{prefix}{run.name}"
+        self.disk.mkdir(path)
+        return str(path)
 
-    def __enter__(self) -> str:
-        self.disk.mkdir(self.path)
-        return str(self.path)
-
-    def __exit__(
-        self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
-    ) -> None:
-        if exc_type is not None and issubclass(exc_type, (Crash, Abort, ModelGap)):
-            return
+    def rmtree(self, path: Path, ignore_errors: bool = False) -> None:
+        if not self.disk.covers(path):
+            raise ModelGap("usunięcie katalogu spoza dysku w pamięci")
         try:
             self.scheduler.step(
                 "usunięcie katalogu tymczasowego",
-                (self.path,),
+                (path,),
                 mutating=True,
-                perform=lambda: self.disk.remove_tree(self.path),
+                perform=lambda: self.disk.remove_tree(path),
                 killable=False,
             )
-        except PermissionError:
-            if not self.ignore_cleanup_errors:
+        except OSError:
+            if not ignore_errors:
                 raise
 
 
@@ -531,14 +525,8 @@ def harness(disk: VirtualDisk, scheduler: Scheduler) -> Iterator[None]:
         )
         return template.kind, Route.COPY
 
-    class TempfileShim:
-        @staticmethod
-        def TemporaryDirectory(  # noqa: N802 - tempfile's name
-            *, prefix: str, dir: Path, ignore_cleanup_errors: bool = False
-        ) -> _StagingDirectory:
-            return _StagingDirectory(disk, scheduler, prefix=prefix, dir=dir, ignore_cleanup_errors=ignore_cleanup_errors)
-
-    replacements: dict[str, Any] = {"_write_period_file": write_period_file, "tempfile": TempfileShim}
+    staging = _StagingDirectory(disk, scheduler)
+    replacements: dict[str, Any] = {"_write_period_file": write_period_file, "tempfile": staging, "shutil": staging}
     originals = {name: getattr(preparation_files, name) for name in replacements}
     for name, value in replacements.items():
         setattr(preparation_files, name, value)

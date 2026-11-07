@@ -12,11 +12,12 @@ też muszą odpowiadać „Co się stało” Komunikatu.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import inspect
 from pathlib import Path
 import re
-from types import ModuleType
+import sys
+from types import FrameType, ModuleType
 
 import pytest
 
@@ -42,6 +43,7 @@ from tests.fixtures.message_samples import (
     SETTLEMENT_SAMPLES,
     START_SAMPLES,
     UPDATE_SAMPLES,
+    WORKER_CONFIG_SAMPLES,
     Samples,
 )
 
@@ -59,7 +61,9 @@ class Catalog:
     ``outside_centrum`` to fabryki, których Komunikatu Centrum rozliczeń nigdy
     nie pokazuje, więc instrukcja ich nie cytuje. ``hidden_folders`` to foldery
     ze ścieżek próbek leżące wyżej niż folder nadrzędny wskazywanego pliku albo
-    folderu; trzy części Komunikatu ich nie pokazują.
+    folderu; trzy części Komunikatu ich nie pokazują. ``shared`` to próbki
+    katalogu wspólnego kilku procesów (Konfiguracja wykonawców), którego
+    Komunikaty sekcja objaśnia tak jak własne.
     """
 
     module: ModuleType
@@ -67,6 +71,7 @@ class Catalog:
     samples: Samples
     outside_centrum: frozenset[str] = frozenset()
     hidden_folders: frozenset[str] = ABOVE_CONFIG
+    shared: Samples = field(default_factory=dict)
 
     def factories(self) -> set[str]:
         return {
@@ -87,12 +92,11 @@ class Catalog:
         }
 
     def messages(self) -> list[Message]:
-        return [sample() for samples in self.samples.values() for sample in samples]
+        return [sample() for samples in (*self.samples.values(), *self.shared.values()) for sample in samples]
 
     def shown_messages(self) -> list[Message]:
-        return [
-            sample() for name, samples in self.samples.items() if name not in self.outside_centrum for sample in samples
-        ]
+        own = [samples for name, samples in self.samples.items() if name not in self.outside_centrum]
+        return [sample() for samples in (*own, *self.shared.values()) for sample in samples]
 
 
 CATALOGS = {
@@ -103,6 +107,7 @@ CATALOGS = {
         PREPARATION_SAMPLES,
         # Centrum przyjmuje tylko okres z kalendarza okresów; zły token zgłasza silnik tylko skryptowi dla maszyn.
         outside_centrum=frozenset({"invalid_period_token"}),
+        shared=WORKER_CONFIG_SAMPLES,
     ),
     "przebieg-rozliczen": Catalog(
         settlement_messages,
@@ -110,6 +115,7 @@ CATALOGS = {
         SETTLEMENT_SAMPLES,
         # Przebieg wskazuje najwyżej folder okresu, więc folderów nad nim nie widać.
         hidden_folders=ABOVE_CONFIG | {"Dane", "INEA"},
+        shared=WORKER_CONFIG_SAMPLES,
     ),
     "start-centrum-rozliczen": Catalog(start_problems, "### Komunikaty startu Centrum rozliczeń", START_SAMPLES),
     # Diagnoza wskazuje najwyżej Folder okresu, więc folderów nad nim nie widać.
@@ -179,22 +185,24 @@ def test_probki_pokrywaja_kazda_fabryke_katalogu(catalog: Catalog) -> None:
 
 
 @each_catalog
-def test_probki_docieraja_do_kazdej_fabryki_przypadku_katalogu(catalog: Catalog, monkeypatch: pytest.MonkeyPatch) -> None:
-    case_factories = catalog.case_factories()
+def test_probki_docieraja_do_kazdej_fabryki_przypadku_katalogu(catalog: Catalog) -> None:
+    """Fabryka przypadku jest osiągnięta, gdy jej kod wykonał się przy próbkach, także wołany przez referencję z
+    ``WorkbookMessages`` katalogu, a nie po nazwie z modułu."""
+
+    names = {factory.__code__: name for name, factory in catalog.case_factories().items()}
     reached: set[str] = set()
 
-    def recording(name: str, factory: Callable[..., Message]) -> Callable[..., Message]:
-        def record(*args: object, **kwargs: object) -> Message:
-            reached.add(name)
-            return factory(*args, **kwargs)
+    def record(frame: FrameType, event: str, _arg: object) -> None:
+        if event == "call" and frame.f_code in names:
+            reached.add(names[frame.f_code])
 
-        return record
+    sys.setprofile(record)
+    try:
+        catalog.messages()
+    finally:
+        sys.setprofile(None)
 
-    for name, factory in case_factories.items():
-        monkeypatch.setattr(catalog.module, name, recording(name, factory))
-    catalog.messages()
-
-    assert reached == set(case_factories)
+    assert reached == set(names.values())
 
 
 @each_catalog

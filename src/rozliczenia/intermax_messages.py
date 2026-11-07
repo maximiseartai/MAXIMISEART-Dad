@@ -8,30 +8,34 @@ numerów zleceń, numerów umów i loginów Wykonawców.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
 from .message import IF_ERROR_RETURNS, Message, file_label, folder_label, refer_if
 from .register_columns import ORDERED_FONT, ORDERED_SIZE
 from .text import row_range
-from .workbook_files import Problem, WorkbookError
+from . import workbook_messages
+from .workbook_files import WorkbookError
+from .workbook_messages import DadWorkbook, WorkbookMessages
 
 _PROCESS = "Uporządkowanie INTERMAX"
 _UNCHANGED = "INTERMAX nie został zmieniony."
+_INTERMAX = DadWorkbook("INTERMAX", "INTERMAX", "order_register", _UNCHANGED, "uruchom ponownie")
 
 
 def register_unusable(error: WorkbookError) -> Message:
     """INTERMAX, którego nie da się użyć; ``error`` mówi dlaczego."""
 
-    match error.problem:
-        case Problem.MISSING:
-            return register_missing(error.path)
-        case Problem.OPEN_IN_EXCEL:
-            return register_open(error.path)
-        case Problem.INACCESSIBLE:
-            return _register_inaccessible(error.path)
-        case Problem.UNREADABLE | Problem.LAYOUT | Problem.HAS_DATA:
-            return _register_unreadable(error.path)
+    return workbook_messages.unusable(
+        error,
+        WorkbookMessages(
+            missing=register_missing,
+            open_in_excel=register_open,
+            inaccessible=lambda register: workbook_messages.not_synced("NIEDOSTEPNY_INTERMAX", register, _INTERMAX),
+            unreadable=_register_unreadable,
+        ),
+    )
 
 
 def register_missing(register: Path) -> Message:
@@ -48,32 +52,7 @@ def register_missing(register: Path) -> Message:
 def register_open(register: Path) -> Message:
     """INTERMAX jest otwarty w Excelu: plik blokady obok przed Kopią INTERMAX albo przy odmowie podmiany pliku."""
 
-    return Message(
-        code="INTERMAX_OTWARTY",
-        dad_file="order_register",
-        what=f"INTERMAX jest otwarty w Excelu. {_UNCHANGED}",
-        where=file_label(register),
-        action=(
-            "Zapisz i zamknij INTERMAX w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat "
-            f"wraca, usuń z tego samego folderu pozostawiony plik ~${register.name} i uruchom ponownie."
-        ),
-    )
-
-
-def _register_inaccessible(register: Path) -> Message:
-    return Message(
-        code="NIEDOSTEPNY_INTERMAX",
-        dad_file="order_register",
-        what=(
-            "Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie "
-            f"z OneDrive. {_UNCHANGED}"
-        ),
-        where=file_label(register),
-        action=(
-            "Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go "
-            f"i uruchom ponownie. {IF_ERROR_RETURNS}"
-        ),
-    )
+    return workbook_messages.open_in_excel("INTERMAX_OTWARTY", register, _INTERMAX)
 
 
 def _register_unreadable(register: Path) -> Message:
@@ -267,6 +246,7 @@ def old_copies_kept(directory: Path) -> Message:
 
 
 _AGAIN = "przywróć kopię jeszcze raz"
+_INTERMAX_RESTORE = replace(_INTERMAX, again=_AGAIN)
 
 
 def copies_unreadable(directory: Path) -> Message:
@@ -294,23 +274,33 @@ def copy_missing(directory: Path, name: str) -> Message:
 def copy_unusable(error: WorkbookError) -> Message:
     """Wybranej Kopii INTERMAX nie da się odczytać; ``error`` mówi dlaczego."""
 
-    match error.problem:
-        case Problem.MISSING:
-            return copy_missing(error.path.parent, error.path.name)
-        case Problem.OPEN_IN_EXCEL:
-            return Message(
-                code="KOPIA_INTERMAX_OTWARTA",
-                what=f"Ta Kopia INTERMAX jest otwarta w Excelu. {_UNCHANGED}",
-                where=file_label(error.path),
-                action=f"Zamknij ją w Excelu bez zapisywania zmian, potem {_AGAIN}.",
-            )
-        case Problem.INACCESSIBLE | Problem.UNREADABLE | Problem.LAYOUT | Problem.HAS_DATA:
-            return Message(
-                code="KOPIA_INTERMAX_NIEDOSTEPNA",
-                what=f"Nie można teraz odczytać tej Kopii INTERMAX. {_UNCHANGED}",
-                where=file_label(error.path),
-                action=f"Spróbuj za chwilę: {_AGAIN}. {IF_ERROR_RETURNS}",
-            )
+    return workbook_messages.unusable(
+        error,
+        WorkbookMessages(
+            missing=lambda copy: copy_missing(copy.parent, copy.name),
+            open_in_excel=_copy_open,
+            inaccessible=_copy_unreadable,
+            unreadable=_copy_unreadable,
+        ),
+    )
+
+
+def _copy_open(copy: Path) -> Message:
+    return Message(
+        code="KOPIA_INTERMAX_OTWARTA",
+        what=f"Ta Kopia INTERMAX jest otwarta w Excelu. {_UNCHANGED}",
+        where=file_label(copy),
+        action=f"Zamknij ją w Excelu bez zapisywania zmian, potem {_AGAIN}. {workbook_messages.lock_hint(copy, _AGAIN)}",
+    )
+
+
+def _copy_unreadable(copy: Path) -> Message:
+    return Message(
+        code="KOPIA_INTERMAX_NIEDOSTEPNA",
+        what=f"Nie można teraz odczytać tej Kopii INTERMAX. {_UNCHANGED}",
+        where=file_label(copy),
+        action=f"Spróbuj za chwilę: {_AGAIN}. {IF_ERROR_RETURNS}",
+    )
 
 
 def copy_damaged(copy: Path) -> Message:
@@ -327,42 +317,33 @@ def copy_damaged(copy: Path) -> Message:
 def restore_register_unusable(error: WorkbookError) -> Message:
     """INTERMAX, którego przywrócenie nie może zastąpić: brak pliku, otwarty w Excelu albo niedostępny."""
 
-    match error.problem:
-        case Problem.MISSING:
-            return Message(
-                code="PRZYWRACANIE_BRAK_INTERMAX",
-                what=f"Nie znaleziono INTERMAX. {_UNCHANGED}",
-                where=file_label(error.path),
-                action=f"Wybierz w Ustawieniach właściwy plik INTERMAX, potem {_AGAIN}.",
-            )
-        case Problem.OPEN_IN_EXCEL:
-            return restore_register_open(error.path)
-        case Problem.INACCESSIBLE | Problem.UNREADABLE | Problem.LAYOUT | Problem.HAS_DATA:
-            return Message(
-                code="PRZYWRACANIE_NIEDOSTEPNY_INTERMAX",
-                dad_file="order_register",
-                what=(
-                    "Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na "
-                    f"pobranie z OneDrive. {_UNCHANGED}"
-                ),
-                where=file_label(error.path),
-                action=f"Poczekaj, aż OneDrive skończy synchronizację, potem {_AGAIN}. {IF_ERROR_RETURNS}",
-            )
+    def not_synced(register: Path) -> Message:
+        return workbook_messages.not_synced("PRZYWRACANIE_NIEDOSTEPNY_INTERMAX", register, _INTERMAX_RESTORE)
+
+    return workbook_messages.unusable(
+        error,
+        WorkbookMessages(
+            missing=_restore_register_missing,
+            open_in_excel=restore_register_open,
+            inaccessible=not_synced,
+            unreadable=not_synced,
+        ),
+    )
+
+
+def _restore_register_missing(register: Path) -> Message:
+    return Message(
+        code="PRZYWRACANIE_BRAK_INTERMAX",
+        what=f"Nie znaleziono INTERMAX. {_UNCHANGED}",
+        where=file_label(register),
+        action=f"Wybierz w Ustawieniach właściwy plik INTERMAX, potem {_AGAIN}.",
+    )
 
 
 def restore_register_open(register: Path) -> Message:
     """INTERMAX jest otwarty w Excelu, więc przywrócenie Kopii odmawia."""
 
-    return Message(
-        code="PRZYWRACANIE_INTERMAX_OTWARTY",
-        dad_file="order_register",
-        what=f"INTERMAX jest otwarty w Excelu. {_UNCHANGED}",
-        where=file_label(register),
-        action=(
-            f"Zapisz i zamknij INTERMAX w Excelu, potem {_AGAIN}. Jeśli Excel jest zamknięty, a komunikat wraca, "
-            f"usuń z tego samego folderu pozostawiony plik ~${register.name}."
-        ),
-    )
+    return workbook_messages.open_in_excel("PRZYWRACANIE_INTERMAX_OTWARTY", register, _INTERMAX_RESTORE)
 
 
 def restore_register_syncing(register: Path) -> Message:

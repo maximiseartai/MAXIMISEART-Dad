@@ -9,7 +9,6 @@ from datetime import datetime
 import errno
 import os
 from pathlib import Path
-import sys
 
 from openpyxl import load_workbook
 from openpyxl.styles import Font
@@ -860,7 +859,7 @@ def test_zlamana_regula_konfiguracji_wykonawcow_zatrzymuje_przygotowanie_ze_szcz
     assert error.message.text == (
         "Co się stało: Nie można odczytać konfiguracji wykonawców. "
         "Dwóch identyfikatorów wskazuje ten sam plik pracownika: Ten Sam / ten sam\n"
-        "Gdzie: plik worker_mapping.yaml\n"
+        "Gdzie: plik worker_mapping.yaml, folder config\n"
         "Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie."
     )
 
@@ -875,7 +874,7 @@ def test_nieczytelna_konfiguracja_wykonawcow_zatrzymuje_przygotowanie_bez_powtor
     assert error.message.code == "ZLA_KONFIGURACJA_WYKONAWCOW"
     assert error.message.text == (
         "Co się stało: Nie można odczytać konfiguracji wykonawców.\n"
-        "Gdzie: plik worker_mapping.yaml\n"
+        "Gdzie: plik worker_mapping.yaml, folder config\n"
         "Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie."
     )
 
@@ -962,11 +961,6 @@ def test_failed_removal_of_published_rozliczenie_wewnetrzne_names_the_file_left(
     assert [path.name for path in fixture.period_directory.iterdir()] == [INTERNAL_SETTLEMENT_NAME]
 
 
-@pytest.mark.skipif(
-    sys.platform == "linux",
-    reason="na Linuksie unlink katalogu daje EISDIR, a sprzątanie TemporaryDirectory po PermissionError z rmdir "
-    "wpada wtedy w nieskończoną rekurencję; folder trzyma OneDrive tylko na Windowsie i Macu",
-)
 @pytest.mark.parametrize("period_directory_exists", [False, True])
 def test_staging_folder_that_cannot_be_removed_after_publication_does_not_stop_the_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, period_directory_exists: bool
@@ -988,3 +982,43 @@ def test_staging_folder_that_cannot_be_removed_after_publication_does_not_stop_t
     assert sorted(path.name for path in fixture.period_directory.iterdir()) == sorted(
         [INTERNAL_SETTLEMENT_NAME, COLLECTIVE_FILE_NAME]
     )
+
+
+@pytest.mark.parametrize("period_directory_exists", [False, True])
+def test_zatrzymanie_przy_zapisie_wskazuje_folder_tymczasowy_trzymany_przez_onedrive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, period_directory_exists: bool
+) -> None:
+    fixture = make_preparation_fixture(tmp_path)
+    if period_directory_exists:
+        fixture.period_directory.mkdir()
+    real_rename, real_unlink = os.rename, os.unlink
+    staging_prefix = f".{PERIOD}.staging-"
+
+    def first_publication_fails(source: str | os.PathLike[str], target: str | os.PathLike[str]) -> None:
+        if Path(target) in (fixture.period_directory, fixture.internal_settlement_path):
+            raise OSError("wymuszony błąd publikacji")
+        real_rename(source, target)
+
+    def unlink_fails_for_staged_period_files(path: str | os.PathLike[str], **kwargs: object) -> None:
+        if Path(path).name in (INTERNAL_SETTLEMENT_NAME, COLLECTIVE_FILE_NAME):
+            raise PermissionError("wymuszony: plik okresu trzyma OneDrive")
+        real_unlink(path, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "rename", first_publication_fails)
+    monkeypatch.setattr(os, "unlink", unlink_fails_for_staged_period_files)
+
+    with pytest.raises(StopError) as raised:
+        run_preparation(fixture)
+
+    staging_left = [path for path in fixture.periods_directory.iterdir() if path.name.startswith(staging_prefix)]
+    assert len(staging_left) == 1
+    assert raised.value.message.text == (
+        "Co się stało: Nie udało się zapisać plików okresu. "
+        "Obok Folderu okresu został folder tymczasowy, którego nie udało się usunąć.\n"
+        f"Gdzie: folder INEA\\{PERIOD}\n"
+        f"Co zrobić: Usuń z folderu INEA każdy folder, którego nazwa zaczyna się od „{staging_prefix}”. "
+        "To foldery tymczasowe, nie Folder okresu. Jeśli któregoś nie daje się usunąć, odczekaj chwilę. "
+        "Sprawdź, czy folder jest dostępny i czy pliki okresu nie są otwarte, i uruchom ponownie. "
+        "Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
+    )
+    assert not period_directory_exists or list(fixture.period_directory.iterdir()) == []

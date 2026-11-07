@@ -436,7 +436,7 @@ def test_plik_okresu_otwarty_w_excelu_wyjasnia_jak_go_zamknac(tmp_path: Path) ->
         "what": "Plik okresu jest otwarty w Excelu.",
         "where": f"plik {INTERNAL_SETTLEMENT_NAME}, folder {PERIOD}",
         "action": (
-            "Zapisz i zamknij plik w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, "
+            "Zapisz i zamknij plik w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, "
             f"usuń z tego samego folderu pozostawiony plik ~${INTERNAL_SETTLEMENT_NAME} i uruchom ponownie."
         ),
     }

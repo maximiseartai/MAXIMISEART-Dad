@@ -13,7 +13,7 @@ Decyzji taty o niepełnym okresie i etykiety liczb zleceń na dzień.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from itertools import groupby
 from pathlib import Path
@@ -22,14 +22,17 @@ from typing import Final, assert_never
 from .message import IF_ERROR_RETURNS, Message, file_label, folder_label, refer_if
 from .period_folder import PeriodFolderLookupError, month_folder_label
 from .text import plural, row_range
-from .workbook_files import WORKER_HEADER, MergedCells, MissingHeader, Problem, WorkbookError
-from .worker_config import ContentProblem, SameWorkerFile, WorkerConfigError
+from . import workbook_messages
+from .workbook_files import WORKER_HEADER, LayoutFault, MergedCells, MissingHeader, WorkbookError
+from .workbook_messages import DadWorkbook, WorkbookMessages
 
 # Napisy Decyzji taty o niepełnym okresie; jej Komunikat to ``incomplete_period``, odmowa ``incomplete_period_refused``.
 INCOMPLETE_PERIOD_TITLE: Final = "Ostrzeżenie: niepełny okres"
 INCOMPLETE_PERIOD_QUESTION: Final = "Kontynuować mimo niepełnego okresu?"
 # Liczby zleceń na dzień okresu, w Decyzji i w podsumowaniu; etykieta dnia to np. „wt 08.09.2026”.
 ORDERS_PER_DAY: Final = "Zlecenia na dzień"
+_NOTHING_CREATED: Final = "Nie utworzono żadnego pliku."
+_STAGING_LEFT: Final = "Obok Folderu okresu został folder tymczasowy, którego nie udało się usunąć."
 
 
 def period_file_exists(period_directory: Path, filename: str) -> Message:
@@ -37,7 +40,7 @@ def period_file_exists(period_directory: Path, filename: str) -> Message:
 
     return Message(
         code="PLIK_OKRESU_ISTNIEJE",
-        what="Plik tego okresu już istnieje, więc nie został nadpisany. Nie utworzono żadnego pliku.",
+        what=f"Plik tego okresu już istnieje, więc nie został nadpisany. {_NOTHING_CREATED}",
         where=f"{folder_label(period_directory)}, plik {filename}",
         action=(
             "Sprawdź, czy wybrano właściwy okres. Jeśli plik ma powstać od nowa, "
@@ -61,90 +64,10 @@ def invalid_period_token(token: str) -> Message:
     )
 
 
-def worker_config_problem(config_path: Path, error: WorkerConfigError) -> Message:
-    """Konfiguracji wykonawców nie da się użyć; poza brakiem pliku Komunikat mówi, co jest nie tak z jego treścią."""
-
-    match error.reason:
-        case "inaccessible":
-            return _worker_config_inaccessible(config_path)
-        case "missing":
-            what = "Nie można odczytać konfiguracji wykonawców."
-        case content:
-            what = f"Nie można odczytać konfiguracji wykonawców. {_worker_config_content(content)}"
-    return Message.to_maintainer(
-        code="ZLA_KONFIGURACJA_WYKONAWCOW",
-        what=what,
-        where=f"plik {config_path.name}",
-    )
-
-
-def _worker_config_content(problem: ContentProblem) -> str:
-    """Co jest nie tak z treścią konfiguracji wykonawców, bez ścieżki pliku."""
-
-    match problem:
-        case "not_utf8":
-            return "Plik nie jest zapisany w kodowaniu UTF-8."
-        case "not_yaml":
-            return "Plik nie jest poprawnym YAML."
-        case "not_mapping":
-            return "Konfiguracja musi być mapą z sekcją workers."
-        case "unsupported_version":
-            return "Nieobsługiwana wersja konfiguracji."
-        case "no_workers":
-            return "Konfiguracja workers musi zawierać co najmniej jeden wpis."
-        case "not_text_entry":
-            return "Konfiguracja zawiera niepoprawny identyfikator lub nazwę pracownika."
-        case "empty_entry":
-            return "Konfiguracja zawiera pusty identyfikator lub nazwę pracownika."
-        case "repeated_id":
-            return "Konfiguracja zawiera powtórzony identyfikator pracownika."
-        case "invalid_worker_name":
-            return "Konfiguracja zawiera nazwę pracownika nieprawidłową dla nazwy pliku."
-        case "too_long_worker_name":
-            return "Konfiguracja zawiera nazwę pracownika zbyt długą dla nazwy pliku."
-        case SameWorkerFile(first=first, second=second):
-            return f"Dwóch identyfikatorów wskazuje ten sam plik pracownika: {first} / {second}"
-
-
-def _worker_config_inaccessible(config_path: Path) -> Message:
-    """System nie oddał konfiguracji wykonawców (np. plik zajęty przez inny program albo bez dostępu); to nie zła treść.
-
-    Konfiguracja leży w ``config`` na dysku C jak Wzorce, więc tata rzadko sam usunie przyczynę: Komunikat idzie do Maksa.
-    """
-
-    return Message.to_maintainer(
-        code="NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW",
-        what="Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.",
-        where=f"plik {config_path.name}",
-    )
-
-
 def template_unusable(error: WorkbookError) -> Message:
     """Wzorzec rozliczenia wewnętrznego albo Wzorzec pliku zbiorczego, którego nie da się użyć; ``error`` mówi dlaczego."""
 
-    match error.problem:
-        case Problem.MISSING:
-            return _template_missing(error.path)
-        case Problem.OPEN_IN_EXCEL:
-            return _template_open_in_excel(error.path)
-        case Problem.INACCESSIBLE:
-            return _template_inaccessible(error.path)
-        case Problem.UNREADABLE | Problem.HAS_DATA:
-            return _template_unreadable(error.path)
-        case Problem.LAYOUT:
-            match error.fault:
-                case MissingHeader(sheet=sheet, found_in=str(column)):
-                    return _template_with_worker_outside_h(error.path, sheet, column)
-                case MissingHeader(sheet=sheet, row=row, header=header):
-                    return _template_without_header(error.path, sheet, row, header)
-                case MergedCells(sheet=sheet, cells=cells):
-                    return _template_with_merged_cells(error.path, sheet, cells)
-                case None:
-                    return _template_unreadable(error.path)
-                case _:
-                    assert_never(error.fault)
-        case _:
-            assert_never(error.problem)
+    return workbook_messages.unusable(error, _TEMPLATE)
 
 
 def _template_missing(template_path: Path) -> Message:
@@ -152,7 +75,7 @@ def _template_missing(template_path: Path) -> Message:
 
     return Message.to_maintainer(
         code="BRAK_WZORCA",
-        what="Nie znaleziono wzorca, z którego powstają pliki okresu. Nie utworzono żadnego pliku.",
+        what=f"Nie znaleziono wzorca, z którego powstają pliki okresu. {_NOTHING_CREATED}",
         where=file_label(template_path),
     )
 
@@ -162,12 +85,11 @@ def _template_open_in_excel(template_path: Path) -> Message:
 
     return Message(
         code="WZORZEC_OTWARTY",
-        what="Wzorzec jest otwarty w Excelu. Nie utworzono żadnego pliku.",
+        what=f"Wzorzec jest otwarty w Excelu. {_NOTHING_CREATED}",
         where=file_label(template_path),
         action=(
             "Zamknij wzorzec w Excelu bez zapisywania zmian i uruchom ponownie. "
-            "Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu "
-            f"pozostawiony plik ~${template_path.name} i uruchom ponownie."
+            f"{workbook_messages.lock_hint(template_path, 'uruchom ponownie')}"
         ),
     )
 
@@ -181,7 +103,7 @@ def _template_inaccessible(template_path: Path) -> Message:
     return Message.to_maintainer(
         code="NIEDOSTEPNY_WZORZEC",
         what=(
-            "Nie można teraz odczytać wzorca. Plik może być zajęty przez inny program. Nie utworzono żadnego pliku."
+            f"Nie można teraz odczytać wzorca. Plik może być zajęty przez inny program. {_NOTHING_CREATED}"
         ),
         where=file_label(template_path),
     )
@@ -194,7 +116,7 @@ def _template_unreadable(template_path: Path) -> Message:
         code="USZKODZONY_WZORZEC",
         what=(
             "Nie można odczytać wzorca. Plik jest uszkodzony "
-            "albo nie jest skoroszytem .xlsx. Nie utworzono żadnego pliku."
+            f"albo nie jest skoroszytem .xlsx. {_NOTHING_CREATED}"
         ),
         where=file_label(template_path),
     )
@@ -207,7 +129,7 @@ def _template_without_header(template_path: Path, sheet: str, row: int, header: 
         code="ZLY_WZORZEC",
         what=(
             f"We wzorcu brakuje nagłówka {header}, więc nie wiadomo, gdzie wpisać zlecenia. "
-            "Nie utworzono żadnego pliku."
+            f"{_NOTHING_CREATED}"
         ),
         where=f"plik {template_path.name}, arkusz {sheet}, wiersz {row}",
     )
@@ -222,7 +144,7 @@ def _template_with_worker_outside_h(template_path: Path, sheet: str, column: str
         code="WYKONAWCA_POZA_H",
         what=(
             f"Wzorzec pliku zbiorczego ma nagłówek WYKONAWCA w kolumnie {column} "
-            f"zamiast w {worker_column} (wiersz {header_row}). Nie utworzono żadnego pliku."
+            f"zamiast w {worker_column} (wiersz {header_row}). {_NOTHING_CREATED}"
         ),
         where=f"plik {template_path.name}, arkusz {sheet}, wiersz {header_row}",
         action=f"Przenieś WYKONAWCA do kolumny {worker_column} we wzorcu i uruchom ponownie.",
@@ -236,26 +158,41 @@ def _template_with_merged_cells(template_path: Path, sheet: str, cell_range: str
         code="SCALONE_KOMORKI_WZORCA",
         what=(
             "We wzorcu są scalone komórki tam, gdzie trafiają zlecenia, więc nie można ich wpisać. "
-            "Nie utworzono żadnego pliku."
+            f"{_NOTHING_CREATED}"
         ),
         where=f"plik {template_path.name}, arkusz {sheet}, komórki {cell_range}",
     )
 
 
+def _template_with_bad_layout(template_path: Path, fault: LayoutFault | None) -> Message:
+    """Wzorzec bez nagłówka na swoim miejscu albo ze scalonymi komórkami tam, gdzie trafiają zlecenia."""
+
+    match fault:
+        case MissingHeader(sheet=sheet, found_in=str(column)):
+            return _template_with_worker_outside_h(template_path, sheet, column)
+        case MissingHeader(sheet=sheet, row=row, header=header):
+            return _template_without_header(template_path, sheet, row, header)
+        case MergedCells(sheet=sheet, cells=cells):
+            return _template_with_merged_cells(template_path, sheet, cells)
+        case None:
+            return _template_unreadable(template_path)
+        case _:
+            assert_never(fault)
+
+
+_TEMPLATE = WorkbookMessages(
+    missing=_template_missing,
+    open_in_excel=_template_open_in_excel,
+    inaccessible=_template_inaccessible,
+    unreadable=_template_unreadable,
+    layout=_template_with_bad_layout,
+)
+
+
 def register_unusable(error: WorkbookError) -> Message:
     """Rejestr zleceń, którego nie da się użyć; ``error`` mówi dlaczego."""
 
-    match error.problem:
-        case Problem.MISSING:
-            return register_missing(error.path)
-        case Problem.OPEN_IN_EXCEL:
-            return _register_open_in_excel(error.path)
-        case Problem.INACCESSIBLE:
-            return _register_inaccessible(error.path)
-        case Problem.UNREADABLE | Problem.LAYOUT | Problem.HAS_DATA:
-            return _register_unreadable(error.path)
-        case _:
-            assert_never(error.problem)
+    return workbook_messages.unusable(error, _REGISTER_MESSAGES)
 
 
 def register_missing(register_path: Path) -> Message:
@@ -263,43 +200,9 @@ def register_missing(register_path: Path) -> Message:
 
     return Message(
         code="BRAK_REJESTRU",
-        what="Nie znaleziono Rejestru zleceń. Nie utworzono żadnego pliku.",
+        what=f"Nie znaleziono Rejestru zleceń. {_NOTHING_CREATED}",
         where=file_label(register_path),
         action="Wybierz właściwy plik Rejestru zleceń i uruchom ponownie.",
-    )
-
-
-def _register_open_in_excel(register_path: Path) -> Message:
-    """Rejestr zleceń ma obok plik blokady Excela ``~$…``; narzędzie go nie usuwa."""
-
-    return Message(
-        code="REJESTR_OTWARTY",
-        dad_file="order_register",
-        what="Rejestr zleceń jest otwarty w Excelu. Nie utworzono żadnego pliku.",
-        where=file_label(register_path),
-        action=(
-            "Zapisz i zamknij Rejestr zleceń w Excelu, potem uruchom ponownie. "
-            "Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu "
-            f"pozostawiony plik ~${register_path.name} i uruchom ponownie."
-        ),
-    )
-
-
-def _register_inaccessible(register_path: Path) -> Message:
-    """System nie oddał bajtów Rejestru zleceń (np. zajęty przez inny program albo OneDrive bez sieci); to nie uszkodzenie."""
-
-    return Message(
-        code="NIEDOSTEPNY_REJESTR",
-        dad_file="order_register",
-        what=(
-            "Nie można teraz odczytać Rejestru zleceń. Plik może być zajęty przez inny program "
-            "albo czekać na pobranie z OneDrive. Nie utworzono żadnego pliku."
-        ),
-        where=file_label(register_path),
-        action=(
-            "Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy Rejestr zleceń otwiera się w Excelu. "
-            f"Zamknij go i uruchom ponownie. {IF_ERROR_RETURNS}"
-        ),
     )
 
 
@@ -311,7 +214,7 @@ def _register_unreadable(register_path: Path) -> Message:
         dad_file="order_register",
         what=(
             "Nie można odczytać Rejestru zleceń. Plik jest uszkodzony "
-            "albo nie jest skoroszytem .xlsx. Nie utworzono żadnego pliku."
+            f"albo nie jest skoroszytem .xlsx. {_NOTHING_CREATED}"
         ),
         where=file_label(register_path),
         action=(
@@ -319,6 +222,15 @@ def _register_unreadable(register_path: Path) -> Message:
             f"zamknij go i uruchom ponownie. {refer_if('Jeśli błąd wraca', request='przekaż to')}"
         ),
     )
+
+
+_REGISTER = DadWorkbook("Rejestr zleceń", "Rejestru zleceń", "order_register", _NOTHING_CREATED, "uruchom ponownie")
+_REGISTER_MESSAGES = WorkbookMessages(
+    missing=register_missing,
+    open_in_excel=lambda path: workbook_messages.open_in_excel("REJESTR_OTWARTY", path, _REGISTER),
+    inaccessible=lambda path: workbook_messages.not_synced("NIEDOSTEPNY_REJESTR", path, _REGISTER),
+    unreadable=_register_unreadable,
+)
 
 
 def _header_list(headers: Sequence[str]) -> str:
@@ -334,7 +246,7 @@ def register_without_headers(register_path: Path, sheet: str, headers: Sequence[
     return Message(
         code="BRAK_NAGLOWKA_REJESTRU",
         dad_file="order_register",
-        what=f"W Rejestrze zleceń brakuje {noun} {_header_list(headers)}. Nie utworzono żadnego pliku.",
+        what=f"W Rejestrze zleceń brakuje {noun} {_header_list(headers)}. {_NOTHING_CREATED}",
         where=f"plik {register_path.name}, arkusz {sheet}, wiersz 1",
         action=(
             f"Dopisz albo popraw {fix} {_header_list(headers)} w pierwszym wierszu arkusza ze zleceniami, "
@@ -353,7 +265,7 @@ def register_with_duplicated_headers(register_path: Path, sheet: str, headers: S
         what=(
             f"W Rejestrze zleceń {'nagłówek' if single else 'nagłówki'} {_header_list(headers)} "
             f"{'występuje' if single else 'występują'} więcej niż raz, "
-            "więc nie wiadomo, z której kolumny brać dane. Nie utworzono żadnego pliku."
+            f"więc nie wiadomo, z której kolumny brać dane. {_NOTHING_CREATED}"
         ),
         where=f"plik {register_path.name}, arkusz {sheet}, wiersz 1",
         action=(
@@ -371,7 +283,7 @@ def register_without_data_sheet(register_path: Path, required_headers: Sequence[
         dad_file="order_register",
         what=(
             "W Rejestrze zleceń nie znaleziono arkusza ze zleceniami, czyli arkusza "
-            "z wymaganymi nagłówkami w pierwszym wierszu. Nie utworzono żadnego pliku."
+            f"z wymaganymi nagłówkami w pierwszym wierszu. {_NOTHING_CREATED}"
         ),
         where=f"plik {register_path.name}",
         action=(
@@ -389,7 +301,7 @@ def period_orders_in_many_sheets(register_path: Path, sheets: Sequence[str], per
         dad_file="order_register",
         what=(
             "Zlecenia tego okresu są w więcej niż jednym arkuszu Rejestru zleceń, "
-            "więc nie wiadomo, który arkusz jest właściwy. Nie utworzono żadnego pliku."
+            f"więc nie wiadomo, który arkusz jest właściwy. {_NOTHING_CREATED}"
         ),
         where=f"plik {register_path.name}, arkusze {', '.join(sheets)}, okres {period}",
         action=(
@@ -407,7 +319,7 @@ def raw_orders_not_ordered(register_path: Path, sheet: str, first_row: int, last
         code="SUROWE_ZLECENIA_W_OKRESIE",
         what=(
             "Wklejone zlecenia na dole Rejestru zleceń nie są jeszcze uporządkowane, "
-            "a mogą należeć do tego okresu. Nie utworzono żadnego pliku."
+            f"a mogą należeć do tego okresu. {_NOTHING_CREATED}"
         ),
         where=f"{_register_location(register_path, sheet)}, {rows}",
         action="Najpierw uporządkuj INTERMAX w Centrum rozliczeń, potem uruchom ponownie.",
@@ -419,7 +331,7 @@ def periods_directory_missing(periods_directory: Path) -> Message:
 
     return Message(
         code="BRAK_FOLDERU_OKRESOW",
-        what="Nie znaleziono folderu okresów. Nie utworzono żadnego pliku.",
+        what=f"Nie znaleziono folderu okresów. {_NOTHING_CREATED}",
         where=folder_label(periods_directory),
         action=(
             "Wybierz istniejący folder okresów, w którym są foldery poprzednich tygodni, "
@@ -433,7 +345,7 @@ def folder_inaccessible(folder: Path) -> Message:
 
     return Message(
         code="NIEDOSTEPNY_FOLDER",
-        what="Nie można teraz odczytać folderu. Nie utworzono żadnego pliku.",
+        what=f"Nie można teraz odczytać folderu. {_NOTHING_CREATED}",
         where=folder_label(folder),
         action="Sprawdź, czy folder otwiera się w Eksploratorze plików i czy OneDrive działa, potem uruchom ponownie.",
     )
@@ -446,7 +358,7 @@ def period_folder_lookup_problem(error: PeriodFolderLookupError) -> Message:
     if not error.locations:
         return Message(
             code="BRAK_FOLDERU_OKRESU",
-            what=f"Nie znaleziono folderu {token} w żadnym folderze miesiąca. Nie utworzono żadnego pliku.",
+            what=f"Nie znaleziono folderu {token} w żadnym folderze miesiąca. {_NOTHING_CREATED}",
             where=f"foldery INEA w folderze {error.periods_directory.name}",
             action=f"Załóż folder {token} w folderze INEA właściwego miesiąca i uruchom ponownie.",
         )
@@ -454,7 +366,7 @@ def period_folder_lookup_problem(error: PeriodFolderLookupError) -> Message:
         code="POWTORZONY_FOLDER_OKRESU",
         what=(
             f"Folder {token} jest w więcej niż jednym folderze miesiąca, "
-            "więc nie wiadomo, gdzie zapisać pliki. Nie utworzono żadnego pliku."
+            f"więc nie wiadomo, gdzie zapisać pliki. {_NOTHING_CREATED}"
         ),
         where=", ".join(month_folder_label(error.periods_directory, location) for location in error.locations),
         action=f"Zostaw folder {token} tylko w jednym folderze miesiąca: drugi usuń albo zmień mu nazwę. Potem uruchom ponownie.",
@@ -487,7 +399,7 @@ def rows_without_date(register_path: Path, sheet: str, row_numbers: Sequence[int
         dad_file="order_register",
         what=(
             f"Między zleceniami okresu {subject} bez poprawnej daty w kolumnie DATA GODZ. POCZ. "
-            "Nie utworzono żadnego pliku."
+            f"{_NOTHING_CREATED}"
         ),
         where=f"{_register_location(register_path, sheet)}, {_rows_label(row_numbers)}",
         action=(
@@ -532,7 +444,7 @@ def invalid_successful_values(
     return Message(
         code="ZLE_SKUTECZNE",
         dad_file="order_register",
-        what=f"{count} {plural(count, 'zlecenie okresu nie ma', 'zlecenia okresu nie mają', 'zleceń okresu nie ma')} tak ani nie w SKUTECZNE. Nie utworzono żadnego pliku.",
+        what=f"{count} {plural(count, 'zlecenie okresu nie ma', 'zlecenia okresu nie mają', 'zleceń okresu nie ma')} tak ani nie w SKUTECZNE. {_NOTHING_CREATED}",
         where=f"{_register_location(register_path, sheet)}, {'; '.join(groups)}",
         action=(
             "Wpisz tak albo nie we wskazanych komórkach Rejestru zleceń. "
@@ -578,7 +490,7 @@ def unknown_workers(
     return Message(
         code="NIEZNANY_WYKONAWCA",
         dad_file="order_register",
-        what=f"{subject} spoza konfiguracji wykonawców: {identifiers}. Nie utworzono żadnego pliku.",
+        what=f"{subject} spoza konfiguracji wykonawców: {identifiers}. {_NOTHING_CREATED}",
         where=f"{_register_location(register_path, sheet)}, {rows}",
         action=(
             f"Dopisz identyfikator wykonawcy do konfiguracji wykonawców ({config_path.name}), "
@@ -594,7 +506,7 @@ def no_period_orders(register_path: Path, sheet: str, period: str) -> Message:
     return Message(
         code="BRAK_ZLECEN_OKRESU",
         dad_file="order_register",
-        what="W Rejestrze zleceń nie ma żadnego zlecenia z tego okresu. Nie utworzono żadnego pliku.",
+        what=f"W Rejestrze zleceń nie ma żadnego zlecenia z tego okresu. {_NOTHING_CREATED}",
         where=f"{_register_location(register_path, sheet)}, okres {period}",
         action=(
             "Sprawdź, czy wybrano właściwy okres i czy eksport zleceń do Rejestru został "
@@ -706,7 +618,7 @@ def incomplete_period_refused(period: str, continue_hint: str) -> Message:
     return Message(
         code="PRZERWANO_NIEPELNY_OKRES",
         dad_file="order_register",
-        what="Przerwano z powodu niepełnego okresu, zgodnie z odpowiedzią. Nie utworzono żadnego pliku.",
+        what=f"Przerwano z powodu niepełnego okresu, zgodnie z odpowiedzią. {_NOTHING_CREATED}",
         where=f"okres {period}",
         action=(
             "Uzupełnij eksport zleceń w Rejestrze zleceń, zapisz go, zamknij i uruchom ponownie. "
@@ -720,11 +632,34 @@ def write_failed(period_directory: Path) -> Message:
 
     return Message(
         code="BLAD_ZAPISU",
-        what="Nie udało się zapisać plików okresu. Nie utworzono żadnego pliku.",
+        what=f"Nie udało się zapisać plików okresu. {_NOTHING_CREATED}",
         where=folder_label(period_directory),
         action=(
             "Sprawdź, czy folder jest dostępny i czy pliki okresu nie są otwarte, "
             f"i uruchom ponownie. {IF_ERROR_RETURNS}"
+        ),
+    )
+
+
+def staging_left(message: Message, periods_directory: Path, staging_prefix: str) -> Message:
+    """Zatrzymanie ``message`` przy zapisie, po którym obok Folderu okresu został folder tymczasowy.
+
+    Folderu nie dało się usunąć, np. bo jego pliki trzyma OneDrive. Komunikat podaje stały początek nazwy, a nie
+    losową nazwę folderu, żeby ten sam problem w kolejnym Uruchomieniu miał ten sam odcisk problemu (Powtórka).
+    """
+
+    what = (
+        message.what.replace(_NOTHING_CREATED, _STAGING_LEFT)
+        if _NOTHING_CREATED in message.what
+        else f"{message.what} {_STAGING_LEFT}"
+    )
+    return replace(
+        message,
+        what=what,
+        action=(
+            f"Usuń z folderu {periods_directory.name} każdy folder, którego nazwa zaczyna się od „{staging_prefix}”. "
+            "To foldery tymczasowe, nie Folder okresu. "
+            f"Jeśli któregoś nie daje się usunąć, odczekaj chwilę. {message.action}"
         ),
     )
 
@@ -749,7 +684,7 @@ def unexpected_failure() -> Message:
 
     return Message(
         code="BLAD_NIEOCZEKIWANY",
-        what="Wystąpił nieoczekiwany błąd. Nie utworzono żadnego pliku.",
+        what=f"Wystąpił nieoczekiwany błąd. {_NOTHING_CREATED}",
         where="Przygotowanie pliku zbiorczego",
         action=f"Uruchom ponownie. {IF_ERROR_RETURNS}",
     )

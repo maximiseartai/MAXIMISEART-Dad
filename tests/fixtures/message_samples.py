@@ -14,7 +14,7 @@ from pathlib import Path
 
 from rozliczenia import efenix_messages, intermax_messages
 from rozliczenia import preparation_messages as messages
-from rozliczenia import settlement_messages
+from rozliczenia import settlement_messages, worker_config_messages
 from rozliczenia.centrum import (
     diagnosis_messages,
     fill_messages,
@@ -66,7 +66,7 @@ INACCESSIBLE_CONFIG = WorkerConfigError("inaccessible")
 CONFIG_NOT_UTF8 = WorkerConfigError("not_utf8")
 CONFIG_NOT_YAML = WorkerConfigError("not_yaml")
 INVALID_CONFIG = WorkerConfigError("unsupported_version")
-# Pozostałe złamane reguły konfiguracji; każda ma swoje zdanie w obu katalogach.
+# Pozostałe złamane reguły konfiguracji; każda ma swoje zdanie w Komunikacie.
 BROKEN_CONFIG_RULES = [
     WorkerConfigError("not_mapping"),
     WorkerConfigError("no_workers"),
@@ -84,17 +84,20 @@ Samples = Mapping[str, Sequence[Callable[[], Message]]]
 
 
 # Każda fabryka katalogu z przykładowymi argumentami; warianty liczby pojedynczej i mnogiej osobno.
+# Konfigurację wykonawców objaśniają sekcje instrukcji obu procesów, które ją czytają.
+WORKER_CONFIG_SAMPLES: Samples = {
+    "worker_config_problem": [
+        lambda: worker_config_messages.worker_config_problem(CONFIG, MISSING_CONFIG),
+        lambda: worker_config_messages.worker_config_problem(CONFIG, INACCESSIBLE_CONFIG),
+        lambda: worker_config_messages.worker_config_problem(CONFIG, CONFIG_NOT_UTF8),
+        lambda: worker_config_messages.worker_config_problem(CONFIG, CONFIG_NOT_YAML),
+        lambda: worker_config_messages.worker_config_problem(CONFIG, INVALID_CONFIG),
+        *(partial(worker_config_messages.worker_config_problem, CONFIG, error) for error in BROKEN_CONFIG_RULES),
+    ],
+}
 PREPARATION_SAMPLES: Samples = {
     "invalid_period_token": [lambda: messages.invalid_period_token("08_14_9_2026")],
     "period_file_exists": [lambda: messages.period_file_exists(PERIOD_DIRECTORY, f"Rozliczenie wew. {PERIOD}.xlsx")],
-    "worker_config_problem": [
-        lambda: messages.worker_config_problem(CONFIG, MISSING_CONFIG),
-        lambda: messages.worker_config_problem(CONFIG, INACCESSIBLE_CONFIG),
-        lambda: messages.worker_config_problem(CONFIG, CONFIG_NOT_UTF8),
-        lambda: messages.worker_config_problem(CONFIG, CONFIG_NOT_YAML),
-        lambda: messages.worker_config_problem(CONFIG, INVALID_CONFIG),
-        *(partial(messages.worker_config_problem, CONFIG, error) for error in BROKEN_CONFIG_RULES),
-    ],
     "template_unusable": [
         *(partial(messages.template_unusable, WorkbookError(TEMPLATE, problem)) for problem in Problem),
         partial(messages.template_unusable, WorkbookError(TEMPLATE, Problem.LAYOUT, MissingHeader("Sheet1", 17, "WYKONAWCA"))),
@@ -171,6 +174,14 @@ PREPARATION_SAMPLES: Samples = {
     "write_failed_with_file_left": [
         lambda: messages.write_failed_with_file_left(PERIOD_DIRECTORY, f"Rozliczenie wew. {PERIOD}.xlsx")
     ],
+    "staging_left": [
+        lambda: messages.staging_left(messages.write_failed(PERIOD_DIRECTORY), PERIODS, f".{PERIOD}.staging-"),
+        lambda: messages.staging_left(
+            messages.write_failed_with_file_left(PERIOD_DIRECTORY, f"Rozliczenie wew. {PERIOD}.xlsx"),
+            PERIODS,
+            f".{PERIOD}.staging-",
+        ),
+    ],
     "unexpected_failure": [messages.unexpected_failure],
     "summary_not_shown": [messages.summary_not_shown],
     "plan_not_shown": [messages.plan_not_shown],
@@ -190,14 +201,6 @@ SETTLEMENT_SAMPLES: Samples = {
         partial(settlement_messages.collective_file_unusable, WorkbookError(SOURCE, problem)) for problem in Problem
     ],
     "worker_settlements_exist": [lambda: settlement_messages.worker_settlements_exist(WORKER_SETTLEMENTS)],
-    "worker_config_problem": [
-        lambda: settlement_messages.worker_config_problem(CONFIG, MISSING_CONFIG),
-        lambda: settlement_messages.worker_config_problem(CONFIG, INACCESSIBLE_CONFIG),
-        lambda: settlement_messages.worker_config_problem(CONFIG, CONFIG_NOT_UTF8),
-        lambda: settlement_messages.worker_config_problem(CONFIG, CONFIG_NOT_YAML),
-        lambda: settlement_messages.worker_config_problem(CONFIG, INVALID_CONFIG),
-        *(partial(settlement_messages.worker_config_problem, CONFIG, error) for error in BROKEN_CONFIG_RULES),
-    ],
     "worker_template_unusable": [
         partial(settlement_messages.worker_template_unusable, WorkbookError(WORKER_TEMPLATE, problem))
         for problem in Problem

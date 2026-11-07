@@ -795,7 +795,7 @@ def test_niepoprawna_konfiguracja_wykonawcow_zatrzymuje_sprawdzanie(tmp_path: Pa
 
     assert (raised.value.message.code, raised.value.message.what) == (
         "ZLA_KONFIGURACJA_WYKONAWCOW",
-        "Konfiguracja wykonawców jest niepoprawna. Plik nie jest poprawnym YAML.",
+        "Nie można odczytać konfiguracji wykonawców. Plik nie jest poprawnym YAML.",
     )
     assert not target_directory.exists()
 

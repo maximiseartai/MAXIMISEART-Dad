@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import CATALOG, DIAGNOZA, SETTINGS, WORKER_CONFIG
+from cele_mutacji_centrum import DIAGNOZA, SETTINGS, WORKER_CONFIG
 from mutacje import Edit, Mutation, check_all
 
 MUTATIONS = (
@@ -22,18 +22,6 @@ MUTATIONS = (
         (Edit(SETTINGS, "        platform.open_path(register)\n", "        pass\n"),),
         DIAGNOZA,
         "tata klika „Otwórz Rejestr zleceń” przy Zatrzymaniu do poprawy, a Excel się nie otwiera",
-    ),
-    Mutation(
-        "Diagnoza Przygotowania tłumaczy konfigurację wykonawców Komunikatem Przebiegu rozliczeń",
-        (
-            Edit(
-                CATALOG,
-                "        WorkerConfigCheck(preparation_messages.worker_config_problem),\n",
-                "        WorkerConfigCheck(settlement_messages.worker_config_problem),\n",
-            ),
-        ),
-        DIAGNOZA,
-        "tata widzi drugi Komunikat o tej samej konfiguracji wykonawców zamiast „Diagnoza potwierdza ten komunikat.”",
     ),
     Mutation(
         "Konfiguracja wykonawców bez dostępu jest brakującym plikiem",

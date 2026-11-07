@@ -13,71 +13,6 @@ period_file_exists [PLIK_OKRESU_ISTNIEJE]
   Gdzie: folder INEA\08_14_09_2026, plik Rozliczenie wew. 08_14_09_2026.xlsx
   Co zrobić: Sprawdź, czy wybrano właściwy okres. Jeśli plik ma powstać od nowa, przenieś albo usuń istniejący plik i uruchom ponownie.
 
-worker_config_problem #1 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #2 [NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #3 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Plik nie jest zapisany w kodowaniu UTF-8.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #4 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Plik nie jest poprawnym YAML.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #5 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Nieobsługiwana wersja konfiguracji.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #6 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja musi być mapą z sekcją workers.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #7 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja workers musi zawierać co najmniej jeden wpis.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #8 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera niepoprawny identyfikator lub nazwę pracownika.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #9 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera pusty identyfikator lub nazwę pracownika.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #10 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera powtórzony identyfikator pracownika.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #11 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera nazwę pracownika nieprawidłową dla nazwy pliku.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #12 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera nazwę pracownika zbyt długą dla nazwy pliku.
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #13 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Dwóch identyfikatorów wskazuje ten sam plik pracownika: Jan Testowy / jan testowy
-  Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
 template_unusable #1 [BRAK_WZORCA]
   Co się stało: Nie znaleziono wzorca, z którego powstają pliki okresu. Nie utworzono żadnego pliku.
   Gdzie: plik Wzorzec pliku zbiorczego.xlsx, folder config
@@ -318,6 +253,16 @@ write_failed_with_file_left [BLAD_ZAPISU_POZOSTAL_PLIK]
   Gdzie: folder INEA\08_14_09_2026, plik Rozliczenie wew. 08_14_09_2026.xlsx
   Co zrobić: Usuń wskazany plik, bo bez drugiego pliku okresu jest niepełny, i uruchom ponownie. Jeśli nie daje się go usunąć, odczekaj chwilę. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie.
 
+staging_left #1 [BLAD_ZAPISU]
+  Co się stało: Nie udało się zapisać plików okresu. Obok Folderu okresu został folder tymczasowy, którego nie udało się usunąć.
+  Gdzie: folder INEA\08_14_09_2026
+  Co zrobić: Usuń z folderu INEA każdy folder, którego nazwa zaczyna się od „.08_14_09_2026.staging-”. To foldery tymczasowe, nie Folder okresu. Jeśli któregoś nie daje się usunąć, odczekaj chwilę. Sprawdź, czy folder jest dostępny i czy pliki okresu nie są otwarte, i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+staging_left #2 [BLAD_ZAPISU_POZOSTAL_PLIK]
+  Co się stało: Zapisano tylko jeden z dwóch plików okresu i nie udało się go usunąć. Obok Folderu okresu został folder tymczasowy, którego nie udało się usunąć.
+  Gdzie: folder INEA\08_14_09_2026, plik Rozliczenie wew. 08_14_09_2026.xlsx
+  Co zrobić: Usuń z folderu INEA każdy folder, którego nazwa zaczyna się od „.08_14_09_2026.staging-”. To foldery tymczasowe, nie Folder okresu. Jeśli któregoś nie daje się usunąć, odczekaj chwilę. Usuń wskazany plik, bo bez drugiego pliku okresu jest niepełny, i uruchom ponownie. Jeśli nie daje się go usunąć, odczekaj chwilę. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie.
+
 unexpected_failure [BLAD_NIEOCZEKIWANY]
   Co się stało: Wystąpił nieoczekiwany błąd. Nie utworzono żadnego pliku.
   Gdzie: Przygotowanie pliku zbiorczego
@@ -368,7 +313,7 @@ collective_file_unusable #1 [BRAK_PLIKU_ZBIORCZEGO]
 collective_file_unusable #2 [PLIK_ZBIORCZY_OTWARTY]
   Co się stało: Plik zbiorczy jest otwarty w Excelu. Nie utworzono żadnego pliku pracownika.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
-  Co zrobić: Zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$Rozliczenie 08_14_09_2026 - zbiorcze.xlsx i uruchom ponownie.
+  Co zrobić: Zapisz i zamknij Plik zbiorczy w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$Rozliczenie 08_14_09_2026 - zbiorcze.xlsx i uruchom ponownie.
 
 collective_file_unusable #3 [NIEDOSTEPNY_PLIK_ZBIORCZY]
   Co się stało: Nie można teraz odczytać Pliku zbiorczego. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. Nie utworzono żadnego pliku pracownika.
@@ -394,71 +339,6 @@ worker_settlements_exist [FOLDER_ROZLICZEN_ISTNIEJE]
   Co się stało: Folder rozliczeń pracowników tego okresu już istnieje, więc nie został nadpisany. Nie utworzono żadnego pliku pracownika.
   Gdzie: folder 08_14_09_2026\Rozliczenie pracowników 08_14_09_2026
   Co zrobić: Sprawdź, czy wybrano właściwy okres. Rozliczenia pracowników tego okresu już są w Folderze okresu. Jeśli trzeba je utworzyć od nowa, najpierw przenieś Folder rozliczeń pracowników poza Folder okresu i uruchom ponownie.
-
-worker_config_problem #1 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Nie można odczytać pliku konfiguracji.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #2 [NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #3 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Plik nie jest zapisany w kodowaniu UTF-8.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #4 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Plik nie jest poprawnym YAML.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #5 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Nieobsługiwana wersja konfiguracji.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #6 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja musi być mapą z sekcją workers.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #7 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja workers musi zawierać co najmniej jeden wpis.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #8 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja zawiera niepoprawny identyfikator lub nazwę pracownika.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #9 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja zawiera pusty identyfikator lub nazwę pracownika.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #10 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja zawiera powtórzony identyfikator pracownika.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #11 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja zawiera nazwę pracownika nieprawidłową dla nazwy pliku.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #12 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Konfiguracja zawiera nazwę pracownika zbyt długą dla nazwy pliku.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #13 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Konfiguracja wykonawców jest niepoprawna. Dwóch identyfikatorów wskazuje ten sam plik pracownika: Jan Testowy / jan testowy
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 worker_template_unusable #1 [ZLY_WZORZEC_PRACOWNIKA]
   Co się stało: Nie można użyć Wzorca rozliczenia pracownika. Nie znaleziono Wzorca rozliczenia pracownika: Wzorzec rozliczenia pracownika.xlsx.
@@ -590,6 +470,73 @@ plan_not_shown [BLAD_PLANU]
   Gdzie: Przebieg rozliczeń
   Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
+=== Konfiguracja wykonawców (src/rozliczenia/worker_config_messages.py) ===
+
+worker_config_problem #1 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #2 [NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #3 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Plik nie jest zapisany w kodowaniu UTF-8.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #4 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Plik nie jest poprawnym YAML.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #5 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Nieobsługiwana wersja konfiguracji.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #6 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja musi być mapą z sekcją workers.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #7 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja workers musi zawierać co najmniej jeden wpis.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #8 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera niepoprawny identyfikator lub nazwę pracownika.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #9 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera pusty identyfikator lub nazwę pracownika.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #10 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera powtórzony identyfikator pracownika.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #11 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera nazwę pracownika nieprawidłową dla nazwy pliku.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #12 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera nazwę pracownika zbyt długą dla nazwy pliku.
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+worker_config_problem #13 [ZLA_KONFIGURACJA_WYKONAWCOW]
+  Co się stało: Nie można odczytać konfiguracji wykonawców. Dwóch identyfikatorów wskazuje ten sam plik pracownika: Jan Testowy / jan testowy
+  Gdzie: plik worker_mapping.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
 === Start Centrum rozliczeń (src/rozliczenia/centrum/start_problems.py) ===
 
 port_taken [PORT_ZAJETY]
@@ -642,7 +589,7 @@ file_only_in_cloud [PLIK_TYLKO_W_CHMURZE]
 period_file_open [PLIK_OKRESU_OTWARTY]
   Co się stało: Plik okresu jest otwarty w Excelu.
   Gdzie: plik Rozliczenie wew. 08_14_09_2026.xlsx, folder 08_14_09_2026
-  Co zrobić: Zapisz i zamknij plik w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, usuń z tego samego folderu pozostawiony plik ~$Rozliczenie wew. 08_14_09_2026.xlsx i uruchom ponownie.
+  Co zrobić: Zapisz i zamknij plik w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$Rozliczenie wew. 08_14_09_2026.xlsx i uruchom ponownie.
 
 === Uzupełnienie pliku zbiorczego (src/rozliczenia/centrum/fill_messages.py) ===
 
@@ -897,7 +844,7 @@ copy_unusable #1 [BRAK_KOPII_INTERMAX]
 copy_unusable #2 [KOPIA_INTERMAX_OTWARTA]
   Co się stało: Ta Kopia INTERMAX jest otwarta w Excelu. INTERMAX nie został zmieniony.
   Gdzie: plik INTERMAX przed uporządkowaniem 2026-09-14 07-30-00.xlsx, folder Kopie INTERMAX
-  Co zrobić: Zamknij ją w Excelu bez zapisywania zmian, potem przywróć kopię jeszcze raz.
+  Co zrobić: Zamknij ją w Excelu bez zapisywania zmian, potem przywróć kopię jeszcze raz. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$INTERMAX przed uporządkowaniem 2026-09-14 07-30-00.xlsx i przywróć kopię jeszcze raz.
 
 copy_unusable #3 [KOPIA_INTERMAX_NIEDOSTEPNA]
   Co się stało: Nie można teraz odczytać tej Kopii INTERMAX. INTERMAX nie został zmieniony.
@@ -932,32 +879,32 @@ restore_register_unusable #1 [PRZYWRACANIE_BRAK_INTERMAX]
 restore_register_unusable #2 [PRZYWRACANIE_INTERMAX_OTWARTY]
   Co się stało: INTERMAX jest otwarty w Excelu. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Zapisz i zamknij INTERMAX w Excelu, potem przywróć kopię jeszcze raz. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx.
+  Co zrobić: Zapisz i zamknij INTERMAX w Excelu, potem przywróć kopię jeszcze raz. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx i przywróć kopię jeszcze raz.
 
 restore_register_unusable #3 [PRZYWRACANIE_NIEDOSTEPNY_INTERMAX]
   Co się stało: Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, potem przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 restore_register_unusable #4 [PRZYWRACANIE_NIEDOSTEPNY_INTERMAX]
   Co się stało: Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, potem przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 restore_register_unusable #5 [PRZYWRACANIE_NIEDOSTEPNY_INTERMAX]
   Co się stało: Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, potem przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 restore_register_unusable #6 [PRZYWRACANIE_NIEDOSTEPNY_INTERMAX]
   Co się stało: Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, potem przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 restore_register_open [PRZYWRACANIE_INTERMAX_OTWARTY]
   Co się stało: INTERMAX jest otwarty w Excelu. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Zapisz i zamknij INTERMAX w Excelu, potem przywróć kopię jeszcze raz. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx.
+  Co zrobić: Zapisz i zamknij INTERMAX w Excelu, potem przywróć kopię jeszcze raz. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx i przywróć kopię jeszcze raz.
 
 restore_register_syncing [PRZYWRACANIE_INTERMAX_SYNCHRONIZOWANY]
   Co się stało: OneDrive jeszcze synchronizuje INTERMAX. INTERMAX nie został zmieniony.
@@ -1009,12 +956,12 @@ source_unusable #1 [EFENIX_BRAK_PLIKU_ZBIORCZEGO]
 source_unusable #2 [EFENIX_PLIK_ZBIORCZY_OTWARTY]
   Co się stało: Plik zbiorczy jest otwarty w Excelu, a Wycena w efenix oznacza w nim gotowe zlecenia Znacznikiem efenix. W efenix nic się nie zmieniło.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
-  Co zrobić: Zapisz i zamknij Plik zbiorczy w Excelu, potem uruchom ponownie.
+  Co zrobić: Zapisz i zamknij Plik zbiorczy w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$Rozliczenie 08_14_09_2026 - zbiorcze.xlsx i uruchom ponownie.
 
 source_unusable #3 [EFENIX_NIEDOSTEPNY_PLIK_ZBIORCZY]
   Co się stało: Nie można teraz odczytać Pliku zbiorczego. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. W efenix nic się nie zmieniło.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
-  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy Plik zbiorczy otwiera się w Excelu. Zamknij go i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 source_unusable #4 [EFENIX_NIECZYTELNY_PLIK_ZBIORCZY]
   Co się stało: Plik zbiorczy jest uszkodzony albo nie ma układu Pliku zbiorczego. W efenix nic się nie zmieniło.
@@ -1235,6 +1182,18 @@ summary_not_shown [EFENIX_PODSUMOWANIE_NIEPOKAZANE]
   Co się stało: Wycena w efenix skończyła się, ale nie udało się pokazać wyniku.
   Gdzie: Wycena w efenix
   Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+=== Plik taty (zdania wspólne) (src/rozliczenia/workbook_messages.py) ===
+
+open_in_excel [PLIK_OTWARTY]
+  Co się stało: Plik taty jest otwarty w Excelu. Nic się nie zmieniło.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Zapisz i zamknij Plik taty w Excelu, potem ponów. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx i ponów.
+
+not_synced [NIEDOSTEPNY_PLIK]
+  Co się stało: Nie można teraz odczytać Pliku taty. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. Nic się nie zmieniło.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy Plik taty otwiera się w Excelu. Zamknij go i ponów. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 === Wynik Uruchomienia (src/rozliczenia/centrum/runs.py) ===
 

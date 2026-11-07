@@ -30,7 +30,7 @@ PERIOD = "08_14_09_2026"
 REGISTER_OPEN = "Rejestr zleceń jest otwarty w Excelu. Nie utworzono żadnego pliku."
 NO_ORDERS = "W Rejestrze zleceń nie ma żadnego zlecenia z tego okresu."
 TEMPLATE_MISSING = "Nie znaleziono wzorca, z którego powstają pliki okresu."
-# Przygotowanie's own Komunikat; Przebieg rozliczeń says „Konfiguracja wykonawców jest niepoprawna.” about the same file.
+# The one Komunikat of the konfiguracja wykonawców, the same in both processes.
 WORKER_CONFIG_NOT_UTF8 = "Nie można odczytać konfiguracji wykonawców. Plik nie jest zapisany w kodowaniu UTF-8."
 WORKER_CONFIG_INACCESSIBLE = "Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program."
 NOT_FOUND = "Nie znalazłem przyczyny na tym komputerze."
@@ -460,7 +460,7 @@ def drive_diagnosis(run: Run, page: Page) -> None:
         assert isinstance(explanation, dict) and isinstance(answer["checks"], list)
         run.check(
             explanation["what"] == WORKER_CONFIG_INACCESSIBLE
-            and explanation["where"] == f"plik {worker_config.name}"
+            and explanation["where"] == f"plik {worker_config.name}, folder {worker_config.parent.name}"
             and answer["confirms_stop"] is True
             and {"label": "Konfiguracja wykonawców", "state": "failed", "detail": WORKER_CONFIG_INACCESSIBLE}
             in answer["checks"],

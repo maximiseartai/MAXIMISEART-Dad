@@ -10,6 +10,7 @@ zatrzymują się ``StopError``. Moduł wewnętrzny Przygotowania pliku zbiorczeg
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from collections import Counter
 from collections.abc import Iterator, Sequence
@@ -105,40 +106,56 @@ def write_period_files(
     orders: Sequence[PeriodOrder],
     collective_rows: Sequence[CollectiveRow],
 ) -> RouteCounts:
-    """Zapisywanie: przygotowuje oba pliki w katalogu tymczasowym, publikuje je razem i podaje ich drogi zapisu.
+    """Zapisywanie: przygotowuje oba pliki w folderze tymczasowym, publikuje je razem i podaje ich drogi zapisu.
 
-    Katalog tymczasowy leży w folderze okresów, obok Folderu okresu. Błąd nie
-    zostawia żadnego z plików ani nowo założonego Folderu okresu, chyba że
-    zatrzymanie wskazuje plik, którego nie udało się usunąć. Katalogu
-    tymczasowego, którego nie da się usunąć (np. trzyma go OneDrive), nie
-    zgłaszamy: nie jest plikiem okresu, a po publikacji oba pliki już są.
+    Folder tymczasowy leży obok Folderu okresu. Błąd nie zostawia żadnego z plików ani nowo założonego Folderu
+    okresu, chyba że zatrzymanie wskazuje plik, którego nie udało się usunąć. Folder tymczasowy, którego po
+    zatrzymaniu nie da się usunąć (np. trzyma jego pliki OneDrive), zostaje, a Komunikat podaje początek jego nazwy,
+    jak w Przebiegu rozliczeń. Po publikacji oba pliki już są, więc resztę folderu tymczasowego zostawia bez
+    Komunikatu.
     """
 
     folder = files.folder
+    staging_prefix = f".{folder.period.token}.staging-"
     try:
-        with tempfile.TemporaryDirectory(
-            prefix=f".{folder.period.token}.staging-", dir=folder.periods_directory, ignore_cleanup_errors=True
-        ) as staging:
-            staged_directory = Path(staging) / folder.directory.name
-            staged_directory.mkdir()
-            internal_name, collective_name = files.filenames
-            routes = Counter(
-                (
-                    _write_period_file(
-                        files.internal_template,
-                        staged_directory / internal_name,
-                        [order.register_row for order in orders],
-                    ),
-                    _write_period_file(
-                        files.collective_template,
-                        staged_directory / collective_name,
-                        [_with_quantities(row) for row in collective_rows],
-                    ),
-                )
-            )
-            _publish(staged_directory, files)
-    except (OSError, WorkbookSaveError) as exc:
+        staging = Path(tempfile.mkdtemp(prefix=staging_prefix, dir=folder.periods_directory))
+    except OSError as exc:
         raise StopError(messages.write_failed(folder.directory)) from exc
+    try:
+        try:
+            routes = _write_and_publish(staging, files, orders, collective_rows)
+        except (OSError, WorkbookSaveError) as exc:
+            raise StopError(messages.write_failed(folder.directory)) from exc
+    except BaseException as error:
+        shutil.rmtree(staging, ignore_errors=True)
+        if isinstance(error, StopError) and staging.exists():
+            raise StopError(messages.staging_left(error.message, folder.periods_directory, staging_prefix)) from error
+        raise
+    shutil.rmtree(staging, ignore_errors=True)
+    return routes
+
+
+def _write_and_publish(
+    staging: Path, files: PeriodFiles, orders: Sequence[PeriodOrder], collective_rows: Sequence[CollectiveRow]
+) -> RouteCounts:
+    staged_directory = staging / files.folder.directory.name
+    staged_directory.mkdir()
+    internal_name, collective_name = files.filenames
+    routes = Counter(
+        (
+            _write_period_file(
+                files.internal_template,
+                staged_directory / internal_name,
+                [order.register_row for order in orders],
+            ),
+            _write_period_file(
+                files.collective_template,
+                staged_directory / collective_name,
+                [_with_quantities(row) for row in collective_rows],
+            ),
+        )
+    )
+    _publish(staged_directory, files)
     return routes
 
 

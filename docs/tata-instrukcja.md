@@ -125,7 +125,7 @@ otwarty w Excelu) albo jednym z tych:
 |---|---|
 | „Nie znalazłem przyczyny na tym komputerze” | Przyczyna nie leży na Twoim komputerze. Kliknij `Wyślij do Maksa`. |
 | „Jest nowsza wersja narzędzia” | Kliknij `Zaktualizuj narzędzie` przy wyjaśnieniu (niżej, „Aktualizacja narzędzia”). Gdy karta Centrum sama się odświeży, uruchom proces ponownie. Bez internetu Diagnoza tego nie sprawdza. |
-| „Plik okresu jest otwarty w Excelu” | Zapisz i zamknij wskazany plik w Excelu i uruchom ponownie. Jeśli Excel jest zamknięty, usuń z tego samego folderu pozostawiony plik zaczynający się od `~$`. |
+| „Plik okresu jest otwarty w Excelu” | Zapisz i zamknij wskazany plik w Excelu i uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik zaczynający się od `~$`. |
 | „Plik jest tylko w OneDrive w chmurze” | W Eksploratorze plików kliknij wskazany plik prawym przyciskiem myszy i wybierz „Zawsze zachowuj na tym urządzeniu”. Gdy ikona chmurki zmieni się w zielony znacznik, uruchom ponownie. |
 
 ### Zgłoszenie do Maksa
@@ -380,6 +380,9 @@ numery wierszy Rejestru zleceń. Po każdym zatrzymaniu nie powstał żaden plik
 więc po poprawce wystarczy uruchomić proces ponownie. Wyjątki: po komunikacie
 o niepokazanym podsumowaniu pliki okresu już są, a po komunikacie o pliku,
 którego nie udało się usunąć, w Folderze okresu został wskazany plik.
+Jeśli komunikat mówi, że obok Folderu okresu został folder tymczasowy, najpierw
+usuń każdy folder, którego nazwa zaczyna się tak, jak podaje komunikat (kropką,
+z `.staging-` na końcu). To nie są Foldery okresu.
 
 #### Zatrzymania
 
@@ -563,7 +566,7 @@ okresu każdy folder, którego nazwa zaczyna się tak, jak podaje komunikat
 | „Plik zbiorczy nie nadaje się do Przebiegu rozliczeń” | Dalsza część komunikatu mówi, co jest nie tak (np. plik nie otwiera się w Excelu albo nie ma nagłówka WYKONAWCA). Popraw Plik zbiorczy, zapisz go, zamknij i uruchom ponownie. |
 | „Folder rozliczeń pracowników tego okresu już istnieje” | Rozliczenia pracowników tego okresu już są; narzędzie ich nie nadpisze. Sprawdź, czy wybrano właściwy okres. Żeby utworzyć je od nowa, najpierw przenieś Folder rozliczeń pracowników poza Folder okresu. |
 | „Nie można teraz odczytać konfiguracji wykonawców” | Nie poprawiaj konfiguracji wykonawców. Przekaż komunikat osobie utrzymującej narzędzie. |
-| „Konfiguracja wykonawców jest niepoprawna” | Przekaż komunikat osobie utrzymującej narzędzie. |
+| „Nie można odczytać konfiguracji wykonawców” | Przekaż komunikat osobie utrzymującej narzędzie. Ta sama konfiguracja jest potrzebna w Przygotowaniu pliku zbiorczego. |
 | „Nie można użyć Wzorca rozliczenia pracownika” | Jeśli Wzorzec jest otwarty w Excelu, zamknij go bez zapisywania i uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat o otwartym Wzorcu wraca, usuń z folderu `config` pozostawiony plik `~$Wzorzec rozliczenia pracownika.xlsx`. Jeśli komunikat prosi o zmianę nazwy `placeholder.xlsx`, zrób to jak w części „Gdy pojawi się problem” niżej. W innym wypadku przekaż komunikat osobie utrzymującej narzędzie. |
 | „spoza konfiguracji wykonawców” | Komunikat podaje każdy taki identyfikator WYKONAWCA. Popraw WYKONAWCĘ w kolumnie H albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy. Zapisz, zamknij i uruchom ponownie. |
 | „Nie wszystkie Wiersze danych Pliku zbiorczego mają WYKONAWCĘ” | Uruchom `Podgląd bez zapisu`: problemy pokażą numery wierszy. Wpisz w nich WYKONAWCĘ w kolumnie H, zapisz, zamknij i uruchom ponownie. |

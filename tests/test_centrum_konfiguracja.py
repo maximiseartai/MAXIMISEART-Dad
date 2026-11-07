@@ -371,7 +371,7 @@ def test_zla_konfiguracja_wykonawcow_jest_komunikatem_w_trzech_czesciach(tmp_pat
         "state": "unreadable",
         "message": {
             "what": (
-                "Konfiguracja wykonawców jest niepoprawna. "
+                "Nie można odczytać konfiguracji wykonawców. "
                 "Dwóch identyfikatorów wskazuje ten sam plik pracownika: Ten Sam / ten sam"
             ),
             "where": "plik worker_mapping.yaml, folder config",

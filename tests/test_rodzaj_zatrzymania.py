@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.fixtures.message_samples import PREPARATION_SAMPLES, SETTLEMENT_SAMPLES, Samples
+from tests.fixtures.message_samples import PREPARATION_SAMPLES, SETTLEMENT_SAMPLES, WORKER_CONFIG_SAMPLES, Samples
 
 FOR_MAKS = {
     "przygotowanie-pliku-zbiorczego": {
@@ -35,9 +35,10 @@ FOR_MAKS = {
         "BLAD_PLANU",
     },
 }
+# Oba procesy zatrzymują się też na Konfiguracji wykonawców, której Komunikaty są we wspólnym katalogu.
 SAMPLES: dict[str, Samples] = {
-    "przygotowanie-pliku-zbiorczego": PREPARATION_SAMPLES,
-    "przebieg-rozliczen": SETTLEMENT_SAMPLES,
+    "przygotowanie-pliku-zbiorczego": {**PREPARATION_SAMPLES, **WORKER_CONFIG_SAMPLES},
+    "przebieg-rozliczen": {**SETTLEMENT_SAMPLES, **WORKER_CONFIG_SAMPLES},
 }
 
 

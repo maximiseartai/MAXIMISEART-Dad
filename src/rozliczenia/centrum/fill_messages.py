@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import Final
 
 from rozliczenia.message import KEEP_ON_DEVICE, OTHERWISE_REFER, Message, file_label
+from rozliczenia import workbook_messages
 from rozliczenia.collective_layout import HEADER_ROW
-from rozliczenia.workbook_files import WORKER_HEADER, Problem, WorkbookError
+from rozliczenia.workbook_files import WORKER_HEADER, WorkbookError
+from rozliczenia.workbook_messages import WorkbookMessages
 
 _REFRESH: Final = "odśwież stronę"
 
@@ -19,16 +21,16 @@ _REFRESH: Final = "odśwież stronę"
 def collective_file_unusable(error: WorkbookError) -> Message:
     """Plik zbiorczy, którego nie da się odczytać; ``error`` mówi dlaczego."""
 
-    # Bez ``case _``: nowy ``Problem`` bez przypadku mypy odrzuca jako brak ``return``.
-    match error.problem:
-        case Problem.MISSING:
-            return _missing(error.path)
-        case Problem.OPEN_IN_EXCEL | Problem.INACCESSIBLE:
-            return _inaccessible(error.path)
-        case Problem.UNREADABLE | Problem.HAS_DATA:
-            return _damaged(error.path)
-        case Problem.LAYOUT:
-            return _without_worker_header(error.path)
+    return workbook_messages.unusable(
+        error,
+        WorkbookMessages(
+            missing=_missing,
+            open_in_excel=_inaccessible,
+            inaccessible=_inaccessible,
+            unreadable=_damaged,
+            layout=lambda source, _fault: _without_worker_header(source),
+        ),
+    )
 
 
 def _missing(source: Path) -> Message:

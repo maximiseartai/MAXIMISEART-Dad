@@ -464,7 +464,7 @@ def test_pomiar_z_niepoprawna_konfiguracja_wykonawcow_konczy_sie_przyczyna_z_kat
     )
 
     assert measured.returncode == 1
-    reason = "Konfiguracja wykonawców jest niepoprawna. Nieobsługiwana wersja konfiguracji."
+    reason = "Nie można odczytać konfiguracji wykonawców. Nieobsługiwana wersja konfiguracji."
     assert f"{reason} Plik: {config}" in measured.stderr
     assert not journal.exists()
 
