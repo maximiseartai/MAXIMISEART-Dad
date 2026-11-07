@@ -969,11 +969,14 @@ def test_diagnoza_dopisuje_sie_do_logow_ostatniego_uruchomienia_raz_na_wynik(tmp
     comments.run_ended(_ended(PRICING.model_copy(update={"process": "preparation"})))
     diagnosis = Diagnosis((), ("wpis dziennika Centrum",))
 
-    for run_id in (RUN_ID, RUN_ID, OTHER_RUN_ID):
-        comments.diagnosed(run_id, diagnosis)
+    comments.diagnosed(OTHER_RUN_ID, diagnosis)
+    other = len(queue.posts)
+    for _ in range(2):
+        comments.diagnosed(RUN_ID, diagnosis)
 
     [file] = (tmp_path / "uruchomienia").glob(f"*-{RUN_ID}.json")
     first, diagnosed = queue.posts
+    assert other == 1
     assert (first.run_id, diagnosed.run_id, diagnosed.rank) == (RUN_ID, RUN_ID, Rank.OWN)
     assert diagnosed.archive is not None and gzip.decompress(diagnosed.archive.packed()) == file.read_bytes()
     assert RunLog.model_validate_json(file.read_text(encoding="utf-8")).diagnosis is not None
