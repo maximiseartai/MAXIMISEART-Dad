@@ -39,15 +39,14 @@ Werdykty to komentarze i recenzje PR kont z prawem zapisu (``OWNER``, ``MEMBER``
 utworzenia; nieopublikowana recenzja (``PENDING``) się nie liczy. Werdykt to komentarz albo recenzja, której pierwsza
 niepusta linia, bez odstępów na brzegach, to dokładnie ``WERDYKT: PASS <SHA>`` albo ``WERDYKT: FAIL <SHA>``, gdzie
 ``<SHA>`` to pełny SHA HEAD PR małymi literami. ``FAIL`` jest sprzeciwem bez względu na dalsze linie, tak jak
-recenzja w stanie ``CHANGES_REQUESTED``. ``PASS`` jest zgodą tylko wtedy, gdy cała treść przechodzi reguły
+recenzja w stanie ``CHANGES_REQUESTED``. ``PASS`` jest zgodą tylko wtedy, gdy dwie pierwsze linie przechodzą reguły
 ``--werdykt`` (niżej), bez względu na to, jak go opublikowano; inaczej to odmowa ``werdykt: PASS dla <sha> nie
-przechodzi reguł --werdykt (<przyczyny>)`` z poleceniem ``--werdykt``, bo ręczny komentarz omijał te reguły (#994,
-#1001, #1004). Inny tekst, także ``FAIL`` w prozie albo werdykt ze skróconym SHA, nie jest werdyktem. Zgodę pisze
-niezależny recenzent, nie autor zmiany: ``PASS`` mówi, że przegląd nie znalazł problemów, a skille ``verify-*``
-z linii ``SKILLE VERIFY`` ``tools/skille_dla_zmiany.py`` przeszły na tym SHA (ich polecenia z linii ``LICZY CI``
-w CI, reszta workflow u agenta). Rozstrzyga najnowszy werdykt dla HEAD:
-sprzeciw po ``PASS`` odbiera zgodę, nowszy ``PASS`` ją przywraca, a werdykt starszego commitu nie przechodzi na nowy
-push. Komentarz edytowany liczy się z treścią po edycji, ale w miejscu utworzenia, a ukryty komentarz nadal się liczy.
+przechodzi reguł --werdykt (<przyczyny>)`` z poleceniem ``--werdykt``. Inny tekst, także ``FAIL`` w prozie albo
+werdykt ze skróconym SHA, nie jest werdyktem. Zgodę pisze niezależny recenzent, nie autor zmiany: ``PASS`` mówi,
+że przegląd nie znalazł problemów, a skille ``verify-*`` z linii ``SKILLE VERIFY`` ``tools/skille_dla_zmiany.py``
+przeszły na tym SHA (ich polecenia z linii ``LICZY CI`` w CI, reszta workflow u agenta). Rozstrzyga najnowszy werdykt
+dla HEAD: sprzeciw po ``PASS`` odbiera zgodę, nowszy ``PASS`` ją przywraca, a werdykt starszego commitu nie
+przechodzi na nowy push. Komentarz edytowany liczy się z treścią po edycji, ale w miejscu utworzenia, a ukryty komentarz nadal się liczy.
 
 Gdy któryś warunek nie zachodzi, narzędzie nie scala i kończy się linią ``SCAL ODMOWA | #N <sha> | <przyczyny>``.
 Warunki 1–4 sprawdza razem i podaje wszystkie przyczyny; warunki 5 i 6 trwają dłużej, więc biegną dopiero po nich.
