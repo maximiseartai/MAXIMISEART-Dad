@@ -355,7 +355,10 @@ def test_reguly_kroku_skilla_licza_od_korzenia_checkoutu_skilla(tmp_path: Path) 
 
 MODEL = ".agents/skills/verify-m/model/M.tla"
 MODEL_CHECK = ".agents/skills/verify-m/scripts/sprawdz_m.py"
-MODEL_UNTOUCHED = "skrypt mutacji modelu biegnie na pull request tylko przy zmianie modelu, skryptu albo sprawdzeń jego mutacji"
+MODEL_ENGINE = "tools/lib/silnik_modelu.py"
+MODEL_UNTOUCHED = (
+    "skrypt mutacji modelu biegnie na pull request tylko przy zmianie modelu, skryptu, sprawdzeń jego mutacji albo modułów, które te sprawdzenia importują"
+)
 
 
 def _model_skill(name: str, edited: tuple[str, ...]) -> dict[str, str]:
@@ -370,7 +373,10 @@ def _model_skill(name: str, edited: tuple[str, ...]) -> dict[str, str]:
         f"{folder}/model/M.tla": "X\n",
         f"{folder}/model/m.cfg": "X\n",
         f"{folder}/model/oczekiwane.json": "{}\n",
-        MODEL_CHECK: "X = 1\n",
+        MODEL_CHECK: "from silnik_modelu import X\n",
+        MODEL_ENGINE: "from tlc_modelu import Y\n\nX = Y\n",
+        "tools/lib/tlc_modelu.py": "Y = 1\n",
+        "tools/lib/obok.py": "Z = 1\n",
     }
 
 
@@ -382,6 +388,10 @@ def _model_skill(name: str, edited: tuple[str, ...]) -> dict[str, str]:
         (".agents/skills/verify-m/model/m.cfg", True),
         (".agents/skills/verify-m/scripts/check_m_mutations.py", True),
         (MODEL_CHECK, True),
+        # Silnik modelu, który sprawdzenie importuje wprost albo przez inny moduł, decyduje o werdykcie jak samo sprawdzenie.
+        (MODEL_ENGINE, True),
+        ("tools/lib/tlc_modelu.py", True),
+        ("tools/lib/obok.py", False),
         # Folder skilla poza modelem i runner mutacji uruchamiają skrypt tylko nocą.
         (".agents/skills/verify-m/SKILL.md", False),
         # Sąsiad folderu modelu, którego nazwa zaczyna się od „model”, nie jest modelem.
