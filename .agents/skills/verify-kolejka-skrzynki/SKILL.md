@@ -132,7 +132,7 @@ pass read a readable file of a newer version of the same wysyłka (the same
 target and `run_id`, `_superseded`), before or after it in the order of the
 queue, gets the delivery marker without being sent and is removed
 (`_mark_delivered`), so one whose removal fails does not wait without a marker. Without the network only the newest progress of a Wycena w
-efenix waits (`pricing_progress.py`, #846), and the Logi with their last
+efenix waits (`RunComments._progress` in `run_comments.py`, #846), and the Logi with their last
 Diagnoza. The progress is a version of the Logi of its Uruchomienie of the
 lowest rank (`DRAFT`), without a file for the Archiwum; the Logi at the end of
 the Wycena (`OWN`), or the stand-in version of the next start (`STAND_IN`: the
@@ -222,7 +222,7 @@ step of this code that the checker can fail, lose or kill:
 | a read of the Archiwum | `KeyedBox.archive` in `_deliver_archive` (with the Archiwum and files `KeyedBox` adds after its own writes): it answers, the network fails, the key lacks the permission (GitHub's 403, as the real `GitHubReportBox` reads it), or the process dies |
 | a write to the Archiwum | `KeyedBox.open_archive`, `remove` and `upload` in `_deliver_archive`: as a box write, or refused (GitHub's 403 through the real `GitHubReportBox`); an upload may also break off in the middle of the file, which leaves it not whole (`uploaded` false), counted as a network failure; in a repository without a commit (`archiwum-puste-repo`) every `open_archive` GitHub answers gets 409, which `GitHubReportBox.open_archive` reads |
 | a read of a queue file | `Outbox._send_all`: `_read` (`_queued`) of every file at the start of the pass, whose `OSError` (`read_text`) sets `_read_failed`, skips the file to the `RETRY_S` wake and keeps it from replacing an older version (`_superseded`); it fails only in a scope with a read bound (`diagnoza-odczyt`, `archiwum-diagnoza`) |
-| a later wysyłka | `Outbox.post` of a scope's later wysyłka (a Diagnoza, the next progress of a Wycena w efenix, its Logi at the end) between two passes, at a moment the schedule picks; the code queues it on its own (`RunLogs.diagnosed`, `pricing_progress.ProgressComment`), so the checker writes it with the real `replace_atomically` |
+| a later wysyłka | `Outbox.post` of a scope's later wysyłka (a Diagnoza, the next progress of a Wycena w efenix, its Logi at the end) between two passes, at a moment the schedule picks; the code queues it on its own (`RunComments.diagnosed`, `RunComments._progress`), so the checker writes it with the real `replace_atomically` |
 | the delivery marker | `Outbox._send_all`: `replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts)))` in `suppress(OSError)` (`_mark_delivered`), also on the file of a superseded version |
 | the removal of a queue file | `Outbox._remove` (`path.unlink`, `_undeleted`) |
 | a pass of the queue | `Outbox._drain` (`_claimed`, `_folder_lock`, `_send_all`, `_released`), run only when the real `Outbox.send_in_background` starts the queue thread (called by `Outbox.post`, `Outbox.resume` and `Outbox._woken`); the checker replaces only `threading.Thread` in `outbox.py`, which hands it the target, and runs one Centrum at a time, so the pass always gets the folder lock |
@@ -247,18 +247,20 @@ that Centrum changes often: `lifespan` in `app.py`, `listen_locally` and
 and `_Server` in `server.py`. `model/definicje.json` lists the four covered files as whole files and these three
 by their definitions: only a change to these definitions, not to the rest of their files, is drift.
 
-**Sync commit: `6908b5c3a`** (2026-11-05, #919 merged with `main` after #910, #924
-and #949). The checker and the model share it: at this commit both were
-confirmed to describe the code above. The model holds the order of versions of
+**Sync commit: `872a47f50`** (2026-11-07, PR 6 of WS-A). The checker and the
+model share it: at this commit both were confirmed to describe the code above.
+Since `6908b5c3a` (#919 merged with `main` after #910, #924 and #949) only the
+docstring of `outbox.py` changed: the progress and the Diagnoza of the Logi now
+come from `run_comments`. The model holds the order of versions of
 #910 (`Nr`, `czytane`, `NowszyDalej` in `Plik`) and the branches `Unreachable`
 and `Gone` of #915 in `Szukaj`; `znane` sets `StarszaPozniej` and `Postep`
 FALSE and `OpoznienieListy` TRUE. The checker is that of #949: `OPENING_FILE`
 lives in memory (`_NotesInMemory`, handed to `KeyedBox` through `NotesFile`),
 and `znane-issue` asks `known_issue`, which reads that file at every list. At it
-`sprawdz_model_kolejki.py` gave `MODEL KOLEJKI OK` on all 15 configurations,
-`check_model_kolejki_mutations.py` 51 of 51 `WYKRYTA`, `explore_outbox.py`
-`KOLEJKA OK` on all 15 scopes and `check_outbox_mutations.py` `MUTACJE OK` in
-all 3 parts. What earlier syncs confirmed is in the history of this file and in
+`sprawdz_model_kolejki.py` gave `MODEL KOLEJKI OK` on all 15 configurations and
+`explore_outbox.py` `KOLEJKA OK` on all 15 scopes; at `6908b5c3a`, with the same code,
+`check_model_kolejki_mutations.py` gave 51 of 51 `WYKRYTA` and
+`check_outbox_mutations.py` `MUTACJE OK` in all 3 parts. What earlier syncs confirmed is in the history of this file and in
 the messages of their commits. To see whether the checker and the model need
 another look:
 
@@ -759,7 +761,7 @@ Checked only with the bounds in the configurations. Assumed and not checked:
   modelled, so neither is the list with closed issues of `labelled_issues`.
 - `os.replace` is atomic: a switch-off leaves the old file or the new one.
 - Only the Logi Uruchomienia have a newer version (`ASSUME Diagnoza => ...`):
-  `RunLogs.diagnosed` and the progress of a Wycena w efenix (`RunLogs.progress`,
+  `RunComments.diagnosed` and the progress of a Wycena w efenix (`RunComments._progress`,
   then the Logi at its end) are the only callers that queue a wysyłka again with
   the same identifier, in the Centrum process that queued the older one; the Logi
   of an Urwane Uruchomienie or the result without Logi, which replace its
