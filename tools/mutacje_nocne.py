@@ -74,7 +74,7 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
-import kroki_skilli
+from kroki_skilli import Katalog, Step
 from mutacje import PART, NearLimit
 import mutacje_zmiany
 import plan_ci
@@ -345,22 +345,22 @@ def przypisz_skrypty(
     od ``od`` uruchomiła krok (``_autor_kroku``), i przyczyny porażki tych, których nie ma komu przypisać, bo ``main``
     nie ma commitu od ``od``."""
 
-    kroki = {f"skill:{krok.key}": krok for krok in kroki_skilli.steps({})}
+    katalog = Katalog.skanuj(root)
     # Ten sam wybór co plan nocy (``tools/plan_ci.py``). Nieśledzone zapisy artefaktów w checkoucie zgłoszenia nie mają
     # historii, więc ``_autor_kroku`` ich nie znajduje w ``git log``.
     wybrane = {f"skill:{w.krok.key}": w for w in zakres(Zdarzenie.NOC, changed_since(root, od), root).wybrane}
     linia_main = _git(root, "rev-list", "--first-parent", "--reverse", f"{od}..HEAD").split()
     autorzy = {
-        klucz: _autor_kroku(github, root, od, linia_main, kroki[klucz], wybrane.get(klucz)) for klucz in {*padly, *(klucz for klucz, _ in blisko)}
+        klucz: _autor_kroku(github, root, od, linia_main, katalog.krok(klucz), wybrane.get(klucz)) for klucz in {*padly, *(klucz for klucz, _ in blisko)}
     }
     wynik: dict[Autor, Skrypty] = {}
     problemy: list[str] = []
     for klucz in padly:
         if (kto := autorzy[klucz]) is None:
             # Skill bez pilnuje biegnie także w nocy bez commitu od bazy, a wtedy jego porażka nie ma PR ani issue.
-            problemy.append(f"skrypt {kroki[klucz].command[0]} padł, a od bazy {od} main nie ma commitu, którego PR by go dostał")
+            problemy.append(f"skrypt {katalog.krok(klucz).command[0]} padł, a od bazy {od} main nie ma commitu, którego PR by go dostał")
             continue
-        wynik.setdefault(kto, Skrypty()).padly.append(kroki[klucz].command[0])
+        wynik.setdefault(kto, Skrypty()).padly.append(katalog.krok(klucz).command[0])
     for klucz, ostrzezenie in blisko:
         if (kto := autorzy[klucz]) is None:
             problemy.append(f"{_klucz_blisko(ostrzezenie)}: od bazy {od} main nie ma commitu, którego PR by je dostał")
@@ -370,15 +370,16 @@ def przypisz_skrypty(
 
 
 def _autor_kroku(
-    github: GitHub, root: Path, od: str, linia_main: Sequence[str], krok: kroki_skilli.Step, wybrany: KrokSkilla | None
+    github: GitHub, root: Path, od: str, linia_main: Sequence[str], krok: Step, wybrany: KrokSkilla | None
 ) -> Autor | None:
     """PR, który ostatni zmienił plik uruchamiający krok (``KrokSkilla.pliki`` wyboru nocy), najpierw w folderze skilla,
     a bez takiego pliku ostatni PR nocy; ``None``, gdy ``main`` nie ma commitu od ``od``.
 
-    Pliki to różnica netto od ``od``, więc PR, który tylko cofnął zmianę pliku, nie dostaje kroku. Krok, którego wybór
+    Pliki to różnica netto od ``od``: plik, którego zmiany nocy się znoszą, nie wskazuje PR-u, ale plik, który zmienił się
+    netto, wskazuje PR, który ostatni go zmienił, także gdy ten PR cofnął tylko część zmiany. Krok, którego wybór
     nocy nie wybrał (``wybrany`` ``None``: plan z innego commitu albo innej bazy), też dostaje ostatni PR nocy."""
 
-    folder = f"{krok.skill.relative_to(kroki_skilli.ROOT).as_posix()}/"
+    folder = krok.folder
     pliki = wybrany.pliki if wybrany else frozenset()
     w_folderze = sorted(plik for plik in pliki if plik.startswith(folder))
     grupy = [grupa for grupa in (w_folderze, sorted(pliki.difference(w_folderze))) if grupa]

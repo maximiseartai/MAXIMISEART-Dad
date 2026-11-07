@@ -28,7 +28,6 @@ sys.path.insert(0, str(ROOT / "tools" / "ci"))
 import czasy_ci  # noqa: E402
 import kroki_skilli  # noqa: E402
 from mutacje import NearLimit  # noqa: E402
-import mutacje_skilli  # noqa: E402
 import niestabilne_testy  # noqa: E402
 import plan_ci  # noqa: E402
 from zakres_runu import KROKI, MUTACJE, TORY, Krok, KrokSkilla, Tor, Zdarzenie, pliki_testow, zakres  # noqa: E402
@@ -662,9 +661,7 @@ def test_zadanie_mutation_checks_uruchamia_po_kolei_swoje_kroki_skilli_a_czesc_s
     for name, text in files.items():
         (tmp_path / ".agents" / "skills" / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / ".agents" / "skills" / name).write_text(text, encoding="utf-8")
-    for module in (kroki_skilli, mutacje_skilli):
-        monkeypatch.setattr(module, "ROOT", tmp_path)
-    monkeypatch.setattr(kroki_skilli, "SKILLS", tmp_path / ".agents" / "skills")
+    monkeypatch.setattr(kroki_skilli, "ROOT", tmp_path)
     monkeypatch.chdir(tmp_path)
     script = "skill:verify-a/check_a_mutations.py"
     # Krok z planu, którego zadanie nie znajduje wśród kroków skilli (plan i zadanie policzyły je inaczej), nie biegł.
@@ -711,9 +708,7 @@ def test_zapis_zadania_mutation_checks_ma_ostrzezenia_czas_blisko_limitu_skryptu
     (tmp_path / ".agents" / "skills" / "verify-a" / "scripts").mkdir(parents=True)
     (tmp_path / ".agents" / "skills" / "verify-a" / "SKILL.md").write_text("", encoding="utf-8")
     (tmp_path / ".agents" / "skills" / "verify-a" / "scripts" / "check_a_mutations.py").write_text(script, encoding="utf-8")
-    for module in (kroki_skilli, mutacje_skilli):
-        monkeypatch.setattr(module, "ROOT", tmp_path)
-    monkeypatch.setattr(kroki_skilli, "SKILLS", tmp_path / ".agents" / "skills")
+    monkeypatch.setattr(kroki_skilli, "ROOT", tmp_path)
     monkeypatch.chdir(tmp_path)
     step = "skill:verify-a/check_a_mutations.py"
     job = plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/2)", (f"{step}#1/2",), 1.0)
@@ -758,7 +753,6 @@ def test_plan_pull_requestu_i_nocy_startuje_mutation_checks_tylko_z_praca_od_zmi
     commit(repo, "zmiana")
     for module in (plan_ci, kroki_skilli):
         monkeypatch.setattr(module, "ROOT", repo)
-    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
     monkeypatch.setattr(czasy_ci, "_gh", offline)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
@@ -798,7 +792,6 @@ def test_plan_bez_zdarzenia_to_plan_pull_requestu_a_plan_pushu_nie_czyta_bazy(
     commit(repo, "zmiana")
     for module in (plan_ci, kroki_skilli):
         monkeypatch.setattr(module, "ROOT", repo)
-    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
     monkeypatch.setattr(czasy_ci, "_gh", offline)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
@@ -858,7 +851,6 @@ def test_zgubiony_skrypt_mutacji_albo_zly_klucz_ci_trafia_z_wyboru_do_planu_i_cz
     commit(repo, "zmiana")
     for module in (plan_ci, kroki_skilli):
         monkeypatch.setattr(module, "ROOT", repo)
-    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
     monkeypatch.setattr(czasy_ci, "_gh", offline)
 
     code = plan_ci.main(["plan", "--zdarzenie", "pull_request", "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")])
