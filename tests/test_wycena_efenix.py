@@ -49,6 +49,7 @@ from rozliczenia.efenix_address import AddressPart
 from rozliczenia.efenix_checks import ListedOrder, ListedRead
 from rozliczenia.efenix_marking import UnsupportedShape, mark_ready
 from rozliczenia.efenix_orders import CollectiveOrder
+from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault
 from rozliczenia.efenix_pricing import (
     BrowserFailure,
     Closed,
@@ -992,6 +993,7 @@ CHANGED: dict[Changed, tuple[PagePart, WindowCause, str]] = {
     Changed.QUANTITY_VALUE: (PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, "012"), "otwarcie zlecenia"),
     Changed.SECOND_NUMBER_FIELD: (PagePart.LIST, ElementCount("#field_numer", 2), "szukanie"),
     Changed.NUMBER_FIELD_GONE: (PagePart.LIST, ElementCount("#field_numer", 0), "szukanie"),
+    Changed.SECOND_EMMETT_DIALOG: (PagePart.EMMETT, ElementCount("#dialog_emmett", 2), "Wycena Emmetta"),
 }
 
 
@@ -1025,6 +1027,51 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
     stopped_at = facts.stopped_at.failed
     assert stopped_at is not None
     assert (facts.part, facts.cause, stopped_at.action) == (part, cause, failed)
+
+
+_DIALOG = '<div id="dialog_emmett">{}</div>'
+_PROPOSAL = '<div id="emmett-propozycja">{}</div>'
+
+
+@pytest.mark.parametrize(
+    ("body", "window", "fault"),
+    [
+        pytest.param(_DIALOG.format(_PROPOSAL.format("<ul><li>012: 1</li></ul>")), EmmettWindow(1, 1, True), None, id="propozycja"),
+        pytest.param(_DIALOG.format(_PROPOSAL.format(" \n ")), EmmettWindow(1, 1, False), None, id="pusta-propozycja"),
+        pytest.param(_PROPOSAL.format("012: 1"), EmmettWindow(0, 0, False), ElementCount("#dialog_emmett", 0), id="bez-okna"),
+        pytest.param(
+            _DIALOG.format(_PROPOSAL.format("012: 1")) + _DIALOG.format(""),
+            EmmettWindow(2, 1, True),
+            ElementCount("#dialog_emmett", 2),
+            id="dwa-okna",
+        ),
+        pytest.param(
+            _DIALOG.format(_PROPOSAL.format("012: 1") * 2),
+            EmmettWindow(1, 2, False),
+            ElementCount("#dialog_emmett #emmett-propozycja", 2),
+            id="dwie-propozycje",
+        ),
+        pytest.param(_DIALOG.format(""), EmmettWindow(1, 0, False), ElementCount("#dialog_emmett #emmett-propozycja", 0), id="bez-propozycji"),
+        pytest.param(
+            '<div id="host"></div><script>document.getElementById("host").attachShadow({mode: "open"}).innerHTML ='
+            f" '{_DIALOG.format(_PROPOSAL.format('012: 1'))}';</script>" + _DIALOG.format(_PROPOSAL.format("012: 1")),
+            EmmettWindow(2, 2, False),
+            ElementCount("#dialog_emmett", 2),
+            id="drugie-okno-w-shadow-dom",
+        ),
+    ],
+)
+def test_okno_emmetta_ma_dokladnie_jedno_okno_a_w_nim_dokladnie_jedna_propozycje_regula_wspolna_wyceny_i_narzedzia(
+    page: Page, body: str, window: EmmettWindow, fault: ElementCount | None
+) -> None:
+    """Reguła okna Emmetta, której używają Wycena w efenix i narzędzie zgodności (``efenix_page``): najpierw dokładnie
+    jedno okno Emmetta na stronie, potem dokładnie jedna propozycja w nim, liczone jak element okna, także w shadow DOM.
+    Propozycja coś pokazuje tylko wtedy, gdy jest dokładnie jedna i ma element albo tekst inny niż białe znaki."""
+
+    page.set_content(body)
+    observed = emmett_window(page)
+
+    assert (observed, emmett_window_fault(observed)) == (window, fault)
 
 
 def test_zmieniona_strona_efenix_oznacza_gotowe_przed_nia_a_komunikat_do_maksa_nie_ma_numeru_adresu_ani_loginu(

@@ -62,7 +62,7 @@ MUTATIONS = (
     ),
     Mutation(
         "#808: formularz logowania pod adresem zlecenia to strona w innej budowie",
-        (Edit(BROWSER, "            if self._page.locator(_LOGIN_FORM).count() > 0:\n", "            if False:\n"),),
+        (Edit(BROWSER, "            if login_form(self._page):\n", "            if False:\n"),),
         explorer("odpowiedzi", "strona-po-dacie"),
         "wylogowanie wygląda jak zmieniony efenix",
         NEW,
@@ -267,9 +267,9 @@ MUTATIONS = (
         (
             Edit(
                 BROWSER,
-                "        button = self._only(_EMMETT_BUTTON, PagePart.EMMETT)\n",
+                "        button = self._only(Element.EMMETT_BUTTON.selector, PagePart.EMMETT)\n",
                 '        self._click(self._only("#button_forward_to_accept", PagePart.EMMETT))\n'
-                "        button = self._only(_EMMETT_BUTTON, PagePart.EMMETT)\n",
+                "        button = self._only(Element.EMMETT_BUTTON.selector, PagePart.EMMETT)\n",
             ),
         ),
         explorer("zamkniete-okno", "szukanie"),
