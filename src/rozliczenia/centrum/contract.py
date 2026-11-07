@@ -727,8 +727,9 @@ class LoggedOutcome(_Model):
     summary: RunSummary | None
 
 
-class OrderLine(_Model):
-    """Zlecenie Wyceny w efenix na karcie bieżącego Uruchomienia: wiersz Pliku zbiorczego, numer zlecenia i Wykonawca.
+class OrderNote(_Model):
+    """Zlecenie Wyceny w efenix na karcie bieżącego Uruchomienia: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i
+    zdanie „Co się stało” Komunikatu zlecenia, które zostało tacie (``None`` przy każdym innym).
 
     Numer zlecenia (``None``: pusty ``NUMER ZL.``) i Wykonawcę widzi tylko tata na swoim komputerze: Logi Uruchomienia ich
     nie mają.
@@ -737,22 +738,16 @@ class OrderLine(_Model):
     row: int
     order: str | None
     worker: str
-
-
-class OrderNote(OrderLine):
-    """Zlecenie Wyceny w efenix, które zostało tacie, ze zdaniem „Co się stało” jego Komunikatu."""
-
-    what: str
+    what: str | None
 
 
 class OrderNotes(_Model):
-    """Błędy zleceń, ostrzeżenia Emmetta, Zlecenia przekazane i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego
-    Uruchomienia."""
+    """Zlecenia Wyceny w efenix z jednym wynikiem na karcie bieżącego Uruchomienia: nazwa wyniku (``title``, ta sama co
+    jego liczba), ``done``: tata nie ma przy nich nic do zrobienia (Zlecenia przekazane i rozliczone)."""
 
-    errors: list[OrderNote]
-    warnings: list[OrderNote]
-    forwarded: list[OrderLine]
-    settled: list[OrderLine]
+    title: str
+    done: bool
+    notes: list[OrderNote]
 
 
 class RunOutcome(LoggedOutcome):
@@ -763,7 +758,7 @@ class RunOutcome(LoggedOutcome):
     ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
     Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
     Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
-    zostały tacie, Zlecenia przekazane i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
+    zostały tacie, Zlecenia przekazane i Zlecenia rozliczone, po wyniku, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
     trzech częściach (``None``: inny proces albo wynik bez podsumowania).
     """
 
@@ -771,7 +766,7 @@ class RunOutcome(LoggedOutcome):
     report: ReportState | None
     files_unchanged: bool
     opens: DadFile | None
-    order_notes: OrderNotes | None = None
+    order_notes: list[OrderNotes] | None = None
 
 
 class RunRestored(_Model):
@@ -1236,20 +1231,9 @@ class ReleaseNotification(_Notification):
     update_offered: bool
 
 
-class PricedOrders(_Model):
-    """Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, przekazane do akceptacji, rozliczone, błędy i
-    ostrzeżenia Emmetta."""
-
-    ready: int
-    forwarded: int
-    settled: int
-    errors: int
-    warnings: int
-
-
 class PricingNotification(_Notification):
     """Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia
-    (``headline``), okres, tryb (jak ``RunInfo.pricing``), zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”
+    (``headline``), okres, tryb (jak ``RunInfo.pricing``), liczba zleceń z każdym wynikiem pod jego nazwą, jak na karcie (``None``: Zatrzymanie przed podsumowaniem), i „Co się stało”
     Komunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów."""
 
     kind: Literal["wycena_w_efenix"]
@@ -1257,7 +1241,7 @@ class PricingNotification(_Notification):
     headline: str
     period: str
     pricing: Pricing | None
-    orders: PricedOrders | None
+    orders: list[Count] | None
     stopped: str | None
 
 

@@ -90,6 +90,7 @@ from .efenix_orders import (
 from .efenix_pace import Pace, Pacing
 from .efenix_positions import (
     Excess,
+    FileQuantities,
     NotWholeQuantities,
     OrderFault,
     OtherAmount,
@@ -129,6 +130,7 @@ __all__ = [
     "EmmettWarning",
     "OrderError",
     "OrderJournal",
+    "OrderKind",
     "OrderResult",
     "PricingMode",
     "PricingStopped",
@@ -174,47 +176,73 @@ Outcome = Ready | Settled | Forwarded | OrderError | EmmettWarning
 """Wynik zlecenia w Wycenie w efenix."""
 
 
+class OrderKind(enum.Enum):
+    """Wynik zlecenia dla taty; wartość to stały klucz wyniku w Logach Uruchomienia, a kolejność członków to kolejność
+    wyników na karcie Uruchomienia."""
+
+    READY = "gotowe"
+    FORWARDED = "przekazane"
+    SETTLED = "rozliczone"
+    ERROR = "błąd"
+    WARNING = "ostrzeżenie Emmetta"
+
+    @property
+    def left_for_tata(self) -> bool:
+        """Zlecenie zostało tacie z Komunikatem: błąd zlecenia albo Ostrzeżenie Emmetta."""
+
+        return self in (OrderKind.ERROR, OrderKind.WARNING)
+
+
 @dataclass(frozen=True)
 class OrderResult:
-    """Wynik zlecenia; ``steps``: ślad działań okna efenix przy nim, po kolei (``efenix_trace``)."""
+    """Wynik zlecenia; ``steps``: ślad działań okna efenix przy nim, po kolei (``efenix_trace``), ``message``: Komunikat
+    zlecenia, które zostało tacie (``OrderKind.left_for_tata``; ``None`` przy każdym innym), a ``file``: ilości Pliku
+    zbiorczego po kodach pozycji (``None``, gdy nie dało się ich przepisać)."""
 
     order: CollectiveOrder
     outcome: Outcome
-    steps: tuple[TraceStep, ...] = ()
+    steps: tuple[TraceStep, ...]
+    message: Message | None
+    file: Mapping[str, int] | None
+
+    def __post_init__(self) -> None:
+        if (self.message is not None) != self.kind.left_for_tata:
+            raise ValueError(f"wynik {self.kind.value} z Komunikatem: {self.message is not None}")
+
+    @property
+    def kind(self) -> OrderKind:
+        match self.outcome:
+            case Ready():
+                return OrderKind.READY
+            case Forwarded():
+                return OrderKind.FORWARDED
+            case Settled():
+                return OrderKind.SETTLED
+            case OrderError():
+                return OrderKind.ERROR
+            case EmmettWarning():
+                return OrderKind.WARNING
 
 
 @dataclass
 class PricingSummary:
-    """Podsumowanie Wyceny w efenix: wynik każdego zlecenia z zakresu po kolei i liczby pominiętych Wierszy danych.
-
-    ``warnings``: Komunikat każdego błędu zlecenia i każdego ostrzeżenia Emmetta, z numerem wiersza Pliku zbiorczego.
-    """
+    """Podsumowanie Wyceny w efenix: wynik każdego zlecenia z zakresu po kolei i liczby pominiętych Wierszy danych."""
 
     results: tuple[OrderResult, ...]
     with_photos: int
     defects: int
-    warnings: list[Message] = field(default_factory=list)
     phase_durations_ms: Mapping[ProgressPhase, int] = field(default_factory=lambda: MappingProxyType({}))
 
     @property
-    def ready_count(self) -> int:
-        return sum(isinstance(result.outcome, Ready) for result in self.results)
+    def warnings(self) -> list[Message]:
+        """Komunikat każdego zlecenia, które zostało tacie, po kolei, z numerem wiersza Pliku zbiorczego."""
 
-    @property
-    def settled_count(self) -> int:
-        return sum(isinstance(result.outcome, Settled) for result in self.results)
+        return [result.message for result in self.results if result.message is not None]
 
-    @property
-    def forwarded_count(self) -> int:
-        return sum(isinstance(result.outcome, Forwarded) for result in self.results)
+    def count(self, kind: OrderKind) -> int:
+        """Ile zleceń ma wynik ``kind``."""
 
-    @property
-    def error_count(self) -> int:
-        return sum(isinstance(result.outcome, OrderError) for result in self.results)
-
-    @property
-    def warning_count(self) -> int:
-        return sum(isinstance(result.outcome, EmmettWarning) for result in self.results)
+        return sum(result.kind is kind for result in self.results)
 
     @property
     def not_found(self) -> int:
@@ -224,13 +252,6 @@ class PricingSummary:
             isinstance(result.outcome, OrderError) and result.outcome.problem is OrderProblem.UNKNOWN_NUMBER
             for result in self.results
         )
-
-    @property
-    def left_for_tata(self) -> tuple[tuple[OrderResult, Message], ...]:
-        """Każde zlecenie z błędem albo ostrzeżeniem Emmetta po kolei z Komunikatem z ``warnings``."""
-
-        left = [result for result in self.results if isinstance(result.outcome, (OrderError, EmmettWarning))]
-        return tuple(zip(left, self.warnings, strict=True))
 
 
 @dataclass(frozen=True)
@@ -270,8 +291,8 @@ class OrderJournal(Protocol):
         działaniem okna efenix przy nim."""
         ...
 
-    def ended(self, result: OrderResult, message: Message | None) -> None:
-        """Zlecenie skończone z wynikiem ``result`` i jego Komunikatem (``None`` przy gotowym, rozliczonym i przekazanym)."""
+    def ended(self, result: OrderResult) -> None:
+        """Zlecenie skończone z wynikiem ``result``."""
         ...
 
 
@@ -281,7 +302,7 @@ class _NoJournal:
     def begun(self, row: int, place: int, total: int) -> None:
         return None
 
-    def ended(self, result: OrderResult, message: Message | None) -> None:
+    def ended(self, result: OrderResult) -> None:
         return None
 
 
@@ -360,7 +381,7 @@ def price_orders(
 
         def stopped(part: PagePart | None, cause: WindowCause) -> PricingStopped:
             before = tuple(results)
-            summary = PricingSummary(before, scope.with_photos, scope.defects, _warnings(source, before))
+            summary = PricingSummary(before, scope.with_photos, scope.defects)
             at = (
                 None
                 if current is None
@@ -377,10 +398,11 @@ def price_orders(
                         current = (done, order, trace)
                         journal.begun(order.row, done + 1, total)
                         window = efenix_trace.traced(efenix, order, trace, clock)
-                        outcome = _outcome(order, window if pacing is None else pacing.window(window), forbidden, mode)
-                        result = OrderResult(order, outcome, tuple(trace.steps))
+                        file = file_quantities(order)
+                        outcome = _outcome(order, file, window if pacing is None else pacing.window(window), forbidden, mode)
+                        result = _result(source, order, outcome, tuple(trace.steps), file)
                         results.append(result)
-                        journal.ended(result, _warning(source, result))
+                        journal.ended(result)
                         current = None
         except StopError:
             phases.step(_MARKING)
@@ -392,13 +414,7 @@ def price_orders(
         return tuple(results)
 
     results = phases.save(save)
-    return PricingSummary(
-        results,
-        scope.with_photos,
-        scope.defects,
-        _warnings(source, results),
-        phases.durations_ms(),
-    )
+    return PricingSummary(results, scope.with_photos, scope.defects, phases.durations_ms())
 
 
 def _mark(source: Path, scope: PricingScope, results: Sequence[OrderResult]) -> Refusal | None:
@@ -416,20 +432,20 @@ def _mark(source: Path, scope: PricingScope, results: Sequence[OrderResult]) -> 
     return mark_orders(source, scope.content, scope.address_column, marks)
 
 
-def _warnings(source: Path, results: Sequence[OrderResult]) -> list[Message]:
-    """Komunikat każdego zlecenia z błędem albo ostrzeżeniem Emmetta, po kolei."""
+def _result(
+    source: Path, order: CollectiveOrder, outcome: Outcome, steps: tuple[TraceStep, ...], file: FileQuantities
+) -> OrderResult:
+    """Wynik zlecenia ``order`` z Komunikatem zlecenia, które zostało tacie, i ilościami pliku ``file``."""
 
-    return [warning for result in results if (warning := _warning(source, result)) is not None]
-
-
-def _warning(source: Path, result: OrderResult) -> Message | None:
-    match result.outcome:
+    message: Message | None
+    match outcome:
         case Ready() | Settled() | Forwarded():
-            return None
+            message = None
         case OrderError(problem):
-            return messages.order_error(source, result.order.row, problem, changed=any(step.sent for step in result.steps))
+            message = messages.order_error(source, order.row, problem, changed=any(step.sent for step in steps))
         case EmmettWarning(excess):
-            return messages.emmett_warning(source, result.order.row, excess)
+            message = messages.emmett_warning(source, order.row, excess)
+    return OrderResult(order, outcome, steps, message, file if isinstance(file, Mapping) else None)
 
 
 @contextmanager
@@ -467,12 +483,14 @@ def _kept(results: Sequence[OrderResult], current: OrderTrace | None, error: Win
     return error.sent or any(step.sent for step in done)
 
 
-def _outcome(order: CollectiveOrder, efenix: Efenix, forbidden: ForbiddenValues | None, mode: PricingMode) -> Outcome:
-    """Wynik zlecenia ``order`` w oknie ``efenix``: sprawdzenia, data wykonania z ``DATA``, gdy jest pusta, Wycena
-    Emmetta przy stronie bez ilości, dokończenie do Pliku zbiorczego tylko w górę, a w trybie ``FORWARD`` Przekazanie
-    do akceptacji gotowego zlecenia."""
+def _outcome(
+    order: CollectiveOrder, file: FileQuantities, efenix: Efenix, forbidden: ForbiddenValues | None, mode: PricingMode
+) -> Outcome:
+    """Wynik zlecenia ``order`` z ilościami pliku ``file`` w oknie ``efenix``: sprawdzenia, data wykonania z ``DATA``,
+    gdy jest pusta, Wycena Emmetta przy stronie bez ilości, dokończenie do Pliku zbiorczego tylko w górę, a w trybie
+    ``FORWARD`` Przekazanie do akceptacji gotowego zlecenia."""
 
-    outcome = _priced_outcome(order, efenix, forbidden)
+    outcome = _priced_outcome(order, file, efenix, forbidden)
     if mode is PricingMode.FORWARD and isinstance(outcome, Ready):
         return _forwarded(order, outcome.listed, efenix, forbidden)
     return outcome
@@ -499,14 +517,15 @@ def _searched(efenix: Efenix, number: str, forbidden: ForbiddenValues | None) ->
     return found
 
 
-def _priced_outcome(order: CollectiveOrder, efenix: Efenix, forbidden: ForbiddenValues | None) -> Outcome:
+def _priced_outcome(
+    order: CollectiveOrder, file: FileQuantities, efenix: Efenix, forbidden: ForbiddenValues | None
+) -> Outcome:
     """Wynik zlecenia bez Przekazania do akceptacji: sprawdzenia, data wykonania, Wycena Emmetta i dokończenie."""
 
     searched = searched_number(order)
     if isinstance(searched, OrderProblem):
         return OrderError(searched)
     number, day = searched
-    file = file_quantities(order)
     if isinstance(file, (UnpairedColumns, NotWholeQuantities)):
         return OrderError(file)
     hit = listing(order, _searched(efenix, number, forbidden))

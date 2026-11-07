@@ -979,32 +979,13 @@ export type Opened = {
 };
 
 /**
- * OrderLine
+ * OrderNote
  *
- * Zlecenie Wyceny w efenix na karcie bieżącego Uruchomienia: wiersz Pliku zbiorczego, numer zlecenia i Wykonawca.
+ * Zlecenie Wyceny w efenix na karcie bieżącego Uruchomienia: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i
+ * zdanie „Co się stało” Komunikatu zlecenia, które zostało tacie (``None`` przy każdym innym).
  *
  * Numer zlecenia (``None``: pusty ``NUMER ZL.``) i Wykonawcę widzi tylko tata na swoim komputerze: Logi Uruchomienia ich
  * nie mają.
- */
-export type OrderLine = {
-    /**
-     * Row
-     */
-    row: number;
-    /**
-     * Order
-     */
-    order: string | null;
-    /**
-     * Worker
-     */
-    worker: string;
-};
-
-/**
- * OrderNote
- *
- * Zlecenie Wyceny w efenix, które zostało tacie, ze zdaniem „Co się stało” jego Komunikatu.
  */
 export type OrderNote = {
     /**
@@ -1022,32 +1003,28 @@ export type OrderNote = {
     /**
      * What
      */
-    what: string;
+    what: string | null;
 };
 
 /**
  * OrderNotes
  *
- * Błędy zleceń, ostrzeżenia Emmetta, Zlecenia przekazane i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego
- * Uruchomienia.
+ * Zlecenia Wyceny w efenix z jednym wynikiem na karcie bieżącego Uruchomienia: nazwa wyniku (``title``, ta sama co
+ * jego liczba), ``done``: tata nie ma przy nich nic do zrobienia (Zlecenia przekazane i rozliczone).
  */
 export type OrderNotes = {
     /**
-     * Errors
+     * Title
      */
-    errors: Array<OrderNote>;
+    title: string;
     /**
-     * Warnings
+     * Done
      */
-    warnings: Array<OrderNote>;
+    done: boolean;
     /**
-     * Forwarded
+     * Notes
      */
-    forwarded: Array<OrderLine>;
-    /**
-     * Settled
-     */
-    settled: Array<OrderLine>;
+    notes: Array<OrderNote>;
 };
 
 /**
@@ -1319,39 +1296,10 @@ export type PriceListItem = {
 };
 
 /**
- * PricedOrders
- *
- * Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, przekazane do akceptacji, rozliczone, błędy i
- * ostrzeżenia Emmetta.
- */
-export type PricedOrders = {
-    /**
-     * Ready
-     */
-    ready: number;
-    /**
-     * Forwarded
-     */
-    forwarded: number;
-    /**
-     * Settled
-     */
-    settled: number;
-    /**
-     * Errors
-     */
-    errors: number;
-    /**
-     * Warnings
-     */
-    warnings: number;
-};
-
-/**
  * PricingNotification
  *
  * Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia
- * (``headline``), okres, tryb (jak ``RunInfo.pricing``), zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”
+ * (``headline``), okres, tryb (jak ``RunInfo.pricing``), liczba zleceń z każdym wynikiem pod jego nazwą, jak na karcie (``None``: Zatrzymanie przed podsumowaniem), i „Co się stało”
  * Komunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów.
  */
 export type PricingNotification = {
@@ -1387,7 +1335,10 @@ export type PricingNotification = {
      * Pricing
      */
     pricing: 'bez Przekazania' | 'z Przekazaniem' | null;
-    orders: PricedOrders | null;
+    /**
+     * Orders
+     */
+    orders: Array<Count> | null;
     /**
      * Stopped
      */
@@ -2072,7 +2023,7 @@ export type RunInterrupted = {
  * ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
  * Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
  * Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
- * zostały tacie, Zlecenia przekazane i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
+ * zostały tacie, Zlecenia przekazane i Zlecenia rozliczone, po wyniku, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
  * trzech częściach (``None``: inny proces albo wynik bez podsumowania).
  */
 export type RunOutcome = {
@@ -2137,7 +2088,10 @@ export type RunOutcome = {
      * Opens
      */
     opens: 'order_register' | 'collective_file' | null;
-    order_notes?: OrderNotes | null;
+    /**
+     * Order Notes
+     */
+    order_notes?: Array<OrderNotes> | null;
 };
 
 /**

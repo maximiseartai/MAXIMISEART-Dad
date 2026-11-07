@@ -89,7 +89,6 @@ export type {
   LoggedOutcome,
   Message,
   Metrics,
-  OrderLine,
   OrderNote,
   OrderNotes,
   Percentiles,

@@ -55,6 +55,7 @@ from rozliczenia.centrum.run_logs import (
 from rozliczenia.centrum.report_box import Unreachable
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
+from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.efenix_window import ForwardRefusal, WindowAction
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.input_checks import FILE_READERS, read_register, register_problem
@@ -1297,10 +1298,10 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
     card = centrum.client.get(f"/api/runs/{notification['run_id']}/card").json()
 
     assert (notifications["unread"], notification["unread"]) == (1, True)
-    assert (notification["headline"], notification["period"], notification["orders"], notification["stopped"]) == (
+    assert (notification["headline"], notification["period"], _priced(notification), notification["stopped"]) == (
         "Wycena w efenix gotowa · wymaga sprawdzenia",
         PERIOD,
-        {"ready": 1, "forwarded": 0, "settled": 0, "errors": 2, "warnings": 3},
+        [("Gotowe do przekazania", 1), ("Przekazane do akceptacji", 0), ("Rozliczone", 0), ("Błędy zleceń", 2), ("Ostrzeżenia Emmetta", 3)],
         None,
     )
     assert (notification["run_id"], card["state"], card["result"]["headline"]) == (
@@ -1329,19 +1330,25 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
         "Usterki": 0,
         "Nieznalezione w efenix": 2,
     }
-    notes = result["order_notes"]
-    assert [(note["row"], note["order"], note["worker"]) for note in notes["errors"]] == [
+    assert [(group["title"], group["done"]) for group in result["order_notes"]] == [
+        ("Błędy zleceń", False),
+        ("Ostrzeżenia Emmetta", False),
+        ("Przekazane do akceptacji", True),
+        ("Rozliczone", True),
+    ]
+    notes = _order_lists(result)
+    assert [(note["row"], note["order"], note["worker"]) for note in notes["Błędy zleceń"]] == [
         (19, "ZLQX02", "beata.testowa"),
         (21, "ZLQX04", "dorota.testowa"),
     ]
-    assert [(note["row"], note["order"], note["worker"]) for note in notes["warnings"]] == [
+    assert [(note["row"], note["order"], note["worker"]) for note in notes["Ostrzeżenia Emmetta"]] == [
         (20, "ZLQX03", "celina.testowa"),
         (22, "ZLQX05", "ewa.testowa"),
         (23, "ZLQX06", "filip.testowy"),
     ]
-    assert notes["errors"][0]["what"].startswith("efenix nie zna zlecenia o numerze z NUMER ZL.")
-    assert notes["warnings"][0]["what"].startswith("efenix ma więcej niż Plik zbiorczy")
-    assert notes["settled"] == []
+    assert notes["Błędy zleceń"][0]["what"].startswith("efenix nie zna zlecenia o numerze z NUMER ZL.")
+    assert notes["Ostrzeżenia Emmetta"][0]["what"].startswith("efenix ma więcej niż Plik zbiorczy")
+    assert notes["Rozliczone"] == []
 
 
 def test_zlecenie_rozliczone_w_efenix_ma_na_karcie_w_logach_i_w_powiadomieniu_wlasny_wynik_a_nie_blad(tmp_path: Path) -> None:
@@ -1363,14 +1370,14 @@ def test_zlecenie_rozliczone_w_efenix_ma_na_karcie_w_logach_i_w_powiadomieniu_wl
 
     figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
     assert (result["result"], figures["Gotowe do przekazania"], figures["Rozliczone"], figures["Błędy zleceń"]) == ("OK", 1, 1, 0)
-    notes = result["order_notes"]
-    assert (notes["errors"], [(note["row"], note["order"], note["worker"]) for note in notes["settled"]]) == (
+    notes = _order_lists(result)
+    assert (notes["Błędy zleceń"], [(note["row"], note["order"], note["worker"], note["what"]) for note in notes["Rozliczone"]]) == (
         [],
-        [(19, "ZLQR02", "beata.testowa")],
+        [(19, "ZLQR02", "beata.testowa", None)],
     )
     traced = [(order["row"], order["outcome"], order["code"], [step["action"] for step in order["steps"]]) for order in record["efenix_orders"]]
     assert traced == [(18, "gotowe", None, ["szukanie", "otwarcie zlecenia"]), (19, "rozliczone", None, ["szukanie"])]
-    assert notification["orders"] == {"ready": 1, "forwarded": 0, "settled": 1, "errors": 0, "warnings": 0}
+    assert _priced(notification) == [("Gotowe do przekazania", 1), ("Przekazane do akceptacji", 0), ("Rozliczone", 1), ("Błędy zleceń", 0), ("Ostrzeżenia Emmetta", 0)]
 
 
 
@@ -1397,10 +1404,22 @@ def test_zlecenie_do_akceptacji_w_efenix_ma_na_karcie_i_w_logach_wynik_przekazan
     assert (finished["run"]["pricing"], record["pricing"]) == ("bez Przekazania", "bez Przekazania")
     figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
     assert (result["result"], figures["Gotowe do przekazania"], figures["Przekazane do akceptacji"], requests) == ("OK", 1, 1, [])
-    forwarded = result["order_notes"]["forwarded"]
+    forwarded = _order_lists(result)["Przekazane do akceptacji"]
     assert [(line["row"], line["order"], line["worker"]) for line in forwarded] == [(19, "ZLQP02", "beata.testowa")]
     traced = [(order["row"], order["outcome"], order["code"], [step["action"] for step in order["steps"]]) for order in record["efenix_orders"]]
     assert traced == [(18, "gotowe", None, ["szukanie", "otwarcie zlecenia"]), (19, "przekazane", None, ["szukanie"])]
+
+def _order_lists(result: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Listy zleceń Wyceny w efenix na karcie bieżącego Uruchomienia po nazwie wyniku."""
+
+    return {group["title"]: group["notes"] for group in result["order_notes"]}
+
+
+def _priced(notification: dict[str, Any]) -> list[tuple[str, int]]:
+    """Liczby zleceń Powiadomienia o Wycenie w efenix z nazwami wyników, po kolei."""
+
+    return [(count["label"], count["count"]) for count in notification["orders"]]
+
 
 # Zlecenie gotowe do przekazania i zlecenie, które tata już przekazał do akceptacji, każde z jedną pozycją jak w pliku.
 FORWARDED: Final = [
@@ -1435,14 +1454,14 @@ def test_wycena_w_efenix_z_zapisem_przekazuje_gotowe_zlecenie_a_karta_logi_i_pow
     assert (started.status_code, started.json()["run"]["pricing"], requests) == (200, "z Przekazaniem", [("POST", "Do akceptacji")])
     figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
     assert (result["result"], figures["Gotowe do przekazania"], figures["Przekazane do akceptacji"]) == ("OK", 0, 2)
-    forwarded = result["order_notes"]["forwarded"]
+    forwarded = _order_lists(result)["Przekazane do akceptacji"]
     assert [(line["row"], line["order"], line["worker"]) for line in forwarded] == [
         (18, "ZLQF01", "adrian.testowy"),
         (19, "ZLQF02", "beata.testowa"),
     ]
     assert [(order["row"], order["outcome"]) for order in record["efenix_orders"]] == [(18, "przekazane"), (19, "przekazane")]
     assert (record["pricing"], card["run"]["pricing"], notification["pricing"]) == ("z Przekazaniem",) * 3
-    assert notification["orders"] == {"ready": 0, "forwarded": 2, "settled": 0, "errors": 0, "warnings": 0}
+    assert _priced(notification) == [("Gotowe do przekazania", 0), ("Przekazane do akceptacji", 2), ("Rozliczone", 0), ("Błędy zleceń", 0), ("Ostrzeżenia Emmetta", 0)]
 
 
 def test_odmowa_przekazania_przez_efenix_jest_na_karcie_w_powiadomieniu_i_w_logach_bledem_zlecenia_z_przyczyna_bez_tekstu_efenix(
@@ -1468,10 +1487,10 @@ def test_odmowa_przekazania_przez_efenix_jest_na_karcie_w_powiadomieniu_i_w_loga
         figures = {figure["label"]: figure["value"] for figure in summary["figures"]}
         assert (figures["Błędy zleceń"], figures["Przekazane do akceptacji"], figures["Gotowe do przekazania"]) == (1, 1, 0)
     assert (result["result"], requests) == ("WYMAGA_SPRAWDZENIA", [])
-    errors = result["order_notes"]["errors"]
+    errors = _order_lists(result)["Błędy zleceń"]
     assert [(note["row"], note["order"], note["worker"]) for note in errors] == [(18, "ZLQF01", "adrian.testowy")]
     assert errors[0]["what"].startswith("efenix nie przyjął Przekazania do akceptacji: do wyceny nie są dołączone żadne zdjęcia")
-    assert notification["orders"] == {"ready": 0, "forwarded": 1, "settled": 0, "errors": 1, "warnings": 0}
+    assert _priced(notification) == [("Gotowe do przekazania", 0), ("Przekazane do akceptacji", 1), ("Rozliczone", 0), ("Błędy zleceń", 1), ("Ostrzeżenia Emmetta", 0)]
     [refused, _forwarded] = record["efenix_orders"]
     assert (refused["outcome"], refused["code"], [(step["action"], step["refusal"]) for step in refused["steps"]][-1]) == (
         "błąd",
@@ -2585,7 +2604,7 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
         quantity=None,
         accepted=None,
     )
-    order = LoggedOrder(row=18, outcome="gotowe", code=None, file={}, file_amount=Decimal(0), steps=[step])
+    order = LoggedOrder(row=18, outcome=OrderKind.READY, code=None, file={}, file_amount=Decimal(0), steps=[step])
     ended_at = utc("2026-09-16T10:16:00+00:00")
     left_journal(centrum.log_path.parent, started, ended_line(ended_at, order))
     if unsent:
@@ -4093,11 +4112,11 @@ def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_prz
         period=PERIOD,
         started_at=utc("2026-09-16T10:15:00+00:00"),
     )
-    order = LoggedOrder(row=18, outcome="gotowe", code=None, file={}, file_amount=Decimal(0), steps=[])
+    order = LoggedOrder(row=18, outcome=OrderKind.READY, code=None, file={}, file_amount=Decimal(0), steps=[])
     begun = begun_line(utc("2026-09-16T10:16:00+00:00"), row=18, place=1, total=2)
     ended = ended_line(utc("2026-09-16T10:17:00+00:00"), order)
     left_journal(centrum.log_path.parent, started, begun, ended)
-    progress = PricingProgress(started, (OrderDone(18, "gotowe", None),), 2, None)
+    progress = PricingProgress(started, (OrderDone(18, OrderKind.READY, None),), 2, None)
     text = guard_text(progress_markdown(progress, elapsed_s=600), "postęp Wyceny w efenix", ForbiddenValues())
     queue = tmp_path / "config" / "zgloszenia" / "kolejka"
     queue.mkdir(parents=True)

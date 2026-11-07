@@ -7,6 +7,7 @@ renderuje go bez rozróżniania procesów (ADR 0004). Kontrakt niesie wyłączni
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Final, Generic, Protocol, TypeVar
@@ -14,8 +15,7 @@ from typing import Final, Generic, Protocol, TypeVar
 from rozliczenia.centrum import contract
 from rozliczenia.collective_preparation import PreparationSummary
 from rozliczenia.engine import SettlementSummary
-from rozliczenia.efenix_checks import Forwarded, Settled
-from rozliczenia.efenix_pricing import EmmettWarning, PricingSummary
+from rozliczenia.efenix_pricing import OrderKind, PricingSummary
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.intermax_process import OrderingInputs
@@ -51,7 +51,7 @@ class Shown(Generic[SummaryT]):
     summary: contract.RunSummary
     warnings: tuple[Message, ...]
     engine_summary: SummaryT
-    notes: contract.OrderNotes | None = None
+    notes: list[contract.OrderNotes] | None = None
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,7 @@ class ResultView(Generic[InputsT, SummaryT]):
 
     _figures: Callable[[ProgressSnapshot, bool], list[contract.Figure]]
     _summary: Callable[[SummaryT, bool], contract.RunSummary]
-    _notes: Callable[[SummaryT], contract.OrderNotes | None] = lambda _summary: None
+    _notes: Callable[[SummaryT], list[contract.OrderNotes] | None] = lambda _summary: None
 
     def progress(self, snapshot: ProgressSnapshot, *, dry_run: bool) -> contract.Progress:
         """Etapy, postęp Szablonów pracowników, krok Zapisywania i liczby na żywo z jednego snapshotu projekcji."""
@@ -262,15 +262,38 @@ INTERMAX: Final[ProcessView[OrderingInputs, OrderingSummary]] = ProcessView(
 )
 
 
+def order_label(kind: OrderKind) -> str:
+    """Nazwa wyniku zlecenia Wyceny w efenix dla taty: liczba na karcie Uruchomienia, z Logów i w Powiadomieniu oraz
+    lista zleceń na karcie."""
+
+    match kind:
+        case OrderKind.READY:
+            return "Gotowe do przekazania"
+        case OrderKind.FORWARDED:
+            return "Przekazane do akceptacji"
+        case OrderKind.SETTLED:
+            return "Rozliczone"
+        case OrderKind.ERROR:
+            return "Błędy zleceń"
+        case OrderKind.WARNING:
+            return "Ostrzeżenia Emmetta"
+
+
+def order_counts(counted: Counter[OrderKind]) -> list[contract.Count]:
+    """Liczba zleceń z każdym wynikiem pod jego nazwą, w kolejności ``OrderKind``."""
+
+    return [contract.Count(label=order_label(kind), count=counted[kind]) for kind in OrderKind]
+
+
+# Listy zleceń na karcie bieżącego Uruchomienia: najpierw te, które zostały tacie.
+_NOTED: Final = (OrderKind.ERROR, OrderKind.WARNING, OrderKind.FORWARDED, OrderKind.SETTLED)
+
+
 def _pricing_summary(summary: PricingSummary, _dry_run: bool) -> contract.RunSummary:
     return contract.RunSummary(
         figures=[
             _count("Zlecenia w zakresie", len(summary.results)),
-            _count("Gotowe do przekazania", summary.ready_count),
-            _count("Przekazane do akceptacji", summary.forwarded_count),
-            _count("Rozliczone", summary.settled_count),
-            _count("Błędy zleceń", summary.error_count),
-            _count("Ostrzeżenia Emmetta", summary.warning_count),
+            *(_count(order_label(kind), summary.count(kind)) for kind in OrderKind),
         ],
         counts=contract.CountGroup(
             title="Pominięte",
@@ -286,26 +309,23 @@ def _pricing_summary(summary: PricingSummary, _dry_run: bool) -> contract.RunSum
     )
 
 
-def _pricing_notes(summary: PricingSummary) -> contract.OrderNotes:
-    notes: dict[bool, list[contract.OrderNote]] = {True: [], False: []}
-    for result, message in summary.left_for_tata:
-        order = result.order
-        notes[isinstance(result.outcome, EmmettWarning)].append(
-            contract.OrderNote(row=order.row, order=order.number, worker=order.worker, what=message.what)
-        )
-    return contract.OrderNotes(
-        errors=notes[False],
-        warnings=notes[True],
-        forwarded=_order_lines(summary, Forwarded),
-        settled=_order_lines(summary, Settled),
-    )
-
-
-def _order_lines(summary: PricingSummary, outcome: type[Forwarded | Settled]) -> list[contract.OrderLine]:
+def _pricing_notes(summary: PricingSummary) -> list[contract.OrderNotes]:
     return [
-        contract.OrderLine(row=result.order.row, order=result.order.number, worker=result.order.worker)
-        for result in summary.results
-        if isinstance(result.outcome, outcome)
+        contract.OrderNotes(
+            title=order_label(kind),
+            done=not kind.left_for_tata,
+            notes=[
+                contract.OrderNote(
+                    row=result.order.row,
+                    order=result.order.number,
+                    worker=result.order.worker,
+                    what=None if result.message is None else result.message.what,
+                )
+                for result in summary.results
+                if result.kind is kind
+            ],
+        )
+        for kind in _NOTED
     ]
 
 

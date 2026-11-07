@@ -23,7 +23,6 @@ import type {
   Message,
   NextAction,
   OpenTarget,
-  OrderLine,
   OrderNote,
   OrderNotes,
   PastRun,
@@ -400,7 +399,7 @@ function OutcomeBody({
   live?: LiveStop | null
   below?: React.ReactNode
   /** Zlecenia, które zostały tacie, Zlecenia przekazane i rozliczone, z numerami i Wykonawcami: zastępują ostrzeżenia w trzech częściach. */
-  notes?: OrderNotes | null
+  notes?: ReadonlyArray<OrderNotes> | null
   filling?: boolean
 }) {
   const [stop] = result.stops
@@ -435,10 +434,9 @@ function OutcomeBody({
         result.warnings.map((warning) => <ThreePartMessage key={warning.what} message={warning} kind="warning" />)
       ) : (
         <>
-          <OrderNoteList title="Błędy" notes={notes.errors} />
-          <OrderNoteList title="Ostrzeżenia Emmetta" notes={notes.warnings} />
-          <OrderNoteList title="Przekazane do akceptacji" notes={notes.forwarded} done />
-          <OrderNoteList title="Rozliczone" notes={notes.settled} done />
+          {notes.map((group) => (
+            <OrderNoteList key={group.title} title={group.title} notes={group.notes} done={group.done} />
+          ))}
         </>
       )}
       {result.technical_notes.map((note) => (
@@ -675,12 +673,12 @@ function StepProgress({ step }: { step: ProgressStep }) {
 function OrderNoteList({
   title,
   notes,
-  done = false,
+  done,
 }: {
   title: string
-  notes: ReadonlyArray<OrderNote | OrderLine>
+  notes: ReadonlyArray<OrderNote>
   /** Zlecenia przekazane i rozliczone w efenix: tata nie ma nic do zrobienia, więc bez ostrzeżenia i bez zdania. */
-  done?: boolean
+  done: boolean
 }) {
   if (notes.length === 0) {
     return null
@@ -704,7 +702,7 @@ function OrderNoteList({
               <TableCell className="w-32 font-medium tabular-nums">{note.order ?? "bez numeru"}</TableCell>
               <TableCell className="w-40 text-muted-foreground">{note.worker}</TableCell>
               {/* Zlecenie przekazane i rozliczone nie ma zdania, ale pusta komórka trzyma kolumny w linii z Błędami. */}
-              <TableCell className="whitespace-normal">{"what" in note ? note.what : null}</TableCell>
+              <TableCell className="whitespace-normal">{note.what}</TableCell>
             </TableRow>
           ))}
         </TableBody>

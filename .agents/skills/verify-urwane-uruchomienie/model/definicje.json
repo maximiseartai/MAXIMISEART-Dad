@@ -36,7 +36,7 @@
     "_NAME": "191666e2ace14a7c",
     "_RUN_ID": "38b226cc6aeae33a",
     "LogsRead": "2dfbc7e2c338f6b7",
-    "Journal": "794227fcab78c98a",
+    "Journal": "0ad2ecf30040e004",
     "_first_line": "9e428daecbdf1f07",
     "_RunEnded": "242ccffd41c0ef05",
     "JournalRead": "e5b35b59400e4346",
@@ -79,7 +79,7 @@
     "replace_atomically": "9e12247e22fdd059"
   },
   "src/rozliczenia/efenix_pricing.py": {
-    "price_orders.save": "1f41203adb4865b2"
+    "price_orders.save": "944904a2f85b713b"
   },
   "src/rozliczenia/process_run.py": {
     "run_process": "3cdf9c79ee1e1031"

@@ -72,7 +72,6 @@ from rozliczenia.centrum.run_logs import (
     StartFacts,
 )
 from rozliczenia.efenix_pricing import OrderResult
-from rozliczenia.message import Message
 
 LAST_STARTED_FILE: Final = "ostatnie-uruchomienie.json"
 _JOURNALS: Final = "dzienniki-wyceny"
@@ -267,9 +266,8 @@ class Journal:
     def begun(self, row: int, place: int, total: int) -> None:
         self._write(_OrderBegun(at=_utc_now(), entry="zaczynam zlecenie", row=row, place=place, total=total))
 
-    def ended(self, result: OrderResult, message: Message | None) -> None:
-        order = LoggedOrder.of(result, None if message is None else message.code)
-        self._write(_OrderEnded(at=_utc_now(), entry="zlecenie skończone", order=order))
+    def ended(self, result: OrderResult) -> None:
+        self._write(_OrderEnded(at=_utc_now(), entry="zlecenie skończone", order=LoggedOrder.of(result)))
 
     def end(self, run_id: str, result: contract.RunResult) -> None:
         """Wpis końca z wynikiem ``result`` w dzienniku Uruchomienia ``run_id``, który ma pierwszą linię na dysku. Dziennik

@@ -3483,38 +3483,6 @@
         ],
         "title": "Opened"
       },
-      "OrderLine": {
-        "properties": {
-          "row": {
-            "type": "integer",
-            "title": "Row"
-          },
-          "order": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Order"
-          },
-          "worker": {
-            "type": "string",
-            "title": "Worker"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "row",
-          "order",
-          "worker"
-        ],
-        "title": "OrderLine",
-        "description": "Zlecenie Wyceny w efenix na karcie bieżącego Uruchomienia: wiersz Pliku zbiorczego, numer zlecenia i Wykonawca.\n\nNumer zlecenia (``None``: pusty ``NUMER ZL.``) i Wykonawcę widzi tylko tata na swoim komputerze: Logi Uruchomienia ich\nnie mają."
-      },
       "OrderNote": {
         "properties": {
           "row": {
@@ -3537,7 +3505,14 @@
             "title": "Worker"
           },
           "what": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "What"
           }
         },
@@ -3550,49 +3525,35 @@
           "what"
         ],
         "title": "OrderNote",
-        "description": "Zlecenie Wyceny w efenix, które zostało tacie, ze zdaniem „Co się stało” jego Komunikatu."
+        "description": "Zlecenie Wyceny w efenix na karcie bieżącego Uruchomienia: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i\nzdanie „Co się stało” Komunikatu zlecenia, które zostało tacie (``None`` przy każdym innym).\n\nNumer zlecenia (``None``: pusty ``NUMER ZL.``) i Wykonawcę widzi tylko tata na swoim komputerze: Logi Uruchomienia ich\nnie mają."
       },
       "OrderNotes": {
         "properties": {
-          "errors": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "done": {
+            "type": "boolean",
+            "title": "Done"
+          },
+          "notes": {
             "items": {
               "$ref": "#/components/schemas/OrderNote"
             },
             "type": "array",
-            "title": "Errors"
-          },
-          "warnings": {
-            "items": {
-              "$ref": "#/components/schemas/OrderNote"
-            },
-            "type": "array",
-            "title": "Warnings"
-          },
-          "forwarded": {
-            "items": {
-              "$ref": "#/components/schemas/OrderLine"
-            },
-            "type": "array",
-            "title": "Forwarded"
-          },
-          "settled": {
-            "items": {
-              "$ref": "#/components/schemas/OrderLine"
-            },
-            "type": "array",
-            "title": "Settled"
+            "title": "Notes"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "errors",
-          "warnings",
-          "forwarded",
-          "settled"
+          "title",
+          "done",
+          "notes"
         ],
         "title": "OrderNotes",
-        "description": "Błędy zleceń, ostrzeżenia Emmetta, Zlecenia przekazane i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego\nUruchomienia."
+        "description": "Zlecenia Wyceny w efenix z jednym wynikiem na karcie bieżącego Uruchomienia: nazwa wyniku (``title``, ta sama co\njego liczba), ``done``: tata nie ma przy nich nic do zrobienia (Zlecenia przekazane i rozliczone)."
       },
       "PathStep": {
         "properties": {
@@ -4027,41 +3988,6 @@
         "title": "PriceListItem",
         "description": "Kolumna N:AP i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego."
       },
-      "PricedOrders": {
-        "properties": {
-          "ready": {
-            "type": "integer",
-            "title": "Ready"
-          },
-          "forwarded": {
-            "type": "integer",
-            "title": "Forwarded"
-          },
-          "settled": {
-            "type": "integer",
-            "title": "Settled"
-          },
-          "errors": {
-            "type": "integer",
-            "title": "Errors"
-          },
-          "warnings": {
-            "type": "integer",
-            "title": "Warnings"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "ready",
-          "forwarded",
-          "settled",
-          "errors",
-          "warnings"
-        ],
-        "title": "PricedOrders",
-        "description": "Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, przekazane do akceptacji, rozliczone, błędy i\nostrzeżenia Emmetta."
-      },
       "PricingNotification": {
         "properties": {
           "id": {
@@ -4112,12 +4038,16 @@
           "orders": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/PricedOrders"
+                "items": {
+                  "$ref": "#/components/schemas/Count"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Orders"
           },
           "stopped": {
             "anyOf": [
@@ -4146,7 +4076,7 @@
           "stopped"
         ],
         "title": "PricingNotification",
-        "description": "Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia\n(``headline``), okres, tryb (jak ``RunInfo.pricing``), zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”\nKomunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów."
+        "description": "Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia\n(``headline``), okres, tryb (jak ``RunInfo.pricing``), liczba zleceń z każdym wynikiem pod jego nazwą, jak na karcie (``None``: Zatrzymanie przed podsumowaniem), i „Co się stało”\nKomunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów."
       },
       "Problem": {
         "properties": {
@@ -5351,12 +5281,16 @@
           "order_notes": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/OrderNotes"
+                "items": {
+                  "$ref": "#/components/schemas/OrderNotes"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Order Notes"
           }
         },
         "additionalProperties": false,
@@ -5377,7 +5311,7 @@
           "opens"
         ],
         "title": "RunOutcome",
-        "description": "Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.\n\n``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla\ntaty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).\n``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed\nZapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka\nZatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które\nzostały tacie, Zlecenia przekazane i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w\ntrzech częściach (``None``: inny proces albo wynik bez podsumowania)."
+        "description": "Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.\n\n``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla\ntaty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).\n``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed\nZapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka\nZatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które\nzostały tacie, Zlecenia przekazane i Zlecenia rozliczone, po wyniku, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w\ntrzech częściach (``None``: inny proces albo wynik bez podsumowania)."
       },
       "RunRecorded": {
         "properties": {

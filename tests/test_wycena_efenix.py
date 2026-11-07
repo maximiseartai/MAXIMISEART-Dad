@@ -56,7 +56,7 @@ from rozliczenia.efenix_mark import Mark
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
 from rozliczenia.efenix_address import AddressPart
 from rozliczenia.efenix_checks import ListedRead
-from rozliczenia.efenix_pricing import PricingMode, PricingStopped, PricingSummary
+from rozliczenia.efenix_pricing import OrderKind, PricingMode, PricingStopped, PricingSummary
 from rozliczenia.efenix_window import (
     BrowserFailure,
     StatusChangeBlocked,
@@ -267,11 +267,11 @@ def _figures(outcome: Priced) -> dict[str, int]:
     summary = outcome.view
     return {
         "zakres": len(summary.results),
-        "gotowe": summary.ready_count,
-        "przekazane": summary.forwarded_count,
-        "rozliczone": summary.settled_count,
-        "błędy": summary.error_count,
-        "ostrzeżenia": summary.warning_count,
+        "gotowe": summary.count(OrderKind.READY),
+        "przekazane": summary.count(OrderKind.FORWARDED),
+        "rozliczone": summary.count(OrderKind.SETTLED),
+        "błędy": summary.count(OrderKind.ERROR),
+        "ostrzeżenia": summary.count(OrderKind.WARNING),
         "ze zdjęciami": summary.with_photos,
         "usterki": summary.defects,
     }
@@ -1106,7 +1106,7 @@ def test_odmowa_przekazania_przez_efenix_to_blad_zlecenia_bez_znacznika_a_nastep
 ) -> None:
     """Skrypt strony efenix po zielonym „Zapisz” sprawdza zlecenie i zamiast okna zmiany statusu pokazuje okno informacji
     z odmową (skrypt efenix z rekonesansu, każdy z czterech tekstów, i tekst, którego okno nie zna). Zlecenie zostaje
-    tacie jako błąd bez Znacznika, do efenix nie dochodzi jego zmiana statusu, a Wycena idzie dalej i przekazuje
+    tacie jako błąd bez Znacznika (także w liczbie błędów metryk), do efenix nie dochodzi jego zmiana statusu, a Wycena idzie dalej i przekazuje
     następne gotowe zlecenie. Ślad dla Logów ma odmowę z zamkniętej listy."""
 
     orders = [Order(number, cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}) for number in ("#8371", "#8372")]
@@ -1125,6 +1125,8 @@ def test_odmowa_przekazania_przez_efenix_to_blad_zlecenia_bez_znacznika_a_nastep
         _figures_of(2, 0, forwarded=1),
         [("EFENIX_ODMOWA_PRZEKAZANIA", "wiersz 18")],
     )
+    assert isinstance(outcome.ending, Finished)
+    assert (outcome.ending.counters["ready"], outcome.ending.counters["errors"]) == (0, 1)
     assert (requests, [order.status for order in after]) == ([("POST", "Do akceptacji")], ["Do wyceny", "Do akceptacji"])
     assert _address_fills(source) == {18: None, 19: FORWARDED_RGB}
     assert outcome.view is not None
@@ -2058,6 +2060,21 @@ def _marking_orders() -> list[Order]:
 
 def _marking_efenix(orders: Sequence[Order]) -> list[AtrapaOrder]:
     return [order.in_efenix(f"77{index}") for index, order in enumerate(orders) if order.number != "#7706"]
+
+
+def test_metryki_wyceny_licza_zlecenia_gotowe_bledy_ostrzezenia_emmetta_i_pominiete(tmp_path: Path) -> None:
+    """Rekord metryk Wyceny w efenix liczy zlecenia z zakresu, gotowe, błędy zleceń, Ostrzeżenia Emmetta i Wiersze danych
+    pominięte za zdjęcia i usterki, a wynik z błędem albo ostrzeżeniem to ``WYMAGA_SPRAWDZENIA``."""
+
+    other_amount = [Order(number, cells={"O": 1}, amount=_au({"012": 1}) + 5) for number in ("#7707", "#7708")]
+    orders = [order for order in _marking_orders() if order.number != "#7706"] + other_amount
+    outcome = _run_in_process(write_collective_file(tmp_path, orders), StanEfenix(_marking_efenix(orders)))
+
+    assert isinstance(outcome.ending, Finished), _ending(outcome)
+    assert (outcome.ending.result, outcome.ending.counters) == (
+        "WYMAGA_SPRAWDZENIA",
+        {"orders": 6, "ready": 2, "errors": 3, "emmett_warnings": 1, "with_photos": 1, "defects": 0},
+    )
 
 
 def test_znacznik_efenix_staje_tylko_w_adresie_gotowych_zlecen_a_reszta_pliku_zostaje_bajt_w_bajt(tmp_path: Path, page: Page) -> None:
