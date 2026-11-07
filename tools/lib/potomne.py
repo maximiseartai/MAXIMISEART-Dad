@@ -21,8 +21,8 @@ zabite drzewo, które żyje jeszcze ``_KILL_S`` po zabiciu, ``run`` nazywa na st
 Granice: na POSIX potomek, który sam założył sesję albo grupę procesów (``setsid``, ``setpgid``), jest poza
 drzewem i przeżywa; ``run`` czeka na resztę wyjścia najwyżej ``_DRAIN_S``. Na Windows narzędzie zabite razem z cudzym Job Object
 zostawia swoje kopie w katalogu tymczasowym. Narzędzie nie robi ``fork`` bez ``exec``: potomek z kopią
-potoku strażnika opóźniłby EOF. Krótkie zapytania ``git`` mogą zostać przy ``subprocess.run``; przez
-``run`` idzie każde polecenie, które trwa albo uruchamia własne procesy.
+potoku strażnika opóźniłby EOF. Gita narzędzie pyta przez ``repo.py``, którego ``run_git`` idzie przez ``run``;
+przez ``run`` idzie też każde inne polecenie, które trwa albo uruchamia własne procesy.
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))  # skrypt z tools/
     import potomne

@@ -26,8 +26,9 @@ import venv
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import potomne
+from repo import ROOT
+import repo
 
-ROOT = Path(__file__).resolve().parents[1]
 VENV = ROOT / ".venv"
 EXTRAS = ".[dev]"
 HOOKS = "tools/hooks"
@@ -73,25 +74,23 @@ def main(argv: list[str] | None = None) -> int:
 def _gate_pushes() -> None:
     """Ustawia ``core.hooksPath`` na bramę pre-push i ostrzega o hookach, które przestają działać."""
 
-    configured = subprocess.run(
-        ["git", "config", "--get", "core.hooksPath"], cwd=ROOT, capture_output=True, text=True, check=False
-    )
-    if configured.stdout.strip() == HOOKS:
+    try:
+        configured = repo.git(ROOT, "config", "--get", "core.hooksPath").strip()
+    except subprocess.CalledProcessError:
+        configured = ""  # bez core.hooksPath
+    if configured == HOOKS:
         return
-    hooks_path = subprocess.run(
-        ["git", "rev-parse", "--git-path", "hooks"], cwd=ROOT, capture_output=True, text=True, check=True
-    )
-    current = ROOT / hooks_path.stdout.strip()
+    current = ROOT / repo.git(ROOT, "rev-parse", "--git-path", "hooks").strip()
     disabled = sorted(hook.name for hook in current.glob("*") if hook.is_file() and hook.suffix != ".sample")
     if disabled:
         print(f"UWAGA: core.hooksPath={HOOKS} wyłącza hooki z {current}: {', '.join(disabled)}.", file=sys.stderr)
-    _run(["git", "config", "core.hooksPath", HOOKS])
+    repo.git(ROOT, "config", "core.hooksPath", HOOKS)
     print(f"OK: push sprawdza {HOOKS}/pre-push.")
 
 
 def _merge_generated() -> None:
-    _run(["git", "config", "merge.wygenerowane.name", "plik generowany: wersja bieżącego HEAD, potem npm run regen"])
-    _run(["git", "config", "merge.wygenerowane.driver", "true"])
+    repo.git(ROOT, "config", "merge.wygenerowane.name", "plik generowany: wersja bieżącego HEAD, potem npm run regen")
+    repo.git(ROOT, "config", "merge.wygenerowane.driver", "true")
 
 
 def _venv_python() -> Path:

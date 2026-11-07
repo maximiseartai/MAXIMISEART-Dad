@@ -38,8 +38,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 import falszywe_api
 import potomne
 import praca_w_tle
+from repo import ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
 MARKER = "WYROCZNIA-PRACY-W-TLE"
 WAITING = "Czekam na powiadomienie o procesie w tle."
 LIMIT_S = 120.0

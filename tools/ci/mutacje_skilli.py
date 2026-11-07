@@ -39,9 +39,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 from kroki_skilli import Step
 import mutacje
 import potomne
+from repo import ROOT
 from zakres_runu import Zdarzenie, zakres
 
-ROOT = Path(__file__).resolve().parents[2]
 # Najdłuższy skrypt trwał w CI na Windows 770 s; limit łapie zawieszenie, a nie wolny runner.
 LIMIT_S = 30 * 60
 

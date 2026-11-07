@@ -34,7 +34,6 @@ import argparse
 from dataclasses import dataclass, replace
 import io
 import json
-import os
 from pathlib import Path
 import re
 import shutil
@@ -43,7 +42,12 @@ import sys
 import time
 from typing import Any
 
-BASE = "origin/main"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+from repo import BASE
+import repo
+
+
 SUBJECTS = 3
 TIMEOUT_S = 30
 FRESH_FETCH_S = 3600
@@ -70,13 +74,6 @@ class WorkInProgress:
 
 
 @dataclass(frozen=True)
-class _Worktree:
-    path: Path
-    branch: str | None
-    head: str
-
-
-@dataclass(frozen=True)
 class _PullRequest:
     number: int
     branch: str
@@ -99,15 +96,15 @@ def main(argv: list[str] | None = None) -> int:
         # Tematy commitów mogą mieć znaki spoza strony kodowej konsoli Windows.
         sys.stdout.reconfigure(errors="replace")
     try:
-        root = Path(_git(Path.cwd(), "rev-parse", "--show-toplevel").strip()).resolve()
+        root = repo.toplevel(Path.cwd())
     except (OSError, subprocess.CalledProcessError):
         print("BŁĄD: uruchom w checkoucie repozytorium git.", file=sys.stderr)
         return 2
-    if _git_fails(root, "rev-parse", "--verify", "--quiet", BASE):
+    if repo.commit(root, BASE) is None:
         print(f"AKTUALIZACJA: nieznana (brak {BASE})" if args.aktualizacja else f"PRACA W TOKU POMINIĘTA | brak {BASE}, nie ma z czym porównać")
         return 0
 
-    branch = _git(root, "branch", "--show-current").strip() or _busy_branch(root)
+    branch = repo.git(root, "branch", "--show-current").strip() or _busy_branch(root)
     if args.aktualizacja:
         print(_update_verdict(root, branch))
         return 0
@@ -147,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
 def _local_work(root: Path) -> list[WorkInProgress]:
     worktrees = _worktrees(root)
     checked_out = {tree.branch: tree.path for tree in worktrees if tree.branch is not None}
-    branches = _git(root, "for-each-ref", "refs/heads", "--format=%(refname)").split()
+    branches = repo.git(root, "for-each-ref", "refs/heads", "--format=%(refname)").split()
     lines: list[tuple[str | None, Path | None, str]] = [
         (ref.removeprefix("refs/heads/"), checked_out.get(ref.removeprefix("refs/heads/")), ref) for ref in branches
     ]
@@ -166,43 +163,35 @@ def _local_work(root: Path) -> list[WorkInProgress]:
 def _work(root: Path, branch: str | None, worktree: Path | None, ref: str) -> WorkInProgress | None:
     dirty = _dirty(worktree) if worktree is not None else frozenset()
     own = ("rev-list", "--count", "--no-merges", ref, "--not", "--branches", "--remotes")
-    if branch is None and not dirty and not int(_git(root, *own)):
+    if branch is None and not dirty and not int(repo.git(root, *own)):
         return None  # czysta odłączona kopia commitów, które pokazuje już gałąź, albo ich merge: piaskownica albo przegląd
-    ahead = int(_git(root, "rev-list", "--count", f"{BASE}..{ref}"))
+    ahead = int(repo.git(root, "rev-list", "--count", f"{BASE}..{ref}"))
     if not ahead and not dirty:
         return None
     return WorkInProgress(
         branch=branch,
         worktree=worktree,
-        head=_git(root, "rev-parse", ref).strip(),
+        head=repo.git(root, "rev-parse", ref).strip(),
         ahead=ahead,
-        unpushed=int(_git(root, "rev-list", "--count", ref, "--not", "--remotes")),
+        unpushed=int(repo.git(root, "rev-list", "--count", ref, "--not", "--remotes")),
         dirty=dirty,
         files=_files(root, ref) | dirty,
         pr=None,
-        issues=_issues(_git(root, "log", "--format=%B", f"{BASE}..{ref}")) | _branch_issues(branch),
-        subjects=tuple(_git(root, "log", "--no-merges", f"-n{SUBJECTS}", "--format=%s", f"{BASE}..{ref}").splitlines()),
+        issues=_issues(repo.git(root, "log", "--format=%B", f"{BASE}..{ref}")) | _branch_issues(branch),
+        subjects=tuple(repo.git(root, "log", "--no-merges", f"-n{SUBJECTS}", "--format=%s", f"{BASE}..{ref}").splitlines()),
     )
 
 
-def _worktrees(root: Path) -> list[_Worktree]:
-    trees = []
-    for block in _git(root, "worktree", "list", "--porcelain").strip().split("\n\n"):
-        fields = dict(line.partition(" ")[::2] for line in block.splitlines())
-        path = Path(fields["worktree"])
-        if "bare" in fields or not path.is_dir():
-            continue
-        branch = fields.get("branch")
-        branch = branch.removeprefix("refs/heads/") if branch else _busy_branch(path)
-        trees.append(_Worktree(path.resolve(), branch, fields["HEAD"]))
-    return trees
+def _worktrees(root: Path) -> list[repo.Worktree]:
+    trees = [tree for tree in repo.worktrees(root) if tree.path.is_dir()]
+    return [tree if tree.branch is not None else replace(tree, branch=_busy_branch(tree.path)) for tree in trees]
 
 
 def _busy_branch(worktree: Path) -> str | None:
     """Gałąź, którą odłączony HEAD worktree przebudowuje (rebase) albo przeszukuje (bisect)."""
 
     try:
-        state = Path(_git(worktree, "rev-parse", "--absolute-git-dir").strip())
+        state = repo.git_dir(worktree)
     except (OSError, subprocess.CalledProcessError):
         return None  # inna sesja właśnie usunęła ten worktree
     for name in ("rebase-merge/head-name", "rebase-apply/head-name", "BISECT_START"):
@@ -211,7 +200,7 @@ def _busy_branch(worktree: Path) -> str | None:
         except OSError:
             continue
         # Rebase odłączonego HEAD zapisuje "detached HEAD", a bisect z odłączonego HEAD hash commita.
-        if not _git_fails(worktree, "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"):
+        if repo.succeeds(worktree, "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"):
             return branch
     return None
 
@@ -312,7 +301,7 @@ def _shared(root: Path, mine: frozenset[str], mine_dirty: frozenset[str], item: 
 
     if item.head is None:
         pushed = f"refs/remotes/origin/{item.branch}"
-        if _git_fails(root, "rev-parse", "--verify", "--quiet", pushed):
+        if repo.commit(root, pushed) is None:
             return mine & item.files
         return (_own_files(root, "HEAD", pushed) | mine_dirty) & _own_files(root, pushed, "HEAD")
     return (_own_files(root, "HEAD", item.head) | mine_dirty) & (_own_files(root, item.head, "HEAD") | item.dirty)
@@ -334,20 +323,14 @@ def _update_verdict(root: Path, branch: str | None) -> str:
     """Q9: gałąź aktualizuje się z ``origin/main`` tylko przy konflikcie albo pliku zmienionym po obu stronach."""
 
     ref = f"refs/heads/{branch}" if branch is not None else _before_rebase(root) or "HEAD"
-    merged = subprocess.run(
-        ["git", "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", ref, BASE],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=TIMEOUT_S,
-        check=False,
-    )
-    if merged.returncode not in (0, 1):
-        reason = (merged.stderr.strip().splitlines() or [f"kod {merged.returncode}"])[0]
-        verdict = f"nieznana (git merge-tree: {reason})"
-    elif conflicts := sorted(set(merged.stdout.split("\0")[1:]) - {""}):
+    try:
+        merged = repo.git(root, "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", ref, BASE)
+    except subprocess.CalledProcessError as conflict:
+        if conflict.returncode != 1:
+            reason = (conflict.stderr.strip().splitlines() or [f"kod {conflict.returncode}"])[0]
+            return f"AKTUALIZACJA: nieznana (git merge-tree: {reason}){_base_note(root)}"
+        merged = conflict.stdout
+    if conflicts := sorted(set(merged.split("\0")[1:]) - {""}):
         verdict = f"potrzebna (konflikt w: {', '.join(conflicts)})"
     elif shared := sorted(_files(root, ref) & _files(root, BASE, since=ref)):
         verdict = f"potrzebna (bez konfliktu, wspólne pliki: {', '.join(shared)})"
@@ -359,7 +342,7 @@ def _update_verdict(root: Path, branch: str | None) -> str:
 def _before_rebase(root: Path) -> str | None:
     """Commit sprzed rebase odłączonego HEAD: w trakcie HEAD stoi na nowym ``origin/main``."""
 
-    state = Path(_git(root, "rev-parse", "--absolute-git-dir").strip())
+    state = repo.git_dir(root)
     for name in ("rebase-merge/orig-head", "rebase-apply/orig-head"):
         try:
             return (state / name).read_text(encoding="utf-8").strip() or None
@@ -371,9 +354,9 @@ def _before_rebase(root: Path) -> str | None:
 def _base_note(root: Path) -> str:
     """Commit ``origin/main``, z którym werdykt porównał, i wiek fetch, gdy żaden nie potwierdził go w ostatniej godzinie."""
 
-    seen, short = _git(root, "log", "-1", "--format=%H%n%h", BASE).split()
+    seen, short = repo.git(root, "log", "-1", "--format=%H%n%h", BASE).split()
     main_branch = f"\tbranch '{BASE.partition('/')[2]}' of "
-    common = (root / _git(root, "rev-parse", "--git-common-dir").strip()).resolve()
+    common = repo.common_dir(root)
     # FETCH_HEAD ma każdy worktree osobno, a origin/main jest wspólny dla wszystkich.
     confirmed = []
     for fetch_head in [common / "FETCH_HEAD", *common.glob("worktrees/*/FETCH_HEAD")]:
@@ -396,16 +379,16 @@ def _base_note(root: Path) -> str:
 def _files(root: Path, ref: str, since: str = BASE) -> frozenset[str]:
     """Pliki, które ``ref`` zmienia od bazy scalenia z ``since``."""
 
-    return frozenset(_git(root, "diff", "--no-renames", "--name-only", "-z", f"{since}...{ref}").split("\0")) - {""}
+    return repo.changed(root, repo.merge_base(root, since, ref), ref)
 
 
 def _own_files(root: Path, ref: str, other: str) -> frozenset[str]:
-    log = _git(root, "log", "--no-renames", "--name-only", "--format=", "-z", ref, f"^{BASE}", f"^{other}")
+    log = repo.git(root, "log", "--no-renames", "--name-only", "--format=", "-z", ref, f"^{BASE}", f"^{other}")
     return frozenset(log.split("\0")) - {""}
 
 
 def _dirty(worktree: Path) -> frozenset[str]:
-    status = _git(worktree, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all")
+    status = repo.git(worktree, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all")
     return frozenset(entry[3:] for entry in status.split("\0") if entry)
 
 
@@ -415,26 +398,6 @@ def _issues(text: str) -> frozenset[int]:
 
 def _branch_issues(branch: str | None) -> frozenset[int]:
     return frozenset(int(number) for number in BRANCH_NUMBER.findall(branch or ""))
-
-
-def _git(cwd: Path, *args: str) -> str:
-    completed = subprocess.run(
-        ["git", *args],
-        cwd=cwd,
-        # Raport tylko czyta: bez odświeżania indeksu cudzych worktree przez git status.
-        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=TIMEOUT_S,
-        check=True,
-    )
-    return completed.stdout
-
-
-def _git_fails(cwd: Path, *args: str) -> bool:
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, timeout=TIMEOUT_S, check=False).returncode != 0
 
 
 def _gh(root: Path, *args: str) -> Any:

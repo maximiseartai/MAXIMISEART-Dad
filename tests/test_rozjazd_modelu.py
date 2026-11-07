@@ -232,7 +232,7 @@ def test_dopobranie_historii_ma_limit_czasu(tmp_path: Path, monkeypatch: pytest.
     clone, _ = _shallow_clone(tmp_path)
     limits: list[float | None] = []
 
-    def run(command: list[str], *, cwd: Path, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
+    def run(command: list[str], *, cwd: Path, timeout: float | None = None, **_: object) -> subprocess.CompletedProcess[str]:
         limits.append(timeout)
         raise subprocess.TimeoutExpired(command, timeout or 0)
 

@@ -51,9 +51,9 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import potomne
+from repo import BASE, MAIN, REMOTE, Worktree
+import repo
 
-BASE = "origin/main"
-PROTECTED_BRANCH = "main"
 TIMEOUT_S = 30
 FETCH_TIMEOUT_S = 120
 REMOVE_TIMEOUT_S = 300
@@ -66,18 +66,8 @@ FRESH = "nowe, bez własnych commitów"
 
 
 @dataclass(frozen=True)
-class _Worktree:
-    path: Path
-    branch: str | None
-    head: str
-    main: bool
-    locked: bool
-    missing: bool
-
-
-@dataclass(frozen=True)
 class _Verdict:
-    worktree: _Worktree | None
+    worktree: Worktree | None
     branch: str | None
     head: str
     reasons: tuple[str, ...]
@@ -103,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(errors="replace")
     here = Path.cwd().resolve()
     try:
-        root = Path(_git(here, "rev-parse", "--show-toplevel").strip()).resolve()
+        root = repo.toplevel(here)
     except (OSError, subprocess.CalledProcessError):
         print("SPRZĄTANIE FAIL | uruchom w checkoucie repozytorium git")
         return 1
@@ -111,18 +101,18 @@ def main(argv: list[str] | None = None) -> int:
         fetched = _fetch(root)
         if fetched:
             print(f"FETCH POMINIĘTY | {fetched}")
-    if _fails(root, "rev-parse", "--verify", "--quiet", BASE):
+    if repo.commit(root, BASE) is None:
         print(f"SPRZĄTANIE FAIL | brak {BASE}, nie ma z czym porównać")
         return 1
 
-    trees = _worktrees(root)
+    trees = repo.worktrees(root)
     threads = _t3_threads(root, next(tree.path for tree in trees if tree.main))
     busy = _busy()
     verdicts = [_judge_tree(root, tree, here, busy, threads) for tree in trees]
     checked_out = {tree.branch for tree in trees if tree.branch is not None}
-    for ref in _git(root, "for-each-ref", "refs/heads", "--format=%(refname:short)%00%(objectname)").splitlines():
+    for ref in repo.git(root, "for-each-ref", "refs/heads", "--format=%(refname:short)%00%(objectname)").splitlines():
         branch, _, head = ref.partition("\0")
-        if branch != PROTECTED_BRANCH and branch not in checked_out:
+        if branch != MAIN and branch not in checked_out:
             verdicts.append(_Verdict(None, branch, head, _readable(_branch_reasons(root, branch, head, threads))))
 
     removed = 0
@@ -152,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _judge_tree(root: Path, tree: _Worktree, here: Path, busy: frozenset[str] | None, threads: _Threads | None) -> _Verdict:
+def _judge_tree(root: Path, tree: Worktree, here: Path, busy: frozenset[str] | None, threads: _Threads | None) -> _Verdict:
     return _Verdict(tree, tree.branch, tree.head, _readable(_tree_reasons(root, tree, here, busy, threads)))
 
 
@@ -165,7 +155,7 @@ def _readable(reasons: Iterable[str]) -> tuple[str, ...]:
     return tuple(found)
 
 
-def _tree_reasons(root: Path, tree: _Worktree, here: Path, busy: frozenset[str] | None, threads: _Threads | None) -> Iterable[str]:
+def _tree_reasons(root: Path, tree: Worktree, here: Path, busy: frozenset[str] | None, threads: _Threads | None) -> Iterable[str]:
     if tree.main:
         yield "główny checkout"
         return
@@ -202,10 +192,10 @@ def _branch_reasons(root: Path, branch: str, head: str, threads: _Threads | None
 
 
 def _tree_state(path: Path) -> Iterable[str]:
-    state = Path(_git(path, "rev-parse", "--absolute-git-dir").strip())
+    state = repo.git_dir(path)
     if any((state / name).exists() for name in IN_PROGRESS):
         yield "w trakcie rebase, merge'a albo bisect"
-    status = _git(path, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=normal", "--ignored=traditional")
+    status = repo.git(path, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=normal", "--ignored=traditional")
     changed: list[str] = []
     kept: list[str] = []
     for entry in filter(None, status.split("\0")):
@@ -245,11 +235,11 @@ def _few(names: list[str]) -> str:
 def _in_base(root: Path, head: str) -> bool:
     """HEAD jest przodkiem ``origin/main`` albo jego scalenie z ``origin/main`` daje drzewo ``origin/main`` (squash)."""
 
-    if not _fails(root, "merge-base", "--is-ancestor", head, BASE):
+    if repo.is_ancestor(root, head, BASE):
         return True
     try:
-        merged = _git(root, "merge-tree", "--write-tree", BASE, head).splitlines()[0]
-        return merged == _git(root, "rev-parse", f"{BASE}^{{tree}}").strip()
+        merged = repo.git(root, "merge-tree", "--write-tree", BASE, head).splitlines()[0]
+        return merged == repo.git(root, "rev-parse", f"{BASE}^{{tree}}").strip()
     except (subprocess.CalledProcessError, IndexError):
         return False  # konflikt albo historie bez wspólnej bazy
 
@@ -257,7 +247,7 @@ def _in_base(root: Path, head: str) -> bool:
 def _fresh_without_own_work(cwd: Path, ref: str, head: str) -> bool:
     """``ref`` stoi tam, gdzie go utworzono, a utworzono go w ostatniej dobie (reflog, najnowszy wpis pierwszy)."""
 
-    entries = [line.split(" ", 1) for line in _git(cwd, "log", "-g", "--date=unix", "--format=%H %gd", ref).splitlines()]
+    entries = [line.split(" ", 1) for line in repo.git(cwd, "log", "-g", "--date=unix", "--format=%H %gd", ref).splitlines()]
     if not entries:
         return False
     created, when = entries[-1]
@@ -272,47 +262,28 @@ def _remove(root: Path, verdict: _Verdict, here: Path, threads: _Threads | None)
         again = _judge_tree(root, replace(tree, head=_head(tree)), here, _busy(), threads)
         if again.reasons or again.head != tree.head:
             return ", ".join(again.reasons) or "HEAD zmienił się w trakcie"
-        removed = potomne.run(["git", "worktree", "remove", str(tree.path)], cwd=root, timeout=REMOVE_TIMEOUT_S)
+        removed = repo.run_git(root, "worktree", "remove", str(tree.path), timeout=REMOVE_TIMEOUT_S)
         if removed.returncode:
             return f"git odmówił ({_first_line(removed)})"
     if verdict.branch is None:
         return None
-    if _fails(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{verdict.branch}"):
+    head = repo.commit(root, f"refs/heads/{verdict.branch}")
+    if head is None:
         return None
-    if _git(root, "rev-parse", f"refs/heads/{verdict.branch}").strip() != verdict.head:
+    if head != verdict.head:
         return "gałąź przesunęła się w trakcie"
-    deleted = subprocess.run(
-        ["git", "branch", "--delete", "--force", verdict.branch], cwd=root, capture_output=True, text=True, timeout=TIMEOUT_S, check=False
-    )
-    return f"git odmówił ({_first_line(deleted)})" if deleted.returncode else None
-
-
-def _head(tree: _Worktree) -> str:
     try:
-        return _git(tree.path, "rev-parse", "HEAD").strip()
+        repo.git(root, "branch", "--delete", "--force", verdict.branch)
+    except subprocess.CalledProcessError as refused:
+        return f"git odmówił ({_first_line(refused)})"
+    return None
+
+
+def _head(tree: Worktree) -> str:
+    try:
+        return repo.git(tree.path, "rev-parse", "HEAD").strip()
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return ""
-
-
-def _worktrees(root: Path) -> list[_Worktree]:
-    trees = []
-    for number, block in enumerate(_git(root, "worktree", "list", "--porcelain").strip().split("\n\n")):
-        fields = dict(line.partition(" ")[::2] for line in block.splitlines())
-        if "bare" in fields:
-            continue
-        path = Path(fields["worktree"])
-        branch = fields.get("branch")
-        trees.append(
-            _Worktree(
-                path=path.resolve(),
-                branch=branch.removeprefix("refs/heads/") if branch else None,
-                head=fields["HEAD"],
-                main=number == 0,
-                locked="locked" in fields,
-                missing="prunable" in fields or not path.is_dir(),
-            )
-        )
-    return trees
 
 
 def _busy() -> frozenset[str] | None:
@@ -362,33 +333,14 @@ def _t3(root: Path, t3: str, *args: str) -> str:
 
 def _fetch(root: Path) -> str | None:
     try:
-        done = potomne.run(["git", "fetch", "--quiet", "origin", PROTECTED_BRANCH], cwd=root, timeout=FETCH_TIMEOUT_S)
+        done = repo.run_git(root, "fetch", "--quiet", REMOTE, MAIN, timeout=FETCH_TIMEOUT_S)
     except subprocess.TimeoutExpired:
         return f"git fetch przekroczył {FETCH_TIMEOUT_S} s"
     return f"git fetch: {_first_line(done)}" if done.returncode else None
 
 
-def _first_line(done: subprocess.CompletedProcess[str]) -> str:
+def _first_line(done: subprocess.CompletedProcess[str] | subprocess.CalledProcessError) -> str:
     return next(iter((done.stderr or done.stdout).strip().splitlines()), f"kod {done.returncode}")
-
-
-def _git(cwd: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args],
-        cwd=cwd,
-        # Ocena tylko czyta: bez odświeżania indeksu cudzych worktree przez git status.
-        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=TIMEOUT_S,
-        check=True,
-    ).stdout
-
-
-def _fails(cwd: Path, *args: str) -> bool:
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, timeout=TIMEOUT_S, check=False).returncode != 0
 
 
 if __name__ == "__main__":

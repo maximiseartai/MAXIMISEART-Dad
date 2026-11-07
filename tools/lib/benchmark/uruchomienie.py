@@ -8,14 +8,13 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from benchmark import ROOT, SCRIPT, BenchmarkError
+from benchmark import SCRIPT, BenchmarkError
 from benchmark.lustro import PERIOD, period_directory, run_quietly
 from rozliczenia.period_folder import PeriodFolder, collective_file_name
 
@@ -36,15 +35,6 @@ def _process_metrics(path: Path) -> dict[str, Any]:
     if not record.get("completed") or record.get("mode") != "RUN":
         raise BenchmarkError(f"Przebieg rozliczeń nie zakończył się w trybie RUN: {record.get('result')}.")
     return record
-
-
-def git_output(*arguments: str) -> str | None:
-    try:
-        return subprocess.run(
-            ["git", *arguments], cwd=ROOT, capture_output=True, text=True, check=True, timeout=30
-        ).stdout
-    except (OSError, subprocess.SubprocessError):
-        return None
 
 
 @dataclass(frozen=True)

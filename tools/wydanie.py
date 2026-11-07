@@ -32,7 +32,6 @@ from datetime import UTC, datetime
 import enum
 import io
 import json
-import os
 from pathlib import Path
 import re
 import subprocess
@@ -48,15 +47,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import niestabilne_testy
-import potomne
+from repo import REMOTE, ROOT
+import repo
 from rozliczenia.centrum import release_notes, tool_update
 from rozliczenia.centrum.release_notes import DadCase, ReleaseNotes
 from rozliczenia.centrum.report_box import REPOSITORY as REPORT_BOX
 from rozliczenia.centrum.tool_update import MainLine, Release
 
-ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY: Final = tool_update.GITHUB_REPOSITORY.removeprefix("https://github.com/").removesuffix(".git")
-ORIGIN: Final = "origin"
 REQUIRED_CI: Final = "Required CI status"
 CONFIRMED: Final = "--potwierdzone-przez-maksa"
 RELEASE_OVERRIDE: Final = "MAXIMISEART_WYDANIE"
@@ -224,10 +222,6 @@ def _gh_bytes(path: str, sent: bytes | None = None) -> bytes | None:
     return answered.stdout
 
 
-def _git(root: Path, *arguments: str) -> str:
-    return subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True, encoding="utf-8", check=True).stdout
-
-
 def ci_state(root: Path, commit: str) -> CiState:
     """Stan ``Required CI status`` commitu na GitHubie, a przy zielonym stan testów z kwarantanny z jego runu.
 
@@ -254,12 +248,12 @@ def ci_state(root: Path, commit: str) -> CiState:
 def _has_quarantine(root: Path, commit: str) -> bool:
     """Czy ``KWARANTANNA`` w drzewie commitu ma wpisy; plik czyta z Gita, bez checkoutu."""
 
-    listed = potomne.run(["git", "ls-tree", "--name-only", commit, "--", niestabilne_testy.PLIK_KWARANTANNY], cwd=root, timeout=60)
+    listed = repo.run_git(root, "ls-tree", "--name-only", commit, "--", niestabilne_testy.PLIK_KWARANTANNY, timeout=60)
     if listed.returncode != 0:
         raise Refused(f"git ls-tree {commit}: {listed.stderr.strip()}")
     if not listed.stdout.strip():
         return False
-    shown = potomne.run(["git", "show", f"{commit}:{niestabilne_testy.PLIK_KWARANTANNY}"], cwd=root, timeout=60)
+    shown = repo.run_git(root, "show", f"{commit}:{niestabilne_testy.PLIK_KWARANTANNY}", timeout=60)
     if shown.returncode != 0:
         raise Refused(f"git show {commit}: {shown.stderr.strip()}")
     return niestabilne_testy.ma_wpisy(shown.stdout)
@@ -347,9 +341,9 @@ def publish(root: Path, chosen: ReleasePlan, summary: str, override: str | None,
 
 def _fetch(root: Path) -> MainLine:
     try:
-        return tool_update.fetch_main_line(root, ORIGIN)
+        return tool_update.fetch_main_line(root, REMOTE)
     except tool_update.GitFailed as failure:
-        raise Refused(f"Nie udało się pobrać main i tagów z {ORIGIN}: {failure}.") from failure
+        raise Refused(f"Nie udało się pobrać main i tagów z {REMOTE}: {failure}.") from failure
 
 
 def _highest(tags: Iterable[str]) -> Release | None:
@@ -358,38 +352,32 @@ def _highest(tags: Iterable[str]) -> Release | None:
 
 def _check_still_releasable(root: Path, line: MainLine, commit: str, release: Release) -> None:
     if commit not in line.tips:
-        raise Refused(f"Commit {commit} nie leży na linii pierwszych rodziców main w {ORIGIN}.")
+        raise Refused(f"Commit {commit} nie leży na linii pierwszych rodziców main w {REMOTE}.")
     state = ci_state(root, commit)
     if state != "zielone":
         raise Refused(f"CI commitu {commit} nie jest już zielone ({state}).")
     tagged = line.releases.get(release.tag)
     if tagged not in (None, commit):
-        raise Refused(f"Tag {release.tag} już jest w {ORIGIN} na innym commicie ({tagged}).")
+        raise Refused(f"Tag {release.tag} już jest w {REMOTE} na innym commicie ({tagged}).")
     others = {tag: target for tag, target in line.releases.items() if tag != release.tag}
     highest = _highest(others)
     if highest is not None and release.number <= highest.number:
-        raise Refused(f"Numer {release.tag} nie jest wyższy od Wydania {highest.tag} w {ORIGIN}.")
+        raise Refused(f"Numer {release.tag} nie jest wyższy od Wydania {highest.tag} w {REMOTE}.")
     newest = MainLine(line.tips, others).newest()
     if newest.release is not None and newest.commit is not None and line.tips.index(commit) >= line.tips.index(newest.commit):
         raise Refused(f"Commit {commit} nie jest nowszy od commitu Wydania {newest.release.tag}.")
 
 
 def _tag_and_push(root: Path, release: Release, commit: str) -> None:
-    tag = f"refs/tags/{release.tag}^{{commit}}"
-    local = subprocess.run(["git", "rev-parse", "--quiet", "--verify", tag], cwd=root, capture_output=True, text=True, check=False)
-    if local.returncode == 0 and local.stdout.strip() != commit:
-        raise Refused(f"Lokalny tag {release.tag} wskazuje inny commit ({local.stdout.strip()}); usuń go i ponów.")
-    if local.returncode != 0:
+    local = repo.commit(root, f"refs/tags/{release.tag}")
+    if local is not None and local != commit:
+        raise Refused(f"Lokalny tag {release.tag} wskazuje inny commit ({local}); usuń go i ponów.")
+    if local is None:
         name = ".".join(map(str, release.number))
-        made = potomne.run(["git", "tag", "--annotate", "--message", f"Wydanie {name}", release.tag, commit], cwd=root, timeout=60)
+        made = repo.run_git(root, "tag", "--annotate", "--message", f"Wydanie {name}", release.tag, commit, timeout=60)
         if made.returncode != 0:
             raise Refused(f"git tag {release.tag}: {made.stderr.strip()}")
-    pushed = potomne.run(
-        ["git", "push", "--quiet", ORIGIN, f"refs/tags/{release.tag}"],
-        cwd=root,
-        env={**os.environ, RELEASE_OVERRIDE: "1"},
-        timeout=_PUSH_TIMEOUT_S,
-    )
+    pushed = repo.run_git(root, "push", "--quiet", REMOTE, f"refs/tags/{release.tag}", extra_env={RELEASE_OVERRIDE: "1"}, timeout=_PUSH_TIMEOUT_S)
     if pushed.returncode != 0:
         raise Refused(f"git push {release.tag}: {(pushed.stderr or pushed.stdout).strip()}")
 
@@ -398,7 +386,7 @@ def _merged_prs(root: Path, previous: str | None, commit: str) -> tuple[MergedPR
     """PR-y scalone do `main` od commitu ``previous`` (bez niego) do ``commit``: merge i squash z GitHuba."""
 
     span = commit if previous is None else f"{previous}..{commit}"
-    listed = _git(root, "log", "--first-parent", "--diff-merges=first-parent", "--name-only", "--format=%x1e%s%x1f%b%x1f", span)
+    listed = repo.git(root, "log", "--first-parent", "--diff-merges=first-parent", "--name-only", "--format=%x1e%s%x1f%b%x1f", span)
     changes: list[MergedPR] = []
     for record in listed.split("\x1e")[1:]:
         subject, body, names = record.split("\x1f")
@@ -420,7 +408,7 @@ def _closed_cases(root: Path, previous: PreviousRelease | None) -> tuple[DadCase
 
     since, listed = None, frozenset[int]()
     if previous is not None:
-        since = datetime.fromisoformat(_git(root, "log", "-1", "--format=%cI", previous.commit).strip())
+        since = datetime.fromisoformat(repo.git(root, "log", "-1", "--format=%cI", previous.commit).strip())
         found = _gh_found(_RELEASE, f"repos/{REPOSITORY}/releases/tags/{previous.release.tag}")
         listed = frozenset(case.number for case in release_notes.parse(found.body or "").cases) if found else frozenset()
     cases: list[DadCase] = []

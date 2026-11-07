@@ -50,9 +50,9 @@ from fnmatch import fnmatchcase
 from functools import cached_property
 import hashlib
 from pathlib import Path, PurePosixPath
-import subprocess
 import sys
 
+import repo
 from sciezki_w_kodzie import Glob, references
 
 __all__ = ["STRUCTURE", "Context", "Impact", "Repository", "changed_since", "run_all", "with_structure"]
@@ -117,7 +117,7 @@ STRUCTURE = (
     "tests/test_mapy_funkcji.py",
     "tests/test_miejsce_skilli.py",
     "tests/test_potomne.py::test_drzewa_procesow_i_kopie_commitow_narzedzi_buduje_tylko_potomne",
-    "tests/test_potomne.py::test_polecenia_narzedzi_ktore_trwaja_biegna_przez_potomne_run",
+    "tests/test_potomne.py::test_narzedzia_pytaja_gita_przez_repo_a_polecenia_ktore_trwaja_uruchamiaja_przez_potomne_run",
     "tests/test_skille_dla_zmiany.py::test_agents_md_nie_wymienia_skilli_verify",
     "tests/test_skille_dla_zmiany.py::test_kazdy_skill_verify_deklaruje_pilnuje",
     "tests/test_skille_dla_zmiany.py::test_skill_nie_kaze_uruchamiac_przed_pushem_tego_co_liczy_ci",
@@ -152,10 +152,7 @@ def changed_since(root: Path, base: str) -> frozenset[str]:
     HEAD z ``base``. Nieznana baza: ``subprocess.CalledProcessError`` gita (``cmd[1]`` to ``merge-base``, ``stderr``
     to tekst błędu)."""
 
-    fork = _git(root, "merge-base", "HEAD", base).strip()
-    diff = _git(root, "diff", "-z", "--name-only", "--no-renames", fork)
-    untracked = _git(root, "ls-files", "-z", "--others", "--exclude-standard")
-    return frozenset(path for path in (diff + untracked).split("\0") if path)
+    return repo.changed(root, repo.merge_base(root, "HEAD", base))
 
 
 def run_all(changed: Iterable[str], context: Context) -> tuple[str, ...]:
@@ -211,9 +208,7 @@ class Repository:
 
     @classmethod
     def scan(cls, root: Path) -> Repository:
-        listed = subprocess.run(
-            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd=root, capture_output=True, check=True
-        ).stdout.decode("utf-8")
+        listed = repo.git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
         return cls(root, frozenset(path for path in listed.split("\0") if path))
 
     def impact(self, changed: frozenset[str]) -> Impact:
@@ -336,11 +331,6 @@ class _Graph:
                 distances[source] = distances[target] + 1
                 pending.append(source)
         return distances
-
-
-def _git(root: Path, *arguments: str) -> str:
-    completed = subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True, encoding="utf-8", check=True)
-    return completed.stdout
 
 
 def _is_python(root: Path, path: str) -> bool:

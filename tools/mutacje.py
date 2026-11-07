@@ -131,8 +131,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 import ciezkie_ci
 import potomne
+from repo import BASE, ROOT
+import repo
 
-ROOT = Path(__file__).resolve().parents[1]
 TIMEOUT = 600
 # Mutacji naraz najwyżej tyle, ile rdzeni ma komputer (4 vCPU runnera Windows CI), i najwyżej 8 (16 rdzeni Maca dzielą
 # agenci). Osiem eksploratorów naraz na 4 vCPU dzieliło procesor, więc czas mutacji zależał od tego, ile ciężkich mutacji
@@ -143,7 +144,6 @@ MYPY_CACHE = ".mypy_cache"
 PART = "MUTACJE_CZESC"
 # Część ``--limit-s``, ponad którą czas polecenia mutacji daje ostrzeżenie ``CZAS BLISKO LIMITU`` w ``check_all``.
 NEAR_LIMIT = 0.5
-BASE = "origin/main"
 # Linie, którymi pytest-timeout kończy test po limicie, w pytest_timeout.py 2.4: ``PYTEST_FAILURE_MESSAGE`` metody
 # ``signal`` jako błąd testu (``E   Failed: …``) albo w krótkim podsumowaniu (``FAILED <test> - Failed: …``) i nagłówek
 # zrzutu stosów metody ``thread`` (``terminal.sep("+", title="Timeout")``). Cała linia, bo ten sam tekst w cudzysłowie
@@ -222,22 +222,11 @@ def environment(copy: Path, *, concurrent: bool = False) -> dict[str, str]:
     }
 
 
-def _git(*arguments: str) -> bytes:
-    return subprocess.run(["git", *arguments], cwd=ROOT, capture_output=True, check=True).stdout
-
-
-def _uncommitted() -> list[str]:
-    """Ścieżki, w których checkout różni się od HEAD: zmienione, także w indeksie, usunięte i nieśledzone."""
-
-    changed = _git("diff", "--name-only", "-z", "--no-renames", "HEAD") + _git("ls-files", "-z", "--others", "--exclude-standard")
-    return sorted(set(filter(None, changed.decode("utf-8").split("\0"))))
-
-
 @contextmanager
 def checkout_copy(commit: str | None = None) -> Iterator[Path]:
     """Kopia HEAD z niezacommitowanymi zmianami checkoutu albo, z ``commit``, kopia samego commitu."""
 
-    names = [] if commit is not None else _uncommitted()
+    names = [] if commit is not None else sorted(repo.uncommitted(ROOT))
     with potomne.commit_copy(ROOT, commit or "HEAD") as copy:
         present = [name for name in names if (ROOT / name).is_symlink() or (ROOT / name).is_file()]
         # Najpierw usunięcia: ścieżka, która zmieniła typ, zwalnia miejsce na plik albo katalog o tej nazwie.
@@ -648,13 +637,13 @@ def _against_base(
     survived = [index for index, (verdict, _) in enumerate(found) if verdict is Verdict.SURVIVED]
     if not survived:
         return list(found)
-    fork = subprocess.run(["git", "merge-base", "HEAD", base], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=False)
-    if fork.returncode:
+    try:
+        commit = repo.merge_base(ROOT, "HEAD", base)
+    except subprocess.CalledProcessError as error:
         # Na stderr: pierwsza linia wyjścia to werdykt mutacji, także w checkoucie CI bez gałęzi bazy.
-        print(f"MERGE-BASE: brak merge-base HEAD z {base}, więc REGRES niesprawdzony, a NIEWYKRYTA bez porównania ({fork.stderr.strip()})", file=sys.stderr, flush=True)
+        print(f"MERGE-BASE: brak merge-base HEAD z {base}, więc REGRES niesprawdzony, a NIEWYKRYTA bez porównania ({error.stderr.strip()})", file=sys.stderr, flush=True)
         return list(found)
-    commit = fork.stdout.strip()
-    if commit == _git("rev-parse", "HEAD").decode("utf-8").strip() and not _uncommitted():
+    if commit == repo.commit(ROOT, "HEAD") and not repo.uncommitted(ROOT):
         # Merge-base to sam checkout, więc drugi przebieg dałby te same werdykty.
         return list(found)
     red = _baseline([mutations[index] for index in survived], limit_s, commit)
@@ -849,7 +838,7 @@ def ci_jobs(jobs: Iterable[tuple[str, str, Sequence[str]]], tracks: Collection[s
 
 
 def _output(command: Sequence[str]) -> str:
-    """Wyjście polecenia ``gh`` albo ``git``; porażka to ``ValueError`` z końcem jego błędu."""
+    """Wyjście polecenia ``gh``; porażka to ``ValueError`` z końcem jego błędu."""
 
     done = potomne.run(command, cwd=ROOT)
     if done.returncode:
@@ -860,10 +849,13 @@ def _output(command: Sequence[str]) -> str:
 def _last_run() -> str:
     """Numer ostatniego runu ``ci.yml`` gałęzi, którą śledzi bieżąca (bez śledzonej: bieżącej)."""
 
-    head = _output(["git", "rev-parse", "--symbolic-full-name", "HEAD"])
-    if not head.startswith("refs/heads/"):
-        raise ValueError("HEAD nie jest na gałęzi, więc podaj numer runu CI: --jak-ci <id runu>")
-    branch = _output(["git", "for-each-ref", "--format=%(upstream:lstrip=3)", head]) or head.removeprefix("refs/heads/")
+    try:
+        head = repo.git(ROOT, "rev-parse", "--symbolic-full-name", "HEAD").strip()
+        if not head.startswith("refs/heads/"):
+            raise ValueError("HEAD nie jest na gałęzi, więc podaj numer runu CI: --jak-ci <id runu>")
+        branch = repo.git(ROOT, "for-each-ref", "--format=%(upstream:lstrip=3)", head).strip() or head.removeprefix("refs/heads/")
+    except subprocess.CalledProcessError as error:
+        raise ValueError(f"{' '.join(error.cmd[:3])} padł: {(error.stderr.strip() or error.stdout.strip())[-300:]}") from error
     runs = json.loads(_output(["gh", "run", "list", "--workflow", "ci.yml", "--branch", branch, "--limit", "1", "--json", "databaseId"]))
     if not runs:
         raise ValueError(f"gałąź {branch} nie ma runu CI, więc podaj numer runu: --jak-ci <id runu>")

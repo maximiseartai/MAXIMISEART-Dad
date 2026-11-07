@@ -18,8 +18,8 @@ aktualizować gałąź z ``origin/main``, i skille ``verify-*`` do załadowania 
 narzędzie się nie uda, brama drukuje ``AKTUALIZACJA: nieznana (…)`` albo ``SKILLE VERIFY: nieznane (…)``, a wynik
 pushu się nie zmienia.
 
-Hook biegnie systemowym Pythonem (na Macu 3.9), więc ten plik i ``tools/lib/potomne.py`` ruff sprawdza pod 3.9
-(``per-file-target-version`` w ``pyproject.toml``).
+Hook biegnie systemowym Pythonem (na Macu 3.9), więc ten plik, ``tools/lib/repo.py`` i ``tools/lib/potomne.py`` ruff
+sprawdza pod 3.9 (``per-file-target-version`` w ``pyproject.toml``).
 """
 
 from __future__ import annotations
@@ -27,8 +27,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
-import subprocess
 import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+from repo import ROOT
+import repo
 
 AGENT_MARKERS = ("AI_AGENT", "CLAUDECODE")
 VENV_PYTHON = Path(".venv/Scripts/python.exe" if sys.platform == "win32" else ".venv/bin/python")
@@ -69,16 +73,12 @@ NOTES = (
 )
 
 
-def _git(*args: str) -> str:
-    return subprocess.run(["git", *args], capture_output=True, text=True, check=True).stdout.strip()
-
-
 def _decide(pushed: set[str]) -> Decision:
     if not any(os.environ.get(marker) for marker in AGENT_MARKERS):
         return HUMAN
-    if _git("rev-parse", "HEAD") not in pushed:
+    if repo.git(ROOT, "rev-parse", "HEAD").strip() not in pushed:
         return NOT_HEAD
-    return DIRTY if _git("status", "--porcelain") else CLEAN
+    return DIRTY if repo.git(ROOT, "status", "--porcelain").strip() else CLEAN
 
 
 def _print_note(note: Note) -> None:
@@ -112,7 +112,6 @@ def main() -> int:
     if not VENV_PYTHON.exists():
         print("pre-push: brak .venv; utwórz je przez tools/setup_worktree.py i ponów push.", flush=True)
         return 1
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
     for note in NOTES:
         _print_note(note)
     if sys.platform == "win32":  # tools/setup_worktree.py nie włącza bramy na Windows

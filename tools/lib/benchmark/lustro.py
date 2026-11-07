@@ -23,7 +23,9 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-from benchmark import ROOT, SCRIPT, BenchmarkError
+from benchmark import SCRIPT, BenchmarkError
+from repo import ROOT
+import repo
 import potomne
 from rozliczenia import settlement_messages
 from rozliczenia.period_folder import PeriodFolder, collective_file_name
@@ -107,12 +109,9 @@ def _main_checkout_config() -> Path | None:
     """``config/`` głównego checkoutu: worktree dzieli z nim katalog gita, ale nie Wzorce spoza gita."""
 
     try:
-        common = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"], cwd=ROOT, capture_output=True, text=True, check=True, timeout=10
-        ).stdout.strip()
+        return repo.main_checkout(ROOT) / "config"
     except (OSError, subprocess.SubprocessError):
         return None
-    return (ROOT / common).resolve().parent / "config"
 
 
 def _config_with(name: str) -> Path:

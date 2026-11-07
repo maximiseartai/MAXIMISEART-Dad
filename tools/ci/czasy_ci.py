@@ -65,10 +65,15 @@ from pathlib import Path
 import shutil
 import statistics
 import subprocess
+import sys
 import time
 from typing import Any, Literal
 import urllib.request
 from xml.etree import ElementTree
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
+
+import repo
 
 WERSJA = 1
 # Krok zadania, który właśnie się skończył, API pokazuje przez około sekundę bez wyniku (conclusion: null).
@@ -365,8 +370,7 @@ def katalog_checkoutu(root: Path) -> Path:
     """Katalog ``czasy-ci`` w katalogu gita checkoutu ``root``, wspólny dla jego worktree: tu ``z_mainu`` trzyma artefakty
     poza CI."""
 
-    wspolny = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=root, capture_output=True, text=True, encoding="utf-8", check=True)
-    return (root / wspolny.stdout.strip() / ARTEFAKT).resolve()
+    return repo.common_dir(root) / ARTEFAKT
 
 
 def z_mainu(katalog: Path, *, odswiez_po_s: float = 0) -> Czasy:

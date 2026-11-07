@@ -78,11 +78,12 @@ from kroki_skilli import Katalog, Step
 from mutacje import PART, NearLimit
 import mutacje_zmiany
 import plan_ci
+from repo import ROOT
+import repo
 from wplyw_zmiany import Repository, changed_since
 from zakres_runu import KrokSkilla, Zdarzenie, potrzebuja_chromium, zakres
 from zgloszenia_ci import MERGE, REPO, SQUASH, GhApi, GitHub, blok_kodu
 
-ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = "mutacje-nocne.yml"
 # Część to 6 pełnych kolejek po WORKERS mutacji naraz. W nocach 31.10–3.11 (runy 41179652907, 41285996039, 41408995300,
 # 41601085650) mediana mutacji pliku wynosiła 1–210 s, ale 16 mutacji tools/mutacje.py trwało w testach linii pełny limit
@@ -112,14 +113,6 @@ _KLUCZ = re.compile(r"\| klucz (?P<klucz>[0-9a-f]{12})\b")
 BEZ_WERDYKTU = " | bez werdyktu w limicie czasu części"
 
 
-def _git(root: Path, *argumenty: str) -> str:
-    return subprocess.run(["git", *argumenty], cwd=root, capture_output=True, text=True, encoding="utf-8", check=True).stdout.strip()
-
-
-def _przodek(root: Path, przodek: str, commit: str) -> bool:
-    return subprocess.run(["git", "merge-base", "--is-ancestor", przodek, commit], cwd=root, capture_output=True, check=False).returncode == 0
-
-
 # --- plan ---
 
 
@@ -129,16 +122,16 @@ def baza(github: GitHub, root: Path, od: str, teraz: datetime) -> tuple[str, str
     gałęzi, których część nie mutuje."""
 
     if od:
-        commit = _git(root, "rev-parse", "--verify", f"{od}^{{commit}}")
+        commit = repo.git(root, "rev-parse", "--verify", f"{od}^{{commit}}").strip()
         try:
-            wspolny = _git(root, "merge-base", "HEAD", commit)
+            wspolny = repo.merge_base(root, "HEAD", commit)
         except subprocess.CalledProcessError:
             raise ValueError(f"--od {od} nie ma wspólnego przodka z HEAD") from None
         return wspolny, f"--od {od}" if wspolny == commit else f"merge-base HEAD z --od {od}"
     runy = github.json(f"{REPO}/actions/workflows/{WORKFLOW}/runs?branch=main&status=success&per_page=1")["workflow_runs"]
-    if runy and _przodek(root, runy[0]["head_sha"], "HEAD"):
+    if runy and repo.is_ancestor(root, runy[0]["head_sha"], "HEAD"):
         return _koniec_runu(github, runy[0]), f"ostatni udany run {runy[0]['id']}"
-    przed = _git(root, "rev-list", "-1", "--first-parent", f"--before={(teraz - OKNO).isoformat()}", "HEAD")
+    przed = repo.git(root, "rev-list", "-1", "--first-parent", f"--before={(teraz - OKNO).isoformat()}", "HEAD").strip()
     if not przed:
         raise ValueError("HEAD nie ma commitu sprzed 24 h; podaj --od")
     return przed, "24 h wstecz, bez udanego runu przodka HEAD"
@@ -268,7 +261,7 @@ def _pr_z_tematu(temat: str) -> int | None:
 def _wniesienie(root: Path, linia_main: Sequence[str], commit: str) -> int:
     """Pozycja na ``linia_main`` commitu, który wniósł ``commit`` na linię pierwszych rodziców HEAD."""
 
-    potomkowie = {commit, *_git(root, "rev-list", "--ancestry-path", f"{commit}..HEAD").split()}
+    potomkowie = {commit, *repo.git(root, "rev-list", "--ancestry-path", f"{commit}..HEAD").split()}
     return next(numer for numer, kandydat in enumerate(linia_main) if kandydat in potomkowie)
 
 
@@ -276,13 +269,13 @@ def _commity_linii(root: Path, plik: str, linie: Sequence[int]) -> set[str]:
     """Commity, które ostatnie zmieniły ``linie`` pliku na HEAD; wiersz ``blame -l -s`` zaczyna pełny SHA commitu."""
 
     zakresy = [argument for linia in linie for argument in ("-L", f"{linia},{linia}")]
-    return {wiersz.split(maxsplit=1)[0] for wiersz in _git(root, "blame", "-l", "-s", *zakresy, "HEAD", "--", plik).splitlines()}
+    return {wiersz.split(maxsplit=1)[0] for wiersz in repo.git(root, "blame", "-l", "-s", *zakresy, "HEAD", "--", plik, timeout=None).splitlines()}
 
 
 def przypisz(github: GitHub, root: Path, od: str, przezyte: Sequence[Przezyta]) -> dict[Autor, list[Przezyta]]:
     """Przeżyte mutacje według PR-u, który ostatni zmienił ich zmienione linie."""
 
-    linia_main = _git(root, "rev-list", "--first-parent", "--reverse", f"{od}..HEAD").split()
+    linia_main = repo.git(root, "rev-list", "--first-parent", "--reverse", f"{od}..HEAD").split()
     wniesione: dict[str, int] = {}
     autorzy: dict[str, Autor] = {}
     wynik: dict[Autor, list[Przezyta]] = {}
@@ -301,7 +294,7 @@ def przypisz(github: GitHub, root: Path, od: str, przezyte: Sequence[Przezyta]) 
 def autor(github: GitHub, root: Path, scalenie: str, commit: str) -> Autor:
     """PR, który wniósł ``commit`` commitem ``scalenie`` linii pierwszych rodziców HEAD."""
 
-    if numer := _pr_z_tematu(_git(root, "log", "-1", "--format=%s", scalenie)):
+    if numer := _pr_z_tematu(repo.git(root, "log", "-1", "--format=%s", scalenie).strip()):
         return Autor(numer)
     scalone = [pr for pr in github.json(f"{REPO}/commits/{commit}/pulls") if pr.get("merged_at")]
     return Autor(int(scalone[0]["number"])) if scalone else Autor(None, commit)
@@ -349,7 +342,7 @@ def przypisz_skrypty(
     # Ten sam wybór co plan nocy (``tools/plan_ci.py``). Nieśledzone zapisy artefaktów w checkoucie zgłoszenia nie mają
     # historii, więc ``_autor_kroku`` ich nie znajduje w ``git log``.
     wybrane = {f"skill:{w.krok.key}": w for w in zakres(Zdarzenie.NOC, changed_since(root, od), root).wybrane}
-    linia_main = _git(root, "rev-list", "--first-parent", "--reverse", f"{od}..HEAD").split()
+    linia_main = repo.git(root, "rev-list", "--first-parent", "--reverse", f"{od}..HEAD").split()
     autorzy = {
         klucz: _autor_kroku(github, root, od, linia_main, katalog.krok(klucz), wybrane.get(klucz)) for klucz in {*padly, *(klucz for klucz, _ in blisko)}
     }
@@ -385,7 +378,7 @@ def _autor_kroku(
     grupy = [grupa for grupa in (w_folderze, sorted(pliki.difference(w_folderze))) if grupa]
     # Grupa bez ścieżek daje ostatni commit nocy.
     for grupa in (*grupy, []):
-        if commit := _git(root, "log", "-1", "--format=%H", f"{od}..HEAD", "--", *grupa):
+        if commit := repo.git(root, "log", "-1", "--format=%H", f"{od}..HEAD", "--", *grupa).strip():
             return autor(github, root, linia_main[_wniesienie(root, linia_main, commit)], commit)
     return None
 

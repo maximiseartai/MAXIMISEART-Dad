@@ -54,8 +54,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import potomne
+from repo import ROOT
+import repo
 
-ROOT = Path(__file__).resolve().parents[1]
 TOOL = Path("tools") / "odtworz_uruchomienie.py"
 ARCHIVE_HOST = "github.com"
 _IMPOSSIBLE = 3
@@ -176,16 +177,9 @@ def _main_configuration() -> Path | None:
     """``config/`` głównego checkoutu (z Wzorcami Maksa), wspólnego dla każdego worktree tego repozytorium."""
 
     try:
-        common = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
+        folder = repo.main_checkout(ROOT) / "config"
+    except (OSError, subprocess.SubprocessError):
         return None
-    folder = Path(common).parent / "config"
     return folder if folder.is_dir() else None
 
 
@@ -211,13 +205,7 @@ def _at_commit(logs: Path, text: str, args: argparse.Namespace) -> int:
     commit = _commit_of(text)
     if commit is None:
         return _impossible("Logi nie mają commitu narzędzia; odtwórz na kodzie tego checkoutu (--na-tym-drzewie)")
-    known = subprocess.run(
-        ["git", "cat-file", "-e", f"{commit}^{{commit}}"],
-        cwd=ROOT,
-        capture_output=True,
-        check=False,
-    )
-    if known.returncode:
+    if repo.commit(ROOT, commit) is None:
         return _impossible(
             f"commitu {commit} nie ma w tym repozytorium; pobierz go (git fetch origin) albo odtwórz na kodzie tego "
             "checkoutu (--na-tym-drzewie)"

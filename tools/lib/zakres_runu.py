@@ -45,6 +45,7 @@ import enum
 from pathlib import Path, PurePosixPath
 
 from kroki_skilli import Katalog, Step, hits, model_watched, repeats, watched
+from repo import ROOT
 from wplyw_zmiany import Context, Repository, run_all, with_structure
 
 __all__ = [
@@ -52,7 +53,6 @@ __all__ = [
     "podstawa_na_pull_request", "potrzebuja_chromium", "zakres",
 ]
 
-ROOT = Path(__file__).resolve().parents[2]
 # Domyślne python_files pytest: pyproject.toml go nie zmienia.
 PLIKI_TESTOW = ("test_*.py", "*_test.py")
 # Powody pominięcia kroku skilla, który biegnie przy innym zdarzeniu.

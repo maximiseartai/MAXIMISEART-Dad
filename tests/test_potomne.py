@@ -590,8 +590,21 @@ def _slow_launches(tool: _Tool, wrappers: dict[str, int]) -> Iterator[tuple[int,
             yield call.lineno, launcher, f"git {subcommand or '?'}"
 
 
-def test_polecenia_narzedzi_ktore_trwaja_biegna_przez_potomne_run() -> None:
-    """Zwykłe ``subprocess`` w ``tools/`` uruchamia tylko ``gh``, ``ps`` i szybkie podpolecenia gita z ``FAST_GIT``.
+GIT_OWNERS = frozenset({TOOLS / "lib" / "repo.py", TOOLS / "lib" / "potomne.py"})
+
+
+def _git_outside_repo(path: Path) -> Iterator[tuple[int, str]]:
+    """Wiersz i początek każdej listy albo krotki, która zaczyna się od stałej ``"git"``."""
+
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, (ast.List, ast.Tuple)) and node.elts and isinstance(node.elts[0], ast.Constant) and node.elts[0].value == "git":
+            yield node.lineno, ast.unparse(node)[:80]
+
+
+def test_narzedzia_pytaja_gita_przez_repo_a_polecenia_ktore_trwaja_uruchamiaja_przez_potomne_run() -> None:
+    """Lista albo krotka zaczynająca się od stałej ``"git"`` stoi w ``tools/`` tylko w ``tools/lib/repo.py``
+    i ``tools/lib/potomne.py``, więc narzędzie pyta gita przez ``repo`` z jego kodowaniem, limitem czasu i bazą,
+    a zwykłe ``subprocess`` w ``tools/`` uruchamia tylko ``gh``, ``ps`` i szybkie podpolecenia gita z ``FAST_GIT``.
 
     Import pod inną nazwą (``import subprocess as sp``) to ten sam ``subprocess``. Git liczy się też przez funkcję
     z dowolnego modułu ``tools/``, która przekazuje mu swoje ``*args``, a krotkę rozpakowaną w wywołaniu (``*own``)
@@ -600,7 +613,8 @@ def test_polecenia_narzedzi_ktore_trwaja_biegna_przez_potomne_run() -> None:
     - każdy inny program, także krótki ``python -c``, idzie przez ``potomne.run``, bo bez uruchomienia nie widać,
       czy trwa;
     - funkcji gita wołanej pod inną nazwą (``partial``, przypisanie, metoda) test nie widzi, bo to wymaga analizy
-      przepływu danych.
+      przepływu danych;
+    - nazwy programu ``git`` zbudowanej w czasie biegu (``"g" + "it"``, zmienna) test nie widzi.
     """
 
     tools = [_Tool.read(path) for path in _tool_sources()]
@@ -610,11 +624,19 @@ def test_polecenia_narzedzi_ktore_trwaja_biegna_przez_potomne_run() -> None:
         for tool in tools
         for number, launcher, command in sorted(_slow_launches(tool, wrappers))
     ]
+    found += [
+        f"{path.relative_to(TOOLS.parent).as_posix()}:{number}: {command} poza tools/lib/repo.py"
+        for path in sorted({*TOOLS.rglob("*.py"), TOOLS / "hooks" / "pre-push"} - GIT_OWNERS)
+        for number, command in _git_outside_repo(path)
+    ]
 
     assert not found, "\n".join(
         [
             *found,
             "Polecenie, które trwa albo uruchamia własne procesy, uruchom przez potomne.run z tools/lib/potomne.py; "
             "zwykłe subprocess zostaje tylko dla git, gh i ps, a nowe szybkie, lokalne podpolecenie gita dopisz do FAST_GIT.",
+            "Gita pytaj przez tools/lib/repo.py: repo.git i repo.succeeds dla szybkich zapytań, repo.run_git dla poleceń,"
+            " które trwają albo sięgają sieci, a repo.command dla polecenia kroku, który uruchamia ktoś inny.",
         ]
     )
+

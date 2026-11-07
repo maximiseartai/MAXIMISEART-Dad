@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import statistics
+import subprocess
 import sys
 import tempfile
 import time
@@ -12,9 +13,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from benchmark import ROOT, BenchmarkError
+from benchmark import BenchmarkError
 from benchmark.referencja import Reference, check_oracle
-from benchmark.uruchomienie import Przebieg, git_output, run_przebieg
+from benchmark.uruchomienie import Przebieg, run_przebieg
+from repo import ROOT
+import repo
 
 
 RUNS = 3
@@ -92,8 +95,11 @@ def measure(
     """Rekord dziennika z ``RUNS`` uruchomień Przebiegu rozliczeń na lustrze i bramki poprawności ostatniego z nich."""
 
     started_at = datetime.now(UTC).isoformat(timespec="seconds")
-    sha = git_output("rev-parse", "HEAD")
-    status = git_output("status", "--porcelain")
+    sha = repo.commit(ROOT, "HEAD")
+    try:
+        dirty: bool | None = bool(repo.git(ROOT, "status", "--porcelain").strip())
+    except (OSError, subprocess.SubprocessError):
+        dirty = None
     runs: list[Przebieg] = []
     with tempfile.TemporaryDirectory(prefix="benchmark-przebiegu-") as scratch:
         for run in range(1, RUNS + 1):
@@ -106,8 +112,8 @@ def measure(
     phases = list(metrics[0]["phase_durations_ms"])
     return {
         "started_at": started_at,
-        "git_sha": sha.strip() if sha is not None else None,
-        "dirty": bool(status.strip()) if status is not None else None,
+        "git_sha": sha,
+        "dirty": dirty,
         "machine": machine,
         "scenario": scenario_name,
         "runs": RUNS,

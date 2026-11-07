@@ -77,10 +77,10 @@ import mutacje_skilli
 import niestabilne_testy
 from niestabilne_testy import FlakyTest, ZapisKwarantanny
 import potomne
+from repo import BASE, ROOT
 from wplyw_zmiany import changed_since
 from zakres_runu import KROKI, MUTACJE, TORY, Krok, KrokSkilla, Tor, ZakresRunu, Zdarzenie, zakres
 
-ROOT = Path(__file__).resolve().parents[1]
 WERSJA = 1
 WORKERY = 4  # pytest -n auto na runnerze 4 vCPU
 JUNIT = Path(".ci-czasy", "junit.xml")
@@ -621,7 +621,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     plan.add_argument("--zdarzenie", type=Zdarzenie, choices=list(Zdarzenie), default=Zdarzenie.PULL_REQUEST)
     plan.add_argument(
         "--baza",
-        default="origin/main",
+        default=BASE,
         help="Od czego na pull request i nocą liczy się zmiana: wybór plików pytest, E2E i straży czasu i wybór kroków skilli (w CI HEAD^1, nocą baza nocy).",
     )
     plan.add_argument("--czasy", type=Path, help="Katalog artefaktów czasy-ci, pobieranych od nowa (domyślnie .git/czasy-ci).")

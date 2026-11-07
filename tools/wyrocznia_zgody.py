@@ -44,9 +44,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import falszywe_api
 import potomne
+from repo import ROOT
 import zgoda
 
-ROOT = Path(__file__).resolve().parents[1]
 CASES = ROOT / "tools" / "wyrocznia_zgody.jsonl"
 PREFIX = ROOT / "tools" / "wyrocznia_zgody_prefiks.sh"
 SETTINGS = ROOT / ".claude" / "settings.json"

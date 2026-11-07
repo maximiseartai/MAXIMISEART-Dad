@@ -146,10 +146,10 @@ import ciezkie_ci
 import mutacje
 import pokrycie_procesu
 import potomne
+from repo import BASE, ROOT
+import repo
 import wplyw_zmiany
 
-ROOT = Path(__file__).resolve().parents[1]
-BASE = "origin/main"
 WORKERS = 4
 # Limit czasu testów jednej mutacji (``--limit-s``): polecenie bez wyniku po nim to PRZEKROCZONY CZAS.
 MUTATION_LIMIT_S = 900
@@ -192,14 +192,6 @@ class Hunk:
     old: tuple[str, ...]
 
 
-def _git(root: Path, *arguments: str, errors: str = "strict") -> str:
-    """Wyjście gita z liniami, jak liczy je git: bez ``text=True``, które zamienia samotne ``\\r`` w treści pliku na koniec
-    linii, i ze ścieżkami spoza ASCII niecytowanymi (``core.quotePath``), żeby ``_code`` i ``root / path`` je rozpoznały."""
-
-    done = subprocess.run(["git", "-c", "core.quotePath=false", *arguments], cwd=root, capture_output=True, check=True)
-    return done.stdout.decode("utf-8", errors)
-
-
 def _short(text: str, limit: int = 60) -> str:
     flat = " ".join(text.split())
     return flat if len(flat) <= limit else f"{flat[: limit - 1]}…"
@@ -223,7 +215,7 @@ def _changes(fork: str, root: Path) -> dict[str, list[Hunk]]:
     # Linie spoza UTF-8 mogą mieć tylko pliki, które ``_code`` odsiewa (plik ``.py`` czyta ``read_text`` w UTF-8),
     # więc zastąpienie ich znaków nie zmienia fragmentów.
     # Usunięty plik nie ma linii do zepsucia, więc każdy nagłówek ``+++`` to ``b/<ścieżka>``.
-    for line in _git(root, "diff", "-U0", "-M", "--diff-filter=d", "--no-color", fork, errors="replace").split("\n"):
+    for line in repo.git(root, "diff", "-U0", "-M", "--diff-filter=d", "--no-color", fork).split("\n"):
         if old_left and line.startswith("-"):
             old_left -= 1
             if current is not None:
@@ -238,7 +230,7 @@ def _changes(fork: str, root: Path) -> dict[str, list[Hunk]]:
             old_left, new_left = int(match["old_count"] or 1), int(match["new_count"] or 1)
             if current is not None:
                 found[current].append(Hunk(int(match["new"]), new_left, ()))
-    for name in filter(_code, _git(root, "ls-files", "--others", "--exclude-standard").splitlines()):
+    for name in filter(_code, repo.git(root, "ls-files", "--others", "--exclude-standard").splitlines()):
         found[name] = [Hunk(1, len(_rows((root / name).read_text(encoding="utf-8"))), ())]
     return {path: hunks for path, hunks in found.items() if (root / path).is_file()}
 
@@ -252,10 +244,8 @@ def _overlay(fork: str, root: Path) -> tuple[frozenset[str], tuple[str, ...]]:
 
     if os.environ.get(ciezkie_ci.FROM_MERGED_PRS) != "1":
         return frozenset(), ()
-    listed = _git(root, "diff", "-z", "--name-only", "HEAD", "--", "tools") + _git(root, "ls-files", "-z", "--others", "--exclude-standard", "--", "tools")
-    replaced = frozenset(name for name in listed.split("\0") if name)
-    committed = set(_git(root, "diff", "-z", "--name-only", fork, "HEAD", "--", "tools").split("\0"))
-    return replaced, tuple(sorted(replaced & committed))
+    replaced = repo.uncommitted(root, paths=("tools",))
+    return replaced, tuple(sorted(replaced & repo.changed(root, fork, "HEAD", paths=("tools",))))
 
 
 def _rows(text: str) -> list[str]:
@@ -838,7 +828,7 @@ def _last_changes(every: Sequence[Mutant], root: Path) -> list[frozenset[str]]:
     Wiersze blame dzieli tylko koniec linii gita (``_rows``): linia z U+2028 albo form feed to dalej jeden wiersz."""
 
     blamed = {
-        path: [row.split(maxsplit=1)[0].lstrip("^") for row in _rows(_git(root, "blame", "--first-parent", "-l", "-s", "--", path))]
+        path: [row.split(maxsplit=1)[0].lstrip("^") for row in _rows(repo.git(root, "blame", "--first-parent", "-l", "-s", "--", path, timeout=None))]
         for path in dict.fromkeys(mutant.path for mutant in every)
     }
     return [frozenset(blamed[mutant.path][line - 1] for line in mutant.lines) for mutant in every]
@@ -873,7 +863,7 @@ class ZakresMutacji:
         """Zakres od wspólnego przodka HEAD i ``baza``: zmiana bez plików podmienionych przez ``overlay``, mutacje
         ``selected`` i wyjątki. Nieznana baza rzuca ``subprocess.CalledProcessError``."""
 
-        fork = _git(root, "merge-base", "HEAD", baza).strip()
+        fork = repo.merge_base(root, "HEAD", baza)
         replaced, unseen = _overlay(fork, root)
         hunks = {path: found for path, found in _changes(fork, root).items() if path not in replaced}
         texts = {path: (root / path).read_text(encoding="utf-8") for path in hunks}
@@ -889,7 +879,7 @@ class ZakresMutacji:
         ``commit`` zawiera na linii pierwszych rodziców: zakres nocy do ``commit``. Mutacje linii zmienionych później
         dostaje następna noc, której bazą jest ``commit``."""
 
-        contained = set(_git(self.root, "rev-list", "--first-parent", commit).split())
+        contained = set(repo.git(self.root, "rev-list", "--first-parent", commit).split())
         commits = _last_changes(self.mutanty, self.root)
         return replace(self, mutanty=tuple(mutant for mutant, last in zip(self.mutanty, commits, strict=True) if last & contained))
 
@@ -899,8 +889,8 @@ class ZakresMutacji:
         commit z mutacjami, także gdy sam ma ich więcej."""
 
         if len(self.mutanty) <= limit:
-            return _git(self.root, "rev-parse", "HEAD").strip()
-        line = _git(self.root, "rev-list", "--first-parent", "--reverse", f"{self.baza}..HEAD").split()
+            return repo.git(self.root, "rev-parse", "HEAD").strip()
+        line = repo.git(self.root, "rev-list", "--first-parent", "--reverse", f"{self.baza}..HEAD").split()
         position = {commit: number for number, commit in enumerate(line)}
         # Mutacja wchodzi do zakresu z najwcześniejszym commitem, który zmienił którąś jej linię (jak w ``do``), a commit
         # spoza linii od bazy (sprzed niej) każdy zakres już zawiera, więc liczy się od pierwszego commitu.

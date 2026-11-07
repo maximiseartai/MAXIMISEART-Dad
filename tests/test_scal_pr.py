@@ -1332,14 +1332,23 @@ def test_blad_gh_konczy_sie_linia_fail_z_nazwa_trybu(tmp_path: Path, mode: list[
 
 
 def _git_hanging_on(github: MergeGitHub, subcommand: str) -> None:
-    """``git <subcommand>`` w narzędziu i atrapie ``gh`` czeka minutę i nic nie drukuje; reszta to prawdziwy Git."""
+    """``git <subcommand>`` w narzędziu i atrapie ``gh`` czeka minutę i nic nie drukuje; reszta to prawdziwy Git.
+
+    Podpolecenie stoi po opcjach ``-c <ustawienie>``, które dokłada ``tools/lib/repo.py``."""
 
     real = shutil.which("git")
     assert real is not None
     fake_cli(
         github.bin,
         "git",
-        f"import os, sys, time\nif sys.argv[1:2] == [{subcommand!r}]:\n    time.sleep(60)\n    sys.exit(0)\nos.execv({real!r}, [{real!r}, *sys.argv[1:]])\n",
+        "import os, sys, time\n"
+        "args = sys.argv[1:]\n"
+        "while args[:1] == ['-c']:\n"
+        "    args = args[2:]\n"
+        f"if args[:1] == [{subcommand!r}]:\n"
+        "    time.sleep(60)\n"
+        "    sys.exit(0)\n"
+        f"os.execv({real!r}, [{real!r}, *sys.argv[1:]])\n",
     )
 
 
