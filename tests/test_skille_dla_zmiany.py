@@ -338,7 +338,7 @@ def _ci_commands(skill: Path) -> set[tuple[str, ...]]:
     skrypty mutacji) i wywołania jego skryptów w krokach CI planu; skrypt mutacji bez argumentów obejmuje każde swoje
     wywołanie."""
 
-    steps = importlib.import_module("kroki_skilli").steps({})
+    steps = importlib.import_module("kroki_skilli").Katalog.skanuj(ROOT).kroki
     ci_steps = importlib.import_module("zakres_runu").KROKI.values()
     runs = {(Path(step.command[0]).name, *step.command[1:]) for step in steps if step.skill == skill}
     return runs | {run for ci_step in ci_steps for run in ci_step.wywolania(skill.name)}

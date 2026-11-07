@@ -32,10 +32,11 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
-from kroki_skilli import ROOT, SKILLS, hits
+from kroki_skilli import Katalog, hits
 from wplyw_zmiany import changed_since
 from zakres_runu import Zdarzenie, zakres
 
+ROOT = Path(__file__).resolve().parents[1]
 VERDICT = "SKILLE VERIFY"
 IN_CI = "LICZY CI"
 AT_NIGHT = "LICZY NOC"
@@ -56,19 +57,19 @@ def main(argv: list[str] | None = None) -> int:
     chosen: list[str] = []
     in_ci: list[str] = []
     at_night: list[str] = []
-    for skill_md in sorted(SKILLS.glob("verify-*/SKILL.md")):
-        found = hits(skill_md.parent, files)
+    for skill in Katalog.skanuj(ROOT).skille("verify-*"):
+        found = hits(skill, files)
         reasons = [found.always] if found.always else [name if glob == name else f"{name} ({glob})" for name, glob in found.files.items()]
         if not reasons:
             continue
-        chosen.append(skill_md.parent.name)
-        if runs := pull_request.polecenia(skill_md.parent):
-            in_ci.append(f"{skill_md.parent.name} ({', '.join(' '.join(run) for run in runs)})")
-        in_pull_request = pull_request.kroki_skilla(skill_md.parent)
-        if scripts := [Path(step.command[0]).name for step in night.kroki_skilla(skill_md.parent) if step not in in_pull_request]:
-            at_night.append(f"{skill_md.parent.name} ({', '.join(scripts)})")
+        chosen.append(skill.name)
+        if runs := pull_request.polecenia(skill):
+            in_ci.append(f"{skill.name} ({', '.join(' '.join(run) for run in runs)})")
+        in_pull_request = pull_request.kroki_skilla(skill)
+        if scripts := [Path(step.command[0]).name for step in night.kroki_skilla(skill) if step not in in_pull_request]:
+            at_night.append(f"{skill.name} ({', '.join(scripts)})")
         more = f" i {len(reasons) - SHOWN} innych" if len(reasons) > SHOWN else ""
-        print(f"{skill_md.parent.name}: {', '.join(reasons[:SHOWN])}{more}")
+        print(f"{skill.name}: {', '.join(reasons[:SHOWN])}{more}")
     if in_ci:
         print(f"{IN_CI}: {'; '.join(in_ci)}")
     if at_night:

@@ -36,11 +36,12 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
-from kroki_skilli import ROOT, Step
+from kroki_skilli import Step
 import mutacje
 import potomne
 from zakres_runu import Zdarzenie, zakres
 
+ROOT = Path(__file__).resolve().parents[2]
 # Najdłuższy skrypt trwał w CI na Windows 770 s; limit łapie zawieszenie, a nie wolny runner.
 LIMIT_S = 30 * 60
 
@@ -54,7 +55,7 @@ class Wynik:
 
 
 def run(step: Step, limit_s: float = LIMIT_S, env: Mapping[str, str] | None = None) -> Wynik:
-    """Uruchamia krok z echem wyjścia i zmiennymi ``env``.
+    """Uruchamia krok z echem wyjścia i zmiennymi ``env`` w checkoucie skilla kroku (``Step.root``).
 
     Skrypt mutacji kończy się linią ``VERDICT``, podstawie wystarczy kod 0. Plan CI daje części skryptu
     ``MUTACJE_CZESC`` przez ``env``. Krok po limicie nie oddaje ostrzeżeń, bo jego wyjścia już nie ma.
@@ -63,8 +64,8 @@ def run(step: Step, limit_s: float = LIMIT_S, env: Mapping[str, str] | None = No
     command = step.command
     try:
         done = potomne.run(
-            [sys.executable, str(ROOT / command[0]), *command[1:]],
-            cwd=ROOT,
+            [sys.executable, str(step.root / command[0]), *command[1:]],
+            cwd=step.root,
             env={**os.environ, "PYTHONIOENCODING": "utf-8", **(env or {})},
             timeout=limit_s,
             echo=True,
