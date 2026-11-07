@@ -112,9 +112,10 @@ jest z PR) i poprzednie werdykty PR w kolejności utworzenia, każdy z datą, au
 czy dotyczy HEAD (``PASS`` poza regułami ``--werdykt`` z dopiskiem). Gdy ostatni werdykt jest dla innego commitu,
 linia ``RUNDA`` podaje polecenie diffu od niego do HEAD. Linia ``CI`` podaje stan ``Required CI status`` na HEAD
 z rollupu checków: ``success`` znaczy, że polecenia z linii ``LICZY CI`` przeszły (``tools/plan_ci.py``), więc ich
-logów nie trzeba czytać; ``pending``, gdy któreś zadanie jeszcze biegnie, także zanim Required się zacznie;
-``failure`` z padłymi zadaniami runu Required i poleceniem ``gh run view <run> --log-failed``; ``brak``, gdy CI na
-HEAD nie biegło. Kończy się linią ``PRZEGLĄD OK | #N <sha>``.
+logów nie trzeba czytać, a zadania innych workflowów, które jeszcze biegną albo padły, wymienia osobno, bo gotowość
+czeka i na nie; ``pending``, gdy Required jeszcze się nie skończył, a któreś zadanie biegnie, także zanim Required się
+zacznie; ``failure`` z padłymi zadaniami runu Required i poleceniem ``gh run view <run> --log-failed``; ``brak``, gdy
+CI na HEAD nie biegło. Kończy się linią ``PRZEGLĄD OK | #N <sha>``.
 
 ``--werdykt <plik>`` publikuje plik jako komentarz PR (``gh pr comment --body-file``), gdy przechodzi te same reguły
 co zgoda przy merge'u: pierwsza niepusta linia
@@ -257,12 +258,18 @@ def _ci_line(rollup: list[dict[str, str | None]], head: str) -> str:
     if red:
         why = jobs or f"bez padłego zadania, przyczynę podaje log „{REQUIRED_CHECK}”"
         return f"{where} failure na HEAD {head} | {why} | polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko {logs}"
+    if required and all(check.get("status") == "COMPLETED" for check in required):
+        running_others = sorted({str(check.get("name")) for check in actions if check.get("status") != "COMPLETED"})
+        failed_others = sorted(
+            {str(check.get("name")) for check in actions if check.get("status") == "COMPLETED" and check.get("conclusion") not in JOB_NOT_FAILED}
+        )
+        states = [f"{state}: {', '.join(names)}" for state, names in (("w toku", running_others), ("padłe", failed_others)) if names]
+        rest = f" | inne workflowy, na które czeka gotowość: {'; '.join(states)}" if states else ""
+        return f"{where} success na HEAD {head} | polecenia z linii LICZY CI przeszły, ich logów nie przeszukuj{rest}"
     running = [check for check in [*required, *actions] if check.get("status") != "COMPLETED"]
     if running:
         return f"{where} pending na HEAD {head} (w toku: {len(running)}{f'; {jobs}' if jobs else ''}) | polecenia z linii LICZY CI jeszcze bez wyniku"
-    if required:
-        return f"{where} success na HEAD {head} | polecenia z linii LICZY CI przeszły, ich logów nie przeszukuj"
-    return f"{where} brak na HEAD {head} | CI nie biegło na tym HEAD (PR z konfliktem z bazą nie dostaje CI)"
+    return f"{where} brak na HEAD {head} | CI nie biegło na tym HEAD: jeszcze nie wystartowało po pushu albo PR ma konflikt z bazą"
 
 
 def _body_problem(body: str) -> str | None:

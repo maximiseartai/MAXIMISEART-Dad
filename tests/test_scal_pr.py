@@ -1125,13 +1125,23 @@ def test_przeglad_po_pass_dla_head_mowi_ze_werdykt_dotyczy_tego_head_a_rundy_z_f
 
 
 OTHER_RUN = "https://github.com/o/r/actions/runs/5000/job/2"
+PASSED = "polecenia z linii LICZY CI przeszły, ich logów nie przeszukuj"
 UNPROVEN = "polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko logi padłych zadań: gh run view 4077 --log-failed"
 
 
 @pytest.mark.parametrize(
     ("ci", "line"),
     [
-        (GREEN, "success na HEAD {head} | polecenia z linii LICZY CI przeszły, ich logów nie przeszukuj"),
+        (GREEN, f"success na HEAD {{head}} | {PASSED}"),
+        (
+            [
+                *GREEN,
+                _check_run("IN_PROGRESS", None, name="Verify Centrum na Windowsie", workflow="Verify", url=OTHER_RUN),
+                _check_run("COMPLETED", "FAILURE", name="Lint skilli", workflow="Skille", url=OTHER_RUN),
+                _check_run("COMPLETED", "SKIPPED", name="Notka", workflow="Skille", url=OTHER_RUN),
+            ],
+            f"success na HEAD {{head}} | {PASSED} | inne workflowy, na które czeka gotowość: w toku: Verify Centrum na Windowsie; padłe: Lint skilli",
+        ),
         (
             [_check_run("COMPLETED", "SUCCESS", name="Ruff, mypy"), _check_run("IN_PROGRESS", None)],
             "pending na HEAD {head} (w toku: 1) | polecenia z linii LICZY CI jeszcze bez wyniku",
@@ -1159,10 +1169,11 @@ UNPROVEN = "polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko logi pa
             [_check_run("COMPLETED", "FAILURE", name="Plan CI", url=OTHER_RUN), _check_run("COMPLETED", "FAILURE")],
             f"failure na HEAD {{head}} | bez padłego zadania, przyczynę podaje log „Required CI status” | {UNPROVEN}",
         ),
-        ([COMMIT_STATUS], "brak na HEAD {head} | CI nie biegło na tym HEAD (PR z konfliktem z bazą nie dostaje CI)"),
+        ([COMMIT_STATUS], "brak na HEAD {head} | CI nie biegło na tym HEAD: jeszcze nie wystartowało po pushu albo PR ma konflikt z bazą"),
     ],
     ids=[
         "zielony",
+        "zielony-a-inny-workflow-w-toku-albo-padl",
         "w-toku",
         "w-toku-przed-required",
         "w-toku-z-padlym-zadaniem",
