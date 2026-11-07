@@ -125,11 +125,11 @@ from .efenix_window import (
     OtherShape,
     PagePart,
     Proposal,
+    SentChanges,
     Shape,
     StatusChangeBlocked,
     UnexpectedPage,
     WindowClosed,
-    WindowStop,
 )
 from .efenix_page import (
     AMOUNT,
@@ -208,7 +208,7 @@ def _action(
     przeglądarki zna zamknięcie karty także wtedy, gdy błąd nawigacji wyprzedził wiadomość Playwrighta o nim.
 
     Wyjątek okna (``WindowStop``) z działania ma ``sent``, gdy działanie przed nim kliknęło przycisk zmiany zlecenia
-    (``BrowserEfenix._answer``), także w działaniu, które woła inne działanie okna.
+    (``BrowserEfenix._answer``, ``SentChanges``).
 
     Żądanie zmiany statusu, które strażnik przerwał przed działaniem albo w jego trakcie, kończy działanie
     ``UnexpectedPage`` z ``StatusChangeBlocked`` zamiast jego wyniku albo wyjątku (``BrowserEfenix.raise_blocked``).
@@ -217,7 +217,7 @@ def _action(
     def decorate(action: Callable[Concatenate[BrowserEfenix, _P], _R]) -> Callable[Concatenate[BrowserEfenix, _P], _R]:
         @functools.wraps(action)
         def guarded(efenix: BrowserEfenix, /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
-            with _sent(efenix):
+            with efenix._sent.action():
                 efenix._part = part
                 efenix.raise_blocked()
                 try:
@@ -236,19 +236,6 @@ def _action(
     return decorate
 
 
-@contextmanager
-def _sent(efenix: BrowserEfenix) -> Iterator[None]:
-    """Wyjątek okna (``WindowStop``) z bloku ma ``sent``, gdy okno kliknęło w nim przycisk zmiany zlecenia
-    (``BrowserEfenix._answer``)."""
-
-    answers = efenix._answers
-    try:
-        yield
-    except WindowStop as stop:
-        stop.sent = efenix._answers > answers
-        raise
-
-
 class BrowserEfenix:
     """Okno efenix na stronie ``page`` z listą zleceń pod adresem ``url``; implementuje ``efenix_window.Efenix``."""
 
@@ -257,9 +244,9 @@ class BrowserEfenix:
         self._url = url
         self._timeout_ms = timeout_ms
         self._positions: dict[str, str] = {}
-        # Ile razy okno kliknęło przycisk, który wysyła do efenix zmianę zlecenia (``_answer``), a przy Przekazaniu do
-        # akceptacji ile razy strażnik przepuścił jego żądanie (``guard``).
-        self._answers = 0
+        # Przyciski zmiany zlecenia, które okno kliknęło (``_answer``), a przy Przekazaniu do akceptacji żądania, które
+        # przepuścił strażnik (``guard``).
+        self._sent = SentChanges()
         self._opened = False
         # Strażnik zmiany statusu (``guard``): czy okno czeka na swoje żądanie Przekazania do akceptacji, pierwsze żądanie,
         # które przerwał, i część strony ostatniego działania okna.
@@ -297,7 +284,7 @@ class BrowserEfenix:
         with suppress(PlaywrightError):
             if blocked is None:
                 self._forwarding = False
-                self._answers += 1
+                self._sent.send()
                 route.continue_()
                 return
             if self._blocked is None:
@@ -652,7 +639,7 @@ class BrowserEfenix:
     def _answer(self, path: str, wanted: Callable[[dict[str, list[str]]], bool], act: Callable[[], None]) -> Response:
         """Odpowiedź efenix na zmianę zlecenia, którą wysyła ``act``."""
 
-        self._answers += 1
+        self._sent.send()
         return self._finished(lambda request: _is_post(request, path) and wanted(_form(request)), act)
 
     def _finished(self, wanted: Callable[[Request], bool], act: Callable[[], None]) -> Response:
