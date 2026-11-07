@@ -16,11 +16,19 @@
     "RunLogs.send",
     "RunLogs.progress",
     "LoggedEnding",
-    "logi_post",
     "RunLogs.queued",
+    "guard_logs",
+    "GuardedLogs"
+  ],
+  "src/rozliczenia/centrum/comment_versions.py": [
     "ResultWithoutLogs",
-    "progress_post",
-    "_logs_post"
+    "ProgressVersion",
+    "OwnLogs",
+    "StandInLogs",
+    "WithoutLogsVersion",
+    "rank_of",
+    "journal_after",
+    "post_of"
   ],
   "src/rozliczenia/centrum/logs_disk.py": [
     "LogsOnDisk.logs",

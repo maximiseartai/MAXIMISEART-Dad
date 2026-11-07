@@ -1,9 +1,10 @@
 ---
 name: verify-urwane-uruchomienie
-description: Model-check with TLA+ (TLC) the trail of a Wycena w efenix that a switched-off Centrum cut short, across the next starts of Centrum, the Dziennik Wyceny in `logs/dzienniki-wyceny/` (`Journal` in `logs_disk.py`, `pricing_journal.py`), the Logi Urwanego Uruchomienia (`RunLogs.interrupted`, `guard`, `close`, `send` in `run_logs.py`) and their way into the Kolejka wysyłki (`Outbox.post`), next to the progress comment of the Wycena (#846, `RunLogs.progress`). It checks that a journal disappears only after its Logi are the newest version the queue accepted, that the journal of a Wycena that may have sent a progress disappears only after the newest version of its comment the queue accepted is final (the Logi with the result, or a stand-in version from the next start, which is the Logi from the file, the Logi Urwanego Uruchomienia or the result without Logi, #910), that no newer version replaces Logi with a progress or a version without Logi, also after the computer's clock went back (the rank of a version, `outbox.Rank`), that a Wycena with a result never gets Logi Urwanego Uruchomienia, that the Logs file and what goes to the queue have the same characters and passed the guard, that nothing reaches the queue before `Outbox.resume`, and that every order the Wycena changed in efenix is in its Logi, under every order of switch-offs and failed reads and writes. Use when a change touches `JournalAtResult`, `JournalAfterLogs` or `InterruptedPricings` in `src/rozliczenia/centrum/pricing_journal.py`, the journal in `logs_disk.py` (`Journal`: its first line through `LogsOnDisk.started`, `progress`, its end entry `end`, `remove`; `_RunEnded`, `_read_journal`, `_remove`, `LogsOnDisk.left_behind`, `remove_journal`), `RunLogs` (also `progress`, `_ended`, `queued` and `send`), `ResultWithoutLogs`, `logi_post`, `progress_post` or `RunLog.interrupted` or `guarded` in `run_logs.py`, the read of a Logs file (`LogsOnDisk.logs`, `_read_logs`, `_names`, `_NAME`) in `logs_disk.py`, `Rank`, `Version` or `_superseded` in `outbox.py`, `ProgressComment` in `pricing_progress.py`, `lifespan`, `send_interrupted` or the order of `after_run` in `app.py`, `_Run.work` or `RunHost.after` in `runs.py`, `run_process` in `process_run.py` (the result), the journal calls in `efenix_pricing.py` `save`, or when the check of this skill fails.
+description: Model-check with TLA+ (TLC) the trail of a Wycena w efenix that a switched-off Centrum cut short, across the next starts of Centrum, the Dziennik Wyceny in `logs/dzienniki-wyceny/` (`Journal` in `logs_disk.py`, `pricing_journal.py`), the Logi Urwanego Uruchomienia (`RunLogs.interrupted`, `guard`, `close`, `send` in `run_logs.py`) and their way into the Kolejka wysyłki (`Outbox.post`), next to the progress comment of the Wycena (#846, `RunLogs.progress`). It checks that a journal disappears only after its Logi are the newest version the queue accepted, that the journal of a Wycena that may have sent a progress disappears only after the newest version of its comment the queue accepted is final (the Logi with the result, or a stand-in version from the next start, which is the Logi from the file, the Logi Urwanego Uruchomienia or the result without Logi, #910), that no newer version replaces Logi with a progress or a version without Logi, also after the computer's clock went back (the rank of a version, `outbox.Rank`), that a Wycena with a result never gets Logi Urwanego Uruchomienia, that the Logs file and what goes to the queue have the same characters and passed the guard, that nothing reaches the queue before `Outbox.resume`, and that every order the Wycena changed in efenix is in its Logi, under every order of switch-offs and failed reads and writes. Use when a change touches `JournalAtResult`, `JournalAfterLogs` or `InterruptedPricings` in `src/rozliczenia/centrum/pricing_journal.py`, the journal in `logs_disk.py` (`Journal`: its first line through `LogsOnDisk.started`, `progress`, its end entry `end`, `remove`; `_RunEnded`, `_read_journal`, `_remove`, `LogsOnDisk.left_behind`, `remove_journal`), `RunLogs` (also `progress`, `_ended`, `queued` and `send`), `RunLog.interrupted`, `guarded`, `guard_logs` or `GuardedLogs` in `run_logs.py`, the versions of the comment of an Uruchomienie in `comment_versions.py` (`post_of`, `rank_of`, `journal_after`, `ResultWithoutLogs` and the version types), the read of a Logs file (`LogsOnDisk.logs`, `_read_logs`, `_names`, `_NAME`) in `logs_disk.py`, `Rank`, `Version` or `_superseded` in `outbox.py`, `ProgressComment` in `pricing_progress.py`, `lifespan`, `send_interrupted` or the order of `after_run` in `app.py`, `_Run.work` or `RunHost.after` in `runs.py`, `run_process` in `process_run.py` (the result), the journal calls in `efenix_pricing.py` `save`, or when the check of this skill fails.
 pilnuje:
   - src/rozliczenia/centrum/pricing_journal.py
   - src/rozliczenia/centrum/run_logs.py
+  - src/rozliczenia/centrum/comment_versions.py
   - src/rozliczenia/centrum/logs_disk.py
   - src/rozliczenia/centrum/pricing_progress.py
   - src/rozliczenia/centrum/app.py
@@ -103,23 +104,23 @@ unless named otherwise):
 | --- | --- |
 | `Start` | `launcher.py` `_start`: `_listen_when_released` takes the port, then `create_app`; in it `InterruptedPricings(...).close()` takes `logs_disk.py` `LogsOnDisk.left_behind()`, which lists `sorted(glob("*.jsonl"))` and yields one journal at a time. Only the process with the port builds the app, so two closes never run at once. The clock may have gone back while Centrum was closed (`MaxCofniecZegara`): the moments of this work may then be earlier than those of any version already in the queue |
 | `Czytaj` | `InterruptedPricings.close` → `_closed(left)` for one journal of `LogsOnDisk.left_behind`, which read it with `_read_journal` (no first line → `None`) and then `LogsOnDisk.logs(run_id)` → `_read_logs` of the file whose name (`_names`, `_NAME`, `_RUN_ID`) has the run's identifier, matched in `_closed` (`Found` → those Logi, with the result or Urwane; `Unreadable` → `ResultWithoutLogs` `"nieczytelne"`, which the model leaves out; `Missing` with the end entry `_RunEnded` (`read.end`) → `ResultWithoutLogs` `"niezapisane"`; `Missing` without it → `RunLogs.interrupted`); Logi then `RunLogs.guard`. The Historia is not read. An `OSError` from the journal (caught by `left_behind`), from the Logs file, or from listing the Logs folder for another reason than no folder (`Refused`, which `_closed` raises again and `close` catches) leaves the journal; the model's read failure is each of them. One step, because nothing else writes these files while `create_app` runs |
-| `ZapiszLogi` | `_closed`: `RunLogs.close(record)` → `_write` → `atomic_file.replace_atomically`; `OSError` only to the Centrum log, and the record still goes to `_pending` |
+| `ZapiszLogi` | `_closed`: `RunLogs.close(logs)` (the `GuardedLogs` of `RunLogs.guard`) → `_write` → `atomic_file.replace_atomically`; `OSError` only to the Centrum log, and `StandInLogs(logs)` still goes to `_pending` |
 | `UsunDziennik` | `close`: `if closed is None: self._disk.remove_journal(left.key)` → `logs_disk._remove`, a journal without its first line (`unlink`; `OSError` leaves the journal) |
 | `Wznow` | `app.py` `lifespan`: `outbox.resume()` before uvicorn accepts the first request |
 | `PierwszeZapytanie` | `app.py` `send_interrupted`, a dependency of every API route, → `InterruptedPricings.send`: `pending, self._pending = self._pending, []` |
-| `Wyslij` | `send`: `self._run_logs.send(final)` → `outbox.py` `Outbox.post` of the stand-in version (`Rank.STAND_IN`): `logi_post(final, Rank.STAND_IN)` or the result without Logi after the guard (`_guarded`, `_logs_post`); True once the queue file exists, False leaves the journal for the next start |
-| `UsunPoWysylce` | `send`: `self._disk.remove_journal(key)` after True |
+| `Wyslij` | `send`: `self._run_logs.send(final)` → `outbox.py` `Outbox.post` of the stand-in version, `comment_versions.post_of` of `StandInLogs` or of `WithoutLogsVersion`, the result without Logi after the guard (`guard_text`), in the rank `rank_of` gives (`Rank.STAND_IN`); `journal_after` gives „usuń” once the queue file exists, and „zostaw” after False leaves the journal for the next start |
+| `UsunPoWysylce` | `send`: `self._disk.remove_journal(key)` after „usuń” |
 | `StartWyceny` | `runs.py` `RunHost.start` → `app.py` `run_started` → `logs_disk.py` `LogsOnDisk.started` → `Journal._run_started` (start in memory, `_header` set) |
 | `ZapiszStart` | `Journal._run_started` → `_append_locked(start)` with `_first_line(start)`: the first line alone in one `write`, `flush`, `fsync`, before the thread of the Wycena starts (#846); `OSError` leaves `_header` set, so the first line goes with the next entry, and an `OSError` from `flush` or `fsync` after `write` may leave the whole first line on the disk while `_header` stays. Without `_header` `Journal.progress` gives a progress, so from here the model counts a progress as possible (`postepMozliwy`) |
 | `WpisZaczete` | `efenix_pricing.py` `save`: `journal.begun(...)` before `efenix_trace.traced` and `_outcome` → `Journal._write` → `_append_locked` (the first line, while `_header` is set, and the entry in one `write`, `flush`, `fsync`, else the entry alone; `OSError` drops the entry, `_header` stays; an `OSError` from `flush` or `fsync` after `write` may leave the whole first line on the disk, so the journal has its start while `_header` stays) |
 | `ZmianaWEfenix` | `_outcome`: the first window action that changes the order (execution date, Wycena Emmetta, a quantity) |
 | `WpisSkonczone` | `save`: `journal.ended(result, ...)` after the result → `Journal._write` |
 | `Zatrzymanie` | `save`: a `StopError` after `journal.begun` of an order and before its `journal.ended` (the window stops), or before the first `journal.begun` (the window closed while it waits for Dad's login); `save` marks the ready orders and raises it on, and `run_process` returns with the Zatrzymanie, so the Wycena reaches its result without „zlecenie skończone” of that order |
-| `Postep` | `pricing_progress.py` `ProgressComment` (at the start of the Wycena and every `PROGRESS_S`) → `RunLogs.progress`: `Outbox.post(progress_post(...))` (`Rank.DRAFT`) when `Journal.progress` gives a progress (no `_header`) and the Uruchomienie is not in `_ended`, both under the lock of `RunLogs`. The model counts the progress as possible from the first line on the disk (`postepMozliwy`); a progress the queue accepted becomes the newest version of the comment when it is newer (`Przyjmij`), a refused one changes nothing |
+| `Postep` | `pricing_progress.py` `ProgressComment` (at the start of the Wycena and every `PROGRESS_S`) → `RunLogs.progress`: `Outbox.post(post_of(ProgressVersion(...)))` (`Rank.DRAFT`, `rank_of`) when `Journal.progress` gives a progress (no `_header`) and the Uruchomienie is not in `_ended`, both under the lock of `RunLogs`. The model counts the progress as possible from the first line on the disk (`postepMozliwy`); a progress the queue accepted becomes the newest version of the comment when it is newer (`Przyjmij`), a refused one changes nothing |
 | `Wynik` | `runs.py` `_Run.work` → `process_run.py` `run_process`: the engine reached its result, the metrics record (the Historia row) is written or not (`metrics_saved`), and `run_process` returns; when it raises, `_Run.work` goes on with a Stop. Nothing on the journal path reads the Historia row, so the model has none |
 | `WpisKonca` | `_Run.work` → `RunHost.after` → `pricing_journal.py` `JournalAtResult.run_ended` → `Journal.end`, the first of `after_run` in `create_app` (assignment `runs`): when no write confirmed the first line (`self._header`, and a failed write may have left it), `_remove(path, ...)` (`unlink`; no file, or a file in place of the folder, leaves nothing to remove; `OSError` leaves the journal without its end entry); otherwise `_write(_RunEnded(..., result=result))` (`write`, `flush`, `fsync`), whose `OSError` leaves the journal without its end entry |
-| `LogiWyniku` | `RunHost.after` → `RunLogs.run_ended`, the next of `after_run`: `_ended.add` under the lock (the end of the progress), then `_keep`: `_write` of the Logs with the result |
-| `WyslijWynik` | `_keep`: `finally: if self._outbox.post(logi_post(kept)): self._queued.add(kept.run_id)` (`Rank.OWN`) |
+| `LogiWyniku` | `RunHost.after` → `RunLogs.run_ended`, the next of `after_run`: `_ended.add` under the lock (the end of the progress), then `guard_logs` and `_keep`: `_write` of the Logs with the result |
+| `WyslijWynik` | `_keep`: `finally:` `Outbox.post(post_of(OwnLogs(logs)))` (`Rank.OWN`, `rank_of`), and `self._queued.add(...)` when `journal_after` gives „usuń”, i.e. the post returned True |
 | `UsunPoLogach` | `RunHost.after` → `JournalAfterLogs.run_ended`, the next of `after_run`: `if self.run_logs.queued(run.info.id): self.journal.remove(run.info.id)`, which removes the journal of this run (`_remove`) unless `_header`; otherwise the journal stays until the next start |
 | `KoniecUruchomienia` | the rest of `after_run` (`QuantityCheckAfterRun`, `filling`), then the end of the Uruchomienie |
 | `Zgasniecie` | none: Centrum switches off at any step; memory is gone, disk and queue stay; an entry being written may be torn, a torn first line is a journal without a start, and a torn end entry is a journal without one (`_read_journal` counts it in `omitted`); a Wycena with a possible progress whose journal never had its first line on the disk would keep its progress (an event of WersjaKoncowa) |
@@ -127,8 +128,9 @@ unless named otherwise):
 
 The script compares these definitions with the Sync commit (`model/definicje.json`: file → names, `Class.method` is a
 method): `JournalAtResult`, `JournalAfterLogs`, `InterruptedPricings` in `pricing_journal.py`; `RunLog.interrupted`, `guarded`, `RunLogs.run_ended`, `_keep`, `queued`, `interrupted`,
-`guard`, `close`, `_write`, `send`, `progress`, `LoggedEnding`, `ResultWithoutLogs`, `logi_post`,
-`progress_post`, `_logs_post` in `run_logs.py`; `LogsOnDisk.logs`, `_read_logs`, `_names`, `_NAME`, `_RUN_ID`, `LogsRead`, `Journal`, `_first_line`, `_RunEnded`,
+`guard`, `close`, `_write`, `send`, `progress`, `LoggedEnding`, `guard_logs`, `GuardedLogs` in `run_logs.py`;
+`ResultWithoutLogs`, `ProgressVersion`, `OwnLogs`, `StandInLogs`, `WithoutLogsVersion`, `rank_of`, `journal_after`,
+`post_of` in `comment_versions.py`; `LogsOnDisk.logs`, `_read_logs`, `_names`, `_NAME`, `_RUN_ID`, `LogsRead`, `Journal`, `_first_line`, `_RunEnded`,
 `JournalRead`, `_read_journal`, `_remove`, `LogsOnDisk.started`, `left_behind`, `remove_journal` in `logs_disk.py`;
 `lifespan`, `send_interrupted`, the assignments `app`, `disk`, `interrupted` and `runs` (its `after_run` puts
 `JournalAtResult`, `run_logs` and `JournalAfterLogs` in this order) and
@@ -137,7 +139,7 @@ method): `JournalAtResult`, `JournalAfterLogs`, `InterruptedPricings` in `pricin
 `_listen_when_released` in `launcher.py`; `replace_atomically` in `atomic_file.py`; `save` in `efenix_pricing.py`;
 `run_process` in `process_run.py`. Every code name in the table above is one of them, except six left out on purpose:
 `ProgressComment` (it only decides when `RunLogs.progress` runs, and the model lets a progress come at any step it
-allows), `_guarded` (the text of a version without Logi), `RunLog` as a whole (the schema of the Logs file, which changes with every new field; the model
+allows), `guard_text` (the text of a version without Logi), `RunLog` as a whole (the schema of the Logs file, which changes with every new field; the model
 reads only `ending`, whose values are `LoggedEnding`), `_outcome`, `efenix_trace.traced` and `StopError`
 (`ZmianaWEfenix` and `Zatrzymanie` need only their place in `save` after `journal.begun` and before `journal.ended`,
 which `save` holds), `metrics_saved` and the Historia (no step of this path reads
@@ -150,18 +152,19 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `b50a4edad` (2026-11-07, candidate 8 of the architecture review of 6.11, part 2). Every row of the
-table was checked against the code at this commit. Since the Sync commit `68aafac28` the journal moved from
-`pricing_journal.py` into `logs_disk.py` with the same behaviour: `PricingJournal` is `Journal` (`run_started` is
-`_run_started`, which `LogsOnDisk.started` calls before it writes the last-start file, in the order of the old
-`run_started` in `app.py`; `run_ended` is `end`, which `JournalAtResult` calls first in `after_run`; `logs_queued` is
-`remove`, which `JournalAfterLogs` calls), `_read` is `_read_journal`, and `_remove` moved with them. `InterruptedPricings`
-takes the journals from `LogsOnDisk.left_behind`, which reads one journal and the Logs file of its run each time `close`
-takes the next one, writes a failed read to the Centrum log itself, and leaves the journal, and removes them through
-`remove_journal`. Every journal line has the same bytes and the reads and writes come in the same order, so only the
-names in the table changed and no action changed.
+Sync commit: `6bdeaf76c` (2026-11-07, candidate 1 of the architecture review of 6.11, part 1). Every row of the
+table was checked against the code at this commit. Since the Sync commit `b50a4edad` every version of the comment of an
+Uruchomienie is a type in `comment_versions.py` (`ProgressVersion`, `OwnLogs`, `StandInLogs`, `WithoutLogsVersion`)
+that carries only Logi or text after the guard (`GuardedLogs` from `guard_logs`, `GuardedText` from `guard_text`), and
+`post_of` gives it the rank of the old `progress_post` and `logi_post` (`rank_of`); `journal_after` says „usuń” exactly
+when `post` returned True, so `_keep` and `InterruptedPricings.send` keep their conditions. `ResultWithoutLogs` moved
+there unchanged, and `RunLogs.send` still guards its text when it sends it. The steps and their order did not change, so
+only the names in the table changed and no action changed.
 
 Earlier Sync commits, each checked the same way:
+- `b50a4edad`: the journal moved from `pricing_journal.py` into `logs_disk.py` (`Journal`, `_read_journal`,
+  `LogsOnDisk.started`, `left_behind`, `remove_journal`, `JournalAtResult`) with the same bytes and order. No action
+  changed.
 - `68aafac28`: the Komunikat of a Zatrzymanie in `save` asks `_kept` with the results and the trace of the current
   order instead of the window's `sent_change`; `journal.begun` and `journal.ended` kept their place. No action changed.
 - `fa352a225`: listing the Logs folder fails with `Refused` unless the folder is missing, and `_closed` raises it again,
@@ -357,7 +360,7 @@ to reproduce a red Mutation checks step or while you change the model. Each muta
 each gives `URWANE URUCHOMIENIE: NOWE NARUSZENIE`:
 
 - DziennikPoKolejce: the journal removed although `post` returned False (`send` without `if
-  self._run_logs.send(final)`, `logi-i-kolejka`); the end entry written before the metrics record (in `save` or in
+  self._run_logs.send(final) == "usuń"`, `logi-i-kolejka`); the end entry written before the metrics record (in `save` or in
   `run_process` before `MetricsStore.append`: a journal cut between the two disappears without Logi); the version only
   from the moment, without a rank, after the clock went back (`zegar`: the progress in the queue is newer than the Logi
   Urwanego Uruchomienia of the start, which the queue drops, D2 of #875).
@@ -366,8 +369,10 @@ each gives `URWANE URUCHOMIENIE: NOWE NARUSZENIE`:
   end entry, and the start gives the Wycena Logi Urwanego Uruchomienia); `Journal.end` returning on `self._header` without
   `_remove` (`koniec`: the first entry fails after its first line is on the disk, the Wycena stops at that order, and
   the start gives it Logi Urwanego Uruchomienia).
-- TeSameZnaki: the Logs file written before the guard (`guard` after `RunLogs.close`).
-- PrzezStraznika: `_closed` without `record = self._run_logs.guard(record)`.
+- TeSameZnaki: the Logs file written before the guard (`guard` after `RunLogs.close`, which mypy now rejects: `close`
+  takes only `GuardedLogs`).
+- PrzezStraznika: `_closed` without `logs = self._run_logs.guard(record)` (2ff78b6b3, which mypy now rejects too:
+  `StandInLogs` and `close` take only `GuardedLogs`).
 - NicPrzedWznowieniem: the stand-in version sent in `create_app` right after `close`, not in the dependency of the first
   request.
 - ZaczeteWLogach: `_read_journal` without the order begun without a result; `journal.begun` after the first window action;
@@ -379,12 +384,12 @@ each gives `URWANE URUCHOMIENIE: NOWE NARUSZENIE`:
   the journal (`Journal.end` as in #888, `wpisy`); the start that removes a journal with a Logs file without sending it
   (`_closed` as on `main` before #910, `zwykle`); `JournalAfterLogs` without `RunLogs.queued` (`logi-i-kolejka`: `post` of
   the Logi with the result returns False, and the journal disappears); the progress of the rank of the stand-in version
-  (`progress_post` with `Rank.STAND_IN`, `zegar`); the whole start of `main` before #910 (`zwykle`: the start removes a
-  journal with the end entry without sending anything, W2 of #875).
+  (`rank_of` giving `ProgressVersion` `Rank.STAND_IN`, `zegar`); the whole start of `main` before #910 (`zwykle`: the
+  start removes a journal with the end entry without sending anything, W2 of #875).
 - LogiZostaja: the version only from the moment, without a rank (`logi-i-kolejka`: the Logs file failed, the queue
   took the Logi with the result, Centrum switches off before `JournalAfterLogs`, and the result without Logi of the start
-  is newer, W1 of round 3 of #846); the stand-in version of the rank of the Logi with the result (`RunLogs.send` with
-  `Rank.OWN`, `logi-i-kolejka`).
+  is newer, W1 of round 3 of #846); the stand-in version of the rank of the Logi with the result (`rank_of` giving
+  `StandInLogs` `Rank.OWN`, `logi-i-kolejka`).
 - Zbieganie: `send` without `remove_journal(key)`; `close` without `if closed is None: remove_journal(left.key)`.
 
 `RunLogs.progress` without `if run_id in self._ended: return False`, or `_ended.add` after `_keep`, breaks no promise

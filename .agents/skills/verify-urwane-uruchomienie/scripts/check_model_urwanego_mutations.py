@@ -39,7 +39,7 @@ _NO_RANK = (
 
 MUTATIONS = (
     Mutation(
-        "dziennik usunięty, choć Outbox.post zwrócił False (send: bez if self._run_logs.send(final))",
+        "dziennik usunięty, choć Outbox.post zwrócił False (send: bez if self._run_logs.send(final) == \"usuń\")",
         (
             Edit(
                 MODEL,
@@ -154,7 +154,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "Logi z dziennika bez strażnika (_closed: bez record = self._run_logs.guard(record))",
+        "Logi z dziennika bez strażnika (_closed: bez logs = self._run_logs.guard(record), co odrzuca też mypy)",
         (Edit(MODEL, "Straz(t) == [t EXCEPT !.tekst = \"strzezone\"]", "Straz(t) == t"),),
         _check("zwykle"),
         "telefon i ulica ze strony efenix idą do Skrzynki Zgłoszeń bez maski (ADR 0025)",
@@ -272,14 +272,14 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "wersja zastępcza ze stopniem Logów z wynikiem (RunLogs.send: Rank.OWN zamiast Rank.STAND_IN)",
+        "wersja zastępcza ze stopniem Logów z wynikiem (rank_of: Rank.OWN zamiast Rank.STAND_IN dla StandInLogs)",
         (Edit(MODEL, "StopienZeStartu == 1  ", "StopienZeStartu == 2  "),),
         _check("logi-i-kolejka"),
         "wynik bez Logów ze startu zastępuje Logi z wynikiem, które kolejka przyjęła bez ich pliku",
         NEW,
     ),
     Mutation(
-        "postęp ze stopniem wersji zastępczej (progress_post: Rank.STAND_IN zamiast Rank.DRAFT)",
+        "postęp ze stopniem wersji zastępczej (rank_of: Rank.STAND_IN zamiast Rank.DRAFT dla ProgressVersion)",
         (Edit(MODEL, "StopienPostepu == 0 ", "StopienPostepu == 1 "),),
         _check("zegar"),
         "po cofnięciu zegara postęp w kolejce jest nowszy od Logów Urwanego Uruchomienia ze startu",
