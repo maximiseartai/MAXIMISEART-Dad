@@ -28,8 +28,8 @@ import rozjazd_modelu  # noqa: E402
 SKILL = ".agents/skills/verify-model"
 CODE = "src/pakiet/kod.py"
 WHOLE = "src/pakiet/caly.py"
-# ``Logi.zamknij`` stoi przed ``Dziennik.zamknij`` z tabeli, a ``kolejka`` w ``inna`` przed ``kolejka`` w ``utworz``:
-# pierwsza definicja o tej nazwie w pliku jest definicją innego zakresu.
+# ``zapisz`` w ``obok``, ``Logi.zamknij`` przed ``Dziennik.zamknij`` z tabeli i ``kolejka`` w ``inna`` przed ``kolejka``
+# w ``utworz``: definicja o tej nazwie w innym zakresie.
 SOURCE = '''"""Moduł."""
 
 
@@ -39,7 +39,10 @@ def zapisz() -> int:
 
 
 def obok() -> int:
-    return 2
+    def zapisz() -> int:
+        return 5
+
+    return 2 + zapisz()
 
 
 class Logi:
@@ -100,7 +103,7 @@ def _edit(root: Path, name: str, old: str, new: str) -> None:
             f"{CODE} utworz.kolejka",
             id="drugie-wiazanie-w-zakresie",
         ),
-        pytest.param("def zapisz(", "def zapisz_inaczej(", f"{CODE} zapisz", id="definicji-nie-ma"),
+        pytest.param("\ndef zapisz(", "\ndef zapisz_inaczej(", f"{CODE} zapisz", id="definicji-nie-ma"),
         pytest.param("X = 1\n", '"""Docstring."""\nX = 1\n', WHOLE, id="caly-plik"),
         pytest.param("X = 1\n", "X = 1  # komentarz\n", WHOLE, id="komentarz-w-calym-pliku"),
     ],
@@ -119,7 +122,8 @@ def test_zmiana_kodu_opisanego_modelem_jest_rozjazdem_z_plikiem_definicja_i_krok
 @pytest.mark.parametrize(
     ("name", "old", "new"),
     [
-        pytest.param(CODE, "    return 2\n", "    return 20\n", id="funkcja-obok"),
+        pytest.param(CODE, "    return 2 + zapisz()\n", "    return 20 + zapisz()\n", id="funkcja-obok"),
+        pytest.param(CODE, "        return 5\n", "        return 50\n", id="funkcja-o-tej-nazwie-zagniezdzona-w-innej"),
         pytest.param(CODE, "        return 4\n", "        return 40\n", id="metoda-o-tej-nazwie-w-innej-klasie"),
         pytest.param(CODE, "    kolejka = set()\n", "    kolejka = frozenset()\n", id="przypisanie-o-tej-nazwie-w-innej-funkcji"),
         pytest.param(CODE, '"""Moduł."""\n', '"""Moduł."""\n\nPOZA = 1\n\n', id="przesuniete-linie"),
@@ -143,7 +147,7 @@ def _branch_beside_main(origin: Path, definition: bool) -> None:
     git(origin, "init", "--quiet", "--initial-branch", "main")
     commit(origin, "model opisuje kod")
     git(origin, "switch", "--quiet", "--create", "zmiana")
-    _edit(origin, CODE, "    return 2\n", "    return 20\n")
+    _edit(origin, CODE, "    return 2 + zapisz()\n", "    return 20 + zapisz()\n")
     commit(origin, "zmiana obok")
     if definition:
         _edit(origin, CODE, "    return 1\n", "    return 10\n")
@@ -208,7 +212,7 @@ def test_przeliczenie_skrotow_po_zmianie_kodu_konczy_rozjazd_i_wymienia_przelicz
 def test_przeliczenie_nie_zapisuje_skrotow_gdy_definicji_nie_ma(tmp_path: Path) -> None:
     skill = _skill(tmp_path)
     recorded = (skill / rozjazd_modelu.DEFINICJE).read_text(encoding="utf-8")
-    _edit(tmp_path, CODE, "def zapisz(", "def zapisz_inaczej(")
+    _edit(tmp_path, CODE, "\ndef zapisz(", "\ndef zapisz_inaczej(")
 
     with pytest.raises(ValueError, match=f"nie ma definicji: {CODE} zapisz; popraw nazwy"):
         rozjazd_modelu.przesun(skill, tmp_path)
@@ -285,7 +289,7 @@ def test_narzedzie_przelicza_skroty_skilla_i_drukuje_przeliczone(tmp_path: Path,
 
 def test_narzedzie_odmawia_skillowi_bez_definicji_i_definicji_ktorej_nie_ma(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _skill(tmp_path)
-    _edit(tmp_path, CODE, "def zapisz(", "def zapisz_inaczej(")
+    _edit(tmp_path, CODE, "\ndef zapisz(", "\ndef zapisz_inaczej(")
 
     unknown = przesun_model.main(["verify-inny", "--root", str(tmp_path)])
     missing = przesun_model.main(["verify-model", "--root", str(tmp_path)])
