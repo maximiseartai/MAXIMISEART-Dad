@@ -16,10 +16,11 @@ Typy pól, które strażnik zostawia bez maski (``TOOL_FIELDS``), sprawdza tu te
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Iterator, Mapping, Sequence
 import copy
 import dataclasses
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
@@ -33,35 +34,58 @@ from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin, 
 from pydantic import BaseModel
 import pytest
 
+from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, REPOSITORY
 from rozliczenia.centrum.comment_versions import (
     LABEL,
+    Closing,
     CommentVersion,
+    Drop,
+    LogsMissing,
     OwnLogs,
     ProgressVersion,
     ResultWithoutLogs,
     StandInLogs,
     WithoutLogsVersion,
+    close,
     journal_after,
     post_of,
     progress_markdown,
     summary_markdown,
     without_logs_markdown,
 )
-from rozliczenia.centrum.outbox import PeriodThread, Rank
+from rozliczenia.centrum.contract import RunResult
+from rozliczenia.centrum.dad_actions import DadActionJournal
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.logs_disk import (
+    EndEntry,
+    Found,
+    JournalKey,
+    JournalRead,
+    LeftJournal,
+    LogsOnDisk,
+    LogsRead,
+    Missing,
+    Refused,
+    Unreadable,
+)
+from rozliczenia.centrum.outbox import PeriodThread, Post, Rank
+from rozliczenia.centrum.run_comments import RecordMaker, RunComments
 from rozliczenia.centrum.run_logs import (
     READ_VALUES,
     TOOL_FIELDS,
+    GuardedLogs,
+    LoggedInterruption,
     OrderDone,
     PricingProgress,
     RunLog,
-    RunLogs,
     StartFacts,
     guard_logs,
     guard_text,
     guarded,
 )
 from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, shown
+from tests.fixtures.dziennik_wyceny import begun_line, left_journal
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 
 RUN_ID = "627b45fe219e4274b722953c34d4af54"
@@ -371,20 +395,10 @@ def test_logi_i_tekst_po_strazniku_nie_maja_podklas_takze_zrobionych_w_trakcie_d
         type("Inne", (type(value),), {"text": property(lambda self: "ul. Syntetyczna 1")})
 
 
-def _file_of_logs(directory: Path) -> RunLogs:
-    """Logi Uruchomienia w katalogu ``directory``, z których test woła tylko plik Logów (``close``)."""
+def _logs_on_disk(directory: Path) -> LogsOnDisk:
+    """Logi na dysku w katalogu Logów ``directory`` (obok dziennika Centrum)."""
 
-    unused: Any = None
-    return RunLogs(
-        directory,
-        unused,
-        commit=unused,
-        wydanie=unused,
-        files=unused,
-        cloud_files=unused,
-        dad_actions=unused,
-        forbidden=ForbiddenValues(),
-    )
+    return LogsOnDisk(CentrumLog(directory / "centrum-rozliczen.log"), journaled="efenix")
 
 
 # Wszystko, co bierze Logi albo tekst po strażniku: cztery wersje komentarza Uruchomienia i plik Logów.
@@ -393,7 +407,7 @@ TAKES_GUARDED: Final[dict[str, Callable[[Any, Path], object]]] = {
     "wynik-bez-logow": lambda value, _: WithoutLogsVersion(ResultWithoutLogs(_progress(), "OK", "niezapisane"), value),
     "logi-z-pliku-albo-urwane": lambda value, _: StandInLogs(value),
     "logi-z-wynikiem-albo-diagnoza": lambda value, _: OwnLogs(value),
-    "plik-logow": lambda value, directory: _file_of_logs(directory).close(value),
+    "plik-logow": lambda value, directory: _logs_on_disk(directory).write(value),
 }
 
 
@@ -412,6 +426,267 @@ def test_wersje_komentarza_i_plik_logow_odmawiaja_logow_sprzed_straznika_ktorych
         take(unguarded, tmp_path)
 
     assert list(tmp_path.iterdir()) == []
+
+
+# Wartość po strażniku drugiego typu: tekst komentarza zamiast Logów i Logi zamiast tekstu (przegląd #1038, runda 3).
+OTHER_GUARDED: Final = {
+    "postep": "logi",
+    "wynik-bez-logow": "logi",
+    "logi-z-pliku-albo-urwane": "tekst",
+    "logi-z-wynikiem-albo-diagnoza": "tekst",
+    "plik-logow": "tekst",
+}
+
+
+@pytest.mark.parametrize(("name", "other"), OTHER_GUARDED.items(), ids=OTHER_GUARDED.keys())
+def test_wersje_komentarza_i_plik_logow_odmawiaja_wartosci_po_strazniku_drugiego_typu(
+    name: str, other: str, tmp_path: Path
+) -> None:
+    """Tekst komentarza po strażniku nie jest Logami, a Logi nie są tekstem komentarza: wersja z Logami i plik Logów
+    biorą tylko Logi po strażniku, a postęp i wynik bez Logów tylko tekst, także gdy typ wartości nie widzi (``Any``)."""
+
+    with pytest.raises(TypeError, match="po strażniku"):
+        TAKES_GUARDED[name](_guarded(other), tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+# Wartość z kolumny ADRES pliku taty, którą ta praca Centrum przeczytała (ADR 0025): w Logach z dziennika i w tekście
+# wyniku bez Logów (tu w miejscu identyfikatora Uruchomienia, jak w teście postępu wyżej).
+ADDRESS: Final = "Syntetyczna Kwarcowa 9"
+
+
+def _forbidden() -> ForbiddenValues:
+    forbidden = ForbiddenValues()
+    forbidden.remember_value(ForbiddenColumn.ADDRESS, ADDRESS)
+    forbidden.remember_value(ForbiddenColumn.ADDRESS, RUN_ID)
+    return forbidden
+
+
+def _journal(end: EndEntry | None) -> JournalRead:
+    """Dziennik Wyceny Uruchomienia ``RUN_ID`` z zaczętym zleceniem z wiersza 19 i wpisem końca ``end``."""
+
+    started = StartFacts(
+        run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
+    )
+    interruption = LoggedInterruption(row=19, place=1, total=2, omitted=0)
+    return JournalRead(started, [], interruption, datetime(2026, 9, 10, 8, 5), 2, end)
+
+
+FROM_FILE: Final = record(process="efenix", technical_notes=[f"Notatka: {ADDRESS}"])
+"""Logi z pliku, które zapisała praca Centrum sprzed strażnika (wartość z kolumny ADRES bez maski)."""
+INTERRUPTED: Final = record(
+    process="efenix", result=None, ending="interrupted", duration_ms=None, technical_notes=[f"Notatka: {ADDRESS}"]
+)
+"""Logi Urwanego Uruchomienia, które składa start Centrum (``RecordMaker.interrupted``)."""
+
+
+def _without_logs(
+    read: JournalRead, result: RunResult, logs: LogsMissing, forbidden: ForbiddenValues
+) -> WithoutLogsVersion:
+    final = ResultWithoutLogs(read.progress, result, logs)
+    return WithoutLogsVersion(final, guard_text(without_logs_markdown(final), "wynik Wyceny w efenix bez Logów", forbidden))
+
+
+# Macierz startu Centrum (GLOSSARY „Dziennik Wyceny w efenix”, #910): co zastał na dysku → wersja zastępcza po strażniku
+# reguły danych tej pracy Centrum i czy start złożył Logi Urwanego Uruchomienia (zabiera działania taty).
+CLOSE_MATRIX: Final[
+    dict[str, tuple[EndEntry | None, bool, LogsRead, Callable[[JournalRead, ForbiddenValues], Closing], bool]]
+] = {
+    "dziennik-bez-pierwszej-linii": (None, False, Missing(), lambda read, forbidden: Drop(), False),
+    "logi-z-pliku": (
+        EndEntry("OK"),
+        True,
+        Found(FROM_FILE),
+        lambda read, forbidden: StandInLogs(guard_logs(FROM_FILE, forbidden)),
+        False,
+    ),
+    "logi-nieczytelne": (
+        EndEntry("OK"),
+        True,
+        Unreadable(),
+        lambda read, forbidden: _without_logs(read, "OK", "nieczytelne", forbidden),
+        False,
+    ),
+    "bez-logow-z-wpisem-konca": (
+        EndEntry("WYMAGA_SPRAWDZENIA"),
+        True,
+        Missing(),
+        lambda read, forbidden: _without_logs(read, "WYMAGA_SPRAWDZENIA", "niezapisane", forbidden),
+        False,
+    ),
+    "urwane-uruchomienie": (
+        None,
+        True,
+        Missing(),
+        lambda read, forbidden: StandInLogs(guard_logs(INTERRUPTED, forbidden)),
+        True,
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("end", "first_line", "logs", "expected", "built"), CLOSE_MATRIX.values(), ids=CLOSE_MATRIX.keys()
+)
+def test_start_centrum_zamyka_dziennik_wyceny_wersja_zastepcza_po_strazniku_z_tego_co_zastal_na_dysku(
+    end: EndEntry | None,
+    first_line: bool,
+    logs: LogsRead,
+    expected: Callable[[JournalRead, ForbiddenValues], Closing],
+    built: bool,
+) -> None:
+    """Model ``Czytaj`` skilla ``verify-urwane-uruchomienie``: dziennik bez pierwszej linii start usuwa, a z każdego
+    innego robi wersję zastępczą komentarza Uruchomienia z tego, co zastał: Logi z pliku, wynik bez Logów, gdy pliku nie
+    da się odczytać albo go nie ma, a jest wpis końca, i Logi Urwanego Uruchomienia, gdy nie ma ani pliku, ani wpisu
+    końca. Każda wersja przeszła strażnika reguły danych tej pracy Centrum (ADR 0025), także Logi z pliku sprzed niego,
+    a Logi Urwanego Uruchomienia składa tylko ostatnia gałąź, bo zabierają działania taty, które czekają na Logi."""
+
+    read = _journal(end)
+    asked: list[JournalRead] = []
+
+    def interrupted(journal: JournalRead) -> RunLog:
+        asked.append(journal)
+        return INTERRUPTED
+
+    forbidden = _forbidden()
+    left = LeftJournal(JournalKey(Path("dziennik.jsonl")), read if first_line else None, logs)
+
+    closing = close(left, forbidden, interrupted)
+
+    wanted = expected(read, forbidden)
+    if isinstance(wanted, Drop):
+        assert closing == wanted
+    else:
+        assert not isinstance(closing, Drop)
+        assert post_of(closing) == post_of(wanted)
+        assert all(ADDRESS not in text for text in post_of(closing).parts)
+    assert asked == ([read] if built else [])
+
+
+def test_plik_logow_ktorego_system_nie_daje_odczytac_zostawia_dziennik_z_bledem_systemu() -> None:
+    """Nie wiadomo, czy Logi są i jakie, więc start nie zgaduje wersji: błąd systemu wychodzi do startu, który zostawia
+    dziennik następnemu startowi, i niczego nie składa."""
+
+    failure = PermissionError("plik trzyma antywirus")
+    left = LeftJournal(JournalKey(Path("dziennik.jsonl")), _journal(None), Refused(failure))
+    asked: list[JournalRead] = []
+
+    def interrupted(journal: JournalRead) -> RunLog:
+        asked.append(journal)
+        return INTERRUPTED
+
+    with pytest.raises(OSError, match="antywirus"):
+        close(left, _forbidden(), interrupted)
+
+    assert asked == []
+
+
+class SwitchedOff(BaseException):
+    """Centrum zgasło (brak prądu, zamknięta konsola, zabity proces): ``BaseException``, więc żadne ``except`` kodu go
+    nie zatrzyma, jak wątku, który ginie razem z komputerem."""
+
+
+@dataclass
+class RecordingQueue:
+    """Kolejka wysyłki, która przyjmuje każdą wysyłkę i pamięta przyjęte."""
+
+    posts: list[Post] = dataclasses.field(default_factory=list)
+
+    def post(self, post: Post) -> bool:
+        self.posts.append(post)
+        return True
+
+
+StartStep = Literal["ZapiszLogi", "Wyslij"]
+
+
+class PowerCut:
+    """Zgaśnięcie Centrum tuż przed krokiem modelu ``verify-urwane-uruchomienie``: zapisem pliku Logów ze startu
+    (``ZapiszLogi``) albo wysyłką wersji zastępczej (``Wyslij``). Daje Logi na dysku i kolejkę, które gasną przed nim."""
+
+    def __init__(self, before: StartStep) -> None:
+        self.before = before
+
+    def disk(self, directory: Path) -> LogsOnDisk:
+        cut = self
+
+        class SwitchedOffDisk(LogsOnDisk):
+            def write(self, logs: GuardedLogs) -> None:
+                if cut.before == "ZapiszLogi":
+                    raise SwitchedOff
+                super().write(logs)
+
+        return SwitchedOffDisk(CentrumLog(directory / "centrum-rozliczen.log"), journaled="efenix")
+
+    def queue(self, queue: RecordingQueue) -> RecordingQueue:
+        cut = self
+
+        class SwitchedOffQueue(RecordingQueue):
+            def post(self, post: Post) -> bool:
+                if cut.before == "Wyslij":
+                    raise SwitchedOff
+                return super().post(post)
+
+        return SwitchedOffQueue(queue.posts)
+
+
+def _started(comments: RunComments) -> None:
+    """Start Centrum od budowy aplikacji do pierwszego zapytania API: zamknięcie dzienników, potem ich wysyłka."""
+
+    comments.close_left_behind()
+    asyncio.run(comments.send_left_behind())
+
+
+def _comments(directory: Path, queue: RecordingQueue, disk: LogsOnDisk | None = None) -> RunComments:
+    """Start Centrum (model ``Start``) na katalogu Logów ``directory``: dziś narzędzie bez commitu i bez plików procesu."""
+
+    log = CentrumLog(directory / "centrum-rozliczen.log")
+    records = RecordMaker(
+        commit=lambda: None,
+        wydanie=lambda commit: None,
+        files=lambda process, period: [],
+        cloud_files=CloudFiles(None),
+        dad_actions=DadActionJournal(directory / "dzialania-taty.jsonl", log),
+    )
+    return RunComments(
+        disk or _logs_on_disk(directory), queue, forbidden=ForbiddenValues(), log=log, records=records
+    )
+
+
+@pytest.mark.parametrize("before", get_args(StartStep))
+def test_centrum_zgaszone_przy_zamykaniu_dziennika_wyceny_wysyla_logi_urwanego_uruchomienia_przy_nastepnym_starcie(
+    before: StartStep, tmp_path: Path
+) -> None:
+    """Start Centrum, który zgasł przed zapisem pliku Logów Urwanego Uruchomienia albo przed ich wysyłką, zostawia
+    dziennik i niczego nie wysyła; następny start wysyła je raz, w stopniu wersji zastępczej, z plikiem w Archiwum o
+    bajtach pliku Logów, dopiero przy pierwszym zapytaniu (po ``Outbox.resume``), i dopiero wtedy usuwa dziennik
+    (obietnice DziennikPoKolejce, TeSameZnaki, NicPrzedWznowieniem i Zbieganie)."""
+
+    started = StartFacts(
+        run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
+    )
+    journal = left_journal(tmp_path, started, begun_line(datetime(2026, 9, 10, 8, 1), row=19, place=1, total=2))
+    queue, cut = RecordingQueue(), PowerCut(before)
+
+    with pytest.raises(SwitchedOff):
+        _started(_comments(tmp_path, cut.queue(queue), cut.disk(tmp_path)))
+    after_cut = (journal.exists(), list(queue.posts))
+    restarted = _comments(tmp_path, queue)
+    restarted.close_left_behind()
+    before_request = list(queue.posts)
+    asyncio.run(restarted.send_left_behind())
+
+    [post] = queue.posts
+    [logs_file] = (tmp_path / "uruchomienia").glob(f"*-{RUN_ID}.json")
+    sent = RunLog.model_validate_json(logs_file.read_text(encoding="utf-8"))
+    assert (after_cut, before_request) == ((True, []), [])
+    assert (post.rank, sent.ending, sent.interruption) == (
+        Rank.STAND_IN,
+        "interrupted",
+        LoggedInterruption(row=19, place=1, total=2, omitted=0),
+    )
+    assert post.archive is not None and gzip.decompress(post.archive.packed()) == logs_file.read_bytes()
+    assert not journal.exists()
 
 
 def test_zakazana_wartosc_w_kluczu_slownika_logow_jest_zamaskowana_z_uwaga_o_polu_bez_wartosci() -> None:

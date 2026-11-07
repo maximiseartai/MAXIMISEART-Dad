@@ -3437,7 +3437,7 @@ def test_wycena_z_wynikiem_bez_pliku_logow_nie_dostaje_logow_urwanego_uruchomien
 
     blocked = tmp_path / "logs" / "uruchomienia"
     blocked.parent.mkdir(parents=True)
-    blocked.write_text("", encoding="utf-8")  # plik zamiast katalogu Logów: RunLogs._write rzuca OSError
+    blocked.write_text("", encoding="utf-8")  # plik zamiast katalogu Logów: LogsOnDisk.write rzuca OSError
 
     def full_disk(_store: MetricsStore, _record: object) -> None:
         raise OSError(28, "No space left on device")

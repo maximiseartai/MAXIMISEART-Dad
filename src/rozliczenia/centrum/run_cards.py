@@ -9,9 +9,9 @@ ma ani Logów, ani wiersza Historii, to Urwane Uruchomienie (Centrum zamknęło 
 przed końcem każdego Uruchomienia, także przy Zatrzymaniu. Na końcu Uruchomienia ten moduł niczego nie zapisuje,
 więc nie ma kolejności względem działań po wyniku.
 
-Urwana Wycena w efenix ma Logi Urwanego Uruchomienia, które start Centrum zamknął z jej dziennika (``pricing_journal``,
-#845): jej karta po starcie to dalej karta Urwanego Uruchomienia, z liczbą zleceń skończonych przed zamknięciem Centrum
-z każdym wynikiem. Takie Logi nie dają karty wiersza Historii (Urwane Uruchomienie nie ma wiersza Historii) ani karty
+Urwana Wycena w efenix ma Logi Urwanego Uruchomienia, które start Centrum zamknął z jej dziennika (``run_comments``,
+#845), zanim karta ostatniego Uruchomienia przeczyta Logi (``LeftBehindClosed``): jej karta po starcie to dalej karta
+Urwanego Uruchomienia, z liczbą zleceń skończonych przed zamknięciem Centrum z każdym wynikiem. Takie Logi nie dają karty wiersza Historii (Urwane Uruchomienie nie ma wiersza Historii) ani karty
 zakończonego Uruchomienia, z której powstaje Powiadomienie, ani karty ostatniego Uporządkowania INTERMAX.
 
 Karta z Logów niesie tylko to, co w nich jest: Komunikaty w trzech częściach, podsumowanie, etapy, sposób
@@ -37,6 +37,7 @@ from fastapi import APIRouter
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.logs_disk import Found, LogsOnDisk, Missing, Refused, Unreadable
+from rozliczenia.centrum.run_comments import LeftBehindClosed
 from rozliczenia.centrum.run_logs import OrderOutcome, RunLog, StartFacts
 from rozliczenia.centrum.runs import verdict
 
@@ -75,8 +76,9 @@ class RunCards:
         self._history = history
         self._ended = disk.viewed(self._ended_of)
 
-    def last(self) -> contract.PastRun | None:
-        """Ostatnie Uruchomienie sprzed tego startu Centrum; ``None``: żadnego albo nie da się go odczytać."""
+    def last(self, closed: LeftBehindClosed) -> contract.PastRun | None:
+        """Ostatnie Uruchomienie sprzed tego startu Centrum; ``None``: żadnego albo nie da się go odczytać. ``closed``:
+        start Centrum zamknął już dzienniki Wyceny, więc Urwana Wycena ma tu swoje Logi Urwanego Uruchomienia."""
 
         started = self._disk.last_start()
         if started is None:

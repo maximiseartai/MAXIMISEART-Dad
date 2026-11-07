@@ -1,19 +1,13 @@
 {
   "src/rozliczenia/centrum/pricing_journal.py": [
     "JournalAtResult",
-    "JournalAfterLogs",
-    "InterruptedPricings"
+    "JournalAfterLogs"
   ],
   "src/rozliczenia/centrum/run_logs.py": [
     "RunLog.interrupted",
     "guarded",
     "RunLogs.run_ended",
     "RunLogs._keep",
-    "RunLogs.interrupted",
-    "RunLogs.guard",
-    "RunLogs.close",
-    "RunLogs._write",
-    "RunLogs.send",
     "RunLogs.progress",
     "LoggedEnding",
     "RunLogs.queued",
@@ -28,7 +22,14 @@
     "WithoutLogsVersion",
     "rank_of",
     "journal_after",
-    "post_of"
+    "post_of",
+    "Drop",
+    "close"
+  ],
+  "src/rozliczenia/centrum/run_comments.py": [
+    "RunComments.close_left_behind",
+    "RunComments.send_left_behind",
+    "RecordMaker.interrupted"
   ],
   "src/rozliczenia/centrum/logs_disk.py": [
     "LogsOnDisk.logs",
@@ -45,14 +46,16 @@
     "_remove",
     "LogsOnDisk.started",
     "LogsOnDisk.left_behind",
-    "LogsOnDisk.remove_journal"
+    "LogsOnDisk.remove_journal",
+    "LogsOnDisk.write"
   ],
   "src/rozliczenia/centrum/app.py": [
     "lifespan",
     "send_interrupted",
     "app",
     "disk",
-    "interrupted",
+    "comments",
+    "closed",
     "run_started",
     "runs"
   ],

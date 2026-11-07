@@ -1,8 +1,8 @@
 ------------------------------ MODULE UrwaneUruchomienie ------------------------------
 (* Ślad Wyceny w efenix, którą przerwało zgaśnięcie Centrum, przez kolejne starty Centrum: dziennik Wyceny w efenix    *)
-(* (src/rozliczenia/centrum/logs_disk.py: Journal, LogsOnDisk.left_behind; pricing_journal.py:                     *)
-(* InterruptedPricings.close i send), Logi Urwanego                                                                 *)
-(* Uruchomienia (src/rozliczenia/centrum/run_logs.py: RunLogs.interrupted, guard, close, send) i ich droga do Kolejki  *)
+(* (src/rozliczenia/centrum/logs_disk.py: Journal, LogsOnDisk.left_behind; run_comments.py:                       *)
+(* RunComments.close_left_behind i send_left_behind, comment_versions.close), Logi Urwanego                          *)
+(* Uruchomienia (run_comments.py: RecordMaker.interrupted; run_logs.py: guard_logs) i ich droga do Kolejki          *)
 (* wysyłki (Outbox.post), obok Logów Wyceny, która doszła do wyniku, i wpisu końca w jej dzienniku, i komentarz       *)
 (* postępu Wyceny (#846: RunLogs.progress), który wersja końcowa zamienia w podsumowanie: Logi z wynikiem, a gdy ich   *)
 (* kolejka nie przyjęła w pracy Uruchomienia, wersja zastępcza z następnego startu (#910). Każda akcja to jeden       *)
@@ -19,8 +19,8 @@ CONSTANTS
     MaxAwariiWpisu,      \* Journal._append_locked: OSError (wpis przepada, Wycena biegnie dalej), także pierwsza
                          \* linia przy starcie i wpis końca; po write może zostać cała pierwsza linia (flush albo fsync
                          \* rzuca)
-    MaxAwariiOdczytu,    \* InterruptedPricings.close: OSError odczytu dziennika, pliku albo katalogu Logów (dziennik zostaje)
-    MaxAwariiLogow,      \* RunLogs._write (replace_atomically): OSError, pliku Logów nie ma albo zostaje poprzedni
+    MaxAwariiOdczytu,    \* RunComments.close_left_behind: OSError odczytu dziennika, pliku albo katalogu Logów (dziennik zostaje)
+    MaxAwariiLogow,      \* LogsOnDisk.write (replace_atomically): OSError, pliku Logów nie ma albo zostaje poprzedni
     MaxAwariiKolejki,    \* Outbox.post: False (pliku kolejki nie dało się zapisać)
     MaxAwariiUsuniecia,  \* _remove: OSError z unlink (dziennik zostaje), przy starcie, po wyniku i za Logami
     MaxCofniecZegara,    \* zegar komputera cofa się, gdy Centrum jest zamknięte (bateria CMOS po braku prądu, a bez sieci
@@ -57,16 +57,16 @@ ZLogami == {"wynik", "urwane"}
 \* Stopień wersji (outbox.py Rank, Post.rank): wybiera go ten, kto wysyła, a nie zegar. Kolejka porównuje najpierw
 \* stopień, a chwilę z nazwy pliku tylko w tym samym stopniu (outbox.py Version).
 StopienPostepu == 0   \* RunLogs.progress -> post_of(ProgressVersion): rank_of daje Rank.DRAFT
-StopienZeStartu == 1  \* InterruptedPricings.send -> RunLogs.send -> post_of(wersja zastępcza): Rank.STAND_IN
+StopienZeStartu == 1  \* RunComments.send_left_behind -> post_of(wersja zastępcza): Rank.STAND_IN
 StopienWlasny == 2    \* RunLogs._keep -> post_of(OwnLogs): rank_of daje Rank.OWN
 Stopnie == 0..2
 \* Najnowsza przyjęta wersja komentarza Uruchomienia: rodzaj, stopień, czy przyszła w tej pracy Centrum i czy od niej
 \* zegar komputera cofnął się przy którymś starcie (wtedy jej chwila może być późniejsza od chwil nowej pracy).
 Wersje == [rodzaj : RodzajeWersji, stopien : Stopnie, tejPracy : BOOLEAN, cofniety : BOOLEAN]
 BrakWersji == [rodzaj |-> "brak", stopien |-> 0, tejPracy |-> FALSE, cofniety |-> FALSE]
-\* Plik Logów, który close zapisze (RunLogs.close), i wersja zastępcza, którą start wyśle: rodzaj i treść.
+\* Plik Logów, który start zapisze (LogsOnDisk.write), i wersja zastępcza, którą start wyśle: rodzaj i treść.
 Rekordy == [rodzaj : ZLogami, tresc : Tresci]
-\* InterruptedPricings._pending: wersja zastępcza, jej dziennik i czy jej pliku Logów nie udało się zapisać.
+\* RunComments._pending: wersja zastępcza, jej dziennik i czy jej pliku Logów nie udało się zapisać.
 Oczekujace == [bieg : Biegi, rodzaj : Rodzaje, tresc : Tresci, niezapisany : BOOLEAN]
 \* Fazy Wyceny, w których RunLogs.progress jeszcze wysyła postęp: przed RunLogs.run_ended (``_ended``).
 PrzedKoncemPostepu == {"zaczete", "efenix", "skonczone", "wynik", "koniec", "logi"}
@@ -87,8 +87,8 @@ VARIABLES
     kursor,          \* który dziennik z sorted(glob) czyta close
     krokZamykania,   \* "czytaj" | "zapisz" (plik Logów) | "usun" (dziennik)
     rekord,          \* Logi (z pliku albo Urwanego Uruchomienia), które close zapisze w pliku
-    oczekujace,      \* InterruptedPricings._pending: wersje zastępcze do wysłania i ich dzienniki
-    doWyslania,      \* to, co send wziął z _pending
+    oczekujace,      \* RunComments._pending: wersje zastępcze do wysłania i ich dzienniki
+    doWyslania,      \* to, co send_left_behind wziął z _pending
     krokWysylki,     \* "post" | "usun" (dziennik po przyjęciu)
     bieg,            \* Wycena, która biegnie w tej pracy Centrum (0: żadna)
     faza,            \* gdzie jest Wycena: "-" | "start" | "zaczete" | "efenix" | "skonczone" | "wynik" | "koniec" |
@@ -217,7 +217,7 @@ Pokrywa(r, t) == Niepokryte(r, t) = {}
 PoWpisach(r, brakujace) == IF brakujace \subseteq przepadle[r] THEN {"wpis-nieudany"} ELSE {}
 
 (* logs_disk._read_journal: zlecenia z wpisów „zlecenie skończone”, a zlecenie zaczęte bez wyniku z ostatniego wpisu, *)
-(* gdy to „zaczynam zlecenie”; RunLogs.interrupted -> RunLog.interrupted. Tekst ze śladu zleceń jest surowy, dopóki   *)
+(* gdy to „zaczynam zlecenie”; RecordMaker.interrupted -> RunLog.interrupted. Tekst ze śladu zleceń jest surowy, dopóki *)
 (* nie przejdzie przez strażnika.                                                                                   *)
 ZDziennika(r) ==
     LET w == wpisy[r]
@@ -225,7 +225,7 @@ ZDziennika(r) ==
     IN [skonczone |-> skonczone,
         zaczete |-> IF Len(w) > 0 /\ w[Len(w)].rodzaj = "zaczete" THEN w[Len(w)].z ELSE 0,
         tekst |-> IF TekstDoMaski /\ skonczone # {} THEN "surowe" ELSE "strzezone"]
-\* RunLogs.guard -> guarded: strażnik reguły danych pracy Centrum.
+\* guard_logs -> guarded w comment_versions.close: strażnik reguły danych pracy Centrum.
 Straz(t) == [t EXCEPT !.tekst = "strzezone"]
 
 (* Zdarzenia przy każdym Outbox.post wersji zastępczej h z dziennika: Logi z innymi znakami niż ich plik, tekst bez     *)
@@ -251,7 +251,7 @@ UsunPlik(r, przyczyny) ==
        /\ UNCHANGED <<dziennik, wpisy, zgubiony, bezWersji>>
 
 (* Start Centrum: launcher._start zajmuje port (_listen_when_released), potem create_app buduje aplikację, a w niej    *)
-(* InterruptedPricings(...).close() -> LogsOnDisk.left_behind przechodzi dzienniki z sorted(glob("*.jsonl")) po    *)
+(* RunComments.close_left_behind() -> LogsOnDisk.left_behind przechodzi dzienniki z sorted(glob("*.jsonl")) po    *)
 (* kolei. Pamięć jest nowa, a                                                                                       *)
 (* wersje w kolejce są z wcześniejszej pracy. Gdy Centrum było zamknięte, zegar komputera mógł się cofnąć: chwile tej *)
 (* pracy mogą być wtedy wcześniejsze od chwil każdej wersji, która już jest w kolejce (cofniety).                    *)
@@ -268,10 +268,10 @@ Start ==
     /\ UNCHANGED <<dziennik, wpisy, logi, efenix, kolejka, nastepny, zgasniecia, zatrzymania, awarieWpisu,
                    awarieOdczytu, awarieLogow, awarieKolejki, awarieUsuniecia, duchy, zdarzenia>>
 
-\* _closed: logs = self._run_logs.guard(record) (GuardedLogs), potem plik Logów (ZapiszLogi).
+\* close: StandInLogs(guard_logs(record, forbidden)) (GuardedLogs), potem plik Logów (ZapiszLogi).
 Odczytane(odczytany) == krokZamykania' = "zapisz" /\ rekord' = [odczytany EXCEPT !.tresc = Straz(@)]
 
-(* _closed z dziennika bez wpisu końca i bez pliku Logów: Logi Urwanego Uruchomienia Wyceny, która doszła do wyniku, *)
+(* close z dziennika bez wpisu końca i bez pliku Logów: Logi Urwanego Uruchomienia Wyceny, która doszła do wyniku,  *)
 (* to zdarzenie obietnicy BezUrwanychPoWyniku. Jego przyczyny to to, dlaczego dziennik nie ma wpisu końca (bezKonca), *)
 (* a „przed-wpisem-konca” tylko, gdy kolejka nie przyjęła jej Logów z wynikiem: zgaśnięcie przed wpisem końca jest   *)
 (* przed Logami. Plik Logów Urwanego Uruchomienia czyta potem gałąź „Logi z pliku”, która tego zdarzenia nie powtarza. *)
@@ -279,11 +279,11 @@ Zbuduj(r) ==
     /\ Odczytane([rodzaj |-> "urwane", tresc |-> ZDziennika(r)])
     /\ poWyniku' = Zdarz(poWyniku, ZWynikiem(r), bezKonca[r] \ (IF WynikPrzyjety(r) THEN {"przed-wpisem-konca"} ELSE {}))
 
-(* InterruptedPricings.close -> _closed(left) dla dziennika na pozycji kursor: LogsOnDisk.left_behind czyta go      *)
+(* RunComments.close_left_behind -> close(left) dla dziennika na pozycji kursor: LogsOnDisk.left_behind czyta go   *)
 (* (_read_journal) i plik Logów (                                                                                   *)
 (* LogsOnDisk.logs, _read_logs) w jednym kroku, bo w create_app nic innego tych plików nie pisze. Historii start nie   *)
-(* czyta. OSError z odczytu dziennika albo Logów albo z listowania katalogu Logów, który jest (Refused): close łapie   *)
-(* go i zostawia dziennik następnemu startowi. Dziennik z pierwszą linią został, bo kolejka nie przyjęła Logów z       *)
+(* czyta. OSError z odczytu dziennika albo Logów albo z listowania katalogu Logów, który jest (Refused, close rzuca  *)
+(* go dalej): close_left_behind łapie go i zostawia dziennik następnemu startowi. Dziennik z pierwszą linią został, bo kolejka nie przyjęła Logów z       *)
 (* wynikiem w pracy Uruchomienia (JournalAfterLogs) albo to Urwane Uruchomienie, więc start zamyka go wersją zastępczą *)
 (* (Rank.STAND_IN), a usuwa tylko dziennik bez niej.                                                                   *)
 Czytaj ==
@@ -295,26 +295,26 @@ Czytaj ==
           /\ dziennik[r] = "brak"
           /\ kursor' = kursor + 1
           /\ UNCHANGED <<krokZamykania, rekord, oczekujace, awarieOdczytu, poWyniku>>
-       \/ \* except OSError (left_behind albo close): pricing_journal_unavailable(where="start"), continue
+       \/ \* except OSError (left_behind albo close_left_behind): pricing_journal_unavailable(where="start"), continue
           /\ dziennik[r] # "brak" /\ awarieOdczytu < MaxAwariiOdczytu
           /\ awarieOdczytu' = awarieOdczytu + 1 /\ kursor' = kursor + 1
           /\ UNCHANGED <<krokZamykania, rekord, oczekujace, poWyniku>>
-       \/ \* _read_journal: None (bez pierwszej linii) -> remove_journal
+       \/ \* _read_journal: None (bez pierwszej linii) -> Drop -> remove_journal
           /\ dziennik[r] = "bezStartu"
           /\ krokZamykania' = "usun"
           /\ UNCHANGED <<kursor, rekord, oczekujace, awarieOdczytu, poWyniku>>
-       \/ \* record = logged: Logi z pliku (z wynikiem, których przyjęcia przez kolejkę nikt nie zapisał, albo Urwanego
+       \/ \* Found: Logi z pliku (z wynikiem, których przyjęcia przez kolejkę nikt nie zapisał, albo Urwanego
           \* Uruchomienia, które poprzedni start zapisał, a nie wysłał)
           /\ dziennik[r] = "jest" /\ logi[r].rodzaj \in ZLogami
           /\ Odczytane(logi[r])
           /\ UNCHANGED <<kursor, oczekujace, awarieOdczytu, poWyniku>>
-       \/ \* read.end bez pliku Logów: ResultWithoutLogs (wynik z wpisu końca, zlecenia z dziennika), bez pliku
+       \/ \* read.end bez pliku Logów: WithoutLogsVersion (wynik z wpisu końca, zlecenia z dziennika), bez pliku
           /\ dziennik[r] = "jest" /\ logi[r].rodzaj = "brak" /\ koniecZapisany
           /\ oczekujace' = Append(oczekujace, [bieg |-> r, rodzaj |-> "bezLogow", tresc |-> Pusta,
                                                niezapisany |-> FALSE])
           /\ kursor' = kursor + 1
           /\ UNCHANGED <<krokZamykania, rekord, awarieOdczytu, poWyniku>>
-       \/ \* bez pliku Logów i bez wpisu końca: record = self._run_logs.interrupted(...)
+       \/ \* bez pliku Logów i bez wpisu końca: StandInLogs(guard_logs(interrupted(read), forbidden))
           /\ dziennik[r] = "jest" /\ logi[r].rodzaj = "brak" /\ ~koniecZapisany
           /\ Zbuduj(r)
           /\ UNCHANGED <<kursor, oczekujace, awarieOdczytu>>
@@ -322,7 +322,7 @@ Czytaj ==
                    nastepny, zgasniecia, zatrzymania, awarieWpisu, awarieLogow, awarieKolejki, awarieUsuniecia,
                    cofniecia, duchy, zgubiony, inneZnaki, bezStrazy, przedWznowieniem, bezZlecenia, bezWersji, wyparty>>
 
-(* _closed: self._run_logs.close(record) -> RunLogs._write -> replace_atomically (plik tymczasowy, os.replace);       *)
+(* close_left_behind: self._disk.write(logs) -> replace_atomically (plik tymczasowy, os.replace);                   *)
 (* OSError tylko do dziennika Centrum, a Logi i tak idą do _pending.                                               *)
 ZapiszLogi ==
     /\ centrum = "zamyka" /\ krokZamykania = "zapisz"
@@ -355,7 +355,7 @@ Wznow ==
     /\ UNCHANGED <<dysk, centrum, kursor, krokZamykania, rekord, oczekujace, doWyslania, krokWysylki, bieg, faza,
                    zlecenie, naglowekCzeka, wKolejce, liczniki, duchy, zdarzenia>>
 
-(* Pierwsze zapytanie API: zależność send_interrupted -> InterruptedPricings.send bierze całe _pending pod blokadą   *)
+(* Pierwsze zapytanie API: zależność send_interrupted -> RunComments.send_left_behind bierze całe _pending pod blokadą *)
 (* (pending, self._pending = self._pending, []); następne zapytania dostają pustą listę.                             *)
 PierwszeZapytanie ==
     /\ centrum = "zamyka" /\ kursor > Wyceny
@@ -365,12 +365,13 @@ PierwszeZapytanie ==
     /\ UNCHANGED <<dysk, wznowiona, kursor, krokZamykania, rekord, bieg, faza, zlecenie, naglowekCzeka, wKolejce,
                    liczniki, duchy, zdarzenia>>
 
-\* Następna wersja zastępcza z listy send albo koniec send.
+\* Następna wersja zastępcza z listy send_left_behind albo koniec send_left_behind.
 Dalej ==
     /\ doWyslania' = Tail(doWyslania) /\ krokWysylki' = "post"
     /\ centrum' = IF Tail(doWyslania) = <<>> THEN "dziala" ELSE "wysyla"
 
-(* send: if self._run_logs.send(final) == "usuń" -> RunLogs.send -> Outbox.post wersji zastępczej                   *)
+(* send_left_behind: journal_after(version, accepted=self._queue.post(post_of(version))) -> Outbox.post wersji       *)
+(* zastępczej                                                                                                         *)
 (* (post_of, Rank.STAND_IN): Logi albo wynik bez Logów; journal_after daje usuń, gdy plik kolejki powstał,            *)
 (* a zostaw, gdy post zwrócił False, i dziennik czeka na następny start.                                              *)
 Wyslij ==

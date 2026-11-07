@@ -53,8 +53,8 @@ nieoczekiwanym wyjątku karta zaczyna Diagnozę sama przy każdym pokazaniu, a M
 Diagnozę ma tylko ostatnie Uruchomienie tej pracy Centrum, więc w pamięci zostają tylko jego Logi; Diagnoza,
 w której trakcie skończyło się następne Uruchomienie, nie dopisuje się nigdzie.
 
-Urwana Wycena w efenix (#845) ma Logi z dziennika Wyceny w efenix (``pricing_journal``), które start Centrum zamyka
-(``RunLogs.interrupted``, ``RunLogs.close``) i wysyła (``RunLogs.send``) jak zwykłe Logi: sposób zakończenia
+Urwana Wycena w efenix (#845) ma Logi z dziennika Wyceny w efenix (``RunLog.interrupted``), które start Centrum zamyka i
+wysyła jak zwykłe Logi (``run_comments.RunComments``): sposób zakończenia
 ``interrupted``, bez wyniku (``result`` ``None``), czasu, etapów i Komunikatów, ze śladem zleceń skończonych przed
 zgaśnięciem Centrum i ze zleceniem zaczętym bez wyniku (``LoggedInterruption``). Koniec takich Logów to ostatni wpis
 dziennika, bo chwili zgaśnięcia nikt nie zapisał.
@@ -62,7 +62,7 @@ dziennika, bo chwili zgaśnięcia nikt nie zapisał.
 W trakcie Wyceny w efenix jej komentarz Uruchomienia pokazuje postęp z dziennika (``RunLogs.progress``, #846). Każda
 wysyłka Logów jednego Uruchomienia to wersja komentarza Uruchomienia ze stopniem (``comment_versions.rank_of``,
 ``outbox.Rank``, #910), który wybiera nadawca, a nie zegar: postęp ma najniższy (``DRAFT``), wersja zastępcza, którą
-następny start Centrum wysyła z dziennika (``send``: Logi z pliku, Logi Urwanego Uruchomienia albo wynik bez Logów,
+następny start Centrum wysyła z dziennika (``run_comments``: Logi z pliku, Logi Urwanego Uruchomienia albo wynik bez Logów,
 ``ResultWithoutLogs``), środkowy (``STAND_IN``), a Logi z pracy Centrum Uruchomienia (``_keep``: z wynikiem, z Diagnozą)
 najwyższy (``OWN``). Wersja końcowa zamienia więc komentarz postępu w podsumowanie także po cofnięciu zegara, a wersja
 zastępcza nie zastępuje Logów z wynikiem, które kolejka już przyjęła, w kolejce ani w Skrzynce. Start wysyła ją tylko
@@ -77,12 +77,10 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from functools import cache
 from pathlib import Path
-import platform
 import re
 import threading
-from typing import Annotated, Final, Literal, Protocol, assert_never, final, get_args
+from typing import TYPE_CHECKING, Annotated, Final, Literal, Protocol, assert_never, final, get_args
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic.fields import FieldInfo
@@ -90,28 +88,18 @@ from pydantic.fields import FieldInfo
 from rozliczenia.client_data import ForbiddenValues, Guarded
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.atomic_file import replace_atomically
-from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.comment_versions import (
     LABEL,
-    JournalAction,
     OwnLogs,
     ProgressVersion,
-    ResultWithoutLogs,
-    StandInLogs,
-    StandInVersion,
-    WithoutLogsVersion,
     journal_after,
     post_of,
     progress_markdown,
-    without_logs_markdown,
 )
-from rozliczenia.centrum.dad_actions import DadActionJournal, DadActions
+from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.diagnosis import CheckState, Diagnosis
 from rozliczenia.centrum.outbox import Outbox
 from rozliczenia.centrum.runs import EndedRun, Ending
-from rozliczenia.centrum.tool_freshness import CommitSource
-from rozliczenia.centrum.tool_update import Release
 from rozliczenia.domain import ProgressPhase, SettlementSummary, WorkerStatus
 from rozliczenia.efenix_pricing import (
     BrowserFailure,
@@ -137,8 +125,12 @@ from rozliczenia.efenix_trace import Action, TraceStep
 from rozliczenia.input_copy import CellValue, CopiedFile, CopiedSheet, Typed, TypedKind
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.message import Message
-from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.progress import ProgressSnapshot
+
+if TYPE_CHECKING:
+    # Logi na dysku i składanie Logów biorą schemat z tego modułu, więc ten moduł bierze je tylko do adnotacji.
+    from rozliczenia.centrum.logs_disk import LogsOnDisk
+    from rozliczenia.centrum.run_comments import RecordMaker
 
 RUN_LOGS_DIRECTORY: Final = "uruchomienia"
 
@@ -1198,7 +1190,7 @@ Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejś
 - Podklasa, także zrobiona przez ``type()``: mypy odrzuca ``class`` (``final``), a ``__init_subclass__`` rzuca
   ``TypeError``.
 - Wartość innego typu, np. Logi sprzed strażnika podane przez ``Any``, ``cast(Any, …)`` albo ``# type: ignore``: typ jej
-  nie widzi, więc wersje komentarza Uruchomienia (``comment_versions``) i plik Logów (``RunLogs._write``), jedyne miejsca,
+  nie widzi, więc wersje komentarza Uruchomienia (``comment_versions``) i plik Logów (``LogsOnDisk.write``), jedyne miejsca,
   które biorą Logi albo tekst po strażniku, sprawdzają ``isinstance`` i rzucają ``TypeError``.
 - ``_MINTED`` i nazwa ``GuardedLogs`` albo ``GuardedText`` poza adnotacją, importem i ``isinstance`` (np.
   ``object.__new__(GuardedLogs)``, ``cast(GuardedLogs, …)``, napis ze slotem ``_GuardedLogs__…``): łapie test
@@ -1213,7 +1205,7 @@ Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejś
 class GuardedLogs:
     """Logi Uruchomienia po strażniku reguły danych tej pracy Centrum (``guarded``, ADR 0025), z ``guard_logs``.
 
-    Plik Logów (``RunLogs._write``) i wysyłka Logów (``comment_versions.post_of``) biorą tylko takie Logi, więc Logi,
+    Plik Logów (``LogsOnDisk.write``) i wysyłka Logów (``comment_versions.post_of``) biorą tylko takie Logi, więc Logi,
     które ominęły strażnika (Logi Urwanego Uruchomienia przed 2ff78b6b3), to błąd typu (``_MINTED``). ``text``: znaki
     pliku Logów i pliku w Archiwum Logów okresu.
     """
@@ -1298,28 +1290,21 @@ def guard_text(text: str, place: str, forbidden: ForbiddenValues) -> GuardedText
 
 
 class RunLogs:
-    """Logi Uruchomienia każdego Uruchomienia procesu z Centrum (``runs.AfterRun``) w katalogu ``directory``."""
+    """Logi Uruchomienia każdego Uruchomienia procesu z Centrum (``runs.AfterRun``) na Logach na dysku ``disk``; Logi
+    składa ``records`` (``run_comments.RecordMaker``)."""
 
     def __init__(
         self,
-        directory: Path,
+        disk: LogsOnDisk,
         outbox: Outbox,
         *,
-        commit: CommitSource,
-        wydanie: Callable[[str], Release | None],
-        files: ProcessFiles,
-        cloud_files: CloudFiles,
-        dad_actions: DadActionJournal,
+        records: RecordMaker,
         forbidden: ForbiddenValues,
     ) -> None:
-        self._directory = directory
-        self._dad_actions = dad_actions
+        self._disk = disk
+        self._records = records
         self._forbidden = forbidden
         self._outbox = outbox
-        self._commit = commit
-        self._wydanie = wydanie
-        self._files = files
-        self._cloud = cloud_files
         self._lock = threading.Lock()
         self._last: GuardedLogs | None = None  # Logi ostatniego Uruchomienia tak, jak ostatnio poszły do pliku i Skrzynki
         self._ended: set[str] = set()  # Uruchomienia tej pracy Centrum po wyniku: ich postęp się skończył (``progress``)
@@ -1330,8 +1315,7 @@ class RunLogs:
     def run_ended(self, run: EndedRun) -> None:
         with self._lock:  # postęp, który już idzie do kolejki, jest w niej przed Logami, a następny nie pójdzie
             self._ended.add(run.info.id)
-        environment = self._environment(run.info.process, run.info.period)
-        record = RunLog.of(run, tool=self._tool(), environment=environment, dad_actions=self._dad_actions.take())
+        record = self._records.of(run)
         logs = guard_logs(record, self._forbidden)
         with self._lock:
             self._last = logs
@@ -1372,11 +1356,11 @@ class RunLogs:
 
     def _keep(self, logs: GuardedLogs) -> None:
         """Plik Logów (nowy albo nadpisany), a do Skrzynki komentarz w issue okresu i plik w Archiwum Logów okresu z tymi
-        samymi bajtami co plik (``_write``); Logi, po których przyjęciu przez kolejkę dziennik Wyceny może zniknąć
+        samymi bajtami co plik (``LogsOnDisk.write``); Logi, po których przyjęciu przez kolejkę dziennik Wyceny może zniknąć
         (``journal_after``), zna ``queued``."""
 
         try:
-            self._write(logs)
+            self._disk.write(logs)
         finally:
             # Katalog Logów, który nie przyjął pliku, nie zatrzymuje Logów w drodze do Maksa.
             version = OwnLogs(logs)
@@ -1388,64 +1372,6 @@ class RunLogs:
         pliku nie dało się zapisać: wersja końcowa jego komentarza Uruchomienia jest już w drodze do Skrzynki."""
 
         return run_id in self._queued
-
-    def interrupted(
-        self,
-        started: StartedFacts,
-        *,
-        ended_at: datetime,
-        orders: Sequence[LoggedOrder],
-        interruption: LoggedInterruption,
-    ) -> RunLog:
-        """Logi Urwanego Uruchomienia ``started`` (``RunLog.interrupted``) z dzisiejszym narzędziem i środowiskiem i z
-        działaniami taty, które czekają na Logi: Aktualizacja narzędzia nie startuje w trakcie Uruchomienia, więc po
-        zgaśnięciu Centrum ma ten sam commit."""
-
-        return RunLog.interrupted(
-            started,
-            ended_at=ended_at,
-            orders=orders,
-            interruption=interruption,
-            tool=self._tool(),
-            environment=self._environment(started.process, started.period),
-            dad_actions=self._dad_actions.take(),
-        )
-
-    def guard(self, record: RunLog) -> GuardedLogs:
-        """Logi ``record`` po strażniku reguły danych tej pracy Centrum (``guard_logs``), jak Logi z wynikiem: Logi
-        Urwanego Uruchomienia przechodzą przez niego przed plikiem (``close``) i wysyłką (``send``)."""
-
-        return guard_logs(record, self._forbidden)
-
-    def close(self, logs: GuardedLogs) -> None:
-        """Plik Logów Urwanego Uruchomienia, jeszcze bez wysyłki (``send``); ``OSError``: pliku nie udało się zapisać."""
-
-        self._write(logs)
-
-    def _write(self, logs: GuardedLogs) -> None:
-        """Plik Logów ``logs`` z bajtami pliku w Archiwum Logów okresu (``ArchiveFile.packed``): ``text`` w UTF-8 bez
-        zamiany ``\n`` na ``\r\n``, którą robi zapis tekstowy na Windows, więc ``gunzip`` pliku z Archiwum daje plik
-        z komputera taty bajt w bajt. Logi innego typu niż ``GuardedLogs`` (np. sprzed strażnika przez ``Any``) rzucają
-        ``TypeError`` (``_MINTED``)."""
-
-        if not isinstance(logs, GuardedLogs):
-            raise TypeError("Plik Logów bierze tylko Logi po strażniku z guard_logs.")
-        replace_atomically(self._directory / logs.record.file_name, logs.text, newline="")
-
-    def send(self, final: StandInLogs | ResultWithoutLogs) -> JournalAction:
-        """Wersja zastępcza komentarza Uruchomienia, którą start Centrum zamyka dziennik Wyceny, do Kolejki wysyłki
-        (``comment_versions.post_of``): Logi albo wynik bez Logów po strażniku reguły danych tej pracy Centrum. Zastępuje
-        postęp, a Logi z wynikiem, które kolejka przyjęła w pracy Uruchomienia, zostają. Daje to, co dalej z dziennikiem
-        (``journal_after``): ``zostaw``, gdy kolejka jej nie przyjęła (typ błędu jest w dzienniku Centrum)."""
-
-        version: StandInVersion
-        match final:
-            case StandInLogs():
-                version = final
-            case ResultWithoutLogs():
-                text = guard_text(without_logs_markdown(final), "wynik Wyceny w efenix bez Logów", self._forbidden)
-                version = WithoutLogsVersion(final, text)
-        return journal_after(version, accepted=self._outbox.post(post_of(version)))
 
     def progress(self, run_id: str, progress: PricingProgress | None, *, elapsed_s: float) -> bool:
         """Postęp Wyceny w efenix ``run_id`` do Kolejki wysyłki jako starsza wersja wysyłki Logów tego Uruchomienia
@@ -1462,33 +1388,3 @@ class RunLogs:
                 text = guard_text(progress_markdown(progress, elapsed_s=elapsed_s), "postęp Wyceny w efenix", self._forbidden)
                 self._outbox.post(post_of(ProgressVersion(progress, text)))
             return True
-
-    def _tool(self) -> Tool:
-        commit = self._commit()
-        release = None if commit is None else self._wydanie(commit)
-        return Tool(wydanie=None if release is None else release.version, commit=commit)
-
-    def _environment(self, process: contract.ProcessKey, period: str) -> Environment:
-        try:
-            paths = self._files(process, period)
-        except (OSError, PeriodFolderInaccessible):
-            # Niedostępny folder to stan komputera taty, nie nieoczekiwany wyjątek: bez wpisu, który Diagnoza by zgłosiła.
-            files = None
-        else:
-            files = [self._file(path) for path in paths]
-        return Environment(system=_system(), python=platform.python_version(), files=files)
-
-    def _file(self, path: Path) -> LoggedFile:
-        try:
-            size: int | None = path.stat().st_size
-        except OSError:
-            size = None
-        online_only = self._cloud.online_only(path) if self._cloud.checked and size is not None else None
-        return LoggedFile(name=path.name, size=size, online_only=online_only)
-
-
-@cache
-def _system() -> str:
-    """System raz na pracę Centrum, przy pierwszych Logach, nie przy starcie; nigdy ``platform.node()`` (nazwa komputera)."""
-
-    return platform.platform()

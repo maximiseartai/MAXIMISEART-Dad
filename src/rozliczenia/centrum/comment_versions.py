@@ -19,8 +19,12 @@ wersja z tekstem sprzed strażnika to błąd typu, a gdy typ go nie widzi (``Any
 którą kolejka przyjęła (``journal_after``), bo do tej chwili jest śladem komentarza, który może jeszcze mówić, że
 Uruchomienie trwa.
 
-Typy Logów bierze z ``run_logs`` do adnotacji i, importem w funkcji, do ``isinstance`` w konstruktorach wersji, bo
-``run_logs.RunLogs`` składa wersje z tego modułu.
+Wersję zastępczą z dziennika, który zostawiła poprzednia praca Centrum, wybiera ``close``: cała macierz startu w jednym
+``match``, ze strażnikiem w środku, więc start Centrum (``run_comments.RunComments``) dostaje tylko wersję po strażniku.
+
+Typy Logów bierze z ``run_logs`` do adnotacji i, importem w funkcji, do ``isinstance`` w konstruktorach wersji i do
+strażnika w ``close``, bo ``run_logs.RunLogs`` składa wersje z tego modułu; typy odczytu dysku z ``logs_disk`` też w
+funkcji, bo ``logs_disk`` wczytuje ``run_logs``.
 """
 
 from __future__ import annotations
@@ -36,8 +40,9 @@ from rozliczenia.centrum.report_box import Label
 from rozliczenia.centrum.version import short_commit
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
+    from rozliczenia.centrum.logs_disk import JournalRead, LeftJournal
     from rozliczenia.centrum.run_logs import (
         GuardedLogs,
         GuardedText,
@@ -47,6 +52,7 @@ if TYPE_CHECKING:
         RunLog,
         StartedFacts,
     )
+    from rozliczenia.client_data import ForbiddenValues
 
 LABEL: Final[Label] = "logi-uruchomienia"
 
@@ -166,6 +172,59 @@ def journal_after(version: CommentVersion, *, accepted: bool) -> JournalAction:
             return "usuń" if accepted else "zostaw"
         case _:
             assert_never(version)
+
+
+@dataclass(frozen=True)
+class Drop:
+    """Dziennik bez pierwszej linii (urwany pierwszy zapis): przed nim nic się w efenix nie zmieniło i żaden postęp do
+    niego nie poszedł, więc start Centrum go usuwa."""
+
+
+Closing = Drop | StandInLogs | WithoutLogsVersion
+"""Co start Centrum robi z jednym dziennikiem Wyceny, który zostawiła poprzednia praca Centrum."""
+
+
+def close(left: LeftJournal, forbidden: ForbiddenValues, interrupted: Callable[[JournalRead], RunLog]) -> Closing:
+    """Wersja zastępcza komentarza Uruchomienia z dziennika ``left`` po strażniku reguły danych ``forbidden`` (ADR 0025):
+
+    - dziennik bez pierwszej linii: ``Drop``;
+    - czytelny plik Logów: te Logi (``StandInLogs``), czyli Logi z wynikiem, których przyjęcia przez kolejkę nikt nie
+      zapisał, albo Logi Urwanego Uruchomienia, które poprzedni start zapisał, a nie wysłał, także sprzed strażnika;
+    - plik Logów, którego nie da się odczytać: wynik bez Logów ``nieczytelne`` (Logi są, więc Uruchomienie miało wynik);
+    - bez pliku Logów, z wpisem końca: wynik bez Logów ``niezapisane`` z wynikiem z wpisu końca;
+    - bez pliku Logów i bez wpisu końca, czyli Urwane Uruchomienie (ADR 0017): Logi Urwanego Uruchomienia z
+      ``interrupted``, które bierze działania taty czekające na Logi, więc woła je tylko ta gałąź.
+
+    Strażnik jest w środku: plik Logów i Skrzynka mają te same znaki także po Logach, które zapisała praca Centrum sprzed
+    strażnika, a żadna gałąź nie daje Logów ani tekstu sprzed niego. Plik Logów, którego system nie daje odczytać
+    (``logs_disk.Refused``), rzuca jego ``OSError``: nie wiadomo, czy Logi są, więc dziennik zostaje następnemu startowi.
+    """
+
+    from rozliczenia.centrum.logs_disk import Found, Missing, Refused, Unreadable
+    from rozliczenia.centrum.run_logs import guard_logs, guard_text
+
+    read = left.journal
+    if read is None:
+        return Drop()
+    final: ResultWithoutLogs
+    match left.logs:
+        case Found(logs=record):
+            return StandInLogs(guard_logs(record, forbidden))
+        case Refused(failure=failure):
+            raise failure
+        case Unreadable():
+            final = ResultWithoutLogs(read.progress, None if read.end is None else read.end.result, "nieczytelne")
+        case Missing() if read.end is not None:
+            final = ResultWithoutLogs(read.progress, read.end.result, "niezapisane")
+        case Missing():
+            return StandInLogs(guard_logs(interrupted(read), forbidden))
+        case _:
+            assert_never(left.logs)
+    return WithoutLogsVersion(final, guard_text(without_logs_markdown(final), _WITHOUT_LOGS_PLACE, forbidden))
+
+
+_WITHOUT_LOGS_PLACE: Final = "wynik Wyceny w efenix bez Logów"
+"""Miejsce zamaskowanej wartości w uwadze technicznej wyniku bez Logów."""
 
 
 def post_of(version: CommentVersion) -> Post:

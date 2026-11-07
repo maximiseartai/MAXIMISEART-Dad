@@ -22,7 +22,7 @@ MUTATIONS = (
         (
             Edit(
                 APP,
-                "        previous=cards.last(),\n",
+                "        previous=cards.last(closed),\n",
                 "        previous=None,\n",
             ),
         ),
