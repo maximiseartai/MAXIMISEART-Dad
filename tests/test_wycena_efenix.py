@@ -857,6 +857,19 @@ def test_zlecenie_rozliczone_w_efenix_nie_jest_bledem_a_proces_go_nie_otwiera_i_
     assert _marked(source) == [19]
 
 
+def test_realizator_efenix_rowny_wykonawcy_innym_zapisem_tych_samych_liter_to_ten_sam_realizator(tmp_path: Path) -> None:
+    """Realizator efenix i ``WYKONAWCA`` z pliku porównują się jak Przebieg rozliczeń grupuje ``WYKONAWCA``
+    (``normalize_text``): ta sama litera zapisana w Excelu jako litera z osobnym znakiem diakrytycznym (Unicode NFD), a w
+    efenix jako jeden znak (NFC), i inna wielkość liter to ten sam realizator, a nie błąd zlecenia."""
+
+    order = Order("#8301", worker="Józef.Testowy", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+    efenix = StanEfenix([replace(order.in_efenix("901"), realizator="józef.testowy", execution_date=DAY)])
+
+    outcome = _price_in_process(tmp_path, efenix, [order])
+
+    assert (outcome.result, _errors(outcome)) == ("OK", [])
+
+
 @pytest.mark.parametrize(
     ("changed", "code"),
     [

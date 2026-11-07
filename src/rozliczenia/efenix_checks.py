@@ -2,8 +2,8 @@
 
 Kolejność sprawdzeń to kolejność ``OrderProblem``, a pierwsza niezgodność jest błędem zlecenia: numer i data w Pliku
 zbiorczym (``searched_number``), potem wiersze listy efenix po szukaniu (``listing``): dokładnie jedno zlecenie o
-``Numer dokumentu`` równym numerowi, status „Do wyceny” albo „Rozliczone”, realizator równy ``WYKONAWCA`` bez wielkości
-liter i ``Dane adresowe`` równe ``ADRES`` (``efenix_address``), a na końcu data wykonania pusta albo różna od dnia z ``DATA``
+``Numer dokumentu`` równym numerowi, status „Do wyceny” albo „Rozliczone”, realizator równy ``WYKONAWCA``
+po ``normalize_text``, jak Przebieg rozliczeń grupuje ``WYKONAWCA``, i ``Dane adresowe`` równe ``ADRES`` (``efenix_address``), a na końcu data wykonania pusta albo różna od dnia z ``DATA``
 najwyżej o ``DATE_TOLERANCE`` w którąkolwiek stronę (``date_problem``; tata, po runie z 4.11.2026, #961). Datę w tej
 tolerancji proces zostawia w efenix bez zmian. Zlecenie „Rozliczone” zgodne z plikiem nie jest niezgodnością, tylko Zleceniem rozliczonym
 (``Settled``), którego proces nie otwiera. Pustą datę wykonania proces ustawia z ``DATA``, a dzień, którego efenix nie
@@ -22,6 +22,7 @@ from typing import Final
 from .efenix_address import AddressPart, address_differences, same_address
 from .efenix_orders import CollectiveOrder
 from .efenix_window import ListedOrder
+from .text import normalize_text
 
 __all__ = [
     "DATE_TOLERANCE",
@@ -126,7 +127,7 @@ def listing(order: CollectiveOrder, listed: Sequence[ListedOrder]) -> ListedOrde
     settled = _is_status(hit, SETTLED_STATUS)
     if not settled and not _is_status(hit, PRICING_STATUS):
         return OrderProblem.OTHER_STATUS
-    if hit.realizator is None or hit.realizator.casefold() != order.worker.casefold():
+    if hit.realizator is None or normalize_text(hit.realizator) != normalize_text(order.worker):
         return OrderProblem.OTHER_REALIZATOR
     if not same_address(order.address, hit.address):
         return OrderProblem.OTHER_ADDRESS
