@@ -36,13 +36,8 @@ from .register_columns import TARGET_HEADERS
 from .quantity_rules import QuantityColumn
 from .row_look import GENERAL, RowLook, wraps
 from .template_copy import InvalidValue, Package, Row, SheetLayout, TemplateCopy
+from .collective_layout import DATA_ROW_COLUMNS, FIRST_DATA_ROW, HEADER_ROW, INPUT_COLUMNS, LOOK_COLUMNS, QUANTITY_COLUMNS
 from .workbook_files import (
-    DATA_ROW_COLUMNS,
-    FIRST_DATA_ROW,
-    HEADER_ROW,
-    INPUT_COLUMNS,
-    LOOK_COLUMNS,
-    QUANTITY_COLUMNS,
     DataRow,
     MergedCells,
     MissingHeader,

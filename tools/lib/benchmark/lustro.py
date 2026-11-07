@@ -30,7 +30,8 @@ import potomne
 from rozliczenia import settlement_messages
 from rozliczenia.period_folder import PeriodFolder, collective_file_name
 from rozliczenia.settlement_period import parse_period_token
-from rozliczenia.workbook_files import DATA_ROW_COLUMNS, QUANTITY_COLUMNS, read_data_rows
+from rozliczenia.collective_layout import CHARGE_AMOUNT, CHARGE_DESCRIPTION, QUANTITY_COLUMNS, REMARKS, REMARKS_AMOUNT
+from rozliczenia.workbook_files import read_data_rows
 from rozliczenia.workbook_save import save_workbook
 from rozliczenia.worker_config import WorkerConfigError, load_worker_mapping
 from syntetyczne_wzorce import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_CONFIG, WORKER_TEMPLATE
@@ -100,9 +101,6 @@ DEVICES = ("dekoder", "router", "terminal ONT")
 ACTIVITIES = ("instalacja", "serwis", "demontaż")
 
 
-# Wpisy taty w Wierszach danych Pliku zbiorczego: ilości N:AP, obciążenie AQ:AR, uwagi AS:AT (za ilościami
-# do końca Wiersza danych).
-CHARGE_DESCRIPTION, CHARGE_AMOUNT, REMARKS_AMOUNT, REMARKS = range(QUANTITY_COLUMNS[-1] + 1, DATA_ROW_COLUMNS[-1] + 1)
 
 
 def _main_checkout_config() -> Path | None:

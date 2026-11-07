@@ -155,6 +155,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 from rozliczenia import workbook_files
+from rozliczenia.collective_layout import COST_ROW
 from rozliczenia.efenix_address import readable
 from rozliczenia.efenix_browser import TIMEOUT_MS
 from rozliczenia.efenix_page import (
@@ -228,9 +229,6 @@ SEARCH_FORM: Final = dict.fromkeys(LIST_SEARCH_FIELDS, "") | {
     "sortowanie": "1",
 }
 POSITION_CODE: Final = re.compile(r"INDEKS_\d{3}_\d{3}")
-# Wiersz Wzorca pliku zbiorczego z kosztem jednej sztuki każdej pozycji Ilości usług (GLOSSARY: Ilości usług); silnik go
-# nie czyta, więc ``workbook_files`` nie ma go w układzie arkusza.
-COST_ROW: Final = 14
 ORDERS_TO_OPEN: Final = 10
 NOT_SIGNED_IN: Final = "Chrome nie jest zalogowany do efenix: zaloguj się kontem taty i uruchom narzędzie jeszcze raz"
 LOGGED_OUT_MIDWAY: Final = "efenix wylogował w trakcie sprawdzania: zaloguj się i uruchom narzędzie jeszcze raz"

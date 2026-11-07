@@ -50,6 +50,12 @@ class SettlementPeriod:
 
         return self.start + timedelta(days=7)
 
+    def contains(self, moment: date) -> bool:
+        """Czy dzień ``moment`` (przy ``datetime`` jego dzień) leży w okresie."""
+
+        day = moment.date() if isinstance(moment, datetime) else moment
+        return self.tuesday <= day <= self.monday
+
 
 def parse_period_token(token: str) -> SettlementPeriod:
     """Okres z tokenu; ``ValueError``, gdy token nie opisuje okresu od wtorku do poniedziałku."""

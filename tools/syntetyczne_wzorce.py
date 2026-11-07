@@ -40,7 +40,7 @@ from openpyxl.utils import get_column_letter
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import tool_files
-from rozliczenia.workbook_files import DATA_ROW_COLUMNS, FIRST_DATA_ROW, HEADER_ROW, QUANTITY_COLUMNS
+from rozliczenia.collective_layout import AMOUNT_COLUMN, COST_ROW, DATA_ROW_COLUMNS, FIRST_DATA_ROW, HEADER_ROW, QUANTITY_COLUMNS
 
 # Nazwy, pod którymi Wzorce i Konfiguracja wykonawców leżą w ``config``: te same, których szukają procesy.
 WORKER_TEMPLATE = tool_files.WORKER_TEMPLATE.name
@@ -52,8 +52,6 @@ WORKER_CONFIG = tool_files.WORKER_CONFIG.name
 FULL_DATA_ROWS = 10_076
 WORKERS = 20
 
-_HEADER_ROW = HEADER_ROW
-_FIRST_DATA_ROW = FIRST_DATA_ROW
 # Wzorzec taty: stałe 0 w N:V i X w wierszach 18..500.
 _ZERO_ROWS = 483
 # Excel zapisuje wzór wspólnej formuły kolumny co 64 wiersze.
@@ -68,9 +66,9 @@ _PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 _XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 
 _COLUMN = {index: get_column_letter(index) for index in range(1, 54)}
-# Ilości N:AP i koniec Wiersza danych AT z układu procesu; pozostałe kolumny to szczegóły Wzorca taty.
-_N, _AP, _AT = QUANTITY_COLUMNS[0], QUANTITY_COLUMNS[-1], DATA_ROW_COLUMNS[-1]
-_V, _W, _X, _AU, _AY, _BA = 22, 23, 24, 47, 51, 53
+# Ilości N:AP, koniec Wiersza danych AT i Kwota AU z układu procesu; pozostałe kolumny to szczegóły Wzorca taty.
+_N, _AP, _AT, _AU = QUANTITY_COLUMNS[0], QUANTITY_COLUMNS[-1], DATA_ROW_COLUMNS[-1], AMOUNT_COLUMN
+_V, _W, _X, _AY, _BA = 22, 23, 24, 51, 53
 
 _INPUT_HEADERS = (
     "ADRES",
@@ -204,13 +202,13 @@ class _Bands:
 
     @classmethod
     def for_rows(cls, data_rows: int) -> _Bands:
-        last_row = _HEADER_ROW + data_rows
-        side_start = _HEADER_ROW + data_rows * 28 // 100
-        side_end = _HEADER_ROW + data_rows * 33 // 100
+        last_row = HEADER_ROW + data_rows
+        side_start = HEADER_ROW + data_rows * 28 // 100
+        side_end = HEADER_ROW + data_rows * 33 // 100
         return cls(
             last_row=last_row,
-            zero_end=_HEADER_ROW + min(_ZERO_ROWS, data_rows // 2),
-            middle_end=_HEADER_ROW + min(591, data_rows * 6 // 10),
+            zero_end=HEADER_ROW + min(_ZERO_ROWS, data_rows // 2),
+            middle_end=HEADER_ROW + min(591, data_rows * 6 // 10),
             side_rows=range(side_start, side_end + 1),
         )
 
@@ -325,37 +323,37 @@ class _TemplateSheet:
         ]
         row_13 += [self._cell(column, 13, "rate") for column in range(_AP + 1, _AT + 1)]
         row_13 += [
-            self._formula(column, 13, "subtotal", f"SUBTOTAL(109,{_COLUMN[column]}18:{_COLUMN[column]}{last})")
+            self._formula(column, 13, "subtotal", f"SUBTOTAL(109,{_COLUMN[column]}{FIRST_DATA_ROW}:{_COLUMN[column]}{last})")
             for column in range(_AU, _AU + 4)
         ]
         rows.append(self._row(13, row_13, ' spans="1:50"'))
-        rates = [self._number(column, 14, "rate", 5 + (column * 7) % 40 + (column % 3) / 2) for column in services]
+        rates = [self._number(column, COST_ROW, "rate", 5 + (column * 7) % 40 + (column % 3) / 2) for column in services]
         rows.append(
             self._row(
-                14,
-                [self._text(13, 14, "label", "Koszt"), *rates]
-                + [self._cell(column, 14, "rate") for column in range(_AP + 1, _AY)],
+                COST_ROW,
+                [self._text(13, COST_ROW, "label", "Koszt"), *rates]
+                + [self._cell(column, COST_ROW, "rate") for column in range(_AP + 1, _AY)],
                 ' spans="1:50"',
             )
         )
         first_si, second_si = self._next_si(), self._next_si()
-        row_15 = [self._text(13, 15, "label", "Ilość"), self._formula(_N, 15, "count", f"SUM(N18:N{last})")]
+        row_15 = [self._text(13, 15, "label", "Ilość"), self._formula(_N, 15, "count", f"SUM(N{FIRST_DATA_ROW}:N{last})")]
         for column in range(_N + 1, _AP + 1):
             si, master, span = (first_si, _N + 1, f"O15:{_COLUMN[_X - 1]}15") if column < _X else (second_si, _X, "X15:AP15")
             letter = _COLUMN[column]
-            row_15.append(self._shared(column, 15, "count", f"SUM({letter}18:{letter}{last})" if column == master else None, span, si))
+            row_15.append(self._shared(column, 15, "count", f"SUM({letter}{FIRST_DATA_ROW}:{letter}{last})" if column == master else None, span, si))
         row_15 += [self._cell(column, 15, "count") for column in range(_AP + 1, _AY)]
         rows.append(self._row(15, row_15, ' spans="1:50"'))
         row_16 = [self._text(1, 16, "block", "Dane wejściowe")] + [self._cell(column, 16, "block") for column in range(2, 14)]
         row_16 += [self._text(_N, 16, "block-service", "Instalacje")]
         row_16 += [self._cell(column, 16, "block-service") for column in range(_N + 1, _AU + 1)]
         rows.append(self._row(16, row_16, ' spans="1:50" ht="19.5" thickBot="1"'))
-        header = [self._text(1, 17, "header-input", self._first_header)]
-        header += [self._text(column, 17, "header-input", label) for column, label in enumerate(_INPUT_HEADERS, start=2)]
-        header += [self._cell(12, 17, "header"), self._cell(13, 17, "header")]
-        header += [self._text(column, 17, "header-service", label) for column, label in enumerate(_SERVICE_HEADERS, start=_N)]
-        header += [self._text(column, 17, "header-summary", label) for column, label in enumerate(_SUMMARY_HEADERS, start=_AP + 1)]
-        rows.append(self._row(17, header, ' spans="1:51" s="1" customFormat="1" ht="41.25" customHeight="1"'))
+        header = [self._text(1, HEADER_ROW, "header-input", self._first_header)]
+        header += [self._text(column, HEADER_ROW, "header-input", label) for column, label in enumerate(_INPUT_HEADERS, start=2)]
+        header += [self._cell(12, HEADER_ROW, "header"), self._cell(13, HEADER_ROW, "header")]
+        header += [self._text(column, HEADER_ROW, "header-service", label) for column, label in enumerate(_SERVICE_HEADERS, start=_N)]
+        header += [self._text(column, HEADER_ROW, "header-summary", label) for column, label in enumerate(_SUMMARY_HEADERS, start=_AP + 1)]
+        rows.append(self._row(HEADER_ROW, header, ' spans="1:51" s="1" customFormat="1" ht="41.25" customHeight="1"'))
         return rows
 
     # Wiersze danych
@@ -403,7 +401,7 @@ class _TemplateSheet:
     def _formula_cells_of(self, row: int, masters: dict[int, int]) -> list[str]:
         """AU:AY: AU18 zwykła, potem wspólne grupy po 64 wiersze w AU:AX, AY zwykła z odwołaniem zewnętrznym."""
 
-        terms = "+".join(f"{_COLUMN[column]}{{row}}*${_COLUMN[column]}$14" for column in range(_N, _AP + 1))
+        terms = "+".join(f"{_COLUMN[column]}{{row}}*${_COLUMN[column]}${COST_ROW}" for column in range(_N, _AP + 1))
         formulas = {
             _AU: terms + "+AS{row}*0.5+AR{row}*0.5",
             _AU + 1: "IFERROR(SUMPRODUCT(N{row}:V{row},$N$14:$V$14)+Y{row}*$Y$14+AA{row}*$AA$14,0)",
@@ -413,10 +411,10 @@ class _TemplateSheet:
         cells = []
         for column, formula in formulas.items():
             style = "amount" if column == _AU else "amount-part"
-            if column == _AU and row == _FIRST_DATA_ROW:
+            if column == _AU and row == FIRST_DATA_ROW:
                 cells.append(self._formula(column, row, style, formula.format(row=row)))
                 continue
-            start = _FIRST_DATA_ROW + (column == _AU)
+            start = FIRST_DATA_ROW + (column == _AU)
             if (row - start) % _SHARED_FORMULA_ROWS == 0:
                 masters[column] = self._next_si()
                 end = min(row + _SHARED_FORMULA_ROWS - 1, self._bands.last_row)
@@ -435,7 +433,7 @@ class _TemplateSheet:
     def _data_rows(self) -> list[str]:
         masters: dict[int, int] = {}
         rows = []
-        for row in range(_FIRST_DATA_ROW, self._bands.last_row + 1):
+        for row in range(FIRST_DATA_ROW, self._bands.last_row + 1):
             cells = self._input_cells(row) + self._quantity_cells(row) + self._formula_cells_of(row, masters)
             side = row in self._bands.side_rows
             if side:
@@ -646,7 +644,7 @@ def write_settlement_template(
         [
             ("[Content_Types].xml", _content_types(linked=True, comments=comments)),
             ("_rels/.rels", _PACKAGE_RELS),
-            ("xl/workbook.xml", _workbook("Sheet1", "Sheet1!$A$17:$AY$17", linked=True)),
+            ("xl/workbook.xml", _workbook("Sheet1", f"Sheet1!$A${HEADER_ROW}:$AY${HEADER_ROW}", linked=True)),
             ("xl/_rels/workbook.xml.rels", workbook_rels),
             ("xl/worksheets/sheet1.xml", sheet_xml),
             ("xl/styles.xml", styles.xml()),

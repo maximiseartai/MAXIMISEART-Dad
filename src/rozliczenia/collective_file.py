@@ -1,8 +1,7 @@
 """Plik zbiorczy w Przebiegu rozliczeń: Wiersze danych z Wykonawcą, numery wierszy bez niego i treść dozwolona.
 
-Skoroszyt czyta moduł skoroszytu (``workbook_files``), właściciel układu
-arkusza; jego ``WorkbookError`` przechodzi do procesu, który tłumaczy go na
-Komunikat. Moduł nie zna mapowania Wykonawców ani nazw plików okresu
+Skoroszyt czyta moduł skoroszytu (``workbook_files``); jego ``WorkbookError`` przechodzi do procesu, który tłumaczy go
+na Komunikat. Moduł nie zna mapowania Wykonawców ani nazw plików okresu
 (``period_folder``). Z tego samego odczytu każdy Wiersz danych, także bez
 Wykonawcy, przechodzi przez filtr prywatności (``order_facts``) dla Kontroli ilości, zanim Wiersze danych z
 Wykonawcą stracą Ilości tylko dla INEA (``inea_only_quantities``, ADR 0018) i Znacznik efenix (``efenix_mark``).

@@ -239,9 +239,7 @@ def _raw_rows_in_period(
     undetermined = next((order for order in pasted if not isinstance(order, raw_orders.RawOrder)), None)
     if undetermined is not None:
         return undetermined.row, undetermined.row
-    in_period = any(
-        period.tuesday <= order.when.date() <= period.monday for order in pasted if isinstance(order, raw_orders.RawOrder)
-    )
+    in_period = any(period.contains(order.when) for order in pasted if isinstance(order, raw_orders.RawOrder))
     return (pasted[0].row, pasted[-1].row) if in_period else None
 
 

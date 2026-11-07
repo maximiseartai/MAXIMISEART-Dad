@@ -7,7 +7,7 @@ przełomie miesięcy i lat liczy się nowszy miesiąc. Każdy okres ma jeden tok
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from hypothesis import example, given, settings
@@ -83,3 +83,16 @@ def test_okres_nie_zaczyna_sie_w_dniu_innym_niz_wtorek(start: date) -> None:
         SettlementPeriod(start)
 
     assert _parsed(_written(start)) == "Token okresu nie opisuje okresu od wtorku do poniedziałku."
+
+
+@PROPERTY
+@example(date(2026, 10, 27), 0).via("GLOSSARY.md: wtorek 00:00 to pierwsza chwila okresu")
+@example(date(2026, 10, 27), 7 * 24 * 3600 - 1).via("poniedziałek 23:59:59 to ostatnia chwila okresu")
+@example(date(2026, 10, 27), 7 * 24 * 3600).via("następny wtorek 00:00 należy do kolejnego okresu")
+@example(date(2026, 10, 27), -1).via("poniedziałek przed okresem 23:59:59")
+@given(TUESDAYS, st.integers(min_value=-2 * 24 * 3600, max_value=9 * 24 * 3600))
+def test_okres_zawiera_kazda_chwile_i_dzien_od_wtorku_do_poniedzialku_i_zadnej_poza_nim(tuesday: date, seconds: int) -> None:
+    moment = datetime(tuesday.year, tuesday.month, tuesday.day) + timedelta(seconds=seconds)
+    inside = 0 <= seconds < 7 * 24 * 3600
+
+    assert (SettlementPeriod(tuesday).contains(moment), SettlementPeriod(tuesday).contains(moment.date())) == (inside, inside)

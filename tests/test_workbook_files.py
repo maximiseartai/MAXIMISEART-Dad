@@ -23,8 +23,9 @@ from openpyxl.cell.text import InlineFont
 from openpyxl.styles import Color, Font, PatternFill
 from openpyxl.styles.fills import Fill
 from openpyxl.styles.numbers import is_date_format
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import column_index_from_string, get_column_letter
 
+from rozliczenia import collective_layout
 from rozliczenia.highlights import Highlights
 from rozliczenia.register_columns import TARGET_HEADERS
 from rozliczenia.quantity_rules import QuantityColumn
@@ -176,6 +177,13 @@ UNREADABLE_CASES = [
     for opening in OPENINGS
     if (damage, opening) != ("bez-styles-xml", "odczyt")
 ]
+
+
+def test_litery_kolumn_ukladu_pliku_zbiorczego_to_litery_excela() -> None:
+    numbers = range(1, column_index_from_string("ZZZ") + 1)
+
+    assert [collective_layout.letter(number) for number in numbers] == [get_column_letter(number) for number in numbers]
+    assert [collective_layout.column(get_column_letter(number)) for number in numbers] == list(numbers)
 
 
 @pytest.mark.parametrize(("damage", "opening"), UNREADABLE_CASES)

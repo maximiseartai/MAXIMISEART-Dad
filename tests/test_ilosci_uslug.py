@@ -15,7 +15,7 @@ import zipfile
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
 
-from rozliczenia.workbook_files import QUANTITY_COLUMNS
+from rozliczenia.collective_layout import QUANTITY_COLUMNS
 
 from tests.fixtures.benchmark import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, write_synthetic_templates
 from tests.fixtures.preparation import (

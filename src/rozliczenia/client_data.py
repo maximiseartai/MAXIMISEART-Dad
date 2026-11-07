@@ -88,6 +88,8 @@ _STREET: Final = re.compile(
 """„ul.”, „os.”, „al.” albo „pl.” z nazwą do czterech słów i numerem domu (z lokalem po ``/`` albo ``m``)."""
 _PHONE_MASK: Final = "[telefon]"
 _STREET_MASK: Final = "[ulica]"
+MASKS: Final = (*_MASKS.values(), _PHONE_MASK, _STREET_MASK)
+"""Każda maska, którą strażnik wpisuje w miejsce wartości taty."""
 
 
 @dataclass(frozen=True)

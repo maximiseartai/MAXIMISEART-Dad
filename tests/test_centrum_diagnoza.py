@@ -450,7 +450,7 @@ def test_rozliczenie_pracownika_otwarte_w_excelu_wyjasnia_jak_je_zamknac(tmp_pat
     centrum = settling_centrum(tmp_path)
     run_id = stopped_for_maks(centrum)
     centrum.worker_settlements.mkdir()
-    worker_file = centrum.worker_settlements / "Rozliczenie Wykonawca Testowy A.xlsx"
+    worker_file = centrum.worker_settlements / f"Rozliczenie {centrum.period_directory.name} - Wykonawca Testowy A.xlsx"
     worker_file.touch()
     lock(worker_file)
 
@@ -461,6 +461,21 @@ def test_rozliczenie_pracownika_otwarte_w_excelu_wyjasnia_jak_je_zamknac(tmp_pat
         f"plik {worker_file.name}, folder {centrum.worker_settlements.name}",
     )
     assert check(diagnosis, "Pliki okresu w Excelu")[0] == "failed"
+
+
+def test_diagnoza_sprawdza_w_excelu_te_rozliczenia_pracownika_ktore_liczy_status_okresu(tmp_path: Path) -> None:
+    centrum = settling_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    centrum.worker_settlements.mkdir()
+    (centrum.worker_settlements / f"Rozliczenie {centrum.period_directory.name} - Wykonawca Testowy A.xlsx").touch()
+    notes = centrum.worker_settlements / "notatki taty do rozliczeń pracowników z tego okresu.xlsx"
+    notes.touch()
+    lock(notes)
+
+    diagnosis = diagnose(centrum, run_id)
+    [row] = [row for row in centrum.client.get("/api/periods").json()["periods"] if row["token"] == centrum.period_directory.name]
+
+    assert (check(diagnosis, "Pliki okresu w Excelu")[0], row["worker_settlement_count"]) == ("passed", 1)
 
 
 UNEXPECTED_LOG_ENTRY = "2026-09-16T10:00:00+02:00 nieoczekiwany-wyjatek typ=KeyError miejsce=\"GET /api/periods\"\n"

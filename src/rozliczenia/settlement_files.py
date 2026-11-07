@@ -24,7 +24,7 @@ from .message import StopError
 
 ResultT = TypeVar("ResultT")
 
-__all__ = ["ensure_worker_settlements_absent", "write_worker_settlements"]
+__all__ = ["ensure_worker_settlements_absent", "staging_prefix", "write_worker_settlements"]
 
 
 def ensure_worker_settlements_absent(target_directory: Path) -> None:
@@ -32,6 +32,12 @@ def ensure_worker_settlements_absent(target_directory: Path) -> None:
 
     if target_directory.exists() or target_directory.is_symlink():
         raise StopError(settlement_messages.worker_settlements_exist(target_directory))
+
+
+def staging_prefix(target_directory: Path) -> str:
+    """Początek nazwy folderu tymczasowego, w którym powstaje Folder rozliczeń pracowników ``target_directory``."""
+
+    return f".{target_directory.name}.staging-"
 
 
 def write_worker_settlements(target_directory: Path, write: Callable[[Path], ResultT]) -> ResultT:
@@ -42,9 +48,9 @@ def write_worker_settlements(target_directory: Path, write: Callable[[Path], Res
     folderu tymczasowego nie da się potem usunąć, Komunikat podaje początek jego nazwy.
     """
 
-    staging_prefix = f".{target_directory.name}.staging-"
+    prefix = staging_prefix(target_directory)
     try:
-        staging_directory = Path(tempfile.mkdtemp(prefix=staging_prefix, dir=target_directory.parent))
+        staging_directory = Path(tempfile.mkdtemp(prefix=prefix, dir=target_directory.parent))
     except OSError as exc:
         raise StopError(settlement_messages.write_failed(target_directory)) from exc
     try:
@@ -60,6 +66,6 @@ def write_worker_settlements(target_directory: Path, write: Callable[[Path], Res
     except BaseException as error:
         shutil.rmtree(staging_directory, ignore_errors=True)
         if isinstance(error, StopError) and staging_directory.exists():
-            raise StopError(settlement_messages.staging_left(error.message, staging_prefix)) from error
+            raise StopError(settlement_messages.staging_left(error.message, prefix)) from error
         raise
     return results

@@ -112,7 +112,7 @@ def plan_period_orders(
         started = cell_datetime(cell_value(row, DATE))
         if started is None:
             undated_rows.append(row.number)
-        elif period.start <= started < period.end:
+        elif period.contains(started):
             orders.append(PeriodOrder(row, started))
     if not orders:
         raise StopError(messages.no_period_orders(register_path, register.name, period.token))
@@ -131,7 +131,7 @@ def plan_period_orders(
 
 def _in_period(row: RegisterRow, period: SettlementPeriod) -> bool:
     started = cell_datetime(cell_value(row, DATE))
-    return started is not None and period.start <= started < period.end
+    return started is not None and period.contains(started)
 
 
 def _check_successful_values(register_path: Path, register: RegisterSheet, orders: Sequence[PeriodOrder]) -> None:

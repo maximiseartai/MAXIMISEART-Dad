@@ -21,7 +21,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
-from .order_facts import N_AP, OrderFacts, TataValue
+from .collective_layout import QUANTITY_LETTERS
+from .order_facts import OrderFacts, TataValue
 from .quantity_check import QuantityCheck, check, compared_columns
 from .quantity_rules import DESCRIPTION_COLUMNS, FromDescription, RuleResult, WithoutRule, evaluate
 
@@ -98,7 +99,7 @@ class RowToFill:
     """Numer wiersza w Pliku zbiorczym z tego odczytu, więc usunięcie wiersza w Excelu przenumerowuje listę."""
     texts: RowTexts
     cells: tuple[QuantityCell, ...]
-    """Każda kolumna ``N_AP`` po kolei."""
+    """Każda kolumna N:AP po kolei."""
     state: RowState
 
     @property
@@ -164,7 +165,7 @@ def _row(row: NumberedOrder, rule: RuleResult, *, settled: bool) -> RowToFill:
 
 def _cells(order: OrderFacts, rule: RuleResult) -> tuple[QuantityCell, ...]:
     compared = compared_columns(rule)
-    return tuple(_cell(order.quantity(column), column in compared) for column in N_AP)
+    return tuple(_cell(order.quantity(column), column in compared) for column in QUANTITY_LETTERS)
 
 
 def _cell(value: TataValue, by_rules: bool) -> QuantityCell:

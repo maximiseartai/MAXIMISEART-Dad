@@ -1,4 +1,4 @@
-"""Skoroszyty na dysku: otwarcie z jedną klasyfikacją uszkodzeń, układ arkusza i odczyt Wierszy danych.
+"""Skoroszyty na dysku: otwarcie z jedną klasyfikacją uszkodzeń, sprawdzenie układu arkusza i odczyt Wierszy danych.
 
 Każde otwarcie skoroszytu w obu procesach przechodzi przez ten moduł: Plik
 zbiorczy (``read_data_rows``) daje Wiersze danych z komórkami po kolumnie (``DataRow``), a Rejestr zleceń
@@ -9,13 +9,10 @@ sprawdza dostępność i klasyfikuje każde uszkodzenie, a problem zgłasza jako
 ``WorkbookError`` z powodem, przy złym układzie z jego miejscem. Moduł nie zna
 Komunikatów: proces tłumaczy powód na Komunikat ze swojego katalogu.
 
-Moduł jest właścicielem układu arkusza Pliku zbiorczego, wspólnego dla Wzorca
-pliku zbiorczego, Wzorca rozliczenia pracownika i Szablonów pracowników:
-nagłówek w wierszu 17 z WYKONAWCA w H, Wiersze danych od 18, dane wejściowe
-A:K, kolumny wyglądu A:L (``row_look``), ilości N:AP, kolumny Wiersza danych A:AT i ``Kwota`` w AU, którą Wycena w efenix
-czyta tak, jak policzył ją Excel (``read_computed_rows``). Publiczne są etykieta komórki
-nagłówka ``WORKER_HEADER`` do treści Komunikatów oraz wiersze i kolumny układu dla pliku z Wzorca i
-narzędzi benchmarku w ``tools/``, żeby nie powtarzały układu.
+Układ arkusza Pliku zbiorczego bierze z ``collective_layout``: nagłówek w wierszu 17 z WYKONAWCA w H, Wiersze danych od
+18, dane wejściowe A:K, kolumny wyglądu A:L (``row_look``), ilości N:AP, kolumny Wiersza danych A:AT i ``Kwota`` w AU,
+którą Wycena w efenix czyta tak, jak policzył ją Excel (``read_computed_rows``). Publiczne są etykieta komórki nagłówka
+``WORKER_HEADER`` do treści Komunikatów i zakazane kolumny reguły danych w układzie (``FORBIDDEN_POSITIONS``).
 """
 
 from __future__ import annotations
@@ -33,7 +30,7 @@ from io import BytesIO
 from pathlib import Path
 import stat
 from types import MappingProxyType
-from typing import IO, NamedTuple, Never, TypeVar, cast
+from typing import IO, Final, NamedTuple, Never, TypeVar, cast
 from xml.etree.ElementTree import ParseError
 from xml.parsers.expat import ExpatError
 
@@ -47,6 +44,18 @@ from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
 from openpyxl.worksheet.worksheet import Worksheet
 
 from . import client_data
+from .collective_layout import (
+    ADDRESS_COLUMN,
+    AMOUNT_COLUMN,
+    DATA_ROW_COLUMNS,
+    FIRST_DATA_ROW,
+    HEADER_ROW,
+    INPUT_COLUMNS,
+    LOOK_COLUMNS,
+    ORANGE_COLUMN,
+    QUANTITY_COLUMNS,
+    WORKER_COLUMN,
+)
 from .input_copy import InputCopy, SheetCopy, modified_at
 from .highlights import Highlights
 from .hyperlinks import Hyperlink, read_sheet_hyperlinks
@@ -74,17 +83,11 @@ _UNREADABLE_WORKBOOK_ERRORS = (
 
 _WORKBOOK_SUFFIXES = (".xlsx", ".xlsm", ".xltx", ".xltm")
 
-# Układ arkusza Pliku zbiorczego i Wzorców tej rodziny. Publiczne są tylko liczby, których potrzebują narzędzia
-# spoza pakietu (benchmark wpisuje ilości jak tata, generator składa syntetyczne Wzorce kształtu Wzorców taty).
-HEADER_ROW = 17
-FIRST_DATA_ROW = 18
-_WORKER_COLUMN = 8  # H
-INPUT_COLUMNS = range(1, 12)  # A:K: nagłówki w wierszu 17 i dane wejściowe Wiersza danych
-LOOK_COLUMNS = range(1, 13)  # A:L: kolumny wyglądu Wiersza danych
-QUANTITY_COLUMNS = range(14, 43)  # N:AP
-DATA_ROW_COLUMNS = range(1, 47)  # A:AT: kopiowane z Pliku zbiorczego do Szablonu pracownika
-_AMOUNT_COLUMN = 47  # AU: Kwota zlecenia, którą liczy formuła Pliku zbiorczego
-_FORBIDDEN_POSITIONS = ((client_data.ForbiddenColumn.ADDRESS, 2), (client_data.ForbiddenColumn.ORANGE, 9))  # B, I: reguła danych
+FORBIDDEN_POSITIONS: Final = (
+    (client_data.ForbiddenColumn.ADDRESS, ADDRESS_COLUMN),
+    (client_data.ForbiddenColumn.ORANGE, ORANGE_COLUMN),
+)
+"""Kolumny reguły danych, które układ Wzorca stawia na stałym miejscu, bez względu na nagłówek."""
 
 
 _ExcelCellValue = (
@@ -164,7 +167,7 @@ class HeaderCell:
         return f"{self.column}{self.row}"
 
 
-WORKER_HEADER = HeaderCell(get_column_letter(_WORKER_COLUMN), HEADER_ROW)
+WORKER_HEADER = HeaderCell(get_column_letter(WORKER_COLUMN), HEADER_ROW)
 _WORKER_LABEL = "WYKONAWCA"
 
 
@@ -325,7 +328,7 @@ def check_worker_header(path: Path, sheet: str, header: Sequence[object]) -> Non
     """Jedno sprawdzenie nagłówka WYKONAWCA w H17 (bez względu na wielkość liter i spacje) dla wartości A17:K17."""
 
     columns = [column for column, value in enumerate(header[: INPUT_COLUMNS[-1]], start=1) if _is_worker_header(value)]
-    if _WORKER_COLUMN not in columns:
+    if WORKER_COLUMN not in columns:
         found_in = get_column_letter(columns[0]) if columns else None
         raise WorkbookError(path, Problem.LAYOUT, MissingHeader(sheet, HEADER_ROW, _WORKER_LABEL, found_in))
 
@@ -356,7 +359,7 @@ def _forbidden_columns(header: Sequence[object]) -> tuple[tuple[client_data.Forb
     adres pod innym nagłówkiem też nie wychodzi, i każda kolumna A:K z nagłówkiem zakazanej kolumny."""
 
     by_header = client_data.forbidden_columns(header_columns(header[: INPUT_COLUMNS[-1]]))
-    return tuple(dict.fromkeys((*_FORBIDDEN_POSITIONS, *by_header)))
+    return tuple(dict.fromkeys((*FORBIDDEN_POSITIONS, *by_header)))
 
 
 def _copied(
@@ -531,7 +534,7 @@ def read_computed_rows(
         rows = [
             ComputedRow(number, values)
             for number, values in enumerate(
-                classified(path, sheet.iter_rows(min_row=FIRST_DATA_ROW, max_col=_AMOUNT_COLUMN, values_only=True)),
+                classified(path, sheet.iter_rows(min_row=FIRST_DATA_ROW, max_col=AMOUNT_COLUMN, values_only=True)),
                 start=FIRST_DATA_ROW,
             )
             if any(value is not None for value in values[: INPUT_COLUMNS[-1]])

@@ -36,7 +36,7 @@ from tests.fixtures.centrum import (
     write_report_key,
 )
 from tests.fixtures.clock import ManualClock
-from tests.fixtures.linie_watkow import new_line, threads_since
+from tests.fixtures.linie_watkow import PYTEST_TIMEOUT_THREAD, new_line, threads_since
 
 KONTROLA = Post.of(
     PeriodThread(
@@ -235,6 +235,24 @@ def test_watek_z_obslugi_zadania_we_wspolnej_petli_nalezy_do_linii_testu_a_watek
     join_threads_since(since)
 
     assert names == ["z-petli", "z-watku-roboczego"]
+
+
+def test_timer_pytest_timeout_z_watku_testu_nie_nalezy_do_linii_testu() -> None:
+    # Na Windows pytest-timeout mierzy test wątkiem o nazwie „pytest_timeout <test>” z wątku testu; sprawdzenie linii
+    # na końcu modułu widziało timer ostatniego testu jako wątek Centrum (#1080).
+    end = threading.Event()
+    since = new_line()
+    threads = [threading.Thread(target=end.wait, name=name) for name in (f"{PYTEST_TIMEOUT_THREAD}test", "centrum")]
+    try:
+        for thread in threads:
+            thread.start()
+        names = [thread.name for thread in threads_since(since)]
+    finally:
+        end.set()
+        for thread in threads:
+            thread.join()
+
+    assert names == ["centrum"]
 
 
 @pytest.fixture(scope="module")
