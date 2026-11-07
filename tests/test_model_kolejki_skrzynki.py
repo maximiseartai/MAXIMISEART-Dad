@@ -1,238 +1,60 @@
-"""Sprawdzenie modelu TLA+ Kolejki Skrzynki nie przechodzi w CI, gdy pokryty kod rozjechał się z modelem.
+"""Model TLA+ Kolejki Skrzynki i podstawa skilla ``verify-kolejka-skrzynki``.
 
 Podstawa skilla w CI (``sprawdz_kolejke.py``) uruchamia model i sprawdzenie prawdziwego kodu, każde do końca, i pada,
 gdy padło którekolwiek; w częściach ``MUTACJE_CZESC=k/n`` każda jednostka biegnie w jednej części.
 
-Znane znalezisko z ``model/oczekiwane.json`` wybacza tylko swoją obietnicę i tylko przebieg, który przeszedł przez jego
-przyczynę: kontrprzykład innej obietnicy albo bez tej przyczyny to nowe naruszenie (werdykt FAIL #638).
-
-Model opisuje kod z ``model/definicje.json`` skilla ``verify-kolejka-skrzynki`` w Sync commit z jego ``SKILL.md``, a
-rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py`` (``tests/test_rozjazd_modelu.py``). Javę i ``tla2tools.jar`` bierze ze
-skryptu skilla ``verify-aktualizacja-narzedzia``, a zmienne ``TLC_JAVA`` i ``TLC_JAR`` (kopia checkoutu mutacji)
-zastępują jego Javę i jar.
+Model opisuje kod z ``model/definicje.json`` skilla w Sync commit z jego ``SKILL.md``, a w plikach procesu Centrum
+(``app.py``, ``launcher.py``, ``server.py``) tylko definicje procesów Centrum. Werdykt, znane znaleziska i rozjazd w CI
+sprawdza ``tests/test_model_tlc.py`` na drodze wspólnej dla modeli skilli.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-import importlib.util
-import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
-from types import ModuleType, SimpleNamespace
 
 import pytest
 
 from tests.fixtures.git_repo import commit, git
+from tests.fixtures.model_tlc import model_tlc, rozjazd_modelu, skrypt_modelu, wyjscie_tlc
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
 
 import mutacje  # noqa: E402
 import kroki_skilli  # noqa: E402
-import rozjazd_modelu  # noqa: E402
 
 SCRIPT = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "scripts" / "sprawdz_model_kolejki.py"
 BASELINE = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "scripts" / "sprawdz_kolejke.py"
 EXPLORER = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "scripts" / "explore_outbox.py"
 SKILL_MD = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "SKILL.md"
-TOOLS = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts" / "sprawdz_aktualizacje.py"
-OWNER = ROOT / "tools" / "lib" / "rozjazd_modelu.py"
-# Właścicielka rozjazdu dopobiera historię przez potomne.run.
-POTOMNE = ROOT / "tools" / "lib" / "potomne.py"
-# Narzędzia TLC skryptu Aktualizacji narzędzia (przypięte wersje, pobieranie z ponowieniem).
-NARZEDZIA = ROOT / "tools" / "lib" / "narzedzia_tlc.py"
 DEFINITIONS = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "model" / "definicje.json"
-COVERED = "src/rozliczenia/centrum/outbox.py"
-DRIFT = "MODEL KOLEJKI: ROZJAZD MODELU Z KODEM"
 APP = ROOT / "src" / "rozliczenia" / "centrum" / "app.py"
 LAUNCHER = ROOT / "src" / "rozliczenia" / "centrum" / "launcher.py"
 SERVER = ROOT / "src" / "rozliczenia" / "centrum" / "server.py"
-PASSED = "Model checking completed. No error has been found.\n"
 
 
-def _load(path: Path = SCRIPT) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _violation(invariant: str, causes: str) -> str:
-    """Wyjście TLC z kontrprzykładem ``invariant``, którego ostatni stan ma ``slady`` równe ``causes``."""
-
-    return "\n".join(
-        [
-            f"Error: Invariant {invariant} is violated.",
-            "State 1: <Initial predicate>",
-            '/\\ krok = "start"',
-            '/\\ plik = <<"czeka">>',
-            "/\\ issues = <<>>",
-            "/\\ slady = {}",
-            "State 2: <Komentuj line 324, col 5 to line 352, col 63 of module KolejkaSkrzynki>",
-            '/\\ krok = "comment: Rejected"',
-            '/\\ plik = <<"usuniety">>',
-            "/\\ issues = <<>>",
-            f"/\\ slady = {causes}",
-        ]
+def test_kontrprzyklad_kolejki_opowiada_kroki_kodu_i_stan_kolejki_i_skrzynki_na_koncu(capsys: pytest.CaptureFixture[str]) -> None:
+    output = wyjscie_tlc(
+        "JednoIssuePozaZnanymi",
+        ("Init", {"krok": '"start"', "plik": '<<"czeka">>', "issues": "<<>>", "slady": "{}"}),
+        ("Zaloz", {"krok": '"open_issue: Sent"', "plik": '<<"czeka">>', "issues": '<< [klucz |-> "L"],\n   [klucz |-> "L"] >>', "slady": '{"a"}'}),
+        ("Stuttering", {}),
     )
 
+    found = model_tlc.werdykt(skrypt_modelu(SCRIPT).MODEL, output)
 
-def test_w_ci_pokryty_kod_zmieniony_od_synchronizacji_konczy_sprawdzenie_modelu_kolejki_porazka(tmp_path: Path) -> None:
-    (tmp_path / COVERED).parent.mkdir(parents=True)
-    (tmp_path / COVERED).write_text("X = 1\n", encoding="utf-8")
-    for script in (SCRIPT, TOOLS, OWNER, POTOMNE, NARZEDZIA):
-        copy = tmp_path / script.relative_to(ROOT)
-        copy.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(script, copy)
-    definitions = tmp_path / DEFINITIONS.relative_to(ROOT)
-    definitions.parent.mkdir(parents=True)
-    definitions.write_text(json.dumps({COVERED: rozjazd_modelu.CALY_PLIK}), encoding="utf-8")
-    git(tmp_path, "init", "--quiet")
-    sync = commit(tmp_path, "synchronizacja")
-    (tmp_path / COVERED).write_text("X = 2\n", encoding="utf-8")
-    commit(tmp_path, "zmiana pokrytego kodu")
-    skill = tmp_path / SCRIPT.relative_to(ROOT).parents[1]
-    (skill / "SKILL.md").write_text(f"**Sync commit: `{sync[:8]}`** (main).\n", encoding="utf-8")
-
-    done = subprocess.run(
-        [sys.executable, str(skill / "scripts" / SCRIPT.name)],
-        cwd=tmp_path,
-        env={**os.environ, "GITHUB_ACTIONS": "true"},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
-    )
-
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert done.stdout.splitlines()[-1] == DRIFT
-    assert f"kod opisany modelem zmienił się od {sync[:8]}: {COVERED}." in done.stdout
-
-
-def test_java_i_jar_ze_zmiennych_srodowiska_zastepuja_narzedzia_aktualizacji(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    module = _load()
-
-    def unavailable() -> str:
-        raise AssertionError("kopia checkoutu mutacji nie ma katalogu podręcznego z Javą i jarem")
-
-    tools = SimpleNamespace(_java=unavailable, _tla_tools=unavailable)
-    monkeypatch.setattr(module, "_tools", lambda: tools)
-    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: None)
-    (tmp_path / "oczekiwane.json").write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(module, "MODEL", tmp_path)  # model bez konfiguracji: sprawdzenie biegnie do końca bez TLC
-    monkeypatch.setenv("TLC_JAVA", "java")
-    monkeypatch.setenv("TLC_JAR", str(tmp_path / "tla2tools.jar"))
-
-    assert module.main([]) == 0
-    assert capsys.readouterr().out.splitlines()[-1] == "MODEL KOLEJKI OK"
-
-
-def test_kontrprzyklad_skleja_wartosc_zmiennej_z_kilku_linii_tlc() -> None:
-    output = "\n".join(
-        [
-            "Error: Invariant JednoIssue is violated.",
-            "State 1: <Initial predicate>",
-            '/\\ krok = "start"',
-            "/\\ issues = <<>>",
-            "State 2: <Zaloz line 296, col 5 to line 322, col 63 of module KolejkaSkrzynki>",
-            '/\\ krok = "open_issue: Sent"',
-            '/\\ issues = << [klucz |-> "L", tresc |-> <<<<1, 1>>>>],',
-            '   [klucz |-> "L", tresc |-> <<<<1, 1>>>>] >>',
-            '/\\ plik = <<"czeka">>',
-            "State 3: Stuttering",
-        ]
-    )
-
-    trace = _load()._trace(output)
-
-    assert trace[1]["issues"] == '<< [klucz |-> "L", tresc |-> <<<<1, 1>>>>], [klucz |-> "L", tresc |-> <<<<1, 1>>>>] >>'
-    assert trace[1]["plik"] == '<<"czeka">>'
-    assert trace[2]["krok"] == "(dalej nic sie nie dzieje)"
-
-
-# Jedno znane znalezisko „a” obietnicy JednoIssue i odpowiedzi TLC: bez wybaczenia (przebieg znaleziska) i z nim (reszta).
-FINDING = {"wynik": "narusza", "obietnica": "JednoIssue", "przyczyna": "a", "znalezisko": "opis"}
-FORGIVEN = ("JednoIssuePozaZnanymi", 'WybaczoneJednoIssue = {"a"}', "WybaczoneDokladnieRaz = {}", "WybaczoneZbieganie = {}")
-
-
-@pytest.mark.parametrize(
-    ("own", "rest", "last", "returncode"),
-    [
-        (_violation("JednoIssue", '{"a"}'), PASSED, "MODEL KOLEJKI OK, ZNANE ZNALEZISKA: 1", 0),
-        (PASSED, PASSED, "MODEL KOLEJKI: ZNALEZISKO ZNIKNĘŁO (1)", 1),
-        (_violation("JednoIssue", '{"a"}'), _violation("DokladnieRazPozaZnanymi", '{"a"}'), "MODEL KOLEJKI: NOWE NARUSZENIE (1)", 1),
-        (_violation("DokladnieRaz", '{"a"}'), PASSED, "MODEL KOLEJKI: NOWE NARUSZENIE (1)", 1),
-        (_violation("JednoIssue", '{"b"}'), PASSED, "MODEL KOLEJKI: NOWE NARUSZENIE (1)", 1),
-        (_violation("TypeOK", '{"a"}'), PASSED, "MODEL KOLEJKI: BŁĄD MODELU (1)", 2),
-    ],
-    ids=["znane", "zniknelo", "inna-obietnica-w-reszcie", "inna-obietnica", "bez-przyczyny", "typeok"],
-)
-def test_znane_znalezisko_wybacza_tylko_swoja_obietnice_po_swojej_przyczynie(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], own: str, rest: str, last: str, returncode: int
-) -> None:
-    module = _load()
-    (tmp_path / "oczekiwane.json").write_text(json.dumps({"f": FINDING}), encoding="utf-8")
-    (tmp_path / "f.cfg").write_text(
-        "\\* Opis.\nINVARIANTS TypeOK JednoIssue DokladnieRaz CzesciWKolejnosci\nPROPERTIES Zbieganie\nCONSTANTS\n"
-        + "".join(f"    Wybaczone{promise} = {{}}\n" for promise in ("JednoIssue", "DokladnieRaz", "CzesciWKolejnosci", "Zbieganie")),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(module, "MODEL", tmp_path)
-    monkeypatch.setattr(module, "_tools", lambda: SimpleNamespace())
-    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: None)
-    monkeypatch.setenv("TLC_JAVA", "java")
-    monkeypatch.setenv("TLC_JAR", str(tmp_path / "tla2tools.jar"))
-    # Reszta przebiegów dostaje wybaczenie tylko w stałej obietnicy znaleziska; każda inna konfiguracja to błąd testu.
-    answers: dict[bool, str] = {False: own, True: rest}
-
-    def tlc(java: str, jar: Path, name: str, config: str) -> str:
-        forgiven = all(line in config for line in FORGIVEN)
-        assert forgiven or "PozaZnanymi" not in config, config
-        return answers[forgiven]
-
-    monkeypatch.setattr(module, "_tlc", tlc)
-
-    assert module.main([]) == returncode
-    assert capsys.readouterr().out.splitlines()[-1] == last
-
-
-def test_konfiguracja_bez_znaleziska_z_kontrprzykladem_to_nowe_naruszenie(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    module = _load()
-    (tmp_path / "oczekiwane.json").write_text(json.dumps({"f": {"wynik": "przechodzi"}}), encoding="utf-8")
-    (tmp_path / "f.cfg").write_text("\\* Opis.\nINVARIANTS TypeOK JednoIssue\n", encoding="utf-8")
-    monkeypatch.setattr(module, "MODEL", tmp_path)
-    monkeypatch.setattr(module, "_tools", lambda: SimpleNamespace())
-    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: None)
-    monkeypatch.setenv("TLC_JAVA", "java")
-    monkeypatch.setenv("TLC_JAR", str(tmp_path / "tla2tools.jar"))
-    monkeypatch.setattr(module, "_tlc", lambda java, jar, name, config: _violation("DokladnieRaz", "{}"))
-
-    assert module.main([]) == 1
-    assert capsys.readouterr().out.splitlines()[-1] == "MODEL KOLEJKI: NOWE NARUSZENIE (1)"
-
-
-def test_w_ci_zmieniona_definicja_procesow_centrum_konczy_sprawdzenie_rozjazdem(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    module = _load()
-    moved = "kod opisany modelem zmienił się od abcdef1: src/rozliczenia/centrum/app.py lifespan."
-    monkeypatch.setattr(module, "_tools", lambda: SimpleNamespace())
-    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: moved)
-    monkeypatch.setenv("GITHUB_ACTIONS", "true")
-
-    assert module.main([]) == 1
-    assert capsys.readouterr().out.splitlines() == [f"UWAGA: {moved}", "", DRIFT]
+    assert found == model_tlc.Werdykt("JednoIssue", frozenset({"a"}))
+    assert capsys.readouterr().out.splitlines() == [
+        "   naruszone JednoIssue: okres, problem Zgłoszenia albo Uwaga taty ma drugie issue.",
+        "   1. open_issue: Sent",
+        "   2. (dalej nic się nie dzieje)",
+        '   na koniec: pliki kolejki <<"czeka">>, Skrzynka << [klucz |-> "L"], [klucz |-> "L"] >>',
+    ]
 
 
 def _no_change(text: str) -> str:
@@ -337,7 +159,7 @@ def test_podstawa_ci_uruchamia_jednostki_swojej_czesci_do_konca_i_pada_gdy_padla
 
 def test_czesci_podstawy_kazdej_liczby_do_ci_czesci_skladaja_sie_na_kazdy_zakres_i_model_raz(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.syspath_prepend(str(EXPLORER.parent))
-    baseline = _load(BASELINE)
+    baseline = skrypt_modelu(BASELINE)
     count = kroki_skilli.ci_parts(SKILL_MD)
 
     assert 1 < count <= len(baseline.UNITS)

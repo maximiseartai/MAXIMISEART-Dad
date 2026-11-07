@@ -50,7 +50,9 @@ CONSTANTS
     NieudanyStart,      \* nowa wersja nie odpowiada w START_TIMEOUT_S, choć ma swoje biblioteki
     Wylaczenie,         \* komputer gaśnie albo proces ginie w dowolnym kroku
     MaxSkrotowWTrakcie, \* ile razy tata klika skrót na pulpicie, gdy opiekun ponownego startu działa
-    Wybaczone           \* znane znaleziska, które TataMaDzialajacaWersjePozaZnanymi pomija (oczekiwane.json)
+    \* Przyczyny znanych znalezisk, które wariant ...PozaZnanymi danej obietnicy pomija (skrypt skilla je ustawia).
+    WybaczoneTataMaDzialajacaWersje, WybaczoneOpiekunCofaTylkoNieudana, WybaczoneOkienkoTylkoGdyNicNieDziala,
+    WybaczoneTataNieZostajeBezOdpowiedzi, WybaczoneKartaNieKlamie, WybaczoneKartaNieStraszy, WybaczonePostep
 
 VARIABLES
     \* Dysk taty: przeżywa zamknięcie Centrum i wyłączenie komputera.
@@ -89,7 +91,7 @@ nowa == <<nowaUsuwaPlikTaty, nowaZmieniaWymagania, nowaStartuje>>
 ekran == <<wynik, karta, widzi>>
 vars == <<dysk, nowa, centrum, pc, klikniecia, krok, slady, cofa, skrot, skrotyWTrakcie, ekran>>
 
-\* Znane znaleziska (SKILL.md, model/oczekiwane.json): krok awarii, po którym obietnica pada. Dziś żadnego:
+\* Znane znaleziska (SKILL.md, model/konfiguracje.json): krok awarii, po którym obietnica pada. Dziś żadnego:
 \* ok_po_dwoch_odmowach i skrot_gasnie_przed_wynikiem zamknęło porównanie „po” z działającą wersją (#490).
 ZnaneZnaleziska == {}
 
@@ -138,18 +140,18 @@ TataMaDzialajacaWersje ==
         \/ Startuje(head) /\ plikTaty = "taty"
         \/ dziennik = "w_toku" /\ TrescTatyNaDysku
 
-\* Znane znalezisko z Wybaczone: przebieg, w którym zdarzyła się jego awaria. Każde
+\* Znane znalezisko obietnicy: przebieg, w którym zdarzyła się awaria z jej stałej Wybaczone... Każde
 \* inne złamanie obietnicy zostaje naruszeniem, więc znane znalezisko nie zasłania nowego.
-Znane == Wybaczone \cap slady /= {}
+Po(wybaczone) == wybaczone \cap slady /= {}
 
-TataMaDzialajacaWersjePozaZnanymi == TataMaDzialajacaWersje \/ Znane
+TataMaDzialajacaWersjePozaZnanymi == TataMaDzialajacaWersje \/ Po(WybaczoneTataMaDzialajacaWersje)
 
 \* Opiekun cofa klon (cofa = "opiekun") tylko wtedy, gdy wersja, na której klon stoi,
 \* naprawdę nie wystartuje. Sprawdzane w chwili wejścia w _roll_back, zanim klon się ruszy.
 OpiekunCofaTylkoNieudana ==
     pc = "cofanie_usun" /\ cofa = "opiekun" => ~Startuje(head)
 
-OpiekunCofaTylkoNieudanaPozaZnanymi == OpiekunCofaTylkoNieudana \/ Znane
+OpiekunCofaTylkoNieudanaPozaZnanymi == OpiekunCofaTylkoNieudana \/ Po(WybaczoneOpiekunCofaTylkoNieudana)
 
 \* Opiekun pokazuje okienko not_started_after_update (pc = "okienko") tylko wtedy, gdy żadne
 \* Centrum nie działa: okienko przy starej wersji ze skrótu to fałszywy alarm (#368), także po
@@ -157,7 +159,7 @@ OpiekunCofaTylkoNieudanaPozaZnanymi == OpiekunCofaTylkoNieudana \/ Znane
 OkienkoTylkoGdyNicNieDziala ==
     pc = "okienko" => centrum = "brak"
 
-OkienkoTylkoGdyNicNieDzialaPozaZnanymi == OkienkoTylkoGdyNicNieDziala \/ Znane
+OkienkoTylkoGdyNicNieDzialaPozaZnanymi == OkienkoTylkoGdyNicNieDziala \/ Po(WybaczoneOkienkoTylkoGdyNicNieDziala)
 
 \* Gdy nic już nie działa (żadna aktualizacja ani opiekun, żadne Centrum), tata widzi okienko z
 \* Komunikatem albo zgaszony komputer, nigdy samą martwą kartę. Docstring restart_guardian.py
@@ -165,7 +167,7 @@ OkienkoTylkoGdyNicNieDzialaPozaZnanymi == OkienkoTylkoGdyNicNieDziala \/ Znane
 TataNieZostajeBezOdpowiedzi ==
     pc = "spoczynek" /\ centrum = "brak" => widzi \in {"okienko", "wylaczony"}
 
-TataNieZostajeBezOdpowiedziPozaZnanymi == TataNieZostajeBezOdpowiedzi \/ Znane
+TataNieZostajeBezOdpowiedziPozaZnanymi == TataNieZostajeBezOdpowiedzi \/ Po(WybaczoneTataNieZostajeBezOdpowiedzi)
 
 \* Karta mówi „Narzędzie zaktualizowane” tylko wtedy, gdy Centrum działa w nowej wersji; inaczej
 \* Maks nie dostaje Zgłoszenia o wersji, która u taty nie startuje. Docstring launcher._roll_back:
@@ -173,7 +175,7 @@ TataNieZostajeBezOdpowiedziPozaZnanymi == TataNieZostajeBezOdpowiedzi \/ Znane
 KartaNieKlamie ==
     karta = "zaktualizowano" => centrum = "nowa"
 
-KartaNieKlamiePozaZnanymi == KartaNieKlamie \/ Znane
+KartaNieKlamiePozaZnanymi == KartaNieKlamie \/ Po(WybaczoneKartaNieKlamie)
 
 \* Karta nowej, działającej wersji nie mówi o porażce aktualizacji: porażka z pliku wyniku dotyczy
 \* wersji sprzed aktualizacji, do której klon cofnięto, a w nowej jest stara (#725). Inaczej tata
@@ -181,7 +183,7 @@ KartaNieKlamiePozaZnanymi == KartaNieKlamie \/ Znane
 KartaNieStraszy ==
     karta = "porazka" => centrum /= "nowa"
 
-KartaNieStraszyPozaZnanymi == KartaNieStraszy \/ Znane
+KartaNieStraszyPozaZnanymi == KartaNieStraszy \/ Po(WybaczoneKartaNieStraszy)
 
 
 \* --- Start ------------------------------------------------------------------
@@ -211,7 +213,7 @@ Init ==
 \* Kroki kodu aktualizacji i opiekuna nie ruszają skrótu klikniętego w trakcie (skrot).
 Idz(nastepny, opis) == pc' = nastepny /\ krok' = opis /\ slady' = slady /\ cofa' = cofa /\ skrot' = skrot /\ skrotyWTrakcie' = skrotyWTrakcie
 
-\* Krok awarii znanego znaleziska: zostawia jej ślad dla Znane.
+\* Krok awarii znanego znaleziska: zostawia jej ślad dla Po.
 Slad(nastepny, opis, slad) == pc' = nastepny /\ krok' = opis /\ slady' = slady \cup {slad} /\ cofa' = cofa /\ skrot' = skrot /\ skrotyWTrakcie' = skrotyWTrakcie
 
 \* Wejście w _roll_back; ``kto`` decyduje, co dzieje się po nim.
@@ -774,7 +776,7 @@ Spec == Init /\ [][Next]_vars /\ Sprawiedliwosc
 \* Założenie: komputer gaśnie skończenie wiele razy.
 Postep == <>[][~Wylacz]_vars => (dziennik = "w_toku" ~> dziennik = "brak")
 
-\* slady tylko rosną, więc <>Znane to przebieg, w którym awaria znanego znaleziska kiedyś się zdarzyła.
-PostepPozaZnanymi == Postep \/ <>Znane
+\* slady tylko rosną, więc <>Po(...) to przebieg, w którym awaria znanego znaleziska kiedyś się zdarzyła.
+PostepPozaZnanymi == Postep \/ <>Po(WybaczonePostep)
 
 =============================================================================

@@ -77,7 +77,7 @@ CONSTANTS
     StarszaPozniej, \* wysyłka 2 to wersja zastępcza ze startu Centrum (Rank.STAND_IN: Logi z pliku), starsza od Logów
                     \* z wynikiem wysyłki 1 (Rank.OWN), choć jej plik kolejki powstał później (#910)
     OpoznienieListy, \* listy GitHuba (labelled_issues, archive) pokazują nowe issue i Archiwum po kilku sekundach
-    \* Znane znaleziska (oczekiwane.json), każde przy jednej obietnicy: ślady przyczyn, po których wariant
+    \* Znane znaleziska (konfiguracje.json), każde przy jednej obietnicy: ślady przyczyn, po których wariant
     \* ...PozaZnanymi tej obietnicy ją pomija. Pozostałe obietnice tego przebiegu sprawdza dalej w całości.
     WybaczoneJednoIssue, WybaczoneDokladnieRaz, WybaczoneCzesciWKolejnosci, WybaczoneZbieganie
 
@@ -184,7 +184,7 @@ awarie == <<sieci, zgubione, odmowy, odmowyArchiwum, bledyPliku, wylaczenia>>
 opoznienie == <<niewidoczne, zakladanie, pamiec, odczyt, wydanieNiewidoczne, pamiecWydania, falszywe>>
 vars == <<dysk, issues, archiwa, zyje, watek, passes, blokada, zamkniecia, nadawanie, awarie, krok, slady, opoznienie>>
 
-\* Znane znaleziska (SKILL.md, oczekiwane.json): ślad przyczyny, po której obietnica pada.
+\* Znane znaleziska (SKILL.md, konfiguracje.json): ślad przyczyny, po której obietnica pada.
 ZnaneZnaleziska == {}
 
 \* Rodzaje zapisów, których skutek widać tylko na liście (keyed_box.py: etykieta issue, _archive_kind). Wysłania i

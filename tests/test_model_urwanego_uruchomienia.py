@@ -1,54 +1,28 @@
-"""Sprawdzenie modelu TLA+ Dziennika Wyceny w efenix i Logów Urwanego Uruchomienia: rozjazd z kodem w CI i werdykty.
+"""Model TLA+ Dziennika Wyceny w efenix i Logów Urwanego Uruchomienia: kod opisany modelem i opowieść kontrprzykładu.
 
 Model opisuje definicje z ``model/definicje.json`` skilla ``verify-urwane-uruchomienie`` w commicie synchronizacji z jego
 ``SKILL.md``: funkcje, klasy, przypisania i metody (``Klasa.metoda``); rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py``
-(``tests/test_rozjazd_modelu.py``). Zmiana innej części tych plików (``run_logs.py``,
-``app.py`` i ``runs.py`` zmieniają się często) rozjazdem nie jest. Testy rozjazdu biegną na repozytorium z plikami
-zbudowanymi z tej tabeli, nie na kodzie ``src/``: sprawdzają skrypt, a kod opisany modelem sprawdza krok ``ci:`` skilla.
-
-Znane znalezisko z ``model/oczekiwane.json`` wybacza tylko w swojej konfiguracji, tylko swoją obietnicę i tylko
-zdarzenie z jego przyczyną: kontrprzykład innej obietnicy, bez tej przyczyny albo w konfiguracji, która go nie oczekuje,
-to nowe naruszenie, a Zbieganie (żywotność) nie ma znanych znalezisk.
+(``tests/test_rozjazd_modelu.py``). Zmiana innej części tych plików (``run_logs.py``, ``app.py`` i ``runs.py`` zmieniają
+się często) rozjazdem nie jest. Testy rozjazdu biegną na repozytorium z plikami zbudowanymi z tej tabeli, nie na kodzie
+``src/``: sprawdzają tabelę, a kod opisany modelem sprawdza krok ``ci:`` skilla. Werdykt i znane znaleziska sprawdza
+``tests/test_model_tlc.py`` na drodze wspólnej dla modeli skilli.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-import importlib.util
 import json
-import os
 from pathlib import Path
 import shutil
-import subprocess
-import sys
-from types import ModuleType
 
 import pytest
 
 from tests.fixtures.git_repo import commit, git
+from tests.fixtures.model_tlc import model_tlc, rozjazd_modelu, skrypt_modelu, wyjscie_tlc
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
-
-import rozjazd_modelu  # noqa: E402
-
 SCRIPT = ROOT / ".agents" / "skills" / "verify-urwane-uruchomienie" / "scripts" / "sprawdz_urwane_uruchomienie.py"
 DEFINITIONS = ROOT / ".agents" / "skills" / "verify-urwane-uruchomienie" / "model" / "definicje.json"
-TOOLS = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts" / "sprawdz_aktualizacje.py"
-OWNER = ROOT / "tools" / "lib" / "rozjazd_modelu.py"
-# Właścicielka rozjazdu dopobiera historię przez potomne.run.
-POTOMNE = ROOT / "tools" / "lib" / "potomne.py"
-# Narzędzia TLC skryptu Aktualizacji narzędzia (przypięte wersje, pobieranie z ponowieniem).
-NARZEDZIA = ROOT / "tools" / "lib" / "narzedzia_tlc.py"
-DRIFT = "URWANE URUCHOMIENIE: ROZJAZD MODELU Z KODEM"
-
-
-def _load() -> ModuleType:
-    spec = importlib.util.spec_from_file_location(SCRIPT.stem, SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _definitions() -> dict[str, list[str]]:
@@ -89,12 +63,11 @@ def _file_of(name: str) -> str:
 
 
 def _repository(root: Path) -> str:
-    """Repozytorium ze skryptami skilli, tabelą definicji i plikami, które ją spełniają; zwraca commit synchronizacji."""
+    """Repozytorium z tabelą definicji skilla i plikami, które ją spełniają; zwraca commit synchronizacji."""
 
-    for script in (SCRIPT, DEFINITIONS, TOOLS, OWNER, POTOMNE, NARZEDZIA):
-        copy = root / script.relative_to(ROOT)
-        copy.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(script, copy)
+    copy = root / DEFINITIONS.relative_to(ROOT)
+    copy.parent.mkdir(parents=True)
+    shutil.copy(DEFINITIONS, copy)
     for path, names in _definitions().items():
         (root / path).parent.mkdir(parents=True, exist_ok=True)
         (root / path).write_text(_source(names), encoding="utf-8")
@@ -112,20 +85,10 @@ def _change(root: Path, name: str) -> None:
     path.write_text(text.replace(anchor, f'return "{name} po zmianie"'), encoding="utf-8")
 
 
-def _check_in_ci(root: Path, sync: str) -> subprocess.CompletedProcess[str]:
-    skill = root / SCRIPT.relative_to(ROOT).parents[1]
+def _drift(root: Path, sync: str) -> str | None:
+    skill = root / DEFINITIONS.relative_to(ROOT).parents[1]
     (skill / "SKILL.md").write_text(f"Sync commit: `{sync}` (main).\n", encoding="utf-8")
-    (skill / "model" / "oczekiwane.json").write_text("{}", encoding="utf-8")  # bez konfiguracji: bez rozjazdu bez TLC
-    return subprocess.run(
-        [sys.executable, str(skill / "scripts" / SCRIPT.name)],
-        cwd=root,
-        env={**os.environ, "GITHUB_ACTIONS": "true", "TLC_JAVA": "java", "TLC_JAR": "tla2tools.jar"},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
-    )
+    return rozjazd_modelu.rozjazd(skill, root)
 
 
 @pytest.mark.parametrize(
@@ -138,21 +101,20 @@ def _check_in_ci(root: Path, sync: str) -> subprocess.CompletedProcess[str]:
         pytest.param("send_interrupted", id="wysylka-przy-zapytaniu"),
         pytest.param("lifespan", id="start-kolejki"),
         pytest.param("run_process", id="wynik-uruchomienia"),
+        pytest.param("_remove", id="usuniecie-dziennika"),
     ],
 )
-def test_w_ci_zmieniona_definicja_opisana_modelem_konczy_sprawdzenie_porazka(tmp_path: Path, name: str) -> None:
+def test_zmieniona_definicja_opisana_modelem_jest_rozjazdem(tmp_path: Path, name: str) -> None:
     sync = _repository(tmp_path)
     _change(tmp_path, name)
     commit(tmp_path, "zmiana kodu opisanego modelem")
 
-    done = _check_in_ci(tmp_path, sync[:9])
+    found = _drift(tmp_path, sync[:9])
 
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert done.stdout.splitlines()[-1] == DRIFT
-    assert f"kod opisany modelem zmienił się od {sync[:9]}: {_file_of(name)} {name}." in done.stdout
+    assert found is not None and f"kod opisany modelem zmienił się od {sync[:9]}: {_file_of(name)} {name}." in found, found
 
 
-def test_w_ci_metoda_rozjazdu_to_metoda_swojej_klasy_a_nie_metoda_o_tej_nazwie_w_innej_klasie(tmp_path: Path) -> None:
+def test_metoda_rozjazdu_to_metoda_swojej_klasy_a_nie_metoda_o_tej_nazwie_w_innej_klasie(tmp_path: Path) -> None:
     """``RunLog.interrupted`` (Logi z dziennika) i ``RecordMaker.interrupted`` (te Logi z narzędziem i środowiskiem) to
     dwie definicje: zmiana pierwszej jest rozjazdem tylko pierwszej."""
 
@@ -160,202 +122,43 @@ def test_w_ci_metoda_rozjazdu_to_metoda_swojej_klasy_a_nie_metoda_o_tej_nazwie_w
     _change(tmp_path, "RunLog.interrupted")
     commit(tmp_path, "Logi Urwanego Uruchomienia inaczej")
 
-    done = _check_in_ci(tmp_path, sync[:9])
+    found = _drift(tmp_path, sync[:9])
 
-    assert done.stdout.splitlines()[-1] == DRIFT, done.stdout + done.stderr
-    assert f"zmienił się od {sync[:9]}: {_file_of('RunLog.interrupted')} RunLog.interrupted." in done.stdout
+    assert found is not None and f"zmienił się od {sync[:9]}: {_file_of('RunLog.interrupted')} RunLog.interrupted. " in found, found
 
 
 @pytest.mark.parametrize("name", ["obok", "RunComments.obok"])
-def test_w_ci_zmiana_obok_definicji_opisanych_modelem_nie_jest_rozjazdem(tmp_path: Path, name: str) -> None:
+def test_zmiana_obok_definicji_opisanych_modelem_nie_jest_rozjazdem(tmp_path: Path, name: str) -> None:
     sync = _repository(tmp_path)
     _change(tmp_path, name)
     commit(tmp_path, "zmiana obok")
 
-    done = _check_in_ci(tmp_path, sync[:9])
-
-    assert (done.returncode, done.stdout.splitlines()[-1]) == (0, "URWANE URUCHOMIENIE OK"), done.stdout + done.stderr
-
-
-def test_w_ci_definicja_ktorej_nie_ma_jest_rozjazdem(tmp_path: Path) -> None:
-    sync = _repository(tmp_path)
-    path = tmp_path / _file_of("_remove")
-    path.write_text(path.read_text(encoding="utf-8").replace("def _remove(", "def _remove_inaczej("), encoding="utf-8")
-    commit(tmp_path, "inna nazwa")
-
-    done = _check_in_ci(tmp_path, sync[:9])
-
-    assert done.stdout.splitlines()[-1] == DRIFT, done.stdout + done.stderr
-    assert f"{_file_of('_remove')} _remove." in done.stdout
-
-
-def test_w_ci_brak_commitu_synchronizacji_konczy_sprawdzenie_porazka(tmp_path: Path) -> None:
-    _repository(tmp_path)
-
-    done = _check_in_ci(tmp_path, "0" * 40)
-
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert done.stdout.splitlines()[-1] == DRIFT
-    assert f"Sync commit {'0' * 40} nie ma w tej historii" in done.stdout
-
-
-def _verdicts(
-    module: ModuleType,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    known: dict[str, list[dict[str, str]]],
-    answers: list[object],
-) -> list[frozenset[tuple[str, str]]]:
-    """Konfiguracje ``known`` (nazwa → jej znane znaleziska); kolejne przebiegi TLC dają ``answers``. Zwraca wybaczone
-    znaleziska każdego przebiegu."""
-
-    for name in known:
-        (tmp_path / f"{name}.cfg").write_text("\\* konfiguracja testu\n", encoding="utf-8")
-    (tmp_path / "oczekiwane.json").write_text(
-        json.dumps({name: {"znane": findings} for name, findings in known.items()}), encoding="utf-8"
-    )
-    monkeypatch.setattr(module, "MODEL", tmp_path)
-    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: None)
-    monkeypatch.setenv("TLC_JAVA", "java")
-    monkeypatch.setenv("TLC_JAR", "tla2tools.jar")
-    forgiven: list[frozenset[tuple[str, str]]] = []
-    pending = iter(answers)
-
-    def run(java: str, jar: Path, name: str, forgiven_now: frozenset[tuple[str, str]]) -> object:
-        forgiven.append(forgiven_now)
-        return next(pending)
-
-    monkeypatch.setattr(module, "_run", run)
-    return forgiven
-
-
-_KNOWN = [{"obietnica": "BezUrwanychPoWyniku", "przyczyna": "przed-wpisem-konca", "znalezisko": "test"}]
-
-
-@pytest.mark.parametrize(
-    ("own", "rest", "code", "last"),
-    [
-        pytest.param(("BezUrwanychPoWyniku", {"przed-wpisem-konca"}), None, 0, "URWANE URUCHOMIENIE OK, ZNANE ZNALEZISKA: 1", id="znane"),
-        pytest.param(("BezUrwanychPoWyniku", set()), None, 1, "URWANE URUCHOMIENIE: NOWE NARUSZENIE (1)", id="bez-przyczyny"),
-        pytest.param(("TeSameZnaki", {"przed-wpisem-konca"}), None, 1, "URWANE URUCHOMIENIE: NOWE NARUSZENIE (1)", id="inna-obietnica"),
-        pytest.param(None, None, 1, "URWANE URUCHOMIENIE: ZNALEZISKO ZNIKNĘŁO (1)", id="zniknelo"),
-        pytest.param(
-            ("BezUrwanychPoWyniku", {"przed-wpisem-konca"}),
-            ("Zbieganie", set()),
-            1,
-            "URWANE URUCHOMIENIE: NOWE NARUSZENIE (1)",
-            id="reszta-nie-zbiega",
-        ),
-    ],
-)
-def test_znane_znalezisko_wybacza_tylko_swoja_obietnice_po_swojej_przyczynie(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    own: tuple[str, set[str]] | None,
-    rest: tuple[str, set[str]] | None,
-    code: int,
-    last: str,
-) -> None:
-    module = _load()
-
-    def verdict(found: tuple[str, set[str]] | None) -> object:
-        return module.Verdict(None) if found is None else module.Verdict(found[0], frozenset(found[1]))
-
-    forgiven = _verdicts(module, monkeypatch, tmp_path, {"k": _KNOWN}, [verdict(own), verdict(rest)])
-
-    assert module.main([]) == code
-    assert capsys.readouterr().out.splitlines()[-1] == last
-    assert forgiven == [frozenset(), frozenset({("BezUrwanychPoWyniku", "przed-wpisem-konca")})]
-
-
-def test_konfiguracja_wybacza_tylko_znane_znaleziska_ktore_oczekiwane_podaja_dla_niej(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Przyczyna znaleziska innej konfiguracji nie jest wybaczona: nowa droga do niej w konfiguracji, która jej nie
-    oczekuje, to nowe naruszenie. Każde znalezisko ma swój przebieg bez pozostałych znanych swojej konfiguracji."""
-
-    module = _load()
-    later = ("ZaczeteWLogach", "wpis-nieudany")
-    unread = ("BezUrwanychPoWyniku", "przed-wpisem-konca")
-    unwritten = ("BezUrwanychPoWyniku", "wpis-konca-nieudany")
-
-    def finding(found: tuple[str, str]) -> dict[str, str]:
-        return {"obietnica": found[0], "przyczyna": found[1], "znalezisko": "test"}
-
-    answers = [
-        module.Verdict(unread[0], frozenset({unread[1]})),
-        module.Verdict(unwritten[0], frozenset({unwritten[1]})),
-        module.Verdict(None),
-        module.Verdict(later[0], frozenset({later[1]})),
-        module.Verdict(None),
-    ]
-    known = {"koniec": [finding(unread), finding(unwritten)], "wpisy": [finding(later)]}
-    forgiven = _verdicts(module, monkeypatch, tmp_path, known, answers)
-
-    assert module.main([]) == 0
-    assert capsys.readouterr().out.splitlines()[-1] == "URWANE URUCHOMIENIE OK, ZNANE ZNALEZISKA: 3"
-    assert forgiven == [
-        frozenset({unwritten}),
-        frozenset({unread}),
-        frozenset({unread, unwritten}),
-        frozenset(),
-        frozenset({later}),
-    ]
-
-
-def _tlc_output(monkeypatch: pytest.MonkeyPatch, module: ModuleType, tmp_path: Path, output: str) -> None:
-    monkeypatch.setattr(module, "_tools", lambda: type("T", (), {"_tlc": staticmethod(lambda *arguments: output)}))
-    (tmp_path / "k.cfg").write_text("\\* konfiguracja testu\n", encoding="utf-8")
-    monkeypatch.setattr(module, "MODEL", tmp_path)
+    assert _drift(tmp_path, sync[:9]) is None
 
 
 def test_kontrprzyklad_daje_obietnice_i_przyczyny_jej_zdarzen_a_odczyt_ktory_sie_nie_udal_nazywa_po_imieniu(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    module = _load()
-    output = "\n".join(
-        [
-            "Error: Invariant BezUrwanychPoWynikuPozaZnanymi is violated.",
-            "State 1: <Initial predicate>",
-            '/\\ dziennik = <<"jest", "brak">>',
-            "/\\ kursor = 1",
-            "/\\ awarieOdczytu = 0",
-            "/\\ poWyniku = {}",
-            "State 2: <Czytaj line 193, col 5 to line 231, col 50 of module UrwaneUruchomienie>",
-            '/\\ dziennik = <<"jest", "brak">>',
-            "/\\ kursor = 2",
-            "/\\ awarieOdczytu = 1",
-            '/\\ poWyniku = {{"przed-wpisem-konca",',
-            '   "wpis-konca-nieudany"}}',
-        ]
+    output = wyjscie_tlc(
+        "BezUrwanychPoWynikuPozaZnanymi",
+        ("Init", {"dziennik": '<<"jest", "brak">>', "kursor": "1", "awarieOdczytu": "0", "poWyniku": "{}"}),
+        (
+            "Czytaj",
+            {"dziennik": '<<"jest", "brak">>', "kursor": "2", "awarieOdczytu": "1", "poWyniku": '{{"przed-wpisem-konca",\n   "wpis-konca-nieudany"}}'},
+        ),
     )
-    _tlc_output(monkeypatch, module, tmp_path, output)
 
-    found = module._run("java", Path("tla2tools.jar"), "k", frozenset())
+    found = model_tlc.werdykt(skrypt_modelu(SCRIPT).MODEL, output)
 
-    assert found == module.Verdict("BezUrwanychPoWyniku", frozenset({"przed-wpisem-konca", "wpis-konca-nieudany"}))
+    assert found == model_tlc.Werdykt("BezUrwanychPoWyniku", frozenset({"przed-wpisem-konca", "wpis-konca-nieudany"}))
     assert "1. close: odczyt dziennika Wyceny 1 rzuca OSError, dziennik zostaje następnemu startowi" in capsys.readouterr().out
 
 
-def test_przebieg_bez_konca_to_naruszone_zbieganie_bez_znanych_znalezisk(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    module = _load()
-    output = "\n".join(
-        [
-            "Error: Temporal properties were violated.",
-            "State 1: <Initial predicate>",
-            '/\\ dziennik = <<"jest">>',
-            "State 2: <Start line 172, col 5 to line 178, col 53 of module UrwaneUruchomienie>",
-            '/\\ dziennik = <<"jest">>',
-            "Back to state 1: <Zamkniecie line 408, col 5 to line 412, col 70 of module UrwaneUruchomienie>",
-        ]
-    )
-    _tlc_output(monkeypatch, module, tmp_path, output)
+def test_przebieg_bez_konca_to_naruszone_zbieganie_bez_znanych_znalezisk(capsys: pytest.CaptureFixture[str]) -> None:
+    output = wyjscie_tlc(None, ("Init", {"dziennik": '<<"jest">>'}), ("Start", {"dziennik": '<<"jest">>'}), ("Back to state 1", {}))
 
-    found = module._run("java", Path("tla2tools.jar"), "k", frozenset())
+    found = model_tlc.werdykt(skrypt_modelu(SCRIPT).MODEL, output)
 
     told = capsys.readouterr().out
-    assert found == module.Verdict("Zbieganie")
+    assert found == model_tlc.Werdykt("Zbieganie")
     assert ("naruszone Zbieganie" in told, "(stąd znów krok 0 i tak bez końca)" in told) == (True, True)
