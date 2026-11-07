@@ -151,6 +151,7 @@ class Changed(enum.Enum):
     HIDDEN_EMMETT = "przycisk Emmetta jest na stronie, ale niewidoczny"
     STALE_AMOUNT = "kwota końcowa nie odświeża się po zapisie ilości"
     QUANTITY_ANSWER = "zapis ilości odpowiada stroną HTML, a nie JSON z kwotą końcową"
+    QUANTITY_RESULT = "zapis ilości odpowiada JSON z wynikiem innym niż ok i nok, bez kwoty końcowej"
     QUANTITY_VALUE = "pole Ilość pozycji 012 ma wartość, która nie jest liczbą całkowitą (1.5)"
     SECOND_NUMBER_FIELD = (
         "lista po wpisaniu numeru ma w #wyniki drugie pole Numer, jak odpowiedź jej własnego szukania przekierowana na listę"
@@ -529,6 +530,8 @@ def atrapa_efenix(
                 return
             if changed is Changed.QUANTITY_ANSWER:
                 self._html("<p>Zapisano.</p>")
+            elif changed is Changed.QUANTITY_RESULT:
+                self._json({"result": "error", "error": "Nieznany błąd."})
             elif saved is None:
                 self._json({"result": "nok", "error": "Zły indeks."})
             else:
