@@ -17,6 +17,7 @@ import email.message
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 from types import ModuleType
@@ -283,6 +284,20 @@ def test_kazdy_skill_z_modelem_ma_konfiguracje_a_jego_opowiesc_zna_kazda_akcje_n
     assert {model.skill.name for model in models if model.akcje is not None} == {"verify-urwane-uruchomienie", "verify-wznowienie-wyceny-efenix"}
 
 
+@pytest.mark.parametrize(
+    ("value", "written"),
+    [(True, "TRUE"), (False, "FALSE"), (0, "0"), (12, "12"), ("12", '"12"'), ("okres", '"okres"')],
+    ids=["prawda", "falsz", "zero", "liczba", "napis-z-cyframi", "napis"],
+)
+def test_stala_konfiguracji_trafia_do_cfg_jako_wartosc_tla(tmp_path: Path, value: bool | int | str, written: str) -> None:
+    """``TRUE``/``FALSE`` z wartości logicznej, liczba bez cudzysłowu, napis w cudzysłowie, także napis z samych cyfr."""
+
+    model = _model(tmp_path, {"f": {"opis": "Opis.", "stale": {"Stala": value}}})
+    [config] = model_tlc.konfiguracje(model)
+
+    assert f"    Stala = {written}" in model_tlc.cfg(model, config, frozenset()).splitlines()
+
+
 def _without_drift_or_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     def unavailable(katalog: Path) -> str:
         raise AssertionError("błąd modelu przed TLC nie pobiera narzędzi")
@@ -332,6 +347,36 @@ def test_poza_ci_rozjazd_tylko_ostrzega_a_java_i_jar_ze_zmiennych_zastepuja_narz
     assert model_tlc.main(model, []) == 0
     assert calls == [("java-z-kopii", tmp_path / "tla2tools.jar", model.skill / "model" / "M.tla", "f")]
     assert capsys.readouterr().out.splitlines()[-3:] == ["UWAGA: pokryty kod zmienił się", "", "MODEL M OK"]
+
+
+@pytest.mark.parametrize(("argv", "returncode"), [([], 0), (["--strict"], 1)], ids=["bez-strict", "strict"])
+def test_znane_znaleziska_koncza_sie_kodem_1_tylko_ze_strict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], argv: list[str], returncode: int
+) -> None:
+    model = _model(tmp_path, {"f": _config(znane=[FINDING])})
+    _without_drift_or_tools(monkeypatch)
+    monkeypatch.setenv(model_tlc.JAVA, "java")
+    monkeypatch.setenv(model_tlc.JAR, str(tmp_path / "tla2tools.jar"))
+    monkeypatch.setattr(model_tlc, "tlc", lambda java, jar, spec, name, text: PASSED if "PozaZnanymi" in text else _violation("Jedno", '{"a"}'))
+
+    assert model_tlc.main(model, argv) == returncode
+    assert capsys.readouterr().out.splitlines()[-1] == "MODEL M OK, ZNANE ZNALEZISKA: 1"
+
+
+def test_narzedzia_dla_kopii_ustawiaja_jave_i_jar_checkoutu_a_ustawionych_zmiennych_nie_zmieniaja(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(narzedzia_tlc, "java", lambda katalog: f"java z {katalog.name}")
+    monkeypatch.setattr(narzedzia_tlc, "jar", lambda katalog: katalog / "tla2tools.jar")
+    monkeypatch.setenv(model_tlc.JAVA, "java-ustawiona")
+    monkeypatch.delenv(model_tlc.JAR, raising=False)
+
+    model_tlc.narzedzia_dla_kopii(tmp_path)
+
+    assert (os.environ[model_tlc.JAVA], os.environ[model_tlc.JAR]) == (
+        "java-ustawiona",
+        str(tmp_path / narzedzia_tlc.KATALOG / "tla2tools.jar"),
+    )
 
 
 JAR = b"tla2tools z atrapy"

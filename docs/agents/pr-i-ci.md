@@ -17,7 +17,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 - Mutation checks biegną tylko wtedy, gdy zakres runu wybrał dla zmiany krok skilla (podstawę `ci:` albo skrypt mutacji modelu).
   Kiedy ją wybiera, mówi [`docs/agents/skille.md`](skille.md).
 - Skrypty mutacji skilli (`check_*_mutations.py`) na PR nie biegną, tylko w pełnym CI `main` i nocą na `main` (sekcja `Change mutations` niżej).
-  Wyjątkiem jest skrypt mutacji modelu TLA+ skilla (dziś `check_model_kolejki_mutations.py`, `check_model_wznowienia_mutations.py` i `check_model_urwanego_mutations.py`), który biegnie na PR zmieniającym plik w `model/` skilla, sam skrypt albo sprawdzenie, które uruchamiają jego mutacje (ADR 0021, [`docs/agents/skille.md`](skille.md)).
+  Wyjątkiem jest skrypt mutacji modelu TLA+ skilla (dziś `check_model_kolejki_mutations.py`, `check_model_wznowienia_mutations.py` i `check_model_urwanego_mutations.py`), który biegnie na PR zmieniającym plik w `model/` skilla, sam skrypt, sprawdzenie, które uruchamiają jego mutacje, albo moduł, który to sprawdzenie importuje (ADR 0021, [`docs/agents/skille.md`](skille.md)).
 - Mutacje zmienionych linii na PR nie biegną, tylko nocą na `main` (sekcja `Change mutations` niżej).
 - Nowy push do PR anuluje run jego starszego commitu.
 - Co biegnie na swojej gałęzi, drukuje `.venv/bin/python tools/plan_ci.py plan --baza origin/main` (Windows: `py -3 tools/plan_ci.py plan --baza origin/main`).
