@@ -19,7 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import TOOL_ROOT, efenix_pricing
+from . import efenix_pricing
 from . import efenix_messages as messages
 from .client_data import ForbiddenValues
 from .input_copy import InputCopy
@@ -31,14 +31,9 @@ from .efenix_window import OpenEfenix
 from .period_folder import PeriodFolder, PeriodFolderError
 from .process_run import Finished, Process
 from .telemetry import UNKNOWN_PERIOD
+from .tool_files import EFENIX_METRICS
 
 _COUNTERS = frozenset({"orders", "ready", "errors", "emmett_warnings", "with_photos", "defects"})
-
-
-def default_metrics_path() -> Path:
-    """Osobna lokalna historia metryk, obok historii pozostałych procesów."""
-
-    return TOOL_ROOT / ".wycena-efenix-metrics.jsonl"
 
 
 @dataclass(frozen=True)
@@ -106,7 +101,7 @@ def _finished(_inputs: EfenixInputs, summary: PricingSummary) -> Finished:
 PROCESS: Process[EfenixInputs, PricingSummary] = Process(
     name="Wycena w efenix",
     counter_names=_COUNTERS,
-    metrics_path=default_metrics_path,
+    metrics_path=lambda: EFENIX_METRICS,
     metrics_failure_tail="Wycena w efenix zakończyła się niezależnie.",
     execute=_execute,
     finished=_finished,

@@ -36,6 +36,7 @@ DEFINITIONS = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "model" 
 APP = ROOT / "src" / "rozliczenia" / "centrum" / "app.py"
 LAUNCHER = ROOT / "src" / "rozliczenia" / "centrum" / "launcher.py"
 SERVER = ROOT / "src" / "rozliczenia" / "centrum" / "server.py"
+TOOL_FILES = ROOT / "src" / "rozliczenia" / "tool_files.py"
 
 
 def test_kontrprzyklad_kolejki_opowiada_kroki_kodu_i_stan_kolejki_i_skrzynki_na_koncu(capsys: pytest.CaptureFixture[str]) -> None:
@@ -67,7 +68,7 @@ def _no_change(text: str) -> str:
         (APP, lambda text: text.replace("        outbox.resume()\n", "        pass\n"), "src/rozliczenia/centrum/app.py lifespan"),
         (LAUNCHER, lambda text: text.replace("def _listen_when_released(", "def _listen_later("), "src/rozliczenia/centrum/launcher.py _listen_when_released"),
         (SERVER, lambda text: text.replace("_GRACEFUL_SHUTDOWN_S = 5", "_GRACEFUL_SHUTDOWN_S = 0"), "src/rozliczenia/centrum/server.py _GRACEFUL_SHUTDOWN_S"),
-        (LAUNCHER, lambda text: text.replace("def listen_locally(port: int) -> socket.socket:\n", "def listen_locally(port: int) -> socket.socket:\n    _ = 0\n"), "src/rozliczenia/centrum/launcher.py listen_locally"),
+        (TOOL_FILES, lambda text: text.replace("def listen_locally(port: int) -> socket.socket:\n", "def listen_locally(port: int) -> socket.socket:\n    _ = 0\n"), "src/rozliczenia/tool_files.py listen_locally"),
         (SERVER, lambda text: text.replace("def serve(", "def serve_later("), "src/rozliczenia/centrum/server.py serve"),
         (SERVER, lambda text: text.replace("class _Server(uvicorn.Server):\n", "class _Server(uvicorn.Server):\n    DODANE = 1\n"), "src/rozliczenia/centrum/server.py _Server"),
         (APP, lambda text: "POZA = 1\n" + text, None),
@@ -79,7 +80,7 @@ def _no_change(text: str) -> str:
 def test_rozjazd_liczy_w_plikach_procesu_centrum_tylko_definicje_procesow_centrum(
     tmp_path: Path, path: Path, edit: Callable[[str], str], moved: str | None
 ) -> None:
-    for source in (APP, LAUNCHER, SERVER, DEFINITIONS):
+    for source in (APP, LAUNCHER, SERVER, TOOL_FILES, DEFINITIONS):
         copy = tmp_path / source.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         copy.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")

@@ -18,12 +18,13 @@ from typing import Any, get_args, get_type_hints
 
 import pytest
 
-from rozliczenia import TOOL_ROOT, settlement_messages
+from rozliczenia import settlement_messages
 from rozliczenia.centrum import contract, run_view
 from rozliczenia.preparation_process import PROCESS as PREPARATION
 from rozliczenia.process_run import Stop
 from rozliczenia.settlement_process import PROCESS as SETTLEMENT
 from rozliczenia.telemetry import MetricsStore
+from rozliczenia.tool_files import TOOL_ROOT
 
 from tests.fixtures.centrum_processes import run_to_end, settling_centrum
 from tests.fixtures.preparation import (

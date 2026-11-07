@@ -41,7 +41,7 @@ from rozliczenia.intermax_replace import Disk, Waiting
 from rozliczenia.intermax_process import OrderingInputs
 from rozliczenia.message import Message, StopError
 from rozliczenia.quantity_rules import WEEKDAY_LABELS
-from rozliczenia.settings import Settings, SettingsStore
+from rozliczenia.centrum.settings import Settings, SettingsStore
 
 _VIEW: Final = INTERMAX.view
 

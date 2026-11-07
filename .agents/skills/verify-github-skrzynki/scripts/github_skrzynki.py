@@ -33,7 +33,8 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from rozliczenia.centrum import report_box, tool_freshness
+from rozliczenia import tool_files
+from rozliczenia.centrum import report_box
 from rozliczenia.centrum.report_box import GitHubReportBox
 
 from skrypt_skilla import Parser, create_run_root, new_run
@@ -373,10 +374,10 @@ def doctor(key: str, admin: Admin, *, features: Sequence[str], freshness_with_ke
     facts = [f"klucz={token_kind(key)}", f"sprzatanie={token_kind(admin.token)}"]
     if (
         not all(trial.startswith(report_box.REPOSITORY + "-") for trial in TRIALS)
-        or tool_freshness.REPOSITORY_API != f"{API}/repos/{TOOL_REPOSITORY}"
+        or tool_files.REPOSITORY_API != f"{API}/repos/{TOOL_REPOSITORY}"
     ):
         problems.append(
-            f"adresy klientów nie są tymi, które skill zna: {report_box.REPOSITORY}, {tool_freshness.REPOSITORY_API}"
+            f"adresy klientów nie są tymi, które skill zna: {report_box.REPOSITORY}, {tool_files.REPOSITORY_API}"
         )
     trials = [trial for trial, feature in ((TRIAL, "skrzynka"), (TRIAL_ARCHIVE, "archiwum")) if feature in features]
     client = Admin(key, Pace())

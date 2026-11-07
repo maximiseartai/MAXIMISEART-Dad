@@ -9,30 +9,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import TOOL_ROOT, collective_preparation
+from . import collective_preparation
 from . import preparation_messages as messages
-from .collective_preparation import (
-    PreparationSummary,
-    default_collective_template_path,
-    default_internal_template_path,
-)
+from .collective_preparation import PreparationSummary
 from .client_data import ForbiddenValues
 from .input_copy import InputCopy
 from .decision import Conversation
 from .domain import ProgressObserver
 from .input_checks import FILE_READERS, Readers
 from .process_run import Finished, Process
-from .worker_config import default_config_path
+from .tool_files import PREPARATION_METRICS
 
 
 # Liczniki historii metryk Przygotowania pliku zbiorczego (inne niż Przebiegu rozliczeń).
 _COUNTERS = frozenset({"period_orders", "successful_orders", "skipped_empty_rows", "warnings"})
-
-
-def default_metrics_path() -> Path:
-    """Osobna lokalna historia metryk, obok historii Przebiegu rozliczeń."""
-
-    return TOOL_ROOT / ".przygotowanie-pliku-zbiorczego-metrics.jsonl"
 
 
 @dataclass(frozen=True)
@@ -46,10 +36,10 @@ class PreparationInputs:
     register_path: Path
     periods_directory: Path
     period: str
+    config_path: Path
+    internal_template_path: Path
+    collective_template_path: Path
     dry_run: bool = False
-    config_path: Path = field(default_factory=default_config_path)
-    internal_template_path: Path = field(default_factory=default_internal_template_path)
-    collective_template_path: Path = field(default_factory=default_collective_template_path)
     readers: Readers = FILE_READERS
     forbidden: ForbiddenValues | None = None
     copy: InputCopy | None = field(default=None, compare=False)
@@ -95,7 +85,7 @@ def _finished(inputs: PreparationInputs, summary: PreparationSummary) -> Finishe
 PROCESS: Process[PreparationInputs, PreparationSummary] = Process(
     name="Przygotowanie pliku zbiorczego",
     counter_names=_COUNTERS,
-    metrics_path=default_metrics_path,
+    metrics_path=lambda: PREPARATION_METRICS,
     metrics_failure_tail="Przygotowanie pliku zbiorczego zakończyło się niezależnie.",
     execute=_execute,
     finished=_finished,

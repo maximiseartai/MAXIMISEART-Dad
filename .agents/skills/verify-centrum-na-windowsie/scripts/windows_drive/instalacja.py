@@ -12,7 +12,7 @@ import sys
 from windows_drive.common import Run, same_path
 import windows_desktop
 from windows_tool import REPO_ROOT
-from rozliczenia.centrum.tool_update import GITHUB_REPOSITORY
+from rozliczenia.tool_files import REPOSITORY_URL
 
 FEATURE = "instalacja"
 
@@ -78,7 +78,7 @@ def drive(run: Run) -> None:
     run.check(clone.returncode == 0 and (run.tool / ".git").is_dir(), "README's clone and choice of the Wydanie run in PowerShell")
     run.check(run.git("rev-parse", "HEAD") == versions["first"], "the tool stands on the newest Wydanie (the first version), not on main")
     run.check(run.git("branch", "--show-current") == "main", "the clone is on main")
-    run.check(run.git("config", "--get", "remote.origin.url") == GITHUB_REPOSITORY, "origin is the tool's GitHub address")
+    run.check(run.git("config", "--get", "remote.origin.url") == REPOSITORY_URL, "origin is the tool's GitHub address")
     run.check(" " in str(run.tool) and not str(run.tool).isascii(), f"the tool's folder has a space and a Polish letter: {run.tool}")
 
     run.step(FEATURE, "pliki-taty")

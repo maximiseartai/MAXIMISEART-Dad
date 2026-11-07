@@ -39,19 +39,14 @@ from openpyxl.utils import get_column_letter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from rozliczenia.collective_preparation import (
-    default_collective_template_path,
-    default_internal_template_path,
-)
-from rozliczenia.engine import default_worker_template_path
+from rozliczenia import tool_files
 from rozliczenia.workbook_files import DATA_ROW_COLUMNS, FIRST_DATA_ROW, HEADER_ROW, QUANTITY_COLUMNS
-from rozliczenia.worker_config import default_config_path
 
 # Nazwy, pod którymi Wzorce i Konfiguracja wykonawców leżą w ``config``: te same, których szukają procesy.
-WORKER_TEMPLATE = default_worker_template_path().name
-COLLECTIVE_TEMPLATE = default_collective_template_path().name
-INTERNAL_TEMPLATE = default_internal_template_path().name
-WORKER_CONFIG = default_config_path().name
+WORKER_TEMPLATE = tool_files.WORKER_TEMPLATE.name
+COLLECTIVE_TEMPLATE = tool_files.COLLECTIVE_TEMPLATE.name
+INTERNAL_TEMPLATE = tool_files.INTERNAL_TEMPLATE.name
+WORKER_CONFIG = tool_files.WORKER_CONFIG.name
 
 # Wiersze danych Wzorca taty: 18..10093.
 FULL_DATA_ROWS = 10_076

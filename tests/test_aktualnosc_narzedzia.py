@@ -20,6 +20,7 @@ import time
 
 import pytest
 
+from rozliczenia import tool_files
 from rozliczenia.centrum import tool_freshness, tool_update
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, published_from, releases_from
 from rozliczenia.centrum.tool_update import Release
@@ -382,8 +383,8 @@ def test_aktualnosc_i_aktualizacja_pytaja_repozytorium_tego_checkoutu_bez_przeki
     ).stdout.strip()
     repository = re.sub(r"^(https://github\.com/|git@github\.com:)|\.git$", "", origin)
 
-    assert tool_freshness.REPOSITORY_API == f"https://api.github.com/repos/{repository}"
-    assert tool_update.GITHUB_REPOSITORY == f"https://github.com/{repository}.git"
+    assert tool_files.REPOSITORY_API == f"https://api.github.com/repos/{repository}"
+    assert tool_update.ToolClone(Path()).origin == f"https://github.com/{repository}.git"
 
 
 def test_lista_wydan_ma_tylko_opublikowane_wydania_z_notka_i_czasem_publikacji(github: str) -> None:

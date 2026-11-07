@@ -31,8 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 import create_centrum_fixture
-from rozliczenia.centrum.launcher import DEFAULT_PORT
-from rozliczenia.centrum.tool_update import GITHUB_REPOSITORY
+from rozliczenia.tool_files import DEFAULT_PORT, REPOSITORY_URL
 from skrypt_skilla import create_run_root
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -153,7 +152,7 @@ def boundaries(facts: dict[str, Any]) -> dict[str, str]:
         "BROWSER": facts["browser"],
         "GIT_CONFIG_COUNT": "1",
         "GIT_CONFIG_KEY_0": f"url.{Path(facts['origin']).as_posix()}.insteadOf",
-        "GIT_CONFIG_VALUE_0": GITHUB_REPOSITORY,
+        "GIT_CONFIG_VALUE_0": REPOSITORY_URL,
     }
 
 

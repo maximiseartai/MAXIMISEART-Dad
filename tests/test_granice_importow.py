@@ -108,6 +108,7 @@ STDLIB_ONLY = {
     "rozliczenia/centrum/__init__.py": "pakiet, który wczytuje każdy moduł Centrum",
     "rozliczenia/message.py": "Komunikat startu o brakującej bibliotece musi działać bez zależności",
     "rozliczenia/decision.py": "moduły procesu biorą z niego rozmowę bez zależności od rdzenia Uruchomienia",
+    "rozliczenia/tool_files.py": "układ plików narzędzia czytają launcher przed FastAPI i opiekun ponownego startu",
     "rozliczenia/centrum/version.py": "launcher pyta o wersję, zanim wczyta FastAPI",
     "rozliczenia/centrum/log.py": "dziennik Centrum zapisuje błąd startu, gdy brakuje zależności",
     "rozliczenia/centrum/platform.py": "okienko z Komunikatem startu pokazuje też brak zależności",

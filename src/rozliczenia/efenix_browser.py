@@ -92,7 +92,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page, Playwright, Request, Response, sync_playwright
 
-from . import TOOL_ROOT
+from .tool_files import TOOL_ROOT
 from .call_trace import exception_type
 from .efenix_window import (
     BrowserFailure,
