@@ -22,26 +22,33 @@ from model_tlc import Model, Obietnica, Stan, main
 
 # Akcja modelu i krok kodu, który opisuje (tabela w SKILL.md), w słowach kontrprzykładu.
 _STEPS = {
-    "Start": "tata uruchamia Wycenę w efenix",
-    "Otworz": "okno otwiera zlecenie {z} i decyduje (_outcome, completion)",
+    "Start": "tata uruchamia Wycenę w efenix (tryb: bez albo z Przekazaniem)",
+    "Otworz": "okno szuka zlecenia {z}, a gdy nie jest „Do akceptacji”, otwiera je i decyduje (_outcome, completion)",
     "ZaladujEmmetta": "okno klika „Załaduj do zlecenia” w zleceniu {z}: efenix ma Wycenę Emmetta (load_emmett, _emmett)",
     "OdczytPoEmmetcie": "okno czyta stronę zlecenia {z} po Emmetcie i liczy, co dopisać (_completed, completion)",
     "BrakPozycji": "strona zlecenia {z} po Emmetcie nie ma pozycji z ilością w pliku: błąd zlecenia",
     "Wpisz": "okno wpisuje ilość z pliku w zleceniu {z}, efenix ją zapisuje (enter_quantity)",
     "Potwierdz": "efenix odpowiada kwotą w zleceniu {z}",
+    "Przekaz": "okno przekazuje zlecenie {z} do akceptacji, efenix zmienia status (forward_to_accept)",
+    "Szukaj": "okno szuka zlecenia {z} ponownie i czyta jego status (_forwarded, listing)",
     "KoniecZlecenia": "zlecenie {z} ma wynik",
     "Zatrzymanie": "okno efenix się nie dokończyło działania: Zatrzymanie (StopError) w zleceniu {z}",
-    "Znaczniki": "Znaczniki efenix przy gotowych zleceniach (_mark), koniec Uruchomienia",
+    "Znaczniki": "Znaczniki efenix przy gotowych i Znaczniki przekazania przy przekazanych zleceniach (_mark), koniec Uruchomienia",
     "Zgasniecie": "Centrum gaśnie w zleceniu {z} (brak prądu, zabity proces)",
     "Tata": "tata sam zmienia ilość w efenix",
     "Koniec": "ostatnie Uruchomienie się skończyło, nic więcej się nie dzieje",
 }
 
 
+# Zmienne stanu modelu, które opowieść kontrprzykładu pokazuje po każdym kroku, i ich nazwy.
+_SHOWN = (("efenix", "efenix"), ("status", "status"), ("wynik", "wynik"), ("znacznik", "Znaczniki"))
+
+
 def _tell(states: Sequence[Stan]) -> None:
     for number, (before, state) in enumerate(itertools.pairwise(states), start=1):
         step = state.petla or _STEPS[state.akcja].format(z=before.zmienne.get("zlecenie", "?"))
-        print(f"   {number}. {step}: efenix {_brief(state.zmienne['efenix'])}, wynik {_brief(state.zmienne['wynik'])}")
+        seen = ", ".join(f"{name} {_brief(state.zmienne[variable])}" for variable, name in _SHOWN if variable in state.zmienne)
+        print(f"   {number}. {step}: {seen}")
 
 
 def _brief(value: str) -> str:
@@ -64,11 +71,17 @@ MODEL = Model(
             "zlyWynikPoTacie",
         ),
         "ZnacznikTylkoNaWycenionym": Obietnica(
-            "Znacznik efenix staje przy zleceniu, którego wycena w efenix różni się od pliku.", "zlyZnacznik"
+            "Znacznik efenix albo Znacznik przekazania staje przy zleceniu, którego nie opisuje (wycena różna od pliku,"
+            " zlecenie nie „Do akceptacji”), albo Znacznik efenix zastępuje Znacznik przekazania.",
+            "zlyZnacznik",
         ),
         "BladTylkoPoZmianieTaty": Obietnica(
             "tata dostaje błąd albo Ostrzeżenie Emmetta przy zleceniu, którego sam nie zmieniał.", "bladBezPowodu"
         ),
+        "PrzekazujeTylkoGotowe": Obietnica(
+            "narzędzie przekazuje do akceptacji zlecenie, które nie jest gotowe, albo w trybie bez Przekazania.", "zlePrzekazanie"
+        ),
+        "NieZmieniaPrzekazanego": Obietnica("narzędzie zmienia coś w zleceniu „Do akceptacji”.", "zmianaPrzekazanego"),
     },
     opowiedz=_tell,
     akcje=frozenset(_STEPS),

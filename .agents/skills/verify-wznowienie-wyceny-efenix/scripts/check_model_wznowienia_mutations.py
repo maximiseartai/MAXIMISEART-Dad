@@ -1,7 +1,8 @@
 """Show that sprawdz_wznowienie_wyceny.py fails when the TLA+ model of resuming Wycena w efenix loses a guard the code has.
 
 Each mutation removes from ``model/WznowienieWyceny.tla`` one guard or step whose counterpart in
-``src/rozliczenia/efenix_pricing.py`` or ``src/rozliczenia/efenix_positions.py`` the mutation names, runs on its own
+``src/rozliczenia/efenix_pricing.py``, ``src/rozliczenia/efenix_checks.py`` or ``src/rozliczenia/efenix_positions.py``
+the mutation names, runs on its own
 copy of the checkout (``tools/mutacje.py``) and must end the check with ``WZNOWIENIE WYCENY: NOWE NARUSZENIE``. A mutation whose anchor text is no longer in the model is reported as
 NIEAKTUALNA: update it to the new model.
 
@@ -33,7 +34,7 @@ def _check(config: str) -> tuple[str, ...]:
 MUTATIONS = (
     Mutation(
         "Wycena Emmetta także do zlecenia z ilościami (_outcome: bez not _priced(opened))",
-        (Edit(MODEL, "    /\\ IF q # Pusta\n       THEN Dokoncz(q)", "    /\\ IF FALSE\n       THEN Dokoncz(q)"),),
+        (Edit(MODEL, "       ELSE IF q # Pusta\n       THEN Dokoncz(q)", "       ELSE IF FALSE\n       THEN Dokoncz(q)"),),
         _check("zwykle"),
         "ponowne Uruchomienie ładuje Emmetta do zlecenia z wyceną i czyści ilości, także tacie",
         NEW,
@@ -73,9 +74,30 @@ MUTATIONS = (
     ),
     Mutation(
         "Znacznik przy każdym zleceniu z wynikiem (_mark: bez isinstance(result.outcome, Ready))",
-        (Edit(MODEL, 'znacznik[o] \\/ wynik[o] = "gotowe"]', 'znacznik[o] \\/ wynik[o] # "brak"]'),),
+        (Edit(MODEL, '[] wynik[o] = "gotowe" /\\ znacznik[o]', '[] wynik[o] # "brak" /\\ znacznik[o]'),),
         _check("zwykle"),
         "Znacznik efenix staje przy zleceniu z Ostrzeżeniem Emmetta",
+        NEW,
+    ),
+    Mutation(
+        "Przekazanie także zlecenia z Ostrzeżeniem albo błędem (_outcome: bez isinstance(outcome, Ready))",
+        (Edit(MODEL, '    IF w = "gotowe" /\\ tryb = "z"\n', '    IF tryb = "z"\n'),),
+        _check("zwykle"),
+        "firma dostaje do akceptacji zlecenie, w którym efenix ma więcej niż Plik zbiorczy (PrzekazujeTylkoGotowe)",
+        NEW,
+    ),
+    Mutation(
+        "Przekazanie także w trybie bez Przekazania (_outcome: bez mode is PricingMode.FORWARD)",
+        (Edit(MODEL, '    IF w = "gotowe" /\\ tryb = "z"\n', '    IF w = "gotowe"\n'),),
+        _check("zwykle"),
+        "tata uruchamia Wycenę bez Przekazania, a narzędzie i tak przekazuje gotowe zlecenia (PrzekazujeTylkoGotowe)",
+        NEW,
+    ),
+    Mutation(
+        "zlecenie „Do akceptacji” otwierane jak „Do wyceny” (listing: bez Forwarded)",
+        (Edit(MODEL, '    /\\ IF status[zlecenie] = "do akceptacji"\n', "    /\\ IF FALSE\n"),),
+        _check("zwykle"),
+        "ponowne Uruchomienie z Przekazaniem przekazuje zlecenie „Do akceptacji” drugi raz (NieZmieniaPrzekazanego)",
         NEW,
     ),
 )

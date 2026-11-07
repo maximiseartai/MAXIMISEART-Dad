@@ -151,15 +151,20 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `aefc594f1` (2026-11-07, PR 7 of WS-A). Every row of the table was checked against the code at this
-commit. Since the Sync commit `872a47f50` the name of the Logs file has one owner, `logs_disk.name_of`, which takes
-the start facts (`run_logs.StartFacts`, in Logi `RunLog.start`) and keeps the format of the removed
-`run_logs.logs_file_name`; `LogsOnDisk.write` and the file in the Archiwum (`post_of` → `_archive_file`) take their
-name from it, and it joins the definitions because the name it writes is the one `_NAME` reads in `Czytaj`. The
-protocol `StartedFacts` is gone, so `RunLog.interrupted` takes `StartFacts` and `post_of` reads `record.start`; `guarded` is private
-(`_guarded`, the same body) and only `guard_logs` calls it. Names and types changed, not a step, so no action changed.
+Sync commit: `c66fb02de` (2026-11-07, Przekazanie do akceptacji, ADR 0027). Every row of the table was checked
+against the code at this commit. Since `aefc594f1` `save` passes the mode of the Wycena to `_outcome`, which in the mode
+with Przekazanie also forwards a gotowe order to acceptance (one more change in efenix between `journal.begun` and
+`journal.ended`, traced like every other), and `run_logs` has the result `przekazane`; the journal calls and their
+order did not change, so no action changed.
 
 Earlier Sync commits, each checked the same way:
+- `aefc594f1` (PR 7 of WS-A): since the Sync commit `872a47f50` the name of the Logs file has one owner,
+  `logs_disk.name_of`, which takes the start facts (`run_logs.StartFacts`, in Logi `RunLog.start`) and keeps the format
+  of the removed `run_logs.logs_file_name`; `LogsOnDisk.write` and the file in the Archiwum (`post_of` → `_archive_file`)
+  take their name from it, and it joins the definitions because the name it writes is the one `_NAME` reads in
+  `Czytaj`. The protocol `StartedFacts` is gone, so `RunLog.interrupted` takes `StartFacts` and `post_of` reads
+  `record.start`; `guarded` is private (`_guarded`, the same body) and only `guard_logs` calls it. Names and types
+  changed, not a step, so no action changed.
 - `872a47f50`: the start and the end of a Wycena go through `RunComments` instead of `JournalAtResult`, `RunLogs`,
   `JournalAfterLogs` and `ProgressComment`: `run_started` writes the first line and the last-start file, then the
   progress; `_progress` posts under the lock of `RunComments`, and `_Watched.ended` stands for `_ended`; `run_ended`

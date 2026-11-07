@@ -60,9 +60,11 @@ from these sentences, never from a run:
   A run that does not stop ends like the reference or leaves the faulted order to Dad (a date efenix did
   not save is `DateRefused.NOT_SAVED`); it never makes an order gotowe that differs from one run without a fault.
   Harm: Maks chases a changed efenix that never changed, or Dad gets a Znacznik on an order nobody checked with Emmett.
-- **BEZ_ZMIANY_STATUSU**: the window never changes an order's status (`status_changes == 0`), never clicks Przekazanie
-  do akceptacji, anulowanie or their „Tak” (the proxy's click watcher), and sends only requests of `EXPECTED_CALLS`
-  and the login page (`GLOSSARY.md`, Przekazanie do akceptacji: „Robi je tylko tata”).
+- **BEZ_ZMIANY_STATUSU**: every run of the explorer is a Wycena in the mode without Przekazanie (`PricingMode.FILL`, the
+  default), in which the window never changes an order's status (`status_changes == 0`), never clicks Przekazanie do
+  akceptacji, anulowanie or their „Tak” (the proxy's click watcher), and sends only requests of `EXPECTED_CALLS` and the
+  login page (`GLOSSARY.md`, Wycena w efenix: „bez Przekazania gotowe zlecenie oznacza Znacznikiem efenix”, ADR 0027).
+  The mode with Przekazanie is outside the explorer (see Outside the explorer).
 - **ZMIANA_ZE_SLADEM**: every order that changed in efenix has the action that changed it in its trace in the result or
   the Zatrzymanie, and a „zaczynam” entry in the dziennik; a Komunikat that says nothing changed in efenix is true; the
   Znaczniki efenix are exactly the gotowe orders; a gotowe order has the file's quantities, `Kwota` (AU) and the date
@@ -164,6 +166,18 @@ that; its match is the race's exact shape, so any other outcome of the same faul
 
 None today. The race of #895 (the answer of „Załaduj do zlecenia” read after the reload dropped it) ended with #899:
 the window no longer reads that answer, and no entry excuses it.
+
+## Outside the explorer
+
+- **The mode with Przekazanie (ADR 0027).** The explorer runs every case without Przekazanie, so a
+  fault at the request `action_change_status.php`, at the search that confirms it or at the reload after it is not
+  swept, and neither is a kill between Przekazanie and the Znaczniki. What covers it instead: the window contract
+  (`tests/test_atrapa_efenix.py`, rows `przekazanie`, `przekazanie-bez-zmiany-statusu` and a logout before the status
+  change), the guard tests on the Atrapa efenix and a resume from the state a kill after Przekazanie leaves (an order „Do
+  akceptacji” with a Znacznik efenix) on the window in process (`tests/test_wycena_efenix.py`, „Przekazanie do
+  akceptacji”), and the model `verify-wznowienie-wyceny-efenix`
+  (actions `Przekaz` and `Szukaj` under every Zatrzymanie and switch-off). Extending `Fault`, `expected()` and the
+  second runs to the mode with Przekazanie is open work.
 
 ## Accepted risks
 
