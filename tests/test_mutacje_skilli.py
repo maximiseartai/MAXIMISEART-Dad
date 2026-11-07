@@ -539,6 +539,28 @@ def test_klucz_ci_bez_skryptu_z_repozytorium_daje_fail(tmp_path: Path, command: 
     assert result.stdout.splitlines()[-1] == "MUTACJE SKILLI FAIL | PODSTAWA verify-d"
 
 
+def test_krok_skilla_biegnie_w_checkoucie_swojego_skilla_a_nie_w_katalogu_biezacym_ani_checkoucie_narzedzia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``run`` uruchamia krok w korzeniu checkoutu, w którym leży jego skill (``Step.root``), więc polecenie ``ci:``
+    i ścieżki od korzenia w skrypcie trafiają w pliki tego checkoutu, gdziekolwiek stoi narzędzie i proces."""
+
+    checkout = tmp_path / "checkout"
+    script = (
+        "import os\nfrom pathlib import Path\n\nMUTATIONS = ()\n\nif __name__ == '__main__':\n"
+        "    Path(__file__).with_name('katalog.txt').write_text(os.getcwd(), encoding='utf-8')\n    print('MUTACJE OK')\n"
+    )
+    _skill(checkout, "verify-a", {"check_a_mutations.py": script})
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.syspath_prepend(str(TOOLS / "ci"))
+    import mutacje_skilli
+
+    krok = _load_tool(monkeypatch).Katalog.skanuj(checkout).krok("skill:verify-a/check_a_mutations.py")
+
+    assert mutacje_skilli.run(krok, limit_s=60).powod is None
+    assert Path((checkout / ".agents/skills/verify-a/scripts/katalog.txt").read_text(encoding="utf-8")).resolve() == checkout.resolve()
+
+
 SHAPE_GAPS = ROOT / "tests" / "fixtures" / "granice_ksztaltow.py"
 
 
