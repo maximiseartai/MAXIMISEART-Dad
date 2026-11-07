@@ -31,6 +31,7 @@ import pytest
 import yaml
 
 from tests.fixtures.ci_workflow import jobs
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, copy_files, git, repository
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -986,7 +987,7 @@ def test_plan_wgrywa_zakres_nocy_pod_nazwa_ktora_czyta_nastepna_noc() -> None:
     assert plan["permissions"]["actions"] == "read"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="krok biegnie w bashu runnera Linuksa, a atrapa python to skrypt sh")
+@pytest.mark.skipif(sys.platform == "win32", reason="krok biegnie w bashu runnera Linuksa")
 @pytest.mark.parametrize(
     ("kod_narzedzia", "czesc_przechodzi"), [(0, True), (1, True), (2, False), (3, True)], ids=["ok", "przezyly-mutacje", "awaria", "bez-werdyktu"]
 )
@@ -996,10 +997,7 @@ def test_czesc_pada_tylko_przy_awarii_a_przezyte_mutacje_zostawia_zgloszeniu(tmp
     (``tools/lib/ciezkie_ci.py`` chce zadania ``failure``) ma co odtworzyć."""
 
     krok = next(krok for krok in _nocne()["jobs"]["change-mutations"]["steps"] if "tools/mutacje_zmiany.py" in krok.get("run", ""))
-    atrapa = tmp_path / "bin" / "python"
-    atrapa.parent.mkdir()
-    atrapa.write_text(f"#!/bin/sh\nexit {kod_narzedzia}\n", encoding="utf-8")
-    atrapa.chmod(0o755)
+    atrapa = fake_cli(tmp_path / "bin", "python", f"import sys\nsys.exit({kod_narzedzia})\n")
     env = {**os.environ, "PATH": f"{atrapa.parent}{os.pathsep}{os.environ['PATH']}", "BAZA": "baza", "CZESC": "1/1"}
 
     # Domyślna powłoka kroku Actions na Linuksie: ``bash -e {0}``.

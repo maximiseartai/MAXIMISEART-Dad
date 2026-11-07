@@ -23,6 +23,7 @@ from typing import Any
 
 import pytest
 
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, git
 from tests.fixtures.potomne import TOOLS, beating, potomne, wait_for, with_grandchild, worktrees
 from tests.fixtures.skladnia import dotted, imports
@@ -289,16 +290,18 @@ def test_nieudana_kopia_commitu_niesie_komunikat_gita(tmp_path: Path) -> None:
 
 
 # Atrapa gita zapisuje początek i koniec każdego polecenia, które zmienia .git/worktrees; ``add`` trwa sekundę dłużej.
-WORKTREE_LOG = """#!/bin/sh
-case "$1 $2" in
-"worktree add"|"worktree remove"|"worktree prune")
-  echo "start $2" >> "$SHIM_LOG"
-  if [ "$2" = add ]; then sleep 1; fi
-  "$SHIM_GIT" "$@"; code=$?
-  echo "end $2" >> "$SHIM_LOG"
-  exit $code;;
-esac
-exec "$SHIM_GIT" "$@"
+WORKTREE_LOG = """import os, subprocess, sys, time
+real, arguments = os.environ["SHIM_GIT"], sys.argv[1:]
+if arguments[:1] != ["worktree"] or arguments[1:2] not in (["add"], ["remove"], ["prune"]):
+    os.execv(real, [real, *arguments])
+with open(os.environ["SHIM_LOG"], "a") as log:
+    log.write(f"start {arguments[1]}\\n")
+if arguments[1] == "add":
+    time.sleep(1)
+code = subprocess.call([real, *arguments])
+with open(os.environ["SHIM_LOG"], "a") as log:
+    log.write(f"end {arguments[1]}\\n")
+sys.exit(code)
 """
 
 
@@ -319,10 +322,7 @@ def _overlapping(log: list[str]) -> list[str]:
 @POSIX_ONLY
 def test_kopie_commitu_z_wielu_watkow_nie_zmieniaja_worktree_naraz(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _repository(tmp_path / "repo")
-    log, shim = tmp_path / "git.log", tmp_path / "atrapa" / "git"
-    shim.parent.mkdir()
-    shim.write_text(WORKTREE_LOG, encoding="utf-8")
-    shim.chmod(0o755)
+    log, shim = tmp_path / "git.log", fake_cli(tmp_path / "atrapa", "git", WORKTREE_LOG)
     monkeypatch.setenv("SHIM_GIT", str(shutil.which("git")))
     monkeypatch.setenv("SHIM_LOG", str(log))
     monkeypatch.setenv("PATH", f"{shim.parent}{os.pathsep}{os.environ['PATH']}")

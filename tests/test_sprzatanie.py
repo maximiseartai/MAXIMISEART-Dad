@@ -12,6 +12,7 @@ import sys
 
 import pytest
 
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import AUTHOR, commit, git
 
 TOOL = Path(__file__).resolve().parents[1] / "tools" / "sprzatanie.py"
@@ -167,11 +168,7 @@ def test_worktree_z_zywym_procesem_zostaje(main: Path, where: str) -> None:
 
 @pytest.fixture
 def fake_t3(home: Path) -> Path:
-    t3 = home / ".t3" / "bin" / "t3"
-    t3.parent.mkdir(parents=True)
-    t3.write_text(f"#!{sys.executable}\n" + _FAKE_T3, encoding="utf-8")
-    t3.chmod(0o755)
-    return t3
+    return fake_cli(home / ".t3" / "bin", "t3", _FAKE_T3)
 
 
 _FAKE_T3 = """import json, os, sys
@@ -322,10 +319,7 @@ def test_odmowa_gita_zostawia_worktree_z_powodem(main: Path) -> None:
 def fake_lsof(home: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     """Podróbka ``lsof`` na ``PATH``: kolejne wywołania drukują kolejne odpowiedzi, ostatnia się powtarza."""
 
-    lsof = home / "bin" / "lsof"
-    lsof.parent.mkdir()
-    lsof.write_text(f"#!{sys.executable}\n" + _FAKE_LSOF, encoding="utf-8")
-    lsof.chmod(0o755)
+    lsof = fake_cli(home / "bin", "lsof", _FAKE_LSOF)
     monkeypatch.setenv("PATH", f"{lsof.parent}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("LSOF_LICZNIK", str(home / "lsof-wywolania"))
 

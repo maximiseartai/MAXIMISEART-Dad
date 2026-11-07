@@ -13,7 +13,6 @@ import json
 import os
 from pathlib import Path
 import re
-import stat
 import subprocess
 import sys
 from types import ModuleType
@@ -22,6 +21,7 @@ from typing import Any
 import pytest
 
 from tests.fixtures import ustawienia_claude
+from tests.fixtures.fake_cli import fake_cli
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOK = ROOT / "tools" / "hooks" / "zgoda.py"
@@ -29,7 +29,7 @@ ORACLE = ROOT / "tools" / "wyrocznia_zgody.py"
 PREFIX = ROOT / "tools" / "wyrocznia_zgody_prefiks.sh"
 CASES = ROOT / "tools" / "wyrocznia_zgody.jsonl"
 SETTINGS = ROOT / ".claude" / "settings.json"
-POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="atrapa claude i prefiks to skrypty z linią #!")
+POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="host wyroczni to potok nazwany, którego Windows nie ma")
 
 
 @pytest.fixture(scope="module")
@@ -202,8 +202,7 @@ def test_przypadki_wyroczni_maja_dziesiec_przestojow_i_polecenia_ktore_claude_co
     assert any(not row["pyta_o_zgode"] for row in rows)
 
 
-FAKE_CLAUDE = '''#!{python}
-"""Atrapa claude: zachowuje się jak Claude Code 2.1.310 w trybie T3 wobec fałszywego API wyroczni."""
+FAKE_CLAUDE = '''"""Atrapa claude: zachowuje się jak Claude Code 2.1.310 w trybie T3 wobec fałszywego API wyroczni."""
 import json, os, select, subprocess, sys, time, urllib.request
 sys.path.insert(0, {fixtures!r})
 import ustawienia_claude
@@ -280,12 +279,9 @@ def _oracle(
     user_settings: dict[str, Any] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     programs = tmp_path / "bin"
-    programs.mkdir()
-    claude = programs / "claude"
     fixtures = str(Path(ustawienia_claude.__file__).parent)
     atrapa = {"ATRAPA_WYWOLANIA": str(tmp_path / "wywolania.jsonl"), **(atrapa or {})}
-    claude.write_text(FAKE_CLAUDE.format(python=sys.executable, fixtures=fixtures, atrapa=atrapa), encoding="utf-8")
-    claude.chmod(claude.stat().st_mode | stat.S_IXUSR)
+    fake_cli(programs, "claude", FAKE_CLAUDE.format(fixtures=fixtures, atrapa=atrapa))
     listed = tmp_path / "przypadki.jsonl"
     listed.write_text("".join(json.dumps(case) + "\n" for case in cases), encoding="utf-8")
     # Piaskownica wyroczni powstaje w ``~/.cache``, więc każdy test ma własny katalog domowy.

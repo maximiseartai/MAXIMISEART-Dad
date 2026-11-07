@@ -14,17 +14,17 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-import sys
 
 import pytest
 
 from tests.fixtures import opisy_pr
-from tests.fixtures.git_repo import commit, copy_files, git, repository
+from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
+from tests.fixtures.git_repo import commit, git
 
 import czasy_ci
 import scal_pr
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Atrapa gh to skrypt sh.")
+pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 TEMPLATE = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "pr" / "SKILL.md"
@@ -133,26 +133,21 @@ NO_PASS = "werdykt: brak komentarza ani recenzji „WERDYKT: PASS {head}”; opu
 OBJECTION = "werdykt: FAIL dla {short} bez nowszego „WERDYKT: PASS {head}”"
 
 
-class FakeGitHub:
+class MergeGitHub(FakeGitHub):
     def __init__(self, tmp_path: Path, files: dict[str, str]) -> None:
-        origin = tmp_path / "origin.git"
-        git(tmp_path, "init", "--quiet", "--bare", "--initial-branch=main", str(origin))
-        self.origin = origin
-        self.checkout = repository(
-            tmp_path / "checkout",
+        super().__init__(
+            tmp_path,
             {
                 ".gitignore": ".mypy_cache/\n.ruff_cache/\n__pycache__/\nposprzatane\n",
                 "pyproject.toml": PYPROJECT,
                 ".agents/skills/pr/SKILL.md": TEMPLATE.read_text(encoding="utf-8"),
                 **files,
             },
+            tool="tools/scal_pr.py",
+            copies=("tools/ci/status_scalenia.py", "tools/lib/wplyw_zmiany.py"),
+            gh=FAKE_GH,
         )
-        copy_files(self.checkout, ("tools/scal_pr.py", "tools/ci/status_scalenia.py", "tools/lib/wplyw_zmiany.py"))
-        git(self.checkout, "checkout", "--quiet", "-b", "main")
-        self.start = commit(self.checkout, "start")
-        git(self.checkout, "remote", "add", "origin", str(origin))
-        git(self.checkout, "push", "--quiet", "origin", "main")
-        self.bin = _fake_gh(tmp_path)
+        _empty_state(self.bin)
         self.pulls: dict[str, dict[str, object]] = {}
         self.issues: dict[str, str] = {}
         self.repo_view = _repo_view("main")  # zaczęte od „gh: ” to błąd ``gh repo view``
@@ -163,7 +158,7 @@ class FakeGitHub:
         """HEAD nowego PR z zielonym CI i bez werdyktu: commit ``files`` na ``parent`` (domyślnie commit ``start``)."""
 
         head = self.commit_on(parent or self.start, files, f"PR {number}")
-        git(self.checkout, "push", "--quiet", "origin", f"{head}:refs/pull/{number}/head")
+        self.push_head(number, head)
         self.pulls[str(number)] = {
             "number": number,
             "title": f"PR {number}",
@@ -182,15 +177,6 @@ class FakeGitHub:
         }
         self._save()
         return head
-
-    def commit_on(self, parent: str, files: dict[str, str], subject: str) -> str:
-        git(self.checkout, "checkout", "--quiet", "--detach", parent)
-        for name, text in files.items():
-            (self.checkout / name).parent.mkdir(parents=True, exist_ok=True)
-            (self.checkout / name).write_text(text, encoding="utf-8")
-        made = commit(self.checkout, subject)
-        git(self.checkout, "checkout", "--quiet", "main")
-        return made
 
     def update(self, number: int, **fields: object) -> None:
         self.pulls[str(number)].update(fields)
@@ -211,25 +197,6 @@ class FakeGitHub:
         assert isinstance(verdicts, list)
         verdicts.append({**verdict, "author": {"login": "recenzent"}})
         self._save()
-
-    def push_main(self, files: dict[str, str]) -> str:
-        for name, text in files.items():
-            (self.checkout / name).write_text(text, encoding="utf-8")
-        head = commit(self.checkout, "main idzie dalej")
-        git(self.checkout, "push", "--quiet", "origin", "main")
-        return head
-
-    def run(self, *arguments: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [sys.executable, str(self.checkout / "tools" / "scal_pr.py"), *arguments],
-            cwd=self.checkout,
-            env={**os.environ, "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}"},
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=300,
-            check=False,
-        )
 
     def open_issues(self, *numbers: int, state: str = "open") -> None:
         self.answer_issue(*numbers, answer=json.dumps({"state": state}))
@@ -255,7 +222,7 @@ class FakeGitHub:
         """Nowy HEAD PR ``number``: commit ``files`` na jego obecnym HEAD."""
 
         head = self.commit_on(str(self.pulls[str(number)]["headRefOid"]), files, f"PR {number} dalej")
-        git(self.checkout, "push", "--quiet", "--force", "origin", f"{head}:refs/pull/{number}/head")
+        self.push_head(number, head)
         self.update(number, headRefOid=head)
         return head
 
@@ -280,17 +247,17 @@ def _fake_gh(tmp_path: Path) -> Path:
     """Katalog atrapy ``gh`` bez PR-ów i issues, która renderuje opisy z ``tests/fixtures/opisy_pr.json``."""
 
     directory = tmp_path / "bin"
-    directory.mkdir()
-    (directory / "gh.py").write_text(FAKE_GH, encoding="utf-8")
-    gh = directory / "gh"
-    gh.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{directory / "gh.py"}" "$@"\n', encoding="utf-8")
-    gh.chmod(0o755)
-    for name, empty in (("pulls.json", "{}"), ("issues.json", "{}"), ("repo_view", ""), ("markdown.json", json.dumps(opisy_pr.rendered()))):
-        (directory / name).write_text(empty, encoding="utf-8")
+    fake_cli(directory, "gh", FAKE_GH)
+    _empty_state(directory)
     return directory
 
 
-def _short_github_timeout(github: FakeGitHub) -> str:
+def _empty_state(directory: Path) -> None:
+    for name, empty in (("pulls.json", "{}"), ("issues.json", "{}"), ("repo_view", ""), ("markdown.json", json.dumps(opisy_pr.rendered()))):
+        (directory / name).write_text(empty, encoding="utf-8")
+
+
+def _short_github_timeout(github: MergeGitHub) -> str:
     """Commit na ``main`` z ``status_scalenia.GITHUB_TIMEOUT_S`` równym 3 s, żeby ``gh``, które zawiesza, kończyło się szybko."""
 
     scalenia = github.checkout / "tools" / "ci" / "status_scalenia.py"
@@ -309,7 +276,7 @@ def _last_line(answered: subprocess.CompletedProcess[str]) -> str:
 
 
 def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/sprzatanie.py": CLEANUP})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/sprzatanie.py": CLEANUP})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     main = github.push_main({"kod/nazwa.py": 'NAZWA = "z main"\n'})
     github.comment(1, f"WERDYKT: FAIL {head}\n- krytyczne: brak testu")
@@ -395,7 +362,7 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_pa
 def test_bez_zielonego_ci_albo_werdyktu_pass_dla_head_pr_nie_jest_scalany(
     tmp_path: Path, ci: list[dict[str, str | None]], comments: list[tuple[str, ...]], reason: str
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     old = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     head = github.commit_on(old, {"kod/inne.py": "INNE: int = 2\n"}, "PR 1 po poprawce")
     git(github.checkout, "push", "--quiet", "--force", "origin", f"{head}:refs/pull/1/head")
@@ -435,7 +402,7 @@ def test_bez_zielonego_ci_albo_werdyktu_pass_dla_head_pr_nie_jest_scalany(
     ],
 )
 def test_sprzeciw_zaufanego_konta_dla_head_po_pass_blokuje_merge(tmp_path: Path, kind: str, objection: str) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     old = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     head = github.commit_on(old, {"kod/inne.py": "INNE: int = 2\n"}, "PR 1 po poprawce")
     git(github.checkout, "push", "--quiet", "--force", "origin", f"{head}:refs/pull/1/head")
@@ -495,7 +462,7 @@ def test_sprzeciw_zaufanego_konta_dla_head_po_pass_blokuje_merge(tmp_path: Path,
 def test_sprzeciw_dla_innego_commitu_starszy_niz_pass_bez_prawa_zapisu_albo_poza_kontraktem_nie_blokuje(
     tmp_path: Path, verdicts: list[tuple[str, ...]]
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     old = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     head = github.commit_on(old, {"kod/inne.py": "INNE: int = 2\n"}, "PR 1 po poprawce")
     git(github.checkout, "push", "--quiet", "--force", "origin", f"{head}:refs/pull/1/head")
@@ -543,7 +510,7 @@ NO_FINDINGS = "druga linia „{line}” to nie „Znaleziska: N (Ważne a, Drobn
 def test_pass_dla_head_opublikowany_z_pominieciem_regul_werdyktu_nie_scala_a_odmowa_wskazuje_werdykt(
     tmp_path: Path, verdicts: list[tuple[str, str]], problems: str
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     for kind, body in verdicts:
         github.comment(1, body.format(head=head)) if kind == "comment" else github.review(1, body.format(head=head), state=kind)
@@ -566,7 +533,7 @@ def test_pass_dla_head_opublikowany_z_pominieciem_regul_werdyktu_nie_scala_a_odm
 def test_pr_zamkniety_szkic_albo_z_forka_nie_jest_scalany(
     tmp_path: Path, state: str, draft: bool, fork: bool, reason: str
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.update(1, state=state, isDraft=draft, isCrossRepository=fork)
     github.comment(1, PASS.format(head=head))
@@ -598,7 +565,7 @@ ALL_SECTIONS = "„## Why”, „## Summary”, „## Evidence”, „## Merge D
     ids=["pusty", "wlasne-sekcje", "sekcje-innego-wzoru", "przetlumaczony-naglowek", "zla-kolejnosc", "naglowek-3-stopnia", "naglowek-w-zdaniu", "odstepy-i-crlf"],
 )
 def test_pr_bez_naglowka_wzoru_skilla_pr_w_jego_kolejnosci_nie_jest_scalany(tmp_path: Path, body: str, missing: str) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.update(1, body=body)
     github.comment(1, PASS.format(head=head))
@@ -613,7 +580,7 @@ def test_pr_bez_naglowka_wzoru_skilla_pr_w_jego_kolejnosci_nie_jest_scalany(tmp_
 
 
 def test_brak_naglowka_wzoru_jest_w_jednej_odmowie_z_czerwonym_ci_i_brakiem_werdyktu(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.update(1, body="", statusCheckRollup=[_check_run("COMPLETED", "FAILURE")])
 
@@ -627,7 +594,7 @@ def test_brak_naglowka_wzoru_jest_w_jednej_odmowie_z_czerwonym_ci_i_brakiem_werd
 
 def test_naglowek_dopisany_do_wzoru_skilla_pr_od_razu_obowiazuje(tmp_path: Path) -> None:
     template = TEMPLATE.read_text(encoding="utf-8").replace("## Merge Danger\n", "## Merge Danger\n\n## Rollback\n", 1)
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM, ".agents/skills/pr/SKILL.md": template})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, ".agents/skills/pr/SKILL.md": template})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.comment(1, PASS.format(head=head))
 
@@ -654,7 +621,7 @@ def test_naglowek_dopisany_do_wzoru_skilla_pr_od_razu_obowiazuje(tmp_path: Path)
 def test_pr_ktory_nie_scala_sie_czysto_z_biezacym_main_nie_jest_scalany(
     tmp_path: Path, main_files: dict[str, str], pull_files: dict[str, str], reason: str
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM, "kod/nazwa.py": 'NAZWA = "pierwsza"\n'})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "kod/nazwa.py": 'NAZWA = "pierwsza"\n'})
     head = github.open_pull(1, pull_files)
     github.comment(1, PASS.format(head=head))
     main = github.push_main(main_files)
@@ -683,11 +650,11 @@ NEGATIVE_TEST_FILE = "tests/test_suma_ujemnych.py"
 
 def _merge_test_github(
     tmp_path: Path, pull_files: dict[str, str], main_files: dict[str, str], ci_seconds: dict[str, float] | None
-) -> tuple[FakeGitHub, str, str]:
+) -> tuple[MergeGitHub, str, str]:
     """PR 1 z PASS, który zapisuje ``pull_files`` obok testu sumy, ``main`` z ``main_files`` po jego merge-base i czasy CI
     plików testów, jakie ``tools/szybko.py`` pobrał dziś do ``.git/czasy-ci`` (``None``: bez czasów); HEAD PR i ``main``."""
 
-    github = FakeGitHub(tmp_path, {"pyproject.toml": WITH_PYTEST, "kod/__init__.py": HELPED_SUM, "kod/pomoc.py": HELPER, SUM_TEST_FILE: SUM_TEST})
+    github = MergeGitHub(tmp_path, {"pyproject.toml": WITH_PYTEST, "kod/__init__.py": HELPED_SUM, "kod/pomoc.py": HELPER, SUM_TEST_FILE: SUM_TEST})
     head = github.open_pull(1, pull_files)
     github.comment(1, PASS.format(head=head))
     main = github.push_main(main_files)
@@ -809,7 +776,7 @@ def test_test_scalenia_nie_biegnie_bez_wspolnego_testu_ponad_limit_czasu_ci_i_pr
 
 
 def test_main_przesuniety_w_trakcie_sprawdzania_zatrzymuje_merge(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     moved = github.commit_on(github.start, {"kod/nowe.py": "NOWE: int = 1\n"}, "main w trakcie")
     pushes_main = (
         "import subprocess\n\n"
@@ -827,7 +794,7 @@ def test_main_przesuniety_w_trakcie_sprawdzania_zatrzymuje_merge(tmp_path: Path)
 
 
 def test_baza_przesunieta_z_innego_klonu_przed_sprawdzeniem_jest_baza_scalenia(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.comment(1, PASS.format(head=head))
     other = tmp_path / "inny-klon"
@@ -844,7 +811,7 @@ def test_baza_przesunieta_z_innego_klonu_przed_sprawdzeniem_jest_baza_scalenia(t
 
 
 def test_po_merge_zamyka_otwarte_issues_z_naprawia_z_komentarzem_a_bez_merge_tylko_je_podaje(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/sprzatanie.py": CLEANUP})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/sprzatanie.py": CLEANUP})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.open_issues(3, 4, 6, 7)
     github.open_issues(5, state="closed")
@@ -868,7 +835,7 @@ def test_po_merge_zamyka_otwarte_issues_z_naprawia_z_komentarzem_a_bez_merge_tyl
 
 
 def test_merge_do_galezi_innej_niz_domyslna_niczego_nie_zamyka_ani_nie_renderuje_opisu(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     github.repo_view = _repo_view("trunk")
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.open_issues(3, 4)
@@ -888,7 +855,7 @@ def test_merge_do_galezi_innej_niz_domyslna_niczego_nie_zamyka_ani_nie_renderuje
 
 @pytest.mark.parametrize("body", [opisy_pr.wzor("Closes #3"), opisy_pr.wzor("Ten PR\nnaprawia #3")], ids=["closes", "naprawia-mala-litera"])
 def test_pr_bez_slowa_naprawia_nie_pyta_o_domyslna_galaz_ani_nie_renderuje_opisu(tmp_path: Path, body: str) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     github.repo_view = _repo_view("trunk")
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.update(1, body=body)
@@ -908,7 +875,7 @@ def test_pr_bez_slowa_naprawia_nie_pyta_o_domyslna_galaz_ani_nie_renderuje_opisu
 def test_bez_domyslnej_galezi_od_githuba_merge_sie_odbywa_a_issues_zostaja_otwarte_z_ostrzezeniem(
     tmp_path: Path, answer: str
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     github.repo_view = answer
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.open_issues(3)
@@ -930,7 +897,7 @@ def test_bez_domyslnej_galezi_od_githuba_merge_sie_odbywa_a_issues_zostaja_otwar
 
 @pytest.mark.parametrize("answer", ["gh: HTTP 502", "\n", "zawiesza"], ids=["blad-http", "pusta-odpowiedz", "gh-po-czasie"])
 def test_bez_html_opisu_od_githuba_merge_sie_odbywa_a_issues_zostaja_otwarte_z_ostrzezeniem(tmp_path: Path, answer: str) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"}, parent=_short_github_timeout(github))
     github.open_issues(3)
     github.markdown[opisy_pr.SCALENIE["jedno"]] = answer
@@ -951,7 +918,7 @@ def test_bez_html_opisu_od_githuba_merge_sie_odbywa_a_issues_zostaja_otwarte_z_o
 
 
 def test_porazka_zamykania_issue_nie_odwoluje_scalenia(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"}, parent=_short_github_timeout(github))
     github.open_issues(3)
     github.answer_issue(10, answer="")
@@ -973,7 +940,7 @@ def test_porazka_zamykania_issue_nie_odwoluje_scalenia(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("after_merge", ["brak", "błąd"], ids=["github-bez-commitu-merge", "gh-pr-view-z-bledem"])
 def test_bez_commitu_merge_od_githuba_issues_zostaja_otwarte_z_ostrzezeniem(tmp_path: Path, after_merge: str) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.open_issues(3)
     github.open_issues(5, state="closed")
@@ -1019,7 +986,7 @@ def test_kazdy_opis_testow_ma_html_z_renderera_githuba() -> None:
 
 def test_sprzatanie_po_czasie_nie_odwoluje_scalenia(tmp_path: Path) -> None:
     hangs = "import time\n\ntime.sleep(600)\n"
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/sprzatanie.py": hangs})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/sprzatanie.py": hangs})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     tool = github.checkout / "tools" / "scal_pr.py"
     tool.write_text(tool.read_text(encoding="utf-8").replace("CLEANUP_TIMEOUT_S = 300", "CLEANUP_TIMEOUT_S = 1"), encoding="utf-8")
@@ -1045,7 +1012,7 @@ def test_sprzatanie_po_czasie_nie_odwoluje_scalenia(tmp_path: Path) -> None:
 def test_gotowy_pr_nie_czeka_na_mutacje_zmiany_ani_linie_mutacja_bo_mutacje_biegna_noca_na_main(
     tmp_path: Path, mutations: list[dict[str, str | None]]
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.update(1, statusCheckRollup=[*GREEN, *mutations])
     github.comment(1, PASS.format(head=head))
@@ -1076,7 +1043,7 @@ def _lines(answered: subprocess.CompletedProcess[str], prefix: str) -> list[str]
 def test_przeglad_podaje_merge_base_zmiane_skille_z_head_pr_i_poprzednie_werdykty_z_poleceniem_diffu_kolejnej_rundy(
     tmp_path: Path,
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM, "skille.txt": "verify-main\n", "tools/skille_dla_zmiany.py": SKILLS_FOR_CHANGE})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "skille.txt": "verify-main\n", "tools/skille_dla_zmiany.py": SKILLS_FOR_CHANGE})
     reviewed = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n", "skille.txt": "verify-pr\n"})
     main = github.push_main({"kod/nazwa.py": 'NAZWA = "z main"\n'})
     github.comment(1, f"WERDYKT: FAIL {reviewed}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n- Ważne: brak testu")
@@ -1108,7 +1075,7 @@ def test_przeglad_podaje_merge_base_zmiane_skille_z_head_pr_i_poprzednie_werdykt
 
 
 def test_przeglad_po_pass_dla_head_mowi_ze_werdykt_dotyczy_tego_head_a_rundy_z_fail_licza_tylko_fail(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM, "skille.txt": "verify-a\n", "tools/skille_dla_zmiany.py": SKILLS_FOR_CHANGE})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "skille.txt": "verify-a\n", "tools/skille_dla_zmiany.py": SKILLS_FOR_CHANGE})
     reviewed = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.comment(1, f"WERDYKT: FAIL {reviewed}\nZnaleziska: 1 (Ważne 1, Drobne 0)")
     head = github.push_pull(1, {"kod/inne.py": "INNE: int = 2\n"})
@@ -1185,7 +1152,7 @@ UNPROVEN = "polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko logi pa
 def test_przeglad_podaje_stan_required_ci_status_na_head_i_padle_zadania_jego_runu(
     tmp_path: Path, ci: list[dict[str, str | None]], line: str
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.update(1, statusCheckRollup=ci)
 
@@ -1196,7 +1163,7 @@ def test_przeglad_podaje_stan_required_ci_status_na_head_i_padle_zadania_jego_ru
 
 
 def test_przeglad_oznacza_pass_dla_head_poza_regulami_werdyktu(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.comment(1, f"WERDYKT: PASS {head}\nZnaleziska: 0")
 
@@ -1215,7 +1182,7 @@ REAL_SKILLS_FOR_CHANGE = (
 
 
 def test_przeglad_z_prawdziwym_skille_dla_zmiany_z_head_pr_podaje_skille_zmiany_od_merge_base(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM, ".agents/skills/verify-kod/SKILL.md": "---\nname: verify-kod\ndescription: kod\npilnuje:\n  - kod/*\n---\n"})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, ".agents/skills/verify-kod/SKILL.md": "---\nname: verify-kod\ndescription: kod\npilnuje:\n  - kod/*\n---\n"})
     github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n", **{name: (TOOLS.parent / name).read_text(encoding="utf-8") for name in REAL_SKILLS_FOR_CHANGE}})
 
     answered = github.run("1", "--przeglad")
@@ -1225,7 +1192,7 @@ def test_przeglad_z_prawdziwym_skille_dla_zmiany_z_head_pr_podaje_skille_zmiany_
 
 
 def test_przeglad_nie_czeka_dluzej_niz_limit_na_skille_dla_zmiany(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/skille_dla_zmiany.py": "import time\n\ntime.sleep(60)\n"})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/skille_dla_zmiany.py": "import time\n\ntime.sleep(60)\n"})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     tool = github.checkout / "tools" / "scal_pr.py"
     tool.write_text(tool.read_text(encoding="utf-8").replace("SKILLS_TIMEOUT_S = 300", "SKILLS_TIMEOUT_S = 1"), encoding="utf-8")
@@ -1249,7 +1216,7 @@ def test_przeglad_nie_czeka_dluzej_niz_limit_na_skille_dla_zmiany(tmp_path: Path
 def test_przeglad_bez_wyniku_skille_dla_zmiany_podaje_skille_nieznane_a_pr_bez_werdyktu_jako_pierwsza_runde(
     tmp_path: Path, files: dict[str, str], skills: str
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM, **files})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, **files})
     github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.comment(1, "Wygląda dobrze, WERDYKT: PASS później.")
 
@@ -1272,7 +1239,7 @@ def test_przeglad_bez_wyniku_skille_dla_zmiany_podaje_skille_nieznane_a_pr_bez_w
 def test_werdykt_w_postaci_ze_skilla_dla_head_trafia_na_pr_jako_komentarz_ktory_rozstrzyga_scalenie(
     tmp_path: Path, verdict: str, decision: str
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     path = tmp_path / "runda-1.md"
     path.write_text(verdict.format(head=head), encoding="utf-8")
@@ -1313,7 +1280,7 @@ OLD = "0" * 40
 def test_werdykt_niezgodny_z_postacia_ze_skilla_albo_z_head_nie_trafia_na_pr_a_odmowa_mowi_co_poprawic(
     tmp_path: Path, verdict: str, reason: str
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     path = tmp_path / "runda-1.md"
     path.write_text(verdict.format(head=head, short=head[:7]), encoding="utf-8")
@@ -1333,7 +1300,7 @@ def test_werdykt_niezgodny_z_postacia_ze_skilla_albo_z_head_nie_trafia_na_pr_a_o
 def test_tryby_przegladu_werdyktu_i_bez_merge_sie_wykluczaja_wiec_dwa_naraz_niczego_nie_publikuja_ani_nie_scalaja(
     tmp_path: Path, modes: list[str]
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     path = tmp_path / "runda-1.md"
     path.write_text(f"WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n", encoding="utf-8")
@@ -1351,7 +1318,7 @@ def test_tryby_przegladu_werdyktu_i_bez_merge_sie_wykluczaja_wiec_dwa_naraz_nicz
     ids=["przeglad", "werdykt", "bez-merge"],
 )
 def test_blad_gh_konczy_sie_linia_fail_z_nazwa_trybu(tmp_path: Path, mode: list[str], label: str) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     path = tmp_path / "runda-1.md"
     path.write_text(f"WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n", encoding="utf-8")
@@ -1364,14 +1331,16 @@ def test_blad_gh_konczy_sie_linia_fail_z_nazwa_trybu(tmp_path: Path, mode: list[
     assert (github.published(), github.merges()) == ([], [])
 
 
-def _git_hanging_on(github: FakeGitHub, subcommand: str) -> None:
+def _git_hanging_on(github: MergeGitHub, subcommand: str) -> None:
     """``git <subcommand>`` w narzędziu i atrapie ``gh`` czeka minutę i nic nie drukuje; reszta to prawdziwy Git."""
 
     real = shutil.which("git")
     assert real is not None
-    fake = github.bin / "git"
-    fake.write_text(f'#!/bin/sh\n[ "$1" = "{subcommand}" ] && exec sleep 60\nexec "{real}" "$@"\n', encoding="utf-8")
-    fake.chmod(0o755)
+    fake_cli(
+        github.bin,
+        "git",
+        f"import os, sys, time\nif sys.argv[1:2] == [{subcommand!r}]:\n    time.sleep(60)\n    sys.exit(0)\nos.execv({real!r}, [{real!r}, *sys.argv[1:]])\n",
+    )
 
 
 @pytest.mark.parametrize(
@@ -1380,7 +1349,7 @@ def _git_hanging_on(github: FakeGitHub, subcommand: str) -> None:
     ids=["przeglad", "merge"],
 )
 def test_git_ktory_wisi_konczy_sie_linia_fail_po_limicie_githuba(tmp_path: Path, mode: list[str], subcommand: str, label: str) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     # Scalenie z bazą sprawdza tu atrapa ruff i mypy, bo sprawdzenie nie jest celem testu.
     head = github.open_pull(1, {"tools/ci_lokalnie.py": "print('CI LOKALNIE OK')\n"}, parent=_short_github_timeout(github))
     github.comment(1, PASS.format(head=head))
@@ -1395,7 +1364,7 @@ def test_git_ktory_wisi_konczy_sie_linia_fail_po_limicie_githuba(tmp_path: Path,
 
 
 def test_przeglad_pr_bez_wspolnej_historii_z_baza_konczy_sie_linia_fail_z_poleceniem_gita(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     git(github.checkout, "checkout", "--quiet", "--orphan", "obca-historia")
     orphan = commit(github.checkout, "obca historia")
@@ -1411,7 +1380,7 @@ def test_przeglad_pr_bez_wspolnej_historii_z_baza_konczy_sie_linia_fail_z_polece
 
 
 def test_werdykt_bez_pliku_konczy_sie_bledem_narzedzia_bez_komentarza(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
 
     answered = github.run("1", "--werdykt", str(tmp_path / "brak.md"))

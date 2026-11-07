@@ -31,8 +31,8 @@ from rozliczenia.centrum.tool_update import (
 
 from tests.fixtures.git_config import computer_git_config
 from tests.fixtures.potomne import beating
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.tool_clone import (
-    git_command,
     git_failing_on,
     FIRST_VERSION,
     NEW_REQUIREMENTS,
@@ -715,8 +715,9 @@ def git_whose_helper_holds_its_output(tmp_path: Path, commit: str) -> Path:
     Odpowiada jak klon na `main` już na commicie ``commit`` najnowszego Wydania.
     """
 
-    script = tmp_path / "git_z_pomocnikiem.py"
-    script.write_text(
+    return fake_cli(
+        tmp_path,
+        "git",
         "import subprocess, sys\n"
         f"COMMIT = {commit!r}\n"
         "args = [arg for index, arg in enumerate(sys.argv[1:]) if arg != '-c' and sys.argv[index] != '-c']\n"
@@ -724,9 +725,7 @@ def git_whose_helper_holds_its_output(tmp_path: Path, commit: str) -> Path:
         "if command == 'fetch':\n"
         "    subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
         "print({'symbolic-ref': 'main', 'for-each-ref': f'v0.1.0 commit {COMMIT}'}.get(command, COMMIT))\n",
-        encoding="utf-8",
     )
-    return git_command(tmp_path, script)
 
 
 def test_pomocnik_gita_trzymajacy_jego_wyjscie_nie_wstrzymuje_aktualizacji(tmp_path: Path) -> None:
@@ -867,8 +866,9 @@ def git_locking_after_merge(tmp_path: Path, locked: Path) -> Path:
 
     real = shutil.which("git")
     assert real is not None
-    script = tmp_path / "git_blokujacy.py"
-    script.write_text(
+    return fake_cli(
+        tmp_path,
+        "git",
         "import os, stat, subprocess, sys\n"
         f"locked = {str(locked)!r}\n"
         "acl = os.name == 'nt' and os.path.isdir(locked)\n"
@@ -884,9 +884,7 @@ def git_locking_after_merge(tmp_path: Path, locked: Path) -> Path:
         "if 'merge' in sys.argv:\n"
         "    lock(True)\n"
         "sys.exit(code)\n",
-        encoding="utf-8",
     )
-    return git_command(tmp_path, script)
 
 
 def test_gdy_plik_taty_nie_wroci_po_odmowie_przesuniecia_wynik_mowi_to_wprost_a_cofniecie_przywraca_plik_taty(
@@ -1034,8 +1032,9 @@ def git_whose_fetch_stalls(tmp_path: Path, commit: str, heartbeat: Path) -> Path
 
     helper = f"import time\nfor _ in range(600):\n    open({str(heartbeat)!r}, 'a').write('.')\n    time.sleep(0.05)\n"
     middle = f"import subprocess, sys\nsubprocess.Popen([sys.executable, '-c', {helper!r}])\n"
-    script = tmp_path / "git_ze_stojacym_pobraniem.py"
-    script.write_text(
+    return fake_cli(
+        tmp_path,
+        "git",
         "import subprocess, sys, time\n"
         f"COMMIT = {commit!r}\n"
         "args = [arg for index, arg in enumerate(sys.argv[1:]) if arg != '-c' and sys.argv[index] != '-c']\n"
@@ -1044,9 +1043,7 @@ def git_whose_fetch_stalls(tmp_path: Path, commit: str, heartbeat: Path) -> Path
         f"    subprocess.run([sys.executable, '-c', {middle!r}])\n"
         "    time.sleep(60)\n"
         "print('main' if command == 'symbolic-ref' else COMMIT)\n",
-        encoding="utf-8",
     )
-    return git_command(tmp_path, script)
 
 
 def test_pobranie_ktore_stoi_po_limicie_czasu_konczy_sie_brakiem_polaczenia_bez_procesow_gita(

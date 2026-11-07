@@ -9,19 +9,16 @@ i zapisuje statusy, które narzędzie wysyła do GitHuba.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 import subprocess
-import sys
 
-import pytest
 
-from tests.fixtures.git_repo import commit, copy_files, git, repository
+from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
+from tests.fixtures.git_repo import git
 from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Atrapa gh to skrypt sh.")
+pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
 
-TOOL = Path(__file__).resolve().parents[1] / "tools" / "ci" / "status_scalenia.py"
 SUM = "def suma(a: int, b: int) -> int:\n    return a + b\n"
 SUM_OF_THREE = "def suma(a: int, b: int, c: int) -> int:\n    return a + b + c\n"
 TYPE_ERROR = 'LICZBA: int = "tekst"\n'
@@ -47,67 +44,34 @@ else:
 """
 
 
-class FakeGitHub:
+class StatusGitHub(FakeGitHub):
     def __init__(self, tmp_path: Path, files: dict[str, str]) -> None:
-        origin = tmp_path / "origin.git"
-        git(tmp_path, "init", "--quiet", "--bare", str(origin))
-        self.checkout = repository(
-            tmp_path / "checkout",
+        super().__init__(
+            tmp_path,
             {
                 ".gitignore": ".mypy_cache/\n.ruff_cache/\n__pycache__/\n",
                 "pyproject.toml": '[tool.ruff]\ninclude = ["kod/**/*.py"]\n\n[tool.mypy]\nstrict = true\nfiles = ["kod"]\n',
                 **files,
             },
+            tool="tools/ci/status_scalenia.py",
+            gh=FAKE_GH,
         )
-        copy_files(self.checkout, ("tools/ci/status_scalenia.py",))
-        git(self.checkout, "checkout", "--quiet", "-b", "main")
-        self.start = commit(self.checkout, "start")
-        git(self.checkout, "remote", "add", "origin", str(origin))
-        git(self.checkout, "push", "--quiet", "origin", "main")
-        self.bin = tmp_path / "bin"
-        self.bin.mkdir()
-        (self.bin / "gh.py").write_text(FAKE_GH, encoding="utf-8")
         (self.bin / "odrzucane").write_text("", encoding="utf-8")
-        gh = self.bin / "gh"
-        gh.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{self.bin / "gh.py"}" "$@"\n', encoding="utf-8")
-        gh.chmod(0o755)
         self.pulls: list[dict[str, object]] = []
 
     def open_pull(self, number: int, files: dict[str, str], *, base: str = "main", fork: bool = False, parent: str = "") -> str:
         """HEAD nowego PR: commit ``files`` na ``parent`` (domyślnie commit ``start``)."""
 
-        git(self.checkout, "checkout", "--quiet", "--detach", parent or self.start)
-        for name, text in files.items():
-            (self.checkout / name).parent.mkdir(parents=True, exist_ok=True)
-            (self.checkout / name).write_text(text, encoding="utf-8")
-        head = commit(self.checkout, f"PR {number}")
-        git(self.checkout, "push", "--quiet", "origin", f"{head}:refs/pull/{number}/head")
-        git(self.checkout, "checkout", "--quiet", "main")
+        head = self.commit_on(parent or self.start, files, f"PR {number}")
+        self.push_head(number, head)
         self.pulls.append(
             {"number": number, "title": f"PR {number}", "headRefOid": head, "baseRefName": base, "isCrossRepository": fork}
         )
         (self.bin / "pulls.json").write_text(json.dumps(self.pulls), encoding="utf-8")
         return head
 
-    def push_main(self, files: dict[str, str]) -> str:
-        for name, text in files.items():
-            (self.checkout / name).write_text(text, encoding="utf-8")
-        head = commit(self.checkout, "main idzie dalej")
-        git(self.checkout, "push", "--quiet", "origin", "main")
-        return head
-
     def reject_statuses_for(self, head: str) -> None:
         (self.bin / "odrzucane").write_text(head, encoding="utf-8")
-
-    def tool(self, *arguments: str) -> tuple[list[str], dict[str, str]]:
-        environment = {**os.environ, "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}"}
-        return [sys.executable, str(self.checkout / "tools" / "ci" / TOOL.name), *arguments], environment
-
-    def run(self, *arguments: str) -> subprocess.CompletedProcess[str]:
-        command, environment = self.tool(*arguments)
-        return subprocess.run(
-            command, cwd=self.checkout, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=300, check=False
-        )
 
     def statuses_by_head(self) -> dict[str, list[dict[str, str]]]:
         log = self.bin / "statuses.jsonl"
@@ -119,7 +83,7 @@ class FakeGitHub:
 
 
 def test_kazdy_pr_do_main_dostaje_werdykt_scalenia_z_nowym_main(tmp_path: Path) -> None:
-    github = FakeGitHub(
+    github = StatusGitHub(
         tmp_path, {"kod/__init__.py": SUM, "kod/nazwa.py": 'NAZWA = "pierwsza"\n', **dict.fromkeys(LONG_NAMES, "start\n")}
     )
     agrees = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
@@ -165,7 +129,7 @@ def test_kazdy_pr_do_main_dostaje_werdykt_scalenia_z_nowym_main(tmp_path: Path) 
 def test_gdy_baza_sama_pada_pr_ktory_jej_nie_naprawia_dostaje_blad_a_bez_publikuj_nic_nie_trafia_na_github(
     tmp_path: Path,
 ) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = StatusGitHub(tmp_path, {"kod/__init__.py": SUM})
     main = github.push_main({"kod/__init__.py": SUM + TYPE_ERROR})
     github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.open_pull(2, {"kod/__init__.py": SUM}, parent=main)
@@ -180,7 +144,7 @@ def test_gdy_baza_sama_pada_pr_ktory_jej_nie_naprawia_dostaje_blad_a_bez_publiku
 
 
 def test_pr_do_innej_bazy_dostaje_jej_werdykt_a_odrzucony_status_nie_zatrzymuje_reszty(tmp_path: Path) -> None:
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = StatusGitHub(tmp_path, {"kod/__init__.py": SUM})
     git(github.checkout, "push", "--quiet", "origin", f"{github.start}:refs/heads/inna")
     github.push_main({"kod/__init__.py": SUM_OF_THREE})
     rejected = github.open_pull(1, {"kod/pierwszy.py": "PIERWSZY: int = 1\n"}, base="inna")
@@ -203,11 +167,10 @@ def test_pr_do_innej_bazy_dostaje_jej_werdykt_a_odrzucony_status_nie_zatrzymuje_
 def test_zabite_narzedzie_nie_zostawia_sprawdzen_ani_kopii_bazy(tmp_path: Path) -> None:
     beats = tmp_path / "wnuk-zyje"
     hangs = with_grandchild(beats, "time.sleep(600)")
-    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = StatusGitHub(tmp_path, {"kod/__init__.py": SUM})
     github.open_pull(1, {"tools/ci_lokalnie.py": f"import subprocess\n\nsubprocess.run({hangs!r})\n"})
-    command, environment = github.tool()
     started = subprocess.Popen(
-        command, cwd=github.checkout, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        github.command(), cwd=github.checkout, env=github.environment(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
     try:
         assert wait_for(beats.exists, 90), "ci_lokalnie ze scalenia nie uruchomiło wiszącego sprawdzenia"

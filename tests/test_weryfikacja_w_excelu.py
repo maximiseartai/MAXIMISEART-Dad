@@ -19,12 +19,13 @@ from types import ModuleType
 
 import pytest
 
+from tests.fixtures.fake_cli import fake_cli
+
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="skill steruje Excelem dla Maca")
 
 SKILL_SCRIPTS = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-skoroszyty-w-excelu" / "scripts"
 
-FAKE_OSASCRIPT = f"""#!{sys.executable}
-import os, sys
+FAKE_OSASCRIPT = """import os, sys
 if "-l" in sys.argv:
     print(os.environ.get("FAKE_EXCEL_WINDOWS", ""))
 elif "-e" in sys.argv:
@@ -35,13 +36,12 @@ else:
         print(os.environ["FAKE_APPLESCRIPT_ANSWER"])
         sys.exit(0)
     code = os.environ["FAKE_APPLESCRIPT_ERROR"]
-    print(f"271:290: execution error: Microsoft Excel got an error: fake ({{code}})", file=sys.stderr)
+    print(f"271:290: execution error: Microsoft Excel got an error: fake ({code})", file=sys.stderr)
     sys.exit(1)
 """
 
 # Jak ``pgrep -x``: jeden numer procesu w linii, kod 1, gdy żaden proces się nie nazywa tak.
-FAKE_PGREP = f"""#!{sys.executable}
-import os, sys
+FAKE_PGREP = """import os, sys
 ids = os.environ.get("FAKE_EXCEL_PIDS", "").split()
 print("\\n".join(ids))
 sys.exit(0 if ids else 1)
@@ -57,11 +57,8 @@ def _fake_commands(tmp_path: Path) -> str:
     """``PATH`` whose ``osascript``, ``open`` and ``pgrep`` are fakes, so no test reaches the real Excel."""
 
     bin_dir = tmp_path / "bin"
-    bin_dir.mkdir(exist_ok=True)
-    for name, body in (("osascript", FAKE_OSASCRIPT), ("open", f"#!{sys.executable}\n"), ("pgrep", FAKE_PGREP)):
-        command = bin_dir / name
-        command.write_text(body, encoding="utf-8")
-        command.chmod(0o755)
+    for name, body in (("osascript", FAKE_OSASCRIPT), ("open", ""), ("pgrep", FAKE_PGREP)):
+        fake_cli(bin_dir, name, body)
     return f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
 
 

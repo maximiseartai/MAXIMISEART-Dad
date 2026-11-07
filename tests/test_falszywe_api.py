@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import stat
 import sys
 import threading
 import time
@@ -20,15 +19,14 @@ import time
 import pytest
 
 from tests.fixtures import ustawienia_claude
+from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 
 import falszywe_api  # noqa: E402
 
-POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="atrapa claude to skrypt z linią #!")
-FAKE_CLAUDE = '''#!{python}
-import json, os, sys, time, urllib.request
+FAKE_CLAUDE = '''import json, os, sys, time, urllib.request
 sys.path.insert(0, {fixtures!r})
 import ustawienia_claude
 with open(os.environ["ATRAPA_WYWOLANIA"], "a", encoding="utf-8") as calls:
@@ -46,11 +44,7 @@ def calls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Plik wywołań atrapy ``claude``, która jest jedynym ``claude`` na ``PATH``."""
 
     programs = tmp_path / "bin"
-    programs.mkdir()
-    claude = programs / "claude"
-    fixtures = str(Path(ustawienia_claude.__file__).parent)
-    claude.write_text(FAKE_CLAUDE.format(python=sys.executable, fixtures=fixtures), encoding="utf-8")
-    claude.chmod(claude.stat().st_mode | stat.S_IXUSR)
+    fake_cli(programs, "claude", FAKE_CLAUDE.format(fixtures=str(Path(ustawienia_claude.__file__).parent)))
     monkeypatch.setenv("PATH", f"{programs}{os.pathsep}/usr/bin{os.pathsep}/bin")
     monkeypatch.delenv(falszywe_api.NESTED, raising=False)
     return tmp_path / "wywolania.jsonl"
@@ -74,7 +68,7 @@ def _claude(
 REDIRECTS = {**dict.fromkeys(ustawienia_claude.PROVIDERS, "1"), ustawienia_claude.SOCKET: "/tmp/gniazdo-huba"}
 
 
-@POSIX_ONLY
+@ONLY_FOUND_BY_NAME_ON_POSIX
 @pytest.mark.parametrize(
     ("settings", "switch"),
     [(("settings.json", "settings.local.json")[index % 2], name) for index, name in enumerate(REDIRECTS)],
@@ -91,7 +85,7 @@ def test_claude_pyta_falszywe_api_takze_gdy_ustawienia_checkoutu_wlaczaja_innego
     assert ran == falszywe_api.Ran(0, True)
 
 
-@POSIX_ONLY
+@ONLY_FOUND_BY_NAME_ON_POSIX
 def test_claude_dostaje_ze_srodowiska_wyroczni_tylko_liste_dozwolona(
     calls: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -128,7 +122,7 @@ def test_claude_dostaje_ze_srodowiska_wyroczni_tylko_liste_dozwolona(
     assert fake.startswith("http://127.0.0.1:") and fake != "http://127.0.0.1:9"
 
 
-@POSIX_ONLY
+@ONLY_FOUND_BY_NAME_ON_POSIX
 def test_claude_w_sesji_wyroczni_odmawia_i_niczego_nie_uruchamia(
     calls: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -141,7 +135,7 @@ def test_claude_w_sesji_wyroczni_odmawia_i_niczego_nie_uruchamia(
     assert not calls.exists()
 
 
-@POSIX_ONLY
+@ONLY_FOUND_BY_NAME_ON_POSIX
 def test_straznik_kontaktu_przypadku_bez_zapytania_nie_konczy_nastepnego_przypadku(calls: Path, tmp_path: Path) -> None:
     # Wyrocznia dzieli jedno ``stop`` między przypadki; ``claude`` pierwszego kończy się samo przed ``contact_s``,
     # a drugie trwa, aż ``contact_s`` pierwszego minie. Atrapa (Python z ``json`` i ``urllib``) startuje na Macu

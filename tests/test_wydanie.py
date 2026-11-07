@@ -19,9 +19,10 @@ import pytest
 
 from rozliczenia.centrum import release_notes, tool_update
 from rozliczenia.centrum.release_notes import DadCase, ReleaseNotes
+from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.git_repo import AUTHOR, commit, git
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Atrapa gh to skrypt z linią #!.")
+pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
 
 TOOL = Path(__file__).resolve().parents[1] / "tools" / "wydanie.py"
 SUMMARY = "Przygotowanie pliku zbiorczego samo wpisuje ilości usług. Centrum pokazuje, co nowego."
@@ -111,10 +112,7 @@ class Releasing:
         (self.checkout / "README.md").write_text("narzędzie\n", encoding="utf-8")
         self.start = commit(self.checkout, "początek")
         self.bin = tmp_path / "bin"
-        self.bin.mkdir()
-        gh = self.bin / "gh"
-        gh.write_text(f"#!{sys.executable}\n{FAKE_GH}", encoding="utf-8")
-        gh.chmod(0o755)
+        fake_cli(self.bin, "gh", FAKE_GH)
         self.state: dict[str, Any] = {"checks": {}, "artifacts": {}, "releases": {}, "issues": [], "posted": [], "now": "2026-10-23T12:00:00Z"}
         self._save()
         self.plan_file = tmp_path / "notatki" / "plan.json"

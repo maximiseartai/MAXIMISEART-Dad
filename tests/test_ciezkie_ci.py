@@ -19,6 +19,7 @@ import sys
 import pytest
 import yaml
 
+from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.git_repo import commit, copy_files, git, repository
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,11 +65,8 @@ def _with_fake_gh(tmp_path: Path, run: dict[str, object]) -> dict[str, str]:
     """Środowisko poza CI z atrapą ``gh`` na ``PATH``, która na ``gh run view`` podaje ``run``."""
 
     bin = tmp_path / "bin"
-    bin.mkdir()
+    fake_cli(bin, "gh", f"import pathlib, sys\nsys.stdout.buffer.write(pathlib.Path({str(bin / 'run.json')!r}).read_bytes())\n")
     (bin / "run.json").write_text(json.dumps(run), encoding="utf-8")
-    gh = bin / "gh"
-    gh.write_text(f'#!/bin/sh\ncat "{bin / "run.json"}"\n', encoding="utf-8")
-    gh.chmod(0o755)
     return {**OUTSIDE_CI, "PATH": f"{bin}{os.pathsep}{OUTSIDE_CI['PATH']}"}
 
 
@@ -159,7 +157,7 @@ def test_odtworzenie_runu_innej_galezi_na_odlaczonym_head_odmawia(tmp_path: Path
     assert refused is not None and "dotyczy gałęzi inna (ffffffff), a nie bieżącej HEAD" in refused
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="atrapa gh to skrypt sh")
+@ONLY_FOUND_BY_NAME_ON_POSIX
 def test_odtworzenie_runu_commitu_z_main_odmawia(tmp_path: Path) -> None:
     """Czerwony run scalonego PR-u ma commit w historii HEAD, ale nie jest porażką tej gałęzi."""
 
@@ -281,7 +279,7 @@ def _mutation_list(tmp_path: Path, count: int) -> Path:
             101,
             ("--odtwarzam", "123"),
             "CIĘŻKIE CI ODMOWA | --odtwarzam 123: run dotyczy gałęzi inna",
-            marks=pytest.mark.skipif(sys.platform == "win32", reason="atrapa gh to skrypt sh"),
+            marks=ONLY_FOUND_BY_NAME_ON_POSIX,
         ),
     ],
     ids=["101 z pliku", "100 z pliku i jedna z --zmiana", "odtworzenie runu innej galezi"],
@@ -304,7 +302,7 @@ def test_mutacje_z_lista_ponad_100_poza_ci_odmawiaja_zanim_policza_podstawe(
     [
         (100, {}, ()),
         (101, {"GITHUB_ACTIONS": "true"}, ()),
-        pytest.param(101, {}, ("--odtwarzam", "123"), marks=pytest.mark.skipif(sys.platform == "win32", reason="atrapa gh to skrypt sh")),
+        pytest.param(101, {}, ("--odtwarzam", "123"), marks=ONLY_FOUND_BY_NAME_ON_POSIX),
     ],
     ids=["celowany dowod poza CI", "w CI", "odtworzenie czerwonych mutacji zmiany"],
 )
