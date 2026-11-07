@@ -35,7 +35,7 @@ from .highlights import PLAIN
 from .register_columns import TARGET_HEADERS
 from .quantity_rules import QuantityColumn
 from .row_look import GENERAL, RowLook, wraps
-from .template_copy import InvalidValue, Package, Row, SheetLayout, TemplateCopy, UnsupportedShape
+from .template_copy import InvalidValue, Package, Row, SheetLayout, TemplateCopy
 from .workbook_files import (
     DATA_ROW_COLUMNS,
     FIRST_DATA_ROW,
@@ -58,7 +58,7 @@ from .workbook_files import (
     unreadable_as_error,
     workbook_content,
 )
-from .workbook_parts import package_parts, sheet_part
+from .workbook_parts import SPREADSHEET_NS, UnsupportedShape, package_parts, sheet_part
 from .workbook_save import SaveProblem, WorkbookSaveError, save_from_template, write_atomically
 from .text import normalize_text
 from .write_routes import Route, TemplateKind
@@ -205,7 +205,7 @@ def _outline(path: Path, content: bytes, rules: _Rules) -> _Outline:
         return _Outline(sheet.title, header, merged_ranges, zero_row_count)
 
 
-_MERGE_CELL = "http://schemas.openxmlformats.org/spreadsheetml/2006/main mergeCell"
+_MERGE_CELL = f"{SPREADSHEET_NS} mergeCell"
 _CELL_OR_ROW_STYLE = re.compile(rb'<(?:[\w.-]+:)?(?:c|row)\s[^>]*?\bs="([0-9]+)"')
 _COLUMN_STYLE = re.compile(rb'<(?:[\w.-]+:)?col\s[^>]*?\bstyle="([0-9]+)"')
 _ANY_STYLE = re.compile(rb's="([0-9]+)"')

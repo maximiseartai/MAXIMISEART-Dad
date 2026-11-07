@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import shutil
 import sys
+import warnings
 from copy import copy
 from dataclasses import replace
 import xml.etree.ElementTree as ET
@@ -16,6 +17,7 @@ from typing import IO, Any, cast
 
 import pytest
 from openpyxl import Workbook, load_workbook
+from openpyxl.chart import BarChart
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
 from openpyxl.styles import Color, Font, PatternFill
@@ -40,6 +42,7 @@ from rozliczenia.workbook_files import (
 from rozliczenia.template_copy import Package
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.write_routes import Route
+from rozliczenia.workbook_parts import UnsupportedShape, active_sheet, package_parts
 from rozliczenia.workbook_save import (
     ExternalLinksError,
     SaveProblem,
@@ -1094,3 +1097,108 @@ def test_wzorzec_rozliczenia_pracownika_ze_scaleniem_w_wierszu_danych_nie_daje_p
 
     assert raised.value.problem is Problem.LAYOUT
     assert not target.exists()
+
+
+def _workbook_with_chartsheet(path: Path) -> Path:
+    """Skoroszyt z arkuszami A, B, arkuszem wykresu W i arkuszem C (części ``sheet1``, ``sheet2``, wykres, ``sheet3``)."""
+
+    workbook = Workbook()
+    active_worksheet(workbook).title = "A"
+    workbook.create_sheet("B")
+    workbook.create_chartsheet("W").add_chart(BarChart())
+    workbook.create_sheet("C")
+    workbook.save(path)
+    return path
+
+
+def _workbook_xml(change: Callable[[bytes], bytes]) -> Callable[[str, bytes], bytes | None]:
+    return lambda name, data: change(data) if name == "xl/workbook.xml" else data
+
+
+def _once(old: bytes, new: bytes) -> Callable[[bytes], bytes]:
+    def change(xml: bytes) -> bytes:
+        assert xml.count(old) == 1, old
+        return xml.replace(old, new)
+
+    return change
+
+
+def _active_tab(tab: int) -> Callable[[bytes], bytes]:
+    return _once(b'activeTab="0"', b'activeTab="%d"' % tab)
+
+
+ACTIVE_SHEET_SHAPES: dict[str, tuple[Callable[[str, bytes], bytes | None], tuple[str, str, int, bool, bool]]] = {
+    "bez-activetab": (_workbook_xml(_once(b' activeTab="0"', b"")), ("A", "xl/worksheets/sheet1.xml", 0, True, True)),
+    "druga-karta": (_workbook_xml(_active_tab(1)), ("B", "xl/worksheets/sheet2.xml", 1, True, True)),
+    "ukryta-aktywna-karta": (
+        _workbook_xml(lambda xml: _once(b'name="B" sheetId="2" state="visible"', b'name="B" sheetId="2" state="hidden"')(_active_tab(1)(xml))),
+        ("B", "xl/worksheets/sheet2.xml", 1, False, True),
+    ),
+    "arkusz-wykresu": (_workbook_xml(_active_tab(2)), ("W", "xl/chartsheets/sheet1.xml", 2, True, False)),
+    "arkusz-bez-r-id-przed-aktywna": (
+        _workbook_xml(lambda xml: _once(b' r:id="rId1"', b"")(_active_tab(2)(xml))),
+        ("C", "xl/worksheets/sheet3.xml", 3, True, True),
+    ),
+    "arkusz-bez-czesci-przed-aktywna": (
+        lambda name, data: None if name == "xl/worksheets/sheet1.xml" else _active_tab(2)(data) if name == "xl/workbook.xml" else data,
+        ("C", "xl/worksheets/sheet3.xml", 3, True, True),
+    ),
+}
+
+
+@pytest.mark.parametrize(("shape", "expected"), ACTIVE_SHEET_SHAPES.values(), ids=ACTIVE_SHEET_SHAPES.keys())
+def test_aktywny_arkusz_zapisow_xml_to_arkusz_workbook_active_ktory_czytaja_czytniki(
+    tmp_path: Path, shape: Callable[[str, bytes], bytes | None], expected: tuple[str, str, int, bool, bool]
+) -> None:
+    """Kopia Wzorca i Znacznik efenix piszą w arkuszu ``workbook.active`` openpyxl, bo ten czytają czytniki Pliku
+    zbiorczego: ``activeTab`` liczy się wśród arkuszy, które openpyxl wczytuje, także ukrytych i arkuszy wykresu."""
+
+    path = _workbook_with_chartsheet(tmp_path / "skoroszyt.xlsx")
+    rewrite_parts(path, shape)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # openpyxl ostrzega o arkuszu bez r:id
+        reader = load_workbook(path, read_only=True)
+    with package_parts(path.read_bytes()) as parts:
+        sheet = active_sheet(parts, "xl/workbook.xml")
+
+    assert (sheet.title, sheet.part, sheet.position, sheet.visible, sheet.worksheet) == expected
+    assert reader.active is not None and reader.active.title == sheet.title
+    reader.close()
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [_workbook_xml(_active_tab(4)), _workbook_xml(_once(b'r:id="rId1"', b'r:id="rId9"'))],
+    ids=["activetab-za-ostatnim-arkuszem", "aktywna-karta-bez-relacji"],
+)
+def test_skoroszyt_bez_arkusza_workbook_active_to_ksztalt_ktorego_zapisy_xml_nie_przenosza(
+    tmp_path: Path, shape: Callable[[str, bytes], bytes | None]
+) -> None:
+    path = _workbook_with_chartsheet(tmp_path / "skoroszyt.xlsx")
+    rewrite_parts(path, shape)
+
+    with package_parts(path.read_bytes()) as parts, pytest.raises(UnsupportedShape):
+        active_sheet(parts, "xl/workbook.xml")
+
+
+@pytest.mark.parametrize("hidden", [False, True], ids=["widoczny", "ukryty"])
+def test_wzorzec_z_ukrytym_aktywnym_arkuszem_idzie_dawna_droga_i_wiersze_trafiaja_do_tego_arkusza(
+    tmp_path: Path, hidden: bool
+) -> None:
+    """Kopia Wzorca nie pisze w ukrytym arkuszu ``workbook.active``: Rozliczenie pracownika powstaje dawną drogą openpyxl,
+    która pisze Wiersze danych w tym samym arkuszu."""
+
+    template_path = tmp_path / "Wzorzec rozliczenia pracownika.xlsx"
+    write_template(template_path)
+    if hidden:
+        rewrite_parts(template_path, _workbook_xml(_once(b'name="Sheet1" sheetId="1" state="visible"', b'name="Sheet1" sheetId="1" state="hidden"')))
+    target = tmp_path / "Rozliczenie - Wykonawca.xlsx"
+
+    route = TemplateFile.worker_settlement(template_path).create(target, [_data_row(_row(A="syntetyczne miasto"))])
+
+    saved = load_workbook(target, read_only=True)
+    try:
+        written = (saved["Sheet1"].sheet_state, saved["Sheet1"]["A18"].value)
+    finally:
+        saved.close()
+    assert (route, written) == (Route.OPENPYXL if hidden else Route.COPY, ("hidden" if hidden else "visible", "syntetyczne miasto"))

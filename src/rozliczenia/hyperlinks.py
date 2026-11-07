@@ -32,9 +32,8 @@ from xml.etree import ElementTree
 
 from openpyxl.utils.cell import range_boundaries
 
-from .workbook_parts import MAIN, OFFICE_REL, package_parts, relationships, sheet_part
+from .workbook_parts import MAIN, OFFICE_REL, WORKSHEET_ROOT, package_parts, relationships, sheet_part
 
-_ROOT: Final = re.compile(rb"<((?:[\w.-]+:)?)worksheet\b[^>]*>")
 _BLOCK: Final = re.compile(rb"<((?:[\w.-]+:)?)hyperlinks\b[^>]*?(/?)>")
 _LAST_ROW: Final = 1_048_576
 _LAST_COLUMN: Final = 16_384
@@ -103,7 +102,7 @@ def read_sheet_hyperlinks(content: bytes, sheet_title: str) -> SheetHyperlinks:
 
 def _sheet_hyperlinks(parts: Mapping[str, bytes], part: str) -> SheetHyperlinks:
     xml = parts[part]
-    root = _ROOT.search(xml)
+    root = WORKSHEET_ROOT.search(xml)
     block = _BLOCK.search(xml, max(xml.rfind(b"sheetData"), 0))
     if root is None or block is None or block.group(2):
         return NO_HYPERLINKS

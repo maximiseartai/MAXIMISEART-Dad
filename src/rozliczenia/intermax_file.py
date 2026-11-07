@@ -79,10 +79,22 @@ from .register_columns import ACTIVITIES, COLUMNS, CONTRACT_NUMBER, DATE, DAY_FI
 from .raw_orders import SHIFT, CellFacts, DayPlan, IntermaxEntry, OperatorColor, OrderColumns, RawBlock, RowFacts
 from .row_look import BORDER
 from .workbook_files import header_columns, is_blank
-from .workbook_parts import MAIN, OFFICE_REL, IrregularSheetData, RowsFromBottom, SheetRow, office_document, relationships
+from .workbook_parts import (
+    MAIN,
+    OFFICE_REL,
+    STYLE_XF,
+    IrregularSheetData,
+    RowsFromBottom,
+    SheetRow,
+    UnsupportedShape,
+    appended,
+    office_document,
+    relationships,
+    style_list,
+)
 from .text import normalize_text
 
-__all__ = ["OrderSheet", "Register", "UnsupportedShape"]
+__all__ = ["OrderSheet", "Register"]
 
 _FIRST: Final = "AKCJE"
 _LAST: Final = "UWAGI"
@@ -127,10 +139,6 @@ _STYLE_LISTS: Final = (b"fonts", b"fills", b"borders", b"cellXfs")
 """Listy ``xl/styles.xml``, na których końcu zapis dopisuje wpisy."""
 
 
-class UnsupportedShape(Exception):
-    """Arkusz zleceń ma w zmienianych wierszach kształt, którego zapis nie przenosi (formuła, zakres)."""
-
-
 @dataclass(frozen=True)
 class _Styles:
     """Style komórek z ``xl/styles.xml``: format liczby, czcionka i wypełnienie każdego stylu."""
@@ -153,7 +161,7 @@ class _Styles:
         fill_trees = list(root.iterfind(f"{MAIN}fills/{MAIN}fill"))
         fills = [_is_yellow(fill) for fill in fill_trees]
         xfs = list(root.iterfind(f"{MAIN}cellXfs/{MAIN}xf"))
-        raw_xfs = re.findall(rb"<xf\b[^>]*?(?:/>|>.*?</xf>)", _style_list(xml, b"cellXfs").group(2), re.S)
+        raw_xfs = STYLE_XF.findall(style_list(xml, b"cellXfs").group(2))
         number_formats = tuple(int(xf.get("numFmtId", "0")) for xf in xfs)
         return cls(
             number_formats=number_formats,
@@ -619,11 +627,11 @@ class _Looks:
 
     def styles(self, xml: bytes) -> bytes:
         styles = self._styles
-        xml = _appended(xml, b"fonts", [ElementTree.tostring(font.to_tree()) for font in self._fonts], len(styles.fonts))
-        xml = _appended(xml, b"fills", [ElementTree.tostring(fill.to_tree()) for fill in self._fills], len(styles.fills))
+        xml = appended(xml, b"fonts", [ElementTree.tostring(font.to_tree()) for font in self._fonts], len(styles.fonts))
+        xml = appended(xml, b"fills", [ElementTree.tostring(fill.to_tree()) for fill in self._fills], len(styles.fills))
         borders = [ElementTree.tostring(border.to_tree()) for border in self._borders]
-        xml = _appended(xml, b"borders", borders, len(styles.borders))
-        return _appended(xml, b"cellXfs", self._xfs, len(styles.xfs))
+        xml = appended(xml, b"borders", borders, len(styles.borders))
+        return appended(xml, b"cellXfs", self._xfs, len(styles.xfs))
 
 
 def _solid(rgb: str) -> PatternFill:
@@ -638,25 +646,6 @@ def _index(existing: Sequence[object], added: list[Any], item: object) -> int:
     if item not in added:
         added.append(item)
     return len(existing) + added.index(item)
-
-
-def _style_list(xml: bytes, tag: bytes) -> re.Match[bytes]:
-    """Lista ``tag`` w ``xl/styles.xml``: atrybuty (grupa 1) i wpisy (grupa 2); ``WriteMismatch``, gdy jej nie ma."""
-
-    found = re.search(rb"<" + tag + rb"\b([^>]*)>(.*?)</" + tag + rb">", xml, re.S)
-    if found is None:
-        raise WriteMismatch(f"style: {tag.decode('ascii')}")
-    return found
-
-
-def _appended(xml: bytes, tag: bytes, entries: Sequence[bytes], existing: int) -> bytes:
-    """``entries`` na końcu listy ``tag`` (``existing`` pozycji) w ``xl/styles.xml`` z licznikiem ``count``."""
-
-    block = _style_list(xml, tag)
-    count = existing + len(entries)
-    attributes = re.sub(rb'\scount="\d+"', b"", block.group(1))
-    opening = b"<" + tag + b' count="%d"' % count + attributes + b">"
-    return xml[: block.start()] + opening + block.group(2) + b"".join(entries) + b"</" + tag + b">" + xml[block.end() :]
 
 
 @dataclass(frozen=True)
@@ -818,7 +807,10 @@ def _check_styles(original: bytes, written: bytes) -> None:
     """``WriteMismatch``, gdy arkusz stylów ``written`` to coś więcej niż ``original`` z wpisami na końcu list."""
 
     for tag in _STYLE_LISTS:
-        before, after = _style_list(original, tag), _style_list(written, tag)
+        try:
+            before, after = style_list(original, tag), style_list(written, tag)
+        except UnsupportedShape as error:
+            raise WriteMismatch(str(error)) from error
         if not after.group(2).startswith(before.group(2)):
             raise WriteMismatch(f"style: {tag.decode('ascii')}")
         written = written[: after.start()] + before.group(0) + written[after.end() :]

@@ -1,9 +1,13 @@
-"""Części zip skoroszytu .xlsx: nawigacja po relacjach i wierszach arkusza oraz skoroszyt zawężony do potrzebnych wierszy.
+"""Części zip skoroszytu .xlsx: nawigacja po relacjach i wierszach arkusza, wspólne części ręcznych zapisów XML oraz
+skoroszyt zawężony do potrzebnych wierszy.
 
-Moduł jest szczegółem ``workbook_files``, ``template_file``, ``template_copy`` i ``hyperlinks`` i
-nikt poza nimi go nie używa. Wszyscy czytają skoroszyt po częściach zip, bez
-openpyxl: ``relationships`` i ``sheet_part`` znajdują część po relacjach, a
-``SheetData`` dzieli XML arkusza na wiersze bez parsera.
+Moduł czyta skoroszyt po częściach zip, bez openpyxl: ``relationships`` i
+``sheet_part`` znajdują część po relacjach, ``active_sheet`` arkusz, który
+openpyxl daje jako ``workbook.active``, a ``SheetData`` dzieli XML arkusza na
+wiersze bez parsera. Ręczne zapisy XML skoroszytu biorą stąd dopisanie wpisów do
+list ``xl/styles.xml`` (``appended``), ustawienie atrybutu stylu komórki z flagą
+``applyX`` (``with_style_attribute``) i jeden wyjątek kształtu, którego nie
+przenoszą (``UnsupportedShape``).
 
 ``SheetData`` przyjmuje tylko kształt, który zapisują Excel i openpyxl: jeden
 ``<sheetData>``, każdy wiersz i każda komórka z ``r`` jako pierwszym atrybutem,
@@ -46,7 +50,7 @@ import posixpath
 import re
 import zipfile
 from bisect import bisect_right
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from functools import cached_property
@@ -57,7 +61,8 @@ from xml.parsers import expat
 
 from openpyxl.utils import get_column_letter
 
-MAIN: Final = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+SPREADSHEET_NS: Final = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+MAIN: Final = f"{{{SPREADSHEET_NS}}}"
 OFFICE_REL: Final = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PACKAGE_REL: Final = "{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"
 
@@ -70,6 +75,14 @@ _SHARED_FORMULA_MASTER: Final = re.compile(rb'<f\b[^>]*\bt="shared"[^>]*(?<!/)>'
 _TYPE: Final = re.compile(rb"""\st=["']([^"']*)["']""")
 _VALUE: Final = re.compile(rb"<v\b[^>]*>([^<]*)</v>")
 _NUMBER_TYPES: Final = (None, b"n")
+WORKSHEET_ROOT: Final = re.compile(rb"<((?:[\w.-]+:)?)worksheet\b[^>]*>")
+"""Znacznik otwierający ``<worksheet>`` z deklaracjami przestrzeni nazw; grupa 1 to prefiks z dwukropkiem albo pusty."""
+STYLE_XF: Final = re.compile(rb"<xf\b[^>]*?(?:/>|>.*?</xf>)", re.S)
+"""Wpis ``<xf>`` listy stylów w ``xl/styles.xml``."""
+
+
+class UnsupportedShape(Exception):
+    """Skoroszyt ma kształt, którego ręczny zapis XML nie przenosi; ``str`` mówi który, bez treści pliku."""
 
 
 # --- części i relacje --------------------------------------------------------------------------
@@ -155,6 +168,83 @@ def sheet_part(parts: Mapping[str, bytes], title: str) -> str:
     sheets = ElementTree.fromstring(parts[workbook]).iter(f"{MAIN}sheet")
     identifier = next((sheet.get(f"{{{OFFICE_REL}}}id", "") for sheet in sheets if sheet.get("name") == title), "")
     return relationships(parts, workbook)[identifier].target
+
+
+@dataclass(frozen=True)
+class ActiveSheet:
+    """Arkusz, który openpyxl daje jako ``workbook.active``, więc ten, który czytają czytniki skoroszytów."""
+
+    part: str
+    title: str
+    position: int
+    """Miejsce wśród ``<sheet>`` w ``workbook.xml``, od 0: tak liczy ``localSheetId`` nazw."""
+    visible: bool
+    worksheet: bool
+    """Arkusz komórek, a nie arkusz wykresu."""
+
+
+def active_sheet(parts: Mapping[str, bytes], workbook: str) -> ActiveSheet:
+    """Arkusz ``workbook.active`` openpyxl w skoroszycie o częściach ``parts`` i części skoroszytu ``workbook``.
+
+    openpyxl liczy ``activeTab`` pierwszego widoku skoroszytu (bez niego 0) wśród arkuszy, które wczytuje: ``<sheet>`` z
+    ``r:id``, którego część jest w zip. Arkusz bez relacji (openpyxl nie wczyta skoroszytu) albo ``activeTab`` poza nimi
+    (``workbook.active`` to ``None``) to ``UnsupportedShape``.
+    """
+
+    root = ElementTree.fromstring(parts[workbook])
+    rels = relationships(parts, workbook)
+    loaded: list[ActiveSheet] = []
+    for position, sheet in enumerate(root.iterfind(f"{MAIN}sheets/{MAIN}sheet")):
+        identifier = sheet.get(f"{{{OFFICE_REL}}}id")
+        if not identifier:
+            continue
+        relationship = rels.get(identifier)
+        if relationship is None:
+            raise UnsupportedShape("aktywna karta")
+        if relationship.target in parts:
+            visible = sheet.get("state", "visible") == "visible"
+            worksheet = relationship.kind.endswith("/worksheet")
+            loaded.append(ActiveSheet(relationship.target, sheet.get("name", ""), position, visible, worksheet))
+    view = root.find(f"{MAIN}bookViews/{MAIN}workbookView")
+    try:
+        return loaded[int(view.get("activeTab", "0")) if view is not None else 0]
+    except (ValueError, IndexError):
+        raise UnsupportedShape("aktywna karta") from None
+
+
+# --- style -------------------------------------------------------------------------------------
+
+
+def style_list(xml: bytes, tag: bytes) -> re.Match[bytes]:
+    """Pierwsza lista ``tag`` w ``xl/styles.xml``: atrybuty (grupa 1) i wpisy (grupa 2); brak to ``UnsupportedShape``."""
+
+    found = re.search(rb"<" + tag + rb"\b([^>]*)>(.*?)</" + tag + rb">", xml, re.S)
+    if found is None:
+        raise UnsupportedShape(f"style: {tag.decode('ascii')}")
+    return found
+
+
+def appended(xml: bytes, tag: bytes, entries: Sequence[bytes], existing: int) -> bytes:
+    """``xl/styles.xml`` z ``entries`` na końcu listy ``tag`` (``existing`` wpisów) i licznikiem ``count`` jako pierwszym
+    atrybutem; bez wpisów ``xml`` bez zmian."""
+
+    if not entries:
+        return xml
+    block = style_list(xml, tag)
+    attributes = re.sub(rb'\scount="\d+"', b"", block.group(1))
+    opening = b"<" + tag + b' count="%d"' % (existing + len(entries)) + attributes + b">"
+    return xml[: block.start()] + opening + block.group(2) + b"".join(entries) + b"</" + tag + b">" + xml[block.end() :]
+
+
+def with_style_attribute(xf: bytes, name: bytes, value: int, apply: bytes) -> bytes:
+    """Wpis ``<xf>`` z atrybutem ``name`` równym ``value`` zaraz za nazwą elementu i flagą ``apply`` równą 1 na końcu
+    znacznika otwierającego; dotychczasowe ``name`` i ``apply`` znikają, reszta atrybutów i elementy wewnątrz zostają."""
+
+    tag_end = xf.index(b">")
+    tag = re.sub(rb"\s" + name + rb'="\d+"', b"", xf[:tag_end])
+    tag = re.sub(rb"\s" + apply + rb'="\w+"', b"", tag).rstrip(b"/ ")
+    closing = b"/>" if xf[tag_end - 1 : tag_end] == b"/" else xf[tag_end:]
+    return tag[:3] + b" " + name + b'="%d"' % value + tag[3:] + b" " + apply + b'="1"' + closing
 
 
 # --- wiersze arkusza ---------------------------------------------------------------------------
