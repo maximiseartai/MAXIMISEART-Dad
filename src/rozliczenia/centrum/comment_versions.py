@@ -15,11 +15,12 @@ wersja to ta sama wysyłka (Uruchomienie i etykieta), więc kolejka zmienia ten 
 Wersja końcowa zamienia więc postęp w podsumowanie także po cofnięciu zegara komputera, a wersja zastępcza nie zastępuje
 Logów z wynikiem, które kolejka już przyjęła. Każda wersja niesie tylko tekst po strażniku reguły danych pracy Centrum
 (``run_logs.GuardedLogs``, ``run_logs.GuardedText``, ADR 0025), więc wysyłka (``post_of``) strażnika nie potrzebuje, a
-wersji z tekstem sprzed strażnika nie da się zbudować bez błędu typu. Dziennik Wyceny znika tylko po wersji końcowej,
+wersja z tekstem sprzed strażnika to błąd typu, a gdy typ go nie widzi (``Any``), ``TypeError`` w konstruktorze wersji. Dziennik Wyceny znika tylko po wersji końcowej,
 którą kolejka przyjęła (``journal_after``), bo do tej chwili jest śladem komentarza, który może jeszcze mówić, że
 Uruchomienie trwa.
 
-Typy Logów bierze z ``run_logs`` tylko do adnotacji: ``run_logs.RunLogs`` składa wersje z tego modułu.
+Typy Logów bierze z ``run_logs`` do adnotacji i, importem w funkcji, do ``isinstance`` w konstruktorach wersji, bo
+``run_logs.RunLogs`` składa wersje z tego modułu.
 """
 
 from __future__ import annotations
@@ -75,12 +76,18 @@ class ProgressVersion:
     progress: PricingProgress
     text: GuardedText
 
+    def __post_init__(self) -> None:
+        _require_text(self.text)
+
 
 @dataclass(frozen=True)
 class OwnLogs:
     """Logi z pracy Centrum Uruchomienia (z wynikiem albo z Diagnozą): podsumowanie z odnośnikiem i plik w Archiwum."""
 
     logs: GuardedLogs
+
+    def __post_init__(self) -> None:
+        _require_logs(self.logs)
 
 
 @dataclass(frozen=True)
@@ -89,6 +96,9 @@ class StandInLogs:
 
     logs: GuardedLogs
 
+    def __post_init__(self) -> None:
+        _require_logs(self.logs)
+
 
 @dataclass(frozen=True)
 class WithoutLogsVersion:
@@ -96,6 +106,28 @@ class WithoutLogsVersion:
 
     final: ResultWithoutLogs
     text: GuardedText
+
+    def __post_init__(self) -> None:
+        _require_text(self.text)
+
+
+def _require_logs(logs: object) -> None:
+    """Wersja z Logami bierze tylko Logi po strażniku (``run_logs._MINTED``): Logi sprzed strażnika podane przez ``Any``
+    typ przepuszcza, a tu rzucają ``TypeError``."""
+
+    from rozliczenia.centrum.run_logs import GuardedLogs
+
+    if not isinstance(logs, GuardedLogs):
+        raise TypeError("Wersja komentarza Uruchomienia bierze tylko Logi po strażniku z guard_logs.")
+
+
+def _require_text(text: object) -> None:
+    """Postęp i wynik bez Logów biorą tylko tekst po strażniku (``run_logs._MINTED``), także gdy typ go nie widzi."""
+
+    from rozliczenia.centrum.run_logs import GuardedText
+
+    if not isinstance(text, GuardedText):
+        raise TypeError("Wersja komentarza Uruchomienia bierze tylko tekst po strażniku z guard_text.")
 
 
 StandInVersion = StandInLogs | WithoutLogsVersion

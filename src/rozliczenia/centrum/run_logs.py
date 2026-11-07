@@ -82,7 +82,7 @@ from pathlib import Path
 import platform
 import re
 import threading
-from typing import Annotated, Final, Literal, Protocol, assert_never, get_args
+from typing import Annotated, Final, Literal, Protocol, assert_never, final, get_args
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic.fields import FieldInfo
@@ -1184,7 +1184,10 @@ class PricingProgress:
 
 _MINTED: Final = object()
 """Dowód, że wartość wyszła ze strażnika reguły danych: ``GuardedLogs`` i ``GuardedText`` daje tylko ``guard_logs`` i
-``guard_text``, a każdą inną drogę zamyka typ albo test.
+``guard_text``.
+
+Sprawdzenia łapią błąd kodu, który zapomniał strażnika albo przerobił wartość, która go przeszła (Logi Urwanego
+Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejścia nie łapią: to zostaje przeglądowi.
 
 - Konstruktor bez ``_MINTED`` rzuca ``TypeError``, a ``_MINTED`` zna tylko ten moduł.
 - ``dataclasses.replace``: to nie są dataclassy, więc mypy odrzuca wywołanie (``type-var``), a Python rzuca ``TypeError``.
@@ -1192,13 +1195,21 @@ _MINTED: Final = object()
   ``__delattr__`` rzucają ``AttributeError``. Dlatego ``copy.copy``, ``copy.deepcopy`` i ``pickle.loads`` też rzucają:
   odtworzenie wartości ustawia sloty przez ``__setattr__``. ``copy.replace`` rzuca ``TypeError``, bo nie ma
   ``__replace__``. Wartość jest niezmienna, więc kopia nie jest potrzebna.
-- ``object.__new__``, ``object.__setattr__``, ``typing.cast`` i ``_MINTED`` z modułu typ przepuszcza, więc łapie je test
-  ``tests/test_granice_importow.py``: poza tym modułem ``GuardedLogs`` i ``GuardedText`` padają tylko w adnotacjach i
-  importach, a napis z ich nazwą (sloty to ``_GuardedLogs__…`` i ``_GuardedText__…``) i ``_MINTED`` w żadnej postaci.
-  Granica: nazwę albo napis złożony w trakcie działania łapie tylko przegląd.
+- Podklasa, także zrobiona przez ``type()``: mypy odrzuca ``class`` (``final``), a ``__init_subclass__`` rzuca
+  ``TypeError``.
+- Wartość innego typu, np. Logi sprzed strażnika podane przez ``Any``, ``cast(Any, …)`` albo ``# type: ignore``: typ jej
+  nie widzi, więc wersje komentarza Uruchomienia (``comment_versions``) i plik Logów (``RunLogs._write``), jedyne miejsca,
+  które biorą Logi albo tekst po strażniku, sprawdzają ``isinstance`` i rzucają ``TypeError``.
+- ``_MINTED`` i nazwa ``GuardedLogs`` albo ``GuardedText`` poza adnotacją, importem i ``isinstance`` (np.
+  ``object.__new__(GuardedLogs)``, ``cast(GuardedLogs, …)``, napis ze slotem ``_GuardedLogs__…``): łapie test
+  ``tests/test_granice_importow.py``.
+- Granica, którą łapie tylko przegląd: celowe obejście bez tych nazw, np. ``object.__new__(type(logs))`` (wartość bez
+  slotów, której odczyt rzuca ``AttributeError``), zmiana ``__class__`` innej wartości albo nazwa złożona w trakcie
+  działania.
 - Pydantic tu nie ma: ``record.model_copy`` daje ``RunLog``, a nie Logi po strażniku."""
 
 
+@final
 class GuardedLogs:
     """Logi Uruchomienia po strażniku reguły danych tej pracy Centrum (``guarded``, ADR 0025), z ``guard_logs``.
 
@@ -1217,6 +1228,9 @@ class GuardedLogs:
             raise TypeError("Logi po strażniku daje tylko guard_logs.")
         object.__setattr__(self, "_GuardedLogs__record", record)
         object.__setattr__(self, "_GuardedLogs__source", source)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("Logi po strażniku nie mają podklas: daje je tylko guard_logs.")
 
     @property
     def record(self) -> RunLog:
@@ -1248,6 +1262,7 @@ def guard_logs(record: RunLog, forbidden: ForbiddenValues) -> GuardedLogs:
     return GuardedLogs(guarded(record, forbidden), record, _MINTED)
 
 
+@final
 class GuardedText:
     """Tekst komentarza bez pliku Logów (postęp, wynik bez Logów) po strażniku reguły danych, z ``guard_text``
     (``_MINTED``)."""
@@ -1259,6 +1274,9 @@ class GuardedText:
         if proof is not _MINTED:
             raise TypeError("Tekst po strażniku daje tylko guard_text.")
         object.__setattr__(self, "_GuardedText__text", text)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("Tekst po strażniku nie ma podklas: daje go tylko guard_text.")
 
     @property
     def text(self) -> str:
@@ -1407,8 +1425,11 @@ class RunLogs:
     def _write(self, logs: GuardedLogs) -> None:
         """Plik Logów ``logs`` z bajtami pliku w Archiwum Logów okresu (``ArchiveFile.packed``): ``text`` w UTF-8 bez
         zamiany ``\n`` na ``\r\n``, którą robi zapis tekstowy na Windows, więc ``gunzip`` pliku z Archiwum daje plik
-        z komputera taty bajt w bajt."""
+        z komputera taty bajt w bajt. Logi innego typu niż ``GuardedLogs`` (np. sprzed strażnika przez ``Any``) rzucają
+        ``TypeError`` (``_MINTED``)."""
 
+        if not isinstance(logs, GuardedLogs):
+            raise TypeError("Plik Logów bierze tylko Logi po strażniku z guard_logs.")
         replace_atomically(self._directory / logs.record.file_name, logs.text, newline="")
 
     def send(self, final: StandInLogs | ResultWithoutLogs) -> JournalAction:

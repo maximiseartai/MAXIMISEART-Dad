@@ -25,8 +25,9 @@ from decimal import Decimal
 from enum import Enum
 import gzip
 import json
+from pathlib import Path
 import pickle
-from types import UnionType
+from types import SimpleNamespace, UnionType
 from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel
@@ -54,6 +55,7 @@ from rozliczenia.centrum.run_logs import (
     OrderDone,
     PricingProgress,
     RunLog,
+    RunLogs,
     StartFacts,
     guard_logs,
     guard_text,
@@ -263,14 +265,20 @@ def test_dziennik_wyceny_znika_tylko_po_wersji_koncowej_komentarza_ktora_kolejka
     assert (journal_after(version, accepted=True), journal_after(version, accepted=False)) == after
 
 
-def _text_version(kind: str, forbidden: ForbiddenValues) -> ProgressVersion | WithoutLogsVersion:
-    """Postęp albo wynik bez Logów Uruchomienia ``RUN_ID`` z tekstem komentarza po strażniku ``forbidden``, tak jak
-    buduje je ``RunLogs``."""
+def _progress() -> PricingProgress:
+    """Postęp Wyceny w efenix Uruchomienia ``RUN_ID``: jedno zlecenie skończone z dwóch."""
 
     started = StartFacts(
         run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
     )
-    progress = PricingProgress(started, (OrderDone(18, "gotowe", None),), 2, 19)
+    return PricingProgress(started, (OrderDone(18, "gotowe", None),), 2, 19)
+
+
+def _text_version(kind: str, forbidden: ForbiddenValues) -> ProgressVersion | WithoutLogsVersion:
+    """Postęp albo wynik bez Logów Uruchomienia ``RUN_ID`` z tekstem komentarza po strażniku ``forbidden``, tak jak
+    buduje je ``RunLogs``."""
+
+    progress = _progress()
     if kind == "postep":
         return ProgressVersion(progress, guard_text(progress_markdown(progress, elapsed_s=90), "postęp", forbidden))
     final = ResultWithoutLogs(progress, "OK", "niezapisane")
@@ -294,7 +302,7 @@ def test_postep_i_wynik_bez_logow_ida_do_skrzynki_z_tekstem_po_strazniku(kind: s
 
 # Drogi do Logów albo tekstu po strażniku bez guard_logs i guard_text, które zamyka sam typ (docstring run_logs._MINTED).
 NOT_FROM_GUARD: Final[dict[str, Callable[[Any], object]]] = {
-    "replace": lambda value: dataclasses.replace(value, text="ul. Syntetyczna 1"),
+    "replace": lambda value: dataclasses.replace(value, **_field_change(value)),
     "kopia": copy.copy,
     "gleboka-kopia": copy.deepcopy,
     "pickle": lambda value: pickle.loads(pickle.dumps(value)),
@@ -302,6 +310,19 @@ NOT_FROM_GUARD: Final[dict[str, Callable[[Any], object]]] = {
     "zmiana-slotu": lambda value: setattr(value, _slot(value), "ul. Syntetyczna 1"),
     "usuniecie-slotu": lambda value: delattr(value, _slot(value)),
 }
+
+
+def _field_change(value: object) -> dict[str, object]:
+    """Zmiana pola, które wartość po strażniku miała, gdy była dataclassą (przed rundą 2 przeglądu #1038): ``record``
+    Logów (Logi sprzed strażnika) i ``text`` tekstu."""
+
+    return {"record": record()} if hasattr(value, "record") else {"text": "ul. Syntetyczna 1"}
+
+
+def _guarded(kind: str) -> Any:
+    """Logi (``logi``) albo tekst (``tekst``) po strażniku z ``guard_logs`` i ``guard_text``."""
+
+    return guard_logs(record(), ForbiddenValues()) if kind == "logi" else guard_text("Postęp.", "postęp", ForbiddenValues())
 
 
 def _slot(value: object) -> str:
@@ -320,7 +341,7 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_kopii_ani_zmiany_istniejacych(
     """Logi i tekst po strażniku reguły danych daje tylko ``guard_logs`` i ``guard_text``: kopia, ``replace`` i zmiana
     pola odmawiają, bo wartość, która ich nie przeszła, przeszłaby jako po strażniku (przegląd #1038, runda 1)."""
 
-    value = guard_logs(record(), ForbiddenValues()) if kind == "logi" else guard_text("Postęp.", "postęp", ForbiddenValues())
+    value = _guarded(kind)
     text = value.text
 
     with pytest.raises((TypeError, AttributeError)):
@@ -337,6 +358,60 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_strazn
         type(logs)(logs.record, logs.record, object())
     with pytest.raises(TypeError, match="guard_text"):
         type(text)("ul. Syntetyczna 1", object())
+
+
+@pytest.mark.parametrize("kind", ["logi", "tekst"])
+def test_logi_i_tekst_po_strazniku_nie_maja_podklas_takze_zrobionych_w_trakcie_dzialania(kind: str) -> None:
+    """Podklasa Logów albo tekstu po strażniku mogłaby podać tekst sprzed strażnika jako po strażniku, więc jej
+    utworzenie odmawia, także przez ``type()`` w trakcie działania (przegląd #1038, runda 2)."""
+
+    value = _guarded(kind)
+
+    with pytest.raises(TypeError, match="podklas"):
+        type("Inne", (type(value),), {"text": property(lambda self: "ul. Syntetyczna 1")})
+
+
+def _file_of_logs(directory: Path) -> RunLogs:
+    """Logi Uruchomienia w katalogu ``directory``, z których test woła tylko plik Logów (``close``)."""
+
+    unused: Any = None
+    return RunLogs(
+        directory,
+        unused,
+        commit=unused,
+        wydanie=unused,
+        files=unused,
+        cloud_files=unused,
+        dad_actions=unused,
+        forbidden=ForbiddenValues(),
+    )
+
+
+# Wszystko, co bierze Logi albo tekst po strażniku: cztery wersje komentarza Uruchomienia i plik Logów.
+TAKES_GUARDED: Final[dict[str, Callable[[Any, Path], object]]] = {
+    "postep": lambda value, _: ProgressVersion(_progress(), value),
+    "wynik-bez-logow": lambda value, _: WithoutLogsVersion(ResultWithoutLogs(_progress(), "OK", "niezapisane"), value),
+    "logi-z-pliku-albo-urwane": lambda value, _: StandInLogs(value),
+    "logi-z-wynikiem-albo-diagnoza": lambda value, _: OwnLogs(value),
+    "plik-logow": lambda value, directory: _file_of_logs(directory).close(value),
+}
+
+
+@pytest.mark.parametrize("take", TAKES_GUARDED.values(), ids=TAKES_GUARDED.keys())
+def test_wersje_komentarza_i_plik_logow_odmawiaja_logow_sprzed_straznika_ktorych_typ_nie_widzi(
+    take: Callable[[Any, Path], object], tmp_path: Path
+) -> None:
+    """Logi sprzed strażnika podane przez ``Any`` (np. ``cast(Any, …)`` albo ``# type: ignore``) typ przepuszcza, więc
+    wersja komentarza Uruchomienia i plik Logów sprawdzają je przy uruchomieniu i odmawiają, zanim cokolwiek pójdzie do
+    Skrzynki albo na dysk (przegląd #1038, runda 2)."""
+
+    raw = record()
+    unguarded: Any = SimpleNamespace(record=raw, text=raw.text)
+
+    with pytest.raises(TypeError, match="po strażniku"):
+        take(unguarded, tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_zakazana_wartosc_w_kluczu_slownika_logow_jest_zamaskowana_z_uwaga_o_polu_bez_wartosci() -> None:
