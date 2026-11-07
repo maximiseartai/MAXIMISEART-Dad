@@ -146,9 +146,10 @@ def _filling_retries(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "blad-odczytu-uzupelnienie")
     token = str(run.fixture["settlement"]["needs_check"])
-    path = f"/api/periods/{token}/quantities-to-fill"
+    pattern = f"**/api/periods/{token}/quantities-to-fill"
     content = page.get_by_role("button", name="Gotowe, rozlicz pracowników", exact=True)
-    page.route(f"**{path}", lambda route: route.abort())
+    held: list[Route] = []
+    page.route(pattern, lambda route: route.abort())
     try:
         page.goto(run.url + f"#/uzupelnienie/{token}")
         failure = _failure(page, "okresu")
@@ -156,15 +157,21 @@ def _filling_retries(run: Run, page: Page) -> None:
         expect(content).to_have_count(0)
         button = failure.get_by_role("button", name=RETRY, exact=True)
         expect(button).to_be_enabled()
-        with page.expect_request(lambda request: request.method == "GET" and urlsplit(request.url).path == path):
-            button.click()
-        expect(button).to_be_enabled()
-        run.check(True, f"a failed read of the Uzupełnienie summary (unreachable, harness) shows „Nie udało się odczytać okresu” with {RETRY}, which reads again")
-        run.capture(page, "148c-blad-odczytu-uzupelnienie")
+        # Harness: the re-read is held. The live page also re-reads by itself every few seconds, so only the waiting
+        # button tells that the click read again.
+        page.unroute(pattern)
+        page.route(pattern, lambda route: held.append(route))
+        page.wait_for_function("document.getAnimations().every((animation) => animation.playState !== 'running')")
+        button.click()
+        expect(button).to_be_disabled()
+        run.check(True, f"a failed read of the Uzupełnienie summary (unreachable, harness) shows „Nie udało się odczytać okresu”, and {RETRY} reads again")
+        run.capture(page, "148c-blad-odczytu-uzupelnienie", live=True)  # the spinner turns until the answer
     finally:
-        page.unroute(f"**{path}")
-    # The live page reads by itself every few seconds after a failure, so it may come back before a click.
-    expect(content).to_be_visible(timeout=10_000)
+        # A held request goes through before the route is removed: removing it hands every held request on by itself.
+        for route in held:
+            route.continue_()
+        page.unroute(pattern)
+    expect(content).to_be_visible()
     expect(failure).to_have_count(0)
     run.check(True, "once Centrum answers, the summary replaces the Komunikat")
 
