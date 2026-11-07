@@ -152,16 +152,19 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `6bdeaf76c` (2026-11-07, candidate 1 of the architecture review of 6.11, part 1). Every row of the
-table was checked against the code at this commit. Since the Sync commit `b50a4edad` every version of the comment of an
-Uruchomienie is a type in `comment_versions.py` (`ProgressVersion`, `OwnLogs`, `StandInLogs`, `WithoutLogsVersion`)
-that carries only Logi or text after the guard (`GuardedLogs` from `guard_logs`, `GuardedText` from `guard_text`), and
-`post_of` gives it the rank of the old `progress_post` and `logi_post` (`rank_of`); `journal_after` says „usuń” exactly
-when `post` returned True, so `_keep` and `InterruptedPricings.send` keep their conditions. `ResultWithoutLogs` moved
-there unchanged, and `RunLogs.send` still guards its text when it sends it. The steps and their order did not change, so
-only the names in the table changed and no action changed.
+Sync commit: `a78b703c5` (2026-11-07, review of #1038, round 1). Every row of the table was checked against the code
+at this commit. Since the Sync commit `6bdeaf76c` `GuardedLogs` is a class with slots instead of a frozen dataclass, so
+`dataclasses.replace`, a copy or a changed field no longer gives Logi that skipped `guard_logs`; it holds the same
+Logi after the guard and the same Logi before it for the Diagnoza, and `ZapiszLogi` still writes `logs.text`. No step
+and no order changed, so no action changed.
 
 Earlier Sync commits, each checked the same way:
+- `6bdeaf76c`: every version of the comment of an Uruchomienie is a type in `comment_versions.py` (`ProgressVersion`,
+  `OwnLogs`, `StandInLogs`, `WithoutLogsVersion`) that carries only Logi or text after the guard (`GuardedLogs` from
+  `guard_logs`, `GuardedText` from `guard_text`), and `post_of` gives it the rank of the old `progress_post` and
+  `logi_post` (`rank_of`); `journal_after` says „usuń” exactly when `post` returned True, so `_keep` and
+  `InterruptedPricings.send` keep their conditions. `ResultWithoutLogs` moved there unchanged, and `RunLogs.send` still
+  guards its text when it sends it. Only the names in the table changed and no action changed.
 - `b50a4edad`: the journal moved from `pricing_journal.py` into `logs_disk.py` (`Journal`, `_read_journal`,
   `LogsOnDisk.started`, `left_behind`, `remove_journal`, `JournalAtResult`) with the same bytes and order. No action
   changed.
