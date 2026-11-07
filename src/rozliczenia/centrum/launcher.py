@@ -32,7 +32,6 @@ import sys
 import time
 import webbrowser
 
-from rozliczenia import TOOL_ROOT
 from rozliczenia.centrum import start_problems
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import has_console, show_start_problem
@@ -46,28 +45,44 @@ from rozliczenia.centrum.tool_update import (
 )
 from rozliczenia.centrum.version import running_centrum, tool_commit, version_label
 from rozliczenia.message import Message
+from rozliczenia.tool_files import (
+    CONFIG_DIR,
+    DEFAULT_PORT,
+    HOST,
+    LOG_PATH,
+    NO_BROWSER_FLAG,
+    NO_DIALOGS_FLAG,
+    PORT_FLAG,
+    SETTINGS,
+    TOOL_ROOT,
+    centrum_script,
+    listen_locally,
+)
 
-DEFAULT_PORT = 47811
-LOG_PATH = TOOL_ROOT / "logs" / "centrum-rozliczen.log"
 _HEALTH_TIMEOUT_S = 5  # drugie kliknięcie skrótu może trafić na Centrum, które jeszcze startuje
-_HOST = "127.0.0.1"  # wyłącznie ten komputer (ADR 0004)
 _SHORTCUT_HOLDS_PORT_S = 10  # skrót kliknięty w trakcie ponownego startu oddaje port po odczycie dziennika (#246)
 _POLL_S = 0.1
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
+    """Argumenty ``run_centrum.py``: z linii poleceń, ze skrótu albo z ``tool_files.start_command`` opiekuna."""
+
     parser = argparse.ArgumentParser(description="Uruchamia Centrum rozliczeń w przeglądarce.")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port na 127.0.0.1.")
-    parser.add_argument("--no-browser", action="store_true", help="Nie otwieraj karty w przeglądarce.")
+    parser.add_argument(PORT_FLAG, type=int, default=DEFAULT_PORT, help=f"Port na {HOST}.")
+    parser.add_argument(NO_BROWSER_FLAG, action="store_true", help="Nie otwieraj karty w przeglądarce.")
     parser.add_argument(
-        "--bez-okienek",
+        NO_DIALOGS_FLAG,
         action="store_true",
         help="Błąd startu tylko do dziennika Centrum, bez natywnego okienka (ponowny start po aktualizacji).",
     )
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_arguments(argv)
     log = CentrumLog(LOG_PATH)
     refuse = functools.partial(_refuse, port=args.port, log=log, dialog=not args.bez_okienek)
-    restart_from_disk = [sys.executable, str(TOOL_ROOT / "run_centrum.py"), *(sys.argv[1:] if argv is None else argv)]
+    restart_from_disk = [sys.executable, str(centrum_script(TOOL_ROOT)), *(sys.argv[1:] if argv is None else argv)]
     try:
         return _start(
             args.port,
@@ -95,7 +110,7 @@ def _start(
         if browser:
             webbrowser.open(url)
 
-    url = f"http://{_HOST}:{port}/"
+    url = f"http://{HOST}:{port}/"
     try:
         listener = _listen_when_released(port, wait_s=_SHORTCUT_HOLDS_PORT_S if started_by_guardian else 0)
     except OSError:
@@ -129,7 +144,6 @@ def _start(
         from rozliczenia.centrum.app import create_app
         from rozliczenia.centrum.platform import system_platform
         from rozliczenia.centrum.server import serve
-        from rozliczenia.settings import default_settings_path
         from rozliczenia.centrum.shutdown import Shutdown
     except ModuleNotFoundError as missing:
         listener.close()
@@ -140,23 +154,8 @@ def _start(
         open_tab(address)
 
     shutdown = Shutdown(log)
-    app = create_app(settings_path=default_settings_path(), platform=system_platform(), log=log, shutdown=shutdown)
+    app = create_app(settings_path=SETTINGS, platform=system_platform(), log=log, shutdown=shutdown)
     return serve(app, listener=listener, on_ready=announce, shutdown=shutdown, log=log)
-
-
-def listen_locally(port: int) -> socket.socket:
-    """Zajmuje port na ``127.0.0.1``; ``OSError``, gdy port ma już inny program albo inne Centrum."""
-
-    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        if sys.platform != "win32":  # na Windows SO_REUSEADDR pozwoliłby przejąć port działającego programu
-            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        listener.bind((_HOST, port))
-        listener.listen()  # kolejne uruchomienie czeka na health, zamiast dostać odmowę połączenia
-    except OSError:
-        listener.close()
-        raise
-    return listener
 
 
 def _listen_when_released(port: int, *, wait_s: float) -> socket.socket:
@@ -180,7 +179,7 @@ def _roll_back(interrupted: InterruptedUpdate) -> None:
     """
 
     ToolClone(TOOL_ROOT).roll_back()
-    write_result(TOOL_ROOT / "config" / RESULT_FILE, UpdateResult(UNEXPECTED, interrupted.before, interrupted.after))
+    write_result(CONFIG_DIR / RESULT_FILE, UpdateResult(UNEXPECTED, interrupted.before, interrupted.after))
 
 
 def _refuse(problem: Message, *, port: int, log: CentrumLog, dialog: bool) -> int:

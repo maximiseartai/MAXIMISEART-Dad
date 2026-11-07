@@ -50,7 +50,7 @@ from playwright.sync_api import Browser, Error as PlaywrightError, Page, Request
 from playwright.sync_api import Response as PlaywrightResponse
 import pytest
 
-from rozliczenia import TOOL_ROOT, efenix_browser, efenix_process, efenix_trace
+from rozliczenia import efenix_browser, efenix_process, efenix_trace
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import MARK_RGB
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
@@ -84,6 +84,7 @@ from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.engine import run_settlements
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
 from rozliczenia.progress import PhaseState, ProgressSnapshot, SavingStep
+from rozliczenia.tool_files import TOOL_ROOT
 from rozliczenia.workbook_files import excel_lock_file, read_computed_rows, read_data_rows
 from rozliczenia.workbook_parts import UnsupportedShape
 

@@ -53,8 +53,8 @@ from rozliczenia.centrum import release_notes, tool_update
 from rozliczenia.centrum.release_notes import DadCase, ReleaseNotes
 from rozliczenia.centrum.report_box import REPOSITORY as REPORT_BOX
 from rozliczenia.centrum.tool_update import MainLine, Release
+from rozliczenia.tool_files import REPOSITORY
 
-REPOSITORY: Final = tool_update.GITHUB_REPOSITORY.removeprefix("https://github.com/").removesuffix(".git")
 REQUIRED_CI: Final = "Required CI status"
 CONFIRMED: Final = "--potwierdzone-przez-maksa"
 RELEASE_OVERRIDE: Final = "MAXIMISEART_WYDANIE"

@@ -9,25 +9,21 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import TOOL_ROOT, engine, settlement_messages
+from . import engine, settlement_messages
 from .client_data import ForbiddenValues
 from .input_copy import InputCopy
 from .decision import Conversation
 from .domain import ProgressObserver
-from .engine import SettlementSummary, default_worker_template_path
+from .engine import SettlementSummary
 from .input_checks import FILE_READERS, Readers
 from .period_folder import PeriodFolder, PeriodFolderError
 from .process_run import Finished, Process
 from .telemetry import UNKNOWN_PERIOD
-from .worker_config import default_config_path
+from .tool_files import SETTLEMENT_METRICS
 
 _COUNTERS = frozenset(
     {"templates_total", "templates_completed", "rows", "written", "empty", "planned", "skipped", "issues"}
 )
-
-def default_metrics_path() -> Path:
-    return TOOL_ROOT / ".rozliczenia-metrics.jsonl"
-
 
 def _period_label(source: Path) -> str:
     try:
@@ -46,9 +42,9 @@ class SettlementInputs:
     """
 
     source: Path
+    config_path: Path
+    worker_template_path: Path
     dry_run: bool = False
-    config_path: Path = field(default_factory=default_config_path)
-    worker_template_path: Path = field(default_factory=default_worker_template_path)
     readers: Readers = FILE_READERS
     forbidden: ForbiddenValues | None = None
     copy: InputCopy | None = field(default=None, compare=False)
@@ -96,7 +92,7 @@ def _finished(_inputs: SettlementInputs, summary: SettlementSummary) -> Finished
 PROCESS: Process[SettlementInputs, SettlementSummary] = Process(
     name="Przebieg rozliczeń",
     counter_names=_COUNTERS,
-    metrics_path=default_metrics_path,
+    metrics_path=lambda: SETTLEMENT_METRICS,
     metrics_failure_tail="proces rozliczeń zakończył się niezależnie.",
     execute=_execute,
     finished=_finished,

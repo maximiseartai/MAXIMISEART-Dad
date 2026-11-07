@@ -58,7 +58,8 @@ import tempfile
 import time
 from typing import IO, Final, Literal, TypeGuard
 
-GITHUB_REPOSITORY: Final = "https://github.com/maximiseartai/MAXIMISEART-Dad.git"
+from rozliczenia.tool_files import REPOSITORY_URL, TOOL_ROOT, config_dir
+
 BRANCH: Final = "main"
 
 UPDATED: Final = "ok"
@@ -335,7 +336,7 @@ class ToolClone:
     """
 
     root: Path
-    origin: str = GITHUB_REPOSITORY
+    origin: str = REPOSITORY_URL
     find_git: Callable[[], Path | None] = find_git
     install: Callable[[Path], bool] = pip_install
 
@@ -343,7 +344,7 @@ class ToolClone:
     def of_system(cls) -> ToolClone:
         """Klon, z którego działa to Centrum, i publiczne repozytorium na GitHubie (tylko w Centrum, nie u opiekuna)."""
 
-        return cls(Path(__file__).resolve().parents[3])
+        return cls(TOOL_ROOT)
 
     def update(self, on_step: Callable[[Step], None] = lambda step: None) -> UpdateResult:
         """Przesuwa klon do przodu na najnowsze Wydanie; wszystko albo nic.
@@ -458,7 +459,7 @@ class ToolClone:
 
     @property
     def _journal(self) -> _Journal:
-        return _Journal(self.root / "config" / JOURNAL)
+        return _Journal(config_dir(self.root) / JOURNAL)
 
 
 def _roll_back(git: _Git, journal: _Journal) -> None:

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from rozliczenia import TOOL_ROOT
+from rozliczenia.tool_files import TOOL_ROOT
 
 _OUTSIDE_TOOL: Final = frozenset({".venv", "site-packages"})
 

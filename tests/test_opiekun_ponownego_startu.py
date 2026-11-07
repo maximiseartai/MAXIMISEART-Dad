@@ -19,7 +19,7 @@ import urllib.request
 
 import pytest
 
-from rozliczenia.centrum import restart_guardian
+from rozliczenia.centrum import launcher, restart_guardian
 
 # Prawdziwy ``launch`` z importu: strażnik z conftest podmienia go tylko dla Centrum w testach API.
 from rozliczenia.centrum.restart_guardian import Restart, launch, main, prepare
@@ -32,6 +32,7 @@ from rozliczenia.centrum.tool_update import (
     UpdateResult,
     read_result,
 )
+from rozliczenia.tool_files import start_command
 
 from tests.fixtures.tool_clone import (
     FIRST_VERSION,
@@ -110,6 +111,16 @@ def _shortcut(clone: Path, port: int) -> subprocess.CompletedProcess[str]:
         timeout=60,
         check=False,
     )
+
+
+def test_polecenie_opiekuna_przyjmuje_launcher_kazdej_wersji_jako_start_bez_karty_i_bez_okienek(tmp_path: Path) -> None:
+    # Opiekun ze starej kopii startuje nową wersję (ADR 0009), więc postać polecenia jest kontraktem między wersjami:
+    # test przypina ją literałem, a nie stałymi z tool_files, które zmieniłyby się razem z nią.
+    command = start_command(tmp_path, 47811)
+    arguments = launcher.parse_arguments(command[2:])
+
+    assert command == [sys.executable, str(tmp_path / "run_centrum.py"), "--port", "47811", "--no-browser", "--bez-okienek"]
+    assert (arguments.port, arguments.no_browser, arguments.bez_okienek) == (47811, True, True)
 
 
 def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identyfikatorem_startu(

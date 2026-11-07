@@ -18,7 +18,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from rozliczenia import TOOL_ROOT
+from rozliczenia.tool_files import TOOL_ROOT, centrum_script
 
 SHORTCUT_NAME = "Centrum rozliczeń"
 ICON = Path(__file__).resolve().parent / "centrum-rozliczen.ico"
@@ -59,7 +59,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     environment = os.environ | folder | {
         "CENTRUM_SKROT_NAZWA": SHORTCUT_NAME,
         "CENTRUM_SKROT_PROGRAM": str(windowless_python),
-        "CENTRUM_SKROT_ARGUMENTY": f'"{TOOL_ROOT / "run_centrum.py"}"',
+        "CENTRUM_SKROT_ARGUMENTY": f'"{centrum_script(TOOL_ROOT)}"',
         "CENTRUM_SKROT_FOLDER_ROBOCZY": str(TOOL_ROOT),
         "CENTRUM_SKROT_IKONA": f"{ICON},0",
     }

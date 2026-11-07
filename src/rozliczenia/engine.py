@@ -104,12 +104,6 @@ class SettlementSummary:
         return not self.warnings
 
 
-def default_worker_template_path() -> Path:
-    """Wskazuje wspólny Wzorzec rozliczenia pracownika w katalogu konfiguracji."""
-
-    return Path(__file__).resolve().parents[2] / "config" / "Wzorzec rozliczenia pracownika.xlsx"
-
-
 def _read_source_rows(
     source_path: Path, forbidden: ForbiddenValues | None, copy: InputCopy | None
 ) -> tuple[dict[str, list[DataRow]], list[int], CollectiveOrders, Cleared]:
@@ -169,8 +163,8 @@ def run_settlements(
     source_path: Path,
     config_path: Path,
     *,
+    worker_template_path: Path,
     dry_run: bool = False,
-    worker_template_path: Path | None = None,
     observer: ProgressObserver | None = None,
     readers: Readers = FILE_READERS,
     forbidden: ForbiddenValues | None = None,
@@ -190,7 +184,7 @@ def run_settlements(
     phases = PhaseRunner(observer)
     source_path = source_path.expanduser().resolve()
     config_path = config_path.expanduser().resolve()
-    worker_template_path = (worker_template_path or default_worker_template_path()).expanduser().resolve()
+    worker_template_path = worker_template_path.expanduser().resolve()
 
     folder, mapping, worker_template = phases.check(
         lambda: input_checks.check_settlement(source_path, config_path, worker_template_path, readers)

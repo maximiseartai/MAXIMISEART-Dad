@@ -24,12 +24,10 @@ from rozliczenia.centrum.catalog import TemplateRole
 from rozliczenia.centrum.keyed_box import KeyJudgement
 from rozliczenia.centrum.tool_freshness import Judgement, ReleaseSource, ToolFreshness, offers_update
 from rozliczenia.centrum.version import short_commit
-from rozliczenia.collective_preparation import default_collective_template_path, default_internal_template_path
-from rozliczenia.engine import default_worker_template_path
 from rozliczenia.input_checks import ProcessTemplate, Readers, WorkerConfigExplanation
 from rozliczenia.message import Message
 from rozliczenia.workbook_files import Problem
-from rozliczenia.worker_config import default_config_path
+from rozliczenia.tool_files import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_CONFIG, WORKER_TEMPLATE
 
 
 @dataclass(frozen=True)
@@ -44,10 +42,10 @@ class ConfigurationFiles:
     @classmethod
     def default(cls) -> ConfigurationFiles:
         return cls(
-            worker_config=default_config_path(),
-            internal_template=default_internal_template_path(),
-            collective_template=default_collective_template_path(),
-            worker_template=default_worker_template_path(),
+            worker_config=WORKER_CONFIG,
+            internal_template=INTERNAL_TEMPLATE,
+            collective_template=COLLECTIVE_TEMPLATE,
+            worker_template=WORKER_TEMPLATE,
         )
 
     def templates(self) -> tuple[Template, Template, Template]:

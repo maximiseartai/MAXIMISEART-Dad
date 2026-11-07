@@ -29,10 +29,10 @@ from typing import Final, Literal
 import urllib.error
 import urllib.request
 
-from rozliczenia import TOOL_ROOT
 from rozliczenia.centrum.deadline import within
 from rozliczenia.centrum.tool_update import Release, contains_commit, find_git, newest_on_main, release_at
 from rozliczenia.centrum.version import commit_since, is_commit, tool_commit
+from rozliczenia.tool_files import REPOSITORY_API, TOOL_ROOT
 
 CommitSource = Callable[[], str | None]
 
@@ -74,7 +74,6 @@ def offers_update(judgement: Judgement) -> bool:
     return judgement == "newer"
 
 
-REPOSITORY_API: Final = "https://api.github.com/repos/maximiseartai/MAXIMISEART-Dad"
 # 1000 tagów: przy Wydaniu na tydzień na lata. Strona 100 tagów to kilkadziesiąt kB.
 _PAGES: Final = 10
 # Tyle najwyższych Wydań sprawdza się po kolei, zanim jedno leży na `main`; dalej wynik jest nieznany.

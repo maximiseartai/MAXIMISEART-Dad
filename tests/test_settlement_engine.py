@@ -1154,7 +1154,7 @@ def test_rozliczenie_wewnetrzne_albo_plik_zbiorczy_poza_folderem_okresu_zatrzymu
     source_path.touch()
 
     with pytest.raises(StopError) as raised:
-        run_settlements(source_path, tmp_path / "missing.yaml")
+        run_settlements(source_path, tmp_path / "missing.yaml", worker_template_path=tmp_path / "missing.xlsx")
 
     assert raised.value.message.code == "ZLY_PLIK_ZBIORCZY"
     assert raised.value.message.what == f"{UNFIT_COLLECTIVE_FILE_PREFIX} {detail}"

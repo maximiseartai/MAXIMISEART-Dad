@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import TOOL_ROOT, intermax_copies, intermax_ordering
+from . import intermax_copies, intermax_ordering
 from . import intermax_messages as messages
 from .client_data import ForbiddenValues
 from .decision import Conversation
@@ -21,14 +21,9 @@ from .intermax_ordering import OrderingSummary
 from .intermax_replace import LOCAL_DISK, Disk, Waiting
 from .process_run import Finished, Process
 from .settlement_period import period_of
+from .tool_files import INTERMAX_METRICS
 
 _COUNTERS = frozenset({"orders", "workers"})
-
-
-def default_metrics_path() -> Path:
-    """Osobna lokalna historia metryk, obok historii pozostałych procesów."""
-
-    return TOOL_ROOT / ".uporzadkowanie-intermax-metrics.jsonl"
 
 
 def _local_now() -> datetime:
@@ -89,7 +84,7 @@ def _finished(_inputs: OrderingInputs, summary: OrderingSummary) -> Finished:
 PROCESS: Process[OrderingInputs, OrderingSummary] = Process(
     name="Uporządkowanie INTERMAX",
     counter_names=_COUNTERS,
-    metrics_path=default_metrics_path,
+    metrics_path=lambda: INTERMAX_METRICS,
     metrics_failure_tail="Uporządkowanie INTERMAX zakończyło się niezależnie.",
     execute=_execute,
     finished=_finished,

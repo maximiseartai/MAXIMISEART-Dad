@@ -15,7 +15,6 @@ from typing import Literal
 
 import yaml
 
-from . import TOOL_ROOT
 from .period_folder import check_worker_name
 from .text import normalize_text
 
@@ -23,7 +22,6 @@ __all__ = [
     "ContentProblem",
     "SameWorkerFile",
     "WorkerConfigError",
-    "default_config_path",
     "load_worker_mapping",
 ]
 
@@ -69,12 +67,6 @@ class WorkerConfigError(Exception):
 
     def __init__(self, reason: WorkerConfigProblem) -> None:
         self.reason: WorkerConfigProblem = reason
-
-
-def default_config_path() -> Path:
-    """Wskazuje Konfigurację wykonawców w katalogu konfiguracji."""
-
-    return TOOL_ROOT / "config" / "worker_mapping.yaml"
 
 
 def load_worker_mapping(config_path: Path) -> dict[str, str]:

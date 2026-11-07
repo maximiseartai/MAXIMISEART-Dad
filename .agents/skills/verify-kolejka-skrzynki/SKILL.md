@@ -9,6 +9,7 @@ pilnuje:
   - src/rozliczenia/centrum/app.py
   - src/rozliczenia/centrum/launcher.py
   - src/rozliczenia/centrum/server.py
+  - src/rozliczenia/tool_files.py
   - tools/lib/model_tlc.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
