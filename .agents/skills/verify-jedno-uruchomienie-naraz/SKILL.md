@@ -8,6 +8,7 @@ pilnuje:
   - src/rozliczenia/centrum/app.py
   - src/rozliczenia/centrum/tool_updates.py
   - src/rozliczenia/centrum/intermax_run.py
+  - tools/lib/rozjazd_modelu.py
 ci: .agents/skills/verify-jedno-uruchomienie-naraz/scripts/explore_runs.py
 ---
 
@@ -18,8 +19,11 @@ ci: .agents/skills/verify-jedno-uruchomienie-naraz/scripts/explore_runs.py
 CI runs `explore_runs.py` whole (the `ci:` key) and `tests/test_jedno_uruchomienie_naraz.py` whenever
 a change touches this skill, and `check_runs_mutations.py` in full CI on `main` and nightly on `main`
 (`mutacje-nocne.yml`). Run them locally only to reproduce a red CI step or the night's issue, or one
-`--scope` while you work on it. What stays with you on every change
-to the covered code is „Does the change touch it?”: read each commit since the sync commit against the
+`--scope` while you work on it. `explore_runs.py` fails with `URUCHOMIENIA: ROZJAZD MODELU Z KODEM` in CI, before it
+explores, when a part modelled by hand (`model/definicje.json`) differs from its digest there; outside CI the same is a
+`UWAGA:` line above the verdict. `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`), and
+one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both. What stays with you on every change
+to the covered code is „Does the change touch it?”: read the diff since the digests against the
 table, above all the parts modelled by hand, whose change the check cannot see.
 
 ## The promise
@@ -76,29 +80,34 @@ after a new version, until the restart guardian has started and
 | `app.py` `create_app`: `shutdown.refuse_while(runs.shutdown_refusal)` | the wiring the harness copies |
 | `server.py` `serve.stop_when_asked` and uvicorn graceful shutdown | modelled by hand (see below) |
 
-**Sync commit: `05430811`** (main, 2026-10-31). At this commit the checker was confirmed to describe
-the covered code. From the previous sync commit `ef1eff19` (#472), `runs.py`, `shutdown.py`, `server.py` and
-`intermax_run.py` did not change. `tool_updates.py` changed only outside the slot: the result after a restart is
-judged in `_after_restart` at Centrum's start (#490, #491), and a failure's next action comes from
-`update_messages.UpdateFailure`; `start` still claims the slot with `begin_update` before its thread, and `_update`
-still calls `end_update` in its `finally` or `close_for_update` after the guardian. `app.py` changed only in the
-Skrzynka wiring (`on_rejected`, the box passed to `dad_notes_router`) and a comment. The Centrum's POST and PUT
-endpoints are the same as at `ef1eff19`, so no new action has to wait for the slot. To see whether
-it needs another look:
+`model/definicje.json` holds a digest of each part modelled by hand: `ToolUpdates.start`, `_update` and `_restart`,
+`intermax_copies_router` and `serve.stop_when_asked` (a name is a path from the module). The rest of the table runs as
+real code, and `create_app` is left out on purpose: it changes with every new endpoint, so look in its diff for the
+`refuse_while` wiring and for a new action that must wait for the slot. The digests were taken when the harness was last
+confirmed to describe the code (`tools/przesun_model.py`); what that confirmation found is in the message of the commit
+that changed them. To see what changed since:
 
 ```bash
-git log --oneline 05430811..HEAD -- src/rozliczenia/centrum/runs.py src/rozliczenia/centrum/shutdown.py src/rozliczenia/centrum/server.py src/rozliczenia/centrum/app.py src/rozliczenia/centrum/tool_updates.py src/rozliczenia/centrum/intermax_run.py
+git diff $(git log -1 --format=%h -- .agents/skills/verify-jedno-uruchomienie-naraz/model/definicje.json) -- src/rozliczenia/centrum/runs.py src/rozliczenia/centrum/shutdown.py src/rozliczenia/centrum/server.py src/rozliczenia/centrum/app.py src/rozliczenia/centrum/tool_updates.py src/rozliczenia/centrum/intermax_run.py
 ```
 
-For every listed commit, read its diff against the table. Move the sync commit
-forward (here and in nothing else) only after you have confirmed that the
-harness still matches the code at the new commit and the check and the mutations
-pass there. Changes to process content, progress views, Diagnoza or Zgłoszenia
+Changes to process content, progress views, Diagnoza or Zgłoszenia
 do not matter here: the checker replaces the engine with fixed steps. Neither do
 the actions after the result themselves (`after_run` in `app.py`): the checker
 replaces them with one step, and their network work runs on a thread outside
 `runs.py` that holds nothing. The same holds for the start-time retry of that
 queue (`outbox.resume()` in `lifespan`).
+
+## Bring the model in line
+
+When a part modelled by hand changes, or the diff above touches a row of the table:
+
+1. Read the diff against the table; the drift line names each changed part.
+2. Change the harness in `explore_runs.py` so that it does what the code does, step for step, and the table row with it.
+3. Run the check and `--strict` on the scope you changed. A new violation is a finding: replay it on the code before
+   you call it a bug.
+4. Run `tools/przesun_model.py verify-jedno-uruchomienie-naraz` only after the harness and the table describe the code,
+   and write in the commit message what changed in the harness and why.
 
 ## Run
 
@@ -115,6 +124,7 @@ script checks the worktree's own `src`.
 | `URUCHOMIENIA OK` | 0 | All four rules hold in every schedule. |
 | `URUCHOMIENIA OK, ZNANE USTALENIA: n` | 0 | Only the known findings below, each printed with its counterexample. |
 | `URUCHOMIENIA: NOWE NARUSZENIE (n)` | 1 | A rule breaks in a way not listed below, or a scope never reached a behaviour it must reach (`BRAK_ZAMKNIECIA`, `BRAK_ODMOWY_ZAMKNIECIA`, `BRAK_WYNIKU`, `BRAK_ODMOWY_STARTU`, `BRAK_DRUGIEGO_WYNIKU`), so the check would prove nothing. |
+| `URUCHOMIENIA: ROZJAZD MODELU Z KODEM` | 1 | Only in CI, before the check: a part modelled by hand differs from its digest in `model/definicje.json` (see „Bring the model in line”). |
 | `URUCHOMIENIA: LUKA MODELU (n)` | 2 | `runs.py` or `shutdown.py` uses `threading` in a way the model does not cover (for example `RLock`, `Condition`, `wait(timeout=...)`), or a modelled thread waits on something outside the model. No verdict on the rules. |
 
 A modelled thread that waits on a real lock or Event, or on `time.sleep`, outside the model ends the check about
@@ -246,4 +256,4 @@ without the updating check, `begin_restore` without the running check,
 and so does a real lock outside `threading` held across a step of `start`.
 CI runs this in the `mutations` job. A mutation reported as `NIEAKTUALNA` no longer matches its file.
 Rewrite its `anchor` and `replacement` in `check_runs_mutations.py` so it breaks
-the same rule again in the new code. Then move the sync commit forward as above.
+the same rule again in the new code.

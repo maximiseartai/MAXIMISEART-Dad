@@ -7,7 +7,7 @@ z przyczynami znanych znalezisk) i opowieść kontrprzykładu krokami kodu. Resz
   dla TLC powstaje z nich (``cfg``): ``INVARIANTS`` to ``TypeOK`` i każda obietnica, ``PROPERTIES`` obietnica czasowa,
   więc żadna konfiguracja nie pomija obietnicy. Sprawdzenie biegnie po konfiguracjach z tego pliku, nie po plikach.
 - Rozjazd modelu z kodem (``tools/lib/rozjazd_modelu.py``) rozstrzyga się przed TLC: w CI (``GITHUB_ACTIONS=true``)
-  kończy sprawdzenie linią ``<werdykt>: ROZJAZD MODELU Z KODEM`` i kodem 1, a poza CI ostrzega na końcu.
+  kończy sprawdzenie linią ``<werdykt>: ROZJAZD MODELU Z KODEM`` i kodem 1 (``porazka_w_ci``), a poza CI ostrzega na końcu.
 - Javę i ``tla2tools.jar`` daje ``tools/lib/narzedzia_tlc.py``, a zmienne ``TLC_JAVA`` i ``TLC_JAR`` je zastępują, bo
   kopia checkoutu mutacji nie ma ignorowanego katalogu podręcznego (``narzedzia_dla_kopii``).
 - Znane znalezisko wybacza tylko w swojej konfiguracji, tylko swoją obietnicę i tylko przebieg, w którym zdarzyła się
@@ -155,8 +155,8 @@ def main(model: Model, argv: list[str] | None = None, *, opis: str | None = None
 
     root = model.skill.parents[2]
     drift = rozjazd_modelu.rozjazd(model.skill, root)
-    if drift is not None and os.environ.get("GITHUB_ACTIONS") == "true":
-        print(f"UWAGA: {drift}\n\n{model.werdykt}: ROZJAZD MODELU Z KODEM")
+    if (failure := rozjazd_modelu.porazka_w_ci(drift, model.werdykt)) is not None:
+        print(failure)
         return 1
     try:
         chosen = _chosen(konfiguracje(model), args.config)

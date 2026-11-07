@@ -26,12 +26,12 @@ ci: .agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwane_uruchomieni
 CI runs `sprawdz_urwane_uruchomienie.py` (the `ci:` key) in Mutation checks whenever a change touches this skill's
 `pilnuje:` or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks
 step. It fails with `URWANE URUCHOMIENIE: ROZJAZD MODELU Z KODEM` when a definition the model describes
-(`model/definicje.json`) changed since the Sync commit, but it cannot tell whether your change to the model is right.
+(`model/definicje.json`) differs from its digest there, but it cannot tell whether your change to the model is right.
 `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 `check_model_urwanego_mutations.py` runs on a pull request that changes a file in `model/`, the script itself or
 `sprawdz_urwane_uruchomienie.py`, and in full CI and nightly on `main` after a change of this skill's folder.
 What stays with you on every change to the covered code is „Bring the model in line”: read the diff against the table,
-change the model, break the new path in it, replay each new counterexample on the code, and move the Sync commit.
+change the model, break the new path in it, replay each new counterexample on the code, and recompute the digests.
 A change whose model nobody brought in line is not verified, whatever CI says.
 
 ## The promises
@@ -126,16 +126,17 @@ unless named otherwise):
 | `Zgasniecie` | none: Centrum switches off at any step; memory is gone, disk and queue stay; an entry being written may be torn, a torn first line is a journal without a start, and a torn end entry is a journal without one (`_read_journal` counts it in `omitted`); a Wycena with a possible progress whose journal never had its first line on the disk would keep its progress (an event of WersjaKoncowa) |
 | `Zamkniecie` | „Zamknij Centrum rozliczeń”: `RunHost.shutdown_refusal` accepts it only when no Uruchomienie runs, and the request passed `send_interrupted` first |
 
-The script compares these definitions with the Sync commit (`model/definicje.json`: file → names, `Class.method` is a
-method): `RunLog.interrupted`, `_guarded`, `LoggedEnding`, `guard_logs`, `GuardedLogs` in `run_logs.py`;
+The script compares these definitions with their digests (`model/definicje.json`: file → name → digest, a name is a
+path from the module, `Class.method` a method and `create_app.runs` an assignment in `create_app`): `RunLog.interrupted`, `_guarded`, `LoggedEnding`, `guard_logs`, `GuardedLogs` in `run_logs.py`;
 `ResultWithoutLogs`, `ProgressVersion`, `OwnLogs`, `StandInLogs`, `WithoutLogsVersion`, `rank_of`, `journal_after`,
 `post_of`, `Drop`, `close` in `comment_versions.py`; `RunComments.run_started`, `_progress`, `run_ended`, `_own`,
 `_step`, `_keep`, `close_left_behind`, `send_left_behind`, `RecordMaker.interrupted` in `run_comments.py`; `LogsOnDisk.logs`, `_read_logs`, `_names`, `_NAME`, `_RUN_ID`, `LogsRead`, `Journal`, `_first_line`, `_RunEnded`,
 `JournalRead`, `_read_journal`, `_remove`, `LogsOnDisk.started`, `left_behind`, `remove_journal`, `write`, `name_of` in `logs_disk.py`;
-`lifespan`, `send_interrupted`, the assignments `app`, `disk`, `comments`, `closed` and `runs` (its `run_started` is
-`comments.run_started`, its `after_run` starts with `comments`, and its `previous` is `cards.last(closed)`) in `app.py`; `_Run.work`, `RunHost.start`, `RunHost.after`, `RunHost.shutdown_refusal` in `runs.py`;
+`create_app.lifespan`, `create_app.send_interrupted`, the assignments `create_app.app`, `create_app.disk`,
+`create_app.comments`, `create_app.closed` and `create_app.runs` (its `run_started` is `comments.run_started`, its
+`after_run` starts with `comments`, and its `previous` is `cards.last(closed)`) in `app.py`; `_Run.work`, `RunHost.start`, `RunHost.after`, `RunHost.shutdown_refusal` in `runs.py`;
 `Outbox.post`, `Outbox.resume`, `Rank`, `Version`, `_version_of`, `_superseded` in `outbox.py`; `_start`,
-`_listen_when_released` in `launcher.py`; `replace_atomically` in `atomic_file.py`; `save` in `efenix_pricing.py`;
+`_listen_when_released` in `launcher.py`; `replace_atomically` in `atomic_file.py`; `price_orders.save` in `efenix_pricing.py`;
 `run_process` in `process_run.py`. Every code name in the table above is one of them, except six left out on purpose:
 `_refresh` and `_Watched` (they only decide when `RunComments._progress` runs, and the model lets a progress come at
 any step it allows; `_progress` itself reads `ended` under the lock), `guard_text` (the text of a version without Logi), `RunLog` as a whole (the schema of the Logs file, which changes with every new field; the model
@@ -151,76 +152,10 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `959eb5864` (2026-11-07, merge of the rdzeń of Przekazanie at `4c6596424` into the two buttons of
-Wycena w efenix). Every row of the table was checked against the code at this commit. It joins the two Sync commits
-below, which changed disjoint definitions (no file of `model/definicje.json` changed on both sides since their
-merge-base `14e590600`), so no action changed.
-
-Earlier Sync commits, each checked the same way:
-- `660044485` (the two buttons of Wycena w efenix in Centrum, ADR 0027): Since `7d6eca83d` the start facts
-  (`StartFacts`, the first line of the journal `_first_line`, the last-start file of `LogsOnDisk.started`,
-  `_read_journal` and `RunLog.interrupted`) carry the mode of the Wycena as one more field, read back the same way as
-  `mode`; no step, write or order of the journal changed, so no action changed.
-- `025b50132` (merge of `main` with N3a into Przekazanie do akceptacji): It joins the two Sync commits below, which
-  changed disjoint definitions (no file of `model/definicje.json` changed on both sides since their merge-base), so no
-  action changed.
-- `7d6eca83d` (Przekazanie do akceptacji, ADR 0027): Since `aefc594f1` `save` passes the mode of the Wycena to
-  `_outcome`, which in the mode with Przekazanie also forwards a gotowe order to acceptance (one more change in efenix
-  between `journal.begun` and `journal.ended`, traced like every other), and `run_logs` has the result `przekazane`; the
-  journal calls and their order did not change, so no action changed.
-- `1a7d93e3` (N3a of the untangle of 7.11): Since `aefc594f1` of the definitions only `launcher._start` changed: it
-  takes the address, the port and the path of the Ustawienia taty from `tool_files` (`HOST`, `SETTINGS`) instead of its
-  own copies, and `listen_locally` behind `_listen_when_released` lives in `tool_files.py`; the order
-  `_listen_when_released` → `create_app` stays, so no action changed.
-- `aefc594f1`: since the Sync commit `872a47f50` the name of the Logs file has one owner, `logs_disk.name_of`, which takes
-  the start facts (`run_logs.StartFacts`, in Logi `RunLog.start`) and keeps the format of the removed
-  `run_logs.logs_file_name`; `LogsOnDisk.write` and the file in the Archiwum (`post_of` → `_archive_file`) take their
-  name from it, and it joins the definitions because the name it writes is the one `_NAME` reads in `Czytaj`. The
-  protocol `StartedFacts` is gone, so `RunLog.interrupted` takes `StartFacts` and `post_of` reads `record.start`; `guarded` is private
-  (`_guarded`, the same body) and only `guard_logs` calls it. Names and types changed, not a step, so no action changed.
-- `872a47f50`: the start and the end of a Wycena go through `RunComments` instead of `JournalAtResult`, `RunLogs`,
-  `JournalAfterLogs` and `ProgressComment`: `run_started` writes the first line and the last-start file, then the
-  progress; `_progress` posts under the lock of `RunComments`, and `_Watched.ended` stands for `_ended`; `run_ended`
-  holds `WpisKonca`, `LogiWyniku`, `WyslijWynik` and `UsunPoLogach` in one body, each step in its own `_step`, and
-  `_keep` still posts in `finally`. No action changed.
-- `5cc955d12`: the start of Centrum closes and sends through `RunComments.close_left_behind` and `send_left_behind`
-  instead of `InterruptedPricings`, with the matrix of `Czytaj` in the pure `comment_versions.close`, which guards
-  every Logi and text inside, and `RunCards.last` takes the proof `closed`. No action changed.
-- `8537da18d`: `GuardedLogs` has no subclasses (`final`, `__init_subclass__` raises), and the four version types and
-  `_write` raise `TypeError` for anything but `GuardedLogs` or `GuardedText`, which `guard`, `guard_logs` and
-  `guard_text` always give on these paths, so the new raise is no step. No action changed.
-- `a78b703c5`: `GuardedLogs` is a class with slots instead of a frozen dataclass, so `dataclasses.replace`, a copy or a
-  changed field no longer gives Logi that skipped `guard_logs`; it holds the same Logi after the guard and the same
-  Logi before it for the Diagnoza, and `ZapiszLogi` still writes `logs.text`. No action changed.
-- `6bdeaf76c`: every version of the comment of an Uruchomienie is a type in `comment_versions.py` (`ProgressVersion`,
-  `OwnLogs`, `StandInLogs`, `WithoutLogsVersion`) that carries only Logi or text after the guard (`GuardedLogs` from
-  `guard_logs`, `GuardedText` from `guard_text`), and `post_of` gives it the rank of the old `progress_post` and
-  `logi_post` (`rank_of`); `journal_after` says „usuń” exactly when `post` returned True, so `_keep` and
-  `InterruptedPricings.send` keep their conditions. `ResultWithoutLogs` moved there unchanged, and `RunLogs.send` still
-  guards its text when it sends it. Only the names in the table changed and no action changed.
-- `b50a4edad`: the journal moved from `pricing_journal.py` into `logs_disk.py` (`Journal`, `_read_journal`,
-  `LogsOnDisk.started`, `left_behind`, `remove_journal`, `JournalAtResult`) with the same bytes and order. No action
-  changed.
-- `68aafac28`: the Komunikat of a Zatrzymanie in `save` asks `_kept` with the results and the trace of the current
-  order instead of the window's `sent_change`; `journal.begun` and `journal.ended` kept their place. No action changed.
-- `fa352a225`: listing the Logs folder fails with `Refused` unless the folder is missing, and `_closed` raises it again,
-  so the read failure of `Czytaj` (`awarieOdczytu`) also stands for a folder the system does not list; an identifier
-  that Centrum does not give (`_RUN_ID`) is `Missing` without the disk. No action changed.
-- `7cfe46274`: the read of the Logs file in `Czytaj` moved into `logs_disk.py` (`LogsOnDisk.logs`), and `create_app`
-  builds `disk` for `InterruptedPricings` and the last-start file. No action changed.
-- `ed73f88ce` (#960): `save` no longer reads the Ślad Wyceny Emmetta and stops only on a window stop; `journal.begun`
-  and `journal.ended` kept their place. No action changed.
-- `ba4092817` (#936 merged with `main` after #910 and #916): `guarded` leaves the fields of tool words and moments
-  (`TOOL_FIELDS`) unmasked, and the model has no step in which the guard masks. Since `917cf6fc6` #910 gave a version
-  of a wysyłka a rank before its moment (`Rank`, `Version`, `_version_of`, `_superseded`, `progress_post`, `logi_post`,
-  `_logs_post`, `RunLogs.send`), the end entry the result, a failed end entry leaves the journal, `JournalAfterLogs`
-  removes the journal once the queue accepted the Logi with the result, and the start closes every journal with its
-  first line with a stand-in version (`_closed`, `ResultWithoutLogs`). The model got the newest version of each comment
-  (`najnowsza`, `Przyjmij` with the rank and the clock, `MaxCofniecZegara`), `Postep`, `UsunPoLogach`, the stand-in
-  version in `Czytaj` and `Wyslij`, the promise LogiZostaja in place of WynikZostaje and the configuration `zegar`; the
-  known finding `po-wpisie-konca` is gone.
-- `917cf6fc6` (since `2b2af53e4`, #846 after its split): a mask in a typed field of the Logs empties it or drops its
-  list element, and a top-level field without `None` raises `UnrepresentableLogs`. No action changed.
+The digests in `model/definicje.json` were taken when every row of the table was last checked against the code
+(`tools/przesun_model.py`); what that check found is in the message of the commit that changed the digests. To see what
+changed since: `git diff $(git log -1 --format=%h -- .agents/skills/verify-urwane-uruchomienie/model/definicje.json) --
+<files of model/definicje.json>`.
 
 ## Run
 
@@ -247,8 +182,8 @@ The last line is the verdict:
 - `URWANE URUCHOMIENIE: BŁĄD MODELU (n)`: TLC gave no verdict (a syntax error, a deadlock), an invariant outside the
   promises such as `TypeOK` broke, `model/konfiguracje.json` has another shape, or the counterexample's story in the
   script does not know every action of `Next`. Exit 2.
-- `URWANE URUCHOMIENIE: ROZJAZD MODELU Z KODEM` (CI only): a definition in `model/definicje.json` changed since the
-  Sync commit.
+- `URWANE URUCHOMIENIE: ROZJAZD MODELU Z KODEM` (CI only): a definition in `model/definicje.json` differs from its
+  digest there.
   Outside CI the same is a `UWAGA:` line above the verdict.
 
 Each counterexample is told as numbered steps in the code's words, a failure named after its step („odczyt dziennika
@@ -391,8 +326,8 @@ When a definition from `model/definicje.json` changes:
    to `scripts/check_model_urwanego_mutations.py` with the code counterpart in its name.
 5. Run the check. A new violation is a finding: replay it on the code (Read a result) before you call it a bug, report
    it with the path, and do not change product code unless asked.
-6. Move the Sync commit forward only after every row of the table describes the code at the new commit, and write in
-   one sentence what changed in the model and why.
+6. Run `tools/przesun_model.py verify-urwane-uruchomienie` only after every row of the table describes the code, and
+   write in the commit message, in one sentence, what changed in the model and why.
 
 ## After changing the model
 

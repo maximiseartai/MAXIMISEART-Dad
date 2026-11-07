@@ -129,6 +129,29 @@ print("sprawdzenie skończone bez błędu")
 """
 
 
+# Skrypt, w którym część modelowana ręcznie rozjechała się z kodem; w CI sprawdzenie przeplotów nie może ruszyć, a poza
+# CI biegnie bez zakresów.
+DRIFTED = """
+import os
+import sys
+
+sys.path.insert(0, sys.argv[1])
+import explore_runs
+
+os.environ["GITHUB_ACTIONS"] = sys.argv[2]
+explore_runs.rozjazd_modelu.rozjazd = lambda skill, root: f"kod opisany modelem zmienił się: {skill.name}."
+
+
+def explored(scope):
+    raise AssertionError("sprawdzenie przeplotów ruszyło mimo rozjazdu w CI")
+
+
+explore_runs.explore = explored
+if sys.argv[2] != "true":
+    explore_runs.SCOPES = {}
+raise SystemExit(explore_runs.main([]))
+"""
+
 def _in_own_process(*arguments: str) -> tuple[int | None, list[str]]:
     """Kod wyjścia Pythona z ``arguments`` we własnym procesie (``None``, gdy nie skończył się w limicie) i jego linie.
 
@@ -153,6 +176,20 @@ def test_centrum_prowadzi_jedno_uruchomienie_naraz_i_nie_zamyka_sie_w_trakcie_w_
 
     assert code == 0 and lines[-1].startswith("URUCHOMIENIA OK"), "\n".join(lines)
 
+
+@pytest.mark.parametrize(
+    ("ci", "code", "last"),
+    [("true", 1, ["URUCHOMIENIA: ROZJAZD MODELU Z KODEM"]), ("", 0, ["", "URUCHOMIENIA OK"])],
+    ids=["w-ci", "poza-ci"],
+)
+def test_rozjazd_czesci_modelowanej_recznie_konczy_sprawdzenie_przeplotow_porazka_w_ci_przed_sprawdzeniem(
+    ci: str, code: int, last: list[str]
+) -> None:
+    """Części modelowanej ręcznie (``model/definicje.json``) sprawdzenie nie wykonuje, więc jej zmiana nie wywraca go sama."""
+
+    exited, lines = _in_own_process("-c", DRIFTED, str(EXPLORER.parent), ci)
+
+    assert (exited, lines[0], lines[-len(last) :]) == (code, "UWAGA: kod opisany modelem zmienił się: verify-jedno-uruchomienie-naraz.", last), "\n".join(lines)
 
 def test_sprawdzenie_przeplotow_prowadzi_watki_modelu_bez_watkow_systemu() -> None:
     """Czas sprawdzenia nie zależy od tego, jak zajęte są procesory runnera (#565).
