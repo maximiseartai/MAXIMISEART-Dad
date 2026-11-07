@@ -14,7 +14,7 @@ const RELOADED_AFTER_UPDATE = "centrum-po-aktualizacji"
 type ToolUpdateContextValue = {
   /** Aktualizacja narzędzia według serwera; `null`, dopóki nikt jej nie odczytał. */
   update: ToolUpdate | null
-  /** Komunikat ostatniego nieudanego odczytu Aktualizacji narzędzia; `null` po udanym. */
+  /** Komunikat ostatniego nieudanego odczytu Aktualizacji narzędzia; `null`, gdy serwer potem podał jej stan. */
   readFailure: string | null
   /** Start wysłany albo aktualizacja trwa: każdy przycisk aktualizacji jest wtedy wyłączony. */
   busy: boolean
@@ -27,6 +27,12 @@ type ToolUpdateContextValue = {
   read: () => void
 }
 
+/**
+ * Stan Aktualizacji narzędzia i nieudany odczyt razem: każdy stan, który serwer podał później (start, krok w trakcie,
+ * odczyt), zastępuje nieudany odczyt, bo inaczej rada „Centrum nie odpowiada” zasłoniłaby Komunikat porażki Aktualizacji.
+ */
+type Shown = Pick<ToolUpdateContextValue, "update" | "readFailure">
+
 const ToolUpdateContext = React.createContext<ToolUpdateContextValue | null>(null)
 
 /**
@@ -37,20 +43,19 @@ const ToolUpdateContext = React.createContext<ToolUpdateContextValue | null>(nul
  * działa nowe Centrum.
  */
 export function ToolUpdateProvider({ children }: { children: React.ReactNode }) {
-  const [update, setUpdate] = React.useState<ToolUpdate | null>(null)
-  const [readFailure, setReadFailure] = React.useState<string | null>(null)
+  const [{ update, readFailure }, setShown] = React.useState<Shown>({ update: null, readFailure: null })
   const [clicked, setClicked] = React.useState(false)
   // Identyfikator startu Centrum sprzed kliknięcia (`health`); inny znaczy, że działa już nowe Centrum.
   const instance = React.useRef<string | null>(null)
   const running = update?.state === "running"
   const restarted = update?.state === "failed" && update.after_restart && !clicked
 
-  const show = React.useCallback((result: ToolUpdate) => {
-    setUpdate(result)
-    setReadFailure(null)
-  }, [])
+  const show = React.useCallback((result: ToolUpdate) => setShown({ update: result, readFailure: null }), [])
 
-  const failRead = React.useCallback((failure: Error) => setReadFailure(failureMessage(failure)), [])
+  const failRead = React.useCallback(
+    (failure: Error) => setShown((shown) => ({ ...shown, readFailure: failureMessage(failure) })),
+    []
+  )
 
   const read = React.useCallback(() => {
     getToolUpdate().then(show, failRead)
@@ -91,13 +96,13 @@ export function ToolUpdateProvider({ children }: { children: React.ReactNode }) 
             return
           }
 
-          return getToolUpdate().then(setUpdate)
+          return getToolUpdate().then(show)
         })
-        .catch(() => setUpdate({ state: "running", step: "restarting" }))
+        .catch(() => show({ state: "running", step: "restarting" }))
     }, POLL_MS)
 
     return () => window.clearTimeout(timer)
-  }, [update])
+  }, [update, show])
 
   const starting = useAction(() => {
     setClicked(true)
@@ -108,7 +113,7 @@ export function ToolUpdateProvider({ children }: { children: React.ReactNode }) 
 
         return startToolUpdate()
       })
-      .then(setUpdate)
+      .then(show)
   }, "Nie zaktualizowano narzędzia")
 
   const run = starting.run
