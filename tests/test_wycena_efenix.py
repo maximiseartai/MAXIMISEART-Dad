@@ -651,7 +651,7 @@ def test_ilosc_ktorej_nie_da_sie_przepisac_do_efenix_to_blad_zlecenia_zanim_proc
     efenix = StanEfenix([order.in_efenix(f"90{index}") for index, order in enumerate(orders)])
     outcome = _price_in_process(tmp_path, efenix, orders)
 
-    assert (_figures(outcome), _errors(outcome), efenix.count(Action.SEARCH)) == (_figures_of(2, 1), [(error, "wiersz 18")], 1)
+    assert (_figures(outcome), _errors(outcome), efenix.searched()) == (_figures_of(2, 1), [(error, "wiersz 18")], ["5502"])
 
 
 # Strona zlecenia efenix bez części „Montaż urządzeń” (#819): z pozycji przypisania kolumn ma tylko 026, a ma 029, 009 i
