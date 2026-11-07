@@ -415,7 +415,7 @@ def test_nieoczekiwany_wyjatek_pokazuje_trzy_czesci_bez_tekstu_wyjatku_i_danych_
         {
             "what": "Wystąpił nieoczekiwany błąd. Nie utworzono żadnego pliku.",
             "where": "Przygotowanie pliku zbiorczego",
-            "action": "Uruchom ponownie. Jeśli błąd wraca, przekaż to osobie utrzymującej narzędzie.",
+            "action": "Uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.",
         }
     ]
     assert phase_states(view)["Odczyt danych"] == "failed"

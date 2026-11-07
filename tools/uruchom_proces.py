@@ -35,8 +35,9 @@ Na stdout trafia jeden obiekt JSON (UTF-8, ``ProcessResult``):
   (``contract.RunSummary``), ``null`` przy Zatrzymaniu;
 - ``warnings``: ostrzeżenia procesu w zakończonym procesie, każde z kodem i
   trzema częściami Komunikatu;
-- ``stop``: przy Zatrzymaniu jego rodzaj (``stop``, ``unexpected``,
-  ``after_engine``) i Komunikat z kodem i trzema częściami, inaczej ``null``;
+- ``stop``: przy Zatrzymaniu sposób zakończenia (``process_run.StopEnding``: ``stop``,
+  ``declined``, ``unexpected``, ``after_engine``) i Komunikat z kodem i trzema częściami,
+  inaczej ``null``;
 - ``progress``: ostatni stan postępu w kształcie kontraktu (``contract.Progress``);
   po awarii widoku ostatni zbudowany przed nią, a gdy żaden nie powstał, pusty (bez etapów);
 - ``total_duration_ms``: ``Czas uruchomienia``;
@@ -56,7 +57,7 @@ import argparse
 from collections.abc import Callable
 from pathlib import Path
 import sys
-from typing import Literal, NoReturn, TypeVar
+from typing import NoReturn, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -72,7 +73,7 @@ from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.intermax_process import OrderingInputs
 from rozliczenia.message import Message
 from rozliczenia.preparation_process import PreparationInputs
-from rozliczenia.process_run import Finished, Process, ProcessInputs, run_process
+from rozliczenia.process_run import Finished, Process, ProcessInputs, StopEnding, run_process
 from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.settlement_process import SettlementInputs
 
@@ -96,7 +97,7 @@ class CodedMessage(_Model):
 
 
 class StopResult(_Model):
-    kind: Literal["stop", "declined", "unexpected", "after_engine"]
+    kind: StopEnding
     message: CodedMessage
 
 

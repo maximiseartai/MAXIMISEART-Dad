@@ -18,6 +18,7 @@ from pathlib import Path
 import subprocess
 import sys
 
+from rozliczenia.message import refer_if
 from rozliczenia.tool_files import TOOL_ROOT, centrum_script
 
 SHORTCUT_NAME = "Centrum rozliczeń"
@@ -77,7 +78,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(
             "Co się stało: Nie udało się utworzyć skrótu „Centrum rozliczeń”.\n"
             "Gdzie: pulpit tego komputera\n"
-            "Co zrobić: Uruchom ten krok ponownie. Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie."
+            f"Co zrobić: Uruchom ten krok ponownie. {refer_if('Jeśli komunikat wraca', request='przekaż go')}"
         )
         return 1
     print(f"Utworzono skrót „Centrum rozliczeń”: {result.stdout.strip()}")
