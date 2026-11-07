@@ -30,6 +30,11 @@ DadFile = Literal["order_register", "collective_file"]
 """Plik taty, który Komunikat każe poprawić: Rejestr zleceń albo Plik zbiorczy."""
 
 REPORT_TO_MAINTAINER: Final = "Przekaż ten komunikat osobie utrzymującej narzędzie."
+KEEP_ON_DEVICE: Final = (
+    "W Eksploratorze plików kliknij ten plik prawym przyciskiem myszy, wybierz „Zawsze zachowuj na tym urządzeniu”, "
+    "poczekaj, aż się pobierze,"
+)
+"""Jak tata pobiera plik, który OneDrive trzyma tylko w chmurze; Komunikat kończy to zdanie swoim „i …”."""
 _SENTENCE_END: Final = re.compile(r"(?<=[.!?])\s+")
 _CONDITIONS: Final = ("jeśli", "w innym wypadku")
 

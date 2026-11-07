@@ -20,6 +20,7 @@ from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.intermax_process import OrderingInputs
 from rozliczenia.message import Message
+from rozliczenia.period_folder import period_status_label
 from rozliczenia.preparation_process import PreparationInputs
 from rozliczenia.process_run import ProcessInputs
 from rozliczenia.quantity_rules import WEEKDAY_LABELS
@@ -184,11 +185,16 @@ def _settlement_summary(summary: SettlementSummary, dry_run: bool) -> contract.R
     )
 
 
+def _elapsed(snapshot: ProgressSnapshot) -> contract.Figure:
+    return contract.Figure(label="Czas uruchomienia", value=snapshot.total_elapsed_ms, unit="ms")
+
+
+def _elapsed_only(snapshot: ProgressSnapshot, _dry_run: bool) -> list[contract.Figure]:
+    return [_elapsed(snapshot)]
+
+
 def _preparation_figures(snapshot: ProgressSnapshot, _dry_run: bool) -> list[contract.Figure]:
-    return [
-        _count("Ostrzeżenia", snapshot.issue_count),
-        contract.Figure(label="Czas uruchomienia", value=snapshot.total_elapsed_ms, unit="ms"),
-    ]
+    return [_count("Ostrzeżenia", snapshot.issue_count), _elapsed(snapshot)]
 
 
 def _preparation_summary(summary: PreparationSummary, _dry_run: bool) -> contract.RunSummary:
@@ -216,7 +222,7 @@ SETTLEMENT: Final[PeriodProcessView[SettlementInputs, SettlementSummary]] = Peri
     reminder="Zapisz i zamknij Plik zbiorczy w Excelu",
     confirms_readiness=True,
     preview_hint="Nic nie zostanie zapisane. Zobaczysz plan plików każdego Wykonawcy.",
-    done="Rozliczenia pracowników gotowe",
+    done=period_status_label("worker_settlements_ready"),
     result_action="open_worker_settlements_folder",
     _figures=_settlement_figures,
     _summary=_settlement_summary,
@@ -225,15 +231,11 @@ PREPARATION: Final[PeriodProcessView[PreparationInputs, PreparationSummary]] = P
     reminder="Zapisz i zamknij Rejestr zleceń w Excelu",
     confirms_readiness=False,
     preview_hint="Nic nie zostanie zapisane. Zobaczysz plan i nazwy obu plików.",
-    done="Plik zbiorczy przygotowany",
+    done=period_status_label("collective_file_prepared"),
     result_action="open_collective_file",
     _figures=_preparation_figures,
     _summary=_preparation_summary,
 )
-
-
-def _ordering_figures(snapshot: ProgressSnapshot, _dry_run: bool) -> list[contract.Figure]:
-    return [contract.Figure(label="Czas uruchomienia", value=snapshot.total_elapsed_ms, unit="ms")]
 
 
 def _ordering_summary(summary: OrderingSummary, _dry_run: bool) -> contract.RunSummary:
@@ -253,13 +255,9 @@ INTERMAX: Final[ProcessView[OrderingInputs, OrderingSummary]] = ProcessView(
     done="INTERMAX uporządkowany",
     result_action="open_order_register",
     register_name="INTERMAX",
-    _figures=_ordering_figures,
+    _figures=_elapsed_only,
     _summary=_ordering_summary,
 )
-
-
-def _pricing_figures(snapshot: ProgressSnapshot, _dry_run: bool) -> list[contract.Figure]:
-    return [contract.Figure(label="Czas uruchomienia", value=snapshot.total_elapsed_ms, unit="ms")]
 
 
 def _pricing_summary(summary: PricingSummary, _dry_run: bool) -> contract.RunSummary:
@@ -305,7 +303,7 @@ EFENIX: Final[ProcessView[EfenixInputs, PricingSummary]] = ProcessView(
     confirms_readiness=False,
     done="Wycena w efenix gotowa",
     result_action="open_collective_file",
-    _figures=_pricing_figures,
+    _figures=_elapsed_only,
     _summary=_pricing_summary,
     _notes=_pricing_notes,
 )

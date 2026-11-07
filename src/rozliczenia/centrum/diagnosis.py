@@ -25,7 +25,7 @@ zostają w ``Diagnosis`` po stronie serwera, dla Zgłoszenia i Logów Uruchomien
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -37,7 +37,7 @@ from rozliczenia.centrum.catalog import CheckStep, NeededSetting, PeriodFolderCh
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import ConfigurationFiles, Template, workers_problem
 from rozliczenia.centrum.keyed_box import KeyJudgement
-from rozliczenia.centrum.log import CentrumLog, event_of
+from rozliczenia.centrum.log import UNEXPECTED_FAILURE_EVENT, CentrumLog, event_of
 from rozliczenia.centrum.tool_freshness import ToolFreshness, offers_update
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.client_data import ForbiddenValues
@@ -47,7 +47,9 @@ from rozliczenia.period_folder import (
     PeriodFolder,
     PeriodFolderInaccessible,
     PeriodFolderLookupError,
+    PeriodPlace,
     locate_period_folder,
+    period_place_label,
     reading,
 )
 from rozliczenia.settings import Settings
@@ -56,7 +58,6 @@ from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
 CheckState = Literal["passed", "failed", "not_checked"]
 
 _LOG_ENTRIES: Final = 20
-_UNEXPECTED_EVENT: Final = "nieoczekiwany-wyjatek"
 
 
 @dataclass(frozen=True)
@@ -363,13 +364,6 @@ def _worker_config(computer: _Computer, label: str, explain: WorkerConfigExplana
     return [CheckResult.passed(label, "Wczytuje się.") if problem is None else CheckResult.failed(label, problem)]
 
 
-_PERIOD_FILE_LABELS: Final[Mapping[str, str]] = {
-    "internal_settlement": "Rozliczenie wewnętrzne",
-    "collective_file": "Plik zbiorczy",
-    "worker_settlements": "Folder rozliczeń pracowników",
-}
-
-
 def _period_folder(
     computer: _Computer, label: str, collective_file_missing: Callable[[Path], Message] | None
 ) -> list[CheckResult]:
@@ -385,15 +379,12 @@ def _period_folder(
     observed = folder.observe()
     if collective_file_missing is not None and not observed.collective_file_exists:
         return [CheckResult.failed(label, collective_file_missing(folder.collective_file))]
-    present = [
-        _PERIOD_FILE_LABELS[name]
-        for name, exists in (
-            ("internal_settlement", observed.internal_settlement_exists),
-            ("collective_file", observed.collective_file_exists),
-            ("worker_settlements", observed.worker_settlements_folder_exists),
-        )
-        if exists
-    ]
+    places: tuple[tuple[PeriodPlace, bool], ...] = (
+        ("internal_settlement", observed.internal_settlement_exists),
+        ("collective_file", observed.collective_file_exists),
+        ("worker_settlements_folder", observed.worker_settlements_folder_exists),
+    )
+    present = [period_place_label(place) for place, exists in places if exists]
     if not observed.period_folder_exists:
         return [CheckResult.passed(label, f"Folderu {computer.period.token} jeszcze nie ma.")]
     return [CheckResult.passed(label, f"Pliki okresu: {', '.join(present) if present else 'brak'}.")]
@@ -441,7 +432,7 @@ def _report_key(computer: _Computer, label: str) -> list[CheckResult]:
 def _centrum_log(computer: _Computer, label: str) -> list[CheckResult]:
     entries = computer.log_entries
     # Dziennik tylko informuje: jego wpisy idą do Zgłoszenia, a wyjątek w nim nie jest przyczyną na komputerze taty.
-    unexpected = ", w tym nieoczekiwany wyjątek" if any(event_of(entry) == _UNEXPECTED_EVENT for entry in entries) else ""
+    unexpected = ", w tym nieoczekiwany wyjątek" if any(event_of(entry) == UNEXPECTED_FAILURE_EVENT for entry in entries) else ""
     return [CheckResult.passed(label, f"Ostatnie wpisy od startu Centrum: {len(entries)}{unexpected}.")]
 
 

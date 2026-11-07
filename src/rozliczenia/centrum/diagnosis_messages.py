@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rozliczenia.message import Message, file_label
+from rozliczenia.message import KEEP_ON_DEVICE, Message, file_label
 
 _DIAGNOSIS = "Diagnoza w Centrum rozliczeń"
 
@@ -59,8 +59,5 @@ def file_only_in_cloud(path: Path) -> Message:
         code="PLIK_TYLKO_W_CHMURZE",
         what="Plik jest tylko w OneDrive w chmurze, bez kopii na tym komputerze.",
         where=file_label(path),
-        action=(
-            "W Eksploratorze plików kliknij ten plik prawym przyciskiem myszy, wybierz „Zawsze zachowuj na tym "
-            "urządzeniu”, poczekaj, aż się pobierze, i uruchom ponownie."
-        ),
+        action=f"{KEEP_ON_DEVICE} i uruchom ponownie.",
     )

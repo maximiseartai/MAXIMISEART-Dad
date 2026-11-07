@@ -18,7 +18,7 @@ from typing import Final, Literal
 from fastapi import APIRouter
 
 from rozliczenia.centrum import contract, run_view
-from rozliczenia.centrum.catalog import EFENIX
+from rozliczenia.centrum.catalog import EFENIX, PERIODS_DIRECTORY, first_choose
 from rozliczenia.centrum.metrics import last_results
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.processes import Processes
@@ -28,6 +28,7 @@ from rozliczenia.period_folder import (
     PeriodFolderLookupError,
     PeriodFolders,
     PeriodStatus,
+    period_place_label,
     locate_period_folder,
     month_folder_label,
     period_status_label,
@@ -209,12 +210,13 @@ def located_period_folder(periods_directory: Path, period: SettlementPeriod) -> 
         ) from None
 
 
-_TARGET_LABELS: dict[contract.OpenTarget, str] = {
-    "internal_settlement": "Rozliczenie wewnętrzne",
-    "collective_file": "Plik zbiorczy",
-    "period_folder": "Folder okresu",
-    "worker_settlements_folder": "Folder rozliczeń pracowników",
-}
+def requested_folder(store: SettingsStore, token: str) -> PeriodFolder:
+    """Folder okresu z tokenu żądania przeglądarki; bez folderu okresów na miejscu odmowa „Najpierw wskaż …”."""
+
+    periods_directory = PERIODS_DIRECTORY.existing(store.load())
+    if periods_directory is None:
+        raise contract.Refusal(409, first_choose((PERIODS_DIRECTORY,)))
+    return located_period_folder(periods_directory, requested_period(token))
 
 
 def periods_router(
@@ -226,25 +228,14 @@ def periods_router(
     def board() -> contract.PeriodBoard:
         return read_board(store.load().periods_directory, today(), processes)
 
-    def requested_folder(token: str) -> PeriodFolder:
-        periods_directory = store.load().periods_directory
-        if periods_directory is None or not periods_directory.is_dir():
-            raise contract.Refusal(409, "Najpierw wskaż folder okresów.")
-        return located_period_folder(periods_directory, requested_period(token))
-
     @router.post("/{token}/open", operation_id="openPeriodPath", responses=contract.NOT_FOUND_OR_CONFLICT)
     def open_period_path(token: str, request: contract.OpenRequest) -> contract.Opened:
-        folder = requested_folder(token)
-        path = {
-            "internal_settlement": folder.internal_settlement,
-            "collective_file": folder.collective_file,
-            "period_folder": folder.directory,
-            "worker_settlements_folder": folder.worker_settlements,
-        }[request.target]
+        folder = requested_folder(store, token)
+        path = folder.path_of(request.target)
         with reading(folder.directory):
             exists = path.exists()
         if not exists:
-            raise contract.Refusal(404, f"{_TARGET_LABELS[request.target]} okresu {token} jeszcze nie istnieje.")
+            raise contract.Refusal(404, f"{period_place_label(request.target)} okresu {token} jeszcze nie istnieje.")
         platform.open_path(path)
         return contract.Opened(name=path.name)
 
@@ -254,7 +245,7 @@ def periods_router(
         responses=contract.NOT_FOUND_OR_CONFLICT,
     )
     def open_worker_settlement(token: str, request: contract.WorkerSettlementRequest) -> contract.Opened:
-        folder = requested_folder(token)
+        folder = requested_folder(store, token)
         path = folder.worker_settlement(request.worker)
         # Nazwa Wykonawcy z „/”, „\” albo „..” wyprowadziłaby ścieżkę poza Folder rozliczeń pracowników.
         inside = path.parent == folder.worker_settlements

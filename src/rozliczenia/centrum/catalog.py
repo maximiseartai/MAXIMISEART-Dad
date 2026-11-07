@@ -14,7 +14,7 @@ każdy moduł Centrum może go czytać bez cyklu.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Generic, Literal, TypeVar
@@ -103,6 +103,12 @@ class PeriodFolderCheck:
 CheckStep = SimpleCheck | WorkerConfigCheck | PeriodFolderCheck
 
 
+def first_choose(missing: Sequence[NeededSetting]) -> str:
+    """Zdanie odmowy „Najpierw wskaż …” z nazwami niewskazanych Ustawień ``missing``."""
+
+    return f"Najpierw wskaż {' i '.join(setting.name for setting in missing)}."
+
+
 @dataclass(frozen=True, kw_only=True)
 class ProcessDeclaration(Generic[InputsT, SummaryT]):
     """Wpis katalogu procesów: wszystko, o co Centrum pyta proces poza budową karty przed startem i wejścia.
@@ -148,8 +154,8 @@ class ProcessDeclaration(Generic[InputsT, SummaryT]):
     def settings_blocker(self, settings: Settings) -> str | None:
         """„Najpierw wskaż …” z nazwami niewskazanych Ustawień procesu; ``None``, gdy wszystkie są wskazane."""
 
-        missing = [setting.name for setting in self.settings if setting.chosen(settings) is None]
-        return f"Najpierw wskaż {' i '.join(missing)}." if missing else None
+        missing = [setting for setting in self.settings if setting.chosen(settings) is None]
+        return first_choose(missing) if missing else None
 
     def required_paths(self, settings: Settings) -> Mapping[SettingField, Path]:
         """Wskazane ścieżki Ustawień procesu; ``contract.Refusal`` ze zdaniem ``settings_blocker``, gdy czegoś brakuje."""
@@ -168,7 +174,7 @@ class PeriodProcessDeclaration(ProcessDeclaration[InputsT, SummaryT]):
     key: contract.PeriodProcessKey
 
 
-_PERIODS_DIRECTORY: Final = NeededSetting(
+PERIODS_DIRECTORY: Final = NeededSetting(
     "folder okresów", "periods_directory", preparation_messages.periods_directory_missing
 )
 # Ogon każdej Diagnozy, po plikach taty: nowsze Wydanie wyjaśnia tylko bez innej przyczyny, bo przyczyny w plikach
@@ -185,7 +191,7 @@ PREPARATION: Final = PeriodProcessDeclaration(
     core=lambda processes: processes.preparation,
     settings=(
         NeededSetting(run_view.PREPARATION.register_name, "register", preparation_messages.register_missing),
-        _PERIODS_DIRECTORY,
+        PERIODS_DIRECTORY,
     ),
     templates=("internal", "collective"),
     checks=(
@@ -204,7 +210,7 @@ SETTLEMENT: Final = PeriodProcessDeclaration(
     title=settlement_process.PROCESS.name,
     view=run_view.SETTLEMENT,
     core=lambda processes: processes.settlement,
-    settings=(_PERIODS_DIRECTORY,),
+    settings=(PERIODS_DIRECTORY,),
     templates=("worker",),
     checks=(
         "tata_settings",
@@ -222,7 +228,7 @@ EFENIX: Final = PeriodProcessDeclaration(
     title=efenix_process.PROCESS.name,
     view=run_view.EFENIX,
     core=lambda processes: processes.efenix,
-    settings=(_PERIODS_DIRECTORY,),
+    settings=(PERIODS_DIRECTORY,),
     templates=(),
     checks=(
         "tata_settings",

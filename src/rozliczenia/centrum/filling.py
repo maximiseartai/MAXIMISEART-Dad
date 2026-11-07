@@ -24,7 +24,7 @@ from rozliczenia.centrum import contract, fill_messages
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.live_file import GoodRead, LastGoodReads, saved_version
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.period_board import located_period_folder, requested_period
+from rozliczenia.centrum.period_board import requested_folder
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.collective_file import NumberedOrders
@@ -58,12 +58,6 @@ class FillingReads:
 def filling_router(store: SettingsStore, log: CentrumLog, cloud_files: CloudFiles, filling: FillingReads) -> APIRouter:
     router = APIRouter(prefix="/api/periods", tags=["okresy"])
 
-    def folder_of(token: str) -> PeriodFolder:
-        periods_directory = store.load().periods_directory
-        if periods_directory is None or not periods_directory.is_dir():
-            raise contract.Refusal(409, "Najpierw wskaż folder okresów.")
-        return located_period_folder(periods_directory, requested_period(token))
-
     def read(token: str, path: Path) -> GoodRead[NumberedOrders] | contract.QuantitiesToFillProblem:
         reads = filling.reads
         attempt = reads.attempt(path)
@@ -89,7 +83,7 @@ def filling_router(store: SettingsStore, log: CentrumLog, cloud_files: CloudFile
         "/{token}/quantities-to-fill", operation_id="getQuantitiesToFill", responses=contract.NOT_FOUND_OR_CONFLICT
     )
     def quantities(token: str) -> contract.QuantitiesToFill:
-        folder = folder_of(token)
+        folder = requested_folder(store, token)
         found = read(token, folder.collective_file)
         if isinstance(found, contract.QuantitiesToFillProblem):
             return found
@@ -99,7 +93,7 @@ def filling_router(store: SettingsStore, log: CentrumLog, cloud_files: CloudFile
         "/{token}/quantities-to-fill/{kind}", operation_id="getKindTable", responses=contract.NOT_FOUND_OR_CONFLICT
     )
     def kind_table(token: str, kind: FillKind) -> contract.KindTable:
-        folder = folder_of(token)
+        folder = requested_folder(store, token)
         found = read(token, folder.collective_file)
         if isinstance(found, contract.QuantitiesToFillProblem):
             return found
@@ -117,7 +111,7 @@ def filling_router(store: SettingsStore, log: CentrumLog, cloud_files: CloudFile
     def collective_file_version(token: str) -> contract.CollectiveFileVersion:
         """Znacznik zapisu Pliku zbiorczego bez otwierania skoroszytu: strona porównuje go z ``read.version``."""
 
-        return contract.CollectiveFileVersion(version=saved_version(folder_of(token).collective_file))
+        return contract.CollectiveFileVersion(version=saved_version(requested_folder(store, token).collective_file))
 
     @router.get("/{token}/without-quantity", operation_id="getWithoutQuantity", responses=contract.NOT_FOUND_OR_CONFLICT)
     def rows_without_quantity(token: str) -> contract.WithoutQuantity:
@@ -127,7 +121,7 @@ def filling_router(store: SettingsStore, log: CentrumLog, cloud_files: CloudFile
         Komunikat i wpis w dzienniku daje strona Uzupełnienia, a sam Przebieg rozliczeń nazywa plik.
         """
 
-        return _without_quantity(folder_of(token), filling.forbidden)
+        return _without_quantity(requested_folder(store, token), filling.forbidden)
 
     return router
 

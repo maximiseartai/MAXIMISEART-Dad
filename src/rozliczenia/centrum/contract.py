@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from rozliczenia import domain
 from rozliczenia.message import DadFile, Message as ProcessMessage
-from rozliczenia.period_folder import PeriodStatus
+from rozliczenia.period_folder import PeriodPlace, PeriodStatus
 from rozliczenia.quantities_to_fill import CellSource, FillKind, RowState
 
 
@@ -180,13 +180,10 @@ class BoardReady(_Model):
 
 PeriodBoard = Annotated[BoardNotSet | BoardMissing | BoardReady, Field(discriminator="state")]
 
-OpenTarget = Literal["internal_settlement", "collective_file", "period_folder", "worker_settlements_folder"]
-
-
 class OpenRequest(_Model):
     """Co otworzyć w okresie; ścieżkę wylicza serwer z folderu okresów, nigdy z żądania."""
 
-    target: OpenTarget
+    target: PeriodPlace
 
 
 class WorkerSettlementRequest(_Model):
