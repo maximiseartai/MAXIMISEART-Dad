@@ -52,7 +52,7 @@ export function MetricsPage() {
 
   return (
     <>
-      <PageHeader title="Metryki" action={filters} />
+      <PageHeader action={filters} />
       {metrics.state === "loading" ? <MetricsSkeleton /> : null}
       {metrics.state === "failed" ? <LoadFailure what="metryk" message={metrics.message} reload={reload} /> : null}
       {metrics.state === "ready" && !hasRuns ? <NoMetrics /> : null}

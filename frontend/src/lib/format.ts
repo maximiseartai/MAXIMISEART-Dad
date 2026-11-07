@@ -72,3 +72,12 @@ export function ago(isoDateTime: string, now: number = Date.now()): string {
 
   return RELATIVE.format(-Math.round(past / DAY_MS), "day")
 }
+
+const PLURAL = new Intl.PluralRules("pl-PL")
+
+/** Forma rzeczownika przy liczbie: `plural(1, …)` → `one`, 2–4 i 22–24 → `few`, 0, 5–21 i 25 → `many`. */
+export function plural(count: number, forms: { one: string; few: string; many: string }): string {
+  const rule = PLURAL.select(count)
+
+  return rule === "one" || rule === "few" ? forms[rule] : forms.many
+}

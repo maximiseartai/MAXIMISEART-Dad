@@ -4,6 +4,7 @@ import { FolderSearchIcon, FolderXIcon } from "lucide-react"
 import { getMetrics, getPeriodBoard, type Metrics, type PeriodBoard } from "@/api/centrum"
 import { PageHeader } from "@/components/page-header"
 import { LoadFailure } from "@/components/load-failure"
+import { ChoosingLabel } from "@/components/setting-path"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import {
@@ -15,7 +16,6 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Spinner } from "@/components/ui/spinner"
 import { useContentEntrance } from "@/lib/content-entrance"
 import { useSettings } from "@/lib/settings"
 import { useResource, type Resource } from "@/lib/use-resource"
@@ -27,7 +27,7 @@ import { PeriodStats } from "@/pages/periods/period-stats"
 export function PeriodsPage() {
   return (
     <>
-      <PageHeader title="Okresy" />
+      <PageHeader />
       <PeriodsContent />
     </>
   )
@@ -62,7 +62,7 @@ function PeriodsContent() {
       {settings.state === "ready" ? (
         <div className={cn(entrance, "flex flex-col gap-6")}>
           <PeriodBoardSection board={board} metrics={metrics} reload={reloadBoard} />
-          <FileSettingsCard settings={settings.data} />
+          <FileSettingsCard />
         </div>
       ) : null}
     </>
@@ -160,8 +160,7 @@ function ChoosePeriodsDirectory() {
 
   return (
     <Button disabled={picker !== null} aria-label="Wskaż folder okresów" onClick={() => choose("periods_directory")}>
-      {picker === "periods_directory" ? <Spinner data-icon="inline-start" /> : null}
-      {picker === "periods_directory" ? "Czekam na wybór…" : "Wskaż folder okresów"}
+      <ChoosingLabel choosing={picker === "periods_directory"}>Wskaż folder okresów</ChoosingLabel>
     </Button>
   )
 }

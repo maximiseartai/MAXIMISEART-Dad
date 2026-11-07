@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ClipboardPenLineIcon, FileSpreadsheetIcon, FileTextIcon, FolderOpenIcon, UsersIcon } from "lucide-react"
+import { FileSpreadsheetIcon, FileTextIcon, FolderOpenIcon, UsersIcon } from "lucide-react"
 
 import type { OpenTarget, PeriodRow } from "@/api/centrum"
 import { PeriodStatusBadge } from "@/components/period-status-badge"
@@ -14,10 +14,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { href } from "@/lib/address"
 import { shortDate } from "@/lib/format"
 import { openAndConfirm } from "@/pages/periods/open-period-path"
-import { FillLink, PrepareLink } from "@/pages/periods/prepare-actions"
+import { FillLink } from "@/pages/filling/fill-link"
+import { FillStepLink, PrepareLink } from "@/pages/periods/prepare-actions"
 
 /** Tablica okresów: od najnowszego, ostatni pełny okres wyróżniony tłem. */
 export function PeriodBoardTable({
@@ -74,8 +74,9 @@ function PeriodBoardRow({ period, onStale }: { period: PeriodRow; onStale: () =>
         <PeriodFiles period={period} onStale={onStale} />
       </TableCell>
       <TableCell className="text-right">
+        {/* Okres z Plikiem zbiorczym przygotowanym po Uzupełnieniu w Excelu nadal prowadzi na jego podsumowanie. */}
         {period.status === "collective_file_prepared" && step.action !== "fill_collective_file" ? (
-          <FillingLink token={period.token} />
+          <FillLink token={period.token} variant="ghost" size="sm" aria-label={`Uzupełnij, okres ${period.token}`} />
         ) : null}
         {period.secondary_step === null ? null : (
           <PrepareLink period={period} step={period.secondary_step} secondary />
@@ -83,7 +84,7 @@ function PeriodBoardRow({ period, onStale }: { period: PeriodRow; onStale: () =>
         {step.action === "fill_collective_file" ? (
           <>
             <PrepareLink period={period} step={step.then} secondary />
-            <FillLink period={period} step={step} />
+            <FillStepLink period={period} step={step} />
           </>
         ) : step.action !== "none" ? (
           <PrepareLink period={period} step={step} secondary={false} />
@@ -104,22 +105,6 @@ function PeriodBoardRow({ period, onStale }: { period: PeriodRow; onStale: () =>
         )}
       </TableCell>
     </TableRow>
-  )
-}
-
-/** Okres z Plikiem zbiorczym przygotowanym po Uzupełnieniu w Excelu nadal prowadzi na jego podsumowanie. */
-function FillingLink({ token }: { token: string }) {
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      aria-label={`Uzupełnij, okres ${token}`}
-      nativeButton={false}
-      render={<a href={href("uzupelnienie", token)} />}
-    >
-      <ClipboardPenLineIcon data-icon="inline-start" />
-      Uzupełnij
-    </Button>
   )
 }
 

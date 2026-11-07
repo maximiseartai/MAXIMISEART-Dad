@@ -2,6 +2,7 @@ import * as React from "react"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { CentrumClosed } from "@/components/close-centrum"
+import { CurrentPage } from "@/components/page-header"
 import { SiteHeader } from "@/components/site-header"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/toast"
@@ -42,7 +43,9 @@ export function App() {
             <SidebarInset>
               <SiteHeader />
               <div className="@container/main mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 pb-10 lg:px-8">
-                <page.Content />
+                <CurrentPage value={page}>
+                  <page.Content />
+                </CurrentPage>
                 {/* Każdy adres to osobny widok, także w obrębie strony (`#/uzupelnienie/<okres>/<rodzaj>`). */}
                 <ViewTiming key={address} page={page} />
               </div>

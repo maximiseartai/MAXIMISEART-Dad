@@ -3,7 +3,8 @@ import { BellIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useNotifications } from "@/lib/notifications"
-import { NOTIFICATIONS_PAGE, pageHref } from "@/pages"
+import { href } from "@/lib/address"
+import { NOTIFICATIONS_PAGE } from "@/pages"
 
 /** Dzwonek w nagłówku: prowadzi do widoku Powiadomienia, czerwona kropka znaczy nowe Powiadomienia. */
 export function NotificationsBell({ current }: { current: boolean }) {
@@ -21,7 +22,7 @@ export function NotificationsBell({ current }: { current: boolean }) {
             aria-label={unread ? "Powiadomienia, są nowe" : "Powiadomienia"}
             aria-current={current ? "page" : undefined}
             className="relative aria-[current=page]:bg-muted"
-            render={<a href={pageHref(NOTIFICATIONS_PAGE)} />}
+            render={<a href={href(NOTIFICATIONS_PAGE.id)} />}
           />
         }
       >

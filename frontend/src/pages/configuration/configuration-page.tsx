@@ -32,7 +32,6 @@ export function ConfigurationPage() {
   return (
     <>
       <PageHeader
-        title="Konfiguracja"
         badge={<ReadOnlyBadge />}
         action={
           configuration.state === "ready" ? (

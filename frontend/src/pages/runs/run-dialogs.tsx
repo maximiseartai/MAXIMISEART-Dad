@@ -1,15 +1,9 @@
 import * as React from "react"
-import {
-  CircleCheckIcon,
-  ChevronDownIcon,
-  InfoIcon,
-  MapPinIcon,
-  PlayIcon,
-  TriangleAlertIcon,
-  WrenchIcon,
-} from "lucide-react"
+import { CircleCheckIcon, InfoIcon, PlayIcon, TriangleAlertIcon } from "lucide-react"
 
 import { getWithoutQuantity, type Decision, type DecisionAnswer, type Pricing, type WithoutQuantity } from "@/api/centrum"
+import { Disclosure } from "@/components/disclosure"
+import { WhereAndAction } from "@/components/three-part-message"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,7 +15,6 @@ import {
   AlertDialogMedia,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { PRICING } from "@/lib/pricing"
 import { useResource } from "@/lib/use-resource"
 import { CountTiles } from "@/pages/runs/count-tiles"
@@ -183,25 +176,11 @@ export function DecisionDialog({
           <AlertDialogDescription>{message.what}</AlertDialogDescription>
         </AlertDialogHeader>
         <CountTiles title={decision.counts.title} counts={decision.counts.counts} />
-        <Collapsible className="text-sm">
-          <CollapsibleTrigger className="group flex items-center gap-1.5 rounded-sm text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-            Gdzie i co zrobić
-            <ChevronDownIcon
-              className="size-4 transition-[rotate] duration-200 ease-out group-data-[panel-open]:rotate-180"
-              aria-hidden
-            />
-          </CollapsibleTrigger>
-          <CollapsibleContent className="flex flex-col gap-1.5 pt-2 text-foreground/80">
-            <span className="flex gap-2">
-              <MapPinIcon className="mt-1 size-3.5 shrink-0 text-muted-foreground" aria-label="Gdzie" />
-              {message.where}
-            </span>
-            <span className="flex gap-2">
-              <WrenchIcon className="mt-1 size-3.5 shrink-0 text-muted-foreground" aria-label="Co zrobić" />
-              {message.action}
-            </span>
-          </CollapsibleContent>
-        </Collapsible>
+        <Disclosure label="Gdzie i co zrobić" className="text-sm">
+          <div className="flex flex-col gap-1.5 pt-2 text-foreground/80">
+            <WhereAndAction message={message} />
+          </div>
+        </Disclosure>
         <AlertDialogFooter>
           <AlertDialogCancel ref={abort} disabled={deciding} onClick={() => onDecide("abort")}>
             Przerwij bez zapisu

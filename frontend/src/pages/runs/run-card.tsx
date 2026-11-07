@@ -22,7 +22,6 @@ import type {
   LoggedOutcome,
   Message,
   NextAction,
-  OpenTarget,
   OrderNote,
   OrderNotes,
   PastRun,
@@ -51,10 +50,11 @@ import { Disclosure } from "@/components/disclosure"
 import { StopMessage, ThreePartMessage } from "@/components/three-part-message"
 import { WriteAboutRun } from "@/components/write-to-maks"
 import { useChangeEntrance } from "@/lib/content-entrance"
-import { dateTime, seconds } from "@/lib/format"
+import { dateTime, plural, seconds } from "@/lib/format"
 import { PRICING } from "@/lib/pricing"
 import { rerunOf, useRuns } from "@/lib/runs"
 import { FillingOnResult } from "@/pages/filling/filling-on-result"
+import { OpenCollectiveFileButton } from "@/pages/periods/open-collective-file"
 import { openAndConfirm, openOrderRegisterAndConfirm, type OpenedInPeriod } from "@/pages/periods/open-period-path"
 import { CountTiles, NumberStrip } from "@/pages/runs/count-tiles"
 import { useStopDiagnosis } from "@/pages/runs/diagnosis"
@@ -424,8 +424,7 @@ function OutcomeBody({
           stop={stop}
           kind={result.stop_kind}
           headline={result.headline}
-          period={run.period}
-          registerName={run.register_name}
+          run={run}
           action={action}
           live={live}
         />
@@ -480,9 +479,9 @@ function useNextAction(run: RunInfo, action: NextAction, reminder: string) {
     button: (
       <NextActionButton
         action={action}
+        run={run}
         onRun={() => setConfirming(true)}
         onRerun={() => rerun(run)}
-        onOpen={(target) => openAndConfirm(run.period, { target })}
       />
     ),
     dialog: (
@@ -511,13 +510,18 @@ const STOPS: Record<StopKind, { kind: "stop" | "to_fix" | "declined"; note: stri
   declined: { kind: "declined", note: null },
 }
 
-// Rejestr zleceń nosi nazwę z Komunikatów procesu (`register_name`), np. „INTERMAX” w Uporządkowaniu INTERMAX.
-const DAD_FILES: Record<DadFile, { label: (registerName: string) => string; open: (period: string) => void }> = {
-  order_register: { label: (registerName) => `Otwórz ${registerName}`, open: () => openOrderRegisterAndConfirm() },
-  collective_file: {
-    label: () => "Otwórz Plik zbiorczy",
-    open: (period) => openAndConfirm(period, { target: "collective_file" }),
-  },
+type DadFileLook = "default" | "outline"
+
+// Przycisk pliku taty przy Zatrzymaniu i po wyniku. Rejestr zleceń nosi nazwę z Komunikatów procesu (`register_name`),
+// np. „INTERMAX” w Uporządkowaniu INTERMAX.
+const DAD_FILES: Record<DadFile, (run: RunInfo, look: DadFileLook) => React.ReactNode> = {
+  order_register: (run, look) => (
+    <Button size="sm" variant={look} onClick={openOrderRegisterAndConfirm}>
+      <FileSpreadsheetIcon data-icon="inline-start" />
+      {`Otwórz ${run.register_name}`}
+    </Button>
+  ),
+  collective_file: (run, look) => <OpenCollectiveFileButton period={run.period} size="sm" variant={look} />,
 }
 
 /** Zatrzymanie na karcie wyniku: obok akcji z serwera przycisk pliku taty, w którym jest poprawka. */
@@ -525,16 +529,14 @@ function RunStop({
   stop,
   kind,
   headline,
-  period,
-  registerName,
+  run,
   action,
   live,
 }: {
   stop: Message
   kind: StopKind
   headline: string
-  period: string
-  registerName: string
+  run: RunInfo
   action: React.ReactNode
   live: LiveStop | null
 }) {
@@ -550,12 +552,7 @@ function RunStop({
       notes={notes}
       actions={
         <>
-          {file === null ? null : (
-            <Button size="sm" variant={live?.openFirst ? "default" : "outline"} onClick={() => file.open(period)}>
-              <FileSpreadsheetIcon data-icon="inline-start" />
-              {file.label(registerName)}
-            </Button>
-          )}
+          {file === null ? null : file(run, live?.openFirst ? "default" : "outline")}
           {action}
         </>
       }
@@ -566,14 +563,14 @@ function RunStop({
 /** Jedyna akcja przy wyniku; którą pokazać, mówi serwer. */
 function NextActionButton({
   action,
+  run,
   onRun,
   onRerun,
-  onOpen,
 }: {
   action: NextAction
+  run: RunInfo
   onRun: () => void
   onRerun: () => void
-  onOpen: (target: OpenTarget) => void
 }) {
   switch (action) {
     case "run":
@@ -586,26 +583,16 @@ function NextActionButton({
     case "rerun":
       return <RerunButton onRerun={onRerun} />
     case "open_collective_file":
-      return (
-        <Button size="sm" onClick={() => onOpen("collective_file")}>
-          <FileSpreadsheetIcon data-icon="inline-start" />
-          Otwórz Plik zbiorczy
-        </Button>
-      )
+      return DAD_FILES.collective_file(run, "default")
     case "open_worker_settlements_folder":
       return (
-        <Button size="sm" onClick={() => onOpen("worker_settlements_folder")}>
+        <Button size="sm" onClick={() => openAndConfirm(run.period, { target: "worker_settlements_folder" })}>
           <FolderOpenIcon data-icon="inline-start" />
           Otwórz folder rozliczeń pracowników
         </Button>
       )
     case "open_order_register":
-      return (
-        <Button size="sm" onClick={openOrderRegisterAndConfirm}>
-          <FileSpreadsheetIcon data-icon="inline-start" />
-          Otwórz INTERMAX
-        </Button>
-      )
+      return DAD_FILES.order_register(run, "default")
     default: {
       const unhandled: never = action
 
@@ -840,10 +827,6 @@ function WorkerSettlements({
   )
 }
 
-const PLURAL = new Intl.PluralRules("pl-PL")
-
-const ORDER_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = { one: "zlecenie", few: "zlecenia" }
-
 /** „1 zlecenie”, „2 zlecenia”, „5 zleceń”, „22 zlecenia”; pusty szablon ma oznaczenie, nie tylko zero. */
 function OrderCount({ settlement }: { settlement: WorkerSettlement }) {
   if (settlement.empty) {
@@ -856,7 +839,7 @@ function OrderCount({ settlement }: { settlement: WorkerSettlement }) {
 
   return (
     <span className="tabular-nums">
-      {settlement.orders} {ORDER_FORMS[PLURAL.select(settlement.orders)] ?? "zleceń"}
+      {settlement.orders} {plural(settlement.orders, { one: "zlecenie", few: "zlecenia", many: "zleceń" })}
     </span>
   )
 }

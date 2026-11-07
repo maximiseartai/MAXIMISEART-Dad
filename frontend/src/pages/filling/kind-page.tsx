@@ -1,5 +1,5 @@
 import { cn } from "cn"
-import { ArrowLeftIcon, CalendarRangeIcon } from "lucide-react"
+import { CalendarRangeIcon } from "lucide-react"
 import type * as React from "react"
 
 import {
@@ -24,22 +24,16 @@ import { useContentEntrance } from "@/lib/content-entrance"
 import { useLiveFile } from "@/lib/use-live-file"
 import type { Resource } from "@/lib/use-resource"
 import { AfterSettlement, afterSettlementHint } from "@/pages/filling/after-settlement"
+import { BackLink } from "@/pages/filling/back-link"
+import { KINDS, ROW_STATES } from "@/pages/filling/labels"
 import { SaveHint } from "@/pages/filling/save-hint"
+import { OpenCollectiveFileButton } from "@/pages/periods/open-collective-file"
 
-// Wygląd wiersza po jego stanie z serwera; tło przypiętych komórek jest kryjące, bo pod nimi przewijają się ilości.
-// `shown`: napis stoi pod numerem, bo szarego wiersza nie odróżni się od zielonego po samym kolorze.
-const ROWS: Record<RowState, { tint: string; label: string; shown: boolean }> = {
-  to_fill: { tint: "bg-to-fill", label: "do uzupełnienia", shown: false },
-  done: {
-    tint: "bg-[color-mix(in_oklab,var(--success)_14%,var(--card))] dark:bg-[color-mix(in_oklab,var(--success)_20%,var(--card))]",
-    label: "zrobiony",
-    shown: false,
-  },
-  without_quantity: {
-    tint: "bg-[color-mix(in_oklab,var(--muted-foreground)_18%,var(--card))] text-muted-foreground",
-    label: "bez ilości",
-    shown: true,
-  },
+// Tło wiersza po jego stanie z serwera; tło przypiętych komórek jest kryjące, bo pod nimi przewijają się ilości.
+const TINTS: Record<RowState, string> = {
+  to_fill: "bg-to-fill",
+  done: "bg-[color-mix(in_oklab,var(--success)_14%,var(--card))] dark:bg-[color-mix(in_oklab,var(--success)_20%,var(--card))]",
+  without_quantity: "bg-[color-mix(in_oklab,var(--muted-foreground)_18%,var(--card))] text-muted-foreground",
 }
 
 type Pinned = { title: string; width: number; left: number }
@@ -67,71 +61,35 @@ function pinnedStyle({ width, left }: Pinned): React.CSSProperties {
   return { width: `${width}rem`, minWidth: `${width}rem`, maxWidth: `${width}rem`, left: `${left}rem` }
 }
 
-/** Plik zbiorczy jest w Folderze okresu: odczytany albo z Komunikatem, który go nazywa (uszkodzony, bez nagłówka). */
-export function hasCollectiveFile(resource: Resource<QuantitiesToFill | KindTable>): boolean {
-  return resource.state === "ready" && (resource.data.state === "ready" || resource.data.collective_file_exists)
-}
+/**
+ * Nagłówek stron Uzupełnienia: okres obok tytułu, a „Otwórz Plik zbiorczy”, gdy Plik zbiorczy jest w Folderze okresu:
+ * odczytany albo z Komunikatem, który go nazywa (uszkodzony, bez nagłówka).
+ */
+export function FillingHeader({ token, resource }: { token: string; resource: Resource<QuantitiesToFill | KindTable> }) {
+  const exists = resource.state === "ready" && (resource.data.state === "ready" || resource.data.collective_file_exists)
 
-/** Strona rodzaju Ilości do uzupełnienia `#/uzupelnienie/<okres>/<rodzaj>`: wiersze rodzaju jak w Excelu, tylko do podglądu. */
-export function KindPage({
-  title,
-  token,
-  kind,
-  heading,
-  hint,
-  action,
-}: {
-  title: string
-  token: string
-  kind: FillKind
-  heading: string
-  hint: string
-  action: React.ReactNode
-}) {
   return (
-    <>
-      <a
-        href={href("uzupelnienie", token)}
-        className="-mb-4 flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeftIcon className="size-4" aria-hidden />
-        Podsumowanie
-      </a>
-      <KindContent title={title} token={token} kind={kind} heading={heading} hint={hint} action={action} />
-    </>
+    <PageHeader
+      badge={
+        <Badge variant="outline" className="tabular-nums">
+          <CalendarRangeIcon aria-hidden />
+          {token}
+        </Badge>
+      }
+      action={exists ? <OpenCollectiveFileButton period={token} size="lg" /> : undefined}
+    />
   )
 }
 
-function KindContent({
-  title,
-  token,
-  kind,
-  heading,
-  hint,
-  action,
-}: {
-  title: string
-  token: string
-  kind: FillKind
-  heading: string
-  hint: string
-  action: React.ReactNode
-}) {
+/** Strona rodzaju Ilości do uzupełnienia `#/uzupelnienie/<okres>/<rodzaj>`: wiersze rodzaju jak w Excelu, tylko do podglądu. */
+export function KindPage({ token, kind }: { token: string; kind: FillKind }) {
   const { resource, reload } = useLiveFile(getKindTable, [token, kind])
 
   return (
     <>
-      <PageHeader
-        title={title}
-        badge={
-          <Badge variant="outline" className="tabular-nums">
-            <CalendarRangeIcon aria-hidden />
-            {token}
-          </Badge>
-        }
-        action={hasCollectiveFile(resource) ? action : undefined}
-      />
-      <KindState resource={resource} reload={reload} heading={heading} hint={hint} />
+      <BackLink to={href("uzupelnienie", token)}>Podsumowanie</BackLink>
+      <FillingHeader token={token} resource={resource} />
+      <KindState resource={resource} reload={reload} heading={KINDS[kind].title} hint={KINDS[kind].hint} />
     </>
   )
 }
@@ -285,7 +243,8 @@ function ColumnHeader({ column }: { column: PriceListItem }) {
 }
 
 function Row({ row }: { row: KindTableRow }) {
-  const { tint, label, shown } = ROWS[row.state]
+  const tint = TINTS[row.state]
+  const { label, shown } = ROW_STATES[row.state]
   const texts = [row.worker, row.devices, row.activities, row.completed]
 
   return (

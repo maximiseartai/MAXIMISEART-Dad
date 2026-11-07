@@ -1,7 +1,8 @@
 import * as React from "react"
 import { EyeIcon, FileSpreadsheetIcon, FolderIcon, InfoIcon, ReceiptTextIcon, TriangleAlertIcon, UsersIcon } from "lucide-react"
 
-import type { PathSetting, PeriodChoice, PeriodProcess, Pricing, ProcessSetup, RunRequest } from "@/api/centrum"
+import type { PeriodChoice, PeriodProcess, Pricing, ProcessSetup, RunRequest } from "@/api/centrum"
+import { SettingPath } from "@/components/setting-path"
 import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -23,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { WarningSentences } from "@/components/warning-sentences"
 import { shortDate } from "@/lib/format"
 import { PRICING } from "@/lib/pricing"
 import { useRuns, type RunDraft } from "@/lib/runs"
@@ -64,7 +66,7 @@ const PROCESS_ICONS: Record<PeriodProcess, React.ReactNode> = {
  */
 export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSetup> }) {
   const { draft, setDraft, starting, start } = useRuns()
-  const { settings, picker, choose } = useSettings()
+  const { settings } = useSettings()
   const [confirming, setConfirming] = React.useState(false)
   // Tryb przycisku, który otworzył potwierdzenie; zostaje po zamknięciu, żeby okno nie zmieniało treści, gdy znika.
   const [pricing, setPricing] = React.useState<Pricing | null>(null)
@@ -181,31 +183,14 @@ export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSe
                   {chosen.process !== "preparation" ? (
                     <CollectiveFile choice={chosenPeriod} />
                   ) : (
-                    <SettingPath
-                      label="Rejestr zleceń"
-                      icon={<FileSpreadsheetIcon />}
-                      setting={settings.data.order_register}
-                      disabled={picker !== null}
-                      onChoose={() => choose("order_register")}
-                    />
+                    <SettingPath label="Rejestr zleceń" icon={<FileSpreadsheetIcon />} path="order_register" />
                   )}
-                  <SettingPath
-                    label="Folder okresów"
-                    icon={<FolderIcon />}
-                    setting={settings.data.periods_directory}
-                    disabled={picker !== null}
-                    onChoose={() => choose("periods_directory")}
-                  />
+                  <SettingPath label="Folder okresów" icon={<FolderIcon />} path="periods_directory" />
                 </div>
               ) : null}
             </Field>
           </div>
-          {chosen.blocker === null ? null : (
-            <Alert className="wejscie">
-              <TriangleAlertIcon className="text-warning!" />
-              <AlertTitle>{chosen.blocker}</AlertTitle>
-            </Alert>
-          )}
+          <WarningSentences sentences={chosen.blocker === null ? [] : [chosen.blocker]} />
           {passedOver === null ? null : (
             <Alert className="wejscie">
               <TriangleAlertIcon className="text-warning!" />
@@ -214,16 +199,7 @@ export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSe
               </AlertTitle>
             </Alert>
           )}
-          {openInExcel.length === 0 ? null : (
-            <Alert className="wejscie">
-              <TriangleAlertIcon className="text-warning!" />
-              <AlertTitle className="flex flex-col gap-0.5">
-                {openInExcel.map((sentence) => (
-                  <span key={sentence}>{sentence}</span>
-                ))}
-              </AlertTitle>
-            </Alert>
-          )}
+          <WarningSentences sentences={openInExcel} />
         </FieldGroup>
       </CardContent>
       <CardFooter className="gap-2">
@@ -310,60 +286,6 @@ function CollectiveFile({ choice }: { choice: PeriodChoice | undefined }) {
       ) : (
         <span className="truncate tabular-nums">{choice.collective_file}</span>
       )}
-    </div>
-  )
-}
-
-export function SettingPath({
-  label,
-  icon,
-  setting,
-  disabled,
-  onChoose,
-}: {
-  label: string
-  icon: React.ReactNode
-  setting: PathSetting
-  /** Okno wyboru jest już otwarte; drugie by się tylko na nie nałożyło. */
-  disabled: boolean
-  onChoose: () => void
-}) {
-  const verb = setting.state === "not_set" ? "Wskaż" : "Zmień"
-
-  return (
-    <div className="flex items-center gap-2 text-sm" role="group" aria-label={label}>
-      <span className="text-muted-foreground [&_svg]:size-4" aria-hidden>
-        {icon}
-      </span>
-      {setting.state === "not_set" ? (
-        <span className="text-muted-foreground">{label}: nie wskazano</span>
-      ) : (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span
-                tabIndex={0}
-                className="truncate rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-              />
-            }
-          >
-            {setting.state === "missing" ? `Nie ma już: ${setting.name}` : setting.name}
-          </TooltipTrigger>
-          <TooltipContent>
-            {label}: {setting.path}
-          </TooltipContent>
-        </Tooltip>
-      )}
-      <Button
-        variant="link"
-        size="sm"
-        className="ml-auto h-auto px-0"
-        disabled={disabled}
-        aria-label={`${verb} ${label}`}
-        onClick={onChoose}
-      >
-        {verb}
-      </Button>
     </div>
   )
 }
