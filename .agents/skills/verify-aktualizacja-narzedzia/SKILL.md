@@ -6,6 +6,7 @@ pilnuje:
   - src/rozliczenia/centrum/tool_updates.py
   - src/rozliczenia/centrum/restart_guardian.py
   - src/rozliczenia/centrum/launcher.py
+  - src/rozliczenia/tool_files.py
   - tools/lib/model_tlc.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
@@ -143,9 +144,22 @@ says nothing, never „updated”.
 Covered files, each as a whole file (`model/definicje.json`): `src/rozliczenia/centrum/tool_update.py`,
 `src/rozliczenia/centrum/tool_updates.py`,
 `src/rozliczenia/centrum/restart_guardian.py`,
-`src/rozliczenia/centrum/launcher.py`.
+`src/rozliczenia/centrum/launcher.py`, and in `src/rozliczenia/tool_files.py` the port
+(`listen_locally`, `port_free`, `_bound`), the guardian's start command (`start_command`,
+`centrum_script`) and the clone's `config_dir`.
 
-Sync commit: `0c554b2e` (2026-11-02, #725 and #726). Since `05430811` the
+Sync commit: `e918760f` (2026-11-07, N3a of the untangle of 7.11). Since `0c554b2e` the
+covered files changed only in where they take the clone's layout from: the port probe of
+`restart_guardian._port_released` is `tool_files.port_free`, the same bind as `listen_locally`,
+which moved from `launcher.py` to `tool_files.py`; `_start_centrum` runs
+`tool_files.start_command` (`run_centrum.py --port <port> --no-browser --bez-okienek`, the same
+command); the launcher's parser takes those flags from `tool_files`; the journal lies in
+`config_dir(root)` and the result file of `launcher._roll_back` in `CONFIG_DIR`, both the same
+`config/` as before; `ToolClone.of_system` takes `TOOL_ROOT`; and the guardian's copy
+(`_COPIED`) carries `tool_files.py`. Every row of the table was checked against the code at
+this commit. No step moved, so no action of the model changed.
+
+`0c554b2e` (2026-11-02, #725 and #726). Since `05430811` the
 covered files changed in two places, and every row of the table was checked
 against the code at this commit. `ToolUpdates._after_restart` skips a failure
 whose `przed` is not the running commit and logs `aktualizacja-wynik-stary`
