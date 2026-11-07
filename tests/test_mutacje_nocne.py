@@ -1,6 +1,7 @@
 """Mutacje nocne (ADR 0021): noc mutuje zmiany ``main`` od ostatniej udanej nocy, a przeżyte mutacje trafiają do
 jednego issue na PR, który ostatni zmienił ich linię, bez powtórzeń przy kolejnym przebiegu. Skrypt mutacji skilla,
-który padł nocą, trafia tak samo do issue PR-u, który ostatni zmienił folder skilla.
+który padł nocą, trafia tak samo do issue PR-u, który ostatni zmienił plik zmieniony od bazy, który uruchomił krok
+(``KrokSkilla.pliki``): najpierw plik w folderze skilla, potem inny, a bez takiego pliku ostatni PR nocy.
 
 Historia ``main`` to prawdziwy Git z PR-ami scalonymi merge'em i squashem, a GitHub to atrapa w pamięci, która
 zapamiętuje założone issue i komentarze, więc drugi przebieg widzi skutki pierwszego.

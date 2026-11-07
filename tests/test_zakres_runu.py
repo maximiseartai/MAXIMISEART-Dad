@@ -287,7 +287,8 @@ BASELINE_K = ".agents/skills/verify-a/scripts/sprawdz_a.py"
 SCRIPT_K = ".agents/skills/verify-a/scripts/check_a_mutations.py"
 LOST_K = ".agents/skills/verify-b/scripts/check_mutation_proba.py"
 # Skill a z podstawą w dwóch częściach i tabelą jednej mutacji, b bez pilnuje ze zgubionym skryptem, z ze złym
-# ci-czesci, inny bez kroków. Podstawa a, tabela a i zgubiony skrypt są tylko w tym checkoucie.
+# ci-czesci, inny bez kroków, ze wskazaniem skryptu mutacji, którego nie ma. Podstawa a, tabela a, zgubiony skrypt i
+# wskazanie są tylko w tym checkoucie.
 KATALOG = {
     "src/pakiet/routing.py": "Z = 3\n",
     ".agents/skills/verify-a/SKILL.md": _with_ci("verify-a", BASELINE_K).replace("ci: ", "ci-czesci: 2\nci: "),
@@ -297,7 +298,7 @@ KATALOG = {
     ".agents/skills/verify-b/scripts/check_b_mutations.py": PASSING,
     LOST_K: "MUTATIONS = ()\n",
     ".agents/skills/verify-z/SKILL.md": f"---\nname: verify-z\nci-czesci: 0\nci: {BASELINE_K}\n---\n",
-    ".agents/skills/inny/SKILL.md": "---\nname: inny\n---\n",
+    ".agents/skills/inny/SKILL.md": "---\nname: inny\n---\npy -3 scripts\\check_inny_mutations.py\n",
 }
 
 
@@ -314,9 +315,22 @@ def test_katalog_skilli_checkoutu_ma_kroki_i_bledy_jego_skilli(tmp_path: Path) -
     assert dict(katalog.bledy) == {
         LOST_K: "nazwa spoza wzorca scripts/check_*_mutations.py",
         "PODSTAWA verify-z": "ci-czesci w .agents/skills/verify-z/SKILL.md nie jest liczbą części od 1",
+        ".agents/skills/inny/scripts/check_inny_mutations.py": "wskazany w .agents/skills/inny/SKILL.md, a nie ma go pod tą nazwą",
     }
     assert [skill.name for skill in katalog.skille("verify-*")] == ["verify-a", "verify-b", "verify-z"]
     assert [skill.name for skill in katalog.skille()] == ["inny", "verify-a", "verify-b", "verify-z"]
+
+
+@pytest.mark.parametrize(
+    ("files", "bledy"),
+    [
+        ({".agents/skills/verify-a/SKILL.md": ""}, {"scripts/check_*_mutations.py": "brak skryptów .agents/skills/*/scripts/check_*_mutations.py"}),
+        ({".agents/skills/verify-b/SKILL.md": "", LOST_K: "MUTATIONS = ()\n"}, {LOST_K: "nazwa spoza wzorca scripts/check_*_mutations.py"}),
+    ],
+    ids=["bez skryptow", "tylko zgubiony skrypt"],
+)
+def test_katalog_bez_skryptow_mutacji_to_fail_a_zgubiony_skrypt_juz_go_zglasza(tmp_path: Path, files: dict[str, str], bledy: dict[str, str]) -> None:
+    assert dict(kroki_skilli.Katalog.skanuj(repository(tmp_path / "repo", files)).bledy) == bledy
 
 
 def test_krok_katalogu_po_kluczu_planu(tmp_path: Path) -> None:
