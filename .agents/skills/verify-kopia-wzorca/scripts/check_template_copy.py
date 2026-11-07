@@ -74,7 +74,8 @@ import porownanie_rozliczen as gate
 from rozliczenia import workbook_files
 from rozliczenia.highlights import PLAIN, Highlights
 from rozliczenia.hyperlinks import Hyperlink
-from rozliczenia.template_file import Route, TemplateFile
+from rozliczenia.template_file import TemplateFile
+from rozliczenia.write_routes import Route
 from rozliczenia.workbook_files import DataCell, DataRow, ExcelRow
 from syntetyczne_wzorce import write_settlement_template
 from tests.fixtures.settlement import write_template

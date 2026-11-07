@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from rozliczenia import efenix_process, intermax_process, preparation_process, settlement_process
 from rozliczenia.collective_preparation import PreparationSummary
-from rozliczenia.domain import SettlementSummary
+from rozliczenia.engine import SettlementSummary
 from rozliczenia.efenix_pricing import PricingSummary
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.intermax_ordering import OrderingSummary

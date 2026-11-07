@@ -16,12 +16,13 @@ from __future__ import annotations
 import shutil
 import tempfile
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
+from typing import TypeVar
 
 from . import settlement_messages
-from .domain import WorkerResult
 from .message import StopError
+
+ResultT = TypeVar("ResultT")
 
 __all__ = ["ensure_worker_settlements_absent", "write_worker_settlements"]
 
@@ -33,13 +34,10 @@ def ensure_worker_settlements_absent(target_directory: Path) -> None:
         raise StopError(settlement_messages.worker_settlements_exist(target_directory))
 
 
-def write_worker_settlements(
-    target_directory: Path, write: Callable[[Path], list[WorkerResult]]
-) -> list[WorkerResult]:
+def write_worker_settlements(target_directory: Path, write: Callable[[Path], ResultT]) -> ResultT:
     """Publikuje Rozliczenia pracowników zapisane przez ``write`` w folderze tymczasowym.
 
-    ``write`` dostaje folder tymczasowy i zwraca wyniki z plikami w nim. Wynik
-    to te same wyniki z plikami w opublikowanym Folderze rozliczeń pracowników.
+    ``write`` dostaje folder tymczasowy, a jego wynik wraca bez zmian po publikacji Folderu rozliczeń pracowników.
     Błąd zapisu zatrzymuje Przebieg rozliczeń Komunikatem bez publikacji. Gdy
     folderu tymczasowego nie da się potem usunąć, Komunikat podaje początek jego nazwy.
     """
@@ -64,4 +62,4 @@ def write_worker_settlements(
         if isinstance(error, StopError) and staging_directory.exists():
             raise StopError(settlement_messages.staging_left(error.message, staging_prefix)) from error
         raise
-    return [replace(result, output_file=target_directory / result.output_file.name) for result in results]
+    return results

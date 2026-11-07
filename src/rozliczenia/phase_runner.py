@@ -19,14 +19,15 @@ from .domain import (
     ProgressPhase,
     ProgressProtocolError,
     StepReached,
+    TemplateResult,
     WorkerEnded,
     WorkerFailed,
-    WorkerResult,
     WorkerStarted,
 )
 
 
 ResultT = TypeVar("ResultT")
+TemplateResultT = TypeVar("TemplateResultT", bound=TemplateResult)
 _PHASE_ORDER = tuple(ProgressPhase)
 
 
@@ -138,7 +139,7 @@ class PhaseRunner:
 
         return self._run_phase(ProgressPhase.SAVING, operation, every_template_ended)
 
-    def each_template(self, settle: Callable[[str], WorkerResult]) -> list[WorkerResult]:
+    def each_template(self, settle: Callable[[str], TemplateResultT]) -> list[TemplateResultT]:
         """W trwającym Zapisywaniu przetwarza po kolei Szablon pracownika każdego Wykonawcy z planu.
 
         Wysyła ``WorkerStarted``, wywołuje ``settle`` i wysyła ``WorkerEnded``.
@@ -148,7 +149,7 @@ class PhaseRunner:
 
         if self._active_phase is not ProgressPhase.SAVING:
             raise ProgressProtocolError("Szablony pracownika przetwarza się tylko w trakcie Zapisywania.")
-        results: list[WorkerResult] = []
+        results: list[TemplateResultT] = []
         for template_index, worker_name in enumerate(self._templates, start=1):
             self._emit(WorkerStarted(worker_name, template_index=template_index, elapsed_ms=self.elapsed_ms()))
             try:

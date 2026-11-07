@@ -38,7 +38,8 @@ from rozliczenia.workbook_files import (
     workbook_content,
 )
 from rozliczenia.template_copy import Package
-from rozliczenia.template_file import Route, TemplateFile
+from rozliczenia.template_file import TemplateFile
+from rozliczenia.write_routes import Route
 from rozliczenia.workbook_save import (
     ExternalLinksError,
     SaveProblem,

@@ -18,8 +18,7 @@ from pathlib import Path
 import pytest
 
 from rozliczenia.intermax_copies import KEPT, Before
-from rozliczenia.intermax_file import WriteMismatch
-from rozliczenia.intermax_replace import LOCAL_DISK, Refusal, Replaced, Waiting, replace_register
+from rozliczenia.intermax_replace import LOCAL_DISK, Refusal, Replaced, Waiting, WriteMismatch, replace_register
 from rozliczenia.workbook_files import Problem, WorkbookError
 
 from tests.fixtures.clock import ManualClock

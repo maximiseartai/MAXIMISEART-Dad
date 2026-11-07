@@ -66,9 +66,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia import intermax_copies, intermax_file, intermax_replace, intermax_restore, workbook_files
-from rozliczenia.intermax_file import WriteMismatch
 from rozliczenia.intermax_ordering import order_register
-from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
+from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting, WriteMismatch
 from rozliczenia.message import StopError
 
 from tests.fixtures.intermax import Intermax, Order

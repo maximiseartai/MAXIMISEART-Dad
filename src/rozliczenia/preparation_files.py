@@ -1,6 +1,6 @@
 """Wzorce i pliki okresu w Przygotowaniu pliku zbiorczego.
 
-Moduł podaje oba wzorce (``internal_template``, ``collective_template``, sprawdzane w ``input_checks``), ocenia,
+Moduł bierze oba Wzorce sprawdzone w ``input_checks`` (``PeriodFiles``), ocenia,
 czy zlecenia zmieszczą się we wzorcach, i podaje fakty o wierszach Pliku zbiorczego (Planowanie), a potem zapisuje
 Rozliczenie wewnętrzne oraz Plik zbiorczy razem do Folderu okresu (Zapisywanie). Planowanie i Zapisywanie
 zatrzymują się ``StopError``. Moduł wewnętrzny Przygotowania pliku zbiorczego; operacją publiczną pozostaje
@@ -22,9 +22,10 @@ from .message import StopError
 from .period_folder import PeriodFolder
 from .preparation_plan import CollectiveRow, PeriodOrder
 from .quantity_rules import FromDescription, WithoutRule
-from .template_file import Route, RouteCounts, TemplateFile, TemplateKind
+from .template_file import TemplateFile
 from .workbook_files import RegisterRow, WorkbookError
 from .workbook_save import WorkbookSaveError
+from .write_routes import Route, RouteCounts, TemplateKind
 
 
 @dataclass(frozen=True)
@@ -139,18 +140,6 @@ def write_period_files(
     except (OSError, WorkbookSaveError) as exc:
         raise StopError(messages.write_failed(folder.directory)) from exc
     return routes
-
-
-def internal_template(template_path: Path) -> TemplateFile:
-    """Wzorzec rozliczenia wewnętrznego."""
-
-    return TemplateFile.internal_settlement(template_path)
-
-
-def collective_template(template_path: Path) -> TemplateFile:
-    """Wzorzec pliku zbiorczego."""
-
-    return TemplateFile.collective_file(template_path)
 
 
 @contextmanager

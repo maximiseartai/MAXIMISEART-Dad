@@ -37,15 +37,18 @@ from typing import Final
 
 from . import intermax_copies, workbook_files
 from .intermax_copies import Before, Copy
-from .intermax_file import WriteMismatch
 from .workbook_files import Problem, WorkbookError
 from .workbook_save import WorkbookSaveError, write_atomically
 
-__all__ = ["LOCAL_DISK", "Disk", "Refusal", "Replaced", "Waiting", "replace_register"]
+__all__ = ["LOCAL_DISK", "Disk", "Refusal", "Replaced", "Waiting", "WriteMismatch", "replace_register"]
 
 _RETRY_S: Final = 5.0
 """Tyle sekund podmiana ponawia zastąpienie INTERMAX, którego system odmawia, choć Excel go nie trzyma."""
 _PAUSE_S: Final = 0.5
+
+
+class WriteMismatch(Exception):
+    """Plik tymczasowy zapisany przed podmianą różni się od tego, co miał zawierać; zgłasza go ``check``."""
 
 
 class Refusal(Enum):

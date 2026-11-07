@@ -17,8 +17,7 @@ from pathlib import Path
 from . import intermax_copies, workbook_files
 from . import intermax_messages as messages
 from .intermax_copies import Copy
-from .intermax_file import WriteMismatch
-from .intermax_replace import LOCAL_DISK, Disk, Refusal, Waiting, replace_register
+from .intermax_replace import LOCAL_DISK, Disk, Refusal, Waiting, WriteMismatch, replace_register
 from .message import Message, StopError
 from .workbook_files import WorkbookError
 

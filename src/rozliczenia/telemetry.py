@@ -13,7 +13,7 @@ from typing import Any, Literal, TypedDict, get_args
 
 from .domain import PHASES, ProgressPhase, StopKind
 from .settlement_period import PERIOD_TOKEN_PATTERN
-from .template_file import Route, RouteCounts, TemplateKind
+from .write_routes import Route, RouteCounts, TemplateKind
 
 
 # Wersja 2 dodaje ``stop``: Rodzaj Zatrzymania i kod Komunikatu przerwanego Uruchomienia procesu.
@@ -22,9 +22,6 @@ METRICS_SCHEMA_VERSION = 3
 MINIMUM_STATISTIC_SAMPLES = 5
 METRIC_MODES = frozenset({"RUN", "DRY-RUN"})
 METRIC_RESULTS = frozenset({"OK", "WYMAGA_SPRAWDZENIA", "BLAD_KRYTYCZNY"})
-COUNTER_NAMES = frozenset(
-    {"templates_total", "templates_completed", "rows", "written", "empty", "planned", "skipped", "issues"}
-)
 # Okres w rekordzie, gdy tokenu nie udało się ustalić.
 UNKNOWN_PERIOD = "nieznany"
 PERIOD_PATTERN = re.compile(rf"^(?:{PERIOD_TOKEN_PATTERN}|{UNKNOWN_PERIOD})$")
@@ -124,7 +121,7 @@ def _are_valid_routes(routes: object) -> bool:
     )
 
 
-def _is_valid_record(record: object, counter_names: frozenset[str] = COUNTER_NAMES) -> bool:
+def _is_valid_record(record: object, counter_names: frozenset[str]) -> bool:
     if not isinstance(record, dict):
         return False
     version = record.get("schema_version")
@@ -170,14 +167,14 @@ def _is_valid_record(record: object, counter_names: frozenset[str] = COUNTER_NAM
 class MetricsStore:
     """Dopisuje rekordy JSONL bez przechowywania danych skoroszytów.
 
-    Każdy proces ma własną historię i własny zestaw liczników; domyślny zestaw
-    to liczniki Przebiegu rozliczeń. Rekordy z innym zestawem są odrzucane.
+    Każdy proces ma własną historię i własny zestaw liczników ``counter_names``.
+    Rekordy z innym zestawem są odrzucane.
     ``read`` zwraca też rekordy wersji 1, które nie mają ``stop``: nie wiadomo,
     jakiego rodzaju było ich Zatrzymanie, oraz rekordy wersji 1 i 2 bez ``routes``:
     nie wiadomo, którą drogą powstały ich pliki.
     """
 
-    def __init__(self, path: Path, counter_names: frozenset[str] = COUNTER_NAMES):
+    def __init__(self, path: Path, counter_names: frozenset[str]):
         self.path = path.expanduser()
         self.counter_names = counter_names
 
@@ -242,7 +239,7 @@ def percentile(values: list[float], proportion: float) -> float:
 def comparable_records(
     records: list[dict[str, Any]],
     mode: str,
-    counter_names: frozenset[str] = COUNTER_NAMES,
+    counter_names: frozenset[str],
 ) -> list[dict[str, Any]]:
     return [
         record
@@ -254,7 +251,7 @@ def comparable_records(
 def statistics_for(
     records: list[dict[str, Any]],
     mode: str,
-    counter_names: frozenset[str] = COUNTER_NAMES,
+    counter_names: frozenset[str],
 ) -> dict[str, tuple[int, int]] | None:
     comparable = comparable_records(records, mode, counter_names)
     if len(comparable) < MINIMUM_STATISTIC_SAMPLES:

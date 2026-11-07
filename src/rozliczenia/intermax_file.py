@@ -74,6 +74,7 @@ from openpyxl.workbook.properties import WorkbookProperties
 
 from . import client_data, raw_orders, workbook_files
 from .input_copy import InputCopy, WorkbookCopy, modified_at
+from .intermax_replace import WriteMismatch
 from .preparation_register import ACTIVITIES, COLUMNS, DATE, DEVICES, WORKER
 from .raw_orders import SHIFT, CellFacts, DayPlan, IntermaxEntry, OperatorColor, OrderColumns, RawBlock, RowFacts
 from .row_look import BORDER
@@ -81,7 +82,7 @@ from .workbook_files import header_columns, is_blank
 from .workbook_parts import MAIN, OFFICE_REL, IrregularSheetData, RowsFromBottom, SheetRow, office_document, relationships
 from .worker_config import normalize_text
 
-__all__ = ["OrderSheet", "Register", "UnsupportedShape", "WriteMismatch"]
+__all__ = ["OrderSheet", "Register", "UnsupportedShape"]
 
 _FIRST: Final = "AKCJE"
 _LAST: Final = "UWAGI"
@@ -134,10 +135,6 @@ _STYLE_LISTS: Final = (b"fonts", b"fills", b"borders", b"cellXfs")
 
 class UnsupportedShape(Exception):
     """Arkusz zleceń ma w zmienianych wierszach kształt, którego zapis nie przenosi (formuła, zakres)."""
-
-
-class WriteMismatch(Exception):
-    """Plik zapisany przed podmianą różni się od oryginału czymś więcej niż uporządkowanym dniem."""
 
 
 @dataclass(frozen=True)
@@ -797,14 +794,14 @@ def _require_writable(tail: bytes, anchor: int) -> None:
                 raise UnsupportedShape("zakres")
 
 
-def _moves(block: RawBlock, plan: DayPlan) -> dict[int, tuple[int, int]]:
+def _moves(plan: DayPlan) -> dict[int, tuple[int, int]]:
     """Wiersz Surowego zlecenia → (przesunięcie kolumn, docelowy wiersz)."""
 
     return {placement.order.row: (SHIFT if placement.order.shifted else 0, placement.row) for placement in plan.placements}
 
 
 def _moved_hyperlinks(tail: bytes, columns: OrderColumns, block: RawBlock, plan: DayPlan) -> bytes:
-    moves = _moves(block, plan)
+    moves = _moves(plan)
 
     def moved(found: re.Match[bytes]) -> bytes:
         reference = found.group(2).decode("ascii")

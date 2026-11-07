@@ -13,7 +13,7 @@ from typing import Final, Generic, Protocol, TypeVar
 
 from rozliczenia.centrum import contract
 from rozliczenia.collective_preparation import PreparationSummary
-from rozliczenia.domain import SettlementSummary
+from rozliczenia.engine import SettlementSummary
 from rozliczenia.efenix_pricing import EmmettWarning, PricingSummary, Settled
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.intermax_ordering import OrderingSummary

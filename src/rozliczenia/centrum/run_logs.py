@@ -87,7 +87,8 @@ from rozliczenia.centrum import contract
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.diagnosis import CheckState, Diagnosis
 from rozliczenia.centrum.runs import EndedRun, Ending
-from rozliczenia.domain import ProgressPhase, SettlementSummary, WorkerStatus
+from rozliczenia.domain import ProgressPhase, WorkerStatus
+from rozliczenia.engine import SettlementSummary
 from rozliczenia.efenix_pricing import (
     BrowserFailure,
     Closed,
