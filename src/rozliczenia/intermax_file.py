@@ -729,7 +729,8 @@ def _ordered_sheet(sheet: RowsFromBottom, columns: OrderColumns, block: RawBlock
         else:
             rows.append(b'<row r="%d"%s/>' % (number, row_looks.blank))
     head = _with_view(_with_dimension(xml[: sheet.start], last, columns.last), plan.view_row, columns.first)
-    return head + xml[sheet.start : region[0].start] + b"".join(rows) + xml[region[-1].end : tail_at] + _moved_hyperlinks(xml[tail_at:], columns, block, plan)
+    above, below = memoryview(xml)[sheet.start : region[0].start], memoryview(xml)[region[-1].end : tail_at]
+    return b"".join((head, above, *rows, below, _moved_hyperlinks(xml[tail_at:], columns, block, plan)))
 
 
 def _order_row(
@@ -896,7 +897,7 @@ def _has_value(cell: _Cell) -> bool:
     return _VALUE.search(content) is not None or b"<is>" in content
 
 
-def _deflated(data: bytes) -> bytes:
+def _deflated(data: bytes, pool: ThreadPoolExecutor) -> bytes:
     """Surowy strumień deflate ``data``, kompresowany kawałkami naraz w wątkach (zlib zwalnia GIL), jak pigz.
 
     Każdy kawałek kończy się ``Z_SYNC_FLUSH`` (blok niekońcowy, do pełnego bajtu), a strumień pusty blok końcowy, więc
@@ -908,8 +909,7 @@ def _deflated(data: bytes) -> bytes:
         compressor = zlib.compressobj(_COMPRESSION, zlib.DEFLATED, -zlib.MAX_WBITS)
         return compressor.compress(data[start : start + _DEFLATE_CHUNK]) + compressor.flush(zlib.Z_SYNC_FLUSH)
 
-    with ThreadPoolExecutor() as pool:
-        return b"".join(pool.map(chunk, range(0, len(data), _DEFLATE_CHUNK))) + _FINAL_BLOCK
+    return b"".join(pool.map(chunk, range(0, len(data), _DEFLATE_CHUNK))) + _FINAL_BLOCK
 
 
 def _archive(entries: Sequence[tuple[zipfile.ZipInfo, bytes]]) -> bytes:
@@ -917,18 +917,21 @@ def _archive(entries: Sequence[tuple[zipfile.ZipInfo, bytes]]) -> bytes:
     treść ``bytes``.
 
     ``zipfile`` kompresuje część tylko w jednym wątku, więc nagłówki pisze tu ``struct`` według APPNOTE (bez ZIP64:
-    INTERMAX ma kilkanaście MB).
+    INTERMAX ma kilkanaście MB). Sumy CRC32 liczą te same wątki co kompresję, bo zlib na Windows liczy je bez SIMD.
     """
 
     out = bytearray()
     central = bytearray()
-    for info, data in entries:
-        stored = _deflated(data)
+    with ThreadPoolExecutor() as pool:
+        checksums = [pool.submit(zlib.crc32, data) for _, data in entries]
+        streams = [_deflated(data, pool) for _, data in entries]
+        crcs = [checksum.result() for checksum in checksums]
+    for (info, data), stored, crc in zip(entries, streams, crcs, strict=True):
         name = info.filename.encode("utf-8")
         flags = 0 if name.isascii() else _UTF8_NAME
         year, month, day, hour, minute, second = info.date_time
         time_and_date = (hour << 11 | minute << 5 | second // 2, (year - 1980) << 9 | month << 5 | day)
-        sizes = (zlib.crc32(data), len(stored), len(data), len(name))
+        sizes = (crc, len(stored), len(data), len(name))
         offset = len(out)
         out += struct.pack("<IHHH2H3IHH", _LOCAL, _VERSION, flags, zipfile.ZIP_DEFLATED, *time_and_date, *sizes, 0)
         out += name + stored
