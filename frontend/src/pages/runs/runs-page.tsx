@@ -10,13 +10,14 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useChangeEntrance, useContentEntrance } from "@/lib/content-entrance"
 import { isActive, useRuns } from "@/lib/runs"
-import { filesIdentity, useSettings } from "@/lib/settings"
+import { useSettings } from "@/lib/settings"
 import { useResource } from "@/lib/use-resource"
 import { RunHistoryCard } from "@/pages/metrics/run-history-card"
 import { PastRunCard, RunCard } from "@/pages/runs/run-card"
 import { DecisionDialog } from "@/pages/runs/run-dialogs"
 import { IntermaxCard } from "@/pages/runs/intermax-card"
 import { RunSetupCard } from "@/pages/runs/run-setup-card"
+import { UnreadableStream } from "@/pages/runs/unreadable-stream"
 
 /**
  * Uruchomienia: zakładka „Uruchomienie” z nowym Uruchomieniem procesu albo podglądem na żywo bieżącego
@@ -45,13 +46,8 @@ export function RunsPage() {
         }
       />
       <TabsContent value="uruchomienie">
-        {/* Treść montuje się raz, przy gotowych Ustawieniach taty, więc start czyta raz. Nowe pliki taty
-            (np. wskazany Rejestr zleceń) to nowy odczyt tego, czego brakuje do startu; zmiana motywu nim nie jest. */}
-        {settings.state === "loading" ? (
-          <RunsSkeleton />
-        ) : (
-          <RunsContent key={settings.state === "ready" ? filesIdentity(settings.data) : settings.state} />
-        )}
+        {/* Treść montuje się przy gotowych Ustawieniach taty, więc start czyta raz. */}
+        {settings.state === "loading" ? <RunsSkeleton /> : <RunsContent />}
       </TabsContent>
       <TabsContent value="historia">
         {/* Każde zakończone Uruchomienie to nowy odczyt historii z plików metryk. */}
@@ -62,7 +58,7 @@ export function RunsPage() {
 }
 
 function RunHistory() {
-  const { resource: metrics, reload } = useResource(getMetrics)
+  const { resource: metrics, reload } = useResource(getMetrics, [])
   const entrance = useContentEntrance(metrics.state === "loading")
 
   switch (metrics.state) {
@@ -85,8 +81,8 @@ function RunHistory() {
 }
 
 function RunsContent() {
-  const { resource: setup, reload } = useResource(getRunSetup)
-  const { view, dismissed } = useRuns()
+  const { resource: setup, reload } = useResource(getRunSetup, [])
+  const { view, dismissed, unreadable } = useRuns()
   const finishedRun = view?.state === "finished" ? view.run.id : null
   const entrance = useContentEntrance(view === null || setup.state === "loading")
   // Uruchomienie zakończone albo odłożone przed wejściem na stronę zna już odczyt przy montowaniu.
@@ -109,6 +105,10 @@ function RunsContent() {
       reload()
     }
   }, [dismissed, reload])
+
+  if (view === null && unreadable) {
+    return <UnreadableStream />
+  }
 
   if (view === null || setup.state === "loading") {
     return <RunsSkeleton />

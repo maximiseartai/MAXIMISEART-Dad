@@ -1,6 +1,5 @@
 import * as React from "react"
 
-import { failureMessage } from "@/api/client"
 import {
   decideRun,
   startIntermax,
@@ -13,6 +12,7 @@ import {
   type RunView,
 } from "@/api/centrum"
 import { toast } from "@/components/ui/toast"
+import { useAction } from "@/lib/action"
 
 /** Okres i proces wybrane w innym miejscu (np. w Tablicy okresów) do formularza nowego Uruchomienia. */
 export type RunDraft = Pick<RunRequest, "process" | "period">
@@ -32,6 +32,8 @@ type RunsContextValue = {
   view: RunView | null
   /** Połączenie ze strumieniem zerwane; przeglądarka łączy się ponownie sama. */
   disconnected: boolean
+  /** Ostatniego zdarzenia strumienia nie dało się odczytać (np. karta ze starszą wersją Centrum), więc widok stoi. */
+  unreadable: boolean
   draft: RunDraft | null
   setDraft: (draft: RunDraft | null) => void
   /** Zakończone Uruchomienie, którego wynik tata odłożył przyciskiem „Nowe Uruchomienie procesu”. */
@@ -52,12 +54,8 @@ type RunsContextValue = {
 
 const RunsContext = React.createContext<RunsContextValue | null>(null)
 
-function showFailure(failure: Error) {
-  toast.add({ title: "Nie udało się", description: failureMessage(failure), type: "error" })
-}
-
-/** Start czekający na strumień: Uruchomienie widoczne przed startem i to, które serwer przyjął (`undefined` przed odpowiedzią). */
-type PendingStart = { before: string | null; accepted?: string | null }
+/** Widok, na który czeka akcja: start albo decyzja kończy się dopiero, gdy strumień go pokaże. */
+type Awaited = { shows: (view: RunView) => boolean; resolve: () => void }
 
 function shownRun(view: RunView | null): string | null {
   return view === null || view.state === "idle" ? null : view.run.id
@@ -99,25 +97,17 @@ export function RunsProvider({ children }: { children: React.ReactNode }) {
   const [disconnected, setDisconnected] = React.useState(false)
   const [draft, setDraft] = React.useState<RunDraft | null>(null)
   const [dismissed, setDismissed] = React.useState<string | null>(null)
+  const [unreadable, setUnreadable] = React.useState(false)
   const latest = React.useRef<RunView | null>(null)
-  // Tata klika dwa razy z przyzwyczajenia i stuka dwa razy w ekran dotykowy, a przycisk startu i okno decyzji
-  // znikają dopiero, gdy strumień pokaże zmianę. Do tej pory powtórne kliknięcie niczego nie wysyła: drugi start
-  // albo druga decyzja dostałyby odmowę serwera obok udanej pierwszej, a drugi podgląd bez zapisu mógłby się
-  // nawet wykonać. Odmowa pierwszego kliknięcia (np. Uruchomienie z innej karty) pokazuje się jak dotąd.
-  const pendingStart = React.useRef<PendingStart | null>(null)
-  const pendingDecision = React.useRef<string | null>(null)
-  const [starting, setStarting] = React.useState(false)
-  const [deciding, setDeciding] = React.useState<string | null>(null)
+  const awaited = React.useRef(new Set<Awaited>())
 
-  const settleStart = React.useCallback(() => {
-    pendingStart.current = null
-    setStarting(false)
-  }, [])
-
-  const settleDecision = React.useCallback(() => {
-    pendingDecision.current = null
-    setDeciding(null)
-  }, [])
+  const streamShows = React.useCallback(
+    (shows: (view: RunView) => boolean) =>
+      new Promise<void>((resolve) => {
+        awaited.current.add({ shows, resolve })
+      }),
+    []
+  )
 
   React.useEffect(
     () =>
@@ -126,75 +116,69 @@ export function RunsProvider({ children }: { children: React.ReactNode }) {
           announce(event, latest.current)
           latest.current = event.view
           setView(event.view)
+          setUnreadable(false)
 
-          // Po przyjęciu startu każde Uruchomienie inne niż sprzed startu to już nowe (albo jeszcze późniejsze).
-          // `idle` znaczy wtedy, że serwer zgubił Uruchomienie (Centrum uruchomione ponownie, gdy karta była w tle):
-          // serwer publikuje widok startu przed odpowiedzią i w jednym procesie nie wraca do `idle`.
-          const start = pendingStart.current
-
-          if (
-            start?.accepted !== undefined &&
-            (shownRun(event.view) !== start.before || event.view.state === "idle")
-          ) {
-            settleStart()
-          }
-
-          const decision = pendingDecision.current
-
-          if (decision !== null && !awaitsDecision(event.view, decision)) {
-            settleDecision()
+          for (const waiting of awaited.current) {
+            if (waiting.shows(event.view)) {
+              awaited.current.delete(waiting)
+              waiting.resolve()
+            }
           }
         },
-        (connected) => setDisconnected(!connected)
+        (connected) => setDisconnected(!connected),
+        () => setUnreadable(true)
       ),
-    [settleStart, settleDecision]
+    []
   )
+
+  // Przycisk startu i okno decyzji znikają dopiero, gdy strumień pokaże zmianę, więc start i decyzja trwają do tej
+  // chwili: drugi start albo druga decyzja dostałyby odmowę serwera obok udanej pierwszej, a drugi podgląd bez
+  // zapisu mógłby się nawet wykonać. Odmowa pierwszego kliknięcia (np. Uruchomienie z innej karty) pokazuje się jak dotąd.
+  const starting = useAction(async (request: RunStart) => {
+    const before = shownRun(latest.current)
+    const accepted = shownRun(await ("period" in request ? startRun(request) : startIntermax()))
+
+    setDraft(null)
+
+    // Ostatni widok strumienia przyszedł przed odpowiedzią: `idle` to w nim zwykły stan świeżo uruchomionego
+    // Centrum, a nie zgubione Uruchomienie, więc liczy się tylko przyjęte Uruchomienie.
+    if (accepted === null || shownRun(latest.current) === accepted) {
+      return
+    }
+
+    // Po przyjęciu startu każde Uruchomienie inne niż sprzed startu to już nowe (albo jeszcze późniejsze).
+    // `idle` znaczy wtedy, że serwer zgubił Uruchomienie (Centrum uruchomione ponownie, gdy karta była w tle):
+    // serwer publikuje widok startu przed odpowiedzią i w jednym procesie nie wraca do `idle`.
+    await streamShows((next) => shownRun(next) !== before || next.state === "idle")
+  })
+
+  const deciding = useAction(async (runId: string, answer: DecisionAnswer["answer"]) => {
+    await decideRun(runId, answer)
+
+    if (awaitsDecision(latest.current, runId)) {
+      await streamShows((next) => !awaitsDecision(next, runId))
+    }
+  })
+
+  const startRunning = starting.run
 
   const start = React.useCallback(
-    (request: RunStart) => {
-      if (pendingStart.current !== null) {
-        return Promise.resolve(false)
-      }
-
-      const pending: PendingStart = { before: shownRun(latest.current) }
-
-      pendingStart.current = pending
-      setStarting(true)
-
-      return ("period" in request ? startRun(request) : startIntermax()).then(
-        (started) => {
-          pending.accepted = shownRun(started)
-
-          // Ostatni widok strumienia przyszedł przed tą odpowiedzią: `idle` to w nim zwykły stan świeżo
-          // uruchomionego Centrum, a nie zgubione Uruchomienie, więc liczy się tylko przyjęte Uruchomienie.
-          if (pending.accepted === null || shownRun(latest.current) === pending.accepted) {
-            settleStart()
-          }
-
-          setDraft(null)
-
-          return true
-        },
-        (failure: Error) => {
-          settleStart()
-          showFailure(failure)
-
-          return false
-        }
-      )
-    },
-    [settleStart]
+    (request: RunStart) => startRunning(request).then((outcome) => outcome === "done"),
+    [startRunning]
   )
+
+  const decide = deciding.run
 
   const value = React.useMemo<RunsContextValue>(
     () => ({
       view,
       disconnected,
+      unreadable,
       draft,
       setDraft,
       dismissed,
       newRun: setDismissed,
-      starting,
+      starting: starting.running !== null,
       start,
       rerun: (run) => {
         if (run.pricing !== null && run.process !== "intermax") {
@@ -205,28 +189,10 @@ export function RunsProvider({ children }: { children: React.ReactNode }) {
 
         start(rerunOf(run, run.dry_run))
       },
-      deciding,
-      decide: (runId, answer) => {
-        if (pendingDecision.current !== null) {
-          return
-        }
-
-        pendingDecision.current = runId
-        setDeciding(runId)
-        decideRun(runId, answer).then(
-          () => {
-            if (!awaitsDecision(latest.current, runId)) {
-              settleDecision()
-            }
-          },
-          (failure: Error) => {
-            settleDecision()
-            showFailure(failure)
-          }
-        )
-      },
+      deciding: deciding.running?.[0] ?? null,
+      decide: (runId, answer) => void decide(runId, answer),
     }),
-    [view, disconnected, draft, dismissed, starting, start, deciding, settleDecision]
+    [view, disconnected, unreadable, draft, dismissed, starting.running, start, deciding.running, decide]
   )
 
   return <RunsContext.Provider value={value}>{children}</RunsContext.Provider>

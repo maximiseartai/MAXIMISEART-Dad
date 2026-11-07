@@ -2,7 +2,6 @@ import * as React from "react"
 import { PowerIcon, PowerOffIcon } from "lucide-react"
 
 import { closeCentrum } from "@/api/centrum"
-import { failureMessage } from "@/api/client"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +21,7 @@ import {
 } from "@/components/ui/empty"
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar"
 import { Spinner } from "@/components/ui/spinner"
-import { toast } from "@/components/ui/toast"
+import { showFailure } from "@/lib/action"
 
 const BACK_WITH_SHORTCUT = "Wrócisz skrótem „Centrum rozliczeń” na pulpicie."
 
@@ -41,11 +40,7 @@ export function CloseCentrumButton({ onClosed }: { onClosed: () => void }) {
     setDialog("closing")
     closeCentrum().then(onClosed, (failure: Error) => {
       setDialog("closed")
-      toast.add({
-        title: "Nie zamknięto Centrum rozliczeń",
-        description: failureMessage(failure),
-        type: "error",
-      })
+      showFailure(failure, "Nie zamknięto Centrum rozliczeń")
     })
   }
 

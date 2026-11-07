@@ -28,7 +28,7 @@ import { SettingPath } from "@/pages/runs/run-setup-card"
  * Uruchomienia, którego pełna karta otwiera się z boku.
  */
 export function IntermaxCard() {
-  const { resource: setup, reload } = useResource(getIntermaxSetup)
+  const { resource: setup, reload } = useResource(getIntermaxSetup, [])
 
   switch (setup.state) {
     case "loading":
@@ -104,7 +104,7 @@ function IntermaxSetupCard({ setup }: { setup: IntermaxSetup }) {
  * obwódkę. Serwer czyta INTERMAX tylko po jego zmianie, więc odczyt przy każdym wejściu i powrocie do okna jest tani.
  */
 function RegisterDays() {
-  const { resource: days, reload } = useResource(getIntermaxDays)
+  const { resource: days, reload } = useResource(getIntermaxDays, [])
 
   switch (days.state) {
     case "loading":

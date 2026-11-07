@@ -26,7 +26,7 @@ import { RunHistoryCard } from "@/pages/metrics/run-history-card"
 import { StageTimesCard } from "@/pages/metrics/stage-times-card"
 
 export function MetricsPage() {
-  const { resource: metrics, reload } = useResource(getMetrics)
+  const { resource: metrics, reload } = useResource(getMetrics, [])
   const [process, setProcess] = React.useState<Process>("preparation")
   const [mode, setMode] = React.useState<Mode>("RUN")
   const hasRuns = metrics.state === "ready" && metrics.data.runs.length > 0

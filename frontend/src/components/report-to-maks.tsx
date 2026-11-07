@@ -1,14 +1,13 @@
 import * as React from "react"
 import { CircleCheckIcon, ClockIcon, HourglassIcon, RotateCcwIcon, SendIcon } from "lucide-react"
 
-import { failureMessage } from "@/api/client"
 import type { ReportDraft, RunOutcome } from "@/api/centrum"
 import { Disclosure } from "@/components/disclosure"
 import { SendProblem } from "@/components/send-problem"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { ThreePartMessage } from "@/components/three-part-message"
-import { toast } from "@/components/ui/toast"
+import { useAction } from "@/lib/action"
 
 type ReportState = NonNullable<RunOutcome["report"]>
 
@@ -32,20 +31,13 @@ export function ReportToMaks({
   /** „Wyślij do Maksa” jest głównym przyciskiem, gdy przyczynę usuwa Maks. */
   primary: boolean
 }) {
-  const [sending, setSending] = React.useState(false)
   // Odpowiedź na kliknięcie ważna tylko do następnego stanu od serwera: kolejka może potem wysłać Zgłoszenie sama.
   const [answer, setAnswer] = React.useState<{ to: ReportState; state: ReportState } | null>(null)
   const state = answer !== null && answer.to === report ? answer.state : report
 
-  const send = () => {
-    setSending(true)
-
-    sendReport()
-      .then((answered) => setAnswer({ to: report, state: answered }), (failure: Error) => {
-        toast.add({ title: "Nie udało się", description: failureMessage(failure), type: "error" })
-      })
-      .finally(() => setSending(false))
-  }
+  const sendAction = useAction(() => sendReport().then((answered) => setAnswer({ to: report, state: answered })))
+  const sending = sendAction.running !== null
+  const send = () => void sendAction.run()
 
   if (state.state === "sent") {
     return (

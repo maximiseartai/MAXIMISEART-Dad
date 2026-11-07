@@ -12,9 +12,9 @@ import {
   type QuantitiesToFill,
 } from "@/api/centrum"
 import type { RowState } from "@/api/generated"
+import { LoadFailure } from "@/components/load-failure"
 import { PageHeader } from "@/components/page-header"
 import { ThreePartMessage } from "@/components/three-part-message"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -67,21 +67,6 @@ function pinnedStyle({ width, left }: Pinned): React.CSSProperties {
   return { width: `${width}rem`, minWidth: `${width}rem`, maxWidth: `${width}rem`, left: `${left}rem` }
 }
 
-// `useResource` pamięta ostatnie dane pod funkcją odczytu, więc każdy okres i rodzaj ma jedną, tę samą funkcję.
-const loads = new Map<string, () => Promise<KindTable>>()
-
-function tableOf(token: string, kind: FillKind) {
-  const key = `${token}/${kind}`
-  let load = loads.get(key)
-
-  if (load === undefined) {
-    load = () => getKindTable(token, kind)
-    loads.set(key, load)
-  }
-
-  return load
-}
-
 /** Plik zbiorczy jest w Folderze okresu: odczytany albo z Komunikatem, który go nazywa (uszkodzony, bez nagłówka). */
 export function hasCollectiveFile(resource: Resource<QuantitiesToFill | KindTable>): boolean {
   return resource.state === "ready" && (resource.data.state === "ready" || resource.data.collective_file_exists)
@@ -132,7 +117,7 @@ function KindContent({
   hint: string
   action: React.ReactNode
 }) {
-  const { resource } = useLiveFile(token, tableOf(token, kind))
+  const { resource, reload } = useLiveFile(getKindTable, [token, kind])
 
   return (
     <>
@@ -146,12 +131,22 @@ function KindContent({
         }
         action={hasCollectiveFile(resource) ? action : undefined}
       />
-      <KindState resource={resource} heading={heading} hint={hint} />
+      <KindState resource={resource} reload={reload} heading={heading} hint={hint} />
     </>
   )
 }
 
-function KindState({ resource, heading, hint }: { resource: Resource<KindTable>; heading: string; hint: string }) {
+function KindState({
+  resource,
+  reload,
+  heading,
+  hint,
+}: {
+  resource: Resource<KindTable>
+  reload: () => Promise<void>
+  heading: string
+  hint: string
+}) {
   const entrance = useContentEntrance(resource.state === "loading")
 
   switch (resource.state) {
@@ -159,10 +154,7 @@ function KindState({ resource, heading, hint }: { resource: Resource<KindTable>;
       return <TableSkeleton />
     case "failed":
       return (
-        <Alert variant="destructive" className="wejscie">
-          <AlertTitle>Nie udało się odczytać okresu</AlertTitle>
-          <AlertDescription>{resource.message}</AlertDescription>
-        </Alert>
+        <LoadFailure what="okresu" message={resource.message} reload={reload} />
       )
     case "ready": {
       const table = resource.data

@@ -59,6 +59,7 @@ import { openAndConfirm, openOrderRegisterAndConfirm, type OpenedInPeriod } from
 import { CountTiles, NumberStrip } from "@/pages/runs/count-tiles"
 import { useStopDiagnosis } from "@/pages/runs/diagnosis"
 import { ConfirmRunDialog } from "@/pages/runs/run-dialogs"
+import { UnreadableStream } from "@/pages/runs/unreadable-stream"
 
 type LiveRun = Exclude<RunView, { state: "idle" }>
 
@@ -127,6 +128,7 @@ export function RunCard({
             <AlertDescription>Uruchomienie trwa dalej. Wynik pojawi się tutaj.</AlertDescription>
           </Alert>
         ) : null}
+        <UnreadableStream />
         {disconnected && view.state !== "finished" ? (
           <Alert className="wejscie">
             <WifiOffIcon />

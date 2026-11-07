@@ -12,7 +12,6 @@ import type {
   GetPeriodBoardResponse,
   GetQuantitiesToFillResponse,
   GetKindTableResponse,
-  GetRunCardResponse,
   GetWithoutQuantityResponse,
   GetToolUpdateResponse,
   NotificationsRead,
@@ -170,9 +169,6 @@ export type RunView = GetCurrentRunResponse
 
 /** Ostatnie Uruchomienie sprzed startu Centrum: karta z Logów, wynik z Historii bez Logów albo Urwane Uruchomienie (unia z kontraktu). */
 export type PastRun = NonNullable<Extract<RunView, { state: "idle" }>["previous"]>
-
-/** Karta Uruchomienia z wiersza Historii albo jej brak (unia z kontraktu). */
-export type RunCard = GetRunCardResponse
 
 /** Akcja, którą Centrum proponuje po wyniku Uruchomienia. */
 export type NextAction = RunOutcome["next_action"]
@@ -348,11 +344,12 @@ export function reportRun(runId: string) {
  * w tle zajęłyby wszystkie połączenia i każde zapytanie Centrum czekałoby bez końca. Karta w tle oddaje więc
  * połączenie, a po powrocie łączy się od nowa. Po połączeniu najpierw przychodzi bieżący widok, potem każda
  * zmiana; po zerwaniu przeglądarka sama łączy się ponownie i znowu dostaje bieżący widok. Każde zdarzenie jest
- * parsowane schematem z kontraktu; zdarzenie, którego nie da się sparsować, jest pomijane.
+ * parsowane schematem z kontraktu; zdarzenie, którego nie da się sparsować, dostaje `onUnreadable`.
  */
 export function watchRunEvents(
   onEvent: (event: RunEvent) => void,
-  onConnection: (connected: boolean) => void
+  onConnection: (connected: boolean) => void,
+  onUnreadable: () => void
 ): () => void {
   let source: EventSource | null = null
 
@@ -367,6 +364,8 @@ export function watchRunEvents(
       try {
         data = JSON.parse(message.data)
       } catch {
+        onUnreadable()
+
         return
       }
 
@@ -374,6 +373,8 @@ export function watchRunEvents(
 
       if (parsed.success) {
         onEvent(parsed.data)
+      } else {
+        onUnreadable()
       }
     })
 

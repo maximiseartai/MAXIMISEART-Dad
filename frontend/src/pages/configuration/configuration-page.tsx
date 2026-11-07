@@ -26,7 +26,7 @@ import { ToolCard } from "@/pages/configuration/tool-card"
  * aktualizacją). Jedyną zmianą pliku taty stąd jest przywrócenie Kopii INTERMAX.
  */
 export function ConfigurationPage() {
-  const { resource: configuration, reload } = useResource(getConfiguration)
+  const { resource: configuration, reload } = useResource(getConfiguration, [])
   const entrance = useContentEntrance(configuration.state === "loading")
 
   return (

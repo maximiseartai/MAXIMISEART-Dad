@@ -1,6 +1,7 @@
 import * as React from "react"
 
 import { getNotifications, markNotificationsRead, type Notifications } from "@/api/centrum"
+import { showFailure } from "@/lib/action"
 import { useRuns } from "@/lib/runs"
 import { useResource, type Resource } from "@/lib/use-resource"
 
@@ -24,7 +25,7 @@ const NotificationsContext = React.createContext<NotificationsValue | null>(null
  * bieżącej strony.
  */
 export function NotificationsProvider({ page, children }: { page: string; children: React.ReactNode }) {
-  const { resource, reload, replace } = useResource(getNotifications)
+  const { resource, reload, replace } = useResource(getNotifications, [], { fromDadFiles: false })
   const shownPage = React.useRef(page)
   const { view } = useRuns()
   const ended = view?.state === "finished" ? view.run.id : null
@@ -52,7 +53,7 @@ export function NotificationsProvider({ page, children }: { page: string; childr
       markNotificationsRead(ids).then((data) => {
         replace({ state: "ready", data })
         reload()
-      }, () => undefined)
+      }, showFailure)
     },
     [replace, reload]
   )

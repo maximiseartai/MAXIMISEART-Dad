@@ -1,4 +1,3 @@
-import { failureMessage } from "@/api/client"
 import {
   openOrderRegister,
   openPeriodPath,
@@ -7,9 +6,11 @@ import {
   type WorkerSettlementRequest,
 } from "@/api/centrum"
 import { toast } from "@/components/ui/toast"
+import { showFailure } from "@/lib/action"
 
 // Tata klika dwa razy z przyzwyczajenia i stuka dwa razy w ekran dotykowy, a Excel i Eksplorator otwierają się
-// dopiero po chwili: powtórne kliknięcie tego samego pliku do tego czasu to ta sama prośba, nie drugie okno.
+// dopiero po chwili, także po odpowiedzi serwera: powtórne kliknięcie tego samego pliku do tego czasu, z dowolnego
+// przycisku, to ta sama prośba, nie drugie okno. Dlatego nie `useAction`, które trzyma jeden przycisk do odpowiedzi.
 const REPEAT_IGNORED_MS = 1500
 
 /** Plik albo folder okresu z jego rodzaju albo Rozliczenie pracownika jednego Wykonawcy: treść żądania do serwera. */
@@ -45,7 +46,7 @@ function confirmOpening(key: string, open: () => Promise<{ name: string }>, onFa
     .then(
       (opened) => toast.add({ title: "Otwieram", description: opened.name }),
       (failure: Error) => {
-        toast.add({ title: "Nie udało się otworzyć", description: failureMessage(failure), type: "error" })
+        showFailure(failure, "Nie udało się otworzyć")
         onFailure()
       }
     )
