@@ -32,8 +32,9 @@ czekałoby bez końca. Działanie w zamkniętej karcie albo oknie, także zamkni
 ``WindowClosed``, cokolwiek zgłosił wtedy Playwright, także gdy błąd nawigacji przerwanej zamknięciem karty przyszedł,
 zanim Playwright powiedział o zamknięciu (``BrowserEfenix.closed``). Przeglądarkę daje rozmówca: stronę (``window``), Chromium
 Playwrighta (``chromium``) albo widoczne okno zainstalowanego Google Chrome w trwałym profilu narzędzia (``chrome``),
-które nie startuje (``BrowserNotStarted``), gdy Chrome nie ma albo jego profil trzyma inne okno, a każde okno także
-wtedy, gdy nie wystartował sterownik Playwrighta (``Operation.DRIVER``). Każda przeglądarka
+które nie startuje (``BrowserNotStarted``), gdy Chrome nie ma albo jego profil trzyma inne okno; Chromium Playwrighta nie
+startuje tak samo, gdy go nie ma, a każde okno także wtedy, gdy nie wystartował sterownik Playwrighta
+(``Operation.DRIVER``). Każda przeglądarka
 okna, także Chromium testów, startuje z argumentami ``launch_options``: bez losowania portu lokalnego każdego połączenia
 (``TcpPortRandomizationWin``), przy którym Windows odmawia czasem połączenia, choć porty są wolne.
 
@@ -762,10 +763,14 @@ def chrome(
 
 @contextmanager
 def chromium(url: str, *, headless: bool = True) -> Iterator[BrowserEfenix]:
-    """Okno efenix w nowym Chromium Playwrighta (Skrypt dla maszyn); przeglądarka zamyka się z oknem."""
+    """Okno efenix w nowym Chromium Playwrighta (Skrypt dla maszyn); przeglądarka zamyka się z oknem.
+    ``BrowserNotStarted``, gdy Chromium nie wystartował, jak w ``chrome``."""
 
     with _playwright() as playwright:
-        browser = playwright.chromium.launch(headless=headless, **launch_options(playwright))
+        try:
+            browser = playwright.chromium.launch(headless=headless, **launch_options(playwright))
+        except PlaywrightError as error:
+            raise BrowserNotStarted(BrowserFailure(exception_type(error), Operation.START)) from error
         try:
             with window(browser.new_page(), url) as efenix:
                 yield efenix

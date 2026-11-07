@@ -2676,6 +2676,21 @@ def test_okno_bez_logowania_taty_i_przegladarka_ktora_nie_wystartowala_zatrzymuj
     assert set(requested) <= READING | {("GET", "page_login.php")}
 
 
+def test_chromium_skryptu_dla_maszyn_ktory_nie_wystartowal_zatrzymuje_wycene_jak_okno_taty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Chromium Playwrighta, którego nie ma na komputerze, to w oknie Skryptu dla maszyn (``chromium``) ta sama droga startu
+    co w oknie taty (``chrome``): Zatrzymanie z Komunikatem o przeglądarce, a nie nieoczekiwany wyjątek (#976)."""
+
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "bez-przegladarek"))
+    source = write_collective_file(tmp_path / "bez-chromium", [Order("#5501", cells={"O": 1}, amount=_au({"012": 1}))])
+    # Okno ``chromium`` startuje własny Playwright, a wątek testu może mieć już Playwright przeglądarki testów.
+    with ThreadPoolExecutor(max_workers=1) as own_thread:
+        outcome = own_thread.submit(_run_with, source, lambda _login: efenix_browser.chromium("http://127.0.0.1:9/")).result()
+
+    assert (_stop(outcome), _kept(outcome)) == ("EFENIX_BRAK_PRZEGLADARKI", False)
+
+
 def test_okno_taty_otwiera_liste_zlecen_w_jedynej_karcie_przegladarki(tmp_path: Path) -> None:
     """Przeglądarka okna taty startuje z jedną pustą kartą, a okno otwiera w niej listę zleceń efenix: tata widzi jedną
     kartę z efenix, a nie efenix obok pustej karty."""
