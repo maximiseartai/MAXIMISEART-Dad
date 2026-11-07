@@ -19,19 +19,22 @@ from rozliczenia.centrum.report_box import CloseReason, Refused, Unreachable
 from rozliczenia.centrum.tool_freshness import PublishedRelease
 from rozliczenia.centrum.tool_update import Release
 
-from tests.fixtures.centrum import TOOL_COMMIT, case_states, centrum as plain_centrum, finished_view, join_threads_since
+from tests.fixtures.centrum import (
+    TOOL_COMMIT,
+    ToolDirectory,
+    case_states,
+    centrum as plain_centrum,
+    finished_view,
+    join_threads_since,
+    write_report_key,
+)
 from tests.fixtures.centrum_processes import PreparingCentrum, preparing_centrum, settling_centrum, stopped_for_maks
 from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.locked_file import lock_file
 from tests.fixtures.potomne import wait_for
 
-KEY = "github_pat_SYNTETYCZNY_KLUCZ_ZGLOSZEN"
 NOTE_TITLE = "Plik zbiorczy otwiera się długo"
 CLOSED_AT = datetime(2026, 10, 20, 9, 15, tzinfo=timezone.utc)
-
-
-def with_key(centrum: PreparingCentrum) -> None:
-    (centrum.tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
 
 
 def sent_report(centrum: PreparingCentrum) -> str:
@@ -91,7 +94,7 @@ def read(centrum: PreparingCentrum, ids: list[str]) -> dict[str, Any]:
 
 def test_wyslana_uwaga_i_zgloszenie_daja_powiadomienia_a_zamkniecie_mowi_co_zrobil_maks(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     what = sent_report(centrum)
     assert sent_note(centrum) == {"state": "sent"}
     box, clock = centrum.surroundings.report_box, centrum.surroundings.clock
@@ -119,7 +122,7 @@ def test_powod_zamkniecia_issue_rozstrzyga_stan_sprawy(
     tmp_path: Path, reason: CloseReason | None, state: str
 ) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     sent_note(centrum)
     centrum.surroundings.report_box.close(number_of(centrum, NOTE_TITLE), reason)
 
@@ -138,7 +141,7 @@ def test_uwaga_bez_tokenu_czeka_na_token_bez_kropki_a_skrzynka_nie_jest_pytana(t
 
 def test_oznacz_przeczytane_gasi_kropke_takze_po_restarcie_a_nowy_stan_znow_jest_nowy(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     sent_note(centrum)
     sent_note(centrum, "Suma godzin na dole tabeli")
     box, clock = centrum.surroundings.report_box, centrum.surroundings.clock
@@ -183,7 +186,7 @@ def test_powiadomienie_o_wycenie_w_efenix_przeczytane_przez_tate_zostaje_na_lisc
 
 def test_przeczytane_sa_tylko_powiadomienia_ktore_tata_zobaczyl(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     sent_note(centrum)
     box, clock = centrum.surroundings.report_box, centrum.surroundings.clock
     seen = notifications(centrum)
@@ -209,7 +212,7 @@ def test_niedostepny_plik_spraw_taty_daje_komunikat_a_po_zwolnieniu_odczyt_zapis
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     locked = lock_file(monkeypatch, DAD_CASES_FILE)
     assert sent_note(centrum) == {"state": "sent"}
 
@@ -228,7 +231,7 @@ def test_niedostepny_plik_przeczytanych_daje_komunikat_a_po_zwolnieniu_zapisuje_
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, again: str
 ) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     sent_note(centrum)
     centrum.surroundings.report_box.close(number_of(centrum, NOTE_TITLE))
     ids = [item["id"] for item in notifications(centrum)["items"]]
@@ -246,7 +249,7 @@ def test_niedostepny_plik_przeczytanych_daje_komunikat_a_po_zwolnieniu_zapisuje_
 
 def test_oba_niedostepne_pliki_stanu_sa_w_jednym_komunikacie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     sent_note(centrum)
     centrum.surroundings.report_box.close(number_of(centrum, NOTE_TITLE))
     lock_file(monkeypatch, DAD_CASES_FILE)
@@ -264,7 +267,7 @@ def test_oba_niedostepne_pliki_stanu_sa_w_jednym_komunikacie(tmp_path: Path, mon
 
 def test_skrzynka_jest_pytana_przy_starcie_i_najwyzej_raz_na_10_minut(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     sent_report(centrum)
     clock = centrum.surroundings.clock
     asked = polls(centrum)
@@ -290,7 +293,7 @@ def test_skrzynka_jest_pytana_przy_starcie_i_najwyzej_raz_na_10_minut(tmp_path: 
 
 def test_zamknieta_sprawa_nie_jest_pytana_ponownie_a_jej_stan_zostaje_po_restarcie(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     what = sent_report(centrum)
     box = centrum.surroundings.report_box
     box.close(box.sent[-1].number, "not_planned")
@@ -309,7 +312,7 @@ def test_porazka_skrzynki_przechodzi_po_cichu_z_ostatnim_znanym_stanem(
     tmp_path: Path, failure: Refused | Unreachable
 ) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     what = sent_report(centrum)
     box = centrum.surroundings.report_box
     box.close(box.sent[-1].number)
@@ -324,7 +327,7 @@ def test_porazka_skrzynki_przechodzi_po_cichu_z_ostatnim_znanym_stanem(
 
 def test_bez_wyslanych_spraw_albo_klucza_skrzynka_nie_jest_pytana(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     box = centrum.surroundings.report_box
 
     assert notifications(centrum) == {"unread": 0, "items": [], "message": None}
@@ -332,7 +335,7 @@ def test_bez_wyslanych_spraw_albo_klucza_skrzynka_nie_jest_pytana(tmp_path: Path
 
     sent_report(centrum)
     asked = polls(centrum)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").unlink()
+    ToolDirectory(tmp_path).report_key.unlink()
 
     notifications(centrum)
     assert polls(centrum) == asked
@@ -340,7 +343,7 @@ def test_bez_wyslanych_spraw_albo_klucza_skrzynka_nie_jest_pytana(tmp_path: Path
 
 def test_przy_starcie_centrum_skrzynka_jest_pytana_w_tle_przed_odczytem_powiadomien(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     what = sent_report(centrum)
     box = centrum.surroundings.report_box
     box.close(box.sent[-1].number)
@@ -360,7 +363,7 @@ def test_przy_starcie_centrum_skrzynka_jest_pytana_w_tle_przed_odczytem_powiadom
 
 def test_spozniona_odpowiedz_skrzynki_nie_wstrzymuje_powiadomien_a_jej_stan_i_tak_zostaje(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     what = sent_report(centrum)
     box = centrum.surroundings.report_box
     box.close(box.sent[-1].number)
@@ -407,7 +410,7 @@ def new_versions(centrum: PreparingCentrum) -> list[dict[str, Any]]:
 
 def test_nowsze_wydanie_daje_powiadomienie_z_notka_sprawami_taty_i_przyciskiem(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     what = sent_report(centrum)
     sent_note(centrum)
     cases = (
@@ -441,7 +444,7 @@ def test_nowsze_wydanie_daje_powiadomienie_z_notka_sprawami_taty_i_przyciskiem(t
 
 def test_notka_poprawiona_recznie_na_githubie_daje_co_nowego_bez_listy_i_sprawy_taty(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     sent_note(centrum)
     notes = f"{SUMMARY}\r\n### Rozwiązane sprawy taty \r\n- Uwaga taty #{number_of(centrum, NOTE_TITLE)}: {NOTE_TITLE}\r\n"
     release_on_main(centrum, "v0.2.0", NEW_COMMIT, published("v0.2.0", notes))
@@ -562,7 +565,7 @@ def queued_report(centrum: PreparingCentrum) -> str:
 def delivered_from_queue(centrum: PreparingCentrum) -> int:
     """Maks wpisuje klucz, kolejka budzi się po minucie i dostarcza Zgłoszenie; zwraca numer jego issue."""
 
-    with_key(centrum)
+    write_report_key(centrum.tool)
     box = centrum.surroundings.report_box
     centrum.surroundings.clock.advance(RETRY_S)
     assert box.wait_until(lambda box: len(box.sent) == 1)

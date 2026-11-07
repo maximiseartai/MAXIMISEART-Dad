@@ -1,7 +1,8 @@
-"""Linie wątków testu i jedna pętla zdarzeń ``TestClient`` (#975), bez importu kodu narzędzia.
+"""Linie wątków testu, zatrzymanie Centrum po teście i jedna pętla zdarzeń ``TestClient`` (#975), bez importu kodu narzędzia.
 
 Linia to wątki, które uruchomił wątek testu, razem z wątkami, które one uruchomiły później. ``CentrumClient``
-(``tests/fixtures/centrum.py``) czeka po ``stop`` na wątki swojej linii. Moduł nie importuje ``src/``, bo ładuje go
+(``tests/fixtures/centrum.py``) czeka po ``stop`` na wątki swojej linii, a ``stop_after_test`` zapisuje go do
+zatrzymania po teście. Moduł nie importuje ``src/``, bo ładuje go
 ``tests/conftest.py``: import Centrum stąd uzależniłby każdy plik testów od kodu Centrum (``tests/test_ksztalt_bramki.py``).
 """
 
@@ -56,6 +57,26 @@ def _start_in_line(self: threading.Thread) -> None:
 
 
 threading.Thread.start = _start_in_line  # type: ignore[method-assign]
+
+
+# Zatrzymania Centrum, które ``stopped_after_test`` woła po teście.
+_AFTER_TEST: list[Callable[[], None]] = []
+
+
+def stop_after_test(stop: Callable[[], None]) -> None:
+    """Zapisuje ``stop`` (np. ``CentrumClient.stop``) do wywołania po bieżącym teście."""
+
+    _AFTER_TEST.append(stop)
+
+
+def stopped_after_test() -> None:
+    """Woła każde zatrzymanie z ``stop_after_test``, od ostatniego, także po błędzie wcześniejszego, i rzuca ten błąd."""
+
+    stops = list(_AFTER_TEST)
+    _AFTER_TEST.clear()
+    with contextlib.ExitStack() as after_test:
+        for stop in stops:
+            after_test.callback(stop)
 
 
 # Pętla zdarzeń, w której ``TestClient`` poza ``with`` obsługuje każde żądanie (``shared_test_loop``).

@@ -15,7 +15,16 @@ from rozliczenia.centrum.report_box import Refused, Unreachable
 from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.template_file import TemplateFile
 
-from tests.fixtures.centrum import NO_RELEASE, FakeGitHub, FakeReportBox, finished_view, phase_states, view_timing, views_until
+from tests.fixtures.centrum import (
+    NO_RELEASE,
+    FakeGitHub,
+    FakeReportBox,
+    finished_view,
+    phase_states,
+    view_timing,
+    views_until,
+    write_report_key,
+)
 from tests.fixtures.centrum_processes import (
     PreparingCentrum,
     SettlingCentrum,
@@ -202,13 +211,9 @@ def check_states(diagnosis: dict[str, Any]) -> dict[str, str]:
     return {check["label"]: check["state"] for check in diagnosis["checks"]}
 
 
-def with_key(centrum: PreparingCentrum) -> None:
-    (centrum.tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
-
-
 def test_diagnoza_bez_przyczyny_na_komputerze_kaze_wyslac_do_maksa(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     run_id = stopped_for_maks(centrum)
 
     diagnosis = diagnose(centrum, run_id)
@@ -693,7 +698,7 @@ def box_now_answers(centrum: PreparingCentrum, failure: Refused | Unreachable) -
 
 def test_diagnoza_pokazuje_odrzucony_klucz_jako_sprawdzenie_a_wyjasnieniem_zostaje_brak_wzorca(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     centrum.fixture.collective_template_path.unlink()
     stopped = run_to_end(centrum, dry_run=True)
     box_now_answers(centrum, Refused())
@@ -707,7 +712,7 @@ def test_diagnoza_pokazuje_odrzucony_klucz_jako_sprawdzenie_a_wyjasnieniem_zosta
 
 def test_diagnoza_bez_innej_przyczyny_i_z_odrzuconym_kluczem_nie_znajduje_przyczyny(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     run_id = stopped_for_maks(centrum)
     box_now_answers(centrum, Refused())
 
@@ -719,7 +724,7 @@ def test_diagnoza_bez_innej_przyczyny_i_z_odrzuconym_kluczem_nie_znajduje_przycz
 
 def test_diagnoza_z_tokenem_przyjetym_przez_skrzynke_mowi_ze_skrzynka_go_przyjmuje(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    with_key(centrum)
+    write_report_key(centrum.tool)
     run_id = stopped_for_maks(centrum)
 
     diagnosis = diagnose(centrum, run_id)
@@ -730,7 +735,7 @@ def test_diagnoza_z_tokenem_przyjetym_przez_skrzynke_mowi_ze_skrzynka_go_przyjmu
 def test_diagnoza_z_kluczem_bez_sieci_go_nie_sprawdzila(tmp_path: Path) -> None:
     offline = FakeReportBox(search_failure=Unreachable())  # także Logi Uruchomienia nie dochodzą do skrzynki
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(report_box=offline))
-    with_key(centrum)
+    write_report_key(centrum.tool)
     run_id = stopped_for_maks(centrum)
 
     diagnosis = diagnose(centrum, run_id)

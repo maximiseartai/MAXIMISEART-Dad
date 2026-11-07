@@ -17,12 +17,20 @@ import pytest
 
 from rozliczenia.centrum.report_box import Refused, SendOutcome, Sent, Unreachable
 
-from tests.fixtures.centrum import TOOL_COMMIT, FakeIssue, FakeReportBox, finished_view, without_times
+from tests.fixtures.centrum import (
+    REPORT_KEY,
+    TOOL_COMMIT,
+    FakeIssue,
+    FakeReportBox,
+    ToolDirectory,
+    finished_view,
+    without_times,
+    write_report_key,
+)
 from tests.fixtures.centrum_processes import SettlingCentrum, run_to_end, settling_centrum
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.settlement import MARKED, CellValue, PERIOD, write_quantity_source
 
-KEY = "github_pat_SYNTETYCZNY_KLUCZ_ZGLOSZEN"
 LABEL: Final = "kontrola-ilosci"
 LINE = f"- Kontrola ilości okresu: {PERIOD}"
 
@@ -136,7 +144,7 @@ def centrum_with(tmp_path: Path, rows: list[dict[str, CellValue]], *, key: bool 
     centrum = settling_centrum(tmp_path)
     write_quantity_source(centrum.collective_file, rows)
     if key:
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
     return centrum
 
 
@@ -166,7 +174,7 @@ def test_przebieg_z_poprawkami_taty_daje_kontrole_ilosci_z_grupami_roznic_i_licz
     issue = sent_check(centrum)
     assert (issue.label, issue.title) == (LABEL, f"Kontrola ilości {PERIOD}: 7 różnic")
     assert issue.body == expected_body(view["run"]["id"])
-    assert box(centrum).keys == [KEY]
+    assert box(centrum).keys == [REPORT_KEY]
     sent = f"skrzynka-wyslano etykieta={LABEL} okres={PERIOD} numer=1"
     assert wait_for(lambda: sent in centrum.log_path.read_text(encoding="utf-8"))
 
@@ -184,7 +192,7 @@ def test_przy_zera_roznic_kontrola_ilosci_tez_powstaje_z_tytulem_bez_roznic(tmp_
 
 def test_plik_zbiorczy_bez_naglowka_kolumny_wejscia_daje_kontrole_bez_porownania(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
 
     run_to_end(centrum, dry_run=False)
 

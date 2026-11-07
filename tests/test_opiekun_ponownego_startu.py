@@ -35,6 +35,7 @@ from rozliczenia.centrum.tool_update import (
 from rozliczenia import tool_files
 from rozliczenia.tool_files import start_command
 
+from tests.fixtures.centrum import ToolDirectory
 from tests.fixtures.tool_clone import (
     FIRST_VERSION,
     REPOSITORY_ROOT,
@@ -96,7 +97,7 @@ def _close_if_running(port: int) -> None:
 
 
 def _log_lines(clone: Path) -> list[str]:
-    return (clone / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8").splitlines()
+    return ToolDirectory(clone).log_path.read_text(encoding="utf-8").splitlines()
 
 
 def _shortcut(clone: Path, port: int) -> subprocess.CompletedProcess[str]:

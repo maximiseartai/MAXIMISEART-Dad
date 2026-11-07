@@ -16,22 +16,17 @@ from rozliczenia.centrum.keyed_box import LIST_LAG_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Rejected, Unreachable
 from rozliczenia.telemetry import MetricsStore
 
-from tests.fixtures.centrum import FakeReportBox
+from tests.fixtures.centrum import FakeReportBox, write_report_key
 from tests.fixtures.centrum_processes import SettlingCentrum, run_logs_handled, run_to_end, settling_centrum
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.settlement import PERIOD
 
-KEY = "github_pat_SYNTETYCZNY_KLUCZ_ZGLOSZEN"
 TITLE = "Podgląd pokazał dwa razy tego samego Wykonawcę"
 BODY = "Na liście Szablonów pracownika jest dwa razy ten sam Wykonawca."
 VERSION = "wersja narzędzia 3c1d0a9"
 UNKNOWN_RUN = (
     "Tego Uruchomienia nie ma już w historii Centrum rozliczeń. Wybierz inne Uruchomienie albo wyślij Uwagę ogólną."
 )
-
-
-def write_key(centrum: SettlingCentrum) -> None:
-    (centrum.tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
 
 
 def box(centrum: SettlingCentrum) -> FakeReportBox:
@@ -77,7 +72,7 @@ def pinned_after_rejected_logs(tmp_path: Path, *, rejected_starts: int) -> tuple
 
     centrum = settling_centrum(tmp_path)
     box(centrum).background_comment_outcomes.extend([Rejected()] * rejected_starts)
-    write_key(centrum)
+    write_report_key(centrum.tool)
     run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
     assert wait_for(lambda: logs_rejections(centrum) == 1), "Skrzynka nie odrzuciła Logów"
 
@@ -89,7 +84,7 @@ def pinned_after_rejected_logs(tmp_path: Path, *, rejected_starts: int) -> tuple
 
 def test_uwaga_przypieta_do_uruchomienia_niesie_jego_linie_i_odnosnik_do_komentarza_logow(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
-    write_key(centrum)
+    write_report_key(centrum.tool)
     run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
     logs = logs_comment(centrum, run_id)
 
@@ -141,7 +136,7 @@ def test_linia_uruchomienia_w_uwadze_nazywa_tryb_i_wynik_jak_karta_uruchomienia(
 
 def test_uwaga_do_nieznanego_uruchomienia_jest_odrzucona_bez_wysylki(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
-    write_key(centrum)
+    write_report_key(centrum.tool)
     run_to_end(centrum, dry_run=True)
 
     draft = centrum.client.post("/api/dad-notes/draft", json=note("nieznane-uruchomienie"))
@@ -166,7 +161,7 @@ def test_uwaga_do_uruchomienia_z_logami_w_kolejce_czeka_i_wychodzi_po_logach_z_o
     assert draft["body"] == f"{BODY}\n\n{waiting}"
     assert box(centrum).issues == []
 
-    write_key(centrum)
+    write_report_key(centrum.tool)
     centrum.restart()
     with centrum.client:
         assert box(centrum).wait_until(lambda fake: len(fake.issues_with("uwaga-taty")) == 1)
@@ -178,7 +173,7 @@ def test_uwaga_do_uruchomienia_z_logami_w_kolejce_czeka_i_wychodzi_po_logach_z_o
 
 def test_odnosnik_do_logow_wyslanych_przez_poprzednie_centrum_jest_od_razu_w_uwadze(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
-    write_key(centrum)
+    write_report_key(centrum.tool)
     run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
     logs = logs_comment(centrum, run_id)
 
@@ -249,7 +244,7 @@ def test_dwie_uwagi_przypiete_do_roznych_uruchomien_dostaja_odnosniki_do_swoich_
         sent = centrum.client.post("/api/dad-notes", json={"title": run_id, "run_id": run_id})
         assert sent.json() == {"state": "waiting", "waits_for": "key"}
 
-    write_key(centrum)
+    write_report_key(centrum.tool)
     centrum.restart()
     with centrum.client:
         assert box(centrum).wait_until(lambda fake: len(fake.issues_with("uwaga-taty")) == 2)
@@ -265,7 +260,7 @@ def test_uwaga_do_uruchomienia_bez_logow_w_kolejce_mowi_ze_nie_powstaly(tmp_path
     run_logs_handled(centrum)
     for path in queued(centrum, "logi-uruchomienia"):
         path.unlink()
-    write_key(centrum)
+    write_report_key(centrum.tool)
 
     sent = centrum.client.post("/api/dad-notes", json=note(run_id))
 
@@ -283,7 +278,7 @@ def test_odrzucone_logi_innego_uruchomienia_nie_zmieniaja_linii_uwagi_bez_logow(
     run_logs_handled(centrum)
     for path in queued(centrum, "logi-uruchomienia"):
         path.unlink()
-    write_key(centrum)
+    write_report_key(centrum.tool)
     box(centrum).background_comment_outcomes.append(Rejected())
     rejected = run_to_end(centrum, dry_run=True)["run"]["id"]
     assert wait_for(lambda: logs_rejections(centrum) == 1), "Skrzynka nie odrzuciła Logów"
@@ -324,14 +319,14 @@ def test_komentarz_do_usunietego_issue_uwagi_kolejka_porzuca_raz_i_wiecej_o_nie_
     assert wait_for(lambda: len(queued(centrum)) == 2)
     [comment] = queued(centrum, "uwaga-taty")
     assert centrum.client.post("/api/dad-notes", json={"title": "Inna Uwaga"}).json() == {"state": "sent"}
-    (centrum.tmp_path / "config" / "zgloszenia-klucz.txt").unlink()
+    centrum.tool.report_key.unlink()
     behind = centrum.client.post("/api/dad-notes", json={"title": "Uwaga za komentarzem"})
     assert behind.json() == {"state": "waiting", "waits_for": "key"}
     # Maks usuwa issue Uwagi, gdy lista issue już je pokazuje: usunięte w LIST_LAG_S po założeniu lista issue z etykietą
     # pokazuje z zapisów KeyedBox, więc kolejka porzuca komentarz do niego dopiero po budzeniu (#879).
     centrum.surroundings.clock.pause(LIST_LAG_S)
     box(centrum).issues.remove(issue)
-    write_key(centrum)
+    write_report_key(centrum.tool)
 
     centrum.restart()
     with centrum.client:
@@ -361,7 +356,7 @@ def _refused_listing(centrum: SettlingCentrum) -> None:
 
 
 def _without_key(centrum: SettlingCentrum) -> None:
-    (centrum.tmp_path / "config" / "zgloszenia-klucz.txt").unlink()
+    centrum.tool.report_key.unlink()
 
 
 UNCHECKABLE: Final[dict[str, tuple[Callable[[SettlingCentrum], None], str]]] = {
@@ -395,7 +390,7 @@ def test_komentarz_do_issue_uwagi_zostaje_w_kolejce_gdy_nie_da_sie_sprawdzic_czy
 
 def test_druga_przypieta_uwaga_po_odrzuconych_logach_dostaje_odnosnik_takze_zamknieta(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
-    write_key(centrum)
+    write_report_key(centrum.tool)
     delivered = run_to_end(centrum, dry_run=True)["run"]["id"]
     logs_comment(centrum, delivered)
     assert centrum.client.post("/api/dad-notes", json={"title": "A", "run_id": delivered}).json() == {"state": "sent"}

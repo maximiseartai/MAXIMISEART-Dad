@@ -44,16 +44,18 @@ from rozliczenia.process_run import Stop
 
 from tests.fixtures.centrum import (
     QUEUE_THREAD,
+    REPORT_KEY,
     TOOL_COMMIT,
     FakeReportBox,
+    ToolDirectory,
     dad_cases,
     join_threads_since,
+    write_report_key,
 )
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.potomne import wait_for
 
-KEY = "github_pat_SYNTETYCZNY_KLUCZ_ZGLOSZEN"
 READY = {"state": "ready"}
 SENT = {"state": "sent"}
 WAITING = {"state": "waiting"}
@@ -99,16 +101,19 @@ class Computer:
     since: int | None = None
 
     @property
+    def tool(self) -> ToolDirectory:
+        return ToolDirectory(self.tmp_path)
+
+    @property
     def config(self) -> Path:
-        return self.tmp_path / "config"
+        return self.tool.config
 
     @property
     def log(self) -> CentrumLog:
-        return CentrumLog(self.tmp_path / "logs" / "centrum-rozliczen.log")
+        return CentrumLog(self.tool.log_path)
 
     def with_key(self) -> None:
-        self.config.mkdir(parents=True, exist_ok=True)
-        (self.config / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+        write_report_key(self.tool)
 
     def reports(self) -> Reports:
         if self.since is not None:
@@ -189,7 +194,7 @@ def test_wyslane_zgloszenie_to_dokladnie_podglad_a_sprawa_ma_numer_issue(compute
         "commit": TOOL_COMMIT,
         "closure": None,
     }
-    assert (owner.states, computer.box.keys) == ([READY, SENT], [KEY])
+    assert (owner.states, computer.box.keys) == ([READY, SENT], [REPORT_KEY])
     assert wait_for(lambda: computer.queued() == [])
 
 
@@ -342,7 +347,7 @@ def test_bez_klucza_albo_z_odrzuconym_zgloszenie_czeka_na_klucz_i_wychodzi_samo_
 
     queued = dump(handle.send())
     computer.box.search_failure = None
-    (computer.config / "zgloszenia-klucz.txt").write_text(KEY + "_NOWY\n", encoding="utf-8")
+    write_report_key(computer.tool, REPORT_KEY + "_NOWY")
     computer.clock.advance(RETRY_S)
 
     assert queued == FOR_KEY

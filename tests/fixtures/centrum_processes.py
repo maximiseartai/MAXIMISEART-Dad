@@ -18,14 +18,10 @@ from typing import Any, Protocol, TypeVar
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rozliczenia.centrum.app import create_app
-from rozliczenia.centrum.efenix_run import EfenixWindow
 from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
 from rozliczenia.centrum.restart_guardian import Restart
-from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness
 from rozliczenia.centrum.tool_update import ToolClone, find_git
 from rozliczenia.decision import EngineConversation
@@ -35,20 +31,31 @@ from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.process_run import Finished, Process, ProcessInputs
 
 from tests.fixtures.centrum import (
+    NO_EFENIX,
+    QUEUE_THREAD,
+    RUN_LOGS_IN_BACKGROUND,
     CentrumClient,
     FakeGitHub,
     FakeOneDrive,
     FakePlatform,
     FakeReportBox,
-    QUEUE_THREAD,
-    RUN_LOGS_IN_BACKGROUND,
     MetricsPaths,
+    ToolDirectory,
+    centrum_app,
+    efenix_window,
     finished_view,
     join_threads_since,
 )
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.preparation import PERIOD, PreparationFixture, RegisterRow, make_preparation_fixture
+from tests.fixtures.preparation import (
+    PERIOD,
+    PreparationFixture,
+    RegisterRow,
+    make_preparation_fixture,
+    write_collective_template,
+    write_internal_template,
+)
 from tests.fixtures.settlement import SOURCE_NAME, write_mapping, write_source, write_template
 from tests.fixtures.tool_clone import FakeInstaller, ToolRepository
 
@@ -154,7 +161,7 @@ class Surroundings:
     release_unanswered: bool = False
     readers: Readers = FILE_READERS
     find_git: Callable[[], Path | None] = find_git
-    efenix_url: str = "http://127.0.0.1:9/index.php"
+    efenix_url: str = NO_EFENIX
     efenix_arguments: tuple[str, ...] = ()
     efenix_pace: Pace | None = None
     _start: _StartClock | None = field(default=None, init=False, repr=False)
@@ -238,33 +245,25 @@ def _app(
     engines: Engines,
     surroundings: Surroundings,
 ) -> FastAPI:
-    log = CentrumLog(tmp_path / "logs" / "centrum-rozliczen.log")
+    tool = ToolDirectory(tmp_path)
     onedrive = surroundings.onedrive
-    clock = surroundings.started_clock()
-    return create_app(
-        settings_path=tmp_path / "config" / "centrum-ustawienia.yaml",
+    return centrum_app(
+        tool,
         platform=platform,
-        log=log,
-        shutdown=Shutdown(log),
-        today=lambda: TODAY,
+        today=TODAY,
         configuration_files=configuration,
         processes=engines.processes(),
         tool_freshness=surroundings.tool_freshness(),
         cloud_files=None if onedrive is None else onedrive.cloud_files(),
         report_box=surroundings.report_box,
-        clock=clock,
+        clock=surroundings.started_clock(),
         pause=surroundings.clock.pause,
         report_search_deadline_s=surroundings.report_search_deadline_s,
         tool_update=surroundings.tool_update(),
         guardian=surroundings.guardian,
         readers=surroundings.readers,
-        efenix_window=EfenixWindow(
-            surroundings.efenix_url,
-            tmp_path / "przegladarka-efenix",
-            channel=None,
-            headless=True,
-            arguments=surroundings.efenix_arguments,
-            pace=surroundings.efenix_pace,
+        window=efenix_window(
+            tool, surroundings.efenix_url, arguments=surroundings.efenix_arguments, pace=surroundings.efenix_pace
         ),
     )
 
@@ -278,6 +277,10 @@ class PreparingCentrum:
     tmp_path: Path
     surroundings: Surroundings
     engines: Engines
+
+    @property
+    def tool(self) -> ToolDirectory:
+        return ToolDirectory(self.tmp_path)
 
     def start(self, *, dry_run: bool, period: str = PERIOD) -> Any:
         return self.client.post("/api/runs", json={"process": "preparation", "period": period, "dry_run": dry_run})
@@ -316,21 +319,13 @@ def _preparation_client(
     *,
     since: int | None = None,
 ) -> CentrumClient:
-    configuration = ConfigurationFiles(
+    configuration = replace(
+        ToolDirectory(tmp_path).configuration,
         worker_config=fixture.config_path,
         internal_template=fixture.internal_template_path,
         collective_template=fixture.collective_template_path,
-        worker_template=tmp_path / "config" / "Wzorzec rozliczenia pracownika.xlsx",
     )
     return _client(tmp_path, platform, configuration, engines, surroundings, since)
-
-
-def _metrics(tmp_path: Path) -> MetricsPaths:
-    return MetricsPaths(
-        preparation=tmp_path / ".przygotowanie-pliku-zbiorczego-metrics.jsonl",
-        settlement=tmp_path / ".rozliczenia-metrics.jsonl",
-        intermax=tmp_path / ".uporzadkowanie-intermax-metrics.jsonl",
-    )
 
 
 def preparing_centrum(
@@ -344,7 +339,7 @@ def preparing_centrum(
     fixture = make_preparation_fixture(tmp_path, rows)
     platform = FakePlatform(chosen_files=[fixture.register_path], chosen_folders=[fixture.periods_directory])
     surroundings = surroundings or Surroundings()
-    engines = Engines(_metrics(tmp_path))
+    engines = Engines(ToolDirectory(tmp_path).metrics)
     client = _preparation_client(tmp_path, fixture, platform, surroundings, engines)
     client.post("/api/settings/register/choose")
     client.post("/api/settings/periods-directory/choose")
@@ -352,7 +347,7 @@ def preparing_centrum(
         client,
         fixture,
         engines.metrics.preparation,
-        tmp_path / "logs" / "centrum-rozliczen.log",
+        ToolDirectory(tmp_path).log_path,
         tmp_path,
         surroundings,
         engines,
@@ -370,6 +365,10 @@ class SettlingCentrum:
     tmp_path: Path
     surroundings: Surroundings
     engines: Engines
+
+    @property
+    def tool(self) -> ToolDirectory:
+        return ToolDirectory(self.tmp_path)
 
     @property
     def period_directory(self) -> Path:
@@ -429,24 +428,23 @@ def settling_centrum(
     parent = periods_directory / "Rozliczenia 2026" / "09_Wrzesień_2026" / "INEA" if dad_layout else periods_directory
     (parent / PERIOD).mkdir(parents=True)
     write_source(parent / PERIOD / SOURCE_NAME, include_unmapped=include_unmapped)
-    config = tmp_path / "config"
-    config.mkdir()
-    configuration = _settling_configuration(tmp_path)
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir()
+    configuration = tool.configuration
     write_template(configuration.worker_template)
     write_mapping(configuration.worker_config)
-    engines = Engines(_metrics(tmp_path))
+    engines = Engines(tool.metrics)
     surroundings = surroundings or Surroundings()
     platform = FakePlatform(chosen_files=[register], chosen_folders=[periods_directory])
     client = _client(tmp_path, platform, configuration, engines, surroundings)
     client.post("/api/settings/periods-directory/choose")
     if register is not None:
         client.post("/api/settings/register/choose")
-    log_path = tmp_path / "logs" / "centrum-rozliczen.log"
     return SettlingCentrum(
         client,
         periods_directory,
         engines.metrics.settlement,
-        log_path,
+        tool.log_path,
         parent,
         configuration,
         tmp_path,
@@ -455,21 +453,24 @@ def settling_centrum(
     )
 
 
-def _settling_configuration(tmp_path: Path) -> ConfigurationFiles:
-    config = tmp_path / "config"
-    return ConfigurationFiles(
-        worker_config=config / "worker_mapping.yaml",
-        internal_template=config / "Wzorzec rozliczenia wewnętrznego.xlsx",
-        collective_template=config / "Wzorzec pliku zbiorczego.xlsx",
-        worker_template=config / "Wzorzec rozliczenia pracownika.xlsx",
-    )
+def write_configuration(tool: ToolDirectory) -> ConfigurationFiles:
+    """Trzy syntetyczne Wzorce i Konfiguracja wykonawców w folderze ``config`` katalogu narzędzia ``tool``."""
+
+    files = tool.configuration
+    tool.config.mkdir(parents=True, exist_ok=True)
+    write_mapping(files.worker_config)
+    write_internal_template(files.internal_template)
+    write_collective_template(files.collective_template)
+    write_template(files.worker_template)
+    return files
 
 
 def settling_app(tmp_path: Path, surroundings: Surroundings) -> FastAPI:
     """Aplikacja Centrum na plikach, które ``settling_centrum`` założył w ``tmp_path`` (Ustawienia taty, wzorce, metryki
     i katalog Logów), bez klienta testu: tak startuje Centrum w osobnym procesie (``centrum_w_procesie``)."""
 
-    return _app(tmp_path, FakePlatform(), _settling_configuration(tmp_path), Engines(_metrics(tmp_path)), surroundings)
+    tool = ToolDirectory(tmp_path)
+    return _app(tmp_path, FakePlatform(), tool.configuration, Engines(tool.metrics), surroundings)
 
 
 class _Starting(Protocol):

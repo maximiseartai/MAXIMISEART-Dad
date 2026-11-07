@@ -34,8 +34,16 @@ from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
 from rozliczenia.centrum.run_logs import RunLog, guard_logs
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 
+from tests.fixtures.centrum import (
+    TOOL_COMMIT,
+    FakeIssue,
+    FakeReportBox,
+    ToolDirectory,
+    finished_view,
+    views_until,
+    write_report_key,
+)
 from tests.fixtures.atrapa_efenix import PRICES, TODAY, AtrapaOrder, Changed, amount_of, atrapa_efenix
-from tests.fixtures.centrum import TOOL_COMMIT, FakeIssue, FakeReportBox, finished_view, views_until
 from tests.fixtures.centrum_intermax import Clock, ordering_centrum
 from tests.fixtures.efenix import Order as EfenixOrder
 from tests.fixtures.efenix import write_collective_file
@@ -55,7 +63,6 @@ from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import INTERNAL_SETTLEMENT_NAME, incomplete_period_rows, paste_raw_orders, register_order
 from tests.fixtures.settlement import PERIOD
 
-KEY = "github_pat_SYNTETYCZNY_KLUCZ_ZGLOSZEN"
 LABEL: Final = "logi-uruchomienia"
 LINE = f"- Logi Uruchomienia okresu: {PERIOD}"
 ARCHIVE = f"logi-{PERIOD}"
@@ -69,12 +76,8 @@ def watched_centrum(tmp_path: Path, *, key: bool = True, include_unmapped: bool 
     centrum = settling_centrum(tmp_path, include_unmapped=include_unmapped)
     box(centrum).background = frozenset()
     if key:
-        write_key(centrum)
+        write_report_key(centrum.tool)
     return centrum
-
-
-def write_key(centrum: SettlingCentrum) -> None:
-    (centrum.tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
 
 
 def box(centrum: SettlingCentrum) -> FakeReportBox:
@@ -307,7 +310,7 @@ def test_logi_bez_skrzynki_czekaja_w_kolejce_bez_komunikatu_a_nastepny_start_je_
     assert (box(centrum).issues, box(centrum).archives) == ([], [])
 
     box(centrum).search_failure = None
-    write_key(centrum)
+    write_report_key(centrum.tool)
     centrum.restart()
     with centrum.client:
         [comment] = thread_with(centrum, comments=1).comments
@@ -740,7 +743,7 @@ class Produced:
 
 def _settlement(tmp_path: Path) -> Produced:
     centrum = settling_centrum(tmp_path)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     assert run_to_end(centrum, dry_run=True)["result"]["result"] == "OK"
     return Produced(_archive_file(centrum.surroundings.report_box, tmp_path), ("--konfiguracja", str(tmp_path / "config")))
 
@@ -748,7 +751,7 @@ def _settlement(tmp_path: Path) -> Produced:
 def _preparation(tmp_path: Path) -> Produced:
     tmp_path.mkdir()
     centrum = preparing_centrum(tmp_path)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     assert run_to_end(centrum, dry_run=False)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
     configuration = {centrum.fixture.config_path.parent, centrum.fixture.internal_template_path.parent}
     assert configuration == {tmp_path / "config"}
@@ -768,7 +771,7 @@ PASTED = (
 
 def _intermax(tmp_path: Path, intermax: Intermax | None = None) -> Produced:
     centrum = ordering_centrum(tmp_path, intermax or Intermax(raw=PASTED), clock=Clock([ORDERED_AT]))
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
     centrum.run_to_end()
     return Produced(_archive_file(centrum.surroundings.report_box, tmp_path), ())
 
@@ -809,7 +812,7 @@ def _efenix(tmp_path: Path, in_efenix: list[AtrapaOrder] | None = None, result: 
     with atrapa_efenix(in_efenix or IN_EFENIX, prices=_TATA_PRICES) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
         write_collective_file(centrum.period_parent, PRICED)
-        (tmp_path / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+        write_report_key(ToolDirectory(tmp_path))
         started = centrum.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "dry_run": False})
         assert started.status_code == 200, started.json()
         assert finished_view(centrum.client)["result"]["result"] == result
@@ -869,7 +872,7 @@ def test_odtworzenie_odpowiada_w_decyzji_taty_tak_jak_tata_w_logach(
     folder = tmp_path / "taty"
     folder.mkdir()
     centrum = preparing_centrum(folder, incomplete_period_rows())
-    (folder / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    write_report_key(ToolDirectory(folder))
     centrum.start(dry_run=False)
     waiting = views_until(centrum.client, "awaiting_decision")[-1]
     centrum.client.post(f"/api/runs/{waiting['run']['id']}/decision", json={"answer": answer})
@@ -1155,7 +1158,6 @@ def test_lista_innej_dlugosci_w_logach_daje_roznice_w_pierwszym_elemencie_bez_pa
     assert (shown[absent].strip(), '"phase": "Zapisywanie"' in shown[present]) == ("(brak)", True), lines
 
 
-
 def test_kopia_intermax_bez_wiersza_nad_wklejeniem_stawia_dzien_gdzie_indziej_niz_u_taty(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1251,7 +1253,7 @@ def test_przesuniety_pierwszy_wiersz_wklejenia_intermax_nie_wypuszcza_adresu_ani
     raw = (first, *PASTED[1:4], replace(PASTED[4], cells=((DONE, QUOTED),)))
     root = tmp_path / "taty"
     centrum = ordering_centrum(root, Intermax(raw=raw), clock=Clock([ORDERED_AT]))
-    (root / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    write_report_key(ToolDirectory(root))
     centrum.run_to_end()
     note = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": QUOTED}).json()["body"]
     archived = _archive_file(centrum.surroundings.report_box, root)
@@ -1280,7 +1282,7 @@ def test_przesuniety_pierwszy_wiersz_wklejenia_rejestru_nie_wypuszcza_adresu_ani
     probe = {**register_order(90, datetime(2026, 9, 15, 10)), "ADRES": FIRST_ADDRESS, "NUMER UMOWY": FIRST_ORANGE}
     later = {**register_order(91, datetime(2026, 9, 15, 12)), "CZYNNOŚCI ZREALIZOWANE": QUOTED}
     paste_raw_orders(centrum.fixture.register_path, [probe, later])
-    (root / "config" / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    write_report_key(ToolDirectory(root))
     run_to_end(centrum, dry_run=False)
     note = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": QUOTED}).json()["body"]
     archived = _archive_file(centrum.surroundings.report_box, root)

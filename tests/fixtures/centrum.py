@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import enum
 import gzip
 import itertools
 import json
@@ -9,19 +10,24 @@ import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time as day_time, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rozliczenia import efenix_process, intermax_process, preparation_process, settlement_process
+from rozliczenia import efenix_process, intermax_process, preparation_process, settlement_process, tool_files
 from rozliczenia.centrum.app import create_app
+from rozliczenia.centrum.clock import Clock
+from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.efenix_run import EfenixWindow
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, REPORT
+from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE
+from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.report_box import (
     REPOSITORY,
@@ -42,23 +48,38 @@ from rozliczenia.centrum.report_box import (
     Rejected,
     Removed,
     RemoveOutcome,
+    ReportBox,
     SendOutcome,
     Sent,
     Unreachable,
     UploadOutcome,
 )
+from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
+from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, ToolFreshness
-from rozliczenia.centrum.tool_update import Release
+from rozliczenia.centrum.tool_update import Release, ToolClone
+from rozliczenia.centrum.tool_updates import GuardianLauncher
+from rozliczenia.efenix_pace import Pace
+from rozliczenia.input_checks import FILE_READERS, Readers
+from rozliczenia.intermax_copies import default_directory as default_intermax_copies
+from rozliczenia.intermax_replace import LOCAL_DISK, Disk
 
 from tests.fixtures.clock import ManualClock
-from tests.fixtures.linie_watkow import new_line, threads_since
+from tests.fixtures.linie_watkow import new_line, stop_after_test, threads_since
 from tests.fixtures.widok_skrzynki import shown
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 CENTRUM = "http://127.0.0.1:47811"
+# Dzień i chwila u taty w Centrum testu, które nie podaje własnych.
+TODAY = date(2026, 10, 19)
+NOW = datetime.combine(TODAY, day_time(12)).astimezone()
+# Lista zleceń okna efenix Centrum testu: pod tym adresem nic nie odpowiada, więc Wycena nie dociera do żadnego efenix.
+NO_EFENIX = "http://127.0.0.1:9/index.php"
+# Syntetyczny Token do Zgłoszeń, który Maks wpisuje w pliku ``REPORT_KEY_FILE`` obok Ustawień taty.
+REPORT_KEY = "github_pat_SYNTETYCZNY_KLUCZ_ZGLOSZEN"
 # Syntetyczny commit narzędzia; testy nigdy nie czytają prawdziwego `main` z GitHuba.
 TOOL_COMMIT = "3c1d0a9e5b7f4c2d8e6a1b0f9c8d7e6a5b4c3d2e"
 # GitHub odpowiedział, ale nie ma żadnego Wydania na `main`.
@@ -465,15 +486,12 @@ class FakeOneDrive:
 
 @dataclass(frozen=True)
 class MetricsPaths:
-    """Pliki metryk procesów w Centrum testu zamiast historii z katalogu narzędzia; Wycena w efenix obok Przebiegu."""
+    """Pliki metryk czterech procesów w Centrum testu zamiast historii z katalogu narzędzia."""
 
     preparation: Path
     settlement: Path
+    efenix: Path
     intermax: Path
-
-    @property
-    def efenix(self) -> Path:
-        return self.settlement.with_name("efenix-metrics.jsonl")
 
     def processes(self) -> Processes:
         return Processes(
@@ -482,6 +500,164 @@ class MetricsPaths:
             efenix=replace(efenix_process.PROCESS, metrics_path=lambda: self.efenix),
             intermax=replace(intermax_process.PROCESS, metrics_path=lambda: self.intermax),
         )
+
+
+@dataclass(frozen=True)
+class ToolDirectory:
+    """Katalog narzędzia Centrum testu w ``root``: każdy plik tam, gdzie ``tool_files`` kładzie go w katalogu narzędzia."""
+
+    root: Path
+
+    def _moved(self, path: Path) -> Path:
+        return self.root / path.relative_to(tool_files.TOOL_ROOT)
+
+    @property
+    def config(self) -> Path:
+        """Folder ``config``: Ustawienia taty, Wzorce, Konfiguracja wykonawców, Token do Zgłoszeń i pliki stanu."""
+
+        return tool_files.config_dir(self.root)
+
+    @property
+    def settings(self) -> Path:
+        return self._moved(tool_files.SETTINGS)
+
+    @property
+    def report_key(self) -> Path:
+        return self.config / REPORT_KEY_FILE
+
+    @property
+    def log_path(self) -> Path:
+        """Dziennik Centrum w katalogu Logów."""
+
+        return self._moved(tool_files.LOG_PATH)
+
+    @property
+    def run_logs(self) -> Path:
+        return self.log_path.parent / RUN_LOGS_DIRECTORY
+
+    @property
+    def last_started(self) -> Path:
+        return self.log_path.parent / LAST_STARTED_FILE
+
+    @property
+    def configuration(self) -> ConfigurationFiles:
+        return ConfigurationFiles(
+            worker_config=self._moved(tool_files.WORKER_CONFIG),
+            internal_template=self._moved(tool_files.INTERNAL_TEMPLATE),
+            collective_template=self._moved(tool_files.COLLECTIVE_TEMPLATE),
+            worker_template=self._moved(tool_files.WORKER_TEMPLATE),
+        )
+
+    @property
+    def metrics(self) -> MetricsPaths:
+        return MetricsPaths(
+            preparation=self._moved(tool_files.PREPARATION_METRICS),
+            settlement=self._moved(tool_files.SETTLEMENT_METRICS),
+            efenix=self._moved(tool_files.EFENIX_METRICS),
+            intermax=self._moved(tool_files.INTERMAX_METRICS),
+        )
+
+    @property
+    def intermax_copies(self) -> Path:
+        return self._moved(default_intermax_copies())
+
+
+def write_report_key(tool: ToolDirectory, key: str = REPORT_KEY) -> Path:
+    """Token do Zgłoszeń w lokalnym pliku obok Ustawień taty, jak go wpisuje Maks; zwraca ten plik."""
+
+    tool.config.mkdir(parents=True, exist_ok=True)
+    tool.report_key.write_text(key + "\n", encoding="utf-8")
+    return tool.report_key
+
+
+def efenix_window(
+    tool: ToolDirectory, url: str = NO_EFENIX, *, arguments: tuple[str, ...] = (), pace: Pace | None = None
+) -> EfenixWindow:
+    """Okno efenix Wyceny w efenix w Chromium Playwrighta bez okna, z profilem w katalogu narzędzia testu.
+
+    ``url`` to lista zleceń: domyślnie adres, pod którym nic nie odpowiada, a w testach Wyceny adres Atrapy efenix,
+    nigdy efenix.pl; ``arguments`` to dodatkowe argumenty przeglądarki, a ``pace`` tempo ludzkie, domyślnie wyłączone.
+    """
+
+    return EfenixWindow(url, tool.root / "przegladarka-efenix", channel=None, headless=True, arguments=arguments, pace=pace)
+
+
+class Fake(enum.Enum):
+    """Parametr ``centrum_app`` pominięty przez test: Centrum dostaje podróbkę testu."""
+
+    FAKE = "podróbka testu"
+
+
+FAKE = Fake.FAKE
+T = TypeVar("T")
+
+
+def _or_fake(value: T | None | Fake, fake: Callable[[], T]) -> T | None:
+    return fake() if isinstance(value, Fake) else value
+
+
+def centrum_app(
+    tool: ToolDirectory,
+    *,
+    platform: Platform | None = None,
+    log: CentrumLog | None = None,
+    shutdown: Shutdown | None = None,
+    today: date = TODAY,
+    now: Callable[[], datetime] = lambda: NOW,
+    processes: Processes | None | Fake = FAKE,
+    configuration_files: ConfigurationFiles | None | Fake = FAKE,
+    tool_freshness: ToolFreshness | None | Fake = FAKE,
+    cloud_files: CloudFiles | None | Fake = FAKE,
+    report_box: ReportBox | None | Fake = FAKE,
+    clock: Clock | None = None,
+    pause: Callable[[float], None] | None = None,
+    report_search_deadline_s: float = SEARCH_DEADLINE_S,
+    tool_update: ToolClone | None = None,
+    guardian: GuardianLauncher | None = None,
+    readers: Readers = FILE_READERS,
+    intermax_copies: Path | None | Fake = FAKE,
+    intermax_disk: Disk = LOCAL_DISK,
+    window: EfenixWindow | None | Fake = FAKE,
+) -> FastAPI:
+    """Jedyna aplikacja Centrum w testach: na plikach katalogu narzędzia ``tool`` i z podróbkami świata taty.
+
+    Parametr pominięty daje podróbkę testu, nigdy domyślną wartość produkcyjną ``create_app``: komputer taty
+    (``FakePlatform``), metryki i Konfiguracja w ``tool``, GitHub (``FakeGitHub``), OneDrive (``FakeOneDrive``),
+    skrzynka Zgłoszeń z Logami Uruchomienia w tle, zegar, który stoi (``ManualClock``, a jego ``pause`` tylko
+    przesuwa czas), dzień ``TODAY`` i chwila ``NOW``, Kopie INTERMAX w ``tool`` i okno efenix pod martwym adresem.
+    ``None`` daje domyślną wartość produkcyjną tylko testowi, który ją sprawdza (np. Kopie INTERMAX w folderze
+    narzędzia albo prawdziwy odczyt atrybutów OneDrive). Bez ``tool_update`` i ``guardian`` Aktualizacja narzędzia i
+    opiekun ponownego startu wywracają test (``tests/conftest.py``).
+    """
+
+    log = log or CentrumLog(tool.log_path)
+    if clock is None:
+        clock = ManualClock()
+    if pause is None:
+        assert isinstance(clock, ManualClock), "Zegar inny niż ManualClock potrzebuje własnego pause."
+        pause = clock.pause
+    return create_app(
+        settings_path=tool.settings,
+        platform=platform or FakePlatform(),
+        log=log,
+        shutdown=shutdown or Shutdown(log),
+        today=lambda: today,
+        processes=_or_fake(processes, lambda: tool.metrics.processes()),
+        configuration_files=_or_fake(configuration_files, lambda: tool.configuration),
+        tool_freshness=_or_fake(tool_freshness, lambda: FakeGitHub().freshness()),
+        cloud_files=_or_fake(cloud_files, lambda: FakeOneDrive().cloud_files()),
+        report_box=_or_fake(report_box, lambda: FakeReportBox(background=RUN_LOGS_IN_BACKGROUND)),
+        clock=clock,
+        pause=pause,
+        report_search_deadline_s=report_search_deadline_s,
+        tool_update=tool_update,
+        guardian=guardian,
+        readers=readers,
+        intermax_copies=_or_fake(intermax_copies, lambda: tool.intermax_copies),
+        intermax_disk=intermax_disk,
+        now=now,
+        efenix_window=_or_fake(window, lambda: efenix_window(tool)),
+    )
 
 
 def join_threads_since(since: int, timeout_s: float = STOP_S, *, named: str | None = None) -> None:
@@ -497,6 +673,8 @@ def join_threads_since(since: int, timeout_s: float = STOP_S, *, named: str | No
 class CentrumClient(TestClient):
     """Klient HTTP Centrum w teście, który zatrzymuje Centrum, zanim test przeczyta albo usunie jego pliki.
 
+    Po teście ``tests/conftest.py`` zatrzymuje każdego klienta, którego test nie zatrzymał (``stop_after_test``).
+
     Na Windows pliku, który wątek Centrum w tle w tej chwili pisze albo czyta, nie da się otworzyć ani usunąć
     (``PermissionError``), więc test dotyka plików Centrum dopiero po ``stop``. Wątki Centrum to wątki z linii, które
     wątek testu zaczął od ``since``, także uruchomione później przez wątki tej linii. Wątek z linii sprzed ``since``
@@ -508,6 +686,7 @@ class CentrumClient(TestClient):
     def __init__(self, app: FastAPI, *, since: int | None = None) -> None:
         super().__init__(app, base_url=CENTRUM, headers={"Origin": CENTRUM})
         self.since = new_line() if since is None else since
+        stop_after_test(self.stop)
 
     def threads(self) -> list[threading.Thread]:
         """Żywe wątki Centrum: serwera i jego pracy w tle."""
@@ -529,11 +708,21 @@ class CentrumClient(TestClient):
 class Centrum:
     client: CentrumClient
     platform: FakePlatform
-    settings_path: Path
-    metrics: MetricsPaths
-    log_path: Path
+    tool: ToolDirectory
     report_box: FakeReportBox
     clock: ManualClock
+
+    @property
+    def settings_path(self) -> Path:
+        return self.tool.settings
+
+    @property
+    def metrics(self) -> MetricsPaths:
+        return self.tool.metrics
+
+    @property
+    def log_path(self) -> Path:
+        return self.tool.log_path
 
 
 def case_states(client: TestClient, kind: str) -> list[str]:
@@ -558,43 +747,15 @@ def dad_cases(config: Path, kind: str) -> list[dict[str, Any]]:
     return [entry for entry in document["sprawy"] if entry["kind"] == kind]
 
 
-def centrum(tmp_path: Path, *, today: date = date(2026, 10, 19)) -> Centrum:
+def centrum(tmp_path: Path, *, today: date = TODAY) -> Centrum:
     """Centrum na syntetycznym folderze; zegar stoi, dopóki test go nie przesunie, więc nie zostawia budzików."""
 
+    tool = ToolDirectory(tmp_path)
     platform = FakePlatform()
     clock = ManualClock()
     report_box = FakeReportBox(background=RUN_LOGS_IN_BACKGROUND)
-    settings_path = tmp_path / "config" / "centrum-ustawienia.yaml"
-    metrics = MetricsPaths(
-        preparation=tmp_path / "przygotowanie-metrics.jsonl",
-        settlement=tmp_path / "metrics.jsonl",
-        intermax=tmp_path / "intermax-metrics.jsonl",
-    )
-    log_path = tmp_path / "logs" / "centrum-rozliczen.log"
-    log = CentrumLog(log_path)
-    app = create_app(
-        settings_path=settings_path,
-        platform=platform,
-        log=log,
-        shutdown=Shutdown(log),
-        today=lambda: today,
-        processes=metrics.processes(),
-        tool_freshness=FakeGitHub().freshness(),
-        cloud_files=FakeOneDrive().cloud_files(),
-        report_box=report_box,
-        clock=clock,
-        pause=clock.pause,
-        # Wycena w efenix w tym Centrum nie dociera do żadnego efenix: pod tym adresem nic nie odpowiada.
-        efenix_window=EfenixWindow(
-            "http://127.0.0.1:9/index.php",
-            tmp_path / "przegladarka-efenix",
-            channel=None,
-            headless=True,
-            pace=None,
-        ),
-    )
-    client = CentrumClient(app)
-    return Centrum(client, platform, settings_path, metrics, log_path, report_box, clock)
+    app = centrum_app(tool, platform=platform, today=today, report_box=report_box, clock=clock)
+    return Centrum(CentrumClient(app), platform, tool, report_box, clock)
 
 
 def view_timing(**changes: object) -> dict[str, object]:

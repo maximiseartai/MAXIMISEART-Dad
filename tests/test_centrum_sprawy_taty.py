@@ -39,13 +39,20 @@ from rozliczenia.centrum.report_box import (
     UploadOutcome,
 )
 
-from tests.fixtures.centrum import RUN_LOGS_IN_BACKGROUND, FakeIssue, FakeReportBox, centrum
+from tests.fixtures.centrum import (
+    REPORT_KEY,
+    ToolDirectory,
+    write_report_key,
+    RUN_LOGS_IN_BACKGROUND,
+    FakeIssue,
+    FakeReportBox,
+    centrum,
+)
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.locked_file import lock_file
 
 FIXTURES = Path(__file__).parent / "fixtures"
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
-KEY = "github_pat_SYNTETYCZNY_KLUCZ_ZGLOSZEN"
 QUEUED_NOTE = "ffeeddccbbaa49988776655443322110"
 
 
@@ -369,7 +376,7 @@ class AnsweringBox:
 
 
 def keyed(box: AnsweringBox) -> KeyedBox:
-    return KeyedBox(box, lambda: KEY, clock=ManualClock())
+    return KeyedBox(box, lambda: REPORT_KEY, clock=ManualClock())
 
 
 def test_skrzynka_jest_pytana_o_rodzaj_z_otwartymi_sprawami_a_jej_zamkniecia_trafiaja_do_spraw(tmp_path: Path) -> None:
@@ -381,7 +388,7 @@ def test_skrzynka_jest_pytana_o_rodzaj_z_otwartymi_sprawami_a_jej_zamkniecia_tra
 
     stored.ask_box(keyed(box))
 
-    assert box.asked == [("uwaga-taty", True, KEY)]
+    assert box.asked == [("uwaga-taty", True, REPORT_KEY)]
     assert [case.closure for case in cases(tmp_path)] == [OLD_CASES[0].closure, None, closed, None]
 
 
@@ -545,7 +552,7 @@ class Skrzynka:
 
     def _outbox(self) -> Outbox:
         clock = ManualClock()
-        keyed = KeyedBox(self.box, lambda: KEY, clock=clock)
+        keyed = KeyedBox(self.box, lambda: REPORT_KEY, clock=clock)
         return case_outbox(self.directory, keyed, log(self._tmp_path), self._stored, clock=clock, addresses=None)
 
     def sent(self, *posts: Post, left: int = 0) -> None:
@@ -704,8 +711,8 @@ def test_wysylka_uwagi_nieznanej_temu_komputerowi_idzie_bez_zmian(tmp_path: Path
 
 
 def test_sprawdzanie_powiadomien_w_tle_nie_wstrzymuje_zamkniecia_centrum(tmp_path: Path) -> None:
-    config = old_files(tmp_path)
-    (config / "zgloszenia-klucz.txt").write_text(KEY + "\n", encoding="utf-8")
+    old_files(tmp_path)
+    write_report_key(ToolDirectory(tmp_path))
     started = centrum(tmp_path)
     hold = started.report_box.search_hold = threading.Event()
     try:

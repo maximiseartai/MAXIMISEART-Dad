@@ -9,20 +9,16 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 import pytest
-from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
-from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import Problem, WorkbookError
-from tests.fixtures.preparation import write_collective_template, write_internal_template
-from tests.fixtures.centrum import CENTRUM, TOOL_COMMIT, FakeGitHub, FakePlatform
+from tests.fixtures.centrum import TOOL_COMMIT, CentrumClient, FakeGitHub, ToolDirectory, centrum_app
+from tests.fixtures.centrum_processes import write_configuration
 from tests.fixtures.workbooks import cut_sheet_after_data_rows
-from tests.fixtures.settlement import write_mapping, write_template
+from tests.fixtures.settlement import write_template
 
 INTERNAL = "Wzorzec rozliczenia wewnętrznego.xlsx"
 COLLECTIVE = "Wzorzec pliku zbiorczego.xlsx"
@@ -38,33 +34,17 @@ WORKER_TEMPLATE_ACTION = (
 
 @dataclass
 class Configured:
-    client: TestClient
+    client: CentrumClient
     files: ConfigurationFiles
 
 
 def configured(tmp_path: Path, github: FakeGitHub | None = None, readers: Readers = FILE_READERS) -> Configured:
     """Centrum z syntetycznym katalogiem konfiguracji: wszystkie trzy Wzorce i konfiguracja wykonawców."""
 
-    config = tmp_path / "config"
-    config.mkdir()
-    files = ConfigurationFiles(
-        worker_config=write_mapping(config / "worker_mapping.yaml"),
-        internal_template=write_internal_template(config / INTERNAL),
-        collective_template=write_collective_template(config / COLLECTIVE),
-        worker_template=config / WORKER,
-    )
-    write_template(files.worker_template)
-    log = CentrumLog(tmp_path / "logs" / "centrum-rozliczen.log")
-    app = create_app(
-        settings_path=config / "centrum-ustawienia.yaml",
-        platform=FakePlatform(),
-        log=log,
-        shutdown=Shutdown(log),
-        configuration_files=files,
-        tool_freshness=(github or FakeGitHub()).freshness(),
-        readers=readers,
-    )
-    return Configured(TestClient(app, base_url=CENTRUM, headers={"Origin": CENTRUM}), files)
+    tool = ToolDirectory(tmp_path)
+    files = write_configuration(tool)
+    app = centrum_app(tool, tool_freshness=(github or FakeGitHub()).freshness(), readers=readers)
+    return Configured(CentrumClient(app), files)
 
 
 def read_configuration(app: Configured) -> dict[str, Any]:
