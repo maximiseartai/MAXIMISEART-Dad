@@ -51,7 +51,7 @@ EXTENDS Naturals, Sequences, FiniteSets
 
 CONSTANTS
     Cel,            \* cel wysyłki (outbox.py Target): "okres" (PeriodThread), "nowe" (NewIssue),
-                    \* "zgloszenie" (ReportIssue), "znane" (KnownIssue: issue o znanym numerze już jest; z
+                    \* "zgloszenie" (OpenIssue), "znane" (KnownIssue: issue o znanym numerze już jest; z
                     \* OpoznienieListy kolejka właśnie je założyła, a lista GitHuba może go jeszcze nie pokazywać)
     Czesci,         \* części jednej wysyłki (Post.parts, Post.of dzieli treść ponad COMMENT_LIMIT)
     CzesciNowszej,  \* części nowszej wersji (wysyłka 2 przy Diagnozie): Diagnoza zmienia długość Logów
@@ -81,7 +81,7 @@ CONSTANTS
     \* ...PozaZnanymi tej obietnicy ją pomija. Pozostałe obietnice tego przebiegu sprawdza dalej w całości.
     WybaczoneJednoIssue, WybaczoneDokladnieRaz, WybaczoneCzesciWKolejnosci, WybaczoneZbieganie
 
-\* outbox.py Post.__post_init__: Zgłoszenie (ReportIssue) w więcej niż jednej części to ValueError (#724).
+\* outbox.py Post.__post_init__: Zgłoszenie (OpenIssue) w więcej niż jednej części to ValueError (#724).
 ASSUME Cel = "zgloszenie" => Czesci = 1
 \* Nowszą wersję wysyłki daje tylko Diagnoza Logów Uruchomienia: issue okresu z nagłówkiem.
 ASSUME Diagnoza => Cel = "okres" /\ Naglowek /\ Wysylek = 2
@@ -519,7 +519,7 @@ Plik(q) ==
                    odmowyArchiwum, wylaczenia>>
 
 \* keyed_box.py KeyedBox.labelled_issues (z report_box.py newest_with_line), wołane przez outbox.py
-\* _deliver_to_period, _deliver_report, _deliver_to_known i _deliver_new_issue. Odczyt nie zmienia Skrzynki.
+\* _deliver_to_period, _deliver_open_issue, _deliver_to_known i _deliver_new_issue. Odczyt nie zmienia Skrzynki.
 \* Znalezione issue dostaje części przez _settle (Czytaj), nowe issue przez open_issue (Zaloz).
 Szukaj(q) == \E zna \in OdczytyZapisow :
     /\ pc[q] = "szukaj"
@@ -543,15 +543,15 @@ Szukaj(q) == \E zna \in OdczytyZapisow :
                   /\ Idz(q, "czytaj", "labelled_issues: jest issue okresu, _settle z kazda czescia")
        \/ /\ Cel = "zgloszenie"
           /\ UNCHANGED <<sieci, stopped, nieczytany, po>>
-          \* _deliver_report: bez otwartego Zgłoszenia z odciskiem nowe issue z jedyną częścią (ASSUME wyżej), a w
-          \* znalezionym _settle z tą częścią jako komentarzem returned_report. Zgłoszenie, którego treść ma znacznik tej
+          \* _deliver_open_issue: bez otwartego Zgłoszenia z odciskiem nowe issue z jedyną częścią (ASSUME wyżej), a w
+          \* znalezionym _settle z tą częścią jako komentarzem z nagłówkiem again. Zgłoszenie, którego treść ma znacznik tej
           \* części, założyła przerwana próba tej wysyłki, więc _settle przejmuje je bez komentarza.
           /\ UNCHANGED slady
           /\ IF Najnowsze(q, zna) = 0
              THEN /\ UNCHANGED <<nr, kom>>
                   /\ Idz(q, "zaloz", "labelled_issues: brak otwartego Zgloszenia z odciskiem")
              ELSE /\ nr' = Ustaw(nr, q, Najnowsze(q, zna)) /\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))
-                  /\ Idz(q, "czytaj", "_deliver_report: jest Zgloszenie z odciskiem, _settle z komentarzem returned_report")
+                  /\ Idz(q, "czytaj", "_deliver_open_issue: jest Zgloszenie z odciskiem, _settle z komentarzem z naglowkiem again")
        \/ /\ Cel = "znane"
           /\ UNCHANGED <<sieci, nieczytany, slady, po>>
           \* _deliver_to_known (keyed_box.py KeyedBox.known_issue): issue jest na liście (także z pliku zapisów), więc
@@ -629,7 +629,7 @@ Czytaj(q) ==
                    arch, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
                    odmowyArchiwum, bledyPliku, wylaczenia, slady>>
 
-\* keyed_box.py KeyedBox.open_issue, wołane przez outbox.py _deliver_new_issue, _deliver_report i
+\* keyed_box.py KeyedBox.open_issue, wołane przez outbox.py _deliver_new_issue, _deliver_open_issue i
 \* _deliver_to_period z Post.opening (treść: nagłówek albo część 1 i wiersz rozpoznawczy). Najpierw _held: chwila
 \* zakładania w pliku sprzed mniej niż LIST_LAG_S, bez odpowiedzi, po której lista nie przyszła, daje
 \* Unreachable bez zapytania; potem _noted zapisuje chwilę tego zakładania (OSError: Unreachable bez zapytania), a

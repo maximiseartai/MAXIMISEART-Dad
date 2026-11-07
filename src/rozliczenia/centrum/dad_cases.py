@@ -13,8 +13,9 @@ pamiętają ją tylko w pamięci tej pracy Centrum. ``ask_box`` pyta skrzynkę o
 rodzaj, który je ma.
 
 Stan leży w ``config/sprawy-taty.json`` poza Gitem. Dopóki tego pliku nie ma, Sprawy taty czytają pliki sprzed
-jednego magazynu (``OLD_FILES``), które mogą leżeć u taty, a pierwszy zapis przenosi ich wpisy do nowego pliku;
-stare pliki zostają nietknięte. Brak, uszkodzenie albo nieznany schemat pliku to brak spraw z tego pliku, a wpis,
+jednego magazynu (``OLD_REPORTS_FILE``, ``OLD_NOTES_FILE``), które mogą leżeć u taty, a pierwszy zapis przenosi ich
+wpisy do nowego pliku; stare pliki zostają nietknięte. Warunek usunięcia tego odczytu: Maks sprawdzi, że u taty jest
+``config/sprawy-taty.json`` albo nie ma żadnego ze starych plików (każde Wydanie pisze już tylko nowy plik). Brak, uszkodzenie albo nieznany schemat pliku to brak spraw z tego pliku, a wpis,
 którego nie da się odczytać, jest pomijany. Plik jest czytany raz, przy starcie Centrum. Piszą do niego wysyłka
 Zgłoszenia, „Wyślij” Uwagi, wątek kolejki i sprawdzanie Powiadomień, więc każda zmiana idzie pod blokadą. Plik,
 którego nie da się zapisać, jest niedostępny (``StateFile``): sprawy czekają w pamięci, a Centrum zapisuje je przy
@@ -35,6 +36,7 @@ from rozliczenia.centrum import contract
 from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
 from rozliczenia.centrum.report_box import (
     Closure,
     CloseReason,
@@ -68,7 +70,7 @@ class CaseKind:
     recurs: bool
 
 
-REPORT: Final = CaseKind("zgloszenie", "zgloszenie", "Zgłoszenie", recurs=True)
+REPORT: Final = CaseKind("zgloszenie", REPORT_LABEL, "Zgłoszenie", recurs=True)
 NOTE: Final = CaseKind("uwaga", "uwaga-taty", "Uwaga taty", recurs=False)
 KINDS: Final = (REPORT, NOTE)
 _BY_KEY: Final[Mapping[str, CaseKind]] = {kind.key: kind for kind in KINDS}

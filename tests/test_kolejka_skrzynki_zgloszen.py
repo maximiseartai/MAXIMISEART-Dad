@@ -35,9 +35,9 @@ from rozliczenia.centrum.outbox import (
     PeriodThread,
     Post,
     Rank,
-    ReportIssue,
 )
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, Refused, Rejected, Unreachable
+from rozliczenia.centrum.reports import report_target
 
 from tests.fixtures.centrum import FakeIssue, FakeReportBox
 from tests.fixtures.clock import ManualClock
@@ -945,7 +945,7 @@ def test_po_wyslaniu_kolejka_zna_adres_pierwszego_komentarza_uruchomienia(tmp_pa
 
 
 FINGERPRINT_LINE = "- Odcisk problemu: 0123456789abcdef"
-REPORT = ReportIssue(fingerprint="0123456789abcdef", title="BRAK_WZORCA: Nie znaleziono wzorca.")
+REPORT = report_target("0123456789abcdef", "BRAK_WZORCA: Nie znaleziono wzorca.")
 REPORT_BODY = f"Zgłoszenie z Centrum rozliczeń.\n\n## Narzędzie\n\n{FINGERPRINT_LINE}\n"
 
 
@@ -1031,7 +1031,7 @@ def test_zgloszenie_w_wiecej_niz_jednej_czesci_to_blad_programu() -> None:
 
 
 def test_zgloszenie_bez_wiersza_odcisku_w_tresci_issue_to_blad_programu() -> None:
-    with pytest.raises(ValueError, match="odcisku problemu"):
+    with pytest.raises(ValueError, match="wiersz rozpoznawczy"):
         report("Zgłoszenie bez odcisku.\n")
 
 
