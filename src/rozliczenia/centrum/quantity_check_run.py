@@ -18,7 +18,7 @@ from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.centrum.outbox import Outbox, PeriodThread, Post
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.centrum.tool_freshness import CommitSource
-from rozliczenia.domain import SettlementSummary
+from rozliczenia.engine import SettlementSummary
 
 LABEL: Final = "kontrola-ilosci"
 

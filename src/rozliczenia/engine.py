@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
-from dataclasses import dataclass, replace
+from collections import Counter, defaultdict
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from types import MappingProxyType
+from typing import Literal
 
 from . import collective_file, input_checks, settlement_files, settlement_messages
-from .domain import PlannedWorkerResult, ProgressObserver, SavedWorkerResult, SettlementSummary, WorkerResult
+from .domain import ProgressObserver, ProgressPhase
 from .client_data import ForbiddenValues
 from .inea_only_quantities import Cleared
 from .input_copy import InputCopy
@@ -18,6 +21,87 @@ from .phase_runner import PhaseRunner
 from .workbook_files import DataRow, WorkbookError
 from .workbook_save import WorkbookSaveError
 from .worker_config import normalize_text
+from .write_routes import Route, RouteCounts, TemplateKind
+
+
+@dataclass(frozen=True)
+class PlannedWorkerResult:
+    """Bezpieczny wynik dla jednego szablonu w Podglądzie bez zapisu: nic nie powstało, więc bez drogi zapisu."""
+
+    worker_name: str
+    output_file: Path
+    rows: int
+
+    @property
+    def status(self) -> Literal["PLAN", "PUSTY_SZABLON"]:
+        return "PLAN" if self.rows else "PUSTY_SZABLON"
+
+
+@dataclass(frozen=True)
+class SavedWorkerResult:
+    """Bezpieczny wynik dla jednego zapisanego szablonu; ``route`` to droga zapisu Rozliczenia pracownika."""
+
+    worker_name: str
+    output_file: Path
+    rows: int
+    route: Route
+
+    @property
+    def status(self) -> Literal["ZAPISANO", "PUSTY_SZABLON"]:
+        return "ZAPISANO" if self.rows else "PUSTY_SZABLON"
+
+
+WorkerResult = PlannedWorkerResult | SavedWorkerResult
+"""Wynik Przetworzenia Szablonu pracownika; tylko zapisany ma drogę zapisu, a ``status`` wynika z liczby wierszy."""
+
+
+@dataclass
+class SettlementSummary:
+    """Podsumowanie operacyjne; z treści Wierszy danych tylko kolumny dozwolone regułą prywatności (``order_facts``)."""
+
+    period: str
+    source_file: Path
+    target_directory: Path
+    orders: CollectiveOrders = ()
+    """Dozwolona treść każdego Wiersza danych, który Przebieg wczytał: dla Kontroli ilości w Centrum."""
+    inea_only_cleared: Cleared = field(default_factory=lambda: MappingProxyType({}))
+    """Liczba wyczyszczonych komórek Ilości tylko dla INEA w każdej kolumnie: tylko dla Logów Uruchomienia."""
+    results: list[WorkerResult] = field(default_factory=list)
+    warnings: list[Message] = field(default_factory=list)
+    """Ostrzeżenia Podglądu bez zapisu z katalogu Przebiegu rozliczeń; Przebieg z zapisem zatrzymuje się na nich."""
+    phase_durations_ms: Mapping[ProgressPhase, int] = field(default_factory=lambda: MappingProxyType({}))
+
+    @property
+    def written_count(self) -> int:
+        return sum(result.status == "ZAPISANO" for result in self.results)
+
+    @property
+    def planned_count(self) -> int:
+        return sum(result.status == "PLAN" for result in self.results)
+
+    @property
+    def empty_count(self) -> int:
+        return sum(result.status == "PUSTY_SZABLON" for result in self.results)
+
+    @property
+    def total_rows(self) -> int:
+        return sum(result.rows for result in self.results)
+
+    @property
+    def template_count(self) -> int:
+        return len(self.results)
+
+    @property
+    def routes(self) -> RouteCounts:
+        return Counter(
+            (TemplateKind.WORKER_SETTLEMENT, result.route)
+            for result in self.results
+            if isinstance(result, SavedWorkerResult)
+        )
+
+    @property
+    def ok(self) -> bool:
+        return not self.warnings
 
 
 def default_worker_template_path() -> Path:
@@ -132,19 +216,19 @@ def run_settlements(
     )
 
     def settle(directory: Path, worker_name: str) -> WorkerResult:
-        target_path = directory / folder.worker_settlement(worker_name).name
+        name = folder.worker_settlement(worker_name).name
         rows = rows_by_target.get(normalize_text(worker_name), [])
         if dry_run:
-            return PlannedWorkerResult(worker_name, target_path, len(rows))
+            return PlannedWorkerResult(worker_name, target_directory / name, len(rows))
         try:
-            route = worker_template.create(target_path, rows)
+            route = worker_template.create(directory / name, rows)
         except WorkbookError as error:
             raise StopError(
                 settlement_messages.worker_template_unusable_in_saving(target_directory, worker_name, error)
             ) from error
         except (OSError, WorkbookSaveError) as exc:
             raise StopError(settlement_messages.worker_file_failed(target_directory, worker_name)) from exc
-        return SavedWorkerResult(worker_name, target_path, len(rows), route)
+        return SavedWorkerResult(worker_name, target_directory / name, len(rows), route)
 
     def save_templates(directory: Path) -> list[WorkerResult]:
         return phases.each_template(lambda worker_name: settle(directory, worker_name))
