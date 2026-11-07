@@ -11,7 +11,8 @@ Tabelę wyników okno czyta z odpowiedzi szukania parserem HTML przeglądarki w 
 biegną. Kolumny rozpoznaje po nagłówkach (``Numer dokumentu``, ``Status``, ``Wykonawca``, ``Dane adresowe``), tekst
 komórki bez jej ``<small>`` (identyfikator Fenix, województwo), login realizatora z ``small.text-default`` komórki
 Wykonawca (obok niego w ``<small>`` stoi data), a stronę zlecenia otwiera linkiem ``page_order_edit.php?id=`` z wiersza.
-Na szukanie bez tabeli wyników efenix odpowiada samym ostrzeżeniem (``SearchWarning``, pomiar 4.11.2026, #828): „Nie
+Wiersz w innej budowie okno zgłasza pierwszą jego różnicą (``listed``), a każdą różnicę tabeli z liczbą wierszy według
+tych samych reguł podaje ``table_faults``, którym narzędzie zgodności tłumaczy tabelę, której Wycena nie czyta. Na szukanie bez tabeli wyników efenix odpowiada samym ostrzeżeniem (``SearchWarning``, pomiar 4.11.2026, #828): „Nie
 znaleziono pasujących wyników” to brak wyników, a ostrzeżenie o wygasłej sesji to ``LoggedOut``, bo na szukanie bez
 sesji efenix nie przekierowuje.
 
@@ -43,7 +44,6 @@ __all__ = [
     "AMOUNT",
     "EXECUTION_DATE",
     "FILL_EMMETT",
-    "HEADERS",
     "LOAD_EMMETT",
     "LOGIN_PAGE",
     "NUMBER_PARAM",
@@ -56,13 +56,17 @@ __all__ = [
     "SET_DATE",
     "SHOWS_ANYTHING",
     "Cell",
+    "ColumnFault",
     "Element",
     "EmmettWindow",
     "PageElement",
     "PageKind",
     "ResultsTable",
+    "RowFault",
+    "RowsFault",
     "ScriptUse",
     "SearchWarning",
+    "TableFault",
     "amount",
     "emmett_window",
     "emmett_window_fault",
@@ -73,6 +77,7 @@ __all__ = [
     "results_table",
     "search_warning",
     "single",
+    "table_faults",
 ]
 
 LOGIN_PAGE: Final = "page_login.php"
@@ -89,7 +94,7 @@ PRICE_ALL: Final = "price_all"
 EXECUTION_DATE: Final = "#data_install"
 AMOUNT: Final = "#cena_all2"
 QUANTITY: Final = "input.wycena-ilosc"
-HEADERS: Final = {"number": "numer dokumentu", "status": "status", "realizator": "wykonawca", "address": "dane adresowe"}
+_HEADERS: Final = {"number": "numer dokumentu", "status": "status", "realizator": "wykonawca", "address": "dane adresowe"}
 """Początek nagłówka kolumny tabeli wyników (bez wielkości liter), z której okno czyta pole ``ListedOrder``."""
 
 _NUMBER_FIELD: Final = "#field_numer"
@@ -347,38 +352,103 @@ def read_results(page: Page, html: str) -> tuple[ListedOrder, ...]:
             raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.NO_TABLE))
 
 
+class RowFault(enum.Enum):
+    """Różnica wiersza tabeli wyników, przez którą okno go nie czyta, w kolejności, w której okno ją sprawdza."""
+
+    CELLS = "inna liczba komórek niż nagłówków"
+    LINK = "nie jeden link do strony zlecenia"
+    EMPTY = "pusty numer albo id zlecenia"
+    """Okno sprawdza ją tylko w wierszu bez innej różnicy w tabeli, w której każda kolumna jest dokładnie raz."""
+
+
+@dataclass(frozen=True)
+class ColumnFault:
+    """Nagłówek kolumny tabeli wyników (początek, bez wielkości liter), od którego zaczyna się ``found`` nagłówków
+    tabeli zamiast dokładnie jednego."""
+
+    header: str
+    found: int
+
+
+@dataclass(frozen=True)
+class RowsFault:
+    """Różnica wiersza ``fault`` w ``rows`` wierszach tabeli wyników."""
+
+    fault: RowFault
+    rows: int
+
+
+TableFault = ColumnFault | RowsFault
+
+
 def listed(table: ResultsTable) -> tuple[ListedOrder, ...]:
     """Zlecenia z wierszy tabeli wyników po kolei; pierwszy wiersz w innej budowie to ``UnexpectedPage`` tabeli wyników z
-    pierwszą jego różnicą (kolumna nie raz, inna liczba komórek albo nie jeden link, pusty numer albo id)."""
+    pierwszą jego różnicą: kolumna nie raz (``Shape.COLUMNS``), inna liczba komórek albo nie jeden link
+    (``Shape.ROW_CELLS``), pusty numer albo id (``Shape.ROW_EMPTY``). Tabela bez wierszy nie ma różnicy."""
 
     return tuple(_listed_order(table.headers, row) for row in table.rows)
 
 
-def _listed_order(headers: Sequence[str], row: Sequence[Cell]) -> ListedOrder:
-    columns = {field: _column(headers, header) for field, header in HEADERS.items()}
-    links = [cell.link for cell in row if cell.link]
-    if len(row) != len(headers) or len(links) != 1:
-        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_CELLS))
-    order_id = parse_qs(urlparse(links[0]).query).get("id", [""])[0]
-    number = row[columns["number"]].plain
-    status = row[columns["status"]]
-    found = _LOGIN.findall(row[columns["realizator"]].login or "")
-    if not order_id or not number:
-        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_EMPTY))
-    return ListedOrder(
-        number=number,
-        status=status.badge if status.badge is not None else status.plain,
-        realizator=found[-1] if found else None,
-        address=row[columns["address"]].plain,
-        order_id=order_id,
+def table_faults(table: ResultsTable) -> tuple[TableFault, ...]:
+    """Każda różnica tabeli wyników według reguł ``listed``: każdy nagłówek kolumny, który nie jest dokładnie raz, a
+    potem każda różnica wiersza z liczbą wierszy, które ją mają (wiersz może mieć kilka). Krotka bez różnicy wierszy
+    znaczy, że ``listed`` czyta każdy wiersz, gdy każda kolumna jest dokładnie raz."""
+
+    found = {field: _starting(table.headers, header) for field, header in _HEADERS.items()}
+    columns = {field: positions[0] for field, positions in found.items() if len(positions) == 1}
+    rows = [_row_faults(table.headers, columns if len(columns) == len(found) else None, row) for row in table.rows]
+    return (
+        *(ColumnFault(_HEADERS[field], len(positions)) for field, positions in found.items() if len(positions) != 1),
+        *(RowsFault(fault, count) for fault in RowFault if (count := sum(fault in faults for faults in rows))),
     )
 
 
+def _listed_order(headers: Sequence[str], row: Sequence[Cell]) -> ListedOrder:
+    columns = {field: _column(headers, header) for field, header in _HEADERS.items()}
+    faults = _row_faults(headers, columns, row)
+    if RowFault.CELLS in faults or RowFault.LINK in faults:
+        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_CELLS))
+    if RowFault.EMPTY in faults:
+        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_EMPTY))
+    status = row[columns["status"]]
+    found = _LOGIN.findall(row[columns["realizator"]].login or "")
+    return ListedOrder(
+        number=row[columns["number"]].plain,
+        status=status.badge if status.badge is not None else status.plain,
+        realizator=found[-1] if found else None,
+        address=row[columns["address"]].plain,
+        order_id=_order_id(_links(row)[0]),
+    )
+
+
+def _row_faults(headers: Sequence[str], columns: Mapping[str, int] | None, row: Sequence[Cell]) -> tuple[RowFault, ...]:
+    """Różnice wiersza ``row``; pusty numer albo id tylko przy kolumnach ``columns`` (``None``: kolumna nie raz) i bez
+    innej różnicy."""
+
+    links = _links(row)
+    faults = [fault for fault, differs in ((RowFault.CELLS, len(row) != len(headers)), (RowFault.LINK, len(links) != 1)) if differs]
+    if not faults and columns is not None and not (_order_id(links[0]) and row[columns["number"]].plain):
+        faults.append(RowFault.EMPTY)
+    return tuple(faults)
+
+
+def _links(row: Sequence[Cell]) -> list[str]:
+    return [cell.link for cell in row if cell.link]
+
+
+def _order_id(link: str) -> str:
+    return parse_qs(urlparse(link).query).get("id", [""])[0]
+
+
 def _column(headers: Sequence[str], header: str) -> int:
-    positions = [index for index, text in enumerate(headers) if text.casefold().startswith(header)]
+    positions = _starting(headers, header)
     if len(positions) != 1:
         raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.COLUMNS))
     return positions[0]
+
+
+def _starting(headers: Sequence[str], header: str) -> list[int]:
+    return [index for index, text in enumerate(headers) if text.casefold().startswith(header)]
 
 
 def read_order(page: Page) -> tuple[OrderPricing, Mapping[str, str]]:

@@ -19,8 +19,9 @@ Emmetta w karcie, w której Maks sam kliknął przycisk Emmetta. Sprawdza:
   ``na_stronie`` jak w domyślnym ustawieniu listy), a odpowiedź czyta
   ``efenix_page.read_results``, odczyt Wyceny w efenix, ze statusem, loginem realizatora i ``Dane adresowe`` w każdym
   wierszu, które reguła adresu (``efenix_address.readable``) rozbiera na ulicę, numer domu i lokal, bo z tych części
-  Logi Uruchomienia mówią, czym różni się adres (przy błędzie odczytu nagłówki ``efenix_page.HEADERS``, liczba komórek, link ``page_order_edit.php?id=`` i status
-  w ``.badge``); ostrzeżenie „Nie znaleziono pasujących wyników”, którym efenix odpowiada na numer, którego nie zna,
+  Logi Uruchomienia mówią, czym różni się adres (przy błędzie odczytu każda różnica tabeli według reguł Wyceny,
+  ``efenix_page.table_faults``: nagłówek kolumny nie raz, liczba komórek, link ``page_order_edit.php?id=``, pusty numer
+  albo id, i do tego status poza ``.badge``, w którym pokazuje go Atrapa); ostrzeżenie „Nie znaleziono pasujących wyników”, którym efenix odpowiada na numer, którego nie zna,
   Wycena czyta jak tabelę bez wierszy, więc ``--numer`` takiego numeru sprawdza i tę odpowiedź;
 - strona zlecenia (do ``ORDERS_TO_OPEN`` zleceń z tabeli, najpierw „Do wyceny”, aż znajdzie pustą datę wykonania):
   ``efenix_page.read_order`` (data wykonania ``RRRR-MM-DD`` albo pusta, kwota końcowa, pola Ilość), a na pierwszym
@@ -53,10 +54,12 @@ Maks i tak działa Atrapa, ale co serwer efenix robi przy ``action_fill_emmett.p
 ``--emmett`` wynik ma więc zawsze linię ``NIESPRAWDZONE`` o budowie propozycji (``PROPOSAL_BY_HAND``).
 
 Z ``--emmett`` przycisk Emmetta klika Maks, a narzędzie po jego Enter czyta żywe drzewo propozycji w oknie Emmetta tej
-karty Chrome, której strona to strona zlecenia efenix spod ``--efenix-url`` (``_READ_WINDOW``): sam odczyt DOM funkcją,
+karty Chrome, której strona to strona zlecenia efenix spod ``--efenix-url`` (``_READ_TREE``): sam odczyt DOM funkcją,
 która przechodzi drzewo ``#emmett-propozycja`` i oddaje znaczniki, klasy (cyfra to 9), nazwy atrybutów bez wartości i
-tekst z maską (litera to a, cyfra to 9), bez skryptu, stylu i ramki w środku, z wynikiem reguły okna Wyceny, czy
-propozycja coś pokazuje (``efenix_page.SHOWS_ANYTHING``). Niczego nie klika, nie przewija, nie zamyka i nie wysyła.
+tekst z maską (litera to a, cyfra to 9), bez skryptu, stylu i ramki w środku. Okna i propozycje liczy, a czy propozycja
+coś pokazuje (``efenix_page.SHOWS_ANYTHING``), sprawdza odczyt Wyceny ``efenix_page.emmett_window``: lokatorem
+Playwrighta, także w shadow DOM, kilkoma pytaniami do karty zamiast jednego. Niczego nie klika, nie przewija, nie
+zamyka i nie wysyła.
 Odczyt widzi propozycję po skryptach strony, także tę, którą narysował skrypt w odpowiedzi ``action_fill_emmett.php``.
 Potem narzędzie uruchamia Atrapę efenix na tym komputerze, otwiera jej zlecenie z propozycją dwóch pozycji
 (``ATRAPA_PROPOSAL``) w osobnym oknie Chrome bez ciasteczek taty, klika w nim przycisk Emmetta, czyta jej
@@ -68,9 +71,10 @@ przed odczytem, strona przeładowana, odpowiedź jeszcze nie przyszła), otwarty
 padł (karta zmieniła stronę w trakcie odczytu), i z propozycją, która nic nie pokazuje (pusta albo same białe znaki: Emmett
 nic nie zaproponował albo propozycja padła, a tego narzędzie nie rozróżni). Karta, w której widać okno Emmetta, a jej
 strona po skryptach nie ma dokładnie jednego ``#dialog_emmett`` (widocznego albo nie) albo potem dokładnie jednego
-``#dialog_emmett #emmett-propozycja``, to ``RÓŻNICA``. Kolejność jest jak w oknie Wyceny: najpierw okno na całej stronie,
-potem propozycja w nim. Chwila liczenia jest inna: Wycena liczy okna zaraz po kliknięciu Emmetta i jeszcze raz, gdy
-któreś okno Emmetta jest już widoczne (``efenix_page.emmett_window_fault``), a narzędzie liczy je po Enter. Drugie okno,
+``#dialog_emmett #emmett-propozycja``, to ``RÓŻNICA``: rozstrzyga to ta sama reguła okna Emmetta co w Wycenie
+(``efenix_page.emmett_window_fault``), najpierw okno na całej stronie, potem propozycja w nim. Chwila liczenia jest
+inna: Wycena liczy okna zaraz po kliknięciu Emmetta i jeszcze raz, gdy któreś okno Emmetta jest już widoczne, a
+narzędzie liczy je po Enter. Drugie okno,
 które skrypt strony dopisze, zanim przeglądarka pokaże pierwsze, Wycena zatrzymuje więc z ``ElementCount`` tak, jak
 narzędzie zgłasza ``RÓŻNICA``, ale okno dopisane później Wycena przepuszcza (próba na Atrapie 7.11.2026: ukryte okno
 dopisane 300 ms po pokazaniu propozycji). Widoczność odczyt sprawdza tylko dla okna,
@@ -148,25 +152,34 @@ from rozliczenia.efenix_browser import TIMEOUT_MS
 from rozliczenia.efenix_page import (
     AMOUNT,
     EXECUTION_DATE,
-    HEADERS,
     LOGIN_PAGE,
     ORDER_PAGE,
     QUANTITY,
     SCRIPT_USES,
     SEARCH,
     SHOWS_ANYTHING,
+    Cell,
+    ColumnFault,
     Element,
     PageElement,
     PageKind,
+    ResultsTable,
+    RowFault,
+    RowsFault,
     ScriptUse,
     SearchWarning,
+    TableFault,
+    emmett_window,
+    emmett_window_fault,
+    listed,
     read_order,
-    read_results,
+    results_table,
     search_warning,
+    table_faults,
 )
 from rozliczenia.efenix_checks import PRICING_STATUS
 from rozliczenia.efenix_positions import POSITION_OF_COLUMN
-from rozliczenia.efenix_pricing import UnexpectedPage
+from rozliczenia.efenix_pricing import ElementCount, UnexpectedPage
 from rozliczenia.workbook_files import WorkbookError
 
 from tests.fixtures.atrapa_efenix import CATALOG, LIST_ROWS_PER_PAGE, LIST_SEARCH_FIELDS, AtrapaOrder, atrapa_efenix
@@ -279,47 +292,19 @@ SHOWS_NOTHING: Final = (
     " kliknij Emmetta na zleceniu, któremu Emmett coś proponuje, i uruchom narzędzie jeszcze raz"
 )
 
-# Tabela odpowiedzi szukania przeczytana w ``<template>``, w którym nic nie biegnie i nic się nie wczytuje. Linki
-# (identyfikatory zleceń) zostają w pamięci narzędzia: służą do otwierania zleceń, nie trafiają do wyniku.
-_READ_TABLE: Final = """([html, orderPage]) => {
-    const template = document.createElement('template');
-    template.innerHTML = html;
-    const table = template.content.querySelector('table');
-    if (!table) return null;
-    const text = (element) => {
-        const copy = element.cloneNode(true);
-        copy.querySelectorAll('br').forEach((br) => br.replaceWith(' '));
-        return copy.textContent.replace(/\\s+/g, ' ').trim();
-    };
-    return {
-        headers: [...table.querySelectorAll('thead th')].map(text),
-        rows: [...table.querySelectorAll('tbody tr')].map((row) => ({
-            cells: row.querySelectorAll('td').length,
-            links: [...row.querySelectorAll(`a[href*="${orderPage}?id="]`)].map((link) => link.getAttribute('href')),
-            badges: [...row.querySelectorAll('td .badge')].map(text),
-        })),
-    };
-}"""
 # Czy pierwszy element ``selector`` coś pokazuje według reguły okna Wyceny (``efenix_page.SHOWS_ANYTHING``, #908);
 # ``false`` bez elementu.
 _SHOWS_ANYTHING: Final = f"""(selector) => {{
     const element = document.querySelector(selector);
     return element !== null && ({SHOWS_ANYTHING})(element);
 }}"""
-# Okno Emmetta w karcie z kliknięciem Emmetta: ``null``, gdy żadne okno strony nie jest widoczne (bez pudełka, jak przy
-# ``display: none``, albo ``visibility: hidden``), a przy widocznym liczba okien (``DIALOG``) i propozycji (``PROPOSAL``)
-# na całej stronie, liczonych jak w oknie Wyceny (``efenix_page.single``), oraz przy jednym oknie i jednej propozycji wynik reguły
-# okna Wyceny dla propozycji i jej drzewo, bez sprawdzania widoczności propozycji i jej węzłów. Węzeł drzewa to tekst z maską (litera to a, cyfra to 9, białe znaki jak jedna spacja;
-# sam biały znak pomija) albo element: znacznik, klasy (cyfra to 9), nazwy atrybutów poza ``class`` bez wartości i węzły
-# w środku, a w skrypcie, stylu, szablonie, ramce i ``noscript`` bez nich. Komentarz pomija. Funkcja tylko czyta.
-_READ_WINDOW: Final = (
-    """([dialogSelector, proposalSelector]) => {
-    const dialogs = document.querySelectorAll(dialogSelector);
-    const visible = (dialog) => dialog.getClientRects().length > 0 && getComputedStyle(dialog).visibility !== 'hidden';
-    if (![...dialogs].some(visible)) return null;
-    const proposals = document.querySelectorAll(proposalSelector);
-    const counted = {dialogs: dialogs.length, proposals: proposals.length};
-    if (dialogs.length !== 1 || proposals.length !== 1) return {...counted, shows: false, nodes: []};
+# Czy któreś z okien Emmetta (``DIALOG``) jest widoczne: ma pudełko (nie ``display: none``) i nie ``visibility: hidden``.
+_ANY_VISIBLE: Final = "(dialogs) => dialogs.some((dialog) => dialog.getClientRects().length > 0 && getComputedStyle(dialog).visibility !== 'hidden')"
+# Drzewo propozycji w oknie Emmetta, bez sprawdzania widoczności propozycji i jej węzłów. Węzeł drzewa to tekst z maską
+# (litera to a, cyfra to 9, białe znaki jak jedna spacja; sam biały znak pomija) albo element: znacznik, klasy (cyfra to
+# 9), nazwy atrybutów poza ``class`` bez wartości i węzły w środku, a w skrypcie, stylu, szablonie, ramce i ``noscript``
+# bez nich. Komentarz pomija. Funkcja tylko czyta.
+_READ_TREE: Final = """(proposal) => {
     const opaque = ['script', 'style', 'template', 'iframe', 'noscript'];
     const mask = (text) => text.replace(/\\s+/g, ' ').trim().replace(/\\p{L}/gu, 'a').replace(/\\p{N}/gu, '9');
     const read = (node) => {
@@ -336,26 +321,14 @@ _READ_WINDOW: Final = (
         };
     };
     const nodes = (parent) => [...parent.childNodes].map(read).filter((node) => node !== null);
-    return {...counted, shows: (__SHOWS_ANYTHING__)(proposals[0]), nodes: nodes(proposals[0])};
+    return nodes(proposal);
 }"""
-).replace("__SHOWS_ANYTHING__", SHOWS_ANYTHING)
 # Karta pozycji: ``id`` pól Ilość, ``id`` pól ceny wpisywanej i ceny z tekstu karty.
 _READ_CARDS: Final = """([card, quantity]) => [...document.querySelectorAll(card)].map((element) => ({
     quantity: [...element.querySelectorAll(quantity)].map((input) => input.id),
     price: [...element.querySelectorAll('input.wycena-cena')].map((input) => input.id),
     shown: [...element.querySelectorAll('.col-sm-1.mt-2 > span.text-default > small')].map((small) => small.textContent.trim()),
 }))"""
-
-
-class _Row(TypedDict):
-    cells: int
-    links: list[str]
-    badges: list[str]
-
-
-class _Table(TypedDict):
-    headers: list[str]
-    rows: list[_Row]
 
 
 class _Card(TypedDict):
@@ -365,7 +338,7 @@ class _Card(TypedDict):
 
 
 class _Node(TypedDict, total=False):
-    """Węzeł drzewa propozycji z ``_READ_WINDOW``: ``text`` w węźle tekstu, a pozostałe klucze w elemencie."""
+    """Węzeł drzewa propozycji z ``_READ_TREE``: ``text`` w węźle tekstu, a pozostałe klucze w elemencie."""
 
     text: str
     tag: str
@@ -374,9 +347,12 @@ class _Node(TypedDict, total=False):
     nodes: list[_Node]
 
 
-class _Window(TypedDict):
-    dialogs: int
-    proposals: int
+@dataclass(frozen=True)
+class _Window:
+    """Widoczne okno Emmetta w karcie: różnica z reguły okna Wyceny (``efenix_page.emmett_window_fault``), czy jedyna
+    propozycja coś pokazuje (``efenix_page.emmett_window``) i jej drzewo (puste przy różnicy)."""
+
+    fault: ElementCount | None
     shows: bool
     nodes: list[_Node]
 
@@ -565,75 +541,83 @@ def _check_signed_in(efenix: _Efenix, page: Page, costs: Mapping[str, Decimal | 
     _check_script(efenix, page, efenix.url, Part.LIST, LIST_SCRIPT, SCRIPT_USES[PageKind.LIST], report)
     answer = efenix.post(efenix.address(SEARCH), {**SEARCH_FORM, "numer": number})
     results = _text(efenix, answer, f"POST {SEARCH}", Part.RESULTS, report)
-    table: _Table | None = None
+    table: ResultsTable | None = None
     if results is not None:
-        match search_warning(page, results):
+        match results_table(page, results):
             case SearchWarning.SESSION_EXPIRED:
                 raise ToolError(LOGGED_OUT_MIDWAY)
             case SearchWarning.NOT_FOUND:
                 # Wycena w efenix czyta tę odpowiedź jak tabelę bez wierszy (``read_results``).
-                table = _Table(headers=[], rows=[])
+                table = ResultsTable((), ())
+            case ResultsTable() as read:
+                table = read
             case None:
-                table = page.evaluate(_READ_TABLE, [results, ORDER_PAGE])
-    if results is not None and table is None:
-        report.differ(Part.RESULTS, f"odpowiedź POST {SEARCH} bez tabeli")
+                report.differ(Part.RESULTS, f"odpowiedź POST {SEARCH} bez tabeli")
     if results is None or table is None:
         report.unchecked += [(Part.ORDER, "bez tabeli wyników nie ma zleceń do otwarcia"), (Part.PRICING, "bez strony zlecenia")]
         return
-    _check_results(page, results, table, report)
-    rows = sorted((row for row in table["rows"] if len(row["links"]) == 1), key=lambda row: PRICING_STATUS not in row["badges"])
-    if not table["rows"]:
+    _check_results(table, report)
+    rows = sorted((row for row in table.rows if len(_links(row)) == 1), key=lambda row: PRICING_STATUS not in _badges(row))
+    if not table.rows:
         report.unchecked.append((Part.RESULTS, "tabela wyników bez wierszy: podaj --numer, który znajduje zlecenia"))
     if not rows:
         report.unchecked += [(Part.ORDER, "żaden wiersz nie prowadzi do strony zlecenia"), (Part.PRICING, "bez strony zlecenia")]
         return
-    _check_orders(efenix, page, [_order_id(row) for row in rows], costs, report)
+    _check_orders(efenix, page, [parse_qs(urlparse(_links(row)[0]).query).get("id", [""])[0] for row in rows], costs, report)
 
 
-def _check_results(page: Page, html: str, table: _Table, report: Report) -> None:
+def _links(row: Sequence[Cell]) -> list[str]:
+    return [cell.link for cell in row if cell.link]
+
+
+def _badges(row: Sequence[Cell]) -> list[str]:
+    return [cell.badge for cell in row if cell.badge is not None]
+
+
+def _check_results(table: ResultsTable, report: Report) -> None:
     """Wycena w efenix czyta każdy wiersz ze statusem, loginem realizatora i adresem, który rozbiera reguła adresu; przy
-    błędzie odczytu budowa tabeli."""
+    błędzie odczytu każda różnica tabeli według reguł Wyceny (``efenix_page.table_faults``) i wiersze bez statusu w
+    ``.badge``, w którym pokazuje go Atrapa."""
 
-    rows = table["rows"]
+    rows = table.rows
     report.checked["wiersze wyników"] = len(rows)
     try:
-        listed = read_results(page, html)
+        orders = listed(table)
     except UnexpectedPage:
         report.differ(Part.RESULTS, "Wycena w efenix nie czyta tabeli wyników")
-        _explain_table(table, report)
+        report.differences += [(Part.RESULTS, _described(fault, table)) for fault in table_faults(table)]
+        if missing := sum(not _badges(row) for row in rows):
+            report.differ(Part.RESULTS, f"wiersze bez statusu w .badge: {missing} z {len(rows)}")
         return
     for what, missing in (
-        ("statusu", sum(not order.status for order in listed)),
-        ("loginu realizatora „(login)” z kolumny Wykonawca", sum(order.realizator is None for order in listed)),
-        ("Dane adresowe", sum(not order.address for order in listed)),
+        ("statusu", sum(not order.status for order in orders)),
+        ("loginu realizatora „(login)” z kolumny Wykonawca", sum(order.realizator is None for order in orders)),
+        ("Dane adresowe", sum(not order.address for order in orders)),
         (
             "Dane adresowe jako ulicy, numeru domu i lokalu (reguła adresu ich nie rozbiera)",
-            sum(bool(order.address) and not readable(order.address) for order in listed),
+            sum(bool(order.address) and not readable(order.address) for order in orders),
         ),
     ):
         if missing:
-            report.differ(Part.RESULTS, f"Wycena w efenix nie czyta {what}: {missing} z {len(listed)} wierszy")
+            report.differ(Part.RESULTS, f"Wycena w efenix nie czyta {what}: {missing} z {len(orders)} wierszy")
 
 
-def _explain_table(table: _Table, report: Report) -> None:
-    headers, rows = table["headers"], table["rows"]
-    for header in HEADERS.values():
-        found = sum(text.casefold().startswith(header) for text in headers)
-        if found != 1:
-            shown = " / ".join(text or "(pusty)" for text in headers)
-            report.differ(Part.RESULTS, f"nagłówek zaczynający się od „{header}”: {found} zamiast 1 (nagłówki: {shown})")
-    faults = {
-        f"wiersze z inną liczbą komórek niż nagłówków ({len(headers)})": [row["cells"] != len(headers) for row in rows],
-        f"wiersze bez jednego linku {ORDER_PAGE}?id=": [len(row["links"]) != 1 for row in rows],
-        "wiersze bez statusu w .badge": [not row["badges"] for row in rows],
-    }
-    for what, bad in faults.items():
-        if any(bad):
-            report.differ(Part.RESULTS, f"{what}: {sum(bad)} z {len(rows)}")
+def _described(fault: TableFault, table: ResultsTable) -> str:
+    """Różnica tabeli wyników dla Maksa; nagłówki są tekstem, który czyta Wycena w efenix."""
 
-
-def _order_id(row: _Row) -> str:
-    return parse_qs(urlparse(row["links"][0]).query).get("id", [""])[0]
+    match fault:
+        case ColumnFault(header, found):
+            shown = " / ".join(text or "(pusty)" for text in table.headers)
+            return f"nagłówek zaczynający się od „{header}”: {found} zamiast 1 (nagłówki: {shown})"
+        case RowsFault(row_fault, rows):
+            match row_fault:
+                case RowFault.CELLS:
+                    what = f"wiersze z inną liczbą komórek niż nagłówków ({len(table.headers)})"
+                case RowFault.LINK:
+                    what = f"wiersze bez jednego linku {ORDER_PAGE}?id="
+                case RowFault.EMPTY:
+                    what = "wiersze z pustym numerem dokumentu albo id zlecenia w linku"
+            return f"{what}: {rows} z {len(table.rows)}"
 
 
 def _check_orders(efenix: _Efenix, page: Page, order_ids: Sequence[str], costs: Mapping[str, Decimal | None], report: Report) -> None:
@@ -820,17 +804,15 @@ def measure_proposal(browser: Browser, efenix_url: str, report: Report, *, timeo
     if window is None:
         return
     print(CLOSE_EMMETT, file=sys.stderr, flush=True)
-    if window["dialogs"] != 1:
-        report.differ(Part.PROPOSAL, f"strona z oknem Emmetta po kliknięciu Emmetta ma {window['dialogs']} × {DIALOG} zamiast 1")
+    if window.fault is not None:
+        where = "strona z oknem Emmetta" if window.fault.selector == DIALOG else "okno Emmetta"
+        report.differ(Part.PROPOSAL, f"{where} po kliknięciu Emmetta ma {window.fault.count} × {window.fault.selector} zamiast 1")
         return
-    if window["proposals"] != 1:
-        report.differ(Part.PROPOSAL, f"okno Emmetta po kliknięciu Emmetta ma {window['proposals']} × {PROPOSAL} zamiast 1")
-        return
-    if not window["shows"]:
+    if not window.shows:
         report.unchecked.append((Part.PROPOSAL, SHOWS_NOTHING))
         return
-    efenix_key, efenix_shown = _layout(window["nodes"])
-    atrapa_key, atrapa_shown = _layout(_atrapa_window(browser, timeout_ms=timeout_ms)["nodes"])
+    efenix_key, efenix_shown = _layout(window.nodes)
+    atrapa_key, atrapa_shown = _layout(_atrapa_proposal(browser, timeout_ms=timeout_ms))
     report.checked["okno Emmetta"] = 1
     if efenix_key != atrapa_key:
         report.differ(Part.PROPOSAL, f"propozycja po kliknięciu Emmetta w innej budowie niż w Atrapie: w efenix {efenix_shown}, w Atrapie {atrapa_shown}")
@@ -848,7 +830,7 @@ def _efenix_window(tabs: Sequence[Page], efenix_url: str, report: Report) -> _Wi
 
     orders = [tab for tab in tabs if order_tab(tab.url, efenix_url)]
     try:
-        windows: list[_Window] = [window for tab in orders if (window := tab.evaluate(_READ_WINDOW, [DIALOG, PROPOSAL])) is not None]
+        windows = [window for tab in orders if (window := _window(tab)) is not None]
     except PlaywrightError:
         report.unchecked.append((Part.PROPOSAL, READ_FAILED))
         return None
@@ -871,9 +853,23 @@ def _efenix_window(tabs: Sequence[Page], efenix_url: str, report: Report) -> _Wi
     return None
 
 
-def _atrapa_window(browser: Browser, *, timeout_ms: int) -> _Window:
-    """Okno Emmetta Atrapy efenix po kliknięciu Emmetta na zleceniu ``ATRAPA_PROPOSAL``, w osobnym kontekście Chrome bez
-    ciasteczek; strona Atrapy wysyła żądania tylko do Atrapy."""
+def _window(tab: Page) -> _Window | None:
+    """Okno Emmetta w karcie ``tab`` po skryptach jej strony: ``None``, gdy żadne okno Emmetta nie jest widoczne, a przy
+    widocznym okna i propozycje na całej stronie liczone i ocenione regułą okna Wyceny (``efenix_page.emmett_window``,
+    ``emmett_window_fault``) i drzewo jedynej propozycji. Kilka odczytów karty jeden po drugim: karta, która w ich trakcie
+    zmieni stronę, daje błąd Playwrighta."""
+
+    if not tab.locator(DIALOG).evaluate_all(_ANY_VISIBLE):
+        return None
+    counted = emmett_window(tab)
+    fault = emmett_window_fault(counted)
+    nodes: list[_Node] = [] if fault is not None else tab.locator(PROPOSAL).evaluate(_READ_TREE)
+    return _Window(fault, counted.shows, nodes)
+
+
+def _atrapa_proposal(browser: Browser, *, timeout_ms: int) -> list[_Node]:
+    """Drzewo propozycji w oknie Emmetta Atrapy efenix po kliknięciu Emmetta na zleceniu ``ATRAPA_PROPOSAL``, w osobnym
+    kontekście Chrome bez ciasteczek; strona Atrapy wysyła żądania tylko do Atrapy."""
 
     with atrapa_efenix([ATRAPA_PROPOSAL]) as atrapa:
         context = browser.new_context(service_workers="block")
@@ -883,10 +879,10 @@ def _atrapa_window(browser: Browser, *, timeout_ms: int) -> _Window:
             page.goto(urljoin(atrapa.url, f"{ORDER_PAGE}?id={ATRAPA_PROPOSAL.order_id}"))
             page.click(EMMETT_BUTTON)
             page.locator(DIALOG).wait_for(state="visible")
-            window: _Window = page.evaluate(_READ_WINDOW, [DIALOG, PROPOSAL])
+            nodes: list[_Node] = page.locator(PROPOSAL).evaluate(_READ_TREE)
         finally:
             context.close()
-    return window
+    return nodes
 
 
 def _layout(nodes: Sequence[_Node]) -> tuple[str, str]:

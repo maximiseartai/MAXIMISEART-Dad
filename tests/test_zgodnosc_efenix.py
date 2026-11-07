@@ -44,7 +44,9 @@ import pytest
 import zgodnosc_efenix
 
 from rozliczenia.efenix_browser import launch_options
+from rozliczenia.efenix_page import read_results
 from rozliczenia.efenix_positions import POSITION_OF_COLUMN
+from rozliczenia.efenix_pricing import ListedOrder
 
 from tests.fixtures.atrapa_efenix import (
     CHANGE_STATUS,
@@ -259,6 +261,27 @@ CHANGED = {
         rewrites={
             LOGIN_PAGE: _replaced(('action="action_login.php"', 'action="zaloguj.php"'), ('id="field_signum"', 'id="login"'), ('id="field_password"', 'id="haslo"'))
         },
+    ),
+    # Numer dokumentu pierwszego wiersza jest linkiem do jego strony zlecenia, więc wiersz ma dwa linki, a Wycena w
+    # efenix czyta tylko wiersz z jednym.
+    "wiersz-z-dwoma-linkami": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "wiersz-z-dwoma-linkami.txt",
+        rewrites={
+            SEARCH: _replaced(
+                (f"<td>{ORDERS[0].number}<br>", f'<td><a href="{ORDER_PAGE}?id={ORDERS[0].order_id}">{ORDERS[0].number}</a><br>')
+            )
+        },
+    ),
+    # Drugi wiersz bez numeru dokumentu, a status i data w komórce Wykonawca bez ``.badge``, w którym pokazuje je Atrapa:
+    # Wycena czyta status z tekstu komórki, a pierwsze otwarte zlecenie to pierwszy wiersz.
+    "wiersz-z-pustym-numerem-i-bez-badge": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "wiersz-z-pustym-numerem-i-bez-badge.txt",
+        rewrites={SEARCH: _replaced((f"<td>{ORDERS[1].number}<br>", "<td><br>"), ('class="badge ', 'class="etykieta '))},
+    ),
+    # Pole Ilość pozycji 020 ma id z kodem 005, więc kod 005 stoi w dwóch polach Ilość strony zlecenia.
+    "kod-pozycji-w-dwoch-polach-ilosc": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "kod-pozycji-w-dwoch-polach-ilosc.txt",
+        rewrites={ORDER_PAGE: _replaced(('id="INDEKS_020_078"', 'id="INDEKS_005_079"'))},
     ),
 }
 # Atrapa w innej postaci niż zgodna, a jednak zgodna z tym, czego używa Wycena w efenix: wynik bez różnic.
@@ -830,6 +853,24 @@ def test_przejscie_w_karcie_skladania_zostawia_zlozony_html(chrome: str) -> None
 
         assert shown == ("Złożony HTML", ["<html><head></head><body></body></html>"], [True])
         assert atrapa.requested() == []
+
+
+def test_tabela_wynikow_w_karcie_skladania_daje_status_z_badge_i_ostatni_login_realizatora(chrome: str) -> None:
+    # Odczyt tabeli wyników, który narzędzie dzieli z Wyceną w efenix: status to tekst ``.badge``, choć komórka Status
+    # ma obok niego inny tekst, a login realizatora to ostatni „(login)” w ``small.text-default`` komórki Wykonawca.
+    html = (
+        '<table class="table table-sm"><thead><tr><th>Numer dokumentu</th><th>Status</th><th>Wykonawca (login)</th>'
+        "<th>Dane adresowe</th><th></th></tr></thead><tbody><tr><td>ZL/1</td>"
+        '<td><span class="badge badge-default">Do wyceny</span> od 2 dni</td>'
+        '<td>Firma <small><small class="text-default">(zastepca) (realizator)</small></small></td>'
+        f'<td>ul.Prosta 1</td><td><a href="{ORDER_PAGE}?id=7" class="btn btn-sm">Otwórz</a></td></tr></tbody></table>'
+    )
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.connect_over_cdp(chrome)
+        with zgodnosc_efenix.parser_page(browser, timeout_ms=10_000) as page:
+            orders = read_results(page, html)
+
+    assert orders == (ListedOrder(number="ZL/1", status="Do wyceny", realizator="realizator", address="ul.Prosta 1", order_id="7"),)
 
 
 def test_lista_dozwolonych_zadan_ma_tylko_odczyty() -> None:
