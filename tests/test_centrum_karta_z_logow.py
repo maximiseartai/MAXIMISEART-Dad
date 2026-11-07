@@ -17,6 +17,7 @@ import pytest
 
 from rozliczenia.centrum.contract import ProcessKey
 from rozliczenia.centrum.dad_actions import DadActions
+from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.run_cards import RunCards
 from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, RunLog, RunLogs, StartFacts, Tool
@@ -33,6 +34,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
+from tests.fixtures.dziennik_wyceny import left_journal
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD
 from tests.fixtures.run_cards import first_view, restored, unlisted
@@ -399,6 +401,12 @@ def interrupted_logs(started: StartFacts) -> RunLog:
     )
 
 
+def on_disk(directory: Path) -> LogsOnDisk:
+    """Logi na dysku w katalogu ``directory`` dziennika Centrum."""
+
+    return LogsOnDisk(CentrumLog(directory / "centrum.log"), journaled="efenix")
+
+
 def written(directory: Path, record: RunLog, name: str | None = None) -> Path:
     """Plik Logów ``record`` w katalogu Logów pod nazwą z jego startu albo pod ``name``."""
 
@@ -418,7 +426,7 @@ def test_nazwa_pliku_logow_to_sekunda_startu_w_utc_proces_i_identyfikator_a_dysk
     written(tmp_path, record)
     later = interrupted_logs(start("f" * 32, started_at=SECOND + timedelta(hours=1)))
     written(tmp_path, later, name_of(later) + ".tmp")
-    disk = LogsOnDisk(tmp_path)
+    disk = on_disk(tmp_path)
 
     assert name_of(started) == f"20261023T140507Z-efenix-{RUN_ID}.json"
     assert (disk.logs(RUN_ID), disk.logs("f" * 32), disk.newest("efenix")) == (Found(record), Missing(), record)
@@ -435,18 +443,18 @@ def test_logi_uruchomienia_bez_pliku_albo_nieczytelne(tmp_path: Path, content: b
         path.parent.mkdir()
         path.write_bytes(content)
 
-    assert LogsOnDisk(tmp_path).logs(RUN_ID) == read
+    assert on_disk(tmp_path).logs(RUN_ID) == read
 
 
 def test_logi_ktorych_system_nie_daje_odczytac_to_odmowa_a_nie_nieczytelne(tmp_path: Path) -> None:
     (tmp_path / "uruchomienia" / name_of(start())).mkdir(parents=True)
 
-    assert isinstance(LogsOnDisk(tmp_path).logs(RUN_ID), Refused)
+    assert isinstance(on_disk(tmp_path).logs(RUN_ID), Refused)
 
 
 def test_identyfikator_spoza_centrum_nie_ma_logow_choc_nazwa_pliku_sie_nim_konczy(tmp_path: Path) -> None:
     written(tmp_path, interrupted_logs(start()))
-    disk = LogsOnDisk(tmp_path)
+    disk = on_disk(tmp_path)
 
     asked = [f"efenix-{RUN_ID}", RUN_ID.upper(), f"{RUN_ID}.json", "*", ""]
     assert [disk.logs(run_id) for run_id in asked] == [Missing()] * len(asked)
@@ -460,13 +468,34 @@ def test_identyfikator_spoza_centrum_nie_ma_logow_bez_zagladania_do_katalogu_log
 
     directory = tmp_path / "uruchomienia"
     directory.mkdir()
-    disk = LogsOnDisk(tmp_path)
+    disk = on_disk(tmp_path)
 
     asked = ["../x", "A" * 32, RUN_ID.upper(), f"{RUN_ID}.json", "*", ""]
     with unlisted(monkeypatch, directory):
         answers = [disk.logs(run_id) for run_id in asked]
         refused = disk.logs(RUN_ID)
     assert (answers, isinstance(refused, Refused)) == ([Missing()] * len(asked), True)
+
+
+def test_plik_z_krotszym_identyfikatorem_w_nazwie_nie_jest_logami_uruchomienia(tmp_path: Path) -> None:
+    """Centrum nadaje identyfikator z 32 znaków szesnastkowych (``uuid4().hex``), więc plik z krótszym w nazwie to nie
+    Logi Uruchomienia, a o krótszy identyfikator dysk nie pyta."""
+
+    written(tmp_path, interrupted_logs(start("abc")))
+    disk = on_disk(tmp_path)
+
+    assert (disk.logs("abc"), disk.newest("efenix")) == (Missing(), None)
+
+
+def test_plik_w_miejscu_katalogu_logow_to_brak_logow_a_nie_odmowa(tmp_path: Path) -> None:
+    """Plik w miejscu katalogu Logów się nie zmieni, więc to brak Logów, jak bez katalogu: start Centrum zamyka dziennik
+    Wyceny jego Uruchomienia wersją zastępczą, zamiast zostawiać go na zawsze jak przy odmowie."""
+
+    (tmp_path / "uruchomienia").write_text("", encoding="utf-8")
+    left_journal(tmp_path, start())
+    disk = on_disk(tmp_path)
+
+    assert (disk.logs(RUN_ID), [left.logs for left in disk.left_behind()]) == (Missing(), [Missing()])
 
 
 def test_katalog_logow_ktorego_system_nie_daje_wylistowac_to_odmowa_a_nie_brak_logow(
@@ -476,7 +505,7 @@ def test_katalog_logow_ktorego_system_nie_daje_wylistowac_to_odmowa_a_nie_brak_l
     tak jak przy Logach, których nie da się odczytać, a Logów procesu nie ma żadnych. Z wylistowanym katalogiem bez pliku
     Logów ostatniego startu to Urwane Uruchomienie."""
 
-    disk = LogsOnDisk(tmp_path)
+    disk = on_disk(tmp_path)
     disk.started(start(process="settlement"))
     record = interrupted_logs(start("f" * 32, process="intermax"))
     written(tmp_path, record)
@@ -501,7 +530,7 @@ def test_najnowsze_logi_z_tej_samej_sekundy_to_logi_z_pozniejszym_startem(tmp_pa
     for record in (older, first, second):
         written(tmp_path, record)
 
-    assert LogsOnDisk(tmp_path).newest("efenix") == second
+    assert on_disk(tmp_path).newest("efenix") == second
 
 
 def test_widok_logow_liczy_sie_raz_na_wersje_pliku(tmp_path: Path) -> None:
@@ -515,7 +544,7 @@ def test_widok_logow_liczy_sie_raz_na_wersje_pliku(tmp_path: Path) -> None:
         seen.append(logs.run_id)
         return logs.ended_at
 
-    viewed = LogsOnDisk(tmp_path).viewed(view)
+    viewed = on_disk(tmp_path).viewed(view)
     before = (viewed.of("efenix"), viewed.of("efenix"), viewed.of("settlement"))
     diagnosed = record.model_copy(update={"ended_at": record.ended_at + timedelta(minutes=1), "technical_notes": ["Diagnoza"]})
     path.write_text(diagnosed.text, encoding="utf-8")
@@ -529,13 +558,13 @@ def test_logi_urwanego_uruchomienia_nie_sa_karta_ostatniego_uruchomienia_procesu
 
     written(tmp_path, interrupted_logs(start(process="intermax")))
 
-    assert RunCards(LogsOnDisk(tmp_path), list).latest("intermax") is None
+    assert RunCards(on_disk(tmp_path), list).latest("intermax") is None
 
 
 def test_logi_ostatniego_startu_ktorych_system_nie_daje_odczytac_to_start_bez_karty(tmp_path: Path) -> None:
     """Logi są, więc Uruchomienie miało wynik: karta po starcie nie mówi, że urwało się w trakcie (a7ee70d7b)."""
 
-    disk = LogsOnDisk(tmp_path)
+    disk = on_disk(tmp_path)
     disk.started(start(process="settlement"))
     (tmp_path / "uruchomienia" / name_of(start(process="settlement"))).mkdir(parents=True)
 

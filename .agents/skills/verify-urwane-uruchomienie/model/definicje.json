@@ -1,11 +1,7 @@
 {
   "src/rozliczenia/centrum/pricing_journal.py": [
-    "PricingJournal",
-    "RunEnded",
+    "JournalAtResult",
     "JournalAfterLogs",
-    "_Read",
-    "_read",
-    "_remove",
     "InterruptedPricings"
   ],
   "src/rozliczenia/centrum/run_logs.py": [
@@ -32,13 +28,21 @@
     "_names",
     "_NAME",
     "_RUN_ID",
-    "LogsRead"
+    "LogsRead",
+    "Journal",
+    "_first_line",
+    "_RunEnded",
+    "JournalRead",
+    "_read_journal",
+    "_remove",
+    "LogsOnDisk.started",
+    "LogsOnDisk.left_behind",
+    "LogsOnDisk.remove_journal"
   ],
   "src/rozliczenia/centrum/app.py": [
     "lifespan",
     "send_interrupted",
     "app",
-    "journal",
     "disk",
     "interrupted",
     "run_started",

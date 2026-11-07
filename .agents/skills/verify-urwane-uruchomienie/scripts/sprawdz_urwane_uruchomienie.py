@@ -229,14 +229,14 @@ def _trace(output: str) -> list[dict[str, str]]:
 
 # Akcja modelu i krok kodu, który opisuje (tabela w SKILL.md), w słowach kontrprzykładu.
 _STEPS = {
-    "Start": "tata otwiera Centrum: port, create_app, InterruptedPricings.close czyta dzienniki",
+    "Start": "tata otwiera Centrum: port, create_app, InterruptedPricings.close czyta dzienniki (LogsOnDisk.left_behind)",
     "ZapiszLogi": "close zapisuje plik Logów Wyceny {k} po strażniku (RunLogs.close)",
     "UsunDziennik": "close usuwa dziennik Wyceny {k} (_remove)",
     "Wznow": "lifespan: Outbox.resume",
     "PierwszeZapytanie": "pierwsze zapytanie API: send_interrupted bierze wersje zastępcze z _pending",
     "Wyslij": "send: Outbox.post wersji zastępczej ({h}) Wyceny {w}, Rank.STAND_IN",
     "UsunPoWysylce": "send usuwa dziennik Wyceny {w} po przyjęciu przez kolejkę",
-    "StartWyceny": "tata uruchamia Wycenę {b2} (PricingJournal.run_started)",
+    "StartWyceny": "tata uruchamia Wycenę {b2} (LogsOnDisk.started)",
     "ZapiszStart": "run_started zapisuje pierwszą linię dziennika Wyceny {b} (_append_locked)",
     "Postep": "budzik postępu: RunLogs.progress, kolejka przyjmuje postęp Wyceny {b} z dziennika, Rank.DRAFT",
     "WpisZaczete": "Wycena {b} pisze „zaczynam zlecenie” {z}",
@@ -244,7 +244,7 @@ _STEPS = {
     "WpisSkonczone": "Wycena {b} pisze „zlecenie skończone” {z}",
     "Zatrzymanie": "Wycena {b} staje przy zleceniu {z} (Zatrzymanie): bez „zlecenie skończone” do wyniku",
     "Wynik": "run_process Wyceny {b} wraca z wynikiem (rekord metryk, wiersz Historii, zapisany albo nie)",
-    "WpisKonca": "PricingJournal.run_ended: Wycena {b} pisze „koniec Uruchomienia”, zanim powstaną jej Logi",
+    "WpisKonca": "Journal.end: Wycena {b} pisze „koniec Uruchomienia”, zanim powstaną jej Logi",
     "LogiWyniku": "RunLogs._keep zapisuje plik Logów z wynikiem Wyceny {b}",
     "WyslijWynik": "RunLogs._keep: Outbox.post Logów z wynikiem Wyceny {b}, Rank.OWN",
     "UsunPoLogach": "JournalAfterLogs: dziennik Wyceny {b} znika, gdy kolejka przyjęła jej Logi z wynikiem",
@@ -277,7 +277,7 @@ def _step(action: str, before: dict[str, str], after: dict[str, str]) -> str:
         said += " (kolejka ma nowszą wersję, więc ta niczego nie zmienia)"
     if action == "WpisKonca" and before.get("naglowekCzeka") == "TRUE":
         kept = "_remove usuwa dziennik" if after.get("dziennik") != before.get("dziennik") else "bez wpisu końca"
-        said = f"PricingJournal.run_ended: żaden wpis Wyceny {fields['b']} się nie zapisał (_header), {kept}"
+        said = f"Journal.end: żaden wpis Wyceny {fields['b']} się nie zapisał (_header), {kept}"
     # Nieudany wpis, po którym dziennik powstał: write położył całą pierwszą linię, a flush albo fsync rzucił.
     left_start = action != "WpisKonca" and after.get("dziennik") != before.get("dziennik")
     failed = [

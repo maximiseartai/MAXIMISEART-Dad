@@ -435,7 +435,7 @@ def atrapa_efenix(
             elif path == ORDER_PAGE:
                 self._order(method, path, serwer.page(order_id))
             elif path == SET_DATE:
-                saved = serwer.set_date(order_id, date.fromisoformat(params["date"]))
+                saved = serwer.set_date(order_id, params.get("date", ""))
                 if self._done(method, path, saved):
                     self._html("ok" if saved else "Nie zapisano daty.")
             elif path == GET_DATE:
@@ -926,6 +926,7 @@ def _order_page(
 
 
 def _order_script(changed: Changed | Unread | None, today: date, reload_ms: int) -> str:
+    # Granice kalendarza są granicami ``model_efenix.calendar_day``, z którym okno w procesie wybiera dzień.
     script = (
         _ORDER_SCRIPT.replace("__RELOAD__", str(reload_ms))
         .replace("__REFRESH__", "false" if changed is Changed.STALE_AMOUNT else "true")
