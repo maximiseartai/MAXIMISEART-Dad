@@ -60,7 +60,7 @@
       {
         "obietnica": "ZaczeteWLogach",
         "przyczyna": "wpis-nieudany",
-        "znalezisko": "wpis dziennika, który się nie zapisał, zostawia zmianę w efenix swojego zlecenia bez śladu w Logach (przyjęte w docstringu pricing_journal.py: „Nieudany zapis wpisu … Wycena biegnie dalej”)"
+        "znalezisko": "wpis dziennika, który się nie zapisał, zostawia zmianę w efenix swojego zlecenia bez śladu w Logach (przyjęte w docstringu logs_disk.py: „Nieudany zapis wpisu … Wycena biegnie dalej”)"
       }
     ]
   },

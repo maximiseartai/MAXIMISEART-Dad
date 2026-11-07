@@ -6,7 +6,7 @@ nie ma Podglądu bez zapisu, więc start bez zapisu jest odrzucony. Okno efenix 
 widoczne okno zainstalowanego Google Chrome w trwałym profilu narzędzia (``efenix_browser.default_profile``), w którym
 proces czeka, aż tata się zaloguje i pracuje w tempie ludzkim; testy i weryfikacja podają Chromium Playwrighta, adres
 Atrapy efenix i okno bez tempa. Wejście procesu ma
-dziennik Wyceny w efenix Centrum (``pricing_journal``), który przeżywa nagłe zgaśnięcie Centrum.
+dziennik Wyceny w efenix Centrum (``logs_disk.Journal``), który przeżywa nagłe zgaśnięcie Centrum.
 """
 
 from __future__ import annotations

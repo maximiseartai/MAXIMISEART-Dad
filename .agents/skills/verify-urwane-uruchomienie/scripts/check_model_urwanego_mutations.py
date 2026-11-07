@@ -1,8 +1,8 @@
 """Show that sprawdz_urwane_uruchomienie.py fails when the TLA+ model of the Dziennik Wyceny loses a guard the code has.
 
 Each mutation removes from ``model/UrwaneUruchomienie.tla`` one guard or step whose counterpart in
-``src/rozliczenia/centrum/pricing_journal.py``, ``run_logs.py``, ``app.py``, ``src/rozliczenia/efenix_pricing.py`` or
-``process_run.py``
+``src/rozliczenia/centrum/pricing_journal.py``, ``logs_disk.py``, ``run_logs.py``, ``app.py``,
+``src/rozliczenia/efenix_pricing.py`` or ``process_run.py``
 the mutation names, runs on its own copy of the checkout (``tools/mutacje.py``) and must end the check with
 ``URWANE URUCHOMIENIE: NOWE NARUSZENIE``. A mutation whose anchor text is no longer in the model is reported as
 NIEAKTUALNA: update it to the new model.
@@ -60,7 +60,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "Wycena bez wpisu końca (create_app: after_run bez journal, PricingJournal.run_ended nie biegnie)",
+        "Wycena bez wpisu końca (create_app: after_run bez JournalAtResult, Journal.end nie biegnie)",
         (
             Edit(
                 MODEL,
@@ -96,7 +96,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "nieudany wpis końca usuwa dziennik przed Logami (PricingJournal.run_ended jak w #888: if header or not "
+        "nieudany wpis końca usuwa dziennik przed Logami (Journal.end jak w #888: if header or not "
         "self._write(...): _remove)",
         (
             Edit(
@@ -114,7 +114,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "dziennik z pierwszą linią z nieudanego zapisu zostaje po wyniku (PricingJournal.run_ended: return przy "
+        "dziennik z pierwszą linią z nieudanego zapisu zostaje po wyniku (Journal.end: return przy "
         "self._header, bez _remove)",
         (
             Edit(MODEL, "          /\\ naglowekCzeka /\\ dziennik[r] = \"brak\"\n", "          /\\ naglowekCzeka\n"),
@@ -169,7 +169,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "bez zlecenia zaczętego bez wyniku (_read: begun zawsze None)",
+        "bez zlecenia zaczętego bez wyniku (_read_journal: begun zawsze None)",
         (Edit(MODEL, "        zaczete |-> IF Len(w) > 0 /\\ w[Len(w)].rodzaj = \"zaczete\" THEN w[Len(w)].z ELSE 0,",
               "        zaczete |-> 0,"),),
         _check("zwykle"),
@@ -192,7 +192,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "dziennik milknie po pierwszym nieudanym wpisie (PricingJournal._write: if self._failed: return na początku)",
+        "dziennik milknie po pierwszym nieudanym wpisie (Journal._write: if self._failed: return na początku)",
         (
             Edit(
                 MODEL,
@@ -226,7 +226,7 @@ MUTATIONS = (
     ),
     Mutation(
         "pierwsza linia, której zapis przy starcie Wyceny się nie udał, nie idzie z następnym wpisem "
-        "(PricingJournal._append_locked: self._header = False także po OSError)",
+        "(Journal._append_locked: self._header = False także po OSError)",
         (Edit(MODEL, "          /\\ UNCHANGED <<dziennik, zapisanyStart, postepMozliwy, naglowekCzeka>>\n",
               "          /\\ naglowekCzeka' = FALSE /\\ UNCHANGED <<dziennik, zapisanyStart, postepMozliwy>>\n"),),
         _check("wpisy"),
@@ -234,7 +234,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "postęp przed pierwszą linią dziennika na dysku (PricingJournal.progress bez self._header, W1 rundy 1 #846)",
+        "postęp przed pierwszą linią dziennika na dysku (Journal.progress bez self._header, W1 rundy 1 #846)",
         (
             Edit(
                 MODEL,
@@ -249,7 +249,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "dziennik znika za Logami, choć kolejka ich nie przyjęła (PricingJournal.logs_ended: bez RunLogs.queued)",
+        "dziennik znika za Logami, choć kolejka ich nie przyjęła (JournalAfterLogs: Journal.remove bez RunLogs.queued)",
         (Edit(MODEL, "    /\\ IF wKolejce /\\ ~naglowekCzeka\n", "    /\\ IF ~naglowekCzeka\n"),),
         _check("logi-i-kolejka"),
         "Outbox.post Logów z wynikiem zwraca False, a dziennik znika: komentarz zostaje na zawsze postępem",
