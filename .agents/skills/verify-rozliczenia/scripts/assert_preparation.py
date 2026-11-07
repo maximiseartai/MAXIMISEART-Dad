@@ -30,7 +30,7 @@ from wynik_uruchomienia import (
 )
 from skrypt_skilla import Parser
 
-from rozliczenia.workbook_files import QUANTITY_COLUMNS
+from rozliczenia.collective_layout import QUANTITY_COLUMNS
 
 
 PERIOD = "08_14_09_2026"

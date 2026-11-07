@@ -32,7 +32,7 @@ import excel
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-from rozliczenia.workbook_files import QUANTITY_COLUMNS
+from rozliczenia.collective_layout import QUANTITY_COLUMNS
 from skrypt_skilla import SKIPPED, Parser, create_run_root, new_run
 
 SCRIPT = Path(__file__).resolve()

@@ -18,9 +18,10 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Final
 
-from openpyxl.utils import column_index_from_string, get_column_letter
+from openpyxl.utils import get_column_letter
 
 from . import workbook_files
+from .collective_layout import AMOUNT_COLUMN, CHARGE_AMOUNT, DEFECT_COLUMN, PHOTO_COLUMNS, QUANTITY_LETTERS, REMARKS_AMOUNT, letter
 from .client_data import ForbiddenValues
 from .input_copy import InputCopy
 from .order_facts import TataValue, tata_value
@@ -33,16 +34,11 @@ __all__ = ["AmountsNotComputed", "CollectiveOrder", "MissingColumns", "PricingSc
 _COLUMNS: Final = (ORDER_NUMBER, ADDRESS, DATE, WORKER)
 
 
-def _letters(first: str, last: str) -> tuple[str, ...]:
-    return tuple(get_column_letter(column) for column in range(column_index_from_string(first), column_index_from_string(last) + 1))
-
-
-PHOTO_COLUMNS: Final = ("AB", "AC", "AD", "AE", "AF", *_letters("AJ", "AP"), "AS")
-"""Kolumny Zlecenia ze zdjęciami (GLOSSARY)."""
-DEFECT_COLUMN: Final = "AI"
-QUANTITY_COLUMNS: Final = (*_letters("N", "AP"), "AR", "AS")
-"""Kolumny Ilości usług, które spec #741 przypisuje pozycjom efenix albo wymienia jako kolumny bez pary (N:AP, AR, AS)."""
-AMOUNT_COLUMN: Final = "AU"
+PRICED_COLUMNS: Final = (*QUANTITY_LETTERS, letter(CHARGE_AMOUNT), letter(REMARKS_AMOUNT))
+"""Kolumny, które spec #741 przypisuje pozycjom efenix albo wymienia jako kolumny bez pary (N:AP, AR, AS)."""
+_PHOTO: Final = tuple(letter(number) for number in PHOTO_COLUMNS)
+_DEFECT: Final = letter(DEFECT_COLUMN)
+_AMOUNT: Final = letter(AMOUNT_COLUMN)
 
 
 @dataclass(frozen=True)
@@ -119,13 +115,13 @@ def scope(
         login = _text(row.value(worker))
         if not login:
             continue
-        if any(_filled(row.value(column)) for column in PHOTO_COLUMNS):
+        if any(_filled(row.value(column)) for column in _PHOTO):
             with_photos += 1
             continue
-        if _filled(row.value(DEFECT_COLUMN)):
+        if _filled(row.value(_DEFECT)):
             defects += 1
             continue
-        amount = _amount(row.value(AMOUNT_COLUMN))
+        amount = _amount(row.value(_AMOUNT))
         if amount is None:
             return AmountsNotComputed(row.number)
         moment = cell_datetime(row.value(started))
@@ -170,5 +166,5 @@ def _amount(value: object) -> Decimal | None:
 
 
 def _quantities(row: ComputedRow) -> dict[str, TataValue]:
-    values = {letter: tata_value(row.value(letter)) for letter in QUANTITY_COLUMNS}
-    return {letter: value for letter, value in values.items() if value != 0}
+    values = {column: tata_value(row.value(column)) for column in PRICED_COLUMNS}
+    return {column: value for column, value in values.items() if value != 0}

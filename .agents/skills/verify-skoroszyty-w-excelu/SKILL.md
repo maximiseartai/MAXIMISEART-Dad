@@ -2,6 +2,7 @@
 name: verify-skoroszyty-w-excelu
 description: Verify in real Microsoft Excel for Mac (AppleScript) that the files of MAXIMISEART-Dad's processes open without a dialog, keep their external link, formulas, Wyróżnienia and Wygląd Wiersza danych (row heights Excel auto-fits, DATA as in the Plik zbiorczy), and that a Gotowość typed and saved in Excel reaches the Rozliczenia pracowników; use after changes to how workbooks are written or read, external links, Wyróżnienia, the Wzorce, or Gotowość. Local only, because it needs this Mac's Excel.
 pilnuje:
+  - src/rozliczenia/collective_layout.py
   - src/rozliczenia/workbook_files.py
   - src/rozliczenia/template_file.py
   - src/rozliczenia/workbook_save.py

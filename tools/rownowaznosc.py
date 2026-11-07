@@ -68,6 +68,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 import potomne
 from repo import BASE, ROOT
 import repo
+from rozliczenia.period_folder import PeriodFolder
 import syntetyczne_wzorce
 
 PARALLEL = 3
@@ -127,7 +128,7 @@ def _synthetic_worker_template(source: Path) -> None:
 
 
 def _existing_settlements(source: Path) -> None:
-    folder = source.parent / f"Rozliczenie pracowników {source.parent.name}"
+    folder = PeriodFolder.from_collective_file(source).worker_settlements
     folder.mkdir()
     (folder / "zostaje.txt").write_text("plik sprzed uruchomienia\n", encoding="utf-8")
 

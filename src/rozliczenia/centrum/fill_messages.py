@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Final
 
 from rozliczenia.message import KEEP_ON_DEVICE, OTHERWISE_REFER, Message, file_label
-from rozliczenia.workbook_files import WORKER_HEADER, HEADER_ROW, Problem, WorkbookError
+from rozliczenia.collective_layout import HEADER_ROW
+from rozliczenia.workbook_files import WORKER_HEADER, Problem, WorkbookError
 
 _REFRESH: Final = "odśwież stronę"
 

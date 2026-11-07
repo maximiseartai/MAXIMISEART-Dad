@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from .text import WEEKDAY_LABELS, plural
-from .order_facts import N_AP, CollectiveOrders, MissingHeaders, OrderFacts, TataValue
+from .collective_layout import HEADER_ROW, QUANTITY_LETTERS
+from .order_facts import CollectiveOrders, MissingHeaders, OrderFacts, TataValue
 from .quantity_rules import (
     DESCRIPTION_COLUMNS,
     FromDescription,
@@ -36,7 +37,7 @@ from .quantity_rules import (
 _RULE_COLUMNS: Final = frozenset(QuantityColumn)
 _SHARED: Final = frozenset({QuantityColumn.AK, QuantityColumn.AM})
 _WITHOUT_RULE_COLUMNS: Final = (QuantityColumn.N, QuantityColumn.T, QuantityColumn.V)
-_OTHER_COLUMNS: Final = tuple(column for column in N_AP if column not in _RULE_COLUMNS and column not in DESCRIPTION_COLUMNS)
+_OTHER_COLUMNS: Final = tuple(column for column in QUANTITY_LETTERS if column not in _RULE_COLUMNS and column not in DESCRIPTION_COLUMNS)
 
 
 @dataclass(frozen=True)
@@ -145,7 +146,7 @@ def _add_unruled(
     group.rows += 1
     group.differences.update(_differences(content, row, rule.quantities, compared))
     group.values.update(
-        (column, row.quantity(column)) for column in N_AP if column not in compared and row.quantity(column) != 0
+        (column, row.quantity(column)) for column in QUANTITY_LETTERS if column not in compared and row.quantity(column) != 0
     )
 
 
@@ -186,7 +187,7 @@ _DIFFERENCE_HEADER: Final = (
     "| Kolumna | Reguła | Tata | CZYNNOŚCI | UMOWA | Dzień, godzina | Wiersze |\n"
     "| --- | --- | --- | --- | --- | --- | --- |\n"
 )
-_COLUMN_ORDER: Final = {column: position for position, column in enumerate(N_AP)}
+_COLUMN_ORDER: Final = {column: position for position, column in enumerate(QUANTITY_LETTERS)}
 
 
 def blocks(result: CheckResult, *, commit: str | None, run_id: str) -> tuple[str, ...]:
@@ -201,7 +202,7 @@ def blocks(result: CheckResult, *, commit: str | None, run_id: str) -> tuple[str
         missing = ", ".join(result.missing_headers)
         return (
             _INTRO,
-            f"Bez porównania: w wierszu 17 Pliku zbiorczego nie ma nagłówka {missing}, "
+            f"Bez porównania: w wierszu {HEADER_ROW} Pliku zbiorczego nie ma nagłówka {missing}, "
             "więc Kontrola nie wie, gdzie czytać treść zlecenia.\n",
             tool,
         )

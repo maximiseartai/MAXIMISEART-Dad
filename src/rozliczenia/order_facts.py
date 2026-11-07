@@ -17,16 +17,16 @@ from typing import Final, Literal
 
 from openpyxl.utils import get_column_letter
 
+from .collective_layout import QUANTITY_LETTERS
 from .register_columns import ACTIVITIES, CONTRACT, DATE, DEVICES, Column
 from .quantity_rules import OrderContent
-from .workbook_files import QUANTITY_COLUMNS, DataRow, cell_datetime, is_blank
+from .workbook_files import DataRow, cell_datetime, is_blank
 from .text import normalize_text
 
 NON_NUMERIC: Final = "nieliczbowa"
 TataValue = int | Literal["nieliczbowa"]
 """Ilość taty: liczba (pusta komórka, 0 i ``"0"`` to 0; ``"2"`` i ``2.0`` to 2) albo „nieliczbowa” (formuła, słowo, 1.5)."""
 
-N_AP: Final[tuple[str, ...]] = tuple(get_column_letter(column) for column in QUANTITY_COLUMNS)
 _INPUTS: Final[tuple[Column, ...]] = (CONTRACT, DEVICES, ACTIVITIES, DATE)
 
 
@@ -108,5 +108,5 @@ def _content(contract: object, devices: object, activities: object, date_cell: o
 
 
 def _quantities(row: DataRow) -> dict[str, TataValue]:
-    values = {letter: tata_value(row.value(letter)) for letter in N_AP}
+    values = {letter: tata_value(row.value(letter)) for letter in QUANTITY_LETTERS}
     return {letter: value for letter, value in values.items() if value != 0}
