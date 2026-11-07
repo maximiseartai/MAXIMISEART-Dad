@@ -52,7 +52,8 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 
 - Workbook code (`workbook_files`, `template_file`) raises `WorkbookError`, and the catalog of the process that called it translates the error into a Komunikat.
   The files that Sprawdzanie reads go through `input_checks`, which translates their reader errors once for both processes, the Diagnoza and the Konfiguracja.
-  `preparation_messages` ends its `match` on `Problem` with `assert_never`, so mypy rejects a new `Problem` until it is handled.
+  A catalog gives `workbook_messages.unusable` a `WorkbookMessages`, one Komunikat for each `Problem`, so a new `Problem` is a new field that mypy asks of every catalog, and the one `match` on `Problem` ends with `assert_never`.
+  The sentences about Dad's file open in Excel, its Excel lock file `~$…` and a file OneDrive has not handed over come only from `workbook_messages`.
   Other code calls its catalog's factories directly, and a process summary reports its problems as warning Komunikaty in `warnings`.
 - A failure that can invalidate a workbook write, reading or restoring `xl/externalLinks/*` included, raises `WorkbookSaveError` with its `SaveProblem` (`workbook_save.py`), not a generic error.
 - Preserve `Nienadpisywanie`: existing input data is reported and never replaced automatically.

@@ -125,7 +125,7 @@ otwarty w Excelu) albo jednym z tych:
 |---|---|
 | „Nie znalazłem przyczyny na tym komputerze” | Przyczyna nie leży na Twoim komputerze. Kliknij `Wyślij do Maksa`. |
 | „Jest nowsza wersja narzędzia” | Kliknij `Zaktualizuj narzędzie` przy wyjaśnieniu (niżej, „Aktualizacja narzędzia”). Gdy karta Centrum sama się odświeży, uruchom proces ponownie. Bez internetu Diagnoza tego nie sprawdza. |
-| „Plik okresu jest otwarty w Excelu” | Zapisz i zamknij wskazany plik w Excelu i uruchom ponownie. Jeśli Excel jest zamknięty, usuń z tego samego folderu pozostawiony plik zaczynający się od `~$`. |
+| „Plik okresu jest otwarty w Excelu” | Zapisz i zamknij wskazany plik w Excelu i uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik zaczynający się od `~$`. |
 | „Plik jest tylko w OneDrive w chmurze” | W Eksploratorze plików kliknij wskazany plik prawym przyciskiem myszy i wybierz „Zawsze zachowuj na tym urządzeniu”. Gdy ikona chmurki zmieni się w zielony znacznik, uruchom ponownie. |
 
 ### Zgłoszenie do Maksa

@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rozliczenia.message import KEEP_ON_DEVICE, Message, file_label
+from rozliczenia.workbook_messages import lock_hint
 
 _DIAGNOSIS = "Diagnoza w Centrum rozliczeń"
 
@@ -45,10 +46,7 @@ def period_file_open(path: Path) -> Message:
         code="PLIK_OKRESU_OTWARTY",
         what="Plik okresu jest otwarty w Excelu.",
         where=file_label(path),
-        action=(
-            "Zapisz i zamknij plik w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, "
-            f"usuń z tego samego folderu pozostawiony plik ~${path.name} i uruchom ponownie."
-        ),
+        action=f"Zapisz i zamknij plik w Excelu, potem uruchom ponownie. {lock_hint(path, 'uruchom ponownie')}",
     )
 
 

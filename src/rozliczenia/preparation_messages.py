@@ -22,7 +22,9 @@ from typing import Final, assert_never
 from .message import IF_ERROR_RETURNS, Message, file_label, folder_label, refer_if
 from .period_folder import PeriodFolderLookupError, month_folder_label
 from .text import plural, row_range
-from .workbook_files import WORKER_HEADER, MergedCells, MissingHeader, Problem, WorkbookError
+from . import workbook_messages
+from .workbook_files import WORKER_HEADER, LayoutFault, MergedCells, MissingHeader, WorkbookError
+from .workbook_messages import DadWorkbook, WorkbookMessages
 from .worker_config import ContentProblem, SameWorkerFile, WorkerConfigError
 
 # Napisy Decyzji taty o niepełnym okresie; jej Komunikat to ``incomplete_period``, odmowa ``incomplete_period_refused``.
@@ -123,29 +125,7 @@ def _worker_config_inaccessible(config_path: Path) -> Message:
 def template_unusable(error: WorkbookError) -> Message:
     """Wzorzec rozliczenia wewnętrznego albo Wzorzec pliku zbiorczego, którego nie da się użyć; ``error`` mówi dlaczego."""
 
-    match error.problem:
-        case Problem.MISSING:
-            return _template_missing(error.path)
-        case Problem.OPEN_IN_EXCEL:
-            return _template_open_in_excel(error.path)
-        case Problem.INACCESSIBLE:
-            return _template_inaccessible(error.path)
-        case Problem.UNREADABLE | Problem.HAS_DATA:
-            return _template_unreadable(error.path)
-        case Problem.LAYOUT:
-            match error.fault:
-                case MissingHeader(sheet=sheet, found_in=str(column)):
-                    return _template_with_worker_outside_h(error.path, sheet, column)
-                case MissingHeader(sheet=sheet, row=row, header=header):
-                    return _template_without_header(error.path, sheet, row, header)
-                case MergedCells(sheet=sheet, cells=cells):
-                    return _template_with_merged_cells(error.path, sheet, cells)
-                case None:
-                    return _template_unreadable(error.path)
-                case _:
-                    assert_never(error.fault)
-        case _:
-            assert_never(error.problem)
+    return workbook_messages.unusable(error, _TEMPLATE)
 
 
 def _template_missing(template_path: Path) -> Message:
@@ -167,8 +147,7 @@ def _template_open_in_excel(template_path: Path) -> Message:
         where=file_label(template_path),
         action=(
             "Zamknij wzorzec w Excelu bez zapisywania zmian i uruchom ponownie. "
-            "Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu "
-            f"pozostawiony plik ~${template_path.name} i uruchom ponownie."
+            f"{workbook_messages.lock_hint(template_path, 'uruchom ponownie')}"
         ),
     )
 
@@ -243,20 +222,35 @@ def _template_with_merged_cells(template_path: Path, sheet: str, cell_range: str
     )
 
 
+def _template_with_bad_layout(template_path: Path, fault: LayoutFault | None) -> Message:
+    """Wzorzec bez nagłówka na swoim miejscu albo ze scalonymi komórkami tam, gdzie trafiają zlecenia."""
+
+    match fault:
+        case MissingHeader(sheet=sheet, found_in=str(column)):
+            return _template_with_worker_outside_h(template_path, sheet, column)
+        case MissingHeader(sheet=sheet, row=row, header=header):
+            return _template_without_header(template_path, sheet, row, header)
+        case MergedCells(sheet=sheet, cells=cells):
+            return _template_with_merged_cells(template_path, sheet, cells)
+        case None:
+            return _template_unreadable(template_path)
+        case _:
+            assert_never(fault)
+
+
+_TEMPLATE = WorkbookMessages(
+    missing=_template_missing,
+    open_in_excel=_template_open_in_excel,
+    inaccessible=_template_inaccessible,
+    unreadable=_template_unreadable,
+    layout=_template_with_bad_layout,
+)
+
+
 def register_unusable(error: WorkbookError) -> Message:
     """Rejestr zleceń, którego nie da się użyć; ``error`` mówi dlaczego."""
 
-    match error.problem:
-        case Problem.MISSING:
-            return register_missing(error.path)
-        case Problem.OPEN_IN_EXCEL:
-            return _register_open_in_excel(error.path)
-        case Problem.INACCESSIBLE:
-            return _register_inaccessible(error.path)
-        case Problem.UNREADABLE | Problem.LAYOUT | Problem.HAS_DATA:
-            return _register_unreadable(error.path)
-        case _:
-            assert_never(error.problem)
+    return workbook_messages.unusable(error, _REGISTER_MESSAGES)
 
 
 def register_missing(register_path: Path) -> Message:
@@ -267,40 +261,6 @@ def register_missing(register_path: Path) -> Message:
         what=f"Nie znaleziono Rejestru zleceń. {_NOTHING_CREATED}",
         where=file_label(register_path),
         action="Wybierz właściwy plik Rejestru zleceń i uruchom ponownie.",
-    )
-
-
-def _register_open_in_excel(register_path: Path) -> Message:
-    """Rejestr zleceń ma obok plik blokady Excela ``~$…``; narzędzie go nie usuwa."""
-
-    return Message(
-        code="REJESTR_OTWARTY",
-        dad_file="order_register",
-        what=f"Rejestr zleceń jest otwarty w Excelu. {_NOTHING_CREATED}",
-        where=file_label(register_path),
-        action=(
-            "Zapisz i zamknij Rejestr zleceń w Excelu, potem uruchom ponownie. "
-            "Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu "
-            f"pozostawiony plik ~${register_path.name} i uruchom ponownie."
-        ),
-    )
-
-
-def _register_inaccessible(register_path: Path) -> Message:
-    """System nie oddał bajtów Rejestru zleceń (np. zajęty przez inny program albo OneDrive bez sieci); to nie uszkodzenie."""
-
-    return Message(
-        code="NIEDOSTEPNY_REJESTR",
-        dad_file="order_register",
-        what=(
-            "Nie można teraz odczytać Rejestru zleceń. Plik może być zajęty przez inny program "
-            f"albo czekać na pobranie z OneDrive. {_NOTHING_CREATED}"
-        ),
-        where=file_label(register_path),
-        action=(
-            "Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy Rejestr zleceń otwiera się w Excelu. "
-            f"Zamknij go i uruchom ponownie. {IF_ERROR_RETURNS}"
-        ),
     )
 
 
@@ -320,6 +280,15 @@ def _register_unreadable(register_path: Path) -> Message:
             f"zamknij go i uruchom ponownie. {refer_if('Jeśli błąd wraca', request='przekaż to')}"
         ),
     )
+
+
+_REGISTER = DadWorkbook("Rejestr zleceń", "Rejestru zleceń", "order_register", _NOTHING_CREATED, "uruchom ponownie")
+_REGISTER_MESSAGES = WorkbookMessages(
+    missing=register_missing,
+    open_in_excel=lambda path: workbook_messages.open_in_excel("REJESTR_OTWARTY", path, _REGISTER),
+    inaccessible=lambda path: workbook_messages.not_synced("NIEDOSTEPNY_REJESTR", path, _REGISTER),
+    unreadable=_register_unreadable,
+)
 
 
 def _header_list(headers: Sequence[str]) -> str:

@@ -240,7 +240,7 @@ def test_przywrocenie_odmawia_przy_otwartym_intermax_i_niczego_nie_zmienia(tmp_p
         "where": f"plik {REGISTER_NAME}, folder OneDrive",
         "action": (
             "Zapisz i zamknij INTERMAX w Excelu, potem przywróć kopię jeszcze raz. Jeśli Excel jest zamknięty, a "
-            f"komunikat wraca, usuń z tego samego folderu pozostawiony plik ~${REGISTER_NAME}."
+            f"komunikat wraca, usuń z tego samego folderu pozostawiony plik ~${REGISTER_NAME} i przywróć kopię jeszcze raz."
         ),
     }
     assert (centrum.register.read_bytes(), _kopie(centrum)) == (before, kopie)
@@ -391,7 +391,10 @@ def test_kopia_otwarta_w_excelu_nie_jest_przywracana(tmp_path: Path) -> None:
     assert refused == {
         "what": f"Ta Kopia INTERMAX jest otwarta w Excelu. {UNCHANGED}",
         "where": f"plik {ORDERED}, folder Kopie INTERMAX",
-        "action": "Zamknij ją w Excelu bez zapisywania zmian, potem przywróć kopię jeszcze raz.",
+        "action": (
+            "Zamknij ją w Excelu bez zapisywania zmian, potem przywróć kopię jeszcze raz. Jeśli Excel jest zamknięty, a "
+            f"komunikat wraca, usuń z tego samego folderu pozostawiony plik {lock.name} i przywróć kopię jeszcze raz."
+        ),
     }
     assert centrum.register.read_bytes() == before
     assert copies(centrum) == sorted([ORDERED, lock.name])

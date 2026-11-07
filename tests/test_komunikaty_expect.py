@@ -24,7 +24,7 @@ import typing
 import pytest
 
 import rozliczenia
-from rozliczenia import efenix_messages, intermax_messages, settlement_messages
+from rozliczenia import efenix_messages, intermax_messages, settlement_messages, workbook_messages
 from rozliczenia import preparation_messages as messages
 from rozliczenia.centrum import (
     contract,
@@ -53,6 +53,7 @@ from tests.fixtures.message_samples import (
     NOTIFICATION_SAMPLES,
     PERIOD,
     PREPARATION_SAMPLES,
+    REGISTER,
     REPORT_SAMPLES,
     SETTLEMENT_SAMPLES,
     START_SAMPLES,
@@ -74,7 +75,16 @@ CATALOGS: dict[str, tuple[ModuleType, Samples]] = {
     "Wycena w efenix": (efenix_messages, EFENIX_SAMPLES),
 }
 # Komunikat karty Urwanego Uruchomienia (contract.Message) nie ma kodu; tytuł procesu jest syntetyczny.
+# Zdania wspólne o pliku taty dostają od katalogu kod, plik, ogon i zwrot ponowienia; tu syntetyczne.
+_DAD_WORKBOOK = workbook_messages.DadWorkbook("Plik taty", "Pliku taty", "order_register", "Nic się nie zmieniło.", "ponów")
 OUTSIDE_CATALOGS: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], Message | contract.Message]]]]] = {
+    "Plik taty (zdania wspólne)": (
+        workbook_messages,
+        {
+            "open_in_excel": [lambda: workbook_messages.open_in_excel("PLIK_OTWARTY", REGISTER, _DAD_WORKBOOK)],
+            "not_synced": [lambda: workbook_messages.not_synced("NIEDOSTEPNY_PLIK", REGISTER, _DAD_WORKBOOK)],
+        },
+    ),
     "Wynik Uruchomienia": (runs, {"_RESULT_NOT_SHOWN": [lambda: runs._RESULT_NOT_SHOWN]}),
     "Karta Urwanego Uruchomienia": (
         run_cards,

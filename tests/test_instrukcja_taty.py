@@ -16,7 +16,8 @@ from dataclasses import dataclass
 import inspect
 from pathlib import Path
 import re
-from types import ModuleType
+import sys
+from types import FrameType, ModuleType
 
 import pytest
 
@@ -179,22 +180,24 @@ def test_probki_pokrywaja_kazda_fabryke_katalogu(catalog: Catalog) -> None:
 
 
 @each_catalog
-def test_probki_docieraja_do_kazdej_fabryki_przypadku_katalogu(catalog: Catalog, monkeypatch: pytest.MonkeyPatch) -> None:
-    case_factories = catalog.case_factories()
+def test_probki_docieraja_do_kazdej_fabryki_przypadku_katalogu(catalog: Catalog) -> None:
+    """Fabryka przypadku jest osiągnięta, gdy jej kod wykonał się przy próbkach, także wołany przez referencję z
+    ``WorkbookMessages`` katalogu, a nie po nazwie z modułu."""
+
+    names = {factory.__code__: name for name, factory in catalog.case_factories().items()}
     reached: set[str] = set()
 
-    def recording(name: str, factory: Callable[..., Message]) -> Callable[..., Message]:
-        def record(*args: object, **kwargs: object) -> Message:
-            reached.add(name)
-            return factory(*args, **kwargs)
+    def record(frame: FrameType, event: str, _arg: object) -> None:
+        if event == "call" and frame.f_code in names:
+            reached.add(names[frame.f_code])
 
-        return record
+    sys.setprofile(record)
+    try:
+        catalog.messages()
+    finally:
+        sys.setprofile(None)
 
-    for name, factory in case_factories.items():
-        monkeypatch.setattr(catalog.module, name, recording(name, factory))
-    catalog.messages()
-
-    assert reached == set(case_factories)
+    assert reached == set(names.values())
 
 
 @each_catalog
