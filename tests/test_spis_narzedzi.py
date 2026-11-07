@@ -11,7 +11,7 @@ każdego innego narzędzia. Narzędzie z obowiązkową podkomendą (``add_subpar
 zdaniu w nawiasie co najmniej jedną z nich, np. „(plan --baza origin/main)”, bo agent, który zna je tylko ze spisu,
 inaczej woła narzędzie bez podkomendy; nawias odróżnia podkomendę od tego samego słowa w zdaniu („Drukuje plan runu”).
 Narzędzie, które liczy zmianę od bazy (``changed_since`` albo ``git merge-base HEAD …``), przyjmuje ją jako opcję
-``--baza``, bo agenci piszą ją tak przy każdym takim narzędziu.
+``--baza``.
 Blok między ``START`` i ``END`` zapisuje ten test z ``ZAPISZ_EXPECT=1``, jak plik expect.
 
 Granica: test nie ocenia, czy zdanie mówi „kiedy” słowami sytuacji agenta (czerwone CI, przed merge'em); to łapie
@@ -271,25 +271,27 @@ def _called(call: ast.Call) -> str | None:
     return call.func.attr if isinstance(call.func, ast.Attribute) else call.func.id if isinstance(call.func, ast.Name) else None
 
 
+def _has_baza_option(calls: list[ast.Call]) -> bool:
+    return any(_called(call) == "add_argument" and any(isinstance(item, ast.Constant) and item.value == "--baza" for item in call.args) for call in calls)
+
+
+def _measures_change_from_base(nodes: list[ast.AST], calls: list[ast.Call]) -> bool:
+    sequences = [node.elts if isinstance(node, (ast.List, ast.Tuple)) else node.args for node in nodes if isinstance(node, (ast.List, ast.Tuple, ast.Call))]
+    merge_base_head = any(
+        (first.value, second.value) == ("merge-base", "HEAD")
+        for items in sequences
+        for first, second in itertools.pairwise(items)
+        if isinstance(first, ast.Constant) and isinstance(second, ast.Constant)
+    )
+    return merge_base_head or any(_called(call) == "changed_since" for call in calls)
+
+
 def _without_baza_option(paths: list[Path]) -> list[Path]:
-    """Narzędzia, które liczą zmianę od bazy (``changed_since`` albo ``git merge-base HEAD …``), a nie mają opcji ``--baza``.
-
-    Opcja liczy się w każdym ``add_argument``, także podkomendy (``plan --baza``); baza pozycyjna obok niej wolno.
-    """
-
     missing = []
     for path in paths:
         nodes = list(ast.walk(ast.parse(path.read_text(encoding="utf-8"))))
         calls = [node for node in nodes if isinstance(node, ast.Call)]
-        option = any(_called(call) == "add_argument" and any(isinstance(item, ast.Constant) and item.value == "--baza" for item in call.args) for call in calls)
-        sequences = [node.elts if isinstance(node, (ast.List, ast.Tuple)) else node.args for node in nodes if isinstance(node, (ast.List, ast.Tuple, ast.Call))]
-        merge_base = any(
-            (first.value, second.value) == ("merge-base", "HEAD")
-            for items in sequences
-            for first, second in itertools.pairwise(items)
-            if isinstance(first, ast.Constant) and isinstance(second, ast.Constant)
-        )
-        if not option and (merge_base or any(_called(call) == "changed_since" for call in calls)):
+        if _measures_change_from_base(nodes, calls) and not _has_baza_option(calls):
             missing.append(path)
     return missing
 
