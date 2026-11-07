@@ -35,6 +35,7 @@ import subprocess
 import sys
 import time
 import traceback
+import warnings
 import weakref
 from typing import TypeVar, cast
 from urllib.parse import urljoin, urlparse
@@ -76,7 +77,7 @@ from rozliczenia.efenix_window import (
     UnexpectedPage,
     WindowCause,
 )
-from rozliczenia.efenix_marking import UnsupportedShape, mark_ready
+from rozliczenia.efenix_marking import mark_ready
 from rozliczenia.efenix_orders import CollectiveOrder
 from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault
 from rozliczenia.efenix_process import EfenixInputs
@@ -84,6 +85,7 @@ from rozliczenia.engine import run_settlements
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
 from rozliczenia.progress import PhaseState, ProgressSnapshot, SavingStep
 from rozliczenia.workbook_files import excel_lock_file, read_computed_rows, read_data_rows
+from rozliczenia.workbook_parts import UnsupportedShape
 
 from tests.fixtures.atrapa_efenix import (
     LIST_PAGE,
@@ -1846,7 +1848,7 @@ Znaczników."""
 @pytest.mark.parametrize(
     ("extra", "ending"),
     [
-        pytest.param(0, ("BLAD_KRYTYCZNY", "rozliczenia.efenix_marking.UnsupportedShape"), id="gotowe-zlecenie"),
+        pytest.param(0, ("BLAD_KRYTYCZNY", "rozliczenia.workbook_parts.UnsupportedShape"), id="gotowe-zlecenie"),
         pytest.param(1, ("WYMAGA_SPRAWDZENIA", None), id="bez-gotowych-zlecen"),
     ],
 )
@@ -1891,6 +1893,25 @@ def test_zapis_znacznikow_w_ksztalcie_do_ktorego_wycena_nie_dochodzi_to_blad_kod
     with pytest.raises(UnsupportedShape):
         mark_ready(source, content, column, rows)
     assert source.read_bytes() == content
+
+
+def test_znacznik_efenix_staje_na_arkuszu_ktory_czyta_odczyt_zakresu_takze_za_arkuszem_bez_relacji(tmp_path: Path) -> None:
+    """Arkusz bez ``r:id`` przed arkuszem zleceń openpyxl pomija, więc ``activeTab`` wskazuje arkusz zleceń, który czyta
+    odczyt zakresu Wyceny, a nie arkusz o tym numerze w ``xl/workbook.xml``: Znacznik efenix trafia w ten sam arkusz."""
+
+    order = Order("#7461", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+    source = write_collective_file(tmp_path, [order], notes_sheet_first=True)
+    without_id = _replaced("xl/workbook.xml", rb"<(\w+:)?sheets>", rb'\g<0><\1sheet name="Stary" sheetId="9" />')
+    changed = without_id(dict(_parts(source)))
+    rewrite_parts(source, lambda name, data: changed.get(name, data))
+    notes = dict(_parts(source))["xl/worksheets/sheet1.xml"]
+
+    refusal = mark_ready(source, source.read_bytes(), "B", [18])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # openpyxl ostrzega o arkuszu bez r:id i go pomija
+        marked = _marked(source)
+    assert (refusal, marked, dict(_parts(source))["xl/worksheets/sheet1.xml"] == notes) == (None, [18], True)
 
 
 @contextmanager

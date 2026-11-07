@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 import zipfile
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection
 from enum import Enum
 from io import BytesIO
 from pathlib import Path
@@ -37,17 +37,28 @@ from openpyxl.styles.fills import Fill
 from . import workbook_files
 from .efenix_mark import MARK_RGB, is_mark
 from .workbook_files import Problem, WorkbookError
-from .workbook_parts import MAIN, OFFICE_REL, IrregularSheetData, Relationship, SheetData, office_document, relationships
+from .workbook_parts import (
+    MAIN,
+    STYLE_XF,
+    IrregularSheetData,
+    SheetData,
+    UnsupportedShape,
+    active_sheet,
+    appended,
+    office_document,
+    relationships,
+    style_list,
+    with_style_attribute,
+)
 from .workbook_save import SaveProblem, WorkbookSaveError, write_atomically
 
-__all__ = ["Refusal", "UnsupportedShape", "mark_ready"]
+__all__ = ["Refusal", "mark_ready"]
 
 _MARK_FILL: Final = (
     b'<fill><patternFill patternType="solid"><fgColor rgb="FF' + MARK_RGB.encode("ascii") + b'"/>'
     b'<bgColor indexed="64"/></patternFill></fill>'
 )
 """Wypełnienie Znacznika tak, jak Excel taty zapisuje jednolite wypełnienie (``bgColor`` 64)."""
-_XF: Final = re.compile(rb"<xf\b[^>]*?(?:/>|>.*?</xf>)", re.S)
 _STYLE: Final = re.compile(rb'\ss="(\d+)"')
 
 
@@ -61,10 +72,6 @@ class Refusal(Enum):
     WRITE_FAILED = "zapis nieudany"
     """Pliku nie ma, nie da się go odczytać, pliku tymczasowego nie da się utworzyć ani zapisać albo system odmówił
     podmiany (np. Excel albo OneDrive trzyma plik bez pliku blokady)."""
-
-
-class UnsupportedShape(Exception):
-    """Plik zbiorczy ma kształt, którego zapis Znaczników nie przenosi; ``str`` mówi który, bez treści pliku."""
 
 
 def mark_ready(path: Path, content: bytes, column: str, rows: Collection[int]) -> Refusal | None:
@@ -111,12 +118,12 @@ def _marked(content: bytes, column: str, rows: Collection[int]) -> bytes:
     styles_part = next((rel.target for rel in rels.values() if rel.kind.endswith("/styles")), None)
     if styles_part is None:
         raise UnsupportedShape("style")
-    sheet_part = _active_sheet(parts[workbook], rels)
+    sheet = active_sheet(parts, workbook)
     styles = _Styles(parts[styles_part])
-    sheet = _marked_sheet(parts[sheet_part], column, rows, styles)
-    if sheet == parts[sheet_part]:
+    marked = _marked_sheet(parts[sheet.part], column, rows, styles)
+    if marked == parts[sheet.part]:
         return content
-    changed = {sheet_part: sheet, styles_part: styles.xml()}
+    changed = {sheet.part: marked, styles_part: styles.xml()}
     for xml in changed.values():
         expat.ParserCreate().Parse(xml, True)
     written = BytesIO()
@@ -124,21 +131,6 @@ def _marked(content: bytes, column: str, rows: Collection[int]) -> bytes:
         for info in infos:
             target.writestr(info, changed.get(info.filename, parts[info.filename]))
     return written.getvalue()
-
-
-def _active_sheet(workbook: bytes, rels: Mapping[str, Relationship]) -> str:
-    """Część arkusza aktywnej karty: ten arkusz czyta odczyt zakresu (``workbook.active`` w openpyxl)."""
-
-    root = ElementTree.fromstring(workbook)
-    view = root.find(f"{MAIN}bookViews/{MAIN}workbookView")
-    active = int(view.get("activeTab", "0")) if view is not None else 0
-    sheets = list(root.iter(f"{MAIN}sheet"))
-    if active >= len(sheets):
-        raise UnsupportedShape("aktywna karta")
-    relationship = rels.get(sheets[active].get(f"{{{OFFICE_REL}}}id", ""))
-    if relationship is None:
-        raise UnsupportedShape("aktywna karta")
-    return relationship.target
 
 
 def _marked_sheet(xml: bytes, column: str, rows: Collection[int], styles: _Styles) -> bytes:
@@ -175,7 +167,7 @@ class _Styles:
         self._marks = {index for index, fill in enumerate(fills) if is_mark(fill)}
         self._fill_count = len(fills)
         self._fill_ids = [int(xf.get("fillId", "0")) for xf in root.iterfind(f"{MAIN}cellXfs/{MAIN}xf")]
-        self._xfs = _XF.findall(_list(xml, b"cellXfs").group(2))
+        self._xfs = STYLE_XF.findall(style_list(xml, b"cellXfs").group(2))
         if len(self._xfs) != len(self._fill_ids):
             raise UnsupportedShape("cellXfs")
         self._added_fill = False
@@ -188,7 +180,7 @@ class _Styles:
             raise UnsupportedShape("styl komórki")
         if self._fill_ids[style] in self._marks:
             return style
-        xf = _with_fill(self._xfs[style], self._mark_fill())
+        xf = with_style_attribute(self._xfs[style], b"fillId", self._mark_fill(), b"applyFill")
         known = [*self._xfs, *self._added_xfs]
         if xf not in known:
             self._added_xfs.append(xf)
@@ -202,41 +194,5 @@ class _Styles:
         return self._fill_count
 
     def xml(self) -> bytes:
-        xml = _appended(self._xml, b"fills", [_MARK_FILL] if self._added_fill else [], self._fill_count)
-        return _appended(xml, b"cellXfs", self._added_xfs, len(self._xfs))
-
-
-def _with_fill(xf: bytes, fill: int) -> bytes:
-    """Wpis ``<xf>`` z wypełnieniem ``fill`` i ``applyFill="1"``; reszta atrybutów i elementy wewnątrz zostają."""
-
-    end = xf.index(b">")
-    if xf[end - 1 : end] == b"/":
-        end -= 1
-    tag = _with_attribute(_with_attribute(xf[:end], b"fillId", b"%d" % fill), b"applyFill", b"1")
-    return tag + xf[end:]
-
-
-def _with_attribute(tag: bytes, name: bytes, value: bytes) -> bytes:
-    attribute = re.compile(rb"\s" + name + rb'="[^"]*"')
-    new = b" " + name + b'="' + value + b'"'
-    return attribute.sub(new, tag, count=1) if attribute.search(tag) else tag + new
-
-
-def _list(xml: bytes, tag: bytes) -> re.Match[bytes]:
-    """Lista ``tag`` w ``xl/styles.xml``: atrybuty (grupa 1) i wpisy (grupa 2)."""
-
-    found = re.search(rb"<" + tag + rb"\b([^>]*)>(.*?)</" + tag + rb">", xml, re.S)
-    if found is None:
-        raise UnsupportedShape(f"style: {tag.decode('ascii')}")
-    return found
-
-
-def _appended(xml: bytes, tag: bytes, entries: Sequence[bytes], existing: int) -> bytes:
-    """``entries`` na końcu listy ``tag`` (``existing`` wpisów) w ``xl/styles.xml`` z nowym licznikiem ``count``."""
-
-    if not entries:
-        return xml
-    block = _list(xml, tag)
-    attributes = re.sub(rb'\scount="\d+"', b"", block.group(1))
-    opening = b"<" + tag + b' count="%d"' % (existing + len(entries)) + attributes + b">"
-    return xml[: block.start()] + opening + block.group(2) + b"".join(entries) + b"</" + tag + b">" + xml[block.end() :]
+        xml = appended(self._xml, b"fills", [_MARK_FILL] if self._added_fill else [], self._fill_count)
+        return appended(xml, b"cellXfs", self._added_xfs, len(self._xfs))

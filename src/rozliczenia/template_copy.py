@@ -90,21 +90,24 @@ from .workbook_parts import (
     MAIN,
     OFFICE_REL,
     PACKAGE_REL,
+    STYLE_XF,
+    WORKSHEET_ROOT,
     IrregularSheetData,
     Relationship,
     SheetData,
     SheetRow,
+    UnsupportedShape,
+    active_sheet,
+    appended,
     office_document,
     relationships,
     relationships_part,
+    style_list,
+    with_style_attribute,
 )
 
 
 _T = TypeVar("_T")
-
-
-class UnsupportedShape(Exception):
-    """Wzorca albo wartości nie da się zapisać podmianą wierszy; zapis idzie dawną drogą."""
 
 
 class InvalidValue(Exception):
@@ -145,17 +148,11 @@ _ATTRIBUTE = re.compile(rb'([\w:.-]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\')')
 _CALC_PR = re.compile(rb"<((?:[\w.-]+:)?)calcPr\b([^>]*?)(\s*/)?>")
 _DIMENSION = re.compile(rb'<dimension ref="([A-Z]+\d+(?::[A-Z]+\d+)?)"')
 _MERGE = re.compile(rb'<mergeCell ref="([^"]+)"')
-_CELL_XFS = re.compile(rb"<cellXfs\b[^>]*>(.*?)</cellXfs>", re.S)
-_FONTS = re.compile(rb"<fonts\b[^>]*>(.*?)</fonts>", re.S)
-_FILLS = re.compile(rb"<fills\b[^>]*>(.*?)</fills>", re.S)
-_BORDERS = re.compile(rb"<borders\b[^>]*>(.*?)</borders>", re.S)
 _ALIGNMENT = re.compile(rb"<alignment\b[^>]*?(?:/>|>.*?</alignment>)", re.S)
 _HEIGHT = re.compile(rb'\s(?:ht|customHeight)="[^"]*"')
-_XF = re.compile(rb"<xf\b[^>]*?(?:/>|>.*?</xf>)", re.S)
 _NUM_FMT = re.compile(rb"<numFmt\b([^>]*?)/?>")
 _NUM_FMT_ID = re.compile(rb'numFmtId="(\d+)"')
 _CALC_FLAGS: Final = ((b"calcMode", b"auto"), (b"fullCalcOnLoad", b"1"), (b"forceFullCalc", b"1"))
-_WORKSHEET_START = re.compile(rb"<((?:[\w.-]+:)?)worksheet\b[^>]*>")
 _RELATIONSHIPS_PREFIX = re.compile(rb"""xmlns:([\w.-]+)\s*=\s*["']""" + OFFICE_REL.encode() + rb"""["']""")
 _RELATIONSHIP_NUMBER = re.compile(r"rId(\d+)")
 # Elementy arkusza, które schemat (CT_Worksheet) stawia między ``sheetData`` a ``hyperlinks``; każdy inny element
@@ -320,7 +317,12 @@ def _read_template(content: bytes, layout: SheetLayout) -> TemplateCopy:
         raise UnsupportedShape("officeDocument")
     workbook_rels = relationships(plain, workbook_name)
     workbook_xml = plain[workbook_name]
-    sheet_name, sheet_title, sheet_position, date1904 = _active_sheet(workbook_xml, workbook_rels)
+    active = active_sheet(plain, workbook_name)
+    if not active.visible:
+        raise UnsupportedShape("hidden active sheet")
+    if not active.worksheet:
+        raise UnsupportedShape("chartsheet")
+    sheet_name = active.part
     styles_name = _target_of_type(workbook_rels, "/styles")
     strings_name = _target_of_type(workbook_rels, "/sharedStrings")
     if styles_name is None or styles_name not in plain:
@@ -342,7 +344,7 @@ def _read_template(content: bytes, layout: SheetLayout) -> TemplateCopy:
             styles_index = index
             parts.append(None)
         elif info.filename == workbook_name and layout.period_file:
-            filter_name = _FilterName(info, index, _with_full_recalculation(workbook_xml), sheet_position)
+            filter_name = _FilterName(info, index, _with_full_recalculation(workbook_xml), active.position)
             parts.append(None)
         elif info.filename == workbook_name:
             parts.append(_compressed_part(info, _with_full_recalculation(workbook_xml)))
@@ -350,7 +352,7 @@ def _read_template(content: bytes, layout: SheetLayout) -> TemplateCopy:
             parts.append(_raw_part(content, info))
     if sheet_index < 0:
         raise UnsupportedShape("sheet")
-    sheet = _Sheet(infos[sheet_index], sheet_index, plain[sheet_name], layout, epoch=MAC_EPOCH if date1904 else WINDOWS_EPOCH)
+    sheet = _Sheet(infos[sheet_index], sheet_index, plain[sheet_name], layout, epoch=MAC_EPOCH if _date1904(workbook_xml) else WINDOWS_EPOCH)
     if layout.period_file:
         sheet.read_filter_columns(shared_strings)
     styles = _Styles(infos[styles_index], styles_index, plain[styles_name], _raw_part(content, infos[styles_index]))
@@ -362,7 +364,7 @@ def _read_template(content: bytes, layout: SheetLayout) -> TemplateCopy:
         sheet_rels = _SheetRels(infos[rels_index], rels_index, plain[rels_name], True)
     look = RowLook([styles.font(style) for style in sheet.header_styles()])
     return TemplateCopy(
-        parts, sheet, styles, sheet_rels, filter_name, sheet_title, sheet.header(shared_strings), sheet.has_input_data, look
+        parts, sheet, styles, sheet_rels, filter_name, active.title, sheet.header(shared_strings), sheet.has_input_data, look
     )
 
 
@@ -390,22 +392,9 @@ def _target_of_type(workbook_rels: Mapping[str, Relationship], suffix: str) -> s
     return next((rel.target for rel in workbook_rels.values() if rel.kind.endswith(suffix)), None)
 
 
-def _active_sheet(workbook_xml: bytes, workbook_rels: Mapping[str, Relationship]) -> tuple[str, str, int, bool]:
-    """Część zip aktywnego arkusza (tak jak ``workbook.active`` w openpyxl), jego nazwa, pozycja i czy daty liczą się od 1904."""
-
-    root = ElementTree.fromstring(workbook_xml)
-    view = root.find(f"{MAIN}bookViews/{MAIN}workbookView")
-    active = int(view.get("activeTab", "0")) if view is not None else 0
-    sheets = root.findall(f"{MAIN}sheets/{MAIN}sheet")
-    sheet = sheets[active]
-    if sheet.get("state", "visible") != "visible":
-        raise UnsupportedShape("hidden active sheet")
-    relationship = workbook_rels[sheet.get(f"{{{OFFICE_REL}}}id", "")]
-    if not relationship.kind.endswith("/worksheet"):
-        raise UnsupportedShape("chartsheet")
-    properties = root.find(f"{MAIN}workbookPr")
-    date1904 = properties is not None and properties.get("date1904", "0").lower() in ("1", "true")
-    return relationship.target, sheet.get("name", ""), active, date1904
+def _date1904(workbook_xml: bytes) -> bool:
+    properties = ElementTree.fromstring(workbook_xml).find(f"{MAIN}workbookPr")
+    return properties is not None and properties.get("date1904", "0").lower() in ("1", "true")
 
 
 def _shared_strings(xml: bytes) -> list[str]:
@@ -799,7 +788,7 @@ def _hyperlinks_place(xml: bytes, data_end: int) -> tuple[int, bytes, bytes]:
     hiperłączami to ``UnsupportedShape``.
     """
 
-    root = _WORKSHEET_START.search(xml)
+    root = WORKSHEET_ROOT.search(xml)
     if root is None:
         raise UnsupportedShape("worksheet")
     after_data = data_end + len(b"</sheetData>")
@@ -1064,10 +1053,7 @@ class _Styles:
         self._info = info
         self.index = index
         self.xml = xml
-        cell_xfs = _CELL_XFS.search(xml)
-        if cell_xfs is None:
-            raise UnsupportedShape("cellXfs")
-        self.xfs: list[bytes] = _XF.findall(cell_xfs.group(1))
+        self.xfs: list[bytes] = STYLE_XF.findall(style_list(xml, b"cellXfs").group(2))
         self.custom_formats: dict[int, str] = {}
         for number_format in _NUM_FMT.finditer(xml):
             attributes = {match.group(1): match.group(2) or match.group(3) or b"" for match in _ATTRIBUTE.finditer(number_format.group(1))}
@@ -1076,7 +1062,9 @@ class _Styles:
         fonts = root.find(f"{MAIN}fonts")
         fills = root.find(f"{MAIN}fills")
         borders = root.find(f"{MAIN}borders")
-        if fonts is None or fills is None or borders is None or None in (_FONTS.search(xml), _FILLS.search(xml), _BORDERS.search(xml)):
+        for tag in (b"fonts", b"fills", b"borders"):
+            style_list(xml, tag)
+        if fonts is None or fills is None or borders is None:
             raise UnsupportedShape("fonts")
         self.fonts = [Font.from_tree(cast(Any, font)) for font in fonts.iterfind(f"{MAIN}font")]
         self.fills = [Fill.from_tree(cast(Any, fill)) or PatternFill() for fill in fills.iterfind(f"{MAIN}fill")]
@@ -1137,27 +1125,26 @@ class _Styles:
         fonts = [ElementTree.tostring(font.to_tree()) for font in additions.fonts]
         fills = [ElementTree.tostring(fill.to_tree()) for fill in additions.fills]
         borders = [ElementTree.tostring(border.to_tree()) for border in additions.borders]
-        xml = _appended(xml, _FONTS, b"fonts", fonts, len(self.fonts))
-        xml = _appended(xml, _FILLS, b"fills", fills, len(self.fills))
-        xml = _appended(xml, _BORDERS, b"borders", borders, len(self.borders))
-        xml = _appended(xml, _CELL_XFS, b"cellXfs", additions.xfs, len(self.xfs))
+        xml = appended(xml, b"fonts", fonts, len(self.fonts))
+        xml = appended(xml, b"fills", fills, len(self.fills))
+        xml = appended(xml, b"borders", borders, len(self.borders))
+        xml = appended(xml, b"cellXfs", additions.xfs, len(self.xfs))
         if additions.formats:
-            entries = b"".join(
+            entries = [
                 b'<numFmt numFmtId="%d" formatCode="' % number + html.escape(code).encode("utf-8") + b'"/>'
                 for number, code in additions.formats
-            )
-            count = len(self.custom_formats) + len(additions.formats)
+            ]
             block = re.search(rb"<numFmts\b[^>]*?(?:/>|>(.*?)</numFmts>)", xml, re.S)
+            if block is not None and block.group(1) is not None:
+                return _compressed_part(self._info, appended(xml, b"numFmts", entries, len(self.custom_formats)))
+            new_list = b'<numFmts count="%d">' % (len(self.custom_formats) + len(entries)) + b"".join(entries) + b"</numFmts>"
             if block is None:
                 root = re.search(rb"<styleSheet\b[^>]*>", xml)
                 if root is None:
                     raise UnsupportedShape("styleSheet")
-                xml = xml[: root.end()] + b'<numFmts count="%d">' % count + entries + b"</numFmts>" + xml[root.end() :]
-            elif block.group(1) is None:
-                xml = xml[: block.start()] + b'<numFmts count="%d">' % count + entries + b"</numFmts>" + xml[block.end() :]
+                xml = xml[: root.end()] + new_list + xml[root.end() :]
             else:
-                xml = xml[: block.end(1)] + entries + xml[block.end(1) :]
-                xml = _with_count(xml, b"numFmts", count)
+                xml = xml[: block.start()] + new_list + xml[block.end() :]
         return _compressed_part(self._info, xml)
 
 
@@ -1172,25 +1159,6 @@ def _item(items: Sequence[_T], index: int) -> _T:
     if index >= len(items):
         raise UnsupportedShape("style")
     return items[index]
-
-
-def _appended(xml: bytes, block: re.Pattern[bytes], tag: bytes, entries: Sequence[bytes], existing: int) -> bytes:
-    """``entries`` dopisane na końcu listy ``tag`` (pierwszej w pliku) z licznikiem ``existing`` + ich liczba."""
-
-    if not entries:
-        return xml
-    found = block.search(xml)
-    assert found is not None
-    xml = xml[: found.end(1)] + b"".join(entries) + xml[found.end(1) :]
-    return _with_count(xml, tag, existing + len(entries))
-
-
-def _with_count(xml: bytes, tag: bytes, count: int) -> bytes:
-    start = re.search(rb"<" + tag + rb"\b[^>]*>", xml)
-    assert start is not None
-    opening = re.sub(rb'\scount="\d+"', b"", start.group(0))
-    opening = opening[: len(tag) + 1] + b' count="%d"' % count + opening[len(tag) + 1 :]
-    return xml[: start.start()] + opening + xml[start.end() :]
 
 
 class _StyleAdditions:
@@ -1226,15 +1194,15 @@ class _StyleAdditions:
         base = self._styles.xf(style)
         xf = base
         if number_format is not None and self.number_format(style) != number_format:
-            xf = _with_id(xf, b"numFmtId", self._format_id(number_format), b"applyNumberFormat")
+            xf = with_style_attribute(xf, b"numFmtId", self._format_id(number_format), b"applyNumberFormat")
         font = self._styles.font_over(_xf_id(xf, _FONT_ID), highlights)
         if font is not None:
             font_id = _id(self._styles.font_ids, len(self._styles.fonts), self.fonts, font)
-            xf = _with_id(xf, b"fontId", font_id, b"applyFont")
+            xf = with_style_attribute(xf, b"fontId", font_id, b"applyFont")
         fill = self._styles.fill_over(_xf_id(xf, _FILL_ID), highlights)
         if fill is not None:
             fill_id = _id(self._styles.fill_ids, len(self._styles.fills), self.fills, fill)
-            xf = _with_id(xf, b"fillId", fill_id, b"applyFill")
+            xf = with_style_attribute(xf, b"fillId", fill_id, b"applyFill")
         if xf is base:
             return style
         self.xfs.append(xf)
@@ -1253,14 +1221,14 @@ class _StyleAdditions:
         base = styles.xf(style)
         xf = base
         if self.number_format(style) != look.number_format:
-            xf = _with_id(xf, b"numFmtId", self._format_id(look.number_format), b"applyNumberFormat")
+            xf = with_style_attribute(xf, b"numFmtId", self._format_id(look.number_format), b"applyNumberFormat")
         if _item(styles.fonts, _xf_id(xf, _FONT_ID)) != look.font:
-            xf = _with_id(xf, b"fontId", _id(styles.font_ids, len(styles.fonts), self.fonts, look.font), b"applyFont")
+            xf = with_style_attribute(xf, b"fontId", _id(styles.font_ids, len(styles.fonts), self.fonts, look.font), b"applyFont")
         if _item(styles.fills, _xf_id(xf, _FILL_ID)) != look.fill:
-            xf = _with_id(xf, b"fillId", _id(styles.fill_ids, len(styles.fills), self.fills, look.fill), b"applyFill")
+            xf = with_style_attribute(xf, b"fillId", _id(styles.fill_ids, len(styles.fills), self.fills, look.fill), b"applyFill")
         if _item(styles.borders, _xf_id(xf, _BORDER_ID)) != look.border:
             border_id = _id(styles.border_ids, len(styles.borders), self.borders, look.border)
-            xf = _with_id(xf, b"borderId", border_id, b"applyBorder")
+            xf = with_style_attribute(xf, b"borderId", border_id, b"applyBorder")
         if styles.alignment(style) != look.alignment:
             xf = _with_alignment(xf, ElementTree.tostring(look.alignment.to_tree()))
         if xf is base:
@@ -1308,15 +1276,3 @@ def _with_alignment(xf: bytes, alignment: bytes) -> bytes:
         tag, children = xf[:tag_end], _ALIGNMENT.sub(b"", xf[tag_end + 1 : xf.rindex(b"</xf>")])
     tag = re.sub(rb'\sapplyAlignment="\w+"', b"", tag)
     return tag + b' applyAlignment="1">' + alignment + children + b"</xf>"
-
-
-def _with_id(xf: bytes, name: bytes, value: int, apply: bytes) -> bytes:
-    """Styl ``xf`` z atrybutem ``name`` równym ``value`` i flagą ``apply``; reszta stylu bez zmian."""
-
-    tag_end = xf.index(b">")
-    tag = xf[:tag_end]
-    tag = re.sub(rb"\s" + name + rb'="\d+"', b"", tag)
-    tag = re.sub(rb"\s" + apply + rb'="\w+"', b"", tag)
-    tag = tag.rstrip(b"/ ")
-    closing = xf[tag_end:] if not xf[tag_end - 1 : tag_end] == b"/" else b"/>"
-    return tag[:3] + b" " + name + b'="%d"' % value + tag[3:] + b" " + apply + b'="1"' + closing

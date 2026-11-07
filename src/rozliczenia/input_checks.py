@@ -27,7 +27,7 @@ from typing import Final, TypeAlias
 
 from . import client_data, input_copy, preparation_files, preparation_register, raw_orders, settlement_files, settlement_messages, workbook_files
 from . import preparation_messages as messages
-from .intermax_file import Register, UnsupportedShape
+from .intermax_file import Register
 from .message import Message, StopError
 from .period_folder import (
     PeriodFolder,
@@ -43,6 +43,7 @@ from .settlement_period import SettlementPeriod, parse_period_token
 from .template_file import TemplateFile
 from .workbook_files import Problem, WorkbookError
 from .text import normalize_text
+from .workbook_parts import UnsupportedShape
 from .worker_config import WorkerConfigError, load_worker_mapping
 
 

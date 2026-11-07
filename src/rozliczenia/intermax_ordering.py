@@ -31,7 +31,7 @@ from . import intermax_messages as messages
 from .client_data import ForbiddenValues
 from .domain import ProgressObserver, ProgressPhase
 from .input_copy import InputCopy
-from .intermax_file import OrderSheet, Register, UnsupportedShape
+from .intermax_file import OrderSheet, Register
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Replaced, Waiting, replace_register
 from .message import Message, StopError
 from .phase_runner import PhaseRunner
@@ -46,6 +46,7 @@ from .raw_orders import (
     WithoutWorker,
 )
 from .workbook_files import WorkbookError
+from .workbook_parts import UnsupportedShape
 
 __all__ = ["OrderingSummary", "RegisterDay", "order_register", "register_days"]
 

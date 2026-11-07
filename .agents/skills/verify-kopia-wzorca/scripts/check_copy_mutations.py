@@ -70,14 +70,14 @@ MUTATIONS = (
     ),
     Mutation(
         "Wyróżnienia bez wypełnienia",
-        (Edit(VERIFIED, 'xf = _with_id(xf, b"fillId", fill_id, b"applyFill")', "pass"),),
+        (Edit(VERIFIED, 'xf = with_style_attribute(xf, b"fillId", fill_id, b"applyFill")', "pass"),),
         CHECKER,
         "wypełnienie komórki z Pliku zbiorczego nie przechodzi do Rozliczenia pracownika",
         EXPECTED,
     ),
     Mutation(
         "obramowanie Wzorca w kolumnach wyglądu",
-        (Edit(VERIFIED, 'xf = _with_id(xf, b"borderId", border_id, b"applyBorder")', "pass"),),
+        (Edit(VERIFIED, 'xf = with_style_attribute(xf, b"borderId", border_id, b"applyBorder")', "pass"),),
         CHECKER,
         "Wiersze danych bez obramowania komórek, jak w resztkach formatowania Wzorca",
         EXPECTED,
