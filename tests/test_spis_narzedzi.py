@@ -27,6 +27,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 import re
+from typing import NamedTuple
 
 import pytest
 
@@ -272,14 +273,21 @@ def test_podkomenda_liczy_sie_tylko_cala_w_nawiasie() -> None:
 Function = ast.FunctionDef | ast.AsyncFunctionDef
 
 
+class Reads(NamedTuple):
+    attributes: set[str]
+    names: set[str]
+
+
+class Argument(NamedTuple):
+    flags: list[str]
+    dest: str
+
+
 def _called(call: ast.Call) -> str | None:
     return call.func.attr if isinstance(call.func, ast.Attribute) else call.func.id if isinstance(call.func, ast.Name) else None
 
 
 def _change_bases(tree: ast.Module) -> list[ast.expr]:
-    """Wyrażenia bazy, od której narzędzie liczy zmianę: ``base`` w ``changed_since(root, base)`` i element po ``"HEAD"``
-    w ``["git", "merge-base", "HEAD", baza]`` albo ``_git(root, "merge-base", "HEAD", baza)``."""
-
     bases: list[ast.expr] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and _called(node) == "changed_since":
@@ -291,9 +299,7 @@ def _change_bases(tree: ast.Module) -> list[ast.expr]:
     return bases
 
 
-def _reads(expression: ast.expr) -> tuple[set[str], set[str]]:
-    """Atrybuty (``args.baza`` daje ``baza``) i nazwy, które wyrażenie czyta; obiektu atrybutu nie czyta dalej."""
-
+def _reads(expression: ast.expr) -> Reads:
     attributes: set[str] = set()
     names: set[str] = set()
     pending: list[ast.AST] = [expression]
@@ -305,13 +311,10 @@ def _reads(expression: ast.expr) -> tuple[set[str], set[str]]:
             names.add(node.id)
         else:
             pending += ast.iter_child_nodes(node)
-    return attributes, names
+    return Reads(attributes, names)
 
 
 def _sources(name: str, function: Function, calls: list[ast.Call]) -> list[ast.expr]:
-    """Skąd w ``function`` przychodzi wartość ``name``: przypisania w niej i, gdy to parametr, argument na jego miejscu
-    (po ``self``/``cls`` przy wywołaniu przez atrybut) albo słowo kluczowe każdego wywołania funkcji o tej nazwie."""
-
     assigned = [
         node.value
         for node in ast.walk(function)
@@ -330,55 +333,47 @@ def _sources(name: str, function: Function, calls: list[ast.Call]) -> list[ast.e
     return assigned + passed
 
 
-def _base_dests(tree: ast.Module, bases: list[ast.expr]) -> set[str]:
-    """Atrybuty, z których płynie baza zmiany, wśród nich desty argparse (``args.od``): od wyrażeń bazy wstecz przez
-    przypisania, parametry funkcji modułu i ich wywołania."""
-
+def _base_attributes(tree: ast.Module, bases: list[ast.expr]) -> set[str]:
     functions = [node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
     scope: dict[ast.AST, Function] = {node: function for function in functions for node in ast.walk(function)}
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
-    dests: set[str] = set()
+    found: set[str] = set()
     seen: set[tuple[Function, str]] = set()
     pending = [(base, scope.get(base)) for base in bases]
     while pending:
         expression, function = pending.pop()
-        attributes, names = _reads(expression)
-        dests |= attributes
-        for name in names:
+        reads = _reads(expression)
+        found |= reads.attributes
+        for name in reads.names:
             if function is not None and (function, name) not in seen:
                 seen.add((function, name))
                 pending += [(source, scope.get(source)) for source in _sources(name, function, calls)]
-    return dests
+    return found
 
 
-def _parsers(tree: ast.Module) -> dict[str, list[tuple[list[str], str]]]:
-    """Argumenty każdego parsera, po zmiennej, na której stoi ``add_argument``: flagi i dest, który da argparse."""
-
-    parsers: dict[str, list[tuple[list[str], str]]] = {}
+def _parsers(tree: ast.Module) -> dict[str, list[Argument]]:
+    parsers: dict[str, list[Argument]] = {}
     for call in ast.walk(tree):
         if not (isinstance(call, ast.Call) and _called(call) == "add_argument" and isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name)):
             continue
         flags = [str(argument.value) for argument in call.args if isinstance(argument, ast.Constant)]
         named = [keyword.value.value for keyword in call.keywords if keyword.arg == "dest" and isinstance(keyword.value, ast.Constant)]
         longest = next((flag for flag in flags if flag.startswith("--")), flags[0] if flags else "")
-        parsers.setdefault(call.func.value.id, []).append((flags, str(named[0]) if named else longest.lstrip("-").replace("-", "_")))
+        parsers.setdefault(call.func.value.id, []).append(Argument(flags, str(named[0]) if named else longest.lstrip("-").replace("-", "_")))
     return parsers
 
 
-def _without_baza_option(paths: list[Path]) -> list[tuple[Path, str]]:
-    """Narzędzie i parser, który przyjmuje bazę zmiany, a nie ma ``--baza``, które do niej trafia; pusty parser znaczy,
-    że narzędzie liczy zmianę od bazy, która nie przychodzi z żadnej opcji."""
-
-    missing = []
+def _without_baza_option(paths: list[Path]) -> list[tuple[Path, str | None]]:
+    missing: list[tuple[Path, str | None]] = []
     for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         bases = _change_bases(tree)
         if not bases:
             continue
-        dests = _base_dests(tree, bases)
-        owners = {name: arguments for name, arguments in _parsers(tree).items() if any(dest in dests for _, dest in arguments)}
-        missing += [(path, "")] if not owners else []
-        missing += [(path, name) for name, arguments in owners.items() if not any("--baza" in flags and dest in dests for flags, dest in arguments)]
+        sources = _base_attributes(tree, bases)
+        owners = {name: arguments for name, arguments in _parsers(tree).items() if any(argument.dest in sources for argument in arguments)}
+        missing += [(path, None)] if not owners else []
+        missing += [(path, name) for name, arguments in owners.items() if not any("--baza" in argument.flags and argument.dest in sources for argument in arguments)]
     return missing
 
 
@@ -430,7 +425,7 @@ def main():
         (PLAN_PRZED_BAZA.replace("plan.add_argument('--od', default='')", "plan.add_argument('--od', '--baza', dest='od')"), []),
         ("parser.add_argument('--od')\nparser.add_argument('--baza')\nchanged_since(ROOT, args.od)\n", ["parser"]),
         (PRZEZ_PRZYPISANIE_SLOWO_I_CLASSMETHOD, ["parser"]),
-        ("changed_since(ROOT, os.environ['BAZA'])\n", [""]),
+        ("changed_since(ROOT, os.environ['BAZA'])\n", [None]),
     ],
     ids=[
         "pozycyjna przy changed_since",
@@ -444,7 +439,7 @@ def main():
         "baza spoza opcji",
     ],
 )
-def test_baze_zmiany_sprawdza_w_parserze_ktory_ja_przyjmuje(tmp_path: Path, source: str, missing: list[str]) -> None:
+def test_baze_zmiany_sprawdza_w_parserze_ktory_ja_przyjmuje(tmp_path: Path, source: str, missing: list[str | None]) -> None:
     tool = tmp_path / "narzedzie.py"
     tool.write_text(source, encoding="utf-8")
 

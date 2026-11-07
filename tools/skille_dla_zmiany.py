@@ -19,8 +19,7 @@ skrypty mutacji skilla, które po merge'u liczy noc na ``main`` (zakres nocy, AD
 ``LICZY CI`` w niej nie stoi. Agent nie uruchamia ich lokalnie poza odtworzeniem czerwonego kroku CI albo issue nocy.
 Gdy git nie wyznaczy zmiany (np. nie ma bazy), ostatnia linia to ``SKILLE VERIFY: nieznane (<powód>)``, a kod wyjścia 1.
 
-Bazę podaje ``--baza``, jak w innych narzędziach zmiany, albo pozycyjnie, bo tak woła kopię narzędzia z HEAD PR
-``tools/scal_pr.py``; obie postacie naraz z różnymi wartościami to błąd użycia.
+Bazę podaje ``--baza`` albo pozycyjnie; obie postacie naraz z różnymi wartościami to błąd użycia.
 
     .venv/bin/python tools/skille_dla_zmiany.py                    # macOS i Linux
     py -3 tools/skille_dla_zmiany.py --baza origin/main            # Windows
