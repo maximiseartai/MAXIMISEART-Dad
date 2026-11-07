@@ -238,7 +238,7 @@ def _base_moved_on(repo: Path, on_main: tuple[str, str], on_branch: tuple[str, s
 
 
 def _commit_times(repo: Path, expensive: dict[str, float]) -> None:
-    """Czasy CI z main, jakie szybko pobrał dziś do ``.git/czasy-ci`` (artefakt ``czasy-ci``, ``tools/ci/czasy_ci.py``), i
+    """Czasy CI z main, jakie szybko pobrał dziś do ``.git/czasy-ci`` (artefakt ``czasy-ci``, ``tools/lib/czasy_ci.py``), i
     commit dotychczasowych zmian jako ``origin/main``."""
 
     times = {test: 0.1 for test in BASE_FILES if test.startswith("tests/test_")} | expensive

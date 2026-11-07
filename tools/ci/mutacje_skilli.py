@@ -5,9 +5,9 @@ Krok to podstawa ``ci:`` skilla albo jeden jego skrypt mutacji ``.agents/skills/
 mutacji dowodzi, że sprawdzenie skilla pada na zepsutych wariantach kodu, i kończy się linią ``MUTACJE OK``. Polecenie
 podstawy, które wybrany skrypt mutacji i tak uruchamia bez mutacji (podstawa ``check_all``), nie biegnie drugi raz.
 Które kroki biegną w runie CI (push, pull request, noc) i dlaczego, rozstrzyga zakres runu
-(``tools/lib/zakres_runu.py``); ten skrypt uruchamia zakres pushu, a plan CI (``tools/plan_ci.py``) dzieli kroki
-zakresu swojego zdarzenia między zadania Mutation checks i uruchamia je tym samym ``run``, część skryptu z
-``MUTACJE_CZESC`` (``tools/mutacje.py``).
+(``tools/lib/zakres_runu.py``); ten skrypt uruchamia zakres pushu, plan CI (``tools/plan_ci.py``) dzieli kroki
+zakresu swojego zdarzenia między zadania Mutation checks, a zadanie planu (``tools/ci/wykonaj_zadanie.py``) uruchamia je
+tym samym ``run``, część skryptu z ``MUTACJE_CZESC`` (``tools/mutacje.py``).
 
 Skrypt nie może zgubić się po cichu. FAIL dostaje plik ``.py`` w skillu z ``mutation`` w nazwie, który nie pasuje do
 wzorca, skrypt mutacji wskazany w ``SKILL.md`` skilla, którego nie ma, i zły klucz ``ci:`` albo ``ci-czesci:``. FAIL

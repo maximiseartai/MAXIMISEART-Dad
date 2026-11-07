@@ -1,6 +1,6 @@
 """Plugin pytest: zadanie CI bierze ze swojego udziału dużego pliku testów tylko jego testy, bez listy id.
 
-    python -m pytest -n auto -p tools.ci.pytest_czesc --czesci czesci.json tests/test_a.py tests/test_b.py
+    python -m pytest -n auto -p tools.lib.pytest_czesc --czesci czesci.json tests/test_a.py tests/test_b.py
 
 ``czesci.json`` to ``{"tests/test_a.py": {"n": 3, "udzialy": [1, 3]}}``: testy pliku posortowane po id idą po
 kolei do udziałów 1, 2, 3, 1, 2, …, a zostają te z udziałów 1 i 3. Plik bez wpisu zostaje cały. Zbiór id pliku nie

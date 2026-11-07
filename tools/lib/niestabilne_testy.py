@@ -1,6 +1,6 @@
 """Niestabilne testy (ADR 0020): ponowienie testu, który padł w bramce PR, zapis flaky testu i zapis testów z kwarantanny.
 
-Zadanie pytest (``tools/plan_ci.py wykonaj``) zapisuje dwa pliki, a dwa narzędzia je czytają z artefaktów runu:
+Zadanie pytest (``tools/ci/wykonaj_zadanie.py``) zapisuje dwa pliki, a dwa narzędzia je czytają z artefaktów runu:
 
 - ``FlakyTest``: test, który w zadaniu pytest bramki padł, a po jednym ponowieniu przeszedł. Lista trafia do
   ``FLAKY_TESTY`` (artefakt ``flaky-testy-<zadanie>-<próba>``), a ``tools/ci/zgloszenia_ci.py`` zakłada z niej issue
@@ -25,9 +25,12 @@ from typing import Literal
 from xml.etree import ElementTree
 
 FLAKY_TESTY = Path(".ci-niestabilne", "flaky-testy.json")
+# Początek nazwy artefaktu z ``FLAKY_TESTY`` i z ``KWARANTANNA`` każdego zadania pytest w ``ci.yml``.
+ARTEFAKT_FLAKY_TESTOW = "flaky-testy-"
 # Plik ze słownikiem ``KWARANTANNA`` (ścieżka w repozytorium, jak ją podaje ``git show <commit>:<ścieżka>``).
 PLIK_KWARANTANNY = "tests/fixtures/kwarantanna.py"
 KWARANTANNA = Path(".ci-niestabilne", "kwarantanna.json")
+ARTEFAKT_KWARANTANNY = "kwarantanna-"
 # Id testu, które bramka ponawia, a zgłoszenia przepisują do issue: plik pod ``tests/`` bez ``..``, nazwy i parametry
 # w jednej linii. Parametry pytest escapuje (``\u017c``), ale mogą mieć nawiasy, cudzysłowy, ``;``, ``@`` i backticki,
 # więc treść issue podaje id tylko w bloku kodu.

@@ -134,7 +134,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      # tools/ci/czasy_ci.py downloads the artifact czasy-ci of earlier runs.
+      # tools/lib/czasy_ci.py downloads the artifact czasy-ci of earlier runs.
       actions: read
     outputs:
       pytest: ${{ steps.plan.outputs.pytest }}
@@ -177,7 +177,7 @@ jobs:
     timeout-minutes: ${{ matrix.limit_minut }}
     permissions:
       contents: read
-      # tools/ci/czasy_ci.py reads the step times of this job from the run's jobs API.
+      # tools/ci/zapis_czasow.py reads the step times of this job from the run's jobs API.
       actions: read
     strategy:
       fail-fast: false
@@ -249,7 +249,7 @@ jobs:
       # also after red tests. On a pull request the tests that failed run once more; passing then makes them flaky.
       - name: Run the planned units
         id: units
-        run: python tools/plan_ci.py wykonaj --plan .ci-plan/plan.json --zadanie ${{ matrix.id }}
+        run: python tools/ci/wykonaj_zadanie.py --plan .ci-plan/plan.json --zadanie ${{ matrix.id }}
 
       # Tests that passed only on their retry; the workflow zgloszenia.yml files an issue "Flaky test: <test>" for each.
       - name: Upload the flaky tests
@@ -291,7 +291,7 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python tools/ci/czasy_ci.py zadanie --tor "${{ runner.os }}-${{ steps.python.outputs.python-version }}" --junit .ci-czasy/junit.xml --wykonanie .ci-czasy/wykonanie.json --wyjscie ".ci-czasy/zapis/${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}.json"
+        run: python tools/ci/zapis_czasow.py zadanie --tor "${{ runner.os }}-${{ steps.python.outputs.python-version }}" --junit .ci-czasy/junit.xml --wykonanie .ci-czasy/wykonanie.json --wyjscie ".ci-czasy/zapis/${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}.json"
 
       - name: Upload the unit times
         if: ${{ !cancelled() }}
@@ -318,7 +318,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-      # tools/ci/czasy_ci.py reads the step times of this job from the run's jobs API.
+      # tools/ci/zapis_czasow.py reads the step times of this job from the run's jobs API.
       actions: read
     # tools/ci/mutacje_skilli.py limits each script to 30 min; this catches a hang in the runner itself.
     timeout-minutes: 60
@@ -385,7 +385,7 @@ jobs:
       # Each baseline and mutation script (or part of one) of the job, also after a red one.
       - name: Run the planned units
         id: units
-        run: python tools/plan_ci.py wykonaj --plan .ci-plan/plan.json --zadanie ${{ matrix.id }}
+        run: python tools/ci/wykonaj_zadanie.py --plan .ci-plan/plan.json --zadanie ${{ matrix.id }}
 
       # The key is saved once and never overwritten, so it is saved only with the jar of the pinned SHA-256: a folder
       # without it (a download that failed to the end, a job whose units run no model) would give each later job a hit
@@ -421,7 +421,7 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python tools/ci/czasy_ci.py zadanie --tor "${{ runner.os }}-${{ steps.python.outputs.python-version }}" --wykonanie .ci-czasy/wykonanie.json --wyjscie ".ci-czasy/zapis/${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}.json"
+        run: python tools/ci/zapis_czasow.py zadanie --tor "${{ runner.os }}-${{ steps.python.outputs.python-version }}" --wykonanie .ci-czasy/wykonanie.json --wyjscie ".ci-czasy/zapis/${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}.json"
 
       - name: Upload the unit times
         if: ${{ !cancelled() }}
@@ -472,14 +472,14 @@ jobs:
       - name: Require every CI check to succeed and every planned unit to report
         env:
           NEEDS: ${{ toJSON(needs) }}
-        run: python3 tools/plan_ci.py werdykt --plan .ci-plan/plan.json --zapisy .ci-czasy/zapisy
+        run: python3 tools/ci/werdykt_required.py --plan .ci-plan/plan.json --zapisy .ci-czasy/zapisy
 
       # On a push to main the unit times of every job of the run become the artifact czasy-ci, the one source of CI
-      # times (tools/ci/czasy_ci.py). Measurement only: a failure here prints CZASY CI FAIL and leaves the verdict above.
+      # times (tools/ci/zapis_czasow.py). Measurement only: a failure here prints CZASY CI FAIL and leaves the verdict above.
       - name: Merge the unit times into czasy-ci
         if: ${{ !cancelled() && github.event_name == 'push' }}
         continue-on-error: true
-        run: python3 tools/ci/czasy_ci.py scal --katalog .ci-czasy/zapisy --wyjscie .ci-czasy/czasy-ci.json
+        run: python3 tools/ci/zapis_czasow.py scal --katalog .ci-czasy/zapisy --wyjscie .ci-czasy/czasy-ci.json
 
       - name: Upload czasy-ci
         if: ${{ !cancelled() && github.event_name == 'push' }}

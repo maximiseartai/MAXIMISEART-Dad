@@ -59,7 +59,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 ## Zadanie CI padło
 
 - Porażkę zadania odtwarzasz przez `.venv/bin/python tools/ci_lokalnie.py --tylko <zadanie>` (Windows: `py -3 tools/ci_lokalnie.py --tylko <zadanie>`).
-- Linia `LIMIT | krok:pytest` znaczy, że krok pytest przekroczył swój limit z planu (`limit_pytest_s` w `tools/plan_ci.py`), czyli coś się zawiesiło: test, który wisiał, zostawił wyżej w logu stosy swoich wątków pod `Timeout (0:02:30)!` (`faulthandler_timeout` w `pyproject.toml`), a zawieszenie przy imporcie albo zbieraniu testów stosów nie zostawia.
+- Linia `LIMIT | krok:pytest` znaczy, że krok pytest przekroczył swój limit z planu (`limit_pytest_s` w `tools/lib/plan_runu.py`), czyli coś się zawiesiło: test, który wisiał, zostawił wyżej w logu stosy swoich wątków pod `Timeout (0:02:30)!` (`faulthandler_timeout` w `pyproject.toml`), a zawieszenie przy imporcie albo zbieraniu testów stosów nie zostawia.
 - Ciężkie zadania liczy GitHub w częściach: `mutations` po pushu (stan pokazuje `tools/praca_w_toku.py` albo `gh pr checks`), a `change-mutations` i skrypty mutacji skilli nocą na `main`.
   Część skryptu mutacji albo podstawy z planu (`#k/n` w nazwie jednostki) odtwarzasz przez `MUTACJE_CZESC=k/n` w środowisku polecenia tego skryptu albo polecenia `ci:`.
 

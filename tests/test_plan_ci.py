@@ -30,6 +30,10 @@ import kroki_skilli  # noqa: E402
 from mutacje import NearLimit  # noqa: E402
 import niestabilne_testy  # noqa: E402
 import plan_ci  # noqa: E402
+import plan_runu  # noqa: E402
+import werdykt_required  # noqa: E402
+import wykonaj_zadanie  # noqa: E402
+import zapis_czasow  # noqa: E402
 from zakres_runu import KROKI, MUTACJE, TORY, Krok, KrokSkilla, Tor, Zdarzenie, pliki_testow, zakres  # noqa: E402
 
 FILES = [f"tests/test_{index:02}.py" for index in range(40)]
@@ -81,13 +85,13 @@ def _with_skill_times(czasy: czasy_ci.Czasy) -> czasy_ci.Czasy:
 
 def _plan(
     czasy: czasy_ci.Czasy, files: list[str], steps: list[kroki_skilli.Step] | None = None, event: Zdarzenie = Zdarzenie.PULL_REQUEST, tory: tuple[Tor, ...] = TORY
-) -> plan_ci.Plan:
+) -> plan_runu.Plan:
     lanes = [plan_ci.wycen(lane, files, czasy) for lane in tory]
     skills = [] if steps is None else [plan_ci.wycen_mutacje([KrokSkilla(step, "") for step in steps], czasy)]
     return plan_ci.rozplanuj([*lanes, *skills], event, czasy.runy)
 
 
-def _run_jobs(plan: plan_ci.Plan) -> int:
+def _run_jobs(plan: plan_runu.Plan) -> int:
     return plan_ci.STALE_ZADANIA + len(plan.zadania)
 
 
@@ -183,7 +187,7 @@ def test_zadanie_pytest_instaluje_chromium_tylko_z_plikiem_testow_ktory_go_potrz
     assert [entry["przegladarka"] for entry in plan.macierz("pytest")] == [job.przegladarka for job in jobs]
 
 
-def _base_in_parts(capacities: float, key: str = "verify-e/ci") -> plan_ci.Plan:
+def _base_in_parts(capacities: float, key: str = "verify-e/ci") -> plan_runu.Plan:
     """Plan pull requestu z jedną podstawą z ``ci-czesci: 4``, która trwa w CI ``capacities`` razy tyle, ile mieści
     zadanie Mutation checks przy ``CEL_S`` (narzut 43 s z ``_with_skill_times``)."""
 
@@ -204,14 +208,14 @@ def test_podstawa_z_ci_czesci_dluzsza_od_zadania_biegnie_w_czesciach_ktore_sklad
     lost = dataclasses.replace(plan, zadania=plan.zadania[1:])
 
     assert units == [f"skill:{key}#{part}/{parts}" for part in range(1, parts + 1)]
-    assert plan_ci.werdykt(plan, {"plan": "success", "mutations": "success"}, complete) == []
+    assert werdykt_required.werdykt(plan, {"plan": "success", "mutations": "success"}, complete) == []
     # Plan bez jednej części: zadania, które biegły, zgłosiły wszystko, a Required i tak widzi, że podstawa nie jest cała.
-    assert plan_ci.werdykt(lost, {"plan": "success", "mutations": "success"}, [_record(lost, job, _reported(job)) for job in lost.zadania]) == [
+    assert werdykt_required.werdykt(lost, {"plan": "success", "mutations": "success"}, [_record(lost, job, _reported(job)) for job in lost.zadania]) == [
         f"plan CI: części {', '.join(f'{part}/{parts}' for part in range(2, parts + 1))} jednostki skill:{key} na torze mutacje nie są całością 1..{parts}"
     ]
 
 
-def _with_units(plan: plan_ci.Plan, units: dict[str, tuple[str, ...]]) -> plan_ci.Plan:
+def _with_units(plan: plan_runu.Plan, units: dict[str, tuple[str, ...]]) -> plan_runu.Plan:
     """``plan``, w którym zadania o id z ``units`` mają te jednostki, a nowe id to kopie pierwszego zadania toru."""
 
     jobs = {job.id: job for job in plan.zadania}
@@ -222,14 +226,14 @@ def _with_units(plan: plan_ci.Plan, units: dict[str, tuple[str, ...]]) -> plan_c
     return dataclasses.replace(plan, zadania=tuple(jobs.values()))
 
 
-def _long_shares(plan: plan_ci.Plan) -> tuple[plan_ci.Zadanie, str]:
+def _long_shares(plan: plan_runu.Plan) -> tuple[plan_runu.Zadanie, str]:
     """Zadanie toru Windows 3.11 z pierwszym udziałem ``LONG`` i ten udział."""
 
     job = next(job for job in plan.zadania if job.tor == "windows-3.11" and any(unit.startswith(f"pytest:{LONG}#1/") for unit in job.jednostki))
     return job, next(unit for unit in job.jednostki if unit.startswith(f"pytest:{LONG}#1/"))
 
 
-def _incomplete(case: str) -> tuple[plan_ci.Plan, str]:
+def _incomplete(case: str) -> tuple[plan_runu.Plan, str]:
     """Plan, którego części jednej jednostki nie są całością, i przyczyna, którą ma dać Required."""
 
     if case == "pytest":
@@ -254,7 +258,7 @@ def test_required_czerwienieje_gdy_czesci_jednostki_nie_sa_kazda_z_1_do_n_doklad
     results = {"plan": "success", "pytest": "success", "mutations": "success"}
 
     # Każde zadanie zgłosiło każdą swoją jednostkę bez porażki, więc przyczyną jest sam podział.
-    assert plan_ci.werdykt(plan, results, [_record(plan, job, _reported(job)) for job in plan.zadania]) == [reason]
+    assert werdykt_required.werdykt(plan, results, [_record(plan, job, _reported(job)) for job in plan.zadania]) == [reason]
 
 
 def test_w_zadaniu_podstawa_skilla_biegnie_przed_jego_skryptami_mutacji(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -279,21 +283,21 @@ def test_tor_bez_pracy_nie_ma_zadan_a_bez_zadnej_pracy_macierz_jest_pusta(monkey
 
     assert {job.tor for job in with_steps.zadania} == {"windows-3.11", "windows-3.14"}
     assert (empty.macierz("pytest"), empty.macierz("mutations"), with_steps.macierz("mutations")) == ([], [], [])
-    assert plan_ci.werdykt(empty, skipped, []) == []
-    assert plan_ci.werdykt(with_steps, skipped, []) == [
+    assert werdykt_required.werdykt(empty, skipped, []) == []
+    assert werdykt_required.werdykt(with_steps, skipped, []) == [
         "pytest=skipped",
         *(f"{job.nazwa}: brak zapisu czasów z tego planu, więc nic nie dowodzi, że jego jednostki biegły" for job in with_steps.zadania),
     ]
 
 
 def _record(
-    plan: plan_ci.Plan, job: plan_ci.Zadanie, units: list[str], *, attempt: int = 1, digest: str | None = None, failed: frozenset[str] = frozenset()
+    plan: plan_runu.Plan, job: plan_runu.Zadanie, units: list[str], *, attempt: int = 1, digest: str | None = None, failed: frozenset[str] = frozenset()
 ) -> czasy_ci.Zapis:
     reported = tuple(czasy_ci.Jednostka(unit, 1.0, "fail" if unit in failed else "ok") for unit in units)
     return czasy_ci.Zapis(1, attempt, "pytest", job.nazwa, job.tor, "pull_request", "0" * 40, 9.0, reported, (), digest or plan.digest, job.id)
 
 
-def _reported(job: plan_ci.Zadanie) -> list[str]:
+def _reported(job: plan_runu.Zadanie) -> list[str]:
     """Klucze, pod którymi zapis czasów zgłasza jednostki zadania: udział i węzeł testu pod swoim plikiem."""
 
     return sorted({unit.partition("#")[0].partition("::")[0] for unit in job.jednostki})
@@ -307,9 +311,9 @@ def test_required_czerwienieje_gdy_zaplanowana_jednostka_nie_zglosila_wyniku_w_o
     missing = f"pytest:{LONG}"
     partial = _record(plan, split, [unit.partition("#")[0] for unit in split.jednostki if not unit.startswith(missing)], attempt=2)
 
-    assert plan_ci.werdykt(plan, results, complete) == []
-    assert plan_ci.werdykt(plan, results, [*complete, partial]) == [f"{split.nazwa}: jednostki bez wyniku: {missing}"]
-    assert plan_ci.werdykt(plan, results, [partial, *(record for record in complete if record.zadanie_planu != split.id)]) == [
+    assert werdykt_required.werdykt(plan, results, complete) == []
+    assert werdykt_required.werdykt(plan, results, [*complete, partial]) == [f"{split.nazwa}: jednostki bez wyniku: {missing}"]
+    assert werdykt_required.werdykt(plan, results, [partial, *(record for record in complete if record.zadanie_planu != split.id)]) == [
         f"{split.nazwa}: jednostki bez wyniku: {missing}"
     ]
 
@@ -323,21 +327,21 @@ def test_required_czerwienieje_gdy_jednostka_zadania_padla_w_ostatniej_probie_a_
     failed = _record(plan, job, units, failed=frozenset({units[0], "krok:e2e"}))
     others = [record for record in complete if record.zadanie_planu != job.id]
 
-    assert plan_ci.werdykt(plan, results, [*others, failed]) == [f"{job.nazwa}: jednostki z porażką: {', '.join(sorted({units[0], 'krok:e2e'}))}"]
-    assert plan_ci.werdykt(plan, results, [*others, failed, _record(plan, job, units, attempt=2)]) == []
+    assert werdykt_required.werdykt(plan, results, [*others, failed]) == [f"{job.nazwa}: jednostki z porażką: {', '.join(sorted({units[0], 'krok:e2e'}))}"]
+    assert werdykt_required.werdykt(plan, results, [*others, failed, _record(plan, job, units, attempt=2)]) == []
 
 
 @pytest.mark.parametrize(("event", "minutes"), [(Zdarzenie.PULL_REQUEST, 106), (Zdarzenie.PUSH, 96)])
 def test_plan_wczytany_z_pliku_ma_zdarzenie_zapisanego_wiec_zadanie_pr_dalej_ma_ponowienie(event: Zdarzenie, minutes: int) -> None:
     """Zadania CI wykonują plan wczytany z ``plan.json``; zdarzenie z pliku rządzi ponowieniem i limitem zadania."""
 
-    job = plan_ci.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py", "krok:e2e", "krok:timing"), 401.0)
-    loaded = plan_ci.Plan.z_json(plan_ci.Plan(event, plan_ci.CEL_S, (), (job,)).do_json())
+    job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py", "krok:e2e", "krok:timing"), 401.0)
+    loaded = plan_runu.Plan.z_json(plan_runu.Plan(event, plan_ci.CEL_S, (), (job,)).do_json())
 
     assert (loaded.zdarzenie is event, loaded.limit_zadania_min(job)) == (True, minutes)
-    unknown = plan_ci.Plan(event, plan_ci.CEL_S, (), (job,)).do_json().replace(f'"zdarzenie": "{event}"', '"zdarzenie": "release"')
+    unknown = plan_runu.Plan(event, plan_ci.CEL_S, (), (job,)).do_json().replace(f'"zdarzenie": "{event}"', '"zdarzenie": "release"')
     with pytest.raises(ValueError, match="release"):
-        plan_ci.Plan.z_json(unknown)
+        plan_runu.Plan.z_json(unknown)
 
 
 def test_plan_zmieniony_po_digest_nie_wykonuje_sie_a_required_nie_bierze_zapisow_innego_planu(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -347,11 +351,11 @@ def test_plan_zmieniony_po_digest_nie_wykonuje_sie_a_required_nie_bierze_zapisow
     (tmp_path / "plan.json").write_text(json.dumps(tampered), encoding="utf-8")
     other = [_record(plan, job, _reported(job), digest="inny") for job in plan.zadania]
 
-    code = plan_ci.main(["wykonaj", "--plan", str(tmp_path / "plan.json"), "--zadanie", plan.zadania[0].id])
+    code = wykonaj_zadanie.main(["--plan", str(tmp_path / "plan.json"), "--zadanie", plan.zadania[0].id])
 
     assert code == 1
     assert capsys.readouterr().out.startswith(f"WYKONANIE FAIL | plan {(tmp_path / 'plan.json').as_posix()}: treść planu nie zgadza się z jego digest {plan.digest[:12]}")
-    assert len(plan_ci.werdykt(plan, {"plan": "success"}, other)) == len(plan.zadania)
+    assert len(werdykt_required.werdykt(plan, {"plan": "success"}, other)) == len(plan.zadania)
 
 
 def test_bez_czasow_z_main_plan_wazy_prace_domyslnie_mowi_to_i_daje_macierz(
@@ -366,7 +370,7 @@ def test_bez_czasow_z_main_plan_wazy_prace_domyslnie_mowi_to_i_daje_macierz(
     # Baza HEAD nie ma zmian, więc tylko push, który bazę pomija, wybiera każdy krok (ADR 0014).
     code = plan_ci.main(["plan", "--zdarzenie", "push", "--baza", "HEAD", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")])
     out = capsys.readouterr().out.splitlines()
-    plan = plan_ci.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8"))
+    plan = plan_runu.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8"))
     output = dict(line.split("=", 1) for line in (tmp_path / "output").read_text(encoding="utf-8").splitlines())
 
     every_step = {f"skill:{chosen.krok.key}" for chosen in zakres(Zdarzenie.PUSH, frozenset()).wybrane}
@@ -394,13 +398,13 @@ def test_kroki_planu_uruchamiaja_skrypty_repozytorium_kazde_polecenie_z_limitem_
 def mini_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """Repozytorium z plikiem 30 testów, z których 3 padają, i pluginem udziałów; w nim biegnie ``wykonaj``."""
 
-    (tmp_path / "tools" / "ci").mkdir(parents=True)
-    shutil.copy2(ROOT / "tools" / "ci" / "pytest_czesc.py", tmp_path / "tools" / "ci" / "pytest_czesc.py")
+    (tmp_path / "tools" / "lib").mkdir(parents=True)
+    shutil.copy2(ROOT / "tools" / "lib" / "pytest_czesc.py", tmp_path / "tools" / "lib" / "pytest_czesc.py")
     (tmp_path / "tests").mkdir()
     cases = "\n".join(f"def test_{index:02}() -> None:\n    assert {index % 10 != 7}\n" for index in range(30))
     (tmp_path / "tests" / "test_mini.py").write_text(cases, encoding="utf-8")
     (tmp_path / "pytest.ini").write_text("[pytest]\njunit_family = xunit1\n", encoding="utf-8")
-    monkeypatch.setattr(plan_ci, "ROOT", tmp_path)
+    monkeypatch.setattr(wykonaj_zadanie, "ROOT", tmp_path)
     monkeypatch.chdir(tmp_path)
     # ``wykonaj`` uruchamia pytest z ``-n auto``: tu jeden worker, bo test sam biegnie w workerze xdist.
     monkeypatch.setenv("PYTEST_XDIST_AUTO_NUM_WORKERS", "1")
@@ -408,7 +412,7 @@ def mini_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]
 
 
 def _junit_tests() -> set[str]:
-    return set(re.findall(r'name="(test_\d+)"', plan_ci.JUNIT.read_text(encoding="utf-8")))
+    return set(re.findall(r'name="(test_\d+)"', wykonaj_zadanie.JUNIT.read_text(encoding="utf-8")))
 
 
 # Cztery testy pliku w czterech udziałach: crc32 id modulo 4 dałby je udziałom 2, 2, 4, 4, a udziały 1 i 3 bez testów
@@ -424,7 +428,7 @@ def test_udzialy_pliku_dziela_go_miedzy_zadania_bez_luk_i_powtorzen_a_kazdy_ma_t
     # sortują się przed id udziału).
     (mini_repo / "tests" / "conftest.py").write_text("def pytest_collection_modifyitems(items):\n    if len({item.path for item in items}) > 1:\n        items.reverse()\n", encoding="utf-8")
     jobs = tuple(
-        plan_ci.Zadanie(
+        plan_runu.Zadanie(
             f"linux-3.14-{share}",
             "linux-3.14",
             f"pytest (Python 3.14, Linux, {share}/{shares})",
@@ -433,11 +437,11 @@ def test_udzialy_pliku_dziela_go_miedzy_zadania_bez_luk_i_powtorzen_a_kazdy_ma_t
         )
         for share in range(1, shares + 1)
     )
-    plan = plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), jobs)
+    plan = plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), jobs)
     ran = []
     for share in range(1, shares + 1):
         monkeypatch.setenv("PYTHONHASHSEED", ("0", "1", "random")[share % 3])
-        plan_ci.wykonaj(plan, f"linux-3.14-{share}")
+        wykonaj_zadanie.wykonaj(plan, f"linux-3.14-{share}")
         ran.append(_junit_tests())
 
     assert Counter(name for names in ran for name in names) == Counter(f"test_{index:02}" for index in range(tests))
@@ -451,13 +455,13 @@ def test_zadanie_wykonuje_kroki_po_czerwonym_pytest_przerywa_krok_po_limicie_i_z
     (mini_repo / "zapisuje.py").write_text("import pathlib, sys\n\npathlib.Path(sys.argv[1]).touch()\n", encoding="utf-8")
     quick = Krok("szybki", ("{python} zapisuje.py biegl",), (60.0,), 1.0)
     hung = Krok("wiszacy", ("{python} wisi.py", "{python} zapisuje.py nie-biegnie"), (1.0, 60.0), 1.0)
-    monkeypatch.setattr(plan_ci, "KROKI", {step.nazwa: step for step in (quick, hung)})
-    job = plan_ci.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_mini.py", "krok:wiszacy", "krok:szybki"), 1.0)
-    plan = plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,))
+    monkeypatch.setattr(wykonaj_zadanie, "KROKI", {step.nazwa: step for step in (quick, hung)})
+    job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_mini.py", "krok:wiszacy", "krok:szybki"), 1.0)
+    plan = plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,))
     (mini_repo / "plan.json").write_text(plan.do_json(), encoding="utf-8")
 
-    code = plan_ci.main(["wykonaj", "--plan", str(mini_repo / "plan.json"), "--zadanie", job.id])
-    result = json.loads(plan_ci.WYKONANIE.read_text(encoding="utf-8"))
+    code = wykonaj_zadanie.main(["--plan", str(mini_repo / "plan.json"), "--zadanie", job.id])
+    result = json.loads(plan_runu.WYKONANIE.read_text(encoding="utf-8"))
 
     assert code == 1
     assert len(_junit_tests()) == 30
@@ -472,12 +476,12 @@ def test_zawieszony_test_konczy_krok_pytest_po_limicie_z_linia_limitu_a_nie_po_g
     mini_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: Zdarzenie
 ) -> None:
     (mini_repo / "tests" / "test_wisi.py").write_text("import time\n\n\ndef test_wisi() -> None:\n    time.sleep(60)\n", encoding="utf-8")
-    monkeypatch.setattr(plan_ci, "LIMIT_PYTEST_MIN_S", 3)
-    job = plan_ci.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_wisi.py",), 0.9)
+    monkeypatch.setattr(plan_runu, "LIMIT_PYTEST_MIN_S", 3)
+    job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_wisi.py",), 0.9)
 
-    code = plan_ci.wykonaj(plan_ci.Plan(event, plan_ci.CEL_S, (), (job,)), job.id)
+    code = wykonaj_zadanie.wykonaj(plan_runu.Plan(event, plan_ci.CEL_S, (), (job,)), job.id)
     out = capsys.readouterr().out
-    result = json.loads(plan_ci.WYKONANIE.read_text(encoding="utf-8"))
+    result = json.loads(plan_runu.WYKONANIE.read_text(encoding="utf-8"))
 
     assert code == 1
     assert [(unit["klucz"], unit["status"]) for unit in result["jednostki"]] == [("krok:pytest", "fail")]
@@ -487,16 +491,16 @@ def test_zawieszony_test_konczy_krok_pytest_po_limicie_z_linia_limitu_a_nie_po_g
 
 @pytest.mark.parametrize(("sciana_s", "limit_s"), [(90.0, 600.0), (411.0, 1233.0)], ids=["krótkie zadanie: 10 min", "długie: 3 ściany"])
 def test_limit_kroku_pytest_to_trzy_sciany_zadania_z_planu_a_najmniej_dziesiec_minut(sciana_s: float, limit_s: float) -> None:
-    job = plan_ci.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py",), sciana_s)
+    job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py",), sciana_s)
 
-    assert plan_ci.limit_pytest_s(job) == limit_s
+    assert plan_runu.limit_pytest_s(job) == limit_s
 
 
 @pytest.mark.parametrize(("event", "minutes"), [(Zdarzenie.PULL_REQUEST, 106), (Zdarzenie.PUSH, 96), (Zdarzenie.NOC, 96)])
 def test_github_zabija_zadanie_pytest_dopiero_po_limitach_wszystkich_jego_krokow(event: Zdarzenie, minutes: int) -> None:
     # 401 s ściany: pytest 1203 s, tylko na pull request ponowienie 600 s, E2E 900 s, straż czasu 3000 s, narzut 600 s; w górę do minuty.
-    job = plan_ci.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py", "krok:e2e", "krok:timing"), 401.0)
-    plan = plan_ci.Plan(event, plan_ci.CEL_S, (), (job,))
+    job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py", "krok:e2e", "krok:timing"), 401.0)
+    plan = plan_runu.Plan(event, plan_ci.CEL_S, (), (job,))
 
     assert [entry["limit_minut"] for entry in plan.macierz("pytest")] == [minutes]
 
@@ -506,7 +510,7 @@ def test_wiszacy_test_zostawia_stosy_watkow_przed_limitem_kroku_ale_po_limicie_p
 
     ini = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["pytest"]["ini_options"]
 
-    assert ini["timeout"] < ini["faulthandler_timeout"] < plan_ci.LIMIT_PYTEST_MIN_S
+    assert ini["timeout"] < ini["faulthandler_timeout"] < plan_runu.LIMIT_PYTEST_MIN_S
 
 
 def test_polecenie_pytest_kroku_drukuje_stosy_testu_ktory_wisi_dluzej_niz_faulthandler_timeout(
@@ -514,9 +518,9 @@ def test_polecenie_pytest_kroku_drukuje_stosy_testu_ktory_wisi_dluzej_niz_faulth
 ) -> None:
     (mini_repo / "pytest.ini").write_text("[pytest]\njunit_family = xunit1\nfaulthandler_timeout = 1\n", encoding="utf-8")
     (mini_repo / "tests" / "test_wisi.py").write_text("import time\n\n\ndef test_wisi() -> None:\n    time.sleep(4)\n", encoding="utf-8")
-    job = plan_ci.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_wisi.py",), 1.0)
+    job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_wisi.py",), 1.0)
 
-    code = plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id)
+    code = wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id)
     out = capsys.readouterr().out
 
     assert code == 0, out
@@ -546,10 +550,10 @@ def test_bramka_ponawia_raz_test_ktory_padl_a_przejscie_po_ponowieniu_to_flaky_t
 ) -> None:
     (mini_repo / "tests" / "test_flaky.py").write_text(FLAKY.format(always=always, second=second), encoding="utf-8")
     monkeypatch.setenv("GITHUB_RUN_ID", "40380584486")
-    job = plan_ci.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
+    job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
 
-    result = plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id)
-    records = czasy_ci._junit(plan_ci.JUNIT)
+    result = wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id)
+    records = zapis_czasow._junit(wykonaj_zadanie.JUNIT)
 
     assert result == code
     assert [(unit.klucz, unit.status) for unit in records] == [("pytest:tests/test_flaky.py", "ok" if code == 0 else "fail")]
@@ -561,9 +565,9 @@ def test_bramka_ponawia_raz_test_ktory_padl_a_przejscie_po_ponowieniu_to_flaky_t
 
 def test_push_nie_ponawia_testu_ktory_padl(mini_repo: Path) -> None:
     (mini_repo / "tests" / "test_flaky.py").write_text(FLAKY.format(always=True, second="return"), encoding="utf-8")
-    job = plan_ci.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
+    job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
 
-    assert plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id) == 1
+    assert wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id) == 1
     assert not niestabilne_testy.FLAKY_TESTY.exists()
 
 
@@ -580,9 +584,9 @@ def test_zadanie_zapisuje_wynik_testow_z_kwarantanny_xfail_to_porazka_a_xpass_pr
         f"        item.user_properties.append(({niestabilne_testy.WLASNOSC!r}, '#1 do 2026-11-01'))\n",
         encoding="utf-8",
     )
-    job = plan_ci.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
+    job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
 
-    plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id)
+    wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id)
     record = niestabilne_testy.kwarantanna_z_json(niestabilne_testy.KWARANTANNA.read_text(encoding="utf-8"))
 
     assert record.zadanie == job.id
@@ -623,9 +627,9 @@ def test_bramka_ponawia_najwyzej_piec_testow_bo_wiecej_porazek_to_nie_flaky_test
     mini_repo: Path, capsys: pytest.CaptureFixture[str], padniete: int, code: int
 ) -> None:
     (mini_repo / "tests" / "test_flaky.py").write_text(_padajace_raz(padniete), encoding="utf-8")
-    job = plan_ci.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
+    job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
 
-    assert plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id) == code
+    assert wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id) == code
     flaky_testy = [] if code else niestabilne_testy.flaky_testy_z_json(niestabilne_testy.FLAKY_TESTY.read_text(encoding="utf-8"))[0]
     assert [flaky.test for flaky in flaky_testy] == ([] if code else [f"tests/test_flaky.py::test_pada_raz_{numer}" for numer in range(5)])
     wyjscie = capsys.readouterr().out
@@ -639,9 +643,9 @@ def test_bramka_nie_ponawia_testu_ktorego_id_nie_da_sie_zglosic_wiec_zostaje_cze
     (mini_repo / "tests" / "z-myslnikiem").mkdir()
     (mini_repo / "tests" / "z-myslnikiem" / "test_flaky.py").write_text(_padajace_raz(1), encoding="utf-8")
     unit = "pytest:tests/z-myslnikiem/test_flaky.py"
-    job = plan_ci.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", (unit,), 1.0)
+    job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", (unit,), 1.0)
 
-    assert plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id) == 1
+    assert wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id) == 1
     assert "PONOWIENIE | bez ponowienia: id testu, którego nie da się zgłosić w issue: tests/z-myslnikiem/test_flaky.py::test_pada_raz_0" in capsys.readouterr().out
     assert not niestabilne_testy.FLAKY_TESTY.exists()
 
@@ -661,22 +665,22 @@ def test_zadanie_mutation_checks_uruchamia_po_kolei_swoje_kroki_skilli_a_czesc_s
     for name, text in files.items():
         (tmp_path / ".agents" / "skills" / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / ".agents" / "skills" / name).write_text(text, encoding="utf-8")
-    monkeypatch.setattr(plan_ci, "ROOT", tmp_path)
+    monkeypatch.setattr(wykonaj_zadanie, "ROOT", tmp_path)
     monkeypatch.chdir(tmp_path)
     script = "skill:verify-a/check_a_mutations.py"
     # Krok z planu, którego zadanie nie znajduje wśród kroków skilli (plan i zadanie policzyły je inaczej), nie biegł.
     lost = "skill:verify-c/check_c_mutations.py"
     jobs = (
-        plan_ci.Zadanie(
+        plan_runu.Zadanie(
             "mutacje-1", "mutacje", "Mutation checks (1/2)", ("skill:verify-a/ci", f"{script}#1/2", "skill:verify-b/check_b_mutations.py", lost), 1.0
         ),
-        plan_ci.Zadanie("mutacje-2", "mutacje", "Mutation checks (2/2)", (f"{script}#2/2",), 1.0),
+        plan_runu.Zadanie("mutacje-2", "mutacje", "Mutation checks (2/2)", (f"{script}#2/2",), 1.0),
     )
-    plan = plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), jobs)
+    plan = plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), jobs)
     results = []
     for job in jobs:
-        code = plan_ci.wykonaj(plan, job.id)
-        units = json.loads(plan_ci.WYKONANIE.read_text(encoding="utf-8"))["jednostki"]
+        code = wykonaj_zadanie.wykonaj(plan, job.id)
+        units = json.loads(plan_runu.WYKONANIE.read_text(encoding="utf-8"))["jednostki"]
         results.append((code, [(unit["klucz"], unit["status"]) for unit in units], capsys.readouterr().out.splitlines()[-1]))
 
     assert results == [
@@ -708,14 +712,14 @@ def test_zapis_zadania_mutation_checks_ma_ostrzezenia_czas_blisko_limitu_skryptu
     (tmp_path / ".agents" / "skills" / "verify-a" / "scripts").mkdir(parents=True)
     (tmp_path / ".agents" / "skills" / "verify-a" / "SKILL.md").write_text("", encoding="utf-8")
     (tmp_path / ".agents" / "skills" / "verify-a" / "scripts" / "check_a_mutations.py").write_text(script, encoding="utf-8")
-    monkeypatch.setattr(plan_ci, "ROOT", tmp_path)
+    monkeypatch.setattr(wykonaj_zadanie, "ROOT", tmp_path)
     monkeypatch.chdir(tmp_path)
     step = "skill:verify-a/check_a_mutations.py"
-    job = plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/2)", (f"{step}#1/2",), 1.0)
+    job = plan_runu.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/2)", (f"{step}#1/2",), 1.0)
 
-    code = plan_ci.wykonaj(plan_ci.Plan(Zdarzenie.NOC, plan_ci.CEL_S, (), (job,)), job.id)
+    code = wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.NOC, plan_ci.CEL_S, (), (job,)), job.id)
 
-    record = json.loads(plan_ci.WYKONANIE.read_text(encoding="utf-8"))
+    record = json.loads(plan_runu.WYKONANIE.read_text(encoding="utf-8"))
     assert (code, [(unit["klucz"], unit["status"]) for unit in record["jednostki"]]) == (0, [(step, "ok")]), capsys.readouterr().out
     assert record["blisko_limitu"] == [{"klucz": step, **dataclasses.asdict(near)}, {"klucz": step, **dataclasses.asdict(other)}]
 
@@ -851,14 +855,14 @@ def test_zgubiony_skrypt_mutacji_albo_zly_klucz_ci_trafia_z_wyboru_do_planu_i_cz
     monkeypatch.setattr(czasy_ci, "_gh", offline)
 
     code = plan_ci.main(["plan", "--zdarzenie", "pull_request", "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")])
-    plan = plan_ci.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8"))
+    plan = plan_runu.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8"))
     every_job_green = {"plan": "success", "pytest": "success", "mutations": "success"}
     complete = [_record(plan, job, _reported(job)) for job in plan.zadania]
 
     assert code == 0
     assert f"FAIL {failure}" in capsys.readouterr().out.splitlines()
     assert plan.bledy == (failure,)
-    assert plan_ci.werdykt(plan, every_job_green, complete) == [f"mutacje skilli: {failure}"]
+    assert werdykt_required.werdykt(plan, every_job_green, complete) == [f"mutacje skilli: {failure}"]
 
 
 WINDOWS, LINUX = "windows-3.11", "linux-3.14"
@@ -874,5 +878,5 @@ def test_wezel_testu_biegnie_caly_w_jednym_zadaniu_a_required_przyjmuje_go_z_zap
     # Cały plik LONG (1100 s testów) plan dzieli na udziały w kilku zadaniach, a jego jeden test nie.
     assert [(job.tor, job.jednostki) for job in plan.zadania] == [(lane.nazwa, (*(f"pytest:{name}" for name in FILES[:2]), f"pytest:{node}")) for lane in gate]
     assert all(job.sciana_s <= plan.cel_s == plan_ci.CEL_S for job in plan.zadania)
-    assert plan_ci.werdykt(plan, results, [_record(plan, job, _reported(job)) for job in plan.zadania]) == []
-    assert plan_ci.werdykt(plan, results, without_node) == [f"{job.nazwa}: jednostki bez wyniku: pytest:{LONG}" for job in plan.zadania]
+    assert werdykt_required.werdykt(plan, results, [_record(plan, job, _reported(job)) for job in plan.zadania]) == []
+    assert werdykt_required.werdykt(plan, results, without_node) == [f"{job.nazwa}: jednostki bez wyniku: pytest:{LONG}" for job in plan.zadania]

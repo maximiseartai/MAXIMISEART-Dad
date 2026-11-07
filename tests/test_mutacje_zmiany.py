@@ -49,7 +49,7 @@ def _repo(
     if other:
         files["src/rozliczenia/inny.py"] = other
     repo = repository(tmp_path, files)
-    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/mutacje_zmiany.py", "tools/ci/pytest_pokrycie.py", "tools/ci/pokrycie_procesu.py"))
+    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
     commit(repo, "baza")
     git(repo, "branch", "--quiet", "baza")
     (repo / MODULE).write_text(changed, encoding="utf-8")
@@ -1360,7 +1360,7 @@ def test_pokrycie_workera_xdist_przetrwa_zamkniecie_workera_zaraz_po_koncu_sesji
         cwd=tmp_path,
         env={
             **{name: value for name, value in os.environ.items() if name != pokrycie_procesu.TEST},
-            "PYTHONPATH": os.pathsep.join([str(ROOT / "tools" / "ci"), str(tmp_path)]),
+            "PYTHONPATH": os.pathsep.join([str(ROOT / "tools" / "lib"), str(tmp_path)]),
             "POKRYCIE_LINII": json.dumps(settings),
         },
         capture_output=True,
@@ -1411,7 +1411,7 @@ def test_pokrycie_przypisuje_zmieniona_linie_testom_ktore_ja_wykonuja_w_watku_i_
         cwd=tmp_path,
         env={
             **{name: value for name, value in os.environ.items() if name != pokrycie_procesu.TEST},
-            "PYTHONPATH": os.pathsep.join([str(site), str(ROOT / "tools" / "ci"), str(tmp_path)]),
+            "PYTHONPATH": os.pathsep.join([str(site), str(ROOT / "tools" / "lib"), str(tmp_path)]),
             "POKRYCIE_LINII": json.dumps(settings),
         },
         capture_output=True,

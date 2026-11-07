@@ -39,27 +39,24 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import io
-import json
 from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Any, Protocol
+from typing import Any
 import urllib.parse
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
+from github import MERGE, REPO, REQUIRED, SQUASH, Akcja, GhApi, GitHub, Skomentuj, Zaloz, Zamknij, blok_kodu, issues, opis
+from github import wykonaj as wykonaj_akcje
 import niestabilne_testy
 from repo import MAIN, ROOT
 import repo
 import wplyw_zmiany
 
-REPO = "repos/{owner}/{repo}"
-REQUIRED = "Required CI status"
 FLAKY_TEST, CZERWONY_MAIN, ZDERZENIE = "flaky-test", "czerwony-main", "zderzenie"
-# Początek nazwy artefaktu, w którym każde zadanie pytest z ``ci.yml`` wysyła ``niestabilne_testy.FLAKY_TESTY``.
-ARTEFAKT_FLAKY_TESTOW = "flaky-testy-"
 # Tyle flaky testów jednego runu trafia do issue; reszta to znak awarii, a nie flaky testów.
 NAJWIECEJ_FLAKY_TESTOW = 10
 # Tyle nowych porażek zderzenia wymienia issue.
@@ -69,8 +66,6 @@ DLUGOSC_W_TYTULE, DLUGOSC_W_TRESCI = 200, 2000
 # Tyle commitów `main` wstecz szuka ostatniego zielonego.
 HISTORIA = 50
 OKNO_ZDERZEN = timedelta(days=7)
-MERGE = re.compile(r"Merge pull request #(?P<numer>[1-9][0-9]*) from \S+")
-SQUASH = re.compile(r"(?P<tytul>.+) \(#(?P<numer>[1-9][0-9]*)\)")
 _ZNACZNIK = re.compile(r"<!-- czerwony-main (?P<sha>[0-9a-f]{40}) -->")
 _RUN = re.compile(r"/actions/runs/(?P<run>[0-9]+)")
 _PLIK_PYTEST = re.compile(r"pytest:(tests/[\w/]+\.py)")
@@ -80,34 +75,6 @@ _PLIK_PYTEST = re.compile(r"pytest:(tests/[\w/]+\.py)")
 _KAWALEK = re.compile(r", \d+/\d+(?=\)$)")
 _PORAZKA = re.compile(r"(?:\S+Z )?(?:FAILED|ERROR) (?P<test>tests/[^\s\[]+(?:\[.*?\])?)(?: - .*)?")
 _KOLOR = re.compile(r"\x1b\[[0-9;]*m")
-
-
-class GitHub(Protocol):
-    def json(self, sciezka: str) -> Any: ...
-
-    def bajty(self, sciezka: str) -> bytes: ...
-
-    def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any: ...
-
-
-class GhApi:
-    """``gh api`` z ``{owner}/{repo}`` repozytorium checkoutu."""
-
-    def _gh(self, *argumenty: str, wejscie: bytes | None = None) -> bytes:
-        odpowiedz = subprocess.run(["gh", "api", *argumenty], cwd=ROOT, input=wejscie, capture_output=True, timeout=120, check=False)
-        if odpowiedz.returncode != 0:
-            raise RuntimeError(f"gh api {' '.join(argumenty)}: {odpowiedz.stderr.decode('utf-8', errors='replace').strip()}")
-        return odpowiedz.stdout
-
-    def json(self, sciezka: str) -> Any:
-        return json.loads(self._gh(sciezka))
-
-    def bajty(self, sciezka: str) -> bytes:
-        # Zip artefaktu i log zadania mają bajty sekwencji terminala, których gh bez tej flagi nie wypisze.
-        return self._gh(sciezka, "--allow-escape-sequences")
-
-    def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
-        return json.loads(self._gh("--method", metoda, sciezka, "--input", "-", wejscie=json.dumps(tresc).encode("utf-8")))
 
 
 @dataclass(frozen=True)
@@ -196,38 +163,8 @@ def _numery(pr: Sequence[PR]) -> str:
     return ", ".join(f"#{p.numer}" for p in pr)
 
 
-def blok_kodu(linie: Sequence[str]) -> list[str]:
-    """Blok kodu z ``linie``: płot dłuższy od każdego ciągu backticków w nich, więc treść nie wyjdzie z bloku."""
-
-    plot = "`" * max([3, *(len(ciag) + 1 for linia in linie for ciag in re.findall("`+", linia))])
-    return [plot, *linie, plot]
-
-
 def _przytnij(tekst: str, dlugosc: int) -> str:
     return tekst if len(tekst) <= dlugosc else f"{tekst[: dlugosc - 1]}…"
-
-
-@dataclass(frozen=True)
-class Zaloz:
-    tytul: str
-    tresc: str
-    etykiety: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class Skomentuj:
-    issue: int
-    tresc: str
-
-
-@dataclass(frozen=True)
-class Zamknij:
-    issue: int
-    tresc: str
-    zdejmij: tuple[str, ...] = ()  # etykiety, które zamknięcie zdejmuje z issue
-
-
-Akcja = Zaloz | Skomentuj | Zamknij
 
 
 def akcje(github: GitHub, root: Path, run_id: int, teraz: datetime) -> list[Akcja]:
@@ -236,35 +173,9 @@ def akcje(github: GitHub, root: Path, run_id: int, teraz: datetime) -> list[Akcj
 
 
 def wykonaj(github: GitHub, wykonane: Sequence[Akcja], *, bez_zapisu: bool) -> list[str]:
-    linie = []
-    for akcja in wykonane:
-        if bez_zapisu:
-            linie.append(f"ZGŁOSZENIA BEZ ZAPISU | {_opis(akcja)}\n" + "\n".join(f"    {linia}" for linia in akcja.tresc.splitlines()))
-            continue
-        match akcja:
-            case Zaloz(tytul, tresc, etykiety):
-                numer = github.wyslij("POST", f"{REPO}/issues", {"title": tytul, "body": tresc, "labels": list(etykiety)})["number"]
-                linie.append(f"ZGŁOSZENIA | założone #{numer} „{tytul}”")
-            case Skomentuj(issue, tresc):
-                github.wyslij("POST", f"{REPO}/issues/{issue}/comments", {"body": tresc})
-                linie.append(f"ZGŁOSZENIA | komentarz w #{issue}")
-            case Zamknij(issue, tresc, zdejmij):
-                github.wyslij("POST", f"{REPO}/issues/{issue}/comments", {"body": tresc})
-                for etykieta in zdejmij:
-                    github.wyslij("DELETE", f"{REPO}/issues/{issue}/labels/{urllib.parse.quote(etykieta)}", {})
-                github.wyslij("PATCH", f"{REPO}/issues/{issue}", {"state": "closed", "state_reason": "completed"})
-                linie.append(f"ZGŁOSZENIA | zamknięte #{issue}" + "".join(f", zdjęta etykieta {etykieta}" for etykieta in zdejmij))
-    return linie
-
-
-def _opis(akcja: Akcja) -> str:
-    match akcja:
-        case Zaloz(tytul, _, etykiety):
-            return f"załóż issue „{tytul}” z etykietami {', '.join(etykiety)}"
-        case Skomentuj(issue, _):
-            return f"skomentuj #{issue}"
-        case Zamknij(issue, _, zdejmij):
-            return f"zamknij #{issue} z komentarzem" + "".join(f", zdejmij etykietę {etykieta}" for etykieta in zdejmij)
+    if not bez_zapisu:
+        return wykonaj_akcje(github, wykonane, "ZGŁOSZENIA")
+    return [f"ZGŁOSZENIA BEZ ZAPISU | {opis(akcja)}\n" + "\n".join(f"    {linia}" for linia in akcja.tresc.splitlines()) for akcja in wykonane]
 
 
 # --- flaky testy ---
@@ -288,7 +199,7 @@ def _flaky_testy(github: GitHub, run: Run) -> list[Akcja]:
         print(f"ZGŁOSZENIA | run {run.id} z forka: flaky testów nie zgłaszam")
         return []
     testy: dict[str, None] = {}
-    for nazwa, plik in _artefakty(github, run.id, ARTEFAKT_FLAKY_TESTOW):
+    for nazwa, plik in _artefakty(github, run.id, niestabilne_testy.ARTEFAKT_FLAKY_TESTOW):
         try:
             flaky_testy, odrzucone = niestabilne_testy.flaky_testy_z_json(plik.decode("utf-8"))
         except (ValueError, UnicodeDecodeError) as blad:
@@ -301,7 +212,7 @@ def _flaky_testy(github: GitHub, run: Run) -> list[Akcja]:
         print(f"ZGŁOSZENIA | {len(testy)} flaky testów w runie, zgłaszam pierwsze {NAJWIECEJ_FLAKY_TESTOW}")
     if not testy:
         return []
-    otwarte = {issue["title"]: issue["number"] for issue in _issues(github, FLAKY_TEST, "open")}
+    otwarte = {issue["title"]: issue["number"] for issue in issues(github, FLAKY_TEST, "open")}
     pr = f", PR {', '.join(f'#{numer}' for numer in run.pr)}" if run.pr else ""
     wynik: list[Akcja] = []
     for test in list(testy)[:NAJWIECEJ_FLAKY_TESTOW]:
@@ -317,11 +228,6 @@ def _flaky_testy(github: GitHub, run: Run) -> list[Akcja]:
     return wynik
 
 
-def _issues(github: GitHub, etykieta: str, stan: str, od: datetime | None = None) -> list[dict[str, Any]]:
-    zapytanie = {"labels": etykieta, "state": stan, "per_page": "100", **({"since": od.strftime("%Y-%m-%dT%H:%M:%SZ")} if od else {})}
-    return [issue for issue in github.json(f"{REPO}/issues?{urllib.parse.urlencode(zapytanie)}") if "pull_request" not in issue]
-
-
 # --- czerwony main ---
 
 
@@ -332,7 +238,7 @@ def _main(github: GitHub, root: Path, run: Run, teraz: datetime) -> list[Akcja]:
     required = next((zadanie for zadanie in zadania if zadanie["name"] == REQUIRED), None)
     if required is None or required["conclusion"] not in ("success", "failure"):
         return []
-    otwarte = _issues(github, CZERWONY_MAIN, "open")
+    otwarte = issues(github, CZERWONY_MAIN, "open")
     if required["conclusion"] == "success":
         return [_zamkniecie(github, root, issue, znak["sha"], run) for issue in otwarte if (znak := _ZNACZNIK.search(issue.get("body") or "")) and repo.is_ancestor(root, znak["sha"], run.sha)]
     przyczyny = tuple(_przyczyny(github, required["id"]))
@@ -468,7 +374,7 @@ def _zderzenie(github: GitHub, root: Path, run: Run, teraz: datetime) -> Zderzen
     if nowe is None or not _w_testach_obu_stron(root, [a.commit for a in niewidziane], b.commit, nowe):
         return None
     od = teraz - OKNO_ZDERZEN
-    wczesniejsze = [issue for issue in _issues(github, ZDERZENIE, "all", od) if _chwila(issue["created_at"]) >= od]
+    wczesniejsze = [issue for issue in issues(github, ZDERZENIE, "all", od) if _chwila(issue["created_at"]) >= od]
     return Zderzenie(tuple(a.pr for a in niewidziane), b.pr, len(wczesniejsze) + 1, nowe)
 
 

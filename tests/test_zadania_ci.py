@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
 import plan_ci  # noqa: E402
+import plan_runu  # noqa: E402
 from zakres_runu import Zdarzenie  # noqa: E402
 
 REQUIRED = "required"
@@ -42,7 +43,7 @@ def test_plan_zna_liczbe_zadan_runu_o_stalej_liczbie() -> None:
     fixed = {name: len(combinations(job.get("strategy", {}).get("matrix", {}))) for name, job in workflow.items() if name not in FROM_PLAN}
 
     assert sum(fixed.values()) == plan_ci.STALE_ZADANIA, fixed
-    assert set(FROM_PLAN) == set(plan_ci.Z_PLANU)
+    assert set(FROM_PLAN) == set(plan_runu.Z_PLANU)
 
 
 def test_required_czeka_na_kazde_zadanie_runu_a_pull_request_nie_mutuje_zmienionych_linii() -> None:
@@ -75,9 +76,9 @@ def test_zadania_z_planu_czekaja_na_plan_i_startuja_tylko_z_praca_od_niego() -> 
 
 @pytest.mark.parametrize("template", ["pytest", "mutations"])
 def test_zadanie_z_macierza_planu_czyta_z_niej_tylko_pola_wpisu(template: str) -> None:
-    pytest_job = plan_ci.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_adr.py",), 1.0)
-    skill_job = plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/1)", ("skill:verify-a/ci",), 1.0, przegladarka=True)
-    plan = plan_ci.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (pytest_job, skill_job))
+    pytest_job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_adr.py",), 1.0)
+    skill_job = plan_runu.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/1)", ("skill:verify-a/ci",), 1.0, przegladarka=True)
+    plan = plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (pytest_job, skill_job))
     used = set(re.findall(r"matrix\.([\w-]+)", yaml.safe_dump(jobs()[template])))
 
     assert used == set(plan.macierz(template)[0])
@@ -103,13 +104,13 @@ def test_zadanie_pytest_instaluje_chromium_tylko_gdy_plan_oznaczyl_je_plikiem_te
     assert browser == dict.fromkeys(["Playwright version", "Cache Chromium", "Install Chromium"], "${{ matrix.przegladarka }}")
 
 
-TESTS_RUN_BY = ("tools/plan_ci.py wykonaj", "tools/mutacje_zmiany.py")
+TESTS_RUN_BY = ("tools/ci/wykonaj_zadanie.py", "tools/mutacje_zmiany.py")
 
 
 @pytest.mark.parametrize("workflow", sorted(WORKFLOW.parent.glob("*.yml")), ids=lambda path: path.name)
 def test_kazde_zadanie_ktore_uruchamia_testy_albo_kroki_skilli_instaluje_chromium_gdy_plan_je_oznaczyl(workflow: Path) -> None:
     """Test, który sięga Atrapy efenix, albo skrypt skilla z Playwrightem bez Chromium pada, zanim cokolwiek sprawdzi.
-    Takie testy i skrypty uruchamiają tylko plan runu (``plan_ci.py wykonaj``) i część Change mutations
+    Takie testy i skrypty uruchamiają tylko zadania planu runu (``tools/ci/wykonaj_zadanie.py``) i część Change mutations
     (``mutacje_zmiany.py``), a ich plan oznacza zadanie ``przegladarka``."""
 
     workflow_jobs: dict[str, dict[str, Any]] = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]
@@ -123,7 +124,7 @@ def test_kazde_zadanie_ktore_uruchamia_testy_albo_kroki_skilli_instaluje_chromiu
 
 
 def _required(
-    tmp_path: Path, plan: plan_ci.Plan | None, results: dict[str, str], *, missing: frozenset[str] = frozenset(), failed: frozenset[str] = frozenset()
+    tmp_path: Path, plan: plan_runu.Plan | None, results: dict[str, str], *, missing: frozenset[str] = frozenset(), failed: frozenset[str] = frozenset()
 ) -> subprocess.CompletedProcess[str]:
     """Krok werdyktu Required z ci.yml na planie i zapisach czasów tam, gdzie kładą je kroki pobrania artefaktów.
 
@@ -142,7 +143,7 @@ def _required(
             record = {"wersja": 1, "run": 1, "proba": 1, "szablon": "pytest", "zadanie": job.nazwa, "tor": job.tor, "zdarzenie": plan.zdarzenie,
                       "sha": "0" * 40, "narzut_s": 9.0, "jednostki": units, "bledy": [], "plan": plan.digest, "zadanie_planu": job.id}  # fmt: skip
             (downloads["czasy-zadanie-*"] / f"pytest-{index}-1.json").write_text(json.dumps(record), encoding="utf-8")
-    step = next(step for step in steps if "tools/plan_ci.py werdykt" in step.get("run", ""))
+    step = next(step for step in steps if "tools/ci/werdykt_required.py" in step.get("run", ""))
     python, script, *arguments = shlex.split(step["run"])
     assert python == "python3"
     needs = {job: {"result": result, "outputs": {}} for job, result in results.items()}
@@ -157,13 +158,13 @@ def _all_succeeded() -> dict[str, str]:
 SCRIPT = "skill:verify-a/check_a_mutations.py"
 
 
-def _plan(event: str, *, skills: bool = False, errors: tuple[str, ...] = ()) -> plan_ci.Plan:
-    job = plan_ci.Zadanie("windows-3.11-1", "windows-3.11", "pytest (Python 3.11, 1/1)", ("pytest:tests/test_a.py#1/2", "pytest:tests/test_a.py#2/2", "pytest:tests/test_b.py", "krok:e2e"), 99.0)
+def _plan(event: str, *, skills: bool = False, errors: tuple[str, ...] = ()) -> plan_runu.Plan:
+    job = plan_runu.Zadanie("windows-3.11-1", "windows-3.11", "pytest (Python 3.11, 1/1)", ("pytest:tests/test_a.py#1/2", "pytest:tests/test_a.py#2/2", "pytest:tests/test_b.py", "krok:e2e"), 99.0)
     checks = (
-        plan_ci.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/2)", ("skill:verify-a/ci", f"{SCRIPT}#1/2"), 99.0, przegladarka=True),
-        plan_ci.Zadanie("mutacje-2", "mutacje", "Mutation checks (2/2)", (f"{SCRIPT}#2/2", "skill:verify-b/ci"), 99.0),
+        plan_runu.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/2)", ("skill:verify-a/ci", f"{SCRIPT}#1/2"), 99.0, przegladarka=True),
+        plan_runu.Zadanie("mutacje-2", "mutacje", "Mutation checks (2/2)", (f"{SCRIPT}#2/2", "skill:verify-b/ci"), 99.0),
     )
-    return plan_ci.Plan(Zdarzenie(event), plan_ci.CEL_S, (), (job, *checks) if skills else (job,), errors)
+    return plan_runu.Plan(Zdarzenie(event), plan_ci.CEL_S, (), (job, *checks) if skills else (job,), errors)
 
 
 @pytest.mark.parametrize(

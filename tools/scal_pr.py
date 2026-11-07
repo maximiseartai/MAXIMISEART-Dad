@@ -11,7 +11,7 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
 4. opis PR ma każdy nagłówek ``##`` wzoru z ``.agents/skills/pr/SKILL.md``, każdy jako osobną linię i w kolejności
    wzoru, więc każdy PR ma te same sekcje, a sekcja dopisana do wzoru od razu obowiązuje;
 5. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
-   scalonym drzewie (``status_scalenia.merge_verdict``, jak status ``scalenie z main``, ale teraz, nie po pushu);
+   scalonym drzewie (``werdykt_scalenia.merge_verdict``, jak status ``scalenie z main``, ale teraz, nie po pushu);
 6. na tym scalonym drzewie przechodzi test scalenia, gdy jest potrzebny i mieści się w limicie (niżej).
 
 Test scalenia łapie PR, który z bieżącą bazą daje czerwony ``main``, choć sam był zielony, bo baza od merge-base PR
@@ -149,16 +149,15 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 
 import czasy_ci
+import github
 import potomne
 from repo import REMOTE, ROOT
 import repo
-import status_scalenia
+import werdykt_scalenia
 from wplyw_zmiany import Context, Repository, run_all
 
-REQUIRED_CHECK = "Required CI status"
 RUN_ID = re.compile(r"/actions/runs/(\d+)/")
 JOB_NOT_FAILED = frozenset({"SUCCESS", "SKIPPED", "NEUTRAL"})
 VERDICT_LINE = re.compile(r"WERDYKT: (PASS|FAIL) ([0-9a-f]{40})")
@@ -207,32 +206,18 @@ class _Refused(Exception):
     pass
 
 
-def _gh(*arguments: str, stdin: str | None = None) -> str:
-    done = subprocess.run(
-        ["gh", *arguments],
-        input=stdin,
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=status_scalenia.GITHUB_TIMEOUT_S,
-        check=True,
-    )
-    return done.stdout
-
-
 def _required(rollup: list[dict[str, str | None]]) -> list[dict[str, str | None]]:
     """Checki ``Required CI status`` z GitHub Actions (CheckRun z workflow), nie status commitu, który ustawi każdy z prawem zapisu."""
 
-    return [check for check in rollup if check.get("name") == REQUIRED_CHECK and check.get("workflowName")]
+    return [check for check in rollup if check.get("name") == github.REQUIRED and check.get("workflowName")]
 
 
 def _ci_problem(rollup: list[dict[str, str | None]]) -> str | None:
     results = [(check.get("conclusion") if check.get("status") == "COMPLETED" else check.get("status")) or "?" for check in _required(rollup)]
     if not results:
-        return f"CI: brak „{REQUIRED_CHECK}” z GitHub Actions na HEAD"
+        return f"CI: brak „{github.REQUIRED}” z GitHub Actions na HEAD"
     failed = [result for result in results if result != "SUCCESS"]
-    return f"CI: „{REQUIRED_CHECK}” {', '.join(failed)}" if failed else None
+    return f"CI: „{github.REQUIRED}” {', '.join(failed)}" if failed else None
 
 
 def _run_id(check: dict[str, str | None]) -> str | None:
@@ -241,9 +226,9 @@ def _run_id(check: dict[str, str | None]) -> str | None:
 
 
 def _ci_line(rollup: list[dict[str, str | None]], head: str) -> str:
-    where = f"CI | {REQUIRED_CHECK}"
+    where = f"CI | {github.REQUIRED}"
     required = _required(rollup)
-    actions = [check for check in rollup if check.get("workflowName") and check.get("name") != REQUIRED_CHECK]
+    actions = [check for check in rollup if check.get("workflowName") and check.get("name") != github.REQUIRED]
     red = [check for check in required if check.get("status") == "COMPLETED" and check.get("conclusion") != "SUCCESS"]
     runs = {run for check in red if (run := _run_id(check))}
     failed = sorted(
@@ -256,7 +241,7 @@ def _ci_line(rollup: list[dict[str, str | None]], head: str) -> str:
     jobs = f"padłe zadania: {', '.join(failed)}" if failed else ""
     logs = f"logi padłych zadań: gh run view {' '.join(sorted(runs))} --log-failed" if runs else "logi padłych zadań"
     if red:
-        why = jobs or f"bez padłego zadania, przyczynę podaje log „{REQUIRED_CHECK}”"
+        why = jobs or f"bez padłego zadania, przyczynę podaje log „{github.REQUIRED}”"
         return f"{where} failure na HEAD {head} | {why} | polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko {logs}"
     if required and all(check.get("status") == "COMPLETED" for check in required):
         running_others = sorted({str(check.get("name")) for check in actions if check.get("status") != "COMPLETED"})
@@ -416,7 +401,7 @@ def fixed_issues(body: str, repository: str) -> tuple[int, ...]:
     Rzuca wyjątek, gdy GitHub opisu nie wyrenderował.
     """
 
-    rendered = _gh("api", "markdown", "--input", "-", stdin=json.dumps({"text": body, "mode": "gfm", "context": repository}))
+    rendered = github.gh("api", "markdown", "--input", "-", wejscie=json.dumps({"text": body, "mode": "gfm", "context": repository}))
     if not rendered.strip():
         raise ValueError("GitHub zwrócił pusty HTML")
     parser = _Lines()
@@ -444,7 +429,7 @@ def _pull(number: int) -> Pull:
         "number,title,state,isDraft,isCrossRepository,baseRefName,headRefOid,statusCheckRollup,comments,reviews,"
         "url,body,closingIssuesReferences"
     )
-    pull = json.loads(_gh("pr", "view", str(number), "--json", fields))
+    pull = json.loads(github.gh("pr", "view", str(number), "--json", fields))
     problems = []
     if pull["state"] != "OPEN":
         problems.append(f"PR nie jest otwarty: {pull['state']}")
@@ -476,7 +461,7 @@ def _pull(number: int) -> Pull:
 
 
 def _remote_base(base: str) -> str:
-    listed = repo.run_git(ROOT, "ls-remote", REMOTE, f"refs/heads/{base}", timeout=status_scalenia.GITHUB_TIMEOUT_S)
+    listed = repo.run_git(ROOT, "ls-remote", REMOTE, f"refs/heads/{base}", timeout=github.LIMIT_S)
     listed.check_returncode()
     return listed.stdout.partition("\t")[0]
 
@@ -484,15 +469,15 @@ def _remote_base(base: str) -> str:
 def _check(pull: Pull) -> tuple[str, str]:
     """SHA bazy, z którą scalenie przeszło, i dopisek linii ``SCAL OK`` o teście scalenia."""
 
-    checked = status_scalenia.PullRequest(pull.number, pull.title, pull.head)
-    base = status_scalenia.fetch(pull.base, [checked])
+    checked = werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)
+    base = werdykt_scalenia.fetch(pull.base, [checked])
     problems = [*pull.problems, *filter(None, [_verdict_problem(pull)])]
     if problems:
         raise _Refused("; ".join(problems))
     where = f"{pull.base} {base[:7]}"
     print(f"== #{pull.number} {pull.head[:7]} na {where}", flush=True)
     with potomne.commit_copy(ROOT, base) as copy:
-        verdict = status_scalenia.merge_verdict(copy, where, base, None, checked)
+        verdict = werdykt_scalenia.merge_verdict(copy, where, base, None, checked)
         if verdict.state != "success":
             raise _Refused(verdict.description)
         return base, _merge_test(copy, where, base, pull.head)
@@ -503,7 +488,7 @@ def _merge_test(copy: Path, where: str, base: str, head: str) -> str:
     nie był potrzebny. Rzuca ``_Refused``, gdy test pada na scaleniu, a na samej bazie nie, albo nie daje wyniku w
     limicie czasu."""
 
-    limit = status_scalenia.GITHUB_TIMEOUT_S
+    limit = github.LIMIT_S
     fork = repo.merge_base(ROOT, base, head, timeout=limit)
     base_changed = repo.changed(ROOT, fork, base, timeout=limit)
     if not base_changed:
@@ -578,7 +563,7 @@ def _close_fixed(pull: Pull, *, merged: bool, merge_commit: str | None) -> str:
         return ""
     unchecked = "nie zamknięto issues z „Naprawia”, zamknij je ręcznie" if merged else "nie sprawdzono „Naprawia”"
     try:
-        default_branch = str(json.loads(_gh("repo", "view", pull.repository, "--json", "defaultBranchRef"))["defaultBranchRef"]["name"])
+        default_branch = str(json.loads(github.gh("repo", "view", pull.repository, "--json", "defaultBranchRef"))["defaultBranchRef"]["name"])
     except Exception:  # noqa: BLE001 - po merge'u każdy błąd to tylko ostrzeżenie w linii SCAL OK, bo PR jest już scalony
         return f" | UWAGA: GitHub nie podał domyślnej gałęzi, {unchecked}"
     if pull.base != default_branch:
@@ -591,11 +576,11 @@ def _close_fixed(pull: Pull, *, merged: bool, merge_commit: str | None) -> str:
     open_issues, failed = [], []
     for number in fixes:
         try:
-            if json.loads(_gh("api", f"repos/{pull.repository}/issues/{number}"))["state"] != "open":
+            if json.loads(github.gh("api", f"repos/{pull.repository}/issues/{number}"))["state"] != "open":
                 continue
             if closes:
                 comment = f"Naprawione przez #{pull.number}, scalone jako {merge_commit}."
-                _gh("issue", "close", str(number), "--repo", pull.repository, "--comment", comment)
+                github.gh("issue", "close", str(number), "--repo", pull.repository, "--comment", comment)
             open_issues.append(f"#{number}")
         except Exception:  # noqa: BLE001 - po merge'u każdy błąd to tylko ostrzeżenie w linii SCAL OK, bo PR jest już scalony
             failed.append(f"#{number}")
@@ -614,7 +599,7 @@ def _merge_commit(number: int) -> str | None:
     """SHA commitu merge'a scalonego PR albo ``None``, gdy GitHub go nie podał."""
 
     try:
-        return str(json.loads(_gh("pr", "view", str(number), "--json", "mergeCommit"))["mergeCommit"]["oid"])
+        return str(json.loads(github.gh("pr", "view", str(number), "--json", "mergeCommit"))["mergeCommit"]["oid"])
     except Exception:  # noqa: BLE001 - PR jest już scalony, a brak SHA podaje linia SCAL OK
         return None
 
@@ -671,8 +656,8 @@ def _verdict_history(pull: Pull) -> list[str]:
 
 def _review_context(number: int) -> int:
     pull = _pull(number)
-    base = status_scalenia.fetch(pull.base, [status_scalenia.PullRequest(pull.number, pull.title, pull.head)])
-    limit = status_scalenia.GITHUB_TIMEOUT_S
+    base = werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
+    limit = github.LIMIT_S
     fork = repo.merge_base(ROOT, base, pull.head, timeout=limit)
     files = sorted(repo.changed(ROOT, fork, pull.head, timeout=limit))
     print(f"PRZEGLĄD | #{pull.number} {pull.title} | HEAD {pull.head} | baza {pull.base} {base} | merge-base {fork}")
@@ -716,7 +701,7 @@ def _publish_verdict(number: int, path: Path) -> int:
     if problems := _verdict_file_problems(text, pull.head):
         print(f"WERDYKT ODMOWA | #{pull.number} | {'; '.join(problems)}; popraw {path} i uruchom ponownie")
         return 1
-    url = _gh("pr", "comment", str(number), "--body-file", str(path)).strip()
+    url = github.gh("pr", "comment", str(number), "--body-file", str(path)).strip()
     print(f"WERDYKT OK | #{pull.number} {pull.head[:7]} | {_text_lines(text)[0].split()[1]} | {url}")
     return 0
 
@@ -734,7 +719,7 @@ def _merge(number: int, *, merge: bool) -> int:
     if not merge:
         print(f"SCAL OK | {where} | gotowy do merge'a z {pull.base} {base[:7]}, bez merge'a (--bez-merge){merge_test}{_close_fixed(pull, merged=False, merge_commit=None)}")
         return 0
-    _gh("pr", "merge", str(number), "--merge", "--match-head-commit", pull.head)
+    github.gh("pr", "merge", str(number), "--merge", "--match-head-commit", pull.head)
     merge_commit = _merge_commit(number)
     closed = _close_fixed(pull, merged=True, merge_commit=merge_commit)
     print(f"SCAL OK | {where} | scalony do {pull.base} jako {(merge_commit or '?')[:7]} (baza {base[:7]}){merge_test}{closed} | {_clean_up()}")

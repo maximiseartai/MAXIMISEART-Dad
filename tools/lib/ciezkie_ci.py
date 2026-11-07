@@ -34,7 +34,8 @@ from pathlib import Path
 import re
 import subprocess
 
-from repo import BASE, ROOT
+import github
+from repo import BASE
 import repo
 
 # Zadanie z ``tools/ci_lokalnie.py`` i początek nazwy jego zadań w ``ci.yml`` albo ``mutacje-nocne.yml``.
@@ -50,7 +51,7 @@ Gh = Callable[[Sequence[str]], str]
 
 
 def _gh(arguments: Sequence[str]) -> str:
-    return subprocess.run(["gh", *arguments], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=True).stdout
+    return github.gh(*arguments, limit_s=None)
 
 
 def argument(parser: argparse.ArgumentParser) -> None:
