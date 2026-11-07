@@ -8,7 +8,7 @@ zapamiętuje założone issue i komentarze, więc drugi przebieg widzi skutki pi
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 import hashlib
@@ -318,8 +318,7 @@ def test_noc_bez_bazy_albo_z_zapisem_bez_pliku_mutacji_konczy_sie_fail_z_przyczy
     # Historia ma same dzisiejsze commity, a GitHub nie ma udanego przebiegu nocy.
     repo, baza = _historia(tmp_path)
     zapisy = _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, [{"id": "bez linii", "linie": [1], "klucz": _klucz("bez linii")}])})
-    for modul in (mutacje_nocne, mutacje_zmiany):
-        monkeypatch.setattr(modul, "ROOT", repo)
+    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
     monkeypatch.setattr(mutacje_nocne, "GhApi", GitHubWPamieci)
 
     kod = mutacje_nocne.main([argument.format(baza=baza, zapisy=zapisy) for argument in polecenie])
@@ -347,19 +346,18 @@ def _warunek_z_dwoch_pr(tmp_path: Path) -> tuple[Path, str]:
     return repo, baza
 
 
-def _noc(repo: Path, baza: str, monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+def _noc(repo: Path, baza: str) -> list[dict[str, object]]:
     """Zapis części, w której przeżyła każda mutacja ``src/a.py``, którą noc od ``baza`` mutuje."""
 
-    monkeypatch.setattr(mutacje_zmiany, "ROOT", repo)
-    tekst = (repo / "src" / "a.py").read_text(encoding="utf-8")
-    return [mutacje_zmiany.entry(mutant, tekst) for mutant in mutacje_zmiany.selected("src/a.py", tekst, mutacje_zmiany.changes(baza)["src/a.py"])]
+    zakres = mutacje_zmiany.ZakresMutacji.od(baza, repo)
+    return [mutacje_zmiany.entry(mutant, zakres.teksty[mutant.path]) for mutant in zakres.mutanty if mutant.path == "src/a.py"]
 
 
 def test_mutacja_instrukcji_wielowierszowej_trafia_do_pr_ktory_zmienil_jej_linie_a_nie_linie_jej_nazwy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo, baza = _warunek_z_dwoch_pr(tmp_path)
-    przezyte = _noc(repo, baza, monkeypatch)
+    przezyte = _noc(repo, baza)
     github = GitHubWPamieci()
 
     kod = mutacje_nocne.zglos(github, repo, baza, _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, przezyte)}), 1, RUN)
@@ -373,7 +371,7 @@ def test_mutacja_instrukcji_wielowierszowej_trafia_do_pr_ktory_zmienil_jej_linie
 
 @pytest.mark.parametrize(("pierwsza", "druga"), [(3, 4), (4, 3)], ids=["pozniejszy-nizej", "pozniejszy-wyzej"])
 def test_mutacja_linii_zmienionych_przez_dwa_pr_trafia_do_pr_scalonego_pozniej(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], pierwsza: int, druga: int
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], pierwsza: int, druga: int
 ) -> None:
     repo = repository(tmp_path / "repo", {"src/a.py": WARUNEK})
     git(repo, "checkout", "--quiet", "-b", "main")
@@ -384,7 +382,7 @@ def test_mutacja_linii_zmienionych_przez_dwa_pr_trafia_do_pr_scalonego_pozniej(
         commit(repo, f"zmień linię {linia}")
         _scal(repo, f"feat/{numer}", f"Merge pull request #{numer} from org/feat/{numer}")
     # Cofnięcie fragmentu 3–4 psuje linie obu PR-ów, a ostatni zmienił je PR #41.
-    cofniecie = [wpis for wpis in _noc(repo, baza, monkeypatch) if wpis["linie"] == [3, 4]]
+    cofniecie = [wpis for wpis in _noc(repo, baza) if wpis["linie"] == [3, 4]]
     github = GitHubWPamieci()
 
     kod = mutacje_nocne.zglos(github, repo, baza, _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, cofniecie)}), 1, RUN)
@@ -395,11 +393,11 @@ def test_mutacja_linii_zmienionych_przez_dwa_pr_trafia_do_pr_scalonego_pozniej(
 
 
 def test_mutacja_zgloszona_przed_czerwona_noca_nie_wraca_gdy_nastepny_pr_przesunie_jej_linie(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo, baza = _warunek_z_dwoch_pr(tmp_path)
     github = GitHubWPamieci()
-    mutacje_nocne.zglos(github, repo, baza, _zapisy(tmp_path / "pierwsza", {1: (PRZEZYLO, _noc(repo, baza, monkeypatch))}), 1, RUN)
+    mutacje_nocne.zglos(github, repo, baza, _zapisy(tmp_path / "pierwsza", {1: (PRZEZYLO, _noc(repo, baza))}), 1, RUN)
     github.issues[0]["state"] = "closed"
     github.issues[0]["comments"].append({"body": "MUTACJA src/a.py:3 warunek | nie warto, bo próg sprawdza test integracyjny"})
     wyslane = list(github.wyslane)
@@ -409,7 +407,7 @@ def test_mutacja_zgloszona_przed_czerwona_noca_nie_wraca_gdy_nastepny_pr_przesun
     sciezka.write_text("# Próg funkcji f.\n\n" + sciezka.read_text(encoding="utf-8"), encoding="utf-8")
     commit(repo, "nagłówek")
     _scal(repo, "feat/naglowek", "Merge pull request #32 from org/feat/naglowek")
-    druga = _noc(repo, baza, monkeypatch)
+    druga = _noc(repo, baza)
 
     kod = mutacje_nocne.zglos(github, repo, baza, _zapisy(tmp_path / "druga", {1: (PRZEZYLO, druga)}), 1, RUN)
 
@@ -471,8 +469,7 @@ def test_reczna_noc_z_od_bez_wspolnego_przodka_z_head_konczy_sie_fail_z_przyczyn
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo, shas = _repo_z_datami(tmp_path, monkeypatch)
-    for modul in (mutacje_nocne, mutacje_zmiany):
-        monkeypatch.setattr(modul, "ROOT", repo)
+    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
     kod = mutacje_nocne.main(["plan", "--od", shas["obcy"]])
@@ -509,8 +506,7 @@ def test_plan_dzieli_mutacje_od_bazy_na_czesci_dla_macierzy_workflow(
         with (repo / "src" / "pakiet" / "a.py").open("a", encoding="utf-8") as plik:
             plik.write(dopisane)
         commit(repo, "zmiana")
-    for modul in (mutacje_nocne, mutacje_zmiany):
-        monkeypatch.setattr(modul, "ROOT", repo)
+    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
     monkeypatch.setattr(mutacje_nocne, "NA_CZESC", na_czesc)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
@@ -551,8 +547,7 @@ def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_
     for sciezka, funkcja in (("src/pakiet/a.py", "a"), ("src/pakiet/okno.py", "b")):
         (repo / sciezka).write_text(f"def {funkcja}(x: int) -> bool:\n    return x > 2\n", encoding="utf-8")
     commit(repo, "zmiana")
-    for modul in (mutacje_nocne, mutacje_zmiany):
-        monkeypatch.setattr(modul, "ROOT", repo)
+    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
     monkeypatch.setattr(mutacje_nocne, "NA_CZESC", 2)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
@@ -573,8 +568,7 @@ def _main_z_zalegloscia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plikow:
     repo = repository(tmp_path / "repo", {f"src/pakiet/m{numer}.py": FUNKCJA for numer in range(1, plikow + 1)})
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza")
-    for modul in (mutacje_nocne, mutacje_zmiany):
-        monkeypatch.setattr(modul, "ROOT", repo)
+    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
     monkeypatch.setattr(mutacje_nocne, "NA_CZESC", 2)
     monkeypatch.setattr(mutacje_nocne, "CZESCI_NA_NOC", 2)
     return repo, baza
@@ -629,7 +623,7 @@ def test_noc_z_zalegloscia_mutuje_najwyzej_limit_a_kolejne_noce_przerabiaja_ja_d
         (pr[6], pr[8], "4", "2"),
     ]
     # Udane noce przerobiły razem każdą mutację od pierwszej bazy do HEAD, żadnej dwa razy.
-    assert sum(int(noce[numer]["mutacje"]) for numer in (0, 2, 3, 4)) == len(mutacje_nocne.mutacje_od(baza)[0]) == 16
+    assert sum(int(noce[numer]["mutacje"]) for numer in (0, 2, 3, 4)) == len(mutacje_zmiany.ZakresMutacji.od(baza, repo).mutanty) == 16
 
 
 def test_pierwszy_pr_z_wieksza_liczba_mutacji_niz_limit_nocy_dostaje_noc_w_calosci(
@@ -654,8 +648,7 @@ def test_mutacja_linii_dwoch_pr_liczy_sie_do_nocy_wczesniejszego_z_nich_jak_w_za
     repo = repository(tmp_path / "repo", {"src/pakiet/a.py": FUNKCJA, "src/pakiet/b.py": b})
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza")
-    for modul in (mutacje_nocne, mutacje_zmiany):
-        monkeypatch.setattr(modul, "ROOT", repo)
+    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
     monkeypatch.setattr(mutacje_nocne, "NA_CZESC", 3)
     monkeypatch.setattr(mutacje_nocne, "CZESCI_NA_NOC", 1)
     commity: list[str] = []
@@ -709,8 +702,7 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
     copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/mutacje_zmiany.py", "tools/ci/pytest_pokrycie.py", "tools/ci/pokrycie_procesu.py"))
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza")
-    for modul in (mutacje_nocne, mutacje_zmiany):
-        monkeypatch.setattr(modul, "ROOT", repo)
+    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
     monkeypatch.setattr(mutacje_nocne, "NA_CZESC", 2)
     for numer, plik in enumerate(("a", "b"), start=1):
         sciezka = repo / "src" / "rozliczenia" / f"{plik}.py"
@@ -771,8 +763,7 @@ def test_reczna_noc_z_od_spoza_linii_main_liczy_od_wspolnego_przodka_te_same_mut
     git(repo, "checkout", "--quiet", "main")
     (repo / "src" / "rozliczenia" / "a.py").write_text(FUNKCJA.replace("x > 1", "x > 2"), encoding="utf-8")
     head = commit(repo, "Zmień a (#1)")
-    for modul in (mutacje_nocne, mutacje_zmiany):
-        monkeypatch.setattr(modul, "ROOT", repo)
+    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
 
     plan = _plan_nocy(GitHubWPamieci(), tmp_path, monkeypatch, capsys, 2, od=boczny)
     czesci = [_czesc(repo, plan, numer, tmp_path / "zapisy") for numer in range(1, int(plan["liczba"]) + 1)]
@@ -780,6 +771,65 @@ def test_reczna_noc_z_od_spoza_linii_main_liczy_od_wspolnego_przodka_te_same_mut
     assert (plan["mutacje"], [czesc.stdout.splitlines()[-1] for czesc in czesci]) == ("2", ["MUTACJE ZMIANY OK | mutacje=2 | wyjątki=0 | innego systemu=0"])
     assert plan["linia"] == f"MUTACJE NOCNE PLAN | baza {wspolny} (merge-base HEAD z --od {boczny}) | do {head} | mutacje 2 | części 1 | z Chromium 0"
     assert (plan["baza"], json.loads(Path(plan["zakres"]).read_text(encoding="utf-8"))["baza"]) == (wspolny, wspolny)
+
+
+def _bez_zaleglosci(repo: Path, baza: str) -> str:
+    _dopisz(repo, 1)
+    _dopisz(repo, 2)
+    return baza
+
+
+def _z_zalegloscia(repo: Path, baza: str) -> str:
+    for numer in range(1, 6):
+        _dopisz(repo, numer)
+    return baza
+
+
+def _ze_zlym_wyjatkiem(repo: Path, baza: str) -> str:
+    _dopisz(repo, 1)
+    with (repo / "src" / "pakiet" / "m2.py").open("a", encoding="utf-8") as kod:
+        kod.write("# mutacje-zmiany: bez terminu\n")
+    commit(repo, "Zły wyjątek (#2)")
+    return baza
+
+
+def _od_spoza_main(repo: Path, baza: str) -> str:
+    """Gałąź boczna odchodzi od ``main`` po PR #1 i zmienia linię ``m2``, której ``main`` potem nie zmienia: od niej plan
+    dołożyłby cofnięcie tej zmiany. Linię ``m2`` zmienia PR #1, bo linii commitu korzenia ``git blame -l`` nie daje
+    pełnego SHA, więc żaden zakres jej nie zawiera."""
+
+    sciezka = repo / "src" / "pakiet" / "m2.py"
+    sciezka.write_text(sciezka.read_text(encoding="utf-8").replace("x > 1", "x > 2"), encoding="utf-8")
+    commit(repo, "Zmień m2 (#1)")
+    git(repo, "checkout", "--quiet", "-b", "boczna")
+    sciezka.write_text(sciezka.read_text(encoding="utf-8").replace("x > 2", "x > 0 and x < 5"), encoding="utf-8")
+    boczny = commit(repo, "Zmiana gałęzi bocznej")
+    git(repo, "checkout", "--quiet", "main")
+    _dopisz(repo, 3)
+    return boczny
+
+
+@pytest.mark.parametrize(
+    ("historia", "mutacje"),
+    [(_bez_zaleglosci, 4), (_z_zalegloscia, 4), (_ze_zlym_wyjatkiem, 2), (_od_spoza_main, 2)],
+    ids=["bez-zaleglosci", "z-zaleglosca", "zly-wyjatek", "od-spoza-main"],
+)
+def test_plan_i_czesci_licza_te_same_mutacje(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], historia: Callable[[Path, str], str], mutacje: int
+) -> None:
+    """Część k z n dostaje ``ZakresMutacji.od(baza).do(do).czesc(k, n)`` z bazą, końcem zakresu i liczbą części z planu,
+    jak ``tools/mutacje_zmiany.py --baza --do --czesc``: części razem mutują dokładnie tyle mutacji, ile policzył plan,
+    a żadna nie zostaje pusta. Limit nocy to 2 części po 2 mutacje, a PR dopisuje funkcję, czyli 2 mutacje."""
+
+    repo, baza = _main_z_zalegloscia(tmp_path, monkeypatch, 5)
+    od = historia(repo, baza)
+
+    plan = _plan_nocy(GitHubWPamieci(), tmp_path, monkeypatch, capsys, 2, od=od)
+    noc = mutacje_zmiany.ZakresMutacji.od(plan["baza"], repo).do(plan["do"])
+    czesci = [noc.czesc(numer, int(plan["liczba"])) for numer in range(1, int(plan["liczba"]) + 1)]
+
+    assert int(plan["mutacje"]) == sum(map(len, czesci)) == mutacje, plan["linia"]
+    assert all(czesci), plan["linia"]
 
 
 # Najgorsze czasy nocy 31.10–3.11 (runy 41179652907, 41285996039, 41408995300, 41601085650, ADR 0021). Pokrycie części
