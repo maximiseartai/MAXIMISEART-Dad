@@ -5,29 +5,29 @@ sprawdza budowę, której używa Wycena w efenix i którą odtwarza Atrapa efeni
 Żadna strona efenix nie działa przy tym w przeglądarce: każde żądanie do efenix narzędzie wysyła samo, z ciasteczkami
 sesji domyślnego kontekstu Chrome (``contexts[0].request``, bez kart i bez skryptów), tylko z listy ``ALLOWED``
 porównywanej po pełnej ścieżce i hoście ``--efenix-url``, i nigdy nie podąża za przekierowaniem: przekierowanie na
-``page_login.php`` i odpowiedź szukania z ostrzeżeniem o wygasłej sesji (``efenix_browser.SearchWarning``) to brak
+``page_login.php`` i odpowiedź szukania z ostrzeżeniem o wygasłej sesji (``efenix_page.SearchWarning``) to brak
 sesji, a inne przekierowanie to różnica. HTML z odpowiedzi składa parserem przeglądarki we własnej karcie
 w osobnym kontekście bez ciasteczek, z wyłączonym JavaScriptem i service workerami, z której nie wychodzi żadne żądanie
 (obraz, styl, ramka, przejście, prefetch; ``parser_page``). Kart taty nie zmienia: z ``--emmett`` tylko czyta okno
 Emmetta w karcie, w której Maks sam kliknął przycisk Emmetta. Sprawdza:
 
-- lista zleceń: elementy ``efenix_browser.LIST_ELEMENTS`` (pole ``Numer``) i skrypt ``js/index.js``, który lista ładuje,
-  z nazwami ``efenix_browser.LIST_SCRIPT_USES`` (Enter w polu ``Numer`` wysyła ``action_fill_orders.php`` z polem
+- lista zleceń: elementy ``efenix_page.Element`` listy zleceń (pole ``Numer``) i skrypt ``js/index.js``, który lista ładuje,
+  z nazwami ``efenix_page.SCRIPT_USES`` listy (Enter w polu ``Numer`` wysyła ``action_fill_orders.php`` z polem
   ``numer``);
 - tabela wyników: szukanie ``--numer`` tak jak skrypt listy w domyślnym stanie listy (POST ``action_fill_orders.php``
   z każdym polem, które wysyła wtedy skrypt listy, bez ``xrodzaj``, z pustymi filtrami, pierwszym ``sortowanie`` i
   ``na_stronie`` jak w domyślnym ustawieniu listy), a odpowiedź czyta
-  ``efenix_browser.read_results``, odczyt Wyceny w efenix, ze statusem, loginem realizatora i ``Dane adresowe`` w każdym
+  ``efenix_page.read_results``, odczyt Wyceny w efenix, ze statusem, loginem realizatora i ``Dane adresowe`` w każdym
   wierszu, które reguła adresu (``efenix_address.readable``) rozbiera na ulicę, numer domu i lokal, bo z tych części
-  Logi Uruchomienia mówią, czym różni się adres (przy błędzie odczytu nagłówki ``efenix_browser.HEADERS``, liczba komórek, link ``page_order_edit.php?id=`` i status
+  Logi Uruchomienia mówią, czym różni się adres (przy błędzie odczytu nagłówki ``efenix_page.HEADERS``, liczba komórek, link ``page_order_edit.php?id=`` i status
   w ``.badge``); ostrzeżenie „Nie znaleziono pasujących wyników”, którym efenix odpowiada na numer, którego nie zna,
   Wycena czyta jak tabelę bez wierszy, więc ``--numer`` takiego numeru sprawdza i tę odpowiedź;
 - strona zlecenia (do ``ORDERS_TO_OPEN`` zleceń z tabeli, najpierw „Do wyceny”, aż znajdzie pustą datę wykonania):
-  ``efenix_browser.read_order`` (data wykonania ``RRRR-MM-DD`` albo pusta, kwota końcowa, pola Ilość), a na pierwszym
-  zleceniu elementy ``efenix_browser.ORDER_ELEMENTS`` (okno daty wykonania, przycisk i okno Emmetta; przycisk Emmetta
+  ``efenix_page.read_order`` (data wykonania ``RRRR-MM-DD`` albo pusta, kwota końcowa, pola Ilość), a na pierwszym
+  zleceniu elementy ``efenix_page.Element`` strony zlecenia, które efenix ma na każdej (okno daty wykonania, przycisk i okno Emmetta; przycisk Emmetta
   widoczny w samym HTML, bez stylów efenix, a propozycja w oknie Emmetta ``#emmett-propozycja`` pusta, bez elementu i
   tekstu, jak w Atrapie, zanim skrypt strony włoży do niej propozycję), przyciski Przekazania do akceptacji i anulowania, które ma Atrapa, skrypt
-  ``js/page_order_edit.js`` (pod adresem z listy ``ALLOWED``) z nazwami ``efenix_browser.ORDER_SCRIPT_USES``
+  ``js/page_order_edit.js`` (pod adresem z listy ``ALLOWED``) z nazwami ``efenix_page.SCRIPT_USES`` strony zlecenia
   (pickadate z ``onSet``, „Potwierdź” daty, Emmett, zapis ilości z ``price_all``) i karty pozycji
   ``.card.rounded-lg.kolorek``: karta z polem Ilość ma cenę w tekście ``.col-sm-1.mt-2 > span.text-default > small``,
   a karta z ceną wpisywaną samo pole ``input.wycena-cena``; każdy kod ``INDEKS_NNN_NNN`` jest pozycją Atrapy
@@ -37,7 +37,7 @@ Emmetta w karcie, w której Maks sam kliknął przycisk Emmetta. Sprawdza:
   z którą Wycena w efenix porównuje kwotę końcową efenix;
 - bez sesji (żądania bez ciasteczek, więc sesja taty trwa): lista przekierowuje na ``page_login.php``, szukanie
   odpowiada 2xx bez przekierowania samym ostrzeżeniem o wygasłej sesji, które rozpoznaje Wycena w efenix
-  (``efenix_browser.SearchWarning``), a strona logowania ma formularz ``action_login.php`` z polami
+  (``efenix_page.SearchWarning``), a strona logowania ma formularz ``action_login.php`` z polami
   ``field_signum``, ``field_password`` i ``fingerprint``.
 
 Skryptów stron narzędzie nie uruchamia, więc ich działania nie widzi: sprawdza tylko, że skrypt ma nazwy, na których
@@ -56,7 +56,7 @@ Z ``--emmett`` przycisk Emmetta klika Maks, a narzędzie po jego Enter czyta ży
 karty Chrome, której strona to strona zlecenia efenix spod ``--efenix-url`` (``_READ_WINDOW``): sam odczyt DOM funkcją,
 która przechodzi drzewo ``#emmett-propozycja`` i oddaje znaczniki, klasy (cyfra to 9), nazwy atrybutów bez wartości i
 tekst z maską (litera to a, cyfra to 9), bez skryptu, stylu i ramki w środku, z wynikiem reguły okna Wyceny, czy
-propozycja coś pokazuje (``efenix_browser.SHOWS_ANYTHING``). Niczego nie klika, nie przewija, nie zamyka i nie wysyła.
+propozycja coś pokazuje (``efenix_page.SHOWS_ANYTHING``). Niczego nie klika, nie przewija, nie zamyka i nie wysyła.
 Odczyt widzi propozycję po skryptach strony, także tę, którą narysował skrypt w odpowiedzi ``action_fill_emmett.php``.
 Potem narzędzie uruchamia Atrapę efenix na tym komputerze, otwiera jej zlecenie z propozycją dwóch pozycji
 (``ATRAPA_PROPOSAL``) w osobnym oknie Chrome bez ciasteczek taty, klika w nim przycisk Emmetta, czyta jej
@@ -69,11 +69,12 @@ padł (karta zmieniła stronę w trakcie odczytu), i z propozycją, która nic n
 nic nie zaproponował albo propozycja padła, a tego narzędzie nie rozróżni). Karta, w której widać okno Emmetta, a jej
 strona po skryptach nie ma dokładnie jednego ``#dialog_emmett`` (widocznego albo nie) albo potem dokładnie jednego
 ``#dialog_emmett #emmett-propozycja``, to ``RÓŻNICA``. Kolejność jest jak w oknie Wyceny: najpierw okno na całej stronie,
-potem propozycja w nim. Chwila liczenia jest inna: Wycena liczy okna zaraz po kliknięciu Emmetta i potem czeka na jedno
-widoczne okno, a narzędzie liczy je po Enter. Na drugie okno, które skrypt strony dopisze po kliknięciu, Wycena może więc
-zareagować inaczej niż ``ElementCount`` albo wcale, a narzędzie zawsze zgłasza ``RÓŻNICA`` (próba na Atrapie 6.11.2026:
-ukryte okno dopisane 300 ms po pokazaniu propozycji Wycena przepuszcza). Widoczność odczyt sprawdza tylko dla okna,
-nie dla propozycji: czyta drzewo DOM, jak reguła okna Wyceny (``efenix_browser.SHOWS_ANYTHING``), więc propozycja
+potem propozycja w nim. Chwila liczenia jest inna: Wycena liczy okna zaraz po kliknięciu Emmetta i jeszcze raz, gdy
+któreś okno Emmetta jest już widoczne (``efenix_page.emmett_window_fault``), a narzędzie liczy je po Enter. Drugie okno,
+które skrypt strony dopisze, zanim przeglądarka pokaże pierwsze, Wycena zatrzymuje więc z ``ElementCount`` tak, jak
+narzędzie zgłasza ``RÓŻNICA``, ale okno dopisane później Wycena przepuszcza (próba na Atrapie 7.11.2026: ukryte okno
+dopisane 300 ms po pokazaniu propozycji). Widoczność odczyt sprawdza tylko dla okna,
+nie dla propozycji: czyta drzewo DOM, jak reguła okna Wyceny (``efenix_page.SHOWS_ANYTHING``), więc propozycja
 ukryta stylem w widocznym oknie (``display: none`` albo ``visibility: hidden`` na ``#emmett-propozycja``) ma zgodną
 budowę, choć tata widzi puste okno (próba na Atrapie 6.11.2026, #953).
 
@@ -143,21 +144,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 from rozliczenia import workbook_files
 from rozliczenia.efenix_address import readable
 from rozliczenia.collective_preparation import default_collective_template_path
-from rozliczenia.efenix_browser import (
+from rozliczenia.efenix_browser import TIMEOUT_MS
+from rozliczenia.efenix_page import (
     AMOUNT,
     EXECUTION_DATE,
     HEADERS,
-    LIST_ELEMENTS,
-    LIST_SCRIPT_USES,
     LOGIN_PAGE,
-    ORDER_ELEMENTS,
     ORDER_PAGE,
-    ORDER_SCRIPT_USES,
     QUANTITY,
+    SCRIPT_USES,
     SEARCH,
     SHOWS_ANYTHING,
-    TIMEOUT_MS,
+    Element,
     PageElement,
+    PageKind,
     ScriptUse,
     SearchWarning,
     read_order,
@@ -218,6 +218,10 @@ class Part(enum.Enum):
     PROPOSAL = "propozycja Emmetta"
 
 
+# Elementy stron, których używa okno Wyceny w efenix (``efenix_page.Element``) i które efenix ma na każdej stronie tego
+# rodzaju; przycisku kalendarza na każdej stronie zlecenia nie ma, więc narzędzie nie sprawdza go na pierwszym zleceniu.
+LIST_ELEMENTS: Final = tuple(element.element for element in Element if element.page is PageKind.LIST and element.always_on_page)
+ORDER_ELEMENTS: Final = tuple(element.element for element in Element if element.page is PageKind.ORDER and element.always_on_page)
 # Elementy, których Wycena w efenix nie używa, a Atrapa ma: przyciski, których okno nie może kliknąć, i formularz
 # logowania, w którym tata loguje się sam.
 UNUSED_ORDER_ELEMENTS: Final = (
@@ -231,11 +235,11 @@ LOGIN_ELEMENTS: Final = (
     PageElement("pole fingerprint", 'input[name="fingerprint"]'),
 )
 PRICING_CARD: Final = ".card.rounded-lg.kolorek"
-# Przycisk i okno Emmetta z ``ORDER_ELEMENTS`` i propozycja w oknie Emmetta: element, do którego skrypt strony wkłada
-# odpowiedź ``action_fill_emmett.php``.
-EMMETT_BUTTON: Final = next(element.selector for element in ORDER_ELEMENTS if element.name == "przycisk Emmetta")
-DIALOG: Final = next(element.selector for element in ORDER_ELEMENTS if element.name == "okno Emmetta")
-PROPOSAL: Final = next(element.selector for element in ORDER_ELEMENTS if element.name == "propozycja w oknie Emmetta")
+# Przycisk i okno Emmetta i propozycja w oknie Emmetta: element, do którego skrypt strony wkłada odpowiedź
+# ``action_fill_emmett.php``.
+EMMETT_BUTTON: Final = Element.EMMETT_BUTTON.selector
+DIALOG: Final = Element.EMMETT_DIALOG.selector
+PROPOSAL: Final = Element.PROPOSAL.selector
 # Zlecenie Atrapy efenix, na którym narzędzie z ``--emmett`` klika Emmetta, żeby przeczytać okno Emmetta Atrapy: propozycja
 # dwóch pozycji z przypisania kolumn.
 ATRAPA_PROPOSAL: Final = AtrapaOrder("ATRAPA-1", "ZL/ATRAPA/1", "atrapa", "ul.Atrapy 1", emmett={"012": 2, "021": 1})
@@ -296,7 +300,7 @@ _READ_TABLE: Final = """([html, orderPage]) => {
         })),
     };
 }"""
-# Czy pierwszy element ``selector`` coś pokazuje według reguły okna Wyceny (``efenix_browser.SHOWS_ANYTHING``, #908);
+# Czy pierwszy element ``selector`` coś pokazuje według reguły okna Wyceny (``efenix_page.SHOWS_ANYTHING``, #908);
 # ``false`` bez elementu.
 _SHOWS_ANYTHING: Final = f"""(selector) => {{
     const element = document.querySelector(selector);
@@ -304,7 +308,7 @@ _SHOWS_ANYTHING: Final = f"""(selector) => {{
 }}"""
 # Okno Emmetta w karcie z kliknięciem Emmetta: ``null``, gdy żadne okno strony nie jest widoczne (bez pudełka, jak przy
 # ``display: none``, albo ``visibility: hidden``), a przy widocznym liczba okien (``DIALOG``) i propozycji (``PROPOSAL``)
-# na całej stronie, liczonych jak w oknie Wyceny (``_single``), oraz przy jednym oknie i jednej propozycji wynik reguły
+# na całej stronie, liczonych jak w oknie Wyceny (``efenix_page.single``), oraz przy jednym oknie i jednej propozycji wynik reguły
 # okna Wyceny dla propozycji i jej drzewo, bez sprawdzania widoczności propozycji i jej węzłów. Węzeł drzewa to tekst z maską (litera to a, cyfra to 9, białe znaki jak jedna spacja;
 # sam biały znak pomija) albo element: znacznik, klasy (cyfra to 9), nazwy atrybutów poza ``class`` bez wartości i węzły
 # w środku, a w skrypcie, stylu, szablonie, ramce i ``noscript`` bez nich. Komentarz pomija. Funkcja tylko czyta.
@@ -558,7 +562,7 @@ def _check_signed_in(efenix: _Efenix, page: Page, costs: Mapping[str, Decimal | 
         return
     _show(page, html)
     _check_elements(page, Part.LIST, LIST_ELEMENTS, report)
-    _check_script(efenix, page, efenix.url, Part.LIST, LIST_SCRIPT, LIST_SCRIPT_USES, report)
+    _check_script(efenix, page, efenix.url, Part.LIST, LIST_SCRIPT, SCRIPT_USES[PageKind.LIST], report)
     answer = efenix.post(efenix.address(SEARCH), {**SEARCH_FORM, "numer": number})
     results = _text(efenix, answer, f"POST {SEARCH}", Part.RESULTS, report)
     table: _Table | None = None
@@ -648,13 +652,13 @@ def _check_orders(efenix: _Efenix, page: Page, order_ids: Sequence[str], costs: 
         opened += 1
         _show(page, html)
         try:
-            empty_found = empty_found or read_order(page).execution_date is None
+            empty_found = empty_found or read_order(page)[0].execution_date is None
         except UnexpectedPage:
             unread[_shape(page)] += 1
         if not structure_checked:
             _check_elements(page, Part.ORDER, (*ORDER_ELEMENTS, *UNUSED_ORDER_ELEMENTS), report)
             _check_proposal_before(page, report)
-            _check_script(efenix, page, address, Part.ORDER, ORDER_SCRIPT, ORDER_SCRIPT_USES, report)
+            _check_script(efenix, page, address, Part.ORDER, ORDER_SCRIPT, SCRIPT_USES[PageKind.ORDER], report)
             _check_positions(page, costs, report)
             structure_checked = True
     report.checked["otwarte zlecenia"] = opened

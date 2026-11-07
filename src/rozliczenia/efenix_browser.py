@@ -1,19 +1,18 @@
-"""Okno efenix w przeglądarce: jedyny moduł, który zna Playwright i budowę stron efenix.
+"""Okno efenix w przeglądarce: jedyny moduł, który zna Playwright, czekanie, klik i sieć efenix.
 
-Na zewnątrz daje tylko typy domeny (``efenix_pricing.Efenix``, ``ListedOrder``, ``OrderPricing``) i zna tylko działania
+Budowę stron efenix (adresy działań, elementy ``Element``, nazwy w skryptach stron) i jej odczyty (tabela wyników,
+strona zlecenia, okno Emmetta) daje ``efenix_page``, z którego okno bierze każdy selektor. Na zewnątrz okno daje tylko
+typy domeny (``efenix_pricing.Efenix``, ``ListedOrder``, ``OrderPricing``) i zna tylko działania
 z listy dozwolonych: szukanie po ``Numer`` na liście zleceń, otwarcie strony zlecenia, ustawienie daty wykonania,
 przycisk Emmetta z „Załaduj do zlecenia” i pola „Ilość”. Przycisków Przekazania do akceptacji, anulowania i zmiany
 statusu nie zna. Każdy przycisk okna dialogowego klika w jego oknie (``#dialog_… .btn-ok``), bo strona zlecenia ma
 ``.btn-ok`` w każdym oknie, także w oknie zmiany statusu. Szuka tak jak tata: wpisuje numer w pole ``#field_numer`` i naciska Enter, a skrypt strony wysyła ``action_fill_orders.php`` i wkłada
 odpowiedź do ``#wyniki``. Tabelę wyników okno czyta z odpowiedzi na swoje szukanie (tej z jego numerem w polu ``numer``),
 tę samą, którą skrypt wkłada do ``#wyniki``, bo lista po wczytaniu sama szuka ostatniego numeru z poprzedniej wizyty, a
-jej odpowiedź trafia do ``#wyniki`` w dowolnej chwili. Kolumny tabeli rozpoznaje po nagłówkach (``Numer dokumentu``,
-``Status``, ``Wykonawca``, ``Dane adresowe``), tekst komórki bez jej ``<small>`` (identyfikator Fenix, województwo),
-login realizatora z ``small.text-default`` komórki Wykonawca (obok niego w ``<small>`` stoi data), a stronę zlecenia
-otwiera linkiem ``page_order_edit.php?id=`` z wiersza. Przekierowanie strony albo odpowiedzi daty, Wyceny Emmetta i ilości na
-``page_login.php`` to ``LoggedOut``. Na szukanie bez tabeli wyników efenix odpowiada samym ostrzeżeniem (``SearchWarning``, pomiar 4.11.2026,
-#828): „Nie znaleziono pasujących wyników” to brak wyników, a ostrzeżenie o wygasłej sesji to ``LoggedOut``, bo na
-szukanie bez sesji efenix nie przekierowuje. Lista zleceń, której okno nie otworzyło przy starcie (adres nie
+jej odpowiedź trafia do ``#wyniki`` w dowolnej chwili; czyta ją ``efenix_page.read_results``, a stronę zlecenia otwiera
+linkiem z wiersza. Przekierowanie strony albo odpowiedzi daty, Wyceny Emmetta i ilości na
+``page_login.php`` to ``LoggedOut``, tak samo ostrzeżenie o wygasłej sesji w odpowiedzi szukania (``efenix_page.SearchWarning``),
+bo na szukanie bez sesji efenix nie przekierowuje. Lista zleceń, której okno nie otworzyło przy starcie (adres nie
 odpowiada), to ``EfenixUnreachable``.
 Każde inne działanie, którego okno nie dokończyło, to ``UnexpectedPage`` z częścią strony: strona bez oczekiwanej
 budowy, odpowiedź efenix ze statusem błędu, element obecny, ale niewidoczny, i każdy błąd Playwrighta w działaniu (czas czekania na stronę, odpowiedź albo
@@ -46,9 +45,8 @@ statusem błędu (4xx, 5xx) to ``UnexpectedPage`` z ``HttpStatus`` jak przy star
 ``LOGIN_TIMEOUT_MS`` to ``LoggedOut``, a karta, okno albo przeglądarka zamknięte w tym czasie to ``WindowClosed``
 najpóźniej po ``LOGIN_POLL_MS``.
 
-Stronę zlecenia czyta tak, jak widzi ją tata: datę wykonania z ``#data_install`` (RRRR-MM-DD albo pusta), kwotę końcową z
-``#cena_all2`` i ilość każdej pozycji z pola ``input.wycena-ilosc`` o id ``INDEKS_NNN_…`` (kod pozycji to ``NNN``).
-Datę ustawia przyciskiem kalendarza ``#button-calendar`` i kalendarzem pickadate pola ``#field_data_instalacji`` okna
+Stronę zlecenia czyta ``efenix_page.read_order`` tak, jak widzi ją tata: data wykonania, kwota końcowa i ilość każdej
+pozycji. Datę ustawia przyciskiem kalendarza ``#button-calendar`` i kalendarzem pickadate pola ``#field_data_instalacji`` okna
 ``#dialog_select_date``: wybiera dzień przez ``picker.set('select', …)`` kalendarza strony, więc biegnie sprawdzenie
 zakresu efenix, które dzień spoza zakresu zamienia na dzisiejszy. Gdy w polu nie ma potem dokładnie wybranego dnia, okno
 zamyka kalendarz bez „Potwierdź”; inaczej klika „Potwierdź” i czeka na odpowiedź ``action_set_date_of_instalation.php``.
@@ -62,7 +60,11 @@ Wycena Emmetta (#877, #889). Czy efenix załadował Wycenę Emmetta, okno nie ro
 (``efenix_pricing``) obserwacje (``EmmettLoad``), czyli stronę po przeładowaniu i to, co okno Emmetta pokazało przed
 kliknięciem „Załaduj do zlecenia” (``Proposal``), w tym samym działaniu okna. Treści odpowiedzi „Załaduj do zlecenia”
 okno nie czyta, bo Chromium porzuca ją, gdy przeładowanie wyprzedzi odczyt (#895), a jej postaci nikt nie zmierzył.
-Okno Emmetta (``#emmett-propozycja``) nic nie pokazało, gdy nie ma w nim elementu ani tekstu, a propozycja przyszła cała,
+Okno Emmetta liczy dwa razy: zaraz po kliknięciu przycisku Emmetta (dokładnie jedno ``#dialog_emmett``), a gdy któreś
+okno Emmetta jest już widoczne, regułą ``efenix_page.emmett_window_fault`` (dokładnie jedno okno, potem dokładnie jedna
+propozycja w nim), tą samą, którą narzędzie zgodności mierzy efenix. Na pokazanie czeka więc na dowolne okno Emmetta, a
+nie na jedyne, bo drugie okno dopisane przed pokazaniem ma być tą różnicą budowy, a nie błędem Playwrighta.
+Propozycja w oknie Emmetta (``#emmett-propozycja``) nic nie pokazała, gdy nie ma w niej elementu ani tekstu, a przyszła cała,
 gdy odpowiedź ``action_fill_emmett.php`` przyszła cała ze statusem 2xx: okno Emmetta jest puste także po statusie błędu,
 przekierowaniu i zerwanym połączeniu, bo skrypt efenix wkłada propozycję tylko z odpowiedzi 2xx, a okno pokazuje i tak
 (#908). Tę odpowiedź okno czyta po pokazaniu okna Emmetta, które skrypt efenix pokazuje dopiero po jej końcu albo
@@ -71,24 +73,15 @@ nie ściga się z przeładowaniem. Postaci propozycji okno nie czyta, bo tej te�
 „Załaduj do zlecenia” i tak ładuje Wycenę Emmetta, bo efenix bierze ją u siebie, a nie z okna. Ilość wpisuje w polu i naciska Enter, a skrypt strony zapisuje ją przez ``action_save_index.php``:
 kwotą końcową jest ``price_all`` z tej odpowiedzi, a ``#cena_all2``, które się do niej nie odświeży, to
 ``UnexpectedPage``. Odpowiedź ``result: nok`` to wygasła sesja (``LoggedOut``).
-
-Odpowiedź szukania, jej ostrzeżenie i stronę zlecenia czytają ``read_results``, ``search_warning`` i ``read_order``,
-których używa też narzędzie zgodności Atrapy efenix (``tools/zgodnosc_efenix.py``) na HTML z serwera efenix. Resztę
-budowy, której okno używa, moduł podaje jako dane dla tego narzędzia: elementy listy i strony zlecenia
-(``LIST_ELEMENTS``, ``ORDER_ELEMENTS``) i nazwy, które muszą być w skryptach tych stron, bo okno polega na ich działaniu
-(``LIST_SCRIPT_USES``, ``ORDER_SCRIPT_USES``).
 """
 
 from __future__ import annotations
 
-import enum
 import functools
 import json
-import re
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -122,103 +115,47 @@ from .efenix_pricing import (
     WindowClosed,
     WindowStop,
 )
+from .efenix_page import (
+    AMOUNT,
+    FILL_EMMETT,
+    LOAD_EMMETT,
+    LOGIN_PAGE,
+    NUMBER_PARAM,
+    ORDER_PAGE,
+    PRICE_ALL,
+    QUANTITY,
+    SAVE_QUANTITY,
+    SEARCH,
+    SET_DATE,
+    Element,
+    amount,
+    emmett_window,
+    emmett_window_fault,
+    login_form,
+    read_order,
+    read_results,
+    single,
+)
 
 __all__ = [
-    "AMOUNT",
-    "EXECUTION_DATE",
-    "HEADERS",
-    "LIST_ELEMENTS",
-    "LIST_SCRIPT_USES",
-    "LOGIN_PAGE",
     "LOGIN_TIMEOUT_MS",
-    "ORDER_ELEMENTS",
-    "ORDER_PAGE",
-    "ORDER_SCRIPT_USES",
     "PROFILE_DIRECTORY",
-    "QUANTITY",
-    "SEARCH",
     "BrowserEfenix",
     "LaunchOptions",
-    "PageElement",
-    "ScriptUse",
-    "SearchWarning",
     "chrome",
     "chromium",
     "default_profile",
     "launch_options",
-    "read_order",
-    "read_results",
-    "search_warning",
     "window",
 ]
 
 PROFILE_DIRECTORY: Final = "przegladarka-efenix"
 """Folder profilu przeglądarki narzędzia w katalogu narzędzia: na dysku lokalnym taty, poza OneDrive, w ``.gitignore``."""
 
-_NUMBER_FIELD: Final = "#field_numer"
-_NUMBER_PARAM: Final = "numer"
-LOGIN_PAGE: Final = "page_login.php"
-SEARCH: Final = "action_fill_orders.php"
-ORDER_PAGE: Final = "page_order_edit.php"
-EXECUTION_DATE: Final = "#data_install"
-AMOUNT: Final = "#cena_all2"
-QUANTITY: Final = "input.wycena-ilosc"
-_DATE_BUTTON: Final = "#button-calendar"
-_DATE_DIALOG: Final = "#dialog_select_date"
-_DATE_FIELD: Final = "#field_data_instalacji"
-_SET_DATE: Final = "action_set_date_of_instalation.php"
-_EMMETT_BUTTON: Final = "#button_emmett"
-_EMMETT_DIALOG: Final = "#dialog_emmett"
-_PROPOSAL: Final = "#emmett-propozycja"
-_FILL_EMMETT: Final = "action_fill_emmett.php"
-_LOAD_EMMETT: Final = "action_load_emmett.php"
-_SAVE_QUANTITY: Final = "action_save_index.php"
-_PRICE_ALL: Final = "price_all"
-_OK: Final = ".btn-ok"
-_POSITION: Final = re.compile(r"INDEKS_(\d{3})_\d+")
-_AMOUNT_TEXT: Final = re.compile(r"[0-9]+(\.[0-9]+)?")
-_QUANTITY_TEXT: Final = re.compile(r"[0-9]*")
-HEADERS: Final = {"number": "numer dokumentu", "status": "status", "realizator": "wykonawca", "address": "dane adresowe"}
-_LOGIN: Final = re.compile(r"\(([^()\s]+)\)")
-_DAY: Final = re.compile(r"\d{4}-\d{2}-\d{2}")
 TIMEOUT_MS: Final = 30_000
 LOGIN_TIMEOUT_MS: Final = 15 * 60_000
 """Tyle okno czeka na logowanie taty, zanim proces zatrzyma się jak po wylogowaniu."""
 LOGIN_POLL_MS: Final = 2_000
-
-# Tabela z odpowiedzi szukania przeczytana parserem HTML przeglądarki w ``<template>``, w którym jej skrypty nie biegną.
-_READ_RESULTS: Final = """(html) => {
-    const template = document.createElement('template');
-    template.innerHTML = html;
-    const table = template.content.querySelector('table');
-    if (!table) return null;
-    const text = (element) => element.textContent.replace(/\\s+/g, ' ').trim();
-    return {
-        headers: [...table.querySelectorAll('thead th')].map(text),
-        rows: [...table.querySelectorAll('tbody tr')].map((row) => [...row.querySelectorAll('td')].map((cell) => {
-            const plain = cell.cloneNode(true);
-            plain.querySelectorAll('small').forEach((small) => small.remove());
-            const badge = cell.querySelector('.badge');
-            const login = cell.querySelector('small.text-default');
-            const link = cell.querySelector('a[href*="page_order_edit.php?id="]');
-            return {
-                plain: text(plain),
-                badge: badge ? text(badge) : null,
-                login: login ? text(login) : null,
-                link: link ? link.getAttribute('href') : null,
-            };
-        })),
-    };
-}"""
-
-
-# Cały tekst odpowiedzi szukania bez tabeli (białe znaki jak jedna spacja); ``null``, gdy odpowiedź ma tabelę.
-_ANSWER_TEXT: Final = """(html) => {
-    const template = document.createElement('template');
-    template.innerHTML = html;
-    return template.content.querySelector('table') ? null : template.content.textContent.replace(/\\s+/g, ' ').trim();
-}"""
-
 
 # Dzień wybrany kalendarzem pickadate pola, tak jak klik dnia: biegnie ``onSet`` strony, które sprawdza zakres dat.
 # Miesiąc pickadate liczy od 0. ``false``, gdy pole nie ma kalendarza.
@@ -229,16 +166,8 @@ _PICK_DAY: Final = """(field, [year, month, day]) => {
     picker.set('select', [year, month - 1, day]);
     return true;
 }"""
-_DISMISS: Final = '[data-dismiss="modal"]'
-_LOGIN_FORM: Final = 'form[action*="action_login.php"]'
 _SHOWS: Final = "([selector, text]) => document.querySelector(selector)?.textContent.trim() === text"
 _COUNT: Final = "(selector) => ({count: document.querySelectorAll(selector).length})"
-SHOWS_ANYTHING: Final = "(element) => element.childElementCount > 0 || element.textContent.trim() !== ''"
-"""Reguła okna Wyceny, czy element pokazuje cokolwiek: ma element albo tekst, a ``false`` tylko dla pustego (same białe
-znaki); funkcja JavaScript elementu. Jej jedyny właściciel: narzędzie zgodności (``tools/zgodnosc_efenix.py``) mierzy
-nią propozycję Emmetta w efenix i w Atrapie efenix (#908, #953)."""
-
-
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
@@ -289,79 +218,6 @@ def _sent(efenix: BrowserEfenix) -> Iterator[None]:
         raise
 
 
-@dataclass(frozen=True)
-class PageElement:
-    """Element strony efenix, którego używa okno: jest na stronie dokładnie raz (``many``: co najmniej raz), a ten, który
-    okno klika pierwszy (``clicked``), jest widoczny."""
-
-    name: str
-    selector: str
-    many: bool = False
-    clicked: bool = False
-
-
-@dataclass(frozen=True)
-class ScriptUse:
-    """Działanie skryptu strony efenix, na którym polega okno, i nazwy (pól, klas, odpowiedzi), które skrypt zawiera."""
-
-    what: str
-    names: tuple[str, ...]
-
-
-# Budowa stron efenix, której okno używa poza odczytem tabeli wyników i strony zlecenia (``read_results``,
-# ``read_order``); narzędzie zgodności Atrapy efenix (``tools/zgodnosc_efenix.py``) sprawdza ją na efenix. Przycisku
-# kalendarza (``_DATE_BUTTON``) nie ma w ``ORDER_ELEMENTS``: okno klika go tylko przy pustej dacie wykonania, a efenix
-# pokazuje go najpewniej tylko wtedy, więc narzędzie nie sprawdza go na pierwszym otwartym zleceniu.
-LIST_ELEMENTS: Final = (PageElement("pole Numer", _NUMBER_FIELD),)
-ORDER_ELEMENTS: Final = (
-    PageElement("okno daty wykonania", _DATE_DIALOG),
-    PageElement("pole kalendarza w oknie daty wykonania", f"{_DATE_DIALOG} {_DATE_FIELD}"),
-    PageElement("„Potwierdź” w oknie daty wykonania", f"{_DATE_DIALOG} {_OK}"),
-    PageElement("zamknięcie okna daty wykonania", f"{_DATE_DIALOG} {_DISMISS}", many=True),
-    PageElement("przycisk Emmetta", _EMMETT_BUTTON, clicked=True),
-    PageElement("okno Emmetta", _EMMETT_DIALOG),
-    PageElement("propozycja w oknie Emmetta", f"{_EMMETT_DIALOG} {_PROPOSAL}"),
-    PageElement("„Załaduj do zlecenia” w oknie Emmetta", f"{_EMMETT_DIALOG} {_OK}"),
-)
-LIST_SCRIPT_USES: Final = (
-    ScriptUse("Enter w polu Numer wysyła szukanie z polem numer", (_NUMBER_FIELD[1:], SEARCH, f"{_NUMBER_PARAM}:")),
-)
-ORDER_SCRIPT_USES: Final = (
-    ScriptUse("kalendarz pickadate pola daty wykonania sprawdza dzień w onSet", (_DATE_FIELD[1:], "pickadate", "onSet")),
-    ScriptUse("„Potwierdź” okna daty wykonania zapisuje datę", (_DATE_DIALOG[1:], _OK[1:], _SET_DATE)),
-    ScriptUse(
-        "przycisk Emmetta pokazuje propozycję, a „Załaduj do zlecenia” ją ładuje",
-        (_EMMETT_BUTTON[1:], _FILL_EMMETT, _PROPOSAL[1:], _EMMETT_DIALOG[1:], _LOAD_EMMETT),
-    ),
-    ScriptUse(
-        "wyjście z pola Ilość zapisuje ilość, a kwotę końcową z odpowiedzi pokazuje na stronie",
-        (QUANTITY.partition(".")[2], "blur", _SAVE_QUANTITY, _PRICE_ALL, AMOUNT[1:]),
-    ),
-)
-
-
-class SearchWarning(enum.Enum):
-    """Ostrzeżenie, którym efenix odpowiada na szukanie zamiast tabeli wyników: cała odpowiedź to ono samo, 200 bez
-    przekierowania (pomiar na efenix 4.11.2026, #828). Wartość to tekst odpowiedzi, po którym okno je rozpoznaje."""
-
-    NOT_FOUND = "Ostrzeżenie: Nie znaleziono pasujących wyników !"
-    """Szukanie nie znalazło żadnego zlecenia: efenix nie zna numeru."""
-    SESSION_EXPIRED = "Ostrzeżenie: Twoja sesja wygasła - zaloguj się ponownie !"
-    """Szukanie bez ważnej sesji: efenix wylogował."""
-
-
-class _Cell(TypedDict):
-    plain: str
-    badge: str | None
-    login: str | None
-    link: str | None
-
-
-class _Results(TypedDict):
-    headers: list[str]
-    rows: list[list[_Cell]]
-
-
 class BrowserEfenix:
     """Okno efenix na stronie ``page`` z listą zleceń pod adresem ``url``; implementuje ``efenix_pricing.Efenix``."""
 
@@ -405,7 +261,7 @@ class BrowserEfenix:
         self._opened = True
         self._ensure_logged_in(PagePart.LIST)
         try:
-            self._only(_NUMBER_FIELD, PagePart.LIST)
+            self._only(Element.NUMBER.selector, PagePart.LIST)
         except UnexpectedPage as unread:
             # Strona błędu serwera efenix: adres odpowiada, więc to nie ``EfenixUnreachable``, także przy starcie.
             if response is not None and not response.ok:
@@ -476,12 +332,12 @@ class BrowserEfenix:
 
         if urlparse(self._page.url).path != urlparse(self._url).path:
             self.open_list()
-        field = self._page.locator(_NUMBER_FIELD)
-        with _within(PagePart.LIST), self._still_single(_NUMBER_FIELD, PagePart.LIST), _doing(Operation.FILL):
+        field = self._page.locator(Element.NUMBER.selector)
+        with _within(PagePart.LIST), self._still_single(Element.NUMBER.selector, PagePart.LIST), _doing(Operation.FILL):
             field.fill(number, timeout=self._timeout_ms)
 
         def enter() -> None:
-            with self._still_single(_NUMBER_FIELD, PagePart.LIST):
+            with self._still_single(Element.NUMBER.selector, PagePart.LIST):
                 self._enter(field)
 
         answer = self._finished(lambda request: _is_search(request, number), enter)
@@ -506,9 +362,9 @@ class BrowserEfenix:
         ``False``: kalendarz efenix zamienił dzień na inny, więc okno zamknęło kalendarz bez „Potwierdź”.
         """
 
-        self._click(self._only(_DATE_BUTTON, PagePart.DATE))
-        self._shown(_DATE_DIALOG, PagePart.DATE)
-        field = self._only(f"{_DATE_DIALOG} {_DATE_FIELD}", PagePart.DATE)
+        self._click(self._only(Element.DATE_BUTTON.selector, PagePart.DATE))
+        self._shown(Element.DATE_DIALOG, PagePart.DATE)
+        field = self._only(Element.DATE_FIELD.selector, PagePart.DATE)
         with _doing(Operation.PICK):
             picked = field.evaluate(_PICK_DAY, [day.year, day.month, day.day], timeout=self._timeout_ms)
         with _doing(Operation.READ):
@@ -516,10 +372,10 @@ class BrowserEfenix:
         if picked is not True:
             raise UnexpectedPage(PagePart.DATE, OtherShape(Shape.NO_CALENDAR))
         if shown != day.isoformat():
-            self._close(_DATE_DIALOG, PagePart.DATE)
+            self._close(Element.DATE_DIALOG, Element.DATE_DISMISS, PagePart.DATE)
             return False
-        confirm = self._only(f"{_DATE_DIALOG} {_OK}", PagePart.DATE)
-        answer = self._answer(_SET_DATE, lambda _params: True, lambda: self._click(confirm))
+        confirm = self._only(Element.DATE_OK.selector, PagePart.DATE)
+        answer = self._answer(SET_DATE, lambda _params: True, lambda: self._click(confirm))
         if _redirected_to_login(answer):
             raise LoggedOut(PagePart.DATE, LoginSign.REDIRECT)
         return True
@@ -535,19 +391,22 @@ class BrowserEfenix:
         przeładowanie, które ją porzuca, nic nie zmienia (#895).
         """
 
-        button = self._only(_EMMETT_BUTTON, PagePart.EMMETT)
+        button = self._only(Element.EMMETT_BUTTON.selector, PagePart.EMMETT)
         with _doing(Operation.ANSWER), self._page.expect_request(
-            lambda request: _is_post(request, _FILL_EMMETT), timeout=self._timeout_ms
+            lambda request: _is_post(request, FILL_EMMETT), timeout=self._timeout_ms
         ) as asked:
             self._click(button)
-        self._shown(_EMMETT_DIALOG, PagePart.EMMETT)
-        proposal = self._only(f"{_EMMETT_DIALOG} {_PROPOSAL}", PagePart.EMMETT)
+        dialogs = self._only(Element.EMMETT_DIALOG.selector, PagePart.EMMETT)
+        with _doing(Operation.ELEMENT):
+            dialogs.locator("visible=true").first.wait_for(state="visible", timeout=self._timeout_ms)
         with _doing(Operation.READ):
-            shown = proposal.evaluate(SHOWS_ANYTHING, timeout=self._timeout_ms)
-        seen = Proposal.SHOWN if shown is not False else Proposal.NOTHING if _came_whole(asked.value) else Proposal.LOST
-        load = self._only(f"{_EMMETT_DIALOG} {_OK}", PagePart.EMMETT)
+            window = emmett_window(self._page)
+        if (fault := emmett_window_fault(window)) is not None:
+            raise UnexpectedPage(PagePart.EMMETT, fault)
+        seen = Proposal.SHOWN if window.shows else Proposal.NOTHING if _came_whole(asked.value) else Proposal.LOST
+        load = self._only(Element.EMMETT_LOAD.selector, PagePart.EMMETT)
         with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms) as reload:
-            answer = self._answer(_LOAD_EMMETT, lambda _params: True, lambda: self._click(load))
+            answer = self._answer(LOAD_EMMETT, lambda _params: True, lambda: self._click(load))
             if _redirected_to_login(answer):
                 raise LoggedOut(PagePart.EMMETT, LoginSign.REDIRECT)
             if 300 <= answer.status < 400:
@@ -566,7 +425,7 @@ class BrowserEfenix:
         self._click(field)
         with _doing(Operation.FILL):
             field.fill(str(quantity), timeout=self._timeout_ms)
-        answer = self._answer(_SAVE_QUANTITY, lambda params: params.get("index") == [field_id], lambda: self._enter(field))
+        answer = self._answer(SAVE_QUANTITY, lambda params: params.get("index") == [field_id], lambda: self._enter(field))
         if _redirected_to_login(answer):
             raise LoggedOut(PagePart.QUANTITY, LoginSign.REDIRECT)
         try:
@@ -578,11 +437,11 @@ class BrowserEfenix:
             raise LoggedOut(PagePart.QUANTITY, LoginSign.REFUSED)
         if result != "ok":
             raise UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.ANSWER_RESULT, position))
-        shown = str(saved.get(_PRICE_ALL, ""))
-        amount = _amount(shown, PagePart.QUANTITY)
+        shown = str(saved.get(PRICE_ALL, ""))
+        total = amount(shown, PagePart.QUANTITY)
         with _doing(Operation.AMOUNT):
             self._page.wait_for_function(_SHOWS, arg=[AMOUNT, shown], timeout=self._timeout_ms)
-        return amount
+        return total
 
     def _read_order(self, response: Response | None) -> OrderPricing:
         """Strona zlecenia, na którą przeglądarka przeszła odpowiedzią ``response`` (otwarcie albo przeładowanie).
@@ -595,24 +454,25 @@ class BrowserEfenix:
         self._ensure_logged_in(PagePart.ORDER)
         try:
             with _doing(Operation.READ):
-                pricing, self._positions = _order_on(self._page)
+                pricing, positions = read_order(self._page)
         except UnexpectedPage as unread:
             if response is not None and not response.ok:
                 raise UnexpectedPage(PagePart.ORDER, HttpStatus(response.status)) from unread
-            if self._page.locator(_LOGIN_FORM).count() > 0:
+            if login_form(self._page):
                 raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.LOGIN_FORM)) from unread
             raise
+        self._positions = dict(positions)
         return pricing
 
     def _only(self, selector: str, part: PagePart) -> Locator:
         with _doing(Operation.READ):
-            return _single(self._page, selector, part)
+            return single(self._page, selector, part)
 
     @contextmanager
     def _still_single(self, selector: str, part: PagePart) -> Iterator[None]:
         """Działanie przeglądarki na elemencie ``selector``, który był na stronie dokładnie raz: gdy się nie udało, a
         elementu nie ma już dokładnie raz, strona zmieniła budowę między sprawdzeniem a działaniem, więc to
-        ``ElementCount`` jak w ``_single``, a nie błąd przeglądarki. Tak jest z polem ``Numer``, gdy odpowiedź szukania,
+        ``ElementCount`` jak w ``single``, a nie błąd przeglądarki. Tak jest z polem ``Numer``, gdy odpowiedź szukania,
         które lista wysyła sama, wkłada do ``#wyniki`` stronę listy, na którą przekierował ją efenix (#971). Liczenie ma
         czas okna, bo strona, która nie odpowiada, zatrzymałaby okno tu bez końca (#886)."""
 
@@ -628,8 +488,8 @@ class BrowserEfenix:
                 raise UnexpectedPage(part, ElementCount(selector, count)) from failed.__cause__
             raise
 
-    def _shown(self, selector: str, part: PagePart) -> None:
-        located = self._only(selector, part)
+    def _shown(self, element: Element, part: PagePart) -> None:
+        located = self._only(element.selector, part)
         with _doing(Operation.ELEMENT):
             located.wait_for(state="visible", timeout=self._timeout_ms)
 
@@ -645,17 +505,17 @@ class BrowserEfenix:
         with _doing(Operation.ANSWER):
             return answer.text()
 
-    def _close(self, dialog: str, part: PagePart) -> None:
-        """Zamyka okno dialogowe jego przyciskiem zamknięcia, bez „Potwierdź”, i czeka, aż zniknie."""
+    def _close(self, dialog: Element, dismiss: Element, part: PagePart) -> None:
+        """Zamyka okno dialogowe ``dialog`` jego przyciskiem zamknięcia ``dismiss``, bez „Potwierdź”, i czeka, aż zniknie."""
 
-        selector = f"{dialog} {_DISMISS}"
-        dismiss = self._page.locator(selector)
+        selector = dismiss.selector
+        buttons = self._page.locator(selector)
         with _doing(Operation.READ):
-            count = dismiss.count()
+            count = buttons.count()
         if count == 0:
             raise UnexpectedPage(part, ElementCount(selector, count))
-        self._click(dismiss.first)
-        located = self._only(dialog, part)
+        self._click(buttons.first)
+        located = self._only(dialog.selector, part)
         with _doing(Operation.ELEMENT):
             located.wait_for(state="hidden", timeout=self._timeout_ms)
 
@@ -685,92 +545,6 @@ class BrowserEfenix:
     def _ensure_logged_in(self, part: PagePart) -> None:
         if _on_login_page(self._page.url):
             raise LoggedOut(part, LoginSign.PAGE)
-
-
-def read_results(page: Page, html: str) -> tuple[ListedOrder, ...]:
-    """Wiersze tabeli wyników z odpowiedzi szukania ``html``, przeczytane parserem HTML przeglądarki strony ``page``.
-
-    Odpowiedź bez tabeli, która jest samym ostrzeżeniem efenix (``search_warning``), to brak wierszy
-    (``SearchWarning.NOT_FOUND``) albo ``LoggedOut`` (``SearchWarning.SESSION_EXPIRED``), a każda inna odpowiedź bez
-    tabeli to ``UnexpectedPage``.
-    """
-
-    results: _Results | None = page.evaluate(_READ_RESULTS, html)
-    if results is not None:
-        return tuple(_listed(results["headers"], row) for row in results["rows"])
-    match search_warning(page, html):
-        case SearchWarning.NOT_FOUND:
-            return ()
-        case SearchWarning.SESSION_EXPIRED:
-            raise LoggedOut(PagePart.RESULTS, LoginSign.SESSION_WARNING)
-        case None:
-            raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.NO_TABLE))
-
-
-def search_warning(page: Page, html: str) -> SearchWarning | None:
-    """Ostrzeżenie efenix, którym jest cała odpowiedź szukania ``html`` bez tabeli, przeczytana parserem HTML przeglądarki
-    strony ``page``; ``None``: odpowiedź z tabelą albo z innym tekstem."""
-
-    try:
-        return SearchWarning(page.evaluate(_ANSWER_TEXT, html))
-    except ValueError:
-        return None
-
-
-def read_order(page: Page) -> OrderPricing:
-    """Data wykonania, kwota końcowa i ilości pozycji ze strony zlecenia, którą pokazuje ``page``."""
-
-    return _order_on(page)[0]
-
-
-def _listed(headers: Sequence[str], row: Sequence[_Cell]) -> ListedOrder:
-    columns = {field: _column(headers, header) for field, header in HEADERS.items()}
-    links = [cell["link"] for cell in row if cell["link"]]
-    if len(row) != len(headers) or len(links) != 1:
-        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_CELLS))
-    order_id = parse_qs(urlparse(links[0]).query).get("id", [""])[0]
-    number = row[columns["number"]]["plain"]
-    status = row[columns["status"]]
-    found = _LOGIN.findall(row[columns["realizator"]]["login"] or "")
-    if not order_id or not number:
-        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_EMPTY))
-    return ListedOrder(
-        number=number,
-        status=status["badge"] if status["badge"] is not None else status["plain"],
-        realizator=found[-1] if found else None,
-        address=row[columns["address"]]["plain"],
-        order_id=order_id,
-    )
-
-
-def _order_on(page: Page) -> tuple[OrderPricing, dict[str, str]]:
-    """Strona zlecenia w ``page`` i ``id`` pola Ilość każdej pozycji (kod ``NNN`` → ``id``)."""
-
-    executed = _single(page, EXECUTION_DATE, PagePart.ORDER)
-    total = _single(page, AMOUNT, PagePart.ORDER)
-    fields: list[list[str]] = page.locator(QUANTITY).evaluate_all("(fields) => fields.map((f) => [f.id, f.value])")
-    positions: dict[str, str] = {}
-    quantities: dict[str, int] = {}
-    for field_id, value in fields:
-        found = _POSITION.fullmatch(field_id)
-        if found is None:
-            raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.QUANTITY_ID))
-        if found[1] in positions:
-            raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.POSITION_TWICE, found[1]))
-        if not _QUANTITY_TEXT.fullmatch(value.strip()):
-            raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, found[1]))
-        positions[found[1]] = field_id
-        quantities[found[1]] = int(value.strip() or 0)
-    return OrderPricing(_execution_date(executed.inner_text()), _amount(total.inner_text(), PagePart.ORDER), quantities), positions
-
-
-def _single(page: Page, selector: str, part: PagePart) -> Locator:
-    """Element strony, który jest na niej dokładnie raz; inaczej efenix ma inną budowę."""
-
-    located = page.locator(selector)
-    if (count := located.count()) != 1:
-        raise UnexpectedPage(part, ElementCount(selector, count))
-    return located
 
 
 class _Failed(Exception):
@@ -815,15 +589,8 @@ def _within(part: PagePart) -> Iterator[None]:
         raise UnexpectedPage(part, BrowserFailure(exception_type(error), None)) from error
 
 
-def _column(headers: Sequence[str], header: str) -> int:
-    positions = [index for index, text in enumerate(headers) if text.casefold().startswith(header)]
-    if len(positions) != 1:
-        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.COLUMNS))
-    return positions[0]
-
-
 def _is_search(request: Request, number: str) -> bool:
-    return _is_post(request, SEARCH) and _form(request).get(_NUMBER_PARAM) == [number]
+    return _is_post(request, SEARCH) and _form(request).get(NUMBER_PARAM) == [number]
 
 
 def _is_post(request: Request, path: str) -> bool:
@@ -852,25 +619,6 @@ def _came_whole(request: Request) -> bool:
 
 def _form(request: Request) -> dict[str, list[str]]:
     return parse_qs(request.post_data or "")
-
-
-def _execution_date(shown: str) -> date | None:
-    text = " ".join(shown.split())
-    if not text:
-        return None
-    if not _DAY.fullmatch(text):
-        raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))
-    try:
-        return date.fromisoformat(text)
-    except ValueError as error:
-        raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT)) from error
-
-
-def _amount(shown: str, part: PagePart) -> Decimal:
-    text = "".join(shown.split())
-    if not _AMOUNT_TEXT.fullmatch(text):
-        raise UnexpectedPage(part, OtherShape(Shape.AMOUNT_TEXT))
-    return Decimal(text)
 
 
 def _on_login_page(url: str) -> bool:

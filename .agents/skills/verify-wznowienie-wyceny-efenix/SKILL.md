@@ -68,10 +68,10 @@ you keep the two in step. Each model action is one indivisible step of this code
 | --- | --- |
 | `Start` | `efenix_pricing.py` `price_orders.save`: the orders of the scope in order |
 | `Otworz` | `_outcome`: `efenix.search`, `listing`, `open_order`, `_dated` when the execution date is empty (on a page with or without quantities; it writes only the date, which the model leaves out), then the decision on the page: a page without any quantity (`not _priced(opened)`) goes to Wycena Emmetta; a page with quantities goes straight to `_completed` (`completion` in `efenix_positions.py`: `to_enter` where the page has less than the file, `excess` where it has more), with the result at once when nothing is to be entered |
-| `ZaladujEmmetta` | `_outcome`: `efenix.load_emmett(_emmett)` up to the click of „Załaduj do zlecenia”, after which efenix holds Wycena Emmetta (`efenix_browser.BrowserEfenix.load_emmett`, `_answer(_LOAD_EMMETT, …)`); before the click the window reads whether the Emmett dialog shows a proposal (`#emmett-propozycja`) and whether the answer to `action_fill_emmett.php` came whole with 2xx (`_came_whole`, #908) into a `Proposal`, and it never reads the body of the answer to „Załaduj do zlecenia” (#895). An answer that refuses it raises: a redirect in `load_emmett` and a 4xx/5xx in `_finished` (`_ErrorAnswer`, #878) before the page is read, and a 2xx after which the Wycena's verdict `_emmett`, which the window runs inside its action on its `EmmettLoad`, finds the reloaded page (`_read_order`) without any quantity (`not _priced(load.page)`, also with an amount other than 0 from a card with an entered price) although Emmett did not propose nothing (`Proposal.NOTHING`; `Shape.EMMETT_NOT_LOADED`, #889, #908). When efenix did not load Wycena Emmetta that is `Zatrzymanie` in place of this step; when it loaded it and still answered with an error (a 5xx after the load) it is this step and then `Zatrzymanie` before `OdczytPoEmmetcie` |
+| `ZaladujEmmetta` | `_outcome`: `efenix.load_emmett(_emmett)` up to the click of „Załaduj do zlecenia”, after which efenix holds Wycena Emmetta (`efenix_browser.BrowserEfenix.load_emmett`, `_answer(LOAD_EMMETT, …)`); before the click the window counts the Emmett dialogs, waits until one is visible and applies `efenix_page.emmett_window_fault` (exactly one dialog, then exactly one proposal in it; otherwise `UnexpectedPage` with `ElementCount` before the click, so `Zatrzymanie` in place of this step), and reads whether the Emmett dialog shows a proposal (`#emmett-propozycja`, `efenix_page.emmett_window`) and whether the answer to `action_fill_emmett.php` came whole with 2xx (`_came_whole`, #908) into a `Proposal`, and it never reads the body of the answer to „Załaduj do zlecenia” (#895). An answer that refuses it raises: a redirect in `load_emmett` and a 4xx/5xx in `_finished` (`_ErrorAnswer`, #878) before the page is read, and a 2xx after which the Wycena's verdict `_emmett`, which the window runs inside its action on its `EmmettLoad`, finds the reloaded page (`_read_order`) without any quantity (`not _priced(load.page)`, also with an amount other than 0 from a card with an entered price) although Emmett did not propose nothing (`Proposal.NOTHING`; `Shape.EMMETT_NOT_LOADED`, #889, #908). When efenix did not load Wycena Emmetta that is `Zatrzymanie` in place of this step; when it loaded it and still answered with an error (a 5xx after the load) it is this step and then `Zatrzymanie` before `OdczytPoEmmetcie` |
 | `OdczytPoEmmetcie` | `load_emmett` reads the reloaded page (`_read_order`) and `_emmett` accepts it, then `_completed` on it: `completion` from Emmett's quantities |
 | `BrakPozycji` | `_outcome`: `missing_positions(..., PageRead.AFTER_EMMETT)` is `OrderError` after `load_emmett`, before `_completed` |
-| `Wpisz` | `_completed` → the window's `enter_quantity(position, quantity)` with the file's quantity, up to the moment efenix saved it (`BrowserEfenix.enter_quantity`, `_answer(_SAVE_QUANTITY, …)`) |
+| `Wpisz` | `_completed` → the window's `enter_quantity(position, quantity)` with the file's quantity, up to the moment efenix saved it (`BrowserEfenix.enter_quantity`, `_answer(SAVE_QUANTITY, …)`) |
 | `Potwierdz` | `enter_quantity` after the save: the JSON answer and the amount on the page; after the last position `_completed` gives `EmmettWarning(plan.excess)` when `excess` is not empty, and otherwise compares the amount with `Kwota` (`same_amount`) |
 | `KoniecZlecenia` | `save`: the result goes to `results` and `journal.ended`, then the next order |
 | `Zatrzymanie` | `LoggedOut`, `UnexpectedPage`, `WindowClosed`, `EfenixUnreachable` from any window action, also `LoggedOut` from `enter_quantity` (efenix did not save the quantity: step `wpisz`) and a stop after efenix saved it (step `potwierdz`): the window's exception passes through `_outcome`, `_efenix_stops` in `save` turns it into `StopError`, and `save` (`except StopError`) calls `_mark` with the results before it |
@@ -87,41 +87,13 @@ classification of other failures) does not move the model. A change that makes a
 decide whether an order is finished does, though no definition above changes: add it to the table and to
 `model/definicje.json`.
 
-Sync commit: `68aafac28` (2026-11-07: the Wycena, not the window, knows whether it sent a change to efenix before a
-Zatrzymanie). Every row of the table was checked against the code at this commit. Since `014b9337a` only `save` and
-`_efenix_stops` changed: the Komunikat of a Zatrzymanie asks `_kept` (a write in the trace of the orders, or
-`WindowStop.sent` of the window action that stopped) instead of the window's `sent_change`, and the model has no
-Komunikat, so it did not change; `_kept` is not in `model/definicje.json` for the same reason. On the previous Sync
-commit `014b9337a` (the Wycena, not the window, decides whether efenix loaded Wycena Emmetta) every row of the table
-was checked against the code. Since `48d371c3f` `_outcome` and `load_emmett`
-changed, and the new `_priced` and `_emmett`, which `model/definicje.json` now lists: the verdict on the reloaded page
-moved from `load_emmett` to the Wycena's `_emmett`, which the window runs inside its action on its observations
-(`EmmettLoad`), with the same rule, and `_outcome` asks `_priced` instead of `any(opened.quantities.values())`, so the
-model, whose refusal is `Zatrzymanie` at step `emmett`, did not change beyond the comments and the rows of `Otworz`,
-`ZaladujEmmetta` and `OdczytPoEmmetcie`. On the previous Sync commit `48d371c3f` (2026-11-06: a refusal of „Załaduj do
-zlecenia” on a page without quantities but with an amount other than 0 stops the Wycena) every row of the table was
-checked against the code. Since `a5d275cdc` only `load_emmett` changed: the window tells a refusal answered with 2xx by a reloaded page without any
-quantity instead of an amount 0, as `_outcome` sends to Wycena Emmetta only a page without any quantity (ADR 0026), so
-the model, whose refusal is `Zatrzymanie` at step `emmett` and which has no amount apart from the quantities, did not
-change beyond the row of `ZaladujEmmetta`. On the previous Sync commit `a5d275cdc` (2026-11-05: the execution date also
-on a pricing that already is) every row of the table was checked against the code. Since `aac769579` only `_outcome` changed, and the new `_dated`, which
-`model/definicje.json` now lists: the date step moved out of the branch of a page without quantities and runs on every
-page with an empty date, so the model, which has no date, did not change beyond the comment of `Otworz`. On the
-previous Sync commit `aac769579` (2026-11-05, #953: merge of `main` after #960) every row of the table was checked
-against the code. Since `ed73f88ce` only `load_emmett` changed, and only by a name: the rule whether the Emmett dialog
-shows anything is the public `SHOWS_ANYTHING`, which the compatibility tool also uses, instead of the private
-`_SHOWS_ANYTHING`, with the same JavaScript, so the model did not change. On the previous Sync commit `ed73f88ce`
-(2026-11-05, #960: Wycena w efenix completes every order to the Plik zbiorczy only upwards), since `c2db26d6c` the
-decision of `_outcome` changed on purpose (ADR 0026): `completion` replaced `to_enter`, `emmett_conflicts`,
-`priced_differently` and `as_left_after_emmett`, both paths (a page without quantities after Emmett, a page with
-quantities without Emmett) go through `_completed`, and the Ślad Wyceny Emmetta with its write ahead
-(`efenix_emmett_trace`, `_WrittenAhead`, `_TraceNotSaved`) is gone, because no decision depends on it. The model lost
-the trace (`naDysku`, `wPamieci`, `Zapowiedz`, `Odmowa`, `Udany`/`Nieudany`, the configuration `slad`), gained
-`NieObnizaIlosci` and an Emmett that gives B one less than the file (the S of #960), and `ZmianaTatyZostaje` changed on
-purpose (above). Four known findings disappeared with the trace: `przerwanie-po-zaladuj`, `slad-nie-zapisany` and
-`przerwanie-przed-zapisem-ilosci` (the next Uruchomienie now finishes the order like one run, which the sweep
-`test_odciecie_efenix_od_kazdego_zadania_wyceny_…` in `tests/test_wycena_efenix.py` shows for every request) and
-`tata-wpisal-ilosc-ze-sladu` (its promise changed).
+Sync commit: `5a87ce2c0` (2026-11-07: the window reads the efenix page through `efenix_page`). Every row of the table
+was checked against the code at this commit. Since `68aafac28` only `load_emmett` and `enter_quantity` changed: their
+selectors, paths and the amount rule come from `efenix_page`, and `load_emmett` counts the Emmett dialogs once more
+when one is visible (`emmett_window_fault`), before the click of „Załaduj do zlecenia”, so a dialog that is not there
+exactly once stays `Zatrzymanie` in place of step `emmett`, as the model already has it; the model did not change.
+Check what changed since: `git diff 5a87ce2c0 -- src/rozliczenia/efenix_pricing.py src/rozliczenia/efenix_positions.py
+src/rozliczenia/efenix_browser.py`; the history of earlier Sync commits is in `git log` of this file.
 
 ## Run
 

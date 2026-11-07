@@ -15,11 +15,11 @@ strony albo odpowiedzi, na którą okno czekało (``HttpStatus`` ze statusem).
 E: wylogowanie (``LoginSign``), formularz logowania pod adresem strony zlecenia bez przekierowania
 (``Shape.LOGIN_FORM``) i zamknięte okno (``Closed``) mają własne przyczyny.
 
-Tabela to dane, a test porównuje ją z kodem: każde ``raise`` wyjątku okna w ``efenix_browser``, ``efenix_pricing`` i
-``efenix_positions`` (funkcja i tekst wyrażenia) ma dokładnie jeden wiersz, a każdy wiersz ma swoje miejsce. Nowe
+Tabela to dane, a test porównuje ją z kodem: każde ``raise`` wyjątku okna w ``efenix_browser``, ``efenix_page``,
+``efenix_pricing`` i ``efenix_positions`` (funkcja i tekst wyrażenia) ma dokładnie jeden wiersz, a każdy wiersz ma swoje miejsce. Nowe
 miejsce bez wiersza albo przyczyny nie przejdzie, więc recenzent czyta najpierw tę tabelę. Że przyczyna dochodzi do Logów
 Uruchomienia, pokazują przegląd odcięć w ``tests/test_wycena_efenix.py`` i testy hipotez B–E w
-``tests/test_centrum_logi_uruchomienia.py``. Granica: wyjątek okna zgłoszony gdzie indziej niż w tych trzech modułach
+``tests/test_centrum_logi_uruchomienia.py``. Granica: wyjątek okna zgłoszony gdzie indziej niż w tych czterech modułach
 i ``raise`` zmiennej (``raise error``) tabela pomija.
 """
 
@@ -33,6 +33,7 @@ from typing import NamedTuple
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = {
     "efenix_browser": ROOT / "src" / "rozliczenia" / "efenix_browser.py",
+    "efenix_page": ROOT / "src" / "rozliczenia" / "efenix_page.py",
     "efenix_pricing": ROOT / "src" / "rozliczenia" / "efenix_pricing.py",
     "efenix_positions": ROOT / "src" / "rozliczenia" / "efenix_positions.py",
 }
@@ -85,36 +86,36 @@ TABLE = [
         "wtedy błędu), a odczyt strony się nie udał", "D"),
     Row("efenix_browser", "_read_order", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.LOGIN_FORM))",
         "formularz logowania pod adresem strony zlecenia, bez przekierowania, a odczyt strony się nie udał", "E"),
-    Row("efenix_browser", "_single", "UnexpectedPage(part, ElementCount(selector, count))",
+    Row("efenix_page", "single", "UnexpectedPage(part, ElementCount(selector, count))",
         "element okna (#field_numer, #data_install, #cena_all2, przyciski i okna dialogowe) nie dokładnie raz", "C"),
     Row("efenix_browser", "_still_single", "UnexpectedPage(part, ElementCount(selector, count))",
         "#field_numer nie dokładnie raz po wpisaniu numeru albo Enter, które się nie udały: odpowiedź szukania listy "
         "włożyła do #wyniki stronę listy po sprawdzeniu pola (#971)", "C"),
     Row("efenix_browser", "_close", "UnexpectedPage(part, ElementCount(selector, count))",
         "okno dialogowe bez przycisku zamknięcia [data-dismiss=\"modal\"]", "C"),
-    Row("efenix_browser", "_amount", "UnexpectedPage(part, OtherShape(Shape.AMOUNT_TEXT))",
+    Row("efenix_page", "amount", "UnexpectedPage(part, OtherShape(Shape.AMOUNT_TEXT))",
         "#cena_all2 (ORDER) albo price_all odpowiedzi (QUANTITY) nie jest liczbą z kropką", "C"),
     # --- szukanie i tabela wyników ---
-    Row("efenix_browser", "read_results", "LoggedOut(PagePart.RESULTS, LoginSign.SESSION_WARNING)",
+    Row("efenix_page", "read_results", "LoggedOut(PagePart.RESULTS, LoginSign.SESSION_WARNING)",
         "odpowiedź szukania to samo ostrzeżenie efenix o wygasłej sesji (tak efenix odpowiada bez sesji, #828)", "E"),
-    Row("efenix_browser", "read_results", "UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.NO_TABLE))",
+    Row("efenix_page", "read_results", "UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.NO_TABLE))",
         "odpowiedź szukania bez <table> i bez ostrzeżenia z SearchWarning", "inna budowa"),
-    Row("efenix_browser", "_column", "UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.COLUMNS))",
+    Row("efenix_page", "_column", "UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.COLUMNS))",
         "nagłówek Numer dokumentu, Status, Wykonawca albo Dane adresowe nie dokładnie raz", "inna budowa"),
-    Row("efenix_browser", "_listed", "UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_CELLS))",
+    Row("efenix_page", "_listed_order", "UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_CELLS))",
         "wiersz z inną liczbą komórek niż nagłówków albo bez jednego linku page_order_edit.php?id=", "inna budowa"),
-    Row("efenix_browser", "_listed", "UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_EMPTY))",
+    Row("efenix_page", "_listed_order", "UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_EMPTY))",
         "wiersz bez id zlecenia w linku albo bez Numer dokumentu", "inna budowa"),
     # --- strona zlecenia ---
-    Row("efenix_browser", "_order_on", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.QUANTITY_ID))",
+    Row("efenix_page", "read_order", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.QUANTITY_ID))",
         "pole input.wycena-ilosc o id spoza INDEKS_NNN_…", "B"),
-    Row("efenix_browser", "_order_on", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.POSITION_TWICE, found[1]))",
+    Row("efenix_page", "read_order", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.POSITION_TWICE, found[1]))",
         "ten sam kod pozycji w dwóch polach Ilość", "B"),
-    Row("efenix_browser", "_order_on", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, found[1]))",
+    Row("efenix_page", "read_order", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, found[1]))",
         "wartość pola Ilość, która nie jest liczbą całkowitą (np. 1.5)", "B"),
-    Row("efenix_browser", "_execution_date", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))",
+    Row("efenix_page", "_execution_date", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))",
         "#data_install niepusta i nie RRRR-MM-DD", "C"),
-    Row("efenix_browser", "_execution_date", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))",
+    Row("efenix_page", "_execution_date", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))",
         "#data_install RRRR-MM-DD, ale nie istniejący dzień (2026-02-30)", "C"),
     # --- data wykonania ---
     Row("efenix_browser", "set_execution_date", "UnexpectedPage(PagePart.DATE, OtherShape(Shape.NO_CALENDAR))",
@@ -122,6 +123,10 @@ TABLE = [
     Row("efenix_browser", "set_execution_date", "LoggedOut(PagePart.DATE, LoginSign.REDIRECT)",
         "odpowiedź zapisu daty przekierowana na page_login.php", "E"),
     # --- Wycena Emmetta: odmowa „Załaduj do zlecenia” (#877) ---
+    Row("efenix_browser", "load_emmett", "UnexpectedPage(PagePart.EMMETT, fault)",
+        "okno Emmetta, gdy któreś jest już widoczne, nie dokładnie raz na stronie albo propozycja w nim nie dokładnie raz "
+        "(ElementCount z efenix_page.emmett_window_fault, tej samej reguły, którą narzędzie zgodności mierzy efenix); "
+        "zaraz po kliknięciu przycisku Emmetta okno Emmetta nie dokładnie raz to single", "C"),
     Row("efenix_browser", "load_emmett", "LoggedOut(PagePart.EMMETT, LoginSign.REDIRECT)",
         "odpowiedź „Załaduj do zlecenia” przekierowana na page_login.php", "E"),
     Row("efenix_browser", "load_emmett", "UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))",

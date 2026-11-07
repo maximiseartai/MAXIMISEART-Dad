@@ -156,6 +156,7 @@ class Changed(enum.Enum):
         "lista po wpisaniu numeru ma w #wyniki drugie pole Numer, jak odpowiedź jej własnego szukania przekierowana na listę"
     )
     NUMBER_FIELD_GONE = "lista po wpisaniu numeru nie ma już pola Numer"
+    SECOND_EMMETT_DIALOG = "strona zlecenia dopisuje drugie okno Emmetta, zanim przeglądarka pokaże pierwsze"
 
 
 class Unread(enum.Enum):
@@ -715,6 +716,18 @@ document.getElementById('field_numer').addEventListener('input', (event) => even
 """
 
 
+# Drugie, puste okno Emmetta (bez propozycji) dopisane do strony zlecenia zaraz po tym, jak skrypt strony pokaże pierwsze,
+# w tym samym zadaniu przeglądarki (mikrozadanie obserwatora), więc nikt nie widzi pokazanego okna bez drugiego.
+_SECOND_EMMETT_DIALOG_SCRIPT = """
+const pierwsze = document.getElementById('dialog_emmett');
+new MutationObserver((_zmiany, obserwator) => {
+  if (pierwsze.style.display !== 'block') return;
+  obserwator.disconnect();
+  pierwsze.insertAdjacentHTML('afterend', '<div class="modal" id="dialog_emmett" style="display: none"></div>');
+}).observe(pierwsze, {attributes: true, attributeFilter: ['style']});
+"""
+
+
 # Skrypt i elementy strony, które przy wczytaniu i przy opuszczeniu strony wysyłają zapis, zmianę statusu i wylogowanie
 # każdą drogą przeglądarki: okno, beacon, ``fetch`` z ``keepalive``, WebSocket, worker, service worker, przejście. Na
 # początku skrypt czyści stronę, więc strona, na której w ogóle biegnie, nie ma już budowy efenix.
@@ -934,6 +947,8 @@ def _order_script(changed: Changed | Unread | None, today: date, reload_ms: int)
         .replace("__TODAY__", today.isoformat())
         .replace("__EARLIEST__", earliest_execution_date(today).isoformat())
     )
+    if changed is Changed.SECOND_EMMETT_DIALOG:
+        script += _SECOND_EMMETT_DIALOG_SCRIPT
     return _HOSTILE_SCRIPT + script if changed is Unread.HOSTILE else script
 
 

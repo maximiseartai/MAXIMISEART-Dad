@@ -49,6 +49,7 @@ from rozliczenia.efenix_address import AddressPart
 from rozliczenia.efenix_checks import ListedOrder, ListedRead
 from rozliczenia.efenix_marking import UnsupportedShape, mark_ready
 from rozliczenia.efenix_orders import CollectiveOrder
+from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault
 from rozliczenia.efenix_pricing import (
     BrowserFailure,
     Closed,
@@ -992,6 +993,7 @@ CHANGED: dict[Changed, tuple[PagePart, WindowCause, str]] = {
     Changed.QUANTITY_VALUE: (PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, "012"), "otwarcie zlecenia"),
     Changed.SECOND_NUMBER_FIELD: (PagePart.LIST, ElementCount("#field_numer", 2), "szukanie"),
     Changed.NUMBER_FIELD_GONE: (PagePart.LIST, ElementCount("#field_numer", 0), "szukanie"),
+    Changed.SECOND_EMMETT_DIALOG: (PagePart.EMMETT, ElementCount("#dialog_emmett", 2), "Wycena Emmetta"),
 }
 
 
@@ -1025,6 +1027,51 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
     stopped_at = facts.stopped_at.failed
     assert stopped_at is not None
     assert (facts.part, facts.cause, stopped_at.action) == (part, cause, failed)
+
+
+_DIALOG = '<div id="dialog_emmett">{}</div>'
+_PROPOSAL = '<div id="emmett-propozycja">{}</div>'
+
+
+@pytest.mark.parametrize(
+    ("body", "window", "fault"),
+    [
+        pytest.param(_DIALOG.format(_PROPOSAL.format("<ul><li>012: 1</li></ul>")), EmmettWindow(1, 1, True), None, id="propozycja"),
+        pytest.param(_DIALOG.format(_PROPOSAL.format(" \n ")), EmmettWindow(1, 1, False), None, id="pusta-propozycja"),
+        pytest.param(_PROPOSAL.format("012: 1"), EmmettWindow(0, 0, False), ElementCount("#dialog_emmett", 0), id="bez-okna"),
+        pytest.param(
+            _DIALOG.format(_PROPOSAL.format("012: 1")) + _DIALOG.format(""),
+            EmmettWindow(2, 1, True),
+            ElementCount("#dialog_emmett", 2),
+            id="dwa-okna",
+        ),
+        pytest.param(
+            _DIALOG.format(_PROPOSAL.format("012: 1") * 2),
+            EmmettWindow(1, 2, False),
+            ElementCount("#dialog_emmett #emmett-propozycja", 2),
+            id="dwie-propozycje",
+        ),
+        pytest.param(_DIALOG.format(""), EmmettWindow(1, 0, False), ElementCount("#dialog_emmett #emmett-propozycja", 0), id="bez-propozycji"),
+        pytest.param(
+            '<div id="host"></div><script>document.getElementById("host").attachShadow({mode: "open"}).innerHTML ='
+            f" '{_DIALOG.format(_PROPOSAL.format('012: 1'))}';</script>" + _DIALOG.format(_PROPOSAL.format("012: 1")),
+            EmmettWindow(2, 2, False),
+            ElementCount("#dialog_emmett", 2),
+            id="drugie-okno-w-shadow-dom",
+        ),
+    ],
+)
+def test_okno_emmetta_ma_dokladnie_jedno_okno_a_w_nim_dokladnie_jedna_propozycje_regula_wspolna_wyceny_i_narzedzia(
+    page: Page, body: str, window: EmmettWindow, fault: ElementCount | None
+) -> None:
+    """Reguła okna Emmetta, której używają Wycena w efenix i narzędzie zgodności (``efenix_page``): najpierw dokładnie
+    jedno okno Emmetta na stronie, potem dokładnie jedna propozycja w nim, liczone jak element okna, także w shadow DOM.
+    Propozycja coś pokazuje tylko wtedy, gdy jest dokładnie jedna i ma element albo tekst inny niż białe znaki."""
+
+    page.set_content(body)
+    observed = emmett_window(page)
+
+    assert (observed, emmett_window_fault(observed)) == (window, fault)
 
 
 def test_zmieniona_strona_efenix_oznacza_gotowe_przed_nia_a_komunikat_do_maksa_nie_ma_numeru_adresu_ani_loginu(
@@ -1280,6 +1327,49 @@ def test_karta_zamknieta_w_trakcie_nawigacji_okna_to_zamkniete_okno_takze_gdy_bl
         part,
         Closed.DURING_ACTION,
     )
+
+
+@pytest.mark.parametrize(
+    ("closed", "error_answer", "code"),
+    [
+        pytest.param(True, None, "EFENIX_OKNO_ZAMKNIETE", id="karta-zamknieta-przy-przeladowaniu"),
+        pytest.param(False, (LOAD_EMMETT, 1, HTTPStatus.INTERNAL_SERVER_ERROR), "EFENIX_OKNO_ZATRZYMANE", id="strona-bledu-serwera"),
+    ],
+)
+def test_zatrzymanie_w_zaladuj_do_zlecenia_zlecenia_z_data_wykonania_mowi_o_zmianie_w_efenix(
+    tmp_path: Path, page: Page, closed: bool, error_answer: tuple[str, int, HTTPStatus] | None, code: str
+) -> None:
+    """Zlecenie ma już datę wykonania, więc „Załaduj do zlecenia” to jego pierwszy zapis, a okno staje w tym samym
+    działaniu: tata zamyka kartę w trakcie przeładowania po nim albo efenix odpowiada na nie stroną błędu serwera. W
+    śladzie zleceń nie ma jeszcze żadnego zapisu, a efenix mógł już załadować Wycenę Emmetta, więc Komunikat mówi, że
+    wycena sprzed Zatrzymania została w efenix (przegląd #1028)."""
+
+    order = Order("#9721", cells={"O": 1}, amount=_au({"012": 1}), emmett={"012": 1})
+    with atrapa_efenix([replace(order.in_efenix("972"), execution_date=DAY)], error_answer=error_answer) as atrapa:
+        window = cast(Page, _CloseReportedLate(page, ORDER_PAGE, 2)) if closed else page
+        outcome = _price(tmp_path, window, atrapa.url, [order])
+
+    assert (_stop(outcome), _kept(outcome)) == (code, True)
+
+
+def test_komunikat_zamknietego_okna_mowi_o_zmianie_w_efenix_z_kazdego_zlecenia_przed_nim_nie_tylko_z_ostatniego(
+    tmp_path: Path, page: Page
+) -> None:
+    """Pierwsze zlecenie dostaje Wycenę Emmetta, drugie ma już wycenę zgodną z plikiem i kończy się bez zapisu, a tata
+    zamyka kartę tuż przed szukaniem trzeciego (działanie 6). Komunikat mówi, że wycena sprzed Zatrzymania została w
+    efenix, bo jest w niej zapis pierwszego zlecenia, choć ostatnie gotowe nic nie zapisało (przegląd #1028)."""
+
+    orders = [
+        Order("#9731", day=date(2026, 9, 3), cells={"O": 1}, amount=_au({"012": 1}), emmett={"012": 1}),
+        Order("#9732", day=date(2026, 9, 4), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),
+        Order("#9733", day=date(2026, 9, 5), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),
+    ]
+    source = write_collective_file(tmp_path, orders)
+    in_efenix = [replace(orders[0].in_efenix("973"), execution_date=orders[0].day), *(order.in_efenix(f"97{index}") for index, order in enumerate(orders[1:], 4))]
+    with atrapa_efenix(in_efenix) as atrapa:
+        outcome = _run(source, page, atrapa.url, window=lambda efenix: _ClosingBeforeAction(efenix, page, 6))
+
+    assert (_stop(outcome), _kept(outcome), _marked(source)) == ("EFENIX_OKNO_ZAMKNIETE", True, [18, 19])
 
 
 def test_cala_przegladarka_zamknieta_w_trakcie_otwierania_strony_zlecenia_to_zamkniete_okno(tmp_path: Path) -> None:
