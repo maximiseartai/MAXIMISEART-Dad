@@ -49,7 +49,10 @@ from __future__ import annotations
 
 import html
 import re
+import struct
 import zipfile
+import zlib
+from concurrent.futures import ThreadPoolExecutor
 from functools import cached_property
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -58,6 +61,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Final, cast
 from xml.etree import ElementTree
+from xml.parsers import expat
 
 from openpyxl.styles.borders import Border
 from openpyxl.styles.colors import Color
@@ -74,7 +78,7 @@ from .preparation_register import ACTIVITIES, COLUMNS, DATE, DEVICES, WORKER
 from .raw_orders import SHIFT, CellFacts, DayPlan, IntermaxEntry, OperatorColor, OrderColumns, RawBlock, RowFacts
 from .row_look import BORDER
 from .workbook_files import header_columns, is_blank
-from .workbook_parts import MAIN, OFFICE_REL, IrregularSheetData, SheetData, SheetRow, office_document, relationships
+from .workbook_parts import MAIN, OFFICE_REL, IrregularSheetData, RowsFromBottom, SheetRow, office_document, relationships
 from .worker_config import normalize_text
 
 __all__ = ["OrderSheet", "Register", "UnsupportedShape", "WriteMismatch"]
@@ -102,6 +106,9 @@ _HEADER_ROW = re.compile(rb'<row r="1"[^>]*?(?:/>|>.*?</row>)', re.S)
 _ATTRIBUTE = re.compile(rb'\s([\w:]+)="([^"]*)"')
 _ROW_LOOK: Final = (b"s", b"customFormat", b"ht", b"customHeight", b"x14ac:dyDescent")
 """Atrybuty ``<row>``, które dają wiersz wygląd: styl wiersza i wysokość; ``x14ac`` deklaruje arkusz taty."""
+_SHARED_ITEM: Final = re.compile(rb"<si\b[^>]*?(?:/>|>(.*?)</si>)", re.S)
+_PHONETIC: Final = re.compile(rb"<rPh\b.*?</rPh>", re.S)
+_SHARED_TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
 _SHEET_VIEWS: Final = re.compile(rb"<sheetViews\b.*?</sheetViews>", re.S)
 _SHEET_VIEW: Final = re.compile(rb"<sheetView\b([^>]*?)(?:/>|>.*?</sheetView>)", re.S)
 _PANE: Final = re.compile(rb"<pane\b([^>]*?)\s*/>")
@@ -109,6 +116,18 @@ _CONTRACT_NUMBER: Final = "NUMER UMOWY/ZLECENIA ORANGE"
 """Nagłówek docelowy kolumny ``NUMER UMOWY`` w ``COLUMNS`` Rejestru."""
 _TAB_SELECTED: Final = re.compile(rb'(<sheetView\b[^>]*?)\stabSelected="(?:1|true)"')
 _WORKBOOK_VIEW: Final = re.compile(rb"<workbookView\b([^>]*?)(/?>)")
+_COMPRESSION: Final = 1
+"""Poziom zlib zapisu: arkusz zleceń taty (dziesiątki MB XML) zajmuje przy nim tyle co po zapisie w Excelu, a domyślny
+poziom 6 kompresuje go kilka razy dłużej i był większością czasu Uporządkowania INTERMAX u taty."""
+_DEFLATE_CHUNK: Final = 1 << 21
+"""Bajty części, które jeden wątek kompresuje naraz: arkusz zleceń taty to kilkadziesiąt kawałków."""
+_LOCAL, _CENTRAL, _END = 0x04034B50, 0x02014B50, 0x06054B50
+"""Sygnatury nagłówka części, wpisu katalogu i końca katalogu zip (APPNOTE 4.3)."""
+_VERSION: Final = 20
+"""Wersja zip potrzebna do odczytu deflate, ta sama, którą wpisuje ``zipfile``."""
+_UTF8_NAME: Final = 0x800
+_FINAL_BLOCK: Final = b"\x03\x00"
+"""Pusty blok końcowy deflate (stałe kody Huffmana), ten sam, który zlib daje na ``Z_FINISH`` po ``Z_SYNC_FLUSH``."""
 _STYLE_LISTS: Final = (b"fonts", b"fills", b"borders", b"cellXfs")
 """Listy ``xl/styles.xml``, na których końcu zapis dopisuje wpisy."""
 
@@ -209,12 +228,11 @@ class OrderSheet:
     _register: Register
 
     @cached_property
-    def sheet_xml(self) -> _SheetXml:
-        """XML arkusza z indeksem wierszy, liczonym raz; ``UnsupportedShape``, gdy wiersze nie dają się rozdzielić."""
+    def sheet_xml(self) -> RowsFromBottom:
+        """XML arkusza z wierszami od dołu, dzielonymi raz; ``UnsupportedShape``, gdy ``<sheetData>`` jest nie jeden."""
 
-        xml = self._register._parts[self.part]
         try:
-            return _SheetXml(xml, SheetData.of(xml))
+            return RowsFromBottom(self._register._parts[self.part])
         except IrregularSheetData as error:
             raise UnsupportedShape(str(error)) from error
 
@@ -287,12 +305,28 @@ class OrderSheet:
                 cells[self.columns.date] = when
             sheet.row(facts.number, cells)
 
+    @cached_property
+    def _facts_read(self) -> dict[int, RowFacts]:
+        """Numer wiersza → fakty wiersza, który któryś przegląd arkusza od dołu już przeczytał, liczone raz."""
+
+        return {}
+
     def _facts_from_bottom(self) -> Iterator[RowFacts]:
-        sheet = self.sheet_xml
-        for row in reversed(sheet.data.rows):
-            if row.number < 2:
-                return
-            yield self._register._facts(_row_tag(sheet.xml, row), row.number, _cells(sheet.xml[row.start : row.end]))
+        """Fakty wierszy od dołu; ``UnsupportedShape``, gdy przeczytanych wierszy nie da się rozdzielić."""
+
+        sheet, read = self.sheet_xml, self._facts_read
+        try:
+            for row in sheet:
+                if row.number < 2:
+                    return
+                facts = read.get(row.number)
+                if facts is None:
+                    facts = read[row.number] = self._register._facts(
+                        _row_tag(sheet.xml, row), row.number, _cells(sheet.xml[row.start : row.end])
+                    )
+                yield facts
+        except IrregularSheetData as error:
+            raise UnsupportedShape(str(error)) from error
 
 
 def _row_tag(xml: bytes, row: SheetRow) -> bytes:
@@ -301,12 +335,6 @@ def _row_tag(xml: bytes, row: SheetRow) -> bytes:
 
 def _row_attributes(tag: bytes) -> dict[bytes, bytes]:
     return dict(_ATTRIBUTE.findall(tag))
-
-
-@dataclass(frozen=True)
-class _SheetXml:
-    xml: bytes
-    data: SheetData
 
 
 class Register:
@@ -330,7 +358,7 @@ class Register:
             self._styles_part = styles_part
             self._styles = _Styles.of(self._parts[styles_part])
             strings = next((rel.target for rel in rels.values() if rel.kind.endswith("/sharedStrings")), None)
-            self._shared = _shared_strings(self._parts[strings]) if strings else []
+            self._shared = _SharedStrings(self._parts[strings] if strings else b"<sst/>")
             properties = root.find(f"{MAIN}workbookPr")
             date1904 = properties is not None and cast(WorkbookProperties, WorkbookProperties.from_tree(cast(Any, properties))).date1904
             self._epoch = MAC_EPOCH if date1904 else WINDOWS_EPOCH
@@ -461,14 +489,7 @@ class Register:
             sheet.part: sheet_xml,
             self._styles_part: looks.styles(self._parts[self._styles_part]),
         }
-        out = BytesIO()
-        with zipfile.ZipFile(out, "w") as target:
-            for info in self._infos:
-                copied = zipfile.ZipInfo(info.filename, info.date_time)
-                copied.compress_type = info.compress_type
-                copied.external_attr = info.external_attr
-                target.writestr(copied, parts.get(info.filename, self._parts[info.filename]))
-        return out.getvalue()
+        return _archive([(info, parts.get(info.filename, self._parts[info.filename])) for info in self._infos])
 
     def check(self, written: bytes, sheet: OrderSheet, block: RawBlock, plan: DayPlan) -> None:
         """``WriteMismatch``, gdy ``written`` różni się od INTERMAX czymś więcej niż dniem z ``plan``.
@@ -540,13 +561,26 @@ def _with_view(head: bytes, row: int, column: int) -> bytes:
     return _SHEET_VIEW.sub(view, head)
 
 
-def _shared_strings(xml: bytes) -> list[str]:
-    """Teksty wspólne bez podpowiedzi wymowy (``rPh``): zwykły tekst albo tekst każdego fragmentu."""
+class _SharedStrings:
+    """Teksty wspólne bez podpowiedzi wymowy (``rPh``): zwykły tekst albo tekst każdego fragmentu.
 
-    return [
-        "".join(text.text or "" for text in [*item.iterfind(f"{MAIN}t"), *item.iterfind(f"{MAIN}r/{MAIN}t")])
-        for item in ElementTree.fromstring(xml).iterfind(f"{MAIN}si")
-    ]
+    Tekst powstaje dopiero, gdy komórka po niego sięga: INTERMAX taty ma dziesiątki tysięcy tekstów wspólnych, a
+    Uporządkowanie czyta kilkaset wierszy z dołu arkusza. Granice ``<si>`` są szukane bez parsera, więc część
+    sprawdza parser expat, zanim cokolwiek z niej przeczyta: zepsuta część to ``ExpatError``, czyli nieczytelny
+    INTERMAX, a w poprawnym XML każdy ``<si>`` jest elementem, którego ``<si>`` nie zagnieżdża.
+    """
+
+    def __init__(self, xml: bytes) -> None:
+        expat.ParserCreate().Parse(xml, True)
+        self._items = _SHARED_ITEM.findall(xml)
+        self._texts: dict[int, str] = {}
+
+    def __getitem__(self, index: int) -> str:
+        if index not in self._texts:
+            item = self._items[index]
+            item = _PHONETIC.sub(b"", item)
+            self._texts[index] = html.unescape(b"".join(_SHARED_TEXT.findall(item)).decode("utf-8"))
+        return self._texts[index]
 
 
 class _Looks:
@@ -647,22 +681,22 @@ class _RowLooks:
     blank: bytes
 
     @classmethod
-    def of(cls, xml: bytes, rows: Mapping[int, SheetRow], block: RawBlock) -> _RowLooks:
+    def of(cls, rows: RowsFromBottom, block: RawBlock) -> _RowLooks:
         def look(number: int) -> bytes:
-            attributes = _row_attributes(_row_tag(xml, rows[number]))
+            attributes = _row_attributes(_row_tag(rows.xml, rows.row(number)))
             return b"".join(b' %s="%s"' % (name, attributes[name]) for name in _ROW_LOOK if name in attributes)
 
         order = look(block.last_ordered) if block.last_ordered > 1 else b""
         return cls(order, order if block.blank_row is None else look(block.blank_row))
 
 
-def _ordered_sheet(sheet: _SheetXml, columns: OrderColumns, block: RawBlock, plan: DayPlan, looks: _Looks) -> bytes:
-    xml, data = sheet.xml, sheet.data
-    region = [row for row in data.rows if row.number > block.anchor]
-    by_number = {row.number: row for row in data.rows}
-    row_looks = _RowLooks.of(xml, by_number, block)
+def _ordered_sheet(sheet: RowsFromBottom, columns: OrderColumns, block: RawBlock, plan: DayPlan, looks: _Looks) -> bytes:
+    xml = sheet.xml
+    region = sheet.above(block.anchor)
+    by_number = {row.number: row for row in region}
+    row_looks = _RowLooks.of(sheet, block)
     raw = {order.row for order in block.orders}
-    tail_at = data.end + len(b"</sheetData>")
+    tail_at = sheet.end + len(b"</sheetData>")
     _require_writable(xml[tail_at:], block.anchor)
     for number in raw:
         if _FORMULA.search(xml, by_number[number].start, by_number[number].end):
@@ -694,8 +728,9 @@ def _ordered_sheet(sheet: _SheetXml, columns: OrderColumns, block: RawBlock, pla
             rows.append(xml[by_number[number].start : by_number[number].end])
         else:
             rows.append(b'<row r="%d"%s/>' % (number, row_looks.blank))
-    head = _with_view(_with_dimension(xml[: region[0].start], last, columns.last), plan.view_row, columns.first)
-    return head + b"".join(rows) + xml[data.rows[-1].end : tail_at] + _moved_hyperlinks(xml[tail_at:], columns, block, plan)
+    head = _with_view(_with_dimension(xml[: sheet.start], last, columns.last), plan.view_row, columns.first)
+    above, below = memoryview(xml)[sheet.start : region[0].start], memoryview(xml)[region[-1].end : tail_at]
+    return b"".join((head, above, *rows, below, _moved_hyperlinks(xml[tail_at:], columns, block, plan)))
 
 
 def _order_row(
@@ -800,21 +835,24 @@ def _check_styles(original: bytes, written: bytes) -> None:
         raise WriteMismatch("style")
 
 
-def _check_sheet(original: _SheetXml, written: bytes, columns: OrderColumns, block: RawBlock, plan: DayPlan) -> None:
+def _check_sheet(original: RowsFromBottom, written: bytes, columns: OrderColumns, block: RawBlock, plan: DayPlan) -> None:
     try:
-        data = SheetData.of(written)
+        data = RowsFromBottom(written)
+        written_region = data.above(block.anchor)
     except IrregularSheetData as error:
         raise WriteMismatch("arkusz") from error
-    xml, before = original.xml, original.data
-    start = next((row.start for row in before.rows if row.number > block.anchor), before.end)
-    new_start = next((row.start for row in data.rows if row.number > block.anchor), data.end)
-    if _without_view(xml[:start]) != _without_view(written[:new_start]):
+    xml, region = original.xml, original.above(block.anchor)
+    start = region[0].start if region else original.end
+    new_start = written_region[0].start if written_region else data.end
+    if _without_view(xml[: original.start]) != _without_view(written[: data.start]) or (
+        xml[original.start : start] != written[data.start : new_start]
+    ):
         raise WriteMismatch("wiersze nad dniem")
-    tail, new_tail = xml[before.end :], written[data.end :]
+    tail, new_tail = xml[original.end :], written[data.end :]
     if _moved_hyperlinks(tail, columns, block, plan) != new_tail:
         raise WriteMismatch("ogon arkusza")
-    rows = {row.number: row for row in data.rows[data.row_index(new_start) :]}
-    sources = {row.number: row for row in before.rows}
+    rows = {row.number: row for row in written_region}
+    sources = {row.number: row for row in region}
     raw = {order.row for order in block.orders}
     kept = {number: xml[row.start : row.end] for number, row in sources.items() if number not in raw}
     placed = {placement.row: placement for placement in plan.placements}
@@ -845,7 +883,11 @@ def _check_sheet(original: _SheetXml, written: bytes, columns: OrderColumns, blo
 
 
 def _without_view(head: bytes) -> bytes:
-    """Nagłówek arkusza zleceń bez tego, co zmienia zapis: ``<dimension>`` i widoku arkusza."""
+    """Nagłówek arkusza zleceń bez tego, co zmienia zapis: ``<dimension>`` i widoku arkusza.
+
+    Oba stoją według schematu arkusza przed ``<sheetData>``, więc nagłówek to bajty przed nim, a nie dziesiątki MB
+    wierszy nad dniem.
+    """
 
     return _SHEET_VIEWS.sub(b"", _DIMENSION.sub(b"", head))
 
@@ -853,3 +895,63 @@ def _without_view(head: bytes) -> bytes:
 def _has_value(cell: _Cell) -> bool:
     content = cell.content or b""
     return _VALUE.search(content) is not None or b"<is>" in content
+
+
+def _deflated(data: bytes, pool: ThreadPoolExecutor) -> bytes:
+    """Surowy strumień deflate ``data``, kompresowany kawałkami naraz w wątkach (zlib zwalnia GIL), jak pigz.
+
+    Każdy kawałek kończy się ``Z_SYNC_FLUSH`` (blok niekońcowy, do pełnego bajtu), a strumień pusty blok końcowy, więc
+    złączone kawałki są jednym pełnym strumieniem. Odwołania nie sięgają przez granicę kawałka, co na arkuszu zleceń
+    taty kosztuje 0,05% rozmiaru.
+    """
+
+    def chunk(start: int) -> bytes:
+        compressor = zlib.compressobj(_COMPRESSION, zlib.DEFLATED, -zlib.MAX_WBITS)
+        return compressor.compress(data[start : start + _DEFLATE_CHUNK]) + compressor.flush(zlib.Z_SYNC_FLUSH)
+
+    return b"".join(pool.map(chunk, range(0, len(data), _DEFLATE_CHUNK))) + _FINAL_BLOCK
+
+
+def _archive(entries: Sequence[tuple[zipfile.ZipInfo, bytes]]) -> bytes:
+    """Zip z częściami ``entries`` po kolei, każdą w deflate: nazwa, data, system i atrybuty z ``ZipInfo`` oryginału,
+    treść ``bytes``.
+
+    ``zipfile`` kompresuje część tylko w jednym wątku, więc nagłówki pisze tu ``struct`` według APPNOTE (bez ZIP64:
+    INTERMAX ma kilkanaście MB). Sumy CRC32 liczą te same wątki co kompresję, bo zlib na Windows liczy je bez SIMD.
+    """
+
+    out = bytearray()
+    central = bytearray()
+    with ThreadPoolExecutor() as pool:
+        checksums = [pool.submit(zlib.crc32, data) for _, data in entries]
+        streams = [_deflated(data, pool) for _, data in entries]
+        crcs = [checksum.result() for checksum in checksums]
+    for (info, data), stored, crc in zip(entries, streams, crcs, strict=True):
+        name = info.filename.encode("utf-8")
+        flags = 0 if name.isascii() else _UTF8_NAME
+        year, month, day, hour, minute, second = info.date_time
+        time_and_date = (hour << 11 | minute << 5 | second // 2, (year - 1980) << 9 | month << 5 | day)
+        sizes = (crc, len(stored), len(data), len(name))
+        offset = len(out)
+        out += struct.pack("<IHHH2H3IHH", _LOCAL, _VERSION, flags, zipfile.ZIP_DEFLATED, *time_and_date, *sizes, 0)
+        out += name + stored
+        central += struct.pack(
+            "<IBBHHH2H3IHHHHHII",
+            _CENTRAL,
+            info.create_version,
+            info.create_system,
+            _VERSION,
+            flags,
+            zipfile.ZIP_DEFLATED,
+            *time_and_date,
+            *sizes,
+            0,
+            0,
+            0,
+            0,
+            info.external_attr,
+            offset,
+        )
+        central += name
+    end = struct.pack("<IHHHHIIH", _END, 0, 0, len(entries), len(entries), len(central), len(out), 0)
+    return bytes(out + central + end)

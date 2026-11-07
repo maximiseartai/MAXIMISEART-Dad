@@ -214,8 +214,7 @@ def test_dni_intermax_ze_starszym_arkuszem_zlecen_ktorego_wierszy_nie_da_sie_roz
     tmp_path: Path,
 ) -> None:
     centrum = ordering_centrum(tmp_path, Intermax(older_sheet=True))
-    older = "xl/worksheets/sheet2.xml"
-    rewrite_parts(centrum.register, lambda name, data: data.replace(b"<sheetData>", b"<sheetData><!-- x -->") if name == older else data)
+    _older_sheet_unsupported(centrum.register)
 
     found = centrum.client.get("/api/intermax/days").json()
 
@@ -912,8 +911,7 @@ def test_arkusz_zlecen_ktorego_wierszy_nie_da_sie_rozdzielic_zatrzymuje_uporzadk
         Order(datetime(2026, 10, 26, 10), "anna.kowalska", 102, cells=((13, f"montaż {ADDRESS_VALUE}"),)),
     )
     centrum = ordering_centrum(tmp_path, Intermax(older_sheet=True, raw=raw))
-    older = "xl/worksheets/sheet2.xml"
-    rewrite_parts(centrum.register, lambda name, data: data.replace(b"<sheetData>", b"<sheetData><!-- x -->") if name == older else data)
+    _older_sheet_unsupported(centrum.register)
     content = centrum.register.read_bytes()
 
     result = _stopped(centrum)["result"]
@@ -978,11 +976,14 @@ def _pasted(index: int, probe: Order) -> tuple[Order, ...]:
 
 
 def _older_sheet_unsupported(register: Path) -> None:
-    """Starszy arkusz zleceń, którego wierszy nie da się rozdzielić: Planowanie staje na nim, zanim dojdzie do wklejenia."""
+    """Starszy arkusz zleceń, którego wierszy nie da się rozdzielić: Planowanie staje na nim, zanim dojdzie do wklejenia.
+
+    Komentarz stoi pod ostatnim wierszem, bo Uporządkowanie czyta arkusz od dołu i tylko te wiersze, których potrzebuje.
+    """
 
     older = "xl/worksheets/sheet2.xml"
     rewrite_parts(
-        register, lambda name, data: data.replace(b"<sheetData>", b"<sheetData><!-- x -->") if name == older else data
+        register, lambda name, data: data.replace(b"</sheetData>", b"<!-- x --></sheetData>") if name == older else data
     )
 
 

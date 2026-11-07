@@ -63,6 +63,8 @@ PACKAGE_REL: Final = "{http://schemas.openxmlformats.org/package/2006/relationsh
 
 _WITHOUT_LEADING_R: Final = re.compile(rb'<(?:c|row)(?=[\s>/])(?! r=")')
 _ROW_START_OR_IRREGULAR: Final = re.compile(rb'<(?:row r="(\d+)"|!|(?:c|row)(?=[\s>/])(?! r="))')
+_IRREGULAR_IN_ROW: Final = re.compile(rb"-->|\]\]>|</?sheetData")
+"""Koniec komentarza albo CDATA zaczętego wyżej albo granica innego ``<sheetData>`` w wierszu ``RowsFromBottom``."""
 _WORKSHEET: Final = re.compile(rb"\s*(?:<\?xml[^>]*\?>\s*)?<worksheet[\s>]")
 _SHARED_FORMULA_MASTER: Final = re.compile(rb'<f\b[^>]*\bt="shared"[^>]*(?<!/)>')
 _TYPE: Final = re.compile(rb"""\st=["']([^"']*)["']""")
@@ -184,11 +186,7 @@ class SheetData:
     def of(cls, xml: bytes) -> SheetData:
         """``<sheetData>`` XML arkusza; kształt spoza tego, który zapisują Excel i openpyxl, to ``IrregularSheetData``."""
 
-        start = xml.find(b"<sheetData>")
-        end = xml.find(b"</sheetData>")
-        if start < 0 or end < start or xml.count(b"<sheetData") != 1:
-            raise IrregularSheetData("sheetData")
-        start += len(b"<sheetData>")
+        start, end = _sheet_data_bounds(xml)
         return cls(start, end, _sheet_rows(xml, start, end))
 
     @cached_property
@@ -199,6 +197,78 @@ class SheetData:
         """Indeks w ``rows`` ostatniego wiersza, który zaczyna się przed miejscem ``position``; -1 przed pierwszym."""
 
         return bisect_right(self._starts, position) - 1
+
+
+def _sheet_data_bounds(xml: bytes) -> tuple[int, int]:
+    """Treść jedynego ``<sheetData>``: od miejsca za ``<sheetData>`` do ``</sheetData>``; inaczej ``IrregularSheetData``."""
+
+    start = xml.find(b"<sheetData>")
+    end = xml.find(b"</sheetData>")
+    if start < 0 or end < start or xml.count(b"<sheetData") != 1:
+        raise IrregularSheetData("sheetData")
+    return start + len(b"<sheetData>"), end
+
+
+class RowsFromBottom:
+    """Wiersze jedynego ``<sheetData>`` arkusza od ostatniego w górę, dzielone dopiero, gdy czytający po nie sięga.
+
+    Dla zmiany dołu arkusza, który ma dziesiątki tysięcy wierszy (Rejestr zleceń): dzielenie całego ``SheetData``
+    kosztuje tyle co reszta Uporządkowania INTERMAX. Kształt jest ten sam co w ``SheetData``, ale sprawdzany tylko w
+    wierszach, które czytający dostał: każdy z nich i jego kolejność za wierszem nad nim, a komentarz albo CDATA także
+    wtedy, gdy w nich się kończy, choć zaczął się wyżej, i granica drugiego ``<sheetData>`` w nich. Wierszy nad nimi
+    czytający nie zna i ich bajtów nie zmienia.
+    """
+
+    def __init__(self, xml: bytes) -> None:
+        start, end = xml.find(b"<sheetData>"), xml.rfind(b"</sheetData>")
+        if start < 0 or end < start:
+            raise IrregularSheetData("sheetData")
+        self.xml = xml
+        self.start, self.end = start + len(b"<sheetData>"), end
+        self._rows: list[SheetRow] = []
+        self._divided_from = self.end
+
+    def __iter__(self) -> Iterator[SheetRow]:
+        index = 0
+        while index < len(self._rows) or self._divide_more():
+            yield self._rows[index]
+            index += 1
+
+    def above(self, number: int) -> list[SheetRow]:
+        """Wiersze o numerze większym niż ``number``, w kolejności z pliku."""
+
+        rows: list[SheetRow] = []
+        for row in self:
+            if row.number <= number:
+                break
+            rows.append(row)
+        return rows[::-1]
+
+    def row(self, number: int) -> SheetRow:
+        """Wiersz o numerze ``number``; ``KeyError``, gdy arkusz go nie ma."""
+
+        for row in self:
+            if row.number == number:
+                return row
+            if row.number < number:
+                break
+        raise KeyError(number)
+
+    def _divide_more(self) -> bool:
+        """Dzieli wiersz nad podzieloną już częścią; ``False``, gdy nad nią nie ma już wierszy."""
+
+        end = self._divided_from
+        if end <= self.start:
+            return False
+        begin = max(self.start, self.xml.rfind(b"<row", self.start, end))
+        if _IRREGULAR_IN_ROW.search(self.xml, begin, end):
+            raise IrregularSheetData("komentarz, CDATA albo drugi sheetData")
+        rows = _sheet_rows(self.xml, begin, end)
+        if self._rows and rows and rows[-1].number >= self._rows[-1].number:
+            raise IrregularSheetData("kolejność wierszy")
+        self._rows.extend(reversed(rows))
+        self._divided_from = begin
+        return bool(rows)
 
 
 def _sheet_rows(xml: bytes, start: int, end: int) -> list[SheetRow]:

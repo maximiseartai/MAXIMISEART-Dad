@@ -5,8 +5,10 @@ from __future__ import annotations
 import errno
 import os
 import re
+import struct
 import sys
 import zipfile
+import zlib
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -211,6 +213,118 @@ def test_dzien_staje_pod_zoltym_wierszem_w_segmentach_wykonawcow_alfabetycznie_i
         None,
         None,
     ]
+
+
+_OLDER_DAYS = tuple(
+    Order(datetime(2026, 10, 1 + day, 8) + timedelta(minutes=5 * index), f"wykonawca.{index // 8:02d}", 100 * day + index)
+    for day in range(6)
+    for index in range(40)
+)
+_WEEK = tuple(
+    Order(datetime(2026, 10, 19 + day, 8) + timedelta(minutes=5 * index), f"wykonawca.{index // 8:02d}", 1000 + 100 * day + index)
+    for day in range(7)
+    for index in range(40)
+)
+"""Uporządkowane dni jak u taty, kilkadziesiąt zleceń dziennie: starsze dni i tydzień przed dzisiejszym dniem (``NOW``)."""
+_LONG_PASTE = tuple(
+    Order(datetime(2026, 10, 26, 8) + timedelta(minutes=(7 * index) % 600), f"wykonawca.{index % 9:02d}", 5000 + index)
+    for index in range(160)
+)
+
+
+def _long_register(tmp_path: Path, raw: Sequence[Order] = Intermax().raw) -> tuple[Path, Layout]:
+    """INTERMAX, którego arkusz zleceń ma ponad pół MB XML: Uporządkowanie czyta tylko jego dół."""
+
+    path, layout = _register(tmp_path, Intermax(ordered=_OLDER_DAYS + _WEEK, raw=raw))
+    assert len(parts(path)[_SHEET]) > 600_000
+    return path, layout
+
+
+def test_dzien_pod_dlugim_arkuszem_staje_w_segmentach_a_wiersze_nad_nim_zostaja_bajt_w_bajt(tmp_path: Path) -> None:
+    """Długie wklejenie pod tygodniem uporządkowanych dni: każde zlecenie staje w swoim segmencie i po godzinie."""
+
+    path, layout = _long_register(tmp_path, _LONG_PASTE)
+    before = parts(path)[_SHEET]
+
+    summary = _ordered(_run(tmp_path))
+
+    assert (summary.order_count, summary.worker_count) == (len(_LONG_PASTE), 9)
+    expected: list[tuple[object, ...] | None] = []
+    for worker in sorted({order.worker for order in _LONG_PASTE}):
+        expected += [_expected(order) for order in sorted(_LONG_PASTE, key=lambda order: order.when) if order.worker == worker]
+        expected.append(None)
+    assert layout.yellow is not None
+    assert order_rows(path, layout.yellow + 2, layout.yellow + 1 + len(expected)) == expected
+    region = next(row for row in re.finditer(rb'<row r="(\d+)"', before) if int(row.group(1)) > layout.yellow)
+    without_dimension_and_view = re.compile(rb"<dimension [^>]*>|<sheetViews>.*?</sheetViews>")
+    above = without_dimension_and_view.sub(b"", before[: region.start()])
+    assert without_dimension_and_view.sub(b"", parts(path)[_SHEET]).startswith(above)
+
+
+@pytest.mark.parametrize(
+    ("opening", "closing"), [(b"<!-- ", b" -->"), (b"<![CDATA[", b"]]>"), (b"", b"</sheetData><sheetData>")]
+)
+def test_komentarz_konczacy_sie_w_czytanym_dole_arkusza_to_zatrzymanie_do_maksa_bez_zapisu(
+    tmp_path: Path, opening: bytes, closing: bytes
+) -> None:
+    """Komentarz albo CDATA zaczyna się w starszych dniach, których Uporządkowanie nie czyta, a kończy w tygodniu,
+    który czyta: wiersze w nim nie są wierszami arkusza. Tak samo granica drugiego ``<sheetData>`` w tygodniu."""
+
+    path, layout = _long_register(tmp_path)
+
+    def commented(name: str, data: bytes) -> bytes:
+        if name != _SHEET:
+            return data
+        data = data.replace(b'<row r="3"', opening + b'<row r="3"', 1)
+        return data.replace(b'<row r="%d"' % layout.last_ordered, closing + b'<row r="%d"' % layout.last_ordered, 1)
+
+    rewrite_parts(path, commented)
+
+    with _nothing_written(tmp_path, path):
+        stop = _stop(_run(tmp_path))
+
+    assert (stop.message.code, stop.stop_kind) == ("NIEOBSLUGIWANY_UKLAD_INTERMAX", "for_maks")
+
+
+@pytest.mark.parametrize("comment", [b'<!-- <row r="999"> -->', b'<![CDATA[<row r="999">]]>'])
+def test_komentarz_z_niedomknietym_wierszem_pod_ostatnim_wierszem_to_zatrzymanie_do_maksa_bez_zapisu(
+    tmp_path: Path, comment: bytes
+) -> None:
+    """Pierwszy wiersz, który Uporządkowanie czyta od dołu, zaczyna się w komentarzu albo CDATA i nie ma ``</row>``."""
+
+    path, _ = _register(tmp_path)
+    rewrite_parts(path, lambda name, data: data.replace(b"</sheetData>", comment + b"</sheetData>", 1) if name == _SHEET else data)
+
+    with _nothing_written(tmp_path, path):
+        stop = _stop(_run(tmp_path))
+
+    assert (stop.message.code, stop.stop_kind) == ("NIEOBSLUGIWANY_UKLAD_INTERMAX", "for_maks")
+
+
+def test_komentarz_w_starszych_dniach_nad_czytanym_dolem_arkusza_zostaje_bajt_w_bajt(tmp_path: Path) -> None:
+    """Uporządkowanie czyta arkusz od dołu do tygodnia przed dzisiejszym dniem, a starszych wierszy nie zmienia."""
+
+    path, layout = _long_register(tmp_path)
+    comment = b"<!-- uwaga -->"
+    rewrite_parts(path, lambda name, data: data.replace(b'<row r="3"', comment + b'<row r="3"', 1) if name == _SHEET else data)
+
+    summary = _ordered(_run(tmp_path))
+
+    assert summary.order_count == len(layout.raw)
+    assert parts(path)[_SHEET].count(comment + b'<row r="3"') == 1
+
+
+def test_wiersz_nie_po_kolei_w_czytanym_dole_arkusza_to_zatrzymanie_do_maksa_bez_zapisu(tmp_path: Path) -> None:
+    """Wiersz w tygodniu przed dzisiejszym dniem z numerem większym niż wiersze pod nim."""
+
+    path, layout = _long_register(tmp_path)
+    moved = b'<row r="%d"' % (layout.last_ordered - 3)
+    rewrite_parts(path, lambda name, data: data.replace(moved, b'<row r="%d"' % (layout.last_ordered + 500), 1) if name == _SHEET else data)
+
+    with _nothing_written(tmp_path, path):
+        stop = _stop(_run(tmp_path))
+
+    assert (stop.message.code, stop.stop_kind) == ("NIEOBSLUGIWANY_UKLAD_INTERMAX", "for_maks")
 
 
 def test_bez_zoltego_wiersza_dzien_staje_10_pustych_wierszy_pod_ostatnim_uporzadkowanym_zleceniem(tmp_path: Path) -> None:
@@ -514,6 +628,29 @@ def test_inne_czesci_pliku_i_wiersze_nad_dniem_zostaja_bajt_w_bajt_a_hiperlacza_
         if (link := (cell := sheet.cell(row, NUMBER)).hyperlink) is not None
     }
     assert links == {f"ZL-{order.number}": order.link for order in layout.raw}
+
+
+def test_kazda_czesc_intermax_po_uporzadkowaniu_to_pelny_strumien_deflate_z_data_oryginalu(tmp_path: Path) -> None:
+    """Excel czyta część skoroszytu jako strumień deflate z blokiem końcowym. Duża część (kilka MB, jak arkusz zleceń
+    taty) wraca z tą samą treścią i datą."""
+
+    path, _ = _register(tmp_path)
+    big = b"".join(b'<row r="%d"><c r="A%d"><v>%d</v></c></row>' % (number, number, number * 7919) for number in range(150_000))
+    rewrite_parts(path, lambda _name, data: data, {"customXml/duza.xml": big})
+    before = {info.filename: info.date_time for info in zipfile.ZipFile(path).infolist()}
+
+    _ordered(_run(tmp_path))
+
+    content = path.read_bytes()
+    with zipfile.ZipFile(path) as archive:
+        assert {info.filename: info.date_time for info in archive.infolist()} == before
+        assert archive.read("customXml/duza.xml") == big
+        for info in archive.infolist():
+            name_length, extra_length = struct.unpack("<HH", content[info.header_offset + 26 : info.header_offset + 30])
+            start = info.header_offset + 30 + name_length + extra_length
+            stream = zlib.decompressobj(-zlib.MAX_WBITS)
+            stream.decompress(content[start : start + info.compress_size])
+            assert (info.compress_type, stream.eof) == (zipfile.ZIP_DEFLATED, True), info.filename
 
 
 @dataclass(frozen=True)
@@ -851,6 +988,7 @@ CORRUPTIONS: dict[str, Callable[[bytes, Layout], bytes]] = {
     "lista stylów": lambda content, _layout: _part_changed(
         content, _STYLES, lambda xml: re.sub(rb"<borders\b.*?</borders>", b"", xml, flags=re.S)
     ),
+    "nagłówek arkusza": _in_sheet(lambda xml: xml.replace(b"<sheetData>", b'<sheetFormatPr defaultRowHeight="20"/><sheetData>', 1)),
     "wiersze nad dniem": _in_sheet(lambda xml: xml.replace(b'<row r="2" ', b'<row r="2" hidden="1" ', 1)),
     "ogon arkusza": _in_sheet(lambda xml: xml.replace(b'<pageMargins left="0.75"', b'<pageMargins left="0.5"', 1)),
     "wartość zlecenia": _cell_value_changed,
@@ -1951,6 +2089,42 @@ def test_brak_albo_nieczytelny_intermax_to_zatrzymanie_dla_taty(tmp_path: Path, 
     assert outcome.progress.phase_states[stopped] == PhaseState.FAILED
     assert sorted(entry.name for entry in folder.iterdir()) == ([] if content is None else [REGISTER_NAME])
     assert not _copies(tmp_path)
+
+
+def test_zepsute_teksty_wspolne_to_nieczytelny_intermax_bez_zapisu(tmp_path: Path) -> None:
+    """Teksty wspólne, których parser XML nie przeczyta: INTERMAX jest nieczytelny, także gdy wiersze z dołu arkusza
+    sięgają tylko po teksty przed usterką."""
+
+    path, _ = _register(tmp_path)
+    rewrite_parts(path, lambda name, data: data.replace(b"</sst>", b"") if name == "xl/sharedStrings.xml" else data)
+
+    with _nothing_written(tmp_path, path):
+        stop = _stop(_run(tmp_path))
+
+    assert (stop.message.code, stop.stop_kind) == ("NIECZYTELNY_INTERMAX", "for_tata")
+
+
+def test_pusty_tekst_wspolny_i_si_z_atrybutem_nie_przesuwaja_tekstow_zlecen(tmp_path: Path) -> None:
+    """``<si/>`` na początku listy tekstów wspólnych i ``<si >`` przy każdym innym: poprawny XML, którego Excel nie
+    zapisuje, a który Uporządkowanie czyta tak samo jak zwykły."""
+
+    path, layout = _register(tmp_path)
+    shifted = re.compile(rb'(<c [^>]*?t="s"[^>]*><v>)(\d+)')
+
+    def with_empty_first(name: str, data: bytes) -> bytes:
+        if name == "xl/sharedStrings.xml":
+            return re.sub(rb"(<sst\b[^>]*>)", rb"\g<1><si/>", data.replace(b"<si>", b"<si >"), count=1)
+        if name.startswith("xl/worksheets/sheet"):
+            return shifted.sub(lambda found: found.group(1) + b"%d" % (int(found.group(2)) + 1), data)
+        return data
+
+    rewrite_parts(path, with_empty_first)
+
+    summary = _ordered(_run(tmp_path))
+
+    assert summary.order_count == len(layout.raw)
+    assert layout.yellow is not None
+    assert order_rows(path, layout.yellow + 2, layout.yellow + 2) == [_expected(layout.raw[1])]
 
 
 @pytest.mark.parametrize("header", ["AKCJE", "UWAGI", "WYKONAWCA"])
