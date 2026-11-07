@@ -12,6 +12,8 @@ from datetime import date
 from pathlib import Path
 
 from .message import REPORT_TO_MAINTAINER, Message, file_label, folder_label
+from .register_columns import ORDERED_FONT, ORDERED_SIZE
+from .text import row_range
 from .workbook_files import Problem, WorkbookError
 
 _PROCESS = "Uporządkowanie INTERMAX"
@@ -139,7 +141,7 @@ def raw_order_above_ordered(register: Path, sheet: str, row: int, ordered_row: i
         where=f"{file_label(register)}, arkusz {sheet}, wiersz {row}",
         action=(
             "Przenieś wklejone zlecenia na dół arkusza zleceń, pod ostatni uporządkowany wiersz. Jeśli wiersz "
-            f"{row} jest już uporządkowany, nadaj mu czcionkę Calibri 8. Zapisz i zamknij INTERMAX i uruchom ponownie."
+            f"{row} jest już uporządkowany, nadaj mu czcionkę {ORDERED_FONT} {ORDERED_SIZE}. Zapisz i zamknij INTERMAX i uruchom ponownie."
         ),
     )
 
@@ -165,7 +167,7 @@ def several_days(register: Path, sheet: str, days: Sequence[date], first_row: in
         code="WKLEJENIE_Z_KILKU_DNI",
         dad_file="order_register",
         what=f"Wklejone zlecenia są z więcej niż jednego dnia: {', '.join(map(_day, days))}. {_UNCHANGED}",
-        where=f"{file_label(register)}, arkusz {sheet}, wiersze {first_row}–{last_row}",
+        where=f"{file_label(register)}, arkusz {sheet}, {row_range(first_row, last_row)}",
         action=(
             "Zostaw na dole arkusza zleceń zlecenia jednego dnia, a pozostałe usuń. Zapisz i zamknij INTERMAX i "
             "uruchom ponownie, a następny dzień wklej i uporządkuj osobno."
@@ -180,9 +182,13 @@ def day_already_ordered(register: Path, sheet: str, day: date, first_row: int, l
         code="DZIEN_JUZ_UPORZADKOWANY",
         dad_file="order_register",
         what=f"Dzień {_day(day)} jest już uporządkowany. {_UNCHANGED}",
-        where=f"{file_label(register)}, arkusz {sheet}, wklejone wiersze {first_row}–{last_row}",
+        where=f"{file_label(register)}, arkusz {sheet}, {_pasted(first_row, last_row)}",
         action="Nowe zlecenia na ten dzień dopisz ręcznie, a wklejone usuń.",
     )
+
+
+def _pasted(first_row: int, last_row: int) -> str:
+    return f"{'wklejony' if first_row == last_row else 'wklejone'} {row_range(first_row, last_row)}"
 
 
 def _day(day: date) -> str:

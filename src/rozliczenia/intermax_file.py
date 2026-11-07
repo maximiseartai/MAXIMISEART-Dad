@@ -75,23 +75,19 @@ from openpyxl.workbook.properties import WorkbookProperties
 from . import client_data, raw_orders, workbook_files
 from .input_copy import InputCopy, WorkbookCopy, modified_at
 from .intermax_replace import WriteMismatch
-from .preparation_register import ACTIVITIES, COLUMNS, DATE, DEVICES, WORKER
+from .register_columns import ACTIVITIES, COLUMNS, CONTRACT_NUMBER, DATE, DAY_FILL, DEVICES, ORDERED_FONT, ORDERED_SIZE, WORKER, WORKER_SIZE
 from .raw_orders import SHIFT, CellFacts, DayPlan, IntermaxEntry, OperatorColor, OrderColumns, RawBlock, RowFacts
 from .row_look import BORDER
 from .workbook_files import header_columns, is_blank
 from .workbook_parts import MAIN, OFFICE_REL, IrregularSheetData, RowsFromBottom, SheetRow, office_document, relationships
-from .worker_config import normalize_text
+from .text import normalize_text
 
 __all__ = ["OrderSheet", "Register", "UnsupportedShape"]
 
 _FIRST: Final = "AKCJE"
 _LAST: Final = "UWAGI"
 _DATE_FORMAT: Final = 22  # m/d/yy h:mm, format daty uporządkowanych dni
-_FACE: Final = "Calibri"
-_SIZE: Final = 8
-_WORKER_SIZE: Final = 9
 _BLACK: Final = "FF000000"
-_YELLOW: Final = "FFFF00"
 
 _CELL = re.compile(rb'<c r="([A-Z]{1,3})(\d+)"([^>]*?)(?:/>|>(.*?)</c>)', re.S)
 _STYLE = re.compile(rb'\ss="(\d+)"')
@@ -113,8 +109,6 @@ _SHARED_TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
 _SHEET_VIEWS: Final = re.compile(rb"<sheetViews\b.*?</sheetViews>", re.S)
 _SHEET_VIEW: Final = re.compile(rb"<sheetView\b([^>]*?)(?:/>|>.*?</sheetView>)", re.S)
 _PANE: Final = re.compile(rb"<pane\b([^>]*?)\s*/>")
-_CONTRACT_NUMBER: Final = "NUMER UMOWY/ZLECENIA ORANGE"
-"""Nagłówek docelowy kolumny ``NUMER UMOWY`` w ``COLUMNS`` Rejestru."""
 _TAB_SELECTED: Final = re.compile(rb'(<sheetView\b[^>]*?)\stabSelected="(?:1|true)"')
 _WORKBOOK_VIEW: Final = re.compile(rb"<workbookView\b([^>]*?)(/?>)")
 _COMPRESSION: Final = 1
@@ -181,7 +175,7 @@ def _face(font: Font) -> tuple[str | None, float | None]:
 
 def _is_yellow(fill: ElementTree.Element) -> bool:
     color = fill.find(f"{MAIN}patternFill[@patternType='solid']/{MAIN}fgColor")
-    return color is not None and color.get("rgb", "").upper().endswith(_YELLOW)
+    return color is not None and color.get("rgb", "").upper().endswith(DAY_FILL)
 
 
 @dataclass(frozen=True)
@@ -436,7 +430,7 @@ class Register:
             last,
             devices=cast(int, named[DEVICES.target_header]),
             activities=cast(int, named[ACTIVITIES.target_header]),
-            contract_number=cast(int, named[_CONTRACT_NUMBER]),
+            contract_number=cast(int, named[CONTRACT_NUMBER.target_header]),
         )
 
     def _value(self, cell: _Cell) -> object:
@@ -604,8 +598,8 @@ class _Looks:
         worker = column == self._columns.worker
         key = (worker, number_format, fill)
         if key not in self._style_ids:
-            size, bold = (_WORKER_SIZE, True) if worker else (_SIZE, None)
-            font = _index(self._styles.fonts, self._fonts, Font(name=_FACE, sz=size, b=bold, color=_BLACK, family=2))
+            size, bold = (WORKER_SIZE, True) if worker else (ORDERED_SIZE, None)
+            font = _index(self._styles.fonts, self._fonts, Font(name=ORDERED_FONT, sz=size, b=bold, color=_BLACK, family=2))
             fill_id = 0 if fill is None else _index(self._styles.fills, self._fills, _solid(fill))
             border = _index(self._styles.borders, self._borders, BORDER)
             xf = (

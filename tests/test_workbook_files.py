@@ -24,7 +24,7 @@ from openpyxl.styles.numbers import is_date_format
 from openpyxl.utils import get_column_letter
 
 from rozliczenia.highlights import Highlights
-from rozliczenia.preparation_register import TARGET_HEADERS
+from rozliczenia.register_columns import TARGET_HEADERS
 from rozliczenia.quantity_rules import QuantityColumn
 from rozliczenia.workbook_files import (
     DataRow,

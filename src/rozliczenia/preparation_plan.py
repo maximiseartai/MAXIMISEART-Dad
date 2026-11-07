@@ -16,11 +16,12 @@ from pathlib import Path
 
 from . import preparation_messages as messages
 from .message import StopError
-from .preparation_register import ACTIVITIES, CONTRACT, DATE, DEVICES, SUCCESSFUL, WORKER, RegisterSheet, cell_value
+from .preparation_register import RegisterSheet, cell_value
+from .register_columns import ACTIVITIES, CONTRACT, DATE, DEVICES, SUCCESSFUL, WORKER
 from .quantity_rules import OrderContent, RuleResult, evaluate
 from .settlement_period import SettlementPeriod
 from .workbook_files import RegisterRow, cell_datetime, is_blank
-from .worker_config import normalize_text
+from .text import normalize_text
 
 _SUCCESSFUL_VALUE = "tak"
 _UNSUCCESSFUL_VALUE = "nie"

@@ -357,7 +357,10 @@ INTERMAX_SAMPLES: Samples = {
             REGISTER, SHEET, [SEPTEMBER_14, date(2026, 9, 15), date(2026, 9, 16)], 816, 860
         ),
     ],
-    "day_already_ordered": [lambda: intermax_messages.day_already_ordered(REGISTER, SHEET, SEPTEMBER_14, 816, 840)],
+    "day_already_ordered": [
+        lambda: intermax_messages.day_already_ordered(REGISTER, SHEET, SEPTEMBER_14, 816, 840),
+        lambda: intermax_messages.day_already_ordered(REGISTER, SHEET, SEPTEMBER_14, 816, 816),
+    ],
     "unsupported_shape": [lambda: intermax_messages.unsupported_shape(REGISTER, SHEET)],
     "register_syncing": [lambda: intermax_messages.register_syncing(REGISTER)],
     "write_check_failed": [lambda: intermax_messages.write_check_failed(REGISTER)],

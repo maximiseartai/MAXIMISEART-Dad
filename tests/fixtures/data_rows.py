@@ -8,7 +8,7 @@ from types import MappingProxyType
 
 from rozliczenia.highlights import PLAIN, Highlights
 from rozliczenia.hyperlinks import Hyperlink
-from rozliczenia.preparation_register import TARGET_HEADERS
+from rozliczenia.register_columns import TARGET_HEADERS
 from rozliczenia.workbook_files import DataCell, DataRow, ExcelRow, RegisterRow
 
 DATA_ROW_COLUMNS = 46  # A:AT

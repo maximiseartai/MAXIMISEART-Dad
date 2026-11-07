@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import stat
-import unicodedata
 from pathlib import Path
 from typing import Literal
 
@@ -18,6 +17,7 @@ import yaml
 
 from . import TOOL_ROOT
 from .period_folder import check_worker_name
+from .text import normalize_text
 
 __all__ = [
     "ContentProblem",
@@ -25,7 +25,6 @@ __all__ = [
     "WorkerConfigError",
     "default_config_path",
     "load_worker_mapping",
-    "normalize_text",
 ]
 
 
@@ -70,13 +69,6 @@ class WorkerConfigError(Exception):
 
     def __init__(self, reason: WorkerConfigProblem) -> None:
         self.reason: WorkerConfigProblem = reason
-
-
-def normalize_text(value: object) -> str:
-    """Normalizuje identyfikator bez usuwania polskich znaków."""
-
-    text = unicodedata.normalize("NFC", str(value or ""))
-    return " ".join(text.replace("\u00a0", " ").split()).casefold()
 
 
 def default_config_path() -> Path:

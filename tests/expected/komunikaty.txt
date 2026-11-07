@@ -864,9 +864,14 @@ several_days #2 [WKLEJENIE_Z_KILKU_DNI]
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane, arkusz ZLECENIA, wiersze 816–860
   Co zrobić: Zostaw na dole arkusza zleceń zlecenia jednego dnia, a pozostałe usuń. Zapisz i zamknij INTERMAX i uruchom ponownie, a następny dzień wklej i uporządkuj osobno.
 
-day_already_ordered [DZIEN_JUZ_UPORZADKOWANY]
+day_already_ordered #1 [DZIEN_JUZ_UPORZADKOWANY]
   Co się stało: Dzień 14.09.2026 jest już uporządkowany. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane, arkusz ZLECENIA, wklejone wiersze 816–840
+  Co zrobić: Nowe zlecenia na ten dzień dopisz ręcznie, a wklejone usuń.
+
+day_already_ordered #2 [DZIEN_JUZ_UPORZADKOWANY]
+  Co się stało: Dzień 14.09.2026 jest już uporządkowany. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane, arkusz ZLECENIA, wklejony wiersz 816
   Co zrobić: Nowe zlecenia na ten dzień dopisz ręcznie, a wklejone usuń.
 
 unsupported_shape [NIEOBSLUGIWANY_UKLAD_INTERMAX]

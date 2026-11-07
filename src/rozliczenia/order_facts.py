@@ -17,10 +17,10 @@ from typing import Final, Literal
 
 from openpyxl.utils import get_column_letter
 
-from .preparation_register import ACTIVITIES, CONTRACT, DATE, DEVICES, Column
+from .register_columns import ACTIVITIES, CONTRACT, DATE, DEVICES, Column
 from .quantity_rules import OrderContent
 from .workbook_files import QUANTITY_COLUMNS, DataRow, cell_datetime, is_blank
-from .worker_config import normalize_text
+from .text import normalize_text
 
 NON_NUMERIC: Final = "nieliczbowa"
 TataValue = int | Literal["nieliczbowa"]

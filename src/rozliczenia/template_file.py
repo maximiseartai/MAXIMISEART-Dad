@@ -32,7 +32,7 @@ from openpyxl.worksheet.filters import AutoFilter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from .highlights import PLAIN
-from .preparation_register import TARGET_HEADERS
+from .register_columns import TARGET_HEADERS
 from .quantity_rules import QuantityColumn
 from .row_look import GENERAL, RowLook, wraps
 from .template_copy import InvalidValue, Package, Row, SheetLayout, TemplateCopy, UnsupportedShape
@@ -60,7 +60,7 @@ from .workbook_files import (
 )
 from .workbook_parts import package_parts, sheet_part
 from .workbook_save import SaveProblem, WorkbookSaveError, save_from_template, write_atomically
-from .worker_config import normalize_text
+from .text import normalize_text
 from .write_routes import Route, TemplateKind
 
 

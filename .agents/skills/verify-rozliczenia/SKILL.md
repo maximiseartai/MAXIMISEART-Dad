@@ -27,9 +27,11 @@ pilnuje:
   - src/rozliczenia/progress.py
   - src/rozliczenia/quantit*.py
   - src/rozliczenia/raw_orders.py
+  - src/rozliczenia/register_columns.py
   - src/rozliczenia/row_look.py
   - src/rozliczenia/settlement_*.py
   - src/rozliczenia/telemetry.py
+  - src/rozliczenia/text.py
   - src/rozliczenia/template_*.py
   - src/rozliczenia/workbook_*.py
   - src/rozliczenia/worker_config.py

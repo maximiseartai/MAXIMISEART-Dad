@@ -13,10 +13,10 @@ from typing import Final
 
 from openpyxl.utils import column_index_from_string
 
-from .preparation_register import DEVICES
+from .register_columns import DEVICES
 from .quantity_rules import QuantityColumn
 from .workbook_files import DataRow, is_blank
-from .worker_config import normalize_text
+from .text import normalize_text
 
 _INEA_ONLY: Final[Mapping[QuantityColumn, str]] = MappingProxyType(
     {QuantityColumn.AP: "gniazdo", QuantityColumn.AK: "technicolor"}
