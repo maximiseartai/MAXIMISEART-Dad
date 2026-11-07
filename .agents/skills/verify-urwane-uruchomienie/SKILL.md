@@ -13,7 +13,7 @@ pilnuje:
   - src/rozliczenia/centrum/atomic_file.py
   - src/rozliczenia/efenix_pricing.py
   - src/rozliczenia/process_run.py
-  - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
+  - tools/lib/model_tlc.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
 ci: .agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwane_uruchomienie.py
@@ -211,21 +211,24 @@ Earlier Sync commits, each checked the same way:
 py -3 .agents\skills\verify-urwane-uruchomienie\scripts\sprawdz_urwane_uruchomienie.py
 ```
 
-`--config NAME` runs one configuration, `--strict` fails also on known findings. Java and `tla2tools.jar` come from
-`verify-aktualizacja-narzedzia` (`sprawdz_aktualizacje.py` installs pinned `jdk4py` and the jar into `.verification/`
-on first use; `TLC_JAVA` and `TLC_JAR` override them). The whole check took 2 min 23 s on Maks's Mac on 2026-11-05
+`--config NAME` runs one configuration, `--strict` fails also on known findings. The run of TLC, the verdict and the
+known findings are `tools/lib/model_tlc.py`, which every skill with a TLA+ model shares; Java and `tla2tools.jar` come
+from `tools/lib/narzedzia_tlc.py` (pinned `jdk4py` and the jar in `.verification/` on first use; `TLC_JAVA` and
+`TLC_JAR` override them). The whole check took 2 min 23 s on Maks's Mac on 2026-11-05
 (#910, 15 known findings in 23 TLC runs, with other runs on the machine).
 
 The last line is the verdict:
 
 - `URWANE URUCHOMIENIE OK` or `URWANE URUCHOMIENIE OK, ZNANE ZNALEZISKA: n`: every configuration ends as
-  `model/oczekiwane.json` says (n counts each known finding in each configuration). Exit 0 (1 with `--strict` and
+  `model/konfiguracje.json` says (n counts each known finding in each configuration). Exit 0 (1 with `--strict` and
   known findings).
 - `URWANE URUCHOMIENIE: NOWE NARUSZENIE (n)`: a promise breaks on a path that is not a known finding, or Zbieganie
   breaks. Exit 1.
 - `URWANE URUCHOMIENIE: ZNALEZISKO ZNIKNĘŁO (n)`: a known finding no longer happens. Describe the change below and
-  remove it from `model/oczekiwane.json`. Exit 1.
-- `URWANE URUCHOMIENIE: BŁĄD MODELU (n)`: TLC gave no verdict (a syntax error, a deadlock) or `TypeOK` broke. Exit 2.
+  remove it from `znane` of its configuration in `model/konfiguracje.json`. Exit 1.
+- `URWANE URUCHOMIENIE: BŁĄD MODELU (n)`: TLC gave no verdict (a syntax error, a deadlock), an invariant outside the
+  promises such as `TypeOK` broke, `model/konfiguracje.json` has another shape, or the counterexample's story in the
+  script does not know every action of `Next`. Exit 2.
 - `URWANE URUCHOMIENIE: ROZJAZD MODELU Z KODEM` (CI only): a definition in `model/definicje.json` changed since the
   Sync commit.
   Outside CI the same is a `UWAGA:` line above the verdict.
@@ -282,7 +285,7 @@ A path that does not happen on the code means the model is wrong until you show 
 
 ## Known findings
 
-A configuration forgives only the findings `model/oczekiwane.json` lists for it, each only for its promise and only
+A configuration forgives only the findings `model/konfiguracje.json` lists for it (`znane`), each only for its promise and only
 for an event that happened with its cause (the history variables `zgubiony`, `poWyniku`, `inneZnaki`, `bezZlecenia`,
 `bezWersji` and `wyparty` record the causes at every event, and `bezKonca` why the journal of a Wycena with a result has no end entry); any other
 path is a new violation. Each cause is pinned to what the finding is about: `wpis-nieudany` to the orders whose own
@@ -339,7 +342,7 @@ the code.
 
 Decide 4 with Maks; when the code changes, the finding disappears and the check says `ZNALEZISKO ZNIKNĘŁO`.
 
-Fixed in #910, gone from `model/oczekiwane.json`: `po-wpisie-konca` (WersjaKoncowa: a Wycena whose Logi with the result
+Fixed in #910, gone from the known findings: `po-wpisie-konca` (WersjaKoncowa: a Wycena whose Logi with the result
 did not reach the queue after the end entry kept the progress „Uruchomienie trwa” forever, because the start removed a
 journal with the end entry without sending anything, so as not to replace Logi with the result the queue might have
 accepted). The start now sends a stand-in version of a rank between the progress and the Logi with the result, and
@@ -348,7 +351,7 @@ only when they may not be.
 `tests/test_centrum_logi_uruchomienia.py` replays the window, the Logi accepted without their file with and without the
 network, and the clock that went back (D2 of #875), and the first and the last fail on `main` before the fix.
 
-Fixed in #870/#871, gone from `model/oczekiwane.json`: `wiersz-pozniejszej-wyceny` (DziennikPoKolejce: the start removed
+Fixed in #870/#871, gone from the known findings: `wiersz-pozniejszej-wyceny` (DziennikPoKolejce: the start removed
 the journal of an Urwana Wycena it had once failed to read, because `RunCards._row` matched the Historia row of a later
 Wycena), `historia-nieczytelna` and `historia-niezapisana` (BezUrwanychPoWyniku: a Wycena with a result and without a
 Logs file got Logi Urwanego Uruchomienia, which replaced its Logi with the result in the Skrzynka, when the start could
@@ -364,7 +367,8 @@ When a definition from `model/definicje.json` changes:
 2. Change the model so each action is again one indivisible step of the code, with the code's names in its comment.
    TLA+ strings must be ASCII; comments may use Polish letters. Never weaken a promise or narrow a configuration to make
    the check pass.
-3. A new way to fail gets a constant, a branch guarded by it, and a line in every `.cfg`.
+3. A new way to fail gets a constant, a branch guarded by it, and a value in `stale` of every configuration in
+   `model/konfiguracje.json`. A new action of `Next` gets its words in `_STEPS` of the script.
 4. Break the new path in the model on purpose (remove the guard you just added) and see the check fail; add that break
    to `scripts/check_model_urwanego_mutations.py` with the code counterpart in its name.
 5. Run the check. A new violation is a finding: replay it on the code (Read a result) before you call it a bug, report
@@ -473,7 +477,7 @@ the start (`RunCards.last`, which shows the Urwane Uruchomienie for `przed-wpise
 ## Files
 
 - `model/UrwaneUruchomienie.tla`: the model, with the code each action describes.
-- `model/*.cfg`: the configurations (first line describes it), `model/oczekiwane.json`: the expected result,
-  `model/definicje.json`: the definitions of the code the model describes.
+- `model/konfiguracje.json`: the configurations (description, constants and known findings; the script writes each
+  `.cfg` with `TypeOK` and every promise), `model/definicje.json`: the definitions of the code the model describes.
 - `scripts/sprawdz_urwane_uruchomienie.py`: runs TLC on every configuration and tells each counterexample.
 - `scripts/check_model_urwanego_mutations.py`: proves the check fails when the model loses a guard the code has.

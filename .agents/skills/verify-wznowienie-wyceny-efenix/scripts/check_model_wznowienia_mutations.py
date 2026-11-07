@@ -6,18 +6,18 @@ copy of the checkout (``tools/mutacje.py``) and must end the check with ``WZNOWI
 NIEAKTUALNA: update it to the new model.
 
 The copy of the checkout has no ignored TLC cache, so this script hands Java and ``tla2tools.jar`` of this checkout
-to every command through ``TLC_JAVA`` and ``TLC_JAR``.
+to every command through ``TLC_JAVA`` and ``TLC_JAR`` (``model_tlc.narzedzia_dla_kopii``).
 """
 
 from __future__ import annotations
 
-import importlib.util
-import os
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
+from model_tlc import narzedzia_dla_kopii
 from mutacje import Edit, Mutation, check_all
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -81,19 +81,6 @@ MUTATIONS = (
 )
 
 
-def _tlc_from_checkout() -> None:
-    """Java i ``tla2tools.jar`` tego checkoutu (narzędzia ``sprawdz_aktualizacje.py``) dla poleceń w kopiach."""
-
-    tools = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts" / "sprawdz_aktualizacje.py"
-    spec = importlib.util.spec_from_file_location("sprawdz_aktualizacje", tools)
-    if spec is None or spec.loader is None:
-        sys.exit(f"BŁĄD: nie da się wczytać {tools}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    os.environ.setdefault("TLC_JAVA", module._java())
-    os.environ.setdefault("TLC_JAR", str(module._tla_tools()))
-
-
 if __name__ == "__main__":
-    _tlc_from_checkout()
+    narzedzia_dla_kopii(ROOT)
     raise SystemExit(check_all(MUTATIONS))

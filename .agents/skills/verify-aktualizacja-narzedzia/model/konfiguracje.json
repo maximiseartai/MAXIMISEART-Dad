@@ -1,0 +1,107 @@
+{
+  "git": {
+    "opis": "Zwykłe awarie i polecenie Gita kończące się GitFailed, limitem czasu albo OSError, także z nową wersją, która nie wystartuje.",
+    "stale": {
+      "MaxKlikniec": 2,
+      "OdmowaScalenia": true,
+      "AwariaPobrania": true,
+      "AwariaBibliotek": true,
+      "AwariaOpiekuna": true,
+      "AwariaGita": true,
+      "AwariaKopiowania": false,
+      "NieudanyStart": true,
+      "MaxSkrotowWTrakcie": 0,
+      "Wylaczenie": false
+    }
+  },
+  "kopiowanie": {
+    "opis": "Zwykłe awarie i OSError z dysku (copy2 pliku taty, stan.json, plik wyniku), także z nową wersją, która nie wystartuje.",
+    "stale": {
+      "MaxKlikniec": 2,
+      "OdmowaScalenia": true,
+      "AwariaPobrania": true,
+      "AwariaBibliotek": true,
+      "AwariaOpiekuna": true,
+      "AwariaGita": false,
+      "AwariaKopiowania": true,
+      "NieudanyStart": true,
+      "MaxSkrotowWTrakcie": 0,
+      "Wylaczenie": false
+    }
+  },
+  "nieudany-start": {
+    "opis": "Zwykłe awarie i nowa wersja, która nie wystartuje.",
+    "stale": {
+      "MaxKlikniec": 2,
+      "OdmowaScalenia": true,
+      "AwariaPobrania": true,
+      "AwariaBibliotek": true,
+      "AwariaOpiekuna": true,
+      "AwariaGita": false,
+      "AwariaKopiowania": false,
+      "NieudanyStart": true,
+      "MaxSkrotowWTrakcie": 0,
+      "Wylaczenie": false
+    }
+  },
+  "skrot-w-trakcie": {
+    "opis": "Zwykłe awarie, nowa wersja, która nie wystartuje, i tata klikający skrót w trakcie ponownego startu.",
+    "stale": {
+      "MaxKlikniec": 2,
+      "OdmowaScalenia": true,
+      "AwariaPobrania": true,
+      "AwariaBibliotek": true,
+      "AwariaOpiekuna": true,
+      "AwariaGita": false,
+      "AwariaKopiowania": false,
+      "NieudanyStart": true,
+      "MaxSkrotowWTrakcie": 2,
+      "Wylaczenie": false
+    }
+  },
+  "wylaczenie": {
+    "opis": "Zwykłe awarie i komputer gasnący w dowolnym kroku, także z nową wersją, która nie wystartuje.",
+    "stale": {
+      "MaxKlikniec": 2,
+      "OdmowaScalenia": true,
+      "AwariaPobrania": true,
+      "AwariaBibliotek": true,
+      "AwariaOpiekuna": true,
+      "AwariaGita": false,
+      "AwariaKopiowania": false,
+      "NieudanyStart": true,
+      "MaxSkrotowWTrakcie": 0,
+      "Wylaczenie": true
+    }
+  },
+  "wylaczenie-i-dysk": {
+    "opis": "Zwykłe awarie, OSError z dysku i komputer gasnący w dowolnym kroku naraz, także z nową wersją, która nie wystartuje.",
+    "stale": {
+      "MaxKlikniec": 2,
+      "OdmowaScalenia": true,
+      "AwariaPobrania": true,
+      "AwariaBibliotek": true,
+      "AwariaOpiekuna": true,
+      "AwariaGita": false,
+      "AwariaKopiowania": true,
+      "NieudanyStart": true,
+      "MaxSkrotowWTrakcie": 0,
+      "Wylaczenie": true
+    }
+  },
+  "zwykle-awarie": {
+    "opis": "Awarie, które kod nazywa Komunikatami: odmowa scalenia, brak sieci, nieudany pip, opiekun bez portu.",
+    "stale": {
+      "MaxKlikniec": 2,
+      "OdmowaScalenia": true,
+      "AwariaPobrania": true,
+      "AwariaBibliotek": true,
+      "AwariaOpiekuna": true,
+      "AwariaGita": false,
+      "AwariaKopiowania": false,
+      "NieudanyStart": false,
+      "MaxSkrotowWTrakcie": 0,
+      "Wylaczenie": false
+    }
+  }
+}

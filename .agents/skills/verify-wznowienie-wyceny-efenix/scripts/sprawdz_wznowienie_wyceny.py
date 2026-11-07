@@ -1,12 +1,9 @@
 """Sprawdza model TLA+ wznowienia Wyceny w efenix przy każdej kolejności Zatrzymań, zgaśnięć i zmian taty w efenix.
 
-Uruchamia TLC na każdej konfiguracji z ``model/*.cfg``, porównuje wynik z ``model/oczekiwane.json`` i opowiada każdy
-kontrprzykład krokami kodu. Javę i ``tla2tools.jar`` bierze z narzędzi skilla ``verify-aktualizacja-narzedzia``
-(``sprawdz_aktualizacje.py``: przypięte ``jdk4py`` i jar w jego katalogu podręcznym), a zmienne ``TLC_JAVA`` i
-``TLC_JAR`` je zastępują: kopia checkoutu mutacji nie ma ignorowanego katalogu podręcznego. Na końcu ostrzega, gdy
-któraś definicja z ``model/definicje.json`` zmieniła się od Sync commit z ``SKILL.md``; rozjazd rozstrzyga
-``tools/lib/rozjazd_modelu.py``. W CI (``GITHUB_ACTIONS=true``) rozjazd kończy się od razu linią
-``WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM`` i kodem 1, bez TLC.
+Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``, porównuje wynik z jej znanymi znaleziskami i
+opowiada każdy kontrprzykład krokami kodu. Konfiguracje, TLC, werdykt, znane znaleziska, narzędzia TLC i rozjazd modelu
+z kodem z ``model/definicje.json`` ma ``tools/lib/model_tlc.py``: w CI (``GITHUB_ACTIONS=true``) rozjazd kończy się od
+razu linią ``WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM`` i kodem 1, bez TLC.
 
     .venv/bin/python .agents/skills/verify-wznowienie-wyceny-efenix/scripts/sprawdz_wznowienie_wyceny.py
     py -3 .agents\\skills\\verify-wznowienie-wyceny-efenix\\scripts\\sprawdz_wznowienie_wyceny.py
@@ -14,199 +11,14 @@ któraś definicja z ``model/definicje.json`` zmieniła się od Sync commit z ``
 
 from __future__ import annotations
 
-import argparse
-import importlib.util
+from collections.abc import Sequence
 import itertools
-import json
-import os
 from pathlib import Path
-import re
 import sys
-from types import ModuleType
-from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-import rozjazd_modelu
-
-SKILL = Path(__file__).resolve().parents[1]
-ROOT = SKILL.parents[2]
-MODEL = SKILL / "model"
-SPEC = "WznowienieWyceny.tla"
-TOOLS = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts" / "sprawdz_aktualizacje.py"
-
-PASSES, VIOLATES = "przechodzi", "narusza"
-VERDICT = "WZNOWIENIE WYCENY"
-DRIFT = f"{VERDICT}: ROZJAZD MODELU Z KODEM"
-# Obietnice, każda z wariantem ``…PozaZnanymi`` i stałą ``Wybaczone…`` w modelu, i ich zdanie dla czytelnika.
-PROMISES = {
-    "NieCzysciWycenyTaty": "narzędzie ładuje Wycenę Emmetta do zlecenia, które ma już ilości, i czyści je.",
-    "NieObnizaIlosci": "narzędzie obniża albo czyści ilość w efenix.",
-    "ZmianaTatyZostaje": (
-        "zlecenie, które tata zmienił, nie kończy się Ostrzeżeniem Emmetta przy ilości większej niż plik albo nie jest"
-        " gotowe bez niej."
-    ),
-    "ZnacznikTylkoNaWycenionym": "Znacznik efenix staje przy zleceniu, którego wycena w efenix różni się od pliku.",
-    "BladTylkoPoZmianieTaty": "tata dostaje błąd albo Ostrzeżenie Emmetta przy zleceniu, którego sam nie zmieniał.",
-}
-_STATE = re.compile(r"^State \d+: ")
-_STUTTERING = re.compile(r"^State \d+: Stuttering")
-_VARIABLE = re.compile(r"^/\\ (\w+) = (.*)$")
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("--config", action="append", help="Tylko ta konfiguracja (nazwa pliku .cfg bez rozszerzenia).")
-    parser.add_argument("--strict", action="store_true", help="Znane znaleziska też kończą się kodem 1.")
-    args = parser.parse_args(argv)
-
-    tools = _tools()
-    drift = rozjazd_modelu.rozjazd(SKILL, ROOT)
-    if drift is not None and os.environ.get("GITHUB_ACTIONS") == "true":
-        print(f"UWAGA: {drift}\n\n{DRIFT}")
-        return 1
-    expected = json.loads((MODEL / "oczekiwane.json").read_text(encoding="utf-8"))
-    names = args.config or sorted(path.stem for path in MODEL.glob("*.cfg"))
-    java = os.environ.get("TLC_JAVA") or tools._java()
-    jar = Path(os.environ.get("TLC_JAR") or tools._tla_tools())
-
-    all_known = frozenset(
-        (finding["obietnica"], finding["przyczyna"]) for entry in expected.values() for finding in entry.get("znane", ())
-    )
-    new, gone, known, broken = [], [], [], []
-    for name in names:
-        findings = expected.get(name, {}).get("znane", [])
-        print(f"\n== {name}: {_description(name)}")
-        # TLC kończy na pierwszym kontrprzykładzie, więc każde znane znalezisko ma swój przebieg bez pozostałych
-        # znanych (czy ono dalej jest), a konfiguracja jeden przebieg bez wszystkich znanych (czy nic poza nimi).
-        # Wybaczenie dotyczy tylko obietnicy znaleziska i zdarzenia, przed którym zdarzyła się jego przyczyna.
-        for finding in findings:
-            promise, cause = finding["obietnica"], finding["przyczyna"]
-            print(f"   znane znalezisko „{cause}”, {promise}: {finding['znalezisko']}")
-            own = _run(java, jar, name, all_known - {(promise, cause)})
-            print(f"   wynik: {_said(own)}, oczekiwany: {VIOLATES} {promise} po „{cause}”")
-            if own is None:
-                broken.append(name)
-            elif own.violated is None:
-                gone.append(name)
-                print("   znalezisko zniknęło: opisz zmianę w SKILL.md i usuń je z model/oczekiwane.json.")
-            elif own.violated != promise or cause not in own.causes:
-                new.append(name)
-                print(f"   to nie jest znane znalezisko: przebieg łamie {own.violated} po {sorted(own.causes)}.")
-            else:
-                known.append(name)
-        if findings:
-            print("   reszta przebiegów, bez wszystkich znanych znalezisk:")
-        rest = _run(java, jar, name, all_known if findings else frozenset())
-        print(f"   wynik: {_said(rest)}, oczekiwany: {PASSES}")
-        if rest is None:
-            broken.append(name)
-        elif rest.violated is not None:
-            new.append(name)
-
-    if drift is not None:
-        print(f"\nUWAGA: {drift}")
-    print()
-    if broken:
-        print(f"{VERDICT}: BŁĄD MODELU ({len(broken)})")
-        return 2
-    if new or gone:
-        parts = [f"NOWE NARUSZENIE ({len(new)})" if new else "", f"ZNALEZISKO ZNIKNĘŁO ({len(gone)})" if gone else ""]
-        print(f"{VERDICT}: " + ", ".join(part for part in parts if part))
-        return 1
-    if known:
-        print(f"{VERDICT} OK, ZNANE ZNALEZISKA: {len(known)}")
-        return 1 if args.strict else 0
-    print(f"{VERDICT} OK")
-    return 0
-
-
-def _tools() -> ModuleType:
-    """``sprawdz_aktualizacje.py``: Java, ``tla2tools.jar`` i TLC we własnym katalogu."""
-
-    spec = importlib.util.spec_from_file_location("sprawdz_aktualizacje", TOOLS)
-    if spec is None or spec.loader is None:
-        sys.exit(f"BŁĄD: nie da się wczytać {TOOLS}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-class Verdict(NamedTuple):
-    """Werdykt TLC: naruszona obietnica (``None``, gdy przechodzi) i przyczyny znanych znalezisk przed jej zdarzeniem."""
-
-    violated: str | None
-    causes: frozenset[str] = frozenset()
-
-
-def _said(verdict: Verdict | None) -> str:
-    if verdict is None:
-        return "błąd modelu"
-    return PASSES if verdict.violated is None else f"{VIOLATES} {verdict.violated}"
-
-
-# Zmienna historii każdej obietnicy: zbiór z jednym zbiorem śladów w chwili zdarzenia, które ją łamie.
-_EVENTS = {
-    "NieCzysciWycenyTaty": "czysciTate",
-    "NieObnizaIlosci": "obniza",
-    "ZmianaTatyZostaje": "zlyWynikPoTacie",
-    "ZnacznikTylkoNaWycenionym": "zlyZnacznik",
-    "BladTylkoPoZmianieTaty": "bladBezPowodu",
-}
-
-
-def _run(java: str, jar: Path, name: str, forgiven: frozenset[tuple[str, str]]) -> Verdict | None:
-    """Werdykt TLC dla konfiguracji ``name``, z opowiedzianym kontrprzykładem; ``None`` przy błędzie modelu.
-
-    ``forgiven`` to pary (obietnica, przyczyna) znanych znalezisk z ``model/oczekiwane.json``; gdy są, przebieg
-    sprawdza warianty ``…PozaZnanymi`` obietnic, a ``Wybaczone<obietnica>`` każdej to przyczyny jej znalezisk.
-    """
-
-    config = (MODEL / f"{name}.cfg").read_text(encoding="utf-8")
-    if forgiven:
-        for promise in PROMISES:
-            config = re.sub(rf" {promise}\b", f" {promise}PozaZnanymi", config)
-            tags = ", ".join(f'"{cause}"' for forgiven_promise, cause in sorted(forgiven) if forgiven_promise == promise)
-            config = config.replace(f"Wybaczone{promise} = {{}}", f"Wybaczone{promise} = {{{tags}}}")
-    output: str = _tools()._tlc(java, jar, MODEL / SPEC, name, config)
-    if "No error has been found" in output:
-        return Verdict(None)
-    found = re.search(r"Invariant (\w+) is violated", output)
-    if found is None:
-        print("   BŁĄD MODELU: TLC nie dał werdyktu.\n" + output)
-        return None
-    promise = found.group(1).removesuffix("PozaZnanymi")
-    trace = _trace(output)
-    if promise not in PROMISES:
-        print(f"   BŁĄD MODELU: naruszony {promise}, czyli model wyszedł poza swoje wartości.")
-        return None
-    print(f"   naruszone {promise}: {PROMISES[promise]}")
-    _tell(trace)
-    return Verdict(promise, frozenset(re.findall(r'"([\w-]+)"', trace[-1].get(_EVENTS[promise], ""))))
-
-
-def _trace(output: str) -> list[dict[str, str]]:
-    """Stany kontrprzykładu; wartość na kilku liniach skleja w jedną."""
-
-    states: list[dict[str, str]] = []
-    variable = ""
-    for line in output.splitlines():
-        if _STUTTERING.match(line):
-            states.append(states[-1] | {"_akcja": "(dalej nic sie nie dzieje)"})
-            variable = ""
-        elif _STATE.match(line):
-            action = re.search(r"<(\w+)", line)
-            states.append({"_akcja": action.group(1) if action else "Init"})
-            variable = ""
-        elif states and (found := _VARIABLE.match(line.strip())):
-            variable = found.group(1)
-            states[-1][variable] = found.group(2).strip('"')
-        elif states and variable and line.startswith(" "):
-            states[-1][variable] += " " + line.strip()
-        else:
-            variable = ""
-    return states
-
+from model_tlc import Model, Obietnica, Stan, main
 
 # Akcja modelu i krok kodu, który opisuje (tabela w SKILL.md), w słowach kontrprzykładu.
 _STEPS = {
@@ -222,23 +34,46 @@ _STEPS = {
     "Znaczniki": "Znaczniki efenix przy gotowych zleceniach (_mark), koniec Uruchomienia",
     "Zgasniecie": "Centrum gaśnie w zleceniu {z} (brak prądu, zabity proces)",
     "Tata": "tata sam zmienia ilość w efenix",
+    "Koniec": "ostatnie Uruchomienie się skończyło, nic więcej się nie dzieje",
 }
 
 
-def _tell(trace: list[dict[str, str]]) -> None:
-    for number, (before, state) in enumerate(itertools.pairwise(trace), start=1):
-        step = _STEPS.get(state["_akcja"], state["_akcja"]).format(z=before.get("zlecenie", "?"))
-        print(f"   {number}. {step}: efenix {_brief(state['efenix'])}, wynik {_brief(state['wynik'])}")
+def _tell(states: Sequence[Stan]) -> None:
+    for number, (before, state) in enumerate(itertools.pairwise(states), start=1):
+        step = state.petla or _STEPS[state.akcja].format(z=before.zmienne.get("zlecenie", "?"))
+        print(f"   {number}. {step}: efenix {_brief(state.zmienne['efenix'])}, wynik {_brief(state.zmienne['wynik'])}")
 
 
 def _brief(value: str) -> str:
     return " ".join(value.split())
 
 
-def _description(name: str) -> str:
-    first = (MODEL / f"{name}.cfg").read_text(encoding="utf-8").splitlines()[0]
-    return first.removeprefix("\\*").strip()
+MODEL = Model(
+    werdykt="WZNOWIENIE WYCENY",
+    skill=Path(__file__).resolve().parents[1],
+    specyfikacja="WznowienieWyceny.tla",
+    # Zmienna historii każdej obietnicy: zbiór z jednym zbiorem śladów w chwili zdarzenia, które ją łamie.
+    obietnice={
+        "NieCzysciWycenyTaty": Obietnica(
+            "narzędzie ładuje Wycenę Emmetta do zlecenia, które ma już ilości, i czyści je.", "czysciTate"
+        ),
+        "NieObnizaIlosci": Obietnica("narzędzie obniża albo czyści ilość w efenix.", "obniza"),
+        "ZmianaTatyZostaje": Obietnica(
+            "zlecenie, które tata zmienił, nie kończy się Ostrzeżeniem Emmetta przy ilości większej niż plik albo nie jest"
+            " gotowe bez niej.",
+            "zlyWynikPoTacie",
+        ),
+        "ZnacznikTylkoNaWycenionym": Obietnica(
+            "Znacznik efenix staje przy zleceniu, którego wycena w efenix różni się od pliku.", "zlyZnacznik"
+        ),
+        "BladTylkoPoZmianieTaty": Obietnica(
+            "tata dostaje błąd albo Ostrzeżenie Emmetta przy zleceniu, którego sam nie zmieniał.", "bladBezPowodu"
+        ),
+    },
+    opowiedz=_tell,
+    akcje=frozenset(_STEPS),
+)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(MODEL, opis=__doc__.splitlines()[0] if __doc__ else None))

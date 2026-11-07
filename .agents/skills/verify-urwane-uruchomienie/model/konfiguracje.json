@@ -1,0 +1,229 @@
+{
+  "koniec": {
+    "opis": "Dwie Wyceny, jedno zgaśnięcie, jedno Zatrzymanie przy zleceniu, wpis dziennika, który się nie zapisał (także wpis końca, albo z całą pierwszą linią na dysku), nieudane usunięcie dziennika i nieudany zapis pliku Logów.",
+    "stale": {
+      "Wyceny": 2,
+      "LiczbaZlecen": 1,
+      "MaxZgasniec": 1,
+      "MaxZatrzyman": 1,
+      "MaxAwariiWpisu": 1,
+      "MaxAwariiOdczytu": 0,
+      "MaxAwariiLogow": 1,
+      "MaxAwariiKolejki": 0,
+      "MaxAwariiUsuniecia": 1,
+      "MaxCofniecZegara": 0,
+      "TekstDoMaski": true,
+      "StareLogi": false
+    },
+    "znane": [
+      {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "przed-wpisem-konca",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "wpis-konca-nieudany",
+        "znalezisko": "wpis końca zawodzi (OSError), więc dziennik zostaje bez niego, a start nie ma pliku Logów z wynikiem (Centrum zgasło przed nim albo jego zapis zawiódł) i nie ma od kogo wiedzieć, że Wycena doszła do wyniku: zamyka dziennik jako Logi Urwanego Uruchomienia; tylko gdy kolejka nie przyjęła Logów z wynikiem (RunComments.run_ended nie usunął dziennika: zgaśnięcie przed usunięciem albo Outbox.post False), bo inaczej są one wersją wyższego stopnia i Logi Urwanego Uruchomienia niczego w kolejce ani w Skrzynce nie zmieniają; tak samo, gdy żaden wpis się nie zapisał, a nieudany zapis zostawił pierwszą linię, i zawodzi tylko usunięcie dziennika (przyjęte w #870/#871, w #910 zamiast komentarza „Uruchomienie trwa” na zawsze)"
+      },
+      {
+        "obietnica": "ZaczeteWLogach",
+        "przyczyna": "wpis-nieudany",
+        "znalezisko": "jak w wpisy"
+      }
+    ]
+  },
+  "logi-i-kolejka": {
+    "opis": "Dwie Wyceny, jedno zgaśnięcie, nieudany zapis pliku Logów, odmowa Kolejki wysyłki i nieudane usunięcie dziennika.",
+    "stale": {
+      "Wyceny": 2,
+      "LiczbaZlecen": 1,
+      "MaxZgasniec": 1,
+      "MaxZatrzyman": 0,
+      "MaxAwariiWpisu": 0,
+      "MaxAwariiOdczytu": 0,
+      "MaxAwariiLogow": 1,
+      "MaxAwariiKolejki": 1,
+      "MaxAwariiUsuniecia": 1,
+      "MaxCofniecZegara": 0,
+      "TekstDoMaski": true,
+      "StareLogi": false
+    },
+    "znane": [
+      {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "przed-wpisem-konca",
+        "znalezisko": "jak w zwykle"
+      }
+    ]
+  },
+  "odczyt": {
+    "opis": "Dwie Wyceny, jedno zgaśnięcie i jeden start, który nie odczytał dziennika (OSError).",
+    "stale": {
+      "Wyceny": 2,
+      "LiczbaZlecen": 1,
+      "MaxZgasniec": 1,
+      "MaxZatrzyman": 0,
+      "MaxAwariiWpisu": 0,
+      "MaxAwariiOdczytu": 1,
+      "MaxAwariiLogow": 0,
+      "MaxAwariiKolejki": 0,
+      "MaxAwariiUsuniecia": 0,
+      "MaxCofniecZegara": 0,
+      "TekstDoMaski": true,
+      "StareLogi": false
+    },
+    "znane": [
+      {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "przed-wpisem-konca",
+        "znalezisko": "jak w zwykle"
+      }
+    ]
+  },
+  "stare-logi": {
+    "opis": "Logi Urwanego Uruchomienia sprzed strażnika zapisane, a niewysłane, druga Wycena, jedno zgaśnięcie i nieudany zapis pliku Logów.",
+    "stale": {
+      "Wyceny": 2,
+      "LiczbaZlecen": 1,
+      "MaxZgasniec": 1,
+      "MaxZatrzyman": 0,
+      "MaxAwariiWpisu": 0,
+      "MaxAwariiOdczytu": 0,
+      "MaxAwariiLogow": 1,
+      "MaxAwariiKolejki": 0,
+      "MaxAwariiUsuniecia": 0,
+      "MaxCofniecZegara": 0,
+      "TekstDoMaski": true,
+      "StareLogi": true
+    },
+    "znane": [
+      {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "przed-wpisem-konca",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "TeSameZnaki",
+        "przyczyna": "zapis-logow-nieudany",
+        "znalezisko": "Logi sprzed strażnika, których start nie przepisał (OSError zapisu), zostają na dysku bez maski, a do Archiwum Logów okresu idą z maską; u taty takich Logów nie ma, bo dziennik (#845) i strażnik (#851) wejdą w jednym Wydaniu"
+      }
+    ]
+  },
+  "wpisy": {
+    "opis": "Jedna Wycena z dwoma zleceniami, jedno zgaśnięcie i jeden wpis dziennika, który się nie zapisał (OSError).",
+    "stale": {
+      "Wyceny": 1,
+      "LiczbaZlecen": 2,
+      "MaxZgasniec": 1,
+      "MaxZatrzyman": 0,
+      "MaxAwariiWpisu": 1,
+      "MaxAwariiOdczytu": 0,
+      "MaxAwariiLogow": 0,
+      "MaxAwariiKolejki": 0,
+      "MaxAwariiUsuniecia": 0,
+      "MaxCofniecZegara": 0,
+      "TekstDoMaski": true,
+      "StareLogi": false
+    },
+    "znane": [
+      {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "przed-wpisem-konca",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "wpis-konca-nieudany",
+        "znalezisko": "jak w koniec"
+      },
+      {
+        "obietnica": "ZaczeteWLogach",
+        "przyczyna": "wpis-nieudany",
+        "znalezisko": "wpis dziennika, który się nie zapisał, zostawia zmianę w efenix swojego zlecenia bez śladu w Logach (przyjęte w docstringu logs_disk.py: „Nieudany zapis wpisu … Wycena biegnie dalej”)"
+      }
+    ]
+  },
+  "wszystko": {
+    "opis": "Wszystko naraz: dwie Wyceny po dwa zlecenia, jedno zgaśnięcie, jedno Zatrzymanie przy zleceniu i po jednej awarii każdego rodzaju.",
+    "stale": {
+      "Wyceny": 2,
+      "LiczbaZlecen": 2,
+      "MaxZgasniec": 1,
+      "MaxZatrzyman": 1,
+      "MaxAwariiWpisu": 1,
+      "MaxAwariiOdczytu": 1,
+      "MaxAwariiLogow": 1,
+      "MaxAwariiKolejki": 1,
+      "MaxAwariiUsuniecia": 1,
+      "MaxCofniecZegara": 0,
+      "TekstDoMaski": true,
+      "StareLogi": false
+    },
+    "znane": [
+      {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "przed-wpisem-konca",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "wpis-konca-nieudany",
+        "znalezisko": "jak w koniec"
+      },
+      {
+        "obietnica": "ZaczeteWLogach",
+        "przyczyna": "wpis-nieudany",
+        "znalezisko": "jak w wpisy"
+      }
+    ]
+  },
+  "zegar": {
+    "opis": "Cofnięty zegar: dwie Wyceny po jednym zleceniu, jedno zgaśnięcie, zegar komputera cofa się raz, gdy Centrum jest zamknięte, nieudany zapis pliku Logów, Outbox.post False i nieudane usunięcie dziennika.",
+    "stale": {
+      "Wyceny": 2,
+      "LiczbaZlecen": 1,
+      "MaxZgasniec": 1,
+      "MaxZatrzyman": 0,
+      "MaxAwariiWpisu": 0,
+      "MaxAwariiOdczytu": 0,
+      "MaxAwariiLogow": 1,
+      "MaxAwariiKolejki": 1,
+      "MaxAwariiUsuniecia": 1,
+      "MaxCofniecZegara": 1,
+      "TekstDoMaski": true,
+      "StareLogi": false
+    },
+    "znane": [
+      {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "przed-wpisem-konca",
+        "znalezisko": "jak w zwykle"
+      }
+    ]
+  },
+  "zwykle": {
+    "opis": "Bez awarii: dwie Wyceny po dwa zlecenia, dwa zgaśnięcia Centrum w dowolnej chwili.",
+    "stale": {
+      "Wyceny": 2,
+      "LiczbaZlecen": 2,
+      "MaxZgasniec": 2,
+      "MaxZatrzyman": 0,
+      "MaxAwariiWpisu": 0,
+      "MaxAwariiOdczytu": 0,
+      "MaxAwariiLogow": 0,
+      "MaxAwariiKolejki": 0,
+      "MaxAwariiUsuniecia": 0,
+      "MaxCofniecZegara": 0,
+      "TekstDoMaski": true,
+      "StareLogi": false
+    },
+    "znane": [
+      {
+        "obietnica": "BezUrwanychPoWyniku",
+        "przyczyna": "przed-wpisem-konca",
+        "znalezisko": "Centrum zgasło między rekordem metryk a wpisem końca dziennika (CentrumRuns.remember i karta wyniku, milisekundy), więc Wycena z wierszem Historii dostaje przy starcie Logi Urwanego Uruchomienia; jej Logi z wynikiem nie powstały i nie poszły do kolejki, więc w Skrzynce niczego nie zastępują (przyjęte w #870/#871: wpis końca przed rekordem metryk gubiłby w tym oknie Logi Urwanego Uruchomienia)"
+      }
+    ]
+  }
+}

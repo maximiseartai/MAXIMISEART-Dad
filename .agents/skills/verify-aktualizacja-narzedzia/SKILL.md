@@ -6,6 +6,7 @@ pilnuje:
   - src/rozliczenia/centrum/tool_updates.py
   - src/rozliczenia/centrum/restart_guardian.py
   - src/rozliczenia/centrum/launcher.py
+  - tools/lib/model_tlc.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
 ci: .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
@@ -245,15 +246,15 @@ no longer describes.
 2. Change the matching actions so that one action stays one indivisible step
    of the code. Keep the comment that names the code. TLA+ strings must be
    ASCII (no Polish letters inside `"…"`), but comments may use them.
-3. A new way to fail gets a `CONSTANT`, a branch guarded by it, and a line in
-   every `.cfg`. Add it to the configuration whose theme fits, or give it its
-   own `.cfg` with an entry in `model/oczekiwane.json`.
+3. A new way to fail gets a `CONSTANT`, a branch guarded by it, and a value in
+   `stale` of every configuration in `model/konfiguracje.json`. Turn it on in the
+   configuration whose theme fits, or give it its own configuration there.
 4. Run the check (next section).
 5. Before you trust a pass on a new code path, break that path in the model
    (drop its rollback, say) and see the check fail. Before you trust a
    failure, read it as described in „Real bug or modeling error?”.
 6. If the change rewrites the code behind a known finding, rewrite that
-   finding below and its `znalezisko` in `model/oczekiwane.json` in the same
+   finding below and its `znalezisko` in `model/konfiguracje.json` in the same
    change.
 7. Move the sync commit forward only after you have checked every row of the
    table against the code at the new commit, and only when you commit the
@@ -270,8 +271,10 @@ In a worktree, create its `.venv` first (`python3 tools/setup_worktree.py`).
 No system Java is needed. The first run downloads pinned `jdk4py==25.0.2.1`
 (a Java runtime packaged for pip, about 50 MB) and `tla2tools.jar` v1.7.4
 (TLC 2.19, SHA-256 checked) into `.verification/formal-aktualizacja/`, which
-Git ignores. After that a run takes about 6 s, offline. The pins and the
-download live in `tools/lib/narzedzia_tlc.py`: a network error, HTTP 5xx or
+Git ignores. After that a run takes about 6 s, offline. The pins, the
+download and the install live in `tools/lib/narzedzia_tlc.py`, and the run of
+TLC, the verdict and the known findings in `tools/lib/model_tlc.py`, which
+every skill with a TLA+ model shares: a network error, HTTP 5xx or
 429 is retried twice, and a download that still fails ends with a line
 `BŁĄD POBIERANIA NARZĘDZIA TLC`, which is a failed download, not a model
 verdict, and so does a downloaded jar with another SHA-256. A jar in the
@@ -289,8 +292,8 @@ The last line is the verdict:
 | `AKTUALIZACJA OK` | 0 | The promise holds in every configuration. |
 | `AKTUALIZACJA OK, ZNANE ZNALEZISKA: n` | 0 | Only the known findings below break the promise. Each is printed with its counterexample, and every other path passes. |
 | `AKTUALIZACJA: NOWE NARUSZENIE (n)` | 1 | The promise breaks in a way that is not a known finding. The counterexample is printed. |
-| `AKTUALIZACJA: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding no longer happens. If you fixed it, set `"wynik": "przechodzi"` for it in `model/oczekiwane.json` and remove it from the findings below. |
-| `AKTUALIZACJA: BŁĄD MODELU (n)` | 2 | TLC gave no verdict (a syntax error in the model), or `TypeOK` broke. Nothing is known about the promise. |
+| `AKTUALIZACJA: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding no longer happens. If you fixed it, remove it from `znane` of its configuration in `model/konfiguracje.json` and from the findings below. |
+| `AKTUALIZACJA: BŁĄD MODELU (n)` | 2 | TLC gave no verdict (a syntax error in the model), an invariant outside the promises such as `TypeOK` broke, or `model/konfiguracje.json` has another shape. Nothing is known about the promise. |
 
 `UWAGA: kod opisany modelem zmienił się od …` means a covered file changed after the
 sync commit. Until you have done „Bring the model in line”, the verdict above
@@ -298,7 +301,9 @@ it means nothing.
 
 ## Configurations
 
-Each `model/*.cfg` turns on a set of failures. TLC explores every order of
+Each configuration in `model/konfiguracje.json` (its `opis`, its constants in
+`stale` and its known findings in `znane`) turns on a set of failures, and the
+script writes its `.cfg` with `TypeOK` and every promise. TLC explores every order of
 steps and failures, for every kind of new version: it does or does not drop
 Dad's file, it does or does not change `requirements.txt`, and (in every
 configuration except `zwykle-awarie`) it does or does not start, so the
@@ -319,20 +324,24 @@ Every configuration checks the invariants `TataMaDzialajacaWersje`,
 `TataNieZostajeBezOdpowiedzi`, `KartaNieKlamie` and `KartaNieStraszy` and the liveness property
 `Postep`, under the fairness in `Sprawiedliwosc` (see Scope). A broken invariant prints
 `naruszone <name>:` and its harm in one sentence.
-A broken `Postep` prints `naruszony Postep` and a counterexample that ends in a
-loop: `(dalej nic sie nie dzieje)` or `(stad znow krok n i tak bez konca)`.
+A broken `Postep` prints `naruszone Postep` and a counterexample that ends in a
+loop: `(dalej nic się nie dzieje)` or `(stąd znów krok n i tak bez końca)`.
 
-TLC stops at the first counterexample, so a configuration with a known finding
-runs twice, both times with the `…PozaZnanymi` variant of every invariant
-(`PROMISES` in the script) and `PostepPozaZnanymi`. They excuse any behaviour in which a step tagged with an
-excused finding happened (`Slad(...)` adds the tag to `slady`, and `Znane`
-checks it).
+A known finding names the promise it breaks (`obietnica`) and its cause
+(`przyczyna`), a tag that `Slad(...)` adds to `slady`. TLC stops at the first
+counterexample, so each known finding runs on its own, with the
+`…PozaZnanymi` variant of every promise (`obietnice` of `MODEL` in the script)
+and `Wybaczone<promise>` set to the causes of its configuration's other
+findings, and the configuration runs once more with all of them; `Po(...)`
+checks the tag.
 
-1. Excusing every other known finding (every `wybacz` in
-   `model/oczekiwane.json`), it must break. The printed counterexample is this
-   finding. If it passes, the finding is gone.
-2. Excusing every known finding, it must pass. If it breaks, the promise
-   fails in a way no known finding explains, and that is reported as new.
+1. Excusing every other known finding of its configuration, it must break
+   exactly its promise with its cause in `slady`. The printed counterexample is
+   this finding. If it passes, the finding is gone; another promise or no cause
+   is new.
+2. Excusing every known finding of the configuration, it must pass. If it
+   breaks, the promise fails in a way no known finding explains, and that is
+   reported as new.
 
 ## Known findings
 
@@ -405,7 +414,7 @@ against its row in the table:
 - If every step is something the code can do, in that order, and the end state
   (`klon na wersji …, plik taty: …, biblioteki: …`) is what the disk would
   hold, it is a real bug. Report it with the counterexample. Do not weaken
-  `TataMaDzialajacaWersje`, remove a failure, widen `Znane`, or change product
+  `TataMaDzialajacaWersje`, remove a failure, widen a `Wybaczone…`, or change product
   code unless the user asks.
 - If a step cannot happen in the code (an exception the code catches, an order
   the code does not allow, two code steps merged into one), the model is

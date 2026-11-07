@@ -1,0 +1,57 @@
+{
+  "przerwania": {
+    "opis": "Zatrzymanie okna i zgaśnięcie Centrum w każdym kroku, bez zmian taty: dwa zlecenia, trzy Uruchomienia.",
+    "stale": {
+      "LiczbaZlecen": 2,
+      "MaxUruchomien": 3,
+      "MaxZmianTaty": 0,
+      "MozeZgasnac": true,
+      "TataWTrakcie": false,
+      "MozeSieZatrzymac": true,
+      "MozeBrakowacPozycji": false
+    }
+  },
+  "tata-po-przerwaniu": {
+    "opis": "Zatrzymanie albo zgaśnięcie, potem jedna zmiana taty w efenix i ponowne Uruchomienie: jedno zlecenie.",
+    "stale": {
+      "LiczbaZlecen": 1,
+      "MaxUruchomien": 3,
+      "MaxZmianTaty": 1,
+      "MozeZgasnac": true,
+      "TataWTrakcie": false,
+      "MozeSieZatrzymac": true,
+      "MozeBrakowacPozycji": false
+    }
+  },
+  "wszystko": {
+    "opis": "Wszystko naraz: Zatrzymanie, zgaśnięcie, strona po Emmetcie bez pozycji i zmiana taty: dwa zlecenia, trzy Uruchomienia.",
+    "stale": {
+      "LiczbaZlecen": 2,
+      "MaxUruchomien": 3,
+      "MaxZmianTaty": 1,
+      "MozeZgasnac": true,
+      "TataWTrakcie": false,
+      "MozeSieZatrzymac": true,
+      "MozeBrakowacPozycji": true
+    },
+    "znane": [
+      {
+        "obietnica": "BladTylkoPoZmianieTaty",
+        "przyczyna": "brak-pozycji-po-emmetcie",
+        "znalezisko": "strona po „Załaduj do zlecenia” bez pozycji z ilością w pliku to błąd zlecenia (EFENIX_BRAK_POZYCJI), a Wycena Emmetta zostaje w efenix; w kodzie ponowne Uruchomienie staje na tym samym braku pozycji przy otwarciu, a gdy pozycja wróci, dokańcza zlecenie do pliku; nic w efenix się nie obniża (przyjęte: tata wycenia takie zlecenie sam)"
+      }
+    ]
+  },
+  "zwykle": {
+    "opis": "Bez awarii: dwa zlecenia, trzy Uruchomienia i jedna zmiana taty w efenix między nimi.",
+    "stale": {
+      "LiczbaZlecen": 2,
+      "MaxUruchomien": 3,
+      "MaxZmianTaty": 1,
+      "MozeZgasnac": false,
+      "TataWTrakcie": false,
+      "MozeSieZatrzymac": false,
+      "MozeBrakowacPozycji": false
+    }
+  }
+}

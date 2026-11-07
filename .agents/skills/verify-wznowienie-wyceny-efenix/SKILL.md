@@ -6,7 +6,7 @@ pilnuje:
   - src/rozliczenia/efenix_positions.py
   - src/rozliczenia/efenix_browser.py
   - src/rozliczenia/efenix_window.py
-  - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
+  - tools/lib/model_tlc.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
 ci: .agents/skills/verify-wznowienie-wyceny-efenix/scripts/sprawdz_wznowienie_wyceny.py
@@ -106,18 +106,21 @@ src/rozliczenia/efenix_browser.py`; the history of earlier Sync commits is in `g
 py -3 .agents\skills\verify-wznowienie-wyceny-efenix\scripts\sprawdz_wznowienie_wyceny.py
 ```
 
-`--config NAME` runs one configuration, `--strict` fails also on known findings. Java and `tla2tools.jar` come from
-`verify-aktualizacja-narzedzia` (`sprawdz_aktualizacje.py` installs pinned `jdk4py` and the jar into `.verification/`
-on first use; `TLC_JAVA` and `TLC_JAR` override them). The whole check took 3.5 s on Maks's Mac (2026-11-05).
+`--config NAME` runs one configuration, `--strict` fails also on known findings. The run of TLC, the verdict and the
+known findings are `tools/lib/model_tlc.py`, which every skill with a TLA+ model shares; Java and `tla2tools.jar` come
+from `tools/lib/narzedzia_tlc.py` (pinned `jdk4py` and the jar in `.verification/` on first use; `TLC_JAVA` and
+`TLC_JAR` override them). The whole check took 3.5 s on Maks's Mac (2026-11-05).
 
 The last line is the verdict:
 
 - `WZNOWIENIE WYCENY OK` or `WZNOWIENIE WYCENY OK, ZNANE ZNALEZISKA: n`: every configuration ends as
-  `model/oczekiwane.json` says. Exit 0 (1 with `--strict` and known findings).
+  `model/konfiguracje.json` says. Exit 0 (1 with `--strict` and known findings).
 - `WZNOWIENIE WYCENY: NOWE NARUSZENIE (n)`: a promise breaks on a path that is not a known finding. Exit 1.
 - `WZNOWIENIE WYCENY: ZNALEZISKO ZNIKNĘŁO (n)`: a known finding no longer happens. Describe the change below and
-  remove it from `model/oczekiwane.json`. Exit 1.
-- `WZNOWIENIE WYCENY: BŁĄD MODELU (n)`: TLC gave no verdict or `TypeOK` broke. Exit 2.
+  remove it from `znane` of its configuration in `model/konfiguracje.json`. Exit 1.
+- `WZNOWIENIE WYCENY: BŁĄD MODELU (n)`: TLC gave no verdict, an invariant outside the promises such as `TypeOK` broke,
+  `model/konfiguracje.json` has another shape, or the counterexample's story in the script does not know every action
+  of `Next`. Exit 2.
 - `WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM` (CI only): a definition in `model/definicje.json` changed since the Sync commit.
 
 Each counterexample is told as numbered steps in the code's words, with the quantities in efenix
@@ -162,7 +165,8 @@ When a definition from `model/definicje.json` changes:
 
 1. Read the diff against the table above. Find each action whose code changed, or the new step that has none.
 2. Change the model so each action is again one indivisible step of the code, with the code's names in its comment.
-   Never weaken a promise or narrow a configuration to make the check pass.
+   Never weaken a promise or narrow a configuration to make the check pass. A new action of `Next` gets its words in
+   `_STEPS` of the script, or the check ends with `BŁĄD MODELU` before TLC.
 3. Break the new path in the model on purpose (remove the guard you just added) and see the check fail; add that break
    to `scripts/check_model_wznowienia_mutations.py` with the code counterpart in its name.
 4. Run the check. A new violation is a finding: replay it on the code (see Read a result) before you call it a bug,
@@ -206,7 +210,8 @@ Left out, each a reason the check can pass while the code is wrong:
 ## Files
 
 - `model/WznowienieWyceny.tla`: the model, with the code each action describes.
-- `model/*.cfg`: the configurations (first line describes it), `model/oczekiwane.json`: the expected result.
+- `model/konfiguracje.json`: the configurations (description, constants and known findings; the script writes each
+  `.cfg` with `TypeOK` and every promise).
 - `model/definicje.json`: the definitions of the code the model describes.
 - `scripts/sprawdz_wznowienie_wyceny.py`: runs TLC on every configuration and tells each counterexample.
 - `scripts/check_model_wznowienia_mutations.py`: proves the check fails when the model loses a guard the code has;

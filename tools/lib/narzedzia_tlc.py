@@ -1,10 +1,9 @@
-"""Narzędzia TLC modeli TLA+ skilli ``verify-*``: przypięte wersje Javy (``jdk4py``) i ``tla2tools.jar`` oraz ich pobieranie.
+"""Narzędzia TLC modeli TLA+ skilli ``verify-*``: przypięte wersje Javy (``jdk4py``) i ``tla2tools.jar``, ich pobieranie i instalacja.
 
-Jedyne miejsce tych wersji i jedyna droga pobrania. Pobiera je skrypt skilla ``verify-aktualizacja-narzedzia``
-(``sprawdz_aktualizacje.py``) do katalogu podręcznego ``.verification/formal-aktualizacja``, a skrypty modeli innych
-skilli biorą narzędzia od niego. Zadania CI, które uruchamiają modele (Mutation checks w ``ci.yml`` i skrypty mutacji
-skilli w ``mutacje-nocne.yml``), trzymają ten katalog w cache z kluczem od skrótu tego pliku, więc nowa wersja albo
-suma to nowy klucz. Zapisują go tylko wtedy, gdy ``tools/ci/zapis_narzedzi_tlc.py`` zobaczy w nim jar o przypiętej sumie
+Jedyne miejsce tych wersji i jedyna droga pobrania: ``java`` i ``jar`` kładą narzędzia w katalogu podręcznym ``KATALOG``,
+a bierze je stamtąd ``tools/lib/model_tlc.py``, jedyna droga TLC skryptów modeli. Zadania CI, które uruchamiają modele
+(Mutation checks w ``ci.yml`` i skrypty mutacji skilli w ``mutacje-nocne.yml``), trzymają ten katalog w cache z kluczem
+od skrótu tego pliku, więc nowa wersja, suma albo sposób instalacji to nowy klucz. Zapisują go tylko wtedy, gdy ``tools/ci/zapis_narzedzi_tlc.py`` zobaczy w nim jar o przypiętej sumie
 (``ma_przypieta_sume``), bo klucz raz zapisany z katalogiem bez jara dawałby każdemu runowi trafienie bez jara (#940).
 
 Chwilowa awaria źródła (błąd sieci, HTTP 5xx albo 429) nie kończy sprawdzenia: ``z_ponowieniem`` ponawia próbę po
@@ -18,12 +17,16 @@ from __future__ import annotations
 from collections.abc import Callable
 import hashlib
 import http.client
+import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+
+import potomne
 
 __all__ = [
     "BLAD_POBIERANIA",
@@ -34,7 +37,9 @@ __all__ = [
     "TLA_URL",
     "TLA_WERSJA",
     "ChwilowaAwaria",
+    "jar",
     "jar_tla",
+    "java",
     "ma_przypieta_sume",
     "pobierz",
     "z_ponowieniem",
@@ -102,3 +107,45 @@ def pobierz(url: str, cel: Path) -> None:
             raise ChwilowaAwaria(f"{type(blad).__name__}: {blad}") from blad
 
     z_ponowieniem(url, proba)
+
+
+def java(katalog: Path) -> str:
+    """Java z przypiętego ``jdk4py`` w katalogu podręcznym ``katalog``; instaluje je za pierwszym razem."""
+
+    target = katalog / "jdk"
+    if not (target / "jdk4py").is_dir():
+        command = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--quiet"]
+        if potomne.run([sys.executable, "-m", "pip", "--version"], cwd=Path.cwd()).returncode != 0:
+            uv = shutil.which("uv")
+            if uv is None:
+                sys.exit("BŁĄD: ten Python nie ma pip, a uv nie jest dostępne; nie da się zainstalować jdk4py.")
+            command = [uv, "pip", "install", "--python", sys.executable, "--quiet"]
+
+        def install() -> None:
+            shutil.rmtree(target, ignore_errors=True)
+            done = potomne.run([*command, "--target", str(target), JDK4PY], cwd=Path.cwd(), echo=True)
+            if done.returncode != 0:
+                raise ChwilowaAwaria(f"instalacja skończyła się kodem {done.returncode}")
+
+        z_ponowieniem(JDK4PY, install)
+    command = [sys.executable, "-I", "-c", f"import sys; sys.path.insert(0, {str(target)!r}); import jdk4py; print(jdk4py.JAVA)"]
+    found = potomne.run(command, cwd=Path.cwd())
+    if found.returncode != 0:
+        raise subprocess.CalledProcessError(found.returncode, command, found.stdout, found.stderr)
+    return found.stdout.strip()
+
+
+def jar(katalog: Path) -> Path:
+    """``tla2tools.jar`` przypiętej wersji w katalogu podręcznym ``katalog``, sprawdzony sumą SHA-256; pobiera go, gdy go
+    nie ma albo ma inną sumę."""
+
+    found = jar_tla(katalog)
+    if not ma_przypieta_sume(found):
+        katalog.mkdir(parents=True, exist_ok=True)
+        partial = found.with_suffix(".part")
+        pobierz(TLA_URL, partial)
+        if not ma_przypieta_sume(partial):
+            partial.unlink()
+            sys.exit(f"{BLAD_POBIERANIA}: {TLA_URL} ma inną sumę SHA-256 niż przypięta; to nie wynik modelu.")
+        os.replace(partial, found)
+    return found
