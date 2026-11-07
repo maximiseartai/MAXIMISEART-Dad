@@ -74,7 +74,7 @@ from .preparation_register import ACTIVITIES, COLUMNS, DATE, DEVICES, WORKER
 from .raw_orders import SHIFT, CellFacts, DayPlan, IntermaxEntry, OperatorColor, OrderColumns, RawBlock, RowFacts
 from .row_look import BORDER
 from .workbook_files import header_columns, is_blank
-from .workbook_parts import MAIN, OFFICE_REL, IrregularSheetData, SheetData, SheetRow, office_document, relationships
+from .workbook_parts import MAIN, OFFICE_REL, IrregularSheetData, RowsFromBottom, SheetRow, office_document, relationships
 from .worker_config import normalize_text
 
 __all__ = ["OrderSheet", "Register", "UnsupportedShape", "WriteMismatch"]
@@ -212,12 +212,11 @@ class OrderSheet:
     _register: Register
 
     @cached_property
-    def sheet_xml(self) -> _SheetXml:
-        """XML arkusza z indeksem wierszy, liczonym raz; ``UnsupportedShape``, gdy wiersze nie dają się rozdzielić."""
+    def sheet_xml(self) -> RowsFromBottom:
+        """XML arkusza z wierszami od dołu, dzielonymi raz; ``UnsupportedShape``, gdy ``<sheetData>`` jest nie jeden."""
 
-        xml = self._register._parts[self.part]
         try:
-            return _SheetXml(xml, SheetData.of(xml))
+            return RowsFromBottom(self._register._parts[self.part])
         except IrregularSheetData as error:
             raise UnsupportedShape(str(error)) from error
 
@@ -291,11 +290,16 @@ class OrderSheet:
             sheet.row(facts.number, cells)
 
     def _facts_from_bottom(self) -> Iterator[RowFacts]:
+        """Fakty wierszy od dołu; ``UnsupportedShape``, gdy przeczytanych wierszy nie da się rozdzielić."""
+
         sheet = self.sheet_xml
-        for row in reversed(sheet.data.rows):
-            if row.number < 2:
-                return
-            yield self._register._facts(_row_tag(sheet.xml, row), row.number, _cells(sheet.xml[row.start : row.end]))
+        try:
+            for row in sheet:
+                if row.number < 2:
+                    return
+                yield self._register._facts(_row_tag(sheet.xml, row), row.number, _cells(sheet.xml[row.start : row.end]))
+        except IrregularSheetData as error:
+            raise UnsupportedShape(str(error)) from error
 
 
 def _row_tag(xml: bytes, row: SheetRow) -> bytes:
@@ -304,12 +308,6 @@ def _row_tag(xml: bytes, row: SheetRow) -> bytes:
 
 def _row_attributes(tag: bytes) -> dict[bytes, bytes]:
     return dict(_ATTRIBUTE.findall(tag))
-
-
-@dataclass(frozen=True)
-class _SheetXml:
-    xml: bytes
-    data: SheetData
 
 
 class Register:
@@ -650,22 +648,22 @@ class _RowLooks:
     blank: bytes
 
     @classmethod
-    def of(cls, xml: bytes, rows: Mapping[int, SheetRow], block: RawBlock) -> _RowLooks:
+    def of(cls, rows: RowsFromBottom, block: RawBlock) -> _RowLooks:
         def look(number: int) -> bytes:
-            attributes = _row_attributes(_row_tag(xml, rows[number]))
+            attributes = _row_attributes(_row_tag(rows.xml, rows.row(number)))
             return b"".join(b' %s="%s"' % (name, attributes[name]) for name in _ROW_LOOK if name in attributes)
 
         order = look(block.last_ordered) if block.last_ordered > 1 else b""
         return cls(order, order if block.blank_row is None else look(block.blank_row))
 
 
-def _ordered_sheet(sheet: _SheetXml, columns: OrderColumns, block: RawBlock, plan: DayPlan, looks: _Looks) -> bytes:
-    xml, data = sheet.xml, sheet.data
-    region = [row for row in data.rows if row.number > block.anchor]
-    by_number = {row.number: row for row in data.rows}
-    row_looks = _RowLooks.of(xml, by_number, block)
+def _ordered_sheet(sheet: RowsFromBottom, columns: OrderColumns, block: RawBlock, plan: DayPlan, looks: _Looks) -> bytes:
+    xml = sheet.xml
+    region = sheet.above(block.anchor)
+    by_number = {row.number: row for row in region}
+    row_looks = _RowLooks.of(sheet, block)
     raw = {order.row for order in block.orders}
-    tail_at = data.end + len(b"</sheetData>")
+    tail_at = sheet.end + len(b"</sheetData>")
     _require_writable(xml[tail_at:], block.anchor)
     for number in raw:
         if _FORMULA.search(xml, by_number[number].start, by_number[number].end):
@@ -698,7 +696,7 @@ def _ordered_sheet(sheet: _SheetXml, columns: OrderColumns, block: RawBlock, pla
         else:
             rows.append(b'<row r="%d"%s/>' % (number, row_looks.blank))
     head = _with_view(_with_dimension(xml[: region[0].start], last, columns.last), plan.view_row, columns.first)
-    return head + b"".join(rows) + xml[data.rows[-1].end : tail_at] + _moved_hyperlinks(xml[tail_at:], columns, block, plan)
+    return head + b"".join(rows) + xml[region[-1].end : tail_at] + _moved_hyperlinks(xml[tail_at:], columns, block, plan)
 
 
 def _order_row(
@@ -803,21 +801,22 @@ def _check_styles(original: bytes, written: bytes) -> None:
         raise WriteMismatch("style")
 
 
-def _check_sheet(original: _SheetXml, written: bytes, columns: OrderColumns, block: RawBlock, plan: DayPlan) -> None:
+def _check_sheet(original: RowsFromBottom, written: bytes, columns: OrderColumns, block: RawBlock, plan: DayPlan) -> None:
     try:
-        data = SheetData.of(written)
+        data = RowsFromBottom(written)
+        written_region = data.above(block.anchor)
     except IrregularSheetData as error:
         raise WriteMismatch("arkusz") from error
-    xml, before = original.xml, original.data
-    start = next((row.start for row in before.rows if row.number > block.anchor), before.end)
-    new_start = next((row.start for row in data.rows if row.number > block.anchor), data.end)
+    xml, region = original.xml, original.above(block.anchor)
+    start = region[0].start if region else original.end
+    new_start = written_region[0].start if written_region else data.end
     if _without_view(xml[:start]) != _without_view(written[:new_start]):
         raise WriteMismatch("wiersze nad dniem")
-    tail, new_tail = xml[before.end :], written[data.end :]
+    tail, new_tail = xml[original.end :], written[data.end :]
     if _moved_hyperlinks(tail, columns, block, plan) != new_tail:
         raise WriteMismatch("ogon arkusza")
-    rows = {row.number: row for row in data.rows[data.row_index(new_start) :]}
-    sources = {row.number: row for row in before.rows}
+    rows = {row.number: row for row in written_region}
+    sources = {row.number: row for row in region}
     raw = {order.row for order in block.orders}
     kept = {number: xml[row.start : row.end] for number, row in sources.items() if number not in raw}
     placed = {placement.row: placement for placement in plan.placements}
