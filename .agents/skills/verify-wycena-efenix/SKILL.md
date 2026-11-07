@@ -6,6 +6,7 @@ pilnuje:
   - src/rozliczenia/centrum/pricing_journal.py
   - src/rozliczenia/centrum/efenix_run.py
   - tests/fixtures/atrapa_efenix.py
+  - tools/lib/model_efenix.py
   - tests/fixtures/efenix.py
 ci: .agents/skills/verify-wycena-efenix/scripts/explore_wycena_efenix.py
 ci-czesci: 8
