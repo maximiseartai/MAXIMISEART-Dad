@@ -530,7 +530,7 @@ def test_kazde_zadanie_z_cache_narzedzi_tlc_zapisuje_go_dopiero_po_sprawdzeniu_j
                 continue
             restore, save = cache
             [check] = [step for step in steps if step.get("run") == "python tools/ci/zapis_narzedzi_tlc.py"]
-            units = next(step for step in steps if "tools/plan_ci.py wykonaj" in step.get("run", ""))
+            units = next(step for step in steps if "tools/ci/wykonaj_zadanie.py" in step.get("run", ""))
             shapes[f"{name}:{job_name}"] = (
                 [step["uses"].split("@")[0] for step in cache],
                 steps.index(restore) < steps.index(units) < steps.index(check) < steps.index(save),

@@ -44,7 +44,6 @@ class Decision:
     checks: bool
 
 
-RELEASE_OVERRIDE = "MAXIMISEART_WYDANIE"
 RELEASE_TAGS = "refs/tags/v"
 HUMAN = Decision("", checks=False)
 NOT_HEAD = Decision("push nie wysyła HEAD (usunięcie gałęzi albo inna gałąź), więc bez sprawdzania", checks=False)
@@ -100,9 +99,12 @@ def main() -> int:
     refs = [line.split() for line in sys.stdin if line.strip()]
     agent = any(os.environ.get(marker) for marker in AGENT_MARKERS)
     tags = [remote_ref for _, _, remote_ref, _ in refs if remote_ref.startswith(RELEASE_TAGS)]
-    if agent and tags and os.environ.get(RELEASE_OVERRIDE) != "1":
-        print(f"pre-push: agent nie wypycha tagów Wydania ({', '.join(tags)}); robi to tylko narzędzie Wydań.", flush=True)
-        return 1
+    if agent and tags:
+        import repo  # tylko push agenta zależy od narzędzi agenta
+
+        if os.environ.get(repo.RELEASE_OVERRIDE) != "1":
+            print(f"pre-push: agent nie wypycha tagów Wydania ({', '.join(tags)}); robi to tylko narzędzie Wydań.", flush=True)
+            return 1
     decision = _decide({local_sha for _, local_sha, _, _ in refs})
     if decision.message:
         print(f"pre-push: {decision.message}.", flush=True)

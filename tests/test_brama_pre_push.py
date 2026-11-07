@@ -20,11 +20,13 @@ from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, copy_files, repository
 from tests.fixtures.potomne import wait_for
 
+import repo
+
 HOOK = Path(__file__).resolve().parents[1] / "tools" / "hooks" / "pre-push"
 WORK_IN_PROGRESS = HOOK.parents[1] / "praca_w_toku.py"
 SKILLS_FOR_CHANGE = (
-    "tools/skille_dla_zmiany.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/ci/mutacje_skilli.py", "tools/plan_ci.py", "tools/lib/niestabilne_testy.py", "tools/mutacje_zmiany.py",
-    "tools/ci/pokrycie_procesu.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py",
+    "tools/skille_dla_zmiany.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/ci/mutacje_skilli.py", "tools/plan_ci.py", "tools/lib/plan_runu.py", "tools/lib/niestabilne_testy.py", "tools/mutacje_zmiany.py",
+    "tools/lib/pokrycie_procesu.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py",
 )
 SKILL = "---\nname: verify-kod\ndescription: kod\npilnuje:\n  - kod/*\n---\n"
 BRANCH = "refs/heads/zmiana"
@@ -363,7 +365,7 @@ def test_tag_wydania_wypycha_narzedzie_wydan_i_czlowiek_a_inny_tag_agent(checkou
     _stub_ci_lokalnie(checkout, passes=True)
     for tag in ("v0.2.0", "v0.3.0", "proba"):
         _git(checkout, "tag", tag)
-    release_tool = _environment("claude-code") | {"MAXIMISEART_WYDANIE": "1"}
+    release_tool = _environment("claude-code") | {repo.RELEASE_OVERRIDE: "1"}
 
     by_tool = subprocess.run(["git", "push", "origin", "v0.2.0"], cwd=checkout, env=release_tool, capture_output=True, text=True, check=False)
     by_human = _git(checkout, "push", "origin", "v0.3.0", agent=None)
@@ -381,7 +383,7 @@ def test_furtka_narzedzia_wydan_otwiera_sie_tylko_na_jedynke(checkout: Path, val
     rejected = subprocess.run(
         ["git", "push", "origin", "v0.2.0"],
         cwd=checkout,
-        env=_environment("claude-code") | {"MAXIMISEART_WYDANIE": value},
+        env=_environment("claude-code") | {repo.RELEASE_OVERRIDE: value},
         capture_output=True,
         text=True,
         check=False,

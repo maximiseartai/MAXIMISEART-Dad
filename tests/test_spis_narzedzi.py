@@ -12,8 +12,13 @@ zdaniu w nawiasie co najmniej jedną z nich, np. „(plan --baza origin/main)”
 inaczej woła narzędzie bez podkomendy; nawias odróżnia podkomendę od tego samego słowa w zdaniu („Drukuje plan runu”).
 Blok między ``START`` i ``END`` zapisuje ten test z ``ZAPISZ_EXPECT=1``, jak plik expect.
 
+Zależności idą w jedną stronę: narzędzia z ``tools/``, biblioteki z ``tools/lib/`` i hooki nie importują skryptów
+z ``tools/ci/`` ani nie dodają tego katalogu do ``sys.path``, bo zmiana skryptu workflow nie może łamać narzędzi agenta.
+Skrypt, który workflow uruchamia systemowym ``python3`` runnera (bez zależności projektu), razem ze wszystkim, co
+importuje z ``tools/``, używa tylko biblioteki standardowej.
+
 Granica: test nie ocenia, czy zdanie mówi „kiedy” słowami sytuacji agenta (czerwone CI, przed merge'em); to łapie
-tylko przegląd.
+tylko przegląd. Importu przez ``importlib`` ani polecenia składanego w czasie biegu strażnik importów nie widzi.
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 import re
+import sys
 
 import pytest
 
@@ -39,6 +45,11 @@ SAME_WORDS = 3
 CI_TOOLS = "tools/ci/"
 # Polecenie, które uruchamia skrypt z tools/ci/: interpreter (python3, .venv/bin/python, py -3) albo `--` przed nim.
 RUNS_CI_TOOL = re.compile(r"(?:python[\d.]*|py -3|--)\s+tools/ci/")
+WORKFLOWS = ROOT / ".github" / "workflows"
+# Skrypt w kroku workflow uruchamiany systemowym python3 runnera, bez zależności projektu.
+SYSTEM_PYTHON = re.compile(r"\bpython3\s+(tools/\S+\.py)\b")
+# Katalogi, z których skrypt z tools/ importuje moduły projektu (sys.path jego i testów).
+MODULE_DIRS = (TOOLS / "lib", TOOLS, TOOLS / "ci")
 
 
 def _tools() -> list[Path]:
@@ -261,3 +272,95 @@ def test_podkomenda_liczy_sie_tylko_cala_w_nawiasie() -> None:
     sentences = ["Drukuje plan runu CI.", "Drukuje plan runu (planem).", "Drukuje plan runu (plan --baza origin/main)."]
 
     assert [_names_subcommand_in_brackets(sentence, ["plan", "wykonaj"]) for sentence in sentences] == [False, False, True]
+
+
+def _imports(tree: ast.Module) -> list[str]:
+    """Najwyższe nazwy modułów, które plik importuje, także w funkcjach, bez ``from __future__``."""
+
+    names = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names += [alias.name.partition(".")[0] for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0 and node.module != "__future__":
+            names.append(node.module.partition(".")[0])
+    return names
+
+
+def _adds_to_sys_path(tree: ast.Module) -> list[str]:
+    """Napisy w argumentach każdego ``sys.path.insert`` i ``sys.path.append`` pliku."""
+
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and ast.unparse(node.func) in ("sys.path.insert", "sys.path.append"):
+            found += [part.value for argument in node.args for part in ast.walk(argument) if isinstance(part, ast.Constant) and isinstance(part.value, str)]
+    return found
+
+
+def _agent_files() -> list[Path]:
+    hooks = [path for path in sorted((TOOLS / "hooks").iterdir()) if path.is_file() and path.read_bytes().startswith((b"#!/usr/bin/env python3", b'"""'))]
+    return [*_tools(), *sorted((TOOLS / "lib").rglob("*.py")), *hooks]
+
+
+def test_narzedzie_biblioteka_ani_hook_nie_siega_do_skryptow_ci() -> None:
+    ci_modules = {path.stem for path in (TOOLS / "ci").glob("*.py")}
+    found = []
+    for path in _agent_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        name = path.relative_to(ROOT).as_posix()
+        found += [f"{name}: sys.path z {text!r}" for text in _adds_to_sys_path(tree) if text.rstrip("/").endswith("ci")]
+        found += [f"{name}: import {module}" for module in _imports(tree) if module in ci_modules]
+
+    assert found == [], "\n".join(
+        [*found, f"{CI_TOOLS} to skrypty workflow (ADR 0022): wspólny kod przenieś do tools/lib/, a narzędzie importuje go stamtąd."]
+    )
+
+
+def _system_python_scripts() -> set[Path]:
+    return {ROOT / script for workflow in sorted(WORKFLOWS.glob("*.yml")) for script in SYSTEM_PYTHON.findall(workflow.read_text(encoding="utf-8"))}
+
+
+def _outside_stdlib(scripts: set[Path], root: Path = ROOT) -> list[str]:
+    """``plik: moduł`` dla każdego importu spoza biblioteki standardowej w domknięciu importów ``scripts`` w ``tools/``."""
+
+    found, seen, queue = [], set(), sorted(scripts)
+    while queue:
+        path = queue.pop()
+        if path in seen:
+            continue
+        seen.add(path)
+        for module in _imports(ast.parse(path.read_text(encoding="utf-8"))):
+            local = next((folder / f"{module}.py" for folder in (path.parent, *MODULE_DIRS) if (folder / f"{module}.py").is_file()), None)
+            if local is not None:
+                queue.append(local)
+            elif module not in sys.stdlib_module_names:
+                found.append(f"{path.relative_to(root).as_posix()}: {module}")
+    return sorted(found)
+
+
+def test_skrypt_workflow_na_systemowym_python3_importuje_tylko_biblioteke_standardowa() -> None:
+    scripts = _system_python_scripts()
+
+    assert {path.relative_to(ROOT).as_posix() for path in scripts} >= {"tools/plan_ci.py", "tools/ci/werdykt_required.py", "tools/ci/zgloszenia_ci.py"}
+    assert _outside_stdlib(scripts) == [], "Systemowy python3 runnera nie ma zależności projektu: ten moduł nie może ich importować."
+
+
+def test_domkniecie_importow_skryptu_widzi_import_spoza_biblioteki_w_module_ktory_importuje(tmp_path: Path) -> None:
+    (tmp_path / "skrypt.py").write_text("import json\nimport modul\n", encoding="utf-8")
+    (tmp_path / "modul.py").write_text("def f() -> None:\n    import yaml\n", encoding="utf-8")
+
+    assert [line.rpartition(": ")[2] for line in _outside_stdlib({tmp_path / "skrypt.py"}, tmp_path)] == ["yaml"]
+
+
+def test_narzedzie_uruchamia_gh_tylko_przez_github() -> None:
+    """Lista albo krotka zaczynająca się od stałej ``"gh"`` stoi w ``tools/`` tylko w ``tools/lib/github.py``: narzędzie
+    woła ``gh`` przez ten moduł, który znajduje program na ``PATH`` (także ``gh.cmd`` na Windows), uruchamia go w
+    checkoucie z limitem czasu i bez wejścia wołającego. Nazwy programu zbudowanej w czasie biegu test nie widzi."""
+
+    found = [
+        f"{path.relative_to(ROOT).as_posix()}:{node.lineno}: {ast.unparse(node)[:80]}"
+        for path in sorted({*TOOLS.rglob("*.py"), TOOLS / "hooks" / "pre-push"} - {TOOLS / "lib" / "github.py"})
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, (ast.List, ast.Tuple)) and node.elts and isinstance(node.elts[0], ast.Constant) and node.elts[0].value == "gh"
+    ]
+
+    assert found == [], "\n".join([*found, "Uruchom gh przez github.gh albo github.gh_bajty z tools/lib/github.py."])

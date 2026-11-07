@@ -224,7 +224,7 @@ jobs:
       # A failed script is a result to file, not a broken job: the last job reads the record of each job's units.
       - name: Run the planned mutation scripts
         continue-on-error: true
-        run: python tools/plan_ci.py wykonaj --plan .ci-plan/plan.json --zadanie ${{ matrix.id }}
+        run: python tools/ci/wykonaj_zadanie.py --plan .ci-plan/plan.json --zadanie ${{ matrix.id }}
 
       # The key is saved once and never overwritten, so it is saved only with the jar of the pinned SHA-256: a folder
       # without it (a download that failed to the end, a job whose units run no model) would give each later job a hit

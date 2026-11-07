@@ -28,11 +28,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 
 import niestabilne_testy
 import zgloszenia_ci
-from zgloszenia_ci import Skomentuj, Zaloz, Zamknij
+from github import REPO, REQUIRED, STRONA, Skomentuj, Zaloz, Zamknij
 
 ROOT = Path(__file__).resolve().parents[1]
 ZGLOSZENIA = ROOT / ".github" / "workflows" / "zgloszenia.yml"
-REPO = "repos/{owner}/{repo}"
 TERAZ = datetime(2026, 10, 26, 20, 0, tzinfo=UTC)
 RUN_URL = "https://github.com/maximiseartai/MAXIMISEART-Dad/actions/runs/{}"
 
@@ -91,8 +90,11 @@ def _artefakty(run_id: int, artefakty: dict[str, object]) -> dict[str, Any]:
 
 
 def _issues(etykieta: str, stan: str, issues: list[dict[str, Any]], od: str = "") -> dict[str, Any]:
-    zapytanie = f"labels={etykieta}&state={stan}&per_page=100" + (f"&since={od}" if od else "")
-    return {f"{REPO}/issues?{zapytanie}": issues}
+    """Strony listy issue po ``STRONA``, jak API, z pustą stroną za pełną ostatnią."""
+
+    zapytanie = f"labels={etykieta}&state={stan}" + (f"&since={od}" if od else "")
+    strony = [issues[poczatek : poczatek + STRONA] for poczatek in range(0, len(issues) + 1, STRONA)]
+    return {f"{REPO}/issues?{zapytanie}&per_page={STRONA}&page={numer}": strona for numer, strona in enumerate(strony, start=1)}
 
 
 def _blok_kodu(tresc: str) -> list[str]:
@@ -219,11 +221,34 @@ def test_kazdy_test_repozytorium_da_sie_ponowic_i_zglosic() -> None:
     assert [flaky.test for flaky in flaky_testy] == testy
 
 
-def test_zgloszenia_czytaja_artefakt_w_ktorym_ci_yml_wysyla_flaky_testy() -> None:
+@pytest.mark.parametrize(
+    ("plik", "poczatek"),
+    [(niestabilne_testy.FLAKY_TESTY, niestabilne_testy.ARTEFAKT_FLAKY_TESTOW), (niestabilne_testy.KWARANTANNA, niestabilne_testy.ARTEFAKT_KWARANTANNY)],
+    ids=["flaky testy", "kwarantanna"],
+)
+def test_narzedzia_czytaja_artefakt_w_ktorym_ci_yml_wysyla_zapis_niestabilnych_testow(plik: Path, poczatek: str) -> None:
     wysylki = [krok["with"] for zadanie in jobs().values() for krok in zadanie["steps"] if "upload-artifact" in krok.get("uses", "")]
-    flaky_testy = [wysylka for wysylka in wysylki if Path(wysylka["path"]) == niestabilne_testy.FLAKY_TESTY]
+    zapisy = [wysylka for wysylka in wysylki if Path(wysylka["path"]) == plik]
 
-    assert [wysylka["name"].startswith(zgloszenia_ci.ARTEFAKT_FLAKY_TESTOW) for wysylka in flaky_testy] == [True]
+    assert [wysylka["name"].startswith(poczatek) for wysylka in zapisy] == [True]
+
+
+def test_narzedzia_pytaja_o_check_zadania_required_z_ci_yml() -> None:
+    assert jobs()["required"]["name"] == REQUIRED
+
+
+def test_flaky_test_z_otwartym_issue_poza_pierwsza_strona_listy_dostaje_komentarz_a_nie_drugie_issue() -> None:
+    test = "tests/test_x.py::test_y"
+    inne = [{"number": numer, "title": f"Flaky test: tests/test_x.py::test_{numer}"} for numer in range(1, STRONA + 1)]
+    github = Nagrany(
+        {
+            f"{REPO}/actions/runs/9": _run(9, "pull_request", "b" * 40, "success"),
+            **_artefakty(9, {"flaky-testy-linux-3.14-1-1": [_flaky(test)]}),
+            **_issues("flaky-test", "open", [*inne, {"number": 500, "title": f"Flaky test: {test}"}]),
+        }
+    )
+
+    assert [(type(akcja), getattr(akcja, "issue", None)) for akcja in zgloszenia_ci.akcje(github, Path.cwd(), 9, TERAZ)] == [(Skomentuj, 500)]
 
 
 # Testy repozytorium `main` i moduły, które importują: PR #n zmienia ``modul<n>.py``, więc ``tests/test_a.py`` i

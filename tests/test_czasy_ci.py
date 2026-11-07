@@ -1,6 +1,6 @@
 """Czasy CI: zadanie zapisuje czas każdej jednostki swojej pracy, a Required na main scala zapisy runu w ``czasy-ci``.
 
-Zapis zadania bierze testy z junit pytest, jednostki zmierzone przez ``tools/plan_ci.py wykonaj`` i kroki CI z API zadań
+Zapis zadania bierze testy z junit pytest, jednostki zmierzone przez ``tools/ci/wykonaj_zadanie.py`` i kroki CI z API zadań
 runu. Wejście, którego brakuje albo którego nie da się odczytać, jest zgłoszone linią ``CZASY CI FAIL``, a reszta
 pomiaru zostaje.
 """
@@ -27,8 +27,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
 import czasy_ci  # noqa: E402
-from czasy_ci import KROKI, main  # noqa: E402
-import plan_ci  # noqa: E402
+import plan_runu  # noqa: E402
+import wykonaj_zadanie  # noqa: E402
+import zapis_czasow  # noqa: E402
+from zapis_czasow import KROKI, main  # noqa: E402
 
 RUNNER = "GitHub Actions 1000012606"
 ENV = {
@@ -87,7 +89,7 @@ JUNIT_UNITS = [
     {"klucz": "pytest:tests/test_d.py", "s": 2.0, "status": "ok"},
     {"klucz": "pytest:tests/test_e.py", "s": 0.0, "status": "fail"},
 ]
-# Jednostki, które mierzy ``tools/plan_ci.py wykonaj``, i plan, z którego biegły.
+# Jednostki, które mierzy ``tools/ci/wykonaj_zadanie.py``, i plan, z którego biegły.
 PLANNED = {"plan": "digest-planu", "zadanie": "windows-3.14-1"}
 PLANNED_UNITS = [
     {"klucz": "krok:pytest", "s": 383.0, "status": "fail"},
@@ -226,7 +228,7 @@ def test_krok_bez_wyniku_po_piatym_odczycie_jest_zgloszony(
 def test_api_ktore_nie_odpowiada_w_limicie_czasu_jest_zgloszone_zamiast_zatrzymac_zadanie(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, api: _Api
 ) -> None:
-    monkeypatch.setattr(czasy_ci, "LIMIT_API_S", 0.1)
+    monkeypatch.setattr(zapis_czasow, "LIMIT_API_S", 0.1)
     api.delay_s = 1.0
 
     code, record = _record(tmp_path, {})
@@ -538,30 +540,30 @@ def test_brak_albo_zepsuty_artefakt_daje_puste_czasy_z_przyczyna(tmp_path: Path,
 def _recorded(job: str, option: str) -> str:
     """Ścieżka, którą krok zapisu zadania ``job`` w ``ci.yml`` podaje opcją ``option``."""
 
-    recorded = [step["run"] for step in jobs()[job]["steps"] if "tools/ci/czasy_ci.py zadanie" in step.get("run", "")]
+    recorded = [step["run"] for step in jobs()[job]["steps"] if "tools/ci/zapis_czasow.py zadanie" in step.get("run", "")]
     assert len(recorded) == 1, job
     arguments = shlex.split(recorded[0])
     return arguments[arguments.index(option) + 1]
 
 
-def test_kazdy_krok_jednostki_jest_krokiem_ci_a_zapis_czyta_junit_i_wynik_tam_gdzie_pisze_je_plan_ci() -> None:
+def test_kazdy_krok_jednostki_jest_krokiem_ci_a_zapis_czyta_junit_i_wynik_tam_gdzie_pisze_je_wykonanie_zadania() -> None:
     workflow = jobs()
     names = {step.get("name") for job in ("pytest", "mutations") for step in workflow[job]["steps"]}
 
     assert set(KROKI) - names == set()
     assert tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["pytest"]["ini_options"]["junit_family"] == "xunit1"
-    assert Path(_recorded("pytest", "--junit")) == plan_ci.JUNIT
-    assert Path(_recorded("pytest", "--wykonanie")) == Path(_recorded("mutations", "--wykonanie")) == plan_ci.WYKONANIE
+    assert Path(_recorded("pytest", "--junit")) == wykonaj_zadanie.JUNIT
+    assert Path(_recorded("pytest", "--wykonanie")) == Path(_recorded("mutations", "--wykonanie")) == plan_runu.WYKONANIE
 
 
 def test_pomiar_czasow_nie_zmienia_werdyktu_ci_i_biegnie_takze_po_porazce_z_dostepem_do_api_zadan() -> None:
     workflow = jobs()
     measuring = {
-        name: [step for step in job["steps"] if "tools/ci/czasy_ci.py" in step.get("run", "") or "czasy" in json.dumps(step.get("with", {}))]
+        name: [step for step in job["steps"] if "tools/ci/zapis_czasow.py" in step.get("run", "") or "czasy" in json.dumps(step.get("with", {}))]
         for name, job in workflow.items()
     }
     required = workflow["required"]["steps"]
-    verdict = next(index for index, step in enumerate(required) if "tools/plan_ci.py werdykt" in step.get("run", ""))
+    verdict = next(index for index, step in enumerate(required) if "tools/ci/werdykt_required.py" in step.get("run", ""))
     # Zapisy zadań Required pobiera przed werdyktem, bo z nich sprawdza, że każda jednostka planu biegła.
     records, *merging = measuring["required"]
 
@@ -580,12 +582,12 @@ def test_pomiar_czasow_nie_zmienia_werdyktu_ci_i_biegnie_takze_po_porazce_z_dost
 
 
 
-def test_pomoc_pokazuje_ksztalt_danych_z_docstringu_z_jego_wcieciami(capsys: pytest.CaptureFixture[str]) -> None:
+def test_pomoc_pokazuje_polecenia_z_docstringu_z_ich_wcieciami(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as stopped:
         main(["--help"])
 
     assert stopped.value.code == 0
-    assert "\n    krok:timing              trzy polecenia straży czasu razem\n" in capsys.readouterr().out
+    assert "\n    python3 tools/ci/zapis_czasow.py scal --katalog zapisy --wyjscie czasy-ci.json\n" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(

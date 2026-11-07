@@ -46,6 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import github
 import niestabilne_testy
 from repo import REMOTE, ROOT
 import repo
@@ -55,9 +56,7 @@ from rozliczenia.centrum.report_box import REPOSITORY as REPORT_BOX
 from rozliczenia.centrum.tool_update import MainLine, Release
 from rozliczenia.tool_files import REPOSITORY
 
-REQUIRED_CI: Final = "Required CI status"
 CONFIRMED: Final = "--potwierdzone-przez-maksa"
-RELEASE_OVERRIDE: Final = "MAXIMISEART_WYDANIE"
 # Pliki, które działają u taty: kod narzędzia, zbudowane Centrum (frontend buduje się do src/), start i biblioteki.
 DAD_FILES: Final = ("src/", "run_centrum.py", "install_centrum_shortcut.py", "requirements.txt")
 FIRST: Final = (0, 1, 0)
@@ -72,7 +71,6 @@ _QUARANTINE: Final[Mapping[niestabilne_testy.StanKwarantanny, CiState]] = {
     "padła": "kwarantanna czerwona",
     "bez zapisu": "bez zapisu kwarantanny",
 }
-_QUARANTINE_ARTIFACT: Final = "kwarantanna-"
 
 
 class Bump(enum.Enum):
@@ -87,8 +85,6 @@ NEXT: Final[Mapping[Bump, Callable[[tuple[int, int, int]], tuple[int, int, int]]
     Bump.PATCH: lambda number: (number[0], number[1], number[2] + 1),
 }
 
-_MERGE: Final = re.compile(r"Merge pull request #(?P<number>[1-9][0-9]*) from \S+")
-_SQUASH: Final = re.compile(r"(?P<title>.+) \(#(?P<number>[1-9][0-9]*)\)")
 _TYPE: Final = re.compile(r"(?P<type>[a-z]+)(\([^)]*\))?!?:")
 _HTTP_STATUS: Final = re.compile(r"\(HTTP (?P<status>[0-9]{3})\)")
 _RUN: Final = re.compile(r"/actions/runs/(?P<run>[0-9]+)/")
@@ -206,20 +202,19 @@ def _gh_found(answer: TypeAdapter[_Answer], path: str, body: Mapping[str, object
 def _gh_bytes(path: str, sent: bytes | None = None) -> bytes | None:
     """Surowa odpowiedź ``gh api`` (także zip artefaktu); 404 to ``None``, inna porażka ``Refused``."""
 
-    answered = subprocess.run(
-        # Zip artefaktu ma bajty sekwencji terminala, których gh bez tej flagi nie wypisze.
-        ["gh", "api", "--method", "GET" if sent is None else "POST", path, *([] if sent is None else ["--input", "-"]), "--allow-escape-sequences"],
-        input=sent,
-        capture_output=True,
-        check=False,
-    )
-    if answered.returncode != 0:
+    try:
+        return github.gh_bajty(
+            # Zip artefaktu ma bajty sekwencji terminala, których gh bez tej flagi nie wypisze.
+            "api", "--method", "GET" if sent is None else "POST", path, *([] if sent is None else ["--input", "-"]), "--allow-escape-sequences",
+            wejscie=sent,
+            limit_s=None,
+        )
+    except subprocess.CalledProcessError as answered:
         error = answered.stderr.decode("utf-8", errors="replace")
         status = _HTTP_STATUS.search(error)
         if status is not None and status["status"] == "404":
             return None
-        raise Refused(f"gh api {path}: {error.strip() or f'kod {answered.returncode}'}")
-    return answered.stdout
+        raise Refused(f"gh api {path}: {error.strip() or f'kod {answered.returncode}'}") from None
 
 
 def ci_state(root: Path, commit: str) -> CiState:
@@ -230,7 +225,7 @@ def ci_state(root: Path, commit: str) -> CiState:
     Commit bez wpisów (także sprzed kwarantanny, bez jej pliku) zapisu nie potrzebuje: jego Required pokazał każdy test.
     """
 
-    check = urllib.parse.quote(REQUIRED_CI)
+    check = urllib.parse.quote(github.REQUIRED)
     answer = _gh(_CHECK_RUNS, f"repos/{REPOSITORY}/commits/{commit}/check-runs?check_name={check}&per_page={_PAGE_SIZE}")
     runs = answer.check_runs
     if not runs:
@@ -266,7 +261,7 @@ def _quarantine_records(run_id: str) -> list[niestabilne_testy.ZapisKwarantanny]
     for page in range(1, _MAX_PAGES + 1):
         listed = _gh(_ARTIFACTS, f"repos/{REPOSITORY}/actions/runs/{run_id}/artifacts?per_page={_PAGE_SIZE}&page={page}").artifacts
         for artifact in listed:
-            if not artifact.name.startswith(_QUARANTINE_ARTIFACT) or artifact.expired:
+            if not artifact.name.startswith(niestabilne_testy.ARTEFAKT_KWARANTANNY) or artifact.expired:
                 continue
             packed = _gh_bytes(f"repos/{REPOSITORY}/actions/artifacts/{artifact.id}/zip")
             try:
@@ -377,7 +372,7 @@ def _tag_and_push(root: Path, release: Release, commit: str) -> None:
         made = repo.run_git(root, "tag", "--annotate", "--message", f"Wydanie {name}", release.tag, commit, timeout=60)
         if made.returncode != 0:
             raise Refused(f"git tag {release.tag}: {made.stderr.strip()}")
-    pushed = repo.run_git(root, "push", "--quiet", REMOTE, f"refs/tags/{release.tag}", extra_env={RELEASE_OVERRIDE: "1"}, timeout=_PUSH_TIMEOUT_S)
+    pushed = repo.run_git(root, "push", "--quiet", REMOTE, f"refs/tags/{release.tag}", extra_env={repo.RELEASE_OVERRIDE: "1"}, timeout=_PUSH_TIMEOUT_S)
     if pushed.returncode != 0:
         raise Refused(f"git push {release.tag}: {(pushed.stderr or pushed.stdout).strip()}")
 
@@ -391,11 +386,11 @@ def _merged_prs(root: Path, previous: str | None, commit: str) -> tuple[MergedPR
     for record in listed.split("\x1e")[1:]:
         subject, body, names = record.split("\x1f")
         for_dad = any(name.startswith(DAD_FILES) for name in names.split())
-        if (merged := _MERGE.fullmatch(subject)) is not None:
+        if (merged := github.MERGE.fullmatch(subject)) is not None:
             title = next((line.strip() for line in body.splitlines() if line.strip()), subject)
-            changes.append(MergedPR(int(merged["number"]), title, for_dad))
-        elif (squashed := _SQUASH.fullmatch(subject)) is not None:
-            changes.append(MergedPR(int(squashed["number"]), squashed["title"], for_dad))
+            changes.append(MergedPR(int(merged["numer"]), title, for_dad))
+        elif (squashed := github.SQUASH.fullmatch(subject)) is not None:
+            changes.append(MergedPR(int(squashed["numer"]), squashed["tytul"], for_dad))
     return tuple(changes)
 
 

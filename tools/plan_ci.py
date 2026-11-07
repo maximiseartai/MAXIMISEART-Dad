@@ -8,14 +8,14 @@ pliki testów na każdym, oraz kroki skilli, które biegną, z powodem. Plan tyl
 torach zakresu, a kroki skilli na torze ``MUTACJE`` (Windows 3.14, zadania Mutation checks), każda podstawa ``ci:`` i
 każdy skrypt mutacji osobno, a krok z częściami ustalonymi przez zakres (nocą każda część każdej liczby części podstawy
 z ``ci-czesci``) każdą z nich. Koszt jednostki to ściana, którą dodaje do zadania: plik waży sumę czasów swoich testów przez
-``WORKERY`` workerów xdist, krok swój czas. Czasy to mediany z ostatnich runów main (``tools/ci/czasy_ci.py``). Plik albo
+``WORKERY`` workerów xdist, krok swój czas. Czasy to mediany z ostatnich runów main (``tools/lib/czasy_ci.py``). Plik albo
 krok skilla bez pomiaru waży medianę zmierzonych jednostek tego rodzaju na torze, a bez żadnych pomiarów wagę z
 ``DOMYSLNIE``: plan to wypisuje i biegnie dalej, bo brak czasów psuje tylko równowagę zadań, nie zbiór pracy.
 
 Ściana zadania to narzut (od startu zadania do pracy), start pytest, suma kosztów jego jednostek i koniec zadania;
 narzut i start też są z pomiarów. Plan dzieli każdy tor na najmniej zadań o ścianie najwyżej ``cel_s`` (LPT: najdłuższa jednostka do
 zadania o najmniejszej sumie). Plik dłuższy niż zadanie dzieli się na k udziałów o tej samej wadze: udział k biegnie
-z ``-p tools.ci.pytest_czesc`` (testy pliku posortowane po id, po kolei). Skrypt mutacji dłuższy niż zadanie dzieli się tak samo na
+z ``-p tools.lib.pytest_czesc`` (testy pliku posortowane po id, po kolei). Skrypt mutacji dłuższy niż zadanie dzieli się tak samo na
 najwyżej tyle części, ile ma mutacji: część biegnie z ``MUTACJE_CZESC=k/n`` (``tools/mutacje.py``), z podstawą
 poleceń swoich mutacji. Podstawa ``ci:`` z ``ci-czesci: <n>`` dzieli się tak samo na najwyżej n części (część k
 skrypt bierze z ``MUTACJE_CZESC=k/n``, ``tools/lib/skrypt_skilla.py``), a bez niego nie. Plan drukuje najdłuższą jednostkę
@@ -25,25 +25,13 @@ zadanie pytest tylko wtedy, gdy ma plik testów, który sięga Chromium dla test
 run (``STALE_ZADANIA``, zadania pytest i Mutation checks) przekroczyłby ``ZADANIA_RUNU`` na pull request albo
 ``ZADANIA_RUNU_MAIN`` na pushu i nocą, cel wszystkich torów rośnie co ``KROK_CELU_S``.
 
-Na pull request zadanie po porażce pytest uruchamia raz same testy, które padły (``niestabilne_testy``, najwyżej
-``PONOWIENIE_NAJWIECEJ``; więcej porażek to nie flaky test), jeśli id każdego da się zgłosić w issue. Gdy wszystkie
-przejdą, pytest przechodzi, a każdy z nich trafia do zapisu flaky testów; druga porażka to porażka. Każde zadanie z pytest
-zapisuje też wynik swoich testów z kwarantanny.
-Krok pytest ma limit ``limit_pytest_s`` ze ściany zadania z planu: po nim drzewo pytest ginie, a linia ``LIMIT`` mówi, że
-to limit, nie porażka testu. Zadanie pytest dostaje w macierzy ``limit_minut`` (``timeout-minutes`` w ``ci.yml``), sumę
-limitów swoich kroków z zapasem, więc GitHub zabija je dopiero wtedy, gdy zawiesi się coś poza krokami z limitem.
-
-Plan ma ``digest``: zadanie wykonuje tylko plan, którego treść się z nim zgadza, i zapisuje go w swoim zapisie czasów,
-a ``Required CI status`` (``werdykt``) przyjmuje tylko zapisy tego planu. Werdykt przepuszcza run, gdy każde zadanie
-przeszło, zadanie pominięte to tylko takie, któremu plan nie dał pracy, a każde zadanie planu zgłosiło w ostatniej
-próbie każdą swoją jednostkę (plik testów, krok CI, krok skilla) bez porażki, a części każdej podzielonej jednostki
-składają się na całość (każda z 1..n dokładnie raz). Plan, którego nie ma, i skrypt mutacji,
-który wybór skilli zgubił albo zły klucz ``ci:`` (``bledy`` planu), są czerwonym werdyktem z przyczyną.
+Plan (``tools/lib/plan_runu.py``) zapisuje się w pliku ``--wyjscie``, a macierze zadań w ``GITHUB_OUTPUT``: każde zadanie
+wykonuje swoje jednostki (``tools/ci/wykonaj_zadanie.py``), a ``Required CI status`` sprawdza je wobec planu
+(``tools/ci/werdykt_required.py``). Zadanie pytest dostaje w macierzy ``limit_minut`` (``timeout-minutes`` w ``ci.yml``),
+sumę limitów swoich kroków z zapasem, więc GitHub zabija je dopiero wtedy, gdy zawiesi się coś poza krokami z limitem.
 
     python3 tools/plan_ci.py plan --zdarzenie pull_request --baza HEAD^1 --czasy .ci-plan/czasy --wyjscie .ci-plan/plan.json
     python3 tools/plan_ci.py plan --zdarzenie noc --baza <baza nocy> --czasy .ci-plan/czasy --wyjscie .ci-plan/plan.json
-    python tools/plan_ci.py wykonaj --plan .ci-plan/plan.json --zadanie windows-3.14-2       # albo mutacje-1
-    python3 tools/plan_ci.py werdykt --plan .ci-plan/plan.json --zapisy .ci-czasy/zapisy      # NEEDS: toJSON(needs)
 
 Lokalnie plan na czasach z ``.git/czasy-ci`` (wspólnych z ``tools/szybko.py``) drukuje zadania i ich prognozę:
 
@@ -53,50 +41,24 @@ Lokalnie plan na czasach z ``.git/czasy-ci`` (wspólnych z ``tools/szybko.py``) 
 from __future__ import annotations
 
 import argparse
-from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field
-import hashlib
+from dataclasses import dataclass, field
 import json
 import math
 import os
 from pathlib import Path
 import statistics
-import subprocess
 import sys
-import tempfile
-import time
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import czasy_ci
-from kroki_skilli import Katalog
-import mutacje
-import mutacje_skilli
-import niestabilne_testy
-from niestabilne_testy import FlakyTest, ZapisKwarantanny
-import potomne
+from plan_runu import Plan, Zadanie
 from repo import BASE, ROOT
 from wplyw_zmiany import changed_since
-from zakres_runu import KROKI, MUTACJE, TORY, Krok, KrokSkilla, Tor, ZakresRunu, Zdarzenie, zakres
+from zakres_runu import KROKI, MUTACJE, TORY, KrokSkilla, Tor, ZakresRunu, Zdarzenie, zakres
 
-WERSJA = 1
 WORKERY = 4  # pytest -n auto na runnerze 4 vCPU
-JUNIT = Path(".ci-czasy", "junit.xml")
-PONOWIENIE = Path(".ci-czasy", "junit-ponowienie.xml")
-# Flaky test trafia w jeden albo dwa testy (Skrzynka w runach 26.10); więcej porażek naraz to defekt albo awaria runnera.
-PONOWIENIE_NAJWIECEJ = 5
-PONOWIENIE_LIMIT_S = 10 * 60
-# Krok pytest zielonego zadania trwał najwyżej 1,68 × ścianę zadania z planu (418 zadań zielonych runów CI z 28–31.10,
-# najdłuższy 668 s przy ścianie 411 s), więc limit 3 × ściana go nie przerywa. Najmniej 10 min, żeby test zawieszony
-# pod koniec kroku zdążył zostawić stosy wątków (faulthandler_timeout w pyproject.toml) przed limitem.
-ZAPAS_PYTEST = 3.0
-LIMIT_PYTEST_MIN_S = 10 * 60
-# Zadanie pytest poza krokami z limitem: checkout, Python, zależności, artefakty i zapis czasów (narzut do 43 s w tych runach).
-NARZUT_ZADANIA_S = 10 * 60
-WYKONANIE = Path(".ci-czasy", "wykonanie.json")
-CZESCI = Path(".ci-plan", "czesci.json")
 # W symulacji 60 PR (29.10) cel 60, 75 i 90 s daje bramce ten sam p50 i p90, bo ścianę trzyma jednostka, której plan
 # nie dzieli (część podstawy skilla, krok E2E, długi test), a 90 s najmniej zadań: stały koszt zadania pytest to ok. 40 s.
 CEL_S = 90.0
@@ -107,8 +69,6 @@ ZADANIA_RUNU = 40
 ZADANIA_RUNU_MAIN = 20
 # Zadania ci.yml o stałej liczbie (plan, Frontend, Ruff i mypy, Required).
 STALE_ZADANIA = 4
-# Zadania bramki w ci.yml, które startują tylko z pracą od planu.
-Z_PLANU = ("pytest", "mutations")
 
 
 @dataclass(frozen=True)
@@ -135,79 +95,6 @@ class Jednostka:
 
     klucz: str
     s: float  # ściana, którą dodaje do zadania
-
-
-@dataclass(frozen=True)
-class Zadanie:
-    id: str
-    tor: str
-    nazwa: str
-    jednostki: tuple[str, ...]
-    sciana_s: float
-    przegladarka: bool = False  # ma krok skilla, którego skrypty importują Playwright
-
-
-@dataclass(frozen=True)
-class Plan:
-    zdarzenie: Zdarzenie
-    cel_s: float
-    runy: tuple[int, ...]  # runy main, z których są czasy
-    zadania: tuple[Zadanie, ...]
-    bledy: tuple[str, ...] = ()  # FAIL-e znalezienia kroków skilli: zgubiony skrypt mutacji, zły klucz ``ci:``
-
-    @property
-    def digest(self) -> str:
-        tresc = json.dumps(asdict(self), sort_keys=True, ensure_ascii=False)
-        return hashlib.sha256(tresc.encode("utf-8")).hexdigest()
-
-    def do_json(self) -> str:
-        return json.dumps({"wersja": WERSJA, "digest": self.digest, **asdict(self)}, indent=1, ensure_ascii=False)
-
-    @classmethod
-    def z_json(cls, tekst: str) -> Plan:
-        """Plan z pliku; treść niezgodna z ``digest`` to ``ValueError``, bo zadania biegłyby z innego planu."""
-
-        dane = json.loads(tekst)
-        if dane.pop("wersja", None) != WERSJA:
-            raise ValueError(f"plan w wersji innej niż {WERSJA}")
-        digest = dane.pop("digest")
-        zadania = tuple(Zadanie(**{**zadanie, "jednostki": tuple(zadanie["jednostki"])}) for zadanie in dane.pop("zadania"))
-        plan = cls(**{**dane, "zdarzenie": Zdarzenie(dane["zdarzenie"]), "runy": tuple(dane["runy"]), "zadania": zadania, "bledy": tuple(dane["bledy"])})
-        if plan.digest != digest:
-            raise ValueError(f"treść planu nie zgadza się z jego digest {digest[:12]}")
-        return plan
-
-    def macierz(self, szablon: str) -> list[dict[str, str | bool | int]]:
-        """``include`` macierzy zadania ``szablon`` w ci.yml (``[]``, gdy plan nie ma jego zadań: zadanie jest pominięte)."""
-
-        tory = {tor.nazwa: tor for tor in (*TORY, MUTACJE)}
-        wpisy: list[dict[str, str | bool | int]] = []
-        for z in self.zadania:
-            tor = tory[z.tor]
-            if tor.szablon == szablon:
-                wpis: dict[str, str | bool | int] = {"id": z.id, "nazwa": z.nazwa, "os": tor.os, "python": tor.python}
-                wpis["przegladarka"] = z.przegladarka
-                if szablon != MUTACJE.szablon:
-                    wpis["limit_minut"] = self.limit_zadania_min(z)
-                wpisy.append(wpis)
-        return wpisy
-
-    def limit_zadania_min(self, zadanie: Zadanie) -> int:
-        """``timeout-minutes`` zadania pytest: suma limitów jego kroków (pytest, na pull request ponowienie, kroki CI)
-        i ``NARZUT_ZADANIA_S``, więc zadanie kończy limit kroku z linią ``LIMIT``, zanim zabije je GitHub."""
-
-        kroki = [KROKI[klucz.removeprefix("krok:")] for klucz in zadanie.jednostki if klucz.startswith("krok:")]
-        ponowienie = PONOWIENIE_LIMIT_S if self.zdarzenie is Zdarzenie.PULL_REQUEST else 0
-        return math.ceil((NARZUT_ZADANIA_S + limit_pytest_s(zadanie) + ponowienie + sum(sum(krok.limity_s) for krok in kroki)) / 60)
-
-
-def limit_pytest_s(zadanie: Zadanie) -> float:
-    """Limit kroku pytest zadania: ``ZAPAS_PYTEST`` × jego ściana z planu, najmniej ``LIMIT_PYTEST_MIN_S``."""
-
-    return max(LIMIT_PYTEST_MIN_S, ZAPAS_PYTEST * zadanie.sciana_s)
-
-
-# --- plan ---
 
 
 @dataclass(frozen=True)
@@ -394,226 +281,6 @@ def _plan(args: argparse.Namespace) -> int:
     return 0
 
 
-# --- wykonanie ---
-
-
-def _pytest(pliki: Mapping[str, list[tuple[int, int]]]) -> tuple[str, ...]:
-    czesci = {plik: {"n": udzialy[0][1], "udzialy": sorted(k for k, _ in udzialy)} for plik, udzialy in pliki.items() if udzialy}
-    CZESCI.parent.mkdir(parents=True, exist_ok=True)
-    CZESCI.write_text(json.dumps(czesci, indent=1), encoding="utf-8")
-    # Bez '=' w argumentach: shim py (cmd) dzieli argument na '='.
-    return (sys.executable, "-m", "pytest", "-n", "auto", "-p", "tools.ci.pytest_czesc", "--czesci", str(CZESCI), *pliki, "--junitxml", str(JUNIT))
-
-
-def _polecenia(krok: Krok) -> list[tuple[tuple[str, ...], float]]:
-    wartosci = {
-        "{python}": sys.executable,
-        "{temp}": os.environ.get("RUNNER_TEMP", tempfile.gettempdir()),
-        "{podsumowanie}": os.environ.get("GITHUB_STEP_SUMMARY", os.devnull),
-    }
-
-    def wstaw(argument: str) -> str:
-        for znacznik, wartosc in wartosci.items():
-            argument = argument.replace(znacznik, wartosc)
-        return argument
-
-    return [(tuple(map(wstaw, polecenie.split())), limit) for polecenie, limit in zip(krok.polecenia, krok.limity_s, strict=True)]
-
-
-def _uruchom(nazwa: str, polecenia: Sequence[tuple[tuple[str, ...], float]], po_limicie: str = "") -> dict[str, object]:
-    """Polecenia po kolei do pierwszej porażki; wyjście na bieżąco, a drzewo procesów ginie z limitem z linią ``LIMIT``
-    i dopiskiem ``po_limicie``."""
-
-    print(f"== {nazwa}", flush=True)
-    start, status = time.monotonic(), "ok"
-    for polecenie, limit in polecenia:
-        try:
-            kod = potomne.run(polecenie, cwd=ROOT, timeout=limit, echo=True).returncode
-        except subprocess.TimeoutExpired:
-            program = " ".join(polecenie[1:3]) if polecenie[1] == "-m" else polecenie[1]
-            print(f"LIMIT | {nazwa}: {program} przerwany po limicie {limit:.0f} s{po_limicie}", flush=True)
-            kod = None
-        if kod != 0:
-            status = "fail"
-            break
-    s = round(time.monotonic() - start, 1)
-    print(f"{'OK  ' if status == 'ok' else 'FAIL'} {nazwa} ({s:.0f} s)", flush=True)
-    return {"klucz": nazwa, "s": s, "status": status}
-
-
-def _krok_skilla(klucz: str, katalog: Katalog) -> tuple[dict[str, object], list[dict[str, object]]]:
-    """Krok skilla albo część ``#k/n`` skryptu mutacji; wynik zgłasza pod kluczem całego kroku, jak udział pliku testów,
-    a obok jego ostrzeżenia ``CZAS BLISKO LIMITU`` (``mutacje.NearLimit``) pod tym samym kluczem."""
-
-    nazwa, _, czesc = klucz.partition("#")
-    print(f"== {klucz}", flush=True)
-    start = time.monotonic()
-    try:
-        krok = katalog.krok(nazwa)
-    except KeyError:
-        wynik = mutacje_skilli.Wynik("planu nie ma wśród kroków skilli")
-    else:
-        wynik = mutacje_skilli.run(krok, env={mutacje.PART: czesc} if czesc else None)
-    s = round(time.monotonic() - start, 1)
-    print(f"OK   {klucz} ({s:.0f} s)" if wynik.powod is None else f"FAIL {klucz} ({s:.0f} s): {wynik.powod}", flush=True)
-    blisko = [{"klucz": nazwa, **asdict(ostrzezenie)} for ostrzezenie in wynik.blisko_limitu]
-    return {"klucz": nazwa, "s": s, "status": "ok" if wynik.powod is None else "fail"}, blisko
-
-
-def _krok_pytest(plan: Plan, zadanie: Zadanie, pliki: Mapping[str, list[tuple[int, int]]]) -> dict[str, object]:
-    """Pytest zadania z limitem ``limit_pytest_s``; na pull request po porażce raz same testy, które padły. Potem wynik
-    testów z kwarantanny."""
-
-    start, limit = time.monotonic(), limit_pytest_s(zadanie)
-    # Linia limitu mówi, że krok przerwał limit, a nie porażka testu, i gdzie szukać miejsca zawieszenia.
-    po_limicie = (
-        f" ({ZAPAS_PYTEST:.0f} × ściana zadania {zadanie.sciana_s:.0f} s z planu, najmniej {LIMIT_PYTEST_MIN_S} s): to nie porażka testu, tylko"
-        " test albo proces, który się zawiesił; test, który wisiał ponad faulthandler_timeout z pyproject.toml, zostawił wyżej"
-        " stosy swoich wątków, a zawieszenie przy imporcie albo zbieraniu testów stosów nie zostawia"
-    )
-    status = _uruchom("krok:pytest", [(_pytest(pliki), limit)], po_limicie)["status"]
-    if status != "ok" and plan.zdarzenie is Zdarzenie.PULL_REQUEST and (testy := niestabilne_testy.padniete(JUNIT)):
-        if len(testy) > PONOWIENIE_NAJWIECEJ:
-            print(f"PONOWIENIE | bez ponowienia: padło {len(testy)} testów, a flaky testy to najwyżej {PONOWIENIE_NAJWIECEJ}", flush=True)
-        elif obce := [test for test in testy if not niestabilne_testy.zgloszalny(test)]:
-            print(f"PONOWIENIE | bez ponowienia: id testu, którego nie da się zgłosić w issue: {', '.join(obce)}", flush=True)
-        elif _ponow(zadanie, testy):
-            status = "ok"
-    sha, proba = os.environ.get("GITHUB_SHA", ""), int(os.environ.get("GITHUB_RUN_ATTEMPT", "0"))
-    niestabilne_testy.zapisz_kwarantanne(ZapisKwarantanny(zadanie.id, proba, sha, niestabilne_testy.wyniki_kwarantanny(JUNIT)))
-    return {"klucz": "krok:pytest", "s": round(time.monotonic() - start, 1), "status": status}
-
-
-def _ponow(zadanie: Zadanie, testy: Sequence[str]) -> bool:
-    """Testy, które padły, raz jeszcze w jednym procesie; przejście każdego to flaky test w ``niestabilne_testy.FLAKY_TESTY``."""
-
-    polecenie = (sys.executable, "-m", "pytest", "-p", "no:cacheprovider", *testy, "--junitxml", str(PONOWIENIE))
-    if _uruchom("ponowienie", [(polecenie, PONOWIENIE_LIMIT_S)])["status"] != "ok" or not niestabilne_testy.po_ponowieniu(JUNIT, PONOWIENIE, testy):
-        return False
-    print(f"FLAKY TESTY | przeszły po ponowieniu: {', '.join(testy)}", flush=True)
-    sha, run, proba = os.environ.get("GITHUB_SHA", ""), int(os.environ.get("GITHUB_RUN_ID", "0")), int(os.environ.get("GITHUB_RUN_ATTEMPT", "0"))
-    niestabilne_testy.zapisz_flaky_testy([FlakyTest(test, zadanie.nazwa, sha, run, proba) for test in testy])
-    return True
-
-
-def wykonaj(plan: Plan, zadanie_id: str) -> int:
-    """Pytest z plikami i udziałami zadania, potem jego kroki CI i kroki skilli po kolei, także po porażce. Kod 1, gdy
-    coś padło. Zapis ``WYKONANIE`` ma wynik każdej jednostki i ostrzeżenia ``CZAS BLISKO LIMITU`` kroków skilli
-    (``blisko_limitu``), które noc zgłasza w issue PR-u (``tools/mutacje_nocne.py``)."""
-
-    zadanie = next((z for z in plan.zadania if z.id == zadanie_id), None)
-    if zadanie is None:
-        print(f"WYKONANIE FAIL | plan {plan.digest[:12]} nie ma zadania {zadanie_id}")
-        return 1
-    pliki: dict[str, list[tuple[int, int]]] = defaultdict(list)
-    kroki = []
-    skille = []
-    for klucz in zadanie.jednostki:
-        nazwa, _, udzial = klucz.partition("#")
-        if nazwa.startswith("pytest:"):
-            k, _, n = udzial.partition("/")
-            pliki[nazwa.removeprefix("pytest:")] += [(int(k), int(n))] if udzial else []
-        elif nazwa.startswith("skill:"):
-            skille.append(klucz)
-        else:
-            kroki.append(KROKI[nazwa.removeprefix("krok:")])
-    wyniki = [_krok_pytest(plan, zadanie, pliki)] if pliki else []
-    wyniki += [_uruchom(f"krok:{krok.nazwa}", _polecenia(krok)) for krok in kroki]
-    blisko: list[dict[str, object]] = []
-    if skille:
-        # Po kolei: mutacje kilku skilli naraz na czterech rdzeniach runnera przekraczają swoje limity czasu.
-        katalog = Katalog.skanuj(ROOT)
-        for klucz in skille:
-            wynik, ostrzezenia = _krok_skilla(klucz, katalog)
-            wyniki.append(wynik)
-            blisko += ostrzezenia
-    WYKONANIE.parent.mkdir(parents=True, exist_ok=True)
-    zapis = {"plan": plan.digest, "zadanie": zadanie.id, "jednostki": wyniki, "blisko_limitu": blisko}
-    WYKONANIE.write_text(json.dumps(zapis, indent=1), encoding="utf-8")
-    padly = [str(wynik["klucz"]) for wynik in wyniki if wynik["status"] != "ok"]
-    print(f"WYKONANIE FAIL | {', '.join(padly)}" if padly else f"WYKONANIE OK | {zadanie.nazwa}")
-    return 1 if padly else 0
-
-
-# --- Required ---
-
-
-def werdykt(plan: Plan | None, wyniki_zadan: Mapping[str, str], zapisy: Sequence[czasy_ci.Zapis], *, brak_planu: str = "") -> list[str]:
-    """Przyczyny czerwonego Required; pusta lista to zielony."""
-
-    przyczyny = []
-    if plan is None:
-        przyczyny.append(f"plan CI: {brak_planu or 'brak planu'}; zadania pytest i Mutation checks nie miały pracy")
-    uruchomione = {} if plan is None else {szablon: False for szablon in Z_PLANU}
-    if plan is not None:
-        tory = {tor.nazwa: tor.szablon for tor in (*TORY, MUTACJE)}
-        uruchomione |= {tory[zadanie.tor]: True for zadanie in plan.zadania}
-    for nazwa, wynik in wyniki_zadan.items():
-        if wynik != "success" and not (wynik == "skipped" and uruchomione.get(nazwa) is False):
-            przyczyny.append(f"{nazwa}={wynik}")
-    if plan is None:
-        return przyczyny
-    przyczyny += [f"mutacje skilli: {blad}" for blad in plan.bledy]
-    przyczyny += _niepelne_czesci(plan)
-    ostatnie: dict[str, czasy_ci.Zapis] = {}
-    for zapis in zapisy:
-        if zapis.plan == plan.digest and zapis.zadanie_planu is not None:
-            if zapis.zadanie_planu not in ostatnie or zapis.proba > ostatnie[zapis.zadanie_planu].proba:
-                ostatnie[zapis.zadanie_planu] = zapis
-    for zadanie in plan.zadania:
-        if (ostatni := ostatnie.get(zadanie.id)) is None:
-            przyczyny.append(f"{zadanie.nazwa}: brak zapisu czasów z tego planu, więc nic nie dowodzi, że jego jednostki biegły")
-            continue
-        # Udział pliku i węzeł testu zapis czasów zgłasza jako cały plik (junit zna tylko plik testu).
-        zaplanowane = {klucz.partition("#")[0].partition("::")[0] for klucz in zadanie.jednostki}
-        if brak := sorted(zaplanowane - {jednostka.klucz for jednostka in ostatni.jednostki}):
-            przyczyny.append(f"{zadanie.nazwa}: jednostki bez wyniku: {', '.join(brak)}")
-        # Druga linia obrony, gdyby zadanie z porażką skończyło się sukcesem.
-        if padly := sorted(zaplanowane & {jednostka.klucz for jednostka in ostatni.jednostki if jednostka.status != "ok"}):
-            przyczyny.append(f"{zadanie.nazwa}: jednostki z porażką: {', '.join(padly)}")
-    return przyczyny
-
-
-def _niepelne_czesci(plan: Plan) -> list[str]:
-    """Jednostki podzielone w planie, których części ``#k/n`` z zadań jednego toru nie są dokładnie raz każdą z 1..n."""
-
-    czesci: dict[tuple[str, str], list[str]] = defaultdict(list)
-    for zadanie in plan.zadania:
-        for klucz in zadanie.jednostki:
-            nazwa, _, czesc = klucz.partition("#")
-            if czesc:
-                czesci[(zadanie.tor, nazwa)].append(czesc)
-    przyczyny = []
-    for (tor, nazwa), lista in sorted(czesci.items()):
-        n = lista[0].partition("/")[2]
-        calosc = [f"{k}/{n}" for k in range(1, int(n) + 1)] if n.isdigit() else []
-        if sorted(lista) != sorted(calosc):
-            przyczyny.append(f"plan CI: części {', '.join(sorted(lista))} jednostki {nazwa} na torze {tor} nie są całością 1..{n}")
-    return przyczyny
-
-
-def _werdykt(args: argparse.Namespace) -> int:
-    plan, brak = None, ""
-    try:
-        plan = Plan.z_json(args.plan.read_text(encoding="utf-8"))
-    except (OSError, ValueError, KeyError, TypeError) as error:
-        brak = f"{args.plan.as_posix()} nieczytelny ({error})"
-    zapisy = []
-    for sciezka in sorted(args.zapisy.rglob("*.json")) if args.zapisy.is_dir() else []:
-        try:
-            zapisy.append(czasy_ci.wczytaj(sciezka))
-        except (OSError, ValueError, KeyError, TypeError) as error:
-            print(f"CZASY CI FAIL | {sciezka.name}: {error!r}")
-    wyniki = {zadanie: need["result"] for zadanie, need in json.loads(os.environ["NEEDS"]).items()}
-    if przyczyny := werdykt(plan, wyniki, zapisy, brak_planu=brak):
-        print("\n".join(f"REQUIRED FAIL | {przyczyna}" for przyczyna in przyczyny))
-        return 1
-    assert plan is not None
-    jednostki = sum(len(zadanie.jednostki) for zadanie in plan.zadania)
-    print(f"REQUIRED OK | {len(wyniki)} zadań, {len(plan.zadania)} zadań z planu {plan.digest[:12]}, {jednostki} jednostek")
-    return 0
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     polecenia = parser.add_subparsers(dest="polecenie", required=True)
@@ -626,23 +293,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     plan.add_argument("--czasy", type=Path, help="Katalog artefaktów czasy-ci, pobieranych od nowa (domyślnie .git/czasy-ci).")
     plan.add_argument("--wyjscie", type=Path)
-    wykonanie = polecenia.add_parser("wykonaj", help="Jednostki jednego zadania planu (w zadaniu pytest albo Mutation checks).")
-    wykonanie.add_argument("--plan", type=Path, required=True)
-    wykonanie.add_argument("--zadanie", required=True)
-    sad = polecenia.add_parser("werdykt", help="Required CI status: zadania i jednostki wobec planu (env NEEDS).")
-    sad.add_argument("--plan", type=Path, required=True)
-    sad.add_argument("--zapisy", type=Path, required=True)
-    args = parser.parse_args(argv)
-    if args.polecenie == "plan":
-        return _plan(args)
-    if args.polecenie == "werdykt":
-        return _werdykt(args)
-    try:
-        wczytany = Plan.z_json(args.plan.read_text(encoding="utf-8"))
-    except (OSError, ValueError, KeyError, TypeError) as error:
-        print(f"WYKONANIE FAIL | plan {args.plan.as_posix()}: {error}")
-        return 1
-    return wykonaj(wczytany, args.zadanie)
+    return _plan(parser.parse_args(argv))
 
 
 if __name__ == "__main__":

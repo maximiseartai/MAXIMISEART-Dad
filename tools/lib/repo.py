@@ -35,10 +35,13 @@ REMOTE = "origin"
 MAIN = "main"
 BASE = f"{REMOTE}/{MAIN}"
 TIMEOUT_S = 60.0
+# Push tagu Wydania przechodzi bramę pre-push tylko z tą zmienną równą 1; ustawia ją tylko narzędzie Wydań (ADR 0014).
+RELEASE_OVERRIDE = "MAXIMISEART_WYDANIE"
 
 __all__ = [
     "BASE",
     "MAIN",
+    "RELEASE_OVERRIDE",
     "REMOTE",
     "ROOT",
     "TIMEOUT_S",
