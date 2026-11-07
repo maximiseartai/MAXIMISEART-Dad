@@ -24,7 +24,11 @@ efenix tata codziennie pracuje naprawdę.
 - **Każdy test i każda próba w trakcie budowy biegnie na Atrapie efenix**:
   lokalnej imitacji stron i odpowiedzi efenix z wymyślonymi zleceniami.
   Prawdziwy efenix widzi tylko Uruchomienie procesu taty. Rekonesans na
-  prawdziwym efenix jest wyłącznie do odczytu.
+  prawdziwym efenix jest wyłącznie do odczytu. Okno w procesie na modelu
+  Atrapy efenix (`tests/fixtures/okno_w_procesie.py` na stanie
+  `tools/lib/model_efenix.py`, bez HTTP i przeglądarki) to też test na
+  Atrapie (decyzja Maksa 6.11.2026): że daje to samo co okno przeglądarki na
+  Atrapie, sprawdza kontrakt w `tests/test_atrapa_efenix.py`.
 - **Tempo jest ludzkie:** ok. 20 s na zlecenie, w którym narzędzie coś
   zapisuje w efenix, nie sekundy. Przerwy należą do zapisów (data wykonania,
   Wycena Emmetta, ilość) i do szukania po zleceniu z zapisem (decyzja Maksa

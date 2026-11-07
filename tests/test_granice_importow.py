@@ -10,7 +10,9 @@ bibliotekę spoza standardowej, którą Python ma, przepuszcza.
 
 Model efenix (``tools/lib/model_efenix.py``) importuje tylko bibliotekę standardową, a Atrapa efenix
 (``tests/fixtures/atrapa_efenix.py``) tylko ją i model: z nimi testy i narzędzia porównują Wycenę w efenix, więc nie
-biorą niczego z kodu pod testem (``src``).
+biorą niczego z kodu pod testem (``src``). Okno w procesie (``tests/fixtures/okno_w_procesie.py``) bierze z kodu pod
+testem tylko typy seamu Wyceny w efenix (klasy i aliasy typów z ``efenix_pricing`` i ``efenix_checks``), a decyzje bierze
+z modelu: okno, które wołałoby kod Wyceny, przestałoby być niezależną drugą stroną kontraktu z oknem przeglądarki.
 
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica: import przez ``importlib`` albo ``__import__`` z napisu łapie tylko
@@ -22,8 +24,10 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterator
 from dataclasses import dataclass
+import importlib
 from pathlib import Path
 import sys
+import typing
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 GUARDIAN = SRC / "rozliczenia" / "centrum" / "restart_guardian.py"
@@ -33,6 +37,9 @@ EFENIX_ORACLE = {
     ROOT / "tools" / "lib" / "model_efenix.py": frozenset[str](),
     ROOT / "tests" / "fixtures" / "atrapa_efenix.py": frozenset({"model_efenix"}),
 }
+# Okno w procesie i moduły kodu pod testem, z których bierze tylko typy.
+WINDOW_IN_PROCESS = ROOT / "tests" / "fixtures" / "okno_w_procesie.py"
+WINDOW_SEAM = frozenset({"rozliczenia.efenix_checks", "rozliczenia.efenix_pricing"})
 STDLIB_ONLY = {
     "rozliczenia/__init__.py": "pakiet, który wczytuje każdy moduł poniżej",
     "rozliczenia/centrum/__init__.py": "pakiet, który wczytuje każdy moduł Centrum",
@@ -195,3 +202,35 @@ def test_model_i_atrapa_efenix_nie_importuja_kodu_pod_testem() -> None:
             "niczego z kodu pod testem. Napisz potrzebny kod w modelu albo w Atrapie.",
         ]
     )
+
+
+def test_okno_w_procesie_bierze_z_kodu_pod_testem_tylko_typy_seamu() -> None:
+    found = []
+    for node in ast.walk(ast.parse(WINDOW_IN_PROCESS.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Import):
+            found += [ast.unparse(node) for alias in node.names if not _is_stdlib(alias.name)]
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if node.level or not (_is_stdlib(module) or module == "model_efenix" or module in WINDOW_SEAM):
+                found.append(ast.unparse(node))
+            elif module in WINDOW_SEAM:
+                imported = importlib.import_module(module)
+                found += [
+                    f"{module}.{alias.name}"
+                    for alias in node.names
+                    if not _is_type(getattr(imported, alias.name))
+                ]
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            "Okno w procesie (tests/fixtures/okno_w_procesie.py) bierze z rozliczenia tylko klasy i aliasy typów z "
+            "efenix_pricing i efenix_checks, a decyzje z modelu efenix (tools/lib/model_efenix.py).",
+        ]
+    )
+
+
+def _is_type(value: object) -> bool:
+    """Klasa (także wyliczenie i wyjątek) albo alias typu (``Callable[...]``, unia)."""
+
+    return isinstance(value, type) or typing.get_origin(value) is not None
