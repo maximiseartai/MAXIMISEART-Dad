@@ -193,7 +193,11 @@ class Hunk:
 
 
 def _git(root: Path, *arguments: str, errors: str = "strict") -> str:
-    return subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True, encoding="utf-8", errors=errors, check=True).stdout
+    """Wyjście gita z liniami, jak liczy je git: bez ``text=True``, które zamienia samotne ``\\r`` w treści pliku na koniec
+    linii, i ze ścieżkami spoza ASCII niecytowanymi (``core.quotePath``), żeby ``_code`` i ``root / path`` je rozpoznały."""
+
+    done = subprocess.run(["git", "-c", "core.quotePath=false", *arguments], cwd=root, capture_output=True, check=True)
+    return done.stdout.decode("utf-8", errors)
 
 
 def _short(text: str, limit: int = 60) -> str:

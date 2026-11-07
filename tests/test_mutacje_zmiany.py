@@ -858,6 +858,36 @@ def test_zmiana_pliku_spoza_src_i_tools_w_kodowaniu_innym_niz_utf8_nie_przerywa_
     assert {path: [hunk.start for hunk in hunks] for path, hunks in zakres.fragmenty.items()} == {"src/pakiet/a.py": [2]}
 
 
+def test_samotne_cr_w_pliku_spoza_kodu_przed_tekstem_w_ksztalcie_naglowka_nie_chowa_zmiany_pliku_kodu(tmp_path: Path) -> None:
+    """Git kończy linię tylko na ``\\n``: samotne ``\\r`` to znak w linii pliku tekstowego, a nie początek nowej linii diffu."""
+
+    repo = repository(tmp_path / "repo", {"tools/a.txt": "x\n", "tools/b.py": FUNKCJA})
+    base = commit(repo, "baza")
+    (repo / "tools" / "a.txt").write_bytes(b"x\r@@ -1 +1,40 @@\n")
+    (repo / "tools" / "b.py").write_text(FUNKCJA.replace("x > 1", "x > 2"), encoding="utf-8")
+    commit(repo, "cr w pliku tekstowym")
+
+    zakres = ZakresMutacji.od(base, repo)
+
+    assert {path: [(hunk.start, hunk.count) for hunk in hunks] for path, hunks in zakres.fragmenty.items()} == {"tools/b.py": [(2, 1)]}
+
+
+def test_plik_kodu_z_polska_litera_w_nazwie_dostaje_fragmenty_zacommitowany_i_niesledzony(tmp_path: Path) -> None:
+    repo = repository(tmp_path / "repo", {"tools/żółw.py": FUNKCJA})
+    base = commit(repo, "baza")
+    (repo / "tools" / "żółw.py").write_text(FUNKCJA.replace("x > 1", "x > 2"), encoding="utf-8")
+    commit(repo, "zmiana żółwia")
+    (repo / "src").mkdir()
+    (repo / "src" / "źdźbło.py").write_text(FUNKCJA, encoding="utf-8")
+
+    zakres = ZakresMutacji.od(base, repo)
+
+    assert {path: [(hunk.start, hunk.count) for hunk in hunks] for path, hunks in zakres.fragmenty.items()} == {
+        "tools/żółw.py": [(2, 1)],
+        "src/źdźbło.py": [(1, 2)],
+    }
+
+
 def test_plik_bez_zaleznych_testow_konczy_sie_fail(tmp_path: Path) -> None:
     repo = _repo(tmp_path, "def test_nic() -> None:\n    pass\n")
 
