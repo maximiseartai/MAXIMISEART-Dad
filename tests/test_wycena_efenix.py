@@ -1282,6 +1282,49 @@ def test_karta_zamknieta_w_trakcie_nawigacji_okna_to_zamkniete_okno_takze_gdy_bl
     )
 
 
+@pytest.mark.parametrize(
+    ("closed", "error_answer", "code"),
+    [
+        pytest.param(True, None, "EFENIX_OKNO_ZAMKNIETE", id="karta-zamknieta-przy-przeladowaniu"),
+        pytest.param(False, (LOAD_EMMETT, 1, HTTPStatus.INTERNAL_SERVER_ERROR), "EFENIX_OKNO_ZATRZYMANE", id="strona-bledu-serwera"),
+    ],
+)
+def test_zatrzymanie_w_zaladuj_do_zlecenia_zlecenia_z_data_wykonania_mowi_o_zmianie_w_efenix(
+    tmp_path: Path, page: Page, closed: bool, error_answer: tuple[str, int, HTTPStatus] | None, code: str
+) -> None:
+    """Zlecenie ma już datę wykonania, więc „Załaduj do zlecenia” to jego pierwszy zapis, a okno staje w tym samym
+    działaniu: tata zamyka kartę w trakcie przeładowania po nim albo efenix odpowiada na nie stroną błędu serwera. W
+    śladzie zleceń nie ma jeszcze żadnego zapisu, a efenix mógł już załadować Wycenę Emmetta, więc Komunikat mówi, że
+    wycena sprzed Zatrzymania została w efenix (przegląd #1028)."""
+
+    order = Order("#9721", cells={"O": 1}, amount=_au({"012": 1}), emmett={"012": 1})
+    with atrapa_efenix([replace(order.in_efenix("972"), execution_date=DAY)], error_answer=error_answer) as atrapa:
+        window = cast(Page, _CloseReportedLate(page, ORDER_PAGE, 2)) if closed else page
+        outcome = _price(tmp_path, window, atrapa.url, [order])
+
+    assert (_stop(outcome), _kept(outcome)) == (code, True)
+
+
+def test_komunikat_zamknietego_okna_mowi_o_zmianie_w_efenix_z_kazdego_zlecenia_przed_nim_nie_tylko_z_ostatniego(
+    tmp_path: Path, page: Page
+) -> None:
+    """Pierwsze zlecenie dostaje Wycenę Emmetta, drugie ma już wycenę zgodną z plikiem i kończy się bez zapisu, a tata
+    zamyka kartę tuż przed szukaniem trzeciego (działanie 6). Komunikat mówi, że wycena sprzed Zatrzymania została w
+    efenix, bo jest w niej zapis pierwszego zlecenia, choć ostatnie gotowe nic nie zapisało (przegląd #1028)."""
+
+    orders = [
+        Order("#9731", day=date(2026, 9, 3), cells={"O": 1}, amount=_au({"012": 1}), emmett={"012": 1}),
+        Order("#9732", day=date(2026, 9, 4), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),
+        Order("#9733", day=date(2026, 9, 5), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),
+    ]
+    source = write_collective_file(tmp_path, orders)
+    in_efenix = [replace(orders[0].in_efenix("973"), execution_date=orders[0].day), *(order.in_efenix(f"97{index}") for index, order in enumerate(orders[1:], 4))]
+    with atrapa_efenix(in_efenix) as atrapa:
+        outcome = _run(source, page, atrapa.url, window=lambda efenix: _ClosingBeforeAction(efenix, page, 6))
+
+    assert (_stop(outcome), _kept(outcome), _marked(source)) == ("EFENIX_OKNO_ZAMKNIETE", True, [18, 19])
+
+
 def test_cala_przegladarka_zamknieta_w_trakcie_otwierania_strony_zlecenia_to_zamkniete_okno(tmp_path: Path) -> None:
     """Tata zamyka całą przeglądarkę, a nie kartę, gdy okno otwiera stronę zlecenia: pytanie przeglądarki, czy karta jest
     zamknięta (``BrowserEfenix.closed``), kończy się wtedy błędem, a Zatrzymanie to i tak zamknięte okno z Komunikatem
