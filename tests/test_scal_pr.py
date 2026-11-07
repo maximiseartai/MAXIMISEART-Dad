@@ -1208,6 +1208,22 @@ def test_przeglad_oznacza_pass_dla_head_poza_regulami_werdyktu(tmp_path: Path) -
     ]
 
 
+REAL_SKILLS_FOR_CHANGE = (
+    "tools/skille_dla_zmiany.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/ci/mutacje_skilli.py", "tools/plan_ci.py", "tools/lib/niestabilne_testy.py", "tools/mutacje_zmiany.py",
+    "tools/ci/pokrycie_procesu.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py",
+)
+
+
+def test_przeglad_z_prawdziwym_skille_dla_zmiany_z_head_pr_podaje_skille_zmiany_od_merge_base(tmp_path: Path) -> None:
+    github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM, ".agents/skills/verify-kod/SKILL.md": "---\nname: verify-kod\ndescription: kod\npilnuje:\n  - kod/*\n---\n"})
+    github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n", **{name: (TOOLS.parent / name).read_text(encoding="utf-8") for name in REAL_SKILLS_FOR_CHANGE}})
+
+    answered = github.run("1", "--przeglad")
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _lines(answered, "SKILLE VERIFY") == ["SKILLE VERIFY: verify-kod"]
+
+
 def test_przeglad_nie_czeka_dluzej_niz_limit_na_skille_dla_zmiany(tmp_path: Path) -> None:
     github = FakeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/skille_dla_zmiany.py": "import time\n\ntime.sleep(60)\n"})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})

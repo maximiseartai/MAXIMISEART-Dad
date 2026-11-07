@@ -267,14 +267,29 @@ def test_zmiana_runnera_mutacji_nie_wskazuje_skilla_choc_noc_uruchamia_jego_skry
     assert _run(tmp_path, base).stdout.splitlines() == [f"{VERDICT}brak"]
 
 
-def test_baza_ktorej_nie_ma_daje_nieznane_skille_i_kod_bledu(tmp_path: Path) -> None:
-    _repo(tmp_path)
+@pytest.mark.parametrize("argv", [["nie-ma-takiej-bazy"], [""], ["--baza", ""]], ids=["nieznana", "pusta-pozycyjna", "pusta-opcja"])
+def test_baza_ktorej_nie_ma_albo_pusta_mimo_istniejacej_domyslnej_daje_nieznane_skille_i_kod_bledu(tmp_path: Path, argv: list[str]) -> None:
+    git(tmp_path, "update-ref", "refs/remotes/origin/main", _repo(tmp_path))
 
-    result = _run(tmp_path, "nie-ma-takiej-bazy")
+    result = _run(tmp_path, *argv)
 
     assert result.returncode == 1
     assert result.stdout.splitlines()[-1].startswith(f"{VERDICT}nieznane (git merge-base: ")
-    assert "nie-ma-takiej-bazy" in result.stdout
+    assert argv[-1] in result.stdout
+
+
+def test_baza_z_opcja_baza_i_pozycyjna_daje_ten_sam_wynik_a_dwie_rozne_to_blad_uzycia(tmp_path: Path) -> None:
+    base = _repo(tmp_path)
+    _append(tmp_path, "docs/b.md")
+    commit(tmp_path, "zmiana")
+
+    forms = [[base], ["--baza", base], [f"--baza={base}"], ["--baza", base, base]]
+    conflict = _run(tmp_path, "--baza", base, "HEAD")
+
+    assert [_run(tmp_path, *form).stdout for form in forms] == [_run(tmp_path, base).stdout] * len(forms)
+    assert _skills(_run(tmp_path, "--baza", base)) == ["verify-b"]
+    assert conflict.returncode == 2
+    assert f"dwie różne bazy: --baza {base} i HEAD" in conflict.stderr
 
 
 def _load_tool(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
