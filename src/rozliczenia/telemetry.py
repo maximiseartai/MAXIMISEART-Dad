@@ -13,7 +13,7 @@ from typing import Any, Literal, TypedDict, get_args
 
 from .domain import PHASES, ProgressPhase, StopKind
 from .settlement_period import PERIOD_TOKEN_PATTERN
-from .template_file import Route, RouteCounts, TemplateKind
+from .write_routes import Route, RouteCounts, TemplateKind
 
 
 # Wersja 2 dodaje ``stop``: Rodzaj Zatrzymania i kod Komunikatu przerwanego Uruchomienia procesu.

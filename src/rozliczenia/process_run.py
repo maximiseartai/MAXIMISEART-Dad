@@ -30,7 +30,7 @@ from .domain import ProgressEvent, ProgressObserver, ProgressPhase, StopKind
 from .message import Message, StopError
 from .progress import PhaseState, ProgressProjection, ProgressSnapshot
 from .telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
-from .template_file import RouteCounts
+from .write_routes import RouteCounts
 
 __all__ = [
     "Finished",

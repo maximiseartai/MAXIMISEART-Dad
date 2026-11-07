@@ -183,7 +183,8 @@ from rozliczenia.centrum.version import commit_since, tool_commit
 from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.preparation_register import RegisterRead
 from rozliczenia.settlement_period import SettlementPeriod
-from rozliczenia.template_file import Route, TemplateFile
+from rozliczenia.template_file import TemplateFile
+from rozliczenia.write_routes import Route
 from rozliczenia.workbook_files import DataRow, RegisterRow
 from skrypt_skilla import Parser
 from tests.fixtures.atrapa_efenix import amount_of, atrapa_efenix

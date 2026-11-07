@@ -10,7 +10,7 @@ import pytest
 
 from rozliczenia import preparation_process, settlement_process
 from rozliczenia.telemetry import MetricsStore, metric_record
-from rozliczenia.template_file import Route, TemplateKind
+from rozliczenia.write_routes import Route, TemplateKind
 from tests.fixtures.message_samples import PREPARATION_SAMPLES, SETTLEMENT_SAMPLES, Samples
 from tests.fixtures.preparation import PERIOD
 

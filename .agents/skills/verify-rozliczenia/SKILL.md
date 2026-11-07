@@ -33,6 +33,7 @@ pilnuje:
   - src/rozliczenia/template_*.py
   - src/rozliczenia/workbook_*.py
   - src/rozliczenia/worker_config.py
+  - src/rozliczenia/write_routes.py
   - tests/fixtures/intermax.py
   - tools/uruchom_proces.py
 ci: .agents/skills/verify-rozliczenia/scripts/quantity_rules_conformance.py

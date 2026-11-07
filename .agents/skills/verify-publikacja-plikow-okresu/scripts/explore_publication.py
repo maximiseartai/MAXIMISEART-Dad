@@ -51,7 +51,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 from rozliczenia import preparation_files
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.settlement_period import parse_period_token
-from rozliczenia.template_file import Route, TemplateFile, TemplateKind
+from rozliczenia.template_file import TemplateFile
+from rozliczenia.write_routes import Route, TemplateKind
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 

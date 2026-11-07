@@ -22,9 +22,10 @@ from .message import StopError
 from .period_folder import PeriodFolder
 from .preparation_plan import CollectiveRow, PeriodOrder
 from .quantity_rules import FromDescription, WithoutRule
-from .template_file import Route, RouteCounts, TemplateFile, TemplateKind
+from .template_file import TemplateFile
 from .workbook_files import RegisterRow, WorkbookError
 from .workbook_save import WorkbookSaveError
+from .write_routes import Route, RouteCounts, TemplateKind
 
 
 @dataclass(frozen=True)

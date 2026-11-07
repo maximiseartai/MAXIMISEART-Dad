@@ -15,11 +15,10 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from contextlib import AbstractContextManager, suppress
 from copy import copy
 from dataclasses import dataclass
-from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
-from typing import Never, TypeAlias, cast
+from typing import Never, cast
 from xml.parsers import expat
 
 from openpyxl.cell.cell import Cell, MergedCell
@@ -62,28 +61,10 @@ from .workbook_files import (
 from .workbook_parts import package_parts, sheet_part
 from .workbook_save import SaveProblem, WorkbookSaveError, save_from_template, write_atomically
 from .worker_config import normalize_text
+from .write_routes import Route, TemplateKind
 
 
 _INTERNAL_LOOK_COLUMNS = range(1, 14)  # A:M Rozliczenia wewnętrznego, z ``zwrot`` i ``UWAGI``
-
-
-class Route(Enum):
-    """Droga, którą powstał plik z Wzorca (ADR 0008); oba dają ten sam plik, a kopia jest szybsza."""
-
-    COPY = "kopia"
-    OPENPYXL = "openpyxl"
-
-
-class TemplateKind(Enum):
-    """Plik, który powstaje z Wzorca, nazwany jak konstruktor ``TemplateFile``."""
-
-    WORKER_SETTLEMENT = "worker_settlement"
-    COLLECTIVE_FILE = "collective_file"
-    INTERNAL_SETTLEMENT = "internal_settlement"
-
-
-RouteCounts: TypeAlias = "Mapping[tuple[TemplateKind, Route], int]"
-"""Drogi zapisu: ile plików każdego rodzaju powstało każdą drogą; para bez plików może nie mieć wpisu."""
 
 
 @dataclass(frozen=True)
