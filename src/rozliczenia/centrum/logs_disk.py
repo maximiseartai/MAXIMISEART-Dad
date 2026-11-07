@@ -69,9 +69,7 @@ from rozliczenia.centrum.run_logs import (
     OrderDone,
     PricingProgress,
     RunLog,
-    StartedFacts,
     StartFacts,
-    logs_file_name,
 )
 from rozliczenia.efenix_pricing import OrderResult
 from rozliczenia.message import Message
@@ -89,10 +87,11 @@ _NAME: Final = re.compile(
 T = TypeVar("T")
 
 
-def name_of(start: StartedFacts) -> str:
-    """Nazwa pliku Logów Uruchomienia ``start``: ``20261023T140507Z-settlement-<run_id>.json``."""
+def name_of(start: StartFacts) -> str:
+    """Nazwa pliku Logów Uruchomienia ``start`` (Logi dają swój przez ``RunLog.start``):
+    ``20261023T140507Z-settlement-<run_id>.json``, sekunda startu w UTC, klucz procesu i identyfikator Uruchomienia."""
 
-    return logs_file_name(start.started_at, start.process, start.run_id)
+    return f"{start.started_at:%Y%m%dT%H%M%SZ}-{start.process}-{start.run_id}.json"
 
 
 @dataclass(frozen=True)
@@ -489,7 +488,7 @@ class LogsOnDisk:
 
         if not isinstance(logs, GuardedLogs):
             raise TypeError("Plik Logów bierze tylko Logi po strażniku z guard_logs.")
-        replace_atomically(self._logs / logs.record.file_name, logs.text, newline="")
+        replace_atomically(self._logs / name_of(logs.record.start), logs.text, newline="")
 
     def last_start(self) -> StartFacts | None:
         """Ostatni start Uruchomienia przed tą pracą Centrum; ``None``: żadnego albo pliku nie da się odczytać."""

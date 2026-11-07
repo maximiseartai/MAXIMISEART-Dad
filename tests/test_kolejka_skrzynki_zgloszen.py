@@ -734,7 +734,7 @@ def run_logs(
     version: str, count: int, *, header: str | None = "Logi Uruchomień okresu.", run_id: str = RUN_ID
 ) -> Post:
     """Logi Uruchomienia ``run_id`` w ``count`` częściach; ``version`` mówi, po której Diagnozie, a każda Diagnoza
-    kolejkuje nowszą wersję tej samej wysyłki (``RunLogs.diagnosed``)."""
+    kolejkuje nowszą wersję tej samej wysyłki (``RunComments.diagnosed``)."""
 
     parts = tuple(f"Logi {version}, część {number}/{count}\n" for number in range(1, count + 1))
     return Post(LOGS, "08_14_09_2026", run_id, header, parts)
@@ -777,7 +777,7 @@ def test_logi_sprzed_diagnozy_ktore_dojda_po_logach_z_diagnoza_do_issue_okresu_i
 ) -> None:
     # Zwykły przypadek u taty: issue okresu założyło wcześniejsze Uruchomienie, więc znacznik nowszej wersji Logów tego
     # Uruchomienia stoi tylko w jego komentarzach. Starsza wersja dochodzi po nowszej (plik raz trzyma OneDrive) i nie
-    # zmienia ani komentarzy, ani adresu Logów Uruchomienia, który pokazuje podgląd Zgłoszenia (``RunLogs.link``).
+    # zmienia ani komentarzy, ani adresu Logów Uruchomienia, który pokazuje podgląd Zgłoszenia (``RunComments.link``).
     queue = Queue(tmp_path, FakeReportBox())
     queue.outbox.post(run_logs("wcześniejszego Uruchomienia", 1, run_id=NEXT_RUN_IDS[0]))
     queue.passed()

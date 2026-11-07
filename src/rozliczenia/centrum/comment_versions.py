@@ -23,8 +23,8 @@ Wersję zastępczą z dziennika, który zostawiła poprzednia praca Centrum, wyb
 ``match``, ze strażnikiem w środku, więc start Centrum (``run_comments.RunComments``) dostaje tylko wersję po strażniku.
 
 Typy Logów bierze z ``run_logs`` do adnotacji i, importem w funkcji, do ``isinstance`` w konstruktorach wersji i do
-strażnika w ``close``, a typy odczytu dysku z ``logs_disk`` też w funkcji: przy wczytaniu moduł bierze tylko nazwy bez
-I/O (``tests/test_granice_importow.py``).
+strażnika w ``close``, a typy odczytu dysku i nazwę pliku Logów (``name_of``) z ``logs_disk`` też w funkcji: przy
+wczytaniu moduł bierze tylko nazwy bez I/O (``tests/test_granice_importow.py``).
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ if TYPE_CHECKING:
         LoggedMessage,
         PricingProgress,
         RunLog,
-        StartedFacts,
+        StartFacts,
     )
     from rozliczenia.client_data import ForbiddenValues
 
@@ -236,13 +236,13 @@ def post_of(version: CommentVersion) -> Post:
     komentarz postępu w podsumowanie (``outbox``).
     """
 
-    start: StartedFacts
+    start: StartFacts
     match version:
         case ProgressVersion(progress=progress, text=text):
             start, comment, archive = progress.started, text.text, None
         case OwnLogs(logs=logs) | StandInLogs(logs=logs):
             record = logs.record
-            start, comment, archive = record, summary_markdown(record), _archive_file(record)
+            start, comment, archive = record.start, summary_markdown(record), _archive_file(record)
         case WithoutLogsVersion(final=final, text=text):
             start, comment, archive = final.journal.started, text.text, None
         case _:
@@ -306,7 +306,7 @@ def without_logs_markdown(final: ResultWithoutLogs) -> str:
     return _comment_title(started) + "\n".join(lines)
 
 
-def _comment_title(started: StartedFacts) -> str:
+def _comment_title(started: StartFacts) -> str:
     return f"**Logi Uruchomienia**: {declaration_of(started.process).title}, {started.mode}, okres {started.period}\n\n"
 
 
@@ -323,6 +323,8 @@ def _orders_done(progress: PricingProgress) -> str | None:
 def _archive_file(record: RunLog) -> ArchiveFile:
     """Pełne Logi w Archiwum Logów okresu: Release z tagiem ``logi-<okres>``, plik o nazwie i treści pliku Logów."""
 
+    from rozliczenia.centrum.logs_disk import name_of
+
     period = record.period
     return ArchiveFile(
         tag=f"logi-{period}",
@@ -331,7 +333,7 @@ def _archive_file(record: RunLog) -> ArchiveFile:
             f"Pełne Logi Uruchomień okresu {period} z Centrum rozliczeń taty: jeden plik na Uruchomienie, nazwany jak "
             "plik Logów na komputerze taty i spakowany gzipem. To nie jest Wydanie narzędzia."
         ),
-        name=record.file_name,
+        name=name_of(record.start),
         text=record.text,
     )
 

@@ -82,14 +82,17 @@ PURE_VERSIONS = {
             "LoggedMessage",
             "PricingProgress",
             "RunLog",
-            "StartedFacts",
+            "StartFacts",
             # strażnik reguły danych: liczy na pamięci ForbiddenValues, bez plików
             "guard_logs",
             "guard_text",
         }
     ),
-    # odczyt dysku, który start Centrum podaje macierzy close, jako wartość: typy bez metod, które czytają pliki
-    "rozliczenia.centrum.logs_disk": frozenset({"Found", "JournalRead", "LeftJournal", "Missing", "Refused", "Unreadable"}),
+    # odczyt dysku, który start Centrum podaje macierzy close, jako wartość: typy bez metod, które czytają pliki, i nazwa
+    # pliku Logów w Archiwum Logów okresu (name_of liczy ją z faktów startu, bez plików)
+    "rozliczenia.centrum.logs_disk": frozenset(
+        {"Found", "JournalRead", "LeftJournal", "Missing", "Refused", "Unreadable", "name_of"}
+    ),
     "rozliczenia.client_data": frozenset({"ForbiddenValues"}),
 }
 RUN_LOGS = "rozliczenia/centrum/run_logs.py"

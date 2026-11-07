@@ -411,7 +411,7 @@ def on_disk(directory: Path) -> LogsOnDisk:
 def written(directory: Path, record: RunLog, name: str | None = None) -> Path:
     """Plik Logów ``record`` w katalogu Logów pod nazwą z jego startu albo pod ``name``."""
 
-    path = directory / "uruchomienia" / (name or name_of(record))
+    path = directory / "uruchomienia" / (name or name_of(record.start))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(record.text, encoding="utf-8")
     return path
@@ -426,7 +426,7 @@ def test_nazwa_pliku_logow_to_sekunda_startu_w_utc_proces_i_identyfikator_a_dysk
     record = interrupted_logs(started)
     written(tmp_path, record)
     later = interrupted_logs(start("f" * 32, started_at=SECOND + timedelta(hours=1)))
-    written(tmp_path, later, name_of(later) + ".tmp")
+    written(tmp_path, later, name_of(later.start) + ".tmp")
     disk = on_disk(tmp_path)
 
     assert name_of(started) == f"20261023T140507Z-efenix-{RUN_ID}.json"

@@ -36,7 +36,7 @@
       {
         "obietnica": "BezUrwanychPoWyniku",
         "przyczyna": "wpis-konca-nieudany",
-        "znalezisko": "wpis końca zawodzi (OSError), więc dziennik zostaje bez niego, a start nie ma pliku Logów z wynikiem (Centrum zgasło przed nim albo jego zapis zawiódł) i nie ma od kogo wiedzieć, że Wycena doszła do wyniku: zamyka dziennik jako Logi Urwanego Uruchomienia; tylko gdy kolejka nie przyjęła Logów z wynikiem (JournalAfterLogs nie usunął dziennika: zgaśnięcie przed nim albo Outbox.post False), bo inaczej są one wersją wyższego stopnia i Logi Urwanego Uruchomienia niczego w kolejce ani w Skrzynce nie zmieniają; tak samo, gdy żaden wpis się nie zapisał, a nieudany zapis zostawił pierwszą linię, i zawodzi tylko usunięcie dziennika (przyjęte w #870/#871, w #910 zamiast komentarza „Uruchomienie trwa” na zawsze)"
+        "znalezisko": "wpis końca zawodzi (OSError), więc dziennik zostaje bez niego, a start nie ma pliku Logów z wynikiem (Centrum zgasło przed nim albo jego zapis zawiódł) i nie ma od kogo wiedzieć, że Wycena doszła do wyniku: zamyka dziennik jako Logi Urwanego Uruchomienia; tylko gdy kolejka nie przyjęła Logów z wynikiem (RunComments.run_ended nie usunął dziennika: zgaśnięcie przed usunięciem albo Outbox.post False), bo inaczej są one wersją wyższego stopnia i Logi Urwanego Uruchomienia niczego w kolejce ani w Skrzynce nie zmieniają; tak samo, gdy żaden wpis się nie zapisał, a nieudany zapis zostawił pierwszą linię, i zawodzi tylko usunięcie dziennika (przyjęte w #870/#871, w #910 zamiast komentarza „Uruchomienie trwa” na zawsze)"
       },
       {
         "obietnica": "ZaczeteWLogach",
