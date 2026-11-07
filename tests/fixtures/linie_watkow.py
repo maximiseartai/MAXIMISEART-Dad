@@ -27,6 +27,9 @@ _LINE_STARTS: weakref.WeakKeyDictionary[threading.Thread, int] = weakref.WeakKey
 _LINE_STARTS_LOCK = threading.Lock()
 _STARTS = itertools.count()
 _thread_start = threading.Thread.start
+# pytest-timeout bez sygnałów (Windows) mierzy każdy test wątkiem-timerem o tej nazwie, uruchomionym w wątku testu: to
+# wątek pytest, nie Centrum, i żyje do końca testu, także w teardownie modułu, który sprawdza linie (#1080).
+PYTEST_TIMEOUT_THREAD = "pytest_timeout "
 
 
 # Linia wątku, który wysłał żądanie przez wspólną pętlę ``TestClient``: obsługa żądania biegnie w wątku tej pętli albo
@@ -51,7 +54,7 @@ def _start_in_line(self: threading.Thread) -> None:
     """
 
     with _LINE_STARTS_LOCK:
-        if not isinstance(self, WorkerThread):
+        if not isinstance(self, WorkerThread) and not self.name.startswith(PYTEST_TIMEOUT_THREAD):
             _LINE_STARTS[self] = _line_of_new_thread()
     _thread_start(self)
 
