@@ -1,19 +1,20 @@
 """Kopia wejścia (#841): Wiersze danych, które Uruchomienie procesu przeczytało z plików taty, i odcisk każdego pliku.
 
-Uruchomienie z Centrum ma swoją Kopię wejścia (``InputCopy``), a czytnik Wierszy danych, który czyta dla niego plik
-taty, oddaje jej bajty, z których czytał plik, zakazane kolumny każdego arkusza i każdy przeczytany wiersz: Rejestr
-zleceń w Przygotowaniu pliku zbiorczego (``input_checks.read_register``), Plik zbiorczy w Przebiegu rozliczeń
+Uruchomienie z Centrum ma swoją Kopię wejścia (``InputCopy``) w uchwycie plików taty (``dad_files.DadFiles``), a
+czytnik, który czyta dla niego plik taty, oddaje jej przez ten uchwyt bajty, z których czytał plik, zakazane kolumny
+każdego arkusza i każdy przeczytany wiersz z jego położeniami (``raw_orders.RowPositions``): Rejestr zleceń w
+Przygotowaniu pliku zbiorczego (``input_checks.read_register``), Plik zbiorczy w Przebiegu rozliczeń
 (``workbook_files.read_data_rows``), w Wycenie w efenix (``workbook_files.read_computed_rows``) i INTERMAX w
 Uporządkowaniu INTERMAX (``intermax_file.Register.read``, #842). Zakazane kolumny to te, których komórki ten sam czytnik
 oddaje pamięci reguły danych (``client_data.ForbiddenValues``). Proces bez Centrum (Skrypt dla maszyn) Kopii nie ma, bo
 nie ma Logów.
 
 W trakcie odczytu Kopia trzyma tylko odwołania do bajtów i wartości, które czytnik i tak ma, i chwilę zmiany pliku,
-którą czytnik bierze przed odczytem bajtów (``modified_at``). Plik po regule danych (``files``) powstaje po końcu
-procesu, zanim karta pokaże wynik: odcisk (rozmiar, chwila zmiany i skrót SHA-256 przeczytanych bajtów) i arkusze z
-kolumnami po nagłówku i wierszami po numerze, bez zakazanych kolumn i bez pustych komórek. Wolny tekst i wartości
-zakazanych kolumn w innych komórkach, także liczby, maskuje strażnik Logów (``run_logs.guard_logs``), jak w każdym innym
-polu Logów.
+którą uchwyt bierze przed odczytem bajtów (``dad_files.DadFiles.read``). Plik po regule danych (``files``) powstaje po
+końcu procesu, zanim karta pokaże wynik: odcisk (rozmiar, chwila zmiany i skrót SHA-256 przeczytanych bajtów) i arkusze
+z kolumnami po nagłówku i wierszami po numerze, bez zakazanych kolumn i bez pustych komórek. Komórki wiersza liczy jedna
+reguła (``SheetCopy.row``). Wolny tekst i wartości zakazanych kolumn w innych komórkach, także liczby, maskuje
+strażnik Logów (``run_logs.guard_logs``), jak w każdym innym polu Logów.
 
 Kopia niesie wartości komórek, bo na nich proces podejmuje decyzje: wynik, Komunikaty i ślad. Wygląd komórek
 (Wyróżnienia, format liczby, Hiperłącza) proces tylko przenosi do plików, które tworzy, więc go nie ma.
@@ -23,13 +24,15 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta
 import hashlib
 from pathlib import Path
 from typing import Literal
 
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.formula import ArrayFormula
+
+from .raw_orders import UNDER_HEADER, RowPositions
 
 TypedKind = Literal["datetime", "time", "timedelta", "other"]
 
@@ -71,9 +74,9 @@ class CopiedSheet:
 
     ``shifted_row``: wiersz, którego komórki czytnik czyta o ``raw_orders.SHIFT`` kolumn na lewo od swojego nagłówka
     (przesunięty pierwszy wiersz wklejenia INTERMAX), a w Kopii stoją pod nim; ``None``: bez takiego wiersza.
-    ``uncertain_rows``: wiersze wklejenia INTERMAX w obu położeniach (ze śladem przesunięcia, ``raw_orders.Shifts.traced``),
-    które mają w Kopii tylko komórki dozwolone przy każdym ich możliwym przesunięciu i datę z godziną spod ``DATA GODZ.
-    POCZ.``, więc brak komórki nie znaczy w nich pustej. ``last_ordered_row`` i ``yellow_row``: ostatni uporządkowany i
+    ``uncertain_rows``: wiersze wklejenia INTERMAX w obu położeniach (``raw_orders.RowPositions.uncertain``), które mają
+    w Kopii tylko komórki dozwolone przy każdym ich możliwym przesunięciu i datę z godziną spod ``DATA GODZ. POCZ.``, więc
+    brak komórki nie znaczy w nich pustej. ``last_ordered_row`` i ``yellow_row``: ostatni uporządkowany i
     żółty wiersz nad wklejeniem INTERMAX (``raw_orders.above_paste``), sam numer, bez treści; ``None``: bez takiego
     wiersza i arkusze innych plików. ``traced_rows``: wiersze ze śladem przesunięcia, które nie są pierwszym wierszem
     bloku wklejenia: łamią fakt domeny, że przesunięty przychodzi tylko pierwszy wklejony wiersz (ADR 0025).
@@ -113,26 +116,25 @@ Values = Sequence[object] | Mapping[int, object]
 
 @dataclass
 class SheetCopy:
-    """Arkusz w trakcie odczytu: nagłówek (numer kolumny → nagłówek), zakazane kolumny (numery od 1), przesunięty
-    wiersz, wiersze w obu położeniach, wiersze nad wklejeniem i wiersze ze śladem przesunięcia (``CopiedSheet``) i
-    odwołania do przeczytanych wierszy."""
+    """Arkusz w trakcie odczytu: nagłówek (numer kolumny → nagłówek), zakazane kolumny (numery od 1), kolumny, które
+    Kopia niesie (``None``: każda), kolumna daty z godziną, wiersze nad wklejeniem (``CopiedSheet``) i odwołania do
+    przeczytanych wierszy z ich położeniami."""
 
     name: str
     header_row: int
     header: Mapping[int, object]
     forbidden: frozenset[int]
-    shifted_row: int | None = None
-    uncertain_rows: tuple[int, ...] = ()
+    copied_columns: frozenset[int] | None = None
+    date_column: int | None = None
     last_ordered_row: int | None = None
     yellow_row: int | None = None
-    traced_rows: tuple[int, ...] = ()
-    _rows: list[tuple[int, Values]] = field(default_factory=list)
+    _rows: list[tuple[int, Values, RowPositions]] = field(default_factory=list)
     _empty: list[int] = field(default_factory=list)
 
-    def row(self, number: int, values: Values) -> None:
-        """Wiersz ``number`` przeczytany z wartościami ``values``."""
+    def row(self, number: int, values: Values, positions: RowPositions = UNDER_HEADER) -> None:
+        """Wiersz ``number`` przeczytany z wartościami ``values`` w położeniach ``positions``; komórki liczy ``copied``."""
 
-        self._rows.append((number, values))
+        self._rows.append((number, values, positions))
 
     def empty_rows(self, numbers: Sequence[int]) -> None:
         """Puste wiersze ``numbers`` z przeczytanego zakresu, które proces liczy (Rejestr zleceń)."""
@@ -145,18 +147,43 @@ class SheetCopy:
             for column, name in sorted(self.header.items())
             if column not in self.forbidden and name is not None and str(name).strip()
         }
+        shifted = [number for number, _, positions in self._rows if positions.read]
+        if len(shifted) > 1:
+            raise ValueError(f"Arkusz {self.name} ma więcej niż jeden przesunięty wiersz: {shifted}")
         return CopiedSheet(
             self.name,
             self.header_row,
             columns,
-            tuple(CopiedRow(number, _cells(values, self.forbidden)) for number, values in self._rows),
+            tuple(CopiedRow(number, self._cells(values, positions)) for number, values, positions in self._rows),
             tuple(self._empty),
-            self.shifted_row,
-            self.uncertain_rows,
+            shifted[0] if shifted else None,
+            tuple(number for number, _, positions in self._rows if positions.uncertain),
             self.last_ordered_row,
             self.yellow_row,
-            self.traced_rows,
+            tuple(number for number, _, positions in self._rows if positions.traced),
         )
+
+    def _cells(self, values: Values, positions: RowPositions) -> dict[str, CellValue]:
+        """Jedyna reguła komórki Kopii (ADR 0025 „Kopia wejścia”): komórka z kolumny c stoi w Kopii pod c +
+        ``positions.read``, gdy w każdym położeniu z ``positions.known`` stoi w kolumnie, którą Kopia niesie, a nie pod
+        zakazanym nagłówkiem. Data z godziną spod ``date_column`` (czytana z przesunięciem ``read``) zostaje, bo nie jest
+        wartością zakazanej kolumny, a bez niej odtworzenie nie powtórzy Uruchomienia (#847)."""
+
+        numbered = _numbered(values)
+        read, known = positions.read, positions.known
+        placed = {
+            column + read: value
+            for column, value in numbered.items()
+            if all(self._allowed(column + offset) for offset in known)
+        }
+        if self.date_column is not None:
+            when = numbered.get(self.date_column - read)
+            if isinstance(when, datetime):
+                placed[self.date_column] = when
+        return _cells(placed, self.forbidden)
+
+    def _allowed(self, column: int) -> bool:
+        return column not in self.forbidden and (self.copied_columns is None or column in self.copied_columns)
 
 
 @dataclass
@@ -176,30 +203,26 @@ class WorkbookCopy:
         header_row: int,
         header: Values,
         forbidden: Collection[int],
-        shifted_row: int | None = None,
-        uncertain_rows: Sequence[int] = (),
         *,
+        copied_columns: Collection[int] | None = None,
+        date_column: int | None = None,
         last_ordered_row: int | None = None,
         yellow_row: int | None = None,
-        traced_rows: Sequence[int] = (),
     ) -> SheetCopy:
         """Arkusz ``name`` z nagłówkiem w wierszu ``header_row``, bez kolumn ``forbidden`` (numery od 1), których komórki
-        czytnik oddaje pamięci reguły danych; ``shifted_row``: przesunięty wiersz (``CopiedSheet.shifted_row``), którego
-        wartości czytnik oddaje już pod ich nagłówkiem, a ``uncertain_rows`` wiersze w obu położeniach, którym czytnik
-        oddaje tylko komórki dozwolone w każdym położeniu (``CopiedSheet.uncertain_rows``); ``last_ordered_row`` i
-        ``yellow_row``: wiersze nad wklejeniem INTERMAX (``CopiedSheet.last_ordered_row``); ``traced_rows``: wiersze ze
-        śladem przesunięcia poza pierwszym wierszem bloku (``CopiedSheet.traced_rows``)."""
+        czytnik oddaje pamięci reguły danych; ``copied_columns``: kolumny, które Kopia niesie (``None``: każda),
+        ``date_column``: kolumna daty z godziną, która zostaje w wierszu z siatki (``SheetCopy._cells``),
+        ``last_ordered_row`` i ``yellow_row``: wiersze nad wklejeniem INTERMAX (``CopiedSheet.last_ordered_row``)."""
 
         sheet = SheetCopy(
             name,
             header_row,
             _numbered(header),
             frozenset(forbidden),
-            shifted_row,
-            tuple(uncertain_rows),
+            None if copied_columns is None else frozenset(copied_columns),
+            date_column,
             last_ordered_row,
             yellow_row,
-            tuple(traced_rows),
         )
         self._sheets.append(sheet)
         return sheet
@@ -217,7 +240,7 @@ class InputCopy:
 
     def workbook(self, path: Path, content: bytes, modified: datetime | None) -> WorkbookCopy:
         """Plik ``path`` przeczytany z bajtów ``content``; ``modified``: chwila zmiany pliku sprzed odczytu bajtów
-        (``modified_at``)."""
+        (``dad_files.DadFiles.read``)."""
 
         folders = tuple(folder for folder in (path.parent.parent.name, path.parent.name) if folder)
         copy = WorkbookCopy(path.name, content, modified, folders=folders)
@@ -228,17 +251,6 @@ class InputCopy:
         """Przeczytane pliki po regule danych, z odciskiem; liczone po końcu procesu, w Logach Uruchomienia."""
 
         return tuple(copy.copied() for copy in self._files)
-
-
-def modified_at(path: Path) -> datetime | None:
-    """Chwila zmiany pliku ``path`` teraz (UTC); ``None``, gdy system jej nie oddał. Czytnik bierze ją przed odczytem
-    bajtów, więc plik zapisany znowu w trakcie albo po odczycie (Autozapis Excela, OneDrive) nie zmienia jej w odcisku.
-    Zapis między tą chwilą a początkiem odczytu daje w odcisku chwilę wcześniejszej wersji; o wersji rozstrzyga skrót."""
-
-    try:
-        return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
-    except OSError:
-        return None
 
 
 def _numbered(values: Values) -> Mapping[int, object]:

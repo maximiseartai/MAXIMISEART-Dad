@@ -23,6 +23,7 @@ from openpyxl.utils import get_column_letter
 from . import workbook_files
 from .collective_layout import AMOUNT_COLUMN, CHARGE_AMOUNT, DEFECT_COLUMN, PHOTO_COLUMNS, QUANTITY_LETTERS, REMARKS_AMOUNT, letter
 from .client_data import ForbiddenValues
+from .dad_files import DadFiles
 from .input_copy import InputCopy
 from .order_facts import TataValue, tata_value
 from .register_columns import ADDRESS, DATE, ORDER_NUMBER, WORKER
@@ -92,9 +93,9 @@ def read_scope(
 ) -> PricingScope | AmountsNotComputed | MissingColumns:
     """Zakres Wyceny w efenix z Pliku zbiorczego ``path``; ``WorkbookError``, gdy pliku nie da się odczytać albo jest
     otwarty w Excelu. Komórki zakazanych kolumn poznaje ``forbidden`` (reguła danych, ADR 0025), a odczyt Kopia wejścia
-    Uruchomienia ``copy`` (#841)."""
+    Uruchomienia ``copy`` (#841); do N1a-1, w którym Wycena dostaje uchwyt plików taty z kontekstu Uruchomienia."""
 
-    read = workbook_files.read_computed_rows(path, forbidden=forbidden, copy=copy)
+    read = workbook_files.read_computed_rows(path, DadFiles.adapted(forbidden, copy))
     return scope(read.header, read.rows, read.content)
 
 

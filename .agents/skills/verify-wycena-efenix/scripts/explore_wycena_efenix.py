@@ -93,6 +93,7 @@ from rozliczenia.efenix_window import (
     StatusChangeBlocked,
     WindowAction,
 )
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.message import Message
 from rozliczenia.process_run import Outcome, Stop, run_process
@@ -692,7 +693,7 @@ def marked(source: Path) -> tuple[int, ...]:
     """Rows of the Plik zbiorczy whose ``ADRES`` has the Znacznik efenix, read the way Przebieg rozliczeń reads them."""
 
     rows = []
-    for row in read_data_rows(source, despite_excel_lock=True).rows:
+    for row in read_data_rows(source, DadFiles(), despite_excel_lock=True).rows:
         fill = row.cells[1].highlights.fill
         if isinstance(fill, PatternFill) and fill.patternType == "solid" and str(fill.fgColor.rgb)[-6:].upper() == Mark.READY.value:
             rows.append(row.number)

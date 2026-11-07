@@ -179,8 +179,9 @@ from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, ToolFreshness, parse_published
 from rozliczenia.centrum.tool_update import ToolClone, find_git, pip_install, release_at
 from rozliczenia.centrum.version import commit_since, tool_commit
+from rozliczenia.dad_files import ReadFile
 from rozliczenia.input_checks import FILE_READERS, Readers
-from rozliczenia.preparation_register import RegisterRead
+from rozliczenia.preparation_register import RegisterSheet
 from rozliczenia.settlement_period import SettlementPeriod
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.tool_files import listen_locally
@@ -547,10 +548,10 @@ def _pace_worker_templates(root: Path, worker_template: Path) -> None:
 def _register_failing_on_hook(root: Path) -> Readers:
     """Readers whose Rejestr reader raises while ``<root>/awaria/odczyt-rejestru`` exists (see the module doc)."""
 
-    def register(path: Path, period: SettlementPeriod | None) -> RegisterRead:
+    def register(file: ReadFile, period: SettlementPeriod | None) -> list[RegisterSheet]:
         if (root / "awaria" / "odczyt-rejestru").exists():
             raise RuntimeError("synthetic unexpected failure")
-        return FILE_READERS.register(path, period)
+        return FILE_READERS.register(file, period)
 
     return replace(FILE_READERS, register=register)
 

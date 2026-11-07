@@ -12,6 +12,7 @@ from typing import Literal
 from . import collective_file, input_checks, settlement_files, settlement_messages
 from .domain import ProgressObserver, ProgressPhase
 from .client_data import ForbiddenValues
+from .dad_files import DadFiles
 from .inea_only_quantities import Cleared
 from .input_copy import InputCopy
 from .input_checks import FILE_READERS, Readers
@@ -105,7 +106,7 @@ class SettlementSummary:
 
 
 def _read_source_rows(
-    source_path: Path, forbidden: ForbiddenValues | None, copy: InputCopy | None
+    source_path: Path, files: DadFiles
 ) -> tuple[dict[str, list[DataRow]], list[int], CollectiveOrders, Cleared]:
     """Czyta Wiersze danych Pliku zbiorczego z ich Wyróżnieniami i grupuje je po identyfikatorze WYKONAWCA.
 
@@ -113,7 +114,7 @@ def _read_source_rows(
     """
 
     try:
-        read = collective_file.read_data_rows(source_path, forbidden, copy)
+        read = collective_file.read_data_rows(source_path, files)
     except WorkbookError as error:
         raise StopError(settlement_messages.collective_file_unusable(error)) from error
     rows_by_worker: defaultdict[str, list[DataRow]] = defaultdict(list)
@@ -182,6 +183,7 @@ def run_settlements(
     """
 
     phases = PhaseRunner(observer)
+    files = DadFiles.adapted(forbidden, copy, readers.source)
     source_path = source_path.expanduser().resolve()
     config_path = config_path.expanduser().resolve()
     worker_template_path = worker_template_path.expanduser().resolve()
@@ -192,7 +194,7 @@ def run_settlements(
     target_directory = folder.worker_settlements
     worker_names = list(mapping.values())
     rows_by_worker, without_worker, orders, inea_only = phases.read(
-        lambda: _read_source_rows(source_path, forbidden, copy),
+        lambda: _read_source_rows(source_path, files),
         issue_count=lambda read_rows: len(read_rows[1]),
     )
 

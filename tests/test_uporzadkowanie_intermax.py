@@ -26,6 +26,7 @@ from openpyxl.styles import Color, Font, PatternFill
 from openpyxl.utils.cell import coordinate_from_string, get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import Mark
 from rozliczenia.intermax_ordering import OrderingSummary, RegisterDay, register_days
@@ -1608,7 +1609,7 @@ def test_karta_przed_wklejeniem_pokazuje_dzien_jako_uporzadkowany_wtedy_gdy_upor
     with TemporaryDirectory() as folder:
         tmp_path = Path(folder)
         path, _ = _register(tmp_path, replace(intermax, raw=()))
-        days = register_days(path, _TODAY)
+        days = register_days(path, _TODAY, DadFiles())
         _register(tmp_path, replace(intermax, raw=raw))
         outcome = _run(tmp_path, now=datetime.combine(_TODAY, time(12)))
 
@@ -2142,7 +2143,7 @@ def test_karta_przed_wklejeniem_bez_arkusza_zlecen_mowi_to_samo_co_uporzadkowani
     path, _ = _register(tmp_path)
     _edited(path, lambda sheet: setattr(sheet.cell(1, FIRST + HEADERS.index("AKCJE")), "value", "AKCJE X"))
 
-    days = register_days(path, _TODAY)
+    days = register_days(path, _TODAY, DadFiles())
 
     assert isinstance(days, Message) and days.code == "BRAK_ARKUSZA_ZLECEN", days
 

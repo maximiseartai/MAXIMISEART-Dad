@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.workbook_files import read_data_rows
 from tests.fixtures.settlement import write_source
 
@@ -65,7 +66,7 @@ def _links_by_row(path: Path) -> dict[int, dict[str, str]]:
     letters = {1: "A", 2: "B", 3: "C", 6: "F", 8: "H"}
     return {
         row.number: links
-        for row in read_data_rows(path).rows
+        for row in read_data_rows(path, DadFiles()).rows
         if (
             links := {
                 letters.get(column, str(column)): cell.hyperlink.address

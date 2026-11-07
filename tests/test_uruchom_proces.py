@@ -18,6 +18,7 @@ from typing import Any, get_args, get_type_hints
 
 import pytest
 
+from rozliczenia.dad_files import DadFiles
 from rozliczenia import settlement_messages
 from rozliczenia.centrum import contract, run_view
 from rozliczenia.preparation_process import PROCESS as PREPARATION
@@ -207,7 +208,7 @@ def test_adres_hiperlacza_nie_trafia_do_wyniku_komunikatow_ani_metryk(tmp_path: 
     for completed in outputs:
         assert sentinel not in completed.stdout + completed.stderr
     assert sentinel not in (tmp_path / "metrics.jsonl").read_text(encoding="utf-8")
-    assert sentinel not in repr(read_data_rows(source))
+    assert sentinel not in repr(read_data_rows(source, DadFiles()))
 
 
 def test_adres_hiperlacza_z_rejestru_nie_trafia_do_wyniku_przygotowania_ani_metryk(tmp_path: Path) -> None:
@@ -223,7 +224,7 @@ def test_adres_hiperlacza_z_rejestru_nie_trafia_do_wyniku_przygotowania_ani_metr
     for completed in outputs:
         assert sentinel not in completed.stdout + completed.stderr
     assert sentinel not in (fixture.register_path.parent / "metrics.jsonl").read_text(encoding="utf-8")
-    assert sentinel not in repr(read_register(fixture.register_path))
+    assert sentinel not in repr(read_register(DadFiles().read(fixture.register_path)))
 
 
 @pytest.mark.parametrize(("good_views", "phase_states"), [(0, set()), (1, {"pending"})])

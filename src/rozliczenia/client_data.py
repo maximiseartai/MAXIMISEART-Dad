@@ -113,13 +113,6 @@ class ForbiddenValues:
         self._columns: dict[tuple[str, ...], ForbiddenColumn] = {}
         self._lengths: dict[str, tuple[int, ...]] = {}
 
-    def remember(self, columns: Iterable[tuple[ForbiddenColumn, int]], values: Sequence[object]) -> None:
-        """Zapamiętuje komórki zakazanych ``columns`` (numer od 1) wiersza ``values`` przeczytanego z pliku taty."""
-
-        for column, number in columns:
-            if number <= len(values):
-                self.remember_value(column, values[number - 1])
-
     def remember_value(self, column: ForbiddenColumn, value: object) -> None:
         """Zapamiętuje jedną komórkę zakazanej ``column`` przeczytaną z pliku taty; ta sama wartość zostaje przy
         kolumnie, pod którą przyszła pierwsza."""

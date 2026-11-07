@@ -29,6 +29,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia.collective_file import read_data_rows
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.collective_layout import HEADER_ROW, QUANTITY_LETTERS
 from rozliczenia.order_facts import MissingHeaders, OrderFacts, TataValue
 from rozliczenia.quantity_check import compared_columns
@@ -98,7 +99,7 @@ class Row:
 def rows(path: Path) -> tuple[list[Row], int]:
     """Wiersze danych z wynikiem reguł i liczba wierszy, których ``DATA`` nie ma dnia i godziny."""
 
-    orders = read_data_rows(path).orders
+    orders = read_data_rows(path, DadFiles()).orders
     if isinstance(orders, MissingHeaders):
         raise SystemExit(f"{path.name}: w wierszu {HEADER_ROW} nie ma nagłówka {', '.join(orders.headers)}")
     measured: list[Row] = []

@@ -6,6 +6,7 @@ Każdy test przygotowuje Plik zbiorczy z syntetycznego Rejestru zleceń w Centru
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import workbook_files
 from rozliczenia.centrum.filling import without_quantity_sentence
-from tests.fixtures.centrum_processes import PreparingCentrum, preparing_centrum, run_to_end
+from rozliczenia.input_checks import FILE_READERS
+from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum, run_to_end
 from tests.fixtures.preparation import PERIOD, register_order
 
 TUE = datetime(2026, 9, 8, 10, 0)
@@ -33,14 +35,14 @@ DEVICES = {
 }
 
 
-def _prepared(tmp_path: Path) -> PreparingCentrum:
+def _prepared(tmp_path: Path, *, surroundings: Surroundings | None = None) -> PreparingCentrum:
     # Ostatnie zlecenie w poniedziałek: okres jest pełny, więc Przygotowanie nie czeka na Decyzję taty.
     starts = [TUE.replace(hour=8 + index) for index in range(len(DEVICES) - 1)] + [MON]
     rows = [
         {**register_order(index, started), "URZĄDZENIA": text}
         for index, (text, started) in enumerate(zip(DEVICES.values(), starts, strict=True), start=1)
     ]
-    centrum = preparing_centrum(tmp_path, list(rows))
+    centrum = preparing_centrum(tmp_path, list(rows), surroundings=surroundings)
     assert run_to_end(centrum, dry_run=False)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
     return centrum
 
@@ -123,18 +125,15 @@ def test_przeniesiony_folder_okresow_to_odmowa(tmp_path: Path) -> None:
     assert (response.status_code, response.json()["message"]) == (409, "Najpierw wskaż folder okresów.")
 
 
-def test_ustawienie_przebiegu_nie_otwiera_zadnego_pliku_zbiorczego(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    centrum = _prepared(tmp_path)
+def test_ustawienie_przebiegu_nie_otwiera_zadnego_pliku_zbiorczego(tmp_path: Path) -> None:
     opened: list[Path] = []
-    read = workbook_files._file_bytes
 
     def spy(path: Path) -> bytes:
         opened.append(path)
-        return read(path)
+        return workbook_files.file_bytes(path)
 
-    monkeypatch.setattr(workbook_files, "_file_bytes", spy)
+    centrum = _prepared(tmp_path, surroundings=Surroundings(readers=replace(FILE_READERS, source=spy)))
+    opened.clear()
     response = centrum.client.get("/api/runs/setup")
     assert response.status_code == 200, response.text
     settlement = next(setup for setup in response.json()["processes"] if setup["process"] == "settlement")

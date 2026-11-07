@@ -7,8 +7,8 @@ Wykonawcy, przechodzi przez filtr prywatności (``order_facts``) dla Kontroli il
 Wykonawcą stracą Ilości tylko dla INEA (``inea_only_quantities``, ADR 0018) i Znacznik efenix (``efenix_mark``).
 Ten sam odczyt i filtr dają Ilości do uzupełnienia (``read_numbered_orders``), także z pliku otwartego w Excelu, a
 obok filtra teksty wiersza i nazwy pozycji cennika dla strony rodzaju, które nie wychodzą z komputera (ADR 0016).
-Komórki zakazanych kolumn odczytu zna pamięć reguły danych pracy Centrum (``forbidden``, ADR 0025), a odczyt Przebiegu
-rozliczeń Kopia wejścia jego Uruchomienia (``copy``, #841).
+Plik czyta uchwyt plików taty (``dad_files.DadFiles``): komórki zakazanych kolumn odczytu zna jego pamięć reguły danych
+(ADR 0025), a odczyt Przebiegu rozliczeń Kopia wejścia jego Uruchomienia (#841).
 """
 
 from __future__ import annotations
@@ -18,9 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import workbook_files
-from .client_data import ForbiddenValues
+from .dad_files import DadFiles
 from .efenix_mark import without_efenix_mark
-from .input_copy import InputCopy
 from .inea_only_quantities import Cleared, without_inea_only
 from .order_facts import CollectiveOrders, MissingHeaders, collective_orders
 from .register_columns import ACTIVITIES, COMPLETED, DEVICES, Column
@@ -41,12 +40,10 @@ class CollectiveRows:
     """Liczba komórek z wartością, które Wiersze danych z Wykonawcą straciły jako Ilości tylko dla INEA."""
 
 
-def read_data_rows(
-    path: Path, forbidden: ForbiddenValues | None = None, copy: InputCopy | None = None
-) -> CollectiveRows:
+def read_data_rows(path: Path, files: DadFiles) -> CollectiveRows:
     """Wiersze danych Pliku zbiorczego jednym odczytem; plik jest tylko czytany."""
 
-    read = workbook_files.read_data_rows(path, forbidden=forbidden, copy=copy)
+    read = workbook_files.read_data_rows(path, files)
     rows: list[DataRow] = []
     without_worker: list[int] = []
     for row in read.rows:
@@ -66,13 +63,13 @@ class NumberedOrders:
     """Litera kolumny N:AP → nazwa pozycji cennika z wiersza 17."""
 
 
-def read_numbered_orders(path: Path, forbidden: ForbiddenValues | None = None) -> NumberedOrders | MissingHeaders:
+def read_numbered_orders(path: Path, files: DadFiles) -> NumberedOrders | MissingHeaders:
     """Dozwolona treść każdego Wiersza danych z jego numerem wiersza i tekstami; plik jest tylko czytany.
 
     Plik otwarty w Excelu też jest czytany: jego ostatnia zapisana wersja (ADR 0016).
     """
 
-    read = workbook_files.read_data_rows(path, despite_excel_lock=True, forbidden=forbidden)
+    read = workbook_files.read_data_rows(path, files, despite_excel_lock=True)
     orders = collective_orders(read.header, read.rows)
     if isinstance(orders, MissingHeaders):
         return orders

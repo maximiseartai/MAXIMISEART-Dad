@@ -239,9 +239,9 @@ def _points(world: World, scheduler: Scheduler) -> Iterator[None]:
     real_check = intermax_file.Register.check
     real_open = workbook_files.is_open_in_excel
 
-    def read(cls: type[intermax_file.Register], /, path: Path, **options: Any) -> intermax_file.Register:
-        # Opcje odczytu (``despite_excel_lock``, pamięć reguły danych ``forbidden``) przechodzą bez zmian.
-        register = real_read(cls, path, **options)
+    def read(cls: type[intermax_file.Register], /, path: Path, *arguments: Any, **options: Any) -> intermax_file.Register:
+        # Uchwyt plików taty i ``despite_excel_lock`` przechodzą bez zmian.
+        register = real_read(cls, path, *arguments, **options)
         if path == world.register:
             world.read = register.content
             scheduler.say("Register.read czyta INTERMAX")

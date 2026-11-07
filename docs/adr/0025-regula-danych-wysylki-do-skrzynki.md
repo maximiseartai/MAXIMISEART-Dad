@@ -130,8 +130,9 @@ telefony na okres.
   który czyta dla Centrum (Pliku zbiorczego w Przebiegu rozliczeń, Kontroli
   ilości, Wycenie w efenix i Uzupełnieniu, Rejestru zleceń w Przygotowaniu i
   Diagnozie, INTERMAX w Uporządkowaniu, na jego karcie i przy szukaniu
-  Surowych zleceń w Przygotowaniu), oddaje przy odczycie komórki zakazanych
-  kolumn pamięci reguły danych, a Wycena w efenix dane adresowe każdego
+  Surowych zleceń w Przygotowaniu), czyta plik uchwytem plików taty
+  (`dad_files.DadFiles`) i oddaje przy odczycie komórki zakazanych kolumn
+  pamięci reguły danych, a Wycena w efenix dane adresowe każdego
   wiersza listy wyników. Każdy wiersz Rejestru zleceń i INTERMAX pamięć zna w
   jednym położeniu (sekcja „Położenie wiersza” niżej): pierwszy wiersz bloku
   wklejenia dwie kolumny na lewo od nagłówków, każdy inny pod nimi, a wiersz z
@@ -141,7 +142,8 @@ telefony na okres.
   nie jest stanem modułu, więc dwie prace Centrum w jednym procesie (testy)
   jej nie dzielą. Tylko rośnie i nie trafia na dysk, więc chroni także Uwagę
   taty, która nie ma Uruchomienia, i Zgłoszenie z Diagnozy. Proces bez Centrum
-  (Skrypt dla maszyn) pamięci nie ma, bo nic nie wysyła. Wartość krótsza niż
+  (Skrypt dla maszyn) ma własną pamięć, której nic nie czyta, bo nic nie
+  wysyła, więc żaden czytnik nie ma drogi bez pamięci. Wartość krótsza niż
   5 znaków jest pomijana: nie wskazuje klienta, a pasowałaby do zwykłych słów
   i liczb.
 - **Zgoda taty.** Tata wie, że wysyłki do prywatnej Skrzynki Zgłoszeń będą

@@ -68,6 +68,7 @@ from rozliczenia.centrum.tool_update import RESULT_FILE, ToolClone
 from rozliczenia.centrum.tool_updates import GuardianLauncher, ToolUpdates, tool_update_router
 from rozliczenia.centrum.version import SERVICE, short_commit
 from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.intermax_copies import default_directory as default_intermax_copies
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
@@ -205,7 +206,10 @@ def create_app(
     # Reguła danych (ADR 0025): zakazane wartości z każdego pliku taty, który ta praca Centrum przeczytała, dla
     # strażnika każdej wysyłki do Skrzynki; jedna pamięć na pracę Centrum, tylko w pamięci.
     forbidden = ForbiddenValues()
-    filling = FillingReads(clock=clock, forbidden=forbidden)
+    # Uchwyt plików taty tej pracy: Diagnoza, Uzupełnienie i dni INTERMAX czytają nim pliki taty ze źródłem bajtów
+    # czytników, a jego pamięć to pamięć reguły danych pracy.
+    files = DadFiles(source=readers.source, forbidden=forbidden)
+    filling = FillingReads(clock=clock, files=files)
     app.include_router(filling_router(store, log, surroundings.cloud_files, filling))
     # Kontrola ilości, Logi Uruchomienia, Uwagi taty i Zgłoszenia: w kolejce Skrzynki, wysyłane w tle (ADR 0007, 0013,
     # 0015); co doręczenie znaczy dla Spraw taty, wiedzą Sprawy taty w Skrzynce.
@@ -247,7 +251,7 @@ def create_app(
             log=log,
             surroundings=surroundings,
             readers=readers,
-            forbidden=forbidden,
+            files=files,
         ),
         log,
         comments,
@@ -269,7 +273,7 @@ def create_app(
         Waiting(clock, pause),
         intermax_disk,
         surroundings.cloud_files,
-        forbidden,
+        files,
     )
     # Karty Uruchomień z pliku startu, Logów Uruchomienia i Historii: ostatnie po starcie Centrum i wiersz Historii (ADR 0017).
     cards = RunCards(disk, lambda: read_runs(processes, centrum_runs.started()))
