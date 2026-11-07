@@ -6,7 +6,7 @@ dokładnie komentarze, które kolejka dopisuje do issue, a jej plik to plik w Ar
 Podsumowanie ma tu tylko przypadki bez taniej drogi przez HTTP z fikstur Przebiegu: nazwa Przygotowania,
 powtórki kodów, powtórzone Zatrzymanie, Zatrzymanie po odmowie w Decyzji taty, czas w sekundach albo nieznany, brak commitu i sprawdzenia Diagnozy,
 które nie przeszły albo których nie sprawdzono. Resztę sprawdza ``test_centrum_logi_w_skrzynce.py``. Strażnik reguły
-danych (``guarded``, ADR 0025) ma tu klucz słownika Logów z zakazaną wartością: klucze pochodzą dziś z zamkniętych
+danych (``guard_logs``, ADR 0025) ma tu klucz słownika Logów z zakazaną wartością: klucze pochodzą dziś z zamkniętych
 list (operator z reguły taty, kod pozycji efenix, litera kolumny), więc przez HTTP żadna taka wartość do klucza nie
 trafia, i liczbę policzoną przez narzędzie w kształcie telefonu, której syntetyczne pliki taty przez HTTP nie dają.
 Pełne Logi z każdym polem schematu (``FULL_LOGS``) niesie tylko ten plik: przemiatanie kształtów pól (#936) daje
@@ -84,7 +84,6 @@ from rozliczenia.centrum.run_logs import (
     StartFacts,
     guard_logs,
     guard_text,
-    guarded,
 )
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, shown
@@ -304,7 +303,7 @@ def _progress() -> PricingProgress:
 
 def _text_version(kind: str, forbidden: ForbiddenValues) -> ProgressVersion | WithoutLogsVersion:
     """Postęp albo wynik bez Logów Uruchomienia ``RUN_ID`` z tekstem komentarza po strażniku ``forbidden``, tak jak
-    buduje je ``RunLogs``."""
+    budują je ``RunComments._progress`` i ``close``."""
 
     progress = _progress()
     if kind == "postep":
@@ -960,6 +959,50 @@ def test_postep_wyceny_idzie_tylko_z_pierwsza_linia_dziennika_na_dysku_i_konczy_
     assert ([post.rank for post in queue.posts], clock.wakes) == ([Rank.DRAFT, Rank.DRAFT, Rank.OWN], 0)
 
 
+def test_postep_wyceny_przeczytany_przed_jej_koncem_nie_idzie_po_jej_logach_gdy_trwa_juz_nastepna_wycena(
+    tmp_path: Path,
+) -> None:
+    """Budzik postępu czyta dziennik Wyceny, zanim weźmie blokadę komentarza Uruchomienia (#846). Gdy w tej chwili Wycena
+    się kończy, a Centrum startuje następną, postęp pierwszej nie idzie: poszedłby po jej Logach z wynikiem jako
+    nowsza wersja komentarza, która mówi, że Uruchomienie trwa. Postęp następnej Wyceny idzie (przegląd #1047)."""
+
+    queue, clock = RecordingQueue(), ManualClock()
+    log = CentrumLog(tmp_path / "centrum-rozliczen.log")
+    box: list[RunComments] = []
+    next_pricing = PRICING.model_copy(update={"id": OTHER_RUN_ID})
+
+    class EndingWhileRead(Journal):
+        armed = False
+
+        def progress(self, run_id: str) -> PricingProgress | None:
+            read = super().progress(run_id)
+            if self.armed and run_id == RUN_ID:
+                self.armed = False
+                box[0].run_ended(_ended())
+                box[0].run_started(next_pricing, STARTED_AT)
+            return read
+
+    journal = EndingWhileRead(tmp_path / "dzienniki-wyceny", log, process="efenix")
+
+    class RacingDisk(LogsOnDisk):
+        @property
+        def journal(self) -> Journal:
+            return journal
+
+    disk = RacingDisk(log, journaled="efenix")
+    box.append(_comments(tmp_path, queue, disk, clock))
+    _priced(box[0], disk)
+    journal.armed = True
+
+    clock.advance(PROGRESS_S)
+
+    assert [(post.rank, post.run_id) for post in queue.posts] == [
+        (Rank.DRAFT, RUN_ID),
+        (Rank.OWN, RUN_ID),
+        (Rank.DRAFT, OTHER_RUN_ID),
+    ]
+
+
 def test_diagnoza_dopisuje_sie_do_logow_ostatniego_uruchomienia_raz_na_wynik(tmp_path: Path) -> None:
     """Diagnoza dopisuje się do Logów ostatniego Uruchomienia tej pracy Centrum nowszą wersją tej samej wysyłki, a druga
     z tym samym wynikiem i Diagnoza innego Uruchomienia nie zmieniają niczego (#840)."""
@@ -1007,7 +1050,7 @@ def test_liczba_policzona_przez_narzedzie_w_ksztalcie_telefonu_zostaje_a_ta_sama
     sheet = {"sheet": "Sheet1", "header_row": 17, "columns": {}, "rows": [{"row": row, "cells": {"AS": row, "AT": size}}], "empty_rows": []}
     copied = {"name": "plik.xlsx", "fingerprint": {"size": size, "modified_at": None, "sha256": "0" * 64}, "sheets": [sheet]}
 
-    kept = guarded(record(input_copy=[copied]), ForbiddenValues())
+    kept = guard_logs(record(input_copy=[copied]), ForbiddenValues()).record
 
     assert kept.input_copy is not None
     [file] = kept.input_copy
@@ -1044,7 +1087,7 @@ def test_maska_w_kwocie_logow_nie_gubi_logow_tylko_kwote_albo_zlecenie_z_uwaga_o
     ]
     logs = record(process="efenix", efenix_orders=orders)
 
-    kept = guarded(logs, forbidden)
+    kept = guard_logs(logs, forbidden).record
 
     assert kept.efenix_orders is not None
     assert [(order.row, order.file_amount, order.steps[0].amount) for order in kept.efenix_orders] == [(19, Decimal("10.00"), None)]
@@ -1065,7 +1108,7 @@ def test_maska_w_chwili_zmiany_pliku_kopii_wejscia_daje_puste_pole_z_uwaga_kopii
     fingerprint = {"size": 10, "modified_at": "2026-10-23T20:47:20.123456Z", "sha256": "0" * 64}
     logs = record(input_copy=[{"name": "plik.xlsx", "fingerprint": fingerprint, "sheets": []}])
 
-    kept = guarded(logs, forbidden)
+    kept = guard_logs(logs, forbidden).record
 
     assert kept.input_copy is not None
     assert kept.input_copy[0].fingerprint.modified_at is None

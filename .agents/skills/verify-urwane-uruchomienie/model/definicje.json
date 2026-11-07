@@ -1,7 +1,7 @@
 {
   "src/rozliczenia/centrum/run_logs.py": [
     "RunLog.interrupted",
-    "guarded",
+    "_guarded",
     "LoggedEnding",
     "guard_logs",
     "GuardedLogs"
@@ -45,7 +45,8 @@
     "LogsOnDisk.started",
     "LogsOnDisk.left_behind",
     "LogsOnDisk.remove_journal",
-    "LogsOnDisk.write"
+    "LogsOnDisk.write",
+    "name_of"
   ],
   "src/rozliczenia/centrum/app.py": [
     "lifespan",

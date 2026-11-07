@@ -20,7 +20,7 @@ Wiersze danych niesie tylko Kopia wejścia (``input_copy``, #841): każdy plik t
 odciskiem i przeczytanymi wierszami bez kolumn ``ADRES`` i numeru Orange (w Uporządkowaniu INTERMAX wklejone wiersze,
 #842), zebrana po końcu procesu z tego, co czytniki oddały Kopii wejścia Uruchomienia (``EndedRun.input_copy``). Poza nią komórkę cytuje tylko Komunikat
 (``ZLE_SKUTECZNE``), a pliki mają tylko nazwę, nigdy pełną ścieżkę. Przed zapisem pliku i przed wysyłką Logi przechodzą
-przez strażnika reguły danych pracy Centrum (``guarded``, ADR 0025), a plik i wysyłka biorą tylko Logi z niego
+przez strażnika reguły danych pracy Centrum (``guard_logs``, ADR 0025), a plik i wysyłka biorą tylko Logi z niego
 (``GuardedLogs``) i tekst komentarza z niego (``GuardedText``): wartość ``ADRES`` albo numeru Orange z przeczytanych
 plików, także wpisana w inną komórkę Kopii wejścia albo zapisana przez Excel jako liczba, staje się maską z uwagą
 techniczną, a telefony i ulice w tekście są zamaskowane. Pola, które niosą tylko słowa i chwile narzędzia (okres,
@@ -76,7 +76,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 import re
-from typing import Annotated, Final, Literal, Protocol, assert_never, final, get_args
+from typing import Annotated, Final, Literal, assert_never, final, get_args
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic.fields import FieldInfo
@@ -130,7 +130,7 @@ class _Record(BaseModel):
 
 class _ReadValues:
     """Znacznik pola Logów (``Annotated``), które niesie wartości przeczytane z komórek pliku taty albo ze strony efenix,
-    także liczby: strażnik (``guarded``) maskuje w nim liczbę z zakazaną wartością albo telefonem jak tekst. Każda inna
+    także liczby: strażnik (``guard_logs``) maskuje w nim liczbę z zakazaną wartością albo telefonem jak tekst. Każda inna
     liczba Logów (numer wiersza, rozmiar, czas, liczba zleceń) to liczba, którą policzyło narzędzie."""
 
 
@@ -667,7 +667,7 @@ class RunLog(_Record):
     input_copy_notes: list[str] = []
     """Uwagi techniczne o Kopii wejścia, osobno od ``technical_notes``, które pokazuje karta Uruchomienia z Logów: wiersz
     ze śladem przesunięcia, który łamie fakt domeny (``_domain_fact_notes``), i uwagi strażnika reguły danych o
-    wartościach zamaskowanych w Kopii (``guarded``)."""
+    wartościach zamaskowanych w Kopii (``guard_logs``)."""
 
     @classmethod
     def of(cls, run: EndedRun, *, tool: Tool, environment: Environment, dad_actions: DadActions) -> RunLog:
@@ -727,7 +727,7 @@ class RunLog(_Record):
     @classmethod
     def interrupted(
         cls,
-        started: StartedFacts,
+        started: StartFacts,
         *,
         ended_at: datetime,
         orders: Sequence[LoggedOrder],
@@ -767,10 +767,12 @@ class RunLog(_Record):
         )
 
     @property
-    def file_name(self) -> str:
-        """``20261023T140507Z-settlement-<run_id>.json``: start w UTC, klucz procesu, identyfikator Uruchomienia."""
+    def start(self) -> StartFacts:
+        """Bezpieczne fakty startu tych Logów, z których ``logs_disk.name_of`` daje nazwę ich pliku."""
 
-        return logs_file_name(self.started_at, self.process, self.run_id)
+        return StartFacts(
+            run_id=self.run_id, process=self.process, mode=self.mode, period=self.period, started_at=self.started_at
+        )
 
     @property
     def text(self) -> str:
@@ -779,24 +781,9 @@ class RunLog(_Record):
         return self.model_dump_json(indent=2) + "\n"
 
 
-class StartedFacts(Protocol):
-    """Bezpieczne fakty startu Uruchomienia, te same co nagłówek Logów (plik ostatniego startu, dziennik Wyceny w efenix)."""
-
-    @property
-    def run_id(self) -> str: ...
-    @property
-    def process(self) -> contract.ProcessKey: ...
-    @property
-    def mode(self) -> Literal["podgląd", "zapis"]: ...
-    @property
-    def period(self) -> str: ...
-    @property
-    def started_at(self) -> datetime: ...
-
-
 @dataclass(frozen=True)
 class StartFacts:
-    """Bezpieczne fakty startu jednego Uruchomienia (``StartedFacts``): te same co nagłówek jego Logów, plik ostatniego
+    """Bezpieczne fakty startu jednego Uruchomienia: te same co nagłówek jego Logów (``RunLog.start``), plik ostatniego
     startu (``logs_disk``) i pierwsza linia dziennika Wyceny w efenix."""
 
     run_id: str
@@ -827,14 +814,7 @@ def _domain_fact_notes(files: Sequence[CopiedFile]) -> list[str]:
     ]
 
 
-def logs_file_name(started_at: datetime, process: contract.ProcessKey, run_id: str) -> str:
-    """Nazwa pliku Logów Uruchomienia: sekunda startu w UTC, klucz procesu i identyfikator, więc jedna na Uruchomienie,
-    a pliki układają się chronologicznie."""
-
-    return f"{started_at:%Y%m%dT%H%M%SZ}-{process}-{run_id}.json"
-
-
-def guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
+def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     """Logi po strażniku reguły danych (``ForbiddenValues.guard``): każdy tekst i klucz bez zakazanych wartości, z
     zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna z kolumną i polem pliku.
 
@@ -928,7 +908,7 @@ TOOL_FIELDS: Final = frozenset(
     }
 )
 """Pola Logów (ścieżka JSON jak w uwadze strażnika), które niosą tylko słowa i chwile narzędzia, więc strażnik
-(``guarded``) zostawia w nich wartość z rekordu (#936). Każde ma wartość z kodu narzędzia, a nie z pliku taty:
+(``guard_logs``) zostawia w nich wartość z rekordu (#936). Każde ma wartość z kodu narzędzia, a nie z pliku taty:
 ``run_id`` to ``uuid4``, ``period`` token okresu z ``parse_period_token`` albo z zegara (INTERMAX), ``process``,
 ``mode``, ``result``, ``ending`` i ``stop_kind`` to wartości zamkniętych list schematu, ``started_at`` i ``ended_at``
 chwile zegara Centrum (w Logach Urwanego Uruchomienia z dziennika Wyceny, który pisze Centrum), ``tool`` Wydanie i
@@ -1006,7 +986,7 @@ _CUT_NOTE: Final = re.compile(
 
 
 def _representable(walked: dict[str, object]) -> RunLog:
-    """Logi z JSON-a po strażniku (``guarded``), w którym każde pole przyjmuje swoją wartość.
+    """Logi z JSON-a po strażniku (``_guarded``), w którym każde pole przyjmuje swoją wartość.
 
     Pole typowane (kwota ``Decimal``, data, wartość z zamkniętej listy), w którym strażnik zamaskował tekst, maski nie
     przyjmuje, więc takie Logi nie przeszłyby walidacji i przepadły. Pole dostaje ``None``, a gdy i ``None`` nie
@@ -1144,7 +1124,7 @@ class PricingProgress:
     ``current``: wiersz zlecenia zaczętego bez wyniku (``None`` między zleceniami).
     """
 
-    started: StartedFacts
+    started: StartFacts
     done: tuple[OrderDone, ...]
     total: int | None
     current: int | None
@@ -1185,7 +1165,7 @@ Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejś
 
 @final
 class GuardedLogs:
-    """Logi Uruchomienia po strażniku reguły danych tej pracy Centrum (``guarded``, ADR 0025), z ``guard_logs``.
+    """Logi Uruchomienia po strażniku reguły danych tej pracy Centrum (ADR 0025), z ``guard_logs``.
 
     Plik Logów (``LogsOnDisk.write``) i wysyłka Logów (``comment_versions.post_of``) biorą tylko takie Logi, więc Logi,
     które ominęły strażnika (Logi Urwanego Uruchomienia przed 2ff78b6b3), to błąd typu (``_MINTED``). ``text``: znaki
@@ -1231,9 +1211,10 @@ class GuardedLogs:
 
 
 def guard_logs(record: RunLog, forbidden: ForbiddenValues) -> GuardedLogs:
-    """Logi ``record`` po strażniku reguły danych ``forbidden`` (``guarded``)."""
+    """Logi ``record`` po strażniku reguły danych ``forbidden`` (``_guarded``) z dowodem strażnika; narzędzia, które nie
+    piszą pliku ani nie wysyłają, biorą z nich ``record``."""
 
-    return GuardedLogs(guarded(record, forbidden), record, _MINTED)
+    return GuardedLogs(_guarded(record, forbidden), record, _MINTED)
 
 
 @final

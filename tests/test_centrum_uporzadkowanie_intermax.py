@@ -23,6 +23,7 @@ import pytest
 
 from rozliczenia import input_checks, intermax_copies, workbook_files
 from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.centrum.logs_disk import name_of
 from rozliczenia.centrum.run_logs import RunLog
 
 from tests.fixtures.centrum import phase_states, views_until
@@ -610,7 +611,7 @@ def _logs_like(centrum: OrderingCentrum, like: str, later: timedelta, **changes:
     started_at = record.started_at.replace(microsecond=0) + later
     times = {"started_at": started_at, "ended_at": started_at + (record.ended_at - record.started_at)}
     other = record.model_copy(update={"run_id": uuid4().hex, **times, **changes})
-    other_path = path.with_name(other.file_name)
+    other_path = path.with_name(name_of(other.start))
     other_path.write_text(other.model_dump_json(indent=2), encoding="utf-8")
     return other_path
 

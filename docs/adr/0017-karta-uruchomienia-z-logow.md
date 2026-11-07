@@ -73,6 +73,18 @@ wynikiem, a pliku Logów nie ma, karta po starcie pokazuje Urwane Uruchomienie
 zamiast wyniku, a komentarz ma Logi Urwanego Uruchomienia zamiast napisu, że
 Uruchomienie trwa.
 
+Dopisek z przeglądu architektury z 6.11.2026 (kandydaci 1 i 8): reguły tego
+ADR mieszkają w trzech modułach Centrum, a decyzja nie zmienia się.
+`logs_disk.py` jako jedyny zna pliki w katalogu Logów: ich układ, nazwę pliku
+Logów (`name_of`), plik ostatniego startu i dziennik Wyceny w efenix, a
+odpowiada odczytem, nie ścieżką. `comment_versions.py` bez I/O decyduje, którą wersję
+komentarza Uruchomienia wysłać, w jakim stopniu, co start Centrum robi z
+pozostawionym dziennikiem (`close`) i kiedy dziennik znika (`journal_after`).
+`run_comments.py` układa kroki startu i końca Uruchomienia w kolejności tych
+dopisków. Fakty startu mają jeden typ (`run_logs.StartFacts`, w Logach
+`RunLog.start`), a plik i wysyłka biorą tylko Logi po strażniku reguły danych
+(`run_logs.guard_logs`).
+
 ## Kontekst
 
 Centrum trzymało tylko bieżące Uruchomienie procesu w pamięci, więc karta

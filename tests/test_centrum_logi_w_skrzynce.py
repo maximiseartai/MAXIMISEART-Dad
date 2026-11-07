@@ -32,7 +32,7 @@ from rozliczenia import intermax_copies
 from rozliczenia.centrum import app
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
-from rozliczenia.centrum.run_logs import RunLog, guarded
+from rozliczenia.centrum.run_logs import RunLog, guard_logs
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 
 from tests.fixtures.atrapa_efenix import PRICES, TODAY, AtrapaOrder, Changed, amount_of, atrapa_efenix
@@ -1298,11 +1298,11 @@ def test_przesuniety_pierwszy_wiersz_wklejenia_rejestru_nie_wypuszcza_adresu_ani
 
 
 def _guarded_with(produced: Produced, folder: Path, word: str) -> Path:
-    """Plik Logów z Archiwum po strażniku, który zapamiętał ``word`` jako ADRES z pliku taty, jak ``guarded`` w Centrum."""
+    """Plik Logów z Archiwum po strażniku, który zapamiętał ``word`` jako ADRES z pliku taty, jak ``guard_logs`` w Centrum."""
 
     forbidden = ForbiddenValues()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, word)
-    kept = guarded(RunLog.model_validate(produced.record), forbidden)
+    kept = guard_logs(RunLog.model_validate(produced.record), forbidden).record
     path = folder / produced.archived.stem
     path.write_text(kept.text, encoding="utf-8")
     return path

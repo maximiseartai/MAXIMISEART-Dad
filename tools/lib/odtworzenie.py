@@ -22,7 +22,7 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   których żaden plik taty nie ma. Wzorce i Konfigurację wykonawców daje folder ``configuration``, bo Logi mają z nich
   tylko nazwę i rozmiar.
 - Proces biegnie przez ten sam rdzeń (``process_run.run_process``) i ten sam wpis katalogu procesów co w Centrum, z
-  Kopią wejścia i pamięcią reguły danych, a Logi odtworzenia składają ``RunLog.of`` i strażnik (``guarded``), jak w
+  Kopią wejścia i pamięcią reguły danych, a Logi odtworzenia składają ``RunLog.of`` i strażnik (``guard_logs``), jak w
   Centrum. Decyzję taty odtworzenie rozstrzyga tak jak tata: odmowa tylko wtedy, gdy Logi kończą się odmową.
 - Porównanie (``first_difference``) idzie po polach Logów w kolejności przyczyn: Kopia wejścia (czy pliki z Kopii
   czytają się tak samo), wynik, zakończenie i Rodzaj Zatrzymania, Komunikaty, uwagi techniczne, podsumowanie, liczba
@@ -64,6 +64,7 @@ from rozliczenia.centrum.catalog import (
     ProcessDeclaration,
 )
 from rozliczenia.centrum.dad_actions import DadActions
+from rozliczenia.centrum.logs_disk import name_of
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.reports import ProblemFingerprint
 from rozliczenia.centrum.run_logs import (
@@ -74,7 +75,7 @@ from rozliczenia.centrum.run_logs import (
     LoggedTyped,
     RunLog,
     guard_cuts,
-    guarded,
+    guard_logs,
 )
 from rozliczenia.centrum.runs import CONTINUE_HINT, EndedRun, PreparedRun
 from rozliczenia.centrum.stops import StoppedRun
@@ -181,7 +182,7 @@ class Report:
         first = f"{self.verdict.headline}: {blocking[0]}" if blocking else self.verdict.headline
         lines = [
             first,
-            f"Uruchomienie: {title}, {record.mode}, okres {record.period}, {record.file_name}",
+            f"Uruchomienie: {title}, {record.mode}, okres {record.period}, {name_of(record.start)}",
             f"Kod: {code}",
         ]
         if (cause := stop_cause(record)) is not None:
@@ -837,7 +838,7 @@ def _run(record: RunLog, setup: _Setup, work: Path) -> RunLog:
         environment=environment,
         dad_actions=DadActions(entries=[], omitted=0),
     )
-    return guarded(replayed, setup.forbidden)
+    return guard_logs(replayed, setup.forbidden).record
 
 
 def _stopped(info: contract.RunInfo, stop: Stop) -> StoppedRun:
