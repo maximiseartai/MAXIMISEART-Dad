@@ -77,7 +77,7 @@ you keep the two in step. Each model action is one indivisible step of this code
 | `Zatrzymanie` | `LoggedOut`, `UnexpectedPage`, `WindowClosed`, `EfenixUnreachable` from any window action, also `LoggedOut` from `enter_quantity` (efenix did not save the quantity: step `wpisz`) and a stop after efenix saved it (step `potwierdz`): the window's exception passes through `_outcome`, `_efenix_stops` in `save` turns it into `StopError`, and `save` (`except StopError`) calls `_mark` with the results before it |
 | `Znaczniki` | `save`: `_mark` (`mark_ready` for every `Ready` row), also after `StopError`, then the end of the Uruchomienie |
 | `Zgasniecie` | none: Centrum switches off or is killed; memory is gone, efenix stays, no Znaczniki |
-| `Tata` | none: Dad changes a quantity in efenix by hand while no Uruchomienie runs (`AtrapaEfenix.edit` in the tests) |
+| `Tata` | none: Dad changes a quantity in efenix by hand while no Uruchomienie runs (`StanEfenix.edit` in the tests) |
 
 The script compares these definitions with the Sync commit (`model/definicje.json`): `save`, `_mark`, `_efenix_stops`,
 `_outcome`, `_priced`, `_emmett`, `_dated`, `_completed` in `src/rozliczenia/efenix_pricing.py`; `completion`, `same_amount` in
@@ -124,10 +124,10 @@ Each counterexample is told as numbered steps in the code's words, with the quan
 Read every result with the pstack `/statechart` skill: give it `model/WznowienieWyceny.tla` and one configuration with
 the `Wybaczone…` constants as they are (empty), and it shows each broken promise as its shortest path in plain words.
 
-Then tell a real bug from a modeling error: replay the path on the code, one step per action, as a test with the
-Atrapa efenix (`tests/test_wycena_efenix.py`: `_run(..., window=...)` to stop the window after a server write,
-`expire_after=(SAVE_QUANTITY, n)` for a refused save, `atrapa.edit` for Dad). A path that does not happen on the code
-means the model is wrong until you show it is not.
+Then tell a real bug from a modeling error: replay the path on the code, one step per action, as a test in
+`tests/test_wycena_efenix.py`: on the window in process (`_run_in_process` with `StanEfenix(..., expire_after=(Action.QUANTITY, n))`
+for a refused save and `StanEfenix.edit` for Dad), or with the Atrapa efenix in Chromium (`_run(..., window=...)`) to stop
+the window after a server write. A path that does not happen on the code means the model is wrong until you show it is not.
 
 ## Configurations
 
