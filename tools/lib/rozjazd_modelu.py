@@ -119,7 +119,7 @@ def przesun(skill: Path, root: Path) -> list[str]:
     if missing:
         raise ValueError(f"nie ma definicji: {', '.join(missing)}; popraw nazwy w {DEFINICJE}")
     moved = [f"{path} {name}" for path, names in recorded.items() for name, digest in names.items() if now[path][name] != digest]
-    (skill / DEFINICJE).write_text(json.dumps(now, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (skill / DEFINICJE).write_text(json.dumps(now, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="")
     return moved
 
 

@@ -64,14 +64,28 @@ def utworz() -> object:
     if True:
         kolejka = list()
     return kolejka
+
+
+STALA: int = 7
+
+
+def galezie(x: object) -> object:
+    try:
+        wynik = 1
+    except ValueError:
+        wynik = 2
+    match x:
+        case 0:
+            wynik = 3
+    return wynik
 '''
-NAMES = {CODE: ["zapisz", "Dziennik.zamknij", "utworz.kolejka"], WHOLE: [rozjazd_modelu.CALY_PLIK]}
+NAMES = {CODE: ["zapisz", "Dziennik.zamknij", "utworz.kolejka", "STALA", "galezie.wynik"], WHOLE: [rozjazd_modelu.CALY_PLIK]}
 STEPS = f"Wykonaj kroki „Bring the model in line” z {SKILL}/SKILL.md, a skróty przelicz (tools/przesun_model.py verify-model) dopiero, gdy model opisuje kod."
 
 
 def _write(root: Path, name: str, text: str) -> None:
     (root / name).parent.mkdir(parents=True, exist_ok=True)
-    (root / name).write_text(text, encoding="utf-8")
+    (root / name).write_text(text, encoding="utf-8", newline="")
 
 
 def _skill(root: Path) -> Path:
@@ -87,7 +101,7 @@ def _skill(root: Path) -> Path:
 def _edit(root: Path, name: str, old: str, new: str) -> None:
     text = (root / name).read_text(encoding="utf-8")
     assert text.count(old) == 1, old
-    (root / name).write_text(text.replace(old, new), encoding="utf-8")
+    (root / name).write_text(text.replace(old, new), encoding="utf-8", newline="")
 
 
 @pytest.mark.parametrize(
@@ -103,6 +117,9 @@ def _edit(root: Path, name: str, old: str, new: str) -> None:
             f"{CODE} utworz.kolejka",
             id="drugie-wiazanie-w-zakresie",
         ),
+        pytest.param("STALA: int = 7\n", "STALA: int = 8\n", f"{CODE} STALA", id="przypisanie-z-adnotacja"),
+        pytest.param("        wynik = 2\n", "        wynik = 20\n", f"{CODE} galezie.wynik", id="wiazanie-w-except"),
+        pytest.param("            wynik = 3\n", "            wynik = 30\n", f"{CODE} galezie.wynik", id="wiazanie-w-case"),
         pytest.param("\ndef zapisz(", "\ndef zapisz_inaczej(", f"{CODE} zapisz", id="definicji-nie-ma"),
         pytest.param("X = 1\n", '"""Docstring."""\nX = 1\n', WHOLE, id="caly-plik"),
         pytest.param("X = 1\n", "X = 1  # komentarz\n", WHOLE, id="komentarz-w-calym-pliku"),
@@ -261,7 +278,7 @@ def test_plik_ktory_sie_nie_parsuje_zmienil_kazda_swoja_definicje(tmp_path: Path
 
     found = rozjazd_modelu.rozjazd(skill, tmp_path)
 
-    assert found == f"kod opisany modelem zmienił się: {CODE} zapisz, {CODE} Dziennik.zamknij, {CODE} utworz.kolejka. {STEPS}"
+    assert found == f"kod opisany modelem zmienił się: {CODE} zapisz, {CODE} Dziennik.zamknij, {CODE} utworz.kolejka, {CODE} STALA, {CODE} galezie.wynik. {STEPS}"
 
 
 @pytest.mark.parametrize(("ci", "failure"), [("true", True), ("", False)], ids=["w-ci", "poza-ci"])
