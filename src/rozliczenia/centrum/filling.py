@@ -32,7 +32,7 @@ from rozliczenia.message import Message
 from rozliczenia.order_facts import MissingHeaders
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.quantities_to_fill import FillKind, KindToFill, quantities_to_fill
-from rozliczenia.settings import SettingsStore
+from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.text import plural
 from rozliczenia.workbook_files import WorkbookError, excel_lock_file
 

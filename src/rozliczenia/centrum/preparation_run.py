@@ -20,7 +20,7 @@ from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.input_copy import InputCopy
-from rozliczenia.settings import SettingsStore
+from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.period_folder import PeriodFolders, period_status_label, scan_period_folders
 from rozliczenia.preparation_process import PreparationInputs
 from rozliczenia.input_checks import Readers

@@ -41,7 +41,7 @@ def settlement(tmp_path: Path, *, period: str = PERIOD) -> ProcessCase:
     worker_template = config.parent / "Wzorzec rozliczenia pracownika.xlsx"
     return ProcessCase(
         process=settlement_process.PROCESS,
-        inputs=lambda dry_run: SettlementInputs(source, dry_run, config, worker_template),
+        inputs=lambda dry_run: SettlementInputs(source, config, worker_template, dry_run),
         period_files=(target_directory,),
         client_data_markers=("syntetyczny adres", "#1"),
         templates=(worker_template,),
@@ -56,10 +56,10 @@ def preparation(tmp_path: Path, *, period: str = PERIOD, fixture: PreparationFix
             fixture.register_path,
             fixture.periods_directory,
             period,
-            dry_run,
             fixture.config_path,
             fixture.internal_template_path,
             fixture.collective_template_path,
+            dry_run,
         ),
         period_files=(fixture.internal_settlement_path, fixture.collective_file_path),
         client_data_markers=("SYN-",),
@@ -222,7 +222,7 @@ def test_problem_przebiegu_rozliczen_i_ostrzezenie_przygotowania_sa_licznikami_r
     worker_template = config.parent / "Wzorzec rozliczenia pracownika.xlsx"
     settled = run_process(
         settlement_process.PROCESS,
-        SettlementInputs(source, True, config, worker_template),
+        SettlementInputs(source, config, worker_template, dry_run=True),
         Tata(),
         view=summary_view,
         metrics_path=tmp_path / "przebieg.jsonl",

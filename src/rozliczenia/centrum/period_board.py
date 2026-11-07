@@ -22,7 +22,7 @@ from rozliczenia.centrum.catalog import EFENIX, PERIODS_DIRECTORY, first_choose
 from rozliczenia.centrum.metrics import last_results
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.processes import Processes
-from rozliczenia.settings import SettingsStore
+from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.period_folder import (
     PeriodFolder,
     PeriodFolderLookupError,

@@ -23,15 +23,16 @@ której mutacje sprawdzają takie testy (``tools/mutacje_nocne.py``).
 
 Kroki skilli (``tools/lib/kroki_skilli.py``). Na pushu biegnie każdy. Na pull request biegnie podstawa ``ci:``, gdy
 zmieniony jest plik z ``pilnuje`` albo plik w folderze skilla, i skrypt mutacji modelu TLA+ (``model_watched``: każda
-jego mutacja psuje plik w folderze ``model/`` skilla), gdy zmieniony jest plik w tym folderze, sam skrypt albo
-sprawdzenie, które uruchamiają jego mutacje; inne skrypty mutacji biegną nocą (ADR 0021). Nocą biegnie skrypt mutacji,
-gdy zmieniony jest plik w folderze skilla, runner mutacji (``RUNNER``) albo sprawdzenie, które uruchamiają jego mutacje,
-i podstawa z ``ci-czesci`` przy tej samej zmianie co na pull request, każdą częścią każdej liczby części od 1 do
-``ci-czesci`` (``KrokSkilla.czesci``), bo pull request uruchamia części jednej liczby, którą plan wybiera z celu ściany.
+jego mutacja psuje plik w folderze ``model/`` skilla), gdy zmieniony jest plik w tym folderze, sam skrypt, sprawdzenie,
+które uruchamiają jego mutacje, albo moduł, który to sprawdzenie importuje (silnik ``tools/lib/model_tlc.py``); inne
+skrypty mutacji biegną nocą (ADR 0021). Nocą biegnie skrypt mutacji, gdy zmieniony jest plik w folderze skilla,
+runner mutacji (``RUNNER``) albo sprawdzenie, które uruchamiają jego mutacje, i podstawa z ``ci-czesci`` przy tej samej
+zmianie co na pull request, każdą częścią każdej liczby części od 1 do ``ci-czesci`` (``KrokSkilla.czesci``), bo pull
+request uruchamia części jednej liczby, którą plan wybiera z celu ściany.
 Zmiana ścieżki z ``Context.SKILL_STEPS`` uruchamia każdy krok swojego rodzaju, a skill bez klucza ``pilnuje`` albo z
-kluczem, którego nie da się odczytać, biegnie zawsze. Importów ani plików, które krok czyta, wybór nie liczy: każdy krok
-uruchamia pełne CI ``main``. Podstawa, którą wybrany skrypt mutacji jej skilla i tak uruchamia bez mutacji (podstawa
-``check_all``), nie biegnie drugi raz.
+kluczem, którego nie da się odczytać, biegnie zawsze. Poza importami sprawdzeń skryptu mutacji modelu importów ani
+plików, które krok czyta, wybór nie liczy: każdy krok uruchamia pełne CI ``main``. Podstawa, którą wybrany skrypt
+mutacji jej skilla i tak uruchamia bez mutacji (podstawa ``check_all``), nie biegnie drugi raz.
 
 Polecenia skilla, które CI liczy, to wybrane kroki skilla i wywołania jego skryptów w krokach CI torów runu; nic więcej
 w ``ci.yml`` nie wywołuje skryptu skilla (``tests/test_zakres_runu.py``).
@@ -39,9 +40,10 @@ w ``ci.yml`` nie wywołuje skryptu skilla (``tests/test_zakres_runu.py``).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 import enum
+from functools import cache
 from pathlib import Path, PurePosixPath
 
 from kroki_skilli import Katalog, Step, hits, model_watched, repeats, watched
@@ -58,7 +60,10 @@ PLIKI_TESTOW = ("test_*.py", "*_test.py")
 # Powody pominięcia kroku skilla, który biegnie przy innym zdarzeniu.
 NIGHTLY = "skrypt mutacji biegnie nocą na main (mutacje-nocne.yml, ADR 0021)"
 ON_PULL_REQUEST = "podstawa biegnie na pull request, nie nocą"
-MODEL_UNTOUCHED = "skrypt mutacji modelu biegnie na pull request tylko przy zmianie modelu, skryptu albo sprawdzeń jego mutacji, a poza tym nocą"
+MODEL_UNTOUCHED = (
+    "skrypt mutacji modelu biegnie na pull request tylko przy zmianie modelu, skryptu, sprawdzeń jego mutacji albo modułów, które te"
+    " sprawdzenia importują, a poza tym nocą"
+)
 
 
 class Zdarzenie(enum.StrEnum):
@@ -194,9 +199,11 @@ def zakres(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path = ROOT) -> Z
     """Zakres runu ``zdarzenie`` dla zmiany ``zmiana`` (ścieżki od bazy; push jej nie czyta) w checkoucie ``root``: pliki
     testów i kroki skilli tego checkoutu (``Katalog.skanuj(root)``)."""
 
-    tory, pliki, zrodlo = _pytest(zdarzenie, zmiana, root)
+    # Pliki checkoutu tylko, gdy run pyta o wpływ zmiany: push w ``tools/ci/mutacje_skilli.py`` biegnie też poza gitem.
+    repository = cache(lambda: Repository.scan(root))
+    tory, pliki, zrodlo = _pytest(zdarzenie, zmiana, root, repository)
     katalog = Katalog.skanuj(root)
-    why = {step: _dlaczego(step, zdarzenie, zmiana) for step in katalog.kroki}
+    why = {step: _dlaczego(step, zdarzenie, zmiana, repository) for step in katalog.kroki}
     running = [step for step in katalog.kroki if why[step][0]]
     wybrane = tuple(
         KrokSkilla(step, why[step][1], _czesci(step, zdarzenie), why[step][2])
@@ -204,7 +211,7 @@ def zakres(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path = ROOT) -> Z
         if step.verdict or not repeats(step, running)
     )
     pominiete = tuple((step, why[step][1]) for step in katalog.kroki if not why[step][0])
-    przegladarka = potrzebuja_chromium(pliki, Repository.scan(root)) if pliki else frozenset()
+    przegladarka = potrzebuja_chromium(pliki, repository()) if pliki else frozenset()
     return ZakresRunu(zdarzenie, tory, pliki, zrodlo, wybrane, pominiete, tuple(sorted(katalog.bledy.items())), przegladarka)
 
 
@@ -215,7 +222,9 @@ def potrzebuja_chromium(testy: Iterable[str], repository: Repository) -> frozens
     return repository.reaching(PRZEGLADARKA) & {test.partition("::")[0] for test in testy}
 
 
-def _pytest(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path) -> tuple[tuple[Tor, ...], tuple[str, ...], str]:
+def _pytest(
+    zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path, repository: Callable[[], Repository]
+) -> tuple[tuple[Tor, ...], tuple[str, ...], str]:
     match zdarzenie:
         case Zdarzenie.NOC:
             return (), (), "bez pytest"
@@ -225,7 +234,7 @@ def _pytest(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path) -> tuple[t
             windows, linux = (tor for tor in TORY if tor.nazwa in ("windows-3.11", "linux-3.14"))
             if full := run_all(zmiana, Context.PR_GATE):
                 return (replace(windows, kroki=("e2e", "timing")), linux), tuple(pliki_testow(root)), f"FULL ({', '.join(full)})"
-            wybor = Repository.scan(root).impact(zmiana)
+            wybor = repository().impact(zmiana)
             kroki = ("e2e",) * any(sciezka.startswith("src/") for sciezka in zmiana) + ("timing",) * any(skrypt in wybor.distances for skrypt in STRAZ)
             return (replace(windows, kroki=kroki), linux), with_structure(wybor.tests), f"wybór {len(wybor.tests)} plików"
 
@@ -242,14 +251,14 @@ def _czesci(step: Step, zdarzenie: Zdarzenie) -> tuple[tuple[int, int], ...]:
 Powod = tuple[bool, str, frozenset[str]]
 
 
-def _dlaczego(step: Step, zdarzenie: Zdarzenie, zmiana: frozenset[str]) -> Powod:
+def _dlaczego(step: Step, zdarzenie: Zdarzenie, zmiana: frozenset[str], repository: Callable[[], Repository]) -> Powod:
     """Czy krok skilla biegnie w runie ``zdarzenie`` przy zmianie ``zmiana``, dlaczego i które zmienione pliki go uruchamiają."""
 
     match zdarzenie:
         case Zdarzenie.PUSH:
             return True, "", frozenset()
         case Zdarzenie.PULL_REQUEST:
-            return _podstawa(step.skill, zmiana) if step.verdict is None else _skrypt_modelu(step, zmiana)
+            return _podstawa(step.skill, zmiana) if step.verdict is None else _skrypt_modelu(step, zmiana, repository)
         case Zdarzenie.NOC:
             if step.verdict is not None:
                 return _skrypt(step, zmiana)
@@ -301,11 +310,11 @@ def _skrypt(step: Step, zmiana: frozenset[str]) -> Powod:
     return False, "zmiany nie dotykają folderu skilla, runnera mutacji ani sprawdzeń, które uruchamiają mutacje skryptu", files
 
 
-def _skrypt_modelu(step: Step, zmiana: frozenset[str]) -> Powod:
+def _skrypt_modelu(step: Step, zmiana: frozenset[str], repository: Callable[[], Repository]) -> Powod:
     """Na pull request biegnie tylko skrypt mutacji modelu, przy zmianie ścieżki z ``model_watched``."""
 
     try:
-        paths = model_watched(step)
+        paths = model_watched(step, lambda path: repository().imported(path))
     except Exception as error:  # noqa: BLE001 - zmieniony skrypt, którego tabeli nie da się wczytać, biegnie i pokazuje swój błąd
         changed = step.command[0] in zmiana
         return (True, f"nie da się wczytać tabeli mutacji: {error}", frozenset({step.command[0]})) if changed else (False, NIGHTLY, frozenset())

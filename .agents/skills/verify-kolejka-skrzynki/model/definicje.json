@@ -7,8 +7,11 @@
     "lifespan"
   ],
   "src/rozliczenia/centrum/launcher.py": [
-    "listen_locally",
     "_listen_when_released"
+  ],
+  "src/rozliczenia/tool_files.py": [
+    "listen_locally",
+    "_bound"
   ],
   "src/rozliczenia/centrum/server.py": [
     "_GRACEFUL_SHUTDOWN_S",

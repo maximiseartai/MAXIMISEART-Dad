@@ -23,7 +23,7 @@ Kiedy który krok biegnie, rozstrzyga zakres runu (``tools/lib/zakres_runu.py``)
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from fnmatch import fnmatchcase
 from functools import cache
 import importlib.util
@@ -271,17 +271,21 @@ def watched(step: Step) -> tuple[str, ...]:
     return (step.folder, *RUNNER, *checkers)
 
 
-def model_watched(step: Step) -> tuple[str, ...] | None:
+def model_watched(step: Step, imported: Callable[[str], Iterable[str]]) -> tuple[str, ...] | None:
     """Ścieżki, których zmiana na pull request uruchamia skrypt mutacji modelu ``step``: folder ``MODEL`` skilla (z ``/``
-    na końcu), sam skrypt i sprawdzenia, które uruchamiają jego mutacje; ``None``, gdy skrypt nie ma mutacji albo któraś
-    psuje plik spoza ``MODEL``. Tabela, której nie da się wczytać, to wyjątek z ``exec_module``."""
+    na końcu), sam skrypt, sprawdzenia, które uruchamiają jego mutacje, i pliki, które te sprawdzenia importują
+    (``imported``, ``Repository.imported``), bo silnik modelu (``tools/lib/model_tlc.py``) daje ich werdykt; ``None``,
+    gdy skrypt nie ma mutacji albo któraś psuje plik spoza ``MODEL``. Tabela, której nie da się wczytać, to wyjątek
+    z ``exec_module``."""
 
     model = f"{step.folder}{MODEL}/"
     mutations = _mutations(step.root / step.command[0])
     edited = {edit.file.as_posix() for mutation in mutations for edit in mutation.edits}
     if not edited or not all(name.startswith(model) for name in edited):
         return None
-    return (model, step.command[0], *sorted({mutation.command[0] for mutation in mutations}))
+    checkers = sorted({mutation.command[0] for mutation in mutations})
+    engine = sorted({name for checker in checkers for name in imported(checker)} - {step.command[0], *checkers})
+    return (model, step.command[0], *checkers, *engine)
 
 
 def repeats(step: Step, chosen: Iterable[Step]) -> bool:

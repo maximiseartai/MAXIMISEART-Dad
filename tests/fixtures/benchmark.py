@@ -16,8 +16,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from rozliczenia.collective_preparation import default_collective_template_path, default_internal_template_path
-from rozliczenia.engine import default_worker_template_path
+from rozliczenia import tool_files
 from rozliczenia.workbook_files import DATA_ROW_COLUMNS, FIRST_DATA_ROW, QUANTITY_COLUMNS
 from tests.fixtures.preparation import write_collective_template, write_internal_template
 from tests.fixtures.settlement import write_template
@@ -28,9 +27,9 @@ BENCHMARK = ROOT / "tools" / "benchmark_przebiegu.py"
 SYNTHETIC_TEMPLATES = ROOT / "tools" / "syntetyczne_wzorce.py"
 
 # Nazwy, pod którymi Wzorce leżą w ``config``: te same, których szukają procesy.
-WORKER_TEMPLATE = default_worker_template_path().name
-COLLECTIVE_TEMPLATE = default_collective_template_path().name
-INTERNAL_TEMPLATE = default_internal_template_path().name
+WORKER_TEMPLATE = tool_files.WORKER_TEMPLATE.name
+COLLECTIVE_TEMPLATE = tool_files.COLLECTIVE_TEMPLATE.name
+INTERNAL_TEMPLATE = tool_files.INTERNAL_TEMPLATE.name
 # Mała odmiana syntetycznych Wzorców: kilka grup wspólnych formuł (co 64 wiersze), szybka w pytest.
 SMALL_DATA_ROWS = 150
 

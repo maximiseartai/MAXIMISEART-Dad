@@ -21,6 +21,7 @@ from rozliczenia.centrum.contract import ApiOperation
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import FileTypes
 from rozliczenia.centrum.shutdown import Shutdown
+from rozliczenia.tool_files import SETTINGS
 
 ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_SOURCE = ROOT / "frontend" / "src"
@@ -80,7 +81,7 @@ class _NoPlatform:
 def main() -> int:
     log = CentrumLog(Path(os.devnull))  # eksport nie obsługuje żądań, więc niczego nie zapisuje
     app = create_app(
-        settings_path=ROOT / "config" / "centrum-ustawienia.yaml",
+        settings_path=SETTINGS,
         platform=_NoPlatform(),
         log=log,
         shutdown=Shutdown(log),

@@ -1031,7 +1031,7 @@ def test_bez_wzorca_w_poleceniu_narzedzie_czyta_wzorzec_z_konfiguracji(
 ) -> None:
     # Wzorzec z konfiguracji to plik ``config/`` checkoutu, u Maksa prawdziwy plik taty, więc test wskazuje inny.
     configured = tmp_path / "config" / "Wzorzec pliku zbiorczego.xlsx"
-    monkeypatch.setattr(zgodnosc_efenix, "default_collective_template_path", lambda: configured)
+    monkeypatch.setattr(zgodnosc_efenix, "COLLECTIVE_TEMPLATE", configured)
 
     code = zgodnosc_efenix.main(["--efenix-url", "https://efenix.example/app/index.php", "--cdp", _dead_endpoint()])
 

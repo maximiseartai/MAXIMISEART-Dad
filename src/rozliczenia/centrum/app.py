@@ -57,8 +57,7 @@ from rozliczenia.centrum.run_cards import RunCards, run_cards_router
 from rozliczenia.centrum.run_comments import RecordMaker, RunComments
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE, CentrumRuns
 from rozliczenia.centrum.runs import ProcessEntry, RunHost, runs_router
-from rozliczenia.centrum.settings import settings_router
-from rozliczenia.settings import SettingsStore
+from rozliczenia.centrum.settings import SettingsStore, settings_router
 from rozliczenia.centrum.settlement_run import SettlementEntry
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
 from rozliczenia.centrum.stops import Stops
@@ -73,9 +72,10 @@ from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.intermax_copies import default_directory as default_intermax_copies
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.period_folder import PeriodFolderInaccessible
+from rozliczenia.tool_files import HOST
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
-_LOCAL_HOSTNAMES = frozenset({"127.0.0.1", "localhost"})
+_LOCAL_HOSTNAMES = frozenset({HOST, "localhost"})
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 

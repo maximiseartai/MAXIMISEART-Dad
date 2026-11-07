@@ -149,7 +149,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 from rozliczenia import workbook_files
 from rozliczenia.efenix_address import readable
-from rozliczenia.collective_preparation import default_collective_template_path
 from rozliczenia.efenix_browser import TIMEOUT_MS
 from rozliczenia.efenix_page import (
     AMOUNT,
@@ -183,6 +182,7 @@ from rozliczenia.efenix_page import (
 from rozliczenia.efenix_checks import PRICING_STATUS
 from rozliczenia.efenix_window import ElementCount, UnexpectedPage
 from rozliczenia.efenix_positions import POSITION_OF_COLUMN
+from rozliczenia.tool_files import COLLECTIVE_TEMPLATE
 from rozliczenia.workbook_files import WorkbookError
 
 from model_efenix import CATALOG, EfenixOrder
@@ -962,7 +962,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         address = urlparse(args.efenix_url)
         if address.scheme not in ("http", "https") or not address.path.endswith("/" + LIST_PAGE):
             raise ToolError(f"--efenix-url to adres listy zleceń efenix kończący się na /{LIST_PAGE}")
-        costs = template_costs(args.wzorzec or default_collective_template_path())
+        costs = template_costs(args.wzorzec or COLLECTIVE_TEMPLATE)
         with sync_playwright() as playwright:
             try:
                 browser = playwright.chromium.connect_over_cdp(args.cdp)

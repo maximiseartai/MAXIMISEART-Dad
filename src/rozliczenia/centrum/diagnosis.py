@@ -52,7 +52,7 @@ from rozliczenia.period_folder import (
     period_place_label,
     reading,
 )
-from rozliczenia.settings import Settings
+from rozliczenia.centrum.settings import Settings
 from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
 
 CheckState = Literal["passed", "failed", "not_checked"]
