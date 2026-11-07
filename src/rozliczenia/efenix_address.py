@@ -1,12 +1,14 @@
 """Reguła adresu Wyceny w efenix: czy ``Dane adresowe`` zlecenia w efenix to ten sam adres co ``ADRES`` w Pliku zbiorczym.
 
 Operacją jest ``address_differences()``: części adresu, którymi oba adresy się różnią (``AddressPart``), a
-``same_address()`` to adresy bez różnicy. Obie strony przechodzą przez jeden rozbiór (``_parse``): bez wielkości liter,
+``same_address()`` to adresy bez różnicy. Obie strony przechodzą przez jeden rozbiór (``_readings``): bez wielkości liter,
 zbędnych spacji i interpunkcji, rodzaj (``ul``, ``os``, ``al``, ``pl``), zbiór słów nazwy ulicy w dowolnej kolejności,
 numer budynku i lokal. Numer budynku to jedna część (``12A``) albo dwie po ``/`` (``13/14``), każda od cyfry.
-Lokal to słowo po ``Lokal`` zaraz za numerem (``12A Lokal 24``, ``13/14 Lokal 16``, zapis efenix) albo część po
-ostatnim ``/`` przy numerze bez ``Lokal`` (``12A/24``, ``13/14/16``, zapis Pliku zbiorczego); jeden ``/`` bez
-``Lokal`` dzieli więc numer i lokal, a nie dwie części numeru. ``Lokal`` gdzie indziej to słowo nazwy ulicy.
+Lokal to słowo po ``Lokal`` zaraz za numerem (``12A Lokal 24``, ``13/14 Lokal 16``, ``8B Lokal 27/3``, zapis efenix)
+albo część po ``/`` przy numerze bez ``Lokal`` (zapis Pliku zbiorczego): jeden ``/`` (``12A/24``) dzieli numer i lokal,
+a nie dwie części numeru. Dwa ``/`` bez ``Lokal`` mają dwa odczyty, bo tata pisze tak oba adresy: budynek ``13/14`` z
+lokalem ``16`` (``13/14/16``, #829) i budynek ``8B`` z lokalem ``27/3`` (``8B/27/3``, Uwaga taty z 7.11.2026). Który
+to podział, wie efenix, więc adres jest równy, gdy pasuje którykolwiek odczyt. ``Lokal`` gdzie indziej to słowo nazwy ulicy.
 Wszystko przed rodzajem (w efenix miejscowość z dzielnicą) się pomija.
 Adres, którego nie da się tak rozebrać (bez rodzaju, bez nazwy ulicy, bez numeru, z numerem budynku z więcej niż
 dwiema częściami albo z pustą częścią numeru), nie jest równy żadnemu, nawet samemu sobie, a jego różnica to strona
@@ -62,16 +64,22 @@ def readable(address: str) -> bool:
     """Reguła rozbiera ``address`` na rodzaj, nazwę ulicy, numer domu i lokal; narzędzie zgodności efenix sprawdza tak
     ``Dane adresowe`` z prawdziwego efenix."""
 
-    return _parse(address) is not None
+    return bool(_readings(address))
 
 
 def address_differences(collective: str, efenix: str) -> tuple[AddressPart, ...]:
     """Części, którymi ``ADRES`` z Pliku zbiorczego i ``Dane adresowe`` z efenix się różnią, w kolejności ``AddressPart``;
-    pusta krotka to ten sam adres. Strona, której reguła nie rozbiera, to jej ``…_UNREAD`` zamiast części."""
+    pusta krotka to ten sam adres. Strona, której reguła nie rozbiera, to jej ``…_UNREAD`` zamiast części. Gdy strona ma
+    dwa odczyty (``X/Y/Z`` bez ``Lokal``), różnica to ta z pary odczytów, która różni się najmniej, przy remisie
+    pierwsza."""
 
-    left, right = _parse(collective), _parse(efenix)
-    if left is None or right is None:
-        return tuple(part for part, parsed in ((AddressPart.FILE_UNREAD, left), (AddressPart.EFENIX_UNREAD, right)) if parsed is None)
+    lefts, rights = _readings(collective), _readings(efenix)
+    if not lefts or not rights:
+        return tuple(part for part, read in ((AddressPart.FILE_UNREAD, lefts), (AddressPart.EFENIX_UNREAD, rights)) if not read)
+    return min((_differences(left, right) for left in lefts for right in rights), key=len)
+
+
+def _differences(left: _Address, right: _Address) -> tuple[AddressPart, ...]:
     differs = {
         AddressPart.STREET: (left.kind, left.street) != (right.kind, right.street),
         AddressPart.NUMBER: left.number != right.number,
@@ -80,11 +88,13 @@ def address_differences(collective: str, efenix: str) -> tuple[AddressPart, ...]
     return tuple(part for part, different in differs.items() if different)
 
 
-def _parse(text: str) -> _Address | None:
+def _readings(text: str) -> tuple[_Address, ...]:
+    """Każdy odczyt adresu ``text``, po kolei; pusty, gdy reguła go nie rozbiera."""
+
     words = _SEPARATORS.sub(" ", _SLASH.sub("/", text.casefold())).split()
     kinds = [index for index, word in enumerate(words) if word in _KINDS]
     if not kinds:
-        return None
+        return ()
     words = words[kinds[0] :]
     kind, rest = words[0], words[1:]
     flat: str | None = None
@@ -92,11 +102,21 @@ def _parse(text: str) -> _Address | None:
     if len(rest) >= 3 and rest[-2] == _FLAT_WORD and rest[-3][:1].isdigit():
         rest, flat = rest[:-2], rest[-1]
     if len(rest) < 2:
-        return None
+        return ()
     *street, number = rest
-    building = number.split("/")
-    if flat is None and len(building) > 1:
-        *building, flat = building
-    if flat == "" or len(building) > 2 or not all(part[:1].isdigit() for part in building) or "/" in "".join(street):
-        return None
-    return _Address(kind, frozenset(street), "/".join(building), flat)
+    if "/" in "".join(street):
+        return ()
+    parts = number.split("/")
+    if flat is not None or len(parts) == 1:
+        splits = [(parts, flat)]
+    else:
+        splits = [(parts[:-1], parts[-1])]
+        if len(parts) == 3:
+            splits.append((parts[:1], "/".join(parts[1:])))
+    return tuple(
+        _Address(kind, frozenset(street), "/".join(building), flat)
+        for building, flat in splits
+        if len(building) <= 2
+        and all(part[:1].isdigit() for part in building)
+        and (flat is None or all(flat.split("/")))
+    )
