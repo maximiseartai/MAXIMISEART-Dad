@@ -70,6 +70,7 @@ from openpyxl.workbook.properties import WorkbookProperties
 
 from . import client_data, raw_orders, workbook_files
 from .input_copy import InputCopy, WorkbookCopy, modified_at
+from .intermax_replace import WriteMismatch
 from .preparation_register import ACTIVITIES, COLUMNS, DATE, DEVICES, WORKER
 from .raw_orders import SHIFT, CellFacts, DayPlan, IntermaxEntry, OperatorColor, OrderColumns, RawBlock, RowFacts
 from .row_look import BORDER
@@ -77,7 +78,7 @@ from .workbook_files import header_columns, is_blank
 from .workbook_parts import MAIN, OFFICE_REL, IrregularSheetData, SheetData, SheetRow, office_document, relationships
 from .worker_config import normalize_text
 
-__all__ = ["OrderSheet", "Register", "UnsupportedShape", "WriteMismatch"]
+__all__ = ["OrderSheet", "Register", "UnsupportedShape"]
 
 _FIRST: Final = "AKCJE"
 _LAST: Final = "UWAGI"
@@ -115,10 +116,6 @@ _STYLE_LISTS: Final = (b"fonts", b"fills", b"borders", b"cellXfs")
 
 class UnsupportedShape(Exception):
     """Arkusz zleceń ma w zmienianych wierszach kształt, którego zapis nie przenosi (formuła, zakres)."""
-
-
-class WriteMismatch(Exception):
-    """Plik zapisany przed podmianą różni się od oryginału czymś więcej niż uporządkowanym dniem."""
 
 
 @dataclass(frozen=True)
