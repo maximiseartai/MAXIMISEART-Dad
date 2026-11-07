@@ -152,13 +152,16 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `a78b703c5` (2026-11-07, review of #1038, round 1). Every row of the table was checked against the code
-at this commit. Since the Sync commit `6bdeaf76c` `GuardedLogs` is a class with slots instead of a frozen dataclass, so
-`dataclasses.replace`, a copy or a changed field no longer gives Logi that skipped `guard_logs`; it holds the same
-Logi after the guard and the same Logi before it for the Diagnoza, and `ZapiszLogi` still writes `logs.text`. No step
-and no order changed, so no action changed.
+Sync commit: `8537da18d` (2026-11-07, review of #1038, round 2). Every row of the table was checked against the code
+at this commit. Since the Sync commit `a78b703c5` `GuardedLogs` has no subclasses (`final`, `__init_subclass__` raises),
+and the four version types and `_write` raise `TypeError` for anything but `GuardedLogs` or `GuardedText`, which
+`guard`, `guard_logs` and `guard_text` always give on these paths, so the new raise is no step. No step and no order
+changed, so no action changed.
 
 Earlier Sync commits, each checked the same way:
+- `a78b703c5`: `GuardedLogs` is a class with slots instead of a frozen dataclass, so `dataclasses.replace`, a copy or a
+  changed field no longer gives Logi that skipped `guard_logs`; it holds the same Logi after the guard and the same
+  Logi before it for the Diagnoza, and `ZapiszLogi` still writes `logs.text`. No action changed.
 - `6bdeaf76c`: every version of the comment of an Uruchomienie is a type in `comment_versions.py` (`ProgressVersion`,
   `OwnLogs`, `StandInLogs`, `WithoutLogsVersion`) that carries only Logi or text after the guard (`GuardedLogs` from
   `guard_logs`, `GuardedText` from `guard_text`), and `post_of` gives it the rank of the old `progress_post` and
