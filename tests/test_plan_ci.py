@@ -346,6 +346,17 @@ def test_plan_wczytany_z_pliku_ma_zdarzenie_zapisanego_wiec_zadanie_pr_dalej_ma_
         plan_runu.Plan.z_json(unknown)
 
 
+@pytest.mark.parametrize("unit", ["tests/test_adr.py", "pytest:", "krok:e2e#0/2", "mutacje:verify-a/ci", "skill:verify-a/ci#3/2"])
+def test_plan_z_jednostka_spoza_postaci_klucza_jest_nieczytelny_zanim_zadanie_cokolwiek_uruchomi(unit: str) -> None:
+    """Zadanie i Required czytają jednostki planu tylko w postaci klucza ``<rodzaj>:<nazwa>[#k/n]``, więc plan z inną
+    jednostką to ``ValueError`` przy wczytaniu, jak plan w innej wersji, a nie krok uruchomiony pod złą nazwą."""
+
+    job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py", unit), 401.0)
+
+    with pytest.raises(ValueError, match=re.escape(repr(unit.partition("#")[2]) if "#" in unit else repr(unit))):
+        plan_runu.Plan.z_json(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)).do_json())
+
+
 def test_plan_zmieniony_po_digest_nie_wykonuje_sie_a_required_nie_bierze_zapisow_innego_planu(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     plan = _plan(_times(), [*FILES, LONG])
     tampered = json.loads(plan.do_json())
