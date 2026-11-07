@@ -9,15 +9,18 @@ bo jeden z Komunikatów mówi o brakujących zależnościach.
 
 from __future__ import annotations
 
+from rozliczenia.centrum.tool_update import GUARDIAN_LEASE_S
 from rozliczenia.message import Message
+from rozliczenia.tool_files import HOST, LOG_PATH, TOOL_ROOT
 
 TITLE = "Centrum rozliczeń"
 _SHORTCUT = "skrót „Centrum rozliczeń”"
-_LOG = "logs\\centrum-rozliczen.log"
+# Ścieżka w folderze narzędzia tak, jak ją widzi tata w Eksploratorze plików Windows.
+_LOG = "\\".join(LOG_PATH.relative_to(TOOL_ROOT).parts)
 
 
 def _address(port: int) -> str:
-    return f"adres http://127.0.0.1:{port}/ na tym komputerze"
+    return f"adres http://{HOST}:{port}/ na tym komputerze"
 
 
 def port_taken(port: int) -> Message:
@@ -89,5 +92,5 @@ def update_finishing() -> Message:
         code="AKTUALIZACJA_SIE_KONCZY",
         what="Aktualizacja narzędzia jeszcze się kończy.",
         where="narzędzie na tym komputerze",
-        action=f"Poczekaj 10 minut i kliknij {_SHORTCUT} ponownie.",
+        action=f"Poczekaj {GUARDIAN_LEASE_S / 60:.0f} minut i kliknij {_SHORTCUT} ponownie.",
     )

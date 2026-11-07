@@ -15,8 +15,8 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import has_console
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.version import tool_commit, version_label
+from rozliczenia.tool_files import HOST
 
-HOST = "127.0.0.1"  # wyłącznie ten komputer (ADR 0004)
 _GRACEFUL_SHUTDOWN_S = 5  # otwarte połączenia (np. strumień postępu) nie wstrzymują zamknięcia dłużej
 
 

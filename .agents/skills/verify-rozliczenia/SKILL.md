@@ -33,6 +33,7 @@ pilnuje:
   - src/rozliczenia/telemetry.py
   - src/rozliczenia/text.py
   - src/rozliczenia/template_*.py
+  - src/rozliczenia/tool_files.py
   - src/rozliczenia/workbook_*.py
   - src/rozliczenia/worker_config.py
   - src/rozliczenia/write_routes.py

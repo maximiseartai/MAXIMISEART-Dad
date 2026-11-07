@@ -80,15 +80,10 @@ from rozliczenia.centrum.run_logs import (
 from rozliczenia.centrum.runs import CONTINUE_HINT, EndedRun, PreparedRun
 from rozliczenia.centrum.stops import StoppedRun
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues, forbidden_columns
-from rozliczenia.collective_preparation import (
-    default_collective_template_path,
-    default_internal_template_path,
-)
 from rozliczenia.decision import Decision
 from rozliczenia.efenix_orders import PricingScope, read_scope
 from rozliczenia.efenix_pricing import PricingMode
 from rozliczenia.efenix_process import EfenixInputs
-from rozliczenia.engine import default_worker_template_path
 from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.intermax_process import OrderingInputs
@@ -98,7 +93,7 @@ from rozliczenia.process_run import Finished, Stop, run_process
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 from rozliczenia.settlement_process import SettlementInputs
 from rozliczenia.text import normalize_text
-from rozliczenia.worker_config import default_config_path
+from rozliczenia.tool_files import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_CONFIG, WORKER_TEMPLATE
 
 import atrapa_z_logow
 
@@ -404,10 +399,10 @@ def _configuration_limit(record: RunLog, configuration: Path | None, roles: Sequ
 
 def _configuration_files(folder: Path) -> dict[str, Path]:
     return {
-        "worker_config": folder / default_config_path().name,
-        "internal_template": folder / default_internal_template_path().name,
-        "collective_template": folder / default_collective_template_path().name,
-        "worker_template": folder / default_worker_template_path().name,
+        "worker_config": folder / WORKER_CONFIG.name,
+        "internal_template": folder / INTERNAL_TEMPLATE.name,
+        "collective_template": folder / COLLECTIVE_TEMPLATE.name,
+        "worker_template": folder / WORKER_TEMPLATE.name,
     }
 
 

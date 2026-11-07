@@ -23,7 +23,7 @@ from pathlib import Path
 import time
 from types import MappingProxyType
 
-from . import TOOL_ROOT, input_checks, preparation_files, preparation_plan
+from . import input_checks, preparation_files, preparation_plan
 from . import preparation_messages as messages
 from .client_data import ForbiddenValues
 from .input_copy import InputCopy
@@ -39,8 +39,6 @@ from .write_routes import RouteCounts
 
 __all__ = [
     "PreparationSummary",
-    "default_collective_template_path",
-    "default_internal_template_path",
     "prepare_collective_file",
 ]
 
@@ -73,18 +71,6 @@ class PreparationSummary:
             (f"{WEEKDAY_LABELS[day.weekday()]} {day:%d.%m.%Y}", count)
             for day, count in self.orders_per_day.items()
         ]
-
-
-def default_internal_template_path() -> Path:
-    """Wzorzec rozliczenia wewnętrznego w katalogu konfiguracji obok Wzorca rozliczenia pracownika."""
-
-    return TOOL_ROOT / "config" / "Wzorzec rozliczenia wewnętrznego.xlsx"
-
-
-def default_collective_template_path() -> Path:
-    """Wzorzec pliku zbiorczego w katalogu konfiguracji obok Wzorca rozliczenia pracownika."""
-
-    return TOOL_ROOT / "config" / "Wzorzec pliku zbiorczego.xlsx"
 
 
 def _incomplete_period_warning(register_path: Path, plan: Plan, incomplete: IncompletePeriod) -> Message:
@@ -139,8 +125,8 @@ def prepare_collective_file(
     period: str,
     config_path: Path,
     *,
-    internal_template_path: Path | None = None,
-    collective_template_path: Path | None = None,
+    internal_template_path: Path,
+    collective_template_path: Path,
     dry_run: bool = False,
     observer: ProgressObserver | None = None,
     conversation: Conversation | None = None,
@@ -175,8 +161,8 @@ def prepare_collective_file(
     register_path = register_path.expanduser().resolve()
     periods_directory = periods_directory.expanduser().resolve()
     config_path = config_path.expanduser().resolve()
-    internal_template = (internal_template_path or default_internal_template_path()).expanduser().resolve()
-    collective_template = (collective_template_path or default_collective_template_path()).expanduser().resolve()
+    internal_template = internal_template_path.expanduser().resolve()
+    collective_template = collective_template_path.expanduser().resolve()
 
     def check() -> tuple[preparation_files.PeriodFiles, dict[str, str]]:
         checked = input_checks.check_preparation(

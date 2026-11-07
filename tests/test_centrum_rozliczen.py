@@ -20,14 +20,13 @@ from rozliczenia import efenix_process
 from rozliczenia.centrum import app
 from rozliczenia.centrum.app import STATIC_DIRECTORY
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
-from rozliczenia.centrum.launcher import LOG_PATH
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.reports import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
-from rozliczenia.settings import default_settings_path
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
+from rozliczenia.tool_files import LOG_PATH, SETTINGS
 from tests.fixtures.centrum import CENTRUM, TOOL_COMMIT, Centrum, ROOT, centrum
 
 
@@ -195,17 +194,17 @@ def test_nieistniejacy_zapamietany_folder_okresow_jest_wyraznie_oznaczony(tmp_pa
 @pytest.mark.parametrize(
     "local_file",
     [
-        default_settings_path(),
+        SETTINGS,
         LOG_PATH,
-        default_settings_path().parent / CENTRUM_RUNS_FILE,
-        default_settings_path().parent / REPORT_KEY_FILE,
-        default_settings_path().parent / DAD_CASES_FILE,
-        default_settings_path().parent / OLD_REPORTS_FILE,
-        default_settings_path().parent / UNSENT_DIRECTORY / QUEUE_DIRECTORY / "20261024T101500000000Z-0001-zgloszenie-3f2a9c1b.json",
-        default_settings_path().parent / OLD_NOTES_FILE,
-        default_settings_path().parent / NOTIFICATIONS_FILE,
-        default_settings_path().parent / ADDRESSES_FILE,
-        default_settings_path().parent / "plik-z-przyszlej-wersji.json",
+        SETTINGS.parent / CENTRUM_RUNS_FILE,
+        SETTINGS.parent / REPORT_KEY_FILE,
+        SETTINGS.parent / DAD_CASES_FILE,
+        SETTINGS.parent / OLD_REPORTS_FILE,
+        SETTINGS.parent / UNSENT_DIRECTORY / QUEUE_DIRECTORY / "20261024T101500000000Z-0001-zgloszenie-3f2a9c1b.json",
+        SETTINGS.parent / OLD_NOTES_FILE,
+        SETTINGS.parent / NOTIFICATIONS_FILE,
+        SETTINGS.parent / ADDRESSES_FILE,
+        SETTINGS.parent / "plik-z-przyszlej-wersji.json",
     ],
     ids=[
         "ustawienia-taty",

@@ -9,6 +9,7 @@ i ``tools/skille_dla_zmiany.py``:
     repository = Repository.scan(root)               # pliki checkoutu; graf liczy się raz, przy pierwszym pytaniu
     impact = repository.impact(changed)              # testy dotknięte zmianą, odległości, odcisk testu
     repository.reaching("tools/mutacje.py")          # pliki testów, które sięgają pliku
+    repository.imported("tools/plan_ci.py")          # pliki, do których plik dochodzi importem
 
 Zmiana to ścieżki, którymi checkout, razem z niezacommitowanymi i nieśledzonymi plikami, różni się od ``merge-base``
 HEAD z bazą; przeniesienie daje starą i nową ścieżkę, a usunięty plik też jest zmianą.
@@ -235,6 +236,18 @@ class Repository:
         """
 
         return self._runners.get(path, frozenset())
+
+    def imported(self, path: str) -> frozenset[str]:
+        """Pliki, do których ``path`` spoza ``tests/`` dochodzi importem, wprost albo przez inny moduł, bez samego ``path``."""
+
+        depends_on = self._graph(frozenset()).depends_on
+        reached: set[str] = set()
+        pending = [path]
+        while pending:
+            for target in depends_on.get(pending.pop(), set()) - reached:
+                reached.add(target)
+                pending.append(target)
+        return frozenset(reached - {path})
 
     @cached_property
     def _runners(self) -> dict[str, frozenset[str]]:

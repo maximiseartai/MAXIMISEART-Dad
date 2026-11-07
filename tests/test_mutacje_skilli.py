@@ -355,9 +355,7 @@ def test_kazdy_glob_pilnuje_trafia_w_plik_repozytorium(monkeypatch: pytest.Monke
     assert dead == []
 
 
-POZA_VERIFY_ROZLICZENIA = {
-    "src/rozliczenia/settings.py": "ustawienia taty importuje tylko Centrum rozliczeń, a skrypty skilla i tools/uruchom_proces.py go nie wykonują",
-}
+POZA_VERIFY_ROZLICZENIA: dict[str, str] = {}
 
 
 def test_kazdy_modul_silnika_jest_w_pilnuje_verify_rozliczenia_albo_na_liscie_wylaczen(monkeypatch: pytest.MonkeyPatch) -> None:

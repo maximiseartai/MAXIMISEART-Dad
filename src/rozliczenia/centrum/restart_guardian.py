@@ -28,7 +28,6 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import shutil
-import socket
 import subprocess
 import sys
 import time
@@ -45,18 +44,19 @@ from rozliczenia.centrum.tool_update import (
     UpdateResult,
     write_result,
 )
+from rozliczenia.tool_files import TOOL_ROOT, port_free, start_command
 
 # Tyle czekają: stare Centrum na zamknięcie (otwarte połączenia karty do 5 s) i nowa wersja na pierwszą odpowiedź.
 PORT_TIMEOUT_S: Final = 60.0
 START_TIMEOUT_S: Final = 60.0
 _POLL_S: Final = 0.2
 _STOP_TIMEOUT_S: Final = 10.0
-_HOST: Final = "127.0.0.1"
-_SOURCE: Final = Path(__file__).resolve().parents[2]
+_SOURCE: Final = TOOL_ROOT / "src"
 # Pakiet-szkielet kopii: tylko moduły bez bibliotek narzędzia, które opiekun importuje.
 _COPIED: Final = (
     "rozliczenia/__init__.py",
     "rozliczenia/message.py",
+    "rozliczenia/tool_files.py",
     "rozliczenia/centrum/__init__.py",
     "rozliczenia/centrum/platform.py",
     "rozliczenia/centrum/start_problems.py",
@@ -187,15 +187,7 @@ def _record(restart: Restart, code: str) -> None:
 def _start_centrum(restart: Restart) -> subprocess.Popen[bytes]:
     """Centrum z klonu jak skrót, tylko bez karty i bez okienek: tata ma widzieć jeden Komunikat."""
 
-    command = [
-        sys.executable,
-        str(restart.root / "run_centrum.py"),
-        "--port",
-        str(restart.port),
-        "--no-browser",
-        "--bez-okienek",
-    ]
-    return _detached(command, restart.root)
+    return _detached(start_command(restart.root, restart.port), restart.root)
 
 
 def _stop(centrum: subprocess.Popen[bytes]) -> None:
@@ -245,19 +237,12 @@ def _detached(command: list[str], cwd: Path) -> subprocess.Popen[bytes]:
 
 
 def _port_released(port: int) -> bool:
-    """Czy stare Centrum zwolniło port w ``PORT_TIMEOUT_S`` (zajęcie go tak jak ``launcher.listen_locally``)."""
+    """Czy stare Centrum zwolniło port w ``PORT_TIMEOUT_S``."""
 
     deadline = time.monotonic() + PORT_TIMEOUT_S
     while True:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            if sys.platform != "win32":
-                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                probe.bind((_HOST, port))
-            except OSError:
-                pass
-            else:
-                return True
+        if port_free(port):
+            return True
         if time.monotonic() > deadline:
             return False
         time.sleep(_POLL_S)

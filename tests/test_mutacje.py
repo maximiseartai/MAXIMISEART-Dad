@@ -98,7 +98,8 @@ def test_mutacja_z_pusta_kotwica_tworzy_plik_w_nowym_katalogu() -> None:
     assert answered.stdout.splitlines()[-2:] == ["WYKRYTA: mutacja → kod wyjścia 1", "MUTACJE OK"]
 
 
-@pytest.mark.parametrize("anchor", ["tego tekstu nie ma w pliku", "\n"], ids=["brak", "wiele-razy"])
+# Początek i koniec docstringu pakietu: ta sama kotwica stoi w pliku dwa razy.
+@pytest.mark.parametrize("anchor", ["tego tekstu nie ma w pliku", '"""'], ids=["brak", "wiele-razy"])
 def test_mutacja_z_kotwica_nie_dokladnie_raz_w_pliku_jest_nieaktualna(anchor: str) -> None:
     answered = _mutacje("--zmiana", PACKAGE, anchor, "", "--", *IMPORT)
 

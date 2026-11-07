@@ -9,6 +9,7 @@ pilnuje:
   - src/rozliczenia/centrum/app.py
   - src/rozliczenia/centrum/launcher.py
   - src/rozliczenia/centrum/server.py
+  - src/rozliczenia/tool_files.py
   - tools/lib/model_tlc.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
@@ -241,13 +242,18 @@ checker takes from the real adapter (`_github` in `explore_outbox.py`), and
 `src/rozliczenia/centrum/atomic_file.py` `replace_atomically`, which writes
 every queue file and its marker (the model only). The model's `Start`, `Zamknij`
 and `KoniecProcesu`, which let an old and a new Centrum process share the queue
-folder (configuration `dwa-procesy`), also cover three definitions in files
-that Centrum changes often: `lifespan` in `app.py`, `listen_locally` and
-`_listen_when_released` in `launcher.py`, and `_GRACEFUL_SHUTDOWN_S`, `serve`
-and `_Server` in `server.py`. `model/definicje.json` lists the four covered files as whole files and these three
+folder (configuration `dwa-procesy`), also cover four definitions in files
+that Centrum changes often: `lifespan` in `app.py`, `_listen_when_released` in
+`launcher.py`, `listen_locally` and its bind `_bound` in `tool_files.py`, and `_GRACEFUL_SHUTDOWN_S`, `serve`
+and `_Server` in `server.py`. `model/definicje.json` lists the four covered files as whole files and these four
 by their definitions: only a change to these definitions, not to the rest of their files, is drift.
 
-**Sync commit: `872a47f50`** (2026-11-07, PR 6 of WS-A). The checker and the
+**Sync commit: `1a7d93e3`** (2026-11-07, N3a of the untangle of 7.11). Since `872a47f50` only
+`listen_locally` moved, unchanged in what it does, from `launcher.py` to `tool_files.py`, its
+`SO_REUSEADDR` bind now in `_bound`, which the restart guardian's port probe shares: `Start` still
+runs only in the process that took the port. No action of the model changed.
+
+`872a47f50` (2026-11-07, PR 6 of WS-A). The checker and the
 model share it: at this commit both were confirmed to describe the code above.
 Since `6908b5c3a` (#919 merged with `main` after #910, #924 and #949) only the
 docstring of `outbox.py` changed: the progress and the Diagnoza of the Logi now
@@ -587,7 +593,7 @@ The comment above each action and branch in the model names the same code.
 
 | Model action | Code |
 | --- | --- |
-| `Start` | `app.py` `lifespan` → `outbox.py` `Outbox.resume`: unlink every `*.tmp` (also one that the old process still writes: its `post` returns `False`, its marker is lost), then `send_in_background`; its `KeyedBox` has no list of its thread yet (`odczyt`), and the file of `KeyedBox` (`zakladanie`, `pamiec`, `pamiecWydania`) stays. Only a process with the port starts (`launcher.py` `listen_locally`); a second queue of one process starts while the first runs |
+| `Start` | `app.py` `lifespan` → `outbox.py` `Outbox.resume`: unlink every `*.tmp` (also one that the old process still writes: its `post` returns `False`, its marker is lost), then `send_in_background`; its `KeyedBox` has no list of its thread yet (`odczyt`), and the file of `KeyedBox` (`zakladanie`, `pamiec`, `pamiecWydania`) stays. Only a process with the port starts (`tool_files.py` `listen_locally`); a second queue of one process starts while the first runs |
 | `Nadaj` | `outbox.py` `Outbox.post`: the name from the moment and `next(self._sequence)`, `replace_atomically` (`write_text` of `.json.tmp`, then `replace`; `OSError` → `False`, also the `FileNotFoundError` of `replace` when `resume` of a new process removed the `.tmp`), then `send_in_background` |
 | `Petla` | `Outbox._drain`: `_claimed` (taken → ask for another pass and skip `_send_all`), then `_folder_lock` without waiting (held by a queue of another process → `_locked_out` and skip `_send_all`), then `_read_failed = False` and `sorted(glob("*.json"))` in `_send_all` |
 | `Plik` | `Outbox._send_all` for one file: `_undeleted` → `_remove`, `_rejected` → skip, `_queued` (an `OSError` or a missing file → `_read_failed` and `_skip_unreadable`), `delivered` → `_remove`, a newer version (`Nr`) of the same wysyłka that the pass read at its start (`czytane`, `Nowszy`, `_superseded`), before or after this file in the list → the marker without sending (`Znacznik`, `_mark_delivered`), or, when the newer file is later in the list and cannot be read (`NowszyDalej`, `_read` at the start of the pass, `_read_failed`), this one as usual and the newer one out of the list, as `_skip_unreadable` skips it to the `RETRY_S` wake, `commented` → `_deliver_archive` alone, else `_deliver`; the end of the list sets `_stopped_on = None`. `Znacznik` also sets `stopped` to FALSE after a superseded file, which the code does not: the pass then either stops on a later file, which sets it again, or ends with `_stopped_on = None` |
@@ -734,7 +740,7 @@ code, or widen `Wybaczone` to make a real counterexample go away.
 
 Checked only with the bounds in the configurations. Assumed and not checked:
 
-- A second Centrum with the port while another has it: `launcher.py`
+- A second Centrum with the port while another has it: `tool_files.py`
   `listen_locally` excludes it, and `Start` takes it as given.
 - A lock file that cannot be opened (no queue folder yet): `_folder_lock`
   lets the pass go without the lock. The model's folder always exists.

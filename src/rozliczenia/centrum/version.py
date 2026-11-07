@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Final
 import urllib.request
 
-from rozliczenia import TOOL_ROOT
+from rozliczenia.tool_files import HOST, TOOL_ROOT
 
 SERVICE: Final = "centrum-rozliczen"
 _COMMIT = re.compile(r"[0-9a-f]{40}")
@@ -51,11 +51,11 @@ class RunningCentrum:
 
 
 def running_centrum(port: int, *, timeout_s: float) -> RunningCentrum | None:
-    """Centrum na ``127.0.0.1:port`` według jego ``health``; ``None``, gdy odpowiada coś innego albo nic."""
+    """Centrum na ``HOST:port`` według jego ``health``; ``None``, gdy odpowiada coś innego albo nic."""
 
     direct = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # serwer proxy nie widzi 127.0.0.1 taty
     try:
-        with direct.open(f"http://127.0.0.1:{port}/api/health", timeout=timeout_s) as response:
+        with direct.open(f"http://{HOST}:{port}/api/health", timeout=timeout_s) as response:
             health = json.load(response)
     except (OSError, ValueError):
         return None

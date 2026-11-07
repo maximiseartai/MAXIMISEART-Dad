@@ -26,7 +26,6 @@ from openpyxl.styles import Color, Font, PatternFill
 from openpyxl.utils.cell import coordinate_from_string, get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from rozliczenia import TOOL_ROOT
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import Mark
 from rozliczenia.intermax_ordering import OrderingSummary, RegisterDay, register_days
@@ -35,6 +34,7 @@ from rozliczenia.intermax_process import PROCESS, OrderingInputs
 from rozliczenia.message import Message
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
 from rozliczenia.progress import PhaseState
+from rozliczenia.tool_files import TOOL_ROOT
 from rozliczenia.workbook_files import Problem, WorkbookError
 
 from tests.fixtures.clock import ManualClock

@@ -35,7 +35,7 @@ from rozliczenia.centrum.run_view import WarnedSummary
 from rozliczenia.input_checks import WorkerConfigExplanation
 from rozliczenia.message import Message
 from rozliczenia.process_run import Process, ProcessInputs
-from rozliczenia.settings import Settings
+from rozliczenia.centrum.settings import Settings
 
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
 SummaryT = TypeVar("SummaryT", bound=WarnedSummary)

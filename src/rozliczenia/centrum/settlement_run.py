@@ -21,7 +21,7 @@ from rozliczenia.centrum.metrics import previewed_periods
 from rozliczenia.centrum.period_board import located_period_folder, observed_period_folder, read_board, requested_period
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun
-from rozliczenia.settings import SettingsStore
+from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.period_folder import PeriodStatus, collective_file_name, period_status_label, scan_period_folders
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 from rozliczenia.client_data import ForbiddenValues

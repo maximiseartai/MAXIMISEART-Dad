@@ -32,7 +32,7 @@ from rozliczenia.efenix_pricing import OrderJournal, PricingMode
 from rozliczenia.efenix_window import OpenEfenix
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.period_folder import PeriodStatus, collective_file_name, scan_period_folders
-from rozliczenia.settings import SettingsStore
+from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 
 _VIEW: Final = EFENIX.view
