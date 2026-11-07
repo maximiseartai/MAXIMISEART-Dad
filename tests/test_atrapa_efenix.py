@@ -210,6 +210,17 @@ def test_szukanie_ktore_lista_wysyla_sama_nie_liczy_sie_do_wygasniecia_sesji() -
     assert ([isinstance(answer, NoSession) for answer in answers], stan.count(Action.SEARCH)) == ([False, False, False, True], 2)
 
 
+def test_stan_efenix_podaje_numery_szukan_okna_po_kolei_takze_bez_sesji_bez_szukan_listy() -> None:
+    stan = StanEfenix([_order()])
+
+    stan.serwer.search("93")
+    stan.serwer.search("9301", own=False)
+    stan.expire_session()
+    stan.serwer.search("9302")
+
+    assert stan.searched() == ["93", "9302"]
+
+
 @pytest.mark.parametrize(
     ("refusal", "loaded", "logged_in"),
     [

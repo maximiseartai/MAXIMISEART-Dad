@@ -63,7 +63,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import date
 from decimal import Decimal
 import enum
@@ -89,7 +89,7 @@ from model_efenix import (
     EmmettRefusal as EmmettRefusal,
     NoOrder,
     NoSession,
-    Position as Position,
+    Position,
     ProposalFailure as ProposalFailure,
     Saved,
     StanEfenix,
@@ -248,11 +248,6 @@ class AtrapaEfenix:
         with self._lock:
             self.outage = None
 
-    def edit(self, number: str, change: Callable[[AtrapaOrder], object]) -> None:
-        """Tata sam zmienia w efenix zlecenie ``number``: ``change`` dostaje jego stan w Atrapie."""
-
-        self.stan.edit(number, change)
-
     def state(self) -> tuple[list[AtrapaOrder], bool]:
         """Kopia zleceń i sesji do porównania stanu przed przebiegiem i po nim."""
 
@@ -289,7 +284,7 @@ class AtrapaEfenix:
 
 @contextmanager
 def atrapa_efenix(
-    orders: Sequence[AtrapaOrder],
+    orders: Sequence[EfenixOrder],
     *,
     expire_after: tuple[str, int] | None = None,
     changed: Changed | Unread | None = None,
@@ -314,7 +309,8 @@ def atrapa_efenix(
     żądanie po kolei, jak w ``requests``), od którego efenix jest odcięty raz, do ``reconnect``. ``emmett_reload_ms``: po
     ilu milisekundach od odpowiedzi „Załaduj do zlecenia” skrypt strony ją przeładowuje (w efenix
     ``EFENIX_EMMETT_RELOAD_MS``, domyślnie krócej). Model pracuje na kopii
-    ``orders``, więc zlecenia testu zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie.
+    ``orders``, więc zlecenia testu zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie. Zlecenie
+    modelu (``EfenixOrder``, bez pokręteł ``AtrapaOrder``) ma stronę i odpowiedzi w budowie efenix.
     ``error_answer``: ścieżka, numer jej żądania narzędzia (od 1, bez szukania, które lista wysyła sama) i status błędu
     HTTP: na to jedno żądanie Atrapa odpowiada stroną błędu serwera z tym statusem, bez wykonania żądania.
     ``prices``: cena każdej pozycji ``CATALOG`` po kodzie na stronie zlecenia i w odpowiedzi na zapis ilości, domyślnie
@@ -322,7 +318,7 @@ def atrapa_efenix(
     """
 
     stan = StanEfenix(
-        orders,
+        [_atrapa_order(order) for order in orders],
         today=today,
         refuse_dates=refuse_dates,
         prices=prices,
@@ -601,6 +597,14 @@ def atrapa_efenix(
         server.close_connections()
         server.server_close()
         thread.join()
+
+
+def _atrapa_order(order: EfenixOrder) -> AtrapaOrder:
+    """Zlecenie ``order`` w Atrapie: zlecenie modelu dostaje domyślne pokrętła ``AtrapaOrder``, czyli budowę efenix."""
+
+    if isinstance(order, AtrapaOrder):
+        return order
+    return AtrapaOrder(**{each.name: getattr(order, each.name) for each in fields(order)})
 
 
 class _Server(ThreadingHTTPServer):

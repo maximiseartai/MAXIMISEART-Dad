@@ -31,13 +31,9 @@ from rozliczenia.centrum.run_logs import (
 )
 from rozliczenia.efenix_address import AddressPart, address_differences
 
-from tests.fixtures.atrapa_efenix import (
-    CATALOG,
-    PRICES,
-    AtrapaEfenix,
-    AtrapaOrder,
-    atrapa_efenix,
-)
+from model_efenix import CATALOG, PRICES, EfenixOrder
+
+from tests.fixtures.atrapa_efenix import AtrapaEfenix, atrapa_efenix
 
 SYNTHETIC_ADDRESS: Final = "ul. Odtworzeniowa {row}"
 """``ADRES`` wiersza odtworzonego pliku, który reguła adresu efenix rozbiera (rodzaj, nazwa ulicy, numer)."""
@@ -63,7 +59,7 @@ class ScopedOrder:
 class Fed:
     """Atrapa z Logów: zlecenia, cena każdej pozycji po kodzie i granice (tekst, czy blokuje)."""
 
-    orders: tuple[AtrapaOrder, ...]
+    orders: tuple[EfenixOrder, ...]
     prices: Mapping[str, Decimal]
     limits: tuple[tuple[str, bool], ...]
 
@@ -95,7 +91,7 @@ def fed(orders: Sequence[LoggedOrder], scoped: Sequence[ScopedOrder]) -> Fed:
     """Zlecenia Atrapy dla śladu ``orders`` z Logów i zakresu ``scoped`` odtworzonego Pliku zbiorczego."""
 
     by_row = {order.row: order for order in scoped}
-    atrapa: list[AtrapaOrder] = []
+    atrapa: list[EfenixOrder] = []
     limits: list[tuple[str, bool]] = []
     for order in orders:
         results = _results(order)
@@ -146,7 +142,7 @@ def _results(order: LoggedOrder) -> list[LoggedResult]:
 
 def _listed(
     order: LoggedOrder, collective: ScopedOrder, result: LoggedResult, index: int
-) -> tuple[AtrapaOrder, str | None]:
+) -> tuple[EfenixOrder, str | None]:
     """Wiersz listy wyników ``index`` zlecenia ``order`` w Atrapie i granica, gdy Atrapa nie odda tej samej różnicy
     adresu co efenix taty."""
 
@@ -155,7 +151,7 @@ def _listed(
     address = _efenix_address(result.address, order.row)
     opened = _first(order.steps, "otwarcie zlecenia") if result.same_number else None
     emmett = _first(order.steps, "Wycena Emmetta") if result.same_number else None
-    listed = AtrapaOrder(
+    listed = EfenixOrder(
         order_id=f"{order.row}-{index}",
         number=number,
         realizator=result.realizator or "",

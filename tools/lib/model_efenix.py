@@ -198,6 +198,7 @@ class _State(Generic[OrderT]):
     logged_in: bool = True
     expired: bool = False
     counts: Counter[Action] = field(default_factory=Counter)
+    searched: list[str] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def session_after(self, action: Action | None) -> bool:
@@ -274,6 +275,12 @@ class StanEfenix(Generic[OrderT]):
         with self._state.lock:
             return self._state.counts[action]
 
+    def searched(self) -> list[str]:
+        """Numery z każdego szukania okna po kolei, także bez sesji, jak ``count(Action.SEARCH)``."""
+
+        with self._state.lock:
+            return list(self._state.searched)
+
 
 class SerwerEfenix(Generic[OrderT]):
     """Twarz okna: decyzje serwera efenix. Każde działanie najpierw liczy się w ``expire_after``, potem sprawdza sesję,
@@ -286,6 +293,8 @@ class SerwerEfenix(Generic[OrderT]):
         """Zlecenia, których numer zawiera ``number``; ``own=False``: szukanie, które lista wysyła sama, bez liczenia."""
 
         with self._state.lock:
+            if own:
+                self._state.searched.append(number)
             if not self._state.session_after(Action.SEARCH if own else None):
                 return NoSession.NO_SESSION
             return tuple(copy.deepcopy(order) for order in self._state.orders if number in order.number)

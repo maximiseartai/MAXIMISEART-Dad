@@ -32,7 +32,7 @@ Emmetta w karcie, w której Maks sam kliknął przycisk Emmetta. Sprawdza:
   (pickadate z ``onSet``, „Potwierdź” daty, Emmett, zapis ilości z ``price_all``) i karty pozycji
   ``.card.rounded-lg.kolorek``: karta z polem Ilość ma cenę w tekście ``.col-sm-1.mt-2 > span.text-default > small``,
   a karta z ceną wpisywaną samo pole ``input.wycena-cena``; każdy kod ``INDEKS_NNN_NNN`` jest pozycją Atrapy
-  (``atrapa_efenix.CATALOG``) z tym samym rodzajem karty, przy czym strona może mieć tylko część pozycji Atrapy, jak
+  (``model_efenix.CATALOG``) z tym samym rodzajem karty, przy czym strona może mieć tylko część pozycji Atrapy, jak
   zlecenia efenix z mniejszą liczbą pozycji wyceny, a strona bez żadnej karty pozycji to część niesprawdzona; cena
   pozycji z przypisania kolumn (``efenix_positions.POSITION_OF_COLUMN``) jest równa kosztowi jej kolumny w wierszu 14 Wzorca pliku zbiorczego, bo z kosztów tego wiersza liczy się ``Kwota`` (AU),
   z którą Wycena w efenix porównuje kwotę końcową efenix;
@@ -140,8 +140,8 @@ from playwright.sync_api import APIRequestContext, Browser, Page, ProxySettings,
 from playwright.sync_api import Error as PlaywrightError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-# Korzeń repozytorium dla Atrapy efenix (``tests.fixtures``), z której narzędzie bierze kody pozycji i pola szukania, i
-# ``tools/lib`` dla jej modelu efenix.
+# Korzeń repozytorium dla Atrapy efenix (``tests.fixtures``), z której narzędzie bierze ścieżki i pola szukania, i
+# ``tools/lib`` dla modelu efenix z kodami pozycji i zleceniem.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
@@ -182,11 +182,17 @@ from rozliczenia.efenix_positions import POSITION_OF_COLUMN
 from rozliczenia.efenix_pricing import ElementCount, UnexpectedPage
 from rozliczenia.workbook_files import WorkbookError
 
-from tests.fixtures.atrapa_efenix import CATALOG, LIST_ROWS_PER_PAGE, LIST_SEARCH_FIELDS, AtrapaOrder, atrapa_efenix
+from model_efenix import CATALOG, EfenixOrder
 
-LIST_PAGE: Final = "index.php"
-LIST_SCRIPT: Final = "js/index.js"
-ORDER_SCRIPT: Final = "js/page_order_edit.js"
+from tests.fixtures.atrapa_efenix import (
+    LIST_PAGE,
+    LIST_ROWS_PER_PAGE,
+    LIST_SCRIPT,
+    LIST_SEARCH_FIELDS,
+    ORDER_SCRIPT,
+    atrapa_efenix,
+)
+
 # Jedyne żądania do efenix, które narzędzie wysyła: (metoda, ścieżka względem katalogu ``--efenix-url``). Zapis ilości,
 # Emmett, data wykonania, zmiana statusu, Przekazanie do akceptacji, anulowanie, logowanie i wylogowanie nie są na liście.
 ALLOWED: Final = frozenset(
@@ -255,7 +261,7 @@ DIALOG: Final = Element.EMMETT_DIALOG.selector
 PROPOSAL: Final = Element.PROPOSAL.selector
 # Zlecenie Atrapy efenix, na którym narzędzie z ``--emmett`` klika Emmetta, żeby przeczytać okno Emmetta Atrapy: propozycja
 # dwóch pozycji z przypisania kolumn.
-ATRAPA_PROPOSAL: Final = AtrapaOrder("ATRAPA-1", "ZL/ATRAPA/1", "atrapa", "ul.Atrapy 1", emmett={"012": 2, "021": 1})
+ATRAPA_PROPOSAL: Final = EfenixOrder("ATRAPA-1", "ZL/ATRAPA/1", "atrapa", "ul.Atrapy 1", emmett={"012": 2, "021": 1})
 # Tyle znaków tekstu z maską pokazuje wynik w drzewie propozycji.
 TEXT_SHOWN: Final = 40
 # Część, której narzędzie nie sprawdza nigdy, a Maks sprawdza ręcznie; zawsze w wyniku jako ``NIESPRAWDZONE``.
