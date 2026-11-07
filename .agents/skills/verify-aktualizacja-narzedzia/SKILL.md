@@ -148,7 +148,7 @@ Covered files, each as a whole file (`model/definicje.json`): `src/rozliczenia/c
 (`listen_locally`, `port_free`, `_bound`), the guardian's start command (`start_command`,
 `centrum_script`) and the clone's `config_dir`.
 
-Sync commit: `e918760f` (2026-11-07, N3a of the untangle of 7.11). Since `0c554b2e` the
+Sync commit: `1a7d93e3` (2026-11-07, N3a of the untangle of 7.11). Since `0c554b2e` the
 covered files changed only in where they take the clone's layout from: the port probe of
 `restart_guardian._port_released` is `tool_files.port_free`, the same bind as `listen_locally`,
 which moved from `launcher.py` to `tool_files.py`; `_start_centrum` runs

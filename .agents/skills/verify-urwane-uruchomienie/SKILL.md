@@ -151,7 +151,7 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `e918760f` (2026-11-07, N3a of the untangle of 7.11). Every row of the table was checked against the code
+Sync commit: `1a7d93e3` (2026-11-07, N3a of the untangle of 7.11). Every row of the table was checked against the code
 at this commit. Since `aefc594f1` of the definitions only `launcher._start` changed: it takes the address, the port and the path of the
 Ustawienia taty from `tool_files` (`HOST`, `SETTINGS`) instead of its own copies, and `listen_locally` behind
 `_listen_when_released` lives in `tool_files.py`; the order `_listen_when_released` → `create_app` stays, so no action
