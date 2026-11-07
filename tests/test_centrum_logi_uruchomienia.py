@@ -1310,6 +1310,7 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
     assert {figure["label"]: figure["value"] for figure in result["summary"]["figures"]} == {
         "Zlecenia w zakresie": 6,
         "Gotowe do przekazania": 1,
+        "Przekazane do akceptacji": 0,
         "Rozliczone": 0,
         "Błędy zleceń": 2,
         "Ostrzeżenia Emmetta": 3,
@@ -1362,6 +1363,30 @@ def test_zlecenie_rozliczone_w_efenix_ma_na_karcie_w_logach_i_w_powiadomieniu_wl
     assert traced == [(18, "gotowe", None, ["szukanie", "otwarcie zlecenia"]), (19, "rozliczone", None, ["szukanie"])]
     assert notification["orders"] == {"ready": 1, "settled": 1, "errors": 0, "warnings": 0}
 
+
+
+def test_zlecenie_do_akceptacji_w_efenix_ma_na_karcie_i_w_logach_wynik_przekazane_a_nie_blad(tmp_path: Path) -> None:
+    """Centrum uruchamia Wycenę w trybie bez Przekazania (ADR 0027, PR 2 dołoży wybór trybu), a zlecenie, które tata już
+    przekazał do akceptacji, to na karcie liczba „Przekazane do akceptacji”, a w Logach Uruchomienia wynik „przekazane”
+    bez kodu Komunikatu i bez otwarcia strony zlecenia; wynik to OK, a efenix nie dostaje żadnej zmiany statusu."""
+
+    orders = [
+        Order("#ZLQP01", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
+        Order("#ZLQP02", worker="beata.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
+    ]
+    in_efenix = [orders[0].in_efenix("631"), replace(orders[1].in_efenix("632"), status="Do akceptacji", execution_date=DAY)]
+    with atrapa_efenix(in_efenix) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        write_collective_file(centrum.period_parent, orders)
+        assert _start_pricing(centrum).status_code == 200
+        result = finished_view(centrum.client)["result"]
+        requests = atrapa.status_requests()
+    [record] = records(centrum)
+
+    figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
+    assert (result["result"], figures["Gotowe do przekazania"], figures["Przekazane do akceptacji"], requests) == ("OK", 1, 1, [])
+    traced = [(order["row"], order["outcome"], order["code"], [step["action"] for step in order["steps"]]) for order in record["efenix_orders"]]
+    assert traced == [(18, "gotowe", None, ["szukanie", "otwarcie zlecenia"]), (19, "przekazane", None, ["szukanie"])]
 
 def _close_window(profile: Path) -> None:
     """Tata zamyka krzyżykiem okno efenix, które Centrum otworzyło (przez port debugowania z profilu przeglądarki)."""
@@ -2190,6 +2215,7 @@ def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwan
     assert (previous["state"], previous["run"]["id"], previous["orders"]["title"]) == ("interrupted", run_id, "Zlecenia przed zamknięciem Centrum")
     assert {count["label"]: count["count"] for count in previous["orders"]["counts"]} == {
         "Gotowe do przekazania": 2,
+        "Przekazane do akceptacji": 0,
         "Rozliczone": 0,
         "Błędy zleceń": 0,
         "Ostrzeżenia Emmetta": 1,

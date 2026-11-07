@@ -28,7 +28,7 @@ from rozliczenia.domain import (
     WorkerFailed,
     WorkerStarted,
 )
-from rozliczenia.efenix_mark import MARK_RGB
+from rozliczenia.efenix_mark import Mark
 from rozliczenia.engine import run_settlements
 from rozliczenia.message import StopError
 from rozliczenia.process_run import Stop
@@ -287,7 +287,7 @@ def test_wiersze_danych_rozliczenia_pracownika_maja_wyroznienia_pliku_zbiorczego
         written_workbook.close()
 
 
-def test_znacznik_efenix_w_adresie_nie_przechodzi_do_rozliczenia_pracownika_a_reszta_wyroznien_tak(
+def test_znacznik_efenix_i_znacznik_przekazania_w_adresie_nie_przechodza_do_rozliczenia_pracownika_a_reszta_wyroznien_tak(
     complete_run: tuple[Path, Path, Path, Path],
 ) -> None:
     source_path, target_directory, config_path, worker_template_path = complete_run
@@ -301,11 +301,11 @@ def test_znacznik_efenix_w_adresie_nie_przechodzi_do_rozliczenia_pracownika_a_re
     marked = Font(name="Arial", sz=8, color="FFFF0000", b=True, i=True)
     style_cells(
         {
-            # openpyxl zapisuje kolor bez kanału alfa z ``00``, a Excel z ``FF``: oba to Znacznik efenix.
-            "B18": (marked, PatternFill(fill_type="solid", fgColor=MARK_RGB)),
-            "B19": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor=f"FF{MARK_RGB}")),
+            # openpyxl zapisuje kolor bez kanału alfa z ``00``, a Excel z ``FF``: oba to Znacznik.
+            "B18": (marked, PatternFill(fill_type="solid", fgColor=Mark.READY.value)),
+            "B19": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor=f"FF{Mark.FORWARDED.value}")),
             "B20": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor="FFFFFF00")),
-            "C18": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor=f"FF{MARK_RGB}")),
+            "C18": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor=f"FF{Mark.READY.value}")),
         }
     )(source_path)
     template_cell = (Font(name="Times New Roman", sz=9), PatternFill(fill_type="solid", fgColor="FF0000FF"))
@@ -323,13 +323,13 @@ def test_znacznik_efenix_w_adresie_nie_przechodzi_do_rozliczenia_pracownika_a_re
         assert highlights(active_worksheet(darek)["B18"])[:2] == (None, None)
         # Ręczne zaznaczenie taty w ADRES i kolor Znacznika w innej kolumnie przechodzą jak każde Wyróżnienie.
         assert highlights(written["B19"])[:2] == ("solid", Color("FFFFFF00"))
-        assert highlights(written["C18"])[:2] == ("solid", Color(f"FF{MARK_RGB}"))
+        assert highlights(written["C18"])[:2] == ("solid", Color(f"FF{Mark.READY.value}"))
     finally:
         adrian.close()
         darek.close()
     source = load_workbook(source_path)
     try:
-        assert highlights(active_worksheet(source)["B18"])[:2] == ("solid", Color(f"00{MARK_RGB}"))
+        assert highlights(active_worksheet(source)["B18"])[:2] == ("solid", Color(f"00{Mark.READY.value}"))
     finally:
         source.close()
 

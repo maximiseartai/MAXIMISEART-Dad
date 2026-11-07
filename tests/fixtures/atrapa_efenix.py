@@ -34,10 +34,11 @@ skrypt efenix, tylko z odpowiedzi 2xx, a okno pokazuje po każdej odpowiedzi, ta
 jak na stronie efenix przed odpowiedzią; gdy Emmett nic nie proponuje, Atrapa odpowiada pustą treścią, choć co wtedy
 odpowiada efenix, nikt nie zmierzył, „Załaduj do zlecenia” wysyła ``action_load_emmett.php``,
 który czyści wycenę i wpisuje propozycję, a skrypt przeładowuje stronę po każdej odpowiedzi, także po odmowie
-``AtrapaOrder.emmett_refusal``) i przyciski, których narzędzie nie może użyć:
-Przekazanie do akceptacji (``#button_forward_to_accept``) i anulowanie (``#button_forward_to_cancel``) z oknem
-``#dialog_forward_yes_no``, którego ``.btn-ok`` wysyła ``action_change_status.php`` (``order_id``, ``xstatus``,
-``comment``, jak efenix) i stoi na stronie przed oknem Emmetta. Okna zamyka przycisk ``[data-dismiss="modal"]``.
+``AtrapaOrder.emmett_refusal``) i przyciski zmiany statusu:
+Przekazanie do akceptacji (``#button_forward_to_accept``, którego okno może użyć tylko w trybie z Przekazaniem) i
+anulowanie (``#button_forward_to_cancel``) ze wspólnym oknem ``#dialog_forward_yes_no``, którego ``.btn-ok`` wysyła
+``action_change_status.php`` (``order_id``, ``xstatus``, ``comment``, jak efenix) i przeładowuje stronę po odpowiedzi, a
+które stoi na stronie przed oknem Emmetta. Okna zamyka przycisk ``[data-dismiss="modal"]``.
 Ilość zapisuje skrypt strony po wyjściu z pola (Enter też z niego wychodzi) przez ``action_save_index.php``, a odpowiedź
 JSON (``result``, ``price_index``, ``price_all``) odświeża ``#cena-…`` i ``#cena_all2``; bez sesji ta odpowiedź to
 ``result: nok``, jak w efenix.
@@ -54,6 +55,7 @@ i kiedy.
 ``answer_delay_s`` opóźnia każdą odpowiedź na szukanie, więc szukanie, które lista wysyła sama, trwa jeszcze, gdy
 narzędzie szuka swojego numeru. ``changed`` psuje budowę jednej części strony tak, jak mógłby ją zmienić autor efenix
 (``Changed``, a w części, której Wycena w efenix w testach nie używa, a sprawdza narzędzie zgodności, ``Unread``).
+``status_change`` każe skryptowi strony zlecenia wysłać zmianę statusu inaczej niż efenix (``StatusChange``).
 ``outage_from`` w trakcie przebiegu odcina efenix od żądania o danym numerze (``Outage``: zerwane połączenie, także w połowie
 odpowiedzi, odpowiedź, która staje w połowie, albo efenix wolniejszy niż okno), aż test przywróci połączenie
 (``reconnect``), jak sieć taty, która na chwilę znika.
@@ -176,6 +178,15 @@ class Unread(enum.Enum):
     HOSTILE = "skrypty i elementy stron po wczytaniu i przy opuszczeniu zapisują, zmieniają status i wylogowują"
 
 
+class StatusChange(enum.Enum):
+    """Skrypt strony zlecenia Atrapy, który wysyła zmianę statusu inaczej niż efenix: pomyłka, której nie może przepuścić
+    strażnik zmiany statusu okna."""
+
+    FORWARD_CANCELS = "przycisk Przekazania do akceptacji otwiera okno zmiany statusu, którego „Tak” wysyła „Anulowane”"
+    ON_LOAD = "strona zlecenia po wczytaniu sama wysyła zmianę statusu na „Do akceptacji”"
+    POPUP = "strona zlecenia po wczytaniu otwiera nowe okno ze zmianą statusu na „Anulowane”"
+
+
 class Outage(enum.Enum):
     """Jak Atrapa nie odpowiada na żądania, gdy efenix jest odcięty (``outage_after``)."""
 
@@ -276,6 +287,12 @@ class AtrapaEfenix:
         with self._lock:
             return sum(request.path == CHANGE_STATUS for request in self.requests)
 
+    def status_requests(self) -> list[tuple[str, str]]:
+        """Metoda i nowy status (``xstatus``) każdego żądania zmiany statusu, które dostała Atrapa, po kolei."""
+
+        with self._lock:
+            return [(request.method, request.params.get("xstatus", "")) for request in self.requests if request.path == CHANGE_STATUS]
+
     def searched_by_list(self) -> list[str]:
         """Numery z każdego szukania, które lista wysłała sama po wczytaniu, po kolei."""
 
@@ -298,6 +315,7 @@ def atrapa_efenix(
     error_answer: tuple[str, int, HTTPStatus] | None = None,
     emmett_reload_ms: int = _EMMETT_RELOAD_MS,
     prices: Mapping[str, Decimal] = PRICES,
+    status_change: StatusChange | None = None,
 ) -> Iterator[AtrapaEfenix]:
     """Uruchamia Atrapę na wolnym porcie ``127.0.0.1`` na czas bloku i zamyka ją razem z jej wątkiem.
 
@@ -308,14 +326,15 @@ def atrapa_efenix(
     dzień kalendarza daty wykonania. ``refuse_dates``: serwer odpowiada na zapis daty wykonania bez zapisu. ``clock``:
     zegar w sekundach, którego chwilę dostaje każde żądanie. ``outage_from``: rodzaj odcięcia i numer żądania (od 0, każde
     żądanie po kolei, jak w ``requests``), od którego efenix jest odcięty raz, do ``reconnect``. ``emmett_reload_ms``: po
-    ilu milisekundach od odpowiedzi „Załaduj do zlecenia” skrypt strony ją przeładowuje (w efenix
-    ``EFENIX_EMMETT_RELOAD_MS``, domyślnie krócej). Model pracuje na kopii
+    ilu milisekundach od odpowiedzi „Załaduj do zlecenia” i zmiany statusu skrypt strony ją przeładowuje (w efenix po
+    „Załaduj do zlecenia” ``EFENIX_EMMETT_RELOAD_MS``, domyślnie krócej; po zmianie statusu nikt nie zmierzył). Model pracuje na kopii
     ``orders``, więc zlecenia testu zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie. Zlecenie
     modelu (``EfenixOrder``, bez pokręteł ``AtrapaOrder``) ma stronę i odpowiedzi w budowie efenix.
     ``error_answer``: ścieżka, numer jej żądania narzędzia (od 1, bez szukania, które lista wysyła sama) i status błędu
     HTTP: na to jedno żądanie Atrapa odpowiada stroną błędu serwera z tym statusem, bez wykonania żądania.
     ``prices``: cena każdej pozycji ``CATALOG`` po kodzie na stronie zlecenia i w odpowiedzi na zapis ilości, domyślnie
     ceny Atrapy (``PRICES``); odtworzenie Uruchomienia podaje ceny z kwot w Logach (``tools/lib/atrapa_z_logow.py``).
+    ``status_change``: skrypt strony zlecenia wysyła zmianę statusu inaczej niż efenix (``StatusChange``).
     """
 
     stan = StanEfenix(
@@ -397,7 +416,7 @@ def atrapa_efenix(
             elif path == LIST_SCRIPT and method == "GET":
                 self._html(_list_script(changed), content_type="text/javascript")
             elif path == ORDER_SCRIPT and method == "GET":
-                self._html(_order_script(changed, today, emmett_reload_ms), content_type="text/javascript")
+                self._html(_order_script(changed, today, emmett_reload_ms, status_change), content_type="text/javascript")
             elif cookie_session and not _has_session_cookie(self.headers.get("Cookie", "")):
                 # Żądanie bez ciasteczka sesji nie należy do sesji efenix, więc nie dochodzi do serwera.
                 self._no_session(method, path)
@@ -490,7 +509,9 @@ def atrapa_efenix(
                 closing.wait()
                 self.close_connection = True
             else:
-                self._html(_order_page(order, order.changed or changed, today, self.headers.get("Host", ""), emmett_reload_ms, prices))
+                self._html(
+                    _order_page(order, order.changed or changed, today, self.headers.get("Host", ""), emmett_reload_ms, prices, status_change)
+                )
 
         def _proposal(self, method: str, path: str, order: AtrapaOrder | NoOrder | NoSession) -> None:
             if not self._done(method, path, order) or isinstance(order, NoOrder | NoSession):
@@ -817,7 +838,7 @@ _ORDER_SCRIPT = """
   document.getElementById('button_forward_to_accept').addEventListener('click', () => { status = 'Do akceptacji'; show('dialog_forward_yes_no'); });
   document.getElementById('button_forward_to_cancel').addEventListener('click', () => { status = 'Anulowane'; show('dialog_forward_yes_no'); });
   document.querySelector('#dialog_forward_yes_no .btn-ok').addEventListener('click', () => {
-    post('action_change_status.php', {order_id: mainId, xstatus: status, comment: ''}).then(() => location.reload());
+    post('action_change_status.php', {order_id: mainId, xstatus: status, comment: ''}).then(() => setTimeout(() => location.reload(), __RELOAD__));
   });
   document.querySelectorAll('[data-dismiss="modal"]').forEach((button) => {
     button.addEventListener('click', () => hide(button.closest('.modal').id));
@@ -900,7 +921,13 @@ _ORDER_SCRIPT = """
 
 
 def _order_page(
-    order: AtrapaOrder, changed: Changed | Unread | None, today: date, host: str, reload_ms: int, prices: Mapping[str, Decimal]
+    order: AtrapaOrder,
+    changed: Changed | Unread | None,
+    today: date,
+    host: str,
+    reload_ms: int,
+    prices: Mapping[str, Decimal],
+    status_change: StatusChange | None,
 ) -> str:
     day = "" if order.execution_date is None else order.execution_date.isoformat()
     if changed is Changed.DATE_FORMAT and order.execution_date is not None:
@@ -938,14 +965,23 @@ def _order_page(
         + _dialog("dialog_emmett", "Emmett", '<div id="emmett-propozycja"></div>', "Załaduj do zlecenia")
         + (_hostile(host) if changed is Unread.HOSTILE else "")
         + (
-            f"<script>{_order_script(changed, today, reload_ms)}</script>"
+            f"<script>{_order_script(changed, today, reload_ms, status_change)}</script>"
             if changed is Unread.SCRIPTS
             else f'<script src="{ORDER_SCRIPT}{";v=1" if changed is Unread.SCRIPT_ADDRESSES else "?v=1"}"></script>'
         ),
     )
 
 
-def _order_script(changed: Changed | Unread | None, today: date, reload_ms: int) -> str:
+# Strona zlecenia sama, bez kliknięcia, wysyła zmianę statusu, gdy tylko się wczyta: w tej karcie albo w nowym oknie.
+_STATUS_ON_LOAD_SCRIPT = """
+fetch('action_change_status.php', {method: 'POST', body: new URLSearchParams({order_id: document.getElementById('main_id').value, xstatus: 'Do akceptacji', comment: ''})});
+"""
+_STATUS_POPUP_SCRIPT = """
+window.open('action_change_status.php?order_id=' + document.getElementById('main_id').value + '&xstatus=Anulowane');
+"""
+
+
+def _order_script(changed: Changed | Unread | None, today: date, reload_ms: int, status_change: StatusChange | None) -> str:
     # Granice kalendarza są granicami ``model_efenix.calendar_day``, z którym okno w procesie wybiera dzień.
     script = (
         _ORDER_SCRIPT.replace("__RELOAD__", str(reload_ms))
@@ -956,6 +992,12 @@ def _order_script(changed: Changed | Unread | None, today: date, reload_ms: int)
     )
     if changed is Changed.SECOND_EMMETT_DIALOG:
         script += _SECOND_EMMETT_DIALOG_SCRIPT
+    if status_change is StatusChange.FORWARD_CANCELS:
+        script = script.replace("{ status = 'Do akceptacji';", "{ status = 'Anulowane';")
+    if status_change is StatusChange.ON_LOAD:
+        script += _STATUS_ON_LOAD_SCRIPT
+    if status_change is StatusChange.POPUP:
+        script += _STATUS_POPUP_SCRIPT
     return _HOSTILE_SCRIPT + script if changed is Unread.HOSTILE else script
 
 

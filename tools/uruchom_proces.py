@@ -9,14 +9,16 @@ Użycie (z katalogu repozytorium):
     python tools/uruchom_proces.py preparation --register REJESTR --periods-directory FOLDER --period TOKEN
         [--dry-run] [--config PLIK] [--internal-template PLIK] [--collective-template PLIK] [--metrics PLIK]
     python tools/uruchom_proces.py intermax --register REJESTR [--copies FOLDER] [--metrics PLIK]
-    python tools/uruchom_proces.py efenix --source PLIK_ZBIORCZY --efenix-url ADRES [--metrics PLIK]
+    python tools/uruchom_proces.py efenix --source PLIK_ZBIORCZY --efenix-url ADRES [--z-przekazaniem] [--metrics PLIK]
 
 ``settlement`` to Przebieg rozliczeń, ``preparation`` Przygotowanie pliku
 zbiorczego, ``intermax`` Uporządkowanie INTERMAX (klucze procesu z kontraktu
 Centrum rozliczeń), a ``efenix`` Wycena w efenix. Wycena w efenix otwiera
 listę zleceń pod ``--efenix-url`` w nowym Chromium Playwrighta bez okna i
 uzupełnia w nim wyceny zleceń (data wykonania, Wycena Emmetta, pola „Ilość”)
-bez tempa ludzkiego, bo to zawsze adres Atrapy efenix, nigdy efenix.pl (ADR 0024). Uporządkowanie nie ma okresu ani
+bez tempa ludzkiego, bo to zawsze adres Atrapy efenix, nigdy efenix.pl (ADR 0024). Bez ``--z-przekazaniem`` biegnie w
+trybie bez Przekazania (gotowe zlecenia dostają Znacznik efenix), a z nim gotowe zlecenia przekazuje do akceptacji
+(ADR 0027). Uporządkowanie nie ma okresu ani
 podglądu bez zapisu: zawsze
 zapisuje, a Kopia INTERMAX trafia do ``--copies`` (bez parametru folder Kopii
 narzędzia), z nazwą z zegara komputera. Proces prowadzi ten
@@ -65,6 +67,7 @@ from rozliczenia.centrum import contract, run_view
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.runs import CONTINUE_HINT
 from rozliczenia.decision import Decision
+from rozliczenia.efenix_pricing import PricingMode
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.intermax_process import OrderingInputs
 from rozliczenia.message import Message
@@ -175,7 +178,8 @@ def _order(args: argparse.Namespace) -> tuple[ProcessResult, int]:
 def _price(args: argparse.Namespace) -> tuple[ProcessResult, int]:
     url: str = args.efenix_url
     # Bez tempa ludzkiego: Skrypt dla maszyn biegnie tylko na Atrapie efenix (ADR 0024), w nowym Chromium bez sesji taty.
-    inputs = EfenixInputs(args.source, lambda _login: efenix_browser.chromium(url), pace=None)
+    mode = PricingMode.FORWARD if args.z_przekazaniem else PricingMode.FILL
+    inputs = EfenixInputs(args.source, lambda _login: efenix_browser.chromium(url), pace=None, mode=mode)
     return _conduct(efenix_process.PROCESS, run_view.EFENIX, inputs, args.metrics)
 
 
@@ -232,6 +236,9 @@ def _parser() -> argparse.ArgumentParser:
     pricing = processes.add_parser("efenix", help=efenix_process.PROCESS.name)
     pricing.add_argument("--source", type=Path, required=True, help="Plik zbiorczy.")
     pricing.add_argument("--efenix-url", required=True, help="Adres listy zleceń efenix (w testach Atrapy efenix).")
+    pricing.add_argument(
+        "--z-przekazaniem", action="store_true", help="Gotowe zlecenia przekaż do akceptacji (tryb z Przekazaniem)."
+    )
     pricing.add_argument("--metrics", type=Path, default=efenix_process.PROCESS.metrics_path(), help="Plik metryk JSONL.")
     pricing.set_defaults(run=_price)
     return parser

@@ -89,7 +89,7 @@ from rozliczenia.centrum.diagnosis import CheckState, Diagnosis
 from rozliczenia.centrum.runs import EndedRun, Ending
 from rozliczenia.domain import ProgressPhase, WorkerStatus
 from rozliczenia.engine import SettlementSummary
-from rozliczenia.efenix_checks import ListedRead, Settled
+from rozliczenia.efenix_checks import Forwarded, ListedRead, Settled
 from rozliczenia.efenix_pricing import (
     EmmettWarning,
     OrderError,
@@ -107,6 +107,7 @@ from rozliczenia.efenix_window import (
     LoginSign,
     OtherShape,
     PagePart,
+    StatusChangeBlocked,
     WindowCause,
 )
 from rozliczenia.efenix_positions import file_quantities
@@ -369,13 +370,14 @@ class LoggedStep(_Record):
         )
 
 
-OrderOutcome = Literal["gotowe", "rozliczone", "błąd", "ostrzeżenie Emmetta"]
-"""Wynik zlecenia Wyceny w efenix w Logach Uruchomienia; ``rozliczone`` to Zlecenie rozliczone, które nie jest błędem."""
+OrderOutcome = Literal["gotowe", "przekazane", "rozliczone", "błąd", "ostrzeżenie Emmetta"]
+"""Wynik zlecenia Wyceny w efenix w Logach Uruchomienia; ``rozliczone`` to Zlecenie rozliczone, a ``przekazane`` Zlecenie
+przekazane, które nie są błędem."""
 
 
 class LoggedOrder(_Record):
-    """Ślad zlecenia Wyceny w efenix: wiersz Pliku zbiorczego, wynik z kodem Komunikatu (``None`` przy gotowym i
-    rozliczonym), ilości z pliku po kodach pozycji (``None``, gdy nie dało się ich przepisać), ``Kwota`` (AU) i działania
+    """Ślad zlecenia Wyceny w efenix: wiersz Pliku zbiorczego, wynik z kodem Komunikatu (``None`` przy gotowym,
+    rozliczonym i przekazanym), ilości z pliku po kodach pozycji (``None``, gdy nie dało się ich przepisać), ``Kwota`` (AU) i działania
     okna."""
 
     row: int
@@ -403,6 +405,8 @@ class LoggedOrder(_Record):
                 outcome = "gotowe"
             case Settled():
                 outcome = "rozliczone"
+            case Forwarded():
+                outcome = "przekazane"
             case EmmettWarning():
                 outcome = "ostrzeżenie Emmetta"
             case OrderError():
@@ -453,7 +457,7 @@ class LoggedCause(_Record):
                     error_type=error_type,
                     operation=None if operation is None else operation.value,
                 )
-            case LoginSign() | Closed():
+            case LoginSign() | Closed() | StatusChangeBlocked():
                 return cls(part=name, what=cause.value)
             case _:
                 assert_never(cause)
@@ -1110,7 +1114,7 @@ _FIELD_NAME: Final = re.compile(r"[a-z_]+")
 @dataclass(frozen=True)
 class OrderDone:
     """Zlecenie skończone w trakcie Wyceny w efenix, jak we wpisie dziennika „zlecenie skończone”: wiersz Pliku
-    zbiorczego, wynik i kod Komunikatu zlecenia (``None`` przy gotowym i rozliczonym)."""
+    zbiorczego, wynik i kod Komunikatu zlecenia (``None`` przy gotowym, rozliczonym i przekazanym)."""
 
     row: int
     outcome: OrderOutcome

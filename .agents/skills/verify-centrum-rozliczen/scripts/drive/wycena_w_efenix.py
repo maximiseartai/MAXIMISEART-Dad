@@ -171,6 +171,7 @@ def _price(run: Run, page: Page, source: Path) -> None:
             {
                 "Zlecenia w zakresie": 4,
                 "Gotowe do przekazania": 1,
+                "Przekazane do akceptacji": 0,
                 "Rozliczone": 1,
                 "Błędy zleceń": 1,
                 "Ostrzeżenia Emmetta": 1,

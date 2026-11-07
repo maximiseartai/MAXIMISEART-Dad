@@ -76,9 +76,9 @@ from playwright.sync_api import Error as PlaywrightError
 from awarie_efenix import DAD, DAD_LOGINS, FORBIDDEN_CLICK, LOGOUTS, OUTAGES, Call, Counter, Fault, Plan, Proxy, call_kind
 from rozliczenia import efenix_browser, efenix_process
 from rozliczenia.centrum.run_logs import LoggedMessage, LoggedOrder, LoggedWindowStop
-from rozliczenia.efenix_mark import MARK_RGB
+from rozliczenia.efenix_mark import Mark
 from rozliczenia.efenix_page import FILL_EMMETT, LOAD_EMMETT, LOGIN_PAGE, ORDER_PAGE, SAVE_QUANTITY, SEARCH, SET_DATE
-from rozliczenia.efenix_checks import Settled
+from rozliczenia.efenix_checks import Forwarded, Settled
 from rozliczenia.efenix_pricing import EmmettWarning, OrderError, OrderResult, PricingStopped, PricingSummary, Ready
 from rozliczenia.efenix_window import (
     BrowserFailure,
@@ -91,6 +91,7 @@ from rozliczenia.efenix_window import (
     OtherShape,
     PagePart,
     Shape,
+    StatusChangeBlocked,
 )
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.message import Message
@@ -515,7 +516,7 @@ def describe(facts: PricingStopped) -> str:
             cause = f"OtherShape({shape.name})"
         case HttpStatus(status):
             cause = f"HttpStatus({status})"
-        case LoginSign() | Closed():
+        case LoginSign() | Closed() | StatusChangeBlocked():
             cause = f"{type(facts.cause).__name__}.{facts.cause.name}"
     return f"{part}, {cause}"
 
@@ -693,7 +694,7 @@ def marked(source: Path) -> tuple[int, ...]:
     rows = []
     for row in read_data_rows(source, despite_excel_lock=True).rows:
         fill = row.cells[1].highlights.fill
-        if isinstance(fill, PatternFill) and fill.patternType == "solid" and str(fill.fgColor.rgb)[-6:].upper() == MARK_RGB:
+        if isinstance(fill, PatternFill) and fill.patternType == "solid" and str(fill.fgColor.rgb)[-6:].upper() == Mark.READY.value:
             rows.append(row.number)
     return tuple(rows)
 
@@ -1034,7 +1035,7 @@ def _problems(summary: PricingSummary | None) -> dict[int, object]:
 
 
 def _outcomes(summary: PricingSummary | None) -> dict[int, str]:
-    """Outcome of each order (0, 1) by its row: gotowe, rozliczone, błąd or ostrzeżenie Emmetta."""
+    """Outcome of each order (0, 1) by its row: gotowe, rozliczone, przekazane, błąd or ostrzeżenie Emmetta."""
 
     names: dict[int, str] = {}
     for result in () if summary is None else summary.results:
@@ -1043,6 +1044,8 @@ def _outcomes(summary: PricingSummary | None) -> dict[int, str]:
                 name = "gotowe"
             case Settled():
                 name = "rozliczone"
+            case Forwarded():
+                name = "przekazane"
             case OrderError():
                 name = "błąd"
             case EmmettWarning():

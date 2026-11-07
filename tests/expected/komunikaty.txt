@@ -1156,42 +1156,47 @@ order_error #8 [EFENIX_INNA_DATA]
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź zlecenie w efenix i wyceń je sam.
 
-order_error #9 [EFENIX_DATA_POZA_ZAKRESEM]
+order_error #9 [EFENIX_NIEPRZEKAZANE]
+  Co się stało: Narzędzie przekazało zlecenie do akceptacji, ale efenix nie pokazuje go potem ze statusem „Do akceptacji”. Wycena z Pliku zbiorczego jest już wpisana w efenix.
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
+  Co zrobić: Sprawdź zlecenie w efenix i, jeśli nie jest przekazane, przekaż je do akceptacji sam.
+
+order_error #10 [EFENIX_DATA_POZA_ZAKRESEM]
   Co się stało: Dzień z DATA jest poza zakresem dat wykonania, który przyjmuje efenix (od pierwszego dnia poprzedniego miesiąca do dziś), więc narzędzie nie ustawiło daty wykonania ani nie wyceniło zlecenia. Zlecenie zostało w efenix bez zmian.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź DATA w Pliku zbiorczym. Jeśli jest błędna, popraw ją i uruchom ponownie. Jeśli jest dobra, okres jest za stary dla efenix: ustaw datę wykonania i wyceń zlecenie w efenix sam.
 
-order_error #10 [EFENIX_DATA_NIEZAPISANA]
+order_error #11 [EFENIX_DATA_NIEZAPISANA]
   Co się stało: efenix nie zapisał daty wykonania z DATA: po ponownym otwarciu zlecenia nie ma jej na stronie. Narzędzie nie załadowało Wyceny Emmetta i nie wpisało ilości.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Ustaw datę wykonania w efenix sam i uruchom ponownie.
 
-order_error #11 [EFENIX_KOLUMNA_BEZ_POZYCJI]
+order_error #12 [EFENIX_KOLUMNA_BEZ_POZYCJI]
   Co się stało: Zlecenie ma ilość w kolumnach, które nie mają pozycji w efenix: N, AR. Zlecenie zostało w efenix bez zmian.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź zlecenie w efenix i wyceń je sam.
 
-order_error #12 [EFENIX_ILOSC_NIECALKOWITA]
+order_error #13 [EFENIX_ILOSC_NIECALKOWITA]
   Co się stało: Ilość usług nie jest liczbą całkowitą większą od 0 w kolumnach: O. Zlecenie zostało w efenix bez zmian.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Popraw ilość w Pliku zbiorczym albo wyceń zlecenie w efenix sam.
 
-order_error #13 [EFENIX_INNA_KWOTA]
+order_error #14 [EFENIX_INNA_KWOTA]
   Co się stało: Po dopisaniu ilości z Pliku zbiorczego kwota w efenix to 1234,50 zł, a Kwota (AU) 1200,00 zł. Ilości z pliku są już wpisane w efenix.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź wycenę w efenix i Plik zbiorczy, popraw tę, która jest błędna, i uruchom ponownie.
 
-order_error #14 [EFENIX_BRAK_POZYCJI]
+order_error #15 [EFENIX_BRAK_POZYCJI]
   Co się stało: Strona zlecenia w efenix nie ma pozycji, w których Plik zbiorczy ma ilość: pozycja INDEKS_012 (kolumna O), pozycja INDEKS_019 (kolumna T). Zlecenie zostało w efenix bez zmian.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź ilości w tych kolumnach Pliku zbiorczego i pozycje zlecenia w efenix, a potem wyceń zlecenie w efenix sam.
 
-order_error #15 [EFENIX_BRAK_POZYCJI]
+order_error #16 [EFENIX_BRAK_POZYCJI]
   Co się stało: Strona zlecenia w efenix nie ma pozycji, w których Plik zbiorczy ma ilość: pozycja INDEKS_012 (kolumna O), pozycja INDEKS_019 (kolumna T). Narzędzie ustawiło już datę wykonania z DATA, ale nie załadowało Wyceny Emmetta i nie wpisało ilości.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź ilości w tych kolumnach Pliku zbiorczego i pozycje zlecenia w efenix, a potem wyceń zlecenie w efenix sam.
 
-order_error #16 [EFENIX_BRAK_POZYCJI]
+order_error #17 [EFENIX_BRAK_POZYCJI]
   Co się stało: Strona zlecenia w efenix nie ma pozycji, w których Plik zbiorczy ma ilość: pozycja INDEKS_012 (kolumna O), pozycja INDEKS_019 (kolumna T). Wycena Emmetta jest już załadowana, a narzędzie niczego do niej nie dopisało.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, wiersz 23
   Co zrobić: Sprawdź ilości w tych kolumnach Pliku zbiorczego i pozycje zlecenia w efenix, a potem wyceń zlecenie w efenix sam.

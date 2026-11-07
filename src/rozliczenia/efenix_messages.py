@@ -236,9 +236,9 @@ def marks_not_saved(source: Path, refusal: Refusal) -> Message:
 def order_error(source: Path, row: int, problem: OrderFault) -> Message:
     """Zlecenie z wiersza ``row`` Pliku zbiorczego, które proces zostawia tacie, bo ``problem``.
 
-    Kwota inna niż AU po dopisaniu ilości, data, której efenix nie zapisał po „Potwierdź”, i strona bez pozycji z ilością
-    w pliku po dacie wykonania albo po Wycenie Emmetta to jedyne błędy, przy których proces mógł już coś zmienić w
-    zleceniu w efenix.
+    Kwota inna niż AU po dopisaniu ilości, data, której efenix nie zapisał po „Potwierdź”, strona bez pozycji z ilością
+    w pliku po dacie wykonania albo po Wycenie Emmetta i Przekazanie do akceptacji, którego efenix nie pokazał, to jedyne
+    błędy, przy których proces mógł już coś zmienić w zleceniu w efenix.
     """
 
     code, what, action = _order_error(problem)
@@ -254,7 +254,7 @@ def order_error(source: Path, row: int, problem: OrderFault) -> Message:
 
 def _left_unchanged(problem: OrderFault) -> bool:
     match problem:
-        case OtherAmount() | DateRefused.NOT_SAVED:
+        case OtherAmount() | DateRefused.NOT_SAVED | OrderProblem.NOT_FORWARDED:
             return False
         case MissingPositions(read=read):
             return read is PageRead.OPENED
@@ -376,6 +376,15 @@ def _order_error(problem: OrderFault) -> tuple[str, str, str]:
                 "EFENIX_INNA_DATA",
                 f"Data wykonania zlecenia w efenix różni się od dnia z DATA w Pliku zbiorczym o więcej niż {DATE_TOLERANCE.days} dni.",
                 _PRICE_YOURSELF,
+            )
+        case OrderProblem.NOT_FORWARDED:
+            return (
+                "EFENIX_NIEPRZEKAZANE",
+                (
+                    "Narzędzie przekazało zlecenie do akceptacji, ale efenix nie pokazuje go potem ze statusem „Do"
+                    " akceptacji”. Wycena z Pliku zbiorczego jest już wpisana w efenix."
+                ),
+                "Sprawdź zlecenie w efenix i, jeśli nie jest przekazane, przekaż je do akceptacji sam.",
             )
 
 

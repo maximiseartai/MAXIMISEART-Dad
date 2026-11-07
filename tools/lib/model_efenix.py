@@ -134,7 +134,8 @@ class EfenixOrder:
     efenix z częścią pozycji wyceny; z ``after_date`` strona jest zmieniona (``page_changed``) dopiero od zapisu daty
     wykonania, a z ``after_emmett`` od Wyceny Emmetta. ``emmett_refusal``: efenix odmawia „Załaduj do zlecenia” tego
     zlecenia (``EmmettRefusal``), aż test to zmieni. ``emmett_proposal_failure``: propozycja Emmetta tego zlecenia pada
-    (``ProposalFailure``), więc okno Emmetta zostaje puste.
+    (``ProposalFailure``), więc okno Emmetta zostaje puste. ``keeps_status``: efenix odpowiada na zmianę statusu tego
+    zlecenia jak zwykle, ale statusu nie zmienia.
     """
 
     order_id: str
@@ -155,6 +156,7 @@ class EfenixOrder:
     after_emmett: bool = False
     emmett_refusal: EmmettRefusal | None = None
     emmett_proposal_failure: ProposalFailure | None = None
+    keeps_status: bool = False
 
     @property
     def amount(self) -> Decimal:
@@ -382,7 +384,8 @@ class SerwerEfenix(Generic[OrderT]):
             return order if isinstance(order, NoOrder) else order.execution_date
 
     def change_status(self, order_id: str, status: str) -> NoOrder | NoSession | None:
-        """Zmiana statusu zlecenia na ``status`` (Przekazanie do akceptacji, anulowanie)."""
+        """Zmiana statusu zlecenia na ``status`` (Przekazanie do akceptacji, anulowanie); zlecenie z ``keeps_status``
+        zostaje przy swoim statusie."""
 
         with self._state.lock:
             if not self._state.session_after(Action.STATUS):
@@ -390,5 +393,6 @@ class SerwerEfenix(Generic[OrderT]):
             order = self._state.order(order_id)
             if isinstance(order, NoOrder):
                 return order
-            order.status = status
+            if not order.keeps_status:
+                order.status = status
             return None

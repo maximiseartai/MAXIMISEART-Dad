@@ -480,7 +480,7 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
     source = write_collective_file(tmp_path, orders)
     metrics = tmp_path / "metrics.jsonl"
     efenix = [order.in_efenix(f"90{index}") for index, order in enumerate(orders)]
-    with atrapa_efenix([efenix[0], replace(efenix[1], status="Do akceptacji"), *efenix[2:]]) as atrapa:
+    with atrapa_efenix([efenix[0], replace(efenix[1], status="Anulowane"), *efenix[2:]]) as atrapa:
         exit_code, result = _run(
             "efenix", "--source", source, "--efenix-url", atrapa.url, "--metrics", metrics
         )
@@ -490,6 +490,7 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
     assert result["summary"]["figures"] == [
         {"label": "Zlecenia w zakresie", "value": 4, "unit": "count"},
         {"label": "Gotowe do przekazania", "value": 1, "unit": "count"},
+        {"label": "Przekazane do akceptacji", "value": 0, "unit": "count"},
         {"label": "Rozliczone", "value": 0, "unit": "count"},
         {"label": "Błędy zleceń", "value": 2, "unit": "count"},
         {"label": "Ostrzeżenia Emmetta", "value": 1, "unit": "count"},
@@ -516,6 +517,21 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
     # („Zlecenie9401”) dalej jest wyciekiem.
     number = re.compile(r"(?<![0-9])9401(?![0-9])")
     assert (number.search(json.dumps(result)), number.search(metrics.read_text(encoding="utf-8"))) == (None, None)
+
+
+def test_wycena_w_efenix_ze_skryptu_dla_maszyn_z_przekazaniem_przekazuje_gotowe_zlecenie_do_akceptacji(tmp_path: Path) -> None:
+    au = float(amount_of({"012": 2}))
+    order = EfenixOrder("#9411", cells={"O": 2}, amount=au)
+    source = write_collective_file(tmp_path, [order])
+    with atrapa_efenix([order.in_efenix("901")]) as atrapa:
+        exit_code, result = _run(
+            "efenix", "--source", source, "--efenix-url", atrapa.url, "--z-przekazaniem", "--metrics", tmp_path / "metrics.jsonl"
+        )
+        requests = atrapa.status_requests()
+
+    figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
+    assert (exit_code, result["result"], requests) == (0, "OK", [("POST", "Do akceptacji")])
+    assert (figures["Gotowe do przekazania"], figures["Przekazane do akceptacji"]) == (0, 1)
 
 
 @pytest.mark.parametrize(

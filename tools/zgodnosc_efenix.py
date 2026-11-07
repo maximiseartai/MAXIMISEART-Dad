@@ -27,9 +27,11 @@ Emmetta w karcie, w której Maks sam kliknął przycisk Emmetta. Sprawdza:
   ``efenix_page.read_order`` (data wykonania ``RRRR-MM-DD`` albo pusta, kwota końcowa, pola Ilość), a na pierwszym
   zleceniu elementy ``efenix_page.Element`` strony zlecenia, które efenix ma na każdej (okno daty wykonania, przycisk i okno Emmetta; przycisk Emmetta
   widoczny w samym HTML, bez stylów efenix, a propozycja w oknie Emmetta ``#emmett-propozycja`` pusta, bez elementu i
-  tekstu, jak w Atrapie, zanim skrypt strony włoży do niej propozycję), przyciski Przekazania do akceptacji i anulowania, które ma Atrapa, skrypt
+  tekstu, jak w Atrapie, zanim skrypt strony włoży do niej propozycję; przycisk Przekazania do akceptacji, okno zmiany
+  statusu ``#dialog_forward_yes_no`` i jego „Tak” ``.btn-ok``, bez klikania), przycisk anulowania, który ma Atrapa, skrypt
   ``js/page_order_edit.js`` (pod adresem z listy ``ALLOWED``) z nazwami ``efenix_page.SCRIPT_USES`` strony zlecenia
-  (pickadate z ``onSet``, „Potwierdź” daty, Emmett, zapis ilości z ``price_all``) i karty pozycji
+  (pickadate z ``onSet``, „Potwierdź” daty, Emmett, zapis ilości z ``price_all``, „Tak” okna zmiany statusu z
+  ``action_change_status.php`` i ``xstatus``) i karty pozycji
   ``.card.rounded-lg.kolorek``: karta z polem Ilość ma cenę w tekście ``.col-sm-1.mt-2 > span.text-default > small``,
   a karta z ceną wpisywaną samo pole ``input.wycena-cena``; każdy kod ``INDEKS_NNN_NNN`` jest pozycją Atrapy
   (``model_efenix.CATALOG``) z tym samym rodzajem karty, przy czym strona może mieć tylko część pozycji Atrapy, jak
@@ -242,12 +244,9 @@ class Part(enum.Enum):
 # rodzaju; przycisku kalendarza na każdej stronie zlecenia nie ma, więc narzędzie nie sprawdza go na pierwszym zleceniu.
 LIST_ELEMENTS: Final = tuple(element.element for element in Element if element.page is PageKind.LIST and element.always_on_page)
 ORDER_ELEMENTS: Final = tuple(element.element for element in Element if element.page is PageKind.ORDER and element.always_on_page)
-# Elementy, których Wycena w efenix nie używa, a Atrapa ma: przyciski, których okno nie może kliknąć, i formularz
-# logowania, w którym tata loguje się sam.
-UNUSED_ORDER_ELEMENTS: Final = (
-    PageElement("przycisk Przekazania do akceptacji", "#button_forward_to_accept"),
-    PageElement("przycisk anulowania", "#button_forward_to_cancel"),
-)
+# Elementy, których Wycena w efenix nie używa, a Atrapa ma: przycisk anulowania, którego okno nie może kliknąć, i
+# formularz logowania, w którym tata loguje się sam.
+UNUSED_ORDER_ELEMENTS: Final = (PageElement("przycisk anulowania", "#button_forward_to_cancel"),)
 LOGIN_ELEMENTS: Final = (
     PageElement("formularz logowania", LOGIN_FORM),
     PageElement("pole loginu", "input#field_signum"),
