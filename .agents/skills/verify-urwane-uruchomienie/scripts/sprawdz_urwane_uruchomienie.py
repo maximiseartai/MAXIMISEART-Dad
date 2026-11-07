@@ -320,8 +320,8 @@ def _read(before: dict[str, str], after: dict[str, str]) -> str:
         files = re.findall(r'rodzaj \|-> "(\w+)", tresc', before.get("logi", ""))
         index = int(k) - 1 if k.isdigit() else -1
         if 0 <= index < len(files) and files[index] != "brak":
-            return f"close: {_KINDS[files[index]]} Wyceny {k} z pliku Logów, po strażniku (guard)"
-        return f"close: Logi Urwanego Uruchomienia Wyceny {k} z dziennika, po strażniku (guard)"
+            return f"close: {_KINDS[files[index]]} Wyceny {k} z pliku Logów, po strażniku (guard_logs)"
+        return f"close: Logi Urwanego Uruchomienia Wyceny {k} z dziennika, po strażniku (guard_logs)"
     if after.get("oczekujace") != before.get("oczekujace"):
         return f"close: wynik bez Logów Wyceny {k} (wpis końca bez pliku Logów, ResultWithoutLogs)"
     return f"close: dziennika Wyceny {k} nie ma"
