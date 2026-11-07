@@ -131,6 +131,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 import ciezkie_ci
 import github
+from jednostka import ZMIENNA_CZESCI, Czesc, Klucz, Rodzaj
+from ostatnie_linie import MUTACJE_OK
 import potomne
 from repo import BASE, ROOT
 import repo
@@ -142,7 +144,6 @@ TIMEOUT = 600
 PARALLEL = min(8, os.cpu_count() or 1)
 # Cache mypy kroków bramy typów (``--cache-dir`` kroku Windows leży w nim), który kopia bez mutacji daje kopiom mutacji.
 MYPY_CACHE = ".mypy_cache"
-PART = "MUTACJE_CZESC"
 # Część ``--limit-s``, ponad którą czas polecenia mutacji daje ostrzeżenie ``CZAS BLISKO LIMITU`` w ``check_all``.
 NEAR_LIMIT = 0.5
 # Linie, którymi pytest-timeout kończy test po limicie, w pytest_timeout.py 2.4: ``PYTEST_FAILURE_MESSAGE`` metody
@@ -213,7 +214,7 @@ class Mutation:
 def environment(copy: Path, *, concurrent: bool = False) -> dict[str, str]:
     nested = {"PYTEST_XDIST_AUTO_NUM_WORKERS": "1"} if concurrent else {}
     # Część dzieli tabelę tego skryptu, nie tabele, które sprawdzane polecenie samo uruchamia.
-    inherited = {name: value for name, value in os.environ.items() if name != PART}
+    inherited = {name: value for name, value in os.environ.items() if name != ZMIENNA_CZESCI}
     return {
         **nested,
         **inherited,
@@ -616,13 +617,14 @@ def type_gate(
 
 
 def _part(mutations: Sequence[Mutation], part: str) -> list[Mutation]:
-    """Mutacje części ``K/N`` w kolejności tabeli; zła postać to ``ValueError`` z nazwą zmiennej."""
+    """Mutacje części ``K/N`` (``Czesc.co_nta`` po nazwie) w kolejności tabeli; zła postać to ``ValueError`` z nazwą zmiennej."""
 
-    number, _, count = part.partition("/")
-    if not (number.isdigit() and count.isdigit() and 1 <= int(number) <= int(count)):
-        raise ValueError(f"{PART} to K/N z 1 <= K <= N, nie {part!r}")
+    try:
+        czesc = Czesc.z_tekstu(part)
+    except ValueError as error:
+        raise ValueError(f"{ZMIENNA_CZESCI} to {error}") from None
     by_name = sorted(range(len(mutations)), key=lambda index: (mutations[index].name, repr(mutations[index])))
-    chosen = set(by_name[int(number) - 1 :: int(count)])
+    chosen = set(czesc.co_nta(by_name))
     return [mutation for index, mutation in enumerate(mutations) if index in chosen]
 
 
@@ -694,12 +696,12 @@ def check_all(
     if not mutations:
         print("MUTACJE: brak mutacji, więc nie ma czego dowieść")
         return 1
-    if part := os.environ.get(PART):
+    if part := os.environ.get(ZMIENNA_CZESCI):
         total = len(mutations)
         mutations = _part(mutations, part)
         print(f"MUTACJE CZĘŚĆ {part}: {len(mutations)} z {total} mutacji", flush=True)
         if not mutations:
-            print("MUTACJE OK")
+            print(MUTACJE_OK)
             return 0
     red = _baseline(mutations, limit_s)
     for command, ran in red.items():
@@ -730,8 +732,8 @@ def check_all(
         print(f"{verdict}: {mutation.name}{harm} → {last}", flush=True)
     for mutation, seconds in zip(mutations, times, strict=True):
         if seconds is not None and seconds > NEAR_LIMIT * limit_s:
-            print(NearLimit(_script(), os.environ.get(PART, ""), mutation.name, round(seconds), limit_s).line, file=sys.stderr, flush=True)
-    print("MUTACJE OK" if not failures else f"MUTACJE: {failures} bez oczekiwanego wyniku")
+            print(NearLimit(_script(), os.environ.get(ZMIENNA_CZESCI, ""), mutation.name, round(seconds), limit_s).line, file=sys.stderr, flush=True)
+    print(MUTACJE_OK if not failures else f"MUTACJE: {failures} bez oczekiwanego wyniku")
     return 1 if failures else 0
 
 
@@ -756,14 +758,14 @@ class NearLimit:
 
     @property
     def line(self) -> str:
-        part = f" ({PART}={self.part})" if self.part else ""
+        part = f" ({ZMIENNA_CZESCI}={self.part})" if self.part else ""
         near = f"CZAS BLISKO LIMITU: {self.script}{part}: {self.name} → {self.seconds} s z limitu --limit-s {self.limit_s:g} s"
         return f"{near} (po nim PRZEKROCZONY CZAS: podziel zakres mutacji albo przyspiesz sprawdzenie)"
 
 
 # ``NearLimit.line`` na początku linii; nazwa mutacji kończy się przed ostatnią strzałką przed czasem.
 _NEAR = re.compile(
-    rf"^CZAS BLISKO LIMITU: (?P<script>\S+)(?: \({PART}=(?P<part>[0-9]+/[0-9]+)\))?: (?P<name>.+) → (?P<seconds>[0-9]+) s z limitu --limit-s (?P<limit>\S+) s \(po nim ",
+    rf"^CZAS BLISKO LIMITU: (?P<script>\S+)(?: \({ZMIENNA_CZESCI}=(?P<part>[0-9]+/[0-9]+)\))?: (?P<name>.+) → (?P<seconds>[0-9]+) s z limitu --limit-s (?P<limit>\S+) s \(po nim ",
     re.MULTILINE,
 )
 
@@ -832,7 +834,7 @@ def ci_jobs(jobs: Iterable[tuple[str, str, Sequence[str]]], tracks: Collection[s
 
     found = []
     for track, name, units in jobs:
-        files = list(dict.fromkeys(unit.removeprefix("pytest:").partition("#")[0] for unit in units if unit.startswith("pytest:")))
+        files = list(dict.fromkeys(klucz.nazwa for klucz in map(Klucz.z_tekstu, units) if klucz.rodzaj is Rodzaj.PYTEST))
         if track in tracks and any(file.partition("::")[0] in tested for file in files):
             found.append((name, files))
     return found
@@ -914,7 +916,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Polecenie z plików każdego zadania pytest runu CI RUN (bez numeru: ostatniego runu gałęzi), w którym stoją zmienione testy, bez polecenia po --.",
     )
     ciezkie_ci.argument(parser)
-    parser.add_argument("--zasady", action="store_true", help="Drukuje zasady werdyktów, kopii, bramy typów, nocy, --jak-ci i MUTACJE_CZESC.")
+    parser.add_argument("--zasady", action="store_true", help=f"Drukuje zasady werdyktów, kopii, bramy typów, nocy, --jak-ci i {ZMIENNA_CZESCI}.")
     args = parser.parse_args(arguments[:split])
     if args.zasady:
         print(RULES.strip())

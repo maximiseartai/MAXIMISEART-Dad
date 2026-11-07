@@ -36,13 +36,15 @@ from xml.etree import ElementTree
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 from czasy_ci import WERSJA, Jednostka, Zapis, wczytaj
+import jednostka
+from jednostka import Rodzaj
 
 # Krok zadania, który właśnie się skończył, API pokazuje przez około sekundę bez wyniku (conclusion: null).
 ODCZYTY_API = 5
 CZEKANIE_API_S = 1.0
 LIMIT_API_S = 20.0
 # Kroki ci.yml, których czas jest jednostką; czasy kroków jednego klucza się sumują.
-KROKI = {"Run the planned units": "krok:praca"}
+KROKI = {"Run the planned units": jednostka.krok("praca")}
 
 
 def _tor(runner: str) -> str:
@@ -69,12 +71,12 @@ def _junit(plik: Path) -> list[Jednostka]:
             porazki.add(nazwa)
     if not sekundy:
         raise ValueError("brak testów")
-    return [Jednostka(f"pytest:{nazwa}", round(s, 3), "fail" if nazwa in porazki else "ok") for nazwa, s in sorted(sekundy.items())]
+    return [Jednostka(jednostka.pytest(nazwa), round(s, 3), "fail" if nazwa in porazki else "ok") for nazwa, s in sorted(sekundy.items())]
 
 
 def _wykonanie(plik: Path) -> tuple[str, str, list[Jednostka]]:
     dane = json.loads(plik.read_text(encoding="utf-8"))
-    return dane["plan"], dane["zadanie"], [Jednostka(**jednostka) for jednostka in dane["jednostki"]]
+    return dane["plan"], dane["zadanie"], [Jednostka(**wpis) for wpis in dane["jednostki"]]
 
 
 def _chwila(tekst: str) -> float:
@@ -178,10 +180,10 @@ def _scal(args: argparse.Namespace) -> int:
             bledy.append(f"{plik.name}: {error!r}")
             continue
         runy.add((zapis.run, zapis.proba, zapis.sha, zapis.zdarzenie))
-        narzut = () if zapis.narzut_s is None else (Jednostka(f"narzut:{zapis.szablon}", zapis.narzut_s, "ok"),)
-        for jednostka in (*zapis.jednostki, *narzut):
-            obserwacja = {"run": zapis.run, "proba": zapis.proba, "zadanie": zapis.zadanie, "s": jednostka.s, "status": jednostka.status}
-            tory[zapis.tor][jednostka.klucz].append(obserwacja)
+        narzut = () if zapis.narzut_s is None else (Jednostka(jednostka.narzut(zapis.szablon), zapis.narzut_s, "ok"),)
+        for praca in (*zapis.jednostki, *narzut):
+            obserwacja = {"run": zapis.run, "proba": zapis.proba, "zadanie": zapis.zadanie, "s": praca.s, "status": praca.status}
+            tory[zapis.tor][praca.klucz].append(obserwacja)
     if not pliki:
         bledy.append(f"brak zapisów zadań w {args.katalog}")
     for blad in bledy:
@@ -198,7 +200,7 @@ def _scal(args: argparse.Namespace) -> int:
     }
     args.wyjscie.write_text(json.dumps(czasy, indent=1), encoding="utf-8")
     for tor, klucze in sorted(tory.items()):
-        pliki_testow = sum(klucz.startswith("pytest:") for klucz in klucze)
+        pliki_testow = sum(jednostka.rodzaj(klucz) is Rodzaj.PYTEST for klucz in klucze)
         print(f"CZASY CI | {tor} | {len(klucze)} kluczy, w tym {pliki_testow} plików testów")
     print(f"CZASY CI SCALONE | {len(pliki) - len(bledy)} zapisów zadań | {args.wyjscie.name}")
     return 1 if bledy else 0

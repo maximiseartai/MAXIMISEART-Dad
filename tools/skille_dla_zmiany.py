@@ -35,11 +35,11 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 from kroki_skilli import Katalog, hits
+from ostatnie_linie import SKILLE_VERIFY
 from repo import BASE, ROOT
 from wplyw_zmiany import changed_since
 from zakres_runu import Zdarzenie, zakres
 
-VERDICT = "SKILLE VERIFY"
 IN_CI = "LICZY CI"
 AT_NIGHT = "LICZY NOC"
 SHOWN = 3
@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         files = changed_since(ROOT, base)
     except subprocess.CalledProcessError as error:
         detail = (error.stderr.strip().splitlines() or [f"kod {error.returncode}"])[0]
-        print(f"{VERDICT}: nieznane (git {error.cmd[1]}: {detail})")
+        print(f"{SKILLE_VERIFY}nieznane (git {error.cmd[1]}: {detail})")
         return 1
     pull_request, night = zakres(Zdarzenie.PULL_REQUEST, files, ROOT), zakres(Zdarzenie.NOC, files, ROOT)
     chosen: list[str] = []
@@ -80,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{IN_CI}: {'; '.join(in_ci)}")
     if at_night:
         print(f"{AT_NIGHT}: {'; '.join(at_night)}")
-    print(f"{VERDICT}: {', '.join(chosen) or 'brak'}")
+    print(f"{SKILLE_VERIFY}{', '.join(chosen) or 'brak'}")
     return 0
 
 

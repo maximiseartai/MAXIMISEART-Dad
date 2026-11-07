@@ -44,6 +44,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import github
+from ostatnie_linie import AKTUALIZACJA
 from repo import BASE
 import repo
 
@@ -101,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         print("BŁĄD: uruchom w checkoucie repozytorium git.", file=sys.stderr)
         return 2
     if repo.commit(root, BASE) is None:
-        print(f"AKTUALIZACJA: nieznana (brak {BASE})" if args.aktualizacja else f"PRACA W TOKU POMINIĘTA | brak {BASE}, nie ma z czym porównać")
+        print(f"{AKTUALIZACJA}nieznana (brak {BASE})" if args.aktualizacja else f"PRACA W TOKU POMINIĘTA | brak {BASE}, nie ma z czym porównać")
         return 0
 
     branch = repo.git(root, "branch", "--show-current").strip() or _busy_branch(root)
@@ -328,7 +329,7 @@ def _update_verdict(root: Path, branch: str | None) -> str:
     except subprocess.CalledProcessError as conflict:
         if conflict.returncode != 1:
             reason = (conflict.stderr.strip().splitlines() or [f"kod {conflict.returncode}"])[0]
-            return f"AKTUALIZACJA: nieznana (git merge-tree: {reason}){_base_note(root)}"
+            return f"{AKTUALIZACJA}nieznana (git merge-tree: {reason}){_base_note(root)}"
         merged = conflict.stdout
     if conflicts := sorted(set(merged.split("\0")[1:]) - {""}):
         verdict = f"potrzebna (konflikt w: {', '.join(conflicts)})"
@@ -336,7 +337,7 @@ def _update_verdict(root: Path, branch: str | None) -> str:
         verdict = f"potrzebna (bez konfliktu, wspólne pliki: {', '.join(shared)})"
     else:
         verdict = "niepotrzebna (bez konfliktu, bez wspólnych plików)"
-    return f"AKTUALIZACJA: {verdict}{_base_note(root)}"
+    return f"{AKTUALIZACJA}{verdict}{_base_note(root)}"
 
 
 def _before_rebase(root: Path) -> str | None:

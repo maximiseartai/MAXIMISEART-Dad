@@ -51,6 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 from github import MERGE, REPO, REQUIRED, SQUASH, Akcja, GhApi, GitHub, Skomentuj, Zaloz, Zamknij, blok_kodu, issues, opis
 from github import wykonaj as wykonaj_akcje
+from jednostka import Rodzaj
 import niestabilne_testy
 from repo import MAIN, ROOT
 import repo
@@ -68,7 +69,7 @@ HISTORIA = 50
 OKNO_ZDERZEN = timedelta(days=7)
 _ZNACZNIK = re.compile(r"<!-- czerwony-main (?P<sha>[0-9a-f]{40}) -->")
 _RUN = re.compile(r"/actions/runs/(?P<run>[0-9]+)")
-_PLIK_PYTEST = re.compile(r"pytest:(tests/[\w/]+\.py)")
+_PLIK_PYTEST = re.compile(rf"{Rodzaj.PYTEST.value}:(tests/[\w/]+\.py)")
 # Linia podsumowania pytest w logu zadania, po znaczniku czasu GitHuba i kolorach terminala.
 # Numer kawałka toru w nazwie zadania pytest (``pytest (Python 3.11, 2/3)``): plan dzieli tor na inną liczbę zadań w
 # każdym runie, więc zadanie bez linii pytest porównuje się z rodzicem po torze.

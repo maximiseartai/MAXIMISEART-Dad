@@ -52,7 +52,8 @@ class Checkout:
         scripts.mkdir(parents=True)
         shutil.copy(SCRIPT, scripts / SCRIPT.name)
         (self.root / "tools" / "lib").mkdir(parents=True)
-        shutil.copy(ROOT / "tools" / "lib" / "skrypt_skilla.py", self.root / "tools" / "lib" / "skrypt_skilla.py")
+        for module in ("skrypt_skilla.py", "jednostka.py"):
+            shutil.copy(ROOT / "tools" / "lib" / module, self.root / "tools" / "lib" / module)
         (self.root / ".gitignore").write_text(".verification/\n__pycache__/\n", encoding="utf-8")
         origin = tmp_path / "origin.git"
         git(tmp_path, "init", "--quiet", "--bare", str(origin))

@@ -43,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
 from mutacje import environment
+from ostatnie_linie import CI_LOKALNIE_FAIL, CI_LOKALNIE_OK
 import potomne
 from repo import BASE, ROOT
 import repo
@@ -219,9 +220,9 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, subprocess.TimeoutExpired) as error:
             print(f"NAKŁADANIA POMINIĘTE | {error}", flush=True)
     if failed:
-        print(f"CI LOKALNIE FAIL | {', '.join(failed)}")
+        print(f"{CI_LOKALNIE_FAIL}{', '.join(failed)}")
         return 1
-    print("CI LOKALNIE OK" if complete else f"CI LOKALNIE OK | tylko {', '.join(sorted(jobs))}")
+    print(CI_LOKALNIE_OK if complete else f"{CI_LOKALNIE_OK} | tylko {', '.join(sorted(jobs))}")
     return 0
 
 

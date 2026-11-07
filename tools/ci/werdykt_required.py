@@ -23,6 +23,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 import czasy_ci
+from jednostka import Czesc
 from plan_runu import Z_PLANU, Plan
 from zakres_runu import MUTACJE, TORY
 
@@ -54,7 +55,7 @@ def werdykt(plan: Plan | None, wyniki_zadan: Mapping[str, str], zapisy: Sequence
             przyczyny.append(f"{zadanie.nazwa}: brak zapisu czasów z tego planu, więc nic nie dowodzi, że jego jednostki biegły")
             continue
         # Udział pliku i węzeł testu zapis czasów zgłasza jako cały plik (junit zna tylko plik testu).
-        zaplanowane = {klucz.partition("#")[0].partition("::")[0] for klucz in zadanie.jednostki}
+        zaplanowane = {str(klucz.zgloszony) for klucz in zadanie.klucze}
         if brak := sorted(zaplanowane - {jednostka.klucz for jednostka in ostatni.jednostki}):
             przyczyny.append(f"{zadanie.nazwa}: jednostki bez wyniku: {', '.join(brak)}")
         # Druga linia obrony, gdyby zadanie z porażką skończyło się sukcesem.
@@ -66,18 +67,16 @@ def werdykt(plan: Plan | None, wyniki_zadan: Mapping[str, str], zapisy: Sequence
 def _niepelne_czesci(plan: Plan) -> list[str]:
     """Jednostki podzielone w planie, których części ``#k/n`` z zadań jednego toru nie są dokładnie raz każdą z 1..n."""
 
-    czesci: dict[tuple[str, str], list[str]] = defaultdict(list)
+    czesci: dict[tuple[str, str], list[Czesc]] = defaultdict(list)
     for zadanie in plan.zadania:
-        for klucz in zadanie.jednostki:
-            nazwa, _, czesc = klucz.partition("#")
-            if czesc:
-                czesci[(zadanie.tor, nazwa)].append(czesc)
+        for klucz in zadanie.klucze:
+            if klucz.czesc:
+                czesci[(zadanie.tor, str(klucz.calosc))].append(klucz.czesc)
     przyczyny = []
     for (tor, nazwa), lista in sorted(czesci.items()):
-        n = lista[0].partition("/")[2]
-        calosc = [f"{k}/{n}" for k in range(1, int(n) + 1)] if n.isdigit() else []
-        if sorted(lista) != sorted(calosc):
-            przyczyny.append(f"plan CI: części {', '.join(sorted(lista))} jednostki {nazwa} na torze {tor} nie są całością 1..{n}")
+        n = lista[0].n
+        if sorted(map(str, lista)) != sorted(map(str, Czesc.calosc(n))):
+            przyczyny.append(f"plan CI: części {', '.join(sorted(map(str, lista)))} jednostki {nazwa} na torze {tor} nie są całością 1..{n}")
     return przyczyny
 
 

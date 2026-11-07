@@ -1,8 +1,8 @@
 """Wykonuje jedno zadanie planu runu CI (``tools/lib/plan_runu.py``): pytest z jego plikami, potem kroki CI i kroki skilli.
 
 Zadanie wykonuje tylko plan, którego treść zgadza się z jego ``digest``. Pytest biegnie z plikami i udziałami zadania:
-udział k dużego pliku z ``-p tools.lib.pytest_czesc`` (testy pliku posortowane po id, po kolei), a krok mutacji z częścią
-``#k/n`` z ``MUTACJE_CZESC=k/n`` (``tools/mutacje.py``). Kroki skilli biegną po kolei przez ``tools/ci/mutacje_skilli.py``
+udział k dużego pliku z ``-p tools.lib.pytest_czesc`` (testy pliku posortowane po id, po kolei), a krok skilla z częścią
+``#k/n`` z tą częścią w ``jednostka.ZMIENNA_CZESCI``. Kroki skilli biegną po kolei przez ``tools/ci/mutacje_skilli.py``
 (``run``), także po porażce.
 
 Na pull request zadanie po porażce pytest uruchamia raz same testy, które padły (``niestabilne_testy``, najwyżej
@@ -35,8 +35,9 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
+import jednostka
+from jednostka import Czesc, Klucz, Rodzaj
 from kroki_skilli import Katalog
-import mutacje
 import mutacje_skilli
 import niestabilne_testy
 from niestabilne_testy import FlakyTest, ZapisKwarantanny
@@ -53,8 +54,8 @@ PONOWIENIE_NAJWIECEJ = 5
 CZESCI = Path(".ci-plan", "czesci.json")
 
 
-def _pytest(pliki: Mapping[str, list[tuple[int, int]]]) -> tuple[str, ...]:
-    czesci = {plik: {"n": udzialy[0][1], "udzialy": sorted(k for k, _ in udzialy)} for plik, udzialy in pliki.items() if udzialy}
+def _pytest(pliki: Mapping[str, list[Czesc]]) -> tuple[str, ...]:
+    czesci = {plik: {"n": udzialy[0].n, "udzialy": sorted(udzial.k for udzial in udzialy)} for plik, udzialy in pliki.items() if udzialy}
     CZESCI.parent.mkdir(parents=True, exist_ok=True)
     CZESCI.write_text(json.dumps(czesci, indent=1), encoding="utf-8")
     # Bez '=' w argumentach: shim py (cmd) dzieli argument na '='.
@@ -97,26 +98,26 @@ def _uruchom(nazwa: str, polecenia: Sequence[tuple[tuple[str, ...], float]], po_
     return {"klucz": nazwa, "s": s, "status": status}
 
 
-def _krok_skilla(klucz: str, katalog: Katalog) -> tuple[dict[str, object], list[dict[str, object]]]:
-    """Krok skilla albo część ``#k/n`` skryptu mutacji; wynik zgłasza pod kluczem całego kroku, jak udział pliku testów,
+def _krok_skilla(klucz: Klucz, katalog: Katalog) -> tuple[dict[str, object], list[dict[str, object]]]:
+    """Krok skilla albo jego część ``#k/n``; wynik zgłasza pod kluczem całego kroku, jak udział pliku testów,
     a obok jego ostrzeżenia ``CZAS BLISKO LIMITU`` (``mutacje.NearLimit``) pod tym samym kluczem."""
 
-    nazwa, _, czesc = klucz.partition("#")
+    nazwa = str(klucz.zgloszony)
     print(f"== {klucz}", flush=True)
     start = time.monotonic()
     try:
-        krok = katalog.krok(nazwa)
+        krok = katalog.krok(klucz)
     except KeyError:
         wynik = mutacje_skilli.Wynik("planu nie ma wśród kroków skilli")
     else:
-        wynik = mutacje_skilli.run(krok, env={mutacje.PART: czesc} if czesc else None)
+        wynik = mutacje_skilli.run(krok, env={jednostka.ZMIENNA_CZESCI: str(klucz.czesc)} if klucz.czesc else None)
     s = round(time.monotonic() - start, 1)
     print(f"OK   {klucz} ({s:.0f} s)" if wynik.powod is None else f"FAIL {klucz} ({s:.0f} s): {wynik.powod}", flush=True)
     blisko = [{"klucz": nazwa, **asdict(ostrzezenie)} for ostrzezenie in wynik.blisko_limitu]
     return {"klucz": nazwa, "s": s, "status": "ok" if wynik.powod is None else "fail"}, blisko
 
 
-def _krok_pytest(plan: Plan, zadanie: Zadanie, pliki: Mapping[str, list[tuple[int, int]]]) -> dict[str, object]:
+def _krok_pytest(plan: Plan, zadanie: Zadanie, pliki: Mapping[str, list[Czesc]]) -> dict[str, object]:
     """Pytest zadania z limitem ``plan_runu.limit_pytest_s``; na pull request po porażce raz same testy, które padły. Potem wynik
     testów z kwarantanny."""
 
@@ -127,7 +128,7 @@ def _krok_pytest(plan: Plan, zadanie: Zadanie, pliki: Mapping[str, list[tuple[in
         " test albo proces, który się zawiesił; test, który wisiał ponad faulthandler_timeout z pyproject.toml, zostawił wyżej"
         " stosy swoich wątków, a zawieszenie przy imporcie albo zbieraniu testów stosów nie zostawia"
     )
-    status = _uruchom("krok:pytest", [(_pytest(pliki), limit)], po_limicie)["status"]
+    status = _uruchom(jednostka.krok("pytest"), [(_pytest(pliki), limit)], po_limicie)["status"]
     if status != "ok" and plan.zdarzenie is Zdarzenie.PULL_REQUEST and (testy := niestabilne_testy.padniete(JUNIT)):
         if len(testy) > PONOWIENIE_NAJWIECEJ:
             print(f"PONOWIENIE | bez ponowienia: padło {len(testy)} testów, a flaky testy to najwyżej {PONOWIENIE_NAJWIECEJ}", flush=True)
@@ -137,7 +138,7 @@ def _krok_pytest(plan: Plan, zadanie: Zadanie, pliki: Mapping[str, list[tuple[in
             status = "ok"
     sha, proba = os.environ.get("GITHUB_SHA", ""), int(os.environ.get("GITHUB_RUN_ATTEMPT", "0"))
     niestabilne_testy.zapisz_kwarantanne(ZapisKwarantanny(zadanie.id, proba, sha, niestabilne_testy.wyniki_kwarantanny(JUNIT)))
-    return {"klucz": "krok:pytest", "s": round(time.monotonic() - start, 1), "status": status}
+    return {"klucz": jednostka.krok("pytest"), "s": round(time.monotonic() - start, 1), "status": status}
 
 
 def _ponow(zadanie: Zadanie, testy: Sequence[str]) -> bool:
@@ -159,20 +160,19 @@ def wykonaj(plan: Plan, zadanie_id: str) -> int:
     if zadanie is None:
         print(f"WYKONANIE FAIL | plan {plan.digest[:12]} nie ma zadania {zadanie_id}")
         return 1
-    pliki: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    pliki: dict[str, list[Czesc]] = defaultdict(list)
     kroki = []
     skille = []
-    for klucz in zadanie.jednostki:
-        nazwa, _, udzial = klucz.partition("#")
-        if nazwa.startswith("pytest:"):
-            k, _, n = udzial.partition("/")
-            pliki[nazwa.removeprefix("pytest:")] += [(int(k), int(n))] if udzial else []
-        elif nazwa.startswith("skill:"):
-            skille.append(klucz)
-        else:
-            kroki.append(KROKI[nazwa.removeprefix("krok:")])
+    for klucz in zadanie.klucze:
+        match klucz.rodzaj:
+            case Rodzaj.PYTEST:
+                pliki[klucz.nazwa] += [klucz.czesc] if klucz.czesc else []
+            case Rodzaj.SKILL:
+                skille.append(klucz)
+            case Rodzaj.KROK | Rodzaj.NARZUT:
+                kroki.append(KROKI[klucz.nazwa])
     wyniki = [_krok_pytest(plan, zadanie, pliki)] if pliki else []
-    wyniki += [_uruchom(f"krok:{krok.nazwa}", _polecenia(krok)) for krok in kroki]
+    wyniki += [_uruchom(jednostka.krok(krok.nazwa), _polecenia(krok)) for krok in kroki]
     blisko: list[dict[str, object]] = []
     if skille:
         # Po kolei: mutacje kilku skilli naraz na czterech rdzeniach runnera przekraczają swoje limity czasu.

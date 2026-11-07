@@ -25,7 +25,7 @@ from tests.fixtures.model_tlc import model_tlc, rozjazd_modelu, skrypt_modelu, w
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-import mutacje  # noqa: E402
+from jednostka import ZMIENNA_CZESCI  # noqa: E402
 import kroki_skilli  # noqa: E402
 
 SCRIPT = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "scripts" / "sprawdz_model_kolejki.py"
@@ -165,7 +165,7 @@ def test_czesci_podstawy_kazdej_liczby_do_ci_czesci_skladaja_sie_na_kazdy_zakres
 
     assert 1 < count <= len(baseline.UNITS)
     for parts in range(1, count + 1):
-        chosen = [baseline.units({mutacje.PART: f"{number}/{parts}"}) for number in range(1, parts + 1)]
+        chosen = [baseline.units({ZMIENNA_CZESCI: f"{number}/{parts}"}) for number in range(1, parts + 1)]
         assert sum(chosen, ()) == baseline.UNITS, parts
         assert all(chosen), parts
     scopes = [argument for name, arguments in baseline.UNITS if name == EXPLORER.name for argument in arguments if argument != "--scope"]

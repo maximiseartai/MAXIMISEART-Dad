@@ -27,7 +27,9 @@ sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
 import czasy_ci  # noqa: E402
 import kroki_skilli  # noqa: E402
+from jednostka import Czesc  # noqa: E402
 from mutacje import NearLimit  # noqa: E402
+from ostatnie_linie import MUTACJE_OK  # noqa: E402
 import niestabilne_testy  # noqa: E402
 import plan_ci  # noqa: E402
 import plan_runu  # noqa: E402
@@ -69,7 +71,7 @@ SKILL_STEPS = {
 def _skill_steps(keys: list[str]) -> list[kroki_skilli.Step]:
     skills = ROOT / ".agents" / "skills"
     return [
-        kroki_skilli.Step(skills / key.split("/")[0], key, key, (key,), None if key.endswith("/ci") else kroki_skilli.VERDICT, SKILL_STEPS[key][1], SKILL_STEPS[key][2])
+        kroki_skilli.Step(skills / key.split("/")[0], key, key, (key,), None if key.endswith("/ci") else MUTACJE_OK, SKILL_STEPS[key][1], SKILL_STEPS[key][2])
         for key in keys
     ]
 
@@ -813,7 +815,7 @@ def test_plan_biegnie_kazda_czescia_ustalona_przez_zakres_a_bez_nich_czesciami_j
     step = kroki_skilli.Step(ROOT / ".agents" / "skills" / "verify-e", key, key, (key,), None, 3, False)
     parts = tuple((k, n) for n in range(1, 4) for k in range(1, n + 1)) if fixed else ()
     czasy = _with_skill_times(_times())
-    plan = plan_ci.rozplanuj([plan_ci.wycen_mutacje([KrokSkilla(step, "", parts)], czasy)], Zdarzenie.NOC, czasy.runy)
+    plan = plan_ci.rozplanuj([plan_ci.wycen_mutacje([KrokSkilla(step, "", tuple(Czesc(k, n) for k, n in parts))], czasy)], Zdarzenie.NOC, czasy.runy)
     base = Counter(unit for job in plan.zadania for unit in job.jednostki)
 
     if fixed:

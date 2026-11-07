@@ -37,6 +37,7 @@ from tests.fixtures.git_repo import commit, copy_files, git, repository
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
+from jednostka import Czesc  # noqa: E402
 from mutacje import NearLimit  # noqa: E402
 import mutacje_nocne  # noqa: E402
 import mutacje_zmiany  # noqa: E402
@@ -837,7 +838,7 @@ def test_plan_i_czesci_licza_te_same_mutacje(
 
     plan = _plan_nocy(GitHubWPamieci(), tmp_path, monkeypatch, capsys, 2, od=od)
     noc = mutacje_zmiany.ZakresMutacji.od(plan["baza"], repo).do(plan["do"])
-    czesci = [noc.czesc(numer, int(plan["liczba"])) for numer in range(1, int(plan["liczba"]) + 1)]
+    czesci = [noc.czesc(czesc) for czesc in Czesc.calosc(int(plan["liczba"]))]
 
     assert int(plan["mutacje"]) == sum(map(len, czesci)) == mutacje, plan["linia"]
     assert all(czesci), plan["linia"]

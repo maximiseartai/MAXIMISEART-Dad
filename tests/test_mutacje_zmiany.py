@@ -22,6 +22,7 @@ from tests.fixtures.git_repo import commit, copy_files, git, repository
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
 
+from jednostka import Czesc  # noqa: E402
 from mutacje_zmiany import Hunk, ZakresMutacji, exceptions, fingerprint, mutants, selected  # noqa: E402
 import pokrycie_procesu  # noqa: E402
 
@@ -555,7 +556,7 @@ def test_czesci_zakresu_skladaja_sie_w_kolejnosci_plikow_i_linii_na_cala_liste_m
     assert len(zakres.mutanty) == 7
     assert [(mutant.path, mutant.line) for mutant in zakres.mutanty] == sorted((mutant.path, mutant.line) for mutant in zakres.mutanty)
     for count in range(1, len(zakres.mutanty) + 2):
-        parts = [list(zakres.czesc(number, count)) for number in range(1, count + 1)]
+        parts = [list(zakres.czesc(czesc)) for czesc in Czesc.calosc(count)]
         assert [mutant for part in parts for mutant in part] == list(zakres.mutanty), count
         # Plan daje tyle części, ile trzeba na jego mutacje, więc żadna z nich nie może zostać pusta.
         assert all(parts) or count > len(zakres.mutanty)

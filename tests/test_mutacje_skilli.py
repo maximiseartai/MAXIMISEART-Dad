@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 sys.path.insert(0, str(TOOLS / "lib"))
 
+from jednostka import Klucz  # noqa: E402
 import rozjazd_modelu  # noqa: E402
 
 TOOL = TOOLS / "ci" / "mutacje_skilli.py"
@@ -81,6 +82,7 @@ def _tool(root: Path) -> list[str]:
     names = (
         "tools/ci/mutacje_skilli.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/lib/potomne.py", "tools/lib/repo.py", "tools/lib/ciezkie_ci.py",
         "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/lib/czasy_ci.py", "tools/lib/github.py",
+        "tools/lib/jednostka.py", "tools/lib/ostatnie_linie.py",
     )
     copy_files(root, [name for name in names if not (root / name).exists()])
     return [sys.executable, str(root / "tools" / "ci" / "mutacje_skilli.py")]
@@ -553,7 +555,7 @@ def test_krok_skilla_biegnie_w_checkoucie_swojego_skilla_a_nie_w_katalogu_biezac
     monkeypatch.syspath_prepend(str(TOOLS / "ci"))
     import mutacje_skilli
 
-    krok = _load_tool(monkeypatch).Katalog.skanuj(checkout).krok("skill:verify-a/check_a_mutations.py")
+    krok = _load_tool(monkeypatch).Katalog.skanuj(checkout).krok(Klucz.z_tekstu("skill:verify-a/check_a_mutations.py"))
 
     assert mutacje_skilli.run(krok, limit_s=60).powod is None
     assert Path((checkout / ".agents/skills/verify-a/scripts/katalog.txt").read_text(encoding="utf-8")).resolve() == checkout.resolve()

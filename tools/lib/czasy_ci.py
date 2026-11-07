@@ -56,6 +56,8 @@ import time
 from typing import Any, Literal
 
 import github
+import jednostka
+from jednostka import Klucz, Rodzaj
 import repo
 
 WERSJA = 1
@@ -118,9 +120,13 @@ class Czasy:
         return statistics.median(w_runie.values()) if w_runie else None
 
     def pliki(self, tor: str) -> dict[str, float]:
-        """Koszt każdego zmierzonego pliku testów toru: ``praca`` jego klucza ``pytest:``."""
+        """Koszt każdego zmierzonego pliku testów toru: ``praca`` jego klucza rodzaju ``Rodzaj.PYTEST``."""
 
-        return {klucz.removeprefix("pytest:"): s for klucz in self.tory.get(tor, {}) if klucz.startswith("pytest:") and (s := self.praca(tor, klucz)) is not None}
+        return {
+            Klucz.z_tekstu(klucz).nazwa: s
+            for klucz in self.tory.get(tor, {})
+            if jednostka.rodzaj(klucz) is Rodzaj.PYTEST and (s := self.praca(tor, klucz)) is not None
+        }
 
     def zadania(self, tor: str) -> list[dict[str, float]]:
         """Pomiary każdego zadania toru w każdym runie: klucz -> sekundy."""
