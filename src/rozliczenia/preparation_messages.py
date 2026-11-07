@@ -13,7 +13,7 @@ Decyzji taty o niepełnym okresie i etykiety liczb zleceń na dzień.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from itertools import groupby
 from pathlib import Path
@@ -32,6 +32,7 @@ INCOMPLETE_PERIOD_QUESTION: Final = "Kontynuować mimo niepełnego okresu?"
 # Liczby zleceń na dzień okresu, w Decyzji i w podsumowaniu; etykieta dnia to np. „wt 08.09.2026”.
 ORDERS_PER_DAY: Final = "Zlecenia na dzień"
 _NOTHING_CREATED: Final = "Nie utworzono żadnego pliku."
+_STAGING_LEFT: Final = "Obok Folderu okresu został folder tymczasowy, którego nie udało się usunąć."
 
 
 def period_file_exists(period_directory: Path, filename: str) -> Message:
@@ -636,6 +637,29 @@ def write_failed(period_directory: Path) -> Message:
         action=(
             "Sprawdź, czy folder jest dostępny i czy pliki okresu nie są otwarte, "
             f"i uruchom ponownie. {IF_ERROR_RETURNS}"
+        ),
+    )
+
+
+def staging_left(message: Message, periods_directory: Path, staging_prefix: str) -> Message:
+    """Zatrzymanie ``message`` przy zapisie, po którym obok Folderu okresu został folder tymczasowy.
+
+    Folderu nie dało się usunąć, np. bo jego pliki trzyma OneDrive. Komunikat podaje stały początek nazwy, a nie
+    losową nazwę folderu, żeby ten sam problem w kolejnym Uruchomieniu miał ten sam odcisk problemu (Powtórka).
+    """
+
+    what = (
+        message.what.replace(_NOTHING_CREATED, _STAGING_LEFT)
+        if _NOTHING_CREATED in message.what
+        else f"{message.what} {_STAGING_LEFT}"
+    )
+    return replace(
+        message,
+        what=what,
+        action=(
+            f"Usuń z folderu {periods_directory.name} każdy folder, którego nazwa zaczyna się od „{staging_prefix}”. "
+            "To foldery tymczasowe, nie Folder okresu. "
+            f"Jeśli któregoś nie daje się usunąć, odczekaj chwilę. {message.action}"
         ),
     )
 

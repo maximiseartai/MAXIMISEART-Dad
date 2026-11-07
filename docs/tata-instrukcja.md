@@ -380,6 +380,9 @@ numery wierszy Rejestru zleceń. Po każdym zatrzymaniu nie powstał żaden plik
 więc po poprawce wystarczy uruchomić proces ponownie. Wyjątki: po komunikacie
 o niepokazanym podsumowaniu pliki okresu już są, a po komunikacie o pliku,
 którego nie udało się usunąć, w Folderze okresu został wskazany plik.
+Jeśli komunikat mówi, że obok Folderu okresu został folder tymczasowy, najpierw
+usuń każdy folder, którego nazwa zaczyna się tak, jak podaje komunikat (kropką,
+z `.staging-` na końcu). To nie są Foldery okresu.
 
 #### Zatrzymania
 

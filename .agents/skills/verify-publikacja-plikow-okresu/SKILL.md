@@ -213,8 +213,8 @@ period files moved in the reverse order (`BOUNDARIES`: only the Plik zbiorczy
 left, outside `left`), a rollback that retries a failed `os.unlink`
 (`BOUNDARIES`: killed before the retry, outside `unlink_failed`), a failed
 rollback reported as plain `BLAD_ZAPISU`, recording a file
-for rollback before it is moved, and a failed staging cleanup reported as
-`BLAD_ZAPISU` all give `NOWE NARUSZENIE`. `shutil.move` gives `LUKA MODELU`. A mutation reported as
+for rollback before it is moved, and a failed staging cleanup after publication
+raised as a stop all give `NOWE NARUSZENIE`. `shutil.move` gives `LUKA MODELU`. A mutation reported as
 `NIEAKTUALNA` no longer matches `preparation_files.py`. Rewrite its `anchor` and
 `replacement` in `check_publication_mutations.py` against the new code so it breaks the same
 rule again. If the publication code moves to another file, update

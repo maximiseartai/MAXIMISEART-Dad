@@ -174,6 +174,14 @@ PREPARATION_SAMPLES: Samples = {
     "write_failed_with_file_left": [
         lambda: messages.write_failed_with_file_left(PERIOD_DIRECTORY, f"Rozliczenie wew. {PERIOD}.xlsx")
     ],
+    "staging_left": [
+        lambda: messages.staging_left(messages.write_failed(PERIOD_DIRECTORY), PERIODS, f".{PERIOD}.staging-"),
+        lambda: messages.staging_left(
+            messages.write_failed_with_file_left(PERIOD_DIRECTORY, f"Rozliczenie wew. {PERIOD}.xlsx"),
+            PERIODS,
+            f".{PERIOD}.staging-",
+        ),
+    ],
     "unexpected_failure": [messages.unexpected_failure],
     "summary_not_shown": [messages.summary_not_shown],
     "plan_not_shown": [messages.plan_not_shown],

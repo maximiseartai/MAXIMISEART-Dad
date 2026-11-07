@@ -253,6 +253,16 @@ write_failed_with_file_left [BLAD_ZAPISU_POZOSTAL_PLIK]
   Gdzie: folder INEA\08_14_09_2026, plik Rozliczenie wew. 08_14_09_2026.xlsx
   Co zrobić: Usuń wskazany plik, bo bez drugiego pliku okresu jest niepełny, i uruchom ponownie. Jeśli nie daje się go usunąć, odczekaj chwilę. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie.
 
+staging_left #1 [BLAD_ZAPISU]
+  Co się stało: Nie udało się zapisać plików okresu. Obok Folderu okresu został folder tymczasowy, którego nie udało się usunąć.
+  Gdzie: folder INEA\08_14_09_2026
+  Co zrobić: Usuń z folderu INEA każdy folder, którego nazwa zaczyna się od „.08_14_09_2026.staging-”. To foldery tymczasowe, nie Folder okresu. Jeśli któregoś nie daje się usunąć, odczekaj chwilę. Sprawdź, czy folder jest dostępny i czy pliki okresu nie są otwarte, i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+staging_left #2 [BLAD_ZAPISU_POZOSTAL_PLIK]
+  Co się stało: Zapisano tylko jeden z dwóch plików okresu i nie udało się go usunąć. Obok Folderu okresu został folder tymczasowy, którego nie udało się usunąć.
+  Gdzie: folder INEA\08_14_09_2026, plik Rozliczenie wew. 08_14_09_2026.xlsx
+  Co zrobić: Usuń z folderu INEA każdy folder, którego nazwa zaczyna się od „.08_14_09_2026.staging-”. To foldery tymczasowe, nie Folder okresu. Jeśli któregoś nie daje się usunąć, odczekaj chwilę. Usuń wskazany plik, bo bez drugiego pliku okresu jest niepełny, i uruchom ponownie. Jeśli nie daje się go usunąć, odczekaj chwilę. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie.
+
 unexpected_failure [BLAD_NIEOCZEKIWANY]
   Co się stało: Wystąpił nieoczekiwany błąd. Nie utworzono żadnego pliku.
   Gdzie: Przygotowanie pliku zbiorczego
