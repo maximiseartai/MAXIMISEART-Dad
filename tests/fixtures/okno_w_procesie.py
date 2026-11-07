@@ -59,6 +59,8 @@ _O = TypeVar("_O", bound=EfenixOrder)
 _MODEL_FIELDS = frozenset(field.name for field in dataclasses.fields(EfenixOrder))
 # Status, którym Atrapa efenix odpowiada na działanie przy zleceniu, którego efenix nie zna.
 _NO_ORDER = HttpStatus(404)
+# Status, który „Tak” po przycisku Przekazania do akceptacji wysyła na stronie zlecenia Atrapy efenix.
+_FORWARDED = "Do akceptacji"
 # Login realizatora, który okno przeglądarki czyta z ``(login)`` w komórce Wykonawca: bez odstępów i nawiasów.
 _LOGIN = re.compile(r"[^()\s]+")
 
@@ -173,6 +175,21 @@ class OknoWProcesie(Generic[_O]):
         if not isinstance(saved, Saved):
             raise LoggedOut(PagePart.QUANTITY, LoginSign.REFUSED)
         return saved.amount
+
+    @_action
+    def forward_to_accept(self) -> None:
+        """Przekazanie do akceptacji otwartego zlecenia: zmiana statusu na „Do akceptacji” i strona zlecenia od nowa, jak
+        przeładowanie, na które czeka okno przeglądarki; bez sesji przekierowanie na stronę logowania."""
+
+        self._send()
+        order_id = self._order_id()
+        changed = self._stan.serwer.change_status(order_id, _FORWARDED)
+        if isinstance(changed, NoSession):
+            raise LoggedOut(PagePart.FORWARD, LoginSign.REDIRECT)
+        if isinstance(changed, NoOrder):
+            raise UnexpectedPage(PagePart.FORWARD, _NO_ORDER)
+        if isinstance(self._stan.serwer.page(order_id), NoSession):
+            raise LoggedOut(PagePart.FORWARD, LoginSign.PAGE)
 
     def _send(self) -> None:
         """Okno klika przycisk, który wysyła do efenix zmianę zlecenia."""

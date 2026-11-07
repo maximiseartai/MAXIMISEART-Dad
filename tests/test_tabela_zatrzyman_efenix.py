@@ -149,6 +149,14 @@ TABLE = [
         "odpowiedź zapisu ilości result: nok (wygasła sesja)", "E"),
     Row("efenix_browser", "enter_quantity", "UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.ANSWER_RESULT, position))",
         "odpowiedź zapisu ilości z result innym niż ok i nok", "inna budowa"),
+    # --- Przekazanie do akceptacji i strażnik zmiany statusu ---
+    Row("efenix_browser", "forward_to_accept", "LoggedOut(PagePart.FORWARD, LoginSign.REDIRECT)",
+        "odpowiedź na „Tak” Przekazania do akceptacji przekierowana na page_login.php", "E"),
+    Row("efenix_browser", "_status_answer", "UnexpectedPage(PagePart.FORWARD, OtherShape(Shape.STATUS_NOT_ANSWERED))",
+        "żądanie Przekazania do akceptacji bez odpowiedzi w czasie okna albo z zerwanym połączeniem", "D"),
+    Row("efenix_browser", "raise_blocked", "UnexpectedPage(self._part, self._blocked)",
+        "strażnik przerwał żądanie zmiany statusu: na inny status niż „Do akceptacji” albo poza Przekazaniem do "
+        "akceptacji (także w trybie bez Przekazania), przed działaniem okna, w jego trakcie albo po ostatnim", "strażnik"),
 ]
 
 

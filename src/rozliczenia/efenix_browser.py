@@ -4,9 +4,9 @@ Budowę stron efenix (adresy działań, elementy ``Element``, nazwy w skryptach 
 strona zlecenia, okno Emmetta) daje ``efenix_page``, z którego okno bierze każdy selektor. Na zewnątrz okno daje tylko
 typy domeny (``efenix_window.Efenix``, ``ListedOrder``, ``OrderPricing``) i zna tylko działania
 z listy dozwolonych: szukanie po ``Numer`` na liście zleceń, otwarcie strony zlecenia, ustawienie daty wykonania,
-przycisk Emmetta z „Załaduj do zlecenia” i pola „Ilość”. Przycisków Przekazania do akceptacji, anulowania i zmiany
-statusu nie zna. Każdy przycisk okna dialogowego klika w jego oknie (``#dialog_… .btn-ok``), bo strona zlecenia ma
-``.btn-ok`` w każdym oknie, także w oknie zmiany statusu. Szuka tak jak tata: wpisuje numer w pole ``#field_numer`` i naciska Enter, a skrypt strony wysyła ``action_fill_orders.php`` i wkłada
+przycisk Emmetta z „Załaduj do zlecenia”, pola „Ilość” i Przekazanie do akceptacji. Przycisku anulowania nie zna. Każdy
+przycisk okna dialogowego klika w jego oknie (``#dialog_… .btn-ok``), bo strona zlecenia ma ``.btn-ok`` w każdym oknie,
+także w oknie zmiany statusu. Szuka tak jak tata: wpisuje numer w pole ``#field_numer`` i naciska Enter, a skrypt strony wysyła ``action_fill_orders.php`` i wkłada
 odpowiedź do ``#wyniki``. Tabelę wyników okno czyta z odpowiedzi na swoje szukanie (tej z jego numerem w polu ``numer``),
 tę samą, którą skrypt wkłada do ``#wyniki``, bo lista po wczytaniu sama szuka ostatniego numeru z poprzedniej wizyty, a
 jej odpowiedź trafia do ``#wyniki`` w dowolnej chwili; czyta ją ``efenix_page.read_results``, a stronę zlecenia otwiera
@@ -74,6 +74,19 @@ nie ściga się z przeładowaniem. Postaci propozycji okno nie czyta, bo tej te�
 „Załaduj do zlecenia” i tak ładuje Wycenę Emmetta, bo efenix bierze ją u siebie, a nie z okna. Ilość wpisuje w polu i naciska Enter, a skrypt strony zapisuje ją przez ``action_save_index.php``:
 kwotą końcową jest ``price_all`` z tej odpowiedzi, a ``#cena_all2``, które się do niej nie odświeży, to
 ``UnexpectedPage``. Odpowiedź ``result: nok`` to wygasła sesja (``LoggedOut``).
+
+Przekazanie do akceptacji okno robi przyciskiem ``#button_forward_to_accept`` i „Tak” w ``#dialog_forward_yes_no``: czeka
+na koniec żądania ``action_change_status.php`` i na przeładowanie strony, które robi skrypt efenix po odpowiedzi, jak po
+„Załaduj do zlecenia”. Strażnik zmiany statusu (``window``) stoi na całym kontekście przeglądarki okna, więc widzi także
+żądania ramek i kart, które otworzy strona: każde żądanie, w którego ścieżce jest ``action_change_status``, przepuszcza
+tylko wtedy, gdy okno jest w Przekazaniu do akceptacji, to jego pierwsze takie żądanie, a jest to POST z polem ``xstatus``
+dokładnie raz, równym dokładnie „Do akceptacji”, i z polem ``order_id`` dokładnie raz, równym identyfikatorowi
+zlecenia, które okno otworzyło, bo Przekazanie innego zlecenia też jest nieodwracalne. Każde inne przerywa przed wysłaniem, a działanie okna, w którym albo
+przed którym to się stało, kończy się ``UnexpectedPage`` z ``StatusChangeBlocked`` (żądanie po ostatnim działaniu: przy
+zamknięciu okna). Okno w trybie bez Przekazania nie wchodzi w Przekazanie, więc przerywa każde takie żądanie. Okno
+anulowania dzieli z Przekazaniem to samo okno dialogowe, a strona, która po pomyłce wyśle w nim „Anulowane”, nie
+dochodzi do efenix. Strażnik nie widzi żądań, których przeglądarka nie daje do przechwycenia: kolejnego kroku
+przekierowania i service workera, którego okno taty i Skryptu dla maszyn nie pozwalają zarejestrować.
 """
 
 from __future__ import annotations
@@ -87,14 +100,15 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Concatenate, Final, ParamSpec, TypedDict, TypeVar
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import Locator, Page, Playwright, Request, Response, sync_playwright
+from playwright.sync_api import Locator, Page, Playwright, Request, Response, Route, sync_playwright
 
 from .tool_files import TOOL_ROOT
 from .call_trace import exception_type
 from .efenix_window import (
+    ACCEPTANCE_STATUS,
     BrowserFailure,
     BrowserNotStarted,
     Closed,
@@ -112,12 +126,14 @@ from .efenix_window import (
     PagePart,
     Proposal,
     Shape,
+    StatusChangeBlocked,
     UnexpectedPage,
     WindowClosed,
     WindowStop,
 )
 from .efenix_page import (
     AMOUNT,
+    CHANGE_STATUS,
     FILL_EMMETT,
     LOAD_EMMETT,
     LOGIN_PAGE,
@@ -127,7 +143,9 @@ from .efenix_page import (
     QUANTITY,
     SAVE_QUANTITY,
     SEARCH,
+    ORDER_PARAM,
     SET_DATE,
+    STATUS_PARAM,
     Element,
     amount,
     emmett_window,
@@ -159,6 +177,8 @@ TIMEOUT_MS: Final = 30_000
 LOGIN_TIMEOUT_MS: Final = 15 * 60_000
 """Tyle okno czeka na logowanie taty, zanim proces zatrzyma się jak po wylogowaniu."""
 LOGIN_POLL_MS: Final = 2_000
+_STATUS_POLL_MS: Final = 50
+"""Co tyle okno sprawdza, czy żądanie Przekazania do akceptacji skończyło się albo strażnik je przerwał."""
 
 # Dzień wybrany kalendarzem pickadate pola, tak jak klik dnia: biegnie ``onSet`` strony, które sprawdza zakres dat.
 # Miesiąc pickadate liczy od 0. ``false``, gdy pole nie ma kalendarza.
@@ -189,19 +209,27 @@ def _action(
 
     Wyjątek okna (``WindowStop``) z działania ma ``sent``, gdy działanie przed nim kliknęło przycisk zmiany zlecenia
     (``BrowserEfenix._answer``), także w działaniu, które woła inne działanie okna.
+
+    Żądanie zmiany statusu, które strażnik przerwał przed działaniem albo w jego trakcie, kończy działanie
+    ``UnexpectedPage`` z ``StatusChangeBlocked`` zamiast jego wyniku albo wyjątku (``BrowserEfenix.raise_blocked``).
     """
 
     def decorate(action: Callable[Concatenate[BrowserEfenix, _P], _R]) -> Callable[Concatenate[BrowserEfenix, _P], _R]:
         @functools.wraps(action)
         def guarded(efenix: BrowserEfenix, /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
             with _sent(efenix):
+                efenix._part = part
+                efenix.raise_blocked()
                 try:
                     with _within(part):
-                        return action(efenix, *args, **kwargs)
+                        done = action(efenix, *args, **kwargs)
                 except Exception as error:
+                    efenix.raise_blocked(error)
                     if efenix.closed and not isinstance(error, WindowClosed):
                         raise WindowClosed(part, Closed.DURING_ACTION) from error
                     raise
+                efenix.raise_blocked()
+                return done
 
         return guarded
 
@@ -229,9 +257,16 @@ class BrowserEfenix:
         self._url = url
         self._timeout_ms = timeout_ms
         self._positions: dict[str, str] = {}
-        # Ile razy okno kliknęło przycisk, który wysyła do efenix zmianę zlecenia (``_answer``).
+        # Ile razy okno kliknęło przycisk, który wysyła do efenix zmianę zlecenia (``_answer``), a przy Przekazaniu do
+        # akceptacji ile razy strażnik przepuścił jego żądanie (``guard``).
         self._answers = 0
         self._opened = False
+        # Strażnik zmiany statusu (``guard``): czy okno czeka na swoje żądanie Przekazania do akceptacji, pierwsze żądanie,
+        # które przerwał, i część strony ostatniego działania okna.
+        self._forwarding = False
+        self._blocked: StatusChangeBlocked | None = None
+        self._part = PagePart.LIST
+        self._order_id: str | None = None
 
     @property
     def closed(self) -> bool:
@@ -249,6 +284,41 @@ class BrowserEfenix:
         with suppress(PlaywrightError):
             self._page.locator(":root").wait_for(state="attached", timeout=self._timeout_ms)
         return self._page.is_closed()
+
+    def guard(self, route: Route) -> None:
+        """Strażnik zmiany statusu na kontekście przeglądarki okna: przepuszcza tylko pierwsze żądanie Przekazania do
+        akceptacji w czasie, gdy okno na nie czeka: POST z ``xstatus`` dokładnie „Do akceptacji” i ``order_id`` dokładnie
+        zlecenia otwartego w oknie; każde inne przerywa i zapamiętuje przyczynę pierwszego przerwanego."""
+
+        try:
+            blocked = self._blocked_cause(route.request)
+        except (PlaywrightError, ValueError):  # treść żądania, której nie da się przeczytać, nie jest Przekazaniem
+            blocked = StatusChangeBlocked.OTHER_STATUS if self._forwarding else StatusChangeBlocked.OUTSIDE_FORWARD
+        with suppress(PlaywrightError):
+            if blocked is None:
+                self._forwarding = False
+                self._answers += 1
+                route.continue_()
+                return
+            if self._blocked is None:
+                self._blocked = blocked
+            route.abort()
+
+    def _blocked_cause(self, request: Request) -> StatusChangeBlocked | None:
+        if not self._forwarding:
+            return StatusChangeBlocked.OUTSIDE_FORWARD
+        if request.method != "POST" or _field(request, STATUS_PARAM) != [ACCEPTANCE_STATUS]:
+            return StatusChangeBlocked.OTHER_STATUS
+        if self._order_id is None or _field(request, ORDER_PARAM) != [self._order_id]:
+            return StatusChangeBlocked.OTHER_ORDER
+        return None
+
+    def raise_blocked(self, error: BaseException | None = None) -> None:
+        """``UnexpectedPage`` z częścią strony ostatniego działania i ``StatusChangeBlocked``, gdy strażnik przerwał już
+        żądanie zmiany statusu; ``error``: wyjątek działania, który to Zatrzymanie zastępuje."""
+
+        if self._blocked is not None:
+            raise UnexpectedPage(self._part, self._blocked) from error
 
     @_action(PagePart.LIST)
     def open_list(self) -> None:
@@ -352,6 +422,7 @@ class BrowserEfenix:
     def open_order(self, order: ListedOrder) -> OrderPricing:
         """Otwiera stronę zlecenia ``order`` i czyta datę wykonania, kwotę końcową i ilości pozycji."""
 
+        self._order_id = order.order_id
         with _doing(Operation.OPEN):
             response = self._page.goto(
                 urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms
@@ -445,6 +516,62 @@ class BrowserEfenix:
         with _doing(Operation.AMOUNT):
             self._page.wait_for_function(_SHOWS, arg=[AMOUNT, shown], timeout=self._timeout_ms)
         return total
+
+    @_action(PagePart.FORWARD)
+    def forward_to_accept(self) -> None:
+        """Przekazuje otwarte zlecenie do akceptacji: przycisk Przekazania, „Tak” w oknie zmiany statusu, koniec żądania
+        ``action_change_status.php`` i przeładowanie strony, które robi skrypt efenix po odpowiedzi."""
+
+        self._click(self._only(Element.FORWARD_BUTTON.selector, PagePart.FORWARD))
+        self._shown(Element.FORWARD_DIALOG, PagePart.FORWARD)
+        confirm = self._only(Element.FORWARD_OK.selector, PagePart.FORWARD)
+        with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
+            answer = self._status_answer(lambda: self._click(confirm))
+            if _redirected_to_login(answer):
+                raise LoggedOut(PagePart.FORWARD, LoginSign.REDIRECT)
+        self._ensure_logged_in(PagePart.FORWARD)
+
+    def _status_answer(self, act: Callable[[], None]) -> Response:
+        """Odpowiedź efenix na żądanie Przekazania do akceptacji, które wysyła ``act``.
+
+        Strażnik przepuszcza je tylko w tym czasie. Okno czeka na koniec albo porażkę żądania zmiany statusu, a nie na
+        samo żądanie, bo żądanie przerwane przez strażnika nie kończy się odpowiedzią: wtedy to ``StatusChangeBlocked``.
+        Treści odpowiedzi okno nie czyta, a porażka po nagłówkach to odpowiedź, bo przeładowanie strony, które skrypt
+        robi zaraz po nagłówkach, porzuca treść (jak po „Załaduj do zlecenia”, #895). Żądanie bez nagłówków odpowiedzi w
+        czasie okna albo z zerwanym połączeniem to ``Shape.STATUS_NOT_ANSWERED``, a odpowiedź ze statusem błędu
+        ``HttpStatus`` (``_ErrorAnswer``).
+        """
+
+        ended: list[Request] = []
+        context = self._page.context
+
+        def on_ended(request: Request) -> None:
+            if _changes_status(request.url):
+                ended.append(request)
+
+        context.on("requestfinished", on_ended)
+        context.on("requestfailed", on_ended)
+        self._forwarding = True
+        try:
+            act()
+            deadline = time.monotonic() + self._timeout_ms / 1000
+            while not (ended or self._blocked) and time.monotonic() < deadline:
+                with _doing(Operation.ANSWER):
+                    self._page.wait_for_timeout(_STATUS_POLL_MS)
+        finally:
+            self._forwarding = False
+            context.remove_listener("requestfinished", on_ended)
+            context.remove_listener("requestfailed", on_ended)
+        self.raise_blocked()
+        response = None
+        if ended:
+            with _doing(Operation.ANSWER):
+                response = ended[0].response()
+        if response is None:
+            raise UnexpectedPage(PagePart.FORWARD, OtherShape(Shape.STATUS_NOT_ANSWERED))
+        if response.status >= 400:
+            raise _ErrorAnswer(HttpStatus(response.status))
+        return response
 
     def _read_order(self, response: Response | None) -> OrderPricing:
         """Strona zlecenia, na którą przeglądarka przeszła odpowiedzią ``response`` (otwarcie albo przeładowanie).
@@ -624,6 +751,20 @@ def _form(request: Request) -> dict[str, list[str]]:
     return parse_qs(request.post_data or "")
 
 
+def _changes_status(url: str) -> bool:
+    """Żądanie zmiany statusu zlecenia: ``action_change_status`` w ścieżce bez wielkości liter i po zdekodowaniu, więc
+    także pod inną pisownią tego samego skryptu PHP i z dalszą częścią ścieżki."""
+
+    return CHANGE_STATUS.removesuffix(".php") in unquote(urlparse(url).path).casefold()
+
+
+def _field(request: Request, name: str) -> list[str]:
+    """Każda wartość pola ``name`` żądania, z adresu i z treści formularza, po kolei."""
+
+    query = parse_qs(urlparse(request.url).query, keep_blank_values=True).get(name, [])
+    return query + parse_qs(request.post_data or "", keep_blank_values=True).get(name, [])
+
+
 def _on_login_page(url: str) -> bool:
     return urlparse(url).path.endswith("/" + LOGIN_PAGE)
 
@@ -645,15 +786,21 @@ def window(
     """Okno efenix na stronie ``page``, którą daje rozmówca, z otwartą listą zleceń pod adresem ``url``.
 
     Z ``login`` na stronie logowania czeka na logowanie taty (``BrowserEfenix.wait_for_login``, czas czekania mierzy
-    ``clock``), bez niego to ``LoggedOut``.
+    ``clock``), bez niego to ``LoggedOut``. Od początku bloku kontekst przeglądarki strony ma strażnika zmiany statusu
+    (``BrowserEfenix.guard``) do swojego zamknięcia, a żądanie, które strażnik przerwał po ostatnim działaniu okna, to
+    ``UnexpectedPage`` na końcu bloku.
     """
 
     efenix = BrowserEfenix(page, url, timeout_ms=timeout_ms)
+    # Strażnika okno nie zdejmuje: ``unroute`` na stronie, której skrypt nie odpowiada, czeka na nią, a kontekst z
+    # przeglądarką okna i tak zamyka się po bloku (``chrome``, ``chromium``).
+    page.context.route(_changes_status, efenix.guard)
     if login is None:
         efenix.open_list()
     else:
         efenix.wait_for_login(login, timeout_ms=login_timeout_ms, clock=clock)
     yield efenix
+    efenix.raise_blocked()
 
 
 def default_profile() -> Path:
@@ -747,7 +894,7 @@ def chrome(
         try:
             options = launch_options(playwright, channel=channel, arguments=arguments)
             context = playwright.chromium.launch_persistent_context(
-                profile, channel=channel, headless=headless, no_viewport=True, **options
+                profile, channel=channel, headless=headless, no_viewport=True, service_workers="block", **options
             )
         except PlaywrightError as error:
             raise BrowserNotStarted(BrowserFailure(exception_type(error), Operation.START)) from error
@@ -772,7 +919,7 @@ def chromium(url: str, *, headless: bool = True) -> Iterator[BrowserEfenix]:
         except PlaywrightError as error:
             raise BrowserNotStarted(BrowserFailure(exception_type(error), Operation.START)) from error
         try:
-            with window(browser.new_page(), url) as efenix:
+            with window(browser.new_page(service_workers="block"), url) as efenix:
                 yield efenix
         finally:
             browser.close()

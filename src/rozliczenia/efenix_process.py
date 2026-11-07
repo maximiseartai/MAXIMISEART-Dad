@@ -1,9 +1,9 @@
 """Wycena w efenix dla Uruchomienia procesu: wejście procesu, wywołanie silnika i fakty zakończenia.
 
 Opis procesu (``PROCESS``) jest wspólny dla każdego rozmówcy, więc liczby, Komunikaty i rekord metryk są te same.
-Wynik to OK, gdy żadne zlecenie nie zostało tacie (każde jest gotowe albo jest Zleceniem rozliczonym). Zlecenia
-rozliczone liczą się w rekordzie metryk tylko do ``orders``: zestaw liczników jest stały, bo rekord z innym zestawem
-Historia odrzuca, a z niej Droga okresu liczy Wycenę w efenix.
+Wynik to OK, gdy żadne zlecenie nie zostało tacie (każde jest gotowe, Zleceniem rozliczonym albo Zleceniem
+przekazanym). Zlecenia rozliczone i przekazane liczą się w rekordzie metryk tylko do ``orders``: zestaw liczników jest
+stały, bo rekord z innym zestawem Historia odrzuca, a z niej Droga okresu liczy Wycenę w efenix.
 Okno efenix daje rozmówca (``EfenixInputs.open_efenix``): Centrum rozliczeń otwiera widoczne okno Google Chrome w profilu
 narzędzia i czeka w nim na logowanie taty (``efenix_browser.chrome``), Skrypt dla maszyn otwiera Chromium Playwrighta
 (``efenix_browser.chromium``), a testy okno na Atrapie efenix. Czas czekania na logowanie wstrzymuje zegar rdzenia
@@ -26,7 +26,7 @@ from .input_copy import InputCopy
 from .decision import EngineConversation
 from .domain import ProgressObserver
 from .efenix_pace import Pace
-from .efenix_pricing import NO_JOURNAL, OrderJournal, PricingSummary
+from .efenix_pricing import NO_JOURNAL, OrderJournal, PricingMode, PricingSummary
 from .efenix_window import OpenEfenix
 from .period_folder import PeriodFolder, PeriodFolderError
 from .process_run import Finished, Process
@@ -46,7 +46,8 @@ class EfenixInputs:
     ``forbidden``: pamięć reguły danych pracy Centrum (``None``: bez wysyłki, bez pamięci). ``copy``: Kopia wejścia
     Uruchomienia z Centrum (``None``: bez Logów, bez Kopii).
     ``journal``: dziennik Wyceny w efenix w trakcie przebiegu; Centrum podaje swój (``centrum.logs_disk.Journal``), a Skrypt
-    dla maszyn przebiega bez niego.
+    dla maszyn przebiega bez niego. ``mode``: tryb Wyceny (``efenix_pricing.PricingMode``), domyślnie bez Przekazania do
+    akceptacji.
     """
 
     source: Path
@@ -56,6 +57,7 @@ class EfenixInputs:
     forbidden: ForbiddenValues | None = None
     journal: OrderJournal = field(default=NO_JOURNAL, compare=False)
     copy: InputCopy | None = field(default=None, compare=False)
+    mode: PricingMode = PricingMode.FILL
 
     @property
     def period(self) -> str:
@@ -80,6 +82,7 @@ def _execute(inputs: EfenixInputs, observer: ProgressObserver, conversation: Eng
         forbidden=inputs.forbidden,
         journal=inputs.journal,
         copy=inputs.copy,
+        mode=inputs.mode,
     )
 
 

@@ -52,13 +52,14 @@ import pytest
 
 from rozliczenia import efenix_browser, efenix_process, efenix_trace
 from rozliczenia.domain import ProgressPhase
-from rozliczenia.efenix_mark import MARK_RGB
+from rozliczenia.efenix_mark import Mark
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
 from rozliczenia.efenix_address import AddressPart
 from rozliczenia.efenix_checks import ListedRead
-from rozliczenia.efenix_pricing import PricingStopped, PricingSummary
+from rozliczenia.efenix_pricing import PricingMode, PricingStopped, PricingSummary
 from rozliczenia.efenix_window import (
     BrowserFailure,
+    StatusChangeBlocked,
     Closed,
     Efenix,
     ElementCount,
@@ -77,7 +78,7 @@ from rozliczenia.efenix_window import (
     UnexpectedPage,
     WindowCause,
 )
-from rozliczenia.efenix_marking import mark_ready
+from rozliczenia.efenix_marking import mark_orders
 from rozliczenia.efenix_orders import CollectiveOrder
 from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault
 from rozliczenia.efenix_process import EfenixInputs
@@ -105,6 +106,7 @@ from tests.fixtures.atrapa_efenix import (
     EmmettRefusal,
     Outage,
     ProposalFailure,
+    StatusChange,
     amount_of,
     atrapa_efenix,
 )
@@ -155,11 +157,12 @@ def _run(
     clock: Callable[[], float] = time.perf_counter,
     window: Callable[[Efenix], Efenix] = lambda efenix: efenix,
     tata: Tata | None = None,
+    mode: PricingMode = PricingMode.FILL,
 ) -> Priced:
     """Uruchomienie Wyceny w efenix dla Pliku zbiorczego ``source``; ``meanwhile`` to to, co tata zrobił z plikiem, zanim
     proces skończył ostatnie zlecenie. Tempo ludzkie jest wyłączone, chyba że test poda ``pace``, a ``clock`` to zegar
     czasów etapów i śladu działań okna. ``window`` to okno efenix, które dostaje proces, zbudowane z okna przeglądarki.
-    ``tata``: rozmówca, który widzi postęp; bez niego ``Tata()``.
+    ``tata``: rozmówca, który widzi postęp; bez niego ``Tata()``. ``mode``: tryb Wyceny.
 
     Karta ``page`` służy jednemu Uruchomieniu, jak przeglądarka okna taty (``efenix_browser.chrome``) i Skryptu dla maszyn
     (``efenix_browser.chromium``), która zamyka się z oknem, więc następne Uruchomienie dostaje nową kartę
@@ -184,15 +187,17 @@ def _run(
             raise
         meanwhile()
 
-    return _launched(source, open_efenix, pace=pace, clock=clock, tata=tata)
+    return _launched(source, open_efenix, pace=pace, clock=clock, tata=tata, mode=mode)
 
 
-def _run_in_process(source: Path, stan: StanEfenix[AtrapaOrder]) -> Priced:
+def _run_in_process(
+    source: Path, stan: StanEfenix[AtrapaOrder], *, mode: PricingMode = PricingMode.FILL, pace: Pace | None = None
+) -> Priced:
     """Uruchomienie Wyceny w efenix dla Pliku zbiorczego ``source`` w oknie w procesie na stanie efenix ``stan``
     (``tests/fixtures/okno_w_procesie.py``), bez przeglądarki: test decyzji Wyceny. Że okno w procesie daje na tym
     samym stanie to samo co okno przeglądarki na Atrapie efenix, sprawdza kontrakt w ``tests/test_atrapa_efenix.py``."""
 
-    return _launched(source, partial(okno, stan))
+    return _launched(source, partial(okno, stan), mode=mode, pace=pace)
 
 
 def _price_in_process(tmp_path: Path, stan: StanEfenix[AtrapaOrder], orders: Sequence[Order]) -> Priced:
@@ -206,10 +211,11 @@ def _launched(
     pace: Pace | None = None,
     clock: Callable[[], float] = time.perf_counter,
     tata: Tata | None = None,
+    mode: PricingMode = PricingMode.FILL,
 ) -> Priced:
     return run_process(
         efenix_process.PROCESS,
-        EfenixInputs(source, open_efenix, pace=pace, clock=clock),
+        EfenixInputs(source, open_efenix, pace=pace, clock=clock, mode=mode),
         tata or Tata(),
         view=lambda _inputs, summary: summary,
         metrics_path=source.parent.parent / "metryki.jsonl",
@@ -252,7 +258,7 @@ def _next_tab(page: Page) -> Page:
 
 
 def _figures(outcome: Priced) -> dict[str, int]:
-    """Liczby podsumowania: zlecenia w zakresie, gotowe, rozliczone, błędy, ostrzeżenia Emmetta i pominięte."""
+    """Liczby podsumowania: zlecenia w zakresie, gotowe, przekazane, rozliczone, błędy, ostrzeżenia Emmetta i pominięte."""
 
     assert isinstance(outcome.ending, Finished), _ending(outcome)
     assert outcome.view is not None
@@ -260,6 +266,7 @@ def _figures(outcome: Priced) -> dict[str, int]:
     return {
         "zakres": len(summary.results),
         "gotowe": summary.ready_count,
+        "przekazane": summary.forwarded_count,
         "rozliczone": summary.settled_count,
         "błędy": summary.error_count,
         "ostrzeżenia": summary.warning_count,
@@ -313,13 +320,14 @@ def _kept(outcome: Priced) -> bool:
 
 
 def _figures_of(
-    orders: int, ready: int, warnings: int = 0, photos: int = 0, defects: int = 0, settled: int = 0
+    orders: int, ready: int, warnings: int = 0, photos: int = 0, defects: int = 0, settled: int = 0, forwarded: int = 0
 ) -> dict[str, int]:
     return {
         "zakres": orders,
         "gotowe": ready,
+        "przekazane": forwarded,
         "rozliczone": settled,
-        "błędy": orders - ready - warnings - settled,
+        "błędy": orders - ready - warnings - settled - forwarded,
         "ostrzeżenia": warnings,
         "ze zdjęciami": photos,
         "usterki": defects,
@@ -815,7 +823,7 @@ def test_kazda_niezgodnosc_z_efenix_to_blad_zlecenia_z_powodem_a_proces_idzie_da
         replace(orders[2].in_efenix("903"), number="80031"),
         orders[4].in_efenix("904"),
         orders[4].in_efenix("914"),
-        replace(orders[5].in_efenix("905"), status="Do akceptacji"),
+        replace(orders[5].in_efenix("905"), status="Anulowane"),
         replace(orders[6].in_efenix("906"), realizator="zenon.testowy"),
         replace(orders[7].in_efenix("907"), address="Miasto-Dzielnica ul.Testowa 14 Lokal 3"),
         replace(orders[8].in_efenix("908"), execution_date=date(2026, 9, 13)),
@@ -889,19 +897,288 @@ def test_realizator_efenix_rowny_wykonawcy_innym_zapisem_tych_samych_liter_to_te
         pytest.param(
             lambda order: replace(order, status="Rozliczone częściowo"), "EFENIX_INNY_STATUS", id="status-dłuższy-niż-rozliczone"
         ),
+        pytest.param(
+            lambda order: replace(order, status="Do akceptacji", realizator="zenon.testowy"),
+            "EFENIX_INNY_REALIZATOR",
+            id="przekazane-inny-realizator",
+        ),
+        pytest.param(
+            lambda order: replace(order, status="Do akceptacji", address="Miasto-Dzielnica ul.Testowa 14 Lokal 3"),
+            "EFENIX_INNY_ADRES",
+            id="przekazane-inny-adres",
+        ),
+        pytest.param(
+            lambda order: replace(order, status="Do akceptacji Maksa"), "EFENIX_INNY_STATUS", id="status-dłuższy-niż-do-akceptacji"
+        ),
     ],
 )
-def test_zlecenie_rozliczone_innego_wykonawcy_albo_adresu_to_blad_zlecenia(
+def test_zlecenie_rozliczone_albo_przekazane_innego_wykonawcy_albo_adresu_to_blad_zlecenia(
     tmp_path: Path, changed: Callable[[AtrapaOrder], AtrapaOrder], code: str
 ) -> None:
-    """``NUMER ZL.``, pod którym efenix ma rozliczone zlecenie innego realizatora albo pod innym adresem, wskazuje inne
-    zlecenie niż wiersz pliku, więc zostaje błędem jak przy statusie „Do wyceny”; status, który tylko zaczyna się od
-    „Rozliczone”, to inny status."""
+    """``NUMER ZL.``, pod którym efenix ma zlecenie rozliczone albo „Do akceptacji” innego realizatora albo pod innym
+    adresem, wskazuje inne zlecenie niż wiersz pliku, więc zostaje błędem jak przy statusie „Do wyceny”; status, który
+    tylko zaczyna się od „Rozliczone” albo „Do akceptacji”, to inny status."""
 
     order = Order("#8201")
     outcome = _price_in_process(tmp_path, StanEfenix([changed(order.in_efenix("901"))]), [order])
 
     assert (outcome.result, _figures(outcome), _errors(outcome)) == ("WYMAGA_SPRAWDZENIA", _figures_of(1, 0), [(code, "wiersz 18")])
+
+
+
+# --- Przekazanie do akceptacji (ADR 0027) -----------------------------------------------------------------------------
+
+FORWARDED_RGB = Mark.FORWARDED.value
+
+
+def _statuses(stan: StanEfenix[AtrapaOrder]) -> dict[str, str]:
+    orders, _logged_in = stan.state()
+    return {order.number: order.status for order in orders}
+
+
+def test_w_trybie_z_przekazaniem_gotowe_zlecenie_jest_przekazane_do_akceptacji_ze_znacznikiem_przekazania_a_blad_i_ostrzezenie_emmetta_nie(
+    tmp_path: Path,
+) -> None:
+    """Gotowe zlecenie proces przekazuje do akceptacji i potwierdza ponownym szukaniem; zlecenie „Do akceptacji” z listy
+    jest przekazane bez otwierania. Oba mają w ``ADRES`` ciemny Znacznik przekazania. Zlecenia z błędem i z Ostrzeżeniem
+    Emmetta zostają tacie nieprzekazane i bez Znacznika."""
+
+    orders = [
+        Order("#8301", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # wiersz 18: gotowe
+        Order("#8302", cells={"O": 1}, amount=_au({"012": 1}) + 5, quantities={"012": 1}),  # 19: kwota inna niż AU
+        Order("#8303", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 2}),  # 20: Ostrzeżenie Emmetta
+        Order("#8304", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # 21: już „Do akceptacji”
+    ]
+    source = write_collective_file(tmp_path, orders)
+    stan = StanEfenix(
+        [
+            *(replace(order.in_efenix(f"90{index}"), execution_date=DAY) for index, order in enumerate(orders[:3])),
+            replace(orders[3].in_efenix("903"), execution_date=DAY, status="Do akceptacji"),
+        ]
+    )
+    outcome = _run_in_process(source, stan, mode=PricingMode.FORWARD)
+
+    assert (outcome.result, _figures(outcome)) == ("WYMAGA_SPRAWDZENIA", _figures_of(4, 0, warnings=1, forwarded=2))
+    assert _errors(outcome) == [("EFENIX_INNA_KWOTA", "wiersz 19"), ("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 20")]
+    assert _statuses(stan) == {"8301": "Do akceptacji", "8302": "Do wyceny", "8303": "Do wyceny", "8304": "Do akceptacji"}
+    assert stan.count(Action.STATUS) == 1
+    assert _address_fills(source) == {18: FORWARDED_RGB, 19: None, 20: None, 21: FORWARDED_RGB}
+    assert outcome.view is not None
+    assert [[step.action for step in result.steps] for result in outcome.view.results] == [
+        ["szukanie", "otwarcie zlecenia", "przekazanie do akceptacji", "szukanie"],
+        ["szukanie", "otwarcie zlecenia"],
+        ["szukanie", "otwarcie zlecenia"],
+        ["szukanie"],
+    ]
+
+
+def test_przekazanie_ktorego_efenix_nie_pokazuje_potem_jako_do_akceptacji_to_blad_zlecenia_bez_znacznika(tmp_path: Path) -> None:
+    order = Order("#8311", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+    source = write_collective_file(tmp_path, [order])
+    stan = StanEfenix([replace(order.in_efenix("901"), execution_date=DAY, keeps_status=True)])
+    outcome = _run_in_process(source, stan, mode=PricingMode.FORWARD)
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == ("WYMAGA_SPRAWDZENIA", _figures_of(1, 0), [("EFENIX_NIEPRZEKAZANE", "wiersz 18")])
+    assert (stan.count(Action.STATUS), _address_fills(source)) == (1, {18: None})
+
+
+def test_w_trybie_bez_przekazania_proces_niczego_nie_przekazuje_a_zlecenie_do_akceptacji_jest_przekazane_bez_otwierania(tmp_path: Path) -> None:
+    orders = [
+        Order("#8321", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # wiersz 18: gotowe
+        Order("#8322", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),  # 19: „Do akceptacji”
+    ]
+    source = write_collective_file(tmp_path, orders)
+    stan = StanEfenix(
+        [
+            replace(orders[0].in_efenix("901"), execution_date=DAY),
+            replace(orders[1].in_efenix("902"), execution_date=DAY, status="Do akceptacji"),
+        ]
+    )
+    before = stan.state()
+    outcome = _run_in_process(source, stan)
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == ("OK", _figures_of(2, 1, forwarded=1), [])
+    assert (stan.state(), _read_only(stan), stan.count(Action.OPEN)) == (before, True, 1)
+    assert _address_fills(source) == {18: READY_RGB, 19: FORWARDED_RGB}
+
+
+@pytest.mark.parametrize("mode", list(PricingMode), ids=lambda mode: mode.name.lower())
+def test_znacznik_przekazania_zastepuje_znacznik_efenix_a_znacznik_efenix_nigdy_nie_zastepuje_znacznika_przekazania(
+    tmp_path: Path, mode: PricingMode
+) -> None:
+    """Ponowne uruchomienie po zgaśnięciu między Przekazaniem a oznaczeniem albo po Przekazaniu przez tatę daje zleceniu
+    „Do akceptacji” ze Znacznikiem efenix Znacznik przekazania. Gotowe zlecenie, które ma już Znacznik przekazania, zostaje
+    z nim (w trybie z Przekazaniem jest przekazane od nowa i dalej ma Znacznik przekazania)."""
+
+    orders = [
+        Order("#8331", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}, address_fill=READY_RGB),
+        Order("#8332", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}, address_fill=FORWARDED_RGB),
+    ]
+    source = write_collective_file(tmp_path, orders)
+    stan = StanEfenix(
+        [
+            replace(orders[0].in_efenix("901"), execution_date=DAY, status="Do akceptacji"),
+            replace(orders[1].in_efenix("902"), execution_date=DAY),
+        ]
+    )
+    outcome = _run_in_process(source, stan, mode=mode)
+
+    assert outcome.result == "OK"
+    assert _address_fills(source) == {18: FORWARDED_RGB, 19: FORWARDED_RGB}
+
+
+class _Logged:
+    """Okno efenix, które zapisuje w ``log`` nazwę każdego działania przed nim."""
+
+    def __init__(self, efenix: Efenix, log: list[str]) -> None:
+        self._efenix = efenix
+        self._log = log
+
+    def __getattr__(self, name: str) -> object:
+        act = getattr(self._efenix, name)
+
+        def logged(*args: object) -> object:
+            self._log.append(name)
+            return act(*args)
+
+        return logged
+
+
+def test_w_tempie_ludzkim_przekazanie_to_zapis_z_przerwa_a_potwierdzajace_szukanie_idzie_bez_przerwy(tmp_path: Path) -> None:
+    """Przerwa przed szukaniem następnego zlecenia liczy się od szukania zlecenia z zapisem, a nie od potwierdzenia."""
+
+    orders = [Order(f"#834{index}", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}) for index in (1, 2)]
+    source = write_collective_file(tmp_path, orders)
+    stan = StanEfenix([replace(order.in_efenix(f"90{index}"), execution_date=DAY) for index, order in enumerate(orders)])
+    log: list[str] = []
+    clock = _FakeTime()
+
+    def sleep(seconds: float) -> None:
+        log.append(f"przerwa {seconds:g} s")
+        clock.pause(seconds)
+
+    @contextmanager
+    def logged_window(login: Login) -> Iterator[Efenix]:
+        with okno(stan, login) as efenix:
+            yield cast(Efenix, _Logged(efenix, log))
+
+    outcome = _launched(source, logged_window, pace=Pace(sleep=sleep, clock=clock), mode=PricingMode.FORWARD)
+
+    assert outcome.result == "OK"
+    one_order = ["search", "open_order", "przerwa 2 s", "forward_to_accept", "search"]
+    assert log == [*one_order, "przerwa 15 s", *one_order]
+
+
+def test_okno_przegladarki_przekazuje_gotowe_zlecenie_jednym_zadaniem_zmiany_statusu_na_do_akceptacji(tmp_path: Path, page: Page) -> None:
+    order = Order("#8351", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+    source = write_collective_file(tmp_path, [order])
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
+        outcome = _run(source, page, atrapa.url, mode=PricingMode.FORWARD)
+        requests = atrapa.status_requests()
+        [in_efenix], _logged_in = atrapa.state()
+
+    assert (outcome.result, _figures(outcome)) == ("OK", _figures_of(1, 0, forwarded=1))
+    assert (requests, in_efenix.status, _address_fills(source)) == ([("POST", "Do akceptacji")], "Do akceptacji", {18: FORWARDED_RGB})
+
+
+def test_przycisk_przekazania_ktorego_tak_wysyla_anulowane_nie_dochodzi_do_efenix_a_wycena_zatrzymuje_sie_do_maksa(
+    tmp_path: Path, page: Page
+) -> None:
+    """Okno anulowania dzieli z Przekazaniem okno dialogowe: strona, która po pomyłce wyśle w nim „Anulowane”, nie anuluje
+    zlecenia, bo strażnik okna przerywa żądanie przed wysłaniem."""
+
+    order = Order("#8361", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+    source = write_collective_file(tmp_path, [order])
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)], status_change=StatusChange.FORWARD_CANCELS) as atrapa:
+        outcome = _run(source, page, atrapa.url, mode=PricingMode.FORWARD, timeout_ms=3_000)
+        requests = atrapa.status_requests()
+        [in_efenix], _logged_in = atrapa.state()
+
+    assert isinstance(outcome.ending, Stop)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), outcome.ending.stop_kind, facts.part, facts.cause) == (
+        "EFENIX_OKNO_ZATRZYMANE",
+        "for_maks",
+        PagePart.FORWARD,
+        StatusChangeBlocked.OTHER_STATUS,
+    )
+    assert (requests, in_efenix.status, _address_fills(source)) == ([], "Do wyceny", {18: None})
+
+
+@pytest.mark.parametrize(
+    ("status_change", "cause", "reached", "status"),
+    [
+        pytest.param(StatusChange.FORWARD_OTHER_ORDER, StatusChangeBlocked.OTHER_ORDER, [], "Do wyceny", id="inne-zlecenie"),
+        pytest.param(StatusChange.FORWARD_TWO_ORDERS, StatusChangeBlocked.OTHER_ORDER, [], "Do wyceny", id="dwa-zlecenia"),
+        pytest.param(StatusChange.FORWARD_GET, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="get"),
+        pytest.param(StatusChange.FORWARD_TWO_STATUSES, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="dwa-statusy"),
+        pytest.param(StatusChange.FORWARD_STATUS_IN_URL, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="status-w-adresie"),
+        pytest.param(
+            StatusChange.FORWARD_TWICE,
+            StatusChangeBlocked.OUTSIDE_FORWARD,
+            [("POST", "Do akceptacji")],
+            "Do akceptacji",
+            id="drugie-zadanie",
+        ),
+    ],
+)
+def test_w_przekazaniu_do_efenix_dochodzi_tylko_jedno_zadanie_post_do_akceptacji_otwartego_zlecenia(
+    tmp_path: Path, page: Page, status_change: StatusChange, cause: StatusChangeBlocked, reached: list[tuple[str, str]], status: str
+) -> None:
+    """Przekazanie innego zlecenia też jest nieodwracalne, więc strażnik przepuszcza tylko pierwsze żądanie, POST z
+    jednym ``xstatus`` „Do akceptacji” i jednym ``order_id`` zlecenia otwartego w oknie; następne zlecenie efenix bez
+    wyceny zostaje nietknięte."""
+
+    order = Order("#8381", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+    source = write_collective_file(tmp_path, [order])
+    in_efenix = [replace(order.in_efenix("901"), execution_date=DAY), Order("#8382").in_efenix("902")]
+    with atrapa_efenix(in_efenix, status_change=status_change) as atrapa:
+        outcome = _run(source, page, atrapa.url, mode=PricingMode.FORWARD, timeout_ms=3_000)
+        requests = atrapa.status_requests()
+        [opened, other], _logged_in = atrapa.state()
+
+    assert isinstance(outcome.ending, Stop)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), outcome.ending.stop_kind, facts.cause) == ("EFENIX_OKNO_ZATRZYMANE", "for_maks", cause)
+    assert (requests, opened.status, other.status, other.quantities) == (reached, status, "Do wyceny", {})
+    assert _address_fills(source) == {18: None}
+
+
+def test_zmiana_statusu_po_ostatnim_dzialaniu_okna_nie_dochodzi_do_efenix_a_okno_konczy_sie_zatrzymaniem(page: Page) -> None:
+    with atrapa_efenix([Order("#8391").in_efenix("901")]) as atrapa:
+        with pytest.raises(UnexpectedPage) as stopped:
+            with efenix_browser.window(page, atrapa.url):
+                page.evaluate(
+                    "() => fetch('action_change_status.php', {method: 'POST', body: 'order_id=901&xstatus=Anulowane'})"
+                    ".catch(() => 'przerwane')"
+                )
+        requests = atrapa.status_requests()
+
+    assert (stopped.value.cause, requests) == (StatusChangeBlocked.OUTSIDE_FORWARD, [])
+
+
+@pytest.mark.parametrize("mode", list(PricingMode), ids=lambda mode: mode.name.lower())
+@pytest.mark.parametrize("status_change", [StatusChange.ON_LOAD, StatusChange.POPUP], ids=lambda change: change.name.lower())
+def test_zmiana_statusu_ktorej_okno_nie_wyslalo_w_przekazaniu_nie_dochodzi_do_efenix_takze_z_nowego_okna_strony(
+    tmp_path: Path, page: Page, mode: PricingMode, status_change: StatusChange
+) -> None:
+    """Strażnik stoi na całym kontekście przeglądarki okna, więc przerywa także żądanie z okna, które otworzyła strona; w
+    trybie bez Przekazania przerywa każde żądanie zmiany statusu."""
+
+    order = Order("#8371", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+    source = write_collective_file(tmp_path, [order])
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)], status_change=status_change) as atrapa:
+        outcome = _run(source, page, atrapa.url, mode=mode, timeout_ms=3_000)
+        requests = atrapa.status_requests()
+        [in_efenix], _logged_in = atrapa.state()
+
+    assert isinstance(outcome.ending, Stop)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), outcome.ending.stop_kind, facts.cause) == ("EFENIX_OKNO_ZATRZYMANE", "for_maks", StatusChangeBlocked.OUTSIDE_FORWARD)
+    assert (requests, in_efenix.status, _address_fills(source)) == ([], "Do wyceny", {18: None})
 
 
 @pytest.mark.parametrize(
@@ -1201,6 +1478,10 @@ class _ClosingBeforeAction:
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
         self._before()
         return self._efenix.enter_quantity(position, quantity)
+
+    def forward_to_accept(self) -> None:
+        self._before()
+        self._efenix.forward_to_accept()
 
     def _before(self) -> None:
         self._left -= 1
@@ -1599,6 +1880,7 @@ def test_strona_bez_listy_zlecen_i_adres_bez_efenix_zatrzymuja_wycene(tmp_path: 
 # --- Znacznik efenix w Pliku zbiorczym (#747) ------------------------------------------------------------------------
 
 YELLOW = "FFFF00"
+READY_RGB = Mark.READY.value
 CHANGED_PARTS = {"xl/worksheets/sheet1.xml", "xl/styles.xml"}
 
 
@@ -1619,7 +1901,7 @@ def _address_fills(source: Path) -> dict[int, str | None]:
 
 
 def _marked(source: Path) -> list[int]:
-    return [row for row, rgb in _address_fills(source).items() if rgb == MARK_RGB]
+    return [row for row, rgb in _address_fills(source).items() if rgb == READY_RGB]
 
 
 def _address_looks(source: Path) -> dict[int, tuple[Font, Border, Protection, Alignment, str]]:
@@ -1713,7 +1995,7 @@ def test_znacznik_efenix_staje_tylko_w_adresie_gotowych_zlecen_a_reszta_pliku_zo
         outcome = _run(source, page, atrapa.url)
 
     assert (outcome.result, _figures(outcome)) == ("WYMAGA_SPRAWDZENIA", _figures_of(5, 2, warnings=1, photos=1))
-    assert _address_fills(source) == {18: MARK_RGB, 19: MARK_RGB, 20: None, 21: None, 22: None, 23: YELLOW}
+    assert _address_fills(source) == {18: READY_RGB, 19: READY_RGB, 20: None, 21: None, 22: None, 23: YELLOW}
     # Poza wypełnieniem komórka ADRES ma swój wygląd, także czerwoną, pogrubioną kursywę taty w wierszu 18.
     assert _address_looks(source) == looks
     font = looks[18][0]
@@ -1798,7 +2080,7 @@ def _packed_like_excel(source: Path) -> None:
 
 
 def test_gotowe_zlecenie_z_adresem_juz_w_kolorze_znacznika_zostaje_a_plik_sie_nie_zmienia(tmp_path: Path, page: Page) -> None:
-    order = Order("#7501", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}, address_fill=MARK_RGB)
+    order = Order("#7501", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}, address_fill=READY_RGB)
     source = write_collective_file(tmp_path, [order])
     _packed_like_excel(source)
     before = source.read_bytes()
@@ -1892,7 +2174,7 @@ def test_zapis_znacznikow_w_ksztalcie_do_ktorego_wycena_nie_dochodzi_to_blad_kod
     content = source.read_bytes()
 
     with pytest.raises(UnsupportedShape):
-        mark_ready(source, content, column, rows)
+        mark_orders(source, content, column, dict.fromkeys(rows, Mark.READY))
     assert source.read_bytes() == content
 
 
@@ -1907,7 +2189,7 @@ def test_znacznik_efenix_staje_na_arkuszu_ktory_czyta_odczyt_zakresu_takze_za_ar
     rewrite_parts(source, lambda name, data: changed.get(name, data))
     notes = dict(_parts(source))["xl/worksheets/sheet1.xml"]
 
-    refusal = mark_ready(source, source.read_bytes(), "B", [18])
+    refusal = mark_orders(source, source.read_bytes(), "B", {18: Mark.READY})
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)  # openpyxl ostrzega o arkuszu bez r:id i go pomija
@@ -2988,6 +3270,9 @@ class _SlowEfenix:
         raise AssertionError("ślad nie woła działań, których nie woła przebieg")
 
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
+        raise AssertionError("ślad nie woła działań, których nie woła przebieg")
+
+    def forward_to_accept(self) -> None:
         raise AssertionError("ślad nie woła działań, których nie woła przebieg")
 
 

@@ -2,7 +2,9 @@
 
 ## Status
 
-Zaakceptowana (grilling 1.11.2026). Szczegóły procesu ustala jego specyfikacja.
+Zaakceptowana (grilling 1.11.2026). Szczegóły procesu ustala jego specyfikacja. Punkt o Przekazaniu do akceptacji i
+odrzucony wariant „Narzędzie samo przekazuje do akceptacji” odwraca ADR 0027 (7.11.2026): w trybie z Przekazaniem
+narzędzie przekazuje gotowe zlecenia do akceptacji.
 
 ## Kontekst
 
@@ -20,7 +22,8 @@ efenix tata codziennie pracuje naprawdę.
   narzędzie przejmuje to okno. Hasła nie widzi i nie przechowuje.
 - **Narzędzie nigdy nie przekazuje zlecenia do akceptacji ani go nie
   anuluje.** Uzupełnia wycenę, a gotowe zlecenie oznacza w Pliku zbiorczym
-  Znacznikiem efenix. Przekazanie do akceptacji należy do taty.
+  Znacznikiem efenix. Przekazanie do akceptacji należy do taty. Część o
+  Przekazaniu odwraca ADR 0027; anulowania narzędzie dalej nie robi.
 - **Każdy test i każda próba w trakcie budowy biegnie na Atrapie efenix**:
   lokalnej imitacji stron i odpowiedzi efenix z wymyślonymi zleceniami.
   Prawdziwy efenix widzi tylko Uruchomienie procesu taty. Rekonesans na
@@ -54,4 +57,5 @@ efenix tata codziennie pracuje naprawdę.
   serwer, a załadowanie Wyceny Emmetta czyści wycenę zlecenia. Pomyłka
   psuje pracę taty i trafia do firmy.
 - **Narzędzie samo przekazuje do akceptacji.** Tego nie da się łatwo cofnąć.
-  Wrócimy do tego najwcześniej po kilku czystych okresach.
+  Wrócimy do tego najwcześniej po kilku czystych okresach. Przyjęte w ADR 0027
+  jako tryb z Przekazaniem, który tata wybiera przy każdym uruchomieniu.

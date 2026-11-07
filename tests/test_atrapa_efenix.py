@@ -14,8 +14,9 @@ Kontrakt okien: każdy wiersz ``_ROWS`` to stan efenix i działania okna Wyceny 
 (obserwacje okna, Zatrzymanie z częścią strony, przyczyną i ``sent``, stan efenix i liczby działań), a okno przeglądarki
 na Atrapie efenix w Chromium daje na każdym wierszu ten sam przebieg. Wiersze powstają z ``Action`` (wylogowanie przed
 działaniem), ``EmmettRefusal``, ``ProposalFailure``, granic kalendarza i reguł strony (``refuse_dates``, ilość 0, pozycja
-bez pola Ilość, ``without`` po dacie i po Wycenie Emmetta), z wylogowania taty przed oknem i między zleceniami oraz
-z wiersza listy z odstępami i realizatorem bez loginu. Po „Załaduj do zlecenia” biegnie werdykt Wyceny (``_emmett``), więc
+bez pola Ilość, ``without`` po dacie i po Wycenie Emmetta), z Przekazania do akceptacji (także takiego, po którym
+efenix nie zmienia statusu, ``keeps_status``), z wylogowania taty przed oknem i między zleceniami oraz z wiersza listy z
+odstępami i realizatorem bez loginu. Po „Załaduj do zlecenia” biegnie werdykt Wyceny (``_emmett``), więc
 jego Zatrzymanie przechodzi przez okno jak każdy wyjątek działania.
 """
 
@@ -62,6 +63,7 @@ from tests.fixtures.atrapa_efenix import (
     LOAD_EMMETT,
     LOGIN_PAGE,
     LOGOUT,
+    CHANGE_STATUS,
     ORDER_PAGE,
     SAVE_QUANTITY,
     SEARCH,
@@ -371,6 +373,7 @@ _PATHS = {
     Action.PROPOSAL: FILL_EMMETT,
     Action.EMMETT: LOAD_EMMETT,
     Action.QUANTITY: SAVE_QUANTITY,
+    Action.STATUS: CHANGE_STATUS,
 }
 # Odmowy „Załaduj do zlecenia” przekierowaniem albo statusem błędu: okno nie czeka po nich na przeładowanie strony.
 _NOT_RELOADED = frozenset({EmmettRefusal.FORBIDDEN, EmmettRefusal.SERVER_ERROR, EmmettRefusal.ELSEWHERE, EmmettRefusal.LOGGED_OUT})
@@ -403,11 +406,16 @@ class _Quantity:
 
 
 @dataclass(frozen=True)
+class _Forward:
+    """Przekazanie do akceptacji otwartego zlecenia."""
+
+
+@dataclass(frozen=True)
 class _Logout:
     """Tata wylogował się w efenix poza działaniem okna (np. między zleceniami)."""
 
 
-_Step = _Search | _Open | _SetDate | _Emmett | _Quantity | _Logout
+_Step = _Search | _Open | _SetDate | _Emmett | _Quantity | _Forward | _Logout
 
 
 @dataclass(frozen=True)
@@ -424,10 +432,11 @@ class _Row:
 
     @property
     def reload_awaited(self) -> bool:
-        """Okno czeka na przeładowanie strony po „Załaduj do zlecenia”, a nie kończy działania przed nim (odmowa
-        przekierowaniem albo statusem błędu, bez sesji przy propozycji albo „Załaduj”)."""
+        """Okno czeka na przeładowanie strony po „Załaduj do zlecenia” i Przekazaniu do akceptacji, a nie kończy działania
+        przed nim (odmowa przekierowaniem albo statusem błędu, bez sesji przy propozycji, „Załaduj” albo zmianie
+        statusu)."""
 
-        expired = self.expire_after is not None and self.expire_after[0] in (Action.PROPOSAL, Action.EMMETT)
+        expired = self.expire_after is not None and self.expire_after[0] in (Action.PROPOSAL, Action.EMMETT, Action.STATUS)
         return not (expired or any(order.emmett_refusal in _NOT_RELOADED for order in self.orders))
 
     @property
@@ -448,6 +457,7 @@ def _new(**changes: Any) -> AtrapaOrder:
 _FULL = (_Search(), _Open(), _SetDate(), _Open(), _Emmett(), _Quantity("012", 3))
 _DATED_EMMETT = (_Search(), _Open(), _Emmett(), _Quantity("012", 3))
 _DATING = (_Search(), _Open(), _SetDate(), _Open())
+_FORWARDING = (_Search(), _Open(), _Forward(), _Search())
 _ROWS = (
     *(
         _Row(f"wylogowanie-{action.name.lower()}-{after}", (_new(),), _FULL, expire_after=(action, after))
@@ -462,6 +472,9 @@ _ROWS = (
             (Action.QUANTITY, 0),
         ]
     ),
+    _Row("wylogowanie-status-0", (_new(execution_date=_DAY, quantities={"012": 1}),), _FORWARDING, expire_after=(Action.STATUS, 0)),
+    _Row("przekazanie", (_new(execution_date=_DAY, quantities={"012": 1}),), _FORWARDING),
+    _Row("przekazanie-bez-zmiany-statusu", (_new(execution_date=_DAY, quantities={"012": 1}, keeps_status=True),), _FORWARDING),
     _Row("zaladuj-bez-odmowy", (_new(execution_date=_DAY),), _DATED_EMMETT),
     *(
         _Row(f"zaladuj-odmowa-{refusal.name.lower()}", (_new(execution_date=_DAY, emmett_refusal=refusal),), _DATED_EMMETT)
@@ -559,6 +572,9 @@ def _observed(open_window: Callable[[], AbstractContextManager[Efenix]], steps: 
                         efenix.load_emmett(recorded)
                     case _Quantity(code, quantity):
                         lines.append(f"ilość {code}={quantity}: kwota {efenix.enter_quantity(code, quantity)}")
+                    case _Forward():
+                        efenix.forward_to_accept()
+                        lines.append("przekazanie do akceptacji")
                     case _Logout():
                         log_out()
                         lines.append("tata wylogował się")
@@ -597,14 +613,14 @@ def test_okno_w_procesie_daje_przebiegi_z_pliku_kontraktu() -> None:
 
 
 def test_kontrakt_okien_ma_wiersz_dla_kazdego_dzialania_odmowy_zaladuj_i_padniecia_propozycji() -> None:
-    """Każde działanie okna (bez zmiany statusu, której okno nie ma) z wylogowaniem przed nim, każda odmowa „Załaduj do
-    zlecenia” i każde padnięcie propozycji Emmetta."""
+    """Każde działanie okna (także Przekazanie do akceptacji, czyli zmiana statusu) z wylogowaniem przed nim, każda odmowa
+    „Załaduj do zlecenia” i każde padnięcie propozycji Emmetta."""
 
     expired = {row.expire_after[0] for row in _ROWS if row.expire_after is not None}
     refusals = {order.emmett_refusal for row in _ROWS for order in row.orders}
     failures = {order.emmett_proposal_failure for row in _ROWS for order in row.orders}
 
-    assert (expired, refusals >= set(EmmettRefusal), failures >= set(ProposalFailure)) == (set(Action) - {Action.STATUS}, True, True)
+    assert (expired, refusals >= set(EmmettRefusal), failures >= set(ProposalFailure)) == (set(Action), True, True)
 
 
 def test_okno_w_procesie_odrzuca_zlecenie_z_pokretlem_strony_atrapy() -> None:

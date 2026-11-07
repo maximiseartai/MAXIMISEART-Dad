@@ -7,7 +7,9 @@
     "_priced",
     "_emmett",
     "_dated",
-    "_completed"
+    "_completed",
+    "_priced_outcome",
+    "_forwarded"
   ],
   "src/rozliczenia/efenix_positions.py": [
     "completion",
@@ -17,6 +19,14 @@
     "load_emmett",
     "enter_quantity",
     "_finished",
-    "_came_whole"
+    "_came_whole",
+    "forward_to_accept",
+    "_status_answer"
+  ],
+  "src/rozliczenia/efenix_checks.py": [
+    "listing"
+  ],
+  "src/rozliczenia/efenix_mark.py": [
+    "Mark.replaces"
   ]
 }

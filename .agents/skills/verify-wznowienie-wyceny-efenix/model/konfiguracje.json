@@ -7,6 +7,7 @@
       "MaxZmianTaty": 0,
       "MozeZgasnac": true,
       "TataWTrakcie": false,
+      "MozePrzekazac": true,
       "MozeSieZatrzymac": true,
       "MozeBrakowacPozycji": false
     }
@@ -19,6 +20,7 @@
       "MaxZmianTaty": 1,
       "MozeZgasnac": true,
       "TataWTrakcie": false,
+      "MozePrzekazac": true,
       "MozeSieZatrzymac": true,
       "MozeBrakowacPozycji": false
     }
@@ -31,6 +33,7 @@
       "MaxZmianTaty": 1,
       "MozeZgasnac": true,
       "TataWTrakcie": false,
+      "MozePrzekazac": true,
       "MozeSieZatrzymac": true,
       "MozeBrakowacPozycji": true
     },
@@ -50,6 +53,7 @@
       "MaxZmianTaty": 1,
       "MozeZgasnac": false,
       "TataWTrakcie": false,
+      "MozePrzekazac": true,
       "MozeSieZatrzymac": false,
       "MozeBrakowacPozycji": false
     }

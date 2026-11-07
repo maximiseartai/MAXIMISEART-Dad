@@ -43,6 +43,7 @@ from .efenix_window import ElementCount, ListedOrder, LoggedOut, LoginSign, Orde
 
 __all__ = [
     "AMOUNT",
+    "CHANGE_STATUS",
     "EXECUTION_DATE",
     "FILL_EMMETT",
     "LOAD_EMMETT",
@@ -57,6 +58,8 @@ __all__ = [
     "SEARCH",
     "SET_DATE",
     "SHOWS_ANYTHING",
+    "ORDER_PARAM",
+    "STATUS_PARAM",
     "Cell",
     "ColumnFault",
     "Element",
@@ -89,6 +92,10 @@ SET_DATE: Final = "action_set_date_of_instalation.php"
 FILL_EMMETT: Final = "action_fill_emmett.php"
 LOAD_EMMETT: Final = "action_load_emmett.php"
 SAVE_QUANTITY: Final = "action_save_index.php"
+CHANGE_STATUS: Final = "action_change_status.php"
+STATUS_PARAM: Final = "xstatus"
+ORDER_PARAM: Final = "order_id"
+"""Pole żądania zmiany statusu z nowym statusem zlecenia."""
 NUMBER_PARAM: Final = "numer"
 """Pole szukania z numerem, który okno wpisało w pole ``Numer``."""
 PRICE_ALL: Final = "price_all"
@@ -105,6 +112,8 @@ _DATE_FIELD: Final = "#field_data_instalacji"
 _EMMETT_BUTTON: Final = "#button_emmett"
 _EMMETT_DIALOG: Final = "#dialog_emmett"
 _PROPOSAL: Final = "#emmett-propozycja"
+_FORWARD_BUTTON: Final = "#button_forward_to_accept"
+_FORWARD_DIALOG: Final = "#dialog_forward_yes_no"
 _OK: Final = ".btn-ok"
 _DISMISS: Final = '[data-dismiss="modal"]'
 LOGIN_FORM: Final = 'form[action*="action_login.php"]'
@@ -180,7 +189,8 @@ class Element(enum.Enum):
     stąd, więc narzędzie zgodności sprawdza na efenix każdy element z ``list(Element)``, a nie ręczną listę.
 
     Przycisk kalendarza (``DATE_BUTTON``) okno klika tylko przy pustej dacie wykonania, a efenix pokazuje go najpewniej
-    tylko wtedy, więc nie jest na każdej stronie zlecenia.
+    tylko wtedy, więc nie jest na każdej stronie zlecenia. Okno zmiany statusu (``FORWARD_DIALOG``) dzieli Przekazanie do
+    akceptacji z anulowaniem zlecenia, więc okno klika jego „Tak” tylko po przycisku Przekazania.
     """
 
     NUMBER = (PageKind.LIST, PageElement("pole Numer", _NUMBER_FIELD))
@@ -193,6 +203,9 @@ class Element(enum.Enum):
     EMMETT_DIALOG = (PageKind.ORDER, PageElement("okno Emmetta", _EMMETT_DIALOG))
     PROPOSAL = (PageKind.ORDER, PageElement("propozycja w oknie Emmetta", f"{_EMMETT_DIALOG} {_PROPOSAL}"))
     EMMETT_LOAD = (PageKind.ORDER, PageElement("„Załaduj do zlecenia” w oknie Emmetta", f"{_EMMETT_DIALOG} {_OK}"))
+    FORWARD_BUTTON = (PageKind.ORDER, PageElement("przycisk Przekazania do akceptacji", _FORWARD_BUTTON))
+    FORWARD_DIALOG = (PageKind.ORDER, PageElement("okno zmiany statusu", _FORWARD_DIALOG))
+    FORWARD_OK = (PageKind.ORDER, PageElement("„Tak” w oknie zmiany statusu", f"{_FORWARD_DIALOG} {_OK}"))
 
     def __init__(self, page: PageKind, element: PageElement, always_on_page: bool = True) -> None:
         self.page = page
@@ -232,6 +245,10 @@ SCRIPT_USES: Final[Mapping[PageKind, tuple[ScriptUse, ...]]] = {
         ScriptUse(
             "wyjście z pola Ilość zapisuje ilość, a kwotę końcową z odpowiedzi pokazuje na stronie",
             (QUANTITY.partition(".")[2], "blur", SAVE_QUANTITY, PRICE_ALL, _bare(AMOUNT)),
+        ),
+        ScriptUse(
+            "„Tak” okna zmiany statusu po przycisku Przekazania wysyła nowy status i przeładowuje stronę",
+            (_bare(_FORWARD_BUTTON), _bare(_FORWARD_DIALOG), CHANGE_STATUS, STATUS_PARAM, "reload"),
         ),
     ),
 }

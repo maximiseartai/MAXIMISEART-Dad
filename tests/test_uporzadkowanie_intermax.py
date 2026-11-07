@@ -27,7 +27,7 @@ from openpyxl.utils.cell import coordinate_from_string, get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia.domain import ProgressPhase
-from rozliczenia.efenix_mark import MARK_RGB
+from rozliczenia.efenix_mark import Mark
 from rozliczenia.intermax_ordering import OrderingSummary, RegisterDay, register_days
 from rozliczenia.intermax_replace import LOCAL_DISK, Waiting
 from rozliczenia.intermax_process import PROCESS, OrderingInputs
@@ -398,11 +398,11 @@ def _colored(activities: str | None, contract_number: str | None, devices: str |
     }
 
 
-def test_znacznik_efenix_nie_jest_zadnym_kolorem_operatora_ani_zoltym_oddzieleniem_dni() -> None:
+def test_znaczniki_wyceny_w_efenix_nie_sa_zadnym_kolorem_operatora_ani_zoltym_oddzieleniem_dni() -> None:
     # Kolory, które Uporządkowanie INTERMAX nadaje według testów niżej, i żółty wiersz, którym tata oddziela dni.
     taken = {_GREEN, _ORANGE, _DARK_BLUE, _LIGHT_BLUE, _PINK, YELLOW.fgColor.rgb}
 
-    assert MARK_RGB.upper() not in {rgb[-6:].upper() for rgb in taken}
+    assert {mark.value for mark in Mark}.isdisjoint({rgb[-6:].upper() for rgb in taken})
 
 
 @pytest.mark.parametrize(

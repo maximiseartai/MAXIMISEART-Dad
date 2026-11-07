@@ -1,8 +1,10 @@
 """Tempo ludzkie Wyceny w efenix: przerwy przed zapisami w oknie efenix, ok. 20 s na zlecenie z zapisem (spec #741, ADR 0024).
 
 Przerwy należą do zapisów w efenix, nie do odczytów (decyzja Maksa 4.11.2026, #834). Okno zlecenia z tempem
-(``Pacing.window``) robi przerwę ``ACTION_PAUSE_S`` przed każdym zapisem (data wykonania, Wycena Emmetta, ilość), a przed
-szukaniem następnego zlecenia tyle, ile zostało do ``ORDER_S`` od szukania zlecenia, w którym coś zapisało. Zlecenie z
+(``Pacing.window``) robi przerwę ``ACTION_PAUSE_S`` przed każdym zapisem (data wykonania, Wycena Emmetta, ilość, Przekazanie
+do akceptacji), a przed szukaniem następnego zlecenia tyle, ile zostało do ``ORDER_S`` od szukania zlecenia, w którym coś
+zapisało. Ponowne szukanie w tym samym zleceniu (potwierdzenie Przekazania do akceptacji) to odczyt: idzie bez przerwy i
+nie zmienia chwili, od której liczy się przerwa przed następnym zleceniem. Zlecenie z
 zapisem trwa więc ok. ``ORDER_S``, jak u taty, a żadna przerwa nie jest dłuższa niż ``KEEPALIVE_S``, więc ruch w oknie co
 kilkanaście sekund podtrzymuje sesję efenix. Samo sprawdzenie zlecenia bez zmiany w efenix (wycena już jest, Zlecenie
 rozliczone, błąd zlecenia) to tylko szukanie i otwarcie, które idą bez przerwy, tak samo jak szukanie po takim zleceniu i
@@ -88,7 +90,8 @@ class _PacedEfenix:
         self._searched: float | None = None
 
     def search(self, number: str) -> Sequence[ListedOrder]:
-        self._searched = self._pacing.before_search()
+        if self._searched is None:
+            self._searched = self._pacing.before_search()
         return self._efenix.search(number)
 
     def open_order(self, order: ListedOrder) -> OrderPricing:
@@ -105,3 +108,7 @@ class _PacedEfenix:
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
         self._pacing.before_write(self._searched)
         return self._efenix.enter_quantity(position, quantity)
+
+    def forward_to_accept(self) -> None:
+        self._pacing.before_write(self._searched)
+        self._efenix.forward_to_accept()

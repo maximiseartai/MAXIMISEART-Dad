@@ -225,12 +225,15 @@ CHANGED = {
                 ('id="cena_all2"', 'id="cena_razem"'),
                 # Okno Emmetta bez elementu, do którego skrypt wkłada propozycję.
                 ('id="emmett-propozycja"', 'id="emmett-wynik"'),
+                # Okno zmiany statusu Przekazania do akceptacji bez przycisku „Tak” w budowie ``.btn-ok``.
+                ('class="btn btn-ok">Tak<', 'class="btn btn-tak">Tak<'),
             ),
             ORDER_SCRIPT: _answered(302),
         },
     ),
     # Skrypt strony zlecenia bez jednej nazwy każdego działania, na którym polega okno: kalendarz bez ``onSet``, „Potwierdź”
-    # daty wysyła inny adres, „Załaduj do zlecenia” Emmetta też, a kwotę końcową skrypt wpisuje do innego elementu.
+    # daty wysyła inny adres, „Załaduj do zlecenia” Emmetta też, kwotę końcową skrypt wpisuje do innego elementu, a nowy
+    # status w innym polu niż ``xstatus``.
     "skrypt-strony-zlecenia-bez-nazw-dzialan-okna": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "skrypt-strony-zlecenia-bez-nazw-dzialan-okna.txt",
         rewrites={
@@ -239,6 +242,7 @@ CHANGED = {
                 (SET_DATE, "action_save_date.php"),
                 (LOAD_EMMETT, "action_emmett_load.php"),
                 ("cena_all2", "cena_razem"),
+                ("xstatus", "nowy_status"),
             )
         },
     ),

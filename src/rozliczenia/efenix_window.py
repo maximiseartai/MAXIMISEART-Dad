@@ -1,6 +1,10 @@
 """Okno efenix jako seam Wyceny w efenix: protokół okna (``Efenix``), to, co okno czyta ze stron efenix, i jego
 Zatrzymania z przyczyną techniczną z zamkniętej listy.
 
+Jedyna zmiana statusu zlecenia, którą zna okno, to Przekazanie do akceptacji (``Efenix.forward_to_accept``): status
+``ACCEPTANCE_STATUS``. Żądanie zmiany statusu, którego okno nie wysłało w tym działaniu, albo na inny status okno
+przerywa, zanim dojdzie do efenix (``StatusChangeBlocked``).
+
 Moduł to sam słownik okna, bez decyzji Wyceny i bez przeglądarki: tylko biblioteka standardowa. Implementują go okno w
 przeglądarce (``efenix_browser`` z odczytami ``efenix_page``), okno z tempem ludzkim (``efenix_pace``), okno ze śladem
 dla Logów Uruchomienia (``efenix_trace``) i okno w procesie testów (``tests/fixtures/okno_w_procesie.py``). Silnik
@@ -16,9 +20,13 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 import enum
-from typing import Protocol
+from typing import Final, Protocol
+
+ACCEPTANCE_STATUS: Final = "Do akceptacji"
+"""Status zlecenia efenix po Przekazaniu do akceptacji: jedyny, na który okno może zmienić status zlecenia."""
 
 __all__ = [
+    "ACCEPTANCE_STATUS",
     "BrowserFailure",
     "BrowserNotStarted",
     "Closed",
@@ -39,6 +47,7 @@ __all__ = [
     "PagePart",
     "Proposal",
     "Shape",
+    "StatusChangeBlocked",
     "UnexpectedPage",
     "WindowCause",
     "WindowClosed",
@@ -55,6 +64,7 @@ class PagePart(enum.Enum):
     DATE = "okno daty wykonania"
     EMMETT = "Wycena Emmetta"
     QUANTITY = "pole Ilość i kwota końcowa"
+    FORWARD = "okno Przekazania do akceptacji"
 
 
 @dataclass(frozen=True)
@@ -104,6 +114,7 @@ class Shape(enum.Enum):
     ANSWER_RESULT = "odpowiedź zapisu ilości z wynikiem innym niż ok i nok"
     LOGIN_FORM = "formularz logowania efenix pod adresem strony zlecenia, bez przekierowania"
     ANSWER_REDIRECT = "odpowiedź na „Załaduj do zlecenia” przekierowana poza stronę logowania"
+    STATUS_NOT_ANSWERED = "żądanie Przekazania do akceptacji bez odpowiedzi efenix (zerwane połączenie)"
     EMMETT_NOT_LOADED = (
         "strona przeładowana po „Załaduj do zlecenia” bez wyceny, choć okno Emmetta pokazało propozycję albo propozycja"
         " nie przyszła cała ze statusem 2xx"
@@ -160,7 +171,16 @@ class BrowserFailure:
     operation: Operation | None
 
 
-PageCause = ElementCount | HttpStatus | OtherShape | BrowserFailure
+class StatusChangeBlocked(enum.Enum):
+    """Żądanie zmiany statusu zlecenia (``action_change_status.php``), które okno przerwało, zanim doszło do efenix: pomyłka
+    anulowałaby zlecenie, czego nie da się cofnąć, więc to Zatrzymanie do Maksa, a nie błąd zlecenia."""
+
+    OTHER_STATUS = "żądanie zmiany statusu na inny niż „Do akceptacji” w Przekazaniu do akceptacji"
+    OUTSIDE_FORWARD = "żądanie zmiany statusu poza Przekazaniem do akceptacji (także w trybie bez Przekazania)"
+    OTHER_ORDER = "żądanie Przekazania do akceptacji innego zlecenia niż otwarte w oknie"
+
+
+PageCause = ElementCount | HttpStatus | OtherShape | BrowserFailure | StatusChangeBlocked
 """Przyczyna niedokończonego działania okna (``UnexpectedPage``)."""
 WindowCause = PageCause | LoginSign | Closed
 """Przyczyna techniczna Zatrzymania okna efenix z zamkniętej listy, dla Logów Uruchomienia, bez treści strony i danych
@@ -171,7 +191,8 @@ class WindowStop(Exception):
     """Okno efenix nie może działać dalej: część strony (``None`` poza stronami efenix) i przyczyna techniczna.
 
     ``sent``: działanie okna, które zgłosiło wyjątek, kliknęło już przycisk, który wysyła do efenix zmianę zlecenia (data
-    wykonania, „Załaduj do zlecenia”, Enter w polu „Ilość”), więc efenix mógł ją zapisać. Ustawia je okno.
+    wykonania, „Załaduj do zlecenia”, Enter w polu „Ilość”, „Tak” Przekazania do akceptacji), więc efenix mógł ją
+    zapisać. Ustawia je okno.
     """
 
     sent: bool = False
@@ -250,8 +271,8 @@ class EmmettLoad:
 
 
 class Efenix(Protocol):
-    """Okno efenix w sesji taty z listą dozwolonych działań: szukanie, otwarcie zlecenia, data wykonania, Wycena Emmetta i
-    pola „Ilość”. Przekazania do akceptacji, anulowania ani zmiany statusu zlecenia w nim nie ma.
+    """Okno efenix w sesji taty z listą dozwolonych działań: szukanie, otwarcie zlecenia, data wykonania, Wycena Emmetta,
+    pola „Ilość” i Przekazanie do akceptacji. Anulowania ani innej zmiany statusu zlecenia w nim nie ma.
 
     Działania po ``open_order`` dotyczą otwartego zlecenia. Każde działanie zgłasza ``LoggedOut`` na stronie logowania,
     ``UnexpectedPage``, gdy go nie dokończyło, i ``WindowClosed`` w zamkniętym oknie, z ``WindowStop.sent``, gdy przed
@@ -287,6 +308,15 @@ class Efenix(Protocol):
         """Wpisuje ``quantity`` w pole „Ilość” pozycji ``position`` otwartego zlecenia; kwota końcowa, którą odesłał efenix.
 
         ``LoggedOut`` znaczy, że efenix tej ilości nie zapisał; po każdym innym wyjątku mógł ją zapisać albo nie.
+        """
+        ...
+
+    def forward_to_accept(self) -> None:
+        """Przekazuje otwarte zlecenie do akceptacji (zielony „Zapisz” i „Tak” w jego oknie) i czeka na odpowiedź efenix.
+
+        Czy efenix zmienił status, okno nie rozstrzyga: pokazuje to dopiero lista zleceń po ponownym szukaniu. Żądanie
+        zmiany statusu na inny status albo poza tym działaniem okno przerywa przed wysłaniem (``UnexpectedPage`` z
+        ``StatusChangeBlocked``).
         """
         ...
 

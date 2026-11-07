@@ -2,11 +2,12 @@
 
 Kolejność sprawdzeń to kolejność ``OrderProblem``, a pierwsza niezgodność jest błędem zlecenia: numer i data w Pliku
 zbiorczym (``searched_number``), potem wiersze listy efenix po szukaniu (``listing``): dokładnie jedno zlecenie o
-``Numer dokumentu`` równym numerowi, status „Do wyceny” albo „Rozliczone”, realizator równy ``WYKONAWCA``
+``Numer dokumentu`` równym numerowi, status „Do wyceny”, „Rozliczone” albo „Do akceptacji”, realizator równy ``WYKONAWCA``
 po ``normalize_text``, jak Przebieg rozliczeń grupuje ``WYKONAWCA``, i ``Dane adresowe`` równe ``ADRES`` (``efenix_address``), a na końcu data wykonania pusta albo różna od dnia z ``DATA``
 najwyżej o ``DATE_TOLERANCE`` w którąkolwiek stronę (``date_problem``; tata, po runie z 4.11.2026, #961). Datę w tej
 tolerancji proces zostawia w efenix bez zmian. Zlecenie „Rozliczone” zgodne z plikiem nie jest niezgodnością, tylko Zleceniem rozliczonym
-(``Settled``), którego proces nie otwiera. Pustą datę wykonania proces ustawia z ``DATA``, a dzień, którego efenix nie
+(``Settled``), a zlecenie „Do akceptacji” zgodne z plikiem Zleceniem przekazanym (``Forwarded``); żadnego z nich proces
+nie otwiera. Pustą datę wykonania proces ustawia z ``DATA``, a dzień, którego efenix nie
 przyjął, to ``DateRefused``. Każdy wiersz listy po szukaniu ma też odczyt dla Logów Uruchomienia (``read_listed``):
 te same porównania numeru i adresu, ale z nazwami różniących się części adresu zamiast danych adresowych.
 """
@@ -21,7 +22,7 @@ from typing import Final
 
 from .efenix_address import AddressPart, address_differences, same_address
 from .efenix_orders import CollectiveOrder
-from .efenix_window import ListedOrder
+from .efenix_window import ACCEPTANCE_STATUS, ListedOrder
 from .text import normalize_text
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "PRICING_STATUS",
     "SETTLED_STATUS",
     "DateRefused",
+    "Forwarded",
     "ListedRead",
     "OrderProblem",
     "Settled",
@@ -55,6 +57,8 @@ class OrderProblem(enum.Enum):
     OTHER_REALIZATOR = enum.auto()
     OTHER_ADDRESS = enum.auto()
     OTHER_DATE = enum.auto()
+    NOT_FORWARDED = enum.auto()
+    """Po Przekazaniu do akceptacji ponowne szukanie nie pokazuje zlecenia ze statusem „Do akceptacji”."""
 
 
 class DateRefused(enum.Enum):
@@ -99,6 +103,15 @@ class Settled:
     listed: ListedOrder
 
 
+@dataclass(frozen=True)
+class Forwarded:
+    """Zlecenie przekazane: zlecenie listy zgodne z Plikiem zbiorczym ma w efenix status „Do akceptacji”, bo przekazał je
+    ten przebieg, wcześniejszy albo tata, więc proces niczego w nim nie zmienia, a w Pliku zbiorczym dostaje Znacznik
+    przekazania."""
+
+    listed: ListedOrder
+
+
 def searched_number(order: CollectiveOrder) -> tuple[str, date] | OrderProblem:
     """Numer, po którym proces szuka zlecenia, i dzień z ``DATA`` albo niezgodność, którą widać bez efenix: wiersz bez
     ``NUMER ZL.`` albo bez daty w ``DATA``."""
@@ -110,12 +123,12 @@ def searched_number(order: CollectiveOrder) -> tuple[str, date] | OrderProblem:
     return order.number, order.day
 
 
-def listing(order: CollectiveOrder, listed: Sequence[ListedOrder]) -> ListedOrder | Settled | OrderProblem:
+def listing(order: CollectiveOrder, listed: Sequence[ListedOrder]) -> ListedOrder | Settled | Forwarded | OrderProblem:
     """Jedyne zlecenie listy o numerze ``order`` zgodne z Plikiem zbiorczym albo pierwsza niezgodność; zgodne zlecenie o
-    statusie „Rozliczone” to ``Settled``.
+    statusie „Rozliczone” to ``Settled``, a o statusie „Do akceptacji” ``Forwarded``.
 
-    Wiersz listy o innym ``Numer dokumentu`` (szukanie po części numeru) nie jest trafieniem. Zlecenie „Rozliczone” też
-    musi mieć realizatora i ``Dane adresowe`` z pliku, bo inaczej ``NUMER ZL.`` wskazuje inne zlecenie.
+    Wiersz listy o innym ``Numer dokumentu`` (szukanie po części numeru) nie jest trafieniem. Zlecenie „Rozliczone” i „Do
+    akceptacji” też musi mieć realizatora i ``Dane adresowe`` z pliku, bo inaczej ``NUMER ZL.`` wskazuje inne zlecenie.
     """
 
     hits = [candidate for candidate in listed if candidate.number == order.number]
@@ -125,13 +138,16 @@ def listing(order: CollectiveOrder, listed: Sequence[ListedOrder]) -> ListedOrde
         return OrderProblem.SEVERAL_FOUND
     [hit] = hits
     settled = _is_status(hit, SETTLED_STATUS)
-    if not settled and not _is_status(hit, PRICING_STATUS):
+    forwarded = _is_status(hit, ACCEPTANCE_STATUS)
+    if not (settled or forwarded or _is_status(hit, PRICING_STATUS)):
         return OrderProblem.OTHER_STATUS
     if hit.realizator is None or normalize_text(hit.realizator) != normalize_text(order.worker):
         return OrderProblem.OTHER_REALIZATOR
     if not same_address(order.address, hit.address):
         return OrderProblem.OTHER_ADDRESS
-    return Settled(hit) if settled else hit
+    if settled:
+        return Settled(hit)
+    return Forwarded(hit) if forwarded else hit
 
 
 def _is_status(hit: ListedOrder, status: str) -> bool:

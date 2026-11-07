@@ -8,7 +8,9 @@ przepisać (``efenix_positions``). Potem zlecenie znajduje po ``Numer dokumentu`
 dokładnie jedno trafienie, status „Do wyceny”, realizator równy ``WYKONAWCA``, ``Dane adresowe`` równe ``ADRES``
 (``efenix_address``) i datę wykonania (``date_problem``). Pierwsza niezgodność to błąd zlecenia, w efenix
 nic się nie zmienia i proces idzie dalej. Zlecenie o statusie „Rozliczone” z realizatorem i adresem z pliku to Zlecenie
-rozliczone (``Settled``): proces go nie otwiera, nie oznacza i nie zostawia tacie jako błędu. Każdy odczyt strony zlecenia (otwarcie, ponowne otwarcie po dacie wykonania i
+rozliczone (``Settled``): proces go nie otwiera, nie oznacza i nie zostawia tacie jako błędu. Zlecenie o statusie „Do
+akceptacji” z realizatorem i adresem z pliku to Zlecenie przekazane (``Forwarded``): proces go nie otwiera, a w Pliku
+zbiorczym dostaje Znacznik przekazania, w obu trybach. Każdy odczyt strony zlecenia (otwarcie, ponowne otwarcie po dacie wykonania i
 strona po Wycenie Emmetta) musi mieć pozycje, w których plik ma ilość: strona bez którejś z nich to błąd zlecenia z
 kodami pozycji i ich kolumnami (``missing_positions``), a strona bez pozycji z 0 w pliku to zwykła strona efenix.
 
@@ -25,8 +27,14 @@ także w miejsce ilości Emmetta. Pozycji, w której strona ma więcej niż plik
 obniża i nie czyści: zlecenie z taką pozycją to Ostrzeżenie Emmetta z pozycją i obiema ilościami, choć resztę ilości
 proces i tak wpisał. Zlecenie bez takiej pozycji jest gotowe, gdy kwota końcowa, którą odesłał efenix, jest równa
 ``Kwota`` (AU), a w przeciwnym razie to błąd z obiema kwotami. Ponowne uruchomienie dokańcza więc każde zlecenie, które
-przerwało Zatrzymanie albo zgaśnięcie Centrum, tak samo jak zlecenie zaczęte przez tatę. Okno efenix (``efenix_window.Efenix``) nie ma działania, które przekazuje zlecenie do
-akceptacji, anuluje je albo zmienia jego status. Strona logowania, efenix, którego okno nie otworzyło, zamknięte okno
+przerwało Zatrzymanie albo zgaśnięcie Centrum, tak samo jak zlecenie zaczęte przez tatę.
+
+Tryb Wyceny (``PricingMode``, domyślnie ``FILL``) rozstrzyga, co dzieje się z gotowym zleceniem. W trybie bez
+Przekazania (``FILL``) dostaje Znacznik efenix, a Przekazanie do akceptacji zostaje tacie. W trybie z Przekazaniem
+(``FORWARD``) proces przekazuje je do akceptacji (``Efenix.forward_to_accept``) i szuka go ponownie: lista ze statusem
+„Do akceptacji” (``listing``) daje Zlecenie przekazane, a każda inna lista błąd ``OrderProblem.NOT_FORWARDED`` bez
+Znacznika. Błędu ani Ostrzeżenia Emmetta proces nie przekazuje w żadnym trybie. Okno efenix (``efenix_window.Efenix``)
+nie ma działania, które anuluje zlecenie albo zmienia jego status na inny niż „Do akceptacji”. Strona logowania, efenix, którego okno nie otworzyło, zamknięte okno
 efenix i działanie okna, którego okno nie dokończyło, to Zatrzymanie (``LoggedOut``, ``EfenixUnreachable``,
 ``WindowClosed``, ``UnexpectedPage``), a Komunikat Zatrzymania mówi, czy przed nim proces zmienił już coś w efenix:
 rozstrzyga to Wycena ze śladu zleceń i z działania, przy którym okno stanęło (``_kept``), a nie okno.
@@ -43,7 +51,8 @@ każdym zleceniu (``efenix_trace``) trafia do jego wyniku, a stamtąd do Logów 
 nim, więc przed każdym zapisem w efenix, i wpis z wynikiem zaraz po nim, zanim proces przejdzie do następnego zlecenia.
 
 Po ostatnim zleceniu, a także przy Zatrzymaniu w trakcie, ``efenix_marking`` raz zapisuje Plik zbiorczy: komórka ``ADRES``
-każdego gotowego zlecenia dostaje Znacznik efenix, a reszta pliku zostaje bajt w bajt. Gdy zapis się nie udaje (Excel trzyma
+każdego gotowego zlecenia dostaje Znacznik efenix, a każdego Zlecenia przekazanego Znacznik przekazania, który zastępuje
+Znacznik efenix (``efenix_mark.Mark``), a reszta pliku zostaje bajt w bajt. Gdy zapis się nie udaje (Excel trzyma
 plik, plik zmienił się od odczytu, zapis nieudany), przebieg kończy się Zatrzymaniem z prośbą o ponowne uruchomienie, a
 wycena w efenix zostaje; przy Zatrzymaniu z efenix zostaje jego Komunikat, bo ponowne uruchomienie i tak jest potrzebne.
 Ponowne uruchomienie dokańcza oznaczanie: gotowe zlecenia mają już wycenę zgodną z plikiem, więc proces je tylko czyta. Wynik nie zawiera
@@ -52,6 +61,7 @@ numerów zleceń, adresów ani loginów, tylko numery wierszy Pliku zbiorczego.
 
 from __future__ import annotations
 
+import enum
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext
@@ -66,8 +76,9 @@ from . import efenix_trace, workbook_files
 from .client_data import ForbiddenColumn, ForbiddenValues
 from .input_copy import InputCopy
 from .domain import ProgressObserver, ProgressPhase
-from .efenix_checks import DateRefused, OrderProblem, Settled, date_problem, listing, searched_number
-from .efenix_marking import Refusal, mark_ready
+from .efenix_checks import DateRefused, Forwarded, OrderProblem, Settled, date_problem, listing, searched_number
+from .efenix_mark import Mark
+from .efenix_marking import Refusal, mark_orders
 from .efenix_orders import (
     AmountsNotComputed,
     CollectiveOrder,
@@ -118,12 +129,22 @@ __all__ = [
     "OrderError",
     "OrderJournal",
     "OrderResult",
+    "PricingMode",
     "PricingStopped",
     "PricingSummary",
     "Ready",
     "StoppedOrder",
     "price_orders",
 ]
+
+
+class PricingMode(enum.Enum):
+    """Tryb Wyceny w efenix, który wybiera tata: co dzieje się z gotowym zleceniem."""
+
+    FILL = "bez Przekazania"
+    """Uzupełnia wycenę i oznacza gotowe zlecenie Znacznikiem efenix; Przekazanie do akceptacji zostaje tacie."""
+    FORWARD = "z Przekazaniem"
+    """Uzupełnia wycenę i gotowe zlecenie przekazuje do akceptacji (zielony „Zapisz”)."""
 
 
 @dataclass(frozen=True)
@@ -148,12 +169,16 @@ class EmmettWarning:
     excess: tuple[Excess, ...]
 
 
+Outcome = Ready | Settled | Forwarded | OrderError | EmmettWarning
+"""Wynik zlecenia w Wycenie w efenix."""
+
+
 @dataclass(frozen=True)
 class OrderResult:
     """Wynik zlecenia; ``steps``: ślad działań okna efenix przy nim, po kolei (``efenix_trace``)."""
 
     order: CollectiveOrder
-    outcome: Ready | Settled | OrderError | EmmettWarning
+    outcome: Outcome
     steps: tuple[TraceStep, ...] = ()
 
 
@@ -177,6 +202,10 @@ class PricingSummary:
     @property
     def settled_count(self) -> int:
         return sum(isinstance(result.outcome, Settled) for result in self.results)
+
+    @property
+    def forwarded_count(self) -> int:
+        return sum(isinstance(result.outcome, Forwarded) for result in self.results)
 
     @property
     def error_count(self) -> int:
@@ -241,7 +270,7 @@ class OrderJournal(Protocol):
         ...
 
     def ended(self, result: OrderResult, message: Message | None) -> None:
-        """Zlecenie skończone z wynikiem ``result`` i jego Komunikatem (``None`` przy gotowym i rozliczonym)."""
+        """Zlecenie skończone z wynikiem ``result`` i jego Komunikatem (``None`` przy gotowym, rozliczonym i przekazanym)."""
         ...
 
 
@@ -275,6 +304,7 @@ def price_orders(
     forbidden: ForbiddenValues | None = None,
     journal: OrderJournal = NO_JOURNAL,
     copy: InputCopy | None = None,
+    mode: PricingMode = PricingMode.FILL,
 ) -> PricingSummary:
     """Uzupełnia w efenix wycenę każdego zlecenia z zakresu Pliku zbiorczego ``source`` i oznacza w nim gotowe zlecenia.
 
@@ -282,7 +312,7 @@ def price_orders(
     ``waiting`` wstrzymuje zegar rozmówcy na czas czekania na logowanie taty. ``pace``: tempo ludzkie okna
     (``efenix_pace``), ``None`` bez przerw. ``journal``: dziennik Wyceny w efenix (``OrderJournal``). Komórki zakazanych
     kolumn Pliku zbiorczego i dane adresowe z listy wyników efenix poznaje ``forbidden`` (reguła danych, ADR 0025), a
-    odczyt Pliku zbiorczego Kopia wejścia Uruchomienia ``copy`` (#841).
+    odczyt Pliku zbiorczego Kopia wejścia Uruchomienia ``copy`` (#841). ``mode``: tryb Wyceny (``PricingMode``).
     """
 
     phases = PhaseRunner(observer, clock=clock)
@@ -346,7 +376,7 @@ def price_orders(
                         current = (done, order, trace)
                         journal.begun(order.row, done + 1, total)
                         window = efenix_trace.traced(efenix, order, trace, clock)
-                        outcome = _outcome(order, window if pacing is None else pacing.window(window), forbidden)
+                        outcome = _outcome(order, window if pacing is None else pacing.window(window), forbidden, mode)
                         result = OrderResult(order, outcome, tuple(trace.steps))
                         results.append(result)
                         journal.ended(result, _warning(source, result))
@@ -371,10 +401,18 @@ def price_orders(
 
 
 def _mark(source: Path, scope: PricingScope, results: Sequence[OrderResult]) -> Refusal | None:
-    """Znacznik efenix w ``ADRES`` każdego gotowego zlecenia z ``results``."""
+    """Znacznik efenix w ``ADRES`` każdego gotowego zlecenia z ``results`` i Znacznik przekazania każdego przekazanego."""
 
-    ready = [result.order.row for result in results if isinstance(result.outcome, Ready)]
-    return mark_ready(source, scope.content, scope.address_column, ready)
+    marks: dict[int, Mark] = {}
+    for result in results:
+        match result.outcome:
+            case Ready():
+                marks[result.order.row] = Mark.READY
+            case Forwarded():
+                marks[result.order.row] = Mark.FORWARDED
+            case Settled() | OrderError() | EmmettWarning():
+                pass
+    return mark_orders(source, scope.content, scope.address_column, marks)
 
 
 def _warnings(source: Path, results: Sequence[OrderResult]) -> list[Message]:
@@ -385,7 +423,7 @@ def _warnings(source: Path, results: Sequence[OrderResult]) -> list[Message]:
 
 def _warning(source: Path, result: OrderResult) -> Message | None:
     match result.outcome:
-        case Ready() | Settled():
+        case Ready() | Settled() | Forwarded():
             return None
         case OrderError(problem):
             return messages.order_error(source, result.order.row, problem)
@@ -430,20 +468,49 @@ def _kept(results: Sequence[OrderResult], current: OrderTrace | None, error: Win
 
 def _wrote(step: TraceStep) -> bool:
     """Udane działanie okna ``step`` wysłało do efenix zmianę zlecenia: data wykonania, którą przyjął kalendarz (okno
-    kliknęło „Potwierdź”), Wycena Emmetta i ilość."""
+    kliknęło „Potwierdź”), Wycena Emmetta, ilość i Przekazanie do akceptacji."""
 
     match step.action:
         case "szukanie" | "otwarcie zlecenia":
             return False
         case "data wykonania":
             return step.accepted is True
-        case "Wycena Emmetta" | "ilość":
+        case "Wycena Emmetta" | "ilość" | "przekazanie do akceptacji":
             return True
 
 
-def _outcome(order: CollectiveOrder, efenix: Efenix, forbidden: ForbiddenValues | None) -> Ready | Settled | OrderError | EmmettWarning:
+def _outcome(order: CollectiveOrder, efenix: Efenix, forbidden: ForbiddenValues | None, mode: PricingMode) -> Outcome:
     """Wynik zlecenia ``order`` w oknie ``efenix``: sprawdzenia, data wykonania z ``DATA``, gdy jest pusta, Wycena
-    Emmetta przy stronie bez ilości i dokończenie do Pliku zbiorczego tylko w górę."""
+    Emmetta przy stronie bez ilości, dokończenie do Pliku zbiorczego tylko w górę, a w trybie ``FORWARD`` Przekazanie
+    do akceptacji gotowego zlecenia."""
+
+    outcome = _priced_outcome(order, efenix, forbidden)
+    if mode is PricingMode.FORWARD and isinstance(outcome, Ready):
+        return _forwarded(order, outcome.listed, efenix, forbidden)
+    return outcome
+
+
+def _forwarded(order: CollectiveOrder, ready: ListedOrder, efenix: Efenix, forbidden: ForbiddenValues | None) -> Forwarded | OrderError:
+    """Gotowe zlecenie ``order`` (wiersz listy ``ready``) przekazane do akceptacji i potwierdzone ponownym szukaniem:
+    lista ze statusem „Do akceptacji” i realizatorem i adresem z pliku (``listing``); każda inna to ``NOT_FORWARDED``."""
+
+    efenix.forward_to_accept()
+    confirmed = listing(order, _searched(efenix, ready.number, forbidden))
+    return confirmed if isinstance(confirmed, Forwarded) else OrderError(OrderProblem.NOT_FORWARDED)
+
+
+def _searched(efenix: Efenix, number: str, forbidden: ForbiddenValues | None) -> Sequence[ListedOrder]:
+    """Wiersze listy po szukaniu ``number``; ich dane adresowe poznaje reguła danych ``forbidden``."""
+
+    found = efenix.search(number)
+    if forbidden is not None:
+        for listed in found:
+            forbidden.remember_value(ForbiddenColumn.ADDRESS, listed.address)
+    return found
+
+
+def _priced_outcome(order: CollectiveOrder, efenix: Efenix, forbidden: ForbiddenValues | None) -> Outcome:
+    """Wynik zlecenia bez Przekazania do akceptacji: sprawdzenia, data wykonania, Wycena Emmetta i dokończenie."""
 
     searched = searched_number(order)
     if isinstance(searched, OrderProblem):
@@ -452,14 +519,10 @@ def _outcome(order: CollectiveOrder, efenix: Efenix, forbidden: ForbiddenValues 
     file = file_quantities(order)
     if isinstance(file, (UnpairedColumns, NotWholeQuantities)):
         return OrderError(file)
-    found = efenix.search(number)
-    if forbidden is not None:
-        for listed in found:
-            forbidden.remember_value(ForbiddenColumn.ADDRESS, listed.address)
-    hit = listing(order, found)
+    hit = listing(order, _searched(efenix, number, forbidden))
     if isinstance(hit, OrderProblem):
         return OrderError(hit)
-    if isinstance(hit, Settled):
+    if isinstance(hit, Settled | Forwarded):
         return hit
     opened = efenix.open_order(hit)
     if (missing := missing_positions(file, opened.quantities, PageRead.OPENED)) is not None:

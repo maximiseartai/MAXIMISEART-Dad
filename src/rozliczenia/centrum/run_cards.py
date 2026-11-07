@@ -46,6 +46,7 @@ _ORDERS_TITLE: Final = "Zlecenia przed zamknięciem Centrum"
 # Wynik zlecenia Wyceny w efenix z Logów i jego nazwa na karcie, w kolejności karty na żywo.
 _ORDER_LABELS: Final[dict[OrderOutcome, str]] = {
     "gotowe": "Gotowe do przekazania",
+    "przekazane": "Przekazane do akceptacji",
     "rozliczone": "Rozliczone",
     "błąd": "Błędy zleceń",
     "ostrzeżenie Emmetta": "Ostrzeżenia Emmetta",

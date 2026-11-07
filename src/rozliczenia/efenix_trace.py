@@ -8,7 +8,8 @@ zlecenia i bez danych adresowych (reguła danych, ADR 0025): z szukania liczbę 
 części adresu, którymi ``Dane adresowe`` różnią się od ``ADRES``), z otwarcia zlecenia status i login realizatora wiersza
 listy, który okno otworzyło (okno nie czyta ich ze strony zlecenia), oraz ze strony zlecenia po otwarciu i po Wycenie
 Emmetta datę wykonania, kwotę i ilości wszystkich pozycji po kodach, z daty wykonania wybrany dzień i to, czy kalendarz
-go przyjął, a z pola „Ilość” kod pozycji, wpisaną ilość i kwotę końcową, którą odesłał efenix. Działanie, które się nie udało (wyjątek okna, np.
+go przyjął, z pola „Ilość” kod pozycji, wpisaną ilość i kwotę końcową, którą odesłał efenix, a z Przekazania do akceptacji
+sam rodzaj i czas (status po nim pokazuje następne szukanie). Działanie, które się nie udało (wyjątek okna, np.
 ``UnexpectedPage``, także Zatrzymanie z werdyktu Wyceny o Wycenie Emmetta, który biegnie w działaniu okna), nie trafia do udanych działań śladu, tylko do ``OrderTrace.failed`` z rodzajem i czasem do
 wyjątku, bo przebieg kończy się wtedy Zatrzymaniem, a Logi Uruchomienia mówią, przy którym działaniu.
 """
@@ -28,7 +29,7 @@ from .efenix_window import Efenix, EmmettLoad, ListedOrder, OrderPricing
 
 __all__ = ["Action", "OrderTrace", "TraceStep", "traced"]
 
-Action = Literal["szukanie", "otwarcie zlecenia", "data wykonania", "Wycena Emmetta", "ilość"]
+Action = Literal["szukanie", "otwarcie zlecenia", "data wykonania", "Wycena Emmetta", "ilość", "przekazanie do akceptacji"]
 
 
 @dataclass(frozen=True)
@@ -106,6 +107,10 @@ class _Traced:
         amount, at, duration_ms = self._done("ilość", lambda: self._efenix.enter_quantity(position, quantity))
         self._add(TraceStep("ilość", at, duration_ms, amount=amount, position=position, quantity=quantity))
         return amount
+
+    def forward_to_accept(self) -> None:
+        _, at, duration_ms = self._done("przekazanie do akceptacji", self._efenix.forward_to_accept)
+        self._add(TraceStep("przekazanie do akceptacji", at, duration_ms))
 
     def _done(self, action: Action, act: Callable[[], _T]) -> tuple[_T, datetime, int]:
         """Wynik działania ``act``, chwila jego rozpoczęcia i czas; działanie, które zgłosiło wyjątek, trafia do

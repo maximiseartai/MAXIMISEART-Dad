@@ -1,20 +1,21 @@
-"""Znaczniki efenix w Pliku zbiorczym: jedyny zapis, którym Wycena w efenix zmienia Plik zbiorczy.
+"""Znaczniki Wyceny w efenix w Pliku zbiorczym: jedyny zapis, którym Wycena w efenix zmienia Plik zbiorczy.
 
-Jedyną operacją jest ``mark_ready()``. Dostaje bajty Pliku zbiorczego z odczytu zakresu, kolumnę ``ADRES`` i numery
-wierszy gotowych zleceń. Komórka ``ADRES`` każdego z tych wierszy dostaje styl, który od jej dotychczasowego różni się
-tylko wypełnieniem: jednolitym w kolorze ``efenix_mark.MARK_RGB``. Zmieniają się tylko:
+Jedyną operacją jest ``mark_orders()``. Dostaje bajty Pliku zbiorczego z odczytu zakresu, kolumnę ``ADRES`` i Znacznik
+(``efenix_mark.Mark``) każdego wiersza: Znacznik efenix gotowego zlecenia albo Znacznik przekazania zlecenia przekazanego.
+Komórka ``ADRES`` każdego z tych wierszy, której Znacznik ``Mark.replaces`` dotychczasowy, dostaje styl, który od jej
+dotychczasowego różni się tylko wypełnieniem: jednolitym w kolorze swojego Znacznika. Zmieniają się tylko:
 
 - atrybut ``s`` tych komórek w XML arkusza, który czyta odczyt zakresu (aktywnego, ``activeTab``);
 - w ``xl/styles.xml`` listy ``fills`` i ``cellXfs``: wypełnienie Znacznika i każdy nowy styl komórki (kopia
-  dotychczasowego z innym ``fillId`` i ``applyFill="1"``) stoją na ich końcu. Wypełnienie Znacznika (``is_mark``) i styl,
+  dotychczasowego z innym ``fillId`` i ``applyFill="1"``) stoją na ich końcu. Wypełnienie Znacznika (``mark_of``) i styl,
   które plik już ma, np. z poprzedniego przebiegu, zapis bierze zamiast nowych.
 
 Każda inna część zip zostaje bajt w bajt, bez openpyxl: wartości policzone przez Excel, ``xl/externalLinks/*``,
-``xl/calcChain.xml``, szerokości kolumn i czcionka komórki ``ADRES``. Komórka, która ma już Znacznik, zostaje bez zmian, a
-gdy żadna się nie zmienia, plik nie jest zapisywany.
+``xl/calcChain.xml``, szerokości kolumn i czcionka komórki ``ADRES``. Komórka, która ma już ten Znacznik albo Znacznik
+przekazania, zostaje bez zmian, a gdy żadna się nie zmienia, plik nie jest zapisywany.
 
 Plik zbiorczy zmienia się tylko wtedy, gdy tuż przed zapisem są na dysku dalej bajty z odczytu zakresu i nie ma przy nim
-pliku blokady Excela, przez atomową podmianę (``workbook_save.write_atomically``). Gdy się nie zmienia, ``mark_ready``
+pliku blokady Excela, przez atomową podmianę (``workbook_save.write_atomically``). Gdy się nie zmienia, ``mark_orders``
 oddaje fakt ``Refusal``, a plik i jego folder są takie, jak były. Arkusz spoza kształtu ``SheetData``, gotowy wiersz bez
 komórki ``ADRES`` i styl, którego zapis nie umie skopiować, to ``UnsupportedShape``: Excel takiego pliku nie zapisuje,
 więc to błąd w kodzie, nie stan pliku taty.
@@ -24,7 +25,7 @@ from __future__ import annotations
 
 import re
 import zipfile
-from collections.abc import Collection
+from collections.abc import Mapping
 from enum import Enum
 from io import BytesIO
 from pathlib import Path
@@ -35,7 +36,7 @@ from xml.parsers import expat
 from openpyxl.styles.fills import Fill
 
 from . import workbook_files
-from .efenix_mark import MARK_RGB, is_mark
+from .efenix_mark import Mark, mark_of
 from .workbook_files import Problem, WorkbookError
 from .workbook_parts import (
     MAIN,
@@ -52,13 +53,18 @@ from .workbook_parts import (
 )
 from .workbook_save import SaveProblem, WorkbookSaveError, write_atomically
 
-__all__ = ["Refusal", "mark_ready"]
+__all__ = ["Refusal", "mark_orders"]
 
-_MARK_FILL: Final = (
-    b'<fill><patternFill patternType="solid"><fgColor rgb="FF' + MARK_RGB.encode("ascii") + b'"/>'
-    b'<bgColor indexed="64"/></patternFill></fill>'
-)
-"""Wypełnienie Znacznika tak, jak Excel taty zapisuje jednolite wypełnienie (``bgColor`` 64)."""
+
+def _mark_fill(mark: Mark) -> bytes:
+    """Wypełnienie Znacznika ``mark`` tak, jak Excel taty zapisuje jednolite wypełnienie (``bgColor`` 64)."""
+
+    return (
+        b'<fill><patternFill patternType="solid"><fgColor rgb="FF' + mark.value.encode("ascii") + b'"/>'
+        b'<bgColor indexed="64"/></patternFill></fill>'
+    )
+
+
 _STYLE: Final = re.compile(rb'\ss="(\d+)"')
 
 
@@ -74,14 +80,14 @@ class Refusal(Enum):
     podmiany (np. Excel albo OneDrive trzyma plik bez pliku blokady)."""
 
 
-def mark_ready(path: Path, content: bytes, column: str, rows: Collection[int]) -> Refusal | None:
-    """Stawia Znacznik efenix w komórce ``column`` (litera ``ADRES``) wierszy ``rows`` Pliku zbiorczego ``path``.
+def mark_orders(path: Path, content: bytes, column: str, marks: Mapping[int, Mark]) -> Refusal | None:
+    """Stawia w komórce ``column`` (litera ``ADRES``) każdego wiersza z ``marks`` Pliku zbiorczego ``path`` jego Znacznik.
 
-    ``content``: bajty pliku, z których pochodzą numery ``rows``. ``None``, gdy każda z tych komórek ma Znacznik w pliku na
-    dysku; inaczej ``Refusal``, a plik się nie zmienia.
+    ``content``: bajty pliku, z których pochodzą numery wierszy. ``None``, gdy każda z tych komórek ma swój Znacznik (albo
+    Znacznik przekazania) w pliku na dysku; inaczej ``Refusal``, a plik się nie zmienia.
     """
 
-    marked = _marked(content, column, rows)
+    marked = _marked(content, column, marks)
     if marked == content:
         return None
     try:
@@ -103,10 +109,10 @@ def mark_ready(path: Path, content: bytes, column: str, rows: Collection[int]) -
     return None
 
 
-def _marked(content: bytes, column: str, rows: Collection[int]) -> bytes:
-    """Bajty skoroszytu ``content`` ze Znacznikiem efenix w komórce ``column`` wierszy ``rows``."""
+def _marked(content: bytes, column: str, marks: Mapping[int, Mark]) -> bytes:
+    """Bajty skoroszytu ``content`` ze Znacznikiem z ``marks`` w komórce ``column`` jego wiersza."""
 
-    if not rows:
+    if not marks:
         return content
     with zipfile.ZipFile(BytesIO(content)) as archive:
         infos = archive.infolist()
@@ -120,7 +126,7 @@ def _marked(content: bytes, column: str, rows: Collection[int]) -> bytes:
         raise UnsupportedShape("style")
     sheet = active_sheet(parts, workbook)
     styles = _Styles(parts[styles_part])
-    marked = _marked_sheet(parts[sheet.part], column, rows, styles)
+    marked = _marked_sheet(parts[sheet.part], column, marks, styles)
     if marked == parts[sheet.part]:
         return content
     changed = {sheet.part: marked, styles_part: styles.xml()}
@@ -133,7 +139,7 @@ def _marked(content: bytes, column: str, rows: Collection[int]) -> bytes:
     return written.getvalue()
 
 
-def _marked_sheet(xml: bytes, column: str, rows: Collection[int], styles: _Styles) -> bytes:
+def _marked_sheet(xml: bytes, column: str, marks: Mapping[int, Mark], styles: _Styles) -> bytes:
     try:
         data = SheetData.of(xml)
     except IrregularSheetData as error:
@@ -141,7 +147,7 @@ def _marked_sheet(xml: bytes, column: str, rows: Collection[int], styles: _Style
     found = {row.number: row for row in data.rows}
     pieces: list[bytes] = []
     position = 0
-    for number in sorted(rows):
+    for number in sorted(marks):
         row = found.get(number)
         reference = column.encode("ascii") + b"%d" % number
         cell = None if row is None else re.compile(rb'<c r="' + reference + rb'"([^>]*?)(/?>)').search(xml, row.start, row.end)
@@ -150,7 +156,7 @@ def _marked_sheet(xml: bytes, column: str, rows: Collection[int], styles: _Style
         attributes = cell.group(1)
         style = _STYLE.search(attributes)
         old = int(style.group(1)) if style else 0
-        new = b' s="%d"' % styles.marked(old)
+        new = b' s="%d"' % styles.marked(old, marks[number])
         attributes = _STYLE.sub(new, attributes) if style else new + attributes
         pieces += [xml[position : cell.start()], b'<c r="' + reference + b'"' + attributes + cell.group(2)]
         position = cell.end()
@@ -164,35 +170,40 @@ class _Styles:
         self._xml = xml
         root = ElementTree.fromstring(xml)
         fills = [cast(Fill, Fill.from_tree(cast(Any, fill))) for fill in root.iterfind(f"{MAIN}fills/{MAIN}fill")]
-        self._marks = {index for index, fill in enumerate(fills) if is_mark(fill)}
+        self._marks = {index: mark for index, fill in enumerate(fills) if (mark := mark_of(fill)) is not None}
         self._fill_count = len(fills)
         self._fill_ids = [int(xf.get("fillId", "0")) for xf in root.iterfind(f"{MAIN}cellXfs/{MAIN}xf")]
         self._xfs = STYLE_XF.findall(style_list(xml, b"cellXfs").group(2))
         if len(self._xfs) != len(self._fill_ids):
             raise UnsupportedShape("cellXfs")
-        self._added_fill = False
+        self._added_fills: list[Mark] = []
         self._added_xfs: list[bytes] = []
 
-    def marked(self, style: int) -> int:
-        """Styl ``style`` z wypełnieniem Znacznika; ``style``, gdy już je ma."""
+    def marked(self, style: int, mark: Mark) -> int:
+        """Styl ``style`` z wypełnieniem Znacznika ``mark``; ``style``, gdy ``mark`` nie zastępuje jego Znacznika."""
 
         if style >= len(self._xfs):
             raise UnsupportedShape("styl komórki")
-        if self._fill_ids[style] in self._marks:
+        if not mark.replaces(self._marks.get(self._fill_ids[style])):
             return style
-        xf = with_style_attribute(self._xfs[style], b"fillId", self._mark_fill(), b"applyFill")
+        xf = with_style_attribute(self._xfs[style], b"fillId", self._mark_fill(mark), b"applyFill")
         known = [*self._xfs, *self._added_xfs]
         if xf not in known:
             self._added_xfs.append(xf)
             known.append(xf)
         return known.index(xf)
 
-    def _mark_fill(self) -> int:
-        if self._marks:
-            return min(self._marks)
-        self._added_fill = True
-        return self._fill_count
+    def _mark_fill(self, mark: Mark) -> int:
+        """Pierwsze wypełnienie Znacznika ``mark`` w pliku albo nowe na końcu listy ``fills``."""
+
+        known = [index for index, each in self._marks.items() if each is mark]
+        if known:
+            return min(known)
+        index = self._fill_count + len(self._added_fills)
+        self._added_fills.append(mark)
+        self._marks[index] = mark
+        return index
 
     def xml(self) -> bytes:
-        xml = appended(self._xml, b"fills", [_MARK_FILL] if self._added_fill else [], self._fill_count)
+        xml = appended(self._xml, b"fills", [_mark_fill(mark) for mark in self._added_fills], self._fill_count)
         return appended(xml, b"cellXfs", self._added_xfs, len(self._xfs))
