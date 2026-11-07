@@ -27,6 +27,7 @@ from tests.fixtures.potomne import beating, potomne
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
+import ciezkie_ci  # noqa: E402
 import mutacje  # noqa: E402
 import plan_ci  # noqa: E402
 from zakres_runu import Zdarzenie  # noqa: E402
@@ -176,7 +177,7 @@ def test_mutacja_z_oczekiwana_linia_jest_wykryta_tylko_gdy_bez_mutacji_jej_nie_m
 def test_bez_polecenia_po_myslnikach_narzedzie_odmawia_z_podpowiedzia() -> None:
     answered = _mutacje("--zmiana", *_appended(PACKAGE, "raise SystemExit(3)"))
 
-    hint = "podaj mutację (--zmiana albo --plik) i polecenie po --, np. -- -m pytest -q tests/test_x.py, albo --jak-ci"
+    hint = "podaj mutację (--zmiana albo --plik) i polecenie po --, np. -- -m pytest -q -n 0 tests/test_x.py -k nazwa_testu, albo --jak-ci"
     assert (answered.returncode, answered.stderr.splitlines()[-1].partition(": error: ")[2]) == (2, hint), answered.stdout
 
 
@@ -185,6 +186,84 @@ def test_pomoc_podaje_domyslna_galaz_bazy_regresu() -> None:
 
     assert answered.returncode == 0
     assert "--baza BAZA Gałąź, z której merge-base z HEAD daje REGRES i plan --jak-ci (domyślnie origin/main)." in " ".join(answered.stdout.split())
+
+
+# Tyle linii ``--help`` czytali agenci pierwszym poleceniem (``| head -40``) w 143 ze 185 sesji implementacji (retro 6.11).
+FIRST_PAGE = 40
+
+
+def test_pierwsza_strona_pomocy_ma_przepis_z_plikiem_json_ktory_narzedzie_przyjmuje(tmp_path: Path) -> None:
+    """Przepis (wywołania, pełny plik JSON, ``-n 0``, ``--baza``, limit mutacji) stoi w pierwszych ``FIRST_PAGE``
+    liniach ``--help``, a zasady werdyktów drukuje dopiero ``--zasady``."""
+
+    whole = _mutacje("--help").stdout
+    page = whole.splitlines()[:FIRST_PAGE]
+    rules = _mutacje("--zasady").stdout
+
+    start, end = page.index("    ["), page.index("    ]")
+    example = tmp_path / "mutacje.json"
+    example.write_text("\n".join(page[start : end + 1]), encoding="utf-8")
+    parsed = mutacje._from_file(example, ("-c", ""))
+    text = " ".join(" ".join(page).split())
+    assert [(mutation.name, len(mutation.edits), mutation.expected is not None) for mutation in parsed] == [("bez limitu", 1, False), ("dwa miejsca", 2, True)]
+    assert "--zmiana src/rozliczenia/x.py 'if n > LIMIT:' 'if False:' \\ -- -m pytest -q -n 0 tests/test_x.py -k nazwa_testu" in text
+    assert [phrase in text for phrase in ("``-p no:xdist`` pada", "``--baza``", f"najwyżej {ciezkie_ci.TARGETED} mutacji", "drukuje ``--zasady``")] == [True] * 4
+    assert ("pytest-timeout" in whole, "ZAWIESZENIE to test, który pytest-timeout skończył" in rules) == (False, True)
+
+
+@pytest.mark.parametrize(
+    ("entries", "problem"),
+    [
+        ({"nazwa": "m"}, "plik mutacji to lista, nie dict"),
+        ([{"nazwa": "m", "zmiana": [["a.py", "x", "y"]]}], "wpis 1 ma nieznany klucz 'zmiana'"),
+        ([{"nazwa": "m", "zmiany": [["a.py", "x"]]}], "wpis 1 ma zły albo brakujący klucz 'zmiany'"),
+        ([{"nazwa": "m", "zmiany": []}], "wpis 1 ma zły albo brakujący klucz 'zmiany'"),
+        ([{"nazwa": "m", "zmiany": [["a.py", "x", "y"]]}, {"nazwa": "n", "zmiany": [["a.py", "x", "y"]], "polecenie": "-c"}], "wpis 2 ma zły albo brakujący klucz 'polecenie'"),
+    ],
+    ids=["nie-lista", "nieznany-klucz", "zmiana-bez-zamiany", "zmiany-puste", "polecenie-tekstem"],
+)
+def test_plik_mutacji_innej_postaci_jest_odrzucony_z_postacia_pliku(tmp_path: Path, entries: object, problem: str) -> None:
+    plan = tmp_path / "mutacje.json"
+    plan.write_text(json.dumps(entries), encoding="utf-8")
+
+    answered = _mutacje("--plik", str(plan), "--", *IMPORT)
+
+    assert (answered.returncode, answered.stderr.splitlines()[-1].partition(": error: ")[2]) == (2, f"{plan}: {problem}; postać: {mutacje.FILE_SHAPE}")
+
+
+KOD_4 = (
+    "pytest nie uruchomił testu (kod 4): zła ścieżka, test albo opcja w poleceniu po -- "
+    "albo conftest.py, którego nie da się zaimportować; który, mówi koniec stderr niżej"
+)
+
+
+@pytest.mark.parametrize(
+    ("command", "cause"),
+    [
+        (("-m", "pytest", "-q", "-n", "0", "tests/test_ciezkie_ci.py", "-k", "nie_ma_takiego_testu"), "pytest nie wybrał żadnego testu (kod 5), więc popraw ścieżkę albo -k w poleceniu po --; to błąd polecenia, nie kodu"),
+        (("-m", "pytest", "-q", "-p", "no:xdist", "tests/test_ciezkie_ci.py"), "pytest odrzucił -p no:xdist (kod 4), bo addopts w pyproject.toml ma --dist, więc zamiast niego daj -n 0 w poleceniu po --"),
+        (("-m", "pytest", "-q", "-n", "0", "tests/test_nie_ma_takiego_pliku.py"), KOD_4),
+        (("-m", "pytest", "-q", "-n", "0", "tests/test_ciezkie_ci.py::nie_ma_takiego_testu"), KOD_4),
+        (("-c", "raise SystemExit(5)"), None),
+    ],
+    ids=["nic-nie-wybrane", "bez-xdist", "brak-pliku", "brak-testu-node-id", "nie-pytest-z-kodem-5"],
+)
+def test_podstawa_pytest_bez_testu_podaje_przyczyne(command: tuple[str, ...], cause: str | None) -> None:
+    answered = _mutacje("--zmiana", *_appended(PACKAGE, ""), "--", *command)
+
+    lines = answered.stdout.splitlines()
+    expected = [f"PODSTAWA BEZ TESTU: {cause}"] if cause else []
+    assert (answered.returncode, lines[0].startswith("PODSTAWA CZERWONA: "), lines[1:-1]) == (2, True, expected), answered.stdout
+
+
+def test_podstawa_z_conftest_ktorego_nie_da_sie_zaimportowac_nie_jest_nazwana_bledem_polecenia(tmp_path: Path) -> None:
+    (tmp_path / "conftest.py").write_text('raise NameError("zepsuty")\n', encoding="utf-8")
+    (tmp_path / "test_a.py").write_text("def test_a() -> None:\n    pass\n", encoding="utf-8")
+
+    answered = _mutacje("--zmiana", *_appended(PACKAGE, ""), "--", "-m", "pytest", "-q", "-n", "0", str(tmp_path / "test_a.py"))
+
+    lines = answered.stdout.splitlines()
+    assert (answered.returncode, lines[0].startswith("PODSTAWA CZERWONA: "), [line for line in lines if "BEZ TESTU" in line]) == (2, True, [f"PODSTAWA BEZ TESTU: {KOD_4}"]), answered.stdout
 
 
 def test_pusta_lista_mutacji_niczego_nie_dowodzi() -> None:
@@ -503,6 +582,41 @@ def test_mutacja_niewykryta_na_head_a_wykryta_na_merge_base_daje_regres(
 
     expected = line.format(base=forked[:8])
     assert (answered.returncode, answered.stdout.splitlines()) == (1, [expected, "MUTACJE: 1 bez oczekiwanego wyniku"]), answered.stderr
+
+
+OLD_TEST = "def test_stary():\n    pass\n"
+NOWY_TEST_NA_BAZIE = "polecenie bez testu, więc test jest nowy i REGRES nie dotyczy"
+KOD_4_NA_BAZIE = "pytest nie uruchomił testu (kod 4: test albo plik nowy, zła ścieżka albo opcja, albo zepsuty conftest.py), więc REGRES nie dotyczy"
+NEW_TEST = "import rozliczenia\n\n\ndef test_nowy():\n    assert rozliczenia.WARTOSC < 5\n"
+
+
+@pytest.mark.parametrize(
+    ("base", "selected", "there", "why"),
+    [
+        ({}, (), r"no tests ran", KOD_4_NA_BAZIE),
+        ({"tests/test_n.py": OLD_TEST}, ("-k", "test_nowy"), r"1 deselected", NOWY_TEST_NA_BAZIE),
+        ({"tests/test_n.py": OLD_TEST}, ("::test_nowy",), r"no tests ran", KOD_4_NA_BAZIE),
+    ],
+    ids=["nowy-plik-testow", "nowy-test-w-pliku", "nowy-test-przez-node-id"],
+)
+def test_niewykryta_z_testem_ktorego_nie_ma_na_merge_base_mowi_ze_regres_nie_dotyczy(
+    tmp_path: Path, base: dict[str, str], selected: tuple[str, ...], there: str, why: str
+) -> None:
+    """Nowy test, którego mutacja przeżyła: na merge-base pytest nie ma czego uruchomić, a to nie czerwona podstawa."""
+
+    repo = repository(tmp_path / "repo", {PACKAGE: "WARTOSC = 0\n", ".gitignore": "__pycache__/\n", **base})
+    forked = commit(repo, "baza")
+    git(repo, "branch", "glowna")
+    (repo / "tests" / "test_n.py").parent.mkdir(exist_ok=True)
+    (repo / "tests" / "test_n.py").write_text(f"{base.get('tests/test_n.py', '')}\n\n{NEW_TEST}", encoding="utf-8")
+    commit(repo, "nowy test")
+    node = ("tests/test_n.py" + selected[0],) if selected[:1] == ("::test_nowy",) else ("tests/test_n.py", *selected)
+    pytest_command = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", *node)
+
+    answered = _in_repository(repo, "--baza", "glowna", "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 1", "--", *pytest_command)
+
+    note = rf"\(na merge-base {forked[:8]} {re.escape(why)}: {there} in [0-9.]+s\)"
+    assert re.fullmatch(rf"NIEWYKRYTA: mutacja → 1 passed[^(]* in [0-9.]+s {note}", answered.stdout.splitlines()[0]), answered.stdout + answered.stderr
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="SIGINT do jednego procesu jest sygnałem POSIX")
