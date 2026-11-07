@@ -120,6 +120,7 @@ from .efenix_pricing import (
     Shape,
     UnexpectedPage,
     WindowClosed,
+    WindowStop,
 )
 
 __all__ = [
@@ -253,22 +254,39 @@ def _action(
     lista typów: Playwright zgłasza wtedy błąd, a granica mogła go już zamienić na ``UnexpectedPage`` albo
     ``open_list`` na ``EfenixUnreachable``. O zamknięciu mówi ``BrowserEfenix.closed``, które po jednym pytaniu
     przeglądarki zna zamknięcie karty także wtedy, gdy błąd nawigacji wyprzedził wiadomość Playwrighta o nim.
+
+    Wyjątek okna (``WindowStop``) z działania ma ``sent``, gdy działanie przed nim kliknęło przycisk zmiany zlecenia
+    (``BrowserEfenix._answer``), także w działaniu, które woła inne działanie okna.
     """
 
     def decorate(action: Callable[Concatenate[BrowserEfenix, _P], _R]) -> Callable[Concatenate[BrowserEfenix, _P], _R]:
         @functools.wraps(action)
         def guarded(efenix: BrowserEfenix, /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
-            try:
-                with _within(part):
-                    return action(efenix, *args, **kwargs)
-            except Exception as error:
-                if efenix.closed and not isinstance(error, WindowClosed):
-                    raise WindowClosed(part, Closed.DURING_ACTION) from error
-                raise
+            with _sent(efenix):
+                try:
+                    with _within(part):
+                        return action(efenix, *args, **kwargs)
+                except Exception as error:
+                    if efenix.closed and not isinstance(error, WindowClosed):
+                        raise WindowClosed(part, Closed.DURING_ACTION) from error
+                    raise
 
         return guarded
 
     return decorate
+
+
+@contextmanager
+def _sent(efenix: BrowserEfenix) -> Iterator[None]:
+    """Wyjątek okna (``WindowStop``) z bloku ma ``sent``, gdy okno kliknęło w nim przycisk zmiany zlecenia
+    (``BrowserEfenix._answer``)."""
+
+    answers = efenix._answers
+    try:
+        yield
+    except WindowStop as stop:
+        stop.sent = efenix._answers > answers
+        raise
 
 
 @dataclass(frozen=True)
@@ -352,14 +370,9 @@ class BrowserEfenix:
         self._url = url
         self._timeout_ms = timeout_ms
         self._positions: dict[str, str] = {}
-        self._sent_change = False
+        # Ile razy okno kliknęło przycisk, który wysyła do efenix zmianę zlecenia (``_answer``).
+        self._answers = 0
         self._opened = False
-
-    @property
-    def sent_change(self) -> bool:
-        """Okno kliknęło już „Potwierdź” daty, „Załaduj do zlecenia” albo Enter w polu „Ilość”."""
-
-        return self._sent_change
 
     @property
     def closed(self) -> bool:
@@ -649,7 +662,7 @@ class BrowserEfenix:
     def _answer(self, path: str, wanted: Callable[[dict[str, list[str]]], bool], act: Callable[[], None]) -> Response:
         """Odpowiedź efenix na zmianę zlecenia, którą wysyła ``act``."""
 
-        self._sent_change = True
+        self._answers += 1
         return self._finished(lambda request: _is_post(request, path) and wanted(_form(request)), act)
 
     def _finished(self, wanted: Callable[[Request], bool], act: Callable[[], None]) -> Response:

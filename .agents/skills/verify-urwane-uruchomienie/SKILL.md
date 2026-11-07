@@ -150,8 +150,11 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `fa352a225` (2026-11-07, candidate 8 of the architecture review of 6.11, part 1, review round 2). Every
-row of the table was checked against the code at this commit. Since the Sync commit `7cfe46274` only `LogsOnDisk.logs`
+Sync commit: `68aafac28` (2026-11-07, candidate 4 of the architecture review of 6.11, the window without
+`sent_change`). Every row of the table was checked against the code at this commit. Since the Sync commit `fa352a225`
+only `save` changed: the Komunikat of a Zatrzymanie asks `_kept` with the results and the trace of the current order
+instead of the window's `sent_change`, and `journal.begun` and `journal.ended` kept their place, so no action changed.
+On the previous Sync commit `fa352a225`, since the Sync commit `7cfe46274` only `LogsOnDisk.logs`
 and `_names` changed: listing the Logs folder fails with `Refused` instead of reading as no Logs file, unless the folder
 is missing, and an identifier that Centrum does not give (`_RUN_ID`) is `Missing` without the disk; `_closed` raises
 `Refused` again as before, so the read failure in `Czytaj` (`awarieOdczytu`) now also stands for a folder the system
