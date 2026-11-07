@@ -23,9 +23,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Final
+from typing import Final, TypeVar
 
-from .efenix_window import Efenix, EmmettLoad, ListedOrder, OrderPricing
+from .efenix_window import Efenix, EmmettLoad, ListedOrder, OrderPricing, WindowAction
 
 __all__ = ["ACTION_PAUSE_S", "KEEPALIVE_S", "ORDER_S", "Pace", "Pacing"]
 
@@ -40,6 +40,8 @@ KEEPALIVE_S: Final = 15.0
 Po ilu minutach bezczynności efenix wylogowuje, nie wiadomo. Zakładamy ostrożnie, że już po 3 minutach (zwykła sesja PHP
 wygasa po 24). 15 s to „ruch co kilkanaście sekund” ze specyfikacji #741 i dwunastokrotny zapas do tych 3 minut.
 """
+
+_T = TypeVar("_T")
 
 
 @dataclass(frozen=True)
@@ -90,25 +92,28 @@ class _PacedEfenix:
         self._searched: float | None = None
 
     def search(self, number: str) -> Sequence[ListedOrder]:
-        if self._searched is None:
-            self._searched = self._pacing.before_search()
-        return self._efenix.search(number)
+        return self._paced(WindowAction.SEARCH, lambda: self._efenix.search(number))
 
     def open_order(self, order: ListedOrder) -> OrderPricing:
-        return self._efenix.open_order(order)
+        return self._paced(WindowAction.OPEN, lambda: self._efenix.open_order(order))
 
     def set_execution_date(self, day: date) -> bool:
-        self._pacing.before_write(self._searched)
-        return self._efenix.set_execution_date(day)
+        return self._paced(WindowAction.DATE, lambda: self._efenix.set_execution_date(day))
 
     def load_emmett(self, verdict: Callable[[EmmettLoad], OrderPricing]) -> OrderPricing:
-        self._pacing.before_write(self._searched)
-        return self._efenix.load_emmett(verdict)
+        return self._paced(WindowAction.EMMETT, lambda: self._efenix.load_emmett(verdict))
 
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
-        self._pacing.before_write(self._searched)
-        return self._efenix.enter_quantity(position, quantity)
+        return self._paced(WindowAction.QUANTITY, lambda: self._efenix.enter_quantity(position, quantity))
 
     def forward_to_accept(self) -> None:
-        self._pacing.before_write(self._searched)
-        self._efenix.forward_to_accept()
+        self._paced(WindowAction.FORWARD, self._efenix.forward_to_accept)
+
+    def _paced(self, action: WindowAction, act: Callable[[], _T]) -> _T:
+        """Działanie ``act`` po przerwie: przed zapisem (``WindowAction.writes``) i przed pierwszym szukaniem zlecenia."""
+
+        if action.writes:
+            self._pacing.before_write(self._searched)
+        elif action is WindowAction.SEARCH and self._searched is None:
+            self._searched = self._pacing.before_search()
+        return act()

@@ -76,6 +76,7 @@ from rozliczenia.efenix_window import (
     PagePart,
     Shape,
     UnexpectedPage,
+    WindowAction,
     WindowCause,
 )
 from rozliczenia.efenix_marking import mark_orders
@@ -965,10 +966,10 @@ def test_w_trybie_z_przekazaniem_gotowe_zlecenie_jest_przekazane_do_akceptacji_z
     assert _address_fills(source) == {18: FORWARDED_RGB, 19: None, 20: None, 21: FORWARDED_RGB}
     assert outcome.view is not None
     assert [[step.action for step in result.steps] for result in outcome.view.results] == [
-        ["szukanie", "otwarcie zlecenia", "przekazanie do akceptacji", "szukanie"],
-        ["szukanie", "otwarcie zlecenia"],
-        ["szukanie", "otwarcie zlecenia"],
-        ["szukanie"],
+        [WindowAction.SEARCH, WindowAction.OPEN, WindowAction.FORWARD, WindowAction.SEARCH],
+        [WindowAction.SEARCH, WindowAction.OPEN],
+        [WindowAction.SEARCH, WindowAction.OPEN],
+        [WindowAction.SEARCH],
     ]
 
 
@@ -1290,23 +1291,23 @@ TIMEOUT = "playwright._impl._errors.TimeoutError"
 # Część strony, której zabrakło przy każdej zmianie budowy Atrapy (lista, tabela wyników, strona zlecenia, okno daty
 # wykonania, Emmett albo kwota), przyczyna techniczna z tabeli decyzji (``tests/test_tabela_zatrzyman_efenix.py``) i działanie
 # okna, które się nie udało.
-CHANGED: dict[Changed, tuple[PagePart, WindowCause, str]] = {
-    Changed.STATUS_HEADER: (PagePart.RESULTS, OtherShape(Shape.COLUMNS), "szukanie"),
-    Changed.ORDER_LINK: (PagePart.RESULTS, OtherShape(Shape.ROW_CELLS), "szukanie"),
-    Changed.RESULTS_WARNING: (PagePart.RESULTS, OtherShape(Shape.NO_TABLE), "szukanie"),
-    Changed.DATE_FORMAT: (PagePart.ORDER, OtherShape(Shape.DATE_TEXT), "otwarcie zlecenia"),
-    Changed.DATE_DIGITS: (PagePart.ORDER, OtherShape(Shape.DATE_TEXT), "otwarcie zlecenia"),
-    Changed.SIGNED_AMOUNT: (PagePart.ORDER, OtherShape(Shape.AMOUNT_TEXT), "otwarcie zlecenia"),
-    Changed.DATE_DIALOG: (PagePart.DATE, BrowserFailure(TIMEOUT, Operation.ELEMENT), "data wykonania"),
-    Changed.EMMETT_BUTTON: (PagePart.EMMETT, ElementCount("#button_emmett", 0), "Wycena Emmetta"),
-    Changed.HIDDEN_EMMETT: (PagePart.EMMETT, BrowserFailure(TIMEOUT, Operation.CLICK), "Wycena Emmetta"),
-    Changed.STALE_AMOUNT: (PagePart.QUANTITY, BrowserFailure(TIMEOUT, Operation.AMOUNT), "ilość"),
-    Changed.QUANTITY_ANSWER: (PagePart.QUANTITY, OtherShape(Shape.ANSWER_NOT_JSON, "012"), "ilość"),
-    Changed.QUANTITY_RESULT: (PagePart.QUANTITY, OtherShape(Shape.ANSWER_RESULT, "012"), "ilość"),
-    Changed.QUANTITY_VALUE: (PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, "012"), "otwarcie zlecenia"),
-    Changed.SECOND_NUMBER_FIELD: (PagePart.LIST, ElementCount("#field_numer", 2), "szukanie"),
-    Changed.NUMBER_FIELD_GONE: (PagePart.LIST, ElementCount("#field_numer", 0), "szukanie"),
-    Changed.SECOND_EMMETT_DIALOG: (PagePart.EMMETT, ElementCount("#dialog_emmett", 2), "Wycena Emmetta"),
+CHANGED: dict[Changed, tuple[PagePart, WindowCause, WindowAction]] = {
+    Changed.STATUS_HEADER: (PagePart.RESULTS, OtherShape(Shape.COLUMNS), WindowAction.SEARCH),
+    Changed.ORDER_LINK: (PagePart.RESULTS, OtherShape(Shape.ROW_CELLS), WindowAction.SEARCH),
+    Changed.RESULTS_WARNING: (PagePart.RESULTS, OtherShape(Shape.NO_TABLE), WindowAction.SEARCH),
+    Changed.DATE_FORMAT: (PagePart.ORDER, OtherShape(Shape.DATE_TEXT), WindowAction.OPEN),
+    Changed.DATE_DIGITS: (PagePart.ORDER, OtherShape(Shape.DATE_TEXT), WindowAction.OPEN),
+    Changed.SIGNED_AMOUNT: (PagePart.ORDER, OtherShape(Shape.AMOUNT_TEXT), WindowAction.OPEN),
+    Changed.DATE_DIALOG: (PagePart.DATE, BrowserFailure(TIMEOUT, Operation.ELEMENT), WindowAction.DATE),
+    Changed.EMMETT_BUTTON: (PagePart.EMMETT, ElementCount("#button_emmett", 0), WindowAction.EMMETT),
+    Changed.HIDDEN_EMMETT: (PagePart.EMMETT, BrowserFailure(TIMEOUT, Operation.CLICK), WindowAction.EMMETT),
+    Changed.STALE_AMOUNT: (PagePart.QUANTITY, BrowserFailure(TIMEOUT, Operation.AMOUNT), WindowAction.QUANTITY),
+    Changed.QUANTITY_ANSWER: (PagePart.QUANTITY, OtherShape(Shape.ANSWER_NOT_JSON, "012"), WindowAction.QUANTITY),
+    Changed.QUANTITY_RESULT: (PagePart.QUANTITY, OtherShape(Shape.ANSWER_RESULT, "012"), WindowAction.QUANTITY),
+    Changed.QUANTITY_VALUE: (PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, "012"), WindowAction.OPEN),
+    Changed.SECOND_NUMBER_FIELD: (PagePart.LIST, ElementCount("#field_numer", 2), WindowAction.SEARCH),
+    Changed.NUMBER_FIELD_GONE: (PagePart.LIST, ElementCount("#field_numer", 0), WindowAction.SEARCH),
+    Changed.SECOND_EMMETT_DIALOG: (PagePart.EMMETT, ElementCount("#dialog_emmett", 2), WindowAction.EMMETT),
 }
 
 
@@ -2565,8 +2566,8 @@ def test_odmowa_zaladuj_do_zlecenia_zatrzymuje_wycene_bez_znacznika_i_sladu_a_po
     assert (_stop(stopped), _kept(stopped), facts.part, facts.cause) == (code, True, PagePart.EMMETT, cause)
     assert facts.stopped_at is not None and facts.stopped_at.failed is not None, facts.stopped_at
     assert ([step.action for step in facts.stopped_at.steps], facts.stopped_at.failed.action) == (
-        ["szukanie", "otwarcie zlecenia", "data wykonania", "otwarcie zlecenia"],
-        "Wycena Emmetta",
+        [WindowAction.SEARCH, WindowAction.OPEN, WindowAction.DATE, WindowAction.OPEN],
+        WindowAction.EMMETT,
     )
     assert (refused, marked) == (({"019": 5} if loaded else {}, date(2026, 9, 2), int(loaded)), [18])
     assert (_errors(again), _marked(source)) == ([("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 19")], [18])
@@ -2644,7 +2645,7 @@ def test_odmowa_zaladuj_do_zlecenia_w_tempie_ludzkim_jako_pierwsza_zmiana_zatrzy
         "EFENIX_OKNO_ZATRZYMANE",
         PagePart.EMMETT,
         OtherShape(Shape.EMMETT_NOT_LOADED),
-        ["szukanie", "otwarcie zlecenia"],
+        [WindowAction.SEARCH, WindowAction.OPEN],
         True,
     )
     assert (pricing, _marked(source)) == ({"9741": ({}, DAY, 0)}, [])
@@ -2997,7 +2998,8 @@ def test_chromium_skryptu_dla_maszyn_ktory_nie_wystartowal_zatrzymuje_wycene_jak
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Chromium Playwrighta, którego nie ma na komputerze, to w oknie Skryptu dla maszyn (``chromium``) ta sama droga startu
-    co w oknie taty (``chrome``): Zatrzymanie z Komunikatem o przeglądarce, a nie nieoczekiwany wyjątek (#976)."""
+    co w oknie taty (``chrome``): Zatrzymanie z Komunikatem o przeglądarce, a nie nieoczekiwany wyjątek (#976), a Logi
+    Uruchomienia nazywają start przeglądarki, nie start sterownika Playwrighta."""
 
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "bez-przegladarek"))
     source = write_collective_file(tmp_path / "bez-chromium", [Order("#5501", cells={"O": 1}, amount=_au({"012": 1}))])
@@ -3006,6 +3008,9 @@ def test_chromium_skryptu_dla_maszyn_ktory_nie_wystartowal_zatrzymuje_wycene_jak
         outcome = own_thread.submit(_run_with, source, lambda _login: efenix_browser.chromium("http://127.0.0.1:9/")).result()
 
     assert (_stop(outcome), _kept(outcome)) == ("EFENIX_BRAK_PRZEGLADARKI", False)
+    assert isinstance(outcome.ending, Stop) and isinstance(outcome.ending.facts, PricingStopped), _ending(outcome)
+    cause = outcome.ending.facts.cause
+    assert isinstance(cause, BrowserFailure) and cause.operation is Operation.START, cause
 
 
 def test_okno_taty_otwiera_liste_zlecen_w_jedynej_karcie_przegladarki(tmp_path: Path) -> None:
@@ -3291,8 +3296,8 @@ def test_slad_zlecenia_ma_chwile_rozpoczecia_kazdego_dzialania_okna_efenix_takze
         window.open_order(listed)
 
     read = ListedRead(same_number=True, status="Nowe", realizator=None, address=(AddressPart.EFENIX_UNREAD,))
-    assert trace.steps == [efenix_trace.TraceStep("szukanie", _TRACE_START + timedelta(seconds=1), 3000, found=1, results=(read,))]
-    assert trace.failed == efenix_trace.TraceStep("otwarcie zlecenia", _TRACE_START + timedelta(seconds=5), 3000)
+    assert trace.steps == [efenix_trace.TraceStep(WindowAction.SEARCH, _TRACE_START + timedelta(seconds=1), 3000, found=1, results=(read,))]
+    assert trace.failed == efenix_trace.TraceStep(WindowAction.OPEN, _TRACE_START + timedelta(seconds=5), 3000)
 
 
 # --- Zgaśnięcie Centrum w przerwie tempa ludzkiego (#881) ----------------------------------------------------------------

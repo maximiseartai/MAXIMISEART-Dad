@@ -55,6 +55,7 @@ from rozliczenia.centrum.run_logs import (
 from rozliczenia.centrum.report_box import Unreachable
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
+from rozliczenia.efenix_window import WindowAction
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.input_checks import FILE_READERS, read_register, register_problem
 from rozliczenia.period_folder import PeriodFolderInaccessible
@@ -2498,7 +2499,7 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
         started_at=utc("2026-09-16T10:15:00+00:00"),
     )
     step = LoggedStep(
-        action="otwarcie zlecenia",
+        action=WindowAction.OPEN,
         duration_ms=120,
         found=None,
         execution_date=None,

@@ -47,9 +47,9 @@ from rozliczenia.efenix_window import (
     OtherShape,
     PagePart,
     Proposal,
+    SentChanges,
     Shape,
     UnexpectedPage,
-    WindowStop,
 )
 
 _P = ParamSpec("_P")
@@ -66,17 +66,12 @@ _LOGIN = re.compile(r"[^()\s]+")
 
 
 def _action(action: Callable[Concatenate[OknoWProcesie[_O], _P], _R]) -> Callable[Concatenate[OknoWProcesie[_O], _P], _R]:
-    """Działanie okna: wyjątek okna (``WindowStop``) z niego ma ``sent``, gdy działanie przed nim kliknęło przycisk
-    zmiany zlecenia (``OknoWProcesie._send``), jak ``efenix_browser._action``."""
+    """Działanie okna: wyjątek okna z niego ma ``WindowStop.sent`` (``SentChanges``), jak ``efenix_browser._action``."""
 
     @functools.wraps(action)
     def guarded(okno: OknoWProcesie[_O], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
-        okno._sent = False
-        try:
+        with okno._sent.action():
             return action(okno, *args, **kwargs)
-        except WindowStop as stop:
-            stop.sent = okno._sent
-            raise
 
     return guarded
 
@@ -86,7 +81,7 @@ class OknoWProcesie(Generic[_O]):
 
     def __init__(self, stan: StanEfenix[_O]) -> None:
         self._stan = stan
-        self._sent = False
+        self._sent = SentChanges()
         # Otwarte zlecenie i kody pozycji z polem Ilość na jego ostatnio przeczytanej stronie; ``None``: okno stoi na
         # liście zleceń.
         self._opened: str | None = None
@@ -119,7 +114,7 @@ class OknoWProcesie(Generic[_O]):
 
         if calendar_day(self._stan.today, day) != day:
             return False
-        self._send()
+        self._sent.send()
         saved = self._stan.serwer.set_date(self._order_id(), day.isoformat())
         if isinstance(saved, NoSession):
             raise LoggedOut(PagePart.DATE, LoginSign.REDIRECT)
@@ -145,7 +140,7 @@ class OknoWProcesie(Generic[_O]):
             shown = Proposal.LOST
         else:
             shown = Proposal.SHOWN if proposed.emmett else Proposal.NOTHING
-        self._send()
+        self._sent.send()
         refusal = self._stan.serwer.load_emmett(order_id)
         match refusal:
             case NoSession() | EmmettRefusal.LOGGED_OUT:
@@ -168,7 +163,7 @@ class OknoWProcesie(Generic[_O]):
 
         if position not in self._positions:
             raise UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.UNKNOWN_POSITION, position))
-        self._send()
+        self._sent.send()
         saved = self._stan.serwer.save_quantity(self._order_id(), position, quantity)
         if isinstance(saved, NoOrder):
             raise UnexpectedPage(PagePart.QUANTITY, _NO_ORDER)
@@ -181,7 +176,7 @@ class OknoWProcesie(Generic[_O]):
         """Przekazanie do akceptacji otwartego zlecenia: zmiana statusu na „Do akceptacji” i strona zlecenia od nowa, jak
         przeładowanie, na które czeka okno przeglądarki; bez sesji przekierowanie na stronę logowania."""
 
-        self._send()
+        self._sent.send()
         order_id = self._order_id()
         changed = self._stan.serwer.change_status(order_id, _FORWARDED)
         if isinstance(changed, NoSession):
@@ -190,11 +185,6 @@ class OknoWProcesie(Generic[_O]):
             raise UnexpectedPage(PagePart.FORWARD, _NO_ORDER)
         if isinstance(self._stan.serwer.page(order_id), NoSession):
             raise LoggedOut(PagePart.FORWARD, LoginSign.PAGE)
-
-    def _send(self) -> None:
-        """Okno klika przycisk, który wysyła do efenix zmianę zlecenia."""
-
-        self._sent = True
 
     def _order_id(self) -> str:
         assert self._opened is not None, "działanie przy zleceniu po open_order"
