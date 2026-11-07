@@ -25,9 +25,9 @@ identyfikatorem, zmienia komentarz swojego Uruchomienia, a starszy plik, który 
 nieczytelny), niczego w issue nie zmienia ani nie dopisuje. Plik, gdy przejście odczytało plik nowszej wersji tej samej
 wysyłki (ten sam cel i ``run_id``, ``_superseded``), także zapisany przed nim, kolejka oznacza znacznikiem
 dostarczenia i usuwa bez wysyłania, bo Skrzynce należy się nowsza: bez sieci w kolejce zostaje tylko najnowszy postęp
-Wyceny w efenix (#846, ``pricing_progress``) i tylko Logi z ostatnią Diagnozą. Chwila i numer porządkują tylko wersje
+Wyceny w efenix (#846, ``run_comments``) i tylko Logi z ostatnią Diagnozą. Chwila i numer porządkują tylko wersje
 jednego stopnia, a te powstają w jednej pracy Centrum (Diagnozę ma tylko ostatnie Uruchomienie tej pracy,
-``run_logs``, a postęp tylko trwające), w której wersja rośnie z każdą wysyłką, także gdy zegar komputera się cofnie
+``run_comments``, a postęp tylko trwające), w której wersja rośnie z każdą wysyłką, także gdy zegar komputera się cofnie
 (``Outbox.post``), albo są wersjami zastępczymi jednego dziennika Wyceny z kolejnych startów. Wersja zastępcza z
 następnej pracy Centrum (Logi Urwanego Uruchomienia, wynik bez Logów) jest więc nowsza od każdego postępu, a starsza od
 Logów z wynikiem, choć zegar komputera mógł się cofnąć. Treści issue kolejka nigdy nie zmienia.

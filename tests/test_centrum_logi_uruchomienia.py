@@ -39,7 +39,7 @@ from rozliczenia.centrum.comment_versions import ProgressVersion, post_of, progr
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.logs_disk import EndEntry, Journal, LogsOnDisk, name_of
-from rozliczenia.centrum.pricing_progress import PROGRESS_S
+from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker
 from rozliczenia.centrum.run_logs import (
     Environment,
     LoggedInterruption,
@@ -48,7 +48,6 @@ from rozliczenia.centrum.run_logs import (
     OrderDone,
     PricingProgress,
     RunLog,
-    RunLogs,
     StartFacts,
     Tool,
     guard_text,
@@ -3471,7 +3470,7 @@ def test_wpis_konca_ktory_sie_nie_zapisal_zostawia_dziennik_do_przyjecia_logow_z
 ) -> None:
     """Każdy wpis Wyceny w efenix się zapisuje oprócz wpisu końca, bo po rekordzie metryk antywirus trzyma dziennik, a
     pliku Logów nie ma (katalog Logów zajęty przez plik). Kolejka wysyłki przyjmuje Logi z wynikiem, więc dziennik bez
-    wpisu końca znika za nimi (``JournalAfterLogs``), z jedną linią dziennika Centrum, a następny start nie robi z Wyceny
+    wpisu końca znika za nimi (``RunComments.run_ended``), z jedną linią dziennika Centrum, a następny start nie robi z Wyceny
     Urwanego Uruchomienia i w Skrzynce zostają Logi z wynikiem."""
 
     blocked = tmp_path / "logs" / "uruchomienia"
@@ -3716,6 +3715,27 @@ def test_wpis_konca_dziennika_z_pierwsza_linia_niesie_wynik_a_dziennik_bez_niej_
     assert ends == ([EndEntry("WYMAGA_SPRAWDZENIA")] if confirmed else [])
 
 
+def held_before_removal(monkeypatch: pytest.MonkeyPatch) -> tuple[threading.Event, threading.Event]:
+    """Usunięcie dziennika Wyceny za Logami z wynikiem (``Journal.remove``, ostatni krok ``RunComments.run_ended``) czeka,
+    aż test je puści: ponowny start Centrum w tym czasie to Centrum zgaszone zaraz po wysyłce Logów z wynikiem do
+    kolejki, przed usunięciem dziennika. Daje parę (doszło, puść)."""
+
+    reached, released = threading.Event(), threading.Event()
+    remove = Journal.remove
+
+    def held(journal: Journal, run_id: str) -> None:
+        reached.set()
+        released.wait()
+        remove(journal, run_id)
+
+    monkeypatch.setattr(Journal, "remove", held)
+    return reached, released
+
+
+class SwitchedOffAfterRelease(Exception):
+    """Wątek Uruchomienia w Centrum, które test uznał za zgaszone: po puszczeniu kończy się bez Logów z wynikiem."""
+
+
 def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie_zastepuje_ich_logami_urwanego_uruchomienia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3728,17 +3748,7 @@ def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie
     blocked = tmp_path / "logs" / "uruchomienia"
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
-    reached, released = threading.Event(), threading.Event()
-    keep = RunLogs.run_ended
-
-    def held_after(self: RunLogs, run: Any) -> None:
-        try:
-            keep(self, run)  # rzuca OSError po wysyłce do kolejki: pliku Logów nie da się zapisać
-        finally:
-            reached.set()
-            released.wait()
-
-    monkeypatch.setattr(RunLogs, "run_ended", held_after)
+    reached, released = held_before_removal(monkeypatch)
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
         (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
@@ -3776,17 +3786,7 @@ def test_bez_sieci_logi_z_wynikiem_zgaszonej_wyceny_w_efenix_czekaja_w_kolejce_p
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
     queue = tmp_path / "config" / "zgloszenia" / "kolejka"
-    reached, released = threading.Event(), threading.Event()
-    keep = RunLogs.run_ended
-
-    def held_after(self: RunLogs, run: Any) -> None:
-        try:
-            keep(self, run)  # rzuca OSError po wysyłce do kolejki: pliku Logów nie da się zapisać
-        finally:
-            reached.set()
-            released.wait()
-
-    monkeypatch.setattr(RunLogs, "run_ended", held_after)
+    reached, released = held_before_removal(monkeypatch)
     surroundings = Surroundings()
     box = surroundings.report_box
     box.background = frozenset()
@@ -3833,11 +3833,12 @@ def test_centrum_zgaszone_po_wpisie_konca_a_przed_logami_z_wynikiem_konczy_komen
 
     reached, released = threading.Event(), threading.Event()
 
-    def switched_off(self: RunLogs, run: Any) -> None:  # Centrum gaśnie: Logi z wynikiem nie powstają
+    def switched_off(records: RecordMaker, run: Any) -> NoReturn:  # Centrum gaśnie: Logi z wynikiem nie powstają
         reached.set()
         released.wait()
+        raise SwitchedOffAfterRelease
 
-    monkeypatch.setattr(RunLogs, "run_ended", switched_off)
+    monkeypatch.setattr(RecordMaker, "of", switched_off)
     with pricing(tmp_path) as (centrum, _, _):
         assert _start_pricing(centrum).status_code == 200
         assert wait_for(reached.is_set, 120)

@@ -20,8 +20,8 @@ from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.run_cards import RunCards
-from rozliczenia.centrum.run_comments import LeftBehindClosed
-from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, RunLog, RunLogs, StartFacts, Tool
+from rozliczenia.centrum.run_comments import LeftBehindClosed, RunComments
+from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, RunLog, StartFacts, Tool
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.telemetry import MetricsStore
 from tests.fixtures.centrum import finished_view, without_times
@@ -127,7 +127,7 @@ def test_centrum_zamkniete_po_zapisie_wyniku_w_historii_daje_karte_z_wynikiem_z_
     """Centrum zamyka się po rekordzie metryk, a przed Logami Uruchomienia: karta po starcie nie przeczy Historii (#722)."""
 
     centrum = preparing_centrum(tmp_path)
-    reached, released = held_before(monkeypatch, RunLogs, "run_ended")
+    reached, released = held_before(monkeypatch, RunComments, "run_ended")
     running = centrum.start(dry_run=False).json()
     assert wait_for(reached.is_set)
     closed = centrum.client
@@ -205,7 +205,7 @@ def test_karta_z_historii_po_zatrzymaniu_ma_tytul_i_akcje_jak_na_zywo(
 ) -> None:
     centrum = preparing_centrum(tmp_path)
     centrum.engines.fail_summary = True
-    reached, released = held_before(monkeypatch, RunLogs, "run_ended")
+    reached, released = held_before(monkeypatch, RunComments, "run_ended")
     running = centrum.start(dry_run=True).json()
     assert wait_for(reached.is_set)
     closed = centrum.client
@@ -246,7 +246,7 @@ def test_nieczytelna_historia_bez_logow_daje_urwane_uruchomienie(tmp_path: Path,
     """Historii nie da się odczytać, więc nie pokaże wyniku, któremu karta mogłaby przeczyć."""
 
     centrum = preparing_centrum(tmp_path)
-    reached, released = held_before(monkeypatch, RunLogs, "run_ended")
+    reached, released = held_before(monkeypatch, RunComments, "run_ended")
     running = centrum.start(dry_run=False).json()
     assert wait_for(reached.is_set)
     closed = centrum.client

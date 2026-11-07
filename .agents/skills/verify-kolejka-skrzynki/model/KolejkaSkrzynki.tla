@@ -67,13 +67,13 @@ CONSTANTS
     Kolejki,        \* 1 albo 2: dwie kolejki jednego folderu (_claimed, _released)
     DwaProcesy,     \* druga kolejka w nowym procesie, gdy stary zamknął port, a jego wątek jeszcze wysyła
     Diagnoza,       \* wysyłka 2 to nowsza wersja wysyłki 1 (ten sam run_id i etykieta: Logi po Diagnozie,
-                    \* run_logs.py RunLogs.diagnosed), a nie osobna wysyłka
+                    \* run_comments.py RunComments.diagnosed), a nie osobna wysyłka
     Archiwum,       \* wysyłka niesie plik do Archiwum okresu (outbox.py Post.archive, ArchiveFile: Logi Uruchomienia)
     MaxOdmowArchiwum, \* Refused albo Rejected z kroku Archiwum (Token bez uprawnienia do treści repozytorium): ArchiveWaits
     PusteRepo,      \* repozytorium Skrzynki bez commitu przez cały przebieg: GitHub odpowiada 409 „Git Repository is
                     \* empty.” na każde założenie Archiwum (report_box.py GitHubReportBox.open_archive: Rejected)
     Postep,         \* wysyłka 1 to postęp Wyceny w efenix, starsza wersja Logów wysyłki 2 bez pliku do Archiwum
-                    \* (comment_versions.py ProgressVersion, pricing_progress.py)
+                    \* (comment_versions.py ProgressVersion, run_comments.py RunComments._progress)
     StarszaPozniej, \* wysyłka 2 to wersja zastępcza ze startu Centrum (Rank.STAND_IN: Logi z pliku), starsza od Logów
                     \* z wynikiem wysyłki 1 (Rank.OWN), choć jej plik kolejki powstał później (#910)
     OpoznienieListy, \* listy GitHuba (labelled_issues, archive) pokazują nowe issue i Archiwum po kilku sekundach
@@ -93,7 +93,8 @@ ASSUME Archiwum => Cel = "okres" /\ Naglowek /\ Czesci = 1 /\ CzesciNowszej = 1
 ASSUME PusteRepo => Archiwum
 \* Postęp to starsza wersja Logów (ten sam run_id i etykieta), a pełne Logi na końcu niosą plik do Archiwum.
 ASSUME Postep => Diagnoza /\ Archiwum
-\* Wersja zastępcza to wersja Logów z plikiem do Archiwum (InterruptedPricings.send, RunLogs.send) po Logach z wynikiem.
+\* Wersja zastępcza to wersja Logów z plikiem do Archiwum (run_comments.py RunComments.send_left_behind) po Logach z
+\* wynikiem.
 ASSUME StarszaPozniej => Diagnoza /\ Archiwum /\ ~Postep
 
 W == 1..Wysylek

@@ -76,10 +76,10 @@ def _source(names: list[str]) -> str:
 
 
 def _file_of(name: str) -> str:
-    """Plik definicji ``name`` z tabeli; ``Klasa.obok`` leży w pliku klasy, a ``obok`` w pliku ``RunLogs``."""
+    """Plik definicji ``name`` z tabeli; ``Klasa.obok`` leży w pliku klasy, a ``obok`` w pliku ``guard_logs``."""
 
     owner = name.split(".")[0] + "." if name.endswith(".obok") else None
-    wanted = "RunLogs.progress" if name == "obok" else name
+    wanted = "guard_logs" if name == "obok" else name
     [path] = [
         path
         for path, names in _definitions().items()
@@ -166,7 +166,7 @@ def test_w_ci_metoda_rozjazdu_to_metoda_swojej_klasy_a_nie_metoda_o_tej_nazwie_w
     assert f"zmienił się od {sync[:9]}: {_file_of('RunLog.interrupted')} RunLog.interrupted." in done.stdout
 
 
-@pytest.mark.parametrize("name", ["obok", "RunLogs.obok"])
+@pytest.mark.parametrize("name", ["obok", "RunComments.obok"])
 def test_w_ci_zmiana_obok_definicji_opisanych_modelem_nie_jest_rozjazdem(tmp_path: Path, name: str) -> None:
     sync = _repository(tmp_path)
     _change(tmp_path, name)

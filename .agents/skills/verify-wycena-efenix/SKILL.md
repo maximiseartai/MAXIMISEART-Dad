@@ -3,7 +3,6 @@ name: verify-wycena-efenix
 description: Exhaustively break each request of a real Wycena w efenix (the window `efenix_browser.window` in Playwright's Chromium on the Atrapa efenix, behind a fault proxy) with every kind of fault (network cut, torn, stalled or slow; HTTP 4xx and 5xx; logout; redirect; a „Załaduj do zlecenia” refused with a 200 answer; a hung answer; an answer just before or after the window's time limit; the login page under an order address; a closed tab; Dad's login wait; the tool killed) and check the Zatrzymanie's cause and Komunikat, the efenix state, the Znaczniki efenix and the Logi, and what a killed tool leaves, then resume each stop and kill with and without Dad's changes in efenix and check that the second run completes every order to the file only upwards. Use when a change touches `efenix_browser`, `efenix_pricing`, `efenix_positions`, `efenix_marking` or another `efenix_*` module, the Dziennik Wyceny w efenix, the Atrapa efenix, or when `explore_wycena_efenix.py` or the explorer tests in `tests/test_centrum_logi_uruchomienia.py` fail.
 pilnuje:
   - src/rozliczenia/efenix_*.py
-  - src/rozliczenia/centrum/pricing_journal.py
   - src/rozliczenia/centrum/logs_disk.py
   - src/rozliczenia/centrum/efenix_run.py
   - tests/fixtures/atrapa_efenix.py

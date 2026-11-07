@@ -39,7 +39,7 @@ Diagnose = Callable[[contract.ProcessKey, str], Diagnosis]
 
 
 class DiagnosedLogs(Protocol):
-    """Logi Uruchomienia (``run_logs.RunLogs``), do których dopisuje się Diagnoza."""
+    """Logi Uruchomienia, do których dopisuje się Diagnoza (``run_comments.RunComments``)."""
 
     def link(self, run_id: str) -> str | None:
         """Adres komentarza Logów Uruchomienia w Skrzynce Zgłoszeń; ``None``: Logów nie ma jeszcze w Skrzynce."""

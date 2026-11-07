@@ -41,8 +41,8 @@ Wpis „koniec Uruchomienia” z wynikiem (``Journal.end``) mówi startowi Centr
 jakiego (#870, #871). Uruchomienie, którego pierwsza linia nie trafiła na dysk w żadnym zapisie, zamiast niego usuwa
 dziennik, który mógł po nim zostać: postęp do niego nie poszedł, a zapis, w którym ``flush`` albo ``fsync`` rzucił po
 ``write``, zostawia na dysku całą pierwszą linię, a Zatrzymanie przed pierwszym zleceniem albo przy nim kończy Wycenę bez
-następnego wpisu. Kiedy wpis końca idzie i kiedy dziennik znika po wyniku, decyduje ``pricing_journal``, a co start
-Centrum robi z dziennikiem, który zastał, ``comment_versions.close``.
+następnego wpisu. Kiedy wpis końca idzie i kiedy dziennik znika po wyniku, decyduje ``run_comments.RunComments``, a co
+start Centrum robi z dziennikiem, który zastał, ``comment_versions.close``.
 """
 
 from __future__ import annotations
@@ -456,7 +456,13 @@ class LogsOnDisk:
         self._last_started = log.directory / LAST_STARTED_FILE
         self._journals = log.directory / _JOURNALS
         self._log = log
-        self.journal: Final = Journal(self._journals, log, process=journaled)
+        self._journal = Journal(self._journals, log, process=journaled)
+
+    @property
+    def journal(self) -> Journal:
+        """Dziennik bieżącej Wyceny w efenix (``efenix_pricing.OrderJournal`` w Centrum)."""
+
+        return self._journal
 
     def started(self, start: StartFacts) -> None:
         """Start Uruchomienia, zanim ruszy jego wątek: pierwsza linia dziennika (``Journal``; nieudana to linia dziennika

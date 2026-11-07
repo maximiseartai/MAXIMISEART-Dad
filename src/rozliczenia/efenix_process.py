@@ -49,7 +49,7 @@ class EfenixInputs:
     ``pace``: tempo ludzkie okna; ``None`` wyłącza przerwy.
     ``forbidden``: pamięć reguły danych pracy Centrum (``None``: bez wysyłki, bez pamięci). ``copy``: Kopia wejścia
     Uruchomienia z Centrum (``None``: bez Logów, bez Kopii).
-    ``journal``: dziennik Wyceny w efenix w trakcie przebiegu; Centrum podaje swój (``centrum.pricing_journal``), a Skrypt
+    ``journal``: dziennik Wyceny w efenix w trakcie przebiegu; Centrum podaje swój (``centrum.logs_disk.Journal``), a Skrypt
     dla maszyn przebiega bez niego.
     """
 

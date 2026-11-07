@@ -36,8 +36,8 @@ schematy: plik schematu 1 nie ma godzin ani dziennika, a te pola są w nim ``Non
 
 Plik leży w katalogu Logów obok dziennika Centrum, poza Gitem i OneDrive, bez rotacji. Nazwa to czas startu (UTC),
 klucz procesu i identyfikator Uruchomienia, więc jest jedna na Uruchomienie i układa się chronologicznie. Zapis jest
-atomowy; nieudany wychodzi z ``run_ended``, a ``RunHost.after`` zapisuje w dzienniku tylko jego typ, bez zmiany
-wyniku i bez Komunikatu.
+atomowy (``logs_disk.LogsOnDisk.write``); nieudany to w dzienniku Centrum tylko jego typ, bez zmiany wyniku i bez
+Komunikatu. Kiedy Logi powstają, idą do pliku i do Skrzynki, decyduje komentarz Uruchomienia (``run_comments.RunComments``).
 
 Te same Logi idą przez kolejkę Skrzynki Zgłoszeń (``Outbox``) jedną wysyłką (``comment_versions.post_of``, #844): do
 issue okresu z etykietą ``logi-uruchomienia``, także zamkniętego, jeden komentarz na Uruchomienie z podsumowaniem w
@@ -45,13 +45,11 @@ Markdown (``comment_versions.summary_markdown``) i odnośnikiem do pełnych Log�
 Release ``logi-<okres>`` w repozytorium Skrzynki, nie Wydanie narzędzia) plik o nazwie pliku Logów spakowany gzipem,
 który rozpakowany ma znak w znak tekst pliku Logów.
 
-Diagnoza Zatrzymania dopisuje się do Logów swojego Uruchomienia (``RunLogs.diagnosed``): ten sam plik dostaje pole
-``diagnosis``, a Logi idą do kolejki drugi raz z tym samym identyfikatorem wysyłki (Uruchomienie i etykieta), więc
-kolejka podmienia plik w Archiwum i zmienia komentarz tego Uruchomienia zamiast dokładać nowy (#840, #844).
-Diagnoza z tym samym wynikiem co ostatnio dopisana (``LoggedDiagnosis.same_result``) nie zmienia niczego: po
-nieoczekiwanym wyjątku karta zaczyna Diagnozę sama przy każdym pokazaniu, a Maks potrzebuje tylko zmiany wyniku.
-Diagnozę ma tylko ostatnie Uruchomienie tej pracy Centrum, więc w pamięci zostają tylko jego Logi; Diagnoza,
-w której trakcie skończyło się następne Uruchomienie, nie dopisuje się nigdzie.
+Diagnoza Zatrzymania dopisuje się do Logów swojego Uruchomienia (``run_comments.RunComments.diagnosed``): ten sam plik
+dostaje pole ``diagnosis`` (``LoggedDiagnosis``, ``GuardedLogs.with_diagnosis``), a Logi idą do kolejki drugi raz z tym
+samym identyfikatorem wysyłki (Uruchomienie i etykieta), więc kolejka podmienia plik w Archiwum i zmienia komentarz tego
+Uruchomienia zamiast dokładać nowy (#840, #844). Diagnoza z tym samym wynikiem co ostatnio dopisana
+(``LoggedDiagnosis.same_result``) nie zmienia niczego.
 
 Urwana Wycena w efenix (#845) ma Logi z dziennika Wyceny w efenix (``RunLog.interrupted``), które start Centrum zamyka i
 wysyła jak zwykłe Logi (``run_comments.RunComments``): sposób zakończenia
@@ -59,15 +57,14 @@ wysyła jak zwykłe Logi (``run_comments.RunComments``): sposób zakończenia
 zgaśnięciem Centrum i ze zleceniem zaczętym bez wyniku (``LoggedInterruption``). Koniec takich Logów to ostatni wpis
 dziennika, bo chwili zgaśnięcia nikt nie zapisał.
 
-W trakcie Wyceny w efenix jej komentarz Uruchomienia pokazuje postęp z dziennika (``RunLogs.progress``, #846). Każda
+W trakcie Wyceny w efenix jej komentarz Uruchomienia pokazuje postęp z dziennika (``PricingProgress``, #846). Każda
 wysyłka Logów jednego Uruchomienia to wersja komentarza Uruchomienia ze stopniem (``comment_versions.rank_of``,
 ``outbox.Rank``, #910), który wybiera nadawca, a nie zegar: postęp ma najniższy (``DRAFT``), wersja zastępcza, którą
-następny start Centrum wysyła z dziennika (``run_comments``: Logi z pliku, Logi Urwanego Uruchomienia albo wynik bez Logów,
-``ResultWithoutLogs``), środkowy (``STAND_IN``), a Logi z pracy Centrum Uruchomienia (``_keep``: z wynikiem, z Diagnozą)
-najwyższy (``OWN``). Wersja końcowa zamienia więc komentarz postępu w podsumowanie także po cofnięciu zegara, a wersja
-zastępcza nie zastępuje Logów z wynikiem, które kolejka już przyjęła, w kolejce ani w Skrzynce. Start wysyła ją tylko
-za Wycenę, której Logów kolejka nie przyjęła w pracy jej Uruchomienia (``queued``), bo inaczej dziennik już zniknął
-(``pricing_journal.JournalAfterLogs``).
+następny start Centrum wysyła z dziennika (Logi z pliku, Logi Urwanego Uruchomienia albo wynik bez Logów,
+``ResultWithoutLogs``), środkowy (``STAND_IN``), a Logi z pracy Centrum Uruchomienia (z wynikiem, z Diagnozą) najwyższy
+(``OWN``). Wersja końcowa zamienia więc komentarz postępu w podsumowanie także po cofnięciu zegara, a wersja zastępcza
+nie zastępuje Logów z wynikiem, które kolejka już przyjęła, w kolejce ani w Skrzynce. Start wysyła ją tylko za Wycenę,
+której Logów kolejka nie przyjęła w pracy jej Uruchomienia, bo inaczej dziennik już zniknął (``run_comments``).
 """
 
 from __future__ import annotations
@@ -75,12 +72,11 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 import re
-import threading
-from typing import TYPE_CHECKING, Annotated, Final, Literal, Protocol, assert_never, final, get_args
+from typing import Annotated, Final, Literal, Protocol, assert_never, final, get_args
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic.fields import FieldInfo
@@ -88,17 +84,8 @@ from pydantic.fields import FieldInfo
 from rozliczenia.client_data import ForbiddenValues, Guarded
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.comment_versions import (
-    LABEL,
-    OwnLogs,
-    ProgressVersion,
-    journal_after,
-    post_of,
-    progress_markdown,
-)
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.diagnosis import CheckState, Diagnosis
-from rozliczenia.centrum.outbox import Outbox
 from rozliczenia.centrum.runs import EndedRun, Ending
 from rozliczenia.domain import ProgressPhase, SettlementSummary, WorkerStatus
 from rozliczenia.efenix_pricing import (
@@ -126,11 +113,6 @@ from rozliczenia.input_copy import CellValue, CopiedFile, CopiedSheet, Typed, Ty
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.message import Message
 from rozliczenia.progress import ProgressSnapshot
-
-if TYPE_CHECKING:
-    # Logi na dysku i składanie Logów biorą schemat z tego modułu, więc ten moduł bierze je tylko do adnotacji.
-    from rozliczenia.centrum.logs_disk import LogsOnDisk
-    from rozliczenia.centrum.run_comments import RecordMaker
 
 RUN_LOGS_DIRECTORY: Final = "uruchomienia"
 
@@ -1288,103 +1270,3 @@ def guard_text(text: str, place: str, forbidden: ForbiddenValues) -> GuardedText
     found = forbidden.guard(text, place)
     return GuardedText(found.text + "".join(f"\n- Uwaga techniczna: {note}" for note in found.notes), _MINTED)
 
-
-class RunLogs:
-    """Logi Uruchomienia każdego Uruchomienia procesu z Centrum (``runs.AfterRun``) na Logach na dysku ``disk``; Logi
-    składa ``records`` (``run_comments.RecordMaker``)."""
-
-    def __init__(
-        self,
-        disk: LogsOnDisk,
-        outbox: Outbox,
-        *,
-        records: RecordMaker,
-        forbidden: ForbiddenValues,
-    ) -> None:
-        self._disk = disk
-        self._records = records
-        self._forbidden = forbidden
-        self._outbox = outbox
-        self._lock = threading.Lock()
-        self._last: GuardedLogs | None = None  # Logi ostatniego Uruchomienia tak, jak ostatnio poszły do pliku i Skrzynki
-        self._ended: set[str] = set()  # Uruchomienia tej pracy Centrum po wyniku: ich postęp się skończył (``progress``)
-        # Uruchomienia tej pracy Centrum, których Logi przyjęła Kolejka wysyłki (``queued``); ``_keep`` tylko dodaje,
-        # jedną operacją ``set.add``, także bez blokady.
-        self._queued: set[str] = set()
-
-    def run_ended(self, run: EndedRun) -> None:
-        with self._lock:  # postęp, który już idzie do kolejki, jest w niej przed Logami, a następny nie pójdzie
-            self._ended.add(run.info.id)
-        record = self._records.of(run)
-        logs = guard_logs(record, self._forbidden)
-        with self._lock:
-            self._last = logs
-        self._keep(logs)
-
-    def link(self, run_id: str) -> str | None:
-        """Adres komentarza Logów Uruchomienia ``run_id``, który Skrzynka przyjęła w tej pracy Centrum; ``None``: jeszcze żaden.
-
-        Komentarz Uruchomienia prowadzi do jego pełnych Logów w Archiwum Logów okresu, także po Diagnozie.
-        """
-
-        return self._outbox.delivered(run_id, LABEL)
-
-    def diagnosed(self, run_id: str, diagnosis: Diagnosis) -> None:
-        """Dopisuje Diagnozę do Logów Uruchomienia ``run_id``: do pliku, do pliku w Archiwum Logów okresu i do komentarza
-        Uruchomienia w issue okresu.
-
-        Logi z Diagnozą to nowsza wersja tej samej wysyłki (``comment_versions.post_of``), więc kolejka podmienia plik w Archiwum i
-        zmienia komentarz, które już są w Skrzynce. Logi, które jeszcze czekają w kolejce, nowsza wersja zastępuje
-        (``outbox._superseded``): przejście kolejki, które zastaje obie, oznacza starsze bez wysyłania i wysyła tylko Logi z
-        Diagnozą, jednym komentarzem bez edycji. Gdy przejście przeczytało Logi, zanim przyszła Diagnoza, wysyła je, a
-        plik w Archiwum i komentarz zmienia następne przejście.
-
-        Uruchomienie, którego Logi nie powstały w tej pracy Centrum, nie dostaje niczego, a Diagnoza z tym samym
-        wynikiem co ostatnio dopisana też nie.
-        """
-
-        with self._lock:  # dwie Diagnozy naraz (np. dwie karty): plik i komentarz każdej, jedna po drugiej
-            last = self._last
-            if last is None or last.record.run_id != run_id:
-                return
-            logged = LoggedDiagnosis.of(diagnosis, diagnosed_at=datetime.now(timezone.utc))
-            logs = last.with_diagnosis(logged, self._forbidden)
-            if logs is None:
-                return
-            self._keep(logs)
-            self._last = logs  # po pliku, który nie powstał, następna Diagnoza próbuje znowu: plik i komentarz
-
-    def _keep(self, logs: GuardedLogs) -> None:
-        """Plik Logów (nowy albo nadpisany), a do Skrzynki komentarz w issue okresu i plik w Archiwum Logów okresu z tymi
-        samymi bajtami co plik (``LogsOnDisk.write``); Logi, po których przyjęciu przez kolejkę dziennik Wyceny może zniknąć
-        (``journal_after``), zna ``queued``."""
-
-        try:
-            self._disk.write(logs)
-        finally:
-            # Katalog Logów, który nie przyjął pliku, nie zatrzymuje Logów w drodze do Maksa.
-            version = OwnLogs(logs)
-            if journal_after(version, accepted=self._outbox.post(post_of(version))) == "usuń":
-                self._queued.add(logs.record.run_id)
-
-    def queued(self, run_id: str) -> bool:
-        """Czy Kolejka wysyłki przyjęła w tej pracy Centrum Logi Uruchomienia ``run_id`` (``run_ended``), także gdy ich
-        pliku nie dało się zapisać: wersja końcowa jego komentarza Uruchomienia jest już w drodze do Skrzynki."""
-
-        return run_id in self._queued
-
-    def progress(self, run_id: str, progress: PricingProgress | None, *, elapsed_s: float) -> bool:
-        """Postęp Wyceny w efenix ``run_id`` do Kolejki wysyłki jako starsza wersja wysyłki Logów tego Uruchomienia
-        (``comment_versions.ProgressVersion``), po strażniku reguły danych tej pracy Centrum jak Logi: zamaskowana wartość to uwaga techniczna
-        na końcu komentarza. ``progress`` ``None``: dziennik nie ma jeszcze na dysku swojej pierwszej linii, więc nic nie
-        idzie. ``False``: Uruchomienie doszło do działań po wyniku (``run_ended``), więc jego postęp się skończył i nic nie
-        idzie, bo postęp po Logach byłby ich nowszą wersją i cofnąłby podsumowanie. Postęp, którego kolejka nie przyjęła,
-        daje ``True``: typ błędu jest w dzienniku Centrum, a następne odświeżenie spróbuje znowu."""
-
-        with self._lock:
-            if run_id in self._ended:
-                return False
-            if progress is not None:
-                text = guard_text(progress_markdown(progress, elapsed_s=elapsed_s), "postęp Wyceny w efenix", self._forbidden)
-                self._outbox.post(post_of(ProgressVersion(progress, text)))
-            return True
