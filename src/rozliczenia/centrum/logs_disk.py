@@ -154,6 +154,7 @@ class _StartedFile(BaseModel):
     mode: Literal["podgląd", "zapis"]
     period: str
     started_at: datetime
+    pricing: contract.Pricing | None = None
 
 
 class _JournalRecord(BaseModel):
@@ -169,6 +170,7 @@ class _JournalStarted(_JournalRecord):
     mode: Literal["podgląd", "zapis"]
     period: str
     started_at: datetime
+    pricing: contract.Pricing | None = None
 
 
 class _OrderBegun(_JournalRecord):
@@ -217,6 +219,7 @@ def _first_line(start: StartFacts) -> _JournalStarted:
         mode=start.mode,
         period=start.period,
         started_at=start.started_at,
+        pricing=start.pricing,
     )
 
 
@@ -423,6 +426,7 @@ def _read_journal(path: Path) -> JournalRead | None:
         mode=started.mode,
         period=started.period,
         started_at=started.started_at,
+        pricing=started.pricing,
     )
     return JournalRead(
         start,
@@ -476,6 +480,7 @@ class LogsOnDisk:
             mode=start.mode,
             period=start.period,
             started_at=start.started_at,
+            pricing=start.pricing,
         )
         replace_atomically(self._last_started, started.model_dump_json(indent=2) + "\n")
 
@@ -503,6 +508,7 @@ class LogsOnDisk:
             mode=started.mode,
             period=started.period,
             started_at=started.started_at,
+            pricing=started.pricing,
         )
 
     def logs(self, run_id: str) -> LogsRead:

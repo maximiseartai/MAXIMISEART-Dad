@@ -9,7 +9,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { HistoryRunCard, ModeBadge } from "@/pages/runs/run-card"
+import { HistoryRunCard } from "@/pages/runs/run-card"
 
 const OPEN = "Karta Uruchomienia"
 
@@ -18,7 +18,7 @@ type Card = { state: "loading" } | { state: "failed"; message: string } | { stat
 /** Przycisk wiersza Historii: karta tego Uruchomienia z jego Logów Uruchomienia w panelu z boku. */
 export function RunCardButton({ run }: { run: ProcessRun }) {
   return (
-    <CardSheet title={run.process_label} period={run.period} dryRun={run.mode === "DRY-RUN"}>
+    <CardSheet title={run.process_label} period={run.period}>
       <ShownCard runId={run.run_id} />
     </CardSheet>
   )
@@ -27,7 +27,7 @@ export function RunCardButton({ run }: { run: ProcessRun }) {
 /** Przycisk z napisem w Powiadomieniu: karta Uruchomienia `runId` z jego Logów w tym samym panelu z boku. */
 export function RunCardLink({ runId, title, period }: { runId: string; title: string; period: string }) {
   return (
-    <CardSheet title={title} period={period} dryRun={false} labelled>
+    <CardSheet title={title} period={period} labelled>
       <RunCardBody runId={runId} />
     </CardSheet>
   )
@@ -36,23 +36,24 @@ export function RunCardLink({ runId, title, period }: { runId: string; title: st
 /** Karta Uruchomienia, którą serwer już przysłał (np. ostatnie Uporządkowanie INTERMAX), w tym samym panelu z boku. */
 export function RestoredCardButton({ card }: { card: RunRestored }) {
   return (
-    <CardSheet title={card.run.title} period={card.run.period} dryRun={card.run.dry_run}>
+    <CardSheet title={card.run.title} period={card.run.period}>
       <HistoryRunCard card={card} />
     </CardSheet>
   )
 }
 
-/** Przycisk z ikoną karty (`labelled`: z napisem) i panel z boku, który montuje treść karty tylko otwarty. */
+/**
+ * Przycisk z ikoną karty (`labelled`: z napisem) i panel z boku, który montuje treść karty tylko otwarty. Tryb
+ * Uruchomienia pokazuje karta z Logów (`HistoryRunCard`).
+ */
 function CardSheet({
   title,
   period,
-  dryRun,
   labelled = false,
   children,
 }: {
   title: string
   period: string
-  dryRun: boolean
   labelled?: boolean
   children: React.ReactNode
 }) {
@@ -87,10 +88,7 @@ function CardSheet({
         <SheetContent className="gap-0 sm:max-w-3xl data-[side=right]:sm:max-w-3xl">
           <SheetHeader className="pr-12">
             <SheetTitle className="text-lg">{title}</SheetTitle>
-            <SheetDescription className="flex items-center gap-2 tabular-nums">
-              Okres {period}
-              <ModeBadge dryRun={dryRun} />
-            </SheetDescription>
+            <SheetDescription className="tabular-nums">Okres {period}</SheetDescription>
           </SheetHeader>
           <div className="overflow-y-auto px-4 pb-6">{open ? children : null}</div>
         </SheetContent>

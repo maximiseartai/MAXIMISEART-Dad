@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import EFENIX_BROWSER, EFENIX_CHECKS, EFENIX_RUN, NOTIFICATIONS, RUN_LOGS, RUN_VIEW, WYCENA
+from cele_mutacji_centrum import BUILD, EFENIX_BROWSER, EFENIX_CHECKS, EFENIX_RUN, NOTIFICATIONS, RUN_LOGS, RUN_VIEW, WYCENA
 from mutacje import Edit, Mutation, check_all
 
 MUTATIONS = (
@@ -52,6 +52,36 @@ MUTATIONS = (
         (Edit(EFENIX_CHECKS, "    settled = _is_status(hit, SETTLED_STATUS)\n", "    settled = False\n"),),
         WYCENA,
         "tata dostaje fałszywy błąd za zlecenie, które firma już rozliczyła (#821)",
+    ),
+    Mutation(
+        "przycisk „Uzupełnij i zapisz” uzupełnia bez Przekazania",
+        (Edit(EFENIX_RUN, "            mode=PricingMode(request.pricing),\n", "            mode=PricingMode.FILL,\n"),),
+        WYCENA,
+        "tata wybrał zapis, a gotowe zlecenia czekają w efenix na zielony „Zapisz”, o którym myśli, że Centrum go kliknęło",
+    ),
+    Mutation(
+        "karta bez listy zleceń przekazanych",
+        (Edit(RUN_VIEW, "        forwarded=_order_lines(summary, Forwarded),\n", "        forwarded=[],\n"),),
+        WYCENA,
+        "tata nie widzi, które zlecenia Centrum przekazało do akceptacji",
+    ),
+    Mutation(
+        "plakietka Wyceny bez zapisu mówi „Z zapisem”",
+        (Edit(BUILD, "badge:`Bez zapisu`", "badge:`Z zapisem`"),),
+        WYCENA,
+        "na karcie Wyceny „zapis” znaczy dwie rzeczy i tata myśli, że zlecenia są przekazane",
+    ),
+    Mutation(
+        "etykieta „Przekazane do akceptacji” łamie się na dwie linie",
+        (Edit(BUILD, "-mt-px -ml-px flex min-w-fit flex-1", "-mt-px -ml-px flex flex-1"),),
+        WYCENA,
+        "pasek liczb karty ma jedną etykietę w dwóch liniach, jak w #1067",
+    ),
+    Mutation(
+        "Powiadomienie bez trybu Wyceny",
+        (Edit(NOTIFICATIONS, "            pricing=card.run.pricing,\n", "            pricing=None,\n"),),
+        WYCENA,
+        "tata, który wraca do komputera, nie wie z Powiadomienia, czy zlecenia są już przekazane",
     ),
     Mutation(
         "bez Powiadomienia o zakończonej Wycenie",

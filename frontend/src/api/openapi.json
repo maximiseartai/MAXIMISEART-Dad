@@ -3568,6 +3568,13 @@
             "type": "array",
             "title": "Warnings"
           },
+          "forwarded": {
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            },
+            "type": "array",
+            "title": "Forwarded"
+          },
           "settled": {
             "items": {
               "$ref": "#/components/schemas/OrderLine"
@@ -3581,10 +3588,11 @@
         "required": [
           "errors",
           "warnings",
+          "forwarded",
           "settled"
         ],
         "title": "OrderNotes",
-        "description": "Błędy zleceń, ostrzeżenia Emmetta i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego Uruchomienia."
+        "description": "Błędy zleceń, ostrzeżenia Emmetta, Zlecenia przekazane i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego\nUruchomienia."
       },
       "PathStep": {
         "properties": {
@@ -4025,6 +4033,10 @@
             "type": "integer",
             "title": "Ready"
           },
+          "forwarded": {
+            "type": "integer",
+            "title": "Forwarded"
+          },
           "settled": {
             "type": "integer",
             "title": "Settled"
@@ -4042,12 +4054,13 @@
         "type": "object",
         "required": [
           "ready",
+          "forwarded",
           "settled",
           "errors",
           "warnings"
         ],
         "title": "PricedOrders",
-        "description": "Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, rozliczone, błędy i ostrzeżenia Emmetta."
+        "description": "Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, przekazane do akceptacji, rozliczone, błędy i\nostrzeżenia Emmetta."
       },
       "PricingNotification": {
         "properties": {
@@ -4081,6 +4094,21 @@
             "type": "string",
             "title": "Period"
           },
+          "pricing": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "bez Przekazania",
+                  "z Przekazaniem"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricing"
+          },
           "orders": {
             "anyOf": [
               {
@@ -4113,11 +4141,12 @@
           "run_id",
           "headline",
           "period",
+          "pricing",
           "orders",
           "stopped"
         ],
         "title": "PricingNotification",
-        "description": "Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia\n(``headline``), okres, zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”\nKomunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów."
+        "description": "Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia\n(``headline``), okres, tryb (jak ``RunInfo.pricing``), zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”\nKomunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów."
       },
       "Problem": {
         "properties": {
@@ -4278,6 +4307,17 @@
             ],
             "title": "Preview Hint"
           },
+          "pricing_modes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "bez Przekazania",
+                "z Przekazaniem"
+              ]
+            },
+            "type": "array",
+            "title": "Pricing Modes"
+          },
           "periods": {
             "items": {
               "$ref": "#/components/schemas/PeriodChoice"
@@ -4310,12 +4350,13 @@
           "reminder",
           "confirms_readiness",
           "preview_hint",
+          "pricing_modes",
           "periods",
           "preselected_period",
           "blocker"
         ],
         "title": "ProcessSetup",
-        "description": "Co tata wybiera przed Uruchomieniem procesu; ``blocker`` mówi, czego jeszcze brakuje w ustawieniach.\n\n``reminder``, ``confirms_readiness`` i ``preview_hint`` deklaruje proces: przypomnienie przed\nuruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma\npodglądu bez zapisu, jak Wycena w efenix)."
+        "description": "Co tata wybiera przed Uruchomieniem procesu; ``blocker`` mówi, czego jeszcze brakuje w ustawieniach.\n\n``reminder``, ``confirms_readiness`` i ``preview_hint`` deklaruje proces: przypomnienie przed\nuruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma\npodglądu bez zapisu, jak Wycena w efenix). ``pricing_modes``: tryby Wyceny w efenix, z których tata wybiera\nprzyciskiem przy każdym starcie, w kolejności przycisków (pusta lista: proces bez trybów i z jednym „Uruchom”)."
       },
       "ProcessStep": {
         "properties": {
@@ -5068,6 +5109,21 @@
             "type": "boolean",
             "title": "Dry Run"
           },
+          "pricing": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "bez Przekazania",
+                  "z Przekazaniem"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricing"
+          },
           "confirms_readiness": {
             "type": "boolean",
             "title": "Confirms Readiness"
@@ -5085,11 +5141,12 @@
           "title",
           "period",
           "dry_run",
+          "pricing",
           "confirms_readiness",
           "register_name"
         ],
         "title": "RunInfo",
-        "description": "Uruchomienie procesu; ``confirms_readiness`` i ``register_name`` deklaruje proces.\n\n``confirms_readiness``: „Uruchom” potwierdza Gotowość. ``register_name``: nazwa Rejestru zleceń z Komunikatów\nprocesu, pod którą karta proponuje otworzyć go przy Zatrzymaniu."
+        "description": "Uruchomienie procesu; ``confirms_readiness`` i ``register_name`` deklaruje proces.\n\n``confirms_readiness``: „Uruchom” potwierdza Gotowość. ``register_name``: nazwa Rejestru zleceń z Komunikatów\nprocesu, pod którą karta proponuje otworzyć go przy Zatrzymaniu. ``pricing``: tryb Wyceny w efenix tego\nUruchomienia (``None``: proces bez trybów)."
       },
       "RunInterrupted": {
         "properties": {
@@ -5320,7 +5377,7 @@
           "opens"
         ],
         "title": "RunOutcome",
-        "description": "Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.\n\n``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla\ntaty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).\n``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed\nZapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka\nZatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które\nzostały tacie, i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w\ntrzech częściach (``None``: inny proces albo wynik bez podsumowania)."
+        "description": "Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.\n\n``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla\ntaty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).\n``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed\nZapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka\nZatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które\nzostały tacie, Zlecenia przekazane i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w\ntrzech częściach (``None``: inny proces albo wynik bez podsumowania)."
       },
       "RunRecorded": {
         "properties": {
@@ -5393,6 +5450,15 @@
           "dry_run": {
             "type": "boolean",
             "title": "Dry Run"
+          },
+          "pricing": {
+            "type": "string",
+            "enum": [
+              "bez Przekazania",
+              "z Przekazaniem"
+            ],
+            "title": "Pricing",
+            "default": "bez Przekazania"
           }
         },
         "additionalProperties": false,
@@ -5403,7 +5469,7 @@
           "dry_run"
         ],
         "title": "RunRequest",
-        "description": "Start Uruchomienia procesu; pliki wejściowe wylicza serwer z ustawień i okresu."
+        "description": "Start Uruchomienia procesu; pliki wejściowe wylicza serwer z ustawień i okresu.\n\n``pricing``: tryb Wyceny w efenix, który tata wybrał przyciskiem; proces bez trybów przyjmuje tylko domyślny."
       },
       "RunRestored": {
         "properties": {

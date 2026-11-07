@@ -9,7 +9,7 @@ import {
   WrenchIcon,
 } from "lucide-react"
 
-import { getWithoutQuantity, type Decision, type DecisionAnswer, type WithoutQuantity } from "@/api/centrum"
+import { getWithoutQuantity, type Decision, type DecisionAnswer, type Pricing, type WithoutQuantity } from "@/api/centrum"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { PRICING } from "@/lib/pricing"
 import { useResource } from "@/lib/use-resource"
 import { CountTiles } from "@/pages/runs/count-tiles"
 
@@ -31,6 +32,8 @@ import { CountTiles } from "@/pages/runs/count-tiles"
  * podglądu „Uruchom” jest dozwolone.
  * Gdy proces deklaruje, że „Uruchom” potwierdza Gotowość (Przebieg rozliczeń), okno to mówi i wymienia
  * wiersze Pliku zbiorczego bez ilości; to tylko informacja, „Uruchom” zostaje dozwolone.
+ * Start Wyceny w efenix (`pricing`) pyta o wybrany tryb słowami jego przycisku, bo „z zapisem” znaczy tam zielony
+ * „Zapisz” w efenix.
  */
 export function ConfirmRunDialog({
   open,
@@ -40,6 +43,7 @@ export function ConfirmRunDialog({
   reminder,
   confirmsReadiness,
   previewed,
+  pricing = null,
   onConfirm,
 }: {
   open: boolean
@@ -49,8 +53,11 @@ export function ConfirmRunDialog({
   reminder: string
   confirmsReadiness: boolean
   previewed: boolean
+  pricing?: Pricing | null
   onConfirm: () => void
 }) {
+  const mode = pricing === null ? null : PRICING[pricing]
+
   // Czytane, gdy karta pokazuje okres, a nie dopiero po „Uruchom”: odczyt trwa u taty ponad sekundę.
   const withoutQuantity = useWithoutQuantity(confirmsReadiness ? period : null)
 
@@ -58,10 +65,8 @@ export function ConfirmRunDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogMedia>
-            <PlayIcon />
-          </AlertDialogMedia>
-          <AlertDialogTitle>Uruchomić z zapisem?</AlertDialogTitle>
+          <AlertDialogMedia>{mode === null ? <PlayIcon /> : <mode.icon />}</AlertDialogMedia>
+          <AlertDialogTitle>{mode === null ? "Uruchomić z zapisem?" : mode.question}</AlertDialogTitle>
           <AlertDialogDescription className="tabular-nums">
             {title} · okres {period}
           </AlertDialogDescription>
@@ -71,6 +76,12 @@ export function ConfirmRunDialog({
             <InfoIcon className="size-4 text-muted-foreground" aria-hidden />
             {reminder}
           </span>
+          {mode === null ? null : (
+            <span className="flex items-center gap-2">
+              <mode.icon className="size-4 text-muted-foreground" aria-hidden />
+              {mode.hint}
+            </span>
+          )}
           {confirmsReadiness ? (
             <span className="flex items-center gap-2">
               <CircleCheckIcon className="size-4 text-muted-foreground" aria-hidden />
@@ -93,7 +104,7 @@ export function ConfirmRunDialog({
               onConfirm()
             }}
           >
-            Uruchom
+            {mode === null ? "Uruchom" : mode.label}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

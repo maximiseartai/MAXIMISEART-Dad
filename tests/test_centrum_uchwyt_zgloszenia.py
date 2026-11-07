@@ -207,6 +207,7 @@ def stop_report(entries: tuple[str, ...]) -> StopReport:
         title="Przygotowanie pliku zbiorczego",
         period="08_14_09_2026",
         dry_run=True,
+        pricing=None,
         confirms_readiness=False,
         register_name="Rejestr zleceń",
     )
@@ -262,6 +263,7 @@ def test_zgloszenie_zatrzymania_do_maksa_z_przyczyna_w_wyjatku_ma_typ_kazdej_prz
         title="Wycena w efenix",
         period="08_14_09_2026",
         dry_run=False,
+        pricing="bez Przekazania",
         confirms_readiness=False,
         register_name="Rejestr zleceń",
     )

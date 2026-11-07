@@ -136,7 +136,9 @@ class RunCards:
         ending, result = record.ending, record.result
         assert ending != "interrupted" and result is not None, "Logi Urwanego Uruchomienia nie mają karty wyniku"
         declaration = declaration_of(record.process)
-        info = declaration.run_info(run_id=record.run_id, period=record.period, dry_run=record.mode == "podgląd")
+        info = declaration.run_info(
+            run_id=record.run_id, period=record.period, dry_run=record.mode == "podgląd", pricing=record.pricing
+        )
         headline, next_action = verdict(
             ending=ending,
             stop_kind=record.stop_kind,
@@ -183,7 +185,9 @@ class RunCards:
         if row is None:
             return None
         declaration = declaration_of(started.process)
-        info = declaration.run_info(run_id=started.run_id, period=started.period, dry_run=started.mode == "podgląd")
+        info = declaration.run_info(
+            run_id=started.run_id, period=started.period, dry_run=started.mode == "podgląd", pricing=started.pricing
+        )
         # Bez ``stop_kind`` sposób zakończenia nie zmienia tytułu ani akcji. Wiersz Historii nie mówi, czy Zatrzymanie
         # przyszło po silniku (``after_engine``), więc po zapisie karta proponuje ponowne Uruchomienie, nie otwarcie
         # pliku; ponowne Uruchomienie zostawia pliki, które powstały, i mówi, co z nimi zrobić.
@@ -229,7 +233,7 @@ def _orders(record: RunLog) -> contract.CountGroup | None:
 
 def _interrupted(started: StartFacts, orders: contract.CountGroup | None) -> contract.RunInterrupted:
     info = declaration_of(started.process).run_info(
-        run_id=started.run_id, period=started.period, dry_run=started.mode == "podgląd"
+        run_id=started.run_id, period=started.period, dry_run=started.mode == "podgląd", pricing=started.pricing
     )
     return contract.RunInterrupted(
         state="interrupted",

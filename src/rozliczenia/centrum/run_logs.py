@@ -630,6 +630,9 @@ class RunLog(_Record):
     run_id: str
     process: contract.ProcessKey
     mode: Literal["podgląd", "zapis"]
+    pricing: contract.Pricing | None = None
+    """Tryb Wyceny w efenix (ADR 0027). ``None``: inne procesy i Logi sprzed trybów, w których Wycena biegła bez
+    Przekazania."""
     period: str
     started_at: datetime
     ended_at: datetime
@@ -689,6 +692,7 @@ class RunLog(_Record):
             run_id=info.id,
             process=info.process,
             mode="podgląd" if info.dry_run else "zapis",
+            pricing=info.pricing,
             period=info.period,
             started_at=run.started_at,
             ended_at=run.ended_at,
@@ -750,6 +754,7 @@ class RunLog(_Record):
             run_id=started.run_id,
             process=started.process,
             mode=started.mode,
+            pricing=started.pricing,
             period=started.period,
             started_at=started.started_at,
             ended_at=ended_at,
@@ -777,7 +782,12 @@ class RunLog(_Record):
         """Bezpieczne fakty startu tych Logów, z których ``logs_disk.name_of`` daje nazwę ich pliku."""
 
         return StartFacts(
-            run_id=self.run_id, process=self.process, mode=self.mode, period=self.period, started_at=self.started_at
+            run_id=self.run_id,
+            process=self.process,
+            mode=self.mode,
+            period=self.period,
+            started_at=self.started_at,
+            pricing=self.pricing,
         )
 
     @property
@@ -790,20 +800,29 @@ class RunLog(_Record):
 @dataclass(frozen=True)
 class StartFacts:
     """Bezpieczne fakty startu jednego Uruchomienia: te same co nagłówek jego Logów (``RunLog.start``), plik ostatniego
-    startu (``logs_disk``) i pierwsza linia dziennika Wyceny w efenix."""
+    startu (``logs_disk``) i pierwsza linia dziennika Wyceny w efenix. ``pricing``: tryb Wyceny w efenix (``None``:
+    inne procesy i zapisy sprzed trybów)."""
 
     run_id: str
     process: contract.ProcessKey
     mode: Literal["podgląd", "zapis"]
     period: str
     started_at: datetime
+    pricing: contract.Pricing | None = None
 
     @classmethod
     def of_run(cls, info: contract.RunInfo, started_at: datetime) -> StartFacts:
         """Fakty startu Uruchomienia ``info``, które Centrum startuje teraz (``RunHost.start`` → ``run_started``)."""
 
         mode: Literal["podgląd", "zapis"] = "podgląd" if info.dry_run else "zapis"
-        return cls(run_id=info.id, process=info.process, mode=mode, period=info.period, started_at=started_at)
+        return cls(
+            run_id=info.id,
+            process=info.process,
+            mode=mode,
+            period=info.period,
+            started_at=started_at,
+            pricing=info.pricing,
+        )
 
 
 def _domain_fact_notes(files: Sequence[CopiedFile]) -> list[str]:

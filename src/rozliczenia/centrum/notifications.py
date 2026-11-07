@@ -24,8 +24,8 @@ znowu, a dopóki się nie da, Powiadomienia mają Komunikat, który nazywa te pl
 
 Powiadomienie o Wycenie w efenix to każda zakończona Wycena w efenix z Logów Uruchomienia (``RunCards.ended``), także
 zakończona Zatrzymaniem: tata w trakcie patrzy na okno efenix albo odchodzi od komputera, więc wynik czeka na niego pod
-dzwonkiem. Ma tytuł wyniku z karty, okres, liczby gotowych, błędów i ostrzeżeń Emmetta, „Co się stało” Zatrzymania i
-kartę Uruchomienia; jest nowe (kropka na dzwonku), dopóki tata go nie zobaczy.
+dzwonkiem. Ma tytuł wyniku z karty, okres, tryb, liczby gotowych, przekazanych, rozliczonych, błędów i ostrzeżeń
+Emmetta, „Co się stało” Zatrzymania i kartę Uruchomienia; jest nowe (kropka na dzwonku), dopóki tata go nie zobaczy.
 """
 
 from __future__ import annotations
@@ -300,10 +300,12 @@ class Notifications:
             run_id=card.run.id,
             headline=card.result.headline,
             period=card.run.period,
+            pricing=card.run.pricing,
             orders=None
             if orders is None
             else contract.PricedOrders(
                 ready=orders["gotowe"],
+                forwarded=orders["przekazane"],
                 settled=orders["rozliczone"],
                 errors=orders["błąd"],
                 warnings=orders["ostrzeżenie Emmetta"],

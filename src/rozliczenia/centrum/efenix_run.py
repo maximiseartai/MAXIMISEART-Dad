@@ -2,7 +2,8 @@
 
 Do wyboru są okresy, które mają Plik zbiorczy (Status okresu „Plik zbiorczy przygotowany” albo „Rozliczenia
 pracowników gotowe”); Plik zbiorczy wynika z folderu okresów i okresu, a Status okresu się nie zmienia. Wycena w efenix
-nie ma Podglądu bez zapisu, więc start bez zapisu jest odrzucony. Okno efenix (``EfenixWindow``) to w Centrum taty
+nie ma Podglądu bez zapisu, więc start bez zapisu jest odrzucony, a tryb Wyceny (ADR 0027) tata wybiera przy każdym
+starcie jednym z dwóch przycisków i Centrum go nie pamięta. Okno efenix (``EfenixWindow``) to w Centrum taty
 widoczne okno zainstalowanego Google Chrome w trwałym profilu narzędzia (``efenix_browser.default_profile``), w którym
 proces czeka, aż tata się zaloguje i pracuje w tempie ludzkim; testy i weryfikacja podają Chromium Playwrighta, adres
 Atrapy efenix i okno bez tempa. Wejście procesu ma
@@ -27,7 +28,7 @@ from rozliczenia.centrum.runs import PreparedRun
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.efenix_pace import Pace
-from rozliczenia.efenix_pricing import OrderJournal
+from rozliczenia.efenix_pricing import OrderJournal, PricingMode
 from rozliczenia.efenix_window import OpenEfenix
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.period_folder import PeriodStatus, collective_file_name, scan_period_folders
@@ -36,7 +37,9 @@ from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 
 _VIEW: Final = EFENIX.view
 _ELIGIBLE: Final[frozenset[PeriodStatus]] = frozenset({"collective_file_prepared", "worker_settlements_ready"})
-_NO_PREVIEW: Final = "Wycena w efenix nie ma podglądu bez zapisu. Uruchom ją przyciskiem „Uruchom”."
+_NO_PREVIEW: Final = (
+    "Wycena w efenix nie ma podglądu bez zapisu. Uruchom ją przyciskiem „Uzupełnij bez zapisu” albo „Uzupełnij i zapisz”."
+)
 EFENIX_URL: Final = "https://efenix.pl/index.php"
 """Lista zleceń prawdziwego efenix, którą otwiera tylko Centrum taty; testy i weryfikacja podają adres Atrapy efenix."""
 
@@ -101,6 +104,7 @@ class EfenixEntry:
             reminder=_VIEW.reminder,
             confirms_readiness=_VIEW.confirms_readiness,
             preview_hint=None,
+            pricing_modes=list(_VIEW.pricing_modes),
             periods=[_choice(row, collective_files[row.token]) for row in rows],
             preselected_period=preselected,
             blocker=EFENIX.settings_blocker(settings) or _blocker(board, rows),
@@ -120,9 +124,15 @@ class EfenixEntry:
             journal=self.journal,
             forbidden=self.forbidden,
             copy=copy,
+            mode=PricingMode(request.pricing),
         )
         return PreparedRun(
-            declaration=EFENIX, period=period.token, process=EFENIX.core(self.processes), inputs=inputs, input_copy=copy
+            declaration=EFENIX,
+            period=period.token,
+            process=EFENIX.core(self.processes),
+            inputs=inputs,
+            input_copy=copy,
+            pricing=request.pricing,
         )
 
 

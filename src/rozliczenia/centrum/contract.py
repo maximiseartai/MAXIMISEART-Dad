@@ -7,7 +7,7 @@ Z tych modeli powstaje OpenAPI, a z niego schematy zod i typy w
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -201,6 +201,11 @@ ProcessKey = Literal["preparation", "settlement", "efenix", "intermax"]
 # Proces, którego Uruchomienie tata wybiera z okresem; Uporządkowanie INTERMAX ma własną kartę poza okresami.
 PeriodProcessKey = Literal["preparation", "settlement", "efenix"]
 RunMode = Literal["RUN", "DRY-RUN"]
+Pricing = Literal["bez Przekazania", "z Przekazaniem"]
+"""Tryb Wyceny w efenix (wartości ``efenix_pricing.PricingMode``, ADR 0027): bez Przekazania do akceptacji gotowych
+zleceń albo z nim."""
+DEFAULT_PRICING: Final[Pricing] = "bez Przekazania"
+"""Tryb startu, w którym nikt trybu nie wybrał: proces bez trybów i żądanie bez pola (ADR 0027)."""
 RunResult = Literal["OK", "WYMAGA_SPRAWDZENIA", "BLAD_KRYTYCZNY"]
 # Rodzaj Zatrzymania zapisany w metrykach, bez powtórki, którą Centrum pamięta tylko do zamknięcia.
 RecordedStopKind = domain.StopKind
@@ -331,7 +336,8 @@ class ProcessSetup(_Model):
 
     ``reminder``, ``confirms_readiness`` i ``preview_hint`` deklaruje proces: przypomnienie przed
     uruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma
-    podglądu bez zapisu, jak Wycena w efenix).
+    podglądu bez zapisu, jak Wycena w efenix). ``pricing_modes``: tryby Wyceny w efenix, z których tata wybiera
+    przyciskiem przy każdym starcie, w kolejności przycisków (pusta lista: proces bez trybów i z jednym „Uruchom”).
     """
 
     process: PeriodProcessKey
@@ -340,6 +346,7 @@ class ProcessSetup(_Model):
     reminder: str
     confirms_readiness: bool
     preview_hint: str | None
+    pricing_modes: list[Pricing]
     periods: list[PeriodChoice]
     preselected_period: str
     blocker: str | None
@@ -350,11 +357,15 @@ class RunSetup(_Model):
 
 
 class RunRequest(_Model):
-    """Start Uruchomienia procesu; pliki wejściowe wylicza serwer z ustawień i okresu."""
+    """Start Uruchomienia procesu; pliki wejściowe wylicza serwer z ustawień i okresu.
+
+    ``pricing``: tryb Wyceny w efenix, który tata wybrał przyciskiem; proces bez trybów przyjmuje tylko domyślny.
+    """
 
     process: PeriodProcessKey
     period: str
     dry_run: bool
+    pricing: Pricing = DEFAULT_PRICING
 
 
 class PhaseProgress(_Model):
@@ -401,7 +412,8 @@ class RunInfo(_Model):
     """Uruchomienie procesu; ``confirms_readiness`` i ``register_name`` deklaruje proces.
 
     ``confirms_readiness``: „Uruchom” potwierdza Gotowość. ``register_name``: nazwa Rejestru zleceń z Komunikatów
-    procesu, pod którą karta proponuje otworzyć go przy Zatrzymaniu.
+    procesu, pod którą karta proponuje otworzyć go przy Zatrzymaniu. ``pricing``: tryb Wyceny w efenix tego
+    Uruchomienia (``None``: proces bez trybów).
     """
 
     id: str
@@ -409,6 +421,7 @@ class RunInfo(_Model):
     title: str
     period: str
     dry_run: bool
+    pricing: Pricing | None
     confirms_readiness: bool
     register_name: str
 
@@ -733,10 +746,12 @@ class OrderNote(OrderLine):
 
 
 class OrderNotes(_Model):
-    """Błędy zleceń, ostrzeżenia Emmetta i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego Uruchomienia."""
+    """Błędy zleceń, ostrzeżenia Emmetta, Zlecenia przekazane i Zlecenia rozliczone Wyceny w efenix na karcie bieżącego
+    Uruchomienia."""
 
     errors: list[OrderNote]
     warnings: list[OrderNote]
+    forwarded: list[OrderLine]
     settled: list[OrderLine]
 
 
@@ -748,7 +763,7 @@ class RunOutcome(LoggedOutcome):
     ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
     Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
     Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
-    zostały tacie, i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
+    zostały tacie, Zlecenia przekazane i Zlecenia rozliczone, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
     trzech częściach (``None``: inny proces albo wynik bez podsumowania).
     """
 
@@ -1222,9 +1237,11 @@ class ReleaseNotification(_Notification):
 
 
 class PricedOrders(_Model):
-    """Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, rozliczone, błędy i ostrzeżenia Emmetta."""
+    """Zlecenia Wyceny w efenix z każdym wynikiem: gotowe do przekazania, przekazane do akceptacji, rozliczone, błędy i
+    ostrzeżenia Emmetta."""
 
     ready: int
+    forwarded: int
     settled: int
     errors: int
     warnings: int
@@ -1232,13 +1249,14 @@ class PricedOrders(_Model):
 
 class PricingNotification(_Notification):
     """Powiadomienie o zakończonej Wycenie w efenix, także po Zatrzymaniu: tytuł wyniku jak na karcie Uruchomienia
-    (``headline``), okres, zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”
+    (``headline``), okres, tryb (jak ``RunInfo.pricing``), zlecenia z każdym wynikiem (``None``: Zatrzymanie przed podsumowaniem) i „Co się stało”
     Komunikatu Zatrzymania (``None`` bez Zatrzymania). ``run_id`` otwiera kartę tego Uruchomienia z jego Logów."""
 
     kind: Literal["wycena_w_efenix"]
     run_id: str
     headline: str
     period: str
+    pricing: Pricing | None
     orders: PricedOrders | None
     stopped: str | None
 
