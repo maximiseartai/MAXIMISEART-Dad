@@ -22,7 +22,7 @@ from types import MappingProxyType
 from typing import Final
 
 from .efenix_checks import DateRefused, OrderProblem
-from .efenix_orders import QUANTITY_COLUMNS, CollectiveOrder
+from .efenix_orders import PRICED_COLUMNS, CollectiveOrder
 from .order_facts import NON_NUMERIC
 
 __all__ = [
@@ -68,7 +68,7 @@ POSITION_OF_COLUMN: Final[Mapping[str, str]] = MappingProxyType(
     }
 )
 """Pary pewne ze specyfikacji #741 (zgadzają się ceny); tata potwierdza je raz przed pierwszym przebiegiem."""
-UNPAIRED_COLUMNS: Final = tuple(column for column in QUANTITY_COLUMNS if column not in POSITION_OF_COLUMN)
+UNPAIRED_COLUMNS: Final = tuple(column for column in PRICED_COLUMNS if column not in POSITION_OF_COLUMN)
 """Kolumny Ilości usług bez pewnej pozycji efenix; ilość w nich to błąd zlecenia."""
 _COLUMN_OF_POSITION: Final = {position: column for column, position in POSITION_OF_COLUMN.items()}
 

@@ -7,6 +7,7 @@ pilnuje:
   - src/rozliczenia/highlights.py
   - src/rozliczenia/row_look.py
   - src/rozliczenia/hyperlinks.py
+  - src/rozliczenia/collective_layout.py
   - src/rozliczenia/workbook_files.py
   - src/rozliczenia/template_file.py
   - src/rozliczenia/write_routes.py

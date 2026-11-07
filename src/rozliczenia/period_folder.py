@@ -200,20 +200,25 @@ class PeriodFolder:
             internal_settlement_exists=_exists(listed, self.internal_settlement, directory=False),
             collective_file_exists=_exists(listed, self.collective_file, directory=False),
             worker_settlements_folder_exists=has_worker_settlements,
-            worker_settlement_count=self._count_worker_settlements() if has_worker_settlements else 0,
+            worker_settlement_count=len(self.worker_settlement_files()) if has_worker_settlements else 0,
         )
 
-    def _count_worker_settlements(self) -> int:
-        """Pomija pliki blokady Excela, pliki ukryte i Wzorzec rozliczenia pracownika bez nazwy wykonawcy."""
+    def worker_settlement_files(self) -> tuple[Path, ...]:
+        """Rozliczenia pracownika w Folderze rozliczeń pracowników, po nazwie; bez tego folderu pusta krotka.
+
+        Pomija pliki blokady Excela, pliki ukryte, foldery i Wzorzec rozliczenia pracownika bez nazwy wykonawcy.
+        """
 
         prefix, suffix = _WORKER_SETTLEMENT.format(token=self.period.token, worker="\0").split("\0")
-        return sum(
-            1
-            for entry in _listing(self.worker_settlements) or ()
-            if entry.name.startswith(prefix)
-            and entry.name.endswith(suffix)
-            and len(entry.name) > len(prefix) + len(suffix)
-            and entry.is_file()
+        return tuple(
+            sorted(
+                self.worker_settlements / entry.name
+                for entry in _listing(self.worker_settlements) or ()
+                if entry.name.startswith(prefix)
+                and entry.name.endswith(suffix)
+                and len(entry.name) > len(prefix) + len(suffix)
+                and entry.is_file()
+            )
         )
 
 

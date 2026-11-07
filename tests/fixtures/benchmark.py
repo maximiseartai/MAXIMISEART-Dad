@@ -17,7 +17,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from rozliczenia import tool_files
-from rozliczenia.workbook_files import DATA_ROW_COLUMNS, FIRST_DATA_ROW, QUANTITY_COLUMNS
+from rozliczenia.collective_layout import DATA_ROW_COLUMNS, FIRST_DATA_ROW, QUANTITY_COLUMNS
 from tests.fixtures.preparation import write_collective_template, write_internal_template
 from tests.fixtures.settlement import write_template
 from tests.fixtures.workbooks import active_worksheet

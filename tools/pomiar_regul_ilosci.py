@@ -29,7 +29,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia.collective_file import read_data_rows
-from rozliczenia.order_facts import N_AP, MissingHeaders, OrderFacts, TataValue
+from rozliczenia.collective_layout import HEADER_ROW, QUANTITY_LETTERS
+from rozliczenia.order_facts import MissingHeaders, OrderFacts, TataValue
 from rozliczenia.quantity_check import compared_columns
 from rozliczenia.quantity_rules import (
     FromDescription,
@@ -99,7 +100,7 @@ def rows(path: Path) -> tuple[list[Row], int]:
 
     orders = read_data_rows(path).orders
     if isinstance(orders, MissingHeaders):
-        raise SystemExit(f"{path.name}: w wierszu 17 nie ma nagłówka {', '.join(orders.headers)}")
+        raise SystemExit(f"{path.name}: w wierszu {HEADER_ROW} nie ma nagłówka {', '.join(orders.headers)}")
     measured: list[Row] = []
     undated = 0
     for order in orders:
@@ -163,7 +164,7 @@ def _texts(texts: Counter[str], limit: int = 12) -> str:
 
 
 def _counts(values: Mapping[str, object]) -> str:
-    return " ".join(f"{letter}={values[letter]}" for letter in N_AP if letter in values and values[letter] != 0) or "nic"
+    return " ".join(f"{letter}={values[letter]}" for letter in QUANTITY_LETTERS if letter in values and values[letter] != 0) or "nic"
 
 
 def _groups(group: list[Row]) -> list[str]:

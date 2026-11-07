@@ -12,6 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Final
 
+from .collective_layout import HEADER_ROW
 from .efenix_checks import DATE_TOLERANCE, DateRefused, OrderProblem
 from .efenix_window import PagePart
 from .efenix_marking import Refusal
@@ -100,8 +101,8 @@ def missing_columns(source: Path, headers: Sequence[str]) -> Message:
         code="EFENIX_BRAK_NAGLOWKOW",
         dad_file="collective_file",
         what=f"W Pliku zbiorczym brakuje nagłówków: {listed}. {_UNCHANGED}",
-        where=f"{file_label(source)}, wiersz 17",
-        action="Przywróć nagłówki w wierszu 17 Pliku zbiorczego, zapisz plik i uruchom ponownie.",
+        where=f"{file_label(source)}, wiersz {HEADER_ROW}",
+        action=f"Przywróć nagłówki w wierszu {HEADER_ROW} Pliku zbiorczego, zapisz plik i uruchom ponownie.",
     )
 
 

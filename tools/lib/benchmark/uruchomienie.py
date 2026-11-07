@@ -17,12 +17,13 @@ from typing import Any
 from benchmark import SCRIPT, BenchmarkError
 from benchmark.lustro import PERIOD, period_directory, run_quietly
 from rozliczenia.period_folder import PeriodFolder, collective_file_name
+from rozliczenia.settlement_files import staging_prefix
 
 
 def remove_worker_settlements(folder: Path) -> None:
     """Każde uruchomienie startuje bez Folderu rozliczeń pracowników i bez folderów roboczych publikacji."""
 
-    for path in (folder, *folder.parent.glob(f".{folder.name}.staging-*")):
+    for path in (folder, *folder.parent.glob(f"{staging_prefix(folder)}*")):
         if path.is_dir():
             shutil.rmtree(path)
 

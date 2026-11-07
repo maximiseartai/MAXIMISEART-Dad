@@ -50,7 +50,6 @@ from rozliczenia.period_folder import (
     PeriodPlace,
     locate_period_folder,
     period_place_label,
-    reading,
 )
 from rozliczenia.centrum.settings import Settings
 from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
@@ -182,17 +181,12 @@ class _ProcessFiles:
 
     @cached_property
     def period_files(self) -> tuple[Path, ...]:
-        """Pliki okresu w odszukanym Folderze okresu: oba pliki okresu i rozliczenia pracowników, bez plików blokady."""
+        """Pliki okresu w odszukanym Folderze okresu: oba pliki okresu i Rozliczenia pracownika."""
 
         folder = self.period_folder
         if not isinstance(folder, PeriodFolder):
             return ()
-        workers = folder.worker_settlements
-        with reading(folder.directory):
-            worker_files = sorted(
-                path for path in (workers.iterdir() if workers.is_dir() else ()) if not path.name.startswith("~$")
-            )
-        return (folder.internal_settlement, folder.collective_file, *worker_files)
+        return (folder.internal_settlement, folder.collective_file, *folder.worker_settlement_files())
 
     @cached_property
     def templates(self) -> tuple[Template, ...]:

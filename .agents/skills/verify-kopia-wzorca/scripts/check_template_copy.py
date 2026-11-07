@@ -71,7 +71,7 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.worksheet.formula import ArrayFormula
 
 import porownanie_rozliczen as gate
-from rozliczenia import workbook_files
+from rozliczenia import collective_layout, workbook_files
 from rozliczenia.highlights import PLAIN, Highlights
 from rozliczenia.hyperlinks import Hyperlink
 from rozliczenia.template_file import TemplateFile
@@ -91,9 +91,9 @@ STYLES = "xl/styles.xml"
 SHEET_RELS = "xl/worksheets/_rels/sheet1.xml.rels"
 CONTENT_TYPES = "[Content_Types].xml"
 ORDER_NUMBER = 6  # F, NUMER ZL.: the column whose Hiperłącza Dad clicks
-FIRST_DATA_ROW = workbook_files.FIRST_DATA_ROW
-HEADER_ROW = workbook_files.HEADER_ROW
-DATA_COLUMNS = workbook_files.DATA_ROW_COLUMNS[-1]  # AT
+FIRST_DATA_ROW = collective_layout.FIRST_DATA_ROW
+HEADER_ROW = collective_layout.HEADER_ROW
+DATA_COLUMNS = collective_layout.DATA_ROW_COLUMNS[-1]  # AT
 LOOK_COLUMNS = 12  # A:L: the columns with the Wygląd Wiersza danych
 ROWS_PER_CHUNK = 64  # Excel's shared-formula block and the copy's compression chunk (``_ROWS_PER_CHUNK``)
 DEFAULT_EXAMPLES = 60

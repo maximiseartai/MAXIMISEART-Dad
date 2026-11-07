@@ -54,7 +54,7 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import column_index_from_string
 from openpyxl.worksheet.worksheet import Worksheet
 
-from rozliczenia import efenix_browser, intermax_copies
+from rozliczenia import collective_layout, efenix_browser, intermax_copies
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.catalog import (
     EFENIX,
@@ -79,7 +79,8 @@ from rozliczenia.centrum.run_logs import (
 )
 from rozliczenia.centrum.runs import CONTINUE_HINT, EndedRun, PreparedRun
 from rozliczenia.centrum.stops import StoppedRun
-from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues, forbidden_columns
+from rozliczenia.client_data import MASKS, ForbiddenColumn, ForbiddenValues, forbidden_columns
+from rozliczenia.collective_layout import ADDRESS_COLUMN, HEADER_ROW
 from rozliczenia.decision import Decision
 from rozliczenia.efenix_orders import PricingScope, read_scope
 from rozliczenia.efenix_pricing import PricingMode
@@ -88,12 +89,14 @@ from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.intermax_process import OrderingInputs
 from rozliczenia.preparation_process import PreparationInputs
-from rozliczenia.register_columns import COLUMNS
+from rozliczenia.raw_orders import SHIFT
+from rozliczenia.register_columns import COLUMNS, DAY_FILL, ORDERED_FONT, ORDERED_SIZE
 from rozliczenia.process_run import Finished, Stop, run_process
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 from rozliczenia.settlement_process import SettlementInputs
 from rozliczenia.text import normalize_text
 from rozliczenia.tool_files import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_CONFIG, WORKER_TEMPLATE
+from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
 
 import atrapa_z_logow
 
@@ -101,29 +104,24 @@ SYNTHETIC_ADDRESS: Final = atrapa_z_logow.SYNTHETIC_ADDRESS
 """``ADRES`` wiersza w odtworzonym pliku: ulica z numerem wiersza, którą reguła adresu efenix rozbiera."""
 SYNTHETIC_ORANGE: Final = "ORANGE-ODTWORZENIE-{row}"
 """Numer Orange wiersza w odtworzonym pliku."""
-MASKS: Final = ("[adres]", "[numer Orange]", "[telefon]", "[ulica]")
-"""Maski strażnika reguły danych (``client_data``), które Kopia wejścia może nieść w miejscu wartości taty."""
 
 _SYNTHETIC: Final = {ForbiddenColumn.ADDRESS: SYNTHETIC_ADDRESS, ForbiddenColumn.ORANGE: SYNTHETIC_ORANGE}
-_COLLECTIVE_HEADER_ROW: Final = 17
-_COLLECTIVE_FORBIDDEN: Final = {"B": ForbiddenColumn.ADDRESS, "I": ForbiddenColumn.ORANGE}
-"""Zakazane kolumny Pliku zbiorczego z układu Wzorca (``workbook_files._FORBIDDEN_POSITIONS``); nagłówek to nazwa
-kolumny w regule danych, jak we Wzorcu."""
+_COLLECTIVE_FORBIDDEN: Final = {collective_layout.letter(column): forbidden for forbidden, column in FORBIDDEN_POSITIONS}
+"""Zakazane kolumny Pliku zbiorczego z układu Wzorca; nagłówek to nazwa kolumny w regule danych, jak we Wzorcu."""
+_ADDRESS: Final = collective_layout.letter(ADDRESS_COLUMN)
 _REGISTER_FORBIDDEN: Final = {
     column.register_header: forbidden
     for column in COLUMNS
     for forbidden, _ in forbidden_columns({normalize_text(column.target_header): column})
 }
 """Nagłówek Rejestru zleceń i INTERMAX (``ADRES``, ``NUMER UMOWY``) każdej kolumny, której Kopia wejścia nie ma."""
-_ORDERED_FONT: Final = Font(name="Calibri", sz=8)
+_ORDERED_FONT: Final = Font(name=ORDERED_FONT, sz=ORDERED_SIZE)
 """Krój uporządkowanego wiersza Rejestru zleceń i INTERMAX (``raw_orders.ordered_look``)."""
 _PASTED_FONT: Final = Font(name="Roboto", sz=4)
 """Krój wiersza wklejonego z aplikacji firmowej, bez wyglądu uporządkowanego (``raw_orders.ordered_look``)."""
-_YELLOW: Final = PatternFill("solid", fgColor="FFFFFF00")
+_YELLOW: Final = PatternFill("solid", fgColor=f"FF{DAY_FILL}")
 """Żółty wiersz, którym tata oddziela dni w INTERMAX."""
 _ORDERED_TEXT: Final = "uporządkowany wiersz odtworzenia"
-_SHIFT: Final = 2
-"""O tyle kolumn w lewo stoi przesunięty pierwszy wiersz wklejenia INTERMAX (``raw_orders.SHIFT``)."""
 _MISSING: Final = "(brak)"
 _Written = bool | int | float | str | datetime | time | timedelta
 """Wartość komórki odtworzonego pliku."""
@@ -521,7 +519,7 @@ def _collective_file(record: RunLog, work: _Work, addresses: Mapping[int, str]) 
         for letter, forbidden in _COLLECTIVE_FORBIDDEN.items():
             created[f"{letter}{row.row}"] = _SYNTHETIC[forbidden].format(row=row.row)
         if row.row in addresses:
-            created[f"B{row.row}"] = addresses[row.row]
+            created[f"{_ADDRESS}{row.row}"] = addresses[row.row]
     path = work.path("okresy", *(copied.folders or [record.period]), copied.name)
     workbook.save(path)
     return path
@@ -532,10 +530,10 @@ def _collective_limits(record: RunLog) -> list[Limit]:
     if limits:
         return limits
     sheets = _the_file(record).sheets
-    if len(sheets) != 1 or sheets[0].header_row != _COLLECTIVE_HEADER_ROW:
+    if len(sheets) != 1 or sheets[0].header_row != HEADER_ROW:
         return [
             Limit(
-                "Kopia Pliku zbiorczego nie ma jednego arkusza z nagłówkami w wierszu 17",
+                f"Kopia Pliku zbiorczego nie ma jednego arkusza z nagłówkami w wierszu {HEADER_ROW}",
                 blocking=True,
             )
         ]
@@ -586,7 +584,7 @@ def _register_file(record: RunLog, work: _Work, folder: str, font: Font) -> tupl
         for column, header in forbidden.items():
             created.cell(sheet.header_row, column, header)
         for row in sheet.rows:
-            shift = _SHIFT if row.row == sheet.shifted_row else 0
+            shift = SHIFT if row.row == sheet.shifted_row else 0
             for letter, value in row.cells.items():
                 created.cell(row.row, column_index_from_string(letter) - shift, _cell(value)).font = font
             for column, header in forbidden.items():
