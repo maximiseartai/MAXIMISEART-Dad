@@ -21,7 +21,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 import copy
 import dataclasses
 from dataclasses import dataclass, fields, is_dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 import gzip
@@ -54,12 +54,14 @@ from rozliczenia.centrum.comment_versions import (
     summary_markdown,
     without_logs_markdown,
 )
-from rozliczenia.centrum.contract import RunResult
+from rozliczenia.centrum.contract import Progress, RunInfo, RunResult
 from rozliczenia.centrum.dad_actions import DadActionJournal
+from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import (
     EndEntry,
     Found,
+    Journal,
     JournalKey,
     JournalRead,
     LeftJournal,
@@ -70,7 +72,7 @@ from rozliczenia.centrum.logs_disk import (
     Unreadable,
 )
 from rozliczenia.centrum.outbox import PeriodThread, Post, Rank
-from rozliczenia.centrum.run_comments import RecordMaker, RunComments
+from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker, RunComments
 from rozliczenia.centrum.run_logs import (
     READ_VALUES,
     TOOL_FIELDS,
@@ -84,7 +86,9 @@ from rozliczenia.centrum.run_logs import (
     guard_text,
     guarded,
 )
+from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, shown
+from tests.fixtures.clock import ManualClock
 from tests.fixtures.dziennik_wyceny import begun_line, left_journal
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 
@@ -482,7 +486,7 @@ INTERRUPTED: Final = record(
 
 
 def _without_logs(
-    read: JournalRead, result: RunResult, logs: LogsMissing, forbidden: ForbiddenValues
+    read: JournalRead, result: RunResult | None, logs: LogsMissing, forbidden: ForbiddenValues
 ) -> WithoutLogsVersion:
     final = ResultWithoutLogs(read.progress, result, logs)
     return WithoutLogsVersion(final, guard_text(without_logs_markdown(final), "wynik Wyceny w efenix bez Logów", forbidden))
@@ -506,6 +510,14 @@ CLOSE_MATRIX: Final[
         True,
         Unreadable(),
         lambda read, forbidden: _without_logs(read, "OK", "nieczytelne", forbidden),
+        False,
+    ),
+    # Plik Logów jest, więc Uruchomienie miało wynik, ale ani plik, ani dziennik go nie mówią (przegląd #1043, Drobne 3).
+    "logi-nieczytelne-bez-wpisu-konca": (
+        None,
+        True,
+        Unreadable(),
+        lambda read, forbidden: _without_logs(read, None, "nieczytelne", forbidden),
         False,
     ),
     "bez-logow-z-wpisem-konca": (
@@ -588,43 +600,78 @@ class SwitchedOff(BaseException):
 
 @dataclass
 class RecordingQueue:
-    """Kolejka wysyłki, która przyjmuje każdą wysyłkę i pamięta przyjęte."""
+    """Kolejka wysyłki, która przyjmuje każdą wysyłkę (``accepts``) albo każdej odmawia i pamięta przyjęte."""
 
     posts: list[Post] = dataclasses.field(default_factory=list)
+    accepts: bool = True
 
     def post(self, post: Post) -> bool:
-        self.posts.append(post)
-        return True
+        if self.accepts:
+            self.posts.append(post)
+        return self.accepts
+
+    def delivered(self, run_id: str, label: str) -> str | None:
+        return None
 
 
 StartStep = Literal["ZapiszLogi", "Wyslij"]
+"""Kroki modelu ``verify-urwane-uruchomienie`` przy starcie Centrum, które coś zapisują."""
+EndStep = Literal["WpisKonca", "LogiWyniku", "WyslijWynik", "UsunPoLogach"]
+"""Kroki modelu na końcu Wyceny (``RunComments.run_ended``), które coś zapisują, w kolejności modelu."""
 
 
 class PowerCut:
-    """Zgaśnięcie Centrum tuż przed krokiem modelu ``verify-urwane-uruchomienie``: zapisem pliku Logów ze startu
-    (``ZapiszLogi``) albo wysyłką wersji zastępczej (``Wyslij``). Daje Logi na dysku i kolejkę, które gasną przed nim."""
+    """Zgaśnięcie Centrum tuż przed krokiem modelu ``verify-urwane-uruchomienie``, który coś zapisuje. Daje Logi na dysku
+    i kolejkę, które gasną przed nim: start Centrum przed zapisem pliku Logów (``ZapiszLogi``) albo wysyłką wersji
+    zastępczej (``Wyslij``), koniec Wyceny przed wpisem końca (``WpisKonca``), plikiem Logów z wynikiem (``LogiWyniku``),
+    ich wysyłką (``WyslijWynik``) albo usunięciem dziennika za nimi (``UsunPoLogach``); ``None``: Centrum nie gaśnie. Po
+    zgaśnięciu nic już nie pisze, także ``finally`` kodu, który biegł w tej chwili."""
 
-    def __init__(self, before: StartStep) -> None:
+    def __init__(self, before: StartStep | EndStep | None) -> None:
         self.before = before
+        self.off = False
+
+    def reached(self, step: StartStep | EndStep) -> None:
+        """Krok ``step`` zaczyna pisać: Centrum gaśnie, gdy to krok zgaśnięcia albo już zgasło."""
+
+        if self.off or step == self.before:
+            self.off = True
+            raise SwitchedOff
 
     def disk(self, directory: Path) -> LogsOnDisk:
         cut = self
+        log = CentrumLog(directory / "centrum-rozliczen.log")
+
+        class SwitchedOffJournal(Journal):
+            def end(self, run_id: str, result: RunResult) -> None:
+                cut.reached("WpisKonca")
+                super().end(run_id, result)
+
+            def remove(self, run_id: str) -> None:
+                cut.reached("UsunPoLogach")
+                super().remove(run_id)
+
+        journal = SwitchedOffJournal(directory / "dzienniki-wyceny", log, process="efenix")
 
         class SwitchedOffDisk(LogsOnDisk):
+            @property
+            def journal(self) -> Journal:
+                return journal
+
             def write(self, logs: GuardedLogs) -> None:
-                if cut.before == "ZapiszLogi":
-                    raise SwitchedOff
+                # Ten sam zapis pliku Logów to ZapiszLogi przy starcie Centrum i LogiWyniku na końcu Wyceny.
+                cut.reached("ZapiszLogi" if cut.before == "ZapiszLogi" else "LogiWyniku")
                 super().write(logs)
 
-        return SwitchedOffDisk(CentrumLog(directory / "centrum-rozliczen.log"), journaled="efenix")
+        return SwitchedOffDisk(log, journaled="efenix")
 
     def queue(self, queue: RecordingQueue) -> RecordingQueue:
         cut = self
 
         class SwitchedOffQueue(RecordingQueue):
             def post(self, post: Post) -> bool:
-                if cut.before == "Wyslij":
-                    raise SwitchedOff
+                if post.rank != Rank.DRAFT or cut.off:
+                    cut.reached("Wyslij" if post.rank == Rank.STAND_IN else "WyslijWynik")
                 return super().post(post)
 
         return SwitchedOffQueue(queue.posts)
@@ -637,7 +684,9 @@ def _started(comments: RunComments) -> None:
     asyncio.run(comments.send_left_behind())
 
 
-def _comments(directory: Path, queue: RecordingQueue, disk: LogsOnDisk | None = None) -> RunComments:
+def _comments(
+    directory: Path, queue: RecordingQueue, disk: LogsOnDisk | None = None, clock: ManualClock | None = None
+) -> RunComments:
     """Start Centrum (model ``Start``) na katalogu Logów ``directory``: dziś narzędzie bez commitu i bez plików procesu."""
 
     log = CentrumLog(directory / "centrum-rozliczen.log")
@@ -649,8 +698,22 @@ def _comments(directory: Path, queue: RecordingQueue, disk: LogsOnDisk | None = 
         dad_actions=DadActionJournal(directory / "dzialania-taty.jsonl", log),
     )
     return RunComments(
-        disk or _logs_on_disk(directory), queue, forbidden=ForbiddenValues(), log=log, records=records
+        disk or _logs_on_disk(directory),
+        queue,
+        forbidden=ForbiddenValues(),
+        clock=clock or ManualClock(),
+        log=log,
+        records=records,
     )
+
+
+def _urwane(directory: Path) -> Path:
+    """Dziennik Urwanego Uruchomienia ``RUN_ID``, które zgasło przy zleceniu z wiersza 19."""
+
+    started = StartFacts(
+        run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
+    )
+    return left_journal(directory, started, begun_line(datetime(2026, 9, 10, 8, 1), row=19, place=1, total=2))
 
 
 @pytest.mark.parametrize("before", get_args(StartStep))
@@ -662,10 +725,7 @@ def test_centrum_zgaszone_przy_zamykaniu_dziennika_wyceny_wysyla_logi_urwanego_u
     bajtach pliku Logów, dopiero przy pierwszym zapytaniu (po ``Outbox.resume``), i dopiero wtedy usuwa dziennik
     (obietnice DziennikPoKolejce, TeSameZnaki, NicPrzedWznowieniem i Zbieganie)."""
 
-    started = StartFacts(
-        run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
-    )
-    journal = left_journal(tmp_path, started, begun_line(datetime(2026, 9, 10, 8, 1), row=19, place=1, total=2))
+    journal = _urwane(tmp_path)
     queue, cut = RecordingQueue(), PowerCut(before)
 
     with pytest.raises(SwitchedOff):
@@ -687,6 +747,236 @@ def test_centrum_zgaszone_przy_zamykaniu_dziennika_wyceny_wysyla_logi_urwanego_u
     )
     assert post.archive is not None and gzip.decompress(post.archive.packed()) == logs_file.read_bytes()
     assert not journal.exists()
+
+
+def test_katalog_logow_ktory_nie_przyjal_pliku_przy_starcie_nie_zatrzymuje_logow_urwanego_uruchomienia(
+    tmp_path: Path,
+) -> None:
+    """Na miejscu katalogu Logów stoi plik, więc start Centrum nie zapisze pliku Logów Urwanego Uruchomienia: jedna linia
+    dziennika Centrum, a te Logi i tak idą do Skrzynki przy pierwszym zapytaniu i dziennik znika (przegląd #1043,
+    Drobne 1)."""
+
+    journal = _urwane(tmp_path)
+    (tmp_path / "uruchomienia").write_text("", encoding="utf-8")
+    queue = RecordingQueue()
+    comments = _comments(tmp_path, queue)
+
+    comments.close_left_behind()
+    asyncio.run(comments.send_left_behind())
+
+    [post] = queue.posts
+    lines = (tmp_path / "centrum-rozliczen.log").read_text(encoding="utf-8").splitlines()
+    assert (post.rank, journal.exists()) == (Rank.STAND_IN, False)
+    assert [line.split(" ", 1)[1].split(" typ=")[0] for line in lines] == ["dziennik-wyceny-niedostepny"]
+    assert lines[0].endswith("miejsce=start")
+
+
+def test_wersja_zastepcza_idzie_do_kolejki_raz_choc_kazde_zapytanie_api_pyta_o_wysylke(tmp_path: Path) -> None:
+    """Wysyłka wersji zastępczej jest zależnością każdej trasy API, a idzie tylko przy pierwszym zapytaniu: następne nie
+    wysyłają jej znowu ani nie usuwają dziennika drugi raz (przegląd #1043, Drobne 2)."""
+
+    _urwane(tmp_path)
+    queue = RecordingQueue()
+    comments = _comments(tmp_path, queue)
+    comments.close_left_behind()
+
+    for _ in range(3):
+        asyncio.run(comments.send_left_behind())
+
+    assert [post.rank for post in queue.posts] == [Rank.STAND_IN]
+    assert not (tmp_path / "centrum-rozliczen.log").exists()
+
+
+PRICING = RunInfo(
+    id=RUN_ID,
+    process="efenix",
+    title="Wycena w efenix",
+    period="08_14_09_2026",
+    dry_run=False,
+    confirms_readiness=False,
+    register_name="Rejestr zleceń",
+)
+STARTED_AT: Final = datetime(2026, 9, 10, 8, 0, tzinfo=timezone.utc)
+OTHER_RUN_ID: Final = "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6"
+ENTRIES: Final = ["start Uruchomienia", "zaczynam zlecenie"]
+"""Wpisy dziennika Wyceny ``PRICING`` przed jej wynikiem (``_priced``)."""
+
+
+def _ended(info: RunInfo = PRICING) -> EndedRun:
+    """Koniec Uruchomienia ``info`` bez wyniku rdzenia (``BLAD_KRYTYCZNY``), po pół godzinie."""
+
+    progress = Progress(phases=[], template_total=0, templates_completed=0, current_worker=None, figures=[])
+    return EndedRun(info, None, None, progress, STARTED_AT, STARTED_AT + timedelta(minutes=30))
+
+
+def _priced(comments: RunComments, disk: LogsOnDisk) -> None:
+    """Start Wyceny ``PRICING`` z Centrum i zlecenie z wiersza 19 zaczęte w jej dzienniku, przed wynikiem."""
+
+    comments.run_started(PRICING, STARTED_AT)
+    disk.journal.begun(19, 1, 1)
+
+
+# Zgaśnięcie Centrum przed krokiem końca Wyceny (model ``verify-urwane-uruchomienie``; ``None``: bez zgaśnięcia) i czy na
+# miejscu katalogu Logów stoi plik → co zostaje: wpis końca w dzienniku, plik Logów z wynikiem i stopnie wysyłek tej pracy
+# Centrum (postęp przy starcie Wyceny, Logi z wynikiem), a potem wersja zastępcza następnego startu: Logi z pliku, wynik bez
+# Logów albo Logi Urwanego Uruchomienia (przy ``WpisKonca`` to przyjęte znalezisko ``przed-wpisem-konca``). Bez zgaśnięcia
+# dziennik znika za Logami z wynikiem, a start nie ma czego wysłać.
+AFTER_CUT: Final[dict[str, tuple[EndStep | None, bool, tuple[bool, bool, list[Rank], str | None]]]] = {
+    "WpisKonca": ("WpisKonca", False, (False, False, [Rank.DRAFT], "interrupted")),
+    "LogiWyniku": ("LogiWyniku", False, (True, False, [Rank.DRAFT], "bez-logow")),
+    "WyslijWynik": ("WyslijWynik", False, (True, True, [Rank.DRAFT], "finished")),
+    "UsunPoLogach": ("UsunPoLogach", False, (True, True, [Rank.DRAFT, Rank.OWN], "finished")),
+    # Logi z wynikiem przyjęte bez swojego pliku: start wysyła wynik bez Logów, niższego stopnia (#871, #910).
+    "UsunPoLogach-bez-pliku-logow": ("UsunPoLogach", True, (True, False, [Rank.DRAFT, Rank.OWN], "bez-logow")),
+    "bez-zgasniecia": (None, False, (True, True, [Rank.DRAFT, Rank.OWN], None)),
+}
+
+
+@pytest.mark.parametrize(("before", "blocked", "expected"), AFTER_CUT.values(), ids=AFTER_CUT.keys())
+def test_centrum_zgaszone_przed_kazdym_krokiem_konca_wyceny_daje_nastepnemu_startowi_wersje_zastepcza_z_tego_co_zapisalo(
+    before: EndStep | None, blocked: bool, expected: tuple[bool, bool, list[Rank], str | None], tmp_path: Path
+) -> None:
+    """Koniec Wyceny w efenix to po kolei wpis końca, plik Logów z wynikiem, ich wysyłka i usunięcie dziennika, gdy
+    kolejka je przyjęła (``RunComments.run_ended``, #871, #910). Centrum zgaszone przed każdym z tych kroków zostawia
+    dziennik, a następny start wysyła z niego wersję zastępczą tego, co zdążyło się zapisać, w stopniu niższym od Logów
+    z wynikiem, i usuwa dziennik. Zgaśnięcie przed wpisem końca daje Logi Urwanego Uruchomienia (przyjęte znalezisko)."""
+
+    queue, cut = RecordingQueue(), PowerCut(before)
+    disk = cut.disk(tmp_path)
+    comments = _comments(tmp_path, cut.queue(queue), disk)
+    if blocked:
+        (tmp_path / "uruchomienia").write_text("", encoding="utf-8")
+    _priced(comments, disk)
+
+    if before is None:
+        comments.run_ended(_ended())
+    else:
+        with pytest.raises(SwitchedOff):
+            comments.run_ended(_ended())
+    ended = [
+        [json.loads(line)["entry"] for line in path.read_text(encoding="utf-8").splitlines()]
+        for path in (tmp_path / "dzienniki-wyceny").glob("*.jsonl")
+    ]
+    logs_files = list((tmp_path / "uruchomienia").glob(f"*-{RUN_ID}.json"))
+    ranks = [post.rank for post in queue.posts]
+    restarted = _comments(tmp_path, queue)
+    _started(restarted)
+
+    end_entry, logs_file, sent, stand_in = expected
+    assert (ranks, bool(logs_files)) == (sent, logs_file)
+    assert ended == ([] if stand_in is None else [ENTRIES + (["koniec Uruchomienia"] if end_entry else [])])
+    assert list((tmp_path / "dzienniki-wyceny").glob("*.jsonl")) == []
+    if stand_in is None:
+        assert [post.rank for post in queue.posts] == sent
+        return
+    *_, last = queue.posts
+    assert last.rank == Rank.STAND_IN
+    if stand_in == "bez-logow":
+        assert last.archive is None and "- Wynik: BLAD_KRYTYCZNY" in last.parts[0]
+    else:
+        assert last.archive is not None
+        assert json.loads(gzip.decompress(last.archive.packed()))["ending"] == stand_in
+
+
+def test_wynik_wyceny_bez_przyjecia_logow_przez_kolejke_zostawia_dziennik_do_nastepnego_startu(tmp_path: Path) -> None:
+    """Kolejka odmawia Logów z wynikiem (``post`` daje ``False``), więc komentarz postępu nie ma jeszcze wersji
+    końcowej: dziennik zostaje z wpisem końca, a następny start wysyła z niego Logi z pliku (#910)."""
+
+    queue = RecordingQueue(accepts=False)
+    disk = _logs_on_disk(tmp_path)
+    comments = _comments(tmp_path, queue, disk)
+    _priced(comments, disk)
+
+    comments.run_ended(_ended())
+    left = list((tmp_path / "dzienniki-wyceny").glob("*.jsonl"))
+    queue.accepts = True
+    _started(_comments(tmp_path, queue))
+
+    [post] = queue.posts
+    assert (len(left), post.rank) == (1, Rank.STAND_IN)
+    assert list((tmp_path / "dzienniki-wyceny").glob("*.jsonl")) == []
+
+
+def test_blad_wpisu_konca_nie_zatrzymuje_logow_z_wynikiem_a_blad_pliku_logow_ich_wysylki(tmp_path: Path) -> None:
+    """Każdy krok końca Wyceny ma własną osłonę (#871): wpis końca, który rzucił, nie zatrzymuje Logów z wynikiem, a plik
+    Logów, który się nie zapisał (na miejscu katalogu Logów stoi plik), nie zatrzymuje ich wysyłki; kolejka je przyjęła,
+    więc dziennik znika, a dziennik Centrum ma typ każdego błędu w miejscu działań po wyniku."""
+
+    queue = RecordingQueue()
+    log = CentrumLog(tmp_path / "centrum-rozliczen.log")
+
+    class BrokenJournal(Journal):
+        def end(self, run_id: str, result: RunResult) -> None:
+            raise PermissionError("dziennik trzyma antywirus")
+
+    journal = BrokenJournal(tmp_path / "dzienniki-wyceny", log, process="efenix")
+
+    class BrokenEndDisk(LogsOnDisk):
+        @property
+        def journal(self) -> Journal:
+            return journal
+
+    disk = BrokenEndDisk(log, journaled="efenix")
+    comments = _comments(tmp_path, queue, disk)
+    _priced(comments, disk)
+    (tmp_path / "uruchomienia").write_text("", encoding="utf-8")
+
+    comments.run_ended(_ended())
+
+    failures = [
+        line.split(" ", 1)[1]
+        for line in (tmp_path / "centrum-rozliczen.log").read_text(encoding="utf-8").splitlines()
+        if "nieoczekiwany-wyjatek" in line
+    ]
+    assert [post.rank for post in queue.posts] == [Rank.DRAFT, Rank.OWN]
+    assert failures == [
+        'nieoczekiwany-wyjatek typ=PermissionError miejsce="po wyniku Uruchomienia procesu"',
+        'nieoczekiwany-wyjatek typ=FileExistsError miejsce="po wyniku Uruchomienia procesu"',
+    ]
+    assert list((tmp_path / "dzienniki-wyceny").glob("*.jsonl")) == []
+
+
+def test_postep_wyceny_idzie_tylko_z_pierwsza_linia_dziennika_na_dysku_i_konczy_sie_z_wynikiem(tmp_path: Path) -> None:
+    """Postęp Wyceny w efenix idzie przy jej starcie i co ``PROGRESS_S``, tylko gdy dziennik ma na dysku pierwszą linię
+    (#846): bez niej (na miejscu katalogu dzienników stoi plik) budzik dzwoni, a nic nie idzie. Od końca Wyceny postęp
+    nie idzie, a pierwszy budzik po końcu nie ustawia następnego."""
+
+    (tmp_path / "dzienniki-wyceny").write_text("", encoding="utf-8")
+    queue, clock = RecordingQueue(), ManualClock()
+    comments = _comments(tmp_path, queue, clock=clock)
+
+    comments.run_started(PRICING, STARTED_AT)
+    clock.advance(PROGRESS_S)
+    without_first_line = (list(queue.posts), clock.wakes)
+    (tmp_path / "dzienniki-wyceny").unlink()
+    comments.run_started(PRICING.model_copy(update={"id": OTHER_RUN_ID}), STARTED_AT)
+    clock.advance(PROGRESS_S)
+    during = [post.rank for post in queue.posts]
+    comments.run_ended(_ended(PRICING.model_copy(update={"id": OTHER_RUN_ID})))
+    clock.advance(PROGRESS_S)
+
+    assert without_first_line == ([], 1)
+    assert during == [Rank.DRAFT, Rank.DRAFT]
+    assert ([post.rank for post in queue.posts], clock.wakes) == ([Rank.DRAFT, Rank.DRAFT, Rank.OWN], 0)
+
+
+def test_diagnoza_dopisuje_sie_do_logow_ostatniego_uruchomienia_raz_na_wynik(tmp_path: Path) -> None:
+    """Diagnoza dopisuje się do Logów ostatniego Uruchomienia tej pracy Centrum nowszą wersją tej samej wysyłki, a druga
+    z tym samym wynikiem i Diagnoza innego Uruchomienia nie zmieniają niczego (#840)."""
+
+    queue = RecordingQueue()
+    comments = _comments(tmp_path, queue)
+    comments.run_ended(_ended(PRICING.model_copy(update={"process": "preparation"})))
+    diagnosis = Diagnosis((), ("wpis dziennika Centrum",))
+
+    for run_id in (RUN_ID, RUN_ID, OTHER_RUN_ID):
+        comments.diagnosed(run_id, diagnosis)
+
+    [file] = (tmp_path / "uruchomienia").glob(f"*-{RUN_ID}.json")
+    first, diagnosed = queue.posts
+    assert (first.run_id, diagnosed.run_id, diagnosed.rank) == (RUN_ID, RUN_ID, Rank.OWN)
+    assert diagnosed.archive is not None and gzip.decompress(diagnosed.archive.packed()) == file.read_bytes()
+    assert RunLog.model_validate_json(file.read_text(encoding="utf-8")).diagnosis is not None
 
 
 def test_zakazana_wartosc_w_kluczu_slownika_logow_jest_zamaskowana_z_uwaga_o_polu_bez_wartosci() -> None:

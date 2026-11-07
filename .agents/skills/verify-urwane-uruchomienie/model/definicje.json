@@ -1,16 +1,8 @@
 {
-  "src/rozliczenia/centrum/pricing_journal.py": [
-    "JournalAtResult",
-    "JournalAfterLogs"
-  ],
   "src/rozliczenia/centrum/run_logs.py": [
     "RunLog.interrupted",
     "guarded",
-    "RunLogs.run_ended",
-    "RunLogs._keep",
-    "RunLogs.progress",
     "LoggedEnding",
-    "RunLogs.queued",
     "guard_logs",
     "GuardedLogs"
   ],
@@ -27,6 +19,12 @@
     "close"
   ],
   "src/rozliczenia/centrum/run_comments.py": [
+    "RunComments.run_started",
+    "RunComments._progress",
+    "RunComments.run_ended",
+    "RunComments._own",
+    "RunComments._step",
+    "RunComments._keep",
     "RunComments.close_left_behind",
     "RunComments.send_left_behind",
     "RecordMaker.interrupted"
@@ -56,7 +54,6 @@
     "disk",
     "comments",
     "closed",
-    "run_started",
     "runs"
   ],
   "src/rozliczenia/centrum/runs.py": [

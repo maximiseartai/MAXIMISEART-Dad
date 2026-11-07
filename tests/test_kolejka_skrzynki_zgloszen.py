@@ -34,6 +34,7 @@ from rozliczenia.centrum.outbox import (
     Outbox,
     PeriodThread,
     Post,
+    Rank,
     ReportIssue,
 )
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, Refused, Rejected, Unreachable
@@ -846,6 +847,41 @@ def test_logi_z_diagnoza_po_cofnieciu_zegara_komputera_zmieniaja_komentarz_uruch
     assert queue.files() == []
     [issue] = queue.box.issues_with(LOGS.label)
     assert issue.comments == list(run_logs("z Diagnozą", 2).parts)
+
+
+def test_wersja_zastepcza_z_nastepnego_startu_nie_zmienia_logow_z_wynikiem_ktore_skrzynka_juz_ma(tmp_path: Path) -> None:
+    # Logi z wynikiem doszły do Skrzynki, Centrum zgasło, zanim ich dziennik zniknął, a następny start wysyła z dziennika
+    # wersję zastępczą tego samego Uruchomienia: późniejszą chwilą, ale niższym stopniem (#871, #910).
+    queue = Queue(tmp_path, FakeReportBox())
+    queue.outbox.post(run_logs("z wynikiem", 1))
+    queue.passed()
+    queue.outbox = queue.restarted()
+
+    queue.outbox.post(replace(run_logs("zastępcze", 1), rank=Rank.STAND_IN))
+    queue.passed()
+
+    assert queue.files() == []
+    [issue] = queue.box.issues_with(LOGS.label)
+    assert (issue.comments, queue.box.edited) == (list(run_logs("z wynikiem", 1).parts), [])
+
+
+def test_bez_sieci_wersja_zastepcza_z_nastepnego_startu_znika_przy_logach_z_wynikiem_bez_wyslania(tmp_path: Path) -> None:
+    # Bez sieci Logi z wynikiem czekają w kolejce, a następny start dokłada wersję zastępczą tego samego Uruchomienia z
+    # dziennika: po powrocie sieci Skrzynka dostaje tylko Logi z wynikiem, bo mają wyższy stopień (#871, #910).
+    queue = Queue(tmp_path, FakeReportBox(search_failure=Unreachable()))
+    queue.outbox.post(run_logs("z wynikiem", 1))
+    queue.passed()
+    queue.outbox = queue.restarted()
+    queue.outbox.post(replace(run_logs("zastępcze", 1), rank=Rank.STAND_IN))
+    queue.passed()
+    waiting = len(queue.files())
+    queue.box.search_failure = None
+
+    queue.clock.advance(RETRY_S)  # przejście poprzedniej pracy Centrum albo tej, które przejmie folder kolejki
+
+    assert (waiting, wait_for(lambda: queue.files() == [])) == (2, True)
+    [issue] = queue.box.issues_with(LOGS.label)
+    assert issue.comments == list(run_logs("z wynikiem", 1).parts)
 
 
 def test_wyslanej_wysylki_ktorej_nie_da_sie_usunac_skrzynka_nie_dostaje_drugi_raz(

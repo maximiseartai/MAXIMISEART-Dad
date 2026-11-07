@@ -807,7 +807,7 @@ class _Tata:
 
 
 def _run(record: RunLog, setup: _Setup, work: Path) -> RunLog:
-    """Uruchomienie odtworzenia przez rdzeń procesu i jego Logi po strażniku, jak w Centrum (``RunLogs.run_ended``)."""
+    """Uruchomienie odtworzenia przez rdzeń procesu i jego Logi po strażniku, jak w Centrum (``RunComments.run_ended``)."""
 
     prepared = setup.prepared
     tata = _Tata(prepared, consent=record.ending != "declined")

@@ -4,8 +4,8 @@
 (* RunComments.close_left_behind i send_left_behind, comment_versions.close), Logi Urwanego                          *)
 (* Uruchomienia (run_comments.py: RecordMaker.interrupted; run_logs.py: guard_logs) i ich droga do Kolejki          *)
 (* wysyłki (Outbox.post), obok Logów Wyceny, która doszła do wyniku, i wpisu końca w jej dzienniku, i komentarz       *)
-(* postępu Wyceny (#846: RunLogs.progress), który wersja końcowa zamienia w podsumowanie: Logi z wynikiem, a gdy ich   *)
-(* kolejka nie przyjęła w pracy Uruchomienia, wersja zastępcza z następnego startu (#910). Każda akcja to jeden       *)
+(* postępu Wyceny (#846: RunComments._progress), który wersja końcowa zamienia w podsumowanie: Logi z wynikiem, a gdy *)
+(* ich kolejka nie przyjęła w pracy Uruchomienia, wersja zastępcza z następnego startu (#910). Każda akcja to jeden    *)
 (* niepodzielny krok kodu z tabeli w SKILL.md skilla verify-urwane-uruchomienie. Kolejka kończy się tu na             *)
 (* Outbox.post i najnowszej wersji, którą przyjęła (outbox.py: stopień, potem chwila): co dalej z plikiem kolejki,    *)
 (* sprawdza model skilla verify-kolejka-skrzynki.                                                                     *)
@@ -48,7 +48,8 @@ BrakLogow == [rodzaj |-> "brak", tresc |-> Pusta]
 \* Wpisy dziennika: „zaczynam zlecenie”, „zlecenie skończone” i „koniec Uruchomienia” (_RunEnded, z jest bez znaczenia).
 Wpisy == [rodzaj : {"zaczete", "skonczone", "koniec"}, z : Zlecenia]
 \* Wersje końcowe komentarza Uruchomienia, które przyjmuje kolejka: Logi z wynikiem, Logi Urwanego Uruchomienia i wynik
-\* bez Logów (run_logs.ResultWithoutLogs: start ma wpis końca, a pliku Logów nie). Postęp (RunLogs.progress) to wersja
+\* bez Logów (comment_versions.ResultWithoutLogs: start ma wpis końca, a pliku Logów nie). Postęp (RunComments._progress)
+\* to wersja
 \* tej samej wysyłki bez pliku Logów, której kolejka nie trzyma w zbiorze wersji końcowych, tylko w najnowszej wersji.
 Rodzaje == {"wynik", "urwane", "bezLogow"}
 \* Rodzaj najnowszej wersji komentarza Uruchomienia, którą przyjęła kolejka ("brak": żadnej), i te z pełnymi Logami.
@@ -56,9 +57,9 @@ RodzajeWersji == Rodzaje \cup {"brak", "postep"}
 ZLogami == {"wynik", "urwane"}
 \* Stopień wersji (outbox.py Rank, Post.rank): wybiera go ten, kto wysyła, a nie zegar. Kolejka porównuje najpierw
 \* stopień, a chwilę z nazwy pliku tylko w tym samym stopniu (outbox.py Version).
-StopienPostepu == 0   \* RunLogs.progress -> post_of(ProgressVersion): rank_of daje Rank.DRAFT
+StopienPostepu == 0   \* RunComments._progress -> post_of(ProgressVersion): rank_of daje Rank.DRAFT
 StopienZeStartu == 1  \* RunComments.send_left_behind -> post_of(wersja zastępcza): Rank.STAND_IN
-StopienWlasny == 2    \* RunLogs._keep -> post_of(OwnLogs): rank_of daje Rank.OWN
+StopienWlasny == 2    \* RunComments._keep -> post_of(OwnLogs): rank_of daje Rank.OWN
 Stopnie == 0..2
 \* Najnowsza przyjęta wersja komentarza Uruchomienia: rodzaj, stopień, czy przyszła w tej pracy Centrum i czy od niej
 \* zegar komputera cofnął się przy którymś starcie (wtedy jej chwila może być późniejsza od chwil nowej pracy).
@@ -68,7 +69,8 @@ BrakWersji == [rodzaj |-> "brak", stopien |-> 0, tejPracy |-> FALSE, cofniety |-
 Rekordy == [rodzaj : ZLogami, tresc : Tresci]
 \* RunComments._pending: wersja zastępcza, jej dziennik i czy jej pliku Logów nie udało się zapisać.
 Oczekujace == [bieg : Biegi, rodzaj : Rodzaje, tresc : Tresci, niezapisany : BOOLEAN]
-\* Fazy Wyceny, w których RunLogs.progress jeszcze wysyła postęp: przed RunLogs.run_ended (``_ended``).
+\* Fazy Wyceny, w których RunComments._progress jeszcze wysyła postęp: przed znacznikiem końca w RunComments.run_ended
+\* (_Watched.ended, za wpisem końca).
 PrzedKoncemPostepu == {"zaczete", "efenix", "skonczone", "wynik", "koniec", "logi"}
 
 VARIABLES
@@ -92,16 +94,16 @@ VARIABLES
     krokWysylki,     \* "post" | "usun" (dziennik po przyjęciu)
     bieg,            \* Wycena, która biegnie w tej pracy Centrum (0: żadna)
     faza,            \* gdzie jest Wycena: "-" | "start" | "zaczete" | "efenix" | "skonczone" | "wynik" | "koniec" |
-                     \* "logi" | "post" | "zaLogami" (JournalAfterLogs) | "po" (reszta działań po wyniku)
+                     \* "logi" | "post" | "zaLogami" (krok 4 run_ended) | "po" (reszta działań po wyniku)
     zlecenie,        \* bieżące zlecenie Wyceny
     naglowekCzeka,   \* Journal._header: pierwszej linii nie ma jeszcze na dysku (przy starcie albo z wpisem)
-    wKolejce,        \* RunLogs._queued: kolejka przyjęła Logi z wynikiem bieżącej Wyceny w tej pracy Centrum
+    wKolejce,        \* accepted w RunComments.run_ended: kolejka przyjęła Logi z wynikiem bieżącej Wyceny
     nastepny,        \* następna Wycena, którą tata może uruchomić
     zgasniecia, zatrzymania, awarieWpisu, awarieOdczytu, awarieLogow, awarieKolejki, awarieUsuniecia, cofniecia,
     \* Zmienne pomocnicze: nie mają odpowiednika w kodzie i służą tylko obietnicom.
     zapisanyStart,   \* dziennik r miał kiedyś pierwszą linię
     postepMozliwy,   \* Wycena r mogła wysłać postęp, więc jej komentarz w Skrzynce może mówić, że trwa: pierwsza linia
-                     \* jej dziennika jest na dysku bez _header (Journal.progress daje postęp, a ProgressComment
+                     \* jej dziennika jest na dysku bez _header (Journal.progress daje postęp, a RunComments
                      \* wysyła go przy starcie Wyceny i potem co PROGRESS_S); model liczy go od tej chwili
     wynik,           \* Wycena r doszła do wyniku: run_process wrócił z wynikiem, z wierszem Historii albo bez niego
     przepadle,       \* zlecenia Wyceny r, których własny wpis dziennika się nie zapisał (OSError)
@@ -284,8 +286,8 @@ Zbuduj(r) ==
 (* LogsOnDisk.logs, _read_logs) w jednym kroku, bo w create_app nic innego tych plików nie pisze. Historii start nie   *)
 (* czyta. OSError z odczytu dziennika albo Logów albo z listowania katalogu Logów, który jest (Refused, close rzuca  *)
 (* go dalej): close_left_behind łapie go i zostawia dziennik następnemu startowi. Dziennik z pierwszą linią został, bo kolejka nie przyjęła Logów z       *)
-(* wynikiem w pracy Uruchomienia (JournalAfterLogs) albo to Urwane Uruchomienie, więc start zamyka go wersją zastępczą *)
-(* (Rank.STAND_IN), a usuwa tylko dziennik bez niej.                                                                   *)
+(* wynikiem w pracy Uruchomienia (RunComments.run_ended) albo to Urwane Uruchomienie, więc start zamyka go wersją     *)
+(* zastępczą (Rank.STAND_IN), a usuwa tylko dziennik bez niej.                                                         *)
 Czytaj ==
     LET r == kursor
         koniecZapisany == Zakonczony(r)
@@ -399,8 +401,8 @@ UsunPoWysylce ==
                    awarieLogow, awarieKolejki, cofniecia, duchy, poWyniku, inneZnaki, bezStrazy, przedWznowieniem,
                    bezZlecenia, wyparty>>
 
-(* Tata uruchamia Wycenę w efenix: RunHost.start -> run_started -> LogsOnDisk.started -> Journal._run_started      *)
-(* (start w pamięci,                                                                                                *)
+(* Tata uruchamia Wycenę w efenix: RunHost.start -> RunComments.run_started -> LogsOnDisk.started ->               *)
+(* Journal._run_started (start w pamięci,                                                                           *)
 (* _header), zanim ruszy wątek; pierwsza linia idzie na dysk w tym samym wywołaniu (ZapiszStart). Każde zapytanie   *)
 (* przechodzi najpierw send_interrupted.                                                                           *)
 StartWyceny ==
@@ -503,12 +505,12 @@ Zatrzymanie ==
                    zlecenie, naglowekCzeka, wKolejce, nastepny, zgasniecia, awarieWpisu, awarieOdczytu, awarieLogow,
                    awarieKolejki, awarieUsuniecia, cofniecia, duchy, zdarzenia>>
 
-(* ProgressComment (start Wyceny albo budzik co PROGRESS_S) -> RunLogs.progress: Outbox.post postępu z dziennika      *)
-(* (post_of(ProgressVersion), Rank.DRAFT), gdy Journal.progress go daje (bez _header) i dopóki                        *)
-(* RunLogs.run_ended nie dodał Uruchomienia do _ended (pod tą samą blokadą). Model liczy postęp jako możliwy od       *)
-(* chwili, gdy pierwsza linia jest na dysku (postepMozliwy); postęp, którego kolejka nie przyjęła, niczego nie        *)
-(* zmienia, więc akcja ma tylko przyjęty. Postęp, który zmienia najnowszą wersję z Logami, to zdarzenie obietnicy      *)
-(* LogiZostaja (Przyjmij).                                                                                           *)
+(* RunComments.run_started (start Wyceny) albo budzik _refresh co PROGRESS_S -> RunComments._progress: Outbox.post   *)
+(* postępu z dziennika (post_of(ProgressVersion), Rank.DRAFT), gdy Journal.progress go daje (bez _header) i dopóki    *)
+(* RunComments.run_ended nie oznaczył Wyceny jako skończonej (_Watched.ended, pod tą samą blokadą). Model liczy     *)
+(* postęp jako możliwy od chwili, gdy pierwsza linia jest na dysku (postepMozliwy); postęp, którego kolejka nie      *)
+(* przyjęła, niczego nie zmienia, więc akcja ma tylko przyjęty. Postęp, który zmienia najnowszą wersję z Logami, to *)
+(* zdarzenie obietnicy LogiZostaja (Przyjmij).                                                                       *)
 Postep ==
     /\ bieg # 0 /\ ~naglowekCzeka /\ faza \in PrzedKoncemPostepu
     /\ Przyjmij(bieg, "postep", StopienPostepu)
@@ -526,12 +528,12 @@ Wynik ==
                    zlecenie, naglowekCzeka, wKolejce, liczniki, zapisanyStart, postepMozliwy, przepadle, bezKonca,
                    zdarzenia>>
 
-(* RunHost.after -> JournalAtResult.run_ended -> Journal.end, pierwsze działanie po wyniku (after_run w create_app), przed *)
-(* RunLogs.run_ended. Gdy pierwszej linii nie potwierdził żaden zapis (self._header): _remove usuwa to, co nieudany    *)
+(* RunHost.after -> RunComments.run_ended, pierwsze działanie po wyniku (after_run w create_app), krok 1 w osłonie     *)
+(* _step: Journal.end. Gdy pierwszej linii nie potwierdził żaden zapis (self._header): _remove usuwa to, co nieudany   *)
 (* zapis zostawił na dysku (bez pliku unlink rzuca FileNotFoundError, a _remove go pomija); postępu wtedy nie było.   *)
 (* Gdy zawiedzie unlink, dziennik zostaje bez wpisu końca. Gdy dziennik ma pierwszą linię na dysku: wpis „koniec      *)
 (* Uruchomienia” z wynikiem przez _write (write, flush, fsync); OSError zostawia dziennik bez wpisu końca, a usuwa go *)
-(* JournalAfterLogs, gdy kolejka przyjmie Logi z wynikiem, albo następny start po wersji zastępczej.                 *)
+(* krok 4 run_ended, gdy kolejka przyjmie Logi z wynikiem, albo następny start po wersji zastępczej.                 *)
 WpisKonca ==
     LET r == bieg IN
     /\ bieg # 0 /\ faza = "koniec"
@@ -558,8 +560,9 @@ WpisKonca ==
                    awarieOdczytu, awarieLogow, awarieKolejki, cofniecia, zapisanyStart, postepMozliwy, wynik,
                    przepadle, poWyniku, inneZnaki, bezStrazy, przedWznowieniem, bezZlecenia, wyparty>>
 
-(* RunHost.after -> RunLogs.run_ended: _ended.add pod blokadą (koniec postępu), potem _keep: _write                  *)
-(* (replace_atomically) Logów z wynikiem; OSError leci dalej.                                                        *)
+(* RunComments.run_ended, za krokiem 1: _Watched.ended pod blokadą (koniec postępu), potem w osłonie _step Logi z    *)
+(* wynikiem (_own: RecordMaker.of, guard_logs) i _keep: LogsOnDisk.write (replace_atomically); błąd zapisu wychodzi  *)
+(* z _keep dopiero po wysyłce (finally), a _step zapisuje jego typ w dzienniku Centrum.                              *)
 LogiWyniku ==
     /\ bieg # 0 /\ faza = "logi"
     /\ \/ logi' = [logi EXCEPT ![bieg] = [rodzaj |-> "wynik", tresc |-> Pusta]] /\ UNCHANGED awarieLogow
@@ -570,8 +573,8 @@ LogiWyniku ==
                    zatrzymania, awarieWpisu, awarieOdczytu, awarieKolejki, awarieUsuniecia, cofniecia, duchy,
                    zdarzenia>>
 
-(* _keep: finally post_of(OwnLogs(logs)) do Outbox.post, a przy usuń z journal_after self._queued.add.               *)
-(* Potem JournalAfterLogs (zaLogami).                                                                              *)
+(* _keep, finally także po błędzie zapisu pliku: post_of(OwnLogs(logs)) do Outbox.post; accepted to jego wynik.       *)
+(* Potem krok 4 run_ended (zaLogami).                                                                              *)
 WyslijWynik ==
     /\ bieg # 0 /\ faza = "post"
     /\ \/ /\ kolejka' = kolejka \cup {[bieg |-> bieg, rodzaj |-> "wynik", tresc |-> Pusta]}
@@ -587,9 +590,9 @@ WyslijWynik ==
                    awarieWpisu, awarieOdczytu, awarieLogow, awarieUsuniecia, cofniecia, duchy, zgubiony, poWyniku,
                    inneZnaki, bezStrazy, bezZlecenia, bezWersji>>
 
-(* JournalAfterLogs.run_ended -> Journal.remove, działanie po wyniku za RunLogs (after_run w create_app):             *)
+(* RunComments.run_ended, krok 4 w osłonie _step: Journal.remove, gdy journal_after(OwnLogs, accepted) daje „usuń”:  *)
 (* dziennik z pierwszą linią na dysku znika, gdy kolejka przyjęła Logi z wynikiem w tej pracy Centrum               *)
-(* (RunLogs.queued); dziennik bez niej (_header) usunął już Journal.end. Inaczej zostaje do następnego startu.      *)
+(* (accepted); dziennik bez niej (_header) usunął już Journal.end. Inaczej zostaje do następnego startu.            *)
 UsunPoLogach ==
     /\ bieg # 0 /\ faza = "zaLogami"
     /\ IF wKolejce /\ ~naglowekCzeka
@@ -601,7 +604,7 @@ UsunPoLogach ==
                    awarieWpisu, awarieOdczytu, awarieLogow, awarieKolejki, cofniecia, duchy, poWyniku, inneZnaki,
                    bezStrazy, przedWznowieniem, bezZlecenia, wyparty>>
 
-(* Reszta after_run za JournalAfterLogs (QuantityCheckAfterRun, filling), potem koniec Uruchomienia (end): następne    *)
+(* Reszta after_run za RunComments (QuantityCheckAfterRun, filling), potem koniec Uruchomienia (end): następne         *)
 (* może ruszyć.                                                                                                     *)
 KoniecUruchomienia ==
     /\ bieg # 0 /\ faza = "po"
@@ -662,7 +665,7 @@ Sprawiedliwosc ==
 
 Spec == Init /\ [][Next]_vars /\ Sprawiedliwosc
 
-(* Obietnice (docstringi logs_disk.py i pricing_journal.py). *)
+(* Obietnice (docstringi logs_disk.py i run_comments.py). *)
 \* Dziennik Urwanego Uruchomienia (z pierwszą linią, bez wyniku) znika dopiero, gdy jego Logi są najnowszą wersją, którą
 \* przyjęła kolejka: razem ze Zbieganiem to wysyłka co najmniej raz.
 DziennikPoKolejce == zgubiony = {}

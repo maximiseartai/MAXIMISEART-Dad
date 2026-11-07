@@ -1,7 +1,7 @@
 """Show that sprawdz_urwane_uruchomienie.py fails when the TLA+ model of the Dziennik Wyceny loses a guard the code has.
 
 Each mutation removes from ``model/UrwaneUruchomienie.tla`` one guard or step whose counterpart in
-``src/rozliczenia/centrum/pricing_journal.py``, ``logs_disk.py``, ``run_logs.py``, ``app.py``,
+``src/rozliczenia/centrum/run_comments.py``, ``comment_versions.py``, ``logs_disk.py``, ``run_logs.py``, ``app.py``,
 ``src/rozliczenia/efenix_pricing.py`` or ``process_run.py``
 the mutation names, runs on its own copy of the checkout (``tools/mutacje.py``) and must end the check with
 ``URWANE URUCHOMIENIE: NOWE NARUSZENIE``. A mutation whose anchor text is no longer in the model is reported as
@@ -60,7 +60,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "Wycena bez wpisu końca (create_app: after_run bez JournalAtResult, Journal.end nie biegnie)",
+        "Wycena bez wpisu końca (kolejność w RunComments.run_ended: bez kroku 1, Journal.end nie biegnie)",
         (
             Edit(
                 MODEL,
@@ -84,7 +84,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "Logi z wynikiem przed wpisem końca (create_app: after_run z run_logs przed journal)",
+        "Logi z wynikiem przed wpisem końca (kolejność w RunComments.run_ended: _keep przed Journal.end)",
         (
             Edit(MODEL, "    /\\ faza' = \"koniec\"\n", "    /\\ faza' = \"logi\"\n"),
             Edit(MODEL, "    /\\ faza' = \"zaLogami\"\n", "    /\\ faza' = \"koniec\"\n"),
@@ -249,7 +249,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "dziennik znika za Logami, choć kolejka ich nie przyjęła (JournalAfterLogs: Journal.remove bez RunLogs.queued)",
+        "dziennik znika za Logami, choć kolejka ich nie przyjęła (RunComments.run_ended: Journal.remove bez journal_after)",
         (Edit(MODEL, "    /\\ IF wKolejce /\\ ~naglowekCzeka\n", "    /\\ IF ~naglowekCzeka\n"),),
         _check("logi-i-kolejka"),
         "Outbox.post Logów z wynikiem zwraca False, a dziennik znika: komentarz zostaje na zawsze postępem",
@@ -259,7 +259,7 @@ MUTATIONS = (
         "wersja tylko z chwili, bez stopnia (outbox.py: wersja z nazwy pliku jak przed #910; kod rundy 3 #846, W1)",
         _NO_RANK,
         _check("logi-i-kolejka"),
-        "plik Logów z wynikiem się nie zapisał, kolejka przyjęła Logi z wynikiem, Centrum gaśnie przed JournalAfterLogs, a "
+        "plik Logów z wynikiem się nie zapisał, kolejka przyjęła Logi z wynikiem, Centrum gaśnie przed krokiem 4, a "
         "wynik bez Logów ze startu jest nowszy i zastępuje je w kolejce i w Skrzynce",
         NEW,
     ),
@@ -287,7 +287,7 @@ MUTATIONS = (
     ),
     Mutation(
         "kod main przed #910: start usuwa dziennik z wpisem końca albo z Logami z wynikiem bez wysyłki, nieudany wpis "
-        "końca usuwa dziennik, bez JournalAfterLogs i bez stopnia wersji (W2)",
+        "końca usuwa dziennik, bez usunięcia dziennika za Logami i bez stopnia wersji (W2)",
         (
             *_NO_RANK,
             Edit(

@@ -23,8 +23,8 @@ Wersję zastępczą z dziennika, który zostawiła poprzednia praca Centrum, wyb
 ``match``, ze strażnikiem w środku, więc start Centrum (``run_comments.RunComments``) dostaje tylko wersję po strażniku.
 
 Typy Logów bierze z ``run_logs`` do adnotacji i, importem w funkcji, do ``isinstance`` w konstruktorach wersji i do
-strażnika w ``close``, bo ``run_logs.RunLogs`` składa wersje z tego modułu; typy odczytu dysku z ``logs_disk`` też w
-funkcji, bo ``logs_disk`` wczytuje ``run_logs``.
+strażnika w ``close``, a typy odczytu dysku z ``logs_disk`` też w funkcji: przy wczytaniu moduł bierze tylko nazwy bez
+I/O (``tests/test_granice_importow.py``).
 """
 
 from __future__ import annotations

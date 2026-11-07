@@ -31,7 +31,7 @@ from rozliczenia.centrum.clock import SYSTEM_CLOCK, Clock
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import CONFIGURATION_WAIT_S, ConfigurationFiles, configuration_router
 from rozliczenia.centrum.case_delivery import case_outbox
-from rozliczenia.centrum.contract import Health, Problem, Refusal, RunInfo
+from rozliczenia.centrum.contract import Health, Problem, Refusal
 from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, DadActionJournal
 from rozliczenia.centrum.dad_cases import DadCases
 from rozliczenia.centrum.dad_notes import dad_notes_router
@@ -52,12 +52,9 @@ from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, UNSENT_DIRECTORY, Reports
 from rozliczenia.centrum.preparation_run import PreparationEntry
-from rozliczenia.centrum.pricing_journal import JournalAfterLogs, JournalAtResult
-from rozliczenia.centrum.pricing_progress import ProgressComment
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.run_cards import RunCards, run_cards_router
 from rozliczenia.centrum.run_comments import RecordMaker, RunComments
-from rozliczenia.centrum.run_logs import RunLogs, StartFacts
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE, CentrumRuns
 from rozliczenia.centrum.runs import ProcessEntry, RunHost, runs_router
 from rozliczenia.centrum.settings import settings_router
@@ -236,8 +233,9 @@ def create_app(
         cloud_files=surroundings.cloud_files,
         dad_actions=dad_actions,
     )
-    # Logi Uruchomienia: jeden plik JSON na Uruchomienie obok dziennika Centrum, poza Gitem i OneDrive (ADR 0015).
-    run_logs = RunLogs(disk, outbox, records=records, forbidden=forbidden)
+    # Komentarz Uruchomienia w issue Logów okresu: postęp Wyceny w efenix (#846), plik Logów i Logi z wynikiem (ADR 0015),
+    # Diagnoza, a przy starcie Centrum wersje zastępcze z dzienników Wyceny w efenix, które zostawiła poprzednia praca.
+    comments = RunComments(disk, outbox, forbidden=forbidden, clock=clock, log=log, records=records)
     # Jedno Uruchomienie procesu albo Aktualizacja narzędzia naraz; w ich trakcie zamknięcie Centrum jest odrzucone.
     stops = Stops(
         reports,
@@ -252,7 +250,7 @@ def create_app(
             forbidden=forbidden,
         ),
         log,
-        run_logs,
+        comments,
     )
     # Adaptery startu procesów z katalogu procesów; reszta Centrum pyta wpis procesu w katalogu, nie adapter.
     entries: list[ProcessEntry] = [
@@ -277,14 +275,7 @@ def create_app(
     cards = RunCards(disk, lambda: read_runs(processes, centrum_runs.started()))
     # Dzienniki Wyceny w efenix z poprzedniej pracy Centrum stają się wersjami zastępczymi komentarza Uruchomienia, a
     # Urwane Wyceny dostają Logi, zanim karta ostatniego Uruchomienia przeczyta Logi (``closed``).
-    comments = RunComments(disk, outbox, forbidden=forbidden, log=log, records=records)
     closed = comments.close_left_behind()
-    # Komentarz postępu Wyceny w efenix w issue Logów okresu, odświeżany z jej dziennika (#846).
-    progress = ProgressComment(disk.journal, run_logs, clock=clock)
-
-    def run_started(info: RunInfo, started_at: datetime) -> None:
-        disk.started(StartFacts.of_run(info, started_at))
-        progress.run_started(info, started_at)  # ostatni: postęp jest dla Maksa, a nie warunkiem pracy taty
 
     # Powiadomienia o Uwagach taty, wysłanych Zgłoszeniach, Wydaniach i zakończonych Wycenach w efenix z Logów
     # Uruchomienia; przeczytane obok Ustawień taty (ADR 0015).
@@ -303,13 +294,11 @@ def create_app(
         centrum_runs,
         stops,
         previous=cards.last(closed),
-        run_started=run_started,
-        # Wpis końca dziennika Wyceny w efenix przed Logami z wynikiem: start Centrum nie weźmie Uruchomienia, którego Logi
-        # z wynikiem mogą być w Skrzynce, za Urwane (#871).
+        run_started=comments.run_started,
+        # Komentarz Uruchomienia pierwszy: wpis końca dziennika Wyceny w efenix, Logi z wynikiem i dziennik po ich
+        # przyjęciu przez kolejkę, zanim cokolwiek innego po wyniku (#871).
         after_run=[
-            JournalAtResult(disk.journal),
-            run_logs,
-            JournalAfterLogs(disk.journal, run_logs),
+            comments,
             QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden),
             filling,
         ],
@@ -340,7 +329,7 @@ def create_app(
             box,
             surroundings.tool_freshness.local,
             lambda: read_runs(processes, centrum_runs.started()),
-            run_logs.link,
+            comments.link,
             forbidden,
         )
     )
