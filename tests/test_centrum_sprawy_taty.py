@@ -16,11 +16,11 @@ from typing import Any
 
 import pytest
 
-from rozliczenia.centrum.case_delivery import case_outbox
+from rozliczenia.centrum.case_delivery import case_outbox, note_post
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, OLD_NOTES_FILE, OLD_REPORTS_FILE, REPORT, Case, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.outbox import KnownIssue, NewIssue, PeriodThread, Post
+from rozliczenia.centrum.outbox import KnownIssue, NewIssue, Outbox, PeriodThread, Post
 from rozliczenia.centrum.report_box import (
     ArchiveOutcome,
     Closure,
@@ -31,6 +31,7 @@ from rozliczenia.centrum.report_box import (
     Label,
     OpenArchiveOutcome,
     Refused,
+    Rejected,
     RemoveOutcome,
     SendOutcome,
     Sent,
@@ -536,21 +537,32 @@ class Skrzynka:
     """Kolejka Skrzynki Zgłoszeń Centrum ze Sprawami taty ``stored`` (``case_outbox``) na fałszywej skrzynce."""
 
     def __init__(self, tmp_path: Path, stored: DadCases, box: FakeReportBox) -> None:
-        clock = ManualClock()
+        self._tmp_path, self._stored = tmp_path, stored
         self.box = box
         self.directory = tmp_path / "kolejka"
         self.directory.mkdir()
-        self.outbox = case_outbox(
-            self.directory, KeyedBox(box, lambda: KEY, clock=clock), log(tmp_path), stored, clock=clock, addresses=None
-        )
+        self.outbox = self._outbox()
 
-    def sent(self, *posts: Post) -> None:
-        """Kładzie ``posts`` w kolejce i czeka na koniec przejścia, także wysyłek następczych z tego przejścia."""
+    def _outbox(self) -> Outbox:
+        clock = ManualClock()
+        keyed = KeyedBox(self.box, lambda: KEY, clock=clock)
+        return case_outbox(self.directory, keyed, log(self._tmp_path), self._stored, clock=clock, addresses=None)
+
+    def sent(self, *posts: Post, left: int = 0) -> None:
+        """Kładzie ``posts`` w kolejce i czeka na koniec przejścia, także wysyłek następczych z tego przejścia, po którym
+        w kolejce zostaje ``left`` plików."""
 
         for post in posts:
             assert self.outbox.post(post)
         assert not self.outbox.wait_delivered("", "kontrola-ilosci", timeout_s=30)
-        assert sorted(self.directory.glob("*.json")) == []
+        assert len(sorted(self.directory.glob("*.json"))) == left
+
+    def restarted(self) -> None:
+        """Nowa kolejka tego folderu, jak po ponownym starcie Centrum, i jej pierwsze przejście do końca."""
+
+        self.outbox = self._outbox()
+        self.outbox.resume()
+        assert not self.outbox.wait_delivered("", "kontrola-ilosci", timeout_s=30)
 
     def logs_delivered(self, *run_ids: str) -> None:
         """Logi Uruchomień ``run_ids`` doszły do Skrzynki z adresem komentarza."""
@@ -602,14 +614,82 @@ def test_tylko_nowa_uwaga_dostaje_komentarz_o_odrzuconych_logach(
 
 def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz(tmp_path: Path) -> None:
     stored = DadCases(old_files(tmp_path), log(tmp_path), pause=ManualClock().pause)
-    skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
-    note = Post(NewIssue("uwaga-taty", "Uwaga"), period=None, run_id=PINNED_ID, header=None, parts=(REJECTED_LOGS,))
+    box = FakeReportBox(background=LOGS)
+    box.background_comment_outcomes.append(Rejected())
+    skrzynka = Skrzynka(tmp_path, stored, box)
+    logs = PeriodThread(label="logi-uruchomienia", line="- Logi", closed="reuse", title="Logi")
 
-    skrzynka.sent(note)
+    assert skrzynka.outbox.post(Post(logs, period=None, run_id=PINNED_RUN, header="Logi okresu", parts=("Logi",)))
+    skrzynka.sent(note_post(PINNED_ID, "Uwaga", f"Treść\n{WAITING_LOGS}", logs_on_the_way=True), left=2)
 
     [issue] = skrzynka.box.issues_with("uwaga-taty")
-    assert (issue.body, issue.comments) == (REJECTED_LOGS, [LOGS_GONE])
+    assert (issue.body, issue.comments) == (f"Treść\n{REJECTED_LOGS}", [])
     assert stored.find(NOTE, PINNED_ID) == replace(OLD_CASES[3], number=issue.number)
+    # Komentarz z odnośnikiem czeka na Logi; gdy znikną z kolejki, następny start mówi, że nie dotrą.
+    for path in skrzynka.directory.glob("*-logi-uruchomienia-*.json"):
+        path.unlink()
+    skrzynka.restarted()
+    assert (issue.body, issue.comments) == (f"Treść\n{REJECTED_LOGS}", [LOGS_GONE])
+
+
+def test_linia_logow_w_drodze_dostaje_odnosnik_takze_gdy_nie_konczy_tresci_uwagi(tmp_path: Path) -> None:
+    """Słuchacz wymienia linię Logów po stanie wysyłki, nie po końcówce tekstu, więc kolejność stopki nie ma znaczenia."""
+
+    stored = DadCases(old_files(tmp_path), log(tmp_path), pause=ManualClock().pause)
+    skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
+    skrzynka.logs_delivered(PINNED_RUN)
+
+    skrzynka.sent(note_post(PINNED_ID, "Uwaga", f"Treść\n{WAITING_LOGS}\nwersja narzędzia abc1234", logs_on_the_way=True))
+
+    [issue] = skrzynka.box.issues_with("uwaga-taty")
+    linked = f"[Logi Uruchomienia]({skrzynka.outbox.delivered(PINNED_RUN, 'logi-uruchomienia')})"
+    assert issue.body == f"Treść\n{linked}\nwersja narzędzia abc1234"
+
+
+def test_zgloszenie_z_kolejki_wydania_sprzed_naglowka_celu_wraca_do_otwartego_zgloszenia(tmp_path: Path) -> None:
+    """Plik kolejki, który zapisało Wydanie v0.5.1 (cel bez nagłówka ``again``), idzie jak wtedy: komentarzem
+    „Zgłoszenie wróciło” do otwartego Zgłoszenia tego odcisku, a czekająca sprawa dostaje jego numer."""
+
+    stored = DadCases(old_files(tmp_path), log(tmp_path), pause=ManualClock().pause)
+    stored.add(Case(REPORT, "3f0c1b2a9d8e7f60", "Nie znaleziono wzorca.", None, at(25, 8), None))
+    open_report = FakeIssue(3, "zgloszenie", "Zgłoszenie", "- Odcisk problemu: 3f0c1b2a9d8e7f60")
+    skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(issues=[open_report]))
+    queued = FIXTURES / "kolejka-v3-zgloszenie.json"
+    shutil.copy(queued, skrzynka.directory / "20261107T101500000000Z-0001-zgloszenie-a1b2c3d4.json")
+
+    skrzynka.restarted()
+
+    [body] = json.loads(queued.read_text(encoding="utf-8"))["parts"]
+    assert open_report.comments == [f"## Zgłoszenie wróciło\n\n{body}"]
+    assert stored.find(REPORT, "3f0c1b2a9d8e7f60") == Case(
+        REPORT, "3f0c1b2a9d8e7f60", "Nie znaleziono wzorca.", None, at(25, 8), 3
+    )
+    assert sorted(skrzynka.directory.glob("*.json")) == []
+
+
+def test_uwaga_z_logami_w_drodze_z_kolejki_wydania_sprzed_stanu_wysylki_dostaje_odnosnik(tmp_path: Path) -> None:
+    """Plik kolejki, który zapisało Wydanie v0.5.1 (Uwaga bez ``state``, Logi w drodze w ostatniej linii stopki),
+    dostaje odnośnik do Logów, które doszły przed nią."""
+
+    run_id, note_id = "5d4c3b2a19087f6e5d4c3b2a19087f6e", "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b"
+    stored = DadCases(old_files(tmp_path), log(tmp_path), pause=ManualClock().pause)
+    stored.add(Case(NOTE, note_id, "Brakuje ilości przy montażu", "6a797a55f42a", at(25, 8), None, run_id=run_id))
+    skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
+    skrzynka.logs_delivered(run_id)
+    queued = FIXTURES / "kolejka-v3-uwaga-przypieta.json"
+    shutil.copy(queued, skrzynka.directory / "20261107T101500000000Z-0001-uwaga-taty-9e8d7c6b.json")
+
+    skrzynka.outbox.resume()
+    assert not skrzynka.outbox.wait_delivered("", "kontrola-ilosci", timeout_s=30)
+
+    [issue] = skrzynka.box.issues_with("uwaga-taty")
+    [body] = json.loads(queued.read_text(encoding="utf-8"))["parts"]
+    linked = f"[Logi Uruchomienia]({skrzynka.outbox.delivered(run_id, 'logi-uruchomienia')})"
+    assert issue.body == body.replace(f"Logi Uruchomienia: w drodze (Uruchomienie {run_id})", linked)
+    assert stored.find(NOTE, note_id) == Case(
+        NOTE, note_id, "Brakuje ilości przy montażu", "6a797a55f42a", at(25, 8), issue.number, run_id=run_id
+    )
+    assert sorted(skrzynka.directory.glob("*.json")) == []
 
 
 def test_wysylka_uwagi_nieznanej_temu_komputerowi_idzie_bez_zmian(tmp_path: Path) -> None:

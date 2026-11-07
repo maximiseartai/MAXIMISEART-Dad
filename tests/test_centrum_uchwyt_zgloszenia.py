@@ -24,7 +24,8 @@ from rozliczenia.centrum.keyed_box import KeyedBox, read_report_key
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, REPORT, Case, DadCases
 from rozliczenia.centrum.case_delivery import case_outbox
-from rozliczenia.centrum.outbox import PART_LIMIT, RETRY_S, Outbox, Post, ReportIssue, fingerprint_line
+from rozliczenia.centrum.outbox import PART_LIMIT, RETRY_S, Outbox, Post
+from rozliczenia.centrum.report_issue import fingerprint_line
 from rozliczenia.centrum.report_box import IssuesOutcome, Label, Refused, Unreachable
 from rozliczenia.centrum.reports import (
     SEARCH_DEADLINE_S,
@@ -34,6 +35,7 @@ from rozliczenia.centrum.reports import (
     Reports,
     StopReport,
     UpdateReport,
+    report_target,
 )
 from rozliczenia.centrum.tool_update import NO_CONNECTION, OTHER_BRANCH, UpdateResult
 from rozliczenia.client_data import ForbiddenValues
@@ -432,7 +434,7 @@ def test_ponowne_dostarczenie_tej_samej_sprawy_nie_zmienia_stanu_wyslanych(compu
     [case] = cases
     report = source(computer)
     post = Post(
-        ReportIssue(fingerprint=report.fingerprint.digest, title="tytuł"),
+        report_target(report.fingerprint.digest, "tytuł"),
         period=None,
         run_id="ponowna-wysylka",
         header=None,

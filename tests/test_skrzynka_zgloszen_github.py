@@ -45,7 +45,9 @@ from rozliczenia.centrum.report_box import (
 )
 from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.outbox import ArchiveFile, Outbox, PeriodThread, Post, ReportIssue, fingerprint_line
+from rozliczenia.centrum.outbox import ArchiveFile, Outbox, PeriodThread, Post
+from rozliczenia.centrum.report_issue import fingerprint_line
+from rozliczenia.centrum.reports import report_target
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
@@ -876,7 +878,7 @@ def test_klucz_bez_uprawnienia_do_tresci_repozytorium_zostawia_plik_w_kolejce_a_
     assert re.search(rf"Plik `{re.escape(ASSET)}` czeka w Kolejce wysyłki", str(comment["body"]))
 
 
-REPORT = ReportIssue(fingerprint=FINGERPRINT, title=TITLE)
+REPORT = report_target(FINGERPRINT, TITLE)
 
 
 def queued_before_start(directory: Path, *posts: Post) -> None:

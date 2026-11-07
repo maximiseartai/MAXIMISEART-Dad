@@ -19,7 +19,7 @@ from typing import Final, cast
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from rozliczenia.centrum.keyed_box import KeyedBox
-from rozliczenia.centrum.outbox import fingerprint_line
+from rozliczenia.centrum.report_issue import fingerprint_line
 from rozliczenia.centrum.report_box import (
     COMMENT_LIMIT,
     Closure,

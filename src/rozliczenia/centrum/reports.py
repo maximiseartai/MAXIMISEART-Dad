@@ -49,7 +49,8 @@ from rozliczenia.centrum.deadline import within
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, PART_LIMIT, Outbox, Post, ReportIssue, fingerprint_line
+from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, PART_LIMIT, OpenIssue, Outbox, Post
+from rozliczenia.centrum.report_issue import RETURNED_HEADING, fingerprint_line
 from rozliczenia.centrum.report_box import FindOutcome
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.tool_update import UpdateResult
@@ -312,6 +313,13 @@ def _cell(text: str) -> str:
 
 
 
+def report_target(fingerprint: str, title: str) -> OpenIssue:
+    """Cel wysyłki Zgłoszenia w kolejce: jedno otwarte Zgłoszenie na odcisk problemu, a Zgłoszenie, które wróciło, idzie
+    do niego komentarzem „Zgłoszenie wróciło” (ADR 0007, #820)."""
+
+    return OpenIssue(REPORT.label, fingerprint_line(fingerprint), title, RETURNED_HEADING)
+
+
 def _unframed(_number: int, _count: int, text: str) -> str:
     """Części Zgłoszenia bez nagłówków: issue i komentarze to razem dokładnie podgląd."""
 
@@ -473,7 +481,7 @@ class ReportHandle:
 class Reports:
     """Zgłoszenia z tego komputera: uchwyt Zgłoszenia każdego źródła, wysyłka przez kolejkę Skrzynki i sprawy.
 
-    „Wyślij do Maksa” zapisuje sprawę bez numeru, kładzie zamrożony podgląd w kolejce jako ``ReportIssue`` i czeka na
+    „Wyślij do Maksa” zapisuje sprawę bez numeru, kładzie zamrożony podgląd w kolejce jako ``report_target`` i czeka na
     skrzynkę najwyżej ``DELIVERY_WAIT_S``. Numer issue dopisują sprawie Sprawy taty w Skrzynce (``case_delivery``),
     także po następnym starcie Centrum, a ``Reports`` słyszy o nim od Spraw taty (``DadCases.watch``) i oddaje stan
     „wysłane” każdemu żywemu uchwytowi tego problemu; o odrzuconej treści tak samo. Jeden problem ma jedno
@@ -546,7 +554,7 @@ class Reports:
         case = Case(REPORT, fingerprint, preview.report.what, self._commit(), datetime.now(timezone.utc), number=None)
         # Własny identyfikator wysyłki: odcisk wraca po zamknięciu, a kolejka czeka na dostarczenie po identyfikatorze.
         post = Post.of(
-            ReportIssue(fingerprint=fingerprint, title=preview.report.title),
+            report_target(fingerprint, preview.report.title),
             period=preview.period,
             run_id=uuid.uuid4().hex,
             blocks=[preview.report.body],

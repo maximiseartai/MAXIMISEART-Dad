@@ -1,0 +1,18 @@
+{
+  "schema_version": 3,
+  "target": {
+    "kind": "new_issue",
+    "label": "uwaga-taty",
+    "title": "Brakuje ilości przy montażu"
+  },
+  "period": null,
+  "run_id": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b",
+  "header": null,
+  "parts": [
+    "Plik kolejki schematu 3 z Wydania v0.5.1.\n\nUruchomienie: Przebieg rozliczeń · 08_14_09_2026 · zapis · OK · 06.11.2026, 08:30 · wersja narzędzia 6a797a5\nLogi Uruchomienia: w drodze (Uruchomienie 5d4c3b2a19087f6e5d4c3b2a19087f6e)"
+  ],
+  "archive": null,
+  "delivered_parts": 0,
+  "archived": false,
+  "rank": 2
+}

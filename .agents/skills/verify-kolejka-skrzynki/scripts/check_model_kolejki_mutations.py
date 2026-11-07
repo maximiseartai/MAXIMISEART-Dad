@@ -132,7 +132,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "Zgłoszenie zakładane bez szukania (_deliver_report: if found is not None)",
+        "Zgłoszenie zakładane bez szukania (_deliver_open_issue: if found is not None)",
         (Edit(MODEL, "          /\\ IF Najnowsze(q, zna) = 0\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ Idz(q, \"zaloz\", \"labelled_issues",
               "          /\\ IF TRUE\n             THEN /\\ UNCHANGED <<nr, kom>>\n                  /\\ Idz(q, \"zaloz\", \"labelled_issues"),),
         _check("zgloszenie"),
@@ -140,11 +140,11 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "Zgłoszenie, które wróciło, przejęte bez komentarza (_deliver_report: Delivered(found, ()) zamiast _settle)",
+        "Zgłoszenie, które wróciło, przejęte bez komentarza (_deliver_open_issue: Delivered(found, ()) zamiast _settle)",
         (Edit(MODEL, "             ELSE /\\ nr' = Ustaw(nr, q, Najnowsze(q, zna)) /\\ kom' = Ustaw(kom, q, Dopisz(Od(biez[q], 1)))\n"
-              "                  /\\ Idz(q, \"czytaj\", \"_deliver_report:",
+              "                  /\\ Idz(q, \"czytaj\", \"_deliver_open_issue:",
               "             ELSE /\\ nr' = Ustaw(nr, q, Najnowsze(q, zna)) /\\ kom' = Ustaw(kom, q, <<>>)\n"
-              "                  /\\ Idz(q, \"dostarczona\", \"_deliver_report:"),),
+              "                  /\\ Idz(q, \"dostarczona\", \"_deliver_open_issue:"),),
         _check("zgloszenie"),
         "drugie Zgłoszenie tego problemu dostaje znacznik, choć Skrzynka go nie ma",
         NEW,
