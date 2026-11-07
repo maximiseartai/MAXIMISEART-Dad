@@ -52,12 +52,7 @@ from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, UNSENT_DIRECTORY, Reports
 from rozliczenia.centrum.preparation_run import PreparationEntry
-from rozliczenia.centrum.pricing_journal import (
-    JOURNALS_DIRECTORY,
-    InterruptedPricings,
-    JournalAfterLogs,
-    PricingJournal,
-)
+from rozliczenia.centrum.pricing_journal import InterruptedPricings, JournalAfterLogs, JournalAtResult
 from rozliczenia.centrum.pricing_progress import ProgressComment
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.run_cards import RunCards, run_cards_router
@@ -227,8 +222,9 @@ def create_app(
         search_deadline_s=report_search_deadline_s,
         forbidden=forbidden,
     )
-    # Dziennik Wyceny w efenix w trakcie Uruchomienia, obok Logów: przeżywa nagłe zgaśnięcie Centrum (#845).
-    journal = PricingJournal(log.directory / JOURNALS_DIRECTORY, log, process=EFENIX.key)
+    # Pliki Logów Uruchomienia, plik ostatniego startu i dziennik Wyceny w efenix w katalogu Logów (ADR 0017); dziennik
+    # przeżywa nagłe zgaśnięcie Centrum w trakcie Wyceny (#845).
+    disk = LogsOnDisk(log, journaled=EFENIX.key)
     # Logi Uruchomienia: jeden plik JSON na Uruchomienie obok dziennika Centrum, poza Gitem i OneDrive (ADR 0015).
     run_logs = RunLogs(
         log.directory / RUN_LOGS_DIRECTORY,
@@ -263,7 +259,7 @@ def create_app(
         PreparationEntry(store, configuration, processes, today, readers, forbidden),
         # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
         # Kafelek Wyceny w efenix stoi przed Przebiegiem rozliczeń, bo w tej kolejności tata pracuje.
-        EfenixEntry(store, processes, today, efenix_window or EfenixWindow.of_tata(), journal, forbidden),
+        EfenixEntry(store, processes, today, efenix_window or EfenixWindow.of_tata(), disk.journal, forbidden),
         SettlementEntry(store, configuration, processes, today, readers, forbidden),
     ]
     # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
@@ -277,18 +273,15 @@ def create_app(
         surroundings.cloud_files,
         forbidden,
     )
-    # Pliki Logów Uruchomienia i plik ostatniego startu w katalogu Logów (ADR 0017).
-    disk = LogsOnDisk(log.directory)
     # Karty Uruchomień z pliku startu, Logów Uruchomienia i Historii: ostatnie po starcie Centrum i wiersz Historii (ADR 0017).
     cards = RunCards(disk, lambda: read_runs(processes, centrum_runs.started()))
     # Dzienniki Urwanych Wycen w efenix stają się ich Logami, zanim karta ostatniego Uruchomienia przeczyta Logi.
-    interrupted = InterruptedPricings(log.directory / JOURNALS_DIRECTORY, run_logs, disk, log)
+    interrupted = InterruptedPricings(run_logs, disk, log)
     interrupted.close()
     # Komentarz postępu Wyceny w efenix w issue Logów okresu, odświeżany z jej dziennika (#846).
-    progress = ProgressComment(journal, run_logs, clock=clock)
+    progress = ProgressComment(disk.journal, run_logs, clock=clock)
 
     def run_started(info: RunInfo, started_at: datetime) -> None:
-        journal.run_started(info, started_at)
         disk.started(StartFacts.of_run(info, started_at))
         progress.run_started(info, started_at)  # ostatni: postęp jest dla Maksa, a nie warunkiem pracy taty
 
@@ -313,9 +306,9 @@ def create_app(
         # Wpis końca dziennika Wyceny w efenix przed Logami z wynikiem: start Centrum nie weźmie Uruchomienia, którego Logi
         # z wynikiem mogą być w Skrzynce, za Urwane (#871).
         after_run=[
-            journal,
+            JournalAtResult(disk.journal),
             run_logs,
-            JournalAfterLogs(journal, run_logs),
+            JournalAfterLogs(disk.journal, run_logs),
             QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden),
             filling,
         ],

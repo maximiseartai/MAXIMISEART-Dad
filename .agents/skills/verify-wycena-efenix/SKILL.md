@@ -66,7 +66,7 @@ from these sentences, never from a run:
   the Zatrzymanie, and a „zaczynam” entry in the dziennik; a Komunikat that says nothing changed in efenix is true; the
   Znaczniki efenix are exactly the gotowe orders; a gotowe order has the file's quantities, `Kwota` (AU) and the date
   (`GLOSSARY.md`, Znacznik efenix). What a killed tool leaves has a „zaczynam” entry in the dziennik for each order
-  changed in efenix (`pricing_journal`: „przed każdym zapisem w efenix”), no Znaczniki efenix (`efenix_pricing`: „na
+  changed in efenix (`logs_disk`: „przed każdym zapisem w efenix”), no Znaczniki efenix (`efenix_pricing`: „na
   końcu Znaczniki efenix”) and the file's pricing for each order the dziennik ended gotowe. Harm: Dad and Maks cannot
   tell what the tool did to efenix.
 - **WZNOWIENIE**: the second Uruchomienie keeps the promises of the model `verify-wznowienie-wyceny-efenix` and the

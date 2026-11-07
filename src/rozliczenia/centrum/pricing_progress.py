@@ -2,7 +2,7 @@
 
 Wycena w efenix trwa u taty do półtorej godziny, a Logi Uruchomienia powstają dopiero na jej końcu. Przy starcie Wyceny
 (``run_started``) Centrum zakłada jej komentarz Uruchomienia w issue Logów okresu, a potem co ``PROGRESS_S`` na zegarze
-Centrum, nigdy częściej, odświeża go stanem dziennika Wyceny (``PricingJournal.progress``): zlecenia skończone z
+Centrum, nigdy częściej, odświeża go stanem dziennika Wyceny (``logs_disk.Journal.progress``): zlecenia skończone z
 wszystkich, wyniki do tej pory, ostatnie skończone zlecenie, zlecenie w trakcie i czas od startu. Dziennik podaje tylko
 wpisy, które już ma na dysku, a bez swojej pierwszej linii na dysku nic, więc postęp nigdy go nie wyprzedza: każdy
 komentarz postępu ma dziennik. Na końcu Wyceny komentarz staje się podsumowaniem z jej Logów z wynikiem, a gdy kolejka
@@ -30,7 +30,7 @@ from typing import Final
 
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.clock import Clock
-from rozliczenia.centrum.pricing_journal import PricingJournal
+from rozliczenia.centrum.logs_disk import Journal
 from rozliczenia.centrum.run_logs import RunLogs
 
 PROGRESS_S: Final = 300.0
@@ -48,14 +48,14 @@ class _Watched:
 class ProgressComment:
     """Komentarz postępu każdego Uruchomienia, którego dziennik pisze ``journal`` (Wycena w efenix)."""
 
-    def __init__(self, journal: PricingJournal, run_logs: RunLogs, *, clock: Clock) -> None:
+    def __init__(self, journal: Journal, run_logs: RunLogs, *, clock: Clock) -> None:
         self._journal = journal
         self._run_logs = run_logs
         self._clock = clock
         self._watched: _Watched | None = None
 
     def run_started(self, info: contract.RunInfo, started_at: datetime) -> None:
-        """Start Uruchomienia z Centrum, po starcie jego dziennika (``PricingJournal.run_started``): komentarz postępu
+        """Start Uruchomienia z Centrum, po starcie jego dziennika (``LogsOnDisk.started``): komentarz postępu
         bez zleceń i budzik pierwszego odświeżenia."""
 
         if info.process != self._journal.process:

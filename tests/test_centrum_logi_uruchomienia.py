@@ -37,7 +37,7 @@ from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES, DadAc
 from rozliczenia.centrum.efenix_run import EFENIX_URL, EfenixWindow
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S
-from rozliczenia.centrum.pricing_journal import JournalStarted, OrderBegun, OrderEnded, PricingJournal, RunEnded
+from rozliczenia.centrum.logs_disk import EndEntry, Journal, LogsOnDisk, name_of
 from rozliczenia.centrum.pricing_progress import PROGRESS_S
 from rozliczenia.centrum.run_logs import (
     Environment,
@@ -48,8 +48,8 @@ from rozliczenia.centrum.run_logs import (
     PricingProgress,
     RunLog,
     RunLogs,
+    StartFacts,
     Tool,
-    logs_file_name,
     progress_markdown,
     progress_post,
 )
@@ -93,6 +93,7 @@ from tests.fixtures.centrum_processes import (
     stopped_for_maks,
 )
 from tests.fixtures.centrum_w_procesie import centrum_process
+from tests.fixtures.dziennik_wyceny import begun_line, end_line, ended_line, left_journal
 from tests.fixtures.efenix import DAY, Order, write_collective_file
 from tests.fixtures.fakt_domeny import known
 from tests.fixtures.konce_linii_windows import windows_text_writes
@@ -2102,17 +2103,17 @@ def journal_entries_of(text: str) -> list[dict[str, Any]]:
 
 def journals_at_result(monkeypatch: pytest.MonkeyPatch, directory: Path) -> dict[Path, str]:
     """Każdy dziennik z katalogu ``directory`` tak, jak jest na dysku w chwili wyniku Wyceny, zanim działanie po wyniku
-    dopisze do niego wpis końca albo go usunie (``PricingJournal.run_ended``): test, który udaje zgaśnięcie Centrum przed
-    wynikiem, odkłada go na dysk."""
+    dopisze do niego wpis końca albo go usunie (``Journal.end``): test, który udaje zgaśnięcie Centrum przed wynikiem,
+    odkłada go na dysk."""
 
     kept: dict[Path, str] = {}
-    ended = PricingJournal.run_ended
+    ended = Journal.end
 
-    def keeping(journal: PricingJournal, run: runs.EndedRun) -> None:
+    def keeping(journal: Journal, run_id: str, result: contract.RunResult) -> None:
         kept.update({path: path.read_text(encoding="utf-8") for path in directory.glob("*.jsonl")})
-        ended(journal, run)
+        ended(journal, run_id, result)
 
-    monkeypatch.setattr(PricingJournal, "run_ended", keeping)
+    monkeypatch.setattr(Journal, "end", keeping)
     return kept
 
 
@@ -2359,8 +2360,7 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
     windows_text_writes(monkeypatch)
     centrum = settling_centrum(tmp_path)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
-    started = JournalStarted(
-        entry="start Uruchomienia",
+    started = StartFacts(
         run_id="b" * 32,
         process="efenix",
         mode="zapis",
@@ -2379,17 +2379,14 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
         accepted=None,
     )
     order = LoggedOrder(row=18, outcome="gotowe", code=None, file={}, file_amount=Decimal(0), steps=[step])
-    ended = OrderEnded(at=utc("2026-09-16T10:16:00+00:00"), entry="zlecenie skończone", order=order)
-    directory = centrum.log_path.parent / "dzienniki-wyceny"
-    directory.mkdir(parents=True)
-    journal = directory / Path(logs_file_name(started.started_at, "efenix", started.run_id)).with_suffix(".jsonl")
-    journal.write_text(f"{started.model_dump_json()}\n{ended.model_dump_json()}\n", encoding="utf-8")
+    ended_at = utc("2026-09-16T10:16:00+00:00")
+    left_journal(centrum.log_path.parent, started, ended_line(ended_at, order))
     if unsent:
-        logs = centrum.log_path.parent / "uruchomienia" / logs_file_name(started.started_at, "efenix", started.run_id)
+        logs = centrum.log_path.parent / "uruchomienia" / name_of(started)
         logs.parent.mkdir(parents=True)
         written = RunLog.interrupted(
             started,
-            ended_at=ended.at,
+            ended_at=ended_at,
             orders=[order],
             interruption=LoggedInterruption(row=None, place=None, total=None, omitted=0),
             tool=Tool(wydanie=None, commit=TOOL_COMMIT),
@@ -2437,21 +2434,15 @@ def test_plik_logow_ktorego_system_nie_daje_odczytac_zostawia_dziennik_do_nastep
     linią dziennika Centrum."""
 
     centrum = settling_centrum(tmp_path)
-    started = JournalStarted(
-        entry="start Uruchomienia",
+    started = StartFacts(
         run_id="d" * 32,
         process="efenix",
         mode="zapis",
         period=PERIOD,
         started_at=utc("2026-09-16T10:15:00+00:00"),
     )
-    directory = centrum.log_path.parent / "dzienniki-wyceny"
-    directory.mkdir(parents=True)
-    journal = directory / Path(logs_file_name(started.started_at, "efenix", started.run_id)).with_suffix(".jsonl")
-    journal.write_text(f"{started.model_dump_json()}\n", encoding="utf-8")
-    (centrum.log_path.parent / "uruchomienia" / logs_file_name(started.started_at, "efenix", started.run_id)).mkdir(
-        parents=True
-    )
+    journal = left_journal(centrum.log_path.parent, started)
+    (centrum.log_path.parent / "uruchomienia" / name_of(started)).mkdir(parents=True)
 
     centrum.restart()
     centrum.client.get("/api/runs/current")
@@ -2473,21 +2464,15 @@ def test_logi_z_pliku_w_katalogu_ktorego_nie_da_sie_wylistowac_ida_do_skrzynki_b
 
     centrum = settling_centrum(tmp_path)
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
-    started = JournalStarted(
-        entry="start Uruchomienia",
+    started = StartFacts(
         run_id="d" * 32,
         process="efenix",
         mode="zapis",
         period=PERIOD,
         started_at=utc("2026-09-16T10:15:00+00:00"),
     )
-    entries = [started.model_dump_json()]
-    if ended:
-        entries.append(RunEnded(at=started.started_at + timedelta(minutes=9), entry="koniec Uruchomienia").model_dump_json())
-    name = logs_file_name(started.started_at, "efenix", started.run_id)
-    journal = centrum.log_path.parent / "dzienniki-wyceny" / Path(name).with_suffix(".jsonl")
-    journal.parent.mkdir(parents=True)
-    journal.write_text("".join(f"{entry}\n" for entry in entries), encoding="utf-8")
+    name = name_of(started)
+    left_journal(centrum.log_path.parent, started, *([end_line(started.started_at + timedelta(minutes=9))] if ended else []))
     logs = RunLog.interrupted(
         started,
         ended_at=started.started_at + timedelta(minutes=5),
@@ -3417,14 +3402,9 @@ def test_dziennik_urwanej_wyceny_nieodczytany_przy_starcie_dostaje_logi_urwanego
         (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
         box = centrum.surroundings.report_box
         started_at = datetime.now(timezone.utc) - timedelta(hours=1)
-        started = JournalStarted(
-            entry="start Uruchomienia", run_id=run_1, process="efenix", mode="zapis", period=PERIOD, started_at=started_at
-        )
-        begun = OrderBegun(at=started_at + timedelta(seconds=30), entry="zaczynam zlecenie", row=18, place=1, total=6)
-        directory = centrum.log_path.parent / "dzienniki-wyceny"
-        directory.mkdir(parents=True)
-        journal_1 = directory / Path(logs_file_name(started_at, "efenix", run_1)).with_suffix(".jsonl")
-        journal_1.write_text(f"{started.model_dump_json()}\n{begun.model_dump_json()}\n", encoding="utf-8")
+        started = StartFacts(run_id=run_1, process="efenix", mode="zapis", period=PERIOD, started_at=started_at)
+        begun = begun_line(started_at + timedelta(seconds=30), row=18, place=1, total=6)
+        journal_1 = left_journal(centrum.log_path.parent, started, begun)
         centrum.client.stop()
         with _refused(monkeypatch, "read_text", lambda path, _: path == journal_1):
             centrum.restart()
@@ -3592,6 +3572,84 @@ def test_wycena_z_wynikiem_ktorej_jedyny_wpis_dziennika_zawiodl_po_zapisie_pierw
     assert (records(centrum), left, [logs_json(box, comment)["ending"] for comment in logs_comments(box)]) == ([], [], ["stop"])
 
 
+PRICING_START = StartFacts(
+    run_id="e" * 32, process="efenix", mode="zapis", period=PERIOD, started_at=utc("2026-09-16T10:15:00+00:00")
+)
+
+
+def journal_log_lines(log: CentrumLog) -> list[str]:
+    return [line.split(" ", 1)[1] for line in log.directory.joinpath("centrum.log").read_text(encoding="utf-8").splitlines()]
+
+
+def test_dziennik_ktorego_pierwsza_linia_sie_nie_zapisala_dostaje_ja_z_pierwszym_zapisanym_wpisem_a_postep_tylko_z_dysku(
+    tmp_path: Path,
+) -> None:
+    """Start Wyceny nie zapisał pierwszej linii dziennika (w miejscu katalogu dzienników stoi plik), a pierwszy wpis też
+    nie, więc postępu nie ma. Następny wpis, który się zapisał, niesie pierwszą linię przed sobą: od niego postęp jest z
+    tego, co dziennik ma na dysku, a start Centrum czyta z dziennika start Uruchomienia i zlecenie zaczęte bez wyniku.
+    Nieudane zapisy jednego Uruchomienia to jedna linia dziennika Centrum."""
+
+    log = CentrumLog(tmp_path / "centrum.log")
+    disk = LogsOnDisk(log, journaled="efenix")
+    blocked = tmp_path / "dzienniki-wyceny"
+    blocked.write_text("", encoding="utf-8")
+
+    disk.started(PRICING_START)
+    disk.journal.begun(18, 1, 2)
+    failed = disk.journal.progress(PRICING_START.run_id)
+    blocked.unlink()
+    disk.journal.begun(19, 2, 2)
+    progress = disk.journal.progress(PRICING_START.run_id)
+    [left] = disk.left_behind()
+
+    assert (failed, progress) == (None, PricingProgress(PRICING_START, (), 2, 19))
+    assert left.journal is not None
+    assert (left.journal.started, left.journal.interruption.row, left.journal.end) == (PRICING_START, 19, None)
+    assert journal_log_lines(log) == ["dziennik-wyceny-niedostepny typ=FileExistsError miejsce=wpis"]
+
+
+def test_uruchomienie_innego_procesu_nie_ma_dziennika_ani_postepu(tmp_path: Path) -> None:
+    log = CentrumLog(tmp_path / "centrum.log")
+    disk = LogsOnDisk(log, journaled="efenix")
+    settlement = StartFacts(
+        run_id="f" * 32, process="settlement", mode="zapis", period=PERIOD, started_at=PRICING_START.started_at
+    )
+
+    disk.started(settlement)
+    disk.journal.begun(18, 1, 2)
+    disk.journal.end(settlement.run_id, "OK")
+
+    assert (disk.journal.progress(settlement.run_id), list(disk.left_behind())) == (None, [])
+
+
+@pytest.mark.parametrize("confirmed", [True, False], ids=["z-pierwsza-linia", "bez-potwierdzonej-pierwszej-linii"])
+def test_wpis_konca_dziennika_z_pierwsza_linia_niesie_wynik_a_dziennik_bez_niej_znika(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, confirmed: bool
+) -> None:
+    """Dziennik z pierwszą linią na dysku dostaje wpis końca z wynikiem, który start Centrum z niego czyta. Gdy żaden zapis
+    nie potwierdził pierwszej linii (dysk zgłasza błąd przy ``fsync`` po ``write``), cała linia może być na dysku, a
+    postępu nie było, więc koniec Uruchomienia usuwa dziennik zamiast wpisu końca: start nie zrobi z niego Urwanego
+    Uruchomienia."""
+
+    log = CentrumLog(tmp_path / "centrum.log")
+    disk = LogsOnDisk(log, journaled="efenix")
+    opened = Path.open
+
+    def opening(self: Path, *arguments: Any, **keywords: Any) -> Any:
+        file = opened(self, *arguments, **keywords)
+        return file if confirmed or self.parent.name != "dzienniki-wyceny" else _Unconfirmed(file)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "open", opening)
+        disk.started(PRICING_START)
+    on_disk = [left.journal is not None for left in disk.left_behind()]
+    disk.journal.end(PRICING_START.run_id, "WYMAGA_SPRAWDZENIA")
+    ends = [None if left.journal is None else left.journal.end for left in disk.left_behind()]
+
+    assert on_disk == [True]
+    assert ends == ([EndEntry("WYMAGA_SPRAWDZENIA")] if confirmed else [])
+
+
 def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie_zastepuje_ich_logami_urwanego_uruchomienia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3753,8 +3811,7 @@ def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_prz
     box = centrum.surroundings.report_box
     box.background = frozenset()
     (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
-    started = JournalStarted(
-        entry="start Uruchomienia",
+    started = StartFacts(
         run_id="c" * 32,
         process="efenix",
         mode="zapis",
@@ -3762,12 +3819,9 @@ def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_prz
         started_at=utc("2026-09-16T10:15:00+00:00"),
     )
     order = LoggedOrder(row=18, outcome="gotowe", code=None, file={}, file_amount=Decimal(0), steps=[])
-    begun = OrderBegun(at=utc("2026-09-16T10:16:00+00:00"), entry="zaczynam zlecenie", row=18, place=1, total=2)
-    ended = OrderEnded(at=utc("2026-09-16T10:17:00+00:00"), entry="zlecenie skończone", order=order)
-    directory = centrum.log_path.parent / "dzienniki-wyceny"
-    directory.mkdir(parents=True)
-    journal = directory / Path(logs_file_name(started.started_at, "efenix", started.run_id)).with_suffix(".jsonl")
-    journal.write_text("".join(line.model_dump_json() + "\n" for line in (started, begun, ended)), encoding="utf-8")
+    begun = begun_line(utc("2026-09-16T10:16:00+00:00"), row=18, place=1, total=2)
+    ended = ended_line(utc("2026-09-16T10:17:00+00:00"), order)
+    left_journal(centrum.log_path.parent, started, begun, ended)
     progress = PricingProgress(started, (OrderDone(18, "gotowe", None),), 2, None)
     queue = tmp_path / "config" / "zgloszenia" / "kolejka"
     queue.mkdir(parents=True)

@@ -223,7 +223,7 @@ Left out, each a reason the check can pass while the code is wrong:
   `Zatrzymanie`. The Atrapa tests in `tests/test_wycena_efenix.py` (`SWEEP`) drive that.
 - **`mark_ready` refusing** (Excel holds the file, the file changed): the model marks always; a refusal only leaves
   ready orders unmarked until the next Uruchomienie.
-- **Dad editing the Plik zbiorczy** between Uruchomienia, and the Dziennik Wyceny (`pricing_journal.py`), which only
+- **Dad editing the Plik zbiorczy** between Uruchomienia, and the Dziennik Wyceny (`Journal` in `logs_disk.py`), which only
   records. The tool reads the file anew in each Uruchomienie, so a change of the file only changes what `completion`
   aims at (`test_po_ostrzezeniu_emmetta_tata_poprawia_plik_…`).
 
