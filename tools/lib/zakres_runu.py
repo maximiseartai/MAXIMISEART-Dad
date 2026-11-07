@@ -44,7 +44,7 @@ from dataclasses import dataclass, replace
 import enum
 from pathlib import Path, PurePosixPath
 
-from kroki_skilli import Step, hits, model_watched, repeats, watched, znajdz
+from kroki_skilli import Katalog, Step, hits, model_watched, repeats, watched
 from wplyw_zmiany import Context, Repository, run_all, with_structure
 
 __all__ = [
@@ -191,20 +191,21 @@ class ZakresRunu:
 
 
 def zakres(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path = ROOT) -> ZakresRunu:
-    """Zakres runu ``zdarzenie`` dla zmiany ``zmiana`` (ścieżki od bazy; push jej nie czyta) w checkoucie ``root``."""
+    """Zakres runu ``zdarzenie`` dla zmiany ``zmiana`` (ścieżki od bazy; push jej nie czyta) w checkoucie ``root``: pliki
+    testów i kroki skilli tego checkoutu (``Katalog.skanuj(root)``)."""
 
     tory, pliki, zrodlo = _pytest(zdarzenie, zmiana, root)
-    found, failed = znajdz()
-    why = {step: _dlaczego(step, zdarzenie, zmiana) for step in found}
-    running = [step for step in found if why[step][0]]
+    katalog = Katalog.skanuj(root)
+    why = {step: _dlaczego(step, zdarzenie, zmiana) for step in katalog.kroki}
+    running = [step for step in katalog.kroki if why[step][0]]
     wybrane = tuple(
         KrokSkilla(step, why[step][1], _czesci(step, zdarzenie), why[step][2])
         for step in running
         if step.verdict or not repeats(step, running)
     )
-    pominiete = tuple((step, why[step][1]) for step in found if not why[step][0])
+    pominiete = tuple((step, why[step][1]) for step in katalog.kroki if not why[step][0])
     przegladarka = potrzebuja_chromium(pliki, Repository.scan(root)) if pliki else frozenset()
-    return ZakresRunu(zdarzenie, tory, pliki, zrodlo, wybrane, pominiete, tuple(sorted(failed.items())), przegladarka)
+    return ZakresRunu(zdarzenie, tory, pliki, zrodlo, wybrane, pominiete, tuple(sorted(katalog.bledy.items())), przegladarka)
 
 
 def potrzebuja_chromium(testy: Iterable[str], repository: Repository) -> frozenset[str]:

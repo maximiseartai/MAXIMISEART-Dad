@@ -1,7 +1,7 @@
 """Zakres runu CI (``tools/lib/zakres_runu.py``): co CI uruchamia dla zdarzenia i zmiany, każda reguła raz, na ``zakres``.
 
-Testy budują repozytorium z własnymi skillami (``zakres`` patrzy na nie przez łatki ``kroki_skilli.ROOT`` i ``SKILLS``,
-a ``kroki_skilli.Katalog`` dostaje jego korzeń) i pytają o zakres jawnej zmiany, bez gita i bez uruchamiania kroków. Plan CI (``tests/test_plan_ci.py``) i
+Testy budują repozytorium z własnymi skillami, dają jego korzeń ``zakres`` i ``kroki_skilli.Katalog.skanuj``, bez łatek
+modułów, i pytają o zakres jawnej zmiany, bez gita i bez uruchamiania kroków. Plan CI (``tests/test_plan_ci.py``) i
 ``tools/skille_dla_zmiany.py`` (``tests/test_skille_dla_zmiany.py``) mają tylko testy tłumaczenia zakresu na swoje wyjście.
 """
 
@@ -57,15 +57,6 @@ SKILLS = {
     ".agents/skills/verify-c/scripts/check_c_mutations.py": PASSING,
 }
 SCRIPT_A = "verify-a/check_a_mutations.py"
-
-
-def _repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, str]) -> Path:
-    """Repozytorium z ``files``, którego skille widzi ``kroki_skilli``."""
-
-    repo = repository(tmp_path / "repo", files)
-    monkeypatch.setattr(kroki_skilli, "ROOT", repo)
-    monkeypatch.setattr(kroki_skilli, "SKILLS", repo / ".agents" / "skills")
-    return repo
 
 
 def _with_ci(name: str, command: str, globs: str = "src/pakiet/rout*.py") -> str:
@@ -199,8 +190,8 @@ def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_reque
         ("tools/mutacje.py", True),
     ],
 )
-def test_noca_skrypt_mutacji_biegnie_przy_zmianie_folderu_skilla_albo_runnera(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str, runs: bool) -> None:
-    repo = _repo(tmp_path, monkeypatch, SKILLS)
+def test_noca_skrypt_mutacji_biegnie_przy_zmianie_folderu_skilla_albo_runnera(tmp_path: Path, changed: str, runs: bool) -> None:
+    repo = repository(tmp_path / "repo", SKILLS)
 
     praca = zakres(Zdarzenie.NOC, frozenset({changed}), repo)
 
@@ -209,19 +200,18 @@ def test_noca_skrypt_mutacji_biegnie_przy_zmianie_folderu_skilla_albo_runnera(tm
     assert (SCRIPT_A in _runs(praca), _runs(praca) >= {"verify-b/check_b_mutations.py", "verify-c/check_c_mutations.py"}) == (runs, True)
 
 
-def test_noca_skrypt_mutacji_ktorego_tabeli_nie_da_sie_wczytac_biegnie_i_pokazuje_blad(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    repo = _repo(tmp_path, monkeypatch, SKILLS)
+def test_noca_skrypt_mutacji_ktorego_tabeli_nie_da_sie_wczytac_biegnie_i_pokazuje_blad(tmp_path: Path) -> None:
+    repo = repository(tmp_path / "repo", SKILLS)
 
     decision = _decisions(zakres(Zdarzenie.NOC, frozenset({"docs/opis.md"}), repo))["verify-c/check_c_mutations.py"]
 
     assert decision[0] and decision[1].startswith("nie da się wczytać tabeli mutacji: "), decision
 
 
-def test_noca_sprawdzenie_spoza_folderu_skilla_uruchamia_skrypt_ktorego_mutacje_je_uruchamiaja(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_noca_sprawdzenie_spoza_folderu_skilla_uruchamia_skrypt_ktorego_mutacje_je_uruchamiaja(tmp_path: Path) -> None:
     checker = "tests/test_sprawdzenie.py"
-    repo = _repo(
-        tmp_path,
-        monkeypatch,
+    repo = repository(
+        tmp_path / "repo",
         {
             **SKILLS,
             checker: "X = 1\n",
@@ -241,9 +231,9 @@ def test_noca_sprawdzenie_spoza_folderu_skilla_uruchamia_skrypt_ktorego_mutacje_
     ids=["noc", "push"],
 )
 def test_bez_zmian_od_bazy_noc_pomija_tylko_skill_z_pilnuje_i_tabela_a_push_biegnie_wszystko(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, event: Zdarzenie, runs: list[str]
+    tmp_path: Path, event: Zdarzenie, runs: list[str]
 ) -> None:
-    repo = _repo(tmp_path, monkeypatch, SKILLS)
+    repo = repository(tmp_path / "repo", SKILLS)
 
     praca = zakres(event, frozenset(), repo)
 
@@ -261,8 +251,8 @@ def test_bez_zmian_od_bazy_noc_pomija_tylko_skill_z_pilnuje_i_tabela_a_push_bieg
     ],
     ids=["pilnuje-nie-lista", "pilnuje-bez-globu", "frontmatter-niezamkniety"],
 )
-def test_pilnuje_ktorego_nie_da_sie_odczytac_uruchamia_skrypt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, skill_md: str, reason: str) -> None:
-    repo = _repo(tmp_path, monkeypatch, {**SKILLS, ".agents/skills/verify-a/SKILL.md": skill_md})
+def test_pilnuje_ktorego_nie_da_sie_odczytac_uruchamia_skrypt(tmp_path: Path, skill_md: str, reason: str) -> None:
+    repo = repository(tmp_path / "repo", {**SKILLS, ".agents/skills/verify-a/SKILL.md": skill_md})
 
     praca = zakres(Zdarzenie.NOC, frozenset(), repo)
 
@@ -280,10 +270,10 @@ def test_pilnuje_ktorego_nie_da_sie_odczytac_uruchamia_skrypt(tmp_path: Path, mo
     ids=["from-import", "import", "import-wzgledny", "skrypt-bez-skladni"],
 )
 def test_krok_skilla_potrzebuje_chromium_gdy_skrypt_skilla_importuje_playwright_albo_sie_nie_parsuje(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str, browser: bool
+    tmp_path: Path, script: str, browser: bool
 ) -> None:
     changed = ".agents/skills/verify-a/scripts/sprawdz_a.py"
-    repo = _repo(tmp_path, monkeypatch, {**SKILLS, changed: script})
+    repo = repository(tmp_path / "repo", {**SKILLS, changed: script})
 
     praca = zakres(Zdarzenie.NOC, frozenset({changed}), repo)
 
@@ -389,11 +379,11 @@ def _model_skill(name: str, edited: tuple[str, ...]) -> dict[str, str]:
     ],
 )
 def test_na_pull_request_skrypt_mutacji_modelu_biegnie_przy_zmianie_modelu_skryptu_albo_sprawdzenia(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str, runs: bool
+    tmp_path: Path, changed: str, runs: bool
 ) -> None:
     # Skrypt, którego mutacja psuje także plik spoza modelu, nie jest skryptem mutacji modelu.
     files = {**SKILLS, **_model_skill("verify-m", (MODEL,)), **_model_skill("verify-n", (".agents/skills/verify-n/model/M.tla", CHECKED))}
-    repo = _repo(tmp_path, monkeypatch, files)
+    repo = repository(tmp_path / "repo", files)
 
     praca = zakres(Zdarzenie.PULL_REQUEST, frozenset({changed, ".agents/skills/verify-n/model/M.tla"}), repo)
     decisions = _decisions(praca)
@@ -405,10 +395,10 @@ def test_na_pull_request_skrypt_mutacji_modelu_biegnie_przy_zmianie_modelu_skryp
 
 @pytest.mark.parametrize(("changed", "runs"), [(True, True), (False, False)], ids=["zmieniony skrypt", "skrypt bez zmiany"])
 def test_na_pull_request_skrypt_mutacji_ktorego_tabeli_nie_da_sie_wczytac_biegnie_gdy_go_zmieniono(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: bool, runs: bool
+    tmp_path: Path, changed: bool, runs: bool
 ) -> None:
     script = ".agents/skills/verify-a/scripts/check_a_mutations.py"
-    repo = _repo(tmp_path, monkeypatch, {**SKILLS, script: "MUTATIONS = (\n"})
+    repo = repository(tmp_path / "repo", {**SKILLS, script: "MUTATIONS = (\n"})
 
     decision = _decisions(zakres(Zdarzenie.PULL_REQUEST, frozenset({script} if changed else ()), repo))[SCRIPT_A]
 
@@ -433,10 +423,10 @@ BASELINE_D = ".agents/skills/verify-d/scripts/sprawdz_d.py"
     ],
 )
 def test_ze_zmianami_od_bazy_podstawa_ci_biegnie_przy_trafieniu_w_pilnuje_albo_folder_skilla(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str, runs: bool
+    tmp_path: Path, changed: str, runs: bool
 ) -> None:
     files = {**SKILLS, ".agents/skills/verify-d/SKILL.md": _with_ci("verify-d", BASELINE_D), BASELINE_D: "print('sprawdzone')\n"}
-    repo = _repo(tmp_path, monkeypatch, files)
+    repo = repository(tmp_path / "repo", files)
 
     decision = _decisions(zakres(Zdarzenie.PULL_REQUEST, frozenset({changed}), repo))["verify-d/ci"]
 
@@ -455,10 +445,10 @@ def test_ze_zmianami_od_bazy_podstawa_ci_biegnie_przy_trafieniu_w_pilnuje_albo_f
     ids=["trzy", "cztery"],
 )
 def test_powod_podstawy_wymienia_najwyzej_trzy_zmienione_pliki_i_liczbe_pozostalych(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: tuple[str, ...], reason: str
+    tmp_path: Path, changed: tuple[str, ...], reason: str
 ) -> None:
     files = {**SKILLS, ".agents/skills/verify-d/SKILL.md": _with_ci("verify-d", BASELINE_D), BASELINE_D: "print('sprawdzone')\n"}
-    repo = _repo(tmp_path, monkeypatch, files)
+    repo = repository(tmp_path / "repo", files)
 
     decision = _decisions(zakres(Zdarzenie.PULL_REQUEST, frozenset(changed), repo))["verify-d/ci"]
 
@@ -474,10 +464,10 @@ def test_powod_podstawy_wymienia_najwyzej_trzy_zmienione_pliki_i_liczbe_pozostal
     ids=["pull-request", "noc"],
 )
 def test_na_pull_request_biegna_same_podstawy_a_noca_same_skrypty_mutacji(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, event: Zdarzenie, baseline: tuple[bool, str], script: tuple[bool, str]
+    tmp_path: Path, event: Zdarzenie, baseline: tuple[bool, str], script: tuple[bool, str]
 ) -> None:
     command = ".agents/skills/verify-a/scripts/sprawdz_a.py"
-    repo = _repo(tmp_path, monkeypatch, {**SKILLS, ".agents/skills/verify-a/SKILL.md": _with_ci("verify-a", command)})
+    repo = repository(tmp_path / "repo", {**SKILLS, ".agents/skills/verify-a/SKILL.md": _with_ci("verify-a", command)})
 
     decisions = _decisions(zakres(event, frozenset({command}), repo))
 
@@ -496,10 +486,10 @@ def test_na_pull_request_biegna_same_podstawy_a_noca_same_skrypty_mutacji(
     ],
 )
 def test_podstawa_ci_ktora_uruchamia_wybrany_skrypt_mutacji_nie_biegnie_drugi_raz(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arguments: str, event: Zdarzenie, changed: str, separately: bool, script: bool
+    tmp_path: Path, arguments: str, event: Zdarzenie, changed: str, separately: bool, script: bool
 ) -> None:
     command = ".agents/skills/verify-a/scripts/sprawdz_a.py" + arguments
-    repo = _repo(tmp_path, monkeypatch, {**SKILLS, ".agents/skills/verify-a/SKILL.md": _with_ci("verify-a", command)})
+    repo = repository(tmp_path / "repo", {**SKILLS, ".agents/skills/verify-a/SKILL.md": _with_ci("verify-a", command)})
 
     runs = _runs(zakres(event, frozenset({changed} - {""}), repo))
 
@@ -517,11 +507,11 @@ def test_podstawa_ci_ktora_uruchamia_wybrany_skrypt_mutacji_nie_biegnie_drugi_ra
     ids=["noc, ci-czesci 3", "noc, ci-czesci 2", "pull-request", "push"],
 )
 def test_noca_podstawa_z_ci_czesci_biegnie_kazda_czescia_kazdego_n_a_pull_request_i_push_czesci_wybiera_plan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, event: Zdarzenie, n: int, parts: tuple[tuple[int, int], ...]
+    tmp_path: Path, event: Zdarzenie, n: int, parts: tuple[tuple[int, int], ...]
 ) -> None:
     # Argument odróżnia podstawę od polecenia mutacji skryptu, więc podstawa biegnie także obok skryptu.
     command = ".agents/skills/verify-a/scripts/sprawdz_a.py --czesciami"
-    repo = _repo(tmp_path, monkeypatch, {**SKILLS, ".agents/skills/verify-a/SKILL.md": _with_ci("verify-a", command).replace("ci: ", f"ci-czesci: {n}\nci: ")})
+    repo = repository(tmp_path / "repo", {**SKILLS, ".agents/skills/verify-a/SKILL.md": _with_ci("verify-a", command).replace("ci: ", f"ci-czesci: {n}\nci: ")})
 
     praca = zakres(event, frozenset({".agents/skills/verify-a/scripts/sprawdz_a.py"}), repo)
 
@@ -565,21 +555,21 @@ BASELINE_E = ".agents/skills/verify-e/scripts/sprawdz_e.py"
     ids=["pilnuje i runner", "biblioteki i folder", "bez trafien"],
 )
 def test_noca_wybrany_krok_skilla_niesie_zmienione_pliki_ktore_go_uruchamiaja(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: set[str], files: dict[str, set[str]]
+    tmp_path: Path, changed: set[str], files: dict[str, set[str]]
 ) -> None:
     skill_d = _with_ci("verify-d", BASELINE_D).replace("ci: ", "ci-czesci: 2\nci: ")
     skill_e = f"---\nname: verify-e\nci-czesci: 2\nci: {BASELINE_E}\n---\n"
     baselines = {".agents/skills/verify-d/SKILL.md": skill_d, BASELINE_D: "print('d')\n", ".agents/skills/verify-e/SKILL.md": skill_e, BASELINE_E: "print('e')\n"}
-    repo = _repo(tmp_path, monkeypatch, {**SKILLS, **baselines})
+    repo = repository(tmp_path / "repo", {**SKILLS, **baselines})
 
     praca = zakres(Zdarzenie.NOC, frozenset(changed), repo)
 
     assert {w.krok.key: set(w.pliki) for w in praca.wybrane} == files
 
 
-def test_zgubiony_skrypt_mutacji_i_zly_klucz_ci_trafiaja_do_bledow_zakresu_kazdego_zdarzenia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_zgubiony_skrypt_mutacji_i_zly_klucz_ci_trafiaja_do_bledow_zakresu_kazdego_zdarzenia(tmp_path: Path) -> None:
     lost = ".agents/skills/verify-a/scripts/check_mutation_proba.py"
-    repo = _repo(tmp_path, monkeypatch, {**SKILLS, lost: "MUTATIONS = ()\n", ".agents/skills/verify-z/SKILL.md": "---\nname: verify-z\nci: brak.py\n---\n"})
+    repo = repository(tmp_path / "repo", {**SKILLS, lost: "MUTATIONS = ()\n", ".agents/skills/verify-z/SKILL.md": "---\nname: verify-z\nci: brak.py\n---\n"})
 
     found = {event: zakres(event, frozenset(), repo).bledy for event in Zdarzenie}
 
@@ -604,7 +594,7 @@ def test_zgubiony_skrypt_mutacji_i_zly_klucz_ci_trafiaja_do_bledow_zakresu_kazde
     ids=["src: podstawa i E2E", "tylko folder skilla: podstawa bez E2E", "nic"],
 )
 def test_polecenia_skilla_to_jego_wybrane_kroki_i_wywolania_w_krokach_ci_ktore_biegna_w_tym_runie(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str, commands: list[tuple[str, ...]]
+    tmp_path: Path, changed: str, commands: list[tuple[str, ...]]
 ) -> None:
     skill = ".agents/skills/verify-rozliczenia"
     files = {
@@ -617,7 +607,7 @@ def test_polecenia_skilla_to_jego_wybrane_kroki_i_wywolania_w_krokach_ci_ktore_b
         "src/a/b.py": "X = 1\n",
         "docs/inne.md": "inne\n",
     }
-    repo = _repo(tmp_path, monkeypatch, files)
+    repo = repository(tmp_path / "repo", files)
 
     praca = zakres(Zdarzenie.PULL_REQUEST, frozenset({changed}), repo)
 
