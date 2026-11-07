@@ -7,8 +7,7 @@ w nazwie, który nie pasuje do wzorca, i skryptowi mutacji wskazanemu w ``SKILL.
 
 Katalog kroków skilli checkoutu to ``Katalog.skanuj(root)``. Reguły jednego skilla albo kroku (``hits``, ``guarded``,
 ``ci_command``, ``watched``, ``model_watched``, ``repeats``) biorą korzeń checkoutu z położenia skilla, bo skill leży
-zawsze w ``<root>/.agents/skills/<skill>`` (``tests/test_miejsce_skilli.py``). ``znajdz`` i ``steps`` dają katalog
-checkoutu z globalnego ``ROOT``.
+zawsze w ``<root>/.agents/skills/<skill>`` (``tests/test_miejsce_skilli.py``), więc moduł nie ma globalnego korzenia.
 
 Skill może zadeklarować we frontmatterze ``SKILL.md`` klucz ``ci:``: polecenie (skrypt ``.py`` z repozytorium, ścieżka
 od korzenia, i jego argumenty), którym CI sprawdza skill na niezmienionym kodzie, czyli krok ``PODSTAWA``, także w skillu
@@ -33,10 +32,8 @@ from pathlib import Path
 import re
 from typing import Any, NamedTuple
 
-ROOT = Path(__file__).resolve().parents[2]
 # Folder skilli od korzenia checkoutu.
 FOLDER_SKILLI = (".agents", "skills")
-SKILLS = ROOT.joinpath(*FOLDER_SKILLI)
 PATTERN = "check_*_mutations.py"
 # Wywołanie skryptu mutacji w SKILL.md; ścieżka bez ``.agents`` na początku liczy się od folderu skilla.
 MENTION = re.compile(r"[\w.\\/-]*scripts[\\/]check_\w+_mutations\.py")
@@ -241,14 +238,10 @@ def _count(script: Path) -> int:
         return 1
 
 
-def steps(failed: dict[str, str]) -> list[Step]:
-    """Kroki wszystkich skilli checkoutu ``ROOT``, podstawa każdego skilla z kluczem ``ci`` przed jego skryptami; zły
+def _steps(root: Path, failed: dict[str, str]) -> list[Step]:
+    """Kroki wszystkich skilli checkoutu ``root``, podstawa każdego skilla z kluczem ``ci`` przed jego skryptami; zły
     klucz ``ci`` albo ``ci-czesci`` trafia do ``failed``."""
 
-    return _steps(ROOT, failed)
-
-
-def _steps(root: Path, failed: dict[str, str]) -> list[Step]:
     folder = root.joinpath(*FOLDER_SKILLI)
     skills: dict[Path, list[Path]] = {skill_md.parent: [] for skill_md in folder.glob("*/SKILL.md") if _values(skill_md, "ci")}
     for script in sorted(folder.glob(f"*/scripts/{PATTERN}")):
@@ -304,7 +297,7 @@ def repeats(step: Step, chosen: Iterable[Step]) -> bool:
 class Katalog(NamedTuple):
     """Kroki skilli checkoutu ``root`` i FAIL-e ich znalezienia, jak ``Repository.scan`` w ``tools/lib/wplyw_zmiany.py``.
 
-    Krotka nazwana, nie dataclass: testy wczytują kopię modułu bez wpisu w ``sys.modules``, którego dataclass potrzebuje.
+    Krotka nazwana, nie dataclass: testy wczytują moduł bez wpisu w ``sys.modules``, którego dataclass potrzebuje.
     ``kroki``: podstawa każdego skilla z kluczem ``ci`` przed jego skryptami mutacji, skille po nazwie. ``bledy``: FAIL
     po nazwie: zgubione skrypty mutacji, zły klucz ``ci:`` albo ``ci-czesci:`` i brak jakiegokolwiek skryptu mutacji.
     """
@@ -333,10 +326,3 @@ class Katalog(NamedTuple):
         """Foldery skilli z ``SKILL.md``, których nazwa pasuje do ``wzorzec`` (glob), po nazwie."""
 
         return sorted(skill_md.parent for skill_md in self.root.joinpath(*FOLDER_SKILLI).glob(f"{wzorzec}/SKILL.md"))
-
-
-def znajdz() -> tuple[list[Step], dict[str, str]]:
-    """Kroki i FAIL-e katalogu checkoutu ``ROOT`` (``Katalog.skanuj``)."""
-
-    katalog = Katalog.skanuj(ROOT)
-    return list(katalog.kroki), dict(katalog.bledy)
