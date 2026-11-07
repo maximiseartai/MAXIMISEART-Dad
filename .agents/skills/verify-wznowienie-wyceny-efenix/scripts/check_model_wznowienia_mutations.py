@@ -32,7 +32,7 @@ def _check(config: str) -> tuple[str, ...]:
 
 MUTATIONS = (
     Mutation(
-        "Wycena Emmetta także do zlecenia z ilościami (_outcome: bez not any(opened.quantities.values()))",
+        "Wycena Emmetta także do zlecenia z ilościami (_outcome: bez not _priced(opened))",
         (Edit(MODEL, "    /\\ IF q # Pusta\n       THEN Dokoncz(q)", "    /\\ IF FALSE\n       THEN Dokoncz(q)"),),
         _check("zwykle"),
         "ponowne Uruchomienie ładuje Emmetta do zlecenia z wyceną i czyści ilości, także tacie",

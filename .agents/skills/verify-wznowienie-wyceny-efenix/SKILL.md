@@ -87,8 +87,13 @@ classification of other failures) does not move the model. A change that makes a
 decide whether an order is finished does, though no definition above changes: add it to the table and to
 `model/definicje.json`.
 
-Sync commit: `014b9337a` (2026-11-07: the Wycena, not the window, decides whether efenix loaded Wycena Emmetta).
-Every row of the table was checked against the code at this commit. Since `48d371c3f` `_outcome` and `load_emmett`
+Sync commit: `68aafac28` (2026-11-07: the Wycena, not the window, knows whether it sent a change to efenix before a
+Zatrzymanie). Every row of the table was checked against the code at this commit. Since `014b9337a` only `save` and
+`_efenix_stops` changed: the Komunikat of a Zatrzymanie asks `_kept` (a write in the trace of the orders, or
+`WindowStop.sent` of the window action that stopped) instead of the window's `sent_change`, and the model has no
+Komunikat, so it did not change; `_kept` is not in `model/definicje.json` for the same reason. On the previous Sync
+commit `014b9337a` (the Wycena, not the window, decides whether efenix loaded Wycena Emmetta) every row of the table
+was checked against the code. Since `48d371c3f` `_outcome` and `load_emmett`
 changed, and the new `_priced` and `_emmett`, which `model/definicje.json` now lists: the verdict on the reloaded page
 moved from `load_emmett` to the Wycena's `_emmett`, which the window runs inside its action on its observations
 (`EmmettLoad`), with the same rule, and `_outcome` asks `_priced` instead of `any(opened.quantities.values())`, so the
