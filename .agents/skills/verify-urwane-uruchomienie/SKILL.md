@@ -151,7 +151,7 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `SCALENIE` (2026-11-07, merge of `main` with N3a into Przekazanie do akceptacji). Every row of the table
+Sync commit: `025b50132` (2026-11-07, merge of `main` with N3a into Przekazanie do akceptacji). Every row of the table
 was checked against the code at this commit. It joins the two Sync commits below, which changed disjoint definitions
 (no file of `model/definicje.json` changed on both sides since their merge-base), so no action changed.
 
