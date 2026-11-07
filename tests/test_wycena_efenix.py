@@ -1099,10 +1099,6 @@ class _ClosingBeforeAction:
         self._page = page
         self._left = at_action
 
-    @property
-    def sent_change(self) -> bool:
-        return self._efenix.sent_change
-
     def search(self, number: str) -> Sequence[ListedOrder]:
         self._before()
         return self._efenix.search(number)
@@ -2805,10 +2801,6 @@ class _SlowEfenix:
 
     time: _FakeTime
     ACTION_S = 3.0
-
-    @property
-    def sent_change(self) -> bool:
-        return False
 
     def search(self, number: str) -> Sequence[ListedOrder]:
         self.time.pause(self.ACTION_S)

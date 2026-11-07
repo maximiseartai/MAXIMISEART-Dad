@@ -89,10 +89,6 @@ class _PacedEfenix:
         self._pacing = pacing
         self._searched: float | None = None
 
-    @property
-    def sent_change(self) -> bool:
-        return self._efenix.sent_change
-
     def search(self, number: str) -> Sequence[ListedOrder]:
         self._searched = self._pacing.before_search()
         return self._efenix.search(number)

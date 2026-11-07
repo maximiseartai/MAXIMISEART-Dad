@@ -28,7 +28,8 @@ proces i tak wpisał. Zlecenie bez takiej pozycji jest gotowe, gdy kwota końcow
 przerwało Zatrzymanie albo zgaśnięcie Centrum, tak samo jak zlecenie zaczęte przez tatę. Okno efenix (``Efenix``) nie ma działania, które przekazuje zlecenie do
 akceptacji, anuluje je albo zmienia jego status. Strona logowania, efenix, którego okno nie otworzyło, zamknięte okno
 efenix i działanie okna, którego okno nie dokończyło, to Zatrzymanie (``LoggedOut``, ``EfenixUnreachable``,
-``WindowClosed``, ``UnexpectedPage``), a Komunikat Zatrzymania mówi, czy przed nim proces zmienił już coś w efenix.
+``WindowClosed``, ``UnexpectedPage``), a Komunikat Zatrzymania mówi, czy przed nim proces zmienił już coś w efenix:
+rozstrzyga to Wycena ze śladu zleceń i z działania, przy którym okno stanęło (``_kept``), a nie okno.
 Niedokończone działanie okna to Zatrzymanie „do Maksa” z częścią strony, bez treści strony i bez zgadywania przyczyny
 (zerwane połączenie, wolny albo zmieniony efenix): tata uruchamia ponownie, a Maks ustala przyczynę z Logów Uruchomienia. Każdy wyjątek okna niesie przyczynę techniczną z zamkniętej listy
 (``WindowCause``), a Zatrzymanie z okna niesie w ``StopError.facts`` (``PricingStopped``) tę przyczynę, wynik każdego
@@ -242,7 +243,13 @@ zleceń; Komunikat taty jej nie pokazuje."""
 
 
 class WindowStop(Exception):
-    """Okno efenix nie może działać dalej: część strony (``None`` poza stronami efenix) i przyczyna techniczna."""
+    """Okno efenix nie może działać dalej: część strony (``None`` poza stronami efenix) i przyczyna techniczna.
+
+    ``sent``: działanie okna, które zgłosiło wyjątek, kliknęło już przycisk, który wysyła do efenix zmianę zlecenia (data
+    wykonania, „Załaduj do zlecenia”, Enter w polu „Ilość”), więc efenix mógł ją zapisać. Ustawia je okno.
+    """
+
+    sent: bool = False
 
     def __init__(self, part: PagePart | None, cause: WindowCause) -> None:
         super().__init__(None if part is None else part.name)
@@ -322,13 +329,9 @@ class Efenix(Protocol):
     pola „Ilość”. Przekazania do akceptacji, anulowania ani zmiany statusu zlecenia w nim nie ma.
 
     Działania po ``open_order`` dotyczą otwartego zlecenia. Każde działanie zgłasza ``LoggedOut`` na stronie logowania,
-    ``UnexpectedPage``, gdy go nie dokończyło, i ``WindowClosed`` w zamkniętym oknie.
+    ``UnexpectedPage``, gdy go nie dokończyło, i ``WindowClosed`` w zamkniętym oknie, z ``WindowStop.sent``, gdy przed
+    wyjątkiem kliknęło już przycisk zmiany zlecenia.
     """
-
-    @property
-    def sent_change(self) -> bool:
-        """Okno kliknęło już przycisk, który wysyła do efenix zmianę zlecenia (data wykonania, Wycena Emmetta, ilość)."""
-        ...
 
     def search(self, number: str) -> Sequence[ListedOrder]:
         """Wiersze listy zleceń po szukaniu po ``Numer``."""
@@ -583,8 +586,8 @@ def price_orders(
             return PricingStopped(part, cause, summary, at)
 
         try:
-            with _efenix_stops(lambda: False, stopped), open_efenix(login) as efenix:
-                with _efenix_stops(lambda: efenix.sent_change, stopped):
+            with _efenix_stops(lambda _error: False, stopped), open_efenix(login) as efenix:
+                with _efenix_stops(lambda error: _kept(results, None if current is None else current[2], error), stopped):
                     for done, order in enumerate(scope.orders):
                         phases.step(_ORDERS, worker=order.worker, done=done, total=total)
                         trace = OrderTrace()
@@ -640,26 +643,50 @@ def _warning(source: Path, result: OrderResult) -> Message | None:
 
 @contextmanager
 def _efenix_stops(
-    changed: Callable[[], bool], stopped: Callable[[PagePart | None, WindowCause], PricingStopped]
+    changed: Callable[[WindowStop], bool], stopped: Callable[[PagePart | None, WindowCause], PricingStopped]
 ) -> Iterator[None]:
     """Strona logowania, niedokończone działanie okna, zamknięte okno i efenix, którego okno nie otworzyło, to Zatrzymanie
     z Komunikatem procesu, a fakty Zatrzymania dla Logów Uruchomienia daje ``stopped`` z częścią strony i przyczyną.
 
-    ``changed``: czy przed Zatrzymaniem proces zmienił już coś w efenix.
+    ``changed``: czy przed Zatrzymaniem z wyjątku okna proces zmienił już coś w efenix.
     """
 
     try:
         yield
     except LoggedOut as error:
-        raise StopError(messages.logged_out(kept=changed()), facts=stopped(error.part, error.cause)) from error
+        raise StopError(messages.logged_out(kept=changed(error)), facts=stopped(error.part, error.cause)) from error
     except UnexpectedPage as error:
-        raise StopError(messages.window_stopped(error.part, kept=changed()), facts=stopped(error.part, error.cause)) from error
+        raise StopError(messages.window_stopped(error.part, kept=changed(error)), facts=stopped(error.part, error.cause)) from error
     except WindowClosed as error:
-        raise StopError(messages.window_closed(kept=changed()), facts=stopped(error.part, error.cause)) from error
+        raise StopError(messages.window_closed(kept=changed(error)), facts=stopped(error.part, error.cause)) from error
     except EfenixUnreachable as error:
-        raise StopError(messages.efenix_unreachable(kept=changed()), facts=stopped(error.part, error.cause)) from error
+        raise StopError(messages.efenix_unreachable(kept=changed(error)), facts=stopped(error.part, error.cause)) from error
     except BrowserNotStarted as error:
         raise StopError(messages.browser_not_started(), facts=stopped(error.part, error.cause)) from error
+
+
+def _kept(results: Sequence[OrderResult], current: OrderTrace | None, error: WindowStop) -> bool:
+    """Czy przed Zatrzymaniem z wyjątku okna ``error`` proces mógł coś zmienić w efenix: udany zapis w śladzie zleceń
+    ``results`` albo zlecenia ``current``, przy którym okno stanęło, albo działanie, które przed wyjątkiem kliknęło już
+    przycisk zmiany zlecenia (``WindowStop.sent``)."""
+
+    done = [step for result in results for step in result.steps]
+    if current is not None:
+        done.extend(current.steps)
+    return error.sent or any(_wrote(step) for step in done)
+
+
+def _wrote(step: TraceStep) -> bool:
+    """Udane działanie okna ``step`` wysłało do efenix zmianę zlecenia: data wykonania, którą przyjął kalendarz (okno
+    kliknęło „Potwierdź”), Wycena Emmetta i ilość."""
+
+    match step.action:
+        case "szukanie" | "otwarcie zlecenia":
+            return False
+        case "data wykonania":
+            return step.accepted is True
+        case "Wycena Emmetta" | "ilość":
+            return True
 
 
 def _outcome(order: CollectiveOrder, efenix: Efenix, forbidden: ForbiddenValues | None) -> Ready | Settled | OrderError | EmmettWarning:

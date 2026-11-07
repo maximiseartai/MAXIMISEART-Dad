@@ -278,7 +278,13 @@ MUTATIONS = (
     ),
     Mutation(
         "Komunikat Zatrzymania zawsze mówi, że w efenix nic się nie zmieniło",
-        (Edit(PRICING, "                with _efenix_stops(lambda: efenix.sent_change, stopped):\n", "                with _efenix_stops(lambda: False, stopped):\n"),),
+        (
+            Edit(
+                PRICING,
+                "                with _efenix_stops(lambda error: _kept(results, None if current is None else current[2], error), stopped):\n",
+                "                with _efenix_stops(lambda _error: False, stopped):\n",
+            ),
+        ),
         explorer("zamkniete-okno", "ilosc"),
         "tata myśli, że efenix jest nietknięty, a wycena jest w połowie",
         NEW,

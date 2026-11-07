@@ -84,10 +84,6 @@ class _Traced:
         self._clock = clock
         self._now = now
 
-    @property
-    def sent_change(self) -> bool:
-        return self._efenix.sent_change
-
     def search(self, number: str) -> Sequence[ListedOrder]:
         found, at, duration_ms = self._done("szukanie", lambda: self._efenix.search(number))
         results = tuple(read_listed(self._order, listed) for listed in found)
