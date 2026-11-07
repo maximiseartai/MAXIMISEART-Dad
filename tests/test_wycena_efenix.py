@@ -1106,7 +1106,7 @@ def test_odmowa_przekazania_przez_efenix_to_blad_zlecenia_bez_znacznika_a_nastep
 ) -> None:
     """Skrypt strony efenix po zielonym „Zapisz” sprawdza zlecenie i zamiast okna zmiany statusu pokazuje okno informacji
     z odmową (skrypt efenix z rekonesansu, każdy z czterech tekstów, i tekst, którego okno nie zna). Zlecenie zostaje
-    tacie jako błąd bez Znacznika, do efenix nie dochodzi jego zmiana statusu, a Wycena idzie dalej i przekazuje
+    tacie jako błąd bez Znacznika (także w liczbie błędów metryk), do efenix nie dochodzi jego zmiana statusu, a Wycena idzie dalej i przekazuje
     następne gotowe zlecenie. Ślad dla Logów ma odmowę z zamkniętej listy."""
 
     orders = [Order(number, cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}) for number in ("#8371", "#8372")]
@@ -1125,6 +1125,8 @@ def test_odmowa_przekazania_przez_efenix_to_blad_zlecenia_bez_znacznika_a_nastep
         _figures_of(2, 0, forwarded=1),
         [("EFENIX_ODMOWA_PRZEKAZANIA", "wiersz 18")],
     )
+    assert isinstance(outcome.ending, Finished)
+    assert (outcome.ending.counters["ready"], outcome.ending.counters["errors"]) == (0, 1)
     assert (requests, [order.status for order in after]) == ([("POST", "Do akceptacji")], ["Do wyceny", "Do akceptacji"])
     assert _address_fills(source) == {18: None, 19: FORWARDED_RGB}
     assert outcome.view is not None
