@@ -151,13 +151,17 @@ outside these definitions, or a progress that reaches the queue another way than
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
 `atomic_file.py`, although that test builds its own files.
 
-Sync commit: `7d6eca83d` (2026-11-07, Przekazanie do akceptacji, ADR 0027). Every row of the table was checked
-against the code at this commit. Since `aefc594f1` `save` passes the mode of the Wycena to `_outcome`, which in the mode
-with Przekazanie also forwards a gotowe order to acceptance (one more change in efenix between `journal.begun` and
-`journal.ended`, traced like every other), and `run_logs` has the result `przekazane`; the journal calls and their
-order did not change, so no action changed.
+Sync commit: `660044485` (2026-11-07, the two buttons of Wycena w efenix in Centrum, ADR 0027). Every row of the table
+was checked against the code at this commit. Since `7d6eca83d` the start facts (`StartFacts`, the first line of the
+journal `_first_line`, the last-start file of `LogsOnDisk.started`, `_read_journal` and `RunLog.interrupted`) carry
+the mode of the Wycena as one more field, read back the same way as `mode`; no step, write or order of the journal
+changed, so no action changed.
 
 Earlier Sync commits, each checked the same way:
+- `7d6eca83d` (Przekazanie do akceptacji, ADR 0027): since `aefc594f1` `save` passes the mode of the Wycena to
+  `_outcome`, which in the mode with Przekazanie also forwards a gotowe order to acceptance (one more change in efenix
+  between `journal.begun` and `journal.ended`, traced like every other), and `run_logs` has the result `przekazane`;
+  the journal calls and their order did not change, so no action changed.
 - `aefc594f1` (PR 7 of WS-A): since the Sync commit `872a47f50` the name of the Logs file has one owner,
   `logs_disk.name_of`, which takes the start facts (`run_logs.StartFacts`, in Logi `RunLog.start`) and keeps the format
   of the removed `run_logs.logs_file_name`; `LogsOnDisk.write` and the file in the Archiwum (`post_of` → `_archive_file`)
