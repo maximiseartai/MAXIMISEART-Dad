@@ -2051,6 +2051,42 @@ def test_brak_albo_nieczytelny_intermax_to_zatrzymanie_dla_taty(tmp_path: Path, 
     assert not _copies(tmp_path)
 
 
+def test_zepsute_teksty_wspolne_to_nieczytelny_intermax_bez_zapisu(tmp_path: Path) -> None:
+    """Teksty wspólne, których parser XML nie przeczyta: INTERMAX jest nieczytelny, także gdy wiersze z dołu arkusza
+    sięgają tylko po teksty przed usterką."""
+
+    path, _ = _register(tmp_path)
+    rewrite_parts(path, lambda name, data: data.replace(b"</sst>", b"") if name == "xl/sharedStrings.xml" else data)
+
+    with _nothing_written(tmp_path, path):
+        stop = _stop(_run(tmp_path))
+
+    assert (stop.message.code, stop.stop_kind) == ("NIECZYTELNY_INTERMAX", "for_tata")
+
+
+def test_pusty_tekst_wspolny_i_si_z_atrybutem_nie_przesuwaja_tekstow_zlecen(tmp_path: Path) -> None:
+    """``<si/>`` na początku listy tekstów wspólnych i ``<si >`` przy każdym innym: poprawny XML, którego Excel nie
+    zapisuje, a który Uporządkowanie czyta tak samo jak zwykły."""
+
+    path, layout = _register(tmp_path)
+    shifted = re.compile(rb'(<c [^>]*?t="s"[^>]*><v>)(\d+)')
+
+    def with_empty_first(name: str, data: bytes) -> bytes:
+        if name == "xl/sharedStrings.xml":
+            return re.sub(rb"(<sst\b[^>]*>)", rb"\g<1><si/>", data.replace(b"<si>", b"<si >"), count=1)
+        if name.startswith("xl/worksheets/sheet"):
+            return shifted.sub(lambda found: found.group(1) + b"%d" % (int(found.group(2)) + 1), data)
+        return data
+
+    rewrite_parts(path, with_empty_first)
+
+    summary = _ordered(_run(tmp_path))
+
+    assert summary.order_count == len(layout.raw)
+    assert layout.yellow is not None
+    assert order_rows(path, layout.yellow + 2, layout.yellow + 2) == [_expected(layout.raw[1])]
+
+
 @pytest.mark.parametrize("header", ["AKCJE", "UWAGI", "WYKONAWCA"])
 def test_bez_naglowka_zlecen_w_wierszu_1_zatrzymanie_dla_taty_bez_zapisu(tmp_path: Path, header: str) -> None:
     path, _ = _register(tmp_path)

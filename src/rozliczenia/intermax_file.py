@@ -58,6 +58,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Final, cast
 from xml.etree import ElementTree
+from xml.parsers import expat
 
 from openpyxl.styles.borders import Border
 from openpyxl.styles.colors import Color
@@ -102,6 +103,9 @@ _HEADER_ROW = re.compile(rb'<row r="1"[^>]*?(?:/>|>.*?</row>)', re.S)
 _ATTRIBUTE = re.compile(rb'\s([\w:]+)="([^"]*)"')
 _ROW_LOOK: Final = (b"s", b"customFormat", b"ht", b"customHeight", b"x14ac:dyDescent")
 """Atrybuty ``<row>``, które dają wiersz wygląd: styl wiersza i wysokość; ``x14ac`` deklaruje arkusz taty."""
+_SHARED_ITEM: Final = re.compile(rb"<si\b[^>]*?(?:/>|>(.*?)</si>)", re.S)
+_PHONETIC: Final = re.compile(rb"<rPh\b.*?</rPh>", re.S)
+_SHARED_TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
 _SHEET_VIEWS: Final = re.compile(rb"<sheetViews\b.*?</sheetViews>", re.S)
 _SHEET_VIEW: Final = re.compile(rb"<sheetView\b([^>]*?)(?:/>|>.*?</sheetView>)", re.S)
 _PANE: Final = re.compile(rb"<pane\b([^>]*?)\s*/>")
@@ -331,7 +335,7 @@ class Register:
             self._styles_part = styles_part
             self._styles = _Styles.of(self._parts[styles_part])
             strings = next((rel.target for rel in rels.values() if rel.kind.endswith("/sharedStrings")), None)
-            self._shared = _shared_strings(self._parts[strings]) if strings else []
+            self._shared = _SharedStrings(self._parts[strings] if strings else b"<sst/>")
             properties = root.find(f"{MAIN}workbookPr")
             date1904 = properties is not None and cast(WorkbookProperties, WorkbookProperties.from_tree(cast(Any, properties))).date1904
             self._epoch = MAC_EPOCH if date1904 else WINDOWS_EPOCH
@@ -541,13 +545,26 @@ def _with_view(head: bytes, row: int, column: int) -> bytes:
     return _SHEET_VIEW.sub(view, head)
 
 
-def _shared_strings(xml: bytes) -> list[str]:
-    """Teksty wspólne bez podpowiedzi wymowy (``rPh``): zwykły tekst albo tekst każdego fragmentu."""
+class _SharedStrings:
+    """Teksty wspólne bez podpowiedzi wymowy (``rPh``): zwykły tekst albo tekst każdego fragmentu.
 
-    return [
-        "".join(text.text or "" for text in [*item.iterfind(f"{MAIN}t"), *item.iterfind(f"{MAIN}r/{MAIN}t")])
-        for item in ElementTree.fromstring(xml).iterfind(f"{MAIN}si")
-    ]
+    Tekst powstaje dopiero, gdy komórka po niego sięga: INTERMAX taty ma dziesiątki tysięcy tekstów wspólnych, a
+    Uporządkowanie czyta kilkaset wierszy z dołu arkusza. Granice ``<si>`` są szukane bez parsera, więc część
+    sprawdza parser expat, zanim cokolwiek z niej przeczyta: zepsuta część to ``ExpatError``, czyli nieczytelny
+    INTERMAX, a w poprawnym XML każdy ``<si>`` jest elementem, którego ``<si>`` nie zagnieżdża.
+    """
+
+    def __init__(self, xml: bytes) -> None:
+        expat.ParserCreate().Parse(xml, True)
+        self._items = _SHARED_ITEM.findall(xml)
+        self._texts: dict[int, str] = {}
+
+    def __getitem__(self, index: int) -> str:
+        if index not in self._texts:
+            item = self._items[index]
+            item = _PHONETIC.sub(b"", item)
+            self._texts[index] = html.unescape(b"".join(_SHARED_TEXT.findall(item)).decode("utf-8"))
+        return self._texts[index]
 
 
 class _Looks:
