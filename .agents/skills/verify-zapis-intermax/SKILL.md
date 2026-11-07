@@ -7,6 +7,7 @@ pilnuje:
   - src/rozliczenia/intermax_restore.py
   - src/rozliczenia/intermax_copies.py
   - src/rozliczenia/intermax_file.py
+  - src/rozliczenia/register_columns.py
   - src/rozliczenia/workbook_save.py
   - src/rozliczenia/workbook_files.py
 ci: .agents/skills/verify-zapis-intermax/scripts/explore_intermax.py

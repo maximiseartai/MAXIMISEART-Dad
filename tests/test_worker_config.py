@@ -15,12 +15,12 @@ from typing import get_args
 import pytest
 import yaml
 
+from rozliczenia.text import normalize_text
 from rozliczenia.worker_config import (
     SameWorkerFile,
     WorkerConfigError,
     WorkerConfigProblem,
     load_worker_mapping,
-    normalize_text,
 )
 
 

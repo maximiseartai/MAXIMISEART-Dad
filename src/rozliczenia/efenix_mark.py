@@ -14,9 +14,9 @@ from typing import Final
 
 from openpyxl.styles.fills import Fill, PatternFill
 
-from .preparation_register import ADDRESS
+from .register_columns import ADDRESS
 from .workbook_files import DataRow
-from .worker_config import normalize_text
+from .text import normalize_text
 
 MARK_RGB: Final = "E0CCFF"
 """RGB Znacznika efenix: jednolite wypełnienie w tym kolorze, bez względu na kanał alfa, który Excel pomija."""

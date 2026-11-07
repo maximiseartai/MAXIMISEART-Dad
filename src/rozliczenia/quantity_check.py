@@ -20,6 +20,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Final
 
+from .text import plural
 from .order_facts import N_AP, CollectiveOrders, MissingHeaders, OrderFacts, TataValue
 from .quantity_rules import (
     DESCRIPTION_COLUMNS,
@@ -174,15 +175,8 @@ def title(period: str, result: CheckResult) -> str:
     if isinstance(result, NotCompared):
         return f"Kontrola ilości {period}: bez porównania"
     count = result.difference_count
-    return f"Kontrola ilości {period}: {f'{count} {_differences_word(count)}' if count else 'bez różnic'}"
-
-
-def _differences_word(count: int) -> str:
-    if count == 1:
-        return "różnica"
-    if count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14):
-        return "różnice"
-    return "różnic"
+    differences = f"{count} {plural(count, 'różnica', 'różnice', 'różnic')}" if count else "bez różnic"
+    return f"Kontrola ilości {period}: {differences}"
 
 
 _INTRO: Final = (

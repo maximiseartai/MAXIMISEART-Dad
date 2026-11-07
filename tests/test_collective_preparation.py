@@ -27,7 +27,8 @@ from rozliczenia.domain import (
 from rozliczenia.progress import PhaseState, ProgressProjection
 from rozliczenia.message import StopError
 from rozliczenia.highlights import PLAIN
-from rozliczenia.preparation_register import COLUMNS, read_register
+from rozliczenia.preparation_register import read_register
+from rozliczenia.register_columns import COLUMNS
 from rozliczenia.workbook_files import DataCell
 from rozliczenia.settlement_period import parse_period_token
 

@@ -24,10 +24,10 @@ from .efenix_mark import without_efenix_mark
 from .input_copy import InputCopy
 from .inea_only_quantities import Cleared, without_inea_only
 from .order_facts import CollectiveOrders, MissingHeaders, collective_orders
-from .preparation_register import ACTIVITIES, COMPLETED, DEVICES, Column
+from .register_columns import ACTIVITIES, COMPLETED, DEVICES, Column
 from .quantities_to_fill import NumberedOrder, RowTexts
 from .workbook_files import DataRow
-from .worker_config import normalize_text
+from .text import normalize_text
 
 
 @dataclass(frozen=True)

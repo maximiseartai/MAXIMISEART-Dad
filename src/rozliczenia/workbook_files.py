@@ -53,7 +53,7 @@ from .hyperlinks import Hyperlink, read_sheet_hyperlinks
 from .quantity_rules import QuantityColumn
 from .row_look import GENERAL
 from .workbook_parts import rows_dated_between, rows_with_input
-from .worker_config import normalize_text
+from .text import normalize_text
 
 
 # Błędy openpyxl przy pliku, który nie jest poprawnym skoroszytem .xlsx: przy otwieraniu, a w trybie

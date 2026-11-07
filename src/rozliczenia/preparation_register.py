@@ -2,7 +2,7 @@
 
 Rejestr jest tylko czytany, przez moduł skoroszytu. Arkusze ze zleceniami są rozpoznawane po komplecie
 wymaganych nagłówków w pierwszym wierszu, a komórki z wartościami, Wyróżnieniami i Hiperłączami
-są zwracane pod nagłówkiem docelowym każdej kolumny ``COLUMNS``. Pierwszy wiersz bloku wklejenia z aplikacji firmowej
+są zwracane pod nagłówkiem docelowym każdej kolumny ``register_columns.COLUMNS``. Pierwszy wiersz bloku wklejenia z aplikacji firmowej
 stoi przesunięty, a wiersz ze śladem przesunięcia może tak stać, więc arkusz oddaje je też z wartościami całego wiersza
 (``RegisterSheet.shifted_rows``, ``RegisterSheet.both_rows``). Dla okresu
 czytane są tylko wiersze od pierwszego do ostatniego, którego data może leżeć w okresie. ``read_register`` to
@@ -22,60 +22,10 @@ from openpyxl.utils import get_column_letter
 from . import preparation_messages as messages
 from . import raw_orders, workbook_files
 from .message import StopError
+from .register_columns import COLUMNS, DATE, TARGET_HEADERS, WORKER, Column
 from .settlement_period import SettlementPeriod
+from .text import normalize_text
 from .workbook_files import ReadRow, ReadWorkbook, RegisterRow, header_columns, is_blank
-from .worker_config import normalize_text
-
-
-@dataclass(frozen=True)
-class Column:
-    """Kolumna przenoszona z Rejestru zleceń; nagłówek docelowy jest szukany we wzorcach.
-
-    Pary różniące się zapisem są jawne; nagłówek Rejestru nigdy nie zastępuje
-    nagłówka docelowego. ``register_header`` to zapis z nowego Rejestru taty;
-    kolumna może mieć w Rejestrze drugi przyjmowany zapis ze starszej kopii.
-    Nagłówki są porównywane bez względu na wielkość liter, więc zapis różniący
-    się tylko nią (``adres``) nie jest osobną alternatywą.
-    """
-
-    register_header: str
-    target_header: str
-    alternative_register_headers: tuple[str, ...] = ()
-
-    @property
-    def register_headers(self) -> tuple[str, ...]:
-        return (self.register_header, *self.alternative_register_headers)
-
-    @property
-    def label(self) -> str:
-        """Nagłówek w komunikacie: wszystkie przyjmowane zapisy."""
-
-        return " albo ".join(self.register_headers)
-
-
-DATE = Column("DATA GODZ. POCZ.", "DATA")
-ADDRESS = Column("ADRES", "ADRES")
-WORKER = Column("WYKONAWCA", "WYKONAWCA")
-SUCCESSFUL = Column("SKUTECZNE", "SKUTECZNE")
-CONTRACT = Column("UMOWA", "UMOWA")
-DEVICES = Column("URZĄDZENIA", "URZĄDZENIA")
-ACTIVITIES = Column("CZYNNOŚCI", "CZYNNOŚCI")
-COMPLETED = Column("CZYNNOŚCI ZREALIZOWANE", "CZYNNOŚCI ZREALIZOWANE")
-COLUMNS: tuple[Column, ...] = (
-    DATE,
-    Column("MIASTO", "MIASTO"),
-    ADDRESS,
-    CONTRACT,
-    DEVICES,
-    ACTIVITIES,
-    Column("NUMER ZL.", "NUMER ZL.", ("nr zlecenia",)),
-    WORKER,
-    Column("NUMER UMOWY", "NUMER UMOWY/ZLECENIA ORANGE", ("NUMER UMOWY/ZLECENIA ORANGE",)),
-    SUCCESSFUL,
-    Column("CZYNNOŚCI ZREALIZOWANE", "CZYNNOŚCI ZREALIZOWANE"),
-)
-TARGET_HEADERS: tuple[str, ...] = tuple(column.target_header for column in COLUMNS)
-"""Nagłówki docelowe obu plików okresu, pod którymi stają komórki wiersza Rejestru."""
 
 
 @dataclass(frozen=True)

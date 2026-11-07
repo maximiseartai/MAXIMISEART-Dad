@@ -39,7 +39,8 @@ import re
 import threading
 from typing import Final, TypeVar
 
-from .worker_config import normalize_text
+from . import register_columns
+from .text import normalize_text
 
 MIN_VALUE: Final = 5
 """Najkrótsza wartość zakazanej kolumny (po zwinięciu odstępów, od pierwszego słowa), której strażnik szuka w tekście."""
@@ -50,8 +51,8 @@ _Position = TypeVar("_Position")
 class ForbiddenColumn(Enum):
     """Kolumna, której wartość nigdy nie wychodzi z komputera taty; ``value`` to jej nazwa w uwadze technicznej."""
 
-    ADDRESS = "ADRES"
-    ORANGE = "NUMER UMOWY/ZLECENIA ORANGE"
+    ADDRESS = register_columns.ADDRESS.target_header
+    ORANGE = register_columns.CONTRACT_NUMBER.target_header
 
     @property
     def mask(self) -> str:
@@ -60,9 +61,12 @@ class ForbiddenColumn(Enum):
 
 _MASKS: Final = {ForbiddenColumn.ADDRESS: "[adres]", ForbiddenColumn.ORANGE: "[numer Orange]"}
 _HEADERS: Final = {
-    normalize_text("ADRES"): ForbiddenColumn.ADDRESS,
-    normalize_text("NUMER UMOWY/ZLECENIA ORANGE"): ForbiddenColumn.ORANGE,
-    normalize_text("NUMER UMOWY"): ForbiddenColumn.ORANGE,
+    normalize_text(header): forbidden
+    for forbidden, column in (
+        (ForbiddenColumn.ADDRESS, register_columns.ADDRESS),
+        (ForbiddenColumn.ORANGE, register_columns.CONTRACT_NUMBER),
+    )
+    for header in (column.target_header, *column.register_headers)
 }
 """Nagłówek kolumny po ``normalize_text`` (Plik zbiorczy, Rejestr zleceń, INTERMAX i starsza kopia Rejestru)."""
 

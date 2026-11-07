@@ -21,6 +21,7 @@ from typing import Final, assert_never
 
 from .message import REPORT_TO_MAINTAINER, Message, file_label, folder_label
 from .period_folder import PeriodFolderLookupError, month_folder_label
+from .text import plural, row_range
 from .workbook_files import WORKER_HEADER, MergedCells, MissingHeader, Problem, WorkbookError
 from .worker_config import ContentProblem, SameWorkerFile, WorkerConfigError
 
@@ -408,7 +409,7 @@ def period_orders_in_many_sheets(register_path: Path, sheets: Sequence[str], per
 def raw_orders_not_ordered(register_path: Path, sheet: str, first_row: int, last_row: int) -> Message:
     """Okres może mieć Surowe zlecenia: wklejone zlecenia na dole arkusza zleceń nie są jeszcze uporządkowane."""
 
-    rows = f"wiersz {first_row}" if first_row == last_row else f"wiersze {first_row}–{last_row}"
+    rows = row_range(first_row, last_row)
     return Message(
         code="SUROWE_ZLECENIA_W_OKRESIE",
         what=(
@@ -538,7 +539,7 @@ def invalid_successful_values(
     return Message(
         code="ZLE_SKUTECZNE",
         dad_file="order_register",
-        what=f"{count} {_orders_without_successful_phrase(count)} tak ani nie w SKUTECZNE. Nie utworzono żadnego pliku.",
+        what=f"{count} {plural(count, 'zlecenie okresu nie ma', 'zlecenia okresu nie mają', 'zleceń okresu nie ma')} tak ani nie w SKUTECZNE. Nie utworzono żadnego pliku.",
         where=f"{_register_location(register_path, sheet)}, {'; '.join(groups)}",
         action=(
             "Wpisz tak albo nie we wskazanych komórkach Rejestru zleceń. "
@@ -561,16 +562,6 @@ def _cell_ranges(column: str, row_numbers: Sequence[int]) -> list[str]:
         rows = [row for _, row in run]
         labels.append(f"{column}{rows[0]}" if len(rows) == 1 else f"{column}{rows[0]}–{column}{rows[-1]}")
     return labels
-
-
-def _orders_without_successful_phrase(count: int) -> str:
-    """Odmiana „zlecenie okresu nie ma” dla liczby zleceń: 1, 2–4 (bez 12–14) i pozostałe."""
-
-    if count == 1:
-        return "zlecenie okresu nie ma"
-    if count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14):
-        return "zlecenia okresu nie mają"
-    return "zleceń okresu nie ma"
 
 
 def unknown_workers(
@@ -628,11 +619,7 @@ def too_few_zero_rows(
     """Ostrzeżenie: Zleceń skutecznych jest więcej niż wierszy Wzorca pliku zbiorczego z zerami."""
 
     last_row = first_row_without_zeros + successful_count - zero_row_count - 1
-    rows = (
-        f"wiersz {last_row}"
-        if last_row == first_row_without_zeros
-        else f"wiersze {first_row_without_zeros}–{last_row}"
-    )
+    rows = row_range(first_row_without_zeros, last_row)
     return Message(
         code="MALO_WIERSZY_Z_ZERAMI",
         what=(

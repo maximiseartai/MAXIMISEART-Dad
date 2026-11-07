@@ -115,6 +115,8 @@ STDLIB_ONLY = {
     "rozliczenia/centrum/start_problems.py": "jeden z Komunikatów startu mówi o brakujących zależnościach",
     "rozliczenia/centrum/launcher.py": "brak FastAPI albo uvicorn staje się Komunikatem startu; resztę wczytuje w funkcji",
     "rozliczenia/efenix_window.py": "seam okna efenix: okno w procesie bierze z niego typy bez kodu Wyceny, a okna i Wycena nie tworzą cyklu",
+    "rozliczenia/text.py": "reguła danych i warstwa skoroszytu normalizują tekst bez zależności od Konfiguracji wykonawców",
+    "rozliczenia/register_columns.py": "Przebieg, Wycena i reguła danych biorą kolumny Rejestru bez czytnika Przygotowania",
 }
 
 

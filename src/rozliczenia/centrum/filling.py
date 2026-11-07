@@ -33,6 +33,7 @@ from rozliczenia.order_facts import MissingHeaders
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.quantities_to_fill import FillKind, KindToFill, quantities_to_fill
 from rozliczenia.settings import SettingsStore
+from rozliczenia.text import plural
 from rozliczenia.workbook_files import WorkbookError, excel_lock_file
 
 
@@ -138,9 +139,7 @@ def without_quantity_sentence(rows: Sequence[int]) -> str | None:
     if not rows:
         return None
     count = len(rows)
-    few = count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14)
-    word = "wiersz" if count == 1 else "wiersze" if few else "wierszy"
-    return f"{count} {word} bez ilości: {', '.join(map(str, rows))}"
+    return f"{count} {plural(count, 'wiersz', 'wiersze', 'wierszy')} bez ilości: {', '.join(map(str, rows))}"
 
 
 def _without_quantity(folder: PeriodFolder, forbidden: ForbiddenValues) -> contract.WithoutQuantity:

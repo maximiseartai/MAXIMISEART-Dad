@@ -37,11 +37,13 @@ from .period_folder import (
     locate_period_folder,
 )
 from .preparation_files import PeriodFiles
-from .preparation_register import TARGET_HEADERS, RegisterRead, RegisterSheet
+from .preparation_register import RegisterRead, RegisterSheet
+from .register_columns import TARGET_HEADERS
 from .settlement_period import SettlementPeriod, parse_period_token
 from .template_file import TemplateFile
 from .workbook_files import Problem, WorkbookError
-from .worker_config import WorkerConfigError, load_worker_mapping, normalize_text
+from .text import normalize_text
+from .worker_config import WorkerConfigError, load_worker_mapping
 
 
 @dataclass(frozen=True)

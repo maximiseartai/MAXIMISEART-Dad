@@ -24,14 +24,13 @@ from . import workbook_files
 from .client_data import ForbiddenValues
 from .input_copy import InputCopy
 from .order_facts import TataValue, tata_value
-from .preparation_register import ADDRESS, DATE, WORKER, Column
+from .register_columns import ADDRESS, DATE, ORDER_NUMBER, WORKER
 from .workbook_files import ComputedRow, cell_datetime, is_blank
-from .worker_config import normalize_text
+from .text import normalize_text
 
 __all__ = ["AmountsNotComputed", "CollectiveOrder", "MissingColumns", "PricingScope", "read_scope", "scope"]
 
-_NUMBER: Final = Column("NUMER ZL.", "NUMER ZL.")
-_COLUMNS: Final = (_NUMBER, ADDRESS, DATE, WORKER)
+_COLUMNS: Final = (ORDER_NUMBER, ADDRESS, DATE, WORKER)
 
 
 def _letters(first: str, last: str) -> tuple[str, ...]:

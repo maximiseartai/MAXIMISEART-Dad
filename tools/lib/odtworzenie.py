@@ -92,11 +92,12 @@ from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.intermax_process import OrderingInputs
 from rozliczenia.preparation_process import PreparationInputs
-from rozliczenia.preparation_register import COLUMNS
+from rozliczenia.register_columns import COLUMNS
 from rozliczenia.process_run import Finished, Stop, run_process
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 from rozliczenia.settlement_process import SettlementInputs
-from rozliczenia.worker_config import default_config_path, normalize_text
+from rozliczenia.text import normalize_text
+from rozliczenia.worker_config import default_config_path
 
 import atrapa_z_logow
 

@@ -20,7 +20,7 @@ from .order_facts import CollectiveOrders
 from .phase_runner import PhaseRunner
 from .workbook_files import DataRow, WorkbookError
 from .workbook_save import WorkbookSaveError
-from .worker_config import normalize_text
+from .text import normalize_text
 from .write_routes import Route, RouteCounts, TemplateKind
 
 
