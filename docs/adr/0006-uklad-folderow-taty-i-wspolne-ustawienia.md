@@ -8,6 +8,9 @@ Centrum rozliczeń. Same launchery zostają jako ścieżka zapasowa.
 [ADR 0010](0010-centrum-jedynym-wejsciem-taty.md) usuwa launchery; Ustawienia
 taty czyta dalej CLI. [ADR 0011](0011-bez-cli-i-adapterow-terminala.md) usuwa
 CLI: Ustawienia taty czyta tylko Centrum rozliczeń.
+Zmieniona 2026-11-07: skoro czyta je tylko Centrum, plik Ustawień taty należy
+do modułu `rozliczenia.centrum.settings`, a jego ścieżkę zna
+`rozliczenia.tool_files.SETTINGS`, właściciel układu plików narzędzia.
 
 ## Kontekst
 
@@ -50,7 +53,8 @@ i folder okresów, choć tata wskazał je już w Centrum rozliczeń.
    pokazuje taki okres raz i nie zatrzymuje się; zatrzymuje dopiero akcja, która
    potrzebuje jednego Folderu okresu.
 4. **Ustawienia taty są wspólne.** Plik `config/centrum-ustawienia.yaml` należy
-   do modułu `rozliczenia.settings`, a nie do Centrum. Launchery biorą z niego
+   do modułu `rozliczenia.settings`, a nie do Centrum (zmienione 2026-11-07,
+   patrz Status). Launchery biorą z niego
    Rejestr zleceń i folder okresów, jeśli nadal są na dysku. Okno wyboru
    pokazują tylko dla tego, czego brak. Argumenty CLI mają pierwszeństwo przed
    ustawieniami. Przebieg rozliczeń z ustawionym folderem okresów pyta o okres z

@@ -32,6 +32,7 @@ from rozliczenia.centrum.tool_update import (
     UpdateResult,
     read_result,
 )
+from rozliczenia import tool_files
 from rozliczenia.tool_files import start_command
 
 from tests.fixtures.tool_clone import (
@@ -121,6 +122,42 @@ def test_polecenie_opiekuna_przyjmuje_launcher_kazdej_wersji_jako_start_bez_kart
 
     assert command == [sys.executable, str(tmp_path / "run_centrum.py"), "--port", "47811", "--no-browser", "--bez-okienek"]
     assert (arguments.port, arguments.no_browser, arguments.bez_okienek) == (47811, True, True)
+
+
+def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> None:
+    # Cofnięcie Aktualizacji startuje starą wersję na plikach, które zostawiła nowa (ADR 0009), więc nazwy przypina literał.
+    files = {
+        "WORKER_CONFIG": tool_files.WORKER_CONFIG,
+        "WORKER_TEMPLATE": tool_files.WORKER_TEMPLATE,
+        "COLLECTIVE_TEMPLATE": tool_files.COLLECTIVE_TEMPLATE,
+        "INTERNAL_TEMPLATE": tool_files.INTERNAL_TEMPLATE,
+        "SETTINGS": tool_files.SETTINGS,
+        "SETTLEMENT_METRICS": tool_files.SETTLEMENT_METRICS,
+        "PREPARATION_METRICS": tool_files.PREPARATION_METRICS,
+        "INTERMAX_METRICS": tool_files.INTERMAX_METRICS,
+        "EFENIX_METRICS": tool_files.EFENIX_METRICS,
+        "LOG_PATH": tool_files.LOG_PATH,
+    }
+
+    assert {name: path.relative_to(tool_files.TOOL_ROOT).as_posix() for name, path in files.items()} == {
+        "WORKER_CONFIG": "config/worker_mapping.yaml",
+        "WORKER_TEMPLATE": "config/Wzorzec rozliczenia pracownika.xlsx",
+        "COLLECTIVE_TEMPLATE": "config/Wzorzec pliku zbiorczego.xlsx",
+        "INTERNAL_TEMPLATE": "config/Wzorzec rozliczenia wewnętrznego.xlsx",
+        "SETTINGS": "config/centrum-ustawienia.yaml",
+        "SETTLEMENT_METRICS": ".rozliczenia-metrics.jsonl",
+        "PREPARATION_METRICS": ".przygotowanie-pliku-zbiorczego-metrics.jsonl",
+        "INTERMAX_METRICS": ".uporzadkowanie-intermax-metrics.jsonl",
+        "EFENIX_METRICS": ".wycena-efenix-metrics.jsonl",
+        "LOG_PATH": "logs/centrum-rozliczen.log",
+    }
+
+
+def test_port_zajety_przez_centrum_przyjmuje_polaczenie_zanim_serwer_zacznie_je_obslugiwac() -> None:
+    # Skrót kliknięty w trakcie startu czeka na health w kolejce portu, zamiast dostać odmowę połączenia.
+    with tool_files.listen_locally(0) as listener:
+        with socket.create_connection(listener.getsockname(), timeout=5):
+            pass
 
 
 def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identyfikatorem_startu(
