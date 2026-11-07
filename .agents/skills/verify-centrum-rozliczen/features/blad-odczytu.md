@@ -22,8 +22,12 @@ component, but this feature does not drive their failed reads.
 - `blad-odczytu-metryki`: a failed read of Metryki (`Nie udało się odczytać metryk`), then the history table.
 - `blad-odczytu-konfiguracja`: a failed read of Konfiguracja (`Nie udało się odczytać konfiguracji`), then the list `Wykonawcy`.
 - `blad-odczytu-ponowna-porazka`: on Konfiguracja, Enter on `Spróbuj ponownie` while the re-read is held on its way leaves the button named the same, `aria-disabled` and in focus, and a second Enter reads nothing; failing again keeps the alert and gives the button back, still in focus; the next try reads the page.
+- `blad-odczytu-aktualizacja`: a failed read of Aktualizacja narzędzia on Konfiguracja is the status `Nie udało się odczytać stanu aktualizacji.` with the Komunikat in the card `Narzędzie`; the next entry reads it and the sentence is gone.
 - `blad-odczytu-powiadomienia`: a failed read of Powiadomienia behind the bell (`Nie udało się odczytać Powiadomień`), then the list or the card of a new Wydanie.
 - `blad-odczytu-uwaga`: in `Napisz do Maksa` → `Do Uruchomienia`, a failed read of the Uruchomienia to pin (`Nie udało się odczytać Uruchomień`), then the radio group `Uruchomienie` or the calm `Nie ma jeszcze Uruchomień z Centrum.`
+
+- `blad-odczytu-uzupelnienie`: a failed read of the summary of Uzupełnienie pliku zbiorczego (`Nie udało się odczytać okresu`) has `Spróbuj ponownie`, which reads it again; once Centrum answers, the summary comes back by itself or after the click.
+- `blad-odczytu-strumien`: an event of the Uruchomienia stream outside the contract (a tab of an older Centrum) gives Uruchomienia the alert `Podgląd przestał się aktualizować` with `Centrum rozliczeń odpowiedziało w nieoczekiwany sposób. Odśwież kartę.` instead of a skeleton that never ends; with a readable stream the page starts as usual.
 
 ## How to get to it (user POV)
 
@@ -46,8 +50,11 @@ Preconditions:
   - `/api/configuration`: link `Okresy`, then link `Konfiguracja`; content: list `Wykonawcy`; screenshot `146`.
   - `/api/notifications`: button `Powiadomienia` in the header; content: list `Powiadomienia` or region `Nowa wersja …`; screenshot `147`.
   - `/api/dad-notes/runs`: button `Napisz do Maksa`, then button `Do Uruchomienia` in group `Dotyczy`; content: radio group `Uruchomienie` or the text `Nie ma jeszcze Uruchomień z Centrum.`; screenshot `148`; Escape closes the dialog.
+- **Aktualizacja narzędzia.** Right after the second failure, route `**/api/tool-update` to abort, link `Okresy`, then link `Konfiguracja`: a `status` with `Nie udało się odczytać stanu aktualizacji.` holds `Centrum rozliczeń nie odpowiada.`; capture `148b`. Remove the route and enter Konfiguracja the same way: list `Wykonawcy` is visible and the status is gone.
+- **Uzupełnienie.** Last but one, route `**/api/periods/<needs_check>/quantities-to-fill` to abort (`fixture.json` → `settlement.needs_check`) and `page.goto(<url>#/uzupelnienie/<needs_check>)`: the alert `Nie udało się odczytać okresu` holds `Centrum rozliczeń nie odpowiada.`, button `Gotowe, rozlicz pracowników` is absent, and `Spróbuj ponownie` sends `GET` of that path and is enabled again; capture `148c`. Remove the route: within 10 s the button `Gotowe, rozlicz pracowników` appears and the alert is gone (the live page re-reads a failed read every 3 s by itself).
+- **Stream.** Last, route `**/api/runs/events` to `route.fulfill` with `Content-Type: text/event-stream` and the body `data: {"view": {"state": "nieznany"}}` (harness: an event outside the contract), then `page.goto(<url>#/uruchomienia)` and `page.reload()`: the alert `Podgląd przestał się aktualizować` holds `Centrum rozliczeń odpowiedziało w nieoczekiwany sposób.` and combobox `Okres` is absent; capture `148d`. Remove the route and reload: combobox `Okres` is visible and the alert is gone.
 - **Second failure.** On Konfiguracja with `/api/configuration` aborted, replace the route with one that holds the request (harness: an answer that takes its time) then focus `Spróbuj ponownie` and press Enter: the button keeps its name, is disabled (`aria-disabled`) and keeps the focus, and a second Enter sends no second request; capture `141` with `live=True` (the spinner turns). Abort the held request: the alert stays with `Centrum rozliczeń nie odpowiada.` and `Spróbuj ponownie` is enabled and still focused. Remove the route and click it: list `Wykonawcy` appears.
-- **Proof.** Screenshots `139`, `141`–`148`, `153` and `154` and the checks in `drive.txt`.
+- **Proof.** Screenshots `139`, `141`–`148`, `148b`–`148d`, `153` and `154` and the checks in `drive.txt`.
 
 ## Gotchas
 

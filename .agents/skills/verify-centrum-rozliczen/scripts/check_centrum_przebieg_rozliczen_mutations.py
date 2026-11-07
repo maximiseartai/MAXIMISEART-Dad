@@ -25,7 +25,7 @@ MUTATIONS = (
     ),
     Mutation(
         "Nowe Uruchomienie procesu bez ponownego odczytu",
-        (Edit(BUILD, "&&(s.current=r,t())},[r,t])", "&&(s.current=r)},[r,t])"),),
+        (Edit(BUILD, "&&(c.current=r,t())},[r,t])", "&&(c.current=r)},[r,t])"),),
         PRZEBIEG,
         "po usunięciu ~$ karta startu pokazuje stare ostrzeżenie aż do powrotu do okna",
     ),

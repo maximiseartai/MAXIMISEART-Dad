@@ -141,6 +141,83 @@ def _retry_in_flight(run: Run, page: Page) -> None:
     run.check(True, "the next try reads Konfiguracja")
 
 
+def _filling_retries(run: Run, page: Page) -> None:
+    """A failed read of the Uzupełnienie summary has „Spróbuj ponownie”, and the page comes back once Centrum answers."""
+
+    run.step(FEATURE, "blad-odczytu-uzupelnienie")
+    token = str(run.fixture["settlement"]["needs_check"])
+    path = f"/api/periods/{token}/quantities-to-fill"
+    content = page.get_by_role("button", name="Gotowe, rozlicz pracowników", exact=True)
+    page.route(f"**{path}", lambda route: route.abort())
+    try:
+        page.goto(run.url + f"#/uzupelnienie/{token}")
+        failure = _failure(page, "okresu")
+        expect(failure).to_contain_text(UNREACHABLE)
+        expect(content).to_have_count(0)
+        button = failure.get_by_role("button", name=RETRY, exact=True)
+        expect(button).to_be_enabled()
+        with page.expect_request(lambda request: request.method == "GET" and urlsplit(request.url).path == path):
+            button.click()
+        expect(button).to_be_enabled()
+        run.check(True, f"a failed read of the Uzupełnienie summary (unreachable, harness) shows „Nie udało się odczytać okresu” with {RETRY}, which reads again")
+        run.capture(page, "148c-blad-odczytu-uzupelnienie")
+    finally:
+        page.unroute(f"**{path}")
+    # The live page reads by itself every few seconds after a failure, so it may come back before a click.
+    expect(content).to_be_visible(timeout=10_000)
+    expect(failure).to_have_count(0)
+    run.check(True, "once Centrum answers, the summary replaces the Komunikat")
+
+
+def _tool_update_unread(run: Run, page: Page, open_page: Callable[[], None]) -> None:
+    """A failed read of Aktualizacja narzędzia on Konfiguracja is said next to its button, not swallowed."""
+
+    run.step(FEATURE, "blad-odczytu-aktualizacja")
+    status = page.get_by_role("status").filter(has_text="Nie udało się odczytać stanu aktualizacji.")
+    page.route("**/api/tool-update", lambda route: route.abort())
+    try:
+        open_page()
+        expect(status).to_contain_text(UNREACHABLE)
+        run.check(True, "a failed read of Aktualizacja narzędzia (unreachable, harness) says so on Konfiguracja")
+        run.capture(page, "148b-blad-odczytu-aktualizacja")
+    finally:
+        page.unroute("**/api/tool-update")
+    open_page()
+    expect(page.get_by_role("list", name="Wykonawcy")).to_be_visible()
+    expect(status).to_have_count(0)
+    run.check(True, "the next entry reads Aktualizacja narzędzia and the sentence is gone")
+
+
+def _unreadable_stream(run: Run, page: Page) -> None:
+    """An event of the Uruchomienia stream the tab cannot read (a tab of an older Centrum) is said, not skipped."""
+
+    run.step(FEATURE, "blad-odczytu-strumien")
+    banner = page.get_by_role("alert").filter(has_text="Podgląd przestał się aktualizować")
+    setup = page.get_by_role("combobox", name="Okres")
+
+    def unreadable(route: Route) -> None:
+        route.fulfill(
+            status=200,
+            headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache"},
+            body='data: {"view": {"state": "nieznany"}}\n\n',
+        )
+
+    page.route("**/api/runs/events", unreadable)
+    try:
+        page.goto(run.url + "#/uruchomienia")
+        page.reload()
+        expect(banner).to_contain_text("Centrum rozliczeń odpowiedziało w nieoczekiwany sposób.")
+        expect(setup).to_have_count(0)
+        run.check(True, "a stream event outside the contract (harness) shows „Podgląd przestał się aktualizować” on Uruchomienia")
+        run.capture(page, "148d-blad-odczytu-strumien")
+    finally:
+        page.unroute("**/api/runs/events")
+    page.reload()
+    expect(setup).to_be_visible()
+    expect(banner).to_have_count(0)
+    run.check(True, "with the stream readable again the page starts as usual")
+
+
 def drive_load_failures(run: Run, page: Page) -> None:
     page.goto(run.url)
     ensure_files_set(run, page)
@@ -193,6 +270,7 @@ def drive_load_failures(run: Run, page: Page) -> None:
         shot="146-blad-odczytu-konfiguracja",
     )
     _retry_in_flight(run, page)
+    _tool_update_unread(run, page, via_menu("Konfiguracja"))
 
     def bell() -> None:
         page.get_by_role("button", name="Powiadomienia").click()
@@ -226,3 +304,5 @@ def drive_load_failures(run: Run, page: Page) -> None:
     )
     page.keyboard.press("Escape")
     expect(dialog).to_have_count(0)
+    _filling_retries(run, page)
+    _unreadable_stream(run, page)

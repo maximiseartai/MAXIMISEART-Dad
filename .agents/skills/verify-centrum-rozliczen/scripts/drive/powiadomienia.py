@@ -187,6 +187,23 @@ def drive_notifications(run: Run, page: Page) -> None:
         clip={"x": header["x"] + header["width"] - 240, "y": header["y"], "width": 240, "height": header["height"]},
     )
 
+    run.step(FEATURE, "powiadomienia-oznaczenie-bez-odpowiedzi")
+    page.route("**/api/notifications/read", lambda route: route.abort())
+    try:
+        _bell(page).click()
+        expect(page.get_by_role("heading", name=BELL, exact=True)).to_be_visible()
+        expect(error_toasts(page)).to_contain_text("Centrum rozliczeń nie odpowiada.")
+        run.check(True, "marking the Powiadomienia read without an answer (unreachable, harness) says so in a notification")
+        run.capture(page, "181c-powiadomienia-oznaczenie-bez-odpowiedzi")
+    finally:
+        page.unroute("**/api/notifications/read")
+    run.check(
+        int(str(run.api("/api/notifications", "powiadomienia-nieoznaczone")["unread"])) > 0,
+        "the Powiadomienia stay new on the server, so the dot on the bell is true",
+    )
+    _enter(page, run, "okresy", "Okresy")
+    expect(_bell(page)).to_have_accessible_name(BELL_FRESH)
+
     run.step(FEATURE, "powiadomienia-widok")
     _bell(page).click()
     expect(page.get_by_role("heading", name=BELL, exact=True)).to_be_visible()

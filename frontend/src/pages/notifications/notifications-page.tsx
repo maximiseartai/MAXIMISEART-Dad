@@ -105,11 +105,17 @@ export function NotificationsPage() {
     setVisit({ unread, fresh: new Set([...visit.fresh, ...unread]) })
   }
 
+  // Ten sam zestaw nowych po ponownym odczycie listy to ta sama prośba: po porażce oznaczenia tata dostaje jedno
+  // powiadomienie, a nie drugie przy odczycie, który wejście do widoku i tak robi.
+  const unreadIds = unread.join("\n")
+  const marked = React.useRef("")
+
   React.useEffect(() => {
-    if (unread.length > 0) {
+    if (unread.length > 0 && marked.current !== unreadIds) {
+      marked.current = unreadIds
       markRead(unread)
     }
-  }, [unread, markRead])
+  }, [unread, unreadIds, markRead])
 
   const fresh = visit.fresh
   const pinned = data?.items.find((item): item is Release => item.kind === "nowa_wersja" && item.update_offered)
