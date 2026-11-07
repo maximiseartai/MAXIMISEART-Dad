@@ -38,6 +38,7 @@ import traceback
 import weakref
 from typing import TypeVar, cast
 from urllib.parse import urljoin, urlparse
+from urllib.request import urlopen
 import zipfile
 
 from model_efenix import Action, StanEfenix
@@ -1008,6 +1009,7 @@ CHANGED: dict[Changed, tuple[PagePart, WindowCause, str]] = {
     Changed.HIDDEN_EMMETT: (PagePart.EMMETT, BrowserFailure(TIMEOUT, Operation.CLICK), "Wycena Emmetta"),
     Changed.STALE_AMOUNT: (PagePart.QUANTITY, BrowserFailure(TIMEOUT, Operation.AMOUNT), "ilość"),
     Changed.QUANTITY_ANSWER: (PagePart.QUANTITY, OtherShape(Shape.ANSWER_NOT_JSON, "012"), "ilość"),
+    Changed.QUANTITY_RESULT: (PagePart.QUANTITY, OtherShape(Shape.ANSWER_RESULT, "012"), "ilość"),
     Changed.QUANTITY_VALUE: (PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, "012"), "otwarcie zlecenia"),
     Changed.SECOND_NUMBER_FIELD: (PagePart.LIST, ElementCount("#field_numer", 2), "szukanie"),
     Changed.NUMBER_FIELD_GONE: (PagePart.LIST, ElementCount("#field_numer", 0), "szukanie"),
@@ -1034,7 +1036,7 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
         outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
         changes = atrapa.status_changes()
 
-    assert (_stop(outcome), changes, _kept(outcome)) == ("EFENIX_OKNO_ZATRZYMANE", 0, changed in (Changed.STALE_AMOUNT, Changed.QUANTITY_ANSWER))
+    assert (_stop(outcome), changes, _kept(outcome)) == ("EFENIX_OKNO_ZATRZYMANE", 0, changed in (Changed.STALE_AMOUNT, Changed.QUANTITY_ANSWER, Changed.QUANTITY_RESULT))
     assert isinstance(outcome.ending, Stop)
     message = outcome.ending.message
     part, cause, failed = CHANGED[changed]
@@ -2672,6 +2674,26 @@ def test_okno_bez_logowania_taty_i_przegladarka_ktora_nie_wystartowala_zatrzymuj
     assert (_stop(not_logged_in), _stop(no_browser)) == ("EFENIX_WYLOGOWANY", "EFENIX_BRAK_PRZEGLADARKI")
     assert (_kept(not_logged_in), _kept(no_browser)) == (False, False)
     assert set(requested) <= READING | {("GET", "page_login.php")}
+
+
+def test_okno_taty_otwiera_liste_zlecen_w_jedynej_karcie_przegladarki(tmp_path: Path) -> None:
+    """Przeglądarka okna taty startuje z jedną pustą kartą, a okno otwiera w niej listę zleceń efenix: tata widzi jedną
+    kartę z efenix, a nie efenix obok pustej karty."""
+
+    profile = tmp_path / "profil"
+
+    def tabs(url: str) -> list[str]:
+        with efenix_browser.chrome(url, profile, nullcontext, channel=None, headless=True, arguments=["--remote-debugging-port=0"]):
+            port = (profile / "DevToolsActivePort").read_text(encoding="utf-8").split()[0]
+            with urlopen(f"http://127.0.0.1:{port}/json/list", timeout=10) as answer:
+                return [target["url"] for target in json.load(answer) if target["type"] == "page"]
+
+    with atrapa_efenix([]) as atrapa:
+        # Okno ``chrome`` startuje własny Playwright, a wątek testu może mieć już Playwright przeglądarki testów.
+        with ThreadPoolExecutor(max_workers=1) as own_thread:
+            shown = own_thread.submit(tabs, atrapa.url).result(timeout=120)
+
+    assert shown == [atrapa.url]
 
 
 def test_okno_czeka_na_logowanie_taty_15_minut_a_potem_daje_wylogowanie(page: Page) -> None:
