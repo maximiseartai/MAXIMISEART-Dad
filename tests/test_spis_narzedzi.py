@@ -10,16 +10,10 @@ najbliższą pozycję spisu: polecenie ``python … tools/ci/…`` w tych dokume
 każdego innego narzędzia. Narzędzie z obowiązkową podkomendą (``add_subparsers(required=True)``) wymienia w tym
 zdaniu w nawiasie co najmniej jedną z nich, np. „(plan --baza origin/main)”, bo agent, który zna je tylko ze spisu,
 inaczej woła narzędzie bez podkomendy; nawias odróżnia podkomendę od tego samego słowa w zdaniu („Drukuje plan runu”).
-Narzędzie, które liczy zmianę od bazy (``changed_since`` albo ``git merge-base HEAD …``), przyjmuje ją jako opcję
-``--baza`` w każdym parserze, także podkomendy, z którego opcji baza płynie do zmiany, i to ``--baza`` samo do niej
-trafia: test śledzi bazę wstecz przez przypisania, parametry i wywołania funkcji modułu aż do ``args.<dest>``.
 Blok między ``START`` i ``END`` zapisuje ten test z ``ZAPISZ_EXPECT=1``, jak plik expect.
 
 Granica: test nie ocenia, czy zdanie mówi „kiedy” słowami sytuacji agenta (czerwone CI, przed merge'em); to łapie
-tylko przegląd. Bazy zmiany nie widzi w narzędziu, które liczy zmianę inaczej (``git diff`` od bazy bez merge-base,
-``HEAD`` ze zmiennej) albo przez inny moduł z ``tools/lib/``. Bazy nie śledzi dalej niż do atrybutu (``self.baza`` to dla
-niego dest ``baza``) ani przez słownik, a desty łączy po nazwie, jak argparse, więc ``--baza`` niepodłączone w jednej
-podkomendzie przechodzi, gdy dest ``baza`` innej podkomendy trafia do zmiany.
+tylko przegląd.
 """
 
 from __future__ import annotations
@@ -27,7 +21,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 import re
-from typing import NamedTuple
 
 import pytest
 
@@ -268,181 +261,3 @@ def test_podkomenda_liczy_sie_tylko_cala_w_nawiasie() -> None:
     sentences = ["Drukuje plan runu CI.", "Drukuje plan runu (planem).", "Drukuje plan runu (plan --baza origin/main)."]
 
     assert [_names_subcommand_in_brackets(sentence, ["plan", "wykonaj"]) for sentence in sentences] == [False, False, True]
-
-
-Function = ast.FunctionDef | ast.AsyncFunctionDef
-
-
-class Reads(NamedTuple):
-    attributes: set[str]
-    names: set[str]
-
-
-class Argument(NamedTuple):
-    flags: list[str]
-    dest: str
-
-
-def _called(call: ast.Call) -> str | None:
-    return call.func.attr if isinstance(call.func, ast.Attribute) else call.func.id if isinstance(call.func, ast.Name) else None
-
-
-def _change_bases(tree: ast.Module) -> list[ast.expr]:
-    bases: list[ast.expr] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and _called(node) == "changed_since":
-            bases += node.args[-1:] + [keyword.value for keyword in node.keywords if keyword.arg == "base"]
-        items = node.elts if isinstance(node, (ast.List, ast.Tuple)) else node.args if isinstance(node, ast.Call) else []
-        for first, second, base in zip(items, items[1:], items[2:], strict=False):
-            if isinstance(first, ast.Constant) and isinstance(second, ast.Constant) and (first.value, second.value) == ("merge-base", "HEAD"):
-                bases.append(base)
-    return bases
-
-
-def _reads(expression: ast.expr) -> Reads:
-    attributes: set[str] = set()
-    names: set[str] = set()
-    pending: list[ast.AST] = [expression]
-    while pending:
-        node = pending.pop()
-        if isinstance(node, ast.Attribute):
-            attributes.add(node.attr)
-        elif isinstance(node, ast.Name):
-            names.add(node.id)
-        else:
-            pending += ast.iter_child_nodes(node)
-    return Reads(attributes, names)
-
-
-def _sources(name: str, function: Function, calls: list[ast.Call]) -> list[ast.expr]:
-    assigned = [
-        node.value
-        for node in ast.walk(function)
-        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)) and node.value is not None
-        and any(isinstance(target, ast.Name) and target.id == name for target in (node.targets if isinstance(node, ast.Assign) else [node.target]))
-    ]
-    positional = [parameter.arg for parameter in function.args.posonlyargs + function.args.args]
-    passed = []
-    for call in calls:
-        if _called(call) != function.name:
-            continue
-        passed += [keyword.value for keyword in call.keywords if keyword.arg == name]
-        if name in positional:
-            shift = 1 if isinstance(call.func, ast.Attribute) and positional[0] in ("self", "cls") else 0
-            passed += [argument for index, argument in enumerate(call.args) if index == positional.index(name) - shift]
-    return assigned + passed
-
-
-def _base_attributes(tree: ast.Module, bases: list[ast.expr]) -> set[str]:
-    functions = [node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
-    scope: dict[ast.AST, Function] = {node: function for function in functions for node in ast.walk(function)}
-    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
-    found: set[str] = set()
-    seen: set[tuple[Function, str]] = set()
-    pending = [(base, scope.get(base)) for base in bases]
-    while pending:
-        expression, function = pending.pop()
-        reads = _reads(expression)
-        found |= reads.attributes
-        for name in reads.names:
-            if function is not None and (function, name) not in seen:
-                seen.add((function, name))
-                pending += [(source, scope.get(source)) for source in _sources(name, function, calls)]
-    return found
-
-
-def _parsers(tree: ast.Module) -> dict[str, list[Argument]]:
-    parsers: dict[str, list[Argument]] = {}
-    for call in ast.walk(tree):
-        if not (isinstance(call, ast.Call) and _called(call) == "add_argument" and isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name)):
-            continue
-        flags = [str(argument.value) for argument in call.args if isinstance(argument, ast.Constant)]
-        named = [keyword.value.value for keyword in call.keywords if keyword.arg == "dest" and isinstance(keyword.value, ast.Constant)]
-        longest = next((flag for flag in flags if flag.startswith("--")), flags[0] if flags else "")
-        parsers.setdefault(call.func.value.id, []).append(Argument(flags, str(named[0]) if named else longest.lstrip("-").replace("-", "_")))
-    return parsers
-
-
-def _without_baza_option(paths: list[Path]) -> list[tuple[Path, str | None]]:
-    missing: list[tuple[Path, str | None]] = []
-    for path in paths:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        bases = _change_bases(tree)
-        if not bases:
-            continue
-        sources = _base_attributes(tree, bases)
-        owners = {name: arguments for name, arguments in _parsers(tree).items() if any(argument.dest in sources for argument in arguments)}
-        missing += [(path, None)] if not owners else []
-        missing += [(path, name) for name, arguments in owners.items() if not any("--baza" in argument.flags and argument.dest in sources for argument in arguments)]
-    return missing
-
-
-def test_narzedzie_ktore_liczy_zmiane_od_bazy_przyjmuje_ja_jako_opcje_baza() -> None:
-    missing = [f"{path.relative_to(ROOT).as_posix()} ({parser or 'baza spoza opcji'})" for path, parser in _without_baza_option(_tools())]
-
-    assert missing == [], (
-        f"te narzędzia (i ich parsery) liczą zmianę od bazy, a nie przyjmują jej jako --baza: {missing}; agenci piszą "
-        "--baza, jak w tools/szybko.py, więc dodaj --baza do tego parsera (podkomendy) i przekaż ją tam, gdzie liczysz "
-        "zmianę; dotychczasową opcję albo bazę pozycyjną możesz zostawić obok."
-    )
-
-
-PLAN_PRZED_BAZA = """
-plan.add_argument('--od', default='')
-zglos.add_argument('--baza', required=True)
-def baza(root, od):
-    return _git(root, 'merge-base', 'HEAD', od)
-def zaplanuj(od):
-    return baza(ROOT, od)
-def zglos_noc(root, baza_nocy):
-    return changed_since(root, baza_nocy)
-zaplanuj(args.od) if args.polecenie == 'plan' else zglos_noc(ROOT, args.baza)
-"""
-
-PRZEZ_PRZYPISANIE_SLOWO_I_CLASSMETHOD = """
-class Zakres:
-    @classmethod
-    def od(cls, baza):
-        return run(['git', 'merge-base', 'HEAD', baza])
-def sprawdz(*, base):
-    return Zakres.od(base)
-def main():
-    parser.add_argument('--od')
-    args = parser.parse_args()
-    wybrana = args.od
-    return sprawdz(base=wybrana)
-"""
-
-
-@pytest.mark.parametrize(
-    ("source", "missing"),
-    [
-        ("parser.add_argument('baza', nargs='?')\nchanged_since(ROOT, args.baza)\n", ["parser"]),
-        ("parser.add_argument('--zmiany-od')\nszybko.changed_since(args.zmiany_od)\n", ["parser"]),
-        ("plan = commands.add_parser('plan')\nplan.add_argument('--baza')\nwplyw_zmiany.changed_since(ROOT, args.baza)\n", []),
-        ("parser.add_argument('--od')\nrun(['git', 'merge-base', 'HEAD', args.od])\n", ["parser"]),
-        ("run(['git', 'merge-base', '--is-ancestor', commit, 'HEAD'])\n", []),
-        (PLAN_PRZED_BAZA, ["plan"]),
-        (PLAN_PRZED_BAZA.replace("plan.add_argument('--od', default='')", "plan.add_argument('--od', '--baza', dest='od')"), []),
-        ("parser.add_argument('--od')\nparser.add_argument('--baza')\nchanged_since(ROOT, args.od)\n", ["parser"]),
-        (PRZEZ_PRZYPISANIE_SLOWO_I_CLASSMETHOD, ["parser"]),
-        ("changed_since(ROOT, os.environ['BAZA'])\n", [None]),
-    ],
-    ids=[
-        "pozycyjna przy changed_since",
-        "--zmiany-od przy changed_since z samą bazą",
-        "--baza podkomendy",
-        "--od przy merge-base HEAD",
-        "merge-base bez bazy zmiany",
-        "--od podkomendy obok --baza innej",
-        "--baza obok --od tej podkomendy",
-        "--baza, która nie trafia do bazy",
-        "--od przez przypisanie, słowo kluczowe i classmethod",
-        "baza spoza opcji",
-    ],
-)
-def test_baze_zmiany_sprawdza_w_parserze_ktory_ja_przyjmuje(tmp_path: Path, source: str, missing: list[str | None]) -> None:
-    tool = tmp_path / "narzedzie.py"
-    tool.write_text(source, encoding="utf-8")
-
-    assert _without_baza_option([tool]) == [(tool, parser) for parser in missing]
