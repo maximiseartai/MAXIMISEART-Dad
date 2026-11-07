@@ -1,6 +1,6 @@
 """Przywracanie Kopii INTERMAX z Konfiguracji Centrum rozliczeń: Rejestr zleceń dostaje w całości bajty wybranej Kopii.
 
-``restore`` przywraca Kopię, którą wymienia ``intermax_copies.listed``: INTERMAX dostaje jej bajty po Kopii stanu
+``restore`` przywraca Kopię, którą wymienia ``copies``: INTERMAX dostaje jej bajty po Kopii stanu
 bieżącego, tą samą podmianą co Uporządkowanie INTERMAX (``intermax_replace``), i tylko nazywa jej fakt Komunikatem
 przywracania.
 """
@@ -41,6 +41,16 @@ def _parts(content: bytes) -> list[str]:
         return []
 
 
+def copies(directory: Path) -> list[Copy]:
+    """Kopie INTERMAX w ``directory`` od najnowszej (``intermax_copies.listed``); ``StopError``, gdy folderu nie da się
+    odczytać: Konfiguracja nie pokaże Kopii, a przywrócenie nie zacznie."""
+
+    try:
+        return intermax_copies.listed(directory)
+    except OSError as error:
+        raise StopError(messages.copies_unreadable(directory)) from error
+
+
 def restore(
     name: str,
     register: Path,
@@ -60,10 +70,7 @@ def restore(
     już przywrócony.
     """
 
-    try:
-        chosen = next((copy for copy in intermax_copies.listed(directory) if copy.path.name == name), None)
-    except OSError as error:
-        raise StopError(messages.copies_unreadable(directory)) from error
+    chosen = next((copy for copy in copies(directory) if copy.path.name == name), None)
     if chosen is None:
         raise StopError(messages.copy_missing(directory, name))
     try:

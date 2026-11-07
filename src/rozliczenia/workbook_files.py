@@ -248,7 +248,7 @@ def is_open_in_excel(path: Path) -> bool:
     W folderze bez dostępu blokady nie widać; niedostępny skoroszyt zgłasza jego odczyt (``ensure_available``).
     """
 
-    return os.path.exists(path.with_name(f"~${path.name}"))
+    return os.path.exists(excel_lock_file(path))
 
 
 def ensure_available(path: Path, *, despite_excel_lock: bool = False) -> None:

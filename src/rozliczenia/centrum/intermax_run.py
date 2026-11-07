@@ -33,7 +33,7 @@ from rozliczenia.centrum.diagnosis_messages import file_only_in_cloud
 from rozliczenia.centrum.live_file import saved_version
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun, RunHost
-from rozliczenia import intermax_copies, intermax_messages, intermax_ordering, intermax_restore
+from rozliczenia import intermax_ordering, intermax_restore
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.intermax_copies import Copy
@@ -144,10 +144,9 @@ class IntermaxEntry:
         """Kopie INTERMAX od najnowszej albo Komunikat, gdy folderu Kopii nie da się odczytać."""
 
         try:
-            listed = intermax_copies.listed(self.copies_directory)
-        except OSError:
-            problem = intermax_messages.copies_unreadable(self.copies_directory)
-            return contract.IntermaxCopies(copies=[], problem=contract.Message.of(problem))
+            listed = intermax_restore.copies(self.copies_directory)
+        except StopError as error:
+            return contract.IntermaxCopies(copies=[], problem=contract.Message.of(error.message))
         return contract.IntermaxCopies(copies=[_copy(copy) for copy in listed], problem=None)
 
     def restore(self, name: str) -> contract.IntermaxRestore:
