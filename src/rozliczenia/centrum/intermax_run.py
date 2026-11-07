@@ -40,7 +40,7 @@ from rozliczenia.intermax_copies import Copy
 from rozliczenia.intermax_replace import Disk, Waiting
 from rozliczenia.intermax_process import OrderingInputs
 from rozliczenia.message import Message, StopError
-from rozliczenia.quantity_rules import WEEKDAY_LABELS
+from rozliczenia.text import short_day_label
 from rozliczenia.centrum.settings import Settings, SettingsStore
 
 _VIEW: Final = INTERMAX.view
@@ -175,7 +175,7 @@ def _copy(copy: Copy) -> contract.IntermaxCopy:
 
 
 def _day(day: intermax_ordering.RegisterDay, today: date) -> contract.IntermaxDay:
-    label = f"{WEEKDAY_LABELS[day.day.weekday()]} {day.day:%d.%m}"
+    label = short_day_label(day.day)
     return contract.IntermaxDay(day=day.day, label=label, today=day.day == today, ordered=day.ordered)
 
 

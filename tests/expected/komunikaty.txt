@@ -757,31 +757,6 @@ rollback_failed [COFNIECIE_NIEUDANE]
   Gdzie: narzędzie na tym komputerze
   Co zrobić: Kliknij „Zaktualizuj narzędzie” jeszcze raz. Jeśli komunikat wraca, kliknij „Wyślij do Maksa”.
 
-message_of #1 [NIEOCZEKIWANY_BLAD]
-  Co się stało: Nie udało się zaktualizować narzędzia z nieoczekiwanego powodu.
-  Gdzie: narzędzie na tym komputerze
-  Co zrobić: Narzędzie działa dalej w poprzedniej wersji. Kliknij „Zaktualizuj narzędzie” jeszcze raz. Jeśli komunikat wraca, kliknij „Wyślij do Maksa”.
-
-message_of #2 [INSTALACJA_BIBLIOTEK]
-  Co się stało: Nie udało się zainstalować bibliotek nowej wersji narzędzia.
-  Gdzie: narzędzie na tym komputerze
-  Co zrobić: Narzędzie działa dalej w poprzedniej wersji. Kliknij „Zaktualizuj narzędzie” jeszcze raz. Jeśli komunikat wraca, kliknij „Wyślij do Maksa”.
-
-message_of #3 [NOWA_WERSJA_NIE_WYSTARTOWALA]
-  Co się stało: Nowa wersja narzędzia nie wystartowała.
-  Gdzie: narzędzie na tym komputerze
-  Co zrobić: Narzędzie działa dalej w poprzedniej wersji. Przekaż sprawę Maksowi: kliknij „Wyślij do Maksa”.
-
-message_of #4 [COFNIECIE_NIEUDANE]
-  Co się stało: Aktualizacja narzędzia się nie udała i nie dało się przywrócić poprzedniej wersji.
-  Gdzie: narzędzie na tym komputerze
-  Co zrobić: Kliknij „Zaktualizuj narzędzie” jeszcze raz. Jeśli komunikat wraca, kliknij „Wyślij do Maksa”.
-
-message_of #5 [NIEOCZEKIWANY_BLAD]
-  Co się stało: Nie udało się zaktualizować narzędzia z nieoczekiwanego powodu.
-  Gdzie: narzędzie na tym komputerze
-  Co zrobić: Narzędzie działa dalej w poprzedniej wersji. Kliknij „Zaktualizuj narzędzie” jeszcze raz. Jeśli komunikat wraca, kliknij „Wyślij do Maksa”.
-
 === Uporządkowanie INTERMAX (src/rozliczenia/intermax_messages.py) ===
 
 register_unusable #1 [BRAK_INTERMAX]

@@ -23,7 +23,6 @@ from rozliczenia.centrum import (
     start_problems,
     update_messages,
 )
-from rozliczenia.centrum.tool_update import LIBRARIES_FAILED, NEW_VERSION_FAILED, ROLLBACK_FAILED, UNEXPECTED
 from rozliczenia.efenix_checks import DateRefused, OrderProblem
 from rozliczenia.efenix_window import PagePart
 from rozliczenia.efenix_marking import Refusal
@@ -292,13 +291,6 @@ UPDATE_SAMPLES: Samples = {
     "libraries_failed": [update_messages.libraries_failed],
     "new_version_failed": [update_messages.new_version_failed],
     "rollback_failed": [update_messages.rollback_failed],
-    "message_of": [
-        lambda: update_messages.message_of(UNEXPECTED),
-        lambda: update_messages.message_of(LIBRARIES_FAILED),
-        lambda: update_messages.message_of(NEW_VERSION_FAILED),
-        lambda: update_messages.message_of(ROLLBACK_FAILED),
-        lambda: update_messages.message_of("NIEZNANY_KOD"),
-    ],
 }
 
 _ORDER_FAULTS: tuple[OrderFault, ...] = (

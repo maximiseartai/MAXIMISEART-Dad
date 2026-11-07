@@ -34,7 +34,8 @@ from .message import Message, StopError
 from .phase_runner import PhaseRunner
 from .preparation_files import CollectiveFilePlan
 from .preparation_plan import IncompletePeriod, Plan
-from .quantity_rules import DESCRIPTION_COLUMNS, WEEKDAY_LABELS
+from .quantity_rules import DESCRIPTION_COLUMNS
+from .text import day_label
 from .write_routes import RouteCounts
 
 __all__ = [
@@ -68,8 +69,7 @@ class PreparationSummary:
         """``Zlecenia na dzień`` z etykietami dni dla taty, np. ``("wt 08.09.2026", 1)``, w kolejności dat."""
 
         return [
-            (f"{WEEKDAY_LABELS[day.weekday()]} {day:%d.%m.%Y}", count)
-            for day, count in self.orders_per_day.items()
+            (day_label(day), count) for day, count in self.orders_per_day.items()
         ]
 
 

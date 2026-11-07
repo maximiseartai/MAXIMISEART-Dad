@@ -24,6 +24,10 @@ from enum import Enum, StrEnum, auto
 from types import MappingProxyType
 from typing import Final
 
+# Tylko dla centrum/run_view.py, którego blokada efenix 7.11 nie pozwala zmienić: gdy run_view przejdzie na
+# text.day_label, ta linia znika.
+from .text import WEEKDAY_LABELS as WEEKDAY_LABELS
+
 
 class QuantityColumn(StrEnum):
     """Kolumna Ilości usług Pliku zbiorczego, w której Reguły ilości coś wpisują."""
@@ -64,10 +68,6 @@ class WeekTime:
 
     weekday: int
     at: time
-
-
-# Skrót dnia tygodnia (indeks jak ``WeekTime.weekday``, 0 to poniedziałek) w liczbach zleceń na dzień i w Kontroli ilości.
-WEEKDAY_LABELS: Final = ("pon", "wt", "śr", "czw", "pt", "sob", "niedz")
 
 
 @dataclass(frozen=True)

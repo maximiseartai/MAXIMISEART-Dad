@@ -20,12 +20,11 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Final
 
-from .text import plural
+from .text import WEEKDAY_LABELS, plural
 from .order_facts import N_AP, CollectiveOrders, MissingHeaders, OrderFacts, TataValue
 from .quantity_rules import (
     DESCRIPTION_COLUMNS,
     FromDescription,
-    WEEKDAY_LABELS,
     OrderContent,
     QuantityColumn,
     RuleResult,

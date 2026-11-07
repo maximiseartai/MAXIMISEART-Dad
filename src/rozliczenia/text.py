@@ -1,10 +1,16 @@
-"""Reguły tekstu wspólne dla wszystkich procesów: normalizacja tekstu z komórek taty i polskie formy w Komunikatach."""
+"""Reguły tekstu wspólne dla wszystkich procesów: normalizacja tekstu z komórek taty, polskie formy w Komunikatach i
+etykiety dni dla taty."""
 
 from __future__ import annotations
 
+from datetime import date
+from typing import Final
 import unicodedata
 
-__all__ = ["normalize_text", "plural", "row_range"]
+__all__ = ["WEEKDAY_LABELS", "day_label", "normalize_text", "plural", "row_range", "short_day_label"]
+
+# Skrót dnia tygodnia (indeks jak ``date.weekday()``, 0 to poniedziałek).
+WEEKDAY_LABELS: Final = ("pon", "wt", "śr", "czw", "pt", "sob", "niedz")
 
 
 def normalize_text(value: object) -> str:
@@ -29,3 +35,15 @@ def row_range(first: int, last: int) -> str:
     """Kolejne wiersze arkusza: „wiersz 18” albo „wiersze 18–20”."""
 
     return f"wiersz {first}" if first == last else f"wiersze {first}–{last}"
+
+
+def day_label(day: date) -> str:
+    """Dzień dla taty ze skrótem dnia tygodnia: „wt 08.09.2026”."""
+
+    return f"{short_day_label(day)}.{day:%Y}"
+
+
+def short_day_label(day: date) -> str:
+    """Dzień bieżącego tygodnia dla taty, bez roku: „wt 08.09”."""
+
+    return f"{WEEKDAY_LABELS[day.weekday()]} {day:%d.%m}"

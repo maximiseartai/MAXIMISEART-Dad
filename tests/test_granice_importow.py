@@ -14,6 +14,12 @@ biorą niczego z kodu pod testem (``src``). Okno w procesie (``tests/fixtures/ok
 testem tylko typy seamu okna efenix (klasy i aliasy typów z ``efenix_window``), a decyzje bierze
 z modelu: okno, które wołałoby kod Wyceny, przestałoby być niezależną drugą stroną kontraktu z oknem przeglądarki.
 
+Rdzeń Uruchomienia procesu i moduły, które procesy i Centrum biorą bez skoroszytu (``WITHOUT_WORKBOOK``), nie
+wczytują warstwy skoroszytu (``template_file`` ani openpyxl), także przez inne moduły ``src/``, importem w funkcji i
+w ``TYPE_CHECKING``: zmiana układu Wzorca albo biblioteki skoroszytu nie dotyka kodu, od którego zależy każdy proces.
+Domknięcie idzie tylko po modułach ``src/``, więc biblioteki spoza ``src/``, która sama wczytuje openpyxl, i
+skoroszytu czytanego bez openpyxl (zip, XML) nie łapie: to zostaje przeglądowi.
+
 Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
 ``PURE_VERSIONS``, więc stopień wersji, los dziennika Wyceny i macierz startu Centrum (``close``) sprawdza test bez
 plików i wątków.
@@ -45,6 +51,7 @@ zbudowana z etykietą wziętą z innej wysyłki (``post.target.label``) oraz cel
 from __future__ import annotations
 
 import ast
+from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass
 import importlib
@@ -119,6 +126,18 @@ STDLIB_ONLY = {
     "rozliczenia/text.py": "reguła danych i warstwa skoroszytu normalizują tekst bez zależności od Konfiguracji wykonawców",
     "rozliczenia/register_columns.py": "Przebieg, Wycena i reguła danych biorą kolumny Rejestru bez czytnika Przygotowania",
 }
+WITHOUT_WORKBOOK = {
+    "rozliczenia/domain.py": "protokół postępu, który zna każdy proces, Centrum i Skrypt dla maszyn",
+    "rozliczenia/telemetry.py": "rekord metryk Uruchomienia wspólny dla wszystkich procesów",
+    "rozliczenia/process_run.py": "rdzeń Uruchomienia procesu wspólny dla Centrum i Skryptu dla maszyn",
+    "rozliczenia/phase_runner.py": "kolejność i czas faz każdego procesu",
+    "rozliczenia/write_routes.py": "drogi zapisu, które telemetria liczy bez kodu zapisu Wzorca",
+    "rozliczenia/text.py": "reguły tekstu dla taty wspólne dla wszystkich procesów",
+    "rozliczenia/register_columns.py": "kolumny Rejestru, które biorą Przebieg, Wycena i reguła danych",
+    "rozliczenia/tool_files.py": "układ plików narzędzia, który znają wszystkie procesy, Centrum i launcher",
+}
+WORKBOOK_LAYER = "rozliczenia.template_file"
+WORKBOOK_LIBRARY = "openpyxl"
 
 
 @dataclass(frozen=True)
@@ -138,10 +157,10 @@ def _module_name(file: str) -> str:
     return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
 
 
-def _file_of(module: str) -> str | None:
+def _file_of(module: str, root: Path = SRC) -> str | None:
     base = module.replace(".", "/")
     for file in (f"{base}.py", f"{base}/__init__.py"):
-        if (SRC / file).is_file():
+        if (root / file).is_file():
             return file
     return None
 
@@ -165,10 +184,10 @@ def _from_module(node: ast.ImportFrom, file: str) -> str:
     return ".".join([*anchor, *([base] if base else [])])
 
 
-def _imports(file: str) -> Iterator[Import]:
+def _imports(file: str, root: Path = SRC) -> Iterator[Import]:
     """Importy pliku z modułami, które wczytują; ``nested`` dla importu w funkcji."""
 
-    tree = ast.parse((SRC / file).read_text(encoding="utf-8"))
+    tree = ast.parse((root / file).read_text(encoding="utf-8"))
     in_function = {
         node
         for function in ast.walk(tree)
@@ -180,7 +199,7 @@ def _imports(file: str) -> Iterator[Import]:
             names = [alias.name for alias in node.names]
         elif isinstance(node, ast.ImportFrom):
             base = _from_module(node, file)
-            names = [base, *(f"{base}.{alias.name}" for alias in node.names if _file_of(f"{base}.{alias.name}"))]
+            names = [base, *(f"{base}.{alias.name}" for alias in node.names if _file_of(f"{base}.{alias.name}", root))]
         else:
             continue
         for name in names:
@@ -236,6 +255,92 @@ def test_moduly_bez_zaleznosci_wczytuja_tylko_biblioteke_standardowa() -> None:
             "moduł bez zależności do STDLIB_ONLY z powodem.",
         ]
     )
+
+
+def _is_workbook(module: str) -> bool:
+    return module == WORKBOOK_LAYER or module.split(".")[0] == WORKBOOK_LIBRARY
+
+
+def _workbook_chains(file: str, root: Path = SRC) -> set[str]:
+    """Łańcuchy importów od pliku ``file`` do warstwy skoroszytu, każdy import z plikiem i linią.
+
+    Idzie wszerz po modułach ``src/`` (``root``), także po importach w funkcji, więc łańcuch jest najkrótszy do
+    każdego modułu po drodze. Moduł spoza ``src/`` (biblioteka) kończy drogę.
+    """
+
+    reached: dict[str, tuple[Import, ...]] = {loaded: () for loaded in _modules_loaded(_module_name(file))}
+    queue = deque(reached)
+    chains = set()
+    while queue:
+        current = _file_of(queue.popleft(), root)
+        if current is None:
+            continue
+        for found in _imports(current, root):
+            chain = (*reached[_module_name(current)], found)
+            if _is_workbook(found.module):
+                chains.add(" → ".join(map(str, chain)))
+            elif found.module not in reached:
+                reached[found.module] = chain
+                queue.append(found.module)
+    return chains
+
+
+def test_rdzen_uruchomienia_nie_wczytuje_warstwy_skoroszytu() -> None:
+    found = {
+        f"{chain}  ({reason})" for file, reason in WITHOUT_WORKBOOK.items() for chain in _workbook_chains(file)
+    }
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            "Moduły z WITHOUT_WORKBOOK (tests/test_granice_importow.py, powód przy każdym) nie wczytują template_file "
+            "ani openpyxl, także przez inne moduły src i importem w funkcji. Przenieś typ albo stałą, której potrzebują, "
+            "do modułu bez skoroszytu (jak write_routes, register_columns) i niech warstwa skoroszytu importuje ją stamtąd.",
+        ]
+    )
+
+
+# Drzewa src z modułem rdzenia a.py i drogą do warstwy skoroszytu, którą sprawdzenie łapie.
+WORKBOOK_ROUTES: typing.Final = {
+    "import-wprost": {"a.py": "import openpyxl\n"},
+    "podmodul-biblioteki": {"a.py": "from openpyxl.styles import Font\n"},
+    "przez-inny-modul": {"a.py": "from . import b\n", "b.py": "from .c import X\n", "c.py": "import openpyxl\n"},
+    "w-funkcji": {"a.py": "def f():\n    from .b import X\n", "b.py": "from .template_file import Y\n"},
+    "w-type-checking": {
+        "a.py": "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from .template_file import Y\n"
+    },
+    "modul-z-from-import": {"a.py": "from . import template_file\n"},
+    "przez-pakiet": {"a.py": "x = 1\n", "__init__.py": "import openpyxl\n"},
+    "pelna-sciezka": {"a.py": "import rozliczenia.b\n", "b.py": "import rozliczenia.template_file\n"},
+}
+
+
+def _source_tree(root: Path, files: dict[str, str]) -> None:
+    package = root / "rozliczenia"
+    package.mkdir()
+    for name, code in {"__init__.py": "", "template_file.py": "import openpyxl\n", **files}.items():
+        (package / name).write_text(code, encoding="utf-8")
+
+
+@pytest.mark.parametrize("files", WORKBOOK_ROUTES.values(), ids=WORKBOOK_ROUTES.keys())
+def test_sprawdzenie_rdzenia_lapie_kazda_droge_do_warstwy_skoroszytu(tmp_path: Path, files: dict[str, str]) -> None:
+    _source_tree(tmp_path, files)
+
+    assert _workbook_chains("rozliczenia/a.py", tmp_path)
+
+
+def test_sprawdzenie_rdzenia_przepuszcza_biblioteke_standardowa_i_moduly_bez_skoroszytu(tmp_path: Path) -> None:
+    _source_tree(
+        tmp_path,
+        {
+            "a.py": "import json\nfrom . import b, template_files\ndef f():\n    from .c import Y\n",
+            "b.py": "from collections.abc import Mapping\nX = 1\n",
+            "c.py": "from .b import X\nY = X\n",
+            "template_files.py": "NAME = 'template_file'\n",
+        },
+    )
+
+    assert _workbook_chains("rozliczenia/a.py", tmp_path) == set()
 
 
 def test_kopia_opiekuna_ponownego_startu_importuje_tylko_biblioteke_standardowa_i_siebie() -> None:

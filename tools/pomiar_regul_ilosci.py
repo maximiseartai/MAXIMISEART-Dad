@@ -32,7 +32,6 @@ from rozliczenia.collective_file import read_data_rows
 from rozliczenia.order_facts import N_AP, MissingHeaders, OrderFacts, TataValue
 from rozliczenia.quantity_check import compared_columns
 from rozliczenia.quantity_rules import (
-    WEEKDAY_LABELS,
     FromDescription,
     OrderContent,
     QuantityColumn,
@@ -41,6 +40,7 @@ from rozliczenia.quantity_rules import (
     WithoutRule,
     evaluate,
 )
+from rozliczenia.text import WEEKDAY_LABELS
 
 Difference = tuple[QuantityColumn, int, TataValue]
 """Kolumna, wartość z reguły, wartość taty."""
