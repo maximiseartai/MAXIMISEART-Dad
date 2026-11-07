@@ -17,10 +17,10 @@ zawęża niczego, więc mutacji za nią nie ma i ``BOUNDARIES`` jej nie wymienia
 skrypt mutacji w CI ``main`` i nocą; że historia wpisu nie ma części, której kształt nie wymienia, sprawdza tylko
 przegląd.
 
-Znanych znalezisk modeli TLA+ (``model/oczekiwane.json``) strażnik nie czyta: znalezisko modelu to para obietnica i
-przyczyna, a przyczynę ustawia w zmiennej historii jedna akcja specyfikacji z jednym warunkiem, więc wybaczenie nie
-jest dopasowaniem po skutku, a poszerzyć je może tylko zmiana tej akcji. Że wybacza tylko swoją parę, sprawdzają
-``tests/test_model_wznowienia_wyceny.py`` i ``tests/test_model_urwanego_uruchomienia.py``.
+Znanych znalezisk modeli TLA+ (``znane`` w ``model/konfiguracje.json``) strażnik nie czyta: znalezisko modelu to para
+obietnica i przyczyna, a przyczynę ustawia w zmiennej historii jedna akcja specyfikacji z jednym warunkiem, więc
+wybaczenie nie jest dopasowaniem po skutku, a poszerzyć je może tylko zmiana tej akcji. Że wybacza tylko swoją parę,
+sprawdza ``tests/test_model_tlc.py``.
 
     python tests/fixtures/granice_ksztaltow.py <katalog tools> <plik eksploratora>
 """

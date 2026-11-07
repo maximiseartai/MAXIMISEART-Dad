@@ -9,7 +9,7 @@ pilnuje:
   - src/rozliczenia/centrum/app.py
   - src/rozliczenia/centrum/launcher.py
   - src/rozliczenia/centrum/server.py
-  - .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
+  - tools/lib/model_tlc.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
 ci: .agents/skills/verify-kolejka-skrzynki/scripts/sprawdz_kolejke.py
@@ -624,8 +624,8 @@ wysyłka's version or a newer one, so the queue sends that file again), `slady`
 2. Change the matching action so that one action stays one indivisible step
    of the code, and keep the comment that names the code. TLA+ strings must be
    ASCII; comments may use Polish letters.
-3. A new way to fail gets a constant, a branch guarded by it, and a line in
-   every `.cfg`.
+3. A new way to fail gets a constant, a branch guarded by it, and a value in
+   `stale` of every configuration in `model/konfiguracje.json`.
 4. Before you trust a pass on a new path, break that path in the model and
    see the check fail; add the break to `check_model_kolejki_mutations.py`
    with the code it mirrors. A new guard in the model needs a counterpart in
@@ -641,10 +641,11 @@ Run one configuration while you work:
 .venv/bin/python .agents/skills/verify-kolejka-skrzynki/scripts/sprawdz_model_kolejki.py --config okres
 ```
 
-On Windows use `py -3`. It takes Java and `tla2tools.jar` from
-`verify-aktualizacja-narzedzia` (`sprawdz_aktualizacje.py` downloads them
-once into its ignored cache, no system Java needed); `TLC_JAVA` and `TLC_JAR`
-replace them. All configurations take about 45 s on Maks's Mac (2026-11-04), `archiwum` about 18 s of it; with the
+On Windows use `py -3`. The run of TLC, the verdict and the known findings are
+`tools/lib/model_tlc.py`, which every skill with a TLA+ model shares; Java and
+`tla2tools.jar` come from `tools/lib/narzedzia_tlc.py`, which downloads them
+once into the ignored `.verification/formal-aktualizacja` (no system Java
+needed); `TLC_JAVA` and `TLC_JAR` replace them. All configurations take about 45 s on Maks's Mac (2026-11-04), `archiwum` about 18 s of it; with the
 lagging lists (#879) about 107 s under load on 2026-11-05, `archiwum` 24 s, `okres` 14 s and `archiwum-lista` 11 s of it; with the failed read of the file of `KeyedBox` (#909) `okres` took 14 s and `archiwum-lista` 24 s under load on 2026-11-05. `--strict`
 makes known findings exit 1.
 
@@ -653,22 +654,27 @@ makes known findings exit 1.
 | `MODEL KOLEJKI OK` | 0 | Every promise holds in every configuration. |
 | `MODEL KOLEJKI OK, ZNANE ZNALEZISKA: n` | 0 | Only the known findings below break a promise, each only its own and after its cause; each is printed with its counterexample, and with every known finding excused the configuration passes. |
 | `MODEL KOLEJKI: NOWE NARUSZENIE (n)` | 1 | A promise breaks in a way no known finding explains: another promise than the finding's, or its promise without its cause in `slady`. The counterexample is printed. |
-| `MODEL KOLEJKI: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding no longer happens. If a change fixed it, set `"wynik": "przechodzi"` in `model/oczekiwane.json` and remove it below. |
-| `MODEL KOLEJKI: BŁĄD MODELU (n)` | 2 | TLC gave no verdict (a syntax error) or `TypeOK` broke. Nothing is known about the promise. |
+| `MODEL KOLEJKI: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding no longer happens. If a change fixed it, remove it from `znane` of its configuration in `model/konfiguracje.json` and below. |
+| `MODEL KOLEJKI: BŁĄD MODELU (n)` | 2 | TLC gave no verdict (a syntax error), an invariant outside the promises such as `TypeOK` broke, or `model/konfiguracje.json` has another shape. Nothing is known about the promise. |
 | `MODEL KOLEJKI: ROZJAZD MODELU Z KODEM` | 1 | Only in CI: covered code changed since the Sync commit. Outside CI the same is a `UWAGA:` line above the verdict, and the verdict means nothing until you bring the model in line. |
 
-Each known finding in `model/oczekiwane.json` names the promise it breaks
-(`obietnica`) and its cause (`przyczyna`), a mark in `slady` that only the step
-of the code it names sets. It runs twice, as in `verify-aktualizacja-narzedzia`.
-First excusing every other known finding: it must break exactly its promise,
+Each known finding in `znane` of its configuration in `model/konfiguracje.json`
+names the promise it breaks (`obietnica`) and its cause (`przyczyna`), a mark
+in `slady` that only the step of the code it names sets. It runs twice, as in
+every skill with a TLA+ model (`tools/lib/model_tlc.py`). First excusing every
+other known finding of its configuration: it must break exactly its promise,
 and the last state of the counterexample must have its cause in `slady`;
 another promise, or the right one without the cause, is `NOWE NARUSZENIE`.
-Then excusing every known finding: it must pass. A finding excuses only its
+Then excusing every known finding of its configuration: it must pass. A finding excuses only its
 own promise (`Wybaczone<promise>`, the `<promise>PozaZnanymi` variant), and
 only in a behaviour in which its cause happened; every other promise of its
 configuration is checked in full.
 
 ### Configurations
+
+Each configuration is an entry of `model/konfiguracje.json`: its `opis`, its
+constants (`stale`) and its known findings (`znane`); the script writes its
+`.cfg` with `TypeOK` and every promise.
 
 | Config | Wysyłki and failures | Expected |
 | --- | --- | --- |
@@ -710,7 +716,7 @@ None. The former finding `przejecie` is gone with the checker's (above): the
 model takes a Zgłoszenie in one part as `ASSUME Cel = "zgloszenie" => Czesci = 1`,
 whose counterpart is the `ValueError` of `Post`.
 
-A known finding lives in `model/oczekiwane.json` with the promise it breaks
+A known finding lives in `znane` of its configuration in `model/konfiguracje.json` with the promise it breaks
 and the cause it is excused after. When a change fixes it, the check ends with `ZNALEZISKO ZNIKNĘŁO`.
 
 ### Real bug or modeling error?
