@@ -5,8 +5,10 @@ from __future__ import annotations
 import errno
 import os
 import re
+import struct
 import sys
 import zipfile
+import zlib
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -611,6 +613,29 @@ def test_inne_czesci_pliku_i_wiersze_nad_dniem_zostaja_bajt_w_bajt_a_hiperlacza_
         if (link := (cell := sheet.cell(row, NUMBER)).hyperlink) is not None
     }
     assert links == {f"ZL-{order.number}": order.link for order in layout.raw}
+
+
+def test_kazda_czesc_intermax_po_uporzadkowaniu_to_pelny_strumien_deflate_z_data_oryginalu(tmp_path: Path) -> None:
+    """Excel czyta część skoroszytu jako strumień deflate z blokiem końcowym. Duża część (kilka MB, jak arkusz zleceń
+    taty) wraca z tą samą treścią i datą."""
+
+    path, _ = _register(tmp_path)
+    big = b"".join(b'<row r="%d"><c r="A%d"><v>%d</v></c></row>' % (number, number, number * 7919) for number in range(150_000))
+    rewrite_parts(path, lambda _name, data: data, {"customXml/duza.xml": big})
+    before = {info.filename: info.date_time for info in zipfile.ZipFile(path).infolist()}
+
+    _ordered(_run(tmp_path))
+
+    content = path.read_bytes()
+    with zipfile.ZipFile(path) as archive:
+        assert {info.filename: info.date_time for info in archive.infolist()} == before
+        assert archive.read("customXml/duza.xml") == big
+        for info in archive.infolist():
+            name_length, extra_length = struct.unpack("<HH", content[info.header_offset + 26 : info.header_offset + 30])
+            start = info.header_offset + 30 + name_length + extra_length
+            stream = zlib.decompressobj(-zlib.MAX_WBITS)
+            stream.decompress(content[start : start + info.compress_size])
+            assert (info.compress_type, stream.eof) == (zipfile.ZIP_DEFLATED, True), info.filename
 
 
 @dataclass(frozen=True)

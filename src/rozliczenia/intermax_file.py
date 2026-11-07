@@ -49,7 +49,10 @@ from __future__ import annotations
 
 import html
 import re
+import struct
 import zipfile
+import zlib
+from concurrent.futures import ThreadPoolExecutor
 from functools import cached_property
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -116,6 +119,15 @@ _WORKBOOK_VIEW: Final = re.compile(rb"<workbookView\b([^>]*?)(/?>)")
 _COMPRESSION: Final = 1
 """Poziom zlib zapisu: arkusz zleceń taty (dziesiątki MB XML) zajmuje przy nim tyle co po zapisie w Excelu, a domyślny
 poziom 6 kompresuje go kilka razy dłużej i był większością czasu Uporządkowania INTERMAX u taty."""
+_DEFLATE_CHUNK: Final = 1 << 21
+"""Bajty części, które jeden wątek kompresuje naraz: arkusz zleceń taty to kilkadziesiąt kawałków."""
+_LOCAL, _CENTRAL, _END = 0x04034B50, 0x02014B50, 0x06054B50
+"""Sygnatury nagłówka części, wpisu katalogu i końca katalogu zip (APPNOTE 4.3)."""
+_VERSION: Final = 20
+"""Wersja zip potrzebna do odczytu deflate, ta sama, którą wpisuje ``zipfile``."""
+_UTF8_NAME: Final = 0x800
+_FINAL_BLOCK: Final = b"\x03\x00"
+"""Pusty blok końcowy deflate (stałe kody Huffmana), ten sam, który zlib daje na ``Z_FINISH`` po ``Z_SYNC_FLUSH``."""
 _STYLE_LISTS: Final = (b"fonts", b"fills", b"borders", b"cellXfs")
 """Listy ``xl/styles.xml``, na których końcu zapis dopisuje wpisy."""
 
@@ -466,14 +478,7 @@ class Register:
             sheet.part: sheet_xml,
             self._styles_part: looks.styles(self._parts[self._styles_part]),
         }
-        out = BytesIO()
-        with zipfile.ZipFile(out, "w") as target:
-            for info in self._infos:
-                copied = zipfile.ZipInfo(info.filename, info.date_time)
-                copied.compress_type = info.compress_type
-                copied.external_attr = info.external_attr
-                target.writestr(copied, parts.get(info.filename, self._parts[info.filename]), compresslevel=_COMPRESSION)
-        return out.getvalue()
+        return _archive([(info, parts.get(info.filename, self._parts[info.filename])) for info in self._infos])
 
     def check(self, written: bytes, sheet: OrderSheet, block: RawBlock, plan: DayPlan) -> None:
         """``WriteMismatch``, gdy ``written`` różni się od INTERMAX czymś więcej niż dniem z ``plan``.
@@ -878,3 +883,61 @@ def _without_view(head: bytes) -> bytes:
 def _has_value(cell: _Cell) -> bool:
     content = cell.content or b""
     return _VALUE.search(content) is not None or b"<is>" in content
+
+
+def _deflated(data: bytes) -> bytes:
+    """Surowy strumień deflate ``data``, kompresowany kawałkami naraz w wątkach (zlib zwalnia GIL), jak pigz.
+
+    Każdy kawałek kończy się ``Z_SYNC_FLUSH`` (blok niekońcowy, do pełnego bajtu), a strumień pusty blok końcowy, więc
+    złączone kawałki są jednym pełnym strumieniem. Odwołania nie sięgają przez granicę kawałka, co na arkuszu zleceń
+    taty kosztuje 0,05% rozmiaru.
+    """
+
+    def chunk(start: int) -> bytes:
+        compressor = zlib.compressobj(_COMPRESSION, zlib.DEFLATED, -zlib.MAX_WBITS)
+        return compressor.compress(data[start : start + _DEFLATE_CHUNK]) + compressor.flush(zlib.Z_SYNC_FLUSH)
+
+    with ThreadPoolExecutor() as pool:
+        return b"".join(pool.map(chunk, range(0, len(data), _DEFLATE_CHUNK))) + _FINAL_BLOCK
+
+
+def _archive(entries: Sequence[tuple[zipfile.ZipInfo, bytes]]) -> bytes:
+    """Zip z częściami ``entries`` po kolei, każdą w deflate: nazwa, data, system i atrybuty z ``ZipInfo`` oryginału,
+    treść ``bytes``.
+
+    ``zipfile`` kompresuje część tylko w jednym wątku, więc nagłówki pisze tu ``struct`` według APPNOTE (bez ZIP64:
+    INTERMAX ma kilkanaście MB).
+    """
+
+    out = bytearray()
+    central = bytearray()
+    for info, data in entries:
+        stored = _deflated(data)
+        name = info.filename.encode("utf-8")
+        flags = 0 if name.isascii() else _UTF8_NAME
+        year, month, day, hour, minute, second = info.date_time
+        time_and_date = (hour << 11 | minute << 5 | second // 2, (year - 1980) << 9 | month << 5 | day)
+        sizes = (zlib.crc32(data), len(stored), len(data), len(name))
+        offset = len(out)
+        out += struct.pack("<IHHH2H3IHH", _LOCAL, _VERSION, flags, zipfile.ZIP_DEFLATED, *time_and_date, *sizes, 0)
+        out += name + stored
+        central += struct.pack(
+            "<IBBHHH2H3IHHHHHII",
+            _CENTRAL,
+            info.create_version,
+            info.create_system,
+            _VERSION,
+            flags,
+            zipfile.ZIP_DEFLATED,
+            *time_and_date,
+            *sizes,
+            0,
+            0,
+            0,
+            0,
+            info.external_attr,
+            offset,
+        )
+        central += name
+    end = struct.pack("<IHHHHIIH", _END, 0, 0, len(entries), len(entries), len(central), len(out), 0)
+    return bytes(out + central + end)
