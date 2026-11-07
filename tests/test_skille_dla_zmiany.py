@@ -269,7 +269,8 @@ def test_zmiana_runnera_mutacji_nie_wskazuje_skilla_choc_noc_uruchamia_jego_skry
 
 @pytest.mark.parametrize("argv", [["nie-ma-takiej-bazy"], [""], ["--baza", ""]], ids=["nieznana", "pusta-pozycyjna", "pusta-opcja"])
 def test_baza_ktorej_nie_ma_albo_pusta_daje_nieznane_skille_i_kod_bledu(tmp_path: Path, argv: list[str]) -> None:
-    _repo(tmp_path)
+    # Domyślna baza istnieje, więc pusta baza daje nieznane tylko wtedy, gdy narzędzie nie bierze za nią domyślnej.
+    git(tmp_path, "update-ref", "refs/remotes/origin/main", _repo(tmp_path))
 
     result = _run(tmp_path, *argv)
 
