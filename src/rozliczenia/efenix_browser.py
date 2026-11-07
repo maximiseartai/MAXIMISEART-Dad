@@ -1,4 +1,4 @@
-"""Okno efenix w przeglądarce: jedyny moduł, który zna Playwright, czekanie, klik i sieć efenix.
+"""Okno efenix w przeglądarce: jedyny moduł, który zna czekanie, klik i sieć efenix (stronę czyta przez Playwright także ``efenix_page``).
 
 Budowę stron efenix (adresy działań, elementy ``Element``, nazwy w skryptach stron) i jej odczyty (tabela wyników,
 strona zlecenia, okno Emmetta) daje ``efenix_page``, z którego okno bierze każdy selektor. Na zewnątrz okno daje tylko

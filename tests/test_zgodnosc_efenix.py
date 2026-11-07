@@ -26,6 +26,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 from decimal import Decimal
 import http.client
+import io
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -44,7 +45,9 @@ import pytest
 import zgodnosc_efenix
 
 from rozliczenia.efenix_browser import launch_options
+from rozliczenia.efenix_page import EmmettWindow, emmett_window, read_results
 from rozliczenia.efenix_positions import POSITION_OF_COLUMN
+from rozliczenia.efenix_pricing import ListedOrder
 
 from tests.fixtures.atrapa_efenix import (
     CHANGE_STATUS,
@@ -258,6 +261,44 @@ CHANGED = {
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "logowanie-bez-formularza-i-pol.txt",
         rewrites={
             LOGIN_PAGE: _replaced(('action="action_login.php"', 'action="zaloguj.php"'), ('id="field_signum"', 'id="login"'), ('id="field_password"', 'id="haslo"'))
+        },
+    ),
+    # Numer dokumentu pierwszego wiersza jest linkiem do jego strony zlecenia, więc wiersz ma dwa linki, a Wycena w
+    # efenix czyta tylko wiersz z jednym.
+    "wiersz-z-dwoma-linkami": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "wiersz-z-dwoma-linkami.txt",
+        rewrites={
+            SEARCH: _replaced(
+                (f"<td>{ORDERS[0].number}<br>", f'<td><a href="{ORDER_PAGE}?id={ORDERS[0].order_id}">{ORDERS[0].number}</a><br>')
+            )
+        },
+    ),
+    # Drugi wiersz bez numeru dokumentu, a status i data w komórce Wykonawca bez ``.badge``, w którym pokazuje je Atrapa:
+    # Wycena czyta status z tekstu komórki, a pierwsze otwarte zlecenie to pierwszy wiersz.
+    "wiersz-z-pustym-numerem-i-bez-badge": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "wiersz-z-pustym-numerem-i-bez-badge.txt",
+        rewrites={SEARCH: _replaced((f"<td>{ORDERS[1].number}<br>", "<td><br>"), ('class="badge ', 'class="etykieta '))},
+    ),
+    # Pole Ilość pozycji 020 ma id z kodem 005, więc kod 005 stoi w dwóch polach Ilość strony zlecenia.
+    "kod-pozycji-w-dwoch-polach-ilosc": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "kod-pozycji-w-dwoch-polach-ilosc.txt",
+        rewrites={ORDER_PAGE: _replaced(('id="INDEKS_020_078"', 'id="INDEKS_005_079"'))},
+    ),
+    # Nagłówek „Dane adresowe” to „Adres”, a drugi wiersz nie ma numeru dokumentu: Wycena w efenix nie czyta tabeli już
+    # przez kolumnę, której nie ma dokładnie raz, więc pustego numeru nie sprawdza i wynik nie ma o nim linii.
+    "kolumna-nie-raz-i-wiersz-z-pustym-numerem": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "kolumna-nie-raz-i-wiersz-z-pustym-numerem.txt",
+        rewrites={SEARCH: _replaced(("<th>Dane adresowe</th>", "<th>Adres</th>"), (f"<td>{ORDERS[1].number}<br>", "<td><br>"))},
+    ),
+    # Pierwszy wiersz ma dwa linki, a trzeci o jedną komórkę więcej niż nagłówków: linie różnic wierszy stoją w kolejności,
+    # w której Wycena je sprawdza (najpierw liczba komórek, potem link), nie w kolejności wierszy.
+    "wiersz-z-dwoma-linkami-i-wiersz-z-dodatkowa-komorka": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "wiersz-z-dwoma-linkami-i-wiersz-z-dodatkowa-komorka.txt",
+        rewrites={
+            SEARCH: _replaced(
+                (f"<td>{ORDERS[0].number}<br>", f'<td><a href="{ORDER_PAGE}?id={ORDERS[0].order_id}">{ORDERS[0].number}</a><br>'),
+                (f"<td>{ORDERS[2].number}<br>", f"<td></td><td>{ORDERS[2].number}<br>"),
+            )
         },
     ),
 }
@@ -830,6 +871,58 @@ def test_przejscie_w_karcie_skladania_zostawia_zlozony_html(chrome: str) -> None
 
         assert shown == ("Złożony HTML", ["<html><head></head><body></body></html>"], [True])
         assert atrapa.requested() == []
+
+
+def test_tabela_wynikow_w_karcie_skladania_daje_status_z_badge_i_ostatni_login_realizatora(chrome: str) -> None:
+    # Odczyt tabeli wyników, który narzędzie dzieli z Wyceną w efenix: status to tekst ``.badge``, choć komórka Status
+    # ma obok niego inny tekst, a login realizatora to ostatni „(login)” w ``small.text-default`` komórki Wykonawca.
+    html = (
+        '<table class="table table-sm"><thead><tr><th>Numer dokumentu</th><th>Status</th><th>Wykonawca (login)</th>'
+        "<th>Dane adresowe</th><th></th></tr></thead><tbody><tr><td>ZL/1</td>"
+        '<td><span class="badge badge-default">Do wyceny</span> od 2 dni</td>'
+        '<td>Firma <small><small class="text-default">(zastepca) (realizator)</small></small></td>'
+        f'<td>ul.Prosta 1</td><td><a href="{ORDER_PAGE}?id=7" class="btn btn-sm">Otwórz</a></td></tr></tbody></table>'
+    )
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.connect_over_cdp(chrome)
+        with zgodnosc_efenix.parser_page(browser, timeout_ms=10_000) as page:
+            orders = read_results(page, html)
+
+    assert orders == (ListedOrder(number="ZL/1", status="Do wyceny", realizator="realizator", address="ul.Prosta 1", order_id="7"),)
+
+
+def test_karta_zlecenia_zmieniona_miedzy_odczytami_okna_emmetta_daje_niesprawdzona_propozycje(
+    chrome: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Okno Emmetta narzędzie czyta kilkoma odczytami karty. Karta Maksa, która po pierwszym (okno jest widoczne) przejdzie
+    # na listę zleceń, ma nie dać różnicy budowy z odczytów dwóch stron, tylko niesprawdzoną propozycję z prośbą o
+    # ponowne kliknięcie Emmetta, jak odczyt, który padł w trakcie przejścia (#1039).
+    efenix_url = f"http://efenix.test/{LIST_PAGE}"
+    pages = {
+        ORDER_PAGE: '<!doctype html><body><div id="dialog_emmett"><div id="emmett-propozycja"><ul><li>INDEKS_012_078: 3</li></ul></div></div></body>',
+        LIST_PAGE: "<!doctype html><body><table></table></body>",
+    }
+    read = emmett_window
+
+    def read_after_leaving(tab: Page) -> EmmettWindow:
+        tab.goto(urljoin(efenix_url, LIST_PAGE))
+        return read(tab)
+
+    report = zgodnosc_efenix.Report()
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.connect_over_cdp(chrome)
+        tab = browser.contexts[0].new_page()
+        try:
+            tab.route("http://efenix.test/**", lambda route: route.fulfill(content_type="text/html", body=pages[urlparse(route.request.url).path.lstrip("/")]))
+            tab.goto(urljoin(efenix_url, f"{ORDER_PAGE}?id=7"))
+            monkeypatch.setattr(zgodnosc_efenix, "emmett_window", read_after_leaving)
+            monkeypatch.setattr(sys, "stdin", io.StringIO("\n"))
+            zgodnosc_efenix.measure_proposal(browser, efenix_url, report, timeout_ms=10_000)
+        finally:
+            tab.close()
+
+    assert (report.differences, report.unchecked) == ([], [(zgodnosc_efenix.Part.PROPOSAL, zgodnosc_efenix.READ_FAILED)])
+    assert capsys.readouterr().err.splitlines() == [zgodnosc_efenix.ASK_EMMETT]
 
 
 def test_lista_dozwolonych_zadan_ma_tylko_odczyty() -> None:

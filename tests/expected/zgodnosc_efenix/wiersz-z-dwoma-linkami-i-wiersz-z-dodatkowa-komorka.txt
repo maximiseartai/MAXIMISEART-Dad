@@ -1,0 +1,7 @@
+ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | wiersze wyników: 3 | otwarte zlecenia: 1 | pozycje wyceny: 43 | ceny porównane z Wzorcem: 20
+RÓŻNICA | tabela wyników | Wycena w efenix nie czyta tabeli wyników
+RÓŻNICA | tabela wyników | wiersze z inną liczbą komórek niż nagłówków (6): 1 z 3
+RÓŻNICA | tabela wyników | wiersze bez jednego linku page_order_edit.php?id=: 1 z 3
+NIESPRAWDZONE | strona zlecenia | przycisk kalendarza daty wykonania nie jest sprawdzany: sprawdź ręcznie w efenix na zleceniu „Do wyceny” bez daty wykonania, że jest przycisk otwierający okno wyboru daty
+NIESPRAWDZONE | propozycja Emmetta | budowa propozycji Emmetta nie jest sprawdzana: uruchom narzędzie z --emmett i kliknij w Chrome przycisk Emmetta, gdy narzędzie o to poprosi
+RÓŻNICE: 3 | NIESPRAWDZONE: 2
