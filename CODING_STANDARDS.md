@@ -77,6 +77,9 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
   Give a module with one entry point (one operation or the HTTP API of Centrum rozliczeń) its own tests only for behaviour that entry point cannot reach.
 - A module whose interface at least two entry points call (two processes, or a process and Centrum rozliczeń) is a seam: test its rule matrix once, on its interface.
   Each entry point that uses it has one translation test (module error → that entry point's Komunikat) and does not repeat the matrix.
+- Test a decision of Wycena w efenix (the execution date, Wycena Emmetta, the completion to the file, the checks of an order, a new Uruchomienie after Dad's change) through the Uruchomienie procesu on the window in process (`_run_in_process` in `tests/test_wycena_efenix.py`, `tests/fixtures/okno_w_procesie.py`), without a browser.
+  Keep in Chromium on the Atrapa efenix what only the browser window shows (the page and its build, a failure, a closed window, login, pace) and a few decision runs as smoke tests.
+  The window contract in `tests/test_atrapa_efenix.py` shows that both windows give the same run only on its rows, so a new branch of the window in process gets its row there.
 - Test Centrum rozliczeń through its HTTP API, the way the browser sees it: responses, the event stream, files on disk, metrics records.
   Prove UI behaviour in the browser with `verify-centrum-rozliczen`, not with component unit tests.
 - Make the Rejestr zleceń or a Wzorzec fail in a test through a failing adapter of `input_checks.Readers`, not by patching a module attribute.

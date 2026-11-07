@@ -3,7 +3,7 @@
 ``okno(stan, login)`` daje okno na stanie ``StanEfenix`` z ``tools/lib/model_efenix.py``, tym samym, który pod Atrapą
 efenix trzyma zlecenia i sesję (decyzja Maksa 6.11.2026: to test na Atrapie, ADR 0024). Okno woła działania
 ``SerwerEfenix`` i tłumaczy ich wynik na to, co z odpowiedzi Atrapy efenix robi okno przeglądarki
-(``efenix_browser.BrowserEfenix``): wiersze listy, stronę zlecenia, wyjątki okna z częścią strony i przyczyną oraz
+(``efenix_browser.BrowserEfenix``): wiersze listy (``_listed``), stronę zlecenia, wyjątki okna z częścią strony i przyczyną oraz
 ``WindowStop.sent``, gdy działanie przed wyjątkiem kliknęło już przycisk zmiany zlecenia. Nie udaje sieci,
 przeglądarki, budowy strony ani czasu, więc zlecenie z pokrętłem strony Atrapy (pole ``AtrapaOrder`` spoza
 ``EfenixOrder`` z wartością inną niż domyślna) odrzuca ``AssertionError`` (fail closed).
@@ -21,6 +21,7 @@ import dataclasses
 from datetime import date
 from decimal import Decimal
 import functools
+import re
 from typing import Concatenate, Generic, ParamSpec, TypeVar
 
 from model_efenix import (
@@ -57,6 +58,8 @@ _O = TypeVar("_O", bound=EfenixOrder)
 _MODEL_FIELDS = frozenset(field.name for field in dataclasses.fields(EfenixOrder))
 # Status, którym Atrapa efenix odpowiada na działanie przy zleceniu, którego efenix nie zna.
 _NO_ORDER = HttpStatus(404)
+# Login realizatora, który okno przeglądarki czyta z ``(login)`` w komórce Wykonawca: bez odstępów i nawiasów.
+_LOGIN = re.compile(r"[^()\s]+")
 
 
 def _action(action: Callable[Concatenate[OknoWProcesie[_O], _P], _R]) -> Callable[Concatenate[OknoWProcesie[_O], _P], _R]:
@@ -100,7 +103,7 @@ class OknoWProcesie(Generic[_O]):
         found = self._stan.serwer.search(number)
         if isinstance(found, NoSession):
             raise LoggedOut(PagePart.RESULTS, LoginSign.SESSION_WARNING)
-        return tuple(ListedOrder(order.number, order.status, order.realizator, order.address, order.order_id) for order in found)
+        return tuple(_listed(order) for order in found)
 
     @_action
     def open_order(self, order: ListedOrder) -> OrderPricing:
@@ -196,6 +199,24 @@ class OknoWProcesie(Generic[_O]):
         quantities = {position.code: order.quantities.get(position.code, 0) for position in order.positions if position.kind == "ILOSC"}
         self._positions = frozenset(quantities)
         return OrderPricing(order.execution_date, amount_of(order.quantities, self._stan.prices), quantities)
+
+
+def _listed(order: EfenixOrder) -> ListedOrder:
+    """Wiersz listy tak, jak okno przeglądarki czyta go z tabeli wyników (``efenix_page.listed``): tekst komórki bez
+    odstępów na brzegach i z jednym odstępem w miejscu każdego ciągu odstępów, a realizator bez loginu (pusty, z odstępem
+    albo nawiasem) to ``None``."""
+
+    return ListedOrder(
+        _text(order.number),
+        _text(order.status),
+        order.realizator if _LOGIN.fullmatch(order.realizator) else None,
+        _text(order.address),
+        order.order_id,
+    )
+
+
+def _text(cell: str) -> str:
+    return " ".join(cell.split())
 
 
 @contextmanager

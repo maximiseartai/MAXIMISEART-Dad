@@ -14,7 +14,9 @@ Kontrakt okien: każdy wiersz ``_ROWS`` to stan efenix i działania okna Wyceny 
 (obserwacje okna, Zatrzymanie z częścią strony, przyczyną i ``sent``, stan efenix i liczby działań), a okno przeglądarki
 na Atrapie efenix w Chromium daje na każdym wierszu ten sam przebieg. Wiersze powstają z ``Action`` (wylogowanie przed
 działaniem), ``EmmettRefusal``, ``ProposalFailure``, granic kalendarza i reguł strony (``refuse_dates``, ilość 0, pozycja
-bez pola Ilość, ``without`` po dacie i po Wycenie Emmetta).
+bez pola Ilość, ``without`` po dacie i po Wycenie Emmetta), z wylogowania taty przed oknem i między zleceniami oraz
+z wiersza listy z odstępami i realizatorem bez loginu. Po „Załaduj do zlecenia” biegnie werdykt Wyceny (``_emmett``), więc
+jego Zatrzymanie przechodzi przez okno jak każdy wyjątek działania.
 """
 
 from __future__ import annotations
@@ -52,7 +54,7 @@ import pytest
 
 from rozliczenia import efenix_browser
 from rozliczenia.efenix_checks import ListedOrder
-from rozliczenia.efenix_pricing import Efenix, EmmettLoad, OrderPricing, WindowStop
+from rozliczenia.efenix_pricing import Efenix, EmmettLoad, OrderPricing, WindowStop, _emmett
 from tests.fixtures.atrapa_efenix import (
     FILL_EMMETT,
     LIST_PAGE,
@@ -389,18 +391,25 @@ class _Quantity:
     quantity: int
 
 
-_Step = _Search | _Open | _SetDate | _Emmett | _Quantity
+@dataclass(frozen=True)
+class _Logout:
+    """Tata wylogował się w efenix poza działaniem okna (np. między zleceniami)."""
+
+
+_Step = _Search | _Open | _SetDate | _Emmett | _Quantity | _Logout
 
 
 @dataclass(frozen=True)
 class _Row:
-    """Wiersz kontraktu: zlecenia efenix, działania okna po kolei i stan efenix (``expire_after``, ``refuse_dates``)."""
+    """Wiersz kontraktu: zlecenia efenix, działania okna po kolei i stan efenix (``expire_after``, ``refuse_dates``,
+    ``logged_in``: sesja przed otwarciem okna)."""
 
     name: str
     orders: tuple[AtrapaOrder, ...]
     steps: tuple[_Step, ...]
     expire_after: tuple[Action, int] | None = None
     refuse_dates: bool = False
+    logged_in: bool = True
 
     @property
     def reload_awaited(self) -> bool:
@@ -470,6 +479,16 @@ _ROWS = (
     _Row("ilosc-zero", (_new(execution_date=_DAY, quantities={"019": 2}),), (_Search(), _Open(), _Quantity("019", 0))),
     _Row("szukanie-bez-wynikow", (_new(),), (_Search("9399"),)),
     _Row("szukanie-zawiera", (_new(), _new(order_id="902", number="19301", realizator="beata.testowa")), (_Search(), _Open())),
+    _Row("wylogowanie-przed-oknem", (_new(),), (_Search(),), logged_in=False),
+    _Row("wylogowanie-miedzy-zleceniami", (_new(), _new(order_id="902", number="9302")), (_Search(), _Open(), _Logout(), _Search("9302"))),
+    _Row(
+        "wiersz-listy-z-odstepami-i-realizatorem-bez-loginu",
+        (
+            _new(status=" Do  wyceny\n", realizator="adrian testowy", address=" Miasto  ul.Testowa 1 "),
+            _new(order_id="902", number=" 19301 ", realizator=""),
+        ),
+        (_Search(),),
+    ),
 )
 
 
@@ -497,11 +516,14 @@ def _page(page: OrderPricing) -> str:
 
 
 def _listed(order: ListedOrder) -> str:
-    return f"{order.order_id} {order.number} {order.status} {order.realizator} {order.address}"
+    """Wiersz listy z tekstem pól w cudzysłowie, żeby odstępy były widać."""
+
+    return f"{order.order_id} {order.number!r} {order.status!r} {order.realizator!r} {order.address!r}"
 
 
-def _observed(open_window: Callable[[], AbstractContextManager[Efenix]], steps: Sequence[_Step]) -> list[str]:
-    """Obserwacja każdego działania okna po kolei; Zatrzymanie z wyjątku okna kończy przebieg."""
+def _observed(open_window: Callable[[], AbstractContextManager[Efenix]], steps: Sequence[_Step], log_out: Callable[[], None]) -> list[str]:
+    """Obserwacja każdego działania okna po kolei; Zatrzymanie z wyjątku okna kończy przebieg. ``log_out`` kończy sesję
+    efenix poza oknem."""
 
     lines: list[str] = []
     found: Sequence[ListedOrder] = ()
@@ -518,17 +540,17 @@ def _observed(open_window: Callable[[], AbstractContextManager[Efenix]], steps: 
                         accepted = efenix.set_execution_date(day)
                         lines.append(f"data {day}: {'potwierdzona' if accepted else 'kalendarz zamienił dzień'}")
                     case _Emmett():
-                        loads: list[EmmettLoad] = []
 
                         def recorded(load: EmmettLoad) -> OrderPricing:
-                            loads.append(load)
-                            return load.page
+                            lines.append(f"Emmett: okno {_text(load.proposal)}, strona {_page(load.page)}")
+                            return _emmett(load)
 
                         efenix.load_emmett(recorded)
-                        [load] = loads
-                        lines.append(f"Emmett: okno {_text(load.proposal)}, strona {_page(load.page)}")
                     case _Quantity(code, quantity):
                         lines.append(f"ilość {code}={quantity}: kwota {efenix.enter_quantity(code, quantity)}")
+                    case _Logout():
+                        log_out()
+                        lines.append("tata wylogował się")
     except WindowStop as stop:
         lines.append(f"Zatrzymanie: {type(stop).__name__} {_text(stop.part)} {_text(stop.cause)}, wysłane {stop.sent}")
     return lines
@@ -541,7 +563,7 @@ def _ended(stan: StanEfenix[AtrapaOrder], resent: frozenset[Action]) -> list[str
     return [
         *(
             f"stan {order.order_id}: data {order.execution_date or '-'}, ilości {_quantities(order.quantities)}, status"
-            f" {order.status}, Wycena Emmetta {order.emmett_loads} (na wycenę {order.emmett_over_pricing})"
+            f" {order.status!r}, Wycena Emmetta {order.emmett_loads} (na wycenę {order.emmett_over_pricing})"
             for order in orders
         ),
         f"sesja {'trwa' if logged_in else 'wygasła'}",
@@ -552,7 +574,9 @@ def _ended(stan: StanEfenix[AtrapaOrder], resent: frozenset[Action]) -> list[str
 
 def _in_process(row: _Row) -> list[str]:
     stan = StanEfenix(row.orders, refuse_dates=row.refuse_dates, expire_after=row.expire_after)
-    return _observed(partial(okno, stan, nullcontext), row.steps) + _ended(stan, row.resent)
+    if not row.logged_in:
+        stan.expire_session()
+    return _observed(partial(okno, stan, nullcontext), row.steps, stan.expire_session) + _ended(stan, row.resent)
 
 
 def test_okno_w_procesie_daje_przebiegi_z_pliku_kontraktu() -> None:
@@ -593,6 +617,9 @@ def test_okno_przegladarki_na_atrapie_daje_ten_sam_przebieg_co_okno_w_procesie(r
     expire_after = None if row.expire_after is None else (_PATHS[row.expire_after[0]], row.expire_after[1])
     atrapa_of_row = partial(atrapa_efenix, row.orders, expire_after=expire_after, refuse_dates=row.refuse_dates)
     with atrapa_of_row() if row.reload_awaited else atrapa_of_row(emmett_reload_ms=600_000) as atrapa, page_of(browser) as page:
-        observed = _observed(partial(efenix_browser.window, page, atrapa.url, timeout_ms=10_000), row.steps) + _ended(atrapa.stan, row.resent)
+        if not row.logged_in:
+            atrapa.expire_session()
+        window = partial(efenix_browser.window, page, atrapa.url, timeout_ms=10_000)
+        observed = _observed(window, row.steps, atrapa.expire_session) + _ended(atrapa.stan, row.resent)
 
     assert observed == _in_process(row)
