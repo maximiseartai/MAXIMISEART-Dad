@@ -15,7 +15,8 @@ testem tylko typy seamu Wyceny w efenix (klasy i aliasy typów z ``efenix_pricin
 z modelu: okno, które wołałoby kod Wyceny, przestałoby być niezależną drugą stroną kontraktu z oknem przeglądarki.
 
 Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
-``PURE_VERSIONS``, więc stopień wersji i los dziennika Wyceny sprawdza test bez plików i wątków.
+``PURE_VERSIONS``, więc stopień wersji, los dziennika Wyceny i macierz startu Centrum (``close``) sprawdza test bez
+plików i wątków.
 
 Dwa sprawdzenia niżej łapią błąd kodu, który zapomniał strażnika reguły danych albo przerobił gotową wysyłkę Logów
 (Logi Urwanego Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejścia nie łapią: to
@@ -74,8 +75,22 @@ PURE_VERSIONS = {
     "rozliczenia.centrum.report_box": frozenset({"Label"}),
     "rozliczenia.centrum.version": frozenset({"short_commit"}),
     "rozliczenia.centrum.run_logs": frozenset(
-        {"GuardedLogs", "GuardedText", "LoggedDiagnosis", "LoggedMessage", "PricingProgress", "RunLog", "StartedFacts"}
+        {
+            "GuardedLogs",
+            "GuardedText",
+            "LoggedDiagnosis",
+            "LoggedMessage",
+            "PricingProgress",
+            "RunLog",
+            "StartedFacts",
+            # strażnik reguły danych: liczy na pamięci ForbiddenValues, bez plików
+            "guard_logs",
+            "guard_text",
+        }
     ),
+    # odczyt dysku, który start Centrum podaje macierzy close, jako wartość: typy bez metod, które czytają pliki
+    "rozliczenia.centrum.logs_disk": frozenset({"Found", "JournalRead", "LeftJournal", "Missing", "Refused", "Unreadable"}),
+    "rozliczenia.client_data": frozenset({"ForbiddenValues"}),
 }
 RUN_LOGS = "rozliczenia/centrum/run_logs.py"
 RUN_LOGS_LABEL = "logi-uruchomienia"
@@ -419,6 +434,8 @@ GUARD_BYPASSES: typing.Final = {
     "dowod-ze-slownika-modulu": 'proof = vars(run_logs)["_MINTED"]',
     "podklasa": "class Mine(GuardedLogs):\n    pass\n",
     "konstruktor-czesciowy": "make = functools.partial(GuardedLogs)",
+    # przegląd #1038, runda 3: isinstance zwalnia tylko typ w drugim argumencie, nie wartość w pierwszym
+    "w-isinstance": "ok = isinstance(object.__new__(GuardedLogs), GuardedLogs)",
 }
 
 

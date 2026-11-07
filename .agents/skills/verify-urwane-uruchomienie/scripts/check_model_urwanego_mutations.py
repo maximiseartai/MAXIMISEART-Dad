@@ -39,7 +39,7 @@ _NO_RANK = (
 
 MUTATIONS = (
     Mutation(
-        "dziennik usunięty, choć Outbox.post zwrócił False (send: bez if self._run_logs.send(final) == \"usuń\")",
+        "dziennik usunięty, choć Outbox.post zwrócił False (send_left_behind: bez if journal_after(...) == \"usuń\")",
         (
             Edit(
                 MODEL,
@@ -53,7 +53,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "start nie czyta wpisu końca (_closed: bez read.end)",
+        "start nie czyta wpisu końca (close: bez read.end)",
         (Edit(MODEL, "        koniecZapisany == Zakonczony(r)\n", "        koniecZapisany == FALSE\n"),),
         _check("zwykle"),
         "Wycena, która dopisała „koniec Uruchomienia” i zgasła przed Logami, dostaje Logi Urwanego Uruchomienia",
@@ -127,7 +127,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "start usuwa dziennik z plikiem Logów bez wysyłki (_closed: return None przy pliku Logów, jak na main)",
+        "start usuwa dziennik z plikiem Logów bez wysyłki (close: Drop przy pliku Logów, jak start na main przed #910)",
         (
             Edit(
                 MODEL,
@@ -143,7 +143,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "plik Logów zapisany przed strażnikiem (_closed: guard dopiero po self._run_logs.close(record))",
+        "plik Logów zapisany przed strażnikiem (close_left_behind: write przed guard_logs, co odrzuca też mypy)",
         (
             Edit(MODEL, "Odczytane(odczytany) == krokZamykania' = \"zapisz\" /\\ rekord' = [odczytany EXCEPT !.tresc = Straz(@)]",
                  "Odczytane(odczytany) == krokZamykania' = \"zapisz\" /\\ rekord' = odczytany"),
@@ -154,14 +154,14 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "Logi z dziennika bez strażnika (_closed: bez logs = self._run_logs.guard(record), co odrzuca też mypy)",
+        "Logi z dziennika bez strażnika (close: StandInLogs(record) bez guard_logs, co odrzuca też mypy)",
         (Edit(MODEL, "Straz(t) == [t EXCEPT !.tekst = \"strzezone\"]", "Straz(t) == t"),),
         _check("zwykle"),
         "telefon i ulica ze strony efenix idą do Skrzynki Zgłoszeń bez maski (ADR 0025)",
         NEW,
     ),
     Mutation(
-        "wersja zastępcza do kolejki przed Outbox.resume (create_app: send zaraz po close, nie w zależności)",
+        "wersja zastępcza do kolejki przed Outbox.resume (create_app: send_left_behind zaraz po close_left_behind, nie w zależności)",
         (Edit(MODEL, "    /\\ centrum = \"zamyka\" /\\ kursor > Wyceny\n    /\\ wznowiona\n",
               "    /\\ centrum = \"zamyka\" /\\ kursor > Wyceny\n"),),
         _check("zwykle"),
@@ -308,11 +308,11 @@ MUTATIONS = (
             ),
             Edit(
                 MODEL,
-                "       \\/ \\* bez pliku Logów i bez wpisu końca: record = self._run_logs.interrupted(...)\n",
+                "       \\/ \\* bez pliku Logów i bez wpisu końca: StandInLogs(guard_logs(interrupted(read), forbidden))\n",
                 "       \\/ /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"wynik\"\n"
                 "          /\\ krokZamykania' = \"usun\"\n"
                 "          /\\ UNCHANGED <<kursor, rekord, oczekujace, awarieOdczytu, poWyniku>>\n"
-                "       \\/ \\* bez pliku Logów i bez wpisu końca: record = self._run_logs.interrupted(...)\n",
+                "       \\/ \\* bez pliku Logów i bez wpisu końca: StandInLogs(guard_logs(interrupted(read), forbidden))\n",
             ),
             Edit(MODEL, "    /\\ IF wKolejce /\\ ~naglowekCzeka\n", "    /\\ IF FALSE\n"),
             Edit(

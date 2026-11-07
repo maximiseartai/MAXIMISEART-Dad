@@ -229,13 +229,13 @@ def _trace(output: str) -> list[dict[str, str]]:
 
 # Akcja modelu i krok kodu, który opisuje (tabela w SKILL.md), w słowach kontrprzykładu.
 _STEPS = {
-    "Start": "tata otwiera Centrum: port, create_app, InterruptedPricings.close czyta dzienniki (LogsOnDisk.left_behind)",
-    "ZapiszLogi": "close zapisuje plik Logów Wyceny {k} po strażniku (RunLogs.close)",
-    "UsunDziennik": "close usuwa dziennik Wyceny {k} (_remove)",
+    "Start": "tata otwiera Centrum: port, create_app, RunComments.close_left_behind czyta dzienniki (LogsOnDisk.left_behind)",
+    "ZapiszLogi": "close_left_behind zapisuje plik Logów Wyceny {k} po strażniku (LogsOnDisk.write)",
+    "UsunDziennik": "close_left_behind usuwa dziennik Wyceny {k} (_remove)",
     "Wznow": "lifespan: Outbox.resume",
     "PierwszeZapytanie": "pierwsze zapytanie API: send_interrupted bierze wersje zastępcze z _pending",
-    "Wyslij": "send: Outbox.post wersji zastępczej ({h}) Wyceny {w}, Rank.STAND_IN",
-    "UsunPoWysylce": "send usuwa dziennik Wyceny {w} po przyjęciu przez kolejkę",
+    "Wyslij": "send_left_behind: Outbox.post wersji zastępczej ({h}) Wyceny {w}, Rank.STAND_IN",
+    "UsunPoWysylce": "send_left_behind usuwa dziennik Wyceny {w} po przyjęciu przez kolejkę",
     "StartWyceny": "tata uruchamia Wycenę {b2} (LogsOnDisk.started)",
     "ZapiszStart": "run_started zapisuje pierwszą linię dziennika Wyceny {b} (_append_locked)",
     "Postep": "budzik postępu: RunLogs.progress, kolejka przyjmuje postęp Wyceny {b} z dziennika, Rank.DRAFT",
@@ -320,8 +320,8 @@ def _read(before: dict[str, str], after: dict[str, str]) -> str:
         files = re.findall(r'rodzaj \|-> "(\w+)", tresc', before.get("logi", ""))
         index = int(k) - 1 if k.isdigit() else -1
         if 0 <= index < len(files) and files[index] != "brak":
-            return f"close: {_KINDS[files[index]]} Wyceny {k} z pliku Logów, po strażniku (guard)"
-        return f"close: Logi Urwanego Uruchomienia Wyceny {k} z dziennika, po strażniku (guard)"
+            return f"close: {_KINDS[files[index]]} Wyceny {k} z pliku Logów, po strażniku (guard_logs)"
+        return f"close: Logi Urwanego Uruchomienia Wyceny {k} z dziennika, po strażniku (guard_logs)"
     if after.get("oczekujace") != before.get("oczekujace"):
         return f"close: wynik bez Logów Wyceny {k} (wpis końca bez pliku Logów, ResultWithoutLogs)"
     return f"close: dziennika Wyceny {k} nie ma"

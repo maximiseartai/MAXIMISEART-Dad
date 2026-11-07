@@ -79,7 +79,7 @@ def _file_of(name: str) -> str:
     """Plik definicji ``name`` z tabeli; ``Klasa.obok`` leży w pliku klasy, a ``obok`` w pliku ``RunLogs``."""
 
     owner = name.split(".")[0] + "." if name.endswith(".obok") else None
-    wanted = "RunLogs.send" if name == "obok" else name
+    wanted = "RunLogs.progress" if name == "obok" else name
     [path] = [
         path
         for path, names in _definitions().items()
@@ -131,7 +131,9 @@ def _check_in_ci(root: Path, sync: str) -> subprocess.CompletedProcess[str]:
 @pytest.mark.parametrize(
     "name",
     [
-        pytest.param("InterruptedPricings", id="zamykanie-i-wysylka-dziennikow"),
+        pytest.param("RunComments.close_left_behind", id="zamykanie-dziennikow"),
+        pytest.param("RunComments.send_left_behind", id="wysylka-wersji-zastepczych"),
+        pytest.param("close", id="macierz-startu"),
         pytest.param("runs", id="kolejnosc-dzialan-po-wyniku"),
         pytest.param("send_interrupted", id="wysylka-przy-zapytaniu"),
         pytest.param("lifespan", id="start-kolejki"),
@@ -151,8 +153,8 @@ def test_w_ci_zmieniona_definicja_opisana_modelem_konczy_sprawdzenie_porazka(tmp
 
 
 def test_w_ci_metoda_rozjazdu_to_metoda_swojej_klasy_a_nie_metoda_o_tej_nazwie_w_innej_klasie(tmp_path: Path) -> None:
-    """``RunLog.interrupted`` (Logi z dziennika) i ``RunLogs.interrupted`` (te Logi z narzędziem i środowiskiem) to dwie
-    definicje: zmiana pierwszej jest rozjazdem tylko pierwszej."""
+    """``RunLog.interrupted`` (Logi z dziennika) i ``RecordMaker.interrupted`` (te Logi z narzędziem i środowiskiem) to
+    dwie definicje: zmiana pierwszej jest rozjazdem tylko pierwszej."""
 
     sync = _repository(tmp_path)
     _change(tmp_path, "RunLog.interrupted")

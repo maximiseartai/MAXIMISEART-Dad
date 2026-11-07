@@ -7,7 +7,7 @@ wszystkich, wyniki do tej pory, ostatnie skończone zlecenie, zlecenie w trakcie
 wpisy, które już ma na dysku, a bez swojej pierwszej linii na dysku nic, więc postęp nigdy go nie wyprzedza: każdy
 komentarz postępu ma dziennik. Na końcu Wyceny komentarz staje się podsumowaniem z jej Logów z wynikiem, a gdy kolejka
 ich nie przyjęła (Centrum zgasło przed nimi, Logi nie powstały albo kolejka odmówiła), dziennik zostaje i następny start
-Centrum zamyka go wersją zastępczą (``pricing_journal.InterruptedPricings``): Logami z pliku, Logami Urwanego
+Centrum zamyka go wersją zastępczą (``run_comments.RunComments``): Logami z pliku, Logami Urwanego
 Uruchomienia albo wynikiem bez Logów, które też zamieniają komentarz w podsumowanie (#910). Wycena, której dziennika nie
 da się zapisać, postępu nie ma, tylko podsumowanie na końcu.
 

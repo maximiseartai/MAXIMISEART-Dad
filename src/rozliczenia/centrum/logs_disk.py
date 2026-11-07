@@ -1,10 +1,11 @@
 """Logi na dysku (ADR 0017): pliki Logów Uruchomienia, plik ostatniego startu i dzienniki Wyceny w efenix w katalogu Logów
 obok dziennika Centrum.
 
-Jedyne miejsce, które zna układ tych plików, format nazwy pliku Logów, odczyt Logów i zapis oraz odczyt dziennika Wyceny w
-efenix. Karty Uruchomień (``run_cards``) i start Centrum, który zamyka dzienniki Wyceny w efenix
-(``pricing_journal.InterruptedPricings``), pytają ten moduł o Logi Uruchomienia i o pozostawione dzienniki i dostają
-odpowiedź (``LogsRead``, ``LeftJournal``), a nie ścieżkę: każdy z nich decyduje sam, co z nią zrobić.
+Jedyne miejsce, które zna układ tych plików, format nazwy pliku Logów, zapis i odczyt Logów i zapis oraz odczyt dziennika
+Wyceny w efenix. Karty Uruchomień (``run_cards``) i start Centrum, który zamyka dzienniki Wyceny w efenix
+(``run_comments.RunComments``), pytają ten moduł o Logi Uruchomienia i o pozostawione dzienniki i dostają
+odpowiedź (``LogsRead``, ``LeftJournal``), a nie ścieżkę: każdy z nich decyduje sam, co z nią zrobić. Plik Logów
+zapisuje tylko z Logów po strażniku reguły danych (``LogsOnDisk.write``, ``run_logs.GuardedLogs``).
 
 Nazwa pliku Logów (``name_of``) to sekunda startu w UTC, klucz procesu i identyfikator Uruchomienia, więc jedna na
 Uruchomienie, a pliki jednego procesu układają się chronologicznie. Ta sama nazwa z rozszerzeniem ``.jsonl`` to dziennik
@@ -40,7 +41,8 @@ Wpis „koniec Uruchomienia” z wynikiem (``Journal.end``) mówi startowi Centr
 jakiego (#870, #871). Uruchomienie, którego pierwsza linia nie trafiła na dysk w żadnym zapisie, zamiast niego usuwa
 dziennik, który mógł po nim zostać: postęp do niego nie poszedł, a zapis, w którym ``flush`` albo ``fsync`` rzucił po
 ``write``, zostawia na dysku całą pierwszą linię, a Zatrzymanie przed pierwszym zleceniem albo przy nim kończy Wycenę bez
-następnego wpisu. Kiedy wpis końca idzie i kiedy dziennik znika, decyduje ``pricing_journal``.
+następnego wpisu. Kiedy wpis końca idzie i kiedy dziennik znika po wyniku, decyduje ``pricing_journal``, a co start
+Centrum robi z dziennikiem, który zastał, ``comment_versions.close``.
 """
 
 from __future__ import annotations
@@ -61,6 +63,7 @@ from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.run_logs import (
     RUN_LOGS_DIRECTORY,
+    GuardedLogs,
     LoggedInterruption,
     LoggedOrder,
     OrderDone,
@@ -470,6 +473,17 @@ class LogsOnDisk:
             started_at=start.started_at,
         )
         replace_atomically(self._last_started, started.model_dump_json(indent=2) + "\n")
+
+    def write(self, logs: GuardedLogs) -> None:
+        """Plik Logów ``logs`` (nowy albo nadpisany atomowo) z bajtami pliku w Archiwum Logów okresu
+        (``ArchiveFile.packed``): ``text`` w UTF-8 bez zamiany ``\n`` na ``\r\n``, którą robi zapis tekstowy na Windows,
+        więc ``gunzip`` pliku z Archiwum daje plik z komputera taty bajt w bajt. Logi innego typu niż ``GuardedLogs`` (np.
+        sprzed strażnika przez ``Any``) rzucają ``TypeError`` (``run_logs._MINTED``); ``OSError``: pliku nie udało się
+        zapisać."""
+
+        if not isinstance(logs, GuardedLogs):
+            raise TypeError("Plik Logów bierze tylko Logi po strażniku z guard_logs.")
+        replace_atomically(self._logs / logs.record.file_name, logs.text, newline="")
 
     def last_start(self) -> StartFacts | None:
         """Ostatni start Uruchomienia przed tą pracą Centrum; ``None``: żadnego albo pliku nie da się odczytać."""

@@ -20,6 +20,7 @@ from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.run_cards import RunCards
+from rozliczenia.centrum.run_comments import LeftBehindClosed
 from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, RunLog, RunLogs, StartFacts, Tool
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.telemetry import MetricsStore
@@ -512,10 +513,10 @@ def test_katalog_logow_ktorego_system_nie_daje_wylistowac_to_odmowa_a_nie_brak_l
     cards = RunCards(disk, list)
     viewed = disk.viewed(lambda logs: logs.run_id)
 
-    listed = (disk.logs(RUN_ID), cards.last() is None, disk.newest("intermax"), viewed.of("intermax"))
+    listed = (disk.logs(RUN_ID), cards.last(LeftBehindClosed()) is None, disk.newest("intermax"), viewed.of("intermax"))
     with unlisted(monkeypatch, tmp_path / "uruchomienia"):
         read = disk.logs(RUN_ID)
-        refused = (cards.last(), disk.newest("intermax"), viewed.of("intermax"))
+        refused = (cards.last(LeftBehindClosed()), disk.newest("intermax"), viewed.of("intermax"))
     assert listed == (Missing(), False, record, ["f" * 32])
     assert (isinstance(read, Refused), refused) == (True, (None, None, []))
 
@@ -568,4 +569,4 @@ def test_logi_ostatniego_startu_ktorych_system_nie_daje_odczytac_to_start_bez_ka
     disk.started(start(process="settlement"))
     (tmp_path / "uruchomienia" / name_of(start(process="settlement"))).mkdir(parents=True)
 
-    assert RunCards(disk, list).last() is None
+    assert RunCards(disk, list).last(LeftBehindClosed()) is None

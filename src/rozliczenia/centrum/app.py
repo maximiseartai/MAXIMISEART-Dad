@@ -52,11 +52,12 @@ from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, UNSENT_DIRECTORY, Reports
 from rozliczenia.centrum.preparation_run import PreparationEntry
-from rozliczenia.centrum.pricing_journal import InterruptedPricings, JournalAfterLogs, JournalAtResult
+from rozliczenia.centrum.pricing_journal import JournalAfterLogs, JournalAtResult
 from rozliczenia.centrum.pricing_progress import ProgressComment
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.run_cards import RunCards, run_cards_router
-from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, RunLogs, StartFacts
+from rozliczenia.centrum.run_comments import RecordMaker, RunComments
+from rozliczenia.centrum.run_logs import RunLogs, StartFacts
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE, CentrumRuns
 from rozliczenia.centrum.runs import ProcessEntry, RunHost, runs_router
 from rozliczenia.centrum.settings import settings_router
@@ -119,8 +120,8 @@ def create_app(
     dad_actions = DadActionJournal(log.directory / DAD_ACTIONS_FILE, log)
 
     async def send_interrupted() -> None:
-        # Logi Urwanych Uruchomień z dzienników Wyceny w efenix idą przy pierwszym zapytaniu, już po ``lifespan``.
-        await interrupted.send()
+        # Wersje zastępcze z dzienników Wyceny w efenix idą przy pierwszym zapytaniu, już po ``lifespan``.
+        await comments.send_left_behind()
 
     # Bez /docs i /openapi.json: kontrakt eksportuje tools/ci/export_openapi.py, a Swagger ładowałby skrypty z sieci.
     app = FastAPI(
@@ -225,10 +226,8 @@ def create_app(
     # Pliki Logów Uruchomienia, plik ostatniego startu i dziennik Wyceny w efenix w katalogu Logów (ADR 0017); dziennik
     # przeżywa nagłe zgaśnięcie Centrum w trakcie Wyceny (#845).
     disk = LogsOnDisk(log, journaled=EFENIX.key)
-    # Logi Uruchomienia: jeden plik JSON na Uruchomienie obok dziennika Centrum, poza Gitem i OneDrive (ADR 0015).
-    run_logs = RunLogs(
-        log.directory / RUN_LOGS_DIRECTORY,
-        outbox,
+    # Logi Uruchomienia z dzisiejszym narzędziem, środowiskiem i działaniami taty.
+    records = RecordMaker(
         commit=surroundings.tool_freshness.local,
         wydanie=surroundings.tool_freshness.wydanie,
         files=lambda process, period: files_of_process(
@@ -236,8 +235,9 @@ def create_app(
         ),
         cloud_files=surroundings.cloud_files,
         dad_actions=dad_actions,
-        forbidden=forbidden,
     )
+    # Logi Uruchomienia: jeden plik JSON na Uruchomienie obok dziennika Centrum, poza Gitem i OneDrive (ADR 0015).
+    run_logs = RunLogs(disk, outbox, records=records, forbidden=forbidden)
     # Jedno Uruchomienie procesu albo Aktualizacja narzędzia naraz; w ich trakcie zamknięcie Centrum jest odrzucone.
     stops = Stops(
         reports,
@@ -275,9 +275,10 @@ def create_app(
     )
     # Karty Uruchomień z pliku startu, Logów Uruchomienia i Historii: ostatnie po starcie Centrum i wiersz Historii (ADR 0017).
     cards = RunCards(disk, lambda: read_runs(processes, centrum_runs.started()))
-    # Dzienniki Urwanych Wycen w efenix stają się ich Logami, zanim karta ostatniego Uruchomienia przeczyta Logi.
-    interrupted = InterruptedPricings(run_logs, disk, log)
-    interrupted.close()
+    # Dzienniki Wyceny w efenix z poprzedniej pracy Centrum stają się wersjami zastępczymi komentarza Uruchomienia, a
+    # Urwane Wyceny dostają Logi, zanim karta ostatniego Uruchomienia przeczyta Logi (``closed``).
+    comments = RunComments(disk, outbox, forbidden=forbidden, log=log, records=records)
+    closed = comments.close_left_behind()
     # Komentarz postępu Wyceny w efenix w issue Logów okresu, odświeżany z jej dziennika (#846).
     progress = ProgressComment(disk.journal, run_logs, clock=clock)
 
@@ -301,7 +302,7 @@ def create_app(
         log,
         centrum_runs,
         stops,
-        previous=cards.last(),
+        previous=cards.last(closed),
         run_started=run_started,
         # Wpis końca dziennika Wyceny w efenix przed Logami z wynikiem: start Centrum nie weźmie Uruchomienia, którego Logi
         # z wynikiem mogą być w Skrzynce, za Urwane (#871).
