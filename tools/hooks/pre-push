@@ -31,9 +31,6 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
-from repo import ROOT
-import repo
-
 AGENT_MARKERS = ("AI_AGENT", "CLAUDECODE")
 VENV_PYTHON = Path(".venv/Scripts/python.exe" if sys.platform == "win32" else ".venv/bin/python")
 COMMAND = (str(VENV_PYTHON), "tools/ci_lokalnie.py", "--tylko", "ruff,mypy", "--do-pierwszego-bledu")
@@ -76,9 +73,11 @@ NOTES = (
 def _decide(pushed: set[str]) -> Decision:
     if not any(os.environ.get(marker) for marker in AGENT_MARKERS):
         return HUMAN
-    if repo.git(ROOT, "rev-parse", "HEAD").strip() not in pushed:
+    import repo  # push człowieka nie zależy od narzędzi agenta, także od zepsutego repo.py
+
+    if repo.git(repo.ROOT, "rev-parse", "HEAD").strip() not in pushed:
         return NOT_HEAD
-    return DIRTY if repo.git(ROOT, "status", "--porcelain").strip() else CLEAN
+    return DIRTY if repo.git(repo.ROOT, "status", "--porcelain").strip() else CLEAN
 
 
 def _print_note(note: Note) -> None:
