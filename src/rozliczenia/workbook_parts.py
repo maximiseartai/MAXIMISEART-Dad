@@ -261,9 +261,9 @@ class RowsFromBottom:
         if end <= self.start:
             return False
         begin = max(self.start, self.xml.rfind(b"<row", self.start, end))
-        rows = _sheet_rows(self.xml, begin, end)
         if _IRREGULAR_IN_ROW.search(self.xml, begin, end):
             raise IrregularSheetData("komentarz, CDATA albo drugi sheetData")
+        rows = _sheet_rows(self.xml, begin, end)
         if self._rows and rows and rows[-1].number >= self._rows[-1].number:
             raise IrregularSheetData("kolejność wierszy")
         self._rows.extend(reversed(rows))

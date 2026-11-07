@@ -286,6 +286,21 @@ def test_komentarz_konczacy_sie_w_czytanym_dole_arkusza_to_zatrzymanie_do_maksa_
     assert (stop.message.code, stop.stop_kind) == ("NIEOBSLUGIWANY_UKLAD_INTERMAX", "for_maks")
 
 
+@pytest.mark.parametrize("comment", [b'<!-- <row r="999"> -->', b'<![CDATA[<row r="999">]]>'])
+def test_komentarz_z_niedomknietym_wierszem_pod_ostatnim_wierszem_to_zatrzymanie_do_maksa_bez_zapisu(
+    tmp_path: Path, comment: bytes
+) -> None:
+    """Pierwszy wiersz, który Uporządkowanie czyta od dołu, zaczyna się w komentarzu albo CDATA i nie ma ``</row>``."""
+
+    path, _ = _register(tmp_path)
+    rewrite_parts(path, lambda name, data: data.replace(b"</sheetData>", comment + b"</sheetData>", 1) if name == _SHEET else data)
+
+    with _nothing_written(tmp_path, path):
+        stop = _stop(_run(tmp_path))
+
+    assert (stop.message.code, stop.stop_kind) == ("NIEOBSLUGIWANY_UKLAD_INTERMAX", "for_maks")
+
+
 def test_komentarz_w_starszych_dniach_nad_czytanym_dolem_arkusza_zostaje_bajt_w_bajt(tmp_path: Path) -> None:
     """Uporządkowanie czyta arkusz od dołu do tygodnia przed dzisiejszym dniem, a starszych wierszy nie zmienia."""
 
