@@ -852,7 +852,9 @@ POKRYCIE_S, BRAMA_S, DROGIE, RESZTA_S, KODU_PLIKU_S, PLIKU_S = 1006, 58, 16, 210
 SKLADY_CZESCI = [(0, 37, 93), (6, 29, 93), (9, 26, 103), (11, 1, 32), (12, 12, 49), (26, 4, 102)]
 # Mutacja ``l*`` widzi test swojej linii, a ``w*`` (``@cache``) dopiero test kodu pliku, bo jej linię wykonuje tylko
 # ``test_a_wspolne``. Test, który widzi mutację, czeka, aż wystartuje ``WORKERS`` mutacji jego przebiegu (albo któraś
-# już policzyła), i zapisuje, ile ich biegnie naraz.
+# już policzyła), i zapisuje, ile ich biegnie naraz. Czeka bez limitu czasu, bo na wolnym runnerze Windows czwarta
+# mutacja startowała ponad 15 s po pierwszej (#1037), a mutacja zapisuje się jako biegnąca przed startem, więc pierwsza,
+# która policzy, widzi wszystkie wystartowane; narzędzie z mniejszą liczbą mutacji naraz zawiesza część do limitu testu.
 PRZEBIEGI_BAZA = "from functools import cache\n" + "".join(f"\n\ndef l{i}() -> int:\n    return 0\n" for i in range(1, 5)) + "".join(
     f"\n\n@cache\ndef w{i}() -> int:\n    return 0\n\n\ndef g{i}() -> int:\n    return w{i}()\n" for i in range(1, 5)
 )
@@ -864,13 +866,11 @@ PRZEBIEGI_TESTY = (
     "    for path in (started, running, seen):\n"
     "        path.mkdir(parents=True, exist_ok=True)\n"
     "    me = uuid.uuid4().hex\n"
-    "    (started / me).touch()\n"
     "    (running / me).touch()\n"
-    "    deadline = time.monotonic() + 15\n"
-    "    while len(list(started.iterdir())) < {workers} and not any(seen.iterdir()) and time.monotonic() < deadline:\n"
+    "    (started / me).touch()\n"
+    "    while len(list(started.iterdir())) < {workers} and not any(seen.iterdir()):\n"
     "        time.sleep(0.05)\n"
     "    (seen / me).write_text(str(len(list(running.iterdir()))))\n"
-    "    time.sleep(0.5)\n"
     "    (running / me).unlink()\n\n\n"
     "def test_a_wspolne() -> None:\n    assert [warunek.w1(), warunek.w2(), warunek.w3(), warunek.w4()]\n"
     + "".join(
@@ -912,16 +912,20 @@ def test_czesc_konczy_sie_w_limicie_czasu_z_najdrozszymi_zmierzonymi_mutacjami_k
     baza = commit(repo, "baza")
     (repo / "src" / "rozliczenia" / "warunek.py").write_text(PRZEBIEGI_BAZA.replace("return 0", "return 1"), encoding="utf-8")
 
-    czesc = subprocess.run(
-        [sys.executable, "tools/mutacje_zmiany.py", "--baza", baza],
-        cwd=repo,
-        env={**os.environ, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1", "GITHUB_ACTIONS": "true"},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=300,
-        check=False,
-    )
+    try:
+        # Przed limitem pytest-timeout (120 s), żeby zawieszona część zginęła razem ze swoimi mutacjami.
+        czesc = subprocess.run(
+            [sys.executable, "tools/mutacje_zmiany.py", "--baza", baza],
+            cwd=repo,
+            env={**os.environ, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1", "GITHUB_ACTIONS": "true"},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=100,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"część nie uruchomiła {mutacje_zmiany.WORKERS} mutacji przebiegu naraz, więc ich testy czekały do limitu")
 
     assert czesc.returncode == 0, czesc.stdout + czesc.stderr
     naraz_linii, naraz_kodu_pliku = (max(int(plik.read_text()) for plik in (folder / przebieg / "naraz").iterdir()) for przebieg in ("linii", "kodu pliku"))
