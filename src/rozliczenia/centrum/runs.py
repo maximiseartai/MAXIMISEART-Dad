@@ -50,6 +50,7 @@ from rozliczenia.process_run import (
     Process,
     ProcessInputs,
     Stop,
+    StopEnding,
     run_process,
 )
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
@@ -62,11 +63,11 @@ CONTINUE_HINT: Final = "przy decyzji wybierz „Kontynuuj”"
 """Jak w Centrum wyraża się zgodę w Decyzji taty (``Conversation.continue_hint``); ten sam tekst ma Komunikat po
 odmowie w Uruchomieniu odtworzonym z Logów (``tools/odtworz_uruchomienie.py``)."""
 # Ostatnia siatka adaptera: wyniku nie dało się pokazać, choć rdzeń zapisał już metryki.
-_RESULT_NOT_SHOWN: Final = Message(
+_RESULT_NOT_SHOWN: Final = Message.to_maintainer(
     code="BLAD_WYNIKU",
     what="Nie udało się pokazać wyniku Uruchomienia procesu.",
     where="Centrum rozliczeń",
-    action="Sprawdź Folder okresu i przekaż ten komunikat osobie utrzymującej narzędzie.",
+    check="Folder okresu",
 )
 
 # Tytuł wyniku przy Zatrzymaniu: tata poprawia sam, błąd do Maksa albo jego własna odmowa w Decyzji taty.
@@ -103,7 +104,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         return self.declaration.view.progress(snapshot, dry_run=self.dry_run)
 
 
-Ending = Literal["finished", "stop", "declined", "unexpected", "after_engine"]
+Ending = Literal["finished", StopEnding]
 
 
 def verdict(

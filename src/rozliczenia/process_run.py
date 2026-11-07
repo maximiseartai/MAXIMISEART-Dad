@@ -71,6 +71,10 @@ class Interlocutor(Conversation, Protocol):
     def show_progress(self, snapshot: ProgressSnapshot) -> None: ...
 
 
+StopEnding = Literal["stop", "declined", "unexpected", "after_engine"]
+"""Sposób zakończenia Uruchomienia procesu Zatrzymaniem (``Stop.kind``)."""
+
+
 @dataclass(frozen=True)
 class Stop:
     """Zatrzymanie Uruchomienia procesu; zawsze z Komunikatem z katalogu procesu (``message``).
@@ -90,7 +94,7 @@ class Stop:
     Zatrzymania i nie trafiają do dziennika ani metryk.
     """
 
-    kind: Literal["stop", "declined", "unexpected", "after_engine"]
+    kind: StopEnding
     message: Message
     trace: CallTrace | None = field(default=None, compare=False, repr=False)
     facts: object = field(default=None, compare=False, repr=False)
@@ -99,9 +103,9 @@ class Stop:
     def stop_kind(self) -> StopKind:
         """Rodzaj Zatrzymania, ten sam w metrykach i w Centrum.
 
-        „Do Maksa”: Komunikat bezwarunkowo każe przekazać go osobie utrzymującej
-        narzędzie (``Message.reports_to_maintainer``) albo zakończenie nie jest
-        własnym zatrzymaniem procesu (nieoczekiwany wyjątek, błąd po silniku).
+        „Do Maksa”: Komunikat ma Rodzaj „do Maksa” (``Message.reports_to_maintainer``)
+        albo zakończenie nie jest własnym zatrzymaniem procesu (nieoczekiwany
+        wyjątek, błąd po silniku).
         Każde inne, także po odmowie w Decyzji taty, jest „dla taty”.
         """
 

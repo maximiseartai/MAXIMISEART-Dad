@@ -10,7 +10,7 @@ bo jeden z Komunikatów mówi o brakujących zależnościach.
 from __future__ import annotations
 
 from rozliczenia.centrum.tool_update import GUARDIAN_LEASE_S
-from rozliczenia.message import Message
+from rozliczenia.message import Message, refer_if
 from rozliczenia.tool_files import HOST, LOG_PATH, TOOL_ROOT
 
 TITLE = "Centrum rozliczeń"
@@ -31,8 +31,8 @@ def port_taken(port: int) -> Message:
         what=f"Centrum rozliczeń nie wystartowało, bo port {port} zajmuje inny program.",
         where=_address(port),
         action=(
-            f"Uruchom ponownie komputer i kliknij {_SHORTCUT}. Jeśli komunikat wraca, "
-            "przekaż go osobie utrzymującej narzędzie."
+            f"Uruchom ponownie komputer i kliknij {_SHORTCUT}. "
+            f"{refer_if('Jeśli komunikat wraca', request='przekaż go')}"
         ),
     )
 
@@ -68,8 +68,7 @@ def unexpected_start_failure() -> Message:
         what="Centrum rozliczeń nie wystartowało z nieoczekiwanego powodu.",
         where=f"dziennik Centrum {_LOG} w folderze narzędzia",
         action=(
-            f"Kliknij {_SHORTCUT} ponownie. Jeśli komunikat wraca, przekaż dziennik osobie "
-            "utrzymującej narzędzie."
+            f"Kliknij {_SHORTCUT} ponownie. {refer_if('Jeśli komunikat wraca', request='przekaż dziennik')}"
         ),
     )
 

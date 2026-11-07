@@ -19,7 +19,7 @@ from itertools import groupby
 from pathlib import Path
 from typing import Final, assert_never
 
-from .message import REPORT_TO_MAINTAINER, Message, file_label, folder_label
+from .message import IF_ERROR_RETURNS, Message, file_label, folder_label, refer_if
 from .period_folder import PeriodFolderLookupError, month_folder_label
 from .text import plural, row_range
 from .workbook_files import WORKER_HEADER, MergedCells, MissingHeader, Problem, WorkbookError
@@ -71,11 +71,10 @@ def worker_config_problem(config_path: Path, error: WorkerConfigError) -> Messag
             what = "Nie można odczytać konfiguracji wykonawców."
         case content:
             what = f"Nie można odczytać konfiguracji wykonawców. {_worker_config_content(content)}"
-    return Message(
+    return Message.to_maintainer(
         code="ZLA_KONFIGURACJA_WYKONAWCOW",
         what=what,
         where=f"plik {config_path.name}",
-        action="Przekaż to osobie utrzymującej narzędzie.",
     )
 
 
@@ -113,11 +112,10 @@ def _worker_config_inaccessible(config_path: Path) -> Message:
     Konfiguracja leży w ``config`` na dysku C jak Wzorce, więc tata rzadko sam usunie przyczynę: Komunikat idzie do Maksa.
     """
 
-    return Message(
+    return Message.to_maintainer(
         code="NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW",
         what="Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.",
         where=f"plik {config_path.name}",
-        action=REPORT_TO_MAINTAINER,
     )
 
 
@@ -152,11 +150,10 @@ def template_unusable(error: WorkbookError) -> Message:
 def _template_missing(template_path: Path) -> Message:
     """Wzorzec rozliczenia wewnętrznego albo Wzorzec pliku zbiorczego nie istnieje."""
 
-    return Message(
+    return Message.to_maintainer(
         code="BRAK_WZORCA",
         what="Nie znaleziono wzorca, z którego powstają pliki okresu. Nie utworzono żadnego pliku.",
         where=file_label(template_path),
-        action=REPORT_TO_MAINTAINER,
     )
 
 
@@ -181,41 +178,38 @@ def _template_inaccessible(template_path: Path) -> Message:
     Wzorce leżą w ``config`` na dysku C, więc tata rzadko sam usunie przyczynę: Komunikat idzie do Maksa.
     """
 
-    return Message(
+    return Message.to_maintainer(
         code="NIEDOSTEPNY_WZORZEC",
         what=(
             "Nie można teraz odczytać wzorca. Plik może być zajęty przez inny program. Nie utworzono żadnego pliku."
         ),
         where=file_label(template_path),
-        action=REPORT_TO_MAINTAINER,
     )
 
 
 def _template_unreadable(template_path: Path) -> Message:
     """Wzorzec nie daje się odczytać jako skoroszyt .xlsx."""
 
-    return Message(
+    return Message.to_maintainer(
         code="USZKODZONY_WZORZEC",
         what=(
             "Nie można odczytać wzorca. Plik jest uszkodzony "
             "albo nie jest skoroszytem .xlsx. Nie utworzono żadnego pliku."
         ),
         where=file_label(template_path),
-        action=REPORT_TO_MAINTAINER,
     )
 
 
 def _template_without_header(template_path: Path, sheet: str, row: int, header: str) -> Message:
     """Wzorzec nie ma oczekiwanego nagłówka, więc nie wiadomo, gdzie wpisać zlecenia."""
 
-    return Message(
+    return Message.to_maintainer(
         code="ZLY_WZORZEC",
         what=(
             f"We wzorcu brakuje nagłówka {header}, więc nie wiadomo, gdzie wpisać zlecenia. "
             "Nie utworzono żadnego pliku."
         ),
         where=f"plik {template_path.name}, arkusz {sheet}, wiersz {row}",
-        action=REPORT_TO_MAINTAINER,
     )
 
 
@@ -238,14 +232,13 @@ def _template_with_worker_outside_h(template_path: Path, sheet: str, column: str
 def _template_with_merged_cells(template_path: Path, sheet: str, cell_range: str) -> Message:
     """Komórki wzorca, do których trafiają zlecenia, są scalone."""
 
-    return Message(
+    return Message.to_maintainer(
         code="SCALONE_KOMORKI_WZORCA",
         what=(
             "We wzorcu są scalone komórki tam, gdzie trafiają zlecenia, więc nie można ich wpisać. "
             "Nie utworzono żadnego pliku."
         ),
         where=f"plik {template_path.name}, arkusz {sheet}, komórki {cell_range}",
-        action=REPORT_TO_MAINTAINER,
     )
 
 
@@ -305,7 +298,7 @@ def _register_inaccessible(register_path: Path) -> Message:
         where=file_label(register_path),
         action=(
             "Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy Rejestr zleceń otwiera się w Excelu. "
-            "Zamknij go i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
+            f"Zamknij go i uruchom ponownie. {IF_ERROR_RETURNS}"
         ),
     )
 
@@ -323,7 +316,7 @@ def _register_unreadable(register_path: Path) -> Message:
         where=file_label(register_path),
         action=(
             "Sprawdź, czy Rejestr zleceń otwiera się w Excelu i jest zapisany jako .xlsx, "
-            "zamknij go i uruchom ponownie. Jeśli błąd wraca, przekaż to osobie utrzymującej narzędzie."
+            f"zamknij go i uruchom ponownie. {refer_if('Jeśli błąd wraca', request='przekaż to')}"
         ),
     )
 
@@ -629,8 +622,8 @@ def too_few_zero_rows(
         where=f"plik {collective_filename}, {rows}",
         action=(
             "Sprawdź te wiersze jak pozostałe: narzędzie wpisało w nich ilości tak samo, a puste komórki liczą się "
-            "jak 0. Jeśli zdarza się to często, przekaż to osobie utrzymującej narzędzie, żeby dodała wiersze z "
-            "zerami we Wzorcu pliku zbiorczego."
+            "jak 0. "
+            f"{refer_if('Jeśli zdarza się to często', request='przekaż to', then=', żeby dodała wiersze z zerami we Wzorcu pliku zbiorczego')}"
         ),
     )
 
@@ -646,8 +639,8 @@ def unknown_devices(collective_filename: str, row_numbers: Sequence[int]) -> Mes
         ),
         where=f"plik {collective_filename}, {_rows_label(row_numbers)}",
         action=(
-            "Uzupełnij pozostałe ilości w tych wierszach ręcznie przed Przebiegiem rozliczeń. Jeśli to nowe "
-            "urządzenie, które będzie wracać, powiedz o nim osobie utrzymującej narzędzie."
+            "Uzupełnij pozostałe ilości w tych wierszach ręcznie przed Przebiegiem rozliczeń. "
+            f"{refer_if('Jeśli to nowe urządzenie, które będzie wracać', request='powiedz o nim')}"
         ),
     )
 
@@ -731,7 +724,7 @@ def write_failed(period_directory: Path) -> Message:
         where=folder_label(period_directory),
         action=(
             "Sprawdź, czy folder jest dostępny i czy pliki okresu nie są otwarte, "
-            "i uruchom ponownie. Jeśli błąd wraca, przekaż to osobie utrzymującej narzędzie."
+            f"i uruchom ponownie. {IF_ERROR_RETURNS}"
         ),
     )
 
@@ -745,8 +738,8 @@ def write_failed_with_file_left(period_directory: Path, filename: str) -> Messag
         where=f"{folder_label(period_directory)}, plik {filename}",
         action=(
             "Usuń wskazany plik, bo bez drugiego pliku okresu jest niepełny, i uruchom ponownie. "
-            "Jeśli nie daje się go usunąć, odczekaj chwilę. Jeśli błąd wraca, przekaż komunikat "
-            "osobie utrzymującej narzędzie."
+            "Jeśli nie daje się go usunąć, odczekaj chwilę. "
+            f"{refer_if('Jeśli błąd wraca', request='przekaż komunikat')}"
         ),
     )
 
@@ -758,30 +751,27 @@ def unexpected_failure() -> Message:
         code="BLAD_NIEOCZEKIWANY",
         what="Wystąpił nieoczekiwany błąd. Nie utworzono żadnego pliku.",
         where="Przygotowanie pliku zbiorczego",
-        action="Uruchom ponownie. Jeśli błąd wraca, przekaż to osobie utrzymującej narzędzie.",
+        action=f"Uruchom ponownie. {IF_ERROR_RETURNS}",
     )
 
 
 def summary_not_shown() -> Message:
     """Pliki okresu powstały, ale podsumowania nie dało się pokazać; treść wyjątku nie trafia do taty."""
 
-    return Message(
+    return Message.to_maintainer(
         code="BLAD_PODSUMOWANIA",
         what="Pliki okresu powstały, ale nie udało się pokazać podsumowania.",
         where="Przygotowanie pliku zbiorczego",
-        action=(
-            "Nie uruchamiaj ponownie: oba pliki okresu już są. "
-            "Sprawdź Folder okresu i przekaż ten komunikat osobie utrzymującej narzędzie."
-        ),
+        before="Nie uruchamiaj ponownie: oba pliki okresu już są.",
+        check="Folder okresu",
     )
 
 
 def plan_not_shown() -> Message:
     """DRY-RUN skończył się, ale planu nie dało się pokazać; nic nie zapisano."""
 
-    return Message(
+    return Message.to_maintainer(
         code="BLAD_PLANU",
         what="Nie udało się pokazać planu. Nic nie zapisano.",
         where="Przygotowanie pliku zbiorczego",
-        action="Przekaż ten komunikat osobie utrzymującej narzędzie.",
     )

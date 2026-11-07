@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final
 
-from rozliczenia.message import KEEP_ON_DEVICE, REPORT_TO_MAINTAINER, Message, file_label
+from rozliczenia.message import KEEP_ON_DEVICE, OTHERWISE_REFER, Message, file_label
 from rozliczenia.workbook_files import WORKER_HEADER, HEADER_ROW, Problem, WorkbookError
 
 _REFRESH: Final = "odśwież stronę"
@@ -68,7 +68,7 @@ def _damaged(source: Path) -> Message:
         where=file_label(source),
         action=(
             f"Sprawdź, czy Plik zbiorczy otwiera się w Excelu. Jeśli się otwiera, zapisz go w Excelu i {_REFRESH}. "
-            f"W innym wypadku {REPORT_TO_MAINTAINER.lower()}"
+            f"{OTHERWISE_REFER}"
         ),
     )
 

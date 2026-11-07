@@ -25,7 +25,7 @@ from .efenix_positions import (
     UnpairedColumns,
     column_of,
 )
-from .message import REPORT_TO_MAINTAINER, Message, file_label
+from .message import IF_ERROR_RETURNS, Message, file_label, refer_if
 from .workbook_files import Problem, WorkbookError
 
 _PROCESS: Final = "Wycena w efenix"
@@ -78,10 +78,7 @@ def _source_inaccessible(source: Path) -> Message:
             f"z OneDrive. {_UNCHANGED}"
         ),
         where=file_label(source),
-        action=(
-            "Poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat "
-            "osobie utrzymującej narzędzie."
-        ),
+        action=f"Poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie. {IF_ERROR_RETURNS}",
     )
 
 
@@ -91,10 +88,7 @@ def _source_unreadable(source: Path) -> Message:
         dad_file="collective_file",
         what=f"Plik zbiorczy jest uszkodzony albo nie ma układu Pliku zbiorczego. {_UNCHANGED}",
         where=file_label(source),
-        action=(
-            "Otwórz Plik zbiorczy w Excelu i sprawdź, czy otwiera się poprawnie. Jeśli tak, przekaż ten komunikat "
-            "osobie utrzymującej narzędzie."
-        ),
+        action=f"Otwórz Plik zbiorczy w Excelu i sprawdź, czy otwiera się poprawnie. {refer_if('Jeśli tak')}",
     )
 
 
@@ -153,13 +147,13 @@ def window_stopped(part: PagePart, *, kept: bool) -> Message:
     tylko część strony, bez treści strony.
     """
 
-    return Message(
+    return Message.to_maintainer(
         code="EFENIX_OKNO_ZATRZYMANE",
         what=f"{_PROCESS} się zatrzymała, Maks już wie. {_after_stop(kept=kept)}",
         where=f"{_EFENIX}, {part.value}",
-        action=(
+        before=(
             "Uruchom ponownie: gotowe zlecenia narzędzie tylko sprawdzi, a resztę wyceni dalej. Jeśli Wycena zatrzyma się "
-            f"znowu, wyceń pozostałe zlecenia w efenix sam albo poczekaj na poprawkę narzędzia. {REPORT_TO_MAINTAINER}"
+            "znowu, wyceń pozostałe zlecenia w efenix sam albo poczekaj na poprawkę narzędzia."
         ),
     )
 
@@ -172,8 +166,8 @@ def efenix_unreachable(*, kept: bool) -> Message:
         what=f"Nie udało się otworzyć efenix. {_after_stop(kept=kept)}",
         where=_EFENIX,
         action=(
-            "Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Jeśli błąd "
-            "wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
+            "Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. "
+            f"{IF_ERROR_RETURNS}"
         ),
     )
 
@@ -186,8 +180,8 @@ def browser_not_started() -> Message:
         what=f"Nie udało się otworzyć przeglądarki Google Chrome z oknem efenix. {_UNCHANGED}",
         where=_EFENIX,
         action=(
-            "Zamknij okno efenix, jeśli zostało otwarte z poprzedniej Wyceny w efenix, i uruchom ponownie. Jeśli na "
-            "komputerze nie ma Google Chrome albo błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
+            "Zamknij okno efenix, jeśli zostało otwarte z poprzedniej Wyceny w efenix, i uruchom ponownie. "
+            f"{refer_if('Jeśli na komputerze nie ma Google Chrome albo błąd wraca')}"
         ),
     )
 
@@ -217,8 +211,8 @@ def marks_not_saved(source: Path, refusal: Refusal) -> Message:
                 "EFENIX_ZNACZNIKI_NIEZAPISANE",
                 "nie udało się zapisać Pliku zbiorczego",
                 (
-                    "Zamknij Plik zbiorczy w Excelu, poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie. Jeśli "
-                    "błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
+                    "Zamknij Plik zbiorczy w Excelu, poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie. "
+                    f"{IF_ERROR_RETURNS}"
                 ),
             )
     return Message(
@@ -382,31 +376,28 @@ def _order_error(problem: OrderFault) -> tuple[str, str, str]:
 def unexpected_failure() -> Message:
     """Nieoczekiwany błąd przed końcem procesu."""
 
-    return Message(
+    return Message.to_maintainer(
         code="EFENIX_BLAD_NIEOCZEKIWANY",
         what=f"{_PROCESS} zatrzymała się przez nieoczekiwany błąd. Część zleceń mogła zostać już wyceniona w efenix.",
         where=_PROCESS,
-        action=REPORT_TO_MAINTAINER,
     )
 
 
 def plan_not_shown() -> Message:
     """Wycena w efenix nie ma podglądu bez zapisu; Komunikat rdzenia dla trybu bez zapisu."""
 
-    return Message(
+    return Message.to_maintainer(
         code="EFENIX_PLAN_NIEPOKAZANY",
         what=f"{_PROCESS} skończyła się, ale nie udało się pokazać planu. {_UNCHANGED}",
         where=_PROCESS,
-        action=REPORT_TO_MAINTAINER,
     )
 
 
 def summary_not_shown() -> Message:
     """Proces skończył się, ale nie udało się zbudować podsumowania."""
 
-    return Message(
+    return Message.to_maintainer(
         code="EFENIX_PODSUMOWANIE_NIEPOKAZANE",
         what=f"{_PROCESS} skończyła się, ale nie udało się pokazać wyniku.",
         where=_PROCESS,
-        action=REPORT_TO_MAINTAINER,
     )

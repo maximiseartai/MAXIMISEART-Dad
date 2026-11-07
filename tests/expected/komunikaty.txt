@@ -16,7 +16,7 @@ period_file_exists [PLIK_OKRESU_ISTNIEJE]
 worker_config_problem #1 [ZLA_KONFIGURACJA_WYKONAWCOW]
   Co się stało: Nie można odczytać konfiguracji wykonawców.
   Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 worker_config_problem #2 [NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW]
   Co się stało: Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.
@@ -26,57 +26,57 @@ worker_config_problem #2 [NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW]
 worker_config_problem #3 [ZLA_KONFIGURACJA_WYKONAWCOW]
   Co się stało: Nie można odczytać konfiguracji wykonawców. Plik nie jest zapisany w kodowaniu UTF-8.
   Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 worker_config_problem #4 [ZLA_KONFIGURACJA_WYKONAWCOW]
   Co się stało: Nie można odczytać konfiguracji wykonawców. Plik nie jest poprawnym YAML.
   Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 worker_config_problem #5 [ZLA_KONFIGURACJA_WYKONAWCOW]
   Co się stało: Nie można odczytać konfiguracji wykonawców. Nieobsługiwana wersja konfiguracji.
   Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 worker_config_problem #6 [ZLA_KONFIGURACJA_WYKONAWCOW]
   Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja musi być mapą z sekcją workers.
   Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 worker_config_problem #7 [ZLA_KONFIGURACJA_WYKONAWCOW]
   Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja workers musi zawierać co najmniej jeden wpis.
   Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 worker_config_problem #8 [ZLA_KONFIGURACJA_WYKONAWCOW]
   Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera niepoprawny identyfikator lub nazwę pracownika.
   Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 worker_config_problem #9 [ZLA_KONFIGURACJA_WYKONAWCOW]
   Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera pusty identyfikator lub nazwę pracownika.
   Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 worker_config_problem #10 [ZLA_KONFIGURACJA_WYKONAWCOW]
   Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera powtórzony identyfikator pracownika.
   Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 worker_config_problem #11 [ZLA_KONFIGURACJA_WYKONAWCOW]
   Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera nazwę pracownika nieprawidłową dla nazwy pliku.
   Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 worker_config_problem #12 [ZLA_KONFIGURACJA_WYKONAWCOW]
   Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera nazwę pracownika zbyt długą dla nazwy pliku.
   Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 worker_config_problem #13 [ZLA_KONFIGURACJA_WYKONAWCOW]
   Co się stało: Nie można odczytać konfiguracji wykonawców. Dwóch identyfikatorów wskazuje ten sam plik pracownika: Jan Testowy / jan testowy
   Gdzie: plik worker_mapping.yaml
-  Co zrobić: Przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 template_unusable #1 [BRAK_WZORCA]
   Co się stało: Nie znaleziono wzorca, z którego powstają pliki okresu. Nie utworzono żadnego pliku.
@@ -311,7 +311,7 @@ incomplete_period_refused #2 [PRZERWANO_NIEPELNY_OKRES]
 write_failed [BLAD_ZAPISU]
   Co się stało: Nie udało się zapisać plików okresu. Nie utworzono żadnego pliku.
   Gdzie: folder INEA\08_14_09_2026
-  Co zrobić: Sprawdź, czy folder jest dostępny i czy pliki okresu nie są otwarte, i uruchom ponownie. Jeśli błąd wraca, przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Sprawdź, czy folder jest dostępny i czy pliki okresu nie są otwarte, i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 write_failed_with_file_left [BLAD_ZAPISU_POZOSTAL_PLIK]
   Co się stało: Zapisano tylko jeden z dwóch plików okresu i nie udało się go usunąć.
@@ -321,7 +321,7 @@ write_failed_with_file_left [BLAD_ZAPISU_POZOSTAL_PLIK]
 unexpected_failure [BLAD_NIEOCZEKIWANY]
   Co się stało: Wystąpił nieoczekiwany błąd. Nie utworzono żadnego pliku.
   Gdzie: Przygotowanie pliku zbiorczego
-  Co zrobić: Uruchom ponownie. Jeśli błąd wraca, przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 summary_not_shown [BLAD_PODSUMOWANIA]
   Co się stało: Pliki okresu powstały, ale nie udało się pokazać podsumowania.
@@ -1012,7 +1012,7 @@ old_copies_kept_after_restore [PRZYWRACANIE_STARE_KOPIE]
 unexpected_failure [BLAD_NIEOCZEKIWANY]
   Co się stało: Wystąpił nieoczekiwany błąd. INTERMAX nie został zmieniony.
   Gdzie: Uporządkowanie INTERMAX
-  Co zrobić: Uruchom ponownie. Jeśli błąd wraca, przekaż to osobie utrzymującej narzędzie.
+  Co zrobić: Uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 summary_not_shown [BLAD_PODSUMOWANIA]
   Co się stało: INTERMAX został uporządkowany, ale nie udało się pokazać podsumowania.
