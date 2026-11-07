@@ -71,7 +71,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import czasy_ci
-from kroki_skilli import Step, steps
+from kroki_skilli import Katalog
 import mutacje
 import mutacje_skilli
 import niestabilne_testy
@@ -441,15 +441,19 @@ def _uruchom(nazwa: str, polecenia: Sequence[tuple[tuple[str, ...], float]], po_
     return {"klucz": nazwa, "s": s, "status": status}
 
 
-def _krok_skilla(klucz: str, znalezione: Mapping[str, Step]) -> tuple[dict[str, object], list[dict[str, object]]]:
+def _krok_skilla(klucz: str, katalog: Katalog) -> tuple[dict[str, object], list[dict[str, object]]]:
     """Krok skilla albo część ``#k/n`` skryptu mutacji; wynik zgłasza pod kluczem całego kroku, jak udział pliku testów,
     a obok jego ostrzeżenia ``CZAS BLISKO LIMITU`` (``mutacje.NearLimit``) pod tym samym kluczem."""
 
     nazwa, _, czesc = klucz.partition("#")
     print(f"== {klucz}", flush=True)
     start = time.monotonic()
-    krok = znalezione.get(nazwa)
-    wynik = mutacje_skilli.Wynik("planu nie ma wśród kroków skilli") if krok is None else mutacje_skilli.run(krok, env={mutacje.PART: czesc} if czesc else None)
+    try:
+        krok = katalog.krok(nazwa)
+    except KeyError:
+        wynik = mutacje_skilli.Wynik("planu nie ma wśród kroków skilli")
+    else:
+        wynik = mutacje_skilli.run(krok, env={mutacje.PART: czesc} if czesc else None)
     s = round(time.monotonic() - start, 1)
     print(f"OK   {klucz} ({s:.0f} s)" if wynik.powod is None else f"FAIL {klucz} ({s:.0f} s): {wynik.powod}", flush=True)
     blisko = [{"klucz": nazwa, **asdict(ostrzezenie)} for ostrzezenie in wynik.blisko_limitu]
@@ -518,9 +522,9 @@ def wykonaj(plan: Plan, zadanie_id: str) -> int:
     blisko: list[dict[str, object]] = []
     if skille:
         # Po kolei: mutacje kilku skilli naraz na czterech rdzeniach runnera przekraczają swoje limity czasu.
-        znalezione = {f"skill:{krok.key}": krok for krok in steps({})}
+        katalog = Katalog.skanuj(ROOT)
         for klucz in skille:
-            wynik, ostrzezenia = _krok_skilla(klucz, znalezione)
+            wynik, ostrzezenia = _krok_skilla(klucz, katalog)
             wyniki.append(wynik)
             blisko += ostrzezenia
     WYKONANIE.parent.mkdir(parents=True, exist_ok=True)

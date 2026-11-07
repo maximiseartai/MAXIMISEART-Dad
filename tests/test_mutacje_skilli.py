@@ -1,7 +1,8 @@
 """``tools/ci/mutacje_skilli.py`` nie przepuszcza skryptu mutacji, który zgubił się albo nie dał werdyktu, a kroki skilli
 (``tools/lib/kroki_skilli.py``) mają polecenie, części i przeglądarkę z frontmattera i skryptów skilla.
 
-Każdy test buduje własne ``.agents/skills`` obok kopii narzędzia, więc narzędzie widzi tylko te skille. Które kroki
+Każdy test buduje własne ``.agents/skills`` i uruchamia obok nich kopię narzędzia albo czyta katalog
+``Katalog.skanuj`` ich korzenia, więc widzi tylko te skille. Które kroki
 biegną w runie CI, sprawdza ``tests/test_zakres_runu.py``.
 """
 
@@ -439,18 +440,6 @@ def test_kotwica_kazdej_mutacji_skilla_trafia_w_swoj_plik_dokladnie_raz(tmp_path
     assert stale == []
 
 
-def _load_copy(root: Path, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    """Kopia ``kroki_skilli`` w ``root`` wczytana jako moduł, więc widzi tylko skille ``root``."""
-
-    _tool(root)
-    monkeypatch.syspath_prepend(str(root / "tools"))
-    spec = importlib.util.spec_from_file_location("kroki_skilli_w_kopii", root / "tools" / "lib" / STEPS.name)
-    assert spec is not None and spec.loader is not None
-    tool = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(tool)
-    return tool
-
-
 def test_krok_skilla_ktorego_skrypty_importuja_playwright_potrzebuje_przegladarki_a_skrypt_ma_tyle_czesci_ile_mutacji(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -462,16 +451,16 @@ def test_krok_skilla_ktorego_skrypty_importuja_playwright_potrzebuje_przegladark
     drive = ".agents/skills/verify-a/scripts/drive/przegladarka.py"
     _skill(tmp_path, "verify-a", {"check_a_mutations.py": table.replace("{count}", "3"), "drive/przegladarka.py": "from playwright.sync_api import sync_playwright\n"}, _with_ci("verify-a", drive))
     _skill(tmp_path, "verify-b", {"check_b_mutations.py": table.replace("{count}", "0"), "opis.py": "TEKST = 'import playwright'\n"})
-    tool = _load_copy(tmp_path, monkeypatch)
+    tool = _load_tool(monkeypatch)
 
-    found, failed = tool.znajdz()
+    katalog = tool.Katalog.skanuj(tmp_path)
 
-    assert [(step.key, step.parts, step.browser) for step in found] == [
+    assert [(step.key, step.parts, step.browser) for step in katalog.kroki] == [
         ("verify-a/ci", 1, True),
         ("verify-a/check_a_mutations.py", 3, True),
         ("verify-b/check_b_mutations.py", 1, False),
     ]
-    assert failed == {}
+    assert katalog.bledy == {}
 
 
 CHECKED_IN_CI = (
@@ -515,12 +504,12 @@ def test_podstawa_dzieli_sie_najwyzej_na_tyle_czesci_ile_mowi_ci_czesci(tmp_path
     command = ".agents/skills/verify-d/scripts/sprawdz_d.py --feature all"
     _skill(tmp_path, "verify-a", {"check_a_mutations.py": "MUTATIONS = ()\n"})
     _skill(tmp_path, "verify-d", {"sprawdz_d.py": CHECKED_IN_CI.format(code=0)}, _with_ci("verify-d", command).replace(f"ci: {command}\n", f"ci: {command}\n{parts}"))
-    tool = _load_copy(tmp_path, monkeypatch)
+    tool = _load_tool(monkeypatch)
 
-    found, failed = tool.znajdz()
+    katalog = tool.Katalog.skanuj(tmp_path)
 
-    assert [(step.key, step.parts) for step in found] == [("verify-a/check_a_mutations.py", 1), ("verify-d/ci", chosen)]
-    assert failed == {}
+    assert [(step.key, step.parts) for step in katalog.kroki] == [("verify-a/check_a_mutations.py", 1), ("verify-d/ci", chosen)]
+    assert katalog.bledy == {}
 
 
 @pytest.mark.parametrize("value", ["0", "osiem", "-2", ""])
