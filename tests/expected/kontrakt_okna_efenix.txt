@@ -1,242 +1,262 @@
 wiersz wylogowanie-search-0
   Zatrzymanie: LoggedOut PagePart.RESULTS LoginSign.SESSION_WARNING, wysłane False
-  stan 901: data -, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data -, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja wygasła
   działania SEARCH=1 OPEN=0 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz wylogowanie-open-0
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   Zatrzymanie: LoggedOut PagePart.ORDER LoginSign.PAGE, wysłane False
-  stan 901: data -, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data -, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja wygasła
   działania SEARCH=1 OPEN=1 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz wylogowanie-date-0
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
   Zatrzymanie: LoggedOut PagePart.DATE LoginSign.REDIRECT, wysłane True
-  stan 901: data -, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data -, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja wygasła
   działania SEARCH=1 OPEN=1 DATE=1 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz wylogowanie-open-1
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
   data 2026-09-09: potwierdzona
   Zatrzymanie: LoggedOut PagePart.ORDER LoginSign.PAGE, wysłane False
-  stan 901: data 2026-09-09, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja wygasła
   działania SEARCH=1 OPEN=2 DATE=1 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz wylogowanie-proposal-0
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
   data 2026-09-09: potwierdzona
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Zatrzymanie: LoggedOut PagePart.EMMETT LoginSign.REDIRECT, wysłane True
-  stan 901: data 2026-09-09, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja wygasła
   działania SEARCH=1 OPEN=2 DATE=1 PROPOSAL=1 EMMETT=1 QUANTITY=0 STATUS=0
 wiersz wylogowanie-emmett-0
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
   data 2026-09-09: potwierdzona
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Zatrzymanie: LoggedOut PagePart.EMMETT LoginSign.REDIRECT, wysłane True
-  stan 901: data 2026-09-09, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja wygasła
   działania SEARCH=1 OPEN=2 DATE=1 PROPOSAL=1 EMMETT=1 QUANTITY=0 STATUS=0
 wiersz wylogowanie-open-2
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
   data 2026-09-09: potwierdzona
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Zatrzymanie: LoggedOut PagePart.ORDER LoginSign.PAGE, wysłane True
-  stan 901: data 2026-09-09, ilości 012=1 019=2, status Do wyceny, Wycena Emmetta 1 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości 012=1 019=2, status 'Do wyceny', Wycena Emmetta 1 (na wycenę 0)
   sesja wygasła
   działania SEARCH=1 OPEN=3 DATE=1 PROPOSAL=1 EMMETT=1 QUANTITY=0 STATUS=0
 wiersz wylogowanie-quantity-0
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
   data 2026-09-09: potwierdzona
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Emmett: okno Proposal.SHOWN, strona data 2026-09-09, kwota 29.00, ilości 012=1 019=2, bez pola Ilość -
   Zatrzymanie: LoggedOut PagePart.QUANTITY LoginSign.REFUSED, wysłane True
-  stan 901: data 2026-09-09, ilości 012=1 019=2, status Do wyceny, Wycena Emmetta 1 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości 012=1 019=2, status 'Do wyceny', Wycena Emmetta 1 (na wycenę 0)
   sesja wygasła
   działania SEARCH=1 OPEN=3 DATE=1 PROPOSAL=1 EMMETT=1 QUANTITY=1 STATUS=0
 wiersz zaladuj-bez-odmowy
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Emmett: okno Proposal.SHOWN, strona data 2026-09-09, kwota 29.00, ilości 012=1 019=2, bez pola Ilość -
   ilość 012=3: kwota 71.00
-  stan 901: data 2026-09-09, ilości 012=3 019=2, status Do wyceny, Wycena Emmetta 1 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości 012=3 019=2, status 'Do wyceny', Wycena Emmetta 1 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=2 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=1 STATUS=0
 wiersz zaladuj-odmowa-forbidden
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Zatrzymanie: UnexpectedPage PagePart.EMMETT HttpStatus(403), wysłane True
-  stan 901: data 2026-09-09, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=1 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=0 STATUS=0
 wiersz zaladuj-odmowa-server_error
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Zatrzymanie: UnexpectedPage PagePart.EMMETT HttpStatus(500), wysłane True
-  stan 901: data 2026-09-09, ilości 012=1 019=2, status Do wyceny, Wycena Emmetta 1 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości 012=1 019=2, status 'Do wyceny', Wycena Emmetta 1 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=1 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=0 STATUS=0
 wiersz zaladuj-odmowa-elsewhere
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Zatrzymanie: UnexpectedPage PagePart.EMMETT OtherShape(Shape.ANSWER_REDIRECT, None), wysłane True
-  stan 901: data 2026-09-09, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=1 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=0 STATUS=0
 wiersz zaladuj-odmowa-logged_out
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Zatrzymanie: LoggedOut PagePart.EMMETT LoginSign.REDIRECT, wysłane True
-  stan 901: data 2026-09-09, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja wygasła
   działania SEARCH=1 OPEN=1 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=0 STATUS=0
 wiersz zaladuj-odmowa-nok
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Emmett: okno Proposal.SHOWN, strona data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
-  ilość 012=3: kwota 63.00
-  stan 901: data 2026-09-09, ilości 012=3, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  Zatrzymanie: UnexpectedPage PagePart.EMMETT OtherShape(Shape.EMMETT_NOT_LOADED, None), wysłane True
+  stan 901: data 2026-09-09, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
-  działania SEARCH=1 OPEN=2 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=1 STATUS=0
+  działania SEARCH=1 OPEN=2 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=0 STATUS=0
 wiersz zaladuj-odmowa-other
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Emmett: okno Proposal.SHOWN, strona data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
-  ilość 012=3: kwota 63.00
-  stan 901: data 2026-09-09, ilości 012=3, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  Zatrzymanie: UnexpectedPage PagePart.EMMETT OtherShape(Shape.EMMETT_NOT_LOADED, None), wysłane True
+  stan 901: data 2026-09-09, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
-  działania SEARCH=1 OPEN=2 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=1 STATUS=0
+  działania SEARCH=1 OPEN=2 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=0 STATUS=0
 wiersz propozycja-server_error
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Emmett: okno Proposal.LOST, strona data 2026-09-09, kwota 29.00, ilości 012=1 019=2, bez pola Ilość -
   ilość 012=3: kwota 71.00
-  stan 901: data 2026-09-09, ilości 012=3 019=2, status Do wyceny, Wycena Emmetta 1 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości 012=3 019=2, status 'Do wyceny', Wycena Emmetta 1 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=2 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=1 STATUS=0
 wiersz propozycja-torn
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Emmett: okno Proposal.LOST, strona data 2026-09-09, kwota 29.00, ilości 012=1 019=2, bez pola Ilość -
   ilość 012=3: kwota 71.00
-  stan 901: data 2026-09-09, ilości 012=3 019=2, status Do wyceny, Wycena Emmetta 1 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości 012=3 019=2, status 'Do wyceny', Wycena Emmetta 1 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=2 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=1 STATUS=0
 wiersz propozycja-cut
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Emmett: okno Proposal.LOST, strona data 2026-09-09, kwota 29.00, ilości 012=1 019=2, bez pola Ilość -
   ilość 012=3: kwota 71.00
-  stan 901: data 2026-09-09, ilości 012=3 019=2, status Do wyceny, Wycena Emmetta 1 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości 012=3 019=2, status 'Do wyceny', Wycena Emmetta 1 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=2 DATE=0 PROPOSAL≥1 EMMETT=1 QUANTITY=1 STATUS=0
 wiersz propozycja-pusta
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Emmett: okno Proposal.NOTHING, strona data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
-  stan 901: data 2026-09-09, ilości -, status Do wyceny, Wycena Emmetta 1 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości -, status 'Do wyceny', Wycena Emmetta 1 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=2 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=0 STATUS=0
 wiersz zaladuj-na-wycene
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 8.00, ilości 019=2, bez pola Ilość -
   Emmett: okno Proposal.SHOWN, strona data 2026-09-09, kwota 29.00, ilości 012=1 019=2, bez pola Ilość -
-  stan 901: data 2026-09-09, ilości 012=1 019=2, status Do wyceny, Wycena Emmetta 1 (na wycenę 1)
+  stan 901: data 2026-09-09, ilości 012=1 019=2, status 'Do wyceny', Wycena Emmetta 1 (na wycenę 1)
   sesja trwa
   działania SEARCH=1 OPEN=2 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=0 STATUS=0
 wiersz kalendarz-przed-najwczesniejszym
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
   data 2026-08-31: kalendarz zamienił dzień
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
-  stan 901: data -, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data -, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=2 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz kalendarz-najwczesniejszy
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
   data 2026-09-01: potwierdzona
   otwarcie 901: data 2026-09-01, kwota 0.00, ilości -, bez pola Ilość -
-  stan 901: data 2026-09-01, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data 2026-09-01, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=2 DATE=1 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz kalendarz-dzis
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
   data 2026-10-12: potwierdzona
   otwarcie 901: data 2026-10-12, kwota 0.00, ilości -, bez pola Ilość -
-  stan 901: data 2026-10-12, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data 2026-10-12, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=2 DATE=1 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz kalendarz-jutro
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
   data 2026-10-13: kalendarz zamienił dzień
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
-  stan 901: data -, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data -, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=2 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz serwer-odmawia-dat
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
   data 2026-09-09: potwierdzona
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
-  stan 901: data -, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data -, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=2 DATE=1 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz bez-pozycji-po-dacie
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
   data 2026-09-09: potwierdzona
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość 012
-  stan 901: data 2026-09-09, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=2 DATE=1 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz bez-pozycji-po-emmecie
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Emmett: okno Proposal.SHOWN, strona data 2026-09-09, kwota 29.00, ilości 019=2, bez pola Ilość 012
   Zatrzymanie: UnexpectedPage PagePart.QUANTITY OtherShape(Shape.UNKNOWN_POSITION, 012), wysłane False
-  stan 901: data 2026-09-09, ilości 012=1 019=2, status Do wyceny, Wycena Emmetta 1 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości 012=1 019=2, status 'Do wyceny', Wycena Emmetta 1 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=2 DATE=0 PROPOSAL=1 EMMETT=1 QUANTITY=0 STATUS=0
 wiersz ilosc-poza-strona
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość 012
   Zatrzymanie: UnexpectedPage PagePart.QUANTITY OtherShape(Shape.UNKNOWN_POSITION, 012), wysłane False
-  stan 901: data 2026-09-09, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=1 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz ilosc-ceny-wpisywanej
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 0.00, ilości -, bez pola Ilość -
   Zatrzymanie: UnexpectedPage PagePart.QUANTITY OtherShape(Shape.UNKNOWN_POSITION, 045), wysłane False
-  stan 901: data 2026-09-09, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=1 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz ilosc-zero
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
   otwarcie 901: data 2026-09-09, kwota 8.00, ilości 019=2, bez pola Ilość -
   ilość 019=0: kwota 0.00
-  stan 901: data 2026-09-09, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data 2026-09-09, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=1 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=1 STATUS=0
 wiersz szukanie-bez-wynikow
   szukanie 9399: brak wyników
-  stan 901: data -, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data -, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=0 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
 wiersz szukanie-zawiera
-  szukanie 9301: 901 9301 Do wyceny adrian.testowy Miasto ul.Testowa 1; 902 19301 Do wyceny beata.testowa Miasto ul.Testowa 1
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'; 902 '19301' 'Do wyceny' 'beata.testowa' 'Miasto ul.Testowa 1'
   otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
-  stan 901: data -, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
-  stan 902: data -, ilości -, status Do wyceny, Wycena Emmetta 0 (na wycenę 0)
+  stan 901: data -, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
+  stan 902: data -, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
   sesja trwa
   działania SEARCH=1 OPEN=1 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
+wiersz wylogowanie-przed-oknem
+  Zatrzymanie: LoggedOut PagePart.LIST LoginSign.PAGE, wysłane False
+  stan 901: data -, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
+  sesja wygasła
+  działania SEARCH=0 OPEN=0 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
+wiersz wylogowanie-miedzy-zleceniami
+  szukanie 9301: 901 '9301' 'Do wyceny' 'adrian.testowy' 'Miasto ul.Testowa 1'
+  otwarcie 901: data -, kwota 0.00, ilości -, bez pola Ilość -
+  tata wylogował się
+  Zatrzymanie: LoggedOut PagePart.LIST LoginSign.PAGE, wysłane False
+  stan 901: data -, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
+  stan 902: data -, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
+  sesja wygasła
+  działania SEARCH=1 OPEN=1 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
+wiersz wiersz-listy-z-odstepami-i-realizatorem-bez-loginu
+  szukanie 9301: 901 '9301' 'Do wyceny' None 'Miasto ul.Testowa 1'; 902 '19301' 'Do wyceny' None 'Miasto ul.Testowa 1'
+  stan 901: data -, ilości -, status ' Do  wyceny\n', Wycena Emmetta 0 (na wycenę 0)
+  stan 902: data -, ilości -, status 'Do wyceny', Wycena Emmetta 0 (na wycenę 0)
+  sesja trwa
+  działania SEARCH=1 OPEN=0 DATE=0 PROPOSAL=0 EMMETT=0 QUANTITY=0 STATUS=0
