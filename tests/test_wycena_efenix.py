@@ -1168,6 +1168,43 @@ def test_zamkniete_okno_efenix_zatrzymuje_wycene_z_komunikatem_dla_taty_a_gotowe
     assert (_stop(outcome), outcome.ending.stop_kind, _kept(outcome), _marked(source)) == ("EFENIX_OKNO_ZAMKNIETE", "for_tata", kept, marked)
 
 
+@pytest.mark.parametrize(
+    ("first", "execution_date", "kept", "marked"),
+    [
+        # Kalendarz zamienia dzień spoza zakresu, więc okno zamyka go bez „Potwierdź”: błąd zlecenia bez zmiany w efenix.
+        pytest.param(
+            Order("#9711", day=date(2026, 10, 13), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),
+            None,
+            False,
+            [],
+            id="dzień-spoza-kalendarza",
+        ),
+        pytest.param(
+            Order("#9711", cells={"O": 1}, amount=_au({"012": 1}), emmett={"012": 1}), DAY, True, [18], id="sama-wycena-emmetta"
+        ),
+        pytest.param(
+            Order("#9711", cells={"O": 2}, amount=_au({"012": 2}), quantities={"012": 1}), DAY, True, [18], id="sama-ilość"
+        ),
+    ],
+)
+def test_komunikat_zamknietego_okna_mowi_o_zmianie_w_efenix_po_kazdym_zapisie_a_nie_po_dniu_ktorego_kalendarz_nie_przyjal(
+    tmp_path: Path, page: Page, first: Order, execution_date: date | None, kept: bool, marked: list[int]
+) -> None:
+    """W pierwszym zleceniu okno robi tylko jedno działanie po otwarciu: wybiera dzień, którego kalendarz nie przyjął,
+    ładuje Wycenę Emmetta albo wpisuje ilość. Tata zamyka kartę tuż przed szukaniem drugiego zlecenia (działanie 4), więc
+    o tym, czy Komunikat mówi, że wycena sprzed Zatrzymania została w efenix, decyduje tylko to jedno działanie. Drugie
+    zlecenie ma późniejszy dzień, bo Wycena idzie po zleceniach jednego Wykonawcy w kolejności dni."""
+
+    orders = [first, Order("#9712", day=date(2026, 10, 14), cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})]
+    source = write_collective_file(tmp_path, orders)
+    in_efenix = [replace(first.in_efenix("971"), execution_date=execution_date), orders[1].in_efenix("972")]
+    with atrapa_efenix(in_efenix, today=date(2026, 10, 12)) as atrapa:
+        outcome = _run(source, page, atrapa.url, window=lambda efenix: _ClosingBeforeAction(efenix, page, 4))
+
+    assert isinstance(outcome.ending, Stop)
+    assert (_stop(outcome), _kept(outcome), _marked(source)) == ("EFENIX_OKNO_ZAMKNIETE", kept, marked)
+
+
 class _CloseReportedLate:
     """Karta ``page``, którą tata zamyka, gdy okno czeka na stronę ``path`` po raz ``number`` (od 1): ta strona nie
     odpowiada, więc karta zamyka się w trakcie nawigacji. Playwright podaje oknu zamknięcie karty dopiero przy jego
@@ -2156,6 +2193,39 @@ def test_odmowa_zaladuj_do_zlecenia_na_stronie_bez_ilosci_z_kwota_z_ceny_wpisywa
         OtherShape(Shape.EMMETT_NOT_LOADED),
     )
     assert (pricing, _marked(source)) == ({"9731": ({"045": 5}, DAY, 0)}, [])
+
+
+def test_odmowa_zaladuj_do_zlecenia_w_tempie_ludzkim_jako_pierwsza_zmiana_zatrzymuje_wycene_z_komunikatem_ze_wycena_mogla_sie_zmienic(
+    tmp_path: Path, page: Page
+) -> None:
+    """Centrum rozliczeń uruchamia Wycenę w efenix w tempie ludzkim (``efenix_pace``), a efenix odmawia „Załaduj do
+    zlecenia” odpowiedzią 200 z inną treścią (#889). Przeładowana strona nie ma żadnej ilości, choć okno Emmetta pokazało
+    propozycję, więc i w tempie ludzkim to Zatrzymanie okna, a nie pusta Wycena Emmetta: zlecenie nie dostaje ilości z
+    pliku ani Znacznika efenix.
+
+    Zlecenie ma już datę wykonania, więc „Załaduj do zlecenia” to pierwsza zmiana, którą okno wysłało do efenix, a w
+    śladzie nie ma żadnego udanego zapisu. Okno kliknęło ją jednak przed Zatrzymaniem, więc Komunikat mówi, że wycena
+    sprzed Zatrzymania została w efenix, a nie, że nic się nie zmieniło."""
+
+    order = Order("#9741", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"019": 5})
+    source = write_collective_file(tmp_path, [order])
+    in_efenix = replace(order.in_efenix("9741"), execution_date=DAY, emmett_refusal=EmmettRefusal.OTHER)
+    clock = _FakeTime()
+    with atrapa_efenix([in_efenix], clock=clock) as atrapa:
+        stopped = _run(source, page, atrapa.url, pace=Pace(sleep=clock.pause, clock=clock), clock=clock)
+        pricing = _pricing(atrapa)
+
+    assert isinstance(stopped.ending, Stop) and isinstance(stopped.ending.facts, PricingStopped), _ending(stopped)
+    facts = stopped.ending.facts
+    assert facts.stopped_at is not None, facts
+    assert (_stop(stopped), facts.part, facts.cause, [step.action for step in facts.stopped_at.steps], _kept(stopped)) == (
+        "EFENIX_OKNO_ZATRZYMANE",
+        PagePart.EMMETT,
+        OtherShape(Shape.EMMETT_NOT_LOADED),
+        ["szukanie", "otwarcie zlecenia"],
+        True,
+    )
+    assert (pricing, _marked(source)) == ({"9741": ({}, DAY, 0)}, [])
 
 
 
