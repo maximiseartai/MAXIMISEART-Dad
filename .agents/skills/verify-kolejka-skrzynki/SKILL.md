@@ -248,7 +248,16 @@ that Centrum changes often: `lifespan` in `app.py`, `_listen_when_released` in
 and `_Server` in `server.py`. `model/definicje.json` lists the four covered files as whole files and these four
 by their definitions: only a change to these definitions, not to the rest of their files, is drift.
 
-**Sync commit: `1a7d93e3`** (2026-11-07, N3a of the untangle of 7.11). Since `872a47f50` only
+**Sync commit: `78d857001`** (2026-11-07, N10a of the untangle of 7.11). Since `1a7d93e3` the
+Zgłoszenie target became the general `OpenIssue` (label, recognition line, title and the heading
+`again` of the comment to an open issue with that line; `reports.report_target` builds the
+Zgłoszenie's), `_deliver_report` is `_deliver_open_issue` with the same box calls in the same order
+and the same comment text, `Post` carries `state` for the listener (written to the queue file, never
+sent), and `KeyedBox` takes the Zgłoszenie label and its memory times from other modules with the same
+values. No action of the model changed; at this commit `sprawdz_model_kolejki.py` gave `MODEL KOLEJKI OK`
+on all 15 configurations and `explore_outbox.py` `KOLEJKA OK` on all 15 scopes.
+
+`1a7d93e3` (2026-11-07, N3a of the untangle of 7.11). Since `872a47f50` only
 `listen_locally` moved, unchanged in what it does, from `launcher.py` to `tool_files.py`, its
 `SO_REUSEADDR` bind now in `_bound`, which the restart guardian's port probe shares: `Start` still
 runs only in the process that took the port. No action of the model changed.
