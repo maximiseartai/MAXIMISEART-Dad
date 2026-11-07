@@ -192,8 +192,8 @@ class Hunk:
     old: tuple[str, ...]
 
 
-def _git(root: Path, *arguments: str) -> str:
-    return subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True, encoding="utf-8", check=True).stdout
+def _git(root: Path, *arguments: str, errors: str = "strict") -> str:
+    return subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True, encoding="utf-8", errors=errors, check=True).stdout
 
 
 def _short(text: str, limit: int = 60) -> str:
@@ -201,7 +201,11 @@ def _short(text: str, limit: int = 60) -> str:
     return flat if len(flat) <= limit else f"{flat[: limit - 1]}…"
 
 
-CODE = (":(glob)src/**/*.py", ":(glob)tools/**/*.py")
+CODE = ("src/", "tools/")  # foldery, których pliki ``.py`` psuje zakres
+
+
+def _code(path: str) -> bool:
+    return path.startswith(CODE) and path.endswith(".py")
 
 
 def _changes(fork: str, root: Path) -> dict[str, list[Hunk]]:
@@ -210,9 +214,12 @@ def _changes(fork: str, root: Path) -> dict[str, list[Hunk]]:
     found: dict[str, list[Hunk]] = defaultdict(list)
     current: str | None = None
     old_left = new_left = 0  # linie fragmentu, których parser jeszcze nie przeczytał: nie są nagłówkiem
-    # Przeniesiony plik (``-M``) psuje tylko linie, które przy przeniesieniu się zmieniły.
+    # Przeniesiony plik (``-M``) psuje tylko linie, które przy przeniesieniu się zmieniły, także gdy przyszedł spoza
+    # ``src/`` i ``tools/``: dlatego diff obejmuje całe repozytorium, a ścieżki odsiewa ``_code`` po nagłówku ``+++``.
+    # Linie spoza UTF-8 mogą mieć tylko pliki, które ``_code`` odsiewa (plik ``.py`` czyta ``read_text`` w UTF-8),
+    # więc zastąpienie ich znaków nie zmienia fragmentów.
     # Usunięty plik nie ma linii do zepsucia, więc każdy nagłówek ``+++`` to ``b/<ścieżka>``.
-    for line in _git(root, "diff", "-U0", "-M", "--diff-filter=d", "--no-color", fork, "--", *CODE).split("\n"):
+    for line in _git(root, "diff", "-U0", "-M", "--diff-filter=d", "--no-color", fork, errors="replace").split("\n"):
         if old_left and line.startswith("-"):
             old_left -= 1
             if current is not None:
@@ -221,12 +228,13 @@ def _changes(fork: str, root: Path) -> dict[str, list[Hunk]]:
         elif new_left and line.startswith("+"):
             new_left -= 1
         elif line.startswith("+++ "):
-            current = line.removeprefix("+++ b/")
+            path = line.removeprefix("+++ b/")
+            current = path if _code(path) else None
         elif match := _HUNK.match(line):
             old_left, new_left = int(match["old_count"] or 1), int(match["new_count"] or 1)
             if current is not None:
                 found[current].append(Hunk(int(match["new"]), new_left, ()))
-    for name in _git(root, "ls-files", "--others", "--exclude-standard", "--", *CODE).splitlines():
+    for name in filter(_code, _git(root, "ls-files", "--others", "--exclude-standard").splitlines()):
         found[name] = [Hunk(1, len(_rows((root / name).read_text(encoding="utf-8"))), ())]
     return {path: hunks for path, hunks in found.items() if (root / path).is_file()}
 

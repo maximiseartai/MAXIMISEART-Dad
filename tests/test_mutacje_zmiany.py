@@ -827,6 +827,37 @@ def test_przeniesiony_plik_bez_zmian_nie_daje_mutacji(tmp_path: Path) -> None:
     assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i tools/ od baza"
 
 
+def test_plik_przeniesiony_do_narzedzi_spoza_src_i_tools_psuje_tylko_linie_zmienione_przy_przeniesieniu(tmp_path: Path) -> None:
+    """Atrapa przeniesiona z ``tests/fixtures/`` do ``tools/lib/`` z jedną zmienioną linią to nie nowy plik, a zmiana
+    testu w tym samym commicie, choć to plik ``.py``, nie wchodzi do zakresu."""
+
+    functions = "".join(f"def f{number}(x: int) -> bool:\n    return x > {number}\n\n\n" for number in range(1, 6))
+    repo = repository(tmp_path / "repo", {"tests/fixtures/atrapa.py": functions, "tests/test_atrapa.py": "def test_a() -> None:\n    pass\n"})
+    base = commit(repo, "baza")
+    git(repo, "mv", "tests/fixtures/atrapa.py", "tools/lib/atrapa.py")
+    (repo / "tools" / "lib" / "atrapa.py").write_text(functions.replace("x > 3", "x >= 3"), encoding="utf-8")
+    (repo / "tests" / "test_atrapa.py").write_text("def test_a() -> None:\n    assert True\n", encoding="utf-8")
+    commit(repo, "atrapa w narzędziach")
+
+    zakres = ZakresMutacji.od(base, repo)
+
+    assert {path: [hunk.start for hunk in hunks] for path, hunks in zakres.fragmenty.items()} == {"tools/lib/atrapa.py": [10]}
+    assert zakres.mutanty
+    assert {(mutant.path, line) for mutant in zakres.mutanty for line in mutant.lines} == {("tools/lib/atrapa.py", 10)}
+
+
+def test_zmiana_pliku_spoza_src_i_tools_w_kodowaniu_innym_niz_utf8_nie_przerywa_zakresu(tmp_path: Path) -> None:
+    repo = repository(tmp_path / "repo", {"src/pakiet/a.py": FUNKCJA, "tests/fixtures/plik_taty.csv": "ilość\n"})
+    base = commit(repo, "baza")
+    (repo / "tests" / "fixtures" / "plik_taty.csv").write_bytes("ilość;zlecenie\n".encode("cp1250"))
+    (repo / "src" / "pakiet" / "a.py").write_text(FUNKCJA.replace("x > 1", "x > 2"), encoding="utf-8")
+    commit(repo, "plik taty w cp1250")
+
+    zakres = ZakresMutacji.od(base, repo)
+
+    assert {path: [hunk.start for hunk in hunks] for path, hunks in zakres.fragmenty.items()} == {"src/pakiet/a.py": [2]}
+
+
 def test_plik_bez_zaleznych_testow_konczy_sie_fail(tmp_path: Path) -> None:
     repo = _repo(tmp_path, "def test_nic() -> None:\n    pass\n")
 
