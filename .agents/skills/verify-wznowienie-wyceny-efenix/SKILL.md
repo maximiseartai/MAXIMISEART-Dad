@@ -108,12 +108,14 @@ The window's exceptions (`LoggedOut`, `UnexpectedPage`, `WindowClosed`, `EfenixU
 `Zatrzymanie` reads, live in `src/rozliczenia/efenix_window.py`, in `pilnuje:` but not in `model/definicje.json`: a change of
 when a window action counts as sent moves the model, though no definition above changes.
 
-Sync commit: `7d6eca83d` (2026-11-07: Przekazanie do akceptacji, ADR 0027). Every row of the table was checked
-against the code at this commit. Since `5a87ce2c0` the model has the mode of each Uruchomienie, the status of each
+Sync commit: `ab3629b1a` (2026-11-07: odmowa Przekazania przez efenix w oknie informacji). Every row of the table was
+checked against the code at this commit. Since `ab3629b1a` the model has the action `OdmowaPrzekazania`: efenix refuses a
+Przekazanie of a gotowe order (`ForwardRefusal`), which ends the order as an error without a Znacznik and changes nothing
+in efenix, because `_forwarded` returns `OrderError(refusal)` and a stuck refusal must not stop the whole Wycena. Since `5a87ce2c0` the model has the mode of each Uruchomienie, the status of each
 order and the two Znaczniki: actions `Przekaz` and `Szukaj`, `Otworz` ends an order „Do akceptacji” as przekazane,
 `Znaczniki` follows `Mark.replaces`, and the promises PrzekazujeTylkoGotowe and NieZmieniaPrzekazanego; Dad changes only
 orders „Do wyceny”.
-Check what changed since: `git diff 7d6eca83d -- src/rozliczenia/efenix_pricing.py src/rozliczenia/efenix_positions.py
+Check what changed since: `git diff ab3629b1a -- src/rozliczenia/efenix_pricing.py src/rozliczenia/efenix_positions.py
 src/rozliczenia/efenix_browser.py src/rozliczenia/efenix_checks.py src/rozliczenia/efenix_mark.py`; the history of earlier
 Sync commits is in `git log` of this file.
 
