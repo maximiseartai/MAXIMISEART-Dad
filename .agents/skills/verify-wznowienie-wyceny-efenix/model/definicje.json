@@ -1,33 +1,33 @@
 {
-  "src/rozliczenia/efenix_pricing.py": [
-    "save",
-    "_mark",
-    "_efenix_stops",
-    "_outcome",
-    "_priced",
-    "_emmett",
-    "_dated",
-    "_completed",
-    "_priced_outcome",
-    "_forwarded"
-  ],
-  "src/rozliczenia/efenix_positions.py": [
-    "completion",
-    "same_amount"
-  ],
-  "src/rozliczenia/efenix_browser.py": [
-    "load_emmett",
-    "enter_quantity",
-    "_finished",
-    "_came_whole",
-    "forward_to_accept",
-    "_refusal",
-    "_status_answer"
-  ],
-  "src/rozliczenia/efenix_checks.py": [
-    "listing"
-  ],
-  "src/rozliczenia/efenix_mark.py": [
-    "Mark.replaces"
-  ]
+  "src/rozliczenia/efenix_pricing.py": {
+    "price_orders.save": "1f41203adb4865b2",
+    "_mark": "b108e7d7a95b8a3e",
+    "_efenix_stops": "73cfa882682aff3b",
+    "_outcome": "498ffcfe959888b0",
+    "_priced": "59d65ecdffde4aac",
+    "_emmett": "00b65d26a2926b6f",
+    "_dated": "086bfa4b2b50697b",
+    "_completed": "5dee0ecc1fe5d3c1",
+    "_priced_outcome": "1753466382461c9b",
+    "_forwarded": "d1d62e554e0935bf"
+  },
+  "src/rozliczenia/efenix_positions.py": {
+    "completion": "04cc1603fa80ed24",
+    "same_amount": "bc973a2141c850aa"
+  },
+  "src/rozliczenia/efenix_browser.py": {
+    "BrowserEfenix.load_emmett": "6faf729dcccce92f",
+    "BrowserEfenix.enter_quantity": "e5b13ff875fc0e83",
+    "BrowserEfenix._finished": "af03337f484dd240",
+    "_came_whole": "74cfead327507694",
+    "BrowserEfenix.forward_to_accept": "31e7ec56d0c3364c",
+    "BrowserEfenix._refusal": "124ce9ba8ea0a270",
+    "BrowserEfenix._status_answer": "92368310cf29e855"
+  },
+  "src/rozliczenia/efenix_checks.py": {
+    "listing": "8faac784be1d32ab"
+  },
+  "src/rozliczenia/efenix_mark.py": {
+    "Mark.replaces": "708b8f23926b8082"
+  }
 }

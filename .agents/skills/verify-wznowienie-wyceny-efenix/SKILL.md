@@ -21,7 +21,7 @@ ci: .agents/skills/verify-wznowienie-wyceny-efenix/scripts/sprawdz_wznowienie_wy
 CI runs `sprawdz_wznowienie_wyceny.py` (the `ci:` key) in Mutation checks whenever a change touches this skill's
 `pilnuje:` or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks
 step. It fails with `WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM` when a definition the model describes
-(`model/definicje.json`) changed since the model's Sync commit, but it cannot tell whether your change to the model is right.
+(`model/definicje.json`) differs from its digest there, but it cannot tell whether your change to the model is right.
 `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 `check_model_wznowienia_mutations.py` runs on a pull request that changes a file in `model/`, the script itself or
 `sprawdz_wznowienie_wyceny.py`, and in full CI and nightly on `main` after a change of this skill's folder.
@@ -96,11 +96,14 @@ you keep the two in step. Each model action is one indivisible step of this code
 | `Zgasniecie` | none: Centrum switches off or is killed; memory is gone, efenix stays, no Znaczniki |
 | `Tata` | none: Dad changes a quantity of an order „Do wyceny” in efenix by hand while no Uruchomienie runs (`StanEfenix.edit` in the tests) |
 
-The script compares these definitions with the Sync commit (`model/definicje.json`): `save`, `_mark`, `_efenix_stops`,
+The script compares these definitions with their digests (`model/definicje.json`, a name is a path from the module):
+`price_orders.save`, `_mark`, `_efenix_stops`,
 `_outcome`, `_priced_outcome`, `_forwarded`, `_priced`, `_emmett`, `_dated`, `_completed` in
 `src/rozliczenia/efenix_pricing.py`; `listing` in `src/rozliczenia/efenix_checks.py`; `Mark.replaces` in
-`src/rozliczenia/efenix_mark.py`; `completion`, `same_amount` in `src/rozliczenia/efenix_positions.py`; `load_emmett`,
-`_came_whole`, `enter_quantity`, `_finished`, `forward_to_accept`, `_refusal`, `_status_answer` in `src/rozliczenia/efenix_browser.py`. A change elsewhere in these files (Sprawdzanie, Odczyt danych, Logi, the window's
+`src/rozliczenia/efenix_mark.py`; `completion`, `same_amount` in `src/rozliczenia/efenix_positions.py`;
+`BrowserEfenix.load_emmett`, `_came_whole`, `BrowserEfenix.enter_quantity`, `BrowserEfenix._finished`,
+`BrowserEfenix.forward_to_accept`, `BrowserEfenix._refusal`,
+`BrowserEfenix._status_answer` in `src/rozliczenia/efenix_browser.py`. A change elsewhere in these files (Sprawdzanie, Odczyt danych, Logi, the window's
 classification of other failures) does not move the model. A change that makes another function write in efenix or
 decide whether an order is finished does, though no definition above changes: add it to the table and to
 `model/definicje.json`.
@@ -108,16 +111,11 @@ The window's exceptions (`LoggedOut`, `UnexpectedPage`, `WindowClosed`, `EfenixU
 `Zatrzymanie` reads, live in `src/rozliczenia/efenix_window.py`, in `pilnuje:` but not in `model/definicje.json`: a change of
 when a window action counts as sent moves the model, though no definition above changes.
 
-Sync commit: `ab3629b1a` (2026-11-07: odmowa Przekazania przez efenix w oknie informacji). Every row of the table was
-checked against the code at this commit. Since `ab3629b1a` the model has the action `OdmowaPrzekazania`: efenix refuses a
-Przekazanie of a gotowe order (`ForwardRefusal`), which ends the order as an error without a Znacznik and changes nothing
-in efenix, because `_forwarded` returns `OrderError(refusal)` and a stuck refusal must not stop the whole Wycena. Since `5a87ce2c0` the model has the mode of each Uruchomienie, the status of each
-order and the two Znaczniki: actions `Przekaz` and `Szukaj`, `Otworz` ends an order „Do akceptacji” as przekazane,
-`Znaczniki` follows `Mark.replaces`, and the promises PrzekazujeTylkoGotowe and NieZmieniaPrzekazanego; Dad changes only
-orders „Do wyceny”.
-Check what changed since: `git diff ab3629b1a -- src/rozliczenia/efenix_pricing.py src/rozliczenia/efenix_positions.py
-src/rozliczenia/efenix_browser.py src/rozliczenia/efenix_checks.py src/rozliczenia/efenix_mark.py`; the history of earlier
-Sync commits is in `git log` of this file.
+The digests in `model/definicje.json` were taken when every row of the table was last checked against the code
+(`tools/przesun_model.py`); what that check found is in the message of the commit that changed the digests. Check what
+changed since: `git diff $(git log -1 --format=%h -- .agents/skills/verify-wznowienie-wyceny-efenix/model/definicje.json)
+-- src/rozliczenia/efenix_pricing.py src/rozliczenia/efenix_positions.py src/rozliczenia/efenix_browser.py
+src/rozliczenia/efenix_checks.py src/rozliczenia/efenix_mark.py`.
 
 ## Run
 
@@ -141,7 +139,7 @@ The last line is the verdict:
 - `WZNOWIENIE WYCENY: BŁĄD MODELU (n)`: TLC gave no verdict, an invariant outside the promises such as `TypeOK` broke,
   `model/konfiguracje.json` has another shape, or the counterexample's story in the script does not know every action
   of `Next`. Exit 2.
-- `WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM` (CI only): a definition in `model/definicje.json` changed since the Sync commit.
+- `WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM` (CI only): a definition in `model/definicje.json` differs from its digest there.
 
 Each counterexample is told as numbered steps in the code's words, with the quantities in efenix
 (`[A |-> …, B |-> …, C |-> …]` per order) and the result of each order in this Uruchomienie.
@@ -197,8 +195,8 @@ When a definition from `model/definicje.json` changes:
    to `scripts/check_model_wznowienia_mutations.py` with the code counterpart in its name.
 4. Run the check. A new violation is a finding: replay it on the code (see Read a result) before you call it a bug,
    report it with the path, and do not change product code unless asked.
-5. Move the Sync commit forward only after every row of the table describes the code at the new commit, and write in
-   one sentence what changed in the model and why.
+5. Run `tools/przesun_model.py verify-wznowienie-wyceny-efenix` only after every row of the table describes the code,
+   and write in the commit message, in one sentence, what changed in the model and why.
 
 ## Scope
 

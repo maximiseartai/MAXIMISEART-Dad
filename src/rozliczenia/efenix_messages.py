@@ -228,17 +228,17 @@ def marks_not_saved(source: Path, refusal: Refusal) -> Message:
     )
 
 
-def order_error(source: Path, row: int, problem: OrderFault) -> Message:
-    """Zlecenie z wiersza ``row`` Pliku zbiorczego, które proces zostawia tacie, bo ``problem``.
+def order_error(source: Path, row: int, problem: OrderFault, *, changed: bool) -> Message:
+    """Zlecenie z wiersza ``row`` Pliku zbiorczego, które proces zostawia tacie, bo ``problem``; ``changed``: przy tym
+    zleceniu proces wysłał już do efenix zmianę (Wycena ze śladu działań okna).
 
-    Kwota inna niż AU po dopisaniu ilości, data, której efenix nie zapisał po „Potwierdź”, strona bez pozycji z ilością
-    w pliku po dacie wykonania albo po Wycenie Emmetta, Przekazanie do akceptacji, którego efenix nie pokazał, i gotowe
-    zlecenie, któremu efenix odmówił Przekazania, to jedyne błędy, przy których proces mógł już coś zmienić w zleceniu w
-    efenix.
+    Bez zmiany Komunikat mówi, że zlecenie zostało w efenix bez zmian, poza kwotą inną niż AU (``OtherAmount``) i
+    odmową Przekazania (``ForwardRefusal``): ich Komunikat sam mówi, że ilości albo wycena z pliku są już w efenix,
+    także wtedy, gdy wpisało je wcześniejsze Uruchomienie.
     """
 
     code, what, action = _order_error(problem)
-    unchanged = " Zlecenie zostało w efenix bez zmian." if _left_unchanged(problem) else ""
+    unchanged = "" if changed or isinstance(problem, OtherAmount | ForwardRefusal) else " Zlecenie zostało w efenix bez zmian."
     return Message(
         code=code,
         dad_file="collective_file",
@@ -246,16 +246,6 @@ def order_error(source: Path, row: int, problem: OrderFault) -> Message:
         where=f"{file_label(source)}, wiersz {row}",
         action=action,
     )
-
-
-def _left_unchanged(problem: OrderFault) -> bool:
-    match problem:
-        case OtherAmount() | DateRefused.NOT_SAVED | OrderProblem.NOT_FORWARDED | ForwardRefusal():
-            return False
-        case MissingPositions(read=read):
-            return read is PageRead.OPENED
-        case _:
-            return True
 
 
 def emmett_warning(source: Path, row: int, excess: Sequence[Excess]) -> Message:

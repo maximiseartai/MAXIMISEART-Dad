@@ -15,8 +15,8 @@ dla Logów Uruchomienia (``efenix_trace``) i okno w procesie testów (``tests/fi
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from contextlib import AbstractContextManager
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -48,9 +48,11 @@ __all__ = [
     "PageCause",
     "PagePart",
     "Proposal",
+    "SentChanges",
     "Shape",
     "StatusChangeBlocked",
     "UnexpectedPage",
+    "WindowAction",
     "WindowCause",
     "WindowClosed",
     "WindowStop",
@@ -215,7 +217,7 @@ class WindowStop(Exception):
 
     ``sent``: działanie okna, które zgłosiło wyjątek, kliknęło już przycisk, który wysyła do efenix zmianę zlecenia (data
     wykonania, „Załaduj do zlecenia”, Enter w polu „Ilość”, „Tak” Przekazania do akceptacji), więc efenix mógł ją
-    zapisać. Ustawia je okno.
+    zapisać. Ustawia je ``SentChanges.action`` okna.
     """
 
     sent: bool = False
@@ -263,6 +265,55 @@ class BrowserNotStarted(WindowStop):
 
     def __init__(self, failure: BrowserFailure) -> None:
         super().__init__(None, failure)
+
+
+class SentChanges:
+    """Przyciski zmiany zlecenia, które okno kliknęło: każde okno woła ``send`` przy takim kliknięciu, a swoje działania
+    obejmuje ``action``, więc wyjątek okna z działania niesie ``WindowStop.sent``."""
+
+    def __init__(self) -> None:
+        self._sent = 0
+
+    def send(self) -> None:
+        """Okno klika przycisk, który wysyła do efenix zmianę zlecenia."""
+
+        self._sent += 1
+
+    @contextmanager
+    def action(self) -> Iterator[None]:
+        """Działanie okna: wyjątek okna z niego ma ``sent``, gdy w nim okno kliknęło przycisk zmiany zlecenia, także w
+        działaniu, które woła inne działanie okna."""
+
+        before = self._sent
+        try:
+            yield
+        except WindowStop as stop:
+            stop.sent = self._sent > before
+            raise
+
+
+class WindowAction(enum.Enum):
+    """Działanie okna efenix (metoda ``Efenix``). Wartość to klucz działania w śladzie zlecenia w Logach Uruchomienia na
+    dysku taty: czytają go stare Logi i narzędzia odtwarzania, więc się nie zmienia."""
+
+    SEARCH = "szukanie"
+    OPEN = "otwarcie zlecenia"
+    DATE = "data wykonania"
+    EMMETT = "Wycena Emmetta"
+    QUANTITY = "ilość"
+    FORWARD = "przekazanie do akceptacji"
+
+    @property
+    def writes(self) -> bool:
+        """Działanie wysyła do efenix zmianę zlecenia (data wykonania tylko wtedy, gdy kalendarz przyjął dzień, a
+        Przekazanie do akceptacji tylko wtedy, gdy efenix go nie odmówił, ``ForwardRefusal``): przed nim tempo ludzkie
+        robi przerwę (ADR 0024), a po nim Komunikat nie mówi, że w efenix nic się nie zmieniło."""
+
+        match self:
+            case WindowAction.SEARCH | WindowAction.OPEN:
+                return False
+            case WindowAction.DATE | WindowAction.EMMETT | WindowAction.QUANTITY | WindowAction.FORWARD:
+                return True
 
 
 @dataclass(frozen=True)

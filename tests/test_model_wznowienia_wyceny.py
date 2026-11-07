@@ -1,7 +1,7 @@
 """Model TLA+ wznowienia Wyceny w efenix: kod opisany modelem i opowieść kontrprzykładu.
 
-Model opisuje definicje z ``model/definicje.json`` skilla ``verify-wznowienie-wyceny-efenix`` w Sync commit z jego
-``SKILL.md`` (rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py``). Zmiana innej części tych plików (``efenix_pricing.py``
+Model opisuje definicje z ``model/definicje.json`` skilla ``verify-wznowienie-wyceny-efenix`` w chwili ich skrótów
+(rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py``). Zmiana innej części tych plików (``efenix_pricing.py``
 zmienia się często) rozjazdem nie jest. Werdykt i znane znaleziska sprawdza ``tests/test_model_tlc.py`` na drodze
 wspólnej dla modeli skilli.
 """
@@ -13,7 +13,6 @@ import shutil
 
 import pytest
 
-from tests.fixtures.git_repo import commit, git
 from tests.fixtures.model_tlc import model_tlc, rozjazd_modelu, skrypt_modelu, wyjscie_tlc
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,35 +28,32 @@ COVERED = (
 )
 
 
-def _drift_after(root: Path, anchor: str, replacement: str) -> tuple[str, str | None]:
-    """Commit synchronizacji z kodem opisanym modelem, potem zmiana ``anchor`` w ``efenix_pricing.py``; zwraca skrót
-    commitu synchronizacji i rozjazd."""
+def _drift_after(root: Path, anchor: str, replacement: str) -> str | None:
+    """Kod opisany modelem ze skrótami przeliczonymi na nim, potem zmiana ``anchor`` w ``efenix_pricing.py``; zwraca
+    rozjazd."""
 
     for path in (DEFINITIONS, *(ROOT / name for name in COVERED)):
         copy = root / path.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(path, copy)
-    git(root, "init", "--quiet")
-    sync = commit(root, "synchronizacja")[:9]
+    skill = root / DEFINITIONS.relative_to(ROOT).parents[1]
+    rozjazd_modelu.przesun(skill, root)
     pricing = root / PRICING
     text = pricing.read_text(encoding="utf-8")
     assert text.count(anchor) == 1, anchor
     pricing.write_text(text.replace(anchor, replacement), encoding="utf-8")
-    commit(root, "zmiana")
-    skill = root / DEFINITIONS.relative_to(ROOT).parents[1]
-    (skill / "SKILL.md").write_text(f"Sync commit: `{sync}` (main).\n", encoding="utf-8")
-    return sync, rozjazd_modelu.rozjazd(skill, root)
+    return rozjazd_modelu.rozjazd(skill, root)
 
 
 def test_zmieniona_definicja_opisana_modelem_jest_rozjazdem(tmp_path: Path) -> None:
-    sync, found = _drift_after(tmp_path, "    if plan.excess:\n        return EmmettWarning(plan.excess)\n", "")
+    found = _drift_after(tmp_path, "    if plan.excess:\n        return EmmettWarning(plan.excess)\n", "")
 
-    assert found is not None and f"kod opisany modelem zmienił się od {sync}: {PRICING} _completed" in found, found
+    assert found is not None and f"kod opisany modelem zmienił się: {PRICING} _completed" in found, found
 
 
 def test_zmiana_obok_definicji_opisanych_modelem_nie_jest_rozjazdem(tmp_path: Path) -> None:
     # Sprawdzania (``check`` w ``price_orders``) model nie opisuje.
-    _, found = _drift_after(tmp_path, "    def check() -> None:\n", "    def check() -> None:\n        pass\n")
+    found = _drift_after(tmp_path, "    def check() -> None:\n", "    def check() -> None:\n        pass\n")
 
     assert found is None
 

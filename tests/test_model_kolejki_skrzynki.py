@@ -3,7 +3,7 @@
 Podstawa skilla w CI (``sprawdz_kolejke.py``) uruchamia model i sprawdzenie prawdziwego kodu, każde do końca, i pada,
 gdy padło którekolwiek; w częściach ``MUTACJE_CZESC=k/n`` każda jednostka biegnie w jednej części.
 
-Model opisuje kod z ``model/definicje.json`` skilla w Sync commit z jego ``SKILL.md``, a w plikach procesu Centrum
+Model opisuje kod z ``model/definicje.json`` skilla w chwili jego skrótów, a w plikach procesu Centrum
 (``app.py``, ``launcher.py``, ``server.py``) tylko definicje procesów Centrum. Werdykt, znane znaleziska i rozjazd w CI
 sprawdza ``tests/test_model_tlc.py`` na drodze wspólnej dla modeli skilli.
 """
@@ -19,7 +19,6 @@ import sys
 
 import pytest
 
-from tests.fixtures.git_repo import commit, git
 from tests.fixtures.model_tlc import model_tlc, rozjazd_modelu, skrypt_modelu, wyjscie_tlc
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +36,13 @@ APP = ROOT / "src" / "rozliczenia" / "centrum" / "app.py"
 LAUNCHER = ROOT / "src" / "rozliczenia" / "centrum" / "launcher.py"
 SERVER = ROOT / "src" / "rozliczenia" / "centrum" / "server.py"
 TOOL_FILES = ROOT / "src" / "rozliczenia" / "tool_files.py"
+# Pliki opisane modelem w całości.
+WHOLE = (
+    ROOT / "src" / "rozliczenia" / "centrum" / "outbox.py",
+    ROOT / "src" / "rozliczenia" / "centrum" / "keyed_box.py",
+    ROOT / "src" / "rozliczenia" / "centrum" / "report_box.py",
+    ROOT / "src" / "rozliczenia" / "centrum" / "atomic_file.py",
+)
 
 
 def test_kontrprzyklad_kolejki_opowiada_kroki_kodu_i_stan_kolejki_i_skrzynki_na_koncu(capsys: pytest.CaptureFixture[str]) -> None:
@@ -65,7 +71,7 @@ def _no_change(text: str) -> str:
 @pytest.mark.parametrize(
     ("path", "edit", "moved"),
     [
-        (APP, lambda text: text.replace("        outbox.resume()\n", "        pass\n"), "src/rozliczenia/centrum/app.py lifespan"),
+        (APP, lambda text: text.replace("        outbox.resume()\n", "        pass\n"), "src/rozliczenia/centrum/app.py create_app.lifespan"),
         (LAUNCHER, lambda text: text.replace("def _listen_when_released(", "def _listen_later("), "src/rozliczenia/centrum/launcher.py _listen_when_released"),
         (SERVER, lambda text: text.replace("_GRACEFUL_SHUTDOWN_S = 5", "_GRACEFUL_SHUTDOWN_S = 0"), "src/rozliczenia/centrum/server.py _GRACEFUL_SHUTDOWN_S"),
         (TOOL_FILES, lambda text: text.replace("def listen_locally(port: int) -> socket.socket:\n", "def listen_locally(port: int) -> socket.socket:\n    _ = 0\n"), "src/rozliczenia/tool_files.py listen_locally"),
@@ -80,26 +86,23 @@ def _no_change(text: str) -> str:
 def test_rozjazd_liczy_w_plikach_procesu_centrum_tylko_definicje_procesow_centrum(
     tmp_path: Path, path: Path, edit: Callable[[str], str], moved: str | None
 ) -> None:
-    for source in (APP, LAUNCHER, SERVER, TOOL_FILES, DEFINITIONS):
+    for source in (APP, LAUNCHER, SERVER, TOOL_FILES, *WHOLE, DEFINITIONS):
         copy = tmp_path / source.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         copy.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
-    git(tmp_path, "init", "--quiet")
-    sync = commit(tmp_path, "synchronizacja")
+    skill = tmp_path / DEFINITIONS.relative_to(ROOT).parents[1]
+    rozjazd_modelu.przesun(skill, tmp_path)
     copy = tmp_path / path.relative_to(ROOT)
     changed = edit(copy.read_text(encoding="utf-8"))
     assert edit is _no_change or changed != copy.read_text(encoding="utf-8"), "kotwica zmiany nie pasuje do kodu"
     copy.write_text(changed, encoding="utf-8")
-
-    skill = tmp_path / DEFINITIONS.relative_to(ROOT).parents[1]
-    (skill / "SKILL.md").write_text(f"**Sync commit: `{sync[:8]}`**\n", encoding="utf-8")
 
     found = rozjazd_modelu.rozjazd(skill, tmp_path)
 
     if moved is None:
         assert found is None
     else:
-        assert found is not None and found.startswith(f"kod opisany modelem zmienił się od {sync[:8]}: {moved}. "), found
+        assert found is not None and found.startswith(f"kod opisany modelem zmienił się: {moved}. "), found
 
 
 # Jednostki sprawdzenia kodu i modelu w kolejności ``UNITS``; atrapa sprawdzenia wypisuje pierwszy zakres jednostki.

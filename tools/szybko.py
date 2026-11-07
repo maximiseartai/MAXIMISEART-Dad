@@ -30,8 +30,8 @@ Szybko nie pobiera ``origin``, więc merge jest z bazą z ostatniego ``git fetch
 ``mutations`` (skrypty mutacji skilli), ``Frontend``, E2E ani Timing guard.
 
 Krok ``rozjazd modelu`` pyta ``tools/lib/rozjazd_modelu.py`` o każdy skill z ``model/definicje.json``, którego podstawę
-``ci:`` zmiana uruchomiłaby na pull request (``tools/lib/zakres_runu.py``): czy kod opisany jego modelem TLA+ zmienił się
-od Sync commit z jego ``SKILL.md``. To samo pytanie skrypt modelu zadaje w CI przed TLC i tam pada, więc szybko pada też,
+``ci:`` zmiana uruchomiłaby na pull request (``tools/lib/zakres_runu.py``): czy kod opisany jego modelem zmienił się od
+skrótów z tego pliku. To samo pytanie skrypt skilla zadaje w CI przed sprawdzeniem i tam pada, więc szybko pada też,
 bez TLC, z nazwą skilla, pliku i definicji i krokami „Bring the model in line” ze ``SKILL.md`` skilla.
 
 Kończy się ``SZYBKO OK`` albo ``SZYBKO FAIL | <kroki>``, z dopiskiem `` | pytest przerwany``, gdy szybko przerwał
@@ -301,12 +301,12 @@ def _run_all(steps: list[ci_lokalnie.Step], interruptible: ci_lokalnie.Step | No
 
 def _model_drift(root: Path, changed: frozenset[str]) -> list[str]:
     """Rozjazdy modelu skilli, których podstawę ``ci:`` zmiana ``changed`` uruchomiłaby na pull request: skrypt modelu w
-    niej pada na nich przed TLC. Szybko nie pobiera ``origin``, więc nie dopobiera historii do Sync commit."""
+    niej pada na nich przed sprawdzeniem."""
 
     return [
         f"{skill.name}: {found}"
         for skill in rozjazd_modelu.skille(root)
-        if podstawa_na_pull_request(skill, changed)[0] and (found := rozjazd_modelu.rozjazd(skill, root, dopobierz=False)) is not None
+        if podstawa_na_pull_request(skill, changed)[0] and (found := rozjazd_modelu.rozjazd(skill, root)) is not None
     ]
 
 

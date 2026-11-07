@@ -92,6 +92,7 @@ from rozliczenia.efenix_window import (
     PagePart,
     Shape,
     StatusChangeBlocked,
+    WindowAction,
 )
 from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.message import Message
@@ -1062,11 +1063,11 @@ def _summary(outcome: Outcome[PricingSummary] | None) -> PricingSummary | None:
     return outcome.view
 
 
-def _steps(outcome: Outcome[PricingSummary] | None) -> dict[int, set[str]]:
+def _steps(outcome: Outcome[PricingSummary] | None) -> dict[int, set[WindowAction]]:
     """Actions of the window at each order (0, 1): its trace in the result, and at the Zatrzymanie the order it stopped
     at with its failed action."""
 
-    actions: dict[int, set[str]] = {}
+    actions: dict[int, set[WindowAction]] = {}
     summary = _summary(outcome)
     for result in () if summary is None else summary.results:
         actions.setdefault(result.order.row - FIRST_ROW, set()).update(step.action for step in result.steps)
@@ -1080,16 +1081,16 @@ def _steps(outcome: Outcome[PricingSummary] | None) -> dict[int, set[str]]:
     return actions
 
 
-def _changes(before: Priced, after: Priced) -> set[str]:
+def _changes(before: Priced, after: Priced) -> set[WindowAction]:
     """Actions of the window that explain the change of one order: the date, Emmett, or a quantity."""
 
-    needed = set()
+    needed: set[WindowAction] = set()
     if before.day != after.day:
-        needed.add("data wykonania")
+        needed.add(WindowAction.DATE)
     if before.emmett_loads != after.emmett_loads:
-        needed.add("Wycena Emmetta")
+        needed.add(WindowAction.EMMETT)
     elif before.quantities != after.quantities:
-        needed.add("ilość")
+        needed.add(WindowAction.QUANTITY)
     return needed
 
 
@@ -1119,7 +1120,7 @@ def common_checks(name: str, run: Run, before: Sequence[Priced], extra: Mapping[
                 "ZMIANA_ZE_SLADEM",
                 "zmiana bez śladu",
                 f"zlecenie {index + 1} zmieniło się w efenix ({was} → {now}), a wynik i Zatrzymanie nie mają działania: "
-                f"{', '.join(sorted(missing))}",
+                f"{', '.join(sorted(action.value for action in missing))}",
             )
         if run.outcome is not None and FIRST_ROW + index not in begun:
             add("ZMIANA_ZE_SLADEM", "zmiana bez dziennika", f"zlecenie {index + 1} zmieniło się w efenix bez wpisu „zaczynam” w dzienniku")

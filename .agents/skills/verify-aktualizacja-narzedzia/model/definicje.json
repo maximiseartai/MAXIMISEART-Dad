@@ -1,14 +1,22 @@
 {
-  "src/rozliczenia/centrum/tool_update.py": "cały plik",
-  "src/rozliczenia/centrum/tool_updates.py": "cały plik",
-  "src/rozliczenia/centrum/restart_guardian.py": "cały plik",
-  "src/rozliczenia/centrum/launcher.py": "cały plik",
-  "src/rozliczenia/tool_files.py": [
-    "config_dir",
-    "centrum_script",
-    "start_command",
-    "listen_locally",
-    "port_free",
-    "_bound"
-  ]
+  "src/rozliczenia/centrum/tool_update.py": {
+    "cały plik": "58ffdb607388e942"
+  },
+  "src/rozliczenia/centrum/tool_updates.py": {
+    "cały plik": "7bd8a20e5f6d30af"
+  },
+  "src/rozliczenia/centrum/restart_guardian.py": {
+    "cały plik": "683904a972847c4f"
+  },
+  "src/rozliczenia/centrum/launcher.py": {
+    "cały plik": "ca2f4b0918a828ee"
+  },
+  "src/rozliczenia/tool_files.py": {
+    "config_dir": "5ed8e57bffc412f1",
+    "centrum_script": "b4f22ab7663f077e",
+    "start_command": "757b7db3a594171b",
+    "listen_locally": "447af6975944743e",
+    "port_free": "fc5e781442384f59",
+    "_bound": "915deb4f448334bf"
+  }
 }

@@ -427,7 +427,7 @@ def _warning(source: Path, result: OrderResult) -> Message | None:
         case Ready() | Settled() | Forwarded():
             return None
         case OrderError(problem):
-            return messages.order_error(source, result.order.row, problem)
+            return messages.order_error(source, result.order.row, problem, changed=any(step.sent for step in result.steps))
         case EmmettWarning(excess):
             return messages.emmett_warning(source, result.order.row, excess)
 
@@ -464,22 +464,7 @@ def _kept(results: Sequence[OrderResult], current: OrderTrace | None, error: Win
     done = [step for result in results for step in result.steps]
     if current is not None:
         done.extend(current.steps)
-    return error.sent or any(_wrote(step) for step in done)
-
-
-def _wrote(step: TraceStep) -> bool:
-    """Udane działanie okna ``step`` wysłało do efenix zmianę zlecenia: data wykonania, którą przyjął kalendarz (okno
-    kliknęło „Potwierdź”), Wycena Emmetta, ilość i Przekazanie do akceptacji, któremu efenix nie odmówił."""
-
-    match step.action:
-        case "szukanie" | "otwarcie zlecenia":
-            return False
-        case "data wykonania":
-            return step.accepted is True
-        case "Wycena Emmetta" | "ilość":
-            return True
-        case "przekazanie do akceptacji":
-            return step.refusal is None
+    return error.sent or any(step.sent for step in done)
 
 
 def _outcome(order: CollectiveOrder, efenix: Efenix, forbidden: ForbiddenValues | None, mode: PricingMode) -> Outcome:

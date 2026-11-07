@@ -22,15 +22,13 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import MappingProxyType
-from typing import Literal, TypeVar
+from typing import TypeVar
 
 from .efenix_checks import ListedRead, read_listed
 from .efenix_orders import CollectiveOrder
-from .efenix_window import Efenix, EmmettLoad, ForwardRefusal, ListedOrder, OrderPricing
+from .efenix_window import Efenix, EmmettLoad, ForwardRefusal, ListedOrder, OrderPricing, WindowAction
 
-__all__ = ["Action", "OrderTrace", "TraceStep", "traced"]
-
-Action = Literal["szukanie", "otwarcie zlecenia", "data wykonania", "Wycena Emmetta", "ilość", "przekazanie do akceptacji"]
+__all__ = ["OrderTrace", "TraceStep", "traced"]
 
 
 @dataclass(frozen=True)
@@ -45,7 +43,7 @@ class TraceStep:
     odmówił Przekazania do akceptacji, więc okno niczego nie wysłało.
     """
 
-    action: Action
+    action: WindowAction
     started_at: datetime
     duration_ms: int
     found: int | None = None
@@ -59,6 +57,14 @@ class TraceStep:
     status: str | None = None
     realizator: str | None = None
     refusal: ForwardRefusal | None = None
+
+    @property
+    def sent(self) -> bool:
+        """Działanie wysłało do efenix zmianę zlecenia (``WindowAction.writes``): data wykonania tylko wtedy, gdy kalendarz
+        przyjął dzień, bo inaczej okno zamyka kalendarz bez „Potwierdź”, a Przekazanie do akceptacji tylko wtedy, gdy
+        efenix go nie odmówił, bo okno zamyka wtedy okno informacji bez „Tak”."""
+
+        return self.action.writes and self.accepted is not False and self.refusal is None
 
 
 @dataclass
@@ -86,37 +92,37 @@ class _Traced:
         self._now = now
 
     def search(self, number: str) -> Sequence[ListedOrder]:
-        found, at, duration_ms = self._done("szukanie", lambda: self._efenix.search(number))
+        found, at, duration_ms = self._done(WindowAction.SEARCH, lambda: self._efenix.search(number))
         results = tuple(read_listed(self._order, listed) for listed in found)
-        self._add(TraceStep("szukanie", at, duration_ms, found=len(found), results=results))
+        self._add(TraceStep(WindowAction.SEARCH, at, duration_ms, found=len(found), results=results))
         return found
 
     def open_order(self, order: ListedOrder) -> OrderPricing:
-        pricing, at, duration_ms = self._done("otwarcie zlecenia", lambda: self._efenix.open_order(order))
-        self._add(replace(_page("otwarcie zlecenia", at, duration_ms, pricing), status=order.status, realizator=order.realizator))
+        pricing, at, duration_ms = self._done(WindowAction.OPEN, lambda: self._efenix.open_order(order))
+        self._add(replace(_page(WindowAction.OPEN, at, duration_ms, pricing), status=order.status, realizator=order.realizator))
         return pricing
 
     def set_execution_date(self, day: date) -> bool:
-        accepted, at, duration_ms = self._done("data wykonania", lambda: self._efenix.set_execution_date(day))
-        self._add(TraceStep("data wykonania", at, duration_ms, execution_date=day, accepted=accepted))
+        accepted, at, duration_ms = self._done(WindowAction.DATE, lambda: self._efenix.set_execution_date(day))
+        self._add(TraceStep(WindowAction.DATE, at, duration_ms, execution_date=day, accepted=accepted))
         return accepted
 
     def load_emmett(self, verdict: Callable[[EmmettLoad], OrderPricing]) -> OrderPricing:
-        pricing, at, duration_ms = self._done("Wycena Emmetta", lambda: self._efenix.load_emmett(verdict))
-        self._add(_page("Wycena Emmetta", at, duration_ms, pricing))
+        pricing, at, duration_ms = self._done(WindowAction.EMMETT, lambda: self._efenix.load_emmett(verdict))
+        self._add(_page(WindowAction.EMMETT, at, duration_ms, pricing))
         return pricing
 
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
-        amount, at, duration_ms = self._done("ilość", lambda: self._efenix.enter_quantity(position, quantity))
-        self._add(TraceStep("ilość", at, duration_ms, amount=amount, position=position, quantity=quantity))
+        amount, at, duration_ms = self._done(WindowAction.QUANTITY, lambda: self._efenix.enter_quantity(position, quantity))
+        self._add(TraceStep(WindowAction.QUANTITY, at, duration_ms, amount=amount, position=position, quantity=quantity))
         return amount
 
     def forward_to_accept(self) -> ForwardRefusal | None:
-        refusal, at, duration_ms = self._done("przekazanie do akceptacji", self._efenix.forward_to_accept)
-        self._add(TraceStep("przekazanie do akceptacji", at, duration_ms, refusal=refusal))
+        refusal, at, duration_ms = self._done(WindowAction.FORWARD, self._efenix.forward_to_accept)
+        self._add(TraceStep(WindowAction.FORWARD, at, duration_ms, refusal=refusal))
         return refusal
 
-    def _done(self, action: Action, act: Callable[[], _T]) -> tuple[_T, datetime, int]:
+    def _done(self, action: WindowAction, act: Callable[[], _T]) -> tuple[_T, datetime, int]:
         """Wynik działania ``act``, chwila jego rozpoczęcia i czas; działanie, które zgłosiło wyjątek, trafia do
         ``OrderTrace.failed``."""
 
@@ -136,7 +142,7 @@ class _Traced:
         self._trace.steps.append(step)
 
 
-def _page(action: Action, started_at: datetime, duration_ms: int, pricing: OrderPricing) -> TraceStep:
+def _page(action: WindowAction, started_at: datetime, duration_ms: int, pricing: OrderPricing) -> TraceStep:
     return TraceStep(
         action,
         started_at,

@@ -40,6 +40,8 @@ PASSING = 'print("WYKRYTA: proba")\nprint("MUTACJE OK")\n'
 CHECKED = "src/pakiet/sprawdzany.py"
 GUARDED = "---\nname: verify-x\npilnuje:\n  - src/pakiet/rout*.py\n---\n"
 ANCHORS = "src/pakiet/kotwice.txt"
+# Dawny znak potwierdzenia modelu w ``SKILL.md``: SHA, który przepisuje każdy rebase gałęzi (#1060).
+SYNC_COMMIT = re.compile(r"Sync commit: `[0-9a-f]{7,40}`")
 WITH_TABLE = f"""from pathlib import Path
 import sys
 
@@ -372,27 +374,28 @@ def test_kazdy_modul_silnika_jest_w_pilnuje_verify_rozliczenia_albo_na_liscie_wy
     assert sorted(POZA_VERIFY_ROZLICZENIA.keys() - (modules - covered)) == [], "usuń z POZA_VERIFY_ROZLICZENIA moduł, którego nie ma albo który glob obejmuje"
 
 
-def test_kazdy_skill_z_modelem_tla_wskazuje_kod_modelu_w_pilnuje_sync_commit_i_kroki_naprawy_rozjazdu(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Rozjazd modelu z kodem (``tools/lib/rozjazd_modelu.py``) sprawdza skrypt modelu w CI i ``tools/szybko.py`` tylko dla
-    skilla z ``model/definicje.json``, więc ma go każdy skill z modelem TLA+ (``model/*.tla``), a nie ma żaden inny. Każdy
-    plik z ``definicje.json`` leży w ``pilnuje:`` skilla, żeby jego zmiana uruchamiała podstawę i krok szybko, a
-    ``SKILL.md`` ma Sync commit i sekcję z krokami, którymi rozjazd każe go naprawić."""
+def test_kazdy_skill_z_modelem_wskazuje_kod_modelu_w_pilnuje_i_kroki_naprawy_rozjazdu_bez_sync_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rozjazd modelu z kodem (``tools/lib/rozjazd_modelu.py``) sprawdza skrypt skilla w CI i ``tools/szybko.py`` tylko dla
+    skilla z ``model/definicje.json``, więc ma go każdy skill z modelem TLA+ (``model/*.tla``) i eksplorator z częściami
+    modelowanymi ręcznie. Każdy plik z ``definicje.json`` leży w ``pilnuje:`` skilla, żeby jego zmiana uruchamiała
+    podstawę i krok szybko, a ``SKILL.md`` ma sekcję z krokami, którymi rozjazd każe go naprawić, i nie ma Sync commit:
+    model potwierdzają skróty w ``definicje.json``, a SHA w ``SKILL.md`` przepisuje każdy rebase (#1060)."""
 
     tool = _load_tool(monkeypatch)
-    models = sorted({path.parents[1] for path in (ROOT / ".agents" / "skills").glob("*/model/*.tla")})
+    models = {path.parents[1] for path in (ROOT / ".agents" / "skills").glob("*/model/*.tla")}
     problems = []
-    for skill in models:
+    for skill in rozjazd_modelu.skille(ROOT):
         definitions = rozjazd_modelu.definicje(skill)
         unguarded = sorted(name for name in definitions if tool.hits(skill, {name}).files.keys() != {name})
         problems += [f"{skill.name}: {name} poza pilnuje:" for name in unguarded]
         text = (skill / "SKILL.md").read_text(encoding="utf-8")
-        if rozjazd_modelu.SYNC.search(text) is None:
-            problems.append(f"{skill.name}: SKILL.md bez Sync commit")
+        if SYNC_COMMIT.search(text) is not None:
+            problems.append(f"{skill.name}: SKILL.md z Sync commit")
         if not re.search(rf"^#+ {rozjazd_modelu.KROKI}", text, re.MULTILINE):
             problems.append(f"{skill.name}: SKILL.md bez sekcji „{rozjazd_modelu.KROKI}”")
 
     assert len(models) >= 4
-    assert rozjazd_modelu.skille(ROOT) == models
+    assert sorted(models - set(rozjazd_modelu.skille(ROOT))) == []
     assert problems == []
 
 

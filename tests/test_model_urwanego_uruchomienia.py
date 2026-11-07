@@ -1,7 +1,7 @@
 """Model TLA+ Dziennika Wyceny w efenix i Logów Urwanego Uruchomienia: kod opisany modelem i opowieść kontrprzykładu.
 
-Model opisuje definicje z ``model/definicje.json`` skilla ``verify-urwane-uruchomienie`` w commicie synchronizacji z jego
-``SKILL.md``: funkcje, klasy, przypisania i metody (``Klasa.metoda``); rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py``
+Model opisuje definicje z ``model/definicje.json`` skilla ``verify-urwane-uruchomienie`` w chwili ich skrótów: funkcje,
+klasy, przypisania i metody po ścieżce od modułu (``Klasa.metoda``, ``create_app.runs``); rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py``
 (``tests/test_rozjazd_modelu.py``). Zmiana innej części tych plików (``run_logs.py``, ``app.py`` i ``runs.py`` zmieniają
 się często) rozjazdem nie jest. Testy rozjazdu biegną na repozytorium z plikami zbudowanymi z tej tabeli, nie na kodzie
 ``src/``: sprawdzają tabelę, a kod opisany modelem sprawdza krok ``ci:`` skilla. Werdykt i znane znaleziska sprawdza
@@ -17,7 +17,6 @@ import shutil
 
 import pytest
 
-from tests.fixtures.git_repo import commit, git
 from tests.fixtures.model_tlc import model_tlc, rozjazd_modelu, skrypt_modelu, wyjscie_tlc
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,13 +25,12 @@ DEFINITIONS = ROOT / ".agents" / "skills" / "verify-urwane-uruchomienie" / "mode
 
 
 def _definitions() -> dict[str, list[str]]:
-    loaded: dict[str, list[str]] = json.loads(DEFINITIONS.read_text(encoding="utf-8"))
-    return loaded
+    return {path: list(names) for path, names in json.loads(DEFINITIONS.read_text(encoding="utf-8")).items()}
 
 
 def _source(names: list[str]) -> str:
-    """Plik z każdą definicją z ``names`` (metoda ``Klasa.metoda`` w swojej klasie), każda z własnym wynikiem, i z
-    funkcją oraz metodą każdej klasy, których tabela nie wymienia."""
+    """Plik z każdą definicją z ``names`` (``Klasa.metoda`` jako metoda w swojej klasie, tak samo ``create_app.runs``),
+    każda z własnym wynikiem, i z funkcją oraz metodą każdej klasy, których tabela nie wymienia."""
 
     classes: dict[str, list[str]] = defaultdict(list)
     lines = []
@@ -62,8 +60,8 @@ def _file_of(name: str) -> str:
     return path
 
 
-def _repository(root: Path) -> str:
-    """Repozytorium z tabelą definicji skilla i plikami, które ją spełniają; zwraca commit synchronizacji."""
+def _repository(root: Path) -> Path:
+    """Tabela definicji skilla i pliki, które ją spełniają, ze skrótami przeliczonymi na nich; zwraca folder skilla."""
 
     copy = root / DEFINITIONS.relative_to(ROOT)
     copy.parent.mkdir(parents=True)
@@ -71,8 +69,9 @@ def _repository(root: Path) -> str:
     for path, names in _definitions().items():
         (root / path).parent.mkdir(parents=True, exist_ok=True)
         (root / path).write_text(_source(names), encoding="utf-8")
-    git(root, "init", "--quiet")
-    return commit(root, "synchronizacja")
+    skill = copy.parents[1]
+    rozjazd_modelu.przesun(skill, root)
+    return skill
 
 
 def _change(root: Path, name: str) -> None:
@@ -85,55 +84,46 @@ def _change(root: Path, name: str) -> None:
     path.write_text(text.replace(anchor, f'return "{name} po zmianie"'), encoding="utf-8")
 
 
-def _drift(root: Path, sync: str) -> str | None:
-    skill = root / DEFINITIONS.relative_to(ROOT).parents[1]
-    (skill / "SKILL.md").write_text(f"Sync commit: `{sync}` (main).\n", encoding="utf-8")
-    return rozjazd_modelu.rozjazd(skill, root)
-
-
 @pytest.mark.parametrize(
     "name",
     [
         pytest.param("RunComments.close_left_behind", id="zamykanie-dziennikow"),
         pytest.param("RunComments.send_left_behind", id="wysylka-wersji-zastepczych"),
         pytest.param("close", id="macierz-startu"),
-        pytest.param("runs", id="kolejnosc-dzialan-po-wyniku"),
-        pytest.param("send_interrupted", id="wysylka-przy-zapytaniu"),
-        pytest.param("lifespan", id="start-kolejki"),
+        pytest.param("create_app.runs", id="kolejnosc-dzialan-po-wyniku"),
+        pytest.param("create_app.send_interrupted", id="wysylka-przy-zapytaniu"),
+        pytest.param("create_app.lifespan", id="start-kolejki"),
         pytest.param("run_process", id="wynik-uruchomienia"),
         pytest.param("_remove", id="usuniecie-dziennika"),
     ],
 )
 def test_zmieniona_definicja_opisana_modelem_jest_rozjazdem(tmp_path: Path, name: str) -> None:
-    sync = _repository(tmp_path)
+    skill = _repository(tmp_path)
     _change(tmp_path, name)
-    commit(tmp_path, "zmiana kodu opisanego modelem")
 
-    found = _drift(tmp_path, sync[:9])
+    found = rozjazd_modelu.rozjazd(skill, tmp_path)
 
-    assert found is not None and f"kod opisany modelem zmienił się od {sync[:9]}: {_file_of(name)} {name}." in found, found
+    assert found is not None and f"kod opisany modelem zmienił się: {_file_of(name)} {name}." in found, found
 
 
 def test_metoda_rozjazdu_to_metoda_swojej_klasy_a_nie_metoda_o_tej_nazwie_w_innej_klasie(tmp_path: Path) -> None:
     """``RunLog.interrupted`` (Logi z dziennika) i ``RecordMaker.interrupted`` (te Logi z narzędziem i środowiskiem) to
     dwie definicje: zmiana pierwszej jest rozjazdem tylko pierwszej."""
 
-    sync = _repository(tmp_path)
+    skill = _repository(tmp_path)
     _change(tmp_path, "RunLog.interrupted")
-    commit(tmp_path, "Logi Urwanego Uruchomienia inaczej")
 
-    found = _drift(tmp_path, sync[:9])
+    found = rozjazd_modelu.rozjazd(skill, tmp_path)
 
-    assert found is not None and f"zmienił się od {sync[:9]}: {_file_of('RunLog.interrupted')} RunLog.interrupted. " in found, found
+    assert found is not None and f"zmienił się: {_file_of('RunLog.interrupted')} RunLog.interrupted. " in found, found
 
 
 @pytest.mark.parametrize("name", ["obok", "RunComments.obok"])
 def test_zmiana_obok_definicji_opisanych_modelem_nie_jest_rozjazdem(tmp_path: Path, name: str) -> None:
-    sync = _repository(tmp_path)
+    skill = _repository(tmp_path)
     _change(tmp_path, name)
-    commit(tmp_path, "zmiana obok")
 
-    assert _drift(tmp_path, sync[:9]) is None
+    assert rozjazd_modelu.rozjazd(skill, tmp_path) is None
 
 
 def test_kontrprzyklad_daje_obietnice_i_przyczyny_jej_zdarzen_a_odczyt_ktory_sie_nie_udal_nazywa_po_imieniu(

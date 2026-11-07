@@ -30,6 +30,7 @@ from rozliczenia.centrum.run_logs import (
     LoggedStep,
 )
 from rozliczenia.efenix_address import AddressPart, address_differences
+from rozliczenia.efenix_window import WindowAction
 
 from model_efenix import CATALOG, PRICES, EfenixOrder
 
@@ -79,7 +80,7 @@ def unread(orders: Sequence[LoggedOrder]) -> list[str]:
     """Granice blokujące: szukanie z trafieniami bez odczytu wierszy listy (Logi sprzed #843)."""
 
     if any(
-        step.action == "szukanie" and step.found and step.results is None for order in orders for step in order.steps
+        step.action is WindowAction.SEARCH and step.found and step.results is None for order in orders for step in order.steps
     ):
         return [
             "Logi Wyceny w efenix nie mają odczytu wierszy listy po szukaniu (Logi sprzed #843), więc Atrapa nie wie, co pokazać"
@@ -136,7 +137,7 @@ def started(fed: Fed, today: date) -> Iterator[AtrapaEfenix]:
 
 
 def _results(order: LoggedOrder) -> list[LoggedResult]:
-    search = next((step for step in order.steps if step.action == "szukanie"), None)
+    search = next((step for step in order.steps if step.action is WindowAction.SEARCH), None)
     return [] if search is None or search.results is None else list(search.results)
 
 
@@ -149,8 +150,8 @@ def _listed(
     assert collective.number is not None
     number = collective.number if result.same_number else f"{collective.number}-{index}"
     address = _efenix_address(result.address, order.row)
-    opened = _first(order.steps, "otwarcie zlecenia") if result.same_number else None
-    emmett = _first(order.steps, "Wycena Emmetta") if result.same_number else None
+    opened = _first(order.steps, WindowAction.OPEN) if result.same_number else None
+    emmett = _first(order.steps, WindowAction.EMMETT) if result.same_number else None
     listed = EfenixOrder(
         order_id=f"{order.row}-{index}",
         number=number,
@@ -183,8 +184,8 @@ def _efenix_address(parts: Sequence[str], row: int) -> str:
     return f"ul. {street} {number}{flat}"
 
 
-def _first(steps: Sequence[LoggedStep], action: str) -> LoggedStep | None:
-    return next((step for step in steps if step.action == action), None)
+def _first(steps: Sequence[LoggedStep], action: WindowAction) -> LoggedStep | None:
+    return next((step for step in steps if step.action is action), None)
 
 
 def _nonzero(quantities: Mapping[str, LoggedQuantity] | None) -> dict[str, int]:
@@ -203,7 +204,7 @@ def _prices(orders: Sequence[LoggedOrder]) -> tuple[dict[str, Decimal], set[str]
             if step.quantities is not None and step.amount is not None:
                 page, amount = _whole(step.quantities), step.amount
                 pages.append((amount, dict(page)))
-            elif step.action == "ilość" and page is not None and amount is not None and step.position is not None:
+            elif step.action is WindowAction.QUANTITY and page is not None and amount is not None and step.position is not None:
                 if not isinstance(step.quantity, int) or step.amount is None:
                     continue
                 change = step.quantity - page.get(step.position, 0)

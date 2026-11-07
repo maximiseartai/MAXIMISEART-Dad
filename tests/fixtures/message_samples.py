@@ -293,14 +293,15 @@ UPDATE_SAMPLES: Samples = {
     "rollback_failed": [update_messages.rollback_failed],
 }
 
-_ORDER_FAULTS: tuple[OrderFault, ...] = (
-    *OrderProblem,
-    *DateRefused,
-    UnpairedColumns(("N", "AR")),
-    NotWholeQuantities(("O",)),
-    OtherAmount(Decimal("1234.50"), Decimal("1200")),
-    *(MissingPositions(("012", "019"), read) for read in PageRead),
-    *ForwardRefusal,
+# Każdy błąd zlecenia z tym, czy proces wysłał już do efenix zmianę zlecenia, gdy Wycena go daje (``changed``).
+_ORDER_FAULTS: tuple[tuple[OrderFault, bool], ...] = (
+    *((problem, problem is OrderProblem.NOT_FORWARDED) for problem in OrderProblem),
+    *((refused, refused is DateRefused.NOT_SAVED) for refused in DateRefused),
+    (UnpairedColumns(("N", "AR")), False),
+    (NotWholeQuantities(("O",)), False),
+    (OtherAmount(Decimal("1234.50"), Decimal("1200")), True),
+    *((MissingPositions(("012", "019"), read), read is not PageRead.OPENED) for read in PageRead),
+    *((refusal, False) for refusal in ForwardRefusal),
 )
 EFENIX_SAMPLES: Samples = {
     "source_unusable": [partial(efenix_messages.source_unusable, WorkbookError(SOURCE, problem)) for problem in Problem],
@@ -315,7 +316,9 @@ EFENIX_SAMPLES: Samples = {
     ],
     "efenix_unreachable": [partial(efenix_messages.efenix_unreachable, kept=kept) for kept in (False, True)],
     "browser_not_started": [efenix_messages.browser_not_started],
-    "order_error": [partial(efenix_messages.order_error, SOURCE, 23, problem) for problem in _ORDER_FAULTS],
+    "order_error": [
+        partial(efenix_messages.order_error, SOURCE, 23, problem, changed=changed) for problem, changed in _ORDER_FAULTS
+    ],
     "emmett_warning": [
         lambda: efenix_messages.emmett_warning(SOURCE, 23, [Excess("012", 2, 1), Excess("020", 1, 0)]),
     ],

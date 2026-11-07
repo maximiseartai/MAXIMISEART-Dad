@@ -108,10 +108,11 @@ from rozliczenia.efenix_window import (
     OtherShape,
     PagePart,
     StatusChangeBlocked,
+    WindowAction,
     WindowCause,
 )
 from rozliczenia.efenix_positions import file_quantities
-from rozliczenia.efenix_trace import Action, TraceStep
+from rozliczenia.efenix_trace import TraceStep
 from rozliczenia.input_copy import CellValue, CopiedFile, CopiedSheet, Typed, TypedKind
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.message import Message
@@ -338,7 +339,7 @@ class LoggedStep(_Record):
     tekstu okna informacji); ``None`` przy innych działaniach i w plikach sprzed tych pól.
     """
 
-    action: Action
+    action: WindowAction
     started_at: datetime | None = None
     duration_ms: int
     found: int | None

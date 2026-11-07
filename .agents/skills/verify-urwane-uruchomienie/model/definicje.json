@@ -1,87 +1,87 @@
 {
-  "src/rozliczenia/centrum/run_logs.py": [
-    "RunLog.interrupted",
-    "_guarded",
-    "LoggedEnding",
-    "guard_logs",
-    "GuardedLogs"
-  ],
-  "src/rozliczenia/centrum/comment_versions.py": [
-    "ResultWithoutLogs",
-    "ProgressVersion",
-    "OwnLogs",
-    "StandInLogs",
-    "WithoutLogsVersion",
-    "rank_of",
-    "journal_after",
-    "post_of",
-    "Drop",
-    "close"
-  ],
-  "src/rozliczenia/centrum/run_comments.py": [
-    "RunComments.run_started",
-    "RunComments._progress",
-    "RunComments.run_ended",
-    "RunComments._own",
-    "RunComments._step",
-    "RunComments._keep",
-    "RunComments.close_left_behind",
-    "RunComments.send_left_behind",
-    "RecordMaker.interrupted"
-  ],
-  "src/rozliczenia/centrum/logs_disk.py": [
-    "LogsOnDisk.logs",
-    "_read_logs",
-    "_names",
-    "_NAME",
-    "_RUN_ID",
-    "LogsRead",
-    "Journal",
-    "_first_line",
-    "_RunEnded",
-    "JournalRead",
-    "_read_journal",
-    "_remove",
-    "LogsOnDisk.started",
-    "LogsOnDisk.left_behind",
-    "LogsOnDisk.remove_journal",
-    "LogsOnDisk.write",
-    "name_of"
-  ],
-  "src/rozliczenia/centrum/app.py": [
-    "lifespan",
-    "send_interrupted",
-    "app",
-    "disk",
-    "comments",
-    "closed",
-    "runs"
-  ],
-  "src/rozliczenia/centrum/runs.py": [
-    "_Run.work",
-    "RunHost.after",
-    "RunHost.shutdown_refusal",
-    "RunHost.start"
-  ],
-  "src/rozliczenia/centrum/outbox.py": [
-    "Outbox.post",
-    "Outbox.resume",
-    "Rank",
-    "Version",
-    "_version_of",
-    "_superseded"
-  ],
-  "src/rozliczenia/centrum/launcher.py": [
-    "_start",
-    "_listen_when_released"
-  ],
-  "src/rozliczenia/centrum/atomic_file.py": [
-    "replace_atomically"
-  ],
-  "src/rozliczenia/efenix_pricing.py": [
-    "save"
-  ],
-  "src/rozliczenia/process_run.py": [
-    "run_process"
-  ]
+  "src/rozliczenia/centrum/run_logs.py": {
+    "RunLog.interrupted": "33aac1b5b5a48abd",
+    "_guarded": "17cc5e8be6f63955",
+    "LoggedEnding": "8ec4ecd3bd0ce997",
+    "guard_logs": "220c4b2868ecc3fc",
+    "GuardedLogs": "5fdd32a040cfba44"
+  },
+  "src/rozliczenia/centrum/comment_versions.py": {
+    "ResultWithoutLogs": "c9fd2e89c92a9fe7",
+    "ProgressVersion": "5e04bea635fa9033",
+    "OwnLogs": "d74da43b6f1f0893",
+    "StandInLogs": "9f9d00d7a8b7553b",
+    "WithoutLogsVersion": "92868149b99a61ae",
+    "rank_of": "801ae38cd3dd02d0",
+    "journal_after": "55d9aebdc4621587",
+    "post_of": "88fdd0c735e40e29",
+    "Drop": "c76b417cfc198b48",
+    "close": "d5ad83be91678da8"
+  },
+  "src/rozliczenia/centrum/run_comments.py": {
+    "RunComments.run_started": "a62533064f9e0d87",
+    "RunComments._progress": "c036f0ad50a24420",
+    "RunComments.run_ended": "bff8def4448bc94c",
+    "RunComments._own": "aa97e6fad8ca97d3",
+    "RunComments._step": "642d6f0503f516a5",
+    "RunComments._keep": "f103fc7564914779",
+    "RunComments.close_left_behind": "e2478851c6d9d2c8",
+    "RunComments.send_left_behind": "7f3d73f60025ee0d",
+    "RecordMaker.interrupted": "de53a5143d62971d"
+  },
+  "src/rozliczenia/centrum/logs_disk.py": {
+    "LogsOnDisk.logs": "09cb03e3fedd9628",
+    "_read_logs": "42f7c04a89d9683f",
+    "_names": "d703673e4771ad93",
+    "_NAME": "191666e2ace14a7c",
+    "_RUN_ID": "38b226cc6aeae33a",
+    "LogsRead": "2dfbc7e2c338f6b7",
+    "Journal": "794227fcab78c98a",
+    "_first_line": "9e428daecbdf1f07",
+    "_RunEnded": "242ccffd41c0ef05",
+    "JournalRead": "e5b35b59400e4346",
+    "_read_journal": "dfebb6da939d24d2",
+    "_remove": "56e443ad89f7a91e",
+    "LogsOnDisk.started": "27bed62b161c2a3b",
+    "LogsOnDisk.left_behind": "6575679b81ab383e",
+    "LogsOnDisk.remove_journal": "68bae958d9af8c30",
+    "LogsOnDisk.write": "f23ef6e67da698d9",
+    "name_of": "d7dce93561713660"
+  },
+  "src/rozliczenia/centrum/app.py": {
+    "create_app.lifespan": "283ef526303aa497",
+    "create_app.send_interrupted": "2a47500d61ec7faf",
+    "create_app.app": "5fab7958bcd93ca4",
+    "create_app.disk": "7193dd27f858d9e4",
+    "create_app.comments": "59c2f539804813da",
+    "create_app.closed": "a1e81435da7def3b",
+    "create_app.runs": "4be9a7a56dd66879"
+  },
+  "src/rozliczenia/centrum/runs.py": {
+    "_Run.work": "76e7c91edeb733d0",
+    "RunHost.after": "3b394aacf6701175",
+    "RunHost.shutdown_refusal": "7b2f8610fb13f295",
+    "RunHost.start": "134b21e6de066ce8"
+  },
+  "src/rozliczenia/centrum/outbox.py": {
+    "Outbox.post": "7c75e38248766fe4",
+    "Outbox.resume": "2a67b7d7c8f5622c",
+    "Rank": "d27ac44226b11a48",
+    "Version": "b20196684cf428b5",
+    "_version_of": "c10f0e62f09470ed",
+    "_superseded": "563aa9a41628837b"
+  },
+  "src/rozliczenia/centrum/launcher.py": {
+    "_start": "b14a179937a29521",
+    "_listen_when_released": "70f8e77fe38bca44"
+  },
+  "src/rozliczenia/centrum/atomic_file.py": {
+    "replace_atomically": "9e12247e22fdd059"
+  },
+  "src/rozliczenia/efenix_pricing.py": {
+    "price_orders.save": "1f41203adb4865b2"
+  },
+  "src/rozliczenia/process_run.py": {
+    "run_process": "3cdf9c79ee1e1031"
+  }
 }
