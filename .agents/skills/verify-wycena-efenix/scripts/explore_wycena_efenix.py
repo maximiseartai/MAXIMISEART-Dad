@@ -356,10 +356,11 @@ def _expected(fault: Fault, call: Call, role: Role) -> Expect:
     (``efenix_browser``: „jej odpowiedź trafia do #wyniki w dowolnej chwili”), so a redirect that puts the list page
     there may give the list another shape. A „Załaduj do zlecenia” efenix answers with 200 and ``result: nok`` in a
     valid session leaves the order without Wycena Emmetta, and the window tells it from the reloaded page, not from the
-    answer it never reads: amount 0 is ``Shape.EMMETT_NOT_LOADED``, a Zatrzymanie of the window, not a logout, unless
-    Emmett proposed nothing, which the window knows only from an empty Emmett dialog after a proposal that came whole
-    with 2xx; an empty dialog after a failed proposal (``REFUSED_NO_PROPOSAL``: its proposal is HTTP 500) is not that
-    (``efenix_browser``: „Strona z kwotą 0 po każdej innej propozycji, także po pustym oknie Emmetta po padniętej
+    answer it never reads: a page without any quantity is ``Shape.EMMETT_NOT_LOADED``, a Zatrzymanie of the window, not
+    a logout, unless Emmett proposed nothing, which the window knows only from an empty Emmett dialog after a proposal
+    that came whole with 2xx; an empty dialog after a failed proposal (``REFUSED_NO_PROPOSAL``: its proposal is HTTP 500)
+    is not that
+    (``efenix_pricing._emmett``: „Strona bez ilości po każdej innej propozycji, także po pustym oknie Emmetta po padniętej
     propozycji, to UnexpectedPage z Shape.EMMETT_NOT_LOADED”, #908); an expired session stays a logout. An answer to „Załaduj
     do zlecenia” just before the end of the window's wait, which includes the reload the efenix script makes after it
     (``early_s``), ends like the reference: the window waits for the answer and the reload within its time limit."""

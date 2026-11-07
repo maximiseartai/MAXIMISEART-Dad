@@ -608,8 +608,11 @@ do tej pory, ostatnie zlecenie), a na końcu staje się podsumowaniem Logów, ta
 gdy Centrum zamknęło się w jej trakcie: wtedy przy następnym starcie
 podsumowaniem Logów Urwanego Uruchomienia. Gdy Logi z wynikiem nie doszły do
 kolejki po wpisie końca dziennika Wyceny (np. Centrum zamknęło się tuż po
-wyniku), komentarz zostaje postępem: start niczego za taką Wycenę nie wysyła,
-żeby nie zastąpić jej Logów z wynikiem, które mogą już być w Skrzynce.
+wyniku), następny start wysyła za taką Wycenę Logi z pliku, a bez pliku Logów
+albo z plikiem, którego nie da się odczytać, wynik bez Logów: wynik z wpisu
+końca, zlecenia z dziennika i powód braku pełnych Logów. To wersja zastępcza o
+stopniu niższym niż Logi z wynikiem, więc Logów z wynikiem, które mogą już być
+w Skrzynce, nie zastępuje.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), dziennik Centrum, raport
 
 ## Kopia wejścia

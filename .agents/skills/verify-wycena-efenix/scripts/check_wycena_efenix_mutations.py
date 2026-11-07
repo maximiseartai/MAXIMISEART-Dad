@@ -155,8 +155,14 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "#889: kwota 0 po „Załaduj do zlecenia” zawsze znaczy, że Emmett nic nie zaproponował",
-        (Edit(BROWSER, "        if not nothing_proposed and loaded.amount == 0:\n", "        if False and loaded.amount == 0:\n"),),
+        "#889: strona bez ilości po „Załaduj do zlecenia” zawsze znaczy, że Emmett nic nie zaproponował",
+        (
+            Edit(
+                PRICING,
+                "    if load.proposal is not Proposal.NOTHING and not _priced(load.page):\n",
+                "    if False and not _priced(load.page):\n",
+            ),
+        ),
         explorer("odpowiedzi", "zaladuj-do-zlecenia"),
         "efenix odmówił Wyceny Emmetta, a okno wpisuje ilości pliku do zlecenia bez Emmetta",
         NEW,
@@ -166,8 +172,8 @@ MUTATIONS = (
         (
             Edit(
                 BROWSER,
-                "        nothing_proposed = shown is False and _came_whole(asked.value)\n",
-                "        nothing_proposed = shown is False\n",
+                "Proposal.NOTHING if _came_whole(asked.value) else Proposal.LOST\n",
+                "Proposal.NOTHING\n",
             ),
         ),
         explorer("odpowiedzi", "zaladuj-do-zlecenia"),
@@ -205,8 +211,8 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "#960: Wycena Emmetta także do zlecenia z ilościami (_outcome: bez not any(opened.quantities.values()))",
-        (Edit(PRICING, "    if not any(opened.quantities.values()):\n", "    if True:\n"),),
+        "#960: Wycena Emmetta także do zlecenia z ilościami (_outcome: bez not _priced(opened))",
+        (Edit(PRICING, "    if not _priced(opened):\n", "    if True:\n"),),
         explorer("zabity-proces", "ilosc"),
         "ponowne uruchomienie ładuje Emmetta do zlecenia z ilościami i czyści je",
         NEW,
@@ -214,7 +220,7 @@ MUTATIONS = (
     Mutation(
         "#965: Wycena Emmetta przy wznowieniu po zerwanej odpowiedzi także do zlecenia z ilościami, na drodze, na której"
         " Chromium ponawia „Załaduj do zlecenia”",
-        (Edit(PRICING, "    if not any(opened.quantities.values()):\n", "    if True:\n"),),
+        (Edit(PRICING, "    if not _priced(opened):\n", "    if True:\n"),),
         explorer("odciecia", "propozycja-emmetta", "ilosc"),
         "po zerwanej sieci ponowne uruchomienie ładuje Emmetta do zlecenia z ilościami i czyści je",
         NEW,
@@ -224,10 +230,10 @@ MUTATIONS = (
         (
             Edit(
                 PRICING,
-                "    if not any(opened.quantities.values()):\n",
-                "    if any(opened.quantities.values()) and completion(file, opened.quantities).to_enter:\n"
+                "    if not _priced(opened):\n",
+                "    if _priced(opened) and completion(file, opened.quantities).to_enter:\n"
                 "        return OrderError(OtherAmount(opened.amount, order.amount))\n"
-                "    if not any(opened.quantities.values()):\n",
+                "    if not _priced(opened):\n",
             ),
         ),
         explorer("zabity-proces", "ilosc"),

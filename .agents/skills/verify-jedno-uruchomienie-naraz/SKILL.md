@@ -66,7 +66,7 @@ after a new version, until the restart guardian has started and
 
 | Covered code | What the check relies on |
 | --- | --- |
-| `runs.py` `RunHost.start`, `shutdown_refusal`, `decide`, `finished`, `publish` | check and claim of `_run` under `_lock`; refusal while a run has not ended; an accepted shutdown sets `_closing` under the same lock; the start file (`run_started`, `run_cards.RunCards`) written outside the lock, after the claim and before the thread; `start` keeps the last view (the previous result) in `_events` |
+| `runs.py` `RunHost.start`, `shutdown_refusal`, `decide`, `finished`, `publish` | check and claim of `_run` under `_lock`; refusal while a run has not ended; an accepted shutdown sets `_closing` under the same lock; the start file (`run_started`, `logs_disk.LogsOnDisk.started`) written outside the lock, after the claim and before the thread; `start` keeps the last view (the previous result) in `_events` |
 | `runs.py` `RunHost.begin_update`, `end_update`, `_busy_locked` | check and claim of `_updating` under `_lock`; refusal while closing, updating, restoring or running |
 | `runs.py` `RunHost.begin_restore`, `end_restore`; `start` | check and claim of `_restoring` under `_lock`; `start` refuses while restoring |
 | `intermax_run.py` `intermax_copies_router` | modelled by hand: `begin_restore`, the restore as one step inside the request, then `end_restore` |

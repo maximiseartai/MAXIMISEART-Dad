@@ -23,7 +23,7 @@ CI runs `check_template_copy.py --no-shrink` (the `ci:` key, which is also the b
 the mutations in full CI on `main` and nightly on `main` (`mutacje-nocne.yml`). Run them locally only to
 reproduce a red CI step or the night's issue. What stays with you: the options CI never
 runs, fresh seeds after a larger change to `template_copy.py` (`--seed`) and Dad's real Wzorzec
-(`--wzorzec`, on Maks's Mac), both as background commands; and reading a red run as „When the check
+(`--wzorzec`, on Maks's Mac), both in the background with a wait for their end in the same turn; and reading a red run as „When the check
 fails” says.
 
 ## The promise

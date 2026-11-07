@@ -40,7 +40,7 @@ Preconditions:
   `gh` is its admin, it has a commit and no Release, tag or leftover of a run.
 
 - **Run.** `github_skrzynki.py na-zywo --feature archiwum [--klucz-plik <file>] --zapisz-nagrania --run-dir
-  ~/.t3/notes/verify-github-skrzynki` in the background; about 115 writes (101 for `pliki-strony`), one per second.
+  ~/.t3/notes/verify-github-skrzynki` in the background, waiting for its end in the same turn; about 115 writes (101 for `pliki-strony`), one per second.
 - **Read.** Each `PRZYPADEK archiwum-<key>/<case>` line. `zalozenie-tego-samego-tagu` and `znalezienie-po-tagu` carry
   `nadazylo_po_s` in their facts: how long GitHub's Release list took to show the new Archiwum. `zalozenie-tego-samego-tagu`
   carries `najnowsze_id`, the Release GitHub answers for `releases/latest`, and `adres-pobrania` carries

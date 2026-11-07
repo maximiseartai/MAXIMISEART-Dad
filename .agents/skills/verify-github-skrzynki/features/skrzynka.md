@@ -48,7 +48,7 @@ Preconditions:
   description, as Maks did in the Skrzynka, and leaves `uwaga-taty` out.
 
 - **Run.** `github_skrzynki.py na-zywo --feature skrzynka [--klucz-plik <file>] --zapisz-nagrania --run-dir
-  ~/.t3/notes/verify-github-skrzynki` in the background; about 8 minutes.
+  ~/.t3/notes/verify-github-skrzynki` in the background, waiting for its end in the same turn; about 8 minutes.
 - **Read.** Each `PRZYPADEK skrzynka-<key>/<case>` line: the statuses GitHub gave, the client's outcome, the domain's.
   `etykieta-z-githuba`, `lista-strony` and `lista-zamkniete` carry `nadazylo_po_s` in their facts in the recording:
   how long GitHub's list took to show what the preparation created.

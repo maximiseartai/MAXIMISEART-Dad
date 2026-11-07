@@ -72,8 +72,8 @@ limits leave room for a run. `DOCTOR FAIL | <reasons>` (exit 2) names what to fi
 `--feature skrzynka` drives the Skrzynka Zgłoszeń, `--feature archiwum` the Archiwum Logów okresu,
 `--feature aktualnosc` Aktualność narzędzia, `all` all three; each live run ends with `--feature wiernosc-atrap` on the new
 recordings. A Skrzynka run takes about 8 minutes (it creates 101 issues and 101 comments for the paging cases, one
-write per second as GitHub asks) and an Archiwum run about 3 (101 files for the paging case), so start them as
-background commands and wait for the notification. Keep `--run-dir` out of `/tmp`. On 2026-11-05 the third Skrzynka run within 25 minutes
+write per second as GitHub asks) and an Archiwum run about 3 (101 files for the paging case), so start a run in
+the background and wait for its end in the same turn. Keep `--run-dir` out of `/tmp`. On 2026-11-05 the third Skrzynka run within 25 minutes
 got `Unreachable()` already in preparation, with no answer from GitHub in its log, and a run an hour later passed. The
 cause is not confirmed (GitHub's limit on content one account creates is a guess), so leave about an hour between
 Skrzynka runs, also between the two keys, and treat a preparation `Unreachable` soon after another run as that.

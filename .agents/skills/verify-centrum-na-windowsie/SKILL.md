@@ -35,7 +35,8 @@ the address Centrum opens). The drive answers native windows through user32 and 
 ## Launch
 
 From macOS (or anywhere with `gh`), run it on GitHub's Windows machine and bring the evidence home. A run takes
-about 10 minutes, so start it as a background command and read its last line:
+about 10 minutes, as long as a foreground command may take, so start it in the background, wait for its end in the
+same turn and read its last line:
 
 ```bash
 .venv/bin/python .agents/skills/verify-centrum-na-windowsie/scripts/run_on_github.py            # dispatch on the current, pushed branch

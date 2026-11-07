@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
     from .efenix_checks import ListedOrder
-    from .efenix_pricing import Efenix, OrderPricing
+    from .efenix_pricing import Efenix, EmmettLoad, OrderPricing
 
 __all__ = ["ACTION_PAUSE_S", "KEEPALIVE_S", "ORDER_S", "Pace", "Pacing"]
 
@@ -104,9 +104,9 @@ class _PacedEfenix:
         self._pacing.before_write(self._searched)
         return self._efenix.set_execution_date(day)
 
-    def load_emmett(self) -> OrderPricing:
+    def load_emmett(self, verdict: Callable[[EmmettLoad], OrderPricing]) -> OrderPricing:
         self._pacing.before_write(self._searched)
-        return self._efenix.load_emmett()
+        return self._efenix.load_emmett(verdict)
 
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
         self._pacing.before_write(self._searched)
