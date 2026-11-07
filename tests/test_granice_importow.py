@@ -14,9 +14,15 @@ biorą niczego z kodu pod testem (``src``). Okno w procesie (``tests/fixtures/ok
 testem tylko typy seamu Wyceny w efenix (klasy i aliasy typów z ``efenix_pricing`` i ``efenix_checks``), a decyzje bierze
 z modelu: okno, które wołałoby kod Wyceny, przestałoby być niezależną drugą stroną kontraktu z oknem przeglądarki.
 
+Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
+``PURE_VERSIONS``, więc stopień wersji i los dziennika Wyceny sprawdza test bez plików i wątków. Wysyłkę Logów
+Uruchomienia (``Post`` z etykietą ``logi-uruchomienia``) buduje tylko ``comment_versions.post_of``, a dowód strażnika
+reguły danych (``_MINTED``) zna tylko ``run_logs``: inaczej typ Logów po strażniku (``GuardedLogs``) niczego by nie
+dowodził, bo dało się go zbudować bez strażnika.
+
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica: import przez ``importlib`` albo ``__import__`` z napisu łapie tylko
-przegląd.
+przegląd, a ``_MINTED`` wzięty przez ``getattr`` z napisu też.
 """
 
 from __future__ import annotations
@@ -40,6 +46,21 @@ EFENIX_ORACLE = {
 # Okno w procesie i moduły kodu pod testem, z których bierze tylko typy.
 WINDOW_IN_PROCESS = ROOT / "tests" / "fixtures" / "okno_w_procesie.py"
 WINDOW_SEAM = frozenset({"rozliczenia.efenix_checks", "rozliczenia.efenix_pricing"})
+# Wersje komentarza Uruchomienia i jedyne, co biorą przy wczytaniu spoza biblioteki standardowej bez I/O: nazwy z modułu.
+COMMENT_VERSIONS = "rozliczenia/centrum/comment_versions.py"
+PURE_STDLIB = frozenset({"__future__", "collections", "collections.abc", "dataclasses", "typing"})
+PURE_VERSIONS = {
+    "rozliczenia.centrum": frozenset({"contract"}),
+    "rozliczenia.centrum.catalog": frozenset({"declaration_of"}),
+    "rozliczenia.centrum.outbox": frozenset({"ArchiveFile", "PeriodThread", "Post", "Rank"}),
+    "rozliczenia.centrum.report_box": frozenset({"Label"}),
+    "rozliczenia.centrum.version": frozenset({"short_commit"}),
+    "rozliczenia.centrum.run_logs": frozenset(
+        {"GuardedLogs", "GuardedText", "LoggedDiagnosis", "LoggedMessage", "PricingProgress", "RunLog", "StartedFacts"}
+    ),
+}
+RUN_LOGS = "rozliczenia/centrum/run_logs.py"
+RUN_LOGS_LABEL = "logi-uruchomienia"
 STDLIB_ONLY = {
     "rozliczenia/__init__.py": "pakiet, który wczytuje każdy moduł poniżej",
     "rozliczenia/centrum/__init__.py": "pakiet, który wczytuje każdy moduł Centrum",
@@ -234,3 +255,100 @@ def _is_type(value: object) -> bool:
     """Klasa (także wyliczenie i wyjątek) albo alias typu (``Callable[...]``, unia)."""
 
     return isinstance(value, type) or typing.get_origin(value) is not None
+
+
+def test_wersje_komentarza_uruchomienia_nie_robia_io_i_biora_tylko_nazwy_z_listy() -> None:
+    tree = ast.parse((SRC / COMMENT_VERSIONS).read_text(encoding="utf-8"))
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found += [ast.unparse(node) for alias in node.names if alias.name not in PURE_STDLIB]
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if node.level:
+                found.append(ast.unparse(node))
+            elif module in PURE_VERSIONS:
+                found += [f"{module}.{alias.name}" for alias in node.names if alias.name not in PURE_VERSIONS[module]]
+            elif module not in PURE_STDLIB:
+                found.append(ast.unparse(node))
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            f"Wersje komentarza Uruchomienia (src/{COMMENT_VERSIONS}) nie robią I/O i biorą spoza biblioteki standardowej "
+            "tylko nazwy z PURE_VERSIONS (tests/test_granice_importow.py). Plik, kolejkę i zegar zostaw powłoce, która "
+            "woła ten moduł.",
+        ]
+    )
+
+
+def _python_files() -> Iterator[Path]:
+    for folder in (SRC, ROOT / "tools", ROOT / "tests", ROOT / ".agents" / "skills"):
+        yield from sorted(folder.rglob("*.py"))
+
+
+def test_dowod_straznika_logow_zna_tylko_run_logs() -> None:
+    found = [
+        f"{path.relative_to(ROOT).as_posix()}:{node.lineno}"
+        for path in _python_files()
+        if path != SRC / RUN_LOGS
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if (isinstance(node, ast.Name) and node.id == "_MINTED")
+        or (isinstance(node, ast.Attribute) and node.attr == "_MINTED")
+        or (isinstance(node, ast.alias) and node.name == "_MINTED")
+    ]
+
+    assert not found, "\n".join(
+        [
+            *found,
+            f"Dowód strażnika reguły danych (_MINTED) zna tylko src/{RUN_LOGS}: Logi i tekst po strażniku (GuardedLogs, "
+            "GuardedText) daje tylko guard_logs i guard_text.",
+        ]
+    )
+
+
+def _run_logs_label_names(tree: ast.Module) -> set[str]:
+    """Nazwy, pod którymi moduł zna etykietę Logów Uruchomienia (``comment_versions.LABEL``)."""
+
+    return {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "rozliczenia.centrum.comment_versions"
+        for alias in node.names
+        if alias.name == "LABEL"
+    }
+
+
+def test_wysylke_logow_uruchomienia_buduje_tylko_post_of() -> None:
+    found = []
+    for path in sorted((SRC / "rozliczenia").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        file = path.relative_to(SRC).as_posix()
+        names = {"LABEL"} if file == COMMENT_VERSIONS else _run_logs_label_names(tree)
+        allowed = {
+            node
+            for function in tree.body
+            if file == COMMENT_VERSIONS and isinstance(function, ast.FunctionDef) and function.name == "post_of"
+            for node in ast.walk(function)
+        }
+        for call in ast.walk(tree):
+            if call in allowed or not isinstance(call, ast.Call):
+                continue
+            called = call.func.id if isinstance(call.func, ast.Name) else getattr(call.func, "attr", "")
+            if called not in {"Post", "PeriodThread"}:
+                continue
+            if any(
+                (isinstance(node, ast.Name) and node.id in names)
+                or (isinstance(node, ast.Attribute) and node.attr == "LABEL")
+                or (isinstance(node, ast.Constant) and node.value == RUN_LOGS_LABEL)
+                for node in ast.walk(call)
+            ):
+                found.append(f"src/{file}:{call.lineno}: {called}(…)")
+
+    assert not found, "\n".join(
+        [
+            *found,
+            "Wysyłkę Logów Uruchomienia (etykieta logi-uruchomienia) buduje tylko post_of z wersji komentarza "
+            f"(src/{COMMENT_VERSIONS}), która niesie tylko tekst po strażniku i wybiera stopień (rank_of).",
+        ]
+    )

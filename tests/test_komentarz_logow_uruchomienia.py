@@ -1,7 +1,7 @@
 """Komentarz Logów Uruchomienia w Skrzynce Zgłoszeń (#320, #844): to, czego testy przez HTTP nie osiągną tanio.
 
 Logi ponad limit komentarza GitHuba wymagałyby przez HTTP setek Komunikatów, więc to, że i tak idą jednym komentarzem
-z pełnymi Logami w Archiwum Logów okresu, sprawdza wysyłka zbudowana wprost z rekordu (``logi_post``): jej części to
+z pełnymi Logami w Archiwum Logów okresu, sprawdza wysyłka zbudowana wprost z rekordu (``post_of``): jej części to
 dokładnie komentarze, które kolejka dopisuje do issue, a jej plik to plik w Archiwum.
 Podsumowanie ma tu tylko przypadki bez taniej drogi przez HTTP z fikstur Przebiegu: nazwa Przygotowania,
 powtórki kodów, powtórzone Zatrzymanie, Zatrzymanie po odmowie w Decyzji taty, czas w sekundach albo nieznany, brak commitu i sprawdzenia Diagnozy,
@@ -30,7 +30,30 @@ from pydantic import BaseModel
 import pytest
 
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, REPOSITORY
-from rozliczenia.centrum.run_logs import READ_VALUES, TOOL_FIELDS, RunLog, guarded, logi_post, summary_markdown
+from rozliczenia.centrum.comment_versions import (
+    LABEL,
+    CommentVersion,
+    OwnLogs,
+    ProgressVersion,
+    ResultWithoutLogs,
+    StandInLogs,
+    WithoutLogsVersion,
+    journal_after,
+    post_of,
+    summary_markdown,
+)
+from rozliczenia.centrum.outbox import PeriodThread, Rank
+from rozliczenia.centrum.run_logs import (
+    READ_VALUES,
+    TOOL_FIELDS,
+    OrderDone,
+    PricingProgress,
+    RunLog,
+    StartFacts,
+    guard_logs,
+    guard_text,
+    guarded,
+)
 from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, shown
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 
@@ -158,7 +181,7 @@ def test_logi_ponad_limit_komentarza_ida_jednym_komentarzem_a_cale_w_pliku_archi
     )
     assert len(logs.text) > 3 * COMMENT_LIMIT
 
-    post = logi_post(logs)
+    post = post_of(OwnLogs(guard_logs(logs, ForbiddenValues())))
 
     name = f"20261023T204720Z-settlement-{RUN_ID}.json.gz"
     link = f"https://github.com/{REPOSITORY}/releases/download/logi-08_14_09_2026/{name}"
@@ -170,17 +193,83 @@ def test_logi_ponad_limit_komentarza_ida_jednym_komentarzem_a_cale_w_pliku_archi
     assert gzip.decompress(post.archive.packed()).decode("utf-8") == logs.text
 
 
+def _versions() -> dict[str, CommentVersion]:
+    """Każda wersja komentarza jednego Uruchomienia Wyceny w efenix, z tekstem po strażniku."""
+
+    logs = guard_logs(record(process="efenix", run_id=RUN_ID), ForbiddenValues())
+    started = StartFacts(
+        run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=logs.record.started_at
+    )
+    progress = PricingProgress(started, (OrderDone(18, "gotowe", None),), 2, 19)
+    text = guard_text("Postęp albo wynik bez Logów.", "komentarz", ForbiddenValues())
+    return {
+        "postep": ProgressVersion(progress, text),
+        "logi-z-pliku-albo-urwane": StandInLogs(logs),
+        "wynik-bez-logow": WithoutLogsVersion(ResultWithoutLogs(progress, "OK", "niezapisane"), text),
+        "logi-z-wynikiem-albo-diagnoza": OwnLogs(logs),
+    }
+
+
+# Stopień wersji (GLOSSARY „Logi Uruchomienia”, #910): postęp najniższy, wersja zastępcza ze startu Centrum niższa niż
+# Logi z wynikiem, a Logi z pracy Centrum Uruchomienia najwyższe.
+RANKS: Final = {
+    "postep": Rank.DRAFT,
+    "logi-z-pliku-albo-urwane": Rank.STAND_IN,
+    "wynik-bez-logow": Rank.STAND_IN,
+    "logi-z-wynikiem-albo-diagnoza": Rank.OWN,
+}
+
+
+@pytest.mark.parametrize(("kind", "rank"), RANKS.items(), ids=RANKS.keys())
+def test_kazda_wersja_komentarza_uruchomienia_to_ta_sama_wysylka_w_swoim_stopniu_a_plik_w_archiwum_maja_tylko_logi(
+    kind: str, rank: Rank
+) -> None:
+    """Każda wersja komentarza Uruchomienia idzie do issue Logów okresu jako ta sama wysyłka (Uruchomienie i etykieta),
+    więc kolejka zmienia jeden komentarz, w stopniu, który wybiera nadawca (#910). Pełny plik w Archiwum Logów okresu
+    mają tylko Logi: postęp i wynik bez Logów go nie mają."""
+
+    version = _versions()[kind]
+
+    post = post_of(version)
+
+    assert isinstance(post.target, PeriodThread)
+    assert (post.target.label, post.period, post.run_id, post.rank) == (LABEL, "08_14_09_2026", RUN_ID, rank)
+    assert (post.archive is not None) == isinstance(version, OwnLogs | StandInLogs)
+
+
+JOURNAL_AFTER: Final = {
+    "postep": ("zostaw", "zostaw"),
+    "logi-z-pliku-albo-urwane": ("usuń", "zostaw"),
+    "wynik-bez-logow": ("usuń", "zostaw"),
+    "logi-z-wynikiem-albo-diagnoza": ("usuń", "zostaw"),
+}
+
+
+@pytest.mark.parametrize(("kind", "after"), JOURNAL_AFTER.items(), ids=JOURNAL_AFTER.keys())
+def test_dziennik_wyceny_znika_tylko_po_wersji_koncowej_komentarza_ktora_kolejka_przyjela(
+    kind: str, after: tuple[str, str]
+) -> None:
+    """Dziennik Wyceny w efenix jest śladem komentarza, który może mówić, że Uruchomienie trwa, więc znika tylko wtedy,
+    gdy Kolejka wysyłki przyjęła wersję końcową tego komentarza: Logi albo wynik bez Logów (#910). Postęp, także przyjęty,
+    dziennika nie usuwa."""
+
+    version = _versions()[kind]
+
+    assert (journal_after(version, accepted=True), journal_after(version, accepted=False)) == after
+
+
 def test_zakazana_wartosc_w_kluczu_slownika_logow_jest_zamaskowana_z_uwaga_o_polu_bez_wartosci() -> None:
     forbidden = ForbiddenValues()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, "Syntetyczna Kwarcowa 9")
     logs = record(process="intermax", intermax_entries={"rows": {"SYNTETYCZNA KWARCOWA 9": [12]}, "without_entry": []})
 
-    kept = guarded(logs, forbidden)
+    guarded_logs = guard_logs(logs, forbidden)
+    kept = guarded_logs.record
 
     assert kept.intermax_entries is not None
     assert kept.intermax_entries.rows == {"[adres]": [12]}
     assert kept.technical_notes == ["Reguła danych: zamaskowano wartość kolumny ADRES w: intermax_entries.rows."]
-    post = logi_post(kept)
+    post = post_of(OwnLogs(guarded_logs))
     assert post.archive is not None
     assert gzip.decompress(post.archive.packed()).decode("utf-8") == kept.text
     assert all("Kwarcowa" not in text for text in (*post.parts, kept.text))
@@ -462,11 +551,12 @@ def test_pole_ze_slowami_i_chwilami_narzedzia_zostaje_w_logach_choc_plik_taty_ma
     logs = full_logs(messages=[{**FULL_LOGS["messages"][0], "where": f"Komórka „{value}”."}])
     assert forbidden.guard(_json_at(logs, place), place).notes, "pole ma wartość z kolumny ADRES"
 
-    kept = guarded(logs, forbidden)
+    guarded_logs = guard_logs(logs, forbidden)
+    kept = guarded_logs.record
 
     assert _json_at(kept, place) == _json_at(logs, place)
     assert kept.messages[0].where == "Komórka „[adres]”."
-    post = logi_post(kept)
+    post = post_of(OwnLogs(guarded_logs))
     assert (post.run_id, post.period) == (RUN_ID, "08_14_09_2026")
 
 
@@ -554,9 +644,10 @@ def test_kazda_wartosc_pelnych_logow_jako_adres_z_pliku_taty_daje_logi_bez_niej_
             continue  # krótsza niż ``MIN_VALUE``: strażnik jej nie szuka
         swept += 1
 
-        kept = guarded(logs, forbidden)
+        guarded_logs = guard_logs(logs, forbidden)
+        kept = guarded_logs.record
 
-        assert logi_post(kept).run_id == RUN_ID, value
+        assert post_of(OwnLogs(guarded_logs)).run_id == RUN_ID, value
         assert [place for place in TOOL_FIELD_VALUES if _json_at(kept, place) != _json_at(logs, place)] == [], value
         if not forbidden.guard(tool_words, "").notes:
             assert not forbidden.guard(kept.text, "").notes, f"{value!r} zostało w Logach"

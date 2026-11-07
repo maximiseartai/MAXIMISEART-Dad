@@ -1172,11 +1172,11 @@ def killed_run(snapshot: Disk, source: Path) -> Run:
 
 def check_killed(name: str, case: Case, run: Run) -> list[Violation]:
     """ZMIANA_ZE_SLADEM, BEZ_ZMIANY_STATUSU and BEZ_DANYCH of what a tool killed at ``case`` leaves: no order changed
-    its status; every order changed in efenix has its „zaczynam” entry in the dziennik (``pricing_journal``: „zaczynam
-    zlecenie” … „przed pierwszym działaniem okna efenix przy zleceniu, więc przed każdym zapisem w efenix”); the Plik
-    zbiorczy has no Znacznik efenix, because Zapisywanie sets them at its end (``efenix_pricing``: „na końcu Znaczniki
-    efenix”); an order the dziennik ended gotowe has the file's quantities, ``Kwota`` (AU) and the date in efenix; and
-    the dziennik has no order data."""
+    its status; every order changed in efenix has its „zaczynam” entry in the dziennik (``logs_disk``, the module of
+    ``Journal``: „zaczynam zlecenie” … „przed pierwszym działaniem okna efenix przy zleceniu, więc przed każdym zapisem w
+    efenix”); the Plik zbiorczy has no Znacznik efenix, because Zapisywanie sets them at its end (``efenix_pricing``: „na
+    końcu Znaczniki efenix”); an order the dziennik ended gotowe has the file's quantities, ``Kwota`` (AU) and the date
+    in efenix; and the dziennik has no order data."""
 
     found: list[Violation] = []
 

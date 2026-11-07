@@ -1161,7 +1161,7 @@ def test_komentarz_do_issue_ktore_lista_juz_pokazuje_dochodzi_takze_bez_odczytu_
 
 
 def logs_with_file(run_id: str) -> Post:
-    """Logi Uruchomienia ``run_id`` w jednym komentarzu z plikiem do Archiwum Logów okresu, jak ``logi_post``."""
+    """Logi Uruchomienia ``run_id`` w jednym komentarzu z plikiem do Archiwum Logów okresu, jak ``comment_versions.post_of``."""
 
     archive = ArchiveFile("logi-08_14_09_2026", "Logi Uruchomień 08_14_09_2026", "Opis.", f"{run_id}.json", "{}\n")
     return Post(LOGS, "08_14_09_2026", run_id, "Logi okresu", (f"podsumowanie {run_id}\n",), archive)

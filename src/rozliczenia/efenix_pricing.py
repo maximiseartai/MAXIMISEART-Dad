@@ -39,7 +39,7 @@ Okno, które czeka, aż tata się zaloguje, robi to w ``Login`` od silnika: ten 
 przez ``waiting`` rozmowy rdzenia, do ``Czas uruchomienia``. Postęp Zapisywania to kroki (``PhaseRunner.step``):
 logowanie, zlecenia z Wykonawcą i liczbą sprawdzonych z wszystkich, na końcu Znaczniki efenix; ślad działań okna przy
 każdym zleceniu (``efenix_trace``) trafia do jego wyniku, a stamtąd do Logów Uruchomienia. Dziennik Wyceny w efenix
-(``OrderJournal``, w Centrum ``centrum.pricing_journal``) dostaje wpis o każdym zleceniu przed pierwszym działaniem okna przy
+(``OrderJournal``, w Centrum ``centrum.logs_disk.Journal``) dostaje wpis o każdym zleceniu przed pierwszym działaniem okna przy
 nim, więc przed każdym zapisem w efenix, i wpis z wynikiem zaraz po nim, zanim proces przejdzie do następnego zlecenia.
 
 Po ostatnim zleceniu, a także przy Zatrzymaniu w trakcie, ``efenix_marking`` raz zapisuje Plik zbiorczy: komórka ``ADRES``

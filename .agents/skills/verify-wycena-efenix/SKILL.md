@@ -4,6 +4,7 @@ description: Exhaustively break each request of a real Wycena w efenix (the wind
 pilnuje:
   - src/rozliczenia/efenix_*.py
   - src/rozliczenia/centrum/pricing_journal.py
+  - src/rozliczenia/centrum/logs_disk.py
   - src/rozliczenia/centrum/efenix_run.py
   - tests/fixtures/atrapa_efenix.py
   - tools/lib/model_efenix.py
