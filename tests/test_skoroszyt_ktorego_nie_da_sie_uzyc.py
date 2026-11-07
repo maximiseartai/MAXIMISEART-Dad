@@ -10,26 +10,17 @@ from collections.abc import Callable
 import errno
 from pathlib import Path
 
-from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 import pytest
 
-from rozliczenia.centrum.app import create_app
-from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.domain import PhaseStarted, ProgressEvent, ProgressPhase, WorkerStarted
 from rozliczenia.engine import run_settlements
 from rozliczenia.message import StopError
 
-from tests.fixtures.centrum import CENTRUM, FakeGitHub, FakePlatform
-from tests.fixtures.preparation import (
-    make_preparation_fixture,
-    run_preparation,
-    write_collective_template,
-    write_internal_template,
-)
-from tests.fixtures.settlement import make_fixture, write_mapping, write_template
+from tests.fixtures.centrum import CentrumClient, ToolDirectory, centrum_app
+from tests.fixtures.centrum_processes import write_configuration
+from tests.fixtures.preparation import make_preparation_fixture, run_preparation
+from tests.fixtures.settlement import make_fixture
 from tests.fixtures.workbooks import active_worksheet
 
 
@@ -122,27 +113,11 @@ def test_konfiguracja_pokazuje_niedostepny_wzorzec_i_wzorzec_z_danymi_jako_niecz
     damage: Callable[[Path, pytest.MonkeyPatch], None],
     what: str,
 ) -> None:
-    config = tmp_path / "config"
-    config.mkdir()
-    files = ConfigurationFiles(
-        worker_config=write_mapping(config / "worker_mapping.yaml"),
-        internal_template=write_internal_template(config / INTERNAL),
-        collective_template=write_collective_template(config / COLLECTIVE),
-        worker_template=config / WORKER,
-    )
-    write_template(files.worker_template)
-    damage(config / file_name, monkeypatch)
-    log = CentrumLog(tmp_path / "logs" / "centrum-rozliczen.log")
-    app = create_app(
-        settings_path=config / "centrum-ustawienia.yaml",
-        platform=FakePlatform(),
-        log=log,
-        shutdown=Shutdown(log),
-        configuration_files=files,
-        tool_freshness=FakeGitHub().freshness(),
-    )
+    tool = ToolDirectory(tmp_path)
+    write_configuration(tool)
+    damage(tool.config / file_name, monkeypatch)
 
-    response = TestClient(app, base_url=CENTRUM, headers={"Origin": CENTRUM}).get("/api/configuration")
+    response = CentrumClient(centrum_app(tool)).get("/api/configuration")
 
     template = {template["file_name"]: template for template in response.json()["templates"]}[file_name]
     assert (template["state"], template["problem"]) == ("problem", "unreadable")

@@ -5,7 +5,7 @@ czeka na koniec każdego jego wątku, i klient testowy, który nie otwiera pętl
 from __future__ import annotations
 
 import asyncio.base_events
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 import threading
@@ -15,20 +15,20 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.outbox import PeriodThread, Post
+from rozliczenia.centrum.outbox import QUEUE_DIRECTORY, PeriodThread, Post
+from rozliczenia.centrum.reports import UNSENT_DIRECTORY
 from rozliczenia.centrum.server import serve
 from rozliczenia.tool_files import listen_locally
 from rozliczenia.centrum.shutdown import Shutdown
 
 from tests.fixtures.centrum import (
-    FakeGitHub,
-    FakeOneDrive,
-    FakePlatform,
+    CentrumClient,
     FakeReportBox,
-    MetricsPaths,
+    ToolDirectory,
+    centrum_app,
     join_threads_since,
+    write_report_key,
 )
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.linie_watkow import new_line, threads_since
@@ -72,29 +72,13 @@ def _events(path: Path) -> list[str]:
 def _centrum(tmp_path: Path, box: FakeReportBox, log: CentrumLog, clock: ManualClock) -> tuple[FastAPI, Shutdown]:
     """Centrum z kluczem do Zgłoszeń, w którego kolejce czeka Kontrola ilości z poprzedniej pracy Centrum."""
 
-    config = tmp_path / "config"
-    (config / "zgloszenia" / "kolejka").mkdir(parents=True)
-    (config / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY_KLUCZ\n", encoding="utf-8")
-    (config / "zgloszenia" / "kolejka" / QUEUED).write_text(KONTROLA.to_json(), encoding="utf-8")
+    tool = ToolDirectory(tmp_path)
+    write_report_key(tool)
+    queue = tool.config / UNSENT_DIRECTORY / QUEUE_DIRECTORY
+    queue.mkdir(parents=True)
+    (queue / QUEUED).write_text(KONTROLA.to_json(), encoding="utf-8")
     shutdown = Shutdown(log)
-    metrics = MetricsPaths(
-        preparation=tmp_path / "przygotowanie-metrics.jsonl",
-        settlement=tmp_path / "metrics.jsonl",
-        intermax=tmp_path / "intermax-metrics.jsonl",
-    )
-    app = create_app(
-        settings_path=config / "centrum-ustawienia.yaml",
-        platform=FakePlatform(),
-        log=log,
-        shutdown=shutdown,
-        processes=metrics.processes(),
-        tool_freshness=FakeGitHub().freshness(),
-        cloud_files=FakeOneDrive().cloud_files(),
-        report_box=box,
-        clock=clock,
-        pause=clock.pause,
-    )
-    return app, shutdown
+    return centrum_app(tool, log=log, shutdown=shutdown, report_box=box, clock=clock), shutdown
 
 
 def _serving(app: FastAPI, shutdown: Shutdown, log: CentrumLog) -> tuple[threading.Thread, int]:
@@ -142,7 +126,7 @@ def test_zamkniete_centrum_zwalnia_port_od_razu_takze_gdy_kolejka_czeka_na_skrzy
     # górnego limitu (wolna sieć): port trzymany do końca wysyłki dałby tacie kartę Centrum, które zaraz zniknie.
     hold = threading.Event()
     box = FakeReportBox(open_hold=hold)
-    log = CentrumLog(tmp_path / "logs" / "centrum-rozliczen.log")
+    log = CentrumLog(ToolDirectory(tmp_path).log_path)
     app, shutdown = _centrum(tmp_path, box, log, ManualClock())
     since = new_line()
     served, port = _serving(app, shutdown, log)
@@ -245,3 +229,29 @@ def test_watek_z_obslugi_zadania_we_wspolnej_petli_nalezy_do_linii_testu_a_watek
     join_threads_since(since)
 
     assert names == ["z-petli", "z-watku-roboczego"]
+
+
+@pytest.fixture(scope="module")
+def centra_po_tescie() -> Iterator[list[CentrumClient]]:
+    """Klienci Centrum, których wątki sprawdza koniec modułu, czyli chwila po zakończeniu testu, który ich utworzył."""
+
+    clients: list[CentrumClient] = []
+    yield clients
+    assert [thread.name for client in clients for thread in client.threads()] == []
+
+
+def test_centrum_testu_bez_stop_zatrzymuje_sie_po_tescie_razem_z_watkami(centra_po_tescie: list[CentrumClient]) -> None:
+    # Reguła „test nie zostawia wątku” nie zależy od tego, czy autor zawołał ``stop``: zatrzymuje go conftest po teście.
+    stopping = threading.Event()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        threading.Thread(target=stopping.wait, name="praca-centrum", daemon=True).start()
+        yield
+        stopping.set()
+
+    client = CentrumClient(FastAPI(lifespan=lifespan))
+    client.__enter__()
+    centra_po_tescie.append(client)
+
+    assert "praca-centrum" in [thread.name for thread in client.threads()]

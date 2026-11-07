@@ -20,6 +20,7 @@ import pytest
 from rozliczenia.centrum import restart_guardian
 
 from tests.fixtures.fake_cli import fake_cli
+from tests.fixtures.centrum import ToolDirectory
 from tests.fixtures.tool_clone import REPOSITORY_ROOT, copy_centrum_runtime, free_port
 
 COMMIT = "3c1d0a9e5b7f4c2d8e6a1b0f9c8d7e6a5b4c3d2e"
@@ -151,7 +152,7 @@ def test_ponowne_uruchomienie_tylko_otwiera_karte_dzialajacego_centrum(tmp_path:
     assert addresses == [f"http://127.0.0.1:{port}/"] * 2
     assert still_serving["service"] == "centrum-rozliczen"
     assert first.text.count(f"Centrum rozliczeń działa: http://127.0.0.1:{port}/") == 1
-    assert not (runtime / "config" / "centrum-ustawienia.yaml").exists()
+    assert not ToolDirectory(runtime).settings.exists()
 
 
 def test_ponowne_uruchomienie_po_przesunieciu_klonu_rozpoznaje_centrum_innej_wersji(tmp_path: Path) -> None:
@@ -174,13 +175,13 @@ def test_ponowne_uruchomienie_po_przesunieciu_klonu_rozpoznaje_centrum_innej_wer
     assert again.returncode == 1, again.stdout + again.stderr
     assert again.stdout.splitlines()[0] == "Co się stało: Działa już Centrum rozliczeń w innej wersji (3c1d0a9)."
     assert still_serving == health
-    assert "kod=INNA_WERSJA_CENTRUM" in (runtime / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
+    assert "kod=INNA_WERSJA_CENTRUM" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
 
 
 def _log_events(runtime: Path) -> list[str]:
     """Nazwy zdarzeń z dziennika Centrum w kolejności wpisów."""
 
-    log = runtime / "logs" / "centrum-rozliczen.log"
+    log = ToolDirectory(runtime).log_path
     return [line.split(" ")[1] for line in log.read_text(encoding="utf-8").splitlines()]
 
 
@@ -204,7 +205,7 @@ def test_obcy_program_na_porcie_daje_bezpieczny_komunikat_w_trzech_czesciach(tmp
     assert result.stderr == ""
     assert not opened.exists()
     assert _log_events(runtime) == ["blad-startu"]
-    assert "kod=PORT_ZAJETY" in (runtime / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
+    assert "kod=PORT_ZAJETY" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
 
 
 def _close(port: int) -> dict[str, object]:
@@ -275,7 +276,7 @@ def test_centrum_bez_konsoli_startuje_rozpoznaje_sie_i_zamyka(tmp_path: Path) ->
     assert addresses == [f"http://127.0.0.1:{port}/"] * 2
     assert exit_code == 0
     assert _log_events(runtime) == ["start", "juz-dziala", "zamkniecie", "stop"]
-    assert "konsola=nie" in (runtime / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
+    assert "konsola=nie" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
 
 
 _CONSOLE, _NO_CONSOLE = 10, 20

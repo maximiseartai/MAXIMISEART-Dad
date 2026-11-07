@@ -138,7 +138,8 @@ def test_po_wylaczeniu_komputera_w_trakcie_instalacji_bibliotek_skrot_wraca_do_p
     repository = _repository_with_dad_file(tmp_path / "repozytoria")
     before = repository.head()
     newest = _version_without_its_library(repository)
-    pip_never_finishes = FakeInstaller(hold=threading.Event())
+    installing = threading.Event()
+    pip_never_finishes = FakeInstaller(hold=installing)
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(tool=repository, installer=pip_never_finishes))
     _update_until(centrum, lambda view: view.get("step") == "installing")
     switched_off = repository.head()
@@ -147,12 +148,15 @@ def test_po_wylaczeniu_komputera_w_trakcie_instalacji_bibliotek_skrot_wraca_do_p
     with _shortcut(repository.clone, port) as shortcut:
         health = _health(shortcut, port)
         view = _get(port, "/api/tool-update")
+    clone = (repository.head(), repository.read(MAPPING), repository.in_clone("status", "--porcelain", "--untracked-files=no"))
+    # Wyłączony komputer nie kończy instalacji; Centrum testu, które ją zaczęło, kończy ją porażką dopiero po odczycie
+    # klonu, żeby zatrzymało się przed końcem testu.
+    pip_never_finishes.succeeds = False
+    installing.set()
 
     assert switched_off == newest
     assert health["commit"] == before[:7]
-    assert repository.head() == before
-    assert repository.read(MAPPING) == DAD_MAPPING
-    assert repository.in_clone("status", "--porcelain", "--untracked-files=no") == f"M {MAPPING}"
+    assert clone == (before, DAD_MAPPING, f"M {MAPPING}")
     assert (view["state"], view["message"]["what"], view["next_action"]) == (
         "failed",
         "Nie udało się zaktualizować narzędzia z nieoczekiwanego powodu.",

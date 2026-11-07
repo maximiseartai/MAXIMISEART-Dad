@@ -26,7 +26,7 @@ from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.centrum.logs_disk import name_of
 from rozliczenia.centrum.run_logs import RunLog
 
-from tests.fixtures.centrum import phase_states, views_until
+from tests.fixtures.centrum import ToolDirectory, phase_states, views_until, write_report_key
 from tests.fixtures.centrum_intermax import (
     NOW,
     PERIOD,
@@ -425,7 +425,7 @@ def test_intermax_otwarty_to_zatrzymanie_dla_taty_przed_odczytem_w_okresie_dzisi
 
 def test_logi_zatrzymania_przed_odczytem_ida_do_skrzynki_przy_okresie_dzisiejszej_daty(tmp_path: Path) -> None:
     centrum = ordering_centrum(tmp_path)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY123\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path), "github_pat_SYNTETYCZNY123")
     open_in_excel(centrum.register)
 
     run_id = _stopped(centrum)["run"]["id"]
@@ -874,7 +874,7 @@ def test_adres_i_numer_umowy_z_wklejenia_intermax_nie_wychodza_do_logow_ani_skrz
         Order(datetime(2026, 10, 26, 9), "bartek.zielinski", 103, cells=((14, PHONE_WITH_PREFIX),)),
     )
     centrum = ordering_centrum(tmp_path, Intermax(raw=raw))
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
 
     view = centrum.run_to_end()
 
@@ -1202,7 +1202,7 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
     centrum = ordering_centrum(tmp_path, position.intermax)
     if position.edit is not None:
         position.edit(centrum.register)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
 
     result = centrum.run_to_end()["result"]
     note = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": ECHO}).json()["body"]
@@ -1345,7 +1345,7 @@ def test_wpis_taty_w_calibri_8_we_wklejonym_wierszu_nie_wypuszcza_adresu_ani_num
 
     centrum = ordering_centrum(tmp_path, case.intermax)
     case.edit(centrum.register)
-    (tmp_path / "config" / "zgloszenia-klucz.txt").write_text("github_pat_SYNTETYCZNY\n", encoding="utf-8")
+    write_report_key(ToolDirectory(tmp_path))
 
     centrum.run_to_end()
     note = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": ECHO}).json()["body"]

@@ -12,15 +12,17 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi.testclient import TestClient
-
 from rozliczenia import intermax_copies
-from rozliczenia.centrum.app import create_app
-from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.shutdown import Shutdown
 
-from tests.fixtures.centrum import CENTRUM, FakePlatform, MetricsPaths, finished_view
+from tests.fixtures.centrum import (
+    QUEUE_THREAD,
+    CentrumClient,
+    FakePlatform,
+    ToolDirectory,
+    centrum_app,
+    finished_view,
+    join_threads_since,
+)
 from tests.fixtures.centrum_processes import Engines, Surroundings
 from tests.fixtures.intermax import Intermax, Layout
 from tests.fixtures.intermax_disk import FaultyDisk
@@ -43,7 +45,7 @@ class Clock:
 
 @dataclass
 class OrderingCentrum:
-    client: TestClient
+    client: CentrumClient
     register: Path
     layout: Layout
     copies: Path
@@ -56,8 +58,12 @@ class OrderingCentrum:
     """Usterki kroków podmiany INTERMAX dla Uporządkowania i przywrócenia Kopii; test wkłada je w każdej chwili."""
 
     @property
+    def tool(self) -> ToolDirectory:
+        return ToolDirectory(self.tmp_path)
+
+    @property
     def log_path(self) -> Path:
-        return self.tmp_path / "logs" / "centrum-rozliczen.log"
+        return self.tool.log_path
 
     @property
     def metrics_path(self) -> Path:
@@ -80,18 +86,28 @@ class OrderingCentrum:
         return [json.loads(line) for line in self.metrics_path.read_text(encoding="utf-8").splitlines()]
 
     def run_logs(self) -> list[dict[str, Any]]:
-        directory = self.tmp_path / "logs" / "uruchomienia"
+        directory = self.tool.run_logs
         return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.glob("*.json"))]
 
     def last_started(self) -> dict[str, Any]:
-        return dict(json.loads((self.tmp_path / "logs" / "ostatnie-uruchomienie.json").read_text(encoding="utf-8")))
+        return dict(json.loads(self.tool.last_started.read_text(encoding="utf-8")))
 
     def restart(self) -> None:
-        """Nowe Centrum na tych samych plikach i Ustawieniach taty."""
+        """Nowe Centrum na tych samych plikach i Ustawieniach taty, gdy skończy się przejście kolejki poprzedniego.
 
-        copies = None if self.tool_copies else self.copies
+        Powód czekania na kolejkę opisuje ``PreparingCentrum.restart``.
+        """
+
+        join_threads_since(self.client.since, named=QUEUE_THREAD)
         self.client = _client(
-            self.tmp_path, self.surroundings, self.engines, self.clock, FakePlatform(), copies, self.disk
+            self.tmp_path,
+            self.surroundings,
+            self.engines,
+            self.clock,
+            FakePlatform(),
+            None if self.tool_copies else self.copies,
+            self.disk,
+            since=self.client.since,
         )
 
 
@@ -103,23 +119,16 @@ def _client(
     platform: FakePlatform,
     copies: Path | None,
     disk: FaultyDisk,
-) -> TestClient:
+    *,
+    since: int | None = None,
+) -> CentrumClient:
     """Centrum na plikach ``tmp_path``; ``copies``: folder Kopii INTERMAX, ``None``: domyślny folder narzędzia."""
 
-    log = CentrumLog(tmp_path / "logs" / "centrum-rozliczen.log")
-    config = tmp_path / "config"
     onedrive = surroundings.onedrive
-    app = create_app(
-        settings_path=config / "centrum-ustawienia.yaml",
+    app = centrum_app(
+        ToolDirectory(tmp_path),
         platform=platform,
-        log=log,
-        shutdown=Shutdown(log),
-        configuration_files=ConfigurationFiles(
-            worker_config=config / "worker_mapping.yaml",
-            internal_template=config / "Wzorzec rozliczenia wewnętrznego.xlsx",
-            collective_template=config / "Wzorzec pliku zbiorczego.xlsx",
-            worker_template=config / "Wzorzec rozliczenia pracownika.xlsx",
-        ),
+        today=clock.moments[0].date(),
         processes=engines.processes(),
         tool_freshness=surroundings.tool_freshness(),
         cloud_files=None if onedrive is None else onedrive.cloud_files(),
@@ -131,7 +140,7 @@ def _client(
         intermax_disk=disk.disk(),
         now=clock,
     )
-    return TestClient(app, base_url=CENTRUM, headers={"Origin": CENTRUM})
+    return CentrumClient(app, since=since)
 
 
 def ordering_centrum(
@@ -154,12 +163,7 @@ def ordering_centrum(
     register = tmp_path / "OneDrive" / REGISTER_NAME
     register.parent.mkdir(parents=True)
     layout = (intermax or Intermax()).write(register)
-    metrics = MetricsPaths(
-        preparation=tmp_path / ".przygotowanie-pliku-zbiorczego-metrics.jsonl",
-        settlement=tmp_path / ".rozliczenia-metrics.jsonl",
-        intermax=tmp_path / ".uporzadkowanie-intermax-metrics.jsonl",
-    )
-    surroundings, engines, clock = surroundings or Surroundings(), Engines(metrics), clock or Clock()
+    surroundings, engines, clock = surroundings or Surroundings(), Engines(ToolDirectory(tmp_path).metrics), clock or Clock()
     platform = FakePlatform(chosen_files=[register], chosen_folders=[periods_directory])
     copies = intermax_copies.default_directory() if tool_copies else tmp_path / "Kopie INTERMAX"
     disk = FaultyDisk()

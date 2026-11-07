@@ -30,24 +30,18 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from rozliczenia import period_folder
-from rozliczenia.centrum.app import create_app
-from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.report_box import GitHubReportBox, HttpRequest, HttpResponse
-from rozliczenia.centrum.shutdown import Shutdown
 
 from tests.fixtures.centrum import (
-    CENTRUM,
     QUEUE_THREAD,
-    FakeGitHub,
-    FakeOneDrive,
+    CentrumClient,
     FakePlatform,
-    MetricsPaths,
+    ToolDirectory,
+    centrum_app,
     finished_view,
     join_threads_since,
 )
 from tests.fixtures.centrum_processes import Engines
-from tests.fixtures.clock import ManualClock
 from tests.fixtures.linie_watkow import new_line, threads_since
 from tests.fixtures.preparation import PERIOD, write_collective_template, write_internal_template, write_register
 from tests.fixtures.settlement import CellValue, write_quantity_source, write_template
@@ -213,47 +207,27 @@ class World:
 
     @cached_property
     def engines(self) -> Engines:
-        return Engines(
-            MetricsPaths(
-                self.path("metryki_przygotowania"), self.path("metryki_przebiegu"), self.path("metryki_uporzadkowania")
-            )
-        )
+        return Engines(ToolDirectory(self.root).metrics)
 
     def app(self) -> FastAPI:
-        log = CentrumLog(self.path("dziennik_centrum"))
         # Drugie wskazanie dostaje wejście chooseRegister albo choosePeriodsDirectory po _remembering_choices.
         platform = FakePlatform(
             chosen_files=[self.path("rejestr")] * 2, chosen_folders=[self.path("folder_okresow")] * 2
         )
-        # Zegar stoi, więc kolejka Skrzynki bez sieci nie nastawia prawdziwego budzika, który przeżyłby test.
-        clock = ManualClock()
-        return create_app(
-            settings_path=self.path("ustawienia"),
+        return centrum_app(
+            ToolDirectory(self.root),
             platform=platform,
-            log=log,
-            shutdown=Shutdown(log),
-            today=lambda: TODAY,
-            configuration_files=ConfigurationFiles(
-                worker_config=self.path("konfiguracja_wykonawcow"),
-                internal_template=self.path("wzorzec_wewnetrzny"),
-                collective_template=self.path("wzorzec_zbiorczy"),
-                worker_template=self.path("wzorzec_pracownika"),
-            ),
-            processes=self.engines.processes(),
-            tool_freshness=FakeGitHub().freshness(),
-            cloud_files=FakeOneDrive().cloud_files(),
-            report_box=GitHubReportBox(transport=_offline_like_urllib),
-            clock=clock,
-            pause=clock.pause,
-            intermax_copies=self.root / "Kopie INTERMAX",
+            today=TODAY,
             now=lambda: NOW,
+            processes=self.engines.processes(),
+            report_box=GitHubReportBox(transport=_offline_like_urllib),
         )
 
-    def client(self) -> TestClient:
-        return TestClient(self.app(), base_url=CENTRUM, headers={"Origin": CENTRUM})
+    def client(self) -> CentrumClient:
+        return CentrumClient(self.app())
 
 
-def _remembering_choices(world: World) -> TestClient:
+def _remembering_choices(world: World) -> CentrumClient:
     """Centrum, w którym tata wskazał Rejestr zleceń i folder okresów tej kopii świata."""
 
     client = world.client()
