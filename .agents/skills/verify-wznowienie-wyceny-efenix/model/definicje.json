@@ -21,6 +21,7 @@
     "_finished",
     "_came_whole",
     "forward_to_accept",
+    "_refusal",
     "_status_answer"
   ],
   "src/rozliczenia/efenix_checks.py": [

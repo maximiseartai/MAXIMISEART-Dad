@@ -1,6 +1,6 @@
 ---
 name: verify-wznowienie-wyceny-efenix
-description: Model-check with TLA+ (TLC) that Wycena w efenix, across the Uruchomienia of one period, completes every order to the Plik zbiorczy only upwards (ADR 0026), never loads Wycena Emmetta over an order that has quantities, never lowers or clears a quantity in efenix, ends an order Dad changed with an Ostrzeżenie Emmetta exactly when it holds more than the file, puts a Znacznik efenix only beside an order priced as in the file and a Znacznik przekazania only beside such an order that is „Do akceptacji”, forwards to acceptance only a gotowe order and only in the mode with Przekazanie (ADR 0027), never changes an order „Do akceptacji”, and leaves Dad an error or an Ostrzeżenie Emmetta only for an order he changed, under every order of window Zatrzymania, Centrum switching off, both modes and Dad's own changes in efenix between Uruchomienia. Use when a change touches `save`, `_outcome`, `_priced_outcome`, `_forwarded`, `_priced`, `_emmett`, `_dated`, `_completed`, `_mark` or `_efenix_stops` in `src/rozliczenia/efenix_pricing.py`, `listing` in `src/rozliczenia/efenix_checks.py`, `Mark.replaces` in `src/rozliczenia/efenix_mark.py`, `completion` or `same_amount` in `src/rozliczenia/efenix_positions.py`, or `load_emmett`, `_came_whole`, `enter_quantity`, `forward_to_accept`, `_status_answer` in `src/rozliczenia/efenix_browser.py`, or when a resumed Wycena w efenix lowered, cleared or wiped a quantity in efenix or forwarded an order that was not gotowe.
+description: Model-check with TLA+ (TLC) that Wycena w efenix, across the Uruchomienia of one period, completes every order to the Plik zbiorczy only upwards (ADR 0026), never loads Wycena Emmetta over an order that has quantities, never lowers or clears a quantity in efenix, ends an order Dad changed with an Ostrzeżenie Emmetta exactly when it holds more than the file, puts a Znacznik efenix only beside an order priced as in the file and a Znacznik przekazania only beside such an order that is „Do akceptacji”, forwards to acceptance only a gotowe order and only in the mode with Przekazanie (ADR 0027), never changes an order „Do akceptacji”, and leaves Dad an error or an Ostrzeżenie Emmetta only for an order he changed, under every order of window Zatrzymania, Centrum switching off, efenix refusing a Przekazanie, both modes and Dad's own changes in efenix between Uruchomienia. Use when a change touches `save`, `_outcome`, `_priced_outcome`, `_forwarded`, `_priced`, `_emmett`, `_dated`, `_completed`, `_mark` or `_efenix_stops` in `src/rozliczenia/efenix_pricing.py`, `listing` in `src/rozliczenia/efenix_checks.py`, `Mark.replaces` in `src/rozliczenia/efenix_mark.py`, `completion` or `same_amount` in `src/rozliczenia/efenix_positions.py`, or `load_emmett`, `_came_whole`, `enter_quantity`, `forward_to_accept`, `_refusal`, `_status_answer` in `src/rozliczenia/efenix_browser.py`, or when a resumed Wycena w efenix lowered, cleared or wiped a quantity in efenix or forwarded an order that was not gotowe.
 pilnuje:
   - src/rozliczenia/efenix_pricing.py
   - src/rozliczenia/efenix_positions.py
@@ -88,6 +88,7 @@ you keep the two in step. Each model action is one indivisible step of this code
 | `Wpisz` | `_completed` → the window's `enter_quantity(position, quantity)` with the file's quantity, up to the moment efenix saved it (`BrowserEfenix.enter_quantity`, `_answer(SAVE_QUANTITY, …)`) |
 | `Potwierdz` | `enter_quantity` after the save: the JSON answer and the amount on the page; after the last position `_completed` gives `EmmettWarning(plan.excess)` when `excess` is not empty, and otherwise compares the amount with `Kwota` (`same_amount`); a `Ready` in the mode with Przekazanie (`mode is PricingMode.FORWARD` in `_outcome`) goes on to `Przekaz` instead of the result (the same after `Otworz` and `OdczytPoEmmetcie` when nothing is to be entered) |
 | `Przekaz` | `_forwarded`: the window's `forward_to_accept` up to the moment efenix changed the status (`BrowserEfenix.forward_to_accept`, the click of „Tak” and `_status_answer`, the only `action_change_status.php` request the window's guard lets through) |
+| `OdmowaPrzekazania` | `_forwarded`: the window's `forward_to_accept`, in which efenix shows its information dialog `#dialog_info` instead of the status dialog after the green „Zapisz” (`BrowserEfenix._refusal`: the window waits for one of the two dialogs, reads the text into a `ForwardRefusal`, closes the dialog and clicks no „Tak”, so nothing reaches efenix); `_forwarded` returns `OrderError(refusal)` without the search, and the order has no Znacznik |
 | `Szukaj` | `_forwarded` after the answer: the reload of the page, `efenix.search` again and `listing`: „Do akceptacji” is `Forwarded` (result `przekazane`), any other list `OrderError(OrderProblem.NOT_FORWARDED)` |
 | `KoniecZlecenia` | `save`: the result goes to `results` and `journal.ended`, then the next order |
 | `Zatrzymanie` | `LoggedOut`, `UnexpectedPage`, `WindowClosed`, `EfenixUnreachable` from any window action, also `LoggedOut` from `enter_quantity` (efenix did not save the quantity: step `wpisz`), a stop after efenix saved it (step `potwierdz`), a Przekazanie efenix did not get (step `przekaz`, also one the window's guard aborted, `StatusChangeBlocked`) and a stop in the search after it (step `szukaj`): the window's exception passes through `_outcome`, `_efenix_stops` in `save` turns it into `StopError`, and `save` (`except StopError`) calls `_mark` with the results before it; the order the window stopped at has no result, so no Znacznik |
@@ -99,7 +100,7 @@ The script compares these definitions with the Sync commit (`model/definicje.jso
 `_outcome`, `_priced_outcome`, `_forwarded`, `_priced`, `_emmett`, `_dated`, `_completed` in
 `src/rozliczenia/efenix_pricing.py`; `listing` in `src/rozliczenia/efenix_checks.py`; `Mark.replaces` in
 `src/rozliczenia/efenix_mark.py`; `completion`, `same_amount` in `src/rozliczenia/efenix_positions.py`; `load_emmett`,
-`_came_whole`, `enter_quantity`, `_finished`, `forward_to_accept`, `_status_answer` in `src/rozliczenia/efenix_browser.py`. A change elsewhere in these files (Sprawdzanie, Odczyt danych, Logi, the window's
+`_came_whole`, `enter_quantity`, `_finished`, `forward_to_accept`, `_refusal`, `_status_answer` in `src/rozliczenia/efenix_browser.py`. A change elsewhere in these files (Sprawdzanie, Odczyt danych, Logi, the window's
 classification of other failures) does not move the model. A change that makes another function write in efenix or
 decide whether an order is finished does, though no definition above changes: add it to the table and to
 `model/definicje.json`.
@@ -160,7 +161,7 @@ the window after a server write. A path that does not happen on the code means t
 | `zwykle` | two orders, three Uruchomienia in either mode, one change by Dad, no failures | passes |
 | `przerwania` | two orders, three Uruchomienia, Zatrzymanie and switch-off at every step, no change by Dad | passes |
 | `tata-po-przerwaniu` | one order, three Uruchomienia, Zatrzymanie and switch-off, one change by Dad | passes |
-| `wszystko` | everything above at once, a page after Emmett without a position | known `brak-pozycji-po-emmetcie` |
+| `wszystko` | everything above at once, a page after Emmett without a position, efenix refusing a Przekazanie | known `brak-pozycji-po-emmetcie`, `odmowa-przekazania` |
 
 Every configuration lets Dad pick either mode at each Uruchomienie (`MozePrzekazac = TRUE`).
 Each order has three positions; the Plik zbiorczy has 1 in A and C and 2 in B. Emmett gives A as the file and B one less
@@ -176,6 +177,11 @@ that breaks it (the variable `slady`, one set per order); any other path is a ne
    has a quantity in the file ends the order with an error (`EFENIX_BRAK_POZYCJI`), so Emmett stays in efenix. In the
    code the next Uruchomienie stops at the same check when it opens the order, and finishes the order to the file once
    the position is back. Nothing in efenix is lowered; Dad prices such an order himself.
+2. **`odmowa-przekazania`, BladTylkoPoZmianieTaty and ZmianaTatyZostaje.** efenix refuses the green „Zapisz” of a gotowe
+   order in its information dialog (no photos, no length of the connection, no pricing or no execution date, page script
+   from the reconnaissance), so the order ends with an error (`EFENIX_ODMOWA_PRZEKAZANIA`) without a Znacznik, also an
+   order Dad did not change. Nothing reaches efenix; the next Uruchomienie with Przekazanie tries again. Accepted by the
+   coordinator's decision of 7.11.2026: Dad fills in what efenix lacks.
 
 ## Bring the model in line
 

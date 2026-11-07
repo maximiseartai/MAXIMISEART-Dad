@@ -172,8 +172,10 @@ the window no longer reads that answer, and no entry excuses it.
 - **The mode with Przekazanie (ADR 0027).** The explorer runs every case without Przekazanie, so a
   fault at the request `action_change_status.php`, at the search that confirms it or at the reload after it is not
   swept, and neither is a kill between Przekazanie and the Znaczniki. What covers it instead: the window contract
-  (`tests/test_atrapa_efenix.py`, rows `przekazanie`, `przekazanie-bez-zmiany-statusu` and a logout before the status
-  change), the guard tests on the Atrapa efenix and a resume from the state a kill after Przekazanie leaves (an order „Do
+  (`tests/test_atrapa_efenix.py`, rows `przekazanie`, `przekazanie-bez-zmiany-statusu`, `przekazanie-odmowa-efenix`,
+  `przekazanie-odmowa-tekstem-spoza-listy` and a logout before the status change), the guard tests on the Atrapa efenix,
+  the refusal of Przekazanie in efenix's information dialog for each of its four texts and one outside the list
+  (`test_odmowa_przekazania_przez_efenix_to_blad_zlecenia_bez_znacznika_a_nastepne_gotowe_zlecenie_jest_przekazane`), and a resume from the state a kill after Przekazanie leaves (an order „Do
   akceptacji” with a Znacznik efenix) on the window in process (`tests/test_wycena_efenix.py`, „Przekazanie do
   akceptacji”), and the model `verify-wznowienie-wyceny-efenix`
   (actions `Przekaz` and `Szukaj` under every Zatrzymanie and switch-off). Extending `Fault`, `expected()` and the
