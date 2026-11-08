@@ -12,9 +12,9 @@ taty (``dad_files.ReadFile``) i tłumaczy jego ``WorkbookError``.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -85,7 +85,7 @@ def read_register(file: ReadFile, period: SettlementPeriod | None = None) -> lis
 
     if period is None:
         with workbook_files.read_workbook(file.path, file.content) as workbook:
-            return _read_register_sheets(workbook, _order_sheet_positions(file.path, workbook))
+            return _read_register_sheets(workbook, _order_sheet_positions(file.path, _headers(workbook)))
     return list(_period_sheets(file.path, file.content, period))
 
 
@@ -94,13 +94,36 @@ def read_register(file: ReadFile, period: SettlementPeriod | None = None) -> lis
 # czytany od nowa. Uruchomienia w różnych wątkach dostają ten sam wynik, więc jest z krotek, zamrożonych dataclass
 # i map w ``MappingProxyType``. Wyjątek to wypełnienie i kolor Wyróżnień: obiekty openpyxl, których nie da się
 # zamrozić, więc Zapis nakłada tylko ich kopie (``Highlights.font_over``, ``Highlights.fill_over``, ``RowLook``).
+# Rejestr jest od razu zawężony po kolumnach daty z wiersza 1 czytanego bez openpyxl (``_guessed_date_columns``), a
+# nagłówki rozpoznaje wiersz 1 zawężonego Rejestru w openpyxl; zawężenie powtarza się tylko, gdy rozpoznał inne kolumny.
 @lru_cache(maxsize=2)
 def _period_sheets(register_path: Path, content: bytes, period: SettlementPeriod) -> tuple[RegisterSheet, ...]:
-    with workbook_files.read_workbook(register_path, content) as workbook:
-        positions = _order_sheet_positions(register_path, workbook)
-        date_columns = {title: columns[COLUMNS.index(DATE)] for title, columns in positions.items()}
-        with workbook.narrowed(date_columns, period.start, period.end) as narrowed:
+    dated = (partial(_guessed_date_columns, register_path), period.start, period.end)
+    with workbook_files.read_workbook(register_path, content, dated) as workbook:
+        positions = _order_sheet_positions(register_path, _headers(workbook))
+        with workbook.narrowed(_date_columns(positions), period.start, period.end) as narrowed:
             return tuple(_read_register_sheets(narrowed, positions))
+
+
+def _guessed_date_columns(register_path: Path, headers: Mapping[str, Sequence[object]]) -> dict[str, int]:
+    """Kolumny daty arkuszy, które ``_order_sheet_positions`` rozpoznaje po wierszach 1 ``headers``; żadne, gdy z nich
+    Przygotowanie się zatrzymuje, bo wtedy zatrzymanie daje wiersz 1 z openpyxl, zanim cokolwiek jest zawężane."""
+
+    try:
+        return _date_columns(_order_sheet_positions(register_path, headers.items()))
+    except StopError:
+        return {}
+
+
+def _date_columns(positions: Mapping[str, list[int]]) -> dict[str, int]:
+    return {title: columns[COLUMNS.index(DATE)] for title, columns in positions.items()}
+
+
+def _headers(workbook: ReadWorkbook) -> Iterator[tuple[str, Sequence[object]]]:
+    """Tytuł i wartości wiersza 1 każdego arkusza, czytane arkusz po arkuszu."""
+
+    for sheet in workbook.sheets():
+        yield sheet.title, next(sheet.values(min_row=1, max_row=1), ())
 
 
 def _register_position(column: Column, columns: dict[str, int]) -> int | None:
@@ -126,8 +149,9 @@ def _duplicated_headers(header: Sequence[object]) -> list[str]:
     ]
 
 
-def _order_sheet_positions(register_path: Path, workbook: ReadWorkbook) -> dict[str, list[int]]:
-    """Arkusze Rejestru rozpoznane po komplecie wymaganych nagłówków w pierwszym wierszu: tytuł → numery kolumn ``COLUMNS``.
+def _order_sheet_positions(register_path: Path, headers: Iterable[tuple[str, Sequence[object]]]) -> dict[str, list[int]]:
+    """Arkusze Rejestru rozpoznane po komplecie wymaganych nagłówków w pierwszym wierszu (``headers``: tytuł i wartości
+    wiersza 1 każdego arkusza): tytuł → numery kolumn ``COLUMNS``.
 
     Arkusze bez większości wymaganych nagłówków (listy, komentarze, ukryte) są pomijane.
     Arkusz z większością, ale nie kompletem nagłówków, wskazuje brakujący nagłówek.
@@ -135,18 +159,17 @@ def _order_sheet_positions(register_path: Path, workbook: ReadWorkbook) -> dict[
 
     sheets: dict[str, list[int]] = {}
     closest: tuple[str, list[str]] | None = None  # arkusz z najmniejszą liczbą braków
-    for sheet in workbook.sheets():
-        header = next(sheet.values(min_row=1, max_row=1), ())
+    for title, header in headers:
         missing = _missing_headers(header)
         if missing:
             if len(missing) < len(COLUMNS) / 2 and (closest is None or len(missing) < len(closest[1])):
-                closest = (sheet.title, missing)
+                closest = (title, missing)
             continue
         duplicated = _duplicated_headers(header)
         if duplicated:
-            raise StopError(messages.register_with_duplicated_headers(register_path, sheet.title, duplicated))
+            raise StopError(messages.register_with_duplicated_headers(register_path, title, duplicated))
         columns = header_columns(header)
-        sheets[sheet.title] = [
+        sheets[title] = [
             position for column in COLUMNS if (position := _register_position(column, columns)) is not None
         ]
     if sheets:

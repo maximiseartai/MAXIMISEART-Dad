@@ -2100,12 +2100,35 @@ def test_brak_albo_nieczytelny_intermax_to_zatrzymanie_dla_taty(tmp_path: Path, 
     assert not _copies(tmp_path)
 
 
-def test_zepsute_teksty_wspolne_to_nieczytelny_intermax_bez_zapisu(tmp_path: Path) -> None:
-    """Teksty wspólne, których parser XML nie przeczyta: INTERMAX jest nieczytelny, także gdy wiersze z dołu arkusza
-    sięgają tylko po teksty przed usterką."""
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        (b"</sst>", b""),
+        (b"</t></si>", b"&zepsuta;</t></si>"),
+        (b"<t>", b'<t p:a="1">'),
+        (b"</si><si>", b"</si><!-- komentarz --><si>"),
+        (b"</si></sst>", b"<!-- komentarz --></si></sst>"),
+        (b"spreadsheetml/2006/main", b"spreadsheetml/2006/inna"),
+    ],
+    ids=[
+        "bez-konca-korzenia",
+        "nieznana-encja",
+        "prefiks-bez-przestrzeni-nazw",
+        "komentarz-miedzy-tekstami",
+        "komentarz-w-ostatnim-tekscie",
+        "inna-przestrzen-nazw",
+    ],
+)
+def test_teksty_wspolne_zepsute_albo_w_ksztalcie_spoza_listy_to_nieczytelny_intermax_bez_zapisu(
+    tmp_path: Path, old: bytes, new: bytes
+) -> None:
+    """Teksty wspólne, których parser XML nie przeczyta (także z nieznaną encją albo prefiksem bez przestrzeni nazw),
+    albo w kształcie, którego granic tekstów Uporządkowanie nie zna (komentarz między tekstami albo w ostatnim, inna
+    przestrzeń nazw): INTERMAX jest nieczytelny, także gdy wiersze z dołu arkusza sięgają tylko po teksty przed
+    usterką."""
 
     path, _ = _register(tmp_path)
-    rewrite_parts(path, lambda name, data: data.replace(b"</sst>", b"") if name == "xl/sharedStrings.xml" else data)
+    rewrite_parts(path, lambda name, data: data.replace(old, new, 1) if name == "xl/sharedStrings.xml" else data)
 
     with _nothing_written(tmp_path, path):
         stop = _stop(_run(tmp_path))
@@ -2113,16 +2136,16 @@ def test_zepsute_teksty_wspolne_to_nieczytelny_intermax_bez_zapisu(tmp_path: Pat
     assert (stop.message.code, stop.stop_kind) == ("NIECZYTELNY_INTERMAX", "for_tata")
 
 
-def test_pusty_tekst_wspolny_i_si_z_atrybutem_nie_przesuwaja_tekstow_zlecen(tmp_path: Path) -> None:
-    """``<si/>`` na początku listy tekstów wspólnych i ``<si >`` przy każdym innym: poprawny XML, którego Excel nie
-    zapisuje, a który Uporządkowanie czyta tak samo jak zwykły."""
+def test_pusty_tekst_wspolny_i_biale_znaki_przy_si_nie_przesuwaja_tekstow_zlecen(tmp_path: Path) -> None:
+    """``<si/>`` na początku listy tekstów wspólnych i ``<si >`` w nowej linii przy każdym innym: poprawny XML, którego
+    Excel nie zapisuje, a który Uporządkowanie czyta tak samo jak zwykły."""
 
     path, layout = _register(tmp_path)
     shifted = re.compile(rb'(<c [^>]*?t="s"[^>]*><v>)(\d+)')
 
     def with_empty_first(name: str, data: bytes) -> bytes:
         if name == "xl/sharedStrings.xml":
-            return re.sub(rb"(<sst\b[^>]*>)", rb"\g<1><si/>", data.replace(b"<si>", b"<si >"), count=1)
+            return re.sub(rb"(<sst\b[^>]*>)", rb"\g<1>\n<si/>", data.replace(b"<si>", b"\n<si >"), count=1)
         if name.startswith("xl/worksheets/sheet"):
             return shifted.sub(lambda found: found.group(1) + b"%d" % (int(found.group(2)) + 1), data)
         return data

@@ -10,16 +10,13 @@ plik. Wzorzec czyta moduł skoroszytu (``workbook_files``) z jego klasyfikacją 
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Collection, Mapping, Sequence
 from contextlib import AbstractContextManager, suppress
 from copy import copy
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
 from typing import Never, cast
-from xml.parsers import expat
 
 from openpyxl.cell.cell import Cell, MergedCell
 from openpyxl.styles.fills import Fill
@@ -35,7 +32,7 @@ from .highlights import PLAIN
 from .register_columns import TARGET_HEADERS
 from .quantity_rules import QuantityColumn
 from .row_look import GENERAL, RowLook, wraps
-from .template_copy import InvalidValue, Package, Row, SheetLayout, TemplateCopy
+from .template_copy import InvalidValue, Package, Recalculation, Row, SheetLayout, TemplateCopy
 from .collective_layout import DATA_ROW_COLUMNS, FIRST_DATA_ROW, HEADER_ROW, INPUT_COLUMNS, LOOK_COLUMNS, QUANTITY_COLUMNS
 from .workbook_files import (
     DataRow,
@@ -45,15 +42,12 @@ from .workbook_files import (
     RegisterRow,
     WorkbookError,
     check_worker_header,
-    classified,
     header_columns,
     is_blank,
     open_workbook,
     template_content,
-    unreadable_as_error,
-    workbook_content,
 )
-from .workbook_parts import SPREADSHEET_NS, UnsupportedShape, package_parts, sheet_part
+from .workbook_parts import UnsupportedShape
 from .workbook_save import SaveProblem, WorkbookSaveError, save_from_template, write_atomically
 from .text import normalize_text
 from .write_routes import Route, TemplateKind
@@ -71,9 +65,6 @@ class _Rules:
     kind: TemplateKind
     worker_header: bool
     """Nagłówek w kolumnach danych wejściowych z WYKONAWCA w H; bez niego nagłówek to cały wiersz."""
-    copy: bool
-    """Plik może powstać kopią Wzorca (ADR 0008). Kopia zawsze każe Excelowi przeliczyć formuły przy otwarciu, więc
-    droga przez openpyxl robi wtedy to samo; Rozliczenie wewnętrzne powstaje tylko przez openpyxl, bez tego."""
     headers: tuple[str, ...] = ()
     """Nagłówki docelowe pliku okresu, pod którymi stają komórki wiersza Rejestru zleceń; szukane w wierszu nagłówka
     Wzorca bez względu na wielkość liter i spacje. Rozliczenie pracownika ich nie ma: komórka kolumny Pliku
@@ -94,10 +85,10 @@ _WORKER_SETTLEMENT = _Rules(
         data_columns=DATA_ROW_COLUMNS[-1],
         look_columns=LOOK_COLUMNS[-1],
         period_file=False,
+        recalculation=Recalculation.FORCED,
     ),
     kind=TemplateKind.WORKER_SETTLEMENT,
     worker_header=True,
-    copy=True,
 )
 _COLLECTIVE_FILE = _Rules(
     SheetLayout(
@@ -107,11 +98,11 @@ _COLLECTIVE_FILE = _Rules(
         data_columns=INPUT_COLUMNS[-1],
         look_columns=LOOK_COLUMNS[-1],
         period_file=True,
+        recalculation=Recalculation.FORCED,
         quantity_columns=QUANTITY_COLUMNS,
     ),
     kind=TemplateKind.COLLECTIVE_FILE,
     worker_header=True,
-    copy=True,
     headers=TARGET_HEADERS,
 )
 _INTERNAL_SETTLEMENT = _Rules(
@@ -122,10 +113,10 @@ _INTERNAL_SETTLEMENT = _Rules(
         data_columns=INPUT_COLUMNS[-1],
         look_columns=_INTERNAL_LOOK_COLUMNS[-1],
         period_file=True,
+        recalculation=Recalculation.ON_LOAD,
     ),
     kind=TemplateKind.INTERNAL_SETTLEMENT,
     worker_header=False,
-    copy=False,
     headers=TARGET_HEADERS,
 )
 
@@ -143,96 +134,28 @@ class _Outline:
     """Wzorzec pliku okresu w tym, czego potrzebują Sprawdzanie i Planowanie."""
 
     title: str
-    header: tuple[object, ...]
+    header: Sequence[object]
     """Wartości wiersza nagłówka od kolumny A."""
     merged_ranges: tuple[CellRange, ...]
     """Scalenia aktywnego arkusza w kolejności, w jakiej daje je openpyxl."""
     zero_row_count: int
-    """Liczba kolejnych Wierszy danych z zerami w kolumnach ilości N:AP."""
+    """Liczba kolejnych Wierszy danych z zerami w kolumnach Ilości usług (``SheetLayout.quantity_columns``)."""
 
 
-def _read_outline(path: Path, rules: _Rules) -> _Outline:
-    """Wzorzec do sprawdzenia bez wczytania każdej komórki; niczego nie zapisuje.
-
-    Pełne wczytanie Wzorca pliku zbiorczego przez openpyxl trwa ~2 s, a Sprawdzanie i Planowanie
-    potrzebują tylko nagłówka, scaleń i wierszy z zerami. openpyxl czyta więc tylko te wiersze, a reszta
-    arkusza jest sprawdzana tak, żeby Wzorzec, którego pełne wczytanie by się nie udało, był nieczytelny.
-    """
-
-    return _outline(path, workbook_content(path), rules)
-
-
-# Sprawdzanie i Planowanie Przygotowania czytają zarys tych samych Wzorców; zarys zależy tylko od bajtów,
-# więc niezmieniony Wzorzec nie jest parsowany drugi raz, a zmieniony po Sprawdzaniu jest czytany od nowa.
-@lru_cache(maxsize=4)
-def _outline(path: Path, content: bytes, rules: _Rules) -> _Outline:
-    with open_workbook(path, content, read_only=True) as workbook:
-        sheet = cast(Worksheet, workbook.active)  # tylko do odczytu: ReadOnlyWorksheet
-        header = next(
-            classified(
-                path,
-                sheet.iter_rows(
-                    min_row=rules.sheet.header_row,
-                    max_row=rules.sheet.header_row,
-                    max_col=rules.last_header_column,
-                    values_only=True,
-                ),
-            ),
-            (),
-        )
-        zero_row_count = 0
-        for values in classified(
-            path,
-            sheet.iter_rows(
-                min_row=rules.sheet.first_data_row,
-                min_col=QUANTITY_COLUMNS[0],
-                max_col=QUANTITY_COLUMNS[-1],
-                values_only=True,
-            ),
-        ):
-            if not any(_is_zero(value) for value in values):
-                break
-            zero_row_count += 1
-        with unreadable_as_error(path):
-            # openpyxl nie daje liczby stylów komórek inaczej niż przez atrybut prywatny.
-            cell_style_count = len(workbook._cell_styles)  # type: ignore[attr-defined]
-            merged_ranges = _merged_ranges(content, sheet.title, cell_style_count)
-        return _Outline(sheet.title, header, merged_ranges, zero_row_count)
-
-
-_MERGE_CELL = f"{SPREADSHEET_NS} mergeCell"
-_CELL_OR_ROW_STYLE = re.compile(rb'<(?:[\w.-]+:)?(?:c|row)\s[^>]*?\bs="([0-9]+)"')
-_COLUMN_STYLE = re.compile(rb'<(?:[\w.-]+:)?col\s[^>]*?\bstyle="([0-9]+)"')
-_ANY_STYLE = re.compile(rb's="([0-9]+)"')
-
-
-def _merged_ranges(content: bytes, sheet_title: str, cell_style_count: int) -> tuple[CellRange, ...]:
-    """Scalenia arkusza z bloku ``<mergeCells>`` za ``</sheetData>``.
-
-    Arkusz musi dać się wczytać w całości jak przy pełnym wczytaniu przez openpyxl: zepsuty XML to
-    ``ExpatError``, a styl komórki, wiersza albo kolumny spoza stylów skoroszytu ``IndexError``.
-    """
-
-    with package_parts(content) as parts:
-        xml = parts[sheet_part(parts, sheet_title)]
-    # Styl każdej komórki i wiersza jest też w zbiorze wszystkich ``s="N"``, który znajduje się ~3× szybciej; dokładne
-    # wyrażenie rozstrzyga tylko wtedy, gdy ten szerszy zbiór ma styl spoza stylów skoroszytu.
-    cell_or_row_styles = set(_ANY_STYLE.findall(xml))
-    if max(map(int, cell_or_row_styles), default=0) >= cell_style_count:
-        cell_or_row_styles = set(_CELL_OR_ROW_STYLE.findall(xml))
-    styles = [int(index) for index in (*cell_or_row_styles, *set(_COLUMN_STYLE.findall(xml)))]
-    if max(styles, default=0) >= cell_style_count:
-        raise IndexError(f"styl {max(styles)} spoza {cell_style_count} stylów skoroszytu")
-    references: list[str] = []
-    parser = expat.ParserCreate(namespace_separator=" ")
-    # Obsługa elementów dopiero za danymi arkusza: wywołanie Pythona dla każdej z ~500 tys. komórek kosztuje.
-    tail = max(xml.rfind(b"sheetData"), 0)
-    parser.Parse(xml[:tail], False)
-    parser.StartElementHandler = lambda name, attributes: (
-        references.append(attributes["ref"]) if name == _MERGE_CELL else None
-    )
-    parser.Parse(xml[tail:], True)
-    return tuple(MultiCellRange([CellRange(reference) for reference in references]).ranges)
+def _zero_row_count(sheet: Worksheet, layout: SheetLayout) -> int:
+    if not layout.quantity_columns:
+        return 0
+    zero_row_count = 0
+    for values in sheet.iter_rows(
+        min_row=layout.first_data_row,
+        min_col=layout.quantity_columns[0],
+        max_col=layout.quantity_columns[-1],
+        values_only=True,
+    ):
+        if not any(_is_zero(value) for value in values):
+            break
+        zero_row_count += 1
+    return zero_row_count
 
 
 @dataclass(frozen=True)
@@ -263,6 +186,7 @@ class TemplateFile:
         self._content: bytes | None = None
         self._copy: TemplateCopy | None = None
         self._copy_read = False
+        self._outline: _Outline | None = None
         self._read_for_files = False
 
     @classmethod
@@ -296,7 +220,7 @@ class TemplateFile:
         """
 
         if self._rules.sheet.period_file:
-            outline = _read_outline(self.path, self._rules)
+            outline = self._read_outline()
             self._target_columns(outline.title, outline.header)
             if self._rules.worker_header:
                 check_worker_header(self.path, outline.title, outline.header)
@@ -314,7 +238,7 @@ class TemplateFile:
         """Planowanie ``row_count`` Wierszy danych: nagłówki docelowe jak przy Sprawdzaniu, a scalenie w
         komórkach, do których trafią, to zły układ z ``MergedCells``."""
 
-        outline = _read_outline(self.path, self._rules)
+        outline = self._read_outline()
         columns = self._written_columns(self._target_columns(outline.title, outline.header))
         _ensure_unmerged(self.path, outline.title, outline.merged_ranges, self._rules.sheet, columns, row_count)
         first_row = self._rules.sheet.first_data_row
@@ -361,21 +285,55 @@ class TemplateFile:
             self._content = content
             self._copy = None
             self._copy_read = False
+            self._outline = None
+
+    def _read_outline(self) -> _Outline:
+        """Wzorzec pliku okresu do Sprawdzania i Planowania z bajtów czytanych od nowa; niczego nie zapisuje.
+
+        Zarys pochodzi z tego samego odczytu co kopia (``TemplateCopy``), więc Wzorzec jest parsowany raz na
+        Uruchomienie, a zmieniony po Sprawdzaniu jest czytany od nowa. Wzorzec, którego kształtu kopia nie przyjmuje,
+        czyta pełne wczytanie przez openpyxl z jego klasyfikacją uszkodzeń.
+        """
+
+        self._read()
+        if self._outline is None:
+            copy = self._template_copy()
+            if copy is not None:
+                # Ten sam zbiór, którym openpyxl trzyma scalenia arkusza, więc i ta sama kolejność.
+                merged_ranges = tuple(MultiCellRange([CellRange(reference) for reference in copy.merged_cells]).ranges)
+                self._outline = _Outline(copy.title, copy.header, merged_ranges, copy.zero_row_count)
+            else:
+                with self._openpyxl_workbook() as workbook:
+                    sheet = _active_worksheet(self.path, workbook)
+                    self._outline = _Outline(
+                        sheet.title,
+                        self._header(sheet),
+                        tuple(sheet.merged_cells.ranges),
+                        _zero_row_count(sheet, self._rules.sheet),
+                    )
+        return self._outline
 
     def _template_copy(self) -> TemplateCopy | None:
-        """Wzorzec do kopii z podmienionymi Wierszami danych; ``None``, gdy jego kształt wymaga openpyxl (ADR 0008)."""
+        """Wzorzec do kopii z podmienionymi Wierszami danych; ``None``, gdy jego kształt wymaga openpyxl (ADR 0008).
+
+        Kopia wpisuje pod nagłówkiem docelowym z kolumn danych wejściowych, a droga przez openpyxl pod jego ostatnim
+        wystąpieniem w całym wierszu (``_header``, ``header_columns``), więc kopia przyjmuje Wzorzec pliku okresu tylko
+        wtedy, gdy oba wskazują dla każdego nagłówka docelowego tę samą kolumnę.
+        """
 
         if not self._copy_read:
             self._copy_read = True
             self._copy = None
-            if self._rules.copy:
-                with suppress(UnsupportedShape):
-                    self._copy = TemplateCopy.of(self._loaded(), self._rules.sheet)
+            with suppress(UnsupportedShape):
+                copy = TemplateCopy.of(self._loaded(), self._rules.sheet)
+                found, whole = header_columns(copy.header), header_columns(copy.whole_header)
+                if all(found.get(normalize_text(target)) == whole.get(normalize_text(target)) for target in self._rules.headers):
+                    self._copy = copy
         return self._copy
 
     def _openpyxl_workbook(self) -> AbstractContextManager[Workbook]:
-        """Pełne wczytanie Wzorca przez openpyxl z jego klasyfikacją uszkodzeń: jedyna droga Rozliczenia wewnętrznego,
-        a dla pozostałych Wzorców droga, gdy kopia nie przyjmuje ich kształtu (ADR 0008)."""
+        """Pełne wczytanie Wzorca przez openpyxl z jego klasyfikacją uszkodzeń: droga, gdy kopia nie przyjmuje kształtu
+        Wzorca (ADR 0008)."""
 
         return open_workbook(self.path, self._loaded(), read_only=False)
 
@@ -398,8 +356,7 @@ class TemplateFile:
                 _write_rows(sheet, self._rules.sheet, _in_columns(rows, target_columns), columns)
             except IllegalCharacterError as exc:
                 raise WorkbookSaveError(target, SaveProblem.INVALID_VALUE) from exc
-            if self._rules.copy:
-                _request_full_recalculation(workbook)
+            _request_recalculation(workbook, self._rules.sheet.recalculation)
             save_from_template(workbook, target, self._loaded())
 
     def _header(self, sheet: Worksheet) -> list[object]:
@@ -541,11 +498,10 @@ def _active_worksheet(path: Path, workbook: Workbook) -> Worksheet:
     return worksheet
 
 
-def _request_full_recalculation(workbook: Workbook) -> None:
-    """Excel przeliczy formuły przy otwarciu; openpyxl nie zapisuje wyników formuł."""
+def _request_recalculation(workbook: Workbook, recalculation: Recalculation) -> None:
+    """Flagi przeliczania układu w ``calcPr``, te same co w kopii; openpyxl nie zapisuje wyników formuł."""
 
     calculation = getattr(workbook, "calculation", None)
     if calculation is not None:
-        calculation.calcMode = "auto"
-        calculation.fullCalcOnLoad = True
-        calculation.forceFullCalc = True
+        for flag, value in recalculation.value:
+            setattr(calculation, flag, value)

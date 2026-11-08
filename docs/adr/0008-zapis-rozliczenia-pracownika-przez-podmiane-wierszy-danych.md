@@ -14,6 +14,10 @@ Od #519 rekord metryk niesie drogę zapisu każdego pliku z Wzorca (`routes`,
 zostawia puste w Rozliczeniu pracownika komórki `AP` i `AK` Ilości tylko dla
 INEA, więc nie każda wartość Wiersza danych Pliku zbiorczego trafia do
 Rozliczenia pracownika.
+Od zmiany z 2026-11-08 także Rozliczenie wewnętrzne powstaje kopią Wzorca, a
+flagi przeliczania są częścią układu pliku (sekcja na końcu); zdania
+wcześniejszych sekcji, że Rozliczenie wewnętrzne powstaje tylko przez openpyxl
+i bez flag przeliczania, opisują stan sprzed niej.
 
 ## Kontekst
 
@@ -100,14 +104,14 @@ Odrzucone kierunki:
   zapisu Rozliczenia pracownika w `tests/test_workbook_files.py`, który
   porównuje wynik z plikiem z Wzorca zapisanym przez openpyxl modułem bramki
   poprawności, oraz bramka benchmarku przy każdym eksperymencie.
-- openpyxl zostaje do odczytu Pliku zbiorczego i Rejestru zleceń, do
-  Sprawdzania Wzorców Przygotowania pliku zbiorczego i do drogi zapasowej.
+- openpyxl zostaje do odczytu Pliku zbiorczego i Rejestru zleceń i do drogi
+  zapasowej, także w Sprawdzaniu Wzorca, którego kształtu kopia nie przyjmuje.
   Wzorzec rozliczenia pracownika przechodzi Sprawdzanie bez openpyxl (#149):
   Wzorzec poprawny jako XML, ale semantycznie odrzucany przez openpyxl, nie
   jest już zatrzymywany w Sprawdzaniu. Do decyzji trzeba wrócić, jeśli taki
   Wzorzec się pojawi. Przygotowanie pliku zbiorczego
-  zapisuje Rozliczenie wewnętrzne przez openpyxl, a Plik zbiorczy od
-  2026-10-22 tą samą kopią (sekcja niżej).
+  zapisuje Plik zbiorczy od 2026-10-22, a Rozliczenie wewnętrzne od
+  2026-11-08 tą samą kopią (sekcje niżej).
 - Bramka poprawności traktuje nazwę arkusza w apostrofach i bez nich w nazwie
   zdefiniowanej jako to samo odwołanie: openpyxl dodaje apostrofy, kopia
   zostawia definicję z Wzorca.
@@ -387,3 +391,63 @@ pod tym nagłówkiem we Wzorcu. Nagłówki docelowe są częścią układu pliku
 więc konstruktor `TemplateFile` nie dostaje ich z wywołania. Kopia Pliku
 zbiorczego szuka ich w A:K, więc w dowolnej kolejności zajmują wszystkie kolumny
 od A; Rozliczenie wewnętrzne nadal zapisuje openpyxl.
+
+## Zmiana z 2026-11-08: Rozliczenie wewnętrzne z kopii Wzorca
+
+Po zmianach wspinaczki „Przygotowanie pliku zbiorczego poniżej sekundy”
+Rozliczenie wewnętrzne zostało jedynym plikiem Przygotowania, który powstawał
+pełnym wczytaniem i zapisem Wzorca przez openpyxl: na runnerze Windows, który
+odpowiada laptopowi taty, 0,41 s w profilu, z czego zapis 0,26 s, a
+Sprawdzanie wczytywało ten Wzorzec przez openpyxl osobno.
+
+Teraz Rozliczenie wewnętrzne powstaje tą samą kopią co Plik zbiorczy, jako plik
+okresu: autofiltr i nazwa `_xlnm._FilterDatabase` obejmują nagłówek i wpisane
+wiersze, a Wygląd Wiersza danych mają kolumny A:M. Sprawdzanie i Planowanie
+czytają jego zarys z tego samego odczytu. Droga przez openpyxl zostaje zapasowa
+tak jak dla Pliku zbiorczego.
+
+Flagi przeliczania są częścią układu pliku (`SheetLayout.recalculation`), a obie
+drogi zapisu ustawiają w `calcPr` te same:
+
+- Rozliczenie pracownika i Plik zbiorczy dostają jak dotąd `calcMode="auto"`,
+  `fullCalcOnLoad="1"` i `forceFullCalc="1"` (`Recalculation.FORCED`).
+- Rozliczenie wewnętrzne dostaje tylko `fullCalcOnLoad="1"`
+  (`Recalculation.ON_LOAD`). Tyle miało dotąd: openpyxl zapisuje
+  `fullCalcOnLoad="1"`, gdy Wzorzec go nie ma (wartość domyślna
+  `CalcProperties`), a Wzorzec taty ma `<calcPr calcId="191029"/>`. „Bez flag
+  przeliczania” ze zmiany z 2026-10-24 znaczyło więc bez `calcMode` i
+  `forceFullCalc`. Jedyna różnica wobec dawnej drogi: Wzorzec z
+  `fullCalcOnLoad="0"` dostaje teraz `1` na obu drogach. Żaden Wzorzec taty
+  go nie ma.
+
+Kopia czyta nagłówek pliku okresu tylko w kolumnach danych wejściowych A:K, a
+droga przez openpyxl szuka nagłówków docelowych Rozliczenia wewnętrznego w
+całym wierszu 1 i wpisuje pod ostatnim wystąpieniem każdego z nich. Kopia
+przyjmuje więc Wzorzec tylko wtedy, gdy oba miejsca to ta sama kolumna; Wzorzec
+z nagłówkiem docelowym dalej niż K albo powtórzonym za K idzie przez openpyxl.
+U taty nagłówki docelowe zajmują A:K bez powtórzeń.
+
+Poza tym, co widać w Excelu, kopia zachowuje części Wzorca, które openpyxl
+pomijał albo zastępował: ustawienia drukarki
+(`xl/printerSettings/printerSettings1.bin` i `r:id` w `pageSetup`) i tabelę
+tekstów wspólnych Wzorca. Wzorzec bez motywu zostaje bez motywu, a openpyxl
+dopisywał domyślny.
+
+Wynik na dwóch kopiach Rejestru taty z Wzorcami taty i na syntetycznym
+Rejestrze z jego Wzorcami (okres 15_21_09_2026): Rozliczenie wewnętrzne z kopii nie
+różni się od zapisanego przez openpyxl w żadnej kategorii bramki
+`tools/porownanie_rozliczen.py`, a także w szerokościach kolumn, widoku,
+blokadzie wierszy, autofiltrze, ustawieniach wydruku, formatowaniu
+warunkowym, walidacji danych, `calcPr` i nazwach zdefiniowanych. Plik zbiorczy
+ma te same bajty co przed zmianą. Na Macu M4 Max `TemplateFile.create`
+Rozliczenia wewnętrznego trwa 29 ms zamiast 62 ms (mediana 9 zimnych
+przebiegów), a Zapisywanie 85 ms zamiast 119 ms.
+
+Odrzucony 2026-10-22 kierunek „Rozliczenie wewnętrzne kopią Wzorca” jest tą
+zmianą wydajności z własnym pomiarem.
+
+Testy właściciele: `tests/test_plik_zbiorczy_kopia_wzorca.py` porównuje oba
+pliki okresu z obu dróg zapisu, także dla Wzorca z nagłówkiem docelowym za K
+albo powtórzonym za K, a
+`tests/test_workbook_files.py` sprawdza flagi przeliczania Rozliczenia
+wewnętrznego na obu drogach.

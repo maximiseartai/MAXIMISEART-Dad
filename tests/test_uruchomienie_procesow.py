@@ -131,8 +131,8 @@ def written(**copy_and_openpyxl: tuple[int, int]) -> dict[str, dict[str, int]]:
 NO_ROUTES = written()
 
 
-# Syntetyczny Wzorzec rozliczenia pracownika i Wzorzec pliku zbiorczego przyjmuje kopia, a Rozliczenie wewnętrzne
-# powstaje zawsze drogą openpyxl; Podgląd bez zapisu nie zapisuje żadnego pliku.
+# Syntetyczne Wzorce (rozliczenia pracownika, pliku zbiorczego i rozliczenia wewnętrznego) przyjmuje kopia (ADR 0008);
+# Podgląd bez zapisu nie zapisuje żadnego pliku.
 @pytest.mark.parametrize(
     ("name", "dry_run", "counters", "result", "routes"),
     [
@@ -143,7 +143,7 @@ NO_ROUTES = written()
             False,
             PREPARATION_COUNTERS,
             "WYMAGA_SPRAWDZENIA",
-            written(collective_file=(1, 0), internal_settlement=(0, 1)),
+            written(collective_file=(1, 0), internal_settlement=(1, 0)),
         ),
         ("przygotowanie-pliku-zbiorczego", True, PREPARATION_COUNTERS, "OK", NO_ROUTES),
     ],

@@ -18,6 +18,8 @@ from rozliczenia.domain import PhaseFailed, PhaseStarted, ProgressEvent, Progres
 from rozliczenia.intermax_replace import Waiting
 from rozliczenia.intermax_ordering import OrderingInputs, order_register
 from rozliczenia.run_context import RunContext
+from rozliczenia.dad_files import DadFiles
+from rozliczenia.input_checks import FILE_READERS, register_problem
 from rozliczenia.message import StopError
 
 from tests.fixtures.preparation import (
@@ -564,19 +566,41 @@ def text_instead_of_number_in_date_of_row_2(data: bytes) -> bytes:
     return data[:value] + b"brak" + data[data.index(b"</v>", value) :]
 
 
-@pytest.mark.parametrize(
-    "damage", [break_tag_of_row_2, text_instead_of_number_in_date_of_row_2], ids=["zly-znacznik", "tekst-zamiast-liczby-w-dacie"]
-)
-def test_rejestr_damaged_in_row_of_earlier_period_stops_as_damaged(
-    tmp_path: Path, damage: Callable[[bytes], bytes]
-) -> None:
+def _damaged_in_earlier_period(tmp_path: Path, damage: Callable[[bytes], bytes]) -> PreparationFixture:
+    """Rejestr, w którym wiersz 2 (zlecenie z 2025 r., daleko przed okresem) jest uszkodzony przez ``damage``."""
+
     fixture = make_preparation_fixture(tmp_path, [register_order(1, datetime(2025, 3, 4, 8, 0)), *default_register_rows()])
-    # ZLECENIA jest za arkuszem lista; wiersz 2 to zlecenie z 2025 r., daleko przed okresem.
+    # ZLECENIA jest za arkuszem lista.
     rewrite_parts(fixture.register_path, lambda name, data: damage(data) if name == "xl/worksheets/sheet2.xml" else data)
+    return fixture
+
+
+def test_rejestr_z_tekstem_zamiast_liczby_w_dacie_wiersza_wczesniejszego_okresu_zatrzymuje_jako_uszkodzony(
+    tmp_path: Path,
+) -> None:
+    fixture = _damaged_in_earlier_period(tmp_path, text_instead_of_number_in_date_of_row_2)
 
     error = stop_preparation(fixture)
 
     assert error.message.code == "USZKODZONY_REJESTR"
+
+
+def test_zepsuty_znacznik_w_wierszu_wczesniejszego_okresu_nie_zatrzymuje_przygotowania_a_diagnoza_go_widzi(
+    tmp_path: Path,
+) -> None:
+    """Przygotowanie czyta z Rejestru tylko wiersze okresu, więc zepsuty XML w wierszu z 2025 r. go nie zatrzymuje;
+    Diagnoza czyta cały Rejestr i nazywa go uszkodzonym."""
+
+    (tmp_path / "caly").mkdir()
+    (tmp_path / "zepsuty").mkdir()
+    intact = run_preparation(_damaged_in_earlier_period(tmp_path / "caly", lambda data: data))
+    fixture = _damaged_in_earlier_period(tmp_path / "zepsuty", break_tag_of_row_2)
+
+    summary = run_preparation(fixture)
+    diagnosis = register_problem(fixture.register_path, FILE_READERS, DadFiles())
+
+    assert (summary.period_order_count, summary.successful_order_count) == (intact.period_order_count, intact.successful_order_count)
+    assert diagnosis is not None and diagnosis.code == "USZKODZONY_REJESTR"
 
 
 WZORCE = pytest.mark.parametrize(

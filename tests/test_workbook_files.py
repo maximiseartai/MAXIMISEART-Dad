@@ -10,8 +10,9 @@ from copy import copy
 from dataclasses import replace
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 from typing import IO, Any, cast
 
@@ -24,6 +25,7 @@ from openpyxl.styles import Color, Font, PatternFill
 from openpyxl.styles.fills import Fill
 from openpyxl.styles.numbers import is_date_format
 from openpyxl.utils import column_index_from_string, get_column_letter
+from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH
 
 from rozliczenia.dad_files import DadFiles
 from rozliczenia import collective_layout
@@ -44,7 +46,14 @@ from rozliczenia.workbook_files import (
 from rozliczenia.template_copy import Package
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.write_routes import Route
-from rozliczenia.workbook_parts import UnsupportedShape, active_sheet, package_parts
+from rozliczenia.workbook_parts import (
+    FirstRows,
+    UnsupportedShape,
+    active_sheet,
+    first_rows,
+    package_parts,
+    rows_dated_between,
+)
 from rozliczenia.workbook_save import (
     ExternalLinksError,
     SaveProblem,
@@ -60,7 +69,13 @@ from tests.fixtures.benchmark import (
     write_synthetic_templates,
     zip_part,
 )
-from tests.fixtures.preparation import INTERNAL_TEMPLATE_HEADERS, write_collective_template, write_internal_template
+from tests.fixtures.preparation import (
+    INTERNAL_TEMPLATE_HEADERS,
+    register_order,
+    write_collective_template,
+    write_internal_template,
+    write_register,
+)
 from tests.fixtures.porownanie import compare_worker_settlements, renumber_cell_styles
 from tests.fixtures.workbooks import (
     active_worksheet,
@@ -81,6 +96,7 @@ from tests.fixtures.workbooks import (
     without_styles,
 )
 from tests.fixtures.data_rows import data_row, register_row
+from tests.fixtures.intermax import like_excel
 from tests.fixtures.locked_file import lock_file
 from tests.fixtures.settlement import COLLECTIVE_HEADERS, write_source, write_template
 
@@ -224,15 +240,48 @@ def test_numer_stylu_poza_komorka_i_wierszem_nie_czyni_wzorca_nieczytelnym(tmp_p
     _plan_template(path)
 
 
+_OUTSIDE_STYLES = {
+    "wiersza": (rb'<row r="([0-9]+)"', rb'<row r="\1" s="%d" customFormat="1"'),
+    "kolumny": (rb'(<col [^>]*?)style="[0-9]+"', rb'\1style="%d"'),
+}
+
+
+def _cell_style_count(path: Path) -> int:
+    with package_parts(path.read_bytes()) as parts:
+        cell_styles = re.search(rb"<cellXfs\b.*?</cellXfs>", parts["xl/styles.xml"], re.S)
+    assert cell_styles is not None
+    return cell_styles.group(0).count(b"<xf ")
+
+
+# Wzorzec w kształcie Pliku zbiorczego (z autofiltrem) przyjmuje kopia Wzorca, a ``styled_template`` nie.
+@pytest.mark.parametrize(
+    ("make", "styled"),
+    [
+        pytest.param(styled_template, "wiersza", id="wiersza-openpyxl"),
+        pytest.param(write_collective_template, "wiersza", id="wiersza-kopia"),
+        pytest.param(write_collective_template, "kolumny", id="kolumny-kopia"),
+    ],
+)
+@pytest.mark.parametrize(
+    "outside",
+    [
+        pytest.param(lambda count: count, id="rowny-liczbie-stylow"),
+        pytest.param(lambda count: count + 1, id="o-jeden-dalej"),
+        pytest.param(lambda count: 10 ** len(str(count)), id="pierwszy-o-cyfre-dluzszy"),
+        pytest.param(lambda count: 99999, id="daleko"),
+    ],
+)
 @pytest.mark.parametrize("opening", [_check_template, _plan_template])
-def test_styl_wiersza_spoza_stylow_skoroszytu_czyni_wzorzec_nieczytelnym(tmp_path: Path, opening: Callable[[Path], None]) -> None:
-    path = styled_template(tmp_path / "Skoroszyt.xlsx")
+def test_styl_wiersza_spoza_stylow_skoroszytu_czyni_wzorzec_nieczytelnym(
+    tmp_path: Path, opening: Callable[[Path], None], outside: Callable[[int], int], styled: str, make: Callable[[Path], Path]
+) -> None:
+    path = make(tmp_path / "Skoroszyt.xlsx")
+    pattern, replacement = _OUTSIDE_STYLES[styled]
+    style = outside(_cell_style_count(path))
     rewrite_parts(
         path,
         lambda name, data: (
-            re.sub(rb'<row r="([0-9]+)"', rb'<row r="\1" s="99999" customFormat="1"', data, count=1)
-            if name.startswith("xl/worksheets/")
-            else data
+            re.sub(pattern, replacement % style, data, count=1) if name.startswith("xl/worksheets/") else data
         ),
     )
 
@@ -240,6 +289,23 @@ def test_styl_wiersza_spoza_stylow_skoroszytu_czyni_wzorzec_nieczytelnym(tmp_pat
         opening(path)
 
     assert raised.value.problem is Problem.UNREADABLE
+
+
+def test_planowanie_czyta_wzorzec_pliku_zbiorczego_zmieniony_po_sprawdzaniu(tmp_path: Path) -> None:
+    path = write_collective_template(tmp_path / "Wzorzec pliku zbiorczego.xlsx")
+    template = TemplateFile.collective_file(path)
+    template.check()
+    workbook = load_workbook(path, keep_links=True)
+    try:
+        active_worksheet(workbook).merge_cells("U18:V18")
+        workbook.save(path)
+    finally:
+        workbook.close()
+
+    with pytest.raises(WorkbookError) as raised:
+        template.plan(1)
+
+    assert raised.value.problem is Problem.LAYOUT
 
 
 @pytest.mark.parametrize("opening", OPENINGS)
@@ -1006,14 +1072,23 @@ def test_naglowek_docelowy_rozliczenia_wewnetrznego_jest_szukany_w_calym_wierszu
     ]
 
 
-def test_rozliczenie_wewnetrzne_powstaje_przez_openpyxl_bez_wymuszonego_przeliczania(tmp_path: Path) -> None:
-    template_path = write_internal_template(tmp_path / "Wzorzec rozliczenia wewnętrznego.xlsx")
+@pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
+def test_rozliczenie_wewnetrzne_przelicza_formuly_przy_otwarciu_bez_wymuszonego_przeliczania(
+    tmp_path: Path, copied: bool
+) -> None:
+    template_path = marked_for_copy(write_internal_template(tmp_path / "Wzorzec rozliczenia wewnętrznego.xlsx"))
+    rewrite_parts(  # ``calcPr`` jak we Wzorcu taty, bez żadnej flagi przeliczania
+        template_path,
+        lambda name, data: re.sub(rb"<calcPr\b[^>]*/>", b'<calcPr calcId="191029"/>', data) if name == "xl/workbook.xml" else data,
+    )
+    if not copied:
+        refused_by_copy(template_path)
     target = tmp_path / "Rozliczenie wewnętrzne.xlsx"
 
     route = TemplateFile.internal_settlement(template_path).create(target, [_register_row()])
 
-    assert route is Route.OPENPYXL
-    assert not load_workbook(target).calculation.forceFullCalc
+    assert route is (Route.COPY if copied else Route.OPENPYXL)
+    assert calculation_flags(target) == {"calcMode": None, "fullCalcOnLoad": "1", "forceFullCalc": None}
 
 
 def test_plik_zbiorczy_z_kopii_ma_wymiar_arkusza_z_wpisanymi_iloscami_uslug(tmp_path: Path) -> None:
@@ -1215,3 +1290,172 @@ def test_wzorzec_z_ukrytym_aktywnym_arkuszem_idzie_dawna_droga_i_wiersze_trafiaj
     finally:
         saved.close()
     assert (route, written) == (Route.OPENPYXL if hidden else Route.COPY, ("hidden" if hidden else "visible", "syntetyczne miasto"))
+
+
+def test_wiersz_1_bez_openpyxl_ma_teksty_komorek_takie_jak_openpyxl(tmp_path: Path) -> None:
+    """Rejestr zleceń jest zawężany po kolumnach daty z wiersza 1 czytanego bez openpyxl: tekst wspólny (także z
+    fragmentami i podpowiedzią wymowy), wbudowany i typu ``str`` jest taki, jaki daje openpyxl, liczba, formuła i pusta
+    komórka nie są tekstem, a arkusz bez wiersza 1 nie ma tekstów."""
+
+    path = tmp_path / "Rejestr.xlsx"
+    workbook = Workbook()
+    workbook.epoch = MAC_EPOCH
+    orders = active_worksheet(workbook)
+    orders.title = "Zlecenia"
+    for column, value in enumerate(["DATA GODZ. POCZ.", "UWAGI", 5, "=A1", None, "  MIASTO  ", "x", "x"], start=1):
+        orders.cell(1, column, value)
+    workbook.create_sheet("Lista").cell(2, 1, "WYKONAWCA")
+    workbook.save(path)
+    like_excel(path)
+    replace_cells(
+        path,
+        {
+            "D1": '<c r="D1" t="str"><f>A1</f><v>DATA GODZ. POCZ.</v></c>',
+            "G1": '<c r="G1" t="str"><v>tekst</v></c>',
+            "H1": '<c t="inlineStr"><is><r><t>NUMER</t></r><r><t xml:space="preserve"> ZL.</t></r>'
+            '<rPh sb="0" eb="1"><t>X</t></rPh></is></c>',
+        },
+    )
+
+    opened = load_workbook(path, read_only=True)
+    try:
+        by_openpyxl: dict[str, list[object]] = {}
+        for sheet in opened.worksheets:
+            row: list[object] = [cell.value if cell.data_type == "s" else None for cell in next(sheet.iter_rows(max_row=1), ())]
+            while row and row[-1] is None:  # openpyxl dopełnia brakujący wiersz 1 pustymi komórkami
+                row.pop()
+            by_openpyxl[sheet.title] = row
+        assert opened.epoch == MAC_EPOCH
+    finally:
+        opened.close()
+    texts = ["DATA GODZ. POCZ.", "UWAGI", None, None, None, "  MIASTO  ", "tekst", "NUMER ZL."]
+    assert first_rows(path.read_bytes()) == FirstRows(True, {"Zlecenia": texts, "Lista": []})
+    assert by_openpyxl == {"Zlecenia": texts, "Lista": []}
+
+
+@pytest.mark.parametrize(
+    ("cell", "kept"),
+    [
+        ('<c r="A3"><v>046279.25</v></c>', range(3, 6)),
+        ('<c r="A3"><v>46278.9999999999999999</v></c>', range(3, 6)),
+        ('<c r="A6"><v>46288</v></c>', range(4, 7)),
+        ('<c r="A2" t="d"><v>45000</v></c>', None),
+    ],
+    ids=["zero-na-poczatku", "cyfry-zaokraglone-do-poczatku", "koniec-przedzialu", "data-typu-d-cyframi"],
+)
+def test_rejestr_zawezony_do_okresu_ma_wiersze_z_liczba_daty_z_przedzialu_w_kazdym_jej_zapisie(
+    tmp_path: Path, cell: str, kept: range | None
+) -> None:
+    """Kolumna daty z liczbami w zapisie openpyxl (``t="n"``) i Excela (bez typu), w wierszach 4–5 z przedziału
+    46279–46288: wiersz z liczbą z przedziału jest w zakresie okresu także wtedy, gdy liczba ma zero na początku, cyfry,
+    które ``float`` zaokrągla do początku przedziału, albo jest jego końcem. Komórka daty typu ``d``, także zapisana
+    cyframi daleko poza przedziałem, zostawia arkusz w całości, bez zakresu."""
+
+    path = tmp_path / "Rejestr.xlsx"
+    workbook = Workbook()
+    orders = active_worksheet(workbook)
+    orders.title = "ZLECENIA"
+    orders.append(["DATA"])
+    for value in (45000.5, 46000.5, 46280.5, 46281.5, 47000.5):
+        orders.append([value])
+    workbook.save(path)
+    replace_cells(path, {cell[len('<c r="') : cell.index('"', len('<c r="'))]: cell})
+
+    _, ranges = rows_dated_between(path.read_bytes(), {"ZLECENIA": 1}, 46279.0, 46288.0)
+
+    assert ranges == ({} if kept is None else {"ZLECENIA": kept})
+
+
+@pytest.mark.parametrize(
+    "guessed", [{}, {"Zlecenia": 2}, {"Zlecenia": 1}], ids=["bez_kolumn", "inna_kolumna", "rozpoznana_kolumna"]
+)
+def test_rejestr_zawezony_po_wierszu_1_bez_openpyxl_daje_wiersze_okresu_z_rozpoznanej_kolumny_daty(
+    tmp_path: Path, guessed: dict[str, int]
+) -> None:
+    """Rejestr zleceń otwarty od razu zawężony po kolumnach daty z wiersza 1 bez openpyxl ma wiersz 1 z nagłówkami, a
+    po rozpoznaniu kolumny daty daje wiersze okresu z niej, także gdy z wiersza 1 bez openpyxl wyszła inna kolumna albo
+    żadna."""
+
+    path = tmp_path / "Rejestr.xlsx"
+    workbook = Workbook()
+    orders = active_worksheet(workbook)
+    orders.title = "Zlecenia"
+    orders.append(["DATA GODZ. POCZ.", "MIASTO"])
+    for day in range(1, 21):
+        orders.append([datetime(2026, 9, day, 8), f"miasto {day}"])
+    workbook.save(path)
+    start, end = datetime(2026, 9, 10), datetime(2026, 9, 13)
+    seen: list[dict[str, object]] = []
+
+    def date_columns(headers: Any) -> dict[str, int]:
+        seen.append(dict(headers))
+        return guessed
+
+    with read_workbook(path, path.read_bytes(), (date_columns, start, end)) as read:
+        headers = [next(sheet.values(min_row=1, max_row=1)) for sheet in read.sheets()]
+        numbers = []
+        for moved in (timedelta(0), timedelta(days=3)):
+            with read.narrowed({"Zlecenia": 1}, start + moved, end + moved) as narrowed:
+                numbers.append([found.row.number for sheet in narrowed.sheets() for found in sheet.data_rows(2, {"DATA": 1})])
+
+    assert seen == [{"Zlecenia": ["DATA GODZ. POCZ.", "MIASTO"]}]
+    assert headers == [("DATA GODZ. POCZ.", "MIASTO")]
+    assert numbers == [list(range(10, 15)), list(range(13, 18))], "okres z dniem zapasu z obu stron"
+
+
+def _rows(content: bytes) -> dict[int, tuple[object, ...]]:
+    workbook = load_workbook(BytesIO(content), read_only=True)
+    try:
+        rows = enumerate(workbook["ZLECENIA"].iter_rows(values_only=True), start=1)
+        return {number: values for number, values in rows if any(value is not None for value in values)}
+    finally:
+        workbook.close()
+
+
+def test_rejestr_z_pusta_tabela_tekstow_wspolnych_zawezony_do_okresu_ma_wiersze_okresu_jak_caly(tmp_path: Path) -> None:
+    """Rejestr zapisany jak w Excelu bez żadnego tekstu, więc z tabelą tekstów wspólnych bez tekstów: zawężony do
+    10–12.09.2026 ma wiersze z tymi datami takie same jak cały Rejestr."""
+
+    path = tmp_path / "Rejestr.xlsx"
+    workbook = Workbook()
+    orders = active_worksheet(workbook)
+    orders.title = "ZLECENIA"
+    for number in range(1, 21):
+        orders.append([datetime(2026, 9, number, 8), number])
+    workbook.save(path)
+    like_excel(path)
+    content = path.read_bytes()
+    day = (datetime(2026, 9, 10) - WINDOWS_EPOCH) / timedelta(days=1)
+
+    narrowed, ranges = rows_dated_between(content, {"ZLECENIA": 1}, day, day + 3)
+
+    whole = _rows(content)
+    assert ranges == {"ZLECENIA": range(10, 13)}
+    assert _rows(narrowed) == {number: whole[number] for number in (1, 10, 11, 12)}
+
+
+def test_rejestr_zawezony_do_okresu_niesie_w_tabeli_tekstow_wspolnych_tylko_teksty_swoich_wierszy(tmp_path: Path) -> None:
+    """Rejestr zapisany jak w Excelu: wiersze 2 i 4 to zlecenia z 2025 r., a wiersz 3 zlecenie z 8.09.2026. Po zawężeniu
+    do tego dnia tabela tekstów wspólnych nie ma tekstów wierszy 2 i 4, a wiersze 1 i 3 mają te same wartości co w
+    całym Rejestrze."""
+
+    path = write_register(
+        tmp_path / "Rejestr.xlsx",
+        [
+            register_order(100, datetime(2025, 3, 4, 8, 0)),
+            register_order(2, datetime(2026, 9, 8, 8, 0)),
+            register_order(101, datetime(2025, 3, 5, 8, 0)),
+        ],
+    )
+    like_excel(path)
+    content = path.read_bytes()
+    day = (datetime(2026, 9, 8) - WINDOWS_EPOCH) / timedelta(days=1)
+
+    narrowed, ranges = rows_dated_between(content, {"ZLECENIA": 3}, day, day + 1)
+
+    with package_parts(narrowed) as parts:
+        table = parts["xl/sharedStrings.xml"]
+    assert ranges == {"ZLECENIA": range(3, 4)}
+    assert (b"UM-SYN-002" in table, b"UM-SYN-100" in table, b"UM-SYN-101" in table) == (True, False, False)
+    whole = _rows(content)
+    assert _rows(narrowed) == {1: whole[1], 3: whole[3]}
