@@ -1,7 +1,7 @@
 """Exhaustively break each request of a Wycena w efenix and check the Zatrzymanie, the efenix state and the resume.
 
 The checker runs the real process (``run_process`` with ``efenix_process.PROCESS``, the window ``efenix_browser.window``
-in Playwright's Chromium, ``pace=None``) on the Atrapa efenix (``tests/fixtures/atrapa_efenix.py``) with two orders of a
+in Playwright's Chromium, ``pace=None``) on the Atrapa efenix (``tools/lib/atrapy/atrapa_efenix.py``) with two orders of a
 synthetic Plik zbiorczy: order 1 (row 18) has an empty pricing, Emmett gives O as the file and T one less than the
 file, and the process enters T over Emmett's and adds AG, so it ends gotowe with a Znacznik efenix; order 2 (row 19) has
 an empty pricing and an Emmett with more than the file in T, so it ends with an Ostrzeżenie Emmetta (ADR 0026). Between the window and the Atrapa sits the proxy of ``awarie_efenix.py``.
@@ -118,7 +118,7 @@ from rozliczenia.workbook_files import read_data_rows
 from skrypt_skilla import Parser, create_run_root, new_run, part, remove_run_root
 # Adresy stron i skryptów efenix z Atrapy, celowej kopii efenix (docs/agents/skille.md, „Co wyrocznia bierze z src”): adres
 # to fakt świata efenix, więc jego zmiana w efenix_page ma wywrócić sprawdzenie, a nie przejść razem z nim.
-from tests.fixtures.atrapa_efenix import (
+from atrapy.atrapa_efenix import (
     EFENIX_EMMETT_RELOAD_MS,
     FILL_EMMETT,
     LIST_PAGE,

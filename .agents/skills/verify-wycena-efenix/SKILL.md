@@ -5,8 +5,8 @@ pilnuje:
   - src/rozliczenia/efenix_*.py
   - src/rozliczenia/centrum/logs_disk.py
   - src/rozliczenia/centrum/efenix_chrome.py
-  - tests/fixtures/atrapa_efenix.py
-  - tools/lib/model_efenix.py
+  - tools/lib/atrapy/atrapa_efenix.py
+  - tools/lib/atrapy/model_efenix.py
   - tests/fixtures/okno_w_procesie.py
   - tests/fixtures/efenix.py
   - tools/lib/eksplorator.py
@@ -102,7 +102,7 @@ checks them on the real window and the Atrapa.
 
 ## Launch
 
-No server to keep: each run starts its own Atrapa efenix (`tests/fixtures/atrapa_efenix.py`) and proxy
+No server to keep: each run starts its own Atrapa efenix (`tools/lib/atrapy/atrapa_efenix.py`) and proxy
 (`scripts/awarie_efenix.py`) on free ports of `127.0.0.1`, and each worker its own headless Chromium of Playwright.
 The scenario is two synthetic orders (`file_orders()`): order 1 (row 18) ends gotowe after the date, Emmett (with T one
 less than the file, like the S of #960) and two quantities, T over Emmett's and AG; order 2 (row 19) ends with an

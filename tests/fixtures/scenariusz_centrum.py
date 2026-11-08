@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from tests.fixtures.atrapa_efenix import amount_of
+from atrapy.atrapa_efenix import amount_of
 from tests.fixtures.efenix import ADDRESS, Order as EfenixOrder
 from tests.fixtures.preparation import COLLECTIVE_TEMPLATE_HEADERS, INTERNAL_TEMPLATE_HEADERS, OLD_REGISTER_HEADERS
 from tests.fixtures.settlement import PERIOD

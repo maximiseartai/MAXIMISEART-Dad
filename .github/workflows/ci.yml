@@ -220,7 +220,7 @@ jobs:
         # The pre-push hook test runs the real ruff and mypy from tools/ci_lokalnie.py.
         run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
 
-      # Test files that reach Atrapa efenix (tests/fixtures/atrapa_efenix.py) drive a real browser, in the test or through
+      # Test files that reach Atrapa efenix (tools/lib/atrapy/atrapa_efenix.py) drive a real browser, in the test or through
       # the machine script; the plan marks the jobs that run them. Playwright comes with the tool's dependencies, so only its browser is missing.
       - name: Chromium
         if: ${{ matrix.przegladarka }}

@@ -49,7 +49,7 @@ from rozliczenia.efenix_page import EmmettWindow, emmett_window, read_results
 from rozliczenia.efenix_positions import POSITION_OF_COLUMN
 from rozliczenia.efenix_window import ListedOrder
 
-from tests.fixtures.atrapa_efenix import (
+from atrapy.atrapa_efenix import (
     CHANGE_STATUS,
     FILL_EMMETT,
     LIST_PAGE,

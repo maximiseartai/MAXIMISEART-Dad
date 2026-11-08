@@ -18,7 +18,7 @@ import zipfile
 from openpyxl import Workbook
 from openpyxl.styles import Border, Font, PatternFill, Protection, Side
 
-from tests.fixtures.atrapa_efenix import AtrapaOrder
+from atrapy.atrapa_efenix import AtrapaOrder
 from tests.fixtures.settlement import COLLECTIVE_HEADERS, PERIOD, CellValue
 from tests.fixtures.workbooks import active_worksheet, add_external_link_fixture
 

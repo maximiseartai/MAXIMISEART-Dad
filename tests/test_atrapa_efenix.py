@@ -1,4 +1,4 @@
-"""Połączenia Atrapy efenix (``tests/fixtures/atrapa_efenix.py``), decyzje serwera efenix w jej modelu i kontrakt okna w
+"""Połączenia Atrapy efenix (``tools/lib/atrapy/atrapa_efenix.py``), decyzje serwera efenix w jej modelu i kontrakt okna w
 procesie z oknem przeglądarki.
 
 Przy połączeniu na każde żądanie przeglądarki testów pod xdist na Windows wyczerpywały gniazda
@@ -6,7 +6,7 @@ Przy połączeniu na każde żądanie przeglądarki testów pod xdist na Windows
 zamyka połączenia, które zostały otwarte, żeby po nim nic pod jej adresem nie odpowiadało.
 
 Decyzje serwera (sesja i jej wygaśnięcie, odmowy „Załaduj do zlecenia”, nadpisanie wyceny Wyceną Emmetta, zapis daty
-wykonania i ilości) model ``tools/lib/model_efenix.py`` podejmuje dla każdego okna, więc ich macierz biegnie na jego
+wykonania i ilości) model ``tools/lib/atrapy/model_efenix.py`` podejmuje dla każdego okna, więc ich macierz biegnie na jego
 interfejsie ``SerwerEfenix``, bez HTTP i przeglądarki.
 
 Kontrakt okien: każdy wiersz ``_ROWS`` to stan efenix i działania okna Wyceny (``efenix_window.Efenix``). Okno w procesie
@@ -36,7 +36,7 @@ import threading
 from typing import Any
 from urllib.parse import urlparse
 
-from model_efenix import (
+from atrapy.model_efenix import (
     CATALOG,
     PRICES,
     TODAY,
@@ -56,7 +56,7 @@ import pytest
 from rozliczenia import efenix_browser
 from rozliczenia.efenix_pricing import _emmett
 from rozliczenia.efenix_window import Efenix, EmmettLoad, ForwardRefusal, ListedOrder, OrderPricing, WindowStop
-from tests.fixtures.atrapa_efenix import (
+from atrapy.atrapa_efenix import (
     FILL_EMMETT,
     LIST_PAGE,
     LIST_SCRIPT,

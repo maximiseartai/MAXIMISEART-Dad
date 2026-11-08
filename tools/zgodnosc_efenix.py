@@ -1,7 +1,7 @@
 """Porównuje budowę stron efenix z Atrapą efenix samym odczytem; uruchom przed pierwszą Wyceną w efenix i po Zgłoszeniu z Zatrzymania okna efenix.
 
 Narzędzie dla Maksa, poza CI (ADR 0024). Łączy się z Chrome, w którym Maks jest zalogowany do efenix kontem taty, i
-sprawdza budowę, której używa Wycena w efenix i którą odtwarza Atrapa efenix (``tests/fixtures/atrapa_efenix.py``).
+sprawdza budowę, której używa Wycena w efenix i którą odtwarza Atrapa efenix (``tools/lib/atrapy/atrapa_efenix.py``).
 Żadna strona efenix nie działa przy tym w przeglądarce: każde żądanie do efenix narzędzie wysyła samo, z ciasteczkami
 sesji domyślnego kontekstu Chrome (``contexts[0].request``, bez kart i bez skryptów), tylko z listy ``ALLOWED``
 porównywanej po pełnej ścieżce i hoście ``--efenix-url``, i nigdy nie podąża za przekierowaniem: przekierowanie na
@@ -149,9 +149,8 @@ from playwright.sync_api import APIRequestContext, Browser, Page, ProxySettings,
 from playwright.sync_api import Error as PlaywrightError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-# Korzeń repozytorium dla Atrapy efenix (``tests.fixtures``), z której narzędzie bierze ścieżki i pola szukania, i
-# ``tools/lib`` dla modelu efenix z kodami pozycji i zleceniem.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# ``tools/lib`` dla Atrapy efenix, z której narzędzie bierze ścieżki i pola szukania, i modelu efenix z kodami pozycji i
+# zleceniem.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 from rozliczenia import workbook_files
@@ -194,15 +193,22 @@ from rozliczenia.efenix_positions import POSITION_OF_COLUMN
 from rozliczenia.tool_files import COLLECTIVE_TEMPLATE
 from rozliczenia.workbook_files import WorkbookError
 
-from model_efenix import CATALOG, EfenixOrder
-
-from tests.fixtures.atrapa_efenix import (
+from atrapy.model_efenix import CATALOG, EfenixOrder
+from atrapy.atrapa_efenix import (
+    CANCEL_BUTTON,
+    FINGERPRINT_FIELD,
     LIST_PAGE,
     LIST_ROWS_PER_PAGE,
     LIST_SCRIPT,
     LIST_SEARCH_FIELDS,
     ORDER_SCRIPT,
+    PASSWORD_FIELD,
+    PRICE_FIELD,
+    PRICING_CARD,
+    SHOWN_PRICE,
+    SIGNUM_FIELD,
     atrapa_efenix,
+    position_field,
 )
 
 # Jedyne żądania do efenix, które narzędzie wysyła: (metoda, ścieżka względem katalogu ``--efenix-url``). Zapis ilości,
@@ -252,14 +258,13 @@ LIST_ELEMENTS: Final = tuple(element.element for element in Element if element.p
 ORDER_ELEMENTS: Final = tuple(element.element for element in Element if element.page is PageKind.ORDER and element.always_on_page)
 # Elementy, których Wycena w efenix nie używa, a Atrapa ma: przycisk anulowania, którego okno nie może kliknąć, i
 # formularz logowania, w którym tata loguje się sam.
-UNUSED_ORDER_ELEMENTS: Final = (PageElement("przycisk anulowania", "#button_forward_to_cancel"),)
+UNUSED_ORDER_ELEMENTS: Final = (PageElement("przycisk anulowania", f"#{CANCEL_BUTTON}"),)
 LOGIN_ELEMENTS: Final = (
     PageElement("formularz logowania", LOGIN_FORM),
-    PageElement("pole loginu", "input#field_signum"),
-    PageElement("pole hasła", "input#field_password"),
-    PageElement("pole fingerprint", 'input[name="fingerprint"]'),
+    PageElement("pole loginu", f"input#{SIGNUM_FIELD}"),
+    PageElement("pole hasła", f"input#{PASSWORD_FIELD}"),
+    PageElement("pole fingerprint", f'input[name="{FINGERPRINT_FIELD}"]'),
 )
-PRICING_CARD: Final = ".card.rounded-lg.kolorek"
 # Przycisk i okno Emmetta i propozycja w oknie Emmetta: element, do którego skrypt strony wkłada odpowiedź
 # ``action_fill_emmett.php``.
 EMMETT_BUTTON: Final = Element.EMMETT_BUTTON.selector
@@ -341,10 +346,10 @@ _READ_TREE: Final = """(proposal) => {
     return nodes(proposal);
 }"""
 # Karta pozycji: ``id`` pól Ilość, ``id`` pól ceny wpisywanej i ceny z tekstu karty.
-_READ_CARDS: Final = """([card, quantity]) => [...document.querySelectorAll(card)].map((element) => ({
+_READ_CARDS: Final = """([card, quantity, price, shown]) => [...document.querySelectorAll(card)].map((element) => ({
     quantity: [...element.querySelectorAll(quantity)].map((input) => input.id),
-    price: [...element.querySelectorAll('input.wycena-cena')].map((input) => input.id),
-    shown: [...element.querySelectorAll('.col-sm-1.mt-2 > span.text-default > small')].map((small) => small.textContent.trim()),
+    price: [...element.querySelectorAll(price)].map((input) => input.id),
+    shown: [...element.querySelectorAll(shown)].map((small) => small.textContent.trim()),
 }))"""
 
 
@@ -754,7 +759,7 @@ def _check_positions(page: Page, costs: Mapping[str, Decimal | None], report: Re
     bez żadnej pozycji z przypisania kolumn nie pozwala porównać cen, więc to porównanie zostaje niesprawdzone.
     """
 
-    cards: list[_Card] = page.evaluate(_READ_CARDS, [PRICING_CARD, QUANTITY])
+    cards: list[_Card] = page.evaluate(_READ_CARDS, [PRICING_CARD, QUANTITY, PRICE_FIELD, SHOWN_PRICE])
     if not cards:
         report.unchecked.append((Part.PRICING, f"strona zlecenia bez kart pozycji {PRICING_CARD}"))
     found = dict(position for card in cards if (position := _position(card)) is not None)
@@ -764,7 +769,7 @@ def _check_positions(page: Page, costs: Mapping[str, Decimal | None], report: Re
             Part.PRICING,
             f"karty bez jednego pola Ilość z ceną w tekście albo jednego pola ceny wpisywanej z kodem INDEKS_NNN_NNN: {broken} z {len(cards)}",
         )
-    atrapa = {f"INDEKS_{item.code}_078": item.kind == "CENA" for item in CATALOG}
+    atrapa = {position_field(item.code): item.kind == "CENA" for item in CATALOG}
     for code in sorted(found.keys() - atrapa.keys()):
         report.differ(Part.PRICING, f"{code}: jest w efenix, nie ma go w Atrapie")
     for code in sorted(found.keys() & atrapa.keys()):

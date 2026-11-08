@@ -115,7 +115,7 @@ The Centrum log goes to ``<root>/logs/centrum-rozliczen.log``, and the button
 „Zamknij Centrum rozliczeń” stops this process the way it stops Dad's.
 
 Wycena w efenix never reaches efenix.pl (ADR 0024): this script serves the Atrapa efenix of the tests
-(``tests/fixtures/atrapa_efenix.py``) on a free local port for as long as Centrum runs, writes its address to
+(``tools/lib/atrapy/atrapa_efenix.py``) on a free local port for as long as Centrum runs, writes its address to
 ``<root>/efenix/adres.txt``, and gives Centrum an efenix window in Playwright's headless Chromium with its profile in
 ``<root>/przegladarka-efenix`` and no human pace, like the
 tests of the process (Dad's window pauses about 20 s per order). The Atrapa holds ``EFENIX_ORDERS`` of ``tests/fixtures/scenariusz_centrum.py`` (made-up numbers, addresses and logins), starts
@@ -187,7 +187,7 @@ from rozliczenia.tool_files import listen_locally
 from rozliczenia.write_routes import Route
 from rozliczenia.workbook_files import DataRow, RegisterRow
 from skrypt_skilla import Parser
-from tests.fixtures.atrapa_efenix import atrapa_efenix
+from atrapy.atrapa_efenix import atrapa_efenix
 from tests.fixtures.widok_skrzynki import shown
 from tests.fixtures.efenix import write_collective_file
 from tests.fixtures.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED, EFENIX_UNKNOWN

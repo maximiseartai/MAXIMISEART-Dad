@@ -8,8 +8,8 @@ spoza standardowej aktualizacja, którą opiekun kończy, mogła właśnie zmien
 kopii (``test_opiekun_ponownego_startu.py``) łapie brak modułu dopiero po minucie czekania na nową wersję, a
 bibliotekę spoza standardowej, którą Python ma, przepuszcza.
 
-Model efenix (``tools/lib/model_efenix.py``) importuje tylko bibliotekę standardową, a Atrapa efenix
-(``tests/fixtures/atrapa_efenix.py``) tylko ją i model: z nimi testy i narzędzia porównują Wycenę w efenix, więc nie
+Model efenix (``tools/lib/atrapy/model_efenix.py``) importuje tylko bibliotekę standardową, a Atrapa efenix
+(``tools/lib/atrapy/atrapa_efenix.py``) tylko ją i model: z nimi testy i narzędzia porównują Wycenę w efenix, więc nie
 biorą niczego z kodu pod testem (``src``). Okno w procesie (``tests/fixtures/okno_w_procesie.py``) bierze z kodu pod
 testem tylko typy seamu okna efenix (klasy i aliasy typów z ``efenix_window``), a decyzje bierze
 z modelu: okno, które wołałoby kod Wyceny, przestałoby być niezależną drugą stroną kontraktu z oknem przeglądarki.
@@ -57,6 +57,14 @@ zewnętrznym przez celową kopię. Do 8.11.2026 cztery wyrocznie sięgały do pr
 kolejki budował swój stan z prywatnych pól ``Outbox`` i ``KeyedBox``, a eksplorator Uruchomień z prywatnych pól
 ``RunHost`` (spis N13).
 
+Kod spoza ``tests/`` (``src/``, ``tools/`` z bibliotekami, skryptami CI i hookami, skrypty skilli i pliki Pythona w
+korzeniu) nie importuje pakietu ``tests``: narzędzia i skille zmieniają się rzadko, a pliki testów najczęściej, więc
+wspólne atrapy świata zewnętrznego leżą w ``tools/lib/atrapy/`` (``atrapy.atrapa_efenix``, ``atrapy.model_efenix``).
+Sprawdzenie łapie dokładnie postacie wyliczone w docstringu ``_tests_imports``; uruchomienie testu po ścieżce
+(``pytest.main([".../tests/test_x.py::test"])``) nie jest importem i przechodzi. Importy, które czekają na
+przeniesienie plików taty i faktów scenariuszy do ``tools/lib/atrapy/`` (N13d PR 2), wylicza ``WAITING_FOR_MOVE`` do
+``WAITING_UNTIL``: nowy import pada, a wpis, którego plik już nie importuje, i lista po terminie też.
+
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica, którą łapie tylko przegląd: nazwa albo napis złożony w trakcie działania
 (``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), ``PreparedRun`` wołany pod nazwą
@@ -73,8 +81,9 @@ import ast
 from collections import deque
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from datetime import date, datetime
 import importlib
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import sys
 import typing
 
@@ -85,8 +94,8 @@ GUARDIAN = SRC / "rozliczenia" / "centrum" / "restart_guardian.py"
 ROOT = SRC.parent
 # Wyrocznia Wyceny w efenix i moduły spoza biblioteki standardowej, które wolno jej importować.
 EFENIX_ORACLE = {
-    ROOT / "tools" / "lib" / "model_efenix.py": frozenset[str](),
-    ROOT / "tests" / "fixtures" / "atrapa_efenix.py": frozenset({"model_efenix"}),
+    ROOT / "tools" / "lib" / "atrapy" / "model_efenix.py": frozenset[str](),
+    ROOT / "tools" / "lib" / "atrapy" / "atrapa_efenix.py": frozenset({"atrapy.model_efenix"}),
 }
 # Okno w procesie i moduły kodu pod testem, z których bierze tylko typy.
 WINDOW_IN_PROCESS = ROOT / "tests" / "fixtures" / "okno_w_procesie.py"
@@ -589,8 +598,8 @@ def test_model_i_atrapa_efenix_nie_importuja_kodu_pod_testem() -> None:
     assert not found, "\n".join(
         [
             *sorted(found),
-            "Model efenix (tools/lib/model_efenix.py) importuje tylko bibliotekę standardową, a Atrapa efenix "
-            "(tests/fixtures/atrapa_efenix.py) tylko ją i model: test porównuje z nimi Wycenę w efenix, więc nie biorą "
+            "Model efenix (tools/lib/atrapy/model_efenix.py) importuje tylko bibliotekę standardową, a Atrapa efenix "
+            "(tools/lib/atrapy/atrapa_efenix.py) tylko ją i model: test porównuje z nimi Wycenę w efenix, więc nie biorą "
             "niczego z kodu pod testem. Napisz potrzebny kod w modelu albo w Atrapie.",
         ]
     )
@@ -603,7 +612,7 @@ def test_okno_w_procesie_bierze_z_kodu_pod_testem_tylko_typy_seamu() -> None:
             found += [ast.unparse(node) for alias in node.names if not _is_stdlib(alias.name)]
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
-            if node.level or not (_is_stdlib(module) or module == "model_efenix" or module in WINDOW_SEAM):
+            if node.level or not (_is_stdlib(module) or module == "atrapy.model_efenix" or module in WINDOW_SEAM):
                 found.append(ast.unparse(node))
             elif module in WINDOW_SEAM:
                 imported = importlib.import_module(module)
@@ -617,7 +626,7 @@ def test_okno_w_procesie_bierze_z_kodu_pod_testem_tylko_typy_seamu() -> None:
         [
             *sorted(found),
             "Okno w procesie (tests/fixtures/okno_w_procesie.py) bierze z rozliczenia tylko klasy i aliasy typów z "
-            "efenix_window, a decyzje z modelu efenix (tools/lib/model_efenix.py).",
+            "efenix_window, a decyzje z modelu efenix (tools/lib/atrapy/model_efenix.py).",
         ]
     )
 
@@ -1450,3 +1459,178 @@ def test_sprawdzenie_wyroczni_przepuszcza_publiczne_nazwy_prywatne_pola_wlasnych
     )
 
     assert _private_reaches(ast.parse(code)) == []
+
+
+# Kod spoza tests/, który nie importuje pakietu tests: src, narzędzia z bibliotekami, skryptami CI i hookami, skrypty
+# skilli i pliki Pythona w korzeniu.
+OUTSIDE_TESTS: typing.Final = ("*.py", "src/**/*.py", "tools/**/*.py", "tools/hooks/pre-push", ".agents/skills/*/scripts/**/*.py")
+TESTS_PACKAGE: typing.Final = "tests"
+# Pliki, które importują jeszcze moduły tests/fixtures, i te moduły: pliki taty (settlement, preparation, workbooks,
+# intermax, efenix), fakty scenariuszy skilli (scenariusz_rozliczen, scenariusz_centrum) i małe pomocniki
+# (widok_skrzynki, sluchacz_kolejki, dziennik_wyceny, interlocutor). Powód: przeniesienie ich do tools/lib/atrapy/ wymaga
+# rozdzielenia budowniczych plików taty od pomocników, którymi testy uruchamiają procesy, więc to osobny PR (N13d PR 2,
+# rozplątanie codebase'u 7.11); do tego czasu lista tylko maleje. Termin: WAITING_UNTIL; zgoda Maksa: do potwierdzenia
+# w przeglądzie N13d PR 1 (tryb D4 rozplątania).
+WAITING_FOR_MOVE: typing.Final = {
+    ".agents/skills/verify-centrum-rozliczen/scripts/centrum_self_test.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/create_centrum_fixture.py": frozenset({"intermax", "scenariusz_centrum", "scenariusz_rozliczen"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/aktualnosc_i_onedrive.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/diagnoza.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/karta_z_logow.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/kontrola_ilosci.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/logi_uruchomienia.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/metryki.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/przebieg_rozliczen.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/przygotowanie_pliku_zbiorczego.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/tablica_okresow.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/uklad_folderow_taty.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/uzupelnienie.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/wycena_w_efenix.py": frozenset({"efenix", "scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/wydajnosc.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/zgloszenie.py": frozenset({"scenariusz_centrum"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/serve_centrum.py": frozenset({"efenix", "scenariusz_centrum", "widok_skrzynki"}),
+    ".agents/skills/verify-kolejka-skrzynki/scripts/explore_outbox.py": frozenset({"sluchacz_kolejki"}),
+    ".agents/skills/verify-kopia-wzorca/scripts/check_template_copy.py": frozenset({"settlement", "workbooks"}),
+    ".agents/skills/verify-rozliczenia/scripts/assert_chain.py": frozenset({"preparation", "scenariusz_rozliczen", "settlement"}),
+    ".agents/skills/verify-rozliczenia/scripts/assert_intermax.py": frozenset({"intermax", "scenariusz_rozliczen"}),
+    ".agents/skills/verify-rozliczenia/scripts/assert_preparation.py": frozenset({"preparation", "scenariusz_rozliczen", "settlement"}),
+    ".agents/skills/verify-rozliczenia/scripts/assert_results.py": frozenset({"scenariusz_rozliczen", "settlement"}),
+    ".agents/skills/verify-rozliczenia/scripts/create_fixture.py": frozenset({"scenariusz_rozliczen", "settlement", "workbooks"}),
+    ".agents/skills/verify-rozliczenia/scripts/create_intermax_fixture.py": frozenset({"intermax", "scenariusz_rozliczen"}),
+    ".agents/skills/verify-rozliczenia/scripts/create_preparation_fixture.py": frozenset({"preparation", "scenariusz_rozliczen", "settlement", "workbooks"}),
+    ".agents/skills/verify-rozliczenia/scripts/doctor.py": frozenset({"scenariusz_rozliczen", "settlement"}),
+    ".agents/skills/verify-rozliczenia/scripts/fill_readiness.py": frozenset({"preparation", "scenariusz_rozliczen", "settlement"}),
+    ".agents/skills/verify-rozliczenia/scripts/preparation_doctor.py": frozenset({"scenariusz_rozliczen", "settlement"}),
+    ".agents/skills/verify-rozliczenia/scripts/run_verification.py": frozenset({"scenariusz_rozliczen", "settlement"}),
+    ".agents/skills/verify-rozliczenia/scripts/self_test.py": frozenset({"scenariusz_rozliczen"}),
+    ".agents/skills/verify-skoroszyty-w-excelu/scripts/excel_doctor.py": frozenset({"preparation", "scenariusz_rozliczen", "settlement"}),
+    ".agents/skills/verify-skoroszyty-w-excelu/scripts/run_excel_verification.py": frozenset({"preparation", "scenariusz_rozliczen", "settlement"}),
+    ".agents/skills/verify-wycena-efenix/scripts/explore_wycena_efenix.py": frozenset({"dziennik_wyceny", "efenix", "interlocutor", "settlement"}),
+    ".agents/skills/verify-zapis-intermax/scripts/explore_intermax.py": frozenset({"intermax"}),
+    "tools/rownowaznosc.py": frozenset({"intermax", "preparation", "settlement", "workbooks"}),
+}
+WAITING_UNTIL: typing.Final = date(2026, 11, 30)
+_IMPORTERS: typing.Final = frozenset({"importlib.import_module", "import_module", "__import__"})
+_PATH_CHANGES: typing.Final = frozenset({"sys.path.insert", "sys.path.append"})
+
+
+def _of_tests(name: str) -> bool:
+    return name == TESTS_PACKAGE or name.startswith(f"{TESTS_PACKAGE}.")
+
+
+def _names_tests_folder(text: str) -> bool:
+    return TESTS_PACKAGE in PureWindowsPath(text).parts
+
+
+def _tests_imports(tree: ast.Module) -> list[tuple[int, str]]:
+    """Moduły pakietu ``tests``, które plik importuje: ``import tests…`` (też ``as``), ``from tests… import …`` (moduł
+    pakietu ``tests`` albo ``tests.fixtures`` z nazwy, np. ``from tests.fixtures import settlement``), oba także w funkcji
+    i w ``TYPE_CHECKING``; ``importlib.import_module``, ``import_module`` i ``__import__`` ze stałym napisem ``tests…`` w
+    pierwszym argumencie; i ``sys.path.insert`` albo ``sys.path.append`` ze stałym napisem, którego częścią ścieżki jest
+    ``tests`` (``ROOT / "tests" / "fixtures"``), po którym ``import atrapa_efenix`` sięgnąłby ``tests/fixtures``.
+
+    Granica (tylko przegląd): nazwa albo ścieżka złożona w trakcie działania, ``spec_from_file_location``, ``runpy``,
+    ``exec``, ``sys.path`` zmienione inaczej niż ``insert`` i ``append`` oraz ``sys.modules``."""
+
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found += [(node.lineno, alias.name) for alias in node.names if _of_tests(alias.name)]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module is not None and _of_tests(node.module):
+            package = node.module in (TESTS_PACKAGE, f"{TESTS_PACKAGE}.fixtures")
+            found += [(node.lineno, f"{node.module}.{alias.name}" if package else node.module) for alias in node.names]
+        elif isinstance(node, ast.Call):
+            called = ast.unparse(node.func)
+            if called in _IMPORTERS and node.args:
+                first = node.args[0]
+                if isinstance(first, ast.Constant) and isinstance(first.value, str) and _of_tests(first.value):
+                    found.append((node.lineno, first.value))
+            elif called in _PATH_CHANGES:
+                texts = [
+                    part.value
+                    for argument in node.args
+                    for part in ast.walk(argument)
+                    if isinstance(part, ast.Constant) and isinstance(part.value, str)
+                ]
+                found += [(node.lineno, f"sys.path {text!r}") for text in texts if _names_tests_folder(text)]
+    return sorted(set(found))
+
+
+def _outside_tests() -> list[Path]:
+    return sorted({path for pattern in OUTSIDE_TESTS for path in ROOT.glob(pattern) if path.is_file()})
+
+
+def test_kod_spoza_testow_nie_importuje_testow() -> None:
+    found: dict[str, set[str]] = {}
+    lines: dict[str, list[str]] = {}
+    for path in _outside_tests():
+        name = path.relative_to(ROOT).as_posix()
+        for line, module in _tests_imports(ast.parse(path.read_text(encoding="utf-8"))):
+            found.setdefault(name, set()).add(module.removeprefix(f"{TESTS_PACKAGE}.fixtures."))
+            lines.setdefault(name, []).append(f"{name}:{line}: {module}")
+    new = [
+        line
+        for name, modules in sorted(found.items())
+        for line in lines[name]
+        if not modules <= WAITING_FOR_MOVE.get(name, frozenset())
+    ]
+    stale = [
+        f"{name}: już nie importuje {sorted(modules - found.get(name, set()))}"
+        for name, modules in sorted(WAITING_FOR_MOVE.items())
+        if modules - found.get(name, set())
+    ]
+
+    assert new == [], "\n".join(
+        [
+            *new,
+            "Kod spoza tests/ nie importuje tests/ (narzędzia i skille zależałyby od najczęściej zmienianych plików): "
+            "atrapę wspólną z testami przenieś do tools/lib/atrapy/, a testy niech importują ją stamtąd.",
+        ]
+    )
+    assert stale == [], "\n".join([*stale, "Usuń z WAITING_FOR_MOVE moduły, których plik już nie importuje."])
+    assert not WAITING_FOR_MOVE or datetime.now().astimezone().date() <= WAITING_UNTIL, (
+        f"WAITING_FOR_MOVE minął termin {WAITING_UNTIL}: przenieś resztę do tools/lib/atrapy/ albo przedłuż termin "
+        "za zgodą Maksa."
+    )
+
+
+TESTS_IMPORTS: typing.Final = {
+    "import": "import tests.fixtures.settlement as s",
+    "import-pakietu": "import tests",
+    "from-modulu": "from tests.fixtures.settlement import PERIOD",
+    "from-pakietu-fixtures": "from tests.fixtures import settlement",
+    "from-pakietu-tests": "from tests import test_ilosci_uslug",
+    "import-w-funkcji": "def f() -> None:\n    from tests.fixtures.intermax import Intermax",
+    "type-checking": "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from tests.fixtures.efenix import Order",
+    "importlib": 'import importlib\nm = importlib.import_module("tests.fixtures.settlement")',
+    "import-module": 'from importlib import import_module\nm = import_module("tests.fixtures.settlement")',
+    "dunder-import": 'm = __import__("tests.fixtures.settlement")',
+    "sys-path-folder": 'import sys\nsys.path.insert(0, str(ROOT / "tests" / "fixtures"))',
+    "sys-path-napis": 'import sys\nsys.path.append("tests/fixtures")',
+    "sys-path-windows": 'import sys\nsys.path.append("C:\\\\repo\\\\tests")',
+}
+
+
+@pytest.mark.parametrize("code", TESTS_IMPORTS.values(), ids=TESTS_IMPORTS.keys())
+def test_sprawdzenie_granicy_testow_lapie_kazda_wyliczona_postac_importu_testow(code: str) -> None:
+    assert _tests_imports(ast.parse(code))
+
+
+def test_sprawdzenie_granicy_testow_przepuszcza_test_uruchomiony_po_sciezce_i_obce_moduly() -> None:
+    code = (
+        "import importlib\n"
+        "import sys\n"
+        "import pytest\n"
+        "import testsuite\n"
+        "from atrapy.atrapa_efenix import atrapa_efenix\n"
+        "from .tests import x\n"
+        'CONFORMANCE = ROOT / "tests" / "test_ilosci_uslug.py"\n'
+        'pytest.main(["-q", f"{CONFORMANCE}::test"])\n'
+        'importlib.import_module("testsuite.a")\n'
+        'sys.path.insert(0, str(ROOT / "tools" / "lib"))\n'
+        'sys.path.insert(0, "my_tests")\n'
+        'log = "from tests.fixtures.settlement import PERIOD"\n'
+    )
+
+    assert _tests_imports(ast.parse(code)) == []

@@ -1,6 +1,6 @@
 """Atrapa efenix: lokalny serwer HTTP z wymyślonymi zleceniami w budowie stron efenix (ADR 0024).
 
-Stan zleceń i sesji oraz decyzje serwera efenix trzyma model ``tools/lib/model_efenix.py`` (``StanEfenix``,
+Stan zleceń i sesji oraz decyzje serwera efenix trzyma model ``tools/lib/atrapy/model_efenix.py`` (``StanEfenix``,
 ``SerwerEfenix``): Atrapa tłumaczy żądanie okna na działanie modelu, a jego wynik na odpowiedź HTTP. W Atrapie zostają
 budowa stron, skrypty stron, ścieżki, ciasteczko sesji i awarie sieci.
 
@@ -84,9 +84,7 @@ import time
 from typing import Any, Final
 from urllib.parse import parse_qs, urlparse
 
-# Model efenix leży w ``tools/lib``, który każdy, kto importuje Atrapę, ma na ``sys.path``: pytest (``tests/conftest.py``)
-# i narzędzia oraz skrypty skilli, które dodają go same.
-from model_efenix import (
+from atrapy.model_efenix import (
     CATALOG as CATALOG,
     PRICES as PRICES,
     TODAY as TODAY,
@@ -120,6 +118,18 @@ ORDER_SCRIPT = "js/page_order_edit.js"
 SESSION_COOKIE = ("PHPSESSID", "atrapa-efenix")
 # Pole ``rodzaj`` szukania, które skrypt listy wysyła sam po wczytaniu strony.
 BY_LIST = "powrot"
+# Części stron, które Atrapa wpisuje w HTML, a czytają narzędzie zgodności (``tools/zgodnosc_efenix.py``) i pośrednik
+# awarii skilla verify-wycena-efenix: identyfikatory przycisków zmiany statusu, ich wspólnego okna i pól logowania oraz
+# selektory karty pozycji wyceny, pola ceny wpisywanej i ceny w tekście karty z polem Ilość.
+FORWARD_BUTTON: Final = "button_forward_to_accept"
+CANCEL_BUTTON: Final = "button_forward_to_cancel"
+STATUS_DIALOG: Final = "dialog_forward_yes_no"
+SIGNUM_FIELD: Final = "field_signum"
+PASSWORD_FIELD: Final = "field_password"
+FINGERPRINT_FIELD: Final = "fingerprint"
+PRICING_CARD: Final = ".card.rounded-lg.kolorek"
+PRICE_FIELD: Final = "input.wycena-cena"
+SHOWN_PRICE: Final = ".col-sm-1.mt-2 > span.text-default > small"
 # Pola szukania, które skrypt listy efenix wysyła do ``SEARCH`` w domyślnym stanie listy, w jego kolejności (odczyt
 # efenix z 4.11.2026, #822). ``xrodzaj`` skrypt bierze z ``<select multiple>``, którego jedyna zaznaczona opcja jest
 # wyłączona, więc wartość to pusta tablica, a jQuery ``$.ajax`` klucza z pustą tablicą nie wysyła.
@@ -712,8 +722,8 @@ def _proposal(order: AtrapaOrder) -> str:
     (``emmett_in_fields``), a gdy Emmett nic nie proponuje, pusta treść."""
 
     if order.emmett_in_fields:
-        return "".join(f'<input name="INDEKS_{escape(code)}_078" value="{quantity}">' for code, quantity in sorted(order.emmett.items()))
-    rows = "".join(f"<li>INDEKS_{escape(code)}_078: {quantity}</li>" for code, quantity in sorted(order.emmett.items()))
+        return "".join(f'<input name="{position_field(escape(code))}" value="{quantity}">' for code, quantity in sorted(order.emmett.items()))
+    rows = "".join(f"<li>{position_field(escape(code))}: {quantity}</li>" for code, quantity in sorted(order.emmett.items()))
     return f"<ul>{rows}</ul>" if rows else ""
 
 
@@ -1011,11 +1021,11 @@ def _order_page(
         f'<div><small>Data wykonania</small><span id="data_install">{day}</span>'
         f"{calendar}</div>"
         f"<div><small>Ulica - numer</small> {escape(order.address)}</div>"
-        f'<div class="card"><button type="button" id="button_forward_to_accept"{refusal}>Przekaż do akceptacji.</button>'
-        '<button type="button" id="button_forward_to_cancel">Anuluj to zlecenie.</button></div>'
+        f'<div class="card"><button type="button" id="{FORWARD_BUTTON}"{refusal}>Przekaż do akceptacji.</button>'
+        f'<button type="button" id="{CANCEL_BUTTON}">Anuluj to zlecenie.</button></div>'
         f'<div class="card"><span>Wycena</span>{emmett}{"".join(_position(order, position, changed, prices) for position in order.positions)}'
         f'<h1><span id="cena_all2">{sign}{amount_of(order.quantities, prices):.2f}</span></h1></div>'
-        + _dialog("dialog_forward_yes_no", "Zmiana statusu", "", "Tak")
+        + _dialog(STATUS_DIALOG, "Zmiana statusu", "", "Tak")
         + _INFO_DIALOG
         + _dialog("dialog_select_date", "Wybierz datę wykonania", day_field, "Potwierdź")
         + _dialog("dialog_emmett", "Emmett", '<div id="emmett-propozycja"></div>', "Załaduj do zlecenia")
@@ -1086,16 +1096,28 @@ def _order_script(changed: Changed | Unread | None, today: date, reload_ms: int,
     return _HOSTILE_SCRIPT + script if changed is Unread.HOSTILE else script
 
 
+def position_field(code: str, suffix: str = "078") -> str:
+    """Identyfikator pola pozycji ``code`` na stronie zlecenia i w propozycji Emmetta, jak kod pozycji strony efenix."""
+
+    return f"INDEKS_{code}_{suffix}"
+
+
+def _classes(selector: str) -> str:
+    """Atrybut ``class`` elementu, który wybiera ``selector`` z klas (``input.a.b`` daje ``a b``)."""
+
+    return " ".join(selector.split(".")[1:])
+
+
 def _position(order: AtrapaOrder, position: Position, changed: Changed | Unread | None, prices: Mapping[str, Decimal]) -> str:
     """Karta pozycji jak w efenix: pole Ilość z ceną z ``prices`` w tekście karty albo samo pole ceny wpisywanej, bez
     ceny w tekście."""
 
     suffix = "079" if changed is Unread.PRICE_LIST and position.code == "005" else "078"
-    field_id = f"INDEKS_{position.code}_{suffix}"
+    field_id = position_field(position.code, suffix)
     price = prices[position.code]
     shown = f'<div class="col-sm-1 mt-2"><span class="text-default"><small>{_price_text(price, changed)}</small></span></div>'
     if position.kind == "CENA" or (changed is Unread.PRICE_LIST and position.code == "007"):
-        field = f'<input type="text" id="{field_id}" order_id="{escape(order.order_id)}" class="form-control form-control-sm wycena-cena" value="0.00">'
+        field = f'<input type="text" id="{field_id}" order_id="{escape(order.order_id)}" class="form-control form-control-sm {_classes(PRICE_FIELD)}" value="0.00">'
         value = Decimal("0.00")
         shown = ""
     else:
@@ -1108,7 +1130,7 @@ def _position(order: AtrapaOrder, position: Position, changed: Changed | Unread 
         if changed is Changed.QUANTITY_VALUE and position.code == "012":
             field = field.replace(f'value="{quantity}"', 'value="1.5"')
     return (
-        '<div class="card rounded-lg kolorek"><div class="row">'
+        f'<div class="{_classes(PRICING_CARD)}"><div class="row">'
         f'<div class="col-sm-3 mt-2"><span class="text-default">Usługa testowa {position.code}</span></div>'
         f'<div class="col-sm-2 mt-2"><span class="text-secondary"><small>{field_id}</small></span></div>{shown}'
         f'<div class="col-sm-2 mt-2">{field}</div>'
@@ -1143,10 +1165,10 @@ def _has_session_cookie(header: str) -> bool:
 
 
 def _login_page(changed: Changed | Unread | None) -> str:
-    fingerprint = "" if changed is Unread.LOGIN_FORM else '<input type="hidden" id="fingerprint" name="fingerprint" value="">'
+    fingerprint = "" if changed is Unread.LOGIN_FORM else f'<input type="hidden" id="{FINGERPRINT_FIELD}" name="{FINGERPRINT_FIELD}" value="">'
     return _page(
         "Atrapa efenix - logowanie",
-        f'<form method="post" action="{LOGIN_ACTION}"><input type="text" id="field_signum" name="field_signum">'
-        f'<input type="password" id="field_password" name="field_password">{fingerprint}'
+        f'<form method="post" action="{LOGIN_ACTION}"><input type="text" id="{SIGNUM_FIELD}" name="{SIGNUM_FIELD}">'
+        f'<input type="password" id="{PASSWORD_FIELD}" name="{PASSWORD_FIELD}">{fingerprint}'
         '<button type="submit" id="button_login">Zaloguj</button></form>',
     )
