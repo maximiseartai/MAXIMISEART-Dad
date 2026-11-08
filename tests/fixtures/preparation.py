@@ -296,9 +296,9 @@ def paste_raw_orders(
     """Wkleja ``orders`` do arkusza ``ZLECENIA`` jak z aplikacji, Roboto 4: od wiersza ``first``, a bez niego na dół,
     ``gap`` pustych wierszy niżej.
 
-    Pierwszy wiersz jest przesunięty o dwie kolumny w lewo, więc wklejenie nie ma wartości ``AKCJE``; ``in_place_from``:
-    tata postawił go z powrotem na miejsce od kolumny z tym nagłówkiem w prawo. Zwraca numer pierwszego wklejonego
-    wiersza.
+    Pierwszy wiersz jest przesunięty o dwie kolumny w lewo, więc wklejenie nie ma wartości ``AKCJE``, także w wierszu,
+    który miał ją przed wklejeniem; ``in_place_from``: tata postawił go z powrotem na miejsce od kolumny z tym
+    nagłówkiem w prawo. Zwraca numer pierwszego wklejonego wiersza.
     """
 
     workbook = load_workbook(path)
@@ -309,6 +309,7 @@ def paste_raw_orders(
             first = sheet.max_row + gap + 1
         in_place = sheet.max_column + 1 if in_place_from is None else columns[in_place_from]
         for index, order in enumerate(orders):
+            sheet.cell(first + index, columns["AKCJE"]).value = None
             for header, value in order.items():
                 if header != "AKCJE":
                     shift = 2 if index == 0 and columns[header] < in_place else 0

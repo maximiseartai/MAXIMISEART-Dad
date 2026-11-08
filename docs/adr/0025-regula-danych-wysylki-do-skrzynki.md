@@ -158,7 +158,7 @@ z 25.10.2026: 84 wklejone wiersze, przesunięty pierwszy). Maks wybrał regułę
 deterministyczną opartą na tym fakcie:
 
 - **Pierwszy wiersz bloku wklejenia** to wiersz z wyglądem z aplikacji (żadna
-  komórka z wartością poza `WYKONAWCA` nie ma Calibri 8), nad którym najbliższy
+  komórka z wartością w kolumnach wyglądu nie ma Calibri 8), nad którym najbliższy
   wiersz z wartościami w odczycie jest uporządkowany albo nie ma żadnego, także
   nad uporządkowanymi (`raw_orders.first_in_block`; odczyt INTERMAX od dołu
   sięga o jeden wiersz z wartościami dalej). Gdy jego przesunięcie widać, czyli
@@ -166,6 +166,14 @@ deterministyczną opartą na tym fakcie:
   (`raw_orders.shift_visible`; tak stoi u taty każdy przesunięty pierwszy wiersz
   z aplikacji), pamięć zna jego `ADRES` i `NUMER UMOWY` tylko dwie kolumny na lewo
   od nagłówków i maskuje je wszędzie.
+- **Kolumny wyglądu** są w obu procesach te same (`OrderColumns.look_columns`,
+  `raw_orders.look`): od `AKCJE` do `UWAGI` bez `WYKONAWCA`, którą tata pisze
+  też Calibri 9; w starszym układzie Rejestru bez `AKCJE` i `UWAGI` kolumny
+  `COLUMNS` bez `WYKONAWCA`. Komórka z samymi spacjami nie ma wartości. Do
+  N5b-2 Przygotowanie brało tylko kolumny `COLUMNS`, więc wiersz z Calibri 8
+  tylko w `AKCJE`, `ZWROT` albo `UWAGI` był w nim z aplikacji, a w
+  Uporządkowaniu uporządkowany; teraz granice bloków Przygotowania i
+  Uporządkowania na tym samym pliku są te same.
 - **Każdy inny wiersz** pamięć zna tylko pod nagłówkiem i maskuje wszędzie.
   Drugich położeń z wąską maską, faktów przesunięcia i podpisów nie ma.
 - **Siatka** (`raw_orders.both_positions`): dwa rodzaje wierszy pamięć zna w obu
@@ -256,7 +264,11 @@ wierszy bloków w Diagnozie całego Rejestru 10, w Uporządkowaniu INTERMAX 7
 (`first_in_block`), w 41 okresach razem 4. Przesunięcie widać tylko w pierwszym
 wierszu ostatniego wklejenia INTERMAX, więc oba położenia ma 10 z 10, 6 z 7 i 4 z
 4. Pamięć nie poznaje przez to żadnej nowej wartości (ich `ADRES` i `NUMER UMOWY`
-są puste albo znane), a masek w Kopii jest tyle samo.
+są puste albo znane), a masek w Kopii jest tyle samo. Po N5b-2 (jedne kolumny
+wyglądu) na tej samej kopii Rejestru pierwszych wierszy bloków w Diagnozie jest
+6, tyle co w Uporządkowaniu tego pliku, a w 41 okresach 1, każdy w obu
+położeniach. Odpadły 4 wiersze z Calibri 8 tylko w `AKCJE`, `ZWROT` albo
+`UWAGI`; masek i uwag o złamanym fakcie domeny jest tyle samo (0).
 
 ## Pewniki i granica dziedziny (decyzja Maksa z 6.11.2026)
 
