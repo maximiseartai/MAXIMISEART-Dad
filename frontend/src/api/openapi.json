@@ -2478,10 +2478,6 @@
             "type": "string",
             "title": "Question"
           },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
           "message": {
             "$ref": "#/components/schemas/Message"
           },
@@ -2493,12 +2489,11 @@
         "type": "object",
         "required": [
           "question",
-          "title",
           "message",
           "counts"
         ],
         "title": "Decision",
-        "description": "Pytanie do taty z części decyzji procesu: tytuł, komunikat w trzech częściach i liczby (np. Zlecenia na dzień)."
+        "description": "Pytanie do taty z części decyzji procesu: komunikat w trzech częściach i liczby (np. Zlecenia na dzień)."
       },
       "DecisionAnswer": {
         "properties": {
@@ -2892,9 +2887,6 @@
           "restored": {
             "$ref": "#/components/schemas/IntermaxCopy"
           },
-          "previous": {
-            "$ref": "#/components/schemas/IntermaxCopy"
-          },
           "warnings": {
             "items": {
               "$ref": "#/components/schemas/Message"
@@ -2908,11 +2900,10 @@
         "required": [
           "state",
           "restored",
-          "previous",
           "warnings"
         ],
         "title": "IntermaxRestored",
-        "description": "INTERMAX ma bajty Kopii ``restored``, a jego stan sprzed przywrócenia leży jako Kopia ``previous``.\n\n``warnings``: Komunikaty o tym, czego przywrócenie nie dokończyło (starsze Kopie zostały)."
+        "description": "INTERMAX ma bajty Kopii ``restored``, a jego stan sprzed przywrócenia leży jako nowa Kopia na liście Kopii.\n\n``warnings``: Komunikaty o tym, czego przywrócenie nie dokończyło (starsze Kopie zostały)."
       },
       "IntermaxSetup": {
         "properties": {
@@ -3006,9 +2997,6 @@
             "type": "boolean",
             "title": "Settled"
           },
-          "kind": {
-            "$ref": "#/components/schemas/FillKind"
-          },
           "columns": {
             "items": {
               "$ref": "#/components/schemas/PriceListItem"
@@ -3030,7 +3018,6 @@
           "state",
           "read",
           "settled",
-          "kind",
           "columns",
           "rows"
         ],
@@ -3211,7 +3198,7 @@
           "summary"
         ],
         "title": "LoggedOutcome",
-        "description": "Wynik Uruchomienia procesu taki, jak niosą go Logi Uruchomienia: to, co karta pokazuje także po zamknięciu Centrum.\n\nZatrzymania i ostrzeżenia w trzech częściach, uwagi techniczne i podsumowanie. ``ending`` mówi, jak się\nskończyło: ``finished``, własne zatrzymanie procesu (``stop``), Zatrzymanie po odmowie w Decyzji taty\n(``declined``), nieoczekiwany błąd (``unexpected``) albo błąd po zakończeniu silnika (``after_engine``).\n``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba\nwylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez\nZatrzymania)."
+        "description": "Wynik Uruchomienia procesu taki, jak niosą go Logi Uruchomienia: to, co karta pokazuje także po zamknięciu Centrum.\n\nZatrzymania i ostrzeżenia w trzech częściach, uwagi techniczne i podsumowanie. ``ending`` mówi, jak się\nskończyło (``Ending``).\n``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba\nwylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez\nZatrzymania)."
       },
       "Message": {
         "properties": {
@@ -3240,6 +3227,13 @@
       },
       "Metrics": {
         "properties": {
+          "processes": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessFacts"
+            },
+            "type": "array",
+            "title": "Processes"
+          },
           "phases": {
             "items": {
               "type": "string"
@@ -3272,6 +3266,7 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "processes",
           "phases",
           "minimum_completed_runs",
           "runs",
@@ -3279,7 +3274,7 @@
           "recent"
         ],
         "title": "Metrics",
-        "description": "Historia Uruchomień procesu z obu plików metryk, czytanych przy każdym odczycie, od najnowszego."
+        "description": "Historia Uruchomień procesu z obu plików metryk, czytanych przy każdym odczycie, od najnowszego.\n\n``processes``: procesy w kolejności statystyk; pierwszy jest wybrany w filtrze."
       },
       "MissingPath": {
         "properties": {
@@ -3760,6 +3755,10 @@
             "type": "boolean",
             "title": "Last Complete"
           },
+          "fillable": {
+            "type": "boolean",
+            "title": "Fillable"
+          },
           "path": {
             "items": {
               "$ref": "#/components/schemas/PathStep"
@@ -3816,6 +3815,7 @@
           "worker_settlements_folder_exists",
           "worker_settlement_count",
           "last_complete",
+          "fillable",
           "path",
           "next_step",
           "secondary_step"
@@ -4093,6 +4093,32 @@
         "title": "Problem",
         "description": "Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku."
       },
+      "ProcessFacts": {
+        "properties": {
+          "process": {
+            "type": "string",
+            "enum": [
+              "preparation",
+              "settlement",
+              "efenix",
+              "intermax"
+            ],
+            "title": "Process"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "process",
+          "label"
+        ],
+        "title": "ProcessFacts",
+        "description": "Proces w Metrykach: klucz i krótka nazwa w filtrach."
+      },
       "ProcessRun": {
         "properties": {
           "process": {
@@ -4218,6 +4244,14 @@
             "type": "string",
             "title": "Creates"
           },
+          "reads": {
+            "type": "string",
+            "enum": [
+              "register",
+              "collective_file"
+            ],
+            "title": "Reads"
+          },
           "reminder": {
             "type": "string",
             "title": "Reminder"
@@ -4277,6 +4311,7 @@
           "process",
           "title",
           "creates",
+          "reads",
           "reminder",
           "confirms_readiness",
           "preview_hint",
@@ -4286,7 +4321,7 @@
           "blocker"
         ],
         "title": "ProcessSetup",
-        "description": "Co tata wybiera przed Uruchomieniem procesu; ``blocker`` mówi, czego jeszcze brakuje w ustawieniach.\n\n``reminder``, ``confirms_readiness`` i ``preview_hint`` deklaruje proces: przypomnienie przed\nuruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma\npodglądu bez zapisu, jak Wycena w efenix). ``pricing_modes``: tryby Wyceny w efenix, z których tata wybiera\nprzyciskiem przy każdym starcie, w kolejności przycisków (pusta lista: proces bez trybów i z jednym „Uruchom”)."
+        "description": "Co tata wybiera przed Uruchomieniem procesu; ``blocker`` mówi, czego jeszcze brakuje w ustawieniach.\n\n``reminder``, ``confirms_readiness`` i ``preview_hint`` deklaruje proces: przypomnienie przed\nuruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma\npodglądu bez zapisu, jak Wycena w efenix). ``pricing_modes``: tryby Wyceny w efenix, z których tata wybiera\nprzyciskiem przy każdym starcie, w kolejności przycisków (pusta lista: proces bez trybów i z jednym „Uruchom”).\n``reads``: plik danych procesu, Rejestr zleceń z Ustawień albo Plik zbiorczy wybranego okresu."
       },
       "ProcessStep": {
         "properties": {
@@ -4298,6 +4333,15 @@
               "create_worker_settlements"
             ],
             "title": "Action"
+          },
+          "process": {
+            "type": "string",
+            "enum": [
+              "preparation",
+              "settlement",
+              "efenix"
+            ],
+            "title": "Process"
           },
           "label": {
             "type": "string",
@@ -4323,12 +4367,13 @@
         "type": "object",
         "required": [
           "action",
+          "process",
           "label",
           "hint",
           "preview_hint"
         ],
         "title": "ProcessStep",
-        "description": "Krok okresu, który robi proces; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu, a ``None`` ma\nproces bez podglądu (Wycena w efenix)."
+        "description": "Krok okresu, który robi proces ``process``; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu, a\n``None`` ma proces bez podglądu (Wycena w efenix)."
       },
       "Progress": {
         "properties": {
@@ -6013,13 +6058,6 @@
             "const": "read",
             "title": "State"
           },
-          "rows": {
-            "items": {
-              "type": "integer"
-            },
-            "type": "array",
-            "title": "Rows"
-          },
           "sentence": {
             "anyOf": [
               {
@@ -6036,7 +6074,6 @@
         "type": "object",
         "required": [
           "state",
-          "rows",
           "sentence"
         ],
         "title": "WithoutQuantityRead",

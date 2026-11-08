@@ -75,7 +75,7 @@ function PeriodBoardRow({ period, onStale }: { period: PeriodRow; onStale: () =>
       </TableCell>
       <TableCell className="text-right">
         {/* Okres z Plikiem zbiorczym przygotowanym po Uzupełnieniu w Excelu nadal prowadzi na jego podsumowanie. */}
-        {period.status === "collective_file_prepared" && step.action !== "fill_collective_file" ? (
+        {period.fillable && step.action !== "fill_collective_file" ? (
           <FillLink token={period.token} variant="ghost" size="sm" aria-label={`Uzupełnij, okres ${period.token}`} />
         ) : null}
         {period.secondary_step === null ? null : (

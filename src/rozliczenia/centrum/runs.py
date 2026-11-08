@@ -28,7 +28,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, Final, Literal, Protocol
+from typing import Any, Final, Protocol
 
 import anyio
 from fastapi import APIRouter
@@ -46,7 +46,7 @@ from rozliczenia.call_trace import CallTrace
 from rozliczenia.decision import Decision
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.message import Message
-from rozliczenia.process_run import Finished, Outcome, Stop, StopEnding
+from rozliczenia.process_run import Finished, Outcome, Stop
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 
 _STREAM_POLL_SECONDS: Final = 0.05
@@ -71,7 +71,7 @@ _STOP_HEADLINES: Final[Mapping[contract.StopKind, str]] = {
     "declined": "Przerwano",
 }
 
-Ending = Literal["finished", StopEnding]
+Ending = contract.Ending
 
 
 def verdict(
@@ -575,7 +575,6 @@ class Run:
 def _decision_view(decision: Decision) -> contract.Decision:
     return contract.Decision(
         question=decision.question,
-        title=decision.title,
         message=contract.Message.of(decision.message),
         counts=contract.CountGroup(
             title=decision.counts_title,

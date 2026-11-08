@@ -79,6 +79,7 @@ def _inputs(start: Start, parts: HostParts) -> EfenixInputs:
 
 KIND: Final[PeriodProcessKind[EfenixInputs, PricingSummary]] = PeriodProcessKind(
     key="efenix",
+    short_title="efenix",
     view=ProcessView(
         reminder="Zapisz i zamknij Plik zbiorczy w Excelu",
         confirms_readiness=False,

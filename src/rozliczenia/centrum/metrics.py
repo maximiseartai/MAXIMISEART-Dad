@@ -39,6 +39,7 @@ def read_metrics(catalog: Catalog, today: date, centrum_started: CentrumStarted)
     runs = _runs(catalog, records, centrum_started)
     since = today - timedelta(weeks=_RECENT_WEEKS)
     return contract.Metrics(
+        processes=[contract.ProcessFacts(process=kind.key, label=kind.short_title) for kind in catalog.kinds],
         phases=list(PHASES),
         minimum_completed_runs=MINIMUM_STATISTIC_SAMPLES,
         runs=runs,

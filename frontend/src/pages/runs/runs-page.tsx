@@ -68,7 +68,7 @@ function RunHistory() {
     case "ready":
       return (
         <div className={entrance}>
-          <RunHistoryCard runs={metrics.data.runs} />
+          <RunHistoryCard runs={metrics.data.runs} processes={metrics.data.processes} />
         </div>
       )
     default: {

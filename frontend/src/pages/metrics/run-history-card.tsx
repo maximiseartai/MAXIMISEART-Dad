@@ -1,7 +1,7 @@
 import * as React from "react"
 import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, EyeIcon, HistoryIcon } from "lucide-react"
 
-import type { Process, ProcessRun } from "@/api/centrum"
+import type { Metrics, Process, ProcessRun } from "@/api/centrum"
 import { RunResultBadge } from "@/components/run-result-badge"
 import { SegmentedFilter, type FilterOption } from "@/components/segmented-filter"
 import { Badge } from "@/components/ui/badge"
@@ -19,7 +19,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { WriteAboutRun } from "@/components/write-to-maks"
 import { dateTime, seconds } from "@/lib/format"
-import { MODE_OPTIONS, PROCESS_OPTIONS, type Mode } from "@/pages/metrics/process-runs"
+import { MODE_OPTIONS, processOptions, type Mode } from "@/pages/metrics/process-runs"
 import { RunCardButton } from "@/pages/runs/run-card-sheet"
 
 const PAGE = 10
@@ -30,15 +30,14 @@ type Sort = { key: SortKey; descending: boolean }
 
 const ALL = { value: "all", label: "Wszystkie" } as const
 
-const PROCESS_FILTER: ReadonlyArray<FilterOption<Process | "all">> = [ALL, ...PROCESS_OPTIONS]
-
 const MODE_FILTER: ReadonlyArray<FilterOption<Mode | "all">> = [ALL, ...MODE_OPTIONS]
 
 /**
  * Historia Uruchomień procesu obu procesów, także z launcherów `.cmd`: sortowanie po dacie i czasie,
  * filtry procesu i trybu. DRY-RUN to ikona oka, launcher to odznaka `.cmd`.
  */
-export function RunHistoryCard({ runs }: { runs: ReadonlyArray<ProcessRun> }) {
+export function RunHistoryCard({ runs, processes }: { runs: ReadonlyArray<ProcessRun>; processes: Metrics["processes"] }) {
+  const processFilter: ReadonlyArray<FilterOption<Process | "all">> = [ALL, ...processOptions(processes)]
   const [process, setProcess] = React.useState<Process | "all">("all")
   const [mode, setMode] = React.useState<Mode | "all">("all")
   const [sort, setSort] = React.useState<Sort>({ key: "started_at", descending: true })
@@ -58,7 +57,7 @@ export function RunHistoryCard({ runs }: { runs: ReadonlyArray<ProcessRun> }) {
       <CardHeader>
         <CardTitle id="historia-uruchomien">Historia Uruchomień procesu</CardTitle>
         <CardAction className="flex gap-2">
-          <SegmentedFilter label="Proces w historii" options={PROCESS_FILTER} value={process} onChange={setProcess} />
+          <SegmentedFilter label="Proces w historii" options={processFilter} value={process} onChange={setProcess} />
           <SegmentedFilter label="Tryb w historii" options={MODE_FILTER} value={mode} onChange={setMode} />
         </CardAction>
       </CardHeader>

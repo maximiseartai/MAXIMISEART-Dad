@@ -84,6 +84,12 @@ def test_bez_plikow_metryk_historia_uruchomien_procesu_jest_pusta(tmp_path: Path
     body = metrics(centrum(tmp_path))
 
     assert body["runs"] == []
+    assert body["processes"] == [
+        {"process": "preparation", "label": "Przygotowanie"},
+        {"process": "settlement", "label": "Przebieg"},
+        {"process": "efenix", "label": "efenix"},
+        {"process": "intermax", "label": "INTERMAX"},
+    ]
     assert body["phases"] == ["Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie"]
     assert body["minimum_completed_runs"] == 5
 

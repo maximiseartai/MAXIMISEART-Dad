@@ -69,11 +69,7 @@ def _write(path: Path, cells: dict[str, int | str | None], *, header: str | None
 
 
 def test_okno_dostaje_wiersze_bez_ilosci_rosnaco_ze_zdaniem(tmp_path: Path) -> None:
-    assert _without_quantity(_prepared(tmp_path)) == {
-        "state": "read",
-        "rows": [19, 20, 21, 22],
-        "sentence": "4 wiersze bez ilości: 19, 20, 21, 22",
-    }
+    assert _without_quantity(_prepared(tmp_path)) == {"state": "read", "sentence": "4 wiersze bez ilości: 19, 20, 21, 22"}
 
 
 def test_po_uzupelnieniu_w_pliku_okno_przestaje_wymieniac_wiersze(tmp_path: Path) -> None:
@@ -81,17 +77,17 @@ def test_po_uzupelnieniu_w_pliku_okno_przestaje_wymieniac_wiersze(tmp_path: Path
     path = centrum.fixture.collective_file_path
 
     _write(path, {"O19": 1, "AP21": 2})
-    assert _without_quantity(centrum) == {"state": "read", "rows": [20, 22], "sentence": "2 wiersze bez ilości: 20, 22"}
+    assert _without_quantity(centrum) == {"state": "read", "sentence": "2 wiersze bez ilości: 20, 22"}
 
     _write(path, {"N20": 45, "AE22": 3})
-    assert _without_quantity(centrum) == {"state": "read", "rows": [], "sentence": None}
+    assert _without_quantity(centrum) == {"state": "read", "sentence": None}
 
 
 def test_v_t_i_n_nie_zdejmuja_wiersza_bez_reguly_a_zero_nie_jest_iloscia(tmp_path: Path) -> None:
     centrum = _prepared(tmp_path)
     _write(centrum.fixture.collective_file_path, {"V19": 1, "T19": 1, "N19": 45, "O22": 0, "Y20": "0"})
 
-    assert _without_quantity(centrum)["rows"] == [19, 20, 21, 22]
+    assert _without_quantity(centrum)["sentence"] == "4 wiersze bez ilości: 19, 20, 21, 22"
 
 
 def test_plik_otwarty_w_excelu_dalej_wymienia_wiersze(tmp_path: Path) -> None:
@@ -99,7 +95,7 @@ def test_plik_otwarty_w_excelu_dalej_wymienia_wiersze(tmp_path: Path) -> None:
     path = centrum.fixture.collective_file_path
     path.with_name(f"~${path.name}").write_bytes(b"blokada Excela")
 
-    assert _without_quantity(centrum)["rows"] == [19, 20, 21, 22]
+    assert _without_quantity(centrum)["sentence"] == "4 wiersze bez ilości: 19, 20, 21, 22"
 
 
 def test_nieczytelny_plik_zbiorczy_daje_unread_zamiast_bledu(tmp_path: Path) -> None:

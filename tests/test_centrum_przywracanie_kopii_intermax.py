@@ -168,19 +168,12 @@ def test_przywrocona_kopia_jest_intermax_bajt_w_bajt_a_stan_sprzed_przywrocenia_
 
     assert response.status_code == 200
     body = response.json()
-    assert (body["state"], body["restored"]["name"], body["previous"]["name"], body["warnings"]) == (
-        "restored",
-        ORDERED,
-        BEFORE_RESTORE,
-        [],
-    )
-    assert (body["previous"]["before"], datetime.fromisoformat(body["previous"]["taken_at"])) == (
-        "restore",
-        LATER.astimezone(),
-    )
+    assert (body["state"], body["restored"]["name"], body["warnings"]) == ("restored", ORDERED, [])
     assert centrum.register.read_bytes() == kopia
     assert _kopie(centrum) == {ORDERED: kopia, BEFORE_RESTORE: ordered_register}
+    newest, _ = _listed(centrum)["copies"]
     assert [copy["name"] for copy in _listed(centrum)["copies"]] == [BEFORE_RESTORE, ORDERED]
+    assert (newest["before"], datetime.fromisoformat(newest["taken_at"])) == ("restore", LATER.astimezone())
     assert [path.name for path in centrum.register.parent.iterdir()] == [REGISTER_NAME]
 
 

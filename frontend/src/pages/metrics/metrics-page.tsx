@@ -21,15 +21,18 @@ import { useContentEntrance } from "@/lib/content-entrance"
 import { seconds } from "@/lib/format"
 import { useResource } from "@/lib/use-resource"
 import { InterruptedRunsCard } from "@/pages/metrics/interrupted-runs-card"
-import { MODE_OPTIONS, PROCESS_OPTIONS, type Mode } from "@/pages/metrics/process-runs"
+import { MODE_OPTIONS, processOptions, type Mode } from "@/pages/metrics/process-runs"
 import { RunHistoryCard } from "@/pages/metrics/run-history-card"
 import { StageTimesCard } from "@/pages/metrics/stage-times-card"
 
 export function MetricsPage() {
   const { resource: metrics, reload } = useResource(getMetrics, [])
-  const [process, setProcess] = React.useState<Process>("preparation")
+  const [chosen, setProcess] = React.useState<Process | null>(null)
   const [mode, setMode] = React.useState<Mode>("RUN")
   const hasRuns = metrics.state === "ready" && metrics.data.runs.length > 0
+  const processes = metrics.state === "ready" ? processOptions(metrics.data.processes) : []
+  // Dopóki tata nie wybierze, filtr stoi na pierwszym procesie z serwera.
+  const process = chosen ?? processes[0]?.value ?? null
   const entrance = useContentEntrance(metrics.state === "loading")
 
   // Tryby procesu mówi serwer: ma statystyki tylko w trybach procesu (Uporządkowanie INTERMAX nie ma DRY-RUN).
@@ -43,9 +46,9 @@ export function MetricsPage() {
   const shownMode = modes.some((option) => option.value === mode) ? mode : (modes[0]?.value ?? mode)
 
   // Jeden filtr w nagłówku steruje statystykami i wykresem; historia ma własne filtry.
-  const filters = hasRuns ? (
+  const filters = hasRuns && process !== null ? (
     <>
-      <SegmentedFilter label="Proces" options={PROCESS_OPTIONS} value={process} onChange={setProcess} />
+      <SegmentedFilter label="Proces" options={processes} value={process} onChange={setProcess} />
       <SegmentedFilter label="Tryb" options={modes} value={shownMode} onChange={setMode} />
     </>
   ) : undefined
@@ -56,7 +59,7 @@ export function MetricsPage() {
       {metrics.state === "loading" ? <MetricsSkeleton /> : null}
       {metrics.state === "failed" ? <LoadFailure what="metryk" message={metrics.message} reload={reload} /> : null}
       {metrics.state === "ready" && !hasRuns ? <NoMetrics /> : null}
-      {metrics.state === "ready" && hasRuns ? (
+      {metrics.state === "ready" && hasRuns && process !== null ? (
         <MetricsContent metrics={metrics.data} process={process} mode={shownMode} className={entrance} />
       ) : null}
     </>
@@ -106,7 +109,7 @@ function MetricsContent({
       />
       <StageTimesCard phases={metrics.phases} runs={runs} percentiles={percentiles} />
       <InterruptedRunsCard phases={metrics.phases} runs={metrics.runs} />
-      <RunHistoryCard runs={metrics.runs} />
+      <RunHistoryCard runs={metrics.runs} processes={metrics.processes} />
     </div>
   )
 }

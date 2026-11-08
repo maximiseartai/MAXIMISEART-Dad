@@ -142,7 +142,6 @@ def test_niepelny_okres_czeka_na_decyzje_taty_z_zleceniami_na_dzien(tmp_path: Pa
 
     assert view["decision"] == {
         "question": "Kontynuować mimo niepełnego okresu?",
-        "title": "Ostrzeżenie: niepełny okres",
         "message": {
             "what": (
                 "Ostatnie zlecenie okresu jest z soboty 12.09.2026, a okres kończy się w poniedziałek 14.09.2026. "
@@ -453,7 +452,11 @@ def test_wybor_okresu_proponuje_ostatni_pelny_okres_i_starsze_ze_statusem_okresu
     processes = centrum.client.get("/api/runs/setup").json()["processes"]
     setup = processes[0]
 
-    assert [process["process"] for process in processes] == ["preparation", "efenix", "settlement"]
+    assert [(process["process"], process["reads"]) for process in processes] == [
+        ("preparation", "register"),
+        ("efenix", "collective_file"),
+        ("settlement", "collective_file"),
+    ]
     assert (setup["process"], setup["title"], setup["blocker"]) == ("preparation", "Przygotowanie pliku zbiorczego", None)
     assert setup["reminder"] == "Zapisz i zamknij Rejestr zleceń w Excelu"
     assert (setup["confirms_readiness"], setup["preview_hint"]) == (

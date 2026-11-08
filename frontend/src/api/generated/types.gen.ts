@@ -357,17 +357,13 @@ export type DadNoteWaiting = {
 /**
  * Decision
  *
- * Pytanie do taty z części decyzji procesu: tytuł, komunikat w trzech częściach i liczby (np. Zlecenia na dzień).
+ * Pytanie do taty z części decyzji procesu: komunikat w trzech częściach i liczby (np. Zlecenia na dzień).
  */
 export type Decision = {
     /**
      * Question
      */
     question: string;
-    /**
-     * Title
-     */
-    title: string;
     message: Message;
     counts: CountGroup;
 };
@@ -640,7 +636,7 @@ export type IntermaxRestoreRequest = {
 /**
  * IntermaxRestored
  *
- * INTERMAX ma bajty Kopii ``restored``, a jego stan sprzed przywrócenia leży jako Kopia ``previous``.
+ * INTERMAX ma bajty Kopii ``restored``, a jego stan sprzed przywrócenia leży jako nowa Kopia na liście Kopii.
  *
  * ``warnings``: Komunikaty o tym, czego przywrócenie nie dokończyło (starsze Kopie zostały).
  */
@@ -650,7 +646,6 @@ export type IntermaxRestored = {
      */
     state: 'restored';
     restored: IntermaxCopy;
-    previous: IntermaxCopy;
     /**
      * Warnings
      */
@@ -716,7 +711,6 @@ export type KindTableReady = {
      * Settled
      */
     settled: boolean;
-    kind: FillKind;
     /**
      * Columns
      */
@@ -785,8 +779,7 @@ export type KindToFill = {
  * Wynik Uruchomienia procesu taki, jak niosą go Logi Uruchomienia: to, co karta pokazuje także po zamknięciu Centrum.
  *
  * Zatrzymania i ostrzeżenia w trzech częściach, uwagi techniczne i podsumowanie. ``ending`` mówi, jak się
- * skończyło: ``finished``, własne zatrzymanie procesu (``stop``), Zatrzymanie po odmowie w Decyzji taty
- * (``declined``), nieoczekiwany błąd (``unexpected``) albo błąd po zakończeniu silnika (``after_engine``).
+ * skończyło (``Ending``).
  * ``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba
  * wylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez
  * Zatrzymania).
@@ -851,8 +844,14 @@ export type Message = {
  * Metrics
  *
  * Historia Uruchomień procesu z obu plików metryk, czytanych przy każdym odczycie, od najnowszego.
+ *
+ * ``processes``: procesy w kolejności statystyk; pierwszy jest wybrany w filtrze.
  */
 export type Metrics = {
+    /**
+     * Processes
+     */
+    processes: Array<ProcessFacts>;
     /**
      * Phases
      */
@@ -1175,6 +1174,10 @@ export type PeriodRow = {
      */
     last_complete: boolean;
     /**
+     * Fillable
+     */
+    fillable: boolean;
+    /**
      * Path
      */
     path: Array<PathStep>;
@@ -1358,6 +1361,22 @@ export type Problem = {
 };
 
 /**
+ * ProcessFacts
+ *
+ * Proces w Metrykach: klucz i krótka nazwa w filtrach.
+ */
+export type ProcessFacts = {
+    /**
+     * Process
+     */
+    process: 'preparation' | 'settlement' | 'efenix' | 'intermax';
+    /**
+     * Label
+     */
+    label: string;
+};
+
+/**
  * ProcessRun
  *
  * Jedno Uruchomienie procesu z pliku metryk; ``BLAD_KRYTYCZNY`` to przerwane, z czasami etapów do przerwania.
@@ -1425,6 +1444,7 @@ export type ProcessRun = {
  * uruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma
  * podglądu bez zapisu, jak Wycena w efenix). ``pricing_modes``: tryby Wyceny w efenix, z których tata wybiera
  * przyciskiem przy każdym starcie, w kolejności przycisków (pusta lista: proces bez trybów i z jednym „Uruchom”).
+ * ``reads``: plik danych procesu, Rejestr zleceń z Ustawień albo Plik zbiorczy wybranego okresu.
  */
 export type ProcessSetup = {
     /**
@@ -1439,6 +1459,10 @@ export type ProcessSetup = {
      * Creates
      */
     creates: string;
+    /**
+     * Reads
+     */
+    reads: 'register' | 'collective_file';
     /**
      * Reminder
      */
@@ -1472,14 +1496,18 @@ export type ProcessSetup = {
 /**
  * ProcessStep
  *
- * Krok okresu, który robi proces; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu, a ``None`` ma
- * proces bez podglądu (Wycena w efenix).
+ * Krok okresu, który robi proces ``process``; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu, a
+ * ``None`` ma proces bez podglądu (Wycena w efenix).
  */
 export type ProcessStep = {
     /**
      * Action
      */
     action: 'prepare_collective_file' | 'price_in_efenix' | 'create_worker_settlements';
+    /**
+     * Process
+     */
+    process: 'preparation' | 'settlement' | 'efenix';
     /**
      * Label
      */
@@ -2519,10 +2547,6 @@ export type WithoutQuantityRead = {
      * State
      */
     state: 'read';
-    /**
-     * Rows
-     */
-    rows: Array<number>;
     /**
      * Sentence
      */

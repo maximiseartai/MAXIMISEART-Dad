@@ -65,7 +65,7 @@ function StepActions({ period, step }: { period: PeriodRow; step: ProcessStep | 
   return (
     <>
       <StepAction period={period} step={step} secondary={false} />
-      {period.status === "collective_file_prepared" ? <FillAction period={period} secondary /> : null}
+      {period.fillable ? <FillAction period={period} secondary /> : null}
     </>
   )
 }

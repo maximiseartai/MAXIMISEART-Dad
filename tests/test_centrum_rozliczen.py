@@ -479,6 +479,7 @@ def write_pricing(app: Centrum, token: str, *started: tuple[int, CompletedResult
 
 PRICE = {
     "action": "price_in_efenix",
+    "process": "efenix",
     "label": "Wyceń w efenix",
     "hint": "Najpierw uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij.",
     "preview_hint": None,
@@ -488,6 +489,7 @@ PRICE_AGAIN = PRICE | {
 }
 SETTLE = {
     "action": "create_worker_settlements",
+    "process": "settlement",
     "label": "Utwórz rozliczenia pracowników",
     "hint": "Wycena w efenix skończyła się wynikiem OK. Teraz rozliczenia pracowników z Pliku zbiorczego.",
     "preview_hint": "Nic nie zostanie zapisane. Zobaczysz plan plików każdego Wykonawcy.",
@@ -550,7 +552,9 @@ def test_droga_okresu_i_nastepny_krok_ida_przez_wycene_w_efenix_zaliczona_ostatn
     row = board_rows(app)[1]
 
     assert row["token"] == "29_05_10_2026"
-    assert row["status"] == ("worker_settlements_ready" if settled else "collective_file_prepared")
+    assert (row["status"], row["fillable"]) == (
+        ("worker_settlements_ready", False) if settled else ("collective_file_prepared", True)
+    )
     assert (stages(row), row["next_step"], row["secondary_step"]) == (path, next_step, secondary_step)
 
 
@@ -584,6 +588,7 @@ def test_ostatni_pelny_okres_jest_wyrozniony_takze_bez_folderu_okresu(tmp_path: 
         "worker_settlements_folder_exists": False,
         "worker_settlement_count": 0,
         "last_complete": True,
+        "fillable": False,
         "path": [
             {"label": "Plik zbiorczy", "stage": "now"},
             {"label": "Uzupełnienie w Excelu", "stage": "later"},
@@ -592,6 +597,7 @@ def test_ostatni_pelny_okres_jest_wyrozniony_takze_bez_folderu_okresu(tmp_path: 
         ],
         "next_step": {
             "action": "prepare_collective_file",
+            "process": "preparation",
             "label": "Przygotuj plik zbiorczy",
             "hint": "Z Rejestru zleceń powstaną Rozliczenie wewnętrzne i Plik zbiorczy.",
             "preview_hint": "Nic nie zostanie zapisane. Zobaczysz plan i nazwy obu plików.",

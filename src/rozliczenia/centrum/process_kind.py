@@ -229,10 +229,12 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     przez katalog. ``needs`` to potrzeby wejścia procesu, a ``inputs`` jedyna budowa wejścia z nich: czysta funkcja
     startu i zależności gospodarza, bez I/O. ``settings`` to potrzebne Ustawienia taty w kolejności odmowy i Diagnozy,
     a ``checks`` sprawdzenia Diagnozy w kolejności wyjaśniania: pierwsze, które nie przeszło, wyjaśnia Zatrzymanie.
-    ``journaled``: proces pisze dziennik Wyceny w efenix (``logs_disk.LogsOnDisk``).
+    ``journaled``: proces pisze dziennik Wyceny w efenix (``logs_disk.LogsOnDisk``). ``short_title``: krótka nazwa
+    procesu w filtrach Metryk.
     """
 
     key: contract.ProcessKey
+    short_title: str
     view: ProcessView[InputsT, SummaryT]
     core: Process[InputsT, SummaryT, RunContext]
     default_metrics: Path

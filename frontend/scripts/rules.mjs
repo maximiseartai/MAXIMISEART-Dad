@@ -30,7 +30,6 @@ const FIELDS_OUTSIDE_UI = new Map([
 
 // Pliki, które wolno rozgałęziać po nazwie procesu; każdy z uzasadnieniem.
 const PROCESS_COMPARISON_FILES = new Map([
-  ["src/pages/runs/run-setup-card.tsx", "wybór wejścia w karcie ustawień: Plik zbiorczy albo Rejestr zleceń"],
   ["src/lib/runs.tsx", "ponowne Uruchomienie: Uporządkowanie INTERMAX startuje bez okresu własną operacją kontraktu"],
 ])
 

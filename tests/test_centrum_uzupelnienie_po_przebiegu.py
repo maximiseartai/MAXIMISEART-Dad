@@ -109,4 +109,4 @@ def test_po_przebiegu_okno_gotowosci_dalej_wymienia_te_same_wiersze(tmp_path: Pa
     centrum = _prepared(tmp_path)
     _settle(centrum)
 
-    assert _get(centrum, f"/api/periods/{PERIOD}/without-quantity")["rows"] == [20, 21, 22]
+    assert _get(centrum, f"/api/periods/{PERIOD}/without-quantity")["sentence"] == "3 wiersze bez ilości: 20, 21, 22"

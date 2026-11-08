@@ -37,17 +37,26 @@ from rozliczenia.period_folder import (
 )
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period, parse_period_token
 
-_PREPARE: Final = contract.ProcessStep(
-    action="prepare_collective_file",
-    label="Przygotuj plik zbiorczy",
-    hint="Z Rejestru zleceń powstaną Rozliczenie wewnętrzne i Plik zbiorczy.",
-    preview_hint=declaration_of("preparation").preview_hint,
+
+
+def _process_step(
+    action: contract.StepAction, process: contract.PeriodProcessKey, label: str, hint: str
+) -> contract.ProcessStep:
+    """Krok okresu, który robi proces ``process``, z podpowiedzią podglądu z jego wpisu w katalogu procesów."""
+
+    return contract.ProcessStep(
+        action=action, process=process, label=label, hint=hint, preview_hint=declaration_of(process).preview_hint
+    )
+
+
+_PREPARE: Final = _process_step(
+    "prepare_collective_file",
+    "preparation",
+    "Przygotuj plik zbiorczy",
+    "Z Rejestru zleceń powstaną Rozliczenie wewnętrzne i Plik zbiorczy.",
 )
-_PRICE: Final = contract.ProcessStep(
-    action="price_in_efenix",
-    label="Wyceń w efenix",
-    hint="Najpierw uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij.",
-    preview_hint=None,
+_PRICE: Final = _process_step(
+    "price_in_efenix", "efenix", "Wyceń w efenix", "Najpierw uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij."
 )
 _FILL: Final = contract.FillStep(
     action="fill_collective_file",
@@ -58,11 +67,11 @@ _FILL: Final = contract.FillStep(
 _PRICE_AGAIN: Final = _PRICE.model_copy(
     update={"hint": "Ostatnia Wycena w efenix nie skończyła się wynikiem OK. Sprawdź jej wynik i uruchom ją ponownie."}
 )
-_SETTLE: Final = contract.ProcessStep(
-    action="create_worker_settlements",
-    label="Utwórz rozliczenia pracowników",
-    hint="Wycena w efenix skończyła się wynikiem OK. Teraz rozliczenia pracowników z Pliku zbiorczego.",
-    preview_hint=declaration_of("settlement").preview_hint,
+_SETTLE: Final = _process_step(
+    "create_worker_settlements",
+    "settlement",
+    "Utwórz rozliczenia pracowników",
+    "Wycena w efenix skończyła się wynikiem OK. Teraz rozliczenia pracowników z Pliku zbiorczego.",
 )
 _SETTLE_BEFORE_PRICING: Final = _SETTLE.model_copy(
     update={"hint": "Możesz je utworzyć także bez Wyceny w efenix, na przykład gdy efenix nie działa."}
@@ -139,6 +148,7 @@ def _row(folder: PeriodFolder, *, last_complete: bool, pricing: Pricing) -> cont
         worker_settlements_folder_exists=observation.worker_settlements_folder_exists,
         worker_settlement_count=observation.worker_settlement_count,
         last_complete=last_complete,
+        fillable=status == "collective_file_prepared",
         path=_path(status, pricing),
         next_step=next_step,
         secondary_step=secondary_step,
