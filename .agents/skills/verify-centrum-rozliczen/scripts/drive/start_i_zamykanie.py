@@ -12,7 +12,7 @@ import urllib.parse
 
 from playwright.sync_api import Page, Request, Response, expect
 
-from drive.common import REPO_ROOT, Run, answers, log_entries, served_version
+from drive.common import REPO_ROOT, Run, answers, log_entries, read_text, served_version
 
 # Every click on the shortcut opens one more tab; the browser keeps at most 6 connections to Centrum for all tabs.
 _SHORTCUT_TABS = 7
@@ -108,13 +108,13 @@ def drive(run: Run, page: Page) -> None:
         "health names Centrum rozliczeń, the tool's commit it runs, and this start",
     )
     run.check(_log_events(served_log)[:1] == ["start"], "the Centrum log starts with a start entry")
-    run.check(f"port={port}" in served_log.read_text(encoding="utf-8"), "the start entry names the port")
+    run.check(f"port={port}" in read_text(served_log), "the start entry names the port")
 
     run.step(feature, "start-druga-instancja")
     again = _launch(run, port, "start-druga-instancja")
     run.check(again.returncode == 0, "a second launch on the same port exits 0")
     run.check(f"Centrum rozliczeń już działa: {run.url}" in again.stdout, "it says Centrum is already running")
-    run.check((run.root / "browser.txt").read_text(encoding="utf-8").split() == [run.url], "it only opens the tab")
+    run.check(read_text(run.root / "browser.txt").split() == [run.url], "it only opens the tab")
     run.check(_log_events(tool_log) == ["juz-dziala"], "its log records the recognised running Centrum")
     run.check(answers(run.url), "the first Centrum keeps serving")
 

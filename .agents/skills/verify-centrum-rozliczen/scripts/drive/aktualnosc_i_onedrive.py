@@ -14,6 +14,7 @@ from drive.common import (
     finished_view,
     move,
     open_setup,
+    read_bytes,
     release_only,
     remove,
     sent_requests,
@@ -140,7 +141,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "onedrive-tylko-w-chmurze")
     remove(offline)
-    before = (register.read_bytes(), register.stat().st_mtime_ns)
+    before = (read_bytes(register), register.stat().st_mtime_ns)
     only_in_cloud.write_text(str(register) + "\n", encoding="utf-8")
     explanation = _diagnose(page)
     expect(explanation).to_contain_text(ONLY_IN_CLOUD)
@@ -152,7 +153,7 @@ def drive(run: Run, page: Page) -> None:
         _state(answer, ONEDRIVE)[0] == "failed" and answer["next_action"] == "rerun",
         "a Rejestr zleceń only in the cloud explains the stop with „Zawsze zachowuj na tym urządzeniu”",
     )
-    run.check((register.read_bytes(), register.stat().st_mtime_ns) == before, "the Diagnoza left the Rejestr zleceń as it was")
+    run.check((read_bytes(register), register.stat().st_mtime_ns) == before, "the Diagnoza left the Rejestr zleceń as it was")
     run.capture(page, "78-onedrive-tylko-w-chmurze")
 
     run.step(FEATURE, "aktualnosc-propozycja")

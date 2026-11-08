@@ -10,7 +10,7 @@ import urllib.request
 
 from playwright.sync_api import Page, Request, Response, Route, expect
 
-from drive.common import PAGES, REPO_ROOT, Run, ensure_files_set
+from drive.common import PAGES, REPO_ROOT, Run, ensure_files_set, read_json
 
 FEATURE = "pomiar-u-taty"
 SERVER_TIMING = re.compile(r"centrum;dur=\d+(\.\d+)?")
@@ -24,7 +24,7 @@ NOTIFICATIONS = {"powiadomienia": "Powiadomienia"}
 # A skeleton shows only once a read takes about 120 ms (index.css); a read held this long shows it for the rest.
 SLOW_READ_S = 0.6
 SKELETON_DELAY_MS = 120
-CONTRACT = json.loads((REPO_ROOT / "frontend" / "src" / "api" / "openapi.json").read_text(encoding="utf-8"))
+CONTRACT = read_json(REPO_ROOT / "frontend" / "src" / "api" / "openapi.json")
 # How many API requests one measurement of a view carries at most: the contract's `ViewTiming.requests`.
 MAX_TIMED_REQUESTS = CONTRACT["components"]["schemas"]["ViewTiming"]["properties"]["requests"]["maxItems"]
 # The contract's operation of every read (`GET`), by its address with `{…}` for any path segment.

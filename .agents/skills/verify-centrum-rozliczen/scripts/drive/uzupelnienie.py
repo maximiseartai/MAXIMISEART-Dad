@@ -17,6 +17,8 @@ from drive.common import (
     HIDE_TAB,
     SHOW_TAB,
     LogEntry,
+    read_bytes,
+    read_text,
     Run,
     close_centrum,
     frontend_ms,
@@ -164,7 +166,7 @@ def drive_result_card(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "uzupelnienie-wynik-bez-starej-kopii")
     collective_file = period_files(run)[1]
-    original = collective_file.read_bytes()
+    original = read_bytes(collective_file)
     # The summary asks for the file's version every 3 s and would read the new file into its copy before Wstecz.
     page.route(f"**{VERSION_API}", lambda route: route.abort())
     try:
@@ -229,7 +231,7 @@ def _live_result_card(run: Run, page: Page, filling: Locator, collective_file: P
         asked.append(urlsplit(request.url).path)
 
     page.on("request", record)
-    original = collective_file.read_bytes()
+    original = read_bytes(collective_file)
     section = filling.get_by_role("region", name=KIND_TITLES["without_rule"], exact=True)
     try:
         page.evaluate(WATCH_RETURNS)
@@ -402,7 +404,7 @@ def _capture(run: Run, page: Page, name: str, answer: dict[str, object]) -> None
     rows = answer["rows"]
     assert isinstance(rows, list)
     snapshot = run.evidence / "aria" / f"{name}.txt"
-    text = snapshot.read_text(encoding="utf-8")
+    text = read_text(snapshot)
     for row in rows:
         for field in ROW_TEXTS:
             if row[field]:
@@ -567,7 +569,7 @@ def _write_dad_value(collective_file: Path, row: int, value: int | None = 1) -> 
 
 def drive(run: Run, page: Page) -> None:
     _, collective_file = period_files(run)
-    original = collective_file.read_bytes()
+    original = read_bytes(collective_file)
     lock = collective_file.with_name(f"~${collective_file.name}")
     try:
         _drive(run, page, collective_file, lock)
@@ -737,7 +739,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
 
     run.step(FEATURE, "uzupelnienie-odczyt-nieudany")
     remove(lock)
-    saved = collective_file.read_bytes()
+    saved = read_bytes(collective_file)
     collective_file.write_bytes(b"Excel zapisuje")
     status = page.get_by_role("status").filter(has_text="Stan z")
     expect(status).to_be_visible(timeout=LIVE_TIMEOUT_MS)
@@ -807,7 +809,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     other = run.fixture["settlement"]["needs_check"]
     assert isinstance(other, str)
     other_file = Path(str(run.fixture["periods_directory"])) / other / f"Rozliczenie {other} - zbiorcze.xlsx"
-    saved = other_file.read_bytes()
+    saved = read_bytes(other_file)
     try:
         other_file.write_bytes(b"to nie jest skoroszyt")
         run.check(True, f"harness: the Plik zbiorczy of {other} is damaged for this step and restored after it")

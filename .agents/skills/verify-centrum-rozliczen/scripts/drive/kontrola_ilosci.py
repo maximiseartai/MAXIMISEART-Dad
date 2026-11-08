@@ -13,6 +13,7 @@ from drive.common import (
     close_centrum,
     drop_report_key,
     queued,
+    read_json,
     remove,
     Run,
     start_centrum,
@@ -48,7 +49,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "kontrola-w-kolejce")
     [waiting] = queued(run, LABEL)
-    document = json.loads(waiting.read_text(encoding="utf-8"))
+    document = read_json(waiting)
     run.check(
         document["target"]["label"] == LABEL and document["period"] == LAST_COMPLETE,
         f"the RUN of {LAST_COMPLETE} left its Kontrola ilości in config/zgloszenia/kolejka",

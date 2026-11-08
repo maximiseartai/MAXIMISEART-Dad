@@ -56,10 +56,11 @@ in `<feature>.md` next to this file, driven by the skill's
   `dialogs.jsonl`, `opened.jsonl`, and `logs/uruchomienia/`.
 - The harness of `drive/common.py` is the one way for what more than one feature does:
   close, start and kill Centrum (`close_centrum`, `start_centrum`, `kill_centrum`, `answers`);
-  read the skrzynka Zgłoszeń and its queue (`box_issues`, `queued`, `queued_posts`, `read_json`), which wait while the server puts a file in place on Windows (#1087);
+  read any file (`read_text`, `read_bytes`, `read_json`), which wait while the server puts it in place on Windows (#1087), and `centrum_self_test.py` fails on any other `read_text` or `read_bytes` in `drive/` (`_direct_reads`);
+  read the skrzynka Zgłoszeń and its queue (`box_issues`, `queued`, `queued_posts`);
   read the Centrum log (`Run.log`, `Run.log_entries`, `log_entries`);
   send a POST as the tab does (`Run.post`; a foreign `Origin` or `Host` goes through `Run.refused`);
-  move Centrum's clock (`advance_clock`);
+  move Centrum's clock (`advance_clock`), which fails, as a wait that times out does, once the clock's wake-up thread has died (`check_clock_alarm`);
   open a second window like Dad's (`dad_tab`);
   reach the start card after a reload (`open_setup`);
   and wait for the result of an Uruchomienie Dad starts (`result_of_start`, `run_again` for `Uruchom ponownie`), because the server shows the previous one as finished until the tab's request arrives.

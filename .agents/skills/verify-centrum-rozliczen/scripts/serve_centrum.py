@@ -54,7 +54,8 @@ line of a Zgłoszenie's problem, or the period line of a Kontrola ilości, which
 then goes into that file's ``comments``). The key is never written
 there. The skrzynka puts each issue file and ``archiwa.json`` in place at once (``replace_atomically``), as GitHub
 never shows half an issue: the drive reads them from its own process, and on Windows a plain write leaves the file
-empty for a moment (#963). While
+empty for a moment (#963). The drive edits an issue file the same way (``edit_issue``), so the skrzynka reads an issue
+file once it is in place (``_read_put_in_place``). While
 ``<root>/skrzynka-zgloszen/brak-sieci`` exists the skrzynka is unreachable, while
 ``<root>/skrzynka-zgloszen/odmawia-klucza`` exists it refuses the key for every question
 (``Refused``, like GitHub's 401 for an expired token), and while
@@ -79,7 +80,8 @@ Centrum asks the skrzynka for the state of Dad's sent cases, and GitHub for the
 Wydania, at most once per 10 minutes of its monotonic clock; each question for the
 published Wydania appends a line to ``<root>/github/zapytania-wydan.jsonl``; ``<root>/zegar/przesuniecie-min.txt`` moves that
 clock forward by the given minutes, so the drive need not wait. Wake-ups on that clock (the queue's retry a minute
-after a failure) fire within 0.2 s of their moment, so moving the clock wakes the queue at once.
+after a failure) fire within 0.2 s of their moment, so moving the clock wakes the queue at once. A failure of that
+wake-up thread leaves its traceback in ``<root>/zegar/budzik-padl.txt``, as no wake-up fires after it.
 
 One harness-only pacing hook: while ``<root>/pacing/szablony-ms.txt`` exists,
 each Szablon pracownika of a Przebieg rozliczeń RUN waits that many
@@ -137,6 +139,7 @@ from pathlib import Path
 import sys
 import threading
 import time
+import traceback
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
@@ -193,8 +196,22 @@ from tests.fixtures.efenix import write_collective_file
 from tests.fixtures.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED, EFENIX_UNKNOWN
 
 EFENIX_SEARCH_DELAY_S = 1.0
-# How long Centrum's clock tries again to read the move the drive is putting in place (``ScriptedClock``).
-MOVE_READ_S = 10.0
+# How long a file the drive is putting in place is tried again (``_read_put_in_place``).
+READ_RETRY_S = 10.0
+
+
+def _read_put_in_place(path: Path) -> str:
+    """``path`` once the drive has put it in place whole (``put_text`` of ``drive/common.py``): Windows refuses a read
+    for that moment (#1087), so a refused read is tried again for at most ``READ_RETRY_S``, then the refusal is raised."""
+
+    deadline = time.monotonic() + READ_RETRY_S
+    while True:
+        try:
+            return path.read_text(encoding="utf-8")
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.01)
 
 
 class ScriptedPlatform:
@@ -350,7 +367,7 @@ class FileReportBox:
         with self._lock:
             if not path.is_file():
                 return Refused()
-            texts = _raw_comments(json.loads(path.read_text(encoding="utf-8")))
+            texts = _raw_comments(json.loads(_read_put_in_place(path)))
         return tuple(
             Comment(number * 1000 + position, f"skrzynka-zgloszen/{number}.json#komentarz-{position}", text)
             for position, text in enumerate(texts, start=1)
@@ -367,7 +384,7 @@ class FileReportBox:
         with self._lock:
             if not path.is_file():
                 return Refused()
-            issue = json.loads(path.read_text(encoding="utf-8"))
+            issue = json.loads(_read_put_in_place(path))
             if self._rejects(issue["labels"][0]):
                 return Rejected()
             texts = _raw_comments(issue)
@@ -397,7 +414,7 @@ class FileReportBox:
         if self._refuses_key():
             return Refused()
         with self._lock:
-            issues = [json.loads(path.read_text(encoding="utf-8")) for path in self._directory.glob("*.json")]
+            issues = [json.loads(_read_put_in_place(path)) for path in self._directory.glob("*.json")]
         return tuple(
             Issue(issue["number"], issue.get("raw_body", issue["body"]), _closure(issue))
             for issue in issues
@@ -464,6 +481,7 @@ class ScriptedClock:
 
     def __init__(self, root: Path) -> None:
         self._moved = root / "zegar" / "przesuniecie-min.txt"
+        self._died = root / "zegar" / "budzik-padl.txt"
         self._lock = threading.Lock()
         self._wakes: list[tuple[float, Callable[[], None]]] = []
         threading.Thread(target=self._fire_due, name="zegar-budzik", daemon=True).start()
@@ -472,33 +490,34 @@ class ScriptedClock:
         return time.monotonic() + self._moved_s()
 
     def _moved_s(self) -> float:
-        """The move in seconds. The drive puts the file in place whole (``put_text``), and Windows refuses a read for
-        that moment (#1087), so a refused read is tried again for at most ``MOVE_READ_S``."""
+        """The move in seconds, which the drive puts in place whole (``_read_put_in_place``)."""
 
-        deadline = time.monotonic() + MOVE_READ_S
-        while True:
-            try:
-                return float(self._moved.read_text(encoding="utf-8")) * 60
-            except FileNotFoundError:
-                return 0.0
-            except PermissionError:
-                if time.monotonic() >= deadline:
-                    raise
-                time.sleep(0.01)
+        try:
+            return float(_read_put_in_place(self._moved)) * 60
+        except FileNotFoundError:
+            return 0.0
 
     def after(self, seconds: float, wake: Callable[[], None]) -> None:
         with self._lock:
             self._wakes.append((self() + seconds, wake))
 
     def _fire_due(self) -> None:
-        while True:
-            time.sleep(0.2)
-            now = self()
-            with self._lock:
-                due = [wake for moment, wake in self._wakes if moment <= now]
-                self._wakes = [(moment, wake) for moment, wake in self._wakes if moment > now]
-            for wake in due:
-                wake()
+        """Fires each wake-up within 0.2 s of its moment. A failure ends the thread and every later wake-up, so it
+        leaves its traceback in ``<root>/zegar/budzik-padl.txt``, where the drive finds it (``check_clock_alarm``)."""
+
+        try:
+            while True:
+                time.sleep(0.2)
+                now = self()
+                with self._lock:
+                    due = [wake for moment, wake in self._wakes if moment <= now]
+                    self._wakes = [(moment, wake) for moment, wake in self._wakes if moment > now]
+                for wake in due:
+                    wake()
+        except BaseException:
+            self._died.parent.mkdir(exist_ok=True)
+            self._died.write_text(traceback.format_exc(), encoding="utf-8")
+            raise
 
 
 def _scripted_onedrive(root: Path) -> CloudFiles:

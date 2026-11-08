@@ -82,7 +82,7 @@ _FACT = re.compile(r'([^\s=]+)=("[^"]*"|\S*)')
 def log_entries(path: Path) -> list[LogEntry]:
     """The entries of the Centrum log at ``path`` in order; no log yet has none."""
 
-    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    lines = read_text(path).splitlines() if path.exists() else []
     entries = []
     for line in lines:
         _, _, text = line.partition(" ")
@@ -97,7 +97,7 @@ class Run:
         self.root = root
         self.url = url
         self.evidence = evidence
-        self.fixture = json.loads((root / "fixture.json").read_text(encoding="utf-8"))
+        self.fixture = read_json(root / "fixture.json")
         self.feature = ""
         for name in ("screenshots", "aria", "api", "state"):
             (evidence / name).mkdir(parents=True, exist_ok=True)
@@ -131,7 +131,7 @@ class Run:
     def log(self) -> str:
         """The Centrum log as written so far; no log yet is an empty one."""
 
-        return self.log_path.read_text(encoding="utf-8") if self.log_path.exists() else ""
+        return read_text(self.log_path) if self.log_path.exists() else ""
 
     def log_entries(self) -> list[LogEntry]:
         return log_entries(self.log_path)
@@ -208,13 +208,13 @@ class Run:
         log = self.root / name
         if not log.exists():
             return []
-        return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines() if line]
+        return [json.loads(line) for line in read_text(log).splitlines() if line]
 
     def settings_text(self) -> str | None:
-        """The settings file as the server last put it in place (``while_open``), ``None`` before Centrum wrote it."""
+        """The settings file as the server last put it in place (``read_text``), ``None`` before Centrum wrote it."""
 
         settings = Path(self.fixture["settings"])
-        return while_open(lambda: settings.read_text(encoding="utf-8")) if settings.exists() else None
+        return read_text(settings) if settings.exists() else None
 
     def remembered(self, key: str) -> object:
         """One value of the settings file as Centrum wrote it (``folder_okresow``, ``rejestr_zlecen``, ``motyw``)."""
@@ -227,6 +227,7 @@ class Run:
         deadline = time.monotonic() + timeout_s
         while not condition():
             if time.monotonic() > deadline:
+                check_clock_alarm(self)
                 raise DriveFailure(f"timed out: {message}")
             time.sleep(0.1)
         print(f"  ok: {message}", flush=True)
@@ -257,7 +258,7 @@ def frontend_ms(source: str, name: str) -> int:
     """A time of the page, ``const <name> = <ms>`` in ``frontend/src/<source>``, for a wait with nothing on screen to
     wait for, so the wait follows the page when its time changes."""
 
-    [ms] = re.findall(rf"^const {name} = (\d+)$", (REPO_ROOT / "frontend" / "src" / source).read_text(encoding="utf-8"), re.M)
+    [ms] = re.findall(rf"^const {name} = (\d+)$", read_text(REPO_ROOT / "frontend" / "src" / source), re.M)
     return int(ms)
 
 
@@ -278,8 +279,8 @@ def period_row(page: Page, token: str) -> Locator:
     return page.get_by_role("table", name="Tablica okresów").get_by_role("row").filter(has_text=token)
 
 
-# How long every helper below (`remove`, `remove_tree`, `remove_empty_folder`, `move`, `replace_file`) retries a file
-# the server holds open on Windows; the server reads the harness's files in milliseconds, so this only bounds a change
+# How long every helper below (`remove`, `remove_tree`, `remove_empty_folder`, `move`, `replace_file`, `read_text`,
+# `read_bytes`, `read_json`) retries a file the server holds open on Windows; the server reads the harness's files in milliseconds, so this only bounds a change
 # that will never succeed.
 RETRY_OPEN_S = 10.0
 
@@ -360,7 +361,7 @@ def edit_issue(box: Path, number: object, **changes: object) -> None:
     The server reads the issue's file from its own threads, so the edited file takes its place whole (``put_text``)."""
 
     path = box / f"{number}.json"
-    issue = {**json.loads(path.read_text(encoding="utf-8")), **changes}
+    issue = {**read_json(path), **changes}
     put_text(path, json.dumps(issue, ensure_ascii=False, indent=2) + "\n")
 
 
@@ -372,15 +373,32 @@ def drop_report_key(key_file: Path, *, missing_ok: bool = False) -> None:
     a removal fails (``WinError 32``, #921), as Python opens files sharing read and write. Without ``missing_ok`` the
     step must have written a key, as the removal it replaces required its file."""
 
-    if not missing_ok and not (key_file.is_file() and key_file.read_bytes().strip()):
+    if not missing_ok and not (key_file.is_file() and read_bytes(key_file).strip()):
         raise DriveFailure(f"the harness takes away a key that was never written: {key_file.name} is missing or empty")
     key_file.write_bytes(b"")
 
 
-def read_json(path: Path) -> Any:
-    """A JSON file the server writes from its own threads, read once the server has put it in place (``while_open``)."""
+def read_text(path: Path) -> str:
+    """Harness: the UTF-8 text of a file, read once the server has put it in place (``while_open``).
 
-    return json.loads(while_open(lambda: path.read_text(encoding="utf-8")))
+    The server puts its files in place whole (``os.replace``) from its own threads at any moment, and Windows refuses
+    to open a file for that moment (#1087), so the drive reads files only through ``read_text``, ``read_bytes`` and
+    ``read_json``; ``centrum_self_test.py`` fails on any other ``read_text`` or ``read_bytes`` in ``drive/``
+    (``_direct_reads``)."""
+
+    return while_open(lambda: path.read_text(encoding="utf-8"))
+
+
+def read_bytes(path: Path) -> bytes:
+    """Harness: the bytes of a file, read once the server has put it in place (``read_text``)."""
+
+    return while_open(path.read_bytes)
+
+
+def read_json(path: Path) -> Any:
+    """Harness: a JSON file, read once the server has put it in place (``read_text``)."""
+
+    return json.loads(read_text(path))
 
 
 def box_issues(run: Run, label: str) -> list[dict[str, Any]]:
@@ -418,14 +436,25 @@ def run_logs(run: Run, process: str | None = None) -> dict[str, dict[str, Any]]:
     return {path.name: read_json(path) for path in sorted(run.run_logs_dir.glob(pattern))}
 
 
+def check_clock_alarm(run: Run) -> None:
+    """Fails once the wake-up thread of Centrum's clock has died (``<root>/zegar/budzik-padl.txt`` of ``ScriptedClock``):
+    no wake-up on that clock, such as the queue's retry, fires any more, so a wait for one would only time out."""
+
+    died = run.root / "zegar" / "budzik-padl.txt"
+    if died.exists():
+        raise DriveFailure(f"the wake-up thread of Centrum's clock died, so no wake-up fires any more:\n{read_text(died)}")
+
+
 def advance_clock(run: Run, minutes: float, why: str) -> None:
     """Harness: Centrum's clock moves ``minutes`` on (``<root>/zegar/przesuniecie-min.txt``), so ``why``.
 
-    The clock's wake-up thread reads the file every 0.2 s, so it takes its place whole (``put_text``)."""
+    The clock's wake-up thread reads the file every 0.2 s, so it takes its place whole (``put_text``); a move wakes
+    nothing once that thread has died (``check_clock_alarm``)."""
 
+    check_clock_alarm(run)
     moved = run.root / "zegar" / "przesuniecie-min.txt"
     moved.parent.mkdir(exist_ok=True)
-    before = float(moved.read_text(encoding="utf-8")) if moved.exists() else 0.0
+    before = float(read_text(moved)) if moved.exists() else 0.0
     put_text(moved, str(before + minutes))
     print(f"  harness: Centrum's clock moves {minutes:g} min on, so {why}", flush=True)
 
@@ -458,7 +487,7 @@ def start_centrum(run: Run, name: str) -> None:
     ``api/<name>-server.txt``. Cleanup stops it through ``server.json``.
     """
 
-    port = json.loads((run.root / "server.json").read_text(encoding="utf-8"))["port"]
+    port = read_json(run.root / "server.json")["port"]
     print("  harness: Dad starts Centrum again (this run's scripted Centrum on the same port)", flush=True)
     with (run.evidence / "api" / f"{name}-server.txt").open("wb") as console:
         subprocess.Popen(
@@ -477,7 +506,7 @@ def kill_centrum(run: Run) -> None:
     Harness: the drive kills this run's server through the pid in ``server.json`` (on Windows ``TerminateProcess``).
     """
 
-    pid = int(json.loads((run.root / "server.json").read_text(encoding="utf-8"))["pid"])
+    pid = int(read_json(run.root / "server.json")["pid"])
     print("  harness: Centrum dies mid-run (its process is killed)", flush=True)
     if sys.platform == "win32":
         os.kill(pid, signal.SIGTERM)
@@ -571,7 +600,7 @@ def priced_in_efenix(run: Run, token: str, result: str = "OK") -> Iterator[None]
     as Python opens files sharing read and write. The metrics reader takes an empty file as no history."""
 
     path = run.root / EFENIX_METRICS
-    before = path.read_bytes() if path.exists() else b""
+    before = read_bytes(path) if path.exists() else b""
     counters = dict.fromkeys(("orders", "ready", "errors", "emmett_warnings", "with_photos", "defects"), 0)
     record = {
         "schema_version": 2, "started_at": "2026-10-13T10:00:00+02:00", "mode": "RUN", "period": token,
@@ -867,7 +896,7 @@ def served_version(run: Run) -> tuple[str, str | None]:
         ).stdout.strip()
 
     pinned = run.root / "github" / "tool-commit.txt"
-    commit = pinned.read_text(encoding="utf-8").strip() if pinned.exists() else git("rev-parse", "HEAD")
+    commit = read_text(pinned).strip() if pinned.exists() else git("rev-parse", "HEAD")
     entry_commit, _, selector = git("log", "--walk-reflogs", "-1", "--date=short", "--format=%H %gd").partition(" ")
     return commit, selector.removeprefix("HEAD@{").removesuffix("}") if entry_commit == commit else None
 

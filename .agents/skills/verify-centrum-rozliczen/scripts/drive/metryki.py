@@ -20,6 +20,7 @@ from drive.common import (
     history_rows,
     local_time,
     move,
+    read_text,
 )
 from tests.fixtures.scenariusz_centrum import LAST_COMPLETE
 
@@ -206,7 +207,7 @@ def drive(run: Run, page: Page) -> None:
         completed.returncode == 1 and result["stop"]["message"]["code"] == "BRAK_REJESTRU" and result["metrics_saved"],
         "the machine script stopped (no Rejestr zleceń) and wrote its metrics record",
     )
-    last_record = json.loads(Path(fixture_metrics["preparation"]).read_text(encoding="utf-8").splitlines()[-1])
+    last_record = json.loads(read_text(Path(fixture_metrics["preparation"])).splitlines()[-1])
     run.check(
         (last_record["schema_version"], last_record["result"], last_record["stop"])
         == (3, "BLAD_KRYTYCZNY", {"kind": "for_tata", "code": "BRAK_REJESTRU"}),

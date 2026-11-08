@@ -21,6 +21,7 @@ from drive.common import (
     edit_issue,
     error_toasts,
     read_json,
+    read_text,
     release_only,
     remove,
     Run,
@@ -73,7 +74,7 @@ def _publish(run: Run, newest_tag: str, newest_commit: str | None, releases: lis
 
 def _release_questions(run: Run) -> int:
     asked = run.root / "github" / "zapytania-wydan.jsonl"
-    return len(asked.read_text(encoding="utf-8").splitlines()) if asked.exists() else 0
+    return len(read_text(asked).splitlines()) if asked.exists() else 0
 
 
 def _expect_points(item: Locator) -> None:
@@ -95,7 +96,7 @@ def _asked(run: Run) -> list[str]:
     """Labels of every question about Dad's cases, closed ones included; Logi Uruchomienia ask the same way."""
 
     asked = run.root / "skrzynka-zgloszen-zapytania.jsonl"
-    lines = asked.read_text(encoding="utf-8").splitlines() if asked.exists() else []
+    lines = read_text(asked).splitlines() if asked.exists() else []
     return [label for label in (json.loads(line)["label"] for line in lines) if label in CASE_LABELS]
 
 
@@ -215,7 +216,7 @@ def drive(run: Run, page: Page) -> None:
         lambda: run.api("/api/notifications", "powiadomienia-przeczytane")["unread"] == 0,
         "entering the view marks every Powiadomienie read",
     )
-    stored = json.loads((config / "powiadomienia.json").read_text(encoding="utf-8"))
+    stored = read_json(config / "powiadomienia.json")
     run.check(stored["schema_version"] == 1 and len(stored["przeczytane"]) >= 2, "config/powiadomienia.json keeps them")
     expect(page.get_by_role("alert")).to_have_count(0)
     expect(error_toasts(page)).to_have_count(0)
@@ -426,7 +427,7 @@ def _drive_unavailable_files(run: Run, page: Page, config: Path, box: Path) -> N
     _close_issue(box, int(str(note["number"])), "completed")
     advance_clock(run, 10, "the next read may ask the skrzynka again")
     with _locked(files):
-        before = [path.read_text(encoding="utf-8") for path in files]
+        before = [read_text(path) for path in files]
         _enter(page, run, "powiadomienia", BELL)
 
         def both_named() -> bool:
@@ -455,7 +456,7 @@ def _drive_unavailable_files(run: Run, page: Page, config: Path, box: Path) -> N
         expect(_row(page, "Uwaga", str(note["title"])).filter(has_text=RESOLVED)).to_have_count(1)
         expect(error_toasts(page)).to_have_count(0)
         run.check(
-            [path.read_text(encoding="utf-8") for path in files] == before,
+            [read_text(path) for path in files] == before,
             "while the files are held, Centrum does not pretend it saved them",
         )
         run.capture(page, "201-powiadomienia-plik-niedostepny")
@@ -466,7 +467,7 @@ def _drive_unavailable_files(run: Run, page: Page, config: Path, box: Path) -> N
         run.api("/api/notifications", "powiadomienia-plik-zapisany")["message"] is None,
         "the next read of Powiadomienia saves both files and the Komunikat is gone",
     )
-    stored = json.loads((config / "powiadomienia.json").read_text(encoding="utf-8"))
+    stored = read_json(config / "powiadomienia.json")
     run.check(read_ids <= set(stored["przeczytane"]), "config/powiadomienia.json now keeps the Uwaga read")
     cases = read_json(config / "sprawy-taty.json")["sprawy"]
     run.check(

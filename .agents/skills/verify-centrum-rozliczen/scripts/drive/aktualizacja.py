@@ -10,7 +10,19 @@ import subprocess
 
 from playwright.sync_api import Locator, Page, expect
 
-from drive.common import Run, advance_clock, answers, move, release_only, remove, served_version, version_line
+from drive.common import (
+    Run,
+    advance_clock,
+    answers,
+    move,
+    read_bytes,
+    read_json,
+    read_text,
+    release_only,
+    remove,
+    served_version,
+    version_line,
+)
 from drive.teksty import FETCHING, UPDATE_BUTTON, UP_TO_DATE
 
 FEATURE = "aktualizacja"
@@ -72,12 +84,12 @@ def _head(clone: Path) -> str:
 
 
 def _contents(directory: Path) -> dict[str, bytes]:
-    return {str(path.relative_to(directory)): path.read_bytes() for path in directory.rglob("*") if path.is_file()}
+    return {str(path.relative_to(directory)): read_bytes(path) for path in directory.rglob("*") if path.is_file()}
 
 
 def _dad_files_kept(run: Run, clone: Path, dad_files: dict[str, str], run_configuration: dict[str, bytes]) -> None:
     run.check(
-        {name: (clone / name).read_text(encoding="utf-8") for name in dad_files} == dad_files,
+        {name: read_text(clone / name) for name in dad_files} == dad_files,
         "Dad's files in the tool's config/ keep exactly their content, the changed konfiguracja wykonawców too",
     )
     run.check(
@@ -573,7 +585,7 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
     card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
     expect(_status(page, RESTARTING)).to_be_visible(timeout=20_000)
     run.wait_for(
-        lambda: result.exists() and json.loads(result.read_text(encoding="utf-8"))["wynik"] == "NOWA_WERSJA_NIE_WYSTARTOWALA",
+        lambda: result.exists() and read_json(result)["wynik"] == "NOWA_WERSJA_NIE_WYSTARTOWALA",
         "the guardian moved the clone back and wrote the failure",
         timeout_s=20,
     )

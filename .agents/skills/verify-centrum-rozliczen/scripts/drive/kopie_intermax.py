@@ -9,7 +9,7 @@ import shutil
 from typing import Any
 
 from playwright.sync_api import Locator, Page, expect
-from drive.common import DAD_TIME_ZONE, Run, dad_tab, remove
+from drive.common import DAD_TIME_ZONE, Run, dad_tab, read_bytes, remove
 
 FEATURE = "kopie-intermax"
 CARD = "Kopie INTERMAX"
@@ -52,7 +52,7 @@ def _to_card(run: Run, page: Page) -> None:
 
 
 def _kopie(folder: Path) -> dict[str, bytes]:
-    return {path.name: path.read_bytes() for path in sorted(folder.iterdir())} if folder.is_dir() else {}
+    return {path.name: read_bytes(path) for path in sorted(folder.iterdir())} if folder.is_dir() else {}
 
 
 def _point_register(run: Run, page: Page, register: Path) -> None:
@@ -72,7 +72,7 @@ def drive(run: Run, page: Page) -> None:
     settings = Path(run.fixture["settings"])
     saved = run.settings_text()
     kopie_before = _kopie(folder)
-    original = register.read_bytes()
+    original = read_bytes(register)
     print("  harness: INTERMAX of this feature in the settings and three Kopie of both names in the folder", flush=True)
     _point_register(run, page, register)
     folder.mkdir(exist_ok=True)
@@ -134,7 +134,7 @@ def _drive(
     dialog.get_by_role("button", name="Anuluj", exact=True).click()
     expect(dialog).to_have_count(0)
     run.check(
-        register.read_bytes() == original and set(_kopie(folder)) == set(names),
+        read_bytes(register) == original and set(_kopie(folder)) == set(names),
         "„Anuluj” leaves INTERMAX and the Kopie as they were",
     )
 
@@ -148,7 +148,7 @@ def _drive(
         expect(_card(page).get_by_text(OPEN, exact=True)).to_be_visible()
         expect(_card(page)).to_contain_text("Zapisz i zamknij INTERMAX w Excelu, potem przywróć kopię jeszcze raz.")
         run.check(
-            register.read_bytes() == original and _kopie(folder) == kopie,
+            read_bytes(register) == original and _kopie(folder) == kopie,
             "with INTERMAX open in Excel the restore refuses and changes neither INTERMAX nor the Kopie",
         )
         run.capture(page, "242-kopie-intermax-otwarty")
@@ -164,15 +164,15 @@ def _restore_by_touch(run: Run, page: Page, register: Path, folder: Path, origin
 
     with dad_tab(page, touch=True, cpu=DAD_CPU, timeout_ms=20_000) as touch:
         _to_card(run, touch)
-        chosen = (folder / oldest).read_bytes()
+        chosen = read_bytes(folder / oldest)
         before = set(_kopie(folder))
         _row(touch, oldest).get_by_role("button", name="Przywróć", exact=True).tap()
         touch.get_by_role("alertdialog").get_by_role("button", name="Przywróć tę kopię", exact=True).tap()
         expect(_card(touch).get_by_text(f"Przywrócono kopię z {_label(oldest)}", exact=True)).to_be_visible()
-        run.check(register.read_bytes() == chosen, "INTERMAX is the chosen Kopia byte for byte")
+        run.check(read_bytes(register) == chosen, "INTERMAX is the chosen Kopia byte for byte")
         made = sorted(set(_kopie(folder)) - before)
         run.check(
-            len(made) == 1 and bool(NEW_COPY.fullmatch(made[0])) and (folder / made[0]).read_bytes() == original,
+            len(made) == 1 and bool(NEW_COPY.fullmatch(made[0])) and read_bytes(folder / made[0]) == original,
             "the state before the restore lies as a new Kopia „przed przywróceniem” named after Centrum's clock",
         )
         listed = run.api("/api/intermax/copies", "kopie-po-przywroceniu")["copies"]
