@@ -8,8 +8,8 @@ that the result of a started Uruchomienie is never the one before it and the Cen
 that a file the server puts in place is read once it is there and only a vanished queue file is left out,
 that the drive reads files in no other way than through those readers (``_direct_reads``),
 that the scripted skrzynka reads an issue file the drive is putting in place once it is there,
-that Centrum's clock reads each move of the drive whole, also while the system refuses a read for a moment, and that
-the drive fails on the clock's wake-up thread once it has died,
+that Centrum's clock reads each move of the drive whole, also while the system refuses a read for a moment, stands still
+without a move and fails on a refusal that outlasts its limit, that the drive fails on the clock's wake-up thread once it has died,
 that the drive deletes, moves and replaces in none of the forms of ``_removals`` outside those helpers, that
 evidence text is strict UTF-8 and screenshots are PNG files, and that no workbook content (the fixture's row marker) reached the
 evidence.
@@ -358,6 +358,9 @@ def _check_drive_reads(errors: list[str]) -> None:
             errors.append(f"the guard of reads takes {sample!r} for a direct read: {found}")
     if not _direct_reads("def read_text(path):\n    return path.read_text()\n", frozenset()):
         errors.append("the guard of reads lets a feature hide a read in its own function named like a reader")
+    beside = "def read_text(path):\n    return path.read_text()\n\n\ndef issue(path):\n    return path.read_text()\n"
+    if _direct_reads(beside, DRIVE_READERS) != ["6: .read_text"]:
+        errors.append("the guard of reads leaves alone more of common.py than its readers: a read beside them passes")
     for path in sorted((SCRIPTS_ROOT / "drive").glob("*.py")):
         helpers = DRIVE_READERS if path.name == "common.py" else frozenset()
         for finding in _direct_reads(path.read_text(encoding="utf-8"), helpers):
@@ -651,6 +654,52 @@ def _check_clock_moved_whole(errors: list[str]) -> None:
             errors.append(f"Centrum's clock gives up on a move the drive is putting in place: {waited!r}")
 
 
+def _check_clock_without_move(errors: list[str]) -> None:
+    """Centrum's clock without a move of the drive stands still at once, as only a refusal is tried again
+    (``_read_put_in_place``), and a refusal that outlasts ``READ_RETRY_S`` fails the clock instead of moving it by 0."""
+
+    import contextlib
+    import io
+    import tempfile
+    import threading
+    import time
+
+    import serve_centrum
+    from drive.common import unreadable
+
+    # The clock's wake-up thread reads the same move every 0.2 s and may die on the refusal for good: its traceback
+    # and its zegar/budzik-padl.txt are none of this check's business.
+    hook = threading.excepthook
+    threading.excepthook = lambda failure: None
+    limit = serve_centrum.READ_RETRY_S
+    try:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
+            root = Path(scratch) / "run"
+            (root / "zegar").mkdir(parents=True)
+            clock = serve_centrum.ScriptedClock(root)
+            started = time.monotonic()
+            try:
+                moved: object = clock() - time.monotonic()
+            except OSError as failure:
+                moved = failure
+            if not (isinstance(moved, float) and abs(moved) < 1 and time.monotonic() - started < 1):
+                errors.append(f"Centrum's clock without a move of the drive does not stand still at once: {moved!r}")
+
+            move = root / "zegar" / "przesuniecie-min.txt"
+            move.write_text("5", encoding="utf-8")
+            serve_centrum.READ_RETRY_S = 0.2  # a refusal for good, without waiting the whole limit
+            with contextlib.redirect_stdout(io.StringIO()), unreadable(move):
+                try:
+                    refused: object = clock() - time.monotonic()
+                except PermissionError as failure:
+                    refused = failure
+            if not isinstance(refused, PermissionError):
+                errors.append(f"Centrum's clock goes on past a refused read of a move that outlasts its limit: {refused!r}")
+    finally:
+        serve_centrum.READ_RETRY_S = limit
+        threading.excepthook = hook
+
+
 def _check_box_reads_while_put_in_place(errors: list[str]) -> None:
     """The scripted skrzynka reads an issue file once the drive has put it in place (``edit_issue``): its comments,
     a new comment and the issues with a label each wait while the system refuses to read it (#1087)."""
@@ -935,6 +984,7 @@ def main(argv: list[str] | None = None) -> int:
     _check_read_while_put_in_place(errors)
     _check_box_reads_while_put_in_place(errors)
     _check_clock_moved_whole(errors)
+    _check_clock_without_move(errors)
     _check_clock_alarm_failure(errors)
     _check_log_entries(errors)
     _check_performance_gate(errors)

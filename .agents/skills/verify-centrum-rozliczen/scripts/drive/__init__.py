@@ -136,6 +136,7 @@ FEATURES = (
             "147-blad-odczytu-powiadomienia",
             "148-blad-odczytu-uwaga",
             "148c-blad-odczytu-uzupelnienie",
+            "148e-blad-odczytu-uzupelnienie-rodzaj",
             "148d-blad-odczytu-strumien",
         ),
     ),
