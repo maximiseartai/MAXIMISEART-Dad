@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
@@ -15,8 +14,9 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-from create_preparation_fixture import REGISTER_NAME, completed_activities, order_contract, order_devices
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from wynik_uruchomienia import (
     check_metrics,
@@ -31,20 +31,29 @@ from wynik_uruchomienia import (
 from skrypt_skilla import Parser
 
 from rozliczenia.collective_layout import QUANTITY_COLUMNS
+from tests.fixtures.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
+from tests.fixtures.scenariusz_rozliczen import (
+    COLLECTIVE_TEMPLATE_NAME,
+    INTERNAL_TEMPLATE_NAME,
+    ORDER_LINK,
+    ORDERS,
+    PERIODS_DIRECTORY,
+    QUANTITIES,
+    REGISTER_NAME,
+    ROW_MARKER,
+    TEMPLATES_DIRECTORY,
+    order_number,
+    register_values,
+)
+from tests.fixtures.settlement import PERIOD
 
-
-PERIOD = "08_14_09_2026"
-INTERNAL_NAME = f"Rozliczenie wew. {PERIOD}.xlsx"
-COLLECTIVE_NAME = f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
-ROW_MARKER = "PREP-SYN-"
-ORDER_LINK = "https://przyklad.invalid/zlecenie?caseId=PREP-SYN-LINK&tw=1&wiersz="
 EXPECTED_COUNTERS = {"period_orders": 7, "successful_orders": 6, "skipped_empty_rows": 4, "warnings": 3}
 # Ilości usług Dad completes: Plik zbiorczy rows 20 (order 7, prewencja) and 21 (order 6, unknown device), and
 # the reminder every Przygotowanie carries. Only the written Plik zbiorczy needs review; the dry-run stays OK.
 EXPECTED_WARNINGS = [
-    ("NIEZNANE_URZADZENIA", f"plik {COLLECTIVE_NAME}, wiersz 21"),
-    ("WIERSZE_Z_OPISU", f"plik {COLLECTIVE_NAME}, wiersz 20"),
-    ("KOLUMNY_Z_OPISU", f"plik {COLLECTIVE_NAME}, kolumny Y, AB, AD, AJ, AK, AL i AM"),
+    ("NIEZNANE_URZADZENIA", f"plik {COLLECTIVE_FILE_NAME}, wiersz 21"),
+    ("WIERSZE_Z_OPISU", f"plik {COLLECTIVE_FILE_NAME}, wiersz 20"),
+    ("KOLUMNY_Z_OPISU", f"plik {COLLECTIVE_FILE_NAME}, kolumny Y, AB, AD, AJ, AK, AL i AM"),
 ]
 EXPECTED_RESULT = {"DRY-RUN": "OK", "RUN": "WYMAGA_SPRAWDZENIA"}
 EXPECTED_SUMMARY = contract.RunSummary(
@@ -69,13 +78,13 @@ EXPECTED_SUMMARY = contract.RunSummary(
         ],
     ),
     files=[
-        contract.PeriodFile(name=INTERNAL_NAME, kind="internal_settlement"),
-        contract.PeriodFile(name=COLLECTIVE_NAME, kind="collective_file"),
+        contract.PeriodFile(name=INTERNAL_SETTLEMENT_NAME, kind="internal_settlement"),
+        contract.PeriodFile(name=COLLECTIVE_FILE_NAME, kind="collective_file"),
     ],
     worker_settlements=None,
 )
-INTERNAL_TEMPLATE = Path("config") / "Wzorzec rozliczenia wewnętrznego.xlsx"
-COLLECTIVE_TEMPLATE = Path("config") / "Wzorzec pliku zbiorczego.xlsx"
+INTERNAL_TEMPLATE = Path(TEMPLATES_DIRECTORY) / INTERNAL_TEMPLATE_NAME
+COLLECTIVE_TEMPLATE = Path(TEMPLATES_DIRECTORY) / COLLECTIVE_TEMPLATE_NAME
 # Target headers the process fills; a real Wzorzec may order them differently.
 TARGET_HEADERS = (
     "DATA",
@@ -92,76 +101,63 @@ TARGET_HEADERS = (
 )
 
 
-def _internal_row(number: int, started: datetime, worker: str, successful: str) -> tuple[object, ...]:
-    """Expected A:M of the Rozliczenie wewnętrzne; zwrot and UWAGI stay empty."""
-
-    return (
-        started,
-        "PREP-SYN-MIASTO",
-        f"PREP-SYN-ADRES-{number}",
-        order_contract(number),
-        order_devices(number),
-        "instalacja",
-        f"PREP-SYN-ZL-{number}",
-        worker,
-        f"PREP-SYN-OR-{number}",
-        successful,
-        completed_activities(number),
-        None,
-        None,
-    )
-
-
-def _collective_row(number: int, started: datetime, worker: str, successful: str) -> tuple[object, ...]:
-    """Expected A:K of the Plik zbiorczy in the Wzorzec header order."""
-
-    return (
-        "PREP-SYN-MIASTO",
-        f"PREP-SYN-ADRES-{number}",
-        order_contract(number),
-        order_devices(number),
-        "instalacja",
-        f"PREP-SYN-ZL-{number}",
-        started,
-        worker,
-        f"PREP-SYN-OR-{number}",
-        successful,
-        completed_activities(number),
-    )
-
-
-# Period orders in Rejestr order: 2, 3 (NIE), 4, 7 (after the next-period order), the late order 6, then 8 and 9.
-EXPECTED_INTERNAL_ROWS = (
-    _internal_row(2, datetime(2026, 9, 8, 0, 0), "adrian.testowy", "tak"),
-    _internal_row(3, datetime(2026, 9, 9, 10, 30), "dariusz.fikcyjny2", "NIE"),
-    _internal_row(4, datetime(2026, 9, 12, 12, 0), "kamil.syntetyczny", " Tak "),
-    _internal_row(7, datetime(2026, 9, 13, 9, 0), "adrian.testowy", "tak"),
-    _internal_row(6, datetime(2026, 9, 14, 18, 30), "dariusz.fikcyjny2", "TAK"),
-    _internal_row(8, datetime(2026, 9, 8, 11, 0), "dariusz.fikcyjny2", "tak"),
-    _internal_row(9, datetime(2026, 9, 14, 10, 0), "kamil.syntetyczny", "tak"),
+# Rejestr header of every column of the Rozliczenie wewnętrzne (A:K) and of the Plik zbiorczy (A:K); zwrot and UWAGI
+# of the Rozliczenie wewnętrzne stay empty.
+INTERNAL_SOURCES = (
+    "DATA GODZ. POCZ.",
+    "MIASTO",
+    "ADRES",
+    "UMOWA",
+    "URZĄDZENIA",
+    "CZYNNOŚCI",
+    "NUMER ZL.",
+    "WYKONAWCA",
+    "NUMER UMOWY",
+    "SKUTECZNE",
+    "CZYNNOŚCI ZREALIZOWANE",
 )
-EXPECTED_COLLECTIVE_ROWS = (
-    _collective_row(2, datetime(2026, 9, 8, 0, 0), "adrian.testowy", "tak"),
-    _collective_row(4, datetime(2026, 9, 12, 12, 0), "kamil.syntetyczny", " Tak "),
-    _collective_row(7, datetime(2026, 9, 13, 9, 0), "adrian.testowy", "tak"),
-    _collective_row(6, datetime(2026, 9, 14, 18, 30), "dariusz.fikcyjny2", "TAK"),
-    _collective_row(8, datetime(2026, 9, 8, 11, 0), "dariusz.fikcyjny2", "tak"),
-    _collective_row(9, datetime(2026, 9, 14, 10, 0), "kamil.syntetyczny", "tak"),
+COLLECTIVE_SOURCES = (
+    "MIASTO",
+    "ADRES",
+    "UMOWA",
+    "URZĄDZENIA",
+    "CZYNNOŚCI",
+    "NUMER ZL.",
+    "DATA GODZ. POCZ.",
+    "WYKONAWCA",
+    "NUMER UMOWY",
+    "SKUTECZNE",
+    "CZYNNOŚCI ZREALIZOWANE",
 )
-# Ilości usług of rows 18..23 (orders 2, 4, 7, 6, 8, 9) from the Reguły ilości; every other N:AP cell keeps the Wzorzec 0.
-EXPECTED_QUANTITIES: tuple[dict[str, int], ...] = (
-    {"O": 1, "P": 1, "Q": 1, "S": 3, "T": 1, "V": 1, "Z": 1},
-    {"N": 45, "O": 1, "S": 2, "V": 1, "AG": 1, "AI": 1, "AO": 1},
-    {},
-    {"N": 45, "T": 1, "V": 1},
-    {"V": 1, "AE": 1, "AP": 1},
-    {"O": 1, "P": 1, "Q": 2, "S": 4, "V": 1, "Z": 1, "AK": 1},
-)
-EXPECTED_INTERNAL_ORDER_NUMBERS = tuple(row[6] for row in EXPECTED_INTERNAL_ROWS)
-EXPECTED_COLLECTIVE_ORDER_NUMBERS = tuple(row[5] for row in EXPECTED_COLLECTIVE_ROWS)
+
+
+def _internal_row(number: int) -> tuple[object, ...]:
+    """Expected A:M of the Rozliczenie wewnętrzne for order ``number``."""
+
+    values = register_values(number, ORDERS[number])
+    return (*(values[header] for header in INTERNAL_SOURCES), None, None)
+
+
+def _collective_row(number: int) -> tuple[object, ...]:
+    """Expected A:K of the Plik zbiorczy for order ``number`` in the Wzorzec header order."""
+
+    values = register_values(number, ORDERS[number])
+    return tuple(values[header] for header in COLLECTIVE_SOURCES)
+
+
+# Period orders in Rejestr order: 2, 3 (NIE), 4, 7 (after the next-period order), the late order 6, then 8 and 9;
+# the Plik zbiorczy holds the Zlecenia skuteczne among them.
+INTERNAL_ORDERS = (2, 3, 4, 7, 6, 8, 9)
+COLLECTIVE_ORDERS = (2, 4, 7, 6, 8, 9)
+EXPECTED_INTERNAL_ROWS = tuple(_internal_row(number) for number in INTERNAL_ORDERS)
+EXPECTED_COLLECTIVE_ROWS = tuple(_collective_row(number) for number in COLLECTIVE_ORDERS)
+# Ilości usług of rows 18..23 from the Reguły ilości; every other N:AP cell keeps the Wzorzec 0.
+EXPECTED_QUANTITIES = tuple(QUANTITIES[number] for number in COLLECTIVE_ORDERS)
+EXPECTED_INTERNAL_ORDER_NUMBERS = tuple(order_number(number) for number in INTERNAL_ORDERS)
+EXPECTED_COLLECTIVE_ORDER_NUMBERS = tuple(order_number(number) for number in COLLECTIVE_ORDERS)
 # Rejestr rows of those orders; their NUMER ZL. Hiperłącze ends with the row number.
-EXPECTED_INTERNAL_REGISTER_ROWS = (4, 6, 9, 12, 13, 14, 15)
-EXPECTED_COLLECTIVE_REGISTER_ROWS = (4, 9, 12, 13, 14, 15)
+EXPECTED_INTERNAL_REGISTER_ROWS = tuple(ORDERS[number].row for number in INTERNAL_ORDERS)
+EXPECTED_COLLECTIVE_REGISTER_ROWS = tuple(ORDERS[number].row for number in COLLECTIVE_ORDERS)
 
 
 def _sheet(workbook_sheet: object) -> Worksheet:
@@ -213,7 +209,7 @@ def _check_metrics(root: Path, metrics: Path, modes: list[str], errors: list[str
 
 def _assert_dry_run(root: Path, metrics: Path, result_path: Path | None) -> int:
     errors = _unchanged_inputs(root)
-    leftovers = sorted(path.name for path in (root / "INEA").iterdir())
+    leftovers = sorted(path.name for path in (root / PERIODS_DIRECTORY).iterdir())
     if leftovers:
         errors.append(f"dry-run created entries in the periods directory: {leftovers}")
     _check_result(result_path, "DRY-RUN", errors)
@@ -434,23 +430,23 @@ def _check_hyperlinks(
 
 def _assert_run(root: Path, metrics: Path, result_path: Path | None, templates: str) -> int:
     errors = _unchanged_inputs(root)
-    periods_directory = root / "INEA"
+    periods_directory = root / PERIODS_DIRECTORY
     period_directory = periods_directory / PERIOD
     if sorted(path.name for path in periods_directory.iterdir()) != [PERIOD]:
         errors.append("periods directory holds more than the Folder okresu (staging left behind?)")
     if not period_directory.is_dir() or sorted(path.name for path in period_directory.iterdir()) != sorted(
-        [INTERNAL_NAME, COLLECTIVE_NAME]
+        [INTERNAL_SETTLEMENT_NAME, COLLECTIVE_FILE_NAME]
     ):
         errors.append("Folder okresu does not contain exactly both period files")
     else:
         try:
             if templates == "synthetic":
-                _check_internal_settlement(period_directory / INTERNAL_NAME, errors)
-                _check_collective_file(period_directory / COLLECTIVE_NAME, errors)
+                _check_internal_settlement(period_directory / INTERNAL_SETTLEMENT_NAME, errors)
+                _check_collective_file(period_directory / COLLECTIVE_FILE_NAME, errors)
             else:
                 _check_real_template_file(
                     root / INTERNAL_TEMPLATE,
-                    period_directory / INTERNAL_NAME,
+                    period_directory / INTERNAL_SETTLEMENT_NAME,
                     label="Rozliczenie wewnętrzne",
                     header_row=1,
                     look_columns=13,
@@ -460,7 +456,7 @@ def _assert_run(root: Path, metrics: Path, result_path: Path | None, templates: 
                 )
                 _check_real_template_file(
                     root / COLLECTIVE_TEMPLATE,
-                    period_directory / COLLECTIVE_NAME,
+                    period_directory / COLLECTIVE_FILE_NAME,
                     label="Plik zbiorczy",
                     header_row=17,
                     look_columns=12,
@@ -469,8 +465,8 @@ def _assert_run(root: Path, metrics: Path, result_path: Path | None, templates: 
                     errors=errors,
                 )
             for template, output, label, header_row, register_rows in (
-                (INTERNAL_TEMPLATE, INTERNAL_NAME, "Rozliczenie wewnętrzne", 1, EXPECTED_INTERNAL_REGISTER_ROWS),
-                (COLLECTIVE_TEMPLATE, COLLECTIVE_NAME, "Plik zbiorczy", 17, EXPECTED_COLLECTIVE_REGISTER_ROWS),
+                (INTERNAL_TEMPLATE, INTERNAL_SETTLEMENT_NAME, "Rozliczenie wewnętrzne", 1, EXPECTED_INTERNAL_REGISTER_ROWS),
+                (COLLECTIVE_TEMPLATE, COLLECTIVE_FILE_NAME, "Plik zbiorczy", 17, EXPECTED_COLLECTIVE_REGISTER_ROWS),
             ):
                 _check_hyperlinks(
                     root / template,

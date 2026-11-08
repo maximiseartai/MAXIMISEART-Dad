@@ -15,16 +15,27 @@ from typing import Literal, TextIO
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from skrypt_skilla import SKIPPED, Parser, new_run
 
+from tests.fixtures.scenariusz_rozliczen import (
+    COLLECTIVE_TEMPLATE_NAME,
+    INTERNAL_TEMPLATE_NAME,
+    PERIODS_DIRECTORY,
+    REGISTER_NAME,
+    TEMPLATES_DIRECTORY,
+    WORKER_SETTLEMENTS_DIRECTORY,
+    WORKER_TEMPLATE_NAME,
+)
+from tests.fixtures.settlement import PERIOD, SOURCE_NAME
+
 SCRIPT = Path(__file__).resolve()
 REPO_ROOT = SCRIPT.parents[4]
-PERIOD = "08_14_09_2026"
 TIMEOUT_SECONDS = 120
 PYTHON_COMMAND = (sys.executable,)
-PREPARATION_TEMPLATE_NAMES = ("Wzorzec rozliczenia wewnętrznego.xlsx", "Wzorzec pliku zbiorczego.xlsx")
-WORKER_TEMPLATE_NAME = "Wzorzec rozliczenia pracownika.xlsx"
+PREPARATION_TEMPLATE_NAMES = (INTERNAL_TEMPLATE_NAME, COLLECTIVE_TEMPLATE_NAME)
 HELPER_DIRECTORY = Path(".agents") / "skills" / "verify-rozliczenia" / "scripts"
 PROCESS_SCRIPT = str(Path("tools") / "uruchom_proces.py")
 
@@ -226,12 +237,12 @@ def _version() -> str:
 
 
 def _create_lock(run_root: Path) -> None:
-    worker_template = run_root / "Wzorzec rozliczenia pracownika.xlsx"
+    worker_template = run_root / WORKER_TEMPLATE_NAME
     worker_template.with_name(f"~${worker_template.name}").touch()
 
 
 def _create_existing_output(run_root: Path) -> None:
-    target_directory = run_root / PERIOD / f"Rozliczenie pracowników {PERIOD}"
+    target_directory = run_root / PERIOD / WORKER_SETTLEMENTS_DIRECTORY
     target_directory.mkdir()
     (target_directory / "existing-synthetic.txt").write_text("preserve", encoding="utf-8")
 
@@ -290,7 +301,7 @@ def _run_workflow(variant: str, run_root: Path, evidence_root: Path, templates_d
         return
     environment = _utf8_environment()
     version = _version()
-    source = run_root / PERIOD / f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
+    source = run_root / PERIOD / SOURCE_NAME
     config = run_root / "worker_mapping.yaml"
     metrics = run_root / "metrics.jsonl"
 
@@ -370,21 +381,21 @@ def _run_preparation_stage(
     metrics: Path,
     step_prefix: str = "",
 ) -> None:
-    config_directory = run_root / "config"
+    config_directory = run_root / TEMPLATES_DIRECTORY
     preparation_arguments = [
         "preparation",
         "--register",
-        str(run_root / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"),
+        str(run_root / REGISTER_NAME),
         "--periods-directory",
-        str(run_root / "INEA"),
+        str(run_root / PERIODS_DIRECTORY),
         "--period",
         PERIOD,
         "--config",
         str(config_directory / "worker_mapping.yaml"),
         "--internal-template",
-        str(config_directory / "Wzorzec rozliczenia wewnętrznego.xlsx"),
+        str(config_directory / INTERNAL_TEMPLATE_NAME),
         "--collective-template",
-        str(config_directory / "Wzorzec pliku zbiorczego.xlsx"),
+        str(config_directory / COLLECTIVE_TEMPLATE_NAME),
     ]
 
     def assert_arguments(mode: str) -> list[str]:
@@ -444,13 +455,13 @@ def _run_chain_workflow(run_root: Path, evidence_root: Path, templates_directory
     """
 
     environment = _utf8_environment()
-    config_directory = run_root / "config"
+    config_directory = run_root / TEMPLATES_DIRECTORY
     settlement_metrics = run_root / "settlement-metrics.jsonl"
     templates: Literal["synthetic", "config"] = "synthetic" if templates_directory is None else "config"
     settlement_arguments = [
         "settlement",
         "--source",
-        str(run_root / "INEA" / PERIOD / f"Rozliczenie {PERIOD} - zbiorcze.xlsx"),
+        str(run_root / PERIODS_DIRECTORY / PERIOD / SOURCE_NAME),
         "--config",
         str(config_directory / "worker_mapping.yaml"),
         "--worker-template",
@@ -550,7 +561,7 @@ def _run_intermax_workflow(run_root: Path, evidence_root: Path) -> None:
         [
             "intermax",
             "--register",
-            str(run_root / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"),
+            str(run_root / REGISTER_NAME),
             "--copies",
             str(run_root / "Kopie INTERMAX"),
         ],

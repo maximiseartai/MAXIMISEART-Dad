@@ -12,18 +12,29 @@ from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from wynik_uruchomienia import Link, ProcessResult, check_metrics, contract, figures, finish, hyperlinks, load_result
 from skrypt_skilla import Parser
 
+from tests.fixtures.scenariusz_rozliczen import (
+    SETTLEMENT_CITY,
+    SETTLEMENT_ORDER_LINK,
+    SETTLEMENT_ROWS,
+    UNMAPPED_ROW,
+    UNMAPPED_WORKER,
+    WORKER_SETTLEMENTS_DIRECTORY,
+    WORKER_TEMPLATE_NAME,
+    worker_settlement_name,
+)
+from tests.fixtures.settlement import PERIOD, SOURCE_NAME, WORKERS
 
-PERIOD = "08_14_09_2026"
-ORDER_LINK = "https://przyklad.invalid/zlecenie?caseId=SYNTHETIC-LINK&tw=1&wiersz="
-WORKERS = ("Adrian Testowy", "Darek Fikcyjny", "Kamil Syntetyczny")
+WORKER_NAMES = tuple(WORKERS.values())
 PHASES = ("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie")
 WORKER_SETTLEMENTS = [
-    contract.WorkerSettlement(worker=worker, file=f"Rozliczenie {PERIOD} - {worker}.xlsx", orders=orders, empty=orders == 0)
-    for worker, orders in zip(WORKERS, (2, 1, 0), strict=True)
+    contract.WorkerSettlement(worker=worker, file=worker_settlement_name(worker), orders=orders, empty=orders == 0)
+    for worker, orders in zip(WORKER_NAMES, (2, 1, 0), strict=True)
 ]
 ORDER_COLUMN = 6  # F
 
@@ -37,7 +48,7 @@ class WorkbookSnapshot(NamedTuple):
 
 
 def _path(root: Path, worker: str) -> Path:
-    return root / PERIOD / f"Rozliczenie pracowników {PERIOD}" / f"Rozliczenie {PERIOD} - {worker}.xlsx"
+    return root / PERIOD / WORKER_SETTLEMENTS_DIRECTORY / worker_settlement_name(worker)
 
 
 def _read_workbook_snapshot(path: Path) -> WorkbookSnapshot:
@@ -82,12 +93,16 @@ def _hyperlinks(path: Path) -> dict[tuple[int, int], Link]:
 def _order_links(rows: dict[int, int]) -> dict[tuple[int, int], Link]:
     """Expected Hiperłącza of a worker workbook: its row -> the Plik zbiorczy row the order came from."""
 
-    return {(row, ORDER_COLUMN): (f"{ORDER_LINK}{source_row}", None) for row, source_row in rows.items()}
+    return {(row, ORDER_COLUMN): (f"{SETTLEMENT_ORDER_LINK}{source_row}", None) for row, source_row in rows.items()}
 
 
-def _expected_source_row(worker_id: str, marker: str, quantity: int) -> tuple[object, ...]:
+def _expected_source_row(source_row: int) -> tuple[object, ...]:
+    """A:AT of the Plik zbiorczy Wiersz danych ``source_row``: MIASTO, NUMER ZL., WYKONAWCA and the quantity in N."""
+
+    worker_id, marker = SETTLEMENT_ROWS[source_row - 18]
+    quantity = source_row - 17
     return (
-        "TEST-CITY",
+        SETTLEMENT_CITY,
         None,
         None,
         None,
@@ -108,8 +123,8 @@ def _unchanged_inputs(root: Path, manifest: dict[str, object]) -> list[str]:
     period_directory = root / PERIOD
     errors: list[str] = []
     for label, path, key in (
-        ("source", period_directory / f"Rozliczenie {PERIOD} - zbiorcze.xlsx", "source_sha256"),
-        ("worker template", root / "Wzorzec rozliczenia pracownika.xlsx", "worker_template_sha256"),
+        ("source", period_directory / SOURCE_NAME, "source_sha256"),
+        ("worker template", root / WORKER_TEMPLATE_NAME, "worker_template_sha256"),
     ):
         actual = hashlib.sha256(path.read_bytes()).hexdigest()
         if actual != manifest.get(key):
@@ -117,8 +132,8 @@ def _unchanged_inputs(root: Path, manifest: dict[str, object]) -> list[str]:
     return errors
 
 
-_UNMAPPED = "unknown.synthetic"
-_ROW_CONTENT = ("TEST-CITY", "SYNTHETIC-1", "SYNTHETIC-2", "SYNTHETIC-3", "SYNTHETIC-4", _UNMAPPED)
+_UNMAPPED = UNMAPPED_WORKER
+_ROW_CONTENT = (SETTLEMENT_CITY, *(marker for _, marker in (*SETTLEMENT_ROWS, UNMAPPED_ROW)), _UNMAPPED)
 _UNMAPPED_WARNING = f"Nieznany identyfikator WYKONAWCA: {_UNMAPPED}. Nie ma go w konfiguracji wykonawców."
 _UNMAPPED_STOP = f"W Pliku zbiorczym jest WYKONAWCA spoza konfiguracji wykonawców: {_UNMAPPED}."
 _NAMING_UNMAPPED = (_UNMAPPED_WARNING, _UNMAPPED_STOP)
@@ -172,7 +187,7 @@ def _check_stop(result: ProcessResult | None, expected_stop: str, expected_what:
 
 def _assert_dry_run(root: Path, result_path: Path | None) -> int:
     period_directory = root / PERIOD
-    target_directory = period_directory / f"Rozliczenie pracowników {PERIOD}"
+    target_directory = period_directory / WORKER_SETTLEMENTS_DIRECTORY
     manifest = json.loads((root / "fixture_manifest.json").read_text(encoding="utf-8"))
     errors = _unchanged_inputs(root, manifest)
     if target_directory.exists():
@@ -210,23 +225,23 @@ def _assert_dry_run(root: Path, result_path: Path | None) -> int:
 
 
 def _assert_run(root: Path, result_path: Path | None) -> int:
-    target_directory = root / PERIOD / f"Rozliczenie pracowników {PERIOD}"
+    target_directory = root / PERIOD / WORKER_SETTLEMENTS_DIRECTORY
     manifest = json.loads((root / "fixture_manifest.json").read_text(encoding="utf-8"))
     errors = _unchanged_inputs(root, manifest)
-    expected_files = {f"Rozliczenie {PERIOD} - {worker}.xlsx" for worker in WORKERS}
+    expected_files = {worker_settlement_name(worker) for worker in WORKER_NAMES}
     if not target_directory.is_dir():
         errors.append("published folder is missing")
     elif {path.name for path in target_directory.glob("*.xlsx")} != expected_files:
         errors.append("published folder does not contain exactly the configured workbooks")
 
     try:
-        adrian = _read_workbook_snapshot(_path(root, WORKERS[0]))
-        darek = _read_workbook_snapshot(_path(root, WORKERS[1]))
-        kamil = _read_workbook_snapshot(_path(root, WORKERS[2]))
-        adrian_file = _path(root, WORKERS[0])
-        darek_file = _path(root, WORKERS[1])
-        kamil_file = _path(root, WORKERS[2])
-        for name, snapshot in zip(WORKERS, (adrian, darek, kamil), strict=True):
+        adrian = _read_workbook_snapshot(_path(root, WORKER_NAMES[0]))
+        darek = _read_workbook_snapshot(_path(root, WORKER_NAMES[1]))
+        kamil = _read_workbook_snapshot(_path(root, WORKER_NAMES[2]))
+        adrian_file = _path(root, WORKER_NAMES[0])
+        darek_file = _path(root, WORKER_NAMES[1])
+        kamil_file = _path(root, WORKER_NAMES[2])
+        for name, snapshot in zip(WORKER_NAMES, (adrian, darek, kamil), strict=True):
             if (snapshot.formula_au18, snapshot.formula_au19) != ("=N18", "=N19"):
                 errors.append(f"formula changed for {name}")
             if (
@@ -236,9 +251,9 @@ def _assert_run(root: Path, result_path: Path | None) -> int:
             ):
                 errors.append(f"worker template structure or formatting changed for {name}")
         if (
-            _read_input_row(adrian_file, 18) != _expected_source_row("adrian.testowy", "SYNTHETIC-1", 1)
-            or _read_input_row(adrian_file, 19) != _expected_source_row("adrian.testowy", "SYNTHETIC-3", 3)
-            or _read_input_row(darek_file, 18) != _expected_source_row("dariusz.fikcyjny2", "SYNTHETIC-2", 2)
+            _read_input_row(adrian_file, 18) != _expected_source_row(18)
+            or _read_input_row(adrian_file, 19) != _expected_source_row(20)
+            or _read_input_row(darek_file, 18) != _expected_source_row(19)
             or _read_input_row(kamil_file, 18) != (None,) * 13 + (0,) + (None,) * 32
         ):
             errors.append("worker rows were not routed or the empty workbook was changed")
@@ -269,7 +284,7 @@ def _assert_run(root: Path, result_path: Path | None) -> int:
         root / "metrics.jsonl", root, period=PERIOD, expected=[("DRY-RUN", "OK"), ("RUN", "OK")],
         row_content=_ROW_CONTENT, errors=errors,
     )
-    if [record.get("routes") for record in records] != [_routes(0), _routes(len(WORKERS))]:
+    if [record.get("routes") for record in records] != [_routes(0), _routes(len(WORKER_NAMES))]:
         errors.append("metrics records do not count each written Rozliczenie pracownika as a copy of the Wzorzec")
 
     return finish(
@@ -282,7 +297,7 @@ def _assert_run(root: Path, result_path: Path | None) -> int:
 
 def _assert_no_publish(root: Path, result_path: Path | None, expected_stop: str, expected_what: str | None) -> int:
     period_directory = root / PERIOD
-    target_directory = period_directory / f"Rozliczenie pracowników {PERIOD}"
+    target_directory = period_directory / WORKER_SETTLEMENTS_DIRECTORY
     manifest = json.loads((root / "fixture_manifest.json").read_text(encoding="utf-8"))
     errors = _unchanged_inputs(root, manifest)
     if target_directory.exists():
@@ -299,7 +314,7 @@ def _assert_no_publish(root: Path, result_path: Path | None, expected_stop: str,
 
 
 def _assert_existing_output(root: Path, result_path: Path | None, expected_stop: str, expected_what: str | None) -> int:
-    target_directory = root / PERIOD / f"Rozliczenie pracowników {PERIOD}"
+    target_directory = root / PERIOD / WORKER_SETTLEMENTS_DIRECTORY
     sentinel = target_directory / "existing-synthetic.txt"
     manifest = json.loads((root / "fixture_manifest.json").read_text(encoding="utf-8"))
     errors = _unchanged_inputs(root, manifest)

@@ -14,6 +14,7 @@ from openpyxl import load_workbook
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia.worker_config import load_worker_mapping
 from rozliczenia.message import StopError
@@ -21,10 +22,18 @@ from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import WorkbookError, is_open_in_excel
 from skrypt_skilla import Parser
+from tests.fixtures.scenariusz_rozliczen import (
+    COLLECTIVE_TEMPLATE_NAME,
+    INTERNAL_TEMPLATE_NAME,
+    PERIODS_DIRECTORY,
+    REGISTER_NAME,
+    TEMPLATES_DIRECTORY,
+    WORKER_TEMPLATE_NAME,
+)
+from tests.fixtures.settlement import PERIOD
 
 SCRIPT = Path(__file__).resolve()
 REPO_ROOT = SCRIPT.parents[4]
-PERIOD = "08_14_09_2026"
 REQUIRED_REGISTER_HEADERS = frozenset(
     {
         "DATA GODZ. POCZ.",
@@ -100,9 +109,9 @@ def _check(root: Path, expected_version: str, *, worker_template: bool) -> tuple
         raise ValueError("Python 3.11 or newer is required")
 
     period = parse_period_token(PERIOD).token
-    register = root / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
-    internal_template = root / "config" / "Wzorzec rozliczenia wewnętrznego.xlsx"
-    collective_template = root / "config" / "Wzorzec pliku zbiorczego.xlsx"
+    register = root / REGISTER_NAME
+    internal_template = root / TEMPLATES_DIRECTORY / INTERNAL_TEMPLATE_NAME
+    collective_template = root / TEMPLATES_DIRECTORY / COLLECTIVE_TEMPLATE_NAME
     for path in (register, internal_template, collective_template):
         _available(path)
 
@@ -119,10 +128,10 @@ def _check(root: Path, expected_version: str, *, worker_template: bool) -> tuple
         raise ValueError("Wzorzec pliku zbiorczego has no xl/externalLinks parts")
 
     if worker_template:
-        TemplateFile.worker_settlement(root / "config" / "Wzorzec rozliczenia pracownika.xlsx").check()
+        TemplateFile.worker_settlement(root / TEMPLATES_DIRECTORY / WORKER_TEMPLATE_NAME).check()
 
-    mapping = load_worker_mapping(root / "config" / "worker_mapping.yaml")
-    periods_directory = root / "INEA"
+    mapping = load_worker_mapping(root / TEMPLATES_DIRECTORY / "worker_mapping.yaml")
+    periods_directory = root / PERIODS_DIRECTORY
     if not periods_directory.is_dir():
         raise ValueError("periods directory is missing")
     if (periods_directory / period).exists():

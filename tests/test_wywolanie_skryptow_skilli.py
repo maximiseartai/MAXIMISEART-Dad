@@ -170,6 +170,26 @@ def test_self_test_pisze_probe_sprzatania_do_podanego_katalogu_przebiegu(tmp_pat
 
 
 @pytest.mark.parametrize(
+    "row_value",
+    ["SYNTHETIC-3", "PREP-SYN-ADRES-4", "ZL-78201", "UM-78205", "Ulica 78203"],
+    ids=["przebieg", "przygotowanie", "intermax-numer-zl", "intermax-numer-umowy", "intermax-adres"],
+)
+def test_self_test_odrzuca_dowod_z_wartoscia_wiersza_kazdego_fixture_skilla(tmp_path: Path, row_value: str) -> None:
+    evidence = tmp_path / "dowody"
+    evidence.mkdir()
+    (evidence / "wynik.txt").write_text(f"VERIFY OK | wiersz={row_value}\n", encoding="utf-8")
+
+    done = _script(
+        SKILLS / "verify-rozliczenia" / "scripts" / "self_test.py",
+        *("--evidence-root", str(evidence), "--run-dir", str(tmp_path / "przebieg")),
+        cwd=tmp_path,
+    )
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "source row content found in evidence: wynik.txt" in done.stdout + done.stderr
+
+
+@pytest.mark.parametrize(
     ("variants", "summary"),
     [
         (

@@ -20,6 +20,7 @@ pilnuje:
   - src/rozliczenia/engine.py
   - src/rozliczenia/inea_only_quantities.py
   - src/rozliczenia/period_folder.py
+  - tests/fixtures/scenariusz_rozliczen.py
   - tools/syntetyczne_wzorce.py
   - requirements.txt
 ---
@@ -68,7 +69,8 @@ took 1:14 with Dad's Wzorce and 1:55 with `syntetyczne` (2026-10-24).
 
 The Rejestr zleceń, Wykonawcy and orders are always the synthetic ones of
 `verify-rozliczenia`'s `create_preparation_fixture.py`, so no customer data
-enters a run.
+enters a run; the runner and the doctor take the facts of that scenario from
+`tests/fixtures/scenariusz_rozliczen.py`, as `verify-rozliczenia` does.
 
 Excel is a shared, single-instance app. Before it looks at Excel, the runner
 locks `~/Library/Containers/com.microsoft.Excel/Data/maximiseart-weryfikacja/excel.lock`,

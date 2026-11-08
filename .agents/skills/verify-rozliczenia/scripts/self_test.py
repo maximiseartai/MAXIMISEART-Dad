@@ -10,8 +10,13 @@ import sys
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
+from create_intermax_fixture import ROW_MARKERS as INTERMAX_ROW_MARKERS
 from skrypt_skilla import Parser, create_run_root, new_run
+
+from tests.fixtures.scenariusz_rozliczen import ROW_CONTENT_MARKERS as SCENARIO_ROW_MARKERS
 
 SCRIPT = Path(__file__).resolve()
 SKILL_ROOT = SCRIPT.parents[1]
@@ -35,17 +40,8 @@ REQUIRED_FEATURE_HEADINGS = (
     "## Gotchas",
 )
 
-ROW_CONTENT_MARKERS = (
-    "TEST-CITY",
-    "SYNTHETIC-1",
-    "SYNTHETIC-2",
-    "SYNTHETIC-3",
-    "SYNTHETIC-4",
-    "PREP-SYN-",
-    "SYNTHETIC-LINK",
-    "ZL-782",
-    "example.invalid/zlecenie",
-)
+# Row content of every fixture the skill creates; none may reach the evidence.
+ROW_CONTENT_MARKERS = (*SCENARIO_ROW_MARKERS, *INTERMAX_ROW_MARKERS)
 
 
 def _read_utf8(path: Path) -> str:

@@ -7,7 +7,6 @@ synthetic workbook.
 
 from __future__ import annotations
 
-from datetime import datetime
 import hashlib
 import json
 import os
@@ -18,159 +17,51 @@ import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 
-import yaml
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from skrypt_skilla import Parser, create_run_root
 
+from tests.fixtures.preparation import COLLECTIVE_TEMPLATE_HEADERS, INTERNAL_TEMPLATE_HEADERS, REGISTER_HEADERS
+from tests.fixtures.scenariusz_rozliczen import (
+    ARCHIVED_NUMBER,
+    ARCHIVED_ORDER,
+    COLLECTIVE_TEMPLATE_NAME,
+    INTERNAL_TEMPLATE_NAME,
+    ORDER_LINK,
+    ORDERS,
+    PERIODS_DIRECTORY,
+    REGISTER_NAME,
+    TEMPLATES_DIRECTORY,
+    WORKER_TEMPLATE_NAME,
+    register_values,
+)
+from tests.fixtures.settlement import PERIOD, WORKERS, write_mapping
+from tests.fixtures.workbooks import active_worksheet
 
-PERIOD = "08_14_09_2026"
-REGISTER_NAME = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
-PERIODS_DIRECTORY = "INEA"
-INTERNAL_TEMPLATE_NAME = "Wzorzec rozliczenia wewnętrznego.xlsx"
-COLLECTIVE_TEMPLATE_NAME = "Wzorzec pliku zbiorczego.xlsx"
-WORKER_TEMPLATE_NAME = "Wzorzec rozliczenia pracownika.xlsx"
-WORKERS = {
-    "adrian.testowy": "Adrian Testowy",
-    "dariusz.fikcyjny2": "Darek Fikcyjny",
-    "kamil.syntetyczny": "Kamil Syntetyczny",
-}
-# Layout of Dad's new Rejestr: empty column A, AKCJE in B, ZWROT and UWAGI at the end. The columns are
-# shifted against both Wzorce; AKCJE, ZWROT and UWAGI are not carried over.
-REGISTER_HEADERS = (
-    "",
-    "AKCJE",
-    "DATA GODZ. POCZ.",
-    "MIASTO",
-    "ADRES",
-    "UMOWA",
-    "URZĄDZENIA",
-    "CZYNNOŚCI",
-    "NUMER ZL.",
-    "WYKONAWCA",
-    "NUMER UMOWY",
-    "SKUTECZNE",
-    "CZYNNOŚCI ZREALIZOWANE",
-    "ZWROT",
-    "UWAGI",
-)
-INTERNAL_TEMPLATE_HEADERS = (
-    "DATA",
-    "MIASTO",
-    "ADRES",
-    "UMOWA",
-    "URZĄDZENIA",
-    "CZYNNOŚCI",
-    "NUMER ZL.",
-    "WYKONAWCA",
-    "NUMER UMOWY/ZLECENIA ORANGE",
-    "SKUTECZNE",
-    "CZYNNOŚCI ZREALIZOWANE",
-    "zwrot",
-    "UWAGI",
-)
-COLLECTIVE_TEMPLATE_HEADERS = (
-    "MIASTO",
-    "ADRES",
-    "UMOWA",
-    "URZĄDZENIA",
-    "CZYNNOŚCI",
-    "NUMER ZL.",
-    "DATA",
-    "WYKONAWCA",
-    "NUMER UMOWY/ZLECENIA ORANGE",
-    "SKUTECZNE",
-    "CZYNNOŚCI ZREALIZOWANE",
-)
 COLLECTIVE_ZERO_ROWS = 8
 REGISTER_DATE_FORMAT = "dd.mm.yyyy hh:mm"
 HIGHLIGHT_FILL = "FFFFFF00"
 HIGHLIGHT_COLOR = "FFC00000"
 # ADRES of order 4: neither yellow nor plain, so the Plik zbiorczy shows it only when it copies the Rejestr.
 ADDRESS_FILL = "FF00B0F0"
-# Hiperłącze in NUMER ZL. of every ZLECENIA order, like the link to the order in the company app; the Rejestr
-# row number ends the address. The PREP-SYN- marker makes self_test.py reject an address leaking into evidence.
-ORDER_LINK = "https://przyklad.invalid/zlecenie?caseId=PREP-SYN-LINK&tw=1&wiersz="
-
-
-def _active_worksheet(workbook: Workbook) -> Worksheet:
-    sheet = workbook.active
-    if not isinstance(sheet, Worksheet):
-        raise ValueError("Workbook does not contain an active worksheet")
-    return sheet
-
-
-def completed_activities(number: int) -> str:
-    """CZYNNOŚCI ZREALIZOWANE; order 2 has two lines, so its Wiersz danych wraps and Excel makes it taller."""
-
-    return "montaż\ndemontaż" if number == 2 else "montaż"
-
-
-# Order number -> first word of UMOWA and the whole URZĄDZENIA, so that the Plik zbiorczy rows get Ilości usług from the
-# Reguły ilości (2: router with two TV devices and printing, 4: gateway with wifi6extra and a Saturday usterka,
-# 6: Monday-evening usterka with an unknown component and printing, 7: prewencja, settled from the description,
-# 8: gniazdo, 9: a technicolor variant not on Dad's list). AP of order 8 and AK of order 9 are Ilości tylko dla INEA.
-ORDER_CONTENT: dict[int, tuple[str, str]] = {
-    2: ("u", "nokia zte  2*fut"),
-    4: ("pr", "gateway wifi6extra, usterka"),
-    6: ("U", "usterka przeniesienie"),
-    7: ("u", "prewencja"),
-    8: ("pr", "gniazdo"),
-    9: ("pr", "Technicolor 3*globo"),
-}
-
-
-def order_contract(number: int) -> str:
-    return f"{ORDER_CONTENT.get(number, ('pr', ''))[0]} PREP-SYN-UM-{number}"
-
-
-def order_devices(number: int) -> str:
-    return ORDER_CONTENT.get(number, ("", "nokia"))[1]
-
-
-def _order(number: int, started: datetime, worker: str, successful: str) -> dict[str, object]:
-    """One synthetic order; every free-text value carries the unique ``PREP-SYN-`` marker."""
-
-    return {
-        "AKCJE": f"PREP-SYN-AKCJA-{number}",
-        "DATA GODZ. POCZ.": started,
-        "MIASTO": "PREP-SYN-MIASTO",
-        "ADRES": f"PREP-SYN-ADRES-{number}",
-        "UMOWA": order_contract(number),
-        "URZĄDZENIA": order_devices(number),
-        "CZYNNOŚCI": "instalacja",
-        "NUMER ZL.": f"PREP-SYN-ZL-{number}",
-        "WYKONAWCA": worker,
-        "NUMER UMOWY": f"PREP-SYN-OR-{number}",
-        "SKUTECZNE": successful,
-        "CZYNNOŚCI ZREALIZOWANE": completed_activities(number),
-        "ZWROT": f"PREP-SYN-ZWROT-{number}",
-        "UWAGI": f"PREP-SYN-UWAGA-{number}",
-    }
 
 
 # Excel row -> order; rows without an entry are fully empty export rows.
 REGISTER_ROWS: dict[int, dict[str, object]] = {
-    2: _order(1, datetime(2026, 9, 7, 15, 0), "adrian.testowy", "tak"),  # previous period
-    4: _order(2, datetime(2026, 9, 8, 0, 0), "adrian.testowy", "tak"),
-    6: _order(3, datetime(2026, 9, 9, 10, 30), "dariusz.fikcyjny2", "NIE"),
-    9: _order(4, datetime(2026, 9, 12, 12, 0), "kamil.syntetyczny", " Tak "),
-    11: _order(5, datetime(2026, 9, 15, 0, 0), "adrian.testowy", "tak"),  # next period
-    12: _order(7, datetime(2026, 9, 13, 9, 0), "adrian.testowy", "tak"),  # Adrian again, after Kamil
-    13: _order(6, datetime(2026, 9, 14, 18, 30), "dariusz.fikcyjny2", "TAK"),  # late order of the period
-    14: _order(8, datetime(2026, 9, 8, 11, 0), "dariusz.fikcyjny2", "tak"),
-    15: _order(9, datetime(2026, 9, 14, 10, 0), "kamil.syntetyczny", "tak"),
+    order.row: register_values(number, order) for number, order in ORDERS.items()
 }
 
 
 def _write_register(path: Path) -> None:
     workbook = Workbook()
-    decoy = _active_worksheet(workbook)
+    decoy = active_worksheet(workbook)
     decoy.title = "lista"
     decoy["A1"] = "WYKONAWCY"
     archive = workbook.create_sheet("ARCHIWUM")
@@ -178,7 +69,7 @@ def _write_register(path: Path) -> None:
     sheet = workbook.create_sheet("ZLECENIA")
     # Column A has no header and stays completely empty.
     columns = [(column, header) for column, header in enumerate(REGISTER_HEADERS, start=1) if header]
-    for target, rows in ((archive, {2: _order(90, datetime(2025, 9, 9, 9, 0), "kamil.syntetyczny", "tak")}), (sheet, REGISTER_ROWS)):
+    for target, rows in ((archive, {ARCHIVED_ORDER.row: register_values(ARCHIVED_NUMBER, ARCHIVED_ORDER)}), (sheet, REGISTER_ROWS)):
         for column, header in columns:
             target.cell(1, column).value = header
         for row_number, order in rows.items():
@@ -217,7 +108,7 @@ def _apply_template_layout(sheet: Worksheet, header_row: int, columns: int) -> N
 
 def _write_internal_template(path: Path) -> None:
     workbook = Workbook()
-    sheet = _active_worksheet(workbook)
+    sheet = active_worksheet(workbook)
     sheet.title = "Arkusz1"
     for column, header in enumerate(INTERNAL_TEMPLATE_HEADERS, start=1):
         sheet.cell(1, column).value = header
@@ -238,7 +129,7 @@ def _write_worker_template(path: Path) -> None:
 
 def _write_collective_layout(path: Path, *, rate: float) -> None:
     workbook = Workbook()
-    sheet = _active_worksheet(workbook)
+    sheet = active_worksheet(workbook)
     sheet.title = "Sheet1"
     sheet["A1"] = "STAWKI"
     sheet["N1"] = rate
@@ -337,7 +228,7 @@ def _sha256(path: Path) -> str:
 
 
 def _write_fixture(root: Path, templates_from: Path | None, *, with_worker_template: bool) -> None:
-    config_directory = root / "config"
+    config_directory = root / TEMPLATES_DIRECTORY
     config_directory.mkdir(parents=True)
     (root / PERIODS_DIRECTORY).mkdir()
     register = root / REGISTER_NAME
@@ -356,10 +247,7 @@ def _write_fixture(root: Path, templates_from: Path | None, *, with_worker_templ
             _write_worker_template(worker_template)
         else:
             shutil.copyfile(templates_from / WORKER_TEMPLATE_NAME, worker_template)
-    (config_directory / "worker_mapping.yaml").write_text(
-        yaml.safe_dump({"schema_version": 1, "workers": WORKERS}, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
+    write_mapping(config_directory / "worker_mapping.yaml")
     manifest = {
         "register_sha256": _sha256(register),
         "internal_template_sha256": _sha256(internal_template),

@@ -20,18 +20,18 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia.workbook_save import save_workbook
 from skrypt_skilla import Parser, require_run_root
+from tests.fixtures.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
+from tests.fixtures.scenariusz_rozliczen import FILLED_ORDERS, PERIODS_DIRECTORY, order_number
+from tests.fixtures.settlement import PERIOD
 
-
-PERIOD = "08_14_09_2026"
 HEADER_ROW = 17
 FIRST_DATA_ROW = 18
 QUANTITY_COLUMNS = range(14, 43)  # N:AP
 CHARGE_DESCRIPTION, CHARGE_AMOUNT, REMARKS_AMOUNT, REMARKS = 43, 44, 45, 46  # AQ, AR, AS, AT
-# Adrian twice and Darek once; Darek's gniazdo order and Kamil's two keep what Przygotowanie pliku zbiorczego wrote.
-FILLED_ORDERS = ("PREP-SYN-ZL-2", "PREP-SYN-ZL-7", "PREP-SYN-ZL-6")
 
 
 def _sheet(workbook: Workbook) -> Worksheet:
@@ -71,15 +71,14 @@ def _order_rows(sheet: Worksheet) -> dict[object, int]:
     }
 
 
-def _readiness_values(index: int, order: str) -> dict[int, int | float | str]:
-    """Dad's entries for one Wiersz danych: distinct non-zero quantities, a charge, and remarks."""
+def _readiness_values(index: int, number: int) -> dict[int, int | float | str]:
+    """Dad's entries for the Wiersz danych of order ``number``: distinct non-zero quantities, a charge, and remarks."""
 
-    suffix = order.removeprefix("PREP-SYN-ZL-")
     values: dict[int, int | float | str] = {column: 100 * index + column - 13 for column in QUANTITY_COLUMNS}
-    values[CHARGE_DESCRIPTION] = f"PREP-SYN-OBC-{suffix}"
+    values[CHARGE_DESCRIPTION] = f"PREP-SYN-OBC-{number}"
     values[CHARGE_AMOUNT] = 25.5 + index
     values[REMARKS_AMOUNT] = 10 + index
-    values[REMARKS] = f"PREP-SYN-UWAGI-{suffix}"
+    values[REMARKS] = f"PREP-SYN-UWAGI-{number}"
     return values
 
 
@@ -94,9 +93,9 @@ def _cells(workbook: Workbook) -> dict[tuple[str, int, int], object]:
 
 
 def _fill(root: Path) -> int:
-    period_directory = root / "INEA" / PERIOD
-    collective_file = period_directory / f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
-    internal_settlement = period_directory / f"Rozliczenie wew. {PERIOD}.xlsx"
+    period_directory = root / PERIODS_DIRECTORY / PERIOD
+    collective_file = period_directory / COLLECTIVE_FILE_NAME
+    internal_settlement = period_directory / INTERNAL_SETTLEMENT_NAME
     links_before = _external_link_parts(collective_file)
     if not links_before:
         raise ValueError("Plik zbiorczy has no xl/externalLinks parts to preserve")
@@ -106,12 +105,13 @@ def _fill(root: Path) -> int:
         sheet = _sheet(workbook)
         before = _cells(workbook)
         rows = _order_rows(sheet)
-        missing = [order for order in FILLED_ORDERS if order not in rows]
+        orders = [order_number(number) for number in FILLED_ORDERS]
+        missing = [order for order in orders if order not in rows]
         if missing:
             raise ValueError(f"Plik zbiorczy lacks {len(missing)} of the Wiersze danych to fill")
         expected = dict(before)
-        for index, order in enumerate(FILLED_ORDERS):
-            for column, value in _readiness_values(index, order).items():
+        for index, (number, order) in enumerate(zip(FILLED_ORDERS, orders, strict=True)):
+            for column, value in _readiness_values(index, number).items():
                 cell = sheet.cell(rows[order], column)
                 if cell.data_type == "f":
                     raise ValueError(f"Plik zbiorczy has a formula in {cell.coordinate}, where Dad types values")
@@ -138,7 +138,7 @@ def _fill(root: Path) -> int:
     manifest = {
         "collective_file_sha256": _sha256(collective_file),
         "internal_settlement_sha256": _sha256(internal_settlement),
-        "filled_orders": list(FILLED_ORDERS),
+        "filled_orders": [order_number(number) for number in FILLED_ORDERS],
     }
     (root / "readiness_manifest.json").write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8")
     print(
