@@ -459,6 +459,22 @@ def test_surowe_zlecenia_w_jednym_z_dwoch_arkuszy_zlecen_zatrzymuja_okres(tmp_pa
     )
 
 
+def test_powtorzony_naglowek_z_surowymi_zleceniami_w_okresie_zatrzymuje_odczyt_danych_na_naglowku(tmp_path: Path) -> None:
+    """Sprawdzanie rozpoznaje arkusz zleceń tak jak Odczyt danych, więc arkusz z powtórzonym nagłówkiem nie jest
+    arkuszem zleceń: tata słyszy o nagłówku, a nie o wklejonych zleceniach w kolumnach, których nie wiadomo."""
+
+    fixture = make_preparation_fixture(tmp_path)
+    write_register(fixture.register_path, headers=(*REGISTER_HEADERS, "WYKONAWCA "))
+    paste_raw_orders(fixture.register_path, [raw_order(11, datetime(2026, 9, 13, 10)), raw_order(12, datetime(2026, 9, 13, 12))])
+    recorded: list[ProgressEvent] = []
+
+    with pytest.raises(StopError) as raised:
+        run_preparation(fixture, observer=recorded.append)
+
+    assert raised.value.message.code == "POWTORZONY_NAGLOWEK_REJESTRU"
+    assert (recorded[-1].phase, type(recorded[-1])) == (ProgressPhase.READING, PhaseFailed)
+
+
 def test_okres_po_uporzadkowaniu_intermax_przechodzi_z_uporzadkowanymi_zleceniami(tmp_path: Path) -> None:
     fixture = make_preparation_fixture(tmp_path)
     paste_raw_orders(

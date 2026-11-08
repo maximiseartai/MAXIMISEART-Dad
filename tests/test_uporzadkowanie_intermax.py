@@ -2159,6 +2159,19 @@ def test_skoroszyt_bez_czesci_stylow_albo_dokumentu_to_nieczytelny_intermax_bez_
     assert outcome.progress.phase_states[ProgressPhase.READING] == PhaseState.FAILED
 
 
+def test_obramowanie_w_stylach_ktorego_nie_da_sie_odczytac_to_nieczytelny_intermax_bez_zapisu(tmp_path: Path) -> None:
+    """Obramowanie ze stylem linii spoza listy Excela: Odczyt danych go nie potrzebuje, a zapis dnia rozszerza style
+    o obramowania, więc tata słyszy o nieczytelnym INTERMAX, zanim cokolwiek się zapisze."""
+
+    path, _ = _register(tmp_path)
+    rewrite_parts(path, lambda name, data: data.replace(b"<border><left />", b'<border><left style="zly" />', 1) if name == _STYLES else data)
+
+    with _nothing_written(tmp_path, path):
+        stop = _stop(_run(tmp_path))
+
+    assert (stop.message.code, stop.stop_kind) == ("NIECZYTELNY_INTERMAX", "for_tata")
+
+
 def test_pusty_tekst_wspolny_i_biale_znaki_przy_si_nie_przesuwaja_tekstow_zlecen(tmp_path: Path) -> None:
     """``<si/>`` na początku listy tekstów wspólnych i ``<si >`` w nowej linii przy każdym innym: poprawny XML, którego
     Excel nie zapisuje, a który Uporządkowanie czyta tak samo jak zwykły."""
