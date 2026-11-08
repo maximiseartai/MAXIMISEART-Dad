@@ -27,8 +27,11 @@ import ast
 from pathlib import Path
 import re
 import sys
+from typing import get_args
 
 import pytest
+
+from rozliczenia.centrum import contract
 
 from tests.fixtures.expect import assert_expected
 
@@ -65,9 +68,10 @@ def _required_subcommands(path: Path) -> list[str]:
     """Stałe nazwy ``add_parser`` narzędzia, które ma ``add_subparsers(required=True)``; pusta lista bez takiej grupy.
 
     Czyta każde ``add_parser("<nazwa>")`` ze stałą nazwą w pliku, bez rozróżniania grup, bo pierwsze zdanie ma wymienić
-    którąkolwiek z nich. Podkomendy dodane inaczej (w pętli, ze zmiennej) obok stałych nie są sprawdzane. Narzędzie z
-    ``required=True``, z którego nie da się odczytać żadnej stałej nazwy, to ``ValueError``, bo pusta lista
-    przepuściłaby je bez sprawdzenia.
+    którąkolwiek z nich, a podkomenda na każdy wpis katalogu procesów (``add_parser(kind.key)`` w pętli
+    ``for kind in CATALOG.kinds``, Skrypt dla maszyn) to każdy klucz procesu (``contract.ProcessKey``). Podkomendy dodane
+    inaczej (ze zmiennej, w innej pętli) obok tych nie są sprawdzane. Narzędzie z ``required=True``, z którego nie da się
+    odczytać żadnej nazwy, to ``ValueError``, bo pusta lista przepuściłaby je bez sprawdzenia.
     """
 
     calls = [
@@ -82,11 +86,20 @@ def _required_subcommands(path: Path) -> list[str]:
     )
     if not required:
         return []
-    names = [
-        call.args[0].value
-        for method, call in calls
-        if method == "add_parser" and call.args and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str)
-    ]
+    kinds = {
+        node.target.id
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.For) and isinstance(node.target, ast.Name) and ast.unparse(node.iter) == "CATALOG.kinds"
+    }
+    names = []
+    for method, call in calls:
+        if method != "add_parser" or not call.args:
+            continue
+        name = call.args[0]
+        if isinstance(name, ast.Constant) and isinstance(name.value, str):
+            names.append(name.value)
+        elif isinstance(name, ast.Attribute) and name.attr == "key" and isinstance(name.value, ast.Name) and name.value.id in kinds:
+            names += get_args(contract.ProcessKey)
     if not names:
         raise ValueError(
             f"{path.name}: add_subparsers(required=True), a żadnej podkomendy nie da się odczytać ze stałej w "
@@ -202,6 +215,19 @@ def test_pierwsze_zdanie_narzedzia_z_obowiazkowa_podkomenda_ja_wymienia() -> Non
 
 
 PARSER = "import argparse\ncommands = argparse.ArgumentParser().add_subparsers({})\ncommands.add_parser('plan')\ncommands.add_parser('wykonaj')\n"
+
+
+def test_podkomenda_na_kazdy_wpis_katalogu_procesow_to_kazdy_klucz_procesu(tmp_path: Path) -> None:
+    tool = tmp_path / "narzedzie.py"
+    tool.write_text(
+        "import argparse\nfrom rozliczenia.centrum.catalog import CATALOG\n"
+        "commands = argparse.ArgumentParser().add_subparsers(required=True)\n"
+        "for kind in CATALOG.kinds:\n    commands.add_parser(kind.key)\n"
+        "for other in EXTRA:\n    commands.add_parser(other.key)\n",
+        encoding="utf-8",
+    )
+
+    assert _required_subcommands(tool) == ["preparation", "settlement", "efenix", "intermax"]
 
 
 def test_podkomendy_sa_obowiazkowe_tylko_z_required_true(tmp_path: Path) -> None:

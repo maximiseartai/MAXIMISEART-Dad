@@ -20,7 +20,7 @@ from fastapi import APIRouter
 
 from rozliczenia import input_checks, workbook_files
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.process_kind import TemplateRole
+from rozliczenia.centrum.process_kind import ConfigurationNeed, TemplateRole
 from rozliczenia.centrum.keyed_box import KeyJudgement
 from rozliczenia.centrum.tool_freshness import Judgement, ReleaseSource, ToolFreshness, offers_update
 from rozliczenia.centrum.version import short_commit
@@ -47,6 +47,32 @@ class ConfigurationFiles:
             collective_template=COLLECTIVE_TEMPLATE,
             worker_template=WORKER_TEMPLATE,
         )
+
+    @classmethod
+    def in_folder(cls, folder: Path) -> ConfigurationFiles:
+        """Konfiguracja wykonawców i Wzorce w folderze ``folder`` pod nazwami z ``config/`` narzędzia."""
+
+        return cls(
+            worker_config=folder / WORKER_CONFIG.name,
+            internal_template=folder / INTERNAL_TEMPLATE.name,
+            collective_template=folder / COLLECTIVE_TEMPLATE.name,
+            worker_template=folder / WORKER_TEMPLATE.name,
+        )
+
+    def path(self, need: ConfigurationNeed) -> Path:
+        """Plik Konfiguracji, którego wejście procesu potrzebuje jako ``need``."""
+
+        match need:
+            case "worker_config":
+                return self.worker_config
+            case "internal_template":
+                return self.internal_template
+            case "collective_template":
+                return self.collective_template
+            case "worker_template":
+                return self.worker_template
+            case _:
+                assert_never(need)
 
     def templates(self) -> tuple[Template, Template, Template]:
         """Trzy Wzorce w kolejności Konfiguracji, każdy pod swoją rolą i ze Sprawdzaniem procesu, który go używa."""

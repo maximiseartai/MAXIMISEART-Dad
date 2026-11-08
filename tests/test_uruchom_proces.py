@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from dataclasses import replace
 from datetime import datetime
 import importlib.util
@@ -25,7 +26,17 @@ from rozliczenia.preparation_process import PROCESS as PREPARATION
 from rozliczenia.process_run import Stop
 from rozliczenia.settlement_process import PROCESS as SETTLEMENT
 from rozliczenia.telemetry import MetricsStore
-from rozliczenia.tool_files import TOOL_ROOT
+from rozliczenia.tool_files import (
+    COLLECTIVE_TEMPLATE,
+    EFENIX_METRICS,
+    INTERMAX_METRICS,
+    INTERNAL_TEMPLATE,
+    PREPARATION_METRICS,
+    SETTLEMENT_METRICS,
+    TOOL_ROOT,
+    WORKER_CONFIG,
+    WORKER_TEMPLATE,
+)
 
 from tests.fixtures.centrum_processes import run_to_end, settling_centrum
 from tests.fixtures.preparation import (
@@ -554,15 +565,68 @@ def test_bledne_argumenty_koncza_sie_kodem_1_bez_wyniku_json(
     assert not (tmp_path / "metrics.jsonl").exists()
 
 
-def test_opis_uzycia_wymienia_kazdy_proces_z_jego_nazwa() -> None:
+def test_opis_uzycia_wymienia_kazdy_proces_z_jego_nazwa_w_kolejnosci_katalogu_procesow() -> None:
     completed = _completed("--help")
 
     assert (completed.returncode, completed.stderr) == (0, "")
     processes = completed.stdout.split("PROCES\n", 1)[1].split("\n\n", 1)[0].split()
     assert " ".join(processes) == (
-        "settlement Przebieg rozliczeń preparation Przygotowanie pliku zbiorczego "
-        "intermax Uporządkowanie INTERMAX efenix Wycena w efenix"
+        "preparation Przygotowanie pliku zbiorczego settlement Przebieg rozliczeń "
+        "efenix Wycena w efenix intermax Uporządkowanie INTERMAX"
     )
+
+
+_METRICS = "Plik metryk JSONL."
+_DRY_RUN = ("--dry-run", False, False, "Podgląd bez zapisu.")
+# Flagi Skryptu dla maszyn zamrożone z f981e7c6e, ostatniego commitu z podparserami pisanymi ręcznie: kolejność,
+# wymagalność, wartość domyślna i pomoc, na których stoją E2E, benchmark, skille i tools/rownowaznosc.py.
+_FLAGS = {
+    "settlement": [
+        ("--source", True, None, "Plik zbiorczy."),
+        ("--config", False, WORKER_CONFIG, "Konfiguracja wykonawców."),
+        ("--worker-template", False, WORKER_TEMPLATE, "Wzorzec rozliczenia pracownika."),
+        ("--metrics", False, SETTLEMENT_METRICS, _METRICS),
+        _DRY_RUN,
+    ],
+    "preparation": [
+        ("--register", True, None, "Rejestr zleceń."),
+        ("--periods-directory", True, None, "Folder okresów."),
+        ("--period", True, None, "Token okresu, np. 08_14_09_2026."),
+        ("--config", False, WORKER_CONFIG, "Konfiguracja wykonawców."),
+        ("--internal-template", False, INTERNAL_TEMPLATE, "Wzorzec rozliczenia wewnętrznego."),
+        ("--collective-template", False, COLLECTIVE_TEMPLATE, "Wzorzec pliku zbiorczego."),
+        ("--metrics", False, PREPARATION_METRICS, _METRICS),
+        _DRY_RUN,
+    ],
+    "intermax": [
+        ("--register", True, None, "Rejestr zleceń (INTERMAX)."),
+        ("--copies", False, TOOL_ROOT / "Kopie INTERMAX", "Folder Kopii INTERMAX."),
+        ("--metrics", False, INTERMAX_METRICS, _METRICS),
+    ],
+    "efenix": [
+        ("--source", True, None, "Plik zbiorczy."),
+        ("--efenix-url", True, None, "Adres listy zleceń efenix (w testach Atrapy efenix)."),
+        ("--z-przekazaniem", False, False, "Gotowe zlecenia przekaż do akceptacji (tryb z Przekazaniem)."),
+        ("--metrics", False, EFENIX_METRICS, _METRICS),
+    ],
+}
+
+
+def test_kazdy_proces_ma_te_same_flagi_wymagalnosc_domyslne_i_pomoc_co_przed_katalogiem_procesow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parser = _script(monkeypatch)._parser()
+    processes = next(action for action in parser._actions if isinstance(action, argparse._SubParsersAction))
+
+    flags = {
+        name: [
+            (*action.option_strings, action.required, action.default, action.help)
+            for action in process._actions
+            if not isinstance(action, argparse._HelpAction)
+        ]
+        for name, process in processes.choices.items()
+    }
+    assert flags == _FLAGS
 
 
 def _tool_copy(tmp_path: Path) -> Path:

@@ -55,9 +55,10 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 import sys
-from typing import Any, NoReturn
+from typing import Any, Final, NoReturn, assert_never
 
 from pydantic import BaseModel, ConfigDict
 
@@ -68,7 +69,7 @@ from rozliczenia.centrum import contract, run_view
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.efenix_chrome import atrapa_opening
-from rozliczenia.centrum.process_kind import HostParts, PreparedRun, Start
+from rozliczenia.centrum.process_kind import HostParts, Need, ProcessKind, Start
 from rozliczenia.centrum.runs import CONTINUE_HINT
 from rozliczenia.decision import Decision
 from rozliczenia.message import Message
@@ -140,52 +141,49 @@ class _Unattended:
         self.progress = self._progress_view(snapshot)
 
 
-def _prepared(
-    key: contract.ProcessKey, start: Start, metrics: Path, parts: HostParts | None = None
-) -> PreparedRun[Any, Any]:
-    """Uruchomienie bez Kopii wejścia, z plikiem metryk ``metrics`` (``--metrics``) w miejscu pliku metryk procesu."""
-
-    return CATALOG.with_metrics({key: metrics}).prepared(key, start, parts or HostParts(), RunContext())
+_REGISTER: Final = "Rejestr zleceń"
+_CONFIGURATION: Final = ConfigurationFiles.default()
+_PRICING_FLAG: Final = "--z-przekazaniem"
+"""Przełącznik trybu Wyceny w efenix procesu z trybami: z nim „z Przekazaniem”, bez niego tryb domyślny wpisu."""
 
 
-def _settle(args: argparse.Namespace) -> PreparedRun[Any, Any]:
-    start = Start(
-        {"collective_file": args.source, "worker_config": args.config, "worker_template": args.worker_template},
-        period=None,
-        dry_run=args.dry_run,
-    )
-    return _prepared("settlement", start, args.metrics)
+@dataclass(frozen=True)
+class _Flag:
+    """Flaga potrzeby wejścia procesu; ``default`` ``None``: flaga wymagana, ``path``: wartość to ścieżka."""
+
+    option: str
+    help: str
+    default: Path | None = None
+    path: bool = True
 
 
-def _prepare(args: argparse.Namespace) -> PreparedRun[Any, Any]:
-    start = Start(
-        {
-            "register": args.register,
-            "periods_directory": args.periods_directory,
-            "worker_config": args.config,
-            "internal_template": args.internal_template,
-            "collective_template": args.collective_template,
-        },
-        period=args.period,
-        dry_run=args.dry_run,
-    )
-    return _prepared("preparation", start, args.metrics)
+def _flag(need: Need, kind: ProcessKind[Any, Any]) -> _Flag:
+    """Flaga Skryptu dla maszyn dla potrzeby ``need`` procesu ``kind``; domyślne pliki to te z Centrum."""
 
-
-def _order(args: argparse.Namespace) -> PreparedRun[Any, Any]:
-    start = Start({"register": args.register, "copies_directory": args.copies}, period=None, dry_run=False)
-    return _prepared("intermax", start, args.metrics)
-
-
-def _price(args: argparse.Namespace) -> PreparedRun[Any, Any]:
-    # Bez tempa ludzkiego: Skrypt dla maszyn biegnie tylko na Atrapie efenix (ADR 0024), w nowym Chromium bez sesji taty.
-    start = Start(
-        {"collective_file": args.source},
-        period=None,
-        dry_run=False,
-        pricing="z Przekazaniem" if args.z_przekazaniem else None,
-    )
-    return _prepared("efenix", start, args.metrics, HostParts(efenix=atrapa_opening(args.efenix_url)))
+    match need:
+        case "collective_file":
+            return _Flag("--source", "Plik zbiorczy.")
+        case "register":
+            name = kind.view.register_name
+            return _Flag("--register", f"{name}." if name == _REGISTER else f"{_REGISTER} ({name}).")
+        case "periods_directory":
+            return _Flag("--periods-directory", "Folder okresów.")
+        case "period":
+            return _Flag("--period", "Token okresu, np. 08_14_09_2026.", path=False)
+        case "worker_config":
+            return _Flag("--config", "Konfiguracja wykonawców.", _CONFIGURATION.path(need))
+        case "internal_template":
+            return _Flag("--internal-template", "Wzorzec rozliczenia wewnętrznego.", _CONFIGURATION.path(need))
+        case "collective_template":
+            return _Flag("--collective-template", "Wzorzec pliku zbiorczego.", _CONFIGURATION.path(need))
+        case "worker_template":
+            return _Flag("--worker-template", "Wzorzec rozliczenia pracownika.", _CONFIGURATION.path(need))
+        case "copies_directory":
+            return _Flag("--copies", "Folder Kopii INTERMAX.", intermax_copies.default_directory())
+        case "efenix_window":
+            return _Flag("--efenix-url", "Adres listy zleceń efenix (w testach Atrapy efenix).", path=False)
+        case _:
+            assert_never(need)
 
 
 class _Parser(argparse.ArgumentParser):
@@ -195,64 +193,58 @@ class _Parser(argparse.ArgumentParser):
 
 
 def _parser() -> argparse.ArgumentParser:
-    files = ConfigurationFiles.default()
     parser = _Parser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    processes = parser.add_subparsers(required=True, metavar="PROCES")
-
-    settlement = processes.add_parser("settlement", help=CATALOG.kind("settlement").title)
-    settlement.add_argument("--source", type=Path, required=True, help="Plik zbiorczy.")
-    settlement.add_argument("--config", type=Path, default=files.worker_config, help="Konfiguracja wykonawców.")
-    settlement.add_argument(
-        "--worker-template", type=Path, default=files.worker_template, help="Wzorzec rozliczenia pracownika."
-    )
-    settlement.add_argument(
-        "--metrics", type=Path, default=CATALOG.metrics_paths["settlement"], help="Plik metryk JSONL."
-    )
-    settlement.add_argument("--dry-run", action="store_true", help="Podgląd bez zapisu.")
-    settlement.set_defaults(prepare=_settle)
-
-    preparation = processes.add_parser("preparation", help=CATALOG.kind("preparation").title)
-    preparation.add_argument("--register", type=Path, required=True, help="Rejestr zleceń.")
-    preparation.add_argument("--periods-directory", type=Path, required=True, help="Folder okresów.")
-    preparation.add_argument("--period", required=True, help="Token okresu, np. 08_14_09_2026.")
-    preparation.add_argument("--config", type=Path, default=files.worker_config, help="Konfiguracja wykonawców.")
-    preparation.add_argument(
-        "--internal-template", type=Path, default=files.internal_template, help="Wzorzec rozliczenia wewnętrznego."
-    )
-    preparation.add_argument(
-        "--collective-template", type=Path, default=files.collective_template, help="Wzorzec pliku zbiorczego."
-    )
-    preparation.add_argument(
-        "--metrics", type=Path, default=CATALOG.metrics_paths["preparation"], help="Plik metryk JSONL."
-    )
-    preparation.add_argument("--dry-run", action="store_true", help="Podgląd bez zapisu.")
-    preparation.set_defaults(prepare=_prepare)
-
-    ordering = processes.add_parser("intermax", help=CATALOG.kind("intermax").title)
-    ordering.add_argument("--register", type=Path, required=True, help="Rejestr zleceń (INTERMAX).")
-    ordering.add_argument(
-        "--copies", type=Path, default=intermax_copies.default_directory(), help="Folder Kopii INTERMAX."
-    )
-    ordering.add_argument(
-        "--metrics", type=Path, default=CATALOG.metrics_paths["intermax"], help="Plik metryk JSONL."
-    )
-    ordering.set_defaults(prepare=_order)
-
-    pricing = processes.add_parser("efenix", help=CATALOG.kind("efenix").title)
-    pricing.add_argument("--source", type=Path, required=True, help="Plik zbiorczy.")
-    pricing.add_argument("--efenix-url", required=True, help="Adres listy zleceń efenix (w testach Atrapy efenix).")
-    pricing.add_argument(
-        "--z-przekazaniem", action="store_true", help="Gotowe zlecenia przekaż do akceptacji (tryb z Przekazaniem)."
-    )
-    pricing.add_argument("--metrics", type=Path, default=CATALOG.metrics_paths["efenix"], help="Plik metryk JSONL.")
-    pricing.set_defaults(prepare=_price)
+    processes = parser.add_subparsers(required=True, metavar="PROCES", dest="process")
+    for kind in CATALOG.kinds:
+        process = processes.add_parser(kind.key, help=kind.title)
+        for need in kind.needs:
+            flag = _flag(need, kind)
+            process.add_argument(
+                flag.option,
+                dest=need,
+                metavar=flag.option.removeprefix("--").replace("-", "_").upper(),
+                type=Path if flag.path else str,
+                required=flag.default is None,
+                default=flag.default,
+                help=flag.help,
+            )
+        if kind.view.pricing_modes:
+            process.add_argument(
+                _PRICING_FLAG,
+                dest="handover",
+                action="store_true",
+                help="Gotowe zlecenia przekaż do akceptacji (tryb z Przekazaniem).",
+            )
+        process.add_argument("--metrics", type=Path, default=CATALOG.metrics_paths[kind.key], help="Plik metryk JSONL.")
+        if kind.core.preview is not None:
+            process.add_argument("--dry-run", action="store_true", help="Podgląd bez zapisu.")
     return parser
+
+
+def _start(kind: ProcessKind[Any, Any], args: argparse.Namespace) -> Start:
+    """Start z flag procesu ``kind``: flaga potrzeby ma ``dest`` potrzeby, a przełącznika, którego proces nie ma, nie ma."""
+
+    values = vars(args)
+    return Start(
+        {need: values[need] for need in kind.path_needs},
+        period=values.get("period"),
+        dry_run=values.get("dry_run", False),
+        pricing="z Przekazaniem" if values.get("handover") else None,
+    )
+
+
+def _parts(kind: ProcessKind[Any, Any], args: argparse.Namespace) -> HostParts:
+    # Bez tempa ludzkiego: Skrypt dla maszyn biegnie tylko na Atrapie efenix (ADR 0024), w nowym Chromium bez sesji taty.
+    return HostParts(efenix=atrapa_opening(args.efenix_window)) if "efenix_window" in kind.needs else HostParts()
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    prepare: Callable[[argparse.Namespace], PreparedRun[Any, Any]] = args.prepare
-    prepared = prepare(args)
+    kind = CATALOG.kind(args.process)
+    # Bez Kopii wejścia, z plikiem metryk ``--metrics`` w miejscu pliku metryk procesu.
+    prepared = CATALOG.with_metrics({kind.key: args.metrics}).prepared(
+        kind.key, _start(kind, args), _parts(kind, args), RunContext()
+    )
     unattended = _Unattended(prepared.progress_view)
     outcome = prepared.conduct(unattended)
     result = ProcessResult.of(outcome, unattended.progress)

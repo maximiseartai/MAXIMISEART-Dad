@@ -810,12 +810,18 @@ IN_EFENIX = [
 ]
 
 
-def _efenix(tmp_path: Path, in_efenix: list[AtrapaOrder] | None = None, result: str = "WYMAGA_SPRAWDZENIA") -> Produced:
+def _efenix(
+    tmp_path: Path,
+    in_efenix: list[AtrapaOrder] | None = None,
+    result: str = "WYMAGA_SPRAWDZENIA",
+    pricing: str = "bez Przekazania",
+) -> Produced:
     with atrapa_efenix(in_efenix or IN_EFENIX, prices=_TATA_PRICES) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
         write_collective_file(centrum.period_parent, PRICED)
         write_report_key(ToolDirectory(tmp_path))
-        started = centrum.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "dry_run": False})
+        request = {"process": "efenix", "period": PERIOD, "dry_run": False, "pricing": pricing}
+        started = centrum.client.post("/api/runs", json=request)
         assert started.status_code == 200, started.json()
         assert finished_view(centrum.client)["result"]["result"] == result
     return Produced(_archive_file(centrum.surroundings.report_box, tmp_path), ("--efenix-dzis", TODAY.isoformat()))
@@ -856,6 +862,31 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
     if process == "efenix":
         actions = {step["action"] for order in record["efenix_orders"] for step in order["steps"]}
         assert actions == {"szukanie", "otwarcie zlecenia", "data wykonania", "Wycena Emmetta", "ilość"}
+
+
+@pytest.mark.parametrize(
+    ("pricing", "change", "replayed_pricing"),
+    [
+        ("z Przekazaniem", lambda record: None, "z Przekazaniem"),
+        ("bez Przekazania", lambda record: record.pop("pricing"), "bez Przekazania"),
+    ],
+    ids=["z_przekazaniem", "logi_sprzed_trybow"],
+)
+def test_logi_wyceny_w_efenix_odtwarzaja_sie_w_trybie_z_logow_a_sprzed_trybow_bez_przekazania(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], pricing: str, change: Callable[[dict[str, Any]], None], replayed_pricing: str
+) -> None:
+    """Wycena w efenix z Przekazaniem do akceptacji odtwarza się w tym trybie, z tym samym śladem zleceń, a Logi sprzed
+    trybów (bez pola trybu) w trybie bez Przekazania, w którym wtedy biegła każda Wycena (ADR 0027)."""
+
+    produced = _efenix(tmp_path / "taty", pricing=pricing)
+    logs = _changed(produced, tmp_path, change)
+    kept = tmp_path / "odtworzenie"
+
+    code, lines = _replayed(capsys, logs, "--na-tym-drzewie", "--zachowaj", kept, *produced.arguments)
+
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    replayed = json.loads((kept / "odtworzone-logi.json").read_text(encoding="utf-8"))
+    assert replayed["pricing"] == replayed_pricing
 
 
 def _title(record: dict[str, Any]) -> str:

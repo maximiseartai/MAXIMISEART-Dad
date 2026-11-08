@@ -56,7 +56,7 @@ import re
 import shutil
 import sys
 import tempfile
-from typing import Literal
+from typing import Literal, get_args
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -68,6 +68,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 import potomne
 from repo import BASE, ROOT
 import repo
+from rozliczenia.centrum import contract
 from rozliczenia.period_folder import PeriodFolder
 import syntetyczne_wzorce
 
@@ -82,6 +83,9 @@ _WRITE_TIME = "docProps/core.xml"
 _FIELDS = 5
 
 Process = Literal["settlement", "preparation", "intermax"]
+"""Proces ze scenariuszami: klucz procesu katalogu bez Wyceny w efenix, która potrzebuje Atrapy efenix w Chromium, a
+scenariusz to tylko pliki w folderze."""
+assert set(get_args(Process)) < set(get_args(contract.ProcessKey)), "proces scenariusza to klucz procesu katalogu"
 
 
 @dataclass(frozen=True)

@@ -85,14 +85,8 @@ class PeriodStarts:
                 return chosen[need]
             case "collective_file":
                 return located_period_folder(chosen["periods_directory"], period).collective_file
-            case "worker_config":
-                return self.configuration.worker_config
-            case "internal_template":
-                return self.configuration.internal_template
-            case "collective_template":
-                return self.configuration.collective_template
-            case "worker_template":
-                return self.configuration.worker_template
+            case "worker_config" | "internal_template" | "collective_template" | "worker_template":
+                return self.configuration.path(need)
             case "copies_directory":
                 raise ValueError("Kopie INTERMAX ma tylko Uporządkowanie INTERMAX, które nie ma okresu (ADR 0019)")
             case _:
