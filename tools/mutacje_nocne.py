@@ -28,12 +28,12 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   (``Merge pull request #N`` albo squash ``… (#N)``); gałąź zbudowana na innej wnosi swoje commity do kilku PR-ów, a
   temat scalenia mówi, który z nich je scalił. Bez numeru w temacie PR podaje ``gh api …/commits/<sha>/pulls``. Na PR
   przypada jedno issue ``Przeżyte mutacje z #N`` z etykietami ``ETYKIETY``, a w nim linie
-  ``MUTACJA <plik>:<linia> <opis> | klucz <klucz>`` (id jak w ``NIEWYKRYTA``, klucz z ``mutacje_zmiany.fingerprint``),
+  ``MUTACJA <plik>:<linia> <opis> | klucz <klucz>`` (z pól zapisu części: id jak w ``NIEWYKRYTA``, klucz z ``mutacje_zmiany.fingerprint``),
   a mutacja bez werdyktu ma na końcu ``BEZ_WERDYKTU``: część po limicie czasu jej nie sprawdziła, więc noc nie wraca do
   jej zakresu, a sprawdza ją agent PR-u.
   Mutacji, której klucz issue już ma w treści albo komentarzu, nie dostaje drugi raz; nowe idą do istniejącego issue
   komentarzem, a zamknięte issue z nowymi wraca otwarte z ``ready-for-agent``.
-  Część bez zapisu albo z porażką inną niż przeżyte mutacje i mutacje bez werdyktu (testy padają albo nie kończą się
+  Część bez zapisu albo z kodem wyjścia spoza ``mutacje_zmiany.KODY_Z_WYNIKIEM`` (testy padają albo nie kończą się
   w limicie czasu części bez mutacji, zły wyjątek) czerwieni run po zgłoszeniu reszty, także przeżytych mutacji z jej
   zapisu, więc następna noc liczy od tej samej bazy, z tym samym limitem mutacji. Zgłoszone mutacje się nie powtórzą, także gdy PR z
   następnego dnia przesunie ich linie, bo klucz nie ma numerów linii.
@@ -108,8 +108,8 @@ ARTEFAKT_SKILLI = "mutacje-skilli-"
 # Artefakt planu z plikiem ``--zakres``: baza i koniec zakresu nocy, od którego zaczyna następna noc.
 ARTEFAKT_ZAKRESU = "zakres-nocy"
 ZAKRES = "zakres.json"
-_ID = re.compile(r"(?P<plik>[^:\s]+):[1-9][0-9]* \S.*")
-_KLUCZ = re.compile(r"\| klucz (?P<klucz>[0-9a-f]{12})\b")
+# Klucz z linii ``MUTACJA`` w treści issue; długość klucza daje ``mutacje_zmiany.fingerprint``.
+_KLUCZ = re.compile(r"\| klucz (?P<klucz>[0-9a-f]+)\b")
 # Koniec linii ``MUTACJA`` mutacji, której część nie dała werdyktu przed limitem czasu.
 BEZ_WERDYKTU = " | bez werdyktu w limicie czasu części"
 
@@ -192,23 +192,29 @@ def zaplanuj(github: GitHub, od: str, zakres: Path | None) -> int:
 @dataclass(frozen=True)
 class Przezyta:
     """Przeżyta mutacja z zapisu części, a z ``bez_werdyktu`` mutacja, której część nie dała werdyktu przed limitem
-    czasu: nazwa ``<plik>:<linia> <opis>``, zmienione linie, które psuje, i jej klucz."""
+    czasu: plik, linia i opis jej nazwy, zmienione linie, które psuje, i jej klucz."""
 
-    id: str
+    plik: str
+    linia: int
+    opis: str
     linie: tuple[int, ...]
     klucz: str
     bez_werdyktu: bool = False
 
-    @property
-    def linia(self) -> str:
-        return f"MUTACJA {self.id} | klucz {self.klucz}{BEZ_WERDYKTU if self.bez_werdyktu else ''}"
+    @classmethod
+    def z_zapisu(cls, wpis: dict[str, Any], *, bez_werdyktu: bool = False) -> Przezyta:
+        """Wpis ``mutacje_zmiany.entry``; wpis bez któregoś pola to ``ValueError``."""
+
+        try:
+            return cls(str(wpis["plik"]), int(wpis["linia"]), str(wpis["opis"]), tuple(wpis["linie"]), str(wpis["klucz"]), bez_werdyktu)
+        except KeyError as blad:
+            raise ValueError(f"wpis mutacji bez pola {blad}: {wpis}") from None
 
     @property
-    def plik(self) -> str:
-        znalezione = _ID.fullmatch(self.id)
-        if znalezione is None:
-            raise ValueError(f"przeżyta mutacja bez postaci <plik>:<linia> <opis>: {self.id}")
-        return znalezione["plik"]
+    def w_issue(self) -> str:
+        """Linia ``MUTACJA`` issue: nazwa jak w ``NIEWYKRYTA`` i klucz, po którym noc nie zgłasza jej drugi raz."""
+
+        return f"MUTACJA {self.plik}:{self.linia} {self.opis} | klucz {self.klucz}{BEZ_WERDYKTU if self.bez_werdyktu else ''}"
 
 
 def zapisy(katalog: Path, liczba: int) -> tuple[list[Przezyta], list[str]]:
@@ -222,14 +228,14 @@ def zapisy(katalog: Path, liczba: int) -> tuple[list[Przezyta], list[str]]:
     for numer in range(1, liczba + 1):
         try:
             zapis = json.loads((katalog / f"{ARTEFAKT}{numer}" / ZAPIS).read_text(encoding="utf-8"))
+            # Część, której limit czasu minął przed werdyktem części mutacji, też zapisuje przeżyte z reszty.
+            czesci = [Przezyta.z_zapisu(wpis) for wpis in zapis.get("przezyte") or []]
+            czesci += [Przezyta.z_zapisu(wpis, bez_werdyktu=True) for wpis in zapis.get("bez_werdyktu") or []]
         except (OSError, ValueError) as blad:
             problemy.append(f"część {numer}/{liczba} bez zapisu: {blad}")
             continue
-        # Część, której limit czasu minął przed werdyktem części mutacji, też zapisuje przeżyte z reszty.
-        przezyte += [Przezyta(wpis["id"], tuple(wpis["linie"]), wpis["klucz"]) for wpis in zapis.get("przezyte") or []]
-        bez_werdyktu = [Przezyta(wpis["id"], tuple(wpis["linie"]), wpis["klucz"], bez_werdyktu=True) for wpis in zapis.get("bez_werdyktu") or []]
-        przezyte += bez_werdyktu
-        if not bez_werdyktu and not str(zapis.get("wynik")).startswith((mutacje_zmiany.OK, mutacje_zmiany.SURVIVED)):
+        przezyte += czesci
+        if zapis.get("kod") not in mutacje_zmiany.KODY_Z_WYNIKIEM:
             problemy.append(f"część {numer}/{liczba}: {zapis.get('wynik')}")
     return przezyte, problemy
 
@@ -320,7 +326,7 @@ def wyniki_skilli(plan: plan_runu.Plan, katalog: Path) -> tuple[list[str], list[
         if brak := sorted(zaplanowane - {jednostka["klucz"] for jednostka in zapis["jednostki"]}):
             problemy.append(f"{zadanie.nazwa}: jednostki bez wyniku: {', '.join(brak)}")
         padly |= zaplanowane & {jednostka["klucz"] for jednostka in zapis["jednostki"] if jednostka["status"] != "ok"}
-        blisko += [(wpis.pop("klucz"), NearLimit(**wpis)) for wpis in zapis["blisko_limitu"]]
+        blisko += [NearLimit.from_record(wpis) for wpis in zapis["blisko_limitu"]]
     return sorted(padly), blisko, problemy
 
 
@@ -392,7 +398,7 @@ def akcje(github: GitHub, przypisane: dict[Autor, list[Przezyta]], run: str) -> 
         istniejace.setdefault(znalezione["title"], znalezione)
     wynik: list[Akcja] = []
     for kto, mutacje in przypisane.items():
-        linie = [mutacja.linia for mutacja in mutacje]
+        linie = [mutacja.w_issue for mutacja in mutacje]
         issue = istniejace.get(kto.tytul)
         if issue is None:
             tresc = [
@@ -410,7 +416,7 @@ def akcje(github: GitHub, przypisane: dict[Autor, list[Przezyta]], run: str) -> 
         znane = "\n".join([issue.get("body") or "", *(komentarz["body"] or "" for komentarz in strony(github, f"{REPO}/issues/{issue['number']}/comments"))])
         klucze = {znalezione["klucz"] for znalezione in _KLUCZ.finditer(znane)}
         if nowe := [mutacja for mutacja in mutacje if mutacja.klucz not in klucze]:
-            tresc = [f"Nowe przeżyte mutacje z [runu]({run}):", "", *blok_kodu([mutacja.linia for mutacja in nowe]), *_rada_bez_werdyktu(nowe)]
+            tresc = [f"Nowe przeżyte mutacje z [runu]({run}):", "", *blok_kodu([mutacja.w_issue for mutacja in nowe]), *_rada_bez_werdyktu(nowe)]
             wynik.append(_uzupelnij(issue, "\n".join(tresc)))
     return wynik
 

@@ -160,21 +160,31 @@ def _klucz(nazwa: str) -> str:
 def _przezyta(nazwa: str) -> dict[str, object]:
     """Wpis zapisu części dla mutacji, która psuje tylko linię swojej nazwy, z kluczem ze skrótu nazwy."""
 
-    return {"id": nazwa, "linie": [int(nazwa.split(":")[1].split()[0])], "klucz": _klucz(nazwa)}
+    miejsce, opis = nazwa.split(" ", 1)
+    plik, linia = miejsce.split(":")
+    return {"plik": plik, "linia": int(linia), "opis": opis, "linie": [int(linia)], "klucz": _klucz(nazwa)}
+
+
+def _nazwa(wpis: dict[str, object]) -> str:
+    """Nazwa mutacji wpisu zapisu części, jak w linii ``NIEWYKRYTA`` i ``MUTACJA``."""
+
+    return f"{wpis['plik']}:{wpis['linia']} {wpis['opis']}"
 
 
 def _zapisy(
-    katalog: Path, czesci: dict[int, tuple[str, list[dict[str, object]]]], bez_werdyktu: dict[int, list[dict[str, object]]] | None = None
+    katalog: Path, czesci: dict[int, tuple[tuple[int, str], list[dict[str, object]]]], bez_werdyktu: dict[int, list[dict[str, object]]] | None = None
 ) -> Path:
-    for numer, (wynik, przezyte) in czesci.items():
+    """Zapis każdej części (numer → kod wyjścia z ostatnią linią i przeżyte) w postaci ``tools/mutacje_zmiany.py --zapis``."""
+
+    for numer, ((kod, wynik), przezyte) in czesci.items():
         (katalog / f"mutacje-nocne-{numer}").mkdir(parents=True)
-        zapis = {"czesc": f"{numer}/3", "wynik": wynik, "przezyte": przezyte, "bez_werdyktu": (bez_werdyktu or {}).get(numer, [])}
+        zapis = {"czesc": f"{numer}/3", "kod": kod, "wynik": wynik, "przezyte": przezyte, "bez_werdyktu": (bez_werdyktu or {}).get(numer, [])}
         (katalog / f"mutacje-nocne-{numer}" / "czesc.json").write_text(json.dumps(zapis), encoding="utf-8")
     return katalog
 
 
-PRZEZYLO = "MUTACJE ZMIANY FAIL | przeżyło 2 | mutacje=4 | wyjątki=0 | innego systemu=0"
-OK = "MUTACJE ZMIANY OK | mutacje=3 | wyjątki=0 | innego systemu=0"
+PRZEZYLO = (1, "MUTACJE ZMIANY FAIL | przeżyło 2 | mutacje=4 | wyjątki=0 | innego systemu=0")
+OK = (0, "MUTACJE ZMIANY OK | mutacje=3 | wyjątki=0 | innego systemu=0")
 
 
 def test_przezyta_mutacja_trafia_do_issue_pr_ktory_ostatni_zmienil_jej_linie_a_drugi_przebieg_niczego_nie_dubluje(
@@ -249,7 +259,7 @@ def test_czesc_bez_zapisu_z_uszkodzonym_zapisem_albo_z_porazka_bez_przezytych_cz
 ) -> None:
     repo, baza = _historia(tmp_path)
     github = GitHubWPamieci()
-    testy_padaja = "MUTACJE ZMIANY FAIL | testy dotknięte zmianą padają bez mutacji, więc mutacje niczego nie dowiodą"
+    testy_padaja = (2, "MUTACJE ZMIANY FAIL | testy dotknięte zmianą padają bez mutacji, więc mutacje niczego nie dowiodą")
     zapisy = _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, [_przezyta("src/a.py:1 stała")]), 3: (testy_padaja, [])})
     (zapisy / "mutacje-nocne-4").mkdir()
     (zapisy / "mutacje-nocne-4" / "czesc.json").write_text("", encoding="utf-8")
@@ -260,7 +270,7 @@ def test_czesc_bez_zapisu_z_uszkodzonym_zapisem_albo_z_porazka_bez_przezytych_cz
     assert kod == 1
     assert [issue["title"] for issue in github.issues] == ["Przeżyte mutacje z #11"]
     assert wyjscie[-1].startswith("MUTACJE NOCNE FAIL | część 2/4 bez zapisu: ")
-    assert wyjscie[-1].endswith(f"; część 3/4: {testy_padaja}; część 4/4 bez zapisu: Expecting value: line 1 column 1 (char 0)")
+    assert wyjscie[-1].endswith(f"; część 3/4: {testy_padaja[1]}; część 4/4 bez zapisu: Expecting value: line 1 column 1 (char 0)")
 
 
 def test_mutacje_bez_werdyktu_po_limicie_czasu_czesci_trafiaja_do_issue_ich_pr_a_przebieg_zostaje_zielony(
@@ -272,7 +282,7 @@ def test_mutacje_bez_werdyktu_po_limicie_czasu_czesci_trafiaja_do_issue_ich_pr_a
 
     repo, baza = _historia(tmp_path)
     github = GitHubWPamieci(issues=[{"number": 5, "title": "Przeżyte mutacje z #12", "state": "open", "body": "", "comments": []}])
-    po_limicie = "MUTACJE ZMIANY FAIL | limit czasu części 10500 s minął przed werdyktem 2 mutacji | przeżyło 1 | mutacje=28 | wyjątki=0 | innego systemu=0"
+    po_limicie = (3, "MUTACJE ZMIANY FAIL | limit czasu części 10500 s minął przed werdyktem 2 mutacji | przeżyło 1 | mutacje=28 | wyjątki=0 | innego systemu=0")
     zapisy = _zapisy(
         tmp_path / "zapisy",
         {1: (OK, []), 2: (po_limicie, [_przezyta("src/a.py:1 stała")])},
@@ -305,6 +315,17 @@ def test_czesc_konczy_sie_w_swoim_limicie_czasu_przed_limitem_zadania_ci_ktore_b
     assert not {"--limit-czesci-s", "--limit-s", "--rownolegle"} & set(shlex.split(krok["run"]))
 
 
+def test_krok_czesci_przechodzi_dokladnie_z_kodami_wyjscia_ktorych_zapis_niesie_wynik_mutacji() -> None:
+    """Krok części w ``mutacje-nocne.yml`` zostaje zielony z kodem, z którym zapis części niesie wynik mutacji
+    (``KODY_Z_WYNIKIEM``), więc zgłoszenie dostaje zapis każdej takiej części, a inna porażka czerwieni krok."""
+
+    zadanie = _nocne()["jobs"]["change-mutations"]
+    krok = next(krok for krok in zadanie["steps"] if "tools/mutacje_zmiany.py" in krok.get("run", ""))
+    przepuszczone = {int(kod) for kod in re.findall(r"\$\? -eq ([0-9]+)", krok["run"].partition("||")[2])}
+
+    assert {0, *przepuszczone} == mutacje_zmiany.KODY_Z_WYNIKIEM
+
+
 @pytest.mark.parametrize(
     ("polecenie", "przyczyna"),
     [
@@ -312,7 +333,7 @@ def test_czesc_konczy_sie_w_swoim_limicie_czasu_przed_limitem_zadania_ci_ktore_b
         (["plan", "--baza", "nie-ma-takiego"], "fatal: Needed a single revision"),
         (["plan", "--od", "nie-ma-takiego", "--baza", "nie-ma-takiego"], "fatal: Needed a single revision"),
         (["plan"], "HEAD nie ma commitu sprzed 24 h; podaj --od"),
-        (["zglos", "--baza", "{baza}", "--zapisy", "{zapisy}", "--czesci", "1", "--run", RUN], "przeżyta mutacja bez postaci <plik>:<linia> <opis>: bez linii"),
+        (["zglos", "--baza", "{baza}", "--zapisy", "{zapisy}", "--czesci", "1", "--run", RUN], "część 1/1 bez zapisu: wpis mutacji bez pola 'plik': {wpis}"),
     ],
     ids=["nieznane-od", "nieznana-baza", "ta-sama-od-i-baza", "bez-commitu-sprzed-24-h", "zapis-bez-pliku-mutacji"],
 )
@@ -321,13 +342,14 @@ def test_noc_bez_bazy_albo_z_zapisem_bez_pliku_mutacji_konczy_sie_fail_z_przyczy
 ) -> None:
     # Historia ma same dzisiejsze commity, a GitHub nie ma udanego przebiegu nocy.
     repo, baza = _historia(tmp_path)
-    zapisy = _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, [{"id": "bez linii", "linie": [1], "klucz": _klucz("bez linii")}])})
+    wpis = {"linia": 1, "opis": "stała", "linie": [1], "klucz": _klucz("bez pliku")}
+    zapisy = _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, [wpis])})
     monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
     monkeypatch.setattr(mutacje_nocne, "GhApi", GitHubWPamieci)
 
     kod = mutacje_nocne.main([argument.format(baza=baza, zapisy=zapisy) for argument in polecenie])
 
-    assert (kod, capsys.readouterr().out.splitlines()[-1]) == (1, f"MUTACJE NOCNE FAIL | {przyczyna}")
+    assert (kod, capsys.readouterr().out.splitlines()[-1]) == (1, f"MUTACJE NOCNE FAIL | {przyczyna.format(wpis=wpis)}")
 
 def test_plan_z_roznymi_bazami_od_i_baza_to_blad_uzycia(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as blad:
@@ -376,9 +398,9 @@ def test_mutacja_instrukcji_wielowierszowej_trafia_do_pr_ktory_zmienil_jej_linie
 
     assert kod == 0, capsys.readouterr().out
     # Nazwę mutacji warunku daje linia 3, której PR #30 nie zmienił, a blame tej linii daje commit sprzed nocy.
-    assert any(str(wpis["id"]).startswith("src/a.py:3 warunek") for wpis in przezyte), przezyte
+    assert any(_nazwa(wpis).startswith("src/a.py:3 warunek") for wpis in przezyte), przezyte
     assert [issue["title"] for issue in github.issues] == ["Przeżyte mutacje z #30"]
-    assert all(f"MUTACJA {wpis['id']} | klucz {wpis['klucz']}" in github.issues[0]["body"] for wpis in przezyte)
+    assert all(f"MUTACJA {_nazwa(wpis)} | klucz {wpis['klucz']}" in github.issues[0]["body"] for wpis in przezyte)
 
 
 @pytest.mark.parametrize(("pierwsza", "druga"), [(3, 4), (4, 3)], ids=["pozniejszy-nizej", "pozniejszy-wyzej"])
@@ -400,7 +422,7 @@ def test_mutacja_linii_zmienionych_przez_dwa_pr_trafia_do_pr_scalonego_pozniej(
     kod = mutacje_nocne.zglos(github, repo, baza, _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, cofniecie)}), 1, RUN)
 
     assert kod == 0, capsys.readouterr().out
-    assert [wpis["id"] for wpis in cofniecie] == ["src/a.py:3 zmiana linii 3–4 cofnięta do bazy"]
+    assert [_nazwa(wpis) for wpis in cofniecie] == ["src/a.py:3 zmiana linii 3–4 cofnięta do bazy"]
     assert [issue["title"] for issue in github.issues] == ["Przeżyte mutacje z #41"]
 
 
@@ -424,7 +446,7 @@ def test_mutacja_zgloszona_przed_czerwona_noca_nie_wraca_gdy_nastepny_pr_przesun
     kod = mutacje_nocne.zglos(github, repo, baza, _zapisy(tmp_path / "druga", {1: (PRZEZYLO, druga)}), 1, RUN)
 
     assert kod == 0, capsys.readouterr().out
-    assert all(not str(wpis["id"]).startswith("src/a.py:3 ") for wpis in druga), druga
+    assert all(not _nazwa(wpis).startswith("src/a.py:3 ") for wpis in druga), druga
     assert github.wyslane == wyslane
     assert github.issues[0]["state"] == "closed"
 

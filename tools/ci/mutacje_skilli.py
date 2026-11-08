@@ -72,7 +72,7 @@ def run(step: Step, limit_s: float = LIMIT_S, env: Mapping[str, str] | None = No
         )
     except subprocess.TimeoutExpired:
         return Wynik(f"przekroczył limit {limit_s:.0f} s")
-    near = tuple(mutacje.near_limits(done.stdout))
+    near = tuple(mutacje.near_limits(done))
     if done.returncode != 0:
         return Wynik(f"kod wyjścia {done.returncode}", near)
     if step.verdict is not None and [line.strip() for line in done.stdout.splitlines() if line.strip()][-1:] != [step.verdict]:

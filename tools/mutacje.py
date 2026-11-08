@@ -108,7 +108,7 @@ from collections import defaultdict
 from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 from functools import partial
 import importlib
@@ -123,7 +123,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import NamedTuple, Protocol, TypeVar
+from typing import Any, NamedTuple, Protocol, TypeVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 # ci_lokalnie (brama typów) importuje dopiero w funkcji, bo sam importuje ten moduł.
@@ -682,7 +682,7 @@ def check_all(
     Przed linią werdyktu każdej mutacji linia ``CZAS`` na stderr podaje czas jej polecenia, a mutację, której polecenie
     trwało ponad ``NEAR_LIMIT`` limitu ``limit_s``, linia ``CZAS BLISKO LIMITU`` na stderr przed linią końcową wymienia ze
     skryptem, częścią i limitem (``NearLimit.line``), zanim limit da PRZEKROCZONY CZAS (#911, #927). Log CI skryptu skilla
-    ma obie, bo ``tools/ci/mutacje_skilli.py`` łączy stderr ze stdout i z niego czyta ostrzeżenia (#935). To nie werdykt,
+    ma obie, a ``near_limits`` czyta ostrzeżenia z obu strumieni wyniku skryptu (#935). To nie werdykt,
     więc stdout (werdykty i linia końcowa) i kod wyjścia się nie zmieniają. Czas ma każda mutacja, której polecenie biegło, także po limicie, więc linię ``CZAS`` i
     ostrzeżenie dostaje też PRZEKROCZONY CZAS, który brama typów zmienia w WYKRYTA PRZEZ BRAMĘ TYPÓW, i ZAWIESZENIE,
     które ``in_ci`` liczy jako wykrycie; bez linii ``CZAS`` jest tylko mutacja, której polecenie nie biegło (NIEAKTUALNA, BEZ
@@ -748,7 +748,8 @@ def _script() -> str:
 class NearLimit:
     """Ostrzeżenie ``CZAS BLISKO LIMITU``: mutacja ``name`` skryptu ``script`` (część ``part`` z ``MUTACJE_CZESC``, pusta
     bez niej), której polecenie trwało ``seconds`` z limitu ``limit_s``. ``check_all`` drukuje je linią ``line``, a
-    ``near_limits`` czyta je z wyjścia skryptu, więc noc dostaje je przez zapis wykonania planu CI (#935)."""
+    ``near_limits`` czyta je z wyjścia skryptu, więc noc dostaje je przez zapis wykonania planu CI (#935): wpis
+    ``record`` pod kluczem kroku, który ``from_record`` czyta z powrotem."""
 
     script: str
     part: str
@@ -762,6 +763,19 @@ class NearLimit:
         near = f"CZAS BLISKO LIMITU: {self.script}{part}: {self.name} → {self.seconds} s z limitu --limit-s {self.limit_s:g} s"
         return f"{near} (po nim PRZEKROCZONY CZAS: podziel zakres mutacji albo przyspiesz sprawdzenie)"
 
+    def record(self, key: str) -> dict[str, Any]:
+        """Wpis ``blisko_limitu`` zapisu wykonania zadania planu CI: klucz kroku skilla ``key`` i pola ostrzeżenia."""
+
+        return {"klucz": key, **asdict(self)}
+
+    @classmethod
+    def from_record(cls, entry: dict[str, Any]) -> tuple[str, NearLimit]:
+        """Klucz kroku i ostrzeżenie z wpisu ``record``."""
+
+        fields = dict(entry)
+        key = str(fields.pop("klucz"))
+        return key, cls(**fields)
+
 
 # ``NearLimit.line`` na początku linii; nazwa mutacji kończy się przed ostatnią strzałką przed czasem.
 _NEAR = re.compile(
@@ -770,9 +784,11 @@ _NEAR = re.compile(
 )
 
 
-def near_limits(output: str) -> list[NearLimit]:
-    """Ostrzeżenia ``CZAS BLISKO LIMITU``, które ``check_all`` wydrukował w ``output``, w ich kolejności."""
+def near_limits(done: subprocess.CompletedProcess[str]) -> list[NearLimit]:
+    """Ostrzeżenia ``CZAS BLISKO LIMITU``, które ``check_all`` skryptu ``done`` wydrukował, w ich kolejności: ze stderr,
+    gdzie je drukuje, a też ze stdout, gdy wołający połączył z nim stderr."""
 
+    output = f"{done.stdout or ''}\n{done.stderr or ''}"
     return [NearLimit(found["script"], found["part"] or "", found["name"], int(found["seconds"]), float(found["limit"])) for found in _NEAR.finditer(output)]
 
 
