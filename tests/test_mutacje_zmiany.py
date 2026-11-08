@@ -100,8 +100,8 @@ def test_zmiana_bez_testu_ktory_ja_widzi_konczy_sie_fail_z_nazwa_mutacji_takze_w
     assert sorted(survived) == ["src/rozliczenia/warunek.py:2 bez `b` w `and`", "src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy"]
     assert done.stdout.splitlines()[-1].startswith("MUTACJE ZMIANY FAIL | przeżyło 2")
     written = json.loads(record.read_text(encoding="utf-8"))
-    assert (written["czesc"], written["wynik"]) == ("1/1", done.stdout.splitlines()[-1])
-    assert sorted((entry["id"], entry["linie"]) for entry in written["przezyte"]) == [(name, [2]) for name in sorted(survived)]
+    assert (written["czesc"], written["kod"], written["wynik"]) == ("1/1", 1, done.stdout.splitlines()[-1])
+    assert sorted((_named(entry), entry["linie"]) for entry in written["przezyte"]) == [(name, [2]) for name in sorted(survived)]
     assert len({entry["klucz"] for entry in written["przezyte"]}) == 2
 
 
@@ -120,6 +120,12 @@ def test_czesc_nocy_z_zalegloscia_mutuje_tylko_zmiany_main_do_konca_zakresu_z_pl
     assert done.returncode == kod, done.stdout + done.stderr
     mutated = {line.split(": ", 1)[1].split(":", 1)[0] for line in done.stdout.splitlines() if line.startswith(("WYKRYTA: ", "NIEWYKRYTA: "))}
     assert sorted(mutated) == pliki
+
+
+def _named(entry: dict[str, object]) -> str:
+    """Nazwa mutacji wpisu zapisu części (``--zapis``), jak w linii ``NIEWYKRYTA``."""
+
+    return f"{entry['plik']}:{entry['linia']} {entry['opis']}"
 
 
 def _caught(done: subprocess.CompletedProcess[str]) -> list[str]:
@@ -180,7 +186,7 @@ def test_mutacja_ktora_przezyla_testy_pliku_albo_nie_ma_testow_tez_trafia_do_zap
     assert [line.endswith("żaden test nie zależy od src/rozliczenia/inny.py") for _, line in sorted(survived.items())] == [True, True, False, False]
     assert [line.endswith("(testy pliku)") for _, line in sorted(survived.items())] == [False, False, True, True]
     written = json.loads(record.read_text(encoding="utf-8"))["przezyte"]
-    assert sorted(entry["id"] for entry in written) == sorted(survived)
+    assert sorted(_named(entry) for entry in written) == sorted(survived)
     assert all(entry["linie"] == [2] and len(entry["klucz"]) == 12 for entry in written)
 
 # Jak #674: zmiana dopisuje ``case`` brakującego wariantu, a gołe ``return`` po ``match`` w bazie robi to samo, więc testy
@@ -224,7 +230,7 @@ def test_brama_typow_sprawdza_przezyte_mutacje_operatorow_a_cofniecie_do_bazy_tr
     ], done.stdout
     assert re.search(r"\| brama typów \d+ s \(3 mutacji\)$", next(line for line in done.stdout.splitlines() if line.startswith("CZAS |"))), done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
-    assert sorted(entry["id"] for entry in written["przezyte"]) == [
+    assert sorted(_named(entry) for entry in written["przezyte"]) == [
         "src/rozliczenia/inny.py:2 zmiana linii 2 cofnięta do bazy",
         "src/rozliczenia/warunek.py:15 zmiana linii 15–23 cofnięta do bazy",
         "src/rozliczenia/warunek.py:3 zmiana linii 3 cofnięta do bazy",
@@ -248,9 +254,10 @@ def test_mutacja_ktorej_brama_typow_nie_sprawdzila_w_czasie_trafia_do_zapisu_jak
     assert done.returncode == 3, done.stdout + done.stderr
     assert f"BEZ WERDYKTU: {late} → brama typów, ruff: brak wyniku po 1 s" in done.stdout.splitlines(), done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
+    assert written["kod"] == 3
     assert written["wynik"].startswith("MUTACJE ZMIANY FAIL | limit czasu części 10500 s minął przed werdyktem 1 mutacji | "), written["wynik"]
-    assert [entry["id"] for entry in written["bez_werdyktu"]] == [late]
-    assert late not in [entry["id"] for entry in written["przezyte"]]
+    assert [_named(entry) for entry in written["bez_werdyktu"]] == [late]
+    assert late not in [_named(entry) for entry in written["przezyte"]]
 
 
 # Poprawka dodaje import w jednym fragmencie, a używa go w innym, i zmienną, którą zwraca; test przechodzi z nią i bez
@@ -287,7 +294,7 @@ def test_brama_typow_z_ruff_i_mypy_liczy_blad_mutacji_operatora_a_cofniecie_do_b
     assert [re.sub(r"error: .*  \[", "error: …  [", line) for line in caught] == [
         "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/inny.py:5 `return JEDEN` → `return None` → mypy: src/rozliczenia/inny.py:5: error: …  [return-value]",
     ], done.stdout + done.stderr
-    survived = [entry["id"] for entry in json.loads(record.read_text(encoding="utf-8"))["przezyte"]]
+    survived = [_named(entry) for entry in json.loads(record.read_text(encoding="utf-8"))["przezyte"]]
     assert {
         "src/rozliczenia/inny.py:1 zmiana linii 1–3 cofnięta do bazy",
         "src/rozliczenia/warunek.py:16 zmiana linii 16–17 cofnięta do bazy",
@@ -319,7 +326,7 @@ def test_czesc_konczy_sie_zapisem_w_limicie_czasu_czesci_takze_gdy_mutacja_zawie
     assert written["wynik"] == "MUTACJE ZMIANY FAIL | limit czasu części 15 s minął przed werdyktem 2 mutacji | przeżyło 0 | mutacje=2 | wyjątki=0 | innego systemu=0"
     # Testy zawieszone do końca czasu części to nie przeżyta mutacja, ale noc zgłasza ją jako mutację bez werdyktu.
     assert written["przezyte"] == []
-    assert [(entry["id"], entry["linie"]) for entry in written["bez_werdyktu"]] == [
+    assert [(_named(entry), entry["linie"]) for entry in written["bez_werdyktu"]] == [
         ("src/rozliczenia/warunek.py:2 bez `b` w `and`", [2]),
         ("src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy", [2]),
     ]
@@ -349,7 +356,7 @@ def test_mutacja_ktora_wiesza_test_do_limitu_pytest_timeout_jest_wykryta_a_nie_p
         f"ZAWIESZENIE: src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy {hang}",
     ], done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
-    assert (written["wynik"], written["przezyte"]) == ("MUTACJE ZMIANY OK | mutacje=2 | wyjątki=0 | innego systemu=0", [])
+    assert (written["kod"], written["wynik"], written["przezyte"]) == (0, "MUTACJE ZMIANY OK | mutacje=2 | wyjątki=0 | innego systemu=0", [])
 
 
 @pytest.mark.parametrize("further", [False, True], ids=["ostatni-krok", "z-dalszymi-krokami"])
@@ -373,7 +380,7 @@ def test_mutacja_ktora_tylko_spowalnia_test_ponad_limit_narzedzia_przezywa(tmp_p
     ], done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
     assert written["wynik"].startswith("MUTACJE ZMIANY FAIL | przeżyło 2"), written["wynik"]
-    assert sorted(entry["id"] for entry in written["przezyte"]) == [
+    assert sorted(_named(entry) for entry in written["przezyte"]) == [
         "src/rozliczenia/warunek.py:2 bez `b` w `and`",
         "src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy",
     ]
@@ -394,7 +401,7 @@ def test_mutacja_ktora_zawiesza_dopiero_testy_pliku_konczy_sie_bez_werdyktu_w_li
     verdict = next(line for line in done.stdout.splitlines() if " → " in line)
     assert verdict.startswith("BEZ WERDYKTU: src/rozliczenia/warunek.py:1 zmiana linii 1 cofnięta do bazy → ") and verdict.endswith(" (testy pliku)"), done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
-    assert (written["przezyte"], [entry["id"] for entry in written["bez_werdyktu"]]) == ([], ["src/rozliczenia/warunek.py:1 zmiana linii 1 cofnięta do bazy"])
+    assert (written["przezyte"], [_named(entry) for entry in written["bez_werdyktu"]]) == ([], ["src/rozliczenia/warunek.py:1 zmiana linii 1 cofnięta do bazy"])
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="linię Failed: Timeout drukuje metoda signal pytest-timeout, a noc biegnie na Linuksie")

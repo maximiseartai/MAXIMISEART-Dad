@@ -88,9 +88,9 @@ pokryciu, przed werdyktem którejś mutacji. Po limicie żadne polecenie już ni
 linię ``BEZ WERDYKTU``, więc część kończy się zapisem przed limitem czasu zadania CI.
 W CI biegnie nocą na Linuksie, na ``main``, od bazy z ``tools/mutacje_nocne.py``, w częściach
 workflow ``mutacje-nocne.yml``. Z ``--zapis`` każda część zapisuje swoją ostatnią linię, przeżyte mutacje i mutacje bez
-werdyktu po limicie czasu części: nazwę (``<plik>:<linia> <opis>``, jak w linii ``NIEWYKRYTA``), zmienione linie, które
-mutacja psuje (``Mutant.lines``), i klucz (``fingerprint``), a ``tools/mutacje_nocne.py`` zakłada z nich issue PR-u,
-który ostatni zmienił te linie.
+werdyktu po limicie czasu części: plik, linię i opis z nazwy (``<plik>:<linia> <opis>``, jak w linii ``NIEWYKRYTA``),
+zmienione linie, które mutacja psuje (``Mutant.lines``), i klucz (``fingerprint``), a do tego kod wyjścia; z nich
+``tools/mutacje_nocne.py`` zakłada issue PR-u, który ostatni zmienił te linie.
 
 Granica: nie zastępuje mutacji z opisu PR. Obietnicę, której żadna z tych mutacji nie psuje (inny klucz
 wyszukiwania, kolejność kroków), samo usunięcie linii, dekoratory, argument pozycyjny, kod poza ``src/`` i ``tools/``
@@ -159,6 +159,9 @@ PART_LIMIT_S = 10500
 # ``tools/mutacje_nocne.py`` tylko zgłasza.
 OK = "MUTACJE ZMIANY OK"
 SURVIVED = "MUTACJE ZMIANY FAIL | przeżyło"
+# Kody wyjścia części, której zapis ``--zapis`` niesie wynik mutacji: 0 bez przeżytych, 1 z przeżytymi, 3 z mutacjami bez
+# werdyktu po limicie czasu części; kod 2 nic o mutacjach nie mówi.
+KODY_Z_WYNIKIEM = frozenset({0, 1, 3})
 # Linia poleceń Windows ma najwyżej 32 767 znaków; dłuższa lista testów idzie jako pliki testów.
 COMMAND_LIMIT = 20_000
 EXCEPTION = re.compile(r"#\s*mutacje-zmiany:(?P<rest>.*)$")
@@ -806,6 +809,7 @@ def main(argv: list[str] | None = None, *, gate: mutacje.Gate = mutacje.static_g
         args.zapis.parent.mkdir(parents=True, exist_ok=True)
         record = {
             "czesc": str(args.czesc),
+            "kod": code,
             "wynik": result,
             "przezyte": [entry(mutant, text) for mutant, text in survived],
             "bez_werdyktu": [entry(mutant, text) for mutant, text in unchecked],
@@ -821,7 +825,7 @@ def _name(mutant: Mutant) -> str:
 def entry(mutant: Mutant, text: str) -> dict[str, object]:
     """Przeżyta albo bez werdyktu mutacja pliku o treści ``text`` w zapisie ``--zapis``, który czyta ``tools/mutacje_nocne.py``."""
 
-    return {"id": _name(mutant), "linie": sorted(mutant.lines), "klucz": fingerprint(mutant, text)}
+    return {"plik": mutant.path, "linia": mutant.line, "opis": mutant.description, "linie": sorted(mutant.lines), "klucz": fingerprint(mutant, text)}
 
 
 def _last_changes(every: Sequence[Mutant], root: Path) -> list[frozenset[str]]:

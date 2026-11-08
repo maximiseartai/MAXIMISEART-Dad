@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict
 import json
 import os
 from pathlib import Path
@@ -113,7 +112,7 @@ def _krok_skilla(klucz: Klucz, katalog: Katalog) -> tuple[dict[str, object], lis
         wynik = mutacje_skilli.run(krok, env={jednostka.ZMIENNA_CZESCI: str(klucz.czesc)} if klucz.czesc else None)
     s = round(time.monotonic() - start, 1)
     print(f"OK   {klucz} ({s:.0f} s)" if wynik.powod is None else f"FAIL {klucz} ({s:.0f} s): {wynik.powod}", flush=True)
-    blisko = [{"klucz": nazwa, **asdict(ostrzezenie)} for ostrzezenie in wynik.blisko_limitu]
+    blisko = [ostrzezenie.record(nazwa) for ostrzezenie in wynik.blisko_limitu]
     return {"klucz": nazwa, "s": s, "status": "ok" if wynik.powod is None else "fail"}, blisko
 
 
