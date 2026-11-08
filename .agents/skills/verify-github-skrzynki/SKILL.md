@@ -45,9 +45,10 @@ finding for the PR, not something to make pass.
   trial repositories like Dad's (Issues RW, Contents RW, Metadata R): `~/.config/maximiseart/token-repo-probne.txt`. The
   script reads the file and never prints it; evidence and recordings name only the kind of key. Cleanup and the
   harness always use the `gh` key (admin of both trial repositories: only it can delete issues and tags).
-- Aktualność asks without a key, like Centrum. GitHub allows 60 such requests per hour per address and the agents on
-  this Mac share it; `--aktualnosc-z-kluczem` asks with the `gh` key instead, and the verdict then says so in
-  `NIESPRAWDZONE`.
+- Aktualność asks without a key, like Centrum without Dad's key file; with the file, Centrum asks with the Token do
+  Zgłoszeń (`KeyedBox.github_key`). GitHub allows 60 requests without a key per hour per address and the agents on
+  this Mac share it; `--aktualnosc-z-kluczem` asks with the `gh` key instead (the proxy adds it, not
+  `tool_freshness`), and the verdict then says so in `NIESPRAWDZONE`.
 
 ## Doctor
 

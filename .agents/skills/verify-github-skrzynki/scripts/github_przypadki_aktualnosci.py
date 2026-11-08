@@ -111,6 +111,12 @@ def _asked(client: Client) -> int:
     return len(client.proxy.exchanges)
 
 
+def _asking(client: Client) -> tool_freshness._Asking:
+    """Pytania jednego sprawdzenia bez tokenu, jak u taty bez pliku klucza."""
+
+    return tool_freshness._Asking(client.api, TIMEOUT_S, None)
+
+
 # --- przypadki ------------------------------------------------------------------------------------------------------
 
 
@@ -120,7 +126,7 @@ def _prepare_tag_pages(live: AktualnoscLive, earlier: Facts) -> Facts:
 
 
 def _tag_pages(client: Client, facts: Facts) -> object:
-    found = tool_freshness._tag_commits(f"{client.api}/tags?per_page={facts['na_stronie']}", TIMEOUT_S)
+    found = tool_freshness._tag_commits(_asking(client), f"{client.api}/tags?per_page={facts['na_stronie']}")
     return (found, _asked(client))
 
 
@@ -205,7 +211,7 @@ def _prepare_branch(live: AktualnoscLive, earlier: Facts) -> Facts:
 
 
 def _on_line(client: Client, facts: Facts) -> object:
-    return tool_freshness._on_first_parent_line(client.api, str(facts["commit"]), str(facts["czubek"]), TIMEOUT_S)
+    return tool_freshness._on_first_parent_line(_asking(client), str(facts["commit"]), str(facts["czubek"]))
 
 
 def _prepare_not_ancestor(live: AktualnoscLive, earlier: Facts) -> Facts:
@@ -222,12 +228,7 @@ def _prepare_before_first(live: AktualnoscLive, earlier: Facts) -> Facts:
 
 def _before_first(client: Client, facts: Facts) -> object:
     try:
-        return tool_freshness._compare(
-            client.api,
-            str(facts["commit"]),
-            f"{facts['czubek']}~{facts['glebokosc']}",
-            TIMEOUT_S,
-        )
+        return tool_freshness._compare(_asking(client), str(facts["commit"]), f"{facts['czubek']}~{facts['glebokosc']}")
     except tool_freshness._NotFound:
         return "404: GitHub nie zna takiego commitu (_NotFound)"
     except tool_freshness._NoAnswer:

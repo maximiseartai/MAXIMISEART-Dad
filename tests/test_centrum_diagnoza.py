@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
@@ -803,8 +804,13 @@ def test_nowsza_wersja_bez_innej_przyczyny_wyjasnia_ze_trzeba_zaktualizowac_narz
         (FakeGitHub(release=None), "Nie sprawdzono: brak połączenia z GitHubem."),
         (FakeGitHub(tool_commit=None), "Nie sprawdzono: narzędzie na tym komputerze nie ma commitu Gita."),
         (FakeGitHub(release=NO_RELEASE), "Nie sprawdzono: na GitHubie nie ma jeszcze żadnego Wydania."),
+        (
+            # Chwila z nagłówka jest w UTC, a tata czyta godzinę swojego komputera (tu 3:49 czasu lokalnego).
+            FakeGitHub(limited=datetime(2026, 11, 8, 3, 49).astimezone(timezone.utc)),
+            "Nie sprawdzono: GitHub chwilowo nie odpowiada na pytania o nową wersję. Centrum sprawdzi ponownie po 03:49.",
+        ),
     ],
-    ids=["brak-sieci", "bez-gita", "bez-wydania"],
+    ids=["brak-sieci", "bez-gita", "bez-wydania", "limit-githuba"],
 )
 def test_aktualnosc_bez_sieci_albo_bez_gita_nie_jest_sprawdzona_i_nie_jest_przyczyna(
     tmp_path: Path, github: FakeGitHub, detail: str

@@ -17,7 +17,7 @@ import time
 import pytest
 
 from rozliczenia.centrum import tool_update
-from rozliczenia.centrum.tool_freshness import ToolFreshness, releases_from
+from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness, releases_from
 from rozliczenia.centrum.tool_update import (
     JOURNAL,
     GitFailed,
@@ -1155,7 +1155,7 @@ def test_aktualnosc_z_api_githuba_i_aktualizacja_wybieraja_to_samo_wydanie(
 
     result = update(repository)
 
-    assert answer is not None
+    assert isinstance(answer, GitHubReleases)
     assert repository.head() == (answer.newest or result.before)
     assert result.code in ("ok", "AKTUALNA")
     assert installed == answer.newest
@@ -1175,7 +1175,7 @@ def test_aktualnosc_pamieta_wydanie_bedace_przodkiem_main_a_wydanie_spoza_main_s
 
     tip = git(repository.origin, "rev-parse", "main")
     assert first == again
-    assert first is not None and first.newest == tip
+    assert isinstance(first, GitHubReleases) and first.newest == tip
     assert asked == [
         "/repo/tags?per_page=100",
         "/repo/git/ref/heads/main",

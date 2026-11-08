@@ -84,7 +84,11 @@ zamiast każdej naprawy z osobna.
   `main` to `Nie sprawdzono` z „na GitHubie nie ma jeszcze żadnego Wydania”.
   Konfiguracja pamięta każdą odpowiedź, także „brak Wydania”, przez 10 minut,
   a brak odpowiedzi przez minutę: zwykle dwa pytania co 10 minut przy limicie
-  60 na godzinę bez logowania.
+  60 na godzinę bez logowania. Ten limit dzieli cały adres IP taty: 8.11.2026
+  coś w jego sieci go wyczerpało i tata nie widział v0.6.1. Od tego dnia
+  Centrum pyta z Tokenem do Zgłoszeń, gdy jest (5000 na godzinę dla konta,
+  ADR 0007), a odmowa z powodu limitu to w Diagnozie „GitHub chwilowo nie
+  odpowiada na pytania o nową wersję” z godziną odnowienia limitu.
 
   Koszt: nowe Wydanie to raz na działanie Centrum cztery pytania (lista tagów,
   czubek, porównanie z nim, PR-y commitu), jak daleko by `main` od niego nie

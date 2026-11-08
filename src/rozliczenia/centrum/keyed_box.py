@@ -1,7 +1,9 @@
 """Skrzynka Zgłoszeń z kluczem taty: jedyne miejsce, które czyta klucz i wie, czy Skrzynka go przyjmuje.
 
 Kolejka Skrzynki, Powiadomienia i Zgłoszenia pytają Skrzynkę tylko przez ``KeyedBox``; nikt poza nim nie czyta
-``config/zgloszenia-klucz.txt`` i nie podaje klucza adapterowi. Bez pliku klucza każda operacja to ``NoKey`` bez
+``config/zgloszenia-klucz.txt`` i nie podaje klucza adapterowi. Jedynym innym odbiorcą klucza jest Aktualność narzędzia:
+``github_key`` daje jej klucz do pytań o Wydania publicznego repozytorium (wyższy limit pytań API GitHuba), a odpowiedź na
+nie, także odmowa, nie jest werdyktem o kluczu (``tool_freshness``). Bez pliku klucza każda operacja to ``NoKey`` bez
 zapytania. Każda odpowiedź adaptera na pytanie z kluczem jest werdyktem o tym kluczu: odmowa przy zakładaniu issue
 albo liście issue to „klucz odrzucony”, każda inna odpowiedź Skrzynki (także odmowa treści) to „klucz przyjęty”, a
 brak sieci niczego nie zmienia. Odmowa komentarza, pytania o komentarze issue i poprawki komentarza mówi o issue
@@ -80,6 +82,7 @@ from rozliczenia.centrum.report_box import (
     Unreachable,
     UploadOutcome,
     newest_with_line,
+    sendable,
 )
 from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
 from rozliczenia.centrum.tool_freshness import ANSWER_KEPT_S, NO_ANSWER_KEPT_S
@@ -568,6 +571,17 @@ class KeyedBox:
         if verdict is None or verdict.key != digest:
             return "unchecked"
         return "refused" if verdict.refused else "accepted"
+
+    def github_key(self) -> str | None:
+        """Klucz do pytań Aktualności narzędzia i Powiadomienia o nowej wersji do API GitHuba; ``None`` bez pliku klucza
+        i dla klucza, którego nie da się wysłać w nagłówku (``report_box.sendable``), bo taki nagłówek wywraca pytanie,
+        zanim dojdzie do GitHuba, a pytanie bez tokenu i tak dostaje odpowiedź.
+
+        Bez werdyktu i bez pytania Skrzynki: ich odmowa mówi o publicznym repozytorium, nie o Skrzynce (opis modułu).
+        """
+
+        key = self._key()
+        return key if key is not None and sendable(key) else None
 
     def check_in_background(self) -> None:
         """Przy starcie Centrum: sprawdzenie klucza w tle, żeby pierwsza Konfiguracja nie czekała na Skrzynkę."""

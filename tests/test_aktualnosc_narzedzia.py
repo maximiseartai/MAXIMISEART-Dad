@@ -1,7 +1,8 @@
 """Źródła Aktualności narzędzia i Powiadomienia o nowej wersji, których HTTP API Centrum nie dosięga, bo w testach są
 podstawione.
 
-Lista tagów Wydań i lista GitHub Releases pochodzą z lokalnego serwera HTTP na 127.0.0.1, nigdy z GitHuba.
+Lista tagów Wydań i lista GitHub Releases pochodzą z lokalnego serwera HTTP na 127.0.0.1, nigdy z GitHuba, a Token do
+Zgłoszeń w tych pytaniach jest wymyślonym napisem.
 Commit narzędzia pochodzi z syntetycznych katalogów ``.git``.
 """
 
@@ -22,9 +23,18 @@ import pytest
 
 from rozliczenia import tool_files
 from rozliczenia.centrum import tool_freshness, tool_update
-from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, published_from, releases_from
+from rozliczenia.centrum.tool_freshness import (
+    GitHubReleases,
+    PublishedRelease,
+    RateLimited,
+    ToolFreshness,
+    offers_update,
+    published_from,
+    releases_from,
+)
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.centrum.version import tool_commit
+from tests.fixtures.github_api import Answer, github_api, newest_on_main
 
 # Prawdziwe ``github_releases`` z chwili importu: autouse ``bez_githuba`` (``tests/conftest.py``) podmienia je w module.
 GITHUB_RELEASES = tool_freshness.github_releases
@@ -405,6 +415,108 @@ def test_lista_wydan_bez_sieci_to_nie_wiadomo() -> None:
         port = closed.getsockname()[1]
 
     assert published_from(f"http://127.0.0.1:{port}/wydania", timeout_s=30) is None
+
+
+TOKEN = "token-wymyslony-w-tescie"
+REPOSITORY = "/repos/tata/narzedzie"
+WITH_TOKEN = f"Bearer {TOKEN}"
+
+
+def test_z_tokenem_kazde_pytanie_o_wydania_do_hosta_api_idzie_z_tokenem_a_strona_z_innego_hosta_bez_niego() -> None:
+    with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST)) as elsewhere:
+        next_page = f'<{elsewhere.url}{REPOSITORY}/tags?per_page=100>; rel="next"'
+        first_page = {f"{REPOSITORY}/tags?per_page=100": Answer(body=[], headers={"Link": next_page})}
+        with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST) | first_page) as api:
+            newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
+            published = published_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
+
+    assert (newest, published is not None) == (GitHubReleases(NEWEST, "v0.2.0"), True)
+    assert [asked.authorization for asked in api.asked] == [WITH_TOKEN] * 4  # tagi, czubek `main`, porównanie, Releases
+    assert [asked.authorization for asked in elsewhere.asked] == [None]
+
+
+def test_przekierowanie_pytania_z_tokenem_na_inny_host_idzie_tam_bez_tokenu() -> None:
+    answers = newest_on_main(REPOSITORY, "v0.2.0", NEWEST)
+    with github_api(answers) as elsewhere:
+        moved = {path: Answer(301, headers={"Location": f"{elsewhere.url}{path}"}) for path in answers}
+        with github_api(moved) as api:
+            newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
+
+    assert newest == GitHubReleases(NEWEST, "v0.2.0")
+    assert {asked.authorization for asked in api.asked} == {WITH_TOKEN}
+    assert [asked.authorization for asked in elsewhere.asked] == [None, None, None]
+
+
+@pytest.mark.parametrize(
+    ("refusal", "authorizations"),
+    [
+        (401, [WITH_TOKEN, None, None, None, WITH_TOKEN, None]),
+        (403, [WITH_TOKEN, None, None, None, WITH_TOKEN, None]),
+        # 404 bywa prawdziwą odpowiedzią wyszukiwania, więc token zostaje dla następnych pytań.
+        (404, [WITH_TOKEN, None, WITH_TOKEN, None, WITH_TOKEN, None, WITH_TOKEN, None]),
+    ],
+    ids=["401", "403", "404"],
+)
+def test_odmowa_pytania_z_tokenem_daje_odpowiedz_bez_tokenu_i_propozycje_aktualizacji(
+    refusal: int, authorizations: list[str | None]
+) -> None:
+    with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=refusal) as api:
+        freshness = ToolFreshness(
+            local=lambda: OLDER,
+            since=lambda: None,
+            release=lambda: releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN),
+            published=lambda: published_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN),
+        )
+        judgement = freshness.judge()
+        published = freshness.published()
+
+    assert offers_update(judgement)
+    assert published == (
+        PublishedRelease(Release((0, 2, 0), "v0.2.0"), "", datetime(2026, 11, 8, 6, tzinfo=timezone.utc)),
+    )
+    # Każde sprawdzenie pyta z tokenem, a po odmowie ponawia to pytanie bez tokenu.
+    assert [asked.authorization for asked in api.asked] == authorizations
+
+
+LIMIT_RESET = datetime(2026, 11, 8, 3, 49, tzinfo=timezone.utc)
+
+
+LIMIT = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(int(LIMIT_RESET.timestamp()))}
+
+
+@pytest.mark.parametrize(("token", "authorizations"), [(None, [None]), (TOKEN, [WITH_TOKEN, None])], ids=["bez-tokenu", "z-tokenem"])
+@pytest.mark.parametrize("status", [403, 429])
+def test_odmowa_z_powodu_limitu_githuba_mowi_kiedy_limit_sie_odnowi_a_bez_tokenu_nie_jest_ponawiana(
+    status: int, token: str | None, authorizations: list[str | None]
+) -> None:
+    refused = Answer(status, {"message": "API rate limit exceeded"}, LIMIT)
+    with github_api({f"{REPOSITORY}/tags?per_page=100": refused}) as api:
+        newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=token)
+
+    assert newest == RateLimited(LIMIT_RESET)
+    assert [asked.authorization for asked in api.asked] == authorizations
+
+
+def test_wyczerpany_limit_konta_z_tokenem_daje_odpowiedz_bez_tokenu_i_propozycje_aktualizacji() -> None:
+    """Limit konta MAXIMISEART-AI dzielą z Centrum agenci Maksa; limit adresu IP taty to osobna pula."""
+
+    limited = Answer(403, {"message": "API rate limit exceeded"}, LIMIT)
+    with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=limited) as api:
+        newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
+
+    assert newest == GitHubReleases(NEWEST, "v0.2.0")
+    assert [asked.authorization for asked in api.asked][:2] == [WITH_TOKEN, None]
+    assert WITH_TOKEN not in [asked.authorization for asked in api.asked][1:]
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [{"X-RateLimit-Remaining": "1", "X-RateLimit-Reset": "1793000000"}, {"X-RateLimit-Remaining": "0"}],
+    ids=["zostaly-pytania", "bez-chwili-odnowienia"],
+)
+def test_odmowa_bez_wyczerpanego_limitu_albo_bez_chwili_odnowienia_to_brak_odpowiedzi(headers: dict[str, str]) -> None:
+    with github_api({f"{REPOSITORY}/tags?per_page=100": Answer(403, {"message": "Forbidden"}, headers)}) as api:
+        assert releases_from(f"{api.url}{REPOSITORY}", timeout_s=30) is None
 
 
 def _git(root: Path, head: str) -> Path:

@@ -57,7 +57,7 @@ from rozliczenia.centrum.report_box import (
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.shutdown import Shutdown
-from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, ToolFreshness
+from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, RateLimited, ReleaseAnswer, ToolFreshness
 from rozliczenia.centrum.tool_update import Release, ToolClone
 from rozliczenia.centrum.tool_updates import GuardianLauncher
 from rozliczenia.efenix_pace import Pace
@@ -437,7 +437,7 @@ class FakeGitHub:
     """Commit narzędzia u taty, dzień, od którego narzędzie jest na nim, i najnowsze Wydanie na GitHubie.
 
     ``release`` to commit najnowszego Wydania na `main`, a ``tag`` jego tag; ``release=None`` to brak sieci,
-    ``NO_RELEASE`` to GitHub bez żadnego Wydania. ``published`` to lista GitHub Releases (``None``: brak sieci).
+    ``NO_RELEASE`` to GitHub bez żadnego Wydania, a ``limited`` odmowa z powodu limitu GitHuba do tej chwili. ``published`` to lista GitHub Releases (``None``: brak sieci).
     ``asked`` liczy pytania o najnowsze Wydanie, a ``asked_published`` o listę. Commit narzędzia zawiera tylko taki
     sam commit Wydania. ``wydanie`` to Wydanie, którego tag w klonie wskazuje commit narzędzia.
     """
@@ -450,6 +450,7 @@ class FakeGitHub:
     asked: int = 0
     asked_published: int = 0
     wydanie: Release | None = None
+    limited: datetime | None = None
 
     def freshness(self) -> ToolFreshness:
         return ToolFreshness(
@@ -460,8 +461,10 @@ class FakeGitHub:
             wydanie=lambda local: self.wydanie,
         )
 
-    def _release(self) -> GitHubReleases | None:
+    def _release(self) -> ReleaseAnswer:
         self.asked += 1
+        if self.limited is not None:
+            return RateLimited(self.limited)
         if self.release is None:
             return None
         return GitHubReleases(None, None) if self.release == NO_RELEASE else GitHubReleases(self.release, self.tag)
