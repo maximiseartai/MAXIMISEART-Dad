@@ -20,9 +20,8 @@ from .workbook_files import DataRow, WorkbookError
 from .workbook_save import WorkbookSaveError
 from .text import normalize_text
 from .write_routes import Route, RouteCounts, TemplateKind
-from .period_folder import PeriodFolder, PeriodFolderError
+from .period_folder import collective_period_token
 from .run_context import RunContext
-from .telemetry import UNKNOWN_PERIOD
 
 
 @dataclass(frozen=True)
@@ -39,10 +38,7 @@ class SettlementInputs:
 
     @property
     def period(self) -> str:
-        try:
-            return PeriodFolder.from_collective_file(self.source.expanduser().resolve()).period.token
-        except PeriodFolderError:
-            return UNKNOWN_PERIOD
+        return collective_period_token(self.source)
 
 
 @dataclass(frozen=True)

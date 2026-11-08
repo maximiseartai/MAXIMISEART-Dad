@@ -18,7 +18,7 @@ from rozliczenia.decision import Declined
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.message import Message, StopError
 from rozliczenia.phase_runner import PhaseRunner
-from rozliczenia.process_run import Finished, Outcome, Process, Stop, run_process
+from rozliczenia.process_run import Counter, Finished, Outcome, Process, Stop, run_process
 from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.run_clock import RunClock
 from rozliczenia.run_context import RunContext
@@ -32,6 +32,7 @@ from tests.fixtures.fake_process import (
     SECRET,
     Durations,
     Inputs,
+    Summary,
     asking_between_planning_and_saving,
     execute,
     fail,
@@ -42,17 +43,17 @@ from tests.fixtures.fake_process import (
 from tests.fixtures.interlocutor import Tata
 
 
-def durations_view(_inputs: Inputs, durations: Durations) -> Durations:
-    return durations
+def durations_view(_inputs: Inputs, summary: Summary) -> Durations:
+    return summary.phase_durations_ms
 
 
 def run_core(
-    process: Process[Inputs, Durations, RunContext],
+    process: Process[Inputs, Summary, RunContext],
     metrics_path: Path,
     *,
     dry_run: bool = False,
     tata: Tata | None = None,
-    view: Callable[[Inputs, Durations], Durations] = durations_view,
+    view: Callable[[Inputs, Summary], Durations] = durations_view,
     clock: Callable[[], float] = time.perf_counter,
 ) -> Outcome[Durations]:
     return run_process(
@@ -72,10 +73,10 @@ def test_core_closes_every_ending_with_a_message(tmp_path: Path, dry_run: bool) 
     def stop_in_engine(_inputs: Inputs, _context: RunContext) -> NoReturn:
         raise own
 
-    endings: dict[str, tuple[Process[Inputs, Durations, RunContext], Callable[[Inputs, Durations], Durations]]] = {
+    endings: dict[str, tuple[Process[Inputs, Summary, RunContext], Callable[[Inputs, Summary], Durations]]] = {
         "stop": (fake_process(execute=stop_in_engine), durations_view),
         "unexpected": (fake_process(execute=fail), durations_view),
-        "after_engine": (fake_process(finished=fail), durations_view),
+        "after_engine": (fake_process(result=fail), durations_view),
         "view": (fake_process(), fail),
     }
 
@@ -120,6 +121,37 @@ def test_rekord_metryk_zatrzymania_do_maksa_ma_rodzaj_i_kod_bez_tresci_komunikat
         None,
     ]
     assert SECRET not in (tmp_path / "metrics.jsonl").read_text(encoding="utf-8")
+
+
+def test_rekord_metryk_ma_liczniki_w_kolejnosci_ich_definicji_w_procesie_takze_przy_zatrzymaniu(tmp_path: Path) -> None:
+    names = ("zapisane", "akcje", "pominiete", "braki", "wiersze")
+
+    def counted(value: int) -> Counter[Summary]:
+        return Counter(names[value - 1], lambda _summary: value)
+
+    counters = tuple(counted(value) for value in range(1, len(names) + 1))
+
+    run_core(fake_process(counters=counters), tmp_path / "metrics.jsonl")
+    run_core(fake_process(counters=counters, execute=fail), tmp_path / "metrics.jsonl")
+
+    assert [list(record["counters"].items()) for record in records(tmp_path / "metrics.jsonl")] == [
+        list(zip(names, range(1, len(names) + 1), strict=True)),
+        [(name, 0) for name in names],
+    ]
+
+
+def test_podglad_bez_zapisu_procesu_bez_podgladu_to_blad_gospodarza_zanim_ruszy_silnik(tmp_path: Path) -> None:
+    started: list[Inputs] = []
+
+    def engine(inputs: Inputs, context: RunContext) -> Summary:
+        started.append(inputs)
+        return execute(inputs, context)
+
+    with pytest.raises(ValueError, match="has no Podgląd bez zapisu"):
+        run_core(fake_process(preview=None, execute=engine), tmp_path / "metrics.jsonl", dry_run=True)
+
+    assert started == []
+    assert not (tmp_path / "metrics.jsonl").exists()
 
 
 def test_zatrzymanie_zapisuje_rekord_z_okresem_zerowymi_licznikami_i_czasami_etapow_ktore_sie_wykonaly(
@@ -188,7 +220,7 @@ def test_czas_decyzji_taty_nie_liczy_sie_do_czasu_uruchomienia(tmp_path: Path) -
     clock = ManualClock()
     tata = Tata(before_answer=lambda: clock.advance(600))
 
-    def working_250_ms_before_and_500_ms_after_decision(inputs: Inputs, context: RunContext) -> Durations:
+    def working_250_ms_before_and_500_ms_after_decision(inputs: Inputs, context: RunContext) -> Summary:
         clock.advance(0.25)
         durations = asking_between_planning_and_saving(inputs, context)
         clock.advance(0.5)
@@ -212,7 +244,7 @@ def test_decyzja_taty_w_trakcie_etapu_nie_liczy_sie_do_czasu_etapu_ani_czasu_uru
     clock = ManualClock()
     tata = Tata(before_answer=lambda: clock.advance(600))
 
-    def asking_while_reading(_inputs: Inputs, context: RunContext) -> Durations:
+    def asking_while_reading(_inputs: Inputs, context: RunContext) -> Summary:
         phases = PhaseRunner(context.observer, clock=context.clock.now)
         phases.check(lambda: None)
 
@@ -224,7 +256,7 @@ def test_decyzja_taty_w_trakcie_etapu_nie_liczy_sie_do_czasu_etapu_ani_czasu_uru
         phases.read(read)
         phases.plan(lambda: None, issue_count=lambda _planned: 0)
         phases.save(lambda: None)
-        return phases.durations_ms()
+        return Summary(phases.durations_ms())
 
     outcome = run_core(fake_process(execute=asking_while_reading), tmp_path / "metrics.jsonl", tata=tata, clock=clock)
 
@@ -253,7 +285,7 @@ def test_czekanie_silnika_na_tate_z_decyzja_w_srodku_zatrzymuje_zegar_raz_dla_kr
     clock = ManualClock()
     tata = TataSeeingSteps(before_answer=lambda: clock.advance(600))
 
-    def waiting_for_tata_while_saving(_inputs: Inputs, context: RunContext) -> Durations:
+    def waiting_for_tata_while_saving(_inputs: Inputs, context: RunContext) -> Summary:
         phases = PhaseRunner(context.observer, clock=context.clock.now)
         phases.check(lambda: None)
         phases.read(lambda: None)
@@ -270,7 +302,7 @@ def test_czekanie_silnika_na_tate_z_decyzja_w_srodku_zatrzymuje_zegar_raz_dla_kr
             phases.step("dalej")
 
         phases.save(save)
-        return phases.durations_ms()
+        return Summary(phases.durations_ms())
 
     outcome = run_core(
         fake_process(execute=waiting_for_tata_while_saving), tmp_path / "metrics.jsonl", tata=tata, clock=clock
@@ -346,7 +378,7 @@ class BlindTata(Tata):
 )
 def test_pliki_taty_sa_bez_zmian_tylko_w_podgladzie_albo_gdy_zapisywanie_sie_nie_zaczelo(
     tmp_path: Path,
-    engine: Callable[[Inputs, RunContext], Durations],
+    engine: Callable[[Inputs, RunContext], Summary],
     dry_run: bool,
     tata: Tata,
     unchanged: bool,

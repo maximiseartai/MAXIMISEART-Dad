@@ -12,14 +12,14 @@ from rozliczenia.decision import Decision
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.message import Message, StopError
 from rozliczenia.phase_runner import PhaseRunner
-from rozliczenia.process_run import Finished, Process
+from rozliczenia.process_run import Counter, Preview, Process
 from rozliczenia.run_context import RunContext
 
 PERIOD = "08_14_09_2026"
-COUNTERS = frozenset({"items"})
 METRICS_WARNING = "Ostrzeżenie: Nie zapisano metryk; Proces testowy zakończył się niezależnie."
 SECRET = "sekret klienta SYN-001"
-# Komunikaty zakończeń sztucznego procesu: każde zatrzymanie bez własnego Komunikatu procesu dostaje jeden z nich.
+# Komunikaty zakończeń sztucznego procesu z Podglądem bez zapisu: każde zatrzymanie bez własnego Komunikatu procesu
+# dostaje jeden z nich.
 ENDINGS = {
     "unexpected_failure": Message("BLAD_NIEOCZEKIWANY", "Wystąpił nieoczekiwany błąd.", "Proces testowy", "Uruchom ponownie."),
     "plan_not_shown": Message("BLAD_PLANU", "Nie udało się pokazać planu.", "Proces testowy", "Zgłoś to."),
@@ -27,6 +27,11 @@ ENDINGS = {
 }
 
 Durations = Mapping[ProgressPhase, int]
+
+
+@dataclass(frozen=True)
+class Summary:
+    phase_durations_ms: Durations
 
 
 @dataclass(frozen=True)
@@ -39,44 +44,35 @@ def stop_error(what: str) -> StopError:
     return StopError(Message(code="ZATRZYMANIE", what=what, where="Proces testowy", action="Uruchom ponownie."))
 
 
-def all_phases(context: RunContext, before_save: Callable[[], None] = lambda: None) -> Durations:
+def all_phases(context: RunContext, before_save: Callable[[], None] = lambda: None) -> Summary:
     phases = PhaseRunner(context.observer, clock=context.clock.now)
     phases.check(lambda: None)
     phases.read(lambda: None)
     phases.plan(lambda: None, issue_count=lambda _planned: 0)
     before_save()
     phases.save(lambda: None)
-    return phases.durations_ms()
+    return Summary(phases.durations_ms())
 
 
-def execute(_inputs: Inputs, context: RunContext) -> Durations:
+def execute(_inputs: Inputs, context: RunContext) -> Summary:
     return all_phases(context)
-
-
-def finished_with(result: str) -> Callable[[Inputs, Durations], Finished]:
-    def finished(_inputs: Inputs, durations: Durations) -> Finished:
-        return Finished(
-            result=result,  # type: ignore[arg-type]  # parametr testu: "OK" albo "WYMAGA_SPRAWDZENIA"
-            counters={"items": 1},
-            phase_durations_ms=durations,
-        )
-
-    return finished
 
 
 def fail(*_args: object) -> NoReturn:
     raise RuntimeError(SECRET)
 
 
-def fake_process(**overrides: Any) -> Process[Inputs, Durations, RunContext]:
+def fake_process(**overrides: Any) -> Process[Inputs, Summary, RunContext]:
     fields: dict[str, Any] = {
         "name": "Proces testowy",
-        "counter_names": COUNTERS,
+        "counters": (Counter("items", lambda _summary: 1),),
+        "result": lambda _inputs, _summary: "OK",
+        "preview": Preview(ENDINGS["plan_not_shown"]),
         "metrics_path": lambda: Path("nieuzywany-plik-metryk.jsonl"),
         "metrics_failure_tail": "Proces testowy zakończył się niezależnie.",
         "execute": execute,
-        "finished": finished_with("OK"),
-        **ENDINGS,
+        "unexpected_failure": ENDINGS["unexpected_failure"],
+        "summary_not_shown": ENDINGS["summary_not_shown"],
     }
     fields.update(overrides)
     return Process(**fields)
@@ -95,7 +91,7 @@ QUESTION = Decision(
 )
 
 
-def asking_between_planning_and_saving(_inputs: Inputs, context: RunContext) -> Durations:
+def asking_between_planning_and_saving(_inputs: Inputs, context: RunContext) -> Summary:
     def ask() -> None:
         if not context.conversation.confirm(QUESTION):
             raise stop_error("Przerwano zgodnie z odpowiedzią.")

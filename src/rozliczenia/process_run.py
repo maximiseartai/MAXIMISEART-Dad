@@ -32,11 +32,14 @@ from .write_routes import RouteCounts
 from .run_clock import RunClock
 
 __all__ = [
+    "Counter",
     "Finished",
     "Interlocutor",
     "Outcome",
+    "Preview",
     "Process",
     "ProcessInputs",
+    "ProcessSummary",
     "Stop",
     "run_process",
 ]
@@ -65,8 +68,15 @@ class EngineContext(Protocol):
     def engaged(self, observer: ProgressObserver, conversation: Conversation) -> Self: ...
 
 
+class ProcessSummary(Protocol):
+    """Podsumowanie silnika, jak je widzi rdzeń: czasy etapów do rekordu metryk."""
+
+    @property
+    def phase_durations_ms(self) -> Mapping[ProgressPhase, int]: ...
+
+
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
-SummaryT = TypeVar("SummaryT")
+SummaryT = TypeVar("SummaryT", bound=ProcessSummary)
 ViewT = TypeVar("ViewT")
 ContextT = TypeVar("ContextT", bound=EngineContext)
 
@@ -94,8 +104,8 @@ class Stop:
     ``declined``: Zatrzymanie po odmowie w Decyzji taty (``Declined``), z Komunikatem procesu.
     ``unexpected``: inny wyjątek przed końcem silnika, z Komunikatem
     ``Process.unexpected_failure``. ``after_engine``: silnik skończył, ale nie
-    dało się zbudować podsumowania, z Komunikatem ``Process.plan_not_shown``
-    (DRY-RUN) albo ``Process.summary_not_shown`` (RUN).
+    dało się zbudować podsumowania, z Komunikatem Podglądu bez zapisu procesu
+    (``Process.preview``, DRY-RUN) albo ``Process.summary_not_shown`` (RUN).
 
     ``trace``: ślad wywołań dla Zgłoszenia do Maksa i Logów Uruchomienia:
     nieoczekiwanego wyjątku (``unexpected``, ``after_engine``) i każdego
@@ -139,6 +149,25 @@ class Finished:
 
 
 @dataclass(frozen=True)
+class Counter(Generic[SummaryT]):
+    """Licznik rekordu metryk procesu: nazwa i jego wartość z podsumowania silnika."""
+
+    name: str
+    count: Callable[[SummaryT], int]
+
+
+@dataclass(frozen=True)
+class Preview:
+    """Podgląd bez zapisu procesu: Komunikat, gdy planu nie da się pokazać."""
+
+    plan_not_shown: Message
+
+
+def _no_routes(_summary: object) -> RouteCounts:
+    return MappingProxyType({})
+
+
+@dataclass(frozen=True, kw_only=True)
 class Process(Generic[InputsT, SummaryT, ContextT]):
     """Opis procesu dla rdzenia Uruchomienia procesu, wspólny dla każdego rozmówcy.
 
@@ -146,21 +175,36 @@ class Process(Generic[InputsT, SummaryT, ContextT]):
     gotowe wejście procesu i Kontekst Uruchomienia.
     Zatrzymanie zgłasza ``StopError`` z Komunikatem z katalogu procesu.
     Komunikaty zakończeń z tego samego katalogu (``unexpected_failure``,
-    ``plan_not_shown``, ``summary_not_shown``) rdzeń dołącza do każdego innego
-    zatrzymania, więc żaden rozmówca nie dobiera treści sam. ``finished`` to
-    czysta funkcja faktów zakończonego procesu z jego wejścia i podsumowania.
+    ``summary_not_shown``, ``preview``) rdzeń dołącza do każdego innego
+    zatrzymania, więc żaden rozmówca nie dobiera treści sam. ``preview`` ``None``: proces bez Podglądu bez zapisu.
+    Fakty zakończonego procesu (``finished``) to wynik z wejścia i podsumowania (``result``), liczniki
+    (``counters``: jedyna definicja nazw i kolejności liczników rekordu metryk) i drogi zapisu z Wzorca (``routes``;
+    proces, który nie pisze z Wzorca, zostawia domyślne: żadnej).
     ``metrics_path`` to domyślny plik metryk procesu.
     """
 
     name: str
-    counter_names: frozenset[str]
+    counters: tuple[Counter[SummaryT], ...]
+    result: Callable[[InputsT, SummaryT], CompletedResult]
+    routes: Callable[[SummaryT], RouteCounts] = _no_routes
+    preview: Preview | None
     metrics_path: Callable[[], Path]
     metrics_failure_tail: str
     execute: Callable[[InputsT, ContextT], SummaryT]
-    finished: Callable[[InputsT, SummaryT], Finished]
     unexpected_failure: Message
-    plan_not_shown: Message
     summary_not_shown: Message
+
+    @property
+    def counter_names(self) -> frozenset[str]:
+        return frozenset(counter.name for counter in self.counters)
+
+    def finished(self, inputs: InputsT, summary: SummaryT) -> Finished:
+        return Finished(
+            result=self.result(inputs, summary),
+            counters={counter.name: counter.count(summary) for counter in self.counters},
+            phase_durations_ms=summary.phase_durations_ms,
+            routes=self.routes(summary),
+        )
 
 
 @dataclass(frozen=True)
@@ -305,6 +349,8 @@ def run_process(
     """
 
     dry_run = inputs.dry_run
+    if dry_run and process.preview is None:
+        raise ValueError(f"{process.name} has no Podgląd bez zapisu.")
     mode = "DRY-RUN" if dry_run else "RUN"
     started_at = datetime.now(timezone.utc).isoformat()
     clock = context.clock
@@ -317,7 +363,8 @@ def run_process(
     )
     total_duration_ms = max(0, round((clock.now() - started) * 1000))
     ending, shown = _build_summary(
-        engine_outcome, not_shown=process.plan_not_shown if dry_run else process.summary_not_shown
+        engine_outcome,
+        not_shown=process.preview.plan_not_shown if process.preview is not None and dry_run else process.summary_not_shown,
     )
 
     finished = ending if isinstance(ending, Finished) else None
@@ -334,7 +381,7 @@ def run_process(
             if isinstance(ending, Finished)
             else RecordedStop(kind=ending.stop_kind, code=ending.message.code)
         ),
-        counters=finished.counters if finished else dict.fromkeys(process.counter_names, 0),
+        counters=finished.counters if finished else {counter.name: 0 for counter in process.counters},
         # Bez wyniku drogi zapisu są nieznane i rekord ma ich zero, tak jak liczników: także gdy zatrzymanie przyszło
         # dopiero przy pokazaniu wyniku, a pliki z Wzorca już powstały.
         routes=finished.routes if finished else {},

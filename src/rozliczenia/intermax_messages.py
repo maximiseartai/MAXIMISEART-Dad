@@ -380,13 +380,3 @@ def summary_not_shown() -> Message:
         before="Nie uruchamiaj ponownie.",
         check="INTERMAX",
     )
-
-
-def plan_not_shown() -> Message:
-    """Uporządkowanie nie ma podglądu bez zapisu; rdzeń wymaga Komunikatu na każdy rodzaj zakończenia."""
-
-    return Message.to_maintainer(
-        code="BLAD_PLANU",
-        what=f"Nie udało się pokazać planu. {_UNCHANGED}",
-        where=_PROCESS,
-    )

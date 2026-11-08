@@ -29,7 +29,8 @@ from rozliczenia.dad_files import ReadFile
 from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.preparation_register import RegisterSheet
 from rozliczenia.settlement_period import SettlementPeriod
-from rozliczenia.process_run import Finished, Process, ProcessInputs
+from rozliczenia.process_run import Process, ProcessInputs, ProcessSummary
+from rozliczenia.telemetry import CompletedResult
 from rozliczenia.run_context import RunContext
 
 from tests.fixtures.centrum import (
@@ -66,7 +67,7 @@ TODAY = date(2026, 9, 16)
 WORKER_SETTLEMENTS = f"Rozliczenie pracowników {PERIOD}"
 
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
-SummaryT = TypeVar("SummaryT")
+SummaryT = TypeVar("SummaryT", bound=ProcessSummary)
 
 
 @dataclass
@@ -74,7 +75,7 @@ class Engines:
     """Prawdziwe rdzenie obu procesów, sterowane przez seam ``Process``.
 
     ``fail_engine``: silnik rzuca nieoczekiwany wyjątek, zanim przeczyta pliki taty. ``fail_summary``:
-    silnik kończy pracę, a ``Process.finished`` rzuca wyjątek, czyli podsumowania nie da się pokazać.
+    silnik kończy pracę, a wynik procesu (``Process.result``) rzuca wyjątek, czyli podsumowania nie da się pokazać.
     """
 
     metrics: MetricsPaths
@@ -96,12 +97,12 @@ class Engines:
                 raise RuntimeError("nieprzewidziany błąd przy SYN-001")
             return real.execute(inputs, context)
 
-        def finished(inputs: InputsT, summary: SummaryT) -> Finished:
+        def result(inputs: InputsT, summary: SummaryT) -> CompletedResult:
             if self.fail_summary:
                 raise ValueError("synthetic summary failure SYN-001")
-            return real.finished(inputs, summary)
+            return real.result(inputs, summary)
 
-        return replace(real, execute=execute, finished=finished)
+        return replace(real, execute=execute, result=result)
 
 
 @dataclass

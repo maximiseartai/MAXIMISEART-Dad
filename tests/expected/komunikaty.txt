@@ -956,11 +956,6 @@ summary_not_shown [BLAD_PODSUMOWANIA]
   Gdzie: Uporządkowanie INTERMAX
   Co zrobić: Nie uruchamiaj ponownie. Sprawdź INTERMAX i przekaż ten komunikat osobie utrzymującej narzędzie.
 
-plan_not_shown [BLAD_PLANU]
-  Co się stało: Nie udało się pokazać planu. INTERMAX nie został zmieniony.
-  Gdzie: Uporządkowanie INTERMAX
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
 === Wycena w efenix (src/rozliczenia/efenix_messages.py) ===
 
 source_unusable #1 [EFENIX_BRAK_PLIKU_ZBIORCZEGO]
@@ -1185,11 +1180,6 @@ marks_not_saved #3 [EFENIX_ZNACZNIKI_NIEZAPISANE]
 
 unexpected_failure [EFENIX_BLAD_NIEOCZEKIWANY]
   Co się stało: Wycena w efenix zatrzymała się przez nieoczekiwany błąd. Część zleceń mogła zostać już wyceniona w efenix.
-  Gdzie: Wycena w efenix
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-plan_not_shown [EFENIX_PLAN_NIEPOKAZANY]
-  Co się stało: Wycena w efenix skończyła się, ale nie udało się pokazać planu. W efenix nic się nie zmieniło.
   Gdzie: Wycena w efenix
   Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
