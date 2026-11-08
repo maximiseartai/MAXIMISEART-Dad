@@ -6,7 +6,7 @@ pierwszym działaniem tej pracy Centrum, a każde Uruchomienie zaczyna się przy
 (eksport kontraktu, Centrum zamknięte bez otwartej karty) wpisu nie zostawia. Widok to strona z menu, którą
 przeglądarka zgłasza pomiarem gotowego widoku (``recordViewTiming``), więc widok, który się nie wczytał, wpisu nie ma.
 Przycisk to każde zapytanie API, które coś zmienia (wszystko poza ``GET``), nazwane operacją API z kontraktu
-(``operation_id``): start Uruchomienia procesu z procesem i trybem (podgląd albo zapis), Decyzja taty, Diagnoza,
+(``operation_id``): start Uruchomienia procesu z procesem i trybem (``RunMode``), Decyzja taty, Diagnoza,
 Aktualizacja narzędzia, zamknięcie Centrum, wysłanie Uwagi taty i każdy inny. Wpis nie ma treści zapytania, więc nie
 ma tytułu ani treści Uwagi taty, ścieżek, adresu zapytania ani tokenu okresu. Szkic Uwagi taty (``draftDadNote``) nie
 jest przyciskiem: okno pyta o niego samo przy pisaniu.
