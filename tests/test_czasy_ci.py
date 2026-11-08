@@ -30,6 +30,7 @@ import czasy_ci  # noqa: E402
 import plan_runu  # noqa: E402
 import wykonaj_zadanie  # noqa: E402
 import zapis_czasow  # noqa: E402
+from zakres_runu import MUTACJE, TORY  # noqa: E402
 from zapis_czasow import KROKI, main  # noqa: E402
 
 RUNNER = "GitHub Actions 1000012606"
@@ -608,3 +609,16 @@ def test_wywolanie_bez_wymaganego_argumentu_konczy_sie_kodem_2_z_jego_nazwa(
 
     assert stopped.value.code == 2
     assert capsys.readouterr().err.splitlines()[-1].endswith(f"the following arguments are required: {missing}")
+
+
+def test_zapis_ci_podaje_czasy_pod_torem_pomiarow_planu_a_tor_lokalny_jest_torem_pytest() -> None:
+    """``ci.yml`` podaje zapisowi tor runnera (``Windows-3.14.0``), a zapis skraca go do toru czasów; plan czyta czasy pod
+    ``Tor.pomiary``, a ``tools/szybko.py`` i ``tools/scal_pr.py`` pod ``TOR_LOKALNY``. Tor, którego zapis nie trafia pod
+    ich nazwę, po cichu waży każdą jednostkę zerem."""
+
+    runner = {"windows-latest": "Windows", "ubuntu-latest": "Linux"}
+    tory = (*TORY, MUTACJE)
+
+    assert {_recorded(job, "--tor") for job in ("pytest", "mutations")} == {"${{ runner.os }}-${{ steps.python.outputs.python-version }}"}
+    assert [zapis_czasow._tor(f"{runner[tor.os]}-{tor.python}.0") for tor in tory] == [tor.pomiary for tor in tory]
+    assert czasy_ci.TOR_LOKALNY in {tor.pomiary for tor in TORY}
