@@ -143,14 +143,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from rozliczenia import efenix_process, intermax_process, preparation_process, settlement_process
 from rozliczenia.centrum.app import create_app
+from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.efenix_run import EfenixWindow
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.report_box import (
     Archive,
     ArchiveOutcome,
@@ -580,11 +579,13 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
     fixture = json.loads((root / "fixture.json").read_text(encoding="utf-8"))
     today = date.fromisoformat(fixture["today"])
     metrics = fixture["metrics"]
-    processes = Processes(
-        preparation=replace(preparation_process.PROCESS, metrics_path=lambda: Path(metrics["preparation"])),
-        settlement=replace(settlement_process.PROCESS, metrics_path=lambda: Path(metrics["settlement"])),
-        efenix=replace(efenix_process.PROCESS, metrics_path=lambda: root / ".wycena-efenix-metrics.jsonl"),
-        intermax=replace(intermax_process.PROCESS, metrics_path=lambda: Path(metrics["intermax"])),
+    catalog = CATALOG.with_metrics(
+        {
+            "preparation": Path(metrics["preparation"]),
+            "settlement": Path(metrics["settlement"]),
+            "efenix": root / ".wycena-efenix-metrics.jsonl",
+            "intermax": Path(metrics["intermax"]),
+        }
     )
     configuration = {name: Path(path) for name, path in fixture["configuration"].items()}
     clone = Path(fixture["tool"]["clone"])
@@ -600,7 +601,7 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
         log=log,
         shutdown=shutdown,
         today=lambda: today,
-        processes=processes,
+        catalog=catalog,
         configuration_files=ConfigurationFiles(**configuration),
         tool_freshness=_scripted_github(root, clone),
         cloud_files=_scripted_onedrive(root),

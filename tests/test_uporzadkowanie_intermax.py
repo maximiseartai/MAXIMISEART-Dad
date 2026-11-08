@@ -2321,10 +2321,6 @@ def test_komunikaty_zakonczen_uporzadkowania_maja_trzy_czesci_i_nazywaja_proces(
     assert message.where == "Uporządkowanie INTERMAX"
 
 
-def test_metryki_uporzadkowania_maja_wlasny_plik_obok_innych_procesow() -> None:
-    assert PROCESS.metrics_path() == TOOL_ROOT / ".uporzadkowanie-intermax-metrics.jsonl"
-
-
 @pytest.mark.parametrize(("rows", "stops"), [("yellow", False), ("above", False), ("whole column", True)])
 def test_zakres_za_danymi_arkusza_zatrzymuje_tylko_gdy_siega_pod_zolty_wiersz(
     tmp_path: Path, rows: str, stops: bool

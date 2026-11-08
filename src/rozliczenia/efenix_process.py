@@ -20,7 +20,6 @@ from . import efenix_messages as messages
 from .efenix_pricing import EfenixInputs, OrderKind, PricingSummary
 from .process_run import Counter, Process
 from .run_context import RunContext
-from .tool_files import EFENIX_METRICS
 
 PROCESS: Process[EfenixInputs, PricingSummary, RunContext] = Process(
     name="Wycena w efenix",
@@ -34,7 +33,6 @@ PROCESS: Process[EfenixInputs, PricingSummary, RunContext] = Process(
     ),
     result=lambda _inputs, summary: "OK" if not summary.warnings else "WYMAGA_SPRAWDZENIA",
     preview=None,
-    metrics_path=lambda: EFENIX_METRICS,
     metrics_failure_tail="Wycena w efenix zakończyła się niezależnie.",
     execute=efenix_pricing.price_orders,
     unexpected_failure=messages.unexpected_failure(),

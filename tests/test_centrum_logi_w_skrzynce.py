@@ -29,6 +29,7 @@ import pytest
 
 from rozliczenia import intermax_copies
 from rozliczenia.centrum import app
+from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
 from rozliczenia.centrum.run_logs import RunLog
@@ -830,11 +831,13 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
     """Plik z Archiwum Logów okresu, który wyprodukowało Uruchomienie procesu z Centrum, odtwarza się na tym kodzie z
     tymi samymi wynikiem, Komunikatami, podsumowaniem, etapami i śladem (Szablony pracownika, Wpisy INTERMAX z
     wierszami dnia, ślad zleceń efenix z odczytem każdej strony), a pliki, które odtworzenie zapisuje, zostają w jego
-    katalogu roboczym."""
+    katalogu roboczym, także rekord metryk: historii metryk narzędzia odtworzenie nie dopisuje."""
 
     produced = PROCESSES[process](tmp_path / "taty")
     record = produced.record
     kept = tmp_path / "odtworzenie"
+    tool_metrics = CATALOG.metrics(record["process"]).path
+    history = tool_metrics.read_bytes() if tool_metrics.exists() else None
 
     code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--zachowaj", kept, *produced.arguments)
 
@@ -844,6 +847,8 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
     assert (replayed["process"], replayed["mode"], replayed["result"]) == (process, record["mode"], record["result"])
     trace = {"settlement": "templates", "preparation": "summary", "intermax": "intermax_entries", "efenix": "efenix_orders"}
     assert record[trace[process]], "ślad, który odtworzenie porównało, nie jest pusty"
+    assert len((kept / "metryki.jsonl").read_text(encoding="utf-8").splitlines()) == 1
+    assert (tool_metrics.read_bytes() if tool_metrics.exists() else None) == history, "rekord w historii metryk narzędzia"
     if process == "intermax":
         assert record["intermax_entries"]["rows"], "wiersze dnia w śladzie"
         assert (kept / "Kopie INTERMAX" / INTERMAX_COPY).is_file()

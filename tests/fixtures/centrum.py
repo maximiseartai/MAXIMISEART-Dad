@@ -9,7 +9,7 @@ import json
 import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import date, datetime, time as day_time, timezone
 from pathlib import Path
 from typing import Any, TypeVar
@@ -17,8 +17,9 @@ from typing import Any, TypeVar
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rozliczenia import efenix_process, intermax_process, preparation_process, settlement_process, tool_files
+from rozliczenia import tool_files
 from rozliczenia.centrum.app import create_app
+from rozliczenia.centrum.catalog import CATALOG, Catalog
 from rozliczenia.centrum.clock import Clock
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.efenix_run import EfenixWindow
@@ -28,7 +29,6 @@ from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE
 from rozliczenia.centrum.platform import Platform
-from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.report_box import (
     REPOSITORY,
     Archive,
@@ -496,12 +496,14 @@ class MetricsPaths:
     efenix: Path
     intermax: Path
 
-    def processes(self) -> Processes:
-        return Processes(
-            preparation=replace(preparation_process.PROCESS, metrics_path=lambda: self.preparation),
-            settlement=replace(settlement_process.PROCESS, metrics_path=lambda: self.settlement),
-            efenix=replace(efenix_process.PROCESS, metrics_path=lambda: self.efenix),
-            intermax=replace(intermax_process.PROCESS, metrics_path=lambda: self.intermax),
+    def catalog(self) -> Catalog:
+        return CATALOG.with_metrics(
+            {
+                "preparation": self.preparation,
+                "settlement": self.settlement,
+                "efenix": self.efenix,
+                "intermax": self.intermax,
+            }
         )
 
 
@@ -607,7 +609,7 @@ def centrum_app(
     shutdown: Shutdown | None = None,
     today: date = TODAY,
     now: Callable[[], datetime] = lambda: NOW,
-    processes: Processes | None | Fake = FAKE,
+    catalog: Catalog | Fake = FAKE,
     configuration_files: ConfigurationFiles | None | Fake = FAKE,
     tool_freshness: ToolFreshness | None | Fake = FAKE,
     cloud_files: CloudFiles | None | Fake = FAKE,
@@ -645,7 +647,7 @@ def centrum_app(
         log=log,
         shutdown=shutdown or Shutdown(log),
         today=lambda: today,
-        processes=_or_fake(processes, lambda: tool.metrics.processes()),
+        catalog=tool.metrics.catalog() if isinstance(catalog, Fake) else catalog,
         configuration_files=_or_fake(configuration_files, lambda: tool.configuration),
         tool_freshness=_or_fake(tool_freshness, lambda: FakeGitHub().freshness()),
         cloud_files=_or_fake(cloud_files, lambda: FakeOneDrive().cloud_files()),

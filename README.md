@@ -479,9 +479,10 @@ npm run build      # build do src/rozliczenia/centrum/static/
   więc po nich `npm run regen` i commit; bez tego CI i `tools/ci_lokalnie.py` padają.
 - Nowy proces w Uruchomieniach: opis procesu `process_run.Process` w module
   procesu (wzór: `settlement_process.PROCESS`), klucz w `contract.ProcessKey`,
-  pole w `Processes` (`centrum/processes.py`), widok w `centrum/run_view.py`,
-  wpis w katalogu procesów `centrum/catalog.py` (wzór: `SETTLEMENT`: Ustawienia
-  taty, Wzorce i kroki Diagnozy procesu) i adapter startu (wzór:
+  wpis procesu `KIND` z widokiem w `centrum/processes/<proces>.py` (wzór:
+  `centrum/processes/settlement.py`: widok, rdzeń, plik metryk, Ustawienia
+  taty, Wzorce i kroki Diagnozy procesu), jego pozycja w `KINDS`
+  (`centrum/catalog.py`) i adapter startu (wzór:
   `SettlementEntry`, spełnia `runs.ProcessEntry`) na liście `entries` w
   `create_app`. Diagnoza, Logi Uruchomienia, karty z Logów, Metryki i Konfiguracja
   pytają wpis, więc `runs.py` i one się nie zmieniają; czego brakuje, mówi

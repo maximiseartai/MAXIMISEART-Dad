@@ -14,21 +14,20 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Final
 
-from rozliczenia.centrum import contract, run_view
-from rozliczenia.centrum.catalog import SETTLEMENT
+from rozliczenia.centrum import contract
+from rozliczenia.centrum.catalog import Catalog, declaration_of
 from rozliczenia.centrum.configuration import ConfigurationFiles, InputWorkbook, open_in_excel
 from rozliczenia.centrum.metrics import previewed_periods
 from rozliczenia.centrum.period_board import located_period_folder, observed_period_folder, read_board, requested_period
-from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.process_kind import PreparedRun
 from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.period_folder import PeriodStatus, collective_file_name, period_status_label, scan_period_folders
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 from rozliczenia.run_context import RunContexts
-from rozliczenia.telemetry import MetricsStore
 from rozliczenia.engine import SettlementInputs
 
-_VIEW: Final = run_view.SETTLEMENT
+_KIND: Final = declaration_of("settlement")
+_VIEW: Final = _KIND.view
 _ELIGIBLE: Final[PeriodStatus] = "collective_file_prepared"
 
 
@@ -38,34 +37,33 @@ class SettlementEntry:
 
     store: SettingsStore
     configuration: ConfigurationFiles
-    processes: Processes
+    catalog: Catalog
     today: Callable[[], date]
     contexts: RunContexts
 
     @property
     def key(self) -> contract.PeriodProcessKey:
-        return SETTLEMENT.key
+        return "settlement"
 
     def setup(self) -> contract.ProcessSetup:
         settings = self.store.load()
         periods_directory = settings.periods_directory
-        board = read_board(periods_directory, self.today(), self.processes)
+        board = read_board(periods_directory, self.today(), self.catalog)
         rows = [row for row in board.periods if row.status == _ELIGIBLE] if board.state == "ready" else []
         preselected = next(
             (row.token for row in rows if row.last_complete),
             rows[0].token if rows else last_complete_period(self.today()).token,
         )
-        process = SETTLEMENT.core(self.processes)
-        previewed = previewed_periods(MetricsStore(process.metrics_path(), process.counter_names))
+        previewed = previewed_periods(self.catalog.metrics(self.key))
         collective_files = _collective_files(periods_directory, rows) if periods_directory is not None else {}
-        open_templates = open_in_excel(self.configuration.template_inputs(SETTLEMENT.templates))
+        open_templates = open_in_excel(self.configuration.template_inputs(_KIND.templates))
         return contract.ProcessSetup(
             process=self.key,
-            title=SETTLEMENT.title,
+            title=_KIND.title,
             creates="Rozliczenia pracowników",
             reminder=_VIEW.reminder,
             confirms_readiness=_VIEW.confirms_readiness,
-            preview_hint=_VIEW.preview_hint,
+            preview_hint=_KIND.preview_hint,
             pricing_modes=list(_VIEW.pricing_modes),
             periods=[
                 _choice(
@@ -79,11 +77,11 @@ class SettlementEntry:
                 for row in rows
             ],
             preselected_period=preselected,
-            blocker=SETTLEMENT.settings_blocker(settings) or _blocker(board, rows),
+            blocker=_KIND.settings_blocker(settings) or _blocker(board, rows),
         )
 
     def prepare(self, request: contract.RunRequest) -> PreparedRun[Any, Any]:
-        periods_directory = SETTLEMENT.required_paths(self.store.load())["periods_directory"]
+        periods_directory = _KIND.required_paths(self.store.load())["periods_directory"]
         period = requested_period(request.period)
         source = located_period_folder(periods_directory, period).collective_file
         inputs = SettlementInputs(
@@ -92,13 +90,7 @@ class SettlementEntry:
             config_path=self.configuration.worker_config,
             worker_template_path=self.configuration.worker_template,
         )
-        return PreparedRun(
-            declaration=SETTLEMENT,
-            period=period.token,
-            process=SETTLEMENT.core(self.processes),
-            inputs=inputs,
-            context=self.contexts.new(),
-        )
+        return self.catalog.prepared(self.key, period=period.token, inputs=inputs, context=self.contexts.new())
 
 
 def _collective_files(periods_directory: Path, rows: list[contract.PeriodRow]) -> dict[str, Path]:

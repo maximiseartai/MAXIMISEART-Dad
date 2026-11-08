@@ -54,19 +54,19 @@
     "create_app.lifespan": "283ef526303aa497",
     "create_app.send_interrupted": "2a47500d61ec7faf",
     "create_app.app": "5fab7958bcd93ca4",
-    "create_app.disk": "7193dd27f858d9e4",
+    "create_app.disk": "cdd915950c705f55",
     "create_app.comments": "59c2f539804813da",
     "create_app.closed": "a1e81435da7def3b",
     "create_app.runs": "4be9a7a56dd66879"
   },
   "src/rozliczenia/centrum/runs.py": {
-    "Run.work": "0daf80cf23e8ea53",
+    "Run.work": "e63c1a3152d105ab",
     "RunHost.after": "3b394aacf6701175",
     "RunHost.shutdown_refusal": "7b2f8610fb13f295",
-    "RunHost.start": "710d19e128a208fb"
+    "RunHost.start": "754dacf48e465bb5"
   },
   "src/rozliczenia/centrum/process_kind.py": {
-    "PreparedRun.conduct": "60359d67fe8e2c54"
+    "PreparedRun.conduct": "a65f1c7fc16b43d0"
   },
   "src/rozliczenia/centrum/outbox.py": {
     "Outbox.post": "ec7d3d2ed8b91d68",

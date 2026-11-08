@@ -64,10 +64,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from rozliczenia import process_run
 from rozliczenia.centrum import contract, process_kind, runs, shutdown
-from rozliczenia.centrum.catalog import PREPARATION
+from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.decision import Decision
 from rozliczenia.message import Message
-from rozliczenia.preparation_process import PROCESS
 from rozliczenia.progress import ProgressProjection
 from rozliczenia.run_context import RunContext
 from eksplorator import Choices, Excuse, Interleaving, Shape, Thread, excuse_line, excused, gone_lines, schedules, verdict
@@ -396,12 +395,8 @@ SCOPES = {
     "przywracanie": Scope("przywracanie", start_tabs=1, close_clicks=1, decisions=1, restore_tabs=2),
 }
 
-PREPARED: process_kind.PreparedRun[Any, Any] = process_kind.PreparedRun(
-    declaration=PREPARATION,
-    period="08_14_09_2026",
-    process=PROCESS,
-    inputs=SimpleNamespace(dry_run=False),
-    context=RunContext(),
+PREPARED: process_kind.PreparedRun[Any, Any] = CATALOG.prepared(
+    "preparation", period="08_14_09_2026", inputs=SimpleNamespace(dry_run=False), context=RunContext()
 )
 
 

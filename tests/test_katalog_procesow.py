@@ -15,25 +15,34 @@ from fastapi.testclient import TestClient
 import pytest
 
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.catalog import CATALOG, PeriodProcessDeclaration, ProcessDeclaration
-from rozliczenia.centrum.processes import Processes
+from rozliczenia.centrum.catalog import CATALOG
+from rozliczenia.centrum.process_kind import PeriodProcessKind, ProcessKind
 from rozliczenia.centrum.comment_versions import summary_markdown
 from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.tool_files import TOOL_ROOT
 from tests.fixtures.centrum import centrum, finished_view
 from tests.fixtures.centrum_intermax import ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum, run_to_end, settling_centrum
 from tests.fixtures.preparation import PERIOD
 
 
-def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum_z_nazwa_jego_rdzenia() -> None:
-    keys = [declaration.key for declaration in CATALOG]
-    period_keys = [declaration.key for declaration in CATALOG if isinstance(declaration, PeriodProcessDeclaration)]
+def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum() -> None:
+    keys = [kind.key for kind in CATALOG.kinds]
+    period_keys = [kind.key for kind in CATALOG.kinds if isinstance(kind, PeriodProcessKind)]
 
     assert sorted(keys) == sorted(get_args(contract.ProcessKey))
     assert sorted(period_keys) == sorted(get_args(contract.PeriodProcessKey))
-    assert [declaration.title for declaration in CATALOG] == [
-        declaration.core(Processes.default()).name for declaration in CATALOG
-    ]
+
+
+def test_kazdy_proces_ma_wlasna_historie_metryk_w_katalogu_narzedzia() -> None:
+    """Nazwy plików metryk są te same na dysku taty od pierwszego Wydania: Historia i Metryki czytają je po zmianie."""
+
+    assert CATALOG.metrics_paths == {
+        "preparation": TOOL_ROOT / ".przygotowanie-pliku-zbiorczego-metrics.jsonl",
+        "settlement": TOOL_ROOT / ".rozliczenia-metrics.jsonl",
+        "efenix": TOOL_ROOT / ".wycena-efenix-metrics.jsonl",
+        "intermax": TOOL_ROOT / ".uporzadkowanie-intermax-metrics.jsonl",
+    }
 
 
 def _period_setup(key: str) -> Callable[[TestClient], tuple[str | None, Any]]:
@@ -57,9 +66,9 @@ _SETUP_AND_START: dict[contract.ProcessKey, Callable[[TestClient], tuple[str | N
 }
 
 
-@pytest.mark.parametrize("declaration", CATALOG, ids=lambda declaration: declaration.key)
+@pytest.mark.parametrize("declaration", CATALOG.kinds, ids=lambda declaration: declaration.key)
 def test_bez_ustawien_taty_karta_i_odmowa_startu_mowia_to_samo_co_brakuje(
-    tmp_path: Path, declaration: ProcessDeclaration[Any, Any]
+    tmp_path: Path, declaration: ProcessKind[Any, Any]
 ) -> None:
     client = centrum(tmp_path).client
 
@@ -104,9 +113,9 @@ _STOPPED: dict[contract.ProcessKey, Callable[[Path], tuple[TestClient, dict[str,
 }
 
 
-@pytest.mark.parametrize("declaration", CATALOG, ids=lambda declaration: declaration.key)
+@pytest.mark.parametrize("declaration", CATALOG.kinds, ids=lambda declaration: declaration.key)
 def test_uruchomienie_procesu_ma_te_same_fakty_wpisu_na_karcie_w_logach_historii_i_metrykach(
-    tmp_path: Path, declaration: ProcessDeclaration[Any, Any]
+    tmp_path: Path, declaration: ProcessKind[Any, Any]
 ) -> None:
     client, view = _STOPPED[declaration.key](tmp_path)
     run = view["run"]
@@ -130,9 +139,9 @@ def test_uruchomienie_procesu_ma_te_same_fakty_wpisu_na_karcie_w_logach_historii
     )
 
 
-@pytest.mark.parametrize("declaration", CATALOG, ids=lambda declaration: declaration.key)
+@pytest.mark.parametrize("declaration", CATALOG.kinds, ids=lambda declaration: declaration.key)
 def test_diagnoza_kazdego_procesu_idzie_w_kolejnosci_wyjasniania(
-    tmp_path: Path, declaration: ProcessDeclaration[Any, Any]
+    tmp_path: Path, declaration: ProcessKind[Any, Any]
 ) -> None:
     """Ustawienia taty pierwsze, OneDrive przed każdym sprawdzeniem, które otwiera pliki, a na końcu Aktualność
     narzędzia, Token do Zgłoszeń i dziennik; Folder okresu tylko w procesie z okresem."""

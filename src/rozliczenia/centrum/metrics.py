@@ -14,12 +14,9 @@ from typing import Any
 from fastapi import APIRouter
 
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.catalog import CATALOG
-from rozliczenia.centrum.processes import Processes
+from rozliczenia.centrum.catalog import Catalog
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.domain import PHASES
-from rozliczenia.process_run import Process
-from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MINIMUM_STATISTIC_SAMPLES, MetricsStore, comparable_records, statistics_for
 
 _RECENT_WEEKS = 8
@@ -29,28 +26,26 @@ CentrumStarted = Mapping[tuple[str, str], str | None]
 """Identyfikator Uruchomienia z Centrum po parze (proces, ``started_at``) z ``CentrumRuns.started``."""
 
 
-def read_runs(processes: Processes, centrum_started: CentrumStarted) -> list[contract.ProcessRun]:
-    """Uruchomienia procesu każdego procesu z katalogu procesów z plików metryk rdzeni ``processes``, od najnowszego."""
+def read_runs(catalog: Catalog, centrum_started: CentrumStarted) -> list[contract.ProcessRun]:
+    """Uruchomienia procesu każdego procesu z katalogu ``catalog`` z jego plików metryk, od najnowszego."""
 
-    cores = _cores(processes)
-    return _runs(cores, _records(cores), centrum_started)
+    return _runs(catalog, _records(catalog), centrum_started)
 
 
-def read_metrics(processes: Processes, today: date, centrum_started: CentrumStarted) -> contract.Metrics:
-    """Metryki procesów katalogu z rdzeniami ``processes``; statystyki każdego procesu tylko w trybach jego widoku."""
+def read_metrics(catalog: Catalog, today: date, centrum_started: CentrumStarted) -> contract.Metrics:
+    """Metryki procesów katalogu ``catalog``; statystyki każdego procesu tylko w trybach jego widoku."""
 
-    cores = _cores(processes)
-    records = _records(cores)
-    runs = _runs(cores, records, centrum_started)
+    records = _records(catalog)
+    runs = _runs(catalog, records, centrum_started)
     since = today - timedelta(weeks=_RECENT_WEEKS)
     return contract.Metrics(
         phases=list(PHASES),
         minimum_completed_runs=MINIMUM_STATISTIC_SAMPLES,
         runs=runs,
         statistics=[
-            _statistics(declaration.key, mode, cores[declaration.key].counter_names, records[declaration.key], runs)
-            for declaration in CATALOG
-            for mode in declaration.view.modes
+            _statistics(kind.key, mode, catalog.metrics(kind.key).counter_names, records[kind.key], runs)
+            for kind in catalog.kinds
+            for mode in kind.view.modes
         ],
         recent=contract.RecentResults(
             weeks=_RECENT_WEEKS,
@@ -59,26 +54,18 @@ def read_metrics(processes: Processes, today: date, centrum_started: CentrumStar
     )
 
 
-def _cores(processes: Processes) -> dict[contract.ProcessKey, Process[Any, Any, RunContext]]:
-    return {declaration.key: declaration.core(processes) for declaration in CATALOG}
-
-
-def _records(
-    processes: Mapping[contract.ProcessKey, Process[Any, Any, RunContext]],
-) -> dict[contract.ProcessKey, list[dict[str, Any]]]:
-    return {
-        key: MetricsStore(process.metrics_path(), process.counter_names).read() for key, process in processes.items()
-    }
+def _records(catalog: Catalog) -> dict[contract.ProcessKey, list[dict[str, Any]]]:
+    return {kind.key: catalog.metrics(kind.key).read() for kind in catalog.kinds}
 
 
 def _runs(
-    processes: Mapping[contract.ProcessKey, Process[Any, Any, RunContext]],
+    catalog: Catalog,
     records: Mapping[contract.ProcessKey, list[dict[str, Any]]],
     centrum_started: CentrumStarted,
 ) -> list[contract.ProcessRun]:
     return sorted(
         (
-            _run(process, processes[process].name, record, centrum_started)
+            _run(process, catalog.kind(process).title, record, centrum_started)
             for process, process_records in records.items()
             for record in process_records
         ),
@@ -185,13 +172,13 @@ def _started(record: Mapping[str, Any]) -> datetime:
     return datetime.fromisoformat(record["started_at"])
 
 
-def metrics_router(processes: Processes, today: Callable[[], date], centrum_runs: CentrumRuns) -> APIRouter:
+def metrics_router(catalog: Catalog, today: Callable[[], date], centrum_runs: CentrumRuns) -> APIRouter:
     router = APIRouter(prefix="/api/metrics", tags=["metryki"])
 
     @router.get("", operation_id="getMetrics", responses={500: {"model": contract.Problem}})
     def metrics() -> contract.Metrics:
         try:
-            return read_metrics(processes, today(), centrum_runs.started())
+            return read_metrics(catalog, today(), centrum_runs.started())
         except OSError:
             raise contract.Refusal(500, "Nie udało się odczytać plików metryk. Odśwież kartę.") from None
 

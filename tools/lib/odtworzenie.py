@@ -41,7 +41,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import ExitStack
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 import enum
 import json
@@ -56,16 +56,9 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import collective_layout, efenix_browser, intermax_copies
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.catalog import (
-    EFENIX,
-    INTERMAX,
-    PREPARATION,
-    SETTLEMENT,
-    ProcessDeclaration,
-)
+from rozliczenia.centrum.catalog import CATALOG, declaration_of
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.logs_disk import name_of
-from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum import stops
 from rozliczenia.centrum.logs_of_run import logs_of
 from rozliczenia.centrum.process_kind import PreparedRun
@@ -164,7 +157,7 @@ class Report:
     def lines(self, record: RunLog, code: str) -> list[str]:
         """Raport dla Maksa: wynik w pierwszej linii, potem Uruchomienie, kod, różnica i granice."""
 
-        title = _KINDS[record.process].declaration.title
+        title = declaration_of(record.process).title
         blocking = [limit.text for limit in self.limits if limit.blocking]
         first = f"{self.verdict.headline}: {blocking[0]}" if blocking else self.verdict.headline
         lines = [
@@ -431,10 +424,8 @@ class _Setup:
 
 @dataclass(frozen=True)
 class _Kind:
-    """Odtworzenie jednego procesu: jego wpis w katalogu procesów, granice, odbudowa wejścia i czy czyta Konfigurację i
-    Wzorce."""
+    """Odtworzenie jednego procesu: granice, odbudowa wejścia i czy czyta Konfigurację i Wzorce."""
 
-    declaration: ProcessDeclaration[Any, Any]
     limits: Callable[[RunLog], list[Limit]]
     setup: Callable[[RunLog, _Work], _Setup]
     configuration: tuple[str, ...] = ()
@@ -538,12 +529,12 @@ def _settlement(record: RunLog, work: _Work) -> _Setup:
         config_path=configuration["worker_config"],
         worker_template_path=configuration["worker_template"],
     )
-    return _Setup(_prepared(work, SETTLEMENT, record.period, inputs))
+    return _Setup(_prepared(work, "settlement", record.period, inputs))
 
 
 def _prepared(
     work: _Work,
-    declaration: ProcessDeclaration[Any, Any],
+    key: contract.ProcessKey,
     period: str,
     inputs: ProcessInputs,
     *,
@@ -552,8 +543,9 @@ def _prepared(
     """Uruchomienie z Kopią wejścia i plikiem metryk w katalogu roboczym, w miejscu pliku metryk procesu."""
 
     metrics = work.path("metryki.jsonl")
-    process = replace(declaration.core(_PROCESSES), metrics_path=lambda: metrics)
-    return PreparedRun(declaration, period, process, inputs, RunContexts().new(), pricing)
+    return CATALOG.with_metrics({key: metrics}).prepared(
+        key, period=period, inputs=inputs, context=RunContexts().new(), pricing=pricing
+    )
 
 
 def _configured(work: _Work) -> dict[str, Path]:
@@ -638,7 +630,7 @@ def _preparation(record: RunLog, work: _Work) -> _Setup:
         internal_template_path=configuration["internal_template"],
         collective_template_path=configuration["collective_template"],
     )
-    return _Setup(_prepared(work, PREPARATION, record.period, inputs), limits)
+    return _Setup(_prepared(work, "preparation", record.period, inputs), limits)
 
 
 def _preparation_limits(record: RunLog) -> list[Limit]:
@@ -658,7 +650,7 @@ def _intermax(record: RunLog, work: _Work) -> _Setup:
     register, limits = _register_file(record, work, "intermax", _PASTED_FONT)
     moment = _intermax_moment(record, work)
     inputs = OrderingInputs(register, work.folder("Kopie INTERMAX"), now=lambda: moment)
-    return _Setup(_prepared(work, INTERMAX, inputs.period, inputs), limits)
+    return _Setup(_prepared(work, "intermax", inputs.period, inputs), limits)
 
 
 def _intermax_moment(record: RunLog, work: _Work) -> datetime:
@@ -719,7 +711,7 @@ def _efenix(record: RunLog, work: _Work) -> _Setup:
     pricing = record.pricing or contract.DEFAULT_PRICING
     inputs = EfenixInputs(source, lambda _login: efenix_browser.chromium(url), pace=None, mode=PricingMode(pricing))
     limits = [Limit(text, blocking=blocking) for text, blocking in fed.limits]
-    return _Setup(_prepared(work, EFENIX, record.period, inputs, pricing=pricing), limits)
+    return _Setup(_prepared(work, "efenix", record.period, inputs, pricing=pricing), limits)
 
 
 def _efenix_limits(record: RunLog) -> list[Limit]:
@@ -743,14 +735,11 @@ def _efenix_limits(record: RunLog) -> list[Limit]:
     return limits
 
 
-_PROCESSES: Final = Processes.default()
 _KINDS: Final[Mapping[contract.ProcessKey, _Kind]] = {
-    "settlement": _Kind(SETTLEMENT, _collective_limits, _settlement, ("worker_config", "worker_template")),
-    "preparation": _Kind(
-        PREPARATION, _preparation_limits, _preparation, ("worker_config", "internal_template", "collective_template")
-    ),
-    "intermax": _Kind(INTERMAX, _intermax_limits, _intermax),
-    "efenix": _Kind(EFENIX, _efenix_limits, _efenix),
+    "settlement": _Kind(_collective_limits, _settlement, ("worker_config", "worker_template")),
+    "preparation": _Kind(_preparation_limits, _preparation, ("worker_config", "internal_template", "collective_template")),
+    "intermax": _Kind(_intermax_limits, _intermax),
+    "efenix": _Kind(_efenix_limits, _efenix),
 }
 """Odtworzenie każdego procesu z katalogu procesów (``contract.ProcessKey``)."""
 

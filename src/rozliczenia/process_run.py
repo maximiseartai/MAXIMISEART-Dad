@@ -180,7 +180,7 @@ class Process(Generic[InputsT, SummaryT, ContextT]):
     Fakty zakończonego procesu (``finished``) to wynik z wejścia i podsumowania (``result``), liczniki
     (``counters``: jedyna definicja nazw i kolejności liczników rekordu metryk) i drogi zapisu z Wzorca (``routes``;
     proces, który nie pisze z Wzorca, zostawia domyślne: żadnej).
-    ``metrics_path`` to domyślny plik metryk procesu.
+    Pliku metryk tu nie ma: wybiera go gospodarz Uruchomienia (``run_process(metrics_path=...)``).
     """
 
     name: str
@@ -188,7 +188,6 @@ class Process(Generic[InputsT, SummaryT, ContextT]):
     result: Callable[[InputsT, SummaryT], CompletedResult]
     routes: Callable[[SummaryT], RouteCounts] = _no_routes
     preview: Preview | None
-    metrics_path: Callable[[], Path]
     metrics_failure_tail: str
     execute: Callable[[InputsT, ContextT], SummaryT]
     unexpected_failure: Message

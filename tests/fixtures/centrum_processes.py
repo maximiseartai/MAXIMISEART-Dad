@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.processes import Processes
+from rozliczenia.centrum.catalog import Catalog
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
 from rozliczenia.centrum.restart_guardian import Restart
 from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness
@@ -82,14 +82,8 @@ class Engines:
     fail_engine: bool = False
     fail_summary: bool = False
 
-    def processes(self) -> Processes:
-        real = self.metrics.processes()
-        return Processes(
-            preparation=self._steered(real.preparation),
-            settlement=self._steered(real.settlement),
-            efenix=self._steered(real.efenix),
-            intermax=self._steered(real.intermax),
-        )
+    def catalog(self) -> Catalog:
+        return self.metrics.catalog().steered(self._steered)
 
     def _steered(self, real: Process[InputsT, SummaryT, RunContext]) -> Process[InputsT, SummaryT, RunContext]:
         def execute(inputs: InputsT, context: RunContext) -> SummaryT:
@@ -255,7 +249,7 @@ def _app(
         platform=platform,
         today=TODAY,
         configuration_files=configuration,
-        processes=engines.processes(),
+        catalog=engines.catalog(),
         tool_freshness=surroundings.tool_freshness(),
         cloud_files=None if onedrive is None else onedrive.cloud_files(),
         report_box=surroundings.report_box,

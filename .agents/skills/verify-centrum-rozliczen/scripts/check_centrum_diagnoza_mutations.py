@@ -13,13 +13,13 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import DIAGNOZA, SETTINGS, WORKER_CONFIG
+from cele_mutacji_centrum import DIAGNOZA, SETTINGS_ROUTER, WORKER_CONFIG
 from mutacje import Edit, Mutation, check_all
 
 MUTATIONS = (
     Mutation(
         "„Otwórz Rejestr zleceń” niczego nie otwiera",
-        (Edit(SETTINGS, "        platform.open_path(register)\n", "        pass\n"),),
+        (Edit(SETTINGS_ROUTER, "        platform.open_path(register)\n", "        pass\n"),),
         DIAGNOZA,
         "tata klika „Otwórz Rejestr zleceń” przy Zatrzymaniu do poprawy, a Excel się nie otwiera",
     ),

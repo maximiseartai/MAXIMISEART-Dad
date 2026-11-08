@@ -47,7 +47,6 @@ from rozliczenia.input_copy import InputCopy
 from rozliczenia.message import Message
 from rozliczenia.process_run import Finished, Outcome, Stop, StopEnding
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
-from rozliczenia.telemetry import MetricsStore
 
 _STREAM_POLL_SECONDS: Final = 0.05
 _KEEPALIVE_SECONDS: Final = 15.0
@@ -362,7 +361,7 @@ class RunHost:
             self._events = self._events[-1:]
             self._publish_locked(run.running_view())
             view = self._events[-1].view
-        self._log.run_started(process=prepared.declaration.key, mode=run.info.mode, period=prepared.period)
+        self._log.run_started(process=prepared.kind.key, mode=run.info.mode, period=prepared.period)
         try:
             self._run_started(run.info, run.started_at)
         except Exception as failure:  # zapis startu na dysku nie może zmienić Uruchomienia
@@ -400,8 +399,7 @@ class RunHost:
     def remember(self, prepared: PreparedRun[Any, Any], run_id: str, since: datetime) -> None:
         """Zapamiętuje rekord metryk, który dopisało Uruchomienie ``run_id``, jako Uruchomienie z Centrum."""
 
-        metrics = MetricsStore(prepared.process.metrics_path(), prepared.process.counter_names)
-        self._centrum_runs.remember(prepared.declaration.key, run_id, metrics, since, datetime.now(timezone.utc))
+        self._centrum_runs.remember(prepared.kind.key, run_id, prepared.metrics, since, datetime.now(timezone.utc))
 
     def failed(self, failure: Exception) -> None:
         """Wyniku Uruchomienia nie dało się pokazać: do dziennika tylko typ wyjątku, bez jego tekstu."""
@@ -494,13 +492,13 @@ class Run:
             core = prepared.conduct(self)
             self._host.remember(prepared, self.info.id, since)
             ended = self._ended(core, None if isinstance(core.ending, Finished) else core.ending, since)
-            result = ended.card(prepared.declaration.view)
+            result = ended.card(prepared.kind.view)
         except Exception as failure:
             self._host.failed(failure)
             stop = Stop("after_engine", _RESULT_NOT_SHOWN, CallTrace.of(failure))
             core = None if core is None else replace(core, ending=stop, view=None, technical_notes=())
             ended = self._ended(core, stop, since)
-            result = ended.card(prepared.declaration.view)
+            result = ended.card(prepared.kind.view)
         self.stopped = ended.stopped
         self._host.after(ended)
         self._host.finished(ended)

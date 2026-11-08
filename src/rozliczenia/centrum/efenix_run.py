@@ -20,10 +20,9 @@ from typing import Any, Final
 
 from rozliczenia import efenix_browser
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.catalog import EFENIX
+from rozliczenia.centrum.catalog import Catalog, declaration_of
 from rozliczenia.centrum.configuration import InputWorkbook, open_in_excel
 from rozliczenia.centrum.period_board import located_period_folder, observed_period_folder, read_board, requested_period
-from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.process_kind import PreparedRun
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import EfenixInputs, OrderJournal, PricingMode
@@ -33,7 +32,8 @@ from rozliczenia.run_context import RunContexts
 from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 
-_VIEW: Final = EFENIX.view
+_KIND: Final = declaration_of("efenix")
+_VIEW: Final = _KIND.view
 _ELIGIBLE: Final[frozenset[PeriodStatus]] = frozenset({"collective_file_prepared", "worker_settlements_ready"})
 _NO_PREVIEW: Final = (
     "Wycena w efenix nie ma podglądu bez zapisu. Uruchom ją przyciskiem „Uzupełnij bez zapisu” albo „Uzupełnij i zapisz”."
@@ -75,7 +75,7 @@ class EfenixEntry:
     """Wycena w efenix jako proces uruchamiany z Centrum (``runs.ProcessEntry``) z dziennikiem ``journal``."""
 
     store: SettingsStore
-    processes: Processes
+    catalog: Catalog
     today: Callable[[], date]
     window: EfenixWindow
     journal: OrderJournal
@@ -83,12 +83,12 @@ class EfenixEntry:
 
     @property
     def key(self) -> contract.PeriodProcessKey:
-        return EFENIX.key
+        return "efenix"
 
     def setup(self) -> contract.ProcessSetup:
         settings = self.store.load()
         periods_directory = settings.periods_directory
-        board = read_board(periods_directory, self.today(), self.processes)
+        board = read_board(periods_directory, self.today(), self.catalog)
         rows = [row for row in board.periods if row.status in _ELIGIBLE] if board.state == "ready" else []
         preselected = next(
             (row.token for row in rows if row.last_complete),
@@ -97,7 +97,7 @@ class EfenixEntry:
         collective_files = _collective_files(periods_directory, rows) if periods_directory is not None else {}
         return contract.ProcessSetup(
             process=self.key,
-            title=EFENIX.title,
+            title=_KIND.title,
             creates="Wyceny zleceń i Znaczniki efenix",
             reminder=_VIEW.reminder,
             confirms_readiness=_VIEW.confirms_readiness,
@@ -105,11 +105,11 @@ class EfenixEntry:
             pricing_modes=list(_VIEW.pricing_modes),
             periods=[_choice(row, collective_files[row.token]) for row in rows],
             preselected_period=preselected,
-            blocker=EFENIX.settings_blocker(settings) or _blocker(board, rows),
+            blocker=_KIND.settings_blocker(settings) or _blocker(board, rows),
         )
 
     def prepare(self, request: contract.RunRequest) -> PreparedRun[Any, Any]:
-        periods_directory = EFENIX.required_paths(self.store.load())["periods_directory"]
+        periods_directory = _KIND.required_paths(self.store.load())["periods_directory"]
         if request.dry_run:
             raise contract.Refusal(409, _NO_PREVIEW)
         period = requested_period(request.period)
@@ -121,13 +121,8 @@ class EfenixEntry:
             journal=self.journal,
             mode=PricingMode(request.pricing),
         )
-        return PreparedRun(
-            declaration=EFENIX,
-            period=period.token,
-            process=EFENIX.core(self.processes),
-            inputs=inputs,
-            context=self.contexts.new(),
-            pricing=request.pricing,
+        return self.catalog.prepared(
+            self.key, period=period.token, inputs=inputs, context=self.contexts.new(), pricing=request.pricing
         )
 
 

@@ -15,7 +15,7 @@ bez innej przyczyny, a obok innej przyczyny Diagnoza ją tylko proponuje (ADR 00
 Proces pyta się swojego wpisu w katalogu procesów (``catalog``): jego Ustawienia,
 Wzorce i kroki Diagnozy w kolejności wyjaśniania. Nowe sprawdzenie to funkcja
 ``(_Computer, label) -> list[CheckResult]`` z nazwą w ``@_check(label)``, nowy
-krok w ``catalog.CheckStep`` i jego gałąź w ``_check_of``. Sprawdzenie, które samo się nie uda (nieoczekiwany
+krok w ``process_kind.CheckStep`` i jego gałąź w ``_check_of``. Sprawdzenie, które samo się nie uda (nieoczekiwany
 wyjątek), jest „nie sprawdzono” na swoim miejscu, a typ wyjątku trafia do
 dziennika Centrum, nigdy jego treść; reszta sprawdzeń idzie dalej, więc
 Diagnoza zawsze kończy się wyjaśnieniem i podglądem Zgłoszenia. Diagnoza
@@ -33,11 +33,12 @@ from typing import Any, Final
 
 from rozliczenia import input_checks, intermax_ordering, preparation_messages, workbook_files
 from rozliczenia.centrum import contract, diagnosis_messages
-from rozliczenia.centrum.catalog import CheckStep, NeededSetting, PeriodFolderCheck, ProcessDeclaration, declaration_of
+from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import ConfigurationFiles, Template, workers_problem
 from rozliczenia.centrum.keyed_box import KeyJudgement
 from rozliczenia.centrum.log import UNEXPECTED_FAILURE_EVENT, CentrumLog, event_of
+from rozliczenia.centrum.process_kind import CheckStep, NeededSetting, PeriodFolderCheck, ProcessKind
 from rozliczenia.centrum.tool_freshness import RateLimited, ToolFreshness, offers_update
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.dad_files import DadFiles
@@ -160,7 +161,7 @@ class Surroundings:
 class _ProcessFiles:
     """Pliki taty, które czyta i zapisuje proces ``declaration`` w okresie ``period``, wyliczone z Ustawień i Konfiguracji."""
 
-    declaration: ProcessDeclaration[Any, Any]
+    declaration: ProcessKind[Any, Any]
     period: SettlementPeriod
     settings: Settings
     configuration: ConfigurationFiles
