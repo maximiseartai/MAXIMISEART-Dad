@@ -217,7 +217,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(FEATURE, "historia")
     logs = _logs(run)[logs_before:]
     run.check(
-        [(log["mode"], log["period"]) for log in logs] == [("zapis", PERIOD)] * 4,
+        [(log["mode"], log["period"]) for log in logs] == [("RUN", PERIOD)] * 4,
         "four new files of Logi of Uporządkowanie INTERMAX, each with the period of the fixture's today",
     )
     page.get_by_role("tab", name="Historia", exact=True).click()

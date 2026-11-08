@@ -96,7 +96,7 @@ export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSe
   const choices = chosen.periods.map((choice) => ({ value: choice.token, label: <PeriodLabel choice={choice} /> }))
 
   const run = (dryRun: boolean, chosenPricing: Pricing | null) => {
-    const request: RunRequest = { ...selection, dry_run: dryRun }
+    const request: RunRequest = { ...selection, mode: dryRun ? "DRY-RUN" : "RUN" }
 
     if (chosenPricing !== null) {
       request.pricing = chosenPricing

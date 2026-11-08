@@ -24,8 +24,13 @@ wyniku, więc Logów nie tworzy.
 Schemat 2 (#839) daje każdemu krokowi śladu godzinę (UTC) obok czasu trwania: etap ma chwilę rozpoczęcia i końca,
 Przetworzenie Szablonu pracownika też, a działanie okna efenix chwilę rozpoczęcia, więc widać przerwy i czekanie, których
 czasy trwania nie liczą. Dochodzi dziennik działań taty w Centrum (``dad_actions``) od Logów poprzedniego Uruchomienia do
-końca tego, bez treści zapytań, więc bez treści Uwagi taty. Karta z Logów i Historia czytają oba schematy: plik schematu 1
-nie ma godzin ani dziennika, a te pola są w nim ``None``.
+końca tego, bez treści zapytań, więc bez treści Uwagi taty. Plik schematu 1 nie ma godzin ani dziennika, a te pola są
+w nim ``None``.
+
+Schemat 3 zapisuje tryb Uruchomienia, także przy starcie Uruchomienia w dzienniku działań taty, wartością ``RunMode``
+(``RUN``, ``DRY-RUN``) jak rekord metryk, zamiast słowa „zapis”/„podgląd”, a fakty startu (``StartFacts``) stoją w
+pliku przed resztą pól. Karta z Logów, Historia, odtworzenie i Uwaga taty czytają każdy schemat: słowo trybu z pliku
+schematu 1–2 to ten sam tryb (``StoredRunMode``).
 
 Plik leży w katalogu Logów obok dziennika Centrum (``logs_disk``), poza Gitem i OneDrive, bez rotacji. Urwana Wycena w
 efenix (#845) ma Logi z dziennika Wyceny (``RunLog.interrupted``): sposób zakończenia ``interrupted``, bez wyniku, czasu,
@@ -39,16 +44,15 @@ nich składa ``logs_of_run`` (``tests/test_granice_importow.py``).
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Final, Literal, assert_never
+from typing import Annotated, Any, Final, Literal, assert_never
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SerializationInfo, SerializerFunctionWrapHandler, model_serializer
 
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.dad_actions import DadActions
+from rozliczenia.centrum.dad_actions import ButtonPressed, DadActions, StoredRunMode
 from rozliczenia.domain import ProgressPhase, WorkerStatus
 from rozliczenia.efenix_checks import ListedRead
 from rozliczenia.efenix_pricing import OrderKind, OrderResult, PricingStopped, PricingSummary, StoppedOrder
@@ -72,6 +76,7 @@ from rozliczenia.process_run import StopEnding
 from rozliczenia.progress import ProgressSnapshot
 
 RUN_LOGS_DIRECTORY: Final = "uruchomienia"
+SCHEMA_VERSION: Final = 3
 
 LoggedEnding = Literal["finished", StopEnding, "interrupted"]
 """Sposób zakończenia w Logach: jak na karcie (``runs.Ending``) albo ``interrupted``, Urwane Uruchomienie, którego Logi
@@ -80,6 +85,40 @@ zamknął start Centrum z dziennika Wyceny w efenix."""
 
 class _Record(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class StartFacts(_Record):
+    """Bezpieczne fakty startu jednego Uruchomienia, jedyny ich kształt: nagłówek Logów (``RunLog``), plik ostatniego
+    startu i pierwsza linia dziennika Wyceny w efenix (``logs_disk``) to te pola z polami swojego pliku.
+    ``pricing``: tryb Wyceny w efenix (``None``: inne procesy i zapisy sprzed trybów)."""
+
+    run_id: str
+    process: contract.ProcessKey
+    mode: StoredRunMode
+    period: str
+    started_at: datetime
+    pricing: contract.Pricing | None = None
+    """Tryb Wyceny w efenix (ADR 0027). ``None``: inne procesy i Logi sprzed trybów, w których Wycena biegła bez
+    Przekazania."""
+
+    @classmethod
+    def of_run(cls, info: contract.RunInfo, started_at: datetime) -> StartFacts:
+        """Fakty startu Uruchomienia ``info``, które Centrum startuje teraz (``RunHost.start`` → ``run_started``)."""
+
+        return cls(
+            run_id=info.id,
+            process=info.process,
+            mode=info.mode,
+            period=info.period,
+            started_at=started_at,
+            pricing=info.pricing,
+        )
+
+    @property
+    def start(self) -> StartFacts:
+        """Same fakty startu, bez pól pliku, który je niesie; z nich ``logs_disk.name_of`` daje nazwę pliku Logów."""
+
+        return StartFacts.model_validate({name: getattr(self, name) for name in StartFacts.model_fields})
 
 
 class _ReadValues:
@@ -530,24 +569,19 @@ class Tool(_Record):
     commit: str | None
 
 
-class RunLog(_Record):
-    """Logi jednego Uruchomienia procesu z Centrum; kształt tego modelu to schemat pliku JSON.
+class RunLog(StartFacts):
+    """Logi jednego Uruchomienia procesu z Centrum; kształt tego modelu to schemat pliku JSON, a fakty startu
+    (``StartFacts``) to jego nagłówek.
 
     ``duration_ms`` to Czas uruchomienia bez czekania na Decyzję taty; ``started_at`` i ``ended_at`` to zegar ścienny.
     ``issue_count``, ``templates`` i ``duration_ms`` są puste tylko wtedy, gdy sam rdzeń (``run_process``) rzucił wyjątek,
     albo w Logach Urwanego Uruchomienia (``ending`` ``interrupted``), które nie mają też wyniku (``result`` ``None``).
-    Centrum zapisuje schemat 2, a czyta też pliki schematu 1 (bez godzin kroków i dziennika działań taty).
+    Centrum zapisuje schemat 3, a czyta też pliki schematu 1 (bez godzin kroków i dziennika działań taty) i 2 (tryb
+    i tryb przycisków startu w dzienniku działań taty jako słowo „podgląd”/„zapis”, ``StoredRunMode``), a taki plik
+    zapisuje z powrotem w jego schemacie (``_in_own_schema``).
     """
 
-    schema_version: Literal[1, 2]
-    run_id: str
-    process: contract.ProcessKey
-    mode: Literal["podgląd", "zapis"]
-    pricing: contract.Pricing | None = None
-    """Tryb Wyceny w efenix (ADR 0027). ``None``: inne procesy i Logi sprzed trybów, w których Wycena biegła bez
-    Przekazania."""
-    period: str
-    started_at: datetime
+    schema_version: Literal[1, 2, 3]
     ended_at: datetime
     duration_ms: int | None
     tool: Tool
@@ -591,6 +625,22 @@ class RunLog(_Record):
     ze śladem przesunięcia, który łamie fakt domeny (``logs_of_run.logs_of``), i uwagi strażnika reguły danych o
     wartościach zamaskowanych w Kopii (``guard_logs``)."""
 
+    @model_serializer(mode="wrap")
+    def _in_own_schema(self, handler: SerializerFunctionWrapHandler, info: SerializationInfo) -> dict[str, Any]:
+        """JSON Logów w ich schemacie: plik sprzed schematu 3, który start Centrum zapisuje z powrotem przy dzienniku
+        Wyceny (``comment_versions.close``), ma dalej tryb i tryb przycisków startu słowem, bo odtworzenie czyta go kodem
+        jego commitu (``tool.commit``)."""
+
+        dumped: dict[str, Any] = handler(self)
+        if self.schema_version == SCHEMA_VERSION or not info.mode_is_json():
+            return dumped
+        dumped["mode"] = self.mode.word
+        if self.dad_actions is not None:
+            for action, entry in zip(self.dad_actions.entries, dumped["dad_actions"]["entries"], strict=True):
+                if isinstance(action, ButtonPressed) and action.mode is not None:
+                    entry["mode"] = action.mode.word
+        return dumped
+
     @classmethod
     def interrupted(
         cls,
@@ -607,13 +657,8 @@ class RunLog(_Record):
         (``orders``) i ``interruption``; ``ended_at`` to ostatni wpis dziennika."""
 
         return cls(
-            schema_version=2,
-            run_id=started.run_id,
-            process=started.process,
-            mode=started.mode,
-            pricing=started.pricing,
-            period=started.period,
-            started_at=started.started_at,
+            **dict(started.start),
+            schema_version=SCHEMA_VERSION,
             ended_at=ended_at,
             duration_ms=None,
             tool=tool,
@@ -635,48 +680,8 @@ class RunLog(_Record):
         )
 
     @property
-    def start(self) -> StartFacts:
-        """Bezpieczne fakty startu tych Logów, z których ``logs_disk.name_of`` daje nazwę ich pliku."""
-
-        return StartFacts(
-            run_id=self.run_id,
-            process=self.process,
-            mode=self.mode,
-            period=self.period,
-            started_at=self.started_at,
-            pricing=self.pricing,
-        )
-
-    @property
     def text(self) -> str:
         """Treść pliku Logów; te same znaki idą do Skrzynki Zgłoszeń."""
 
         return self.model_dump_json(indent=2) + "\n"
 
-
-@dataclass(frozen=True)
-class StartFacts:
-    """Bezpieczne fakty startu jednego Uruchomienia: te same co nagłówek jego Logów (``RunLog.start``), plik ostatniego
-    startu (``logs_disk``) i pierwsza linia dziennika Wyceny w efenix. ``pricing``: tryb Wyceny w efenix (``None``:
-    inne procesy i zapisy sprzed trybów)."""
-
-    run_id: str
-    process: contract.ProcessKey
-    mode: Literal["podgląd", "zapis"]
-    period: str
-    started_at: datetime
-    pricing: contract.Pricing | None = None
-
-    @classmethod
-    def of_run(cls, info: contract.RunInfo, started_at: datetime) -> StartFacts:
-        """Fakty startu Uruchomienia ``info``, które Centrum startuje teraz (``RunHost.start`` → ``run_started``)."""
-
-        mode: Literal["podgląd", "zapis"] = "podgląd" if info.dry_run else "zapis"
-        return cls(
-            run_id=info.id,
-            process=info.process,
-            mode=mode,
-            period=info.period,
-            started_at=started_at,
-            pricing=info.pricing,
-        )

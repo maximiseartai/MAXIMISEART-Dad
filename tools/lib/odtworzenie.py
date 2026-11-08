@@ -72,7 +72,15 @@ from rozliczenia.centrum.process_kind import (
     ProcessKind,
     Start,
 )
-from rozliczenia.centrum.run_logs import Environment, LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped, RunLog
+from rozliczenia.centrum.run_logs import (
+    Environment,
+    LoggedCell,
+    LoggedInputFile,
+    LoggedSheet,
+    LoggedTyped,
+    RunLog,
+    StartFacts,
+)
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
 from rozliczenia.centrum.runs import CONTINUE_HINT, EndedRun
 from rozliczenia.client_data import MASKS, ForbiddenColumn, forbidden_columns
@@ -167,7 +175,7 @@ class Report:
         first = f"{self.verdict.headline}: {blocking[0]}" if blocking else self.verdict.headline
         lines = [
             first,
-            f"Uruchomienie: {title}, {record.mode}, okres {record.period}, {name_of(record.start)}",
+            f"Uruchomienie: {title}, {record.mode.word}, okres {record.period}, {name_of(record.start)}",
             f"Kod: {code}",
         ]
         if (cause := stop_cause(record)) is not None:
@@ -179,7 +187,7 @@ class Report:
                 f"  Odtworzenie: {_shown(self.difference.replayed)}",
             ]
         if self.verdict is not Verdict.IMPOSSIBLE:
-            lines.append(f"Porównano: {', '.join(name for name, _ in _COMPARED)}.")
+            lines.append(f"Porównano: {', '.join(part.name for part in COMPARED)}.")
             lines.append(
                 "Poza porównaniem: czasy i chwile kroków, odciski plików, środowisko, dziennik działań taty, wygląd "
                 "komórek (Kopia wejścia go nie ma) i zapisane pliki."
@@ -747,7 +755,7 @@ def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, wo
 
     paths = {**rebuilt.paths, **_configured(work, kind.configuration_needs)}
     period = record.period if isinstance(kind, PeriodProcessKind) else None
-    start = Start(paths, period=period, dry_run=record.mode == "podgląd", pricing=record.pricing)
+    start = Start(paths, period=period, dry_run=record.mode.dry_run, pricing=record.pricing)
     metrics = work.path("metryki.jsonl")
     return CATALOG.with_metrics({kind.key: metrics}).prepared(kind.key, start, rebuilt.parts, RunContexts().new())
 
@@ -837,60 +845,66 @@ def _window_stop(stop: dict[str, Any] | None) -> object:
     }
 
 
-_COMPARED: Final[tuple[tuple[str, Callable[[dict[str, Any]], object]], ...]] = (
-    ("Kopia wejścia", lambda logs: _copied(logs["input_copy"])),
-    ("wynik", lambda logs: logs["result"]),
-    ("zakończenie", lambda logs: logs["ending"]),
-    (
-        "Rodzaj Zatrzymania",
-        lambda logs: "for_tata" if logs["stop_kind"] == "repeated" else logs["stop_kind"],
-    ),
-    ("Komunikaty", lambda logs: logs["messages"]),
-    ("uwagi techniczne", lambda logs: logs["technical_notes"]),
-    ("podsumowanie", lambda logs: logs["summary"]),
-    ("liczba problemów", lambda logs: logs["issue_count"]),
-    (
-        "etapy",
-        lambda logs: [{"phase": phase["phase"], "state": phase["state"]} for phase in logs["phases"]],
-    ),
-    (
+def _same_value(value: Any) -> object:
+    return value
+
+
+@dataclass(frozen=True)
+class _Part:
+    """Porównana część Logów: nazwa w raporcie, pole ``RunLog`` i jego postać bez czasów, chwil i odcisków."""
+
+    name: str
+    key: str
+    view: Callable[[Any], object] = _same_value
+
+
+COMPARED: Final = (
+    _Part("Kopia wejścia", "input_copy", _copied),
+    _Part("wynik", "result"),
+    _Part("zakończenie", "ending"),
+    _Part("Rodzaj Zatrzymania", "stop_kind", lambda kind: "for_tata" if kind == "repeated" else kind),
+    _Part("Komunikaty", "messages"),
+    _Part("uwagi techniczne", "technical_notes"),
+    _Part("podsumowanie", "summary"),
+    _Part("liczba problemów", "issue_count"),
+    _Part("etapy", "phases", lambda phases: [{"phase": phase["phase"], "state": phase["state"]} for phase in phases]),
+    _Part(
         "Szablony pracownika",
-        lambda logs: [
-            {key: template[key] for key in ("wykonawca", "outcome", "rows")} for template in logs["templates"]
-        ],
+        "templates",
+        lambda templates: [{key: template[key] for key in ("wykonawca", "outcome", "rows")} for template in templates],
     ),
-    ("Ilości tylko dla INEA", lambda logs: logs["inea_only_cleared"]),
-    ("Wpisy INTERMAX", lambda logs: logs["intermax_entries"]),
-    ("ślad zleceń efenix", lambda logs: _orders(logs["efenix_orders"])),
-    ("Zatrzymanie okna efenix", lambda logs: _window_stop(logs["efenix_stop"])),
-    ("ślad wywołań", lambda logs: logs["trace"]),
+    _Part("Ilości tylko dla INEA", "inea_only_cleared"),
+    _Part("Wpisy INTERMAX", "intermax_entries"),
+    _Part("ślad zleceń efenix", "efenix_orders", _orders),
+    _Part("Zatrzymanie okna efenix", "efenix_stop", _window_stop),
+    _Part("ślad wywołań", "trace"),
 )
-"""Porównane części Logów w kolejności przyczyn i ich postać bez czasów, chwil i odcisków."""
-_FIELDS: Final = {
-    "Kopia wejścia": "input_copy",
-    "wynik": "result",
-    "zakończenie": "ending",
-    "Rodzaj Zatrzymania": "stop_kind",
-    "Komunikaty": "messages",
-    "uwagi techniczne": "technical_notes",
-    "podsumowanie": "summary",
-    "liczba problemów": "issue_count",
-    "etapy": "phases",
-    "Szablony pracownika": "templates",
-    "Ilości tylko dla INEA": "inea_only_cleared",
-    "Wpisy INTERMAX": "intermax_entries",
-    "ślad zleceń efenix": "efenix_orders",
-    "Zatrzymanie okna efenix": "efenix_stop",
-    "ślad wywołań": "trace",
-}
+"""Porównane części Logów w kolejności przyczyn."""
+NOT_COMPARED: Final = frozenset(
+    {
+        *StartFacts.model_fields,
+        "schema_version",
+        "ended_at",
+        "duration_ms",
+        "tool",
+        "environment",
+        "diagnosis",
+        "dad_actions",
+        "interruption",
+        "input_copy_notes",
+    }
+)
+"""Pola Logów, które odtworzenie bierze z Logów albo które zależą od chwili, komputera albo taty, a nie od wejścia i
+kodu: fakty startu, czasy, narzędzie, środowisko, Diagnoza, działania taty, Urwanie i uwagi o Kopii wejścia. Każde
+inne pole ``RunLog`` jest w ``COMPARED`` (``tests/test_centrum_logi_w_skrzynce.py``)."""
 
 
 def first_difference(logged: RunLog, replayed: RunLog) -> Difference | None:
-    """Pierwsza różnica Logów odtworzenia ``replayed`` od Logów ``logged`` w porównanych częściach (``_COMPARED``)."""
+    """Pierwsza różnica Logów odtworzenia ``replayed`` od Logów ``logged`` w porównanych częściach (``COMPARED``)."""
 
     left, right = logged.model_dump(), replayed.model_dump()
-    for name, view in _COMPARED:
-        found = _walk(view(left), view(right), f"{name} ({_FIELDS[name]})")
+    for part in COMPARED:
+        found = _walk(part.view(left[part.key]), part.view(right[part.key]), f"{part.name} ({part.key})")
         if found is not None:
             return found
     return None

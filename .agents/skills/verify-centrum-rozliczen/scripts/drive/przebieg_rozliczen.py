@@ -414,7 +414,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(feature, "przebieg-nienadpisywanie")
     before = {path.name: read_bytes(path) for path in worker_settlements.iterdir()}
-    start = {"process": "settlement", "period": LAST_COMPLETE, "dry_run": False}
+    start = {"process": "settlement", "period": LAST_COMPLETE, "mode": "RUN"}
     started = run.post("/api/runs", "przebieg-nienadpisywanie-start", start).status
     run.check(started == 200, "a second RUN of the closed period starts (the Okres list no longer offers it)")
     page.goto(run.url + "#/uruchomienia")

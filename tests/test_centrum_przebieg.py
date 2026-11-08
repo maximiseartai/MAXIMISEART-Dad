@@ -469,7 +469,7 @@ def test_bez_okresu_z_plikiem_zbiorczym_przebieg_mowi_czego_brakuje(tmp_path: Pa
 
     without_periods = settlement_setup(centrum.client)
     without_settings = settlement_setup(client)
-    refused = client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "dry_run": True})
+    refused = client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "DRY-RUN"})
 
     assert without_periods["blocker"] == (
         "Żaden okres nie ma Statusu „Plik zbiorczy przygotowany”. Najpierw przygotuj plik zbiorczy."

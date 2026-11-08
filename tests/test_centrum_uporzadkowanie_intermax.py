@@ -313,11 +313,11 @@ def test_uporzadkuj_porzadkuje_intermax_z_ustawien_taty_i_pokazuje_liczby_dzien_
     assert started.status_code == 200
     assert started.json()["state"] == "running"
     run = finished["run"]
-    assert (run["process"], run["title"], run["period"], run["dry_run"], run["confirms_readiness"]) == (
+    assert (run["process"], run["title"], run["period"], run["mode"], run["confirms_readiness"]) == (
         "intermax",
         "Uporządkowanie INTERMAX",
         PERIOD,
-        False,
+        "RUN",
         False,
     )
     result = finished["result"]
@@ -433,7 +433,7 @@ def test_logi_zatrzymania_przed_odczytem_ida_do_skrzynki_przy_okresie_dzisiejsze
     run_id = _stopped(centrum)["run"]["id"]
 
     [logs] = centrum.run_logs()
-    assert (logs["run_id"], logs["process"], logs["mode"], logs["period"]) == (run_id, "intermax", "zapis", PERIOD)
+    assert (logs["run_id"], logs["process"], logs["mode"], logs["period"]) == (run_id, "intermax", "RUN", PERIOD)
     assert [message["code"] for message in logs["messages"]] == ["INTERMAX_OTWARTY"]
     assert [file["name"] for file in logs["environment"]["files"]] == [REGISTER_NAME]
     box = centrum.surroundings.report_box
@@ -742,7 +742,7 @@ def test_karta_wraca_z_logow_uporzadkowania_sprzed_wpisow_intermax(tmp_path: Pat
 def test_start_z_okresem_nie_przyjmuje_uporzadkowania_intermax(tmp_path: Path) -> None:
     centrum = ordering_centrum(tmp_path)
 
-    refused = centrum.client.post("/api/runs", json={"process": "intermax", "period": PERIOD, "dry_run": False})
+    refused = centrum.client.post("/api/runs", json={"process": "intermax", "period": PERIOD, "mode": "RUN"})
 
     assert refused.status_code == 422
     assert copies(centrum) == []

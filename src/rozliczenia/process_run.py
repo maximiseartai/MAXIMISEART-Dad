@@ -24,7 +24,7 @@ from typing import Any, Generic, Literal, Protocol, Self, TypeVar
 
 from .call_trace import CallTrace
 from .decision import Conversation, Decision, Declined
-from .domain import ProgressEvent, ProgressObserver, ProgressPhase, StopKind
+from .domain import ProgressEvent, ProgressObserver, ProgressPhase, RunMode, StopKind
 from .message import Message, StopError
 from .progress import PhaseState, ProgressProjection, ProgressSnapshot
 from .telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
@@ -350,7 +350,7 @@ def run_process(
     dry_run = inputs.dry_run
     if dry_run and process.preview is None:
         raise ValueError(f"{process.name} has no Podgląd bez zapisu.")
-    mode = "DRY-RUN" if dry_run else "RUN"
+    mode = RunMode.of(dry_run=dry_run)
     started_at = datetime.now(timezone.utc).isoformat()
     clock = context.clock
     started = clock.now()

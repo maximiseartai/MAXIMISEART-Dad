@@ -108,6 +108,7 @@ export type {
   RunEvent,
   RunInfo,
   RunInterrupted,
+  RunMode,
   RunOutcome,
   RunRequest,
   RunRestored,

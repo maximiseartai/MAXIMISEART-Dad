@@ -24,7 +24,7 @@ from drive.common import (
     run_logs,
     served_version,
 )
-from drive.teksty import ABOUT_LOGS, MODES
+from drive.teksty import ABOUT_LOGS
 from drive.przebieg_rozliczen import TEMPLATE_PACING_MS
 from tests.fixtures.scenariusz_centrum import ROW_MARKER
 
@@ -131,7 +131,7 @@ def _archived(run: Run, tag: str, name: str) -> bytes:
 
 def _ended_in_centrum_log(run: Run) -> list[tuple[str, str, str, str, str]]:
     return [
-        (fact["proces"], MODES[fact["tryb"]], fact["okres"], fact["wynik"], fact["koniec"])
+        (fact["proces"], fact["tryb"], fact["okres"], fact["wynik"], fact["koniec"])
         for fact in (entry.facts for entry in run.log_entries() if entry.event == "uruchomienie-koniec")
     ]
 
@@ -147,7 +147,7 @@ def drive(run: Run, page: Page) -> None:
     expect(page.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
     view = _card(run, "logi-podglad")
     record = _one_new(run, before, "Podgląd bez zapisu")
-    _matches_card(run, record, view, "podgląd")
+    _matches_card(run, record, view, "DRY-RUN")
     _names_running_tool(run, record)
     run.check(
         _codes(record) == [("warning", "BRAK_MAPOWANIA")],
@@ -164,7 +164,7 @@ def drive(run: Run, page: Page) -> None:
     expect(page.get_by_label("Zatrzymanie")).to_contain_text("W Pliku zbiorczym jest WYKONAWCA")
     view = _card(run, "logi-zatrzymanie")
     record = _one_new(run, before, "Zatrzymanie")
-    _matches_card(run, record, view, "zapis")
+    _matches_card(run, record, view, "RUN")
     _names_running_tool(run, record)
     run.check(
         _codes(record) == [("stop", "NIEZNANY_WYKONAWCA")],
@@ -176,7 +176,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(FEATURE, "logi-szablony")
     view = read_json(settled)
     [record] = [record for record in run_logs(run).values() if record["run_id"] == view["run"]["id"]]
-    _matches_card(run, record, view, "zapis")
+    _matches_card(run, record, view, "RUN")
     workers, rows = run.fixture["workers"], run.fixture["settlement"]["rows_per_worker"]
     templates = record["templates"]
     run.check(

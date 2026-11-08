@@ -572,27 +572,6 @@ export const zPhaseProgress = z.object({
 });
 
 /**
- * PinnableRun
- *
- * Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.
- *
- * Pola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć.
- */
-export const zPinnableRun = z.object({
-    run_id: z.string(),
-    process_label: z.string(),
-    started_at: z.iso.datetime(),
-    mode: z.enum(['RUN', 'DRY-RUN']),
-    period: z.string(),
-    result: z.enum([
-        'OK',
-        'WYMAGA_SPRAWDZENIA',
-        'BLAD_KRYTYCZNY'
-    ]),
-    stop_kind: z.enum(['for_tata', 'for_maks']).nullable()
-});
-
-/**
  * PriceListItem
  *
  * Kolumna N:AP i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego.
@@ -644,41 +623,6 @@ export const zProcessFacts = z.object({
         'intermax'
     ]),
     label: z.string()
-});
-
-/**
- * ProcessRun
- *
- * Jedno Uruchomienie procesu z pliku metryk; ``BLAD_KRYTYCZNY`` to przerwane, z czasami etapów do przerwania.
- *
- * ``origin`` mówi, skąd wystartowało: ``centrum`` to Centrum rozliczeń, ``cmd`` każde inne źródło
- * rekordu: Uruchomienia z dawnych launcherów ``.cmd`` i CLI oraz ze skryptu dla maszyn.
- * ``stop_kind`` to Rodzaj Zatrzymania przerwanego; ``None`` przy ukończonym i przy przerwanym ze starego
- * rekordu, który rodzaju nie zapisał. ``run_id`` to identyfikator Uruchomienia z Centrum, ten sam co w jego
- * Logach Uruchomienia, po którym okno Uwagi taty przypina do niego Uwagę; ``None`` przy ``cmd`` i przy
- * Uruchomieniu z Centrum sprzed #322, które identyfikatora nie zapamiętało.
- */
-export const zProcessRun = z.object({
-    process: z.enum([
-        'preparation',
-        'settlement',
-        'efenix',
-        'intermax'
-    ]),
-    process_label: z.string(),
-    started_at: z.iso.datetime(),
-    mode: z.enum(['RUN', 'DRY-RUN']),
-    period: z.string(),
-    result: z.enum([
-        'OK',
-        'WYMAGA_SPRAWDZENIA',
-        'BLAD_KRYTYCZNY'
-    ]),
-    total_duration_ms: z.int(),
-    phase_durations: z.array(zPhaseDuration),
-    origin: z.enum(['cmd', 'centrum']),
-    stop_kind: z.enum(['for_tata', 'for_maks']).nullable(),
-    run_id: z.string().nullable()
 });
 
 /**
@@ -975,24 +919,6 @@ export const zResultCounts = z.object({
 });
 
 /**
- * ModeStatistics
- *
- * Statystyki jednego procesu w jednym trybie; bez ``percentiles`` poniżej minimum ukończonych obserwacji.
- */
-export const zModeStatistics = z.object({
-    process: z.enum([
-        'preparation',
-        'settlement',
-        'efenix',
-        'intermax'
-    ]),
-    mode: z.enum(['RUN', 'DRY-RUN']),
-    completed_runs: z.int(),
-    percentiles: zPercentiles.nullable(),
-    results: zResultCounts
-});
-
-/**
  * RecentResults
  *
  * Wyniki Uruchomień procesu obu procesów z ostatnich ``weeks`` tygodni.
@@ -1000,22 +926,6 @@ export const zModeStatistics = z.object({
 export const zRecentResults = z.object({
     weeks: z.int(),
     results: zResultCounts
-});
-
-/**
- * Metrics
- *
- * Historia Uruchomień procesu z obu plików metryk, czytanych przy każdym odczycie, od najnowszego.
- *
- * ``processes``: procesy w kolejności statystyk; pierwszy jest wybrany w filtrze.
- */
-export const zMetrics = z.object({
-    processes: z.array(zProcessFacts),
-    phases: z.array(z.string()),
-    minimum_completed_runs: z.int(),
-    runs: z.array(zProcessRun),
-    statistics: z.array(zModeStatistics),
-    recent: zRecentResults
 });
 
 /**
@@ -1106,6 +1016,106 @@ export const zRunCardMissing = z.object({
 });
 
 /**
+ * RunMode
+ *
+ * Tryb Uruchomienia procesu: zapis albo Podgląd bez zapisu. Jedyny słownik trybu: rekord metryk, dziennik
+ * Centrum, Zgłoszenie, kontrakt Centrum, Logi Uruchomienia i dziennik działań taty niosą jego wartość, a słowo
+ * (``word``) pokazują Uwaga taty i jej okno.
+ */
+export const zRunMode = z.enum(['RUN', 'DRY-RUN']);
+
+/**
+ * ModeStatistics
+ *
+ * Statystyki jednego procesu w jednym trybie; bez ``percentiles`` poniżej minimum ukończonych obserwacji.
+ */
+export const zModeStatistics = z.object({
+    process: z.enum([
+        'preparation',
+        'settlement',
+        'efenix',
+        'intermax'
+    ]),
+    mode: zRunMode,
+    completed_runs: z.int(),
+    percentiles: zPercentiles.nullable(),
+    results: zResultCounts
+});
+
+/**
+ * PinnableRun
+ *
+ * Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.
+ *
+ * Pola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć.
+ */
+export const zPinnableRun = z.object({
+    run_id: z.string(),
+    process_label: z.string(),
+    started_at: z.iso.datetime(),
+    mode: zRunMode,
+    period: z.string(),
+    result: z.enum([
+        'OK',
+        'WYMAGA_SPRAWDZENIA',
+        'BLAD_KRYTYCZNY'
+    ]),
+    stop_kind: z.enum(['for_tata', 'for_maks']).nullable(),
+    mode_word: z.string().readonly()
+});
+
+/**
+ * ProcessRun
+ *
+ * Jedno Uruchomienie procesu z pliku metryk; ``BLAD_KRYTYCZNY`` to przerwane, z czasami etapów do przerwania.
+ *
+ * ``origin`` mówi, skąd wystartowało: ``centrum`` to Centrum rozliczeń, ``cmd`` każde inne źródło
+ * rekordu: Uruchomienia z dawnych launcherów ``.cmd`` i CLI oraz ze skryptu dla maszyn.
+ * ``stop_kind`` to Rodzaj Zatrzymania przerwanego; ``None`` przy ukończonym i przy przerwanym ze starego
+ * rekordu, który rodzaju nie zapisał. ``run_id`` to identyfikator Uruchomienia z Centrum, ten sam co w jego
+ * Logach Uruchomienia, po którym okno Uwagi taty przypina do niego Uwagę; ``None`` przy ``cmd`` i przy
+ * Uruchomieniu z Centrum sprzed #322, które identyfikatora nie zapamiętało.
+ */
+export const zProcessRun = z.object({
+    process: z.enum([
+        'preparation',
+        'settlement',
+        'efenix',
+        'intermax'
+    ]),
+    process_label: z.string(),
+    started_at: z.iso.datetime(),
+    mode: zRunMode,
+    period: z.string(),
+    result: z.enum([
+        'OK',
+        'WYMAGA_SPRAWDZENIA',
+        'BLAD_KRYTYCZNY'
+    ]),
+    total_duration_ms: z.int(),
+    phase_durations: z.array(zPhaseDuration),
+    origin: z.enum(['cmd', 'centrum']),
+    stop_kind: z.enum(['for_tata', 'for_maks']).nullable(),
+    run_id: z.string().nullable()
+});
+
+/**
+ * Metrics
+ *
+ * Historia Uruchomień procesu z obu plików metryk, czytanych przy każdym odczycie, od najnowszego.
+ *
+ * ``processes``: procesy w kolejności statystyk; pierwszy jest wybrany w filtrze.
+ */
+export const zMetrics = z.object({
+    processes: z.array(zProcessFacts),
+    phases: z.array(z.string()),
+    minimum_completed_runs: z.int(),
+    runs: z.array(zProcessRun),
+    statistics: z.array(zModeStatistics),
+    recent: zRecentResults
+});
+
+/**
  * RunInfo
  *
  * Uruchomienie procesu; ``confirms_readiness`` i ``register_name`` deklaruje proces.
@@ -1124,7 +1134,7 @@ export const zRunInfo = z.object({
     ]),
     title: z.string(),
     period: z.string(),
-    dry_run: z.boolean(),
+    mode: zRunMode,
     pricing: z.enum(['bez Przekazania', 'z Przekazaniem']).nullable(),
     confirms_readiness: z.boolean(),
     register_name: z.string()
@@ -1202,7 +1212,7 @@ export const zRunRequest = z.object({
         'efenix'
     ]),
     period: z.string(),
-    dry_run: z.boolean(),
+    mode: zRunMode,
     pricing: z.enum(['bez Przekazania', 'z Przekazaniem']).optional().default('bez Przekazania')
 });
 
@@ -1730,6 +1740,27 @@ export const zConfiguration = z.object({
         'missing_key',
         'refused_key'
     ])
+});
+
+/**
+ * PinnableRun
+ *
+ * Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.
+ *
+ * Pola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć.
+ */
+export const zPinnableRunWritable = z.object({
+    run_id: z.string(),
+    process_label: z.string(),
+    started_at: z.iso.datetime(),
+    mode: zRunMode,
+    period: z.string(),
+    result: z.enum([
+        'OK',
+        'WYMAGA_SPRAWDZENIA',
+        'BLAD_KRYTYCZNY'
+    ]),
+    stop_kind: z.enum(['for_tata', 'for_maks']).nullable()
 });
 
 /**

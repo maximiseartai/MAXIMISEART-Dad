@@ -177,8 +177,13 @@ co stało się z tym, co wysłał.
   Centrum od Logów poprzedniego Uruchomienia do końca bieżącego: start
   Centrum, widoki, przyciski (każde zapytanie API, które coś zmienia, nazwane
   operacją API, start Uruchomienia z procesem i trybem), każde z godziną w UTC,
-  bez treści zapytań, więc bez treści Uwagi taty. Karta Uruchomienia i Historia
-  czytają pliki schematu 1 i 2.
+  bez treści zapytań, więc bez treści Uwagi taty.
+  Od `schema_version` 3 (N8b rozplątania 7.11) tryb Uruchomienia, także przy
+  starcie w dzienniku działań taty, w pliku ostatniego startu (jego schemat 2)
+  i w pierwszej linii dziennika Wyceny w efenix, ma wartość `RUN` albo
+  `DRY-RUN` jak rekord metryk, a nie słowo „zapis” albo „podgląd”. Karta
+  Uruchomienia, Historia, odtworzenie i Uwaga taty czytają pliki schematu 1, 2
+  i 3, a słowo trybu ze starszego pliku to ten sam tryb.
   Wydanie to numer najwyższego Wydania, którego tag w klonie taty (z instalacji
   albo pobrany przez Aktualizację narzędzia) wskazuje dokładnie commit, z
   którego działa Centrum; Centrum ustala je lokalnie przy końcu każdego

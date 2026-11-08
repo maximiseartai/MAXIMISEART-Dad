@@ -88,6 +88,7 @@ from awarie_efenix import (
     call_kind,
 )
 from rozliczenia import efenix_browser, efenix_process
+from rozliczenia.domain import RunMode
 from rozliczenia.centrum.contract import DEFAULT_PRICING
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LogsOnDisk
@@ -142,7 +143,7 @@ VERDICT: Final = "WYCENA EFENIX"
 START: Final = StartFacts(
     run_id="wycena-efenix",
     process="efenix",
-    mode="zapis",
+    mode=RunMode.RUN,
     period=PERIOD,
     started_at=datetime(2026, 10, 20, 8, tzinfo=timezone.utc),
     pricing=DEFAULT_PRICING,

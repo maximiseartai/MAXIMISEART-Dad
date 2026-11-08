@@ -9,8 +9,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { dateTime } from "@/lib/format"
 import type { Resource } from "@/lib/use-resource"
 
-const MODE_WORDS: Record<PinnableRun["mode"], string> = { "DRY-RUN": "podgląd", RUN: "zapis" }
-
 const SKELETON_ROWS = 3
 
 const NOT_IN_HISTORY = "Tego Uruchomienia nie ma w historii Centrum."
@@ -96,7 +94,7 @@ export function DadNoteRuns({
                     ) : null}
                   </span>
                   <span className="text-xs text-muted-foreground tabular-nums">
-                    {run.period} · {MODE_WORDS[run.mode]} · {dateTime(run.started_at)}
+                    {run.period} · {run.mode_word} · {dateTime(run.started_at)}
                   </span>
                 </span>
                 <RunResultBadge run={run} />

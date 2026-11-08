@@ -31,6 +31,7 @@ from fastapi.testclient import TestClient
 
 from rozliczenia import period_folder
 from rozliczenia.centrum.clock import ALARM_THREAD
+from rozliczenia.domain import RunMode
 from rozliczenia.centrum.github import HttpRequest, HttpResponse
 from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.centrum.report_box import GitHubReportBox
@@ -273,7 +274,7 @@ def _build(root: Path) -> None:
     assert client.post("/api/dad-notes", json=DAD_NOTE).json() == {"state": "waiting", "waits_for": "internet"}
     assert client.get(f"/api/periods/{SETTLEMENT_PERIOD}/quantities-to-fill").json()["state"] == "ready"
     for process, period in (("preparation", PERIOD), ("settlement", SETTLEMENT_PERIOD)):
-        started = client.post("/api/runs", json={"process": process, "period": period, "dry_run": True})
+        started = client.post("/api/runs", json={"process": process, "period": period, "mode": "DRY-RUN"})
         assert started.status_code == 200, started.json()
         assert finished_view(client)["result"]["ending"] == "finished"
     # Wiersze Rejestru zleceń świata to zlecenia kilku dni bez wyglądu INTERMAX, więc Uporządkowanie INTERMAX zatrzymuje
@@ -333,7 +334,7 @@ def _start(client: TestClient, process: str, period: str, *, dry_run: bool) -> A
 
     if process == "intermax":
         return client.post("/api/intermax/run")
-    return client.post("/api/runs", json={"process": process, "period": period, "dry_run": dry_run})
+    return client.post("/api/runs", json={"process": process, "period": period, "mode": RunMode.of(dry_run=dry_run)})
 
 
 def _start_operation(process: str) -> str:
@@ -580,7 +581,7 @@ def test_folder_okresow_bez_odczytu_nazywa_folder_w_kazdym_wejsciu(
     _inaccessible(periods)
     try:
         board = client.get("/api/periods")
-        preview = client.post("/api/runs", json={"process": "preparation", "period": PERIOD, "dry_run": True})
+        preview = client.post("/api/runs", json={"process": "preparation", "period": PERIOD, "mode": "DRY-RUN"})
         stopped = finished_view(client)["result"]
         world.engines.fail_summary = True
         run_id = _run_with_diagnosis(client, "preparation", PERIOD)

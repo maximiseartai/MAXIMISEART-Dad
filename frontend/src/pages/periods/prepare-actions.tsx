@@ -68,7 +68,7 @@ function PreviewAction({ period, step, hint, look }: { period: PeriodRow; step: 
           <Button
             {...look}
             onClick={() =>
-              start({ process: step.process, period: period.token, dry_run: true }).then((started) => started && showRuns())
+              start({ process: step.process, period: period.token, mode: "DRY-RUN" }).then((started) => started && showRuns())
             }
           />
         }

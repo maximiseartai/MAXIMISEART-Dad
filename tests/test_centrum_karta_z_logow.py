@@ -11,11 +11,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import shutil
 import threading
+from collections.abc import Callable
 from typing import Any
 
 import pytest
 
 from rozliczenia.centrum.contract import ProcessKey
+from rozliczenia.domain import RunMode
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
@@ -35,7 +37,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
-from tests.fixtures.dziennik_wyceny import left_journal
+from tests.fixtures.dziennik_wyceny import journal_path, left_journal, start_line
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD
 from tests.fixtures.run_cards import first_view, restored, unlisted
@@ -333,10 +335,23 @@ def test_wiersz_historii_otwiera_karte_swojego_uruchomienia_takze_po_ponownym_st
     assert before == after == expected
 
 
+OLD_WORDS = {"RUN": "zapis", "DRY-RUN": "podgląd"}
+"""Tryb w plikach Centrum sprzed schematu Logów 3."""
+
+
+def as_schema_2(record: dict[str, Any]) -> dict[str, Any]:
+    """Logi tego Uruchomienia tak, jak zapisało je Centrum sprzed schematu 3: tryb, także przy starcie w dzienniku
+    działań taty, słowem."""
+
+    actions = record["dad_actions"]
+    entries = [entry | {"mode": OLD_WORDS[entry["mode"]]} if entry.get("mode") else entry for entry in actions["entries"]]
+    return record | {"schema_version": 2, "mode": OLD_WORDS[record["mode"]], "dad_actions": actions | {"entries": entries}}
+
+
 def as_schema_1(record: dict[str, Any]) -> dict[str, Any]:
     """Logi tego Uruchomienia tak, jak zapisało je Centrum sprzed #839: bez godzin kroków i dziennika działań taty."""
 
-    old = {key: value for key, value in record.items() if key != "dad_actions"} | {"schema_version": 1}
+    old = {key: value for key, value in as_schema_2(record).items() if key != "dad_actions"} | {"schema_version": 1}
     old["phases"] = [{key: phase[key] for key in ("phase", "state", "duration_ms")} for phase in record["phases"]]
     old["templates"] = [
         {key: value for key, value in template.items() if key not in ("started_at", "ended_at")}
@@ -345,16 +360,28 @@ def as_schema_1(record: dict[str, Any]) -> dict[str, Any]:
     return old
 
 
-def test_karta_po_starcie_i_wiersz_historii_otwieraja_logi_schematu_1_i_2(tmp_path: Path) -> None:
+@pytest.mark.parametrize("schema", [as_schema_1, as_schema_2, None], ids=["schemat-1", "schemat-2", "schemat-3"])
+def test_karta_po_starcie_i_wiersz_historii_otwieraja_logi_kazdego_schematu(
+    tmp_path: Path, schema: Callable[[dict[str, Any]], dict[str, Any]] | None
+) -> None:
     centrum = settling_centrum(tmp_path)
     preview = run_to_end(centrum, dry_run=True)
     saved = run_to_end(centrum, dry_run=False)
     centrum.client.stop()
     paths = {record["run_id"]: path for path, record in zip(log_paths(centrum), logged(centrum), strict=True)}
     records = {run_id: json.loads(path.read_text(encoding="utf-8")) for run_id, path in paths.items()}
-    assert {record["schema_version"] for record in records.values()} == {2}
+    assert {record["schema_version"] for record in records.values()} == {3}
+    assert {record["mode"] for record in records.values()} == {"RUN", "DRY-RUN"}
+    if schema is not None:
+        for run_id, path in paths.items():
+            path.write_text(json.dumps(schema(records[run_id]), ensure_ascii=False), encoding="utf-8")
+        start_file = centrum.log_path.parent / "ostatnie-uruchomienie.json"
+        started = json.loads(start_file.read_text(encoding="utf-8"))
+        assert (started["schema_version"], started["mode"]) == (2, "RUN")
+        start_file.write_text(
+            json.dumps(started | {"schema_version": 1, "mode": "zapis"}, ensure_ascii=False), encoding="utf-8"
+        )
     saved_id = saved["run"]["id"]
-    paths[saved_id].write_text(json.dumps(as_schema_1(records[saved_id]), ensure_ascii=False), encoding="utf-8")
 
     centrum.restart()
 
@@ -385,7 +412,7 @@ SECOND = datetime(2026, 10, 23, 14, 5, 7, tzinfo=timezone.utc)
 
 
 def start(run_id: str = RUN_ID, *, process: ProcessKey = "efenix", started_at: datetime = SECOND) -> StartFacts:
-    return StartFacts(run_id=run_id, process=process, mode="zapis", period=PERIOD, started_at=started_at)
+    return StartFacts(run_id=run_id, process=process, mode=RunMode.RUN, period=PERIOD, started_at=started_at)
 
 
 def interrupted_logs(started: StartFacts) -> RunLog:
@@ -486,6 +513,20 @@ def test_plik_z_krotszym_identyfikatorem_w_nazwie_nie_jest_logami_uruchomienia(t
     disk = on_disk(tmp_path)
 
     assert (disk.logs("abc"), disk.newest("efenix")) == (Missing(), None)
+
+
+def test_dziennik_wyceny_sprzed_schematu_3_ze_slowem_trybu_ma_ten_sam_start(tmp_path: Path) -> None:
+    """Dziennik Wyceny w efenix, który zostawiło Centrum sprzed schematu Logów 3, ma w pierwszej linii słowo trybu
+    („zapis”), a start Centrum czyta go jako ten sam start Uruchomienia, więc zamyka go Logami Urwanego Uruchomienia."""
+
+    started = start()
+    path = journal_path(tmp_path, started)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(start_line(started) | {"mode": "zapis"}) + "\n", encoding="utf-8")
+
+    [left] = on_disk(tmp_path).left_behind()
+
+    assert left.journal is not None and left.journal.started == started
 
 
 def test_plik_w_miejscu_katalogu_logow_to_brak_logow_a_nie_odmowa(tmp_path: Path) -> None:

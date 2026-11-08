@@ -28,6 +28,7 @@ from rozliczenia import preparation_messages
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, WarnedSummary
 from rozliczenia.centrum.settings import Settings
+from rozliczenia.domain import RunMode
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import NO_JOURNAL, OrderJournal
 from rozliczenia.efenix_window import OpenEfenix
@@ -305,7 +306,7 @@ class ProcessKind(Generic[InputsT, SummaryT]):
         return None if not modes else modes[0] if chosen is None else chosen
 
     def run_info(
-        self, *, run_id: str, period: str, dry_run: bool, pricing: contract.Pricing | None
+        self, *, run_id: str, period: str, mode: contract.RunMode, pricing: contract.Pricing | None
     ) -> contract.RunInfo:
         """Uruchomienie procesu na karcie: ta sama reguła na żywo i dla karty z Logów Uruchomienia."""
 
@@ -314,7 +315,7 @@ class ProcessKind(Generic[InputsT, SummaryT]):
             process=self.key,
             title=self.title,
             period=period,
-            dry_run=dry_run,
+            mode=mode,
             pricing=self.pricing_of(pricing),
             confirms_readiness=self.view.confirms_readiness,
             register_name=self.view.register_name,
@@ -397,7 +398,9 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     def info(self, run_id: str) -> contract.RunInfo:
         """Uruchomienie ``run_id`` na karcie: na żywo w Centrum i w Logach odtworzenia ta sama reguła wpisu procesu."""
 
-        return self.kind.run_info(run_id=run_id, period=self.period, dry_run=self.dry_run, pricing=self.pricing)
+        return self.kind.run_info(
+            run_id=run_id, period=self.period, mode=RunMode.of(dry_run=self.dry_run), pricing=self.pricing
+        )
 
     def conduct(self, interlocutor: Interlocutor) -> Outcome[Shown[SummaryT]]:
         """Uruchomienie przez rdzeń z rozmówcą ``interlocutor`` i plikiem metryk procesu."""

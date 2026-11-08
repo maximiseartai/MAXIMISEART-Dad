@@ -119,7 +119,7 @@ def drive(run: Run, page: Page) -> None:
     current = run.api("/api/runs/current", "diagnoza-powtorka")
     run_info = current["run"]
     assert isinstance(run_info, dict)
-    run.check((run_info["period"], run_info["dry_run"]) == (PERIOD, True), "Uruchom ponownie kept the period and mode")
+    run.check((run_info["period"], run_info["mode"]) == (PERIOD, "DRY-RUN"), "Uruchom ponownie kept the period and mode")
     expect(stop_banner(page).get_by_role("button", name="Diagnoza", exact=True)).to_be_visible()
     expect(stop_banner(page).get_by_role("button", name="Uruchom ponownie", exact=True)).to_have_count(0)
     run.check(True, "the repeated stop offers Diagnoza instead of Uruchom ponownie")

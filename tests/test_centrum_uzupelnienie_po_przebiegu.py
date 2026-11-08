@@ -54,7 +54,7 @@ def _prepared(tmp_path: Path) -> PreparingCentrum:
 
 
 def _settle(centrum: PreparingCentrum) -> None:
-    started = centrum.client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "dry_run": False})
+    started = centrum.client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "RUN"})
     assert started.status_code == 200, started.text
     assert finished_view(centrum.client)["result"]["result"] == "OK"
     assert (centrum.fixture.collective_file_path.parent / WORKER_SETTLEMENTS).is_dir()

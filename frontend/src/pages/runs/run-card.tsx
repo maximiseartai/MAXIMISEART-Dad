@@ -250,7 +250,7 @@ export function HistoryRunCard({ card }: { card: RunRestored }) {
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-3">
         <PastNote>Uruchomienie z {dateTime(card.started_at)}</PastNote>
-        <ModeBadge dryRun={card.run.dry_run} pricing={card.run.pricing} />
+        <ModeBadge dryRun={card.run.mode === "DRY-RUN"} pricing={card.run.pricing} />
       </div>
       <PhaseList phases={card.phases} />
       <OutcomeBody run={card.run} result={card.result} action={null} />
@@ -265,7 +265,7 @@ function RunHeader({ run, actions }: { run: RunInfo; actions: React.ReactNode })
       <CardDescription className="tabular-nums">Okres {run.period}</CardDescription>
       <CardTitle className="text-lg">{run.title}</CardTitle>
       <CardAction className="flex items-center gap-2">
-        <ModeBadge dryRun={run.dry_run} pricing={run.pricing} />
+        <ModeBadge dryRun={run.mode === "DRY-RUN"} pricing={run.pricing} />
         {actions}
       </CardAction>
     </CardHeader>
@@ -494,7 +494,7 @@ function useNextAction(run: RunInfo, action: NextAction, reminder: string) {
         confirmsReadiness={run.confirms_readiness}
         // „Uruchom” przy wyniku jest tylko po udanym podglądzie bez zapisu tego okresu.
         previewed
-        onConfirm={() => start(rerunOf(run, false))}
+        onConfirm={() => start(rerunOf(run, "RUN"))}
       />
     ),
   }
@@ -703,7 +703,7 @@ function OrderNoteList({
 /** Szczegóły wyniku z serwera: kafelki liczb (np. Zlecenia na dzień), pliki okresu i Rozliczenia pracowników. */
 function SummaryDetails({ summary, run }: { summary: RunSummary; run: RunInfo }) {
   // Po podglądzie bez zapisu pliki są tylko planem: jeszcze ich nie ma, więc nie ma czego otwierać.
-  const open = run.dry_run ? undefined : (what: OpenedInPeriod) => openAndConfirm(run.period, what)
+  const open = run.mode === "DRY-RUN" ? undefined : (what: OpenedInPeriod) => openAndConfirm(run.period, what)
 
   return (
     <>

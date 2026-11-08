@@ -13,6 +13,7 @@ from datetime import datetime
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.run_logs import (
+    SCHEMA_VERSION,
     Environment,
     Explanation,
     LoggedCheck,
@@ -25,6 +26,7 @@ from rozliczenia.centrum.run_logs import (
     LoggedTemplate,
     LoggedWindowStop,
     RunLog,
+    StartFacts,
     Tool,
 )
 from rozliczenia.centrum.runs import EndedRun
@@ -46,13 +48,8 @@ def logs_of(run: EndedRun, *, tool: Tool, environment: Environment, dad_actions:
         priced = facts.summary
     copied = None if run.input_copy is None else run.input_copy.files()
     return RunLog(
-        schema_version=2,
-        run_id=info.id,
-        process=info.process,
-        mode="podgląd" if info.dry_run else "zapis",
-        pricing=info.pricing,
-        period=info.period,
-        started_at=run.started_at,
+        **dict(StartFacts.of_run(info, run.started_at)),
+        schema_version=SCHEMA_VERSION,
         ended_at=run.ended_at,
         duration_ms=run.duration_ms,
         tool=tool,

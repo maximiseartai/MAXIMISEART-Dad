@@ -19,7 +19,7 @@ FETCHING = "Pobieranie nowej wersji…"
 # The header: the bell with something new and Uwaga taty's button.
 BELL_FRESH = "Powiadomienia, są nowe"
 WRITE = "Napisz do Maksa"
-# A mode of an Uruchomienie procesu as Centrum names it.
+# A mode of an Uruchomienie procesu as Dad reads it in the Uwaga window (copied on purpose, docs/agents/skille.md).
 MODES = {"DRY-RUN": "podgląd", "RUN": "zapis"}
 # What Dad could read about the Logi: the word in any of its cases, or their folder.
 ABOUT_LOGS = re.compile(r"\bLog(i|ów|ach|ami)\b|uruchomienia/")

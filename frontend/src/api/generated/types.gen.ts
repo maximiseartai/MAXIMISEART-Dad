@@ -901,10 +901,7 @@ export type ModeStatistics = {
      * Process
      */
     process: 'preparation' | 'settlement' | 'efenix' | 'intermax';
-    /**
-     * Mode
-     */
-    mode: 'RUN' | 'DRY-RUN';
+    mode: RunMode;
     /**
      * Completed Runs
      */
@@ -1264,10 +1261,7 @@ export type PinnableRun = {
      * Started At
      */
     started_at: string;
-    /**
-     * Mode
-     */
-    mode: 'RUN' | 'DRY-RUN';
+    mode: RunMode;
     /**
      * Period
      */
@@ -1280,6 +1274,12 @@ export type PinnableRun = {
      * Stop Kind
      */
     stop_kind: 'for_tata' | 'for_maks' | null;
+    /**
+     * Mode Word
+     *
+     * Słowo trybu w wierszu okna Uwagi, to samo co w Uwadze taty (``RunMode.word``).
+     */
+    readonly mode_word: string;
 };
 
 /**
@@ -1401,10 +1401,7 @@ export type ProcessRun = {
      * Started At
      */
     started_at: string;
-    /**
-     * Mode
-     */
-    mode: 'RUN' | 'DRY-RUN';
+    mode: RunMode;
     /**
      * Period
      */
@@ -1999,10 +1996,7 @@ export type RunInfo = {
      * Period
      */
     period: string;
-    /**
-     * Dry Run
-     */
-    dry_run: boolean;
+    mode: RunMode;
     /**
      * Pricing
      */
@@ -2040,6 +2034,15 @@ export type RunInterrupted = {
     advice: Message;
     orders?: CountGroup | null;
 };
+
+/**
+ * RunMode
+ *
+ * Tryb Uruchomienia procesu: zapis albo Podgląd bez zapisu. Jedyny słownik trybu: rekord metryk, dziennik
+ * Centrum, Zgłoszenie, kontrakt Centrum, Logi Uruchomienia i dziennik działań taty niosą jego wartość, a słowo
+ * (``word``) pokazują Uwaga taty i jej okno.
+ */
+export type RunMode = 'RUN' | 'DRY-RUN';
 
 /**
  * RunOutcome
@@ -2171,10 +2174,7 @@ export type RunRequest = {
      * Period
      */
     period: string;
-    /**
-     * Dry Run
-     */
-    dry_run: boolean;
+    mode: RunMode;
     /**
      * Pricing
      */
@@ -2626,6 +2626,41 @@ export type WorkersUnreadable = {
      */
     state: 'unreadable';
     message: Message;
+};
+
+/**
+ * PinnableRun
+ *
+ * Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.
+ *
+ * Pola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć.
+ */
+export type PinnableRunWritable = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Process Label
+     */
+    process_label: string;
+    /**
+     * Started At
+     */
+    started_at: string;
+    mode: RunMode;
+    /**
+     * Period
+     */
+    period: string;
+    /**
+     * Result
+     */
+    result: 'OK' | 'WYMAGA_SPRAWDZENIA' | 'BLAD_KRYTYCZNY';
+    /**
+     * Stop Kind
+     */
+    stop_kind: 'for_tata' | 'for_maks' | null;
 };
 
 export type GetConfigurationData = {

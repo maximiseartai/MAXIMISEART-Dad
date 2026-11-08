@@ -66,13 +66,13 @@ class PeriodStarts:
         if request.pricing not in (kind.view.pricing_modes or (contract.DEFAULT_PRICING,)):
             raise contract.Refusal(409, _PRICING_ONLY.format(title=kind.title))
         chosen = kind.required_paths(self.store.load())
-        if request.dry_run and kind.start.no_preview is not None:
+        if request.mode.dry_run and kind.start.no_preview is not None:
             raise contract.Refusal(409, kind.start.no_preview)
         period = requested_period(request.period)
         start = Start(
             {need: self._path(need, chosen, period) for need in kind.path_needs},
             period=period.token,
-            dry_run=request.dry_run,
+            dry_run=request.mode.dry_run,
             pricing=request.pricing if kind.view.pricing_modes else None,
         )
         return self.catalog.prepared(kind.key, start, self.parts, self.contexts.new())

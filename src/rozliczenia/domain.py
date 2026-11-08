@@ -1,11 +1,45 @@
-"""Pojęcia procesu rozliczeń: etapy, Zdarzenia przebiegu i Rodzaj Zatrzymania."""
+"""Pojęcia procesu rozliczeń: tryb Uruchomienia, etapy, Zdarzenia przebiegu i Rodzaj Zatrzymania."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import ClassVar, Literal, Protocol
+from typing import ClassVar, Final, Literal, Protocol
+
+
+class RunMode(StrEnum):
+    """Tryb Uruchomienia procesu: zapis albo Podgląd bez zapisu. Jedyny słownik trybu: rekord metryk, dziennik
+    Centrum, Zgłoszenie, kontrakt Centrum, Logi Uruchomienia i dziennik działań taty niosą jego wartość, a słowo
+    (``word``) pokazują Uwaga taty i jej okno."""
+
+    RUN = "RUN"
+    DRY_RUN = "DRY-RUN"
+
+    @classmethod
+    def of(cls, *, dry_run: bool) -> RunMode:
+        return cls.DRY_RUN if dry_run else cls.RUN
+
+    @classmethod
+    def stored(cls, value: object) -> object:
+        """Tryb z pliku na dysku taty: plik sprzed schematu Logów 3 (Logi schematu 1–2, plik ostatniego startu
+        schematu 1, dziennik Wyceny w efenix i dziennik działań taty sprzed niego) ma słowo trybu zamiast wartości;
+        inną wartość zostawia walidacji."""
+
+        return _BY_OLD_WORD.get(value, value) if isinstance(value, str) else value
+
+    @property
+    def dry_run(self) -> bool:
+        return self is RunMode.DRY_RUN
+
+    @property
+    def word(self) -> str:
+        """Słowo trybu dla taty: „podgląd” albo „zapis”."""
+
+        return "podgląd" if self.dry_run else "zapis"
+
+
+_BY_OLD_WORD: Final = {mode.word: mode for mode in RunMode}
 
 
 class ProgressPhase(StrEnum):

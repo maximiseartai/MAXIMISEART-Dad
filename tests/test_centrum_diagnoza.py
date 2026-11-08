@@ -641,7 +641,7 @@ def test_diagnoza_wyceny_w_efenix_wyjasnia_brak_pliku_zbiorczego_komunikatem_wyc
 
     centrum = settling_centrum(tmp_path)
     centrum.engines.fail_engine = True
-    assert centrum.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "dry_run": False}).status_code == 200
+    assert centrum.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "mode": "RUN"}).status_code == 200
     run_id = finished_view(centrum.client)["run"]["id"]
     run_logs_handled(centrum)
 
