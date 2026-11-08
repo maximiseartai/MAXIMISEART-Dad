@@ -1,10 +1,14 @@
 """Podstawa skilla z ``ci-czesci`` biegnie w CI w częściach ``MUTACJE_CZESC=k/n`` i żadna jej jednostka nie ginie:
-części jednej liczby n składają się w kolejności na całość, a Centrum przejeżdża w nich każdą funkcję ``all`` raz."""
+części jednej liczby n składają się w kolejności na całość, a Centrum przejeżdża w nich każdą funkcję ``all`` raz.
+
+Runner i drive Centrum biorą funkcję z rejestru ``FEATURES`` (``drive/__init__.py``): jej potrzeby przed nią, jej
+zrzuty i dowody, wariant fixture'a i pomiar na wyłączność, a ``Run.capture`` odmawia zrzutu spoza jej listy."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
-from contextlib import contextmanager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
+from dataclasses import dataclass, field
 import importlib.util
 import json
 from pathlib import Path
@@ -75,43 +79,64 @@ def test_zla_czesc_centrum_konczy_przebieg_porazka_zanim_cokolwiek_wystartuje(ru
     assert not Path("nie-powstanie").exists()
 
 
-def _without_processes(runner: ModuleType, monkeypatch: pytest.MonkeyPatch, missing: str = "") -> list[list[str]]:
-    """Kroki runnera bez procesów: drive zostawia zrzuty funkcji, które dostał (``all`` to każda), poza ``missing``."""
+@dataclass
+class _Steps:
+    """Co runner bez procesów zrobił: funkcje każdego drive'u, argumenty fixture'a i jak trzymał maszynę."""
 
-    driven: list[list[str]] = []
+    driven: list[list[str]] = field(default_factory=list)
+    fixtures: list[list[str]] = field(default_factory=list)
+    holds: list[str] = field(default_factory=list)
+
+
+def _without_processes(runner: ModuleType, monkeypatch: pytest.MonkeyPatch, missing: str = "") -> _Steps:
+    """Kroki runnera bez procesów: drive zostawia zrzuty i dowody funkcji, które dostał (``all`` to każda), poza
+    ``missing`` (ścieżką w dowodach)."""
+
+    steps = _Steps()
 
     def step(name: str, arguments: list[str], evidence: Path, timeout: int = 0) -> None:
         (evidence / f"{name}.txt").write_text("OK\n", encoding="utf-8")
+        if name == "fixture":
+            steps.fixtures.append(arguments)
         if name == "drive":
             features = arguments[arguments.index("--feature") + 1 :]
-            driven.append(features)
-            (evidence / "screenshots").mkdir(exist_ok=True)
+            steps.driven.append(features)
             for feature in runner.driven("all", {}) if features == ["all"] else features:
-                for shot in runner.feature(feature).screenshots:
-                    if shot != missing:
-                        (evidence / "screenshots" / f"{shot}.png").write_bytes(b"")
+                paths = [f"screenshots/{shot}.png" for shot in runner.feature(feature).screenshots]
+                for path in [*paths, *runner.feature(feature).evidence]:
+                    if path != missing:
+                        (evidence / path).parent.mkdir(parents=True, exist_ok=True)
+                        (evidence / path).write_bytes(b"")
 
     def launch(root: Path, evidence: Path) -> tuple[None, str]:
         (evidence / "server.txt").write_text("OK\n", encoding="utf-8")
         return None, "http://127.0.0.1:1"
 
+    def hold(kind: str) -> AbstractContextManager[float]:
+        steps.holds.append(kind)
+        return nullcontext(0.0)
+
     monkeypatch.setattr(runner, "_preflight", lambda: None)
     monkeypatch.setattr(runner, "_launch", launch)
     monkeypatch.setattr(runner, "_run_step", step)
-    monkeypatch.setattr(runner, "QuietMachine", lambda: SimpleNamespace(run=lambda: nullcontext(0.0)))
-    return driven
+    monkeypatch.setattr(
+        runner,
+        "QuietMachine",
+        lambda: SimpleNamespace(run=lambda: hold("run"), measurement=lambda: hold("measurement")),
+    )
+    return steps
 
 
 def test_czesc_all_przekazuje_drive_tylko_funkcje_swojej_czesci(
     runner: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    driven = _without_processes(runner, monkeypatch)
+    steps = _without_processes(runner, monkeypatch)
     monkeypatch.setenv(ZMIENNA_CZESCI, "2/8")
     part = list(runner.driven("all"))
 
     code = runner.main(["--feature", "all", "--run-dir", str(tmp_path)])
 
-    assert (code, driven) == (0, [part])
+    assert (code, steps.driven) == (0, [part])
     assert 1 < len(part) < len(runner.driven("all", {}))
     assert capsys.readouterr().out.splitlines()[-1].startswith(f"VERIFY OK | features={','.join(part)} | ")
 
@@ -120,12 +145,56 @@ def test_przejazd_bez_zrzutu_z_rejestru_funkcji_pada(
     runner: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     shot = runner.feature("uzupelnienie").screenshots[-1]
-    _without_processes(runner, monkeypatch, missing=shot)
+    _without_processes(runner, monkeypatch, missing=f"screenshots/{shot}.png")
 
     code = runner.main(["--feature", "uzupelnienie", "--run-dir", str(tmp_path)])
 
     assert code == 1
     assert capsys.readouterr().err.startswith(f"VERIFY FAIL | features=uzupelnienie | evidence is missing: {shot}.png")
+
+
+def test_przejazd_bez_dowodu_z_rejestru_funkcji_pada(
+    runner: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = runner.feature("wydajnosc").evidence[-1]
+    _without_processes(runner, monkeypatch, missing=path)
+
+    code = runner.main(["--feature", "wydajnosc", "--run-dir", str(tmp_path)])
+
+    assert code == 1
+    assert capsys.readouterr().err.startswith(f"VERIFY FAIL | features=wydajnosc | evidence is missing: {path}")
+
+
+def test_pomiar_trzyma_maszyne_na_wylacznosc_na_fixture_swojego_wariantu_a_inna_funkcja_czeka_tylko_na_pomiar(
+    runner: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    steps = _without_processes(runner, monkeypatch)
+
+    codes = [runner.main(["--feature", name, "--run-dir", str(tmp_path)]) for name in ("wydajnosc", "metryki")]
+
+    assert codes == [0, 0]
+    assert steps.holds == ["measurement", "run"]
+    assert [arguments[arguments.index("--root") + 2 :] for arguments in steps.fixtures] == [["--wariant", "rok-pracy"], []]
+
+
+def test_rejestr_funkcji_centrum_ma_kazdy_numer_zrzutu_w_jednej_funkcji_i_potrzeby_przed_funkcja(
+    runner: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    every = runner.FEATURES
+    metryki = runner.feature("metryki")
+    shared = metryki._replace(name="metryki-druga", screenshots=("20-metryki-druga",))
+    early = runner.feature("kontrola-ilosci")
+
+    assert runner.broken_rules(every) == []
+    assert runner.broken_rules((*every, shared)) == [
+        "screenshot numbers of more than one feature: {'20': ['metryki', 'metryki-druga']}"
+    ]
+    assert runner.broken_rules((early, *(each for each in every if each != early))) == [
+        "a feature needs one that does not stand before it in FEATURES: ['kontrola-ilosci needs przebieg-rozliczen']"
+    ]
+    monkeypatch.setattr(runner, "FEATURES", (*every, shared))
+    with pytest.raises(runner.VerificationFailure, match="screenshot numbers of more than one feature"):
+        runner._preflight()
 
 
 class _Playwright(ModuleType):
@@ -190,3 +259,57 @@ def test_drive_przejezdza_podane_funkcje_w_podanej_kolejnosci_po_potrzebach_ktor
     )
     assert capsys.readouterr().out.splitlines()[-1] == f"DRIVE OK | features={','.join(features)}"
 
+
+
+def test_drive_daje_opcje_pomiaru_tylko_funkcji_pomiaru(
+    drive_centrum: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    received: dict[str, dict[str, Any]] = {}
+    for feature, module in drive_centrum.MODULES.items():
+        monkeypatch.setattr(module, "drive", lambda run, page, feature=feature, **options: received.update({feature: options}))
+    (tmp_path / "fixture.json").write_text(json.dumps({}), encoding="utf-8")
+
+    code = drive_centrum.main(
+        ["--root", str(tmp_path), "--url", "http://127.0.0.1:1", "--evidence", str(tmp_path / "dowody"),
+         "--feature", "metryki", "wydajnosc", "--baseline", str(tmp_path / "baseline.json"), "--powtorzenia", "3"]
+    )
+
+    assert code == 0
+    assert received == {
+        "metryki": {},
+        "wydajnosc": {"baseline_path": (tmp_path / "baseline.json").resolve(), "repeats": 3},
+    }
+
+
+class _Page:
+    """Strona, której ``Run.capture`` robi zrzut: zapisuje tylko ścieżki zrzutów."""
+
+    def __init__(self) -> None:
+        self.shots: list[Path] = []
+
+    def wait_for_function(self, expression: str) -> None:
+        pass
+
+    def screenshot(self, *, path: Path, full_page: bool, clip: object) -> None:
+        self.shots.append(path)
+
+    def locator(self, selector: str) -> SimpleNamespace:
+        return SimpleNamespace(aria_snapshot=lambda: "- main")
+
+
+def test_zrzut_spoza_rejestru_funkcji_konczy_jej_przejazd_a_jej_wlasny_zrzut_powstaje(
+    drive_centrum: ModuleType, tmp_path: Path
+) -> None:
+    common = sys.modules["drive.common"]
+    (tmp_path / "fixture.json").write_text(json.dumps({}), encoding="utf-8")
+    run = common.Run(tmp_path, "http://127.0.0.1:1", tmp_path / "dowody")
+    page = _Page()
+    own = drive_centrum.feature("metryki").screenshots[0]
+    foreign = drive_centrum.feature("tablica-okresow").screenshots[0]
+    run.step("metryki", "metryki-karty-okresow")
+
+    with pytest.raises(common.DriveFailure, match=f"screenshot {foreign} is not among the screenshots of metryki"):
+        run.capture(page, foreign)
+    run.capture(page, own)
+
+    assert page.shots == [tmp_path / "dowody" / "screenshots" / f"{own}.png"]

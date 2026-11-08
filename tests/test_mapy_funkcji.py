@@ -1,9 +1,8 @@
 """Mapa funkcji skilla ``verify-*`` (``features/``) zgadza się z jego kodem i ``SKILL.md``.
 
-Mapa to pamięć skilla: agent wybiera z niej funkcję do sprawdzenia, a harness skilla prowadzi funkcje z krotek
-``FEATURES`` i ``EXPLICIT_FEATURES`` w swoich skryptach (napisów albo rejestru ``Feature("nazwa", …)``) i z modułów
-pakietu ``scripts/<pakiet>/``. Rozjazd mapy z kodem
-czerwieni CI, a nie dopiero przebieg skilla u agenta. Plik funkcji skilla z funkcjami w kodzie odpowiada funkcji z kodu
+Mapa to pamięć skilla: agent wybiera z niej funkcję do sprawdzenia, a harness skilla prowadzi funkcje z krotki
+``FEATURES`` w swoich skryptach (napisów albo rejestru ``Feature("nazwa", …)``) i z modułów pakietu
+``scripts/<pakiet>/``. Rozjazd mapy z kodem czerwieni CI, a nie dopiero przebieg skilla u agenta. Plik funkcji skilla z funkcjami w kodzie odpowiada funkcji z kodu
 w obie strony, więc ``features/README.md`` takiego skilla nie listuje plików: lista bez sprawdzenia kompletności kłamie od
 pierwszej nowej funkcji. Skill bez funkcji w kodzie listuje je w README, a każdy plik funkcji ma tam link.
 """
@@ -20,7 +19,6 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS = ROOT / ".agents" / "skills"
 MAPS = sorted(path.parent for path in SKILLS.glob("*/features"))
-FEATURE_LISTS = ("FEATURES", "EXPLICIT_FEATURES")
 PACKAGE_HELPERS = frozenset({"__init__", "common", "teksty"})
 LINK = re.compile(r"\]\(\./([^)]+\.md)\)")
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -43,7 +41,7 @@ def _feature_list_values(tree: ast.Module) -> list[tuple[str, ast.expr]]:
         for node in ast.walk(tree)
         if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)) and node.value is not None
         for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
-        if isinstance(target, ast.Name) and target.id in FEATURE_LISTS
+        if isinstance(target, ast.Name) and target.id == "FEATURES"
     ]
 
 
@@ -199,5 +197,5 @@ def test_kazdy_plik_funkcji_i_modul_pakietu_ma_funkcje_w_kodzie_skilla(skill: Pa
         if module.name not in driven
     ]
 
-    assert lists, f"{skill.name} ma pakiet funkcji bez krotki {' ani '.join(FEATURE_LISTS)} w scripts/"
+    assert lists, f"{skill.name} ma pakiet funkcji bez krotki FEATURES w scripts/"
     assert problems == [], "\n".join(problems)
