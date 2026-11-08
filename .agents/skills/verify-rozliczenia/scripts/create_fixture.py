@@ -12,19 +12,18 @@ from openpyxl.styles import PatternFill
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from skrypt_skilla import Parser, create_run_root
 
-from tests.fixtures.scenariusz_rozliczen import (
+from atrapy.scenariusz_rozliczen import (
     SETTLEMENT_CITY,
     SETTLEMENT_ORDER_LINK,
     SETTLEMENT_ROWS,
     UNMAPPED_ROW,
     WORKER_TEMPLATE_NAME,
 )
-from tests.fixtures.settlement import PERIOD, SOURCE_NAME, WORKERS, write_mapping
-from tests.fixtures.workbooks import active_worksheet
+from atrapy.settlement import PERIOD, SOURCE_NAME, WORKERS, write_mapping
+from atrapy.workbooks import active_worksheet
 
 
 def _write_template(path: Path) -> None:

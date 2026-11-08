@@ -33,7 +33,7 @@ from rozliczenia.register_columns import COLUMNS
 from rozliczenia.workbook_files import DataCell
 from rozliczenia.settlement_period import parse_period_token
 
-from tests.fixtures.preparation import (
+from atrapy.preparation import (
     COLLECTIVE_FILE_NAME,
     COLLECTIVE_TEMPLATE_ZERO_ROWS,
     INTERNAL_SETTLEMENT_NAME,
@@ -57,8 +57,8 @@ from tests.fixtures.preparation import (
     write_register,
 )
 from tests.fixtures.benchmark import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, write_synthetic_templates
-from tests.fixtures.intermax import like_excel
-from tests.fixtures.workbooks import (
+from atrapy.intermax import like_excel
+from atrapy.workbooks import (
     TEMPLATE_VIEW,
     View,
     active_worksheet,
@@ -72,15 +72,14 @@ from tests.fixtures.workbooks import (
     view_of,
     written_by_copy,
 )
-from tests.fixtures.settlement import projected
-from tests.fixtures.preparation import (
+from tests.fixtures.operacje import projected
+from atrapy.preparation import (
     cell_values,
     collective_row,
     incomplete_period_fixture,
-    other_warnings,
-    run_preparation,
 )
-from tests.fixtures.interlocutor import Tata
+from tests.fixtures.operacje import other_warnings, run_preparation
+from atrapy.interlocutor import Tata
 
 
 def sheet_rows(path: Path, *, min_row: int, max_col: int) -> list[tuple[object, ...]]:

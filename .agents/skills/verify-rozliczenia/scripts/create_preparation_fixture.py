@@ -24,12 +24,11 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from skrypt_skilla import Parser, create_run_root
 
-from tests.fixtures.preparation import COLLECTIVE_TEMPLATE_HEADERS, INTERNAL_TEMPLATE_HEADERS, REGISTER_HEADERS
-from tests.fixtures.scenariusz_rozliczen import (
+from atrapy.preparation import COLLECTIVE_TEMPLATE_HEADERS, INTERNAL_TEMPLATE_HEADERS, REGISTER_HEADERS
+from atrapy.scenariusz_rozliczen import (
     ARCHIVED_NUMBER,
     ARCHIVED_ORDER,
     COLLECTIVE_TEMPLATE_NAME,
@@ -42,8 +41,8 @@ from tests.fixtures.scenariusz_rozliczen import (
     WORKER_TEMPLATE_NAME,
     register_values,
 )
-from tests.fixtures.settlement import PERIOD, WORKERS, write_mapping
-from tests.fixtures.workbooks import active_worksheet
+from atrapy.settlement import PERIOD, WORKERS, write_mapping
+from atrapy.workbooks import active_worksheet
 
 COLLECTIVE_ZERO_ROWS = 8
 REGISTER_DATE_FORMAT = "dd.mm.yyyy hh:mm"

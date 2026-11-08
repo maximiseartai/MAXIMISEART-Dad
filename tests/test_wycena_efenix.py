@@ -116,12 +116,12 @@ from atrapy.atrapa_efenix import (
     amount_of,
     atrapa_efenix,
 )
-from tests.fixtures.efenix import DAY, Order, write_collective_file
-from tests.fixtures.interlocutor import Tata
+from atrapy.efenix import DAY, Order, write_collective_file
+from atrapy.interlocutor import Tata
 from tests.fixtures.okno_w_procesie import okno
 from tests.fixtures.przegladarka import chromium, page_of
-from tests.fixtures.settlement import PERIOD, write_mapping, write_template
-from tests.fixtures.workbooks import active_worksheet, rewrite_parts
+from atrapy.settlement import PERIOD, write_mapping, write_template
+from atrapy.workbooks import active_worksheet, rewrite_parts
 
 # Żądania, które niczego w efenix nie zmieniają: lista zleceń, szukanie, strona zlecenia i skrypty obu stron.
 READING = {("GET", LIST_PAGE), ("POST", SEARCH), ("GET", ORDER_PAGE), ("GET", LIST_SCRIPT), ("GET", ORDER_SCRIPT)}

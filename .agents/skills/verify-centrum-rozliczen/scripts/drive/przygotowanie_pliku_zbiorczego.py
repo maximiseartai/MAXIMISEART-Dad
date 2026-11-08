@@ -31,7 +31,7 @@ from drive.common import (
 )
 from drive.teksty import FILES_UNCHANGED
 from drive.uzupelnienie import drive_result_card
-from tests.fixtures.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
+from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
 
 # An older period with no successful DRY-RUN in the fixture's metrics; its confirmation keeps the no-preview warning.
 NOT_PREVIEWED = "08_14_09_2026"

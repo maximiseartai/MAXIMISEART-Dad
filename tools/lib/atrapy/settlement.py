@@ -1,4 +1,4 @@
-"""Przebieg rozliczeń w testach: syntetyczne pliki i obserwator postępu.
+"""Przebieg rozliczeń: syntetyczne pliki taty dla testów, narzędzi i skryptów skilli.
 
 Plik zbiorczy, Wzorzec rozliczenia pracownika i konfiguracja wykonawców są
 budowane w katalogu tymczasowym. Nie zawierają prawdziwych danych klientów.
@@ -16,9 +16,7 @@ from openpyxl.styles import PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.formula import ArrayFormula
 
-from rozliczenia.domain import ProgressEvent, ProgressObserver
-from rozliczenia.progress import ProgressProjection
-from tests.fixtures.workbooks import TEMPLATE_VIEW, View, active_worksheet, set_view
+from atrapy.workbooks import TEMPLATE_VIEW, View, active_worksheet, set_view
 
 PERIOD = "08_14_09_2026"
 
@@ -190,13 +188,6 @@ def make_fixture(tmp_path: Path, period: str = PERIOD) -> tuple[Path, Path, Path
     config_path = write_mapping(tmp_path / "worker_mapping.yaml")
     write_template(tmp_path / "Wzorzec rozliczenia pracownika.xlsx")
     return source_path, target_directory, config_path
-
-
-def projected(projection: ProgressProjection) -> ProgressObserver:
-    def observer(event: ProgressEvent) -> None:
-        projection.update(event)
-
-    return observer
 
 
 def make_preview_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:

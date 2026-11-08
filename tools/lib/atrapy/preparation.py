@@ -1,4 +1,4 @@
-"""Przygotowanie pliku zbiorczego w testach: syntetyczne skoroszyty i operacja.
+"""Przygotowanie pliku zbiorczego: syntetyczne skoroszyty taty dla testów, narzędzi i skryptów skilli.
 
 Rejestr zleceń, Wzorzec rozliczenia wewnętrznego i Wzorzec pliku zbiorczego są
 budowane w katalogu tymczasowym. Nie zawierają prawdziwych danych klientów.
@@ -17,24 +17,12 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from rozliczenia.collective_preparation import (
-    PreparationInputs,
-    PreparationSummary,
-    prepare_collective_file,
-)
-from rozliczenia.dad_files import DadFiles
-from rozliczenia.decision import Conversation
-from rozliczenia.domain import ProgressObserver
-from rozliczenia.message import Message
-from rozliczenia.run_context import UNASKED, RunContext
-from tests.fixtures.settlement import write_mapping
-from tests.fixtures.workbooks import TEMPLATE_VIEW, View, active_worksheet, add_external_link_fixture, set_view
+from atrapy.settlement import write_mapping
+from atrapy.workbooks import TEMPLATE_VIEW, View, active_worksheet, add_external_link_fixture, set_view
 
 PERIOD = "08_14_09_2026"
 INTERNAL_SETTLEMENT_NAME = f"Rozliczenie wew. {PERIOD}.xlsx"
 COLLECTIVE_FILE_NAME = f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
-QUANTITY_WARNINGS = frozenset({"NIEZNANE_URZADZENIA", "WIERSZE_Z_OPISU", "KOLUMNY_Z_OPISU"})
-"""Kody ostrzeżeń o Ilościach usług do uzupełnienia (``tests/test_ostrzezenia_ilosci.py``)."""
 
 # Układ nowego Rejestru taty: pusta kolumna A, AKCJE w B, ZWROT i UWAGI na końcu.
 # AKCJE, ZWROT i UWAGI nie są przenoszone; kolumny są przesunięte względem wzorców.
@@ -508,31 +496,6 @@ def make_dad_layout_fixture(tmp_path: Path) -> PreparationFixture:
     return replace(fixture, periods_directory=periods_directory, month_periods_folder=september)
 
 
-def run_preparation(
-    fixture: PreparationFixture,
-    period: str = PERIOD,
-    *,
-    dry_run: bool = False,
-    observer: ProgressObserver | None = None,
-    conversation: Conversation = UNASKED,
-    files: DadFiles | None = None,
-) -> PreparationSummary:
-    """Przygotowanie ``fixture`` w okresie ``period``; ``files``: uchwyt plików taty z Kopią wejścia (``None``: bez
-    Kopii)."""
-
-    inputs = PreparationInputs(
-        fixture.register_path,
-        fixture.periods_directory,
-        period,
-        fixture.config_path,
-        fixture.internal_template_path,
-        fixture.collective_template_path,
-        dry_run,
-    )
-    context = RunContext(observer=observer, conversation=conversation)
-    return prepare_collective_file(inputs, context if files is None else replace(context, files=files))
-
-
 def collective_row(number: int, started: datetime, successful: str, worker: str) -> tuple[object, ...]:
     return (
         "POZNAŃ",
@@ -576,8 +539,3 @@ def incomplete_period_fixture(tmp_path: Path) -> PreparationFixture:
 
     return make_preparation_fixture(tmp_path, incomplete_period_rows())
 
-
-def other_warnings(warnings: Sequence[Message]) -> list[Message]:
-    """Ostrzeżenia Przygotowania bez ostrzeżeń ilości, które ma każdy okres (``tests/test_ostrzezenia_ilosci.py``)."""
-
-    return [warning for warning in warnings if warning.code not in QUANTITY_WARNINGS]

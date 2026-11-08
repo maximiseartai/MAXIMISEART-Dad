@@ -95,13 +95,13 @@ The coverage at this commit:
 | `src/rozliczenia/template_file.py`: `TemplateFile` (`check`, `create`, `_read`, `_template_copy`, `_create_with_openpyxl`), `_in_columns` (a `DataRow` cell in its own column), `_package_writer`; `src/rozliczenia/write_routes.py`: `Route`; `src/rozliczenia/workbook_save.py`: `write_atomically` | the real entry point; which path it takes (`create` returns it) |
 | `src/rozliczenia/template_file.py`: `TemplateFile._create_with_openpyxl`, `_write_rows`, `_request_recalculation`; `src/rozliczenia/workbook_save.py`: `save_from_template`, `_restore_external_link_parts` | the reference (old openpyxl path) |
 | `tools/porownanie_rozliczen.py` (`compare_worker_settlements` and its per-cell helpers, `_hyperlink` among them) | the judge for WIERNA_KOPIA |
-| `tools/syntetyczne_wzorce.py` (`write_settlement_template`), `tests/fixtures/settlement.py` (`write_template`), `tests/fixtures/workbooks.py` (`add_external_link_fixture`, `refused_by_copy`) | the Wzorce under test and the twin the copy refuses |
+| `tools/syntetyczne_wzorce.py` (`write_settlement_template`), `tools/lib/atrapy/settlement.py` (`write_template`), `tools/lib/atrapy/workbooks.py` (`add_external_link_fixture`, `refused_by_copy`) | the Wzorce under test and the twin the copy refuses |
 
 Run the check when a diff touches any of these. To see whether the covered code moved since the
 sync commit:
 
 ```bash
-git diff --stat 054308111 -- src/rozliczenia/template_copy.py src/rozliczenia/workbook_parts.py src/rozliczenia/highlights.py src/rozliczenia/row_look.py src/rozliczenia/hyperlinks.py src/rozliczenia/workbook_files.py src/rozliczenia/template_file.py src/rozliczenia/write_routes.py src/rozliczenia/workbook_save.py tools/porownanie_rozliczen.py tools/syntetyczne_wzorce.py tests/fixtures/settlement.py tests/fixtures/workbooks.py
+git diff --stat 054308111 -- src/rozliczenia/template_copy.py src/rozliczenia/workbook_parts.py src/rozliczenia/highlights.py src/rozliczenia/row_look.py src/rozliczenia/hyperlinks.py src/rozliczenia/workbook_files.py src/rozliczenia/template_file.py src/rozliczenia/write_routes.py src/rozliczenia/workbook_save.py tools/porownanie_rozliczen.py tools/syntetyczne_wzorce.py tests/fixtures/settlement.py tests/fixtures/workbooks.py tools/lib/atrapy/settlement.py tools/lib/atrapy/workbooks.py
 ```
 
 Changes elsewhere (reading the Plik zbiorczy, `engine.py`, publication of the Folder rozliczeń

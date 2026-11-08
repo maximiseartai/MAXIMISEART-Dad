@@ -25,7 +25,7 @@ from tests.fixtures.intermax_disk import denied, failing_replace, no_space, part
 from tests.fixtures.centrum_intermax import NOW, REGISTER_NAME, Clock, OrderingCentrum, copies, open_in_excel, ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum
 from tests.fixtures.centrum import views_until
-from tests.fixtures.preparation import PERIOD, incomplete_period_rows
+from atrapy.preparation import PERIOD, incomplete_period_rows
 
 ORDERED = "INTERMAX przed uporządkowaniem 2026-10-26 14-05-07.xlsx"
 LATER = NOW + timedelta(hours=2, minutes=30)

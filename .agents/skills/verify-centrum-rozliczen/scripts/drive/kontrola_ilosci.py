@@ -18,7 +18,7 @@ from drive.common import (
     Run,
     start_centrum,
 )
-from tests.fixtures.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
+from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
 
 FEATURE = "kontrola-ilosci"
 LABEL = "kontrola-ilosci"

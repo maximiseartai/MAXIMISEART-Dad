@@ -20,9 +20,10 @@ from rozliczenia.run_context import RunContext
 
 from tests.fixtures.centrum import CentrumClient, ToolDirectory, centrum_app
 from tests.fixtures.centrum_processes import write_configuration
-from tests.fixtures.preparation import make_preparation_fixture, run_preparation
-from tests.fixtures.settlement import make_fixture
-from tests.fixtures.workbooks import active_worksheet
+from atrapy.preparation import make_preparation_fixture
+from tests.fixtures.operacje import run_preparation
+from atrapy.settlement import make_fixture
+from atrapy.workbooks import active_worksheet
 
 
 def test_przygotowanie_tlumaczy_wzorzec_otwarty_w_excelu_dopiero_w_zapisywaniu(tmp_path: Path) -> None:

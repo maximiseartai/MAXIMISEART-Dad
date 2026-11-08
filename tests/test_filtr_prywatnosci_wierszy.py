@@ -18,7 +18,7 @@ from rozliczenia.order_facts import NON_NUMERIC, MissingHeaders, OrderFacts, col
 from rozliczenia.quantity_rules import OrderContent, WeekTime
 from rozliczenia.collective_file import read_data_rows
 from tests.fixtures.data_rows import data_row
-from tests.fixtures.settlement import write_quantity_source
+from atrapy.settlement import write_quantity_source
 
 # Nagłówki A17:K17 Wzorca pliku zbiorczego po normalizacji, jak je daje odczyt Pliku zbiorczego.
 HEADER = {

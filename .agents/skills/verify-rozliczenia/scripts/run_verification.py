@@ -16,11 +16,10 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from skrypt_skilla import SKIPPED, Parser, new_run
 
-from tests.fixtures.scenariusz_rozliczen import (
+from atrapy.scenariusz_rozliczen import (
     COLLECTIVE_TEMPLATE_NAME,
     INTERNAL_TEMPLATE_NAME,
     PERIODS_DIRECTORY,
@@ -29,7 +28,7 @@ from tests.fixtures.scenariusz_rozliczen import (
     WORKER_SETTLEMENTS_DIRECTORY,
     WORKER_TEMPLATE_NAME,
 )
-from tests.fixtures.settlement import PERIOD, SOURCE_NAME
+from atrapy.settlement import PERIOD, SOURCE_NAME
 
 SCRIPT = Path(__file__).resolve()
 REPO_ROOT = SCRIPT.parents[4]

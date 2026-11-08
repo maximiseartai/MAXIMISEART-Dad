@@ -31,12 +31,11 @@ import excel
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia.collective_layout import QUANTITY_COLUMNS
 from skrypt_skilla import SKIPPED, Parser, create_run_root, new_run
-from tests.fixtures.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
-from tests.fixtures.scenariusz_rozliczen import (
+from atrapy.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
+from atrapy.scenariusz_rozliczen import (
     COLLECTIVE_TEMPLATE_NAME,
     FILLED_ORDERS,
     INTERNAL_TEMPLATE_NAME,
@@ -50,8 +49,8 @@ from tests.fixtures.scenariusz_rozliczen import (
     order_number,
     worker_settlement_name,
 )
-from tests.fixtures.scenariusz_rozliczen import QUANTITIES as ORDER_QUANTITIES
-from tests.fixtures.settlement import PERIOD, WORKERS
+from atrapy.scenariusz_rozliczen import QUANTITIES as ORDER_QUANTITIES
+from atrapy.settlement import PERIOD, WORKERS
 
 SCRIPT = Path(__file__).resolve()
 REPO_ROOT = SCRIPT.parents[4]

@@ -53,7 +53,7 @@ from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.github_api import Answer, github_api
 from tests.fixtures.proxy_systemu import system_proxy
-from tests.fixtures.sluchacz_kolejki import QueueListener
+from atrapy.sluchacz_kolejki import QueueListener
 
 SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
 sys.path.insert(0, str(SKILL / "scripts"))

@@ -18,7 +18,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Si
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.worksheet import Worksheet
 
-from tests.fixtures.workbooks import active_worksheet, add_external_link_fixture, rewrite_parts
+from atrapy.workbooks import active_worksheet, add_external_link_fixture, rewrite_parts
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))

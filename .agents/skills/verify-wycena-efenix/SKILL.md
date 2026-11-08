@@ -8,7 +8,7 @@ pilnuje:
   - tools/lib/atrapy/atrapa_efenix.py
   - tools/lib/atrapy/model_efenix.py
   - tests/fixtures/okno_w_procesie.py
-  - tests/fixtures/efenix.py
+  - tools/lib/atrapy/efenix.py
   - tools/lib/eksplorator.py
 ci: .agents/skills/verify-wycena-efenix/scripts/explore_wycena_efenix.py
 ci-czesci: 8

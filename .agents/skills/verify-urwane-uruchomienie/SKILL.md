@@ -204,7 +204,7 @@ Then tell a real bug from a modeling error: replay the path on the code, one ste
 `tests/test_centrum_logi_uruchomienia.py`. A Centrum switched off during a Wycena is either a real kill
 (`centrum_process(...)` and `process.kill()`, as in
 `test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwanego_uruchomienia_ze_zleceniami_sprzed_zgasniecia`)
-or a journal written with `left_journal` (`tests/fixtures/dziennik_wyceny.py`), as in
+or a journal written with `left_journal` (`tools/lib/atrapy/dziennik_wyceny.py`), as in
 `test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_straznika_reguly_danych`. A start is
 `centrum.restart()`, which builds the app with `create_app` in the test process, so a failed read during one start is
 `monkeypatch` of `Path.read_text` (journal) or `Path.open` with mode `"r"` (the efenix metrics file,

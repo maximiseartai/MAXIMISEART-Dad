@@ -17,12 +17,11 @@ import excel
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from skrypt_skilla import Parser
 
-from tests.fixtures.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
-from tests.fixtures.scenariusz_rozliczen import (
+from atrapy.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
+from atrapy.scenariusz_rozliczen import (
     COLLECTIVE_TEMPLATE_NAME,
     PERIODS_DIRECTORY,
     REGISTER_NAME,
@@ -30,7 +29,7 @@ from tests.fixtures.scenariusz_rozliczen import (
     WORKER_TEMPLATE_NAME,
     worker_settlement_name,
 )
-from tests.fixtures.settlement import PERIOD, WORKERS
+from atrapy.settlement import PERIOD, WORKERS
 
 LINKED_TEMPLATES = (COLLECTIVE_TEMPLATE_NAME, WORKER_TEMPLATE_NAME)
 WORKBOOK_NAMES = (

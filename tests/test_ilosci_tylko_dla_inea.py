@@ -15,8 +15,8 @@ import pytest
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.quantity_rules import QuantityColumn
 from rozliczenia.run_context import RunContext
-from tests.fixtures.settlement import PERIOD, CellValue, make_fixture, write_quantity_source
-from tests.fixtures.workbooks import active_worksheet, hyperlinks, marked_for_copy, refused_by_copy, written_by_copy
+from atrapy.settlement import PERIOD, CellValue, make_fixture, write_quantity_source
+from atrapy.workbooks import active_worksheet, hyperlinks, marked_for_copy, refused_by_copy, written_by_copy
 
 AP, AK = QuantityColumn.AP, QuantityColumn.AK
 HIGHLIGHT = "FFFFFF00"

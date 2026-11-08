@@ -7,7 +7,7 @@ from pathlib import Path
 from playwright.sync_api import Page, expect
 
 from drive.common import Run, last_opened_is, next_step_names_current_step, period_row
-from tests.fixtures.scenariusz_centrum import LAST_COMPLETE
+from atrapy.scenariusz_centrum import LAST_COMPLETE
 
 
 def _choose_folder(run: Run, page: Page, path: str) -> None:

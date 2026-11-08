@@ -21,7 +21,7 @@ from drive.common import (
     sent_requests,
     settle,
 )
-from tests.fixtures.scenariusz_centrum import NEEDS_CHECK
+from atrapy.scenariusz_centrum import NEEDS_CHECK
 
 
 def drive(run: Run, page: Page) -> None:

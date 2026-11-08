@@ -29,8 +29,8 @@ from tests.fixtures.centrum import (
 from tests.fixtures.centrum_intermax import ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum, run_to_end, settling_centrum, stopped_for_maks
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.preparation import PERIOD, default_register_rows, paste_raw_orders, register_order
-from tests.fixtures.settlement import write_quantity_source
+from atrapy.preparation import PERIOD, default_register_rows, paste_raw_orders, register_order
+from atrapy.settlement import write_quantity_source
 
 TITLE = "Plik zbiorczy otwiera się długo"
 BODY = "Od wczoraj Excel myśli przy nim minutę.\nInne pliki otwierają się od razu."

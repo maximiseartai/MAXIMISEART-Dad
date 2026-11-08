@@ -39,7 +39,7 @@ from rozliczenia.workbook_files import read_data_rows
 from rozliczenia.run_context import RunContext
 from tests.fixtures.benchmark import WORKER_TEMPLATE, write_synthetic_templates
 from tests.fixtures.porownanie import compare_worker_settlements
-from tests.fixtures.workbooks import (
+from atrapy.workbooks import (
     TEMPLATE_VIEW,
     View,
     active_worksheet,
@@ -55,7 +55,7 @@ from tests.fixtures.workbooks import (
     without_sheet,
     written_by_copy,
 )
-from tests.fixtures.settlement import (
+from atrapy.settlement import (
     COLLECTIVE_HEADERS,
     NOT_A_PERIOD,
     PERIOD,
@@ -63,10 +63,10 @@ from tests.fixtures.settlement import (
     WORKER_TEMPLATE_COLUMN_WIDTHS,
     link_order_numbers,
     make_fixture,
-    projected,
     write_source,
     write_template,
 )
+from tests.fixtures.operacje import projected
 
 
 UNREADABLE_SOURCE_MESSAGE = (

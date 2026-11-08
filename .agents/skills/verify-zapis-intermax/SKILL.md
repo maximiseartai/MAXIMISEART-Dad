@@ -146,7 +146,7 @@ The last line is the verdict:
 ## How it works and what it covers
 
 `explore_intermax.py` writes three synthetic INTERMAX files with
-`tests/fixtures/intermax.py`: the original, with a day of Surowe zlecenia at the
+`tools/lib/atrapy/intermax.py`: the original, with a day of Surowe zlecenia at the
 bottom, the version a worker saves on another computer, with one more
 ordered order above them, and an earlier one with one ordered order fewer. For
 every schedule it puts the original into a fresh folder, fills the Kopie folder

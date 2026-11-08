@@ -84,7 +84,7 @@ def centrum_process(tmp_path: Path, efenix_url: str) -> Iterator[CentrumProcess]
 
     port = free_port()
     command = [sys.executable, "-m", "tests.fixtures.centrum_w_procesie", str(tmp_path), efenix_url, str(port)]
-    environment = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    environment = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT / "tools" / "lib")])}
     stop = threading.Event()
     ended: list[subprocess.CompletedProcess[str] | None] = []
 

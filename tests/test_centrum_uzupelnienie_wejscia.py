@@ -13,7 +13,7 @@ from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from tests.fixtures.centrum_processes import PreparingCentrum, preparing_centrum, run_to_end
-from tests.fixtures.preparation import PERIOD
+from atrapy.preparation import PERIOD
 
 URL = f"/api/periods/{PERIOD}/quantities-to-fill"
 

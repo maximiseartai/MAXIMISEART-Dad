@@ -68,7 +68,7 @@ from rozliczenia.intermax_replace import LOCAL_DISK, Disk
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.linie_watkow import new_line, stop_after_test, threads_since
-from tests.fixtures.widok_skrzynki import shown
+from atrapy.widok_skrzynki import shown
 
 ROOT = Path(__file__).resolve().parents[2]
 

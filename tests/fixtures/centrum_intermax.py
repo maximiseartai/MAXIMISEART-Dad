@@ -24,7 +24,7 @@ from tests.fixtures.centrum import (
     join_threads_since,
 )
 from tests.fixtures.centrum_processes import Engines, Surroundings
-from tests.fixtures.intermax import Intermax, Layout
+from atrapy.intermax import Intermax, Layout
 from tests.fixtures.intermax_disk import FaultyDisk
 
 REGISTER_NAME = "ZLECENIA INTERMAX OD 08_11_2021-NOWA WERSJA.xlsx"

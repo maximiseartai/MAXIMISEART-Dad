@@ -22,7 +22,7 @@ from drive.common import (
     stop_banner,
 )
 from drive.teksty import FETCHING, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON, UP_TO_DATE
-from tests.fixtures.scenariusz_centrum import PERIOD_WITHOUT_FILES
+from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES
 
 FEATURE = "aktualnosc-i-onedrive"
 # The period of features/diagnoza.md: no Folder okresu and no orders, so no Uruchomienie here writes a file.

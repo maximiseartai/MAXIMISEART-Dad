@@ -19,7 +19,7 @@ from rozliczenia.telemetry import MetricsStore
 from tests.fixtures.centrum import FakeReportBox, write_report_key
 from tests.fixtures.centrum_processes import SettlingCentrum, run_logs_handled, run_to_end, settling_centrum
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.settlement import PERIOD
+from atrapy.settlement import PERIOD
 
 TITLE = "Podgląd pokazał dwa razy tego samego Wykonawcę"
 BODY = "Na liście Szablonów pracownika jest dwa razy ten sam Wykonawca."

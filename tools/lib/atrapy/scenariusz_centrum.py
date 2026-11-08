@@ -2,8 +2,8 @@
 
 ``create_centrum_fixture.py`` i ``serve_centrum.py`` budują z tych danych pliki taty i Atrapę efenix, a napęd
 (``drive/*.py``), ``centrum_self_test.py`` i ``windows_tool.py`` skilla verify-centrum-na-windowsie biorą stąd te same
-wartości wejścia. Nagłówki biorą z ``tests/fixtures/preparation.py``, a nazwy Wzorców generator bierze z
-``tests/fixtures/scenariusz_rozliczen.py``; Rejestr ma układ starego Rejestru taty, a Wzorzec rozliczenia
+wartości wejścia. Nagłówki biorą z ``tools/lib/atrapy/preparation.py``, a nazwy Wzorców generator bierze z
+``tools/lib/atrapy/scenariusz_rozliczen.py``; Rejestr ma układ starego Rejestru taty, a Wzorzec rozliczenia
 wewnętrznego nie ma kolumn ``zwrot`` i ``UWAGI``, których żaden proces nie czyta.
 
 Wiersze Pliku zbiorczego, na które trafiają zlecenia okresu (``COLLECTIVE_FILE_ROWS``), stoją tu jawnie, a nie z kodu
@@ -16,9 +16,9 @@ from __future__ import annotations
 from datetime import datetime
 
 from atrapy.atrapa_efenix import amount_of
-from tests.fixtures.efenix import ADDRESS, Order as EfenixOrder
-from tests.fixtures.preparation import COLLECTIVE_TEMPLATE_HEADERS, INTERNAL_TEMPLATE_HEADERS, OLD_REGISTER_HEADERS
-from tests.fixtures.settlement import PERIOD
+from atrapy.efenix import ADDRESS, Order as EfenixOrder
+from atrapy.preparation import COLLECTIVE_TEMPLATE_HEADERS, INTERNAL_TEMPLATE_HEADERS, OLD_REGISTER_HEADERS
+from atrapy.settlement import PERIOD
 
 # Dad's "today" for the run: Monday 19.10.2026, so the last complete period is 06_12_10_2026,
 # whose Folder okresu deliberately does not exist.
@@ -71,7 +71,7 @@ DEVICES = {4: "prewencja"}
 # of the period in the Rejestr's order from row 18.
 COLLECTIVE_FILE_ROWS = {2: 18, 4: 19, 5: 20}
 
-# Wycena w efenix: the Plik zbiorczy of the period of tests.fixtures.efenix, rows 18–20 one per Wykonawca: ready after
+# Wycena w efenix: the Plik zbiorczy of the period of atrapy.efenix, rows 18–20 one per Wykonawca: ready after
 # the Wycena Emmetta and the quantity from the file, unknown to efenix, and an Emmett whose quantity differs from the file;
 # row 21 is „Rozliczone” in efenix.
 EFENIX_PERIOD = PERIOD
@@ -87,6 +87,6 @@ EFENIX_ORDERS = (
 EFENIX_SETTLED = frozenset({"#QX9004"})
 # The orders of ``EFENIX_ORDERS`` that efenix does not know: the Atrapa efenix does not hold them.
 EFENIX_UNKNOWN = frozenset({"#QX9002"})
-# The ADRES of every order (tests.fixtures.efenix.Order), pieces of it and of its Dane adresowe in the Atrapa: the rule of data (ADR 0025) keeps
+# The ADRES of every order (atrapy.efenix.Order), pieces of it and of its Dane adresowe in the Atrapa: the rule of data (ADR 0025) keeps
 # each out of the Logi.
 EFENIX_ADDRESS_MARKERS = (ADDRESS, "TESTOWA", "Testowa", "Miasto-Dzielnica")

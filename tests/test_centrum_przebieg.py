@@ -24,8 +24,8 @@ from tests.fixtures.centrum_processes import (
     run_to_end,
     settling_centrum,
 )
-from tests.fixtures.settlement import PERIOD, SOURCE_NAME
-from tests.fixtures.workbooks import replace_cells
+from atrapy.settlement import PERIOD, SOURCE_NAME
+from atrapy.workbooks import replace_cells
 
 # Syntetyczny Plik zbiorczy: dwa zlecenia Adriana, jedno Darka, a Kamil bez zleceń ma pusty szablon.
 WORKER_SETTLEMENT_ROWS = [

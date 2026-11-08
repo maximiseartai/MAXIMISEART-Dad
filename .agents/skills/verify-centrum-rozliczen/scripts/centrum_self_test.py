@@ -30,9 +30,8 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from tests.fixtures.scenariusz_centrum import ROW_MARKER
+from atrapy.scenariusz_centrum import ROW_MARKER
 
 SCRIPT = Path(__file__).resolve()
 SKILL_ROOT = SCRIPT.parents[1]

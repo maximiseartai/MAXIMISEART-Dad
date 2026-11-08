@@ -18,15 +18,15 @@ from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.message import Message, StopError
 from rozliczenia.run_context import RunContext
 
-from tests.fixtures.preparation import (
+from atrapy.preparation import (
     INTERNAL_SETTLEMENT_NAME,
     PERIOD,
     PreparationFixture,
     make_preparation_fixture,
     month_periods_folder,
-    run_preparation,
 )
-from tests.fixtures.settlement import NOT_A_PERIOD, make_fixture
+from tests.fixtures.operacje import run_preparation
+from atrapy.settlement import NOT_A_PERIOD, make_fixture
 
 NOT_A_WORKBOOK = b"to nie jest skoroszyt"
 INVALID_YAML = "workers: ["

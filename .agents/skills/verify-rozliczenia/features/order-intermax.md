@@ -24,7 +24,7 @@ ordered.
 
 Preconditions:
 
-- The orchestrator builds the synthetic INTERMAX with `tests/fixtures/intermax.py` (ordered days of 19 and 20.10.2026 in Calibri 8, Dad's yellow row, and six Surowe zlecenia of Monday 26.10.2026 for `anna.kowalska`, `bartek.zielinski` and `jan.nowak`, in the look from the app with the first row shifted two columns left and no two orders of one Wykonawca at the same hour) and an empty `Kopie INTERMAX` folder under a fresh run root.
+- The orchestrator builds the synthetic INTERMAX with `tools/lib/atrapy/intermax.py` (ordered days of 19 and 20.10.2026 in Calibri 8, Dad's yellow row, and six Surowe zlecenia of Monday 26.10.2026 for `anna.kowalska`, `bartek.zielinski` and `jan.nowak`, in the look from the app with the first row shifted two columns left and no two orders of one Wykonawca at the same hour) and an empty `Kopie INTERMAX` folder under a fresh run root.
 
 - **Run the proof.** Run `py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py --variant intermax`. It runs `create_intermax_fixture.py`, `tools/uruchom_proces.py intermax`, `assert_intermax.py`, cleanup, and the self-test. Success prints `VERIFY OK | variant=intermax`.
 - **Read the proof.** `run.json` holds the command, exit code `0` and the JSON result; `assert-run.txt` ends with `ASSERT OK | intermax=true | orders=6 | workers=3 | intermax_copy=before_run | ordered_by_worker_and_hour=true | earlier_days_unchanged=true | metrics_safe=true`. A failure names the check, never a row value.

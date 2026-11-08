@@ -26,7 +26,7 @@ from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Pag
 import yaml
 
 from drive import feature
-from tests.fixtures.scenariusz_centrum import LAST_COMPLETE
+from atrapy.scenariusz_centrum import LAST_COMPLETE
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SERVE = REPO_ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts" / "serve_centrum.py"

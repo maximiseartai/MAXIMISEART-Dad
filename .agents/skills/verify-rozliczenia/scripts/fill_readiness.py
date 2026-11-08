@@ -20,13 +20,12 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia.workbook_save import save_workbook
 from skrypt_skilla import Parser, require_run_root
-from tests.fixtures.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
-from tests.fixtures.scenariusz_rozliczen import FILLED_ORDERS, PERIODS_DIRECTORY, order_number
-from tests.fixtures.settlement import PERIOD
+from atrapy.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
+from atrapy.scenariusz_rozliczen import FILLED_ORDERS, PERIODS_DIRECTORY, order_number
+from atrapy.settlement import PERIOD
 
 HEADER_ROW = 17
 FIRST_DATA_ROW = 18

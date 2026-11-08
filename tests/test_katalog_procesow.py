@@ -26,7 +26,7 @@ from rozliczenia.tool_files import TOOL_ROOT
 from tests.fixtures.centrum import centrum, finished_view
 from tests.fixtures.centrum_intermax import ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum, run_to_end, settling_centrum
-from tests.fixtures.preparation import PERIOD
+from atrapy.preparation import PERIOD
 
 
 def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum() -> None:

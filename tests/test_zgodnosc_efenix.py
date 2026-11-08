@@ -71,10 +71,10 @@ from atrapy.atrapa_efenix import (
     Unread,
     atrapa_efenix,
 )
-from tests.fixtures.efenix import write_template_costs
+from atrapy.efenix import write_template_costs
 from tests.fixtures.expect import assert_expected
-from tests.fixtures.settlement import CellValue
-from tests.fixtures.workbooks import active_worksheet
+from atrapy.settlement import CellValue
+from atrapy.workbooks import active_worksheet
 
 ROOT = Path(__file__).resolve().parents[1]
 # Linia, którą ma każdy wynik narzędzia (#748): przycisku kalendarza narzędzie nie sprawdza, sprawdza go Maks.

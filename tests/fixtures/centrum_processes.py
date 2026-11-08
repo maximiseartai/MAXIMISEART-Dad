@@ -49,7 +49,7 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.preparation import (
+from atrapy.preparation import (
     PERIOD,
     REGISTER_NAME,
     PreparationFixture,
@@ -58,7 +58,7 @@ from tests.fixtures.preparation import (
     write_collective_template,
     write_internal_template,
 )
-from tests.fixtures.settlement import SOURCE_NAME, write_mapping, write_source, write_template
+from atrapy.settlement import SOURCE_NAME, write_mapping, write_source, write_template
 from tests.fixtures.tool_clone import FakeInstaller, ToolRepository
 
 # Środa po okresie 08_14_09_2026, więc to on jest ostatnim pełnym okresem.

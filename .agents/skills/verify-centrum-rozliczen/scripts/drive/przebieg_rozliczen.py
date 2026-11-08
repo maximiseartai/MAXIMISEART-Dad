@@ -29,7 +29,7 @@ from drive.common import (
     start_card_warns_while_open,
     stop_banner,
 )
-from tests.fixtures.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
+from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
 
 SETTLEMENT = "przebieg-rozliczen"
 WORKER_SETTLEMENTS = f"Rozliczenie pracowników {LAST_COMPLETE}"

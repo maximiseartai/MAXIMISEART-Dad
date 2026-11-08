@@ -39,7 +39,7 @@ from tests.fixtures.centrum_intermax import (
     open_in_excel,
     ordering_centrum,
 )
-from tests.fixtures.intermax import (
+from atrapy.intermax import (
     ADDRESS,
     CONTRACT_NUMBER,
     FIRST,

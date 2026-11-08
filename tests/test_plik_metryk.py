@@ -12,7 +12,7 @@ from rozliczenia import settlement_process
 from rozliczenia.telemetry import MetricsStore, metric_record
 from rozliczenia.write_routes import Route, TemplateKind
 from tests.fixtures.message_samples import PREPARATION_SAMPLES, SETTLEMENT_SAMPLES, Samples
-from tests.fixtures.preparation import PERIOD
+from atrapy.preparation import PERIOD
 
 SETTLEMENT_COUNTERS = settlement_process.PROCESS.counter_names
 

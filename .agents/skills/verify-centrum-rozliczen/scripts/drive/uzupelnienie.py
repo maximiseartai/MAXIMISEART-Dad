@@ -32,7 +32,7 @@ from drive.common import (
     start_centrum,
     switch_theme,
 )
-from tests.fixtures.scenariusz_centrum import LAST_COMPLETE, PRICE_LIST, ROW_MARKER
+from atrapy.scenariusz_centrum import LAST_COMPLETE, PRICE_LIST, ROW_MARKER
 
 FEATURE = "uzupelnienie"
 SUMMARY = f"#/uzupelnienie/{LAST_COMPLETE}"

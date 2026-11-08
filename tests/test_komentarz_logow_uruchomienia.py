@@ -81,7 +81,7 @@ from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, shown
 from rozliczenia.efenix_pricing import OrderKind
 from tests.fixtures.clock import ManualClock
-from tests.fixtures.dziennik_wyceny import begun_line, left_journal
+from atrapy.dziennik_wyceny import begun_line, left_journal
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 from tests.fixtures.praca_centrum import centrum_work
 

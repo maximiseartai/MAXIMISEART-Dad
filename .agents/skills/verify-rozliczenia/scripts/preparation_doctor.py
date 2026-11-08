@@ -14,7 +14,6 @@ from openpyxl import load_workbook
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia.worker_config import load_worker_mapping
 from rozliczenia.message import StopError
@@ -22,7 +21,7 @@ from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import WorkbookError, is_open_in_excel
 from skrypt_skilla import Parser
-from tests.fixtures.scenariusz_rozliczen import (
+from atrapy.scenariusz_rozliczen import (
     COLLECTIVE_TEMPLATE_NAME,
     INTERNAL_TEMPLATE_NAME,
     PERIODS_DIRECTORY,
@@ -30,7 +29,7 @@ from tests.fixtures.scenariusz_rozliczen import (
     TEMPLATES_DIRECTORY,
     WORKER_TEMPLATE_NAME,
 )
-from tests.fixtures.settlement import PERIOD
+from atrapy.settlement import PERIOD
 
 SCRIPT = Path(__file__).resolve()
 REPO_ROOT = SCRIPT.parents[4]

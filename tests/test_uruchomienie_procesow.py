@@ -23,10 +23,10 @@ from rozliczenia.telemetry import MetricsStore
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.fake_process import fail
-from tests.fixtures.interlocutor import Tata
-from tests.fixtures.preparation import PreparationFixture, incomplete_period_fixture, make_preparation_fixture, register_order
-from tests.fixtures.settlement import NOT_A_PERIOD, PERIOD, make_fixture, make_preview_fixture
-from tests.fixtures.workbooks import refused_by_copy
+from atrapy.interlocutor import Tata
+from atrapy.preparation import PreparationFixture, incomplete_period_fixture, make_preparation_fixture, register_order
+from atrapy.settlement import NOT_A_PERIOD, PERIOD, make_fixture, make_preview_fixture
+from atrapy.workbooks import refused_by_copy
 
 PHASES = {"Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie"}
 

@@ -37,7 +37,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
-from tests.fixtures.preparation import (
+from atrapy.preparation import (
     INTERNAL_SETTLEMENT_NAME,
     PERIOD,
     REGISTER_HEADERS,

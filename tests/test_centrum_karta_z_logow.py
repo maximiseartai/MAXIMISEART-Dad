@@ -37,9 +37,9 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
-from tests.fixtures.dziennik_wyceny import journal_path, left_journal, start_line
+from atrapy.dziennik_wyceny import journal_path, left_journal, start_line
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.preparation import PERIOD
+from atrapy.preparation import PERIOD
 from tests.fixtures.run_cards import first_view, restored, unlisted
 
 INTERRUPTED = "Centrum rozliczeń zamknęło się w trakcie tego Uruchomienia, więc nie ma jego wyniku."

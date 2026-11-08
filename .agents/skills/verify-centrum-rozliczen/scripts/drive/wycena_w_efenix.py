@@ -26,8 +26,8 @@ from drive.common import (
     stop_banner,
 )
 from drive.teksty import BELL_FRESH
-from tests.fixtures.efenix import FIRST_ROW, SOURCE_NAME
-from tests.fixtures.scenariusz_centrum import EFENIX_ADDRESS_MARKERS, EFENIX_ORDERS, EFENIX_PERIOD
+from atrapy.efenix import FIRST_ROW, SOURCE_NAME
+from atrapy.scenariusz_centrum import EFENIX_ADDRESS_MARKERS, EFENIX_ORDERS, EFENIX_PERIOD
 
 FEATURE = "wycena-w-efenix"
 PROCESS = "Wycena w efenix"
