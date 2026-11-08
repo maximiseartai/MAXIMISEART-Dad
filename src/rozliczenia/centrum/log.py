@@ -10,7 +10,7 @@ brakuje zależności.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 import threading
@@ -36,10 +36,14 @@ WaitingCause = Literal["brak-klucza", "brak-sieci", "odmowa", "odmowa-tresci", "
 
 
 class CentrumLog:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, append: Callable[[str], None] | None = None) -> None:
+        """Dziennik w pliku ``path``; ``append`` dostaje każdą linię zamiast pliku (wyrocznia skilla, która ocenia same
+        wywołania dziennika, a zapis na dysk dodawałby jej tylko czasu)."""
+
         self._path = path
         self._lock = threading.Lock()
         self._view_timings = 0
+        self._append = self._to_file if append is None else append
 
     @property
     def directory(self) -> Path:
@@ -259,7 +263,9 @@ class CentrumLog:
 
     def _write(self, event: str, **facts: str | int) -> None:
         moment = datetime.now().astimezone().isoformat(timespec="seconds")
-        line = " ".join([moment, event, *(f"{key}={_quoted(value)}" for key, value in facts.items())])
+        self._append(" ".join([moment, event, *(f"{key}={_quoted(value)}" for key, value in facts.items())]))
+
+    def _to_file(self, line: str) -> None:
         try:
             with self._lock:
                 self._path.parent.mkdir(parents=True, exist_ok=True)

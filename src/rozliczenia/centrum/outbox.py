@@ -138,6 +138,8 @@ _RETIRED: Final = "Ta część jest pusta: nowsza wersja tej wysyłki ma mniej c
 RETRY_S: Final = 60.0
 # Tyle „Wyślij” Uwagi taty i „Wyślij do Maksa” czekają na skrzynkę, zanim powiedzą, że wysyłka czeka w kolejce.
 DELIVERY_WAIT_S: Final = 5.0
+# Miejsce (``where``) wyjątku przejścia kolejki w dzienniku Centrum (``CentrumLog.unexpected_failure``).
+DRAIN: Final = "wysyłka do Skrzynki Zgłoszeń"
 
 Frame = Callable[[int, int, str], str]
 """Komentarz części ``k`` z ``n`` z jej tekstu."""
@@ -606,7 +608,35 @@ def _archive_file(entry: object) -> ArchiveFile | None:
     )
 
 
-def _queued(path: Path) -> _Queued | None:
+@dataclass(frozen=True)
+class QueueDisk:
+    """Pliki kolejki na dysku: treść pliku, jego zapis atomowy (nowa wysyłka i znacznik dostarczenia) i usunięcie
+    dostarczonego. U taty ``LOCAL_QUEUE_DISK``; wyrocznia ``verify-kolejka-skrzynki`` daje swój, którego każdy krok może
+    zawieść."""
+
+    read: Callable[[Path], str]
+    write: Callable[[Path, str], None]
+    remove: Callable[[Path], None]
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _unlink(path: Path) -> None:
+    path.unlink(missing_ok=True)
+
+
+LOCAL_QUEUE_DISK: Final = QueueDisk(read=_read_text, write=replace_atomically, remove=_unlink)
+
+
+def _in_thread(drain: Callable[[], None]) -> None:
+    """Przejście kolejki w nowym wątku ``skrzynka-kolejka``, który nie trzyma zamknięcia Centrum."""
+
+    threading.Thread(target=drain, name="skrzynka-kolejka", daemon=True).start()
+
+
+def _queued(path: Path, disk: QueueDisk) -> _Queued | None:
     """Plik kolejki albo ``None``: uszkodzona treść albo nieznany schemat.
 
     ``OSError`` (plik trzyma np. OneDrive albo antywirus) przechodzi do wołającego: ten sam plik może się dać odczytać
@@ -614,7 +644,7 @@ def _queued(path: Path) -> _Queued | None:
     """
 
     try:
-        text = path.read_text(encoding="utf-8")
+        text = disk.read(path)
     except UnicodeError:
         return None
     return _parse(text)
@@ -1098,6 +1128,25 @@ class Listener(Protocol):
     def rejected(self, post: Post) -> None: ...
 
 
+@dataclass(frozen=True)
+class QueueState:
+    """Pamięć kolejki, od której zależą jej następne przejścia (``Outbox.state``): pliki, których usunięcie się nie udało,
+    przyczyna, na której stanęło ostatnie przejście, odmowa Archiwum okresu w nim, nastawione budzenie oraz to, czy
+    przejście trwa i czy ma przejść kolejkę jeszcze raz.
+
+    Nie ma tu tego, co następnych wysyłek nie zmienia: adresów pierwszych komentarzy (``delivered``, ``wait_delivered``),
+    plików i wysyłek odrzuconych, nieudanego odczytu, blokady folderu u innego procesu (przejście ustawia oba od nowa, a
+    budzenie, które nastawiły, jest w ``retry_armed``) i plików, o których dziennik już wie (oszczędzają mu tylko linii).
+    """
+
+    undeleted: frozenset[str]
+    stopped_on: WaitingCause | None
+    archive_refused: bool
+    retry_armed: bool
+    draining: bool
+    again: bool
+
+
 class Outbox:
     """Pliki kolejki w ``directory`` i jedyny wątek, który je wysyła, także sam po porażce skrzynki.
 
@@ -1127,8 +1176,15 @@ class Outbox:
         clock: Clock,
         listener: Listener,
         addresses: Path | None = None,
+        disk: QueueDisk = LOCAL_QUEUE_DISK,
+        start: Callable[[Callable[[], None]], None] = _in_thread,
     ) -> None:
+        """``disk`` czyta, zapisuje i usuwa pliki kolejki, a ``start`` uruchamia przejście (``_drain``) w tle; inne niż
+        domyślne daje tylko wyrocznia ``verify-kolejka-skrzynki``, która decyduje o każdym kroku."""
+
         self._directory = directory
+        self._disk = disk
+        self._start = start
         self._box = box
         self._log = log
         self._clock = clock
@@ -1173,6 +1229,20 @@ class Outbox:
     @property
     def directory(self) -> Path:
         return self._directory
+
+    def state(self) -> QueueState:
+        """Pamięć kolejki między przejściami (``QueueState``); wyrocznia ``verify-kolejka-skrzynki`` porównuje ją, by nie
+        sprawdzać drugi raz stanu, który już zna."""
+
+        with self._lock:
+            return QueueState(
+                frozenset(self._undeleted),
+                self._stopped_on,
+                self._archive_refused,
+                self._retry_armed,
+                self._draining,
+                self._again,
+            )
 
     def delivered(self, run_id: str, label: Label) -> str | None:
         """Adres pierwszego komentarza wysyłki ``label`` z Uruchomienia ``run_id``, przyjętej przez skrzynkę.
@@ -1219,7 +1289,7 @@ class Outbox:
             self._last_moment = moment
             name = f"{moment:%Y%m%dT%H%M%S%fZ}-{next(self._sequence):04d}-{post.target.label}-{post.run_id[:8]}.json"
         try:
-            replace_atomically(self._directory / name, post.to_json())
+            self._disk.write(self._directory / name, post.to_json())
         except OSError as failure:
             self._log.unexpected_failure(failure, where="zapis wysyłki do Skrzynki Zgłoszeń")
             return False
@@ -1235,7 +1305,7 @@ class Outbox:
                 self._again = True
                 return
             self._draining = True
-        threading.Thread(target=self._drain, name="skrzynka-kolejka", daemon=True).start()
+        self._start(self._drain)
 
     def _drain(self) -> None:
         while True:
@@ -1251,7 +1321,7 @@ class Outbox:
                             with self._lock:
                                 self._again = True
             except Exception as failure:
-                self._log.unexpected_failure(failure, where="wysyłka do Skrzynki Zgłoszeń")
+                self._log.unexpected_failure(failure, where=DRAIN)
             with self._changed:
                 if not self._again:
                     self._draining = False
@@ -1343,7 +1413,7 @@ class Outbox:
             if outcome.archive_waits:
                 self._archive_waits(path, post)
                 with suppress(OSError):  # bez znacznika części następna próba znajdzie je w skrzynce (_settle)
-                    replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts), archived=False))
+                    self._disk.write(path, _queue_text(post, delivered_parts=len(post.parts), archived=False))
                 continue
             self._mark_delivered(path, post)
         self._stopped_on = None
@@ -1352,7 +1422,7 @@ class Outbox:
         """Plik kolejki w tym przejściu (``_queued``); ``OSError`` ustawia ``_read_failed`` i daje ``None``."""
 
         try:
-            return _queued(path)
+            return _queued(path, self._disk)
         except OSError:
             self._read_failed = True
             return None
@@ -1376,7 +1446,7 @@ class Outbox:
         """Znacznik dostarczenia całej wysyłki, potem usunięcie pliku kolejki."""
 
         with suppress(OSError):  # bez znacznika następna próba znajdzie każdą część w skrzynce (_settle) i plik w Archiwum
-            replace_atomically(path, _queue_text(post, delivered_parts=len(post.parts), archived=True))
+            self._disk.write(path, _queue_text(post, delivered_parts=len(post.parts), archived=True))
         self._remove(path)
 
     def _remember_address(self, post: Post, outcome: Delivered) -> None:
@@ -1395,7 +1465,7 @@ class Outbox:
         """Usuwa dostarczony plik; gdy się nie da (np. plik otwarty w Windows), pierwszy raz zapisuje to w dzienniku."""
 
         try:
-            path.unlink(missing_ok=True)
+            self._disk.remove(path)
         except OSError as failure:
             if path.name not in self._undeleted:
                 self._undeleted.add(path.name)

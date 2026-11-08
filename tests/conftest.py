@@ -222,11 +222,11 @@ def _record_responses(monkeypatch: pytest.MonkeyPatch, responses: list[_Response
 
 
 def _record_log_paths(monkeypatch: pytest.MonkeyPatch, log_paths: list[Path]) -> None:
-    original_init: Callable[[CentrumLog, Path], None] = CentrumLog.__init__
+    original_init = CentrumLog.__init__
 
-    def recording_init(self: CentrumLog, path: Path) -> None:
+    def recording_init(self: CentrumLog, path: Path, *, append: Callable[[str], None] | None = None) -> None:
         log_paths.append(path)
-        original_init(self, path)
+        original_init(self, path, append=append)
 
     monkeypatch.setattr(CentrumLog, "__init__", recording_init)
 

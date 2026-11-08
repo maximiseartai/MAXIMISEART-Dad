@@ -21,9 +21,10 @@ import pytest
 
 from rozliczenia.centrum import outbox as outbox_module
 from rozliczenia.centrum.atomic_file import replace_atomically
-from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE, KeyedBox, NotesFile
+from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE, BoxState, KeyedBox, NotesFile
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import (
+    DRAIN,
     PART_LIMIT,
     RETRY_S,
     TEXT_LIMIT,
@@ -34,9 +35,10 @@ from rozliczenia.centrum.outbox import (
     Outbox,
     PeriodThread,
     Post,
+    QueueState,
     Rank,
 )
-from rozliczenia.centrum.report_box import COMMENT_LIMIT, Refused, Rejected, Unreachable
+from rozliczenia.centrum.report_box import COMMENT_LIMIT, Refused, Rejected, Sent, Unreachable
 from rozliczenia.centrum.reports import report_target
 
 from tests.fixtures.centrum import FakeIssue, FakeReportBox
@@ -304,6 +306,85 @@ def test_po_braku_sieci_kolejka_ponawia_po_minucie_bez_kolejnej_wysylki(tmp_path
     assert wait_for(lambda: queue.files() == [])
     queue.passed()
     assert queue.clock.wakes == 0
+
+
+def test_stan_kolejki_ma_przyczyne_czekania_budzenie_i_plik_ktorego_nie_dalo_sie_usunac(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``Outbox.state``: pamięć, od której zależą następne przejścia, i którą wyrocznia kolejki porównuje między
+    harmonogramami zamiast prywatnych pól ``Outbox`` (docs/agents/skille.md, „Co wyrocznia bierze z src”)."""
+
+    hold = threading.Event()
+    queue = Queue(tmp_path, FakeReportBox(search_failure=Unreachable(), search_hold=hold))
+    assert queue.outbox.state() == QueueState(frozenset(), None, False, False, False, False)
+    queue.outbox.post(post(["treść\n"]))
+    assert queue.box.searching.wait(30)
+    queue.outbox.send_in_background()
+    assert queue.outbox.state() == QueueState(frozenset(), None, False, False, True, True)
+    hold.set()
+    queue.passed()
+    assert queue.outbox.state() == QueueState(frozenset(), "brak-sieci", False, True, False, False)
+
+    queue.box.search_failure = None
+    unlink = Path.unlink
+
+    def locked(path: Path, missing_ok: bool = False) -> None:
+        if path.parent == queue.directory and path.suffix == ".json":
+            raise PermissionError("plik otwarty w innym programie")
+        unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", locked)
+    queue.clock.advance(RETRY_S)
+    assert queue.box.wait_until(lambda box: len(box.issues) == 1)
+    queue.passed()
+    assert queue.outbox.state() == QueueState(frozenset(queue.files()), None, False, False, False, False)
+    assert len(queue.files()) == 1
+
+
+def test_stan_skrzynki_z_kluczem_ma_issue_z_odpowiedzia_i_zakladanie_bez_odpowiedzi_do_uplywu_opoznienia_listy() -> None:
+    """``KeyedBox.state``: zapisy, od których zależą następne odpowiedzi skrzynki z kluczem, które wyrocznia kolejki
+    porównuje między harmonogramami zamiast prywatnych pól ``KeyedBox``."""
+
+    clock = ManualClock()
+    box = FakeReportBox()
+    keyed = KeyedBox(box, lambda: KEY, clock=clock)
+    assert keyed.state() == BoxState((), (), (), (), (), (), ())
+
+    sent = keyed.open_issue(THREAD.label, "Okres", "treść")
+    box.outcomes.append(Unreachable())
+    lost = keyed.open_issue("zgloszenie", "Zgłoszenie", "treść")
+
+    assert isinstance(sent, Sent)
+    assert isinstance(lost, Unreachable)
+    assert keyed.state() == BoxState((), (), (), (), (sent.number,), ("zgloszenie",), ())
+    clock.pause(LIST_LAG_S)
+    assert keyed.state() == BoxState((), (), (), (), (), (), ())
+
+
+def test_stan_skrzynki_z_kluczem_ma_liste_przy_ktorej_pliku_zapisow_nie_dalo_sie_odczytac(tmp_path: Path) -> None:
+    unreadable = tmp_path / OPENING_FILE
+    unreadable.mkdir()  # odczyt folderu rzuca OSError jak plik, który trzyma antywirus
+    keyed = KeyedBox(FakeReportBox(), lambda: KEY, clock=ManualClock(), opening=NotesFile(unreadable, replace_atomically))
+
+    keyed.labelled_issues(THREAD.label, include_closed=False)
+
+    assert keyed.state() == BoxState((), (), (), (), (), (), (THREAD.label,))
+
+
+def test_dziennik_centrum_z_wlasnym_zapisem_daje_mu_kazda_linie_i_nie_pisze_pliku(tmp_path: Path) -> None:
+    """``CentrumLog(append=…)``: wyrocznia kolejki dostaje linie dziennika bez pliku, zamiast nadpisywać jego zapis."""
+
+    lines: list[str] = []
+    log = CentrumLog(tmp_path / "logs" / "centrum-rozliczen.log", append=lines.append)
+
+    log.unexpected_failure(PermissionError("plik zablokowany"), where=DRAIN)
+    log.box_post_queued(label=THREAD.label, period=None)
+
+    assert [line.split(" ", 1)[1] for line in lines] == [
+        'nieoczekiwany-wyjatek typ=PermissionError miejsce="wysyłka do Skrzynki Zgłoszeń"',
+        f"skrzynka-w-kolejce etykieta={THREAD.label} okres=bez-okresu",
+    ]
+    assert not (tmp_path / "logs").exists()
 
 
 def test_kolejne_przejscia_przed_budzeniem_nie_nastawiaja_drugiego_budzenia(tmp_path: Path) -> None:

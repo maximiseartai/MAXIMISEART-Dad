@@ -30,9 +30,9 @@ passes, at a moment the schedule picks. Then it checks:
   removal failed may wait for the next start.
 - BEZ_WYJATKU: no pass ends in an exception that ``_drain`` logs as ``nieoczekiwany-wyjatek``.
 
-Nothing in ``outbox.py`` or ``keyed_box.py`` is replaced but the start of the queue thread: ``threading.Thread`` in
-``outbox.py`` hands its target (``_drain``) to the checker, which runs it in its own thread when nothing else is left
-to do, so the real ``send_in_background`` decides whether a pass starts at all. The Skrzynka behind ``KeyedBox`` is
+Nothing in ``outbox.py`` or ``keyed_box.py`` is replaced: ``Outbox`` gets the checker's queue files (``QueueDisk``) and
+start of a pass (``start``), which hands ``_drain`` to the checker, which runs it when nothing else is left to do, so the
+real ``send_in_background`` decides whether a pass starts at all. The Skrzynka behind ``KeyedBox`` is
 the in-memory ``MemoryBox`` (GitHub's issues and comments, and its Releases with their files for the Archiwum okresu),
 the clock moves only when the ``RETRY_S`` wake fires and keeps the wakes ``after`` arms, and the key is always there and
 accepted. In a scope with ``list_lag`` GitHub's issue list does not show an issue until ``LIST_LAG_S`` after it was
@@ -51,7 +51,6 @@ import argparse
 import gzip
 import json
 import os
-import pathlib
 import re
 import sys
 import tempfile
@@ -59,19 +58,18 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from rozliczenia.centrum import keyed_box as keyed_box_module
-from rozliczenia.centrum import outbox as outbox_module
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.github import HttpResponse
 from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE, KeyedBox, NotesFile
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import (
+    DRAIN,
+    LOCAL_QUEUE_DISK,
     RETRY_S,
     ArchiveFile,
     Deliveries,
@@ -81,6 +79,7 @@ from rozliczenia.centrum.outbox import (
     PeriodThread,
     OpenIssue,
     Post,
+    QueueDisk,
 )
 from rozliczenia.centrum.report_box import (
     Archive,
@@ -133,9 +132,9 @@ class _Unchanged:
         return None
 # Passes beyond one per failure until the queue must be empty; a pass without a failure delivers or removes each file.
 EXTRA_PASSES = 3
-# Początek dopisku części, gdy Archiwum nie przyjęło pliku (outbox._waiting_note).
+# Początek dopisku części, gdy Archiwum nie przyjęło pliku (outbox._waiting_note). Celowa kopia (docs/agents/skille.md,
+# „Co wyrocznia bierze z src”): dopisek czyta Maks w Skrzynce, więc zmiana jego tekstu w src ma wywrócić sprawdzenie.
 WAITING = "czeka w Kolejce wysyłki na komputerze taty"
-DRAIN_FAILURE = "wysyłka do Skrzynki Zgłoszeń"
 
 
 class Crash(BaseException):
@@ -779,21 +778,22 @@ KNOWN_FINDINGS: tuple[Excuse[Shape], ...] = ()
 ACCEPTED_RISKS: tuple[Excuse[Shape], ...] = ()
 
 
+def _dropped(line: str) -> None:
+    return None
+
+
 class _Log(CentrumLog):
     """The Centrum log of the queue without a file: the checker judges only the exceptions of a pass (BEZ_WYJATKU), and
     a line written to disk added only time, as ``_NotesInMemory`` says (#911)."""
 
     def __init__(self, failures: list[str]) -> None:
-        super().__init__(Path("centrum.log"))  # never written: ``_write`` drops every line
+        super().__init__(Path("centrum.log"), append=_dropped)
         self._failures = failures
 
     def unexpected_failure(self, failure: BaseException, *, where: str) -> None:
         super().unexpected_failure(failure, where=where)
-        if where == DRAIN_FAILURE:
+        if where == DRAIN:
             self._failures.append(f"{type(failure).__name__}: {failure}")
-
-    def _write(self, event: str, **facts: str | int) -> None:
-        return None
 
 
 class _Clock:
@@ -811,90 +811,58 @@ class _Clock:
         self.armed.append(wake)
 
 
-class _QueueThread:
-    """``threading.Thread`` inside ``outbox.py``: ``start`` hands the target to the checker, which runs it later."""
+def _queue_version(path: Path) -> str:
+    """The version of a wysyłka from the name of its queue file (``Outbox.post``): its moment and number, as in its marks.
 
-    def __init__(
-        self, started: list[Callable[[], None]], target: Callable[[], None]
-    ) -> None:
-        self._started = started
-        self._target = target
-
-    def start(self) -> None:
-        self._started.append(self._target)
-
-
-@contextmanager
-def _queue_threads(started: list[Callable[[], None]]) -> Iterator[None]:
-    """Only the start of the queue thread is replaced; ``Lock`` and ``Condition`` stay real."""
-
-    names = vars(outbox_module)
-    real = names["threading"]
-    names["threading"] = SimpleNamespace(
-        Thread=lambda *, target, name, daemon: _QueueThread(started, target),
-        Lock=real.Lock,
-        Condition=real.Condition,
-    )
-    try:
-        yield
-    finally:
-        names["threading"] = real
-
-
-@contextmanager
-def _intercepted(scheduler: Scheduler, queue: Path, versions: dict[str, str]) -> Iterator[None]:
-    """The read of a queue file, the marker write and the removal of queue files as steps of ``scheduler``.
-
-    The read is ``_queued``, which lets the ``OSError`` of ``read_text`` through to ``_send_all``; the checker raises it
-    before the real ``_queued`` runs.
+    A deliberate copy (docs/agents/skille.md, „Co wyrocznia bierze z src”): the queue file and the marks in the Skrzynka
+    outlive a Wydanie, and the next one reads them, so a change of the name in ``outbox.py`` must break this checker.
     """
 
-    names = vars(outbox_module)
-    queued = names["_queued"]
-    replace = names["replace_atomically"]
-    unlink = pathlib.Path.unlink
+    return "-".join(path.stem.split("-")[:2])
 
-    def read(path: Path) -> object:
-        if scheduler.read(f"odczyt pliku kolejki wysyłki {versions[outbox_module._version(path)]}"):
+
+class _QueueDisk:
+    """The queue files of ``Outbox`` (``outbox.QueueDisk``) as steps of ``scheduler``: the read of a queue file, the
+    marker write and the removal of a queue file. A wysyłka the checker posts itself (``posting``) writes its file with
+    the real ``replace_atomically``: the checker fails only the marker write, never a post (the model has a failed post).
+    The read fails before the real one, with the ``OSError`` that ``_queued`` lets through to ``_send_all``.
+    """
+
+    def __init__(self, scheduler: Scheduler, versions: dict[str, str]) -> None:
+        self._scheduler = scheduler
+        self._versions = versions
+        self.posting = True
+
+    def read(self, path: Path) -> str:
+        if self._scheduler.read(f"odczyt pliku kolejki wysyłki {self._versions[_queue_version(path)]}"):
             raise PermissionError("plik zablokowany")
-        return queued(path)
+        return LOCAL_QUEUE_DISK.read(path)
 
-    def marker(path: Path, text: str) -> None:
-        if scheduler.disk("zapis znacznika dostarczenia"):
+    def write(self, path: Path, text: str) -> None:
+        if self.posting:
+            replace_atomically(path, text)
+            return
+        if self._scheduler.disk("zapis znacznika dostarczenia"):
             raise PermissionError("plik zablokowany")
-        replace(path, text)
-        scheduler.say("znacznik dostarczenia zapisany")
+        replace_atomically(path, text)
+        self._scheduler.say("znacznik dostarczenia zapisany")
 
-    def removal(path: Path, missing_ok: bool = False) -> None:
-        if path.parent == queue and path.suffix == ".json":
-            if scheduler.disk("usunięcie pliku kolejki"):
-                raise PermissionError("plik zablokowany")
-            scheduler.say("plik kolejki usunięty")
-        unlink(path, missing_ok=missing_ok)
-
-    names["_queued"] = read
-    names["replace_atomically"] = marker
-    pathlib.Path.unlink = removal  # type: ignore[method-assign,assignment]
-    try:
-        yield
-    finally:
-        names["_queued"] = queued
-        names["replace_atomically"] = replace
-        pathlib.Path.unlink = unlink  # type: ignore[method-assign]
+    def remove(self, path: Path) -> None:
+        if self._scheduler.disk("usunięcie pliku kolejki"):
+            raise PermissionError("plik zablokowany")
+        self._scheduler.say("plik kolejki usunięty")
+        LOCAL_QUEUE_DISK.remove(path)
 
 
 @contextmanager
-def _posting() -> Iterator[None]:
-    """``Outbox.post`` of a later wysyłka writes its file with the real ``replace_atomically``, as the first posts do:
-    the checker fails only the marker write, never a post (the model has a failed post)."""
+def _posting(disk: _QueueDisk) -> Iterator[None]:
+    """``Outbox.post`` of a later wysyłka writes its file as the first posts do (``_QueueDisk.posting``)."""
 
-    names = vars(outbox_module)
-    intercepted = names["replace_atomically"]
-    names["replace_atomically"] = replace_atomically
+    disk.posting = True
     try:
         yield
     finally:
-        names["replace_atomically"] = intercepted
+        disk.posting = False
 
 
 @dataclass(frozen=True)
@@ -1073,41 +1041,31 @@ def _state(
     The faults so far count as a set plus the verdict of each ``Excuse`` on them: an excuse that holds keeps holding,
     and the only order it reads (a failed marker before a kill at the removal) is in the set as the failed marker.
 
-    The version of a wysyłka in the Skrzynka's texts (``outbox._version``, from the moment the checker posted it) counts
+    The version of a wysyłka in the Skrzynka's texts (``_queue_version``, from the moment the checker posted it) counts
     as its place among the scope's wysyłki (``versions``): the code only compares versions of one wysyłka.
 
-    Also whether a ``RETRY_S`` wake is armed, and ``_stopped_on`` and ``_retry_armed``, which decide in ``_drain``
-    whether the next one is, and ``_draining``, ``_again`` and the queue threads started and not run yet, which decide
+    Also whether a ``RETRY_S`` wake is armed, the memory of the queue that decides its next passes (``Outbox.state``,
+    whose docstring says what it leaves out and why) and the queue threads started and not run yet, which decide
     whether ``send_in_background`` starts a pass. The Archiwum counts as its files with the versions in their labels and
     whether each upload ended, plus the files the queue sent twice (``MemoryBox.twice``), which the rule reads; a pair of
     ``remove`` and ``upload`` never spans a pass boundary.
-    ``_archive_refused`` is in the state although ``_send_all`` sets it anew in every pass, as the wake it arms is.
+    ``archive_refused`` is in the state although ``_send_all`` sets it anew in every pass, as the wake it arms is.
     Also how many later wysyłki of the scope the code has not posted yet (``pending``), which decides which versions are
     superseded, and whether the Skrzynka got a text of a superseded one (NAJNOWSZA_WERSJA).
-    Time counts only as what it decides (#879): which issues and Releases GitHub's lists do not show yet, which issues
-    ``KeyedBox`` still adds to a list (``opened`` in ``opening``), which kinds have a write without an answer less than
-    ``LIST_LAG_S`` ago in ``opening``, each with whether the last list of the queue thread came before the write ended
-    its lag (``_listed_at``), and the Releases, files and removals ``KeyedBox`` adds to what ``archive`` answers
-    (``archives``, ``uploads``, ``removals`` in ``opening``); a wake moves time past all of them. The checker runs every
+    Time counts only as what it decides (#879): which issues and Releases GitHub's lists do not show yet, and what
+    ``KeyedBox`` adds to its answers from ``opening`` and which writes it holds (``KeyedBox.state``); a wake moves time
+    past all of them. The checker runs every
     pass in its own thread, so the last list of a pass is still there in the next one; in Centrum each pass has a new
     thread, so it holds at least as often, and every write follows a list of its kind in the same pass.
-    Left out on purpose, because they do not change what is sent: ``_first_comments``
-    (``delivered``, ``wait_delivered``), ``_rejected`` (no ``Rejected`` here), ``_read_failed`` and ``_unreadable``
-    (``_send_all`` sets the first anew in every pass, and whether it armed a wake is in the state; the second only spares
-    the log a line) and the key verdict of ``KeyedBox`` (the key is always accepted, and ``Unreachable`` does not change
-    it).
+    Left out on purpose, because they do not change what is sent: the key verdict of ``KeyedBox`` (the key is always
+    accepted, and ``Unreachable`` does not change it).
     """
 
     files = {
         path.name: path.read_text(encoding="utf-8") for path in queue.glob("*.json")
     }
-    with keyed._lock:
-        notes = keyed._notes() or keyed_box_module._Notes()
-    listed = keyed._listed_at()
-
-    def held(kind: str, moment: float) -> bool:
-        at = listed.get(keyed_box_module._list_of(kind), clock())
-        return at is None or at - moment < LIST_LAG_S
+    memory = outbox.state()
+    box_state = keyed.state()
 
     def same(text: str) -> str:
         return _VERSION.sub(lambda found: f"wersja {versions.get(found.group(1), '?')} -->", text)
@@ -1126,7 +1084,7 @@ def _state(
         ),
         tuple(box.twice),
         tuple(sorted(files.values())),
-        tuple(sorted(files[name] for name in outbox._undeleted if name in files)),
+        tuple(sorted(files[name] for name in memory.undeleted if name in files)),
         tuple(sorted(scheduler.left.items())),
         frozenset(scheduler.faults),
         tuple(
@@ -1136,31 +1094,25 @@ def _state(
         passes,
         tuple(failures),
         bool(clock.armed),
-        outbox._stopped_on,
-        outbox._archive_refused,
-        outbox._retry_armed,
-        outbox._draining,
-        outbox._again,
+        memory.stopped_on,
+        memory.archive_refused,
+        memory.retry_armed,
+        memory.draining,
+        memory.again,
         threads,
         pending,
         bool(scheduler.older_sent),
         tuple(sorted(box.unlisted())),
         tuple(sorted(box.unlisted_releases())),
-        tuple(sorted(tag for _, tag, _ in notes.archives)),
-        tuple(sorted(asset.id for _, _, asset in notes.uploads)),
-        tuple(sorted(asset for _, asset in notes.removals)),
-        tuple(sorted(keyed._names.items())),
-        tuple(sorted(issue.number for _, _, issue in notes.opened)),
-        tuple(
-            sorted(
-                (kind, held(kind, moment))
-                for kind, (moment, _) in notes.pending.items()
-                if 0 <= clock() - moment < LIST_LAG_S
-            )
-        ),
+        box_state.archives,
+        box_state.uploads,
+        box_state.removals,
+        box_state.names,
+        box_state.opened,
+        box_state.pending,
         # A list at which the file could not be read holds every write of its kind (``_held``); the checker never fails
         # the read, so this stays empty, and it is here so that such a state differs from one without it.
-        tuple(sorted(kind for kind, at in listed.items() if at is None)),
+        box_state.unread_lists,
     )
 
 
@@ -1197,6 +1149,7 @@ def execute(name: str, choices: Choices, work: Path, visited: set[object]) -> li
     ] = []  # targets of threads the code started, not run yet
     keyed: list[KeyedBox] = []  # the KeyedBox of the Centrum that runs now
     notes = _NotesInMemory()  # survives a restart, as the file in Dad's config folder does
+    disk = _QueueDisk(scheduler, box.versions)
 
     def started() -> Outbox:
         clock.armed.clear()  # a timer and a thread die with their process
@@ -1209,101 +1162,102 @@ def execute(name: str, choices: Choices, work: Path, visited: set[object]) -> li
             _Log(failures),
             clock=clock,
             listener=_Unchanged(),
+            disk=QueueDisk(read=disk.read, write=disk.write, remove=disk.remove),
+            start=started_threads.append,
         )
 
-    with _queue_threads(started_threads):
-        outbox = started()
-        for post in scope.posts:
+    outbox = started()
+    for post in scope.posts:
+        assert outbox.post(post), "zapis wysyłki do kolejki"
+    scheduler.say("wysyłki czekają w kolejce (Outbox.post)")
+    versions = box.versions
+    versions.update(
+        (_queue_version(path), str(place))
+        for place, path in enumerate(sorted(queue.glob("*.json")), start=1)
+    )
+    pending = list(scope.later)
+    everything = (*scope.posts, *scope.later)
+
+    def arrive() -> None:
+        """The code posts the next later wysyłka; every earlier version of it in the scope is now superseded."""
+
+        post = pending.pop(0)
+        place = len(everything) - len(pending)
+        with _posting(disk):
             assert outbox.post(post), "zapis wysyłki do kolejki"
-        scheduler.say("wysyłki czekają w kolejce (Outbox.post)")
-        versions = box.versions
-        versions.update(
-            (outbox_module._version(path), str(place))
-            for place, path in enumerate(sorted(queue.glob("*.json")), start=1)
+        [new] = [path for path in queue.glob("*.json") if _queue_version(path) not in versions]
+        versions[_queue_version(new)] = str(place)
+        scheduler.superseded.update(
+            str(number)
+            for number, earlier in enumerate(everything[: place - 1], start=1)
+            if (earlier.target, earlier.run_id) == (post.target, post.run_id)
         )
-        pending = list(scope.later)
-        everything = (*scope.posts, *scope.later)
+        scheduler.say(f"kod wysyła nowszą wersję {place} wysyłki {post.run_id} (Outbox.post)")
 
-        def arrive() -> None:
-            """The code posts the next later wysyłka; every earlier version of it in the scope is now superseded."""
-
-            post = pending.pop(0)
-            place = len(everything) - len(pending)
-            with _posting():
-                assert outbox.post(post), "zapis wysyłki do kolejki"
-            [new] = [path for path in queue.glob("*.json") if outbox_module._version(path) not in versions]
-            versions[outbox_module._version(new)] = str(place)
-            scheduler.superseded.update(
-                str(number)
-                for number, earlier in enumerate(everything[: place - 1], start=1)
-                if (earlier.target, earlier.run_id) == (post.target, post.run_id)
-            )
-            scheduler.say(f"kod wysyła nowszą wersję {place} wysyłki {post.run_id} (Outbox.post)")
-
-        bounds = scope.bounds
-        passes = (
-            bounds.unreachable + bounds.lost + bounds.disk + bounds.kills + bounds.reads + len(scope.later) + EXTRA_PASSES
-        )
-        ended = "pusta"
-        with _intercepted(scheduler, queue, versions):
-            while pending or any(not _settled(scope, path) for path in queue.glob("*.json")):
-                if not passes:
-                    ended = "limit"
-                    break
-                while pending and scheduler.arrival(f"Outbox.post(wersja {len(everything) - len(pending) + 1})"):
-                    arrive()
-                if not started_threads and pending and all(_settled(scope, path) for path in queue.glob("*.json")):
-                    arrive()  # nothing else is left to do before it
-                if not started_threads:
-                    then = scheduler.between_passes(bool(clock.armed))
-                    if then == "restart":
-                        scheduler.say("Centrum startuje znów (Outbox.resume)")
-                        outbox = started()
-                        outbox.resume()
-                    elif then == "next":
-                        scheduler.say("mija RETRY_S: budzik woła Outbox._woken")
-                        clock.now += RETRY_S
-                        clock.armed.pop(0)()
-                    elif pending:
-                        arrive()  # the code posts it anyway: the next version is the last thing that moves the queue
-                    else:
-                        scheduler.say(
-                            "nic nie rusza kolejki do następnego startu Centrum"
-                        )
-                        ended = "nic"
-                        break
-                    if not started_threads:
-                        scheduler.say(
-                            "kod nie uruchamia wątku kolejki (send_in_background)"
-                        )
-                        ended = "bez-watku"
-                        break
-                state = _state(
-                    box,
-                    queue,
-                    outbox,
-                    scheduler,
-                    passes,
-                    failures,
-                    clock,
-                    len(started_threads),
-                    versions,
-                    len(pending),
-                    keyed[0],
-                )
-                if state in visited and not choices.replaying:
-                    return []
-                visited.add(state)
-                passes -= 1
+    bounds = scope.bounds
+    passes = (
+        bounds.unreachable + bounds.lost + bounds.disk + bounds.kills + bounds.reads + len(scope.later) + EXTRA_PASSES
+    )
+    ended = "pusta"
+    disk.posting = False
+    while pending or any(not _settled(scope, path) for path in queue.glob("*.json")):
+        if not passes:
+            ended = "limit"
+            break
+        while pending and scheduler.arrival(f"Outbox.post(wersja {len(everything) - len(pending) + 1})"):
+            arrive()
+        if not started_threads and pending and all(_settled(scope, path) for path in queue.glob("*.json")):
+            arrive()  # nothing else is left to do before it
+        if not started_threads:
+            then = scheduler.between_passes(bool(clock.armed))
+            if then == "restart":
+                scheduler.say("Centrum startuje znów (Outbox.resume)")
+                outbox = started()
+                outbox.resume()
+            elif then == "next":
+                scheduler.say("mija RETRY_S: budzik woła Outbox._woken")
+                clock.now += RETRY_S
+                clock.armed.pop(0)()
+            elif pending:
+                arrive()  # the code posts it anyway: the next version is the last thing that moves the queue
+            else:
                 scheduler.say(
-                    "przejście kolejki (wątek skrzynka-kolejka, Outbox._drain)"
+                    "nic nie rusza kolejki do następnego startu Centrum"
                 )
-                try:
-                    started_threads.pop(0)()
-                except Crash:
-                    outbox = started()
-                    scheduler.say("Centrum startuje znów (Outbox.resume)")
-                    outbox.resume()
+                ended = "nic"
+                break
+            if not started_threads:
+                scheduler.say(
+                    "kod nie uruchamia wątku kolejki (send_in_background)"
+                )
+                ended = "bez-watku"
+                break
+        state = _state(
+            box,
+            queue,
+            outbox,
+            scheduler,
+            passes,
+            failures,
+            clock,
+            len(started_threads),
+            versions,
+            len(pending),
+            keyed[0],
+        )
+        if state in visited and not choices.replaying:
+            return []
+        visited.add(state)
+        passes -= 1
+        scheduler.say(
+            "przejście kolejki (wątek skrzynka-kolejka, Outbox._drain)"
+        )
+        try:
+            started_threads.pop(0)()
+        except Crash:
+            outbox = started()
+            scheduler.say("Centrum startuje znów (Outbox.resume)")
+            outbox.resume()
     trace = tuple(scheduler.trace)
     faults = tuple(scheduler.faults)
     # A pass that could not read the newer file sends the older one, and the newer then changes its comment.

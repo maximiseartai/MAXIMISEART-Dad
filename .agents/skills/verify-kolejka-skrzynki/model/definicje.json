@@ -1,9 +1,9 @@
 {
   "src/rozliczenia/centrum/outbox.py": {
-    "cały plik": "15450b10fd3c944c"
+    "cały plik": "8b744db61574b143"
   },
   "src/rozliczenia/centrum/keyed_box.py": {
-    "cały plik": "b7a2a980c935112c"
+    "cały plik": "4da2ee65e6b516c2"
   },
   "src/rozliczenia/centrum/report_box.py": {
     "cały plik": "4724c02a3c888be2"

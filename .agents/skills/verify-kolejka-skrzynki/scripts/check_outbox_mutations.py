@@ -480,7 +480,7 @@ MUTATIONS = (
         (
             Edit(
                 VERIFIED,
-                '        threading.Thread(target=self._drain, name="skrzynka-kolejka", daemon=True).start()\n',
+                "        self._start(self._drain)\n",
                 "        pass\n",
             ),
         ),
