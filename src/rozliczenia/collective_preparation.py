@@ -123,7 +123,6 @@ def _incomplete_period_decision(register_path: Path, plan: Plan, summary: Prepar
     if plan.incomplete_period is None:
         return None
     return Decision(
-        title=messages.INCOMPLETE_PERIOD_TITLE,
         message=_incomplete_period_warning(register_path, plan, plan.incomplete_period),
         counts_title=messages.ORDERS_PER_DAY,
         counts=summary.labeled_orders_per_day(),

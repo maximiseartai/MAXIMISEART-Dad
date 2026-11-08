@@ -21,12 +21,11 @@ __all__ = ["Conversation", "Decision"]
 
 @dataclass(frozen=True)
 class Decision:
-    """Pytanie do taty w trakcie silnika: tytuł, Komunikat, liczby z etykietami i pytanie.
+    """Pytanie do taty w trakcie silnika: Komunikat, liczby z etykietami i pytanie.
 
     Każdy rozmówca pokazuje te same części po swojemu, bez parsowania linii.
     """
 
-    title: str
     message: Message
     counts_title: str
     counts: Sequence[tuple[str, int]]

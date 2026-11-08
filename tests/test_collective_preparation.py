@@ -1331,8 +1331,7 @@ def test_decyzja_taty_about_incomplete_period_comes_after_planowanie_and_before_
     summary = run_preparation(fixture, observer=recorded.append, conversation=tata)
 
     [decision] = tata.decisions
-    assert (decision.title, decision.message.code, decision.question) == (
-        "Ostrzeżenie: niepełny okres",
+    assert (decision.message.code, decision.question) == (
         "NIEPELNY_OKRES",
         "Kontynuować mimo niepełnego okresu?",
     )
