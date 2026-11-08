@@ -56,7 +56,7 @@ from .collective_layout import (
     QUANTITY_COLUMNS,
     WORKER_COLUMN,
 )
-from .highlights import Highlights
+from .highlights import Face, Highlights, LookReader
 from .hyperlinks import Hyperlink, read_sheet_hyperlinks
 from .quantity_rules import QuantityColumn
 from .row_look import GENERAL
@@ -64,7 +64,7 @@ from .workbook_parts import rows_dated_between, rows_with_input
 from .text import normalize_text
 
 if TYPE_CHECKING:
-    from .dad_files import DadFiles
+    from .dad_files import DadFiles, ReadFile, WitnessedSheet
 
 
 # Błędy openpyxl przy pliku, który nie jest poprawnym skoroszytem .xlsx: przy otwieraniu, a w trybie
@@ -371,6 +371,70 @@ def _forbidden_columns(header: Sequence[object]) -> tuple[tuple[client_data.Forb
 
 
 @dataclass(frozen=True)
+class _Collective:
+    """Arkusz Pliku zbiorczego z jednego odczytu po sprawdzeniu układu (``_collective_sheet``)."""
+
+    file: ReadFile
+    title: str
+    header: ExcelRow
+    """Wartości A17:AP17: nagłówki A:K i nazwy pozycji cennika N:AP."""
+    content: bytes = field(repr=False)
+    """Bajty, które czyta openpyxl: plik bez wierszy, które nie mogą mieć wartości w A:K (``rows_with_input``)."""
+    rows: Iterator[tuple[int, tuple[object, ...], ExcelRow]]
+    """Wiersze danych od 18 w kolejności z pliku: numer, komórki i wartości do ``last_column``; każdy już u świadka."""
+
+
+@contextmanager
+def _collective_sheet(
+    path: Path, files: DadFiles, *, last_column: int, computed: bool = False, despite_excel_lock: bool = False
+) -> Iterator[_Collective]:
+    """Jedyny ciąg kroków odczytu Pliku zbiorczego, wspólny dla obu obiektywów (wyglądu i wartości policzonych).
+
+    Kroki w stałej kolejności: plik z uchwytu ``files``, ``rows_with_input``, openpyxl tylko do odczytu (``computed``:
+    wartości policzone przez Excel), nagłówek A17:AP17, arkusz u świadka (``ReadFile.sheet``), sprawdzenie
+    ``WYKONAWCA`` w H17 i Wiersze danych. Arkusz wchodzi do Kopii wejścia przed sprawdzeniem nagłówka, więc Logi
+    Uruchomienia zatrzymanego na złym układzie mają odcisk pliku i jego nagłówek. Każdy Wiersz danych przechodzi przez
+    świadka (pamięć reguły danych i Kopia), zanim dostanie go obiektyw.
+
+    openpyxl czyta tylko wiersze, które mogą mieć wartości w A:K (``workbook_parts.rows_with_input``), a nie każdy z
+    ~10 tys. sformatowanych wierszy Pliku zbiorczego; wartości i klasyfikacja uszkodzeń są takie jak przy odczycie
+    całego arkusza.
+    """
+
+    file = files.read(path, despite_excel_lock=despite_excel_lock)
+    with unreadable_as_error(path):
+        content = rows_with_input(file.content, INPUT_COLUMNS[-1])
+    workbook = _open(path, BytesIO(content), read_only=True, computed=computed)
+    try:
+        sheet = cast(Worksheet, workbook.active)  # tylko do odczytu: ReadOnlyWorksheet
+        header = next(
+            classified(
+                path,
+                sheet.iter_rows(min_row=HEADER_ROW, max_row=HEADER_ROW, max_col=QUANTITY_COLUMNS[-1], values_only=True),
+            ),
+            (),
+        )
+        witness = file.sheet(sheet.title, HEADER_ROW, header, _forbidden_columns(header))
+        check_worker_header(path, sheet.title, header)
+        yield _Collective(file, sheet.title, header, content, _data_rows(path, sheet, witness, last_column))
+    finally:
+        workbook.close()
+
+
+def _data_rows(
+    path: Path, sheet: Worksheet, witness: WitnessedSheet, last_column: int
+) -> Iterator[tuple[int, tuple[object, ...], ExcelRow]]:
+    for number, cells in enumerate(
+        classified(path, sheet.iter_rows(min_row=FIRST_DATA_ROW, max_col=last_column)), start=FIRST_DATA_ROW
+    ):
+        values = tuple(cell.value for cell in cells)
+        if all(value is None for value in values[: INPUT_COLUMNS[-1]]):
+            continue
+        witness.row(number, values)
+        yield number, cells, values
+
+
+@dataclass(frozen=True)
 class DataRows:
     """Wiersze danych Pliku zbiorczego i nagłówki A17:K17 z tego samego odczytu.
 
@@ -386,51 +450,22 @@ class DataRows:
 
 
 def read_data_rows(path: Path, files: DadFiles, *, despite_excel_lock: bool = False) -> DataRows:
-    """Wiersze danych Pliku zbiorczego z Wyróżnieniami i Hiperłączami komórek w kolejności z pliku; plik jest tylko czytany.
+    """Wiersze danych Pliku zbiorczego z Wyróżnieniami i Hiperłączami komórek A:AT w kolejności z pliku; plik jest tylko
+    czytany.
 
-    Wiersz bez wartości w A:K nie jest Wierszem danych i jest pomijany. Brak
-    nagłówka WYKONAWCA w H17 to ``WorkbookError`` ze złym układem. Plik otwarty w Excelu to
-    ``WorkbookError``, chyba że wywołujący jawnie pozwala go czytać (``despite_excel_lock``, ADR 0016).
-    Plik czyta uchwyt ``files``, a każdy Wiersz danych przechodzi przez świadka arkusza (``dad_files.WitnessedSheet``):
-    komórki zakazanych kolumn (``_forbidden_columns``) zna pamięć reguły danych (ADR 0025), a bajty pliku, nagłówki
-    A17:AP17 i wartości A:AT bez tych kolumn Kopia wejścia Uruchomienia.
-
-    openpyxl czyta tylko wiersze, które mogą mieć wartości w A:K
-    (``workbook_parts.rows_with_input``), a nie każdy z ~10 tys. sformatowanych wierszy Pliku
-    zbiorczego; wartości i klasyfikacja uszkodzeń są takie jak przy odczycie
-    całego arkusza.
+    Obiektyw wyglądu na potoku ``_collective_sheet``: wiersz bez wartości w A:K nie jest Wierszem danych i jest
+    pomijany, a brak nagłówka WYKONAWCA w H17 to ``WorkbookError`` ze złym układem. Plik otwarty w Excelu to
+    ``WorkbookError``, chyba że wywołujący jawnie pozwala go czytać (``despite_excel_lock``, ADR 0016). Komórki
+    zakazanych kolumn (``_forbidden_columns``) zna pamięć reguły danych (ADR 0025), a bajty pliku, nagłówki A17:AP17 i
+    wartości A:AT bez tych kolumn Kopia wejścia Uruchomienia.
     """
 
-    file = files.read(path, despite_excel_lock=despite_excel_lock)
-    with unreadable_as_error(path):
-        content = rows_with_input(file.content, INPUT_COLUMNS[-1])
-    workbook = _open(path, BytesIO(content), read_only=True)
-    try:
-        sheet = cast(Worksheet, workbook.active)  # tylko do odczytu: ReadOnlyWorksheet
-        header = next(
-            classified(
-                path,
-                sheet.iter_rows(min_row=HEADER_ROW, max_row=HEADER_ROW, max_col=QUANTITY_COLUMNS[-1], values_only=True),
-            ),
-            (),
-        )
-        witness = file.sheet(sheet.title, HEADER_ROW, header, _forbidden_columns(header))
-        header, price_list = header[: INPUT_COLUMNS[-1]], header[QUANTITY_COLUMNS[0] - 1 :]
-        check_worker_header(path, sheet.title, header)
+    with _collective_sheet(path, files, last_column=DATA_ROW_COLUMNS[-1], despite_excel_lock=despite_excel_lock) as sheet:
         with unreadable_as_error(path):
-            max_column = max(DATA_ROW_COLUMNS[-1], sheet.max_column)
-            links = read_sheet_hyperlinks(content, sheet.title)
+            links = read_sheet_hyperlinks(sheet.content, sheet.title)
         rows: list[DataRow] = []
-        last_column = DATA_ROW_COLUMNS[-1]
-        highlights = _HighlightsReader()
-        for number, cells in enumerate(
-            classified(path, sheet.iter_rows(min_row=FIRST_DATA_ROW, max_col=max_column)), start=FIRST_DATA_ROW
-        ):
-            row_cells = cells[:last_column]
-            values = tuple(cell.value for cell in row_cells)
-            if all(value is None for value in values[: INPUT_COLUMNS[-1]]):
-                continue
-            witness.row(number, values)
+        highlights = LookReader()
+        for number, cells, values in sheet.rows:
             row_links = links.row(number, values)
             with unreadable_as_error(path):
                 rows.append(
@@ -443,17 +478,15 @@ def read_data_rows(path: Path, files: DadFiles, *, despite_excel_lock: bool = Fa
                                 (getattr(cell, "number_format", None) or GENERAL) if column in LOOK_COLUMNS else GENERAL,
                                 row_links.get(column),
                             )
-                            for column, cell in enumerate(row_cells, start=1)
+                            for column, cell in enumerate(cells, start=1)
                         ),
                     )
                 )
-    finally:
-        workbook.close()
     names = {
         get_column_letter(column): "" if is_blank(name) else " ".join(str(name).split())
-        for column, name in enumerate(price_list, start=QUANTITY_COLUMNS[0])
+        for column, name in enumerate(sheet.header[QUANTITY_COLUMNS[0] - 1 :], start=QUANTITY_COLUMNS[0])
     }
-    return DataRows(header_columns(header), rows, names)
+    return DataRows(header_columns(sheet.header[: INPUT_COLUMNS[-1]]), rows, names)
 
 
 @dataclass(frozen=True)
@@ -490,42 +523,14 @@ def read_computed_rows(path: Path, files: DadFiles) -> ComputedRows:
     """Wiersze danych Pliku zbiorczego (A:AU) z wartościami, które policzył Excel, w kolejności z pliku; plik jest tylko
     czytany.
 
-    Wiersz bez wartości w A:K nie jest Wierszem danych i jest pomijany, a brak nagłówka WYKONAWCA w H17 to
-    ``WorkbookError`` ze złym układem, tak jak w ``read_data_rows``. Plik otwarty w Excelu to ``WorkbookError``.
-    Plik czyta uchwyt ``files``, a każdy Wiersz danych przechodzi przez świadka arkusza: komórki zakazanych kolumn
-    (``_forbidden_columns``) zna pamięć reguły danych (ADR 0025), a bajty pliku, nagłówki A17:K17 i wartości A:AU bez
-    tych kolumn Kopia wejścia Uruchomienia.
+    Obiektyw wartości na tym samym potoku co ``read_data_rows`` (``_collective_sheet``): te same Wiersze danych, to samo
+    Zatrzymanie na złym układzie i ta sama Kopia wejścia, tylko z wartościami A:AU. Plik otwarty w Excelu to
+    ``WorkbookError``.
     """
 
-    file = files.read(path)
-    with unreadable_as_error(path):
-        content = rows_with_input(file.content, INPUT_COLUMNS[-1])
-    workbook = _open(path, BytesIO(content), read_only=True, computed=True)
-    try:
-        sheet = cast(Worksheet, workbook.active)  # tylko do odczytu: ReadOnlyWorksheet
-        header = next(
-            classified(path, sheet.iter_rows(min_row=HEADER_ROW, max_row=HEADER_ROW, max_col=INPUT_COLUMNS[-1], values_only=True)),
-            (),
-        )
-        check_worker_header(path, sheet.title, header)
-        rows = [
-            ComputedRow(number, values)
-            for number, values in enumerate(
-                classified(path, sheet.iter_rows(min_row=FIRST_DATA_ROW, max_col=AMOUNT_COLUMN, values_only=True)),
-                start=FIRST_DATA_ROW,
-            )
-            if any(value is not None for value in values[: INPUT_COLUMNS[-1]])
-        ]
-        witness = file.sheet(sheet.title, HEADER_ROW, header, _forbidden_columns(header))
-        for row in rows:
-            witness.row(row.number, row.values)
-    finally:
-        workbook.close()
-    return ComputedRows(header_columns(header), rows, file.content)
-
-
-Face = tuple[str | None, float | None]
-"""Krój i rozmiar czcionki komórki; ``(None, None)``: brakująca komórka."""
+    with _collective_sheet(path, files, last_column=AMOUNT_COLUMN, computed=True) as sheet:
+        rows = [ComputedRow(number, values) for number, _, values in sheet.rows]
+    return ComputedRows(header_columns(sheet.header[: INPUT_COLUMNS[-1]]), rows, sheet.file.content)
 
 
 class ReadRow(NamedTuple):
@@ -535,25 +540,6 @@ class ReadRow(NamedTuple):
     values: tuple[object, ...]
     row: RegisterRow
     faces: Mapping[str, Face]
-
-
-class _HighlightsReader:
-    """Wyróżnienia i krój czcionki komórek jednego odczytu; komórki o tej samej czcionce i wypełnieniu dzielą jeden
-    obiekt."""
-
-    def __init__(self) -> None:
-        self._known: dict[tuple[int, int], tuple[Highlights, Face]] = {}
-
-    def of(self, cell: object) -> Highlights:
-        return self.look(cell)[0]
-
-    def look(self, cell: object) -> tuple[Highlights, Face]:
-        font, fill = getattr(cell, "font", None), getattr(cell, "fill", None)
-        key = (id(font), id(fill))
-        found = self._known.get(key)
-        if found is None:
-            found = self._known[key] = (Highlights.of(font, fill), (None, None) if font is None else (font.name, font.sz))
-        return found
 
 
 class ReadSheet:
@@ -579,7 +565,7 @@ class ReadSheet:
         """Wartości całego wiersza, wiersz z komórkami ``columns`` (nagłówek docelowy → kolumna od 1) i krój czcionki
         tych komórek, od ``min_row`` w dół.
 
-        Wyróżnienia czyta ta sama reguła co w Pliku zbiorczym (``Highlights.of``), a format liczby każdej
+        Wyróżnienia czyta ta sama reguła co w Pliku zbiorczym (``highlights.LookReader``), a format liczby każdej
         komórki to jej format, ogólny dla brakującej. W arkuszu zawężonym tylko wiersze z jego zakresu.
         """
 
@@ -592,7 +578,7 @@ class ReadSheet:
             if min_row > max_row:
                 return
         links = read_sheet_hyperlinks(self._content, self.title)
-        highlights = _HighlightsReader()
+        highlights = LookReader()
         for number, cells in enumerate(self._sheet.iter_rows(min_row=min_row, max_row=max_row), start=min_row):
             values = tuple(getattr(cell, "value", None) for cell in cells)
             row_links = links.row(number, values)

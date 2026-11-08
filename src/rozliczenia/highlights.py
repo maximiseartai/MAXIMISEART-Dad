@@ -10,7 +10,7 @@ kolorem automatycznym, bez pogrubienia i bez kursywy.
 
 Przygotowanie pliku zbiorczego przenosi je tak samo z komórek Rejestru zleceń do
 obu plików okresu. Oba odczyty (Pliku zbiorczego i Rejestru w ``workbook_files``)
-tworzą typ przez ``Highlights.of``, więc ten sam wygląd komórki daje tę samą wartość,
+tworzą typ przez ``LookReader``, więc ten sam wygląd komórki daje tę samą wartość,
 a obie drogi zapisu (``template_copy`` i openpyxl w ``template_file``) nakładają
 go tymi samymi metodami, więc dają ten sam wynik.
 """
@@ -78,6 +78,29 @@ class Highlights:
 
 PLAIN = Highlights()
 """Komórka bez Wyróżnień."""
+
+
+Face = tuple[str | None, float | None]
+"""Krój i rozmiar czcionki komórki; ``(None, None)``: brakująca komórka."""
+
+
+class LookReader:
+    """Wyróżnienia i krój czcionki komórek jednego odczytu openpyxl; komórki o tej samej czcionce i wypełnieniu dzielą
+    jeden obiekt."""
+
+    def __init__(self) -> None:
+        self._known: dict[tuple[int, int], tuple[Highlights, Face]] = {}
+
+    def of(self, cell: object) -> Highlights:
+        return self.look(cell)[0]
+
+    def look(self, cell: object) -> tuple[Highlights, Face]:
+        font, fill = getattr(cell, "font", None), getattr(cell, "fill", None)
+        key = (id(font), id(fill))
+        found = self._known.get(key)
+        if found is None:
+            found = self._known[key] = (Highlights.of(font, fill), (None, None) if font is None else (font.name, font.sz))
+        return found
 
 
 def _is_empty(fill: Fill) -> bool:

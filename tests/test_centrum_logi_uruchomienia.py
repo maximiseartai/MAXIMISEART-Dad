@@ -3482,6 +3482,57 @@ def test_chwila_zmiany_w_odcisku_pliku_zbiorczego_jest_sprzed_odczytu_takze_gdy_
     assert (copied["name"], logged_fingerprint(copied)["modified_at"]) == (SOURCE_NAME, READ_AT)
 
 
+MOVED_WORKER: Final = "KTO"
+"""Nagłówek H17 Pliku zbiorczego, w którym tata nadpisał ``WYKONAWCA``."""
+
+
+def _no_worker_settlement(tmp_path: Path, _: ExitStack) -> SettlingCentrum:
+    centrum = settling_centrum(tmp_path)
+    write_quantity_source(centrum.collective_file, [{}])
+    workbook = load_workbook(centrum.collective_file)
+    active_worksheet(workbook)["H17"] = MOVED_WORKER
+    workbook.save(centrum.collective_file)
+    return centrum
+
+
+def _no_worker_pricing(tmp_path: Path, stack: ExitStack) -> SettlingCentrum:
+    atrapa = stack.enter_context(atrapa_efenix([]))
+    centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+    write_collective_file(centrum.period_parent, [Order("#ZLKW06", amount=0.0)], headers={"H": MOVED_WORKER})
+    return centrum
+
+
+NO_WORKER = {
+    "settlement": (_no_worker_settlement, "ZLY_PLIK_ZBIORCZY"),
+    "efenix": (_no_worker_pricing, "EFENIX_NIECZYTELNY_PLIK_ZBIORCZY"),
+}
+
+
+@pytest.mark.parametrize("process", NO_WORKER.keys())
+def test_logi_uruchomienia_zatrzymanego_na_braku_wykonawcy_w_h17_maja_odcisk_i_naglowek_pliku_zbiorczego(
+    tmp_path: Path, process: str
+) -> None:
+    """Przebieg rozliczeń i Wycena w efenix czytają Plik zbiorczy jednym potokiem: arkusz wchodzi do Kopii wejścia przed
+    sprawdzeniem ``WYKONAWCA`` w H17, więc Logi Uruchomienia zatrzymanego na złym układzie mają odcisk pliku i jego
+    nagłówek, z których da się to Zatrzymanie odtworzyć."""
+
+    setup, code = NO_WORKER[process]
+    with ExitStack() as stack:
+        centrum = setup(tmp_path, stack)
+        content = centrum.collective_file.read_bytes()
+        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})
+        assert started.status_code == 200, started.json()
+        finished_view(centrum.client)
+
+    [record] = records(centrum)
+    assert [message["code"] for message in record["messages"] if message["kind"] == "stop"] == [code]
+    [copied] = record["input_copy"]
+    assert (copied["name"], logged_fingerprint(copied)) == (SOURCE_NAME, fingerprint(content, centrum.collective_file))
+    [sheet] = copied["sheets"]
+    columns = {**COLLECTIVE_COLUMNS, "H": MOVED_WORKER}
+    assert (sheet["header_row"], sheet["columns"], sheet["rows"]) == (17, columns, [])
+
+
 def cells_row(copied: dict[str, Any]) -> int:
     """Miejsce (od 0) przeczytanego wiersza z zamaskowanym wolnym tekstem w jedynym arkuszu Kopii."""
 
