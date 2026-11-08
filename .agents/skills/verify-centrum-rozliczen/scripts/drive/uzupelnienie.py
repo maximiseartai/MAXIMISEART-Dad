@@ -14,11 +14,12 @@ from openpyxl.worksheet.worksheet import Worksheet
 from playwright.sync_api import Locator, Page, Request, expect
 
 from create_centrum_fixture import PRICE_LIST
-from drive import kontrola_ilosci
 from drive.common import (
     LAST_COMPLETE,
     ROW_MARKER,
+    LogEntry,
     Run,
+    close_centrum,
     last_opened_is,
     move,
     next_step_names_current_step,
@@ -26,6 +27,7 @@ from drive.common import (
     period_row,
     remove,
     remove_empty_folder,
+    start_centrum,
 )
 from drive.przygotowanie_pliku_zbiorczego import HIDE_TAB, SHOW_TAB, drive_preparation
 
@@ -187,8 +189,8 @@ def drive_result_card(run: Run, page: Page) -> None:
     _unanswered_result_card(run, page, filling)
 
     run.step(FEATURE, "uzupelnienie-wynik-po-starcie")
-    kontrola_ilosci._close(run, page)
-    kontrola_ilosci._start(run, "uzupelnienie-start-po-zamknieciu")
+    close_centrum(run, page)
+    start_centrum(run, "uzupelnienie-start-po-zamknieciu")
     page.goto(run.url + "#/uruchomienia")
     page.reload()
     restored = page.get_by_role("region", name="Ostatnie Uruchomienie")
@@ -400,12 +402,21 @@ def _capture(run: Run, page: Page, name: str, answer: dict[str, object]) -> None
     snapshot.write_text(text, encoding="utf-8")
 
 
+def _measured(entry: LogEntry, operation: str) -> bool:
+    """A measurement of a view of page uzupelnienie (``pomiar`` in the Centrum log) that carries ``operation``."""
+
+    return (
+        entry.event == "pomiar"
+        and entry.facts.get("strona") == "uzupelnienie"
+        and f"{operation}:" in entry.facts.get("zapytania", "")
+    )
+
+
 def _drive_kind(run: Run, page: Page, kind: str, shot: str) -> dict[str, object]:
     """From the summary, open the kind's table and check it against the server; returns the server's answer."""
 
     title = KIND_TITLES[kind]
-    log_path = run.root / "logs" / "centrum-rozliczen.log"
-    since = len(log_path.read_text(encoding="utf-8").splitlines())
+    since = len(run.log_entries())
     page.get_by_role("region", name=title, exact=True).get_by_role("link").click()
     expect(page).to_have_url(f"{run.url.rstrip('/')}/{SUMMARY}/{kind}")
     table = page.get_by_role("table", name="Wiersze Pliku zbiorczego", exact=True)
@@ -453,8 +464,7 @@ def _drive_kind(run: Run, page: Page, kind: str, shot: str) -> dict[str, object]
     run.check(True, f"{title}: a tap on a column header or on CZYNNOŚCI ZREALIZOWANE shows the full text")
     run.wait_for(
         lambda: any(
-            " pomiar " in line and "strona=uzupelnienie" in line and "getKindTable:" in line
-            for line in log_path.read_text(encoding="utf-8").splitlines()[since:]
+            _measured(entry, "getKindTable") for entry in run.log_entries()[since:]
         ),
         f"{title}: the view is measured as page uzupelnienie with its getKindTable request",
     )
@@ -596,9 +606,11 @@ def drive_filling(run: Run, page: Page) -> None:
     expect(page.get_by_role("button", name="Otwórz Plik zbiorczy", exact=True)).to_have_count(1 if on_disk else 0)
     run.check(True, "the kind page of the same period follows the same rule")
     page.go_back()
-    log = (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8").splitlines()
     run.check(
-        any(" uzupelnienie-odczyt-nieudany " in line and f"okres={EMPTY_PERIOD}" in line for line in log),
+        any(
+            entry.event == "uzupelnienie-odczyt-nieudany" and entry.facts.get("okres") == EMPTY_PERIOD
+            for entry in run.log_entries()
+        ),
         "the failed read is in the Centrum log with the period",
     )
     run.capture(page, "224-uzupelnienie-bez-pliku")
@@ -646,8 +658,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     run.capture(page, "220-uzupelnienie-karta")
 
     run.step(FEATURE, "uzupelnienie-podsumowanie")
-    log_path = run.root / "logs" / "centrum-rozliczen.log"
-    since = len(log_path.read_text(encoding="utf-8").splitlines())
+    since = len(run.log_entries())
     fill.click()
     expect(page).to_have_url(f"{run.url.rstrip('/')}/{SUMMARY}")
     expect(page.get_by_role("heading", level=1)).to_have_text("Uzupełnienie pliku zbiorczego")
@@ -662,8 +673,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     expect(menu.get_by_role("link", name="Okresy", exact=True)).to_have_attribute("data-active", "")
     run.wait_for(
         lambda: any(
-            " pomiar " in line and "strona=uzupelnienie" in line and "getQuantitiesToFill:" in line
-            for line in log_path.read_text(encoding="utf-8").splitlines()[since:]
+            _measured(entry, "getQuantitiesToFill") for entry in run.log_entries()[since:]
         ),
         "the view is measured as page uzupelnienie with its getQuantitiesToFill request",
     )

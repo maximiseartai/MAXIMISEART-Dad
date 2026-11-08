@@ -9,13 +9,11 @@ from playwright.sync_api import Locator, Page, expect
 
 from drive.common import (
     Run,
-    current_run,
     diagnosis_answer,
-    ended_run_shown,
     ensure_files_set,
-    finished_result,
+    finished_view,
     move,
-    period_choice,
+    open_setup,
     release_only,
     remove,
     sent_requests,
@@ -51,24 +49,16 @@ def _stop_without_cause_on_computer(run: Run, page: Page) -> str:
     aside = template.with_name(f"{template.name}.odlozony")
     page.goto(run.url)
     ensure_files_set(run, page)
-    page.goto(run.url + "#/uruchomienia")
-    page.reload()
-    if ended_run_shown(current_run(run, "aktualnosc-przed")):
-        page.get_by_role("button", name="Nowe Uruchomienie procesu").click()
-    page.get_by_role("radio", name="Przygotowanie pliku zbiorczego").click()
-    page.get_by_role("combobox", name="Okres").click()
-    page.get_by_role("option", name=period_choice(PERIOD, "Brak plików okresu"), exact=True).click()
+    open_setup(run, page, "Przygotowanie pliku zbiorczego", "aktualnosc", period=(PERIOD, "Brak plików okresu"))
     move(template, aside)
     try:
         page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
         expect(stop_banner(page)).to_contain_text(TEMPLATE_MISSING)
-        result = finished_result(run, "aktualnosc-zatrzymanie")
+        view = finished_view(run, "aktualnosc-zatrzymanie")
     finally:
         move(aside, template)
-    run.check(result["stop_kind"] == "for_maks", "the stop without its Wzorzec is „do Maksa”")
-    view = current_run(run, "aktualnosc-zatrzymanie")["run"]
-    assert isinstance(view, dict)
-    return str(view["id"])
+    run.check(view["result"]["stop_kind"] == "for_maks", "the stop without its Wzorzec is „do Maksa”")
+    return str(view["run"]["id"])
 
 
 def _diagnose(page: Page) -> Locator:
@@ -210,7 +200,7 @@ def drive_freshness_and_onedrive(run: Run, page: Page) -> None:
         and answer["update_proposal"] is False,
         "an up-to-date tool and files kept on the computer pass both checks, and the Diagnoza offers no update",
     )
-    log = (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
+    log = run.log()
     run.check(
         all(f"przyczyna={code}" in log for code in ("NOWSZA_WERSJA_NARZEDZIA", "PLIK_TYLKO_W_CHMURZE")),
         "the Centrum log records both causes by code only",
@@ -220,8 +210,7 @@ def drive_freshness_and_onedrive(run: Run, page: Page) -> None:
 
 
 def _update_entries(run: Run) -> list[str]:
-    log = (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
-    return [line for line in log.splitlines() if line.split(" ")[1:2] == ["aktualizacja-start"]]
+    return [entry.text for entry in run.log_entries() if entry.event == "aktualizacja-start"]
 
 
 def _drive_update_in_progress(run: Run, page: Page, update: Locator) -> None:

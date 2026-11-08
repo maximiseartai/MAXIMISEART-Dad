@@ -9,7 +9,7 @@ import shutil
 from typing import Any
 
 from playwright.sync_api import Locator, Page, expect
-from drive.common import DAD_TIME_ZONE, Run, remove
+from drive.common import DAD_TIME_ZONE, Run, dad_tab, remove
 
 FEATURE = "kopie-intermax"
 CARD = "Kopie INTERMAX"
@@ -162,15 +162,7 @@ def _drive(
 def _restore_by_touch(run: Run, page: Page, register: Path, folder: Path, original: bytes, oldest: str) -> None:
     """Dad taps „Przywróć” and „Przywróć tę kopię” with his finger on a laptop as slow as his (CPU 4×)."""
 
-    browser = page.context.browser
-    assert browser is not None
-    context = browser.new_context(
-        viewport={"width": 1440, "height": 1000}, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key, has_touch=True
-    )
-    try:
-        touch = context.new_page()
-        touch.set_default_timeout(20_000)
-        context.new_cdp_session(touch).send("Emulation.setCPUThrottlingRate", {"rate": DAD_CPU})
+    with dad_tab(page, touch=True, cpu=DAD_CPU, timeout_ms=20_000) as touch:
         _to_card(run, touch)
         chosen = (folder / oldest).read_bytes()
         before = set(_kopie(folder))
@@ -191,5 +183,3 @@ def _restore_by_touch(run: Run, page: Page, register: Path, folder: Path, origin
         expect(first).to_contain_text("przed przywróceniem")
         run.check(True, "the card reads the list again and shows the new Kopia first")
         run.capture(touch, "243-kopie-intermax-przywrocona")
-    finally:
-        context.close()

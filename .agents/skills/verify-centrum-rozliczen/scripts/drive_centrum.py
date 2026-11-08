@@ -49,7 +49,7 @@ from drive import (
     wydajnosc,
     zgloszenie,
 )
-from drive.common import DAD_TIME_ZONE, DriveFailure, Run
+from drive.common import DriveFailure, Run, dad_context
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
@@ -108,10 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
             try:
-                context = browser.new_context(
-                    viewport={"width": 1440, "height": 1000}, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key
-                )
-                page = context.new_page()
+                page = dad_context(browser).new_page()
                 page.set_default_timeout(10_000)
                 for feature in selected:
                     drives[feature](run, page)

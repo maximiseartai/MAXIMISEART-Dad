@@ -28,7 +28,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from playwright.sync_api import Browser, BrowserContext, CDPSession, Page, Request, expect
 
 from drive import DEFAULT_REPEATS
-from drive.common import DAD_TIME_ZONE, LAST_COMPLETE, PAGES, DriveFailure, Run, replace_file
+from drive.common import LAST_COMPLETE, PAGES, DriveFailure, Run, dad_context, replace_file
 
 SKILL_ROOT = Path(__file__).resolve().parents[2]
 BASELINE = SKILL_ROOT / "wydajnosc-baseline.json"
@@ -154,9 +154,7 @@ class Browsing:
 
     @contextmanager
     def context(self) -> Iterator[tuple[BrowserContext, list[str]]]:
-        context = self.browser.new_context(
-            viewport={"width": 1440, "height": 1000}, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key
-        )
+        context = dad_context(self.browser)
         context.add_init_script(INIT)
         requests: list[str] = []
 

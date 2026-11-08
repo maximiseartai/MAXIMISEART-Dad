@@ -54,6 +54,16 @@ in `<feature>.md` next to this file, driven by the skill's
   before the click. Leave the file absent to cancel.
 - Read side effects from the run root: `config/centrum-ustawienia.yaml`,
   `dialogs.jsonl`, `opened.jsonl`, and `logs/uruchomienia/`.
+- The harness of `drive/common.py` is the one way for what more than one feature does:
+  close, start and kill Centrum (`close_centrum`, `start_centrum`, `kill_centrum`, `answers`);
+  read the skrzynka Zgłoszeń and its queue (`box_issues`, `queued`, `queued_posts`, `read_json`), which wait while the server puts a file in place on Windows (#1087);
+  read the Centrum log (`Run.log`, `Run.log_entries`, `log_entries`);
+  send a POST as the tab does (`Run.post`; a foreign `Origin` or `Host` goes through `Run.refused`);
+  move Centrum's clock (`advance_clock`);
+  open a second window like Dad's (`dad_tab`);
+  reach the start card after a reload (`open_setup`);
+  and wait for the result of an Uruchomienie Dad starts (`result_of_start`, `run_again` for `Uruchom ponownie`), because the server shows the previous one as finished until the tab's request arrives.
+  Wait for the server's answer to a page's read (`reload_with_answer`) instead of a longer timeout when the page shows it.
 - Change files on disk only inside the run root, and restore what a step moved.
   Delete, move and replace files and folders only with `remove`, `remove_tree`, `remove_empty_folder`, `move` and
   `replace_file` (`drive/common.py`), which retry while the server holds the file open: on Windows that refuses the

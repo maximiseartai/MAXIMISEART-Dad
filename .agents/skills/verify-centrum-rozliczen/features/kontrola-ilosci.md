@@ -42,6 +42,6 @@ Preconditions:
 ## Gotchas
 
 - The issue body holds CZYNNOŚCI and UMOWA of the synthetic Plik zbiorczy, which carry the fixture's row marker. Never copy the body into evidence: the self-test fails on the marker.
-- The Kontrola issue takes a number in the skrzynka before the Zgłoszenia of features/zgloszenie.md. Drives look issues up by label (`zgloszenie._issues`), never by `1.json`.
+- The Kontrola issue takes a number in the skrzynka before the Zgłoszenia of features/zgloszenie.md. Drives look issues up by label (`box_issues`), never by `1.json`.
 - After a restart `/api/runs/current` is idle; Uruchomienia shows the last card restored from its Logi (`karta-z-logow.md`), and later features start a new Uruchomienie from the form.
 - `diagnoza` expects no key before `zgloszenie`, so the drive empties its file at the end (an empty key file is no key for the server, and on Windows it can be emptied while the server reads it).

@@ -9,11 +9,10 @@ import socket
 import subprocess
 import sys
 import urllib.parse
-import urllib.request
 
 from playwright.sync_api import Page, Request, Response, expect
 
-from drive.common import REPO_ROOT, Run, served_version
+from drive.common import REPO_ROOT, Run, answers, log_entries, served_version
 
 # Every click on the shortcut opens one more tab; the browser keeps at most 6 connections to Centrum for all tabs.
 _SHORTCUT_TABS = 7
@@ -79,15 +78,7 @@ def _launch(run: Run, port: int, name: str) -> subprocess.CompletedProcess[str]:
 
 
 def _log_events(path: Path) -> list[str]:
-    return [line.split(" ")[1] for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
-
-
-def _answers(url: str) -> bool:
-    try:
-        with urllib.request.urlopen(url.rstrip("/") + "/api/health", timeout=2):
-            return True
-    except OSError:
-        return False
+    return [entry.event for entry in log_entries(path)]
 
 
 def _is_stream(message: Request | Response) -> bool:
@@ -104,7 +95,7 @@ def _expect_runs_shown(tab: Page) -> None:
 def drive_start_and_close(run: Run, page: Page) -> None:
     feature = "start-i-zamykanie"
     port = int(urllib.parse.urlsplit(run.url).port or 0)
-    served_log = run.root / "logs" / "centrum-rozliczen.log"
+    served_log = run.log_path
     tool_log = run.root / "narzedzie" / "logs" / "centrum-rozliczen.log"
 
     run.step(feature, "start-gotowosc")
@@ -125,7 +116,7 @@ def drive_start_and_close(run: Run, page: Page) -> None:
     run.check(f"Centrum rozliczeń już działa: {run.url}" in again.stdout, "it says Centrum is already running")
     run.check((run.root / "browser.txt").read_text(encoding="utf-8").split() == [run.url], "it only opens the tab")
     run.check(_log_events(tool_log) == ["juz-dziala"], "its log records the recognised running Centrum")
-    run.check(_answers(run.url), "the first Centrum keeps serving")
+    run.check(answers(run.url), "the first Centrum keeps serving")
 
     run.step(feature, "start-obcy-program")
     with socket.socket() as foreign_program:
@@ -169,7 +160,7 @@ def drive_start_and_close(run: Run, page: Page) -> None:
     other_tab.goto(run.url)
     expect(other_tab.get_by_role("heading", name="Okresy", exact=True)).to_be_visible()
     other_tab.close()
-    run.check(_answers(run.url), "closing a tab leaves Centrum running")
+    run.check(answers(run.url), "closing a tab leaves Centrum running")
 
     run.step(feature, "zamykanie-potwierdzenie")
     # In `all`, Centrum already closed once for aktualizacja (`zamkniecie z=aktualizacja`) and was restarted.
@@ -183,13 +174,13 @@ def drive_start_and_close(run: Run, page: Page) -> None:
     dialog.get_by_role("button", name="Anuluj", exact=True).click()
     expect(dialog).to_be_hidden()
     run.check(
-        _answers(run.url) and _log_events(served_log).count("zamkniecie") == closings, "Anuluj leaves Centrum running"
+        answers(run.url) and _log_events(served_log).count("zamkniecie") == closings, "Anuluj leaves Centrum running"
     )
 
     run.step(feature, "zamykanie")
     close_button.click()
     page.get_by_role("button", name="Zamknij Centrum", exact=True).click()
     expect(page.get_by_role("heading", name="Centrum rozliczeń jest zamknięte", exact=True)).to_be_visible()
-    run.wait_for(lambda: not _answers(run.url), "the Centrum process stops serving")
+    run.wait_for(lambda: not answers(run.url), "the Centrum process stops serving")
     run.wait_for(lambda: _log_events(served_log)[-2:] == ["zamkniecie", "stop"], "the log ends with zamkniecie, stop")
     run.capture(page, "92-start-i-zamykanie-zamkniete")

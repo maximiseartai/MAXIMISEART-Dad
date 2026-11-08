@@ -4,6 +4,7 @@ Checks the frontmatter, the feature-map headings, that every helper named in
 SKILL.md exists and answers ``--help``, the gate of ``wydajnosc`` on made-up
 numbers (no browser), that the retrying helpers of ``drive/common.py`` outlast a
 file the server holds open, retry nothing else and nothing longer, and take the key away only after a step wrote it,
+that the result of a started Uruchomienie is never the one before it and the Centrum log is read as ``log.py`` writes it,
 that the drive deletes, moves and replaces in none of the forms of ``_removals`` outside those helpers, that
 evidence text is strict UTF-8 and screenshots are PNG files, and that no workbook content (the fixture's row marker) reached the
 evidence.
@@ -306,7 +307,7 @@ def _check_guard_documented(errors: list[str]) -> None:
 
 def _check_retry_while_open(errors: list[str]) -> None:
     """The helpers outlast a file the server holds open for a moment (Windows refuses twice, then allows), and raise
-    any other error at once and a refusal that outlasts ``RETRY_OPEN_S`` after it; ``remove_tree`` takes a missing
+    any other error at once and a refusal that outlasts its limit after it; ``remove_tree`` takes a missing
     folder for removed only with ``missing_ok``."""
 
     import tempfile
@@ -322,7 +323,7 @@ def _check_retry_while_open(errors: list[str]) -> None:
             raise PermissionError(32, "The process cannot access the file because it is being used by another process")
 
     try:
-        common._while_open(held_for_a_moment)
+        common.while_open(held_for_a_moment)
     except PermissionError:
         errors.append("drive/common.py gives up on a file the server holds open for a moment (#921)")
     attempts = 0
@@ -334,7 +335,7 @@ def _check_retry_while_open(errors: list[str]) -> None:
             raise FileNotFoundError(2, "No such file or directory")
 
     try:
-        common._while_open(missing_at_first)
+        common.while_open(missing_at_first)
     except FileNotFoundError:
         pass
     else:
@@ -343,16 +344,12 @@ def _check_retry_while_open(errors: list[str]) -> None:
     def held_for_good() -> None:
         raise PermissionError(32, "The process cannot access the file because it is being used by another process")
 
-    limit_s = common.RETRY_OPEN_S
-    common.RETRY_OPEN_S = 0.2  # a refusal for good, without waiting the whole limit
     try:
-        common._while_open(held_for_good)
+        common.while_open(held_for_good, limit_s=0.2)  # a refusal for good, without waiting the whole limit
     except PermissionError:
         pass
     else:
-        errors.append("drive/common.py swallows a refusal that outlasts RETRY_OPEN_S, so the drive goes on without it")
-    finally:
-        common.RETRY_OPEN_S = limit_s
+        errors.append("drive/common.py swallows a refusal that outlasts its limit, so the drive goes on without it")
     with tempfile.TemporaryDirectory() as scratch:
         missing = Path(scratch) / "brak"
         try:
@@ -365,6 +362,70 @@ def _check_retry_while_open(errors: list[str]) -> None:
             common.remove_tree(missing, missing_ok=True)
         except FileNotFoundError:
             errors.append("remove_tree(missing_ok=True) refuses a missing folder")
+
+
+def _check_result_of_start(errors: list[str]) -> None:
+    """``result_of_start`` (and ``run_again``) returns the Uruchomienie Dad's click started, though the server shows the
+    one before it as finished until the tab's request arrives (the flaky „the same stop again offers Diagnoza”)."""
+
+    import contextlib
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import io
+    import json
+    import tempfile
+    import threading
+
+    from drive.common import Run, result_of_start
+
+    def finished(run_id: str, stop_kind: str) -> dict[str, object]:
+        return {"state": "finished", "run": {"id": run_id}, "result": {"stop_kind": stop_kind}}
+
+    # The read before the click, then two reads before the tab's request arrives, then the new Uruchomienie.
+    answers = [finished("poprzednie", "for_tata")] * 3 + [finished("nowe", "repeated")]
+
+    class Scripted(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            body = json.dumps(answers.pop(0) if len(answers) > 1 else answers[0]).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Scripted)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch) / "run"
+            root.mkdir()
+            (root / "fixture.json").write_text("{}", encoding="utf-8")
+            run = Run(root, f"http://127.0.0.1:{server.server_port}/", Path(scratch) / "evidence")
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = result_of_start(run, "powtorka", lambda: None)
+    finally:
+        server.shutdown()
+        server.server_close()
+    if result != {"stop_kind": "repeated"}:
+        errors.append(f"result_of_start took the Uruchomienie before Dad's click for the new one: {result}")
+
+
+def _check_log_entries(errors: list[str]) -> None:
+    """``log_entries`` reads a fact whose value has a space, which the Centrum log writes in quotes (``log.py``)."""
+
+    import tempfile
+
+    from drive.common import LogEntry, log_entries
+
+    line = 'skrzynka-czeka etykieta=zgloszenie przyczyna="brak sieci" okres=06_12_10_2026'
+    with tempfile.TemporaryDirectory() as scratch:
+        path = Path(scratch) / "centrum-rozliczen.log"
+        path.write_text(f"2026-10-19T08:00:00+02:00 {line}\n", encoding="utf-8")
+        entries = log_entries(path)
+    facts = {"etykieta": "zgloszenie", "przyczyna": "brak sieci", "okres": "06_12_10_2026"}
+    if entries != [LogEntry("skrzynka-czeka", facts, line)]:
+        errors.append(f"log_entries splits an entry of the Centrum log other than log.py writes it: {entries}")
 
 
 def _check_drop_report_key(errors: list[str]) -> None:
@@ -542,6 +603,8 @@ def main(argv: list[str] | None = None) -> int:
     _check_feature_map(errors)
     _check_retry_while_open(errors)
     _check_drop_report_key(errors)
+    _check_result_of_start(errors)
+    _check_log_entries(errors)
     _check_performance_gate(errors)
     _check_machine_lock(errors)
     _check_guard_documented(errors)

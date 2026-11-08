@@ -40,20 +40,10 @@ def _read_operation(url: str) -> str | None:
     return next((operation for address, operation in READS if address.fullmatch(path)), None)
 
 
-def _log_lines(run: Run) -> list[str]:
-    log = run.root / "logs" / "centrum-rozliczen.log"
-    return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
-
-
 def _timings(run: Run, since: int) -> list[dict[str, str]]:
-    """Facts of every ``pomiar`` entry after the first ``since`` log lines."""
+    """Facts of every ``pomiar`` entry after the first ``since`` log entries."""
 
-    entries = []
-    for line in _log_lines(run)[since:]:
-        _, event, *facts = line.split(" ")
-        if event == "pomiar":
-            entries.append(dict(fact.split("=", 1) for fact in facts))
-    return entries
+    return [entry.facts for entry in run.log_entries()[since:] if entry.event == "pomiar"]
 
 
 def _wait_for_timings(run: Run, since: int, count: int, message: str) -> list[dict[str, str]]:
@@ -82,7 +72,7 @@ def drive_measurement(run: Run, page: Page) -> None:
     run.step(FEATURE, "pomiar-zimny-start")
     page.on("response", remember)
     for page_id, title in (NOTIFICATIONS | PAGES).items():
-        since = len(_log_lines(run))
+        since = len(run.log_entries())
         page.goto("about:blank")
         page.goto(f"{run.url}#/{page_id}")
         expect(page.get_by_role("heading", name=title, level=1)).to_be_visible()
@@ -109,7 +99,7 @@ def drive_measurement(run: Run, page: Page) -> None:
     )
 
     run.step(FEATURE, "pomiar-przejscia-w-menu")
-    since = len(_log_lines(run))
+    since = len(run.log_entries())
     first, *rest = PAGES.items()
     route = [*rest, first]
     for _, title in route:
@@ -123,7 +113,7 @@ def drive_measurement(run: Run, page: Page) -> None:
     )
     run.check(all("fcp_ms" not in timing for timing in timings), "menu clicks carry no FCP")
     [(page_id, title)] = NOTIFICATIONS.items()
-    bell_since = len(_log_lines(run))
+    bell_since = len(run.log_entries())
     page.locator("header").get_by_role("button", name=title, exact=False).click()
     expect(page.get_by_role("heading", name=title, level=1)).to_be_visible()
     [bell] = _wait_for_timings(run, bell_since, 1, "the click on the bell is in the Centrum log")
@@ -152,7 +142,7 @@ def drive_measurement(run: Run, page: Page) -> None:
         route.continue_()
 
     page.route("**/api/configuration", slow)
-    since = len(_log_lines(run))
+    since = len(run.log_entries())
     try:
         page.get_by_role("link", name="Konfiguracja", exact=True).click()
         expect(page.get_by_role("heading", name="Konfiguracja", level=1)).to_be_visible()
@@ -206,7 +196,7 @@ def drive_measurement(run: Run, page: Page) -> None:
     page.route("**/api/configuration", hold_first)
     page.on("requestfinished", finished)
     page.on("request", sent)
-    since = len(_log_lines(run))
+    since = len(run.log_entries())
     try:
         # Dad returns to the tab again and again while Konfiguracja is still reading: every return reads the
         # settings and the configuration again, so the view ends with more requests than one measurement takes.
@@ -247,7 +237,7 @@ def drive_measurement(run: Run, page: Page) -> None:
     expect(page.get_by_role("alert")).to_have_count(0)
     expect(page.get_by_role("dialog")).to_have_count(0)
     run.capture(page, "80-pomiar-bez-sladu")
-    entries = [line for line in _log_lines(run) if line.split(" ")[1:2] == ["pomiar"]]
+    entries = [entry.text for entry in run.log_entries() if entry.event == "pomiar"]
     (run.evidence / "api" / "pomiar-dziennik.txt").write_text("\n".join(entries) + "\n", encoding="utf-8")
     run.check(
         not any(str(run.root) in entry or "/api/" in entry or PERIOD_TOKEN.search(entry) for entry in entries),
@@ -255,7 +245,7 @@ def drive_measurement(run: Run, page: Page) -> None:
     )
 
     run.step(FEATURE, "pomiar-obcy-origin")
-    since = len(_log_lines(run))
+    since = len(run.log_entries())
     body = json.dumps(
         {"kind": "navigation", "page": "okresy", "ready_ms": 1, "fcp_ms": None, "skeleton_ms": 0, "requests": []}
     ).encode()

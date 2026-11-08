@@ -12,7 +12,18 @@ import sys
 from playwright.sync_api import Locator, Page, expect
 
 from drive import aktualizacja, uwaga_taty, zgloszenie
-from drive.common import PAGES, Run, drop_report_key, edit_issue, error_toasts, release_only, remove
+from drive.common import (
+    PAGES,
+    Run,
+    advance_clock,
+    box_issues,
+    drop_report_key,
+    edit_issue,
+    error_toasts,
+    read_json,
+    release_only,
+    remove,
+)
 
 FEATURE = "powiadomienia"
 BELL = "Powiadomienia"
@@ -88,15 +99,6 @@ def _asked(run: Run) -> list[str]:
     return [label for label in (json.loads(line)["label"] for line in lines) if label in CASE_LABELS]
 
 
-def _advance_clock(run: Run, minutes: int) -> None:
-    """Move Centrum's monotonic clock forward, so the next read may ask the skrzynka again."""
-
-    moved = run.root / "zegar" / "przesuniecie-min.txt"
-    moved.parent.mkdir(exist_ok=True)
-    before = float(moved.read_text(encoding="utf-8")) if moved.exists() else 0.0
-    moved.write_text(str(before + minutes), encoding="utf-8")
-
-
 def _close_issue(box: Path, number: int, reason: str) -> None:
     """Maks closes issue ``number`` in the skrzynka with GitHub's ``state_reason``."""
 
@@ -125,22 +127,22 @@ def _toggle_theme(page: Page) -> None:
 def drive_notifications(run: Run, page: Page) -> None:
     config = Path(run.fixture["settings"]).parent
     key_file = config / "zgloszenia-klucz.txt"
-    box = run.root / "skrzynka-zgloszen"
+    box = run.box
     # A part of `all` may start at uwaga-taty or later (SKILL.md), so each case this feature closes is checked apart.
-    if not any(issue["state"] == "open" for issue in zgloszenie._issues(box)):
+    if not any(issue["state"] == "open" for issue in zgloszenie.reports(run)):
         print("  harness: no open Zgłoszenie yet, so zgloszenie runs first", flush=True)
         zgloszenie.drive_report(run, page)
-    if not uwaga_taty._issues(box):
+    if not box_issues(run, uwaga_taty.LABEL):
         print("  harness: no Uwaga taty sent yet, so uwaga-taty runs first", flush=True)
         uwaga_taty.drive_dad_note(run, page)
     key_file.write_text(KEY + "\n", encoding="utf-8")
-    notes = uwaga_taty._issues(box)
-    reports = zgloszenie._issues(box)
+    notes = box_issues(run, uwaga_taty.LABEL)
+    reports = zgloszenie.reports(run)
     note, report = notes[-1], next(issue for issue in reports if issue["state"] == "open")
     report_what = str(report["title"]).split(": ", 1)[1]
 
     run.step(FEATURE, "powiadomienia-dzwonek")
-    _advance_clock(run, 10)
+    advance_clock(run, 10, "the next read may ask the skrzynka again")
     for page_id, heading in PAGES.items():
         _enter(page, run, page_id, heading)
         bell, write = _bell(page), page.get_by_role("button", name=uwaga_taty.WRITE, exact=True)
@@ -169,7 +171,7 @@ def drive_notifications(run: Run, page: Page) -> None:
     print(f"  harness: Maks closes Uwaga #{note['number']} as completed and Zgłoszenie #{report['number']} as not planned", flush=True)
     _close_issue(box, int(str(note["number"])), "completed")
     _close_issue(box, int(str(report["number"])), "not_planned")
-    _advance_clock(run, 10)
+    advance_clock(run, 10, "the next read may ask the skrzynka again")
     asked = len(_asked(run))
     _enter(page, run, "okresy", "Okresy")
     expect(_bell(page)).to_have_accessible_name(BELL_FRESH)
@@ -246,7 +248,7 @@ def drive_notifications(run: Run, page: Page) -> None:
     (box / "brak-sieci").touch()
     try:
         _close_issue(box, int(str(notes[0]["number"])), "completed")
-        _advance_clock(run, 10)
+        advance_clock(run, 10, "the next read may ask the skrzynka again")
         asked = len(_asked(run))
         _enter(page, run, "powiadomienia", BELL)
         run.check(len(_asked(run)) > asked, "after 10 minutes Centrum asks again")
@@ -263,7 +265,7 @@ def drive_notifications(run: Run, page: Page) -> None:
         for name in ("wydanie.txt", "main-commit.txt", "wydania.json", "brak-sieci"):
             remove(run.root / "github" / name, missing_ok=True)
     _drive_unavailable_files(run, page, config, box)
-    log = (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
+    log = run.log()
     run.check(KEY not in log and KEY not in page.content(), "the key is neither in the Centrum log nor in the browser")
     drop_report_key(key_file)
 
@@ -292,7 +294,7 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
         _release("v0.1.0", FIRST_SUMMARY, "2026-10-08T08:00:00Z"),
     ]
     _publish(run, "v0.2.0", DORMANT_RELEASE, releases)
-    _advance_clock(run, 10)
+    advance_clock(run, 10, "the next read may ask the skrzynka again")
     asked = _release_questions(run)
     _enter(page, run, "okresy", "Okresy")
     expect(_bell(page)).to_have_accessible_name(BELL_FRESH)
@@ -343,17 +345,16 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
     head = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
     print("  harness: the newest Wydanie in the local origin is the clone's own commit", flush=True)
     release_only(Path(tool["origin"]), head)
-    log = run.root / "logs" / "centrum-rozliczen.log"
-    updates = log.read_text(encoding="utf-8").count("aktualizacja-koniec")
+    updates = run.log().count("aktualizacja-koniec")
     card.get_by_role("button", name=aktualizacja.BUTTON, exact=True).click()
     run.wait_for(
-        lambda: log.read_text(encoding="utf-8").count("aktualizacja-koniec") == updates + 1,
+        lambda: run.log().count("aktualizacja-koniec") == updates + 1,
         "the card's button starts the Aktualizacja narzędzia",
     )
     expect(card.get_by_role("status").filter(has_text=aktualizacja.UP_TO_DATE)).to_be_visible()
+    last = run.log_entries()[-1]
     run.check(
-        log.read_text(encoding="utf-8").splitlines()[-1].split(" ", 2)[1:2] == ["aktualizacja-koniec"]
-        and "wynik=AKTUALNA" in log.read_text(encoding="utf-8").splitlines()[-1],
+        last.event == "aktualizacja-koniec" and last.facts.get("wynik") == "AKTUALNA",
         "the update does not take a Wydanie that never was the tip of `main`, so the tool stays where it is",
     )
     run.check(
@@ -366,7 +367,7 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
     run.step(FEATURE, "powiadomienia-wydanie-aktualne")
     print("  harness: the newest Wydanie on `main` is v0.2.0 on the tool's own commit (Dad is on it)", flush=True)
     _publish(run, "v0.2.0", None, releases)
-    _advance_clock(run, 10)
+    advance_clock(run, 10, "the next read may ask the skrzynka again")
     _enter(page, run, "powiadomienia", BELL)
     expect(page.get_by_role("region", name="Nowa wersja 0.2.0", exact=True)).to_have_count(0)
     current = page.get_by_role("list", name=BELL).get_by_role("listitem", name="Nowa wersja 0.2.0", exact=True)
@@ -382,7 +383,7 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
 
     run.step(FEATURE, "powiadomienia-wydania-brak-sieci")
     (run.root / "github" / "brak-sieci").touch()
-    _advance_clock(run, 10)
+    advance_clock(run, 10, "the next read may ask the skrzynka again")
     asked = _release_questions(run)
     _enter(page, run, "powiadomienia", BELL)
     run.check(_release_questions(run) == asked + 1, "after 10 minutes Centrum asks GitHub again")
@@ -431,10 +432,10 @@ def _locked(files: Sequence[Path]) -> Iterator[None]:
 def _drive_unavailable_files(run: Run, page: Page, config: Path, box: Path) -> None:
     run.step(FEATURE, "powiadomienia-plik-niedostepny")
     files = [config / name for name in STATE_FILES]
-    note = next(issue for issue in uwaga_taty._issues(box) if issue["state"] == "open")
+    note = next(issue for issue in box_issues(run, uwaga_taty.LABEL) if issue["state"] == "open")
     print(f"  harness: Maks closes Uwaga #{note['number']} while another program holds both state files", flush=True)
     _close_issue(box, int(str(note["number"])), "completed")
-    _advance_clock(run, 10)
+    advance_clock(run, 10, "the next read may ask the skrzynka again")
     with _locked(files):
         before = [path.read_text(encoding="utf-8") for path in files]
         _enter(page, run, "powiadomienia", BELL)
@@ -478,7 +479,7 @@ def _drive_unavailable_files(run: Run, page: Page, config: Path, box: Path) -> N
     )
     stored = json.loads((config / "powiadomienia.json").read_text(encoding="utf-8"))
     run.check(read_ids <= set(stored["przeczytane"]), "config/powiadomienia.json now keeps the Uwaga read")
-    cases = json.loads((config / "sprawy-taty.json").read_text(encoding="utf-8"))["sprawy"]
+    cases = read_json(config / "sprawy-taty.json")["sprawy"]
     run.check(
         any(case["number"] == note["number"] and (case["closure"] or {}).get("reason") == "completed" for case in cases),
         "config/sprawy-taty.json now keeps Maks's closing of the Uwaga",

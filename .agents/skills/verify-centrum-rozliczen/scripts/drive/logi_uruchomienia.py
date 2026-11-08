@@ -5,14 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 import gzip
 import json
-from pathlib import Path
 import re
 import subprocess
 from typing import Any
 
 from playwright.sync_api import Page, expect
 
-from drive.common import ROW_MARKER, Run, drop_report_key, finished_result, served_version
+from drive.common import ROW_MARKER, Run, box_issues, drop_report_key, finished_view, queued, served_version
 from drive.przebieg_rozliczen import TEMPLATE_PACING_MS, drive_settlement
 
 FEATURE = "logi-uruchomienia"
@@ -40,11 +39,9 @@ def _records(run: Run) -> dict[str, Json]:
 
 
 def _card(run: Run, name: str) -> Json:
-    """The finished card as the browser got it: the one answer ``finished_result`` waited for, kept in ``api/``."""
+    """The finished card as the browser got it: the one answer ``finished_view`` waited for, kept in ``api/``."""
 
-    finished_result(run, name)
-    view: Json = json.loads((run.evidence / "api" / f"{name}.json").read_text(encoding="utf-8"))
-    return view
+    return finished_view(run, name)
 
 
 def _one_new(run: Run, before: set[str], what: str) -> Json:
@@ -121,16 +118,6 @@ def _new_settlement(run: Run, page: Page, period: str) -> None:
     expect(page.get_by_role("combobox", name="Okres")).to_contain_text(period)
 
 
-def _queued_logs(run: Run) -> list[Path]:
-    return sorted((run.root / "config" / "zgloszenia" / "kolejka").glob(f"*-{LABEL}-*.json"))
-
-
-def _threads(run: Run) -> list[Json]:
-    box = run.root / "skrzynka-zgloszen"
-    issues = [json.loads(path.read_text(encoding="utf-8")) for path in box.glob("*.json")] if box.is_dir() else []
-    return sorted((issue for issue in issues if issue["labels"] == [LABEL]), key=lambda issue: int(issue["number"]))
-
-
 def _archived(run: Run, tag: str, name: str) -> bytes:
     """The file ``name`` of the Archiwum ``tag`` in the run's skrzynka, unpacked byte for byte; empty when the Archiwum
     lacks it."""
@@ -140,13 +127,10 @@ def _archived(run: Run, tag: str, name: str) -> bytes:
 
 
 def _ended_in_centrum_log(run: Run) -> list[tuple[str, str, str, str, str]]:
-    ended = []
-    for line in (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8").splitlines():
-        _, event, *facts = line.split(" ")
-        if event == "uruchomienie-koniec":
-            fact = dict(entry.split("=", 1) for entry in facts)
-            ended.append((fact["proces"], MODES[fact["tryb"]], fact["okres"], fact["wynik"], fact["koniec"]))
-    return ended
+    return [
+        (fact["proces"], MODES[fact["tryb"]], fact["okres"], fact["wynik"], fact["koniec"])
+        for fact in (entry.facts for entry in run.log_entries() if entry.event == "uruchomienie-koniec")
+    ]
 
 
 def drive_run_logs(run: Run, page: Page) -> None:
@@ -235,19 +219,19 @@ def drive_run_logs(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "logi-w-skrzynce")
     print("  harness: Maks writes the key; the next Uruchomienie wakes the queue", flush=True)
-    key_file = run.root / "config" / "zgloszenia-klucz.txt"
+    key_file = run.config / "zgloszenia-klucz.txt"
     key_file.write_text(KEY + "\n", encoding="utf-8")
     try:
         _new_settlement(run, page, needs_check)
         page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
         expect(page.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
         woke = _card(run, "logi-skrzynka-podglad")
-        run.wait_for(lambda: _queued_logs(run) == [], "every Logi waiting in the queue reaches the skrzynka", timeout_s=60)
+        run.wait_for(lambda: queued(run, LABEL) == [], "every Logi waiting in the queue reaches the skrzynka", timeout_s=60)
     finally:
         drop_report_key(key_file)
     # Bytes, not text: reading text turns the \r\n of a file written in text mode on Windows back into \n.
     files = sorted(path.read_bytes() for path in (run.root / LOGS).glob("*.json"))
-    threads = _threads(run)
+    threads = box_issues(run, LABEL)
     (run.evidence / "api" / "logi-skrzynka.json").write_text(
         json.dumps(
             [
