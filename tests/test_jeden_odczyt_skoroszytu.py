@@ -44,9 +44,7 @@ ONLY: dict[str, frozenset[str]] = {
     "workbook_content": frozenset(),
     "template_content": frozenset({"rozliczenia/template_file.py::_read"}),
     "read_workbook": frozenset(),
-    "open_workbook": frozenset(
-        {"rozliczenia/template_file.py::_outline", "rozliczenia/template_file.py::_openpyxl_workbook"}
-    ),
+    "open_workbook": frozenset({"rozliczenia/template_file.py::_openpyxl_workbook"}),
     "_modified_at": frozenset({"rozliczenia/dad_files.py::read"}),
     "ReadFile": frozenset({"rozliczenia/dad_files.py::read"}),
     "InputCopy": frozenset({"rozliczenia/dad_files.py::for_run"}),
@@ -72,10 +70,6 @@ EXCEPTIONS: dict[tuple[str, str], str] = {
         "workbook_content",
         "rozliczenia/efenix_marking.py::mark_orders",
     ): "porównanie bajtów pliku przed zapisem Znaczników, nie jego wartości",
-    (
-        "workbook_content",
-        "rozliczenia/template_file.py::_read_outline",
-    ): "Wzorzec, nie plik z danymi klientów",
     (
         "read_workbook",
         "rozliczenia/preparation_register.py::read_register",

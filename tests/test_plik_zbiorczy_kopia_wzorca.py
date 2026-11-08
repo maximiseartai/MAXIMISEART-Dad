@@ -17,11 +17,18 @@ from openpyxl import load_workbook
 import pytest
 
 from tests.fixtures.benchmark import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, write_synthetic_templates
+from datetime import datetime
+
+from openpyxl.utils import get_column_letter
+
 from tests.fixtures.preparation import (
+    COLLECTIVE_TEMPLATE_ZERO_ROWS,
     PreparationFixture,
     link_register_order_numbers,
     make_dad_layout_fixture,
     make_preparation_fixture,
+    other_warnings,
+    register_order,
     run_preparation,
     write_collective_template,
 )
@@ -32,6 +39,8 @@ from tests.fixtures.workbooks import (
     leave_data_row_leftovers,
     marked_for_copy,
     refused_by_copy,
+    replace_cells,
+    rewrite_parts,
     written_by_copy,
 )
 
@@ -158,3 +167,86 @@ def test_plik_zbiorczy_z_kopii_wzorca_jest_taki_jak_z_openpyxl(
     assert external_link_parts(created) == external_link_parts(reference)
     assert keeps_template_calc_chain == (copied and template_has_calc_chain)
 
+
+
+_QUANTITY_LETTERS = [get_column_letter(column) for column in range(14, 43)]  # N:AP
+
+
+def _date_style(path: Path) -> int:
+    """Dopisuje do stylów Wzorca styl komórki z formatem daty (wbudowany ``numFmtId`` 14) i podaje jego numer."""
+
+    found: list[int] = []
+
+    def change(name: str, data: bytes) -> bytes:
+        if name != "xl/styles.xml":
+            return data
+        count = re.search(rb'<cellXfs count="(\d+)"', data)
+        assert count is not None
+        found.append(int(count.group(1)))
+        data = data.replace(count.group(0), b'<cellXfs count="%d"' % (found[0] + 1), 1)
+        return data.replace(b"</cellXfs>", b'<xf numFmtId="14" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/></cellXfs>', 1)
+
+    rewrite_parts(path, change)
+    return found[0]
+
+
+def _third_zero_row(path: Path, cell: Callable[[str], str]) -> None:
+    replace_cells(path, {f"{letter}20": cell(f"{letter}20") for letter in _QUANTITY_LETTERS})
+
+
+def _without_row_20(path: Path) -> None:
+    rewrite_parts(
+        path,
+        lambda name, data: re.sub(rb'<row r="20".*?</row>', b"", data, count=1, flags=re.S)
+        if name == "xl/worksheets/sheet1.xml"
+        else data,
+    )
+
+
+def _date_zeros(path: Path) -> None:
+    style = _date_style(path)
+    _third_zero_row(path, lambda reference: f'<c r="{reference}" s="{style}"><v>0</v></c>')
+
+
+def _zero_only_in_ap(path: Path) -> None:
+    _third_zero_row(path, lambda reference: f'<c r="{reference}"/>' if reference != "AP20" else '<c r="AP20"><v>0.0</v></c>')
+
+
+@pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
+@pytest.mark.parametrize(
+    ("change", "zero_rows"),
+    [
+        pytest.param(lambda path: None, COLLECTIVE_TEMPLATE_ZERO_ROWS, id="wzorzec"),
+        pytest.param(_zero_only_in_ap, COLLECTIVE_TEMPLATE_ZERO_ROWS, id="zero-tylko-w-AP"),
+        pytest.param(
+            lambda path: _third_zero_row(path, lambda reference: f'<c r="{reference}" t="inlineStr"><is><t>0</t></is></c>'),
+            2,
+            id="tekst-0",
+        ),
+        pytest.param(
+            lambda path: _third_zero_row(path, lambda reference: f'<c r="{reference}" t="b"><v>0</v></c>'),
+            2,
+            id="falsz",
+        ),
+        pytest.param(_date_zeros, 2, id="0-w-formacie-daty"),
+        pytest.param(_without_row_20, 2, id="brak-wiersza"),
+    ],
+)
+def test_wiersze_przygotowane_zerami_to_liczba_0_w_kolumnach_ilosci_na_obu_drogach_zapisu(
+    tmp_path: Path, copied: bool, change: Callable[[Path], None], zero_rows: int
+) -> None:
+    successful_count = COLLECTIVE_TEMPLATE_ZERO_ROWS + 1
+    fixture = make_preparation_fixture(
+        tmp_path, [register_order(number, datetime(2026, 9, 14, 8, number)) for number in range(1, successful_count + 1)]
+    )
+    change(marked_for_copy(fixture.collective_template_path))
+    if not copied:
+        refused_by_copy(fixture.collective_template_path)
+
+    summary = run_preparation(fixture)
+
+    assert written_by_copy(fixture.collective_file_path) == copied
+    assert [warning.text.splitlines()[0] for warning in other_warnings(summary.warnings)] == [
+        f"Co się stało: Zleceń skutecznych: {successful_count}, wierszy przygotowanych zerami we Wzorcu pliku zbiorczego: "
+        f"{zero_rows}. Dolne wiersze Pliku zbiorczego nie mają zer w kolumnach ilości."
+    ]

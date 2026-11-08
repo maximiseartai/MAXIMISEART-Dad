@@ -224,15 +224,31 @@ def test_numer_stylu_poza_komorka_i_wierszem_nie_czyni_wzorca_nieczytelnym(tmp_p
     _plan_template(path)
 
 
+_OUTSIDE_STYLES = {
+    "wiersza": (rb'<row r="([0-9]+)"', rb'<row r="\1" s="99999" customFormat="1"'),
+    "kolumny": (rb'(<col [^>]*?)style="[0-9]+"', rb'\1style="99999"'),
+}
+
+
+# Wzorzec w kształcie Pliku zbiorczego (z autofiltrem) przyjmuje kopia Wzorca, a ``styled_template`` nie.
+@pytest.mark.parametrize(
+    ("make", "styled"),
+    [
+        pytest.param(styled_template, "wiersza", id="wiersza-openpyxl"),
+        pytest.param(write_collective_template, "wiersza", id="wiersza-kopia"),
+        pytest.param(write_collective_template, "kolumny", id="kolumny-kopia"),
+    ],
+)
 @pytest.mark.parametrize("opening", [_check_template, _plan_template])
-def test_styl_wiersza_spoza_stylow_skoroszytu_czyni_wzorzec_nieczytelnym(tmp_path: Path, opening: Callable[[Path], None]) -> None:
-    path = styled_template(tmp_path / "Skoroszyt.xlsx")
+def test_styl_wiersza_spoza_stylow_skoroszytu_czyni_wzorzec_nieczytelnym(
+    tmp_path: Path, opening: Callable[[Path], None], styled: str, make: Callable[[Path], Path]
+) -> None:
+    path = make(tmp_path / "Skoroszyt.xlsx")
+    pattern, replacement = _OUTSIDE_STYLES[styled]
     rewrite_parts(
         path,
         lambda name, data: (
-            re.sub(rb'<row r="([0-9]+)"', rb'<row r="\1" s="99999" customFormat="1"', data, count=1)
-            if name.startswith("xl/worksheets/")
-            else data
+            re.sub(pattern, replacement, data, count=1) if name.startswith("xl/worksheets/") else data
         ),
     )
 
@@ -240,6 +256,23 @@ def test_styl_wiersza_spoza_stylow_skoroszytu_czyni_wzorzec_nieczytelnym(tmp_pat
         opening(path)
 
     assert raised.value.problem is Problem.UNREADABLE
+
+
+def test_planowanie_czyta_wzorzec_pliku_zbiorczego_zmieniony_po_sprawdzaniu(tmp_path: Path) -> None:
+    path = write_collective_template(tmp_path / "Wzorzec pliku zbiorczego.xlsx")
+    template = TemplateFile.collective_file(path)
+    template.check()
+    workbook = load_workbook(path, keep_links=True)
+    try:
+        active_worksheet(workbook).merge_cells("U18:V18")
+        workbook.save(path)
+    finally:
+        workbook.close()
+
+    with pytest.raises(WorkbookError) as raised:
+        template.plan(1)
+
+    assert raised.value.problem is Problem.LAYOUT
 
 
 @pytest.mark.parametrize("opening", OPENINGS)
