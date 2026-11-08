@@ -2,8 +2,8 @@
 
 ``check_quantity_rules_mutations.py`` breaks one rule at a time and expects this check to fail. The test runs by its
 path in a pytest of this process, as a skill script does not import a module of ``tests/``
-(``tests/test_granice_importow.py``); a renamed or missing test is a pytest failure, not a pass. Ends with
-``ILOŚCI USŁUG OK`` or ``ILOŚCI USŁUG FAIL``.
+(``tests/test_granice_importow.py::test_kod_spoza_testow_nie_importuje_testow``); a renamed or missing test is a
+pytest failure, not a pass. Ends with ``ILOŚCI USŁUG OK`` or ``ILOŚCI USŁUG FAIL``.
 """
 
 from __future__ import annotations

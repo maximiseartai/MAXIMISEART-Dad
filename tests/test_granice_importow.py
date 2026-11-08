@@ -57,6 +57,13 @@ zewnętrznym przez celową kopię. Do 8.11.2026 cztery wyrocznie sięgały do pr
 kolejki budował swój stan z prywatnych pól ``Outbox`` i ``KeyedBox``, a eksplorator Uruchomień z prywatnych pól
 ``RunHost`` (spis N13).
 
+Kod spoza ``tests/`` (``src/``, ``tools/`` z bibliotekami, skryptami CI i hookami, skrypty skilli i pliki Pythona w
+korzeniu) nie importuje pakietu ``tests``: narzędzia i skille zmieniają się rzadko, a pliki testów najczęściej, więc
+atrapy świata zewnętrznego i syntetyczne pliki taty wspólne z testami leżą w ``tools/lib/atrapy/``, a ``tests/fixtures``
+trzyma tylko pomocniki testów. Sprawdzenie nie ma wyjątków i łapie dokładnie postacie wyliczone w docstringu
+``_tests_imports``; uruchomienie testu po ścieżce (``pytest.main([".../tests/test_x.py::test"])``) nie jest importem i
+przechodzi.
+
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica, którą łapie tylko przegląd: nazwa albo napis złożony w trakcie działania
 (``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), ``PreparedRun`` wołany pod nazwą
@@ -74,7 +81,7 @@ from collections import deque
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 import importlib
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import sys
 import typing
 
@@ -1451,3 +1458,137 @@ def test_sprawdzenie_wyroczni_przepuszcza_publiczne_nazwy_prywatne_pola_wlasnych
 
     assert _private_reaches(ast.parse(code)) == []
 
+
+# Kod spoza tests/, który nie importuje pakietu tests: src, narzędzia z bibliotekami, skryptami CI i hookami, skrypty
+# skilli i pliki Pythona w korzeniu.
+OUTSIDE_TESTS: typing.Final = ("*.py", "src/**/*.py", "tools/**/*.py", "tools/hooks/pre-push", ".agents/skills/*/scripts/**/*.py")
+TESTS_PACKAGE: typing.Final = "tests"
+_IMPORTERS: typing.Final = frozenset({"importlib.import_module", "import_module", "__import__"})
+_PATH_CHANGES: typing.Final = frozenset({"sys.path.insert", "sys.path.append"})
+
+
+def _of_tests(name: str) -> bool:
+    return name == TESTS_PACKAGE or name.startswith(f"{TESTS_PACKAGE}.")
+
+
+def _names_tests_folder(text: str) -> bool:
+    return TESTS_PACKAGE in PureWindowsPath(text).parts
+
+
+def _tests_imports(tree: ast.Module) -> list[tuple[int, str]]:
+    """Moduły pakietu ``tests``, które plik importuje: ``import tests…`` (też ``as``), ``from tests… import …`` (moduł
+    pakietu ``tests`` albo ``tests.fixtures`` z nazwy, np. ``from tests.fixtures import settlement``), oba także w funkcji
+    i w ``TYPE_CHECKING``; ``importlib.import_module``, ``import_module`` i ``__import__`` ze stałym napisem ``tests…`` w
+    pierwszym argumencie; i ``sys.path.insert`` albo ``sys.path.append`` ze stałym napisem, którego częścią ścieżki jest
+    ``tests`` (``ROOT / "tests" / "fixtures"``), po którym ``import okno_w_procesie`` sięgnąłby ``tests/fixtures``.
+
+    Granica (tylko przegląd): nazwa albo ścieżka złożona w trakcie działania, ``spec_from_file_location``, ``runpy``,
+    ``exec``, ``sys.path`` zmienione inaczej niż ``insert`` i ``append`` oraz ``sys.modules``."""
+
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found += [(node.lineno, alias.name) for alias in node.names if _of_tests(alias.name)]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module is not None and _of_tests(node.module):
+            package = node.module in (TESTS_PACKAGE, f"{TESTS_PACKAGE}.fixtures")
+            found += [(node.lineno, f"{node.module}.{alias.name}" if package else node.module) for alias in node.names]
+        elif isinstance(node, ast.Call):
+            called = ast.unparse(node.func)
+            if called in _IMPORTERS and node.args:
+                first = node.args[0]
+                if isinstance(first, ast.Constant) and isinstance(first.value, str) and _of_tests(first.value):
+                    found.append((node.lineno, first.value))
+            elif called in _PATH_CHANGES:
+                texts = [
+                    part.value
+                    for argument in node.args
+                    for part in ast.walk(argument)
+                    if isinstance(part, ast.Constant) and isinstance(part.value, str)
+                ]
+                found += [(node.lineno, f"sys.path {text!r}") for text in texts if _names_tests_folder(text)]
+    return sorted(set(found))
+
+
+def _outside_tests() -> list[Path]:
+    return sorted({path for pattern in OUTSIDE_TESTS for path in ROOT.glob(pattern) if path.is_file()})
+
+
+def test_kod_spoza_testow_nie_importuje_testow() -> None:
+    found = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {module}"
+        for path in _outside_tests()
+        for line, module in _tests_imports(ast.parse(path.read_text(encoding="utf-8")))
+    ]
+
+    assert found == [], "\n".join(
+        [
+            *found,
+            "Kod spoza tests/ nie importuje tests/ (narzędzia i skille zależałyby od najczęściej zmienianych plików): "
+            "atrapę wspólną z testami przenieś do tools/lib/atrapy/, a testy niech importują ją stamtąd.",
+        ]
+    )
+
+
+# Każda postać importu tests, którą zna sprawdzenie, i moduł, który z niej czyta.
+TESTS_IMPORTS: typing.Final = {
+    "import": ("import tests.fixtures.settlement as s", "tests.fixtures.settlement"),
+    "import-pakietu": ("import tests", "tests"),
+    "from-modulu": ("from tests.fixtures.settlement import PERIOD", "tests.fixtures.settlement"),
+    "from-pakietu-fixtures": ("from tests.fixtures import settlement", "tests.fixtures.settlement"),
+    "from-pakietu-tests": ("from tests import test_ilosci_uslug", "tests.test_ilosci_uslug"),
+    "import-w-funkcji": ("def f() -> None:\n    from tests.fixtures.intermax import Intermax", "tests.fixtures.intermax"),
+    "type-checking": (
+        "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from tests.fixtures.efenix import Order",
+        "tests.fixtures.efenix",
+    ),
+    "importlib": ('import importlib\nm = importlib.import_module("tests.fixtures.settlement")', "tests.fixtures.settlement"),
+    "import-module": ('from importlib import import_module\nm = import_module("tests.fixtures.settlement")', "tests.fixtures.settlement"),
+    "dunder-import": ('m = __import__("tests.fixtures.settlement")', "tests.fixtures.settlement"),
+    "sys-path-folder": ('import sys\nsys.path.insert(0, str(ROOT / "tests" / "fixtures"))', "sys.path 'tests'"),
+    "sys-path-napis": ('import sys\nsys.path.append("tests/fixtures")', "sys.path 'tests/fixtures'"),
+    "sys-path-windows": ('import sys\nsys.path.append("C:\\\\repo\\\\tests")', "sys.path 'C:\\\\repo\\\\tests'"),
+}
+
+
+@pytest.mark.parametrize(("code", "module"), TESTS_IMPORTS.values(), ids=TESTS_IMPORTS.keys())
+def test_sprawdzenie_granicy_testow_lapie_kazda_wyliczona_postac_importu_testow(code: str, module: str) -> None:
+    assert [found for _, found in _tests_imports(ast.parse(code))] == [module]
+
+
+# Katalog każdej części kodu spoza tests/, którą sprawdzenie musi czytać, z jednym jej plikiem.
+OUTSIDE_TESTS_PARTS: typing.Final = {
+    ".": "run_centrum.py",
+    "src/rozliczenia": "src/rozliczenia/engine.py",
+    "tools": "tools/rownowaznosc.py",
+    "tools/lib/atrapy": "tools/lib/atrapy/settlement.py",
+    "tools/ci": "tools/ci/export_openapi.py",
+    "tools/hooks": "tools/hooks/pre-push",
+    ".agents/skills/verify-rozliczenia/scripts": ".agents/skills/verify-rozliczenia/scripts/doctor.py",
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive": ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py",
+}
+
+
+def test_sprawdzenie_granicy_testow_czyta_kazda_czesc_kodu_spoza_testow() -> None:
+    read = {path.relative_to(ROOT).as_posix() for path in _outside_tests()}
+
+    assert {part: file for part, file in OUTSIDE_TESTS_PARTS.items() if file in read} == OUTSIDE_TESTS_PARTS
+    assert not any(path.startswith("tests/") for path in read)
+
+
+def test_sprawdzenie_granicy_testow_przepuszcza_test_uruchomiony_po_sciezce_i_obce_moduly() -> None:
+    code = (
+        "import importlib\n"
+        "import sys\n"
+        "import pytest\n"
+        "import testsuite\n"
+        "from atrapy.atrapa_efenix import atrapa_efenix\n"
+        "from .tests import x\n"
+        'CONFORMANCE = ROOT / "tests" / "test_ilosci_uslug.py"\n'
+        'pytest.main(["-q", f"{CONFORMANCE}::test"])\n'
+        'importlib.import_module("testsuite.a")\n'
+        'sys.path.insert(0, str(ROOT / "tools" / "lib"))\n'
+        'sys.path.insert(0, "my_tests")\n'
+        'log = "from tests.fixtures.settlement import PERIOD"\n'
+    )
+
+    assert _tests_imports(ast.parse(code)) == []
